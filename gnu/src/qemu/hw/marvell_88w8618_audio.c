@@ -4,7 +4,7 @@
  *
  * Copyright (c) 2008 Jan Kiszka
  *
- * This code is licenced under the GNU GPL v2.
+ * This code is licensed under the GNU GPL v2.
  */
 #include "sysbus.h"
 #include "hw.h"
@@ -249,7 +249,8 @@ static int mv88w8618_audio_init(SysBusDevice *dev)
     wm8750_data_req_set(s->wm, mv88w8618_audio_callback, s);
 
     iomemtype = cpu_register_io_memory(mv88w8618_audio_readfn,
-                                       mv88w8618_audio_writefn, s);
+                                       mv88w8618_audio_writefn, s,
+                                       DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, MP_AUDIO_SIZE, iomemtype);
 
     return 0;

@@ -33,8 +33,8 @@
 #define ARM_ANGEL_HEAP_SIZE (128 * 1024 * 1024)
 #else
 #include "qemu-common.h"
-#include "sysemu.h"
 #include "gdbstub.h"
+#include "hw/arm-misc.h"
 #endif
 
 #define SYS_OPEN        0x01
@@ -370,49 +370,88 @@ uint32_t do_arm_semihosting(CPUState *env)
         return syscall_err;
 #endif
     case SYS_GET_CMDLINE:
-#ifdef CONFIG_USER_ONLY
-        /* Build a commandline from the original argv.  */
         {
-            char **arg = ts->info->host_argv;
-            int len = ARG(1);
-            /* lock the buffer on the ARM side */
-            char *cmdline_buffer = (char*)lock_user(VERIFY_WRITE, ARG(0), len, 0);
+            /* Build a command-line from the original argv.
+             *
+             * The inputs are:
+             *     * ARG(0), pointer to a buffer of at least the size
+             *               specified in ARG(1).
+             *     * ARG(1), size of the buffer pointed to by ARG(0) in
+             *               bytes.
+             *
+             * The outputs are:
+             *     * ARG(0), pointer to null-terminated string of the
+             *               command line.
+             *     * ARG(1), length of the string pointed to by ARG(0).
+             */
 
-            if (!cmdline_buffer)
-                /* FIXME - should this error code be -TARGET_EFAULT ? */
-                return (uint32_t)-1;
+            char *output_buffer;
+            size_t input_size = ARG(1);
+            size_t output_size;
+            int status = 0;
 
-            s = cmdline_buffer;
-            while (*arg && len > 2) {
-                int n = strlen(*arg);
-
-                if (s != cmdline_buffer) {
-                    *(s++) = ' ';
-                    len--;
-                }
-                if (n >= len)
-                    n = len - 1;
-                memcpy(s, *arg, n);
-                s += n;
-                len -= n;
-                arg++;
-            }
-            /* Null terminate the string.  */
-            *s = 0;
-            len = s - cmdline_buffer;
-
-            /* Unlock the buffer on the ARM side.  */
-            unlock_user(cmdline_buffer, ARG(0), len);
-
-            /* Adjust the commandline length argument.  */
-            SET_ARG(1, len);
-
-            /* Return success if commandline fit into buffer.  */
-            return *arg ? -1 : 0;
-        }
+            /* Compute the size of the output string.  */
+#if !defined(CONFIG_USER_ONLY)
+            output_size = strlen(ts->boot_info->kernel_filename)
+                        + 1  /* Separating space.  */
+                        + strlen(ts->boot_info->kernel_cmdline)
+                        + 1; /* Terminating null byte.  */
 #else
-      return -1;
+            unsigned int i;
+
+            output_size = ts->info->arg_end - ts->info->arg_start;
+            if (!output_size) {
+                /* We special-case the "empty command line" case (argc==0).
+                   Just provide the terminating 0. */
+                output_size = 1;
+            }
 #endif
+
+            if (output_size > input_size) {
+                 /* Not enough space to store command-line arguments.  */
+                return -1;
+            }
+
+            /* Adjust the command-line length.  */
+            SET_ARG(1, output_size - 1);
+
+            /* Lock the buffer on the ARM side.  */
+            output_buffer = lock_user(VERIFY_WRITE, ARG(0), output_size, 0);
+            if (!output_buffer) {
+                return -1;
+            }
+
+            /* Copy the command-line arguments.  */
+#if !defined(CONFIG_USER_ONLY)
+            pstrcpy(output_buffer, output_size, ts->boot_info->kernel_filename);
+            pstrcat(output_buffer, output_size, " ");
+            pstrcat(output_buffer, output_size, ts->boot_info->kernel_cmdline);
+#else
+            if (output_size == 1) {
+                /* Empty command-line.  */
+                output_buffer[0] = '\0';
+                goto out;
+            }
+
+            if (copy_from_user(output_buffer, ts->info->arg_start,
+                               output_size)) {
+                status = -1;
+                goto out;
+            }
+
+            /* Separate arguments by white spaces.  */
+            for (i = 0; i < output_size - 1; i++) {
+                if (output_buffer[i] == 0) {
+                    output_buffer[i] = ' ';
+                }
+            }
+        out:
+#endif
+            /* Unlock the buffer on the ARM side.  */
+            unlock_user(output_buffer, ARG(0), output_size);
+
+            return status;
+        }
     case SYS_HEAPINFO:
         {
             uint32_t *ptr;
@@ -422,15 +461,16 @@ uint32_t do_arm_semihosting(CPUState *env)
             /* Some C libraries assume the heap immediately follows .bss, so
                allocate it using sbrk.  */
             if (!ts->heap_limit) {
-                long ret;
+                abi_ulong ret;
 
                 ts->heap_base = do_brk(0);
                 limit = ts->heap_base + ARM_ANGEL_HEAP_SIZE;
                 /* Try a big heap, and reduce the size if that fails.  */
                 for (;;) {
                     ret = do_brk(limit);
-                    if (ret != -1)
+                    if (ret >= limit) {
                         break;
+                    }
                     limit = (ts->heap_base >> 1) + (limit >> 1);
                 }
                 ts->heap_limit = limit;

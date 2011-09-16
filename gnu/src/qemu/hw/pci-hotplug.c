@@ -31,6 +31,7 @@
 #include "scsi.h"
 #include "virtio-blk.h"
 #include "qemu-config.h"
+#include "blockdev.h"
 
 #if defined(TARGET_I386)
 static PCIDevice *qemu_pci_hot_add_nic(Monitor *mon,
@@ -51,7 +52,7 @@ static PCIDevice *qemu_pci_hot_add_nic(Monitor *mon,
         return NULL;
     }
 
-    opts = qemu_opts_parse(&qemu_net_opts, opts_str ? opts_str : "", 0);
+    opts = qemu_opts_parse(qemu_find_opts("net"), opts_str ? opts_str : "", 0);
     if (!opts) {
         return NULL;
     }
@@ -89,7 +90,8 @@ static int scsi_hot_add(Monitor *mon, DeviceState *adapter,
      * specified).
      */
     dinfo->unit = qemu_opt_get_number(dinfo->opts, "unit", -1);
-    scsidev = scsi_bus_legacy_add_drive(scsibus, dinfo->bdrv, dinfo->unit);
+    dinfo->bus = scsibus->busnr;
+    scsidev = scsi_bus_legacy_add_drive(scsibus, dinfo->bdrv, dinfo->unit, false);
     if (!scsidev) {
         return -1;
     }
@@ -125,7 +127,8 @@ void drive_hot_add(Monitor *mon, const QDict *qdict)
         if (pci_read_devaddr(mon, pci_addr, &dom, &pci_bus, &slot)) {
             goto err;
         }
-        dev = pci_find_device(pci_find_root_bus(dom), pci_bus, slot, 0);
+        dev = pci_find_device(pci_find_root_bus(dom), pci_bus,
+                              PCI_DEVFN(slot, 0));
         if (!dev) {
             monitor_printf(mon, "no pci device with address %s\n", pci_addr);
             goto err;
@@ -145,7 +148,7 @@ void drive_hot_add(Monitor *mon, const QDict *qdict)
 
 err:
     if (dinfo)
-        drive_uninit(dinfo);
+        drive_put_ref(dinfo);
     return;
 }
 
@@ -275,7 +278,7 @@ static int pci_device_hot_remove(Monitor *mon, const char *pci_addr)
         return -1;
     }
 
-    d = pci_find_device(pci_find_root_bus(dom), bus, slot, 0);
+    d = pci_find_device(pci_find_root_bus(dom), bus, PCI_DEVFN(slot, 0));
     if (!d) {
         monitor_printf(mon, "slot %d empty\n", slot);
         return -1;

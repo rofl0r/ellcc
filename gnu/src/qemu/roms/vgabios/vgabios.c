@@ -210,7 +210,12 @@ vgabios_pci_data:
 .word 0x1013
 .word 0x00b8 // CLGD5446
 #else
+#ifdef PCI_VID
+.word PCI_VID
+.word PCI_DID
+#else
 #error "Unknown PCI vendor and device id"
+#endif
 #endif
 .word 0 // reserved
 .word 0x18 // dlen
@@ -2039,7 +2044,9 @@ Bit8u car;Bit8u page;Bit8u attr;Bit8u flag;
   {
    if(vga_modes[line].class==TEXT)
     {
-     biosfn_scroll(0x01,0x07,0,0,nbrows-1,nbcols-1,page,SCROLL_UP);
+     address=SCREEN_MEM_START(nbcols,nbrows,page)+(xcurs+(ycurs-1)*nbcols)*2;
+     attr=read_byte(vga_modes[line].sstart,address+1);
+     biosfn_scroll(0x01,attr,0,0,nbrows-1,nbcols-1,page,SCROLL_UP);
     }
    else
     {
@@ -2047,7 +2054,7 @@ Bit8u car;Bit8u page;Bit8u attr;Bit8u flag;
     }
    ycurs-=1;
   }
- 
+
  // Set the cursor for the page
  cursor=ycurs; cursor<<=8; cursor+=xcurs;
  biosfn_set_cursor_pos(page,cursor);
@@ -3829,6 +3836,69 @@ void printf(s)
     }
 }
 #endif
+
+ASM_START
+  ; get LFB address from PCI
+  ; in - ax: PCI device vendor
+  ; out - ax: LFB address (high 16 bit)
+  ;; NOTE - may be called in protected mode
+_pci_get_lfb_addr:
+  push bx
+  push cx
+  push dx
+  push eax
+    mov bx, ax
+    xor cx, cx
+    mov dl, #0x00
+    call pci_read_reg
+    cmp ax, #0xffff
+    jz pci_get_lfb_addr_fail
+ pci_get_lfb_addr_next_dev:
+    mov dl, #0x00
+    call pci_read_reg
+    cmp ax, bx ;; check vendor
+    jz pci_get_lfb_addr_found
+    add cx, #0x8
+    cmp cx, #0x200 ;; search bus #0 and #1
+    jb pci_get_lfb_addr_next_dev
+ pci_get_lfb_addr_fail:
+    xor dx, dx ;; no LFB
+    jmp pci_get_lfb_addr_return
+ pci_get_lfb_addr_found:
+    mov dl, #0x10 ;; I/O space #0
+    call pci_read_reg
+    test ax, #0xfff1
+    jz pci_get_lfb_addr_success
+    mov dl, #0x14 ;; I/O space #1
+    call pci_read_reg
+    test ax, #0xfff1
+    jnz pci_get_lfb_addr_fail
+ pci_get_lfb_addr_success:
+    shr eax, #16
+    mov dx, ax ;; LFB address
+ pci_get_lfb_addr_return:
+  pop eax
+  mov ax, dx
+  pop dx
+  pop cx
+  pop bx
+  ret
+
+  ; read PCI register
+  ; in - cx: device/function
+  ; in - dl: register
+  ; out - eax: value
+pci_read_reg:
+  mov eax, #0x00800000
+  mov ax, cx
+  shl eax, #8
+  mov al, dl
+  mov dx, #0xcf8
+  out dx, eax
+  add dl, #4
+  in  eax, dx
+  ret
+ASM_END
 
 #ifdef VBE
 #include "vbe.c"

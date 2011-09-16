@@ -27,7 +27,6 @@
 #include <hw/isa.h>
 #include "block.h"
 #include "block_int.h"
-#include "sysemu.h"
 #include "dma.h"
 
 #include <hw/ide/internal.h>
@@ -67,9 +66,11 @@ static int isa_ide_initfn(ISADevice *dev)
 {
     ISAIDEState *s = DO_UPCAST(ISAIDEState, dev, dev);
 
-    ide_bus_new(&s->bus, &s->dev.qdev);
+    ide_bus_new(&s->bus, &s->dev.qdev, 0);
     ide_init_ioport(&s->bus, s->iobase, s->iobase2);
     isa_init_irq(dev, &s->irq, s->isairq);
+    isa_init_ioport_range(dev, s->iobase, 8);
+    isa_init_ioport(dev, s->iobase2);
     ide_init2(&s->bus, s->irq);
     vmstate_register(&dev->qdev, 0, &vmstate_ide_isa, s);
     return 0;
@@ -98,6 +99,7 @@ ISADevice *isa_ide_init(int iobase, int iobase2, int isairq,
 
 static ISADeviceInfo isa_ide_info = {
     .qdev.name  = "isa-ide",
+    .qdev.fw_name  = "ide",
     .qdev.size  = sizeof(ISAIDEState),
     .init       = isa_ide_initfn,
     .qdev.reset = isa_ide_reset,

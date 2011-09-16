@@ -109,9 +109,7 @@ cdemu_setup(void)
 {
     if (!CONFIG_CDROM_EMU)
         return;
-    cdemu_drive_gf = NULL;
-    cdemu_buf_fl = NULL;
-    if (!Drives.cdcount)
+    if (!CDCount)
         return;
 
     struct drive_s *drive_g = malloc_fseg(sizeof(*drive_g));
@@ -243,12 +241,13 @@ atapi_is_ready(struct disk_op_s *op)
 }
 
 int
-cdrom_boot(int cdid)
+cdrom_boot(struct drive_s *drive_g)
 {
     struct disk_op_s dop;
+    int cdid = getDriveId(EXTTYPE_CD, drive_g);
     memset(&dop, 0, sizeof(dop));
-    dop.drive_g = getDrive(EXTTYPE_CD, cdid);
-    if (!dop.drive_g)
+    dop.drive_g = drive_g;
+    if (!dop.drive_g || cdid < 0)
         return 1;
 
     int ret = atapi_is_ready(&dop);

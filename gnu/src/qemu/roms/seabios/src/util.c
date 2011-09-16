@@ -150,6 +150,15 @@ memset(void *s, int c, size_t n)
     return s;
 }
 
+void memset_fl(void *ptr, u8 val, size_t size)
+{
+    if (MODESEGMENT)
+        memset_far(FLATPTR_TO_SEG(ptr), (void*)(FLATPTR_TO_OFFSET(ptr)),
+                   val, size);
+    else
+        memset(ptr, val, size);
+}
+
 inline void
 memcpy_far(u16 d_seg, void *d_far, u16 s_seg, const void *s_far, size_t len)
 {
@@ -202,24 +211,27 @@ memcpy(void *d1, const void *s1, size_t len)
     return d1;
 }
 
-// Copy from memory mapped IO.  IO mem is very slow, so yield
-// periodically.  'len' must be 4 byte aligned.
+// Copy to/from memory mapped IO.  IO mem is very slow, so yield
+// periodically.
 void
 iomemcpy(void *d, const void *s, u32 len)
 {
     yield();
-    while (len) {
+    while (len > 3) {
         u32 copylen = len;
         if (copylen > 2048)
             copylen = 2048;
-        len -= copylen;
         copylen /= 4;
+        len -= copylen * 4;
         asm volatile(
             "rep movsl (%%esi),%%es:(%%edi)"
             : "+c"(copylen), "+S"(s), "+D"(d)
             : : "cc", "memory");
         yield();
     }
+    if (len)
+        // Copy any remaining bytes.
+        memcpy(d, s, len);
 }
 
 void *
@@ -250,6 +262,25 @@ strtcpy(char *dest, const char *src, size_t len)
     return dest;
 }
 
+// locate first occurance of character c in the string s
+char *
+strchr(const char *s, int c)
+{
+    for (; *s; s++)
+        if (*s == c)
+            return (char*)s;
+    return NULL;
+}
+
+// Remove any trailing blank characters (spaces, new lines, carriage returns)
+void
+nullTrailingSpace(char *buf)
+{
+    int len = strlen(buf);
+    char *end = &buf[len-1];
+    while (end >= buf && *end <= ' ')
+        *(end--) = '\0';
+}
 
 /****************************************************************
  * Keyboard calls

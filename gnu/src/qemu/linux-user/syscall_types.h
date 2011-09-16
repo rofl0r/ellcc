@@ -161,7 +161,43 @@ STRUCT(fb_var_screeninfo,
        TYPE_INT, /* rotate */
        MK_ARRAY(TYPE_INT, 5)) /* reserved */
 
+STRUCT(fb_cmap,
+       TYPE_INT, /* start  */
+       TYPE_INT, /* len    */
+       TYPE_PTRVOID, /* red    */
+       TYPE_PTRVOID, /* green  */
+       TYPE_PTRVOID, /* blue   */
+       TYPE_PTRVOID) /* transp */
+
+STRUCT(fb_con2fbmap,
+       TYPE_INT, /* console     */
+       TYPE_INT) /* framebuffer */
+
+
 STRUCT(vt_stat,
        TYPE_SHORT, /* v_active */
        TYPE_SHORT, /* v_signal */
        TYPE_SHORT) /* v_state */
+
+STRUCT(vt_mode,
+       TYPE_CHAR,  /* mode   */
+       TYPE_CHAR,  /* waitv  */
+       TYPE_SHORT, /* relsig */
+       TYPE_SHORT, /* acqsig */
+       TYPE_SHORT) /* frsig  */
+
+STRUCT(fiemap_extent,
+       TYPE_ULONGLONG, /* fe_logical */
+       TYPE_ULONGLONG, /* fe_physical */
+       TYPE_ULONGLONG, /* fe_length */
+       MK_ARRAY(TYPE_ULONGLONG, 2), /* fe_reserved64[2] */
+       TYPE_INT, /* fe_flags */
+       MK_ARRAY(TYPE_INT, 3)) /* fe_reserved[3] */
+
+STRUCT(fiemap,
+       TYPE_ULONGLONG, /* fm_start */
+       TYPE_ULONGLONG, /* fm_length */
+       TYPE_INT, /* fm_flags */
+       TYPE_INT, /* fm_mapped_extents */
+       TYPE_INT, /* fm_extent_count */
+       TYPE_INT) /* fm_reserved */

@@ -39,6 +39,8 @@
 #include "msix.h"
 #include "sysbus.h"
 #include "sysemu.h"
+#include "blockdev.h"
+#include "ui/qemu-spice.h"
 
 /* output Bochs bios info messages */
 //#define DEBUG_BIOS
@@ -74,14 +76,15 @@ struct e820_entry {
     uint64_t address;
     uint64_t length;
     uint32_t type;
-};
+} __attribute((__packed__, __aligned__(4)));
 
 struct e820_table {
     uint32_t count;
     struct e820_entry entry[E820_NR_ENTRIES];
-};
+} __attribute((__packed__, __aligned__(4)));
 
 static struct e820_table e820_table;
+struct hpet_fw_config hpet_cfg = {.count = UINT8_MAX};
 
 void isa_irq_handler(void *opaque, int n, int level)
 {
@@ -189,23 +192,24 @@ static void pic_irq_request(void *opaque, int irq, int level)
 
 #define REG_EQUIPMENT_BYTE          0x14
 
-static int cmos_get_fd_drive_type(int fd0)
+static int cmos_get_fd_drive_type(FDriveType fd0)
 {
     int val;
 
     switch (fd0) {
-    case 0:
+    case FDRIVE_DRV_144:
         /* 1.44 Mb 3"5 drive */
         val = 4;
         break;
-    case 1:
+    case FDRIVE_DRV_288:
         /* 2.88 Mb 3"5 drive */
         val = 5;
         break;
-    case 2:
+    case FDRIVE_DRV_120:
         /* 1.2 Mb 5"5 drive */
         val = 2;
         break;
+    case FDRIVE_DRV_NONE:
     default:
         val = 0;
         break;
@@ -330,10 +334,11 @@ static void pc_cmos_init_late(void *opaque)
 void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
                   const char *boot_device,
                   BusState *idebus0, BusState *idebus1,
-                  FDCtrl *floppy_controller, ISADevice *s)
+                  ISADevice *s)
 {
-    int val;
-    int fd0, fd1, nb;
+    int val, nb, nb_heads, max_track, last_sect, i;
+    FDriveType fd_type[2];
+    DriveInfo *fd[2];
     static pc_cmos_init_late_arg arg;
 
     /* various important CMOS locations needed by PC/Bochs bios */
@@ -375,19 +380,28 @@ void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
     }
 
     /* floppy type */
-
-    fd0 = fdctrl_get_drive_type(floppy_controller, 0);
-    fd1 = fdctrl_get_drive_type(floppy_controller, 1);
-
-    val = (cmos_get_fd_drive_type(fd0) << 4) | cmos_get_fd_drive_type(fd1);
+    for (i = 0; i < 2; i++) {
+        fd[i] = drive_get(IF_FLOPPY, 0, i);
+        if (fd[i] && bdrv_is_inserted(fd[i]->bdrv)) {
+            bdrv_get_floppy_geometry_hint(fd[i]->bdrv, &nb_heads, &max_track,
+                                          &last_sect, FDRIVE_DRV_NONE,
+                                          &fd_type[i]);
+        } else {
+            fd_type[i] = FDRIVE_DRV_NONE;
+        }
+    }
+    val = (cmos_get_fd_drive_type(fd_type[0]) << 4) |
+        cmos_get_fd_drive_type(fd_type[1]);
     rtc_set_memory(s, 0x10, val);
 
     val = 0;
     nb = 0;
-    if (fd0 < 3)
+    if (fd_type[0] < FDRIVE_DRV_NONE) {
         nb++;
-    if (fd1 < 3)
+    }
+    if (fd_type[1] < FDRIVE_DRV_NONE) {
         nb++;
+    }
     switch (nb) {
     case 0:
         break;
@@ -409,11 +423,92 @@ void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
     qemu_register_reset(pc_cmos_init_late, &arg);
 }
 
+/* port 92 stuff: could be split off */
+typedef struct Port92State {
+    ISADevice dev;
+    uint8_t outport;
+    qemu_irq *a20_out;
+} Port92State;
+
+static void port92_write(void *opaque, uint32_t addr, uint32_t val)
+{
+    Port92State *s = opaque;
+
+    DPRINTF("port92: write 0x%02x\n", val);
+    s->outport = val;
+    qemu_set_irq(*s->a20_out, (val >> 1) & 1);
+    if (val & 1) {
+        qemu_system_reset_request();
+    }
+}
+
+static uint32_t port92_read(void *opaque, uint32_t addr)
+{
+    Port92State *s = opaque;
+    uint32_t ret;
+
+    ret = s->outport;
+    DPRINTF("port92: read 0x%02x\n", ret);
+    return ret;
+}
+
+static void port92_init(ISADevice *dev, qemu_irq *a20_out)
+{
+    Port92State *s = DO_UPCAST(Port92State, dev, dev);
+
+    s->a20_out = a20_out;
+}
+
+static const VMStateDescription vmstate_port92_isa = {
+    .name = "port92",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .minimum_version_id_old = 1,
+    .fields      = (VMStateField []) {
+        VMSTATE_UINT8(outport, Port92State),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static void port92_reset(DeviceState *d)
+{
+    Port92State *s = container_of(d, Port92State, dev.qdev);
+
+    s->outport &= ~1;
+}
+
+static int port92_initfn(ISADevice *dev)
+{
+    Port92State *s = DO_UPCAST(Port92State, dev, dev);
+
+    register_ioport_read(0x92, 1, 1, port92_read, s);
+    register_ioport_write(0x92, 1, 1, port92_write, s);
+    isa_init_ioport(dev, 0x92);
+    s->outport = 0;
+    return 0;
+}
+
+static ISADeviceInfo port92_info = {
+    .qdev.name     = "port92",
+    .qdev.size     = sizeof(Port92State),
+    .qdev.vmsd     = &vmstate_port92_isa,
+    .qdev.no_user  = 1,
+    .qdev.reset    = port92_reset,
+    .init          = port92_initfn,
+};
+
+static void port92_register(void)
+{
+    isa_qdev_register(&port92_info);
+}
+device_init(port92_register)
+
 static void handle_a20_line_change(void *opaque, int irq, int level)
 {
     CPUState *cpu = opaque;
 
     /* XXX: send to all CPUs ? */
+    /* XXX: add logic to handle multiple A20 line sources */
     cpu_x86_set_a20(cpu, level);
 }
 
@@ -429,8 +524,8 @@ static void bochs_bios_write(void *opaque, uint32_t addr, uint32_t val)
         /* Bochs BIOS messages */
     case 0x400:
     case 0x401:
-        fprintf(stderr, "BIOS panic at rombios.c, line %d\n", val);
-        exit(1);
+        /* used to be panic, now unused */
+        break;
     case 0x402:
     case 0x403:
 #ifdef DEBUG_BIOS
@@ -466,19 +561,19 @@ static void bochs_bios_write(void *opaque, uint32_t addr, uint32_t val)
 
 int e820_add_entry(uint64_t address, uint64_t length, uint32_t type)
 {
-    int index = e820_table.count;
+    int index = le32_to_cpu(e820_table.count);
     struct e820_entry *entry;
 
     if (index >= E820_NR_ENTRIES)
         return -EBUSY;
-    entry = &e820_table.entry[index];
+    entry = &e820_table.entry[index++];
 
-    entry->address = address;
-    entry->length = length;
-    entry->type = type;
+    entry->address = cpu_to_le64(address);
+    entry->length = cpu_to_le64(length);
+    entry->type = cpu_to_le32(type);
 
-    e820_table.count++;
-    return e820_table.count;
+    e820_table.count = cpu_to_le32(index);
+    return index;
 }
 
 static void *bochs_bios_init(void)
@@ -732,7 +827,8 @@ static void load_linux(void *fw_cfg,
     fw_cfg_add_i32(fw_cfg, FW_CFG_SETUP_SIZE, setup_size);
     fw_cfg_add_bytes(fw_cfg, FW_CFG_SETUP_DATA, setup, setup_size);
 
-    option_rom[nb_option_roms] = "linuxboot.bin";
+    option_rom[nb_option_roms].name = "linuxboot.bin";
+    option_rom[nb_option_roms].bootindex = 0;
     nb_option_roms++;
 }
 
@@ -744,23 +840,6 @@ static const int ne2000_irq[NE2000_NB_MAX] = { 9, 10, 11, 3, 4, 5 };
 
 static const int parallel_io[MAX_PARALLEL_PORTS] = { 0x378, 0x278, 0x3bc };
 static const int parallel_irq[MAX_PARALLEL_PORTS] = { 7, 7, 7 };
-
-void pc_audio_init (PCIBus *pci_bus, qemu_irq *pic)
-{
-    struct soundhw *c;
-
-    for (c = soundhw; c->name; ++c) {
-        if (c->enabled) {
-            if (c->isa) {
-                c->init.init_isa(pic);
-            } else {
-                if (pci_bus) {
-                    c->init.init_pci(pci_bus);
-                }
-            }
-        }
-    }
-}
 
 void pc_init_ne2k_isa(NICInfo *nd)
 {
@@ -878,34 +957,18 @@ void pc_cpus_init(const char *cpu_model)
     }
 }
 
-void pc_memory_init(ram_addr_t ram_size,
-                    const char *kernel_filename,
+void pc_memory_init(const char *kernel_filename,
                     const char *kernel_cmdline,
                     const char *initrd_filename,
-                    ram_addr_t *below_4g_mem_size_p,
-                    ram_addr_t *above_4g_mem_size_p)
+                    ram_addr_t below_4g_mem_size,
+                    ram_addr_t above_4g_mem_size)
 {
     char *filename;
     int ret, linux_boot, i;
     ram_addr_t ram_addr, bios_offset, option_rom_offset;
-    ram_addr_t below_4g_mem_size, above_4g_mem_size = 0;
     int bios_size, isa_bios_size;
     void *fw_cfg;
 
-    if (ram_size >= 0xe0000000 ) {
-        above_4g_mem_size = ram_size - 0xe0000000;
-        below_4g_mem_size = 0xe0000000;
-    } else {
-        below_4g_mem_size = ram_size;
-    }
-    *above_4g_mem_size_p = above_4g_mem_size;
-    *below_4g_mem_size_p = below_4g_mem_size;
-
-#if TARGET_PHYS_ADDR_BITS == 32
-    if (above_4g_mem_size > 0) {
-        hw_error("To much RAM for 32-bit physical address");
-    }
-#endif
     linux_boot = (kernel_filename != NULL);
 
     /* allocate RAM */
@@ -915,12 +978,10 @@ void pc_memory_init(ram_addr_t ram_size,
     cpu_register_physical_memory(0x100000,
                  below_4g_mem_size - 0x100000,
                  ram_addr + 0x100000);
-#if TARGET_PHYS_ADDR_BITS > 32
     if (above_4g_mem_size > 0) {
         cpu_register_physical_memory(0x100000000ULL, above_4g_mem_size,
                                      ram_addr + below_4g_mem_size);
     }
-#endif
 
     /* BIOS load */
     if (bios_name == NULL)
@@ -936,7 +997,7 @@ void pc_memory_init(ram_addr_t ram_size,
         goto bios_error;
     }
     bios_offset = qemu_ram_alloc(NULL, "pc.bios", bios_size);
-    ret = rom_add_file_fixed(bios_name, (uint32_t)(-bios_size));
+    ret = rom_add_file_fixed(bios_name, (uint32_t)(-bios_size), -1);
     if (ret != 0) {
     bios_error:
         fprintf(stderr, "qemu: could not load PC BIOS '%s'\n", bios_name);
@@ -968,7 +1029,7 @@ void pc_memory_init(ram_addr_t ram_size,
     }
 
     for (i = 0; i < nb_option_roms; i++) {
-        rom_add_option(option_rom[i]);
+        rom_add_option(option_rom[i].name, option_rom[i].bootindex);
     }
 }
 
@@ -986,16 +1047,37 @@ void pc_vga_init(PCIBus *pci_bus)
             isa_cirrus_vga_init();
         }
     } else if (vmsvga_enabled) {
-        if (pci_bus)
-            pci_vmsvga_init(pci_bus);
-        else
+        if (pci_bus) {
+            if (!pci_vmsvga_init(pci_bus)) {
+                fprintf(stderr, "Warning: vmware_vga not available,"
+                        " using standard VGA instead\n");
+                pci_vga_init(pci_bus);
+            }
+        } else {
             fprintf(stderr, "%s: vmware_vga: no PCI bus\n", __FUNCTION__);
+        }
+#ifdef CONFIG_SPICE
+    } else if (qxl_enabled) {
+        if (pci_bus)
+            pci_create_simple(pci_bus, -1, "qxl-vga");
+        else
+            fprintf(stderr, "%s: qxl: no PCI bus\n", __FUNCTION__);
+#endif
     } else if (std_vga_enabled) {
         if (pci_bus) {
-            pci_vga_init(pci_bus, 0, 0);
+            pci_vga_init(pci_bus);
         } else {
             isa_vga_init();
         }
+    }
+
+    /*
+     * sga does not suppress normal vga output. So a machine can have both a
+     * vga card and sga manually enabled. Output will be seen on both.
+     * For nographic case, sga is enabled at all times
+     */
+    if (display_type == DT_NOGRAPHIC) {
+        isa_create_simple("sga");
     }
 }
 
@@ -1009,15 +1091,14 @@ static void cpu_request_exit(void *opaque, int irq, int level)
 }
 
 void pc_basic_device_init(qemu_irq *isa_irq,
-                          FDCtrl **floppy_controller,
-                          ISADevice **rtc_state)
+                          ISADevice **rtc_state,
+                          bool no_vmport)
 {
     int i;
     DriveInfo *fd[MAX_FD];
-    PITState *pit;
     qemu_irq rtc_irq = NULL;
     qemu_irq *a20_line;
-    ISADevice *i8042;
+    ISADevice *i8042, *port92, *vmmouse, *pit;
     qemu_irq *cpu_exit_irq;
 
     register_ioport_write(0x80, 1, 1, ioport80_write, NULL);
@@ -1025,18 +1106,20 @@ void pc_basic_device_init(qemu_irq *isa_irq,
     register_ioport_write(0xf0, 1, 1, ioportF0_write, NULL);
 
     if (!no_hpet) {
-        DeviceState *hpet = sysbus_create_simple("hpet", HPET_BASE, NULL);
+        DeviceState *hpet = sysbus_try_create_simple("hpet", HPET_BASE, NULL);
 
-        for (i = 0; i < 24; i++) {
-            sysbus_connect_irq(sysbus_from_qdev(hpet), i, isa_irq[i]);
+        if (hpet) {
+            for (i = 0; i < 24; i++) {
+                sysbus_connect_irq(sysbus_from_qdev(hpet), i, isa_irq[i]);
+            }
+            rtc_irq = qdev_get_gpio_in(hpet, 0);
         }
-        rtc_irq = qdev_get_gpio_in(hpet, 0);
     }
     *rtc_state = rtc_init(2000, rtc_irq);
 
     qemu_register_boot_set(pc_boot_set, *rtc_state);
 
-    pit = pit_init(0x40, isa_reserve_irq(0));
+    pit = pit_init(0x40, 0);
     pcspk_init(pit);
 
     for(i = 0; i < MAX_SERIAL_PORTS; i++) {
@@ -1051,10 +1134,21 @@ void pc_basic_device_init(qemu_irq *isa_irq,
         }
     }
 
-    a20_line = qemu_allocate_irqs(handle_a20_line_change, first_cpu, 1);
+    a20_line = qemu_allocate_irqs(handle_a20_line_change, first_cpu, 2);
     i8042 = isa_create_simple("i8042");
-    i8042_setup_a20_line(i8042, a20_line);
-    vmmouse_init(i8042);
+    i8042_setup_a20_line(i8042, &a20_line[0]);
+    if (!no_vmport) {
+        vmport_init();
+        vmmouse = isa_try_create("vmmouse");
+    } else {
+        vmmouse = NULL;
+    }
+    if (vmmouse) {
+        qdev_prop_set_ptr(&vmmouse->qdev, "ps2_mouse", i8042);
+        qdev_init_nofail(&vmmouse->qdev);
+    }
+    port92 = isa_create_simple("port92");
+    port92_init(port92, &a20_line[1]);
 
     cpu_exit_irq = qemu_allocate_irqs(cpu_request_exit, NULL, 1);
     DMA_init(0, cpu_exit_irq);
@@ -1062,7 +1156,7 @@ void pc_basic_device_init(qemu_irq *isa_irq,
     for(i = 0; i < MAX_FD; i++) {
         fd[i] = drive_get(IF_FLOPPY, 0, i);
     }
-    *floppy_controller = fdctrl_init_isa(fd);
+    fdctrl_init_isa(fd);
 }
 
 void pc_pci_device_init(PCIBus *pci_bus)

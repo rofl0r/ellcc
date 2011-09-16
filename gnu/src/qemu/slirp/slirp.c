@@ -373,6 +373,31 @@ void slirp_select_fill(int *pnfds,
 				UPD_NFDS(so->s);
 			}
 		}
+
+                /*
+                 * ICMP sockets
+                 */
+                for (so = slirp->icmp.so_next; so != &slirp->icmp;
+                     so = so_next) {
+                    so_next = so->so_next;
+
+                    /*
+                     * See if it's timed out
+                     */
+                    if (so->so_expire) {
+                        if (so->so_expire <= curtime) {
+                            icmp_detach(so);
+                            continue;
+                        } else {
+                            do_slowtimo = 1; /* Let socket expire */
+                        }
+                    }
+
+                    if (so->so_state & SS_ISFCONNECTED) {
+                        FD_SET(so->s, readfds);
+                        UPD_NFDS(so->s);
+                    }
+                }
 	}
 
         *pnfds = nfds;
@@ -393,7 +418,7 @@ void slirp_select_poll(fd_set *readfds, fd_set *writefds, fd_set *xfds,
     global_writefds = writefds;
     global_xfds = xfds;
 
-    curtime = qemu_get_clock(rt_clock);
+    curtime = qemu_get_clock_ms(rt_clock);
 
     QTAILQ_FOREACH(slirp, &slirp_instances, entry) {
 	/*
@@ -497,7 +522,7 @@ void slirp_select_poll(fd_set *readfds, fd_set *writefds, fd_set *xfds,
 	 	 	 */
 #ifdef PROBE_CONN
 			if (so->so_state & SS_ISFCONNECTING) {
-			  ret = recv(so->s, (char *)&ret, 0,0);
+                          ret = qemu_recv(so->s, &ret, 0,0);
 
 			  if (ret < 0) {
 			    /* XXX */
@@ -542,6 +567,18 @@ void slirp_select_poll(fd_set *readfds, fd_set *writefds, fd_set *xfds,
                             sorecvfrom(so);
                         }
 		}
+
+                /*
+                 * Check incoming ICMP relies.
+                 */
+                for (so = slirp->icmp.so_next; so != &slirp->icmp;
+                     so = so_next) {
+                     so_next = so->so_next;
+
+                    if (so->s != -1 && FD_ISSET(so->s, readfds)) {
+                        icmp_receive(so);
+                    }
+                }
 	}
 
 	/*
@@ -599,7 +636,7 @@ static void arp_input(Slirp *slirp, const uint8_t *pkt, int pkt_len)
 {
     struct ethhdr *eh = (struct ethhdr *)pkt;
     struct arphdr *ah = (struct arphdr *)(pkt + ETH_HLEN);
-    uint8_t arp_reply[ETH_HLEN + sizeof(struct arphdr)];
+    uint8_t arp_reply[max(ETH_HLEN + sizeof(struct arphdr), 64)];
     struct ethhdr *reh = (struct ethhdr *)arp_reply;
     struct arphdr *rah = (struct arphdr *)(arp_reply + ETH_HLEN);
     int ar_op;
@@ -619,6 +656,7 @@ static void arp_input(Slirp *slirp, const uint8_t *pkt, int pkt_len)
             }
             return;
         arp_ok:
+            memset(arp_reply, 0, sizeof(arp_reply));
             /* XXX: make an ARP request to have the client address */
             memcpy(slirp->client_ethaddr, eh->h_source, ETH_ALEN);
 

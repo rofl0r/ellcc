@@ -56,7 +56,9 @@
 #define KBD_CCMD_WRITE_MOUSE	0xD4	/* Write the following byte to the mouse */
 #define KBD_CCMD_DISABLE_A20    0xDD    /* HP vectra only ? */
 #define KBD_CCMD_ENABLE_A20     0xDF    /* HP vectra only ? */
-#define KBD_CCMD_RESET	        0xFE
+#define KBD_CCMD_PULSE_BITS_3_0 0xF0    /* Pulse bits 3-0 of the output port P2. */
+#define KBD_CCMD_RESET          0xFE    /* Pulse bit 0 of the output port P2 = CPU reset. */
+#define KBD_CCMD_NO_OP          0xFF    /* Pulse no bits of the output port P2. */
 
 /* Keyboard Commands */
 #define KBD_CMD_SET_LEDS	0xED	/* Set keyboard leds */
@@ -209,10 +211,8 @@ static void kbd_queue(KBDState *s, int b, int aux)
         ps2_queue(s->kbd, b);
 }
 
-static void ioport92_write(void *opaque, uint32_t addr, uint32_t val)
+static void outport_write(KBDState *s, uint32_t val)
 {
-    KBDState *s = opaque;
-
     DPRINTF("kbd: write outport=0x%02x\n", val);
     s->outport = val;
     if (s->a20_out) {
@@ -223,21 +223,26 @@ static void ioport92_write(void *opaque, uint32_t addr, uint32_t val)
     }
 }
 
-static uint32_t ioport92_read(void *opaque, uint32_t addr)
-{
-    KBDState *s = opaque;
-    uint32_t ret;
-
-    ret = s->outport;
-    DPRINTF("kbd: read outport=0x%02x\n", ret);
-    return ret;
-}
-
 static void kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
 {
     KBDState *s = opaque;
 
     DPRINTF("kbd: write cmd=0x%02x\n", val);
+
+    /* Bits 3-0 of the output port P2 of the keyboard controller may be pulsed
+     * low for approximately 6 micro seconds. Bits 3-0 of the KBD_CCMD_PULSE
+     * command specify the output port bits to be pulsed.
+     * 0: Bit should be pulsed. 1: Bit should not be modified.
+     * The only useful version of this command is pulsing bit 0,
+     * which does a CPU reset.
+     */
+    if((val & KBD_CCMD_PULSE_BITS_3_0) == KBD_CCMD_PULSE_BITS_3_0) {
+        if(!(val & 1))
+            val = KBD_CCMD_RESET;
+        else
+            val = KBD_CCMD_NO_OP;
+    }
+
     switch(val) {
     case KBD_CCMD_READ_MODE:
         kbd_queue(s, s->mode, 0);
@@ -294,8 +299,8 @@ static void kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
     case KBD_CCMD_RESET:
         qemu_system_reset_request();
         break;
-    case 0xff:
-        /* ignore that - I don't know what is its use */
+    case KBD_CCMD_NO_OP:
+        /* ignore that */
         break;
     default:
         fprintf(stderr, "qemu: unsupported keyboard cmd=0x%02x\n", val);
@@ -340,7 +345,7 @@ static void kbd_write_data(void *opaque, uint32_t addr, uint32_t val)
         kbd_queue(s, val, 1);
         break;
     case KBD_CCMD_WRITE_OUTPORT:
-        ioport92_write(s, 0, val);
+        outport_write(s, val);
         break;
     case KBD_CCMD_WRITE_MOUSE:
         ps2_write_mouse(s->mouse, val);
@@ -419,7 +424,8 @@ void i8042_mm_init(qemu_irq kbd_irq, qemu_irq mouse_irq,
     s->mask = mask;
 
     vmstate_register(NULL, 0, &vmstate_kbd, s);
-    s_io_memory = cpu_register_io_memory(kbd_mm_read, kbd_mm_write, s);
+    s_io_memory = cpu_register_io_memory(kbd_mm_read, kbd_mm_write, s,
+                                         DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, size, s_io_memory);
 
     s->kbd = ps2_kbd_init(kbd_update_kbd_irq, s);
@@ -467,10 +473,10 @@ static int i8042_initfn(ISADevice *dev)
 
     register_ioport_read(0x60, 1, 1, kbd_read_data, s);
     register_ioport_write(0x60, 1, 1, kbd_write_data, s);
+    isa_init_ioport(dev, 0x60);
     register_ioport_read(0x64, 1, 1, kbd_read_status, s);
     register_ioport_write(0x64, 1, 1, kbd_write_command, s);
-    register_ioport_read(0x92, 1, 1, ioport92_read, s);
-    register_ioport_write(0x92, 1, 1, ioport92_write, s);
+    isa_init_ioport(dev, 0x64);
 
     s->kbd = ps2_kbd_init(kbd_update_kbd_irq, s);
     s->mouse = ps2_mouse_init(kbd_update_aux_irq, s);

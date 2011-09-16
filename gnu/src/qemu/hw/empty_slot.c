@@ -53,18 +53,21 @@ static CPUWriteMemoryFunc * const empty_slot_write[3] = {
 
 void empty_slot_init(target_phys_addr_t addr, uint64_t slot_size)
 {
-    DeviceState *dev;
-    SysBusDevice *s;
-    EmptySlot *e;
+    if (slot_size > 0) {
+        /* Only empty slots larger than 0 byte need handling. */
+        DeviceState *dev;
+        SysBusDevice *s;
+        EmptySlot *e;
 
-    dev = qdev_create(NULL, "empty_slot");
-    s = sysbus_from_qdev(dev);
-    e = FROM_SYSBUS(EmptySlot, s);
-    e->size = slot_size;
+        dev = qdev_create(NULL, "empty_slot");
+        s = sysbus_from_qdev(dev);
+        e = FROM_SYSBUS(EmptySlot, s);
+        e->size = slot_size;
 
-    qdev_init_nofail(dev);
+        qdev_init_nofail(dev);
 
-    sysbus_mmio_map(s, 0, addr);
+        sysbus_mmio_map(s, 0, addr);
+    }
 }
 
 static int empty_slot_init1(SysBusDevice *dev)
@@ -73,7 +76,8 @@ static int empty_slot_init1(SysBusDevice *dev)
     ram_addr_t empty_slot_offset;
 
     empty_slot_offset = cpu_register_io_memory(empty_slot_read,
-                                               empty_slot_write, s);
+                                               empty_slot_write, s,
+                                               DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, s->size, empty_slot_offset | IO_MEM_RAM);
     return 0;
 }

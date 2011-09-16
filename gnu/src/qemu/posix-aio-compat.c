@@ -17,14 +17,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
-#include <signal.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 
 #include "qemu-queue.h"
 #include "osdep.h"
+#include "sysemu.h"
 #include "qemu-common.h"
+#include "trace.h"
 #include "block_int.h"
 
 #include "block/raw-posix-aio.h"
@@ -127,7 +128,7 @@ static ssize_t handle_aiocb_ioctl(struct qemu_paiocb *aiocb)
 
     /*
      * This looks weird, but the aio code only consideres a request
-     * successfull if it has written the number full number of bytes.
+     * successful if it has written the number full number of bytes.
      *
      * Now we overload aio_nbytes as aio_ioctl_cmd for the ioctl command,
      * so in fact we return the ioctl command here to make posix_aio_read()
@@ -269,7 +270,7 @@ static ssize_t handle_aiocb_rw(struct qemu_paiocb *aiocb)
      * Ok, we have to do it the hard way, copy all segments into
      * a single aligned buffer.
      */
-    buf = qemu_memalign(512, aiocb->aio_nbytes);
+    buf = qemu_blockalign(aiocb->common.bs, aiocb->aio_nbytes);
     if (aiocb->aio_type & QEMU_AIO_WRITE) {
         char *p = buf;
         int i;
@@ -320,7 +321,9 @@ static void *aio_thread(void *unused)
 
         while (QTAILQ_EMPTY(&request_list) &&
                !(ret == ETIMEDOUT)) {
+            idle_threads++;
             ret = cond_timedwait(&cond, &lock, &ts);
+            idle_threads--;
         }
 
         if (QTAILQ_EMPTY(&request_list))
@@ -329,7 +332,6 @@ static void *aio_thread(void *unused)
         aiocb = QTAILQ_FIRST(&request_list);
         QTAILQ_REMOVE(&request_list, aiocb, node);
         aiocb->active = 1;
-        idle_threads--;
         mutex_unlock(&lock);
 
         switch (aiocb->aio_type & QEMU_AIO_TYPE_MASK) {
@@ -351,13 +353,11 @@ static void *aio_thread(void *unused)
 
         mutex_lock(&lock);
         aiocb->ret = ret;
-        idle_threads++;
         mutex_unlock(&lock);
 
         if (kill(pid, aiocb->ev_signo)) die("kill failed");
     }
 
-    idle_threads--;
     cur_threads--;
     mutex_unlock(&lock);
 
@@ -369,7 +369,6 @@ static void spawn_thread(void)
     sigset_t set, oldset;
 
     cur_threads++;
-    idle_threads++;
 
     /* block all signals */
     if (sigfillset(&set)) die("sigfillset");
@@ -453,6 +452,9 @@ static int posix_aio_process_queue(void *opaque)
                 } else {
                     ret = -ret;
                 }
+
+                trace_paio_complete(acb, acb->common.opaque, ret);
+
                 /* remove the request */
                 *pacb = acb->next;
                 /* call the callback */
@@ -535,6 +537,8 @@ static void paio_cancel(BlockDriverAIOCB *blockacb)
     struct qemu_paiocb *acb = (struct qemu_paiocb *)blockacb;
     int active = 0;
 
+    trace_paio_cancel(acb, acb->common.opaque);
+
     mutex_lock(&lock);
     if (!acb->active) {
         QTAILQ_REMOVE(&request_list, acb, node);
@@ -583,6 +587,7 @@ BlockDriverAIOCB *paio_submit(BlockDriverState *bs, int fd,
     acb->next = posix_aio_state->first_aio;
     posix_aio_state->first_aio = acb;
 
+    trace_paio_submit(acb, opaque, sector_num, nb_sectors, type);
     qemu_paio_submit(acb);
     return &acb->common;
 }

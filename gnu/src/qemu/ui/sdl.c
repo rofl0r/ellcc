@@ -21,12 +21,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+
+/* Avoid compiler warning because macro is redefined in SDL_syswm.h. */
+#undef WIN32_LEAN_AND_MEAN
+
 #include <SDL.h>
 #include <SDL_syswm.h>
-
-#ifndef _WIN32
-#include <signal.h>
-#endif
 
 #include "qemu-common.h"
 #include "console.h"
@@ -83,12 +83,6 @@ static void sdl_update(DisplayState *ds, int x, int y, int w, int h)
 
 static void sdl_setdata(DisplayState *ds)
 {
-    SDL_Rect rec;
-    rec.x = 0;
-    rec.y = 0;
-    rec.w = real_screen->w;
-    rec.h = real_screen->h;
-
     if (guest_screen != NULL) SDL_FreeSurface(guest_screen);
 
     guest_screen = SDL_CreateRGBSurfaceFrom(ds_get_data(ds), ds_get_width(ds), ds_get_height(ds),
@@ -178,22 +172,18 @@ static DisplaySurface* sdl_create_displaysurface(int width, int height)
 
     surface->width = width;
     surface->height = height;
-    
-    if (scaling_active) {
-        if (host_format.BytesPerPixel != 2 && host_format.BytesPerPixel != 4) {
-            surface->linesize = width * 4;
-            surface->pf = qemu_default_pixelformat(32);
-        } else {
-            surface->linesize = width * host_format.BytesPerPixel;
-            surface->pf = sdl_to_qemu_pixelformat(&host_format);
-        }
-#ifdef HOST_WORDS_BIGENDIAN
-        surface->flags = QEMU_ALLOCATED_FLAG | QEMU_BIG_ENDIAN_FLAG;
-#else
-        surface->flags = QEMU_ALLOCATED_FLAG;
-#endif
-        surface->data = (uint8_t*) qemu_mallocz(surface->linesize * surface->height);
 
+    if (scaling_active) {
+        int linesize;
+        PixelFormat pf;
+        if (host_format.BytesPerPixel != 2 && host_format.BytesPerPixel != 4) {
+            linesize = width * 4;
+            pf = qemu_default_pixelformat(32);
+        } else {
+            linesize = width * host_format.BytesPerPixel;
+            pf = sdl_to_qemu_pixelformat(&host_format);
+        }
+        qemu_alloc_display(surface, width, height, linesize, pf, 0);
         return surface;
     }
 
@@ -390,12 +380,16 @@ static void sdl_process_key(SDL_KeyboardEvent *ev)
         else
             modifiers_state[keycode] = 1;
         break;
+#define QEMU_SDL_VERSION ((SDL_MAJOR_VERSION << 8) + SDL_MINOR_VERSION)
+#if QEMU_SDL_VERSION < 0x102 || QEMU_SDL_VERSION == 0x102 && SDL_PATCHLEVEL < 14
+        /* SDL versions before 1.2.14 don't support key up for caps/num lock. */
     case 0x45: /* num lock */
     case 0x3a: /* caps lock */
         /* SDL does not send the key up event, so we generate it */
         kbd_put_keycode(keycode);
         kbd_put_keycode(keycode | SCANCODE_UP);
         return;
+#endif
     }
 
     /* now send the key code */
@@ -487,7 +481,7 @@ static void sdl_grab_end(void)
     sdl_update_caption();
 }
 
-static void sdl_mouse_mode_change(Notifier *notify)
+static void sdl_mouse_mode_change(Notifier *notify, void *data)
 {
     if (kbd_mouse_is_absolute()) {
         if (!absolute_enabled) {
@@ -814,6 +808,7 @@ void sdl_display_init(DisplayState *ds, int full_screen, int no_frame)
     uint8_t data = 0;
     DisplayAllocator *da;
     const SDL_VideoInfo *vi;
+    char *filename;
 
 #if defined(__APPLE__)
     /* always use generic keymaps */
@@ -832,6 +827,22 @@ void sdl_display_init(DisplayState *ds, int full_screen, int no_frame)
     if (!full_screen) {
         setenv("SDL_VIDEO_ALLOW_SCREENSAVER", "1", 0);
     }
+#ifdef __linux__
+    /* on Linux, SDL may use fbcon|directfb|svgalib when run without
+     * accessible $DISPLAY to open X11 window.  This is often the case
+     * when qemu is run using sudo.  But in this case, and when actually
+     * run in X11 environment, SDL fights with X11 for the video card,
+     * making current display unavailable, often until reboot.
+     * So make x11 the default SDL video driver if this variable is unset.
+     * This is a bit hackish but saves us from bigger problem.
+     * Maybe it's a good idea to fix this in SDL instead.
+     */
+    setenv("SDL_VIDEODRIVER", "x11", 0);
+#endif
+
+    /* Enable normal up/down events for Caps-Lock and Num-Lock keys.
+     * This requires SDL >= 1.2.14. */
+    setenv("SDL_DISABLE_LOCK_KEYS", "1", 1);
 
     flags = SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE;
     if (SDL_Init (flags)) {
@@ -841,6 +852,18 @@ void sdl_display_init(DisplayState *ds, int full_screen, int no_frame)
     }
     vi = SDL_GetVideoInfo();
     host_format = *(vi->vfmt);
+
+    /* Load a 32x32x4 image. White pixels are transparent. */
+    filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, "qemu-icon.bmp");
+    if (filename) {
+        SDL_Surface *image = SDL_LoadBMP(filename);
+        if (image) {
+            uint32_t colorkey = SDL_MapRGB(image->format, 255, 255, 255);
+            SDL_SetColorKey(image, SDL_SRCCOLORKEY, colorkey);
+            SDL_WM_SetIcon(image, NULL);
+        }
+        qemu_free(filename);
+    }
 
     dcl = qemu_mallocz(sizeof(DisplayChangeListener));
     dcl->dpy_update = sdl_update;

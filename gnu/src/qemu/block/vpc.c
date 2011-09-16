@@ -110,8 +110,6 @@ struct vhd_dyndisk_header {
 };
 
 typedef struct BDRVVPCState {
-    BlockDriverState *hd;
-
     uint8_t footer_buf[HEADER_SIZE];
     uint64_t free_data_block_offset;
     int max_table_entries;
@@ -439,6 +437,10 @@ static int vpc_write(BlockDriverState *bs, int64_t sector_num,
     return 0;
 }
 
+static int vpc_flush(BlockDriverState *bs)
+{
+    return bdrv_flush(bs->file);
+}
 
 /*
  * Calculates the number of cylinders, heads and sectors per cylinder
@@ -500,14 +502,11 @@ static int vpc_create(const char *filename, QEMUOptionParameter *options)
     uint8_t secs_per_cyl = 0;
     size_t block_size, num_bat_entries;
     int64_t total_sectors = 0;
+    int ret = -EIO;
 
     // Read out options
-    while (options && options->name) {
-        if (!strcmp(options->name, "size")) {
-            total_sectors = options->value.n / 512;
-        }
-        options++;
-    }
+    total_sectors = get_option_parameter(options, BLOCK_OPT_SIZE)->value.n /
+                    BDRV_SECTOR_SIZE;
 
     // Create the file
     fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
@@ -519,7 +518,8 @@ static int vpc_create(const char *filename, QEMUOptionParameter *options)
     for (i = 0; total_sectors > (int64_t)cyls * heads * secs_per_cyl; i++) {
         if (calculate_geometry(total_sectors + i,
                                &cyls, &heads, &secs_per_cyl)) {
-            return -EFBIG;
+            ret = -EFBIG;
+            goto fail;
         }
     }
     total_sectors = (int64_t) cyls * heads * secs_per_cyl;
@@ -558,22 +558,28 @@ static int vpc_create(const char *filename, QEMUOptionParameter *options)
     block_size = 0x200000;
     num_bat_entries = (total_sectors + block_size / 512) / (block_size / 512);
 
-    if (write(fd, buf, HEADER_SIZE) != HEADER_SIZE)
-        return -EIO;
+    if (write(fd, buf, HEADER_SIZE) != HEADER_SIZE) {
+        goto fail;
+    }
 
-    if (lseek(fd, 1536 + ((num_bat_entries * 4 + 511) & ~511), SEEK_SET) < 0)
-        return -EIO;
-    if (write(fd, buf, HEADER_SIZE) != HEADER_SIZE)
-        return -EIO;
+    if (lseek(fd, 1536 + ((num_bat_entries * 4 + 511) & ~511), SEEK_SET) < 0) {
+        goto fail;
+    }
+    if (write(fd, buf, HEADER_SIZE) != HEADER_SIZE) {
+        goto fail;
+    }
 
     // Write the initial BAT
-    if (lseek(fd, 3 * 512, SEEK_SET) < 0)
-        return -EIO;
+    if (lseek(fd, 3 * 512, SEEK_SET) < 0) {
+        goto fail;
+    }
 
     memset(buf, 0xFF, 512);
-    for (i = 0; i < (num_bat_entries * 4 + 511) / 512; i++)
-        if (write(fd, buf, 512) != 512)
-            return -EIO;
+    for (i = 0; i < (num_bat_entries * 4 + 511) / 512; i++) {
+        if (write(fd, buf, 512) != 512) {
+            goto fail;
+        }
+    }
 
 
     // Prepare the Dynamic Disk Header
@@ -590,13 +596,18 @@ static int vpc_create(const char *filename, QEMUOptionParameter *options)
     dyndisk_header->checksum = be32_to_cpu(vpc_checksum(buf, 1024));
 
     // Write the header
-    if (lseek(fd, 512, SEEK_SET) < 0)
-        return -EIO;
-    if (write(fd, buf, 1024) != 1024)
-        return -EIO;
+    if (lseek(fd, 512, SEEK_SET) < 0) {
+        goto fail;
+    }
 
+    if (write(fd, buf, 1024) != 1024) {
+        goto fail;
+    }
+    ret = 0;
+
+ fail:
     close(fd);
-    return 0;
+    return ret;
 }
 
 static void vpc_close(BlockDriverState *bs)
@@ -618,14 +629,15 @@ static QEMUOptionParameter vpc_create_options[] = {
 };
 
 static BlockDriver bdrv_vpc = {
-    .format_name	= "vpc",
-    .instance_size	= sizeof(BDRVVPCState),
-    .bdrv_probe		= vpc_probe,
-    .bdrv_open		= vpc_open,
-    .bdrv_read		= vpc_read,
-    .bdrv_write		= vpc_write,
-    .bdrv_close		= vpc_close,
-    .bdrv_create	= vpc_create,
+    .format_name    = "vpc",
+    .instance_size  = sizeof(BDRVVPCState),
+    .bdrv_probe     = vpc_probe,
+    .bdrv_open      = vpc_open,
+    .bdrv_read      = vpc_read,
+    .bdrv_write     = vpc_write,
+    .bdrv_flush     = vpc_flush,
+    .bdrv_close     = vpc_close,
+    .bdrv_create    = vpc_create,
 
     .create_options = vpc_create_options,
 };

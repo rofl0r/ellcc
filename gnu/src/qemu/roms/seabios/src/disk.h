@@ -63,9 +63,18 @@ struct int13dpt_s {
     u8  host_bus[4];
     u8  iface_type[8];
     u64 iface_path;
-    u64 device_path;
-    u8  reserved3;
-    u8  checksum;
+    union {
+        struct {
+            u64 device_path;
+            u8  reserved3;
+            u8  checksum;
+        } phoenix;
+        struct {
+            u64 device_path[2];
+            u8  reserved3;
+            u8  checksum;
+        } t13;
+    };
 } PACKED;
 
 #define GET_INT13DPT(regs,var)                                          \
@@ -177,7 +186,6 @@ struct drive_s {
     u8 floppy_type;     // Type of floppy (only for floppy drives).
     struct chs_s lchs;  // Logical CHS
     u64 sectors;        // Total sectors count
-    char *desc;         // Drive description (only available during POST)
     u32 cntl_id;        // Unique id for a given driver type.
     u8 removable;       // Is media removable (currently unused)
 
@@ -198,6 +206,7 @@ struct drive_s {
 #define DTYPE_CDEMU    0x05
 #define DTYPE_USB      0x06
 #define DTYPE_VIRTIO   0x07
+#define DTYPE_AHCI     0x08
 
 #define MAXDESCSIZE 80
 
@@ -205,13 +214,6 @@ struct drive_s {
 #define TRANSLATION_LBA   1
 #define TRANSLATION_LARGE 2
 #define TRANSLATION_RECHS 3
-
-struct drives_s {
-    // map between bios floppy/hd/cd id and drive_s struct
-    u8 floppycount;
-    u8 cdcount;
-    struct drive_s *idmap[3][CONFIG_MAX_EXTDRIVE];
-};
 
 #define EXTTYPE_FLOPPY 0
 #define EXTTYPE_HD 1
@@ -226,20 +228,19 @@ struct drives_s {
  ****************************************************************/
 
 // block.c
-extern struct drives_s Drives;
+extern u8 FloppyCount, CDCount;
 struct drive_s *getDrive(u8 exttype, u8 extdriveoffset);
-void setup_translation(struct drive_s *drive_g);
+int getDriveId(u8 exttype, struct drive_s *drive_g);
 void map_floppy_drive(struct drive_s *drive_g);
 void map_hd_drive(struct drive_s *drive_g);
 void map_cd_drive(struct drive_s *drive_g);
 int process_op(struct disk_op_s *op);
 int send_disk_op(struct disk_op_s *op);
-void drive_setup(void);
 
 // floppy.c
 extern struct floppy_ext_dbt_s diskette_param_table2;
 void floppy_setup(void);
-struct drive_s *addFloppy(int floppyid, int ftype, int driver);
+struct drive_s *init_floppy(int floppyid, int ftype);
 int find_floppy_type(u32 size);
 int process_floppy_op(struct disk_op_s *op);
 void floppy_tick(void);
@@ -249,7 +250,7 @@ extern struct drive_s *cdemu_drive_gf;
 int process_cdemu_op(struct disk_op_s *op);
 void cdemu_setup(void);
 void cdemu_134b(struct bregs *regs);
-int cdrom_boot(int cdid);
+int cdrom_boot(struct drive_s *drive_g);
 
 // ramdisk.c
 void ramdisk_setup(void);

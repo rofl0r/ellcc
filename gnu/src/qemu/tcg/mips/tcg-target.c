@@ -351,8 +351,10 @@ static inline void tcg_out_opc_imm(TCGContext *s, int opc, int rt, int rs, int i
  */
 static inline void tcg_out_opc_br(TCGContext *s, int opc, int rt, int rs)
 {
-    /* We need to keep the offset unchanged for retranslation */
-    uint16_t offset = (uint16_t)(*(uint32_t *) &s->code_ptr);
+    /* We pay attention here to not modify the branch target by reading
+       the existing value and using it again. This ensure that caches and
+       memory are kept coherent during retranslation. */
+    uint16_t offset = (uint16_t)(*(uint32_t *) s->code_ptr);
 
     tcg_out_opc_imm(s, opc, rt, rs, offset);
 }
@@ -1450,9 +1452,7 @@ static const TCGTargetOpDef mips_op_defs[] = {
 };
 
 static int tcg_target_callee_save_regs[] = {
-#if 0 /* used for the global env (TCG_AREG0), so no need to save */
-    TCG_REG_S0,
-#endif
+    TCG_REG_S0,       /* used for the global env (TCG_AREG0) */
     TCG_REG_S1,
     TCG_REG_S2,
     TCG_REG_S3,
@@ -1484,8 +1484,8 @@ static void tcg_target_qemu_prologue(TCGContext *s)
     }
 
     /* Call generated code */
-    tcg_out_opc_reg(s, OPC_JR, 0, TCG_REG_A0, 0);
-    tcg_out_nop(s);
+    tcg_out_opc_reg(s, OPC_JR, 0, tcg_target_call_iarg_regs[1], 0);
+    tcg_out_mov(s, TCG_TYPE_PTR, TCG_AREG0, tcg_target_call_iarg_regs[0]);
     tb_ret_addr = s->code_ptr;
 
     /* TB epilogue */
@@ -1528,4 +1528,6 @@ static void tcg_target_init(TCGContext *s)
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_SP);   /* stack pointer */
 
     tcg_add_target_add_op_defs(mips_op_defs);
+    tcg_set_frame(s, TCG_AREG0, offsetof(CPUState, temp_buf),
+                  CPU_TEMP_BUF_NLONGS * sizeof(long));
 }

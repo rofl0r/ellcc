@@ -45,6 +45,11 @@ struct virtio_console_control {
     uint16_t value;		/* Extra information for the key */
 };
 
+struct virtio_serial_conf {
+    /* Max. number of ports we can have for a virtio-serial device */
+    uint32_t max_virtserial_ports;
+};
+
 /* Some events for the internal messages (control packets) */
 #define VIRTIO_CONSOLE_DEVICE_READY	0
 #define VIRTIO_CONSOLE_PORT_ADD		1
@@ -62,11 +67,6 @@ typedef struct VirtIOSerialBus VirtIOSerialBus;
 typedef struct VirtIOSerialPort VirtIOSerialPort;
 typedef struct VirtIOSerialPortInfo VirtIOSerialPortInfo;
 
-typedef struct VirtIOSerialDevice {
-    DeviceState qdev;
-    VirtIOSerialPortInfo *info;
-} VirtIOSerialDevice;
-
 /*
  * This is the state that's shared between all the ports.  Some of the
  * state is configurable via command-line options. Some of it can be
@@ -75,7 +75,6 @@ typedef struct VirtIOSerialDevice {
  */
 struct VirtIOSerialPort {
     DeviceState dev;
-    VirtIOSerialPortInfo *info;
 
     QTAILQ_ENTRY(VirtIOSerialPort) next;
 
@@ -102,8 +101,27 @@ struct VirtIOSerialPort {
      */
     uint32_t id;
 
-    /* Identify if this is a port that binds with hvc in the guest */
-    uint8_t is_console;
+    /*
+     * This is the elem that we pop from the virtqueue.  A slow
+     * backend that consumes guest data (e.g. the file backend for
+     * qemu chardevs) can cause the guest to block till all the output
+     * is flushed.  This isn't desired, so we keep a note of the last
+     * element popped and continue consuming it once the backend
+     * becomes writable again.
+     */
+    VirtQueueElement elem;
+
+    /*
+     * The index and the offset into the iov buffer that was popped in
+     * elem above.
+     */
+    uint32_t iov_idx;
+    uint64_t iov_offset;
+
+    /*
+     * When unthrottling we use a bottom-half to call flush_queued_data.
+     */
+    QEMUBH *bh;
 
     /* Is the corresponding guest device open? */
     bool guest_connected;
@@ -115,16 +133,20 @@ struct VirtIOSerialPort {
 
 struct VirtIOSerialPortInfo {
     DeviceInfo qdev;
+
+    /* Is this a device that binds with hvc in the guest? */
+    bool is_console;
+
     /*
      * The per-port (or per-app) init function that's called when a
      * new device is found on the bus.
      */
-    int (*init)(VirtIOSerialDevice *dev);
+    int (*init)(VirtIOSerialPort *port);
     /*
      * Per-port exit function that's called when a port gets
      * hot-unplugged or removed.
      */
-    int (*exit)(VirtIOSerialDevice *dev);
+    int (*exit)(VirtIOSerialPort *port);
 
     /* Callbacks for guest events */
         /* Guest opened device. */
@@ -137,10 +159,11 @@ struct VirtIOSerialPortInfo {
 
     /*
      * Guest wrote some data to the port. This data is handed over to
-     * the app via this callback.  The app is supposed to consume all
-     * the data that is presented to it.
+     * the app via this callback.  The app can return a size less than
+     * 'len'.  In this case, throttling will be enabled for this port.
      */
-    void (*have_data)(VirtIOSerialPort *port, const uint8_t *buf, size_t len);
+    ssize_t (*have_data)(VirtIOSerialPort *port, const uint8_t *buf,
+                         size_t len);
 };
 
 /* Interface to the virtio-serial bus */

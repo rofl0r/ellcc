@@ -33,10 +33,10 @@
 #define SEMIHOSTING_HEAP_SIZE (128 * 1024 * 1024)
 #else
 #include "qemu-common.h"
-#include "sysemu.h"
 #include "gdbstub.h"
 #include "softmmu-semi.h"
 #endif
+#include "sysemu.h"
 
 #define HOSTED_EXIT  0
 #define HOSTED_INIT_SIM 1
@@ -370,7 +370,7 @@ void do_m68k_semihosting(CPUM68KState *env, int nr)
         TaskState *ts = env->opaque;
         /* Allocate the heap using sbrk.  */
         if (!ts->heap_limit) {
-            long ret;
+            abi_ulong ret;
             uint32_t size;
             uint32_t base;
 
@@ -379,8 +379,9 @@ void do_m68k_semihosting(CPUM68KState *env, int nr)
             /* Try a big heap, and reduce the size if that fails.  */
             for (;;) {
                 ret = do_brk(base + size);
-                if (ret != -1)
+                if (ret >= (base + size)) {
                     break;
+                }
                 size >>= 1;
             }
             ts->heap_limit = base + size;

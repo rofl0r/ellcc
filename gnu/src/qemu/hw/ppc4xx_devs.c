@@ -24,7 +24,6 @@
 #include "hw.h"
 #include "ppc.h"
 #include "ppc4xx.h"
-#include "sysemu.h"
 #include "qemu-log.h"
 
 //#define DEBUG_MMIO
@@ -39,7 +38,7 @@
 #endif
 
 /*****************************************************************************/
-/* Generic PowerPC 4xx processor instanciation */
+/* Generic PowerPC 4xx processor instantiation */
 CPUState *ppc4xx_init (const char *cpu_model,
                        clk_setup_t *cpu_clk, clk_setup_t *tb_clk,
                        uint32_t sysclk)
@@ -56,7 +55,7 @@ CPUState *ppc4xx_init (const char *cpu_model,
     cpu_clk->cb = NULL; /* We don't care about CPU clock frequency changes */
     cpu_clk->opaque = env;
     /* Set time-base frequency to sysclk */
-    tb_clk->cb = ppc_emb_timers_init(env, sysclk);
+    tb_clk->cb = ppc_emb_timers_init(env, sysclk, PPC_INTERRUPT_PIT);
     tb_clk->opaque = env;
     ppc_dcr_init(env, NULL, NULL);
     /* Register qemu callbacks */
@@ -619,7 +618,6 @@ static void sdram_reset (void *opaque)
     /* We pre-initialize RAM banks */
     sdram->status = 0x00000000;
     sdram->cfg = 0x00800000;
-    sdram_unmap_bcr(sdram);
 }
 
 void ppc4xx_sdram_init (CPUState *env, qemu_irq irq, int nbanks,
@@ -684,7 +682,7 @@ ram_addr_t ppc4xx_sdram_adjust(ram_addr_t ram_size, int nr_banks,
     }
 
     ram_size -= size_left;
-    if (ram_size)
+    if (size_left)
         printf("Truncating memory to %d MiB to fit SDRAM controller limits.\n",
                (int)(ram_size >> 20));
 

@@ -97,11 +97,11 @@ typedef struct {
 
 static uint32_t mb_add_cmdline(MultibootState *s, const char *cmdline)
 {
-    int len = strlen(cmdline) + 1;
     target_phys_addr_t p = s->offset_cmdlines;
+    char *b = (char *)s->mb_buf + p;
 
-    pstrcpy((char *)s->mb_buf + p, len, cmdline);
-    s->offset_cmdlines += len;
+    get_opt_value(b, strlen(cmdline) + 1, cmdline);
+    s->offset_cmdlines += strlen(b) + 1;
     return s->mb_buf_phys + p;
 }
 
@@ -171,6 +171,12 @@ int load_multiboot(void *fw_cfg,
         uint64_t elf_low, elf_high;
         int kernel_size;
         fclose(f);
+
+        if (((struct elf64_hdr*)header)->e_machine == EM_X86_64) {
+            fprintf(stderr, "Cannot load x86-64 image, give a 32bit one.\n");
+            exit(1);
+        }
+
         kernel_size = load_elf(kernel_filename, NULL, NULL, &elf_entry,
                                &elf_low, &elf_high, 0, ELF_MACHINE, 0);
         if (kernel_size < 0) {
@@ -232,7 +238,7 @@ int load_multiboot(void *fw_cfg,
         const char *r = initrd_filename;
         mbs.mb_buf_size += strlen(r) + 1;
         mbs.mb_mods_avail = 1;
-        while ((r = strchr(r, ','))) {
+        while (*(r = get_opt_value(NULL, 0, r))) {
            mbs.mb_mods_avail++;
            r++;
         }
@@ -246,18 +252,18 @@ int load_multiboot(void *fw_cfg,
     mbs.offset_cmdlines = mbs.offset_mbinfo + mbs.mb_mods_avail * MB_MOD_SIZE;
 
     if (initrd_filename) {
-        char *next_initrd;
+        char *next_initrd, not_last;
 
         mbs.offset_mods = mbs.mb_buf_size;
 
         do {
             char *next_space;
-            uint32_t mb_mod_length;
+            int mb_mod_length;
             uint32_t offs = mbs.mb_buf_size;
 
-            next_initrd = strchr(initrd_filename, ',');
-            if (next_initrd)
-                *next_initrd = '\0';
+            next_initrd = (char *)get_opt_value(NULL, 0, initrd_filename);
+            not_last = *next_initrd;
+            *next_initrd = '\0';
             /* if a space comes after the module filename, treat everything
                after that as parameters */
             target_phys_addr_t c = mb_add_cmdline(&mbs, initrd_filename);
@@ -266,7 +272,7 @@ int load_multiboot(void *fw_cfg,
             mb_debug("multiboot loading module: %s\n", initrd_filename);
             mb_mod_length = get_image_size(initrd_filename);
             if (mb_mod_length < 0) {
-                fprintf(stderr, "failed to get %s image size\n", initrd_filename);
+                fprintf(stderr, "Failed to open file '%s'\n", initrd_filename);
                 exit(1);
             }
 
@@ -281,7 +287,7 @@ int load_multiboot(void *fw_cfg,
                      (char *)mbs.mb_buf + offs,
                      (char *)mbs.mb_buf + offs + mb_mod_length, c);
             initrd_filename = next_initrd+1;
-        } while (next_initrd);
+        } while (not_last);
     }
 
     /* Commandline support */
@@ -300,8 +306,8 @@ int load_multiboot(void *fw_cfg,
                                 | MULTIBOOT_FLAGS_MODULES
                                 | MULTIBOOT_FLAGS_MMAP);
     stl_p(bootinfo + MBI_MEM_LOWER,   640);
-    stl_p(bootinfo + MBI_MEM_UPPER,   ram_size / 1024);
-    stl_p(bootinfo + MBI_BOOT_DEVICE, 0x8001ffff); /* XXX: use the -boot switch? */
+    stl_p(bootinfo + MBI_MEM_UPPER,   (ram_size / 1024) - 1024);
+    stl_p(bootinfo + MBI_BOOT_DEVICE, 0x8000ffff); /* XXX: use the -boot switch? */
     stl_p(bootinfo + MBI_MMAP_ADDR,   ADDR_E820_MAP);
 
     mb_debug("multiboot: mh_entry_addr = %#x\n", mh_entry_addr);
@@ -325,7 +331,8 @@ int load_multiboot(void *fw_cfg,
     fw_cfg_add_bytes(fw_cfg, FW_CFG_INITRD_DATA, mb_bootinfo_data,
                      sizeof(bootinfo));
 
-    option_rom[nb_option_roms] = "multiboot.bin";
+    option_rom[nb_option_roms].name = "multiboot.bin";
+    option_rom[nb_option_roms].bootindex = 0;
     nb_option_roms++;
 
     return 1; /* yes, we are multiboot */

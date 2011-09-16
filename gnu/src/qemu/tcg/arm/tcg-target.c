@@ -113,12 +113,25 @@ static const int tcg_target_call_oarg_regs[2] = {
     TCG_REG_R0, TCG_REG_R1
 };
 
+static inline void reloc_abs32(void *code_ptr, tcg_target_long target)
+{
+    *(uint32_t *) code_ptr = target;
+}
+
+static inline void reloc_pc24(void *code_ptr, tcg_target_long target)
+{
+    uint32_t offset = ((target - ((tcg_target_long) code_ptr + 8)) >> 2);
+
+    *(uint32_t *) code_ptr = ((*(uint32_t *) code_ptr) & ~0xffffff)
+                             | (offset & 0xffffff);
+}
+
 static void patch_reloc(uint8_t *code_ptr, int type,
                 tcg_target_long value, tcg_target_long addend)
 {
     switch (type) {
     case R_ARM_ABS32:
-        *(uint32_t *) code_ptr = value;
+        reloc_abs32(code_ptr, value);
         break;
 
     case R_ARM_CALL:
@@ -127,8 +140,7 @@ static void patch_reloc(uint8_t *code_ptr, int type,
         tcg_abort();
 
     case R_ARM_PC24:
-        *(uint32_t *) code_ptr = ((*(uint32_t *) code_ptr) & 0xff000000) |
-                (((value - ((tcg_target_long) code_ptr + 8)) >> 2) & 0xffffff);
+        reloc_pc24(code_ptr, value);
         break;
     }
 }
@@ -340,6 +352,9 @@ static inline void tcg_out_b(TCGContext *s, int cond, int32_t offset)
 
 static inline void tcg_out_b_noaddr(TCGContext *s, int cond)
 {
+    /* We pay attention here to not modify the branch target by skipping
+       the corresponding bytes. This ensure that caches and memory are
+       kept coherent during retranslation. */
 #ifdef HOST_WORDS_BIGENDIAN
     tcg_out8(s, (cond << 4) | 0x0a);
     s->code_ptr += 3;
@@ -358,6 +373,12 @@ static inline void tcg_out_bl(TCGContext *s, int cond, int32_t offset)
 static inline void tcg_out_blx(TCGContext *s, int cond, int rn)
 {
     tcg_out32(s, (cond << 28) | 0x012fff30 | rn);
+}
+
+static inline void tcg_out_blx_imm(TCGContext *s, int32_t offset)
+{
+    tcg_out32(s, 0xfa000000 | ((offset & 2) << 23) |
+                (((offset - 8) >> 2) & 0x00ffffff));
 }
 
 static inline void tcg_out_dat_reg(TCGContext *s,
@@ -394,35 +415,38 @@ static inline void tcg_out_dat_imm(TCGContext *s,
 }
 
 static inline void tcg_out_movi32(TCGContext *s,
-                int cond, int rd, int32_t arg)
+                int cond, int rd, uint32_t arg)
 {
     /* TODO: This is very suboptimal, we can easily have a constant
      * pool somewhere after all the instructions.  */
-
-    if (arg < 0 && arg > -0x100)
-        return tcg_out_dat_imm(s, cond, ARITH_MVN, rd, 0, (~arg) & 0xff);
-
-    if (use_armv7_instructions) {
+    if ((int)arg < 0 && (int)arg >= -0x100) {
+        tcg_out_dat_imm(s, cond, ARITH_MVN, rd, 0, (~arg) & 0xff);
+    } else if (use_armv7_instructions) {
         /* use movw/movt */
         /* movw */
         tcg_out32(s, (cond << 28) | 0x03000000 | (rd << 12)
                   | ((arg << 4) & 0x000f0000) | (arg & 0xfff));
-        if (arg & 0xffff0000)
+        if (arg & 0xffff0000) {
             /* movt */
             tcg_out32(s, (cond << 28) | 0x03400000 | (rd << 12)
                       | ((arg >> 12) & 0x000f0000) | ((arg >> 16) & 0xfff));
-    } else {
-        tcg_out_dat_imm(s, cond, ARITH_MOV, rd, 0, arg & 0xff);
-        if (arg & 0x0000ff00)
-            tcg_out_dat_imm(s, cond, ARITH_ORR, rd, rd,
-                            ((arg >>  8) & 0xff) | 0xc00);
-        if (arg & 0x00ff0000)
-            tcg_out_dat_imm(s, cond, ARITH_ORR, rd, rd,
-                            ((arg >> 16) & 0xff) | 0x800);
-        if (arg & 0xff000000)
-            tcg_out_dat_imm(s, cond, ARITH_ORR, rd, rd,
-                            ((arg >> 24) & 0xff) | 0x400);
         }
+    } else {
+        int opc = ARITH_MOV;
+        int rn = 0;
+
+        do {
+            int i, rot;
+
+            i = ctz32(arg) & ~1;
+            rot = ((32 - i) << 7) & 0xf00;
+            tcg_out_dat_imm(s, cond, opc, rd, rn, ((arg >> i) & 0xff) | rot);
+            arg &= ~(0xff << i);
+
+            opc = ARITH_ORR;
+            rn = rd;
+        } while (arg);
+    }
 }
 
 static inline void tcg_out_mul32(TCGContext *s,
@@ -822,6 +846,11 @@ static inline void tcg_out_goto(TCGContext *s, int cond, uint32_t addr)
 {
     int32_t val;
 
+    if (addr & 1) {
+        /* goto to a Thumb destination isn't supported */
+        tcg_abort();
+    }
+
     val = addr - (tcg_target_long) s->code_ptr;
     if (val - 8 < 0x01fffffd && val - 8 > -0x01fffffd)
         tcg_out_b(s, cond, val);
@@ -842,14 +871,22 @@ static inline void tcg_out_goto(TCGContext *s, int cond, uint32_t addr)
     }
 }
 
-static inline void tcg_out_call(TCGContext *s, int cond, uint32_t addr)
+static inline void tcg_out_call(TCGContext *s, uint32_t addr)
 {
     int32_t val;
 
     val = addr - (tcg_target_long) s->code_ptr;
-    if (val < 0x01fffffd && val > -0x01fffffd)
-        tcg_out_bl(s, cond, val);
-    else {
+    if (val - 8 < 0x02000000 && val - 8 >= -0x02000000) {
+        if (addr & 1) {
+            /* Use BLX if the target is in Thumb mode */
+            if (!use_armv5_instructions) {
+                tcg_abort();
+            }
+            tcg_out_blx_imm(s, val);
+        } else {
+            tcg_out_bl(s, COND_AL, val);
+        }
+    } else {
 #if 1
         tcg_abort();
 #else
@@ -1031,7 +1068,7 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     }
 
     label_ptr = (void *) s->code_ptr;
-    tcg_out_b(s, COND_EQ, 8);
+    tcg_out_b_noaddr(s, COND_EQ);
 
     /* TODO: move this code to where the constants pool will be */
     if (addr_reg != TCG_REG_R0) {
@@ -1045,8 +1082,7 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
                     TCG_REG_R1, 0, addr_reg2, SHIFT_IMM_LSL(0));
     tcg_out_dat_imm(s, COND_AL, ARITH_MOV, TCG_REG_R2, 0, mem_index);
 # endif
-    tcg_out_bl(s, COND_AL, (tcg_target_long) qemu_ld_helpers[s_bits] -
-                    (tcg_target_long) s->code_ptr);
+    tcg_out_call(s, (tcg_target_long) qemu_ld_helpers[s_bits]);
 
     switch (opc) {
     case 0 | 4:
@@ -1076,7 +1112,7 @@ static inline void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
         break;
     }
 
-    *label_ptr += ((void *) s->code_ptr - (void *) label_ptr - 8) >> 2;
+    reloc_pc24(label_ptr, (tcg_target_long)s->code_ptr);
 #else /* !CONFIG_SOFTMMU */
     if (GUEST_BASE) {
         uint32_t offset = GUEST_BASE;
@@ -1236,7 +1272,7 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
             tcg_out_bswap32(s, COND_EQ, TCG_REG_R0, data_reg2);
             tcg_out_st32_rwb(s, COND_EQ, TCG_REG_R0, TCG_REG_R1, addr_reg);
             tcg_out_bswap32(s, COND_EQ, TCG_REG_R0, data_reg);
-            tcg_out_st32_12(s, COND_EQ, data_reg, TCG_REG_R1, 4);
+            tcg_out_st32_12(s, COND_EQ, TCG_REG_R0, TCG_REG_R1, 4);
         } else {
             tcg_out_st32_rwb(s, COND_EQ, data_reg, TCG_REG_R1, addr_reg);
             tcg_out_st32_12(s, COND_EQ, data_reg2, TCG_REG_R1, 4);
@@ -1245,7 +1281,7 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
     }
 
     label_ptr = (void *) s->code_ptr;
-    tcg_out_b(s, COND_EQ, 8);
+    tcg_out_b_noaddr(s, COND_EQ);
 
     /* TODO: move this code to where the constants pool will be */
     tcg_out_dat_reg(s, COND_AL, ARITH_MOV,
@@ -1312,12 +1348,11 @@ static inline void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, int opc)
     }
 # endif
 
-    tcg_out_bl(s, COND_AL, (tcg_target_long) qemu_st_helpers[s_bits] -
-                    (tcg_target_long) s->code_ptr);
+    tcg_out_call(s, (tcg_target_long) qemu_st_helpers[s_bits]);
     if (opc == 3)
         tcg_out_dat_imm(s, COND_AL, ARITH_ADD, TCG_REG_R13, TCG_REG_R13, 0x10);
 
-    *label_ptr += ((void *) s->code_ptr - (void *) label_ptr - 8) >> 2;
+    reloc_pc24(label_ptr, (tcg_target_long)s->code_ptr);
 #else /* !CONFIG_SOFTMMU */
     if (GUEST_BASE) {
         uint32_t offset = GUEST_BASE;
@@ -1399,7 +1434,7 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
             /* Direct jump method */
 #if defined(USE_DIRECT_JUMP)
             s->tb_jmp_offset[args[0]] = s->code_ptr - s->code_buf;
-            tcg_out_b(s, COND_AL, 8);
+            tcg_out_b_noaddr(s, COND_AL);
 #else
             tcg_out_ld32_12(s, COND_AL, TCG_REG_PC, TCG_REG_PC, -4);
             s->tb_jmp_offset[args[0]] = s->code_ptr - s->code_buf;
@@ -1425,7 +1460,7 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         break;
     case INDEX_op_call:
         if (const_args[0])
-            tcg_out_call(s, COND_AL, args[0]);
+            tcg_out_call(s, args[0]);
         else
             tcg_out_callr(s, COND_AL, args[0]);
         break;
@@ -1769,6 +1804,8 @@ static void tcg_target_init(TCGContext *s)
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_PC);
 
     tcg_add_target_add_op_defs(arm_op_defs);
+    tcg_set_frame(s, TCG_AREG0, offsetof(CPUState, temp_buf),
+                  CPU_TEMP_BUF_NLONGS * sizeof(long));
 }
 
 static inline void tcg_out_ld(TCGContext *s, TCGType type, int arg,
@@ -1811,15 +1848,18 @@ static inline void tcg_out_movi(TCGContext *s, TCGType type,
 
 static void tcg_target_qemu_prologue(TCGContext *s)
 {
-    /* There is no need to save r7, it is used to store the address
-       of the env structure and is not modified by GCC. */
+    /* Calling convention requires us to save r4-r11 and lr;
+     * save also r12 to maintain stack 8-alignment.
+     */
 
-    /* stmdb sp!, { r4 - r6, r8 - r11, lr } */
-    tcg_out32(s, (COND_AL << 28) | 0x092d4f70);
+    /* stmdb sp!, { r4 - r12, lr } */
+    tcg_out32(s, (COND_AL << 28) | 0x092d5ff0);
 
-    tcg_out_bx(s, COND_AL, TCG_REG_R0);
+    tcg_out_mov(s, TCG_TYPE_PTR, TCG_AREG0, tcg_target_call_iarg_regs[0]);
+
+    tcg_out_bx(s, COND_AL, tcg_target_call_iarg_regs[1]);
     tb_ret_addr = s->code_ptr;
 
-    /* ldmia sp!, { r4 - r6, r8 - r11, pc } */
-    tcg_out32(s, (COND_AL << 28) | 0x08bd8f70);
+    /* ldmia sp!, { r4 - r12, pc } */
+    tcg_out32(s, (COND_AL << 28) | 0x08bd9ff0);
 }

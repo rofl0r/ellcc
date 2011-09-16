@@ -24,8 +24,7 @@ qemu_cfg_select(u16 f)
 static void
 qemu_cfg_read(u8 *buf, int len)
 {
-    while (len--)
-        *(buf++) = inb(PORT_QEMU_CFG_DATA);
+    insb(PORT_QEMU_CFG_DATA, buf, len);
 }
 
 static void
@@ -339,22 +338,74 @@ u32 qemu_cfg_find_file(const char *name)
     return __cfg_next_prefix_file(name, strlen(name) + 1, 0);
 }
 
+static int
+__qemu_cfg_set_file(u32 select)
+{
+    if (!qemu_cfg_present || !select)
+        return -1;
+    if (select == ntohs(LastFile.select))
+        return 0;
+
+    u32 count;
+    qemu_cfg_read_entry(&count, QEMU_CFG_FILE_DIR, sizeof(count));
+    count = ntohl(count);
+    u32 e;
+    for (e = 0; e < count; e++) {
+        qemu_cfg_read((void*)&LastFile, sizeof(LastFile));
+        if (select == ntohs(LastFile.select))
+            return 0;
+    }
+    return -1;
+}
+
 int qemu_cfg_size_file(u32 select)
 {
-    if (select != ntohs(LastFile.select))
+    if (__qemu_cfg_set_file(select))
         return -1;
     return ntohl(LastFile.size);
 }
 
+const char* qemu_cfg_name_file(u32 select)
+{
+    if (__qemu_cfg_set_file(select))
+        return NULL;
+    return LastFile.name;
+}
+
 int qemu_cfg_read_file(u32 select, void *dst, u32 maxlen)
 {
-    if (!qemu_cfg_present)
-        return -1;
-    if (!select || select != ntohs(LastFile.select))
+    if (__qemu_cfg_set_file(select))
         return -1;
     int len = qemu_cfg_size_file(select);
     if (len < 0 || len > maxlen)
         return -1;
     qemu_cfg_read_entry(dst, select, len);
     return len;
+}
+
+// Helper function to find, malloc_tmphigh, and copy a romfile.  This
+// function adds a trailing zero to the malloc'd copy.
+void *
+romfile_loadfile(const char *name, int *psize)
+{
+    u32 file = romfile_find(name);
+    if (!file)
+        return NULL;
+
+    int filesize = romfile_size(file);
+    if (!filesize)
+        return NULL;
+
+    char *data = malloc_tmphigh(filesize+1);
+    if (!data) {
+        warn_noalloc();
+        return NULL;
+    }
+
+    dprintf(5, "Copying romfile '%s' (len %d)\n", name, filesize);
+    romfile_copy(file, data, filesize);
+    if (psize)
+        *psize = filesize;
+    data[filesize] = '\0';
+    return data;
 }

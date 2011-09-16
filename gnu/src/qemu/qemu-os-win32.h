@@ -26,6 +26,12 @@
 #ifndef QEMU_OS_WIN32_H
 #define QEMU_OS_WIN32_H
 
+#include <windows.h>
+#include <winsock2.h>
+
+/* Declaration of ffs() is missing in MinGW's strings.h. */
+int ffs(int i);
+
 /* Polling handling */
 
 /* return TRUE if no sleep should be done afterwards */
@@ -45,12 +51,19 @@ void os_host_main_loop_wait(int *timeout);
 static inline void os_setup_signal_handling(void) {}
 static inline void os_daemonize(void) {}
 static inline void os_setup_post(void) {}
-/* Win32 doesn't support line-buffering and requires size >= 2 */
-static inline void os_set_line_buffering(void) {}
+void os_set_line_buffering(void);
 static inline void os_set_proc_name(const char *dummy) {}
 
 #if !defined(EPROTONOSUPPORT)
 # define EPROTONOSUPPORT EINVAL
 #endif
+
+int setenv(const char *name, const char *value, int overwrite);
+
+typedef struct {
+    long tv_sec;
+    long tv_usec;
+} qemu_timeval;
+int qemu_gettimeofday(qemu_timeval *tp);
 
 #endif

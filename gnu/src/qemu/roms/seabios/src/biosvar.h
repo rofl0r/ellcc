@@ -1,6 +1,6 @@
 // Variable layouts of bios.
 //
-// Copyright (C) 2008,2009  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2008-2010  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 #ifndef __BIOSVAR_H
@@ -24,6 +24,12 @@ struct rmode_IVT {
     GET_FARVAR(SEG_IVT, ((struct rmode_IVT *)0)->ivec[vector])
 #define SET_IVT(vector, segoff)                                         \
     SET_FARVAR(SEG_IVT, ((struct rmode_IVT *)0)->ivec[vector], segoff)
+
+#define FUNC16(func) ({                                 \
+        ASSERT32FLAT();                                 \
+        extern void func (void);                        \
+        SEGOFF(SEG_BIOS, (u32)func - BUILD_BIOS_ADDR);  \
+    })
 
 
 /****************************************************************

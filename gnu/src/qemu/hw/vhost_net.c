@@ -15,12 +15,12 @@
 
 #include "virtio-net.h"
 #include "vhost_net.h"
+#include "qemu-error.h"
 
 #include "config.h"
 
 #ifdef CONFIG_VHOST_NET
 #include <linux/vhost.h>
-#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <linux/kvm.h>
 #include <fcntl.h>
@@ -51,7 +51,12 @@ unsigned vhost_net_get_features(struct vhost_net *net, unsigned features)
     if (!(net->dev.features & (1 << VIRTIO_RING_F_INDIRECT_DESC))) {
         features &= ~(1 << VIRTIO_RING_F_INDIRECT_DESC);
     }
-    features &= ~(1 << VIRTIO_NET_F_MRG_RXBUF);
+    if (!(net->dev.features & (1 << VIRTIO_RING_F_EVENT_IDX))) {
+        features &= ~(1 << VIRTIO_RING_F_EVENT_IDX);
+    }
+    if (!(net->dev.features & (1 << VIRTIO_NET_F_MRG_RXBUF))) {
+        features &= ~(1 << VIRTIO_NET_F_MRG_RXBUF);
+    }
     return features;
 }
 
@@ -63,6 +68,12 @@ void vhost_net_ack_features(struct vhost_net *net, unsigned features)
     }
     if (features & (1 << VIRTIO_RING_F_INDIRECT_DESC)) {
         net->dev.acked_features |= (1 << VIRTIO_RING_F_INDIRECT_DESC);
+    }
+    if (features & (1 << VIRTIO_RING_F_EVENT_IDX)) {
+        net->dev.acked_features |= (1 << VIRTIO_RING_F_EVENT_IDX);
+    }
+    if (features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
+        net->dev.acked_features |= (1 << VIRTIO_NET_F_MRG_RXBUF);
     }
 }
 
@@ -77,7 +88,8 @@ static int vhost_net_get_fd(VLANClientState *backend)
     }
 }
 
-struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd)
+struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
+                                 bool force)
 {
     int r;
     struct vhost_net *net = qemu_malloc(sizeof *net);
@@ -94,9 +106,13 @@ struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd)
         (1 << VHOST_NET_F_VIRTIO_NET_HDR);
     net->backend = r;
 
-    r = vhost_dev_init(&net->dev, devfd);
+    r = vhost_dev_init(&net->dev, devfd, force);
     if (r < 0) {
         goto fail;
+    }
+    if (!tap_has_vnet_hdr_len(backend,
+                              sizeof(struct virtio_net_hdr_mrg_rxbuf))) {
+        net->dev.features &= ~(1 << VIRTIO_NET_F_MRG_RXBUF);
     }
     if (~net->dev.features & net->dev.backend_features) {
         fprintf(stderr, "vhost lacks feature mask %" PRIu64 " for backend\n",
@@ -113,11 +129,20 @@ fail:
     return NULL;
 }
 
+bool vhost_net_query(VHostNetState *net, VirtIODevice *dev)
+{
+    return vhost_dev_query(&net->dev, dev);
+}
+
 int vhost_net_start(struct vhost_net *net,
                     VirtIODevice *dev)
 {
     struct vhost_vring_file file = { };
     int r;
+    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
+        tap_set_vnet_hdr_len(net->vc,
+                             sizeof(struct virtio_net_hdr_mrg_rxbuf));
+    }
 
     net->dev.nvqs = 2;
     net->dev.vqs = net->vqs;
@@ -139,12 +164,15 @@ int vhost_net_start(struct vhost_net *net,
     return 0;
 fail:
     file.fd = -1;
-    while (--file.index >= 0) {
+    while (file.index-- > 0) {
         int r = ioctl(net->dev.control, VHOST_NET_SET_BACKEND, &file);
         assert(r >= 0);
     }
     net->vc->info->poll(net->vc, true);
     vhost_dev_stop(&net->dev, dev);
+    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
+        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
+    }
     return r;
 }
 
@@ -159,23 +187,36 @@ void vhost_net_stop(struct vhost_net *net,
     }
     net->vc->info->poll(net->vc, true);
     vhost_dev_stop(&net->dev, dev);
+    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
+        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
+    }
 }
 
 void vhost_net_cleanup(struct vhost_net *net)
 {
     vhost_dev_cleanup(&net->dev);
+    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
+        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
+    }
     qemu_free(net);
 }
 #else
-struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd)
+struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
+                                 bool force)
 {
-	return NULL;
+    error_report("vhost-net support is not compiled in");
+    return NULL;
+}
+
+bool vhost_net_query(VHostNetState *net, VirtIODevice *dev)
+{
+    return false;
 }
 
 int vhost_net_start(struct vhost_net *net,
 		    VirtIODevice *dev)
 {
-	return -ENOSYS;
+    return -ENOSYS;
 }
 void vhost_net_stop(struct vhost_net *net,
 		    VirtIODevice *dev)
@@ -188,7 +229,7 @@ void vhost_net_cleanup(struct vhost_net *net)
 
 unsigned vhost_net_get_features(struct vhost_net *net, unsigned features)
 {
-	return features;
+    return features;
 }
 void vhost_net_ack_features(struct vhost_net *net, unsigned features)
 {

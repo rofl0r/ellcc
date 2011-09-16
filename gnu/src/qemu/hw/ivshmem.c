@@ -706,12 +706,7 @@ static int pci_ivshmem_init(PCIDevice *dev)
     }
 
     pci_conf = s->dev.config;
-    pci_config_set_vendor_id(pci_conf, PCI_VENDOR_ID_REDHAT_QUMRANET);
-    pci_conf[0x02] = 0x10;
-    pci_conf[0x03] = 0x11;
     pci_conf[PCI_COMMAND] = PCI_COMMAND_IO | PCI_COMMAND_MEMORY;
-    pci_config_set_class(pci_conf, PCI_CLASS_MEMORY_RAM);
-    pci_conf[PCI_HEADER_TYPE] = PCI_HEADER_TYPE_NORMAL;
 
     pci_config_set_interrupt_pin(pci_conf, 1);
 
@@ -720,7 +715,7 @@ static int pci_ivshmem_init(PCIDevice *dev)
     s->shm_fd = 0;
 
     s->ivshmem_mmio_io_addr = cpu_register_io_memory(ivshmem_mmio_read,
-                                    ivshmem_mmio_write, s);
+                                    ivshmem_mmio_write, s, DEVICE_NATIVE_ENDIAN);
     /* region for registers*/
     pci_register_bar(&s->dev, 0, IVSHMEM_REG_BAR_SIZE,
                            PCI_BASE_ADDRESS_SPACE_MEMORY, ivshmem_mmio_map);
@@ -809,6 +804,9 @@ static PCIDeviceInfo ivshmem_info = {
     .qdev.reset = ivshmem_reset,
     .init       = pci_ivshmem_init,
     .exit       = pci_ivshmem_uninit,
+    .vendor_id  = PCI_VENDOR_ID_REDHAT_QUMRANET,
+    .device_id  = 0x1110,
+    .class_id   = PCI_CLASS_MEMORY_RAM,
     .qdev.props = (Property[]) {
         DEFINE_PROP_CHR("chardev", IVShmemState, server_chr),
         DEFINE_PROP_STRING("size", IVShmemState, sizearg),

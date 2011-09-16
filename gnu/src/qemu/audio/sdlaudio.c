@@ -32,7 +32,6 @@
 #elif defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
 #include <pthread.h>
 #endif
-#include <signal.h>
 #endif
 
 #define AUDIO_CAP "sdl"
@@ -139,36 +138,36 @@ static int aud_to_sdlfmt (audfmt_e fmt)
     }
 }
 
-static int sdl_to_audfmt (int sdlfmt, audfmt_e *fmt, int *endianess)
+static int sdl_to_audfmt(int sdlfmt, audfmt_e *fmt, int *endianness)
 {
     switch (sdlfmt) {
     case AUDIO_S8:
-        *endianess = 0;
+        *endianness = 0;
         *fmt = AUD_FMT_S8;
         break;
 
     case AUDIO_U8:
-        *endianess = 0;
+        *endianness = 0;
         *fmt = AUD_FMT_U8;
         break;
 
     case AUDIO_S16LSB:
-        *endianess = 0;
+        *endianness = 0;
         *fmt = AUD_FMT_S16;
         break;
 
     case AUDIO_U16LSB:
-        *endianess = 0;
+        *endianness = 0;
         *fmt = AUD_FMT_U16;
         break;
 
     case AUDIO_S16MSB:
-        *endianess = 1;
+        *endianness = 1;
         *fmt = AUD_FMT_S16;
         break;
 
     case AUDIO_U16MSB:
-        *endianess = 1;
+        *endianness = 1;
         *fmt = AUD_FMT_U16;
         break;
 
@@ -184,11 +183,20 @@ static int sdl_open (SDL_AudioSpec *req, SDL_AudioSpec *obt)
 {
     int status;
 #ifndef _WIN32
+    int err;
     sigset_t new, old;
 
     /* Make sure potential threads created by SDL don't hog signals.  */
-    sigfillset (&new);
-    pthread_sigmask (SIG_BLOCK, &new, &old);
+    err = sigfillset (&new);
+    if (err) {
+        dolog ("sdl_open: sigfillset failed: %s\n", strerror (errno));
+        return -1;
+    }
+    err = pthread_sigmask (SIG_BLOCK, &new, &old);
+    if (err) {
+        dolog ("sdl_open: pthread_sigmask failed: %s\n", strerror (err));
+        return -1;
+    }
 #endif
 
     status = SDL_OpenAudio (req, obt);
@@ -197,7 +205,14 @@ static int sdl_open (SDL_AudioSpec *req, SDL_AudioSpec *obt)
     }
 
 #ifndef _WIN32
-    pthread_sigmask (SIG_SETMASK, &old, NULL);
+    err = pthread_sigmask (SIG_SETMASK, &old, NULL);
+    if (err) {
+        dolog ("sdl_open: pthread_sigmask (restore) failed: %s\n",
+               strerror (errno));
+        /* We have failed to restore original signal mask, all bets are off,
+           so exit the process */
+        exit (EXIT_FAILURE);
+    }
 #endif
     return status;
 }
@@ -322,7 +337,7 @@ static int sdl_init_out (HWVoiceOut *hw, struct audsettings *as)
     SDLVoiceOut *sdl = (SDLVoiceOut *) hw;
     SDLAudioState *s = &glob_sdl;
     SDL_AudioSpec req, obt;
-    int endianess;
+    int endianness;
     int err;
     audfmt_e effective_fmt;
     struct audsettings obt_as;
@@ -338,7 +353,7 @@ static int sdl_init_out (HWVoiceOut *hw, struct audsettings *as)
         return -1;
     }
 
-    err = sdl_to_audfmt (obt.format, &effective_fmt, &endianess);
+    err = sdl_to_audfmt(obt.format, &effective_fmt, &endianness);
     if (err) {
         sdl_close (s);
         return -1;
@@ -347,7 +362,7 @@ static int sdl_init_out (HWVoiceOut *hw, struct audsettings *as)
     obt_as.freq = obt.freq;
     obt_as.nchannels = obt.channels;
     obt_as.fmt = effective_fmt;
-    obt_as.endianness = endianess;
+    obt_as.endianness = endianness;
 
     audio_pcm_init_info (&hw->info, &obt_as);
     hw->samples = obt.samples;

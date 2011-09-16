@@ -1,6 +1,6 @@
 // Code to load disk image and start system boot.
 //
-// Copyright (C) 2008  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2008-2010  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2002  MandrakeSoft S.A.
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
@@ -10,210 +10,348 @@
 #include "config.h" // CONFIG_*
 #include "disk.h" // cdrom_boot
 #include "bregs.h" // struct bregs
-#include "boot.h" // struct ipl_s
+#include "boot.h" // func defs
 #include "cmos.h" // inb_cmos
-#include "paravirt.h"
-
-struct ipl_s IPL;
+#include "paravirt.h" // romfile_loadfile
+#include "pci.h" //pci_bdf_to_*
 
 
 /****************************************************************
- * IPL and BCV handlers
+ * Boot priority ordering
  ****************************************************************/
+
+static char **Bootorder;
+static int BootorderCount;
+
+static void
+loadBootOrder(void)
+{
+    char *f = romfile_loadfile("bootorder", NULL);
+    if (!f)
+        return;
+
+    int i = 0;
+    BootorderCount = 1;
+    while (f[i]) {
+        if (f[i] == '\n')
+            BootorderCount++;
+        i++;
+    }
+    Bootorder = malloc_tmphigh(BootorderCount*sizeof(char*));
+    if (!Bootorder) {
+        warn_noalloc();
+        free(f);
+        BootorderCount = 0;
+        return;
+    }
+
+    dprintf(3, "boot order:\n");
+    i = 0;
+    do {
+        Bootorder[i] = f;
+        f = strchr(f, '\n');
+        if (f)
+            *(f++) = '\0';
+        nullTrailingSpace(Bootorder[i]);
+        dprintf(3, "%d: %s\n", i+1, Bootorder[i]);
+        i++;
+    } while (f);
+}
+
+// See if 'str' starts with 'glob' - if glob contains an '*' character
+// it will match any number of characters in str that aren't a '/' or
+// the next glob character.
+static char *
+glob_prefix(const char *glob, const char *str)
+{
+    for (;;) {
+        if (!*glob && (!*str || *str == '/'))
+            return (char*)str;
+        if (*glob == '*') {
+            if (!*str || *str == '/' || *str == glob[1])
+                glob++;
+            else
+                str++;
+            continue;
+        }
+        if (*glob != *str)
+            return NULL;
+        glob++;
+        str++;
+    }
+}
+
+// Search the bootorder list for the given glob pattern.
+static int
+find_prio(const char *glob)
+{
+    dprintf(1, "Searching bootorder for: %s\n", glob);
+    int i;
+    for (i = 0; i < BootorderCount; i++)
+        if (glob_prefix(glob, Bootorder[i]))
+            return i+1;
+    return -1;
+}
+
+#define FW_PCI_DOMAIN "/pci@i0cf8"
+
+static char *
+build_pci_path(char *buf, int max, const char *devname, int bdf)
+{
+    // Build the string path of a bdf - for example: /pci@i0cf8/isa@1,2
+    char *p = buf;
+    int parent = pci_bdf_to_bus(bdf);
+    if (PCIpaths)
+        parent = PCIpaths[parent];
+    int parentdev = parent & 0xffff;
+    if (parent & PP_PCIBRIDGE) {
+        p = build_pci_path(p, max, "pci-bridge", parentdev);
+    } else {
+        if (parentdev)
+            p += snprintf(p, max, "/pci-root@%x", parentdev);
+        p += snprintf(p, buf+max-p, "%s", FW_PCI_DOMAIN);
+    }
+
+    int dev = pci_bdf_to_dev(bdf), fn = pci_bdf_to_fn(bdf);
+    p += snprintf(p, buf+max-p, "/%s@%x", devname, dev);
+    if (fn)
+        p += snprintf(p, buf+max-p, ",%x", fn);
+    return p;
+}
+
+int bootprio_find_pci_device(int bdf)
+{
+    // Find pci device - for example: /pci@i0cf8/ethernet@5
+    char desc[256];
+    build_pci_path(desc, sizeof(desc), "*", bdf);
+    return find_prio(desc);
+}
+
+int bootprio_find_ata_device(int bdf, int chanid, int slave)
+{
+    if (bdf == -1)
+        // support only pci machine for now
+        return -1;
+    // Find ata drive - for example: /pci@i0cf8/ide@1,1/drive@1/disk@0
+    char desc[256], *p;
+    p = build_pci_path(desc, sizeof(desc), "*", bdf);
+    snprintf(p, desc+sizeof(desc)-p, "/drive@%x/disk@%x", chanid, slave);
+    return find_prio(desc);
+}
+
+int bootprio_find_fdc_device(int bdf, int port, int fdid)
+{
+    if (bdf == -1)
+        // support only pci machine for now
+        return -1;
+    // Find floppy - for example: /pci@i0cf8/isa@1/fdc@03f1/floppy@0
+    char desc[256], *p;
+    p = build_pci_path(desc, sizeof(desc), "isa", bdf);
+    snprintf(p, desc+sizeof(desc)-p, "/fdc@%04x/floppy@%x", port, fdid);
+    return find_prio(desc);
+}
+
+int bootprio_find_pci_rom(int bdf, int instance)
+{
+    // Find pci rom - for example: /pci@i0cf8/scsi@3:rom2
+    char desc[256], *p;
+    p = build_pci_path(desc, sizeof(desc), "*", bdf);
+    if (instance)
+        snprintf(p, desc+sizeof(desc)-p, ":rom%d", instance);
+    return find_prio(desc);
+}
+
+int bootprio_find_named_rom(const char *name, int instance)
+{
+    // Find named rom - for example: /rom@genroms/linuxboot.bin
+    char desc[256], *p;
+    p = desc + snprintf(desc, sizeof(desc), "/rom@%s", name);
+    if (instance)
+        snprintf(p, desc+sizeof(desc)-p, ":rom%d", instance);
+    return find_prio(desc);
+}
+
+int bootprio_find_usb(int bdf, u64 path)
+{
+    // Find usb - for example: /pci@i0cf8/usb@1,2/hub@1/network@0/ethernet@0
+    int i;
+    char desc[256], *p;
+    p = build_pci_path(desc, sizeof(desc), "usb", bdf);
+    for (i=56; i>0; i-=8) {
+        int port = (path >> i) & 0xff;
+        if (port != 0xff)
+            p += snprintf(p, desc+sizeof(desc)-p, "/hub@%x", port);
+    }
+    snprintf(p, desc+sizeof(desc)-p, "/*@%x", (u32)(path & 0xff));
+    return find_prio(desc);
+}
+
+
+/****************************************************************
+ * Boot setup
+ ****************************************************************/
+
+static int CheckFloppySig = 1;
+
+#define DEFAULT_PRIO           9999
+
+static int DefaultFloppyPrio = 101;
+static int DefaultCDPrio     = 102;
+static int DefaultHDPrio     = 103;
+static int DefaultBEVPrio    = 104;
 
 void
 boot_setup(void)
 {
     if (! CONFIG_BOOT)
         return;
-    dprintf(3, "init boot device ordering\n");
 
-    memset(&IPL, 0, sizeof(IPL));
-    struct ipl_entry_s *ie = &IPL.bev[0];
-
-    // Floppy drive
-    ie->type = IPL_TYPE_FLOPPY;
-    ie->description = "Floppy";
-    ie++;
-
-    // First HDD
-    ie->type = IPL_TYPE_HARDDISK;
-    ie->description = "Hard Disk";
-    ie++;
-
-    // CDROM
-    if (CONFIG_CDROM_BOOT) {
-        ie->type = IPL_TYPE_CDROM;
-        ie->description = "DVD/CD";
-        ie++;
-    }
-
-    if (CONFIG_COREBOOT && CONFIG_COREBOOT_FLASH) {
-        ie->type = IPL_TYPE_CBFS;
-        ie->description = "CBFS";
-        ie++;
-    }
-
-    IPL.bevcount = ie - IPL.bev;
     SET_EBDA(boot_sequence, 0xffff);
-    if (CONFIG_COREBOOT) {
-        // XXX - hardcode defaults for coreboot.
-        IPL.bootorder = 0x87654231;
-        IPL.checkfloppysig = 1;
-    } else {
+
+    if (!CONFIG_COREBOOT) {
         // On emulators, get boot order from nvram.
-        IPL.bootorder = (inb_cmos(CMOS_BIOS_BOOTFLAG2)
+        if (inb_cmos(CMOS_BIOS_BOOTFLAG1) & 1)
+            CheckFloppySig = 0;
+        u32 bootorder = (inb_cmos(CMOS_BIOS_BOOTFLAG2)
                          | ((inb_cmos(CMOS_BIOS_BOOTFLAG1) & 0xf0) << 4));
-        if (!(inb_cmos(CMOS_BIOS_BOOTFLAG1) & 1))
-            IPL.checkfloppysig = 1;
+        DefaultFloppyPrio = DefaultCDPrio = DefaultHDPrio
+            = DefaultBEVPrio = DEFAULT_PRIO;
+        int i;
+        for (i=101; i<104; i++) {
+            u32 val = bootorder & 0x0f;
+            bootorder >>= 4;
+            switch (val) {
+            case 1: DefaultFloppyPrio = i; break;
+            case 2: DefaultHDPrio = i;     break;
+            case 3: DefaultCDPrio = i;     break;
+            case 4: DefaultBEVPrio = i;    break;
+            }
+        }
     }
+
+    loadBootOrder();
+}
+
+
+/****************************************************************
+ * BootList handling
+ ****************************************************************/
+
+struct bootentry_s {
+    int type;
+    union {
+        u32 data;
+        struct segoff_s vector;
+        struct drive_s *drive;
+    };
+    int priority;
+    const char *description;
+    struct bootentry_s *next;
+};
+static struct bootentry_s *BootList;
+
+#define IPL_TYPE_FLOPPY      0x01
+#define IPL_TYPE_HARDDISK    0x02
+#define IPL_TYPE_CDROM       0x03
+#define IPL_TYPE_CBFS        0x20
+#define IPL_TYPE_BEV         0x80
+#define IPL_TYPE_BCV         0x81
+
+static void
+bootentry_add(int type, int prio, u32 data, const char *desc)
+{
+    if (! CONFIG_BOOT)
+        return;
+    struct bootentry_s *be = malloc_tmp(sizeof(*be));
+    if (!be) {
+        warn_noalloc();
+        return;
+    }
+    be->type = type;
+    be->priority = prio;
+    be->data = data;
+    be->description = desc ?: "?";
+    dprintf(3, "Registering bootable: %s (type:%d prio:%d data:%x)\n"
+            , be->description, type, prio, data);
+
+    // Add entry in sorted order.
+    struct bootentry_s **pprev;
+    for (pprev = &BootList; *pprev; pprev = &(*pprev)->next) {
+        struct bootentry_s *pos = *pprev;
+        if (be->priority < pos->priority)
+            break;
+        if (be->priority > pos->priority)
+            continue;
+        if (be->type < pos->type)
+            break;
+        if (be->type > pos->type)
+            continue;
+        if (be->type <= IPL_TYPE_CDROM
+            && (be->drive->type < pos->drive->type
+                || (be->drive->type == pos->drive->type
+                    && be->drive->cntl_id < pos->drive->cntl_id)))
+            break;
+    }
+    be->next = *pprev;
+    *pprev = be;
+}
+
+// Return the given priority if it's set - defaultprio otherwise.
+static inline int defPrio(int priority, int defaultprio) {
+    return (priority < 0) ? defaultprio : priority;
 }
 
 // Add a BEV vector for a given pnp compatible option rom.
 void
-add_bev(u16 seg, u16 bev, u16 desc)
+boot_add_bev(u16 seg, u16 bev, u16 desc, int prio)
 {
-    if (! CONFIG_BOOT)
-        return;
-    if (IPL.bevcount >= ARRAY_SIZE(IPL.bev))
-        return;
-
-    struct ipl_entry_s *ie = &IPL.bev[IPL.bevcount++];
-    ie->type = IPL_TYPE_BEV;
-    ie->vector = (seg << 16) | bev;
-    const char *d = "Unknown";
-    if (desc)
-        d = MAKE_FLATPTR(seg, desc);
-    ie->description = d;
+    bootentry_add(IPL_TYPE_BEV, defPrio(prio, DefaultBEVPrio)
+                  , SEGOFF(seg, bev).segoff
+                  , desc ? MAKE_FLATPTR(seg, desc) : "Unknown");
+    DefaultBEVPrio = DEFAULT_PRIO;
 }
 
 // Add a bcv entry for an expansion card harddrive or legacy option rom
 void
-add_bcv(u16 seg, u16 ip, u16 desc)
+boot_add_bcv(u16 seg, u16 ip, u16 desc, int prio)
 {
-    if (! CONFIG_BOOT)
-        return;
-    if (IPL.bcvcount >= ARRAY_SIZE(IPL.bcv))
-        return;
-
-    struct ipl_entry_s *ie = &IPL.bcv[IPL.bcvcount++];
-    ie->type = BCV_TYPE_EXTERNAL;
-    ie->vector = (seg << 16) | ip;
-    const char *d = "Legacy option rom";
-    if (desc)
-        d = MAKE_FLATPTR(seg, desc);
-    ie->description = d;
+    bootentry_add(IPL_TYPE_BCV, defPrio(prio, DEFAULT_PRIO)
+                  , SEGOFF(seg, ip).segoff
+                  , desc ? MAKE_FLATPTR(seg, desc) : "Legacy option rom");
 }
 
-// Add a bcv entry for an internal harddrive
 void
-add_bcv_internal(struct drive_s *drive_g)
+boot_add_floppy(struct drive_s *drive_g, const char *desc, int prio)
 {
-    if (! CONFIG_BOOT)
-        return;
-    if (IPL.bcvcount >= ARRAY_SIZE(IPL.bcv))
-        return;
+    bootentry_add(IPL_TYPE_FLOPPY, defPrio(prio, DefaultFloppyPrio)
+                  , (u32)drive_g, desc);
+}
 
-    struct ipl_entry_s *ie = &IPL.bcv[IPL.bcvcount++];
-    if (CONFIG_THREADS) {
-        // Add to bcv list with assured drive order.
-        struct ipl_entry_s *end = ie;
-        for (;;) {
-            struct ipl_entry_s *prev = ie - 1;
-            if (prev < IPL.bcv || prev->type != BCV_TYPE_INTERNAL)
-                break;
-            struct drive_s *prevdrive = (void*)prev->vector;
-            if (prevdrive->type < drive_g->type
-                || (prevdrive->type == drive_g->type
-                    && prevdrive->cntl_id < drive_g->cntl_id))
-                break;
-            ie--;
-        }
-        if (ie != end)
-            memmove(ie+1, ie, (void*)end-(void*)ie);
-    }
-    ie->type = BCV_TYPE_INTERNAL;
-    ie->vector = (u32)drive_g;
-    ie->description = "";
+void
+boot_add_hd(struct drive_s *drive_g, const char *desc, int prio)
+{
+    bootentry_add(IPL_TYPE_HARDDISK, defPrio(prio, DefaultHDPrio)
+                  , (u32)drive_g, desc);
+}
+
+void
+boot_add_cd(struct drive_s *drive_g, const char *desc, int prio)
+{
+    bootentry_add(IPL_TYPE_CDROM, defPrio(prio, DefaultCDPrio)
+                  , (u32)drive_g, desc);
+}
+
+// Add a CBFS payload entry
+void
+boot_add_cbfs(void *data, const char *desc, int prio)
+{
+    bootentry_add(IPL_TYPE_CBFS, defPrio(prio, DEFAULT_PRIO), (u32)data, desc);
 }
 
 
 /****************************************************************
  * Boot menu and BCV execution
  ****************************************************************/
-
-// Show a generic menu item
-static int
-menu_show_default(struct ipl_entry_s *ie, int menupos)
-{
-    char desc[33];
-    printf("%d. %s\n", menupos
-           , strtcpy(desc, ie->description, ARRAY_SIZE(desc)));
-    return 1;
-}
-
-// Show floppy menu item - but only if there exists a floppy drive.
-static int
-menu_show_floppy(struct ipl_entry_s *ie, int menupos)
-{
-    int i;
-    for (i = 0; i < Drives.floppycount; i++) {
-        struct drive_s *drive_g = getDrive(EXTTYPE_FLOPPY, i);
-        printf("%d. Floppy [%s]\n", menupos + i, drive_g->desc);
-    }
-    return Drives.floppycount;
-}
-
-// Show menu items from BCV list.
-static int
-menu_show_harddisk(struct ipl_entry_s *ie, int menupos)
-{
-    int i;
-    for (i = 0; i < IPL.bcvcount; i++) {
-        struct ipl_entry_s *ie = &IPL.bcv[i];
-        struct drive_s *drive_g = (void*)ie->vector;
-        switch (ie->type) {
-        case BCV_TYPE_INTERNAL:
-            printf("%d. %s\n", menupos + i, drive_g->desc);
-            break;
-        default:
-            menu_show_default(ie, menupos+i);
-            break;
-        }
-    }
-    return IPL.bcvcount;
-}
-
-// Show cdrom menu item - but only if there exists a cdrom drive.
-static int
-menu_show_cdrom(struct ipl_entry_s *ie, int menupos)
-{
-    int i;
-    for (i = 0; i < Drives.cdcount; i++) {
-        struct drive_s *drive_g = getDrive(EXTTYPE_CD, i);
-        printf("%d. DVD/CD [%s]\n", menupos + i, drive_g->desc);
-    }
-    return Drives.cdcount;
-}
-
-// Show coreboot-fs menu item.
-static int
-menu_show_cbfs(struct ipl_entry_s *ie, int menupos)
-{
-    int count = 0;
-    struct cbfs_file *file = NULL;
-    for (;;) {
-        file = cbfs_findprefix("img/", file);
-        if (!file)
-            break;
-        const char *filename = cbfs_filename(file);
-        printf("%d. Payload [%s]\n", menupos + count, &filename[4]);
-        count++;
-        if (count > 8)
-            break;
-    }
-    return count;
-}
 
 // Show IPL option menu.
 static void
@@ -227,7 +365,9 @@ interactive_bootmenu(void)
 
     printf("Press F12 for boot menu.\n\n");
 
+    enable_bootsplash();
     int scan_code = get_keystroke(CONFIG_BOOTMENU_WAIT);
+    disable_bootsplash();
     if (scan_code != 0x86)
         /* not F12 */
         return;
@@ -238,69 +378,61 @@ interactive_bootmenu(void)
     printf("Select boot device:\n\n");
     wait_threads();
 
-    int subcount[ARRAY_SIZE(IPL.bev)];
-    int menupos = 1;
-    int i;
-    for (i = 0; i < IPL.bevcount; i++) {
-        struct ipl_entry_s *ie = &IPL.bev[i];
-        int sc;
-        switch (ie->type) {
-        case IPL_TYPE_FLOPPY:
-            sc = menu_show_floppy(ie, menupos);
-            break;
-        case IPL_TYPE_HARDDISK:
-            sc = menu_show_harddisk(ie, menupos);
-            break;
-        case IPL_TYPE_CDROM:
-            sc = menu_show_cdrom(ie, menupos);
-            break;
-        case IPL_TYPE_CBFS:
-            sc = menu_show_cbfs(ie, menupos);
-            break;
-        default:
-            sc = menu_show_default(ie, menupos);
-            break;
-        }
-        subcount[i] = sc;
-        menupos += sc;
+    // Show menu items
+    struct bootentry_s *pos = BootList;
+    int maxmenu = 0;
+    while (pos) {
+        char desc[60];
+        maxmenu++;
+        printf("%d. %s\n", maxmenu
+               , strtcpy(desc, pos->description, ARRAY_SIZE(desc)));
+        pos = pos->next;
     }
 
+    // Get key press
     for (;;) {
         scan_code = get_keystroke(1000);
-        if (scan_code == 0x01)
-            // ESC
+        if (scan_code >= 1 && scan_code <= maxmenu+1)
             break;
-        if (scan_code < 1 || scan_code > menupos)
-            continue;
-        int choice = scan_code - 1;
-
-        // Find out which IPL this was for.
-        int bev = 0;
-        while (choice > subcount[bev]) {
-            choice -= subcount[bev];
-            bev++;
-        }
-        IPL.bev[bev].subchoice = choice-1;
-
-        // Add user choice to the boot order.
-        IPL.bootorder = (IPL.bootorder << 4) | (bev+1);
-        break;
     }
     printf("\n");
+    if (scan_code == 0x01)
+        // ESC
+        return;
+
+    // Find entry and make top priority.
+    int choice = scan_code - 1;
+    struct bootentry_s **pprev = &BootList;
+    while (--choice)
+        pprev = &(*pprev)->next;
+    pos = *pprev;
+    *pprev = pos->next;
+    pos->next = BootList;
+    BootList = pos;
+    pos->priority = 0;
 }
 
-// Run the specified bcv.
+// BEV (Boot Execution Vector) list
+struct bev_s {
+    int type;
+    u32 vector;
+};
+static struct bev_s BEV[20];
+static int BEVCount;
+static int HaveHDBoot, HaveFDBoot;
+
 static void
-run_bcv(struct ipl_entry_s *ie)
+add_bev(int type, u32 vector)
 {
-    switch (ie->type) {
-    case BCV_TYPE_INTERNAL:
-        map_hd_drive((void*)ie->vector);
-        break;
-    case BCV_TYPE_EXTERNAL:
-        call_bcv(ie->vector >> 16, ie->vector & 0xffff);
-        break;
-    }
+    if (type == IPL_TYPE_HARDDISK && HaveHDBoot++)
+        return;
+    if (type == IPL_TYPE_FLOPPY && HaveFDBoot++)
+        return;
+    if (BEVCount >= ARRAY_SIZE(BEV))
+        return;
+    struct bev_s *bev = &BEV[BEVCount++];
+    bev->type = type;
+    bev->vector = vector;
 }
 
 // Prepare for boot - show menu and run bcvs.
@@ -318,20 +450,35 @@ boot_prep(void)
     interactive_bootmenu();
     wait_threads();
 
-    // Setup floppy boot order
-    int override = IPL.bev[0].subchoice;
-    struct drive_s *tmp = Drives.idmap[EXTTYPE_FLOPPY][0];
-    Drives.idmap[EXTTYPE_FLOPPY][0] = Drives.idmap[EXTTYPE_FLOPPY][override];
-    Drives.idmap[EXTTYPE_FLOPPY][override] = tmp;
+    // Map drives and populate BEV list
+    struct bootentry_s *pos = BootList;
+    while (pos) {
+        switch (pos->type) {
+        case IPL_TYPE_BCV:
+            call_bcv(pos->vector.seg, pos->vector.offset);
+            add_bev(IPL_TYPE_HARDDISK, 0);
+            break;
+        case IPL_TYPE_FLOPPY:
+            map_floppy_drive(pos->drive);
+            add_bev(IPL_TYPE_FLOPPY, 0);
+            break;
+        case IPL_TYPE_HARDDISK:
+            map_hd_drive(pos->drive);
+            add_bev(IPL_TYPE_HARDDISK, 0);
+            break;
+        case IPL_TYPE_CDROM:
+            map_cd_drive(pos->drive);
+            // NO BREAK
+        default:
+            add_bev(pos->type, pos->data);
+            break;
+        }
+        pos = pos->next;
+    }
 
-    // Run BCVs
-    override = IPL.bev[1].subchoice;
-    if (override < IPL.bcvcount)
-        run_bcv(&IPL.bcv[override]);
-    int i;
-    for (i=0; i<IPL.bcvcount; i++)
-        if (i != override)
-            run_bcv(&IPL.bcv[i]);
+    // If nothing added a floppy/hd boot - add it manually.
+    add_bev(IPL_TYPE_FLOPPY, 0);
+    add_bev(IPL_TYPE_HARDDISK, 0);
 }
 
 
@@ -341,17 +488,13 @@ boot_prep(void)
 
 // Jump to a bootup entry point.
 static void
-call_boot_entry(u16 bootseg, u16 bootip, u8 bootdrv)
+call_boot_entry(struct segoff_s bootsegip, u8 bootdrv)
 {
-    dprintf(1, "Booting from %04x:%04x\n", bootseg, bootip);
-
-    /* Go back to text, the OS might expect it... (Can't do this any later) */
-    disable_bootsplash();
-
+    dprintf(1, "Booting from %04x:%04x\n", bootsegip.seg, bootsegip.offset);
     struct bregs br;
     memset(&br, 0, sizeof(br));
     br.flags = F_IF;
-    br.code = SEGOFF(bootseg, bootip);
+    br.code = bootsegip;
     // Set the magic number in ax and the boot drive in dl.
     br.dl = bootdrv;
     br.ax = 0xaa55;
@@ -392,16 +535,18 @@ boot_disk(u8 bootdrv, int checksig)
     u16 bootip = (bootseg & 0x0fff) << 4;
     bootseg &= 0xf000;
 
-    call_boot_entry(bootseg, bootip, bootdrv);
+    call_boot_entry(SEGOFF(bootseg, bootip), bootdrv);
 }
 
 // Boot from a CD-ROM
 static void
-boot_cdrom(struct ipl_entry_s *ie)
+boot_cdrom(struct drive_s *drive_g)
 {
     if (! CONFIG_CDROM_BOOT)
         return;
-    int status = cdrom_boot(ie->subchoice);
+    printf("Booting from DVD/CD...\n");
+
+    int status = cdrom_boot(drive_g);
     if (status) {
         printf("Boot failed: Could not read from CDROM (code %04x)\n", status);
         return;
@@ -414,69 +559,62 @@ boot_cdrom(struct ipl_entry_s *ie)
     u16 bootip = (bootseg & 0x0fff) << 4;
     bootseg &= 0xf000;
 
-    call_boot_entry(bootseg, bootip, bootdrv);
+    call_boot_entry(SEGOFF(bootseg, bootip), bootdrv);
 }
 
 // Boot from a CBFS payload
 static void
-boot_cbfs(struct ipl_entry_s *ie)
+boot_cbfs(struct cbfs_file *file)
 {
     if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH)
         return;
-    int count = ie->subchoice;
-    struct cbfs_file *file = NULL;
-    for (;;) {
-        file = cbfs_findprefix("img/", file);
-        if (!file)
-            return;
-        if (count--)
-            continue;
-        cbfs_run_payload(file);
-    }
+    printf("Booting from CBFS...\n");
+    cbfs_run_payload(file);
 }
 
+// Boot from a BEV entry on an optionrom.
+static void
+boot_rom(u32 vector)
+{
+    printf("Booting from ROM...\n");
+    struct segoff_s so;
+    so.segoff = vector;
+    call_boot_entry(so, 0);
+}
+
+// Determine next boot method and attempt a boot using it.
 static void
 do_boot(u16 seq_nr)
 {
     if (! CONFIG_BOOT)
         panic("Boot support not compiled in.\n");
 
-    u32 bootdev = IPL.bootorder;
-    bootdev >>= 4 * seq_nr;
-    bootdev &= 0xf;
-
-    /* Translate bootdev to an IPL table offset by subtracting 1 */
-    bootdev -= 1;
-
-    if (bootdev >= IPL.bevcount) {
+    if (seq_nr >= BEVCount) {
         printf("No bootable device.\n");
         // Loop with irqs enabled - this allows ctrl+alt+delete to work.
         for (;;)
             wait_irq();
     }
 
-    /* Do the loading, and set up vector as a far pointer to the boot
-     * address, and bootdrv as the boot drive */
-    struct ipl_entry_s *ie = &IPL.bev[bootdev];
-    char desc[33];
-    printf("Booting from %s...\n"
-           , strtcpy(desc, ie->description, ARRAY_SIZE(desc)));
-
-    switch(ie->type) {
+    // Boot the given BEV type.
+    struct bev_s *ie = &BEV[seq_nr];
+    switch (ie->type) {
     case IPL_TYPE_FLOPPY:
-        boot_disk(0x00, IPL.checkfloppysig);
+        printf("Booting from Floppy...\n");
+        boot_disk(0x00, CheckFloppySig);
         break;
     case IPL_TYPE_HARDDISK:
+        printf("Booting from Hard Disk...\n");
         boot_disk(0x80, 1);
         break;
     case IPL_TYPE_CDROM:
-        boot_cdrom(ie);
+        boot_cdrom((void*)ie->vector);
         break;
     case IPL_TYPE_CBFS:
-        boot_cbfs(ie);
+        boot_cbfs((void*)ie->vector);
         break;
     case IPL_TYPE_BEV:
-        call_boot_entry(ie->vector >> 16, ie->vector & 0xffff, 0);
+        boot_rom(ie->vector);
         break;
     }
 

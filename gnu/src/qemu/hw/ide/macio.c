@@ -27,7 +27,6 @@
 #include <hw/mac_dbdma.h>
 #include "block.h"
 #include "block_int.h"
-#include "sysemu.h"
 #include "dma.h"
 
 #include <hw/ide/internal.h>
@@ -146,12 +145,21 @@ static void pmac_ide_transfer_cb(void *opaque, int ret)
     io->addr += io->len;
     io->len = 0;
 
-    if (s->is_read)
+    switch (s->dma_cmd) {
+    case IDE_DMA_READ:
         m->aiocb = dma_bdrv_read(s->bs, &s->sg, sector_num,
 		                 pmac_ide_transfer_cb, io);
-    else
+        break;
+    case IDE_DMA_WRITE:
         m->aiocb = dma_bdrv_write(s->bs, &s->sg, sector_num,
 		                  pmac_ide_transfer_cb, io);
+        break;
+    case IDE_DMA_TRIM:
+        m->aiocb = dma_bdrv_io(s->bs, &s->sg, sector_num,
+                               ide_issue_trim, pmac_ide_transfer_cb, s, 1);
+        break;
+    }
+
     if (!m->aiocb)
         pmac_ide_transfer_cb(io, -1);
 }
@@ -320,7 +328,8 @@ int pmac_ide_init (DriveInfo **hd_table, qemu_irq irq,
         DBDMA_register_channel(dbdma, channel, dma_irq, pmac_ide_transfer, pmac_ide_flush, d);
 
     pmac_ide_memory = cpu_register_io_memory(pmac_ide_read,
-                                             pmac_ide_write, d);
+                                             pmac_ide_write, d,
+                                             DEVICE_NATIVE_ENDIAN);
     vmstate_register(NULL, 0, &vmstate_pmac, d);
     qemu_register_reset(pmac_ide_reset, d);
 

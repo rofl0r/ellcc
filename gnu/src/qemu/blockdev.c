@@ -14,8 +14,41 @@
 #include "qemu-option.h"
 #include "qemu-config.h"
 #include "sysemu.h"
+#include "hw/qdev.h"
+#include "block_int.h"
 
 static QTAILQ_HEAD(drivelist, DriveInfo) drives = QTAILQ_HEAD_INITIALIZER(drives);
+
+static const char *const if_name[IF_COUNT] = {
+    [IF_NONE] = "none",
+    [IF_IDE] = "ide",
+    [IF_SCSI] = "scsi",
+    [IF_FLOPPY] = "floppy",
+    [IF_PFLASH] = "pflash",
+    [IF_MTD] = "mtd",
+    [IF_SD] = "sd",
+    [IF_VIRTIO] = "virtio",
+    [IF_XEN] = "xen",
+};
+
+static const int if_max_devs[IF_COUNT] = {
+    /*
+     * Do not change these numbers!  They govern how drive option
+     * index maps to unit and bus.  That mapping is ABI.
+     *
+     * All controllers used to imlement if=T drives need to support
+     * if_max_devs[T] units, for any T with if_max_devs[T] != 0.
+     * Otherwise, some index values map to "impossible" bus, unit
+     * values.
+     *
+     * For instance, if you change [IF_SCSI] to 255, -drive
+     * if=scsi,index=12 no longer means bus=1,unit=5, but
+     * bus=0,unit=12.  With an lsi53c895a controller (7 units max),
+     * the drive can't be set up.  Regression.
+     */
+    [IF_IDE] = 2,
+    [IF_SCSI] = 7,
+};
 
 /*
  * We automatically delete the drive when a device using it gets
@@ -28,31 +61,53 @@ void blockdev_mark_auto_del(BlockDriverState *bs)
 {
     DriveInfo *dinfo = drive_get_by_blockdev(bs);
 
-    dinfo->auto_del = 1;
+    if (dinfo) {
+        dinfo->auto_del = 1;
+    }
 }
 
 void blockdev_auto_del(BlockDriverState *bs)
 {
     DriveInfo *dinfo = drive_get_by_blockdev(bs);
 
-    if (dinfo->auto_del) {
-        drive_uninit(dinfo);
+    if (dinfo && dinfo->auto_del) {
+        drive_put_ref(dinfo);
     }
 }
 
-QemuOpts *drive_add(const char *file, const char *fmt, ...)
+static int drive_index_to_bus_id(BlockInterfaceType type, int index)
 {
-    va_list ap;
-    char optstr[1024];
+    int max_devs = if_max_devs[type];
+    return max_devs ? index / max_devs : 0;
+}
+
+static int drive_index_to_unit_id(BlockInterfaceType type, int index)
+{
+    int max_devs = if_max_devs[type];
+    return max_devs ? index % max_devs : index;
+}
+
+QemuOpts *drive_def(const char *optstr)
+{
+    return qemu_opts_parse(qemu_find_opts("drive"), optstr, 0);
+}
+
+QemuOpts *drive_add(BlockInterfaceType type, int index, const char *file,
+                    const char *optstr)
+{
     QemuOpts *opts;
+    char buf[32];
 
-    va_start(ap, fmt);
-    vsnprintf(optstr, sizeof(optstr), fmt, ap);
-    va_end(ap);
-
-    opts = qemu_opts_parse(&qemu_drive_opts, optstr, 0);
+    opts = drive_def(optstr);
     if (!opts) {
         return NULL;
+    }
+    if (type != IF_DEFAULT) {
+        qemu_opt_set(opts, "if", if_name[type]);
+    }
+    if (index >= 0) {
+        snprintf(buf, sizeof(buf), "%d", index);
+        qemu_opt_set(opts, "index", buf);
     }
     if (file)
         qemu_opt_set(opts, "file", file);
@@ -75,6 +130,13 @@ DriveInfo *drive_get(BlockInterfaceType type, int bus, int unit)
     return NULL;
 }
 
+DriveInfo *drive_get_by_index(BlockInterfaceType type, int index)
+{
+    return drive_get(type,
+                     drive_index_to_bus_id(type, index),
+                     drive_index_to_unit_id(type, index));
+}
+
 int drive_get_max_bus(BlockInterfaceType type)
 {
     int max_bus;
@@ -87,6 +149,16 @@ int drive_get_max_bus(BlockInterfaceType type)
             max_bus = dinfo->bus;
     }
     return max_bus;
+}
+
+/* Get a block device.  This should only be used for single-drive devices
+   (e.g. SD/Floppy/MTD).  Multi-disk devices (scsi/ide) should use the
+   appropriate bus.  */
+DriveInfo *drive_get_next(BlockInterfaceType type)
+{
+    static int next_block_unit[IF_COUNT];
+
+    return drive_get(type, 0, next_block_unit[type]++);
 }
 
 DriveInfo *drive_get_by_blockdev(BlockDriverState *bs)
@@ -103,15 +175,29 @@ DriveInfo *drive_get_by_blockdev(BlockDriverState *bs)
 
 static void bdrv_format_print(void *opaque, const char *name)
 {
-    fprintf(stderr, " %s", name);
+    error_printf(" %s", name);
 }
 
-void drive_uninit(DriveInfo *dinfo)
+static void drive_uninit(DriveInfo *dinfo)
 {
     qemu_opts_del(dinfo->opts);
     bdrv_delete(dinfo->bdrv);
+    qemu_free(dinfo->id);
     QTAILQ_REMOVE(&drives, dinfo, next);
     qemu_free(dinfo);
+}
+
+void drive_put_ref(DriveInfo *dinfo)
+{
+    assert(dinfo->refcount);
+    if (--dinfo->refcount == 0) {
+        drive_uninit(dinfo);
+    }
+}
+
+void drive_get_ref(DriveInfo *dinfo)
+{
+    dinfo->refcount++;
 }
 
 static int parse_block_error_action(const char *buf, int is_read)
@@ -125,13 +211,13 @@ static int parse_block_error_action(const char *buf, int is_read)
     } else if (!strcmp(buf, "report")) {
         return BLOCK_ERR_REPORT;
     } else {
-        fprintf(stderr, "qemu: '%s' invalid %s error action\n",
-            buf, is_read ? "read" : "write");
+        error_report("'%s' invalid %s error action",
+                     buf, is_read ? "read" : "write");
         return -1;
     }
 }
 
-DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
+DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi)
 {
     const char *buf;
     const char *file = NULL;
@@ -153,19 +239,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
     int snapshot = 0;
     int ret;
 
-    *fatal_error = 1;
-
     translation = BIOS_ATA_TRANSLATION_AUTO;
-
-    if (default_to_scsi) {
-        type = IF_SCSI;
-        max_devs = MAX_SCSI_DEVS;
-        pstrcpy(devname, sizeof(devname), "scsi");
-    } else {
-        type = IF_IDE;
-        max_devs = MAX_IDE_DEVS;
-        pstrcpy(devname, sizeof(devname), "ide");
-    }
     media = MEDIA_DISK;
 
     /* extract parameters */
@@ -185,59 +259,38 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     if ((buf = qemu_opt_get(opts, "if")) != NULL) {
         pstrcpy(devname, sizeof(devname), buf);
-        if (!strcmp(buf, "ide")) {
-	    type = IF_IDE;
-            max_devs = MAX_IDE_DEVS;
-        } else if (!strcmp(buf, "scsi")) {
-	    type = IF_SCSI;
-            max_devs = MAX_SCSI_DEVS;
-        } else if (!strcmp(buf, "floppy")) {
-	    type = IF_FLOPPY;
-            max_devs = 0;
-        } else if (!strcmp(buf, "pflash")) {
-	    type = IF_PFLASH;
-            max_devs = 0;
-	} else if (!strcmp(buf, "mtd")) {
-	    type = IF_MTD;
-            max_devs = 0;
-	} else if (!strcmp(buf, "sd")) {
-	    type = IF_SD;
-            max_devs = 0;
-        } else if (!strcmp(buf, "virtio")) {
-            type = IF_VIRTIO;
-            max_devs = 0;
-	} else if (!strcmp(buf, "xen")) {
-	    type = IF_XEN;
-            max_devs = 0;
-	} else if (!strcmp(buf, "none")) {
-	    type = IF_NONE;
-            max_devs = 0;
-	} else {
-            fprintf(stderr, "qemu: unsupported bus type '%s'\n", buf);
+        for (type = 0; type < IF_COUNT && strcmp(buf, if_name[type]); type++)
+            ;
+        if (type == IF_COUNT) {
+            error_report("unsupported bus type '%s'", buf);
             return NULL;
 	}
+    } else {
+        type = default_to_scsi ? IF_SCSI : IF_IDE;
+        pstrcpy(devname, sizeof(devname), if_name[type]);
     }
+
+    max_devs = if_max_devs[type];
 
     if (cyls || heads || secs) {
         if (cyls < 1 || (type == IF_IDE && cyls > 16383)) {
-            fprintf(stderr, "qemu: '%s' invalid physical cyls number\n", buf);
+            error_report("invalid physical cyls number");
 	    return NULL;
 	}
         if (heads < 1 || (type == IF_IDE && heads > 16)) {
-            fprintf(stderr, "qemu: '%s' invalid physical heads number\n", buf);
+            error_report("invalid physical heads number");
 	    return NULL;
 	}
         if (secs < 1 || (type == IF_IDE && secs > 63)) {
-            fprintf(stderr, "qemu: '%s' invalid physical secs number\n", buf);
+            error_report("invalid physical secs number");
 	    return NULL;
 	}
     }
 
     if ((buf = qemu_opt_get(opts, "trans")) != NULL) {
         if (!cyls) {
-            fprintf(stderr,
-                    "qemu: '%s' trans must be used with cyls,heads and secs\n",
-                    buf);
+            error_report("'%s' trans must be used with cyls, heads and secs",
+                         buf);
             return NULL;
         }
         if (!strcmp(buf, "none"))
@@ -247,7 +300,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
         else if (!strcmp(buf, "auto"))
             translation = BIOS_ATA_TRANSLATION_AUTO;
 	else {
-            fprintf(stderr, "qemu: '%s' invalid translation type\n", buf);
+            error_report("'%s' invalid translation type", buf);
 	    return NULL;
 	}
     }
@@ -257,20 +310,19 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 	    media = MEDIA_DISK;
 	} else if (!strcmp(buf, "cdrom")) {
             if (cyls || secs || heads) {
-                fprintf(stderr,
-                        "qemu: '%s' invalid physical CHS format\n", buf);
+                error_report("CHS can't be set with media=%s", buf);
 	        return NULL;
             }
 	    media = MEDIA_CDROM;
 	} else {
-	    fprintf(stderr, "qemu: '%s' invalid media\n", buf);
+	    error_report("'%s' invalid media", buf);
 	    return NULL;
 	}
     }
 
     if ((buf = qemu_opt_get(opts, "cache")) != NULL) {
         if (!strcmp(buf, "off") || !strcmp(buf, "none")) {
-            bdrv_flags |= BDRV_O_NOCACHE;
+            bdrv_flags |= BDRV_O_NOCACHE | BDRV_O_CACHE_WB;
         } else if (!strcmp(buf, "writeback")) {
             bdrv_flags |= BDRV_O_CACHE_WB;
         } else if (!strcmp(buf, "unsafe")) {
@@ -279,7 +331,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
         } else if (!strcmp(buf, "writethrough")) {
             /* this is the default */
         } else {
-           fprintf(stderr, "qemu: invalid cache option\n");
+           error_report("invalid cache option");
            return NULL;
         }
     }
@@ -291,7 +343,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
         } else if (!strcmp(buf, "threads")) {
             /* this is the default */
         } else {
-           fprintf(stderr, "qemu: invalid aio option\n");
+           error_report("invalid aio option");
            return NULL;
         }
     }
@@ -299,14 +351,14 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     if ((buf = qemu_opt_get(opts, "format")) != NULL) {
        if (strcmp(buf, "?") == 0) {
-            fprintf(stderr, "qemu: Supported formats:");
-            bdrv_iterate_format(bdrv_format_print, NULL);
-            fprintf(stderr, "\n");
-	    return NULL;
+           error_printf("Supported formats:");
+           bdrv_iterate_format(bdrv_format_print, NULL);
+           error_printf("\n");
+           return NULL;
         }
         drv = bdrv_find_whitelisted_format(buf);
         if (!drv) {
-            fprintf(stderr, "qemu: '%s' invalid format\n", buf);
+            error_report("'%s' invalid format", buf);
             return NULL;
         }
     }
@@ -314,7 +366,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
     on_write_error = BLOCK_ERR_STOP_ENOSPC;
     if ((buf = qemu_opt_get(opts, "werror")) != NULL) {
         if (type != IF_IDE && type != IF_SCSI && type != IF_VIRTIO && type != IF_NONE) {
-            fprintf(stderr, "werror is no supported by this format\n");
+            error_report("werror is not supported by this bus type");
             return NULL;
         }
 
@@ -326,8 +378,8 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     on_read_error = BLOCK_ERR_REPORT;
     if ((buf = qemu_opt_get(opts, "rerror")) != NULL) {
-        if (type != IF_IDE && type != IF_VIRTIO && type != IF_NONE) {
-            fprintf(stderr, "rerror is no supported by this format\n");
+        if (type != IF_IDE && type != IF_VIRTIO && type != IF_SCSI && type != IF_NONE) {
+            error_report("rerror is not supported by this bus type");
             return NULL;
         }
 
@@ -339,7 +391,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     if ((devaddr = qemu_opt_get(opts, "addr")) != NULL) {
         if (type != IF_VIRTIO) {
-            fprintf(stderr, "addr is not supported\n");
+            error_report("addr is not supported by this bus type");
             return NULL;
         }
     }
@@ -348,18 +400,11 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     if (index != -1) {
         if (bus_id != 0 || unit_id != -1) {
-            fprintf(stderr,
-                    "qemu: index cannot be used with bus and unit\n");
+            error_report("index cannot be used with bus and unit");
             return NULL;
         }
-        if (max_devs == 0)
-        {
-            unit_id = index;
-            bus_id = 0;
-        } else {
-            unit_id = index % max_devs;
-            bus_id = index / max_devs;
-        }
+        bus_id = drive_index_to_bus_id(type, index);
+        unit_id = drive_index_to_unit_id(type, index);
     }
 
     /* if user doesn't specify a unit_id,
@@ -380,17 +425,18 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
     /* check unit id */
 
     if (max_devs && unit_id >= max_devs) {
-        fprintf(stderr, "qemu: unit %d too big (max is %d)\n",
-                unit_id, max_devs - 1);
+        error_report("unit %d too big (max is %d)",
+                     unit_id, max_devs - 1);
         return NULL;
     }
 
     /*
-     * ignore multiple definitions
+     * catch multiple definitions
      */
 
     if (drive_get(type, bus_id, unit_id) != NULL) {
-        *fatal_error = 0;
+        error_report("drive with bus=%d, unit=%d (index=%d) exists",
+                     bus_id, unit_id, index);
         return NULL;
     }
 
@@ -417,6 +463,7 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
     dinfo->bus = bus_id;
     dinfo->unit = unit_id;
     dinfo->opts = opts;
+    dinfo->refcount = 1;
     if (serial)
         strncpy(dinfo->serial, serial, sizeof(dinfo->serial) - 1);
     QTAILQ_INSERT_TAIL(&drives, dinfo, next);
@@ -436,7 +483,8 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
             }
 	    break;
 	case MEDIA_CDROM:
-            bdrv_set_type_hint(dinfo->bdrv, BDRV_TYPE_CDROM);
+            bdrv_set_removable(dinfo->bdrv, 1);
+            dinfo->media_cd = 1;
 	    break;
 	}
         break;
@@ -444,25 +492,24 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
         /* FIXME: This isn't really a floppy, but it's a reasonable
            approximation.  */
     case IF_FLOPPY:
-        bdrv_set_type_hint(dinfo->bdrv, BDRV_TYPE_FLOPPY);
+        bdrv_set_removable(dinfo->bdrv, 1);
         break;
     case IF_PFLASH:
     case IF_MTD:
         break;
     case IF_VIRTIO:
         /* add virtio block device */
-        opts = qemu_opts_create(&qemu_device_opts, NULL, 0);
-        qemu_opt_set(opts, "driver", "virtio-blk-pci");
+        opts = qemu_opts_create(qemu_find_opts("device"), NULL, 0);
+        qemu_opt_set(opts, "driver", "virtio-blk");
         qemu_opt_set(opts, "drive", dinfo->id);
         if (devaddr)
             qemu_opt_set(opts, "addr", devaddr);
         break;
-    case IF_COUNT:
+    default:
         abort();
     }
     if (!file || !*file) {
-        *fatal_error = 0;
-        return NULL;
+        return dinfo;
     }
     if (snapshot) {
         /* always use cache=unsafe with snapshot */
@@ -475,8 +522,8 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
         ro = 1;
     } else if (ro == 1) {
         if (type != IF_SCSI && type != IF_VIRTIO && type != IF_FLOPPY && type != IF_NONE) {
-            fprintf(stderr, "qemu: readonly flag not supported for drive with this interface\n");
-            return NULL;
+            error_report("readonly not supported by this bus type");
+            goto err;
         }
     }
 
@@ -484,15 +531,21 @@ DriveInfo *drive_init(QemuOpts *opts, int default_to_scsi, int *fatal_error)
 
     ret = bdrv_open(dinfo->bdrv, file, bdrv_flags, drv);
     if (ret < 0) {
-        fprintf(stderr, "qemu: could not open disk image %s: %s\n",
-                        file, strerror(-ret));
-        return NULL;
+        error_report("could not open disk image %s: %s",
+                     file, strerror(-ret));
+        goto err;
     }
 
     if (bdrv_key_required(dinfo->bdrv))
         autostart = 0;
-    *fatal_error = 0;
     return dinfo;
+
+err:
+    bdrv_delete(dinfo->bdrv);
+    qemu_free(dinfo->id);
+    QTAILQ_REMOVE(&drives, dinfo, next);
+    qemu_free(dinfo);
+    return NULL;
 }
 
 void do_commit(Monitor *mon, const QDict *qdict)
@@ -510,6 +563,85 @@ void do_commit(Monitor *mon, const QDict *qdict)
         }
         bdrv_commit(bs);
     }
+}
+
+int do_snapshot_blkdev(Monitor *mon, const QDict *qdict, QObject **ret_data)
+{
+    const char *device = qdict_get_str(qdict, "device");
+    const char *filename = qdict_get_try_str(qdict, "snapshot-file");
+    const char *format = qdict_get_try_str(qdict, "format");
+    BlockDriverState *bs;
+    BlockDriver *drv, *old_drv, *proto_drv;
+    int ret = 0;
+    int flags;
+    char old_filename[1024];
+
+    if (!filename) {
+        qerror_report(QERR_MISSING_PARAMETER, "snapshot-file");
+        ret = -1;
+        goto out;
+    }
+
+    bs = bdrv_find(device);
+    if (!bs) {
+        qerror_report(QERR_DEVICE_NOT_FOUND, device);
+        ret = -1;
+        goto out;
+    }
+
+    pstrcpy(old_filename, sizeof(old_filename), bs->filename);
+
+    old_drv = bs->drv;
+    flags = bs->open_flags;
+
+    if (!format) {
+        format = "qcow2";
+    }
+
+    drv = bdrv_find_format(format);
+    if (!drv) {
+        qerror_report(QERR_INVALID_BLOCK_FORMAT, format);
+        ret = -1;
+        goto out;
+    }
+
+    proto_drv = bdrv_find_protocol(filename);
+    if (!proto_drv) {
+        qerror_report(QERR_INVALID_BLOCK_FORMAT, format);
+        ret = -1;
+        goto out;
+    }
+
+    ret = bdrv_img_create(filename, format, bs->filename,
+                          bs->drv->format_name, NULL, -1, flags);
+    if (ret) {
+        goto out;
+    }
+
+    qemu_aio_flush();
+    bdrv_flush(bs);
+
+    bdrv_close(bs);
+    ret = bdrv_open(bs, filename, flags, drv);
+    /*
+     * If reopening the image file we just created fails, fall back
+     * and try to re-open the original image. If that fails too, we
+     * are in serious trouble.
+     */
+    if (ret != 0) {
+        ret = bdrv_open(bs, old_filename, flags, old_drv);
+        if (ret != 0) {
+            qerror_report(QERR_OPEN_FILE_FAILED, old_filename);
+        } else {
+            qerror_report(QERR_OPEN_FILE_FAILED, filename);
+        }
+    }
+out:
+    if (ret) {
+        ret = -1;
+    }
+
+    return ret;
 }
 
 static int eject_device(Monitor *mon, BlockDriverState *bs, int force)
@@ -596,4 +728,68 @@ int do_change_block(Monitor *mon, const char *device,
         return -1;
     }
     return monitor_read_bdrv_key_start(mon, bs, NULL, NULL);
+}
+
+int do_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data)
+{
+    const char *id = qdict_get_str(qdict, "id");
+    BlockDriverState *bs;
+
+    bs = bdrv_find(id);
+    if (!bs) {
+        qerror_report(QERR_DEVICE_NOT_FOUND, id);
+        return -1;
+    }
+    if (bdrv_in_use(bs)) {
+        qerror_report(QERR_DEVICE_IN_USE, id);
+        return -1;
+    }
+
+    /* quiesce block driver; prevent further io */
+    qemu_aio_flush();
+    bdrv_flush(bs);
+    bdrv_close(bs);
+
+    /* if we have a device associated with this BlockDriverState (bs->peer)
+     * then we need to make the drive anonymous until the device
+     * can be removed.  If this is a drive with no device backing
+     * then we can just get rid of the block driver state right here.
+     */
+    if (bs->peer) {
+        bdrv_make_anon(bs);
+    } else {
+        drive_uninit(drive_get_by_blockdev(bs));
+    }
+
+    return 0;
+}
+
+/*
+ * XXX: replace the QERR_UNDEFINED_ERROR errors with real values once the
+ * existing QERR_ macro mess is cleaned up.  A good example for better
+ * error reports can be found in the qemu-img resize code.
+ */
+int do_block_resize(Monitor *mon, const QDict *qdict, QObject **ret_data)
+{
+    const char *device = qdict_get_str(qdict, "device");
+    int64_t size = qdict_get_int(qdict, "size");
+    BlockDriverState *bs;
+
+    bs = bdrv_find(device);
+    if (!bs) {
+        qerror_report(QERR_DEVICE_NOT_FOUND, device);
+        return -1;
+    }
+
+    if (size < 0) {
+        qerror_report(QERR_UNDEFINED_ERROR);
+        return -1;
+    }
+
+    if (bdrv_truncate(bs, size)) {
+        qerror_report(QERR_UNDEFINED_ERROR);
+        return -1;
+    }
+
+    return 0;
 }

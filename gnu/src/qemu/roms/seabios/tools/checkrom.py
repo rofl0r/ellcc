@@ -14,10 +14,7 @@ def main():
 
     # Read in symbols
     objinfofile = open(objinfo, 'rb')
-    symbols = layoutrom.parseObjDump(objinfofile)[1]
-    syms = {}
-    for name, (addr, section) in symbols.items():
-        syms[name] = addr
+    symbols = layoutrom.parseObjDump(objinfofile, 'in')[1]
 
     # Read in raw file
     f = open(rawfile, 'rb')
@@ -27,10 +24,12 @@ def main():
     finalsize = 64*1024
     if datasize > 64*1024:
         finalsize = 128*1024
+        if datasize > 128*1024:
+            finalsize = 256*1024
 
     # Sanity checks
-    start = syms['code32flat_start']
-    end = syms['code32flat_end']
+    start = symbols['code32flat_start'].offset
+    end = symbols['code32flat_end'].offset
     expend = layoutrom.BUILD_BIOS_ADDR + layoutrom.BUILD_BIOS_SIZE
     if end != expend:
         print "Error!  Code does not end at 0x%x (got 0x%x)" % (
@@ -47,8 +46,11 @@ def main():
         sys.exit(1)
 
     # Print statistics
-    print "Total size: %d  Free space: %d  Percent used: %.1f%% (%dKiB rom)" % (
-        datasize, finalsize - datasize
+    runtimesize = datasize
+    if '_reloc_abs_start' in symbols:
+        runtimesize = end - symbols['code32init_end'].offset
+    print "Total size: %d  Fixed: %d  Free: %d (used %.1f%% of %dKiB rom)" % (
+        datasize, runtimesize, finalsize - datasize
         , (datasize / float(finalsize)) * 100.0
         , finalsize / 1024)
 

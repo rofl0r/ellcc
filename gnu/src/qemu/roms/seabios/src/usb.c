@@ -94,7 +94,7 @@ alloc_bulk_pipe(struct usb_pipe *pipe, struct usb_endpoint_descriptor *epdesc)
     case USB_TYPE_UHCI:
         return uhci_alloc_bulk_pipe(&dummy);
     case USB_TYPE_OHCI:
-        return NULL;
+        return ohci_alloc_bulk_pipe(&dummy);
     case USB_TYPE_EHCI:
         return ehci_alloc_bulk_pipe(&dummy);
     }
@@ -108,7 +108,7 @@ usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
     case USB_TYPE_UHCI:
         return uhci_send_bulk(pipe_fl, dir, data, datasize);
     case USB_TYPE_OHCI:
-        return -1;
+        return ohci_send_bulk(pipe_fl, dir, data, datasize);
     case USB_TYPE_EHCI:
         return ehci_send_bulk(pipe_fl, dir, data, datasize);
     }
@@ -259,6 +259,7 @@ usb_set_address(struct usbhub_s *hub, int port, int speed)
         dummy.cntl = cntl;
         dummy.type = cntl->type;
         dummy.maxpacket = 8;
+        dummy.path = (u64)-1;
         cntl->defaultpipe = defpipe = alloc_default_control_pipe(&dummy);
         if (!defpipe)
             return NULL;
@@ -294,6 +295,9 @@ usb_set_address(struct usbhub_s *hub, int port, int speed)
     defpipe->devaddr = cntl->maxaddr;
     struct usb_pipe *pipe = alloc_default_control_pipe(defpipe);
     defpipe->devaddr = 0;
+    if (hub->pipe)
+        pipe->path = hub->pipe->path;
+    pipe->path = (pipe->path << 8) | port;
     return pipe;
 }
 
@@ -422,8 +426,6 @@ usb_setup(void)
         return;
 
     dprintf(3, "init usb\n");
-
-    usb_hid_setup();
 
     // Look for USB controllers
     int ehcibdf = -1;

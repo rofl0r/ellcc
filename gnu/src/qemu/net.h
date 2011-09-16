@@ -17,23 +17,27 @@ typedef struct NICConf {
     MACAddr macaddr;
     VLANState *vlan;
     VLANClientState *peer;
+    int32_t bootindex;
 } NICConf;
 
 #define DEFINE_NIC_PROPERTIES(_state, _conf)                            \
     DEFINE_PROP_MACADDR("mac",   _state, _conf.macaddr),                \
     DEFINE_PROP_VLAN("vlan",     _state, _conf.vlan),                   \
-    DEFINE_PROP_NETDEV("netdev", _state, _conf.peer)
+    DEFINE_PROP_NETDEV("netdev", _state, _conf.peer),                   \
+    DEFINE_PROP_INT32("bootindex", _state, _conf.bootindex, -1)
 
 /* VLANs support */
 
 typedef enum {
     NET_CLIENT_TYPE_NONE,
     NET_CLIENT_TYPE_NIC,
-    NET_CLIENT_TYPE_SLIRP,
+    NET_CLIENT_TYPE_USER,
     NET_CLIENT_TYPE_TAP,
     NET_CLIENT_TYPE_SOCKET,
     NET_CLIENT_TYPE_VDE,
-    NET_CLIENT_TYPE_DUMP
+    NET_CLIENT_TYPE_DUMP,
+
+    NET_CLIENT_TYPE_MAX
 } net_client_type;
 
 typedef void (NetPoll)(VLANClientState *, bool enable);
@@ -125,13 +129,14 @@ int do_set_link(Monitor *mon, const QDict *qdict, QObject **ret_data);
 #define MAX_NICS 8
 
 struct NICInfo {
-    uint8_t macaddr[6];
+    MACAddr macaddr;
     char *model;
     char *name;
     char *devaddr;
     VLANState *vlan;
     VLANClientState *netdev;
-    int used;
+    int used;         /* is this slot in nd_table[] being used? */
+    int instantiated; /* does this NICInfo correspond to an instantiated NIC? */
     int nvectors;
 };
 

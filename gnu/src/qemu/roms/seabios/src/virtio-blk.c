@@ -13,7 +13,7 @@
 #include "biosvar.h" // GET_GLOBAL
 #include "pci_ids.h" // PCI_DEVICE_ID_VIRTIO_BLK
 #include "pci_regs.h" // PCI_VENDOR_ID
-#include "boot.h" // add_bcv_internal
+#include "boot.h" // boot_add_hd
 #include "virtio-pci.h"
 #include "virtio-ring.h"
 #include "virtio-blk.h"
@@ -26,13 +26,13 @@ struct virtiodrive_s {
 };
 
 static int
-virtio_blk_read(struct disk_op_s *op)
+virtio_blk_op(struct disk_op_s *op, int write)
 {
     struct virtiodrive_s *vdrive_g =
         container_of(op->drive_g, struct virtiodrive_s, drive);
     struct vring_virtqueue *vq = GET_GLOBAL(vdrive_g->vq);
     struct virtio_blk_outhdr hdr = {
-        .type = VIRTIO_BLK_T_IN,
+        .type = write ? VIRTIO_BLK_T_OUT : VIRTIO_BLK_T_IN,
         .ioprio = 0,
         .sector = op->lba,
     };
@@ -53,7 +53,10 @@ virtio_blk_read(struct disk_op_s *op)
     };
 
     /* Add to virtqueue and kick host */
-    vring_add_buf(vq, sg, 1, 2, 0, 0);
+    if (write)
+        vring_add_buf(vq, sg, 2, 1, 0, 0);
+    else
+        vring_add_buf(vq, sg, 1, 2, 0, 0);
     vring_kick(GET_GLOBAL(vdrive_g->ioaddr), vq, 1);
 
     /* Wait for reply */
@@ -78,10 +81,10 @@ process_virtio_op(struct disk_op_s *op)
         return 0;
     switch (op->command) {
     case CMD_READ:
-        return virtio_blk_read(op);
-    case CMD_FORMAT:
+        return virtio_blk_op(op, 0);
     case CMD_WRITE:
-        return DISK_RET_EWRITEPROTECT;
+        return virtio_blk_op(op, 1);
+    case CMD_FORMAT:
     case CMD_RESET:
     case CMD_ISREADY:
     case CMD_VERIFY:
@@ -98,14 +101,14 @@ init_virtio_blk(u16 bdf)
 {
     dprintf(1, "found virtio-blk at %x:%x\n", pci_bdf_to_bus(bdf),
             pci_bdf_to_dev(bdf));
-    char *desc = malloc_tmphigh(MAXDESCSIZE);
     struct virtiodrive_s *vdrive_g = malloc_fseg(sizeof(*vdrive_g));
     struct vring_virtqueue *vq = memalign_low(PAGE_SIZE, sizeof(*vq));
-    if (!vdrive_g || !desc || !vq) {
+    if (!vdrive_g || !vq) {
         warn_noalloc();
         goto fail;
     }
     memset(vdrive_g, 0, sizeof(*vdrive_g));
+    memset(vq, 0, sizeof(*vq));
     vdrive_g->drive.type = DTYPE_VIRTIO;
     vdrive_g->drive.cntl_id = bdf;
     vdrive_g->vq = vq;
@@ -147,14 +150,10 @@ init_virtio_blk(u16 bdf)
     vdrive_g->drive.pchs.cylinders = cfg.cylinders;
     vdrive_g->drive.pchs.heads = cfg.heads;
     vdrive_g->drive.pchs.spt = cfg.sectors;
+    char *desc = znprintf(MAXDESCSIZE, "Virtio disk PCI:%x:%x",
+                          pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf));
 
-    setup_translation(&vdrive_g->drive);
-    add_bcv_internal(&vdrive_g->drive);
-
-    snprintf(desc, MAXDESCSIZE, "Virtio disk PCI:%x:%x",
-             pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf));
-
-    vdrive_g->drive.desc = desc;
+    boot_add_hd(&vdrive_g->drive, desc, bootprio_find_pci_device(bdf));
 
     vp_set_status(ioaddr, VIRTIO_CONFIG_S_ACKNOWLEDGE |
                   VIRTIO_CONFIG_S_DRIVER | VIRTIO_CONFIG_S_DRIVER_OK);
@@ -162,7 +161,6 @@ init_virtio_blk(u16 bdf)
 
 fail:
     free(vdrive_g);
-    free(desc);
     free(vq);
 }
 

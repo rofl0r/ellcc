@@ -31,6 +31,7 @@
 /*needed for MAP_POPULATE before including qemu-options.h */
 #include <sys/mman.h>
 #include <pwd.h>
+#include <grp.h>
 #include <libgen.h>
 
 /* Needed early for CONFIG_BSD etc. */
@@ -41,6 +42,11 @@
 
 #ifdef CONFIG_LINUX
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#endif
+
+#ifdef CONFIG_EVENTFD
+#include <sys/eventfd.h>
 #endif
 
 static struct passwd *user_pwd;
@@ -57,14 +63,9 @@ void os_setup_early_signal_handling(void)
     sigaction(SIGPIPE, &act, NULL);
 }
 
-static void termsig_handler(int signal)
+static void termsig_handler(int signal, siginfo_t *info, void *c)
 {
-    qemu_system_shutdown_request();
-}
-
-static void sigchld_handler(int signal)
-{
-    waitpid(-1, NULL, WNOHANG);
+    qemu_system_killed(info->si_signo, info->si_pid);
 }
 
 void os_setup_signal_handling(void)
@@ -72,14 +73,11 @@ void os_setup_signal_handling(void)
     struct sigaction act;
 
     memset(&act, 0, sizeof(act));
-    act.sa_handler = termsig_handler;
+    act.sa_sigaction = termsig_handler;
+    act.sa_flags = SA_SIGINFO;
     sigaction(SIGINT,  &act, NULL);
     sigaction(SIGHUP,  &act, NULL);
     sigaction(SIGTERM, &act, NULL);
-
-    act.sa_handler = sigchld_handler;
-    act.sa_flags = SA_NOCLDSTOP;
-    sigaction(SIGCHLD, &act, NULL);
 }
 
 /* Find a likely location for support files using the location of the binary.
@@ -110,7 +108,7 @@ char *os_find_datadir(const char *argv0)
         size_t len = sizeof(buf) - 1;
 
         *buf = '\0';
-        if (!sysctl(mib, sizeof(mib)/sizeof(*mib), buf, &len, NULL, 0) &&
+        if (!sysctl(mib, ARRAY_SIZE(mib), buf, &len, NULL, 0) &&
             *buf) {
             buf[sizeof(buf) - 1] = '\0';
             p = buf;
@@ -200,6 +198,11 @@ static void change_process_uid(void)
     if (user_pwd) {
         if (setgid(user_pwd->pw_gid) < 0) {
             fprintf(stderr, "Failed to setgid(%d)\n", user_pwd->pw_gid);
+            exit(1);
+        }
+        if (initgroups(user_pwd->pw_name, user_pwd->pw_gid) < 0) {
+            fprintf(stderr, "Failed to initgroups(\"%s\", %d)\n",
+                    user_pwd->pw_name, user_pwd->pw_gid);
             exit(1);
         }
         if (setuid(user_pwd->pw_uid) < 0) {
@@ -328,4 +331,62 @@ void os_pidfile_error(void)
 void os_set_line_buffering(void)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
+}
+
+/*
+ * Creates an eventfd that looks like a pipe and has EFD_CLOEXEC set.
+ */
+int qemu_eventfd(int fds[2])
+{
+#ifdef CONFIG_EVENTFD
+    int ret;
+
+    ret = eventfd(0, 0);
+    if (ret >= 0) {
+        fds[0] = ret;
+        qemu_set_cloexec(ret);
+        if ((fds[1] = dup(ret)) == -1) {
+            close(ret);
+            return -1;
+        }
+        qemu_set_cloexec(fds[1]);
+        return 0;
+    }
+
+    if (errno != ENOSYS) {
+        return -1;
+    }
+#endif
+
+    return qemu_pipe(fds);
+}
+
+int qemu_create_pidfile(const char *filename)
+{
+    char buffer[128];
+    int len;
+    int fd;
+
+    fd = qemu_open(filename, O_RDWR | O_CREAT, 0600);
+    if (fd == -1) {
+        return -1;
+    }
+    if (lockf(fd, F_TLOCK, 0) == -1) {
+        return -1;
+    }
+    len = snprintf(buffer, sizeof(buffer), FMT_pid "\n", getpid());
+    if (write(fd, buffer, len) != len) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int qemu_get_thread_id(void)
+{
+#if defined (__linux__)
+    return syscall(SYS_gettid);
+#else
+    return getpid();
+#endif
 }

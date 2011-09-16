@@ -35,9 +35,10 @@ DEF_HELPER_2(check_align, void, tl, i32)
 DEF_HELPER_0(debug, void)
 DEF_HELPER_0(save, void)
 DEF_HELPER_0(restore, void)
-DEF_HELPER_1(flush, void, tl)
 DEF_HELPER_2(udiv, tl, tl, tl)
+DEF_HELPER_2(udiv_cc, tl, tl, tl)
 DEF_HELPER_2(sdiv, tl, tl, tl)
+DEF_HELPER_2(sdiv_cc, tl, tl, tl)
 DEF_HELPER_2(stdf, void, tl, int)
 DEF_HELPER_2(lddf, void, tl, int)
 DEF_HELPER_2(ldqf, void, tl, int)
@@ -83,6 +84,7 @@ DEF_HELPER_0(fcmpeq_fcc2, void)
 DEF_HELPER_0(fcmpeq_fcc3, void)
 #endif
 DEF_HELPER_1(raise_exception, void, int)
+DEF_HELPER_0(shutdown, void)
 #define F_HELPER_0_0(name) DEF_HELPER_0(f ## name, void)
 #define F_HELPER_DQ_0_0(name)                   \
     F_HELPER_0_0(name ## d);                    \
@@ -146,8 +148,8 @@ F_HELPER_0_0(expand);
 VIS_HELPER(padd);
 VIS_HELPER(psub);
 #define VIS_CMPHELPER(name)                              \
-    F_HELPER_0_0(name##16);                              \
-    F_HELPER_0_0(name##32)
+    DEF_HELPER_0(f##name##16, i64);                      \
+    DEF_HELPER_0(f##name##32, i64)
 VIS_CMPHELPER(cmpgt);
 VIS_CMPHELPER(cmpeq);
 VIS_CMPHELPER(cmple);

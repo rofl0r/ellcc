@@ -9,6 +9,7 @@
 #include "ioport.h" // outl
 #include "util.h" // dprintf
 #include "config.h" // CONFIG_*
+#include "farptr.h" // CONFIG_*
 #include "pci_regs.h" // PCI_VENDOR_ID
 #include "pci_ids.h" // PCI_CLASS_DISPLAY_VGA
 
@@ -184,6 +185,36 @@ pci_find_class(u16 classid)
     return -1;
 }
 
+int *PCIpaths;
+
+// Build the PCI path designations.
+void
+pci_path_setup(void)
+{
+    PCIpaths = malloc_tmp(sizeof(*PCIpaths) * 256);
+    if (!PCIpaths)
+        return;
+    memset(PCIpaths, 0, sizeof(*PCIpaths) * 256);
+
+    int roots = 0;
+    int bdf, max;
+    foreachpci(bdf, max) {
+        int bus = pci_bdf_to_bus(bdf);
+        if (! PCIpaths[bus])
+            PCIpaths[bus] = (roots++) | PP_ROOT;
+
+        // Check if found device is a bridge.
+        u32 v = pci_config_readb(bdf, PCI_HEADER_TYPE);
+        v &= 0x7f;
+        if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
+            v = pci_config_readl(bdf, PCI_PRIMARY_BUS);
+            int childbus = (v >> 8) & 0xff;
+            if (childbus > bus)
+                PCIpaths[childbus] = bdf | PP_PCIBRIDGE;
+        }
+    }
+}
+
 int pci_init_device(const struct pci_device_id *ids, u16 bdf, void *arg)
 {
     u16 vendor_id = pci_config_readw(bdf, PCI_VENDOR_ID);
@@ -202,4 +233,72 @@ int pci_init_device(const struct pci_device_id *ids, u16 bdf, void *arg)
         ids++;
     }
     return -1;
+}
+
+int pci_find_init_device(const struct pci_device_id *ids, void *arg)
+{
+    int bdf, max;
+
+    foreachpci(bdf, max) {
+        if (pci_init_device(ids, bdf, arg) == 0) {
+            return bdf;
+        }
+    }
+    return -1;
+}
+
+void
+pci_reboot(void)
+{
+    u8 v = inb(PORT_PCI_REBOOT) & ~6;
+    outb(v|2, PORT_PCI_REBOOT); /* Request hard reset */
+    udelay(50);
+    outb(v|6, PORT_PCI_REBOOT); /* Actually do the reset */
+    udelay(50);
+}
+
+// helper functions to access pci mmio bars from real mode
+
+u32 VISIBLE32FLAT
+pci_readl_32(u32 addr)
+{
+    dprintf(3, "32: pci read : %x\n", addr);
+    return readl((void*)addr);
+}
+
+u32 pci_readl(u32 addr)
+{
+    if (MODESEGMENT) {
+        dprintf(3, "16: pci read : %x\n", addr);
+        extern void _cfunc32flat_pci_readl_32(u32 addr);
+        return call32(_cfunc32flat_pci_readl_32, addr, -1);
+    } else {
+        return pci_readl_32(addr);
+    }
+}
+
+struct reg32 {
+    u32 addr;
+    u32 data;
+};
+
+void VISIBLE32FLAT
+pci_writel_32(struct reg32 *reg32)
+{
+    dprintf(3, "32: pci write: %x, %x (%p)\n", reg32->addr, reg32->data, reg32);
+    writel((void*)(reg32->addr), reg32->data);
+}
+
+void pci_writel(u32 addr, u32 val)
+{
+    struct reg32 reg32 = { .addr = addr, .data = val };
+    if (MODESEGMENT) {
+        dprintf(3, "16: pci write: %x, %x (%x:%p)\n",
+                reg32.addr, reg32.data, GET_SEG(SS), &reg32);
+        void *flatptr = MAKE_FLATPTR(GET_SEG(SS), &reg32);
+        extern void _cfunc32flat_pci_writel_32(struct reg32 *reg32);
+        call32(_cfunc32flat_pci_writel_32, (u32)flatptr, -1);
+    } else {
+        pci_writel_32(&reg32);
+    }
 }

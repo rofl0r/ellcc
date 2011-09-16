@@ -235,7 +235,7 @@ disk_1308(struct bregs *regs, struct drive_s *drive_g)
     u8 count;
     if (regs->dl < EXTSTART_HD) {
         // Floppy
-        count = GET_GLOBAL(Drives.floppycount);
+        count = GET_GLOBAL(FloppyCount);
 
         if (CONFIG_CDROM_EMU
             && drive_g == GLOBALFLAT2GLOBAL(GET_GLOBAL(cdemu_drive_gf)))
@@ -503,6 +503,7 @@ static void
 disk_1348(struct bregs *regs, struct drive_s *drive_g)
 {
     u16 size = GET_INT13DPT(regs, size);
+    u16 t13 = size == 74;
 
     // Buffer is too small
     if (size < 26) {
@@ -544,64 +545,78 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
     }
     SET_INT13DPT(regs, blksize, blksize);
 
-    if (size < 30 || (type != DTYPE_ATA && type != DTYPE_ATAPI)) {
+    if (size < 30 ||
+        (type != DTYPE_ATA && type != DTYPE_ATAPI && type != DTYPE_VIRTIO)) {
         disk_ret(regs, DISK_RET_SUCCESS);
         return;
     }
 
     // EDD 2.x
 
-    u16 ebda_seg = get_ebda_seg();
+    int bdf;
+    u16 iobase1 = 0;
+    u64 device_path = 0;
+    u8 channel = 0;
     SET_INT13DPT(regs, size, 30);
+    if (type == DTYPE_ATA || type == DTYPE_ATAPI) {
+        u16 ebda_seg = get_ebda_seg();
 
-    SET_INT13DPT(regs, dpte_segment, ebda_seg);
-    SET_INT13DPT(regs, dpte_offset
-                 , offsetof(struct extended_bios_data_area_s, dpte));
+        SET_INT13DPT(regs, dpte_segment, ebda_seg);
+        SET_INT13DPT(regs, dpte_offset
+                     , offsetof(struct extended_bios_data_area_s, dpte));
 
-    // Fill in dpte
-    struct atadrive_s *adrive_g = container_of(
-        drive_g, struct atadrive_s, drive);
-    struct ata_channel_s *chan_gf = GET_GLOBAL(adrive_g->chan_gf);
-    u8 slave = GET_GLOBAL(adrive_g->slave);
-    u16 iobase1 = GET_GLOBALFLAT(chan_gf->iobase1);
-    u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
-    u8 irq = GET_GLOBALFLAT(chan_gf->irq);
+        // Fill in dpte
+        struct atadrive_s *adrive_g = container_of(
+            drive_g, struct atadrive_s, drive);
+        struct ata_channel_s *chan_gf = GET_GLOBAL(adrive_g->chan_gf);
+        u8 slave = GET_GLOBAL(adrive_g->slave);
+        u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
+        u8 irq = GET_GLOBALFLAT(chan_gf->irq);
+        iobase1 = GET_GLOBALFLAT(chan_gf->iobase1);
+        bdf = GET_GLOBALFLAT(chan_gf->pci_bdf);
+        device_path = slave;
+        channel = GET_GLOBALFLAT(chan_gf->chanid);
 
-    u16 options = 0;
-    if (type == DTYPE_ATA) {
-        u8 translation = GET_GLOBAL(drive_g->translation);
-        if (translation != TRANSLATION_NONE) {
-            options |= 1<<3; // CHS translation
-            if (translation == TRANSLATION_LBA)
-                options |= 1<<9;
-            if (translation == TRANSLATION_RECHS)
-                options |= 3<<9;
+        u16 options = 0;
+        if (type == DTYPE_ATA) {
+            u8 translation = GET_GLOBAL(drive_g->translation);
+            if (translation != TRANSLATION_NONE) {
+                options |= 1<<3; // CHS translation
+                if (translation == TRANSLATION_LBA)
+                    options |= 1<<9;
+                if (translation == TRANSLATION_RECHS)
+                    options |= 3<<9;
+            }
+        } else {
+            // ATAPI
+            options |= 1<<5; // removable device
+            options |= 1<<6; // atapi device
         }
+        options |= 1<<4; // lba translation
+        if (CONFIG_ATA_PIO32)
+            options |= 1<<7;
+
+        SET_EBDA2(ebda_seg, dpte.iobase1, iobase1);
+        SET_EBDA2(ebda_seg, dpte.iobase2, iobase2 + ATA_CB_DC);
+        SET_EBDA2(ebda_seg, dpte.prefix, ((slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0)
+                                          | ATA_CB_DH_LBA));
+        SET_EBDA2(ebda_seg, dpte.unused, 0xcb);
+        SET_EBDA2(ebda_seg, dpte.irq, irq);
+        SET_EBDA2(ebda_seg, dpte.blkcount, 1);
+        SET_EBDA2(ebda_seg, dpte.dma, 0);
+        SET_EBDA2(ebda_seg, dpte.pio, 0);
+        SET_EBDA2(ebda_seg, dpte.options, options);
+        SET_EBDA2(ebda_seg, dpte.reserved, 0);
+        SET_EBDA2(ebda_seg, dpte.revision, 0x11);
+
+        u8 sum = checksum_far(
+            ebda_seg, (void*)offsetof(struct extended_bios_data_area_s, dpte), 15);
+        SET_EBDA2(ebda_seg, dpte.checksum, -sum);
     } else {
-        // ATAPI
-        options |= 1<<5; // removable device
-        options |= 1<<6; // atapi device
+        SET_INT13DPT(regs, dpte_segment, 0);
+        SET_INT13DPT(regs, dpte_offset, 0);
+        bdf = GET_GLOBAL(drive_g->cntl_id);
     }
-    options |= 1<<4; // lba translation
-    if (CONFIG_ATA_PIO32)
-        options |= 1<<7;
-
-    SET_EBDA2(ebda_seg, dpte.iobase1, iobase1);
-    SET_EBDA2(ebda_seg, dpte.iobase2, iobase2 + ATA_CB_DC);
-    SET_EBDA2(ebda_seg, dpte.prefix, ((slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0)
-                                      | ATA_CB_DH_LBA));
-    SET_EBDA2(ebda_seg, dpte.unused, 0xcb);
-    SET_EBDA2(ebda_seg, dpte.irq, irq);
-    SET_EBDA2(ebda_seg, dpte.blkcount, 1);
-    SET_EBDA2(ebda_seg, dpte.dma, 0);
-    SET_EBDA2(ebda_seg, dpte.pio, 0);
-    SET_EBDA2(ebda_seg, dpte.options, options);
-    SET_EBDA2(ebda_seg, dpte.reserved, 0);
-    SET_EBDA2(ebda_seg, dpte.revision, 0x11);
-
-    u8 sum = checksum_far(
-        ebda_seg, (void*)offsetof(struct extended_bios_data_area_s, dpte), 15);
-    SET_EBDA2(ebda_seg, dpte.checksum, -sum);
 
     if (size < 66) {
         disk_ret(regs, DISK_RET_SUCCESS);
@@ -610,43 +625,60 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
 
     // EDD 3.x
     SET_INT13DPT(regs, key, 0xbedd);
-    SET_INT13DPT(regs, dpi_length, 36);
+    SET_INT13DPT(regs, dpi_length, t13 ? 44 : 36);
     SET_INT13DPT(regs, reserved1, 0);
     SET_INT13DPT(regs, reserved2, 0);
 
-    int bdf = GET_GLOBALFLAT(chan_gf->pci_bdf);
     if (bdf != -1) {
         SET_INT13DPT(regs, host_bus[0], 'P');
         SET_INT13DPT(regs, host_bus[1], 'C');
         SET_INT13DPT(regs, host_bus[2], 'I');
-        SET_INT13DPT(regs, host_bus[3], 0);
+        SET_INT13DPT(regs, host_bus[3], ' ');
 
         u32 path = (pci_bdf_to_bus(bdf) | (pci_bdf_to_dev(bdf) << 8)
                     | (pci_bdf_to_fn(bdf) << 16));
+        if (t13)
+            path |= channel << 24;
+
         SET_INT13DPT(regs, iface_path, path);
     } else {
         // ISA
         SET_INT13DPT(regs, host_bus[0], 'I');
         SET_INT13DPT(regs, host_bus[1], 'S');
         SET_INT13DPT(regs, host_bus[2], 'A');
-        SET_INT13DPT(regs, host_bus[3], 0);
+        SET_INT13DPT(regs, host_bus[3], ' ');
 
         SET_INT13DPT(regs, iface_path, iobase1);
     }
 
-    SET_INT13DPT(regs, iface_type[0], 'A');
-    SET_INT13DPT(regs, iface_type[1], 'T');
-    SET_INT13DPT(regs, iface_type[2], 'A');
-    SET_INT13DPT(regs, iface_type[3], 0);
-    SET_INT13DPT(regs, iface_type[4], 0);
-    SET_INT13DPT(regs, iface_type[5], 0);
-    SET_INT13DPT(regs, iface_type[6], 0);
-    SET_INT13DPT(regs, iface_type[7], 0);
+    if (type != DTYPE_VIRTIO) {
+        SET_INT13DPT(regs, iface_type[0], 'A');
+        SET_INT13DPT(regs, iface_type[1], 'T');
+        SET_INT13DPT(regs, iface_type[2], 'A');
+        SET_INT13DPT(regs, iface_type[3], ' ');
+    } else {
+        SET_INT13DPT(regs, iface_type[0], 'S');
+        SET_INT13DPT(regs, iface_type[1], 'C');
+        SET_INT13DPT(regs, iface_type[2], 'S');
+        SET_INT13DPT(regs, iface_type[3], 'I');
+    }
+    SET_INT13DPT(regs, iface_type[4], ' ');
+    SET_INT13DPT(regs, iface_type[5], ' ');
+    SET_INT13DPT(regs, iface_type[6], ' ');
+    SET_INT13DPT(regs, iface_type[7], ' ');
 
-    SET_INT13DPT(regs, device_path, slave);
+    if (t13) {
+        SET_INT13DPT(regs, t13.device_path[0], device_path);
+        SET_INT13DPT(regs, t13.device_path[1], 0);
 
-    SET_INT13DPT(regs, checksum
-                 , -checksum_far(regs->ds, (void*)(regs->si+30), 35));
+        SET_INT13DPT(regs, t13.checksum
+                     , -checksum_far(regs->ds, (void*)(regs->si+30), 43));
+    } else {
+        SET_INT13DPT(regs, phoenix.device_path, device_path);
+
+        SET_INT13DPT(regs, phoenix.checksum
+                     , -checksum_far(regs->ds, (void*)(regs->si+30), 35));
+    }
 
     disk_ret(regs, DISK_RET_SUCCESS);
 }

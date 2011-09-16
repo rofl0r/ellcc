@@ -1,6 +1,6 @@
 // Code for manipulating stack locations.
 //
-// Copyright (C) 2009  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2009-2010  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
@@ -15,7 +15,9 @@ struct thread_info {
     void *stackpos;
     struct thread_info **pprev;
 };
-struct thread_info VAR16VISIBLE MainThread;
+struct thread_info VAR32FLATVISIBLE MainThread = {
+    &MainThread, NULL, &MainThread.next
+};
 
 
 /****************************************************************
@@ -35,14 +37,14 @@ static inline void lgdt(struct descloc_s *desc) {
 }
 
 // Call a 32bit SeaBIOS function from a 16bit SeaBIOS function.
-static inline int
-call32(void *func)
+u32
+call32(void *func, u32 eax, u32 errret)
 {
     ASSERT16();
     u32 cr0 = getcr0();
     if (cr0 & CR0_PE)
         // Called in 16bit protected mode?!
-        return -1;
+        return errret;
 
     // Backup cmos index register and disable nmi
     u8 cmosindex = inb(PORT_CMOS_INDEX);
@@ -61,14 +63,14 @@ call32(void *func)
         "  movl %%esp, %1\n"
         "  shll $4, %0\n"
         "  addl %0, %%esp\n"
-        "  movl %%ss, %0\n"
+        "  shrl $4, %0\n"
 
         // Transition to 32bit mode, call func, return to 16bit
-        "  pushl $(" __stringify(BUILD_BIOS_ADDR) " + 1f)\n"
+        "  movl $(" __stringify(BUILD_BIOS_ADDR) " + 1f), %%edx\n"
         "  jmp transition32\n"
         "  .code32\n"
-        "1:calll *%2\n"
-        "  pushl $2f\n"
+        "1:calll *%3\n"
+        "  movl $2f, %%edx\n"
         "  jmp transition16big\n"
 
         // Restore ds/ss/esp
@@ -76,9 +78,9 @@ call32(void *func)
         "2:movl %0, %%ds\n"
         "  movl %0, %%ss\n"
         "  movl %1, %%esp\n"
-        : "=&r" (bkup_ss), "=&r" (bkup_esp)
+        : "=&r" (bkup_ss), "=&r" (bkup_esp), "+a" (eax)
         : "r" (func)
-        : "eax", "ecx", "edx", "cc", "memory");
+        : "ecx", "edx", "cc", "memory");
 
     // Restore gdt and fs/gs
     lgdt(&gdt);
@@ -88,7 +90,7 @@ call32(void *func)
     // Restore cmos index register
     outb(cmosindex, PORT_CMOS_INDEX);
     inb(PORT_CMOS_DATA);
-    return 0;
+    return eax;
 }
 
 // 16bit trampoline for enabling irqs from 32bit mode.
@@ -189,15 +191,6 @@ stack_hop(u32 eax, u32 edx, void *func)
 
 #define THREADSTACKSIZE 4096
 int VAR16VISIBLE CanPreempt;
-
-void
-thread_setup(void)
-{
-    MainThread.next = &MainThread;
-    MainThread.pprev = &MainThread.next;
-    MainThread.stackpos = NULL;
-    CanPreempt = 0;
-}
 
 // Return the 'struct thread_info' for the currently running thread.
 struct thread_info *
@@ -380,16 +373,13 @@ wait_preempt(void)
     return 1;
 }
 
-extern void yield_preempt(void);
-#if MODESEGMENT == 0
 // Try to execute 32bit threads.
-void VISIBLE32FLAT
+void VISIBLE32INIT
 yield_preempt(void)
 {
     PreemptCount++;
     switch_next(&MainThread);
 }
-#endif
 
 // 16bit code that checks if threads are pending and executes them if so.
 void
@@ -397,8 +387,9 @@ check_preempt(void)
 {
     if (! CONFIG_THREADS || ! CONFIG_THREAD_OPTIONROMS
         || !GET_GLOBAL(CanPreempt)
-        || GET_GLOBAL(MainThread.next) == &MainThread)
+        || GET_FLATPTR(MainThread.next) == &MainThread)
         return;
 
-    call32(yield_preempt);
+    extern void _cfunc32flat_yield_preempt(void);
+    call32(_cfunc32flat_yield_preempt, 0, 0);
 }

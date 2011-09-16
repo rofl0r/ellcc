@@ -25,6 +25,8 @@
 #include "soc_dma.h"
 /* We use pc-style serial ports.  */
 #include "pc.h"
+#include "blockdev.h"
+#include "range.h"
 
 /* Should signal the TCMI/GPMC */
 uint32_t omap_badwidth_read8(void *opaque, target_phys_addr_t addr)
@@ -99,7 +101,7 @@ struct omap_mpu_timer_s {
 
 static inline uint32_t omap_timer_read(struct omap_mpu_timer_s *timer)
 {
-    uint64_t distance = qemu_get_clock(vm_clock) - timer->time;
+    uint64_t distance = qemu_get_clock_ns(vm_clock) - timer->time;
 
     if (timer->st && timer->enable && timer->rate)
         return timer->val - muldiv64(distance >> (timer->ptv + 1),
@@ -111,7 +113,7 @@ static inline uint32_t omap_timer_read(struct omap_mpu_timer_s *timer)
 static inline void omap_timer_sync(struct omap_mpu_timer_s *timer)
 {
     timer->val = omap_timer_read(timer);
-    timer->time = qemu_get_clock(vm_clock);
+    timer->time = qemu_get_clock_ns(vm_clock);
 }
 
 static inline void omap_timer_update(struct omap_mpu_timer_s *timer)
@@ -256,13 +258,13 @@ static struct omap_mpu_timer_s *omap_mpu_timer_init(target_phys_addr_t base,
 
     s->irq = irq;
     s->clk = clk;
-    s->timer = qemu_new_timer(vm_clock, omap_timer_tick, s);
+    s->timer = qemu_new_timer_ns(vm_clock, omap_timer_tick, s);
     s->tick = qemu_bh_new(omap_timer_fire, s);
     omap_mpu_timer_reset(s);
     omap_timer_clk_setup(s);
 
     iomemtype = cpu_register_io_memory(omap_mpu_timer_readfn,
-                    omap_mpu_timer_writefn, s);
+                    omap_mpu_timer_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x100, iomemtype);
 
     return s;
@@ -380,12 +382,12 @@ static struct omap_watchdog_timer_s *omap_wd_timer_init(target_phys_addr_t base,
 
     s->timer.irq = irq;
     s->timer.clk = clk;
-    s->timer.timer = qemu_new_timer(vm_clock, omap_timer_tick, &s->timer);
+    s->timer.timer = qemu_new_timer_ns(vm_clock, omap_timer_tick, &s->timer);
     omap_wd_timer_reset(s);
     omap_timer_clk_setup(&s->timer);
 
     iomemtype = cpu_register_io_memory(omap_wd_timer_readfn,
-                    omap_wd_timer_writefn, s);
+                    omap_wd_timer_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x100, iomemtype);
 
     return s;
@@ -482,12 +484,12 @@ static struct omap_32khz_timer_s *omap_os_timer_init(target_phys_addr_t base,
 
     s->timer.irq = irq;
     s->timer.clk = clk;
-    s->timer.timer = qemu_new_timer(vm_clock, omap_timer_tick, &s->timer);
+    s->timer.timer = qemu_new_timer_ns(vm_clock, omap_timer_tick, &s->timer);
     omap_os_timer_reset(s);
     omap_timer_clk_setup(&s->timer);
 
     iomemtype = cpu_register_io_memory(omap_os_timer_readfn,
-                    omap_os_timer_writefn, s);
+                    omap_os_timer_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     return s;
@@ -578,7 +580,7 @@ static void omap_ulpd_pm_write(void *opaque, target_phys_addr_t addr,
     case 0x10:	/* GAUGING_CTRL */
         /* Bits 0 and 1 seem to be confused in the OMAP 310 TRM */
         if ((s->ulpd_pm_regs[addr >> 2] ^ value) & 1) {
-            now = qemu_get_clock(vm_clock);
+            now = qemu_get_clock_ns(vm_clock);
 
             if (value & 1)
                 s->ulpd_gauge_start = now;
@@ -714,7 +716,7 @@ static void omap_ulpd_pm_init(target_phys_addr_t base,
                 struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_ulpd_pm_readfn,
-                    omap_ulpd_pm_writefn, mpu);
+                    omap_ulpd_pm_writefn, mpu, DEVICE_NATIVE_ENDIAN);
 
     cpu_register_physical_memory(base, 0x800, iomemtype);
     omap_ulpd_pm_reset(mpu);
@@ -929,7 +931,7 @@ static void omap_pin_cfg_init(target_phys_addr_t base,
                 struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_pin_cfg_readfn,
-                    omap_pin_cfg_writefn, mpu);
+                    omap_pin_cfg_writefn, mpu, DEVICE_NATIVE_ENDIAN);
 
     cpu_register_physical_memory(base, 0x800, iomemtype);
     omap_pin_cfg_reset(mpu);
@@ -999,7 +1001,7 @@ static CPUWriteMemoryFunc * const omap_id_writefn[] = {
 static void omap_id_init(struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_id_readfn,
-                    omap_id_writefn, mpu);
+                    omap_id_writefn, mpu, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory_offset(0xfffe1800, 0x800, iomemtype, 0xfffe1800);
     cpu_register_physical_memory_offset(0xfffed400, 0x100, iomemtype, 0xfffed400);
     if (!cpu_is_omap15xx(mpu))
@@ -1082,7 +1084,7 @@ static void omap_mpui_init(target_phys_addr_t base,
                 struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_mpui_readfn,
-                    omap_mpui_writefn, mpu);
+                    omap_mpui_writefn, mpu, DEVICE_NATIVE_ENDIAN);
 
     cpu_register_physical_memory(base, 0x100, iomemtype);
 
@@ -1191,7 +1193,7 @@ static struct omap_tipb_bridge_s *omap_tipb_bridge_init(target_phys_addr_t base,
     omap_tipb_bridge_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_tipb_bridge_readfn,
-                    omap_tipb_bridge_writefn, s);
+                    omap_tipb_bridge_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x100, iomemtype);
 
     return s;
@@ -1297,7 +1299,7 @@ static void omap_tcmi_init(target_phys_addr_t base,
                 struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_tcmi_readfn,
-                    omap_tcmi_writefn, mpu);
+                    omap_tcmi_writefn, mpu, DEVICE_NATIVE_ENDIAN);
 
     cpu_register_physical_memory(base, 0x100, iomemtype);
     omap_tcmi_reset(mpu);
@@ -1370,7 +1372,7 @@ static void omap_dpll_init(struct dpll_ctl_s *s, target_phys_addr_t base,
                 omap_clk clk)
 {
     int iomemtype = cpu_register_io_memory(omap_dpll_readfn,
-                    omap_dpll_writefn, s);
+                    omap_dpll_writefn, s, DEVICE_NATIVE_ENDIAN);
 
     s->dpll = clk;
     omap_dpll_reset(s);
@@ -1774,8 +1776,10 @@ static void omap_clkm_init(target_phys_addr_t mpu_base,
                 target_phys_addr_t dsp_base, struct omap_mpu_state_s *s)
 {
     int iomemtype[2] = {
-        cpu_register_io_memory(omap_clkm_readfn, omap_clkm_writefn, s),
-        cpu_register_io_memory(omap_clkdsp_readfn, omap_clkdsp_writefn, s),
+        cpu_register_io_memory(omap_clkm_readfn, omap_clkm_writefn, s,
+                               DEVICE_NATIVE_ENDIAN),
+        cpu_register_io_memory(omap_clkdsp_readfn, omap_clkdsp_writefn, s,
+                               DEVICE_NATIVE_ENDIAN),
     };
 
     s->clkm.arm_idlect1 = 0x03ff;
@@ -2029,7 +2033,7 @@ struct omap_mpuio_s *omap_mpuio_init(target_phys_addr_t base,
     omap_mpuio_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_mpuio_readfn,
-                    omap_mpuio_writefn, s);
+                    omap_mpuio_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     omap_clk_adduser(clk, qemu_allocate_irqs(omap_mpuio_onoff, s, 1)[0]);
@@ -2214,7 +2218,7 @@ struct omap_uwire_s *omap_uwire_init(target_phys_addr_t base,
     omap_uwire_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_uwire_readfn,
-                    omap_uwire_writefn, s);
+                    omap_uwire_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     return s;
@@ -2315,7 +2319,7 @@ static void omap_pwl_init(target_phys_addr_t base, struct omap_mpu_state_s *s,
     omap_pwl_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_pwl_readfn,
-                    omap_pwl_writefn, s);
+                    omap_pwl_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     omap_clk_adduser(clk, qemu_allocate_irqs(omap_pwl_clk_update, s, 1)[0]);
@@ -2410,7 +2414,7 @@ static void omap_pwt_init(target_phys_addr_t base, struct omap_mpu_state_s *s,
     omap_pwt_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_pwt_readfn,
-                    omap_pwt_writefn, s);
+                    omap_pwt_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 }
 
@@ -2798,7 +2802,7 @@ static void omap_rtc_reset(struct omap_rtc_s *s)
     s->pm_am = 0;
     s->auto_comp = 0;
     s->round = 0;
-    s->tick = qemu_get_clock(rt_clock);
+    s->tick = qemu_get_clock_ms(rt_clock);
     memset(&s->alarm_tm, 0, sizeof(s->alarm_tm));
     s->alarm_tm.tm_mday = 0x01;
     s->status = 1 << 7;
@@ -2818,12 +2822,12 @@ static struct omap_rtc_s *omap_rtc_init(target_phys_addr_t base,
 
     s->irq = irq[0];
     s->alarm = irq[1];
-    s->clk = qemu_new_timer(rt_clock, omap_rtc_tick, s);
+    s->clk = qemu_new_timer_ms(rt_clock, omap_rtc_tick, s);
 
     omap_rtc_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_rtc_readfn,
-                    omap_rtc_writefn, s);
+                    omap_rtc_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     return s;
@@ -2911,7 +2915,7 @@ static void omap_mcbsp_source_tick(void *opaque)
     s->rx_req = s->rx_rate << bps[(s->rcr[0] >> 5) & 7];
 
     omap_mcbsp_rx_newdata(s);
-    qemu_mod_timer(s->source_timer, qemu_get_clock(vm_clock) +
+    qemu_mod_timer(s->source_timer, qemu_get_clock_ns(vm_clock) +
                    get_ticks_per_sec());
 }
 
@@ -2957,7 +2961,7 @@ static void omap_mcbsp_sink_tick(void *opaque)
     s->tx_req = s->tx_rate << bps[(s->xcr[0] >> 5) & 7];
 
     omap_mcbsp_tx_newdata(s);
-    qemu_mod_timer(s->sink_timer, qemu_get_clock(vm_clock) +
+    qemu_mod_timer(s->sink_timer, qemu_get_clock_ns(vm_clock) +
                    get_ticks_per_sec());
 }
 
@@ -3340,12 +3344,12 @@ struct omap_mcbsp_s *omap_mcbsp_init(target_phys_addr_t base,
     s->rxirq = irq[1];
     s->txdrq = dma[0];
     s->rxdrq = dma[1];
-    s->sink_timer = qemu_new_timer(vm_clock, omap_mcbsp_sink_tick, s);
-    s->source_timer = qemu_new_timer(vm_clock, omap_mcbsp_source_tick, s);
+    s->sink_timer = qemu_new_timer_ns(vm_clock, omap_mcbsp_sink_tick, s);
+    s->source_timer = qemu_new_timer_ns(vm_clock, omap_mcbsp_source_tick, s);
     omap_mcbsp_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_mcbsp_readfn,
-                    omap_mcbsp_writefn, s);
+                    omap_mcbsp_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     return s;
@@ -3395,9 +3399,9 @@ static void omap_lpg_tick(void *opaque)
     struct omap_lpg_s *s = opaque;
 
     if (s->cycle)
-        qemu_mod_timer(s->tm, qemu_get_clock(rt_clock) + s->period - s->on);
+        qemu_mod_timer(s->tm, qemu_get_clock_ms(rt_clock) + s->period - s->on);
     else
-        qemu_mod_timer(s->tm, qemu_get_clock(rt_clock) + s->on);
+        qemu_mod_timer(s->tm, qemu_get_clock_ms(rt_clock) + s->on);
 
     s->cycle = !s->cycle;
     printf("%s: LED is %s\n", __FUNCTION__, s->cycle ? "on" : "off");
@@ -3512,12 +3516,12 @@ static struct omap_lpg_s *omap_lpg_init(target_phys_addr_t base, omap_clk clk)
     struct omap_lpg_s *s = (struct omap_lpg_s *)
             qemu_mallocz(sizeof(struct omap_lpg_s));
 
-    s->tm = qemu_new_timer(rt_clock, omap_lpg_tick, s);
+    s->tm = qemu_new_timer_ms(rt_clock, omap_lpg_tick, s);
 
     omap_lpg_reset(s);
 
     iomemtype = cpu_register_io_memory(omap_lpg_readfn,
-                    omap_lpg_writefn, s);
+                    omap_lpg_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x800, iomemtype);
 
     omap_clk_adduser(clk, qemu_allocate_irqs(omap_lpg_clk_update, s, 1)[0]);
@@ -3550,7 +3554,7 @@ static CPUWriteMemoryFunc * const omap_mpui_io_writefn[] = {
 static void omap_setup_mpui_io(struct omap_mpu_state_s *mpu)
 {
     int iomemtype = cpu_register_io_memory(omap_mpui_io_readfn,
-                    omap_mpui_io_writefn, mpu);
+                    omap_mpui_io_writefn, mpu, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(OMAP_MPUI_BASE, 0x7fff, iomemtype);
 }
 
@@ -3668,37 +3672,38 @@ static const struct dma_irq_map omap1_dma_irq_map[] = {
 static int omap_validate_emiff_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= OMAP_EMIFF_BASE && addr < OMAP_EMIFF_BASE + s->sdram_size;
+    return range_covers_byte(OMAP_EMIFF_BASE, s->sdram_size, addr);
 }
 
 static int omap_validate_emifs_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= OMAP_EMIFS_BASE && addr < OMAP_EMIFF_BASE;
+    return range_covers_byte(OMAP_EMIFS_BASE, OMAP_EMIFF_BASE - OMAP_EMIFS_BASE,
+                             addr);
 }
 
 static int omap_validate_imif_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= OMAP_IMIF_BASE && addr < OMAP_IMIF_BASE + s->sram_size;
+    return range_covers_byte(OMAP_IMIF_BASE, s->sram_size, addr);
 }
 
 static int omap_validate_tipb_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= 0xfffb0000 && addr < 0xffff0000;
+    return range_covers_byte(0xfffb0000, 0xffff0000 - 0xfffb0000, addr);
 }
 
 static int omap_validate_local_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= OMAP_LOCALBUS_BASE && addr < OMAP_LOCALBUS_BASE + 0x1000000;
+    return range_covers_byte(OMAP_LOCALBUS_BASE, 0x1000000, addr);
 }
 
 static int omap_validate_tipb_mpui_addr(struct omap_mpu_state_s *s,
                 target_phys_addr_t addr)
 {
-    return addr >= 0xe1010000 && addr < 0xe1020004;
+    return range_covers_byte(0xe1010000, 0xe1020004 - 0xe1010000, addr);
 }
 
 struct omap_mpu_state_s *omap310_mpu_init(unsigned long sdram_size,
@@ -3808,16 +3813,19 @@ struct omap_mpu_state_s *omap310_mpu_init(unsigned long sdram_size,
                     omap_findclk(s, "uart1_ck"),
                     omap_findclk(s, "uart1_ck"),
                     s->drq[OMAP_DMA_UART1_TX], s->drq[OMAP_DMA_UART1_RX],
+                    "uart1",
                     serial_hds[0]);
     s->uart[1] = omap_uart_init(0xfffb0800, s->irq[1][OMAP_INT_UART2],
                     omap_findclk(s, "uart2_ck"),
                     omap_findclk(s, "uart2_ck"),
                     s->drq[OMAP_DMA_UART2_TX], s->drq[OMAP_DMA_UART2_RX],
+                    "uart2",
                     serial_hds[0] ? serial_hds[1] : NULL);
     s->uart[2] = omap_uart_init(0xfffb9800, s->irq[0][OMAP_INT_UART3],
                     omap_findclk(s, "uart3_ck"),
                     omap_findclk(s, "uart3_ck"),
                     s->drq[OMAP_DMA_UART3_TX], s->drq[OMAP_DMA_UART3_RX],
+                    "uart3",
                     serial_hds[0] && serial_hds[1] ? serial_hds[2] : NULL);
 
     omap_dpll_init(&s->dpll[0], 0xfffecf00, omap_findclk(s, "dpll1"));

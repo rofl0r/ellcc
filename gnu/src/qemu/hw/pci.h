@@ -9,11 +9,14 @@
 /* PCI includes legacy ISA access.  */
 #include "isa.h"
 
+#include "pcie.h"
+
 /* PCI bus */
 
 #define PCI_DEVFN(slot, func)   ((((slot) & 0x1f) << 3) | ((func) & 0x07))
 #define PCI_SLOT(devfn)         (((devfn) >> 3) & 0x1f)
 #define PCI_FUNC(devfn)         ((devfn) & 0x07)
+#define PCI_SLOT_MAX            32
 #define PCI_FUNC_MAX            8
 
 /* Class, Vendor and Device IDs from Linux's pci_ids.h */
@@ -60,6 +63,7 @@
 /* Intel (0x8086) */
 #define PCI_DEVICE_ID_INTEL_82551IT      0x1209
 #define PCI_DEVICE_ID_INTEL_82557        0x1229
+#define PCI_DEVICE_ID_INTEL_82801IR      0x2922
 
 /* Red Hat / Qumranet (for QEMU) -- see pci-ids.txt */
 #define PCI_VENDOR_ID_REDHAT_QUMRANET    0x1af4
@@ -88,6 +92,7 @@ typedef struct PCIIORegion {
     pcibus_t filtered_size;
     uint8_t type;
     PCIMapIORegionFunc *map_func;
+    ram_addr_t ram_addr;
 } PCIIORegion;
 
 #define PCI_ROM_SLOT 6
@@ -109,12 +114,17 @@ typedef struct PCIIORegion {
 
 /* Bits in cap_present field. */
 enum {
-    QEMU_PCI_CAP_MSIX = 0x1,
-    QEMU_PCI_CAP_EXPRESS = 0x2,
+    QEMU_PCI_CAP_MSI = 0x1,
+    QEMU_PCI_CAP_MSIX = 0x2,
+    QEMU_PCI_CAP_EXPRESS = 0x4,
 
     /* multifunction capable device */
-#define QEMU_PCI_CAP_MULTIFUNCTION_BITNR        2
+#define QEMU_PCI_CAP_MULTIFUNCTION_BITNR        3
     QEMU_PCI_CAP_MULTIFUNCTION = (1 << QEMU_PCI_CAP_MULTIFUNCTION_BITNR),
+
+    /* command register SERR bit enabled */
+#define QEMU_PCI_CAP_SERR_BITNR 4
+    QEMU_PCI_CAP_SERR = (1 << QEMU_PCI_CAP_SERR_BITNR),
 };
 
 struct PCIDevice {
@@ -122,12 +132,15 @@ struct PCIDevice {
     /* PCI config space */
     uint8_t *config;
 
-    /* Used to enable config checks on load. Note that writeable bits are
+    /* Used to enable config checks on load. Note that writable bits are
      * never checked even if set in cmask. */
     uint8_t *cmask;
 
     /* Used to implement R/W bytes */
     uint8_t *wmask;
+
+    /* Used to implement RW1C(Write 1 to Clear) bytes */
+    uint8_t *w1cmask;
 
     /* Used to allocate config space for capabilities. */
     uint8_t *used;
@@ -168,6 +181,12 @@ struct PCIDevice {
     /* Version id needed for VMState */
     int32_t version_id;
 
+    /* Offset of MSI capability in config space */
+    uint8_t msi_cap;
+
+    /* PCI Express */
+    PCIExpressDevice exp;
+
     /* Location of option rom */
     char *romfile;
     ram_addr_t rom_offset;
@@ -180,12 +199,13 @@ PCIDevice *pci_register_device(PCIBus *bus, const char *name,
                                PCIConfigWriteFunc *config_write);
 
 void pci_register_bar(PCIDevice *pci_dev, int region_num,
-                            pcibus_t size, int type,
+                            pcibus_t size, uint8_t type,
                             PCIMapIORegionFunc *map_func);
+void pci_register_bar_simple(PCIDevice *pci_dev, int region_num,
+                             pcibus_t size, uint8_t attr, ram_addr_t ram_addr);
 
-int pci_add_capability(PCIDevice *pci_dev, uint8_t cap_id, uint8_t cap_size);
-int pci_add_capability_at_offset(PCIDevice *pci_dev, uint8_t cap_id,
-                                 uint8_t cap_offset, uint8_t cap_size);
+int pci_add_capability(PCIDevice *pdev, uint8_t cap_id,
+                       uint8_t offset, uint8_t size);
 
 void pci_del_capability(PCIDevice *pci_dev, uint8_t cap_id, uint8_t cap_size);
 
@@ -203,16 +223,27 @@ int pci_device_load(PCIDevice *s, QEMUFile *f);
 
 typedef void (*pci_set_irq_fn)(void *opaque, int irq_num, int level);
 typedef int (*pci_map_irq_fn)(PCIDevice *pci_dev, int irq_num);
-typedef int (*pci_hotplug_fn)(DeviceState *qdev, PCIDevice *pci_dev, int state);
+
+typedef enum {
+    PCI_HOTPLUG_DISABLED,
+    PCI_HOTPLUG_ENABLED,
+    PCI_COLDPLUG_ENABLED,
+} PCIHotplugState;
+
+typedef int (*pci_hotplug_fn)(DeviceState *qdev, PCIDevice *pci_dev,
+                              PCIHotplugState state);
 void pci_bus_new_inplace(PCIBus *bus, DeviceState *parent,
-                         const char *name, int devfn_min);
-PCIBus *pci_bus_new(DeviceState *parent, const char *name, int devfn_min);
+                         const char *name, uint8_t devfn_min);
+PCIBus *pci_bus_new(DeviceState *parent, const char *name, uint8_t devfn_min);
 void pci_bus_irqs(PCIBus *bus, pci_set_irq_fn set_irq, pci_map_irq_fn map_irq,
                   void *irq_opaque, int nirq);
+int pci_bus_get_irq_level(PCIBus *bus, int irq_num);
 void pci_bus_hotplug(PCIBus *bus, pci_hotplug_fn hotplug, DeviceState *dev);
 PCIBus *pci_register_bus(DeviceState *parent, const char *name,
                          pci_set_irq_fn set_irq, pci_map_irq_fn map_irq,
-                         void *irq_opaque, int devfn_min, int nirq);
+                         void *irq_opaque, uint8_t devfn_min, int nirq);
+void pci_device_reset(PCIDevice *dev);
+void pci_bus_reset(PCIBus *bus);
 
 void pci_bus_set_mem_base(PCIBus *bus, target_phys_addr_t base);
 
@@ -225,18 +256,20 @@ void pci_for_each_device(PCIBus *bus, int bus_num, void (*fn)(PCIBus *bus, PCIDe
 PCIBus *pci_find_root_bus(int domain);
 int pci_find_domain(const PCIBus *bus);
 PCIBus *pci_find_bus(PCIBus *bus, int bus_num);
-PCIDevice *pci_find_device(PCIBus *bus, int bus_num, int slot, int function);
+PCIDevice *pci_find_device(PCIBus *bus, int bus_num, uint8_t devfn);
+int pci_qdev_find_device(const char *id, PCIDevice **pdev);
 PCIBus *pci_get_bus_devfn(int *devfnp, const char *devaddr);
 
+int pci_parse_devaddr(const char *addr, int *domp, int *busp,
+                      unsigned int *slotp, unsigned int *funcp);
 int pci_read_devaddr(Monitor *mon, const char *addr, int *domp, int *busp,
                      unsigned *slotp);
 
 void do_pci_info_print(Monitor *mon, const QObject *data);
 void do_pci_info(Monitor *mon, QObject **ret_data);
-PCIBus *pci_bridge_init(PCIBus *bus, int devfn, bool multifunction,
-                        uint16_t vid, uint16_t did,
-                        pci_map_irq_fn map_irq, const char *name);
-PCIDevice *pci_bridge_get_device(PCIBus *bus);
+void pci_bridge_update_mappings(PCIBus *b);
+
+void pci_device_deassert_intx(PCIDevice *dev);
 
 static inline void
 pci_set_byte(uint8_t *config, uint8_t val)
@@ -322,6 +355,76 @@ pci_config_set_interrupt_pin(uint8_t *pci_config, uint8_t val)
     pci_set_byte(&pci_config[PCI_INTERRUPT_PIN], val);
 }
 
+/*
+ * helper functions to do bit mask operation on configuration space.
+ * Just to set bit, use test-and-set and discard returned value.
+ * Just to clear bit, use test-and-clear and discard returned value.
+ * NOTE: They aren't atomic.
+ */
+static inline uint8_t
+pci_byte_test_and_clear_mask(uint8_t *config, uint8_t mask)
+{
+    uint8_t val = pci_get_byte(config);
+    pci_set_byte(config, val & ~mask);
+    return val & mask;
+}
+
+static inline uint8_t
+pci_byte_test_and_set_mask(uint8_t *config, uint8_t mask)
+{
+    uint8_t val = pci_get_byte(config);
+    pci_set_byte(config, val | mask);
+    return val & mask;
+}
+
+static inline uint16_t
+pci_word_test_and_clear_mask(uint8_t *config, uint16_t mask)
+{
+    uint16_t val = pci_get_word(config);
+    pci_set_word(config, val & ~mask);
+    return val & mask;
+}
+
+static inline uint16_t
+pci_word_test_and_set_mask(uint8_t *config, uint16_t mask)
+{
+    uint16_t val = pci_get_word(config);
+    pci_set_word(config, val | mask);
+    return val & mask;
+}
+
+static inline uint32_t
+pci_long_test_and_clear_mask(uint8_t *config, uint32_t mask)
+{
+    uint32_t val = pci_get_long(config);
+    pci_set_long(config, val & ~mask);
+    return val & mask;
+}
+
+static inline uint32_t
+pci_long_test_and_set_mask(uint8_t *config, uint32_t mask)
+{
+    uint32_t val = pci_get_long(config);
+    pci_set_long(config, val | mask);
+    return val & mask;
+}
+
+static inline uint64_t
+pci_quad_test_and_clear_mask(uint8_t *config, uint64_t mask)
+{
+    uint64_t val = pci_get_quad(config);
+    pci_set_quad(config, val & ~mask);
+    return val & mask;
+}
+
+static inline uint64_t
+pci_quad_test_and_set_mask(uint8_t *config, uint64_t mask)
+{
+    uint64_t val = pci_get_quad(config);
+    pci_set_quad(config, val | mask);
+    return val & mask;
+}
+
 typedef int (*pci_qdev_initfn)(PCIDevice *dev);
 typedef struct {
     DeviceInfo qdev;
@@ -329,6 +432,13 @@ typedef struct {
     PCIUnregisterFunc *exit;
     PCIConfigReadFunc *config_read;
     PCIConfigWriteFunc *config_write;
+
+    uint16_t vendor_id;
+    uint16_t device_id;
+    uint8_t revision;
+    uint16_t class_id;
+    uint16_t subsystem_vendor_id;       /* only for header type = 0 */
+    uint16_t subsystem_id;              /* only for header type = 0 */
 
     /*
      * pci-to-pci bridge or normal device.
@@ -339,6 +449,9 @@ typedef struct {
 
     /* pcie stuff */
     int is_express;   /* is this device pci express? */
+
+    /* device isn't hot-pluggable */
+    int no_hotplug;
 
     /* rom bar */
     const char *romfile;
@@ -352,8 +465,12 @@ PCIDevice *pci_create_multifunction(PCIBus *bus, int devfn, bool multifunction,
 PCIDevice *pci_create_simple_multifunction(PCIBus *bus, int devfn,
                                            bool multifunction,
                                            const char *name);
+PCIDevice *pci_try_create_multifunction(PCIBus *bus, int devfn,
+                                        bool multifunction,
+                                        const char *name);
 PCIDevice *pci_create(PCIBus *bus, int devfn, const char *name);
 PCIDevice *pci_create_simple(PCIBus *bus, int devfn, const char *name);
+PCIDevice *pci_try_create(PCIBus *bus, int devfn, const char *name);
 
 static inline int pci_is_express(const PCIDevice *d)
 {
@@ -363,35 +480,6 @@ static inline int pci_is_express(const PCIDevice *d)
 static inline uint32_t pci_config_size(const PCIDevice *d)
 {
     return pci_is_express(d) ? PCIE_CONFIG_SPACE_SIZE : PCI_CONFIG_SPACE_SIZE;
-}
-
-/* These are not pci specific. Should move into a separate header.
- * Only pci.c uses them, so keep them here for now.
- */
-
-/* Get last byte of a range from offset + length.
- * Undefined for ranges that wrap around 0. */
-static inline uint64_t range_get_last(uint64_t offset, uint64_t len)
-{
-    return offset + len - 1;
-}
-
-/* Check whether a given range covers a given byte. */
-static inline int range_covers_byte(uint64_t offset, uint64_t len,
-                                    uint64_t byte)
-{
-    return offset <= byte && byte <= range_get_last(offset, len);
-}
-
-/* Check whether 2 given ranges overlap.
- * Undefined if ranges that wrap around 0. */
-static inline int ranges_overlap(uint64_t first1, uint64_t len1,
-                                 uint64_t first2, uint64_t len2)
-{
-    uint64_t last1 = range_get_last(first1, len1);
-    uint64_t last2 = range_get_last(first2, len2);
-
-    return !(last2 < first1 || last1 < first2);
 }
 
 #endif

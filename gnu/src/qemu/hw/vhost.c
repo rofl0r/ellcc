@@ -11,11 +11,9 @@
  */
 
 #include <sys/ioctl.h>
-#include <sys/eventfd.h>
 #include "vhost.h"
 #include "hw/hw.h"
-/* For range_get_last */
-#include "pci.h"
+#include "range.h"
 #include <linux/vhost.h>
 
 static void vhost_dev_sync_region(struct vhost_dev *dev,
@@ -39,6 +37,7 @@ static void vhost_dev_sync_region(struct vhost_dev *dev,
         /* We first check with non-atomic: much cheaper,
          * and we expect non-dirty to be the common case. */
         if (!*from) {
+            addr += VHOST_LOG_CHUNK;
             continue;
         }
         /* Data must be read atomically. We don't really
@@ -48,8 +47,10 @@ static void vhost_dev_sync_region(struct vhost_dev *dev,
         log = __sync_fetch_and_and(from, 0);
         while ((bit = sizeof(log) > sizeof(int) ?
                 ffsll(log) : ffs(log))) {
+            ram_addr_t ram_addr;
             bit -= 1;
-            cpu_physical_memory_set_dirty(addr + bit * VHOST_LOG_PAGE);
+            ram_addr = cpu_get_physical_page_desc(addr + bit * VHOST_LOG_PAGE);
+            cpu_physical_memory_set_dirty(ram_addr);
             log &= ~(0x1ull << bit);
         }
         addr += VHOST_LOG_CHUNK;
@@ -296,10 +297,50 @@ static int vhost_verify_ring_mappings(struct vhost_dev *dev,
     return 0;
 }
 
+static struct vhost_memory_region *vhost_dev_find_reg(struct vhost_dev *dev,
+						      uint64_t start_addr,
+						      uint64_t size)
+{
+    int i, n = dev->mem->nregions;
+    for (i = 0; i < n; ++i) {
+        struct vhost_memory_region *reg = dev->mem->regions + i;
+        if (ranges_overlap(reg->guest_phys_addr, reg->memory_size,
+                           start_addr, size)) {
+            return reg;
+        }
+    }
+    return NULL;
+}
+
+static bool vhost_dev_cmp_memory(struct vhost_dev *dev,
+                                 uint64_t start_addr,
+                                 uint64_t size,
+                                 uint64_t uaddr)
+{
+    struct vhost_memory_region *reg = vhost_dev_find_reg(dev, start_addr, size);
+    uint64_t reglast;
+    uint64_t memlast;
+
+    if (!reg) {
+        return true;
+    }
+
+    reglast = range_get_last(reg->guest_phys_addr, reg->memory_size);
+    memlast = range_get_last(start_addr, size);
+
+    /* Need to extend region? */
+    if (start_addr < reg->guest_phys_addr || memlast > reglast) {
+        return true;
+    }
+    /* userspace_addr changed? */
+    return uaddr != reg->userspace_addr + start_addr - reg->guest_phys_addr;
+}
+
 static void vhost_client_set_memory(CPUPhysMemoryClient *client,
                                     target_phys_addr_t start_addr,
                                     ram_addr_t size,
-                                    ram_addr_t phys_offset)
+                                    ram_addr_t phys_offset,
+                                    bool log_dirty)
 {
     struct vhost_dev *dev = container_of(client, struct vhost_dev, client);
     ram_addr_t flags = phys_offset & ~TARGET_PAGE_MASK;
@@ -307,9 +348,28 @@ static void vhost_client_set_memory(CPUPhysMemoryClient *client,
         (dev->mem->nregions + 1) * sizeof dev->mem->regions[0];
     uint64_t log_size;
     int r;
+
     dev->mem = qemu_realloc(dev->mem, s);
 
+    if (log_dirty) {
+        flags = IO_MEM_UNASSIGNED;
+    }
+
     assert(size);
+
+    /* Optimize no-change case. At least cirrus_vga does this a lot at this time. */
+    if (flags == IO_MEM_RAM) {
+        if (!vhost_dev_cmp_memory(dev, start_addr, size,
+                                  (uintptr_t)qemu_get_ram_ptr(phys_offset))) {
+            /* Region exists with same address. Nothing to do. */
+            return;
+        }
+    } else {
+        if (!vhost_dev_find_reg(dev, start_addr, size)) {
+            /* Removing region that we don't access. Nothing to do. */
+            return;
+        }
+    }
 
     vhost_dev_unassign_memory(dev, start_addr, size);
     if (flags == IO_MEM_RAM) {
@@ -582,7 +642,7 @@ static void vhost_virtqueue_cleanup(struct vhost_dev *dev,
                               0, virtio_queue_get_desc_size(vdev, idx));
 }
 
-int vhost_dev_init(struct vhost_dev *hdev, int devfd)
+int vhost_dev_init(struct vhost_dev *hdev, int devfd, bool force)
 {
     uint64_t features;
     int r;
@@ -608,12 +668,15 @@ int vhost_dev_init(struct vhost_dev *hdev, int devfd)
     hdev->client.set_memory = vhost_client_set_memory;
     hdev->client.sync_dirty_bitmap = vhost_client_sync_dirty_bitmap;
     hdev->client.migration_log = vhost_client_migration_log;
+    hdev->client.log_start = NULL;
+    hdev->client.log_stop = NULL;
     hdev->mem = qemu_mallocz(offsetof(struct vhost_memory, regions));
     hdev->log = NULL;
     hdev->log_size = 0;
     hdev->log_enabled = false;
     hdev->started = false;
     cpu_register_phys_memory_client(&hdev->client);
+    hdev->force = force;
     return 0;
 fail:
     r = -errno;
@@ -626,6 +689,13 @@ void vhost_dev_cleanup(struct vhost_dev *hdev)
     cpu_unregister_phys_memory_client(&hdev->client);
     qemu_free(hdev->mem);
     close(hdev->control);
+}
+
+bool vhost_dev_query(struct vhost_dev *hdev, VirtIODevice *vdev)
+{
+    return !vdev->binding->query_guest_notifiers ||
+        vdev->binding->query_guest_notifiers(vdev->binding_opaque) ||
+        hdev->force;
 }
 
 int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
@@ -714,5 +784,6 @@ void vhost_dev_stop(struct vhost_dev *hdev, VirtIODevice *vdev)
 
     hdev->started = false;
     qemu_free(hdev->log);
+    hdev->log = NULL;
     hdev->log_size = 0;
 }

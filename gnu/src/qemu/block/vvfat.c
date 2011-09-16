@@ -756,6 +756,7 @@ static int read_directory(BDRVVVFATState* s, int mapping_index)
         if (st.st_size > 0x7fffffff) {
 	    fprintf(stderr, "File %s is larger than 2GB\n", buffer);
 	    free(buffer);
+            closedir(dir);
 	    return -2;
         }
 	direntry->size=cpu_to_le32(S_ISDIR(st.st_mode)?0:st.st_size);
@@ -2282,7 +2283,6 @@ static void check1(BDRVVVFATState* s)
 	    fprintf(stderr, "deleted\n");
 	    continue;
 	}
-	assert(mapping->dir_index >= 0);
 	assert(mapping->dir_index < s->directory.next);
 	direntry_t* direntry = array_get(&(s->directory), mapping->dir_index);
 	assert(mapping->begin == begin_of_direntry(direntry) || mapping->first_mapping_index >= 0);

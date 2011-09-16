@@ -28,13 +28,27 @@ DefinitionBlock (
     Scope (\)
     {
         /* Debug Output */
-        OperationRegion (DBG, SystemIO, 0xb044, 0x04)
-        Field (DBG, DWordAcc, NoLock, Preserve)
+        OperationRegion (DBG, SystemIO, 0x0402, 0x01)
+        Field (DBG, ByteAcc, NoLock, Preserve)
         {
-            DBGL,   32,
+            DBGB,   8,
+        }
+
+        /* Debug method - use this method to send output to the QEMU
+         * BIOS debug port.  This method handles strings, integers,
+         * and buffers.  For example: DBUG("abc") DBUG(0x123) */
+        Method(DBUG, 1) {
+            ToHexString(Arg0, Local0)
+            ToBuffer(Local0, Local0)
+            Subtract(SizeOf(Local0), 1, Local1)
+            Store(Zero, Local2)
+            While (LLess(Local2, Local1)) {
+                Store(DerefOf(Index(Local0, Local2)), DBGB)
+                Increment(Local2)
+            }
+            Store(0x0A, DBGB)
         }
     }
-
 
     /* PCI Bus definition */
     Scope(\_SB) {
@@ -59,7 +73,7 @@ DefinitionBlock (
 #define prt_slot3(nr) prt_slot(nr, LNKC, LNKD, LNKA, LNKB)
                prt_slot0(0x0000),
                /* Device 1 is power mgmt device, and can only use irq 9 */
-               Package() { 0x0001ffff, 0, 0, 9 },
+               Package() { 0x0001ffff, 0, LNKS, 0 },
                Package() { 0x0001ffff, 1, LNKB, 0 },
                Package() { 0x0001ffff, 2, LNKC, 0 },
                Package() { 0x0001ffff, 3, LNKD, 0 },
@@ -106,6 +120,12 @@ DefinitionBlock (
             Field (SEJ, DWordAcc, NoLock, WriteAsZeros)
             {
                 B0EJ, 32,
+            }
+
+            OperationRegion(RMVC, SystemIO, 0xae0c, 0x04)
+            Field(RMVC, DWordAcc, NoLock, WriteAsZeros)
+            {
+                PCRM, 32,
             }
 
 #define hotplug_slot(name, nr) \
@@ -231,11 +251,14 @@ DefinitionBlock (
                  {
                          Return (0x00)
                  }
+                 Method(_RMV) { Return (0x00) }
         }
 
 	/* PIIX3 ISA bridge */
         Device (ISA) {
             Name (_ADR, 0x00010000)
+            Method(_RMV) { Return (0x00) }
+
 
             /* PIIX PCI to ISA irq remapping */
             OperationRegion (P40C, PCI_Config, 0x60, 0x04)
@@ -428,6 +451,49 @@ DefinitionBlock (
 		DRSJ, 32
 	    }
 	}
+
+#define gen_pci_device(name, nr)                                \
+        Device(SL##name) {                                      \
+            Name (_ADR, nr##0000)                               \
+            Method (_RMV) {                                     \
+                If (And(\_SB.PCI0.PCRM, ShiftLeft(1, nr))) {    \
+                    Return (0x1)                                \
+                }                                               \
+                Return (0x0)                                    \
+            }                                                   \
+            Name (_SUN, name)                                   \
+        }
+
+        /* VGA (slot 1) and ISA bus (slot 2) defined above */
+	gen_pci_device(3, 0x0003)
+	gen_pci_device(4, 0x0004)
+	gen_pci_device(5, 0x0005)
+	gen_pci_device(6, 0x0006)
+	gen_pci_device(7, 0x0007)
+	gen_pci_device(8, 0x0008)
+	gen_pci_device(9, 0x0009)
+	gen_pci_device(10, 0x000a)
+	gen_pci_device(11, 0x000b)
+	gen_pci_device(12, 0x000c)
+	gen_pci_device(13, 0x000d)
+	gen_pci_device(14, 0x000e)
+	gen_pci_device(15, 0x000f)
+	gen_pci_device(16, 0x0010)
+	gen_pci_device(17, 0x0011)
+	gen_pci_device(18, 0x0012)
+	gen_pci_device(19, 0x0013)
+	gen_pci_device(20, 0x0014)
+	gen_pci_device(21, 0x0015)
+	gen_pci_device(22, 0x0016)
+	gen_pci_device(23, 0x0017)
+	gen_pci_device(24, 0x0018)
+	gen_pci_device(25, 0x0019)
+	gen_pci_device(26, 0x001a)
+	gen_pci_device(27, 0x001b)
+	gen_pci_device(28, 0x001c)
+	gen_pci_device(29, 0x001d)
+	gen_pci_device(30, 0x001e)
+	gen_pci_device(31, 0x001f)
     }
 
     /* PCI IRQs */
@@ -620,6 +686,46 @@ DefinitionBlock (
                     Store (TMP, PRQ3)
                 }
         }
+        Device(LNKS){
+                Name(_HID, EISAID("PNP0C0F"))     // PCI interrupt link
+                Name(_UID, 5)
+                Name(_PRS, ResourceTemplate(){
+                    Interrupt (, Level, ActiveHigh, Shared)
+                        { 9 }
+                })
+                Method (_STA, 0, NotSerialized)
+                {
+                    Store (0x0B, Local0)
+                    If (And (0x80, PRQ0, Local1))
+                    {
+                         Store (0x09, Local0)
+                    }
+                    Return (Local0)
+                }
+                Method (_DIS, 0, NotSerialized)
+                {
+                    Or (PRQ0, 0x80, PRQ0)
+                }
+                Method (_CRS, 0, NotSerialized)
+                {
+                    Name (PRR0, ResourceTemplate ()
+                    {
+                        Interrupt (, Level, ActiveHigh, Shared)
+                            {9}
+                    })
+                    CreateDWordField (PRR0, 0x05, TMP)
+                    Store (PRQ0, Local0)
+                    If (LLess (Local0, 0x80))
+                    {
+                        Store (Local0, TMP)
+                    }
+                    Else
+                    {
+                        Store (Zero, TMP)
+                    }
+                    Return (PRR0)
+                }
+        }
     }
 
     /*
@@ -647,6 +753,78 @@ DefinitionBlock (
         Zero,  /* reserved */
         Zero   /* reserved */
     })
+
+    /* CPU hotplug */
+    Scope(\_SB) {
+        /* Objects filled in by run-time generated SSDT */
+        External(NTFY, MethodObj)
+        External(CPON, PkgObj)
+
+        /* Methods called by run-time generated SSDT Processor objects */
+        Method (CPMA, 1, NotSerialized) {
+            // _MAT method - create an madt apic buffer
+            // Local0 = CPON flag for this cpu
+            Store(DerefOf(Index(CPON, Arg0)), Local0)
+            // Local1 = Buffer (in madt apic form) to return
+            Store(Buffer(8) {0x00, 0x08, 0x00, 0x00, 0x00, 0, 0, 0}, Local1)
+            // Update the processor id, lapic id, and enable/disable status
+            Store(Arg0, Index(Local1, 2))
+            Store(Arg0, Index(Local1, 3))
+            Store(Local0, Index(Local1, 4))
+            Return (Local1)
+        }
+        Method (CPST, 1, NotSerialized) {
+            // _STA method - return ON status of cpu
+            // Local0 = CPON flag for this cpu
+            Store(DerefOf(Index(CPON, Arg0)), Local0)
+            If (Local0) { Return(0xF) } Else { Return(0x0) }
+        }
+        Method (CPEJ, 2, NotSerialized) {
+            // _EJ0 method - eject callback
+            Sleep(200)
+        }
+
+        /* CPU hotplug notify method */
+        OperationRegion(PRST, SystemIO, 0xaf00, 32)
+        Field (PRST, ByteAcc, NoLock, Preserve)
+        {
+            PRS, 256
+        }
+        Method(PRSC, 0) {
+            // Local5 = active cpu bitmap
+            Store (PRS, Local5)
+            // Local2 = last read byte from bitmap
+            Store (Zero, Local2)
+            // Local0 = cpuid iterator
+            Store (Zero, Local0)
+            While (LLess(Local0, SizeOf(CPON))) {
+                // Local1 = CPON flag for this cpu
+                Store(DerefOf(Index(CPON, Local0)), Local1)
+                If (And(Local0, 0x07)) {
+                    // Shift down previously read bitmap byte
+                    ShiftRight(Local2, 1, Local2)
+                } Else {
+                    // Read next byte from cpu bitmap
+                    Store(DerefOf(Index(Local5, ShiftRight(Local0, 3))), Local2)
+                }
+                // Local3 = active state for this cpu
+                Store(And(Local2, 1), Local3)
+
+                If (LNotEqual(Local1, Local3)) {
+                    // State change - update CPON with new state
+                    Store(Local3, Index(CPON, Local0))
+                    // Do CPU notify
+                    If (LEqual(Local3, 1)) {
+                        NTFY(Local0, 1)
+                    } Else {
+                        NTFY(Local0, 3)
+                    }
+                }
+                Increment(Local0)
+            }
+            Return(One)
+        }
+    }
 
     Scope (\_GPE)
     {
@@ -701,7 +879,8 @@ DefinitionBlock (
 
         }
         Method(_L02) {
-            Return(0x01)
+            // CPU hotplug event
+            Return(\_SB.PRSC())
         }
         Method(_L03) {
             Return(0x01)

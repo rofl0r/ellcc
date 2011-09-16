@@ -45,8 +45,9 @@ CPUState *ppc440ep_init(ram_addr_t *ram_size, PCIBus **pcip,
     qemu_irq *irqs;
     qemu_irq *pci_irqs;
 
-    if (cpu_model == NULL)
-        cpu_model = "405"; // XXX: should be 440EP
+    if (cpu_model == NULL) {
+        cpu_model = "440-Xilinx"; // XXX: should be 440EP
+    }
     env = cpu_init(cpu_model);
     if (!env) {
         fprintf(stderr, "Unable to initialize CPU!\n");
@@ -85,7 +86,7 @@ CPUState *ppc440ep_init(ram_addr_t *ram_size, PCIBus **pcip,
     if (!*pcip)
         printf("couldn't create PCI controller!\n");
 
-    isa_mmio_init(PPC440EP_PCI_IO, PPC440EP_PCI_IOLEN, 1);
+    isa_mmio_init(PPC440EP_PCI_IO, PPC440EP_PCI_IOLEN);
 
     if (serial_hds[0] != NULL) {
         serial_mm_init(0xef600300, 0, pic[0], PPC_SERIAL_MM_BAUDBASE,

@@ -1,6 +1,6 @@
 // Support for generating ACPI tables (on emulators)
 //
-// Copyright (C) 2008,2009  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2008-2010  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2006 Fabrice Bellard
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
@@ -12,24 +12,13 @@
 #include "pci_ids.h" // PCI_VENDOR_ID_INTEL
 #include "pci_regs.h" // PCI_INTERRUPT_LINE
 #include "paravirt.h"
+#include "dev-i440fx.h" // piix4_fadt_init
 
 /****************************************************/
 /* ACPI tables init */
 
 /* Table structure from Linux kernel (the ACPI tables are under the
    BSD license) */
-
-#define ACPI_TABLE_HEADER_DEF   /* ACPI common table header */ \
-    u32 signature;          /* ACPI signature (4 ASCII characters) */ \
-    u32 length;                 /* Length of table, in bytes, including header */ \
-    u8  revision;               /* ACPI Specification minor version # */ \
-    u8  checksum;               /* To make sum of entire table == 0 */ \
-    u8  oem_id [6];             /* OEM identification */ \
-    u8  oem_table_id [8];       /* OEM table identification */ \
-    u32 oem_revision;           /* OEM revision number */ \
-    u8  asl_compiler_id [4];    /* ASL compiler vendor ID */ \
-    u32 asl_compiler_revision;  /* ASL compiler revision number */
-
 
 struct acpi_table_header         /* ACPI common table header */
 {
@@ -63,67 +52,6 @@ struct facs_descriptor_rev1
     u8  resverved3 [40];        /* Reserved - must be zero */
 } PACKED;
 
-
-/*
- * ACPI 1.0 Fixed ACPI Description Table (FADT)
- */
-#define FACP_SIGNATURE 0x50434146 // FACP
-struct fadt_descriptor_rev1
-{
-    ACPI_TABLE_HEADER_DEF     /* ACPI common table header */
-    u32 firmware_ctrl;          /* Physical address of FACS */
-    u32 dsdt;                   /* Physical address of DSDT */
-    u8  model;                  /* System Interrupt Model */
-    u8  reserved1;              /* Reserved */
-    u16 sci_int;                /* System vector of SCI interrupt */
-    u32 smi_cmd;                /* Port address of SMI command port */
-    u8  acpi_enable;            /* Value to write to smi_cmd to enable ACPI */
-    u8  acpi_disable;           /* Value to write to smi_cmd to disable ACPI */
-    u8  S4bios_req;             /* Value to write to SMI CMD to enter S4BIOS state */
-    u8  reserved2;              /* Reserved - must be zero */
-    u32 pm1a_evt_blk;           /* Port address of Power Mgt 1a acpi_event Reg Blk */
-    u32 pm1b_evt_blk;           /* Port address of Power Mgt 1b acpi_event Reg Blk */
-    u32 pm1a_cnt_blk;           /* Port address of Power Mgt 1a Control Reg Blk */
-    u32 pm1b_cnt_blk;           /* Port address of Power Mgt 1b Control Reg Blk */
-    u32 pm2_cnt_blk;            /* Port address of Power Mgt 2 Control Reg Blk */
-    u32 pm_tmr_blk;             /* Port address of Power Mgt Timer Ctrl Reg Blk */
-    u32 gpe0_blk;               /* Port addr of General Purpose acpi_event 0 Reg Blk */
-    u32 gpe1_blk;               /* Port addr of General Purpose acpi_event 1 Reg Blk */
-    u8  pm1_evt_len;            /* Byte length of ports at pm1_x_evt_blk */
-    u8  pm1_cnt_len;            /* Byte length of ports at pm1_x_cnt_blk */
-    u8  pm2_cnt_len;            /* Byte Length of ports at pm2_cnt_blk */
-    u8  pm_tmr_len;             /* Byte Length of ports at pm_tm_blk */
-    u8  gpe0_blk_len;           /* Byte Length of ports at gpe0_blk */
-    u8  gpe1_blk_len;           /* Byte Length of ports at gpe1_blk */
-    u8  gpe1_base;              /* Offset in gpe model where gpe1 events start */
-    u8  reserved3;              /* Reserved */
-    u16 plvl2_lat;              /* Worst case HW latency to enter/exit C2 state */
-    u16 plvl3_lat;              /* Worst case HW latency to enter/exit C3 state */
-    u16 flush_size;             /* Size of area read to flush caches */
-    u16 flush_stride;           /* Stride used in flushing caches */
-    u8  duty_offset;            /* Bit location of duty cycle field in p_cnt reg */
-    u8  duty_width;             /* Bit width of duty cycle field in p_cnt reg */
-    u8  day_alrm;               /* Index to day-of-month alarm in RTC CMOS RAM */
-    u8  mon_alrm;               /* Index to month-of-year alarm in RTC CMOS RAM */
-    u8  century;                /* Index to century in RTC CMOS RAM */
-    u8  reserved4;              /* Reserved */
-    u8  reserved4a;             /* Reserved */
-    u8  reserved4b;             /* Reserved */
-#if 0
-    u32 wb_invd         : 1;    /* The wbinvd instruction works properly */
-    u32 wb_invd_flush   : 1;    /* The wbinvd flushes but does not invalidate */
-    u32 proc_c1         : 1;    /* All processors support C1 state */
-    u32 plvl2_up        : 1;    /* C2 state works on MP system */
-    u32 pwr_button      : 1;    /* Power button is handled as a generic feature */
-    u32 sleep_button    : 1;    /* Sleep button is handled as a generic feature, or not present */
-    u32 fixed_rTC       : 1;    /* RTC wakeup stat not in fixed register space */
-    u32 rtcs4           : 1;    /* RTC wakeup stat not possible from S4 */
-    u32 tmr_val_ext     : 1;    /* The tmr_val width is 32 bits (0 = 24 bits) */
-    u32 reserved5       : 23;   /* Reserved - must be zero */
-#else
-    u32 flags;
-#endif
-} PACKED;
 
 /*
  * MADT values and structures
@@ -270,16 +198,6 @@ struct srat_memory_affinity
 
 #include "acpi-dsdt.hex"
 
-static inline u16 cpu_to_le16(u16 x)
-{
-    return x;
-}
-
-static inline u32 cpu_to_le32(u32 x)
-{
-    return x;
-}
-
 static void
 build_header(struct acpi_table_header *h, u32 sig, int len, u8 rev)
 {
@@ -294,6 +212,14 @@ build_header(struct acpi_table_header *h, u32 sig, int len, u8 rev)
     h->asl_compiler_revision = cpu_to_le32(1);
     h->checksum -= checksum(h, len);
 }
+
+static const struct pci_device_id fadt_init_tbl[] = {
+    /* PIIX4 Power Management device (for ACPI) */
+    PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3,
+               piix4_fadt_init),
+
+    PCI_DEVICE_END
+};
 
 static void*
 build_fadt(int bdf)
@@ -324,8 +250,6 @@ build_fadt(int bdf)
     int pm_sci_int = pci_config_readb(bdf, PCI_INTERRUPT_LINE);
     fadt->sci_int = cpu_to_le16(pm_sci_int);
     fadt->smi_cmd = cpu_to_le32(PORT_SMI_CMD);
-    fadt->acpi_enable = 0xf1;
-    fadt->acpi_disable = 0xf0;
     fadt->pm1a_evt_blk = cpu_to_le32(PORT_ACPI_PM_BASE);
     fadt->pm1a_cnt_blk = cpu_to_le32(PORT_ACPI_PM_BASE + 0x04);
     fadt->pm_tmr_blk = cpu_to_le32(PORT_ACPI_PM_BASE + 0x08);
@@ -334,10 +258,9 @@ build_fadt(int bdf)
     fadt->pm_tmr_len = 4;
     fadt->plvl2_lat = cpu_to_le16(0xfff); // C2 state not supported
     fadt->plvl3_lat = cpu_to_le16(0xfff); // C3 state not supported
-    fadt->gpe0_blk = cpu_to_le32(0xafe0);
-    fadt->gpe0_blk_len = 4;
-    /* WBINVD + PROC_C1 + SLP_BUTTON + FIX_RTC */
-    fadt->flags = cpu_to_le32((1 << 0) | (1 << 2) | (1 << 5) | (1 << 6));
+    pci_init_device(fadt_init_tbl, bdf, fadt);
+    /* WBINVD + PROC_C1 + SLP_BUTTON + FIX_RTC + RTC_S4 */
+    fadt->flags = cpu_to_le32((1 << 0) | (1 << 2) | (1 << 5) | (1 << 6) | (1 << 7));
 
     build_header((void*)fadt, FACP_SIGNATURE, sizeof(*fadt), 1);
 
@@ -406,63 +329,120 @@ build_madt(void)
     return madt;
 }
 
+// Encode a hex value
+static inline char getHex(u32 val) {
+    val &= 0x0f;
+    return (val <= 9) ? ('0' + val) : ('A' + val - 10);
+}
+
+// Encode a length in an SSDT.
+static u8 *
+encodeLen(u8 *ssdt_ptr, int length, int bytes)
+{
+    switch (bytes) {
+    default:
+    case 4: ssdt_ptr[3] = ((length >> 20) & 0xff);
+    case 3: ssdt_ptr[2] = ((length >> 12) & 0xff);
+    case 2: ssdt_ptr[1] = ((length >> 4) & 0xff);
+            ssdt_ptr[0] = (((bytes-1) & 0x3) << 6) | (length & 0x0f);
+            break;
+    case 1: ssdt_ptr[0] = length & 0x3f;
+    }
+    return ssdt_ptr + bytes;
+}
+
+// AML Processor() object.  See src/ssdt-proc.dsl for info.
+static unsigned char ssdt_proc[] = {
+    0x5b,0x83,0x42,0x05,0x43,0x50,0x41,0x41,
+    0xaa,0x10,0xb0,0x00,0x00,0x06,0x08,0x49,
+    0x44,0x5f,0x5f,0x0a,0xaa,0x08,0x5f,0x48,
+    0x49,0x44,0x0d,0x41,0x43,0x50,0x49,0x30,
+    0x30,0x30,0x37,0x00,0x14,0x0f,0x5f,0x4d,
+    0x41,0x54,0x00,0xa4,0x43,0x50,0x4d,0x41,
+    0x49,0x44,0x5f,0x5f,0x14,0x0f,0x5f,0x53,
+    0x54,0x41,0x00,0xa4,0x43,0x50,0x53,0x54,
+    0x49,0x44,0x5f,0x5f,0x14,0x0f,0x5f,0x45,
+    0x4a,0x30,0x01,0x43,0x50,0x45,0x4a,0x49,
+    0x44,0x5f,0x5f,0x68
+};
+#define SD_OFFSET_CPUHEX 6
+#define SD_OFFSET_CPUID1 8
+#define SD_OFFSET_CPUID2 20
+
 #define SSDT_SIGNATURE 0x54445353 // SSDT
 static void*
 build_ssdt(void)
 {
     int acpi_cpus = MaxCountCPUs > 0xff ? 0xff : MaxCountCPUs;
-    // calculate the length of processor block and scope block
-    // excluding PkgLength
-    int cpu_length = 13 * acpi_cpus + 4;
-
-    int length = sizeof(struct acpi_table_header) + 3 + cpu_length;
-    u8 *ssdt = malloc_high(length);
+    // length = ScopeOp + procs + NTYF method + CPON package
+    int length = ((1+3+4)
+                  + (acpi_cpus * sizeof(ssdt_proc))
+                  + (1+2+5+(12*acpi_cpus))
+                  + (6+2+1+(1*acpi_cpus)));
+    u8 *ssdt = malloc_high(sizeof(struct acpi_table_header) + length);
     if (! ssdt) {
         warn_noalloc();
         return NULL;
     }
+    u8 *ssdt_ptr = ssdt + sizeof(struct acpi_table_header);
 
-    u8 *ssdt_ptr = ssdt;
-    ssdt_ptr[9] = 0; // checksum;
-    ssdt_ptr += sizeof(struct acpi_table_header);
-
-    // build processor scope header
+    // build Scope(_SB_) header
     *(ssdt_ptr++) = 0x10; // ScopeOp
-    if (cpu_length <= 0x3e) {
-        /* Handle 1-4 CPUs with one byte encoding */
-        *(ssdt_ptr++) = cpu_length + 1;
-    } else {
-        /* Handle 5-314 CPUs with two byte encoding */
-        *(ssdt_ptr++) = 0x40 | ((cpu_length + 2) & 0xf);
-        *(ssdt_ptr++) = (cpu_length + 2) >> 4;
-    }
-    *(ssdt_ptr++) = '_'; // Name
-    *(ssdt_ptr++) = 'P';
-    *(ssdt_ptr++) = 'R';
+    ssdt_ptr = encodeLen(ssdt_ptr, length-1, 3);
+    *(ssdt_ptr++) = '_';
+    *(ssdt_ptr++) = 'S';
+    *(ssdt_ptr++) = 'B';
     *(ssdt_ptr++) = '_';
 
-    // build object for each processor
+    // build Processor object for each processor
     int i;
     for (i=0; i<acpi_cpus; i++) {
-        *(ssdt_ptr++) = 0x5B; // ProcessorOp
-        *(ssdt_ptr++) = 0x83;
-        *(ssdt_ptr++) = 0x0B; // Length
-        *(ssdt_ptr++) = 'C';  // Name (CPUxx)
-        *(ssdt_ptr++) = 'P';
-        if ((i & 0xf0) != 0)
-            *(ssdt_ptr++) = (i >> 4) < 0xa ? (i >> 4) + '0' : (i >> 4) + 'A' - 0xa;
-        else
-            *(ssdt_ptr++) = 'U';
-        *(ssdt_ptr++) = (i & 0xf) < 0xa ? (i & 0xf) + '0' : (i & 0xf) + 'A' - 0xa;
-        *(ssdt_ptr++) = i;
-        *(ssdt_ptr++) = 0x10; // Processor block address
-        *(ssdt_ptr++) = 0xb0;
-        *(ssdt_ptr++) = 0;
-        *(ssdt_ptr++) = 0;
-        *(ssdt_ptr++) = 6;    // Processor block length
+        memcpy(ssdt_ptr, ssdt_proc, sizeof(ssdt_proc));
+        ssdt_ptr[SD_OFFSET_CPUHEX] = getHex(i >> 4);
+        ssdt_ptr[SD_OFFSET_CPUHEX+1] = getHex(i);
+        ssdt_ptr[SD_OFFSET_CPUID1] = i;
+        ssdt_ptr[SD_OFFSET_CPUID2] = i;
+        ssdt_ptr += sizeof(ssdt_proc);
     }
 
+    // build "Method(NTFY, 2) {If (LEqual(Arg0, 0x00)) {Notify(CP00, Arg1)} ...}"
+    *(ssdt_ptr++) = 0x14; // MethodOp
+    ssdt_ptr = encodeLen(ssdt_ptr, 2+5+(12*acpi_cpus), 2);
+    *(ssdt_ptr++) = 'N';
+    *(ssdt_ptr++) = 'T';
+    *(ssdt_ptr++) = 'F';
+    *(ssdt_ptr++) = 'Y';
+    *(ssdt_ptr++) = 0x02;
+    for (i=0; i<acpi_cpus; i++) {
+        *(ssdt_ptr++) = 0xA0; // IfOp
+        ssdt_ptr = encodeLen(ssdt_ptr, 11, 1);
+        *(ssdt_ptr++) = 0x93; // LEqualOp
+        *(ssdt_ptr++) = 0x68; // Arg0Op
+        *(ssdt_ptr++) = 0x0A; // BytePrefix
+        *(ssdt_ptr++) = i;
+        *(ssdt_ptr++) = 0x86; // NotifyOp
+        *(ssdt_ptr++) = 'C';
+        *(ssdt_ptr++) = 'P';
+        *(ssdt_ptr++) = getHex(i >> 4);
+        *(ssdt_ptr++) = getHex(i);
+        *(ssdt_ptr++) = 0x69; // Arg1Op
+    }
+
+    // build "Name(CPON, Package() { One, One, ..., Zero, Zero, ... })"
+    *(ssdt_ptr++) = 0x08; // NameOp
+    *(ssdt_ptr++) = 'C';
+    *(ssdt_ptr++) = 'P';
+    *(ssdt_ptr++) = 'O';
+    *(ssdt_ptr++) = 'N';
+    *(ssdt_ptr++) = 0x12; // PackageOp
+    ssdt_ptr = encodeLen(ssdt_ptr, 2+1+(1*acpi_cpus), 2);
+    *(ssdt_ptr++) = acpi_cpus;
+    for (i=0; i<acpi_cpus; i++)
+        *(ssdt_ptr++) = (i < CountCPUs) ? 0x01 : 0x00;
+
     build_header((void*)ssdt, SSDT_SIGNATURE, ssdt_ptr - ssdt, 1);
+
+    //hexdump(ssdt, ssdt_ptr - ssdt);
 
     return ssdt;
 }
@@ -599,6 +579,13 @@ build_srat(void)
     return srat;
 }
 
+static const struct pci_device_id acpi_find_tbl[] = {
+    /* PIIX4 Power Management device. */
+    PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3, NULL),
+
+    PCI_DEVICE_END,
+};
+
 struct rsdp_descriptor *RsdpAddr;
 
 #define MAX_ACPI_TABLES 20
@@ -611,8 +598,7 @@ acpi_bios_init(void)
     dprintf(3, "init ACPI tables\n");
 
     // This code is hardcoded for PIIX4 Power Management device.
-    int bdf = pci_find_device(PCI_VENDOR_ID_INTEL
-                              , PCI_DEVICE_ID_INTEL_82371AB_3);
+    int bdf = pci_find_init_device(acpi_find_tbl, NULL);
     if (bdf < 0)
         // Device not found
         return;

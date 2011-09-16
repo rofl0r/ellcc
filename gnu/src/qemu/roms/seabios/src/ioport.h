@@ -43,6 +43,7 @@
 #define PORT_LPT1              0x0378
 #define PORT_SERIAL3           0x03e8
 #define PORT_ATA1_CTRL_BASE    0x03f4
+#define PORT_FD_BASE           0x03f0
 #define PORT_FD_DOR            0x03f2
 #define PORT_FD_STATUS         0x03f4
 #define PORT_FD_DATA           0x03f5
@@ -50,6 +51,7 @@
 #define PORT_FD_DIR            0x03f7
 #define PORT_SERIAL1           0x03f8
 #define PORT_PCI_CMD           0x0cf8
+#define PORT_PCI_REBOOT        0x0cf9
 #define PORT_PCI_DATA          0x0cfc
 #define PORT_BIOS_DEBUG        0x0402
 #define PORT_QEMU_CFG_CTL      0x0510

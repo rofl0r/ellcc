@@ -11,13 +11,13 @@
  ****************************************************************/
 
         .code16gcc
-.include "out/ccode.16.s"
+#include "ccode.16.s"
 
 #include "config.h" // CONFIG_*
 #include "ioport.h" // PORT_A20
 #include "bregs.h" // CR0_*
 #include "cmos.h" // CMOS_RESET_CODE
-#include "../out/asm-offsets.h" // BREGS_*
+#include "asm-offsets.h" // BREGS_*
 #include "entryfuncs.S" // ENTRY_*
 
 
@@ -26,6 +26,7 @@
  ****************************************************************/
 
 // Place CPU into 32bit mode from 16bit mode.
+// %edx = return location (in 32bit mode)
 // Clobbers: ecx, flags, segment registers, cr0, idt/gdt
         DECLFUNC transition32
 transition32:
@@ -68,9 +69,10 @@ transition32:
         movw %ax, %gs
 
         movl %ecx, %eax
-        retl
+        jmpl *%edx
 
 // Place CPU into 16bit mode from 32bit mode.
+// %edx = return location (in 16bit mode)
 // Clobbers: ecx, flags, segment registers, cr0, idt/gdt
         DECLFUNC transition16
         .global transition16big
@@ -105,7 +107,7 @@ transition16big:
         movw %ax, %fs
         movw %ax, %gs
 
-        ljmpl $SEG32_MODE16BIG_CS, $(BUILD_BIOS_ADDR + 1f)
+        ljmpw $SEG32_MODE16BIG_CS, $1f
 
         .code16gcc
 1:
@@ -130,7 +132,7 @@ transition16big:
         movw %ax, %ss  // Assume stack is in segment 0
 
         movl %ecx, %eax
-        retl
+        jmpl *%edx
 
 // Call a 16bit function from 16bit mode with a specified cpu register state
 // %eax = address of struct bregs
@@ -195,18 +197,22 @@ __call16:
         .global __call16big_from32
         .code32
 __call16_from32:
-        pushl $1f
+        movl $1f, %edx
         jmp transition16
 __call16big_from32:
-        pushl $1f
+        movl $1f, %edx
         jmp transition16big
 
         // Make call.
         .code16gcc
 1:      calll __call16
         // Return via transition32
+        movl $(2f + BUILD_BIOS_ADDR), %edx
         jmp transition32
+        .code32
+2:      retl
 
+        .code16gcc
 // IRQ trampolines
         .macro IRQ_TRAMPOLINE num
         DECLFUNC irq_trampoline_0x\num
@@ -246,7 +252,7 @@ entry_post:
         jnz 1f
 
         // Normal entry point
-        ENTRY_INTO32 _start
+        ENTRY_INTO32 _cfunc32flat__start
 
         // Entry point when a post call looks like a resume.
 1:
@@ -361,7 +367,7 @@ apm32protected_entry:
         pushl %cs               // Move second descriptor after %cs to %gs
         addl $16, (%esp)
         popl %gs
-        ENTRY_ARG_ESP handle_apm32
+        ENTRY_ARG_ESP _cfunc32seg_handle_apm32
         popl %gs
         popfl
         lretl
@@ -373,7 +379,7 @@ pcibios32_entry:
         pushl %gs               // Backup %gs and set %gs=%ds
         pushl %ds
         popl %gs
-        ENTRY_ARG_ESP handle_pcibios32
+        ENTRY_ARG_ESP _cfunc32seg_handle_pcibios32
         popl %gs
         popfl
         lretl
@@ -412,7 +418,7 @@ post32:
         movw %ax, %gs
         movw %ax, %ss
         movl $BUILD_STACK_ADDR, %esp
-        ljmpl $SEG32_MODE32_CS, $_start
+        ljmpl $SEG32_MODE32_CS, $_cfunc32flat__start
 
         .code16gcc
 
@@ -420,32 +426,6 @@ post32:
 /****************************************************************
  * Interrupt entry points
  ****************************************************************/
-
-        // Define an entry point for an interrupt (no args passed).
-        .macro IRQ_ENTRY num
-        .global entry_\num
-        entry_\num :
-        pushl $ handle_\num
-        jmp irqentry
-        .endm
-
-        // Define an entry point for an interrupt (can read/modify args).
-        .macro IRQ_ENTRY_ARG num
-        .global entry_\num
-        entry_\num :
-        pushl $ handle_\num
-        jmp irqentryarg
-        .endm
-
-        // Macros that put each handler into its own section
-        .macro DECL_IRQ_ENTRY num
-        DECLFUNC entry_\num
-        IRQ_ENTRY \num
-        .endm
-        .macro DECL_IRQ_ENTRY_ARG num
-        DECLFUNC entry_\num
-        IRQ_ENTRY_ARG \num
-        .endm
 
         // Main entry point for interrupts without args
         DECLFUNC irqentry
@@ -459,6 +439,33 @@ irqentryarg:
         ENTRY_ARG_ST
         iretw
 
+        // Define an entry point for an interrupt (no args passed).
+        .macro IRQ_ENTRY num
+        .global entry_\num
+        entry_\num :
+        pushl $ handle_\num
+        jmp irqentry
+        .endm
+
+        .macro DECL_IRQ_ENTRY num
+        DECLFUNC entry_\num
+        IRQ_ENTRY \num
+        .endm
+
+        // Define an entry point for an interrupt (can read/modify args).
+        .macro IRQ_ENTRY_ARG num
+        .global entry_\num
+        entry_\num :
+        pushl $ handle_\num
+        jmp irqentryarg
+        .endm
+
+        .macro DECL_IRQ_ENTRY_ARG num
+        DECLFUNC entry_\num
+        IRQ_ENTRY_ARG \num
+        .endm
+
+        // Various entry points (that don't require a fixed location).
         DECL_IRQ_ENTRY_ARG 13
         DECL_IRQ_ENTRY 76
         DECL_IRQ_ENTRY 70
@@ -470,11 +477,11 @@ irqentryarg:
         // int 18/19 are special - they reset stack and call into 32bit mode.
         DECLFUNC entry_19
 entry_19:
-        ENTRY_INTO32 handle_19
+        ENTRY_INTO32 _cfunc32flat_handle_19
 
         DECLFUNC entry_18
 entry_18:
-        ENTRY_INTO32 handle_18
+        ENTRY_INTO32 _cfunc32flat_handle_18
 
 
 /****************************************************************

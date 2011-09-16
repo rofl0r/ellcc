@@ -72,7 +72,7 @@ smp_probe(void)
     ASSERT32FLAT();
     u32 eax, ebx, ecx, cpuid_features;
     cpuid(1, &eax, &ebx, &ecx, &cpuid_features);
-    if (! (cpuid_features & CPUID_APIC)) {
+    if (eax < 1 || !(cpuid_features & CPUID_APIC)) {
         // No apic - only the main cpu is present.
         dprintf(1, "No apic - only the main cpu is present.\n");
         CountCPUs= 1;
@@ -126,12 +126,4 @@ smp_probe(void)
 
     dprintf(1, "Found %d cpu(s) max supported %d cpu(s)\n", readl(&CountCPUs),
         MaxCountCPUs);
-}
-
-// Reset variables to zero
-void
-smp_probe_setup(void)
-{
-    CountCPUs = 0;
-    smp_mtrr_count = 0;
 }

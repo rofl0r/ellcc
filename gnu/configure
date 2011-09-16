@@ -100,7 +100,7 @@ p=qemu
 echo Configuring package $p for $targets
 mkdir $p
 cd $p
-../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix \
+../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix --disable-strip \
   --target-list="$qemu_target_list"
 if [ $? -ne 0 ] ; then
   echo configure for $p failed

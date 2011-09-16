@@ -444,22 +444,19 @@ static int protocol_client_auth_sasl_mechname(VncState *vs, uint8_t *data, size_
         if (vs->sasl.mechlist[len] != '\0' &&
             vs->sasl.mechlist[len] != ',') {
             VNC_DEBUG("One %d", vs->sasl.mechlist[len]);
-            vnc_client_error(vs);
-            return -1;
+            goto fail;
         }
     } else {
         char *offset = strstr(vs->sasl.mechlist, mechname);
         VNC_DEBUG("Two %p\n", offset);
         if (!offset) {
-            vnc_client_error(vs);
-            return -1;
+            goto fail;
         }
         VNC_DEBUG("Two '%s'\n", offset);
         if (offset[-1] != ',' ||
             (offset[len] != '\0'&&
              offset[len] != ',')) {
-            vnc_client_error(vs);
-            return -1;
+            goto fail;
         }
     }
 
@@ -469,6 +466,11 @@ static int protocol_client_auth_sasl_mechname(VncState *vs, uint8_t *data, size_
     VNC_DEBUG("Validated mechname '%s'\n", mechname);
     vnc_read_when(vs, protocol_client_auth_sasl_start_len, 4);
     return 0;
+
+ fail:
+    vnc_client_error(vs);
+    free(mechname);
+    return -1;
 }
 
 static int protocol_client_auth_sasl_mechname_len(VncState *vs, uint8_t *data, size_t len)
@@ -488,13 +490,6 @@ static int protocol_client_auth_sasl_mechname_len(VncState *vs, uint8_t *data, s
     vnc_read_when(vs, protocol_client_auth_sasl_mechname,mechlen);
     return 0;
 }
-
-#define USES_X509_AUTH(vs)                              \
-    ((vs)->subauth == VNC_AUTH_VENCRYPT_X509NONE ||   \
-     (vs)->subauth == VNC_AUTH_VENCRYPT_X509VNC ||    \
-     (vs)->subauth == VNC_AUTH_VENCRYPT_X509PLAIN ||  \
-     (vs)->subauth == VNC_AUTH_VENCRYPT_X509SASL)
-
 
 void start_auth_sasl(VncState *vs)
 {
@@ -536,8 +531,8 @@ void start_auth_sasl(VncState *vs)
 
 #ifdef CONFIG_VNC_TLS
     /* Inform SASL that we've got an external SSF layer from TLS/x509 */
-    if (vs->vd->auth == VNC_AUTH_VENCRYPT &&
-        vs->vd->subauth == VNC_AUTH_VENCRYPT_X509SASL) {
+    if (vs->auth == VNC_AUTH_VENCRYPT &&
+        vs->subauth == VNC_AUTH_VENCRYPT_X509SASL) {
         gnutls_cipher_algorithm_t cipher;
         sasl_ssf_t ssf;
 
@@ -568,8 +563,8 @@ void start_auth_sasl(VncState *vs)
 #ifdef CONFIG_VNC_TLS
         /* Disable SSF, if using TLS+x509+SASL only. TLS without x509
            is not sufficiently strong */
-        || (vs->vd->auth == VNC_AUTH_VENCRYPT &&
-            vs->vd->subauth == VNC_AUTH_VENCRYPT_X509SASL)
+        || (vs->auth == VNC_AUTH_VENCRYPT &&
+            vs->subauth == VNC_AUTH_VENCRYPT_X509SASL)
 #endif /* CONFIG_VNC_TLS */
         ) {
         /* If we've got TLS or UNIX domain sock, we don't care about SSF */

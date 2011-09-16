@@ -216,6 +216,7 @@ static abi_ulong mmap_next_start = TASK_UNMAPPED_BASE;
 
 unsigned long last_brk;
 
+#ifdef CONFIG_USE_GUEST_BASE
 /* Subroutine of mmap_find_vma, used when we have pre-allocated a chunk
    of guest address space.  */
 static abi_ulong mmap_find_vma_reserved(abi_ulong start, abi_ulong size)
@@ -249,6 +250,7 @@ static abi_ulong mmap_find_vma_reserved(abi_ulong start, abi_ulong size)
     mmap_next_start = addr;
     return last_addr;
 }
+#endif
 
 /*
  * Find and reserve a free memory area of size 'size'. The search
@@ -271,9 +273,11 @@ abi_ulong mmap_find_vma(abi_ulong start, abi_ulong size)
 
     size = HOST_PAGE_ALIGN(size);
 
+#ifdef CONFIG_USE_GUEST_BASE
     if (RESERVED_VA) {
         return mmap_find_vma_reserved(start, size);
     }
+#endif
 
     addr = start;
     wrapped = repeat = 0;
@@ -342,7 +346,7 @@ abi_ulong mmap_find_vma(abi_ulong start, abi_ulong size)
         munmap(ptr, size);
 
         /* ENOMEM if we checked the whole of the target address space.  */
-        if (addr == -1ul) {
+        if (addr == (abi_ulong)-1) {
             return (abi_ulong)-1;
         } else if (addr == 0) {
             if (wrapped) {
@@ -350,7 +354,7 @@ abi_ulong mmap_find_vma(abi_ulong start, abi_ulong size)
             }
             wrapped = 1;
             /* Don't actually use 0 when wrapping, instead indicate
-               that we'd truely like an allocation in low memory.  */
+               that we'd truly like an allocation in low memory.  */
             addr = (mmap_min_addr > TARGET_PAGE_SIZE
                      ? TARGET_PAGE_ALIGN(mmap_min_addr)
                      : TARGET_PAGE_SIZE);
@@ -697,7 +701,9 @@ abi_long target_mremap(abi_ulong old_addr, abi_ulong old_size,
                                          old_size, new_size,
                                          flags | MREMAP_FIXED,
                                          g2h(mmap_start));
-            mmap_reserve(old_addr, old_size);
+            if ( RESERVED_VA ) {
+                mmap_reserve(old_addr, old_size);
+            }
         }
     } else {
         int prot = 0;

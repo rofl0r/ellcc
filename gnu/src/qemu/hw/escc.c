@@ -369,14 +369,18 @@ static inline void set_txint(ChannelState *s)
     if (!s->rxint_under_svc) {
         s->txint_under_svc = 1;
         if (s->chn == chn_a) {
-            s->rregs[R_INTR] |= INTR_TXINTA;
+            if (s->wregs[W_INTR] & INTR_TXINT) {
+                s->rregs[R_INTR] |= INTR_TXINTA;
+            }
             if (s->wregs[W_MINTR] & MINTR_STATUSHI)
                 s->otherchn->rregs[R_IVEC] = IVEC_HITXINTA;
             else
                 s->otherchn->rregs[R_IVEC] = IVEC_LOTXINTA;
         } else {
             s->rregs[R_IVEC] = IVEC_TXINTB;
-            s->otherchn->rregs[R_INTR] |= INTR_TXINTB;
+            if (s->wregs[W_INTR] & INTR_TXINT) {
+                s->otherchn->rregs[R_INTR] |= INTR_TXINTB;
+            }
         }
     escc_update_irq(s);
     }
@@ -914,7 +918,8 @@ static int escc_init1(SysBusDevice *dev)
     s->chn[0].otherchn = &s->chn[1];
     s->chn[1].otherchn = &s->chn[0];
 
-    io = cpu_register_io_memory(escc_mem_read, escc_mem_write, s);
+    io = cpu_register_io_memory(escc_mem_read, escc_mem_write, s,
+                                DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, ESCC_SIZE << s->it_shift, io);
     s->mmio_index = io;
 

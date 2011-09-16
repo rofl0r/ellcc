@@ -464,7 +464,7 @@ static int eth_match_groupaddr(struct fs_eth *eth, const unsigned char *sa)
 
 	/* First bit on the wire of a MAC address signals multicast or
 	   physical address.  */
-	if (!m_individual && !sa[0] & 1)
+	if (!m_individual && !(sa[0] & 1))
 		return 0;
 
 	/* Calculate the hash index for the GA registers. */
@@ -598,10 +598,11 @@ void *etraxfs_eth_init(NICInfo *nd, target_phys_addr_t base, int phyaddr)
 	tdk_init(&eth->phy);
 	mdio_attach(&eth->mdio_bus, &eth->phy, eth->phyaddr);
 
-	eth->ethregs = cpu_register_io_memory(eth_read, eth_write, eth);
+	eth->ethregs = cpu_register_io_memory(eth_read, eth_write, eth,
+                                              DEVICE_NATIVE_ENDIAN);
 	cpu_register_physical_memory (base, 0x5c, eth->ethregs);
 
-	memcpy(eth->conf.macaddr.a, nd->macaddr, sizeof(nd->macaddr));
+	eth->conf.macaddr = nd->macaddr;
 	eth->conf.vlan = nd->vlan;
 	eth->conf.peer = nd->netdev;
 

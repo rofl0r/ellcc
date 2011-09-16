@@ -23,7 +23,6 @@
 
 #include "config.h"
 #include "cpu.h"
-#include "exec-all.h"
 #include "qemu-common.h"
 #include "gdbstub.h"
 
@@ -53,7 +52,7 @@ static m68k_def_t m68k_cpu_defs[] = {
     {NULL, 0},
 };
 
-void m68k_cpu_list(FILE *f, int (*cpu_fprintf)(FILE *f, const char *fmt, ...))
+void m68k_cpu_list(FILE *f, fprintf_function cpu_fprintf)
 {
     unsigned int i;
 
@@ -614,10 +613,10 @@ float64 HELPER(sub_cmp_f64)(CPUState *env, float64 a, float64 b)
     /* ??? Should flush denormals to zero.  */
     float64 res;
     res = float64_sub(a, b, &env->fp_status);
-    if (float64_is_nan(res)) {
+    if (float64_is_quiet_nan(res)) {
         /* +/-inf compares equal against itself, but sub returns nan.  */
-        if (!float64_is_nan(a)
-            && !float64_is_nan(b)) {
+        if (!float64_is_quiet_nan(a)
+            && !float64_is_quiet_nan(b)) {
             res = float64_zero;
             if (float64_lt_quiet(a, res, &env->fp_status))
                 res = float64_chs(res);
@@ -714,7 +713,7 @@ void HELPER(macsats)(CPUState *env, uint32_t acc)
     if (env->macsr & MACSR_V) {
         env->macsr |= MACSR_PAV0 << acc;
         if (env->macsr & MACSR_OMC) {
-            /* The result is saturated to 32 bits, despite overflow occuring
+            /* The result is saturated to 32 bits, despite overflow occurring
                at 48 bits.  Seems weird, but that's what the hardware docs
                say.  */
             result = (result >> 63) ^ 0x7fffffff;

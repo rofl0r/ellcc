@@ -27,7 +27,6 @@
 #include <inttypes.h>
 
 #include "cpu.h"
-#include "exec-all.h"
 #include "disas.h"
 #include "tcg-op.h"
 #include "qemu-common.h"
@@ -1066,7 +1065,7 @@ static void gen_ld (CPUState *env, DisasContext *ctx, uint32_t opc,
         opn = "ld";
         break;
     case OPC_LLD:
-        save_cpu_state(ctx, 0);
+        save_cpu_state(ctx, 1);
         op_ld_lld(t0, t0, ctx);
         gen_store_gpr(t0, rt);
         opn = "lld";
@@ -1086,7 +1085,7 @@ static void gen_ld (CPUState *env, DisasContext *ctx, uint32_t opc,
         opn = "ldr";
         break;
     case OPC_LDPC:
-        save_cpu_state(ctx, 1);
+        save_cpu_state(ctx, 0);
         tcg_gen_movi_tl(t1, pc_relative_pc(ctx));
         gen_op_addr_add(ctx, t0, t0, t1);
         op_ld_ld(t0, t0, ctx);
@@ -1095,7 +1094,7 @@ static void gen_ld (CPUState *env, DisasContext *ctx, uint32_t opc,
         break;
 #endif
     case OPC_LWPC:
-        save_cpu_state(ctx, 1);
+        save_cpu_state(ctx, 0);
         tcg_gen_movi_tl(t1, pc_relative_pc(ctx));
         gen_op_addr_add(ctx, t0, t0, t1);
         op_ld_lw(t0, t0, ctx);
@@ -1153,6 +1152,7 @@ static void gen_ld (CPUState *env, DisasContext *ctx, uint32_t opc,
         opn = "ll";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %d(%s)", opn, regnames[rt], offset, regnames[base]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -1212,6 +1212,7 @@ static void gen_st (DisasContext *ctx, uint32_t opc, int rt,
         opn = "swr";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %d(%s)", opn, regnames[rt], offset, regnames[base]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -1236,7 +1237,7 @@ static void gen_st_cond (DisasContext *ctx, uint32_t opc, int rt,
     switch (opc) {
 #if defined(TARGET_MIPS64)
     case OPC_SCD:
-        save_cpu_state(ctx, 0);
+        save_cpu_state(ctx, 1);
         op_st_scd(t1, t0, rt, ctx);
         opn = "scd";
         break;
@@ -1247,6 +1248,7 @@ static void gen_st_cond (DisasContext *ctx, uint32_t opc, int rt,
         opn = "sc";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %d(%s)", opn, regnames[rt], offset, regnames[base]);
     tcg_temp_free(t1);
     tcg_temp_free(t0);
@@ -1312,6 +1314,7 @@ static void gen_flt_ldst (DisasContext *ctx, uint32_t opc, int ft,
         generate_exception(ctx, EXCP_RI);
         goto out;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %d(%s)", opn, fregnames[ft], offset, regnames[base]);
  out:
     tcg_temp_free(t0);
@@ -1412,6 +1415,7 @@ static void gen_arith_imm (CPUState *env, DisasContext *ctx, uint32_t opc,
         break;
 #endif
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, " TARGET_FMT_lx, opn, regnames[rt], regnames[rs], uimm);
 }
 
@@ -1454,6 +1458,7 @@ static void gen_logic_imm (CPUState *env, uint32_t opc, int rt, int rs, int16_t 
         opn = "lui";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, " TARGET_FMT_lx, opn, regnames[rt], regnames[rs], uimm);
 }
 
@@ -1481,6 +1486,7 @@ static void gen_slt_imm (CPUState *env, uint32_t opc, int rt, int rs, int16_t im
         opn = "sltiu";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, " TARGET_FMT_lx, opn, regnames[rt], regnames[rs], uimm);
     tcg_temp_free(t0);
 }
@@ -1572,6 +1578,7 @@ static void gen_shift_imm(CPUState *env, DisasContext *ctx, uint32_t opc,
         break;
 #endif
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, " TARGET_FMT_lx, opn, regnames[rt], regnames[rs], uimm);
     tcg_temp_free(t0);
 }
@@ -1752,6 +1759,7 @@ static void gen_arith (CPUState *env, DisasContext *ctx, uint32_t opc,
         opn = "mul";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
 }
 
@@ -1789,6 +1797,7 @@ static void gen_cond_move (CPUState *env, uint32_t opc, int rd, int rs, int rt)
         tcg_gen_movi_tl(cpu_gpr[rd], 0);
     gen_set_label(l1);
 
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
 }
 
@@ -1849,6 +1858,7 @@ static void gen_logic (CPUState *env, uint32_t opc, int rd, int rs, int rt)
         opn = "xor";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
 }
 
@@ -1878,6 +1888,7 @@ static void gen_slt (CPUState *env, uint32_t opc, int rd, int rs, int rt)
         opn = "sltu";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -1958,6 +1969,7 @@ static void gen_shift (CPUState *env, DisasContext *ctx, uint32_t opc,
         break;
 #endif
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -1997,6 +2009,7 @@ static void gen_HILO (DisasContext *ctx, uint32_t opc, int reg)
         opn = "mtlo";
         break;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s", opn, regnames[reg]);
 }
 
@@ -2229,6 +2242,7 @@ static void gen_muldiv (DisasContext *ctx, uint32_t opc,
         generate_exception(ctx, EXCP_RI);
         goto out;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s %s", opn, regnames[rs], regnames[rt]);
  out:
     tcg_temp_free(t0);
@@ -2308,6 +2322,7 @@ static void gen_mul_vr54xx (DisasContext *ctx, uint32_t opc,
         goto out;
     }
     gen_store_gpr(t0, rd);
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s", opn, regnames[rd], regnames[rs], regnames[rt]);
 
  out:
@@ -2348,6 +2363,7 @@ static void gen_cl (DisasContext *ctx, uint32_t opc,
         break;
 #endif
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s", opn, regnames[rd], regnames[rs]);
     tcg_temp_free(t0);
 }
@@ -2561,6 +2577,7 @@ static void gen_loongson_integer (DisasContext *ctx, uint32_t opc,
 #endif
     }
 
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s", opn, regnames[rd], regnames[rs]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -2668,7 +2685,7 @@ static inline void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
         likely(!ctx->singlestep_enabled)) {
         tcg_gen_goto_tb(n);
         gen_save_pc(dest);
-        tcg_gen_exit_tb((long)tb + n);
+        tcg_gen_exit_tb((tcg_target_long)tb + n);
     } else {
         gen_save_pc(dest);
         if (ctx->singlestep_enabled) {
@@ -3392,8 +3409,10 @@ static void gen_mfc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int s
             gen_helper_mfc0_count(arg);
             if (use_icount) {
                 gen_io_end();
-                ctx->bstate = BS_STOP;
             }
+            /* Break the TB to be able to take timer interrupts immediately
+               after reading count.  */
+            ctx->bstate = BS_STOP;
             rn = "Count";
             break;
         /* 6,7 are implementation dependent */
@@ -3730,6 +3749,7 @@ static void gen_mfc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int s
     default:
        goto die;
     }
+    (void)rn; /* avoid a compiler warning */
     LOG_DISAS("mfc0 %s (reg %d sel %d)\n", rn, reg, sel);
     return;
 
@@ -4320,6 +4340,7 @@ static void gen_mtc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int s
     default:
        goto die;
     }
+    (void)rn; /* avoid a compiler warning */
     LOG_DISAS("mtc0 %s (reg %d sel %d)\n", rn, reg, sel);
     /* For simplicity assume that all writes can cause interrupts.  */
     if (use_icount) {
@@ -4561,8 +4582,10 @@ static void gen_dmfc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int 
             gen_helper_mfc0_count(arg);
             if (use_icount) {
                 gen_io_end();
-                ctx->bstate = BS_STOP;
             }
+            /* Break the TB to be able to take timer interrupts immediately
+               after reading count.  */
+            ctx->bstate = BS_STOP;
             rn = "Count";
             break;
         /* 6,7 are implementation dependent */
@@ -4892,6 +4915,7 @@ static void gen_dmfc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int 
     default:
         goto die;
     }
+    (void)rn; /* avoid a compiler warning */
     LOG_DISAS("dmfc0 %s (reg %d sel %d)\n", rn, reg, sel);
     return;
 
@@ -5483,6 +5507,7 @@ static void gen_dmtc0 (CPUState *env, DisasContext *ctx, TCGv arg, int reg, int 
     default:
         goto die;
     }
+    (void)rn; /* avoid a compiler warning */
     LOG_DISAS("dmtc0 %s (reg %d sel %d)\n", rn, reg, sel);
     /* For simplicity assume that all writes can cause interrupts.  */
     if (use_icount) {
@@ -5943,6 +5968,7 @@ static void gen_cp0 (CPUState *env, DisasContext *ctx, uint32_t opc, int rt, int
         generate_exception(ctx, EXCP_RI);
         return;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s %d", opn, regnames[rt], rd);
 }
 #endif /* !CONFIG_USER_ONLY */
@@ -6052,6 +6078,7 @@ static void gen_compute_branch1 (CPUState *env, DisasContext *ctx, uint32_t op,
         generate_exception (ctx, EXCP_RI);
         goto out;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s: cond %02x target " TARGET_FMT_lx, opn,
                ctx->hflags, btarget);
     ctx->btarget = btarget;
@@ -6281,6 +6308,7 @@ static void gen_cp1 (DisasContext *ctx, uint32_t opc, int rt, int fs)
         generate_exception (ctx, EXCP_RI);
         goto out;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s %s", opn, regnames[rt], fregnames[fs]);
 
  out:
@@ -7608,6 +7636,7 @@ static void gen_farith (DisasContext *ctx, enum fopcode op1,
         generate_exception (ctx, EXCP_RI);
         return;
     }
+    (void)opn; /* avoid a compiler warning */
     switch (optype) {
     case BINOP:
         MIPS_DEBUG("%s %s, %s, %s", opn, fregnames[fd], fregnames[fs], fregnames[ft]);
@@ -7720,6 +7749,7 @@ static void gen_flt3_ldst (DisasContext *ctx, uint32_t opc,
         break;
     }
     tcg_temp_free(t0);
+    (void)opn; (void)store; /* avoid compiler warnings */
     MIPS_DEBUG("%s %s, %s(%s)", opn, fregnames[store ? fs : fd],
                regnames[index], regnames[base]);
 }
@@ -7993,6 +8023,7 @@ static void gen_flt3_arith (DisasContext *ctx, uint32_t opc,
         generate_exception (ctx, EXCP_RI);
         return;
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s %s, %s, %s, %s", opn, fregnames[fd], fregnames[fr],
                fregnames[fs], fregnames[ft]);
 }
@@ -9939,7 +9970,7 @@ static void gen_ldst_pair (DisasContext *ctx, uint32_t opc, int rd,
         opn = "lwp";
         break;
     case SWP:
-        save_cpu_state(ctx, 1);
+        save_cpu_state(ctx, 0);
         gen_load_gpr(t1, rd);
         op_st_sw(t1, t0, ctx);
         tcg_gen_movi_tl(t1, 4);
@@ -9960,7 +9991,7 @@ static void gen_ldst_pair (DisasContext *ctx, uint32_t opc, int rd,
         opn = "ldp";
         break;
     case SDP:
-        save_cpu_state(ctx, 1);
+        save_cpu_state(ctx, 0);
         gen_load_gpr(t1, rd);
         op_st_sd(t1, t0, ctx);
         tcg_gen_movi_tl(t1, 8);
@@ -9971,6 +10002,7 @@ static void gen_ldst_pair (DisasContext *ctx, uint32_t opc, int rd,
         break;
 #endif
     }
+    (void)opn; /* avoid a compiler warning */
     MIPS_DEBUG("%s, %s, %d(%s)", opn, regnames[rd], offset, regnames[base]);
     tcg_temp_free(t0);
     tcg_temp_free(t1);
@@ -12004,22 +12036,22 @@ static void decode_opc (CPUState *env, DisasContext *ctx, int *is_branch)
                 switch (op2) {
                 case OPC_DMT:
                     check_insn(env, ctx, ASE_MT);
-                    gen_helper_dmt(t0, t0);
+                    gen_helper_dmt(t0);
                     gen_store_gpr(t0, rt);
                     break;
                 case OPC_EMT:
                     check_insn(env, ctx, ASE_MT);
-                    gen_helper_emt(t0, t0);
+                    gen_helper_emt(t0);
                     gen_store_gpr(t0, rt);
                     break;
                 case OPC_DVPE:
                     check_insn(env, ctx, ASE_MT);
-                    gen_helper_dvpe(t0, t0);
+                    gen_helper_dvpe(t0);
                     gen_store_gpr(t0, rt);
                     break;
                 case OPC_EVPE:
                     check_insn(env, ctx, ASE_MT);
-                    gen_helper_evpe(t0, t0);
+                    gen_helper_evpe(t0);
                     gen_store_gpr(t0, rt);
                     break;
                 case OPC_DI:
@@ -12421,8 +12453,7 @@ void gen_intermediate_code_pc (CPUState *env, struct TranslationBlock *tb)
     gen_intermediate_code_internal(env, tb, 1);
 }
 
-static void fpu_dump_state(CPUState *env, FILE *f,
-                           int (*fpu_fprintf)(FILE *f, const char *fmt, ...),
+static void fpu_dump_state(CPUState *env, FILE *f, fprintf_function fpu_fprintf,
                            int flags)
 {
     int i;
@@ -12451,8 +12482,8 @@ static void fpu_dump_state(CPUState *env, FILE *f,
     } while(0)
 
 
-    fpu_fprintf(f, "CP1 FCR0 0x%08x  FCR31 0x%08x  SR.FR %d  fp_status 0x%08x(0x%02x)\n",
-                env->active_fpu.fcr0, env->active_fpu.fcr31, is_fpu64, env->active_fpu.fp_status,
+    fpu_fprintf(f, "CP1 FCR0 0x%08x  FCR31 0x%08x  SR.FR %d  fp_status 0x%02x\n",
+                env->active_fpu.fcr0, env->active_fpu.fcr31, is_fpu64,
                 get_float_exception_flags(&env->active_fpu.fp_status));
     for (i = 0; i < 32; (is_fpu64) ? i++ : (i += 2)) {
         fpu_fprintf(f, "%3s: ", fregnames[i]);
@@ -12470,7 +12501,7 @@ static void fpu_dump_state(CPUState *env, FILE *f,
 
 static void
 cpu_mips_check_sign_extensions (CPUState *env, FILE *f,
-                                int (*cpu_fprintf)(FILE *f, const char *fmt, ...),
+                                fprintf_function cpu_fprintf,
                                 int flags)
 {
     int i;
@@ -12496,8 +12527,7 @@ cpu_mips_check_sign_extensions (CPUState *env, FILE *f,
 }
 #endif
 
-void cpu_dump_state (CPUState *env, FILE *f,
-                     int (*cpu_fprintf)(FILE *f, const char *fmt, ...),
+void cpu_dump_state (CPUState *env, FILE *f, fprintf_function cpu_fprintf,
                      int flags)
 {
     int i;
@@ -12679,8 +12709,7 @@ void cpu_reset (CPUMIPSState *env)
     env->CP0_Random = env->tlb->nb_tlb - 1;
     env->tlb->tlb_in_use = env->tlb->nb_tlb;
     env->CP0_Wired = 0;
-    /* SMP not implemented */
-    env->CP0_EBase = 0x80000000;
+    env->CP0_EBase = 0x80000000 | (env->cpu_index & 0x3FF);
     env->CP0_Status = (1 << CP0St_BEV) | (1 << CP0St_ERL);
     /* vectored interrupts not implemented, timer on int 7,
        no performance counters. */
@@ -12707,8 +12736,7 @@ void cpu_reset (CPUMIPSState *env)
     env->exception_index = EXCP_NONE;
 }
 
-void gen_pc_load(CPUState *env, TranslationBlock *tb,
-                unsigned long searched_pc, int pc_pos, void *puc)
+void restore_state_to_opc(CPUState *env, TranslationBlock *tb, int pc_pos)
 {
     env->active_tc.PC = gen_opc_pc[pc_pos];
     env->hflags &= ~MIPS_HFLAG_BMASK;

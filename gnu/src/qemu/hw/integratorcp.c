@@ -4,13 +4,12 @@
  * Copyright (c) 2005-2007 CodeSourcery.
  * Written by Paul Brook
  *
- * This code is licenced under the GPL
+ * This code is licensed under the GPL
  */
 
 #include "sysbus.h"
 #include "primecell.h"
 #include "devices.h"
-#include "sysemu.h"
 #include "boards.h"
 #include "arm-misc.h"
 #include "net.h"
@@ -256,7 +255,8 @@ static int integratorcm_init(SysBusDevice *dev)
     s->flash_offset = qemu_ram_alloc(NULL, "integrator.flash", 0x100000);
 
     iomemtype = cpu_register_io_memory(integratorcm_readfn,
-                                       integratorcm_writefn, s);
+                                       integratorcm_writefn, s,
+                                       DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, 0x00800000, iomemtype);
     integratorcm_do_remap(s, 1);
     /* ??? Save/restore.  */
@@ -382,7 +382,8 @@ static int icp_pic_init(SysBusDevice *dev)
     sysbus_init_irq(dev, &s->parent_irq);
     sysbus_init_irq(dev, &s->parent_fiq);
     iomemtype = cpu_register_io_memory(icp_pic_readfn,
-                                       icp_pic_writefn, s);
+                                       icp_pic_writefn, s,
+                                       DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, 0x00800000, iomemtype);
     return 0;
 }
@@ -435,7 +436,8 @@ static void icp_control_init(uint32_t base)
     int iomemtype;
 
     iomemtype = cpu_register_io_memory(icp_control_readfn,
-                                       icp_control_writefn, NULL);
+                                       icp_control_writefn, NULL,
+                                       DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(base, 0x00800000, iomemtype);
     /* ??? Save/restore.  */
 }

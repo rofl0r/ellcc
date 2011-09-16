@@ -47,6 +47,11 @@ int pci_find_vga(void);
 int pci_find_device(u16 vendid, u16 devid);
 int pci_find_class(u16 classid);
 
+#define PP_ROOT      (1<<17)
+#define PP_PCIBRIDGE (1<<18)
+extern int *PCIpaths;
+void pci_path_setup(void);
+
 int pci_next(int bdf, int *pmax);
 #define foreachpci(BDF, MAX)                    \
     for (MAX=0x0100, BDF=pci_next(0, &MAX)      \
@@ -93,6 +98,12 @@ struct pci_device_id {
     }
 
 int pci_init_device(const struct pci_device_id *table, u16 bdf, void *arg);
+int pci_find_init_device(const struct pci_device_id *ids, void *arg);
+void pci_reboot(void);
+
+// helper functions to access pci mmio bars from real mode
+u32 pci_readl(u32 addr);
+void pci_writel(u32 addr, u32 val);
 
 // pirtable.c
 void create_pirtable(void);

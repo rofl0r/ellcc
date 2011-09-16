@@ -17,6 +17,9 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "virtio-net.h"
+#include "virtio-serial.h"
+
 #define VIRTIO_DEV_OFFS_TYPE		0	/* 8 bits */
 #define VIRTIO_DEV_OFFS_NUM_VQ		1	/* 8 bits */
 #define VIRTIO_DEV_OFFS_FEATURE_LEN	2	/* 8 bits */
@@ -30,7 +33,7 @@
 #define VIRTIO_VQCONFIG_LEN		24
 
 #define VIRTIO_RING_LEN			(TARGET_PAGE_SIZE * 3)
-#define S390_DEVICE_PAGES		256
+#define S390_DEVICE_PAGES		512
 
 typedef struct VirtIOS390Device {
     DeviceState qdev;
@@ -39,10 +42,11 @@ typedef struct VirtIOS390Device {
     uint8_t feat_len;
     VirtIODevice *vdev;
     BlockConf block;
+    char *block_serial;
     NICConf nic;
     uint32_t host_features;
-    /* Max. number of ports we can have for a the virtio-serial device */
-    uint32_t max_virtserial_ports;
+    virtio_serial_conf serial;
+    virtio_net_conf net;
 } VirtIOS390Device;
 
 typedef struct VirtIOS390Bus {
@@ -55,14 +59,12 @@ typedef struct VirtIOS390Bus {
 } VirtIOS390Bus;
 
 
-extern void s390_virtio_device_update_status(VirtIOS390Device *dev);
+void s390_virtio_device_update_status(VirtIOS390Device *dev);
 
-extern VirtIOS390Device *s390_virtio_bus_console(VirtIOS390Bus *bus);
-extern VirtIOS390Bus *s390_virtio_bus_init(ram_addr_t *ram_size);
+VirtIOS390Device *s390_virtio_bus_console(VirtIOS390Bus *bus);
+VirtIOS390Bus *s390_virtio_bus_init(ram_addr_t *ram_size);
 
-extern VirtIOS390Device *s390_virtio_bus_find_vring(VirtIOS390Bus *bus,
-                                                    ram_addr_t mem,
-                                                    int *vq_num);
-extern VirtIOS390Device *s390_virtio_bus_find_mem(VirtIOS390Bus *bus,
-                                                  ram_addr_t mem);
-extern void s390_virtio_device_sync(VirtIOS390Device *dev);
+VirtIOS390Device *s390_virtio_bus_find_vring(VirtIOS390Bus *bus,
+                                             ram_addr_t mem, int *vq_num);
+VirtIOS390Device *s390_virtio_bus_find_mem(VirtIOS390Bus *bus, ram_addr_t mem);
+void s390_virtio_device_sync(VirtIOS390Device *dev);

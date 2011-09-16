@@ -11,7 +11,7 @@
 #include "biosvar.h" // GET_GLOBAL
 #include "blockcmd.h" // cdb_read
 #include "disk.h" // DTYPE_USB
-#include "boot.h" // add_bcv_internal
+#include "boot.h" // boot_add_hd
 
 struct usbdrive_s {
     struct drive_s drive;
@@ -50,6 +50,9 @@ struct csw_s {
 int
 usb_cmd_data(struct disk_op_s *op, void *cdbcmd, u16 blocksize)
 {
+    if (!CONFIG_USB_MSC)
+        return 0;
+
     dprintf(16, "usb_cmd_data id=%p write=%d count=%d bs=%d buf=%p\n"
             , op->drive_g, 0, op->count, blocksize, op->buf_fl);
     struct usbdrive_s *udrive_g = container_of(
@@ -136,16 +139,19 @@ process_usb_op(struct disk_op_s *op)
  ****************************************************************/
 
 static int
-setup_drive_cdrom(struct disk_op_s *op)
+setup_drive_cdrom(struct disk_op_s *op, char *desc)
 {
     op->drive_g->blksize = CDROM_SECTOR_SIZE;
     op->drive_g->sectors = (u64)-1;
-    map_cd_drive(op->drive_g);
+    struct usb_pipe *pipe = container_of(
+        op->drive_g, struct usbdrive_s, drive)->bulkout;
+    int prio = bootprio_find_usb(pipe->cntl->bdf, pipe->path);
+    boot_add_cd(op->drive_g, desc, prio);
     return 0;
 }
 
 static int
-setup_drive_hd(struct disk_op_s *op)
+setup_drive_hd(struct disk_op_s *op, char *desc)
 {
     struct cdbres_read_capacity info;
     int ret = cdb_read_capacity(op, &info);
@@ -156,7 +162,7 @@ setup_drive_hd(struct disk_op_s *op)
     u32 blksize = ntohl(info.blksize), sectors = ntohl(info.sectors);
     if (blksize != DISK_SECTOR_SIZE) {
         if (blksize == CDROM_SECTOR_SIZE)
-            return setup_drive_cdrom(op);
+            return setup_drive_cdrom(op, desc);
         dprintf(1, "Unsupported USB MSC block size %d\n", blksize);
         return -1;
     }
@@ -164,11 +170,11 @@ setup_drive_hd(struct disk_op_s *op)
     op->drive_g->sectors = sectors;
     dprintf(1, "USB MSC blksize=%d sectors=%d\n", blksize, sectors);
 
-    // Setup disk geometry translation.
-    setup_translation(op->drive_g);
-
     // Register with bcv system.
-    add_bcv_internal(op->drive_g);
+    struct usb_pipe *pipe = container_of(
+        op->drive_g, struct usbdrive_s, drive)->bulkout;
+    int prio = bootprio_find_usb(pipe->cntl->bdf, pipe->path);
+    boot_add_hd(op->drive_g, desc, prio);
 
     return 0;
 }
@@ -182,7 +188,9 @@ usb_msc_init(struct usb_pipe *pipe
         return -1;
 
     // Verify right kind of device
-    if (iface->bInterfaceSubClass != US_SC_SCSI
+    if ((iface->bInterfaceSubClass != US_SC_SCSI &&
+	 iface->bInterfaceSubClass != US_SC_ATAPI_8070 &&
+	 iface->bInterfaceSubClass != US_SC_ATAPI_8020)
         || iface->bInterfaceProtocol != US_PR_BULK) {
         dprintf(1, "Unsupported MSC USB device (subclass=%02x proto=%02x)\n"
                 , iface->bInterfaceSubClass, iface->bInterfaceProtocol);
@@ -190,9 +198,8 @@ usb_msc_init(struct usb_pipe *pipe
     }
 
     // Allocate drive structure.
-    char *desc = malloc_tmphigh(MAXDESCSIZE);
     struct usbdrive_s *udrive_g = malloc_fseg(sizeof(*udrive_g));
-    if (!udrive_g || !desc) {
+    if (!udrive_g) {
         warn_noalloc();
         goto fail;
     }
@@ -221,30 +228,33 @@ usb_msc_init(struct usb_pipe *pipe
         goto fail;
     char vendor[sizeof(data.vendor)+1], product[sizeof(data.product)+1];
     char rev[sizeof(data.rev)+1];
+    strtcpy(vendor, data.vendor, sizeof(vendor));
+    nullTrailingSpace(vendor);
+    strtcpy(product, data.product, sizeof(product));
+    nullTrailingSpace(product);
+    strtcpy(rev, data.rev, sizeof(rev));
+    nullTrailingSpace(rev);
     int pdt = data.pdt & 0x1f;
     int removable = !!(data.removable & 0x80);
-    dprintf(1, "USB MSC vendor='%s' product='%s' rev='%s'"
-            " type=%d removable=%d\n"
-            , strtcpy(vendor, data.vendor, sizeof(vendor))
-            , strtcpy(product, data.product, sizeof(product))
-            , strtcpy(rev, data.rev, sizeof(rev))
-            , pdt, removable);
+    dprintf(1, "USB MSC vendor='%s' product='%s' rev='%s' type=%d removable=%d\n"
+            , vendor, product, rev, pdt, removable);
     udrive_g->drive.removable = removable;
 
-    if (pdt == USB_MSC_TYPE_CDROM)
-        ret = setup_drive_cdrom(&dop);
-    else
-        ret = setup_drive_hd(&dop);
+    if (pdt == USB_MSC_TYPE_CDROM) {
+        char *desc = znprintf(MAXDESCSIZE, "DVD/CD [USB Drive %s %s %s]"
+                              , vendor, product, rev);
+        ret = setup_drive_cdrom(&dop, desc);
+    } else {
+        char *desc = znprintf(MAXDESCSIZE, "USB Drive %s %s %s"
+                              , vendor, product, rev);
+        ret = setup_drive_hd(&dop, desc);
+    }
     if (ret)
         goto fail;
-
-    snprintf(desc, MAXDESCSIZE, "USB Drive %s %s %s", vendor, product, rev);
-    udrive_g->drive.desc = desc;
 
     return 0;
 fail:
     dprintf(1, "Unable to configure USB MSC device.\n");
-    free(desc);
     free(udrive_g);
     return -1;
 }

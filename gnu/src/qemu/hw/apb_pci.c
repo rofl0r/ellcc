@@ -29,6 +29,8 @@
 #include "sysbus.h"
 #include "pci.h"
 #include "pci_host.h"
+#include "pci_bridge.h"
+#include "pci_internals.h"
 #include "rwhandler.h"
 #include "apb_pci.h"
 #include "sysemu.h"
@@ -293,9 +295,14 @@ static void pci_apb_set_irq(void *opaque, int irq_num, int level)
     }
 }
 
-static void apb_pci_bridge_init(PCIBus *b)
+static int apb_pci_bridge_initfn(PCIDevice *dev)
 {
-    PCIDevice *dev = pci_bridge_get_device(b);
+    int rc;
+
+    rc = pci_bridge_initfn(dev);
+    if (rc < 0) {
+        return rc;
+    }
 
     /*
      * command register:
@@ -311,7 +318,7 @@ static void apb_pci_bridge_init(PCIBus *b)
     pci_set_word(dev->config + PCI_STATUS,
                  PCI_STATUS_FAST_BACK | PCI_STATUS_66MHZ |
                  PCI_STATUS_DEVSEL_MEDIUM);
-    pci_set_byte(dev->config + PCI_REVISION_ID, 0x11);
+    return 0;
 }
 
 PCIBus *pci_apb_init(target_phys_addr_t special_base,
@@ -322,6 +329,8 @@ PCIBus *pci_apb_init(target_phys_addr_t special_base,
     SysBusDevice *s;
     APBState *d;
     unsigned int i;
+    PCIDevice *pci_dev;
+    PCIBridge *br;
 
     /* Ultrasparc PBM main bus */
     dev = qdev_create(NULL, "pbm");
@@ -347,17 +356,21 @@ PCIBus *pci_apb_init(target_phys_addr_t special_base,
     pci_create_simple(d->bus, 0, "pbm");
 
     /* APB secondary busses */
-    *bus2 = pci_bridge_init(d->bus, PCI_DEVFN(1, 0), true,
-                            PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_SIMBA,
-                            pci_apb_map_irq,
-                            "Advanced PCI Bus secondary bridge 1");
-    apb_pci_bridge_init(*bus2);
+    pci_dev = pci_create_multifunction(d->bus, PCI_DEVFN(1, 0), true,
+                                   "pbm-bridge");
+    br = DO_UPCAST(PCIBridge, dev, pci_dev);
+    pci_bridge_map_irq(br, "Advanced PCI Bus secondary bridge 1",
+                       pci_apb_map_irq);
+    qdev_init_nofail(&pci_dev->qdev);
+    *bus2 = pci_bridge_get_sec_bus(br);
 
-    *bus3 = pci_bridge_init(d->bus, PCI_DEVFN(1, 1), true,
-                            PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_SIMBA,
-                            pci_apb_map_irq,
-                            "Advanced PCI Bus secondary bridge 2");
-    apb_pci_bridge_init(*bus3);
+    pci_dev = pci_create_multifunction(d->bus, PCI_DEVFN(1, 1), true,
+                                   "pbm-bridge");
+    br = DO_UPCAST(PCIBridge, dev, pci_dev);
+    pci_bridge_map_irq(br, "Advanced PCI Bus secondary bridge 2",
+                       pci_apb_map_irq);
+    qdev_init_nofail(&pci_dev->qdev);
+    *bus3 = pci_bridge_get_sec_bus(br);
 
     return d->bus;
 }
@@ -393,21 +406,24 @@ static int pci_pbm_init_device(SysBusDevice *dev)
 
     /* apb_config */
     apb_config = cpu_register_io_memory(apb_config_read,
-                                        apb_config_write, s);
+                                        apb_config_write, s,
+                                        DEVICE_NATIVE_ENDIAN);
     /* at region 0 */
     sysbus_init_mmio(dev, 0x10000ULL, apb_config);
 
     /* PCI configuration space */
     s->pci_config_handler.read = apb_pci_config_read;
     s->pci_config_handler.write = apb_pci_config_write;
-    pci_config = cpu_register_io_memory_simple(&s->pci_config_handler);
+    pci_config = cpu_register_io_memory_simple(&s->pci_config_handler,
+                                               DEVICE_NATIVE_ENDIAN);
     assert(pci_config >= 0);
     /* at region 1 */
     sysbus_init_mmio(dev, 0x1000000ULL, pci_config);
 
     /* pci_ioport */
     pci_ioport = cpu_register_io_memory(pci_apb_ioread,
-                                        pci_apb_iowrite, s);
+                                        pci_apb_iowrite, s,
+                                        DEVICE_NATIVE_ENDIAN);
     /* at region 2 */
     sysbus_init_mmio(dev, 0x10000ULL, pci_ioport);
 
@@ -416,14 +432,11 @@ static int pci_pbm_init_device(SysBusDevice *dev)
 
 static int pbm_pci_host_init(PCIDevice *d)
 {
-    pci_config_set_vendor_id(d->config, PCI_VENDOR_ID_SUN);
-    pci_config_set_device_id(d->config, PCI_DEVICE_ID_SUN_SABRE);
     pci_set_word(d->config + PCI_COMMAND,
                  PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
     pci_set_word(d->config + PCI_STATUS,
                  PCI_STATUS_FAST_BACK | PCI_STATUS_66MHZ |
                  PCI_STATUS_DEVSEL_MEDIUM);
-    pci_config_set_class(d->config, PCI_CLASS_BRIDGE_HOST);
     return 0;
 }
 
@@ -431,6 +444,9 @@ static PCIDeviceInfo pbm_pci_host_info = {
     .qdev.name = "pbm",
     .qdev.size = sizeof(PCIDevice),
     .init      = pbm_pci_host_init,
+    .vendor_id = PCI_VENDOR_ID_SUN,
+    .device_id = PCI_DEVICE_ID_SUN_SABRE,
+    .class_id  = PCI_CLASS_BRIDGE_HOST,
     .is_bridge = 1,
 };
 
@@ -440,10 +456,26 @@ static SysBusDeviceInfo pbm_host_info = {
     .qdev.reset = pci_pbm_reset,
     .init = pci_pbm_init_device,
 };
+
+static PCIDeviceInfo pbm_pci_bridge_info = {
+    .qdev.name = "pbm-bridge",
+    .qdev.size = sizeof(PCIBridge),
+    .qdev.vmsd = &vmstate_pci_device,
+    .qdev.reset = pci_bridge_reset,
+    .init = apb_pci_bridge_initfn,
+    .exit = pci_bridge_exitfn,
+    .vendor_id = PCI_VENDOR_ID_SUN,
+    .device_id = PCI_DEVICE_ID_SUN_SIMBA,
+    .revision = 0x11,
+    .config_write = pci_bridge_write_config,
+    .is_bridge = 1,
+};
+
 static void pbm_register_devices(void)
 {
     sysbus_register_withprop(&pbm_host_info);
     pci_qdev_register(&pbm_pci_host_info);
+    pci_qdev_register(&pbm_pci_bridge_info);
 }
 
 device_init(pbm_register_devices)

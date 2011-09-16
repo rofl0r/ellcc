@@ -24,7 +24,9 @@ typedef char *caddr_t;
 #else
 # define ioctlsocket ioctl
 # define closesocket(s) close(s)
-# define O_BINARY 0
+# if !defined(__HAIKU__)
+#  define O_BINARY 0
+# endif
 #endif
 
 #include <sys/types.h>
@@ -150,6 +152,7 @@ int inet_aton(const char *cp, struct in_addr *ia);
 #include "tcp_var.h"
 #include "tcpip.h"
 #include "udp.h"
+#include "ip_icmp.h"
 #include "mbuf.h"
 #include "sbuf.h"
 #include "socket.h"
@@ -216,6 +219,10 @@ struct Slirp {
     struct socket udb;
     struct socket *udp_last_so;
 
+    /* icmp states */
+    struct socket icmp;
+    struct socket *icmp_last_so;
+
     /* tftp states */
     char *tftp_prefix;
     struct tftp_session tftp_sessions[TFTP_SESSIONS_MAX];
@@ -235,22 +242,8 @@ void if_start(Slirp *);
 void if_start(struct ttys *);
 #endif
 
-#ifdef BAD_SPRINTF
-# define vsprintf vsprintf_len
-# define sprintf sprintf_len
- extern int vsprintf_len(char *, const char *, va_list);
- extern int sprintf_len(char *, const char *, ...);
-#endif
-
-#ifdef DECLARE_SPRINTF
-# ifndef BAD_SPRINTF
- extern int vsprintf(char *, const char *, va_list);
-# endif
- extern int vfprintf(FILE *, const char *, va_list);
-#endif
-
 #ifndef HAVE_STRERROR
- extern char *strerror(int error);
+ char *strerror(int error);
 #endif
 
 #ifndef HAVE_INDEX
@@ -261,7 +254,7 @@ void if_start(struct ttys *);
  long gethostid(void);
 #endif
 
-void lprint(const char *, ...);
+void lprint(const char *, ...) GCC_FMT_ATTR(1, 2);
 
 #ifndef _WIN32
 #include <netdb.h>

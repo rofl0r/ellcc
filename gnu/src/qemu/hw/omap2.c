@@ -600,7 +600,7 @@ static struct omap_eac_s *omap_eac_init(struct omap_target_agent_s *ta,
     AUD_register_card("OMAP EAC", &s->codec.card);
 
     iomemtype = cpu_register_io_memory(omap_eac_readfn,
-                    omap_eac_writefn, s);
+                    omap_eac_writefn, s, DEVICE_NATIVE_ENDIAN);
     omap_l4_attach(ta, 0, iomemtype);
 
     return s;
@@ -788,7 +788,7 @@ static struct omap_sti_s *omap_sti_init(struct omap_target_agent_s *ta,
     omap_l4_attach(ta, 0, iomemtype);
 
     iomemtype = cpu_register_io_memory(omap_sti_fifo_readfn,
-                    omap_sti_fifo_writefn, s);
+                    omap_sti_fifo_writefn, s, DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(channel_base, 0x10000, iomemtype);
 
     return s;
@@ -2291,13 +2291,16 @@ struct omap_mpu_state_s *omap2420_mpu_init(unsigned long sdram_size,
                     omap_findclk(s, "uart1_fclk"),
                     omap_findclk(s, "uart1_iclk"),
                     s->drq[OMAP24XX_DMA_UART1_TX],
-                    s->drq[OMAP24XX_DMA_UART1_RX], serial_hds[0]);
+                    s->drq[OMAP24XX_DMA_UART1_RX],
+                    "uart1",
+                    serial_hds[0]);
     s->uart[1] = omap2_uart_init(omap_l4ta(s->l4, 20),
                     s->irq[0][OMAP_INT_24XX_UART2_IRQ],
                     omap_findclk(s, "uart2_fclk"),
                     omap_findclk(s, "uart2_iclk"),
                     s->drq[OMAP24XX_DMA_UART2_TX],
                     s->drq[OMAP24XX_DMA_UART2_RX],
+                    "uart2",
                     serial_hds[0] ? serial_hds[1] : NULL);
     s->uart[2] = omap2_uart_init(omap_l4ta(s->l4, 21),
                     s->irq[0][OMAP_INT_24XX_UART3_IRQ],
@@ -2305,6 +2308,7 @@ struct omap_mpu_state_s *omap2420_mpu_init(unsigned long sdram_size,
                     omap_findclk(s, "uart3_iclk"),
                     s->drq[OMAP24XX_DMA_UART3_TX],
                     s->drq[OMAP24XX_DMA_UART3_RX],
+                    "uart3",
                     serial_hds[0] && serial_hds[1] ? serial_hds[2] : NULL);
 
     s->gptimer[0] = omap_gp_timer_init(omap_l4ta(s->l4, 7),

@@ -1,11 +1,11 @@
 # SeaBIOS build system
 #
-# Copyright (C) 2008,2009  Kevin O'Connor <kevin@koconnor.net>
+# Copyright (C) 2008-2010  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU LGPLv3 license.
 
 # Program version
-VERSION=pre-0.6.1-$(shell date +"%Y%m%d_%H%M%S")-$(shell hostname)
+VERSION=pre-0.6.3-$(shell date +"%Y%m%d_%H%M%S")-$(shell hostname)
 
 # Output directory
 OUT=out/
@@ -15,18 +15,20 @@ SRCBOTH=misc.c pmm.c stacks.c output.c util.c block.c floppy.c ata.c mouse.c \
         kbd.c pci.c serial.c clock.c pic.c cdrom.c ps2port.c smp.c resume.c \
         pnpbios.c pirtable.c vgahooks.c ramdisk.c pcibios.c blockcmd.c \
         usb.c usb-uhci.c usb-ohci.c usb-ehci.c usb-hid.c usb-msc.c \
-        virtio-ring.c virtio-pci.c virtio-blk.c
-SRC16=$(SRCBOTH) system.c disk.c apm.c font.c
+        virtio-ring.c virtio-pci.c virtio-blk.c apm.c ahci.c
+SRC16=$(SRCBOTH) system.c disk.c font.c
 SRC32FLAT=$(SRCBOTH) post.c shadow.c memmap.c coreboot.c boot.c \
       acpi.c smm.c mptable.c smbios.c pciinit.c optionroms.c mtrr.c \
-      lzmadecode.c bootsplash.c jpeg.c usb-hub.c paravirt.c dev-i440fx.c
+      lzmadecode.c bootsplash.c jpeg.c usb-hub.c paravirt.c dev-i440fx.c \
+      pci_region.c
 SRC32SEG=util.c output.c pci.c pcibios.c apm.c stacks.c
 
 cc-option = $(shell if test -z "`$(1) $(2) -S -o /dev/null -xc \
               /dev/null 2>&1`"; then echo "$(2)"; else echo "$(3)"; fi ;)
 
 # Default compiler flags
-COMMONCFLAGS = -Os -MD -Wall -Wno-strict-aliasing -Wold-style-definition \
+COMMONCFLAGS = -I$(OUT) -Os -MD \
+               -Wall -Wno-strict-aliasing -Wold-style-definition \
                $(call cc-option,$(CC),-Wtype-limits,) \
                -m32 -march=i386 -mregparm=3 -mpreferred-stack-boundary=2 \
                -mrtd -minline-all-stringops \
@@ -53,13 +55,14 @@ ifdef V
 Q=
 else
 Q=@
+MAKEFLAGS += --no-print-directory
 endif
 
 OBJCOPY=objcopy
 OBJDUMP=objdump
 STRIP=strip
 
-.PHONY : all FORCE
+.PHONY : all clean distclean FORCE
 
 vpath %.c src vgasrc
 vpath %.S src vgasrc
@@ -67,7 +70,7 @@ vpath %.S src vgasrc
 ################ Build rules
 
 # Verify the gcc configuration and test if -fwhole-program works.
-TESTGCC:=$(shell CC=$(CC) tools/test-gcc.sh)
+TESTGCC:=$(shell CC="$(CC)" tools/test-gcc.sh)
 ifeq "$(TESTGCC)" "-1"
 $(error "Please upgrade GCC")
 endif
@@ -113,22 +116,24 @@ $(OUT)%.lds: %.lds.S
 	@echo "  Precompiling $@"
 	$(Q)$(CPP) -P -D__ASSEMBLY__ $< -o $@
 
+$(OUT)asm-offsets.s: $(OUT)autoconf.h
+
 $(OUT)asm-offsets.h: $(OUT)asm-offsets.s
 	@echo "  Generating offset file $@"
 	$(Q)./tools/gen-offsets.sh $< $@
 
 
-$(OUT)ccode.16.s: ; $(call whole-compile, $(CFLAGS16) -S, $(addprefix src/, $(SRC16)),$@)
+$(OUT)ccode.16.s: $(OUT)autoconf.h ; $(call whole-compile, $(CFLAGS16) -S, $(addprefix src/, $(SRC16)),$@)
 
-$(OUT)code32seg.o: ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
+$(OUT)code32seg.o: $(OUT)autoconf.h ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
 
-$(OUT)ccode32flat.o: ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
+$(OUT)ccode32flat.o: $(OUT)autoconf.h ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
 
 $(OUT)code16.o: romlayout.S $(OUT)ccode.16.s $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
 	$(Q)$(CC) $(CFLAGS16INC) -c -D__ASSEMBLY__ $< -o $@
 
-$(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds $(OUT)code32flat.o: $(OUT)ccode32flat.o $(OUT)code32seg.o $(OUT)code16.o tools/layoutrom.py
+$(OUT)romlayout16.lds: $(OUT)ccode32flat.o $(OUT)code32seg.o $(OUT)code16.o tools/layoutrom.py
 	@echo "  Building ld scripts (version \"$(VERSION)\")"
 	$(Q)echo 'const char VERSION[] = "$(VERSION)";' > $(OUT)version.c
 	$(Q)$(CC) $(CFLAGS32FLAT) -c $(OUT)version.c -o $(OUT)version.o
@@ -138,6 +143,9 @@ $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds $(OUT)c
 	$(Q)$(OBJDUMP) -thr $(OUT)code16.o > $(OUT)code16.o.objdump
 	$(Q)./tools/layoutrom.py $(OUT)code16.o.objdump $(OUT)code32seg.o.objdump $(OUT)code32flat.o.objdump $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
 
+# These are actually built by tools/layoutrom.py above, but by pulling them
+# into an extra rule we prevent make -j from spawning layoutrom.py 4 times.
+$(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds $(OUT)code32flat.o: $(OUT)romlayout16.lds
 
 $(OUT)rom16.o: $(OUT)code16.o $(OUT)romlayout16.lds
 	@echo "  Linking $@"
@@ -165,7 +173,7 @@ $(OUT)bios.bin.elf $(OUT)bios.bin: $(OUT)rom.o tools/checkrom.py
 SRCVGA=src/output.c src/util.c vgasrc/vga.c vgasrc/vgafb.c vgasrc/vgaio.c \
        vgasrc/vgatables.c vgasrc/vgafonts.c vgasrc/clext.c
 
-$(OUT)vgaccode.16.s: ; $(call whole-compile, $(CFLAGS16) -S -Isrc, $(SRCVGA),$@)
+$(OUT)vgaccode.16.s: $(OUT)autoconf.h ; $(call whole-compile, $(CFLAGS16) -S -Isrc, $(SRCVGA),$@)
 
 $(OUT)vgalayout16.o: vgaentry.S $(OUT)vgaccode.16.s $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
@@ -192,9 +200,29 @@ src/%.hex: src/%.dsl
 
 $(OUT)ccode32flat.o: src/acpi-dsdt.hex
 
+####### Kconfig rules
+export HOSTCC             := $(CC)
+export CONFIG_SHELL       := sh
+export KCONFIG_AUTOHEADER := autoconf.h
+export KCONFIG_CONFIG     := $(CURDIR)/.config
+
+$(OUT)autoconf.h : $(KCONFIG_CONFIG)
+	$(Q)$(MAKE) silentoldconfig
+
+$(KCONFIG_CONFIG):
+	$(Q)$(MAKE) defconfig
+
+%onfig:
+	$(Q)mkdir -p $(OUT)/tools/kconfig/lxdialog
+	$(Q)mkdir -p $(OUT)/include/config
+	$(Q)$(MAKE) -C $(OUT) -f $(CURDIR)/tools/kconfig/Makefile srctree=$(CURDIR) src=tools/kconfig obj=tools/kconfig Q=$(Q) Kconfig=$(CURDIR)/src/Kconfig $@
+
 ####### Generic rules
 clean:
 	$(Q)rm -rf $(OUT)
+
+distclean: clean
+	$(Q)rm -f .config .config.old
 
 $(OUT):
 	$(Q)mkdir $@

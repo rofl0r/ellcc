@@ -44,7 +44,7 @@ static void usage(const char *name)
 "Usage: %s [OPTIONS] FILE\n"
 "QEMU Disk Network Block Device Server\n"
 "\n"
-"  -p, --port=PORT      port to listen on (default `1024')\n"
+"  -p, --port=PORT      port to listen on (default `%d')\n"
 "  -o, --offset=OFFSET  offset into the image\n"
 "  -b, --bind=IFACE     interface to bind to (default `0.0.0.0')\n"
 "  -k, --socket=PATH    path to the unix socket\n"
@@ -62,7 +62,7 @@ static void usage(const char *name)
 "  -V, --version        output version information and exit\n"
 "\n"
 "Report bugs to <anthony@codemonkey.ws>\n"
-    , name, "DEVICE");
+    , name, NBD_DEFAULT_PORT, "DEVICE");
 }
 
 static void version(const char *name)
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
     bool readonly = false;
     bool disconnect = false;
     const char *bindto = "0.0.0.0";
-    int port = 1024;
+    int port = NBD_DEFAULT_PORT;
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
     off_t fd_size;
@@ -230,6 +230,7 @@ int main(int argc, char **argv)
     int nb_fds = 0;
     int max_fd;
     int persistent = 0;
+    uint32_t nbdflags;
 
     while ((ch = getopt_long(argc, argv, sopt, lopt, &opt_ind)) != -1) {
         switch (ch) {
@@ -237,7 +238,7 @@ int main(int argc, char **argv)
             flags |= BDRV_O_SNAPSHOT;
             break;
         case 'n':
-            flags |= BDRV_O_NOCACHE;
+            flags |= BDRV_O_NOCACHE | BDRV_O_CACHE_WB;
             break;
         case 'b':
             bindto = optarg;
@@ -335,8 +336,6 @@ int main(int argc, char **argv)
     bdrv_init();
 
     bs = bdrv_new("hda");
-    if (bs == NULL)
-        return 1;
 
     if ((ret = bdrv_open(bs, argv[optind], flags, NULL)) < 0) {
         errno = -ret;
@@ -360,7 +359,7 @@ int main(int argc, char **argv)
 
         if (!verbose) {
             /* detach client and server */
-            if (daemon(0, 0) == -1) {
+            if (qemu_daemon(0, 0) == -1) {
                 err(EXIT_FAILURE, "Failed to daemonize");
             }
         }
@@ -398,7 +397,8 @@ int main(int argc, char **argv)
                 goto out;
             }
 
-            ret = nbd_receive_negotiate(sock, &size, &blocksize);
+            ret = nbd_receive_negotiate(sock, NULL, &nbdflags,
+					&size, &blocksize);
             if (ret == -1) {
                 ret = 1;
                 goto out;
@@ -417,7 +417,10 @@ int main(int argc, char **argv)
 
             show_parts(device);
 
-            nbd_client(fd, sock);
+            ret = nbd_client(fd);
+            if (ret) {
+                ret = 1;
+            }
             close(fd);
  out:
             kill(pid, SIGTERM);
@@ -441,7 +444,7 @@ int main(int argc, char **argv)
     max_fd = sharing_fds[0];
     nb_fds++;
 
-    data = qemu_memalign(512, NBD_BUFFER_SIZE);
+    data = qemu_blockalign(bs, NBD_BUFFER_SIZE);
     if (data == NULL)
         errx(EXIT_FAILURE, "Cannot allocate data buffer");
 

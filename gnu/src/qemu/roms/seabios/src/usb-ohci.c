@@ -211,6 +211,7 @@ ohci_init(u16 bdf, int busid)
     struct usb_ohci_s *cntl = malloc_tmphigh(sizeof(*cntl));
     memset(cntl, 0, sizeof(*cntl));
     cntl->usb.busid = busid;
+    cntl->usb.bdf = bdf;
     cntl->usb.type = USB_TYPE_OHCI;
 
     u32 baseaddr = pci_config_readl(bdf, PCI_BASE_ADDRESS_0);
@@ -409,6 +410,21 @@ ohci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
         ohci_waittick(cntl);
     free(tds);
     return ret;
+}
+
+struct usb_pipe *
+ohci_alloc_bulk_pipe(struct usb_pipe *dummy)
+{
+    if (! CONFIG_USB_OHCI)
+        return NULL;
+    dprintf(1, "OHCI Bulk transfers not supported.\n");
+    return NULL;
+}
+
+int
+ohci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize)
+{
+    return -1;
 }
 
 struct usb_pipe *

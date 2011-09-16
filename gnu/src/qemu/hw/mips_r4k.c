@@ -22,6 +22,7 @@
 #include "loader.h"
 #include "elf.h"
 #include "mc146818rtc.h"
+#include "blockdev.h"
 
 #define MAX_IDE_BUS 2
 
@@ -29,7 +30,7 @@ static const int ide_iobase[2] = { 0x1f0, 0x170 };
 static const int ide_iobase2[2] = { 0x3f6, 0x376 };
 static const int ide_irq[2] = { 14, 15 };
 
-static PITState *pit; /* PIT i8254 */
+static ISADevice *pit; /* PIT i8254 */
 
 /* i8254 PIT is attached to the IRQ0 at PIC i8259 */
 
@@ -166,7 +167,6 @@ void mips_r4k_init (ram_addr_t ram_size,
     int bios_size;
     CPUState *env;
     ResetData *reset_info;
-    ISADevice *rtc_state;
     int i;
     qemu_irq *i8259;
     DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
@@ -204,7 +204,8 @@ void mips_r4k_init (ram_addr_t ram_size,
 
     if (!mips_qemu_iomemtype) {
         mips_qemu_iomemtype = cpu_register_io_memory(mips_qemu_read,
-                                                     mips_qemu_write, NULL);
+                                                     mips_qemu_write, NULL,
+                                                     DEVICE_NATIVE_ENDIAN);
     }
     cpu_register_physical_memory(0x1fbf0000, 0x10000, mips_qemu_iomemtype);
 
@@ -267,17 +268,13 @@ void mips_r4k_init (ram_addr_t ram_size,
     isa_bus_new(NULL);
     isa_bus_irqs(i8259);
 
-    rtc_state = rtc_init(2000, NULL);
+    rtc_init(2000, NULL);
 
     /* Register 64 KB of ISA IO space at 0x14000000 */
-#ifdef TARGET_WORDS_BIGENDIAN
-    isa_mmio_init(0x14000000, 0x00010000, 1);
-#else
-    isa_mmio_init(0x14000000, 0x00010000, 0);
-#endif
+    isa_mmio_init(0x14000000, 0x00010000);
     isa_mem_base = 0x10000000;
 
-    pit = pit_init(0x40, i8259[0]);
+    pit = pit_init(0x40, 0);
 
     for(i = 0; i < MAX_SERIAL_PORTS; i++) {
         if (serial_hds[i]) {
@@ -290,15 +287,7 @@ void mips_r4k_init (ram_addr_t ram_size,
     if (nd_table[0].vlan)
         isa_ne2000_init(0x300, 9, &nd_table[0]);
 
-    if (drive_get_max_bus(IF_IDE) >= MAX_IDE_BUS) {
-        fprintf(stderr, "qemu: too many IDE bus\n");
-        exit(1);
-    }
-
-    for(i = 0; i < MAX_IDE_BUS * MAX_IDE_DEVS; i++) {
-        hd[i] = drive_get(IF_IDE, i / MAX_IDE_DEVS, i % MAX_IDE_DEVS);
-    }
-
+    ide_drive_get(hd, MAX_IDE_BUS);
     for(i = 0; i < MAX_IDE_BUS; i++)
         isa_ide_init(ide_iobase[i], ide_iobase2[i], ide_irq[i],
                      hd[MAX_IDE_DEVS * i],

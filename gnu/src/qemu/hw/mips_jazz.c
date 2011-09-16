@@ -29,13 +29,15 @@
 #include "isa.h"
 #include "fdc.h"
 #include "sysemu.h"
-#include "audio/audio.h"
+#include "arch_init.h"
 #include "boards.h"
 #include "net.h"
 #include "esp.h"
 #include "mips-bios.h"
 #include "loader.h"
 #include "mc146818rtc.h"
+#include "blockdev.h"
+#include "sysbus.h"
 
 enum jazz_model_e
 {
@@ -89,26 +91,6 @@ static CPUWriteMemoryFunc * const dma_dummy_write[3] = {
     dma_dummy_writeb,
 };
 
-static void audio_init(qemu_irq *pic)
-{
-    struct soundhw *c;
-    int audio_enabled = 0;
-
-    for (c = soundhw; !audio_enabled && c->name; ++c) {
-        audio_enabled = c->enabled;
-    }
-
-    if (audio_enabled) {
-        for (c = soundhw; c->name; ++c) {
-            if (c->enabled) {
-                if (c->isa) {
-                    c->init.init_isa(pic);
-                }
-            }
-        }
-    }
-}
-
 #define MAGNUM_BIOS_SIZE_MAX 0x7e000
 #define MAGNUM_BIOS_SIZE (BIOS_SIZE < MAGNUM_BIOS_SIZE_MAX ? BIOS_SIZE : MAGNUM_BIOS_SIZE_MAX)
 
@@ -134,9 +116,11 @@ void mips_jazz_init (ram_addr_t ram_size,
     void* rc4030_opaque;
     int s_rtc, s_dma_dummy;
     NICInfo *nd;
-    PITState *pit;
+    DeviceState *dev;
+    SysBusDevice *sysbus;
+    ISADevice *pit;
     DriveInfo *fds[MAX_FD];
-    qemu_irq esp_reset;
+    qemu_irq esp_reset, dma_enable;
     qemu_irq *cpu_exit_irq;
     ram_addr_t ram_offset;
     ram_addr_t bios_offset;
@@ -190,7 +174,8 @@ void mips_jazz_init (ram_addr_t ram_size,
 
     /* Chipset */
     rc4030_opaque = rc4030_init(env->irq[6], env->irq[3], &rc4030, &dmas);
-    s_dma_dummy = cpu_register_io_memory(dma_dummy_read, dma_dummy_write, NULL);
+    s_dma_dummy = cpu_register_io_memory(dma_dummy_read, dma_dummy_write, NULL,
+                                         DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(0x8000d000, 0x00001000, s_dma_dummy);
 
     /* ISA devices */
@@ -199,16 +184,11 @@ void mips_jazz_init (ram_addr_t ram_size,
     isa_bus_irqs(i8259);
     cpu_exit_irq = qemu_allocate_irqs(cpu_request_exit, NULL, 1);
     DMA_init(0, cpu_exit_irq);
-    pit = pit_init(0x40, i8259[0]);
+    pit = pit_init(0x40, 0);
     pcspk_init(pit);
 
     /* ISA IO space at 0x90000000 */
-#ifdef TARGET_WORDS_BIGENDIAN
-    isa_mmio_init(0x90000000, 0x01000000, 1);
-#else
-    isa_mmio_init(0x90000000, 0x01000000, 0);
-#endif
-
+    isa_mmio_init(0x90000000, 0x01000000);
     isa_mem_base = 0x11000000;
 
     /* Video card */
@@ -244,7 +224,7 @@ void mips_jazz_init (ram_addr_t ram_size,
     /* SCSI adapter */
     esp_init(0x80002000, 0,
              rc4030_dma_read, rc4030_dma_write, dmas[0],
-             rc4030[5], &esp_reset);
+             rc4030[5], &esp_reset, &dma_enable);
 
     /* Floppy */
     if (drive_get_max_bus(IF_FLOPPY) >= MAX_FD) {
@@ -258,7 +238,8 @@ void mips_jazz_init (ram_addr_t ram_size,
 
     /* Real time clock */
     rtc_init(1980, NULL);
-    s_rtc = cpu_register_io_memory(rtc_read, rtc_write, NULL);
+    s_rtc = cpu_register_io_memory(rtc_read, rtc_write, NULL,
+                                   DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(0x80004000, 0x00001000, s_rtc);
 
     /* Keyboard (i8042) */
@@ -286,10 +267,13 @@ void mips_jazz_init (ram_addr_t ram_size,
 
     /* Sound card */
     /* FIXME: missing Jazz sound at 0x8000c000, rc4030[2] */
-    audio_init(i8259);
+    audio_init(i8259, NULL);
 
-    /* NVRAM: Unprotected at 0x9000, Protected at 0xa000, Read only at 0xb000 */
-    ds1225y_init(0x80009000, "nvram");
+    /* NVRAM */
+    dev = qdev_create(NULL, "ds1225y");
+    qdev_init_nofail(dev);
+    sysbus = sysbus_from_qdev(dev);
+    sysbus_mmio_map(sysbus, 0, 0x80009000);
 
     /* LED indicator */
     jazz_led_init(0x8000f000);

@@ -12,6 +12,7 @@
 #include "biosvar.h" // GET_EBDA
 #include "lzmadecode.h" // LzmaDecode
 #include "smbios.h" // smbios_init
+#include "boot.h" // boot_add_cbfs
 
 
 /****************************************************************
@@ -125,8 +126,6 @@ static void
 coreboot_fill_map(void)
 {
     dprintf(3, "Attempting to find coreboot table\n");
-
-    CBMemTable = NULL;
 
     // Find coreboot table.
     struct cb_header *cbh = find_cb_header(0, 0x1000);
@@ -290,10 +289,6 @@ coreboot_copy_biostable(void)
 
     dprintf(3, "Relocating coreboot bios tables\n");
 
-    // Init variables set in coreboot table memory scan.
-    PirOffset = 0;
-    RsdpAddr = 0;
-
     // Scan CB_MEM_TABLE areas for bios tables.
     int i, count = MEM_RANGE_COUNT(cbm);
     for (i=0; i<count; i++) {
@@ -326,7 +321,7 @@ ulzma(u8 *dst, u32 maxlen, const u8 *src, u32 srclen)
     u8 scratch[15980];
     int need = (LzmaGetNumProbs(&state.Properties) * sizeof(CProb));
     if (need > sizeof(scratch)) {
-        dprintf(1, "LzmaDecode need %d have %d\n", need, sizeof(scratch));
+        dprintf(1, "LzmaDecode need %d have %d\n", need, (unsigned int)sizeof(scratch));
         return -1;
     }
     state.Probs = (CProb *)scratch;
@@ -510,11 +505,10 @@ cbfs_copyfile(struct cbfs_file *file, void *dst, u32 maxlen)
     void *src = (void*)file + ntohl(file->offset);
     if (cbfs_iscomp(file)) {
         // Compressed - copy to temp ram and uncompress it.
-        u32 asize = ALIGN(size, 4);
-        void *temp = malloc_tmphigh(asize);
+        void *temp = malloc_tmphigh(size);
         if (!temp)
             return -1;
-        iomemcpy(temp, src, asize);
+        iomemcpy(temp, src, size);
         int ret = ulzma(dst, maxlen, temp, size);
         yield();
         free(temp);
@@ -597,6 +591,21 @@ cbfs_run_payload(struct cbfs_file *file)
             break;
         }
         seg++;
+    }
+}
+
+// Register payloads in "img/" directory with boot system.
+void
+cbfs_payload_setup(void)
+{
+    struct cbfs_file *file = NULL;
+    for (;;) {
+        file = cbfs_findprefix("img/", file);
+        if (!file)
+            break;
+        const char *filename = cbfs_filename(file);
+        char *desc = znprintf(MAXDESCSIZE, "Payload [%s]", &filename[4]);
+        boot_add_cbfs(file, desc, bootprio_find_named_rom(filename, 0));
     }
 }
 
