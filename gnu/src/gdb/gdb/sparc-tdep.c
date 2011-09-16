@@ -1,6 +1,6 @@
 /* Target-dependent code for SPARC.
 
-   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -63,7 +63,7 @@ struct regset;
    sparc64-tdep.c; don't add any here.  */
 
 /* The SPARC Floating-Point Quad-Precision format is similar to
-   big-endian IA-64 Quad-recision format.  */
+   big-endian IA-64 Quad-Precision format.  */
 #define floatformats_sparc_quad floatformats_ia64_quad
 
 /* The stack pointer is offset from the stack frame by a BIAS of 2047
@@ -145,7 +145,7 @@ sparc_is_unimp_insn (CORE_ADDR pc)
 
    More information on StackGuard can be found on in:
 
-   Mike Frantzen and Mike Shuey. "StackGhost: Hardware Facilitated
+   Mike Frantzen and Mike Shuey.  "StackGhost: Hardware Facilitated
    Stack Protection."  2001.  Published in USENIX Security Symposium
    '01.  */
 
@@ -347,7 +347,7 @@ sparc_fsr_type (struct gdbarch *gdbarch)
 }
 
 /* Return the GDB type object for the "standard" data type of data in
-   register REGNUM. */
+   register REGNUM.  */
 
 static struct type *
 sparc32_register_type (struct gdbarch *gdbarch, int regnum)
@@ -373,16 +373,20 @@ sparc32_register_type (struct gdbarch *gdbarch, int regnum)
   return builtin_type (gdbarch)->builtin_int32;
 }
 
-static void
+static enum register_status
 sparc32_pseudo_register_read (struct gdbarch *gdbarch,
 			      struct regcache *regcache,
 			      int regnum, gdb_byte *buf)
 {
+  enum register_status status;
+
   gdb_assert (regnum >= SPARC32_D0_REGNUM && regnum <= SPARC32_D30_REGNUM);
 
   regnum = SPARC_F0_REGNUM + 2 * (regnum - SPARC32_D0_REGNUM);
-  regcache_raw_read (regcache, regnum, buf);
-  regcache_raw_read (regcache, regnum + 1, buf + 4);
+  status = regcache_raw_read (regcache, regnum, buf);
+  if (status == REG_VALID)
+    status = regcache_raw_read (regcache, regnum + 1, buf + 4);
+  return status;
 }
 
 static void
@@ -397,6 +401,13 @@ sparc32_pseudo_register_write (struct gdbarch *gdbarch,
   regcache_raw_write (regcache, regnum + 1, buf + 4);
 }
 
+
+static CORE_ADDR
+sparc32_frame_align (struct gdbarch *gdbarch, CORE_ADDR address)
+{
+  /* The ABI requires double-word alignment.  */
+  return address & ~0x7;
+}
 
 static CORE_ADDR
 sparc32_push_dummy_code (struct gdbarch *gdbarch, CORE_ADDR sp,
@@ -1020,6 +1031,7 @@ sparc32_frame_prev_register (struct frame_info *this_frame,
 static const struct frame_unwind sparc32_frame_unwind =
 {
   NORMAL_FRAME,
+  default_frame_unwind_stop_reason,
   sparc32_frame_this_id,
   sparc32_frame_prev_register,
   NULL,
@@ -1407,6 +1419,7 @@ sparc32_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_fp0_regnum (gdbarch, SPARC_F0_REGNUM); /* %f0 */
 
   /* Call dummy code.  */
+  set_gdbarch_frame_align (gdbarch, sparc32_frame_align);
   set_gdbarch_call_dummy_location (gdbarch, ON_STACK);
   set_gdbarch_push_dummy_code (gdbarch, sparc32_push_dummy_code);
   set_gdbarch_push_dummy_call (gdbarch, sparc32_push_dummy_call);

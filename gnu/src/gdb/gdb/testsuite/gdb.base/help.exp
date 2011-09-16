@@ -1,5 +1,5 @@
 #   Copyright 1988, 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1998, 1999,
-#   2000, 2002, 2003, 2005, 2006, 2007, 2008, 2009, 2010
+#   2000, 2002, 2003, 2005, 2006, 2007, 2008, 2009, 2010, 2011
 #   Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -238,7 +238,9 @@ gdb_test "help info all-registers" "List of all registers and their contents, fo
 # test help info args
 gdb_test "help info args" "Argument variables of current stack frame\." "help info args"
 # test help info breakpoints
-gdb_test "help info breakpoints" "Status of user-settable breakpoints, or breakpoint number NUMBER\..*\[\r\n\]+breakpoint set\." "help info breakpoints"
+gdb_test "help info breakpoints" \
+    "Status of specified breakpoints .all user-settable breakpoints if no argument.*\[\r\n\]+breakpoint set\." \
+    "help info breakpoints"
 # test help info catch
 gdb_test "help info catch" "Exceptions that can be caught in the current stack frame\." "help info catch"
 # test help info copying
@@ -281,6 +283,8 @@ gdb_test "help info symbol" "Describe what symbol is at location ADDR.*"
 gdb_test "help info target" "Names of targets and files being debugged\.\[\r\n\]+Shows the entire stack of targets currently in use \\(including the exec-file,\[\r\n\]+core-file, and process, if any\\), as well as the symbol file name\." "help info target"
 # test help info terminal
 gdb_test "help info terminal" "Print inferior's saved terminal status\." "help info terminal"
+# test help info threads
+gdb_test "help info threads" "Display currently known threads.*" "help info threads"
 # test help info types
 gdb_test "help info types" "All type names, or those matching REGEXP\." "help info types"
 # test help info variables
@@ -288,7 +292,9 @@ gdb_test "help info variables" "All global and static variable names, or those m
 # test help info warranty
 gdb_test "help info warranty" "Various kinds of warranty you do not have\." "help info warranty"
 # test help info watchpoints
-gdb_test "help info watchpoints" "Status of watchpoints, or watchpoint number NUMBER\." "help info watchpoints"
+gdb_test "help info watchpoints" \
+    "Status of specified watchpoints .all watchpoints if no argument.\." \
+    "help info watchpoints"
 # test help inspect
 gdb_test "help inspect" "Same as \"print\" command, except that if you are running in the epoch\[\r\n\]+environment, the value is printed in its own window\." "help inspect"
 # test help jump
@@ -507,7 +513,7 @@ gdb_test "help show confirm" "Show whether to confirm potentially dangerous oper
 # test help show convenience
 gdb_test "help show convenience" "Debugger convenience \\(\"\\\$foo\"\\) variables\.\[\r\n\]+These variables are created when you assign them values;\[\r\n\]+thus, \"print \\\$foo=1\" gives \"\\\$foo\" the value 1\.  Values may be any type\.\[\r\n\]+A few convenience variables are given values automatically:\[\r\n\]+\"\\\$_\"holds the last address examined with \"x\" or \"info lines\",\[\r\n\]+\"\\\$__\" holds the contents of the last address examined with \"x\"\." "help show convenience"
 # test help show directories
-gdb_test "help show directories" "Current search path for finding source files\.\[\r\n\]+\\\$cwd in the path means the current working directory\.\[\r\n\]+\\\$cdir in the path means the compilation directory of the source file\." "help show directories"
+gdb_test "help show directories" "Show the search path for finding source files\.\[\r\n\]+\\\$cwd in the path means the current working directory\.\[\r\n\]+\\\$cdir in the path means the compilation directory of the source file\..*" "help show directories"
 # test help show editing
 gdb_test "help show editing" "Show editing of command lines as they are typed\.\[\r\n\]+Use \"on\" to enable the editing, and \"off\" to disable it\.\[\r\n\]+Without an argument, command line editing is enabled\.  To edit, use\[\r\n\]+EMACS-like or VI-like commands like control-P or ESC\." "help show editing"
 # test help show environment
@@ -644,6 +650,14 @@ test_prefix_command_help "target" {
 }
 # test help tbreak
 gdb_test "help tbreak" "Set a temporary breakpoint.*" "help tbreak"
+#test help thread
+gdb_test "help thread" "Use this command to switch between threads.*" "help thread"
+# test help thread apply
+gdb_test "help thread apply" "Apply a command to a list of threads.*" "help thread apply"
+# test help thread find
+gdb_test "help thread find" "Find threads that match a regular.*" "help thread find"
+# test help thread name
+gdb_test "help thread name" "Set the current thread's name.*" "help thread name"
 # test help tty
 gdb_test "help tty" "Set terminal for future runs of program being debugged\.\[\r\n\]+Usage: set inferior-tty /dev/pts/1" "help tty"
 # test help until "u" abbreviation
@@ -669,7 +683,7 @@ test_class_help "user-defined" {
     "Use the \"define\" command to define a command\.\[\r\n\]+"
 }
 # test help watch
-gdb_test "help watch" "Set a watchpoint for an expression\.\[\r\n\]+A watchpoint stops execution of your program whenever the value of\[\r\n\]+an expression changes\." "help watch"
+gdb_test "help watch" "Set a watchpoint for an expression\.\[\r\n\]+Usage: watch .-l.-location. EXPRESSION\[\r\n\]+A watchpoint stops execution of your program whenever the value of\[\r\n\]+an expression changes\.\[\r\n\]+If -l or -location is given, this evaluates EXPRESSION and watches\[\r\n\]+the memory to which it refers\." "help watch"
 # test help whatis
 gdb_test "help whatis" "Print data type of expression EXP\." "help whatis"
 # test help where

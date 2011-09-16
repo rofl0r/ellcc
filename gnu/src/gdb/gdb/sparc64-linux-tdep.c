@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux UltraSPARC.
 
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010
+   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -32,6 +32,7 @@
 #include "trad-frame.h"
 #include "tramp-frame.h"
 #include "xml-syscall.h"
+#include "linux-tdep.h"
 
 /* The syscall's XML filename for sparc 64-bit.  */
 #define XML_SYSCALL_FILENAME_SPARC64 "syscalls/sparc64-linux.xml"
@@ -156,7 +157,8 @@ sparc64_linux_supply_core_gregset (const struct regset *regset,
 				   struct regcache *regcache,
 				   int regnum, const void *gregs, size_t len)
 {
-  sparc64_supply_gregset (&sparc64_linux_core_gregset, regcache, regnum, gregs);
+  sparc64_supply_gregset (&sparc64_linux_core_gregset,
+			  regcache, regnum, gregs);
 }
 
 static void
@@ -164,7 +166,8 @@ sparc64_linux_collect_core_gregset (const struct regset *regset,
 				    const struct regcache *regcache,
 				    int regnum, void *gregs, size_t len)
 {
-  sparc64_collect_gregset (&sparc64_linux_core_gregset, regcache, regnum, gregs);
+  sparc64_collect_gregset (&sparc64_linux_core_gregset,
+			   regcache, regnum, gregs);
 }
 
 static void
@@ -236,6 +239,8 @@ static void
 sparc64_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+
+  linux_init_abi (info, gdbarch);
 
   tdep->gregset = regset_alloc (gdbarch, sparc64_linux_supply_core_gregset,
 				sparc64_linux_collect_core_gregset);

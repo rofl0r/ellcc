@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux SPARC.
 
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010
+   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -33,6 +33,7 @@
 #include "trad-frame.h"
 #include "tramp-frame.h"
 #include "xml-syscall.h"
+#include "linux-tdep.h"
 
 /* The syscall's XML filename for sparc 32-bit.  */
 #define XML_SYSCALL_FILENAME_SPARC32 "syscalls/sparc-linux.xml"
@@ -140,7 +141,7 @@ sparc32_linux_step_trap (struct frame_info *frame, unsigned long insn)
     {
       ULONGEST sc_num = get_frame_register_unsigned (frame, SPARC_G1_REGNUM);
 
-      /* __NR_rt_sigreturn is 101 and __NR_sigreturn is 216  */
+      /* __NR_rt_sigreturn is 101 and __NR_sigreturn is 216.  */
       if (sc_num == 101 || sc_num == 216)
 	{
 	  struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -192,7 +193,8 @@ sparc32_linux_supply_core_gregset (const struct regset *regset,
 				   struct regcache *regcache,
 				   int regnum, const void *gregs, size_t len)
 {
-  sparc32_supply_gregset (&sparc32_linux_core_gregset, regcache, regnum, gregs);
+  sparc32_supply_gregset (&sparc32_linux_core_gregset,
+			  regcache, regnum, gregs);
 }
 
 static void
@@ -200,7 +202,8 @@ sparc32_linux_collect_core_gregset (const struct regset *regset,
 				    const struct regcache *regcache,
 				    int regnum, void *gregs, size_t len)
 {
-  sparc32_collect_gregset (&sparc32_linux_core_gregset, regcache, regnum, gregs);
+  sparc32_collect_gregset (&sparc32_linux_core_gregset,
+			   regcache, regnum, gregs);
 }
 
 static void
@@ -272,6 +275,8 @@ static void
 sparc32_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+
+  linux_init_abi (info, gdbarch);
 
   tdep->gregset = regset_alloc (gdbarch, sparc32_linux_supply_core_gregset,
 				sparc32_linux_collect_core_gregset);

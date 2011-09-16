@@ -1,6 +1,7 @@
 /* Target-dependent code for GNU/Linux Super-H.
 
-   Copyright (C) 2005, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011
+   Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,6 +26,7 @@
 
 #include "glibc-tdep.h"
 #include "sh-tdep.h"
+#include "linux-tdep.h"
 
 #define REGSx16(base) \
   {(base),      0}, \
@@ -72,6 +74,8 @@ static const struct sh_corefile_regmap fpregs_table[] =
 static void
 sh_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
+  linux_init_abi (info, gdbarch);
+
   /* GNU/Linux uses SVR4-style shared libraries.  */
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);
   set_solib_svr4_fetch_link_map_offsets

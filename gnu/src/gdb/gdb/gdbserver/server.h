@@ -1,6 +1,6 @@
 /* Common definitions for remote server for GDB.
    Copyright (C) 1993, 1995, 1997, 1998, 1999, 2000, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,6 +38,15 @@
 #include <string.h>
 #endif
 
+#ifdef HAVE_ALLOCA_H
+#include <alloca.h>
+#endif
+/* On some systems such as MinGW, alloca is declared in malloc.h
+   (there is no alloca.h).  */
+#if HAVE_MALLOC_H
+#include <malloc.h>
+#endif
+
 #if !HAVE_DECL_STRERROR
 #ifndef strerror
 extern char *strerror (int);	/* X3.159-1989  4.11.6.2 */
@@ -54,8 +63,16 @@ extern void perror (const char *);
 extern void *memmem (const void *, size_t , const void *, size_t);
 #endif
 
+#if !HAVE_DECL_VASPRINTF
+extern int vasprintf(char **strp, const char *fmt, va_list ap);
+#endif
+#if !HAVE_DECL_VSNPRINTF
+int vsnprintf(char *str, size_t size, const char *format, va_list ap);
+#endif
+
 #ifndef ATTR_NORETURN
-#if defined(__GNUC__) && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 7))
+#if defined(__GNUC__) && (__GNUC__ > 2 \
+			  || (__GNUC__ == 2 && __GNUC_MINOR__ >= 7))
 #define ATTR_NORETURN __attribute__ ((noreturn))
 #else
 #define ATTR_NORETURN           /* nothing */
@@ -63,7 +80,8 @@ extern void *memmem (const void *, size_t , const void *, size_t);
 #endif
 
 #ifndef ATTR_FORMAT
-#if defined(__GNUC__) && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 4))
+#if defined(__GNUC__) && (__GNUC__ > 2 \
+			  || (__GNUC__ == 2 && __GNUC_MINOR__ >= 4))
 #define ATTR_FORMAT(type, x, y) __attribute__ ((format(type, x, y)))
 #else
 #define ATTR_FORMAT(type, x, y) /* nothing */
@@ -76,6 +94,12 @@ extern void *memmem (const void *, size_t , const void *, size_t);
 #else
 #define ATTR_MALLOC             /* nothing */
 #endif
+#endif
+
+/* Define underscore macro, if not available, to be able to use it inside
+   code shared with gdb in common directory.  */
+#ifndef _
+#define _(String) (String)
 #endif
 
 /* A type used for binary buffers.  */
@@ -334,13 +358,20 @@ extern int disable_packet_qfThreadInfo;
 extern int multi_process;
 extern int non_stop;
 
+#if USE_WIN32API
+#include <winsock2.h>
+typedef SOCKET gdb_fildes_t;
+#else
+typedef int gdb_fildes_t;
+#endif
+
 /* Functions from event-loop.c.  */
 typedef void *gdb_client_data;
 typedef int (handler_func) (int, gdb_client_data);
 typedef int (callback_handler_func) (gdb_client_data);
 
-extern void delete_file_handler (int fd);
-extern void add_file_handler (int fd, handler_func *proc,
+extern void delete_file_handler (gdb_fildes_t fd);
+extern void add_file_handler (gdb_fildes_t fd, handler_func *proc,
 			      gdb_client_data client_data);
 extern int append_callback_event (callback_handler_func *proc,
 				   gdb_client_data client_data);
@@ -398,13 +429,14 @@ void decode_M_packet (char *from, CORE_ADDR * mem_addr_ptr,
 		      unsigned int *len_ptr, unsigned char **to_p);
 int decode_X_packet (char *from, int packet_len, CORE_ADDR * mem_addr_ptr,
 		     unsigned int *len_ptr, unsigned char **to_p);
-int decode_xfer_write (char *buf, int packet_len, char **annex,
+int decode_xfer_write (char *buf, int packet_len,
 		       CORE_ADDR *offset, unsigned int *len,
 		       unsigned char *data);
 int decode_search_memory_packet (const char *buf, int packet_len,
 				 CORE_ADDR *start_addrp,
 				 CORE_ADDR *search_space_lenp,
-				 gdb_byte *pattern, unsigned int *pattern_lenp);
+				 gdb_byte *pattern,
+				 unsigned int *pattern_lenp);
 
 int unhexify (char *bin, const char *hex, int count);
 int hexify (char *hex, const char *bin, int count);
@@ -462,6 +494,8 @@ void *xmalloc (size_t) ATTR_MALLOC;
 void *xrealloc (void *, size_t);
 void *xcalloc (size_t, size_t) ATTR_MALLOC;
 char *xstrdup (const char *) ATTR_MALLOC;
+int xsnprintf (char *str, size_t size, const char *format, ...)
+  ATTR_FORMAT (printf, 3, 4);;
 void freeargv (char **argv);
 void perror_with_name (const char *string);
 void error (const char *string,...) ATTR_NORETURN ATTR_FORMAT (printf, 1, 2);
@@ -473,6 +507,7 @@ char *paddress (CORE_ADDR addr);
 char *pulongest (ULONGEST u);
 char *plongest (LONGEST l);
 char *phex_nz (ULONGEST l, int sizeof_l);
+char *pfildes (gdb_fildes_t fd);
 
 #define gdb_assert(expr)                                                      \
   ((void) ((expr) ? 0 :                                                       \
@@ -545,6 +580,8 @@ int fetch_traceframe_registers (int tfnum,
 int traceframe_read_sdata (int tfnum, ULONGEST offset,
 			   unsigned char *buf, ULONGEST length,
 			   ULONGEST *nbytes);
+
+int traceframe_read_info (int tfnum, struct buffer *buffer);
 
 /* If a thread is determined to be collecting a fast tracepoint, this
    structure holds the collect status.  */

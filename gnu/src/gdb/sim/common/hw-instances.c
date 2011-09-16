@@ -1,6 +1,6 @@
 /* The common simulator framework for GDB, the GNU Debugger.
 
-   Copyright 2002, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright 2002, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
    Contributed by Andrew Cagney and Red Hat.
 
@@ -26,7 +26,8 @@
 #include "sim-io.h"
 #include "sim-assert.h"
 
-struct hw_instance_data {
+struct hw_instance_data
+{
   hw_finish_instance_method *to_finish;
   struct hw_instance *instances;
 };
@@ -88,9 +89,9 @@ hw_instance_delete (struct hw_instance *instance)
     hw_abort (me, "no delete method");
   instance->method->delete(instance);
   if (instance->args != NULL)
-    zfree (instance->args);
+    free (instance->args);
   if (instance->path != NULL)
-    zfree (instance->path);
+    free (instance->path);
   if (instance->child == NULL)
     {
       /* only remove leaf nodes */
@@ -116,7 +117,7 @@ hw_instance_delete (struct hw_instance *instance)
       instance->child->parent = NULL;
     }
   cap_remove (me->ihandles, instance);
-  zfree (instance);
+  free (instance);
 #endif
 }
 
@@ -156,7 +157,7 @@ int
 hw_instance_call_method (struct hw_instance *instance,
 			 const char *method_name,
 			 int n_stack_args,
-			 unsigned_cell stack_args[/*n_stack_args*/],	
+			 unsigned_cell stack_args[/*n_stack_args*/],
 			 int n_stack_returns,
 			 unsigned_cell stack_returns[/*n_stack_args*/])
 {

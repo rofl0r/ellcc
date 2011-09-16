@@ -1,6 +1,6 @@
 /* Target-dependent code for the Renesas RX for GDB, the GNU debugger.
 
-   Copyright (C) 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
    Contributed by Red Hat, Inc.
 
@@ -296,7 +296,6 @@ rx_analyze_prologue (CORE_ADDR start_pc,
 	}
       else if (opc.id == RXO_branch
 	       && opc.op[0].type == RX_Operand_Immediate
-	       && opc.op[1].type == RX_Operand_Condition
 	       && next_pc < opc.op[0].addend)
 	{
 	  /* When a loop appears as the first statement of a function
@@ -456,6 +455,7 @@ rx_frame_prev_register (struct frame_info *this_frame,
 
 static const struct frame_unwind rx_frame_unwind = {
   NORMAL_FRAME,
+  default_frame_unwind_stop_reason,
   rx_frame_this_id,
   rx_frame_prev_register,
   NULL,

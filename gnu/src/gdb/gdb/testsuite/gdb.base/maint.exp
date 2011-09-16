@@ -1,4 +1,4 @@
-# Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2007, 2008, 2009, 2010
+# Copyright 1998, 1999, 2000, 2001, 2002, 2003, 2007, 2008, 2009, 2010, 2011
 # Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -54,10 +54,6 @@ if $tracelevel then {
 
 global usestubs
 
-#
-# test running programs
-#
-
 set testfile "break"
 set srcfile ${testfile}.c
 set srcfile1 ${testfile}1.c
@@ -82,16 +78,26 @@ if  { [gdb_compile "${binfile}0.o ${binfile}1.o" "${binfile}" executable {debug 
 gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
+
+# The commands we test here produce many lines of output; disable "press
+# <return> to continue" prompts.
+gdb_test_no_output "set height 0"
+
+# Tests that require that no program is running
+
+gdb_file_cmd ${binfile}
+
+# Test for a regression where this command would internal-error if the
+# program wasn't running.
+gdb_test "maint print registers" "Name.*Nr.*Rel.*Offset.*Size.*Type.*"
+
+# Tests that can or should be done with a running program
+
 gdb_load ${binfile}
 
 if ![runto_main] then {
         perror "tests suppressed"
 }
-
-
-# The commands we test here produce many lines of output; disable "press 
-# <return> to continue" prompts.
-gdb_test_no_output "set height 0"
 
 
 #
@@ -149,14 +155,18 @@ if [istarget "*-*-cygwin*"] {
 	set timeout [expr $timeout + 500]
 }
 
-gdb_test_multiple "maint print statistics" "maint print statistics" {
-    -re "Statistics for.*break.*Number of \"minimal\" symbols read.*Number of \"partial\" symbols read.*Number of \"types\" defined.*Number of psym tables \\(not yet expanded\\).*Number of symbol tables.*Number of symbol tables with line tables.*Number of symbol tables with blockvectors.*Total memory used for psymbol obstack.*Total memory used for psymbol cache.*Total memory used for symbol obstack.*Total memory used for type obstack.*$gdb_prompt $" { 
-	# Old output for gdb 6.0 and earlier
-	pass "maint print statistics" 
+send_gdb "maint print statistics\n"
+gdb_expect  {
+    -re "Statistics for\[^\n\r\]*break\[^\n\r\]*:\r\n  Number of \"minimal\" symbols read: $decimal\r\n  Number of \"partial\" symbols read: $decimal\r\n  Number of \"full\" symbols read: $decimal\r\n  Number of \"types\" defined: $decimal\r\n  Number of psym tables \\(not yet expanded\\): $decimal\r\n  Number of symbol tables: $decimal\r\n  Number of symbol tables with line tables: $decimal\r\n  Number of symbol tables with blockvectors: $decimal\r\n  Total memory used for objfile obstack: $decimal\r\n  Total memory used for psymbol cache: $decimal\r\n  Total memory used for macro cache: $decimal\r\n  Total memory used for file name cache: $decimal\r\n" {
+	gdb_expect {
+	    -re "$gdb_prompt $" {
+		pass "maint print statistics"
+	    }
+	    timeout { fail "(timeout) maint print statistics" }
+	}
     }
-    -re "Statistics for.*break.*Number of \"minimal\" symbols read.*Number of \"partial\" symbols read.*Number of \"types\" defined.*Number of psym tables \\(not yet expanded\\).*Number of symbol tables.*Number of symbol tables with line tables.*Number of symbol tables with blockvectors.*Total memory used for objfile obstack.*Total memory used for psymbol cache.*Total memory used for macro cache.*$gdb_prompt $" {
-	pass "maint print statistics"
-    }
+    -re ".*$gdb_prompt $"     { fail "maint print statistics" }
+    timeout         { fail "(timeout) maint print statistics" }
 }
 
 # There aren't any ...
@@ -249,7 +259,7 @@ gdb_expect  {
 	    -re "msymbols_output\r\n$gdb_prompt $" {
 		send_gdb "shell grep factorial msymbols_output\n"
 		gdb_expect {
-		    -re "\\\[ *$decimal\\\] \[tT\]\[ \t\]+$hex factorial.*$gdb_prompt $" {
+		    -re "\\\[ *$decimal\\\] \[tT\]\[ \t\]+$hex \\.?factorial.*$gdb_prompt $" {
 			pass "maint print msymbols"
 		    }
 		    -re ".*$gdb_prompt $"     { fail "maint print msymbols" }
@@ -276,7 +286,7 @@ gdb_test_multiple "maint print msymbols msymbols_output2 ${subdir}/${testfile}" 
     	gdb_test_multiple "shell ls msymbols_output2" "maint print msymbols" {
 	    -re "msymbols_output2\r\n$gdb_prompt $" {
 	    	gdb_test_multiple "shell grep factorial msymbols_output2" "maint print msymbols" {
-		    -re "\\\[ *$decimal\\\] \[tT\]\[ \t\]+$hex factorial.*$gdb_prompt $" {
+		    -re "\\\[ *$decimal\\\] \[tT\]\[ \t\]+$hex \\.?factorial.*$gdb_prompt $" {
 		    	pass "maint print msymbols"
 		    }
 		    -re ".*$gdb_prompt $" {

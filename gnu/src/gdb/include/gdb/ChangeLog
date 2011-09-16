@@ -1,3 +1,23 @@
+2011-03-05  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-bfin.h: New file.
+
+2011-01-11  Andrew Burgess  <aburgess@broadcom.com>
+
+	* remote-sim.h (sim_store_register): Update the API
+	documentation for this function.
+
+2010-09-06  Pedro Alves  <pedro@codesourcery.com>
+
+	* signals.def: Replace all ANY uses by SET with specific numbers.
+	* signals.h (ANY): Remove.
+
+2010-07-31  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* signals.h (enum target_signal): Move the content to signals.def.
+	Include it.
+	* signals.def: New file.
+
 2010-06-24  Kevin Buettner  <kevinb@redhat.com>
 
 	* sim-rx.h (sim_rx_regnum): Add sim_rx_acc_regnum.  Adjust

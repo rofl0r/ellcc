@@ -23,6 +23,7 @@ else !INSTALL_LIBBFD
 # Empty these so that the respective installation directories will not be created.
 bfdlibdir =
 bfdincludedir =
+bfdinclude_HEADERS =
 rpath_bfdlibdir = @bfdlibdir@
 noinst_LTLIBRARIES = libbfd.la
 libbfd_la_LDFLAGS += -rpath $(rpath_bfdlibdir)
@@ -33,6 +34,7 @@ NO_WERROR = @NO_WERROR@
 AM_CFLAGS = $(WARN_CFLAGS)
 AM_CPPFLAGS = -DBINDIR='"$(bindir)"'
 if PLUGINS
+bfdinclude_HEADERS += $(INCDIR)/plugin-api.h
 LIBDL = -ldl
 endif
 
@@ -651,6 +653,7 @@ OPTIONAL_BACKENDS = \
 	irix-core.lo \
 	lynx-core.lo \
 	osf-core.lo \
+	rs6000-core.lo \
 	sco5-core.lo \
 	trad-core.lo
 
@@ -661,6 +664,7 @@ OPTIONAL_BACKENDS_CFILES = \
 	irix-core.c \
 	lynx-core.c \
 	osf-core.c \
+	rs6000-core.c \
 	sco5-core.c \
 	trad-core.c
 

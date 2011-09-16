@@ -1,3 +1,8 @@
+
+@example
+/* Set to N to open the next N BFDs using an alternate id space.  */
+extern unsigned int bfd_use_reserved_id;
+@end example
 @section Opening and closing BFDs
 
 
@@ -191,7 +196,7 @@ bfd *bfd_create (const char *filename, bfd *templ);
 @strong{Description}@*
 Create a new BFD in the manner of @code{bfd_openw}, but without
 opening a file. The new BFD takes the target from the target
-used by @var{template}. The format is always set to @code{bfd_object}.
+used by @var{templ}. The format is always set to @code{bfd_object}.
 
 @findex bfd_make_writable
 @subsubsection @code{bfd_make_writable}

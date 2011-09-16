@@ -1,6 +1,7 @@
 /* load.c --- loading object files into the RX simulator.
 
-Copyright (C) 2005, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011
+Free Software Foundation, Inc.
 Contributed by Red Hat, Inc.
 
 This file is part of the GNU simulators.
@@ -19,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
+#include "config.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -140,6 +142,8 @@ rx_load (bfd *prog)
       regs.r_pc = mem_get_si (0xfffffffc);
       heaptop = heapbottom = 0;
     }
+
+  reset_decoder ();
 
   if (verbose > 1)
     fprintf (stderr, "[start pc=%08x %s]\n",

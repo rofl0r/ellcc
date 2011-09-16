@@ -1,3 +1,21 @@
+2011-03-05  Mike Frysinger  <vapier@gentoo.org>
+
+	* MAINTAINERS: Add bfin entry.
+	* configure.tgt (bfin-*-*): Handle bfin targets.
+	* configure: Regenerate.
+
+2011-01-05  Mike Frysinger  <vapier@gentoo.org>
+
+	* .gitignore: Add /*/hw-config.h.
+
+2010-12-23  Mike Frysinger  <vapier@gentoo.org>
+
+	* .gitignore: New file.
+
+2010-07-28  DJ Delorie  <dj@redhat.com>
+
+	* MAINTAINERS: Add self as RX maintainer.  Sort list.
+
 2010-06-08  Nick Clifton  <nickc@redhat.com>
 
 	* reg.c (set_oszc): Use unsigned int for the mask.

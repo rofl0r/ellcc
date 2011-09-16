@@ -1,5 +1,5 @@
 # Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2007, 2008, 2009,
-# 2010 Free Software Foundation, Inc.
+# 2010, 2011 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -251,6 +251,23 @@ proc do_constvar_tests {} {
     gdb_test "print *locust" " = 70"
     local_compiler_xfail_check
     gdb_test "ptype locust" "type = double \\* const"
+
+    local_compiler_xfail_check
+    gdb_test "ptype logical" "type = const char \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lugged" "type = const unsigned char \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype luck" "type = const short( int)? \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lunar" "type = const (unsigned short|short unsigned)( int)? \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lumen" "type = const long( int)? \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lurk" "type = const (unsigned long|long unsigned)( int)? \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lush" "type = const float \\\[2\\\]"
+    local_compiler_xfail_check
+    gdb_test "ptype lynx" "type = const double \\\[2\\\]"
 
     local_compiler_xfail_check
     local_compiler_xfail_check_2

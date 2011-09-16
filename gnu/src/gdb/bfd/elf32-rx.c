@@ -20,6 +20,7 @@
 
 #include "sysdep.h"
 #include "bfd.h"
+#include "bfd_stdint.h"
 #include "libbfd.h"
 #include "elf-bfd.h"
 #include "elf/rx.h"
@@ -29,7 +30,7 @@
 
 #ifdef DEBUG
 char * rx_get_reloc (long);
-void dump_symtab (bfd *, void *, void *);
+void rx_dump_symtab (bfd *, void *, void *);
 #endif
 
 #define RXREL(n,sz,bit,shift,complain,pcrel)				     \
@@ -248,9 +249,12 @@ static const struct rx_reloc_map rx_reloc_map [] =
   { BFD_RELOC_RX_RELAX,		R_RX_RH_RELAX },
   { BFD_RELOC_RX_SYM,		R_RX_SYM },
   { BFD_RELOC_RX_OP_SUBTRACT,	R_RX_OPsub },
+  { BFD_RELOC_RX_OP_NEG,	R_RX_OPneg },
   { BFD_RELOC_RX_ABS8,		R_RX_ABS8 },
   { BFD_RELOC_RX_ABS16,		R_RX_ABS16 },
+  { BFD_RELOC_RX_ABS16_REV,	R_RX_ABS16_REV },
   { BFD_RELOC_RX_ABS32,		R_RX_ABS32 },
+  { BFD_RELOC_RX_ABS32_REV,	R_RX_ABS32_REV },
   { BFD_RELOC_RX_ABS16UL,	R_RX_ABS16UL },
   { BFD_RELOC_RX_ABS16UW,	R_RX_ABS16UW },
   { BFD_RELOC_RX_ABS16U,	R_RX_ABS16U }
@@ -502,15 +506,8 @@ rx_elf_relocate_section
 	}
 
       if (sec != NULL && elf_discarded_section (sec))
-	{
-	  /* For relocs against symbols from removed linkonce sections,
-	     or sections discarded by a linker script, we just want the
-	     section contents zeroed.  Avoid any special processing.  */
-	  _bfd_clear_contents (howto, input_bfd, contents + rel->r_offset);
-	  rel->r_info = 0;
-	  rel->r_addend = 0;
-	  continue;
-	}
+	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
+					 rel, relend, howto, contents);
 
       if (info->relocatable)
 	{
@@ -2962,7 +2959,7 @@ rx_elf_object_p (bfd * abfd)
 
 #ifdef DEBUG
 void
-dump_symtab (bfd * abfd, void * internal_syms, void * external_syms)
+rx_dump_symtab (bfd * abfd, void * internal_syms, void * external_syms)
 {
   size_t locsymcount;
   Elf_Internal_Sym * isymbuf;

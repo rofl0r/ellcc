@@ -1858,7 +1858,7 @@ ppc_elf_grok_prstatus (bfd *abfd, Elf_Internal_Note *note)
       elf_tdata (abfd)->core_signal = bfd_get_16 (abfd, note->descdata + 12);
 
       /* pr_pid */
-      elf_tdata (abfd)->core_pid = bfd_get_32 (abfd, note->descdata + 24);
+      elf_tdata (abfd)->core_lwpid = bfd_get_32 (abfd, note->descdata + 24);
 
       /* pr_reg */
       offset = 72;
@@ -2785,6 +2785,7 @@ ppc_elf_link_hash_newfunc (struct bfd_hash_entry *entry,
       ppc_elf_hash_entry (entry)->linker_section_pointer = NULL;
       ppc_elf_hash_entry (entry)->dyn_relocs = NULL;
       ppc_elf_hash_entry (entry)->tls_mask = 0;
+      ppc_elf_hash_entry (entry)->has_sda_refs = 0;
     }
 
   return entry;
@@ -4630,10 +4631,15 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
     return TRUE;
 
   htab = ppc_elf_hash_table (info);
+  if (htab == NULL)
+    return FALSE;
+
   /* Make two passes through the relocs.  First time check that tls
      relocs involved in setting up a tls_get_addr call are indeed
-     followed by such a call.  If they are not, exclude them from
-     the optimizations done on the second pass.  */
+     followed by such a call.  If they are not, don't do any tls
+     optimization.  On the second pass twiddle tls_mask flags to
+     notify relocate_section that optimization can be done, and
+     adjust got and plt refcounts.  */
   for (pass = 0; pass < 2; ++pass)
     for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link_next)
       {
@@ -4645,6 +4651,7 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 	  if (sec->has_tls_reloc && !bfd_is_abs_section (sec->output_section))
 	    {
 	      Elf_Internal_Rela *relstart, *rel, *relend;
+	      int expecting_tls_get_addr = 0;
 
 	      /* Read the relocations.  */
 	      relstart = _bfd_elf_link_read_relocs (ibfd, sec, NULL, NULL,
@@ -4661,7 +4668,6 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		  char *tls_mask;
 		  char tls_set, tls_clear;
 		  bfd_boolean is_local;
-		  int expecting_tls_get_addr;
 		  bfd_signed_vma *got_count;
 
 		  r_symndx = ELF32_R_SYM (rel->r_info);
@@ -4676,13 +4682,34 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 			h = (struct elf_link_hash_entry *) h->root.u.i.link;
 		    }
 
-		  expecting_tls_get_addr = 0;
 		  is_local = FALSE;
 		  if (h == NULL
 		      || !h->def_dynamic)
 		    is_local = TRUE;
 
 		  r_type = ELF32_R_TYPE (rel->r_info);
+		  /* If this section has old-style __tls_get_addr calls
+		     without marker relocs, then check that each
+		     __tls_get_addr call reloc is preceded by a reloc
+		     that conceivably belongs to the __tls_get_addr arg
+		     setup insn.  If we don't find matching arg setup
+		     relocs, don't do any tls optimization.  */
+		  if (pass == 0
+		      && sec->has_tls_get_addr_call
+		      && h != NULL
+		      && h == htab->tls_get_addr
+		      && !expecting_tls_get_addr
+		      && is_branch_reloc (r_type))
+		    {
+		      info->callbacks->minfo ("%C __tls_get_addr lost arg, "
+					      "TLS optimization disabled\n",
+					      ibfd, sec, rel->r_offset);
+		      if (elf_section_data (sec)->relocs != relstart)
+			free (relstart);
+		      return TRUE;
+		    }
+
+		  expecting_tls_get_addr = 0;
 		  switch (r_type)
 		    {
 		    case R_PPC_GOT_TLSLD16:
@@ -4759,9 +4786,13 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		      /* Uh oh, we didn't find the expected call.  We
 			 could just mark this symbol to exclude it
 			 from tls optimization but it's safer to skip
-			 the entire section.  */
-		      sec->has_tls_reloc = 0;
-		      break;
+			 the entire optimization.  */
+		      info->callbacks->minfo (_("%C arg lost __tls_get_addr, "
+						"TLS optimization disabled\n"),
+					      ibfd, sec, rel->r_offset);
+		      if (elf_section_data (sec)->relocs != relstart)
+			free (relstart);
+		      return TRUE;
 		    }
 
 		  if (expecting_tls_get_addr)
@@ -6391,6 +6422,7 @@ ppc_elf_relax_section (bfd *abfd,
     {
       /* Append sufficient NOP relocs so we can write out relocation
 	 information for the trampolines.  */
+      Elf_Internal_Shdr *rel_hdr;
       Elf_Internal_Rela *new_relocs = bfd_malloc ((changes + isec->reloc_count)
 						  * sizeof (*new_relocs));
       unsigned ix;
@@ -6409,8 +6441,8 @@ ppc_elf_relax_section (bfd *abfd,
 	free (internal_relocs);
       elf_section_data (isec)->relocs = new_relocs;
       isec->reloc_count += changes;
-      elf_section_data (isec)->rel_hdr.sh_size
-	+= changes * elf_section_data (isec)->rel_hdr.sh_entsize;
+      rel_hdr = _bfd_elf_single_rel_hdr (isec);
+      rel_hdr->sh_size += changes * rel_hdr->sh_entsize;
     }
   else if (elf_section_data (isec)->relocs != internal_relocs)
     free (internal_relocs);
@@ -6816,10 +6848,8 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	  howto = NULL;
 	  if (r_type < R_PPC_max)
 	    howto = ppc_elf_howto_table[r_type];
-	  _bfd_clear_contents (howto, input_bfd, contents + rel->r_offset);
-	  rel->r_info = 0;
-	  rel->r_addend = 0;
-	  continue;
+	  RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
+					   rel, relend, howto, contents);
 	}
 
       if (info->relocatable)
@@ -6985,9 +7015,9 @@ ppc_elf_relocate_section (bfd *output_bfd,
 			if (local_sections[r_symndx] == sec)
 			  break;
 		      if (r_symndx >= symtab_hdr->sh_info)
-			r_symndx = 0;
+			r_symndx = STN_UNDEF;
 		      rel->r_addend = htab->elf.tls_sec->vma + DTP_OFFSET;
-		      if (r_symndx != 0)
+		      if (r_symndx != STN_UNDEF)
 			rel->r_addend -= (local_syms[r_symndx].st_value
 					  + sec->output_offset
 					  + sec->output_section->vma);
@@ -7053,9 +7083,9 @@ ppc_elf_relocate_section (bfd *output_bfd,
 		if (local_sections[r_symndx] == sec)
 		  break;
 	      if (r_symndx >= symtab_hdr->sh_info)
-		r_symndx = 0;
+		r_symndx = STN_UNDEF;
 	      rel->r_addend = htab->elf.tls_sec->vma + DTP_OFFSET;
-	      if (r_symndx != 0)
+	      if (r_symndx != STN_UNDEF)
 		rel->r_addend -= (local_syms[r_symndx].st_value
 				  + sec->output_offset
 				  + sec->output_section->vma);
@@ -7658,7 +7688,7 @@ ppc_elf_relocate_section (bfd *output_bfd,
 			     sym_name);
 			  ret = FALSE;
 			}
-		      else if (r_symndx == 0 || bfd_is_abs_section (sec))
+		      else if (r_symndx == STN_UNDEF || bfd_is_abs_section (sec))
 			;
 		      else if (sec == NULL || sec->owner == NULL)
 			{
@@ -8927,6 +8957,7 @@ ppc_elf_finish_dynamic_sections (bfd *output_bfd,
 #define TARGET_BIG_SYM		bfd_elf32_powerpc_vec
 #define TARGET_BIG_NAME		"elf32-powerpc"
 #define ELF_ARCH		bfd_arch_powerpc
+#define ELF_TARGET_ID		PPC32_ELF_DATA
 #define ELF_MACHINE_CODE	EM_PPC
 #ifdef __QNXTARGET__
 #define ELF_MAXPAGESIZE		0x1000

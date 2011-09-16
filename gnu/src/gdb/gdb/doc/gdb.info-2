@@ -22,8 +22,8 @@ developing GNU and promoting software freedom."
 
    This file documents the GNU debugger GDB.
 
-   This is the Ninth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.2.
+   This is the Tenth Edition, of `Debugging with GDB: the GNU
+Source-Level Debugger' for GDB (GDB) Version 7.3.1.
 
    Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
@@ -39,6 +39,120 @@ with the Back-Cover Texts as in (a) below.
    (a) The FSF's Back-Cover Text is: "You are free to copy and modify
 this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
+
+
+File: gdb.info,  Node: Convenience Vars,  Next: Registers,  Prev: Value History,  Up: Data
+
+10.11 Convenience Variables
+===========================
+
+GDB provides "convenience variables" that you can use within GDB to
+hold on to a value and refer to it later.  These variables exist
+entirely within GDB; they are not part of your program, and setting a
+convenience variable has no direct effect on further execution of your
+program.  That is why you can use them freely.
+
+   Convenience variables are prefixed with `$'.  Any name preceded by
+`$' can be used for a convenience variable, unless it is one of the
+predefined machine-specific register names (*note Registers:
+Registers.).  (Value history references, in contrast, are _numbers_
+preceded by `$'.  *Note Value History: Value History.)
+
+   You can save a value in a convenience variable with an assignment
+expression, just as you would set a variable in your program.  For
+example:
+
+     set $foo = *object_ptr
+
+would save in `$foo' the value contained in the object pointed to by
+`object_ptr'.
+
+   Using a convenience variable for the first time creates it, but its
+value is `void' until you assign a new value.  You can alter the value
+with another assignment at any time.
+
+   Convenience variables have no fixed types.  You can assign a
+convenience variable any type of value, including structures and
+arrays, even if that variable already has a value of a different type.
+The convenience variable, when used as an expression, has the type of
+its current value.
+
+`show convenience'
+     Print a list of convenience variables used so far, and their
+     values.  Abbreviated `show conv'.
+
+`init-if-undefined $VARIABLE = EXPRESSION'
+     Set a convenience variable if it has not already been set.  This
+     is useful for user-defined commands that keep some state.  It is
+     similar, in concept, to using local static variables with
+     initializers in C (except that convenience variables are global).
+     It can also be used to allow users to override default values used
+     in a command script.
+
+     If the variable is already defined then the expression is not
+     evaluated so any side-effects do not occur.
+
+   One of the ways to use a convenience variable is as a counter to be
+incremented or a pointer to be advanced.  For example, to print a field
+from successive elements of an array of structures:
+
+     set $i = 0
+     print bar[$i++]->contents
+
+Repeat that command by typing <RET>.
+
+   Some convenience variables are created automatically by GDB and given
+values likely to be useful.
+
+`$_'
+     The variable `$_' is automatically set by the `x' command to the
+     last address examined (*note Examining Memory: Memory.).  Other
+     commands which provide a default address for `x' to examine also
+     set `$_' to that address; these commands include `info line' and
+     `info breakpoint'.  The type of `$_' is `void *' except when set
+     by the `x' command, in which case it is a pointer to the type of
+     `$__'.
+
+`$__'
+     The variable `$__' is automatically set by the `x' command to the
+     value found in the last address examined.  Its type is chosen to
+     match the format in which the data was printed.
+
+`$_exitcode'
+     The variable `$_exitcode' is automatically set to the exit code
+     when the program being debugged terminates.
+
+`$_sdata'
+     The variable `$_sdata' contains extra collected static tracepoint
+     data.  *Note Tracepoint Action Lists: Tracepoint Actions.  Note
+     that `$_sdata' could be empty, if not inspecting a trace buffer, or
+     if extra static tracepoint data has not been collected.
+
+`$_siginfo'
+     The variable `$_siginfo' contains extra signal information (*note
+     extra signal information::).  Note that `$_siginfo' could be
+     empty, if the application has not yet received any signals.  For
+     example, it will be empty before you execute the `run' command.
+
+`$_tlb'
+     The variable `$_tlb' is automatically set when debugging
+     applications running on MS-Windows in native mode or connected to
+     gdbserver that supports the `qGetTIBAddr' request.  *Note General
+     Query Packets::.  This variable contains the address of the thread
+     information block.
+
+
+   On HP-UX systems, if you refer to a function or variable name that
+begins with a dollar sign, GDB searches for a user or system name
+first, before it searches for a convenience variable.
+
+   GDB also supplies some "convenience functions".  These have a syntax
+similar to convenience variables.  A convenience function can be used
+in an expression just like an ordinary function; however, a convenience
+function is implemented internally to GDB.
+
+`help function'
+     Print a list of all convenience functions.
 
 
 File: gdb.info,  Node: Registers,  Next: Floating Point Hardware,  Prev: Convenience Vars,  Up: Data
@@ -510,8 +624,8 @@ command, described below.
      this case, GDB uses `UTF-8'.
 
      GDB can only use certain character sets as its host character set.
-     If you type `set target-charset <TAB><TAB>', GDB will list the
-     host character sets it supports.
+     If you type `set host-charset <TAB><TAB>', GDB will list the host
+     character sets it supports.
 
 `set charset CHARSET'
      Set the current host and target character sets to CHARSET.  As
@@ -1175,7 +1289,7 @@ usually placed at locations which facilitate investigating what the
 target is actually doing.  GDB's support for static tracing includes
 being able to list instrumentation points, and attach them with GDB
 defined high level tracepoints that expose the whole range of
-convenience of GDB's tracepoints support.  Namelly, support for
+convenience of GDB's tracepoints support.  Namely, support for
 collecting registers values and values of global or local (to the
 instrumentation point) variables; tracepoint conditions and trace state
 variables.  The act of installing a GDB static tracepoint on an
@@ -1390,7 +1504,7 @@ breakpoints.
 
    Unlike breakpoint conditions, GDB does not actually evaluate the
 conditional expression itself.  Instead, GDB encodes the expression
-into an agent expression (*note Agent Expressions:: suitable for
+into an agent expression (*note Agent Expressions::) suitable for
 execution on the target, independently of GDB.  Global variables become
 raw memory locations, locals become stack accesses, and so forth.
 
@@ -1583,7 +1697,7 @@ File: gdb.info,  Node: Listing Tracepoints,  Next: Listing Static Tracepoint Mar
 13.1.7 Listing Tracepoints
 --------------------------
 
-`info tracepoints [NUM]'
+`info tracepoints [NUM...]'
      Display information about the tracepoint NUM.  If you don't
      specify a tracepoint number, displays information about all the
      tracepoints defined so far.  The format is similar to that used for
@@ -1741,7 +1855,7 @@ frames, oldest first, until there is enough room to continue
 collecting.  This is especially useful if your tracepoints are being
 hit too often, and your trace gets terminated prematurely because the
 buffer is full.  To ask for a circular trace buffer, simply set
-`circular_trace_buffer' to on.  You can set this at any time, including
+`circular-trace-buffer' to on.  You can set this at any time, including
 during tracing; if the agent can do it, it will change buffer handling
 on the fly, otherwise it will not take effect until the next run.
 
@@ -2819,11 +2933,11 @@ File: gdb.info,  Node: Supported Languages,  Next: Unsupported Languages,  Prev:
 15.4 Supported Languages
 ========================
 
-GDB supports C, C++, D, Objective-C, Fortran, Java, Pascal, assembly,
-Modula-2, and Ada.  Some GDB features may be used in expressions
-regardless of the language you use: the GDB `@' and `::' operators, and
-the `{type}addr' construct (*note Expressions: Expressions.) can be
-used with the constructs of any supported language.
+GDB supports C, C++, D, Objective-C, Fortran, Java, OpenCL C, Pascal,
+assembly, Modula-2, and Ada.  Some GDB features may be used in
+expressions regardless of the language you use: the GDB `@' and `::'
+operators, and the `{type}addr' construct (*note Expressions:
+Expressions.) can be used with the constructs of any supported language.
 
    The following sections detail to what degree each source language is
 supported by GDB.  These sections are not meant to be language
@@ -2838,6 +2952,7 @@ reference or tutorial.
 * C::                           C and C++
 * D::                           D
 * Objective-C::                 Objective-C
+* OpenCL C::                    OpenCL C
 * Fortran::                     Fortran
 * Pascal::                      Pascal
 * Modula-2::                    Modula-2
@@ -3311,7 +3426,7 @@ LDC or DMD compilers. Currently GDB supports only one D specific
 feature -- dynamic arrays.
 
 
-File: gdb.info,  Node: Objective-C,  Next: Fortran,  Prev: D,  Up: Supported Languages
+File: gdb.info,  Node: Objective-C,  Next: OpenCL C,  Prev: D,  Up: Supported Languages
 
 15.4.3 Objective-C
 ------------------
@@ -3399,9 +3514,53 @@ However, this command may only work with certain Objective-C libraries
 that have a particular hook function, `_NSPrintForDebugger', defined.
 
 
-File: gdb.info,  Node: Fortran,  Next: Pascal,  Prev: Objective-C,  Up: Supported Languages
+File: gdb.info,  Node: OpenCL C,  Next: Fortran,  Prev: Objective-C,  Up: Supported Languages
 
-15.4.4 Fortran
+15.4.4 OpenCL C
+---------------
+
+This section provides information about GDBs OpenCL C support.
+
+* Menu:
+
+* OpenCL C Datatypes::
+* OpenCL C Expressions::
+* OpenCL C Operators::
+
+
+File: gdb.info,  Node: OpenCL C Datatypes,  Next: OpenCL C Expressions,  Up: OpenCL C
+
+15.4.4.1 OpenCL C Datatypes
+...........................
+
+GDB supports the builtin scalar and vector datatypes specified by
+OpenCL 1.1.  In addition the half- and double-precision floating point
+data types of the `cl_khr_fp16' and `cl_khr_fp64' OpenCL extensions are
+also known to GDB.
+
+
+File: gdb.info,  Node: OpenCL C Expressions,  Next: OpenCL C Operators,  Prev: OpenCL C Datatypes,  Up: OpenCL C
+
+15.4.4.2 OpenCL C Expressions
+.............................
+
+GDB supports accesses to vector components including the access as
+lvalue where possible.  Since OpenCL C is based on C99 most C
+expressions supported by GDB can be used as well.
+
+
+File: gdb.info,  Node: OpenCL C Operators,  Prev: OpenCL C Expressions,  Up: OpenCL C
+
+15.4.4.3 OpenCL C Operators
+...........................
+
+GDB supports the operators specified by OpenCL 1.1 for scalar and
+vector data types.
+
+
+File: gdb.info,  Node: Fortran,  Next: Pascal,  Prev: OpenCL C,  Up: Supported Languages
+
+15.4.5 Fortran
 --------------
 
 GDB can be used to debug programs written in Fortran, but it currently
@@ -3422,7 +3581,7 @@ underscore.
 
 File: gdb.info,  Node: Fortran Operators,  Next: Fortran Defaults,  Up: Fortran
 
-15.4.4.1 Fortran Operators and Expressions
+15.4.5.1 Fortran Operators and Expressions
 ..........................................
 
 Operators must be defined on values of specific types.  For instance,
@@ -3446,7 +3605,7 @@ arithmetic types.  Operators are often defined on groups of types.
 
 File: gdb.info,  Node: Fortran Defaults,  Next: Special Fortran Commands,  Prev: Fortran Operators,  Up: Fortran
 
-15.4.4.2 Fortran Defaults
+15.4.5.2 Fortran Defaults
 .........................
 
 Fortran symbols are usually case-insensitive, so GDB by default uses
@@ -3457,7 +3616,7 @@ details.
 
 File: gdb.info,  Node: Special Fortran Commands,  Prev: Fortran Defaults,  Up: Fortran
 
-15.4.4.3 Special Fortran Commands
+15.4.5.3 Special Fortran Commands
 .................................
 
 GDB has some commands to support Fortran-specific features, such as
@@ -3472,7 +3631,7 @@ displaying common blocks.
 
 File: gdb.info,  Node: Pascal,  Next: Modula-2,  Prev: Fortran,  Up: Supported Languages
 
-15.4.5 Pascal
+15.4.6 Pascal
 -------------
 
 Debugging Pascal programs which use sets, subranges, file variables, or
@@ -3487,7 +3646,7 @@ pascal_static-members: Print Settings.
 
 File: gdb.info,  Node: Modula-2,  Next: Ada,  Prev: Pascal,  Up: Supported Languages
 
-15.4.6 Modula-2
+15.4.7 Modula-2
 ---------------
 
 The extensions made to GDB to support Modula-2 only support output from
@@ -3511,7 +3670,7 @@ reads in the executable's symbol table.
 
 File: gdb.info,  Node: M2 Operators,  Next: Built-In Func/Proc,  Up: Modula-2
 
-15.4.6.1 Operators
+15.4.7.1 Operators
 ..................
 
 Operators must be defined on values of specific types.  For instance,
@@ -3620,7 +3779,7 @@ increasing precedence:
 
 File: gdb.info,  Node: Built-In Func/Proc,  Next: M2 Constants,  Prev: M2 Operators,  Up: Modula-2
 
-15.4.6.2 Built-in Functions and Procedures
+15.4.7.2 Built-in Functions and Procedures
 ..........................................
 
 Modula-2 also makes available several built-in procedures and functions.
@@ -3732,7 +3891,7 @@ below.
 
 File: gdb.info,  Node: M2 Constants,  Next: M2 Types,  Prev: Built-In Func/Proc,  Up: Modula-2
 
-15.4.6.3 Constants
+15.4.7.3 Constants
 ..................
 
 GDB allows you to express the constants of Modula-2 in the following
@@ -3771,7 +3930,7 @@ ways:
 
 File: gdb.info,  Node: M2 Types,  Next: M2 Defaults,  Prev: M2 Constants,  Up: Modula-2
 
-15.4.6.4 Modula-2 Types
+15.4.7.4 Modula-2 Types
 .......................
 
 Currently GDB can print the following data types in Modula-2 syntax:
@@ -3899,7 +4058,7 @@ and you can ask GDB to describe the type of `s' as shown below.
 
 File: gdb.info,  Node: M2 Defaults,  Next: Deviations,  Prev: M2 Types,  Up: Modula-2
 
-15.4.6.5 Modula-2 Defaults
+15.4.7.5 Modula-2 Defaults
 ..........................
 
 If type and range checking are set automatically by GDB, they both
@@ -3915,7 +4074,7 @@ Automatically, for further details.
 
 File: gdb.info,  Node: Deviations,  Next: M2 Checks,  Prev: M2 Defaults,  Up: Modula-2
 
-15.4.6.6 Deviations from Standard Modula-2
+15.4.7.6 Deviations from Standard Modula-2
 ..........................................
 
 A few changes have been made to make Modula-2 programs easier to debug.
@@ -3941,7 +4100,7 @@ This is done primarily via loosening its type strictness:
 
 File: gdb.info,  Node: M2 Checks,  Next: M2 Scope,  Prev: Deviations,  Up: Modula-2
 
-15.4.6.7 Modula-2 Type and Range Checks
+15.4.7.7 Modula-2 Type and Range Checks
 .......................................
 
      _Warning:_ in this release, GDB does not yet perform type or range
@@ -3965,7 +4124,7 @@ array index bounds, and all built-in functions and procedures.
 
 File: gdb.info,  Node: M2 Scope,  Next: GDB/M2,  Prev: M2 Checks,  Up: Modula-2
 
-15.4.6.8 The Scope Operators `::' and `.'
+15.4.7.8 The Scope Operators `::' and `.'
 .........................................
 
 There are a few subtle differences between the Modula-2 scope operator
@@ -3993,7 +4152,7 @@ is not an identifier in MODULE.
 
 File: gdb.info,  Node: GDB/M2,  Prev: M2 Scope,  Up: Modula-2
 
-15.4.6.9 GDB and Modula-2
+15.4.7.9 GDB and Modula-2
 .........................
 
 Some GDB commands have little use when debugging Modula-2 programs.
@@ -4014,7 +4173,7 @@ as the beginning of a comment.  Use `<>' instead.
 
 File: gdb.info,  Node: Ada,  Prev: Modula-2,  Up: Supported Languages
 
-15.4.7 Ada
+15.4.8 Ada
 ----------
 
 The extensions made to GDB for Ada only support output from the GNU Ada
@@ -4032,12 +4191,14 @@ difficult.
 * Stopping Before Main Program:: Debugging the program during elaboration.
 * Ada Tasks::                   Listing and setting breakpoints in tasks.
 * Ada Tasks and Core Files::    Tasking Support when Debugging Core Files
+* Ravenscar Profile::           Tasking Support when using the Ravenscar
+                                   Profile
 * Ada Glitches::                Known peculiarities of Ada mode.
 
 
 File: gdb.info,  Node: Ada Mode Intro,  Next: Omissions from Ada,  Up: Ada
 
-15.4.7.1 Introduction
+15.4.8.1 Introduction
 .....................
 
 The Ada mode of GDB supports a fairly large subset of Ada expression
@@ -4080,7 +4241,7 @@ the `call' command, and functions to procedures elsewhere.
 
 File: gdb.info,  Node: Omissions from Ada,  Next: Additions to Ada,  Prev: Ada Mode Intro,  Up: Ada
 
-15.4.7.2 Omissions from Ada
+15.4.8.2 Omissions from Ada
 ...........................
 
 Here are the notable omissions from the subset:
@@ -4186,7 +4347,7 @@ Here are the notable omissions from the subset:
 
 File: gdb.info,  Node: Additions to Ada,  Next: Stopping Before Main Program,  Prev: Omissions from Ada,  Up: Ada
 
-15.4.7.3 Additions to Ada
+15.4.8.3 Additions to Ada
 .........................
 
 As it does for other languages, GDB makes certain generic extensions to
@@ -4277,7 +4438,7 @@ additions specific to Ada:
 
 File: gdb.info,  Node: Stopping Before Main Program,  Next: Ada Tasks,  Prev: Additions to Ada,  Up: Ada
 
-15.4.7.4 Stopping at the Very Beginning
+15.4.8.4 Stopping at the Very Beginning
 .......................................
 
 It is sometimes necessary to debug the program during elaboration, and
@@ -4289,7 +4450,7 @@ simply use the following two commands: `tbreak adainit' and `run'.
 
 File: gdb.info,  Node: Ada Tasks,  Next: Ada Tasks and Core Files,  Prev: Stopping Before Main Program,  Up: Ada
 
-15.4.7.5 Extensions for Ada Tasks
+15.4.8.5 Extensions for Ada Tasks
 .................................
 
 Support for Ada tasks is analogous to that for threads (*note
@@ -4463,9 +4624,9 @@ Threads::).  GDB provides the following task-related commands:
              4 140056040   1   15 Delay Sleep           t3
 
 
-File: gdb.info,  Node: Ada Tasks and Core Files,  Next: Ada Glitches,  Prev: Ada Tasks,  Up: Ada
+File: gdb.info,  Node: Ada Tasks and Core Files,  Next: Ravenscar Profile,  Prev: Ada Tasks,  Up: Ada
 
-15.4.7.6 Tasking Support when Debugging Core Files
+15.4.8.6 Tasking Support when Debugging Core Files
 ..................................................
 
 When inspecting a core file, as opposed to debugging a live program,
@@ -4482,20 +4643,42 @@ Patching::).  Under these circumstances, you should make a backup copy
 of the core file before inspecting it with GDB.
 
 
-File: gdb.info,  Node: Ada Glitches,  Prev: Ada Tasks and Core Files,  Up: Ada
+File: gdb.info,  Node: Ravenscar Profile,  Next: Ada Glitches,  Prev: Ada Tasks and Core Files,  Up: Ada
 
-15.4.7.7 Known Peculiarities of Ada Mode
+15.4.8.7 Tasking Support when using the Ravenscar Profile
+.........................................................
+
+The "Ravenscar Profile" is a subset of the Ada tasking features,
+specifically designed for systems with safety-critical real-time
+requirements.
+
+`set ravenscar task-switching on'
+     Allows task switching when debugging a program that uses the
+     Ravenscar Profile.  This is the default.
+
+`set ravenscar task-switching off'
+     Turn off task switching when debugging a program that uses the
+     Ravenscar Profile.  This is mostly intended to disable the code
+     that adds support for the Ravenscar Profile, in case a bug in
+     either GDB or in the Ravenscar runtime is preventing GDB from
+     working properly.  To be effective, this command should be run
+     before the program is started.
+
+`show ravenscar task-switching'
+     Show whether it is possible to switch from task to task in a
+     program using the Ravenscar Profile.
+
+
+
+File: gdb.info,  Node: Ada Glitches,  Prev: Ravenscar Profile,  Up: Ada
+
+15.4.8.8 Known Peculiarities of Ada Mode
 ........................................
 
 Besides the omissions listed previously (*note Omissions from Ada::),
 we know of several problems with and limitations of Ada mode in GDB,
 some of which will be fixed with planned future releases of the debugger
 and the GNU Ada compiler.
-
-   * Currently, the debugger has insufficient information to determine
-     whether certain pointers represent pointers to objects or the
-     objects themselves.  Thus, the user may have to tack an extra
-     `.all' after an expression to get it printed properly.
 
    * Static constants that the compiler chooses not to materialize as
      objects in storage are invisible to the debugger.
@@ -5249,6 +5432,7 @@ the core dump file.
 
 * Files::                       Commands to specify files
 * Separate Debug Files::        Debugging information in separate files
+* Index Files::                 Index files speed up GDB
 * Symbol Errors::               Errors reading symbol files
 * Data Files::                  GDB data files
 
@@ -5760,7 +5944,7 @@ that happens to be named `remote:', you need to use some equivalent
 variant of the name like `./remote:'.
 
 
-File: gdb.info,  Node: Separate Debug Files,  Next: Symbol Errors,  Prev: Files,  Up: GDB Files
+File: gdb.info,  Node: Separate Debug Files,  Next: Index Files,  Prev: Files,  Up: GDB Files
 
 18.2 Debugging Information in Separate Files
 ============================================
@@ -5993,9 +6177,42 @@ function passing in zero will start computing the CRC using
 This computation does not apply to the "build ID" method.
 
 
-File: gdb.info,  Node: Symbol Errors,  Next: Data Files,  Prev: Separate Debug Files,  Up: GDB Files
+File: gdb.info,  Node: Index Files,  Next: Symbol Errors,  Prev: Separate Debug Files,  Up: GDB Files
 
-18.3 Errors Reading Symbol Files
+18.3 Index Files Speed Up GDB
+=============================
+
+When GDB finds a symbol file, it scans the symbols in the file in order
+to construct an internal symbol table.  This lets most GDB operations
+work quickly--at the cost of a delay early on.  For large programs,
+this delay can be quite lengthy, so GDB provides a way to build an
+index, which speeds up startup.
+
+   The index is stored as a section in the symbol file.  GDB can write
+the index to a file, then you can put it into the symbol file using
+`objcopy'.
+
+   To create an index file, use the `save gdb-index' command:
+
+`save gdb-index DIRECTORY'
+     Create an index file for each symbol file currently known by GDB.
+     Each file is named after its corresponding symbol file, with
+     `.gdb-index' appended, and is written into the given DIRECTORY.
+
+   Once you have created an index file you can merge it into your symbol
+file, here named `symfile', using `objcopy':
+
+     $ objcopy --add-section .gdb_index=symfile.gdb-index \
+         --set-section-flags .gdb_index=readonly symfile symfile
+
+   There are currently some limitation on indices.  They only work when
+for DWARF debugging information, not stabs.  And, they do not currently
+work for programs using Ada.
+
+
+File: gdb.info,  Node: Symbol Errors,  Next: Data Files,  Prev: Index Files,  Up: GDB Files
+
+18.4 Errors Reading Symbol Files
 ================================
 
 While reading a symbol file, GDB occasionally encounters problems, such
@@ -6076,7 +6293,7 @@ Optional Warnings and Messages: Messages/Warnings.).
 
 File: gdb.info,  Node: Data Files,  Prev: Symbol Errors,  Up: GDB Files
 
-18.4 GDB Data Files
+18.5 GDB Data Files
 ===================
 
 GDB will sometimes read an auxiliary data file.  These files are kept
@@ -6097,6 +6314,9 @@ currently using.
 configured binary prefix (set with `--prefix' or `--exec-prefix'), then
 the default data directory will be updated automatically if the
 installed GDB is moved to a new location.
+
+   The data directory may also be specified with the `--data-directory'
+command line option.  *Note Mode Options::.
 
 
 File: gdb.info,  Node: Targets,  Next: Remote Debugging,  Prev: GDB Files,  Up: Top
@@ -6144,32 +6364,21 @@ File: gdb.info,  Node: Active Targets,  Next: Target Commands,  Up: Targets
 19.1 Active Targets
 ===================
 
-There are three classes of targets: processes, core files, and
-executable files.  GDB can work concurrently on up to three active
-targets, one in each class.  This allows you to (for example) start a
-process and inspect its activity without abandoning your work on a core
-file.
-
-   For example, if you execute `gdb a.out', then the executable file
-`a.out' is the only active target.  If you designate a core file as
-well--presumably from a prior run that crashed and coredumped--then GDB
-has two active targets and uses them in tandem, looking first in the
-corefile target, then in the executable file, to satisfy requests for
-memory addresses.  (Typically, these two classes of target are
-complementary, since core files contain only a program's read-write
-memory--variables and so on--plus machine status, while executable
-files contain only the program text and initialized data.)
-
-   When you type `run', your executable file becomes an active process
-target as well.  When a process target is active, all GDB commands
-requesting memory addresses refer to that target; addresses in an
-active core file or executable file target are obscured while the
-process target is active.
+There are multiple classes of targets such as: processes, executable
+files or recording sessions.  Core files belong to the process class,
+making core file and process mutually exclusive.  Otherwise, GDB can
+work concurrently on multiple active targets, one in each class.  This
+allows you to (for example) start a process and inspect its activity,
+while still having access to the executable file after the process
+finishes.  Or if you start process recording (*note Reverse
+Execution::) and `reverse-step' there, you are presented a virtual
+layer of the recording target, while the process target remains stopped
+at the chronologically last point of the process execution.
 
    Use the `core-file' and `exec-file' commands to select a new core
-file or executable target (*note Commands to Specify Files: Files.).
-To specify as a target a process that is already running, use the
-`attach' command (*note Debugging an Already-running Process: Attach.).
+file or executable target (*note Commands to Specify Files: Files.).  To
+specify as a target a process that is already running, use the `attach'
+command (*note Debugging an Already-running Process: Attach.).
 
 
 File: gdb.info,  Node: Target Commands,  Next: Byte Order,  Prev: Active Targets,  Up: Targets
@@ -6984,6 +7193,7 @@ storage-address'                             `__thread'
 `query-attached'     `qAttached'             Querying remote
                                              process attach
                                              state.
+`traceframe-info'    `qXfer:traceframe-info:read'Traceframe info
 
 
 File: gdb.info,  Node: Remote Stub,  Prev: Remote Configuration,  Up: Remote Debugging
@@ -7191,212 +7401,4 @@ You must also make sure this library routine is available:
 library subroutines as well; this varies from one stub to another, but
 in general the stubs are likely to use any of the common library
 subroutines which `GCC' generates as inline code.
-
-
-File: gdb.info,  Node: Debug Session,  Prev: Bootstrapping,  Up: Remote Stub
-
-20.5.3 Putting it All Together
-------------------------------
-
-In summary, when your program is ready to debug, you must follow these
-steps.
-
-  1. Make sure you have defined the supporting low-level routines
-     (*note What You Must Do for the Stub: Bootstrapping.):
-          `getDebugChar', `putDebugChar',
-          `flush_i_cache', `memset', `exceptionHandler'.
-
-  2. Insert these lines near the top of your program:
-
-          set_debug_traps();
-          breakpoint();
-
-  3. For the 680x0 stub only, you need to provide a variable called
-     `exceptionHook'.  Normally you just use:
-
-          void (*exceptionHook)() = 0;
-
-     but if before calling `set_debug_traps', you set it to point to a
-     function in your program, that function is called when `GDB'
-     continues after stopping on a trap (for example, bus error).  The
-     function indicated by `exceptionHook' is called with one
-     parameter: an `int' which is the exception number.
-
-  4. Compile and link together: your program, the GDB debugging stub for
-     your target architecture, and the supporting subroutines.
-
-  5. Make sure you have a serial connection between your target machine
-     and the GDB host, and identify the serial port on the host.
-
-  6. Download your program to your target machine (or get it there by
-     whatever means the manufacturer provides), and start it.
-
-  7. Start GDB on the host, and connect to the target (*note Connecting
-     to a Remote Target: Connecting.).
-
-
-
-File: gdb.info,  Node: Configurations,  Next: Controlling GDB,  Prev: Remote Debugging,  Up: Top
-
-21 Configuration-Specific Information
-*************************************
-
-While nearly all GDB commands are available for all native and cross
-versions of the debugger, there are some exceptions.  This chapter
-describes things that are only available in certain configurations.
-
-   There are three major categories of configurations: native
-configurations, where the host and target are the same, embedded
-operating system configurations, which are usually the same for several
-different processor architectures, and bare embedded processors, which
-are quite different from each other.
-
-* Menu:
-
-* Native::
-* Embedded OS::
-* Embedded Processors::
-* Architectures::
-
-
-File: gdb.info,  Node: Native,  Next: Embedded OS,  Up: Configurations
-
-21.1 Native
-===========
-
-This section describes details specific to particular native
-configurations.
-
-* Menu:
-
-* HP-UX::                       HP-UX
-* BSD libkvm Interface::	Debugging BSD kernel memory images
-* SVR4 Process Information::    SVR4 process information
-* DJGPP Native::                Features specific to the DJGPP port
-* Cygwin Native::		Features specific to the Cygwin port
-* Hurd Native::                 Features specific to GNU Hurd
-* Neutrino::                    Features specific to QNX Neutrino
-* Darwin::			Features specific to Darwin
-
-
-File: gdb.info,  Node: HP-UX,  Next: BSD libkvm Interface,  Up: Native
-
-21.1.1 HP-UX
-------------
-
-On HP-UX systems, if you refer to a function or variable name that
-begins with a dollar sign, GDB searches for a user or system name
-first, before it searches for a convenience variable.
-
-
-File: gdb.info,  Node: BSD libkvm Interface,  Next: SVR4 Process Information,  Prev: HP-UX,  Up: Native
-
-21.1.2 BSD libkvm Interface
----------------------------
-
-BSD-derived systems (FreeBSD/NetBSD/OpenBSD) have a kernel memory
-interface that provides a uniform interface for accessing kernel virtual
-memory images, including live systems and crash dumps.  GDB uses this
-interface to allow you to debug live kernels and kernel crash dumps on
-many native BSD configurations.  This is implemented as a special `kvm'
-debugging target.  For debugging a live system, load the currently
-running kernel into GDB and connect to the `kvm' target:
-
-     (gdb) target kvm
-
-   For debugging crash dumps, provide the file name of the crash dump
-as an argument:
-
-     (gdb) target kvm /var/crash/bsd.0
-
-   Once connected to the `kvm' target, the following commands are
-available:
-
-`kvm pcb'
-     Set current context from the "Process Control Block" (PCB) address.
-
-`kvm proc'
-     Set current context from proc address.  This command isn't
-     available on modern FreeBSD systems.
-
-
-File: gdb.info,  Node: SVR4 Process Information,  Next: DJGPP Native,  Prev: BSD libkvm Interface,  Up: Native
-
-21.1.3 SVR4 Process Information
--------------------------------
-
-Many versions of SVR4 and compatible systems provide a facility called
-`/proc' that can be used to examine the image of a running process
-using file-system subroutines.  If GDB is configured for an operating
-system with this facility, the command `info proc' is available to
-report information about the process running your program, or about any
-process running on your system.  `info proc' works only on SVR4 systems
-that include the `procfs' code.  This includes, as of this writing,
-GNU/Linux, OSF/1 (Digital Unix), Solaris, Irix, and Unixware, but not
-HP-UX, for example.
-
-`info proc'
-`info proc PROCESS-ID'
-     Summarize available information about any running process.  If a
-     process ID is specified by PROCESS-ID, display information about
-     that process; otherwise display information about the program being
-     debugged.  The summary includes the debugged process ID, the
-     command line used to invoke it, its current working directory, and
-     its executable file's absolute file name.
-
-     On some systems, PROCESS-ID can be of the form `[PID]/TID' which
-     specifies a certain thread ID within a process.  If the optional
-     PID part is missing, it means a thread from the process being
-     debugged (the leading `/' still needs to be present, or else GDB
-     will interpret the number as a process ID rather than a thread ID).
-
-`info proc mappings'
-     Report the memory address space ranges accessible in the program,
-     with information on whether the process has read, write, or
-     execute access rights to each range.  On GNU/Linux systems, each
-     memory range includes the object file which is mapped to that
-     range, instead of the memory access rights to that range.
-
-`info proc stat'
-`info proc status'
-     These subcommands are specific to GNU/Linux systems.  They show
-     the process-related information, including the user ID and group
-     ID; how many threads are there in the process; its virtual memory
-     usage; the signals that are pending, blocked, and ignored; its
-     TTY; its consumption of system and user time; its stack size; its
-     `nice' value; etc.  For more information, see the `proc' man page
-     (type `man 5 proc' from your shell prompt).
-
-`info proc all'
-     Show all the information about the process described under all of
-     the above `info proc' subcommands.
-
-`set procfs-trace'
-     This command enables and disables tracing of `procfs' API calls.
-
-`show procfs-trace'
-     Show the current state of `procfs' API call tracing.
-
-`set procfs-file FILE'
-     Tell GDB to write `procfs' API trace to the named FILE.  GDB
-     appends the trace info to the previous contents of the file.  The
-     default is to display the trace on the standard output.
-
-`show procfs-file'
-     Show the file to which `procfs' API trace is written.
-
-`proc-trace-entry'
-`proc-trace-exit'
-`proc-untrace-entry'
-`proc-untrace-exit'
-     These commands enable and disable tracing of entries into and exits
-     from the `syscall' interface.
-
-`info pidlist'
-     For QNX Neutrino only, this command displays the list of all the
-     processes and all the threads within each process.
-
-`info meminfo'
-     For QNX Neutrino only, this command displays the list of all
-     mapinfos.
 

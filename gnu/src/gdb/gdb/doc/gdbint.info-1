@@ -7,9 +7,9 @@ START-INFO-DIR-ENTRY
 END-INFO-DIR-ENTRY
 
    Copyright (C) 1990, 1991, 1992, 1993, 1994, 1996, 1998, 1999, 2000,
-2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2010 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2010, 2011 Free
+Software Foundation, Inc.  Contributed by Cygnus Solutions.  Written by
+John Gilmore.  Second Edition by Stan Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -21,9 +21,9 @@ Free Documentation License".
    This file documents the internals of the GNU debugger GDB.
 
    Copyright (C) 1990, 1991, 1992, 1993, 1994, 1996, 1998, 1999, 2000,
-2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2010 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+2001, 2002, 2003, 2004, 2005, 2006, 2008, 2009, 2010, 2011 Free
+Software Foundation, Inc.  Contributed by Cygnus Solutions.  Written by
+John Gilmore.  Second Edition by Stan Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -59,7 +59,8 @@ the mechanisms that adapt GDB to specific hosts and targets.
 * Target Vector Definition::
 * Native Debugging::
 * Support Libraries::
-* Coding::
+* Coding Standards::
+* Misc Guidelines::
 * Porting GDB::
 * Versions and Branches::
 * Start of New Year Procedure::
@@ -1154,9 +1155,9 @@ output fields between them.
  -- Function: struct cleanup * make_cleanup_ui_out_tuple_begin_end
           (struct ui_out *UIOUT, const char *ID)
      This function first opens the tuple and then establishes a cleanup
-     (*note Cleanups: Coding.) to close the tuple.  It provides a
-     convenient and correct implementation of the non-portable(1) code
-     sequence:
+     (*note Cleanups: Misc Guidelines.) to close the tuple.  It
+     provides a convenient and correct implementation of the
+     non-portable(1) code sequence:
           struct cleanup *old_cleanup;
           ui_out_tuple_begin (uiout, "...");
           old_cleanup = make_cleanup ((void(*)(void *)) ui_out_tuple_end,
@@ -1178,8 +1179,8 @@ output fields between them.
  -- Function: struct cleanup * make_cleanup_ui_out_list_begin_end
           (struct ui_out *UIOUT, const char *ID)
      Similar to `make_cleanup_ui_out_tuple_begin_end', this function
-     opens a list and then establishes cleanup (*note Cleanups: Coding.)
-     that will close the list.
+     opens a list and then establishes cleanup (*note Cleanups: Misc
+     Guidelines.)  that will close the list.
 
 4.2.4 Item Output Functions
 ---------------------------
@@ -4952,7 +4953,7 @@ the same.  These macros should be defined (or left undefined) in
 
 
 
-File: gdbint.info,  Node: Support Libraries,  Next: Coding,  Prev: Native Debugging,  Up: Top
+File: gdbint.info,  Node: Support Libraries,  Next: Coding Standards,  Prev: Native Debugging,  Up: Top
 
 15 Support Libraries
 ********************
@@ -5251,15 +5252,236 @@ accessors provided.  They are enumerated here:
 ============
 
 
-File: gdbint.info,  Node: Coding,  Next: Porting GDB,  Prev: Support Libraries,  Up: Top
+File: gdbint.info,  Node: Coding Standards,  Next: Misc Guidelines,  Prev: Support Libraries,  Up: Top
 
-16 Coding
-*********
+16 Coding Standards
+*******************
+
+16.1 GDB C Coding Standards
+===========================
+
+GDB follows the GNU coding standards, as described in
+`etc/standards.texi'.  This file is also available for anonymous FTP
+from GNU archive sites.  GDB takes a strict interpretation of the
+standard; in general, when the GNU standard recommends a practice but
+does not require it, GDB requires it.
+
+   GDB follows an additional set of coding standards specific to GDB,
+as described in the following sections.
+
+16.1.1 ISO C
+------------
+
+GDB assumes an ISO/IEC 9899:1990 (a.k.a. ISO C90) compliant compiler.
+
+   GDB does not assume an ISO C or POSIX compliant C library.
+
+16.1.2 Formatting
+-----------------
+
+The standard GNU recommendations for formatting must be followed
+strictly.  Any GDB-specific deviation from GNU recomendations is
+described below.
+
+   A function declaration should not have its name in column zero.  A
+function definition should have its name in column zero.
+
+     /* Declaration */
+     static void foo (void);
+     /* Definition */
+     void
+     foo (void)
+     {
+     }
+
+   _Pragmatics: This simplifies scripting.  Function definitions can be
+found using `^function-name'._
+
+   There must be a space between a function or macro name and the
+opening parenthesis of its argument list (except for macro definitions,
+as required by C).  There must not be a space after an open
+paren/bracket or before a close paren/bracket.
+
+   While additional whitespace is generally helpful for reading, do not
+use more than one blank line to separate blocks, and avoid adding
+whitespace after the end of a program line (as of 1/99, some 600 lines
+had whitespace after the semicolon).  Excess whitespace causes
+difficulties for `diff' and `patch' utilities.
+
+   Pointers are declared using the traditional K&R C style:
+
+     void *foo;
+
+and not:
+
+     void * foo;
+     void* foo;
+
+   In addition, whitespace around casts and unary operators should
+follow the following guidelines:
+
+Use...         ...instead of  
+`!x'           `! x'          
+`~x'           `~ x'          
+`-x'           `- x'          (unary minus)
+`(foo) x'      `(foo)x'       (cast)
+`*x'           `* x'          (pointer dereference)
+
+16.1.3 Comments
+---------------
+
+The standard GNU requirements on comments must be followed strictly.
+
+   Block comments must appear in the following form, with no `/*'- or
+`*/'-only lines, and no leading `*':
+
+     /* Wait for control to return from inferior to debugger.  If inferior
+        gets a signal, we may decide to start it up again instead of
+        returning.  That is why there is a loop in this function.  When
+        this function actually returns it means the inferior should be left
+        stopped and GDB should read more commands.  */
+
+   (Note that this format is encouraged by Emacs; tabbing for a
+multi-line comment works correctly, and `M-q' fills the block
+consistently.)
+
+   Put a blank line between the block comments preceding function or
+variable definitions, and the definition itself.
+
+   In general, put function-body comments on lines by themselves, rather
+than trying to fit them into the 20 characters left at the end of a
+line, since either the comment or the code will inevitably get longer
+than will fit, and then somebody will have to move it anyhow.
+
+16.1.4 C Usage
+--------------
+
+Code must not depend on the sizes of C data types, the format of the
+host's floating point numbers, the alignment of anything, or the order
+of evaluation of expressions.
+
+   Use functions freely.  There are only a handful of compute-bound
+areas in GDB that might be affected by the overhead of a function call,
+mainly in symbol reading.  Most of GDB's performance is limited by the
+target interface (whether serial line or system call).
+
+   However, use functions with moderation.  A thousand one-line
+functions are just as hard to understand as a single thousand-line
+function.
+
+   _Macros are bad, M'kay._ (But if you have to use a macro, make sure
+that the macro arguments are protected with parentheses.)
+
+   Declarations like `struct foo *' should be used in preference to
+declarations like `typedef struct foo { ... } *foo_ptr'.
+
+16.1.5 Function Prototypes
+--------------------------
+
+Prototypes must be used when both _declaring_ and _defining_ a
+function.  Prototypes for GDB functions must include both the argument
+type and name, with the name matching that used in the actual function
+definition.
+
+   All external functions should have a declaration in a header file
+that callers include, except for `_initialize_*' functions, which must
+be external so that `init.c' construction works, but shouldn't be
+visible to random source files.
+
+   Where a source file needs a forward declaration of a static function,
+that declaration must appear in a block near the top of the source file.
+
+16.1.6 File Names
+-----------------
+
+Any file used when building the core of GDB must be in lower case.  Any
+file used when building the core of GDB must be 8.3 unique.  These
+requirements apply to both source and generated files.
+
+   _Pragmatics: The core of GDB must be buildable on many platforms
+including DJGPP and MacOS/HFS.  Every time an unfriendly file is
+introduced to the build process both `Makefile.in' and `configure.in'
+need to be modified accordingly.  Compare the convoluted conversion
+process needed to transform `COPYING' into `copying.c' with the
+conversion needed to transform `version.in' into `version.c'._
+
+   Any file non 8.3 compliant file (that is not used when building the
+core of GDB) must be added to `gdb/config/djgpp/fnchange.lst'.
+
+   _Pragmatics: This is clearly a compromise._
+
+   When GDB has a local version of a system header file (ex `string.h')
+the file name based on the POSIX header prefixed with `gdb_'
+(`gdb_string.h').  These headers should be relatively independent: they
+should use only macros defined by `configure', the compiler, or the
+host; they should include only system headers; they should refer only
+to system types.  They may be shared between multiple programs, e.g.
+GDB and GDBSERVER.
+
+   For other files `-' is used as the separator.
+
+16.1.7 Include Files
+--------------------
+
+A `.c' file should include `defs.h' first.
+
+   A `.c' file should directly include the `.h' file of every
+declaration and/or definition it directly refers to.  It cannot rely on
+indirect inclusion.
+
+   A `.h' file should directly include the `.h' file of every
+declaration and/or definition it directly refers to.  It cannot rely on
+indirect inclusion.  Exception: The file `defs.h' does not need to be
+directly included.
+
+   An external declaration should only appear in one include file.
+
+   An external declaration should never appear in a `.c' file.
+Exception: a declaration for the `_initialize' function that pacifies
+`-Wmissing-declaration'.
+
+   A `typedef' definition should only appear in one include file.
+
+   An opaque `struct' declaration can appear in multiple `.h' files.
+Where possible, a `.h' file should use an opaque `struct' declaration
+instead of an include.
+
+   All `.h' files should be wrapped in:
+
+     #ifndef INCLUDE_FILE_NAME_H
+     #define INCLUDE_FILE_NAME_H
+     header body
+     #endif
+
+16.2 GDB Python Coding Standards
+================================
+
+GDB follows the published `Python' coding standards in `PEP008'
+(http://www.python.org/dev/peps/pep-0008/).
+
+   In addition, the guidelines in the Google Python Style Guide
+(http://google-styleguide.googlecode.com/svn/trunk/pyguide.html) are
+also followed where they do not conflict with `PEP008'.
+
+16.2.1 GDB-specific exceptions
+------------------------------
+
+There are a few exceptions to the published standards.  They exist
+mainly for consistency with the `C' standards.
+
+   * Use `FIXME' instead of `TODO'.
+
+
+
+File: gdbint.info,  Node: Misc Guidelines,  Next: Porting GDB,  Prev: Coding Standards,  Up: Top
+
+17 Misc Guidelines
+******************
 
 This chapter covers topics that are lower-level than the major
 algorithms of GDB.
 
-16.1 Cleanups
+17.1 Cleanups
 =============
 
 Cleanups are a structured way to deal with things that need to be done
@@ -5347,7 +5569,7 @@ interruption must be on the cleanup chain before you call these
 functions, since they might never return to your code (they `longjmp'
 instead).
 
-16.2 Per-architecture module data
+17.2 Per-architecture module data
 =================================
 
 The multi-arch framework includes a mechanism for adding module
@@ -5438,7 +5660,7 @@ using `post_init'.
        return data->total;
      }
 
-16.3 Wrapping Output Lines
+17.3 Wrapping Output Lines
 ==========================
 
 Output that goes through `printf_filtered' or `fputs_filtered' or
@@ -5462,27 +5684,8 @@ finish by printing a newline, to flush the wrap buffer, before switching
 to unfiltered (`printf') output.  Symbol reading routines that print
 warnings are a good example.
 
-16.4 GDB Coding Standards
-=========================
-
-GDB follows the GNU coding standards, as described in
-`etc/standards.texi'.  This file is also available for anonymous FTP
-from GNU archive sites.  GDB takes a strict interpretation of the
-standard; in general, when the GNU standard recommends a practice but
-does not require it, GDB requires it.
-
-   GDB follows an additional set of coding standards specific to GDB,
-as described in the following sections.
-
-16.4.1 ISO C
-------------
-
-GDB assumes an ISO/IEC 9899:1990 (a.k.a. ISO C90) compliant compiler.
-
-   GDB does not assume an ISO C or POSIX compliant C library.
-
-16.4.2 Memory Management
-------------------------
+17.4 Memory Management
+======================
 
 GDB does not use the functions `malloc', `realloc', `calloc', `free'
 and `asprintf'.
@@ -5518,8 +5721,8 @@ restrict the memory being allocated to no more than a few kilobytes._
    _Pragmatics: `asprintf' and `strdup' can fail.  Print functions such
 as `sprintf' are very prone to buffer overflow errors._
 
-16.4.3 Compiler Warnings
-------------------------
+17.5 Compiler Warnings
+======================
 
 With few exceptions, developers should avoid the configuration option
 `--disable-werror' when building GDB.  The exceptions are listed in the
@@ -5570,112 +5773,8 @@ those flags are treated as errors.
      currently too noisy to enable with `-Werror'.
 
 
-16.4.4 Formatting
------------------
-
-The standard GNU recommendations for formatting must be followed
-strictly.
-
-   A function declaration should not have its name in column zero.  A
-function definition should have its name in column zero.
-
-     /* Declaration */
-     static void foo (void);
-     /* Definition */
-     void
-     foo (void)
-     {
-     }
-
-   _Pragmatics: This simplifies scripting.  Function definitions can be
-found using `^function-name'._
-
-   There must be a space between a function or macro name and the
-opening parenthesis of its argument list (except for macro definitions,
-as required by C).  There must not be a space after an open
-paren/bracket or before a close paren/bracket.
-
-   While additional whitespace is generally helpful for reading, do not
-use more than one blank line to separate blocks, and avoid adding
-whitespace after the end of a program line (as of 1/99, some 600 lines
-had whitespace after the semicolon).  Excess whitespace causes
-difficulties for `diff' and `patch' utilities.
-
-   Pointers are declared using the traditional K&R C style:
-
-     void *foo;
-
-and not:
-
-     void * foo;
-     void* foo;
-
-16.4.5 Comments
----------------
-
-The standard GNU requirements on comments must be followed strictly.
-
-   Block comments must appear in the following form, with no `/*'- or
-`*/'-only lines, and no leading `*':
-
-     /* Wait for control to return from inferior to debugger.  If inferior
-        gets a signal, we may decide to start it up again instead of
-        returning.  That is why there is a loop in this function.  When
-        this function actually returns it means the inferior should be left
-        stopped and GDB should read more commands.  */
-
-   (Note that this format is encouraged by Emacs; tabbing for a
-multi-line comment works correctly, and `M-q' fills the block
-consistently.)
-
-   Put a blank line between the block comments preceding function or
-variable definitions, and the definition itself.
-
-   In general, put function-body comments on lines by themselves, rather
-than trying to fit them into the 20 characters left at the end of a
-line, since either the comment or the code will inevitably get longer
-than will fit, and then somebody will have to move it anyhow.
-
-16.4.6 C Usage
---------------
-
-Code must not depend on the sizes of C data types, the format of the
-host's floating point numbers, the alignment of anything, or the order
-of evaluation of expressions.
-
-   Use functions freely.  There are only a handful of compute-bound
-areas in GDB that might be affected by the overhead of a function call,
-mainly in symbol reading.  Most of GDB's performance is limited by the
-target interface (whether serial line or system call).
-
-   However, use functions with moderation.  A thousand one-line
-functions are just as hard to understand as a single thousand-line
-function.
-
-   _Macros are bad, M'kay._ (But if you have to use a macro, make sure
-that the macro arguments are protected with parentheses.)
-
-   Declarations like `struct foo *' should be used in preference to
-declarations like `typedef struct foo { ... } *foo_ptr'.
-
-16.4.7 Function Prototypes
---------------------------
-
-Prototypes must be used when both _declaring_ and _defining_ a
-function.  Prototypes for GDB functions must include both the argument
-type and name, with the name matching that used in the actual function
-definition.
-
-   All external functions should have a declaration in a header file
-that callers include, except for `_initialize_*' functions, which must
-be external so that `init.c' construction works, but shouldn't be
-visible to random source files.
-
-   Where a source file needs a forward declaration of a static function,
-that declaration must appear in a block near the top of the source file.
-
-16.4.8 Internal Error Recovery
-------------------------------
+17.6 Internal Error Recovery
+============================
 
 During its execution, GDB can encounter two types of errors.  User
 errors and internal errors.  User errors include not only a user
@@ -5694,75 +5793,13 @@ code detected a user error, recovered from it and issued a `warning' or
 the code failed to correctly recover from the user error and issued an
 `internal_error'._
 
-16.4.9 Command Names
---------------------
+17.7 Command Names
+==================
 
 GDB U/I commands are written `foo-bar', not `foo_bar'.
 
-16.4.10 File Names
-------------------
-
-Any file used when building the core of GDB must be in lower case.  Any
-file used when building the core of GDB must be 8.3 unique.  These
-requirements apply to both source and generated files.
-
-   _Pragmatics: The core of GDB must be buildable on many platforms
-including DJGPP and MacOS/HFS.  Every time an unfriendly file is
-introduced to the build process both `Makefile.in' and `configure.in'
-need to be modified accordingly.  Compare the convoluted conversion
-process needed to transform `COPYING' into `copying.c' with the
-conversion needed to transform `version.in' into `version.c'._
-
-   Any file non 8.3 compliant file (that is not used when building the
-core of GDB) must be added to `gdb/config/djgpp/fnchange.lst'.
-
-   _Pragmatics: This is clearly a compromise._
-
-   When GDB has a local version of a system header file (ex `string.h')
-the file name based on the POSIX header prefixed with `gdb_'
-(`gdb_string.h').  These headers should be relatively independent: they
-should use only macros defined by `configure', the compiler, or the
-host; they should include only system headers; they should refer only
-to system types.  They may be shared between multiple programs, e.g.
-GDB and GDBSERVER.
-
-   For other files `-' is used as the separator.
-
-16.4.11 Include Files
----------------------
-
-A `.c' file should include `defs.h' first.
-
-   A `.c' file should directly include the `.h' file of every
-declaration and/or definition it directly refers to.  It cannot rely on
-indirect inclusion.
-
-   A `.h' file should directly include the `.h' file of every
-declaration and/or definition it directly refers to.  It cannot rely on
-indirect inclusion.  Exception: The file `defs.h' does not need to be
-directly included.
-
-   An external declaration should only appear in one include file.
-
-   An external declaration should never appear in a `.c' file.
-Exception: a declaration for the `_initialize' function that pacifies
-`-Wmissing-declaration'.
-
-   A `typedef' definition should only appear in one include file.
-
-   An opaque `struct' declaration can appear in multiple `.h' files.
-Where possible, a `.h' file should use an opaque `struct' declaration
-instead of an include.
-
-   All `.h' files should be wrapped in:
-
-     #ifndef INCLUDE_FILE_NAME_H
-     #define INCLUDE_FILE_NAME_H
-     header body
-     #endif
-
-16.4.12 Clean Design and Portable Implementation
-------------------------------------------------
+17.8 Clean Design and Portable Implementation
+=============================================
 
 In addition to getting the syntax right, there's the little question of
 semantics.  Some things are done in certain ways in GDB because long
@@ -5878,9 +5915,9 @@ command.  Do not use `printf' to print trace messages.  Use
 `fprintf_unfiltered(gdb_stdlog, ...'.  Do not use `#ifdef DEBUG'.
 
 
-File: gdbint.info,  Node: Porting GDB,  Next: Versions and Branches,  Prev: Coding,  Up: Top
+File: gdbint.info,  Node: Porting GDB,  Next: Versions and Branches,  Prev: Misc Guidelines,  Up: Top
 
-17 Porting GDB
+18 Porting GDB
 **************
 
 Most of the work in making GDB compile on a new machine is in
@@ -5925,10 +5962,10 @@ architecture to GDB can be broken into a number of steps.
 
 File: gdbint.info,  Node: Versions and Branches,  Next: Start of New Year Procedure,  Prev: Porting GDB,  Up: Top
 
-18 Versions and Branches
+19 Versions and Branches
 ************************
 
-18.1 Versions
+19.1 Versions
 =============
 
 GDB's version is determined by the file `gdb/version.in' and takes one
@@ -6012,7 +6049,7 @@ illustration of a typical sequence:
      6.3.50.20020312-cvs        6.2.90 (draft #1)
              |                          |
 
-18.2 Release Branches
+19.2 Release Branches
 =====================
 
 GDB draws a release series (6.2, 6.2.1, ...) from a single release
@@ -6027,7 +6064,7 @@ is made, both the branchpoint and release tags include the date that
 they are cut (YYYYMMDD) in the tag.  The branch tag, denoting the head
 of the branch, does not need this._
 
-18.3 Vendor Branches
+19.3 Vendor Branches
 ====================
 
 To avoid version conflicts, vendors are expected to modify the file
@@ -6035,10 +6072,10 @@ To avoid version conflicts, vendors are expected to modify the file
 official GDB release never uses alphabetic characters in its version
 identifier).  E.g., `6.2widgit2', or `6.2 (Widgit Inc Patch 2)'.
 
-18.4 Experimental Branches
+19.4 Experimental Branches
 ==========================
 
-18.4.1 Guidelines
+19.4.1 Guidelines
 -----------------
 
 GDB permits the creation of branches, cut from the CVS repository, for
@@ -6084,7 +6121,7 @@ _a branch shall be branded using `version.in'_
      `6.2.50.20030303_owner_name' or `6.2 (Owner Name)'.
 
 
-18.4.2 Tags
+19.4.2 Tags
 -----------
 
 To simplify the identification of GDB branches, the following branch
@@ -6117,7 +6154,7 @@ For further information on CVS, see Concurrent Versions System
 
 File: gdbint.info,  Node: Start of New Year Procedure,  Next: Releasing GDB,  Prev: Versions and Branches,  Up: Top
 
-19 Start of New Year Procedure
+20 Start of New Year Procedure
 ******************************
 
 At the start of each new year, the following actions should be
@@ -6182,10 +6219,10 @@ performed:
 
 File: gdbint.info,  Node: Releasing GDB,  Next: Testsuite,  Prev: Start of New Year Procedure,  Up: Top
 
-20 Releasing GDB
+21 Releasing GDB
 ****************
 
-20.1 Branch Commit Policy
+21.1 Branch Commit Policy
 =========================
 
 The branch commit policy is pretty slack.  GDB releases 5.0, 5.1 and
@@ -6213,7 +6250,7 @@ functionality there is little chance that a broken change will be fatal.
 This means that changes such as adding a new architectures or (within
 reason) support for a new host are considered acceptable._
 
-20.2 Obsoleting code
+21.2 Obsoleting code
 ====================
 
 Before anything else, poke the other developers (and around the source
@@ -6254,7 +6291,7 @@ wrong.  Secondly since it removes any history associated with the file
 (effectively clearing the slate) the developer has a much freer hand
 when it comes to fixing broken files._
 
-20.3 Before the Branch
+21.3 Before the Branch
 ======================
 
 The most important objective at this stage is to find and fix simple
@@ -6295,17 +6332,17 @@ number of errors and coding conventions.  The checks include things
 like using `malloc' instead of `xmalloc' and file naming problems.
 There shouldn't be any regressions.
 
-20.3.1 Review the bug data base
+21.3.1 Review the bug data base
 -------------------------------
 
 Close anything obviously fixed.
 
-20.3.2 Check all cross targets build
+21.3.2 Check all cross targets build
 ------------------------------------
 
 The targets are listed in `gdb/MAINTAINERS'.
 
-20.4 Cut the Branch
+21.4 Cut the Branch
 ===================
 
 Create the branch
@@ -6426,12 +6463,12 @@ list are alerted._
 
    * The branch commit policy still holds.
 
-20.5 Stabilize the branch
+21.5 Stabilize the branch
 =========================
 
 Something goes here.
 
-20.6 Create a Release
+21.6 Create a Release
 =====================
 
 The process of creating and then making available a release is broken
@@ -6441,7 +6478,7 @@ process of releasing that tar ball.
 
    When making a release candidate just the first section is needed.
 
-20.6.1 Create a release candidate
+21.6.1 Create a release candidate
 ---------------------------------
 
 The objective at this stage is to create a set of tar balls that can be
@@ -6610,7 +6647,7 @@ Note:
      can not include it in the compressed file.  This is also why the
      release process runs `tar' and `bzip2' as separate passes.
 
-20.6.2 Sanity check the tar ball
+21.6.2 Sanity check the tar ball
 --------------------------------
 
 Pick a popular machine (Solaris/PPC?) and try the build on that.
@@ -6634,7 +6671,7 @@ Pick a popular machine (Solaris/PPC?) and try the build on that.
      $1 = {argc = 136426532, argv = 0x821b7f0}
      (gdb)
 
-20.6.3 Make a release candidate available
+21.6.3 Make a release candidate available
 -----------------------------------------
 
 If this is a release candidate then the only remaining steps are:
@@ -6650,7 +6687,7 @@ If this is a release candidate then the only remaining steps are:
   4. Notify the relevant mailing lists ( <gdb@sourceware.org> and
      <gdb-testers@sourceware.org> that the candidate is available.
 
-20.6.4 Make a formal release available
+21.6.4 Make a formal release available
 --------------------------------------
 
 (And you thought all that was required was to post an e-mail.)
@@ -6743,7 +6780,7 @@ Post the `ANNOUNCEMENT' file you created above to:
 
    * GDB Bug Report mailing list <bug-gdb@gnu.org>
 
-20.6.5 Cleanup
+21.6.5 Cleanup
 --------------
 
 The release is out but you're still not finished.
@@ -6811,7 +6848,7 @@ of the most recent release.
 
    Also update the schedule `cronjob'.
 
-20.7 Post release
+21.7 Post release
 =================
 
 Remove any `OBSOLETE' code.
@@ -6819,7 +6856,7 @@ Remove any `OBSOLETE' code.
 
 File: gdbint.info,  Node: Testsuite,  Next: Hints,  Prev: Releasing GDB,  Up: Top
 
-21 Testsuite
+22 Testsuite
 ************
 
 The testsuite is an important component of the GDB package.  While it
@@ -6832,7 +6869,7 @@ cause a significant regression that went unnoticed for some time.
 themselves are calls to various `Tcl' procs; the framework runs all the
 procs and summarizes the passes and fails.
 
-21.1 Using the Testsuite
+22.1 Using the Testsuite
 ========================
 
 To run the testsuite, simply go to the GDB object directory (or to the
@@ -6902,7 +6939,7 @@ give a result of "UNRESOLVED", like this:
 
      UNRESOLVED: gdb.base/example.exp: This test script does not work on a remote host.
 
-21.2 Testsuite Parameters
+22.2 Testsuite Parameters
 =========================
 
 Several variables exist to modify the behavior of the testsuite.
@@ -6980,7 +7017,7 @@ DejaGnu `runtest' command directly.
      make site.exp
      runtest TRANSCRIPT=y
 
-21.3 Testsuite Configuration
+22.3 Testsuite Configuration
 ============================
 
 It is possible to adjust the behavior of the testsuite by defining the
@@ -7008,7 +7045,7 @@ board file.
      test suite(1).
 
 
-21.4 Testsuite Organization
+22.4 Testsuite Organization
 ===========================
 
 The testsuite is entirely contained in `gdb/testsuite'.  While the
@@ -7060,7 +7097,7 @@ intelligibility.
      instance, `gdb.disasm' exercises various disassemblers, while
      `gdb.stabs' tests pathways through the stabs symbol reader.
 
-21.5 Writing Tests
+22.5 Writing Tests
 ==================
 
 In many areas, the GDB tests are already quite comprehensive; you
@@ -7096,7 +7133,7 @@ default; search the board file for "timeout".
 
 File: gdbint.info,  Node: Hints,  Next: GDB Observers,  Prev: Testsuite,  Up: Top
 
-22 Hints
+23 Hints
 ********
 
 Check the `README' file, it often has useful information that does not
@@ -7110,7 +7147,7 @@ appear anywhere else in the directory.
 
 File: gdbint.info,  Node: Getting Started,  Next: Debugging GDB,  Up: Hints
 
-22.1 Getting Started
+23.1 Getting Started
 ====================
 
 GDB is a large and complicated program, and if you first starting to
@@ -7188,7 +7225,7 @@ Suggestions for improving the manual are always welcome, of course.
 
 File: gdbint.info,  Node: Debugging GDB,  Prev: Getting Started,  Up: Hints
 
-22.2 Debugging GDB with itself
+23.2 Debugging GDB with itself
 ==============================
 
 If GDB is limping on your machine, this is the preferred way to get it
@@ -7212,7 +7249,7 @@ routines for your local machine where they will be accessed first by
    Also, make sure that you've either compiled GDB with your local cc,
 or have run `fixincludes' if you are compiling with gcc.
 
-22.3 Submitting Patches
+23.3 Submitting Patches
 =======================
 
 Thanks for thinking of offering your changes back to the community of
@@ -7276,7 +7313,7 @@ be for quite some time.
    Please send patches directly to the GDB maintainers
 <gdb-patches@sourceware.org>.
 
-22.4 Build Script
+23.4 Build Script
 =================
 
 The script `gdb_buildall.sh' builds GDB with flag

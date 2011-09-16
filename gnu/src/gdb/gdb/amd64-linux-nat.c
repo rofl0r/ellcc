@@ -1,7 +1,7 @@
 /* Native-dependent code for GNU/Linux x86-64.
 
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
-   Free Software Foundation, Inc.
+   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+   2011 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -40,7 +40,7 @@
    <asm/ptrace.h> because the latter redefines FS and GS for no apparent
    reason, and those definitions don't match the ones that libpthread_db
    uses, which come from <sys/reg.h>.  */
-/* ezannoni-2003-07-09: I think this is fixed. The extraneous defs have
+/* ezannoni-2003-07-09: I think this is fixed.  The extraneous defs have
    been removed from ptrace.h in the kernel.  However, better safe than
    sorry.  */
 #include <asm/ptrace.h>
@@ -574,8 +574,10 @@ compat_siginfo_from_siginfo (compat_siginfo_t *to, siginfo_t *from)
   to->si_errno = from->si_errno;
   to->si_code = from->si_code;
 
-  if (to->si_code < 0)
+  if (to->si_code == SI_TIMER)
     {
+      to->cpt_si_timerid = from->si_timerid;
+      to->cpt_si_overrun = from->si_overrun;
       to->cpt_si_ptr = (intptr_t) from->si_ptr;
     }
   else if (to->si_code == SI_USER)
@@ -583,10 +585,10 @@ compat_siginfo_from_siginfo (compat_siginfo_t *to, siginfo_t *from)
       to->cpt_si_pid = from->si_pid;
       to->cpt_si_uid = from->si_uid;
     }
-  else if (to->si_code == SI_TIMER)
+  else if (to->si_code < 0)
     {
-      to->cpt_si_timerid = from->si_timerid;
-      to->cpt_si_overrun = from->si_overrun;
+      to->cpt_si_pid = from->si_pid;
+      to->cpt_si_uid = from->si_uid;
       to->cpt_si_ptr = (intptr_t) from->si_ptr;
     }
   else
@@ -628,8 +630,10 @@ siginfo_from_compat_siginfo (siginfo_t *to, compat_siginfo_t *from)
   to->si_errno = from->si_errno;
   to->si_code = from->si_code;
 
-  if (to->si_code < 0)
+  if (to->si_code == SI_TIMER)
     {
+      to->si_timerid = from->cpt_si_timerid;
+      to->si_overrun = from->cpt_si_overrun;
       to->si_ptr = (void *) (intptr_t) from->cpt_si_ptr;
     }
   else if (to->si_code == SI_USER)
@@ -637,10 +641,10 @@ siginfo_from_compat_siginfo (siginfo_t *to, compat_siginfo_t *from)
       to->si_pid = from->cpt_si_pid;
       to->si_uid = from->cpt_si_uid;
     }
-  else if (to->si_code == SI_TIMER)
+  if (to->si_code < 0)
     {
-      to->si_timerid = from->cpt_si_timerid;
-      to->si_overrun = from->cpt_si_overrun;
+      to->si_pid = from->cpt_si_pid;
+      to->si_uid = from->cpt_si_uid;
       to->si_ptr = (void *) (intptr_t) from->cpt_si_ptr;
     }
   else

@@ -1,4 +1,5 @@
-# Copyright 2002, 2004, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+# Copyright 2002, 2004, 2007, 2008, 2009, 2010, 2011
+# Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,6 +50,10 @@ if  { [gdb_compile "$srcdir/$subdir/$srcfile1" "$objdir/$subdir/$objfile1" objec
 if { [gdb_compile "$objdir/$subdir/$objfile $objdir/$subdir/$objfile1" "${binfile}" executable {debug c++}] != "" } {
      untested m-static.exp
      return -1
+}
+
+if [get_compiler_info $binfile] {
+    return -1
 }
 
 gdb_exit
@@ -125,6 +130,13 @@ gdb_test "print test3.data.value_derived" "\\$\[0-9\].* = etruscan" "template ob
 gdb_test "print test4.elsewhere" "\\$\[0-9\].* = 221" "static const int initialized elsewhere"
 
 # static const int that nobody initializes.  From PR gdb/635.
+if {[test_compiler_info {gcc-[0-3]-*}]
+    || [test_compiler_info {gcc-4-[0-4]-*}]} {
+    # There was an extra CU-level DW_TAG_variable as DW_AT_declaration
+    # with DW_AT_name = nowhere
+    # and DW_AT_MIPS_linkage_name = _ZN9gnu_obj_47nowhereE .
+    setup_xfail *-*-*
+}
 gdb_test "print test4.nowhere" "field nowhere is nonexistent or has been optimized out" "static const int initialized nowhere"
 
 # static const initialized in the class definition, PR gdb/11702.

@@ -22,8 +22,8 @@ developing GNU and promoting software freedom."
 
    This file documents the GNU debugger GDB.
 
-   This is the Ninth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.2.
+   This is the Tenth Edition, of `Debugging with GDB: the GNU
+Source-Level Debugger' for GDB (GDB) Version 7.3.1.
 
    Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
@@ -39,6 +39,1528 @@ with the Back-Cover Texts as in (a) below.
    (a) The FSF's Back-Cover Text is: "You are free to copy and modify
 this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
+
+
+File: gdb.info,  Node: GDB/MI Program Execution,  Next: GDB/MI Stack Manipulation,  Prev: GDB/MI Thread Commands,  Up: GDB/MI
+
+27.11 GDB/MI Program Execution
+==============================
+
+These are the asynchronous commands which generate the out-of-band
+record `*stopped'.  Currently GDB only really executes asynchronously
+with remote targets and this interaction is mimicked in other cases.
+
+The `-exec-continue' Command
+----------------------------
+
+Synopsis
+........
+
+      -exec-continue [--reverse] [--all|--thread-group N]
+
+   Resumes the execution of the inferior program, which will continue
+to execute until it reaches a debugger stop event.  If the `--reverse'
+option is specified, execution resumes in reverse until it reaches a
+stop event.  Stop events may include
+   * breakpoints or watchpoints
+
+   * signals or exceptions
+
+   * the end of the process (or its beginning under `--reverse')
+
+   * the end or beginning of a replay log if one is being used.
+   In all-stop mode (*note All-Stop Mode::), may resume only one
+thread, or all threads, depending on the value of the
+`scheduler-locking' variable.  If `--all' is specified, all threads (in
+all inferiors) will be resumed.  The `--all' option is ignored in
+all-stop mode.  If the `--thread-group' options is specified, then all
+threads in that thread group are resumed.
+
+GDB Command
+...........
+
+The corresponding GDB corresponding is `continue'.
+
+Example
+.......
+
+     -exec-continue
+     ^running
+     (gdb)
+     @Hello world
+     *stopped,reason="breakpoint-hit",disp="keep",bkptno="2",frame={
+     func="foo",args=[],file="hello.c",fullname="/home/foo/bar/hello.c",
+     line="13"}
+     (gdb)
+
+The `-exec-finish' Command
+--------------------------
+
+Synopsis
+........
+
+      -exec-finish [--reverse]
+
+   Resumes the execution of the inferior program until the current
+function is exited.  Displays the results returned by the function.  If
+the `--reverse' option is specified, resumes the reverse execution of
+the inferior program until the point where current function was called.
+
+GDB Command
+...........
+
+The corresponding GDB command is `finish'.
+
+Example
+.......
+
+Function returning `void'.
+
+     -exec-finish
+     ^running
+     (gdb)
+     @hello from foo
+     *stopped,reason="function-finished",frame={func="main",args=[],
+     file="hello.c",fullname="/home/foo/bar/hello.c",line="7"}
+     (gdb)
+
+   Function returning other than `void'.  The name of the internal GDB
+variable storing the result is printed, together with the value itself.
+
+     -exec-finish
+     ^running
+     (gdb)
+     *stopped,reason="function-finished",frame={addr="0x000107b0",func="foo",
+     args=[{name="a",value="1"],{name="b",value="9"}},
+     file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     gdb-result-var="$1",return-value="0"
+     (gdb)
+
+The `-exec-interrupt' Command
+-----------------------------
+
+Synopsis
+........
+
+      -exec-interrupt [--all|--thread-group N]
+
+   Interrupts the background execution of the target.  Note how the
+token associated with the stop message is the one for the execution
+command that has been interrupted.  The token for the interrupt itself
+only appears in the `^done' output.  If the user is trying to interrupt
+a non-running program, an error message will be printed.
+
+   Note that when asynchronous execution is enabled, this command is
+asynchronous just like other execution commands.  That is, first the
+`^done' response will be printed, and the target stop will be reported
+after that using the `*stopped' notification.
+
+   In non-stop mode, only the context thread is interrupted by default.
+All threads (in all inferiors) will be interrupted if the `--all'
+option is specified.  If the `--thread-group' option is specified, all
+threads in that group will be interrupted.
+
+GDB Command
+...........
+
+The corresponding GDB command is `interrupt'.
+
+Example
+.......
+
+     (gdb)
+     111-exec-continue
+     111^running
+
+     (gdb)
+     222-exec-interrupt
+     222^done
+     (gdb)
+     111*stopped,signal-name="SIGINT",signal-meaning="Interrupt",
+     frame={addr="0x00010140",func="foo",args=[],file="try.c",
+     fullname="/home/foo/bar/try.c",line="13"}
+     (gdb)
+
+     (gdb)
+     -exec-interrupt
+     ^error,msg="mi_cmd_exec_interrupt: Inferior not executing."
+     (gdb)
+
+The `-exec-jump' Command
+------------------------
+
+Synopsis
+........
+
+      -exec-jump LOCATION
+
+   Resumes execution of the inferior program at the location specified
+by parameter.  *Note Specify Location::, for a description of the
+different forms of LOCATION.
+
+GDB Command
+...........
+
+The corresponding GDB command is `jump'.
+
+Example
+.......
+
+     -exec-jump foo.c:10
+     *running,thread-id="all"
+     ^running
+
+The `-exec-next' Command
+------------------------
+
+Synopsis
+........
+
+      -exec-next [--reverse]
+
+   Resumes execution of the inferior program, stopping when the
+beginning of the next source line is reached.
+
+   If the `--reverse' option is specified, resumes reverse execution of
+the inferior program, stopping at the beginning of the previous source
+line.  If you issue this command on the first line of a function, it
+will take you back to the caller of that function, to the source line
+where the function was called.
+
+GDB Command
+...........
+
+The corresponding GDB command is `next'.
+
+Example
+.......
+
+     -exec-next
+     ^running
+     (gdb)
+     *stopped,reason="end-stepping-range",line="8",file="hello.c"
+     (gdb)
+
+The `-exec-next-instruction' Command
+------------------------------------
+
+Synopsis
+........
+
+      -exec-next-instruction [--reverse]
+
+   Executes one machine instruction.  If the instruction is a function
+call, continues until the function returns.  If the program stops at an
+instruction in the middle of a source line, the address will be printed
+as well.
+
+   If the `--reverse' option is specified, resumes reverse execution of
+the inferior program, stopping at the previous instruction.  If the
+previously executed instruction was a return from another function, it
+will continue to execute in reverse until the call to that function
+(from the current stack frame) is reached.
+
+GDB Command
+...........
+
+The corresponding GDB command is `nexti'.
+
+Example
+.......
+
+     (gdb)
+     -exec-next-instruction
+     ^running
+
+     (gdb)
+     *stopped,reason="end-stepping-range",
+     addr="0x000100d4",line="5",file="hello.c"
+     (gdb)
+
+The `-exec-return' Command
+--------------------------
+
+Synopsis
+........
+
+      -exec-return
+
+   Makes current function return immediately.  Doesn't execute the
+inferior.  Displays the new current frame.
+
+GDB Command
+...........
+
+The corresponding GDB command is `return'.
+
+Example
+.......
+
+     (gdb)
+     200-break-insert callee4
+     200^done,bkpt={number="1",addr="0x00010734",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",line="8"}
+     (gdb)
+     000-exec-run
+     000^running
+     (gdb)
+     000*stopped,reason="breakpoint-hit",disp="keep",bkptno="1",
+     frame={func="callee4",args=[],
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="8"}
+     (gdb)
+     205-break-delete
+     205^done
+     (gdb)
+     111-exec-return
+     111^done,frame={level="0",func="callee3",
+     args=[{name="strarg",
+     value="0x11940 \"A string argument.\""}],
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="18"}
+     (gdb)
+
+The `-exec-run' Command
+-----------------------
+
+Synopsis
+........
+
+      -exec-run [--all | --thread-group N]
+
+   Starts execution of the inferior from the beginning.  The inferior
+executes until either a breakpoint is encountered or the program exits.
+In the latter case the output will include an exit code, if the
+program has exited exceptionally.
+
+   When no option is specified, the current inferior is started.  If the
+`--thread-group' option is specified, it should refer to a thread group
+of type `process', and that thread group will be started.  If the
+`--all' option is specified, then all inferiors will be started.
+
+GDB Command
+...........
+
+The corresponding GDB command is `run'.
+
+Examples
+........
+
+     (gdb)
+     -break-insert main
+     ^done,bkpt={number="1",addr="0x0001072c",file="recursive2.c",line="4"}
+     (gdb)
+     -exec-run
+     ^running
+     (gdb)
+     *stopped,reason="breakpoint-hit",disp="keep",bkptno="1",
+     frame={func="main",args=[],file="recursive2.c",
+     fullname="/home/foo/bar/recursive2.c",line="4"}
+     (gdb)
+
+Program exited normally:
+
+     (gdb)
+     -exec-run
+     ^running
+     (gdb)
+     x = 55
+     *stopped,reason="exited-normally"
+     (gdb)
+
+Program exited exceptionally:
+
+     (gdb)
+     -exec-run
+     ^running
+     (gdb)
+     x = 55
+     *stopped,reason="exited",exit-code="01"
+     (gdb)
+
+   Another way the program can terminate is if it receives a signal
+such as `SIGINT'.  In this case, GDB/MI displays this:
+
+     (gdb)
+     *stopped,reason="exited-signalled",signal-name="SIGINT",
+     signal-meaning="Interrupt"
+
+The `-exec-step' Command
+------------------------
+
+Synopsis
+........
+
+      -exec-step [--reverse]
+
+   Resumes execution of the inferior program, stopping when the
+beginning of the next source line is reached, if the next source line
+is not a function call.  If it is, stop at the first instruction of the
+called function.  If the `--reverse' option is specified, resumes
+reverse execution of the inferior program, stopping at the beginning of
+the previously executed source line.
+
+GDB Command
+...........
+
+The corresponding GDB command is `step'.
+
+Example
+.......
+
+Stepping into a function:
+
+     -exec-step
+     ^running
+     (gdb)
+     *stopped,reason="end-stepping-range",
+     frame={func="foo",args=[{name="a",value="10"},
+     {name="b",value="0"}],file="recursive2.c",
+     fullname="/home/foo/bar/recursive2.c",line="11"}
+     (gdb)
+
+   Regular stepping:
+
+     -exec-step
+     ^running
+     (gdb)
+     *stopped,reason="end-stepping-range",line="14",file="recursive2.c"
+     (gdb)
+
+The `-exec-step-instruction' Command
+------------------------------------
+
+Synopsis
+........
+
+      -exec-step-instruction [--reverse]
+
+   Resumes the inferior which executes one machine instruction.  If the
+`--reverse' option is specified, resumes reverse execution of the
+inferior program, stopping at the previously executed instruction.  The
+output, once GDB has stopped, will vary depending on whether we have
+stopped in the middle of a source line or not.  In the former case, the
+address at which the program stopped will be printed as well.
+
+GDB Command
+...........
+
+The corresponding GDB command is `stepi'.
+
+Example
+.......
+
+     (gdb)
+     -exec-step-instruction
+     ^running
+
+     (gdb)
+     *stopped,reason="end-stepping-range",
+     frame={func="foo",args=[],file="try.c",
+     fullname="/home/foo/bar/try.c",line="10"}
+     (gdb)
+     -exec-step-instruction
+     ^running
+
+     (gdb)
+     *stopped,reason="end-stepping-range",
+     frame={addr="0x000100f4",func="foo",args=[],file="try.c",
+     fullname="/home/foo/bar/try.c",line="10"}
+     (gdb)
+
+The `-exec-until' Command
+-------------------------
+
+Synopsis
+........
+
+      -exec-until [ LOCATION ]
+
+   Executes the inferior until the LOCATION specified in the argument
+is reached.  If there is no argument, the inferior executes until a
+source line greater than the current one is reached.  The reason for
+stopping in this case will be `location-reached'.
+
+GDB Command
+...........
+
+The corresponding GDB command is `until'.
+
+Example
+.......
+
+     (gdb)
+     -exec-until recursive2.c:6
+     ^running
+     (gdb)
+     x = 55
+     *stopped,reason="location-reached",frame={func="main",args=[],
+     file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="6"}
+     (gdb)
+
+
+File: gdb.info,  Node: GDB/MI Stack Manipulation,  Next: GDB/MI Variable Objects,  Prev: GDB/MI Program Execution,  Up: GDB/MI
+
+27.12 GDB/MI Stack Manipulation Commands
+========================================
+
+The `-stack-info-frame' Command
+-------------------------------
+
+Synopsis
+........
+
+      -stack-info-frame
+
+   Get info on the selected frame.
+
+GDB Command
+...........
+
+The corresponding GDB command is `info frame' or `frame' (without
+arguments).
+
+Example
+.......
+
+     (gdb)
+     -stack-info-frame
+     ^done,frame={level="1",addr="0x0001076c",func="callee3",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="17"}
+     (gdb)
+
+The `-stack-info-depth' Command
+-------------------------------
+
+Synopsis
+........
+
+      -stack-info-depth [ MAX-DEPTH ]
+
+   Return the depth of the stack.  If the integer argument MAX-DEPTH is
+specified, do not count beyond MAX-DEPTH frames.
+
+GDB Command
+...........
+
+There's no equivalent GDB command.
+
+Example
+.......
+
+For a stack with frame levels 0 through 11:
+
+     (gdb)
+     -stack-info-depth
+     ^done,depth="12"
+     (gdb)
+     -stack-info-depth 4
+     ^done,depth="4"
+     (gdb)
+     -stack-info-depth 12
+     ^done,depth="12"
+     (gdb)
+     -stack-info-depth 11
+     ^done,depth="11"
+     (gdb)
+     -stack-info-depth 13
+     ^done,depth="12"
+     (gdb)
+
+The `-stack-list-arguments' Command
+-----------------------------------
+
+Synopsis
+........
+
+      -stack-list-arguments PRINT-VALUES
+         [ LOW-FRAME HIGH-FRAME ]
+
+   Display a list of the arguments for the frames between LOW-FRAME and
+HIGH-FRAME (inclusive).  If LOW-FRAME and HIGH-FRAME are not provided,
+list the arguments for the whole call stack.  If the two arguments are
+equal, show the single frame at the corresponding level.  It is an
+error if LOW-FRAME is larger than the actual number of frames.  On the
+other hand, HIGH-FRAME may be larger than the actual number of frames,
+in which case only existing frames will be returned.
+
+   If PRINT-VALUES is 0 or `--no-values', print only the names of the
+variables; if it is 1 or `--all-values', print also their values; and
+if it is 2 or `--simple-values', print the name, type and value for
+simple data types, and the name and type for arrays, structures and
+unions.
+
+   Use of this command to obtain arguments in a single frame is
+deprecated in favor of the `-stack-list-variables' command.
+
+GDB Command
+...........
+
+GDB does not have an equivalent command.  `gdbtk' has a `gdb_get_args'
+command which partially overlaps with the functionality of
+`-stack-list-arguments'.
+
+Example
+.......
+
+     (gdb)
+     -stack-list-frames
+     ^done,
+     stack=[
+     frame={level="0",addr="0x00010734",func="callee4",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="8"},
+     frame={level="1",addr="0x0001076c",func="callee3",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="17"},
+     frame={level="2",addr="0x0001078c",func="callee2",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="22"},
+     frame={level="3",addr="0x000107b4",func="callee1",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="27"},
+     frame={level="4",addr="0x000107e0",func="main",
+     file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/home/foo/bar/devo/gdb/testsuite/gdb.mi/basics.c",line="32"}]
+     (gdb)
+     -stack-list-arguments 0
+     ^done,
+     stack-args=[
+     frame={level="0",args=[]},
+     frame={level="1",args=[name="strarg"]},
+     frame={level="2",args=[name="intarg",name="strarg"]},
+     frame={level="3",args=[name="intarg",name="strarg",name="fltarg"]},
+     frame={level="4",args=[]}]
+     (gdb)
+     -stack-list-arguments 1
+     ^done,
+     stack-args=[
+     frame={level="0",args=[]},
+     frame={level="1",
+      args=[{name="strarg",value="0x11940 \"A string argument.\""}]},
+     frame={level="2",args=[
+     {name="intarg",value="2"},
+     {name="strarg",value="0x11940 \"A string argument.\""}]},
+     {frame={level="3",args=[
+     {name="intarg",value="2"},
+     {name="strarg",value="0x11940 \"A string argument.\""},
+     {name="fltarg",value="3.5"}]},
+     frame={level="4",args=[]}]
+     (gdb)
+     -stack-list-arguments 0 2 2
+     ^done,stack-args=[frame={level="2",args=[name="intarg",name="strarg"]}]
+     (gdb)
+     -stack-list-arguments 1 2 2
+     ^done,stack-args=[frame={level="2",
+     args=[{name="intarg",value="2"},
+     {name="strarg",value="0x11940 \"A string argument.\""}]}]
+     (gdb)
+
+The `-stack-list-frames' Command
+--------------------------------
+
+Synopsis
+........
+
+      -stack-list-frames [ LOW-FRAME HIGH-FRAME ]
+
+   List the frames currently on the stack.  For each frame it displays
+the following info:
+
+`LEVEL'
+     The frame number, 0 being the topmost frame, i.e., the innermost
+     function.
+
+`ADDR'
+     The `$pc' value for that frame.
+
+`FUNC'
+     Function name.
+
+`FILE'
+     File name of the source file where the function lives.
+
+`FULLNAME'
+     The full file name of the source file where the function lives.
+
+`LINE'
+     Line number corresponding to the `$pc'.
+
+`FROM'
+     The shared library where this function is defined.  This is only
+     given if the frame's function is not known.
+
+   If invoked without arguments, this command prints a backtrace for the
+whole stack.  If given two integer arguments, it shows the frames whose
+levels are between the two arguments (inclusive).  If the two arguments
+are equal, it shows the single frame at the corresponding level.  It is
+an error if LOW-FRAME is larger than the actual number of frames.  On
+the other hand, HIGH-FRAME may be larger than the actual number of
+frames, in which case only existing frames will be returned.
+
+GDB Command
+...........
+
+The corresponding GDB commands are `backtrace' and `where'.
+
+Example
+.......
+
+Full stack backtrace:
+
+     (gdb)
+     -stack-list-frames
+     ^done,stack=
+     [frame={level="0",addr="0x0001076c",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="11"},
+     frame={level="1",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="2",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="3",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="4",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="5",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="6",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="7",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="8",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="9",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="10",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="11",addr="0x00010738",func="main",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="4"}]
+     (gdb)
+
+   Show frames between LOW_FRAME and HIGH_FRAME:
+
+     (gdb)
+     -stack-list-frames 3 5
+     ^done,stack=
+     [frame={level="3",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="4",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"},
+     frame={level="5",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"}]
+     (gdb)
+
+   Show a single frame:
+
+     (gdb)
+     -stack-list-frames 3 3
+     ^done,stack=
+     [frame={level="3",addr="0x000107a4",func="foo",
+       file="recursive2.c",fullname="/home/foo/bar/recursive2.c",line="14"}]
+     (gdb)
+
+The `-stack-list-locals' Command
+--------------------------------
+
+Synopsis
+........
+
+      -stack-list-locals PRINT-VALUES
+
+   Display the local variable names for the selected frame.  If
+PRINT-VALUES is 0 or `--no-values', print only the names of the
+variables; if it is 1 or `--all-values', print also their values; and
+if it is 2 or `--simple-values', print the name, type and value for
+simple data types, and the name and type for arrays, structures and
+unions.  In this last case, a frontend can immediately display the
+value of simple data types and create variable objects for other data
+types when the user wishes to explore their values in more detail.
+
+   This command is deprecated in favor of the `-stack-list-variables'
+command.
+
+GDB Command
+...........
+
+`info locals' in GDB, `gdb_get_locals' in `gdbtk'.
+
+Example
+.......
+
+     (gdb)
+     -stack-list-locals 0
+     ^done,locals=[name="A",name="B",name="C"]
+     (gdb)
+     -stack-list-locals --all-values
+     ^done,locals=[{name="A",value="1"},{name="B",value="2"},
+       {name="C",value="{1, 2, 3}"}]
+     -stack-list-locals --simple-values
+     ^done,locals=[{name="A",type="int",value="1"},
+       {name="B",type="int",value="2"},{name="C",type="int [3]"}]
+     (gdb)
+
+The `-stack-list-variables' Command
+-----------------------------------
+
+Synopsis
+........
+
+      -stack-list-variables PRINT-VALUES
+
+   Display the names of local variables and function arguments for the
+selected frame.  If PRINT-VALUES is 0 or `--no-values', print only the
+names of the variables; if it is 1 or `--all-values', print also their
+values; and if it is 2 or `--simple-values', print the name, type and
+value for simple data types, and the name and type for arrays,
+structures and unions.
+
+Example
+.......
+
+     (gdb)
+     -stack-list-variables --thread 1 --frame 0 --all-values
+     ^done,variables=[{name="x",value="11"},{name="s",value="{a = 1, b = 2}"}]
+     (gdb)
+
+The `-stack-select-frame' Command
+---------------------------------
+
+Synopsis
+........
+
+      -stack-select-frame FRAMENUM
+
+   Change the selected frame.  Select a different frame FRAMENUM on the
+stack.
+
+   This command in deprecated in favor of passing the `--frame' option
+to every command.
+
+GDB Command
+...........
+
+The corresponding GDB commands are `frame', `up', `down',
+`select-frame', `up-silent', and `down-silent'.
+
+Example
+.......
+
+     (gdb)
+     -stack-select-frame 2
+     ^done
+     (gdb)
+
+
+File: gdb.info,  Node: GDB/MI Variable Objects,  Next: GDB/MI Data Manipulation,  Prev: GDB/MI Stack Manipulation,  Up: GDB/MI
+
+27.13 GDB/MI Variable Objects
+=============================
+
+Introduction to Variable Objects
+--------------------------------
+
+Variable objects are "object-oriented" MI interface for examining and
+changing values of expressions.  Unlike some other MI interfaces that
+work with expressions, variable objects are specifically designed for
+simple and efficient presentation in the frontend.  A variable object
+is identified by string name.  When a variable object is created, the
+frontend specifies the expression for that variable object.  The
+expression can be a simple variable, or it can be an arbitrary complex
+expression, and can even involve CPU registers.  After creating a
+variable object, the frontend can invoke other variable object
+operations--for example to obtain or change the value of a variable
+object, or to change display format.
+
+   Variable objects have hierarchical tree structure.  Any variable
+object that corresponds to a composite type, such as structure in C, has
+a number of child variable objects, for example corresponding to each
+element of a structure.  A child variable object can itself have
+children, recursively.  Recursion ends when we reach leaf variable
+objects, which always have built-in types.  Child variable objects are
+created only by explicit request, so if a frontend is not interested in
+the children of a particular variable object, no child will be created.
+
+   For a leaf variable object it is possible to obtain its value as a
+string, or set the value from a string.  String value can be also
+obtained for a non-leaf variable object, but it's generally a string
+that only indicates the type of the object, and does not list its
+contents.  Assignment to a non-leaf variable object is not allowed.
+
+   A frontend does not need to read the values of all variable objects
+each time the program stops.  Instead, MI provides an update command
+that lists all variable objects whose values has changed since the last
+update operation.  This considerably reduces the amount of data that
+must be transferred to the frontend.  As noted above, children variable
+objects are created on demand, and only leaf variable objects have a
+real value.  As result, gdb will read target memory only for leaf
+variables that frontend has created.
+
+   The automatic update is not always desirable.  For example, a
+frontend might want to keep a value of some expression for future
+reference, and never update it.  For another example,  fetching memory
+is relatively slow for embedded targets, so a frontend might want to
+disable automatic update for the variables that are either not visible
+on the screen, or "closed".  This is possible using so called "frozen
+variable objects".  Such variable objects are never implicitly updated.
+
+   Variable objects can be either "fixed" or "floating".  For the fixed
+variable object, the expression is parsed when the variable object is
+created, including associating identifiers to specific variables.  The
+meaning of expression never changes.  For a floating variable object
+the values of variables whose names appear in the expressions are
+re-evaluated every time in the context of the current frame.  Consider
+this example:
+
+     void do_work(...)
+     {
+             struct work_state state;
+
+             if (...)
+                do_work(...);
+     }
+
+   If a fixed variable object for the `state' variable is created in
+this function, and we enter the recursive call, the the variable object
+will report the value of `state' in the top-level `do_work' invocation.
+On the other hand, a floating variable object will report the value of
+`state' in the current frame.
+
+   If an expression specified when creating a fixed variable object
+refers to a local variable, the variable object becomes bound to the
+thread and frame in which the variable object is created.  When such
+variable object is updated, GDB makes sure that the thread/frame
+combination the variable object is bound to still exists, and
+re-evaluates the variable object in context of that thread/frame.
+
+   The following is the complete set of GDB/MI operations defined to
+access this functionality:
+
+*Operation*                   *Description*
+`-enable-pretty-printing'     enable Python-based pretty-printing
+`-var-create'                 create a variable object
+`-var-delete'                 delete the variable object and/or its
+                              children
+`-var-set-format'             set the display format of this variable
+`-var-show-format'            show the display format of this variable
+`-var-info-num-children'      tells how many children this object has
+`-var-list-children'          return a list of the object's children
+`-var-info-type'              show the type of this variable object
+`-var-info-expression'        print parent-relative expression that this
+                              variable object represents
+`-var-info-path-expression'   print full expression that this variable
+                              object represents
+`-var-show-attributes'        is this variable editable? does it exist
+                              here?
+`-var-evaluate-expression'    get the value of this variable
+`-var-assign'                 set the value of this variable
+`-var-update'                 update the variable and its children
+`-var-set-frozen'             set frozeness attribute
+`-var-set-update-range'       set range of children to display on update
+
+   In the next subsection we describe each operation in detail and
+suggest how it can be used.
+
+Description And Use of Operations on Variable Objects
+-----------------------------------------------------
+
+The `-enable-pretty-printing' Command
+-------------------------------------
+
+     -enable-pretty-printing
+
+   GDB allows Python-based visualizers to affect the output of the MI
+variable object commands.  However, because there was no way to
+implement this in a fully backward-compatible way, a front end must
+request that this functionality be enabled.
+
+   Once enabled, this feature cannot be disabled.
+
+   Note that if Python support has not been compiled into GDB, this
+command will still succeed (and do nothing).
+
+   This feature is currently (as of GDB 7.0) experimental, and may work
+differently in future versions of GDB.
+
+The `-var-create' Command
+-------------------------
+
+Synopsis
+........
+
+      -var-create {NAME | "-"}
+         {FRAME-ADDR | "*" | "@"} EXPRESSION
+
+   This operation creates a variable object, which allows the
+monitoring of a variable, the result of an expression, a memory cell or
+a CPU register.
+
+   The NAME parameter is the string by which the object can be
+referenced.  It must be unique.  If `-' is specified, the varobj system
+will generate a string "varNNNNNN" automatically.  It will be unique
+provided that one does not specify NAME of that format.  The command
+fails if a duplicate name is found.
+
+   The frame under which the expression should be evaluated can be
+specified by FRAME-ADDR.  A `*' indicates that the current frame should
+be used.  A `@' indicates that a floating variable object must be
+created.
+
+   EXPRESSION is any expression valid on the current language set (must
+not begin with a `*'), or one of the following:
+
+   * `*ADDR', where ADDR is the address of a memory cell
+
+   * `*ADDR-ADDR' -- a memory address range (TBD)
+
+   * `$REGNAME' -- a CPU register name
+
+   A varobj's contents may be provided by a Python-based
+pretty-printer.  In this case the varobj is known as a "dynamic
+varobj".  Dynamic varobjs have slightly different semantics in some
+cases.  If the `-enable-pretty-printing' command is not sent, then GDB
+will never create a dynamic varobj.  This ensures backward
+compatibility for existing clients.
+
+Result
+......
+
+This operation returns attributes of the newly-created varobj.  These
+are:
+
+`name'
+     The name of the varobj.
+
+`numchild'
+     The number of children of the varobj.  This number is not
+     necessarily reliable for a dynamic varobj.  Instead, you must
+     examine the `has_more' attribute.
+
+`value'
+     The varobj's scalar value.  For a varobj whose type is some sort of
+     aggregate (e.g., a `struct'), or for a dynamic varobj, this value
+     will not be interesting.
+
+`type'
+     The varobj's type.  This is a string representation of the type, as
+     would be printed by the GDB CLI.
+
+`thread-id'
+     If a variable object is bound to a specific thread, then this is
+     the thread's identifier.
+
+`has_more'
+     For a dynamic varobj, this indicates whether there appear to be any
+     children available.  For a non-dynamic varobj, this will be 0.
+
+`dynamic'
+     This attribute will be present and have the value `1' if the
+     varobj is a dynamic varobj.  If the varobj is not a dynamic varobj,
+     then this attribute will not be present.
+
+`displayhint'
+     A dynamic varobj can supply a display hint to the front end.  The
+     value comes directly from the Python pretty-printer object's
+     `display_hint' method.  *Note Pretty Printing API::.
+
+   Typical output will look like this:
+
+      name="NAME",numchild="N",type="TYPE",thread-id="M",
+       has_more="HAS_MORE"
+
+The `-var-delete' Command
+-------------------------
+
+Synopsis
+........
+
+      -var-delete [ -c ] NAME
+
+   Deletes a previously created variable object and all of its children.
+With the `-c' option, just deletes the children.
+
+   Returns an error if the object NAME is not found.
+
+The `-var-set-format' Command
+-----------------------------
+
+Synopsis
+........
+
+      -var-set-format NAME FORMAT-SPEC
+
+   Sets the output format for the value of the object NAME to be
+FORMAT-SPEC.
+
+   The syntax for the FORMAT-SPEC is as follows:
+
+      FORMAT-SPEC ==>
+      {binary | decimal | hexadecimal | octal | natural}
+
+   The natural format is the default format choosen automatically based
+on the variable type (like decimal for an `int', hex for pointers,
+etc.).
+
+   For a variable with children, the format is set only on the variable
+itself, and the children are not affected.
+
+The `-var-show-format' Command
+------------------------------
+
+Synopsis
+........
+
+      -var-show-format NAME
+
+   Returns the format used to display the value of the object NAME.
+
+      FORMAT ==>
+      FORMAT-SPEC
+
+The `-var-info-num-children' Command
+------------------------------------
+
+Synopsis
+........
+
+      -var-info-num-children NAME
+
+   Returns the number of children of a variable object NAME:
+
+      numchild=N
+
+   Note that this number is not completely reliable for a dynamic
+varobj.  It will return the current number of children, but more
+children may be available.
+
+The `-var-list-children' Command
+--------------------------------
+
+Synopsis
+........
+
+      -var-list-children [PRINT-VALUES] NAME [FROM TO]
+
+   Return a list of the children of the specified variable object and
+create variable objects for them, if they do not already exist.  With a
+single argument or if PRINT-VALUES has a value of 0 or `--no-values',
+print only the names of the variables; if PRINT-VALUES is 1 or
+`--all-values', also print their values; and if it is 2 or
+`--simple-values' print the name and value for simple data types and
+just the name for arrays, structures and unions.
+
+   FROM and TO, if specified, indicate the range of children to report.
+If FROM or TO is less than zero, the range is reset and all children
+will be reported.  Otherwise, children starting at FROM (zero-based)
+and up to and excluding TO will be reported.
+
+   If a child range is requested, it will only affect the current call
+to `-var-list-children', but not future calls to `-var-update'.  For
+this, you must instead use `-var-set-update-range'.  The intent of this
+approach is to enable a front end to implement any update approach it
+likes; for example, scrolling a view may cause the front end to request
+more children with `-var-list-children', and then the front end could
+call `-var-set-update-range' with a different range to ensure that
+future updates are restricted to just the visible items.
+
+   For each child the following results are returned:
+
+NAME
+     Name of the variable object created for this child.
+
+EXP
+     The expression to be shown to the user by the front end to
+     designate this child.  For example this may be the name of a
+     structure member.
+
+     For a dynamic varobj, this value cannot be used to form an
+     expression.  There is no way to do this at all with a dynamic
+     varobj.
+
+     For C/C++ structures there are several pseudo children returned to
+     designate access qualifiers.  For these pseudo children EXP is
+     `public', `private', or `protected'.  In this case the type and
+     value are not present.
+
+     A dynamic varobj will not report the access qualifying
+     pseudo-children, regardless of the language.  This information is
+     not available at all with a dynamic varobj.
+
+NUMCHILD
+     Number of children this child has.  For a dynamic varobj, this
+     will be 0.
+
+TYPE
+     The type of the child.
+
+VALUE
+     If values were requested, this is the value.
+
+THREAD-ID
+     If this variable object is associated with a thread, this is the
+     thread id.  Otherwise this result is not present.
+
+FROZEN
+     If the variable object is frozen, this variable will be present
+     with a value of 1.
+
+   The result may have its own attributes:
+
+`displayhint'
+     A dynamic varobj can supply a display hint to the front end.  The
+     value comes directly from the Python pretty-printer object's
+     `display_hint' method.  *Note Pretty Printing API::.
+
+`has_more'
+     This is an integer attribute which is nonzero if there are children
+     remaining after the end of the selected range.
+
+Example
+.......
+
+     (gdb)
+      -var-list-children n
+      ^done,numchild=N,children=[child={name=NAME,exp=EXP,
+      numchild=N,type=TYPE},(repeats N times)]
+     (gdb)
+      -var-list-children --all-values n
+      ^done,numchild=N,children=[child={name=NAME,exp=EXP,
+      numchild=N,value=VALUE,type=TYPE},(repeats N times)]
+
+The `-var-info-type' Command
+----------------------------
+
+Synopsis
+........
+
+      -var-info-type NAME
+
+   Returns the type of the specified variable NAME.  The type is
+returned as a string in the same format as it is output by the GDB CLI:
+
+      type=TYPENAME
+
+The `-var-info-expression' Command
+----------------------------------
+
+Synopsis
+........
+
+      -var-info-expression NAME
+
+   Returns a string that is suitable for presenting this variable
+object in user interface.  The string is generally not valid expression
+in the current language, and cannot be evaluated.
+
+   For example, if `a' is an array, and variable object `A' was created
+for `a', then we'll get this output:
+
+     (gdb) -var-info-expression A.1
+     ^done,lang="C",exp="1"
+
+Here, the values of `lang' can be `{"C" | "C++" | "Java"}'.
+
+   Note that the output of the `-var-list-children' command also
+includes those expressions, so the `-var-info-expression' command is of
+limited use.
+
+The `-var-info-path-expression' Command
+---------------------------------------
+
+Synopsis
+........
+
+      -var-info-path-expression NAME
+
+   Returns an expression that can be evaluated in the current context
+and will yield the same value that a variable object has.  Compare this
+with the `-var-info-expression' command, which result can be used only
+for UI presentation.  Typical use of the `-var-info-path-expression'
+command is creating a watchpoint from a variable object.
+
+   This command is currently not valid for children of a dynamic varobj,
+and will give an error when invoked on one.
+
+   For example, suppose `C' is a C++ class, derived from class `Base',
+and that the `Base' class has a member called `m_size'.  Assume a
+variable `c' is has the type of `C' and a variable object `C' was
+created for variable `c'.  Then, we'll get this output:
+     (gdb) -var-info-path-expression C.Base.public.m_size
+     ^done,path_expr=((Base)c).m_size)
+
+The `-var-show-attributes' Command
+----------------------------------
+
+Synopsis
+........
+
+      -var-show-attributes NAME
+
+   List attributes of the specified variable object NAME:
+
+      status=ATTR [ ( ,ATTR )* ]
+
+where ATTR is `{ { editable | noneditable } | TBD }'.
+
+The `-var-evaluate-expression' Command
+--------------------------------------
+
+Synopsis
+........
+
+      -var-evaluate-expression [-f FORMAT-SPEC] NAME
+
+   Evaluates the expression that is represented by the specified
+variable object and returns its value as a string.  The format of the
+string can be specified with the `-f' option.  The possible values of
+this option are the same as for `-var-set-format' (*note
+-var-set-format::).  If the `-f' option is not specified, the current
+display format will be used.  The current display format can be changed
+using the `-var-set-format' command.
+
+      value=VALUE
+
+   Note that one must invoke `-var-list-children' for a variable before
+the value of a child variable can be evaluated.
+
+The `-var-assign' Command
+-------------------------
+
+Synopsis
+........
+
+      -var-assign NAME EXPRESSION
+
+   Assigns the value of EXPRESSION to the variable object specified by
+NAME.  The object must be `editable'.  If the variable's value is
+altered by the assign, the variable will show up in any subsequent
+`-var-update' list.
+
+Example
+.......
+
+     (gdb)
+     -var-assign var1 3
+     ^done,value="3"
+     (gdb)
+     -var-update *
+     ^done,changelist=[{name="var1",in_scope="true",type_changed="false"}]
+     (gdb)
+
+The `-var-update' Command
+-------------------------
+
+Synopsis
+........
+
+      -var-update [PRINT-VALUES] {NAME | "*"}
+
+   Reevaluate the expressions corresponding to the variable object NAME
+and all its direct and indirect children, and return the list of
+variable objects whose values have changed; NAME must be a root
+variable object.  Here, "changed" means that the result of
+`-var-evaluate-expression' before and after the `-var-update' is
+different.  If `*' is used as the variable object names, all existing
+variable objects are updated, except for frozen ones (*note
+-var-set-frozen::).  The option PRINT-VALUES determines whether both
+names and values, or just names are printed.  The possible values of
+this option are the same as for `-var-list-children' (*note
+-var-list-children::).  It is recommended to use the `--all-values'
+option, to reduce the number of MI commands needed on each program stop.
+
+   With the `*' parameter, if a variable object is bound to a currently
+running thread, it will not be updated, without any diagnostic.
+
+   If `-var-set-update-range' was previously used on a varobj, then
+only the selected range of children will be reported.
+
+   `-var-update' reports all the changed varobjs in a tuple named
+`changelist'.
+
+   Each item in the change list is itself a tuple holding:
+
+`name'
+     The name of the varobj.
+
+`value'
+     If values were requested for this update, then this field will be
+     present and will hold the value of the varobj.
+
+`in_scope'
+     This field is a string which may take one of three values:
+
+    `"true"'
+          The variable object's current value is valid.
+
+    `"false"'
+          The variable object does not currently hold a valid value but
+          it may hold one in the future if its associated expression
+          comes back into scope.
+
+    `"invalid"'
+          The variable object no longer holds a valid value.  This can
+          occur when the executable file being debugged has changed,
+          either through recompilation or by using the GDB `file'
+          command.  The front end should normally choose to delete
+          these variable objects.
+
+     In the future new values may be added to this list so the front
+     should be prepared for this possibility.  *Note GDB/MI Development
+     and Front Ends: GDB/MI Development and Front Ends.
+
+`type_changed'
+     This is only present if the varobj is still valid.  If the type
+     changed, then this will be the string `true'; otherwise it will be
+     `false'.
+
+`new_type'
+     If the varobj's type changed, then this field will be present and
+     will hold the new type.
+
+`new_num_children'
+     For a dynamic varobj, if the number of children changed, or if the
+     type changed, this will be the new number of children.
+
+     The `numchild' field in other varobj responses is generally not
+     valid for a dynamic varobj - it will show the number of children
+     that GDB knows about, but because dynamic varobjs lazily
+     instantiate their children, this will not reflect the number of
+     children which may be available.
+
+     The `new_num_children' attribute only reports changes to the
+     number of children known by GDB.  This is the only way to detect
+     whether an update has removed children (which necessarily can only
+     happen at the end of the update range).
+
+`displayhint'
+     The display hint, if any.
+
+`has_more'
+     This is an integer value, which will be 1 if there are more
+     children available outside the varobj's update range.
+
+`dynamic'
+     This attribute will be present and have the value `1' if the
+     varobj is a dynamic varobj.  If the varobj is not a dynamic varobj,
+     then this attribute will not be present.
+
+`new_children'
+     If new children were added to a dynamic varobj within the selected
+     update range (as set by `-var-set-update-range'), then they will
+     be listed in this attribute.
+
+Example
+.......
+
+     (gdb)
+     -var-assign var1 3
+     ^done,value="3"
+     (gdb)
+     -var-update --all-values var1
+     ^done,changelist=[{name="var1",value="3",in_scope="true",
+     type_changed="false"}]
+     (gdb)
+
+The `-var-set-frozen' Command
+-----------------------------
+
+Synopsis
+........
+
+      -var-set-frozen NAME FLAG
+
+   Set the frozenness flag on the variable object NAME.  The FLAG
+parameter should be either `1' to make the variable frozen or `0' to
+make it unfrozen.  If a variable object is frozen, then neither itself,
+nor any of its children, are implicitly updated by `-var-update' of a
+parent variable or by `-var-update *'.  Only `-var-update' of the
+variable itself will update its value and values of its children.
+After a variable object is unfrozen, it is implicitly updated by all
+subsequent `-var-update' operations.  Unfreezing a variable does not
+update it, only subsequent `-var-update' does.
+
+Example
+.......
+
+     (gdb)
+     -var-set-frozen V 1
+     ^done
+     (gdb)
+
+The `-var-set-update-range' command
+-----------------------------------
+
+Synopsis
+........
+
+      -var-set-update-range NAME FROM TO
+
+   Set the range of children to be returned by future invocations of
+`-var-update'.
+
+   FROM and TO indicate the range of children to report.  If FROM or TO
+is less than zero, the range is reset and all children will be
+reported.  Otherwise, children starting at FROM (zero-based) and up to
+and excluding TO will be reported.
+
+Example
+.......
+
+     (gdb)
+     -var-set-update-range V 1 2
+     ^done
+
+The `-var-set-visualizer' command
+---------------------------------
+
+Synopsis
+........
+
+      -var-set-visualizer NAME VISUALIZER
+
+   Set a visualizer for the variable object NAME.
+
+   VISUALIZER is the visualizer to use.  The special value `None' means
+to disable any visualizer in use.
+
+   If not `None', VISUALIZER must be a Python expression.  This
+expression must evaluate to a callable object which accepts a single
+argument.  GDB will call this object with the value of the varobj NAME
+as an argument (this is done so that the same Python pretty-printing
+code can be used for both the CLI and MI).  When called, this object
+must return an object which conforms to the pretty-printing interface
+(*note Pretty Printing API::).
+
+   The pre-defined function `gdb.default_visualizer' may be used to
+select a visualizer by following the built-in process (*note Selecting
+Pretty-Printers::).  This is done automatically when a varobj is
+created, and so ordinarily is not needed.
+
+   This feature is only available if Python support is enabled.  The MI
+command `-list-features' (*note GDB/MI Miscellaneous Commands::) can be
+used to check this.
+
+Example
+.......
+
+Resetting the visualizer:
+
+     (gdb)
+     -var-set-visualizer V None
+     ^done
+
+   Reselecting the default (type-based) visualizer:
+
+     (gdb)
+     -var-set-visualizer V gdb.default_visualizer
+     ^done
+
+   Suppose `SomeClass' is a visualizer class.  A lambda expression can
+be used to instantiate this class for a varobj:
+
+     (gdb)
+     -var-set-visualizer V "lambda val: SomeClass()"
+     ^done
 
 
 File: gdb.info,  Node: GDB/MI Data Manipulation,  Next: GDB/MI Tracepoint Commands,  Prev: GDB/MI Variable Objects,  Up: GDB/MI
@@ -84,8 +1606,9 @@ Where:
      END-ADDR, only the lines up to END-ADDR are displayed.
 
 `MODE'
-     is either 0 (meaning only disassembly) or 1 (meaning mixed source
-     and disassembly).
+     is either 0 (meaning only disassembly), 1 (meaning mixed source and
+     disassembly), 2 (meaning disassembly with raw opcodes), or 3
+     (meaning mixed source and disassembly with raw opcodes).
 
 Result
 ......
@@ -384,6 +1907,8 @@ don't appear in the actual output):
 The `-data-read-memory' Command
 -------------------------------
 
+This command is deprecated, use `-data-read-memory-bytes' instead.
+
 Synopsis
 ........
 
@@ -484,6 +2009,113 @@ the non-printable character.
      {addr="0x000013b4",data=["0x24","0x25","0x26","0x27"],ascii="$%&'"},
      {addr="0x000013b8",data=["0x28","0x29","0x2a","0x2b"],ascii="()*+"},
      {addr="0x000013bc",data=["0x2c","0x2d","0x2e","0x2f"],ascii=",-./"}]
+     (gdb)
+
+The `-data-read-memory-bytes' Command
+-------------------------------------
+
+Synopsis
+........
+
+      -data-read-memory-bytes [ -o BYTE-OFFSET ]
+        ADDRESS COUNT
+
+where:
+
+`ADDRESS'
+     An expression specifying the address of the first memory word to be
+     read.  Complex expressions containing embedded white space should
+     be quoted using the C convention.
+
+`COUNT'
+     The number of bytes to read.  This should be an integer literal.
+
+`BYTE-OFFSET'
+     The offsets in bytes relative to ADDRESS at which to start
+     reading.  This should be an integer literal.  This option is
+     provided so that a frontend is not required to first evaluate
+     address and then perform address arithmetics itself.
+
+
+   This command attempts to read all accessible memory regions in the
+specified range.  First, all regions marked as unreadable in the memory
+map (if one is defined) will be skipped.  *Note Memory Region
+Attributes::.  Second, GDB will attempt to read the remaining regions.
+For each one, if reading full region results in an errors, GDB will try
+to read a subset of the region.
+
+   In general, every single byte in the region may be readable or not,
+and the only way to read every readable byte is to try a read at every
+address, which is not practical.   Therefore, GDB will attempt to read
+all accessible bytes at either beginning or the end of the region,
+using a binary division scheme.  This heuristic works well for reading
+accross a memory map boundary.  Note that if a region has a readable
+range that is neither at the beginning or the end, GDB will not read it.
+
+   The result record (*note GDB/MI Result Records::) that is output of
+the command includes a field named `memory' whose content is a list of
+tuples.  Each tuple represent a successfully read memory block and has
+the following fields:
+
+`begin'
+     The start address of the memory block, as hexadecimal literal.
+
+`end'
+     The end address of the memory block, as hexadecimal literal.
+
+`offset'
+     The offset of the memory block, as hexadecimal literal, relative to
+     the start address passed to `-data-read-memory-bytes'.
+
+`contents'
+     The contents of the memory block, in hex.
+
+
+GDB Command
+...........
+
+The corresponding GDB command is `x'.
+
+Example
+.......
+
+     (gdb)
+     -data-read-memory-bytes &a 10
+     ^done,memory=[{begin="0xbffff154",offset="0x00000000",
+                   end="0xbffff15e",
+                   contents="01000000020000000300"}]
+     (gdb)
+
+The `-data-write-memory-bytes' Command
+--------------------------------------
+
+Synopsis
+........
+
+      -data-write-memory-bytes ADDRESS CONTENTS
+
+where:
+
+`ADDRESS'
+     An expression specifying the address of the first memory word to be
+     read.  Complex expressions containing embedded white space should
+     be quoted using the C convention.
+
+`CONTENTS'
+     The hex-encoded bytes to write.
+
+
+GDB Command
+...........
+
+There's no corresponding GDB command.
+
+Example
+.......
+
+     (gdb)
+     -data-write-memory-bytes &a "aabbccdd"
+     ^done
      (gdb)
 
 
@@ -1373,6 +3005,10 @@ given below.
 
 `thread-info'
      Indicates presence of the `-thread-info' command.
+
+`data-read-memory-bytes'
+     Indicates presense of the `-data-read-memory-bytes' and the
+     `-data-write-memory-bytes' commands.
 
 
 The `-list-target-features' Command
@@ -3495,7 +5131,7 @@ the standard `vi' movement keys, move to previous history lines with
 `k' and subsequent lines with `j', and so forth.
 
 
-File: gdb.info,  Node: Using History Interactively,  Next: Formatting Documentation,  Prev: Command Line Editing,  Up: Top
+File: gdb.info,  Node: Using History Interactively,  Next: In Memoriam,  Prev: Command Line Editing,  Up: Top
 
 32 Using History Interactively
 ******************************
@@ -3687,9 +5323,32 @@ more of the following modifiers, each preceded by a `:'.
 
 
 
-File: gdb.info,  Node: Formatting Documentation,  Next: Installing GDB,  Prev: Using History Interactively,  Up: Top
+File: gdb.info,  Node: In Memoriam,  Next: Formatting Documentation,  Prev: Using History Interactively,  Up: Top
 
-Appendix A Formatting Documentation
+Appendix A In Memoriam
+**********************
+
+The GDB project mourns the loss of the following long-time contributors:
+
+`Fred Fish'
+     Fred was a long-standing contributor to GDB (1991-2006), and to
+     Free Software in general.  Outside of GDB, he was known in the
+     Amiga world for his series of Fish Disks, and the GeekGadget
+     project.
+
+`Michael Snyder'
+     Michael was one of the Global Maintainers of the GDB project, with
+     contributions recorded as early as 1996, until 2011.  In addition
+     to his day to day participation, he was a large driving force
+     behind adding Reverse Debugging to GDB.
+
+   Beyond their technical contributions to the project, they were also
+enjoyable members of the Free Software Community.  We will miss them.
+
+
+File: gdb.info,  Node: Formatting Documentation,  Next: Installing GDB,  Prev: In Memoriam,  Up: Top
+
+Appendix B Formatting Documentation
 ***********************************
 
 The GDB 4 release includes an already-formatted reference card, ready
@@ -3717,7 +5376,7 @@ and TeX (or `texi2roff') to typeset the printed version.
 
    GDB includes an already formatted copy of the on-line Info version
 of this manual in the `gdb' subdirectory.  The main Info file is
-`gdb-7.2/gdb/gdb.info', and it refers to subordinate files matching
+`gdb-7.3.1/gdb/gdb.info', and it refers to subordinate files matching
 `gdb.info*' in the same directory.  If necessary, you can print out
 these files, or read them with any editor; but they are easier to read
 using the `info' subsystem in GNU Emacs or the standalone `info'
@@ -3727,8 +5386,8 @@ program, available as part of the GNU Texinfo distribution.
 Info formatting programs, such as `texinfo-format-buffer' or `makeinfo'.
 
    If you have `makeinfo' installed, and are in the top level GDB
-source directory (`gdb-7.2', in the case of version 7.2), you can make
-the Info file by typing:
+source directory (`gdb-7.3.1', in the case of version 7.3.1), you can
+make the Info file by typing:
 
      cd gdb
      make gdb.info
@@ -3753,7 +5412,7 @@ format.  On its own, TeX cannot either read or typeset a Texinfo file.
 
    If you have TeX and a DVI printer program installed, you can typeset
 and print this manual.  First switch to the `gdb' subdirectory of the
-main source directory (for example, to `gdb-7.2/gdb') and type:
+main source directory (for example, to `gdb-7.3.1/gdb') and type:
 
      make gdb.dvi
 
@@ -3761,12 +5420,12 @@ main source directory (for example, to `gdb-7.2/gdb') and type:
 
    ---------- Footnotes ----------
 
-   (1) In `gdb-7.2/gdb/refcard.ps' of the version 7.2 release.
+   (1) In `gdb-7.3.1/gdb/refcard.ps' of the version 7.3.1 release.
 
 
 File: gdb.info,  Node: Installing GDB,  Next: Maintenance Commands,  Prev: Formatting Documentation,  Up: Top
 
-Appendix B Installing GDB
+Appendix C Installing GDB
 *************************
 
 * Menu:
@@ -3781,7 +5440,7 @@ Appendix B Installing GDB
 
 File: gdb.info,  Node: Requirements,  Next: Running Configure,  Up: Installing GDB
 
-B.1 Requirements for Building GDB
+C.1 Requirements for Building GDB
 =================================
 
 Building GDB requires various tools and packages to be available.
@@ -3816,6 +5475,8 @@ Expat
 
         * MS-Windows shared libraries (*note Shared Libraries::)
 
+        * Traceframe info (*note Traceframe Info Format::)
+
 zlib
      GDB will use the `zlib' library, if available, to read compressed
      debug sections.  Some linkers, such as GNU gold, are capable of
@@ -3849,7 +5510,7 @@ iconv
 
 File: gdb.info,  Node: Running Configure,  Next: Separate Objdir,  Prev: Requirements,  Up: Installing GDB
 
-B.2 Invoking the GDB `configure' Script
+C.2 Invoking the GDB `configure' Script
 =======================================
 
 GDB comes with a `configure' script that automates the process of
@@ -3860,39 +5521,39 @@ preparing GDB for installation; you can then use `make' to build the
 in a single directory, whose name is usually composed by appending the
 version number to `gdb'.
 
-   For example, the GDB version 7.2 distribution is in the `gdb-7.2'
-directory.  That directory contains:
+   For example, the GDB version 7.3.1 distribution is in the
+`gdb-7.3.1' directory.  That directory contains:
 
-`gdb-7.2/configure (and supporting files)'
+`gdb-7.3.1/configure (and supporting files)'
      script for configuring GDB and all its supporting libraries
 
-`gdb-7.2/gdb'
+`gdb-7.3.1/gdb'
      the source specific to GDB itself
 
-`gdb-7.2/bfd'
+`gdb-7.3.1/bfd'
      source for the Binary File Descriptor library
 
-`gdb-7.2/include'
+`gdb-7.3.1/include'
      GNU include files
 
-`gdb-7.2/libiberty'
+`gdb-7.3.1/libiberty'
      source for the `-liberty' free software library
 
-`gdb-7.2/opcodes'
+`gdb-7.3.1/opcodes'
      source for the library of opcode tables and disassemblers
 
-`gdb-7.2/readline'
+`gdb-7.3.1/readline'
      source for the GNU command-line interface
 
-`gdb-7.2/glob'
+`gdb-7.3.1/glob'
      source for the GNU filename pattern-matching subroutine
 
-`gdb-7.2/mmalloc'
+`gdb-7.3.1/mmalloc'
      source for the GNU memory-mapped malloc package
 
    The simplest way to configure and build GDB is to run `configure'
 from the `gdb-VERSION-NUMBER' source directory, which in this example
-is the `gdb-7.2' directory.
+is the `gdb-7.3.1' directory.
 
    First switch to the `gdb-VERSION-NUMBER' source directory if you are
 not already in it; then run `configure'.  Pass the identifier for the
@@ -3900,7 +5561,7 @@ platform on which GDB will run as an argument.
 
    For example:
 
-     cd gdb-7.2
+     cd gdb-7.3.1
      ./configure HOST
      make
 
@@ -3921,8 +5582,8 @@ you may need to run `sh' on it explicitly:
      sh configure HOST
 
    If you run `configure' from a directory that contains source
-directories for multiple libraries or programs, such as the `gdb-7.2'
-source directory for version 7.2, `configure' creates configuration
+directories for multiple libraries or programs, such as the `gdb-7.3.1'
+source directory for version 7.3.1, `configure' creates configuration
 files for every directory level underneath (unless you tell it not to,
 with the `--norecursion' option).
 
@@ -3945,7 +5606,7 @@ processes whose programs are not readable.
 
 File: gdb.info,  Node: Separate Objdir,  Next: Config Names,  Prev: Running Configure,  Up: Installing GDB
 
-B.3 Compiling GDB in Another Directory
+C.3 Compiling GDB in Another Directory
 ======================================
 
 If you want to run GDB versions for several host or target machines,
@@ -3963,13 +5624,13 @@ directory.  If the path to `configure' would be the same as the
 argument to `--srcdir', you can leave out the `--srcdir' option; it is
 assumed.)
 
-   For example, with version 7.2, you can build GDB in a separate
+   For example, with version 7.3.1, you can build GDB in a separate
 directory for a Sun 4 like this:
 
-     cd gdb-7.2
+     cd gdb-7.3.1
      mkdir ../gdb-sun4
      cd ../gdb-sun4
-     ../gdb-7.2/configure sun4
+     ../gdb-7.3.1/configure sun4
      make
 
    When `configure' builds a configuration using a remote source
@@ -3980,7 +5641,7 @@ directory `gdb-sun4/libiberty', and GDB itself in `gdb-sun4/gdb'.
 
    Make sure that your path to the `configure' script has just one
 instance of `gdb' in it.  If your path to `configure' looks like
-`../gdb-7.2/gdb/configure', you are configuring only one subdirectory
+`../gdb-7.3.1/gdb/configure', you are configuring only one subdirectory
 of GDB, not the whole package.  This leads to build errors about
 missing include files such as `bfd/bfd.h'.
 
@@ -3996,9 +5657,9 @@ called `configure' (or one of its subdirectories).
 
    The `Makefile' that `configure' generates in each source directory
 also runs recursively.  If you type `make' in a source directory such
-as `gdb-7.2' (or in a separate configured directory configured with
-`--srcdir=DIRNAME/gdb-7.2'), you will build all the required libraries,
-and then build GDB.
+as `gdb-7.3.1' (or in a separate configured directory configured with
+`--srcdir=DIRNAME/gdb-7.3.1'), you will build all the required
+libraries, and then build GDB.
 
    When you have multiple hosts or targets configured in separate
 directories, you can run `make' on them in parallel (for example, if
@@ -4008,7 +5669,7 @@ with each other.
 
 File: gdb.info,  Node: Config Names,  Next: Configure Options,  Prev: Separate Objdir,  Up: Installing GDB
 
-B.4 Specifying Names for Hosts and Targets
+C.4 Specifying Names for Hosts and Targets
 ==========================================
 
 The specifications used for hosts and targets in the `configure' script
@@ -4042,12 +5703,12 @@ you can use it to test your guesses on abbreviations--for example:
      Invalid configuration `i986v': machine `i986v' not recognized
 
 `config.sub' is also distributed in the GDB source directory
-(`gdb-7.2', for version 7.2).
+(`gdb-7.3.1', for version 7.3.1).
 
 
 File: gdb.info,  Node: Configure Options,  Next: System-wide configuration,  Prev: Config Names,  Up: Installing GDB
 
-B.5 `configure' Options
+C.5 `configure' Options
 =======================
 
 Here is a summary of the `configure' options and arguments that are
@@ -4112,7 +5773,7 @@ generally needed for special purposes only.
 
 File: gdb.info,  Node: System-wide configuration,  Prev: Configure Options,  Up: Installing GDB
 
-B.6 System-wide configuration and settings
+C.6 System-wide configuration and settings
 ==========================================
 
 GDB can be configured to have a system-wide init file; this file will
@@ -4144,7 +5805,7 @@ may be subject to relocation.  Two possible cases:
 
 File: gdb.info,  Node: Maintenance Commands,  Next: Remote Protocol,  Prev: Installing GDB,  Up: Top
 
-Appendix C Maintenance Commands
+Appendix D Maintenance Commands
 *******************************
 
 In addition to commands intended for GDB users, GDB includes a number
@@ -4508,7 +6169,7 @@ GDB, such as in the test suite.
 
 File: gdb.info,  Node: Remote Protocol,  Next: Agent Expressions,  Prev: Maintenance Commands,  Up: Top
 
-Appendix D GDB Remote Serial Protocol
+Appendix E GDB Remote Serial Protocol
 *************************************
 
 * Menu:
@@ -4529,11 +6190,12 @@ Appendix D GDB Remote Serial Protocol
 * Library List Format::
 * Memory Map Format::
 * Thread List Format::
+* Traceframe Info Format::
 
 
 File: gdb.info,  Node: Overview,  Next: Packets,  Up: Remote Protocol
 
-D.1 Overview
+E.1 Overview
 ============
 
 There may be occasions when you need to know something about the
@@ -4637,7 +6299,7 @@ COMMANDs.  All other COMMANDs are optional.
 
 File: gdb.info,  Node: Packets,  Next: Stop Reply Packets,  Prev: Overview,  Up: Remote Protocol
 
-D.2 Packets
+E.2 Packets
 ===========
 
 The following table provides a complete list of all currently defined
@@ -4796,6 +6458,19 @@ letter, other than those described here, are reserved for future use.
           functions `DEPRECATED_REGISTER_RAW_SIZE' and
           `gdbarch_register_name'.  The specification of several
           standard `g' packets is specified below.
+
+          When reading registers from a trace frame (*note Using the
+          Collected Data: Analyze Collected Data.), the stub may also
+          return a string of literal `x''s in place of the register
+          data digits, to indicate that the corresponding register has
+          not been collected, thus its value is unavailable.  For
+          example, for an architecture with 4 registers of 4 bytes
+          each, the following reply indicates to GDB that registers 0
+          and 2 have not been collected, while registers 1 and 3 have
+          been collected, and both have zero value:
+
+               -> `g'
+               <- `xxxxxxxx00000000xxxxxxxx00000000'
 
     `E NN'
           for an error.
@@ -5248,7 +6923,7 @@ letter, other than those described here, are reserved for future use.
 
 File: gdb.info,  Node: Stop Reply Packets,  Next: General Query Packets,  Prev: Packets,  Up: Remote Protocol
 
-D.3 Stop Reply Packets
+E.3 Stop Reply Packets
 ======================
 
 The `C', `c', `S', `s', `vCont', `vAttach', `vRun', `vStopped', and `?'
@@ -5359,7 +7034,7 @@ components.
 
 File: gdb.info,  Node: General Query Packets,  Next: Architecture-Specific Protocol Details,  Prev: Stop Reply Packets,  Up: Remote Protocol
 
-D.4 General Query Packets
+E.4 General Query Packets
 =========================
 
 Packets starting with `q' are "general query packets"; packets starting
@@ -5801,6 +7476,7 @@ GDB packet uses spaces to separate its components.
      `qXfer:siginfo:read'    No            `-'      Yes
      `qXfer:siginfo:write'   No            `-'      Yes
      `qXfer:threads:read'    No            `-'      Yes
+     `qXfer:traceframe-info:read'No            `-'      Yes
      `QNonStop'              No            `-'      Yes
      `QPassSignals'          No            `-'      Yes
      `QStartNoAckMode'       No            `-'      Yes
@@ -5863,6 +7539,10 @@ GDB packet uses spaces to separate its components.
     `qXfer:threads:read'
           The remote stub understands the `qXfer:threads:read' packet
           (*note qXfer threads read::).
+
+    `qXfer:traceframe-info:read'
+          The remote stub understands the `qXfer:traceframe-info:read'
+          packet (*note qXfer traceframe info read::).
 
     `QNonStop'
           The remote stub understands the `QNonStop' packet (*note
@@ -6089,6 +7769,15 @@ GDB packet uses spaces to separate its components.
           request it, by supplying an appropriate `qSupported' response
           (*note qSupported::).
 
+    `qXfer:traceframe-info:read::OFFSET,LENGTH'
+          Return a description of the current traceframe's contents.
+          *Note Traceframe Info Format::.  The annex part of the generic
+          `qXfer' packet must be empty (*note qXfer read::).
+
+          This packet is not probed by default; the remote stub must
+          request it, by supplying an appropriate `qSupported' response
+          (*note qSupported::).
+
     `qXfer:osdata:read::OFFSET,LENGTH'
           Access the target's "operating system information".  *Note
           Operating System Information::.
@@ -6210,17 +7899,17 @@ are known to not check for the end of the packet.
 
 File: gdb.info,  Node: Architecture-Specific Protocol Details,  Next: Tracepoint Packets,  Prev: General Query Packets,  Up: Remote Protocol
 
-D.5 Architecture-Specific Protocol Details
+E.5 Architecture-Specific Protocol Details
 ==========================================
 
 This section describes how the remote protocol is applied to specific
 target architectures.  Also see *Note Standard Target Features::, for
 details of XML target descriptions for each architecture.
 
-D.5.1 ARM
+E.5.1 ARM
 ---------
 
-D.5.1.1 Breakpoint Kinds
+E.5.1.1 Breakpoint Kinds
 ........................
 
 These breakpoint kinds are defined for the `Z0' and `Z1' packets.
@@ -6235,10 +7924,10 @@ These breakpoint kinds are defined for the `Z0' and `Z1' packets.
      32-bit ARM mode breakpoint.
 
 
-D.5.2 MIPS
+E.5.2 MIPS
 ----------
 
-D.5.2.1 Register Packet Format
+E.5.2.1 Register Packet Format
 ..............................
 
 The following `g'/`G' packets have previously been defined.  In the
@@ -6262,7 +7951,7 @@ MIPS64
 
 File: gdb.info,  Node: Tracepoint Packets,  Next: Host I/O Packets,  Prev: Architecture-Specific Protocol Details,  Up: Remote Protocol
 
-D.6 Tracepoint Packets
+E.6 Tracepoint Packets
 ======================
 
 Here we describe the packets GDB uses to implement tracepoints (*note
@@ -6626,7 +8315,7 @@ Tracepoints::).
      VALUE is 1, or a linear buffer if the value is 0.
 
 
-D.6.1 Relocate instruction reply packet
+E.6.1 Relocate instruction reply packet
 ---------------------------------------
 
 When installing fast tracepoints in memory, the target may need to
@@ -6663,7 +8352,7 @@ explicitly say so.  See for example the above descriptions for the
 
 File: gdb.info,  Node: Host I/O Packets,  Next: Interrupts,  Prev: Tracepoint Packets,  Up: Remote Protocol
 
-D.7 Host I/O Packets
+E.7 Host I/O Packets
 ====================
 
 The "Host I/O" packets allow GDB to perform I/O operations on the far
@@ -6752,7 +8441,7 @@ its arguments.  They have this format:
 
 File: gdb.info,  Node: Interrupts,  Next: Notification Packets,  Prev: Host I/O Packets,  Up: Remote Protocol
 
-D.8 Interrupts
+E.8 Interrupts
 ==============
 
 When a program on the remote target is running, GDB may attempt to
@@ -6791,7 +8480,7 @@ program is stopped are discarded.
 
 File: gdb.info,  Node: Notification Packets,  Next: Remote Non-Stop,  Prev: Interrupts,  Up: Remote Protocol
 
-D.9 Notification Packets
+E.9 Notification Packets
 ========================
 
 The GDB remote serial protocol includes "notifications", packets that
@@ -6835,1540 +8524,4 @@ most older stubs would ignore them, as well.)
      the form of a stop reply, as described in *Note Stop Reply
      Packets::.  Refer to *Note Remote Non-Stop::, for information on
      how these notifications are acknowledged by GDB.
-
-
-File: gdb.info,  Node: Remote Non-Stop,  Next: Packet Acknowledgment,  Prev: Notification Packets,  Up: Remote Protocol
-
-D.10 Remote Protocol Support for Non-Stop Mode
-==============================================
-
-GDB's remote protocol supports non-stop debugging of multi-threaded
-programs, as described in *Note Non-Stop Mode::.  If the stub supports
-non-stop mode, it should report that to GDB by including `QNonStop+' in
-its `qSupported' response (*note qSupported::).
-
-   GDB typically sends a `QNonStop' packet only when establishing a new
-connection with the stub.  Entering non-stop mode does not alter the
-state of any currently-running threads, but targets must stop all
-threads in any already-attached processes when entering all-stop mode.
-GDB uses the `?' packet as necessary to probe the target state after a
-mode change.
-
-   In non-stop mode, when an attached process encounters an event that
-would otherwise be reported with a stop reply, it uses the asynchronous
-notification mechanism (*note Notification Packets::) to inform GDB.
-In contrast to all-stop mode, where all threads in all processes are
-stopped when a stop reply is sent, in non-stop mode only the thread
-reporting the stop event is stopped.  That is, when reporting a `S' or
-`T' response to indicate completion of a step operation, hitting a
-breakpoint, or a fault, only the affected thread is stopped; any other
-still-running threads continue to run.  When reporting a `W' or `X'
-response, all running threads belonging to other attached processes
-continue to run.
-
-   Only one stop reply notification at a time may be pending; if
-additional stop events occur before GDB has acknowledged the previous
-notification, they must be queued by the stub for later synchronous
-transmission in response to `vStopped' packets from GDB.  Because the
-notification mechanism is unreliable, the stub is permitted to resend a
-stop reply notification if it believes GDB may not have received it.
-GDB ignores additional stop reply notifications received before it has
-finished processing a previous notification and the stub has completed
-sending any queued stop events.
-
-   Otherwise, GDB must be prepared to receive a stop reply notification
-at any time.  Specifically, they may appear when GDB is not otherwise
-reading input from the stub, or when GDB is expecting to read a normal
-synchronous response or a `+'/`-' acknowledgment to a packet it has
-sent.  Notification packets are distinct from any other communication
-from the stub so there is no ambiguity.
-
-   After receiving a stop reply notification, GDB shall acknowledge it
-by sending a `vStopped' packet (*note vStopped packet::) as a regular,
-synchronous request to the stub.  Such acknowledgment is not required
-to happen immediately, as GDB is permitted to send other, unrelated
-packets to the stub first, which the stub should process normally.
-
-   Upon receiving a `vStopped' packet, if the stub has other queued
-stop events to report to GDB, it shall respond by sending a normal stop
-reply response.  GDB shall then send another `vStopped' packet to
-solicit further responses; again, it is permitted to send other,
-unrelated packets as well which the stub should process normally.
-
-   If the stub receives a `vStopped' packet and there are no additional
-stop events to report, the stub shall return an `OK' response.  At this
-point, if further stop events occur, the stub shall send a new stop
-reply notification, GDB shall accept the notification, and the process
-shall be repeated.
-
-   In non-stop mode, the target shall respond to the `?' packet as
-follows.  First, any incomplete stop reply notification/`vStopped'
-sequence in progress is abandoned.  The target must begin a new
-sequence reporting stop events for all stopped threads, whether or not
-it has previously reported those events to GDB.  The first stop reply
-is sent as a synchronous reply to the `?' packet, and subsequent stop
-replies are sent as responses to `vStopped' packets using the mechanism
-described above.  The target must not send asynchronous stop reply
-notifications until the sequence is complete.  If all threads are
-running when the target receives the `?' packet, or if the target is
-not attached to any process, it shall respond `OK'.
-
-
-File: gdb.info,  Node: Packet Acknowledgment,  Next: Examples,  Prev: Remote Non-Stop,  Up: Remote Protocol
-
-D.11 Packet Acknowledgment
-==========================
-
-By default, when either the host or the target machine receives a
-packet, the first response expected is an acknowledgment: either `+'
-(to indicate the package was received correctly) or `-' (to request
-retransmission).  This mechanism allows the GDB remote protocol to
-operate over unreliable transport mechanisms, such as a serial line.
-
-   In cases where the transport mechanism is itself reliable (such as a
-pipe or TCP connection), the `+'/`-' acknowledgments are redundant.  It
-may be desirable to disable them in that case to reduce communication
-overhead, or for other reasons.  This can be accomplished by means of
-the `QStartNoAckMode' packet; *note QStartNoAckMode::.
-
-   When in no-acknowledgment mode, neither the stub nor GDB shall send
-or expect `+'/`-' protocol acknowledgments.  The packet and response
-format still includes the normal checksum, as described in *Note
-Overview::, but the checksum may be ignored by the receiver.
-
-   If the stub supports `QStartNoAckMode' and prefers to operate in
-no-acknowledgment mode, it should report that to GDB by including
-`QStartNoAckMode+' in its response to `qSupported'; *note qSupported::.
-If GDB also supports `QStartNoAckMode' and it has not been disabled via
-the `set remote noack-packet off' command (*note Remote
-Configuration::), GDB may then send a `QStartNoAckMode' packet to the
-stub.  Only then may the stub actually turn off packet acknowledgments.
-GDB sends a final `+' acknowledgment of the stub's `OK' response, which
-can be safely ignored by the stub.
-
-   Note that `set remote noack-packet' command only affects negotiation
-between GDB and the stub when subsequent connections are made; it does
-not affect the protocol acknowledgment state for any current connection.
-Since `+'/`-' acknowledgments are enabled by default when a new
-connection is established, there is also no protocol request to
-re-enable the acknowledgments for the current connection, once disabled.
-
-
-File: gdb.info,  Node: Examples,  Next: File-I/O Remote Protocol Extension,  Prev: Packet Acknowledgment,  Up: Remote Protocol
-
-D.12 Examples
-=============
-
-Example sequence of a target being re-started.  Notice how the restart
-does not get any direct output:
-
-     -> `R00'
-     <- `+'
-     _target restarts_
-     -> `?'
-     <- `+'
-     <- `T001:1234123412341234'
-     -> `+'
-
-   Example sequence of a target being stepped by a single instruction:
-
-     -> `G1445...'
-     <- `+'
-     -> `s'
-     <- `+'
-     _time passes_
-     <- `T001:1234123412341234'
-     -> `+'
-     -> `g'
-     <- `+'
-     <- `1455...'
-     -> `+'
-
-
-File: gdb.info,  Node: File-I/O Remote Protocol Extension,  Next: Library List Format,  Prev: Examples,  Up: Remote Protocol
-
-D.13 File-I/O Remote Protocol Extension
-=======================================
-
-* Menu:
-
-* File-I/O Overview::
-* Protocol Basics::
-* The F Request Packet::
-* The F Reply Packet::
-* The Ctrl-C Message::
-* Console I/O::
-* List of Supported Calls::
-* Protocol-specific Representation of Datatypes::
-* Constants::
-* File-I/O Examples::
-
-
-File: gdb.info,  Node: File-I/O Overview,  Next: Protocol Basics,  Up: File-I/O Remote Protocol Extension
-
-D.13.1 File-I/O Overview
-------------------------
-
-The "File I/O remote protocol extension" (short: File-I/O) allows the
-target to use the host's file system and console I/O to perform various
-system calls.  System calls on the target system are translated into a
-remote protocol packet to the host system, which then performs the
-needed actions and returns a response packet to the target system.
-This simulates file system operations even on targets that lack file
-systems.
-
-   The protocol is defined to be independent of both the host and
-target systems.  It uses its own internal representation of datatypes
-and values.  Both GDB and the target's GDB stub are responsible for
-translating the system-dependent value representations into the internal
-protocol representations when data is transmitted.
-
-   The communication is synchronous.  A system call is possible only
-when GDB is waiting for a response from the `C', `c', `S' or `s'
-packets.  While GDB handles the request for a system call, the target
-is stopped to allow deterministic access to the target's memory.
-Therefore File-I/O is not interruptible by target signals.  On the
-other hand, it is possible to interrupt File-I/O by a user interrupt
-(`Ctrl-C') within GDB.
-
-   The target's request to perform a host system call does not finish
-the latest `C', `c', `S' or `s' action.  That means, after finishing
-the system call, the target returns to continuing the previous activity
-(continue, step).  No additional continue or step request from GDB is
-required.
-
-     (gdb) continue
-       <- target requests 'system call X'
-       target is stopped, GDB executes system call
-       -> GDB returns result
-       ... target continues, GDB returns to wait for the target
-       <- target hits breakpoint and sends a Txx packet
-
-   The protocol only supports I/O on the console and to regular files on
-the host file system.  Character or block special devices, pipes, named
-pipes, sockets or any other communication method on the host system are
-not supported by this protocol.
-
-   File I/O is not supported in non-stop mode.
-
-
-File: gdb.info,  Node: Protocol Basics,  Next: The F Request Packet,  Prev: File-I/O Overview,  Up: File-I/O Remote Protocol Extension
-
-D.13.2 Protocol Basics
-----------------------
-
-The File-I/O protocol uses the `F' packet as the request as well as
-reply packet.  Since a File-I/O system call can only occur when GDB is
-waiting for a response from the continuing or stepping target, the
-File-I/O request is a reply that GDB has to expect as a result of a
-previous `C', `c', `S' or `s' packet.  This `F' packet contains all
-information needed to allow GDB to call the appropriate host system
-call:
-
-   * A unique identifier for the requested system call.
-
-   * All parameters to the system call.  Pointers are given as addresses
-     in the target memory address space.  Pointers to strings are given
-     as pointer/length pair.  Numerical values are given as they are.
-     Numerical control flags are given in a protocol-specific
-     representation.
-
-
-   At this point, GDB has to perform the following actions.
-
-   * If the parameters include pointer values to data needed as input
-     to a system call, GDB requests this data from the target with a
-     standard `m' packet request.  This additional communication has to
-     be expected by the target implementation and is handled as any
-     other `m' packet.
-
-   * GDB translates all value from protocol representation to host
-     representation as needed.  Datatypes are coerced into the host
-     types.
-
-   * GDB calls the system call.
-
-   * It then coerces datatypes back to protocol representation.
-
-   * If the system call is expected to return data in buffer space
-     specified by pointer parameters to the call, the data is
-     transmitted to the target using a `M' or `X' packet.  This packet
-     has to be expected by the target implementation and is handled as
-     any other `M' or `X' packet.
-
-
-   Eventually GDB replies with another `F' packet which contains all
-necessary information for the target to continue.  This at least
-contains
-
-   * Return value.
-
-   * `errno', if has been changed by the system call.
-
-   * "Ctrl-C" flag.
-
-
-   After having done the needed type and value coercion, the target
-continues the latest continue or step action.
-
-
-File: gdb.info,  Node: The F Request Packet,  Next: The F Reply Packet,  Prev: Protocol Basics,  Up: File-I/O Remote Protocol Extension
-
-D.13.3 The `F' Request Packet
------------------------------
-
-The `F' request packet has the following format:
-
-`FCALL-ID,PARAMETER...'
-     CALL-ID is the identifier to indicate the host system call to be
-     called.  This is just the name of the function.
-
-     PARAMETER... are the parameters to the system call.  Parameters
-     are hexadecimal integer values, either the actual values in case
-     of scalar datatypes, pointers to target buffer space in case of
-     compound datatypes and unspecified memory areas, or pointer/length
-     pairs in case of string parameters.  These are appended to the
-     CALL-ID as a comma-delimited list.  All values are transmitted in
-     ASCII string representation, pointer/length pairs separated by a
-     slash.
-
-
-
-File: gdb.info,  Node: The F Reply Packet,  Next: The Ctrl-C Message,  Prev: The F Request Packet,  Up: File-I/O Remote Protocol Extension
-
-D.13.4 The `F' Reply Packet
----------------------------
-
-The `F' reply packet has the following format:
-
-`FRETCODE,ERRNO,CTRL-C FLAG;CALL-SPECIFIC ATTACHMENT'
-     RETCODE is the return code of the system call as hexadecimal value.
-
-     ERRNO is the `errno' set by the call, in protocol-specific
-     representation.  This parameter can be omitted if the call was
-     successful.
-
-     CTRL-C FLAG is only sent if the user requested a break.  In this
-     case, ERRNO must be sent as well, even if the call was successful.
-     The CTRL-C FLAG itself consists of the character `C':
-
-          F0,0,C
-
-     or, if the call was interrupted before the host call has been
-     performed:
-
-          F-1,4,C
-
-     assuming 4 is the protocol-specific representation of `EINTR'.
-
-
-
-File: gdb.info,  Node: The Ctrl-C Message,  Next: Console I/O,  Prev: The F Reply Packet,  Up: File-I/O Remote Protocol Extension
-
-D.13.5 The `Ctrl-C' Message
----------------------------
-
-If the `Ctrl-C' flag is set in the GDB reply packet (*note The F Reply
-Packet::), the target should behave as if it had gotten a break
-message.  The meaning for the target is "system call interrupted by
-`SIGINT'".  Consequentially, the target should actually stop (as with a
-break message) and return to GDB with a `T02' packet.
-
-   It's important for the target to know in which state the system call
-was interrupted.  There are two possible cases:
-
-   * The system call hasn't been performed on the host yet.
-
-   * The system call on the host has been finished.
-
-
-   These two states can be distinguished by the target by the value of
-the returned `errno'.  If it's the protocol representation of `EINTR',
-the system call hasn't been performed.  This is equivalent to the
-`EINTR' handling on POSIX systems.  In any other case, the target may
-presume that the system call has been finished -- successfully or not
--- and should behave as if the break message arrived right after the
-system call.
-
-   GDB must behave reliably.  If the system call has not been called
-yet, GDB may send the `F' reply immediately, setting `EINTR' as `errno'
-in the packet.  If the system call on the host has been finished before
-the user requests a break, the full action must be finished by GDB.
-This requires sending `M' or `X' packets as necessary.  The `F' packet
-may only be sent when either nothing has happened or the full action
-has been completed.
-
-
-File: gdb.info,  Node: Console I/O,  Next: List of Supported Calls,  Prev: The Ctrl-C Message,  Up: File-I/O Remote Protocol Extension
-
-D.13.6 Console I/O
-------------------
-
-By default and if not explicitly closed by the target system, the file
-descriptors 0, 1 and 2 are connected to the GDB console.  Output on the
-GDB console is handled as any other file output operation (`write(1,
-...)' or `write(2, ...)').  Console input is handled by GDB so that
-after the target read request from file descriptor 0 all following
-typing is buffered until either one of the following conditions is met:
-
-   * The user types `Ctrl-c'.  The behaviour is as explained above, and
-     the `read' system call is treated as finished.
-
-   * The user presses <RET>.  This is treated as end of input with a
-     trailing newline.
-
-   * The user types `Ctrl-d'.  This is treated as end of input.  No
-     trailing character (neither newline nor `Ctrl-D') is appended to
-     the input.
-
-
-   If the user has typed more characters than fit in the buffer given to
-the `read' call, the trailing characters are buffered in GDB until
-either another `read(0, ...)' is requested by the target, or debugging
-is stopped at the user's request.
-
-
-File: gdb.info,  Node: List of Supported Calls,  Next: Protocol-specific Representation of Datatypes,  Prev: Console I/O,  Up: File-I/O Remote Protocol Extension
-
-D.13.7 List of Supported Calls
-------------------------------
-
-* Menu:
-
-* open::
-* close::
-* read::
-* write::
-* lseek::
-* rename::
-* unlink::
-* stat/fstat::
-* gettimeofday::
-* isatty::
-* system::
-
-
-File: gdb.info,  Node: open,  Next: close,  Up: List of Supported Calls
-
-open
-....
-
-Synopsis:
-          int open(const char *pathname, int flags);
-          int open(const char *pathname, int flags, mode_t mode);
-
-Request:
-     `Fopen,PATHPTR/LEN,FLAGS,MODE'
-
-     FLAGS is the bitwise `OR' of the following values:
-
-    `O_CREAT'
-          If the file does not exist it will be created.  The host
-          rules apply as far as file ownership and time stamps are
-          concerned.
-
-    `O_EXCL'
-          When used with `O_CREAT', if the file already exists it is an
-          error and open() fails.
-
-    `O_TRUNC'
-          If the file already exists and the open mode allows writing
-          (`O_RDWR' or `O_WRONLY' is given) it will be truncated to
-          zero length.
-
-    `O_APPEND'
-          The file is opened in append mode.
-
-    `O_RDONLY'
-          The file is opened for reading only.
-
-    `O_WRONLY'
-          The file is opened for writing only.
-
-    `O_RDWR'
-          The file is opened for reading and writing.
-
-     Other bits are silently ignored.
-
-     MODE is the bitwise `OR' of the following values:
-
-    `S_IRUSR'
-          User has read permission.
-
-    `S_IWUSR'
-          User has write permission.
-
-    `S_IRGRP'
-          Group has read permission.
-
-    `S_IWGRP'
-          Group has write permission.
-
-    `S_IROTH'
-          Others have read permission.
-
-    `S_IWOTH'
-          Others have write permission.
-
-     Other bits are silently ignored.
-
-Return value:
-     `open' returns the new file descriptor or -1 if an error occurred.
-
-Errors:
-
-    `EEXIST'
-          PATHNAME already exists and `O_CREAT' and `O_EXCL' were used.
-
-    `EISDIR'
-          PATHNAME refers to a directory.
-
-    `EACCES'
-          The requested access is not allowed.
-
-    `ENAMETOOLONG'
-          PATHNAME was too long.
-
-    `ENOENT'
-          A directory component in PATHNAME does not exist.
-
-    `ENODEV'
-          PATHNAME refers to a device, pipe, named pipe or socket.
-
-    `EROFS'
-          PATHNAME refers to a file on a read-only filesystem and write
-          access was requested.
-
-    `EFAULT'
-          PATHNAME is an invalid pointer value.
-
-    `ENOSPC'
-          No space on device to create the file.
-
-    `EMFILE'
-          The process already has the maximum number of files open.
-
-    `ENFILE'
-          The limit on the total number of files open on the system has
-          been reached.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: close,  Next: read,  Prev: open,  Up: List of Supported Calls
-
-close
-.....
-
-Synopsis:
-          int close(int fd);
-
-Request:
-     `Fclose,FD'
-
-Return value:
-     `close' returns zero on success, or -1 if an error occurred.
-
-Errors:
-
-    `EBADF'
-          FD isn't a valid open file descriptor.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: read,  Next: write,  Prev: close,  Up: List of Supported Calls
-
-read
-....
-
-Synopsis:
-          int read(int fd, void *buf, unsigned int count);
-
-Request:
-     `Fread,FD,BUFPTR,COUNT'
-
-Return value:
-     On success, the number of bytes read is returned.  Zero indicates
-     end of file.  If count is zero, read returns zero as well.  On
-     error, -1 is returned.
-
-Errors:
-
-    `EBADF'
-          FD is not a valid file descriptor or is not open for reading.
-
-    `EFAULT'
-          BUFPTR is an invalid pointer value.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: write,  Next: lseek,  Prev: read,  Up: List of Supported Calls
-
-write
-.....
-
-Synopsis:
-          int write(int fd, const void *buf, unsigned int count);
-
-Request:
-     `Fwrite,FD,BUFPTR,COUNT'
-
-Return value:
-     On success, the number of bytes written are returned.  Zero
-     indicates nothing was written.  On error, -1 is returned.
-
-Errors:
-
-    `EBADF'
-          FD is not a valid file descriptor or is not open for writing.
-
-    `EFAULT'
-          BUFPTR is an invalid pointer value.
-
-    `EFBIG'
-          An attempt was made to write a file that exceeds the
-          host-specific maximum file size allowed.
-
-    `ENOSPC'
-          No space on device to write the data.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: lseek,  Next: rename,  Prev: write,  Up: List of Supported Calls
-
-lseek
-.....
-
-Synopsis:
-          long lseek (int fd, long offset, int flag);
-
-Request:
-     `Flseek,FD,OFFSET,FLAG'
-
-     FLAG is one of:
-
-    `SEEK_SET'
-          The offset is set to OFFSET bytes.
-
-    `SEEK_CUR'
-          The offset is set to its current location plus OFFSET bytes.
-
-    `SEEK_END'
-          The offset is set to the size of the file plus OFFSET bytes.
-
-Return value:
-     On success, the resulting unsigned offset in bytes from the
-     beginning of the file is returned.  Otherwise, a value of -1 is
-     returned.
-
-Errors:
-
-    `EBADF'
-          FD is not a valid open file descriptor.
-
-    `ESPIPE'
-          FD is associated with the GDB console.
-
-    `EINVAL'
-          FLAG is not a proper value.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: rename,  Next: unlink,  Prev: lseek,  Up: List of Supported Calls
-
-rename
-......
-
-Synopsis:
-          int rename(const char *oldpath, const char *newpath);
-
-Request:
-     `Frename,OLDPATHPTR/LEN,NEWPATHPTR/LEN'
-
-Return value:
-     On success, zero is returned.  On error, -1 is returned.
-
-Errors:
-
-    `EISDIR'
-          NEWPATH is an existing directory, but OLDPATH is not a
-          directory.
-
-    `EEXIST'
-          NEWPATH is a non-empty directory.
-
-    `EBUSY'
-          OLDPATH or NEWPATH is a directory that is in use by some
-          process.
-
-    `EINVAL'
-          An attempt was made to make a directory a subdirectory of
-          itself.
-
-    `ENOTDIR'
-          A  component used as a directory in OLDPATH or new path is
-          not a directory.  Or OLDPATH is a directory and NEWPATH
-          exists but is not a directory.
-
-    `EFAULT'
-          OLDPATHPTR or NEWPATHPTR are invalid pointer values.
-
-    `EACCES'
-          No access to the file or the path of the file.
-
-    `ENAMETOOLONG'
-          OLDPATH or NEWPATH was too long.
-
-    `ENOENT'
-          A directory component in OLDPATH or NEWPATH does not exist.
-
-    `EROFS'
-          The file is on a read-only filesystem.
-
-    `ENOSPC'
-          The device containing the file has no room for the new
-          directory entry.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: unlink,  Next: stat/fstat,  Prev: rename,  Up: List of Supported Calls
-
-unlink
-......
-
-Synopsis:
-          int unlink(const char *pathname);
-
-Request:
-     `Funlink,PATHNAMEPTR/LEN'
-
-Return value:
-     On success, zero is returned.  On error, -1 is returned.
-
-Errors:
-
-    `EACCES'
-          No access to the file or the path of the file.
-
-    `EPERM'
-          The system does not allow unlinking of directories.
-
-    `EBUSY'
-          The file PATHNAME cannot be unlinked because it's being used
-          by another process.
-
-    `EFAULT'
-          PATHNAMEPTR is an invalid pointer value.
-
-    `ENAMETOOLONG'
-          PATHNAME was too long.
-
-    `ENOENT'
-          A directory component in PATHNAME does not exist.
-
-    `ENOTDIR'
-          A component of the path is not a directory.
-
-    `EROFS'
-          The file is on a read-only filesystem.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: stat/fstat,  Next: gettimeofday,  Prev: unlink,  Up: List of Supported Calls
-
-stat/fstat
-..........
-
-Synopsis:
-          int stat(const char *pathname, struct stat *buf);
-          int fstat(int fd, struct stat *buf);
-
-Request:
-     `Fstat,PATHNAMEPTR/LEN,BUFPTR'
-     `Ffstat,FD,BUFPTR'
-
-Return value:
-     On success, zero is returned.  On error, -1 is returned.
-
-Errors:
-
-    `EBADF'
-          FD is not a valid open file.
-
-    `ENOENT'
-          A directory component in PATHNAME does not exist or the path
-          is an empty string.
-
-    `ENOTDIR'
-          A component of the path is not a directory.
-
-    `EFAULT'
-          PATHNAMEPTR is an invalid pointer value.
-
-    `EACCES'
-          No access to the file or the path of the file.
-
-    `ENAMETOOLONG'
-          PATHNAME was too long.
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-
-File: gdb.info,  Node: gettimeofday,  Next: isatty,  Prev: stat/fstat,  Up: List of Supported Calls
-
-gettimeofday
-............
-
-Synopsis:
-          int gettimeofday(struct timeval *tv, void *tz);
-
-Request:
-     `Fgettimeofday,TVPTR,TZPTR'
-
-Return value:
-     On success, 0 is returned, -1 otherwise.
-
-Errors:
-
-    `EINVAL'
-          TZ is a non-NULL pointer.
-
-    `EFAULT'
-          TVPTR and/or TZPTR is an invalid pointer value.
-
-
-
-File: gdb.info,  Node: isatty,  Next: system,  Prev: gettimeofday,  Up: List of Supported Calls
-
-isatty
-......
-
-Synopsis:
-          int isatty(int fd);
-
-Request:
-     `Fisatty,FD'
-
-Return value:
-     Returns 1 if FD refers to the GDB console, 0 otherwise.
-
-Errors:
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-   Note that the `isatty' call is treated as a special case: it returns
-1 to the target if the file descriptor is attached to the GDB console,
-0 otherwise.  Implementing through system calls would require
-implementing `ioctl' and would be more complex than needed.
-
-
-File: gdb.info,  Node: system,  Prev: isatty,  Up: List of Supported Calls
-
-system
-......
-
-Synopsis:
-          int system(const char *command);
-
-Request:
-     `Fsystem,COMMANDPTR/LEN'
-
-Return value:
-     If LEN is zero, the return value indicates whether a shell is
-     available.  A zero return value indicates a shell is not available.
-     For non-zero LEN, the value returned is -1 on error and the return
-     status of the command otherwise.  Only the exit status of the
-     command is returned, which is extracted from the host's `system'
-     return value by calling `WEXITSTATUS(retval)'.  In case `/bin/sh'
-     could not be executed, 127 is returned.
-
-Errors:
-
-    `EINTR'
-          The call was interrupted by the user.
-
-
-   GDB takes over the full task of calling the necessary host calls to
-perform the `system' call.  The return value of `system' on the host is
-simplified before it's returned to the target.  Any termination signal
-information from the child process is discarded, and the return value
-consists entirely of the exit status of the called command.
-
-   Due to security concerns, the `system' call is by default refused by
-GDB.  The user has to allow this call explicitly with the `set remote
-system-call-allowed 1' command.
-
-`set remote system-call-allowed'
-     Control whether to allow the `system' calls in the File I/O
-     protocol for the remote target.  The default is zero (disabled).
-
-`show remote system-call-allowed'
-     Show whether the `system' calls are allowed in the File I/O
-     protocol.
-
-
-File: gdb.info,  Node: Protocol-specific Representation of Datatypes,  Next: Constants,  Prev: List of Supported Calls,  Up: File-I/O Remote Protocol Extension
-
-D.13.8 Protocol-specific Representation of Datatypes
-----------------------------------------------------
-
-* Menu:
-
-* Integral Datatypes::
-* Pointer Values::
-* Memory Transfer::
-* struct stat::
-* struct timeval::
-
-
-File: gdb.info,  Node: Integral Datatypes,  Next: Pointer Values,  Up: Protocol-specific Representation of Datatypes
-
-Integral Datatypes
-..................
-
-The integral datatypes used in the system calls are `int', `unsigned
-int', `long', `unsigned long', `mode_t', and `time_t'.
-
-   `int', `unsigned int', `mode_t' and `time_t' are implemented as 32
-bit values in this protocol.
-
-   `long' and `unsigned long' are implemented as 64 bit types.
-
-   *Note Limits::, for corresponding MIN and MAX values (similar to
-those in `limits.h') to allow range checking on host and target.
-
-   `time_t' datatypes are defined as seconds since the Epoch.
-
-   All integral datatypes transferred as part of a memory read or write
-of a structured datatype e.g. a `struct stat' have to be given in big
-endian byte order.
-
-
-File: gdb.info,  Node: Pointer Values,  Next: Memory Transfer,  Prev: Integral Datatypes,  Up: Protocol-specific Representation of Datatypes
-
-Pointer Values
-..............
-
-Pointers to target data are transmitted as they are.  An exception is
-made for pointers to buffers for which the length isn't transmitted as
-part of the function call, namely strings.  Strings are transmitted as
-a pointer/length pair, both as hex values, e.g.
-
-     `1aaf/12'
-
-which is a pointer to data of length 18 bytes at position 0x1aaf.  The
-length is defined as the full string length in bytes, including the
-trailing null byte.  For example, the string `"hello world"' at address
-0x123456 is transmitted as
-
-     `123456/d'
-
-
-File: gdb.info,  Node: Memory Transfer,  Next: struct stat,  Prev: Pointer Values,  Up: Protocol-specific Representation of Datatypes
-
-Memory Transfer
-...............
-
-Structured data which is transferred using a memory read or write (for
-example, a `struct stat') is expected to be in a protocol-specific
-format with all scalar multibyte datatypes being big endian.
-Translation to this representation needs to be done both by the target
-before the `F' packet is sent, and by GDB before it transfers memory to
-the target.  Transferred pointers to structured data should point to
-the already-coerced data at any time.
-
-
-File: gdb.info,  Node: struct stat,  Next: struct timeval,  Prev: Memory Transfer,  Up: Protocol-specific Representation of Datatypes
-
-struct stat
-...........
-
-The buffer of type `struct stat' used by the target and GDB is defined
-as follows:
-
-     struct stat {
-         unsigned int  st_dev;      /* device */
-         unsigned int  st_ino;      /* inode */
-         mode_t        st_mode;     /* protection */
-         unsigned int  st_nlink;    /* number of hard links */
-         unsigned int  st_uid;      /* user ID of owner */
-         unsigned int  st_gid;      /* group ID of owner */
-         unsigned int  st_rdev;     /* device type (if inode device) */
-         unsigned long st_size;     /* total size, in bytes */
-         unsigned long st_blksize;  /* blocksize for filesystem I/O */
-         unsigned long st_blocks;   /* number of blocks allocated */
-         time_t        st_atime;    /* time of last access */
-         time_t        st_mtime;    /* time of last modification */
-         time_t        st_ctime;    /* time of last change */
-     };
-
-   The integral datatypes conform to the definitions given in the
-appropriate section (see *Note Integral Datatypes::, for details) so
-this structure is of size 64 bytes.
-
-   The values of several fields have a restricted meaning and/or range
-of values.
-
-`st_dev'
-     A value of 0 represents a file, 1 the console.
-
-`st_ino'
-     No valid meaning for the target.  Transmitted unchanged.
-
-`st_mode'
-     Valid mode bits are described in *Note Constants::.  Any other
-     bits have currently no meaning for the target.
-
-`st_uid'
-`st_gid'
-`st_rdev'
-     No valid meaning for the target.  Transmitted unchanged.
-
-`st_atime'
-`st_mtime'
-`st_ctime'
-     These values have a host and file system dependent accuracy.
-     Especially on Windows hosts, the file system may not support exact
-     timing values.
-
-   The target gets a `struct stat' of the above representation and is
-responsible for coercing it to the target representation before
-continuing.
-
-   Note that due to size differences between the host, target, and
-protocol representations of `struct stat' members, these members could
-eventually get truncated on the target.
-
-
-File: gdb.info,  Node: struct timeval,  Prev: struct stat,  Up: Protocol-specific Representation of Datatypes
-
-struct timeval
-..............
-
-The buffer of type `struct timeval' used by the File-I/O protocol is
-defined as follows:
-
-     struct timeval {
-         time_t tv_sec;  /* second */
-         long   tv_usec; /* microsecond */
-     };
-
-   The integral datatypes conform to the definitions given in the
-appropriate section (see *Note Integral Datatypes::, for details) so
-this structure is of size 8 bytes.
-
-
-File: gdb.info,  Node: Constants,  Next: File-I/O Examples,  Prev: Protocol-specific Representation of Datatypes,  Up: File-I/O Remote Protocol Extension
-
-D.13.9 Constants
-----------------
-
-The following values are used for the constants inside of the protocol.
-GDB and target are responsible for translating these values before and
-after the call as needed.
-
-* Menu:
-
-* Open Flags::
-* mode_t Values::
-* Errno Values::
-* Lseek Flags::
-* Limits::
-
-
-File: gdb.info,  Node: Open Flags,  Next: mode_t Values,  Up: Constants
-
-Open Flags
-..........
-
-All values are given in hexadecimal representation.
-
-       O_RDONLY        0x0
-       O_WRONLY        0x1
-       O_RDWR          0x2
-       O_APPEND        0x8
-       O_CREAT       0x200
-       O_TRUNC       0x400
-       O_EXCL        0x800
-
-
-File: gdb.info,  Node: mode_t Values,  Next: Errno Values,  Prev: Open Flags,  Up: Constants
-
-mode_t Values
-.............
-
-All values are given in octal representation.
-
-       S_IFREG       0100000
-       S_IFDIR        040000
-       S_IRUSR          0400
-       S_IWUSR          0200
-       S_IXUSR          0100
-       S_IRGRP           040
-       S_IWGRP           020
-       S_IXGRP           010
-       S_IROTH            04
-       S_IWOTH            02
-       S_IXOTH            01
-
-
-File: gdb.info,  Node: Errno Values,  Next: Lseek Flags,  Prev: mode_t Values,  Up: Constants
-
-Errno Values
-............
-
-All values are given in decimal representation.
-
-       EPERM           1
-       ENOENT          2
-       EINTR           4
-       EBADF           9
-       EACCES         13
-       EFAULT         14
-       EBUSY          16
-       EEXIST         17
-       ENODEV         19
-       ENOTDIR        20
-       EISDIR         21
-       EINVAL         22
-       ENFILE         23
-       EMFILE         24
-       EFBIG          27
-       ENOSPC         28
-       ESPIPE         29
-       EROFS          30
-       ENAMETOOLONG   91
-       EUNKNOWN       9999
-
-   `EUNKNOWN' is used as a fallback error value if a host system returns
- any error value not in the list of supported error numbers.
-
-
-File: gdb.info,  Node: Lseek Flags,  Next: Limits,  Prev: Errno Values,  Up: Constants
-
-Lseek Flags
-...........
-
-       SEEK_SET      0
-       SEEK_CUR      1
-       SEEK_END      2
-
-
-File: gdb.info,  Node: Limits,  Prev: Lseek Flags,  Up: Constants
-
-Limits
-......
-
-All values are given in decimal representation.
-
-       INT_MIN       -2147483648
-       INT_MAX        2147483647
-       UINT_MAX       4294967295
-       LONG_MIN      -9223372036854775808
-       LONG_MAX       9223372036854775807
-       ULONG_MAX      18446744073709551615
-
-
-File: gdb.info,  Node: File-I/O Examples,  Prev: Constants,  Up: File-I/O Remote Protocol Extension
-
-D.13.10 File-I/O Examples
--------------------------
-
-Example sequence of a write call, file descriptor 3, buffer is at target
-address 0x1234, 6 bytes should be written:
-
-     <- `Fwrite,3,1234,6'
-     _request memory read from target_
-     -> `m1234,6'
-     <- XXXXXX
-     _return "6 bytes written"_
-     -> `F6'
-
-   Example sequence of a read call, file descriptor 3, buffer is at
-target address 0x1234, 6 bytes should be read:
-
-     <- `Fread,3,1234,6'
-     _request memory write to target_
-     -> `X1234,6:XXXXXX'
-     _return "6 bytes read"_
-     -> `F6'
-
-   Example sequence of a read call, call fails on the host due to
-invalid file descriptor (`EBADF'):
-
-     <- `Fread,3,1234,6'
-     -> `F-1,9'
-
-   Example sequence of a read call, user presses `Ctrl-c' before
-syscall on host is called:
-
-     <- `Fread,3,1234,6'
-     -> `F-1,4,C'
-     <- `T02'
-
-   Example sequence of a read call, user presses `Ctrl-c' after syscall
-on host is called:
-
-     <- `Fread,3,1234,6'
-     -> `X1234,6:XXXXXX'
-     <- `T02'
-
-
-File: gdb.info,  Node: Library List Format,  Next: Memory Map Format,  Prev: File-I/O Remote Protocol Extension,  Up: Remote Protocol
-
-D.14 Library List Format
-========================
-
-On some platforms, a dynamic loader (e.g. `ld.so') runs in the same
-process as your application to manage libraries.  In this case, GDB can
-use the loader's symbol table and normal memory operations to maintain
-a list of shared libraries.  On other platforms, the operating system
-manages loaded libraries.  GDB can not retrieve the list of currently
-loaded libraries through memory operations, so it uses the
-`qXfer:libraries:read' packet (*note qXfer library list read::)
-instead.  The remote stub queries the target's operating system and
-reports which libraries are loaded.
-
-   The `qXfer:libraries:read' packet returns an XML document which
-lists loaded libraries and their offsets.  Each library has an
-associated name and one or more segment or section base addresses,
-which report where the library was loaded in memory.
-
-   For the common case of libraries that are fully linked binaries, the
-library should have a list of segments.  If the target supports dynamic
-linking of a relocatable object file, its library XML element should
-instead include a list of allocated sections.  The segment or section
-bases are start addresses, not relocation offsets; they do not depend
-on the library's link-time base addresses.
-
-   GDB must be linked with the Expat library to support XML library
-lists.  *Note Expat::.
-
-   A simple memory map, with one loaded library relocated by a single
-offset, looks like this:
-
-     <library-list>
-       <library name="/lib/libc.so.6">
-         <segment address="0x10000000"/>
-       </library>
-     </library-list>
-
-   Another simple memory map, with one loaded library with three
-allocated sections (.text, .data, .bss), looks like this:
-
-     <library-list>
-       <library name="sharedlib.o">
-         <section address="0x10000000"/>
-         <section address="0x20000000"/>
-         <section address="0x30000000"/>
-       </library>
-     </library-list>
-
-   The format of a library list is described by this DTD:
-
-     <!-- library-list: Root element with versioning -->
-     <!ELEMENT library-list  (library)*>
-     <!ATTLIST library-list  version CDATA   #FIXED  "1.0">
-     <!ELEMENT library       (segment*, section*)>
-     <!ATTLIST library       name    CDATA   #REQUIRED>
-     <!ELEMENT segment       EMPTY>
-     <!ATTLIST segment       address CDATA   #REQUIRED>
-     <!ELEMENT section       EMPTY>
-     <!ATTLIST section       address CDATA   #REQUIRED>
-
-   In addition, segments and section descriptors cannot be mixed within
-a single library element, and you must supply at least one segment or
-section for each library.
-
-
-File: gdb.info,  Node: Memory Map Format,  Next: Thread List Format,  Prev: Library List Format,  Up: Remote Protocol
-
-D.15 Memory Map Format
-======================
-
-To be able to write into flash memory, GDB needs to obtain a memory map
-from the target.  This section describes the format of the memory map.
-
-   The memory map is obtained using the `qXfer:memory-map:read' (*note
-qXfer memory map read::) packet and is an XML document that lists
-memory regions.
-
-   GDB must be linked with the Expat library to support XML memory
-maps.  *Note Expat::.
-
-   The top-level structure of the document is shown below:
-
-     <?xml version="1.0"?>
-     <!DOCTYPE memory-map
-               PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN"
-                      "http://sourceware.org/gdb/gdb-memory-map.dtd">
-     <memory-map>
-         region...
-     </memory-map>
-
-   Each region can be either:
-
-   * A region of RAM starting at ADDR and extending for LENGTH bytes
-     from there:
-
-          <memory type="ram" start="ADDR" length="LENGTH"/>
-
-   * A region of read-only memory:
-
-          <memory type="rom" start="ADDR" length="LENGTH"/>
-
-   * A region of flash memory, with erasure blocks BLOCKSIZE bytes in
-     length:
-
-          <memory type="flash" start="ADDR" length="LENGTH">
-            <property name="blocksize">BLOCKSIZE</property>
-          </memory>
-
-
-   Regions must not overlap.  GDB assumes that areas of memory not
-covered by the memory map are RAM, and uses the ordinary `M' and `X'
-packets to write to addresses in such ranges.
-
-   The formal DTD for memory map format is given below:
-
-     <!-- ................................................... -->
-     <!-- Memory Map XML DTD ................................ -->
-     <!-- File: memory-map.dtd .............................. -->
-     <!-- .................................... .............. -->
-     <!-- memory-map.dtd -->
-     <!-- memory-map: Root element with versioning -->
-     <!ELEMENT memory-map (memory | property)>
-     <!ATTLIST memory-map    version CDATA   #FIXED  "1.0.0">
-     <!ELEMENT memory (property)>
-     <!-- memory: Specifies a memory region,
-                  and its type, or device. -->
-     <!ATTLIST memory        type    CDATA   #REQUIRED
-                             start   CDATA   #REQUIRED
-                             length  CDATA   #REQUIRED
-                             device  CDATA   #IMPLIED>
-     <!-- property: Generic attribute tag -->
-     <!ELEMENT property (#PCDATA | property)*>
-     <!ATTLIST property      name    CDATA   #REQUIRED>
-
-
-File: gdb.info,  Node: Thread List Format,  Prev: Memory Map Format,  Up: Remote Protocol
-
-D.16 Thread List Format
-=======================
-
-To efficiently update the list of threads and their attributes, GDB
-issues the `qXfer:threads:read' packet (*note qXfer threads read::) and
-obtains the XML document with the following structure:
-
-     <?xml version="1.0"?>
-     <threads>
-         <thread id="id" core="0">
-         ... description ...
-         </thread>
-     </threads>
-
-   Each `thread' element must have the `id' attribute that identifies
-the thread (*note thread-id syntax::).  The `core' attribute, if
-present, specifies which processor core the thread was last executing
-on.  The content of the of `thread' element is interpreted as
-human-readable auxilliary information.
-
-
-File: gdb.info,  Node: Agent Expressions,  Next: Target Descriptions,  Prev: Remote Protocol,  Up: Top
-
-Appendix E The GDB Agent Expression Mechanism
-*********************************************
-
-In some applications, it is not feasible for the debugger to interrupt
-the program's execution long enough for the developer to learn anything
-helpful about its behavior.  If the program's correctness depends on its
-real-time behavior, delays introduced by a debugger might cause the
-program to fail, even when the code itself is correct.  It is useful to
-be able to observe the program's behavior without interrupting it.
-
-   Using GDB's `trace' and `collect' commands, the user can specify
-locations in the program, and arbitrary expressions to evaluate when
-those locations are reached.  Later, using the `tfind' command, she can
-examine the values those expressions had when the program hit the trace
-points.  The expressions may also denote objects in memory --
-structures or arrays, for example -- whose values GDB should record;
-while visiting a particular tracepoint, the user may inspect those
-objects as if they were in memory at that moment.  However, because GDB
-records these values without interacting with the user, it can do so
-quickly and unobtrusively, hopefully not disturbing the program's
-behavior.
-
-   When GDB is debugging a remote target, the GDB "agent" code running
-on the target computes the values of the expressions itself.  To avoid
-having a full symbolic expression evaluator on the agent, GDB translates
-expressions in the source language into a simpler bytecode language, and
-then sends the bytecode to the agent; the agent then executes the
-bytecode, and records the values for GDB to retrieve later.
-
-   The bytecode language is simple; there are forty-odd opcodes, the
-bulk of which are the usual vocabulary of C operands (addition,
-subtraction, shifts, and so on) and various sizes of literals and
-memory reference operations.  The bytecode interpreter operates
-strictly on machine-level values -- various sizes of integers and
-floating point numbers -- and requires no information about types or
-symbols; thus, the interpreter's internal data structures are simple,
-and each bytecode requires only a few native machine instructions to
-implement it.  The interpreter is small, and strict limits on the
-memory and time required to evaluate an expression are easy to
-determine, making it suitable for use by the debugging agent in
-real-time applications.
-
-* Menu:
-
-* General Bytecode Design::     Overview of the interpreter.
-* Bytecode Descriptions::       What each one does.
-* Using Agent Expressions::     How agent expressions fit into the big picture.
-* Varying Target Capabilities:: How to discover what the target can do.
-* Rationale::                   Why we did it this way.
-
-
-File: gdb.info,  Node: General Bytecode Design,  Next: Bytecode Descriptions,  Up: Agent Expressions
-
-E.1 General Bytecode Design
-===========================
-
-The agent represents bytecode expressions as an array of bytes.  Each
-instruction is one byte long (thus the term "bytecode").  Some
-instructions are followed by operand bytes; for example, the `goto'
-instruction is followed by a destination for the jump.
-
-   The bytecode interpreter is a stack-based machine; most instructions
-pop their operands off the stack, perform some operation, and push the
-result back on the stack for the next instruction to consume.  Each
-element of the stack may contain either a integer or a floating point
-value; these values are as many bits wide as the largest integer that
-can be directly manipulated in the source language.  Stack elements
-carry no record of their type; bytecode could push a value as an
-integer, then pop it as a floating point value.  However, GDB will not
-generate code which does this.  In C, one might define the type of a
-stack element as follows:
-     union agent_val {
-       LONGEST l;
-       DOUBLEST d;
-     };
-   where `LONGEST' and `DOUBLEST' are `typedef' names for the largest
-integer and floating point types on the machine.
-
-   By the time the bytecode interpreter reaches the end of the
-expression, the value of the expression should be the only value left
-on the stack.  For tracing applications, `trace' bytecodes in the
-expression will have recorded the necessary data, and the value on the
-stack may be discarded.  For other applications, like conditional
-breakpoints, the value may be useful.
-
-   Separate from the stack, the interpreter has two registers:
-`pc'
-     The address of the next bytecode to execute.
-
-`start'
-     The address of the start of the bytecode expression, necessary for
-     interpreting the `goto' and `if_goto' instructions.
-
-   Neither of these registers is directly visible to the bytecode
-language itself, but they are useful for defining the meanings of the
-bytecode operations.
-
-   There are no instructions to perform side effects on the running
-program, or call the program's functions; we assume that these
-expressions are only used for unobtrusive debugging, not for patching
-the running code.
-
-   Most bytecode instructions do not distinguish between the various
-sizes of values, and operate on full-width values; the upper bits of the
-values are simply ignored, since they do not usually make a difference
-to the value computed.  The exceptions to this rule are:
-memory reference instructions (`ref'N)
-     There are distinct instructions to fetch different word sizes from
-     memory.  Once on the stack, however, the values are treated as
-     full-size integers.  They may need to be sign-extended; the `ext'
-     instruction exists for this purpose.
-
-the sign-extension instruction (`ext' N)
-     These clearly need to know which portion of their operand is to be
-     extended to occupy the full length of the word.
-
-
-   If the interpreter is unable to evaluate an expression completely for
-some reason (a memory location is inaccessible, or a divisor is zero,
-for example), we say that interpretation "terminates with an error".
-This means that the problem is reported back to the interpreter's caller
-in some helpful way.  In general, code using agent expressions should
-assume that they may attempt to divide by zero, fetch arbitrary memory
-locations, and misbehave in other ways.
-
-   Even complicated C expressions compile to a few bytecode
-instructions; for example, the expression `x + y * z' would typically
-produce code like the following, assuming that `x' and `y' live in
-registers, and `z' is a global variable holding a 32-bit `int':
-     reg 1
-     reg 2
-     const32 address of z
-     ref32
-     ext 32
-     mul
-     add
-     end
-
-   In detail, these mean:
-`reg 1'
-     Push the value of register 1 (presumably holding `x') onto the
-     stack.
-
-`reg 2'
-     Push the value of register 2 (holding `y').
-
-`const32 address of z'
-     Push the address of `z' onto the stack.
-
-`ref32'
-     Fetch a 32-bit word from the address at the top of the stack;
-     replace the address on the stack with the value.  Thus, we replace
-     the address of `z' with `z''s value.
-
-`ext 32'
-     Sign-extend the value on the top of the stack from 32 bits to full
-     length.  This is necessary because `z' is a signed integer.
-
-`mul'
-     Pop the top two numbers on the stack, multiply them, and push their
-     product.  Now the top of the stack contains the value of the
-     expression `y * z'.
-
-`add'
-     Pop the top two numbers, add them, and push the sum.  Now the top
-     of the stack contains the value of `x + y * z'.
-
-`end'
-     Stop executing; the value left on the stack top is the value to be
-     recorded.
-
 

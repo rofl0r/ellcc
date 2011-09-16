@@ -1,5 +1,5 @@
 /* Tracepoint code for remote server for GDB.
-   Copyright (C) 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,14 +22,11 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <stddef.h>
-#if HAVE_MALLOC_H
-#include <malloc.h>
-#endif
 #if HAVE_STDINT_H
 #include <stdint.h>
 #endif
 
-/* This file is built for both both GDBserver, and the in-process
+/* This file is built for both GDBserver, and the in-process
    agent (IPA), a shared library that includes a tracing agent that is
    loaded by the inferior to support fast tracepoints.  Fast
    tracepoints (or more accurately, jump based tracepoints) are
@@ -133,8 +130,10 @@ trace_vdebug (const char *fmt, ...)
 # define traceframes_created gdb_agent_traceframes_created
 # define trace_state_variables gdb_agent_trace_state_variables
 # define get_raw_reg gdb_agent_get_raw_reg
-# define get_trace_state_variable_value gdb_agent_get_trace_state_variable_value
-# define set_trace_state_variable_value gdb_agent_set_trace_state_variable_value
+# define get_trace_state_variable_value \
+  gdb_agent_get_trace_state_variable_value
+# define set_trace_state_variable_value \
+  gdb_agent_set_trace_state_variable_value
 # define ust_loaded gdb_agent_ust_loaded
 # define helper_thread_id gdb_agent_helper_thread_id
 # define cmd_buf gdb_agent_cmd_buf
@@ -178,7 +177,7 @@ struct ipa_sym_addresses
 
 #define STRINGIZE_1(STR) #STR
 #define STRINGIZE(STR) STRINGIZE_1(STR)
-#define IPA_SYM(SYM)				\
+#define IPA_SYM(SYM)					\
   {							\
     STRINGIZE (gdb_agent_ ## SYM),			\
     offsetof (struct ipa_sym_addresses, addr_ ## SYM)	\
@@ -471,107 +470,19 @@ write_inferior_uinteger (CORE_ADDR symaddr, unsigned int val)
 
 enum gdb_agent_op
   {
-    gdb_agent_op_float = 0x01,
-    gdb_agent_op_add = 0x02,
-    gdb_agent_op_sub = 0x03,
-    gdb_agent_op_mul = 0x04,
-    gdb_agent_op_div_signed = 0x05,
-    gdb_agent_op_div_unsigned = 0x06,
-    gdb_agent_op_rem_signed = 0x07,
-    gdb_agent_op_rem_unsigned = 0x08,
-    gdb_agent_op_lsh = 0x09,
-    gdb_agent_op_rsh_signed = 0x0a,
-    gdb_agent_op_rsh_unsigned = 0x0b,
-    gdb_agent_op_trace = 0x0c,
-    gdb_agent_op_trace_quick = 0x0d,
-    gdb_agent_op_log_not = 0x0e,
-    gdb_agent_op_bit_and = 0x0f,
-    gdb_agent_op_bit_or = 0x10,
-    gdb_agent_op_bit_xor = 0x11,
-    gdb_agent_op_bit_not = 0x12,
-    gdb_agent_op_equal = 0x13,
-    gdb_agent_op_less_signed = 0x14,
-    gdb_agent_op_less_unsigned = 0x15,
-    gdb_agent_op_ext = 0x16,
-    gdb_agent_op_ref8 = 0x17,
-    gdb_agent_op_ref16 = 0x18,
-    gdb_agent_op_ref32 = 0x19,
-    gdb_agent_op_ref64 = 0x1a,
-    gdb_agent_op_ref_float = 0x1b,
-    gdb_agent_op_ref_double = 0x1c,
-    gdb_agent_op_ref_long_double = 0x1d,
-    gdb_agent_op_l_to_d = 0x1e,
-    gdb_agent_op_d_to_l = 0x1f,
-    gdb_agent_op_if_goto = 0x20,
-    gdb_agent_op_goto = 0x21,
-    gdb_agent_op_const8 = 0x22,
-    gdb_agent_op_const16 = 0x23,
-    gdb_agent_op_const32 = 0x24,
-    gdb_agent_op_const64 = 0x25,
-    gdb_agent_op_reg = 0x26,
-    gdb_agent_op_end = 0x27,
-    gdb_agent_op_dup = 0x28,
-    gdb_agent_op_pop = 0x29,
-    gdb_agent_op_zero_ext = 0x2a,
-    gdb_agent_op_swap = 0x2b,
-    gdb_agent_op_getv = 0x2c,
-    gdb_agent_op_setv = 0x2d,
-    gdb_agent_op_tracev = 0x2e,
-    gdb_agent_op_trace16 = 0x30,
+#define DEFOP(NAME, SIZE, DATA_SIZE, CONSUMED, PRODUCED, VALUE)  \
+    gdb_agent_op_ ## NAME = VALUE,
+#include "ax.def"
+#undef DEFOP
     gdb_agent_op_last
   };
 
 static const char *gdb_agent_op_names [gdb_agent_op_last] =
   {
-    "?undef?",
-    "float",
-    "add",
-    "sub",
-    "mul",
-    "div_signed",
-    "div_unsigned",
-    "rem_signed",
-    "rem_unsigned",
-    "lsh",
-    "rsh_signed",
-    "rsh_unsigned",
-    "trace",
-    "trace_quick",
-    "log_not",
-    "bit_and",
-    "bit_or",
-    "bit_xor",
-    "bit_not",
-    "equal",
-    "less_signed",
-    "less_unsigned",
-    "ext",
-    "ref8",
-    "ref16",
-    "ref32",
-    "ref64",
-    "ref_float",
-    "ref_double",
-    "ref_long_double",
-    "l_to_d",
-    "d_to_l",
-    "if_goto",
-    "goto",
-    "const8",
-    "const16",
-    "const32",
-    "const64",
-    "reg",
-    "end",
-    "dup",
-    "pop",
-    "zero_ext",
-    "swap",
-    "getv",
-    "setv",
-    "tracev",
-    "?undef?",
-    "trace16",
+    "?undef?"
+#define DEFOP(NAME, SIZE, DATA_SIZE, CONSUMED, PRODUCED, VALUE)  , # NAME
+#include "ax.def"
+#undef DEFOP
   };
 
 struct agent_expr
@@ -2552,7 +2463,7 @@ cmd_qtv (char *own_buf)
   char *packet = own_buf;
 
   packet += strlen ("qTV:");
-  packet = unpack_varlen_hex (packet, &num);
+  unpack_varlen_hex (packet, &num);
 
   if (current_traceframe >= 0)
     {
@@ -3122,7 +3033,7 @@ cmd_qtframe (char *own_buf)
   if (strncmp (packet, "pc:", strlen ("pc:")) == 0)
     {
       packet += strlen ("pc:");
-      packet = unpack_varlen_hex (packet, &pc);
+      unpack_varlen_hex (packet, &pc);
       trace_debug ("Want to find next traceframe at pc=0x%s", paddress (pc));
       tframe = find_next_traceframe_in_range (pc, pc, 1, &tfnum);
     }
@@ -3131,7 +3042,7 @@ cmd_qtframe (char *own_buf)
       packet += strlen ("range:");
       packet = unpack_varlen_hex (packet, &lo);
       ++packet;
-      packet = unpack_varlen_hex (packet, &hi);
+      unpack_varlen_hex (packet, &hi);
       trace_debug ("Want to find next traceframe in the range 0x%s to 0x%s",
 		   paddress (lo), paddress (hi));
       tframe = find_next_traceframe_in_range (lo, hi, 1, &tfnum);
@@ -3141,7 +3052,7 @@ cmd_qtframe (char *own_buf)
       packet += strlen ("outside:");
       packet = unpack_varlen_hex (packet, &lo);
       ++packet;
-      packet = unpack_varlen_hex (packet, &hi);
+      unpack_varlen_hex (packet, &hi);
       trace_debug ("Want to find next traceframe "
 		   "outside the range 0x%s to 0x%s",
 		   paddress (lo), paddress (hi));
@@ -3150,7 +3061,7 @@ cmd_qtframe (char *own_buf)
   else if (strncmp (packet, "tdp:", strlen ("tdp:")) == 0)
     {
       packet += strlen ("tdp:");
-      packet = unpack_varlen_hex (packet, &num);
+      unpack_varlen_hex (packet, &num);
       tpnum = (int) num;
       trace_debug ("Want to find next traceframe for tracepoint %d", tpnum);
       tframe = find_next_traceframe_by_tracepoint (tpnum, &tfnum);
@@ -3472,7 +3383,7 @@ cmd_qtbuffer (char *own_buf)
 
   packet = unpack_varlen_hex (packet, &offset);
   ++packet; /* skip a comma */
-  packet = unpack_varlen_hex (packet, &num);
+  unpack_varlen_hex (packet, &num);
 
   trace_debug ("Want to get trace buffer, %d bytes at offset 0x%s",
 	       (int) num, pulongest (offset));
@@ -3522,7 +3433,7 @@ cmd_bigqtbuffer (char *own_buf)
   if (strncmp ("circular:", packet, strlen ("circular:")) == 0)
     {
       packet += strlen ("circular:");
-      packet = unpack_varlen_hex (packet, &val);
+      unpack_varlen_hex (packet, &val);
       circular_trace_buffer = val;
       trace_debug ("Trace buffer is now %s",
 		   circular_trace_buffer ? "circular" : "linear");
@@ -3765,6 +3676,7 @@ tracepoint_finished_step (struct thread_info *tinfo, CORE_ADDR stop_pc)
 	  /* Unlink.  */
 	  *wstep_link = wstep->next;
 	  release_while_stepping_state (wstep);
+	  wstep = *wstep_link;
 	  continue;
 	}
 
@@ -4073,7 +3985,9 @@ get_context_regcache (struct tracepoint_hit_ctx *ctx)
 #ifdef HAVE_UST
   if (ctx->type == static_tracepoint)
     {
-      struct static_tracepoint_ctx *sctx = (struct static_tracepoint_ctx *) ctx;
+      struct static_tracepoint_ctx *sctx
+	= (struct static_tracepoint_ctx *) ctx;
+
       if (!sctx->regcache_initted)
 	{
 	  sctx->regcache_initted = 1;
@@ -4129,13 +4043,10 @@ do_action_at_tracepoint (struct tracepoint_hit_ctx *ctx,
       }
     case 'R':
       {
-	struct collect_registers_action *raction;
-
 	unsigned char *regspace;
 	struct regcache tregcache;
 	struct regcache *context_regcache;
 
-	raction = (struct collect_registers_action *) taction;
 
 	trace_debug ("Want to collect registers");
 
@@ -4293,6 +4204,16 @@ unparse_agent_expr (struct agent_expr *aexpr)
 }
 
 #endif
+
+/* A wrapper for gdb_agent_op_names that does some bounds-checking.  */
+
+static const char *
+gdb_agent_op_name (int op)
+{
+  if (op < 0 || op >= gdb_agent_op_last || gdb_agent_op_names[op] == NULL)
+    return "?undef?";
+  return gdb_agent_op_names[op];
+}
 
 /* The agent expression evaluator, as specified by the GDB docs. It
    returns 0 if everything went OK, and a nonzero error code
@@ -4600,6 +4521,23 @@ eval_agent_expr (struct tracepoint_hit_ctx *ctx,
 	    top = stack[sp];
 	  break;
 
+	case gdb_agent_op_pick:
+	  arg = aexpr->bytes[pc++];
+	  stack[sp] = top;
+	  top = stack[sp - arg];
+	  ++sp;
+	  break;
+
+	case gdb_agent_op_rot:
+	  {
+	    ULONGEST tem = stack[sp - 1];
+
+	    stack[sp - 1] = stack[sp - 2];
+	    stack[sp - 2] = top;
+	    top = tem;
+	  }
+	  break;
+
 	case gdb_agent_op_zero_ext:
 	  arg = aexpr->bytes[pc++];
 	  if (arg < (sizeof (LONGEST) * 8))
@@ -4670,7 +4608,7 @@ eval_agent_expr (struct tracepoint_hit_ctx *ctx,
 	}
 
       trace_debug ("Op %s -> sp=%d, top=0x%s",
-		   gdb_agent_op_names[op], sp, pulongest (top));
+		   gdb_agent_op_name (op), sp, pulongest (top));
     }
 }
 
@@ -4743,9 +4681,34 @@ agent_tsv_read (struct traceframe *tframe, int n)
 
 #ifndef IN_PROCESS_AGENT
 
+/* Callback for traceframe_walk_blocks, used to find a given block
+   type in a traceframe.  */
+
+static int
+match_blocktype (char blocktype, unsigned char *dataptr, void *data)
+{
+  char *wantedp = data;
+
+  if (*wantedp == blocktype)
+    return 1;
+
+  return 0;
+}
+
+/* Walk over all traceframe blocks of the traceframe buffer starting
+   at DATABASE, of DATASIZE bytes long, and call CALLBACK for each
+   block found, passing in DATA unmodified.  If CALLBACK returns true,
+   this returns a pointer to where the block is found.  Returns NULL
+   if no callback call returned true, indicating that all blocks have
+   been walked.  */
+
 static unsigned char *
-traceframe_find_block_type (unsigned char *database, unsigned int datasize,
-			    int tfnum, char type_wanted)
+traceframe_walk_blocks (unsigned char *database, unsigned int datasize,
+			int tfnum,
+			int (*callback) (char blocktype,
+					 unsigned char *dataptr,
+					 void *data),
+			void *data)
 {
   unsigned char *dataptr;
 
@@ -4771,9 +4734,10 @@ traceframe_find_block_type (unsigned char *database, unsigned int datasize,
 	  datasize = dataptr - database;
 	  dataptr = database = trace_buffer_lo;
 	}
+
       blocktype = *dataptr++;
 
-      if (type_wanted == blocktype)
+      if ((*callback) (blocktype, dataptr, data))
 	return dataptr;
 
       switch (blocktype)
@@ -4805,6 +4769,18 @@ traceframe_find_block_type (unsigned char *database, unsigned int datasize,
     }
 
   return NULL;
+}
+
+/* Look for the block of type TYPE_WANTED in the trameframe starting
+   at DATABASE of DATASIZE bytes long.  TFNUM is the traceframe
+   number.  */
+
+static unsigned char *
+traceframe_find_block_type (unsigned char *database, unsigned int datasize,
+			    int tfnum, char type_wanted)
+{
+  return traceframe_walk_blocks (database, datasize, tfnum,
+				 match_blocktype, &type_wanted);
 }
 
 static unsigned char *
@@ -4842,8 +4818,7 @@ fetch_traceframe_registers (int tfnum, struct regcache *regcache, int regnum)
   dataptr = traceframe_find_regblock (tframe, tfnum);
   if (dataptr == NULL)
     {
-      /* We don't like making up numbers, but GDB has all manner of
-	 troubles when the target says there are no registers.  */
+      /* Mark registers unavailable.  */
       supply_regblock (regcache, NULL);
 
       /* We can generally guess at a PC, although this will be
@@ -4901,7 +4876,8 @@ traceframe_read_mem (int tfnum, CORE_ADDR addr,
 
   /* Iterate through a traceframe's blocks, looking for memory.  */
   while ((dataptr = traceframe_find_block_type (dataptr,
-						datasize - (dataptr - database),
+						datasize
+						- (dataptr - database),
 						tfnum, 'M')) != NULL)
     {
       memcpy (&maddr, dataptr, sizeof (maddr));
@@ -4911,12 +4887,17 @@ traceframe_read_mem (int tfnum, CORE_ADDR addr,
       trace_debug ("traceframe %d has %d bytes at %s",
 		   tfnum, mlen, paddress (maddr));
 
-      /* Check that requested data is in bounds.  */
-      if (maddr <= addr && (addr + length) <= (maddr + mlen))
+      /* If the block includes the first part of the desired range,
+	 return as much it has; GDB will re-request the remainder,
+	 which might be in a different block of this trace frame.  */
+      if (maddr <= addr && addr < (maddr + mlen))
 	{
-	  /* Block includes the requested range, copy it out.  */
-	  memcpy (buf, dataptr + (addr - maddr), length);
-	  *nbytes = length;
+	  ULONGEST amt = (maddr + mlen) - addr;
+	  if (amt > length)
+	    amt = length;
+
+	  memcpy (buf, dataptr + (addr - maddr), amt);
+	  *nbytes = amt;
 	  return 0;
 	}
 
@@ -4963,7 +4944,8 @@ traceframe_read_tsv (int tsvnum, LONGEST *val)
 
   /* Iterate through a traceframe's blocks, looking for the tsv.  */
   while ((dataptr = traceframe_find_block_type (dataptr,
-						datasize - (dataptr - database),
+						datasize
+						- (dataptr - database),
 						tfnum, 'V')) != NULL)
     {
       memcpy (&vnum, dataptr, sizeof (vnum));
@@ -5037,6 +5019,72 @@ traceframe_read_sdata (int tfnum, ULONGEST offset,
   trace_debug ("traceframe %d has no static trace data", tfnum);
 
   *nbytes = 0;
+  return 0;
+}
+
+/* Callback for traceframe_walk_blocks.  Builds a traceframe-info
+   object.  DATA is pointer to a struct buffer holding the
+   traceframe-info object being built.  */
+
+static int
+build_traceframe_info_xml (char blocktype, unsigned char *dataptr, void *data)
+{
+  struct buffer *buffer = data;
+
+  switch (blocktype)
+    {
+    case 'M':
+      {
+	unsigned short mlen;
+	CORE_ADDR maddr;
+
+	memcpy (&maddr, dataptr, sizeof (maddr));
+	dataptr += sizeof (maddr);
+	memcpy (&mlen, dataptr, sizeof (mlen));
+	dataptr += sizeof (mlen);
+	buffer_xml_printf (buffer,
+			   "<memory start=\"0x%s\" length=\"0x%s\"/>\n",
+			   paddress (maddr), phex_nz (mlen, sizeof (mlen)));
+	break;
+      }
+    case 'V':
+    case 'R':
+    case 'S':
+      {
+	break;
+      }
+    default:
+      warning ("Unhandled trace block type (%d) '%c ' "
+	       "while building trace frame info.",
+	       blocktype, blocktype);
+      break;
+    }
+
+  return 0;
+}
+
+/* Build a traceframe-info object for traceframe number TFNUM into
+   BUFFER.  */
+
+int
+traceframe_read_info (int tfnum, struct buffer *buffer)
+{
+  struct traceframe *tframe;
+
+  trace_debug ("traceframe_read_info");
+
+  tframe = find_traceframe (tfnum);
+
+  if (!tframe)
+    {
+      trace_debug ("traceframe %d not found", tfnum);
+      return 1;
+    }
+
+  buffer_grow_str (buffer, "<traceframe-info>\n");
+  traceframe_walk_blocks (tframe->data, tframe->data_size,
+			  tfnum, build_traceframe_info_xml, buffer);
+  buffer_grow_str0 (buffer, "</traceframe-info>\n");
   return 0;
 }
 
@@ -5155,7 +5203,8 @@ fast_tracepoint_collecting (CORE_ADDR thread_area,
 				  &ipa_gdb_jump_pad_buffer_end))
     fatal ("error extracting `gdb_jump_pad_buffer_end'");
 
-  if (ipa_gdb_jump_pad_buffer <= stop_pc && stop_pc < ipa_gdb_jump_pad_buffer_end)
+  if (ipa_gdb_jump_pad_buffer <= stop_pc
+      && stop_pc < ipa_gdb_jump_pad_buffer_end)
     {
       /* We can tell which tracepoint(s) the thread is collecting by
 	 matching the jump pad address back to the tracepoint.  */
@@ -5545,7 +5594,8 @@ emit_void_call_2 (CORE_ADDR fn, int arg1)
 static enum eval_result_type compile_bytecodes (struct agent_expr *aexpr);
 
 static void
-compile_tracepoint_condition (struct tracepoint *tpoint, CORE_ADDR *jump_entry)
+compile_tracepoint_condition (struct tracepoint *tpoint,
+			      CORE_ADDR *jump_entry)
 {
   CORE_ADDR entry_point = *jump_entry;
   enum eval_result_type err;
@@ -5868,11 +5918,11 @@ compile_bytecodes (struct agent_expr *aexpr)
       if (emit_error)
 	{
 	  trace_debug ("Error %d while emitting code for %s\n",
-		       emit_error, gdb_agent_op_names[op]);
+		       emit_error, gdb_agent_op_name (op));
 	  return expr_eval_unhandled_opcode;
 	}
 
-      trace_debug ("Op %s compiled\n", gdb_agent_op_names[op]);
+      trace_debug ("Op %s compiled\n", gdb_agent_op_name (op));
     }
 
   /* Now fill in real addresses as goto destinations.  */
@@ -6189,8 +6239,9 @@ download_trace_state_variables (void)
   if (prev_ptr != 0)
     {
       /* Fixup the next pointer in the last item in the list.  */
-      write_inferior_data_ptr (prev_ptr + offsetof (struct trace_state_variable,
-						    next), 0);
+      write_inferior_data_ptr (prev_ptr
+			       + offsetof (struct trace_state_variable,
+					   next), 0);
     }
 }
 
@@ -6228,8 +6279,10 @@ upload_fast_traceframes (void)
     return;
 
   trace_debug ("ipa_traceframe_count (racy area): %d (w=%d, r=%d)",
-	       ipa_traceframe_write_count_racy - ipa_traceframe_read_count_racy,
-	       ipa_traceframe_write_count_racy, ipa_traceframe_read_count_racy);
+	       ipa_traceframe_write_count_racy
+	       - ipa_traceframe_read_count_racy,
+	       ipa_traceframe_write_count_racy,
+	       ipa_traceframe_read_count_racy);
 
   if (ipa_traceframe_write_count_racy == ipa_traceframe_read_count_racy)
     return;
@@ -6374,7 +6427,8 @@ upload_fast_traceframes (void)
 	  block = add_traceframe_block (tframe, ipa_tframe.data_size);
 	  if (block != NULL)
 	    {
-	      if (read_inferior_memory (tf + offsetof (struct traceframe, data),
+	      if (read_inferior_memory (tf
+					+ offsetof (struct traceframe, data),
 					block, ipa_tframe.data_size))
 		error ("Uploading: Couldn't read traceframe data at %s\n",
 		       paddress (tf + offsetof (struct traceframe, data)));
@@ -6422,7 +6476,8 @@ upload_fast_traceframes (void)
 		   curr_tbctrl_idx,
 		   (int) (ipa_trace_buffer_ctrl.start - ipa_trace_buffer_lo),
 		   (int) (ipa_trace_buffer_ctrl.free - ipa_trace_buffer_lo),
-		   (int) (ipa_trace_buffer_ctrl.end_free - ipa_trace_buffer_lo),
+		   (int) (ipa_trace_buffer_ctrl.end_free
+			  - ipa_trace_buffer_lo),
 		   (int) (ipa_trace_buffer_ctrl.wrap - ipa_trace_buffer_lo),
 		   (int) (ipa_trace_buffer_hi - ipa_trace_buffer_lo));
     }
@@ -6723,7 +6778,7 @@ gdb_ust_connect_sync_socket (int pid)
   int res, fd;
   char path[UNIX_PATH_MAX];
 
-  res = snprintf (path, UNIX_PATH_MAX, "%s/gdb_ust%d", SOCK_DIR, pid);
+  res = xsnprintf (path, UNIX_PATH_MAX, "%s/gdb_ust%d", SOCK_DIR, pid);
   if (res >= UNIX_PATH_MAX)
     {
       trace_debug ("string overflow allocating socket name");
@@ -6739,7 +6794,7 @@ gdb_ust_connect_sync_socket (int pid)
 
   addr.sun_family = AF_UNIX;
 
-  res = snprintf (addr.sun_path, UNIX_PATH_MAX, "%s", path);
+  res = xsnprintf (addr.sun_path, UNIX_PATH_MAX, "%s", path);
   if (res >= UNIX_PATH_MAX)
     {
       warning ("string overflow allocating socket name\n");
@@ -6964,8 +7019,8 @@ gdb_ust_socket_init (void)
   int result, fd;
   char name[UNIX_PATH_MAX];
 
-  result = snprintf (name, UNIX_PATH_MAX, "%s/gdb_ust%d",
-		     SOCK_DIR, getpid ());
+  result = xsnprintf (name, UNIX_PATH_MAX, "%s/gdb_ust%d",
+		      SOCK_DIR, getpid ());
   if (result >= UNIX_PATH_MAX)
     {
       trace_debug ("string overflow allocating socket name");
@@ -7143,7 +7198,8 @@ probe_marker_at (char *packet)
 		     "ltt_marker_connect (marker = %s/%s)",
 		     m->channel, m->name);
 
-	result = USTF(ltt_marker_connect) (m->channel, m->name, GDB_PROBE_NAME);
+	result = USTF(ltt_marker_connect) (m->channel, m->name,
+					   GDB_PROBE_NAME);
 	if (result && result != -EEXIST)
 	  trace_debug ("ltt_marker_connect (marker = %s/%s, errno = %d)",
 		       m->channel, m->name, -result);

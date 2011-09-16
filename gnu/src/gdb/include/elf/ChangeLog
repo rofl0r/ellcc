@@ -1,3 +1,84 @@
+2011-03-31  Bernd Schmidt  <bernds@codesourcery.com>
+
+	* tic6x.h (R_C6000_JUMP_SPLOT, R_C6000_EHTYPE,
+	R_C6000_PCR_H16, R_C6000_PCR_L16): New relocs.
+	(SHN_TIC6X_SCOMMON): Define.
+
+2011-03-31  Tristan Gingold  <gingold@adacore.com>
+
+	* ia64.h (Elf64_External_VMS_Note): New struct.
+	(NT_VMS_MHD, NT_VMS_LNM, NT_VMS_SRC, NT_VMS_TITLE, NT_VMS_EIDC)
+	(NT_VMS_FPMODE, NT_VMS_LINKTIME, NT_VMS_IMGNAM, NT_VMS_IMGID)
+	(NT_VMS_LINKID, NT_VMS_IMGBID, NT_VMS_GSTNAM, NT_VMS_ORIG_DYN)
+	(NT_VMS_PATCHTIME) New macros.
+
+2011-03-14  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	* arm.h (R_ARM_IRELATIVE): New relocation.
+
+2011-03-14  Richard Sandiford  <richard.sandiford@linaro.org>
+
+	* internal.h (elf_internal_sym): Add st_target_internal.
+	* arm.h (arm_st_branch_type): New enum.
+	(ARM_SYM_BRANCH_TYPE): New macro.
+
+2011-03-10  Nick Clifton  <nickc@redhat.com>
+
+	* common.h (EM_V850): V850s now supplied by Renesas.
+
+2011-02-25  Alan Modra  <amodra@gmail.com>
+
+	PR 12516
+	* internal.h (ELF_SECTION_IN_SEGMENT_1): Don't match zero size
+	sections at start or end of PT_DYNAMIC.
+
+2011-01-10  Nathan Sidwell  <nathan@codesourcery.com>
+	    Glauber de Oliveira Costa  <glommer@gmail.com>
+
+	* arm.h (R_ARM_TLS_DESC, R_ARM_TLS_GOTDESC, R_ARM_TLS_CALL,
+	R_ARM_TLS_DESCSEQ, T_ARM_THM_TLS_CALL, R_ARM_THM_TLS_DESCSEQ): New
+	relocations.
+
+2010-11-11  Mingming Sun  <mingm.sun@gmail.com>
+
+	* mips.h (E_MIPS_MACH_LS3A): Defined.
+
+2010-11-02  Joseph Myers  <joseph@codesourcery.com>
+
+	* tic6x-attrs.h (Tag_ABI_wchar_t, Tag_ABI_stack_align_needed,
+	Tag_ABI_stack_align_preserved, Tag_ABI_PID, Tag_ABI_PIC,
+	Tag_ABI_array_object_alignment,
+	Tag_ABI_array_object_align_expected, Tag_ABI_conformance): Define.
+
+2010-10-29  Joseph Myers  <joseph@codesourcery.com>
+
+	* tic6x-attrs.h (Tag_ABI_compatibility): Define.
+
+2010-10-29  Bernd Schmidt  <bernds@codesourcery.com>
+            Joseph Myers  <joseph@codesourcery.com>
+
+	* tic6x-attrs.h (Tag_ABI_DSBT): New.
+
+2010-10-21  Joseph Myers  <joseph@codesourcery.com>
+
+	* tic6x-attrs.h (Tag_C6XABI_Tag_CPU_arch): Change to Tag_ISA,
+	value 4.
+	* tic6x.h (Values for Tag_C6XABI_Tag_CPU_arch): Rename for
+	attribute renaming.
+
+2010-07-23  Naveen.H.S  <naveen.S@kpitcummins.com>
+	    Ina Pandit  <ina.pandit@kpitcummins.com>
+
+	* v850.h: Add support for V850E2 and V850E2V3.
+	(v850_reloc_type): Update the newly added relocations
+
+2010-07-20  Alan Modra  <amodra@gmail.com>
+
+	* internal.h (ELF_TBSS_SPECIAL): New macro, extracted from..
+	(ELF_SECTION_SIZE): ..here.
+	(ELF_SECTION_IN_SEGMENT_1): Add "strict" arg.
+	(ELF_SECTION_IN_SEGMENT_STRICT): New macro.
+
 2010-06-25  Alan Modra  <amodra@gmail.com>
 
 	* ppc64.h (R_PPC64_LO_DS_OPT): Define.

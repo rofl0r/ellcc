@@ -1,4 +1,4 @@
-# Copyright (C) 2010 Free Software Foundation, Inc.
+# Copyright (C) 2010, 2011 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -164,7 +164,7 @@ proc build_executable_own_libs {testname executable sources options {interp ""} 
 
     # Do not lappend it so that "-rpath $dir" overrides any possible "-rpath"s
     # specified by the caller to be able to link it for ldd" above.
-    set options [linsert $options 0 "additional_flags=-Wl,--dynamic-linker,$interp,-rpath,$dir"]
+    set options [linsert $options 0 "ldflags=-Wl,--dynamic-linker,$interp,-rpath,$dir"]
 
     if {[build_executable $testname $executable $sources $options] == -1} {
 	return ""

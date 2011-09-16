@@ -1,5 +1,5 @@
 /* Target-dependent code for GNU/Linux on Alpha.
-   Copyright (C) 2002, 2003, 2007, 2008, 2009, 2010
+   Copyright (C) 2002, 2003, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -26,7 +26,7 @@
 #include "symtab.h"
 #include "regset.h"
 #include "regcache.h"
-
+#include "linux-tdep.h"
 #include "alpha-tdep.h"
 
 /* Under GNU/Linux, signal handler invocations can be identified by
@@ -41,8 +41,7 @@
      (2) the kernel has changed from using "addq" to "lda" to load the
          syscall number,
      (3) there is a "normal" sigreturn and an "rt" sigreturn which
-         has a different stack layout.
-*/
+         has a different stack layout.  */
 
 static long
 alpha_linux_sigtramp_offset_1 (struct gdbarch *gdbarch, CORE_ADDR pc)
@@ -120,8 +119,8 @@ alpha_linux_sigcontext_addr (struct frame_info *this_frame)
 	  struct ucontext uc;
         };
 
-	offsetof (struct rt_sigframe, uc.uc_mcontext);
-  */
+	offsetof (struct rt_sigframe, uc.uc_mcontext);  */
+
   if (alpha_read_insn (gdbarch, pc - off + 4) == 0x201f015f)
     return sp + 176;
 
@@ -211,6 +210,8 @@ static void
 alpha_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   struct gdbarch_tdep *tdep;
+
+  linux_init_abi (info, gdbarch);
 
   /* Hook into the DWARF CFI frame unwinder.  */
   alpha_dwarf2_init_abi (info, gdbarch);

@@ -1,6 +1,6 @@
 /* Remote utility routines for the remote server for GDB.
    Copyright (C) 1986, 1989, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -107,8 +107,8 @@ struct sym_cache
 int remote_debug = 0;
 struct ui_file *gdb_stdlog;
 
-static int remote_desc = INVALID_DESCRIPTOR;
-static int listen_desc = INVALID_DESCRIPTOR;
+static gdb_fildes_t remote_desc = INVALID_DESCRIPTOR;
+static gdb_fildes_t listen_desc = INVALID_DESCRIPTOR;
 
 /* FIXME headerize? */
 extern int using_threads;
@@ -328,7 +328,8 @@ remote_open (char *name)
       if (port == 0)
 	{
 	  socklen_t len = sizeof (sockaddr);
-	  if (getsockname (listen_desc, (struct sockaddr *) &sockaddr, &len) < 0
+	  if (getsockname (listen_desc,
+			   (struct sockaddr *) &sockaddr, &len) < 0
 	      || len < sizeof (sockaddr))
 	    perror_with_name ("Can't determine port");
 	  port = ntohs (sockaddr.sin_port);
@@ -724,7 +725,7 @@ putpkt_binary_1 (char *buf, int cnt, int is_notif)
   char *p;
   int cc;
 
-  buf2 = xmalloc (PBUFSIZ);
+  buf2 = xmalloc (strlen ("$") + cnt + strlen ("#nn") + 1);
 
   /* Copy the packet into buffer BUF2, encapsulating it
      and giving it a checksum.  */
@@ -971,7 +972,8 @@ readchar (void)
 
   if (readchar_bufcnt == 0)
     {
-      readchar_bufcnt = read (remote_desc, readchar_buf, sizeof (readchar_buf));
+      readchar_bufcnt = read (remote_desc, readchar_buf,
+			      sizeof (readchar_buf));
 
       if (readchar_bufcnt <= 0)
 	{
@@ -1083,7 +1085,9 @@ getpkt (char *buf)
 
       if (noack_mode)
 	{
-	  fprintf (stderr, "Bad checksum, sentsum=0x%x, csum=0x%x, buf=%s [no-ack-mode, Bad medium?]\n",
+	  fprintf (stderr,
+		   "Bad checksum, sentsum=0x%x, csum=0x%x, "
+		   "buf=%s [no-ack-mode, Bad medium?]\n",
 		   (c1 << 4) + c2, csum, buf);
 	  /* Not much we can do, GDB wasn't expecting an ack/nac.  */
 	  break;
@@ -1091,7 +1095,8 @@ getpkt (char *buf)
 
       fprintf (stderr, "Bad checksum, sentsum=0x%x, csum=0x%x, buf=%s\n",
 	       (c1 << 4) + c2, csum, buf);
-      write (remote_desc, "-", 1);
+      if (write (remote_desc, "-", 1) != 1)
+	return -1;
     }
 
   if (!noack_mode)
@@ -1102,7 +1107,8 @@ getpkt (char *buf)
 	  fflush (stderr);
 	}
 
-      write (remote_desc, "+", 1);
+      if (write (remote_desc, "+", 1) != 1)
+	return -1;
 
       if (remote_debug)
 	{
@@ -1426,19 +1432,13 @@ decode_X_packet (char *from, int packet_len, CORE_ADDR *mem_addr_ptr,
 }
 
 /* Decode a qXfer write request.  */
+
 int
-decode_xfer_write (char *buf, int packet_len, char **annex, CORE_ADDR *offset,
+decode_xfer_write (char *buf, int packet_len, CORE_ADDR *offset,
 		   unsigned int *len, unsigned char *data)
 {
   char ch;
-
-  /* Extract and NUL-terminate the annex.  */
-  *annex = buf;
-  while (*buf && *buf != ':')
-    buf++;
-  if (*buf == '\0')
-    return -1;
-  *buf++ = 0;
+  char *b = buf;
 
   /* Extract the offset.  */
   *offset = 0;
@@ -1449,7 +1449,7 @@ decode_xfer_write (char *buf, int packet_len, char **annex, CORE_ADDR *offset,
     }
 
   /* Get encoded data.  */
-  packet_len -= buf - *annex;
+  packet_len -= buf - b;
   *len = remote_unescape_input ((const gdb_byte *) buf, packet_len,
 				data, packet_len);
   return 0;

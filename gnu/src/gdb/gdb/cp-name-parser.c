@@ -405,7 +405,7 @@ typedef union YYSTYPE {
     const char *opname;
   } YYSTYPE;
 /* Line 191 of yacc.c.  */
-#line 409 "cp-name-parser.c.tmp"
+#line 409 "cp-name-parser.c"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1
@@ -417,7 +417,7 @@ typedef union YYSTYPE {
 
 
 /* Line 214 of yacc.c.  */
-#line 421 "cp-name-parser.c.tmp"
+#line 421 "cp-name-parser.c"
 
 #if ! defined (yyoverflow) || YYERROR_VERBOSE
 
@@ -2830,7 +2830,7 @@ yyreduce:
     }
 
 /* Line 1000 of yacc.c.  */
-#line 2834 "cp-name-parser.c.tmp"
+#line 2834 "cp-name-parser.c"
 
   yyvsp -= yylen;
   yyssp -= yylen;
@@ -3442,14 +3442,14 @@ yylex (void)
 	c = cp_parse_escape (&lexptr);
       else if (c == '\'')
 	{
-	  yyerror ("empty character constant");
+	  yyerror (_("empty character constant"));
 	  return ERROR;
 	}
 
       c = *lexptr++;
       if (c != '\'')
 	{
-	  yyerror ("invalid character constant");
+	  yyerror (_("invalid character constant"));
 	  return ERROR;
 	}
 
@@ -3573,7 +3573,7 @@ yylex (void)
 
 	    memcpy (err_copy, tokstart, p - tokstart);
 	    err_copy[p - tokstart] = 0;
-	    yyerror ("invalid number");
+	    yyerror (_("invalid number"));
 	    return ERROR;
 	  }
 	lexptr = p;
@@ -3649,14 +3649,14 @@ yylex (void)
 
     case '"':
       /* These can't occur in C++ names.  */
-      yyerror ("unexpected string literal");
+      yyerror (_("unexpected string literal"));
       return ERROR;
     }
 
   if (!(c == '_' || c == '$' || ISALPHA (c)))
     {
       /* We must have come across a bad character (e.g. ';').  */
-      yyerror ("invalid character");
+      yyerror (_("invalid character"));
       return ERROR;
     }
 

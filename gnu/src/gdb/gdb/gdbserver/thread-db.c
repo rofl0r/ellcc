@@ -1,5 +1,5 @@
 /* Thread management interface, for the remote server for GDB.
-   Copyright (C) 2002, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   Copyright (C) 2002, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
@@ -150,7 +150,7 @@ thread_db_err_str (td_err_e err)
       return "version mismatch between libthread_db and libpthread";
 #endif
     default:
-      snprintf (buf, sizeof (buf), "unknown thread_db error '%d'", err);
+      xsnprintf (buf, sizeof (buf), "unknown thread_db error '%d'", err);
       return buf;
     }
 }
@@ -176,7 +176,7 @@ thread_db_state_str (td_thr_state_e state)
     case TD_THR_STOPPED_ASLEEP:
       return "stopped by debugger AND blocked";
     default:
-      snprintf (buf, sizeof (buf), "unknown thread_db state %d", state);
+      xsnprintf (buf, sizeof (buf), "unknown thread_db state %d", state);
       return buf;
     }
 }
@@ -428,7 +428,8 @@ thread_db_find_new_threads (void)
       err = thread_db->td_ta_thr_iter_p (thread_db->thread_agent,
 					 find_new_threads_callback,
 					 &new_thread_count,
-					 TD_THR_ANY_STATE, TD_THR_LOWEST_PRIORITY,
+					 TD_THR_ANY_STATE,
+					 TD_THR_LOWEST_PRIORITY,
 					 TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
       if (debug_threads)
 	fprintf (stderr, "Found %d threads in iteration %d.\n",

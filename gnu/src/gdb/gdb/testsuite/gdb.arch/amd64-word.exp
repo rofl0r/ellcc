@@ -1,4 +1,4 @@
-# Copyright 2010 Free Software Foundation, Inc.
+# Copyright 2010, 2011 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ if $tracelevel {
 }
 
 
-if { ![istarget x86_64-*-* ] } {
+if { ![istarget x86_64-*-* ] || ![is_lp64_target] } {
     verbose "Skipping amd64 word register tests."
     return
 }

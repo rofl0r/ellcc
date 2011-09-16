@@ -1,3 +1,134 @@
+2011-03-22  Eric B. Weddington  <eric.weddington@atmel.com>
+
+	* avr.h (AVR_ISA_SPMX,AVR_ISA_DES,AVR_ISA_M256,AVR_ISA_XMEGA):
+	New instruction set flags.
+	(AVR_INSN): Add new instructions for SPM Z+, DES for XMEGA.
+
+2011-02-28  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* mips.h (M_PREF_AB): New enum value.
+
+2011-02-12  Mike Frysinger  <vapier@gentoo.org>
+
+	* bfin.h (M_S2RND, M_T, M_W32, M_FU, M_TFU, M_IS, M_ISS2, M_IH,
+	M_IU): Define.
+	(is_macmod_pmove, is_macmod_hmove): New functions.
+
+2011-02-11  Mike Frysinger  <vapier@gentoo.org>
+
+	* bfin.h: Add OPCODE_BFIN_H ifdef multiple include protection.
+
+2011-02-04  Bernd Schmidt  <bernds@codesourcery.com>
+
+	* tic6x-opcode-table.h (cmtl, ll, sl): Available on C64XP.
+	* tic6x.h (TIC6X_INSN_ATOMIC): Remove.
+
+2010-12-31  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	PR gas/11395
+	* hppa.h (pa_opcodes): Revert last change.  Exchange 32 and 64-bit
+	"bb" entries.
+
+2010-12-26  John David Anglin  <dave.anglin@nrc-cnrc.gc.ca>
+
+	PR gas/11395
+	* hppa.h: Clear "d" bit in "add" and "sub" patterns.
+
+2010-12-18  Richard Sandiford  <rdsandiford@googlemail.com>
+
+	* mips.h: Update commentary after last commit.
+
+2010-12-18  Mingjie Xing  <mingjie.xing@gmail.com>
+
+	* mips.h (OP_*_OFFSET_A, OP_*_OFFSET_B, OP_*_OFFSET_C)
+	(OP_*_RZ, OP_*_FZ, INSN2_M_FP_D, INSN2_WRITE_GPR_Z, INSN2_WRITE_FPR_Z)
+	(INSN2_READ_GPR_Z, INSN2_READ_FPR_Z, INSN2_READ_GPR_D): Define.
+
+2010-11-23  Richard Sandiford  <rdsandiford@googlemail.com>
+
+	* mips.h: Fix previous commit.
+
+2010-11-23  Maciej W. Rozycki  <macro@linux-mips.org>
+
+	* mips.h (INSN_CHIP_MASK): Update according to INSN_LOONGSON_3A.
+	(INSN_LOONGSON_3A): Clear bit 31.
+
+2010-11-15  Matthew Gretton-Dann  <matthew.gretton-dann@arm.com>
+
+	PR gas/12198
+	* arm.h (ARM_AEXT_V6M_ONLY): New define.
+	(ARM_AEXT_V6M): Rewrite in terms of ARM_AEXT_V6M_ONLY.
+	(ARM_ARCH_V6M_ONLY): New define.
+
+2010-11-11  Mingming Sun  <mingm.sun@gmail.com>
+
+	* mips.h (INSN_LOONGSON_3A): Defined.
+	(CPU_LOONGSON_3A): Defined.
+	(OPCODE_IS_MEMBER): Add LOONGSON_3A.
+
+2010-10-09  Matt Rice  <ratmice@gmail.com>
+
+	* cgen.h (CGEN_ATTR, CGEN_ATTR_TYPE): Rename bool attribute to bool_.
+	(CGEN_ATTR_BOOLS, CGEN_ATTR_CGEN_INSN_ALIAS_VALUE): Likewise.
+
+2010-09-23  Matthew Gretton-Dann  <matthew.gretton-dann@arm.com>
+
+	* arm.h (ARM_EXT_VIRT): New define.
+	(ARM_ARCH_V7A_IDIV_MP_SEC): Rename...
+	(ARM_ARCH_V7A_IDIV_MP_SEC_VIRT): ...to this and include Virtualization
+	Extensions.
+
+2010-09-23  Matthew Gretton-Dann  <matthew.gretton-dann@arm.com>
+
+	* arm.h (ARM_AEXT_ADIV): New define.
+	(ARM_ARCH_V7A_IDIV_MP_SEC): Likewise.
+
+2010-09-23  Matthew Gretton-Dann  <matthew.gretton-dann@arm.com>
+
+	* arm.h (ARM_EXT_OS): New define.
+	(ARM_AEXT_V6SM): Likewise.
+	(ARM_ARCH_V6SM): Likewise.
+
+2010-09-23  Matthew Gretton-Dann  <matthew.gretton-dann@arm.com>
+
+	* arm.h (ARM_EXT_MP): Add.
+	(ARM_ARCH_V7A_MP): Likewise.
+
+2010-09-22  Mike Frysinger  <vapier@gentoo.org>
+
+	* bfin.h: Declare pseudoChr structs/defines.
+
+2010-09-21  Mike Frysinger  <vapier@gentoo.org>
+
+	* bfin.h: Strip trailing whitespace.
+
+2010-07-29  DJ Delorie  <dj@redhat.com>
+
+	* rx.h (RX_Operand_Type): Add TwoReg.
+	(RX_Opcode_ID): Remove ediv and ediv2.
+
+2010-07-27  DJ Delorie  <dj@redhat.com>
+
+	* rx.h (RX_Opcode_ID): Add nop2 and nop3 for statistics.
+
+2010-07-23  Naveen.H.S  <naveen.S@kpitcummins.com>
+	    Ina Pandit  <ina.pandit@kpitcummins.com>
+
+	* v850.h: Define PROCESSOR_MASK, PROCESSOR_OPTION_EXTENSION,
+	PROCESSOR_OPTION_ALIAS, PROCESSOR_V850E2, PROCESSOR_V850E2V3 and
+	PROCESSOR_V850E2_ALL.
+	Remove PROCESSOR_V850EA support.
+	(v850_operand): Define V850_OPERAND_EP, V850_OPERAND_FLOAT_CC,
+	V850_OPERAND_VREG, V850E_IMMEDIATE16, V850E_IMMEDIATE16HI,
+	V850E_IMMEDIATE23, V850E_IMMEDIATE32, V850_OPERAND_SIGNED,
+	V850_OPERAND_DISP, V850_PCREL, V850_REG_EVEN, V850E_PUSH_POP,
+	V850_NOT_IMM0, V850_NOT_SA, V850_OPERAND_BANG and
+	V850_OPERAND_PERCENT.
+	Update V850_OPERAND_SRG, V850_OPERAND_CC, V850_OPERAND_RELAX and
+	V850_NOT_R0.
+	Remove V850_OPERAND_SIGNED, V850_OPERAND_EP, V850_OPERAND_DISP
+	and V850E_PUSH_POP
+
 2010-07-06  Maciej W. Rozycki  <macro@codesourcery.com>
 
 	* mips.h (MIPS16_INSN_UNCOND_BRANCH): New macro.

@@ -1,5 +1,5 @@
 /* Common target dependent code for GDB on ARM systems.
-   Copyright (C) 2002, 2003, 2007, 2008, 2009, 2010
+   Copyright (C) 2002, 2003, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GDB.
@@ -23,6 +23,7 @@
 /* Forward declarations.  */
 struct gdbarch;
 struct regset;
+struct address_space;
 
 /* Register numbers of various important registers.  */
 
@@ -108,6 +109,8 @@ enum gdb_regnum {
 
 #define CPSR_T		0x20
 
+#define XPSR_T		0x01000000
+
 /* Type of floating-point code in use by inferior.  There are really 3 models
    that are traditionally supported (plus the endianness issue), but gcc can
    only generate 2 of those.  The third is APCS_FLOAT, where arguments to
@@ -163,6 +166,7 @@ struct gdbarch_tdep
 				   have_vfp_pseudos.  */
   int have_neon;		/* Do we have a NEON unit?  */
 
+  int is_m;			/* Does the target follow the "M" profile.  */
   CORE_ADDR lowest_pc;		/* Lowest address at which instructions 
 				   will appear.  */
 
@@ -178,7 +182,7 @@ struct gdbarch_tdep
   const char *thumb2_breakpoint;
   int thumb2_breakpoint_size;
 
-  int jb_pc;			/* Offset to PC value in jump buffer. 
+  int jb_pc;			/* Offset to PC value in jump buffer.
 				   If this is negative, longjmp support
 				   will be disabled.  */
   size_t jb_elt_size;		/* And the size of each entry in the buf.  */
@@ -259,6 +263,17 @@ struct displaced_step_closure
 			  struct displaced_step_closure *dsc);
     } svc;
   } u;
+
+  /* The size of original instruction, 2 or 4.  */
+  unsigned int insn_size;
+  /* True if the original insn (and thus all replacement insns) are Thumb
+     instead of ARM.   */
+  unsigned int is_thumb;
+
+  /* The slots in the array is used in this way below,
+     - ARM instruction occupies one slot,
+     - Thumb 16 bit instruction occupies one slot,
+     - Thumb 32-bit instruction occupies *two* slots, one part for each.  */
   unsigned long modinsn[DISPLACED_MODIFIED_INSNS];
   int numinsns;
   CORE_ADDR insn_addr;
@@ -281,15 +296,15 @@ enum pc_write_style
 };
 
 extern void
-  arm_process_displaced_insn (struct gdbarch *gdbarch, uint32_t insn,
-			      CORE_ADDR from, CORE_ADDR to,
-			      struct regcache *regs,
+  arm_process_displaced_insn (struct gdbarch *gdbarch, CORE_ADDR from,
+			      CORE_ADDR to, struct regcache *regs,
 			      struct displaced_step_closure *dsc);
 extern void
   arm_displaced_init_closure (struct gdbarch *gdbarch, CORE_ADDR from,
 			      CORE_ADDR to, struct displaced_step_closure *dsc);
 extern ULONGEST
-  displaced_read_reg (struct regcache *regs, CORE_ADDR from, int regno);
+  displaced_read_reg (struct regcache *regs, struct displaced_step_closure *dsc,
+		      int regno);
 extern void
   displaced_write_reg (struct regcache *regs,
 		       struct displaced_step_closure *dsc, int regno,
@@ -297,6 +312,8 @@ extern void
 
 CORE_ADDR arm_skip_stub (struct frame_info *, CORE_ADDR);
 CORE_ADDR arm_get_next_pc (struct frame_info *, CORE_ADDR);
+void arm_insert_single_step_breakpoint (struct gdbarch *,
+					struct address_space *, CORE_ADDR);
 int arm_software_single_step (struct frame_info *);
 int arm_frame_is_thumb (struct frame_info *frame);
 
@@ -306,6 +323,13 @@ extern struct displaced_step_closure *
 extern void arm_displaced_step_fixup (struct gdbarch *,
 				      struct displaced_step_closure *,
 				      CORE_ADDR, CORE_ADDR, struct regcache *);
+
+/* Return the bit mask in ARM_PS_REGNUM that indicates Thumb mode.  */
+extern int arm_psr_thumb_bit (struct gdbarch *);
+
+/* Is the instruction at the given memory address a Thumb or ARM
+   instruction?  */
+extern int arm_pc_is_thumb (struct gdbarch *, CORE_ADDR);
 
 /* Functions exported from armbsd-tdep.h.  */
 

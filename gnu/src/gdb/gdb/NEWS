@@ -1,6 +1,199 @@
 		What has changed in GDB?
 	     (Organized release by release)
 
+*** Changes in GDB 7.3.1
+
+* The build failure for NetBSD and OpenBSD targets have now been fixed.
+
+*** Changes in GDB 7.3
+
+* GDB has a new command: "thread find [REGEXP]".
+  It finds the thread id whose name, target id, or thread extra info
+  matches the given regular expression.
+
+* The "catch syscall" command now works on mips*-linux* targets.
+
+* The -data-disassemble MI command now supports modes 2 and 3 for
+  dumping the instruction opcodes.
+
+* New command line options
+
+-data-directory DIR	Specify DIR as the "data-directory".
+			This is mostly for testing purposes.
+
+* The "maint set python auto-load on|off" command has been renamed to
+  "set auto-load-scripts on|off".
+
+* GDB has a new command: "set directories".
+  It is like the "dir" command except that it replaces the
+  source path list instead of augmenting it.
+
+* GDB now understands thread names.
+
+  On GNU/Linux, "info threads" will display the thread name as set by
+  prctl or pthread_setname_np.
+
+  There is also a new command, "thread name", which can be used to
+  assign a name internally for GDB to display.
+
+* OpenCL C
+  Initial support for the OpenCL C language (http://www.khronos.org/opencl)
+  has been integrated into GDB.
+
+* Python scripting
+
+  ** The function gdb.Write now accepts an optional keyword 'stream'.
+     This keyword, when provided, will direct the output to either
+     stdout, stderr, or GDB's logging output.
+
+  ** Parameters can now be be sub-classed in Python, and in particular
+     you may implement the get_set_doc and get_show_doc functions.
+     This improves how Parameter set/show documentation is processed
+     and allows for more dynamic content.
+
+  ** Symbols, Symbol Table, Symbol Table and Line, Object Files,
+     Inferior, Inferior Thread, Blocks, and Block Iterator APIs now
+     have an is_valid method.
+
+  ** Breakpoints can now be sub-classed in Python, and in particular
+     you may implement a 'stop' function that is executed each time
+     the inferior reaches that breakpoint.   
+
+  ** New function gdb.lookup_global_symbol looks up a global symbol.
+
+  ** GDB values in Python are now callable if the value represents a
+     function.  For example, if 'some_value' represents a function that
+     takes two integer parameters and returns a value, you can call
+     that function like so:
+
+     result = some_value (10,20)
+
+  ** Module gdb.types has been added.
+     It contains a collection of utilities for working with gdb.Types objects:
+     get_basic_type, has_field, make_enum_dict.
+
+  ** Module gdb.printing has been added.
+     It contains utilities for writing and registering pretty-printers.
+     New classes: PrettyPrinter,  SubPrettyPrinter,
+     RegexpCollectionPrettyPrinter.
+     New function: register_pretty_printer.
+
+  ** New commands "info pretty-printers", "enable pretty-printer" and
+     "disable pretty-printer" have been added.
+
+  ** gdb.parameter("directories") is now available.
+
+  ** New function gdb.newest_frame returns the newest frame in the
+     selected thread.
+
+  ** The gdb.InferiorThread class has a new "name" attribute.  This
+     holds the thread's name.
+
+  ** Python Support for Inferior events.
+     Python scripts can add observers to be notified of events
+     occurring in the process being debugged.
+     The following events are currently supported:
+     - gdb.events.cont Continue event.
+     - gdb.events.exited Inferior exited event.
+     - gdb.events.stop Signal received, and Breakpoint hit events.
+
+* C++ Improvements:
+
+  ** GDB now puts template parameters in scope when debugging in an
+     instantiation.  For example, if you have:
+
+     template<int X> int func (void) { return X; }
+
+     then if you step into func<5>, "print X" will show "5".  This
+     feature requires proper debuginfo support from the compiler; it
+     was added to GCC 4.5.
+
+  ** The motion commands "next", "finish", "until", and "advance" now
+     work better when exceptions are thrown.  In particular, GDB will
+     no longer lose control of the inferior; instead, the GDB will
+     stop the inferior at the point at which the exception is caught.
+     This functionality requires a change in the exception handling
+     code that was introduced in GCC 4.5.
+
+* GDB now follows GCC's rules on accessing volatile objects when
+  reading or writing target state during expression evaluation.
+  One notable difference to prior behavior is that "print x = 0"
+  no longer generates a read of x; the value of the assignment is
+  now always taken directly from the value being assigned.
+
+* GDB now has some support for using labels in the program's source in
+  linespecs.  For instance, you can use "advance label" to continue
+  execution to a label.
+
+* GDB now has support for reading and writing a new .gdb_index
+  section.  This section holds a fast index of DWARF debugging
+  information and can be used to greatly speed up GDB startup and
+  operation.  See the documentation for `save gdb-index' for details.
+
+* The "watch" command now accepts an optional "-location" argument.
+  When used, this causes GDB to watch the memory referred to by the
+  expression.  Such a watchpoint is never deleted due to it going out
+  of scope.
+
+* GDB now supports thread debugging of core dumps on GNU/Linux.
+
+  GDB now activates thread debugging using the libthread_db library
+  when debugging GNU/Linux core dumps, similarly to when debugging
+  live processes.  As a result, when debugging a core dump file, GDB
+  is now able to display pthread_t ids of threads.  For example, "info
+  threads" shows the same output as when debugging the process when it
+  was live.  In earlier releases, you'd see something like this:
+
+  (gdb) info threads
+   * 1 LWP 6780  main () at main.c:10
+
+  While now you see this:
+
+  (gdb) info threads
+   * 1 Thread 0x7f0f5712a700 (LWP 6780)  main () at main.c:10
+
+  It is also now possible to inspect TLS variables when debugging core
+  dumps.
+
+  When debugging a core dump generated on a machine other than the one
+  used to run GDB, you may need to point GDB at the correct
+  libthread_db library with the "set libthread-db-search-path"
+  command.  See the user manual for more details on this command.
+
+* When natively debugging programs on PowerPC BookE processors running
+  a Linux kernel version 2.6.34 or later, GDB supports ranged breakpoints,
+  which stop execution of the inferior whenever it executes an instruction
+  at any address within the specified range.  See the "PowerPC Embedded"
+  section in the user manual for more details.
+
+* New features in the GDB remote stub, GDBserver
+
+  ** GDBserver is now supported on PowerPC LynxOS (versions 4.x and 5.x),
+     and i686 LynxOS (version 5.x).
+
+  ** GDBserver is now supported on Blackfin Linux.
+
+* New native configurations
+
+ia64 HP-UX                      ia64-*-hpux*
+
+* New targets:
+
+Analog Devices, Inc. Blackfin Processor	bfin-*
+
+* Ada task switching is now supported on sparc-elf targets when
+  debugging a program using the Ravenscar Profile.  For more information,
+  see the "Tasking Support when using the Ravenscar Profile" section
+  in the GDB user manual.
+
+* Guile support was removed.
+
+* New features in the GNU simulator
+
+  ** The --map-info flag lists all known core mappings.
+
+  ** CFI flashes may be simulated via the "cfi" device.
+
 *** Changes in GDB 7.2
 
 * Shared library support for remote targets by default

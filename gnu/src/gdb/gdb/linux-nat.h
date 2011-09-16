@@ -1,7 +1,7 @@
 /* Native debugging support for GNU/Linux (LWP layer).
 
    Copyright (C) 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010 Free Software Foundation, Inc.
+   2010, 2011 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -122,7 +122,8 @@ int thread_db_attach_lwp (ptid_t ptid);
 extern void lin_thread_get_thread_signals (sigset_t *mask);
 
 /* Find process PID's pending signal set from /proc/pid/status.  */
-void linux_proc_pending_signals (int pid, sigset_t *pending, sigset_t *blocked, sigset_t *ignored);
+void linux_proc_pending_signals (int pid, sigset_t *pending,
+				 sigset_t *blocked, sigset_t *ignored);
 
 /* Return the TGID of LWPID from /proc/pid/status.  Returns -1 if not
    found.  */
@@ -172,3 +173,7 @@ struct siginfo *linux_nat_get_siginfo (ptid_t ptid);
 
 /* Compute and return the processor core of a given thread.  */
 int linux_nat_core_of_thread_1 (ptid_t ptid);
+
+/* Set alternative SIGTRAP-like events recognizer.  */
+void linux_nat_set_status_is_event (struct target_ops *t,
+				    int (*status_is_event) (int status));

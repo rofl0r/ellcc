@@ -1,5 +1,6 @@
 /* Low level interface to Windows debugging, for gdbserver.
-   Copyright (C) 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
+   Free Software Foundation, Inc.
 
    Contributed by Leo Zayas.  Based on "win32-nat.c" from GDB.
 
@@ -31,7 +32,6 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <sys/param.h>
-#include <malloc.h>
 #include <process.h>
 
 #ifndef USE_WIN32API
@@ -1781,6 +1781,8 @@ static struct target_ops win32_target_ops = {
   win32_wait,
   win32_fetch_inferior_registers,
   win32_store_inferior_registers,
+  NULL, /* prepare_to_access_memory */
+  NULL, /* done_accessing_memory */
   win32_read_inferior_memory,
   win32_write_inferior_memory,
   NULL, /* lookup_symbols */

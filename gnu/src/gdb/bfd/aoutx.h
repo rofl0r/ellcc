@@ -269,7 +269,7 @@ NAME (aout, reloc_type_lookup) (bfd *abfd, bfd_reloc_code_real_type code)
   int ext = obj_reloc_entry_size (abfd) == RELOC_EXT_SIZE;
 
   if (code == BFD_RELOC_CTOR)
-    switch (bfd_get_arch_info (abfd)->bits_per_address)
+    switch (bfd_arch_bits_per_address (abfd))
       {
       case 32:
 	code = BFD_RELOC_32;
@@ -629,7 +629,9 @@ NAME (aout, some_aout_object_p) (bfd *abfd,
   if (execp->a_entry != 0
       || (execp->a_entry >= obj_textsec (abfd)->vma
 	  && execp->a_entry < (obj_textsec (abfd)->vma
-			       + obj_textsec (abfd)->size)))
+			       + obj_textsec (abfd)->size)
+	  && execp->a_trsize == 0
+	  && execp->a_drsize == 0))
     abfd->flags |= EXEC_P;
 #ifdef STAT_FOR_EXEC
   else
@@ -3208,7 +3210,8 @@ aout_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 static bfd_boolean
 aout_link_check_ar_symbols (bfd *abfd,
 			    struct bfd_link_info *info,
-			    bfd_boolean *pneeded)
+			    bfd_boolean *pneeded,
+			    bfd **subsbfd)
 {
   struct external_nlist *p;
   struct external_nlist *pend;
@@ -3302,7 +3305,8 @@ aout_link_check_ar_symbols (bfd *abfd,
 		continue;
 	    }
 
-	  if (! (*info->callbacks->add_archive_element) (info, abfd, name))
+	  if (!(*info->callbacks
+		->add_archive_element) (info, abfd, name, subsbfd))
 	    return FALSE;
 	  *pneeded = TRUE;
 	  return TRUE;
@@ -3329,9 +3333,8 @@ aout_link_check_ar_symbols (bfd *abfd,
 			 outside BFD.  We assume that we should link
 			 in the object file.  This is done for the -u
 			 option in the linker.  */
-		      if (! (*info->callbacks->add_archive_element) (info,
-								     abfd,
-								     name))
+		      if (!(*info->callbacks
+			    ->add_archive_element) (info, abfd, name, subsbfd))
 			return FALSE;
 		      *pneeded = TRUE;
 		      return TRUE;
@@ -3340,8 +3343,8 @@ aout_link_check_ar_symbols (bfd *abfd,
 		     symbol.  It is already on the undefs list.  */
 		  h->type = bfd_link_hash_common;
 		  h->u.c.p = (struct bfd_link_hash_common_entry *)
-                      bfd_hash_allocate (&info->hash->table,
-                                         sizeof (struct bfd_link_hash_common_entry));
+		    bfd_hash_allocate (&info->hash->table,
+				       sizeof (struct bfd_link_hash_common_entry));
 		  if (h->u.c.p == NULL)
 		    return FALSE;
 
@@ -3379,7 +3382,8 @@ aout_link_check_ar_symbols (bfd *abfd,
 	     it if the current link symbol is common.  */
 	  if (h->type == bfd_link_hash_undefined)
 	    {
-	      if (! (*info->callbacks->add_archive_element) (info, abfd, name))
+	      if (!(*info->callbacks
+		    ->add_archive_element) (info, abfd, name, subsbfd))
 		return FALSE;
 	      *pneeded = TRUE;
 	      return TRUE;
@@ -3400,21 +3404,36 @@ aout_link_check_archive_element (bfd *abfd,
 				 struct bfd_link_info *info,
 				 bfd_boolean *pneeded)
 {
-  if (! aout_get_external_symbols (abfd))
+  bfd *oldbfd;
+  bfd_boolean needed;
+
+  if (!aout_get_external_symbols (abfd))
     return FALSE;
 
-  if (! aout_link_check_ar_symbols (abfd, info, pneeded))
+  oldbfd = abfd;
+  if (!aout_link_check_ar_symbols (abfd, info, pneeded, &abfd))
     return FALSE;
 
-  if (*pneeded)
+  needed = *pneeded;
+  if (needed)
     {
-      if (! aout_link_add_symbols (abfd, info))
+      /* Potentially, the add_archive_element hook may have set a
+	 substitute BFD for us.  */
+      if (abfd != oldbfd)
+	{
+	  if (!info->keep_memory
+	      && !aout_link_free_symbols (oldbfd))
+	    return FALSE;
+	  if (!aout_get_external_symbols (abfd))
+	    return FALSE;
+	}
+      if (!aout_link_add_symbols (abfd, info))
 	return FALSE;
     }
 
-  if (! info->keep_memory || ! *pneeded)
+  if (!info->keep_memory || !needed)
     {
-      if (! aout_link_free_symbols (abfd))
+      if (!aout_link_free_symbols (abfd))
 	return FALSE;
     }
 
@@ -3618,6 +3637,7 @@ aout_link_write_other_symbol (struct aout_link_hash_entry *h, void * data)
     case bfd_link_hash_undefweak:
       type = N_WEAKU;
       val = 0;
+      break;
     case bfd_link_hash_indirect:
       /* We ignore these symbols, since the indirected symbol is
 	 already in the hash table.  */
@@ -5429,7 +5449,7 @@ NAME (aout, final_link) (bfd *abfd,
   /* Allocate buffers to hold section contents and relocs.  */
   aout_info.contents = (bfd_byte *) bfd_malloc (max_contents_size);
   aout_info.relocs = bfd_malloc (max_relocs_size);
-  aout_info.symbol_map = (int *) bfd_malloc (max_sym_count * sizeof (int *));
+  aout_info.symbol_map = (int *) bfd_malloc (max_sym_count * sizeof (int));
   aout_info.output_syms = (struct external_nlist *)
       bfd_malloc ((max_sym_count + 1) * sizeof (struct external_nlist));
   if ((aout_info.contents == NULL && max_contents_size != 0)

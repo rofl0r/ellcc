@@ -1254,6 +1254,12 @@ Relocations for setting up GOTs and PLTs for shared libraries.
 @deffnx {} BFD_RELOC_ARM_TLS_TPOFF32
 @deffnx {} BFD_RELOC_ARM_TLS_IE32
 @deffnx {} BFD_RELOC_ARM_TLS_LE32
+@deffnx {} BFD_RELOC_ARM_TLS_GOTDESC
+@deffnx {} BFD_RELOC_ARM_TLS_CALL
+@deffnx {} BFD_RELOC_ARM_THM_TLS_CALL
+@deffnx {} BFD_RELOC_ARM_TLS_DESCSEQ
+@deffnx {} BFD_RELOC_ARM_THM_TLS_DESCSEQ
+@deffnx {} BFD_RELOC_ARM_TLS_DESC
 ARM thread-local storage relocations.
 @end deffn
 @deffn {} BFD_RELOC_ARM_ALU_PC_G0_NC
@@ -1289,6 +1295,9 @@ ARM group relocations.
 @deffn {} BFD_RELOC_ARM_V4BX
 Annotation of BX instructions.
 @end deffn
+@deffn {} BFD_RELOC_ARM_IRELATIVE
+ARM support for STT_GNU_IFUNC.
+@end deffn
 @deffn {} BFD_RELOC_ARM_IMMEDIATE
 @deffnx {} BFD_RELOC_ARM_ADRL_IMMEDIATE
 @deffnx {} BFD_RELOC_ARM_T32_IMMEDIATE
@@ -1297,6 +1306,7 @@ Annotation of BX instructions.
 @deffnx {} BFD_RELOC_ARM_T32_ADD_PC12
 @deffnx {} BFD_RELOC_ARM_SHIFT_IMM
 @deffnx {} BFD_RELOC_ARM_SMC
+@deffnx {} BFD_RELOC_ARM_HVC
 @deffnx {} BFD_RELOC_ARM_SWI
 @deffnx {} BFD_RELOC_ARM_MULTI
 @deffnx {} BFD_RELOC_ARM_CP_OFF_IMM
@@ -1740,6 +1750,72 @@ Used to maintain alignment whilst relaxing.
 This is a variation of BFD_RELOC_LO16 that can be used in v850e ld.bu
 instructions.
 @end deffn
+@deffn {} BFD_RELOC_V850_16_PCREL
+This is a 16-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_17_PCREL
+This is a 17-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_23
+This is a 23-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_PCREL
+This is a 32-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_ABS
+This is a 32-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_16_SPLIT_OFFSET
+This is a 16-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_16_S1
+This is a 16-bit reloc.
+@end deffn
+@deffn {} BFD_RELOC_V850_LO16_S1
+Low 16 bits. 16 bit shifted by 1.
+@end deffn
+@deffn {} BFD_RELOC_V850_CALLT_15_16_OFFSET
+This is a 16 bit offset from the call table base pointer.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_GOTPCREL
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_16_GOT
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_GOT
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_22_PLT_PCREL
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_PLT_PCREL
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_COPY
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_GLOB_DAT
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_JMP_SLOT
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_RELATIVE
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_16_GOTOFF
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_32_GOTOFF
+DSO relocations.
+@end deffn
+@deffn {} BFD_RELOC_V850_CODE
+start code.
+@end deffn
+@deffn {} BFD_RELOC_V850_DATA
+start data in text.
+@end deffn
 @deffn {} BFD_RELOC_MN10300_32_PCREL
 This is a 32bit pcrel reloc for the mn10300, offset by two bytes in the
 instruction.
@@ -1799,6 +1875,10 @@ the opcode.
 @deffnx {} BFD_RELOC_C6000_DSBT_INDEX
 @deffnx {} BFD_RELOC_C6000_PREL31
 @deffnx {} BFD_RELOC_C6000_COPY
+@deffnx {} BFD_RELOC_C6000_JUMP_SLOT
+@deffnx {} BFD_RELOC_C6000_EHTYPE
+@deffnx {} BFD_RELOC_C6000_PCR_H16
+@deffnx {} BFD_RELOC_C6000_PCR_L16
 @deffnx {} BFD_RELOC_C6000_ALIGN
 @deffnx {} BFD_RELOC_C6000_FPHEAD
 @deffnx {} BFD_RELOC_C6000_NOCMP
@@ -2031,9 +2111,12 @@ instructions
 @deffnx {} BFD_RELOC_RX_GPRELL
 @deffnx {} BFD_RELOC_RX_SYM
 @deffnx {} BFD_RELOC_RX_OP_SUBTRACT
+@deffnx {} BFD_RELOC_RX_OP_NEG
 @deffnx {} BFD_RELOC_RX_ABS8
 @deffnx {} BFD_RELOC_RX_ABS16
+@deffnx {} BFD_RELOC_RX_ABS16_REV
 @deffnx {} BFD_RELOC_RX_ABS32
+@deffnx {} BFD_RELOC_RX_ABS32_REV
 @deffnx {} BFD_RELOC_RX_ABS16U
 @deffnx {} BFD_RELOC_RX_ABS16UW
 @deffnx {} BFD_RELOC_RX_ABS16UL

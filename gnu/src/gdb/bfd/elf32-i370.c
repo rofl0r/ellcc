@@ -962,6 +962,7 @@ i370_elf_finish_dynamic_sections (bfd *output_bfd,
       sym.st_name = 0;
       sym.st_info = ELF_ST_INFO (STB_LOCAL, STT_SECTION);
       sym.st_other = 0;
+      sym.st_target_internal = 0;
 
       for (s = output_bfd->sections; s != NULL; s = s->next)
 	{
@@ -1141,15 +1142,8 @@ i370_elf_relocate_section (bfd *output_bfd,
 	}
 
       if (sec != NULL && elf_discarded_section (sec))
-	{
-	  /* For relocs against symbols from removed linkonce sections,
-	     or sections discarded by a linker script, we just want the
-	     section contents zeroed.  Avoid any special processing.  */
-	  _bfd_clear_contents (howto, input_bfd, contents + rel->r_offset);
-	  rel->r_info = 0;
-	  rel->r_addend = 0;
-	  continue;
-	}
+	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
+					 rel, relend, howto, contents);
 
       if (info->relocatable)
 	continue;
@@ -1183,7 +1177,7 @@ i370_elf_relocate_section (bfd *output_bfd,
 	case (int) R_I370_ADDR31:
 	case (int) R_I370_ADDR16:
 	  if (info->shared
-	      && r_symndx != 0)
+	      && r_symndx != STN_UNDEF)
 	    {
 	      Elf_Internal_Rela outrel;
 	      bfd_byte *loc;

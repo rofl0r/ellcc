@@ -309,7 +309,7 @@ typedef union YYSTYPE {
     struct internalvar *ivar;
   } YYSTYPE;
 /* Line 191 of yacc.c.  */
-#line 313 "ada-exp.c.tmp"
+#line 313 "ada-exp.c"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1
@@ -321,7 +321,7 @@ typedef union YYSTYPE {
 
 
 /* Line 214 of yacc.c.  */
-#line 325 "ada-exp.c.tmp"
+#line 325 "ada-exp.c"
 
 #if ! defined (yyoverflow) || YYERROR_VERBOSE
 
@@ -2200,7 +2200,7 @@ yyreduce:
     }
 
 /* Line 1000 of yacc.c.  */
-#line 2204 "ada-exp.c.tmp"
+#line 2204 "ada-exp.c"
 
   yyvsp -= yylen;
   yyssp -= yylen;
@@ -2609,6 +2609,7 @@ write_object_renaming (struct block *orig_left_context,
         break;
       case 'L':
 	slice_state = LOWER_BOUND;
+	/* FALLTHROUGH */
       case 'S':
 	renaming_expr += 1;
 	if (isdigit (*renaming_expr))

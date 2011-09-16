@@ -1,6 +1,7 @@
 /* mem.h --- interface to memory for M32C simulator.
 
-Copyright (C) 2005, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011
+Free Software Foundation, Inc.
 Contributed by Red Hat, Inc.
 
 This file is part of the GNU simulators.
@@ -25,9 +26,28 @@ enum mem_content_type {
      MC_NUM_TYPES
 };
 
+enum mem_ptr_action
+{
+  MPA_WRITING,
+  MPA_READING,
+  MPA_CONTENT_TYPE,
+  MPA_DECODE_CACHE
+};
+
 void init_mem (void);
 void mem_usage_stats (void);
 unsigned long mem_usage_cycles (void);
+
+/* rx_mem_ptr returns a pointer which is valid as long as the address
+   requested remains within the same page.  */
+#define PAGE_BITS 12
+#define PAGE_SIZE (1 << PAGE_BITS)
+#define NONPAGE_MASK (~(PAGE_SIZE-1))
+
+unsigned char *rx_mem_ptr (unsigned long address, enum mem_ptr_action action);
+#ifdef RXC_never
+RX_Opcode_Decoded **rx_mem_decode_cache (unsigned long address);
+#endif
 
 void mem_put_qi (int address, unsigned char value);
 void mem_put_hi (int address, unsigned short value);

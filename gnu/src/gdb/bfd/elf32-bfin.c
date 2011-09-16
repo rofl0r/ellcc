@@ -1,5 +1,5 @@
 /* ADI Blackfin BFD support for 32-bit ELF.
-   Copyright 2005, 2006, 2007, 2008, 2009, 2010
+   Copyright 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -104,7 +104,7 @@ bfin_pcrel24_reloc (bfd *abfd,
   /* if rightshift is 1 and the number odd, return error.  */
   if (howto->rightshift && (relocation & 0x01))
     {
-      fprintf(stderr, "relocation should be even number\n");
+      (*_bfd_error_handler) (_("relocation should be even number"));
       return bfd_reloc_overflow;
     }
 
@@ -360,7 +360,7 @@ bfin_bfd_reloc (bfd *abfd,
   /* If rightshift is 1 and the number odd, return error.  */
   if (howto->rightshift && (relocation & 0x01))
     {
-      fprintf(stderr, "relocation should be even number\n");
+      (*_bfd_error_handler) (_("relocation should be even number"));
       return bfd_reloc_overflow;
     }
 
@@ -1120,6 +1120,22 @@ bfin_reloc_type_lookup (bfd * abfd ATTRIBUTE_UNUSED,
   return (reloc_howto_type *) NULL;
 }
 
+/* Set by ld emulation if --code-in-l1.  */
+bfd_boolean elf32_bfin_code_in_l1 = 0;
+
+/* Set by ld emulation if --data-in-l1.  */
+bfd_boolean elf32_bfin_data_in_l1 = 0;
+
+static void
+elf32_bfin_final_write_processing (bfd *abfd,
+				   bfd_boolean linker ATTRIBUTE_UNUSED)
+{
+  if (elf32_bfin_code_in_l1)
+    elf_elfheader (abfd)->e_flags |= EF_BFIN_CODE_IN_L1;
+  if (elf32_bfin_data_in_l1)
+    elf_elfheader (abfd)->e_flags |= EF_BFIN_DATA_IN_L1;
+}
+
 /* Return TRUE if the name is a local label.
    bfin local labels begin with L$.  */
 static bfd_boolean
@@ -1429,15 +1445,8 @@ bfin_relocate_section (bfd * output_bfd,
 	}
 
       if (sec != NULL && elf_discarded_section (sec))
-	{
-	  /* For relocs against symbols from removed linkonce sections,
-	     or sections discarded by a linker script, we just want the
-	     section contents zeroed.  Avoid any special processing.  */
-	  _bfd_clear_contents (howto, input_bfd, contents + rel->r_offset);
-	  rel->r_info = 0;
-	  rel->r_addend = 0;
-	  continue;
-	}
+	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
+					 rel, relend, howto, contents);
 
       if (info->relocatable)
 	continue;
@@ -2655,15 +2664,8 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 	}
 
       if (sec != NULL && elf_discarded_section (sec))
-	{
-	  /* For relocs against symbols from removed linkonce sections,
-	     or sections discarded by a linker script, we just want the
-	     section contents zeroed.  Avoid any special processing.  */
-	  _bfd_clear_contents (howto, input_bfd, contents + rel->r_offset);
-	  rel->r_info = 0;
-	  rel->r_addend = 0;
-	  continue;
-	}
+	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
+					 rel, relend, howto, contents);
 
       if (info->relocatable)
 	continue;
@@ -3101,10 +3103,10 @@ bfinfdpic_relocate_section (bfd * output_bfd,
 	  if (silence_segment_error == 1)
 	    silence_segment_error =
 	      (strlen (input_bfd->filename) == 6
-	       && strcmp (input_bfd->filename, "crt0.o") == 0)
+	       && filename_cmp (input_bfd->filename, "crt0.o") == 0)
 	      || (strlen (input_bfd->filename) > 6
-		  && strcmp (input_bfd->filename
-			     + strlen (input_bfd->filename) - 7,
+		  && filename_cmp (input_bfd->filename
+				   + strlen (input_bfd->filename) - 7,
 			     "/crt0.o") == 0)
 	      ? -1 : 0;
 #endif
@@ -3456,14 +3458,8 @@ _bfin_create_got_section (bfd *abfd, struct bfd_link_info *info)
 	return FALSE;
 
       bfinfdpic_gotfixup_section (info) = s;
-      flags = BSF_GLOBAL;
-    }
-  else
-    {
-      flags = BSF_GLOBAL | BSF_WEAK;
     }
 
-  flags = pltflags;
   pltflags |= SEC_CODE;
   if (bed->plt_not_loaded)
     pltflags &= ~ (SEC_CODE | SEC_LOAD | SEC_HAS_CONTENTS);
@@ -5280,7 +5276,8 @@ bfin_finish_dynamic_symbol (bfd * output_bfd,
 	  && (info->symbolic
 	      || h->dynindx == -1 || h->forced_local) && h->def_regular)
 	{
-	  fprintf(stderr, "*** check this relocation %s\n", __FUNCTION__);
+	  (*_bfd_error_handler) (_("*** check this relocation %s"),
+				 __FUNCTION__);
 	  rela.r_info = ELF32_R_INFO (0, R_BFIN_PCREL24);
 	  rela.r_addend = bfd_get_signed_32 (output_bfd,
 					     (sgot->contents
@@ -5764,6 +5761,7 @@ struct bfd_elf_special_section const elf32_bfin_special_sections[] =
 #define TARGET_LITTLE_SYM		bfd_elf32_bfin_vec
 #define TARGET_LITTLE_NAME		"elf32-bfin"
 #define ELF_ARCH			bfd_arch_bfin
+#define ELF_TARGET_ID			BFIN_ELF_DATA
 #define ELF_MACHINE_CODE		EM_BLACKFIN
 #define ELF_MAXPAGESIZE			0x1000
 #define elf_symbol_leading_char		'_'
@@ -5806,6 +5804,8 @@ struct bfd_elf_special_section const elf32_bfin_special_sections[] =
                                         elf32_bfin_set_private_flags
 #define bfd_elf32_bfd_print_private_bfd_data \
                                         elf32_bfin_print_private_bfd_data
+#define elf_backend_final_write_processing \
+                                        elf32_bfin_final_write_processing
 #define elf_backend_reloc_type_class    elf32_bfin_reloc_type_class
 #define elf_backend_can_gc_sections 1
 #define elf_backend_special_sections	elf32_bfin_special_sections

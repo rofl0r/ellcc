@@ -1,6 +1,7 @@
 /* ppc-opc.c -- PowerPC opcode list
    Copyright 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   2005, 2006, 2007, 2008, 2009, 2010, 2011
+   Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support
 
    This file is part of the GNU opcodes library.
@@ -1909,7 +1910,7 @@ extract_dm (unsigned long insn,
 #define POWER7	PPC_OPCODE_POWER7
 #define CELL	PPC_OPCODE_CELL
 #define PPC64	PPC_OPCODE_64 | PPC_OPCODE_64_BRIDGE
-#define NON32	(PPC_OPCODE_64 | PPC_OPCODE_POWER4 | PPC_OPCODE_PPCPS	\
+#define NON32	(PPC_OPCODE_64 | PPC_OPCODE_POWER4	\
 		 | PPC_OPCODE_EFS | PPC_OPCODE_E500MC | PPC_OPCODE_TITAN)
 #define PPC403	PPC_OPCODE_403
 #define PPC405	PPC_OPCODE_405
@@ -1932,7 +1933,7 @@ extract_dm (unsigned long insn,
 #define MFDEC1	PPC_OPCODE_POWER
 #define MFDEC2	PPC_OPCODE_PPC | PPC_OPCODE_601 | PPC_OPCODE_BOOKE | PPC_OPCODE_TITAN
 #define BOOKE	PPC_OPCODE_BOOKE
-#define NO371	PPC_OPCODE_BOOKE | PPC_OPCODE_PPCPS | PPC_OPCODE_EFS
+#define NO371	PPC_OPCODE_BOOKE | PPC_OPCODE_EFS
 #define PPCE300 PPC_OPCODE_E300
 #define PPCSPE	PPC_OPCODE_SPE
 #define PPCISEL PPC_OPCODE_ISEL
@@ -4420,7 +4421,7 @@ const struct powerpc_opcode powerpc_opcodes[] = {
 
 {"ldbrx",	X(31,532),	X_MASK, CELL|POWER7|PPCA2, PPCNONE,	{RT, RA0, RB}},
 
-{"lswx",	X(31,533),	X_MASK,      PPCCOM,	PPCNONE,	{RT, RA0, RB}},
+{"lswx",	X(31,533),	X_MASK,      PPCCOM,	E500|E500MC,	{RT, RA0, RB}},
 {"lsx",		X(31,533),	X_MASK,      PWRCOM,	PPCNONE,	{RT, RA, RB}},
 
 {"lwbrx",	X(31,534),	X_MASK,      PPCCOM,	PPCNONE,	{RT, RA0, RB}},
@@ -4466,7 +4467,7 @@ const struct powerpc_opcode powerpc_opcodes[] = {
 
 {"mfsr",	X(31,595), XRB_MASK|(1<<20), COM,	NON32,  	{RT, SR}},
 
-{"lswi",	X(31,597),	X_MASK,      PPCCOM,	PPCNONE,	{RT, RA0, NB}},
+{"lswi",	X(31,597),	X_MASK,      PPCCOM,	E500|E500MC,	{RT, RA0, NB}},
 {"lsi",		X(31,597),	X_MASK,      PWRCOM,	PPCNONE,	{RT, RA0, NB}},
 
 {"lwsync",	XSYNC(31,598,1), 0xffffffff, PPC,	E500,		{0}},
@@ -4517,7 +4518,7 @@ const struct powerpc_opcode powerpc_opcodes[] = {
 
 {"stdbrx",	X(31,660),	X_MASK, CELL|POWER7|PPCA2, PPCNONE,	{RS, RA0, RB}},
 
-{"stswx",	X(31,661),	X_MASK,      PPCCOM,	PPCNONE,	{RS, RA0, RB}},
+{"stswx",	X(31,661),	X_MASK,      PPCCOM,	E500|E500MC,	{RS, RA0, RB}},
 {"stsx",	X(31,661),	X_MASK,      PWRCOM,	PPCNONE,	{RS, RA0, RB}},
 
 {"stwbrx",	X(31,662),	X_MASK,      PPCCOM,	PPCNONE,	{RS, RA0, RB}},
@@ -4559,7 +4560,7 @@ const struct powerpc_opcode powerpc_opcodes[] = {
 {"addzeo.",	XO(31,202,1,1),	XORB_MASK,   PPCCOM,	PPCNONE,	{RT, RA}},
 {"azeo.",	XO(31,202,1,1),	XORB_MASK,   PWRCOM,	PPCNONE,	{RT, RA}},
 
-{"stswi",	X(31,725),	X_MASK,      PPCCOM,	PPCNONE,	{RS, RA0, NB}},
+{"stswi",	X(31,725),	X_MASK,      PPCCOM,	E500|E500MC,	{RS, RA0, NB}},
 {"stsi",	X(31,725),	X_MASK,      PWRCOM,	PPCNONE,	{RS, RA0, NB}},
 
 {"sthcx.",	XRC(31,726,1),	X_MASK,      POWER7,	PPCNONE,	{RS, RA0, RB}},

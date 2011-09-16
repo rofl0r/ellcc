@@ -1,6 +1,7 @@
 /* trace.c --- tracing output for the RX simulator.
 
-Copyright (C) 2005, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+Copyright (C) 2005, 2007, 2008, 2009, 2010, 2011
+Free Software Foundation, Inc.
 Contributed by Red Hat, Inc.
 
 This file is part of the GNU simulators.
@@ -19,6 +20,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 
+#include "config.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -321,7 +323,13 @@ sim_disasm_one (void)
     }
 
   opbuf[0] = 0;
-  printf ("\033[33m%06x: ", mypc);
+#ifdef CYCLE_ACCURATE
+  printf ("\033[33m %04u %06x: ", (int)(regs.cycle_count % 10000), mypc);
+#else
+  printf ("\033[33m %06x: ", mypc);
+
+#endif
+
   max = print_insn_rx (mypc, & info);
 
   for (i = 0; i < max; i++)

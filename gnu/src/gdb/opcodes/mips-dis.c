@@ -512,6 +512,10 @@ const struct mips_arch_choice mips_arch_choices[] =
     ISA_MIPS3 | INSN_LOONGSON_2F, mips_cp0_names_numeric, 
     NULL, 0, mips_hwr_names_numeric },
 
+  { "loongson3a",   1, bfd_mach_mips_loongson_3a, CPU_LOONGSON_3A,
+    ISA_MIPS64 | INSN_LOONGSON_3A, mips_cp0_names_numeric, 
+    NULL, 0, mips_hwr_names_numeric },
+
   { "octeon",   1, bfd_mach_mips_octeon, CPU_OCTEON,
     ISA_MIPS64R2 | INSN_OCTEON, mips_cp0_names_numeric, NULL, 0,
     mips_hwr_names_numeric },
@@ -967,6 +971,38 @@ print_insn_args (const char *d,
 	      /* Sign-extend it.  */
 	      op = (op ^ 512) - 512;
 	      (*info->fprintf_func) (info->stream, "%d", op);
+	      break;
+
+	    case 'a':		/* 8-bit signed offset in bit 6 */
+	      delta = (l >> OP_SH_OFFSET_A) & OP_MASK_OFFSET_A;
+	      if (delta & 0x80)
+		delta |= ~OP_MASK_OFFSET_A;
+	      (*info->fprintf_func) (info->stream, "%d", delta);
+	      break;
+
+	    case 'b':		/* 8-bit signed offset in bit 3 */
+	      delta = (l >> OP_SH_OFFSET_B) & OP_MASK_OFFSET_B;
+	      if (delta & 0x80)
+		delta |= ~OP_MASK_OFFSET_B;
+	      (*info->fprintf_func) (info->stream, "%d", delta);
+	      break;
+
+	    case 'c':		/* 9-bit signed offset in bit 6 */
+	      delta = (l >> OP_SH_OFFSET_C) & OP_MASK_OFFSET_C;
+	      if (delta & 0x100)
+		delta |= ~OP_MASK_OFFSET_C;
+	      /* Left shift 4 bits to print the real offset.  */
+	      (*info->fprintf_func) (info->stream, "%d", delta << 4);
+	      break;
+
+	    case 'z':
+	      (*info->fprintf_func) (info->stream, "%s",
+				     mips_gpr_names[(l >> OP_SH_RZ) & OP_MASK_RZ]);
+	      break;
+
+	    case 'Z':
+	      (*info->fprintf_func) (info->stream, "%s",
+				     mips_fpr_names[(l >> OP_SH_FZ) & OP_MASK_FZ]);
 	      break;
 
 	    default:

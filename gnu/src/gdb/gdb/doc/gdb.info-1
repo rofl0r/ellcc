@@ -22,8 +22,8 @@ developing GNU and promoting software freedom."
 
    This file documents the GNU debugger GDB.
 
-   This is the Ninth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.2.
+   This is the Tenth Edition, of `Debugging with GDB: the GNU
+Source-Level Debugger' for GDB (GDB) Version 7.3.1.
 
    Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
@@ -48,7 +48,7 @@ Debugging with GDB
 
 This file describes GDB, the GNU symbolic debugger.
 
-   This is the Ninth Edition, for GDB (GDB) Version 7.2.
+   This is the Tenth Edition, for GDB (GDB) Version 7.3.1.
 
    Copyright (C) 1988-2010 Free Software Foundation, Inc.
 
@@ -94,8 +94,10 @@ in general.  We will miss him.
 
 * GDB Bugs::                    Reporting bugs in GDB
 
+
 * Command Line Editing::        Command Line Editing
 * Using History Interactively:: Using History Interactively
+* In Memoriam::                 In Memoriam
 * Formatting Documentation::    How to format and print GDB documentation
 * Installing GDB::              Installing GDB
 * Maintenance Commands::        Maintenance Commands
@@ -142,6 +144,9 @@ more information, see *Note C and C++: C.
 
    Support for Modula-2 is partial.  For information on Modula-2, see
 *Note Modula-2: Modula-2.
+
+   Support for OpenCL C is partial.  For information on OpenCL C, see
+*Note OpenCL C: OpenCL C.
 
    Debugging Pascal programs which use sets, subranges, file variables,
 or nested functions does not currently work.  GDB does not support
@@ -483,7 +488,7 @@ Let us use GDB to try to see what is going on.
      There is absolutely no warranty for GDB; type "show warranty"
       for details.
 
-     GDB 7.2, Copyright 1999 Free Software Foundation, Inc...
+     GDB 7.3.1, Copyright 1999 Free Software Foundation, Inc...
      (gdb)
 
 GDB reads only enough symbol data to know where to find the rest when
@@ -901,6 +906,10 @@ mode or quiet mode.
      Run GDB using DIRECTORY as its working directory, instead of the
      current directory.
 
+`-data-directory DIRECTORY'
+     Run GDB using DIRECTORY as its data directory.  The data directory
+     is where GDB searches for its auxiliary files.  *Note Data Files::.
+
 `-fullname'
 `-f'
      GNU Emacs sets this option when it runs GDB as a subprocess.  It
@@ -1012,10 +1021,25 @@ Here's the description of what GDB does during session startup:
      and another, specific to the program you are debugging, in the
      directory where you invoke GDB.
 
-  6. Reads command files specified by the `-x' option.  *Note Command
+  6. If the command line specified a program to debug, or a process to
+     attach to, or a core file, GDB loads any auto-loaded scripts
+     provided for the program or for its loaded shared libraries.
+     *Note Auto-loading::.
+
+     If you wish to disable the auto-loading during startup, you must
+     do something like the following:
+
+          $ gdb -ex "set auto-load-scripts off" -ex "file myprogram"
+
+     The following does not work because the auto-loading is turned off
+     too late:
+
+          $ gdb -ex "set auto-load-scripts off" myprogram
+
+  7. Reads command files specified by the `-x' option.  *Note Command
      Files::, for more details about GDB command files.
 
-  7. Reads the command history recorded in the "history file".  *Note
+  8. Reads the command history recorded in the "history file".  *Note
      Command History::, for more details about the command history and
      the files where GDB records it.
 
@@ -2036,7 +2060,7 @@ Each inferior may in turn have multiple threads running in it.
 `add-inferior' and `clone-inferior' commands.  On some systems GDB can
 add inferiors to the debug session automatically by following calls to
 `fork' and `exec'.  To remove inferiors from the debugging session use
-the `remove-inferior' command.
+the `remove-inferiors' command.
 
 `add-inferior [ -copies N ] [ -exec EXECUTABLE ]'
      Adds N inferiors to be run using EXECUTABLE as the executable.  N
@@ -2064,32 +2088,33 @@ the `remove-inferior' command.
 
      You can now simply switch focus to inferior 2 and run it.
 
-`remove-inferior INFNO'
-     Removes the inferior INFNO.  It is not possible to remove an
-     inferior that is running with this command.  For those, use the
-     `kill' or `detach' command first.
+`remove-inferiors INFNO...'
+     Removes the inferior or inferiors INFNO....  It is not possible to
+     remove an inferior that is running with this command.  For those,
+     use the `kill' or `detach' command first.
 
 
    To quit debugging one of the running inferiors that is not the
 current inferior, you can either detach from it by using the
 `detach inferior' command (allowing it to run independently), or kill it
-using the `kill inferior' command:
+using the `kill inferiors' command:
 
-`detach inferior INFNO'
-     Detach from the inferior identified by GDB inferior number INFNO.
-     Note that the inferior's entry still stays on the list of
-     inferiors shown by `info inferiors', but its Description will show
-     `<null>'.
+`detach inferior INFNO...'
+     Detach from the inferior or inferiors identified by GDB inferior
+     number(s) INFNO....  Note that the inferior's entry still stays on
+     the list of inferiors shown by `info inferiors', but its
+     Description will show `<null>'.
 
-`kill inferior INFNO'
-     Kill the inferior identified by GDB inferior number INFNO.  Note
-     that the inferior's entry still stays on the list of inferiors
-     shown by `info inferiors', but its Description will show `<null>'.
+`kill inferiors INFNO...'
+     Kill the inferior or inferiors identified by GDB inferior
+     number(s) INFNO....  Note that the inferior's entry still stays on
+     the list of inferiors shown by `info inferiors', but its
+     Description will show `<null>'.
 
    After the successful completion of a command such as `detach',
-`detach inferior', `kill' or `kill inferior', or after a normal process
-exit, the inferior is still valid and listed with `info inferiors',
-ready to be restarted.
+`detach inferiors', `kill' or `kill inferiors', or after a normal
+process exit, the inferior is still valid and listed with `info
+inferiors', ready to be restarted.
 
    To be notified when inferiors are started or exit under GDB's
 control use `set print inferior-events':
@@ -2212,7 +2237,7 @@ form `[New SYSTAG]'.  SYSTAG is a thread identifier whose form varies
 depending on the particular system.  For example, on GNU/Linux, you
 might see
 
-     [New Thread 46912507313328 (LWP 25582)]
+     [New Thread 0x41e02940 (LWP 25582)]
 
 when GDB notices a new thread.  In contrast, on an SGI system, the
 SYSTAG is simply something like `process 368', with no further
@@ -2221,15 +2246,21 @@ qualifier.
    For debugging purposes, GDB associates its own thread number--always
 a single integer--with each thread in your program.
 
-`info threads'
-     Display a summary of all threads currently in your program.  GDB
-     displays for each thread (in this order):
+`info threads [ID...]'
+     Display a summary of all threads currently in your program.
+     Optional argument ID... is one or more thread ids separated by
+     spaces, and means to print information only about the specified
+     thread or threads.  GDB displays for each thread (in this order):
 
        1. the thread number assigned by GDB
 
        2. the target system's thread identifier (SYSTAG)
 
-       3. the current stack frame summary for that thread
+       3. the thread's name, if one is known.  A thread can either be
+          named by the user (see `thread name', below), or, in some
+          cases, by the program itself.
+
+       4. the current stack frame summary for that thread
 
      An asterisk `*' to the left of the GDB thread number indicates the
      current thread.
@@ -2237,52 +2268,11 @@ a single integer--with each thread in your program.
      For example,
 
      (gdb) info threads
-       3 process 35 thread 27  0x34e5 in sigpause ()
-       2 process 35 thread 23  0x34e5 in sigpause ()
-     * 1 process 35 thread 13  main (argc=1, argv=0x7ffffff8)
+       Id   Target Id         Frame
+       3    process 35 thread 27  0x34e5 in sigpause ()
+       2    process 35 thread 23  0x34e5 in sigpause ()
+     * 1    process 35 thread 13  main (argc=1, argv=0x7ffffff8)
          at threadtest.c:68
-
-   On HP-UX systems:
-
-   For debugging purposes, GDB associates its own thread number--a
-small integer assigned in thread-creation order--with each thread in
-your program.
-
-   Whenever GDB detects a new thread in your program, it displays both
-GDB's thread number and the target system's identification for the
-thread with a message in the form `[New SYSTAG]'.  SYSTAG is a thread
-identifier whose form varies depending on the particular system.  For
-example, on HP-UX, you see
-
-     [New thread 2 (system thread 26594)]
-
-when GDB notices a new thread.
-
-`info threads'
-     Display a summary of all threads currently in your program.  GDB
-     displays for each thread (in this order):
-
-       1. the thread number assigned by GDB
-
-       2. the target system's thread identifier (SYSTAG)
-
-       3. the current stack frame summary for that thread
-
-     An asterisk `*' to the left of the GDB thread number indicates the
-     current thread.
-
-     For example,
-
-     (gdb) info threads
-         * 3 system thread 26607  worker (wptr=0x7b09c318 "@") \
-
-     at quicksort.c:137
-           2 system thread 26606  0x7b0030d8 in __ksleep () \
-
-     from /usr/lib/libc.2
-           1 system thread 27905  0x7b003498 in _brk () \
-
-     from /usr/lib/libc.2
 
    On Solaris, you can display more information about user threads with
 a Solaris-specific command:
@@ -2298,8 +2288,9 @@ a Solaris-specific command:
      its current stack frame summary:
 
           (gdb) thread 2
-          [Switching to process 35 thread 23]
-          0x34e5 in sigpause ()
+          [Switching to thread 2 (Thread 0xb7fdab70 (LWP 12747))]
+          #0  some_function (ignore=0x0) at example.c:8
+          8	    printf ("hello\n");
 
      As with the `[New ...]' message, the form of the text after
      `Switching to' depends on your system's conventions for identifying
@@ -2311,7 +2302,7 @@ a Solaris-specific command:
      See *Note Convenience Variables: Convenience Vars, for general
      information on convenience variables.
 
-`thread apply [THREADNO] [ALL] COMMAND'
+`thread apply [THREADNO | all] COMMAND'
      The `thread apply' command allows you to apply the named COMMAND
      to one or more threads.  Specify the numbers of the threads that
      you want affected with the command argument THREADNO.  It can be a
@@ -2319,6 +2310,31 @@ a Solaris-specific command:
      of the `info threads' display; or it could be a range of thread
      numbers, as in `2-4'.  To apply a command to all threads, type
      `thread apply all COMMAND'.
+
+`thread name [NAME]'
+     This command assigns a name to the current thread.  If no argument
+     is given, any existing user-specified name is removed.  The thread
+     name appears in the `info threads' display.
+
+     On some systems, such as GNU/Linux, GDB is able to determine the
+     name of the thread as given by the OS.  On these systems, a name
+     specified with `thread name' will override the system-give name,
+     and removing the user-specified name will cause GDB to once again
+     display the system-specified name.
+
+`thread find [REGEXP]'
+     Search for and display thread ids whose name or SYSTAG matches the
+     supplied regular expression.
+
+     As well as being the complement to the `thread name' command, this
+     command also allows you to identify a thread by its target SYSTAG.
+     For instance, on GNU/Linux, the target SYSTAG is the LWP id.
+
+          (GDB) thread find 26688
+          Thread 4 has target id 'Thread 0x41e02940 (LWP 26688)'
+          (GDB) info thread 4
+            Id   Target Id         Frame
+            4    Thread 0x41e02940 (LWP 26688) 0x00000031ca6cd372 in select ()
 
 `set print thread-events'
 `set print thread-events on'
@@ -2367,6 +2383,11 @@ watchpoints in programs with multiple threads.
 
 `show libthread-db-search-path'
      Display current libthread_db search path.
+
+`set debug libthread-db'
+`show debug libthread-db'
+     Turns on or off display of `libthread_db'-related events.  Use `1'
+     to enable, `0' to disable.
 
 
 File: gdb.info,  Node: Forks,  Next: Checkpoint/Restart,  Prev: Threads,  Up: Running
@@ -2450,8 +2471,8 @@ the `inferior' command (*note Debugging Multiple Inferiors and
 Programs: Inferiors and Programs.).
 
    To quit debugging one of the forked processes, you can either detach
-from it by using the `detach inferior' command (allowing it to run
-independently), or kill it using the `kill inferior' command.  *Note
+from it by using the `detach inferiors' command (allowing it to run
+independently), or kill it using the `kill inferiors' command.  *Note
 Debugging Multiple Inferiors and Programs: Inferiors and Programs.
 
    If you ask to debug a child process and a `vfork' is followed by an
@@ -2850,12 +2871,13 @@ variables.
      The colon separating the filename qualifier from the regex may
      optionally be surrounded by spaces.
 
-`info breakpoints [N]'
-`info break [N]'
+`info breakpoints [N...]'
+`info break [N...]'
      Print a table of all breakpoints, watchpoints, and catchpoints set
      and not deleted.  Optional argument N means print information only
-     about the specified breakpoint (or watchpoint or catchpoint).  For
-     each breakpoint, following columns are printed:
+     about the specified breakpoint(s) (or watchpoint(s) or
+     catchpoint(s)).  For each breakpoint, following columns are
+     printed:
 
     _Breakpoint Numbers_
 
@@ -3110,7 +3132,7 @@ culprit.)
 x86-based targets, GDB includes support for hardware watchpoints, which
 do not slow down the running of your program.
 
-`watch EXPR [thread THREADNUM]'
+`watch [-l|-location] EXPR [thread THREADNUM]'
      Set a watchpoint for an expression.  GDB will break when the
      expression EXPR is written into by the program and its value
      changes.  The simplest (and the most popular) use of this command
@@ -3124,15 +3146,23 @@ do not slow down the running of your program.
      break.  Note that watchpoints restricted to a single thread in
      this way only work with Hardware Watchpoints.
 
-`rwatch EXPR [thread THREADNUM]'
+     Ordinarily a watchpoint respects the scope of variables in EXPR
+     (see below).  The `-location' argument tells GDB to instead watch
+     the memory referred to by EXPR.  In this case, GDB will evaluate
+     EXPR, take the address of the result, and watch the memory at that
+     address.  The type of the result is used to determine the size of
+     the watched memory.  If the expression's result does not have an
+     address, then GDB will print an error.
+
+`rwatch [-l|-location] EXPR [thread THREADNUM]'
      Set a watchpoint that will break when the value of EXPR is read by
      the program.
 
-`awatch EXPR [thread THREADNUM]'
+`awatch [-l|-location] EXPR [thread THREADNUM]'
      Set a watchpoint that will break when EXPR is either read from or
      written into by the program.
 
-`info watchpoints'
+`info watchpoints [N...]'
      This command prints a list of watchpoints, using the same format as
      `info break' (*note Set Breaks::).
 
@@ -5079,13 +5109,13 @@ backtrace might look like:
 
      #0  m4_traceon (obs=0x24eb0, argc=1, argv=0x2b8c8)
          at builtin.c:993
-     #1  0x6e38 in expand_macro (sym=<value optimized out>) at macro.c:242
-     #2  0x6840 in expand_token (obs=0x0, t=<value optimized out>, td=0xf7fffb08)
+     #1  0x6e38 in expand_macro (sym=<optimized out>) at macro.c:242
+     #2  0x6840 in expand_token (obs=0x0, t=<optimized out>, td=0xf7fffb08)
          at macro.c:71
      (More stack frames follow...)
 
 The values of arguments that were not saved in their stack frames are
-shown as `<value optimized out>'.
+shown as `<optimized out>'.
 
    If you need to display the values of such optimized-out arguments,
 either deduce that from other variables whose values depend on the one
@@ -5416,11 +5446,21 @@ GDB understands:
      Specifies the line that begins the body of the function FUNCTION.
      For example, in C, this is the line with the open brace.
 
+`FUNCTION:LABEL'
+     Specifies the line where LABEL appears in FUNCTION.
+
 `FILENAME:FUNCTION'
      Specifies the line that begins the body of the function FUNCTION
      in the file FILENAME.  You only need the file name with a function
      name to avoid ambiguity when there are identically named functions
      in different source files.
+
+`LABEL'
+     Specifies the line at which the label named LABEL appears.  GDB
+     searches for the label in the function corresponding to the
+     currently selected stack frame.  If there is no current selected
+     stack frame (for instance, if the inferior is not running), then
+     GDB will not search for a label.
 
 `*ADDRESS'
      Specifies the program address ADDRESS.  For line-oriented
@@ -5649,6 +5689,10 @@ being moved together.
 `directory'
      Reset the source path to its default value (`$cdir:$cwd' on Unix
      systems).  This requires confirmation.
+
+`set directories PATH-LIST'
+     Set the source path to PATH-LIST.  `$cdir:$cwd' are added if
+     missing.
 
 `show directories'
      Print the source path: show which directories it contains.
@@ -6501,7 +6545,11 @@ common name for the program counter; *note Registers: Registers.).
 
 `undisplay DNUMS...'
 `delete display DNUMS...'
-     Remove item numbers DNUMS from the list of expressions to display.
+     Remove items from the list of expressions to display.  Specify the
+     numbers of the displays that you want affected with the command
+     argument DNUMS.  It can be a single display number, one of the
+     numbers shown in the first field of the `info display' display; or
+     it could be a range of display numbers, as in `2-4'.
 
      `undisplay' does not repeat if you press <RET> after using it.
      (Otherwise you would just get the error `No display number ...'.)
@@ -6509,12 +6557,20 @@ common name for the program counter; *note Registers: Registers.).
 `disable display DNUMS...'
      Disable the display of item numbers DNUMS.  A disabled display
      item is not printed automatically, but is not forgotten.  It may be
-     enabled again later.
+     enabled again later.  Specify the numbers of the displays that you
+     want affected with the command argument DNUMS.  It can be a single
+     display number, one of the numbers shown in the first field of the
+     `info display' display; or it could be a range of display numbers,
+     as in `2-4'.
 
 `enable display DNUMS...'
      Enable display of item numbers DNUMS.  It becomes effective once
      again in auto display of its expression, until you specify
-     otherwise.
+     otherwise.  Specify the numbers of the displays that you want
+     affected with the command argument DNUMS.  It can be a single
+     display number, one of the numbers shown in the first field of the
+     `info display' display; or it could be a range of display numbers,
+     as in `2-4'.
 
 `display'
      Display the current values of the expressions on the list, just as
@@ -6924,8 +6980,61 @@ GDB provides a mechanism to allow pretty-printing of values using
 Python code.  It greatly simplifies the display of complex objects.
 This mechanism works for both MI and the CLI.
 
-   For example, here is how a C++ `std::string' looks without a
-pretty-printer:
+* Menu:
+
+* Pretty-Printer Introduction::  Introduction to pretty-printers
+* Pretty-Printer Example::       An example pretty-printer
+* Pretty-Printer Commands::      Pretty-printer commands
+
+
+File: gdb.info,  Node: Pretty-Printer Introduction,  Next: Pretty-Printer Example,  Up: Pretty Printing
+
+10.9.1 Pretty-Printer Introduction
+----------------------------------
+
+When GDB prints a value, it first sees if there is a pretty-printer
+registered for the value.  If there is then GDB invokes the
+pretty-printer to print the value.  Otherwise the value is printed
+normally.
+
+   Pretty-printers are normally named.  This makes them easy to manage.
+The `info pretty-printer' command will list all the installed
+pretty-printers with their names.  If a pretty-printer can handle
+multiple data types, then its "subprinters" are the printers for the
+individual data types.  Each such subprinter has its own name.  The
+format of the name is PRINTER-NAME;SUBPRINTER-NAME.
+
+   Pretty-printers are installed by "registering" them with GDB.
+Typically they are automatically loaded and registered when the
+corresponding debug information is loaded, thus making them available
+without having to do anything special.
+
+   There are three places where a pretty-printer can be registered.
+
+   * Pretty-printers registered globally are available when debugging
+     all inferiors.
+
+   * Pretty-printers registered with a program space are available only
+     when debugging that program.  *Note Progspaces In Python::, for
+     more details on program spaces in Python.
+
+   * Pretty-printers registered with an objfile are loaded and unloaded
+     with the corresponding objfile (e.g., shared library).  *Note
+     Objfiles In Python::, for more details on objfiles in Python.
+
+   *Note Selecting Pretty-Printers::, for further information on how
+pretty-printers are selected,
+
+   *Note Writing a Pretty-Printer::, for implementing pretty printers
+for new types.
+
+
+File: gdb.info,  Node: Pretty-Printer Example,  Next: Pretty-Printer Commands,  Prev: Pretty-Printer Introduction,  Up: Pretty Printing
+
+10.9.2 Pretty-Printer Example
+-----------------------------
+
+Here is how a C++ `std::string' looks without a pretty-printer:
 
      (gdb) print s
      $1 = {
@@ -6947,8 +7056,86 @@ printed:
      (gdb) print s
      $2 = "abcd"
 
-   For implementing pretty printers for new types you should read the
-Python API details (*note Pretty Printing API::).
+
+File: gdb.info,  Node: Pretty-Printer Commands,  Prev: Pretty-Printer Example,  Up: Pretty Printing
+
+10.9.3 Pretty-Printer Commands
+------------------------------
+
+`info pretty-printer [OBJECT-REGEXP [NAME-REGEXP]]'
+     Print the list of installed pretty-printers.  This includes
+     disabled pretty-printers, which are marked as such.
+
+     OBJECT-REGEXP is a regular expression matching the objects whose
+     pretty-printers to list.  Objects can be `global', the program
+     space's file (*note Progspaces In Python::), and the object files
+     within that program space (*note Objfiles In Python::).  *Note
+     Selecting Pretty-Printers::, for details on how GDB looks up a
+     printer from these three objects.
+
+     NAME-REGEXP is a regular expression matching the name of the
+     printers to list.
+
+`disable pretty-printer [OBJECT-REGEXP [NAME-REGEXP]]'
+     Disable pretty-printers matching OBJECT-REGEXP and NAME-REGEXP.  A
+     disabled pretty-printer is not forgotten, it may be enabled again
+     later.
+
+`enable pretty-printer [OBJECT-REGEXP [NAME-REGEXP]]'
+     Enable pretty-printers matching OBJECT-REGEXP and NAME-REGEXP.
+
+   Example:
+
+   Suppose we have three pretty-printers installed: one from library1.so
+named `foo' that prints objects of type `foo', and another from
+library2.so named `bar' that prints two types of objects, `bar1' and
+`bar2'.
+
+     (gdb) info pretty-printer
+     library1.so:
+       foo
+     library2.so:
+       bar
+         bar1
+         bar2
+     (gdb) info pretty-printer library2
+     library2.so:
+       bar
+         bar1
+         bar2
+     (gdb) disable pretty-printer library1
+     1 printer disabled
+     2 of 3 printers enabled
+     (gdb) info pretty-printer
+     library1.so:
+       foo [disabled]
+     library2.so:
+       bar
+         bar1
+         bar2
+     (gdb) disable pretty-printer library2 bar:bar1
+     1 printer disabled
+     1 of 3 printers enabled
+     (gdb) info pretty-printer library2
+     library1.so:
+       foo [disabled]
+     library2.so:
+       bar
+         bar1 [disabled]
+         bar2
+     (gdb) disable pretty-printer library2 bar
+     1 printer disabled
+     0 of 3 printers enabled
+     (gdb) info pretty-printer library2
+     library1.so:
+       foo [disabled]
+     library2.so:
+       bar [disabled]
+         bar1 [disabled]
+         bar2
+
+   Note that for `bar' the entire printer can be disabled, as can each
+individual subprinter.
 
 
 File: gdb.info,  Node: Value History,  Next: Convenience Vars,  Prev: Pretty Printing,  Up: Data
@@ -7011,118 +7198,4 @@ remains 4 even though the value of `x' has changed.
 
    Pressing <RET> to repeat `show values N' has exactly the same effect
 as `show values +'.
-
-
-File: gdb.info,  Node: Convenience Vars,  Next: Registers,  Prev: Value History,  Up: Data
-
-10.11 Convenience Variables
-===========================
-
-GDB provides "convenience variables" that you can use within GDB to
-hold on to a value and refer to it later.  These variables exist
-entirely within GDB; they are not part of your program, and setting a
-convenience variable has no direct effect on further execution of your
-program.  That is why you can use them freely.
-
-   Convenience variables are prefixed with `$'.  Any name preceded by
-`$' can be used for a convenience variable, unless it is one of the
-predefined machine-specific register names (*note Registers:
-Registers.).  (Value history references, in contrast, are _numbers_
-preceded by `$'.  *Note Value History: Value History.)
-
-   You can save a value in a convenience variable with an assignment
-expression, just as you would set a variable in your program.  For
-example:
-
-     set $foo = *object_ptr
-
-would save in `$foo' the value contained in the object pointed to by
-`object_ptr'.
-
-   Using a convenience variable for the first time creates it, but its
-value is `void' until you assign a new value.  You can alter the value
-with another assignment at any time.
-
-   Convenience variables have no fixed types.  You can assign a
-convenience variable any type of value, including structures and
-arrays, even if that variable already has a value of a different type.
-The convenience variable, when used as an expression, has the type of
-its current value.
-
-`show convenience'
-     Print a list of convenience variables used so far, and their
-     values.  Abbreviated `show conv'.
-
-`init-if-undefined $VARIABLE = EXPRESSION'
-     Set a convenience variable if it has not already been set.  This
-     is useful for user-defined commands that keep some state.  It is
-     similar, in concept, to using local static variables with
-     initializers in C (except that convenience variables are global).
-     It can also be used to allow users to override default values used
-     in a command script.
-
-     If the variable is already defined then the expression is not
-     evaluated so any side-effects do not occur.
-
-   One of the ways to use a convenience variable is as a counter to be
-incremented or a pointer to be advanced.  For example, to print a field
-from successive elements of an array of structures:
-
-     set $i = 0
-     print bar[$i++]->contents
-
-Repeat that command by typing <RET>.
-
-   Some convenience variables are created automatically by GDB and given
-values likely to be useful.
-
-`$_'
-     The variable `$_' is automatically set by the `x' command to the
-     last address examined (*note Examining Memory: Memory.).  Other
-     commands which provide a default address for `x' to examine also
-     set `$_' to that address; these commands include `info line' and
-     `info breakpoint'.  The type of `$_' is `void *' except when set
-     by the `x' command, in which case it is a pointer to the type of
-     `$__'.
-
-`$__'
-     The variable `$__' is automatically set by the `x' command to the
-     value found in the last address examined.  Its type is chosen to
-     match the format in which the data was printed.
-
-`$_exitcode'
-     The variable `$_exitcode' is automatically set to the exit code
-     when the program being debugged terminates.
-
-`$_sdata'
-     The variable `$_sdata' contains extra collected static tracepoint
-     data.  *Note Tracepoint Action Lists: Tracepoint Actions.  Note
-     that `$_sdata' could be empty, if not inspecting a trace buffer, or
-     if extra static tracepoint data has not been collected.
-
-`$_siginfo'
-     The variable `$_siginfo' contains extra signal information (*note
-     extra signal information::).  Note that `$_siginfo' could be
-     empty, if the application has not yet received any signals.  For
-     example, it will be empty before you execute the `run' command.
-
-`$_tlb'
-     The variable `$_tlb' is automatically set when debugging
-     applications running on MS-Windows in native mode or connected to
-     gdbserver that supports the `qGetTIBAddr' request.  *Note General
-     Query Packets::.  This variable contains the address of the thread
-     information block.
-
-
-   On HP-UX systems, if you refer to a function or variable name that
-begins with a dollar sign, GDB searches for a user or system name
-first, before it searches for a convenience variable.
-
-   GDB also supplies some "convenience functions".  These have a syntax
-similar to convenience variables.  A convenience function can be used
-in an expression just like an ordinary function; however, a convenience
-function is implemented internally to GDB.
-
-`help function'
-     Print a list of all convenience functions.
 

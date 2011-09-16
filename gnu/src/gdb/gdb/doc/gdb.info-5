@@ -22,8 +22,8 @@ developing GNU and promoting software freedom."
 
    This file documents the GNU debugger GDB.
 
-   This is the Ninth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.2.
+   This is the Tenth Edition, of `Debugging with GDB: the GNU
+Source-Level Debugger' for GDB (GDB) Version 7.3.1.
 
    Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
@@ -41,9 +41,1589 @@ this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
 
 
+File: gdb.info,  Node: Remote Non-Stop,  Next: Packet Acknowledgment,  Prev: Notification Packets,  Up: Remote Protocol
+
+E.10 Remote Protocol Support for Non-Stop Mode
+==============================================
+
+GDB's remote protocol supports non-stop debugging of multi-threaded
+programs, as described in *Note Non-Stop Mode::.  If the stub supports
+non-stop mode, it should report that to GDB by including `QNonStop+' in
+its `qSupported' response (*note qSupported::).
+
+   GDB typically sends a `QNonStop' packet only when establishing a new
+connection with the stub.  Entering non-stop mode does not alter the
+state of any currently-running threads, but targets must stop all
+threads in any already-attached processes when entering all-stop mode.
+GDB uses the `?' packet as necessary to probe the target state after a
+mode change.
+
+   In non-stop mode, when an attached process encounters an event that
+would otherwise be reported with a stop reply, it uses the asynchronous
+notification mechanism (*note Notification Packets::) to inform GDB.
+In contrast to all-stop mode, where all threads in all processes are
+stopped when a stop reply is sent, in non-stop mode only the thread
+reporting the stop event is stopped.  That is, when reporting a `S' or
+`T' response to indicate completion of a step operation, hitting a
+breakpoint, or a fault, only the affected thread is stopped; any other
+still-running threads continue to run.  When reporting a `W' or `X'
+response, all running threads belonging to other attached processes
+continue to run.
+
+   Only one stop reply notification at a time may be pending; if
+additional stop events occur before GDB has acknowledged the previous
+notification, they must be queued by the stub for later synchronous
+transmission in response to `vStopped' packets from GDB.  Because the
+notification mechanism is unreliable, the stub is permitted to resend a
+stop reply notification if it believes GDB may not have received it.
+GDB ignores additional stop reply notifications received before it has
+finished processing a previous notification and the stub has completed
+sending any queued stop events.
+
+   Otherwise, GDB must be prepared to receive a stop reply notification
+at any time.  Specifically, they may appear when GDB is not otherwise
+reading input from the stub, or when GDB is expecting to read a normal
+synchronous response or a `+'/`-' acknowledgment to a packet it has
+sent.  Notification packets are distinct from any other communication
+from the stub so there is no ambiguity.
+
+   After receiving a stop reply notification, GDB shall acknowledge it
+by sending a `vStopped' packet (*note vStopped packet::) as a regular,
+synchronous request to the stub.  Such acknowledgment is not required
+to happen immediately, as GDB is permitted to send other, unrelated
+packets to the stub first, which the stub should process normally.
+
+   Upon receiving a `vStopped' packet, if the stub has other queued
+stop events to report to GDB, it shall respond by sending a normal stop
+reply response.  GDB shall then send another `vStopped' packet to
+solicit further responses; again, it is permitted to send other,
+unrelated packets as well which the stub should process normally.
+
+   If the stub receives a `vStopped' packet and there are no additional
+stop events to report, the stub shall return an `OK' response.  At this
+point, if further stop events occur, the stub shall send a new stop
+reply notification, GDB shall accept the notification, and the process
+shall be repeated.
+
+   In non-stop mode, the target shall respond to the `?' packet as
+follows.  First, any incomplete stop reply notification/`vStopped'
+sequence in progress is abandoned.  The target must begin a new
+sequence reporting stop events for all stopped threads, whether or not
+it has previously reported those events to GDB.  The first stop reply
+is sent as a synchronous reply to the `?' packet, and subsequent stop
+replies are sent as responses to `vStopped' packets using the mechanism
+described above.  The target must not send asynchronous stop reply
+notifications until the sequence is complete.  If all threads are
+running when the target receives the `?' packet, or if the target is
+not attached to any process, it shall respond `OK'.
+
+
+File: gdb.info,  Node: Packet Acknowledgment,  Next: Examples,  Prev: Remote Non-Stop,  Up: Remote Protocol
+
+E.11 Packet Acknowledgment
+==========================
+
+By default, when either the host or the target machine receives a
+packet, the first response expected is an acknowledgment: either `+'
+(to indicate the package was received correctly) or `-' (to request
+retransmission).  This mechanism allows the GDB remote protocol to
+operate over unreliable transport mechanisms, such as a serial line.
+
+   In cases where the transport mechanism is itself reliable (such as a
+pipe or TCP connection), the `+'/`-' acknowledgments are redundant.  It
+may be desirable to disable them in that case to reduce communication
+overhead, or for other reasons.  This can be accomplished by means of
+the `QStartNoAckMode' packet; *note QStartNoAckMode::.
+
+   When in no-acknowledgment mode, neither the stub nor GDB shall send
+or expect `+'/`-' protocol acknowledgments.  The packet and response
+format still includes the normal checksum, as described in *Note
+Overview::, but the checksum may be ignored by the receiver.
+
+   If the stub supports `QStartNoAckMode' and prefers to operate in
+no-acknowledgment mode, it should report that to GDB by including
+`QStartNoAckMode+' in its response to `qSupported'; *note qSupported::.
+If GDB also supports `QStartNoAckMode' and it has not been disabled via
+the `set remote noack-packet off' command (*note Remote
+Configuration::), GDB may then send a `QStartNoAckMode' packet to the
+stub.  Only then may the stub actually turn off packet acknowledgments.
+GDB sends a final `+' acknowledgment of the stub's `OK' response, which
+can be safely ignored by the stub.
+
+   Note that `set remote noack-packet' command only affects negotiation
+between GDB and the stub when subsequent connections are made; it does
+not affect the protocol acknowledgment state for any current connection.
+Since `+'/`-' acknowledgments are enabled by default when a new
+connection is established, there is also no protocol request to
+re-enable the acknowledgments for the current connection, once disabled.
+
+
+File: gdb.info,  Node: Examples,  Next: File-I/O Remote Protocol Extension,  Prev: Packet Acknowledgment,  Up: Remote Protocol
+
+E.12 Examples
+=============
+
+Example sequence of a target being re-started.  Notice how the restart
+does not get any direct output:
+
+     -> `R00'
+     <- `+'
+     _target restarts_
+     -> `?'
+     <- `+'
+     <- `T001:1234123412341234'
+     -> `+'
+
+   Example sequence of a target being stepped by a single instruction:
+
+     -> `G1445...'
+     <- `+'
+     -> `s'
+     <- `+'
+     _time passes_
+     <- `T001:1234123412341234'
+     -> `+'
+     -> `g'
+     <- `+'
+     <- `1455...'
+     -> `+'
+
+
+File: gdb.info,  Node: File-I/O Remote Protocol Extension,  Next: Library List Format,  Prev: Examples,  Up: Remote Protocol
+
+E.13 File-I/O Remote Protocol Extension
+=======================================
+
+* Menu:
+
+* File-I/O Overview::
+* Protocol Basics::
+* The F Request Packet::
+* The F Reply Packet::
+* The Ctrl-C Message::
+* Console I/O::
+* List of Supported Calls::
+* Protocol-specific Representation of Datatypes::
+* Constants::
+* File-I/O Examples::
+
+
+File: gdb.info,  Node: File-I/O Overview,  Next: Protocol Basics,  Up: File-I/O Remote Protocol Extension
+
+E.13.1 File-I/O Overview
+------------------------
+
+The "File I/O remote protocol extension" (short: File-I/O) allows the
+target to use the host's file system and console I/O to perform various
+system calls.  System calls on the target system are translated into a
+remote protocol packet to the host system, which then performs the
+needed actions and returns a response packet to the target system.
+This simulates file system operations even on targets that lack file
+systems.
+
+   The protocol is defined to be independent of both the host and
+target systems.  It uses its own internal representation of datatypes
+and values.  Both GDB and the target's GDB stub are responsible for
+translating the system-dependent value representations into the internal
+protocol representations when data is transmitted.
+
+   The communication is synchronous.  A system call is possible only
+when GDB is waiting for a response from the `C', `c', `S' or `s'
+packets.  While GDB handles the request for a system call, the target
+is stopped to allow deterministic access to the target's memory.
+Therefore File-I/O is not interruptible by target signals.  On the
+other hand, it is possible to interrupt File-I/O by a user interrupt
+(`Ctrl-C') within GDB.
+
+   The target's request to perform a host system call does not finish
+the latest `C', `c', `S' or `s' action.  That means, after finishing
+the system call, the target returns to continuing the previous activity
+(continue, step).  No additional continue or step request from GDB is
+required.
+
+     (gdb) continue
+       <- target requests 'system call X'
+       target is stopped, GDB executes system call
+       -> GDB returns result
+       ... target continues, GDB returns to wait for the target
+       <- target hits breakpoint and sends a Txx packet
+
+   The protocol only supports I/O on the console and to regular files on
+the host file system.  Character or block special devices, pipes, named
+pipes, sockets or any other communication method on the host system are
+not supported by this protocol.
+
+   File I/O is not supported in non-stop mode.
+
+
+File: gdb.info,  Node: Protocol Basics,  Next: The F Request Packet,  Prev: File-I/O Overview,  Up: File-I/O Remote Protocol Extension
+
+E.13.2 Protocol Basics
+----------------------
+
+The File-I/O protocol uses the `F' packet as the request as well as
+reply packet.  Since a File-I/O system call can only occur when GDB is
+waiting for a response from the continuing or stepping target, the
+File-I/O request is a reply that GDB has to expect as a result of a
+previous `C', `c', `S' or `s' packet.  This `F' packet contains all
+information needed to allow GDB to call the appropriate host system
+call:
+
+   * A unique identifier for the requested system call.
+
+   * All parameters to the system call.  Pointers are given as addresses
+     in the target memory address space.  Pointers to strings are given
+     as pointer/length pair.  Numerical values are given as they are.
+     Numerical control flags are given in a protocol-specific
+     representation.
+
+
+   At this point, GDB has to perform the following actions.
+
+   * If the parameters include pointer values to data needed as input
+     to a system call, GDB requests this data from the target with a
+     standard `m' packet request.  This additional communication has to
+     be expected by the target implementation and is handled as any
+     other `m' packet.
+
+   * GDB translates all value from protocol representation to host
+     representation as needed.  Datatypes are coerced into the host
+     types.
+
+   * GDB calls the system call.
+
+   * It then coerces datatypes back to protocol representation.
+
+   * If the system call is expected to return data in buffer space
+     specified by pointer parameters to the call, the data is
+     transmitted to the target using a `M' or `X' packet.  This packet
+     has to be expected by the target implementation and is handled as
+     any other `M' or `X' packet.
+
+
+   Eventually GDB replies with another `F' packet which contains all
+necessary information for the target to continue.  This at least
+contains
+
+   * Return value.
+
+   * `errno', if has been changed by the system call.
+
+   * "Ctrl-C" flag.
+
+
+   After having done the needed type and value coercion, the target
+continues the latest continue or step action.
+
+
+File: gdb.info,  Node: The F Request Packet,  Next: The F Reply Packet,  Prev: Protocol Basics,  Up: File-I/O Remote Protocol Extension
+
+E.13.3 The `F' Request Packet
+-----------------------------
+
+The `F' request packet has the following format:
+
+`FCALL-ID,PARAMETER...'
+     CALL-ID is the identifier to indicate the host system call to be
+     called.  This is just the name of the function.
+
+     PARAMETER... are the parameters to the system call.  Parameters
+     are hexadecimal integer values, either the actual values in case
+     of scalar datatypes, pointers to target buffer space in case of
+     compound datatypes and unspecified memory areas, or pointer/length
+     pairs in case of string parameters.  These are appended to the
+     CALL-ID as a comma-delimited list.  All values are transmitted in
+     ASCII string representation, pointer/length pairs separated by a
+     slash.
+
+
+
+File: gdb.info,  Node: The F Reply Packet,  Next: The Ctrl-C Message,  Prev: The F Request Packet,  Up: File-I/O Remote Protocol Extension
+
+E.13.4 The `F' Reply Packet
+---------------------------
+
+The `F' reply packet has the following format:
+
+`FRETCODE,ERRNO,CTRL-C FLAG;CALL-SPECIFIC ATTACHMENT'
+     RETCODE is the return code of the system call as hexadecimal value.
+
+     ERRNO is the `errno' set by the call, in protocol-specific
+     representation.  This parameter can be omitted if the call was
+     successful.
+
+     CTRL-C FLAG is only sent if the user requested a break.  In this
+     case, ERRNO must be sent as well, even if the call was successful.
+     The CTRL-C FLAG itself consists of the character `C':
+
+          F0,0,C
+
+     or, if the call was interrupted before the host call has been
+     performed:
+
+          F-1,4,C
+
+     assuming 4 is the protocol-specific representation of `EINTR'.
+
+
+
+File: gdb.info,  Node: The Ctrl-C Message,  Next: Console I/O,  Prev: The F Reply Packet,  Up: File-I/O Remote Protocol Extension
+
+E.13.5 The `Ctrl-C' Message
+---------------------------
+
+If the `Ctrl-C' flag is set in the GDB reply packet (*note The F Reply
+Packet::), the target should behave as if it had gotten a break
+message.  The meaning for the target is "system call interrupted by
+`SIGINT'".  Consequentially, the target should actually stop (as with a
+break message) and return to GDB with a `T02' packet.
+
+   It's important for the target to know in which state the system call
+was interrupted.  There are two possible cases:
+
+   * The system call hasn't been performed on the host yet.
+
+   * The system call on the host has been finished.
+
+
+   These two states can be distinguished by the target by the value of
+the returned `errno'.  If it's the protocol representation of `EINTR',
+the system call hasn't been performed.  This is equivalent to the
+`EINTR' handling on POSIX systems.  In any other case, the target may
+presume that the system call has been finished -- successfully or not
+-- and should behave as if the break message arrived right after the
+system call.
+
+   GDB must behave reliably.  If the system call has not been called
+yet, GDB may send the `F' reply immediately, setting `EINTR' as `errno'
+in the packet.  If the system call on the host has been finished before
+the user requests a break, the full action must be finished by GDB.
+This requires sending `M' or `X' packets as necessary.  The `F' packet
+may only be sent when either nothing has happened or the full action
+has been completed.
+
+
+File: gdb.info,  Node: Console I/O,  Next: List of Supported Calls,  Prev: The Ctrl-C Message,  Up: File-I/O Remote Protocol Extension
+
+E.13.6 Console I/O
+------------------
+
+By default and if not explicitly closed by the target system, the file
+descriptors 0, 1 and 2 are connected to the GDB console.  Output on the
+GDB console is handled as any other file output operation (`write(1,
+...)' or `write(2, ...)').  Console input is handled by GDB so that
+after the target read request from file descriptor 0 all following
+typing is buffered until either one of the following conditions is met:
+
+   * The user types `Ctrl-c'.  The behaviour is as explained above, and
+     the `read' system call is treated as finished.
+
+   * The user presses <RET>.  This is treated as end of input with a
+     trailing newline.
+
+   * The user types `Ctrl-d'.  This is treated as end of input.  No
+     trailing character (neither newline nor `Ctrl-D') is appended to
+     the input.
+
+
+   If the user has typed more characters than fit in the buffer given to
+the `read' call, the trailing characters are buffered in GDB until
+either another `read(0, ...)' is requested by the target, or debugging
+is stopped at the user's request.
+
+
+File: gdb.info,  Node: List of Supported Calls,  Next: Protocol-specific Representation of Datatypes,  Prev: Console I/O,  Up: File-I/O Remote Protocol Extension
+
+E.13.7 List of Supported Calls
+------------------------------
+
+* Menu:
+
+* open::
+* close::
+* read::
+* write::
+* lseek::
+* rename::
+* unlink::
+* stat/fstat::
+* gettimeofday::
+* isatty::
+* system::
+
+
+File: gdb.info,  Node: open,  Next: close,  Up: List of Supported Calls
+
+open
+....
+
+Synopsis:
+          int open(const char *pathname, int flags);
+          int open(const char *pathname, int flags, mode_t mode);
+
+Request:
+     `Fopen,PATHPTR/LEN,FLAGS,MODE'
+
+     FLAGS is the bitwise `OR' of the following values:
+
+    `O_CREAT'
+          If the file does not exist it will be created.  The host
+          rules apply as far as file ownership and time stamps are
+          concerned.
+
+    `O_EXCL'
+          When used with `O_CREAT', if the file already exists it is an
+          error and open() fails.
+
+    `O_TRUNC'
+          If the file already exists and the open mode allows writing
+          (`O_RDWR' or `O_WRONLY' is given) it will be truncated to
+          zero length.
+
+    `O_APPEND'
+          The file is opened in append mode.
+
+    `O_RDONLY'
+          The file is opened for reading only.
+
+    `O_WRONLY'
+          The file is opened for writing only.
+
+    `O_RDWR'
+          The file is opened for reading and writing.
+
+     Other bits are silently ignored.
+
+     MODE is the bitwise `OR' of the following values:
+
+    `S_IRUSR'
+          User has read permission.
+
+    `S_IWUSR'
+          User has write permission.
+
+    `S_IRGRP'
+          Group has read permission.
+
+    `S_IWGRP'
+          Group has write permission.
+
+    `S_IROTH'
+          Others have read permission.
+
+    `S_IWOTH'
+          Others have write permission.
+
+     Other bits are silently ignored.
+
+Return value:
+     `open' returns the new file descriptor or -1 if an error occurred.
+
+Errors:
+
+    `EEXIST'
+          PATHNAME already exists and `O_CREAT' and `O_EXCL' were used.
+
+    `EISDIR'
+          PATHNAME refers to a directory.
+
+    `EACCES'
+          The requested access is not allowed.
+
+    `ENAMETOOLONG'
+          PATHNAME was too long.
+
+    `ENOENT'
+          A directory component in PATHNAME does not exist.
+
+    `ENODEV'
+          PATHNAME refers to a device, pipe, named pipe or socket.
+
+    `EROFS'
+          PATHNAME refers to a file on a read-only filesystem and write
+          access was requested.
+
+    `EFAULT'
+          PATHNAME is an invalid pointer value.
+
+    `ENOSPC'
+          No space on device to create the file.
+
+    `EMFILE'
+          The process already has the maximum number of files open.
+
+    `ENFILE'
+          The limit on the total number of files open on the system has
+          been reached.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: close,  Next: read,  Prev: open,  Up: List of Supported Calls
+
+close
+.....
+
+Synopsis:
+          int close(int fd);
+
+Request:
+     `Fclose,FD'
+
+Return value:
+     `close' returns zero on success, or -1 if an error occurred.
+
+Errors:
+
+    `EBADF'
+          FD isn't a valid open file descriptor.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: read,  Next: write,  Prev: close,  Up: List of Supported Calls
+
+read
+....
+
+Synopsis:
+          int read(int fd, void *buf, unsigned int count);
+
+Request:
+     `Fread,FD,BUFPTR,COUNT'
+
+Return value:
+     On success, the number of bytes read is returned.  Zero indicates
+     end of file.  If count is zero, read returns zero as well.  On
+     error, -1 is returned.
+
+Errors:
+
+    `EBADF'
+          FD is not a valid file descriptor or is not open for reading.
+
+    `EFAULT'
+          BUFPTR is an invalid pointer value.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: write,  Next: lseek,  Prev: read,  Up: List of Supported Calls
+
+write
+.....
+
+Synopsis:
+          int write(int fd, const void *buf, unsigned int count);
+
+Request:
+     `Fwrite,FD,BUFPTR,COUNT'
+
+Return value:
+     On success, the number of bytes written are returned.  Zero
+     indicates nothing was written.  On error, -1 is returned.
+
+Errors:
+
+    `EBADF'
+          FD is not a valid file descriptor or is not open for writing.
+
+    `EFAULT'
+          BUFPTR is an invalid pointer value.
+
+    `EFBIG'
+          An attempt was made to write a file that exceeds the
+          host-specific maximum file size allowed.
+
+    `ENOSPC'
+          No space on device to write the data.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: lseek,  Next: rename,  Prev: write,  Up: List of Supported Calls
+
+lseek
+.....
+
+Synopsis:
+          long lseek (int fd, long offset, int flag);
+
+Request:
+     `Flseek,FD,OFFSET,FLAG'
+
+     FLAG is one of:
+
+    `SEEK_SET'
+          The offset is set to OFFSET bytes.
+
+    `SEEK_CUR'
+          The offset is set to its current location plus OFFSET bytes.
+
+    `SEEK_END'
+          The offset is set to the size of the file plus OFFSET bytes.
+
+Return value:
+     On success, the resulting unsigned offset in bytes from the
+     beginning of the file is returned.  Otherwise, a value of -1 is
+     returned.
+
+Errors:
+
+    `EBADF'
+          FD is not a valid open file descriptor.
+
+    `ESPIPE'
+          FD is associated with the GDB console.
+
+    `EINVAL'
+          FLAG is not a proper value.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: rename,  Next: unlink,  Prev: lseek,  Up: List of Supported Calls
+
+rename
+......
+
+Synopsis:
+          int rename(const char *oldpath, const char *newpath);
+
+Request:
+     `Frename,OLDPATHPTR/LEN,NEWPATHPTR/LEN'
+
+Return value:
+     On success, zero is returned.  On error, -1 is returned.
+
+Errors:
+
+    `EISDIR'
+          NEWPATH is an existing directory, but OLDPATH is not a
+          directory.
+
+    `EEXIST'
+          NEWPATH is a non-empty directory.
+
+    `EBUSY'
+          OLDPATH or NEWPATH is a directory that is in use by some
+          process.
+
+    `EINVAL'
+          An attempt was made to make a directory a subdirectory of
+          itself.
+
+    `ENOTDIR'
+          A  component used as a directory in OLDPATH or new path is
+          not a directory.  Or OLDPATH is a directory and NEWPATH
+          exists but is not a directory.
+
+    `EFAULT'
+          OLDPATHPTR or NEWPATHPTR are invalid pointer values.
+
+    `EACCES'
+          No access to the file or the path of the file.
+
+    `ENAMETOOLONG'
+          OLDPATH or NEWPATH was too long.
+
+    `ENOENT'
+          A directory component in OLDPATH or NEWPATH does not exist.
+
+    `EROFS'
+          The file is on a read-only filesystem.
+
+    `ENOSPC'
+          The device containing the file has no room for the new
+          directory entry.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: unlink,  Next: stat/fstat,  Prev: rename,  Up: List of Supported Calls
+
+unlink
+......
+
+Synopsis:
+          int unlink(const char *pathname);
+
+Request:
+     `Funlink,PATHNAMEPTR/LEN'
+
+Return value:
+     On success, zero is returned.  On error, -1 is returned.
+
+Errors:
+
+    `EACCES'
+          No access to the file or the path of the file.
+
+    `EPERM'
+          The system does not allow unlinking of directories.
+
+    `EBUSY'
+          The file PATHNAME cannot be unlinked because it's being used
+          by another process.
+
+    `EFAULT'
+          PATHNAMEPTR is an invalid pointer value.
+
+    `ENAMETOOLONG'
+          PATHNAME was too long.
+
+    `ENOENT'
+          A directory component in PATHNAME does not exist.
+
+    `ENOTDIR'
+          A component of the path is not a directory.
+
+    `EROFS'
+          The file is on a read-only filesystem.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: stat/fstat,  Next: gettimeofday,  Prev: unlink,  Up: List of Supported Calls
+
+stat/fstat
+..........
+
+Synopsis:
+          int stat(const char *pathname, struct stat *buf);
+          int fstat(int fd, struct stat *buf);
+
+Request:
+     `Fstat,PATHNAMEPTR/LEN,BUFPTR'
+     `Ffstat,FD,BUFPTR'
+
+Return value:
+     On success, zero is returned.  On error, -1 is returned.
+
+Errors:
+
+    `EBADF'
+          FD is not a valid open file.
+
+    `ENOENT'
+          A directory component in PATHNAME does not exist or the path
+          is an empty string.
+
+    `ENOTDIR'
+          A component of the path is not a directory.
+
+    `EFAULT'
+          PATHNAMEPTR is an invalid pointer value.
+
+    `EACCES'
+          No access to the file or the path of the file.
+
+    `ENAMETOOLONG'
+          PATHNAME was too long.
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+
+File: gdb.info,  Node: gettimeofday,  Next: isatty,  Prev: stat/fstat,  Up: List of Supported Calls
+
+gettimeofday
+............
+
+Synopsis:
+          int gettimeofday(struct timeval *tv, void *tz);
+
+Request:
+     `Fgettimeofday,TVPTR,TZPTR'
+
+Return value:
+     On success, 0 is returned, -1 otherwise.
+
+Errors:
+
+    `EINVAL'
+          TZ is a non-NULL pointer.
+
+    `EFAULT'
+          TVPTR and/or TZPTR is an invalid pointer value.
+
+
+
+File: gdb.info,  Node: isatty,  Next: system,  Prev: gettimeofday,  Up: List of Supported Calls
+
+isatty
+......
+
+Synopsis:
+          int isatty(int fd);
+
+Request:
+     `Fisatty,FD'
+
+Return value:
+     Returns 1 if FD refers to the GDB console, 0 otherwise.
+
+Errors:
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+   Note that the `isatty' call is treated as a special case: it returns
+1 to the target if the file descriptor is attached to the GDB console,
+0 otherwise.  Implementing through system calls would require
+implementing `ioctl' and would be more complex than needed.
+
+
+File: gdb.info,  Node: system,  Prev: isatty,  Up: List of Supported Calls
+
+system
+......
+
+Synopsis:
+          int system(const char *command);
+
+Request:
+     `Fsystem,COMMANDPTR/LEN'
+
+Return value:
+     If LEN is zero, the return value indicates whether a shell is
+     available.  A zero return value indicates a shell is not available.
+     For non-zero LEN, the value returned is -1 on error and the return
+     status of the command otherwise.  Only the exit status of the
+     command is returned, which is extracted from the host's `system'
+     return value by calling `WEXITSTATUS(retval)'.  In case `/bin/sh'
+     could not be executed, 127 is returned.
+
+Errors:
+
+    `EINTR'
+          The call was interrupted by the user.
+
+
+   GDB takes over the full task of calling the necessary host calls to
+perform the `system' call.  The return value of `system' on the host is
+simplified before it's returned to the target.  Any termination signal
+information from the child process is discarded, and the return value
+consists entirely of the exit status of the called command.
+
+   Due to security concerns, the `system' call is by default refused by
+GDB.  The user has to allow this call explicitly with the `set remote
+system-call-allowed 1' command.
+
+`set remote system-call-allowed'
+     Control whether to allow the `system' calls in the File I/O
+     protocol for the remote target.  The default is zero (disabled).
+
+`show remote system-call-allowed'
+     Show whether the `system' calls are allowed in the File I/O
+     protocol.
+
+
+File: gdb.info,  Node: Protocol-specific Representation of Datatypes,  Next: Constants,  Prev: List of Supported Calls,  Up: File-I/O Remote Protocol Extension
+
+E.13.8 Protocol-specific Representation of Datatypes
+----------------------------------------------------
+
+* Menu:
+
+* Integral Datatypes::
+* Pointer Values::
+* Memory Transfer::
+* struct stat::
+* struct timeval::
+
+
+File: gdb.info,  Node: Integral Datatypes,  Next: Pointer Values,  Up: Protocol-specific Representation of Datatypes
+
+Integral Datatypes
+..................
+
+The integral datatypes used in the system calls are `int', `unsigned
+int', `long', `unsigned long', `mode_t', and `time_t'.
+
+   `int', `unsigned int', `mode_t' and `time_t' are implemented as 32
+bit values in this protocol.
+
+   `long' and `unsigned long' are implemented as 64 bit types.
+
+   *Note Limits::, for corresponding MIN and MAX values (similar to
+those in `limits.h') to allow range checking on host and target.
+
+   `time_t' datatypes are defined as seconds since the Epoch.
+
+   All integral datatypes transferred as part of a memory read or write
+of a structured datatype e.g. a `struct stat' have to be given in big
+endian byte order.
+
+
+File: gdb.info,  Node: Pointer Values,  Next: Memory Transfer,  Prev: Integral Datatypes,  Up: Protocol-specific Representation of Datatypes
+
+Pointer Values
+..............
+
+Pointers to target data are transmitted as they are.  An exception is
+made for pointers to buffers for which the length isn't transmitted as
+part of the function call, namely strings.  Strings are transmitted as
+a pointer/length pair, both as hex values, e.g.
+
+     `1aaf/12'
+
+which is a pointer to data of length 18 bytes at position 0x1aaf.  The
+length is defined as the full string length in bytes, including the
+trailing null byte.  For example, the string `"hello world"' at address
+0x123456 is transmitted as
+
+     `123456/d'
+
+
+File: gdb.info,  Node: Memory Transfer,  Next: struct stat,  Prev: Pointer Values,  Up: Protocol-specific Representation of Datatypes
+
+Memory Transfer
+...............
+
+Structured data which is transferred using a memory read or write (for
+example, a `struct stat') is expected to be in a protocol-specific
+format with all scalar multibyte datatypes being big endian.
+Translation to this representation needs to be done both by the target
+before the `F' packet is sent, and by GDB before it transfers memory to
+the target.  Transferred pointers to structured data should point to
+the already-coerced data at any time.
+
+
+File: gdb.info,  Node: struct stat,  Next: struct timeval,  Prev: Memory Transfer,  Up: Protocol-specific Representation of Datatypes
+
+struct stat
+...........
+
+The buffer of type `struct stat' used by the target and GDB is defined
+as follows:
+
+     struct stat {
+         unsigned int  st_dev;      /* device */
+         unsigned int  st_ino;      /* inode */
+         mode_t        st_mode;     /* protection */
+         unsigned int  st_nlink;    /* number of hard links */
+         unsigned int  st_uid;      /* user ID of owner */
+         unsigned int  st_gid;      /* group ID of owner */
+         unsigned int  st_rdev;     /* device type (if inode device) */
+         unsigned long st_size;     /* total size, in bytes */
+         unsigned long st_blksize;  /* blocksize for filesystem I/O */
+         unsigned long st_blocks;   /* number of blocks allocated */
+         time_t        st_atime;    /* time of last access */
+         time_t        st_mtime;    /* time of last modification */
+         time_t        st_ctime;    /* time of last change */
+     };
+
+   The integral datatypes conform to the definitions given in the
+appropriate section (see *Note Integral Datatypes::, for details) so
+this structure is of size 64 bytes.
+
+   The values of several fields have a restricted meaning and/or range
+of values.
+
+`st_dev'
+     A value of 0 represents a file, 1 the console.
+
+`st_ino'
+     No valid meaning for the target.  Transmitted unchanged.
+
+`st_mode'
+     Valid mode bits are described in *Note Constants::.  Any other
+     bits have currently no meaning for the target.
+
+`st_uid'
+`st_gid'
+`st_rdev'
+     No valid meaning for the target.  Transmitted unchanged.
+
+`st_atime'
+`st_mtime'
+`st_ctime'
+     These values have a host and file system dependent accuracy.
+     Especially on Windows hosts, the file system may not support exact
+     timing values.
+
+   The target gets a `struct stat' of the above representation and is
+responsible for coercing it to the target representation before
+continuing.
+
+   Note that due to size differences between the host, target, and
+protocol representations of `struct stat' members, these members could
+eventually get truncated on the target.
+
+
+File: gdb.info,  Node: struct timeval,  Prev: struct stat,  Up: Protocol-specific Representation of Datatypes
+
+struct timeval
+..............
+
+The buffer of type `struct timeval' used by the File-I/O protocol is
+defined as follows:
+
+     struct timeval {
+         time_t tv_sec;  /* second */
+         long   tv_usec; /* microsecond */
+     };
+
+   The integral datatypes conform to the definitions given in the
+appropriate section (see *Note Integral Datatypes::, for details) so
+this structure is of size 8 bytes.
+
+
+File: gdb.info,  Node: Constants,  Next: File-I/O Examples,  Prev: Protocol-specific Representation of Datatypes,  Up: File-I/O Remote Protocol Extension
+
+E.13.9 Constants
+----------------
+
+The following values are used for the constants inside of the protocol.
+GDB and target are responsible for translating these values before and
+after the call as needed.
+
+* Menu:
+
+* Open Flags::
+* mode_t Values::
+* Errno Values::
+* Lseek Flags::
+* Limits::
+
+
+File: gdb.info,  Node: Open Flags,  Next: mode_t Values,  Up: Constants
+
+Open Flags
+..........
+
+All values are given in hexadecimal representation.
+
+       O_RDONLY        0x0
+       O_WRONLY        0x1
+       O_RDWR          0x2
+       O_APPEND        0x8
+       O_CREAT       0x200
+       O_TRUNC       0x400
+       O_EXCL        0x800
+
+
+File: gdb.info,  Node: mode_t Values,  Next: Errno Values,  Prev: Open Flags,  Up: Constants
+
+mode_t Values
+.............
+
+All values are given in octal representation.
+
+       S_IFREG       0100000
+       S_IFDIR        040000
+       S_IRUSR          0400
+       S_IWUSR          0200
+       S_IXUSR          0100
+       S_IRGRP           040
+       S_IWGRP           020
+       S_IXGRP           010
+       S_IROTH            04
+       S_IWOTH            02
+       S_IXOTH            01
+
+
+File: gdb.info,  Node: Errno Values,  Next: Lseek Flags,  Prev: mode_t Values,  Up: Constants
+
+Errno Values
+............
+
+All values are given in decimal representation.
+
+       EPERM           1
+       ENOENT          2
+       EINTR           4
+       EBADF           9
+       EACCES         13
+       EFAULT         14
+       EBUSY          16
+       EEXIST         17
+       ENODEV         19
+       ENOTDIR        20
+       EISDIR         21
+       EINVAL         22
+       ENFILE         23
+       EMFILE         24
+       EFBIG          27
+       ENOSPC         28
+       ESPIPE         29
+       EROFS          30
+       ENAMETOOLONG   91
+       EUNKNOWN       9999
+
+   `EUNKNOWN' is used as a fallback error value if a host system returns
+ any error value not in the list of supported error numbers.
+
+
+File: gdb.info,  Node: Lseek Flags,  Next: Limits,  Prev: Errno Values,  Up: Constants
+
+Lseek Flags
+...........
+
+       SEEK_SET      0
+       SEEK_CUR      1
+       SEEK_END      2
+
+
+File: gdb.info,  Node: Limits,  Prev: Lseek Flags,  Up: Constants
+
+Limits
+......
+
+All values are given in decimal representation.
+
+       INT_MIN       -2147483648
+       INT_MAX        2147483647
+       UINT_MAX       4294967295
+       LONG_MIN      -9223372036854775808
+       LONG_MAX       9223372036854775807
+       ULONG_MAX      18446744073709551615
+
+
+File: gdb.info,  Node: File-I/O Examples,  Prev: Constants,  Up: File-I/O Remote Protocol Extension
+
+E.13.10 File-I/O Examples
+-------------------------
+
+Example sequence of a write call, file descriptor 3, buffer is at target
+address 0x1234, 6 bytes should be written:
+
+     <- `Fwrite,3,1234,6'
+     _request memory read from target_
+     -> `m1234,6'
+     <- XXXXXX
+     _return "6 bytes written"_
+     -> `F6'
+
+   Example sequence of a read call, file descriptor 3, buffer is at
+target address 0x1234, 6 bytes should be read:
+
+     <- `Fread,3,1234,6'
+     _request memory write to target_
+     -> `X1234,6:XXXXXX'
+     _return "6 bytes read"_
+     -> `F6'
+
+   Example sequence of a read call, call fails on the host due to
+invalid file descriptor (`EBADF'):
+
+     <- `Fread,3,1234,6'
+     -> `F-1,9'
+
+   Example sequence of a read call, user presses `Ctrl-c' before
+syscall on host is called:
+
+     <- `Fread,3,1234,6'
+     -> `F-1,4,C'
+     <- `T02'
+
+   Example sequence of a read call, user presses `Ctrl-c' after syscall
+on host is called:
+
+     <- `Fread,3,1234,6'
+     -> `X1234,6:XXXXXX'
+     <- `T02'
+
+
+File: gdb.info,  Node: Library List Format,  Next: Memory Map Format,  Prev: File-I/O Remote Protocol Extension,  Up: Remote Protocol
+
+E.14 Library List Format
+========================
+
+On some platforms, a dynamic loader (e.g. `ld.so') runs in the same
+process as your application to manage libraries.  In this case, GDB can
+use the loader's symbol table and normal memory operations to maintain
+a list of shared libraries.  On other platforms, the operating system
+manages loaded libraries.  GDB can not retrieve the list of currently
+loaded libraries through memory operations, so it uses the
+`qXfer:libraries:read' packet (*note qXfer library list read::)
+instead.  The remote stub queries the target's operating system and
+reports which libraries are loaded.
+
+   The `qXfer:libraries:read' packet returns an XML document which
+lists loaded libraries and their offsets.  Each library has an
+associated name and one or more segment or section base addresses,
+which report where the library was loaded in memory.
+
+   For the common case of libraries that are fully linked binaries, the
+library should have a list of segments.  If the target supports dynamic
+linking of a relocatable object file, its library XML element should
+instead include a list of allocated sections.  The segment or section
+bases are start addresses, not relocation offsets; they do not depend
+on the library's link-time base addresses.
+
+   GDB must be linked with the Expat library to support XML library
+lists.  *Note Expat::.
+
+   A simple memory map, with one loaded library relocated by a single
+offset, looks like this:
+
+     <library-list>
+       <library name="/lib/libc.so.6">
+         <segment address="0x10000000"/>
+       </library>
+     </library-list>
+
+   Another simple memory map, with one loaded library with three
+allocated sections (.text, .data, .bss), looks like this:
+
+     <library-list>
+       <library name="sharedlib.o">
+         <section address="0x10000000"/>
+         <section address="0x20000000"/>
+         <section address="0x30000000"/>
+       </library>
+     </library-list>
+
+   The format of a library list is described by this DTD:
+
+     <!-- library-list: Root element with versioning -->
+     <!ELEMENT library-list  (library)*>
+     <!ATTLIST library-list  version CDATA   #FIXED  "1.0">
+     <!ELEMENT library       (segment*, section*)>
+     <!ATTLIST library       name    CDATA   #REQUIRED>
+     <!ELEMENT segment       EMPTY>
+     <!ATTLIST segment       address CDATA   #REQUIRED>
+     <!ELEMENT section       EMPTY>
+     <!ATTLIST section       address CDATA   #REQUIRED>
+
+   In addition, segments and section descriptors cannot be mixed within
+a single library element, and you must supply at least one segment or
+section for each library.
+
+
+File: gdb.info,  Node: Memory Map Format,  Next: Thread List Format,  Prev: Library List Format,  Up: Remote Protocol
+
+E.15 Memory Map Format
+======================
+
+To be able to write into flash memory, GDB needs to obtain a memory map
+from the target.  This section describes the format of the memory map.
+
+   The memory map is obtained using the `qXfer:memory-map:read' (*note
+qXfer memory map read::) packet and is an XML document that lists
+memory regions.
+
+   GDB must be linked with the Expat library to support XML memory
+maps.  *Note Expat::.
+
+   The top-level structure of the document is shown below:
+
+     <?xml version="1.0"?>
+     <!DOCTYPE memory-map
+               PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN"
+                      "http://sourceware.org/gdb/gdb-memory-map.dtd">
+     <memory-map>
+         region...
+     </memory-map>
+
+   Each region can be either:
+
+   * A region of RAM starting at ADDR and extending for LENGTH bytes
+     from there:
+
+          <memory type="ram" start="ADDR" length="LENGTH"/>
+
+   * A region of read-only memory:
+
+          <memory type="rom" start="ADDR" length="LENGTH"/>
+
+   * A region of flash memory, with erasure blocks BLOCKSIZE bytes in
+     length:
+
+          <memory type="flash" start="ADDR" length="LENGTH">
+            <property name="blocksize">BLOCKSIZE</property>
+          </memory>
+
+
+   Regions must not overlap.  GDB assumes that areas of memory not
+covered by the memory map are RAM, and uses the ordinary `M' and `X'
+packets to write to addresses in such ranges.
+
+   The formal DTD for memory map format is given below:
+
+     <!-- ................................................... -->
+     <!-- Memory Map XML DTD ................................ -->
+     <!-- File: memory-map.dtd .............................. -->
+     <!-- .................................... .............. -->
+     <!-- memory-map.dtd -->
+     <!-- memory-map: Root element with versioning -->
+     <!ELEMENT memory-map (memory | property)>
+     <!ATTLIST memory-map    version CDATA   #FIXED  "1.0.0">
+     <!ELEMENT memory (property)>
+     <!-- memory: Specifies a memory region,
+                  and its type, or device. -->
+     <!ATTLIST memory        type    CDATA   #REQUIRED
+                             start   CDATA   #REQUIRED
+                             length  CDATA   #REQUIRED
+                             device  CDATA   #IMPLIED>
+     <!-- property: Generic attribute tag -->
+     <!ELEMENT property (#PCDATA | property)*>
+     <!ATTLIST property      name    CDATA   #REQUIRED>
+
+
+File: gdb.info,  Node: Thread List Format,  Next: Traceframe Info Format,  Prev: Memory Map Format,  Up: Remote Protocol
+
+E.16 Thread List Format
+=======================
+
+To efficiently update the list of threads and their attributes, GDB
+issues the `qXfer:threads:read' packet (*note qXfer threads read::) and
+obtains the XML document with the following structure:
+
+     <?xml version="1.0"?>
+     <threads>
+         <thread id="id" core="0">
+         ... description ...
+         </thread>
+     </threads>
+
+   Each `thread' element must have the `id' attribute that identifies
+the thread (*note thread-id syntax::).  The `core' attribute, if
+present, specifies which processor core the thread was last executing
+on.  The content of the of `thread' element is interpreted as
+human-readable auxilliary information.
+
+
+File: gdb.info,  Node: Traceframe Info Format,  Prev: Thread List Format,  Up: Remote Protocol
+
+E.17 Traceframe Info Format
+===========================
+
+To be able to know which objects in the inferior can be examined when
+inspecting a tracepoint hit, GDB needs to obtain the list of memory
+ranges, registers and trace state variables that have been collected in
+a traceframe.
+
+   This list is obtained using the `qXfer:traceframe-info:read' (*note
+qXfer traceframe info read::) packet and is an XML document.
+
+   GDB must be linked with the Expat library to support XML traceframe
+info discovery.  *Note Expat::.
+
+   The top-level structure of the document is shown below:
+
+     <?xml version="1.0"?>
+     <!DOCTYPE traceframe-info
+               PUBLIC "+//IDN gnu.org//DTD GDB Memory Map V1.0//EN"
+                      "http://sourceware.org/gdb/gdb-traceframe-info.dtd">
+     <traceframe-info>
+        block...
+     </traceframe-info>
+
+   Each traceframe block can be either:
+
+   * A region of collected memory starting at ADDR and extending for
+     LENGTH bytes from there:
+
+          <memory start="ADDR" length="LENGTH"/>
+
+
+   The formal DTD for the traceframe info format is given below:
+
+     <!ELEMENT traceframe-info  (memory)* >
+     <!ATTLIST traceframe-info  version CDATA   #FIXED  "1.0">
+
+     <!ELEMENT memory        EMPTY>
+     <!ATTLIST memory        start   CDATA   #REQUIRED
+                             length  CDATA   #REQUIRED>
+
+
+File: gdb.info,  Node: Agent Expressions,  Next: Target Descriptions,  Prev: Remote Protocol,  Up: Top
+
+Appendix F The GDB Agent Expression Mechanism
+*********************************************
+
+In some applications, it is not feasible for the debugger to interrupt
+the program's execution long enough for the developer to learn anything
+helpful about its behavior.  If the program's correctness depends on its
+real-time behavior, delays introduced by a debugger might cause the
+program to fail, even when the code itself is correct.  It is useful to
+be able to observe the program's behavior without interrupting it.
+
+   Using GDB's `trace' and `collect' commands, the user can specify
+locations in the program, and arbitrary expressions to evaluate when
+those locations are reached.  Later, using the `tfind' command, she can
+examine the values those expressions had when the program hit the trace
+points.  The expressions may also denote objects in memory --
+structures or arrays, for example -- whose values GDB should record;
+while visiting a particular tracepoint, the user may inspect those
+objects as if they were in memory at that moment.  However, because GDB
+records these values without interacting with the user, it can do so
+quickly and unobtrusively, hopefully not disturbing the program's
+behavior.
+
+   When GDB is debugging a remote target, the GDB "agent" code running
+on the target computes the values of the expressions itself.  To avoid
+having a full symbolic expression evaluator on the agent, GDB translates
+expressions in the source language into a simpler bytecode language, and
+then sends the bytecode to the agent; the agent then executes the
+bytecode, and records the values for GDB to retrieve later.
+
+   The bytecode language is simple; there are forty-odd opcodes, the
+bulk of which are the usual vocabulary of C operands (addition,
+subtraction, shifts, and so on) and various sizes of literals and
+memory reference operations.  The bytecode interpreter operates
+strictly on machine-level values -- various sizes of integers and
+floating point numbers -- and requires no information about types or
+symbols; thus, the interpreter's internal data structures are simple,
+and each bytecode requires only a few native machine instructions to
+implement it.  The interpreter is small, and strict limits on the
+memory and time required to evaluate an expression are easy to
+determine, making it suitable for use by the debugging agent in
+real-time applications.
+
+* Menu:
+
+* General Bytecode Design::     Overview of the interpreter.
+* Bytecode Descriptions::       What each one does.
+* Using Agent Expressions::     How agent expressions fit into the big picture.
+* Varying Target Capabilities:: How to discover what the target can do.
+* Rationale::                   Why we did it this way.
+
+
+File: gdb.info,  Node: General Bytecode Design,  Next: Bytecode Descriptions,  Up: Agent Expressions
+
+F.1 General Bytecode Design
+===========================
+
+The agent represents bytecode expressions as an array of bytes.  Each
+instruction is one byte long (thus the term "bytecode").  Some
+instructions are followed by operand bytes; for example, the `goto'
+instruction is followed by a destination for the jump.
+
+   The bytecode interpreter is a stack-based machine; most instructions
+pop their operands off the stack, perform some operation, and push the
+result back on the stack for the next instruction to consume.  Each
+element of the stack may contain either a integer or a floating point
+value; these values are as many bits wide as the largest integer that
+can be directly manipulated in the source language.  Stack elements
+carry no record of their type; bytecode could push a value as an
+integer, then pop it as a floating point value.  However, GDB will not
+generate code which does this.  In C, one might define the type of a
+stack element as follows:
+     union agent_val {
+       LONGEST l;
+       DOUBLEST d;
+     };
+   where `LONGEST' and `DOUBLEST' are `typedef' names for the largest
+integer and floating point types on the machine.
+
+   By the time the bytecode interpreter reaches the end of the
+expression, the value of the expression should be the only value left
+on the stack.  For tracing applications, `trace' bytecodes in the
+expression will have recorded the necessary data, and the value on the
+stack may be discarded.  For other applications, like conditional
+breakpoints, the value may be useful.
+
+   Separate from the stack, the interpreter has two registers:
+`pc'
+     The address of the next bytecode to execute.
+
+`start'
+     The address of the start of the bytecode expression, necessary for
+     interpreting the `goto' and `if_goto' instructions.
+
+   Neither of these registers is directly visible to the bytecode
+language itself, but they are useful for defining the meanings of the
+bytecode operations.
+
+   There are no instructions to perform side effects on the running
+program, or call the program's functions; we assume that these
+expressions are only used for unobtrusive debugging, not for patching
+the running code.
+
+   Most bytecode instructions do not distinguish between the various
+sizes of values, and operate on full-width values; the upper bits of the
+values are simply ignored, since they do not usually make a difference
+to the value computed.  The exceptions to this rule are:
+memory reference instructions (`ref'N)
+     There are distinct instructions to fetch different word sizes from
+     memory.  Once on the stack, however, the values are treated as
+     full-size integers.  They may need to be sign-extended; the `ext'
+     instruction exists for this purpose.
+
+the sign-extension instruction (`ext' N)
+     These clearly need to know which portion of their operand is to be
+     extended to occupy the full length of the word.
+
+
+   If the interpreter is unable to evaluate an expression completely for
+some reason (a memory location is inaccessible, or a divisor is zero,
+for example), we say that interpretation "terminates with an error".
+This means that the problem is reported back to the interpreter's caller
+in some helpful way.  In general, code using agent expressions should
+assume that they may attempt to divide by zero, fetch arbitrary memory
+locations, and misbehave in other ways.
+
+   Even complicated C expressions compile to a few bytecode
+instructions; for example, the expression `x + y * z' would typically
+produce code like the following, assuming that `x' and `y' live in
+registers, and `z' is a global variable holding a 32-bit `int':
+     reg 1
+     reg 2
+     const32 address of z
+     ref32
+     ext 32
+     mul
+     add
+     end
+
+   In detail, these mean:
+`reg 1'
+     Push the value of register 1 (presumably holding `x') onto the
+     stack.
+
+`reg 2'
+     Push the value of register 2 (holding `y').
+
+`const32 address of z'
+     Push the address of `z' onto the stack.
+
+`ref32'
+     Fetch a 32-bit word from the address at the top of the stack;
+     replace the address on the stack with the value.  Thus, we replace
+     the address of `z' with `z''s value.
+
+`ext 32'
+     Sign-extend the value on the top of the stack from 32 bits to full
+     length.  This is necessary because `z' is a signed integer.
+
+`mul'
+     Pop the top two numbers on the stack, multiply them, and push their
+     product.  Now the top of the stack contains the value of the
+     expression `y * z'.
+
+`add'
+     Pop the top two numbers, add them, and push the sum.  Now the top
+     of the stack contains the value of `x + y * z'.
+
+`end'
+     Stop executing; the value left on the stack top is the value to be
+     recorded.
+
+
+
 File: gdb.info,  Node: Bytecode Descriptions,  Next: Using Agent Expressions,  Prev: General Bytecode Design,  Up: Agent Expressions
 
-E.2 Bytecode Descriptions
+F.2 Bytecode Descriptions
 =========================
 
 Each bytecode description has the following form:
@@ -221,6 +1801,16 @@ describing them, to save time.
 `pop' (0x29): A =>
      Discard the top value on the stack.
 
+`pick' (0x32) N: A ... B => A ... B A
+     Duplicate an item from the stack and push it on the top of the
+     stack.  N, a single byte, indicates the stack item to copy.  If N
+     is zero, this is the same as `dup'; if N is one, it copies the
+     item under the top item, etc.  If N exceeds the number of items on
+     the stack, terminate with an error.
+
+`rot' (0x33): A B C => C B A
+     Rotate the top three items on the stack.
+
 `if_goto' (0x20) OFFSET: A =>
      Pop an integer off the stack; if it is non-zero, branch to the
      given offset in the bytecode string.  Otherwise, continue to the
@@ -320,7 +1910,7 @@ describing them, to save time.
 
 File: gdb.info,  Node: Using Agent Expressions,  Next: Varying Target Capabilities,  Prev: Bytecode Descriptions,  Up: Agent Expressions
 
-E.3 Using Agent Expressions
+F.3 Using Agent Expressions
 ===========================
 
 Agent expressions can be used in several different ways by GDB, and the
@@ -364,7 +1954,7 @@ collection; in addition to bytecodes that do the calculation, GDB adds
 
 File: gdb.info,  Node: Varying Target Capabilities,  Next: Rationale,  Prev: Using Agent Expressions,  Up: Agent Expressions
 
-E.4 Varying Target Capabilities
+F.4 Varying Target Capabilities
 ===============================
 
 Some targets don't support floating-point, and some would rather not
@@ -395,7 +1985,7 @@ least the following information:
 
 File: gdb.info,  Node: Rationale,  Prev: Varying Target Capabilities,  Up: Agent Expressions
 
-E.5 Rationale
+F.5 Rationale
 =============
 
 Some of the design decisions apparent above are arguable.
@@ -547,53 +2137,6 @@ Why does `trace16' exist?
      opcode 0x30 reserved, to remain compatible with the customer who
      added it.
 
-
-
-File: gdb.info,  Node: Trace File Format,  Next: Copying,  Prev: Operating System Information,  Up: Top
-
-Appendix F Trace File Format
-****************************
-
-The trace file comes in three parts: a header, a textual description
-section, and a trace frame section with binary data.
-
-   The header has the form `\x7fTRACE0\n'.  The first byte is `0x7f' so
-as to indicate that the file contains binary data, while the `0' is a
-version number that may have different values in the future.
-
-   The description section consists of multiple lines of ASCII text
-separated by newline characters (`0xa').  The lines may include a
-variety of optional descriptive or context-setting information, such as
-tracepoint definitions or register set size.  GDB will ignore any line
-that it does not recognize.  An empty line marks the end of this
-section.
-
-   The trace frame section consists of a number of consecutive frames.
-Each frame begins with a two-byte tracepoint number, followed by a
-four-byte size giving the amount of data in the frame.  The data in the
-frame consists of a number of blocks, each introduced by a character
-indicating its type (at least register, memory, and trace state
-variable).  The data in this section is raw binary, not a hexadecimal
-or other encoding; its endianness matches the target's endianness.
-
-`R BYTES'
-     Register block.  The number and ordering of bytes matches that of a
-     `g' packet in the remote protocol.  Note that these are the actual
-     bytes, in target order and GDB register order, not a hexadecimal
-     encoding.
-
-`M ADDRESS LENGTH BYTES...'
-     Memory block.  This is a contiguous block of memory, at the 8-byte
-     address ADDRESS, with a 2-byte length LENGTH, followed by LENGTH
-     bytes.
-
-`V NUMBER VALUE'
-     Trace state variable block.  This records the 8-byte signed value
-     VALUE of trace state variable numbered NUMBER.
-
-
-   Future enhancements of the trace file format may include additional
-types of blocks.
 
 
 File: gdb.info,  Node: Target Descriptions,  Next: Operating System Information,  Prev: Agent Expressions,  Up: Top
@@ -1015,9 +2558,13 @@ File: gdb.info,  Node: ARM Features,  Next: i386 Features,  Up: Standard Target 
 G.4.1 ARM Features
 ------------------
 
-The `org.gnu.gdb.arm.core' feature is required for ARM targets.  It
-should contain registers `r0' through `r13', `sp', `lr', `pc', and
-`cpsr'.
+The `org.gnu.gdb.arm.core' feature is required for non-M-profile ARM
+targets.  It should contain registers `r0' through `r13', `sp', `lr',
+`pc', and `cpsr'.
+
+   For M-profile targets (e.g. Cortex-M3), the `org.gnu.gdb.arm.core'
+feature is replaced by `org.gnu.gdb.arm.m-profile'.  It should contain
+registers `r0' through `r13', `sp', `lr', `pc', and `xpsr'.
 
    The `org.gnu.gdb.arm.fpa' feature is optional.  If present, it
 should contain registers `f0' through `f7' and `fps'.
@@ -1079,7 +2626,6 @@ of YMM registers:
 
    - `ymm0h' through `ymm15h' for amd64
 
-   -
    The `org.gnu.gdb.i386.linux' feature is optional.  It should
 describe a single register, `orig_eax'.
 
@@ -1207,9 +2753,56 @@ cores that this process is running on.  Target may provide additional
 columns, which GDB currently ignores.
 
 
+File: gdb.info,  Node: Trace File Format,  Next: Copying,  Prev: Operating System Information,  Up: Top
+
+Appendix I Trace File Format
+****************************
+
+The trace file comes in three parts: a header, a textual description
+section, and a trace frame section with binary data.
+
+   The header has the form `\x7fTRACE0\n'.  The first byte is `0x7f' so
+as to indicate that the file contains binary data, while the `0' is a
+version number that may have different values in the future.
+
+   The description section consists of multiple lines of ASCII text
+separated by newline characters (`0xa').  The lines may include a
+variety of optional descriptive or context-setting information, such as
+tracepoint definitions or register set size.  GDB will ignore any line
+that it does not recognize.  An empty line marks the end of this
+section.
+
+   The trace frame section consists of a number of consecutive frames.
+Each frame begins with a two-byte tracepoint number, followed by a
+four-byte size giving the amount of data in the frame.  The data in the
+frame consists of a number of blocks, each introduced by a character
+indicating its type (at least register, memory, and trace state
+variable).  The data in this section is raw binary, not a hexadecimal
+or other encoding; its endianness matches the target's endianness.
+
+`R BYTES'
+     Register block.  The number and ordering of bytes matches that of a
+     `g' packet in the remote protocol.  Note that these are the actual
+     bytes, in target order and GDB register order, not a hexadecimal
+     encoding.
+
+`M ADDRESS LENGTH BYTES...'
+     Memory block.  This is a contiguous block of memory, at the 8-byte
+     address ADDRESS, with a 2-byte length LENGTH, followed by LENGTH
+     bytes.
+
+`V NUMBER VALUE'
+     Trace state variable block.  This records the 8-byte signed value
+     VALUE of trace state variable numbered NUMBER.
+
+
+   Future enhancements of the trace file format may include additional
+types of blocks.
+
+
 File: gdb.info,  Node: Copying,  Next: GNU Free Documentation License,  Prev: Trace File Format,  Up: Top
 
-Appendix I GNU GENERAL PUBLIC LICENSE
+Appendix J GNU GENERAL PUBLIC LICENSE
 *************************************
 
                         Version 3, 29 June 2007
@@ -1932,7 +3525,7 @@ please read `http://www.gnu.org/philosophy/why-not-lgpl.html'.
 
 File: gdb.info,  Node: GNU Free Documentation License,  Next: Index,  Prev: Copying,  Up: Top
 
-Appendix J GNU Free Documentation License
+Appendix K GNU Free Documentation License
 *****************************************
 
                      Version 1.3, 3 November 2008

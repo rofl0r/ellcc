@@ -226,6 +226,18 @@
 #define OP_SH_SEQI		6
 #define OP_MASK_SEQI		0x3ff
 
+/* Loongson */
+#define OP_SH_OFFSET_A		6
+#define OP_MASK_OFFSET_A	0xff
+#define OP_SH_OFFSET_B		3
+#define OP_MASK_OFFSET_B	0xff
+#define OP_SH_OFFSET_C		6
+#define OP_MASK_OFFSET_C	0x1ff
+#define OP_SH_RZ		0
+#define OP_MASK_RZ		0x1f
+#define OP_SH_FZ		0
+#define OP_MASK_FZ		0x1f
+
 /* This structure holds information for a particular instruction.  */
 
 struct mips_opcode
@@ -396,6 +408,13 @@ struct mips_opcode
 	pos + lenm1 < 32 or pos + lenm1 < 64 depending whether previous
 	position field is "+p" or "+P".
 
+   Loongson-3A:
+   "+a" 8-bit signed offset in bit 6 (OP_*_OFFSET_A)
+   "+b" 8-bit signed offset in bit 3 (OP_*_OFFSET_B)
+   "+c" 9-bit signed offset in bit 6 (OP_*_OFFSET_C)
+   "+z" 5-bit rz register (OP_*_RZ)
+   "+Z" 5-bit fz register (OP_*_FZ)
+
    Other:
    "()" parens surrounding optional value
    ","  separates operands
@@ -411,8 +430,8 @@ struct mips_opcode
    Extension character sequences used so far ("+" followed by the
    following), for quick reference when adding more:
    "1234"
-   "ABCDEFGHIPQSTX"
-   "pstx"
+   "ABCDEFGHIPQSTXZ"
+   "abcpstxz"
 */
 
 /* These are the bits which may be set in the pinfo field of an
@@ -503,6 +522,17 @@ struct mips_opcode
    only be set for macros.  For instructions, FP_D in pinfo carries the
    same information.  */
 #define INSN2_M_FP_D		    0x00000010
+/* Modifies the general purpose register in OP_*_RZ.  */
+#define INSN2_WRITE_GPR_Z	    0x00000020
+/* Modifies the floating point register in OP_*_FZ.  */
+#define INSN2_WRITE_FPR_Z	    0x00000040
+/* Reads the general purpose register in OP_*_RZ.  */
+#define INSN2_READ_GPR_Z	    0x00000080
+/* Reads the floating point register in OP_*_FZ.  */
+#define INSN2_READ_FPR_Z	    0x00000100
+/* Reads the general purpose register in OP_*_RD.  */
+#define INSN2_READ_GPR_D	    0x00000200
+
 
 /* Masks used to mark instructions to indicate which MIPS ISA level
    they were introduced in.  INSN_ISA_MASK masks an enumeration that
@@ -544,7 +574,7 @@ static const unsigned int mips_isa_table[] =
   { 0x0001, 0x0003, 0x0607, 0x1e0f, 0x3e1f, 0x0a23, 0x3e63, 0x3ebf, 0x3fff };
 
 /* Masks used for Chip specific instructions.  */
-#define INSN_CHIP_MASK		  0xc3ff0820
+#define INSN_CHIP_MASK		  0xc3ff0c20
 
 /* Cavium Networks Octeon instructions.  */
 #define INSN_OCTEON		  0x00000800
@@ -594,6 +624,8 @@ static const unsigned int mips_isa_table[] =
 #define INSN_LOONGSON_2E          0x40000000
 /* ST Microelectronics Loongson 2F.  */
 #define INSN_LOONGSON_2F          0x80000000
+/* Loongson 3A.  */
+#define INSN_LOONGSON_3A          0x00000400
 /* RMI Xlr instruction */
 #define INSN_XLR              	  0x00000020
 
@@ -647,6 +679,7 @@ static const unsigned int mips_isa_table[] =
 #define CPU_SB1         12310201        /* octal 'SB', 01.  */
 #define CPU_LOONGSON_2E 3001
 #define CPU_LOONGSON_2F 3002
+#define CPU_LOONGSON_3A 3003
 #define CPU_OCTEON	6501
 #define CPU_XLR     	887682   	/* decimal 'XLR'   */
 
@@ -680,6 +713,8 @@ static const unsigned int mips_isa_table[] =
          && ((insn)->membership & INSN_LOONGSON_2E) != 0)               \
      || (cpu == CPU_LOONGSON_2F                                         \
          && ((insn)->membership & INSN_LOONGSON_2F) != 0)               \
+     || (cpu == CPU_LOONGSON_3A                                         \
+         && ((insn)->membership & INSN_LOONGSON_3A) != 0)               \
      || (cpu == CPU_OCTEON						\
 	 && ((insn)->membership & INSN_OCTEON) != 0)			\
      || (cpu == CPU_XLR && ((insn)->membership & INSN_XLR) != 0)        \
@@ -829,6 +864,7 @@ enum
   M_MULOU_I,
   M_NOR_I,
   M_OR_I,
+  M_PREF_AB,
   M_REM_3,
   M_REM_3I,
   M_REMU_3,

@@ -1,5 +1,5 @@
 # Copyright 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-# 2004, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+# 2004, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 if $tracelevel then {
 	strace $tracelevel
 }
-
 
 set testfile "callfuncs"
 set srcfile ${testfile}.c
@@ -50,25 +49,6 @@ if [target_info exists gdb,cannot_call_functions] {
     setup_xfail "*-*-*" 2416
     fail "This target can not call functions"
     continue
-}
-
-# Set the current language to C.  This counts as a test.  If it
-# fails, then we skip the other tests.
-
-proc set_lang_c {} {
-    global gdb_prompt
-
-    gdb_test_no_output "set language c" 
-
-    set success 0
-
-    gdb_test_multiple "show language" "set language to \"c\"" {
-	-re ".* source language is \"c\".*$gdb_prompt $" {
-	    pass "set language to \"c\""
-	    set success 1
-	}
-    }
-    return $success
 }
 
 # FIXME:  Before calling this proc, we should probably verify that
@@ -229,10 +209,14 @@ proc do_function_calls {} {
 	"call inferior func with struct - returns int"
     gdb_test "p t_structs_l(struct_val1)" "= 51" \
 	"call inferior func with struct - returns long"
-    gdb_test "p t_structs_f(struct_val1)" "= 2.12.*" \
-       	"call inferior func with struct - returns float"
-    gdb_test "p t_structs_d(struct_val1)" "= 9.87.*" \
-    	"call inferior func with struct - returns double"
+
+    if ![target_info exists gdb,skip_float_tests] {
+	gdb_test "p t_structs_f(struct_val1)" "= 2.12.*" \
+	    "call inferior func with struct - returns float"
+	gdb_test "p t_structs_d(struct_val1)" "= 9.87.*" \
+	    "call inferior func with struct - returns double"
+    }
+
     gdb_test "p t_structs_a(struct_val1)" "= (.unsigned char .. )?\"foo\"" \
     	"call inferior func with struct - returns char *"
 }
@@ -315,12 +299,9 @@ if { $hp_aCC_compiler } {
 
     gdb_test_no_output "set overload-resolution 0"
 } else {
-    if { ![set_lang_c] } {
+    gdb_test_no_output "set language c"
+    if { ![runto_main] } {
 	gdb_suppress_tests;
-    } else {
-	if { ![runto_main] } {
-	    gdb_suppress_tests;
-	}
     }
 }
 
