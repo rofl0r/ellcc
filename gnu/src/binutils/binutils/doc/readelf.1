@@ -132,7 +132,7 @@
 .\" ========================================================================
 .\"
 .IX Title "READELF 1"
-.TH READELF 1 "2010-11-08" "binutils-2.20.90" "GNU Development Tools"
+.TH READELF 1 "2011-06-27" "binutils-2.21.1" "GNU Development Tools"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -162,7 +162,7 @@ readelf [\fB\-a\fR|\fB\-\-all\fR]
         [\fB\-R\fR <number or name>|\fB\-\-relocated\-dump=\fR<number or name>]
         [\fB\-c\fR|\fB\-\-archive\-index\fR]
         [\fB\-w[lLiaprmfFsoRt]\fR|
-         \fB\-\-debug\-dump\fR[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames\-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges]]
+         \fB\-\-debug\-dump\fR[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames\-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges,=gdb_index]]
         [\fB\-I\fR|\fB\-\-histogram\fR]
         [\fB\-v\fR|\fB\-\-version\fR]
         [\fB\-W\fR|\fB\-\-wide\fR]
@@ -354,15 +354,15 @@ command to \fBar\fR, but without using the \s-1BFD\s0 library.
 .IP "\fB\-w[lLiaprmfFsoRt]\fR" 4
 .IX Item "-w[lLiaprmfFsoRt]"
 .PD 0
-.IP "\fB\-\-debug\-dump[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames\-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges]\fR" 4
-.IX Item "--debug-dump[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges]"
+.IP "\fB\-\-debug\-dump[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames\-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges,=gdb_index]\fR" 4
+.IX Item "--debug-dump[=rawline,=decodedline,=info,=abbrev,=pubnames,=aranges,=macro,=frames,=frames-interp,=str,=loc,=Ranges,=pubtypes,=trace_info,=trace_abbrev,=trace_aranges,=gdb_index]"
 .PD
 Displays the contents of the debug sections in the file, if any are
 present.  If one of the optional letters or words follows the switch
 then only data found in those specific sections will be dumped.
 .Sp
 Note that there is no single letter option to display the content of
-trace sections.
+trace sections or .gdb_index.
 .Sp
 Note: the \fB=decodedline\fR option will display the interpreted
 contents of a .debug_line section whereas the \fB=rawline\fR option

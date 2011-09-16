@@ -1789,13 +1789,13 @@ class Output_data_reloc<elfcpp::SHT_RELA, dynamic, size, big_endian>
   void
   add_output_section(Output_section* os, unsigned int type, Output_data* od,
 		     Address address, Addend addend)
-  { this->add(os, Output_reloc_type(os, type, od, address, addend)); }
+  { this->add(od, Output_reloc_type(os, type, od, address, addend)); }
 
   void
-  add_output_section(Output_section* os, unsigned int type,
+  add_output_section(Output_section* os, unsigned int type, Output_data* od,
                      Sized_relobj<size, big_endian>* relobj,
 		     unsigned int shndx, Address address, Addend addend)
-  { this->add(os, Output_reloc_type(os, type, relobj, shndx, address,
+  { this->add(od, Output_reloc_type(os, type, relobj, shndx, address,
                                     addend)); }
 
   // Add an absolute relocation.
@@ -3911,7 +3911,7 @@ class Output_segment
   // *PSHNDX.  This should only be called for a PT_LOAD segment.
   uint64_t
   set_section_addresses(const Layout*, bool reset, uint64_t addr,
-			unsigned int increase_relro, bool* has_relro,
+			unsigned int* increase_relro, bool* has_relro,
 			off_t* poff, unsigned int* pshndx);
 
   // Set the minimum alignment of this segment.  This may be adjusted

@@ -207,6 +207,7 @@ static const arm_feature_set arm_arch_any = ARM_ANY;
 static const arm_feature_set arm_arch_full = ARM_FEATURE (-1, -1);
 static const arm_feature_set arm_arch_t2 = ARM_ARCH_THUMB2;
 static const arm_feature_set arm_arch_none = ARM_ARCH_NONE;
+static const arm_feature_set arm_arch_v6m_only = ARM_ARCH_V6M_ONLY;
 
 static const arm_feature_set arm_cext_iwmmxt2 =
   ARM_FEATURE (0, ARM_CEXT_IWMMXT2);
@@ -2213,7 +2214,7 @@ create_neon_reg_alias (char *newname, char *p)
   struct reg_entry mybasereg;
   struct neon_type ntype;
   struct neon_typed_alias typeinfo;
-  char *namebuf, *nameend;
+  char *namebuf, *nameend ATTRIBUTE_UNUSED;
   int namelen;
 
   typeinfo.defined = 0;
@@ -4420,7 +4421,7 @@ parse_big_immediate (char **str, int i)
       /* If we're on a 64-bit host, then a 64-bit number can be returned using
 	 O_constant.  We have to be careful not to break compilation for
 	 32-bit X_add_number, though.  */
-      if ((exp.X_add_number & ~0xffffffffl) != 0)
+      if ((exp.X_add_number & ~(offsetT)(0xffffffffU)) != 0)
 	{
           /* X >> 32 is illegal if sizeof (exp.X_add_number) == 4.  */
 	  inst.operands[i].reg = ((exp.X_add_number >> 16) >> 16) & 0xffffffff;
@@ -9683,7 +9684,9 @@ do_t_branch (void)
   else
     opcode = inst.instruction;
 
-  if (unified_syntax && inst.size_req == 4)
+  if (unified_syntax
+      && (inst.size_req == 4
+	  || (inst.size_req != 2 && inst.operands[0].hasreloc)))
     {
       inst.instruction = THUMB_OP32(opcode);
       if (cond == COND_ALWAYS)
@@ -23229,6 +23232,12 @@ aeabi_set_public_attributes (void)
       ARM_CLEAR_FEATURE (flags, flags, arm_arch_any);
       ARM_MERGE_FEATURE_SETS (flags, flags, *object_arch);
     }
+
+  /* We need to make sure that the attributes do not identify us as v6S-M
+     when the only v6S-M feature in use is the Operating System Extensions.  */
+  if (ARM_CPU_HAS_FEATURE (flags, arm_ext_os))
+      if (!ARM_CPU_HAS_FEATURE (flags, arm_arch_v6m_only))
+        ARM_CLEAR_FEATURE (flags, flags, arm_ext_os);
 
   tmp = flags;
   arch = 0;

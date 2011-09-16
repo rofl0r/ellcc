@@ -132,7 +132,7 @@
 .\" ========================================================================
 .\"
 .IX Title "NM 1"
-.TH NM 1 "2010-11-08" "binutils-2.20.90" "GNU Development Tools"
+.TH NM 1 "2011-06-27" "binutils-2.21.1" "GNU Development Tools"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -165,7 +165,9 @@ hexadecimal by default.
 .IP "\(bu" 4
 The symbol type.  At least the following types are used; others are, as
 well, depending on the object file format.  If lowercase, the symbol is
-local; if uppercase, the symbol is global (external).
+usually local; if uppercase, the symbol is global (external).  There
+are however a few lowercase symbols that are shown for special global
+symbols (\f(CW\*(C`u\*(C'\fR, \f(CW\*(C`v\*(C'\fR and \f(CW\*(C`w\*(C'\fR).
 .RS 4
 .ie n .IP """A""" 4
 .el .IP "\f(CWA\fR" 4

@@ -1,6 +1,6 @@
 /* ELF object file format
    Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -1893,22 +1893,17 @@ elf_frob_symbol (symbolS *symp, int *puntp)
 
   if (sy_obj->size != NULL)
     {
-      switch (sy_obj->size->X_op)
+      if (resolve_expression (sy_obj->size)
+	  && sy_obj->size->X_op == O_constant)
+	S_SET_SIZE (symp, sy_obj->size->X_add_number);
+      else
 	{
-	case O_subtract:
-	  S_SET_SIZE (symp,
-		      (S_GET_VALUE (sy_obj->size->X_add_symbol)
-		       + sy_obj->size->X_add_number
-		       - S_GET_VALUE (sy_obj->size->X_op_symbol)));
-	  break;
-	case O_constant:
-	  S_SET_SIZE (symp,
-		      (S_GET_VALUE (sy_obj->size->X_add_symbol)
-		       + sy_obj->size->X_add_number));
-	  break;
-	default:
-	  as_bad (_(".size expression too complicated to fix up"));
-	  break;
+	  if (flag_size_check == size_check_error)
+	    as_bad (_(".size expression for %s "
+		      "does not evaluate to a constant"), S_GET_NAME (symp));
+	  else
+	    as_warn (_(".size expression for %s "
+		       "does not evaluate to a constant"), S_GET_NAME (symp));
 	}
       free (sy_obj->size);
       sy_obj->size = NULL;
@@ -2146,7 +2141,14 @@ elf_adjust_symtab (void)
 	{
 	  /* Create the symbol now.  */
 	  sy = symbol_new (group_name, now_seg, (valueT) 0, frag_now);
+#ifdef TE_SOLARIS
+	  /* Before Solaris 11 build 154, Sun ld rejects local group
+	     signature symbols, so make them weak hidden instead.  */
+	  symbol_get_bfdsym (sy)->flags |= BSF_WEAK;
+	  S_SET_OTHER (sy, STV_HIDDEN);
+#else
 	  symbol_get_obj (sy)->local = 1;
+#endif
 	  symbol_table_insert (sy);
 	}
       elf_group_id (s) = symbol_get_bfdsym (sy);
@@ -2392,6 +2394,29 @@ sco_id (void)
 
 #endif /* SCO_ELF */
 
+static void
+elf_generate_asm_lineno (void)
+{
+#ifdef NEED_ECOFF_DEBUG
+  if (ECOFF_DEBUGGING)
+    ecoff_generate_asm_lineno ();
+#endif
+}
+
+static void
+elf_process_stab (segT sec ATTRIBUTE_UNUSED,
+		  int what ATTRIBUTE_UNUSED,
+		  const char *string ATTRIBUTE_UNUSED,
+		  int type ATTRIBUTE_UNUSED,
+		  int other ATTRIBUTE_UNUSED,
+		  int desc ATTRIBUTE_UNUSED)
+{
+#ifdef NEED_ECOFF_DEBUG
+  if (ECOFF_DEBUGGING)
+    ecoff_stab (sec, what, string, type, other, desc);
+#endif
+}
+
 static int
 elf_separate_stab_sections (void)
 {
@@ -2432,13 +2457,8 @@ const struct format_ops elf_format_ops =
   0,	/* s_get_type */
   0,	/* s_set_type */
   elf_copy_symbol_attributes,
-#ifdef NEED_ECOFF_DEBUG
-  ecoff_generate_asm_lineno,
-  ecoff_stab,
-#else
-  0,	/* generate_asm_lineno */
-  0,	/* process_stab */
-#endif
+  elf_generate_asm_lineno,
+  elf_process_stab,
   elf_separate_stab_sections,
   elf_init_stab_section,
   elf_sec_sym_ok_for_reloc,

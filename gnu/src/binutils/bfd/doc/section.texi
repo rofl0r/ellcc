@@ -838,6 +838,16 @@ requested. For example, a .bss section in @code{a.out} may not
 have the @code{SEC_HAS_CONTENTS} field set.
 @end itemize
 
+@findex bfd_rename_section
+@subsubsection @code{bfd_rename_section}
+@strong{Synopsis}
+@example
+void bfd_rename_section
+   (bfd *abfd, asection *sec, const char *newname);
+@end example
+@strong{Description}@*
+Rename section @var{sec} in @var{abfd} to @var{newname}.
+
 @findex bfd_map_over_sections
 @subsubsection @code{bfd_map_over_sections}
 @strong{Synopsis}

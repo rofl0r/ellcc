@@ -132,7 +132,7 @@
 .\" ========================================================================
 .\"
 .IX Title "LD 1"
-.TH LD 1 "2010-11-08" "binutils-2.20.90" "GNU Development Tools"
+.TH LD 1 "2011-06-27" "binutils-2.21.1" "GNU Development Tools"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -1653,12 +1653,13 @@ can change this to a warning.
 .IP "\fB\-\-dll\-verbose\fR" 4
 .IX Item "--dll-verbose"
 .PD 0
-.IP "\fB\-\-verbose\fR" 4
-.IX Item "--verbose"
+.IP "\fB\-\-verbose[=\fR\fI\s-1NUMBER\s0\fR\fB]\fR" 4
+.IX Item "--verbose[=NUMBER]"
 .PD
 Display the version number for \fBld\fR and list the linker emulations
 supported.  Display which input files can and cannot be opened.  Display
-the linker script being used by the linker.
+the linker script being used by the linker. If the optional \fI\s-1NUMBER\s0\fR
+argument > 1, plugin symbol status will also be displayed.
 .IP "\fB\-\-version\-script=\fR\fIversion-scriptfile\fR" 4
 .IX Item "--version-script=version-scriptfile"
 Specify the name of a version script to the linker.  This is typically

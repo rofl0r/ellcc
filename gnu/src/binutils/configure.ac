@@ -321,19 +321,31 @@ case ${with_newlib} in
   yes) skipdirs=`echo " ${skipdirs} " | sed -e 's/ target-newlib / /'` ;;
 esac
 
-# Handle --enable-gold.
-#   --enable-gold		Build only gold
-#   --disable-gold [default]	Build only ld
-#   --enable-gold=both		Build both gold and ld, ld is default
-#   --enable-gold=both/ld	Same
-#   --enable-gold=both/gold	Build both gold and ld, gold is default, ld is renamed ld.bfd
+# Handle --enable-gold, --enable-ld.
+# --disable-gold [--enable-ld]
+#     Build only ld.  Default option.
+# --enable-gold [--enable-ld]
+#     Build both gold and ld.  Install gold as "ld.gold", install ld
+#     as "ld.bfd" and "ld".
+# --enable-gold=default [--enable-ld]
+#     Build both gold and ld.  Install gold as "ld.gold" and "ld",
+#     install ld as "ld.bfd".
+# --enable-gold[=default] --disable-ld
+#     Build only gold, which is then installed as both "ld.gold" and "ld".
+# --enable-gold --enable-ld=default
+#     Build both gold (installed as "ld.gold") and ld (installed as "ld"
+#     and ld.bfd).
+#     In other words, ld is default
+# --enable-gold=default --enable-ld=default
+#     Error.
 
+default_ld=
 AC_ARG_ENABLE(gold,
-[[  --enable-gold[=ARG]     build gold [ARG={both}[/{gold,ld}]]]],
+[[  --enable-gold[=ARG]     build gold [ARG={default,yes,no}]]],
 ENABLE_GOLD=$enableval,
 ENABLE_GOLD=no)
-  case "${ENABLE_GOLD}" in
-  yes|both|both/gold|both/ld)
+case "${ENABLE_GOLD}" in
+  yes|default)
     # Check for ELF target.
     is_elf=no
     case "${target}" in
@@ -353,14 +365,10 @@ ENABLE_GOLD=no)
       # Check for target supported by gold.
       case "${target}" in
         i?86-*-* | x86_64-*-* | sparc*-*-* | powerpc*-*-* | arm*-*-*)
-	  case "${ENABLE_GOLD}" in 
-	  both*)
-            configdirs="$configdirs gold"
-	    ;;
-	  *)
-            configdirs=`echo " ${configdirs} " | sed -e 's/ ld / gold /'`
-	    ;;
-	  esac
+	  configdirs="$configdirs gold"
+	  if test x${ENABLE_GOLD} = xdefault; then
+	    default_ld=gold
+	  fi
 	  ENABLE_GOLD=yes
           ;;
       esac
@@ -371,7 +379,31 @@ ENABLE_GOLD=no)
   *)
     AC_MSG_ERROR([invalid --enable-gold argument])
     ;;
-  esac
+esac
+
+AC_ARG_ENABLE(ld,
+[[  --enable-ld[=ARG]     build ld [ARG={default,yes,no}]]],
+ENABLE_LD=$enableval,
+ENABLE_LD=yes)
+
+case "${ENABLE_LD}" in
+  default)
+    if test x${default_ld} != x; then
+      AC_MSG_ERROR([either gold or ld can be the default ld])
+    fi
+    ;;
+  yes)
+    ;;
+  no)
+    if test x${ENABLE_GOLD} != xyes; then
+      AC_MSG_WARN([neither ld nor gold are enabled])
+    fi
+    configdirs=`echo " ${configdirs} " | sed -e 's/ ld / /'`
+    ;;
+  *)
+    AC_MSG_ERROR([invalid --enable-ld argument])
+    ;;
+esac
 
 # Configure extra directories which are host specific
 
@@ -1634,11 +1666,11 @@ if test "x$with_cloog" != "xno" -a "${ENABLE_CLOOG_CHECK}" = "yes"; then
   CFLAGS="$CFLAGS $clooginc $gmpinc $pplinc"
   AC_MSG_CHECKING([for version 0.15.5 (or later revision) of CLooG])
   AC_TRY_COMPILE([#include "cloog/cloog.h"],[
-  #if CLOOG_VERSION_MAJOR != 0 || CLOOG_VERSION_MINOR != 15 || CLOOG_VERSION_REVISION < 5
+  #if ((CLOOG_VERSION_MAJOR < 0) || (CLOOG_VERSION_MAJOR == 0 && CLOOG_VERSION_MINOR < 15) || (CLOOG_VERSION_MAJOR == 0 && CLOOG_VERSION_MINOR == 15 && CLOOG_VERSION_REVISION < 5))
   choke me
   #endif
   ], [AC_TRY_COMPILE([#include "cloog/cloog.h"],[
-  #if CLOOG_VERSION_MAJOR != 0 || CLOOG_VERSION_MINOR != 15 || CLOOG_VERSION_REVISION < 9
+  #if ((CLOOG_VERSION_MAJOR < 0) || (CLOOG_VERSION_MAJOR == 0 && CLOOG_VERSION_MINOR < 15) || (CLOOG_VERSION_MAJOR == 0 && CLOOG_VERSION_MINOR == 15 && CLOOG_VERSION_REVISION < 5))
   choke me
   #endif
   ], [AC_MSG_RESULT([yes])], [AC_MSG_RESULT([buggy but acceptable])])],
