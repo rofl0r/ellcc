@@ -59,7 +59,8 @@ Preprocessor::Preprocessor(Diagnostic &diags, LangOptions &opts,
     SourceMgr(SM), HeaderInfo(Headers), TheModuleLoader(TheModuleLoader),
     ExternalSource(0), 
     Identifiers(opts, IILookup), CodeComplete(0),
-    CodeCompletionFile(0), SkipMainFilePreamble(0, true), CurPPLexer(0), 
+    CodeCompletionFile(0), CodeCompletionOffset(0), CodeCompletionReached(0),
+    SkipMainFilePreamble(0, true), CurPPLexer(0), 
     CurDirLookup(0), Callbacks(0), MacroArgCache(0), Record(0), MIChainHead(0),
     MICache(0) 
 {
@@ -73,7 +74,8 @@ Preprocessor::Preprocessor(Diagnostic &diags, LangOptions &opts,
 
 Preprocessor::~Preprocessor() {
   assert(BacktrackPositions.empty() && "EnableBacktrack/Backtrack imbalance!");
-  assert(MacroExpandingLexersStack.empty() && MacroExpandedTokens.empty() &&
+  assert(((MacroExpandingLexersStack.empty() && MacroExpandedTokens.empty()) ||
+          isCodeCompletionReached()) &&
          "Preprocessor::HandleEndOfTokenLexer should have cleared those");
 
   while (!IncludeMacroStack.empty()) {
@@ -131,6 +133,7 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
   KeepComments = false;
   KeepMacroComments = false;
   SuppressIncludeNotFoundError = false;
+  AutoModuleImport = false;
   
   // Macro expansion is enabled.
   DisableMacroExpansion = false;
@@ -141,8 +144,6 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
   
   // We haven't read anything from the external source.
   ReadMacrosFromExternalSource = false;
-  
-  LexDepth = 0;
   
   // "Poison" __VA_ARGS__, which can only appear in the expansion of a macro.
   // This gets unpoisoned where it is allowed.
@@ -270,15 +271,13 @@ Preprocessor::macro_end(bool IncludeExternalMacros) const {
 }
 
 bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
-                                          unsigned TruncateAtLine,
-                                          unsigned TruncateAtColumn) {
+                                          unsigned CompleteLine,
+                                          unsigned CompleteColumn) {
+  assert(File);
+  assert(CompleteLine && CompleteColumn && "Starts from 1:1");
+  assert(!CodeCompletionFile && "Already set");
+
   using llvm::MemoryBuffer;
-
-  CodeCompletionFile = File;
-
-  // Okay to clear out the code-completion point by passing NULL.
-  if (!CodeCompletionFile)
-    return false;
 
   // Load the actual file's contents.
   bool Invalid = false;
@@ -288,7 +287,7 @@ bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
 
   // Find the byte position of the truncation point.
   const char *Position = Buffer->getBufferStart();
-  for (unsigned Line = 1; Line < TruncateAtLine; ++Line) {
+  for (unsigned Line = 1; Line < CompleteLine; ++Line) {
     for (; *Position; ++Position) {
       if (*Position != '\r' && *Position != '\n')
         continue;
@@ -302,31 +301,30 @@ bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
     }
   }
 
-  Position += TruncateAtColumn - 1;
+  Position += CompleteColumn - 1;
 
-  // Truncate the buffer.
+  // Insert '\0' at the code-completion point.
   if (Position < Buffer->getBufferEnd()) {
-    StringRef Data(Buffer->getBufferStart(),
-                         Position-Buffer->getBufferStart());
-    MemoryBuffer *TruncatedBuffer
-      = MemoryBuffer::getMemBufferCopy(Data, Buffer->getBufferIdentifier());
-    SourceMgr.overrideFileContents(File, TruncatedBuffer);
+    CodeCompletionFile = File;
+    CodeCompletionOffset = Position - Buffer->getBufferStart();
+
+    MemoryBuffer *NewBuffer =
+        MemoryBuffer::getNewUninitMemBuffer(Buffer->getBufferSize() + 1,
+                                            Buffer->getBufferIdentifier());
+    char *NewBuf = const_cast<char*>(NewBuffer->getBufferStart());
+    char *NewPos = std::copy(Buffer->getBufferStart(), Position, NewBuf);
+    *NewPos = '\0';
+    std::copy(Position, Buffer->getBufferEnd(), NewPos+1);
+    SourceMgr.overrideFileContents(File, NewBuffer);
   }
 
   return false;
 }
 
-bool Preprocessor::isCodeCompletionFile(SourceLocation FileLoc) const {
-  return CodeCompletionFile && FileLoc.isFileID() &&
-    SourceMgr.getFileEntryForID(SourceMgr.getFileID(FileLoc))
-      == CodeCompletionFile;
-}
-
 void Preprocessor::CodeCompleteNaturalLanguage() {
-  SetCodeCompletionPoint(0, 0, 0);
-  getDiagnostics().setSuppressAllDiagnostics(true);
   if (CodeComplete)
     CodeComplete->CodeCompleteNaturalLanguage();
+  setCodeCompletionReached();
 }
 
 /// getSpelling - This method is used to get the spelling of a token into a
@@ -525,27 +523,44 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
   // like "#define TY typeof", "TY(1) x".
   if (II.isExtensionToken() && !DisableMacroExpansion)
     Diag(Identifier, diag::ext_token_used);
+  
+  // If this is the '__import_module__' keyword, note that the next token
+  // indicates a module name.
+  if (II.getTokenID() == tok::kw___import_module__ &&
+      !InMacroArgs && !DisableMacroExpansion) {
+    ModuleImportLoc = Identifier.getLocation();
+    CurLexerKind = CLK_LexAfterModuleImport;
+  }
 }
 
-void Preprocessor::HandleModuleImport(Token &Import) {
+/// \brief Lex a token following the __import_module__ keyword.
+void Preprocessor::LexAfterModuleImport(Token &Result) {
+  // Figure out what kind of lexer we actually have.
+  if (CurLexer)
+    CurLexerKind = CLK_Lexer;
+  else if (CurPTHLexer)
+    CurLexerKind = CLK_PTHLexer;
+  else if (CurTokenLexer)
+    CurLexerKind = CLK_TokenLexer;
+  else 
+    CurLexerKind = CLK_CachingLexer;
+  
+  // Lex the next token.
+  Lex(Result);
+
   // The token sequence 
   //
   //   __import_module__ identifier
   //
-  // indicates a module import directive. We load the module and then 
-  // leave the token sequence for the parser.
-  Token ModuleNameTok = LookAhead(0);
-  if (ModuleNameTok.getKind() != tok::identifier)
+  // indicates a module import directive. We already saw the __import_module__
+  // keyword, so now we're looking for the identifier.
+  if (Result.getKind() != tok::identifier)
     return;
   
-  (void)TheModuleLoader.loadModule(Import.getLocation(),
-                                   *ModuleNameTok.getIdentifierInfo(), 
-                                   ModuleNameTok.getLocation());
-  
-  // FIXME: Transmogrify __import_module__ into some kind of AST-only 
-  // __import_module__ that is not recognized by the preprocessor but is 
-  // recognized by the parser. It would also be useful to stash the ModuleKey
-  // somewhere, so we don't try to load the module twice.
+  // Load the module.
+  (void)TheModuleLoader.loadModule(ModuleImportLoc,
+                                   *Result.getIdentifierInfo(), 
+                                   Result.getLocation());
 }
 
 void Preprocessor::AddCommentHandler(CommentHandler *Handler) {

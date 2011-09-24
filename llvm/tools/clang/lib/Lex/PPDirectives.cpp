@@ -17,6 +17,7 @@
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/LexDiagnostic.h"
 #include "clang/Lex/CodeCompletionHandler.h"
+#include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/Pragma.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
@@ -102,8 +103,8 @@ void Preprocessor::ReadMacroName(Token &MacroNameTok, char isDefineUndef) {
   if (MacroNameTok.is(tok::code_completion)) {
     if (CodeComplete)
       CodeComplete->CodeCompleteMacroName(isDefineUndef == 1);
+    setCodeCompletionReached();
     LexUnexpandedToken(MacroNameTok);
-    return;
   }
   
   // Missing macro name?
@@ -214,6 +215,7 @@ void Preprocessor::SkipExcludedConditionalBlock(SourceLocation IfTokenLoc,
     if (Tok.is(tok::code_completion)) {
       if (CodeComplete)
         CodeComplete->CodeCompleteInConditionalExclusion();
+      setCodeCompletionReached();
       continue;
     }
     
@@ -222,7 +224,7 @@ void Preprocessor::SkipExcludedConditionalBlock(SourceLocation IfTokenLoc,
       // Emit errors for each unterminated conditional on the stack, including
       // the current one.
       while (!CurPPLexer->ConditionalStack.empty()) {
-        if (!isCodeCompletionFile(Tok.getLocation()))
+        if (CurLexer->getFileLoc() != CodeCompletionFileLoc)
           Diag(CurPPLexer->ConditionalStack.back().IfLoc,
                diag::err_pp_unterminated_conditional);
         CurPPLexer->ConditionalStack.pop_back();
@@ -477,7 +479,8 @@ const FileEntry *Preprocessor::LookupFile(
     const DirectoryLookup *FromDir,
     const DirectoryLookup *&CurDir,
     SmallVectorImpl<char> *SearchPath,
-    SmallVectorImpl<char> *RelativePath) {
+    SmallVectorImpl<char> *RelativePath,
+    StringRef *SuggestedModule) {
   // If the header lookup mechanism may be relative to the current file, pass in
   // info about where the current file is.
   const FileEntry *CurFileEnt = 0;
@@ -501,12 +504,13 @@ const FileEntry *Preprocessor::LookupFile(
   CurDir = CurDirLookup;
   const FileEntry *FE = HeaderInfo.LookupFile(
       Filename, isAngled, FromDir, CurDir, CurFileEnt,
-      SearchPath, RelativePath);
+      SearchPath, RelativePath, SuggestedModule);
   if (FE) return FE;
 
   // Otherwise, see if this is a subframework header.  If so, this is relative
   // to one of the headers on the #include stack.  Walk the list of the current
   // headers on the #include stack and pass them to HeaderInfo.
+  // FIXME: SuggestedModule!
   if (IsFileLexer()) {
     if ((CurFileEnt = SourceMgr.getFileEntryForID(CurPPLexer->getFileID())))
       if ((FE = HeaderInfo.LookupSubframeworkHeader(Filename, CurFileEnt,
@@ -581,6 +585,7 @@ TryAgain:
     if (CodeComplete)
       CodeComplete->CodeCompleteDirective(
                                     CurPPLexer->getConditionalStackDepth() > 0);
+    setCodeCompletionReached();
     return;
   case tok::numeric_constant:  // # 7  GNU line marker directive.
     if (getLangOptions().AsmPreprocessor)
@@ -1104,6 +1109,7 @@ bool Preprocessor::ConcatenateIncludeName(
     
     // FIXME: Provide code completion for #includes.
     if (CurTok.is(tok::code_completion)) {
+      setCodeCompletionReached();
       Lex(CurTok);
       continue;
     }
@@ -1211,10 +1217,21 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
   llvm::SmallString<1024> RelativePath;
   // We get the raw path only if we have 'Callbacks' to which we later pass
   // the path.
+  StringRef SuggestedModule;
   const FileEntry *File = LookupFile(
       Filename, isAngled, LookupFrom, CurDir,
-      Callbacks ? &SearchPath : NULL, Callbacks ? &RelativePath : NULL);
+      Callbacks ? &SearchPath : NULL, Callbacks ? &RelativePath : NULL,
+      AutoModuleImport? &SuggestedModule : 0);
 
+  // If we are supposed to import a module rather than including the header,
+  // do so now.
+  if (!SuggestedModule.empty()) {
+    TheModuleLoader.loadModule(IncludeTok.getLocation(),
+                               Identifiers.get(SuggestedModule),
+                               FilenameTok.getLocation());
+    return;
+  }
+  
   // Notify the callback object that we've seen an inclusion directive.
   if (Callbacks)
     Callbacks->InclusionDirective(HashLoc, IncludeTok, Filename, isAngled, File,

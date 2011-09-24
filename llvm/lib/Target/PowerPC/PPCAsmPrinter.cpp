@@ -395,7 +395,6 @@ void PPCLinuxAsmPrinter::EmitFunctionEntryLabel() {
   OutStreamer.EmitRawText(".L." + Twine(CurrentFnSym->getName()) + ":");
 }
 
-
 bool PPCLinuxAsmPrinter::doFinalization(Module &M) {
   const TargetData *TD = TM.getTargetData();
 

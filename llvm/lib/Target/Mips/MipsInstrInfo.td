@@ -273,7 +273,7 @@ class LoadUpper<bits<6> op, string instr_asm>:
       [], IIAlu>;
 
 // Memory Load/Store
-let canFoldAsLoad = 1, hasDelaySlot = 1 in
+let canFoldAsLoad = 1 in
 class LoadM<bits<6> op, string instr_asm, PatFrag OpNode>:
   FI<op, (outs CPURegs:$dst), (ins mem:$addr),
      !strconcat(instr_asm, "\t$dst, $addr"),
@@ -570,7 +570,7 @@ def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
 }
 
 /// Load-linked, Store-conditional
-let mayLoad = 1, hasDelaySlot = 1 in
+let mayLoad = 1 in
   def LL    : FI<0x30, (outs CPURegs:$dst), (ins mem:$addr),
               "ll\t$dst, $addr", [], IILoad>;
 let mayStore = 1, Constraints = "$src = $dst" in
@@ -733,16 +733,20 @@ def : Pat<(MipsJmpLink (i32 texternalsym:$dst)),
 // hi/lo relocs
 def : Pat<(MipsHi tglobaladdr:$in), (LUi tglobaladdr:$in)>;
 def : Pat<(MipsHi tblockaddress:$in), (LUi tblockaddress:$in)>;
+def : Pat<(MipsLo tglobaladdr:$in), (ADDiu ZERO, tglobaladdr:$in)>;
+def : Pat<(MipsLo tblockaddress:$in), (ADDiu ZERO, tblockaddress:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tglobaladdr:$lo)),
           (ADDiu CPURegs:$hi, tglobaladdr:$lo)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tblockaddress:$lo)),
           (ADDiu CPURegs:$hi, tblockaddress:$lo)>;
 
 def : Pat<(MipsHi tjumptable:$in), (LUi tjumptable:$in)>;
+def : Pat<(MipsLo tjumptable:$in), (ADDiu ZERO, tjumptable:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tjumptable:$lo)),
           (ADDiu CPURegs:$hi, tjumptable:$lo)>;
 
 def : Pat<(MipsHi tconstpool:$in), (LUi tconstpool:$in)>;
+def : Pat<(MipsLo tconstpool:$in), (ADDiu ZERO, tconstpool:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tconstpool:$lo)),
           (ADDiu CPURegs:$hi, tconstpool:$lo)>;
 
@@ -758,6 +762,7 @@ def : Pat<(add CPURegs:$gp, (MipsTlsGd tglobaltlsaddr:$in)),
 
 // tprel hi/lo
 def : Pat<(MipsTprelHi tglobaltlsaddr:$in), (LUi tglobaltlsaddr:$in)>;
+def : Pat<(MipsTprelLo tglobaltlsaddr:$in), (ADDiu ZERO, tglobaltlsaddr:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsTprelLo tglobaltlsaddr:$lo)),
           (ADDiu CPURegs:$hi, tglobaltlsaddr:$lo)>;
 

@@ -180,6 +180,16 @@ public:
   /// \brief Determine whether this declaration has linkage.
   bool hasLinkage() const;
 
+  /// \brief Whether this declaration was marked as being private to the
+  /// module in which it was defined.
+  bool isModulePrivate() const { return ModulePrivate; }
+  
+  /// \brief Specify whether this declaration was marked as being private
+  /// to the module in which it was defined.
+  void setModulePrivate(bool MP = true) {
+    ModulePrivate = MP;
+  }
+  
   /// \brief Determine whether this declaration is a C++ class member.
   bool isCXXClassMember() const {
     const DeclContext *DC = getDeclContext();
@@ -1965,7 +1975,7 @@ public:
   /// specialization or a member of a class template specialization.
   ///
   /// \returns the first point of instantiation, if this function was 
-  /// instantiated from a template; otherwie, returns an invalid source 
+  /// instantiated from a template; otherwise, returns an invalid source 
   /// location.
   SourceLocation getPointOfInstantiation() const;
                        

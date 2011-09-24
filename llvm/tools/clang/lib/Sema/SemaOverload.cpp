@@ -2133,8 +2133,8 @@ bool Sema::CheckPointerConversion(Expr *From, QualType ToType,
                         PDiag(diag::warn_impcast_bool_to_null_pointer)
                           << ToType << From->getSourceRange());
 
-  if (const PointerType *FromPtrType = FromType->getAs<PointerType>())
-    if (const PointerType *ToPtrType = ToType->getAs<PointerType>()) {
+  if (const PointerType *ToPtrType = ToType->getAs<PointerType>()) {
+    if (const PointerType *FromPtrType = FromType->getAs<PointerType>()) {
       QualType FromPointeeType = FromPtrType->getPointeeType(),
                ToPointeeType   = ToPtrType->getPointeeType();
 
@@ -2152,16 +2152,23 @@ bool Sema::CheckPointerConversion(Expr *From, QualType ToType,
         Kind = CK_DerivedToBase;
       }
     }
-  if (const ObjCObjectPointerType *FromPtrType =
-        FromType->getAs<ObjCObjectPointerType>()) {
-    if (const ObjCObjectPointerType *ToPtrType =
-          ToType->getAs<ObjCObjectPointerType>()) {
+  } else if (const ObjCObjectPointerType *ToPtrType =
+               ToType->getAs<ObjCObjectPointerType>()) {
+    if (const ObjCObjectPointerType *FromPtrType =
+          FromType->getAs<ObjCObjectPointerType>()) {
       // Objective-C++ conversions are always okay.
       // FIXME: We should have a different class of conversions for the
       // Objective-C++ implicit conversions.
       if (FromPtrType->isObjCBuiltinType() || ToPtrType->isObjCBuiltinType())
         return false;
+    } else if (FromType->isBlockPointerType()) {
+      Kind = CK_BlockPointerToObjCPointerCast;
+    } else {
+      Kind = CK_CPointerToObjCPointerCast;
     }
+  } else if (ToType->isBlockPointerType()) {
+    if (!FromType->isBlockPointerType())
+      Kind = CK_AnyPointerToBlockPointerCast;
   }
 
   // We shouldn't fall into this case unless it's valid for other
@@ -3861,25 +3868,57 @@ ExprResult Sema::PerformContextuallyConvertToBool(Expr *From) {
   return ExprError();
 }
 
-/// TryContextuallyConvertToObjCId - Attempt to contextually convert the
-/// expression From to 'id'.
-static ImplicitConversionSequence
-TryContextuallyConvertToObjCId(Sema &S, Expr *From) {
-  QualType Ty = S.Context.getObjCIdType();
-  return TryImplicitConversion(S, From, Ty,
-                               // FIXME: Are these flags correct?
-                               /*SuppressUserConversions=*/false,
-                               /*AllowExplicit=*/true,
-                               /*InOverloadResolution=*/false,
-                               /*CStyle=*/false,
-                               /*AllowObjCWritebackConversion=*/false);
+/// dropPointerConversions - If the given standard conversion sequence
+/// involves any pointer conversions, remove them.  This may change
+/// the result type of the conversion sequence.
+static void dropPointerConversion(StandardConversionSequence &SCS) {
+  if (SCS.Second == ICK_Pointer_Conversion) {
+    SCS.Second = ICK_Identity;
+    SCS.Third = ICK_Identity;
+    SCS.ToTypePtrs[2] = SCS.ToTypePtrs[1] = SCS.ToTypePtrs[0];
+  }
 }
 
-/// PerformContextuallyConvertToObjCId - Perform a contextual conversion
-/// of the expression From to 'id'.
-ExprResult Sema::PerformContextuallyConvertToObjCId(Expr *From) {
+/// TryContextuallyConvertToObjCPointer - Attempt to contextually
+/// convert the expression From to an Objective-C pointer type.
+static ImplicitConversionSequence
+TryContextuallyConvertToObjCPointer(Sema &S, Expr *From) {
+  // Do an implicit conversion to 'id'.
+  QualType Ty = S.Context.getObjCIdType();
+  ImplicitConversionSequence ICS
+    = TryImplicitConversion(S, From, Ty,
+                            // FIXME: Are these flags correct?
+                            /*SuppressUserConversions=*/false,
+                            /*AllowExplicit=*/true,
+                            /*InOverloadResolution=*/false,
+                            /*CStyle=*/false,
+                            /*AllowObjCWritebackConversion=*/false);
+
+  // Strip off any final conversions to 'id'.
+  switch (ICS.getKind()) {
+  case ImplicitConversionSequence::BadConversion:
+  case ImplicitConversionSequence::AmbiguousConversion:
+  case ImplicitConversionSequence::EllipsisConversion:
+    break;
+
+  case ImplicitConversionSequence::UserDefinedConversion:
+    dropPointerConversion(ICS.UserDefined.After);
+    break;
+
+  case ImplicitConversionSequence::StandardConversion:
+    dropPointerConversion(ICS.Standard);
+    break;
+  }
+
+  return ICS;
+}
+
+/// PerformContextuallyConvertToObjCPointer - Perform a contextual
+/// conversion of the expression From to an Objective-C pointer type.
+ExprResult Sema::PerformContextuallyConvertToObjCPointer(Expr *From) {
   QualType Ty = Context.getObjCIdType();
-  ImplicitConversionSequence ICS = TryContextuallyConvertToObjCId(*this, From);
+  ImplicitConversionSequence ICS =
+    TryContextuallyConvertToObjCPointer(*this, From);
   if (!ICS.isBad())
     return PerformImplicitConversion(From, Ty, ICS, AA_Converting);
   return ExprError();
@@ -7249,6 +7288,37 @@ SourceLocation GetLocationForCandidate(const OverloadCandidate *Cand) {
   return SourceLocation();
 }
 
+static unsigned
+RankDeductionFailure(const OverloadCandidate::DeductionFailureInfo &DFI) {
+  switch ((Sema::TemplateDeductionResult)DFI.Result) {
+  case Sema::TDK_Success:
+    assert(0 && "TDK_success while diagnosing bad deduction");
+
+  case Sema::TDK_Incomplete:
+    return 1;
+
+  case Sema::TDK_Underqualified:
+  case Sema::TDK_Inconsistent:
+    return 2;
+
+  case Sema::TDK_SubstitutionFailure:
+  case Sema::TDK_NonDeducedMismatch:
+    return 3;
+
+  case Sema::TDK_InstantiationDepth:
+  case Sema::TDK_FailedOverloadResolution:
+    return 4;
+
+  case Sema::TDK_InvalidExplicitArguments:
+    return 5;
+
+  case Sema::TDK_TooManyArguments:
+  case Sema::TDK_TooFewArguments:
+    return 6;
+  }
+  llvm_unreachable("Unhandled deduction result");
+}
+
 struct CompareOverloadCandidatesForDisplay {
   Sema &S;
   CompareOverloadCandidatesForDisplay(Sema &S) : S(S) {}
@@ -7328,6 +7398,15 @@ struct CompareOverloadCandidatesForDisplay {
 
       } else if (R->FailureKind == ovl_fail_bad_conversion)
         return false;
+
+      if (L->FailureKind == ovl_fail_bad_deduction) {
+        if (R->FailureKind != ovl_fail_bad_deduction)
+          return true;
+
+        if (L->DeductionFailure.Result != R->DeductionFailure.Result)
+          return RankDeductionFailure(L->DeductionFailure)
+              <= RankDeductionFailure(R->DeductionFailure);
+      }
 
       // TODO: others?
     }
@@ -8289,9 +8368,22 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
   // If we found nothing, try to recover.
   // BuildRecoveryCallExpr diagnoses the error itself, so we just bail
   // out if it fails.
-  if (CandidateSet.empty())
+  if (CandidateSet.empty()) {
+    // In Microsoft mode, if we are inside a template class member function then
+    // create a type dependent CallExpr. The goal is to postpone name lookup
+    // to instantiation time to be able to search into type dependent base
+    // classes.
+    if (getLangOptions().Microsoft && CurContext->isDependentContext() && 
+        isa<CXXMethodDecl>(CurContext)) {
+      CallExpr *CE = new (Context) CallExpr(Context, Fn, Args, NumArgs,
+                                          Context.DependentTy, VK_RValue,
+                                          RParenLoc);
+      CE->setTypeDependent(true);
+      return Owned(CE);
+    }
     return BuildRecoveryCallExpr(*this, S, Fn, ULE, LParenLoc, Args, NumArgs,
                                  RParenLoc, /*EmptyLookup=*/true);
+  }
 
   OverloadCandidateSet::iterator Best;
   switch (CandidateSet.BestViableFunction(*this, Fn->getLocStart(), Best)) {

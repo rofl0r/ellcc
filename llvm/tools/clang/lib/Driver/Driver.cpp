@@ -233,8 +233,16 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   llvm::PrettyStackTraceString CrashInfo("Compilation construction");
 
   // FIXME: Handle environment options which affect driver behavior, somewhere
-  // (client?). GCC_EXEC_PREFIX, COMPILER_PATH, LIBRARY_PATH, LPATH,
-  // CC_PRINT_OPTIONS.
+  // (client?). GCC_EXEC_PREFIX, LIBRARY_PATH, LPATH, CC_PRINT_OPTIONS.
+
+  if (char *env = ::getenv("COMPILER_PATH")) {
+    StringRef CompilerPath = env;
+    while (!CompilerPath.empty()) {
+      std::pair<StringRef, StringRef> Split = CompilerPath.split(':');      
+      PrefixDirs.push_back(Split.first);
+      CompilerPath = Split.second;
+    }
+  }
 
   // FIXME: What are we going to do with -V and -b?
 
@@ -385,6 +393,23 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
       ie = Inputs.end();
     } else {
       ++it;
+    }
+  }
+
+  // Don't attempt to generate preprocessed files if multiple -arch options are
+  // used.
+  int Archs = 0;
+  for (ArgList::const_iterator it = C.getArgs().begin(), ie = C.getArgs().end();
+       it != ie; ++it) {
+    Arg *A = *it;
+    if (A->getOption().matches(options::OPT_arch)) {
+      Archs++;
+      if (Archs > 1) {
+        Diag(clang::diag::note_drv_command_failed_diag_msg)
+          << "Error generating preprocessed source(s) - cannot generate "
+          "preprocessed source with multiple -arch options.";
+        return;
+      }
     }
   }
 
@@ -577,7 +602,7 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
       llvm::outs() << *it;
     }
     llvm::outs() << "\n";
-    llvm::outs() << "libraries: =";
+    llvm::outs() << "libraries: =" << ResourceDir;
 
     std::string sysroot;
     if (Arg *A = C.getArgs().getLastArg(options::OPT__sysroot_EQ))
@@ -585,8 +610,7 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
 
     for (ToolChain::path_list::const_iterator it = TC.getFilePaths().begin(),
            ie = TC.getFilePaths().end(); it != ie; ++it) {
-      if (it != TC.getFilePaths().begin())
-        llvm::outs() << ':';
+      llvm::outs() << ':';
       const char *path = it->c_str();
       if (path[0] == '=')
         llvm::outs() << sysroot << path + 1;
@@ -1419,6 +1443,12 @@ std::string Driver::GetFilePath(const char *Name, const ToolChain &TC) const {
     if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
       return P.str();
   }
+
+  llvm::sys::Path P(ResourceDir);
+  P.appendComponent(Name);
+  bool Exists;
+  if (!llvm::sys::fs::exists(P.str(), Exists) && Exists)
+    return P.str();
 
   const ToolChain::path_list &List = TC.getFilePaths();
   for (ToolChain::path_list::const_iterator

@@ -12,9 +12,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/ParentMap.h"
 #include "clang/AST/StmtCXX.h"
 #include "llvm/ADT/SmallString.h"
 
@@ -128,6 +130,113 @@ void PathDiagnosticClient::HandlePathDiagnostic(const PathDiagnostic *D) {
 // PathDiagnosticLocation methods.
 //===----------------------------------------------------------------------===//
 
+static SourceLocation getValidSourceLocation(const Stmt* S,
+                                             const LocationContext *LC) {
+  assert(LC);
+  SourceLocation L = S->getLocStart();
+
+  // S might be a temporary statement that does not have a location in the
+  // source code, so find an enclosing statement and use it's location.
+  if (!L.isValid()) {
+    ParentMap & PM = LC->getParentMap();
+
+    while (!L.isValid()) {
+      S = PM.getParent(S);
+      L = S->getLocStart();
+    }
+  }
+
+  return L;
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createBeginStmt(const Stmt *S,
+                                          const SourceManager &SM,
+                                          const LocationContext *LC) {
+  return PathDiagnosticLocation(getValidSourceLocation(S, LC), SM, SingleLocK);
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createOperatorLoc(const BinaryOperator *BO,
+                                            const SourceManager &SM) {
+  return PathDiagnosticLocation(BO->getOperatorLoc(), SM, SingleLocK);
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createBeginBrace(const CompoundStmt *CS,
+                                           const SourceManager &SM) {
+  SourceLocation L = CS->getLBracLoc();
+  return PathDiagnosticLocation(L, SM, SingleLocK);
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createEndBrace(const CompoundStmt *CS,
+                                         const SourceManager &SM) {
+  SourceLocation L = CS->getRBracLoc();
+  return PathDiagnosticLocation(L, SM, SingleLocK);
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createDeclBegin(const LocationContext *LC,
+                                          const SourceManager &SM) {
+  // FIXME: Should handle CXXTryStmt if analyser starts supporting C++.
+  if (const CompoundStmt *CS =
+        dyn_cast_or_null<CompoundStmt>(LC->getDecl()->getBody()))
+    if (!CS->body_empty()) {
+      SourceLocation Loc = (*CS->body_begin())->getLocStart();
+      return PathDiagnosticLocation(Loc, SM, SingleLocK);
+    }
+
+  return PathDiagnosticLocation();
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createDeclEnd(const LocationContext *LC,
+                                             const SourceManager &SM) {
+  SourceLocation L = LC->getDecl()->getBodyRBrace();
+  return PathDiagnosticLocation(L, SM, SingleLocK);
+}
+
+PathDiagnosticLocation::PathDiagnosticLocation(const ProgramPoint& P,
+                                               const SourceManager &SMng)
+  : K(StmtK), S(0), D(0), SM(&SMng), LC(P.getLocationContext()) {
+
+  if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P)) {
+    const CFGBlock *BSrc = BE->getSrc();
+    S = BSrc->getTerminatorCondition();
+  }
+  else if (const PostStmt *PS = dyn_cast<PostStmt>(&P)) {
+    S = PS->getStmt();
+  }
+
+  if (!S)
+    invalidate();
+}
+
+PathDiagnosticLocation
+  PathDiagnosticLocation::createEndOfPath(const ExplodedNode* N,
+                                          const SourceManager &SM) {
+  assert(N && "Cannot create a location with a null node.");
+
+  const ExplodedNode *NI = N;
+
+  while (NI) {
+    ProgramPoint P = NI->getLocation();
+    const LocationContext *LC = P.getLocationContext();
+    if (const StmtPoint *PS = dyn_cast<StmtPoint>(&P)) {
+      return PathDiagnosticLocation(PS->getStmt(), SM, LC);
+    }
+    else if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P)) {
+      const Stmt *Term = BE->getSrc()->getTerminator();
+      assert(Term);
+      return PathDiagnosticLocation(Term, SM, LC);
+    }
+    NI = NI->succ_empty() ? 0 : *(NI->succ_begin());
+  }
+
+  return createDeclEnd(N->getLocationContext(), SM);
+}
+
 FullSourceLoc PathDiagnosticLocation::asLocation() const {
   assert(isValid());
   // Note that we want a 'switch' here so that the compiler can warn us in
@@ -137,7 +246,8 @@ FullSourceLoc PathDiagnosticLocation::asLocation() const {
     case RangeK:
       break;
     case StmtK:
-      return FullSourceLoc(S->getLocStart(), const_cast<SourceManager&>(*SM));
+      return FullSourceLoc(getValidSourceLocation(S, LC),
+                           const_cast<SourceManager&>(*SM));
     case DeclK:
       return FullSourceLoc(D->getLocation(), const_cast<SourceManager&>(*SM));
   }
@@ -180,7 +290,7 @@ PathDiagnosticRange PathDiagnosticLocation::asRange() const {
         case Stmt::BinaryConditionalOperatorClass:
         case Stmt::ConditionalOperatorClass:
         case Stmt::ObjCForCollectionStmtClass: {
-          SourceLocation L = S->getLocStart();
+          SourceLocation L = getValidSourceLocation(S, LC);
           return SourceRange(L, L);
         }
       }

@@ -375,6 +375,22 @@ void Clang::AddPreprocessingOptions(const Driver &D,
       CmdArgs.push_back(A->getValue(Args));
     }
   }
+  
+  // If a module path was provided, pass it along. Otherwise, use a temporary
+  // directory.
+  if (Arg *A = Args.getLastArg(options::OPT_fmodule_cache_path)) {
+    A->claim();
+    A->render(Args, CmdArgs);
+  } else {
+    llvm::SmallString<128> DefaultModuleCache;
+    llvm::sys::path::system_temp_directory(/*erasedOnReboot=*/false, 
+                                           DefaultModuleCache);
+    llvm::sys::path::append(DefaultModuleCache, "clang-module-cache");
+    CmdArgs.push_back("-fmodule-cache-path");
+    CmdArgs.push_back(Args.MakeArgString(DefaultModuleCache));
+  }
+  
+  Args.AddAllArgs(CmdArgs, options::OPT_fauto_module_import);
 }
 
 /// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
@@ -1827,6 +1843,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
          Args.hasArg(options::OPT_fobjc_nonfragile_abi) &&
          !Args.hasArg(options::OPT_fno_blocks))) {
     CmdArgs.push_back("-fblocks");
+
+    if (!Args.hasArg(options::OPT_fgnu_runtime) && 
+        !getToolChain().hasBlocksRuntime())
+      CmdArgs.push_back("-fblocks-runtime-optional");
   }
 
   // -faccess-control is default.
@@ -1873,6 +1893,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasFlag(options::OPT_fms_extensions, options::OPT_fno_ms_extensions,
                    getToolChain().getTriple().getOS() == llvm::Triple::Win32))
     CmdArgs.push_back("-fms-extensions");
+
+  // -fms-compatibility=0 is default.
+  if (Args.hasFlag(options::OPT_fms_compatibility, options::OPT_fno_ms_compatibility,
+                   getToolChain().getTriple().getOS() == llvm::Triple::Win32))
+    CmdArgs.push_back("-fms-compatibility");
 
   // -fmsc-version=1300 is default.
   if (Args.hasFlag(options::OPT_fms_extensions, options::OPT_fno_ms_extensions,
@@ -2996,6 +3021,8 @@ void darwin::Preprocess::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_d_Group);
+
+  RemoveCC1UnsupportedArgs(CmdArgs);
 
   const char *CC1Name = getCC1Name(Inputs[0].getType());
   const char *Exec =

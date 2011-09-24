@@ -487,8 +487,8 @@ let isCall = 1,
 
 let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
   let isPredicable = 1 in
-  def tB   : T1I<(outs), (ins t_brtarget:$target), IIC_Br,
-                 "b\t$target", [(br bb:$target)]>,
+  def tB   : T1pI<(outs), (ins t_brtarget:$target), IIC_Br,
+                 "b", "\t$target", [(br bb:$target)]>,
              T1Encoding<{1,1,1,0,0,?}> {
     bits<11> target;
     let Inst{10-0} = target;
@@ -537,9 +537,10 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // Non-Darwin versions (the difference is R9).
   let Defs = [R0, R1, R2, R3, R12, QQQQ0, QQQQ2, QQQQ3, PC],
       Uses = [SP] in {
-    def tTAILJMPdND : tPseudoExpand<(outs), (ins t_brtarget:$dst, variable_ops),
+    def tTAILJMPdND : tPseudoExpand<(outs),
+                   (ins t_brtarget:$dst, pred:$p, variable_ops),
                    4, IIC_Br, [],
-                   (tB t_brtarget:$dst)>,
+                   (tB t_brtarget:$dst, pred:$p)>,
                  Requires<[IsThumb, IsNotDarwin]>;
     def tTAILJMPrND : tPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
                      4, IIC_Br, [],
@@ -1144,7 +1145,7 @@ def tSBC :                      // A8.6.151
 
 // Subtract immediate
 def tSUBi3 :                    // A8.6.210 T1
-  T1sIGenEncodeImm<0b01111, (outs tGPR:$Rd), (ins tGPR:$Rm, i32imm:$imm3),
+  T1sIGenEncodeImm<0b01111, (outs tGPR:$Rd), (ins tGPR:$Rm, imm0_7:$imm3),
                    IIC_iALUi,
                    "sub", "\t$Rd, $Rm, $imm3",
                    [(set tGPR:$Rd, (add tGPR:$Rm, imm0_7_neg:$imm3))]> {
@@ -1153,8 +1154,8 @@ def tSUBi3 :                    // A8.6.210 T1
 }
 
 def tSUBi8 :                    // A8.6.210 T2
-  T1sItGenEncodeImm<{1,1,1,?,?}, (outs tGPR:$Rdn), (ins tGPR:$Rn, i32imm:$imm8),
-                    IIC_iALUi,
+  T1sItGenEncodeImm<{1,1,1,?,?}, (outs tGPR:$Rdn),
+                    (ins tGPR:$Rn, imm0_255:$imm8), IIC_iALUi,
                     "sub", "\t$Rdn, $imm8",
                     [(set tGPR:$Rdn, (add tGPR:$Rn, imm8_255_neg:$imm8))]>;
 
@@ -1361,6 +1362,31 @@ def : T1Pat<(sextloadi16 t_addrmode_rrs2:$addr),
             (tASRri (tLSLri (tLDRHr t_addrmode_rrs2:$addr), 16), 16)>;
 def : T1Pat<(sextloadi16 t_addrmode_is2:$addr),
             (tASRri (tLSLri (tLDRHi t_addrmode_is2:$addr), 16), 16)>;
+
+def : T1Pat<(atomic_load_8 t_addrmode_is1:$src),
+             (tLDRBi t_addrmode_is1:$src)>;
+def : T1Pat<(atomic_load_8 t_addrmode_rrs1:$src),
+             (tLDRBr t_addrmode_rrs1:$src)>;
+def : T1Pat<(atomic_load_16 t_addrmode_is2:$src),
+             (tLDRHi t_addrmode_is2:$src)>;
+def : T1Pat<(atomic_load_16 t_addrmode_rrs2:$src),
+             (tLDRHr t_addrmode_rrs2:$src)>;
+def : T1Pat<(atomic_load_32 t_addrmode_is4:$src),
+             (tLDRi t_addrmode_is4:$src)>;
+def : T1Pat<(atomic_load_32 t_addrmode_rrs4:$src),
+             (tLDRr t_addrmode_rrs4:$src)>;
+def : T1Pat<(atomic_store_8 t_addrmode_is1:$ptr, tGPR:$val),
+             (tSTRBi tGPR:$val, t_addrmode_is1:$ptr)>;
+def : T1Pat<(atomic_store_8 t_addrmode_rrs1:$ptr, tGPR:$val),
+             (tSTRBr tGPR:$val, t_addrmode_rrs1:$ptr)>;
+def : T1Pat<(atomic_store_16 t_addrmode_is2:$ptr, tGPR:$val),
+             (tSTRHi tGPR:$val, t_addrmode_is2:$ptr)>;
+def : T1Pat<(atomic_store_16 t_addrmode_rrs2:$ptr, tGPR:$val),
+             (tSTRHr tGPR:$val, t_addrmode_rrs2:$ptr)>;
+def : T1Pat<(atomic_store_32 t_addrmode_is4:$ptr, tGPR:$val),
+             (tSTRi tGPR:$val, t_addrmode_is4:$ptr)>;
+def : T1Pat<(atomic_store_32 t_addrmode_rrs4:$ptr, tGPR:$val),
+             (tSTRr tGPR:$val, t_addrmode_rrs4:$ptr)>;
 
 // Large immediate handling.
 

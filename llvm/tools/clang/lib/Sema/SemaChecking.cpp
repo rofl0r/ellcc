@@ -88,6 +88,19 @@ static bool checkArgCount(Sema &S, CallExpr *call, unsigned desiredArgCount) {
     << call->getArg(1)->getSourceRange();
 }
 
+/// CheckBuiltinAnnotationString - Checks that string argument to the builtin
+/// annotation is a non wide string literal.
+static bool CheckBuiltinAnnotationString(Sema &S, Expr *Arg) {
+  Arg = Arg->IgnoreParenCasts();
+  StringLiteral *Literal = dyn_cast<StringLiteral>(Arg);
+  if (!Literal || !Literal->isAscii()) {
+    S.Diag(Arg->getLocStart(), diag::err_builtin_annotation_not_string_constant)
+      << Arg->getSourceRange();
+    return true;
+  }
+  return false;
+}
+
 ExprResult
 Sema::CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   ExprResult TheCallResult(Owned(TheCall));
@@ -184,6 +197,10 @@ Sema::CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case Builtin::BI__sync_lock_release:
   case Builtin::BI__sync_swap:
     return SemaBuiltinAtomicOverloaded(move(TheCallResult));
+  case Builtin::BI__builtin_annotation:
+    if (CheckBuiltinAnnotationString(*this, TheCall->getArg(1)))
+      return ExprError();
+    break;
   }
   
   // Since the target specific builtins for each arch overlap, only check those
@@ -614,13 +631,20 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
     TheCall->setArg(i+1, Arg.get());
   }
 
-  // Switch the DeclRefExpr to refer to the new decl.
-  DRE->setDecl(NewBuiltinDecl);
-  DRE->setType(NewBuiltinDecl->getType());
+  ASTContext& Context = this->getASTContext();
+
+  // Create a new DeclRefExpr to refer to the new decl.
+  DeclRefExpr* NewDRE = DeclRefExpr::Create(
+      Context,
+      DRE->getQualifierLoc(),
+      NewBuiltinDecl,
+      DRE->getLocation(),
+      NewBuiltinDecl->getType(),
+      DRE->getValueKind());
 
   // Set the callee in the CallExpr.
   // FIXME: This leaks the original parens and implicit casts.
-  ExprResult PromotedCall = UsualUnaryConversions(DRE);
+  ExprResult PromotedCall = UsualUnaryConversions(NewDRE);
   if (PromotedCall.isInvalid())
     return ExprError();
   TheCall->setCallee(PromotedCall.take());
@@ -632,7 +656,6 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
 
   return move(TheCallResult);
 }
-
 
 /// CheckObjCString - Checks that the argument to the builtin
 /// CFString constructor is correct
@@ -2481,11 +2504,11 @@ do {
 /// Check for comparisons of floating point operands using != and ==.
 /// Issue a warning if these are no self-comparisons, as they are not likely
 /// to do what the programmer intended.
-void Sema::CheckFloatComparison(SourceLocation loc, Expr* lex, Expr *rex) {
+void Sema::CheckFloatComparison(SourceLocation Loc, Expr* LHS, Expr *RHS) {
   bool EmitWarning = true;
 
-  Expr* LeftExprSansParen = lex->IgnoreParenImpCasts();
-  Expr* RightExprSansParen = rex->IgnoreParenImpCasts();
+  Expr* LeftExprSansParen = LHS->IgnoreParenImpCasts();
+  Expr* RightExprSansParen = RHS->IgnoreParenImpCasts();
 
   // Special case: check for x == x (which is OK).
   // Do not emit warnings for such cases.
@@ -2524,8 +2547,8 @@ void Sema::CheckFloatComparison(SourceLocation loc, Expr* lex, Expr *rex) {
 
   // Emit the diagnostic.
   if (EmitWarning)
-    Diag(loc, diag::warn_floatingpoint_eq)
-      << lex->getSourceRange() << rex->getSourceRange();
+    Diag(Loc, diag::warn_floatingpoint_eq)
+      << LHS->getSourceRange() << RHS->getSourceRange();
 }
 
 //===--- CHECK: Integer mixed-sign comparisons (-Wsign-compare) --------===//
@@ -2597,7 +2620,7 @@ struct IntRange {
     if (const ComplexType *CT = dyn_cast<ComplexType>(T))
       T = CT->getElementType().getTypePtr();
     if (const EnumType *ET = dyn_cast<EnumType>(T))
-      T = ET->getDecl()->getIntegerType().getTypePtr();
+      T = C.getCanonicalType(ET->getDecl()->getIntegerType()).getTypePtr();
 
     const BuiltinType *BT = cast<BuiltinType>(T);
     assert(BT->isInteger());
@@ -2990,10 +3013,7 @@ void AnalyzeImpConvsInComparison(Sema &S, BinaryOperator *E) {
 
 /// \brief Implements -Wsign-compare.
 ///
-/// \param lex the left-hand expression
-/// \param rex the right-hand expression
-/// \param OpLoc the location of the joining operator
-/// \param BinOpc binary opcode or 0
+/// \param E the binary operator to check for warnings
 void AnalyzeComparison(Sema &S, BinaryOperator *E) {
   // The type the comparison is being performed in.
   QualType T = E->getLHS()->getType();
@@ -3010,20 +3030,20 @@ void AnalyzeComparison(Sema &S, BinaryOperator *E) {
       || E->isValueDependent() || E->isIntegerConstantExpr(S.Context))
     return AnalyzeImpConvsInComparison(S, E);
 
-  Expr *lex = E->getLHS()->IgnoreParenImpCasts();
-  Expr *rex = E->getRHS()->IgnoreParenImpCasts();
+  Expr *LHS = E->getLHS()->IgnoreParenImpCasts();
+  Expr *RHS = E->getRHS()->IgnoreParenImpCasts();
 
   // Check to see if one of the (unmodified) operands is of different
   // signedness.
   Expr *signedOperand, *unsignedOperand;
-  if (lex->getType()->hasSignedIntegerRepresentation()) {
-    assert(!rex->getType()->hasSignedIntegerRepresentation() &&
+  if (LHS->getType()->hasSignedIntegerRepresentation()) {
+    assert(!RHS->getType()->hasSignedIntegerRepresentation() &&
            "unsigned comparison between two signed integer expressions?");
-    signedOperand = lex;
-    unsignedOperand = rex;
-  } else if (rex->getType()->hasSignedIntegerRepresentation()) {
-    signedOperand = rex;
-    unsignedOperand = lex;
+    signedOperand = LHS;
+    unsignedOperand = RHS;
+  } else if (RHS->getType()->hasSignedIntegerRepresentation()) {
+    signedOperand = RHS;
+    unsignedOperand = LHS;
   } else {
     CheckTrivialUnsignedComparison(S, E);
     return AnalyzeImpConvsInComparison(S, E);
@@ -3034,8 +3054,8 @@ void AnalyzeComparison(Sema &S, BinaryOperator *E) {
 
   // Go ahead and analyze implicit conversions in the operands.  Note
   // that we skip the implicit conversions on both sides.
-  AnalyzeImplicitConversions(S, lex, E->getOperatorLoc());
-  AnalyzeImplicitConversions(S, rex, E->getOperatorLoc());
+  AnalyzeImplicitConversions(S, LHS, E->getOperatorLoc());
+  AnalyzeImplicitConversions(S, RHS, E->getOperatorLoc());
 
   // If the signed range is non-negative, -Wsign-compare won't fire,
   // but we should still check for comparisons which are always true
@@ -3060,8 +3080,8 @@ void AnalyzeComparison(Sema &S, BinaryOperator *E) {
   }
 
   S.Diag(E->getOperatorLoc(), diag::warn_mixed_sign_comparison)
-    << lex->getType() << rex->getType()
-    << lex->getSourceRange() << rex->getSourceRange();
+    << LHS->getType() << RHS->getType()
+    << LHS->getSourceRange() << RHS->getSourceRange();
 }
 
 /// Analyzes an attempt to assign the given value to a bitfield.
@@ -3287,6 +3307,11 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
         return;
       
       Expr *InnerE = E->IgnoreParenImpCasts();
+      // We also want to warn on, e.g., "int i = -1.234"
+      if (UnaryOperator *UOp = dyn_cast<UnaryOperator>(InnerE))
+        if (UOp->getOpcode() == UO_Minus || UOp->getOpcode() == UO_Plus)
+          InnerE = UOp->getSubExpr()->IgnoreParenImpCasts();
+
       if (FloatingLiteral *FL = dyn_cast<FloatingLiteral>(InnerE)) {
         DiagnoseFloatingLiteralImpCast(S, FL, T, CC);
       } else {
@@ -3825,7 +3850,7 @@ static bool findRetainCycleOwner(Expr *e, RetainCycleOwner &owner) {
       case CK_BitCast:
       case CK_LValueBitCast:
       case CK_LValueToRValue:
-      case CK_ObjCReclaimReturnedObject:
+      case CK_ARCReclaimReturnedObject:
         e = cast->getSubExpr();
         continue;
 
@@ -3834,10 +3859,7 @@ static bool findRetainCycleOwner(Expr *e, RetainCycleOwner &owner) {
         const ObjCPropertyRefExpr *pre = cast->getSubExpr()->getObjCProperty();
         if (pre->isImplicitProperty()) return false;
         ObjCPropertyDecl *property = pre->getExplicitProperty();
-        if (!(property->getPropertyAttributes() &
-              (ObjCPropertyDecl::OBJC_PR_retain |
-               ObjCPropertyDecl::OBJC_PR_copy |
-               ObjCPropertyDecl::OBJC_PR_strong)) &&
+        if (!property->isRetaining() &&
             !(property->getPropertyIvarDecl() &&
               property->getPropertyIvarDecl()->getType()
                 .getObjCLifetime() == Qualifiers::OCL_Strong))
@@ -4010,7 +4032,7 @@ bool Sema::checkUnsafeAssigns(SourceLocation Loc,
     return false;
   // strip off any implicit cast added to get to the one arc-specific
   while (ImplicitCastExpr *cast = dyn_cast<ImplicitCastExpr>(RHS)) {
-    if (cast->getCastKind() == CK_ObjCConsumeObject) {
+    if (cast->getCastKind() == CK_ARCConsumeObject) {
       Diag(Loc, diag::warn_arc_retained_assign)
         << (LT == Qualifiers::OCL_ExplicitNone) 
         << RHS->getSourceRange();
@@ -4041,7 +4063,7 @@ void Sema::checkUnsafeExprAssigns(SourceLocation Loc,
     unsigned Attributes = PD->getPropertyAttributes();
     if (Attributes & ObjCPropertyDecl::OBJC_PR_assign)
       while (ImplicitCastExpr *cast = dyn_cast<ImplicitCastExpr>(RHS)) {
-        if (cast->getCastKind() == CK_ObjCConsumeObject) {
+        if (cast->getCastKind() == CK_ARCConsumeObject) {
           Diag(Loc, diag::warn_arc_retained_property_assign)
           << RHS->getSourceRange();
           return;

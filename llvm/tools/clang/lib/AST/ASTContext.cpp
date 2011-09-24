@@ -225,7 +225,7 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     GlobalNestedNameSpecifier(0), 
     Int128Decl(0), UInt128Decl(0),
     ObjCIdDecl(0), ObjCSelDecl(0), ObjCClassDecl(0),
-    CFConstantStringTypeDecl(0),
+    CFConstantStringTypeDecl(0), ObjCInstanceTypeDecl(0),
     FILEDecl(0), 
     jmp_bufDecl(0), sigjmp_bufDecl(0), BlockDescriptorType(0), 
     BlockDescriptorExtendedType(0), cudaConfigureCallDecl(0),
@@ -3844,6 +3844,17 @@ ASTContext::BuildByRefType(StringRef DeclName, QualType Ty) const {
   return getPointerType(getTagDeclType(T));
 }
 
+TypedefDecl *ASTContext::getObjCInstanceTypeDecl() {
+  if (!ObjCInstanceTypeDecl)
+    ObjCInstanceTypeDecl = TypedefDecl::Create(*this, 
+                                               getTranslationUnitDecl(),
+                                               SourceLocation(), 
+                                               SourceLocation(),
+                                               &Idents.get("instancetype"), 
+                                     getTrivialTypeSourceInfo(getObjCIdType()));
+  return ObjCInstanceTypeDecl;
+}
+
 // This returns true if a type has been typedefed to BOOL:
 // typedef <type> BOOL;
 static bool isTypeTypedefedAsBOOL(QualType T) {
@@ -4193,6 +4204,17 @@ static char ObjCEncodingForPrimitiveKind(const ASTContext *C, QualType T) {
     }
 }
 
+static char ObjCEncodingForEnumType(const ASTContext *C, const EnumType *ET) {
+  EnumDecl *Enum = ET->getDecl();
+  
+  // The encoding of an non-fixed enum type is always 'i', regardless of size.
+  if (!Enum->isFixed())
+    return 'i';
+  
+  // The encoding of a fixed enum type matches its fixed underlying type.
+  return ObjCEncodingForPrimitiveKind(C, Enum->getIntegerType());
+}
+
 static void EncodeBitField(const ASTContext *Ctx, std::string& S,
                            QualType T, const FieldDecl *FD) {
   const Expr *E = FD->getBitWidth();
@@ -4217,8 +4239,8 @@ static void EncodeBitField(const ASTContext *Ctx, std::string& S,
     const RecordDecl *RD = FD->getParent();
     const ASTRecordLayout &RL = Ctx->getASTRecordLayout(RD);
     S += llvm::utostr(RL.getFieldOffset(FD->getFieldIndex()));
-    if (T->isEnumeralType())
-      S += 'i';
+    if (const EnumType *ET = T->getAs<EnumType>())
+      S += ObjCEncodingForEnumType(Ctx, ET);
     else
       S += ObjCEncodingForPrimitiveKind(Ctx, T);
   }
@@ -4404,11 +4426,11 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
     return;
   }
   
-  if (T->isEnumeralType()) {
+  if (const EnumType *ET = T->getAs<EnumType>()) {
     if (FD && FD->isBitField())
       EncodeBitField(this, S, T, FD);
     else
-      S += 'i';
+      S += ObjCEncodingForEnumType(this, ET);
     return;
   }
 
@@ -4908,7 +4930,7 @@ CanQualType ASTContext::getFromTargetType(unsigned Type) const {
 /// garbage collection attribute.
 ///
 Qualifiers::GC ASTContext::getObjCGCAttrKind(QualType Ty) const {
-  if (getLangOptions().getGCMode() == LangOptions::NonGC)
+  if (getLangOptions().getGC() == LangOptions::NonGC)
     return Qualifiers::GCNone;
 
   assert(getLangOptions().ObjC1);
@@ -6405,7 +6427,7 @@ bool ASTContext::DeclMustBeEmitted(const Decl *D) {
       return false;
     return true;
   }
-
+  
   const VarDecl *VD = cast<VarDecl>(D);
   assert(VD->isFileVarDecl() && "Expected file scoped var");
 

@@ -106,7 +106,7 @@ void ARMTargetLowering::addTypeForNEON(EVT VT, EVT PromotedLdStVT,
 
   EVT ElemTy = VT.getVectorElementType();
   if (ElemTy != MVT::i64 && ElemTy != MVT::f64)
-    setOperationAction(ISD::VSETCC, VT.getSimpleVT(), Custom);
+    setOperationAction(ISD::SETCC, VT.getSimpleVT(), Custom);
   setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT.getSimpleVT(), Custom);
   if (ElemTy != MVT::i32) {
     setOperationAction(ISD::SINT_TO_FP, VT.getSimpleVT(), Expand);
@@ -177,6 +177,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   Subtarget = &TM.getSubtarget<ARMSubtarget>();
   RegInfo = TM.getRegisterInfo();
   Itins = TM.getInstrItineraryData();
+
+  setBooleanVectorContents(ZeroOrNegativeOneBooleanContent);
 
   if (Subtarget->isTargetDarwin()) {
     // Uses VFP for Thumb libfuncs if available.
@@ -453,7 +455,7 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::FDIV, MVT::v2f64, Expand);
     setOperationAction(ISD::FREM, MVT::v2f64, Expand);
     setOperationAction(ISD::FCOPYSIGN, MVT::v2f64, Expand);
-    setOperationAction(ISD::VSETCC, MVT::v2f64, Expand);
+    setOperationAction(ISD::SETCC, MVT::v2f64, Expand);
     setOperationAction(ISD::FNEG, MVT::v2f64, Expand);
     setOperationAction(ISD::FABS, MVT::v2f64, Expand);
     setOperationAction(ISD::FSQRT, MVT::v2f64, Expand);
@@ -485,8 +487,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::SDIV, MVT::v8i8, Custom);
     setOperationAction(ISD::UDIV, MVT::v4i16, Custom);
     setOperationAction(ISD::UDIV, MVT::v8i8, Custom);
-    setOperationAction(ISD::VSETCC, MVT::v1i64, Expand);
-    setOperationAction(ISD::VSETCC, MVT::v2i64, Expand);
+    setOperationAction(ISD::SETCC, MVT::v1i64, Expand);
+    setOperationAction(ISD::SETCC, MVT::v2i64, Expand);
     // Neon does not have single instruction SINT_TO_FP and UINT_TO_FP with
     // a destination type that is wider than the source.
     setOperationAction(ISD::SINT_TO_FP, MVT::v4i16, Custom);
@@ -637,8 +639,10 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::ATOMIC_LOAD_MAX, MVT::i32, Expand);
     setOperationAction(ISD::ATOMIC_LOAD_UMIN, MVT::i32, Expand);
     setOperationAction(ISD::ATOMIC_LOAD_UMAX, MVT::i32, Expand);
-    setOperationAction(ISD::ATOMIC_LOAD, MVT::i32, Expand);
-    setOperationAction(ISD::ATOMIC_STORE, MVT::i32, Expand);
+    // Mark ATOMIC_LOAD and ATOMIC_STORE custom so we can handle the
+    // Unordered/Monotonic case.
+    setOperationAction(ISD::ATOMIC_LOAD, MVT::i32, Custom);
+    setOperationAction(ISD::ATOMIC_STORE, MVT::i32, Custom);
     // Since the libcalls include locking, fold in the fences
     setShouldFoldAtomicFences(true);
   }
@@ -928,6 +932,11 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::VST3LN_UPD:    return "ARMISD::VST3LN_UPD";
   case ARMISD::VST4LN_UPD:    return "ARMISD::VST4LN_UPD";
   }
+}
+
+EVT ARMTargetLowering::getSetCCResultType(EVT VT) const {
+  if (!VT.isVector()) return getPointerTy();
+  return VT.changeVectorElementTypeToInteger();
 }
 
 /// getRegClassFor - Return the register class that should be used for the
@@ -2768,7 +2777,7 @@ SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
     SDValue ARMcc;
     SDValue CCR = DAG.getRegister(ARM::CPSR, MVT::i32);
     SDValue Cmp = getARMCmp(LHS, RHS, CC, ARMcc, DAG, dl);
-    return DAG.getNode(ARMISD::CMOV, dl, VT, FalseVal, TrueVal, ARMcc, CCR, Cmp);
+    return DAG.getNode(ARMISD::CMOV, dl, VT, FalseVal, TrueVal, ARMcc, CCR,Cmp);
   }
 
   ARMCC::CondCodes CondCode, CondCode2;
@@ -4854,6 +4863,17 @@ static SDValue LowerADDC_ADDE_SUBC_SUBE(SDValue Op, SelectionDAG &DAG) {
                      Op.getOperand(1), Op.getOperand(2));
 }
 
+static SDValue LowerAtomicLoadStore(SDValue Op, SelectionDAG &DAG) {
+  // Monotonic load/store is legal for all targets
+  if (cast<AtomicSDNode>(Op)->getOrdering() <= Monotonic)
+    return Op;
+
+  // Aquire/Release load/store is not legal for targets without a
+  // dmb or equivalent available.
+  return SDValue();
+}
+
+
 static void
 ReplaceATOMIC_OP_64(SDNode *Node, SmallVectorImpl<SDValue>& Results,
                     SelectionDAG &DAG, unsigned NewOp) {
@@ -4925,7 +4945,7 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SRL_PARTS:
   case ISD::SRA_PARTS:     return LowerShiftRightParts(Op, DAG);
   case ISD::CTTZ:          return LowerCTTZ(Op.getNode(), DAG, Subtarget);
-  case ISD::VSETCC:        return LowerVSETCC(Op, DAG);
+  case ISD::SETCC:         return LowerVSETCC(Op, DAG);
   case ISD::BUILD_VECTOR:  return LowerBUILD_VECTOR(Op, DAG, Subtarget);
   case ISD::VECTOR_SHUFFLE: return LowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::EXTRACT_VECTOR_ELT: return LowerEXTRACT_VECTOR_ELT(Op, DAG);
@@ -4938,6 +4958,8 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::ADDE:
   case ISD::SUBC:
   case ISD::SUBE:          return LowerADDC_ADDE_SUBC_SUBE(Op, DAG);
+  case ISD::ATOMIC_LOAD:
+  case ISD::ATOMIC_STORE:  return LowerAtomicLoadStore(Op, DAG);
   }
   return SDValue();
 }
@@ -5060,7 +5082,10 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
   //   cmp dest, oldval
   //   bne exitMBB
   BB = loop1MBB;
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr));
+  MachineInstrBuilder MIB = BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr);
+  if (ldrOpc == ARM::t2LDREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
   AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPrr : ARM::CMPrr))
                  .addReg(dest).addReg(oldval));
   BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
@@ -5073,8 +5098,10 @@ ARMTargetLowering::EmitAtomicCmpSwap(MachineInstr *MI,
   //   cmp scratch, #0
   //   bne loop1MBB
   BB = loop2MBB;
-  AddDefaultPred(BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(newval)
-                 .addReg(ptr));
+  MIB = BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(newval).addReg(ptr);
+  if (strOpc == ARM::t2STREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
   AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPri : ARM::CMPri))
                  .addReg(scratch).addImm(0));
   BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
@@ -5160,7 +5187,10 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
   //   bne- loopMBB
   //   fallthrough --> exitMBB
   BB = loopMBB;
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr));
+  MachineInstrBuilder MIB = BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr);
+  if (ldrOpc == ARM::t2LDREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
   if (BinOpcode) {
     // operand order needs to go the other way for NAND
     if (BinOpcode == ARM::BICrr || BinOpcode == ARM::t2BICrr)
@@ -5171,8 +5201,10 @@ ARMTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
                      addReg(dest).addReg(incr)).addReg(0);
   }
 
-  AddDefaultPred(BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(scratch2)
-                 .addReg(ptr));
+  MIB = BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(scratch2).addReg(ptr);
+  if (strOpc == ARM::t2STREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
   AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPri : ARM::CMPri))
                  .addReg(scratch).addImm(0));
   BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
@@ -5267,7 +5299,10 @@ ARMTargetLowering::EmitAtomicBinaryMinMax(MachineInstr *MI,
   //   bne- loopMBB
   //   fallthrough --> exitMBB
   BB = loopMBB;
-  AddDefaultPred(BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr));
+  MachineInstrBuilder MIB = BuildMI(BB, dl, TII->get(ldrOpc), dest).addReg(ptr);
+  if (ldrOpc == ARM::t2LDREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
 
   // Sign extend the value, if necessary.
   if (signExtend && extendOpc) {
@@ -5283,8 +5318,10 @@ ARMTargetLowering::EmitAtomicBinaryMinMax(MachineInstr *MI,
   BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2MOVCCr : ARM::MOVCCr), scratch2)
          .addReg(oldval).addReg(incr).addImm(Cond).addReg(ARM::CPSR);
 
-  AddDefaultPred(BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(scratch2)
-                 .addReg(ptr));
+  MIB = BuildMI(BB, dl, TII->get(strOpc), scratch).addReg(scratch2).addReg(ptr);
+  if (strOpc == ARM::t2STREX)
+    MIB.addImm(0);
+  AddDefaultPred(MIB);
   AddDefaultPred(BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2CMPri : ARM::CMPri))
                  .addReg(scratch).addImm(0));
   BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
@@ -5458,6 +5495,19 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     MI->dump();
     llvm_unreachable("Unexpected instr type to insert");
   }
+  // The Thumb2 pre-indexed stores have the same MI operands, they just
+  // define them differently in the .td files from the isel patterns, so
+  // they need pseudos.
+  case ARM::t2STR_preidx:
+    MI->setDesc(TII->get(ARM::t2STR_PRE));
+    return BB;
+  case ARM::t2STRB_preidx:
+    MI->setDesc(TII->get(ARM::t2STRB_PRE));
+    return BB;
+  case ARM::t2STRH_preidx:
+    MI->setDesc(TII->get(ARM::t2STRH_PRE));
+    return BB;
+
   case ARM::STRi_preidx:
   case ARM::STRBi_preidx: {
     unsigned NewOpc = MI->getOpcode() == ARM::STRi_preidx ?
@@ -5691,8 +5741,10 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 
     BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc))
       .addMBB(destMBB).addImm(ARMCC::EQ).addReg(ARM::CPSR);
-    BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2B : ARM::B))
-      .addMBB(exitMBB);
+    if (isThumb2)
+      AddDefaultPred(BuildMI(BB, dl, TII->get(ARM::t2B)).addMBB(exitMBB));
+    else
+      BuildMI(BB, dl, TII->get(ARM::B)) .addMBB(exitMBB);
 
     MI->eraseFromParent();   // The pseudo instruction is gone now.
     return BB;
@@ -5708,7 +5760,7 @@ void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
   // the optional operand to CPSR. Otherwise, remove the CPSR implicit def.
   const MCInstrDesc &MCID = MI->getDesc();
   if (Node->hasAnyUseOfValue(1)) {
-    MachineOperand &MO = MI->getOperand(MCID.getNumOperands() - 2);
+    MachineOperand &MO = MI->getOperand(MCID.getNumOperands() - 1);
     MO.setReg(ARM::CPSR);
     MO.setIsDef(true);
   } else {
@@ -7228,7 +7280,8 @@ ARMTargetLowering::PerformCMOVCombine(SDNode *N, SelectionDAG &DAG) const {
   SDValue FalseVal = N->getOperand(0);
   SDValue TrueVal = N->getOperand(1);
   SDValue ARMcc = N->getOperand(2);
-  ARMCC::CondCodes CC = (ARMCC::CondCodes)cast<ConstantSDNode>(ARMcc)->getZExtValue();
+  ARMCC::CondCodes CC =
+    (ARMCC::CondCodes)cast<ConstantSDNode>(ARMcc)->getZExtValue();
 
   // Simplify
   //   mov     r1, r0

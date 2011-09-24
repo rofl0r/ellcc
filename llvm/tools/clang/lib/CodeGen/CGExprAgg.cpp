@@ -79,7 +79,7 @@ public:
   void EmitMoveFromReturnSlot(const Expr *E, RValue Src);
 
   AggValueSlot::NeedsGCBarriers_t needsGC(QualType T) {
-    if (CGF.getLangOptions().getGCMode() && TypeRequiresGCollection(T))
+    if (CGF.getLangOptions().getGC() && TypeRequiresGCollection(T))
       return AggValueSlot::NeedsGCBarriers;
     return AggValueSlot::DoesNotNeedGCBarriers;
   }
@@ -365,7 +365,8 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_FloatingToIntegral:
   case CK_FloatingToBoolean:
   case CK_FloatingCast:
-  case CK_AnyPointerToObjCPointerCast:
+  case CK_CPointerToObjCPointerCast:
+  case CK_BlockPointerToObjCPointerCast:
   case CK_AnyPointerToBlockPointerCast:
   case CK_ObjCObjectLValueCast:
   case CK_FloatingRealToComplex:
@@ -378,9 +379,10 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   case CK_IntegralComplexToBoolean:
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
-  case CK_ObjCProduceObject:
-  case CK_ObjCConsumeObject:
-  case CK_ObjCReclaimReturnedObject:
+  case CK_ARCProduceObject:
+  case CK_ARCConsumeObject:
+  case CK_ARCReclaimReturnedObject:
+  case CK_ARCExtendBlockObject:
     llvm_unreachable("cast kind invalid for aggregate types");
   }
 }
@@ -1069,7 +1071,9 @@ void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
     if (const RecordType *RT = Ty->getAs<RecordType>()) {
       CXXRecordDecl *Record = cast<CXXRecordDecl>(RT->getDecl());
       assert((Record->hasTrivialCopyConstructor() || 
-              Record->hasTrivialCopyAssignment()) &&
+              Record->hasTrivialCopyAssignment() ||
+              Record->hasTrivialMoveConstructor() ||
+              Record->hasTrivialMoveAssignment()) &&
              "Trying to aggregate-copy a type without a trivial copy "
              "constructor or assignment operator");
       // Ignore empty classes in C++.
@@ -1119,7 +1123,7 @@ void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
   SrcPtr = Builder.CreateBitCast(SrcPtr, SBP, "tmp");
 
   // Don't do any of the memmove_collectable tests if GC isn't set.
-  if (CGM.getLangOptions().getGCMode() == LangOptions::NonGC) {
+  if (CGM.getLangOptions().getGC() == LangOptions::NonGC) {
     // fall through
   } else if (const RecordType *RecordTy = Ty->getAs<RecordType>()) {
     RecordDecl *Record = RecordTy->getDecl();

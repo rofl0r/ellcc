@@ -209,6 +209,8 @@ def IsARM            : Predicate<"!Subtarget->isThumb()">,
                                  AssemblerPredicate<"!ModeThumb">;
 def IsDarwin         : Predicate<"Subtarget->isTargetDarwin()">;
 def IsNotDarwin      : Predicate<"!Subtarget->isTargetDarwin()">;
+def IsNaCl           : Predicate<"Subtarget->isTargetNaCl()">,
+                                 AssemblerPredicate<"ModeNaCl">;
 
 // FIXME: Eventually this will be just "hasV6T2Ops".
 def UseMovt          : Predicate<"Subtarget->useMovt()">;
@@ -574,18 +576,6 @@ def bf_inv_mask_imm : Operand<i32>,
   let PrintMethod = "printBitfieldInvMaskImmOperand";
   let DecoderMethod = "DecodeBitfieldMaskOperand";
   let ParserMatchClass = BitfieldAsmOperand;
-}
-
-/// lsb_pos_imm - position of the lsb bit, used by BFI4p and t2BFI4p
-def lsb_pos_imm : Operand<i32>, ImmLeaf<i32, [{
-  return isInt<5>(Imm);
-}]>;
-
-/// width_imm - number of bits to be copied, used by BFI4p and t2BFI4p
-def width_imm : Operand<i32>, ImmLeaf<i32, [{
-  return Imm > 0 &&  Imm <= 32;
-}] > {
-  let EncoderMethod = "getMsbOpValue";
 }
 
 def imm1_32_XFORM: SDNodeXForm<imm, [{
@@ -1035,8 +1025,8 @@ multiclass AsI1_rbin_irs<bits<4> opcod, string opc,
 
 }
 
-/// AsI1_rbin_s_is - Same as AsI1_rbin_s_is except sets 's' bit.
-let isCodeGenOnly = 1, Defs = [CPSR] in {
+/// AsI1_rbin_s_is - Same as AsI1_rbin_s_is except it sets 's' bit by default.
+let hasPostISelHook = 1, isCodeGenOnly = 1, Defs = [CPSR] in {
 multiclass AsI1_rbin_s_is<bits<4> opcod, string opc,
                      InstrItinClass iii, InstrItinClass iir, InstrItinClass iis,
                         PatFrag opnode, bit Commutable = 0> {
@@ -1099,25 +1089,25 @@ multiclass AsI1_rbin_s_is<bits<4> opcod, string opc,
 }
 }
 
-/// AI1_bin_s_irs - Similar to AsI1_bin_irs except it sets the 's' bit so the
-/// instruction modifies the CPSR register.
-let isCodeGenOnly = 1, Defs = [CPSR] in {
-multiclass AI1_bin_s_irs<bits<4> opcod, string opc,
+/// AsI1_bin_s_irs - Same as AsI1_bin_irs except it sets the 's' bit by default.
+let hasPostISelHook = 1, isCodeGenOnly = 1, Defs = [CPSR] in {
+multiclass AsI1_bin_s_irs<bits<4> opcod, string opc,
                      InstrItinClass iii, InstrItinClass iir, InstrItinClass iis,
                          PatFrag opnode, bit Commutable = 0> {
-  def ri : AI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm), DPFrm,
+  let isReMaterializable = 1 in {
+  def ri : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm), DPFrm,
                iii, opc, "\t$Rd, $Rn, $imm",
                [(set GPR:$Rd, CPSR, (opnode GPR:$Rn, so_imm:$imm))]> {
     bits<4> Rd;
     bits<4> Rn;
     bits<12> imm;
     let Inst{25} = 1;
-    let Inst{20} = 1;
     let Inst{19-16} = Rn;
     let Inst{15-12} = Rd;
     let Inst{11-0} = imm;
   }
-  def rr : AI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm,
+  }
+  def rr : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm,
                iir, opc, "\t$Rd, $Rn, $Rm",
                [(set GPR:$Rd, CPSR, (opnode GPR:$Rn, GPR:$Rm))]> {
     bits<4> Rd;
@@ -1125,13 +1115,12 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc,
     bits<4> Rm;
     let isCommutable = Commutable;
     let Inst{25} = 0;
-    let Inst{20} = 1;
     let Inst{19-16} = Rn;
     let Inst{15-12} = Rd;
     let Inst{11-4} = 0b00000000;
     let Inst{3-0} = Rm;
   }
-  def rsi : AI1<opcod, (outs GPR:$Rd),
+  def rsi : AsI1<opcod, (outs GPR:$Rd),
                (ins GPR:$Rn, so_reg_imm:$shift), DPSoRegImmFrm,
                iis, opc, "\t$Rd, $Rn, $shift",
                [(set GPR:$Rd, CPSR, (opnode GPR:$Rn, so_reg_imm:$shift))]> {
@@ -1139,7 +1128,6 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc,
     bits<4> Rn;
     bits<12> shift;
     let Inst{25} = 0;
-    let Inst{20} = 1;
     let Inst{19-16} = Rn;
     let Inst{15-12} = Rd;
     let Inst{11-5} = shift{11-5};
@@ -1147,7 +1135,7 @@ multiclass AI1_bin_s_irs<bits<4> opcod, string opc,
     let Inst{3-0} = shift{3-0};
   }
 
-  def rsr : AI1<opcod, (outs GPR:$Rd),
+  def rsr : AsI1<opcod, (outs GPR:$Rd),
                (ins GPR:$Rn, so_reg_reg:$shift), DPSoRegRegFrm,
                iis, opc, "\t$Rd, $Rn, $shift",
                [(set GPR:$Rd, CPSR, (opnode GPR:$Rn, so_reg_reg:$shift))]> {
@@ -1611,7 +1599,7 @@ PseudoInst<(outs), (ins i32imm:$amt, pred:$p), NoItinerary,
 
 // Atomic pseudo-insts which will be lowered to ldrexd/strexd loops.
 // (These psuedos use a hand-written selection code).
-let usesCustomInserter = 1, Uses = [CPSR] in {
+let usesCustomInserter = 1, Defs = [CPSR], mayLoad = 1, mayStore = 1 in {
 def ATOMOR6432   : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
                               (ins GPR:$addr, GPR:$src1, GPR:$src2),
                               NoItinerary, []>;
@@ -3134,10 +3122,12 @@ defm SUB  : AsI1_bin_irs<0b0010, "sub",
                          BinOpFrag<(sub  node:$LHS, node:$RHS)>, "SUB">;
 
 // ADD and SUB with 's' bit set.
-defm ADDS : AI1_bin_s_irs<0b0100, "adds",
+// FIXME: Eliminate them if we can write def : Pat patterns which defines
+// CPSR and the implicit def of CPSR is not needed.
+defm ADDS : AsI1_bin_s_irs<0b0100, "add",
                           IIC_iALUi, IIC_iALUr, IIC_iALUsr,
                           BinOpFrag<(ARMaddc node:$LHS, node:$RHS)>, 1>;
-defm SUBS : AI1_bin_s_irs<0b0010, "subs",
+defm SUBS : AsI1_bin_s_irs<0b0010, "sub",
                           IIC_iALUi, IIC_iALUr, IIC_iALUsr,
                           BinOpFrag<(ARMsubc node:$LHS, node:$RHS)>>;
 
@@ -3151,6 +3141,9 @@ defm SBC : AI1_adde_sube_irs<0b0110, "sbc",
 defm RSB  : AsI1_rbin_irs <0b0011, "rsb",
                          IIC_iALUi, IIC_iALUr, IIC_iALUsr,
                          BinOpFrag<(sub node:$LHS, node:$RHS)>, "RSB">;
+
+// FIXME: Eliminate them if we can write def : Pat patterns which defines
+// CPSR and the implicit def of CPSR is not needed.
 defm RSBS : AsI1_rbin_s_is<0b0011, "rsb",
                          IIC_iALUi, IIC_iALUr, IIC_iALUsr,
                          BinOpFrag<(ARMsubc node:$LHS, node:$RHS)>>;
@@ -3403,25 +3396,6 @@ def BFI:I<(outs GPRnopc:$Rd), (ins GPRnopc:$src, GPR:$Rn, bf_inv_mask_imm:$imm),
   let Inst{15-12} = Rd;
   let Inst{11-7}  = imm{4-0}; // lsb
   let Inst{20-16} = imm{9-5}; // width
-  let Inst{3-0}   = Rn;
-}
-
-// GNU as only supports this form of bfi (w/ 4 arguments)
-let isAsmParserOnly = 1 in
-def BFI4p : I<(outs GPRnopc:$Rd), (ins GPRnopc:$src, GPR:$Rn,
-                                   lsb_pos_imm:$lsb, width_imm:$width),
-               AddrMode1, 4, IndexModeNone, DPFrm, IIC_iUNAsi,
-               "bfi", "\t$Rd, $Rn, $lsb, $width", "$src = $Rd",
-               []>, Requires<[IsARM, HasV6T2]> {
-  bits<4> Rd;
-  bits<4> Rn;
-  bits<5> lsb;
-  bits<5> width;
-  let Inst{27-21} = 0b0111110;
-  let Inst{6-4}   = 0b001; // Rn: Inst{3-0} != 15
-  let Inst{15-12} = Rd;
-  let Inst{11-7}  = lsb;
-  let Inst{20-16} = width; // Custom encoder => lsb+width-1
   let Inst{3-0}   = Rn;
 }
 
@@ -3883,37 +3857,38 @@ def : ARMV6Pat<(or (sra (shl GPR:$Rm, (i32 24)), (i32 16)),
                    (and (srl GPR:$Rm, (i32 8)), 0xFF)),
                (REVSH GPR:$Rm)>;
 
-def PKHBT : APKHI<0b01101000, 0, (outs GPR:$Rd),
-                              (ins GPR:$Rn, GPR:$Rm, pkh_lsl_amt:$sh),
+def PKHBT : APKHI<0b01101000, 0, (outs GPRnopc:$Rd),
+                              (ins GPRnopc:$Rn, GPRnopc:$Rm, pkh_lsl_amt:$sh),
                IIC_iALUsi, "pkhbt", "\t$Rd, $Rn, $Rm$sh",
-               [(set GPR:$Rd, (or (and GPR:$Rn, 0xFFFF),
-                                  (and (shl GPR:$Rm, pkh_lsl_amt:$sh),
-                                       0xFFFF0000)))]>,
+               [(set GPRnopc:$Rd, (or (and GPRnopc:$Rn, 0xFFFF),
+                                      (and (shl GPRnopc:$Rm, pkh_lsl_amt:$sh),
+                                           0xFFFF0000)))]>,
                Requires<[IsARM, HasV6]>;
 
 // Alternate cases for PKHBT where identities eliminate some nodes.
-def : ARMV6Pat<(or (and GPR:$Rn, 0xFFFF), (and GPR:$Rm, 0xFFFF0000)),
-               (PKHBT GPR:$Rn, GPR:$Rm, 0)>;
-def : ARMV6Pat<(or (and GPR:$Rn, 0xFFFF), (shl GPR:$Rm, imm16_31:$sh)),
-               (PKHBT GPR:$Rn, GPR:$Rm, imm16_31:$sh)>;
+def : ARMV6Pat<(or (and GPRnopc:$Rn, 0xFFFF), (and GPRnopc:$Rm, 0xFFFF0000)),
+               (PKHBT GPRnopc:$Rn, GPRnopc:$Rm, 0)>;
+def : ARMV6Pat<(or (and GPRnopc:$Rn, 0xFFFF), (shl GPRnopc:$Rm, imm16_31:$sh)),
+               (PKHBT GPRnopc:$Rn, GPRnopc:$Rm, imm16_31:$sh)>;
 
 // Note: Shifts of 1-15 bits will be transformed to srl instead of sra and
 // will match the pattern below.
-def PKHTB : APKHI<0b01101000, 1, (outs GPR:$Rd),
-                              (ins GPR:$Rn, GPR:$Rm, pkh_asr_amt:$sh),
+def PKHTB : APKHI<0b01101000, 1, (outs GPRnopc:$Rd),
+                              (ins GPRnopc:$Rn, GPRnopc:$Rm, pkh_asr_amt:$sh),
                IIC_iBITsi, "pkhtb", "\t$Rd, $Rn, $Rm$sh",
-               [(set GPR:$Rd, (or (and GPR:$Rn, 0xFFFF0000),
-                                  (and (sra GPR:$Rm, pkh_asr_amt:$sh),
-                                       0xFFFF)))]>,
+               [(set GPRnopc:$Rd, (or (and GPRnopc:$Rn, 0xFFFF0000),
+                                      (and (sra GPRnopc:$Rm, pkh_asr_amt:$sh),
+                                           0xFFFF)))]>,
                Requires<[IsARM, HasV6]>;
 
 // Alternate cases for PKHTB where identities eliminate some nodes.  Note that
 // a shift amount of 0 is *not legal* here, it is PKHBT instead.
-def : ARMV6Pat<(or (and GPR:$src1, 0xFFFF0000), (srl GPR:$src2, imm16_31:$sh)),
-               (PKHTB GPR:$src1, GPR:$src2, imm16_31:$sh)>;
-def : ARMV6Pat<(or (and GPR:$src1, 0xFFFF0000),
-                   (and (srl GPR:$src2, imm1_15:$sh), 0xFFFF)),
-               (PKHTB GPR:$src1, GPR:$src2, imm1_15:$sh)>;
+def : ARMV6Pat<(or (and GPRnopc:$src1, 0xFFFF0000),
+                   (srl GPRnopc:$src2, imm16_31:$sh)),
+               (PKHTB GPRnopc:$src1, GPRnopc:$src2, imm16_31:$sh)>;
+def : ARMV6Pat<(or (and GPRnopc:$src1, 0xFFFF0000),
+                   (and (srl GPRnopc:$src2, imm1_15:$sh), 0xFFFF)),
+               (PKHTB GPRnopc:$src1, GPRnopc:$src2, imm1_15:$sh)>;
 
 //===----------------------------------------------------------------------===//
 //  Comparison Instructions...
@@ -4102,7 +4077,7 @@ def ISB : AInoP<(outs), (ins memb_opt:$opt), MiscFrm, NoItinerary,
 }
 
 let usesCustomInserter = 1 in {
-  let Uses = [CPSR] in {
+  let Defs = [CPSR] in {
     def ATOMIC_LOAD_ADD_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_add_8 GPR:$ptr, GPR:$incr))]>;
@@ -4315,7 +4290,6 @@ class ACI<dag oops, dag iops, string opc, string asm,
 }
 
 multiclass LdStCop<bits<4> op31_28, bit load, dag ops, string opc, string cond>{
-  let DecoderNamespace = "Common" in {
   def _OFFSET : ACI<(outs),
       !con((ins nohash_imm:$cop, nohash_imm:$CRd, addrmode2:$addr), ops),
       !strconcat(opc, cond), "\tp$cop, cr$CRd, $addr"> {
@@ -4410,7 +4384,6 @@ multiclass LdStCop<bits<4> op31_28, bit load, dag ops, string opc, string cond>{
     let Inst{22} = 1; // D = 1
     let Inst{20} = load;
     let DecoderMethod = "DecodeCopMemInstruction";
-  }
   }
 }
 
@@ -4902,6 +4875,7 @@ def : MnemonicAlias<"swi", "svc">;
 // Load / Store Multiple
 def : MnemonicAlias<"ldmfd", "ldm">;
 def : MnemonicAlias<"ldmia", "ldm">;
+def : MnemonicAlias<"ldmea", "ldmdb">;
 def : MnemonicAlias<"stmfd", "stmdb">;
 def : MnemonicAlias<"stmia", "stm">;
 def : MnemonicAlias<"stmea", "stm">;
@@ -4909,10 +4883,10 @@ def : MnemonicAlias<"stmea", "stm">;
 // PKHBT/PKHTB with default shift amount. PKHTB is equivalent to PKHBT when the
 // shift amount is zero (i.e., unspecified).
 def : InstAlias<"pkhbt${p} $Rd, $Rn, $Rm",
-                (PKHBT GPR:$Rd, GPR:$Rn, GPR:$Rm, 0, pred:$p)>,
+                (PKHBT GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, 0, pred:$p)>,
         Requires<[IsARM, HasV6]>;
 def : InstAlias<"pkhtb${p} $Rd, $Rn, $Rm",
-                (PKHBT GPR:$Rd, GPR:$Rn, GPR:$Rm, 0, pred:$p)>,
+                (PKHBT GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, 0, pred:$p)>,
         Requires<[IsARM, HasV6]>;
 
 // PUSH/POP aliases for STM/LDM
@@ -4967,6 +4941,17 @@ def : MnemonicAlias<"srsea", "srsdb">;
 def : MnemonicAlias<"srsfd", "srsia">;
 def : MnemonicAlias<"srsed", "srsib">;
 def : MnemonicAlias<"srs", "srsia">;
+
+// QSAX == QSUBADDX
+def : MnemonicAlias<"qsubaddx", "qsax">;
+// SASX == SADDSUBX
+def : MnemonicAlias<"saddsubx", "sasx">;
+// SHASX == SHADDSUBX
+def : MnemonicAlias<"shaddsubx", "shasx">;
+// SHSAX == SHSUBADDX
+def : MnemonicAlias<"shsubaddx", "shsax">;
+// SSAX == SSUBADDX
+def : MnemonicAlias<"ssubaddx", "ssax">;
 
 // LDRSBT/LDRHT/LDRSHT post-index offset if optional.
 // Note that the write-back output register is a dummy operand for MC (it's

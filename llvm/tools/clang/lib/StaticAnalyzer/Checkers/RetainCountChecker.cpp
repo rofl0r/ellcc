@@ -1772,7 +1772,7 @@ void CFRefReport::addGCModeDescription(const LangOptions &LOpts,
                                        bool GCEnabled) {
   const char *GCModeDescription = 0;
 
-  switch (LOpts.getGCMode()) {
+  switch (LOpts.getGC()) {
   case LangOptions::GCOnly:
     assert(GCEnabled);
     GCModeDescription = "Code is compiled to only use garbage collection";
@@ -1875,7 +1875,8 @@ PathDiagnosticPiece *CFRefReportVisitor::VisitNode(const ExplodedNode *N,
       os << "+0 retain count";
     }
 
-    PathDiagnosticLocation Pos(S, BRC.getSourceManager());
+    PathDiagnosticLocation Pos(S, BRC.getSourceManager(),
+                                  N->getLocationContext());
     return new PathDiagnosticEventPiece(Pos, os.str());
   }
 
@@ -2039,7 +2040,8 @@ PathDiagnosticPiece *CFRefReportVisitor::VisitNode(const ExplodedNode *N,
     return 0; // We have nothing to say!
 
   const Stmt *S = cast<StmtPoint>(N->getLocation()).getStmt();
-  PathDiagnosticLocation Pos(S, BRC.getSourceManager());
+  PathDiagnosticLocation Pos(S, BRC.getSourceManager(),
+                                N->getLocationContext());
   PathDiagnosticPiece *P = new PathDiagnosticEventPiece(Pos, os.str());
 
   // Add the range by scanning the children of the statement for any bindings
@@ -2142,35 +2144,13 @@ CFRefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
   llvm::tie(AllocNode, FirstBinding) =
     GetAllocationSite(BRC.getStateManager(), EndN, Sym);
 
-  SourceManager& SMgr = BRC.getSourceManager();
+  SourceManager& SM = BRC.getSourceManager();
 
   // Compute an actual location for the leak.  Sometimes a leak doesn't
   // occur at an actual statement (e.g., transition between blocks; end
   // of function) so we need to walk the graph and compute a real location.
   const ExplodedNode *LeakN = EndN;
-  PathDiagnosticLocation L;
-
-  while (LeakN) {
-    ProgramPoint P = LeakN->getLocation();
-
-    if (const StmtPoint *PS = dyn_cast<StmtPoint>(&P)) {
-      L = PathDiagnosticLocation(PS->getStmt()->getLocStart(), SMgr);
-      break;
-    }
-    else if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P)) {
-      if (const Stmt *Term = BE->getSrc()->getTerminator()) {
-        L = PathDiagnosticLocation(Term->getLocStart(), SMgr);
-        break;
-      }
-    }
-
-    LeakN = LeakN->succ_empty() ? 0 : *(LeakN->succ_begin());
-  }
-
-  if (!L.isValid()) {
-    const Decl &D = EndN->getCodeDecl();
-    L = PathDiagnosticLocation(D.getBodyRBrace(), SMgr);
-  }
+  PathDiagnosticLocation L = PathDiagnosticLocation::createEndOfPath(LeakN, SM);
 
   std::string sbuf;
   llvm::raw_string_ostream os(sbuf);
@@ -2354,7 +2334,7 @@ public:
       return leakWithinFunctionGC.get();
     } else {
       if (!leakWithinFunction) {
-        if (LOpts.getGCMode() == LangOptions::HybridGC) {
+        if (LOpts.getGC() == LangOptions::HybridGC) {
           leakWithinFunction.reset(new LeakWithinFunction("Leak of object when "
                                                           "not using garbage "
                                                           "collection (GC) in "
@@ -2376,7 +2356,7 @@ public:
       return leakAtReturnGC.get();
     } else {
       if (!leakAtReturn) {
-        if (LOpts.getGCMode() == LangOptions::HybridGC) {
+        if (LOpts.getGC() == LangOptions::HybridGC) {
           leakAtReturn.reset(new LeakAtReturn("Leak of returned object when "
                                               "not using garbage collection "
                                               "(GC) in dual GC/non-GC code"));

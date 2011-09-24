@@ -222,7 +222,7 @@ void AnalysisConsumer::HandleDeclContextDecl(ASTContext &C, Decl *D) {
           if (!Opts.AnalyzeSpecificFunction.empty() &&
               Opts.AnalyzeSpecificFunction != 
                 (*MI)->getSelector().getAsString())
-            break;
+            continue;
           DisplayFunction(*MI);
           HandleCode(*MI);
         }
@@ -336,7 +336,7 @@ static void ActionExprEngine(AnalysisConsumer &C, AnalysisManager &mgr,
 static void RunPathSensitiveChecks(AnalysisConsumer &C, AnalysisManager &mgr,
                                    Decl *D) {
 
-  switch (mgr.getLangOptions().getGCMode()) {
+  switch (mgr.getLangOptions().getGC()) {
   default:
     llvm_unreachable("Invalid GC mode.");
   case LangOptions::NonGC:

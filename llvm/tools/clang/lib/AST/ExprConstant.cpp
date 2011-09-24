@@ -674,7 +674,8 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr* E) {
 
   case CK_NoOp:
   case CK_BitCast:
-  case CK_AnyPointerToObjCPointerCast:
+  case CK_CPointerToObjCPointerCast:
+  case CK_BlockPointerToObjCPointerCast:
   case CK_AnyPointerToBlockPointerCast:
     return Visit(SubExpr);
 
@@ -1808,7 +1809,8 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_VectorSplat:
   case CK_IntegralToFloating:
   case CK_FloatingCast:
-  case CK_AnyPointerToObjCPointerCast:
+  case CK_CPointerToObjCPointerCast:
+  case CK_BlockPointerToObjCPointerCast:
   case CK_AnyPointerToBlockPointerCast:
   case CK_ObjCObjectLValueCast:
   case CK_FloatingRealToComplex:
@@ -1825,9 +1827,10 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_GetObjCProperty:
   case CK_LValueBitCast:
   case CK_UserDefinedConversion:
-  case CK_ObjCProduceObject:
-  case CK_ObjCConsumeObject:
-  case CK_ObjCReclaimReturnedObject:
+  case CK_ARCProduceObject:
+  case CK_ARCConsumeObject:
+  case CK_ARCReclaimReturnedObject:
+  case CK_ARCExtendBlockObject:
     return false;
 
   case CK_LValueToRValue:
@@ -2325,16 +2328,18 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_FloatingToIntegral:
   case CK_FloatingToBoolean:
   case CK_FloatingCast:
-  case CK_AnyPointerToObjCPointerCast:
+  case CK_CPointerToObjCPointerCast:
+  case CK_BlockPointerToObjCPointerCast:
   case CK_AnyPointerToBlockPointerCast:
   case CK_ObjCObjectLValueCast:
   case CK_FloatingComplexToReal:
   case CK_FloatingComplexToBoolean:
   case CK_IntegralComplexToReal:
   case CK_IntegralComplexToBoolean:
-  case CK_ObjCProduceObject:
-  case CK_ObjCConsumeObject:
-  case CK_ObjCReclaimReturnedObject:
+  case CK_ARCProduceObject:
+  case CK_ARCConsumeObject:
+  case CK_ARCReclaimReturnedObject:
+  case CK_ARCExtendBlockObject:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_LValueToRValue:

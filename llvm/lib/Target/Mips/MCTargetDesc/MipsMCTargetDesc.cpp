@@ -64,21 +64,16 @@ static MCAsmInfo *createMipsMCAsmInfo(const Target &T, StringRef TT) {
 static MCCodeGenInfo *createMipsMCCodeGenInfo(StringRef TT, Reloc::Model RM,
                                               CodeModel::Model CM) {
   MCCodeGenInfo *X = new MCCodeGenInfo();
-  if (RM == Reloc::Default) {
-    // Abicall enables PIC by default
-    if (TT.find("mipsallegrex") != std::string::npos ||
-        TT.find("psp") != std::string::npos)
-      RM = Reloc::Static;
-    else
-      RM = Reloc::PIC_;
-  }
+  if (RM == Reloc::Default)
+    RM = Reloc::PIC_;
   X->InitMCCodeGenInfo(RM, CM);
   return X;
 }
 
 static MCInstPrinter *createMipsMCInstPrinter(const Target &T,
                                               unsigned SyntaxVariant,
-                                              const MCAsmInfo &MAI) {
+                                              const MCAsmInfo &MAI,
+                                              const MCSubtargetInfo &STI) {
   return new MipsInstPrinter(MAI);
 }
 

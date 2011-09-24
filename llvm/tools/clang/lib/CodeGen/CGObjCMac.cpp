@@ -1605,7 +1605,7 @@ llvm::Constant *CGObjCCommonMac::BuildGCBlockLayout(CodeGenModule &CGM,
   llvm::Constant *nullPtr = 
     llvm::Constant::getNullValue(llvm::Type::getInt8PtrTy(VMContext));
 
-  if (CGM.getLangOptions().getGCMode() == LangOptions::NonGC &&
+  if (CGM.getLangOptions().getGC() == LangOptions::NonGC &&
       !CGM.getLangOptions().ObjCAutoRefCount)
     return nullPtr;
 
@@ -3384,9 +3384,9 @@ void CGObjCCommonMac::EmitImageInfo() {
   unsigned flags = 0;
 
   // FIXME: Fix and continue?
-  if (CGM.getLangOptions().getGCMode() != LangOptions::NonGC)
+  if (CGM.getLangOptions().getGC() != LangOptions::NonGC)
     flags |= eImageInfo_GarbageCollected;
-  if (CGM.getLangOptions().getGCMode() == LangOptions::GCOnly)
+  if (CGM.getLangOptions().getGC() == LangOptions::GCOnly)
     flags |= eImageInfo_GCOnly;
 
   // We never allow @synthesize of a superclass property.
@@ -3548,13 +3548,6 @@ llvm::Function *CGObjCCommonMac::GetMethodDefinition(const ObjCMethodDecl *MD) {
       I = MethodDefinitions.find(MD);
   if (I != MethodDefinitions.end())
     return I->second;
-
-  if (MD->hasBody() && MD->getPCHLevel() > 0) {
-    // MD isn't emitted yet because it comes from PCH.
-    CGM.EmitTopLevelDecl(const_cast<ObjCMethodDecl*>(MD));
-    assert(MethodDefinitions[MD] && "EmitTopLevelDecl didn't emit the method!");
-    return MethodDefinitions[MD];
-  }
 
   return NULL;
 }
@@ -3897,7 +3890,7 @@ llvm::Constant *CGObjCCommonMac::BuildIvarLayout(
   bool hasUnion = false;
 
   llvm::Type *PtrTy = llvm::Type::getInt8PtrTy(VMContext);
-  if (CGM.getLangOptions().getGCMode() == LangOptions::NonGC &&
+  if (CGM.getLangOptions().getGC() == LangOptions::NonGC &&
       !CGM.getLangOptions().ObjCAutoRefCount)
     return llvm::Constant::getNullValue(PtrTy);
 
@@ -4663,7 +4656,7 @@ bool CGObjCNonFragileABIMac::isVTableDispatchedSelector(Selector Sel) {
 
     // These are vtable-based if GC is disabled.
     // Optimistically use vtable dispatch for hybrid compiles.
-    if (CGM.getLangOptions().getGCMode() != LangOptions::GCOnly) {
+    if (CGM.getLangOptions().getGC() != LangOptions::GCOnly) {
       VTableDispatchMethods.insert(GetNullarySelector("retain"));
       VTableDispatchMethods.insert(GetNullarySelector("release"));
       VTableDispatchMethods.insert(GetNullarySelector("autorelease"));
@@ -4679,7 +4672,7 @@ bool CGObjCNonFragileABIMac::isVTableDispatchedSelector(Selector Sel) {
 
     // These are vtable-based if GC is enabled.
     // Optimistically use vtable dispatch for hybrid compiles.
-    if (CGM.getLangOptions().getGCMode() != LangOptions::NonGC) {
+    if (CGM.getLangOptions().getGC() != LangOptions::NonGC) {
       VTableDispatchMethods.insert(GetNullarySelector("hash"));
       VTableDispatchMethods.insert(GetUnarySelector("addObject"));
     

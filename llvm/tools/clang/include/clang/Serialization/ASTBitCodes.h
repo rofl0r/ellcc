@@ -127,12 +127,6 @@ namespace clang {
     /// \brief The number of predefined identifier IDs.
     const unsigned int NUM_PREDEF_IDENT_IDS = 1;
     
-    /// \brief An ID number that refers to a macro in an AST file.
-    typedef uint32_t MacroID;
-
-    /// \brief The number of predefined macro IDs.
-    const unsigned int NUM_PREDEF_MACRO_IDS = 1;
-    
     /// \brief An ID number that refers to an ObjC selctor in an AST file.
     typedef uint32_t SelectorID;
 
@@ -312,9 +306,9 @@ namespace clang {
       /// \brief Record code for the array of unused file scoped decls.
       UNUSED_FILESCOPED_DECLS = 22,
       
-      /// \brief Record code for the table of offsets to macro definition
-      /// entries in the preprocessing record.
-      MACRO_DEFINITION_OFFSETS = 23,
+      /// \brief Record code for the table of offsets to entries in the
+      /// preprocessing record.
+      PPD_ENTITIES_OFFSETS = 23,
 
       /// \brief Record code for the array of VTable uses.
       VTABLE_USES = 24,
@@ -666,6 +660,9 @@ namespace clang {
       /// \brief Objective-C "SEL" redefinition type
       SPECIAL_TYPE_OBJC_SEL_REDEFINITION       = 8
     };
+    
+    /// \brief The number of special type IDs.
+    const unsigned NumSpecialTypeIDs = 0;
 
     /// \brief Predefined declaration IDs.
     ///
@@ -693,14 +690,17 @@ namespace clang {
       PREDEF_DECL_INT_128_ID = 5,
 
       /// \brief The unsigned 128-bit integer type.
-      PREDEF_DECL_UNSIGNED_INT_128_ID = 6
+      PREDEF_DECL_UNSIGNED_INT_128_ID = 6,
+      
+      /// \brief The internal 'instancetype' typedef.
+      PREDEF_DECL_OBJC_INSTANCETYPE_ID = 7
     };
 
     /// \brief The number of declaration IDs that are predefined.
     ///
     /// For more information about predefined declarations, see the
     /// \c PredefinedDeclIDs type and the PREDEF_DECL_*_ID constants.
-    const unsigned int NUM_PREDEF_DECL_IDS = 7;
+    const unsigned int NUM_PREDEF_DECL_IDS = 8;
     
     /// \brief Record codes for each kind of declaration.
     ///

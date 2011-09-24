@@ -27,7 +27,6 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Mangle.h"
 #include "clang/AST/RecordLayout.h"
-#include "clang/Basic/Builtins.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -43,6 +42,8 @@
 #include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 using namespace CodeGen;
+
+static const char AnnotationSection[] = "llvm.metadata";
 
 static CGCXXABI &createCXXABI(CodeGenModule &CGM) {
   switch (CGM.getContext().getTargetInfo().getCXXABI()) {
@@ -68,9 +69,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
     CFConstantStringClassRef(0), ConstantStringClassRef(0),
     NSConstantStringType(0),
     VMContext(M.getContext()),
-    NSConcreteGlobalBlockDecl(0), NSConcreteStackBlockDecl(0),
     NSConcreteGlobalBlock(0), NSConcreteStackBlock(0),
-    BlockObjectAssignDecl(0), BlockObjectDisposeDecl(0),
     BlockObjectAssign(0), BlockObjectDispose(0),
     BlockDescriptorType(0), GenericBlockLiteralType(0) {
   if (Features.ObjC1)
@@ -133,7 +132,7 @@ void CodeGenModule::Release() {
       AddGlobalCtor(ObjCInitFunction);
   EmitCtorList(GlobalCtors, "llvm.global_ctors");
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
-  EmitAnnotations();
+  EmitGlobalAnnotations();
   EmitLLVMUsed();
 
   SimplifyPersonality();
@@ -384,22 +383,6 @@ void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
   }
 }
 
-void CodeGenModule::EmitAnnotations() {
-  if (Annotations.empty())
-    return;
-
-  // Create a new global variable for the ConstantStruct in the Module.
-  llvm::Constant *Array =
-  llvm::ConstantArray::get(llvm::ArrayType::get(Annotations[0]->getType(),
-                                                Annotations.size()),
-                           Annotations);
-  llvm::GlobalValue *gv =
-  new llvm::GlobalVariable(TheModule, Array->getType(), false,
-                           llvm::GlobalValue::AppendingLinkage, Array,
-                           "llvm.global.annotations");
-  gv->setSection("llvm.metadata");
-}
-
 llvm::GlobalValue::LinkageTypes
 CodeGenModule::getFunctionLinkage(const FunctionDecl *D) {
   GVALinkage Linkage = getContext().GetGVALinkageForFunction(D);
@@ -489,9 +472,9 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
   if (isa<CXXConstructorDecl>(D) || isa<CXXDestructorDecl>(D))
     F->setUnnamedAddr(true);
 
-  if (Features.getStackProtectorMode() == LangOptions::SSPOn)
+  if (Features.getStackProtector() == LangOptions::SSPOn)
     F->addFnAttr(llvm::Attribute::StackProtect);
-  else if (Features.getStackProtectorMode() == LangOptions::SSPReq)
+  else if (Features.getStackProtector() == LangOptions::SSPReq)
     F->addFnAttr(llvm::Attribute::StackProtectReq);
   
   unsigned alignment = D->getMaxAlignment() / Context.getCharWidth();
@@ -644,52 +627,76 @@ void CodeGenModule::EmitDeferred() {
   }
 }
 
-/// EmitAnnotateAttr - Generate the llvm::ConstantStruct which contains the
-/// annotation information for a given GlobalValue.  The annotation struct is
-/// {i8 *, i8 *, i8 *, i32}.  The first field is a constant expression, the
-/// GlobalValue being annotated.  The second field is the constant string
-/// created from the AnnotateAttr's annotation.  The third field is a constant
-/// string containing the name of the translation unit.  The fourth field is
-/// the line number in the file of the annotated value declaration.
-///
-/// FIXME: this does not unique the annotation string constants, as llvm-gcc
-///        appears to.
-///
+void CodeGenModule::EmitGlobalAnnotations() {
+  if (Annotations.empty())
+    return;
+
+  // Create a new global variable for the ConstantStruct in the Module.
+  llvm::Constant *Array = llvm::ConstantArray::get(llvm::ArrayType::get(
+    Annotations[0]->getType(), Annotations.size()), Annotations);
+  llvm::GlobalValue *gv = new llvm::GlobalVariable(getModule(),
+    Array->getType(), false, llvm::GlobalValue::AppendingLinkage, Array,
+    "llvm.global.annotations");
+  gv->setSection(AnnotationSection);
+}
+
+llvm::Constant *CodeGenModule::EmitAnnotationString(llvm::StringRef Str) {
+  llvm::StringMap<llvm::Constant*>::iterator i = AnnotationStrings.find(Str);
+  if (i != AnnotationStrings.end())
+    return i->second;
+
+  // Not found yet, create a new global.
+  llvm::Constant *s = llvm::ConstantArray::get(getLLVMContext(), Str, true);
+  llvm::GlobalValue *gv = new llvm::GlobalVariable(getModule(), s->getType(),
+    true, llvm::GlobalValue::PrivateLinkage, s, ".str");
+  gv->setSection(AnnotationSection);
+  gv->setUnnamedAddr(true);
+  AnnotationStrings[Str] = gv;
+  return gv;
+}
+
+llvm::Constant *CodeGenModule::EmitAnnotationUnit(SourceLocation Loc) {
+  SourceManager &SM = getContext().getSourceManager();
+  PresumedLoc PLoc = SM.getPresumedLoc(Loc);
+  if (PLoc.isValid())
+    return EmitAnnotationString(PLoc.getFilename());
+  return EmitAnnotationString(SM.getBufferName(Loc));
+}
+
+llvm::Constant *CodeGenModule::EmitAnnotationLineNo(SourceLocation L) {
+  SourceManager &SM = getContext().getSourceManager();
+  PresumedLoc PLoc = SM.getPresumedLoc(L);
+  unsigned LineNo = PLoc.isValid() ? PLoc.getLine() :
+    SM.getExpansionLineNumber(L);
+  return llvm::ConstantInt::get(Int32Ty, LineNo);
+}
+
 llvm::Constant *CodeGenModule::EmitAnnotateAttr(llvm::GlobalValue *GV,
                                                 const AnnotateAttr *AA,
-                                                unsigned LineNo) {
-  llvm::Module *M = &getModule();
-
-  // get [N x i8] constants for the annotation string, and the filename string
-  // which are the 2nd and 3rd elements of the global annotation structure.
-  llvm::Type *SBP = llvm::Type::getInt8PtrTy(VMContext);
-  llvm::Constant *anno = llvm::ConstantArray::get(VMContext,
-                                                  AA->getAnnotation(), true);
-  llvm::Constant *unit = llvm::ConstantArray::get(VMContext,
-                                                  M->getModuleIdentifier(),
-                                                  true);
-
-  // Get the two global values corresponding to the ConstantArrays we just
-  // created to hold the bytes of the strings.
-  llvm::GlobalValue *annoGV =
-    new llvm::GlobalVariable(*M, anno->getType(), false,
-                             llvm::GlobalValue::PrivateLinkage, anno,
-                             GV->getName());
-  // translation unit name string, emitted into the llvm.metadata section.
-  llvm::GlobalValue *unitGV =
-    new llvm::GlobalVariable(*M, unit->getType(), false,
-                             llvm::GlobalValue::PrivateLinkage, unit,
-                             ".str");
-  unitGV->setUnnamedAddr(true);
+                                                SourceLocation L) {
+  // Get the globals for file name, annotation, and the line number.
+  llvm::Constant *AnnoGV = EmitAnnotationString(AA->getAnnotation()),
+                 *UnitGV = EmitAnnotationUnit(L),
+                 *LineNoCst = EmitAnnotationLineNo(L);
 
   // Create the ConstantStruct for the global annotation.
   llvm::Constant *Fields[4] = {
-    llvm::ConstantExpr::getBitCast(GV, SBP),
-    llvm::ConstantExpr::getBitCast(annoGV, SBP),
-    llvm::ConstantExpr::getBitCast(unitGV, SBP),
-    llvm::ConstantInt::get(llvm::Type::getInt32Ty(VMContext), LineNo)
+    llvm::ConstantExpr::getBitCast(GV, Int8PtrTy),
+    llvm::ConstantExpr::getBitCast(AnnoGV, Int8PtrTy),
+    llvm::ConstantExpr::getBitCast(UnitGV, Int8PtrTy),
+    LineNoCst
   };
   return llvm::ConstantStruct::getAnon(Fields);
+}
+
+void CodeGenModule::AddGlobalAnnotations(const ValueDecl *D,
+                                         llvm::GlobalValue *GV) {
+  assert(D->hasAttr<AnnotateAttr>() && "no annotate attribute");
+  // Get the struct elements for these annotations.
+  for (specific_attr_iterator<AnnotateAttr>
+       ai = D->specific_attr_begin<AnnotateAttr>(),
+       ae = D->specific_attr_end<AnnotateAttr>(); ai != ae; ++ai)
+    Annotations.push_back(EmitAnnotateAttr(GV, *ai, D->getLocation()));
 }
 
 bool CodeGenModule::MayDeferGeneration(const ValueDecl *Global) {
@@ -739,15 +746,6 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
 
   // Ignore declarations, they will be emitted on their first use.
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(Global)) {
-    if (FD->getIdentifier()) {
-      StringRef Name = FD->getName();
-      if (Name == "_Block_object_assign") {
-        BlockObjectAssignDecl = FD;
-      } else if (Name == "_Block_object_dispose") {
-        BlockObjectDisposeDecl = FD;
-      }
-    }
-
     // Forward declarations are emitted lazily on first use.
     if (!FD->doesThisDeclarationHaveABody()) {
       if (!FD->doesDeclarationForceExternallyVisibleDefinition())
@@ -767,16 +765,6 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   } else {
     const VarDecl *VD = cast<VarDecl>(Global);
     assert(VD->isFileVarDecl() && "Cannot emit local var decl as global.");
-
-    if (VD->getIdentifier()) {
-      StringRef Name = VD->getName();
-      if (Name == "_NSConcreteGlobalBlock") {
-        NSConcreteGlobalBlockDecl = VD;
-      } else if (Name == "_NSConcreteStackBlock") {
-        NSConcreteStackBlockDecl = VD;
-      }
-    }
-
 
     if (VD->isThisDeclarationADefinition() != VarDecl::Definition)
       return;
@@ -1318,11 +1306,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
     cast<llvm::GlobalValue>(Entry)->eraseFromParent();
   }
 
-  if (const AnnotateAttr *AA = D->getAttr<AnnotateAttr>()) {
-    SourceManager &SM = Context.getSourceManager();
-    AddAnnotation(EmitAnnotateAttr(
-        GV, AA, SM.getExpansionLineNumber(D->getLocation())));
-  }
+  if (D->hasAttr<AnnotateAttr>())
+    AddGlobalAnnotations(D, GV);
 
   GV->setInitializer(Init);
 
@@ -1551,6 +1536,8 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
     AddGlobalCtor(Fn, CA->getPriority());
   if (const DestructorAttr *DA = D->getAttr<DestructorAttr>())
     AddGlobalDtor(Fn, DA->getPriority());
+  if (D->hasAttr<AnnotateAttr>())
+    AddGlobalAnnotations(D, Fn);
 }
 
 void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {
@@ -1621,35 +1608,6 @@ void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {
   }
 
   SetCommonAttributes(D, GA);
-}
-
-/// getBuiltinLibFunction - Given a builtin id for a function like
-/// "__builtin_fabsf", return a Function* for "fabsf".
-llvm::Value *CodeGenModule::getBuiltinLibFunction(const FunctionDecl *FD,
-                                                  unsigned BuiltinID) {
-  assert((Context.BuiltinInfo.isLibFunction(BuiltinID) ||
-          Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID)) &&
-         "isn't a lib fn");
-
-  // Get the name, skip over the __builtin_ prefix (if necessary).
-  StringRef Name;
-  GlobalDecl D(FD);
-
-  // If the builtin has been declared explicitly with an assembler label,
-  // use the mangled name. This differs from the plain label on platforms
-  // that prefix labels.
-  if (FD->hasAttr<AsmLabelAttr>())
-    Name = getMangledName(D);
-  else if (Context.BuiltinInfo.isLibFunction(BuiltinID))
-    Name = Context.BuiltinInfo.GetName(BuiltinID) + 10;
-  else
-    Name = Context.BuiltinInfo.GetName(BuiltinID);
-
-
-  llvm::FunctionType *Ty =
-    cast<llvm::FunctionType>(getTypes().ConvertType(FD->getType()));
-
-  return GetOrCreateLLVMFunction(Name, Ty, D, /*ForVTable=*/false);
 }
 
 llvm::Function *CodeGenModule::getIntrinsic(unsigned IID,
@@ -2417,81 +2375,3 @@ void CodeGenModule::EmitCoverageFile() {
     }
   }
 }
-
-///@name Custom Runtime Function Interfaces
-///@{
-//
-// FIXME: These can be eliminated once we can have clients just get the required
-// AST nodes from the builtin tables.
-
-llvm::Constant *CodeGenModule::getBlockObjectDispose() {
-  if (BlockObjectDispose)
-    return BlockObjectDispose;
-
-  // If we saw an explicit decl, use that.
-  if (BlockObjectDisposeDecl) {
-    return BlockObjectDispose = GetAddrOfFunction(
-      BlockObjectDisposeDecl,
-      getTypes().GetFunctionType(BlockObjectDisposeDecl));
-  }
-
-  // Otherwise construct the function by hand.
-  llvm::Type *args[] = { Int8PtrTy, Int32Ty };
-  llvm::FunctionType *fty
-    = llvm::FunctionType::get(VoidTy, args, false);
-  return BlockObjectDispose =
-    CreateRuntimeFunction(fty, "_Block_object_dispose");
-}
-
-llvm::Constant *CodeGenModule::getBlockObjectAssign() {
-  if (BlockObjectAssign)
-    return BlockObjectAssign;
-
-  // If we saw an explicit decl, use that.
-  if (BlockObjectAssignDecl) {
-    return BlockObjectAssign = GetAddrOfFunction(
-      BlockObjectAssignDecl,
-      getTypes().GetFunctionType(BlockObjectAssignDecl));
-  }
-
-  // Otherwise construct the function by hand.
-  llvm::Type *args[] = { Int8PtrTy, Int8PtrTy, Int32Ty };
-  llvm::FunctionType *fty
-    = llvm::FunctionType::get(VoidTy, args, false);
-  return BlockObjectAssign =
-    CreateRuntimeFunction(fty, "_Block_object_assign");
-}
-
-llvm::Constant *CodeGenModule::getNSConcreteGlobalBlock() {
-  if (NSConcreteGlobalBlock)
-    return NSConcreteGlobalBlock;
-
-  // If we saw an explicit decl, use that.
-  if (NSConcreteGlobalBlockDecl) {
-    return NSConcreteGlobalBlock = GetAddrOfGlobalVar(
-      NSConcreteGlobalBlockDecl,
-      getTypes().ConvertType(NSConcreteGlobalBlockDecl->getType()));
-  }
-
-  // Otherwise construct the variable by hand.
-  return NSConcreteGlobalBlock =
-    CreateRuntimeVariable(Int8PtrTy, "_NSConcreteGlobalBlock");
-}
-
-llvm::Constant *CodeGenModule::getNSConcreteStackBlock() {
-  if (NSConcreteStackBlock)
-    return NSConcreteStackBlock;
-
-  // If we saw an explicit decl, use that.
-  if (NSConcreteStackBlockDecl) {
-    return NSConcreteStackBlock = GetAddrOfGlobalVar(
-      NSConcreteStackBlockDecl,
-      getTypes().ConvertType(NSConcreteStackBlockDecl->getType()));
-  }
-
-  // Otherwise construct the variable by hand.
-  return NSConcreteStackBlock =
-    CreateRuntimeVariable(Int8PtrTy, "_NSConcreteStackBlock");
-}
-
-///@}

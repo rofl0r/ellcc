@@ -714,7 +714,7 @@ Decl *Sema::ActOnNonTypeTemplateParameter(Scope *S, Declarator &D,
 /// has been parsed. S is the current scope.
 Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
                                            SourceLocation TmpLoc,
-                                           TemplateParamsTy *Params,
+                                           TemplateParameterList *Params,
                                            SourceLocation EllipsisLoc,
                                            IdentifierInfo *Name,
                                            SourceLocation NameLoc,
@@ -785,7 +785,7 @@ Decl *Sema::ActOnTemplateTemplateParameter(Scope* S,
 
 /// ActOnTemplateParameterList - Builds a TemplateParameterList that
 /// contains the template parameters in Params/NumParams.
-Sema::TemplateParamsTy *
+TemplateParameterList *
 Sema::ActOnTemplateParameterList(unsigned Depth,
                                  SourceLocation ExportLoc,
                                  SourceLocation TemplateLoc,
@@ -811,7 +811,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                          IdentifierInfo *Name, SourceLocation NameLoc,
                          AttributeList *Attr,
                          TemplateParameterList *TemplateParams,
-                         AccessSpecifier AS,
+                         AccessSpecifier AS, SourceLocation ModulePrivateLoc,
                          unsigned NumOuterTemplateParamLists,
                          TemplateParameterList** OuterTemplateParamLists) {
   assert(TemplateParams && TemplateParams->size() > 0 &&
@@ -945,7 +945,7 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
         // definition, as part of error recovery?
         return true;
       }
-    }
+    }    
   } else if (PrevDecl && PrevDecl->isTemplateParameter()) {
     // Maybe we will complain about the shadowed template parameter.
     DiagnoseTemplateParameterShadow(NameLoc, PrevDecl);
@@ -999,7 +999,17 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                 DeclarationName(Name), TemplateParams,
                                 NewClass, PrevClassTemplate);
   NewClass->setDescribedClassTemplate(NewTemplate);
-
+  
+  if (PrevClassTemplate && PrevClassTemplate->isModulePrivate()) {
+    NewTemplate->setModulePrivate();
+  } else if (ModulePrivateLoc.isValid()) {
+    if (PrevClassTemplate && !PrevClassTemplate->isModulePrivate())
+      diagnoseModulePrivateRedeclaration(NewTemplate, PrevClassTemplate,
+                                         ModulePrivateLoc);
+    else
+      NewTemplate->setModulePrivate();
+  }
+  
   // Build the type for the class template declaration now.
   QualType T = NewTemplate->getInjectedClassNameSpecialization();
   T = Context.getInjectedClassNameType(NewClass, T);
@@ -4715,6 +4725,7 @@ DeclResult
 Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
                                        TagUseKind TUK,
                                        SourceLocation KWLoc,
+                                       SourceLocation ModulePrivateLoc,
                                        CXXScopeSpec &SS,
                                        TemplateTy TemplateD,
                                        SourceLocation TemplateNameLoc,
@@ -4931,14 +4942,14 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
       //   -- The argument list of the specialization shall not be identical
       //      to the implicit argument list of the primary template.
       Diag(TemplateNameLoc, diag::err_partial_spec_args_match_primary_template)
-      << (TUK == TUK_Definition)
-      << FixItHint::CreateRemoval(SourceRange(LAngleLoc, RAngleLoc));
+        << (TUK == TUK_Definition)
+        << FixItHint::CreateRemoval(SourceRange(LAngleLoc, RAngleLoc));
       return CheckClassTemplate(S, TagSpec, TUK, KWLoc, SS,
                                 ClassTemplate->getIdentifier(),
                                 TemplateNameLoc,
                                 Attr,
                                 TemplateParams,
-                                AS_none,
+                                AS_none, /*ModulePrivateLoc=*/SourceLocation(),
                                 TemplateParameterLists.size() - 1,
                   (TemplateParameterList**) TemplateParameterLists.release());
     }
@@ -5080,6 +5091,11 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
   if (Attr)
     ProcessDeclAttributeList(S, Specialization, Attr);
 
+  if (ModulePrivateLoc.isValid())
+    Diag(Specialization->getLocation(), diag::err_module_private_specialization)
+      << (isPartialSpecialization? 1 : 0)
+      << FixItHint::CreateRemoval(ModulePrivateLoc);
+  
   // Build the fully-sugared type for this class template
   // specialization as the user wrote in the specialization
   // itself. This means that we'll pretty-print the type retrieved
@@ -5973,6 +5989,7 @@ Sema::ActOnExplicitInstantiation(Scope *S,
   bool IsDependent = false;
   Decl *TagD = ActOnTag(S, TagSpec, Sema::TUK_Reference,
                         KWLoc, SS, Name, NameLoc, Attr, AS_none,
+                        /*ModulePrivateLoc=*/SourceLocation(),
                         MultiTemplateParamsArg(*this, 0, 0),
                         Owned, IsDependent, false, false,
                         TypeResult());

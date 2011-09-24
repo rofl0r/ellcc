@@ -89,7 +89,7 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     Builder.defineMacro("__weak", "__attribute__((objc_gc(weak)))");
 
     // Darwin defines __strong even in C mode (just to nothing).
-    if (Opts.getGCMode() != LangOptions::NonGC)
+    if (Opts.getGC() != LangOptions::NonGC)
       Builder.defineMacro("__strong", "__attribute__((objc_gc(strong)))");
     else
       Builder.defineMacro("__strong", "");
@@ -928,6 +928,10 @@ namespace {
       // FIXME: implement
       return "typedef char* __builtin_va_list;";
     }
+
+    virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                   const std::string &Name,
+                                   bool Enabled) const;
   };
 
   const Builtin::Info PTXTargetInfo::BuiltinInfo[] = {
@@ -947,6 +951,91 @@ namespace {
     NumNames = llvm::array_lengthof(GCCRegNames);
   }
 
+  bool PTXTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                        const std::string &Name,
+                                        bool Enabled) const {
+    if (Enabled) {
+      if (Name == "double")
+        Features["double"] = true;
+      else if (Name == "no-fma")
+        Features["no-fma"] = true;
+      else if (Name == "compute10")
+        Features["compute10"] = true;
+      else if (Name == "compute11")
+        Features["compute11"] = true;
+      else if (Name == "compute12")
+        Features["compute12"] = true;
+      else if (Name == "compute13")
+        Features["compute13"] = true;
+      else if (Name == "compute20")
+        Features["compute20"] = true;
+      else if (Name == "ptx20")
+        Features["ptx20"] = true;
+      else if (Name == "ptx21")
+        Features["ptx21"] = true;
+      else if (Name == "ptx22")
+        Features["ptx22"] = true;
+      else if (Name == "ptx23")
+        Features["ptx23"] = true;
+      else if (Name == "sm10")
+        Features["sm10"] = true;
+      else if (Name == "sm11")
+        Features["sm11"] = true;
+      else if (Name == "sm12")
+        Features["sm12"] = true;
+      else if (Name == "sm13")
+        Features["sm13"] = true;
+      else if (Name == "sm20")
+        Features["sm20"] = true;
+      else if (Name == "sm21")
+        Features["sm21"] = true;
+      else if (Name == "sm22")
+        Features["sm22"] = true;
+      else if (Name == "sm23")
+        Features["sm23"] = true;
+    } else {
+      if (Name == "double")
+        Features["double"] = false;
+      else if (Name == "no-fma")
+        Features["no-fma"] = false;
+      else if (Name == "compute10")
+        Features["compute10"] = false;
+      else if (Name == "compute11")
+        Features["compute11"] = false;
+      else if (Name == "compute12")
+        Features["compute12"] = false;
+      else if (Name == "compute13")
+        Features["compute13"] = false;
+      else if (Name == "compute20")
+        Features["compute20"] = false;
+      else if (Name == "ptx20")
+        Features["ptx20"] = false;
+      else if (Name == "ptx21")
+        Features["ptx21"] = false;
+      else if (Name == "ptx22")
+        Features["ptx22"] = false;
+      else if (Name == "ptx23")
+        Features["ptx23"] = false;
+      else if (Name == "sm10")
+        Features["sm10"] = false;
+      else if (Name == "sm11")
+        Features["sm11"] = false;
+      else if (Name == "sm12")
+        Features["sm12"] = false;
+      else if (Name == "sm13")
+        Features["sm13"] = false;
+      else if (Name == "sm20")
+        Features["sm20"] = false;
+      else if (Name == "sm21")
+        Features["sm21"] = false;
+      else if (Name == "sm22")
+        Features["sm22"] = false;
+      else if (Name == "sm23")
+        Features["sm23"] = false;
+    }
+
+    return true;
+  }
 
   class PTX32TargetInfo : public PTXTargetInfo {
   public:
@@ -2752,6 +2841,7 @@ public:
   }
   virtual void getArchDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
+    // NOTE: O64 will not be supported.
     if (ABI == "o32") {
       Builder.defineMacro("__mips_o32");
       Builder.defineMacro("_ABIO32", "1");
@@ -2766,11 +2856,6 @@ public:
       Builder.defineMacro("__mips_n64");
       Builder.defineMacro("_ABI64", "3");
       Builder.defineMacro("_MIPS_SIM", "_ABI64");
-    }
-    else if (ABI == "o64") {
-      Builder.defineMacro("__mips_o64");
-      Builder.defineMacro("_ABIO64", "4");
-      Builder.defineMacro("_MIPS_SIM", "_ABIO64");
     }
     else if (ABI == "eabi")
       Builder.defineMacro("__mips_eabi");
@@ -3037,8 +3122,6 @@ static TargetInfo *AllocateTarget(const std::string &T) {
 
   case llvm::Triple::mips:
     switch (os) {
-    case llvm::Triple::Psp:
-      return new PSPTargetInfo<MipsTargetInfo>(T);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<MipsTargetInfo>(T);
     case llvm::Triple::RTEMS:
@@ -3053,8 +3136,6 @@ static TargetInfo *AllocateTarget(const std::string &T) {
 
   case llvm::Triple::mipsel:
     switch (os) {
-    case llvm::Triple::Psp:
-      return new PSPTargetInfo<MipselTargetInfo>(T);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<MipselTargetInfo>(T);
     case llvm::Triple::RTEMS:

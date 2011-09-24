@@ -211,9 +211,10 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
         continue;
         // The analyzer doesn't do anything special with these casts,
         // since it understands retain/release semantics already.
-      case CK_ObjCProduceObject:
-      case CK_ObjCConsumeObject:
-      case CK_ObjCReclaimReturnedObject: // Fall-through.
+      case CK_ARCProduceObject:
+      case CK_ARCConsumeObject:
+      case CK_ARCReclaimReturnedObject:
+      case CK_ARCExtendBlockObject: // Fall-through.
         // True no-ops.
       case CK_NoOp:
       case CK_FunctionToPointerDecay: {
@@ -248,7 +249,8 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
       case CK_IntegralComplexToBoolean:
       case CK_IntegralComplexCast:
       case CK_IntegralComplexToFloatingComplex:
-      case CK_AnyPointerToObjCPointerCast:
+      case CK_CPointerToObjCPointerCast:
+      case CK_BlockPointerToObjCPointerCast:
       case CK_AnyPointerToBlockPointerCast:  
       case CK_ObjCObjectLValueCast: {
         // Delegate to SValBuilder to process.

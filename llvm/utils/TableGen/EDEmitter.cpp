@@ -666,11 +666,14 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   MISC("spr_reglist", "kOperandTypeARMSPRRegisterList");          // I, R, ...
   MISC("it_mask", "kOperandTypeThumbITMask");                     // I
   MISC("t2addrmode_reg", "kOperandTypeThumb2AddrModeReg");        // R
+  MISC("t2addrmode_posimm8", "kOperandTypeThumb2AddrModeImm8");   // R, I
+  MISC("t2addrmode_negimm8", "kOperandTypeThumb2AddrModeImm8");   // R, I
   MISC("t2addrmode_imm8", "kOperandTypeThumb2AddrModeImm8");      // R, I
   MISC("t2am_imm8_offset", "kOperandTypeThumb2AddrModeImm8Offset");//I
   MISC("t2addrmode_imm12", "kOperandTypeThumb2AddrModeImm12");    // R, I
   MISC("t2addrmode_so_reg", "kOperandTypeThumb2AddrModeSoReg");   // R, R, I
   MISC("t2addrmode_imm8s4", "kOperandTypeThumb2AddrModeImm8s4");  // R, I
+  MISC("t2addrmode_imm0_1020s4", "kOperandTypeThumb2AddrModeImm8s4");  // R, I
   MISC("t2am_imm8s4_offset", "kOperandTypeThumb2AddrModeImm8s4Offset");
                                                                   // R, I
   MISC("tb_addrmode", "kOperandTypeARMTBAddrMode");               // I

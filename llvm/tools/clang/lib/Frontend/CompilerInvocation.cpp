@@ -363,7 +363,6 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::ASTDumpXML:             return "-ast-dump-xml";
   case frontend::ASTPrint:               return "-ast-print";
   case frontend::ASTView:                return "-ast-view";
-  case frontend::CreateModule:           return "-create-module";
   case frontend::DumpRawTokens:          return "-dump-raw-tokens";
   case frontend::DumpTokens:             return "-dump-tokens";
   case frontend::EmitAssembly:           return "-S";
@@ -576,6 +575,10 @@ static void HeaderSearchOptsToArgs(const HeaderSearchOptions &Opts,
     Res.push_back("-resource-dir");
     Res.push_back(Opts.ResourceDir);
   }
+  if (!Opts.ModuleCachePath.empty()) {
+    Res.push_back("-fmodule-cache-path");
+    Res.push_back(Opts.ModuleCachePath);
+  }
   if (!Opts.UseStandardIncludes)
     Res.push_back("-nostdinc");
   if (!Opts.UseStandardCXXIncludes)
@@ -665,6 +668,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-pthread");
   if (Opts.Blocks)
     Res.push_back("-fblocks");
+  if (Opts.BlocksRuntimeOptional)
+    Res.push_back("-fblocks-runtime-optional");
   if (Opts.EmitAllDecls)
     Res.push_back("-femit-all-decls");
   if (Opts.MathErrno)
@@ -707,11 +712,11 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fshort-wchar");
   if (!Opts.ElideConstructors)
     Res.push_back("-fno-elide-constructors");
-  if (Opts.getGCMode() != LangOptions::NonGC) {
-    if (Opts.getGCMode() == LangOptions::HybridGC) {
+  if (Opts.getGC() != LangOptions::NonGC) {
+    if (Opts.getGC() == LangOptions::HybridGC) {
       Res.push_back("-fobjc-gc");
     } else {
-      assert(Opts.getGCMode() == LangOptions::GCOnly && "Invalid GC mode!");
+      assert(Opts.getGC() == LangOptions::GCOnly && "Invalid GC mode!");
       Res.push_back("-fobjc-gc-only");
     }
   }
@@ -738,9 +743,9 @@ static void LangOptsToArgs(const LangOptions &Opts,
   if (Opts.InlineVisibilityHidden)
     Res.push_back("-fvisibility-inlines-hidden");
 
-  if (Opts.getStackProtectorMode() != 0) {
+  if (Opts.getStackProtector() != 0) {
     Res.push_back("-stack-protector");
-    Res.push_back(llvm::utostr(Opts.getStackProtectorMode()));
+    Res.push_back(llvm::utostr(Opts.getStackProtector()));
   }
   if (Opts.InstantiationDepth != DefaultLangOpts.InstantiationDepth) {
     Res.push_back("-ftemplate-depth");
@@ -1225,8 +1230,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::RunAnalysis; break;
     case OPT_Eonly:
       Opts.ProgramAction = frontend::RunPreprocessorOnly; break;
-    case OPT_create_module:
-      Opts.ProgramAction = frontend::CreateModule; break;
     }
   }
 
@@ -1376,7 +1379,9 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   if (const Arg *A = Args.getLastArg(OPT_stdlib_EQ))
     Opts.UseLibcxx = (strcmp(A->getValue(Args), "libc++") == 0);
   Opts.ResourceDir = Args.getLastArgValue(OPT_resource_dir);
-
+  Opts.ModuleCachePath = Args.getLastArgValue(OPT_fmodule_cache_path);
+  Opts.DisableModuleHash = Args.hasArg(OPT_fdisable_module_hash);
+  
   // Add -I..., -F..., and -index-header-map options in order.
   bool IsIndexHeaderMap = false;
   for (arg_iterator it = Args.filtered_begin(OPT_I, OPT_F, 
@@ -1424,7 +1429,7 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
                  ((*it)->getOption().matches(OPT_cxx_isystem) ?
                    frontend::CXXSystem : frontend::System),
                  true, false, !(*it)->getOption().matches(OPT_iwithsysroot));
-
+  
   // FIXME: Need options for the various environment variables!
 }
 
@@ -1579,9 +1584,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   if (Opts.ObjC1) {
     if (Args.hasArg(OPT_fobjc_gc_only))
-      Opts.setGCMode(LangOptions::GCOnly);
+      Opts.setGC(LangOptions::GCOnly);
     else if (Args.hasArg(OPT_fobjc_gc))
-      Opts.setGCMode(LangOptions::HybridGC);
+      Opts.setGC(LangOptions::HybridGC);
     else if (Args.hasArg(OPT_fobjc_arc)) {
       Opts.ObjCAutoRefCount = 1;
       if (!Args.hasArg(OPT_fobjc_nonfragile_abi))
@@ -1650,6 +1655,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                                    Opts.DollarIdents);
   Opts.PascalStrings = Args.hasArg(OPT_fpascal_strings);
   Opts.Microsoft = Args.hasArg(OPT_fms_extensions);
+  Opts.MicrosoftMode = Args.hasArg(OPT_fms_compatibility);
   Opts.MSCVersion = Args.getLastArgIntValue(OPT_fmsc_version, 0, Diags);
   Opts.Borland = Args.hasArg(OPT_fborland_extensions);
   Opts.WritableStrings = Args.hasArg(OPT_fwritable_strings);
@@ -1667,6 +1673,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.RTTI = !Args.hasArg(OPT_fno_rtti);
   Opts.Blocks = Args.hasArg(OPT_fblocks);
+  Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
   Opts.CharIsSigned = !Args.hasArg(OPT_fno_signed_char);
   Opts.ShortWChar = Args.hasArg(OPT_fshort_wchar);
   Opts.ShortEnums = Args.hasArg(OPT_fshort_enums);
@@ -1729,9 +1736,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Diags.Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_stack_protector)->getAsString(Args) << SSP;
     break;
-  case 0: Opts.setStackProtectorMode(LangOptions::SSPOff); break;
-  case 1: Opts.setStackProtectorMode(LangOptions::SSPOn);  break;
-  case 2: Opts.setStackProtectorMode(LangOptions::SSPReq); break;
+  case 0: Opts.setStackProtector(LangOptions::SSPOff); break;
+  case 1: Opts.setStackProtector(LangOptions::SSPOn);  break;
+  case 2: Opts.setStackProtector(LangOptions::SSPReq); break;
   }
 }
 
@@ -1747,6 +1754,7 @@ static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
     Opts.TokenCache = Opts.ImplicitPTHInclude;
   Opts.UsePredefines = !Args.hasArg(OPT_undef);
   Opts.DetailedRecord = Args.hasArg(OPT_detailed_preprocessing_record);
+  Opts.AutoModuleImport = Args.hasArg(OPT_fauto_module_import);
   Opts.DisablePCHValidation = Args.hasArg(OPT_fno_validate_pch);
 
   Opts.DumpDeserializedPCHDecls = Args.hasArg(OPT_dump_deserialized_pch_decls);
@@ -1905,4 +1913,89 @@ void CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   ParsePreprocessorArgs(Res.getPreprocessorOpts(), *Args, FileMgr, Diags);
   ParsePreprocessorOutputArgs(Res.getPreprocessorOutputOpts(), *Args);
   ParseTargetArgs(Res.getTargetOpts(), *Args);
+}
+
+namespace {
+
+  class ModuleSignature {
+    llvm::SmallVector<uint64_t, 16> Data;
+    unsigned CurBit;
+    uint64_t CurValue;
+    
+  public:
+    ModuleSignature() : CurBit(0), CurValue(0) { }
+    
+    void add(uint64_t Value, unsigned Bits);
+    void add(StringRef Value);
+    void flush();
+    
+    llvm::APInt getAsInteger() const;
+  };
+}
+
+void ModuleSignature::add(uint64_t Value, unsigned int NumBits) {
+  CurValue |= Value << CurBit;
+  if (CurBit + NumBits < 64) {
+    CurBit += NumBits;
+    return;
+  }
+  
+  // Add the current word.
+  Data.push_back(CurValue);
+  
+  if (CurBit)
+    CurValue = Value >> (64-CurBit);
+  else
+    CurValue = 0;
+  CurBit = (CurBit+NumBits) & 63;
+}
+
+void ModuleSignature::flush() {
+  if (CurBit == 0)
+    return;
+  
+  Data.push_back(CurValue);
+  CurBit = 0;
+  CurValue = 0;
+}
+
+void ModuleSignature::add(StringRef Value) {
+  for (StringRef::iterator I = Value.begin(), IEnd = Value.end(); I != IEnd;++I)
+    add(*I, 8);
+}
+
+llvm::APInt ModuleSignature::getAsInteger() const {
+  return llvm::APInt(Data.size() * 64, Data);
+}
+
+std::string CompilerInvocation::getModuleHash() const {
+  ModuleSignature Signature;
+  
+  // Start the signature with the compiler version.
+  Signature.add(getClangFullRepositoryVersion());
+  
+  // Extend the signature with the language options
+#define LANGOPT(Name, Bits, Default, Description) \
+  Signature.add(LangOpts.Name, Bits);
+#define ENUM_LANGOPT(Name, Type, Bits, Default, Description) \
+  Signature.add(static_cast<unsigned>(LangOpts.get##Name()), Bits);
+#define BENIGN_LANGOPT(Name, Bits, Default, Description)
+#define BENIGN_ENUM_LANGOPT(Name, Type, Bits, Default, Description)
+#include "clang/Basic/LangOptions.def"
+  
+  // Extend the signature with the target triple
+  llvm::Triple T(TargetOpts.Triple);
+  Signature.add((unsigned)T.getArch(), 5);
+  Signature.add((unsigned)T.getVendor(), 4);
+  Signature.add((unsigned)T.getOS(), 5);
+  Signature.add((unsigned)T.getEnvironment(), 4);
+
+  // Extend the signature with preprocessor options.
+  Signature.add(getPreprocessorOpts().UsePredefines, 1);
+  Signature.add(getPreprocessorOpts().DetailedRecord, 1);
+  
+  // We've generated the signature. Treat it as one large APInt that we'll
+  // encode in base-36 and return.
+  Signature.flush();
+  return Signature.getAsInteger().toString(36, /*Signed=*/false);
 }

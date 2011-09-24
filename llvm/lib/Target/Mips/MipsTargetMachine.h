@@ -37,7 +37,6 @@ namespace llvm {
     MipsSelectionDAGInfo TSInfo;
     MipsIntrinsicInfo   IntrinsicInfo;
     MipsJITInfo JITInfo;
-    Reloc::Model DefRelocModel; // Reloc model before it's overridden.
   public:
     MipsTargetMachine(const Target &T, StringRef TT,
                       StringRef CPU, StringRef FS,

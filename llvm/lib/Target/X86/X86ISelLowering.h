@@ -175,8 +175,8 @@ namespace llvm {
       /// PSIGNB/W/D - Copy integer sign.
       PSIGNB, PSIGNW, PSIGND,
 
-      /// PBLENDVB - Variable blend
-      PBLENDVB,
+      /// BLEND family of opcodes
+      BLENDV,
 
       /// FMAX, FMIN - Floating point max and min.
       ///
@@ -288,7 +288,7 @@ namespace llvm {
 
       // SEG_ALLOCA - For allocating variable amounts of stack space when using
       // segmented stacks. Check if the current stacklet has enough space, and
-      // defects to heap allocation if not.
+      // falls back to heap allocation if not.
       SEG_ALLOCA,
 
       // Memory barrier
@@ -572,8 +572,8 @@ namespace llvm {
     /// DAG node.
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
-    /// getSetCCResultType - Return the ISD::SETCC ValueType
-    virtual MVT::SimpleValueType getSetCCResultType(EVT VT) const;
+    /// getSetCCResultType - Return the value type to use for ISD::SETCC.
+    virtual EVT getSetCCResultType(EVT VT) const;
 
     /// computeMaskedBitsForTargetNode - Determine which of the bits specified
     /// in Mask are known to be either zero or one and return them in the
@@ -821,7 +821,8 @@ namespace llvm {
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFRAME_TO_ARGS_OFFSET(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerTRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerADJUST_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTTZ(SDValue Op, SelectionDAG &DAG) const;

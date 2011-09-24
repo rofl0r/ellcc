@@ -236,7 +236,7 @@ def err_maybe_falloff_nonvoid_block : Error<
 def err_falloff_nonvoid_block : Error<
   "control reaches end of non-void block">;
 def warn_suggest_noreturn_function : Warning<
-  "function %0 could be declared with attribute 'noreturn'">,
+  "%select{function|method}0 %1 could be declared with attribute 'noreturn'">,
   InGroup<DiagGroup<"missing-noreturn">>, DefaultIgnore;
 def warn_suggest_noreturn_block : Warning<
   "block could be declared with attribute 'noreturn'">,
@@ -289,11 +289,10 @@ def note_strlcpycat_wrong_size : Note<
 
 /// main()
 // static/inline main() are not errors in C, just in C++.
-def warn_unusual_main_decl : Warning<"'main' should not be declared "
-    "%select{static|inline|static or inline}0">,
+def warn_static_main : Warning<"'main' should not be declared static">,
     InGroup<Main>;
-def err_unusual_main_decl : Error<"'main' is not allowed to be declared "
-    "%select{static|inline|static or inline}0">;
+def err_static_main : Error<"'main' is not allowed to be declared static">;
+def err_inline_main : Error<"'main' is not allowed to be declared inline">;
 def err_main_template_decl : Error<"'main' cannot be a template">;
 def err_main_returns_nonint : Error<"'main' must return 'int'">;
 def err_main_surplus_args : Error<"too many parameters (%0) for 'main': "
@@ -495,6 +494,9 @@ def warn_property_attr_mismatch : Warning<
 def warn_objc_property_copy_missing_on_block : Warning<
     "'copy' attribute must be specified for the block property "
     "when -fobjc-gc-only is specified">;
+def warn_objc_property_retain_of_block : Warning<
+    "retain'ed block property does not copy the block "
+    "- use copy attribute instead">, InGroup<ObjCRetainBlockProperty>;
 def warn_atomic_property_rule : Warning<
   "writable atomic property %0 cannot pair a synthesized setter/getter "
   "with a user defined setter/getter">;
@@ -549,6 +551,9 @@ def err_arc_perform_selector_retains : Error<
 def warn_arc_perform_selector_leaks : Warning<
   "performSelector may cause a leak because its selector is unknown">,
   InGroup<DiagGroup<"arc-performSelector-leaks">>;
+def err_gc_weak_property_strong_type : Error<
+  "weak attribute declared on a __strong type property"
+  "in GC mode">;
 
 def error_synthesized_ivar_yet_not_supported : Error<
   "instance variable synthesis not yet supported"
@@ -1030,7 +1035,7 @@ def warn_maybe_uninit_var_captured_by_block : Warning<
   "variable %0 may be uninitialized when captured by block">,
   InGroup<UninitializedMaybe>, DefaultIgnore;
 def note_var_fixit_add_initialization : Note<
-  "add initialization to silence this warning">;
+  "initialize the variable %0 to silence this warning">;
 def err_init_incomplete_type : Error<"initialization of incomplete type %0">;
 
 def err_temp_copy_no_viable : Error<
@@ -1386,35 +1391,52 @@ def err_attribute_argument_not_lockable : Error<
 def err_attribute_decl_not_lockable : Error<
   "%0 attribute can only be applied in a context annotated "
   "with 'lockable' attribute">;
-def warn_unlock_but_no_acquire : Warning<
-  "unlocking '%0' that was not acquired">,
+def warn_unlock_but_no_lock : Warning<
+  "unlocking '%0' that was not locked">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_double_lock : Warning<
-  "locking '%0' that is already acquired">,
+  "locking '%0' that is already locked">,
   InGroup<ThreadSafety>, DefaultIgnore;
-def warn_function_requires_lock : Warning<
-  "calling function '%0' requires lock '%0'">,
+def warn_no_unlock : Warning<
+  "mutex '%0' is still locked at the end of function">,
   InGroup<ThreadSafety>, DefaultIgnore;
-def warn_locks_not_released : Warning<
-  "lock '%0' is not released at the end of function '%1'">,
-  InGroup<ThreadSafety>, DefaultIgnore;
-def warn_lock_not_released_in_scope : Warning<
-  "lock '%0' is not released at the end of its scope">,
+// FIXME: improve the error message about locks not in scope
+def warn_lock_at_end_of_scope : Warning<
+  "mutex '%0' is still locked at the end of its scope">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_expecting_lock_held_on_loop : Warning<
-  "expecting lock '%0' to be held at start of each loop">,
+  "expecting mutex '%0' to be locked at start of each loop">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_lock_exclusive_and_shared : Warning<
+  "mutex '%0' is locked exclusively and shared in the same scope">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def note_lock_exclusive_and_shared : Note<
+  "the other lock of mutex '%0' is here">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_variable_requires_lock : Warning<
-  "accessing variable '%0' requires lock '%1'">,
-  InGroup<ThreadSafety>, DefaultIgnore;
-def warn_variable_requires_any_lock : Warning<
-  "accessing variable '%0' requires some lock">,
+  "%select{reading|writing}2 variable '%0' requires locking "
+  "%select{'%1'|'%1' exclusively}2">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_var_deref_requires_lock : Warning<
-  "accessing the value pointed to by '%0' requires lock '%1'">,
+  "%select{reading|writing}2 the value pointed to by '%0' requires locking "
+  "%select{'%1'|'%1' exclusively}2">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_variable_requires_any_lock : Warning<
+  "%select{reading|writing}1 variable '%0' requires locking "
+  "%select{any mutex|any mutex exclusively}1">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_var_deref_requires_any_lock : Warning<
-  "accessing the value pointed to by '%0' requires some lock">,
+  "%select{reading|writing}1 the value pointed to by '%0' requires locking "
+  "%select{any mutex|any mutex exclusively}1">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_fun_requires_lock : Warning<
+  "calling function '%0' requires %select{shared|exclusive}2 lock on '%1'">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_fun_excludes_mutex : Warning<
+  "cannot call function '%0' while mutex '%1' is locked">,
+  InGroup<ThreadSafety>, DefaultIgnore;
+def warn_cannot_resolve_lock : Warning<
+  "cannot resolve lock expression to a specific lockable object">,
   InGroup<ThreadSafety>, DefaultIgnore;
 
 
@@ -1458,7 +1480,7 @@ def warn_impcast_different_enum_types : Warning<
   "implicit conversion from enumeration type %0 to different enumeration type "
   "%1">, InGroup<DiagGroup<"conversion">>;
 def warn_impcast_bool_to_null_pointer : Warning<
-    "initialization of pointer of type %0 to NULL from a constant boolean "
+    "initialization of pointer of type %0 to null from a constant boolean "
     "expression">, InGroup<BoolConversions>;
 def warn_impcast_null_pointer_to_integer : Warning<
     "implicit conversion of NULL constant to integer">,
@@ -2392,6 +2414,9 @@ def err_unexpected_typedef : Error<
 def err_unexpected_namespace : Error<
   "unexpected namespace name %0: expected expression">;
 def err_undeclared_var_use : Error<"use of undeclared identifier %0">;
+def warn_found_via_dependent_bases_lookup : ExtWarn<"use of identifier %0 "
+   "found via unqualified lookup into dependent bases of class templates is a "
+   "Microsoft extension">, InGroup<Microsoft>;
 def note_dependent_var_use : Note<"must qualify identifier to find this "
     "declaration in dependent base class">;
 def err_not_found_by_two_phase_lookup : Error<"call to function %0 that is neither "
@@ -2643,6 +2668,8 @@ def warn_unused_label : Warning<"unused label %0">,
   InGroup<UnusedLabel>, DefaultIgnore;
 
 def err_goto_into_protected_scope : Error<"goto into protected scope">;
+def warn_goto_into_protected_scope : ExtWarn<"goto into protected scope">,
+  InGroup<Microsoft>;
 def err_switch_into_protected_scope : Error<
   "switch case is in protected scope">;
 def err_indirect_goto_without_addrlabel : Error<
@@ -2870,7 +2897,7 @@ def err_arc_assign_property_ownership : Error<
   "existing ivar %1 for property %0 with %select{unsafe_unretained| assign}2 "
   "attribute must be __unsafe_unretained">;
 def err_arc_inconsistent_property_ownership : Error<
-  "%select{strong|weak|unsafe_unretained}1 property %0 may not also be "
+  "%select{|unsafe_unretained|strong|weak}1 property %0 may not also be "
   "declared %select{|__unsafe_unretained|__strong|__weak|__autoreleasing}2">;
 def err_arc_atomic_ownership : Error<
   "cannot perform atomic operation on a pointer to type %0: type has "
@@ -3668,7 +3695,7 @@ def note_condition_assign_silence : Note<
   "place parentheses around the assignment to silence this warning">;
 
 def warn_equality_with_extra_parens : Warning<"equality comparison with "
-  "extraneous parentheses">, InGroup<Parentheses>;
+  "extraneous parentheses">, InGroup<ParenthesesOnEquality>;
 def note_equality_comparison_to_assign : Note<
   "use '=' to turn this equality comparison into an assignment">;
 def note_equality_comparison_silence : Note<
@@ -4358,13 +4385,13 @@ def note_ref_var_local_bind : Note<
 // a constructor parameter.
 def warn_bind_ref_member_to_parameter : Warning<
   "binding reference member %0 to stack allocated parameter %1">,
-  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+  InGroup<DiagGroup<"dangling-field">>;
 def warn_init_ptr_member_to_parameter_addr : Warning<
   "initializing pointer member %0 with the stack address of parameter %1">,
-  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+  InGroup<DiagGroup<"dangling-field">>;
 def warn_bind_ref_member_to_temporary : Warning<
   "binding reference member %0 to a temporary value">,
-  InGroup<DiagGroup<"dangling-field">>, DefaultIgnore;
+  InGroup<DiagGroup<"dangling-field">>;
 def note_ref_or_ptr_member_declared_here : Note<
   "%select{reference|pointer}0 member declared here">;
 
@@ -4406,6 +4433,9 @@ def err_return_in_block_expression : Error<
 def err_block_returning_array_function : Error<
   "block cannot return %select{array|function}0 type %1">;
 
+// Builtin annotation string.
+def err_builtin_annotation_not_string_constant : Error<
+  "__builtin_annotation requires a non wide string constant">;
 
 // CFString checking
 def err_cfstring_literal_not_string_constant : Error<
@@ -4690,13 +4720,30 @@ def warn_related_result_type_compatibility_class : Warning<
 def warn_related_result_type_compatibility_protocol : Warning<
   "protocol method is expected to return an instance of the implementing "
   "class, but is declared to return %0">;
-def note_related_result_type_overridden : Note<
+def note_related_result_type_overridden_family : Note<
   "overridden method is part of the '%select{|alloc|copy|init|mutableCopy|"
-  "new|autorelease|dealloc|release|retain|retainCount|self}0' method family">;
+  "new|autorelease|dealloc|finalize|release|retain|retainCount|self}0' method "
+  "family">;
+def note_related_result_type_overridden : Note<
+  "overridden method returns an instance of its class type">;
 def note_related_result_type_inferred : Note<
   "%select{class|instance}0 method %1 is assumed to return an instance of "
   "its receiver type (%2)">;
 
+}
+
+let CategoryName = "Modules Issue" in {
+def err_module_private_follows_public : Error<
+  "__module_private__ declaration of %0 follows public declaration">;
+def err_module_private_specialization : Error<
+  "%select{template|partial|member}0 specialization cannot be "
+  "declared __module_private__">;
+def err_module_private_local : Error<
+  "%select{local variable|parameter|typedef}0 %1 cannot be declared "
+  "__module_private__">;
+def err_module_private_local_class : Error<
+  "local %select{struct|union|class|enum}0 cannot be declared "
+  "__module_private__">;
 }
 
 } // end of sema component.

@@ -216,6 +216,7 @@ private:
   SDValue PromoteIntRes_MERGE_VALUES(SDNode *N);
   SDValue PromoteIntRes_AssertSext(SDNode *N);
   SDValue PromoteIntRes_AssertZext(SDNode *N);
+  SDValue PromoteIntRes_Atomic0(AtomicSDNode *N);
   SDValue PromoteIntRes_Atomic1(AtomicSDNode *N);
   SDValue PromoteIntRes_Atomic2(AtomicSDNode *N);
   SDValue PromoteIntRes_EXTRACT_SUBVECTOR(SDNode *N);
@@ -240,6 +241,7 @@ private:
   SDValue PromoteIntRes_SADDSUBO(SDNode *N, unsigned ResNo);
   SDValue PromoteIntRes_SDIV(SDNode *N);
   SDValue PromoteIntRes_SELECT(SDNode *N);
+  SDValue PromoteIntRes_VSELECT(SDNode *N);
   SDValue PromoteIntRes_SELECT_CC(SDNode *N);
   SDValue PromoteIntRes_SETCC(SDNode *N);
   SDValue PromoteIntRes_SHL(SDNode *N);
@@ -257,6 +259,7 @@ private:
   // Integer Operand Promotion.
   bool PromoteIntegerOperand(SDNode *N, unsigned OperandNo);
   SDValue PromoteIntOp_ANY_EXTEND(SDNode *N);
+  SDValue PromoteIntOp_ATOMIC_STORE(AtomicSDNode *N);
   SDValue PromoteIntOp_BITCAST(SDNode *N);
   SDValue PromoteIntOp_BUILD_PAIR(SDNode *N);
   SDValue PromoteIntOp_BR_CC(SDNode *N, unsigned OpNo);
@@ -272,6 +275,7 @@ private:
   SDValue PromoteIntOp_SELECT(SDNode *N, unsigned OpNo);
   SDValue PromoteIntOp_SELECT_CC(SDNode *N, unsigned OpNo);
   SDValue PromoteIntOp_SETCC(SDNode *N, unsigned OpNo);
+  SDValue PromoteIntOp_VSETCC(SDNode *N, unsigned OpNo);
   SDValue PromoteIntOp_Shift(SDNode *N);
   SDValue PromoteIntOp_SIGN_EXTEND(SDNode *N);
   SDValue PromoteIntOp_SINT_TO_FP(SDNode *N);
@@ -573,6 +577,7 @@ private:
   SDValue SplitVecOp_EXTRACT_VECTOR_ELT(SDNode *N);
   SDValue SplitVecOp_STORE(StoreSDNode *N, unsigned OpNo);
   SDValue SplitVecOp_CONCAT_VECTORS(SDNode *N);
+  SDValue SplitVecOp_VSETCC(SDNode *N);
   SDValue SplitVecOp_FP_ROUND(SDNode *N);
 
   //===--------------------------------------------------------------------===//

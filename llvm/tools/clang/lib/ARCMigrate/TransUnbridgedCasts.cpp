@@ -61,7 +61,7 @@ public:
   }
 
   bool VisitCastExpr(CastExpr *E) {
-    if (E->getCastKind() != CK_AnyPointerToObjCPointerCast
+    if (E->getCastKind() != CK_CPointerToObjCPointerCast
         && E->getCastKind() != CK_BitCast)
       return true;
 
@@ -237,11 +237,16 @@ private:
     }
 
     if (ImplicitCastExpr *implCE = dyn_cast<ImplicitCastExpr>(E->getSubExpr())){
-      if (implCE->getCastKind() == CK_ObjCConsumeObject)
+      if (implCE->getCastKind() == CK_ARCConsumeObject)
         return rewriteToBridgedCast(E, OBC_BridgeRetained);
-      if (implCE->getCastKind() == CK_ObjCReclaimReturnedObject)
+      if (implCE->getCastKind() == CK_ARCReclaimReturnedObject)
         return rewriteToBridgedCast(E, OBC_Bridge);
     }
+
+    bool isConsumed = false;
+    if (isPassedToCParamWithKnownOwnership(E, isConsumed))
+      return rewriteToBridgedCast(E, isConsumed ? OBC_BridgeRetained
+                                                : OBC_Bridge);
   }
 
   static ObjCMethodFamily getFamilyOfMessage(Expr *E) {
@@ -261,6 +266,29 @@ private:
             FD->getParent()->isTranslationUnit() &&
             FD->getLinkage() == ExternalLinkage)
           return true;
+
+    return false;
+  }
+
+  bool isPassedToCParamWithKnownOwnership(Expr *E, bool &isConsumed) const {
+    if (CallExpr *callE = dyn_cast_or_null<CallExpr>(
+                                     StmtMap->getParentIgnoreParenImpCasts(E)))
+      if (FunctionDecl *
+            FD = dyn_cast_or_null<FunctionDecl>(callE->getCalleeDecl())) {
+        unsigned i = 0;
+        for (unsigned e = callE->getNumArgs(); i != e; ++i) {
+          Expr *arg = callE->getArg(i);
+          if (arg == E || arg->IgnoreParenImpCasts() == E)
+            break;
+        }
+        if (i < callE->getNumArgs()) {
+          ParmVarDecl *PD = FD->getParamDecl(i);
+          if (PD->getAttr<CFConsumedAttr>()) {
+            isConsumed = true;
+            return true;
+          }
+        }
+      }
 
     return false;
   }

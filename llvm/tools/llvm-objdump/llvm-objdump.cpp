@@ -25,6 +25,7 @@
 #include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
@@ -190,7 +191,7 @@ static void DisassembleInput(const StringRef &Filename) {
       bool contains;
       if (!error(i->containsSymbol(*si, contains)) && contains) {
         uint64_t Address;
-        if (error(si->getAddress(Address))) break;
+        if (error(si->getOffset(Address))) break;
         StringRef Name;
         if (error(si->getName(Name))) break;
         Symbols.push_back(std::make_pair(Address, Name));
@@ -217,7 +218,14 @@ static void DisassembleInput(const StringRef &Filename) {
       return;
     }
 
-    OwningPtr<const MCDisassembler> DisAsm(TheTarget->createMCDisassembler());
+    OwningPtr<const MCSubtargetInfo> STI(TheTarget->createMCSubtargetInfo(TripleName, "", ""));
+
+    if (!STI) {
+      errs() << "error: no subtarget info for target " << TripleName << "\n";
+      return;
+    }
+
+    OwningPtr<const MCDisassembler> DisAsm(TheTarget->createMCDisassembler(*STI));
     if (!DisAsm) {
       errs() << "error: no disassembler for target " << TripleName << "\n";
       return;
@@ -225,7 +233,7 @@ static void DisassembleInput(const StringRef &Filename) {
 
     int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
     OwningPtr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-                                  AsmPrinterVariant, *AsmInfo));
+                                AsmPrinterVariant, *AsmInfo, *STI));
     if (!IP) {
       errs() << "error: no instruction printer for target " << TripleName << '\n';
       return;
@@ -254,13 +262,14 @@ static void DisassembleInput(const StringRef &Filename) {
       if (!CFG) {
         for (Index = Start; Index < End; Index += Size) {
           MCInst Inst;
+
           if (DisAsm->getInstruction(Inst, Size, memoryObject, Index,
-                                     DebugOut)) {
+                                     DebugOut, nulls())) {
             uint64_t addr;
             if (error(i->getAddress(addr))) break;
             outs() << format("%8x:\t", addr + Index);
             DumpBytes(StringRef(Bytes.data() + Index, Size));
-            IP->printInst(&Inst, outs());
+            IP->printInst(&Inst, outs(), "");
             outs() << "\n";
           } else {
             errs() << ToolName << ": warning: invalid instruction encoding\n";
@@ -315,7 +324,7 @@ static void DisassembleInput(const StringRef &Filename) {
             // Simple loops.
             if (fi->second.contains(&fi->second))
               outs() << '\t';
-            IP->printInst(&Inst.Inst, outs());
+            IP->printInst(&Inst.Inst, outs(), "");
             outs() << '\n';
           }
         }
@@ -351,7 +360,7 @@ static void DisassembleInput(const StringRef &Filename) {
             // Escape special chars and print the instruction in mnemonic form.
             std::string Str;
             raw_string_ostream OS(Str);
-            IP->printInst(&i->second.getInsts()[ii].Inst, OS);
+            IP->printInst(&i->second.getInsts()[ii].Inst, OS, "");
             Out << DOT::EscapeString(OS.str()) << '|';
           }
           Out << "<o>\" shape=\"record\" ];\n";

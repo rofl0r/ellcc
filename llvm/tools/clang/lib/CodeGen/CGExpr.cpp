@@ -659,7 +659,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitVAArgExprLValue(cast<VAArgExpr>(E));
   case Expr::DeclRefExprClass:
     return EmitDeclRefLValue(cast<DeclRefExpr>(E));
-  case Expr::ParenExprClass:return EmitLValue(cast<ParenExpr>(E)->getSubExpr());
+  case Expr::ParenExprClass:
+    return EmitLValue(cast<ParenExpr>(E)->getSubExpr());
   case Expr::GenericSelectionExprClass:
     return EmitLValue(cast<GenericSelectionExpr>(E)->getResultExpr());
   case Expr::PredefinedExprClass:
@@ -1211,7 +1212,7 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
 // or neither.
 static void setObjCGCLValueClass(const ASTContext &Ctx, const Expr *E,
                                  LValue &LV) {
-  if (Ctx.getLangOptions().getGCMode() == LangOptions::NonGC)
+  if (Ctx.getLangOptions().getGC() == LangOptions::NonGC)
     return;
   
   if (isa<ObjCIvarRefExpr>(E)) {
@@ -1418,7 +1419,7 @@ LValue CodeGenFunction::EmitUnaryOpLValue(const UnaryOperator *E) {
     // But, we continue to generate __strong write barrier on indirect write
     // into a pointer to object.
     if (getContext().getLangOptions().ObjC1 &&
-        getContext().getLangOptions().getGCMode() != LangOptions::NonGC &&
+        getContext().getLangOptions().getGC() != LangOptions::NonGC &&
         LV.isObjCWeak())
       LV.setNonGC(!E->isOBJCGCCandidate(getContext()));
     return LV;
@@ -1679,7 +1680,7 @@ LValue CodeGenFunction::EmitArraySubscriptExpr(const ArraySubscriptExpr *E) {
   LV.getQuals().setAddressSpace(E->getBase()->getType().getAddressSpace());
 
   if (getContext().getLangOptions().ObjC1 &&
-      getContext().getLangOptions().getGCMode() != LangOptions::NonGC) {
+      getContext().getLangOptions().getGC() != LangOptions::NonGC) {
     LV.setNonGC(!E->isOBJCGCCandidate(getContext()));
     setObjCGCLValueClass(getContext(), E, LV);
   }
@@ -1874,6 +1875,9 @@ LValue CodeGenFunction::EmitLValueForField(llvm::Value *baseAddr,
                                          CGM.getTypes().ConvertTypeForMem(type),
                                          field->getName());
 
+  if (field->hasAttr<AnnotateAttr>())
+    addr = EmitFieldAnnotations(field, addr);
+
   unsigned alignment = getContext().getDeclAlign(field).getQuantity();
   LValue LV = MakeAddrLValue(addr, type, alignment);
   LV.getQuals().addCVRQualifiers(cvr);
@@ -2055,9 +2059,10 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_BaseToDerivedMemberPointer:
   case CK_MemberPointerToBoolean:
   case CK_AnyPointerToBlockPointerCast:
-  case CK_ObjCProduceObject:
-  case CK_ObjCConsumeObject:
-  case CK_ObjCReclaimReturnedObject: {
+  case CK_ARCProduceObject:
+  case CK_ARCConsumeObject:
+  case CK_ARCReclaimReturnedObject:
+  case CK_ARCExtendBlockObject: {
     // These casts only produce lvalues when we're binding a reference to a 
     // temporary realized from a (converted) pure rvalue. Emit the expression
     // as a value, copy it into a temporary, and return an lvalue referring to
@@ -2076,7 +2081,8 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
 
   case CK_ConstructorConversion:
   case CK_UserDefinedConversion:
-  case CK_AnyPointerToObjCPointerCast:
+  case CK_CPointerToObjCPointerCast:
+  case CK_BlockPointerToObjCPointerCast:
     return EmitLValue(E->getSubExpr());
   
   case CK_UncheckedDerivedToBase:
@@ -2174,14 +2180,10 @@ RValue CodeGenFunction::EmitCallExpr(const CallExpr *E,
   if (const CXXMemberCallExpr *CE = dyn_cast<CXXMemberCallExpr>(E))
     return EmitCXXMemberCallExpr(CE, ReturnValue);
 
-  const Decl *TargetDecl = 0;
-  if (const ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E->getCallee())) {
-    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(CE->getSubExpr())) {
-      TargetDecl = DRE->getDecl();
-      if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(TargetDecl))
-        if (unsigned builtinID = FD->getBuiltinID())
-          return EmitBuiltinExpr(FD, builtinID, E);
-    }
+  const Decl *TargetDecl = E->getCalleeDecl();
+  if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(TargetDecl)) {
+    if (unsigned builtinID = FD->getBuiltinID())
+      return EmitBuiltinExpr(FD, builtinID, E);
   }
 
   if (const CXXOperatorCallExpr *CE = dyn_cast<CXXOperatorCallExpr>(E))

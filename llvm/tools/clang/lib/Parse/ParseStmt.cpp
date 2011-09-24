@@ -100,8 +100,8 @@ Retry:
 
   case tok::code_completion:
     Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Statement);
-    ConsumeCodeCompletionToken();
-    return ParseStatementOrDeclaration(Stmts, OnlyStatement);
+    cutOffParsing();
+    return StmtError();
       
   case tok::identifier: {
     Token Next = NextToken();
@@ -497,7 +497,7 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
   // DeepestParsedCaseStmt - This is the deepest statement we have parsed, which
   // gets updated each time a new case is parsed, and whose body is unset so
   // far.  When parsing 'case 4', this is the 'case 3' node.
-  StmtTy *DeepestParsedCaseStmt = 0;
+  Stmt *DeepestParsedCaseStmt = 0;
 
   // While we have case statements, eat and stack them.
   SourceLocation ColonLoc;
@@ -507,7 +507,8 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
 
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteCase(getCurScope());
-      ConsumeCodeCompletionToken();
+      cutOffParsing();
+      return StmtError();
     }
     
     /// We don't want to treat 'case x : y' as a potential typo for 'case x::y'.
@@ -953,7 +954,8 @@ StmtResult Parser::ParseIfStatement(ParsedAttributes &attrs) {
     InnerScope.Exit();
   } else if (Tok.is(tok::code_completion)) {
     Actions.CodeCompleteAfterIf(getCurScope());
-    ConsumeCodeCompletionToken();
+    cutOffParsing();
+    return StmtError();
   }
 
   IfScope.Exit();
@@ -1282,7 +1284,8 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
     Actions.CodeCompleteOrdinaryName(getCurScope(), 
                                      C99orCXXorObjC? Sema::PCC_ForInit
                                                    : Sema::PCC_Expression);
-    ConsumeCodeCompletionToken();
+    cutOffParsing();
+    return StmtError();
   }
   
   // Parse the first part of the for specifier.
@@ -1310,6 +1313,9 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
     FirstPart = Actions.ActOnDeclStmt(DG, DeclStart, Tok.getLocation());
 
     if (ForRangeInit.ParsedForRangeDecl()) {
+      if (!getLang().CPlusPlus0x)
+        Diag(ForRangeInit.ColonLoc, diag::ext_for_range);
+
       ForRange = true;
     } else if (Tok.is(tok::semi)) {  // for (int x = 4;
       ConsumeToken();
@@ -1320,7 +1326,8 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
       
       if (Tok.is(tok::code_completion)) {
         Actions.CodeCompleteObjCForCollection(getCurScope(), DG);
-        ConsumeCodeCompletionToken();
+        cutOffParsing();
+        return StmtError();
       }
       Collection = ParseExpression();
     } else {
@@ -1346,7 +1353,8 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
       
       if (Tok.is(tok::code_completion)) {
         Actions.CodeCompleteObjCForCollection(getCurScope(), DeclGroupPtrTy());
-        ConsumeCodeCompletionToken();
+        cutOffParsing();
+        return StmtError();
       }
       Collection = ParseExpression();
     } else {
@@ -1537,8 +1545,7 @@ StmtResult Parser::ParseReturnStatement(ParsedAttributes &attrs) {
   if (Tok.isNot(tok::semi)) {
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteReturn(getCurScope());
-      ConsumeCodeCompletionToken();
-      SkipUntil(tok::semi, false, true);
+      cutOffParsing();
       return StmtError();
     }
         
@@ -1751,8 +1758,8 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
 //
 // FIXME: Avoid unnecessary std::string trashing.
 bool Parser::ParseAsmOperandsOpt(SmallVectorImpl<IdentifierInfo *> &Names,
-                                 SmallVectorImpl<ExprTy *> &Constraints,
-                                 SmallVectorImpl<ExprTy *> &Exprs) {
+                                 SmallVectorImpl<Expr *> &Constraints,
+                                 SmallVectorImpl<Expr *> &Exprs) {
   // 'asm-operands' isn't present?
   if (!isTokenStringLiteral() && Tok.isNot(tok::l_square))
     return false;
@@ -1849,7 +1856,9 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl, ParseScope &BodyScope) {
   // Constructor initializer list?
   if (Tok.is(tok::colon))
     ParseConstructorInitializer(Decl);
-
+  else
+    Actions.ActOnDefaultCtorInitializers(Decl);
+  
   if (PP.isCodeCompletionEnabled()) {
     if (trySkippingFunctionBodyForCodeCompletion()) {
       BodyScope.Exit();

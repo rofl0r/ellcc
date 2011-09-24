@@ -183,11 +183,6 @@ class CursorVisitor : public DeclVisitor<CursorVisitor, bool>,
   /// \brief The opaque client data, to be passed along to the visitor.
   CXClientData ClientData;
 
-  // MaxPCHLevel - the maximum PCH level of declarations that we will pass on
-  // to the visitor. Declarations with a PCH level greater than this value will
-  // be suppressed.
-  unsigned MaxPCHLevel;
-
   /// \brief Whether we should visit the preprocessing record entries last, 
   /// after visiting other declarations.
   bool VisitPreprocessorLast;
@@ -238,12 +233,11 @@ class CursorVisitor : public DeclVisitor<CursorVisitor, bool>,
 public:
   CursorVisitor(CXTranslationUnit TU, CXCursorVisitor Visitor,
                 CXClientData ClientData,
-                unsigned MaxPCHLevel,
                 bool VisitPreprocessorLast,
                 SourceRange RegionOfInterest = SourceRange())
     : TU(TU), AU(static_cast<ASTUnit*>(TU->TUData)),
       Visitor(Visitor), ClientData(ClientData),
-      MaxPCHLevel(MaxPCHLevel), VisitPreprocessorLast(VisitPreprocessorLast),
+      VisitPreprocessorLast(VisitPreprocessorLast),
       RegionOfInterest(RegionOfInterest), DI_current(0)
   {
     Parent.kind = CXCursor_NoDeclFound;
@@ -375,9 +369,6 @@ bool CursorVisitor::Visit(CXCursor Cursor, bool CheckedRegionOfInterest) {
   if (clang_isDeclaration(Cursor.kind)) {
     Decl *D = getCursorDecl(Cursor);
     assert(D && "Invalid declaration cursor");
-    if (D->getPCHLevel() > MaxPCHLevel && !isa<TranslationUnitDecl>(D))
-      return false;
-
     if (D->isImplicit())
       return false;
   }
@@ -568,7 +559,15 @@ bool CursorVisitor::VisitChildren(CXCursor Cursor) {
       }
     }
   }
-  
+
+  if (Cursor.kind == CXCursor_IBOutletCollectionAttr) {
+    IBOutletCollectionAttr *A =
+      cast<IBOutletCollectionAttr>(cxcursor::getCursorAttr(Cursor));
+    if (const ObjCInterfaceType *InterT = A->getInterface()->getAs<ObjCInterfaceType>())
+      return Visit(cxcursor::MakeCursorObjCClassRef(InterT->getInterface(),
+                                                    A->getInterfaceLoc(), TU));
+  }
+
   // Nothing to visit at the moment.
   return false;
 }
@@ -2862,6 +2861,34 @@ void clang_getExpansionLocation(CXSourceLocation location,
     *offset = SM.getDecomposedLoc(ExpansionLoc).second;
 }
 
+void clang_getPresumedLocation(CXSourceLocation location,
+                               CXString *filename,
+                               unsigned *line,
+                               unsigned *column) {
+  SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
+
+  if (!location.ptr_data[0] || Loc.isInvalid()) {
+    if (filename)
+      *filename = createCXString("");
+    if (line)
+      *line = 0;
+    if (column)
+      *column = 0;
+  }
+  else {
+	const SourceManager &SM =
+        *static_cast<const SourceManager*>(location.ptr_data[0]);
+    PresumedLoc PreLoc = SM.getPresumedLoc(Loc);
+
+    if (filename)
+      *filename = createCXString(PreLoc.getFilename());
+    if (line)
+      *line = PreLoc.getLine();
+    if (column)
+      *column = PreLoc.getColumn();
+  }
+}
+
 void clang_getInstantiationLocation(CXSourceLocation location,
                                     CXFile *file,
                                     unsigned *line,
@@ -2972,7 +2999,7 @@ unsigned clang_isFileMultipleIncludeGuarded(CXTranslationUnit tu, CXFile file) {
 //===----------------------------------------------------------------------===//
 
 static Decl *getDeclFromExpr(Stmt *E) {
-  if (CastExpr *CE = dyn_cast<CastExpr>(E))
+  if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
     return getDeclFromExpr(CE->getSubExpr());
 
   if (DeclRefExpr *RefExpr = dyn_cast<DeclRefExpr>(E))
@@ -3008,6 +3035,9 @@ static Decl *getDeclFromExpr(Stmt *E) {
 }
 
 static SourceLocation getLocationFromExpr(Expr *E) {
+  if (ImplicitCastExpr *CE = dyn_cast<ImplicitCastExpr>(E))
+    return getLocationFromExpr(CE->getSubExpr());
+
   if (ObjCMessageExpr *Msg = dyn_cast<ObjCMessageExpr>(E))
     return /*FIXME:*/Msg->getLeftLoc();
   if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E))
@@ -3030,7 +3060,6 @@ unsigned clang_visitChildren(CXCursor parent,
                              CXCursorVisitor visitor,
                              CXClientData client_data) {
   CursorVisitor CursorVis(getCursorTU(parent), visitor, client_data, 
-                          getCursorASTUnit(parent)->getMaxPCHLevel(),
                           false);
   return CursorVis.VisitChildren(parent);
 }
@@ -3393,6 +3422,10 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
      return createCXString("attribute(iboutlet)");
   case CXCursor_IBOutletCollectionAttr:
       return createCXString("attribute(iboutletcollection)");
+  case CXCursor_CXXFinalAttr:
+      return createCXString("attribute(final)");
+  case CXCursor_CXXOverrideAttr:
+      return createCXString("attribute(override)");
   case CXCursor_PreprocessingDirective:
     return createCXString("preprocessing directive");
   case CXCursor_MacroDefinition:
@@ -3527,7 +3560,8 @@ CXCursor clang_getCursor(CXTranslationUnit TU, CXSourceLocation Loc) {
     GetCursorData ResultData(CXXUnit->getSourceManager(), SLoc, Result);
     CXCursor Parent = clang_getTranslationUnitCursor(TU);
     CursorVisitor CursorVis(TU, GetCursorVisitor, &ResultData,
-                            Decl::MaxPCHLevel, true, SourceLocation(SLoc));
+                            /*VisitPreprocessorLast=*/true, 
+                            SourceLocation(SLoc));
     CursorVis.VisitChildren(Parent);
   }
   
@@ -3809,6 +3843,9 @@ static SourceRange getRawCursorExtent(CXCursor C) {
 
   if (clang_isStatement(C.kind))
     return getCursorStmt(C)->getSourceRange();
+
+  if (clang_isAttribute(C.kind))
+    return getCursorAttr(C)->getRange();
 
   if (C.kind == CXCursor_PreprocessingDirective)
     return cxcursor::getCursorPreprocessingDirective(C);
@@ -4564,8 +4601,7 @@ public:
     : Annotated(annotated), Tokens(tokens), Cursors(cursors),
       NumTokens(numTokens), TokIdx(0), PreprocessingTokIdx(0),
       AnnotateVis(tu,
-                  AnnotateTokensVisitor, this,
-                  Decl::MaxPCHLevel, true, RegionOfInterest),
+                  AnnotateTokensVisitor, this, true, RegionOfInterest),
       SrcMgr(static_cast<ASTUnit*>(tu->TUData)->getSourceManager()),
       HasContextSensitiveKeywords(false) { }
 
@@ -5029,7 +5065,7 @@ static void clang_annotateTokensImpl(void *UserData) {
                                       Tokens, NumTokens);
     CursorVisitor MacroArgMarker(TU,
                                  MarkMacroArgTokensVisitorDelegate, &Visitor,
-                                 Decl::MaxPCHLevel, true, RegionOfInterest);
+                                 true, RegionOfInterest);
     MacroArgMarker.visitPreprocessedEntitiesInRegion();
   }
   
@@ -5090,44 +5126,10 @@ static void clang_annotateTokensImpl(void *UserData) {
           Tokens[I].int_data[0] = CXToken_Keyword;
         continue;
       }
-      
-      if (Cursors[I].kind == CXCursor_CXXMethod) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (CXXMethodDecl *Method
-            = dyn_cast_or_null<CXXMethodDecl>(getCursorDecl(Cursors[I]))) {
-          if ((Method->hasAttr<FinalAttr>() || 
-               Method->hasAttr<OverrideAttr>()) &&
-              Method->getLocation().getRawEncoding() != Tokens[I].int_data[1] &&
-              llvm::StringSwitch<bool>(II->getName())
-              .Case("final", true)
-              .Case("override", true)
-              .Default(false))
-            Tokens[I].int_data[0] = CXToken_Keyword;
-        }
-        continue;
-      }
-      
-      if (Cursors[I].kind == CXCursor_ClassDecl ||
-          Cursors[I].kind == CXCursor_StructDecl ||
-          Cursors[I].kind == CXCursor_ClassTemplate) {
-        IdentifierInfo *II = static_cast<IdentifierInfo *>(Tokens[I].ptr_data);
-        if (II->getName() == "final") {
-          // We have to be careful with 'final', since it could be the name
-          // of a member class rather than the context-sensitive keyword.
-          // So, check whether the cursor associated with this
-          Decl *D = getCursorDecl(Cursors[I]);
-          if (CXXRecordDecl *Record = dyn_cast_or_null<CXXRecordDecl>(D)) {
-            if ((Record->hasAttr<FinalAttr>()) &&
-                Record->getIdentifier() != II)
-              Tokens[I].int_data[0] = CXToken_Keyword;
-          } else if (ClassTemplateDecl *ClassTemplate
-                     = dyn_cast_or_null<ClassTemplateDecl>(D)) {
-            CXXRecordDecl *Record = ClassTemplate->getTemplatedDecl();
-            if ((Record->hasAttr<FinalAttr>()) &&
-                Record->getIdentifier() != II)
-              Tokens[I].int_data[0] = CXToken_Keyword;
-          }
-        }
+
+      if (Cursors[I].kind == CXCursor_CXXFinalAttr ||
+          Cursors[I].kind == CXCursor_CXXOverrideAttr) {
+        Tokens[I].int_data[0] = CXToken_Keyword;
         continue;
       }
     }
@@ -5491,7 +5493,7 @@ CXType clang_getIBOutletCollectionType(CXCursor C) {
   IBOutletCollectionAttr *A =
     cast<IBOutletCollectionAttr>(cxcursor::getCursorAttr(C));
   
-  return cxtype::MakeCXType(A->getInterFace(), cxcursor::getCursorTU(C));  
+  return cxtype::MakeCXType(A->getInterface(), cxcursor::getCursorTU(C));  
 }
 } // end: extern "C"
 

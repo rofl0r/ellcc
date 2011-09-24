@@ -1121,6 +1121,11 @@ public:
   llvm::Value *getExceptionSlot();
   llvm::Value *getEHSelectorSlot();
 
+  /// Returns the contents of the function's exception object and selector
+  /// slots.
+  llvm::Value *getExceptionFromSlot();
+  llvm::Value *getSelectorFromSlot();
+
   llvm::Value *getNormalCleanupDestSlot();
 
   llvm::BasicBlock *getUnreachableBlock() {
@@ -1202,9 +1207,8 @@ public:
   /// GenerateObjCGetter - Synthesize an Objective-C property getter function.
   void GenerateObjCGetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
-  void GenerateObjCGetterBody(ObjCIvarDecl *Ivar, bool IsAtomic, bool IsStrong);
-  void GenerateObjCAtomicSetterBody(ObjCMethodDecl *OMD,
-                                    ObjCIvarDecl *Ivar);
+  void generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
+                              const ObjCPropertyImplDecl *propImpl);
 
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
                                   ObjCMethodDecl *MD, bool ctor);
@@ -1213,6 +1217,8 @@ public:
   /// for the given property.
   void GenerateObjCSetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
+  void generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
+                              const ObjCPropertyImplDecl *propImpl);
   bool IndirectObjCSetterArg(const CGFunctionInfo &FI);
   bool IvarTypeWithAggrGCObjects(QualType Ty);
 
@@ -1668,8 +1674,8 @@ public:
   void EmitCXXDestructorCall(const CXXDestructorDecl *D, CXXDtorType Type,
                              bool ForVirtualBase, llvm::Value *This);
 
-  void EmitNewArrayInitializer(const CXXNewExpr *E, llvm::Value *NewPtr,
-                               llvm::Value *NumElements);
+  void EmitNewArrayInitializer(const CXXNewExpr *E, QualType elementType,
+                               llvm::Value *NewPtr, llvm::Value *NumElements);
 
   void EmitCXXTemporary(const CXXTemporary *Temporary, llvm::Value *Ptr);
 
@@ -2270,6 +2276,23 @@ public:
                               AggValueSlot Slot =AggValueSlot::ignored());
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
+
+  //===--------------------------------------------------------------------===//
+  //                         Annotations Emission
+  //===--------------------------------------------------------------------===//
+
+  /// Emit an annotation call (intrinsic or builtin).
+  llvm::Value *EmitAnnotationCall(llvm::Value *AnnotationFn,
+                                  llvm::Value *AnnotatedVal,
+                                  llvm::StringRef AnnotationStr,
+                                  SourceLocation Location);
+
+  /// Emit local annotations for the local variable V, declared by D.
+  void EmitVarAnnotations(const VarDecl *D, llvm::Value *V);
+
+  /// Emit field annotations for the given field & value. Returns the
+  /// annotation result.
+  llvm::Value *EmitFieldAnnotations(const FieldDecl *D, llvm::Value *V);
 
   //===--------------------------------------------------------------------===//
   //                             Internal Helpers

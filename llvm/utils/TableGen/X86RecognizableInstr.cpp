@@ -325,7 +325,7 @@ InstructionContext RecognizableInstr::insnContext() const {
       insnContext = IC_OPSIZE;
     else if (Prefix == X86Local::XD)
       insnContext = IC_XD;
-    else if (Prefix == X86Local::XS)
+    else if (Prefix == X86Local::XS || Prefix == X86Local::REP)
       insnContext = IC_XS;
     else
       insnContext = IC;
@@ -345,19 +345,12 @@ RecognizableInstr::filter_ret RecognizableInstr::filter() const {
     return FILTER_STRONG;
   
   if (Form == X86Local::Pseudo ||
-      IsCodeGenOnly)
+      (IsCodeGenOnly && Name.find("_REV") == Name.npos))
     return FILTER_STRONG;
   
   if (Form == X86Local::MRMInitReg)
     return FILTER_STRONG;
     
-    
-  // TEMPORARY pending bug fixes
-
-  if (Name.find("VMOVDQU") != Name.npos ||
-      Name.find("VMOVDQA") != Name.npos ||
-      Name.find("VROUND") != Name.npos)
-    return FILTER_STRONG;
     
   // Filter out artificial instructions
     
@@ -882,6 +875,7 @@ void RecognizableInstr::emitDecodePath(DisassemblerTables &tables) const {
     }
     opcodeToSet = 0xd8 + (Prefix - X86Local::D8);
     break;
+  case X86Local::REP:
   default:
     opcodeType = ONEBYTE;
     switch (Opcode) {

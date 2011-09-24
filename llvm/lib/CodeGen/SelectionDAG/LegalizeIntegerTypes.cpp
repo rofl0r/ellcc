@@ -64,6 +64,7 @@ void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
                          Res = PromoteIntRes_EXTRACT_VECTOR_ELT(N); break;
   case ISD::LOAD:        Res = PromoteIntRes_LOAD(cast<LoadSDNode>(N));break;
   case ISD::SELECT:      Res = PromoteIntRes_SELECT(N); break;
+  case ISD::VSELECT:     Res = PromoteIntRes_VSELECT(N); break;
   case ISD::SELECT_CC:   Res = PromoteIntRes_SELECT_CC(N); break;
   case ISD::SETCC:       Res = PromoteIntRes_SETCC(N); break;
   case ISD::SHL:         Res = PromoteIntRes_SHL(N); break;
@@ -115,6 +116,9 @@ void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
   case ISD::SMULO:
   case ISD::UMULO:       Res = PromoteIntRes_XMULO(N, ResNo); break;
 
+  case ISD::ATOMIC_LOAD:
+    Res = PromoteIntRes_Atomic0(cast<AtomicSDNode>(N)); break;
+
   case ISD::ATOMIC_LOAD_ADD:
   case ISD::ATOMIC_LOAD_SUB:
   case ISD::ATOMIC_LOAD_AND:
@@ -154,6 +158,19 @@ SDValue DAGTypeLegalizer::PromoteIntRes_AssertZext(SDNode *N) {
   SDValue Op = ZExtPromotedInteger(N->getOperand(0));
   return DAG.getNode(ISD::AssertZext, N->getDebugLoc(),
                      Op.getValueType(), Op, N->getOperand(1));
+}
+
+SDValue DAGTypeLegalizer::PromoteIntRes_Atomic0(AtomicSDNode *N) {
+  EVT ResVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
+  SDValue Res = DAG.getAtomic(N->getOpcode(), N->getDebugLoc(),
+                              N->getMemoryVT(), ResVT,
+                              N->getChain(), N->getBasePtr(),
+                              N->getMemOperand(), N->getOrdering(),
+                              N->getSynchScope());
+  // Legalized the chain result - switch anything that used the old chain to
+  // use the new one.
+  ReplaceValueWith(SDValue(N, 1), Res.getValue(1));
+  return Res;
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_Atomic1(AtomicSDNode *N) {
@@ -465,6 +482,14 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SELECT(SDNode *N) {
                      LHS.getValueType(), N->getOperand(0),LHS,RHS);
 }
 
+SDValue DAGTypeLegalizer::PromoteIntRes_VSELECT(SDNode *N) {
+  SDValue Mask = GetPromotedInteger(N->getOperand(0));
+  SDValue LHS = GetPromotedInteger(N->getOperand(1));
+  SDValue RHS = GetPromotedInteger(N->getOperand(2));
+  return DAG.getNode(ISD::VSELECT, N->getDebugLoc(),
+                     LHS.getValueType(), Mask, LHS, RHS);
+}
+
 SDValue DAGTypeLegalizer::PromoteIntRes_SELECT_CC(SDNode *N) {
   SDValue LHS = GetPromotedInteger(N->getOperand(2));
   SDValue RHS = GetPromotedInteger(N->getOperand(3));
@@ -475,11 +500,13 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SELECT_CC(SDNode *N) {
 
 SDValue DAGTypeLegalizer::PromoteIntRes_SETCC(SDNode *N) {
   EVT SVT = TLI.getSetCCResultType(N->getOperand(0).getValueType());
-  assert(isTypeLegal(SVT) && "Illegal SetCC type!");
+
   DebugLoc dl = N->getDebugLoc();
+  assert(SVT.isVector() == N->getOperand(0).getValueType().isVector() &&
+         "Vector compare must return a vector result!");
 
   // Get the SETCC result using the canonical SETCC type.
-  SDValue SetCC = DAG.getNode(ISD::SETCC, dl, SVT, N->getOperand(0),
+  SDValue SetCC = DAG.getNode(N->getOpcode(), dl, SVT, N->getOperand(0),
                               N->getOperand(1), N->getOperand(2));
 
   // Convert to the expected type.
@@ -715,6 +742,9 @@ bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
     llvm_unreachable("Do not know how to promote this operator's operand!");
 
   case ISD::ANY_EXTEND:   Res = PromoteIntOp_ANY_EXTEND(N); break;
+  case ISD::ATOMIC_STORE:
+    Res = PromoteIntOp_ATOMIC_STORE(cast<AtomicSDNode>(N));
+    break;
   case ISD::BITCAST:      Res = PromoteIntOp_BITCAST(N); break;
   case ISD::BR_CC:        Res = PromoteIntOp_BR_CC(N, OpNo); break;
   case ISD::BRCOND:       Res = PromoteIntOp_BRCOND(N, OpNo); break;
@@ -729,6 +759,7 @@ bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
   case ISD::MEMBARRIER:   Res = PromoteIntOp_MEMBARRIER(N); break;
   case ISD::SCALAR_TO_VECTOR:
                           Res = PromoteIntOp_SCALAR_TO_VECTOR(N); break;
+  case ISD::VSELECT:
   case ISD::SELECT:       Res = PromoteIntOp_SELECT(N, OpNo); break;
   case ISD::SELECT_CC:    Res = PromoteIntOp_SELECT_CC(N, OpNo); break;
   case ISD::SETCC:        Res = PromoteIntOp_SETCC(N, OpNo); break;
@@ -797,6 +828,13 @@ void DAGTypeLegalizer::PromoteSetCCOperands(SDValue &NewLHS,SDValue &NewRHS,
 SDValue DAGTypeLegalizer::PromoteIntOp_ANY_EXTEND(SDNode *N) {
   SDValue Op = GetPromotedInteger(N->getOperand(0));
   return DAG.getNode(ISD::ANY_EXTEND, N->getDebugLoc(), N->getValueType(0), Op);
+}
+
+SDValue DAGTypeLegalizer::PromoteIntOp_ATOMIC_STORE(AtomicSDNode *N) {
+  SDValue Op2 = GetPromotedInteger(N->getOperand(2));
+  return DAG.getAtomic(N->getOpcode(), N->getDebugLoc(), N->getMemoryVT(),
+                       N->getChain(), N->getBasePtr(), Op2, N->getMemOperand(),
+                       N->getOrdering(), N->getSynchScope());
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_BITCAST(SDNode *N) {
@@ -921,14 +959,17 @@ SDValue DAGTypeLegalizer::PromoteIntOp_SCALAR_TO_VECTOR(SDNode *N) {
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_SELECT(SDNode *N, unsigned OpNo) {
-  assert(OpNo == 0 && "Only know how to promote condition");
+  assert(OpNo == 0 && "Only know how to promote the condition!");
+  SDValue Cond = N->getOperand(0);
+  EVT OpTy = N->getOperand(1).getValueType();
 
   // Promote all the way up to the canonical SetCC type.
-  EVT SVT = TLI.getSetCCResultType(N->getOperand(1).getValueType());
-  SDValue Cond = PromoteTargetBoolean(N->getOperand(0), SVT);
+  EVT SVT = TLI.getSetCCResultType(N->getOpcode() == ISD::SELECT ?
+                                   OpTy.getScalarType() : OpTy);
+  Cond = PromoteTargetBoolean(Cond, SVT);
 
-  return SDValue(DAG.UpdateNodeOperands(N, Cond,
-                                N->getOperand(1), N->getOperand(2)), 0);
+  return SDValue(DAG.UpdateNodeOperands(N, Cond, N->getOperand(1),
+                                        N->getOperand(2)), 0);
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_SELECT_CC(SDNode *N, unsigned OpNo) {

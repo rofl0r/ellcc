@@ -23,11 +23,17 @@
 
 namespace clang {
 
+class BinaryOperator;
+class CompoundStmt;
 class Decl;
+class LocationContext;
+class ProgramPoint;
 class SourceManager;
 class Stmt;
 
 namespace ento {
+
+class ExplodedNode;
 
 //===----------------------------------------------------------------------===//
 // High-level interface for handlers of path-sensitive diagnostics.
@@ -86,44 +92,75 @@ private:
   const Stmt *S;
   const Decl *D;
   const SourceManager *SM;
+  const LocationContext *LC;
 public:
   PathDiagnosticLocation()
-    : K(SingleLocK), S(0), D(0), SM(0) {}
+    : K(SingleLocK), S(0), D(0), SM(0), LC(0) {}
 
   PathDiagnosticLocation(FullSourceLoc L)
-    : K(SingleLocK), R(L, L), S(0), D(0), SM(&L.getManager()) {}
+    : K(SingleLocK), R(L, L), S(0), D(0), SM(&L.getManager()), LC(0) {}
 
-  PathDiagnosticLocation(const Stmt *s, const SourceManager &sm)
-    : K(StmtK), S(s), D(0), SM(&sm) {}
+  PathDiagnosticLocation(SourceLocation L, const SourceManager &sm,
+                         Kind kind = SingleLocK)
+    : K(kind), R(L, L), S(0), D(0), SM(&sm), LC(0) {}
 
-  PathDiagnosticLocation(SourceRange r, const SourceManager &sm)
-    : K(RangeK), R(r), S(0), D(0), SM(&sm) {}
+  PathDiagnosticLocation(const Stmt *s,
+                         const SourceManager &sm,
+                         const LocationContext *lc)
+    : K(StmtK), S(s), D(0), SM(&sm), LC(lc) {}
 
   PathDiagnosticLocation(const Decl *d, const SourceManager &sm)
-    : K(DeclK), S(0), D(d), SM(&sm) {}
+    : K(DeclK), S(0), D(d), SM(&sm), LC(0) {}
+
+  // Create a location for the beginning of the statement.
+  static PathDiagnosticLocation createBeginStmt(const Stmt *S,
+                                                const SourceManager &SM,
+                                                const LocationContext *LC);
+
+  /// Create the location for the operator of the binary expression.
+  /// Assumes the statement has a valid location.
+  static PathDiagnosticLocation createOperatorLoc(const BinaryOperator *BO,
+                                                  const SourceManager &SM);
+
+  /// Create a location for the beginning of the compound statement.
+  /// Assumes the statement has a valid location.
+  static PathDiagnosticLocation createBeginBrace(const CompoundStmt *CS,
+                                                 const SourceManager &SM);
+
+  /// Create a location for the end of the compound statement.
+  /// Assumes the statement has a valid location.
+  static PathDiagnosticLocation createEndBrace(const CompoundStmt *CS,
+                                               const SourceManager &SM);
+
+  /// Create a location for the beginning of the enclosing declaration body.
+  /// Defaults to the beginning of the first statement in the declaration body.
+  static PathDiagnosticLocation createDeclBegin(const LocationContext *LC,
+                                                const SourceManager &SM);
+
+  /// Constructs a location for the end of the enclosing declaration body.
+  /// Defaults to the end of brace.
+  static PathDiagnosticLocation createDeclEnd(const LocationContext *LC,
+                                                   const SourceManager &SM);
+
+  /// Create a location corresponding to the given valid ExplodedNode.
+  PathDiagnosticLocation(const ProgramPoint& P, const SourceManager &SMng);
+
+  /// Create a location corresponding to the next valid ExplodedNode as end
+  /// of path location.
+  static PathDiagnosticLocation createEndOfPath(const ExplodedNode* N,
+                                                const SourceManager &SM);
 
   bool operator==(const PathDiagnosticLocation &X) const {
-    return K == X.K && R == X.R && S == X.S && D == X.D;
+    return K == X.K && R == X.R && S == X.S && D == X.D && LC == X.LC;
   }
 
   bool operator!=(const PathDiagnosticLocation &X) const {
-    return K != X.K || R != X.R || S != X.S || D != X.D;;
-  }
-
-  PathDiagnosticLocation& operator=(const PathDiagnosticLocation &X) {
-    K = X.K;
-    R = X.R;
-    S = X.S;
-    D = X.D;
-    SM = X.SM;
-    return *this;
+    return !(*this == X);
   }
 
   bool isValid() const {
     return SM != 0;
   }
-
-  const SourceManager& getSourceManager() const { assert(isValid());return *SM;}
 
   FullSourceLoc asLocation() const;
   PathDiagnosticRange asRange() const;
@@ -136,9 +173,20 @@ public:
     *this = PathDiagnosticLocation();
   }
 
+  /// Specify that the object represents a single location.
+  void setSingleLocKind() {
+    if (K == SingleLocK)
+      return;
+
+    SourceLocation L = asLocation();
+    K = SingleLocK;
+    R = SourceRange(L, L);
+  }
+
   void flatten();
 
   const SourceManager& getManager() const { assert(isValid()); return *SM; }
+  const LocationContext* getLocationContext() const { return LC; }
   
   void Profile(llvm::FoldingSetNodeID &ID) const;
 };

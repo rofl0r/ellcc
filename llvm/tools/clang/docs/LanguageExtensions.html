@@ -81,6 +81,7 @@
   <ul>
     <li><a href="#objc_instancetype">Related result types</a></li>
     <li><a href="#objc_arc">Automatic reference counting</a></li>
+    <li><a href="#objc_fixed_enum">Enumerations with a fixed underlying type</a></li>
   </ul>
 </li>
 <li><a href="#overloading-in-c">Function Overloading in C</a></li>
@@ -723,7 +724,19 @@ related result type. Similarly, the type of the expression
 <code>init</code> has a related result type and its receiver is known
 to have the type <code>NSArray *</code>. If neither <code>alloc</code> nor <code>init</code> had a related result type, the expressions would have had type <code>id</code>, as declared in the method signature.</p>
 
-<p>To determine whether a method has a related result type, the first
+<p>A method with a related result type can be declared by using the
+type <tt>instancetype</tt> as its result type. <tt>instancetype</tt>
+is a contextual keyword that is only permitted in the result type of
+an Objective-C method, e.g.</p>
+
+<pre>
+@interface A
++ (<b>instancetype</b>)constructAnA;
+@end
+</pre>
+
+<p>The related result type can also be inferred for some methods.
+To determine whether a method has an inferred related result type, the first
 word in the camel-case selector (e.g., "init" in "initWithObjects") is
 considered, and the method will a related result type if its return
 type is compatible with the type of its class and if</p>
@@ -752,14 +765,35 @@ with the subclass type. For example:</p>
 
 <p>Related result types only affect the type of a message send or
 property access via the given method. In all other respects, a method
-with a related result type is treated the same way as method without a
-related result type.</p>
+with a related result type is treated the same way as method that
+returns <tt>id</tt>.</p>
+
+<p>Use <tt>__has_feature(objc_instancetype)</tt> to determine whether
+the <tt>instancetype</tt> contextual keyword is available.</p>
 
 <!-- ======================================================================= -->
 <h2 id="objc_arc">Automatic reference counting </h2>
 <!-- ======================================================================= -->
 
 <p>Clang provides support for <a href="AutomaticReferenceCounting.html">automated reference counting</a> in Objective-C, which eliminates the need for manual retain/release/autorelease message sends. There are two feature macros associated with automatic reference counting: <code>__has_feature(objc_arc)</code> indicates the availability of automated reference counting in general, while <code>__has_feature(objc_arc_weak)</code> indicates that automated reference counting also includes support for <code>__weak</code> pointers to Objective-C objects.</p>
+
+<!-- ======================================================================= -->
+<h2 id="objc_fixed_enum">Enumerations with a fixed underlying type</h2>
+<!-- ======================================================================= -->
+
+<p>Clang provides support for C++0x enumerations with a fixed
+underlying type within Objective-C. For example, one can write an
+enumeration type as:</p>
+
+<pre>
+typedef enum : unsigned char { Red, Green, Blue } Color;
+</pre>
+
+<p>This specifies that the underlying type, which is used to store the
+enumeration value, is <tt>unsigned char</tt>.</p>
+
+<p>Use <tt>__has_feature(objc_fixed_enum)</tt> to determine whether
+support for fixed underlying types is available in Objective-C.</p>
 
 <!-- ======================================================================= -->
 <h2 id="overloading-in-c">Function Overloading in C</h2>

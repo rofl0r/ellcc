@@ -571,7 +571,8 @@ public:
     case CK_NoOp:
       return C;
 
-    case CK_AnyPointerToObjCPointerCast:
+    case CK_CPointerToObjCPointerCast:
+    case CK_BlockPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
     case CK_LValueBitCast:
     case CK_BitCast:
@@ -585,9 +586,10 @@ public:
     case CK_GetObjCProperty:
     case CK_ToVoid:
     case CK_Dynamic:
-    case CK_ObjCProduceObject:
-    case CK_ObjCConsumeObject:
-    case CK_ObjCReclaimReturnedObject:
+    case CK_ARCProduceObject:
+    case CK_ARCConsumeObject:
+    case CK_ARCReclaimReturnedObject:
+    case CK_ARCExtendBlockObject:
       return 0;
 
     // These might need to be supported for constexpr.

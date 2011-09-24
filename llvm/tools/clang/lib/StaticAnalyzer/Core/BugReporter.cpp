@@ -83,11 +83,6 @@ static const Stmt *GetNextStmt(const ExplodedNode *N) {
         default:
           break;
       }
-
-      // Some expressions don't have locations.
-      if (S->getLocStart().isInvalid())
-        continue;
-
       return S;
     }
 
@@ -151,6 +146,10 @@ public:
 
   Decl const &getCodeDecl() { return R->getErrorNode()->getCodeDecl(); }
 
+  const LocationContext* getLocationContext() {
+    return R->getErrorNode()->getLocationContext();
+  }
+
   ParentMap& getParentMap() { return R->getErrorNode()->getParentMap(); }
 
   const Stmt *getParent(const Stmt *S) {
@@ -174,10 +173,10 @@ public:
 PathDiagnosticLocation
 PathDiagnosticBuilder::ExecutionContinues(const ExplodedNode *N) {
   if (const Stmt *S = GetNextStmt(N))
-    return PathDiagnosticLocation(S, getSourceManager());
+    return PathDiagnosticLocation(S, getSourceManager(), getLocationContext());
 
-  return FullSourceLoc(N->getLocationContext()->getDecl()->getBodyRBrace(),
-                       getSourceManager());
+  return PathDiagnosticLocation::createDeclEnd(N->getLocationContext(),
+                                               getSourceManager());
 }
 
 PathDiagnosticLocation
@@ -235,6 +234,7 @@ PathDiagnosticBuilder::getEnclosingStmtLocation(const Stmt *S) {
   assert(S && "Null Stmt *passed to getEnclosingStmtLocation");
   ParentMap &P = getParentMap();
   SourceManager &SMgr = getSourceManager();
+  const LocationContext *LC = getLocationContext();
 
   while (IsNested(S, P)) {
     const Stmt *Parent = P.getParentIgnoreParens(S);
@@ -246,44 +246,44 @@ PathDiagnosticBuilder::getEnclosingStmtLocation(const Stmt *S) {
       case Stmt::BinaryOperatorClass: {
         const BinaryOperator *B = cast<BinaryOperator>(Parent);
         if (B->isLogicalOp())
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
         break;
       }
       case Stmt::CompoundStmtClass:
       case Stmt::StmtExprClass:
-        return PathDiagnosticLocation(S, SMgr);
+        return PathDiagnosticLocation(S, SMgr, LC);
       case Stmt::ChooseExprClass:
         // Similar to '?' if we are referring to condition, just have the edge
         // point to the entire choose expression.
         if (cast<ChooseExpr>(Parent)->getCond() == S)
-          return PathDiagnosticLocation(Parent, SMgr);
+          return PathDiagnosticLocation(Parent, SMgr, LC);
         else
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
       case Stmt::BinaryConditionalOperatorClass:
       case Stmt::ConditionalOperatorClass:
         // For '?', if we are referring to condition, just have the edge point
         // to the entire '?' expression.
         if (cast<AbstractConditionalOperator>(Parent)->getCond() == S)
-          return PathDiagnosticLocation(Parent, SMgr);
+          return PathDiagnosticLocation(Parent, SMgr, LC);
         else
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
       case Stmt::DoStmtClass:
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
       case Stmt::ForStmtClass:
         if (cast<ForStmt>(Parent)->getBody() == S)
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
         break;
       case Stmt::IfStmtClass:
         if (cast<IfStmt>(Parent)->getCond() != S)
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
         break;
       case Stmt::ObjCForCollectionStmtClass:
         if (cast<ObjCForCollectionStmt>(Parent)->getBody() == S)
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
         break;
       case Stmt::WhileStmtClass:
         if (cast<WhileStmt>(Parent)->getCond() != S)
-          return PathDiagnosticLocation(S, SMgr);
+          return PathDiagnosticLocation(S, SMgr, LC);
         break;
       default:
         break;
@@ -301,7 +301,7 @@ PathDiagnosticBuilder::getEnclosingStmtLocation(const Stmt *S) {
       switch (Parent->getStmtClass()) {
         case Stmt::ForStmtClass:
         case Stmt::ObjCForCollectionStmtClass:
-          return PathDiagnosticLocation(Parent, SMgr);
+          return PathDiagnosticLocation(Parent, SMgr, LC);
         default:
           break;
       }
@@ -314,11 +314,11 @@ PathDiagnosticBuilder::getEnclosingStmtLocation(const Stmt *S) {
     if (const ForStmt *FS =
           dyn_cast_or_null<ForStmt>(P.getParentIgnoreParens(S))) {
       if (FS->getInit() == S)
-        return PathDiagnosticLocation(FS, SMgr);
+        return PathDiagnosticLocation(FS, SMgr, LC);
     }
   }
 
-  return PathDiagnosticLocation(S, SMgr);
+  return PathDiagnosticLocation(S, SMgr, LC);
 }
 
 //===----------------------------------------------------------------------===//
@@ -516,6 +516,7 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
                                           const ExplodedNode *N) {
 
   SourceManager& SMgr = PDB.getSourceManager();
+  const LocationContext *LC = PDB.getLocationContext();
   const ExplodedNode *NextNode = N->pred_empty()
                                         ? NULL : *(N->pred_begin());
   while (NextNode) {
@@ -562,7 +563,7 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
           llvm::raw_string_ostream os(sbuf);
 
           if (const Stmt *S = Dst->getLabel()) {
-            PathDiagnosticLocation End(S, SMgr);
+            PathDiagnosticLocation End(S, SMgr, LC);
 
             switch (S->getStmtClass()) {
               default:
@@ -663,14 +664,15 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
 
             if (*(Src->succ_begin()+1) == Dst) {
               os << "false";
-              PathDiagnosticLocation End(B->getLHS(), SMgr);
-              PathDiagnosticLocation Start(B->getOperatorLoc(), SMgr);
+              PathDiagnosticLocation End(B->getLHS(), SMgr, LC);
+              PathDiagnosticLocation Start =
+                PathDiagnosticLocation::createOperatorLoc(B, SMgr);
               PD.push_front(new PathDiagnosticControlFlowPiece(Start, End,
                                                                os.str()));
             }
             else {
               os << "true";
-              PathDiagnosticLocation Start(B->getLHS(), SMgr);
+              PathDiagnosticLocation Start(B->getLHS(), SMgr, LC);
               PathDiagnosticLocation End = PDB.ExecutionContinues(N);
               PD.push_front(new PathDiagnosticControlFlowPiece(Start, End,
                                                                os.str()));
@@ -682,15 +684,16 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
 
             if (*(Src->succ_begin()+1) == Dst) {
               os << "false";
-              PathDiagnosticLocation Start(B->getLHS(), SMgr);
+              PathDiagnosticLocation Start(B->getLHS(), SMgr, LC);
               PathDiagnosticLocation End = PDB.ExecutionContinues(N);
               PD.push_front(new PathDiagnosticControlFlowPiece(Start, End,
                                                                os.str()));
             }
             else {
               os << "true";
-              PathDiagnosticLocation End(B->getLHS(), SMgr);
-              PathDiagnosticLocation Start(B->getOperatorLoc(), SMgr);
+              PathDiagnosticLocation End(B->getLHS(), SMgr, LC);
+              PathDiagnosticLocation Start =
+                PathDiagnosticLocation::createOperatorLoc(B, SMgr);
               PD.push_front(new PathDiagnosticControlFlowPiece(Start, End,
                                                                os.str()));
             }
@@ -874,11 +877,11 @@ class EdgeBuilder {
       }
 
       if (S != Original)
-        L = PathDiagnosticLocation(S, L.getManager());
+        L = PathDiagnosticLocation(S, L.getManager(), L.getLocationContext());
     }
 
     if (firstCharOnly)
-      L = PathDiagnosticLocation(L.asLocation());
+      L.setSingleLocKind();
 
     return L;
   }
@@ -907,17 +910,14 @@ public:
 
   ~EdgeBuilder() {
     while (!CLocs.empty()) popLocation();
-
+    
     // Finally, add an initial edge from the start location of the first
     // statement (if it doesn't already exist).
-    // FIXME: Should handle CXXTryStmt if analyser starts supporting C++.
-    if (const CompoundStmt *CS =
-          dyn_cast_or_null<CompoundStmt>(PDB.getCodeDecl().getBody()))
-      if (!CS->body_empty()) {
-        SourceLocation Loc = (*CS->body_begin())->getLocStart();
-        rawAddEdge(PathDiagnosticLocation(Loc, PDB.getSourceManager()));
-      }
-
+    PathDiagnosticLocation L = PathDiagnosticLocation::createDeclBegin(
+                                                       PDB.getLocationContext(),
+                                                       PDB.getSourceManager());
+    if (L.isValid())
+      rawAddEdge(L);
   }
 
   void addEdge(PathDiagnosticLocation NewLoc, bool alwaysAdd = false);
@@ -1091,7 +1091,7 @@ void EdgeBuilder::addContext(const Stmt *S) {
   if (!S)
     return;
 
-  PathDiagnosticLocation L(S, PDB.getSourceManager());
+  PathDiagnosticLocation L(S, PDB.getSourceManager(), PDB.getLocationContext());
 
   while (!CLocs.empty()) {
     const PathDiagnosticLocation &TopContextLoc = CLocs.back();
@@ -1116,6 +1116,7 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
                                             PathDiagnosticBuilder &PDB,
                                             const ExplodedNode *N) {
   EdgeBuilder EB(PD, PDB);
+  const SourceManager& SM = PDB.getSourceManager();
 
   const ExplodedNode *NextNode = N->pred_empty() ? NULL : *(N->pred_begin());
   while (NextNode) {
@@ -1131,7 +1132,7 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
 
         // Are we jumping to the head of a loop?  Add a special diagnostic.
         if (const Stmt *Loop = BE->getDst()->getLoopTarget()) {
-          PathDiagnosticLocation L(Loop, PDB.getSourceManager());
+          PathDiagnosticLocation L(Loop, SM, PDB.getLocationContext());
           const CompoundStmt *CS = NULL;
 
           if (!Term) {
@@ -1149,9 +1150,8 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
           PD.push_front(p);
 
           if (CS) {
-            PathDiagnosticLocation BL(CS->getRBracLoc(),
-                                      PDB.getSourceManager());
-            BL = PathDiagnosticLocation(BL.asLocation());
+            PathDiagnosticLocation BL =
+              PathDiagnosticLocation::createEndBrace(CS, SM);
             EB.addEdge(BL);
           }
         }

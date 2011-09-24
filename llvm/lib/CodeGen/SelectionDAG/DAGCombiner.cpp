@@ -3757,7 +3757,7 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
   if (VT.isInteger() &&
       (VT0 == MVT::i1 ||
        (VT0.isInteger() &&
-        TLI.getBooleanContents() == TargetLowering::ZeroOrOneBooleanContent)) &&
+        TLI.getBooleanContents(false) == TargetLowering::ZeroOrOneBooleanContent)) &&
       N1C && N2C && N1C->isNullValue() && N2C->getAPIntValue() == 1) {
     SDValue XORNode;
     if (VT == VT0)
@@ -4112,7 +4112,7 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
         // we know that the element size of the sext'd result matches the
         // element size of the compare operands.
       if (VT.getSizeInBits() == N0VT.getSizeInBits())
-        return DAG.getVSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
+        return DAG.getSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
                              N0.getOperand(1),
                              cast<CondCodeSDNode>(N0.getOperand(2))->get());
       // If the desired elements are smaller or larger than the source
@@ -4126,7 +4126,7 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
           EVT::getVectorVT(*DAG.getContext(), MatchingElementType,
                            N0VT.getVectorNumElements());
         SDValue VsetCC =
-          DAG.getVSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
+          DAG.getSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
                         N0.getOperand(1),
                         cast<CondCodeSDNode>(N0.getOperand(2))->get());
         return DAG.getSExtOrTrunc(VsetCC, N->getDebugLoc(), VT);
@@ -4342,7 +4342,7 @@ SDValue DAGCombiner::visitZERO_EXTEND(SDNode *N) {
         // we know that the element size of the sext'd result matches the
         // element size of the compare operands.
         return DAG.getNode(ISD::AND, N->getDebugLoc(), VT,
-                           DAG.getVSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
+                           DAG.getSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
                                          N0.getOperand(1),
                                  cast<CondCodeSDNode>(N0.getOperand(2))->get()),
                            DAG.getNode(ISD::BUILD_VECTOR, N->getDebugLoc(), VT,
@@ -4358,7 +4358,7 @@ SDValue DAGCombiner::visitZERO_EXTEND(SDNode *N) {
         EVT::getVectorVT(*DAG.getContext(), MatchingElementType,
                          N0VT.getVectorNumElements());
       SDValue VsetCC =
-        DAG.getVSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
+        DAG.getSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
                       N0.getOperand(1),
                       cast<CondCodeSDNode>(N0.getOperand(2))->get());
       return DAG.getNode(ISD::AND, N->getDebugLoc(), VT,
@@ -4526,7 +4526,7 @@ SDValue DAGCombiner::visitANY_EXTEND(SDNode *N) {
         // we know that the element size of the sext'd result matches the
         // element size of the compare operands.
       if (VT.getSizeInBits() == N0VT.getSizeInBits())
-        return DAG.getVSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
+        return DAG.getSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
                              N0.getOperand(1),
                              cast<CondCodeSDNode>(N0.getOperand(2))->get());
       // If the desired elements are smaller or larger than the source
@@ -4540,7 +4540,7 @@ SDValue DAGCombiner::visitANY_EXTEND(SDNode *N) {
           EVT::getVectorVT(*DAG.getContext(), MatchingElementType,
                            N0VT.getVectorNumElements());
         SDValue VsetCC =
-          DAG.getVSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
+          DAG.getSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
                         N0.getOperand(1),
                         cast<CondCodeSDNode>(N0.getOperand(2))->get());
         return DAG.getSExtOrTrunc(VsetCC, N->getDebugLoc(), VT);
@@ -6770,6 +6770,7 @@ SDValue DAGCombiner::visitINSERT_VECTOR_ELT(SDNode *N) {
   SDValue InVec = N->getOperand(0);
   SDValue InVal = N->getOperand(1);
   SDValue EltNo = N->getOperand(2);
+  DebugLoc dl = N->getDebugLoc();
 
   // If the inserted element is an UNDEF, just use the input vector.
   if (InVal.getOpcode() == ISD::UNDEF)
@@ -6781,32 +6782,40 @@ SDValue DAGCombiner::visitINSERT_VECTOR_ELT(SDNode *N) {
   if (LegalOperations && !TLI.isOperationLegal(ISD::BUILD_VECTOR, VT))
     return SDValue();
 
-  // If the invec is a BUILD_VECTOR and if EltNo is a constant, build a new
-  // vector with the inserted element.
-  if (InVec.getOpcode() == ISD::BUILD_VECTOR && isa<ConstantSDNode>(EltNo)) {
-    unsigned Elt = cast<ConstantSDNode>(EltNo)->getZExtValue();
-    SmallVector<SDValue, 8> Ops(InVec.getNode()->op_begin(),
-                                InVec.getNode()->op_end());
-    if (Elt < Ops.size())
-      Ops[Elt] = InVal;
-    return DAG.getNode(ISD::BUILD_VECTOR, N->getDebugLoc(),
-                       VT, &Ops[0], Ops.size());
-  }
-  // If the invec is an UNDEF and if EltNo is a constant, create a new
-  // BUILD_VECTOR with undef elements and the inserted element.
-  if (InVec.getOpcode() == ISD::UNDEF &&
-      isa<ConstantSDNode>(EltNo)) {
-    EVT EltVT = VT.getVectorElementType();
-    unsigned NElts = VT.getVectorNumElements();
-    SmallVector<SDValue, 8> Ops(NElts, DAG.getUNDEF(EltVT));
+  // Check that we know which element is being inserted
+  if (!isa<ConstantSDNode>(EltNo))
+    return SDValue();
+  unsigned Elt = cast<ConstantSDNode>(EltNo)->getZExtValue();
 
-    unsigned Elt = cast<ConstantSDNode>(EltNo)->getZExtValue();
-    if (Elt < Ops.size())
-      Ops[Elt] = InVal;
-    return DAG.getNode(ISD::BUILD_VECTOR, N->getDebugLoc(),
-                       VT, &Ops[0], Ops.size());
+  // Check that the operand is a BUILD_VECTOR (or UNDEF, which can essentially
+  // be converted to a BUILD_VECTOR).  Fill in the Ops vector with the
+  // vector elements.
+  SmallVector<SDValue, 8> Ops;
+  if (InVec.getOpcode() == ISD::BUILD_VECTOR) {
+    Ops.append(InVec.getNode()->op_begin(),
+               InVec.getNode()->op_end());
+  } else if (InVec.getOpcode() == ISD::UNDEF) {
+    unsigned NElts = VT.getVectorNumElements();
+    Ops.append(NElts, DAG.getUNDEF(InVal.getValueType()));
+  } else {
+    return SDValue();
   }
-  return SDValue();
+
+  // Insert the element
+  if (Elt < Ops.size()) {
+    // All the operands of BUILD_VECTOR must have the same type;
+    // we enforce that here.
+    EVT OpVT = Ops[0].getValueType();
+    if (InVal.getValueType() != OpVT)
+      InVal = OpVT.bitsGT(InVal.getValueType()) ?
+                DAG.getNode(ISD::ANY_EXTEND, dl, OpVT, InVal) :
+                DAG.getNode(ISD::TRUNCATE, dl, OpVT, InVal);
+    Ops[Elt] = InVal;
+  }
+
+  // Return the new vector
+  return DAG.getNode(ISD::BUILD_VECTOR, dl,
+                     VT, &Ops[0], Ops.size());
 }
 
 SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
@@ -7547,7 +7556,8 @@ SDValue DAGCombiner::SimplifySelectCC(DebugLoc DL, SDValue N0, SDValue N1,
 
   // fold select C, 16, 0 -> shl C, 4
   if (N2C && N3C && N3C->isNullValue() && N2C->getAPIntValue().isPowerOf2() &&
-      TLI.getBooleanContents() == TargetLowering::ZeroOrOneBooleanContent) {
+    TLI.getBooleanContents(N0.getValueType().isVector()) ==
+      TargetLowering::ZeroOrOneBooleanContent) {
 
     // If the caller doesn't want us to simplify this into a zext of a compare,
     // don't do it.

@@ -770,7 +770,13 @@ CallExpr::CallExpr(ASTContext &C, StmtClass SC, unsigned NumPreArgs,
 }
 
 Decl *CallExpr::getCalleeDecl() {
-  Expr *CEE = getCallee()->IgnoreParenCasts();
+  Expr *CEE = getCallee()->IgnoreParenImpCasts();
+    
+  while (SubstNonTypeTemplateParmExpr *NTTP
+                                = dyn_cast<SubstNonTypeTemplateParmExpr>(CEE)) {
+    CEE = NTTP->getReplacement()->IgnoreParenCasts();
+  }
+  
   // If we're calling a dereference, look at the pointer instead.
   if (BinaryOperator *BO = dyn_cast<BinaryOperator>(CEE)) {
     if (BO->isPtrMemOp())
@@ -1007,6 +1013,94 @@ SourceRange MemberExpr::getSourceRange() const {
   return SourceRange(StartLoc, EndLoc);
 }
 
+void CastExpr::CheckCastConsistency() const {
+  switch (getCastKind()) {
+  case CK_DerivedToBase:
+  case CK_UncheckedDerivedToBase:
+  case CK_DerivedToBaseMemberPointer:
+  case CK_BaseToDerived:
+  case CK_BaseToDerivedMemberPointer:
+    assert(!path_empty() && "Cast kind should have a base path!");
+    break;
+
+  case CK_CPointerToObjCPointerCast:
+    assert(getType()->isObjCObjectPointerType());
+    assert(getSubExpr()->getType()->isPointerType());
+    goto CheckNoBasePath;
+
+  case CK_BlockPointerToObjCPointerCast:
+    assert(getType()->isObjCObjectPointerType());
+    assert(getSubExpr()->getType()->isBlockPointerType());
+    goto CheckNoBasePath;
+
+  case CK_BitCast:
+    // Arbitrary casts to C pointer types count as bitcasts.
+    // Otherwise, we should only have block and ObjC pointer casts
+    // here if they stay within the type kind.
+    if (!getType()->isPointerType()) {
+      assert(getType()->isObjCObjectPointerType() == 
+             getSubExpr()->getType()->isObjCObjectPointerType());
+      assert(getType()->isBlockPointerType() == 
+             getSubExpr()->getType()->isBlockPointerType());
+    }
+    goto CheckNoBasePath;
+
+  case CK_AnyPointerToBlockPointerCast:
+    assert(getType()->isBlockPointerType());
+    assert(getSubExpr()->getType()->isAnyPointerType() &&
+           !getSubExpr()->getType()->isBlockPointerType());
+    goto CheckNoBasePath;
+
+  // These should not have an inheritance path.
+  case CK_Dynamic:
+  case CK_ToUnion:
+  case CK_ArrayToPointerDecay:
+  case CK_FunctionToPointerDecay:
+  case CK_NullToMemberPointer:
+  case CK_NullToPointer:
+  case CK_ConstructorConversion:
+  case CK_IntegralToPointer:
+  case CK_PointerToIntegral:
+  case CK_ToVoid:
+  case CK_VectorSplat:
+  case CK_IntegralCast:
+  case CK_IntegralToFloating:
+  case CK_FloatingToIntegral:
+  case CK_FloatingCast:
+  case CK_ObjCObjectLValueCast:
+  case CK_FloatingRealToComplex:
+  case CK_FloatingComplexToReal:
+  case CK_FloatingComplexCast:
+  case CK_FloatingComplexToIntegralComplex:
+  case CK_IntegralRealToComplex:
+  case CK_IntegralComplexToReal:
+  case CK_IntegralComplexCast:
+  case CK_IntegralComplexToFloatingComplex:
+  case CK_ARCProduceObject:
+  case CK_ARCConsumeObject:
+  case CK_ARCReclaimReturnedObject:
+  case CK_ARCExtendBlockObject:
+    assert(!getType()->isBooleanType() && "unheralded conversion to bool");
+    goto CheckNoBasePath;
+
+  case CK_Dependent:
+  case CK_LValueToRValue:
+  case CK_GetObjCProperty:
+  case CK_NoOp:
+  case CK_PointerToBoolean:
+  case CK_IntegralToBoolean:
+  case CK_FloatingToBoolean:
+  case CK_MemberPointerToBoolean:
+  case CK_FloatingComplexToBoolean:
+  case CK_IntegralComplexToBoolean:
+  case CK_LValueBitCast:            // -> bool&
+  case CK_UserDefinedConversion:    // operator bool()
+  CheckNoBasePath:
+    assert(path_empty() && "Cast kind should not have a base path!");
+    break;
+  }
+}
+
 const char *CastExpr::getCastKindName() const {
   switch (getCastKind()) {
   case CK_Dependent:
@@ -1071,8 +1165,10 @@ const char *CastExpr::getCastKindName() const {
     return "FloatingToBoolean";
   case CK_MemberPointerToBoolean:
     return "MemberPointerToBoolean";
-  case CK_AnyPointerToObjCPointerCast:
-    return "AnyPointerToObjCPointerCast";
+  case CK_CPointerToObjCPointerCast:
+    return "CPointerToObjCPointerCast";
+  case CK_BlockPointerToObjCPointerCast:
+    return "BlockPointerToObjCPointerCast";
   case CK_AnyPointerToBlockPointerCast:
     return "AnyPointerToBlockPointerCast";
   case CK_ObjCObjectLValueCast:
@@ -1097,12 +1193,14 @@ const char *CastExpr::getCastKindName() const {
     return "IntegralComplexCast";
   case CK_IntegralComplexToFloatingComplex:
     return "IntegralComplexToFloatingComplex";
-  case CK_ObjCConsumeObject:
-    return "ObjCConsumeObject";
-  case CK_ObjCProduceObject:
-    return "ObjCProduceObject";
-  case CK_ObjCReclaimReturnedObject:
-    return "ObjCReclaimReturnedObject";
+  case CK_ARCConsumeObject:
+    return "ARCConsumeObject";
+  case CK_ARCProduceObject:
+    return "ARCProduceObject";
+  case CK_ARCReclaimReturnedObject:
+    return "ARCReclaimReturnedObject";
+  case CK_ARCExtendBlockObject:
+    return "ARCCExtendBlockObject";
   }
 
   llvm_unreachable("Unhandled cast kind!");
@@ -2036,7 +2134,11 @@ Expr *Expr::IgnoreParenCasts() {
       E = Materialize->GetTemporaryExpr();
       continue;
     }
-      
+    if (SubstNonTypeTemplateParmExpr *NTTP
+                                  = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      E = NTTP->getReplacement();
+      continue;
+    }      
     return E;
   }
 }
@@ -2070,6 +2172,10 @@ Expr *Expr::IgnoreParenLValueCasts() {
                                       = dyn_cast<MaterializeTemporaryExpr>(E)) {
       E = Materialize->GetTemporaryExpr();
       continue;
+    } else if (SubstNonTypeTemplateParmExpr *NTTP
+                                  = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      E = NTTP->getReplacement();
+      continue;
     }
     break;
   }
@@ -2102,6 +2208,11 @@ Expr *Expr::IgnoreParenImpCasts() {
     if (MaterializeTemporaryExpr *Materialize 
                                       = dyn_cast<MaterializeTemporaryExpr>(E)) {
       E = Materialize->GetTemporaryExpr();
+      continue;
+    }
+    if (SubstNonTypeTemplateParmExpr *NTTP
+                                  = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      E = NTTP->getReplacement();
       continue;
     }
     return E;
@@ -2161,6 +2272,12 @@ Expr *Expr::IgnoreParenNoopCasts(ASTContext &Ctx) {
       }
     }
 
+    if (SubstNonTypeTemplateParmExpr *NTTP
+                                  = dyn_cast<SubstNonTypeTemplateParmExpr>(E)) {
+      E = NTTP->getReplacement();
+      continue;
+    }
+    
     return E;
   }
 }

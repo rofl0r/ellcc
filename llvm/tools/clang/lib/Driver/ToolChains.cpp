@@ -109,6 +109,14 @@ void Darwin::configureObjCRuntime(ObjCRuntime &runtime) const {
     runtime.HasTerminate = false;
 }
 
+/// Darwin provides a blocks runtime starting in MacOS X 10.6 and iOS 3.2.
+bool Darwin::hasBlocksRuntime() const {
+  if (isTargetIPhoneOS())
+    return !isIPhoneOSVersionLT(3, 2);
+  else
+    return !isMacosxVersionLT(10, 6);
+}
+
 // FIXME: Can we tablegen this?
 static const char *GetArmArchForMArch(StringRef Value) {
   if (Value == "armv6k")
@@ -1505,6 +1513,14 @@ static std::string findGCCBaseLibDir(const std::string &GccTriple) {
     std::string t3 = "/usr/lib/" + GccTriple + "/gcc/" + Suffix;
     if (!llvm::sys::fs::exists(t3 + "/crtbegin.o", Exists) && Exists)
       return t3;
+    if (GccTriple == "i386-linux-gnu") {
+      // Ubuntu 11.04 uses an unusual path.
+      std::string t4 =
+          std::string("/usr/lib/i386-linux-gnu/gcc/i686-linux-gnu/") +
+          GccVersions[i];
+      if (!llvm::sys::fs::exists(t4 + "/crtbegin.o", Exists) && Exists)
+        return t4;
+    }
   }
   return "";
 }
@@ -1570,6 +1586,9 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
   } else if (Arch == llvm::Triple::x86) {
     if (!llvm::sys::fs::exists("/usr/lib/gcc/i686-linux-gnu", Exists) && Exists)
       GccTriple = "i686-linux-gnu";
+    else if (!llvm::sys::fs::exists("/usr/lib/i386-linux-gnu", Exists) &&
+             Exists)
+      GccTriple = "i386-linux-gnu";
     else if (!llvm::sys::fs::exists("/usr/lib/gcc/i686-pc-linux-gnu", Exists) &&
              Exists)
       GccTriple = "i686-pc-linux-gnu";
