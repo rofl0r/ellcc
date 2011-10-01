@@ -503,8 +503,13 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SELECT_CC(SDNode *N) {
 
 SDValue DAGTypeLegalizer::PromoteIntRes_SETCC(SDNode *N) {
   EVT SVT = TLI.getSetCCResultType(N->getOperand(0).getValueType());
-  // Vector setcc result types need to be leglized.
-  SVT = TLI.getTypeToTransformTo(*DAG.getContext(), SVT);
+
+  EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
+
+  // Only use the result of getSetCCResultType if it is legal,
+  // otherwise just use the promoted result type (NVT).
+  if (!TLI.isTypeLegal(SVT))
+      SVT = NVT;
 
   DebugLoc dl = N->getDebugLoc();
   assert(SVT.isVector() == N->getOperand(0).getValueType().isVector() &&
@@ -514,9 +519,8 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SETCC(SDNode *N) {
   SDValue SetCC = DAG.getNode(N->getOpcode(), dl, SVT, N->getOperand(0),
                               N->getOperand(1), N->getOperand(2));
 
-  // Convert to the expected type.
-  EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(0));
   assert(NVT.bitsLE(SVT) && "Integer type overpromoted?");
+  // Convert to the expected type.
   return DAG.getNode(ISD::TRUNCATE, dl, NVT, SetCC);
 }
 
@@ -2982,8 +2986,10 @@ SDValue DAGTypeLegalizer::PromoteIntOp_EXTRACT_VECTOR_ELT(SDNode *N) {
   SDValue Ext = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl,
     V0->getValueType(0).getScalarType(), V0, V1);
 
-  return DAG.getNode(ISD::TRUNCATE, dl, N->getValueType(0), Ext);
-
+  // EXTRACT_VECTOR_ELT can return types which are wider than the incoming
+  // element types. If this is the case then we need to expand the outgoing
+  // value and not truncate it.
+  return DAG.getAnyExtOrTrunc(Ext, dl, N->getValueType(0));
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_CONCAT_VECTORS(SDNode *N) {

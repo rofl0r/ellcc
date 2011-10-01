@@ -60,6 +60,16 @@ static const char *getAnalysisDiagClientName(AnalysisDiagClients Kind) {
   }
 }
 
+static const char *getAnalysisPurgeModeName(AnalysisPurgeMode Kind) {
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown analysis client!");
+#define ANALYSIS_PURGE(NAME, CMDFLAG, DESC) \
+  case NAME: return CMDFLAG;
+#include "clang/Frontend/Analyses.def"
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Serialization (to args)
 //===----------------------------------------------------------------------===//
@@ -80,6 +90,10 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyzer-output");
     Res.push_back(getAnalysisDiagClientName(Opts.AnalysisDiagOpt));
   }
+  if (Opts.AnalysisPurgeOpt != PurgeStmt) {
+    Res.push_back("-analyzer-purge");
+    Res.push_back(getAnalysisPurgeModeName(Opts.AnalysisPurgeOpt));
+  }
   if (!Opts.AnalyzeSpecificFunction.empty()) {
     Res.push_back("-analyze-function");
     Res.push_back(Opts.AnalyzeSpecificFunction);
@@ -92,8 +106,6 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyzer-opt-analyze-nested-blocks");
   if (Opts.EagerlyAssume)
     Res.push_back("-analyzer-eagerly-assume");
-  if (!Opts.PurgeDead)
-    Res.push_back("-analyzer-no-purge-dead");
   if (Opts.TrimGraph)
     Res.push_back("-trim-egraph");
   if (Opts.VisualizeEGDot)
@@ -872,7 +884,7 @@ using namespace clang::driver::cc1options;
 //
 
 static unsigned getOptimizationLevel(ArgList &Args, InputKind IK,
-                                     Diagnostic &Diags) {
+                                     DiagnosticsEngine &Diags) {
   unsigned DefaultOpt = 0;
   if (IK == IK_OpenCL && !Args.hasArg(OPT_cl_opt_disable))
     DefaultOpt = 2;
@@ -882,7 +894,7 @@ static unsigned getOptimizationLevel(ArgList &Args, InputKind IK,
 }
 
 static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
-                              Diagnostic &Diags) {
+                              DiagnosticsEngine &Diags) {
   using namespace cc1options;
 
   if (Arg *A = Args.getLastArg(OPT_analyzer_store)) {
@@ -930,6 +942,21 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
       Opts.AnalysisDiagOpt = Value;
   }
 
+  if (Arg *A = Args.getLastArg(OPT_analyzer_purge)) {
+    StringRef Name = A->getValue(Args);
+    AnalysisPurgeMode Value = llvm::StringSwitch<AnalysisPurgeMode>(Name)
+#define ANALYSIS_PURGE(NAME, CMDFLAG, DESC) \
+      .Case(CMDFLAG, NAME)
+#include "clang/Frontend/Analyses.def"
+      .Default(NumPurgeModes);
+    // FIXME: Error handling.
+    if (Value == NumPurgeModes)
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << Name;
+    else
+      Opts.AnalysisPurgeOpt = Value;
+  }
+
   Opts.ShowCheckerHelp = Args.hasArg(OPT_analyzer_checker_help);
   Opts.VisualizeEGDot = Args.hasArg(OPT_analyzer_viz_egraph_graphviz);
   Opts.VisualizeEGUbi = Args.hasArg(OPT_analyzer_viz_egraph_ubigraph);
@@ -937,7 +964,6 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.AnalyzerDisplayProgress = Args.hasArg(OPT_analyzer_display_progress);
   Opts.AnalyzeNestedBlocks =
     Args.hasArg(OPT_analyzer_opt_analyze_nested_blocks);
-  Opts.PurgeDead = !Args.hasArg(OPT_analyzer_no_purge_dead);
   Opts.EagerlyAssume = Args.hasArg(OPT_analyzer_eagerly_assume);
   Opts.AnalyzeSpecificFunction = Args.getLastArgValue(OPT_analyze_function);
   Opts.UnoptimizedCFG = Args.hasArg(OPT_analysis_UnoptimizedCFG);
@@ -967,7 +993,7 @@ static void ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
 }
 
 static void ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
-                             Diagnostic &Diags) {
+                             DiagnosticsEngine &Diags) {
   using namespace cc1options;
 
   Opts.OptimizationLevel = getOptimizationLevel(Args, IK, Diags);
@@ -1069,7 +1095,7 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
 }
 
 static void ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
-                                Diagnostic &Diags) {
+                                DiagnosticsEngine &Diags) {
   using namespace cc1options;
   Opts.DiagnosticLogFile = Args.getLastArgValue(OPT_diagnostic_log_file);
   Opts.IgnoreWarnings = Args.hasArg(OPT_w);
@@ -1096,9 +1122,9 @@ static void ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   StringRef ShowOverloads =
     Args.getLastArgValue(OPT_fshow_overloads_EQ, "all");
   if (ShowOverloads == "best")
-    Opts.ShowOverloads = Diagnostic::Ovl_Best;
+    Opts.ShowOverloads = DiagnosticsEngine::Ovl_Best;
   else if (ShowOverloads == "all")
-    Opts.ShowOverloads = Diagnostic::Ovl_All;
+    Opts.ShowOverloads = DiagnosticsEngine::Ovl_All;
   else
     Diags.Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fshow_overloads_EQ)->getAsString(Args)
@@ -1158,7 +1184,7 @@ static void ParseFileSystemArgs(FileSystemOptions &Opts, ArgList &Args) {
 }
 
 static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
-                                   Diagnostic &Diags) {
+                                   DiagnosticsEngine &Diags) {
   using namespace cc1options;
   Opts.ProgramAction = frontend::ParseSyntaxOnly;
   if (const Arg *A = Args.getLastArg(OPT_Action_Group)) {
@@ -1518,7 +1544,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
 }
 
 static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
-                          Diagnostic &Diags) {
+                          DiagnosticsEngine &Diags) {
   // FIXME: Cleanup per-file based stuff.
   LangStandard::Kind LangStd = LangStandard::lang_unspecified;
   if (const Arg *A = Args.getLastArg(OPT_std_EQ)) {
@@ -1748,7 +1774,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
 static void ParsePreprocessorArgs(PreprocessorOptions &Opts, ArgList &Args,
                                   FileManager &FileMgr,
-                                  Diagnostic &Diags) {
+                                  DiagnosticsEngine &Diags) {
   using namespace cc1options;
   Opts.ImplicitPCHInclude = Args.getLastArgValue(OPT_include_pch);
   Opts.ImplicitPTHInclude = Args.getLastArgValue(OPT_include_pth);
@@ -1879,7 +1905,7 @@ static void ParseTargetArgs(TargetOptions &Opts, ArgList &Args) {
 void CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
                                         const char *const *ArgBegin,
                                         const char *const *ArgEnd,
-                                        Diagnostic &Diags) {
+                                        DiagnosticsEngine &Diags) {
   // Parse the arguments.
   llvm::OwningPtr<OptTable> Opts(createCC1OptTable());
   unsigned MissingArgIndex, MissingArgCount;

@@ -595,7 +595,7 @@ Value *ScalarExprEmitter::EmitScalarConversion(Value *Src, QualType SrcType,
     // Insert the element in element zero of an undef vector
     llvm::Value *UnV = llvm::UndefValue::get(DstTy);
     llvm::Value *Idx = Builder.getInt32(0);
-    UnV = Builder.CreateInsertElement(UnV, Elt, Idx, "tmp");
+    UnV = Builder.CreateInsertElement(UnV, Elt, Idx);
 
     // Splat the element across to all elements
     SmallVector<llvm::Constant*, 16> Args;
@@ -837,9 +837,14 @@ Value *ScalarExprEmitter::VisitInitListExpr(InitListExpr *E) {
   llvm::VectorType *VType =
     dyn_cast<llvm::VectorType>(ConvertType(E->getType()));
   
-  // We have a scalar in braces. Just use the first element.
-  if (!VType)
+  if (!VType) {
+    if (NumInitElements == 0) {
+      // C++11 value-initialization for the scalar.
+      return EmitNullValue(E->getType());
+    }
+    // We have a scalar in braces. Just use the first element.
     return Visit(E->getInit(0));
+  }
   
   unsigned ResElts = VType->getNumElements();
   
@@ -1179,7 +1184,7 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
     // Insert the element in element zero of an undef vector
     llvm::Value *UnV = llvm::UndefValue::get(DstTy);
     llvm::Value *Idx = Builder.getInt32(0);
-    UnV = Builder.CreateInsertElement(UnV, Elt, Idx, "tmp");
+    UnV = Builder.CreateInsertElement(UnV, Elt, Idx);
 
     // Splat the element across to all elements
     SmallVector<llvm::Constant*, 16> Args;

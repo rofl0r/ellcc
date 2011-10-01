@@ -94,6 +94,7 @@ PTXTargetMachine::PTXTargetMachine(const Target &T,
     Subtarget(TT, CPU, FS, is64Bit),
     FrameLowering(Subtarget),
     InstrInfo(*this),
+    TSInfo(*this),
     TLInfo(*this) {
 }
 
@@ -118,7 +119,7 @@ bool PTXTargetMachine::addInstSelector(PassManagerBase &PM,
 bool PTXTargetMachine::addPostRegAlloc(PassManagerBase &PM,
                                        CodeGenOpt::Level OptLevel) {
   // PTXMFInfoExtract must after register allocation!
-  PM.add(createPTXMFInfoExtract(*this, OptLevel));
+  //PM.add(createPTXMFInfoExtract(*this, OptLevel));
   return false;
 }
 
@@ -323,8 +324,8 @@ bool PTXTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   if (addPostRegAlloc(PM, OptLevel))
     printAndVerify(PM, "After PostRegAlloc passes");
 
-  PM.add(createLowerSubregsPass());
-  printAndVerify(PM, "After LowerSubregs");
+  PM.add(createExpandPostRAPseudosPass());
+  printAndVerify(PM, "After ExpandPostRAPseudos");
 
   // Insert prolog/epilog code.  Eliminate abstract frame index references...
   PM.add(createPrologEpilogCodeInserter());
@@ -364,6 +365,9 @@ bool PTXTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
 
   if (addPreEmitPass(PM, OptLevel))
     printNoVerify(PM, "After PreEmit passes");
+
+  PM.add(createPTXMFInfoExtract(*this, OptLevel));
+  PM.add(createPTXFPRoundingModePass(*this, OptLevel));
 
   return false;
 }

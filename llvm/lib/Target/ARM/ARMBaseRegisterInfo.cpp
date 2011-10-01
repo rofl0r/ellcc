@@ -353,7 +353,7 @@ const TargetRegisterClass*
 ARMBaseRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC)
                                                                          const {
   const TargetRegisterClass *Super = RC;
-  TargetRegisterClass::sc_iterator I = RC->superclasses_begin();
+  TargetRegisterClass::sc_iterator I = RC->getSuperClasses();
   do {
     switch (Super->getID()) {
     case ARM::GPRRegClassID:
@@ -626,13 +626,10 @@ bool ARMBaseRegisterInfo::hasBasePointer(const MachineFunction &MF) const {
 
 bool ARMBaseRegisterInfo::canRealignStack(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
-  const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   // We can't realign the stack if:
   // 1. Dynamic stack realignment is explicitly disabled,
-  // 2. This is a Thumb1 function (it's not useful, so we don't bother), or
-  // 3. There are VLAs in the function and the base pointer is disabled.
-  return (RealignStack && !AFI->isThumb1OnlyFunction() &&
-          (!MFI->hasVarSizedObjects() || EnableBasePointer));
+  // 2. There are VLAs in the function and the base pointer is disabled.
+  return (RealignStack && (!MFI->hasVarSizedObjects() || EnableBasePointer));
 }
 
 bool ARMBaseRegisterInfo::

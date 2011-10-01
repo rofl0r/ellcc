@@ -83,9 +83,9 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
 
 MipsTargetLowering::
 MipsTargetLowering(MipsTargetMachine &TM)
-  : TargetLowering(TM, new MipsTargetObjectFile()) {
-  Subtarget = &TM.getSubtarget<MipsSubtarget>();
-  bool HasMips64 = Subtarget->hasMips64();
+  : TargetLowering(TM, new MipsTargetObjectFile()),
+    Subtarget(&TM.getSubtarget<MipsSubtarget>()),
+    HasMips64(Subtarget->hasMips64()) {
 
   // Mips does not have i1 type, so use i32 for
   // setcc operations results (slt, sgt, ...).
@@ -159,9 +159,13 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::CTPOP,             MVT::i32,   Expand);
   setOperationAction(ISD::CTTZ,              MVT::i32,   Expand);
   setOperationAction(ISD::ROTL,              MVT::i32,   Expand);
+  setOperationAction(ISD::ROTL,              MVT::i64,   Expand);
 
   if (!Subtarget->hasMips32r2())
     setOperationAction(ISD::ROTR, MVT::i32,   Expand);
+
+  if (!Subtarget->hasMips64r2())
+    setOperationAction(ISD::ROTR, MVT::i64,   Expand);
 
   setOperationAction(ISD::SHL_PARTS,         MVT::i32,   Expand);
   setOperationAction(ISD::SRA_PARTS,         MVT::i32,   Expand);
@@ -2280,10 +2284,9 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
         RC = Mips::CPU64RegsRegisterClass;
       else if (RegVT == MVT::f32)
         RC = Mips::FGR32RegisterClass;
-      else if (RegVT == MVT::f64) {
-        if (!Subtarget->isSingleFloat())
-          RC = Mips::AFGR64RegisterClass;
-      } else
+      else if (RegVT == MVT::f64)
+        RC = HasMips64 ? Mips::FGR64RegisterClass : Mips::AFGR64RegisterClass;
+      else
         llvm_unreachable("RegVT not supported by FormalArguments Lowering");
 
       // Transform the arguments stored on

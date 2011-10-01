@@ -114,9 +114,15 @@ class ARMAsmParser : public MCTargetAsmParser {
   bool hasV6Ops() const {
     return STI.getFeatureBits() & ARM::HasV6Ops;
   }
+  bool hasV7Ops() const {
+    return STI.getFeatureBits() & ARM::HasV7Ops;
+  }
   void SwitchMode() {
     unsigned FB = ComputeAvailableFeatures(STI.ToggleFeature(ARM::ModeThumb));
     setAvailableFeatures(FB);
+  }
+  bool isMClass() const {
+    return STI.getFeatureBits() & ARM::FeatureMClass;
   }
 
   /// @name Auto-generated Match Functions
@@ -2076,6 +2082,37 @@ parseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   assert(Tok.is(AsmToken::Identifier) && "Token is not an Identifier");
   StringRef Mask = Tok.getString();
 
+  if (isMClass()) {
+    // See ARMv6-M 10.1.1
+    unsigned FlagsVal = StringSwitch<unsigned>(Mask)
+      .Case("apsr", 0)
+      .Case("iapsr", 1)
+      .Case("eapsr", 2)
+      .Case("xpsr", 3)
+      .Case("ipsr", 5)
+      .Case("epsr", 6)
+      .Case("iepsr", 7)
+      .Case("msp", 8)
+      .Case("psp", 9)
+      .Case("primask", 16)
+      .Case("basepri", 17)
+      .Case("basepri_max", 18)
+      .Case("faultmask", 19)
+      .Case("control", 20)
+      .Default(~0U);
+    
+    if (FlagsVal == ~0U)
+      return MatchOperand_NoMatch;
+
+    if (!hasV7Ops() && FlagsVal >= 17 && FlagsVal <= 19)
+      // basepri, basepri_max and faultmask only valid for V7m.
+      return MatchOperand_NoMatch;
+    
+    Parser.Lex(); // Eat identifier token.
+    Operands.push_back(ARMOperand::CreateMSRMask(FlagsVal, S));
+    return MatchOperand_Success;
+  }
+
   // Split spec_reg from flag, example: CPSR_sxf => "CPSR" and "sxf"
   size_t Start = 0, Next = Mask.find('_');
   StringRef Flags = "";
@@ -2255,7 +2292,11 @@ parseShifterImm(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       Error(E, "'asr' shift amount must be in range [1,32]");
       return MatchOperand_ParseFail;
     }
-    // asr #32 encoded as asr #0.
+    // asr #32 encoded as asr #0, but is not allowed in Thumb2 mode.
+    if (isThumb() && Val == 32) {
+      Error(E, "'asr #32' shift amount not allowed in Thumb mode");
+      return MatchOperand_ParseFail;
+    }
     if (Val == 32) Val = 0;
   } else {
     // Shift amount must be in [1,32]

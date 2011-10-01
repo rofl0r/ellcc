@@ -38,9 +38,11 @@ private:
   typedef std::vector<unsigned> RegisterList;
   typedef DenseMap<const TargetRegisterClass*, RegisterList> RegisterMap;
   typedef DenseMap<unsigned, std::string> RegisterNameMap;
+  typedef DenseMap<int, std::string> FrameMap;
 
   RegisterMap UsedRegs;
   RegisterNameMap RegNames;
+  FrameMap FrameSymbols;
 
   PTXParamManager ParamManager;
 
@@ -126,9 +128,9 @@ public:
 
   /// getRegisterName - Returns the name of the specified virtual register. This
   /// name is used during PTX emission.
-  std::string getRegisterName(unsigned Reg) const {
+  const char *getRegisterName(unsigned Reg) const {
     if (RegNames.count(Reg))
-      return RegNames.lookup(Reg);
+      return RegNames.find(Reg)->second.c_str();
     else if (Reg == PTX::NoRegister)
       return "%noreg";
     else
@@ -141,6 +143,21 @@ public:
     return UsedRegs.lookup(TRC).size();
   }
 
+  /// getFrameSymbol - Returns the symbol name for the given FrameIndex.
+  const char* getFrameSymbol(int FrameIndex) {
+    if (FrameSymbols.count(FrameIndex)) {
+      return FrameSymbols.lookup(FrameIndex).c_str();
+    } else {
+      std::string Name = "__local";
+      Name += utostr(FrameIndex);
+      // The whole point of caching this name is to ensure the pointer we pass
+      // to any getExternalSymbol() calls will remain valid for the lifetime of
+      // the back-end instance. This is to work around an issue in SelectionDAG
+      // where symbol names are expected to be life-long strings.
+      FrameSymbols[FrameIndex] = Name;
+      return FrameSymbols[FrameIndex].c_str();
+    }
+  }
 }; // class PTXMachineFunctionInfo
 } // namespace llvm
 

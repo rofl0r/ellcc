@@ -12,12 +12,15 @@ add_llvm_target(PTXCodeGen
   PTXISelDAGToDAG.cpp
   PTXISelLowering.cpp
   PTXInstrInfo.cpp
+  PTXFPRoundingModePass.cpp
   PTXFrameLowering.cpp
   PTXMCAsmStreamer.cpp
+  PTXMCInstLower.cpp
   PTXMFInfoExtract.cpp
   PTXParamManager.cpp
   PTXRegAlloc.cpp
   PTXRegisterInfo.cpp
+  PTXSelectionDAGInfo.cpp
   PTXSubtarget.cpp
   PTXTargetMachine.cpp
   )
@@ -36,4 +39,6 @@ add_llvm_library_dependencies(LLVMPTXCodeGen
   )
 
 add_subdirectory(TargetInfo)
+add_subdirectory(InstPrinter)
 add_subdirectory(MCTargetDesc)
+

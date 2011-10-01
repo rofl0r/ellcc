@@ -1067,15 +1067,12 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
                                          TemplateArgs);
   }
 
-  bool isConstexpr = D->isConstexpr();
-  // FIXME: check whether the instantiation produces a constexpr function.
-
   FunctionDecl *Function =
       FunctionDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
                            D->getLocation(), D->getDeclName(), T, TInfo,
                            D->getStorageClass(), D->getStorageClassAsWritten(),
                            D->isInlineSpecified(), D->hasWrittenPrototype(),
-                           isConstexpr);
+                           /*isConstexpr*/ false);
 
   if (QualifierLoc)
     Function->setQualifierInfo(QualifierLoc);
@@ -1388,9 +1385,6 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     if (!DC) return 0;
   }
 
-  bool isConstexpr = D->isConstexpr();
-  // FIXME: check whether the instantiation produces a constexpr function.
-
   // Build the instantiated method declaration.
   CXXRecordDecl *Record = cast<CXXRecordDecl>(DC);
   CXXMethodDecl *Method = 0;
@@ -1403,7 +1397,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                         StartLoc, NameInfo, T, TInfo,
                                         Constructor->isExplicit(),
                                         Constructor->isInlineSpecified(),
-                                        false, isConstexpr);
+                                        false, /*isConstexpr*/ false);
   } else if (CXXDestructorDecl *Destructor = dyn_cast<CXXDestructorDecl>(D)) {
     Method = CXXDestructorDecl::Create(SemaRef.Context, Record,
                                        StartLoc, NameInfo, T, TInfo,
@@ -1414,14 +1408,15 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                                        StartLoc, NameInfo, T, TInfo,
                                        Conversion->isInlineSpecified(),
                                        Conversion->isExplicit(),
-                                       isConstexpr, Conversion->getLocEnd());
+                                       /*isConstexpr*/ false,
+                                       Conversion->getLocEnd());
   } else {
     Method = CXXMethodDecl::Create(SemaRef.Context, Record,
                                    StartLoc, NameInfo, T, TInfo,
                                    D->isStatic(),
                                    D->getStorageClassAsWritten(),
                                    D->isInlineSpecified(),
-                                   isConstexpr, D->getLocEnd());
+                                   /*isConstexpr*/ false, D->getLocEnd());
   }
 
   if (QualifierLoc)
@@ -2312,6 +2307,13 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
                                                  EPI));
   }
 
+  // C++0x [dcl.constexpr]p6: If the instantiated template specialization of
+  // a constexpr function template satisfies the requirements for a constexpr
+  // function, then it is a constexpr function.
+  if (Tmpl->isConstexpr() &&
+      SemaRef.CheckConstexprFunctionDecl(New, Sema::CCK_Instantiation))
+    New->setConstexpr(true);
+
   const FunctionDecl* Definition = Tmpl;
 
   // Get the definition. Leaves the variable unchanged if undefined.
@@ -2670,6 +2672,19 @@ void Sema::InstantiateStaticDataMemberDefinition(
   }
 }
 
+static MultiInitializer CreateMultiInitializer(
+                        const SmallVectorImpl<Expr*> &Args,
+                        const CXXCtorInitializer *Init) {
+  // FIXME: This is a hack that will do slightly the wrong thing for an
+  // initializer of the form foo({...}).
+  // The right thing to do would be to modify InstantiateInitializer to create
+  // the MultiInitializer.
+  if (Args.size() == 1 && isa<InitListExpr>(Args[0]))
+    return MultiInitializer(Args[0]);
+  return MultiInitializer(Init->getLParenLoc(), (Expr **)Args.data(),
+                          Args.size(), Init->getRParenLoc());
+}
+
 void
 Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
                                  const CXXConstructorDecl *Tmpl,
@@ -2736,12 +2751,9 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         }
 
         // Build the initializer.
-        MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(), 
-                                                     BaseTInfo,
-                                                     (Expr **)NewArgs.data(),
-                                                     NewArgs.size(),
-                                                     Init->getLParenLoc(),
-                                                     Init->getRParenLoc(),
+        MultiInitializer MultiInit(CreateMultiInitializer(NewArgs, Init));
+        MemInitResult NewInit = BuildBaseInitializer(BaseTInfo->getType(),
+                                                     BaseTInfo, MultiInit,
                                                      New->getParent(),
                                                      SourceLocation());
         if (NewInit.isInvalid()) {
@@ -2774,14 +2786,10 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         New->setInvalidDecl();
         continue;
       }
-      
-      NewInit = BuildBaseInitializer(BaseTInfo->getType(), BaseTInfo,
-                                     (Expr **)NewArgs.data(),
-                                     NewArgs.size(),
-                                     Init->getLParenLoc(),
-                                     Init->getRParenLoc(),
-                                     New->getParent(),
-                                     EllipsisLoc);
+
+      MultiInitializer MultiInit(CreateMultiInitializer(NewArgs, Init));
+      NewInit = BuildBaseInitializer(BaseTInfo->getType(), BaseTInfo, MultiInit,
+                                     New->getParent(), EllipsisLoc);
     } else if (Init->isMemberInitializer()) {
       FieldDecl *Member = cast_or_null<FieldDecl>(FindInstantiatedDecl(
                                                      Init->getMemberLocation(),
@@ -2793,11 +2801,9 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         continue;
       }
 
-      NewInit = BuildMemberInitializer(Member, (Expr **)NewArgs.data(),
-                                       NewArgs.size(),
-                                       Init->getSourceLocation(),
-                                       Init->getLParenLoc(),
-                                       Init->getRParenLoc());
+      MultiInitializer MultiInit(CreateMultiInitializer(NewArgs, Init));
+      NewInit = BuildMemberInitializer(Member, MultiInit,
+                                       Init->getSourceLocation());
     } else if (Init->isIndirectMemberInitializer()) {
       IndirectFieldDecl *IndirectMember =
          cast_or_null<IndirectFieldDecl>(FindInstantiatedDecl(
@@ -2807,14 +2813,12 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       if (!IndirectMember) {
         AnyErrors = true;
         New->setInvalidDecl();
-        continue;        
+        continue;
       }
-      
-      NewInit = BuildMemberInitializer(IndirectMember, (Expr **)NewArgs.data(),
-                                       NewArgs.size(),
-                                       Init->getSourceLocation(),
-                                       Init->getLParenLoc(),
-                                       Init->getRParenLoc());
+
+      MultiInitializer MultiInit(CreateMultiInitializer(NewArgs, Init));
+      NewInit = BuildMemberInitializer(IndirectMember, MultiInit,
+                                       Init->getSourceLocation());
     }
 
     if (NewInit.isInvalid()) {

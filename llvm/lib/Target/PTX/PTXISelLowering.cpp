@@ -225,8 +225,11 @@ SDValue PTXTargetLowering::
 
       unsigned ParamSize = Ins[i].VT.getStoreSizeInBits();
       unsigned Param = PM.addArgumentParam(ParamSize);
+      const std::string &ParamName = PM.getParamName(Param);
+      SDValue ParamValue = DAG.getTargetExternalSymbol(ParamName.c_str(),
+                                                       MVT::Other);
       SDValue ArgValue = DAG.getNode(PTXISD::LOAD_PARAM, dl, Ins[i].VT, Chain,
-                                     DAG.getTargetConstant(Param, MVT::i32));
+                                     ParamValue);
       InVals.push_back(ArgValue);
     }
   }
@@ -319,9 +322,11 @@ SDValue PTXTargetLowering::
     if (Outs.size() == 1) {
       unsigned ParamSize = OutVals[0].getValueType().getSizeInBits();
       unsigned Param = PM.addReturnParam(ParamSize);
-      SDValue ParamIndex = DAG.getTargetConstant(Param, MVT::i32);
+      const std::string &ParamName = PM.getParamName(Param);
+      SDValue ParamValue = DAG.getTargetExternalSymbol(ParamName.c_str(),
+                                                       MVT::Other);
       Chain = DAG.getNode(PTXISD::STORE_PARAM, dl, MVT::Other, Chain,
-                          ParamIndex, OutVals[0]);
+                          ParamValue, OutVals[0]);
     }
   } else {
     for (unsigned i = 0, e = Outs.size(); i != e; ++i) {
@@ -388,47 +393,45 @@ PTXTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
          "Calls are not handled for the target device");
 
   std::vector<SDValue> Ops;
-  // The layout of the ops will be [Chain, Ins, Callee, Outs]
-  Ops.resize(Outs.size() + Ins.size() + 2);
+  // The layout of the ops will be [Chain, #Ins, Ins, Callee, #Outs, Outs]
+  Ops.resize(Outs.size() + Ins.size() + 4);
 
   Ops[0] = Chain;
 
   // Identify the callee function
-  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
-    const GlobalValue *GV = G->getGlobal();
-    if (const Function *F = dyn_cast<Function>(GV)) {
-      assert(F->getCallingConv() == CallingConv::PTX_Device &&
-             "PTX function calls must be to PTX device functions");
-      Callee = DAG.getTargetGlobalAddress(GV, dl, getPointerTy());
-      Ops[Ins.size()+1] = Callee;
-    } else {
-      assert(false && "GlobalValue is not a function");
-    }
-  } else {
-    assert(false && "Function must be a GlobalAddressSDNode");
-  }
+  const GlobalValue *GV = cast<GlobalAddressSDNode>(Callee)->getGlobal();
+  assert(cast<Function>(GV)->getCallingConv() == CallingConv::PTX_Device &&
+         "PTX function calls must be to PTX device functions");
+  Callee = DAG.getTargetGlobalAddress(GV, dl, getPointerTy());
+  Ops[Ins.size()+2] = Callee;
 
   // Generate STORE_PARAM nodes for each function argument.  In PTX, function
   // arguments are explicitly stored into .param variables and passed as
   // arguments. There is no register/stack-based calling convention in PTX.
+  Ops[Ins.size()+3] = DAG.getTargetConstant(OutVals.size(), MVT::i32);
   for (unsigned i = 0; i != OutVals.size(); ++i) {
     unsigned Size = OutVals[i].getValueType().getSizeInBits();
     unsigned Param = PM.addLocalParam(Size);
-    SDValue Index = DAG.getTargetConstant(Param, MVT::i32);
+    const std::string &ParamName = PM.getParamName(Param);
+    SDValue ParamValue = DAG.getTargetExternalSymbol(ParamName.c_str(),
+                                                     MVT::Other);
     Chain = DAG.getNode(PTXISD::STORE_PARAM, dl, MVT::Other, Chain,
-                        Index, OutVals[i]);
-    Ops[i+Ins.size()+2] = Index;
+                        ParamValue, OutVals[i]);
+    Ops[i+Ins.size()+4] = ParamValue;
   }
 
-  std::vector<unsigned> InParams;
+  std::vector<SDValue> InParams;
 
   // Generate list of .param variables to hold the return value(s).
+  Ops[1] = DAG.getTargetConstant(Ins.size(), MVT::i32);
   for (unsigned i = 0; i < Ins.size(); ++i) {
     unsigned Size = Ins[i].VT.getStoreSizeInBits();
     unsigned Param = PM.addLocalParam(Size);
-    SDValue Index = DAG.getTargetConstant(Param, MVT::i32);
-    Ops[i+1] = Index;
-    InParams.push_back(Param);
+    const std::string &ParamName = PM.getParamName(Param);
+    SDValue ParamValue = DAG.getTargetExternalSymbol(ParamName.c_str(),
+                                                     MVT::Other);
+    Ops[i+2] = ParamValue;
+    InParams.push_back(ParamValue);
   }
 
   Ops[0] = Chain;
@@ -438,8 +441,8 @@ PTXTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
   // Create the LOAD_PARAM nodes that retrieve the function return value(s).
   for (unsigned i = 0; i < Ins.size(); ++i) {
-    SDValue Index = DAG.getTargetConstant(InParams[i], MVT::i32);
-    SDValue Load = DAG.getNode(PTXISD::LOAD_PARAM, dl, Ins[i].VT, Chain, Index);
+    SDValue Load = DAG.getNode(PTXISD::LOAD_PARAM, dl, Ins[i].VT, Chain,
+                               InParams[i]);
     InVals.push_back(Load);
   }
 

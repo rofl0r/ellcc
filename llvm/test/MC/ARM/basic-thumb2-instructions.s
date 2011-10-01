@@ -2070,13 +2070,11 @@ _func:
         ssat	r8, #1, r10
         ssat	r8, #1, r10, lsl #0
         ssat	r8, #1, r10, lsl #31
-        ssat	r8, #1, r10, asr #32
         ssat	r8, #1, r10, asr #1
 
 @ CHECK: ssat	r8, #1, r10             @ encoding: [0x0a,0xf3,0x00,0x08]
 @ CHECK: ssat	r8, #1, r10             @ encoding: [0x0a,0xf3,0x00,0x08]
 @ CHECK: ssat	r8, #1, r10, lsl #31    @ encoding: [0x0a,0xf3,0xc0,0x78]
-@ CHECK: ssat	r8, #1, r10, asr #32    @ encoding: [0x2a,0xf3,0x00,0x08]
 @ CHECK: ssat	r8, #1, r10, asr #1     @ encoding: [0x2a,0xf3,0x40,0x08]
 
 
@@ -2519,6 +2517,7 @@ _func:
         ite ge
         sxtbge r2, r4
         sxtblt r5, r1, ror #16
+        sxtb.w  r7, r8
 
 @ CHECK: sxtb	r5, r6                  @ encoding: [0x75,0xb2]
 @ CHECK: sxtb.w	r6, r9, ror #8          @ encoding: [0x4f,0xfa,0x99,0xf6]
@@ -2526,6 +2525,7 @@ _func:
 @ CHECK: ite	ge                      @ encoding: [0xac,0xbf]
 @ CHECK: sxtbge	r2, r4                  @ encoding: [0x62,0xb2]
 @ CHECK: sxtblt.w	r5, r1, ror #16 @ encoding: [0x4f,0xfa,0xa1,0xf5]
+@ CHECK: sxtb.w	r7, r8                  @ encoding: [0x4f,0xfa,0x88,0xf7]
 
 
 @------------------------------------------------------------------------------
@@ -2555,6 +2555,7 @@ _func:
         itt ne
         sxthne r3, r9
         sxthne r2, r2, ror #16
+        sxth.w  r7, r8
 
 @ CHECK: sxth	r1, r6                  @ encoding: [0x31,0xb2]
 @ CHECK: sxth.w	r3, r8, ror #8          @ encoding: [0x0f,0xfa,0x98,0xf3]
@@ -2562,6 +2563,7 @@ _func:
 @ CHECK: itt	ne                      @ encoding: [0x1c,0xbf]
 @ CHECK: sxthne.w	r3, r9          @ encoding: [0x0f,0xfa,0x89,0xf3]
 @ CHECK: sxthne.w	r2, r2, ror #16 @ encoding: [0x0f,0xfa,0xa2,0xf2]
+@ CHECK: sxth.w	r7, r8                  @ encoding: [0x0f,0xfa,0x88,0xf7]
 
 
 @------------------------------------------------------------------------------
@@ -2898,13 +2900,11 @@ _func:
         usat	r8, #1, r10
         usat	r8, #4, r10, lsl #0
         usat	r8, #5, r10, lsl #31
-        usat	r8, #31, r10, asr #32
         usat	r8, #16, r10, asr #1
 
 @ CHECK: usat	r8, #1, r10             @ encoding: [0x8a,0xf3,0x01,0x08]
 @ CHECK: usat	r8, #4, r10             @ encoding: [0x8a,0xf3,0x04,0x08]
 @ CHECK: usat	r8, #5, r10, lsl #31    @ encoding: [0x8a,0xf3,0xc5,0x78]
-@ CHECK: usat	r8, #31, r10, asr #32   @ encoding: [0xaa,0xf3,0x1f,0x08]
 @ CHECK: usat	r8, #16, r10, asr #1    @ encoding: [0xaa,0xf3,0x50,0x08]
 
 
@@ -3020,6 +3020,7 @@ _func:
         it cc
         uxtbcc r5, r1, ror #16
         uxtb r8, r3, ror #24
+        uxtb.w  r7, r8
 
 @ CHECK: it	ge                      @ encoding: [0xa8,0xbf]
 @ CHECK: uxtbge	r2, r4                  @ encoding: [0xe2,0xb2]
@@ -3028,6 +3029,7 @@ _func:
 @ CHECK: it	lo                      @ encoding: [0x38,0xbf]
 @ CHECK: uxtblo.w	r5, r1, ror #16 @ encoding: [0x5f,0xfa,0xa1,0xf5]
 @ CHECK: uxtb.w	r8, r3, ror #24         @ encoding: [0x5f,0xfa,0xb3,0xf8]
+@ CHECK: uxtb.w	r7, r8                  @ encoding: [0x5f,0xfa,0x88,0xf7]
 
 
 @------------------------------------------------------------------------------
@@ -3060,6 +3062,7 @@ _func:
         it le
         uxthle r2, r2, ror #16
         uxth r9, r3, ror #24
+        uxth.w  r7, r8
 
 @ CHECK: it	ne                      @ encoding: [0x18,0xbf]
 @ CHECK: uxthne.w	r3, r9          @ encoding: [0x1f,0xfa,0x89,0xf3]
@@ -3068,7 +3071,7 @@ _func:
 @ CHECK: it	le                      @ encoding: [0xd8,0xbf]
 @ CHECK: uxthle.w	r2, r2, ror #16 @ encoding: [0x1f,0xfa,0xa2,0xf2]
 @ CHECK: uxth.w	r9, r3, ror #24         @ encoding: [0x1f,0xfa,0xb3,0xf9]
-
+@ CHECK: uxth.w	r7, r8                  @ encoding: [0x1f,0xfa,0x88,0xf7]
 
 @------------------------------------------------------------------------------
 @ WFE/WFI/YIELD
