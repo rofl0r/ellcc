@@ -263,8 +263,7 @@ static BaseOffset ComputeBaseOffset(ASTContext &Context,
   
   if (!const_cast<CXXRecordDecl *>(DerivedRD)->
       isDerivedFrom(const_cast<CXXRecordDecl *>(BaseRD), Paths)) {
-    assert(false && "Class must be derived from the passed in base class!");
-    return BaseOffset();
+    llvm_unreachable("Class must be derived from the passed in base class!");
   }
 
   return ComputeBaseOffset(Context, DerivedRD, Paths.front());
@@ -303,7 +302,7 @@ ComputeReturnAdjustmentBaseOffset(ASTContext &Context,
     CanBaseReturnType = 
       CanBaseReturnType->getAs<PointerType>()->getPointeeType();
   } else {
-    assert(false && "Unexpected return type!");
+    llvm_unreachable("Unexpected return type!");
   }
   
   // We need to compare unqualified types here; consider
@@ -700,8 +699,7 @@ CharUnits VCallOffsetMap::getVCallOffsetOffset(const CXXMethodDecl *MD) {
       return Offsets[I].second;
   }
   
-  assert(false && "Should always find a vcall offset offset!");
-  return CharUnits::Zero();
+  llvm_unreachable("Should always find a vcall offset offset!");
 }
 
 /// VCallAndVBaseOffsetBuilder - Class for building vcall and vbase offsets.
@@ -1361,8 +1359,7 @@ VTableBuilder::ComputeThisAdjustmentBaseOffset(BaseSubobject Base,
 
   if (!const_cast<CXXRecordDecl *>(DerivedRD)->
       isDerivedFrom(const_cast<CXXRecordDecl *>(BaseRD), Paths)) {
-    assert(false && "Class must be derived from the passed in base class!");
-    return BaseOffset();
+    llvm_unreachable("Class must be derived from the passed in base class!");
   }
 
   // We have to go through all the paths, and see which one leads us to the
@@ -1553,7 +1550,7 @@ VTableBuilder::IsOverriderUsed(const CXXMethodDecl *Overrider,
     }
     
     if (!PrimaryBases.insert(PrimaryBase))
-      assert(false && "Found a duplicate primary base!");
+      llvm_unreachable("Found a duplicate primary base!");
 
     RD = PrimaryBase;
   }
@@ -1627,7 +1624,7 @@ VTableBuilder::AddMethods(BaseSubobject Base, CharUnits BaseOffsetInLayoutClass,
                FirstBaseOffsetInLayoutClass, PrimaryBases);
     
     if (!PrimaryBases.insert(PrimaryBase))
-      assert(false && "Found a duplicate primary base!");
+      llvm_unreachable("Found a duplicate primary base!");
   }
 
   // Now go through all virtual member functions and add them.
@@ -2316,7 +2313,7 @@ CollectPrimaryBases(const CXXRecordDecl *RD, ASTContext &Context,
   CollectPrimaryBases(PrimaryBase, Context, PrimaryBases);
 
   if (!PrimaryBases.insert(PrimaryBase))
-    assert(false && "Found a duplicate primary base!");
+    llvm_unreachable("Found a duplicate primary base!");
 }
 
 void CodeGenVTables::ComputeMethodVTableIndices(const CXXRecordDecl *RD) {

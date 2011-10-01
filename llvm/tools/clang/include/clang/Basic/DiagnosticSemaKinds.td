@@ -516,6 +516,9 @@ def warn_default_atomic_custom_getter_setter : Warning<
 def err_use_continuation_class : Error<
   "illegal redeclaration of property in continuation class %0"
   " (attribute must be 'readwrite', while its primary must be 'readonly')">;
+def error_type_mismatch_continuation_class : Error<
+  "type of property %0 in continuation class does not match"
+  "property type in primary class">;
 def err_use_continuation_class_redeclaration_readwrite : Error<
   "illegal redeclaration of 'readwrite' property in continuation class %0"
   " (perhaps you intended this to be a 'readwrite' redeclaration of a "
@@ -1474,6 +1477,9 @@ def warn_impcast_literal_float_to_integer : Warning<
   "implicit conversion turns literal floating-point number into integer: "
   "%0 to %1">,
   InGroup<DiagGroup<"literal-conversion">>, DefaultIgnore;
+def warn_impcast_string_literal_to_bool : Warning<
+  "implicit conversion turns string literal into bool: %0 to %1">,
+  InGroup<DiagGroup<"literal-conversion">>, DefaultIgnore;
 def note_fix_integral_float_as_integer : Note<
   "this can be rewritten as an integer literal with the exact same value">;
 def warn_impcast_different_enum_types : Warning<
@@ -1790,15 +1796,18 @@ def note_ovl_candidate_bad_ownership : Note<"candidate "
     "function |function |constructor |"
     "constructor (the implicit default constructor)|"
     "constructor (the implicit copy constructor)|"
+    "constructor (the implicit move constructor)|"
     "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 not viable: "
     "%select{%ordinal6|'this'}5 argument (%2) has "
     "%select{no|__unsafe_unretained|__strong|__weak|__autoreleasing}3 ownership,"
     " but parameter has %select{no|__unsafe_unretained|__strong|__weak|"
     "__autoreleasing}4 ownership">;
 def note_ovl_candidate_bad_cvr_this : Note<"candidate "
-    "%select{|function|||function||||"
-    "function (the implicit copy assignment operator)|}0 not viable: "
+    "%select{|function|||function|||||"
+    "function (the implicit copy assignment operator)|"
+    "function (the implicit move assignment operator)|}0 not viable: "
     "'this' argument has type %2, but method is not marked "
     "%select{const|restrict|const or restrict|volatile|const or volatile|"
     "volatile or restrict|const, volatile, or restrict}3">;
@@ -1944,6 +1953,9 @@ def err_template_template_parm_no_parms : Error<
 def err_template_variable : Error<"variable %0 declared as a template">;
 def err_template_variable_noparams : Error<
   "extraneous 'template<>' in declaration of variable %0">;
+def err_template_member : Error<"member %0 declared as a template">;
+def err_template_member_noparams : Error<
+  "extraneous 'template<>' in declaration of member %0">;
 def err_template_tag_noparams : Error<
   "extraneous 'template<>' in declaration of %0 %1">;
 def err_template_decl_ref : Error<
@@ -2589,6 +2601,8 @@ def err_at_least_one_initializer_needed_to_size_array : Error<
 def err_array_size_non_int : Error<"size of array has non-integer type %0">;
 def err_init_element_not_constant : Error<
   "initializer element is not a compile-time constant">;
+def err_local_cant_init : Error<
+  "'__local' variable cannot have an initializer">;
 def err_block_extern_cant_init : Error<
   "'extern' variable cannot have an initializer">;
 def warn_extern_init : Warning<"'extern' variable has an initializer">;
@@ -2615,6 +2629,9 @@ def warn_braces_around_scalar_init : Warning<
   "braces around scalar initializer">;
 def warn_many_braces_around_scalar_init : ExtWarn<
   "too many braces around scalar initializer">;
+def ext_complex_component_init : Extension<
+  "complex initialization specifying real and imaginary components "
+  "is an extension">, InGroup<DiagGroup<"complex-component-init">>;
 def err_empty_scalar_initializer : Error<"scalar initializer cannot be empty">;
 def err_illegal_initializer : Error<
   "illegal initializer (only variables can be initialized)">;
@@ -3771,19 +3788,21 @@ def ext_typecheck_convert_incompatible_pointer : ExtWarn<
   "take the address with &|"
   "remove *|"
   "remove &}3">,
-  InGroup<DiagGroup<"incompatible-pointer-types">>;
+  InGroup<IncompatiblePointerTypes>;
 def ext_typecheck_convert_discards_qualifiers : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
   "with an expression of type|to parameter of type|to type}2 %1 discards "
-  "qualifiers">;
+  "qualifiers">,
+  InGroup<IncompatiblePointerTypes>;
 def ext_nested_pointer_qualifier_mismatch : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
   "with an expression of type|to parameter of type|to type}2 %1 discards "
-  "qualifiers in nested pointer types">;
+  "qualifiers in nested pointer types">,
+  InGroup<IncompatiblePointerTypes>;
 def warn_incompatible_vectors : Warning<
   "incompatible vector types "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -3927,9 +3946,11 @@ def ext_typecheck_cond_incompatible_operands_nonstandard : ExtWarn<
 def err_cast_selector_expr : Error<
   "cannot type cast @selector expression">;
 def warn_typecheck_cond_incompatible_pointers : ExtWarn<
-  "pointer type mismatch (%0 and %1)">;
+  "pointer type mismatch (%0 and %1)">,
+  InGroup<DiagGroup<"pointer-type-mismatch">>;
 def warn_typecheck_cond_pointer_integer_mismatch : ExtWarn<
-  "pointer/integer type mismatch in conditional expression (%0 and %1)">;
+  "pointer/integer type mismatch in conditional expression (%0 and %1)">,
+  InGroup<DiagGroup<"conditional-type-mismatch">>;
 def err_typecheck_choose_expr_requires_constant : Error<
   "'__builtin_choose_expr' requires a constant expression">;
 def ext_typecheck_expression_not_constant_but_accepted : Extension<
@@ -4615,7 +4636,8 @@ def note_getter_unavailable : Note<
 def err_invalid_protocol_qualifiers : Error<
   "invalid protocol qualifiers on non-ObjC type">;
 def warn_ivar_use_hidden : Warning<
-  "local declaration of %0 hides instance variable">;
+  "local declaration of %0 hides instance variable">,
+   InGroup<DiagGroup<"shadow-ivar">>;
 def error_ivar_use_in_class_method : Error<
   "instance variable %0 accessed in class method">;
 def error_implicit_ivar_access : Error<

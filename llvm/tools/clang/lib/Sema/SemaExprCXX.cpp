@@ -1525,8 +1525,7 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
     return true;
   }
   }
-  assert(false && "Unreachable, bad result from BestViableFunction");
-  return true;
+  llvm_unreachable("Unreachable, bad result from BestViableFunction");
 }
 
 
@@ -1671,7 +1670,7 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
                                            SourceLocation(), 0,
                                            Argument, /*TInfo=*/0,
                                            SC_None, SC_None, 0);
-  Alloc->setParams(&Param, 1);
+  Alloc->setParams(Param);
 
   // FIXME: Also add this declaration to the IdentifierResolver, but
   // make sure it is at the end of the chain to coincide with the
@@ -2065,10 +2064,10 @@ static ExprResult BuildCXXCastArgument(Sema &S,
                                        QualType Ty,
                                        CastKind Kind,
                                        CXXMethodDecl *Method,
-                                       NamedDecl *FoundDecl,
+                                       DeclAccessPair FoundDecl,
                                        Expr *From) {
   switch (Kind) {
-  default: assert(0 && "Unhandled cast kind!");
+  default: llvm_unreachable("Unhandled cast kind!");
   case CK_ConstructorConversion: {
     ASTOwningVector<Expr*> ConstructorArgs(S);
 
@@ -2095,6 +2094,8 @@ static ExprResult BuildCXXCastArgument(Sema &S,
     ExprResult Result = S.BuildCXXMemberCallExpr(From, FoundDecl, Method);
     if (Result.isInvalid())
       return ExprError();
+
+    S.CheckMemberOperatorAccess(CastLoc, From, /*arg*/ 0, FoundDecl);
 
     return S.MaybeBindToTemporary(Result.get());
   }
@@ -2179,8 +2180,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
      return ExprError();
 
   case ImplicitConversionSequence::EllipsisConversion:
-    assert(false && "Cannot perform an ellipsis conversion");
-    return Owned(From);
+    llvm_unreachable("Cannot perform an ellipsis conversion");
 
   case ImplicitConversionSequence::BadConversion:
     return ExprError();
@@ -2282,8 +2282,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     break;
 
   default:
-    assert(false && "Improper first standard conversion");
-    break;
+    llvm_unreachable("Improper first standard conversion");
   }
 
   // Perform the second implicit conversion
@@ -2522,8 +2521,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
   case ICK_Function_To_Pointer:
   case ICK_Qualification:
   case ICK_Num_Conversion_Kinds:
-    assert(false && "Improper second standard conversion");
-    break;
+    llvm_unreachable("Improper second standard conversion");
   }
 
   switch (SCS.Third) {
@@ -2548,8 +2546,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
     }
 
   default:
-    assert(false && "Improper third standard conversion");
-    break;
+    llvm_unreachable("Improper third standard conversion");
   }
 
   return Owned(From);
@@ -3558,8 +3555,7 @@ static bool FindConditionalOverload(Sema &Self, ExprResult &LHS, ExprResult &RHS
       break;
 
     case OR_Deleted:
-      assert(false && "Conditional operator has only built-in overloads");
-      break;
+      llvm_unreachable("Conditional operator has only built-in overloads");
   }
   return true;
 }
@@ -4641,7 +4637,7 @@ ExprResult Sema::ActOnFinishFullExpr(Expr *FE) {
   if (FullExpr.isInvalid())
     return ExprError();
 
-  CheckImplicitConversions(FullExpr.get());
+  CheckImplicitConversions(FullExpr.get(), FullExpr.get()->getExprLoc());
   return MaybeCreateExprWithCleanups(FullExpr);
 }
 

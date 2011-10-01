@@ -72,6 +72,8 @@ namespace {
     typedef DenseSet<unsigned> RegSet;
     typedef DenseMap<unsigned, const MachineInstr*> RegMap;
 
+    const MachineInstr *FirstTerminator;
+
     BitVector regsReserved;
     RegSet regsLive;
     RegVector regsDefined, regsDead, regsKilled;
@@ -389,6 +391,8 @@ static bool matchPair(MachineBasicBlock::const_succ_iterator i,
 
 void
 MachineVerifier::visitMachineBasicBlockBefore(const MachineBasicBlock *MBB) {
+  FirstTerminator = 0;
+
   // Count the number of landing pad successors.
   SmallPtrSet<MachineBasicBlock*, 4> LandingPadSuccs;
   for (MachineBasicBlock::const_succ_iterator I = MBB->succ_begin(),
@@ -570,6 +574,18 @@ void MachineVerifier::visitMachineInstrBefore(const MachineInstr *MI) {
     }
   }
 
+  // Ensure non-terminators don't follow terminators.
+  if (MCID.isTerminator()) {
+    if (!FirstTerminator)
+      FirstTerminator = MI;
+  } else if (FirstTerminator) {
+    report("Non-terminator instruction after the first terminator", MI);
+    *OS << "First terminator was:\t" << *FirstTerminator;
+  }
+
+  StringRef ErrorInfo;
+  if (!TII->verifyInstruction(MI, ErrorInfo))
+    report(ErrorInfo.data(), MI);
 }
 
 void

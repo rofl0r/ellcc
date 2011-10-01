@@ -20,6 +20,7 @@
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/Basic/Linkage.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Optional.h"
 
 namespace clang {
@@ -32,6 +33,7 @@ class StringLiteral;
 class NestedNameSpecifier;
 class TemplateParameterList;
 class TemplateArgumentList;
+struct ASTTemplateArgumentListInfo;
 class MemberSpecializationInfo;
 class FunctionTemplateSpecializationInfo;
 class DependentFunctionTemplateSpecializationInfo;
@@ -815,7 +817,7 @@ public:
       return !isFileVarDecl();
 
     // Return true for:  Auto, Register.
-    // Return false for: Extern, Static, PrivateExtern.
+    // Return false for: Extern, Static, PrivateExtern, OpenCLWorkGroupLocal.
 
     return getStorageClass() >= SC_Auto;
   }
@@ -1480,7 +1482,7 @@ private:
   void setInstantiationOfMemberFunction(ASTContext &C, FunctionDecl *FD,
                                         TemplateSpecializationKind TSK);
 
-  void setParams(ASTContext &C, ParmVarDecl **NewParamInfo, unsigned NumParams);
+  void setParams(ASTContext &C, llvm::ArrayRef<ParmVarDecl *> NewParamInfo);
 
 protected:
   FunctionDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
@@ -1750,8 +1752,8 @@ public:
     assert(i < getNumParams() && "Illegal param #");
     return ParamInfo[i];
   }
-  void setParams(ParmVarDecl **NewParamInfo, unsigned NumParams) {
-    setParams(getASTContext(), NewParamInfo, NumParams);
+  void setParams(llvm::ArrayRef<ParmVarDecl *> NewParamInfo) {
+    setParams(getASTContext(), NewParamInfo);
   }
 
   /// getMinRequiredArguments - Returns the minimum number of arguments
@@ -1917,7 +1919,7 @@ public:
   /// or if it had no explicit template argument list, returns NULL.
   /// Note that it an explicit template argument list may be written empty,
   /// e.g., template<> void foo<>(char* s);
-  const TemplateArgumentListInfo*
+  const ASTTemplateArgumentListInfo*
   getTemplateSpecializationArgsAsWritten() const;
 
   /// \brief Specify that this function declaration is actually a function
@@ -2997,7 +2999,7 @@ public:
     assert(i < getNumParams() && "Illegal param #");
     return ParamInfo[i];
   }
-  void setParams(ParmVarDecl **NewParamInfo, unsigned NumParams);
+  void setParams(llvm::ArrayRef<ParmVarDecl *> NewParamInfo);
 
   /// hasCaptures - True if this block (or its nested blocks) captures
   /// anything of local storage from its enclosing scopes.

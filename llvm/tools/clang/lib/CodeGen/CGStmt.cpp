@@ -137,11 +137,11 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
     EmitObjCAtTryStmt(cast<ObjCAtTryStmt>(*S));
     break;
   case Stmt::ObjCAtCatchStmtClass:
-    assert(0 && "@catch statements should be handled by EmitObjCAtTryStmt");
-    break;
+    llvm_unreachable(
+                    "@catch statements should be handled by EmitObjCAtTryStmt");
   case Stmt::ObjCAtFinallyStmtClass:
-    assert(0 && "@finally statements should be handled by EmitObjCAtTryStmt");
-    break;
+    llvm_unreachable(
+                  "@finally statements should be handled by EmitObjCAtTryStmt");
   case Stmt::ObjCAtThrowStmtClass:
     EmitObjCAtThrowStmt(cast<ObjCAtThrowStmt>(*S));
     break;

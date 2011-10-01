@@ -664,7 +664,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       // each struct declaration and type name."
       // FIXME: Does Microsoft really have the implicit int extension in C++?
       if (S.getLangOptions().CPlusPlus &&
-          !S.getLangOptions().Microsoft) {
+          !S.getLangOptions().MicrosoftExt) {
         S.Diag(DeclLoc, diag::err_missing_type_specifier)
           << DS.getSourceRange();
 
@@ -1036,6 +1036,11 @@ static QualType inferARCLifetimeForPointee(Sema &S, QualType type,
   // retaining.  This currently only triggers for Class (possibly
   // protocol-qualifed, and arrays thereof).
   } else if (type->isObjCARCImplicitlyUnretainedType()) {
+    implicitLifetime = Qualifiers::OCL_ExplicitNone;
+
+  // If we are in an unevaluated context, like sizeof, assume ExplicitNone and
+  // don't give error.
+  } else if (S.ExprEvalContexts.back().Context == Sema::Unevaluated) {
     implicitLifetime = Qualifiers::OCL_ExplicitNone;
 
   // If that failed, give an error and recover using __autoreleasing.
@@ -1745,7 +1750,7 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
 
     switch (D.getContext()) {
     case Declarator::KNRTypeListContext:
-      assert(0 && "K&R type lists aren't allowed in C++");
+      llvm_unreachable("K&R type lists aren't allowed in C++");
       break;
     case Declarator::ObjCPrototypeContext:
     case Declarator::PrototypeContext:
@@ -1755,7 +1760,7 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
       if (D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_static)
         break;
       switch (cast<TagDecl>(SemaRef.CurContext)->getTagKind()) {
-      case TTK_Enum: assert(0 && "unhandled tag kind"); break;
+      case TTK_Enum: llvm_unreachable("unhandled tag kind");
       case TTK_Struct: Error = 1; /* Struct member */ break;
       case TTK_Union:  Error = 2; /* Union member */ break;
       case TTK_Class:  Error = 3; /* Class member */ break;
@@ -1916,7 +1921,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     state.setCurrentChunkIndex(chunkIndex);
     DeclaratorChunk &DeclType = D.getTypeObject(chunkIndex);
     switch (DeclType.Kind) {
-    default: assert(0 && "Unknown decltype!");
+    default: llvm_unreachable("Unknown decltype!");
     case DeclaratorChunk::Paren:
       T = S.BuildParenType(T);
       break;
@@ -3030,7 +3035,7 @@ ParsedType Sema::CreateParsedType(QualType T, TypeSourceInfo *TInfo) {
 
 void LocInfoType::getAsStringInternal(std::string &Str,
                                       const PrintingPolicy &Policy) const {
-  assert(false && "LocInfoType leaked into the type system; an opaque TypeTy*"
+  llvm_unreachable("LocInfoType leaked into the type system; an opaque TypeTy*"
          " was used directly instead of getting the QualType through"
          " GetTypeFromParser");
 }

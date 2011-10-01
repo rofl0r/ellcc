@@ -687,6 +687,18 @@ public:
     return (Val >= -1020 && Val <= 1020 && ((Val & 3) == 0)) ||
            Val == INT32_MIN;
   }
+  bool isMemTBB() const {
+    if (Kind != Memory || !Mem.OffsetRegNum || Mem.isNegative ||
+        Mem.ShiftType != ARM_AM::no_shift)
+      return false;
+    return true;
+  }
+  bool isMemTBH() const {
+    if (Kind != Memory || !Mem.OffsetRegNum || Mem.isNegative ||
+        Mem.ShiftType != ARM_AM::lsl || Mem.ShiftImm != 1)
+      return false;
+    return true;
+  }
   bool isMemRegOffset() const {
     if (Kind != Memory || !Mem.OffsetRegNum)
       return false;
@@ -768,7 +780,7 @@ public:
     // Immediate offset in range [-255, 255].
     if (!Mem.OffsetImm) return true;
     int64_t Val = Mem.OffsetImm->getValue();
-    return Val > -256 && Val < 256;
+    return (Val == INT32_MIN) || (Val > -256 && Val < 256);
   }
   bool isMemPosImm8Offset() const {
     if (Kind != Memory || Mem.OffsetRegNum != 0)
@@ -1203,6 +1215,18 @@ public:
     int64_t Val = Mem.OffsetImm ? Mem.OffsetImm->getValue() : 0;
     Inst.addOperand(MCOperand::CreateReg(Mem.BaseRegNum));
     Inst.addOperand(MCOperand::CreateImm(Val));
+  }
+
+  void addMemTBBOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 2 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::CreateReg(Mem.BaseRegNum));
+    Inst.addOperand(MCOperand::CreateReg(Mem.OffsetRegNum));
+  }
+
+  void addMemTBHOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 2 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::CreateReg(Mem.BaseRegNum));
+    Inst.addOperand(MCOperand::CreateReg(Mem.OffsetRegNum));
   }
 
   void addMemRegOffsetOperands(MCInst &Inst, unsigned N) const {
@@ -2254,15 +2278,11 @@ ARMAsmParser::OperandMatchResultTy ARMAsmParser::
 parseRotImm(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   const AsmToken &Tok = Parser.getTok();
   SMLoc S = Tok.getLoc();
-  if (Tok.isNot(AsmToken::Identifier)) {
-    Error(S, "rotate operator 'ror' expected");
-    return MatchOperand_ParseFail;
-  }
+  if (Tok.isNot(AsmToken::Identifier))
+    return MatchOperand_NoMatch;
   StringRef ShiftName = Tok.getString();
-  if (ShiftName != "ror" && ShiftName != "ROR") {
-    Error(S, "rotate operator 'ror' expected");
-    return MatchOperand_ParseFail;
-  }
+  if (ShiftName != "ror" && ShiftName != "ROR")
+    return MatchOperand_NoMatch;
   Parser.Lex(); // Eat the operator.
 
   // A '#' and a rotate amount.
@@ -2807,6 +2827,13 @@ parseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     Operands.push_back(ARMOperand::CreateMem(BaseRegNum, 0, 0, ARM_AM::no_shift,
                                              0, false, S, E));
 
+    // If there's a pre-indexing writeback marker, '!', just add it as a token
+    // operand. It's rather odd, but syntactically valid.
+    if (Parser.getTok().is(AsmToken::Exclaim)) {
+      Operands.push_back(ARMOperand::CreateToken("!",Parser.getTok().getLoc()));
+      Parser.Lex(); // Eat the '!'.
+    }
+
     return false;
   }
 
@@ -3186,12 +3213,12 @@ getMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
       Mnemonic == "rrx" || Mnemonic == "ror" || Mnemonic == "sub" ||
       Mnemonic == "add" || Mnemonic == "adc" ||
       Mnemonic == "mul" || Mnemonic == "bic" || Mnemonic == "asr" ||
-      Mnemonic == "umlal" || Mnemonic == "orr" || Mnemonic == "mvn" ||
+      Mnemonic == "orr" || Mnemonic == "mvn" ||
       Mnemonic == "rsb" || Mnemonic == "rsc" || Mnemonic == "orn" ||
-      Mnemonic == "sbc" || Mnemonic == "umull" || Mnemonic == "eor" ||
-      Mnemonic == "neg" ||
+      Mnemonic == "sbc" || Mnemonic == "eor" || Mnemonic == "neg" ||
       (!isThumb() && (Mnemonic == "smull" || Mnemonic == "mov" ||
-                      Mnemonic == "mla" || Mnemonic == "smlal"))) {
+                      Mnemonic == "mla" || Mnemonic == "smlal" ||
+                      Mnemonic == "umlal" || Mnemonic == "umull"))) {
     CanAcceptCarrySet = true;
   } else
     CanAcceptCarrySet = false;
@@ -3856,6 +3883,36 @@ processInstruction(MCInst &Inst,
       TmpInst.addOperand(Inst.getOperand(1));
       TmpInst.addOperand(Inst.getOperand(2));
       TmpInst.addOperand(Inst.getOperand(3));
+      Inst = TmpInst;
+    }
+    break;
+  }
+  case ARM::t2SXTH:
+  case ARM::t2SXTB:
+  case ARM::t2UXTH:
+  case ARM::t2UXTB: {
+    // If we can use the 16-bit encoding and the user didn't explicitly
+    // request the 32-bit variant, transform it here.
+    if (isARMLowRegister(Inst.getOperand(0).getReg()) &&
+        isARMLowRegister(Inst.getOperand(1).getReg()) &&
+        Inst.getOperand(2).getImm() == 0 &&
+        (!static_cast<ARMOperand*>(Operands[2])->isToken() ||
+         static_cast<ARMOperand*>(Operands[2])->getToken() != ".w")) {
+      unsigned NewOpc;
+      switch (Inst.getOpcode()) {
+      default: llvm_unreachable("Illegal opcode!");
+      case ARM::t2SXTH: NewOpc = ARM::tSXTH; break;
+      case ARM::t2SXTB: NewOpc = ARM::tSXTB; break;
+      case ARM::t2UXTH: NewOpc = ARM::tUXTH; break;
+      case ARM::t2UXTB: NewOpc = ARM::tUXTB; break;
+      }
+      // The operands aren't the same for thumb1 (no rotate operand).
+      MCInst TmpInst;
+      TmpInst.setOpcode(NewOpc);
+      TmpInst.addOperand(Inst.getOperand(0));
+      TmpInst.addOperand(Inst.getOperand(1));
+      TmpInst.addOperand(Inst.getOperand(3));
+      TmpInst.addOperand(Inst.getOperand(4));
       Inst = TmpInst;
     }
     break;

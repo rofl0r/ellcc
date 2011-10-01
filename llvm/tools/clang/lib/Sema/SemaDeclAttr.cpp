@@ -3205,8 +3205,7 @@ static void handleNSReturnsRetainedAttr(Sema &S, Decl *D,
 
   switch (Attr.getKind()) {
     default:
-      assert(0 && "invalid ownership attribute");
-      return;
+      llvm_unreachable("invalid ownership attribute");
     case AttributeList::AT_ns_returns_autoreleased:
       D->addAttr(::new (S.Context) NSReturnsAutoreleasedAttr(Attr.getRange(),
                                                              S.Context));
@@ -3322,7 +3321,7 @@ static bool isKnownDeclSpecAttr(const AttributeList &Attr) {
 //===----------------------------------------------------------------------===//
 
 static void handleUuidAttr(Sema &S, Decl *D, const AttributeList &Attr) {
-  if (S.LangOpts.Microsoft || S.LangOpts.Borland) {
+  if (S.LangOpts.MicrosoftExt || S.LangOpts.Borland) {
     // check the attribute arguments.
     if (!checkAttributeNumArgs(S, Attr, 1))
       return;
@@ -3674,7 +3673,7 @@ NamedDecl * Sema::DeclClonePragmaWeak(NamedDecl *ND, IdentifierInfo *II,
         Param->setScopeInfo(0, Params.size());
         Params.push_back(Param);
       }
-      NewFD->setParams(Params.data(), Params.size());
+      NewFD->setParams(Params);
     }
   } else if (VarDecl *VD = dyn_cast<VarDecl>(ND)) {
     NewD = VarDecl::Create(VD->getASTContext(), VD->getDeclContext(),

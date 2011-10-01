@@ -114,6 +114,11 @@ Retry:
       CXXScopeSpec SS;
       IdentifierInfo *Name = Tok.getIdentifierInfo();
       SourceLocation NameLoc = Tok.getLocation();
+
+      if (getLang().CPlusPlus)
+        CheckForTemplateAndDigraph(Next, ParsedType(),
+                                   /*EnteringContext=*/false, *Name, SS);
+
       Sema::NameClassification Classification
         = Actions.ClassifyName(getCurScope(), SS, Name, NameLoc, Next);
       switch (Classification.getKind()) {
@@ -746,7 +751,7 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
       continue;
     }
 
-    if (getLang().Microsoft && (Tok.is(tok::kw___if_exists) ||
+    if (getLang().MicrosoftExt && (Tok.is(tok::kw___if_exists) ||
         Tok.is(tok::kw___if_not_exists))) {
       ParseMicrosoftIfExistsStatement(Stmts);
       continue;
@@ -1637,7 +1642,7 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
   assert(Tok.is(tok::kw_asm) && "Not an asm stmt");
   SourceLocation AsmLoc = ConsumeToken();
 
-  if (getLang().Microsoft && Tok.isNot(tok::l_paren) && !isTypeQualifier()) {
+  if (getLang().MicrosoftExt && Tok.isNot(tok::l_paren) && !isTypeQualifier()) {
     msAsm = true;
     return FuzzyParseMicrosoftAsmStatement(AsmLoc);
   }

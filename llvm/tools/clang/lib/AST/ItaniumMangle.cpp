@@ -310,7 +310,7 @@ private:
   void mangleCXXCtorType(CXXCtorType T);
   void mangleCXXDtorType(CXXDtorType T);
 
-  void mangleTemplateArgs(const ExplicitTemplateArgumentList &TemplateArgs);
+  void mangleTemplateArgs(const ASTTemplateArgumentListInfo &TemplateArgs);
   void mangleTemplateArgs(TemplateName Template,
                           const TemplateArgument *TemplateArgs,
                           unsigned NumTemplateArgs);  
@@ -1069,8 +1069,7 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
   case DeclarationName::ObjCZeroArgSelector:
   case DeclarationName::ObjCOneArgSelector:
   case DeclarationName::ObjCMultiArgSelector:
-    assert(false && "Can't mangle Objective-C selector names here!");
-    break;
+    llvm_unreachable("Can't mangle Objective-C selector names here!");
 
   case DeclarationName::CXXConstructorName:
     if (ND == Structor)
@@ -1124,8 +1123,7 @@ void CXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
     break;
 
   case DeclarationName::CXXUsingDirective:
-    assert(false && "Can't mangle a using directive name!");
-    break;
+    llvm_unreachable("Can't mangle a using directive name!");
   }
 }
 
@@ -1512,8 +1510,7 @@ CXXNameMangler::mangleOperatorName(OverloadedOperatorKind OO, unsigned Arity) {
 
   case OO_None:
   case NUM_OVERLOADED_OPERATORS:
-    assert(false && "Not an overloaded operator");
-    break;
+    llvm_unreachable("Not an overloaded operator");
   }
 }
 
@@ -2817,7 +2814,7 @@ void CXXNameMangler::mangleCXXDtorType(CXXDtorType T) {
 }
 
 void CXXNameMangler::mangleTemplateArgs(
-                          const ExplicitTemplateArgumentList &TemplateArgs) {
+                          const ASTTemplateArgumentListInfo &TemplateArgs) {
   // <template-args> ::= I <template-arg>+ E
   Out << 'I';
   for (unsigned i = 0, e = TemplateArgs.NumTemplateArgs; i != e; ++i)

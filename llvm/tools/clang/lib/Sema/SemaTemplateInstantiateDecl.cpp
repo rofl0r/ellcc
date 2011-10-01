@@ -96,8 +96,7 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
 
 Decl *
 TemplateDeclInstantiator::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
-  assert(false && "Translation units cannot be instantiated");
-  return D;
+  llvm_unreachable("Translation units cannot be instantiated");
 }
 
 Decl *
@@ -110,8 +109,7 @@ TemplateDeclInstantiator::VisitLabelDecl(LabelDecl *D) {
 
 Decl *
 TemplateDeclInstantiator::VisitNamespaceDecl(NamespaceDecl *D) {
-  assert(false && "Namespaces cannot be instantiated");
-  return D;
+  llvm_unreachable("Namespaces cannot be instantiated");
 }
 
 Decl *
@@ -701,8 +699,7 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
 }
 
 Decl *TemplateDeclInstantiator::VisitEnumConstantDecl(EnumConstantDecl *D) {
-  assert(false && "EnumConstantDecls can only occur within EnumDecls.");
-  return 0;
+  llvm_unreachable("EnumConstantDecls can only occur within EnumDecls.");
 }
 
 Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
@@ -1112,7 +1109,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
       Params.push_back(Param);
     }
   }
-  Function->setParams(Params.data(), Params.size());
+  Function->setParams(Params);
 
   SourceLocation InstantiateAtPOI;
   if (TemplateParams) {
@@ -1485,7 +1482,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   // Attach the parameters
   for (unsigned P = 0; P < Params.size(); ++P)
     Params[P]->setOwningFunction(Method);
-  Method->setParams(Params.data(), Params.size());
+  Method->setParams(Params);
 
   if (InitMethodInstantiation(Method, D))
     Method->setInvalidDecl();
@@ -1633,8 +1630,7 @@ Decl *TemplateDeclInstantiator::VisitNonTypeTemplateParmDecl(
     llvm::Optional<unsigned> NumExpansions = OrigNumExpansions;
     if (SemaRef.CheckParameterPacksForExpansion(Expansion.getEllipsisLoc(),
                                                 Pattern.getSourceRange(),
-                                                Unexpanded.data(),
-                                                Unexpanded.size(),
+                                                Unexpanded,
                                                 TemplateArgs,
                                                 Expand, RetainExpansion, 
                                                 NumExpansions))
@@ -2236,8 +2232,7 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
                                           = PackExpansion->getNumExpansions();
         if (SemaRef.CheckParameterPacksForExpansion(New->getLocation(), 
                                                     SourceRange(),
-                                                    Unexpanded.data(), 
-                                                    Unexpanded.size(),
+                                                    Unexpanded,
                                                     TemplateArgs,
                                                     Expand, 
                                                     RetainExpansion,
@@ -2709,8 +2704,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
       llvm::Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Init->getEllipsisLoc(), 
                                           BaseTL.getSourceRange(),
-                                          Unexpanded.data(), 
-                                          Unexpanded.size(),
+                                          Unexpanded,
                                           TemplateArgs, ShouldExpand, 
                                           RetainExpansion,
                                           NumExpansions)) {
@@ -3311,7 +3305,7 @@ void Sema::PerformPendingInstantiations(bool LocalOnly) {
     // and removed the need for implicit instantiation.
     switch (Var->getMostRecentDeclaration()->getTemplateSpecializationKind()) {
     case TSK_Undeclared:
-      assert(false && "Cannot instantitiate an undeclared specialization.");
+      llvm_unreachable("Cannot instantitiate an undeclared specialization.");
     case TSK_ExplicitInstantiationDeclaration:
     case TSK_ExplicitSpecialization:
       continue;  // No longer need to instantiate this type.

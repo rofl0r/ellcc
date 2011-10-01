@@ -290,17 +290,13 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
   const char *BTName = NULL;
   switch (BT->getKind()) {
   case BuiltinType::Dependent:
-    assert(0 && "Unexpected builtin type Dependent");
-    return llvm::DIType();
+    llvm_unreachable("Unexpected builtin type Dependent");
   case BuiltinType::Overload:
-    assert(0 && "Unexpected builtin type Overload");
-    return llvm::DIType();
+    llvm_unreachable("Unexpected builtin type Overload");
   case BuiltinType::BoundMember:
-    assert(0 && "Unexpected builtin type BoundMember");
-    return llvm::DIType();
+    llvm_unreachable("Unexpected builtin type BoundMember");
   case BuiltinType::UnknownAny:
-    assert(0 && "Unexpected builtin type UnknownAny");
-    return llvm::DIType();
+    llvm_unreachable("Unexpected builtin type UnknownAny");
   case BuiltinType::NullPtr:
     return DBuilder.
       createNullPtrType(BT->getName(CGM.getContext().getLangOptions()));
@@ -1194,7 +1190,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   }
 
   const ASTRecordLayout &RL = CGM.getContext().getASTObjCInterfaceLayout(ID);
-
+  ObjCImplementationDecl *ImpD = ID->getImplementation();
   unsigned FieldNo = 0;
   for (ObjCIvarDecl *Field = ID->all_declared_ivar_begin(); Field;
        Field = Field->getNextIvar(), ++FieldNo) {
@@ -1238,13 +1234,17 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
     StringRef PropertyGetter;
     StringRef PropertySetter;
     unsigned PropertyAttributes = 0;
-    if (ObjCPropertyDecl *PD =
-        ID->FindPropertyVisibleInPrimaryClass(Field->getIdentifier())) {
+    ObjCPropertyDecl *PD = NULL;
+    if (ImpD)
+      if (ObjCPropertyImplDecl *PImpD = 
+	  ImpD->FindPropertyImplIvarDecl(Field->getIdentifier()))
+	PD = PImpD->getPropertyDecl();
+    if (PD) {
       PropertyName = PD->getName();
       PropertyGetter = getSelectorName(PD->getGetterName());
       PropertySetter = getSelectorName(PD->getSetterName());
       PropertyAttributes = PD->getPropertyAttributes();
-    }
+    } 
     FieldTy = DBuilder.createObjCIVar(FieldName, FieldDefUnit,
                                       FieldLine, FieldSize, FieldAlign,
                                       FieldOffset, Flags, FieldTy,
@@ -1539,7 +1539,7 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
 #define NON_CANONICAL_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
 #include "clang/AST/TypeNodes.def"
-    assert(false && "Dependent types cannot show up in debug information");
+    llvm_unreachable("Dependent types cannot show up in debug information");
 
   case Type::ExtVector:
   case Type::Vector:

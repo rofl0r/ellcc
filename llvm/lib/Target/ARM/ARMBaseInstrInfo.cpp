@@ -405,7 +405,7 @@ ARMBaseInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   int BccOpc = !AFI->isThumbFunction()
     ? ARM::Bcc : (AFI->isThumb2Function() ? ARM::t2Bcc : ARM::tBcc);
   bool isThumb = AFI->isThumbFunction() || AFI->isThumb2Function();
- 
+
   // Shouldn't be a fall through.
   assert(TBB && "InsertBranch must not be told to insert a fallthrough");
   assert((Cond.size() == 2 || Cond.size() == 0) &&
@@ -693,9 +693,9 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       ARM::QQQQPRRegClass.contains(DestReg, SrcReg)) {
     const TargetRegisterInfo *TRI = &getRegisterInfo();
     assert(ARM::qsub_0 + 3 == ARM::qsub_3 && "Expected contiguous enum.");
-    unsigned EndSubReg = ARM::QQPRRegClass.contains(DestReg, SrcReg) ? 
+    unsigned EndSubReg = ARM::QQPRRegClass.contains(DestReg, SrcReg) ?
       ARM::qsub_1 : ARM::qsub_3;
-    for (unsigned i = ARM::qsub_0, e = EndSubReg + 1; i != e; ++i) { 
+    for (unsigned i = ARM::qsub_0, e = EndSubReg + 1; i != e; ++i) {
       unsigned Dst = TRI->getSubReg(DestReg, i);
       unsigned Src = TRI->getSubReg(SrcReg, i);
       MachineInstrBuilder Mov =
@@ -1369,7 +1369,7 @@ isProfitableToIfCvt(MachineBasicBlock &TMBB,
   // Attempt to estimate the relative costs of predication versus branching.
   unsigned TUnpredCost = Probability.getNumerator() * TCycles;
   TUnpredCost /= Probability.getDenominator();
-    
+
   uint32_t Comp = Probability.getDenominator() - Probability.getNumerator();
   unsigned FUnpredCost = Comp * FCycles;
   FUnpredCost /= Probability.getDenominator();
@@ -1409,6 +1409,57 @@ int llvm::getMatchingCondBranchOpcode(int Opc) {
   return 0;
 }
 
+
+/// Map pseudo instructions that imply an 'S' bit onto real opcodes. Whether the
+/// instruction is encoded with an 'S' bit is determined by the optional CPSR
+/// def operand.
+///
+/// This will go away once we can teach tblgen how to set the optional CPSR def
+/// operand itself.
+struct AddSubFlagsOpcodePair {
+  unsigned PseudoOpc;
+  unsigned MachineOpc;
+};
+
+static AddSubFlagsOpcodePair AddSubFlagsOpcodeMap[] = {
+  {ARM::ADDSri, ARM::ADDri},
+  {ARM::ADDSrr, ARM::ADDrr},
+  {ARM::ADDSrsi, ARM::ADDrsi},
+  {ARM::ADDSrsr, ARM::ADDrsr},
+
+  {ARM::SUBSri, ARM::SUBri},
+  {ARM::SUBSrr, ARM::SUBrr},
+  {ARM::SUBSrsi, ARM::SUBrsi},
+  {ARM::SUBSrsr, ARM::SUBrsr},
+
+  {ARM::RSBSri, ARM::RSBri},
+  {ARM::RSBSrr, ARM::RSBrr},
+  {ARM::RSBSrsi, ARM::RSBrsi},
+  {ARM::RSBSrsr, ARM::RSBrsr},
+
+  {ARM::t2ADDSri, ARM::t2ADDri},
+  {ARM::t2ADDSrr, ARM::t2ADDrr},
+  {ARM::t2ADDSrs, ARM::t2ADDrs},
+
+  {ARM::t2SUBSri, ARM::t2SUBri},
+  {ARM::t2SUBSrr, ARM::t2SUBrr},
+  {ARM::t2SUBSrs, ARM::t2SUBrs},
+
+  {ARM::t2RSBSri, ARM::t2RSBri},
+  {ARM::t2RSBSrs, ARM::t2RSBrs},
+};
+
+unsigned llvm::convertAddSubFlagsOpcode(unsigned OldOpc) {
+  static const int NPairs =
+    sizeof(AddSubFlagsOpcodeMap) / sizeof(AddSubFlagsOpcodePair);
+  for (AddSubFlagsOpcodePair *OpcPair = &AddSubFlagsOpcodeMap[0],
+         *End = &AddSubFlagsOpcodeMap[NPairs]; OpcPair != End; ++OpcPair) {
+    if (OldOpc == OpcPair->PseudoOpc) {
+      return OpcPair->MachineOpc;
+    }
+  }
+  return 0;
+}
 
 void llvm::emitARMRegPlusImmediate(MachineBasicBlock &MBB,
                                MachineBasicBlock::iterator &MBBI, DebugLoc dl,
@@ -2643,6 +2694,15 @@ hasLowDefLatency(const InstrItineraryData *ItinData,
     return (DefCycle != -1 && DefCycle <= 2);
   }
   return false;
+}
+
+bool ARMBaseInstrInfo::verifyInstruction(const MachineInstr *MI,
+                                         StringRef &ErrInfo) const {
+  if (convertAddSubFlagsOpcode(MI->getOpcode())) {
+    ErrInfo = "Pseudo flag setting opcodes only exist in Selection DAG";
+    return false;
+  }
+  return true;
 }
 
 bool

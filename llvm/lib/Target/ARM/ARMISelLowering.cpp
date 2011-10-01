@@ -4890,7 +4890,7 @@ ReplaceATOMIC_OP_64(SDNode *Node, SmallVectorImpl<SDValue>& Results,
   // High part of Val1
   Ops.push_back(DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32,
                             Node->getOperand(2), DAG.getIntPtrConstant(1)));
-  if (NewOp == ARMISD::ATOMCMPXCHG64_DAG) { 
+  if (NewOp == ARMISD::ATOMCMPXCHG64_DAG) {
     // High part of Val1
     Ops.push_back(DAG.getNode(ISD::EXTRACT_ELEMENT, dl, MVT::i32,
                               Node->getOperand(3), DAG.getIntPtrConstant(0)));
@@ -5410,7 +5410,7 @@ ARMTargetLowering::EmitAtomicBinary64(MachineInstr *MI, MachineBasicBlock *BB,
   // Note that the registers are explicitly specified because there is not any
   // way to force the register allocator to allocate a register pair.
   //
-  // FIXME: The hardcoded registers are not necessary for Thumb2, but we 
+  // FIXME: The hardcoded registers are not necessary for Thumb2, but we
   // need to properly enforce the restriction that the two output registers
   // for ldrexd must be different.
   BB = loopMBB;
@@ -5754,25 +5754,66 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 
 void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
                                                       SDNode *Node) const {
-  // Adjust potentially 's' setting instructions after isel, i.e. ADC, SBC,
-  // RSB, RSC. Coming out of isel, they have an implicit CPSR def, but the
-  // optional operand is not filled in. If the carry bit is used, then change
-  // the optional operand to CPSR. Otherwise, remove the CPSR implicit def.
   const MCInstrDesc &MCID = MI->getDesc();
-  if (Node->hasAnyUseOfValue(1)) {
-    MachineOperand &MO = MI->getOperand(MCID.getNumOperands() - 1);
-    MO.setReg(ARM::CPSR);
-    MO.setIsDef(true);
-  } else {
-    for (unsigned i = MCID.getNumOperands(), e = MI->getNumOperands();
-         i != e; ++i) {
-      const MachineOperand &MO = MI->getOperand(i);
-      if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR) {
-        MI->RemoveOperand(i);
-        break;
-      }
+  if (!MCID.hasPostISelHook()) {
+    assert(!convertAddSubFlagsOpcode(MI->getOpcode()) &&
+           "Pseudo flag-setting opcodes must be marked with 'hasPostISelHook'");
+    return;
+  }
+
+  // Adjust potentially 's' setting instructions after isel, i.e. ADC, SBC, RSB,
+  // RSC. Coming out of isel, they have an implicit CPSR def, but the optional
+  // operand is still set to noreg. If needed, set the optional operand's
+  // register to CPSR, and remove the redundant implicit def.
+  //
+  // e.g. ADCS (...opt:%noreg, CPSR<imp-def>) -> ADC (... opt:CPSR<def>).
+
+  // Rename pseudo opcodes.
+  unsigned NewOpc = convertAddSubFlagsOpcode(MI->getOpcode());
+  if (NewOpc) {
+    const ARMBaseInstrInfo *TII =
+      static_cast<const ARMBaseInstrInfo*>(getTargetMachine().getInstrInfo());
+    MI->setDesc(TII->get(NewOpc));
+  }
+  unsigned ccOutIdx = MCID.getNumOperands() - 1;
+
+  // Any ARM instruction that sets the 's' bit should specify an optional
+  // "cc_out" operand in the last operand position.
+  if (!MCID.hasOptionalDef() || !MCID.OpInfo[ccOutIdx].isOptionalDef()) {
+    assert(!NewOpc && "Optional cc_out operand required");
+    return;
+  }
+  // Look for an implicit def of CPSR added by MachineInstr ctor. Remove it
+  // since we already have an optional CPSR def.
+  bool definesCPSR = false;
+  bool deadCPSR = false;
+  for (unsigned i = MCID.getNumOperands(), e = MI->getNumOperands();
+       i != e; ++i) {
+    const MachineOperand &MO = MI->getOperand(i);
+    if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR) {
+      definesCPSR = true;
+      if (MO.isDead())
+        deadCPSR = true;
+      MI->RemoveOperand(i);
+      break;
     }
   }
+  if (!definesCPSR) {
+    assert(!NewOpc && "Optional cc_out operand required");
+    return;
+  }
+  assert(deadCPSR == !Node->hasAnyUseOfValue(1) && "inconsistent dead flag");
+  if (deadCPSR) {
+    assert(!MI->getOperand(ccOutIdx).getReg() &&
+           "expect uninitialized optional cc_out operand");
+    return;
+  }
+
+  // If this instruction was defined with an optional CPSR def and its dag node
+  // had a live implicit CPSR def, then activate the optional CPSR def.
+  MachineOperand &MO = MI->getOperand(ccOutIdx);
+  MO.setReg(ARM::CPSR);
+  MO.setIsDef(true);
 }
 
 //===----------------------------------------------------------------------===//
@@ -7928,7 +7969,7 @@ ARMTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
         return RCPair(0U, ARM::GPRRegisterClass);
     case 'h': // High regs or no regs.
       if (Subtarget->isThumb())
-	return RCPair(0U, ARM::hGPRRegisterClass);
+        return RCPair(0U, ARM::hGPRRegisterClass);
       break;
     case 'r':
       return RCPair(0U, ARM::GPRRegisterClass);
@@ -7942,15 +7983,15 @@ ARMTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
       break;
     case 'x':
       if (VT == MVT::f32)
-	return RCPair(0U, ARM::SPR_8RegisterClass);
+        return RCPair(0U, ARM::SPR_8RegisterClass);
       if (VT.getSizeInBits() == 64)
-	return RCPair(0U, ARM::DPR_8RegisterClass);
+        return RCPair(0U, ARM::DPR_8RegisterClass);
       if (VT.getSizeInBits() == 128)
-	return RCPair(0U, ARM::QPR_8RegisterClass);
+        return RCPair(0U, ARM::QPR_8RegisterClass);
       break;
     case 't':
       if (VT == MVT::f32)
-	return RCPair(0U, ARM::SPRRegisterClass);
+        return RCPair(0U, ARM::SPRRegisterClass);
       break;
     }
   }
@@ -7990,12 +8031,12 @@ void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
 
     switch (ConstraintLetter) {
       case 'j':
-	// Constant suitable for movw, must be between 0 and
-	// 65535.
-	if (Subtarget->hasV6T2Ops())
-	  if (CVal >= 0 && CVal <= 65535)
-	    break;
-	return;
+        // Constant suitable for movw, must be between 0 and
+        // 65535.
+        if (Subtarget->hasV6T2Ops())
+          if (CVal >= 0 && CVal <= 65535)
+            break;
+        return;
       case 'I':
         if (Subtarget->isThumb1Only()) {
           // This must be a constant between 0 and 255, for ADD

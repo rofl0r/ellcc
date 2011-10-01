@@ -80,7 +80,7 @@ namespace clang {
     static const unsigned NumExprFields = NumStmtFields + 7;
     
     /// \brief Read and initialize a ExplicitTemplateArgumentList structure.
-    void ReadExplicitTemplateArgumentList(ExplicitTemplateArgumentList &ArgList,
+    void ReadExplicitTemplateArgumentList(ASTTemplateArgumentListInfo &ArgList,
                                           unsigned NumTemplateArgs);
 
     void VisitStmt(Stmt *S);
@@ -91,7 +91,7 @@ namespace clang {
 }
 
 void ASTStmtReader::
-ReadExplicitTemplateArgumentList(ExplicitTemplateArgumentList &ArgList,
+ReadExplicitTemplateArgumentList(ASTTemplateArgumentListInfo &ArgList,
                                  unsigned NumTemplateArgs) {
   TemplateArgumentListInfo ArgInfo;
   ArgInfo.setLAngleLoc(ReadSourceLocation(Record, Idx));
@@ -1061,7 +1061,7 @@ void ASTStmtReader::VisitCXXThrowExpr(CXXThrowExpr *E) {
 void ASTStmtReader::VisitCXXDefaultArgExpr(CXXDefaultArgExpr *E) {
   VisitExpr(E);
 
-  assert(Record[Idx] == E->Param.getInt() && "We messed up at creation ?");
+  assert((bool)Record[Idx] == E->Param.getInt() && "We messed up at creation ?");
   ++Idx; // HasOtherExprStored and SubExpr was handled during creation.
   E->Param.setPointer(ReadDeclAs<ParmVarDecl>(Record, Idx));
   E->Loc = ReadSourceLocation(Record, Idx);

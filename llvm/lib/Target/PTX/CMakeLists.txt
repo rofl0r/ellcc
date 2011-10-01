@@ -1,7 +1,6 @@
 set(LLVM_TARGET_DEFINITIONS PTX.td)
 
 tablegen(PTXGenAsmWriter.inc -gen-asm-writer)
-tablegen(PTXGenCallingConv.inc -gen-callingconv)
 tablegen(PTXGenDAGISel.inc -gen-dag-isel)
 tablegen(PTXGenInstrInfo.inc -gen-instr-info)
 tablegen(PTXGenRegisterInfo.inc -gen-register-info)
@@ -16,6 +15,8 @@ add_llvm_target(PTXCodeGen
   PTXFrameLowering.cpp
   PTXMCAsmStreamer.cpp
   PTXMFInfoExtract.cpp
+  PTXParamManager.cpp
+  PTXRegAlloc.cpp
   PTXRegisterInfo.cpp
   PTXSubtarget.cpp
   PTXTargetMachine.cpp

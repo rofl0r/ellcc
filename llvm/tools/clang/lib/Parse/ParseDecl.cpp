@@ -2642,7 +2642,7 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
   MaybeParseGNUAttributes(attrs);
 
   Actions.ActOnFields(getCurScope(),
-                      RecordLoc, TagDecl, FieldDecls.data(), FieldDecls.size(),
+                      RecordLoc, TagDecl, FieldDecls,
                       LBraceLoc, RBraceLoc,
                       attrs.getList());
   StructScope.Exit();
@@ -2701,7 +2701,7 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   MaybeParseGNUAttributes(attrs);
 
   bool AllowFixedUnderlyingType 
-    = getLang().CPlusPlus0x || getLang().Microsoft || getLang().ObjC2;
+    = getLang().CPlusPlus0x || getLang().MicrosoftExt || getLang().ObjC2;
 
   CXXScopeSpec &SS = DS.getTypeSpecScope();
   if (getLang().CPlusPlus) {
@@ -4152,7 +4152,7 @@ void Parser::ParseParameterDeclarationClause(
     DeclSpec DS(AttrFactory);
 	
     // Skip any Microsoft attributes before a param.
-    if (getLang().Microsoft && Tok.is(tok::l_square))
+    if (getLang().MicrosoftExt && Tok.is(tok::l_square))
       ParseMicrosoftAttributes(DS.getAttributes());
 
     SourceLocation DSStart = Tok.getLocation();

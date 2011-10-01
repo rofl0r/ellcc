@@ -189,8 +189,9 @@ Darwin::~Darwin() {
     delete it->second;
 }
 
-std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args) const {
-  llvm::Triple Triple(ComputeLLVMTriple(Args));
+std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
+                                                types::ID InputType) const {
+  llvm::Triple Triple(ComputeLLVMTriple(Args, InputType));
 
   // If the target isn't initialized (e.g., an unknown Darwin platform, return
   // the default triple).
@@ -242,7 +243,7 @@ Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
     switch (Key) {
     case Action::InputClass:
     case Action::BindArchClass:
-      assert(0 && "Invalid tool kind.");
+      llvm_unreachable("Invalid tool kind.");
     case Action::PreprocessJobClass:
       T = new tools::darwin::Preprocess(*this); break;
     case Action::AnalyzeJobClass:
@@ -275,8 +276,6 @@ Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
 DarwinClang::DarwinClang(const HostInfo &Host, const llvm::Triple& Triple)
   : Darwin(Host, Triple)
 {
-  std::string UsrPrefix = "llvm-gcc-4.2/";
-
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
     getProgramPaths().push_back(getDriver().Dir);
@@ -289,16 +288,24 @@ DarwinClang::DarwinClang(const HostInfo &Host, const llvm::Triple& Triple)
   // For fallback, we need to know how to find the GCC cc1 executables, so we
   // also add the GCC libexec paths. This is legacy code that can be removed
   // once fallback is no longer useful.
+  AddGCCLibexecPath(DarwinVersion[0]);
+  AddGCCLibexecPath(DarwinVersion[0] - 2);
+  AddGCCLibexecPath(DarwinVersion[0] - 1);
+  AddGCCLibexecPath(DarwinVersion[0] + 1);
+  AddGCCLibexecPath(DarwinVersion[0] + 2);
+}
+
+void DarwinClang::AddGCCLibexecPath(unsigned darwinVersion) {
   std::string ToolChainDir = "i686-apple-darwin";
-  ToolChainDir += llvm::utostr(DarwinVersion[0]);
+  ToolChainDir += llvm::utostr(darwinVersion);
   ToolChainDir += "/4.2.1";
 
   std::string Path = getDriver().Dir;
-  Path += "/../" + UsrPrefix + "libexec/gcc/";
+  Path += "/../llvm-gcc-4.2/libexec/gcc/";
   Path += ToolChainDir;
   getProgramPaths().push_back(Path);
 
-  Path = "/usr/" + UsrPrefix + "libexec/gcc/";
+  Path = "/usr/llvm-gcc-4.2/libexec/gcc/";
   Path += ToolChainDir;
   getProgramPaths().push_back(Path);
 }
@@ -316,7 +323,7 @@ void DarwinClang::AddLinkSearchPathArgs(const ArgList &Args,
   P.appendComponent("gcc");
   switch (getTriple().getArch()) {
   default:
-    assert(0 && "Invalid Darwin arch!");
+    llvm_unreachable("Invalid Darwin arch!");
   case llvm::Triple::x86:
   case llvm::Triple::x86_64:
     P.appendComponent("i686-apple-darwin10");
@@ -958,8 +965,9 @@ bool Darwin::SupportsObjCGC() const {
 }
 
 std::string
-Darwin_Generic_GCC::ComputeEffectiveClangTriple(const ArgList &Args) const {
-  return ComputeLLVMTriple(Args);
+Darwin_Generic_GCC::ComputeEffectiveClangTriple(const ArgList &Args,
+                                                types::ID InputType) const {
+  return ComputeLLVMTriple(Args, InputType);
 }
 
 /// Generic_GCC - A tool chain using the 'gcc' command to perform
@@ -994,7 +1002,7 @@ Tool &Generic_GCC::SelectTool(const Compilation &C,
     switch (Key) {
     case Action::InputClass:
     case Action::BindArchClass:
-      assert(0 && "Invalid tool kind.");
+      llvm_unreachable("Invalid tool kind.");
     case Action::PreprocessJobClass:
       T = new tools::gcc::Preprocess(*this); break;
     case Action::PrecompileJobClass:
@@ -1085,7 +1093,7 @@ Tool &TCEToolChain::SelectTool(const Compilation &C,
     case Action::AnalyzeJobClass:
       T = new tools::Clang(*this); break;
     default:
-     assert(false && "Unsupported action for TCE target.");
+     llvm_unreachable("Unsupported action for TCE target.");
     }
   }
   return *T;
@@ -1836,7 +1844,7 @@ Tool &Windows::SelectTool(const Compilation &C, const JobAction &JA,
     case Action::LipoJobClass:
     case Action::DsymutilJobClass:
     case Action::VerifyJobClass:
-      assert(0 && "Invalid tool kind.");
+      llvm_unreachable("Invalid tool kind.");
     case Action::PreprocessJobClass:
     case Action::PrecompileJobClass:
     case Action::AnalyzeJobClass:

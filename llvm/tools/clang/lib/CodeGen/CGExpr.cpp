@@ -18,6 +18,7 @@
 #include "CGDebugInfo.h"
 #include "CGRecordLayout.h"
 #include "CGObjCRuntime.h"
+#include "TargetInfo.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/Frontend/CodeGenOptions.h"
@@ -473,7 +474,8 @@ CodeGenFunction::EmitReferenceBindingToExpr(const Expr *E,
   else {
     switch (ObjCARCReferenceLifetimeType.getObjCLifetime()) {
     case Qualifiers::OCL_None:
-      assert(0 && "Not a reference temporary that needs to be deallocated");
+      llvm_unreachable(
+                      "Not a reference temporary that needs to be deallocated");
     case Qualifiers::OCL_ExplicitNone:
     case Qualifiers::OCL_Autoreleasing:
       // Nothing to do.
@@ -1195,7 +1197,7 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
       Vec = Builder.CreateShuffleVector(Vec, ExtSrcVal, MaskV, "tmp");
     } else {
       // We should never shorten the vector
-      assert(0 && "unexpected shorten vector length");
+      llvm_unreachable("unexpected shorten vector length");
     }
   } else {
     // If the Src is a scalar (not a vector) it must be updating one element.
@@ -1386,7 +1388,7 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
   if (const FunctionDecl *fn = dyn_cast<FunctionDecl>(ND))
     return EmitFunctionDeclLValue(*this, E, fn);
 
-  assert(false && "Unhandled DeclRefExpr");
+  llvm_unreachable("Unhandled DeclRefExpr");
   
   // an invalid LValue, but the assert will
   // ensure that this point is never reached.
@@ -1406,7 +1408,7 @@ LValue CodeGenFunction::EmitUnaryOpLValue(const UnaryOperator *E) {
 
   QualType ExprTy = getContext().getCanonicalType(E->getSubExpr()->getType());
   switch (E->getOpcode()) {
-  default: assert(0 && "Unknown unary operator lvalue!");
+  default: llvm_unreachable("Unknown unary operator lvalue!");
   case UO_Deref: {
     QualType T = E->getSubExpr()->getType()->getPointeeType();
     assert(!T.isNull() && "CodeGenFunction::EmitUnaryOpLValue: Illegal type");
@@ -1482,7 +1484,7 @@ LValue CodeGenFunction::EmitPredefinedLValue(const PredefinedExpr *E) {
     std::string GlobalVarName;
 
     switch (Type) {
-    default: assert(0 && "Invalid type");
+    default: llvm_unreachable("Invalid type");
     case PredefinedExpr::Func:
       GlobalVarName = "__func__.";
       break;
@@ -1792,8 +1794,7 @@ LValue CodeGenFunction::EmitMemberExpr(const MemberExpr *E) {
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(ND))
     return EmitFunctionDeclLValue(*this, E, FD);
 
-  assert(false && "Unhandled member declaration!");
-  return LValue();
+  llvm_unreachable("Unhandled member declaration!");
 }
 
 LValue CodeGenFunction::EmitLValueForBitfield(llvm::Value *BaseValue,
@@ -2414,8 +2415,35 @@ RValue CodeGenFunction::EmitCall(QualType CalleeType, llvm::Value *Callee,
   CallArgList Args;
   EmitCallArgs(Args, dyn_cast<FunctionProtoType>(FnType), ArgBeg, ArgEnd);
 
-  return EmitCall(CGM.getTypes().getFunctionInfo(Args, FnType),
-                  Callee, ReturnValue, Args, TargetDecl);
+  const CGFunctionInfo &FnInfo = CGM.getTypes().getFunctionInfo(Args, FnType);
+
+  // C99 6.5.2.2p6:
+  //   If the expression that denotes the called function has a type
+  //   that does not include a prototype, [the default argument
+  //   promotions are performed]. If the number of arguments does not
+  //   equal the number of parameters, the behavior is undefined. If
+  //   the function is defined with a type that includes a prototype,
+  //   and either the prototype ends with an ellipsis (, ...) or the
+  //   types of the arguments after promotion are not compatible with
+  //   the types of the parameters, the behavior is undefined. If the
+  //   function is defined with a type that does not include a
+  //   prototype, and the types of the arguments after promotion are
+  //   not compatible with those of the parameters after promotion,
+  //   the behavior is undefined [except in some trivial cases].
+  // That is, in the general case, we should assume that a call
+  // through an unprototyped function type works like a *non-variadic*
+  // call.  The way we make this work is to cast to the exact type
+  // of the promoted arguments.
+  if (isa<FunctionNoProtoType>(FnType) &&
+      !getTargetHooks().isNoProtoCallVariadic(FnType->getCallConv())) {
+    assert(cast<llvm::FunctionType>(Callee->getType()->getContainedType(0))
+             ->isVarArg());
+    llvm::Type *CalleeTy = getTypes().GetFunctionType(FnInfo, false);
+    CalleeTy = CalleeTy->getPointerTo();
+    Callee = Builder.CreateBitCast(Callee, CalleeTy, "callee.knr.cast");
+  }
+
+  return EmitCall(FnInfo, Callee, ReturnValue, Args, TargetDecl);
 }
 
 LValue CodeGenFunction::

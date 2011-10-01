@@ -650,7 +650,7 @@ bool DeclSpec::SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
   TypeQualifiers |= T;
 
   switch (T) {
-  default: assert(0 && "Unknown type qualifier!");
+  default: llvm_unreachable("Unknown type qualifier!");
   case TQ_const:    TQ_constLoc = Loc; break;
   case TQ_restrict: TQ_restrictLoc = Loc; break;
   case TQ_volatile: TQ_volatileLoc = Loc; break;
@@ -866,7 +866,7 @@ void DeclSpec::Finish(Diagnostic &D, Preprocessor &PP) {
   // class specifier, then assume this is an attempt to use C++0x's 'auto'
   // type specifier.
   // FIXME: Does Microsoft really support implicit int in C++?
-  if (PP.getLangOptions().CPlusPlus && !PP.getLangOptions().Microsoft &&
+  if (PP.getLangOptions().CPlusPlus && !PP.getLangOptions().MicrosoftExt &&
       TypeSpecType == TST_unspecified && StorageClassSpec == SCS_auto) {
     TypeSpecType = TST_auto;
     StorageClassSpec = StorageClassSpecAsWritten = SCS_unspecified;
@@ -890,7 +890,7 @@ void DeclSpec::Finish(Diagnostic &D, Preprocessor &PP) {
     const char *SpecName = getSpecifierName(SC);
 
     SourceLocation SCLoc = getStorageClassSpecLoc();
-    SourceLocation SCEndLoc = SCLoc.getFileLocWithOffset(strlen(SpecName));
+    SourceLocation SCEndLoc = SCLoc.getLocWithOffset(strlen(SpecName));
 
     Diag(D, SCLoc, diag::err_friend_storage_spec)
       << SpecName
@@ -948,7 +948,7 @@ bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
   Specifiers |= VS;
 
   switch (VS) {
-  default: assert(0 && "Unknown specifier!");
+  default: llvm_unreachable("Unknown specifier!");
   case VS_Override: VS_overrideLoc = Loc; break;
   case VS_Final:    VS_finalLoc = Loc; break;
   }
@@ -958,7 +958,7 @@ bool VirtSpecifiers::SetSpecifier(Specifier VS, SourceLocation Loc,
 
 const char *VirtSpecifiers::getSpecifierName(Specifier VS) {
   switch (VS) {
-  default: assert(0 && "Unknown specifier");
+  default: llvm_unreachable("Unknown specifier");
   case VS_Override: return "override";
   case VS_Final: return "final";
   }

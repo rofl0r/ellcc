@@ -209,6 +209,13 @@ def PTXstoreparam
   : SDNode<"PTXISD::STORE_PARAM", SDTypeProfile<0, 2, [SDTCisVT<0, i32>]>,
            [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue]>;
 
+def PTXreadparam
+  : SDNode<"PTXISD::READ_PARAM", SDTypeProfile<1, 1, [SDTCisVT<1, i32>]>,
+      [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue]>;
+def PTXwriteparam
+  : SDNode<"PTXISD::WRITE_PARAM", SDTypeProfile<0, 1, []>,
+      [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue]>;
+
 //===----------------------------------------------------------------------===//
 // Instruction Class Templates
 //===----------------------------------------------------------------------===//
@@ -397,53 +404,73 @@ multiclass PTX_SETP_I<RegisterClass RC, string regclsname, Operand immcls,
 
   def rr_and_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (and (setcc RC:$a, RC:$b, cmp), RegPred:$c))]>;
   def ri_and_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (and (setcc RC:$a, imm:$b, cmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (and (setcc RC:$a, imm:$b, cmp),
+                                     RegPred:$c))]>;
   def rr_or_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (or (setcc RC:$a, RC:$b, cmp), RegPred:$c))]>;
   def ri_or_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (or (setcc RC:$a, imm:$b, cmp), RegPred:$c))]>;
   def rr_xor_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, cmp), RegPred:$c))]>;
   def ri_xor_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, imm:$b, cmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, imm:$b, cmp),
+                                     RegPred:$c))]>;
 
   def rr_and_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, cmp),
+                                     (not RegPred:$c)))]>;
   def ri_and_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (and (setcc RC:$a, imm:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (and (setcc RC:$a, imm:$b, cmp),
+                                     (not RegPred:$c)))]>;
   def rr_or_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, cmp),
+                                    (not RegPred:$c)))]>;
   def ri_or_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (or (setcc RC:$a, imm:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (or (setcc RC:$a, imm:$b, cmp),
+                                    (not RegPred:$c)))]>;
   def rr_xor_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, cmp),
+                                     (not RegPred:$c)))]>;
   def ri_xor_not_r
     : InstPTX<(outs RegPred:$p), (ins RC:$a, immcls:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, imm:$b, cmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, imm:$b, cmp),
+                                     (not RegPred:$c)))]>;
 }
 
 multiclass PTX_SETP_FP<RegisterClass RC, string regclsname,
@@ -461,57 +488,79 @@ multiclass PTX_SETP_FP<RegisterClass RC, string regclsname,
 
   def rr_and_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.and.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ucmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, "u.and.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ucmp),
+                                     RegPred:$c))]>;
   def rr_and_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ocmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ocmp),
+                                     RegPred:$c))]>;
 
   def rr_or_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.or.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, "u.or.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ucmp), RegPred:$c))]>;
   def rr_or_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, $c"),
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, $c"),
               [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ocmp), RegPred:$c))]>;
 
   def rr_xor_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.xor.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ucmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, "u.xor.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ucmp),
+                                     RegPred:$c))]>;
   def rr_xor_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, $c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ocmp), RegPred:$c))]>;
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, $c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ocmp),
+                                     RegPred:$c))]>;
 
   def rr_and_not_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.and.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ucmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, "u.and.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ucmp),
+                                     (not RegPred:$c)))]>;
   def rr_and_not_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".and.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ocmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".and.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (and (setcc RC:$a, RC:$b, ocmp),
+                                     (not RegPred:$c)))]>;
 
   def rr_or_not_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.or.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ucmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, "u.or.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ucmp),
+                                    (not RegPred:$c)))]>;
   def rr_or_not_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".or.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ocmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".or.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (or (setcc RC:$a, RC:$b, ocmp),
+                                    (not RegPred:$c)))]>;
 
   def rr_xor_not_r_u
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, "u.xor.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ucmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, "u.xor.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ucmp),
+                                     (not RegPred:$c)))]>;
   def rr_xor_not_r_o
     : InstPTX<(outs RegPred:$p), (ins RC:$a, RC:$b, RegPred:$c),
-              !strconcat("setp.", cmpstr, ".xor.", regclsname, "\t$p, $a, $b, !$c"),
-              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ocmp), (not RegPred:$c)))]>;
+              !strconcat("setp.", cmpstr, ".xor.", regclsname,
+                         "\t$p, $a, $b, !$c"),
+              [(set RegPred:$p, (xor (setcc RC:$a, RC:$b, ocmp),
+                                     (not RegPred:$c)))]>;
 }
 
 multiclass PTX_SELP<RegisterClass RC, string regclsname> {
@@ -521,31 +570,38 @@ multiclass PTX_SELP<RegisterClass RC, string regclsname> {
               [(set RC:$r, (select RegPred:$a, RC:$b, RC:$c))]>;
 }
 
-multiclass PTX_LD<string opstr, string typestr, RegisterClass RC, PatFrag pat_load> {
+multiclass PTX_LD<string opstr, string typestr,
+           RegisterClass RC, PatFrag pat_load> {
   def rr32 : InstPTX<(outs RC:$d),
                      (ins MEMri32:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRrr32:$a))]>, Requires<[Use32BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRrr32:$a))]>,
+                     Requires<[Use32BitAddresses]>;
   def rr64 : InstPTX<(outs RC:$d),
                      (ins MEMri64:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRrr64:$a))]>, Requires<[Use64BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRrr64:$a))]>,
+                     Requires<[Use64BitAddresses]>;
   def ri32 : InstPTX<(outs RC:$d),
                      (ins MEMri32:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRri32:$a))]>, Requires<[Use32BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRri32:$a))]>,
+                     Requires<[Use32BitAddresses]>;
   def ri64 : InstPTX<(outs RC:$d),
                      (ins MEMri64:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRri64:$a))]>, Requires<[Use64BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRri64:$a))]>,
+                     Requires<[Use64BitAddresses]>;
   def ii32 : InstPTX<(outs RC:$d),
                      (ins MEMii32:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRii32:$a))]>, Requires<[Use32BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRii32:$a))]>,
+                     Requires<[Use32BitAddresses]>;
   def ii64 : InstPTX<(outs RC:$d),
                      (ins MEMii64:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t$d, [$a]")),
-                     [(set RC:$d, (pat_load ADDRii64:$a))]>, Requires<[Use64BitAddresses]>;
+                     [(set RC:$d, (pat_load ADDRii64:$a))]>,
+                     Requires<[Use64BitAddresses]>;
 }
 
 multiclass PTX_LD_ALL<string opstr, PatFrag pat_load> {
@@ -556,31 +612,38 @@ multiclass PTX_LD_ALL<string opstr, PatFrag pat_load> {
   defm f64 : PTX_LD<opstr, ".f64", RegF64, pat_load>;
 }
 
-multiclass PTX_ST<string opstr, string typestr, RegisterClass RC, PatFrag pat_store> {
+multiclass PTX_ST<string opstr, string typestr, RegisterClass RC,
+                  PatFrag pat_store> {
   def rr32 : InstPTX<(outs),
                      (ins RC:$d, MEMri32:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                     [(pat_store RC:$d, ADDRrr32:$a)]>, Requires<[Use32BitAddresses]>;
+                     [(pat_store RC:$d, ADDRrr32:$a)]>,
+                     Requires<[Use32BitAddresses]>;
   def rr64 : InstPTX<(outs),
                      (ins RC:$d, MEMri64:$a),
                      !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                     [(pat_store RC:$d, ADDRrr64:$a)]>, Requires<[Use64BitAddresses]>;
+                     [(pat_store RC:$d, ADDRrr64:$a)]>,
+                     Requires<[Use64BitAddresses]>;
   def ri32 : InstPTX<(outs),
                    (ins RC:$d, MEMri32:$a),
                    !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                   [(pat_store RC:$d, ADDRri32:$a)]>, Requires<[Use32BitAddresses]>;
+                   [(pat_store RC:$d, ADDRri32:$a)]>,
+                   Requires<[Use32BitAddresses]>;
   def ri64 : InstPTX<(outs),
                    (ins RC:$d, MEMri64:$a),
                    !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                   [(pat_store RC:$d, ADDRri64:$a)]>, Requires<[Use64BitAddresses]>;
+                   [(pat_store RC:$d, ADDRri64:$a)]>,
+                   Requires<[Use64BitAddresses]>;
   def ii32 : InstPTX<(outs),
                    (ins RC:$d, MEMii32:$a),
                    !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                   [(pat_store RC:$d, ADDRii32:$a)]>, Requires<[Use32BitAddresses]>;
+                   [(pat_store RC:$d, ADDRii32:$a)]>,
+                   Requires<[Use32BitAddresses]>;
   def ii64 : InstPTX<(outs),
                    (ins RC:$d, MEMii64:$a),
                    !strconcat(opstr, !strconcat(typestr, "\t[$a], $d")),
-                   [(pat_store RC:$d, ADDRii64:$a)]>, Requires<[Use64BitAddresses]>;
+                   [(pat_store RC:$d, ADDRii64:$a)]>,
+                   Requires<[Use64BitAddresses]>;
 }
 
 multiclass PTX_ST_ALL<string opstr, PatFrag pat_store> {
@@ -617,7 +680,7 @@ defm FMUL : PTX_FLOAT_3OP<"mul.rn", fmul>;
 // SM_13+ defaults to .rn for f32 and f64,
 // SM10 must *not* provide a rounding
 
-// TODO: 
+// TODO:
 //     - Allow user selection of rounding modes for fdiv
 //     - Add support for -prec-div=false (.approx)
 
@@ -866,22 +929,22 @@ let hasSideEffects = 1 in {
                          "ld.param.f64\t$d, [$a]",
                          [(set RegF64:$d, (PTXloadparam timm:$a))]>;
 
-  def STpiPred : InstPTX<(outs), (ins MEMret:$d, RegPred:$a),
+  def STpiPred : InstPTX<(outs), (ins MEMpi:$d, RegPred:$a),
                          "st.param.pred\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegPred:$a)]>;
-  def STpiU16  : InstPTX<(outs), (ins MEMret:$d, RegI16:$a),
+  def STpiU16  : InstPTX<(outs), (ins MEMpi:$d, RegI16:$a),
                          "st.param.u16\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegI16:$a)]>;
-  def STpiU32  : InstPTX<(outs), (ins MEMret:$d, RegI32:$a),
+  def STpiU32  : InstPTX<(outs), (ins MEMpi:$d, RegI32:$a),
                          "st.param.u32\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegI32:$a)]>;
-  def STpiU64  : InstPTX<(outs), (ins MEMret:$d, RegI64:$a),
+  def STpiU64  : InstPTX<(outs), (ins MEMpi:$d, RegI64:$a),
                          "st.param.u64\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegI64:$a)]>;
-  def STpiF32  : InstPTX<(outs), (ins MEMret:$d, RegF32:$a),
+  def STpiF32  : InstPTX<(outs), (ins MEMpi:$d, RegF32:$a),
                          "st.param.f32\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegF32:$a)]>;
-  def STpiF64  : InstPTX<(outs), (ins MEMret:$d, RegF64:$a),
+  def STpiF64  : InstPTX<(outs), (ins MEMpi:$d, RegF64:$a),
                          "st.param.f64\t[$d], $a",
                          [(PTXstoreparam timm:$d, RegF64:$a)]>;
 }
@@ -1045,7 +1108,7 @@ def CVT_f32_f64
 // Conversion to f64
 
 def CVT_f64_pred
-  : InstPTX<(outs RegF64:$d), (ins RegPred:$a), 
+  : InstPTX<(outs RegF64:$d), (ins RegPred:$a),
             "selp.f64\t$d, 0D3F80000000000000, 0D0000000000000000, $a",  // 1.0
             [(set RegF64:$d, (uint_to_fp RegPred:$a))]>;
 
@@ -1114,6 +1177,27 @@ def STACKLOADF32 : InstPTX<(outs), (ins RegF32:$d, i32imm:$a),
 def STACKLOADF64 : InstPTX<(outs), (ins RegF64:$d, i32imm:$a),
                            "mov.f64\t$d, s$a", []>;
 
+///===- Parameter Passing Pseudo-Instructions -----------------------------===//
+
+def READPARAMPRED : InstPTX<(outs RegPred:$a), (ins i32imm:$b),
+                            "mov.pred\t$a, %param$b", []>;
+def READPARAMI16  : InstPTX<(outs RegI16:$a), (ins i32imm:$b),
+                            "mov.b16\t$a, %param$b", []>;
+def READPARAMI32  : InstPTX<(outs RegI32:$a), (ins i32imm:$b),
+                            "mov.b32\t$a, %param$b", []>;
+def READPARAMI64  : InstPTX<(outs RegI64:$a), (ins i32imm:$b),
+                            "mov.b64\t$a, %param$b", []>;
+def READPARAMF32  : InstPTX<(outs RegF32:$a), (ins i32imm:$b),
+                            "mov.f32\t$a, %param$b", []>;
+def READPARAMF64  : InstPTX<(outs RegF64:$a), (ins i32imm:$b),
+                            "mov.f64\t$a, %param$b", []>;
+
+def WRITEPARAMPRED : InstPTX<(outs), (ins RegPred:$a), "//w", []>;
+def WRITEPARAMI16  : InstPTX<(outs), (ins RegI16:$a), "//w", []>;
+def WRITEPARAMI32  : InstPTX<(outs), (ins RegI32:$a), "//w", []>;
+def WRITEPARAMI64  : InstPTX<(outs), (ins RegI64:$a), "//w", []>;
+def WRITEPARAMF32  : InstPTX<(outs), (ins RegF32:$a), "//w", []>;
+def WRITEPARAMF64  : InstPTX<(outs), (ins RegF64:$a), "//w", []>;
 
 // Call handling
 // def ADJCALLSTACKUP :

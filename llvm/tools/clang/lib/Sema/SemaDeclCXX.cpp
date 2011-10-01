@@ -392,7 +392,7 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old) {
       // MSVC accepts that default parameters be redefined for member functions
       // of template class. The new default parameter's value is ignored.
       Invalid = true;
-      if (getLangOptions().Microsoft) {
+      if (getLangOptions().MicrosoftExt) {
         CXXMethodDecl* MD = dyn_cast<CXXMethodDecl>(New);
         if (MD && MD->getParent()->getDescribedClassTemplate()) {
           // Merge the old default argument into the new parameter.
@@ -1121,6 +1121,30 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   if (isInstField) {
     CXXScopeSpec &SS = D.getCXXScopeSpec();
     
+    // FIXME: Check that the name is an identifier!
+    IdentifierInfo *II = Name.getAsIdentifierInfo();
+
+    // Member field could not be with "template" keyword.
+    // So TemplateParameterLists should be empty in this case.
+    if (TemplateParameterLists.size()) {
+      TemplateParameterList* TemplateParams = TemplateParameterLists.get()[0];
+      if (TemplateParams->size()) {
+        // There is no such thing as a member field template.
+        Diag(D.getIdentifierLoc(), diag::err_template_member)
+            << II
+            << SourceRange(TemplateParams->getTemplateLoc(),
+                TemplateParams->getRAngleLoc());
+      } else {
+        // There is an extraneous 'template<>' for this member.
+        Diag(TemplateParams->getTemplateLoc(),
+            diag::err_template_member_noparams)
+            << II
+            << SourceRange(TemplateParams->getTemplateLoc(),
+                TemplateParams->getRAngleLoc());
+      }
+      return 0;
+    }
+
     if (SS.isSet() && !SS.isInvalid()) {
       // The user provided a superfluous scope specifier inside a class
       // definition:
@@ -1138,9 +1162,7 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
        
       SS.clear();
     }
-    
-    // FIXME: Check for template parameters!
-    // FIXME: Check that the name is an identifier!
+
     Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D, BitWidth,
                          HasDeferredInit, AS);
     assert(Member && "HandleField never returns null");
@@ -2262,6 +2284,19 @@ struct BaseAndFieldInfo {
 };
 }
 
+/// \brief Determine whether the given indirect field declaration is somewhere
+/// within an anonymous union.
+static bool isWithinAnonymousUnion(IndirectFieldDecl *F) {
+  for (IndirectFieldDecl::chain_iterator C = F->chain_begin(), 
+                                      CEnd = F->chain_end();
+       C != CEnd; ++C)
+    if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>((*C)->getDeclContext()))
+      if (Record->isUnion())
+        return true;
+        
+  return false;
+}
+
 static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
                                     FieldDecl *Field, 
                                     IndirectFieldDecl *Indirect = 0) {
@@ -2290,6 +2325,12 @@ static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
     Info.AllToInit.push_back(Init);
     return false;
   }
+
+  // Don't build an implicit initializer for union members if none was
+  // explicitly specified.
+  if (Field->getParent()->isUnion() ||
+      (Indirect && isWithinAnonymousUnion(Indirect)))
+    return false;
 
   // Don't try to build an implicit initializer if there were semantic
   // errors in any of the initializers (and therefore we might be
@@ -2328,24 +2369,11 @@ Sema::SetDelegatingInitializer(CXXConstructorDecl *Constructor,
   return false;
 }
 
-/// \brief Determine whether the given indirect field declaration is somewhere
-/// within an anonymous union.
-static bool isWithinAnonymousUnion(IndirectFieldDecl *F) {
-  for (IndirectFieldDecl::chain_iterator C = F->chain_begin(), 
-                                      CEnd = F->chain_end();
-       C != CEnd; ++C)
-    if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>((*C)->getDeclContext()))
-      if (Record->isUnion())
-        return true;
-        
-  return false;
-}
-
 bool Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
                                CXXCtorInitializer **Initializers,
                                unsigned NumInitializers,
                                bool AnyErrors) {
-  if (Constructor->getDeclContext()->isDependentContext()) {
+  if (Constructor->isDependentContext()) {
     // Just store the initializers as written, they will be checked during
     // instantiation.
     if (NumInitializers > 0) {
@@ -2461,17 +2489,6 @@ bool Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
       if (F->getType()->isIncompleteArrayType()) {
         assert(ClassDecl->hasFlexibleArrayMember() &&
                "Incomplete array type is not valid");
-        continue;
-      }
-      
-      // If this field is somewhere within an anonymous union, we only 
-      // initialize it if there's an explicit initializer.
-      if (isWithinAnonymousUnion(F)) {
-        if (CXXCtorInitializer *Init
-              = Info.AllBaseFields.lookup(F->getAnonField())) {
-          Info.AllToInit.push_back(Init);
-        }
-        
         continue;
       }
       
@@ -2773,8 +2790,9 @@ void Sema::ActOnMemInitializers(Decl *ConstructorDecl,
 void
 Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
                                              CXXRecordDecl *ClassDecl) {
-  // Ignore dependent contexts.
-  if (ClassDecl->isDependentContext())
+  // Ignore dependent contexts. Also ignore unions, since their members never
+  // have destructors implicitly called.
+  if (ClassDecl->isDependentContext() || ClassDecl->isUnion())
     return;
 
   // FIXME: all the access-control diagnostics are positioned on the
@@ -4634,10 +4652,10 @@ void Sema::ActOnFinishCXXMemberSpecification(Scope* S, SourceLocation RLoc,
 
   AdjustDeclIfTemplate(TagDecl);
 
-  ActOnFields(S, RLoc, TagDecl,
+  ActOnFields(S, RLoc, TagDecl, llvm::makeArrayRef(
               // strict aliasing violation!
               reinterpret_cast<Decl**>(FieldCollector->getCurFields()),
-              FieldCollector->getCurNumFields(), LBrac, RBrac, AttrList);
+              FieldCollector->getCurNumFields()), LBrac, RBrac, AttrList);
 
   CheckCompletedCXXClass(
                         dyn_cast_or_null<CXXRecordDecl>(TagDecl));
@@ -5937,7 +5955,6 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
   // Otherwise, look up the target name.
 
   LookupResult R(*this, NameInfo, LookupOrdinaryName);
-  R.setUsingDeclaration(true);
 
   // Unlike most lookups, we don't always want to hide tag
   // declarations: tag names are visible through the using declaration
@@ -6818,7 +6835,7 @@ void Sema::DeclareInheritedConstructors(CXXRecordDecl *ClassDecl) {
                                                    /*TInfo=*/0, SC_None,
                                                    SC_None, /*DefaultArg=*/0));
         }
-        NewCtor->setParams(ParamDecls.data(), ParamDecls.size());
+        NewCtor->setParams(ParamDecls);
         NewCtor->setInheritedConstructor(BaseCtor);
 
         PushOnScopeChains(NewCtor, S, false);
@@ -6946,7 +6963,7 @@ void Sema::DefineImplicitDestructor(SourceLocation CurrentLocation,
 
   SourceLocation Loc = Destructor->getLocation();
   Destructor->setBody(new (Context) CompoundStmt(Context, 0, 0, Loc, Loc));
-
+  Destructor->setImplicitlyDefined(true);
   Destructor->setUsed();
   MarkVTableUsed(CurrentLocation, ClassDecl);
 
@@ -6969,8 +6986,10 @@ void Sema::AdjustDestructorExceptionSpec(CXXRecordDecl *classDecl,
   ImplicitExceptionSpecification exceptSpec =
       ComputeDefaultedDtorExceptionSpec(classDecl);
 
-  // Replace the destructor's type.
-  FunctionProtoType::ExtProtoInfo epi;
+  // Replace the destructor's type, building off the existing one. Fortunately,
+  // the only thing of interest in the destructor type is its extended info.
+  // The return and arguments are fixed.
+  FunctionProtoType::ExtProtoInfo epi = dtorType->getExtProtoInfo();
   epi.ExceptionSpecType = exceptSpec.getExceptionSpecType();
   epi.NumExceptions = exceptSpec.size();
   epi.Exceptions = exceptSpec.data();
@@ -7334,7 +7353,7 @@ CXXMethodDecl *Sema::DeclareImplicitCopyAssignment(CXXRecordDecl *ClassDecl) {
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
                                                SC_None, 0);
-  CopyAssignment->setParams(&FromParam, 1);
+  CopyAssignment->setParams(FromParam);
   
   // Note that we have added this copy-assignment operator.
   ++ASTContext::NumImplicitCopyAssignmentOperatorsDeclared;
@@ -7749,7 +7768,7 @@ CXXMethodDecl *Sema::DeclareImplicitMoveAssignment(CXXRecordDecl *ClassDecl) {
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
                                                SC_None, 0);
-  MoveAssignment->setParams(&FromParam, 1);
+  MoveAssignment->setParams(FromParam);
 
   // Note that we have added this copy-assignment operator.
   ++ASTContext::NumImplicitMoveAssignmentOperatorsDeclared;
@@ -8240,7 +8259,7 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
                                                SC_None, 0);
-  CopyConstructor->setParams(&FromParam, 1);
+  CopyConstructor->setParams(FromParam);
 
   if (Scope *S = getScopeForContext(ClassDecl))
     PushOnScopeChains(CopyConstructor, S, false);
@@ -8282,10 +8301,10 @@ void Sema::DefineImplicitCopyConstructor(SourceLocation CurrentLocation,
                                                MultiStmtArg(*this, 0, 0), 
                                                /*isStmtExpr=*/false)
                                                               .takeAs<Stmt>());
+    CopyConstructor->setImplicitlyDefined(true);
   }
   
   CopyConstructor->setUsed();
-
   if (ASTMutationListener *L = getASTMutationListener()) {
     L->CompletedImplicitDefinition(CopyConstructor);
   }
@@ -8397,7 +8416,7 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
                                                ArgType, /*TInfo=*/0,
                                                SC_None,
                                                SC_None, 0);
-  MoveConstructor->setParams(&FromParam, 1);
+  MoveConstructor->setParams(FromParam);
 
   // C++0x [class.copy]p9:
   //   If the definition of a class X does not explicitly declare a move
@@ -8445,6 +8464,7 @@ void Sema::DefineImplicitMoveConstructor(SourceLocation CurrentLocation,
                                                MultiStmtArg(*this, 0, 0), 
                                                /*isStmtExpr=*/false)
                                                               .takeAs<Stmt>());
+    MoveConstructor->setImplicitlyDefined(true);
   }
 
   MoveConstructor->setUsed();
@@ -9957,8 +9977,7 @@ void Sema::SetDeclDefaulted(Decl *Dcl, SourceLocation DefaultLoc) {
     }
 
     case CXXInvalid:
-      assert(false && "Invalid special member.");
-      break;
+      llvm_unreachable("Invalid special member.");
     }
   } else {
     Diag(DefaultLoc, diag::err_default_special_members);
@@ -10282,7 +10301,10 @@ bool Sema::DefineUsedVTables() {
     // Optionally warn if we're emitting a weak vtable.
     if (Class->getLinkage() == ExternalLinkage &&
         Class->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) {
-      if (!KeyFunction || (KeyFunction->hasBody() && KeyFunction->isInlined()))
+      const FunctionDecl *KeyFunctionDef = 0;
+      if (!KeyFunction || 
+          (KeyFunction->hasBody(KeyFunctionDef) && 
+           KeyFunctionDef->isInlined()))
         Diag(Class->getLocation(), diag::warn_weak_vtable) << Class;
     }
   }

@@ -548,7 +548,7 @@ Sema::SemaBuiltinAtomicOverloaded(ExprResult TheCallResult) {
   unsigned BuiltinID = FDecl->getBuiltinID();
   unsigned BuiltinIndex, NumFixed = 1;
   switch (BuiltinID) {
-  default: assert(0 && "Unknown overloaded atomic builtin!");
+  default: llvm_unreachable("Unknown overloaded atomic builtin!");
   case Builtin::BI__sync_fetch_and_add: BuiltinIndex = 0; break;
   case Builtin::BI__sync_fetch_and_sub: BuiltinIndex = 1; break;
   case Builtin::BI__sync_fetch_and_or:  BuiltinIndex = 2; break;
@@ -1302,7 +1302,7 @@ getSpecifierRange(const char *startSpecifier, unsigned specifierLen) {
   SourceLocation End   = getLocationOfByte(startSpecifier + specifierLen - 1);
 
   // Advance the end SourceLocation by one due to half-open ranges.
-  End = End.getFileLocWithOffset(1);
+  End = End.getLocWithOffset(1);
 
   return CharSourceRange::getCharRange(Start, End);
 }
@@ -3237,9 +3237,17 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   if (CC.isInvalid())
     return;
 
-  // Never diagnose implicit casts to bool.
-  if (Target->isSpecificBuiltinType(BuiltinType::Bool))
-    return;
+  // Diagnose implicit casts to bool.
+  if (Target->isSpecificBuiltinType(BuiltinType::Bool)) {
+    if (isa<StringLiteral>(E))
+      // Warn on string literal to bool.  Checks for string literals in logical
+      // expressions, for instances, assert(0 && "error here"), is prevented
+      // by a check in AnalyzeImplicitConversions().
+      return DiagnoseImpCast(S, E, T, CC,
+                             diag::warn_impcast_string_literal_to_bool);
+    else // Other casts to bool are not checked.
+      return;
+  }
 
   // Strip vector types.
   if (isa<VectorType>(Source)) {
@@ -3508,8 +3516,16 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
 
   // Now just recurse over the expression's children.
   CC = E->getExprLoc();
-  for (Stmt::child_range I = E->children(); I; ++I)
-    AnalyzeImplicitConversions(S, cast<Expr>(*I), CC);
+  BinaryOperator *BO = dyn_cast<BinaryOperator>(E);
+  bool IsLogicalOperator = BO && BO->isLogicalOp();
+  for (Stmt::child_range I = E->children(); I; ++I) {
+    Expr *ChildExpr = cast<Expr>(*I);
+    if (IsLogicalOperator &&
+        isa<StringLiteral>(ChildExpr->IgnoreParenImpCasts()))
+      // Ignore checking string literals that are in logical operators.
+      continue;
+    AnalyzeImplicitConversions(S, ChildExpr, CC);
+  }
 }
 
 } // end anonymous namespace
@@ -3709,7 +3725,7 @@ void Sema::CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
       return;
 
     const Type* BaseType = getElementType(BaseExpr);
-    if (!isSubscript && BaseType != EffectiveType) {
+    if (BaseType != EffectiveType) {
       // Make sure we're comparing apples to apples when comparing index to size
       uint64_t ptrarith_typesize = Context.getTypeSize(EffectiveType);
       uint64_t array_typesize = Context.getTypeSize(BaseType);

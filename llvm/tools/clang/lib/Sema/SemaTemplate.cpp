@@ -424,7 +424,7 @@ bool Sema::DiagnoseTemplateParameterShadow(SourceLocation Loc, Decl *PrevDecl) {
   assert(PrevDecl->isTemplateParameter() && "Not a template parameter");
 
   // Microsoft Visual C++ permits template parameters to be shadowed.
-  if (getLangOptions().Microsoft)
+  if (getLangOptions().MicrosoftExt)
     return false;
 
   // C++ [temp.local]p4:
@@ -2323,7 +2323,8 @@ TemplateNameKind Sema::ActOnDependentTemplateName(Scope *S,
     return TNK_Dependent_template_name;
 
   case UnqualifiedId::IK_LiteralOperatorId:
-    assert(false && "We don't support these; Parse shouldn't have allowed propagation");
+    llvm_unreachable(
+            "We don't support these; Parse shouldn't have allowed propagation");
 
   default:
     break;
@@ -2681,8 +2682,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
     switch (Arg.getArgument().getKind()) {
     case TemplateArgument::Null:
-      assert(false && "Should never see a NULL template argument here");
-      return true;
+      llvm_unreachable("Should never see a NULL template argument here");
 
     case TemplateArgument::Expression: {
       TemplateArgument Result;
@@ -2804,8 +2804,7 @@ bool Sema::CheckTemplateArgument(NamedDecl *Param,
 
   switch (Arg.getArgument().getKind()) {
   case TemplateArgument::Null:
-    assert(false && "Should never see a NULL template argument here");
-    return true;
+    llvm_unreachable("Should never see a NULL template argument here");
 
   case TemplateArgument::Template:
   case TemplateArgument::TemplateExpansion:
@@ -3370,7 +3369,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
     }
   }
 
-  if (S.getLangOptions().Microsoft && isa<CXXUuidofExpr>(Arg)) {
+  if (S.getLangOptions().MicrosoftExt && isa<CXXUuidofExpr>(Arg)) {
     Converted = TemplateArgument(ArgIn);
     return false;
   }
@@ -4521,7 +4520,7 @@ static bool CheckTemplateSpecializationScope(Sema &S,
   }
 
   if (S.CurContext->isRecord() && !IsPartialSpecialization) {
-    if (S.getLangOptions().Microsoft) {
+    if (S.getLangOptions().MicrosoftExt) {
       // Do not warn for class scope explicit specialization during
       // instantiation, warning was already emitted during pattern
       // semantic analysis.
@@ -5216,8 +5215,7 @@ Sema::CheckSpecializationInstantiationRedecl(SourceLocation NewLoc,
   switch (NewTSK) {
   case TSK_Undeclared:
   case TSK_ImplicitInstantiation:
-    assert(false && "Don't check implicit instantiations here");
-    return false;
+    llvm_unreachable("Don't check implicit instantiations here");
 
   case TSK_ExplicitSpecialization:
     switch (PrevTSK) {
@@ -5349,9 +5347,7 @@ Sema::CheckSpecializationInstantiationRedecl(SourceLocation NewLoc,
     break;
   }
 
-  assert(false && "Missing specialization/instantiation case?");
-
-  return false;
+  llvm_unreachable("Missing specialization/instantiation case?");
 }
 
 /// \brief Perform semantic analysis for the given dependent function
@@ -5522,12 +5518,10 @@ Sema::CheckFunctionTemplateSpecialization(FunctionDecl *FD,
   // Take copies of (semantic and syntactic) template argument lists.
   const TemplateArgumentList* TemplArgs = new (Context)
     TemplateArgumentList(Specialization->getTemplateSpecializationArgs());
-  const TemplateArgumentListInfo* TemplArgsAsWritten = ExplicitTemplateArgs
-    ? new (Context) TemplateArgumentListInfo(*ExplicitTemplateArgs) : 0;
   FD->setFunctionTemplateSpecialization(Specialization->getPrimaryTemplate(),
                                         TemplArgs, /*InsertPos=*/0,
                                     SpecInfo->getTemplateSpecializationKind(),
-                                        TemplArgsAsWritten);
+                                        ExplicitTemplateArgs);
   FD->setStorageClass(Specialization->getStorageClass());
   
   // The "previous declaration" for this function template specialization is

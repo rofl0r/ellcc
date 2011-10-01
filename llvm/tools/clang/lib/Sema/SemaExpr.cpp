@@ -1441,7 +1441,7 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
           CXXMethodDecl *DepMethod = cast_or_null<CXXMethodDecl>(
               CurMethod->getInstantiatedFromMemberFunction());
           if (DepMethod) {
-            if (getLangOptions().Microsoft)
+            if (getLangOptions().MicrosoftExt)
               diagnostic = diag::warn_found_via_dependent_bases_lookup;
             Diag(R.getNameLoc(), diagnostic) << Name
               << FixItHint::CreateInsertion(R.getNameLoc(), "this->");
@@ -1690,6 +1690,16 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
     // If this name wasn't predeclared and if this is not a function
     // call, diagnose the problem.
     if (R.empty()) {
+
+      // In Microsoft mode, if we are inside a template class member function
+      // and we can't resolve an identifier then assume the identifier is type
+      // dependent. The goal is to postpone name lookup to instantiation time 
+      // to be able to search into type dependent base classes.
+      if (getLangOptions().MicrosoftMode && CurContext->isDependentContext() &&
+          isa<CXXMethodDecl>(CurContext))
+        return ActOnDependentIdExpression(SS, NameInfo, IsAddressOfOperand,
+                                          TemplateArgs);
+
       if (DiagnoseEmptyLookup(S, SS, R, CTC_Unknown))
         return ExprError();
 
@@ -1702,7 +1712,10 @@ ExprResult Sema::ActOnIdExpression(Scope *S,
       if (ObjCIvarDecl *Ivar = R.getAsSingle<ObjCIvarDecl>()) {
         R.clear();
         ExprResult E(LookupInObjCMethod(R, S, Ivar->getIdentifier()));
-        assert(E.isInvalid() || E.get());
+        // In a hopelessly buggy code, Objective-C instance variable
+        // lookup fails and no expression will be built to reference it.
+        if (!E.isInvalid() && !E.get())
+          return ExprError();
         return move(E);
       }
     }
@@ -2390,7 +2403,7 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
   PredefinedExpr::IdentType IT;
 
   switch (Kind) {
-  default: assert(0 && "Unknown simple primary expr!");
+  default: llvm_unreachable("Unknown simple primary expr!");
   case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
   case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
   case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
@@ -2601,7 +2614,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok) {
           // To be compatible with MSVC, hex integer literals ending with the
           // LL or i64 suffix are always signed in Microsoft mode.
           if (!Literal.isUnsigned && (ResultVal[LongLongSize-1] == 0 ||
-              (getLangOptions().Microsoft && Literal.isLongLong)))
+              (getLangOptions().MicrosoftExt && Literal.isLongLong)))
             Ty = Context.LongLongTy;
           else if (AllowUnsigned)
             Ty = Context.UnsignedLongLongTy;
@@ -2952,7 +2965,7 @@ Sema::ActOnPostfixUnaryOp(Scope *S, SourceLocation OpLoc,
                           tok::TokenKind Kind, Expr *Input) {
   UnaryOperatorKind Opc;
   switch (Kind) {
-  default: assert(0 && "Unknown unary op!");
+  default: llvm_unreachable("Unknown unary op!");
   case tok::plusplus:   Opc = UO_PostInc; break;
   case tok::minusminus: Opc = UO_PostDec; break;
   }
@@ -4194,8 +4207,12 @@ ExprResult Sema::CheckExtVectorCast(SourceRange R, QualType DestTy,
 
   // If SrcTy is a VectorType, the total size must match to explicitly cast to
   // an ExtVectorType.
+  // In OpenCL, casts between vectors of different types are not allowed.
+  // (See OpenCL 6.2).
   if (SrcTy->isVectorType()) {
-    if (Context.getTypeSize(DestTy) != Context.getTypeSize(SrcTy)) {
+    if (Context.getTypeSize(DestTy) != Context.getTypeSize(SrcTy)
+        || (getLangOptions().OpenCL &&
+            (DestTy.getCanonicalType() != SrcTy.getCanonicalType()))) {
       Diag(R.getBegin(),diag::err_invalid_conversion_between_ext_vectors)
         << DestTy << SrcTy << R;
       return ExprError();
@@ -4248,7 +4265,8 @@ Sema::ActOnCastExpr(Scope *S, SourceLocation LParenLoc,
   // i.e. all the elements are integer constants.
   ParenExpr *PE = dyn_cast<ParenExpr>(CastExpr);
   ParenListExpr *PLE = dyn_cast<ParenListExpr>(CastExpr);
-  if (getLangOptions().AltiVec && castType->isVectorType() && (PE || PLE)) {
+  if ((getLangOptions().AltiVec || getLangOptions().OpenCL)
+       && castType->isVectorType() && (PE || PLE)) {
     if (PLE && PLE->getNumExprs() == 0) {
       Diag(PLE->getExprLoc(), diag::err_altivec_empty_initializer);
       return ExprError();
@@ -5074,6 +5092,25 @@ ExprResult Sema::ActOnConditionalOp(SourceLocation QuestionLoc,
                               OK));
 }
 
+/// ConvertObjCSelfToClassRootType - convet type of 'self' in class method
+/// to pointer to root of method's class.
+static QualType
+ConvertObjCSelfToClassRootType(Sema &S, Expr *selfExpr) {
+  QualType SelfType;
+  if (const ObjCMethodDecl *MD = S.GetMethodIfSelfExpr(selfExpr))
+    if (MD->isClassMethod()) {
+      const ObjCInterfaceDecl *Root = 0;
+      if (const ObjCInterfaceDecl * IDecl = MD->getClassInterface())
+      do {
+        Root = IDecl;
+      } while ((IDecl = IDecl->getSuperClass()));
+      if (Root)
+        SelfType =  S.Context.getObjCObjectPointerType(
+                      S.Context.getObjCInterfaceType(Root)); 
+    }
+  return SelfType;
+}
+
 // checkPointerTypesForAssignment - This is a very tricky routine (despite
 // being closely modeled after the C99 spec:-). The odd characteristic of this
 // routine is it effectively iqnores the qualifiers on the top level pointee.
@@ -5401,7 +5438,7 @@ Sema::CheckAssignmentConstraints(QualType LHSType, ExprResult &RHS,
         Kind = CK_BitCast;
         return Compatible;
       }
-
+      
       Kind = CK_BitCast;
       return IncompatiblePointer;
     }
@@ -5449,6 +5486,9 @@ Sema::CheckAssignmentConstraints(QualType LHSType, ExprResult &RHS,
 
   // Conversions to Objective-C pointers.
   if (isa<ObjCObjectPointerType>(LHSType)) {
+    QualType RHSQT = ConvertObjCSelfToClassRootType(*this, RHS.get());
+    if (!RHSQT.isNull())
+      RHSType = RHSQT;
     // A* -> B*
     if (RHSType->isObjCObjectPointerType()) {
       Kind = CK_BitCast;
@@ -6484,7 +6524,7 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
       case BO_GE: resultComparison = ") >= 0"; break;
       case BO_EQ: resultComparison = ") == 0"; break;
       case BO_NE: resultComparison = ") != 0"; break;
-      default: assert(false && "Invalid comparison operator");
+      default: llvm_unreachable("Invalid comparison operator");
       }
 
       DiagRuntimeBehavior(Loc, 0,
@@ -7141,10 +7181,10 @@ QualType Sema::CheckAssignmentOperands(Expr *LHSExpr, ExprResult &RHS,
            UO->getOpcode() == UO_Minus) &&
           Loc.isFileID() && UO->getOperatorLoc().isFileID() &&
           // Only if the two operators are exactly adjacent.
-          Loc.getFileLocWithOffset(1) == UO->getOperatorLoc() &&
+          Loc.getLocWithOffset(1) == UO->getOperatorLoc() &&
           // And there is a space or other character before the subexpr of the
           // unary +/-.  We don't want to warn on "x=-1".
-          Loc.getFileLocWithOffset(2) != UO->getSubExpr()->getLocStart() &&
+          Loc.getLocWithOffset(2) != UO->getSubExpr()->getLocStart() &&
           UO->getSubExpr()->getLocStart().isFileID()) {
         Diag(Loc, diag::warn_not_compound_assign)
           << (UO->getOpcode() == UO_Plus ? "+" : "-")
@@ -7566,7 +7606,7 @@ static QualType CheckAddressOfOperand(Sema &S, Expr *OrigOp,
         }
       }
     } else if (!isa<FunctionDecl>(dcl) && !isa<NonTypeTemplateParmDecl>(dcl))
-      assert(0 && "Unknown/unexpected decl type");
+      llvm_unreachable("Unknown/unexpected decl type");
   }
 
   if (AddressOfError != AO_No_Error) {
@@ -7642,7 +7682,7 @@ static inline BinaryOperatorKind ConvertTokenKindToBinaryOpcode(
   tok::TokenKind Kind) {
   BinaryOperatorKind Opc;
   switch (Kind) {
-  default: assert(0 && "Unknown binop!");
+  default: llvm_unreachable("Unknown binop!");
   case tok::periodstar:           Opc = BO_PtrMemD; break;
   case tok::arrowstar:            Opc = BO_PtrMemI; break;
   case tok::star:                 Opc = BO_Mul; break;
@@ -7683,7 +7723,7 @@ static inline UnaryOperatorKind ConvertTokenKindToUnaryOpcode(
   tok::TokenKind Kind) {
   UnaryOperatorKind Opc;
   switch (Kind) {
-  default: assert(0 && "Unknown unary op!");
+  default: llvm_unreachable("Unknown unary op!");
   case tok::plusplus:     Opc = UO_PreInc; break;
   case tok::minusminus:   Opc = UO_PreDec; break;
   case tok::amp:          Opc = UO_AddrOf; break;
@@ -8688,7 +8728,7 @@ void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
 
   // Set the parameters on the block decl.
   if (!Params.empty()) {
-    CurBlock->TheDecl->setParams(Params.data(), Params.size());
+    CurBlock->TheDecl->setParams(Params);
     CheckParmsForFunctionDef(CurBlock->TheDecl->param_begin(),
                              CurBlock->TheDecl->param_end(),
                              /*CheckParameterNames=*/false);
@@ -8914,8 +8954,7 @@ ExprResult Sema::ActOnGNUNullExpr(SourceLocation TokenLoc) {
   else if (pw == Context.getTargetInfo().getLongLongWidth())
     Ty = Context.LongLongTy;
   else {
-    assert(!"I don't know size of pointer!");
-    Ty = Context.IntTy;
+    llvm_unreachable("I don't know size of pointer!");
   }
 
   return Owned(new (Context) GNUNullExpr(Ty, TokenLoc));
@@ -8963,7 +9002,7 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
   bool MayHaveConvFixit = false;
 
   switch (ConvTy) {
-  default: assert(0 && "Unknown conversion type");
+  default: llvm_unreachable("Unknown conversion type");
   case Compatible: return false;
   case PointerToInt:
     DiagKind = diag::ext_typecheck_convert_pointer_int;
@@ -9564,7 +9603,7 @@ void Sema::DiagnoseAssignmentAsCondition(Expr *E) {
       Selector Sel = ME->getSelector();
 
       // self = [<foo> init...]
-      if (isSelfExpr(Op->getLHS()) && Sel.getNameForSlot(0).startswith("init"))
+      if (GetMethodIfSelfExpr(Op->getLHS()) && Sel.getNameForSlot(0).startswith("init"))
         diagnostic = diag::warn_condition_is_idiomatic_assignment;
 
       // <foo> = [<bar> nextObject]

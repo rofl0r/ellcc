@@ -742,6 +742,22 @@ public:
   }
 
   llvm::Constant *VisitInitListExpr(InitListExpr *ILE) {
+    if (ILE->getType()->isAnyComplexType() && ILE->getNumInits() == 2) {
+      // Complex type with element initializers
+      Expr *Real = ILE->getInit(0);
+      Expr *Imag = ILE->getInit(1);
+      llvm::Constant *Complex[2];
+      Complex[0] = CGM.EmitConstantExpr(Real, Real->getType(), CGF);
+      if (!Complex[0])
+        return 0;
+      Complex[1] = CGM.EmitConstantExpr(Imag, Imag->getType(), CGF);
+      if (!Complex[1])
+        return 0;
+      llvm::StructType *STy =
+          cast<llvm::StructType>(ConvertType(ILE->getType()));
+      return llvm::ConstantStruct::get(STy, Complex);
+    }
+
     if (ILE->getType()->isScalarType()) {
       // We have a scalar in braces. Just use the first element.
       if (ILE->getNumInits() > 0) {
@@ -764,10 +780,7 @@ public:
     if (ILE->getType()->isVectorType())
       return 0;
 
-    assert(0 && "Unable to handle InitListExpr");
-    // Get rid of control reaches end of void function warning.
-    // Not reached.
-    return 0;
+    llvm_unreachable("Unable to handle InitListExpr");
   }
 
   llvm::Constant *VisitCXXConstructExpr(CXXConstructExpr *E) {
@@ -950,8 +963,7 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
   if (Success && !Result.HasSideEffects) {
     switch (Result.Val.getKind()) {
     case APValue::Uninitialized:
-      assert(0 && "Constant expressions should be initialized.");
-      return 0;
+      llvm_unreachable("Constant expressions should be initialized.");
     case APValue::LValue: {
       llvm::Type *DestTy = getTypes().ConvertTypeForMem(DestType);
       llvm::Constant *Offset =

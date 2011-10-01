@@ -25,6 +25,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <cstdio>
 #include <ctime>
 using namespace clang;
@@ -93,7 +94,7 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_include_next = RegisterBuiltinMacro(*this, "__has_include_next");
 
   // Microsoft Extensions.
-  if (Features.Microsoft) 
+  if (Features.MicrosoftExt) 
     Ident__pragma = RegisterBuiltinMacro(*this, "__pragma");
   else
     Ident__pragma = 0;
@@ -489,8 +490,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     return 0;
   }
 
-  return MacroArgs::create(MI, ArgTokens.data(), ArgTokens.size(),
-                           isVarargsElided, *this);
+  return MacroArgs::create(MI, ArgTokens, isVarargsElided, *this);
 }
 
 /// \brief Keeps macro expanded tokens for TokenLexers.
@@ -1016,7 +1016,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     OS << (int)Value;
     Tok.setKind(tok::numeric_constant);
   } else {
-    assert(0 && "Unknown identifier!");
+    llvm_unreachable("Unknown identifier!");
   }
   CreateString(OS.str().data(), OS.str().size(), Tok, Tok.getLocation());
 }

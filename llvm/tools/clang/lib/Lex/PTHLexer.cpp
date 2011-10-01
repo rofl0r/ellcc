@@ -73,7 +73,7 @@ LexNextToken:
   Tok.setKind(TKind);
   Tok.setFlag(TFlags);
   assert(!LexingRawMode);
-  Tok.setLocation(FileStartLoc.getFileLocWithOffset(FileOffset));
+  Tok.setLocation(FileStartLoc.getLocWithOffset(FileOffset));
   Tok.setLength(Len);
 
   // Handle identifiers.
@@ -297,7 +297,7 @@ SourceLocation PTHLexer::getSourceLocation() {
   // NOTE: This is a virtual function; hence it is defined out-of-line.
   const unsigned char *OffsetPtr = CurPtr + (DISK_TOKEN_SIZE - 4);
   uint32_t Offset = ReadLE32(OffsetPtr);
-  return FileStartLoc.getFileLocWithOffset(Offset);
+  return FileStartLoc.getLocWithOffset(Offset);
 }
 
 //===----------------------------------------------------------------------===//
@@ -575,7 +575,7 @@ IdentifierInfo* PTHManager::LazilyCreateIdentifierInfo(unsigned PersistentID) {
 IdentifierInfo* PTHManager::get(StringRef Name) {
   PTHStringIdLookup& SL = *((PTHStringIdLookup*)StringIdLookup);
   // Double check our assumption that the last character isn't '\0'.
-  assert(Name.empty() || Name.data()[Name.size()-1] != '\0');
+  assert(Name.empty() || Name.back() != '\0');
   PTHStringIdLookup::iterator I = SL.find(std::make_pair(Name.data(),
                                                          Name.size()));
   if (I == SL.end()) // No identifier found?

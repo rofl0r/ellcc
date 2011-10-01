@@ -280,7 +280,7 @@ bool Sema::isMicrosoftMissingTypename(const CXXScopeSpec *SS) {
       if (Context.hasSameUnqualifiedType(QualType(Ty, 1), Base->getType()))
         return true;
   } 
-  return false;
+  return CurContext->isFunctionOrMethod();
 }
 
 bool Sema::DiagnoseUnknownTypeName(const IdentifierInfo &II, 
@@ -362,7 +362,7 @@ bool Sema::DiagnoseUnknownTypeName(const IdentifierInfo &II,
       << &II << DC << SS->getRange();
   else if (isDependentScopeSpecifier(*SS)) {
     unsigned DiagID = diag::err_typename_missing;
-    if (getLangOptions().Microsoft && isMicrosoftMissingTypename(SS))
+    if (getLangOptions().MicrosoftMode && isMicrosoftMissingTypename(SS))
       DiagID = diag::warn_typename_missing;
 
     Diag(SS->getRange().getBegin(), DiagID)
@@ -1290,7 +1290,7 @@ NamedDecl *Sema::LazilyCreateBuiltin(IdentifierInfo *II, unsigned bid,
       parm->setScopeInfo(0, i);
       Params.push_back(parm);
     }
-    New->setParams(Params.data(), Params.size());
+    New->setParams(Params);
   }
 
   AddKnownFunctionAttributes(New);
@@ -1400,7 +1400,7 @@ void Sema::MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls) {
   else if (New->isModulePrivate())
     diagnoseModulePrivateRedeclaration(New, Old);
            
-  if (getLangOptions().Microsoft)
+  if (getLangOptions().MicrosoftExt)
     return;
 
   if (getLangOptions().CPlusPlus) {
@@ -1493,9 +1493,11 @@ static void mergeDeclAttributes(Decl *newDecl, const Decl *oldDecl,
   for (specific_attr_iterator<InheritableAttr>
        i = oldDecl->specific_attr_begin<InheritableAttr>(),
        e = oldDecl->specific_attr_end<InheritableAttr>(); i != e; ++i) {
-    // Ignore deprecated and unavailable attributes if requested.
+    // Ignore deprecated/unavailable/availability attributes if requested.
     if (!mergeDeprecation &&
-        (isa<DeprecatedAttr>(*i) || isa<UnavailableAttr>(*i)))
+        (isa<DeprecatedAttr>(*i) || 
+         isa<UnavailableAttr>(*i) ||
+         isa<AvailabilityAttr>(*i)))
       continue;
 
     if (!DeclHasAttr(newDecl, *i)) {
@@ -1636,7 +1638,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD) {
       New->getStorageClass() == SC_Static &&
       Old->getStorageClass() != SC_Static &&
       !canRedefineFunction(Old, getLangOptions())) {
-    if (getLangOptions().Microsoft) {
+    if (getLangOptions().MicrosoftExt) {
       Diag(New->getLocation(), diag::warn_static_non_static) << New;
       Diag(Old->getLocation(), PrevDiag);
     } else {
@@ -1853,7 +1855,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD) {
         Params.push_back(Param);
       }
 
-      New->setParams(Params.data(), Params.size());
+      New->setParams(Params);
     }
 
     return MergeCompatibleFunctionDecls(New, Old);
@@ -2298,7 +2300,7 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
   }
 
   // Check for Microsoft C extension: anonymous struct.
-  if (getLangOptions().Microsoft && !getLangOptions().CPlusPlus &&
+  if (getLangOptions().MicrosoftExt && !getLangOptions().CPlusPlus &&
       CurContext->isRecord() &&
       DS.getStorageClassSpec() == DeclSpec::SCS_unspecified) {
     // Handle 2 kinds of anonymous struct:
@@ -2656,7 +2658,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
         if (!MemRecord->isAnonymousStructOrUnion() &&
             MemRecord->getDeclName()) {
           // Visual C++ allows type definition in anonymous struct or union.
-          if (getLangOptions().Microsoft)
+          if (getLangOptions().MicrosoftExt)
             Diag(MemRecord->getLocation(), diag::ext_anonymous_record_with_type)
               << (int)Record->isUnion();
           else {
@@ -2680,7 +2682,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
           DK = diag::err_anonymous_record_with_static;
         
         // Visual C++ allows type definition in anonymous struct or union.
-        if (getLangOptions().Microsoft &&
+        if (getLangOptions().MicrosoftExt &&
             DK == diag::err_anonymous_record_with_type)
           Diag((*Mem)->getLocation(), diag::ext_anonymous_record_with_type)
             << (int)Record->isUnion();
@@ -2739,6 +2741,12 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
                            Record->getLocation(), /*IdentifierInfo=*/0,
                            Context.getTypeDeclType(Record),
                            TInfo, SC, SCAsWritten);
+
+    // Default-initialize the implicit variable. This initialization will be
+    // trivial in almost all cases, except if a union member has an in-class
+    // initializer:
+    //   union { int n = 0; };
+    ActOnUninitializedDecl(Anon, /*TypeMayContainAuto=*/false);
   }
   Anon->setImplicit();
 
@@ -2929,8 +2937,7 @@ Sema::GetNameFromUnqualifiedId(const UnqualifiedId &Name) {
 
   } // switch (Name.getKind())
 
-  assert(false && "Unknown name kind");
-  return DeclarationNameInfo();
+  llvm_unreachable("Unknown name kind");
 }
 
 static QualType getCoreType(QualType Ty) {
@@ -3728,6 +3735,13 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     }
   }
   
+  if (getLangOptions().OpenCL) {
+    // Set up the special work-group-local storage class for variables in the
+    // OpenCL __local address space.
+    if (R.getAddressSpace() == LangAS::opencl_local)
+      SC = SC_OpenCLWorkGroupLocal;
+  }
+
   bool isExplicitSpecialization = false;
   VarDecl *NewVD;
   if (!getLangOptions().CPlusPlus) {
@@ -3877,6 +3891,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       case SC_Static:
       case SC_Extern:
       case SC_PrivateExtern:
+      case SC_OpenCLWorkGroupLocal:
         break;
       }
     }
@@ -4346,7 +4361,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   DeclarationName Name = NameInfo.getName();
   FunctionDecl::StorageClass SC = SC_None;
   switch (D.getDeclSpec().getStorageClassSpec()) {
-  default: assert(0 && "Unknown storage class!");
+  default: llvm_unreachable("Unknown storage class!");
   case DeclSpec::SCS_auto:
   case DeclSpec::SCS_register:
   case DeclSpec::SCS_mutable:
@@ -4859,7 +4874,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
            "Should not need args for typedef of non-prototype fn");
   }
   // Finally, we know we have the right number of parameters, install them.
-  NewFD->setParams(Params.data(), Params.size());
+  NewFD->setParams(Params);
 
   // Process the non-inheritable attributes on this declaration.
   ProcessDeclAttributes(S, NewFD, D,
@@ -4953,7 +4968,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       if (CurContext->isDependentContext() && CurContext->isRecord() 
           && !isFriend) {
         isDependentClassScopeExplicitSpecialization = true;
-        Diag(NewFD->getLocation(), getLangOptions().Microsoft ? 
+        Diag(NewFD->getLocation(), getLangOptions().MicrosoftExt ? 
           diag::ext_function_specialization_in_class :
           diag::err_function_specialization_in_class)
           << NewFD->getDeclName();
@@ -5709,6 +5724,14 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     }
   }
 
+  // OpenCL 1.1 6.5.2: "Variables allocated in the __local address space inside
+  // a kernel function cannot be initialized."
+  if (VDecl->getStorageClass() == SC_OpenCLWorkGroupLocal) {
+    Diag(VDecl->getLocation(), diag::err_local_cant_init);
+    VDecl->setInvalidDecl();
+    return;
+  }
+
   // Capture the variable that is being initialized and the style of
   // initialization.
   InitializedEntity Entity = InitializedEntity::InitializeVariable(VDecl);
@@ -6125,6 +6148,8 @@ void Sema::ActOnCXXForRangeDecl(Decl *D) {
   case SC_Register:
     Error = 4;
     break;
+  case SC_OpenCLWorkGroupLocal:
+    llvm_unreachable("Unexpected storage class");
   }
   // FIXME: constexpr isn't allowed here.
   //if (DS.isConstexprSpecified())
@@ -6686,7 +6711,7 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D) {
     // dllimport attribute cannot be directly applied to definition.
     // Microsoft accepts dllimport for functions defined within class scope. 
     if (!DA->isInherited() &&
-        !(LangOpts.Microsoft && FD->getLexicalDeclContext()->isRecord())) {
+        !(LangOpts.MicrosoftExt && FD->getLexicalDeclContext()->isRecord())) {
       Diag(FD->getLocation(),
            diag::err_attribute_can_be_applied_only_to_symbol_declaration)
         << "dllimport";
@@ -6696,7 +6721,7 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D) {
 
     // Visual C++ appears to not think this is an issue, so only issue
     // a warning when Microsoft extensions are disabled.
-    if (!LangOpts.Microsoft) {
+    if (!LangOpts.MicrosoftExt) {
       // If a symbol previously declared dllimport is later defined, the
       // attribute is ignored in subsequent references, and a warning is
       // emitted.
@@ -6773,7 +6798,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
 
     // MSVC permits the use of pure specifier (=0) on function definition,
     // defined at class scope, warn about this non standard construct.
-    if (getLangOptions().Microsoft && FD->isPure())
+    if (getLangOptions().MicrosoftExt && FD->isPure())
       Diag(FD->getLocation(), diag::warn_pure_function_definition);
 
     if (!FD->isInvalidDecl()) {
@@ -7277,7 +7302,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                           UPPC_FixedUnderlyingType))
         EnumUnderlying = Context.IntTy.getTypePtr();
 
-    } else if (getLangOptions().Microsoft)
+    } else if (getLangOptions().MicrosoftExt)
       // Microsoft enums are always of int type.
       EnumUnderlying = Context.IntTy.getTypePtr();
   }
@@ -7576,7 +7601,7 @@ Decl *Sema::ActOnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
           // For our current ASTs this shouldn't be a problem, but will
           // need to be changed with DeclGroups.
           if ((TUK == TUK_Reference && (!PrevTagDecl->getFriendObjectKind() ||
-               getLangOptions().Microsoft)) || TUK == TUK_Friend)
+               getLangOptions().MicrosoftExt)) || TUK == TUK_Friend)
             return PrevTagDecl;
 
           // Diagnose attempts to redefine a tag.
@@ -7728,7 +7753,7 @@ CreateNewDecl:
         Diag(Def->getLocation(), diag::note_previous_definition);
       } else {
         unsigned DiagID = diag::ext_forward_ref_enum;
-        if (getLangOptions().Microsoft)
+        if (getLangOptions().MicrosoftExt)
           DiagID = diag::ext_ms_forward_ref_enum;
         else if (getLangOptions().CPlusPlus)
           DiagID = diag::err_forward_ref_enum;
@@ -7840,7 +7865,7 @@ CreateNewDecl:
   // the tag name visible.
   if (TUK == TUK_Friend)
     New->setObjectOfFriendDecl(/* PreviouslyDeclared = */ !Previous.empty() ||
-                               getLangOptions().Microsoft);
+                               getLangOptions().MicrosoftExt);
 
   // Set the access specifier.
   if (!Invalid && SearchDC->isRecord())
@@ -8348,8 +8373,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
         }
       }
 
-      assert(0 && "found no user-declared constructors");
-      return;
+      llvm_unreachable("found no user-declared constructors");
     }
     break;
 
@@ -8434,7 +8458,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
   case CXXDestructor:
     hasTrivial = &CXXRecordDecl::hasTrivialDestructor; break;
   default:
-    assert(0 && "unexpected special member"); return;
+    llvm_unreachable("unexpected special member");
   }
 
   // Check for nontrivial bases (and recurse).
@@ -8482,7 +8506,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
     }
   }
 
-  assert(0 && "found no explanation for non-trivial member");
+  llvm_unreachable("found no explanation for non-trivial member");
 }
 
 /// TranslateIvarVisibility - Translate visibility from a token ID to an
@@ -8490,7 +8514,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
 static ObjCIvarDecl::AccessControl
 TranslateIvarVisibility(tok::ObjCKeywordKind ivarVisibility) {
   switch (ivarVisibility) {
-  default: assert(0 && "Unknown visitibility kind");
+  default: llvm_unreachable("Unknown visitibility kind");
   case tok::objc_private: return ObjCIvarDecl::Private;
   case tok::objc_public: return ObjCIvarDecl::Public;
   case tok::objc_protected: return ObjCIvarDecl::Protected;
@@ -8649,7 +8673,7 @@ void Sema::ActOnLastBitfield(SourceLocation DeclLoc,
 
 void Sema::ActOnFields(Scope* S,
                        SourceLocation RecLoc, Decl *EnclosingDecl,
-                       Decl **Fields, unsigned NumFields,
+                       llvm::ArrayRef<Decl *> Fields,
                        SourceLocation LBrac, SourceLocation RBrac,
                        AttributeList *Attr) {
   assert(EnclosingDecl && "missing record or interface decl");
@@ -8665,8 +8689,9 @@ void Sema::ActOnFields(Scope* S,
 
   RecordDecl *Record = dyn_cast<RecordDecl>(EnclosingDecl);
   bool ARCErrReported = false;
-  for (unsigned i = 0; i != NumFields; ++i) {
-    FieldDecl *FD = cast<FieldDecl>(Fields[i]);
+  for (llvm::ArrayRef<Decl *>::iterator i = Fields.begin(), end = Fields.end();
+       i != end; ++i) {
+    FieldDecl *FD = cast<FieldDecl>(*i);
 
     // Get the type for the field.
     const Type *FDTy = FD->getType().getTypePtr();
@@ -8701,25 +8726,26 @@ void Sema::ActOnFields(Scope* S,
       EnclosingDecl->setInvalidDecl();
       continue;
     } else if (FDTy->isIncompleteArrayType() && Record && 
-               ((i == NumFields - 1 && !Record->isUnion()) ||
-                ((getLangOptions().Microsoft || getLangOptions().CPlusPlus) &&
-                 (i == NumFields - 1 || Record->isUnion())))) {
+               ((i + 1 == Fields.end() && !Record->isUnion()) ||
+                ((getLangOptions().MicrosoftExt ||
+                  getLangOptions().CPlusPlus) &&
+                 (i + 1 == Fields.end() || Record->isUnion())))) {
       // Flexible array member.
       // Microsoft and g++ is more permissive regarding flexible array.
       // It will accept flexible array in union and also
       // as the sole element of a struct/class.
-      if (getLangOptions().Microsoft) {
+      if (getLangOptions().MicrosoftExt) {
         if (Record->isUnion()) 
           Diag(FD->getLocation(), diag::ext_flexible_array_union_ms)
             << FD->getDeclName();
-        else if (NumFields == 1) 
+        else if (Fields.size() == 1) 
           Diag(FD->getLocation(), diag::ext_flexible_array_empty_aggregate_ms)
             << FD->getDeclName() << Record->getTagKind();
       } else if (getLangOptions().CPlusPlus) {
         if (Record->isUnion()) 
           Diag(FD->getLocation(), diag::ext_flexible_array_union_gnu)
             << FD->getDeclName();
-        else if (NumFields == 1) 
+        else if (Fields.size() == 1) 
           Diag(FD->getLocation(), diag::ext_flexible_array_empty_aggregate_gnu)
             << FD->getDeclName() << Record->getTagKind();
       } else if (NumNamedMembers < 1) {
@@ -8756,7 +8782,7 @@ void Sema::ActOnFields(Scope* S,
           // If this is a struct/class and this is not the last element, reject
           // it.  Note that GCC supports variable sized arrays in the middle of
           // structures.
-          if (i != NumFields-1)
+          if (i + 1 != Fields.end())
             Diag(FD->getLocation(), diag::ext_variable_sized_type_in_struct)
               << FD->getDeclName() << FD->getType();
           else {
@@ -9071,7 +9097,7 @@ EnumConstantDecl *Sema::CheckEnumConstant(EnumDecl *Enum,
           //   ... if the initializing value of an enumerator cannot be
           //   represented by the underlying type, the program is ill-formed.
           if (!isRepresentableIntegerValue(Context, EnumVal, EltTy)) {
-            if (getLangOptions().Microsoft) {
+            if (getLangOptions().MicrosoftExt) {
               Diag(IdLoc, diag::ext_enumerator_too_large) << EltTy;
               Val = ImpCastExprToType(Val, EltTy, CK_IntegralCast).take();
             } else 

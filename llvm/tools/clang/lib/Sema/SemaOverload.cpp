@@ -1665,7 +1665,7 @@ bool Sema::IsPointerConversion(Expr *From, QualType FromType, QualType ToType,
   }
 
   // MSVC allows implicit function to void* type conversion.
-  if (getLangOptions().Microsoft && FromPointeeType->isFunctionType() &&
+  if (getLangOptions().MicrosoftExt && FromPointeeType->isFunctionType() &&
       ToPointeeType->isVoidType()) {
     ConvertedType = BuildSimilarlyQualifiedPointerType(FromTypePtr,
                                                        ToPointeeType,
@@ -2509,7 +2509,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
         User.EllipsisConversion = false;
       }
       User.ConversionFunction = Constructor;
-      User.FoundConversionFunction = Best->FoundDecl.getDecl();
+      User.FoundConversionFunction = Best->FoundDecl;
       User.After.setAsIdentityConversion();
       User.After.setFromType(ThisType->getAs<PointerType>()->getPointeeType());
       User.After.setAllToTypes(ToType);
@@ -2526,7 +2526,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
       //   implicit object parameter of the conversion function.
       User.Before = Best->Conversions[0].Standard;
       User.ConversionFunction = Conversion;
-      User.FoundConversionFunction = Best->FoundDecl.getDecl();
+      User.FoundConversionFunction = Best->FoundDecl;
       User.EllipsisConversion = false;
 
       // C++ [over.ics.user]p2:
@@ -2865,6 +2865,25 @@ CompareStandardConversionSequences(Sema &S,
         return ImplicitConversionSequence::Worse;      
     }
   }
+
+  // In Microsoft mode, prefer an integral conversion to a
+  // floating-to-integral conversion if the integral conversion
+  // is between types of the same size.
+  // For example:
+  // void f(float);
+  // void f(int);
+  // int main {
+  //    long a;
+  //    f(a);
+  // }
+  // Here, MSVC will call f(int) instead of generating a compile error
+  // as clang will do in standard mode.
+  if (S.getLangOptions().MicrosoftMode &&
+      SCS1.Second == ICK_Integral_Conversion &&
+      SCS2.Second == ICK_Floating_Integral && 
+      S.Context.getTypeSize(SCS1.getFromType()) ==
+      S.Context.getTypeSize(SCS1.getToType(2)))
+    return ImplicitConversionSequence::Better;
 
   return ImplicitConversionSequence::Indistinguishable;
 }
@@ -3348,7 +3367,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
     ICS.UserDefined.Before = Best->Conversions[0].Standard;
     ICS.UserDefined.After = Best->FinalConversion;
     ICS.UserDefined.ConversionFunction = Best->Function;
-    ICS.UserDefined.FoundConversionFunction = Best->FoundDecl.getDecl();
+    ICS.UserDefined.FoundConversionFunction = Best->FoundDecl;
     ICS.UserDefined.EllipsisConversion = false;
     assert(ICS.UserDefined.After.ReferenceBinding &&
            ICS.UserDefined.After.DirectBinding &&
@@ -4638,7 +4657,7 @@ Sema::AddConversionCandidate(CXXConversionDecl *Conversion,
     break;
 
   default:
-    assert(false &&
+    llvm_unreachable(
            "Can only end up with a standard conversion sequence or failure");
   }
 }
@@ -4735,8 +4754,7 @@ void Sema::AddSurrogateCandidate(CXXConversionDecl *Conversion,
   Candidate.Conversions[0].UserDefined.Before = ObjectInit.Standard;
   Candidate.Conversions[0].UserDefined.EllipsisConversion = false;
   Candidate.Conversions[0].UserDefined.ConversionFunction = Conversion;
-  Candidate.Conversions[0].UserDefined.FoundConversionFunction
-    = FoundDecl.getDecl();
+  Candidate.Conversions[0].UserDefined.FoundConversionFunction = FoundDecl;
   Candidate.Conversions[0].UserDefined.After
     = Candidate.Conversions[0].UserDefined.Before;
   Candidate.Conversions[0].UserDefined.After.setAsIdentityConversion();
@@ -5021,7 +5039,7 @@ BuiltinCandidateTypeSet::AddPointerWithMoreQualifiedTypeVariants(QualType Ty,
       buildObjCPtr = true;
     }
     else
-      assert(false && "type was not a pointer type!");
+      llvm_unreachable("type was not a pointer type!");
   }
   else
     PointeeTy = PointerTy->getPointeeType();
@@ -6315,16 +6333,15 @@ Sema::AddBuiltinOperatorCandidates(OverloadedOperatorKind Op,
   switch (Op) {
   case OO_None:
   case NUM_OVERLOADED_OPERATORS:
-    assert(false && "Expected an overloaded operator");
-    break;
+    llvm_unreachable("Expected an overloaded operator");
 
   case OO_New:
   case OO_Delete:
   case OO_Array_New:
   case OO_Array_Delete:
   case OO_Call:
-    assert(false && "Special operators don't use AddBuiltinOperatorCandidates");
-    break;
+    llvm_unreachable(
+                    "Special operators don't use AddBuiltinOperatorCandidates");
 
   case OO_Comma:
   case OO_Arrow:
@@ -7292,7 +7309,7 @@ static unsigned
 RankDeductionFailure(const OverloadCandidate::DeductionFailureInfo &DFI) {
   switch ((Sema::TemplateDeductionResult)DFI.Result) {
   case Sema::TDK_Success:
-    assert(0 && "TDK_success while diagnosing bad deduction");
+    llvm_unreachable("TDK_success while diagnosing bad deduction");
 
   case Sema::TDK_Incomplete:
     return 1;
@@ -8350,7 +8367,7 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
     if (ULE->decls_begin() + 1 == ULE->decls_end() &&
         (F = dyn_cast<FunctionDecl>(*ULE->decls_begin())) &&
         F->getBuiltinID() && F->isImplicit())
-      assert(0 && "performing ADL for builtin");
+      llvm_unreachable("performing ADL for builtin");
 
     // We don't perform ADL in C.
     assert(getLangOptions().CPlusPlus && "ADL enabled in C");
@@ -8373,7 +8390,7 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
     // create a type dependent CallExpr. The goal is to postpone name lookup
     // to instantiation time to be able to search into type dependent base
     // classes.
-    if (getLangOptions().Microsoft && CurContext->isDependentContext() && 
+    if (getLangOptions().MicrosoftExt && CurContext->isDependentContext() && 
         isa<CXXMethodDecl>(CurContext)) {
       CallExpr *CE = new (Context) CallExpr(Context, Fn, Args, NumArgs,
                                           Context.DependentTy, VK_RValue,
@@ -9209,7 +9226,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
 
 
       // Microsoft supports direct constructor calls.
-      if (getLangOptions().Microsoft && isa<CXXConstructorDecl>(Func)) {
+      if (getLangOptions().MicrosoftExt && isa<CXXConstructorDecl>(Func)) {
         AddOverloadCandidate(cast<CXXConstructorDecl>(Func), I.getPair(), Args, NumArgs,
                              CandidateSet);
       } else if ((Method = dyn_cast<CXXMethodDecl>(Func))) {

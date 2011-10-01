@@ -295,8 +295,7 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
   Record.push_back(D->getIdentifierNamespace());
   Record.push_back(D->getTemplatedKind());
   switch (D->getTemplatedKind()) {
-  default: assert(false && "Unhandled TemplatedKind!");
-    break;
+  default: llvm_unreachable("Unhandled TemplatedKind!");
   case FunctionDecl::TK_NonTemplate:
     break;
   case FunctionDecl::TK_FunctionTemplate:
@@ -321,13 +320,14 @@ void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
     // Template args as written.
     Record.push_back(FTSInfo->TemplateArgumentsAsWritten != 0);
     if (FTSInfo->TemplateArgumentsAsWritten) {
-      Record.push_back(FTSInfo->TemplateArgumentsAsWritten->size());
-      for (int i=0, e = FTSInfo->TemplateArgumentsAsWritten->size(); i!=e; ++i)
+      Record.push_back(FTSInfo->TemplateArgumentsAsWritten->NumTemplateArgs);
+      for (int i=0, e = FTSInfo->TemplateArgumentsAsWritten->NumTemplateArgs;
+             i!=e; ++i)
         Writer.AddTemplateArgumentLoc((*FTSInfo->TemplateArgumentsAsWritten)[i],
                                       Record);
-      Writer.AddSourceLocation(FTSInfo->TemplateArgumentsAsWritten->getLAngleLoc(),
+      Writer.AddSourceLocation(FTSInfo->TemplateArgumentsAsWritten->LAngleLoc,
                                Record);
-      Writer.AddSourceLocation(FTSInfo->TemplateArgumentsAsWritten->getRAngleLoc(),
+      Writer.AddSourceLocation(FTSInfo->TemplateArgumentsAsWritten->RAngleLoc,
                                Record);
     }
     

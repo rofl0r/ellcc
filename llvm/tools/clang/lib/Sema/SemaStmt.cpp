@@ -1387,8 +1387,7 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation ColonLoc,
       else {
         // Can't be a DependentSizedArrayType or an IncompleteArrayType since
         // UnqAT is not incomplete and Range is not type-dependent.
-        assert(0 && "Unexpected array type in for-range");
-        return StmtError();
+        llvm_unreachable("Unexpected array type in for-range");
       }
 
       // end-expr is __range + __bound.

@@ -17,6 +17,7 @@
 #include "clang/Lex/LexDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 
 /// HexDigitValue - Return the value of the specified hex digit, or -1 if it's
@@ -30,7 +31,7 @@ static int HexDigitValue(char C) {
 
 static unsigned getCharWidth(tok::TokenKind kind, const TargetInfo &Target) {
   switch (kind) {
-  default: assert(0 && "Unknown token type!");
+  default: llvm_unreachable("Unknown token type!");
   case tok::char_constant:
   case tok::string_literal:
   case tok::utf8_string_literal:
@@ -452,7 +453,7 @@ NumericLiteralParser(const char *begin, const char *end,
       continue;  // Success.
     case 'i':
     case 'I':
-      if (PP.getLangOptions().Microsoft) {
+      if (PP.getLangOptions().MicrosoftExt) {
         if (isFPConstant || isLong || isLongLong) break;
 
         // Allow i8, i16, i32, i64, and i128.

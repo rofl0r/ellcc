@@ -3400,8 +3400,7 @@ void Sema::CodeCompleteTag(Scope *S, unsigned TagSpec) {
     break;
     
   default:
-    assert(false && "Unknown type specifier kind in CodeCompleteTag");
-    return;
+    llvm_unreachable("Unknown type specifier kind in CodeCompleteTag");
   }
   
   ResultBuilder Results(*this, CodeCompleter->getAllocator(), ContextKind);

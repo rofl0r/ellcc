@@ -185,7 +185,7 @@ static FullSourceLoc ConvertBackendLocation(const llvm::SMDiagnostic &D,
   // Translate the offset into the file.
   unsigned Offset = D.getLoc().getPointer()  - LBuf->getBufferStart();
   SourceLocation NewLoc =
-  CSM.getLocForStartOfFile(FID).getFileLocWithOffset(Offset);
+  CSM.getLocForStartOfFile(FID).getLocWithOffset(Offset);
   return FullSourceLoc(NewLoc, CSM);
 }
 
@@ -275,8 +275,7 @@ static raw_ostream *GetOutputStream(CompilerInstance &CI,
     return CI.createDefaultOutputFile(true, InFile, "o");
   }
 
-  assert(0 && "Invalid action!");
-  return 0;
+  llvm_unreachable("Invalid action!");
 }
 
 ASTConsumer *CodeGenAction::CreateASTConsumer(CompilerInstance &CI,
@@ -320,7 +319,7 @@ void CodeGenAction::ExecuteAction() {
     TheModule.reset(ParseIR(MainFileCopy, Err, *VMContext));
     if (!TheModule) {
       // Translate from the diagnostic info to the SourceManager location.
-      SourceLocation Loc = SM.getLocation(
+      SourceLocation Loc = SM.translateFileLineCol(
         SM.getFileEntryForID(SM.getMainFileID()), Err.getLineNo(),
         Err.getColumnNo() + 1);
 

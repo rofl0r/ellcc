@@ -32,6 +32,7 @@
 #include "clang/Basic/TemplateKinds.h"
 #include "clang/Basic/TypeTraits.h"
 #include "clang/Basic/ExpressionTraits.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -675,8 +676,9 @@ public:
 
   GlobalMethodPool::iterator ReadMethodPool(Selector Sel);
 
-  /// Private Helper predicate to check for 'self'.
-  bool isSelfExpr(Expr *RExpr);
+  /// Private Helper predicate to check for 'self'. Upon success, it
+  /// returns method declaration where 'self' is referenced.
+  const ObjCMethodDecl *GetMethodIfSelfExpr(Expr *RExpr);
 public:
   Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
        TranslationUnitKind TUKind = TU_Complete,
@@ -1189,7 +1191,7 @@ public:
 
   // This is used for both record definitions and ObjC interface declarations.
   void ActOnFields(Scope* S, SourceLocation RecLoc, Decl *TagDecl,
-                   Decl **Fields, unsigned NumFields,
+                   llvm::ArrayRef<Decl *> Fields,
                    SourceLocation LBrac, SourceLocation RBrac,
                    AttributeList *AttrList);
 
@@ -4331,8 +4333,7 @@ public:
   /// must be set.
   bool CheckParameterPacksForExpansion(SourceLocation EllipsisLoc,
                                        SourceRange PatternRange,
-                                     const UnexpandedParameterPack *Unexpanded,
-                                       unsigned NumUnexpanded,
+                             llvm::ArrayRef<UnexpandedParameterPack> Unexpanded,
                              const MultiLevelTemplateArgumentList &TemplateArgs,
                                        bool &ShouldExpand,
                                        bool &RetainExpansion,

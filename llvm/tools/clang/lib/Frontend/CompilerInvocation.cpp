@@ -534,8 +534,20 @@ static void HeaderSearchOptsToArgs(const HeaderSearchOptions &Opts,
         Res.push_back(E.IsFramework? "-F" : "-I");
         break;
         
+      case frontend::CSystem:
+        Res.push_back("-c-isystem");
+        break;
+
       case frontend::CXXSystem:
         Res.push_back("-cxx-isystem");
+        break;
+
+      case frontend::ObjCSystem:
+        Res.push_back("-objc-isystem");
+        break;
+
+      case frontend::ObjCXXSystem:
+        Res.push_back("-objcxx-isystem");
         break;
         
       case frontend::Angled:
@@ -551,26 +563,6 @@ static void HeaderSearchOptsToArgs(const HeaderSearchOptions &Opts,
     Res.push_back(E.Path);
   }
 
-  if (!Opts.EnvIncPath.empty()) {
-    // FIXME: Provide an option for this, and move env detection to driver.
-    llvm::report_fatal_error("Not yet implemented!");
-  }
-  if (!Opts.CEnvIncPath.empty()) {
-    // FIXME: Provide an option for this, and move env detection to driver.
-    llvm::report_fatal_error("Not yet implemented!");
-  }
-  if (!Opts.ObjCEnvIncPath.empty()) {
-    // FIXME: Provide an option for this, and move env detection to driver.
-    llvm::report_fatal_error("Not yet implemented!");
-  }
-  if (!Opts.CXXEnvIncPath.empty()) {
-    // FIXME: Provide an option for this, and move env detection to driver.
-    llvm::report_fatal_error("Not yet implemented!");
-  }
-  if (!Opts.ObjCXXEnvIncPath.empty()) {
-    // FIXME: Provide an option for this, and move env detection to driver.
-    llvm::report_fatal_error("Not yet implemented!");
-  }
   if (!Opts.ResourceDir.empty()) {
     Res.push_back("-resource-dir");
     Res.push_back(Opts.ResourceDir);
@@ -613,7 +605,7 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fno-gnu-keywords");
   if (!Opts.GNUMode && Opts.GNUKeywords)
     Res.push_back("-fgnu-keywords");
-  if (Opts.Microsoft)
+  if (Opts.MicrosoftExt)
     Res.push_back("-fms-extensions");
   if (Opts.MSCVersion != 0)
     Res.push_back("-fmsc-version=" + llvm::utostr(Opts.MSCVersion));
@@ -1172,7 +1164,7 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   if (const Arg *A = Args.getLastArg(OPT_Action_Group)) {
     switch (A->getOption().getID()) {
     default:
-      assert(0 && "Invalid option in group!");
+      llvm_unreachable("Invalid option in group!");
     case OPT_ast_dump:
       Opts.ProgramAction = frontend::ASTDump; break;
     case OPT_ast_dump_xml:
@@ -1373,7 +1365,8 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   using namespace cc1options;
   Opts.Sysroot = Args.getLastArgValue(OPT_isysroot, "/");
   Opts.Verbose = Args.hasArg(OPT_v);
-  Opts.UseBuiltinIncludes = !Args.hasArg(OPT_nobuiltininc);
+  Opts.UseBuiltinIncludes = !Args.hasArg(OPT_nobuiltininc) &&
+                            !Args.hasArg(OPT_fms_compatibility);
   Opts.UseStandardIncludes = !Args.hasArg(OPT_nostdinc);
   Opts.UseStandardCXXIncludes = !Args.hasArg(OPT_nostdincxx);
   if (const Arg *A = Args.getLastArg(OPT_stdlib_EQ))
@@ -1423,14 +1416,25 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   for (arg_iterator it = Args.filtered_begin(OPT_iquote),
          ie = Args.filtered_end(); it != ie; ++it)
     Opts.AddPath((*it)->getValue(Args), frontend::Quoted, true, false, false);
-  for (arg_iterator it = Args.filtered_begin(OPT_cxx_isystem, OPT_isystem,
+  for (arg_iterator it = Args.filtered_begin(OPT_isystem,
          OPT_iwithsysroot), ie = Args.filtered_end(); it != ie; ++it)
-    Opts.AddPath((*it)->getValue(Args),
-                 ((*it)->getOption().matches(OPT_cxx_isystem) ?
-                   frontend::CXXSystem : frontend::System),
-                 true, false, !(*it)->getOption().matches(OPT_iwithsysroot));
-  
-  // FIXME: Need options for the various environment variables!
+    Opts.AddPath((*it)->getValue(Args), frontend::System, true, false,
+                 !(*it)->getOption().matches(OPT_iwithsysroot));
+
+  // Add the paths for the various language specific isystem flags.
+  for (arg_iterator it = Args.filtered_begin(OPT_c_isystem),
+       ie = Args.filtered_end(); it != ie; ++it)
+    Opts.AddPath((*it)->getValue(Args), frontend::CSystem, true, false, true);
+  for (arg_iterator it = Args.filtered_begin(OPT_cxx_isystem),
+       ie = Args.filtered_end(); it != ie; ++it)
+    Opts.AddPath((*it)->getValue(Args), frontend::CXXSystem, true, false, true);
+  for (arg_iterator it = Args.filtered_begin(OPT_objc_isystem),
+       ie = Args.filtered_end(); it != ie; ++it)
+    Opts.AddPath((*it)->getValue(Args), frontend::ObjCSystem, true, false,true);
+  for (arg_iterator it = Args.filtered_begin(OPT_objcxx_isystem),
+       ie = Args.filtered_end(); it != ie; ++it)
+    Opts.AddPath((*it)->getValue(Args), frontend::ObjCXXSystem, true, false,
+                 true);
 }
 
 void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
@@ -1453,7 +1457,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     case IK_None:
     case IK_AST:
     case IK_LLVM_IR:
-      assert(0 && "Invalid input kind!");
+      llvm_unreachable("Invalid input kind!");
     case IK_OpenCL:
       LangStd = LangStandard::lang_opencl;
       break;
@@ -1491,9 +1495,9 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   // OpenCL has some additional defaults.
   if (LangStd == LangStandard::lang_opencl) {
     Opts.OpenCL = 1;
-    Opts.AltiVec = 1;
+    Opts.AltiVec = 0;
     Opts.CXXOperatorNames = 1;
-    Opts.LaxVectorConversions = 1;
+    Opts.LaxVectorConversions = 0;
     Opts.DefaultFPContract = 1;
   }
 
@@ -1654,7 +1658,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
                                    OPT_fno_dollars_in_identifiers,
                                    Opts.DollarIdents);
   Opts.PascalStrings = Args.hasArg(OPT_fpascal_strings);
-  Opts.Microsoft = Args.hasArg(OPT_fms_extensions);
+  Opts.MicrosoftExt = Args.hasArg(OPT_fms_extensions);
   Opts.MicrosoftMode = Args.hasArg(OPT_fms_compatibility);
   Opts.MSCVersion = Args.getLastArgIntValue(OPT_fmsc_version, 0, Diags);
   Opts.Borland = Args.hasArg(OPT_fborland_extensions);

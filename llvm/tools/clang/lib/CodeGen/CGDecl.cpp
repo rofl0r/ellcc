@@ -14,6 +14,7 @@
 #include "CGDebugInfo.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
+#include "CGOpenCLRuntime.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/Decl.h"
@@ -71,7 +72,7 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::FriendTemplate:
   case Decl::Block:
   case Decl::ClassScopeFunctionSpecialization:
-    assert(0 && "Declaration should not be in declstmts!");
+    llvm_unreachable("Declaration should not be in declstmts!");
   case Decl::Function:  // void X();
   case Decl::Record:    // struct/union/class X;
   case Decl::Enum:      // enum X;
@@ -131,9 +132,11 @@ void CodeGenFunction::EmitVarDecl(const VarDecl &D) {
   case SC_PrivateExtern:
     // Don't emit it now, allow it to be emitted lazily on its first use.
     return;
+  case SC_OpenCLWorkGroupLocal:
+    return CGM.getOpenCLRuntime().EmitWorkGroupLocalVarDecl(*this, D);
   }
 
-  assert(0 && "Unknown storage class");
+  llvm_unreachable("Unknown storage class");
 }
 
 static std::string GetStaticDeclName(CodeGenFunction &CGF, const VarDecl &D,
@@ -155,14 +158,14 @@ static std::string GetStaticDeclName(CodeGenFunction &CGF, const VarDecl &D,
       ContextName = Name.getString();
     }
     else
-      assert(0 && "Unknown context for block static var decl");
+      llvm_unreachable("Unknown context for block static var decl");
   } else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(CGF.CurFuncDecl)) {
     StringRef Name = CGM.getMangledName(FD);
     ContextName = Name.str();
   } else if (isa<ObjCMethodDecl>(CGF.CurFuncDecl))
     ContextName = CGF.CurFn->getName();
   else
-    assert(0 && "Unknown context for static var decl");
+    llvm_unreachable("Unknown context for static var decl");
 
   return ContextName + Separator + D.getNameAsString();
 }

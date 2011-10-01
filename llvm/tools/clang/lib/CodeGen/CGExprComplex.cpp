@@ -103,8 +103,7 @@ public:
     
   ComplexPairTy VisitStmt(Stmt *S) {
     S->dump(CGF.getContext().getSourceManager());
-    assert(0 && "Stmt can't have complex result type!");
-    return ComplexPairTy();
+    llvm_unreachable("Stmt can't have complex result type!");
   }
   ComplexPairTy VisitExpr(Expr *S);
   ComplexPairTy VisitParenExpr(ParenExpr *PE) { return Visit(PE->getSubExpr());}
@@ -738,10 +737,17 @@ ComplexPairTy ComplexExprEmitter::VisitInitListExpr(InitListExpr *E) {
     Ignore = TestAndClearIgnoreImag();
     (void)Ignore;
     assert (Ignore == false && "init list ignored");
-  if (E->getNumInits())
+
+  if (E->getNumInits() == 2) {
+    llvm::Value *Real = CGF.EmitScalarExpr(E->getInit(0));
+    llvm::Value *Imag = CGF.EmitScalarExpr(E->getInit(1));
+    return ComplexPairTy(Real, Imag);
+  } else if (E->getNumInits() == 1) {
     return Visit(E->getInit(0));
+  }
 
   // Empty init list intializes to null
+  assert(E->getNumInits() == 0 && "Unexpected number of inits");
   QualType Ty = E->getType()->getAs<ComplexType>()->getElementType();
   llvm::Type* LTy = CGF.ConvertType(Ty);
   llvm::Value* zeroConstant = llvm::Constant::getNullValue(LTy);
