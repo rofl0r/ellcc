@@ -3195,6 +3195,7 @@ public:
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const {
     static const char * const GCCRegNames[] = {
+#if RICH
       "$0",   "$1",   "$2",   "$3",   "$4",   "$5",   "$6",   "$7",
       "$8",   "$9",   "$10",  "$11",  "$12",  "$13",  "$14",  "$15",
       "$16",  "$17",  "$18",  "$19",  "$20",  "$21",  "$22",  "$23",
@@ -3205,6 +3206,19 @@ public:
       "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
       "hi",   "lo",   "",     "$fcc0","$fcc1","$fcc2","$fcc3","$fcc4",
       "$fcc5","$fcc6","$fcc7"
+#else
+      "zero", "at",  "v0",   "v1",  "a0",  "a1",  "a2",  "a3",
+      "t0",   "t1",  "t2",   "t3",  "t4",  "t5",  "t6",  "t7",
+      "s0",   "s1",  "s2",   "s3",  "s4",  "s5",  "s6",  "s7",
+      "t8",   "t9",  "k0",   "k1",  "gp",  "sp",  "fp",  "ra",
+
+      "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
+      "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
+      "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
+      "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
+      "hi",   "lo",   "",     "$fcc0","$fcc1","$fcc2","$fcc3","$fcc4",
+      "$fcc5","$fcc6","$fcc7"
+#endif
     };
     Names = GCCRegNames;
     NumNames = llvm::array_lengthof(GCCRegNames);
@@ -3239,21 +3253,6 @@ public:
   }
 };
 
-#if RICH
-const char * const MipsTargetInfo::GCCRegNames[] = {
-  "zero", "at",  "v0",   "v1",  "a0",  "a1",  "a2",  "a3",
-  "t0",   "t1",  "t2",   "t3",  "t4",  "t5",  "t6",  "t7",
-  "s0",   "s1",  "s2",   "s3",  "s4",  "s5",  "s6",  "s7",
-  "t8",   "t9",  "k0",   "k1",  "gp",  "sp",  "fp",  "ra",
-
-  "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
-  "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
-  "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
-  "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31",
-  "hi",   "lo",   "",     "$fcc0","$fcc1","$fcc2","$fcc3","$fcc4",
-  "$fcc5","$fcc6","$fcc7"
-};
-#endif
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
 public:
   Mips32TargetInfoBase(const std::string& triple) :
@@ -3280,6 +3279,7 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
                                 unsigned &NumAliases) const {
     static const TargetInfo::GCCRegAlias GCCRegAliases[] = {
+#if RICH
       { { "at" },  "$1" },
       { { "v0" },  "$2" },
       { { "v1" },  "$3" },
@@ -3311,6 +3311,40 @@ public:
       { { "sp" }, "$29" },
       { { "fp" }, "$30" },
       { { "ra" }, "$31" }
+#else
+      { { "$0" }, "zero" },
+      { { "$1" }, "at" },
+      { { "$2" }, "v0" },
+      { { "$3" }, "v1" },
+      { { "$4" }, "a0" },
+      { { "$5" }, "a1" },
+      { { "$6" }, "a2" },
+      { { "$7" }, "a3" },
+      { { "$8" }, "t0" },
+      { { "$9" }, "t1" },
+      { { "$10" }, "t2" },
+      { { "$11" }, "t3" },
+      { { "$12" }, "t4" },
+      { { "$13" }, "t5" },
+      { { "$14" }, "t6" },
+      { { "$15" }, "t7" },
+      { { "$16" }, "s0" },
+      { { "$17" }, "s1" },
+      { { "$18" }, "s2" },
+      { { "$19" }, "s3" },
+      { { "$20" }, "s4" },
+      { { "$21" }, "s5" },
+      { { "$22" }, "s6" },
+      { { "$23" }, "s7" },
+      { { "$24" }, "t8" },
+      { { "$25" }, "t9" },
+      { { "$26" }, "k0" },
+      { { "$27" }, "k1" },
+      { { "$28" }, "gp" },
+      { { "$29" }, "sp" },
+      { { "$30" }, "fp" },
+      { { "$31" }, "ra" },
+#endif
     };
     Aliases = GCCRegAliases;
     NumAliases = llvm::array_lengthof(GCCRegAliases);
@@ -3333,43 +3367,6 @@ public:
     getArchDefines(Opts, Builder);
   }
 };
-
-#if RICH
-const TargetInfo::GCCRegAlias MipsTargetInfo::GCCRegAliases[] = {
-  { { "$0" }, "zero" },
-  { { "$1" }, "at" },
-  { { "$2" }, "v0" },
-  { { "$3" }, "v1" },
-  { { "$4" }, "a0" },
-  { { "$5" }, "a1" },
-  { { "$6" }, "a2" },
-  { { "$7" }, "a3" },
-  { { "$8" }, "t0" },
-  { { "$9" }, "t1" },
-  { { "$10" }, "t2" },
-  { { "$11" }, "t3" },
-  { { "$12" }, "t4" },
-  { { "$13" }, "t5" },
-  { { "$14" }, "t6" },
-  { { "$15" }, "t7" },
-  { { "$16" }, "s0" },
-  { { "$17" }, "s1" },
-  { { "$18" }, "s2" },
-  { { "$19" }, "s3" },
-  { { "$20" }, "s4" },
-  { { "$21" }, "s5" },
-  { { "$22" }, "s6" },
-  { { "$23" }, "s7" },
-  { { "$24" }, "t8" },
-  { { "$25" }, "t9" },
-  { { "$26" }, "k0" },
-  { { "$27" }, "k1" },
-  { { "$28" }, "gp" },
-  { { "$29" }, "sp" },
-  { { "$30" }, "fp" },
-  { { "$31" }, "ra" },
-};
-#endif
 
 class Mips32ELTargetInfo : public Mips32TargetInfoBase {
 public:
@@ -3419,6 +3416,7 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
                                 unsigned &NumAliases) const {
     static const TargetInfo::GCCRegAlias GCCRegAliases[] = {
+#if RICH
       { { "at" },  "$1" },
       { { "v0" },  "$2" },
       { { "v1" },  "$3" },
@@ -3450,6 +3448,40 @@ public:
       { { "sp" }, "$29" },
       { { "fp" }, "$30" },
       { { "ra" }, "$31" }
+#else
+      { { "$0" }, "zero" },
+      { { "$1" }, "at" },
+      { { "$2" }, "v0" },
+      { { "$3" }, "v1" },
+      { { "$4" }, "a0" },
+      { { "$5" }, "a1" },
+      { { "$6" }, "a2" },
+      { { "$7" }, "a3" },
+      { { "$8" }, "t0" },
+      { { "$9" }, "t1" },
+      { { "$10" }, "t2" },
+      { { "$11" }, "t3" },
+      { { "$12" }, "t4" },
+      { { "$13" }, "t5" },
+      { { "$14" }, "t6" },
+      { { "$15" }, "t7" },
+      { { "$16" }, "s0" },
+      { { "$17" }, "s1" },
+      { { "$18" }, "s2" },
+      { { "$19" }, "s3" },
+      { { "$20" }, "s4" },
+      { { "$21" }, "s5" },
+      { { "$22" }, "s6" },
+      { { "$23" }, "s7" },
+      { { "$24" }, "t8" },
+      { { "$25" }, "t9" },
+      { { "$26" }, "k0" },
+      { { "$27" }, "k1" },
+      { { "$28" }, "gp" },
+      { { "$29" }, "sp" },
+      { { "$30" }, "fp" },
+      { { "$31" }, "ra" },
+#endif
     };
     Aliases = GCCRegAliases;
     NumAliases = llvm::array_lengthof(GCCRegAliases);

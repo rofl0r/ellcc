@@ -439,6 +439,16 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
   // return to previous section
   OutStreamer.EmitRawText(StringRef("\t.previous"));
+
+  if (Subtarget->hasMips64r2()) {
+    OutStreamer.EmitRawText(StringRef("\t.set mips62r2"));
+  } else if (Subtarget->hasMips64()) {
+    OutStreamer.EmitRawText(StringRef("\t.set mips62"));
+  } else if (Subtarget->hasMips32r2()) {
+    OutStreamer.EmitRawText(StringRef("\t.set mips32r2"));
+  } else if (Subtarget->hasMips32()) {
+    OutStreamer.EmitRawText(StringRef("\t.set mips32"));
+  }
 }
 
 MachineLocation

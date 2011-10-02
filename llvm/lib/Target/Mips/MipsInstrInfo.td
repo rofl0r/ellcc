@@ -123,10 +123,11 @@ def MipsIns :  SDNode<"MipsISD::Ins", SDT_Ins>;
 //===----------------------------------------------------------------------===//
 def HasSEInReg  : Predicate<"Subtarget.hasSEInReg()">;
 def HasBitCount : Predicate<"Subtarget.hasBitCount()">;
+def HasMulDivAdd: Predicate<"Subtarget.hasMulDivAdd()">;
 def HasSwap     : Predicate<"Subtarget.hasSwap()">;
 def HasCondMov  : Predicate<"Subtarget.hasCondMov()">;
-def HasMips32    : Predicate<"Subtarget.hasMips32()">;
-def HasMips32r2  : Predicate<"Subtarget.hasMips32r2()">;
+def HasMips32   : Predicate<"Subtarget.hasMips32()">;
+def HasMips32r2 : Predicate<"Subtarget.hasMips32r2()">;
 
 //===----------------------------------------------------------------------===//
 // Mips Operand, Complex Patterns and Transformations Definitions.
@@ -225,7 +226,7 @@ let rd = 0, shamt = 0, Defs = [HI, LO], Uses = [HI, LO] in
 class MArithR<bits<6> func, string instr_asm, SDNode op, bit isComm = 0> :
   FR<0x1c, func, (outs), (ins CPURegs:$rs, CPURegs:$rt),
      !strconcat(instr_asm, "\t$rs, $rt"),
-     [(op CPURegs:$rs, CPURegs:$rt, LO, HI)], IIImul> {
+     [(op CPURegs:$rs, CPURegs:$rt, LO, HI)], IIImul>, Requires<[HasMulDivAdd]> {
   let isCommutable = isComm;
 }
 

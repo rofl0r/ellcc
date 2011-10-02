@@ -108,6 +108,7 @@ namespace {
     bool doFinalization(Module &M);
 
     virtual void EmitFunctionEntryLabel();
+    virtual void EmitFunctionSizeDirective();
   };
 
   /// PPCDarwinAsmPrinter - PowerPC assembly printer, customized for Darwin/Mac
@@ -393,6 +394,19 @@ void PPCLinuxAsmPrinter::EmitFunctionEntryLabel() {
                           ",.TOC.@tocbase");
   OutStreamer.EmitRawText(StringRef("\t.previous"));
   OutStreamer.EmitRawText(".L." + Twine(CurrentFnSym->getName()) + ":");
+}
+
+void PPCLinuxAsmPrinter::EmitFunctionSizeDirective() {
+  if (!Subtarget.isPPC64())  // linux/ppc32 - Normal size directive.
+    return AsmPrinter::EmitFunctionSizeDirective();
+    
+  MCSymbol *FnEndLabel = OutContext.CreateTempSymbol();
+  OutStreamer.EmitLabel(FnEndLabel);
+
+  OutStreamer.EmitRawText(StringRef("\t.size ") + 
+                          Twine(CurrentFnSym->getName()) + ", " + 
+                          Twine(FnEndLabel->getName()) +
+                          "-.L." + Twine(CurrentFnSym->getName()));
 }
 
 bool PPCLinuxAsmPrinter::doFinalization(Module &M) {

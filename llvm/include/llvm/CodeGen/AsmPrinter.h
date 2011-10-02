@@ -261,6 +261,8 @@ namespace llvm {
 
     virtual void EmitFunctionEntryLabel();
 
+    virtual void EmitFunctionSizeDirective();
+
     virtual void EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV);
 
     /// isBlockOnlyReachableByFallthough - Return true if the basic block has
