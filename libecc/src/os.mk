@@ -25,7 +25,7 @@ CFLAGS = -Werror -MD -MP -O1 -fno-builtin
 
 .SUFFIXES: .c .S .o
 .c.o:
-	${CC} -c ${CFLAGS} $<
+	${CC} -g -c ${CFLAGS} $<
 .S.o:
 	${CC} -c ${CFLAGS} $<
 

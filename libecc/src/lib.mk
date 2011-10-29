@@ -23,7 +23,7 @@ CFLAGS = -Werror -MD -MP -O1
 
 .SUFFIXES: .c .o
 .c.o:
-	${CC} -c ${CFLAGS} $<
+	${CC} -g -c ${CFLAGS} $<
 
 VPATH := ../../../src/$(LIB)
 
