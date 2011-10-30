@@ -49,9 +49,11 @@ CXCursor getCursor(CXTranslationUnit, SourceLocation);
 CXCursor MakeCXCursor(const clang::Attr *A, clang::Decl *Parent,
                       CXTranslationUnit TU);
 CXCursor MakeCXCursor(clang::Decl *D, CXTranslationUnit TU,
+                      SourceRange RegionOfInterest = SourceRange(),
                       bool FirstInDeclGroup = true);
 CXCursor MakeCXCursor(clang::Stmt *S, clang::Decl *Parent,
-                      CXTranslationUnit TU);
+                      CXTranslationUnit TU,
+                      SourceRange RegionOfInterest = SourceRange());
 CXCursor MakeCXCursorInvalid(CXCursorKind K);
 
 /// \brief Create an Objective-C superclass reference at the given location.
@@ -65,7 +67,8 @@ std::pair<ObjCInterfaceDecl *, SourceLocation>
   getCursorObjCSuperClassRef(CXCursor C);
 
 /// \brief Create an Objective-C protocol reference at the given location.
-CXCursor MakeCursorObjCProtocolRef(ObjCProtocolDecl *Proto, SourceLocation Loc, 
+CXCursor MakeCursorObjCProtocolRef(const ObjCProtocolDecl *Proto,
+                                   SourceLocation Loc, 
                                    CXTranslationUnit TU);
 
 /// \brief Unpack an ObjCProtocolRef cursor into the protocol it references
@@ -74,7 +77,8 @@ std::pair<ObjCProtocolDecl *, SourceLocation>
   getCursorObjCProtocolRef(CXCursor C);
 
 /// \brief Create an Objective-C class reference at the given location.
-CXCursor MakeCursorObjCClassRef(ObjCInterfaceDecl *Class, SourceLocation Loc, 
+CXCursor MakeCursorObjCClassRef(const ObjCInterfaceDecl *Class,
+                                SourceLocation Loc, 
                                 CXTranslationUnit TU);
 
 /// \brief Unpack an ObjCClassRef cursor into the class it references
@@ -83,7 +87,7 @@ std::pair<ObjCInterfaceDecl *, SourceLocation>
   getCursorObjCClassRef(CXCursor C);
 
 /// \brief Create a type reference at the given location.
-CXCursor MakeCursorTypeRef(TypeDecl *Type, SourceLocation Loc,
+CXCursor MakeCursorTypeRef(const TypeDecl *Type, SourceLocation Loc,
                            CXTranslationUnit TU);
                                
 /// \brief Unpack a TypeRef cursor into the class it references
@@ -191,7 +195,36 @@ Decl *getCursorParentDecl(CXCursor Cursor);
 ASTContext &getCursorContext(CXCursor Cursor);
 ASTUnit *getCursorASTUnit(CXCursor Cursor);
 CXTranslationUnit getCursorTU(CXCursor Cursor);
-  
+
+void getOverriddenCursors(CXCursor cursor,
+                          SmallVectorImpl<CXCursor> &overridden); 
+
+/// \brief Returns a index/location pair for a selector identifier if the cursor
+/// points to one.
+std::pair<int, SourceLocation> getSelectorIdentifierIndexAndLoc(CXCursor);
+static inline int getSelectorIdentifierIndex(CXCursor cursor) {
+  return getSelectorIdentifierIndexAndLoc(cursor).first;
+}
+static inline SourceLocation getSelectorIdentifierLoc(CXCursor cursor) {
+  return getSelectorIdentifierIndexAndLoc(cursor).second;
+}
+
+CXCursor getSelectorIdentifierCursor(int SelIdx, CXCursor cursor);
+
+static inline CXCursor getTypeRefedCallExprCursor(CXCursor cursor) {
+  CXCursor newCursor = cursor;
+  if (cursor.kind == CXCursor_CallExpr)
+    newCursor.xdata = 1;
+  return newCursor;
+}
+
+CXCursor getTypeRefCursor(CXCursor cursor);
+
+/// \brief Generate a USR for \arg D and put it in \arg Buf.
+/// \returns true if no USR was computed or the result should be ignored,
+/// false otherwise.
+bool getDeclCursorUSR(const Decl *D, SmallVectorImpl<char> &Buf);
+
 bool operator==(CXCursor X, CXCursor Y);
   
 inline bool operator!=(CXCursor X, CXCursor Y) {

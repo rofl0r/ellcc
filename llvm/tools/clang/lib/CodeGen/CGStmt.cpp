@@ -31,11 +31,12 @@ using namespace CodeGen;
 
 void CodeGenFunction::EmitStopPoint(const Stmt *S) {
   if (CGDebugInfo *DI = getDebugInfo()) {
+    SourceLocation Loc;
     if (isa<DeclStmt>(S))
-      DI->setLocation(S->getLocEnd());
+      Loc = S->getLocEnd();
     else
-      DI->setLocation(S->getLocStart());
-    DI->EmitLocation(Builder);
+      Loc = S->getLocStart();
+    DI->EmitLocation(Builder, Loc);
   }
 }
 
@@ -72,6 +73,7 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::CXXCatchStmtClass:
   case Stmt::SEHExceptStmtClass:
   case Stmt::SEHFinallyStmtClass:
+  case Stmt::MSDependentExistsStmtClass:
     llvm_unreachable("invalid statement class to emit generically");
   case Stmt::NullStmtClass:
   case Stmt::CompoundStmtClass:
@@ -190,10 +192,8 @@ RValue CodeGenFunction::EmitCompoundStmt(const CompoundStmt &S, bool GetLast,
                              "LLVM IR generation of compound statement ('{}')");
 
   CGDebugInfo *DI = getDebugInfo();
-  if (DI) {
-    DI->setLocation(S.getLBracLoc());
-    DI->EmitLexicalBlockStart(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockStart(Builder, S.getLBracLoc());
 
   // Keep track of the current cleanup stack depth.
   RunCleanupsScope Scope(*this);
@@ -202,10 +202,8 @@ RValue CodeGenFunction::EmitCompoundStmt(const CompoundStmt &S, bool GetLast,
        E = S.body_end()-GetLast; I != E; ++I)
     EmitStmt(*I);
 
-  if (DI) {
-    DI->setLocation(S.getRBracLoc());
-    DI->EmitLexicalBlockEnd(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockEnd(Builder, S.getRBracLoc());
 
   RValue RV;
   if (!GetLast)
@@ -570,10 +568,8 @@ void CodeGenFunction::EmitForStmt(const ForStmt &S) {
   RunCleanupsScope ForScope(*this);
 
   CGDebugInfo *DI = getDebugInfo();
-  if (DI) {
-    DI->setLocation(S.getSourceRange().getBegin());
-    DI->EmitLexicalBlockStart(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockStart(Builder, S.getSourceRange().getBegin());
 
   // Evaluate the first part before the loop.
   if (S.getInit())
@@ -652,10 +648,8 @@ void CodeGenFunction::EmitForStmt(const ForStmt &S) {
 
   ForScope.ForceCleanup();
 
-  if (DI) {
-    DI->setLocation(S.getSourceRange().getEnd());
-    DI->EmitLexicalBlockEnd(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
 
   // Emit the fall-through block.
   EmitBlock(LoopExit.getBlock(), true);
@@ -667,10 +661,8 @@ void CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S) {
   RunCleanupsScope ForScope(*this);
 
   CGDebugInfo *DI = getDebugInfo();
-  if (DI) {
-    DI->setLocation(S.getSourceRange().getBegin());
-    DI->EmitLexicalBlockStart(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockStart(Builder, S.getSourceRange().getBegin());
 
   // Evaluate the first pieces before the loop.
   EmitStmt(S.getRangeStmt());
@@ -726,10 +718,8 @@ void CodeGenFunction::EmitCXXForRangeStmt(const CXXForRangeStmt &S) {
 
   ForScope.ForceCleanup();
 
-  if (DI) {
-    DI->setLocation(S.getSourceRange().getEnd());
-    DI->EmitLexicalBlockEnd(Builder);
-  }
+  if (DI)
+    DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
 
   // Emit the fall-through block.
   EmitBlock(LoopExit.getBlock(), true);
@@ -834,8 +824,8 @@ void CodeGenFunction::EmitContinueStmt(const ContinueStmt &S) {
 void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S) {
   assert(S.getRHS() && "Expected RHS value in CaseStmt");
 
-  llvm::APSInt LHS = S.getLHS()->EvaluateAsInt(getContext());
-  llvm::APSInt RHS = S.getRHS()->EvaluateAsInt(getContext());
+  llvm::APSInt LHS = S.getLHS()->EvaluateKnownConstInt(getContext());
+  llvm::APSInt RHS = S.getRHS()->EvaluateKnownConstInt(getContext());
 
   // Emit the code for this case. We do this first to make sure it is
   // properly chained from our predecessor before generating the
@@ -894,7 +884,7 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
   }
 
   llvm::ConstantInt *CaseVal =
-    Builder.getInt(S.getLHS()->EvaluateAsInt(getContext()));
+    Builder.getInt(S.getLHS()->EvaluateKnownConstInt(getContext()));
 
   // If the body of the case is just a 'break', and if there was no fallthrough,
   // try to not emit an empty block.
@@ -935,7 +925,7 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S) {
   while (NextCase && NextCase->getRHS() == 0) {
     CurCase = NextCase;
     llvm::ConstantInt *CaseVal = 
-      Builder.getInt(CurCase->getLHS()->EvaluateAsInt(getContext()));
+      Builder.getInt(CurCase->getLHS()->EvaluateKnownConstInt(getContext()));
     SwitchInsn->addCase(CaseVal, CaseDest);
     NextCase = dyn_cast<CaseStmt>(CurCase->getSubStmt());
   }
@@ -1125,7 +1115,7 @@ static bool FindCaseStatementsForValue(const SwitchStmt &S,
     if (CS->getRHS()) return false;
     
     // If we found our case, remember it as 'case'.
-    if (CS->getLHS()->EvaluateAsInt(C) == ConstantCondValue)
+    if (CS->getLHS()->EvaluateKnownConstInt(C) == ConstantCondValue)
       break;
   }
   

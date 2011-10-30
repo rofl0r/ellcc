@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s 
+// RUN: %clang_cc1 -fsyntax-only -verify -Wc++11-compat %s 
 class C {
 public:
   auto int errx; // expected-error {{error: storage class specified for a member declaration}} expected-warning {{'auto' storage class specifier is redundant}}
@@ -34,12 +34,12 @@ public:
 
   enum E1 { en1, en2 };
 
-  int i = 0; // expected-warning {{in-class initialization of non-static data member accepted as a C++0x extension}}
+  int i = 0; // expected-warning {{in-class initialization of non-static data member accepted as a C++11 extension}}
   static int si = 0; // expected-error {{non-const static data member must be initialized out of line}}
   static const NestedC ci = 0; // expected-error {{static data member of type 'const C::NestedC' must be initialized out of line}}
   static const int nci = vs; // expected-error {{in-class initializer is not a constant expression}}
   static const int vi = 0;
-  static const volatile int cvi = 0; // ok, illegal in C++0x
+  static const volatile int cvi = 0; // ok, illegal in C++11
   static const E evi = 0;
 
   void m() {
@@ -189,3 +189,7 @@ void f() {
     S::c; // expected-error {{invalid use of nonstatic data member}}
 }
 }
+
+struct PR9989 { 
+  static int const PR9989_Member = sizeof PR9989_Member; 
+};

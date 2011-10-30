@@ -27,8 +27,7 @@ using namespace llvm;
 
 /// translateShiftImm - Convert shift immediate from 0-31 to 1-32 for printing.
 ///
-/// getSORegOffset returns an integer from 0-31, but '0' should actually be printed
-/// 32 as the immediate shouldbe within the range 1-32.
+/// getSORegOffset returns an integer from 0-31, representing '32' as 0.
 static unsigned translateShiftImm(unsigned imm) {
   if (imm == 0)
     return 32;
@@ -207,7 +206,18 @@ void ARMInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
     O << '#' << Op.getImm();
   } else {
     assert(Op.isExpr() && "unknown operand kind in printOperand");
-    O << *Op.getExpr();
+    // If a symbolic branch target was added as a constant expression then print
+    // that address in hex.
+    const MCConstantExpr *BranchTarget = dyn_cast<MCConstantExpr>(Op.getExpr());
+    int64_t Address;
+    if (BranchTarget && BranchTarget->EvaluateAsAbsolute(Address)) {
+      O << "0x";
+      O.write_hex(Address);
+    }
+    else {
+      // Otherwise, just print the expression.
+      O << *Op.getExpr();
+    }
   }
 }
 
@@ -240,7 +250,7 @@ void ARMInstPrinter::printSORegRegOperand(const MCInst *MI, unsigned OpNum,
   O << ", " << ARM_AM::getShiftOpcStr(ShOpc);
   if (ShOpc == ARM_AM::rrx)
     return;
-  
+
   O << ' ' << getRegisterName(MO2.getReg());
   assert(ARM_AM::getSORegOffset(MO3.getImm()) == 0);
 }
@@ -613,6 +623,9 @@ void ARMInstPrinter::printCPSIFlag(const MCInst *MI, unsigned OpNum,
   for (int i=2; i >= 0; --i)
     if (IFlags & (1 << i))
       O << ARM_PROC::IFlagsToString(1 << i);
+
+  if (IFlags == 0)
+    O << "none";
 }
 
 void ARMInstPrinter::printMSRMaskOperand(const MCInst *MI, unsigned OpNum,
@@ -697,13 +710,18 @@ void ARMInstPrinter::printNoHashImmediate(const MCInst *MI, unsigned OpNum,
 }
 
 void ARMInstPrinter::printPImmediate(const MCInst *MI, unsigned OpNum,
-                                          raw_ostream &O) {
+                                     raw_ostream &O) {
   O << "p" << MI->getOperand(OpNum).getImm();
 }
 
 void ARMInstPrinter::printCImmediate(const MCInst *MI, unsigned OpNum,
-                                          raw_ostream &O) {
+                                     raw_ostream &O) {
   O << "c" << MI->getOperand(OpNum).getImm();
+}
+
+void ARMInstPrinter::printCoprocOptionImm(const MCInst *MI, unsigned OpNum,
+                                          raw_ostream &O) {
+  O << "{" << MI->getOperand(OpNum).getImm() << "}";
 }
 
 void ARMInstPrinter::printPCLabel(const MCInst *MI, unsigned OpNum,
@@ -966,4 +984,44 @@ void ARMInstPrinter::printRotImmOperand(const MCInst *MI, unsigned OpNum,
   case 2: O << "16"; break;
   case 3: O << "24"; break;
   }
+}
+
+void ARMInstPrinter::printVectorIndex(const MCInst *MI, unsigned OpNum,
+                                      raw_ostream &O) {
+  O << "[" << MI->getOperand(OpNum).getImm() << "]";
+}
+
+void ARMInstPrinter::printVectorListOne(const MCInst *MI, unsigned OpNum,
+                                        raw_ostream &O) {
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << "}";
+}
+
+void ARMInstPrinter::printVectorListTwo(const MCInst *MI, unsigned OpNum,
+                                        raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 1) << "}";
+}
+
+void ARMInstPrinter::printVectorListThree(const MCInst *MI, unsigned OpNum,
+                                          raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 1) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 2) << "}";
+}
+
+void ARMInstPrinter::printVectorListFour(const MCInst *MI, unsigned OpNum,
+                                         raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 1) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 2) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 3) << "}";
 }

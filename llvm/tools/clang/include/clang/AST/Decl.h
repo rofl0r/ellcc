@@ -306,9 +306,8 @@ public:
   static bool classofKind(Kind K) { return K >= firstNamed && K <= lastNamed; }
 };
 
-inline raw_ostream &operator<<(raw_ostream &OS,
-                                     const NamedDecl *ND) {
-  ND->getDeclName().printName(OS);
+inline raw_ostream &operator<<(raw_ostream &OS, const NamedDecl &ND) {
+  ND.printName(OS);
   return OS;
 }
 
@@ -728,6 +727,8 @@ private:
   friend class StmtIteratorBase;
   
 protected:
+  enum { NumParameterIndexBits = 8 };
+  
   class ParmVarDeclBitfields {
     friend class ParmVarDecl;
     friend class ASTDeclReader;
@@ -752,7 +753,7 @@ protected:
 
     /// The number of parameters preceding this parameter in the
     /// function parameter scope in which it was declared.
-    unsigned ParameterIndex : 8;
+    unsigned ParameterIndex : NumParameterIndexBits;
   };
 
   union {
@@ -1218,12 +1219,10 @@ public:
                              Expr *DefArg);
 
   virtual SourceRange getSourceRange() const;
-
+  
   void setObjCMethodScopeInfo(unsigned parameterIndex) {
     ParmVarDeclBits.IsObjCMethodParam = true;
-
-    ParmVarDeclBits.ParameterIndex = parameterIndex;
-    assert(ParmVarDeclBits.ParameterIndex == parameterIndex && "truncation!");
+    setParameterIndex(parameterIndex);
   }
 
   void setScopeInfo(unsigned scopeDepth, unsigned parameterIndex) {
@@ -1232,8 +1231,7 @@ public:
     ParmVarDeclBits.ScopeDepthOrObjCQuals = scopeDepth;
     assert(ParmVarDeclBits.ScopeDepthOrObjCQuals == scopeDepth && "truncation!");
 
-    ParmVarDeclBits.ParameterIndex = parameterIndex;
-    assert(ParmVarDeclBits.ParameterIndex == parameterIndex && "truncation!");
+    setParameterIndex(parameterIndex);
   }
 
   bool isObjCMethodParameter() const {
@@ -1247,7 +1245,7 @@ public:
 
   /// Returns the index of this parameter in its prototype or method scope.
   unsigned getFunctionScopeIndex() const {
-    return ParmVarDeclBits.ParameterIndex;
+    return getParameterIndex();
   }
 
   ObjCDeclQualifier getObjCDeclQualifier() const {
@@ -1364,6 +1362,26 @@ public:
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const ParmVarDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == ParmVar; }
+  
+private:
+  enum { ParameterIndexSentinel = (1 << NumParameterIndexBits) - 1 };
+
+  void setParameterIndex(unsigned parameterIndex) {
+    if (parameterIndex >= ParameterIndexSentinel) {
+      setParameterIndexLarge(parameterIndex);
+      return;
+    }
+    
+    ParmVarDeclBits.ParameterIndex = parameterIndex;
+    assert(ParmVarDeclBits.ParameterIndex == parameterIndex && "truncation!");
+  }
+  unsigned getParameterIndex() const {
+    unsigned d = ParmVarDeclBits.ParameterIndex;
+    return d == ParameterIndexSentinel ? getParameterIndexLarge() : d;
+  }
+  
+  void setParameterIndexLarge(unsigned parameterIndex);
+  unsigned getParameterIndexLarge() const;
 };
 
 /// FunctionDecl - An instance of this class is created to represent a
@@ -2065,6 +2083,7 @@ public:
   Expr *getBitWidth() const {
     return isBitField() ? InitializerOrBitWidth.getPointer() : 0;
   }
+  unsigned getBitWidthValue(const ASTContext &Ctx) const;
   void setBitWidth(Expr *BW) {
     assert(!InitializerOrBitWidth.getPointer() &&
            "bit width or initializer already set");
@@ -2340,9 +2359,10 @@ private:
   /// TagDeclKind - The TagKind enum.
   unsigned TagDeclKind : 2;
 
-  /// IsDefinition - True if this is a definition ("struct foo {};"), false if
-  /// it is a declaration ("struct foo;").
-  bool IsDefinition : 1;
+  /// IsCompleteDefinition - True if this is a definition ("struct foo
+  /// {};"), false if it is a declaration ("struct foo;").  It is not
+  /// a definition until the definition has been fully processed.
+  bool IsCompleteDefinition : 1;
 
   /// IsBeingDefined - True if this is currently being defined.
   bool IsBeingDefined : 1;
@@ -2402,7 +2422,7 @@ protected:
     assert((DK != Enum || TK == TTK_Enum) &&
            "EnumDecl not matched with TTK_Enum");
     TagDeclKind = TK;
-    IsDefinition = false;
+    IsCompleteDefinition = false;
     IsBeingDefined = false;
     IsEmbeddedInDeclarator = false;
     IsFreeStanding = false;
@@ -2444,14 +2464,15 @@ public:
   }
 
   /// isThisDeclarationADefinition() - Return true if this declaration
-  /// defines the type.  Provided for consistency.
+  /// is a completion definintion of the type.  Provided for consistency.
   bool isThisDeclarationADefinition() const {
-    return isDefinition();
+    return isCompleteDefinition();
   }
 
-  /// isDefinition - Return true if this decl has its body specified.
-  bool isDefinition() const {
-    return IsDefinition;
+  /// isCompleteDefinition - Return true if this decl has its body
+  /// fully specified.
+  bool isCompleteDefinition() const {
+    return IsCompleteDefinition;
   }
 
   /// isBeingDefined - Return true if this decl is currently being defined.
@@ -2485,14 +2506,15 @@ public:
 
   /// getDefinition - Returns the TagDecl that actually defines this
   ///  struct/union/class/enum.  When determining whether or not a
-  ///  struct/union/class/enum is completely defined, one should use this method
-  ///  as opposed to 'isDefinition'.  'isDefinition' indicates whether or not a
-  ///  specific TagDecl is defining declaration, not whether or not the
-  ///  struct/union/class/enum type is defined.  This method returns NULL if
-  ///  there is no TagDecl that defines the struct/union/class/enum.
-  TagDecl* getDefinition() const;
+  ///  struct/union/class/enum has a definition, one should use this
+  ///  method as opposed to 'isDefinition'.  'isDefinition' indicates
+  ///  whether or not a specific TagDecl is defining declaration, not
+  ///  whether or not the struct/union/class/enum type is defined.
+  ///  This method returns NULL if there is no TagDecl that defines
+  ///  the struct/union/class/enum.
+  TagDecl *getDefinition() const;
 
-  void setDefinition(bool V) { IsDefinition = V; }
+  void setCompleteDefinition(bool V) { IsCompleteDefinition = V; }
 
   const char *getKindName() const {
     return TypeWithKeyword::getTagTypeKindName(getTagKind());
@@ -2732,7 +2754,7 @@ public:
 
   /// \brief Returns true if this can be considered a complete type.
   bool isComplete() const {
-    return isDefinition() || isFixed();
+    return isCompleteDefinition() || isFixed();
   }
 
   /// \brief Returns the enumeration (declared within the template)
@@ -2835,14 +2857,15 @@ public:
   /// \endcode
   bool isInjectedClassName() const;
 
-  /// getDefinition - Returns the RecordDecl that actually defines this
-  ///  struct/union/class.  When determining whether or not a struct/union/class
-  ///  is completely defined, one should use this method as opposed to
-  ///  'isDefinition'.  'isDefinition' indicates whether or not a specific
-  ///  RecordDecl is defining declaration, not whether or not the record
-  ///  type is defined.  This method returns NULL if there is no RecordDecl
-  ///  that defines the struct/union/tag.
-  RecordDecl* getDefinition() const {
+  /// getDefinition - Returns the RecordDecl that actually defines
+  ///  this struct/union/class.  When determining whether or not a
+  ///  struct/union/class is completely defined, one should use this
+  ///  method as opposed to 'isCompleteDefinition'.
+  ///  'isCompleteDefinition' indicates whether or not a specific
+  ///  RecordDecl is a completed definition, not whether or not the
+  ///  record type is defined.  This method returns NULL if there is
+  ///  no RecordDecl that defines the struct/union/tag.
+  RecordDecl *getDefinition() const {
     return cast_or_null<RecordDecl>(TagDecl::getDefinition());
   }
 

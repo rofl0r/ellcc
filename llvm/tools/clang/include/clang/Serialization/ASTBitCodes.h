@@ -156,6 +156,22 @@ namespace clang {
           BitOffset(BitOffset) { }
     };
 
+    /// \brief Source range/offset of a preprocessed entity.
+    struct DeclOffset {
+      /// \brief Raw source location.
+      unsigned Loc;
+      /// \brief Offset in the AST file.
+      uint32_t BitOffset;
+
+      DeclOffset() : Loc(0), BitOffset(0) { }
+      DeclOffset(SourceLocation Loc, uint32_t BitOffset)
+        : Loc(Loc.getRawEncoding()),
+          BitOffset(BitOffset) { }
+      void setLocation(SourceLocation L) {
+        Loc = L.getRawEncoding();
+      }
+    };
+
     /// \brief The number of predefined preprocessed entity IDs.
     const unsigned int NUM_PREDEF_PP_ENTITY_IDS = 1;
 
@@ -420,7 +436,10 @@ namespace clang {
 
       /// \brief Record code for ObjC categories in a module that are chained to
       /// an interface.
-      OBJC_CHAINED_CATEGORIES
+      OBJC_CHAINED_CATEGORIES,
+
+      /// \brief Record code for a file sorted array of DeclIDs in a module.
+      FILE_SORTED_DECLS
     };
 
     /// \brief Record types used within a source manager block.
@@ -552,7 +571,13 @@ namespace clang {
       /// \brief The "auto" deduction type.
       PREDEF_TYPE_AUTO_DEDUCT   = 31,
       /// \brief The "auto &&" deduction type.
-      PREDEF_TYPE_AUTO_RREF_DEDUCT = 32
+      PREDEF_TYPE_AUTO_RREF_DEDUCT = 32,
+      /// \brief The OpenCL 'half' / ARM NEON __fp16 type.
+      PREDEF_TYPE_HALF_ID       = 33,
+      /// \brief ARC's unbridged-cast placeholder type.
+      PREDEF_TYPE_ARC_UNBRIDGED_CAST = 34,
+      /// \brief The pseudo-object placeholder type.
+      PREDEF_TYPE_PSEUDO_OBJECT = 35
     };
 
     /// \brief The number of predefined type IDs that are reserved for
@@ -647,7 +672,9 @@ namespace clang {
       /// \brief A AutoType record.
       TYPE_AUTO                  = 38,
       /// \brief A UnaryTransformType record.
-      TYPE_UNARY_TRANSFORM       = 39
+      TYPE_UNARY_TRANSFORM       = 39,
+      /// \brief An AtomicType record.
+      TYPE_ATOMIC                = 40
     };
 
     /// \brief The type IDs for special types constructed by semantic
@@ -869,6 +896,8 @@ namespace clang {
       STMT_STOP = 100,
       /// \brief A NULL expression.
       STMT_NULL_PTR,
+      /// \brief A reference to a previously [de]serialized Stmt record.
+      STMT_REF_PTR,
       /// \brief A NullStmt record.
       STMT_NULL,
       /// \brief A CompoundStmt record.
@@ -971,7 +1000,9 @@ namespace clang {
       EXPR_BLOCK_DECL_REF,
       /// \brief A GenericSelectionExpr record.
       EXPR_GENERIC_SELECTION,
-      
+      /// \brief An AtomicExpr record.
+      EXPR_ATOMIC,
+
       // Objective-C
 
       /// \brief An ObjCStringLiteral record.
@@ -1089,7 +1120,9 @@ namespace clang {
       STMT_SEH_TRY,               // SEHTryStmt
       
       // ARC
-      EXPR_OBJC_BRIDGED_CAST       // ObjCBridgedCastExpr
+      EXPR_OBJC_BRIDGED_CAST,     // ObjCBridgedCastExpr
+      
+      STMT_MS_DEPENDENT_EXISTS    // MSDependentExistsStmt
     };
 
     /// \brief The kinds of designators that can occur in a

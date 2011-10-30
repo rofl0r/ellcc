@@ -438,7 +438,7 @@ public:
     if (Loc::isLocType(VD->getType())) {
       llvm::SmallString<64> buf;
       llvm::raw_svector_ostream os(buf);
-      os << '\'' << VD << "' now aliases '" << MostRecent << '\'';
+      os << '\'' << *VD << "' now aliases '" << *MostRecent << '\'';
       PathDiagnosticLocation L =
         PathDiagnosticLocation::createBegin(S, BR.getSourceManager(),
                                                    Pred->getLocationContext());
@@ -594,12 +594,12 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
 
                   if (D) {
                     GetRawInt = false;
-                    os << D;
+                    os << *D;
                   }
                 }
 
                 if (GetRawInt)
-                  os << LHS->EvaluateAsInt(PDB.getASTContext());
+                  os << LHS->EvaluateKnownConstInt(PDB.getASTContext());
 
                 os << ":'  at line "
                 << End.asLocation().getExpansionLineNumber();

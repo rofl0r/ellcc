@@ -112,6 +112,18 @@ X86RegisterInfo::getSEHRegNum(unsigned i) const {
 }
 
 const TargetRegisterClass *
+X86RegisterInfo::getSubClassWithSubReg(const TargetRegisterClass *RC,
+                                       unsigned Idx) const {
+  // The sub_8bit sub-register index is more constrained in 32-bit mode.
+  // It behaves just like the sub_8bit_hi index.
+  if (!Is64Bit && Idx == X86::sub_8bit)
+    Idx = X86::sub_8bit_hi;
+
+  // Forward to TableGen's default version.
+  return X86GenRegisterInfo::getSubClassWithSubReg(RC, Idx);
+}
+
+const TargetRegisterClass *
 X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
                                           const TargetRegisterClass *B,
                                           unsigned SubIdx) const {
@@ -234,6 +246,17 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
 
 const TargetRegisterClass*
 X86RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC) const{
+  // Don't allow super-classes of GR8_NOREX.  This class is only used after
+  // extrating sub_8bit_hi sub-registers.  The H sub-registers cannot be copied
+  // to the full GR8 register class in 64-bit mode, so we cannot allow the
+  // reigster class inflation.
+  //
+  // The GR8_NOREX class is always used in a way that won't be constrained to a
+  // sub-class, so sub-classes like GR8_ABCD_L are allowed to expand to the
+  // full GR8 class.
+  if (RC == X86::GR8_NOREXRegisterClass)
+    return RC;
+
   const TargetRegisterClass *Super = RC;
   TargetRegisterClass::sc_iterator I = RC->getSuperClasses();
   do {

@@ -90,6 +90,24 @@ protected:
   /// HasFMA4 - Target has 4-operand fused multiply-add
   bool HasFMA4;
 
+  /// HasMOVBE - True if the processor has the MOVBE instruction.
+  bool HasMOVBE;
+
+  /// HasRDRAND - True if the processor has the RDRAND instruction.
+  bool HasRDRAND;
+
+  /// HasF16C - Processor has 16-bit floating point conversion instructions.
+  bool HasF16C;
+
+  /// HasLZCNT - Processor has LZCNT instruction.
+  bool HasLZCNT;
+
+  /// HasBMI - Processor has BMI1 instructions.
+  bool HasBMI;
+
+  /// HasBMI2 - Processor has BMI2 instructions.
+  bool HasBMI2;
+
   /// IsBTMemSlow - True if BT (bit test) of memory instructions are slow.
   bool IsBTMemSlow;
 
@@ -118,9 +136,6 @@ protected:
 private:
   /// In64BitMode - True if compiling for 64-bit, false for 32-bit.
   bool In64BitMode;
-
-  /// InNaClMode - True if compiling for Native Client target.
-  bool InNaClMode;
 
 public:
 
@@ -172,6 +187,12 @@ public:
   bool hasCLMUL() const { return HasCLMUL; }
   bool hasFMA3() const { return HasFMA3; }
   bool hasFMA4() const { return HasFMA4; }
+  bool hasMOVBE() const { return HasMOVBE; }
+  bool hasRDRAND() const { return HasRDRAND; }
+  bool hasF16C() const { return HasF16C; }
+  bool hasLZCNT() const { return HasLZCNT; }
+  bool hasBMI() const { return HasBMI; }
+  bool hasBMI2() const { return HasBMI2; }
   bool isBTMemSlow() const { return IsBTMemSlow; }
   bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool hasVectorUAMem() const { return HasVectorUAMem; }

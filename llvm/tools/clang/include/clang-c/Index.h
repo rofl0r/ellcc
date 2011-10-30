@@ -115,7 +115,12 @@ enum CXAvailabilityKind {
   /**
    * \brief The entity is not available; any use of it will be an error.
    */
-  CXAvailability_NotAvailable
+  CXAvailability_NotAvailable,
+  /**
+   * \brief The entity is available, but not accessible; any use of it will be
+   * an error.
+   */
+  CXAvailability_NotAccessible
 };
   
 /**
@@ -338,7 +343,7 @@ CINDEX_LINKAGE unsigned clang_equalRanges(CXSourceRange range1,
 /**
  * \brief Returns non-zero if \arg range is null.
  */
-int clang_Range_isNull(CXSourceRange range);
+CINDEX_LINKAGE int clang_Range_isNull(CXSourceRange range);
 
 /**
  * \brief Retrieve the file, line, column, and offset represented by
@@ -1311,6 +1316,7 @@ enum CXCursorKind {
   CXCursor_ObjCDynamicDecl               = 38,
   /** \brief An access specifier. */
   CXCursor_CXXAccessSpecifier            = 39,
+
   CXCursor_FirstDecl                     = CXCursor_UnexposedDecl,
   CXCursor_LastDecl                      = CXCursor_CXXAccessSpecifier,
 
@@ -1451,7 +1457,207 @@ enum CXCursorKind {
   /** \brief An expression that represents a block literal. */
   CXCursor_BlockExpr                     = 105,
 
-  CXCursor_LastExpr                      = 105,
+  /** \brief An integer literal.
+   */
+  CXCursor_IntegerLiteral                = 106,
+
+  /** \brief A floating point number literal.
+   */
+  CXCursor_FloatingLiteral               = 107,
+
+  /** \brief An imaginary number literal.
+   */
+  CXCursor_ImaginaryLiteral              = 108,
+
+  /** \brief A string literal.
+   */
+  CXCursor_StringLiteral                 = 109,
+
+  /** \brief A character literal.
+   */
+  CXCursor_CharacterLiteral              = 110,
+
+  /** \brief A parenthesized expression, e.g. "(1)".
+   *
+   * This AST node is only formed if full location information is requested.
+   */
+  CXCursor_ParenExpr                     = 111,
+
+  /** \brief This represents the unary-expression's (except sizeof and
+   * alignof).
+   */
+  CXCursor_UnaryOperator                 = 112,
+
+  /** \brief [C99 6.5.2.1] Array Subscripting.
+   */
+  CXCursor_ArraySubscriptExpr            = 113,
+
+  /** \brief A builtin binary operation expression such as "x + y" or
+   * "x <= y".
+   */
+  CXCursor_BinaryOperator                = 114,
+
+  /** \brief Compound assignment such as "+=".
+   */
+  CXCursor_CompoundAssignOperator        = 115,
+
+  /** \brief The ?: ternary operator.
+   */
+  CXCursor_ConditionalOperator           = 116,
+
+  /** \brief An explicit cast in C (C99 6.5.4) or a C-style cast in C++
+   * (C++ [expr.cast]), which uses the syntax (Type)expr.
+   *
+   * For example: (int)f.
+   */
+  CXCursor_CStyleCastExpr                = 117,
+
+  /** \brief [C99 6.5.2.5]
+   */
+  CXCursor_CompoundLiteralExpr           = 118,
+
+  /** \brief Describes an C or C++ initializer list.
+   */
+  CXCursor_InitListExpr                  = 119,
+
+  /** \brief The GNU address of label extension, representing &&label.
+   */
+  CXCursor_AddrLabelExpr                 = 120,
+
+  /** \brief This is the GNU Statement Expression extension: ({int X=4; X;})
+   */
+  CXCursor_StmtExpr                      = 121,
+
+  /** \brief Represents a C1X generic selection.
+   */
+  CXCursor_GenericSelectionExpr          = 122,
+
+  /** \brief Implements the GNU __null extension, which is a name for a null
+   * pointer constant that has integral type (e.g., int or long) and is the same
+   * size and alignment as a pointer.
+   *
+   * The __null extension is typically only used by system headers, which define
+   * NULL as __null in C++ rather than using 0 (which is an integer that may not
+   * match the size of a pointer).
+   */
+  CXCursor_GNUNullExpr                   = 123,
+
+  /** \brief C++'s static_cast<> expression.
+   */
+  CXCursor_CXXStaticCastExpr             = 124,
+
+  /** \brief C++'s dynamic_cast<> expression.
+   */
+  CXCursor_CXXDynamicCastExpr            = 125,
+
+  /** \brief C++'s reinterpret_cast<> expression.
+   */
+  CXCursor_CXXReinterpretCastExpr        = 126,
+
+  /** \brief C++'s const_cast<> expression.
+   */
+  CXCursor_CXXConstCastExpr              = 127,
+
+  /** \brief Represents an explicit C++ type conversion that uses "functional"
+   * notion (C++ [expr.type.conv]).
+   *
+   * Example:
+   * \code
+   *   x = int(0.5);
+   * \endcode
+   */
+  CXCursor_CXXFunctionalCastExpr         = 128,
+
+  /** \brief A C++ typeid expression (C++ [expr.typeid]).
+   */
+  CXCursor_CXXTypeidExpr                 = 129,
+
+  /** \brief [C++ 2.13.5] C++ Boolean Literal.
+   */
+  CXCursor_CXXBoolLiteralExpr            = 130,
+
+  /** \brief [C++0x 2.14.7] C++ Pointer Literal.
+   */
+  CXCursor_CXXNullPtrLiteralExpr         = 131,
+
+  /** \brief Represents the "this" expression in C++
+   */
+  CXCursor_CXXThisExpr                   = 132,
+
+  /** \brief [C++ 15] C++ Throw Expression.
+   *
+   * This handles 'throw' and 'throw' assignment-expression. When
+   * assignment-expression isn't present, Op will be null.
+   */
+  CXCursor_CXXThrowExpr                  = 133,
+
+  /** \brief A new expression for memory allocation and constructor calls, e.g:
+   * "new CXXNewExpr(foo)".
+   */
+  CXCursor_CXXNewExpr                    = 134,
+
+  /** \brief A delete expression for memory deallocation and destructor calls,
+   * e.g. "delete[] pArray".
+   */
+  CXCursor_CXXDeleteExpr                 = 135,
+
+  /** \brief A unary expression.
+   */
+  CXCursor_UnaryExpr                     = 136,
+
+  /** \brief ObjCStringLiteral, used for Objective-C string literals i.e. "foo".
+   */
+  CXCursor_ObjCStringLiteral             = 137,
+
+  /** \brief ObjCEncodeExpr, used for in Objective-C.
+   */
+  CXCursor_ObjCEncodeExpr                = 138,
+
+  /** \brief ObjCSelectorExpr used for in Objective-C.
+   */
+  CXCursor_ObjCSelectorExpr              = 139,
+
+  /** \brief Objective-C's protocol expression.
+   */
+  CXCursor_ObjCProtocolExpr              = 140,
+
+  /** \brief An Objective-C "bridged" cast expression, which casts between
+   * Objective-C pointers and C pointers, transferring ownership in the process.
+   *
+   * \code
+   *   NSString *str = (__bridge_transfer NSString *)CFCreateString();
+   * \endcode
+   */
+  CXCursor_ObjCBridgedCastExpr           = 141,
+
+  /** \brief Represents a C++0x pack expansion that produces a sequence of
+   * expressions.
+   *
+   * A pack expansion expression contains a pattern (which itself is an
+   * expression) followed by an ellipsis. For example:
+   *
+   * \code
+   * template<typename F, typename ...Types>
+   * void forward(F f, Types &&...args) {
+   *  f(static_cast<Types&&>(args)...);
+   * }
+   * \endcode
+   */
+  CXCursor_PackExpansionExpr             = 142,
+
+  /** \brief Represents an expression that computes the length of a parameter
+   * pack.
+   *
+   * \code
+   * template<typename ...Types>
+   * struct count {
+   *   static const unsigned value = sizeof...(Types);
+   * };
+   * \endcode
+   */
+  CXCursor_SizeOfPackExpr                = 143,
+
+  CXCursor_LastExpr                      = CXCursor_SizeOfPackExpr,
 
   /* Statements */
   CXCursor_FirstStmt                     = 200,
@@ -1478,8 +1684,130 @@ enum CXCursorKind {
    *
    */
   CXCursor_LabelStmt                     = 201,
-  
-  CXCursor_LastStmt                      = CXCursor_LabelStmt,
+
+  /** \brief A group of statements like { stmt stmt }.
+   *
+   * This cursor kind is used to describe compound statements, e.g. function
+   * bodies.
+   */
+  CXCursor_CompoundStmt                  = 202,
+
+  /** \brief A case statment.
+   */
+  CXCursor_CaseStmt                      = 203,
+
+  /** \brief A default statement.
+   */
+  CXCursor_DefaultStmt                   = 204,
+
+  /** \brief An if statement
+   */
+  CXCursor_IfStmt                        = 205,
+
+  /** \brief A switch statement.
+   */
+  CXCursor_SwitchStmt                    = 206,
+
+  /** \brief A while statement.
+   */
+  CXCursor_WhileStmt                     = 207,
+
+  /** \brief A do statement.
+   */
+  CXCursor_DoStmt                        = 208,
+
+  /** \brief A for statement.
+   */
+  CXCursor_ForStmt                       = 209,
+
+  /** \brief A goto statement.
+   */
+  CXCursor_GotoStmt                      = 210,
+
+  /** \brief An indirect goto statement.
+   */
+  CXCursor_IndirectGotoStmt              = 211,
+
+  /** \brief A continue statement.
+   */
+  CXCursor_ContinueStmt                  = 212,
+
+  /** \brief A break statement.
+   */
+  CXCursor_BreakStmt                     = 213,
+
+  /** \brief A return statement.
+   */
+  CXCursor_ReturnStmt                    = 214,
+
+  /** \brief A GNU inline assembly statement extension.
+   */
+  CXCursor_AsmStmt                       = 215,
+
+  /** \brief Objective-C's overall @try-@catc-@finall statement.
+   */
+  CXCursor_ObjCAtTryStmt                 = 216,
+
+  /** \brief Objective-C's @catch statement.
+   */
+  CXCursor_ObjCAtCatchStmt               = 217,
+
+  /** \brief Objective-C's @finally statement.
+   */
+  CXCursor_ObjCAtFinallyStmt             = 218,
+
+  /** \brief Objective-C's @throw statement.
+   */
+  CXCursor_ObjCAtThrowStmt               = 219,
+
+  /** \brief Objective-C's @synchronized statement.
+   */
+  CXCursor_ObjCAtSynchronizedStmt        = 220,
+
+  /** \brief Objective-C's autorelease pool statement.
+   */
+  CXCursor_ObjCAutoreleasePoolStmt       = 221,
+
+  /** \brief Objective-C's collection statement.
+   */
+  CXCursor_ObjCForCollectionStmt         = 222,
+
+  /** \brief C++'s catch statement.
+   */
+  CXCursor_CXXCatchStmt                  = 223,
+
+  /** \brief C++'s try statement.
+   */
+  CXCursor_CXXTryStmt                    = 224,
+
+  /** \brief C++'s for (* : *) statement.
+   */
+  CXCursor_CXXForRangeStmt               = 225,
+
+  /** \brief Windows Structured Exception Handling's try statement.
+   */
+  CXCursor_SEHTryStmt                    = 226,
+
+  /** \brief Windows Structured Exception Handling's except statement.
+   */
+  CXCursor_SEHExceptStmt                 = 227,
+
+  /** \brief Windows Structured Exception Handling's finally statement.
+   */
+  CXCursor_SEHFinallyStmt                = 228,
+
+  /** \brief The null satement ";": C99 6.8.3p3.
+   *
+   * This cursor kind is used to describe the null statement.
+   */
+  CXCursor_NullStmt                      = 230,
+
+  /** \brief Adaptor class for mixing declarations with statements and
+   * expressions.
+   */
+  CXCursor_DeclStmt                      = 231,
+
+  CXCursor_LastStmt                      = CXCursor_DeclStmt,
 
   /**
    * \brief Cursor that represents the translation unit itself.
@@ -1502,7 +1830,8 @@ enum CXCursorKind {
   CXCursor_IBOutletCollectionAttr        = 403,
   CXCursor_CXXFinalAttr                  = 404,
   CXCursor_CXXOverrideAttr               = 405,
-  CXCursor_LastAttr                      = CXCursor_CXXOverrideAttr,
+  CXCursor_AnnotateAttr                  = 406,
+  CXCursor_LastAttr                      = CXCursor_AnnotateAttr,
      
   /* Preprocessing */
   CXCursor_PreprocessingDirective        = 500,
@@ -1534,6 +1863,7 @@ enum CXCursorKind {
  */
 typedef struct {
   enum CXCursorKind kind;
+  int xdata;
   void *data[3];
 } CXCursor;
 
@@ -2951,8 +3281,7 @@ clang_getCompletionChunkText(CXCompletionString completion_string,
  * \param chunk_number the 0-based index of the chunk in the completion string.
  *
  * \returns the completion string associated with the chunk at index
- * \c chunk_number, or NULL if that chunk is not represented by a completion
- * string.
+ * \c chunk_number.
  */
 CINDEX_LINKAGE CXCompletionString
 clang_getCompletionChunkCompletionString(CXCompletionString completion_string,
@@ -2989,6 +3318,33 @@ clang_getCompletionPriority(CXCompletionString completion_string);
  */
 CINDEX_LINKAGE enum CXAvailabilityKind 
 clang_getCompletionAvailability(CXCompletionString completion_string);
+
+/**
+ * \brief Retrieve the number of annotations associated with the given
+ * completion string.
+ *
+ * \param completion_string the completion string to query.
+ *
+ * \returns the number of annotations associated with the given completion
+ * string.
+ */
+CINDEX_LINKAGE unsigned
+clang_getCompletionNumAnnotations(CXCompletionString completion_string);
+
+/**
+ * \brief Retrieve the annotation associated with the given completion string.
+ *
+ * \param completion_string the completion string to query.
+ *
+ * \param annotation_number the 0-based index of the annotation of the
+ * completion string.
+ *
+ * \returns annotation string associated with the completion at index
+ * \c annotation_number, or a NULL string if that annotation is not available.
+ */
+CINDEX_LINKAGE CXString
+clang_getCompletionAnnotation(CXCompletionString completion_string,
+                              unsigned annotation_number);
 
 /**
  * \brief Retrieve a completion string for an arbitrary declaration or macro
@@ -3451,6 +3807,721 @@ CINDEX_LINKAGE void clang_remap_getFilenames(CXRemapping, unsigned index,
  * \brief Dispose the remapping.
  */
 CINDEX_LINKAGE void clang_remap_dispose(CXRemapping);
+
+/**
+ * @}
+ */
+
+/** \defgroup CINDEX_HIGH Higher level API functions
+ *
+ * @{
+ */
+
+enum CXVisitorResult {
+  CXVisit_Break,
+  CXVisit_Continue
+};
+
+typedef struct {
+  void *context;
+  enum CXVisitorResult (*visit)(void *context, CXCursor, CXSourceRange);
+} CXCursorAndRangeVisitor;
+
+/**
+ * \brief Find references of a declaration in a specific file.
+ * 
+ * \param cursor pointing to a declaration or a reference of one.
+ *
+ * \param file to search for references.
+ *
+ * \param visitor callback that will receive pairs of CXCursor/CXSourceRange for
+ * each reference found.
+ * The CXSourceRange will point inside the file; if the reference is inside
+ * a macro (and not a macro argument) the CXSourceRange will be invalid.
+ */
+CINDEX_LINKAGE void clang_findReferencesInFile(CXCursor cursor, CXFile file,
+                                               CXCursorAndRangeVisitor visitor);
+
+#ifdef __has_feature
+#  if __has_feature(blocks)
+
+typedef enum CXVisitorResult
+    (^CXCursorAndRangeVisitorBlock)(CXCursor, CXSourceRange);
+
+CINDEX_LINKAGE
+void clang_findReferencesInFileWithBlock(CXCursor, CXFile,
+                                         CXCursorAndRangeVisitorBlock);
+
+#  endif
+#endif
+
+/**
+ * \brief The client's data object that is associated with a CXFile.
+ */
+typedef void *CXIdxFile;
+
+/**
+ * \brief The client's data object that is associated with a unique entity in
+ * the current translation unit that gets indexed. For example:
+ * 
+ *  \code
+ *  @class Foo;
+ *  @interface Foo
+ *  @end
+ *  \endcode
+ *  
+ *  In the example above there is only one entity introduced, the class 'Foo'.
+ */
+typedef void *CXIdxEntity;
+
+/**
+ * \brief The client's data object that is associated with a semantic container
+ * of entities.
+ * 
+ *  \code
+ *  // #1 \see startedTranslationUnit
+ *  
+ *  void func() { } // #2 \see startedStatementBody
+ *  
+ *  @interface Foo // #3 \see startedObjCContainer
+ *  -(void)meth;
+ *  @end
+ *  
+ *  @implementation Foo // #4 \see startedObjCContainer
+ *  -(void)meth {} // #5 \see startedStatementBody
+ *  @end
+ *  
+ *  class C { // #6 \see startedTagTypeDefinition
+ *    void meth();
+ *  };
+ *  void C::meth() {} // #7 \see startedStatementBody
+ *  \endcode
+ *  
+ *  In the example above the markings are wherever there is a callback that
+ *  initiates a container context. The CXIdxContainer that the client returns
+ *  for the callbacks will be passed along the indexed entities in the
+ *  container. Note that C++ out-of-line member functions (#7) are considered
+ *  as part of the C++ class container, not of the translation unit.
+ */
+typedef void *CXIdxContainer;
+
+/**
+ * \brief The client's data object that is associated with a macro definition
+ * in the current translation unit that gets indexed.
+ */
+typedef void *CXIdxMacro;
+
+/**
+ * \brief The client's data object that is associated with an AST file (PCH
+ * or module).
+ */
+typedef void *CXIdxASTFile;
+
+/**
+ * \brief The client's data object that is associated with an AST file (PCH
+ * or module).
+ */
+typedef struct {
+  void *ptr_data[2];
+  unsigned int_data;
+} CXIdxLoc;
+
+/**
+ * \brief Data for \see ppIncludedFile callback.
+ */
+typedef struct {
+  /**
+   * \brief Location of '#' in the #include/#import directive.
+   */
+  CXIdxLoc hashLoc;
+  /**
+   * \brief Filename as written in the #include/#import directive.
+   */
+  const char *filename;
+  /**
+   * \brief The actual file that the #include/#import directive resolved to.
+   */
+  CXIdxFile file;
+  int isImport;
+  int isAngled;
+} CXIdxIncludedFileInfo;
+
+/**
+ * \brief Data for \see importedASTFile callback.
+ */
+typedef struct {
+  CXFile file;
+  /**
+   * \brief Location where the file is imported. It is useful mostly for
+   * modules.
+   */
+  CXIdxLoc loc;
+  /**
+   * \brief Non-zero if the AST file is a module otherwise it's a PCH.
+   */
+  int isModule;
+} CXIdxImportedASTFileInfo;
+
+typedef struct {
+  /**
+   * \brief Location of the macro definition.
+   */
+  CXIdxLoc loc;
+  const char *name;
+} CXIdxMacroInfo;
+
+/**
+ * \brief Data for \see ppMacroDefined callback.
+ */
+typedef struct {
+  CXIdxMacroInfo *macroInfo;
+  CXIdxLoc defBegin;
+  /**
+   * \brief Length of macro definition in characters.
+   */
+  unsigned defLength;
+} CXIdxMacroDefinedInfo;
+
+/**
+ * \brief Data for \see ppMacroUndefined callback.
+ */
+typedef struct {
+  CXIdxLoc loc;
+  const char *name;
+  CXIdxMacro macro;
+} CXIdxMacroUndefinedInfo;
+
+/**
+ * \brief Data for \see ppMacroExpanded callback.
+ */
+typedef struct {
+  CXIdxLoc loc;
+  const char *name;
+  CXIdxMacro macro;
+} CXIdxMacroExpandedInfo;
+
+typedef struct {
+  const char *name;
+  const char *USR;
+} CXIdxEntityInfo;
+
+typedef struct {
+  CXCursor cursor;
+  CXIdxLoc loc;
+  CXIdxContainer container;
+} CXIdxIndexedDeclInfo;
+
+/**
+ * \brief Data for \see importedEntity callback.
+ */
+typedef struct {
+  CXIdxEntityInfo *entityInfo;
+  CXCursor cursor;
+  CXIdxLoc loc;
+  CXIdxASTFile ASTFile;
+} CXIdxImportedEntityInfo;
+
+/**
+ * \brief Data for \see importedMacro callback.
+ */
+typedef struct {
+  CXIdxMacroInfo *macroInfo;
+  CXIdxASTFile ASTFile;
+} CXIdxImportedMacroInfo;
+
+typedef struct {
+  CXIdxEntityInfo *entityInfo;
+  CXIdxIndexedDeclInfo *declInfo;
+} CXIdxIndexedEntityInfo;
+
+typedef struct {
+  CXIdxIndexedDeclInfo *declInfo;
+  CXIdxEntity entity;
+} CXIdxIndexedRedeclInfo;
+
+typedef struct {
+  CXCursor cursor;
+  CXIdxLoc loc;
+  CXIdxEntity entity;
+} CXIdxContainerInfo;
+
+/**
+ * \brief Data for \see indexTypedef callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+} CXIdxTypedefInfo;
+
+/**
+ * \brief Data for \see indexFunction callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isDefinition;
+} CXIdxFunctionInfo;
+
+/**
+ * \brief Data for \see indexFunctionRedeclaration callback.
+ */
+typedef struct {
+  CXIdxIndexedRedeclInfo *indexedRedeclInfo;
+  int isDefinition;
+} CXIdxFunctionRedeclInfo;
+
+/**
+ * \brief Data for \see indexVariable callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isDefinition;
+} CXIdxVariableInfo;
+
+/**
+ * \brief Data for \see indexVariableRedeclaration callback.
+ */
+typedef struct {
+  CXIdxIndexedRedeclInfo *indexedRedeclInfo;
+  int isDefinition;
+} CXIdxVariableRedeclInfo;
+
+/**
+ * \brief Data for \see indexTagType callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isDefinition;
+  int isAnonymous;
+} CXIdxTagTypeInfo;
+
+/**
+ * \brief Data for \see indexTagTypeRedeclaration callback.
+ */
+typedef struct {
+  CXIdxIndexedRedeclInfo *indexedRedeclInfo;
+  int isDefinition;
+} CXIdxTagTypeRedeclInfo;
+
+/**
+ * \brief Data for \see startedTagTypeDefinition callback.
+ */
+typedef struct {
+  CXIdxContainerInfo *containerInfo;
+} CXIdxTagTypeDefinitionInfo;
+
+/**
+ * \brief Data for \see indexField callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+} CXIdxFieldInfo;
+
+/**
+ * \brief Data for \see indexEnumerator callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+} CXIdxEnumeratorInfo;
+
+/**
+ * \brief Data for \see indexObjCClass callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isForwardRef;
+} CXIdxObjCClassInfo;
+
+/**
+ * \brief Data for \see indexObjCProtocol callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isForwardRef;
+} CXIdxObjCProtocolInfo;
+
+/**
+ * \brief Data for \see indexObjCCategory callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  CXIdxEntity objcClass;
+} CXIdxObjCCategoryInfo;
+
+/**
+ * \brief Data for \see indexObjCMethod callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+  int isDefinition;
+} CXIdxObjCMethodInfo;
+
+/**
+ * \brief Data for \see indexObjCProperty callback.
+ */
+typedef struct {
+  CXIdxIndexedEntityInfo *indexedEntityInfo;
+} CXIdxObjCPropertyInfo;
+
+/**
+ * \brief Data for \see indexObjCMethodRedeclaration callback.
+ */
+typedef struct {
+  CXIdxIndexedRedeclInfo *indexedRedeclInfo;
+  int isDefinition;
+} CXIdxObjCMethodRedeclInfo;
+
+/**
+ * \brief Data for \see startedStatementBody callback.
+ */
+typedef struct {
+  CXIdxContainerInfo *containerInfo;
+  CXIdxLoc bodyBegin;
+} CXIdxStmtBodyInfo;
+
+/**
+ * \brief Data for \see startedObjCContainer callback.
+ */
+typedef struct {
+  CXIdxContainerInfo *containerInfo;
+} CXIdxObjCContainerInfo;
+
+/**
+ * \brief Data for \see defineObjCClass callback.
+ */
+typedef struct {
+  CXIdxEntity objcClass;
+  CXIdxLoc loc;
+} CXIdxObjCBaseClassInfo;
+
+/**
+ * \brief Data for \see defineObjCClass callback.
+ */
+typedef struct {
+  CXIdxEntity protocol;
+  CXIdxLoc loc;
+} CXIdxObjCProtocolRefInfo;
+
+/**
+ * \brief Data for \see defineObjCClass callback.
+ */
+typedef struct {
+  CXCursor cursor;
+  CXIdxEntity objcClass;
+  CXIdxContainer container;
+  CXIdxObjCBaseClassInfo *baseInfo;
+  CXIdxObjCProtocolRefInfo **protocols;
+  unsigned numProtocols;
+} CXIdxObjCClassDefineInfo;
+
+/**
+ * \brief Data for \see endedContainer callback.
+ */
+typedef struct {
+  CXIdxContainer container;
+  CXIdxLoc endLoc;
+} CXIdxEndContainerInfo;
+
+/**
+ * \brief Data for \see indexEntityReference callback.
+ */
+typedef enum {
+  /**
+   * \brief The entity is referenced directly in user's code.
+   */
+  CXIdxEntityRef_Direct = 1,
+  /**
+   * \brief A reference of an ObjC method via the dot syntax.
+   */
+  CXIdxEntityRef_ImplicitProperty = 2
+} CXIdxEntityRefKind;
+
+/**
+ * \brief Data for \see indexEntityReference callback.
+ */
+typedef struct {
+  /**
+   * \brief Reference cursor.
+   */
+  CXCursor cursor;
+  CXIdxLoc loc;
+  /**
+   * \brief The entity that gets referenced.
+   */
+  CXIdxEntity referencedEntity;
+  /**
+   * \brief Immediate "parent" of the reference. For example:
+   * 
+   * \code
+   * Foo *var;
+   * \endcode
+   * 
+   * The parent of reference of type 'Foo' is the variable 'var'.
+   * parentEntity will be null for references inside statement bodies.
+   */
+  CXIdxEntity parentEntity;
+  /**
+   * \brief Container context of the reference.
+   */
+  CXIdxContainer container;
+  CXIdxEntityRefKind kind;
+} CXIdxEntityRefInfo;
+
+typedef struct {
+  /**
+   * \brief Called when a diagnostic is emitted.
+   */
+  void (*diagnostic)(CXClientData client_data,
+                     CXDiagnostic, void *reserved);
+
+  /**
+   * \brief Called for the purpose of associating a client's CXIdxFile with
+   * a CXFile.
+   */
+  CXIdxFile (*recordFile)(CXClientData client_data,
+                          CXFile file, void *reserved);
+
+  /**
+   * \brief Called when a file gets #included/#imported.
+   */
+  void (*ppIncludedFile)(CXClientData client_data,
+                         CXIdxIncludedFileInfo *);
+
+  /**
+   * \brief Called when a macro gets #defined.
+   */
+  CXIdxMacro (*ppMacroDefined)(CXClientData client_data,
+                               CXIdxMacroDefinedInfo *);
+
+  /**
+   * \brief Called when a macro gets undefined.
+   */
+  void (*ppMacroUndefined)(CXClientData client_data,
+                           CXIdxMacroUndefinedInfo *);
+
+  /**
+   * \brief Called when a macro gets expanded.
+   */
+  void (*ppMacroExpanded)(CXClientData client_data,
+                          CXIdxMacroExpandedInfo *);
+  
+  /**
+   * \brief Called when a AST file (PCH or module) gets imported.
+   * 
+   * AST files will not get indexed (there will not be callbacks to index all
+   * the entities in an AST file). The recommended action is that, if the AST
+   * file is not already indexed, to block further indexing and initiate a new
+   * indexing job specific to the AST file, so that references of entities of
+   * the AST file can be later associated with CXIdxEntities returned by
+   * \see importedEntity callbacks.
+   */
+  CXIdxASTFile (*importedASTFile)(CXClientData client_data,
+                                  CXIdxImportedASTFileInfo *);
+
+  /**
+   * \brief Called when an entity gets imported from an AST file. This generally
+   * happens when an entity from a PCH/module is referenced for the first time.
+   */
+  CXIdxEntity (*importedEntity)(CXClientData client_data,
+                                CXIdxImportedEntityInfo *);
+
+  /**
+   * \brief Called when a macro gets imported from an AST file. This generally
+   * happens when a macro from a PCH/module is referenced for the first time.
+   */
+  CXIdxEntity (*importedMacro)(CXClientData client_data,
+                               CXIdxImportedMacroInfo *);
+
+  /**
+   * \brief Called at the beginning of indexing a translation unit.
+   */
+  CXIdxContainer (*startedTranslationUnit)(CXClientData client_data,
+                                           void *reserved);
+
+  /**
+   * \brief Called to index a typedef entity.
+   */
+  CXIdxEntity (*indexTypedef)(CXClientData client_data,
+                              CXIdxTypedefInfo *);
+
+  /**
+   * \brief Called to index a function entity.
+   */
+  CXIdxEntity (*indexFunction)(CXClientData client_data,
+                               CXIdxFunctionInfo *);
+
+  /**
+   * \brief Called to index a function redeclaration.
+   */
+  void (*indexFunctionRedeclaration)(CXClientData client_data,
+                                     CXIdxFunctionRedeclInfo *);
+
+  /**
+   * \brief Called to index a file-scope variable (not field or ivar).
+   */
+  CXIdxEntity (*indexVariable)(CXClientData client_data,
+                               CXIdxVariableInfo *);
+
+  /**
+   * \brief Called to index a variable redeclaration.
+   */
+  void (*indexVariableRedeclaration)(CXClientData client_data,
+                                     CXIdxVariableRedeclInfo *);
+
+  /**
+   * \brief Called to index a tag entity (struct/union/enum/class).
+   */
+  CXIdxEntity (*indexTagType)(CXClientData client_data,
+                              CXIdxTagTypeInfo *);
+
+  /**
+   * \brief Called to index a tag redeclaration.
+   */
+  void (*indexTagTypeRedeclaration)(CXClientData client_data,
+                                    CXIdxTagTypeRedeclInfo *);
+
+  /**
+   * \brief Called to index a tag type's field entity.
+   */
+  CXIdxEntity (*indexField)(CXClientData client_data,
+                            CXIdxFieldInfo *);
+
+  /**
+   * \brief Called to index an enumerator entity.
+   */
+  CXIdxEntity (*indexEnumerator)(CXClientData client_data,
+                                 CXIdxEnumeratorInfo *);
+
+  /**
+   * \brief Called to initiate a tag type's container context.
+   */
+  CXIdxContainer (*startedTagTypeDefinition)(CXClientData client_data,
+                                            CXIdxTagTypeDefinitionInfo *);
+
+  /**
+   * \brief Called to index an ObjC class entity.
+   */
+  CXIdxEntity (*indexObjCClass)(CXClientData client_data,
+                                CXIdxObjCClassInfo *);
+
+  /**
+   * \brief Called to index an ObjC protocol entity.
+   */
+  CXIdxEntity (*indexObjCProtocol)(CXClientData client_data,
+                                   CXIdxObjCProtocolInfo *);
+
+  /**
+   * \brief Called to index an ObjC category entity.
+   */
+  CXIdxEntity (*indexObjCCategory)(CXClientData client_data,
+                                   CXIdxObjCCategoryInfo *);
+
+  /**
+   * \brief Called to index an ObjC method entity.
+   */
+  CXIdxEntity (*indexObjCMethod)(CXClientData client_data,
+                                 CXIdxObjCMethodInfo *);
+
+  /**
+   * \brief Called to index an ObjC property entity.
+   */
+  CXIdxEntity (*indexObjCProperty)(CXClientData client_data,
+                                   CXIdxObjCPropertyInfo *);
+
+  /**
+   * \brief Called to index an ObjC method redeclaration.
+   */
+  void (*indexObjCMethodRedeclaration)(CXClientData client_data,
+                                       CXIdxObjCMethodRedeclInfo *);
+
+  /**
+   * \brief Called to initiate a statement body container context for a
+   * function/ObjC method/C++ member function/block.
+   */
+  CXIdxContainer (*startedStatementBody)(CXClientData client_data,
+                                         CXIdxStmtBodyInfo *);
+
+  /**
+   * \brief Called to initiate an ObjC container context for
+   * @interface/@implementation/@protocol.
+   */
+  CXIdxContainer (*startedObjCContainer)(CXClientData client_data,
+                                         CXIdxObjCContainerInfo *);
+
+  /**
+   * \brief Called to define an ObjC class via its @interface.
+   */
+  void (*defineObjCClass)(CXClientData client_data,
+                          CXIdxObjCClassDefineInfo *);
+
+  /**
+   * \brief Called when a container context is ended.
+   */
+  void (*endedContainer)(CXClientData client_data,
+                         CXIdxEndContainerInfo *);
+
+  /**
+   * \brief Called to index a reference of an entity.
+   */
+  void (*indexEntityReference)(CXClientData client_data,
+                               CXIdxEntityRefInfo *);
+
+} IndexerCallbacks;
+
+/**
+ * \brief Index the given source file and the translation unit corresponding
+ * to that file via callbacks implemented through \see IndexerCallbacks.
+ *
+ * \param client_data pointer data supplied by the client, which will
+ * be passed to the invoked callbacks.
+ *
+ * \param index_callbacks Pointer to indexing callbacks that the client
+ * implements.
+ *
+ * \param index_callbacks_size Size of \see IndexerCallbacks structure that gets
+ * passed in index_callbacks.
+ *
+ * \param index_options Options affecting indexing; reserved.
+ *
+ * \param out_TU [out] pointer to store a CXTranslationUnit that can be reused
+ * after indexing is finished. Set to NULL if you do not require it.
+ *
+ * \returns If there is a failure from which the compiler cannot recover returns
+ * non-zero, otherwise returns 0.
+ * 
+ * The rest of the parameters are the same as \see clang_parseTranslationUnit.
+ */
+CINDEX_LINKAGE int clang_indexTranslationUnit(CXIndex CIdx,
+                                         CXClientData client_data,
+                                         IndexerCallbacks *index_callbacks,
+                                         unsigned index_callbacks_size,
+                                         unsigned index_options,
+                                         const char *source_filename,
+                                         const char * const *command_line_args,
+                                         int num_command_line_args,
+                                         struct CXUnsavedFile *unsaved_files,
+                                         unsigned num_unsaved_files,
+                                         CXTranslationUnit *out_TU,
+                                         unsigned TU_options);
+
+/**
+ * \brief Retrieve the CXIdxFile, file, line, column, and offset represented by
+ * the given CXIdxLoc.
+ *
+ * If the location refers into a macro expansion, retrieves the
+ * location of the macro expansion and if it refers into a macro argument
+ * retrieves the location of the argument.
+ */
+CINDEX_LINKAGE void clang_indexLoc_getFileLocation(CXIdxLoc loc,
+                                                   CXIdxFile *indexFile,
+                                                   CXFile *file,
+                                                   unsigned *line,
+                                                   unsigned *column,
+                                                   unsigned *offset);
+
+/**
+ * \brief Retrieve the CXSourceLocation represented by the given CXIdxLoc.
+ */
+CINDEX_LINKAGE
+CXSourceLocation clang_indexLoc_getCXSourceLocation(CXIdxLoc loc);
 
 /**
  * @}

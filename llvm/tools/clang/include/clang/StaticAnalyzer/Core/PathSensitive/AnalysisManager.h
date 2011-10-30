@@ -31,8 +31,7 @@ namespace ento {
   class CheckerManager;
 
 class AnalysisManager : public BugReporterData {
-  AnalysisContextManager AnaCtxMgr;
-  LocationContextManager LocCtxMgr;
+  AnalysisDeclContextManager AnaCtxMgr;
 
   ASTContext &Ctx;
   DiagnosticsEngine &Diags;
@@ -97,11 +96,10 @@ public:
   ~AnalysisManager() { FlushDiagnostics(); }
   
   void ClearContexts() {
-    LocCtxMgr.clear();
     AnaCtxMgr.clear();
   }
   
-  AnalysisContextManager& getAnalysisContextManager() {
+  AnalysisDeclContextManager& getAnalysisDeclContextManager() {
     return AnaCtxMgr;
   }
 
@@ -166,52 +164,32 @@ public:
 
   bool hasIndexer() const { return Idxer != 0; }
 
-  AnalysisContext *getAnalysisContextInAnotherTU(const Decl *D);
+  AnalysisDeclContext *getAnalysisDeclContextInAnotherTU(const Decl *D);
 
   CFG *getCFG(Decl const *D) {
     return AnaCtxMgr.getContext(D)->getCFG();
   }
 
-  LiveVariables *getLiveVariables(Decl const *D) {
-    return AnaCtxMgr.getContext(D)->getLiveVariables();
+  template <typename T>
+  T *getAnalysis(Decl const *D) {
+    return AnaCtxMgr.getContext(D)->getAnalysis<T>();
   }
 
   ParentMap &getParentMap(Decl const *D) {
     return AnaCtxMgr.getContext(D)->getParentMap();
   }
 
-  AnalysisContext *getAnalysisContext(const Decl *D) {
+  AnalysisDeclContext *getAnalysisDeclContext(const Decl *D) {
     return AnaCtxMgr.getContext(D);
   }
 
-  AnalysisContext *getAnalysisContext(const Decl *D, idx::TranslationUnit *TU) {
+  AnalysisDeclContext *getAnalysisDeclContext(const Decl *D, idx::TranslationUnit *TU) {
     return AnaCtxMgr.getContext(D, TU);
   }
 
-  const StackFrameContext *getStackFrame(AnalysisContext *Ctx,
-                                         LocationContext const *Parent,
-                                         const Stmt *S,
-                                         const CFGBlock *Blk, unsigned Idx) {
-    return LocCtxMgr.getStackFrame(Ctx, Parent, S, Blk, Idx);
-  }
-
-  // Get the top level stack frame.
-  const StackFrameContext *getStackFrame(Decl const *D, 
-                                         idx::TranslationUnit *TU) {
-    return LocCtxMgr.getStackFrame(AnaCtxMgr.getContext(D, TU), 0, 0, 0, 0);
-  }
-
-  // Get a stack frame with parent.
-  StackFrameContext const *getStackFrame(const Decl *D, 
-                                         LocationContext const *Parent,
-                                         const Stmt *S,
-                                         const CFGBlock *Blk, unsigned Idx) {
-    return LocCtxMgr.getStackFrame(AnaCtxMgr.getContext(D), Parent, S,
-                                   Blk,Idx);
-  }
 };
 
-} // end GR namespace
+} // enAnaCtxMgrspace
 
 } // end clang namespace
 

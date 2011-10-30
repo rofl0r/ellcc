@@ -569,7 +569,7 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
   /// source location.
   typedef std::map<unsigned, SourceLocation> MacroArgsMap;
 
-  mutable llvm::DenseMap<FileID, MacroArgsMap *> MacroArgsCacheMap; 
+  mutable llvm::DenseMap<FileID, MacroArgsMap *> MacroArgsCacheMap;
 
   // SourceManager doesn't support copy construction.
   explicit SourceManager(const SourceManager&);
@@ -807,6 +807,18 @@ public:
     unsigned FileOffset = Entry.getOffset();
     return SourceLocation::getFileLoc(FileOffset);
   }
+  
+  /// \brief Return the source location corresponding to the last byte of the
+  /// specified file.
+  SourceLocation getLocForEndOfFile(FileID FID) const {
+    bool Invalid = false;
+    const SrcMgr::SLocEntry &Entry = getSLocEntry(FID, &Invalid);
+    if (Invalid || !Entry.isFile())
+      return SourceLocation();
+    
+    unsigned FileOffset = Entry.getOffset();
+    return SourceLocation::getFileLoc(FileOffset + getFileIDSize(FID) - 1);
+  }
 
   /// \brief Returns the include location if \arg FID is a #include'd file
   /// otherwise it returns an invalid location.
@@ -826,6 +838,14 @@ public:
     // expansions.
     if (Loc.isFileID()) return Loc;
     return getExpansionLocSlowCase(Loc);
+  }
+
+  /// \brief Given \arg Loc, if it is a macro location return the expansion
+  /// location or the spelling location, depending on if it comes from a
+  /// macro argument or not.
+  SourceLocation getFileLoc(SourceLocation Loc) const {
+    if (Loc.isFileID()) return Loc;
+    return getFileLocSlowCase(Loc);
   }
 
   /// getImmediateExpansionRange - Loc is required to be an expansion location.
@@ -1197,7 +1217,8 @@ public:
   unsigned loaded_sloc_entry_size() const { return LoadedSLocEntryTable.size();}
 
   /// \brief Get a loaded SLocEntry. This is exposed for indexing.
-  const SrcMgr::SLocEntry &getLoadedSLocEntry(unsigned Index, bool *Invalid=0) const {
+  const SrcMgr::SLocEntry &getLoadedSLocEntry(unsigned Index,
+                                              bool *Invalid = 0) const {
     assert(Index < LoadedSLocEntryTable.size() && "Invalid index");
     if (!SLocEntryLoaded[Index])
       ExternalSLocEntries->ReadSLocEntry(-(static_cast<int>(Index) + 2));
@@ -1205,6 +1226,10 @@ public:
   }
 
   const SrcMgr::SLocEntry &getSLocEntry(FileID FID, bool *Invalid = 0) const {
+    if (FID.ID == 0 || FID.ID == -1) {
+      if (Invalid) *Invalid = true;
+      return LocalSLocEntryTable[0];
+    }
     return getSLocEntryByID(FID.ID);
   }
 
@@ -1301,6 +1326,7 @@ private:
 
   SourceLocation getExpansionLocSlowCase(SourceLocation Loc) const;
   SourceLocation getSpellingLocSlowCase(SourceLocation Loc) const;
+  SourceLocation getFileLocSlowCase(SourceLocation Loc) const;
 
   std::pair<FileID, unsigned>
   getDecomposedExpansionLocSlowCase(const SrcMgr::SLocEntry *E) const;

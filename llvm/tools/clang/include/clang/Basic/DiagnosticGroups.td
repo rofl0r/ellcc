@@ -29,6 +29,7 @@ def BoolConversions : DiagGroup<"bool-conversions">;
 def CXXCompat: DiagGroup<"c++-compat">;
 def CastAlign : DiagGroup<"cast-align">;
 def : DiagGroup<"cast-qual">;
+def CatchIncompleteExtension : DiagGroup<"catch-incomplete-type-extensions">;
 def : DiagGroup<"char-align">;
 def Comment : DiagGroup<"comment">;
 def : DiagGroup<"ctor-dtor-privacy">;
@@ -54,11 +55,19 @@ def ExtraTokens : DiagGroup<"extra-tokens">;
 def FormatExtraArgs : DiagGroup<"format-extra-args">;
 def FormatZeroLength : DiagGroup<"format-zero-length">;
 
-def CXX0xNarrowing : DiagGroup<"c++0x-narrowing">;
+def CXX98Compat : DiagGroup<"c++98-compat">;
+// Warnings for C++11 features which are Extensions in C++98 mode.
+def CXX98CompatPedantic : DiagGroup<"c++98-compat-pedantic", [CXX98Compat]>;
 
-def CXX0xCompat : DiagGroup<"c++0x-compat", [CXX0xNarrowing]>;
+def CXX11Narrowing : DiagGroup<"c++11-narrowing">;
+def : DiagGroup<"c++0x-narrowing", [CXX11Narrowing]>;
+
+def CXX11Compat : DiagGroup<"c++11-compat", [CXX11Narrowing]>;
+def : DiagGroup<"c++0x-compat", [CXX11Compat]>;
+
 def : DiagGroup<"effc++">;
 def ExitTimeDestructors : DiagGroup<"exit-time-destructors">;
+def FlexibleArrayExtensions : DiagGroup<"flexible-array-extensions">;
 def FourByteMultiChar : DiagGroup<"four-char-constants">;
 def GlobalConstructors : DiagGroup<"global-constructors">;
 def : DiagGroup<"idiomatic-parentheses">;
@@ -73,6 +82,7 @@ def : DiagGroup<"int-to-pointer-cast">;
 def : DiagGroup<"invalid-pch">;
 def LiteralRange : DiagGroup<"literal-range">;
 def LocalTypeTemplateArgs : DiagGroup<"local-type-template-args">;
+def MalformedWarningCheck : DiagGroup<"malformed-warning-check">;
 def Main : DiagGroup<"main">;
 def MissingBraces : DiagGroup<"missing-braces">;
 def MissingDeclarations: DiagGroup<"missing-declarations">;
@@ -86,6 +96,7 @@ def LongLong : DiagGroup<"long-long">;
 def MismatchedTags : DiagGroup<"mismatched-tags">;
 def MissingFieldInitializers : DiagGroup<"missing-field-initializers">;
 def ModuleBuild : DiagGroup<"module-build">;
+def NullCharacter : DiagGroup<"null-character">;
 def NullDereference : DiagGroup<"null-dereference">;
 def InitializerOverrides : DiagGroup<"initializer-overrides">;
 def NonNull : DiagGroup<"nonnull">;
@@ -99,6 +110,7 @@ def OverlengthStrings : DiagGroup<"overlength-strings">;
 def OverloadedVirtual : DiagGroup<"overloaded-virtual">;
 def ObjCMissingSuperCalls : DiagGroup<"objc-missing-super-calls">;
 def ObjCRetainBlockProperty : DiagGroup<"objc-noncopy-retain-block-property">;
+def ObjCContinuationPropertyType :DiagGroup<"objc-continuation-property-type">;
 def Packed : DiagGroup<"packed">;
 def Padded : DiagGroup<"padded">;
 def PointerArith : DiagGroup<"pointer-arith">;
@@ -152,6 +164,7 @@ def Switch         : DiagGroup<"switch", [SwitchEnum]>;
 def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
+def Unicode  : DiagGroup<"unicode">;
 def Uninitialized  : DiagGroup<"uninitialized">;
 def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
 def UnknownPragmas : DiagGroup<"unknown-pragmas">;
@@ -301,14 +314,18 @@ def : DiagGroup<"comments", [Comment]>;         // -Wcomments = -Wcomment
 def NonGCC : DiagGroup<"non-gcc",
     [SignCompare, Conversion, LiteralRange]>;
 
-// A warning group for warnings about using C++0x features as extensions in
+// A warning group for warnings about using C++11 features as extensions in
 // earlier C++ versions.
-def CXX0x : DiagGroup<"c++0x-extensions">;
+def CXX11 : DiagGroup<"c++11-extensions">;
+def : DiagGroup<"c++0x-extensions", [CXX11]>;
 def DelegatingCtorCycles :
   DiagGroup<"delegating-ctor-cycles">;
 
 // A warning group for warnings about using C1X features as extensions.
 def C1X : DiagGroup<"c1x-extensions">;
+
+// A warning group for warnings about using C99 features as extensions.
+def C99 : DiagGroup<"c99-extensions">;
 
 // A warning group for warnings about GCC extensions.
 def GNU : DiagGroup<"gnu", [GNUDesignator, VLA]>;

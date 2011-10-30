@@ -19,7 +19,7 @@ td {
 
 <ul>
 <li><a href="#intro">Introduction</a></li>
-<li><a href="#libsystem">LLVM System and Support Libraries</a></li>
+<li><a href="#libsupport">LLVM Support Library</a></li>
 <li><a href="#libbasic">The Clang 'Basic' Library</a>
   <ul>
   <li><a href="#Diagnostics">The Diagnostics Subsystem</a></li>
@@ -89,15 +89,13 @@ Clang, not for end-users.  The description below is categorized by
 libraries, and does not describe any of the clients of the libraries.</p>
 
 <!-- ======================================================================= -->
-<h2 id="libsystem">LLVM System and Support Libraries</h2>
+<h2 id="libsupport">LLVM Support Library</h2>
 <!-- ======================================================================= -->
 
-<p>The LLVM libsystem library provides the basic Clang system abstraction layer,
-which is used for file system access.  The LLVM libsupport library provides many
-underlying libraries and <a 
-href="http://llvm.org/docs/ProgrammersManual.html">data-structures</a>,
- including command line option
-processing and various containers.</p>
+<p>The LLVM libsupport library provides many underlying libraries and
+<a href="http://llvm.org/docs/ProgrammersManual.html">data-structures</a>,
+including command line option processing, various containers and a system
+abstraction layer, which is used for file system access.</p>
 
 <!-- ======================================================================= -->
 <h2 id="libbasic">The Clang 'Basic' Library</h2>
@@ -429,10 +427,10 @@ the problem. For example, it might add the missing semicolon at the
 end of the statement or rewrite the use of a deprecated construct
 into something more palatable. Here is one such example from the C++
 front end, where we warn about the right-shift operator changing
-meaning from C++98 to C++0x:</p>
+meaning from C++98 to C++11:</p>
 
 <pre>
-test.cpp:3:7: warning: use of right-shift operator ('&gt;&gt;') in template argument will require parentheses in C++0x
+test.cpp:3:7: warning: use of right-shift operator ('&gt;&gt;') in template argument will require parentheses in C++11
 A&lt;100 &gt;&gt; 2&gt; *a;
       ^
   (       )
@@ -1325,7 +1323,7 @@ extern "C" {
 
 <p>The transparent <code>DeclContexts</code> are:</p>
 <ul>
-  <li>Enumerations (but not C++0x "scoped enumerations"):
+  <li>Enumerations (but not C++11 "scoped enumerations"):
     <pre>
 enum Color { 
   Red, 
@@ -1356,7 +1354,7 @@ LookupTable LT;
 LT.Vector = 0; // Okay: finds Vector inside the unnamed union
     </pre>
   </li>
-  <li>C++0x inline namespaces:
+  <li>C++11 inline namespaces:
 <pre>
 namespace mylib {
   inline namespace debug {
@@ -1738,7 +1736,7 @@ to subsequent declarations of the same name.</p>
 
 <p><tt>Spellings</tt> lists the strings that can appear in
 <tt>__attribute__((here))</tt> or <tt>[[here]]</tt>.  All such strings
-will be synonymous.  If you want to allow the <tt>[[]]</tt> C++0x
+will be synonymous.  If you want to allow the <tt>[[]]</tt> C++11
 syntax, you have to define a list of <tt>Namespaces</tt>, which will
 let users write <tt>[[namespace:spelling]]</tt>. Using the empty
 string for a namespace will allow users to write just the spelling
@@ -1810,7 +1808,7 @@ focus on expressions, but statements are similar.</p>
    <li>Write tests for all of the "bad" parsing cases, to make sure
     your recovery is good. If you have matched delimiters (e.g.,
     parentheses, square brackets, etc.), use
-    <tt>Parser::MatchRHSPunctuation</tt> to give nice diagnostics when
+    <tt>Parser::BalancedDelimiterTracker</tt> to give nice diagnostics when
     things go wrong.</li>
   </ul>
   </li>
@@ -1965,7 +1963,7 @@ focus on expressions, but statements are similar.</p>
     expression produces can change from one instantiation to the
     next), value dependence (i.e., the constant value your expression
     produces can change from one instantiation to the next),
-    instantiation dependence (i.e., a template parameter or occurs
+    instantiation dependence (i.e., a template parameter occurs
     anywhere in your expression), and whether your expression contains
     a parameter pack (for variadic templates). Often, computing these
     flags just means combining the results from the various types and

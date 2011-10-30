@@ -184,7 +184,7 @@ const CGFunctionInfo &CodeGenTypes::getFunctionInfo(const ObjCMethodDecl *MD) {
   ArgTys.push_back(Context.getCanonicalParamType(MD->getSelfDecl()->getType()));
   ArgTys.push_back(Context.getCanonicalParamType(Context.getObjCSelType()));
   // FIXME: Kill copy?
-  for (ObjCMethodDecl::param_iterator i = MD->param_begin(),
+  for (ObjCMethodDecl::param_const_iterator i = MD->param_begin(),
          e = MD->param_end(); i != e; ++i) {
     ArgTys.push_back(Context.getCanonicalParamType((*i)->getType()));
   }
@@ -366,7 +366,7 @@ CodeGenFunction::ExpandTypeFromArgs(QualType Ty, LValue LV,
     QualType EltTy = CT->getElementType();
     llvm::Value *RealAddr = Builder.CreateStructGEP(Addr, 0, "real");
     EmitStoreThroughLValue(RValue::get(AI++), MakeAddrLValue(RealAddr, EltTy));
-    llvm::Value *ImagAddr = Builder.CreateStructGEP(Addr, 0, "imag");
+    llvm::Value *ImagAddr = Builder.CreateStructGEP(Addr, 1, "imag");
     EmitStoreThroughLValue(RValue::get(AI++), MakeAddrLValue(ImagAddr, EltTy));
   } else {
     EmitStoreThroughLValue(RValue::get(AI), LV);
@@ -729,6 +729,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
 
   // FIXME: handle sseregparm someday...
   if (TargetDecl) {
+    if (TargetDecl->hasAttr<ReturnsTwiceAttr>())
+      FuncAttrs |= llvm::Attribute::ReturnsTwice;
     if (TargetDecl->hasAttr<NoThrowAttr>())
       FuncAttrs |= llvm::Attribute::NoUnwind;
     else if (const FunctionDecl *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
@@ -739,6 +741,9 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
 
     if (TargetDecl->hasAttr<NoReturnAttr>())
       FuncAttrs |= llvm::Attribute::NoReturn;
+
+    if (TargetDecl->hasAttr<ReturnsTwiceAttr>())
+      FuncAttrs |= llvm::Attribute::ReturnsTwice;
 
     // 'const' and 'pure' attribute functions are also nounwind.
     if (TargetDecl->hasAttr<ConstAttr>()) {

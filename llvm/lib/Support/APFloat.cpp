@@ -1192,7 +1192,7 @@ APFloat::normalize(roundingMode rounding_mode,
 
   if (omsb) {
     /* OMSB is numbered from 1.  We want to place it in the integer
-       bit numbered PRECISON if possible, with a compensating change in
+       bit numbered PRECISION if possible, with a compensating change in
        the exponent.  */
     exponentChange = omsb - semantics->precision;
 
@@ -2125,7 +2125,7 @@ APFloat::convertFromUnsignedParts(const integerPart *src,
   dstCount = partCount();
   precision = semantics->precision;
 
-  /* We want the most significant PRECISON bits of SRC.  There may not
+  /* We want the most significant PRECISION bits of SRC.  There may not
      be that many; extract what we can.  */
   if (precision <= omsb) {
     exponent = omsb - 1;
@@ -3243,8 +3243,9 @@ APFloat APFloat::getLargest(const fltSemantics &Sem, bool Negative) {
     significand[i] = ~((integerPart) 0);
 
   // ...and then clear the top bits for internal consistency.
-  significand[N-1] &=
-    (((integerPart) 1) << ((Sem.precision % integerPartWidth) - 1)) - 1;
+  if (Sem.precision % integerPartWidth != 0)
+    significand[N-1] &=
+      (((integerPart) 1) << (Sem.precision % integerPartWidth)) - 1;
 
   return Val;
 }
@@ -3274,7 +3275,7 @@ APFloat APFloat::getSmallestNormalized(const fltSemantics &Sem, bool Negative) {
   Val.exponent = Sem.minExponent;
   Val.zeroSignificand();
   Val.significandParts()[partCountForBits(Sem.precision)-1] |=
-    (((integerPart) 1) << ((Sem.precision % integerPartWidth) - 1));
+    (((integerPart) 1) << ((Sem.precision - 1) % integerPartWidth));
 
   return Val;
 }
@@ -3455,7 +3456,7 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
     //                 <= semantics->precision + e * 137 / 59
     //   (log_2(5) ~ 2.321928 < 2.322034 ~ 137/59)
 
-    unsigned precision = semantics->precision + 137 * texp / 59;
+    unsigned precision = semantics->precision + (137 * texp + 136) / 59;
 
     // Multiply significand by 5^e.
     //   N * 5^0101 == N * 5^(1*1) * 5^(0*2) * 5^(1*4) * 5^(0*8)

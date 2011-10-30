@@ -550,9 +550,12 @@ DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, unsigned DiagClass,
       !MappingInfo.isUser())
     Result = DiagnosticIDs::Warning;
 
-  // Ignore any kind of extension diagnostics inside __extension__ blocks.
-  bool IsExtensionDiag = isBuiltinExtensionDiag(DiagID);
-  if (Diag.AllExtensionsSilenced && IsExtensionDiag)
+  // Ignore -pedantic diagnostics inside __extension__ blocks.
+  // (The diagnostics controlled by -pedantic are the extension diagnostics
+  // that are not enabled by default.)
+  bool EnabledByDefault;
+  bool IsExtensionDiag = isBuiltinExtensionDiag(DiagID, EnabledByDefault);
+  if (Diag.AllExtensionsSilenced && IsExtensionDiag && !EnabledByDefault)
     return DiagnosticIDs::Ignored;
 
   // For extension diagnostics that haven't been explicitly mapped, check if we
@@ -803,9 +806,14 @@ bool DiagnosticIDs::isUnrecoverable(unsigned DiagID) const {
     return false;
 
   // Currently we consider all ARC errors as recoverable.
-  if (getCategoryNumberForDiag(DiagID) ==
-        diag::DiagCat_Automatic_Reference_Counting_Issue)
+  if (isARCDiagnostic(DiagID))
     return false;
 
   return true;
 }
+
+bool DiagnosticIDs::isARCDiagnostic(unsigned DiagID) {
+  unsigned cat = getCategoryNumberForDiag(DiagID);
+  return DiagnosticIDs::getCategoryNameFromID(cat).startswith("ARC ");
+}
+

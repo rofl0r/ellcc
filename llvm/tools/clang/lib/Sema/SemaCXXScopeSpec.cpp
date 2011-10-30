@@ -237,7 +237,7 @@ bool Sema::RequireCompleteDeclContext(CXXScopeSpec &SS,
     // until we see a definition, so awkwardly pull out this special
     // case.
     if (const EnumType *enumType = dyn_cast_or_null<EnumType>(tagType)) {
-      if (!enumType->getDecl()->isDefinition()) {
+      if (!enumType->getDecl()->isCompleteDefinition()) {
         Diag(loc, diag::err_incomplete_nested_name_spec)
           << type << SS.getRange();
         SS.SetInvalid(SS.getRange());
@@ -268,7 +268,7 @@ bool Sema::isAcceptableNestedNameSpecifier(NamedDecl *SD) {
   if (!isa<TypeDecl>(SD))
     return false;
 
-  // Determine whether we have a class (or, in C++0x, an enum) or
+  // Determine whether we have a class (or, in C++11, an enum) or
   // a typedef thereof. If so, build the nested-name-specifier.
   QualType T = Context.getTypeDeclType(cast<TypeDecl>(SD));
   if (T->isDependentType())
@@ -595,6 +595,9 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
     } else {
       llvm_unreachable("Unhandled TypeDecl node in nested-name-specifier");
     }
+
+    if (T->isEnumeralType())
+      Diag(IdentifierLoc, diag::warn_cxx98_compat_enum_nested_name_spec);
 
     SS.Extend(Context, SourceLocation(), TLB.getTypeLocInContext(Context, T),
               CCLoc);

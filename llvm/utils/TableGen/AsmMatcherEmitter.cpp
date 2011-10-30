@@ -98,8 +98,6 @@
 
 #include "AsmMatcherEmitter.h"
 #include "CodeGenTarget.h"
-#include "Error.h"
-#include "Record.h"
 #include "StringMatcher.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -109,6 +107,8 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
 #include <map>
 #include <set>
 using namespace llvm;
@@ -591,7 +591,8 @@ private:
 
   /// getOperandClass - Lookup or create the class for the given operand.
   ClassInfo *getOperandClass(const CGIOperandList::OperandInfo &OI,
-                             int SubOpIdx = -1);
+                             int SubOpIdx);
+  ClassInfo *getOperandClass(Record *Rec, int SubOpIdx);
 
   /// BuildRegisterClasses - Build the ClassInfo* instances for register
   /// classes.
@@ -870,7 +871,11 @@ AsmMatcherInfo::getOperandClass(const CGIOperandList::OperandInfo &OI,
   Record *Rec = OI.Rec;
   if (SubOpIdx != -1)
     Rec = dynamic_cast<DefInit*>(OI.MIOperandInfo->getArg(SubOpIdx))->getDef();
+  return getOperandClass(Rec, SubOpIdx);
+}
 
+ClassInfo *
+AsmMatcherInfo::getOperandClass(Record *Rec, int SubOpIdx) {
   if (Rec->isSubClassOf("RegisterOperand")) {
     // RegisterOperand may have an associated ParserMatchClass. If it does,
     // use it, else just fall back to the underlying register class.
@@ -999,6 +1004,10 @@ BuildRegisterClasses(SmallPtrSet<Record*, 16> &SingletonRegisters) {
   for (ArrayRef<CodeGenRegisterClass*>::const_iterator
        it = RegClassList.begin(), ie = RegClassList.end(); it != ie; ++it) {
     const CodeGenRegisterClass &RC = **it;
+    // Def will be NULL for non-user defined register classes.
+    Record *Def = RC.getDef();
+    if (!Def)
+      continue;
     ClassInfo *CI = RegisterSetClasses[std::set<Record*>(RC.getOrder().begin(),
                                                          RC.getOrder().end())];
     if (CI->ValueName.empty()) {
@@ -1008,7 +1017,7 @@ BuildRegisterClasses(SmallPtrSet<Record*, 16> &SingletonRegisters) {
     } else
       CI->ValueName = CI->ValueName + "," + RC.getName();
 
-    RegisterClassClasses.insert(std::make_pair(RC.TheDef, CI));
+    RegisterClassClasses.insert(std::make_pair(Def, CI));
   }
 
   // Populate the map for individual registers.
@@ -1371,9 +1380,11 @@ void AsmMatcherInfo::BuildAliasOperandReference(MatchableInfo *II,
         CGA.ResultOperands[i].getName() == OperandName) {
       // It's safe to go with the first one we find, because CodeGenInstAlias
       // validates that all operands with the same name have the same record.
-      unsigned ResultIdx = CGA.ResultInstOperandIndex[i].first;
       Op.SubOpIdx = CGA.ResultInstOperandIndex[i].second;
-      Op.Class = getOperandClass(CGA.ResultInst->Operands[ResultIdx],
+      // Use the match class from the Alias definition, not the
+      // destination instruction, as we may have an immediate that's
+      // being munged by the match class.
+      Op.Class = getOperandClass(CGA.ResultOperands[i].getRecord(),
                                  Op.SubOpIdx);
       Op.SrcOpName = OperandName;
       return;
@@ -1971,6 +1982,15 @@ static bool EmitMnemonicAliases(raw_ostream &OS, const AsmMatcherInfo &Info) {
   return true;
 }
 
+static const char *getMinimalTypeForRange(uint64_t Range) {
+  assert(Range < 0xFFFFFFFFULL && "Enum too large");
+  if (Range > 0xFFFF)
+    return "uint32_t";
+  if (Range > 0xFF)
+    return "uint16_t";
+  return "uint8_t";
+}
+
 static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
                               const AsmMatcherInfo &Info, StringRef ClassName) {
   // Emit the static custom operand parsing table;
@@ -2258,9 +2278,12 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "  struct MatchEntry {\n";
   OS << "    unsigned Opcode;\n";
   OS << "    const char *Mnemonic;\n";
-  OS << "    ConversionKind ConvertFn;\n";
-  OS << "    MatchClassKind Classes[" << MaxNumOperands << "];\n";
-  OS << "    unsigned RequiredFeatures;\n";
+  OS << "    " << getMinimalTypeForRange(Info.Matchables.size())
+               << " ConvertFn;\n";
+  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
+               << " Classes[" << MaxNumOperands << "];\n";
+  OS << "    " << getMinimalTypeForRange(1ULL << Info.SubtargetFeatures.size())
+               << " RequiredFeatures;\n";
   OS << "  };\n\n";
 
   OS << "  // Predicate for searching for an opcode.\n";
@@ -2380,7 +2403,8 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "        OperandsValid = (it->Classes[i] == " <<"InvalidMatchClass);\n";
   OS << "        break;\n";
   OS << "      }\n";
-  OS << "      if (ValidateOperandClass(Operands[i+1], it->Classes[i]))\n";
+  OS << "      if (ValidateOperandClass(Operands[i+1], "
+                                       "(MatchClassKind)it->Classes[i]))\n";
   OS << "        continue;\n";
   OS << "      // If this operand is broken for all of the instances of this\n";
   OS << "      // mnemonic, keep track of it so we can report loc info.\n";

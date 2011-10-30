@@ -16,6 +16,7 @@
 - (int) foo: (int)arg1; 
 
 - (int) foo2: (int)arg1 __attribute__((deprecated)) __attribute__((unavailable));
+- (int) foo3: (int)arg1 __attribute__((deprecated)) __attribute__((unavailable)) __attribute__((ns_consumes_self));
 @end
 
 @implementation INTF
@@ -28,5 +29,7 @@
 - (int) foo2: (int)arg1 __attribute__((deprecated)) {  // expected-warning {{method attribute can only be specified}}
         return 10;
 }
+- (int) foo3: (int)arg1 __attribute__((deprecated)) __attribute__((unavailable)) __attribute__((ns_consumes_self)) {return 0; }
+- (void) dep __attribute__((deprecated)) { } // OK private methodn
 @end
 

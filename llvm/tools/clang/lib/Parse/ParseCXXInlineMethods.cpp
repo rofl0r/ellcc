@@ -21,7 +21,9 @@ using namespace clang;
 /// ParseCXXInlineMethodDef - We parsed and verified that the specified
 /// Declarator is a well formed C++ inline method definition. Now lex its body
 /// and store its tokens for parsing after the C++ class is complete.
-Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
+Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
+                                      AttributeList *AccessAttrs,
+                                      ParsingDeclarator &D,
                                 const ParsedTemplateInfo &TemplateInfo,
                                 const VirtSpecifiers& VS, ExprResult& Init) {
   assert(D.isFunctionDeclarator() && "This isn't a function declarator!");
@@ -34,16 +36,25 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
           TemplateInfo.TemplateParams ? TemplateInfo.TemplateParams->size() : 0);
 
   Decl *FnD;
+  D.setFunctionDefinition(true);
   if (D.getDeclSpec().isFriendSpecified())
-    // FIXME: Friend templates
-    FnD = Actions.ActOnFriendFunctionDecl(getCurScope(), D, true,
+    FnD = Actions.ActOnFriendFunctionDecl(getCurScope(), D,
                                           move(TemplateParams));
-  else { // FIXME: pass template information through
+  else {
     FnD = Actions.ActOnCXXMemberDeclarator(getCurScope(), AS, D,
                                            move(TemplateParams), 0, 
-                                           VS, Init.release(),
-                                           /*HasInit=*/false,
-                                           /*IsDefinition*/true);
+                                           VS, /*HasDeferredInit=*/false);
+    if (FnD) {
+      Actions.ProcessDeclAttributeList(getCurScope(), FnD, AccessAttrs,
+                                       false, true);
+      bool TypeSpecContainsAuto
+        = D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto;
+      if (Init.isUsable())
+        Actions.AddInitializerToDecl(FnD, Init.get(), false, 
+                                     TypeSpecContainsAuto);
+      else
+        Actions.ActOnUninitializedDecl(FnD, TypeSpecContainsAuto);
+    }
   }
 
   HandleMemberFunctionDefaultArgs(D, FnD);
@@ -56,15 +67,17 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
     bool Delete = false;
     SourceLocation KWLoc;
     if (Tok.is(tok::kw_delete)) {
-      if (!getLang().CPlusPlus0x)
-        Diag(Tok, diag::warn_deleted_function_accepted_as_extension);
+      Diag(Tok, getLang().CPlusPlus0x ?
+           diag::warn_cxx98_compat_deleted_function :
+           diag::warn_deleted_function_accepted_as_extension);
 
       KWLoc = ConsumeToken();
       Actions.SetDeclDeleted(FnD, KWLoc);
       Delete = true;
     } else if (Tok.is(tok::kw_default)) {
-      if (!getLang().CPlusPlus0x)
-        Diag(Tok, diag::warn_defaulted_function_accepted_as_extension);
+      Diag(Tok, getLang().CPlusPlus0x ?
+           diag::warn_cxx98_compat_defaulted_function :
+           diag::warn_defaulted_function_accepted_as_extension);
 
       KWLoc = ConsumeToken();
       Actions.SetDeclDefaulted(FnD, KWLoc);

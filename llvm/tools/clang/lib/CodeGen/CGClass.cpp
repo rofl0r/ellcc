@@ -693,7 +693,7 @@ void CodeGenFunction::EmitConstructorBody(FunctionArgList &Args) {
   // delegation optimization.
   if (CtorType == Ctor_Complete && IsConstructorDelegationValid(Ctor)) {
     if (CGDebugInfo *DI = getDebugInfo()) 
-      DI->EmitLocation(Builder);
+      DI->EmitLocation(Builder, Ctor->getLocEnd());
     EmitDelegateCXXConstructorCall(Ctor, Ctor_Base, Args);
     return;
   }
@@ -1622,7 +1622,6 @@ static const Expr *skipNoOpCastsAndParens(const Expr *E) {
 
 /// canDevirtualizeMemberFunctionCall - Checks whether the given virtual member
 /// function call on the given expr can be devirtualized.
-/// expr can be devirtualized.
 static bool canDevirtualizeMemberFunctionCall(const Expr *Base, 
                                               const CXXMethodDecl *MD) {
   // If the most derived class is marked final, we know that no subclass can

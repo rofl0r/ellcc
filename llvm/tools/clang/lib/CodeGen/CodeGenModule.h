@@ -76,6 +76,7 @@ namespace CodeGen {
   class CGDebugInfo;
   class CGObjCRuntime;
   class CGOpenCLRuntime;
+  class CGCUDARuntime;
   class BlockFieldFlags;
   class FunctionArgList;
   
@@ -228,6 +229,7 @@ class CodeGenModule : public CodeGenTypeCache {
 
   CGObjCRuntime* ObjCRuntime;
   CGOpenCLRuntime* OpenCLRuntime;
+  CGCUDARuntime* CUDARuntime;
   CGDebugInfo* DebugInfo;
   ARCEntrypoints *ARCData;
   RREntrypoints *RRData;
@@ -320,7 +322,10 @@ class CodeGenModule : public CodeGenTypeCache {
   void createObjCRuntime();
 
   void createOpenCLRuntime();
+  void createCUDARuntime();
 
+  bool isTriviallyRecursiveViaAsm(const FunctionDecl *F);
+  bool shouldEmitFunction(const FunctionDecl *F);
   llvm::LLVMContext &VMContext;
 
   /// @name Cache for Blocks Runtime Globals
@@ -361,10 +366,16 @@ public:
   /// been configured.
   bool hasObjCRuntime() { return !!ObjCRuntime; }
 
-  /// getObjCRuntime() - Return a reference to the configured OpenCL runtime.
+  /// getOpenCLRuntime() - Return a reference to the configured OpenCL runtime.
   CGOpenCLRuntime &getOpenCLRuntime() {
     assert(OpenCLRuntime != 0);
     return *OpenCLRuntime;
+  }
+
+  /// getCUDARuntime() - Return a reference to the configured CUDA runtime.
+  CGCUDARuntime &getCUDARuntime() {
+    assert(CUDARuntime != 0);
+    return *CUDARuntime;
   }
 
   /// getCXXABI() - Return a reference to the configured C++ ABI.
@@ -660,6 +671,11 @@ public:
   /// type, i.e. a null expression of the given type.  This is usually,
   /// but not always, an LLVM null constant.
   llvm::Constant *EmitNullConstant(QualType T);
+
+  /// EmitNullConstantForBase - Return a null constant appropriate for 
+  /// zero-initializing a base class with the given type.  This is usually,
+  /// but not always, an LLVM null constant.
+  llvm::Constant *EmitNullConstantForBase(const CXXRecordDecl *Record);
 
   /// Error - Emit a general error that something can't be done.
   void Error(SourceLocation loc, StringRef error);

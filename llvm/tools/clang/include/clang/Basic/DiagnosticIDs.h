@@ -182,6 +182,10 @@ public:
   /// category.
   static StringRef getCategoryNameFromID(unsigned CategoryID);
   
+  /// isARCDiagnostic - Return true if a given diagnostic falls into an
+  /// ARC diagnostic category;
+  static bool isARCDiagnostic(unsigned DiagID);
+
   /// \brief Enumeration describing how the the emission of a diagnostic should
   /// be treated when it occurs during C++ template argument deduction.
   enum SFINAEResponse {
@@ -251,7 +255,6 @@ public:
   static diag_iterator diags_begin();
   static diag_iterator diags_end();
 
-private:
   /// \brief Get the set of all diagnostic IDs in the group with the given name.
   ///
   /// \param Diags [out] - On return, the diagnostics in the group.
@@ -259,6 +262,7 @@ private:
   bool getDiagnosticsInGroup(StringRef Group,
                              llvm::SmallVectorImpl<diag::kind> &Diags) const;
 
+private:
   /// \brief Get the set of all diagnostic IDs in the given group.
   ///
   /// \param Diags [out] - On return, the diagnostics in the group.

@@ -740,6 +740,7 @@ void es_bad_7() {
   sls_mu.Unlock();
 }
 
+
 //-----------------------------------------------//
 // Unparseable lock expressions
 // ----------------------------------------------//
@@ -748,23 +749,22 @@ Mutex UPmu;
 // FIXME: add support for lock expressions involving arrays.
 Mutex mua[5];
 
-int x __attribute__((guarded_by(UPmu = sls_mu))); // \
-  // expected-warning{{cannot resolve lock expression to a specific lockable object}}
-int y __attribute__((guarded_by(mua[0]))); // \
-  // expected-warning{{cannot resolve lock expression to a specific lockable object}}
+int x __attribute__((guarded_by(UPmu = sls_mu)));
+int y __attribute__((guarded_by(mua[0])));
 
 
 void testUnparse() {
-  // no errors, since the lock expressions are not resolved
-  x = 5;
-  y = 5;
+  x = 5; // \
+    // expected-warning{{cannot resolve lock expression}}
+  y = 5; // \
+    // expected-warning{{cannot resolve lock expression}}
 }
 
 void testUnparse2() {
   mua[0].Lock(); // \
-    // expected-warning{{cannot resolve lock expression to a specific lockable object}}
+    // expected-warning{{cannot resolve lock expression}}
   (&(mua[0]) + 4)->Lock(); // \
-    // expected-warning{{cannot resolve lock expression to a specific lockable object}}
+    // expected-warning{{cannot resolve lock expression}}
 }
 
 
@@ -1420,3 +1420,132 @@ void main()
 } // end namespace thread_annot_lock_67_modified
 
 
+namespace substitution_test {
+  class MyData  {
+  public:
+    Mutex mu;
+
+    void lockData()    __attribute__((exclusive_lock_function(mu)))   { }
+    void unlockData()  __attribute__((unlock_function(mu)))           { }
+
+    void doSomething() __attribute__((exclusive_locks_required(mu)))  { }
+  };
+
+
+  class DataLocker {
+  public:
+    void lockData  (MyData *d) __attribute__((exclusive_lock_function(d->mu))) { }
+    void unlockData(MyData *d) __attribute__((unlock_function(d->mu)))         { }
+  };
+
+
+  class Foo {
+  public:
+    void foo(MyData* d) __attribute__((exclusive_locks_required(d->mu))) { }
+
+    void bar1(MyData* d) {
+      d->lockData();
+      foo(d);
+      d->unlockData();
+    }
+
+    void bar2(MyData* d) {
+      DataLocker dlr;
+      dlr.lockData(d);
+      foo(d);
+      dlr.unlockData(d);
+    }
+
+    void bar3(MyData* d1, MyData* d2) {
+      DataLocker dlr;
+      dlr.lockData(d1);   // \
+        // expected-warning {{mutex 'mu' is still locked at the end of function}}
+      dlr.unlockData(d2); // \
+        // expected-warning {{unlocking 'mu' that was not locked}}
+    }
+
+    void bar4(MyData* d1, MyData* d2) {
+      DataLocker dlr;
+      dlr.lockData(d1);
+      foo(d2); // \
+        // expected-warning {{calling function 'foo' requires exclusive lock on 'mu'}}
+      dlr.unlockData(d1);
+    }
+  };
+} // end namespace substituation_test
+
+
+
+namespace constructor_destructor_tests {
+  Mutex fooMu;
+  int myVar GUARDED_BY(fooMu);
+
+  class Foo {
+  public:
+    Foo()  __attribute__((exclusive_lock_function(fooMu))) { }
+    ~Foo() __attribute__((unlock_function(fooMu))) { }
+  };
+
+  void fooTest() {
+    Foo foo;
+    myVar = 0;
+  }
+}
+
+
+namespace invalid_lock_expression_test {
+
+class LOCKABLE MyLockable {
+public:
+  MyLockable() __attribute__((exclusive_lock_function)) { }
+  ~MyLockable() { }
+};
+
+// create an empty lock expression
+void foo() {
+  MyLockable lock;  // \
+    // expected-warning {{cannot resolve lock expression}}
+}
+
+} // end namespace invalid_lock_expression_test
+
+namespace template_member_test {
+
+  struct S { int n; };
+  struct T {
+    Mutex m;
+    S *s GUARDED_BY(this->m);
+  };
+  Mutex m;
+  struct U {
+    union {
+      int n;
+    };
+  } *u GUARDED_BY(m);
+
+  template<typename U>
+  struct IndirectLock {
+    int DoNaughtyThings(T *t) {
+      u->n = 0; // expected-warning {{reading variable 'u' requires locking 'm'}}
+      return t->s->n; // expected-warning {{reading variable 's' requires locking 'm'}}
+    }
+  };
+
+  template struct IndirectLock<int>; // expected-note {{here}}
+
+  struct V {
+    void f(int);
+    void f(double);
+
+    Mutex m;
+    V *p GUARDED_BY(this->m);
+  };
+  template<typename U> struct W {
+    V v;
+    void f(U u) {
+      v.p->f(u); // expected-warning {{reading variable 'p' requires locking 'm'}}
+    }
+  };
+  template struct W<int>; // expected-note {{here}}
+
+}

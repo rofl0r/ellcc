@@ -758,7 +758,8 @@ static Value *SimplifyMulInst(Value *Op0, Value *Op1, const TargetData *TD,
   Value *X = 0, *Y = 0;
   if ((match(Op0, m_IDiv(m_Value(X), m_Value(Y))) && Y == Op1) || // (X / Y) * Y
       (match(Op1, m_IDiv(m_Value(X), m_Value(Y))) && Y == Op0)) { // Y * (X / Y)
-    BinaryOperator *Div = cast<BinaryOperator>(Y == Op1 ? Op0 : Op1);
+    PossiblyExactOperator *Div =
+      cast<PossiblyExactOperator>(Y == Op1 ? Op0 : Op1);
     if (Div->isExact())
       return X;
   }
@@ -842,7 +843,7 @@ static Value *SimplifyDiv(Instruction::BinaryOps Opcode, Value *Op0, Value *Op1,
   Value *X = 0, *Y = 0;
   if (match(Op0, m_Mul(m_Value(X), m_Value(Y))) && (X == Op1 || Y == Op1)) {
     if (Y != Op1) std::swap(X, Y); // Ensure expression is (X * Y) / Y, Y = Op1
-    BinaryOperator *Mul = cast<BinaryOperator>(Op0);
+    OverflowingBinaryOperator *Mul = cast<OverflowingBinaryOperator>(Op0);
     // If the Mul knows it does not overflow, then we are good to go.
     if ((isSigned && Mul->hasNoSignedWrap()) ||
         (!isSigned && Mul->hasNoUnsignedWrap()))
@@ -1196,6 +1197,15 @@ static Value *SimplifyAndInst(Value *Op0, Value *Op1, const TargetData *TD,
   if (match(Op1, m_Or(m_Value(A), m_Value(B))) &&
       (A == Op0 || B == Op0))
     return Op0;
+
+  // A & (-A) = A if A is a power of two or zero.
+  if (match(Op0, m_Neg(m_Specific(Op1))) ||
+      match(Op1, m_Neg(m_Specific(Op0)))) {
+    if (isPowerOfTwo(Op0, TD, /*OrZero*/true))
+      return Op0;
+    if (isPowerOfTwo(Op1, TD, /*OrZero*/true))
+      return Op1;
+  }
 
   // Try some generic simplifications for associative operations.
   if (Value *V = SimplifyAssociativeBinOp(Instruction::And, Op0, Op1, TD, DT,
@@ -1564,6 +1574,9 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
       // 'srem x, CI2' produces (-|CI2|, |CI2|).
       Upper = CI2->getValue().abs();
       Lower = (-Upper) + 1;
+    } else if (match(LHS, m_UDiv(m_ConstantInt(CI2), m_Value()))) {
+      // 'udiv CI2, x' produces [0, CI2].
+      Upper = CI2->getValue();
     } else if (match(LHS, m_UDiv(m_Value(), m_ConstantInt(CI2)))) {
       // 'udiv x, CI2' produces [0, UINT_MAX / CI2].
       APInt NegOne = APInt::getAllOnesValue(Width);
@@ -1868,6 +1881,15 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
     case ICmpInst::ICMP_ULE:
       return getFalse(ITy);
     }
+  }
+
+  // x udiv y <=u x.
+  if (LBO && match(LBO, m_UDiv(m_Specific(RHS), m_Value()))) {
+    // icmp pred (X /u Y), X
+    if (Pred == ICmpInst::ICMP_UGT)
+      return getFalse(ITy);
+    if (Pred == ICmpInst::ICMP_ULE)
+      return getTrue(ITy);
   }
 
   if (MaxRecurse && LBO && RBO && LBO->getOpcode() == RBO->getOpcode() &&

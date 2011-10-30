@@ -13,6 +13,7 @@
 
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
+#include "CGCUDARuntime.h"
 #include "CGCXXABI.h"
 #include "CGDebugInfo.h"
 #include "CGException.h"
@@ -86,6 +87,10 @@ bool CodeGenFunction::hasAggregateLLVMType(QualType type) {
   case Type::ObjCObject:
   case Type::ObjCInterface:
     return true;
+
+  // In IRGen, atomic types are just the underlying type
+  case Type::Atomic:
+    return hasAggregateLLVMType(type->getAs<AtomicType>()->getValueType());
   }
   llvm_unreachable("unknown type kind!");
 }
@@ -293,11 +298,18 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
 
   // Emit subprogram debug descriptor.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    // FIXME: what is going on here and why does it ignore all these
-    // interesting type properties?
+    unsigned NumArgs = 0;
+    QualType *ArgsArray = new QualType[Args.size()];
+    for (FunctionArgList::const_iterator i = Args.begin(), e = Args.end();
+	 i != e; ++i) {
+      ArgsArray[NumArgs++] = (*i)->getType();
+    }
+
     QualType FnType =
-      getContext().getFunctionType(RetTy, 0, 0,
+      getContext().getFunctionType(RetTy, ArgsArray, NumArgs,
                                    FunctionProtoType::ExtProtoInfo());
+
+    delete[] ArgsArray;
 
     DI->setLocation(StartLoc);
     DI->EmitFunctionStart(GD, FnType, CurFn, Builder);
@@ -346,6 +358,9 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
     if (Ty->isVariablyModifiedType())
       EmitVariablyModifiedType(Ty);
   }
+  // Emit a location at the end of the prologue.
+  if (CGDebugInfo *DI = getDebugInfo())
+    DI->EmitLocation(Builder, StartLoc);
 }
 
 void CodeGenFunction::EmitFunctionBody(FunctionArgList &Args) {
@@ -404,6 +419,10 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
     EmitDestructorBody(Args);
   else if (isa<CXXConstructorDecl>(FD))
     EmitConstructorBody(Args);
+  else if (getContext().getLangOptions().CUDA &&
+           !CGM.getCodeGenOpts().CUDAIsDevice &&
+           FD->hasAttr<CUDAGlobalAttr>())
+    CGM.getCUDARuntime().EmitDeviceStubBody(*this, Args);
   else
     EmitFunctionBody(Args);
 
@@ -494,7 +513,7 @@ ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &ResultInt) {
   // FIXME: Rename and handle conversion of other evaluatable things
   // to bool.
   Expr::EvalResult Result;
-  if (!Cond->Evaluate(Result, getContext()) || !Result.Val.isInt() ||
+  if (!Cond->EvaluateAsRValue(Result, getContext()) || !Result.Val.isInt() ||
       Result.HasSideEffects)
     return false;  // Not foldable, not integer or not fully evaluatable.
   
@@ -977,6 +996,10 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
     case Type::FunctionProto: 
     case Type::FunctionNoProto:
       type = cast<FunctionType>(ty)->getResultType();
+      break;
+
+    case Type::Atomic:
+      type = cast<AtomicType>(ty)->getValueType();
       break;
     }
   } while (type->isVariablyModifiedType());

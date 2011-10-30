@@ -70,3 +70,74 @@ entry:
   ret i64 %xor
 }
 
+define i64 @f12(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: mult
+  %mul = mul nsw i64 %b, %a
+  ret i64 %mul
+}
+
+define i64 @f13(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: mult
+  %mul = mul i64 %b, %a
+  ret i64 %mul
+}
+
+define i64 @f14(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: ddiv $zero
+; CHECK: mflo
+  %div = sdiv i64 %a, %b
+  ret i64 %div
+}
+
+define i64 @f15(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: ddivu $zero
+; CHECK: mflo
+  %div = udiv i64 %a, %b
+  ret i64 %div
+}
+
+define i64 @f16(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: ddiv $zero
+; CHECK: mfhi
+  %rem = srem i64 %a, %b
+  ret i64 %rem
+}
+
+define i64 @f17(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: ddivu $zero
+; CHECK: mfhi
+  %rem = urem i64 %a, %b
+  ret i64 %rem
+}
+
+declare i64 @llvm.ctlz.i64(i64) nounwind readnone
+
+define i64 @f18(i64 %X) nounwind readnone {
+entry:
+; CHECK: dclz $2, $4
+  %tmp1 = tail call i64 @llvm.ctlz.i64(i64 %X)
+  ret i64 %tmp1
+}
+
+define i64 @f19(i64 %X) nounwind readnone {
+entry:
+; CHECK: dclo $2, $4
+  %neg = xor i64 %X, -1
+  %tmp1 = tail call i64 @llvm.ctlz.i64(i64 %neg)
+  ret i64 %tmp1
+}
+
+define i64 @f20(i64 %a, i64 %b) nounwind readnone {
+entry:
+; CHECK: nor
+  %or = or i64 %b, %a
+  %neg = xor i64 %or, -1
+  ret i64 %neg
+}
+

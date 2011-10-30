@@ -91,6 +91,7 @@ PPKEYWORD(unassert)
 
 // Clang extensions
 PPKEYWORD(__export_macro__)
+PPKEYWORD(__private_macro__)
 
 //===----------------------------------------------------------------------===//
 // Language keywords.
@@ -250,6 +251,7 @@ KEYWORD(void                        , KEYALL)
 KEYWORD(volatile                    , KEYALL)
 KEYWORD(while                       , KEYALL)
 KEYWORD(_Alignas                    , KEYALL)
+KEYWORD(_Atomic                     , KEYALL)
 KEYWORD(_Bool                       , KEYNOCXX)
 KEYWORD(_Complex                    , KEYALL)
 KEYWORD(_Generic                    , KEYALL)
@@ -440,6 +442,12 @@ KEYWORD(__pascal                    , KEYALL)
 KEYWORD(__vector                    , KEYALTIVEC)
 KEYWORD(__pixel                     , KEYALTIVEC)
 
+// ARM NEON extensions.
+ALIAS("__fp16", half                , KEYALL)
+
+// OpenCL Extension.
+KEYWORD(half                        , KEYOPENCL)
+
 // Objective-C ARC keywords.
 KEYWORD(__bridge                     , KEYARC)
 KEYWORD(__bridge_transfer            , KEYARC)
@@ -477,7 +485,6 @@ KEYWORD(__ptr32                   , KEYMS)
 KEYWORD(__w64                     , KEYMS)
 KEYWORD(__uuidof                  , KEYMS | KEYBORLAND)
 KEYWORD(__try                     , KEYMS | KEYBORLAND)
-KEYWORD(__except                  , KEYMS | KEYBORLAND)
 KEYWORD(__finally                 , KEYMS | KEYBORLAND)
 KEYWORD(__leave                   , KEYMS | KEYBORLAND)
 KEYWORD(__int64                   , KEYMS)

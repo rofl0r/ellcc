@@ -685,6 +685,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_const:
   case tok::kw_double:
   case tok::kw_enum:
+  case tok::kw_half:
   case tok::kw_float:
   case tok::kw_int:
   case tok::kw_long:
@@ -719,6 +720,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___unaligned:
   case tok::kw___vector:
   case tok::kw___pixel:
+  case tok::kw__Atomic:
     return TPResult::False();
 
   default:
@@ -993,6 +995,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
   case tok::kw___int64:
   case tok::kw_signed:
   case tok::kw_unsigned:
+  case tok::kw_half:
   case tok::kw_float:
   case tok::kw_double:
   case tok::kw_void:
@@ -1031,6 +1034,10 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
 
   // C++0x type traits support
   case tok::kw___underlying_type:
+    return TPResult::True();
+
+  // C1x _Atomic
+  case tok::kw__Atomic:
     return TPResult::True();
 
   default:

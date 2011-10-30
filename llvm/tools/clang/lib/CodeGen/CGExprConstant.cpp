@@ -143,8 +143,7 @@ void ConstStructBuilder::AppendBitField(const FieldDecl *Field,
     AppendPadding(PadSize);
   }
 
-  uint64_t FieldSize =
-    Field->getBitWidth()->EvaluateAsInt(Context).getZExtValue();
+  uint64_t FieldSize = Field->getBitWidthValue(Context);
 
   llvm::APInt FieldValue = CI->getValue();
 
@@ -574,7 +573,6 @@ public:
     case CK_CPointerToObjCPointerCast:
     case CK_BlockPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
-    case CK_LValueBitCast:
     case CK_BitCast:
       if (C->getType() == destType) return C;
       return llvm::ConstantExpr::getBitCast(C, destType);
@@ -590,6 +588,7 @@ public:
     case CK_ARCConsumeObject:
     case CK_ARCReclaimReturnedObject:
     case CK_ARCExtendBlockObject:
+    case CK_LValueBitCast:
       return 0;
 
     // These might need to be supported for constexpr.
@@ -958,7 +957,7 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
   if (DestType->isReferenceType())
     Success = E->EvaluateAsLValue(Result, Context);
   else
-    Success = E->Evaluate(Result, Context);
+    Success = E->EvaluateAsRValue(Result, Context);
 
   if (Success && !Result.HasSideEffects) {
     switch (Result.Val.getKind()) {
@@ -1027,8 +1026,13 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
                                                     NULL);
       return llvm::ConstantStruct::get(STy, Complex);
     }
-    case APValue::Float:
-      return llvm::ConstantFP::get(VMContext, Result.Val.getFloat());
+    case APValue::Float: {
+      const llvm::APFloat &Init = Result.Val.getFloat();
+      if (&Init.getSemantics() == &llvm::APFloat::IEEEhalf)
+        return llvm::ConstantInt::get(VMContext, Init.bitcastToAPInt());
+      else
+        return llvm::ConstantFP::get(VMContext, Init);
+    }
     case APValue::ComplexFloat: {
       llvm::Constant *Complex[2];
 
@@ -1343,4 +1347,9 @@ llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
   // Itanium C++ ABI 2.3:
   //   A NULL pointer is represented as -1.
   return getCXXABI().EmitNullMemberPointer(T->castAs<MemberPointerType>());
+}
+
+llvm::Constant *
+CodeGenModule::EmitNullConstantForBase(const CXXRecordDecl *Record) {
+  return ::EmitNullConstant(*this, Record, false);
 }

@@ -2,6 +2,8 @@
 // RUN: %clang_cc1 -x objective-c++ -fsyntax-only -verify %s
 // rdar://8308053
 
+@class NSObject;
+
 @interface I {
     __attribute__((iboutletcollection(I))) id ivar1;
     __attribute__((iboutletcollection(id))) id ivar2;
@@ -29,3 +31,13 @@ typedef void *PV;
 @property __attribute__((iboutletcollection(BAD))) int prop3; // expected-error {{property with 'iboutletcollection' attribute must be an object type (invalid 'int')}}
 @end
 
+// rdar://10296078
+@interface ParentRDar10296078 @end
+@class NSArray;
+@protocol RDar10296078_Protocol;
+@class RDar10296078_OtherClass;
+
+@interface RDar10296078  : ParentRDar10296078
+@property (nonatomic, strong) 
+  __attribute__((iboutletcollection(RDar10296078_OtherClass<RDar10296078_Protocol>))) NSArray *stuff; 
+@end

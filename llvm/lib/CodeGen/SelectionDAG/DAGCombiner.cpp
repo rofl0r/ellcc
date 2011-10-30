@@ -1756,7 +1756,7 @@ SDValue DAGCombiner::visitSDIV(SDNode *N) {
   if (N0C && N1C && !N1C->isNullValue())
     return DAG.FoldConstantArithmetic(ISD::SDIV, VT, N0C, N1C);
   // fold (sdiv X, 1) -> X
-  if (N1C && N1C->getSExtValue() == 1LL)
+  if (N1C && N1C->getAPIntValue() == 1LL)
     return N0;
   // fold (sdiv X, -1) -> 0-X
   if (N1C && N1C->isAllOnesValue())
@@ -1771,16 +1771,14 @@ SDValue DAGCombiner::visitSDIV(SDNode *N) {
   }
   // fold (sdiv X, pow2) -> simple ops after legalize
   if (N1C && !N1C->isNullValue() && !TLI.isIntDivCheap() &&
-      (isPowerOf2_64(N1C->getSExtValue()) ||
-       isPowerOf2_64(-N1C->getSExtValue()))) {
+      (N1C->getAPIntValue().isPowerOf2() ||
+       (-N1C->getAPIntValue()).isPowerOf2())) {
     // If dividing by powers of two is cheap, then don't perform the following
     // fold.
     if (TLI.isPow2DivCheap())
       return SDValue();
 
-    int64_t pow2 = N1C->getSExtValue();
-    int64_t abs2 = pow2 > 0 ? pow2 : -pow2;
-    unsigned lg2 = Log2_64(abs2);
+    unsigned lg2 = N1C->getAPIntValue().countTrailingZeros();
 
     // Splat the sign bit into the register
     SDValue SGN = DAG.getNode(ISD::SRA, N->getDebugLoc(), VT, N0,
@@ -1800,7 +1798,7 @@ SDValue DAGCombiner::visitSDIV(SDNode *N) {
 
     // If we're dividing by a positive value, we're done.  Otherwise, we must
     // negate the result.
-    if (pow2 > 0)
+    if (N1C->getAPIntValue().isNonNegative())
       return SRA;
 
     AddToWorkList(SRA.getNode());
@@ -1810,8 +1808,7 @@ SDValue DAGCombiner::visitSDIV(SDNode *N) {
 
   // if integer divide is expensive and we satisfy the requirements, emit an
   // alternate sequence.
-  if (N1C && (N1C->getSExtValue() < -1 || N1C->getSExtValue() > 1) &&
-      !TLI.isIntDivCheap()) {
+  if (N1C && !N1C->isNullValue() && !TLI.isIntDivCheap()) {
     SDValue Op = BuildSDIV(N);
     if (Op.getNode()) return Op;
   }
@@ -7261,8 +7258,19 @@ SDValue DAGCombiner::SimplifyVBinOp(SDNode *N) {
       }
 
       EVT VT = LHSOp.getValueType();
-      assert(RHSOp.getValueType() == VT &&
-             "SimplifyVBinOp with different BUILD_VECTOR element types");
+      EVT RVT = RHSOp.getValueType();
+      if (RVT != VT) {
+        // Integer BUILD_VECTOR operands may have types larger than the element
+        // size (e.g., when the element type is not legal).  Prior to type
+        // legalization, the types may not match between the two BUILD_VECTORS.
+        // Truncate one of the operands to make them match.
+        if (RVT.getSizeInBits() > VT.getSizeInBits()) {
+          RHSOp = DAG.getNode(ISD::TRUNCATE, N->getDebugLoc(), VT, RHSOp);
+        } else {
+          LHSOp = DAG.getNode(ISD::TRUNCATE, N->getDebugLoc(), RVT, LHSOp);
+          VT = RVT;
+        }
+      }
       SDValue FoldOp = DAG.getNode(N->getOpcode(), LHS.getDebugLoc(), VT,
                                    LHSOp, RHSOp);
       if (FoldOp.getOpcode() != ISD::UNDEF &&
@@ -7517,8 +7525,6 @@ SDValue DAGCombiner::SimplifySelectCC(DebugLoc DL, SDValue N0, SDValue N1,
   // Check to see if we can perform the "gzip trick", transforming
   // (select_cc setlt X, 0, A, 0) -> (and (sra X, (sub size(X), 1), A)
   if (N1C && N3C && N3C->isNullValue() && CC == ISD::SETLT &&
-      N0.getValueType().isInteger() &&
-      N2.getValueType().isInteger() &&
       (N1C->isNullValue() ||                         // (a < 0) ? b : 0
        (N1C->getAPIntValue() == 1 && N0 == N2))) {   // (a < 1) ? a : 0
     EVT XType = N0.getValueType();

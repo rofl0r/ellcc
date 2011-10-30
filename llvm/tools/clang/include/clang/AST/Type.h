@@ -1362,6 +1362,7 @@ public:
   /// various convenient purposes within Clang.  All such types are
   /// BuiltinTypes.
   bool isPlaceholderType() const;
+  const BuiltinType *getAsPlaceholderType() const;
 
   /// isSpecificPlaceholderType - Test for a specific placeholder type.
   bool isSpecificPlaceholderType(unsigned K) const;
@@ -1391,6 +1392,7 @@ public:
   bool isComplexType() const;      // C99 6.2.5p11 (complex)
   bool isAnyComplexType() const;   // C99 6.2.5p11 (complex) + Complex Int.
   bool isFloatingType() const;     // C99 6.2.5p11 (real floating + complex)
+  bool isHalfType() const;         // OpenCL 6.1.1.1, NEON (IEEE 754-2008 half)
   bool isRealType() const;         // C99 6.2.5p17 (real floating + integer)
   bool isArithmeticType() const;   // C99 6.2.5p18 (integer + floating)
   bool isVoidType() const;         // C99 6.2.5p19
@@ -1449,6 +1451,7 @@ public:
   bool isCARCBridgableType() const;
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
+  bool isAtomicType() const;                    // C1X _Atomic()
 
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
@@ -1674,79 +1677,9 @@ template <> inline const Class##Type *Type::castAs() const { \
 class BuiltinType : public Type {
 public:
   enum Kind {
-    Void,
-
-    Bool,     // This is bool and/or _Bool.
-    Char_U,   // This is 'char' for targets where char is unsigned.
-    UChar,    // This is explicitly qualified unsigned char.
-    WChar_U,  // This is 'wchar_t' for C++, when unsigned.
-    Char16,   // This is 'char16_t' for C++.
-    Char32,   // This is 'char32_t' for C++.
-    UShort,
-    UInt,
-    ULong,
-    ULongLong,
-    UInt128,  // __uint128_t
-
-    Char_S,   // This is 'char' for targets where char is signed.
-    SChar,    // This is explicitly qualified signed char.
-    WChar_S,  // This is 'wchar_t' for C++, when signed.
-    Short,
-    Int,
-    Long,
-    LongLong,
-    Int128,   // __int128_t
-
-    Float, Double, LongDouble,
-
-    NullPtr,  // This is the type of C++0x 'nullptr'.
-
-    /// The primitive Objective C 'id' type.  The user-visible 'id'
-    /// type is a typedef of an ObjCObjectPointerType to an
-    /// ObjCObjectType with this as its base.  In fact, this only ever
-    /// shows up in an AST as the base type of an ObjCObjectType.
-    ObjCId,
-
-    /// The primitive Objective C 'Class' type.  The user-visible
-    /// 'Class' type is a typedef of an ObjCObjectPointerType to an
-    /// ObjCObjectType with this as its base.  In fact, this only ever
-    /// shows up in an AST as the base type of an ObjCObjectType.
-    ObjCClass,
-
-    /// The primitive Objective C 'SEL' type.  The user-visible 'SEL'
-    /// type is a typedef of a PointerType to this.
-    ObjCSel,
-
-    /// This represents the type of an expression whose type is
-    /// totally unknown, e.g. 'T::foo'.  It is permitted for this to
-    /// appear in situations where the structure of the type is
-    /// theoretically deducible.
-    Dependent,
-
-    /// The type of an unresolved overload set.  A placeholder type.
-    /// Expressions with this type have one of the following basic
-    /// forms, with parentheses generally permitted:
-    ///   foo          # possibly qualified, not if an implicit access
-    ///   foo          # possibly qualified, not if an implicit access
-    ///   &foo         # possibly qualified, not if an implicit access
-    ///   x->foo       # only if might be a static member function
-    ///   &x->foo      # only if might be a static member function
-    ///   &Class::foo  # when a pointer-to-member; sub-expr also has this type
-    /// OverloadExpr::find can be used to analyze the expression.
-    Overload,
-
-    /// The type of a bound C++ non-static member function.
-    /// A placeholder type.  Expressions with this type have one of the
-    /// following basic forms:
-    ///   foo          # if an implicit access
-    ///   x->foo       # if only contains non-static members
-    BoundMember,
-
-    /// __builtin_any_type.  A placeholder type.  Useful for clients
-    /// like debuggers that don't know what type to give something.
-    /// Only a small number of operations are valid on expressions of
-    /// unknown type, most notably explicit casts.
-    UnknownAny
+#define BUILTIN_TYPE(Id, SingletonId) Id,
+#define LAST_BUILTIN_TYPE(Id) LastKind = Id
+#include "clang/AST/BuiltinTypes.def"
   };
 
 public:
@@ -1777,14 +1710,19 @@ public:
   }
 
   bool isFloatingPoint() const {
-    return getKind() >= Float && getKind() <= LongDouble;
+    return getKind() >= Half && getKind() <= LongDouble;
+  }
+
+  /// Determines whether the given kind corresponds to a placeholder type.
+  static bool isPlaceholderTypeKind(Kind K) {
+    return K >= Overload;
   }
 
   /// Determines whether this type is a placeholder type, i.e. a type
   /// which cannot appear in arbitrary positions in a fully-formed
   /// expression.
   bool isPlaceholderType() const {
-    return getKind() >= Overload;
+    return isPlaceholderTypeKind(getKind());
   }
 
   static bool classof(const Type *T) { return T->getTypeClass() == Builtin; }
@@ -2732,18 +2670,18 @@ private:
   /// HasAnyConsumedArgs - Whether this function has any consumed arguments.
   unsigned HasAnyConsumedArgs : 1;
 
-  /// ArgInfo - There is an variable size array after the class in memory that
-  /// holds the argument types.
+  // ArgInfo - There is an variable size array after the class in memory that
+  // holds the argument types.
 
-  /// Exceptions - There is another variable size array after ArgInfo that
-  /// holds the exception types.
+  // Exceptions - There is another variable size array after ArgInfo that
+  // holds the exception types.
 
-  /// NoexceptExpr - Instead of Exceptions, there may be a single Expr* pointing
-  /// to the expression in the noexcept() specifier.
+  // NoexceptExpr - Instead of Exceptions, there may be a single Expr* pointing
+  // to the expression in the noexcept() specifier.
 
-  /// ConsumedArgs - A variable size array, following Exceptions
-  /// and of length NumArgs, holding flags indicating which arguments
-  /// are consumed.  This only appears if HasAnyConsumedArgs is true.
+  // ConsumedArgs - A variable size array, following Exceptions
+  // and of length NumArgs, holding flags indicating which arguments
+  // are consumed.  This only appears if HasAnyConsumedArgs is true.
 
   friend class ASTContext;  // ASTContext creates these.
 
@@ -4352,6 +4290,37 @@ public:
   static bool classof(const ObjCObjectPointerType *) { return true; }
 };
 
+class AtomicType : public Type, public llvm::FoldingSetNode {
+  QualType ValueType;
+
+  AtomicType(QualType ValTy, QualType Canonical)
+    : Type(Atomic, Canonical, ValTy->isDependentType(),
+           ValTy->isInstantiationDependentType(),
+           ValTy->isVariablyModifiedType(),
+           ValTy->containsUnexpandedParameterPack()),
+      ValueType(ValTy) {}
+  friend class ASTContext;  // ASTContext creates these.
+
+  public:
+  /// getValueType - Gets the type contained by this atomic type, i.e.
+  /// the type returned by performing an atomic load of this atomic type.
+  QualType getValueType() const { return ValueType; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, getValueType());
+  }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType T) {
+    ID.AddPointer(T.getAsOpaquePtr());
+  }
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == Atomic;
+  }
+  static bool classof(const AtomicType *) { return true; }
+};
+
 /// A qualifier set is used to build a set of qualifiers.
 class QualifierCollector : public Qualifiers {
 public:
@@ -4677,6 +4646,9 @@ inline bool Type::isObjCObjectOrInterfaceType() const {
   return isa<ObjCInterfaceType>(CanonicalType) || 
     isa<ObjCObjectType>(CanonicalType);
 }
+inline bool Type::isAtomicType() const {
+  return isa<AtomicType>(CanonicalType);
+}
 
 inline bool Type::isObjCQualifiedIdType() const {
   if (const ObjCObjectPointerType *OPT = getAs<ObjCObjectPointerType>())
@@ -4718,12 +4690,20 @@ inline bool Type::isSpecificBuiltinType(unsigned K) const {
 }
 
 inline bool Type::isPlaceholderType() const {
-  if (const BuiltinType *BT = getAs<BuiltinType>())
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(this))
     return BT->isPlaceholderType();
   return false;
 }
 
+inline const BuiltinType *Type::getAsPlaceholderType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(this))
+    if (BT->isPlaceholderType())
+      return BT;
+  return 0;
+}
+
 inline bool Type::isSpecificPlaceholderType(unsigned K) const {
+  assert(BuiltinType::isPlaceholderTypeKind((BuiltinType::Kind) K));
   if (const BuiltinType *BT = dyn_cast<BuiltinType>(this))
     return (BT->getKind() == (BuiltinType::Kind) K);
   return false;

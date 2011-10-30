@@ -13,8 +13,8 @@ add_clang_library(clangSema
   Sema.cpp
   SemaAccess.cpp
   SemaAttr.cpp
-  SemaCXXCast.cpp
   SemaCXXScopeSpec.cpp
+  SemaCast.cpp
   SemaChecking.cpp
   SemaCodeComplete.cpp
   SemaDecl.cpp
@@ -31,6 +31,7 @@ add_clang_library(clangSema
   SemaLookup.cpp
   SemaObjCProperty.cpp
   SemaOverload.cpp
+  SemaPseudoObject.cpp
   SemaStmt.cpp
   SemaTemplate.cpp
   SemaTemplateDeduction.cpp

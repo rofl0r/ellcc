@@ -111,17 +111,20 @@ SDNode *MipsDAGToDAGISel::getGlobalBaseReg() {
 /// Used on Mips Load/Store instructions
 bool MipsDAGToDAGISel::
 SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
+  EVT ValTy = Addr.getValueType();
+  unsigned GPReg = ValTy == MVT::i32 ? Mips::GP : Mips::GP_64;
+
   // if Address is FI, get the TargetFrameIndex.
   if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>(Addr)) {
-    Base   = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
-    Offset = CurDAG->getTargetConstant(0, MVT::i32);
+    Base   = CurDAG->getTargetFrameIndex(FIN->getIndex(), ValTy);
+    Offset = CurDAG->getTargetConstant(0, ValTy);
     return true;
   }
 
   // on PIC code Load GA
   if (TM.getRelocationModel() == Reloc::PIC_) {
     if (Addr.getOpcode() == MipsISD::WrapperPIC) {
-      Base   = CurDAG->getRegister(Mips::GP, MVT::i32);
+      Base   = CurDAG->getRegister(GPReg, ValTy);
       Offset = Addr.getOperand(0);
       return true;
     }
@@ -130,7 +133,7 @@ SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
         Addr.getOpcode() == ISD::TargetGlobalAddress))
       return false;
     else if (Addr.getOpcode() == ISD::TargetGlobalTLSAddress) {
-      Base   = CurDAG->getRegister(Mips::GP, MVT::i32);
+      Base   = CurDAG->getRegister(GPReg, ValTy);
       Offset = Addr;
       return true;
     }
@@ -144,11 +147,11 @@ SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
       // If the first operand is a FI, get the TargetFI Node
       if (FrameIndexSDNode *FIN = dyn_cast<FrameIndexSDNode>
                                   (Addr.getOperand(0)))
-        Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), MVT::i32);
+        Base = CurDAG->getTargetFrameIndex(FIN->getIndex(), ValTy);
       else
         Base = Addr.getOperand(0);
 
-      Offset = CurDAG->getTargetConstant(CN->getZExtValue(), MVT::i32);
+      Offset = CurDAG->getTargetConstant(CN->getZExtValue(), ValTy);
       return true;
     }
   }
@@ -177,7 +180,7 @@ SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
   }
 
   Base   = Addr;
-  Offset = CurDAG->getTargetConstant(0, MVT::i32);
+  Offset = CurDAG->getTargetConstant(0, ValTy);
   return true;
 }
 
@@ -237,6 +240,8 @@ SDNode* MipsDAGToDAGISel::Select(SDNode *Node) {
     /// Mul with two results
     case ISD::SMUL_LOHI:
     case ISD::UMUL_LOHI: {
+      assert(Node->getValueType(0) != MVT::i64 &&
+             "64-bit multiplication with two results not handled.");
       SDValue Op1 = Node->getOperand(0);
       SDValue Op2 = Node->getOperand(1);
 
@@ -262,21 +267,29 @@ SDNode* MipsDAGToDAGISel::Select(SDNode *Node) {
 
     /// Special Muls
     case ISD::MUL:
-      if (Subtarget.hasMips32())
+      // Mips32 has a 32-bit three operand mul instruction.
+      if (Subtarget.hasMips32() && Node->getValueType(0) == MVT::i32)
         break;
     case ISD::MULHS:
     case ISD::MULHU: {
+      assert((Opcode == ISD::MUL || Node->getValueType(0) != MVT::i64) &&
+             "64-bit MULH* not handled.");
+      EVT Ty = Node->getValueType(0);
       SDValue MulOp1 = Node->getOperand(0);
       SDValue MulOp2 = Node->getOperand(1);
 
-      unsigned MulOp  = (Opcode == ISD::MULHU ? Mips::MULTu : Mips::MULT);
+      unsigned MulOp  = (Opcode == ISD::MULHU ?
+                         Mips::MULTu :
+                         (Ty == MVT::i32 ? Mips::MULT : Mips::DMULT));
       SDNode *MulNode = CurDAG->getMachineNode(MulOp, dl,
                                                MVT::Glue, MulOp1, MulOp2);
 
       SDValue InFlag = SDValue(MulNode, 0);
 
-      if (Opcode == ISD::MUL)
-        return CurDAG->getMachineNode(Mips::MFLO, dl, MVT::i32, InFlag);
+      if (Opcode == ISD::MUL) {
+        unsigned Opc = (Ty == MVT::i32 ? Mips::MFLO : Mips::MFLO64);
+        return CurDAG->getMachineNode(Opc, dl, Ty, InFlag);
+      }
       else
         return CurDAG->getMachineNode(Mips::MFHI, dl, MVT::i32, InFlag);
     }

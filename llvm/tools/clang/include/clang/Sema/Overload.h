@@ -244,7 +244,12 @@ namespace clang {
     // a gcc code gen. bug which causes a crash in a test. Putting it here seems
     // to work around the crash.
     bool EllipsisConversion : 1;
-    
+
+    /// HadMultipleCandidates - When this is true, it means that the
+    /// conversion function was resolved from an overloaded set having
+    /// size greater than 1.
+    bool HadMultipleCandidates : 1;
+
     /// After - Represents the standard conversion that occurs after
     /// the actual user-defined conversion.
     StandardConversionSequence After;
@@ -527,7 +532,12 @@ namespace clang {
     
     /// This conversion function template specialization candidate is not 
     /// viable because the final conversion was not an exact match.
-    ovl_fail_final_conversion_not_exact
+    ovl_fail_final_conversion_not_exact,
+
+    /// (CUDA) This candidate was not viable because the callee
+    /// was not accessible from the caller's target (i.e. host->device,
+    /// global->host, device->host).
+    ovl_fail_bad_target
   };
 
   /// OverloadCandidate - A single candidate in an overload set (C++ 13.3).

@@ -21,12 +21,18 @@ set(SOURCES
   CIndexCXX.cpp
   CIndexCodeCompletion.cpp
   CIndexDiagnostic.cpp
+  CIndexHigh.cpp
   CIndexInclusionStack.cpp
   CIndexUSRs.cpp
   CIndexer.cpp
   CXCursor.cpp
   CXString.cpp
   CXType.cpp
+  IndexBody.cpp
+  IndexDecl.cpp
+  IndexTypeSourceInfo.cpp
+  Indexing.cpp
+  IndexingContext.cpp
   ../../include/clang-c/Index.h
   )
 

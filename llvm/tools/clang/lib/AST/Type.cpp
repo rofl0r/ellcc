@@ -766,9 +766,16 @@ bool Type::hasUnsignedIntegerRepresentation() const {
     return isUnsignedIntegerType();
 }
 
+bool Type::isHalfType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() == BuiltinType::Half;
+  // FIXME: Should we allow complex __fp16? Probably not.
+  return false;
+}
+
 bool Type::isFloatingType() const {
   if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
-    return BT->getKind() >= BuiltinType::Float &&
+    return BT->getKind() >= BuiltinType::Half &&
            BT->getKind() <= BuiltinType::LongDouble;
   if (const ComplexType *CT = dyn_cast<ComplexType>(CanonicalType))
     return CT->getElementType()->isFloatingType();
@@ -905,7 +912,7 @@ bool Type::isIncompleteType() const {
   case Record:
     // A tagged type (struct/union/enum/class) is incomplete if the decl is a
     // forward declaration, but not a full definition (C99 6.2.5p22).
-    return !cast<TagType>(CanonicalType)->getDecl()->isDefinition();
+    return !cast<TagType>(CanonicalType)->getDecl()->isCompleteDefinition();
   case ConstantArray:
     // An array is incomplete if its element type is incomplete
     // (C++ [dcl.array]p1).
@@ -1265,6 +1272,10 @@ bool Type::isPromotableIntegerType() const {
     case BuiltinType::UChar:
     case BuiltinType::Short:
     case BuiltinType::UShort:
+    case BuiltinType::WChar_S:
+    case BuiltinType::WChar_U:
+    case BuiltinType::Char16:
+    case BuiltinType::Char32:
       return true;
     default:
       return false;
@@ -1277,10 +1288,7 @@ bool Type::isPromotableIntegerType() const {
         || ET->getDecl()->isScoped())
       return false;
     
-    const BuiltinType *BT
-      = ET->getDecl()->getPromotionType()->getAs<BuiltinType>();
-    return BT->getKind() == BuiltinType::Int
-           || BT->getKind() == BuiltinType::UInt;
+    return true;
   }
   
   return false;
@@ -1475,6 +1483,7 @@ const char *BuiltinType::getName(const PrintingPolicy &Policy) const {
   case ULong:             return "unsigned long";
   case ULongLong:         return "unsigned long long";
   case UInt128:           return "__uint128_t";
+  case Half:              return "half";
   case Float:             return "float";
   case Double:            return "double";
   case LongDouble:        return "long double";
@@ -1485,8 +1494,10 @@ const char *BuiltinType::getName(const PrintingPolicy &Policy) const {
   case NullPtr:           return "nullptr_t";
   case Overload:          return "<overloaded function type>";
   case BoundMember:       return "<bound member function type>";
+  case PseudoObject:      return "<pseudo-object type>";
   case Dependent:         return "<dependent type>";
   case UnknownAny:        return "<unknown type>";
+  case ARCUnbridgedCast:  return "<ARC unbridged cast type>";
   case ObjCId:            return "id";
   case ObjCClass:         return "Class";
   case ObjCSel:           return "SEL";
@@ -1747,7 +1758,7 @@ static TagDecl *getInterestingTagDecl(TagDecl *decl) {
   for (TagDecl::redecl_iterator I = decl->redecls_begin(),
                                 E = decl->redecls_end();
        I != E; ++I) {
-    if (I->isDefinition() || I->isBeingDefined())
+    if (I->isCompleteDefinition() || I->isBeingDefined())
       return *I;
   }
   // If there's no definition (not even in progress), return what we have.
@@ -2113,6 +2124,8 @@ static CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<ObjCObjectType>(T)->getBaseType());
   case Type::ObjCObjectPointer:
     return Cache::get(cast<ObjCObjectPointerType>(T)->getPointeeType());
+  case Type::Atomic:
+    return Cache::get(cast<AtomicType>(T)->getValueType());
   }
 
   llvm_unreachable("unhandled type class");

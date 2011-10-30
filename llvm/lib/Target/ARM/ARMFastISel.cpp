@@ -173,6 +173,7 @@ class ARMFastISel : public FastISel {
   private:
     bool isTypeLegal(Type *Ty, MVT &VT);
     bool isLoadTypeLegal(Type *Ty, MVT &VT);
+    bool ARMEmitCmp(const Value *Src1Value, const Value *Src2Value);
     bool ARMEmitLoad(EVT VT, unsigned &ResultReg, Address &Addr);
     bool ARMEmitStore(EVT VT, unsigned SrcReg, Address &Addr);
     bool ARMComputeAddress(const Value *Obj, Address &Addr);
@@ -1099,30 +1100,8 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
 
   // If we can, avoid recomputing the compare - redoing it could lead to wonky
   // behavior.
-  // TODO: Factor this out.
   if (const CmpInst *CI = dyn_cast<CmpInst>(BI->getCondition())) {
-    MVT SourceVT;
-    Type *Ty = CI->getOperand(0)->getType();
-    if (CI->hasOneUse() && (CI->getParent() == I->getParent())
-        && isTypeLegal(Ty, SourceVT)) {
-      bool isFloat = (Ty->isDoubleTy() || Ty->isFloatTy());
-      if (isFloat && !Subtarget->hasVFP2())
-        return false;
-
-      unsigned CmpOpc;
-      switch (SourceVT.SimpleTy) {
-        default: return false;
-        // TODO: Verify compares.
-        case MVT::f32:
-          CmpOpc = ARM::VCMPES;
-          break;
-        case MVT::f64:
-          CmpOpc = ARM::VCMPED;
-          break;
-        case MVT::i32:
-          CmpOpc = isThumb ? ARM::t2CMPrr : ARM::CMPrr;
-          break;
-      }
+    if (CI->hasOneUse() && (CI->getParent() == I->getParent())) {
 
       // Get the compare predicate.
       // Try to take advantage of fallthrough opportunities.
@@ -1137,21 +1116,9 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
       // We may not handle every CC for now.
       if (ARMPred == ARMCC::AL) return false;
 
-      unsigned Arg1 = getRegForValue(CI->getOperand(0));
-      if (Arg1 == 0) return false;
-
-      unsigned Arg2 = getRegForValue(CI->getOperand(1));
-      if (Arg2 == 0) return false;
-
-      AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                              TII.get(CmpOpc))
-                      .addReg(Arg1).addReg(Arg2));
-
-      // For floating point we need to move the result to a comparison register
-      // that we can then use for branches.
-      if (isFloat)
-        AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                                TII.get(ARM::FMSTAT)));
+      // Emit the compare.
+      if (!ARMEmitCmp(CI->getOperand(0), CI->getOperand(1)))
+        return false;
 
       unsigned BrOpc = isThumb ? ARM::t2Bcc : ARM::Bcc;
       BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(BrOpc))
@@ -1184,6 +1151,12 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
       FuncInfo.MBB->addSuccessor(TBB);
       return true;
     }
+  } else if (const ConstantInt *CI =
+             dyn_cast<ConstantInt>(BI->getCondition())) {
+    uint64_t Imm = CI->getZExtValue();
+    MachineBasicBlock *Target = (Imm == 0) ? FBB : TBB;
+    FastEmitBranch(Target, DL);
+    return true;
   }
 
   unsigned CmpReg = getRegForValue(BI->getCondition());
@@ -1214,36 +1187,52 @@ bool ARMFastISel::SelectBranch(const Instruction *I) {
   return true;
 }
 
-bool ARMFastISel::SelectCmp(const Instruction *I) {
-  const CmpInst *CI = cast<CmpInst>(I);
-
+bool ARMFastISel::ARMEmitCmp(const Value *Src1Value, const Value *Src2Value) {
   MVT VT;
-  Type *Ty = CI->getOperand(0)->getType();
+  Type *Ty = Src1Value->getType();
   if (!isTypeLegal(Ty, VT))
     return false;
 
-  bool isFloat = (Ty->isDoubleTy() || Ty->isFloatTy());
+  bool isFloat = (Ty->isFloatTy() || Ty->isDoubleTy());
   if (isFloat && !Subtarget->hasVFP2())
     return false;
 
   unsigned CmpOpc;
-  unsigned CondReg;
   switch (VT.SimpleTy) {
+    // TODO: Add support for non-legal types (i.e., i1, i8, i16).
     default: return false;
     // TODO: Verify compares.
     case MVT::f32:
       CmpOpc = ARM::VCMPES;
-      CondReg = ARM::FPSCR;
       break;
     case MVT::f64:
       CmpOpc = ARM::VCMPED;
-      CondReg = ARM::FPSCR;
       break;
     case MVT::i32:
       CmpOpc = isThumb ? ARM::t2CMPrr : ARM::CMPrr;
-      CondReg = ARM::CPSR;
       break;
   }
+
+  unsigned Src1 = getRegForValue(Src1Value);
+  if (Src1 == 0) return false;
+
+  unsigned Src2 = getRegForValue(Src2Value);
+  if (Src2 == 0) return false;
+
+  AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(CmpOpc))
+                  .addReg(Src1).addReg(Src2));
+
+  // For floating point we need to move the result to a comparison register
+  // that we can then use for branches.
+  if (Ty->isFloatTy() || Ty->isDoubleTy())
+    AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
+                            TII.get(ARM::FMSTAT)));
+  return true;
+}
+
+bool ARMFastISel::SelectCmp(const Instruction *I) {
+  const CmpInst *CI = cast<CmpInst>(I);
+  Type *Ty = CI->getOperand(0)->getType();
 
   // Get the compare predicate.
   ARMCC::CondCodes ARMPred = getComparePred(CI->getPredicate());
@@ -1251,20 +1240,9 @@ bool ARMFastISel::SelectCmp(const Instruction *I) {
   // We may not handle every CC for now.
   if (ARMPred == ARMCC::AL) return false;
 
-  unsigned Arg1 = getRegForValue(CI->getOperand(0));
-  if (Arg1 == 0) return false;
-
-  unsigned Arg2 = getRegForValue(CI->getOperand(1));
-  if (Arg2 == 0) return false;
-
-  AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(CmpOpc))
-                  .addReg(Arg1).addReg(Arg2));
-
-  // For floating point we need to move the result to a comparison register
-  // that we can then use for branches.
-  if (isFloat)
-    AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                            TII.get(ARM::FMSTAT)));
+  // Emit the compare.
+  if (!ARMEmitCmp(CI->getOperand(0), CI->getOperand(1)))
+    return false;
 
   // Now set a register based on the comparison. Explicitly set the predicates
   // here.
@@ -1272,9 +1250,10 @@ bool ARMFastISel::SelectCmp(const Instruction *I) {
   TargetRegisterClass *RC = isThumb ? ARM::rGPRRegisterClass
                                     : ARM::GPRRegisterClass;
   unsigned DestReg = createResultReg(RC);
-  Constant *Zero
-    = ConstantInt::get(Type::getInt32Ty(*Context), 0);
+  Constant *Zero = ConstantInt::get(Type::getInt32Ty(*Context), 0);
   unsigned ZeroReg = TargetMaterializeConstant(Zero);
+  bool isFloat = (Ty->isFloatTy() || Ty->isDoubleTy());
+  unsigned CondReg = isFloat ? ARM::FPSCR : ARM::CPSR;
   BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(MovCCOpc), DestReg)
           .addReg(ZeroReg).addImm(1)
           .addImm(ARMPred).addReg(CondReg);
@@ -1743,6 +1722,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
     CCValAssign &VA = ValLocs[0];
 
     // Don't bother handling odd stuff for now.
+    // FIXME: Should be able to handle i1, i8, and/or i16 return types.
     if (VA.getLocInfo() != CCValAssign::Full)
       return false;
     // Only handle register returns for now.
@@ -1934,6 +1914,7 @@ bool ARMFastISel::SelectCall(const Instruction *I) {
 
     Type *ArgTy = (*i)->getType();
     MVT ArgVT;
+    // FIXME: Should be able to handle i1, i8, and/or i16 parameters.
     if (!isTypeLegal(ArgTy, ArgVT))
       return false;
     unsigned OriginalAlignment = TD.getABITypeAlignment(ArgTy);

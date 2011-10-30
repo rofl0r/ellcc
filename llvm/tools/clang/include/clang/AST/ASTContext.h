@@ -63,6 +63,7 @@ namespace clang {
   class ObjCIvarDecl;
   class ObjCIvarRefExpr;
   class ObjCPropertyDecl;
+  class ParmVarDecl;
   class RecordDecl;
   class StoredDeclsMap;
   class TagDecl;
@@ -119,6 +120,7 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   mutable llvm::FoldingSet<ObjCObjectTypeImpl> ObjCObjectTypes;
   mutable llvm::FoldingSet<ObjCObjectPointerType> ObjCObjectPointerTypes;
   mutable llvm::FoldingSet<AutoType> AutoTypes;
+  mutable llvm::FoldingSet<AtomicType> AtomicTypes;
   llvm::FoldingSet<AttributedType> AttributedTypes;
 
   mutable llvm::FoldingSet<QualifiedTemplateName> QualifiedTemplateNames;
@@ -148,6 +150,10 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   
   /// \brief Mapping from ObjCContainers to their ObjCImplementations.
   llvm::DenseMap<ObjCContainerDecl*, ObjCImplDecl*> ObjCImpls;
+  
+  /// \brief Mapping from ObjCMethod to its duplicate declaration in the same
+  /// interface.
+  llvm::DenseMap<const ObjCMethodDecl*,const ObjCMethodDecl*> ObjCMethodRedecls;
 
   /// \brief Mapping from __block VarDecls to their copy initialization expr.
   llvm::DenseMap<const VarDecl*, Expr*> BlockVarCopyInits;
@@ -197,7 +203,6 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   mutable TypedefDecl *ObjCSelDecl;
 
   QualType ObjCProtoType;
-  const RecordType *ProtoStructType;
 
   /// \brief The typedef for the predefined 'Class' type.
   mutable TypedefDecl *ObjCClassDecl;
@@ -312,6 +317,12 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   typedef UsuallyTinyPtrVector<const CXXMethodDecl> CXXMethodVector;
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector> OverriddenMethods;
 
+  /// \brief Mapping that stores parameterIndex values for ParmVarDecls
+  /// when that value exceeds the bitfield size of
+  /// ParmVarDeclBits.ParameterIndex.
+  typedef llvm::DenseMap<const VarDecl *, unsigned> ParameterIndexTable;
+  ParameterIndexTable ParamIndices;  
+  
   TranslationUnitDecl *TUDecl;
 
   /// SourceMgr - The associated SourceManager object.
@@ -481,9 +492,11 @@ public:
   CanQualType UnsignedCharTy, UnsignedShortTy, UnsignedIntTy, UnsignedLongTy;
   CanQualType UnsignedLongLongTy, UnsignedInt128Ty;
   CanQualType FloatTy, DoubleTy, LongDoubleTy;
+  CanQualType HalfTy; // [OpenCL 6.1.1.1], ARM NEON
   CanQualType FloatComplexTy, DoubleComplexTy, LongDoubleComplexTy;
   CanQualType VoidPtrTy, NullPtrTy;
   CanQualType DependentTy, OverloadTy, BoundMemberTy, UnknownAnyTy;
+  CanQualType PseudoObjectTy, ARCUnbridgedCastTy;
   CanQualType ObjCBuiltinIdTy, ObjCBuiltinClassTy, ObjCBuiltinSelTy;
 
   // Types for deductions in C++0x [stmt.ranged]'s desugaring. Built on demand.
@@ -593,6 +606,10 @@ public:
   CanQualType getPointerType(CanQualType T) const {
     return CanQualType::CreateUnsafe(getPointerType((QualType) T));
   }
+
+  /// getAtomicType - Return the uniqued reference to the atomic type for
+  /// the specified type.
+  QualType getAtomicType(QualType T) const;
 
   /// getBlockPointerType - Return the uniqued reference to the type for a block
   /// of the specified type.
@@ -818,6 +835,14 @@ public:
   /// in <stddef.h>. The sizeof operator requires this (C99 6.5.3.4p4).
   CanQualType getSizeType() const;
 
+  /// getIntMaxType - Return the unique type for "intmax_t" (C99 7.18.1.5),
+  /// defined in <stdint.h>.
+  CanQualType getIntMaxType() const;
+
+  /// getUIntMaxType - Return the unique type for "uintmax_t" (C99 7.18.1.5),
+  /// defined in <stdint.h>.
+  CanQualType getUIntMaxType() const;
+
   /// getWCharType - In C++, this returns the unique wchar_t type.  In C99, this
   /// returns a type compatible with the type defined in <stddef.h> as defined
   /// by the target.
@@ -831,7 +856,7 @@ public:
   /// Used when in C++, as a GCC extension.
   QualType getUnsignedWCharType() const;
 
-  /// getPointerDiffType - Return the unique type for "ptrdiff_t" (ref?)
+  /// getPointerDiffType - Return the unique type for "ptrdiff_t" (C99 7.17)
   /// defined in <stddef.h>. Pointer - pointer requires this (C99 6.5.6p9).
   QualType getPointerDiffType() const;
 
@@ -1249,7 +1274,7 @@ public:
   CanQualType getCanonicalParamType(QualType T) const;
 
   /// \brief Determine whether the given types are equivalent.
-  bool hasSameType(QualType T1, QualType T2) {
+  bool hasSameType(QualType T1, QualType T2) const {
     return getCanonicalType(T1) == getCanonicalType(T2);
   }
 
@@ -1269,7 +1294,7 @@ public:
 
   /// \brief Determine whether the given types are equivalent after
   /// cvr-qualifiers have been removed.
-  bool hasSameUnqualifiedType(QualType T1, QualType T2) {
+  bool hasSameUnqualifiedType(QualType T1, QualType T2) const {
     return getCanonicalType(T1).getTypePtr() ==
            getCanonicalType(T2).getTypePtr();
   }
@@ -1573,6 +1598,22 @@ public:
   /// \brief Set the implementation of ObjCCategoryDecl.
   void setObjCImplementation(ObjCCategoryDecl *CatD,
                              ObjCCategoryImplDecl *ImplD);
+
+  /// \brief Get the duplicate declaration of a ObjCMethod in the same
+  /// interface, or null if non exists.
+  const ObjCMethodDecl *getObjCMethodRedeclaration(
+                                               const ObjCMethodDecl *MD) const {
+    llvm::DenseMap<const ObjCMethodDecl*, const ObjCMethodDecl*>::const_iterator
+      I = ObjCMethodRedecls.find(MD);
+    if (I == ObjCMethodRedecls.end())
+      return 0;
+    return I->second;
+  }
+
+  void setObjCMethodRedeclaration(const ObjCMethodDecl *MD,
+                                  const ObjCMethodDecl *Redecl) {
+    ObjCMethodRedecls[MD] = Redecl;
+  }
   
   /// \brief Set the copy inialization expression of a block var decl.
   void setBlockVarCopyInits(VarDecl*VD, Expr* Init);
@@ -1622,6 +1663,15 @@ public:
   /// it is not used.
   bool DeclMustBeEmitted(const Decl *D);
 
+  
+  /// \brief Used by ParmVarDecl to store on the side the
+  /// index of the parameter when it exceeds the size of the normal bitfield.
+  void setParameterIndex(const ParmVarDecl *D, unsigned index);
+
+  /// \brief Used by ParmVarDecl to retrieve on the side the
+  /// index of the parameter when it exceeds the size of the normal bitfield.
+  unsigned getParameterIndex(const ParmVarDecl *D) const;
+  
   //===--------------------------------------------------------------------===//
   //                    Statistics
   //===--------------------------------------------------------------------===//

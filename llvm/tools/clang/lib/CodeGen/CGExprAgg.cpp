@@ -154,6 +154,9 @@ public:
   void EmitNullInitializationToLValue(LValue Address);
   //  case Expr::ChooseExprClass:
   void VisitCXXThrowExpr(const CXXThrowExpr *E) { CGF.EmitCXXThrowExpr(E); }
+  void VisitAtomicExpr(AtomicExpr *E) {
+    CGF.EmitAtomicExpr(E, EnsureSlot(E->getType()).getAddr());
+  }
 };
 }  // end anonymous namespace.
 
@@ -323,7 +326,8 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
   }
 
   case CK_GetObjCProperty: {
-    LValue LV = CGF.EmitLValue(E->getSubExpr());
+    LValue LV =
+      CGF.EmitObjCPropertyRefLValue(E->getSubExpr()->getObjCProperty());
     assert(LV.isPropertyRef());
     RValue RV = CGF.EmitLoadOfPropertyRefLValue(LV, getReturnValueSlot());
     EmitMoveFromReturnSlot(E, RV);

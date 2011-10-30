@@ -241,7 +241,7 @@ public:
   
   /// \brief Offset of each declaration within the bitstream, indexed
   /// by the declaration ID (-1).
-  const uint32_t *DeclOffsets;
+  const DeclOffset *DeclOffsets;
   
   /// \brief Base declaration ID for declarations local to this module.
   serialization::DeclID BaseDeclID;
@@ -271,6 +271,9 @@ public:
   /// Key is the ID of the interface.
   /// Value is a pair of linked category DeclIDs (head category, tail category).
   ChainedObjCCategoriesMap ChainedObjCCategories;
+
+  /// \brief Array of file-level DeclIDs sorted by file.
+  const serialization::DeclID *FileSortedDecls;
   
   // === Types ===
   

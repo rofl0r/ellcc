@@ -474,8 +474,10 @@ void AsmPrinter::EmitFunctionHeader() {
 void AsmPrinter::EmitFunctionEntryLabel() {
   // The function label could have already been emitted if two symbols end up
   // conflicting due to asm renaming.  Detect this and emit an error.
-  if (CurrentFnSym->isUndefined())
+  if (CurrentFnSym->isUndefined()) {
+    OutStreamer.ForceCodeRegion();
     return OutStreamer.EmitLabel(CurrentFnSym);
+  }
 
   report_fatal_error("'" + Twine(CurrentFnSym->getName()) +
                      "' label emitted multiple times to assembly file");
@@ -609,6 +611,10 @@ AsmPrinter::CFIMoveType AsmPrinter::needsCFIMoves() {
 bool AsmPrinter::needsSEHMoves() {
   return MAI->getExceptionHandlingType() == ExceptionHandling::Win64 &&
     MF->getFunction()->needsUnwindTableEntry();
+}
+
+bool AsmPrinter::needsRelocationsForDwarfStringPool() const {
+  return MAI->doesDwarfUseRelocationsForStringPool();
 }
 
 void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
@@ -1064,6 +1070,15 @@ void AsmPrinter::EmitJumpTableInfo() {
   }
 
   EmitAlignment(Log2_32(MJTI->getEntryAlignment(*TM.getTargetData())));
+
+  // If we know the form of the jump table, go ahead and tag it as such.
+  if (!JTInDiffSection) {
+    if (MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32) {
+      OutStreamer.EmitJumpTable32Region();
+    } else {
+      OutStreamer.EmitDataRegion();
+    }
+  }
 
   for (unsigned JTI = 0, e = JT.size(); JTI != e; ++JTI) {
     const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
@@ -2088,4 +2103,3 @@ GCMetadataPrinter *AsmPrinter::GetOrCreateGCPrinter(GCStrategy *S) {
   report_fatal_error("no GCMetadataPrinter registered for GC: " + Twine(Name));
   return 0;
 }
-

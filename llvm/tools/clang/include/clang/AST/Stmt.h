@@ -146,6 +146,7 @@ protected:
     friend class CXXUnresolvedConstructExpr; // ctor
     friend class CXXDependentScopeMemberExpr; // ctor
     friend class OverloadExpr; // ctor
+    friend class AtomicExpr; // ctor
     unsigned : NumStmtBits;
 
     unsigned ValueKind : 2;
@@ -165,6 +166,7 @@ protected:
     unsigned HasQualifier : 1;
     unsigned HasExplicitTemplateArgs : 1;
     unsigned HasFoundDecl : 1;
+    unsigned HadMultipleCandidates : 1;
   };
 
   class CastExprBitfields {
@@ -1594,9 +1596,8 @@ public:
   }
 
   static bool classof(SEHTryStmt *) { return true; }
-
 };
-
+  
 }  // end namespace clang
 
 #endif

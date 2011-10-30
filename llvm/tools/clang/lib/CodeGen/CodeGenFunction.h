@@ -25,8 +25,10 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Support/Debug.h"
 #include "CodeGenModule.h"
 #include "CGBuilder.h"
+#include "CGDebugInfo.h"
 #include "CGValue.h"
 
 namespace llvm {
@@ -69,7 +71,6 @@ namespace clang {
 
 namespace CodeGen {
   class CodeGenTypes;
-  class CGDebugInfo;
   class CGFunctionInfo;
   class CGRecordLayout;
   class CGBlockInfo;
@@ -767,7 +768,6 @@ public:
   /// \brief Enters a new scope for capturing cleanups, all of which
   /// will be executed once the scope is exited.
   class RunCleanupsScope {
-    CodeGenFunction& CGF;
     EHScopeStack::stable_iterator CleanupStackDepth;
     bool OldDidCallStackSave;
     bool PerformCleanup;
@@ -775,10 +775,13 @@ public:
     RunCleanupsScope(const RunCleanupsScope &); // DO NOT IMPLEMENT
     RunCleanupsScope &operator=(const RunCleanupsScope &); // DO NOT IMPLEMENT
 
+  protected:
+    CodeGenFunction& CGF;
+    
   public:
     /// \brief Enter a new cleanup scope.
     explicit RunCleanupsScope(CodeGenFunction &CGF)
-      : CGF(CGF), PerformCleanup(true)
+      : PerformCleanup(true), CGF(CGF)
     {
       CleanupStackDepth = CGF.EHStack.stable_begin();
       OldDidCallStackSave = CGF.DidCallStackSave;
@@ -806,6 +809,41 @@ public:
       CGF.DidCallStackSave = OldDidCallStackSave;
       CGF.PopCleanupBlocks(CleanupStackDepth);
       PerformCleanup = false;
+    }
+  };
+
+  class LexicalScope: protected RunCleanupsScope {
+    SourceRange Range;
+    bool PopDebugStack;
+
+    LexicalScope(const LexicalScope &); // DO NOT IMPLEMENT THESE
+    LexicalScope &operator=(const LexicalScope &);
+
+  public:
+    /// \brief Enter a new cleanup scope.
+    explicit LexicalScope(CodeGenFunction &CGF, SourceRange Range)
+      : RunCleanupsScope(CGF), Range(Range), PopDebugStack(true) {
+      if (CGDebugInfo *DI = CGF.getDebugInfo())
+        DI->EmitLexicalBlockStart(CGF.Builder, Range.getBegin());
+    }
+
+    /// \brief Exit this cleanup scope, emitting any accumulated
+    /// cleanups.
+    ~LexicalScope() {
+      if (PopDebugStack) {
+        CGDebugInfo *DI = CGF.getDebugInfo();
+        if (DI) DI->EmitLexicalBlockEnd(CGF.Builder, Range.getEnd());
+      }
+    }
+
+    /// \brief Force the emission of cleanups now, instead of waiting
+    /// until this object is destroyed.
+    void ForceCleanup() {
+      RunCleanupsScope::ForceCleanup();
+      if (CGDebugInfo *DI = CGF.getDebugInfo()) {
+        DI->EmitLexicalBlockEnd(CGF.Builder, Range.getEnd());
+        PopDebugStack = false;
+      }
     }
   };
 
@@ -2076,6 +2114,9 @@ public:
                                        const CXXMethodDecl *MD,
                                        ReturnValueSlot ReturnValue);
 
+  RValue EmitCUDAKernelCallExpr(const CUDAKernelCallExpr *E,
+                                ReturnValueSlot ReturnValue);
+
 
   RValue EmitBuiltinExpr(const FunctionDecl *FD,
                          unsigned BuiltinID, const CallExpr *E);
@@ -2129,7 +2170,7 @@ public:
                                       bool ignored);
   llvm::Value *EmitARCRetain(QualType type, llvm::Value *value);
   llvm::Value *EmitARCRetainNonBlock(llvm::Value *value);
-  llvm::Value *EmitARCRetainBlock(llvm::Value *value);
+  llvm::Value *EmitARCRetainBlock(llvm::Value *value, bool mandatory);
   void EmitARCRelease(llvm::Value *value, bool precise);
   llvm::Value *EmitARCAutorelease(llvm::Value *value);
   llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
@@ -2147,6 +2188,7 @@ public:
   llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
   llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);
 
+  llvm::Value *EmitARCExtendBlockObject(const Expr *expr);
   llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
 
@@ -2279,6 +2321,8 @@ public:
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
 
+  RValue EmitAtomicExpr(AtomicExpr *E, llvm::Value *Dest = 0);
+
   //===--------------------------------------------------------------------===//
   //                         Annotations Emission
   //===--------------------------------------------------------------------===//
@@ -2337,6 +2381,11 @@ public:
   /// is, the current function is delegating to another one.  Produce
   /// a r-value suitable for passing the given parameter.
   void EmitDelegateCallArg(CallArgList &args, const VarDecl *param);
+
+  /// SetFPAccuracy - Set the minimum required accuracy of the given floating
+  /// point operation, expressed as the maximum relative error in ulp.
+  void SetFPAccuracy(llvm::Value *Val, unsigned AccuracyN,
+                     unsigned AccuracyD = 1);
 
 private:
   void EmitReturnOfRValue(RValue RV, QualType Ty);

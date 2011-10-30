@@ -63,7 +63,7 @@ namespace {
 }
 
 /// CheckUnreachable - Check for unreachable code.
-static void CheckUnreachable(Sema &S, AnalysisContext &AC) {
+static void CheckUnreachable(Sema &S, AnalysisDeclContext &AC) {
   UnreachableCodeHandler UC(S);
   reachable_code::FindUnreachableCode(AC, UC);
 }
@@ -89,7 +89,7 @@ enum ControlFlowKind {
 /// return.  We assume NeverFallThrough iff we never fall off the end of the
 /// statement but we may return.  We assume that functions not marked noreturn
 /// will return.
-static ControlFlowKind CheckFallThrough(AnalysisContext &AC) {
+static ControlFlowKind CheckFallThrough(AnalysisDeclContext &AC) {
   CFG *cfg = AC.getCFG();
   if (cfg == 0) return UnknownFallThrough;
 
@@ -239,7 +239,23 @@ struct CheckFallThroughDiagnostics {
     if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(Func))
       isVirtualMethod = Method->isVirtual();
     
-    if (!isVirtualMethod)
+    // Don't suggest that template instantiations be marked "noreturn"
+    bool isTemplateInstantiation = false;
+    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Func)) {
+      switch (Function->getTemplateSpecializationKind()) {
+      case TSK_Undeclared:
+      case TSK_ExplicitSpecialization:
+        break;
+        
+      case TSK_ImplicitInstantiation:
+      case TSK_ExplicitInstantiationDeclaration:
+      case TSK_ExplicitInstantiationDefinition:
+        isTemplateInstantiation = true;
+        break;
+      }
+    }
+        
+    if (!isVirtualMethod && !isTemplateInstantiation)
       D.diag_NeverFallThroughOrReturn =
         diag::warn_suggest_noreturn_function;
     else
@@ -296,7 +312,7 @@ struct CheckFallThroughDiagnostics {
 static void CheckFallThroughForBody(Sema &S, const Decl *D, const Stmt *Body,
                                     const BlockExpr *blkExpr,
                                     const CheckFallThroughDiagnostics& CD,
-                                    AnalysisContext &AC) {
+                                    AnalysisDeclContext &AC) {
 
   bool ReturnsVoid = false;
   bool HasNoReturn = false;
@@ -454,7 +470,8 @@ static bool SuggestInitializationFixit(Sema &S, const VarDecl *VD) {
 /// as a warning. If a pariticular use is one we omit warnings for, returns
 /// false.
 static bool DiagnoseUninitializedUse(Sema &S, const VarDecl *VD,
-                                     const Expr *E, bool isAlwaysUninit) {
+                                     const Expr *E, bool isAlwaysUninit,
+                                     bool alwaysReportSelfInit = false) {
   bool isSelfInit = false;
 
   if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
@@ -474,7 +491,7 @@ static bool DiagnoseUninitializedUse(Sema &S, const VarDecl *VD,
       // TODO: Should we suppress maybe-uninitialized warnings for
       // variables initialized in this way?
       if (const Expr *Initializer = VD->getInit()) {
-        if (DRE == Initializer->IgnoreParenImpCasts())
+        if (!alwaysReportSelfInit && DRE == Initializer->IgnoreParenImpCasts())
           return false;
 
         ContainsReference CR(S.Context, DRE);
@@ -525,7 +542,7 @@ struct SLocSort {
 class UninitValsDiagReporter : public UninitVariablesHandler {
   Sema &S;
   typedef SmallVector<UninitUse, 2> UsesVec;
-  typedef llvm::DenseMap<const VarDecl *, UsesVec*> UsesMap;
+  typedef llvm::DenseMap<const VarDecl *, std::pair<UsesVec*, bool> > UsesMap;
   UsesMap *uses;
   
 public:
@@ -533,17 +550,26 @@ public:
   ~UninitValsDiagReporter() { 
     flushDiagnostics();
   }
-  
-  void handleUseOfUninitVariable(const Expr *ex, const VarDecl *vd,
-                                 bool isAlwaysUninit) {
+
+  std::pair<UsesVec*, bool> &getUses(const VarDecl *vd) {
     if (!uses)
       uses = new UsesMap();
-    
-    UsesVec *&vec = (*uses)[vd];
+
+    UsesMap::mapped_type &V = (*uses)[vd];
+    UsesVec *&vec = V.first;
     if (!vec)
       vec = new UsesVec();
     
-    vec->push_back(std::make_pair(ex, isAlwaysUninit));
+    return V;
+  }
+  
+  void handleUseOfUninitVariable(const Expr *ex, const VarDecl *vd,
+                                 bool isAlwaysUninit) {
+    getUses(vd).first->push_back(std::make_pair(ex, isAlwaysUninit));
+  }
+  
+  void handleSelfInit(const VarDecl *vd) {
+    getUses(vd).second = true;    
   }
   
   void flushDiagnostics() {
@@ -552,26 +578,49 @@ public:
     
     for (UsesMap::iterator i = uses->begin(), e = uses->end(); i != e; ++i) {
       const VarDecl *vd = i->first;
-      UsesVec *vec = i->second;
+      const UsesMap::mapped_type &V = i->second;
 
-      // Sort the uses by their SourceLocations.  While not strictly
-      // guaranteed to produce them in line/column order, this will provide
-      // a stable ordering.
-      std::sort(vec->begin(), vec->end(), SLocSort());
-      
-      for (UsesVec::iterator vi = vec->begin(), ve = vec->end(); vi != ve;
-           ++vi) {
-        if (DiagnoseUninitializedUse(S, vd, vi->first,
-                                      /*isAlwaysUninit=*/vi->second))
-          // Skip further diagnostics for this variable. We try to warn only on
-          // the first point at which a variable is used uninitialized.
-          break;
+      UsesVec *vec = V.first;
+      bool hasSelfInit = V.second;
+
+      // Specially handle the case where we have uses of an uninitialized 
+      // variable, but the root cause is an idiomatic self-init.  We want
+      // to report the diagnostic at the self-init since that is the root cause.
+      if (!vec->empty() && hasSelfInit && hasAlwaysUninitializedUse(vec))
+        DiagnoseUninitializedUse(S, vd, vd->getInit()->IgnoreParenCasts(),
+                                 /* isAlwaysUninit */ true,
+                                 /* alwaysReportSelfInit */ true);
+      else {
+        // Sort the uses by their SourceLocations.  While not strictly
+        // guaranteed to produce them in line/column order, this will provide
+        // a stable ordering.
+        std::sort(vec->begin(), vec->end(), SLocSort());
+        
+        for (UsesVec::iterator vi = vec->begin(), ve = vec->end(); vi != ve;
+             ++vi) {
+          if (DiagnoseUninitializedUse(S, vd, vi->first,
+                                        /*isAlwaysUninit=*/vi->second))
+            // Skip further diagnostics for this variable. We try to warn only
+            // on the first point at which a variable is used uninitialized.
+            break;
+        }
       }
-
+      
+      // Release the uses vector.
       delete vec;
     }
     delete uses;
   }
+
+private:
+  static bool hasAlwaysUninitializedUse(const UsesVec* vec) {
+  for (UsesVec::const_iterator i = vec->begin(), e = vec->end(); i != e; ++i) {
+    if (i->second) {
+      return true;
+    }
+  }
+  return false;
+}
 };
 }
 
@@ -599,15 +648,21 @@ struct SortDiagBySourceLocation {
 class ThreadSafetyReporter : public clang::thread_safety::ThreadSafetyHandler {
   Sema &S;
   DiagList Warnings;
+  SourceLocation FunLocation;
 
   // Helper functions
   void warnLockMismatch(unsigned DiagID, Name LockName, SourceLocation Loc) {
+    // Gracefully handle rare cases when the analysis can't get a more
+    // precise source location.
+    if (!Loc.isValid())
+      Loc = FunLocation;
     PartialDiagnostic Warning = S.PDiag(DiagID) << LockName;
     Warnings.push_back(DelayedDiag(Loc, Warning));
   }
 
  public:
-  ThreadSafetyReporter(Sema &S) : S(S) {}
+  ThreadSafetyReporter(Sema &S, SourceLocation FL)
+    : S(S), FunLocation(FL) {}
 
   /// \brief Emit all buffered diagnostics in order of sourcelocation.
   /// We need to output diagnostics produced while iterating through
@@ -775,7 +830,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   const Stmt *Body = D->getBody();
   assert(Body);
 
-  AnalysisContext AC(D, 0);
+  AnalysisDeclContext AC(/* AnalysisDeclContextManager */ 0,  D, 0);
 
   // Don't generate EH edges for CallExprs as we'd like to avoid the n^2
   // explosion for destrutors that can result and the compile time hit.
@@ -864,7 +919,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
   // Check for thread safety violations
   if (P.enableThreadSafetyAnalysis) {
-    thread_safety::ThreadSafetyReporter Reporter(S);
+    SourceLocation FL = AC.getDecl()->getLocation();
+    thread_safety::ThreadSafetyReporter Reporter(S, FL);
     thread_safety::runThreadSafetyAnalysis(AC, Reporter);
     Reporter.emitDiagnostics();
   }

@@ -305,6 +305,22 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   Indent() << "}\n";
 }
 
+void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
+  Indent();
+  if (Node->isIfExists())
+    OS << "__if_exists (";
+  else
+    OS << "__if_not_exists (";
+  
+  if (NestedNameSpecifier *Qualifier
+        = Node->getQualifierLoc().getNestedNameSpecifier())
+    Qualifier->print(OS, Policy);
+  
+  OS << Node->getNameInfo() << ") ";
+  
+  PrintRawCompoundStmt(Node->getSubStmt());
+}
+
 void StmtPrinter::VisitGotoStmt(GotoStmt *Node) {
   Indent() << "goto " << Node->getLabel()->getName() << ";\n";
 }
@@ -564,7 +580,7 @@ void StmtPrinter::VisitObjCIvarRefExpr(ObjCIvarRefExpr *Node) {
     PrintExpr(Node->getBase());
     OS << (Node->isArrow() ? "->" : ".");
   }
-  OS << Node->getDecl();
+  OS << *Node->getDecl();
 }
 
 void StmtPrinter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
@@ -668,8 +684,9 @@ void StmtPrinter::VisitIntegerLiteral(IntegerLiteral *Node) {
   }
 }
 void StmtPrinter::VisitFloatingLiteral(FloatingLiteral *Node) {
-  // FIXME: print value more precisely.
-  OS << Node->getValueAsApproximateDouble();
+  llvm::SmallString<16> Str;
+  Node->getValue().toString(Str);
+  OS << Str;
 }
 
 void StmtPrinter::VisitImaginaryLiteral(ImaginaryLiteral *Node) {
@@ -1007,6 +1024,59 @@ void StmtPrinter::VisitVAArgExpr(VAArgExpr *Node) {
   PrintExpr(Node->getSubExpr());
   OS << ", ";
   OS << Node->getType().getAsString(Policy);
+  OS << ")";
+}
+
+void StmtPrinter::VisitAtomicExpr(AtomicExpr *Node) {
+  const char *Name = 0;
+  switch (Node->getOp()) {
+    case AtomicExpr::Load:
+      Name = "__atomic_load(";
+      break;
+    case AtomicExpr::Store:
+      Name = "__atomic_store(";
+      break;
+    case AtomicExpr::CmpXchgStrong:
+      Name = "__atomic_compare_exchange_strong(";
+      break;
+    case AtomicExpr::CmpXchgWeak:
+      Name = "__atomic_compare_exchange_weak(";
+      break;
+    case AtomicExpr::Xchg:
+      Name = "__atomic_exchange(";
+      break;
+    case AtomicExpr::Add:
+      Name = "__atomic_fetch_add(";
+      break;
+    case AtomicExpr::Sub:
+      Name = "__atomic_fetch_sub(";
+      break;
+    case AtomicExpr::And:
+      Name = "__atomic_fetch_and(";
+      break;
+    case AtomicExpr::Or:
+      Name = "__atomic_fetch_or(";
+      break;
+    case AtomicExpr::Xor:
+      Name = "__atomic_fetch_xor(";
+      break;
+  }
+  OS << Name;
+  PrintExpr(Node->getPtr());
+  OS << ", ";
+  if (Node->getOp() != AtomicExpr::Load) {
+    PrintExpr(Node->getVal1());
+    OS << ", ";
+  }
+  if (Node->isCmpXChg()) {
+    PrintExpr(Node->getVal2());
+    OS << ", ";
+  }
+  PrintExpr(Node->getOrder());
+  if (Node->isCmpXChg()) {
+    OS << ", ";
+    PrintExpr(Node->getOrderFail());
+  }
   OS << ")";
 }
 
@@ -1450,7 +1520,7 @@ void StmtPrinter::VisitObjCSelectorExpr(ObjCSelectorExpr *Node) {
 }
 
 void StmtPrinter::VisitObjCProtocolExpr(ObjCProtocolExpr *Node) {
-  OS << "@protocol(" << Node->getProtocol() << ')';
+  OS << "@protocol(" << *Node->getProtocol() << ')';
 }
 
 void StmtPrinter::VisitObjCMessageExpr(ObjCMessageExpr *Mess) {
@@ -1532,7 +1602,7 @@ void StmtPrinter::VisitBlockExpr(BlockExpr *Node) {
 }
 
 void StmtPrinter::VisitBlockDeclRefExpr(BlockDeclRefExpr *Node) {
-  OS << Node->getDecl();
+  OS << *Node->getDecl();
 }
 
 void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) {}

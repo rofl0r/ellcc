@@ -847,18 +847,18 @@ std::string NamedDecl::getQualifiedNameAsString(const PrintingPolicy &P) const {
       if (ND->isAnonymousNamespace())
         OS << "<anonymous namespace>";
       else
-        OS << ND;
+        OS << *ND;
     } else if (const RecordDecl *RD = dyn_cast<RecordDecl>(*I)) {
       if (!RD->getIdentifier())
         OS << "<anonymous " << RD->getKindName() << '>';
       else
-        OS << RD;
+        OS << *RD;
     } else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*I)) {
       const FunctionProtoType *FT = 0;
       if (FD->hasWrittenPrototype())
         FT = dyn_cast<FunctionProtoType>(FD->getType()->getAs<FunctionType>());
 
-      OS << FD << '(';
+      OS << *FD << '(';
       if (FT) {
         unsigned NumParams = FD->getNumParams();
         for (unsigned i = 0; i < NumParams; ++i) {
@@ -877,13 +877,13 @@ std::string NamedDecl::getQualifiedNameAsString(const PrintingPolicy &P) const {
       }
       OS << ')';
     } else {
-      OS << cast<NamedDecl>(*I);
+      OS << *cast<NamedDecl>(*I);
     }
     OS << "::";
   }
 
   if (getDeclName())
-    OS << this;
+    OS << *this;
   else
     OS << "<anonymous>";
 
@@ -1441,6 +1441,15 @@ bool ParmVarDecl::isParameterPack() const {
   return isa<PackExpansionType>(getType());
 }
 
+void ParmVarDecl::setParameterIndexLarge(unsigned parameterIndex) {
+  getASTContext().setParameterIndex(this, parameterIndex);
+  ParmVarDeclBits.ParameterIndex = ParameterIndexSentinel;
+}
+
+unsigned ParmVarDecl::getParameterIndexLarge() const {
+  return getASTContext().getParameterIndex(this);
+}
+
 //===----------------------------------------------------------------------===//
 // FunctionDecl Implementation
 //===----------------------------------------------------------------------===//
@@ -1847,7 +1856,12 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
     // Only consider file-scope declarations in this test.
     if (!Redecl->getLexicalDeclContext()->isTranslationUnit())
       continue;
-    
+
+    // Only consider explicit declarations; the presence of a builtin for a
+    // libcall shouldn't affect whether a definition is externally visible.
+    if (Redecl->isImplicit())
+      continue;
+
     if (!Redecl->isInlineSpecified() || Redecl->getStorageClass() == SC_Extern) 
       return true; // Not an inline definition
   }
@@ -2178,6 +2192,12 @@ bool FieldDecl::isAnonymousStructOrUnion() const {
   return false;
 }
 
+unsigned FieldDecl::getBitWidthValue(const ASTContext &Ctx) const {
+  assert(isBitField() && "not a bitfield");
+  Expr *BitWidth = InitializerOrBitWidth.getPointer();
+  return BitWidth->EvaluateKnownConstInt(Ctx).getZExtValue();
+}
+
 unsigned FieldDecl::getFieldIndex() const {
   if (CachedFieldIndex) return CachedFieldIndex - 1;
 
@@ -2262,22 +2282,22 @@ void TagDecl::completeDefinition() {
           cast<CXXRecordDecl>(this)->hasDefinition()) &&
          "definition completed but not started");
 
-  IsDefinition = true;
+  IsCompleteDefinition = true;
   IsBeingDefined = false;
 
   if (ASTMutationListener *L = getASTMutationListener())
     L->CompletedTagDefinition(this);
 }
 
-TagDecl* TagDecl::getDefinition() const {
-  if (isDefinition())
+TagDecl *TagDecl::getDefinition() const {
+  if (isCompleteDefinition())
     return const_cast<TagDecl *>(this);
   if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(this))
     return CXXRD->getDefinition();
 
   for (redecl_iterator R = redecls_begin(), REnd = redecls_end();
        R != REnd; ++R)
-    if (R->isDefinition())
+    if (R->isCompleteDefinition())
       return *R;
 
   return 0;
@@ -2339,7 +2359,7 @@ void EnumDecl::completeDefinition(QualType NewType,
                                   QualType NewPromotionType,
                                   unsigned NumPositiveBits,
                                   unsigned NumNegativeBits) {
-  assert(!isDefinition() && "Cannot redefine enums!");
+  assert(!isCompleteDefinition() && "Cannot redefine enums!");
   if (!IntegerType)
     IntegerType = NewType.getTypePtr();
   PromotionType = NewPromotionType;
@@ -2392,7 +2412,7 @@ RecordDecl::field_iterator RecordDecl::field_begin() const {
 /// completeDefinition - Notes that the definition of this type is now
 /// complete.
 void RecordDecl::completeDefinition() {
-  assert(!isDefinition() && "Cannot redefine record!");
+  assert(!isCompleteDefinition() && "Cannot redefine record!");
   TagDecl::completeDefinition();
 }
 
@@ -2423,7 +2443,8 @@ void RecordDecl::LoadFieldsFromExternalStorage() const {
   if (Decls.empty())
     return;
 
-  llvm::tie(FirstDecl, LastDecl) = BuildDeclChain(Decls);
+  llvm::tie(FirstDecl, LastDecl) = BuildDeclChain(Decls,
+                                                 /*FieldsAlreadyLoaded=*/false);
 }
 
 //===----------------------------------------------------------------------===//

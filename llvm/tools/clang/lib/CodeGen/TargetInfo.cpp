@@ -1337,8 +1337,7 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
           continue;
 
         uint64_t Offset = OffsetBase + Layout.getFieldOffset(idx);
-        uint64_t Size =
-          i->getBitWidth()->EvaluateAsInt(getContext()).getZExtValue();
+        uint64_t Size = i->getBitWidthValue(getContext());
 
         uint64_t EB_Lo = Offset / 64;
         uint64_t EB_Hi = (Offset + Size - 1) / 64;
@@ -2872,6 +2871,9 @@ class PTXTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   PTXTargetCodeGenInfo(CodeGenTypes &CGT)
     : TargetCodeGenInfo(new PTXABIInfo(CGT)) {}
+    
+  virtual void SetTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+                                   CodeGen::CodeGenModule &M) const;
 };
 
 ABIArgInfo PTXABIInfo::classifyReturnType(QualType RetTy) const {
@@ -2901,13 +2903,21 @@ void PTXABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
   // Calling convention as default by an ABI.
   llvm::CallingConv::ID DefaultCC;
-  StringRef Env = getContext().getTargetInfo().getTriple().getEnvironmentName();
-  if (Env == "device")
+  const LangOptions &LangOpts = getContext().getLangOptions();
+  if (LangOpts.OpenCL || LangOpts.CUDA) {
+    // If we are in OpenCL or CUDA mode, then default to device functions
     DefaultCC = llvm::CallingConv::PTX_Device;
-  else
-    DefaultCC = llvm::CallingConv::PTX_Kernel;
-
+  } else {
+    // If we are in standard C/C++ mode, use the triple to decide on the default
+    StringRef Env = 
+      getContext().getTargetInfo().getTriple().getEnvironmentName();
+    if (Env == "device")
+      DefaultCC = llvm::CallingConv::PTX_Device;
+    else
+      DefaultCC = llvm::CallingConv::PTX_Kernel;
+  }
   FI.setEffectiveCallingConvention(DefaultCC);
+   
 }
 
 llvm::Value *PTXABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -2916,85 +2926,36 @@ llvm::Value *PTXABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   return 0;
 }
 
-}
+void PTXTargetCodeGenInfo::SetTargetAttributes(const Decl *D,
+                                               llvm::GlobalValue *GV,
+                                               CodeGen::CodeGenModule &M) const{
+  const FunctionDecl *FD = dyn_cast<FunctionDecl>(D);
+  if (!FD) return;
 
-//===----------------------------------------------------------------------===//
-// SystemZ ABI Implementation
-//===----------------------------------------------------------------------===//
+  llvm::Function *F = cast<llvm::Function>(GV);
 
-namespace {
-
-class SystemZABIInfo : public ABIInfo {
-public:
-  SystemZABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
-
-  bool isPromotableIntegerType(QualType Ty) const;
-
-  ABIArgInfo classifyReturnType(QualType RetTy) const;
-  ABIArgInfo classifyArgumentType(QualType RetTy) const;
-
-  virtual void computeInfo(CGFunctionInfo &FI) const {
-    FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it)
-      it->info = classifyArgumentType(it->type);
+  // Perform special handling in OpenCL mode
+  if (M.getLangOptions().OpenCL) {
+    // Use OpenCL function attributes to set proper calling conventions
+    // By default, all functions are device functions
+    if (FD->hasAttr<OpenCLKernelAttr>()) {
+      // OpenCL __kernel functions get a kernel calling convention
+      F->setCallingConv(llvm::CallingConv::PTX_Kernel);
+      // And kernel functions are not subject to inlining
+      F->addFnAttr(llvm::Attribute::NoInline);
+    }
   }
 
-  virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
-                                 CodeGenFunction &CGF) const;
-};
-
-class SystemZTargetCodeGenInfo : public TargetCodeGenInfo {
-public:
-  SystemZTargetCodeGenInfo(CodeGenTypes &CGT)
-    : TargetCodeGenInfo(new SystemZABIInfo(CGT)) {}
-};
-
+  // Perform special handling in CUDA mode.
+  if (M.getLangOptions().CUDA) {
+    // CUDA __global__ functions get a kernel calling convention.  Since
+    // __global__ functions cannot be called from the device, we do not
+    // need to set the noinline attribute.
+    if (FD->getAttr<CUDAGlobalAttr>())
+      F->setCallingConv(llvm::CallingConv::PTX_Kernel);
+  }
 }
 
-bool SystemZABIInfo::isPromotableIntegerType(QualType Ty) const {
-  // SystemZ ABI requires all 8, 16 and 32 bit quantities to be extended.
-  if (const BuiltinType *BT = Ty->getAs<BuiltinType>())
-    switch (BT->getKind()) {
-    case BuiltinType::Bool:
-    case BuiltinType::Char_S:
-    case BuiltinType::Char_U:
-    case BuiltinType::SChar:
-    case BuiltinType::UChar:
-    case BuiltinType::Short:
-    case BuiltinType::UShort:
-    case BuiltinType::Int:
-    case BuiltinType::UInt:
-      return true;
-    default:
-      return false;
-    }
-  return false;
-}
-
-llvm::Value *SystemZABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
-                                       CodeGenFunction &CGF) const {
-  // FIXME: Implement
-  return 0;
-}
-
-
-ABIArgInfo SystemZABIInfo::classifyReturnType(QualType RetTy) const {
-  if (RetTy->isVoidType())
-    return ABIArgInfo::getIgnore();
-  if (isAggregateTypeForABI(RetTy))
-    return ABIArgInfo::getIndirect(0);
-
-  return (isPromotableIntegerType(RetTy) ?
-          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
-}
-
-ABIArgInfo SystemZABIInfo::classifyArgumentType(QualType Ty) const {
-  if (isAggregateTypeForABI(Ty))
-    return ABIArgInfo::getIndirect(0);
-
-  return (isPromotableIntegerType(Ty) ?
-          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
 
 //===----------------------------------------------------------------------===//
@@ -3364,12 +3325,78 @@ bool MipsABIInfo::isPromotableIntegerType(QualType Ty) const {
   return false;
 }
 
+//===----------------------------------------------------------------------===//
+// TCE ABI Implementation (see http://tce.cs.tut.fi). Uses mostly the defaults.
+// Currently subclassed only to implement custom OpenCL C function attribute 
+// handling.
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+class TCETargetCodeGenInfo : public DefaultTargetCodeGenInfo {
+public:
+  TCETargetCodeGenInfo(CodeGenTypes &CGT)
+    : DefaultTargetCodeGenInfo(CGT) {}
+
+  virtual void SetTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+                                   CodeGen::CodeGenModule &M) const;
+};
+
+void TCETargetCodeGenInfo::SetTargetAttributes(const Decl *D,
+                                               llvm::GlobalValue *GV,
+                                               CodeGen::CodeGenModule &M) const {
+  const FunctionDecl *FD = dyn_cast<FunctionDecl>(D);
+  if (!FD) return;
+
+  llvm::Function *F = cast<llvm::Function>(GV);
+  
+  if (M.getLangOptions().OpenCL) {
+    if (FD->hasAttr<OpenCLKernelAttr>()) {
+      // OpenCL C Kernel functions are not subject to inlining
+      F->addFnAttr(llvm::Attribute::NoInline);
+          
+      if (FD->hasAttr<ReqdWorkGroupSizeAttr>()) {
+
+        // Convert the reqd_work_group_size() attributes to metadata.
+        llvm::LLVMContext &Context = F->getContext();
+        llvm::NamedMDNode *OpenCLMetadata = 
+            M.getModule().getOrInsertNamedMetadata("opencl.kernel_wg_size_info");
+
+        SmallVector<llvm::Value*, 5> Operands;
+        Operands.push_back(F);
+
+        Operands.push_back(llvm::Constant::getIntegerValue(
+                             llvm::Type::getInt32Ty(Context), 
+                             llvm::APInt(
+                               32, 
+                               FD->getAttr<ReqdWorkGroupSizeAttr>()->getXDim())));
+        Operands.push_back(llvm::Constant::getIntegerValue(
+                             llvm::Type::getInt32Ty(Context), 
+                             llvm::APInt(
+                               32,
+                               FD->getAttr<ReqdWorkGroupSizeAttr>()->getYDim())));
+        Operands.push_back(llvm::Constant::getIntegerValue(
+                             llvm::Type::getInt32Ty(Context), 
+                             llvm::APInt(
+                               32, 
+                               FD->getAttr<ReqdWorkGroupSizeAttr>()->getZDim())));
+
+        // Add a boolean constant operand for "required" (true) or "hint" (false)
+        // for implementing the work_group_size_hint attr later. Currently 
+        // always true as the hint is not yet implemented.
+        Operands.push_back(llvm::ConstantInt::getTrue(llvm::Type::getInt1Ty(Context)));
+
+        OpenCLMetadata->addOperand(llvm::MDNode::get(Context, Operands));
+      }
+    }
+  }
+}
+
+}
+
 const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   if (TheTargetCodeGenInfo)
     return *TheTargetCodeGenInfo;
-
-  // For now we just cache the TargetCodeGenInfo in CodeGenModule and don't
-  // free it.
 
   const llvm::Triple &Triple = getContext().getTargetInfo().getTriple();
   switch (Triple.getArch()) {
@@ -3407,14 +3434,14 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::ptx64:
     return *(TheTargetCodeGenInfo = new PTXTargetCodeGenInfo(Types));
 
-  case llvm::Triple::systemz:
-    return *(TheTargetCodeGenInfo = new SystemZTargetCodeGenInfo(Types));
-
   case llvm::Triple::mblaze:
     return *(TheTargetCodeGenInfo = new MBlazeTargetCodeGenInfo(Types));
 
   case llvm::Triple::msp430:
     return *(TheTargetCodeGenInfo = new MSP430TargetCodeGenInfo(Types));
+
+  case llvm::Triple::tce:
+    return *(TheTargetCodeGenInfo = new TCETargetCodeGenInfo(Types));
 
   case llvm::Triple::x86: {
     bool DisableMMX = strcmp(getContext().getTargetInfo().getABI(), "no-mmx") == 0;

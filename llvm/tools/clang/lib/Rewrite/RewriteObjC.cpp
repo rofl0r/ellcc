@@ -610,9 +610,9 @@ void RewriteObjC::Initialize(ASTContext &context) {
   Preamble += "(struct objc_object *, struct objc_selector *, ...);\n";
   Preamble += "__OBJC_RW_DLLIMPORT struct objc_object *objc_msgSendSuper";
   Preamble += "(struct objc_super *, struct objc_selector *, ...);\n";
-  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object *objc_msgSend_stret";
+  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object* objc_msgSend_stret";
   Preamble += "(struct objc_object *, struct objc_selector *, ...);\n";
-  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object *objc_msgSendSuper_stret";
+  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object* objc_msgSendSuper_stret";
   Preamble += "(struct objc_super *, struct objc_selector *, ...);\n";
   Preamble += "__OBJC_RW_DLLIMPORT double objc_msgSend_fpret";
   Preamble += "(struct objc_object *, struct objc_selector *, ...);\n";
@@ -1304,7 +1304,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitSetter(BinaryOperator *BinOp, Expr *
     } else {
       OMD = PropRefExpr->getImplicitPropertySetter();
       Sel = OMD->getSelector();
-      Ty = PropRefExpr->getType();
+      Ty = (*OMD->param_begin())->getType();
     }
     Super = PropRefExpr->isSuperReceiver();
     if (!Super) {
@@ -1316,8 +1316,6 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitSetter(BinaryOperator *BinOp, Expr *
   }
   
   assert(OMD && "RewritePropertyOrImplicitSetter - null OMD");
-  SmallVector<Expr *, 1> ExprVec;
-  ExprVec.push_back(newStmt);
 
   ObjCMessageExpr *MsgExpr;
   if (Super)
@@ -1329,7 +1327,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitSetter(BinaryOperator *BinOp, Expr *
                                       /*IsInstanceSuper=*/true,
                                       SuperTy,
                                       Sel, SelectorLoc, OMD,
-                                      &ExprVec[0], 1,
+                                      newStmt,
                                       /*FIXME:*/SourceLocation());
   else {
     // FIXME. Refactor this into common code with that in 
@@ -1346,7 +1344,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitSetter(BinaryOperator *BinOp, Expr *
                                       /*FIXME: */SourceLocation(),
                                       cast<Expr>(Receiver),
                                       Sel, SelectorLoc, OMD,
-                                      &ExprVec[0], 1,
+                                      newStmt,
                                       /*FIXME:*/SourceLocation());
   }
   Stmt *ReplacingStmt = SynthMessageExpr(MsgExpr);
@@ -1382,7 +1380,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitGetter(Expr *PropOrGetterRefExpr) {
     } else {
       OMD = PropRefExpr->getImplicitPropertyGetter();
       Sel = OMD->getSelector();
-      Ty = PropRefExpr->getType();
+      Ty = OMD->getResultType();
     }
     Super = PropRefExpr->isSuperReceiver();
     if (!Super)
@@ -1405,7 +1403,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitGetter(Expr *PropOrGetterRefExpr) {
                                       /*IsInstanceSuper=*/true,
                                       SuperTy,
                                       Sel, SelectorLoc, OMD,
-                                      0, 0, 
+                                      ArrayRef<Expr*>(), 
                                       PropOrGetterRefExpr->getLocEnd());
   else {
     assert (Receiver && "RewritePropertyOrImplicitGetter - Receiver is null");
@@ -1419,7 +1417,7 @@ Stmt *RewriteObjC::RewritePropertyOrImplicitGetter(Expr *PropOrGetterRefExpr) {
                                       PropOrGetterRefExpr->getLocStart(),
                                       cast<Expr>(Receiver),
                                       Sel, SelectorLoc, OMD,
-                                      0, 0, 
+                                      ArrayRef<Expr*>(), 
                                       PropOrGetterRefExpr->getLocEnd());
   }
 
@@ -3034,8 +3032,13 @@ Stmt *RewriteObjC::SynthMessageExpr(ObjCMessageExpr *Exp,
     Expr *recExpr = Exp->getInstanceReceiver();
     while (CStyleCastExpr *CE = dyn_cast<CStyleCastExpr>(recExpr))
       recExpr = CE->getSubExpr();
+    CastKind CK = recExpr->getType()->isObjCObjectPointerType()
+                    ? CK_BitCast : recExpr->getType()->isBlockPointerType()
+                                     ? CK_BlockPointerToObjCPointerCast
+                                     : CK_CPointerToObjCPointerCast;
+
     recExpr = NoTypeInfoCStyleCastExpr(Context, Context->getObjCIdType(),
-                                       CK_BitCast, recExpr);
+                                       CK, recExpr);
     MsgExprs.push_back(recExpr);
     break;
   }
@@ -3361,7 +3364,7 @@ void RewriteObjC::SynthesizeObjCInternalStruct(ObjCInterfaceDecl *CDecl,
     // This clause is segregated to avoid breaking the common case.
     if (BufferContainsPPDirectives(startBuf, cursor)) {
       SourceLocation L = RCDecl ? CDecl->getSuperClassLoc() :
-                                  CDecl->getClassLoc();
+                                  CDecl->getAtStartLoc();
       const char *endHeader = SM->getCharacterData(L);
       endHeader += Lexer::MeasureTokenLength(L, *SM, LangOpts);
 
@@ -5981,7 +5984,7 @@ void RewriteObjC::HandleDeclInMainFile(Decl *D) {
       }
     } else if (VD->getType()->isRecordType()) {
       RecordDecl *RD = VD->getType()->getAs<RecordType>()->getDecl();
-      if (RD->isDefinition())
+      if (RD->isCompleteDefinition())
         RewriteRecordBody(RD);
     }
     if (VD->getInit()) {
@@ -6013,7 +6016,7 @@ void RewriteObjC::HandleDeclInMainFile(Decl *D) {
     return;
   }
   if (RecordDecl *RD = dyn_cast<RecordDecl>(D)) {
-    if (RD->isDefinition()) 
+    if (RD->isCompleteDefinition()) 
       RewriteRecordBody(RD);
     return;
   }

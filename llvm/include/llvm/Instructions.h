@@ -1267,6 +1267,15 @@ public:
     else removeAttribute(~0, Attribute::NoInline);
   }
 
+  /// @brief Return true if the call can return twice
+  bool canReturnTwice() const {
+    return paramHasAttr(~0, Attribute::ReturnsTwice);
+  }
+  void setCanReturnTwice(bool Value = true) {
+    if (Value) addAttribute(~0, Attribute::ReturnsTwice);
+    else removeAttribute(~0, Attribute::ReturnsTwice);
+  }
+
   /// @brief Determine if the call does not access memory.
   bool doesNotAccessMemory() const {
     return paramHasAttr(~0, Attribute::ReadNone);
@@ -2357,6 +2366,13 @@ public:
     assert(idx < getNumSuccessors() && "Successor # out of range for Branch!");
     *(&Op<-1>() - idx) = (Value*)NewSucc;
   }
+
+  /// \brief Swap the successors of this branch instruction.
+  ///
+  /// Swaps the successors of the branch instruction. This also swaps any
+  /// branch weight metadata associated with the instruction so that it
+  /// continues to map correctly to each operand.
+  void swapSuccessors();
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const BranchInst *) { return true; }

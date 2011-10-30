@@ -788,6 +788,7 @@ void CXXNameMangler::mangleUnresolvedPrefix(NestedNameSpecifier *qualifier,
     case Type::ObjCObject:
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
+    case Type::Atomic:
       llvm_unreachable("type is illegal as a nested name specifier");
 
     case Type::SubstTemplateTypeParmPack:
@@ -1703,7 +1704,7 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
   // UNSUPPORTED:    ::= Dd # IEEE 754r decimal floating point (64 bits)
   // UNSUPPORTED:    ::= De # IEEE 754r decimal floating point (128 bits)
   // UNSUPPORTED:    ::= Df # IEEE 754r decimal floating point (32 bits)
-  // UNSUPPORTED:    ::= Dh # IEEE 754r half-precision floating point (16 bits)
+  //                 ::= Dh # IEEE 754r half-precision floating point (16 bits)
   //                 ::= Di # char32_t
   //                 ::= Ds # char16_t
   //                 ::= Dn # std::nullptr_t (i.e., decltype(nullptr))
@@ -1728,15 +1729,17 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
   case BuiltinType::Long: Out << 'l'; break;
   case BuiltinType::LongLong: Out << 'x'; break;
   case BuiltinType::Int128: Out << 'n'; break;
+  case BuiltinType::Half: Out << "Dh"; break;
   case BuiltinType::Float: Out << 'f'; break;
   case BuiltinType::Double: Out << 'd'; break;
   case BuiltinType::LongDouble: Out << 'e'; break;
   case BuiltinType::NullPtr: Out << "Dn"; break;
 
-  case BuiltinType::Overload:
+#define BUILTIN_TYPE(Id, SingletonId)
+#define PLACEHOLDER_TYPE(Id, SingletonId) \
+  case BuiltinType::Id:
+#include "clang/AST/BuiltinTypes.def"
   case BuiltinType::Dependent:
-  case BuiltinType::BoundMember:
-  case BuiltinType::UnknownAny:
     llvm_unreachable("mangling a placeholder type");
     break;
   case BuiltinType::ObjCId: Out << "11objc_object"; break;
@@ -2111,6 +2114,13 @@ void CXXNameMangler::mangleType(const AutoType *T) {
     mangleType(D);
 }
 
+void CXXNameMangler::mangleType(const AtomicType *T) {
+  // <type> ::= U <source-name> <type>	# vendor extended type qualifier
+  // (Until there's a standardized mangling...)
+  Out << "U7_Atomic";
+  mangleType(T->getValueType());
+}
+
 void CXXNameMangler::mangleIntegerLiteral(QualType T,
                                           const llvm::APSInt &Value) {
   //  <expr-primary> ::= L <type> <value number> E # integer literal
@@ -2247,6 +2257,7 @@ recurse:
   case Expr::CXXNoexceptExprClass:
   case Expr::CUDAKernelCallExprClass:
   case Expr::AsTypeExprClass:
+  case Expr::AtomicExprClass:
   {
     // As bad as this diagnostic is, it's better than crashing.
     DiagnosticsEngine &Diags = Context.getDiags();
@@ -2408,7 +2419,8 @@ recurse:
       QualType T = (ImplicitlyConvertedToType.isNull() || 
                     !ImplicitlyConvertedToType->isIntegerType())? SAE->getType()
                                                     : ImplicitlyConvertedToType;
-      mangleIntegerLiteral(T, SAE->EvaluateAsInt(Context.getASTContext()));
+      llvm::APSInt V = SAE->EvaluateKnownConstInt(Context.getASTContext());
+      mangleIntegerLiteral(T, V);
       break;
     }
     

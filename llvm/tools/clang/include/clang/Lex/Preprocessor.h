@@ -93,6 +93,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   IdentifierInfo *Ident__has_attribute;            // __has_attribute
   IdentifierInfo *Ident__has_include;              // __has_include
   IdentifierInfo *Ident__has_include_next;         // __has_include_next
+  IdentifierInfo *Ident__has_warning;              // __has_warning
 
   SourceLocation DATELoc, TIMELoc;
   unsigned CounterValue;  // Next __COUNTER__ value.
@@ -752,11 +753,11 @@ public:
   /// Diag - Forwarding function for diagnostics.  This emits a diagnostic at
   /// the specified Token's location, translating the token's start
   /// position in the current buffer into a SourcePosition object for rendering.
-  DiagnosticBuilder Diag(SourceLocation Loc, unsigned DiagID) {
+  DiagnosticBuilder Diag(SourceLocation Loc, unsigned DiagID) const {
     return Diags->Report(Loc, DiagID);
   }
 
-  DiagnosticBuilder Diag(const Token &Tok, unsigned DiagID) {
+  DiagnosticBuilder Diag(const Token &Tok, unsigned DiagID) const {
     return Diags->Report(Tok.getLocation(), DiagID);
   }
 
@@ -826,8 +827,9 @@ public:
   /// CreateString - Plop the specified string into a scratch buffer and set the
   /// specified token's location and length to it.  If specified, the source
   /// location provides a location of the expansion point of the token.
-  void CreateString(const char *Buf, unsigned Len,
-                    Token &Tok, SourceLocation SourceLoc = SourceLocation());
+  void CreateString(const char *Buf, unsigned Len, Token &Tok,
+                    SourceLocation ExpansionLocStart = SourceLocation(),
+                    SourceLocation ExpansionLocEnd = SourceLocation());
 
   /// \brief Computes the source location just past the end of the
   /// token at this source location.
@@ -1181,6 +1183,7 @@ private:
   void HandleUserDiagnosticDirective(Token &Tok, bool isWarning);
   void HandleIdentSCCSDirective(Token &Tok);
   void HandleMacroExportDirective(Token &Tok);
+  void HandleMacroPrivateDirective(Token &Tok);
   
   // File inclusion.
   void HandleIncludeDirective(SourceLocation HashLoc,

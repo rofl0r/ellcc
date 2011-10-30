@@ -77,6 +77,7 @@
 //          in that it accepts its arguments as a va_list rather than
 //          through an ellipsis
 //  e -> const, but only when -fmath-errno=0
+//  j -> returns_twice (like setjmp)
 //  FIXME: gcc has nonnull
 
 #if defined(BUILTIN) && !defined(LIBBUILTIN)
@@ -427,7 +428,7 @@ BUILTIN(__builtin_return_address, "v*IUi", "n")
 BUILTIN(__builtin_extract_return_addr, "v*v*", "n")
 BUILTIN(__builtin_frame_address, "v*IUi", "n")
 BUILTIN(__builtin_flt_rounds, "i", "nc")
-BUILTIN(__builtin_setjmp, "iv**", "")
+BUILTIN(__builtin_setjmp, "iv**", "j")
 BUILTIN(__builtin_longjmp, "vv**i", "r")
 BUILTIN(__builtin_unwind_init, "v", "")
 BUILTIN(__builtin_eh_return_data_regno, "iIi", "nc")
@@ -585,12 +586,22 @@ BUILTIN(__sync_swap_4, "iiD*i.", "n")
 BUILTIN(__sync_swap_8, "LLiLLiD*LLi.", "n")
 BUILTIN(__sync_swap_16, "LLLiLLLiD*LLLi.", "n")
 
-
+BUILTIN(__atomic_load, "v.", "t")
+BUILTIN(__atomic_store, "v.", "t")
+BUILTIN(__atomic_exchange, "v.", "t")
+BUILTIN(__atomic_compare_exchange_strong, "v.", "t")
+BUILTIN(__atomic_compare_exchange_weak, "v.", "t")
+BUILTIN(__atomic_fetch_add, "v.", "t")
+BUILTIN(__atomic_fetch_sub, "v.", "t")
+BUILTIN(__atomic_fetch_and, "v.", "t")
+BUILTIN(__atomic_fetch_or, "v.", "t")
+BUILTIN(__atomic_fetch_xor, "v.", "t")
+BUILTIN(__atomic_thread_fence, "vi", "n")
+BUILTIN(__atomic_signal_fence, "vi", "n")
+BUILTIN(__atomic_is_lock_free, "iz", "n")
 
 // Non-overloaded atomic builtins.
 BUILTIN(__sync_synchronize, "v.", "n")
-// LLVM instruction builtin [Clang extension].
-BUILTIN(__builtin_llvm_memory_barrier,"vbbbbb", "n")
 // GCC does not support these, they are a Clang extension.
 BUILTIN(__sync_fetch_and_min, "iiD*i", "n")
 BUILTIN(__sync_fetch_and_max, "iiD*i", "n")
@@ -662,7 +673,21 @@ LIBBUILTIN(rindex, "c*cC*i",      "f",     "strings.h", ALL_LANGUAGES)
 LIBBUILTIN(bzero, "vv*z",         "f",     "strings.h", ALL_LANGUAGES)
 // POSIX unistd.h
 LIBBUILTIN(_exit, "vi",           "fr",    "unistd.h", ALL_LANGUAGES)
+LIBBUILTIN(vfork, "i",            "fj",    "unistd.h", ALL_LANGUAGES)
 // POSIX setjmp.h
+
+// In some systems setjmp is a macro that expands to _setjmp. We undefine
+// it here to avoid having two identical LIBBUILTIN entries.
+#undef setjmp
+LIBBUILTIN(_setjmp, "iJ",         "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(__sigsetjmp, "iJi",    "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(setjmp, "iJ",          "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(sigsetjmp, "iJi",      "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(setjmp_syscall, "iJ",  "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(savectx, "iJ",         "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(qsetjmp, "iJ",         "fj",   "setjmp.h", ALL_LANGUAGES)
+LIBBUILTIN(getcontext, "iJ",      "fj",   "setjmp.h", ALL_LANGUAGES)
+
 LIBBUILTIN(_longjmp, "vJi",       "fr",    "setjmp.h", ALL_LANGUAGES)
 LIBBUILTIN(siglongjmp, "vSJi",    "fr",    "setjmp.h", ALL_LANGUAGES)
 // non-standard but very common

@@ -16,6 +16,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
 #include <cstdlib>
 using namespace llvm;
@@ -23,7 +24,9 @@ using namespace llvm;
 MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), EmitEHFrame(true),
                                          EmitDebugFrame(false),
                                          CurrentW64UnwindInfo(0),
-                                         LastSymbol(0) {
+                                         LastSymbol(0),
+                                         UniqueCodeBeginSuffix(0),
+                                         UniqueDataBeginSuffix(0) {
   const MCSection *section = NULL;
   SectionStack.push_back(std::make_pair(section, section));
 }
@@ -139,8 +142,9 @@ void MCStreamer::EmitFill(uint64_t NumBytes, uint8_t FillValue,
 }
 
 bool MCStreamer::EmitDwarfFileDirective(unsigned FileNo,
+                                        StringRef Directory,
                                         StringRef Filename) {
-  return getContext().GetDwarfFile(Filename, FileNo) == 0;
+  return getContext().GetDwarfFile(Directory, Filename, FileNo) == 0;
 }
 
 void MCStreamer::EmitDwarfLocDirective(unsigned FileNo, unsigned Line,
@@ -175,6 +179,87 @@ void MCStreamer::EmitLabel(MCSymbol *Symbol) {
   LastSymbol = Symbol;
 }
 
+void MCStreamer::EmitDataRegion() {
+  if (RegionIndicator == Data) return;
+
+  MCContext &Context = getContext();
+  const MCAsmInfo &MAI = Context.getAsmInfo();
+  if (!MAI.getSupportsDataRegions()) return;
+
+  // Generate a unique symbol name.
+  MCSymbol *NewSym = Context.GetOrCreateSymbol(
+      Twine(MAI.getDataBeginLabelName()) +
+        utostr(UniqueDataBeginSuffix++));
+  EmitLabel(NewSym);
+
+  RegionIndicator = Data;
+}
+
+void MCStreamer::EmitCodeRegion() {
+  if (RegionIndicator == Code) return;
+
+  MCContext &Context = getContext();
+  const MCAsmInfo &MAI = Context.getAsmInfo();
+  if (!MAI.getSupportsDataRegions()) return;
+
+  // Generate a unique symbol name.
+  MCSymbol *NewSym = Context.GetOrCreateSymbol(
+      Twine(MAI.getCodeBeginLabelName()) +
+        utostr(UniqueCodeBeginSuffix++));
+  EmitLabel(NewSym);
+
+  RegionIndicator = Code;
+}
+
+void MCStreamer::EmitJumpTable8Region() {
+  if (RegionIndicator == JumpTable8) return;
+
+  MCContext &Context = getContext();
+  const MCAsmInfo &MAI = Context.getAsmInfo();
+  if (!MAI.getSupportsDataRegions()) return;
+
+  // Generate a unique symbol name.
+  MCSymbol *NewSym = Context.GetOrCreateSymbol(
+      Twine(MAI.getJumpTable8BeginLabelName()) +
+        utostr(UniqueDataBeginSuffix++));
+  EmitLabel(NewSym);
+
+  RegionIndicator = JumpTable8;
+}
+
+void MCStreamer::EmitJumpTable16Region() {
+  if (RegionIndicator == JumpTable16) return;
+
+  MCContext &Context = getContext();
+  const MCAsmInfo &MAI = Context.getAsmInfo();
+  if (!MAI.getSupportsDataRegions()) return;
+
+  // Generate a unique symbol name.
+  MCSymbol *NewSym = Context.GetOrCreateSymbol(
+      Twine(MAI.getJumpTable16BeginLabelName()) +
+        utostr(UniqueDataBeginSuffix++));
+  EmitLabel(NewSym);
+
+  RegionIndicator = JumpTable16;
+}
+
+
+void MCStreamer::EmitJumpTable32Region() {
+  if (RegionIndicator == JumpTable32) return;
+
+  MCContext &Context = getContext();
+  const MCAsmInfo &MAI = Context.getAsmInfo();
+  if (!MAI.getSupportsDataRegions()) return;
+
+  // Generate a unique symbol name.
+  MCSymbol *NewSym = Context.GetOrCreateSymbol(
+      Twine(MAI.getJumpTable32BeginLabelName()) +
+        utostr(UniqueDataBeginSuffix++));
+  EmitLabel(NewSym);
+
+  RegionIndicator = JumpTable32;
+}
+
 void MCStreamer::EmitCompactUnwindEncoding(uint32_t CompactUnwindEncoding) {
   EnsureValidFrame();
   MCDwarfFrameInfo *CurFrame = getCurrentFrameInfo();
@@ -206,6 +291,7 @@ void MCStreamer::EmitCFIStartProc() {
   }
 
   FrameInfos.push_back(Frame);
+  RegionIndicator = Code;
 }
 
 void MCStreamer::EmitCFIEndProc() {

@@ -182,6 +182,13 @@ void StmtProfiler::VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
   VisitStmt(S);
 }
 
+void StmtProfiler::VisitMSDependentExistsStmt(const MSDependentExistsStmt *S) {
+  VisitStmt(S);
+  ID.AddBoolean(S->isIfExists());
+  VisitNestedNameSpecifier(S->getQualifierLoc().getNestedNameSpecifier());
+  VisitName(S->getNameInfo().getName());
+}
+
 void StmtProfiler::VisitSEHTryStmt(const SEHTryStmt *S) {
   VisitStmt(S);
 }
@@ -466,6 +473,11 @@ void StmtProfiler::VisitGenericSelectionExpr(const GenericSelectionExpr *S) {
       VisitType(T);
     VisitExpr(S->getAssocExpr(i));
   }
+}
+
+void StmtProfiler::VisitAtomicExpr(const AtomicExpr *S) {
+  VisitExpr(S);
+  ID.AddInteger(S->getOp());
 }
 
 static Stmt::StmtClass DecodeOperatorCall(const CXXOperatorCallExpr *S,

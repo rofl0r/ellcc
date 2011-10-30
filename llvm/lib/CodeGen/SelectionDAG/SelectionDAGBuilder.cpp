@@ -788,6 +788,18 @@ void RegsForValue::AddInlineAsmOperands(unsigned Code, bool HasMatching,
   unsigned Flag = InlineAsm::getFlagWord(Code, Regs.size());
   if (HasMatching)
     Flag = InlineAsm::getFlagWordForMatchingOp(Flag, MatchingIdx);
+  else if (!Regs.empty() &&
+           TargetRegisterInfo::isVirtualRegister(Regs.front())) {
+    // Put the register class of the virtual registers in the flag word.  That
+    // way, later passes can recompute register class constraints for inline
+    // assembly as well as normal instructions.
+    // Don't do this for tied operands that can use the regclass information
+    // from the def.
+    const MachineRegisterInfo &MRI = DAG.getMachineFunction().getRegInfo();
+    const TargetRegisterClass *RC = MRI.getRegClass(Regs.front());
+    Flag = InlineAsm::getFlagWordForRegClass(Flag, RC->getID());
+  }
+
   SDValue Res = DAG.getTargetConstant(Flag, MVT::i32);
   Ops.push_back(Res);
 
@@ -805,6 +817,7 @@ void SelectionDAGBuilder::init(GCFunctionInfo *gfi, AliasAnalysis &aa) {
   AA = &aa;
   GFI = gfi;
   TD = DAG.getTarget().getTargetData();
+  LPadToCallSiteMap.clear();
 }
 
 /// clear - Clear out the current SelectionDAG and the associated
@@ -1679,7 +1692,7 @@ void SelectionDAGBuilder::visitBitTestHeader(BitTestBlock &B,
     UsePtrType = true;
   else {
     for (unsigned i = 0, e = B.Cases.size(); i != e; ++i)
-      if ((uint64_t)((int64_t)B.Cases[i].Mask >> VT.getSizeInBits()) + 1 >= 2) {
+      if (!isUIntN(VT.getSizeInBits(), B.Cases[i].Mask)) {
         // Switch table case range are encoded into series of masks.
         // Just use pointer type, it's guaranteed to fit.
         UsePtrType = true;
@@ -2021,14 +2034,17 @@ bool SelectionDAGBuilder::handleJTSwitchCase(CaseRec &CR,
     return false;
 
   APInt Range = ComputeRange(First, Last);
-  double Density = TSize.roundToDouble() / Range.roundToDouble();
-  if (Density < 0.4)
+  // The density is TSize / Range. Require at least 40%.
+  // It should not be possible for IntTSize to saturate for sane code, but make
+  // sure we handle Range saturation correctly.
+  uint64_t IntRange = Range.getLimitedValue(UINT64_MAX/10);
+  uint64_t IntTSize = TSize.getLimitedValue(UINT64_MAX/10);
+  if (IntTSize * 10 < IntRange * 4)
     return false;
 
   DEBUG(dbgs() << "Lowering jump table\n"
                << "First entry: " << First << ". Last entry: " << Last << '\n'
-               << "Range: " << Range
-               << ". Size: " << TSize << ". Density: " << Density << "\n\n");
+               << "Range: " << Range << ". Size: " << TSize << ".\n\n");
 
   // Get the MachineFunction which holds the current MBB.  This is used when
   // inserting any additional MBBs necessary to represent the switch.
@@ -2461,7 +2477,7 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
   size_t numCmps = Clusterify(Cases, SI);
   DEBUG(dbgs() << "Clusterify finished. Total clusters: " << Cases.size()
                << ". Total compares: " << numCmps << '\n');
-  numCmps = 0;
+  (void)numCmps;
 
   // Get the Value to be switched on and default basic blocks, which will be
   // inserted into CaseBlock records, representing basic blocks in the binary
@@ -2673,7 +2689,7 @@ void SelectionDAGBuilder::visitFPTrunc(const User &I) {
 }
 
 void SelectionDAGBuilder::visitFPExt(const User &I){
-  // FPTrunc is never a no-op cast, no need to check
+  // FPExt is never a no-op cast, no need to check
   SDValue N = getValue(I.getOperand(0));
   EVT DestVT = TLI.getValueType(I.getType());
   setValue(&I, DAG.getNode(ISD::FP_EXTEND, getCurDebugLoc(), DestVT, N));
@@ -3579,26 +3595,6 @@ GetExponent(SelectionDAG &DAG, SDValue Op, const TargetLowering &TLI,
 static SDValue
 getF32Constant(SelectionDAG &DAG, unsigned Flt) {
   return DAG.getConstantFP(APFloat(APInt(32, Flt)), MVT::f32);
-}
-
-/// Inlined utility function to implement binary input atomic intrinsics for
-/// visitIntrinsicCall: I is a call instruction
-///                     Op is the associated NodeType for I
-const char *
-SelectionDAGBuilder::implVisitBinaryAtomic(const CallInst& I,
-                                           ISD::NodeType Op) {
-  SDValue Root = getRoot();
-  SDValue L =
-    DAG.getAtomic(Op, getCurDebugLoc(),
-                  getValue(I.getArgOperand(1)).getValueType().getSimpleVT(),
-                  Root,
-                  getValue(I.getArgOperand(0)),
-                  getValue(I.getArgOperand(1)),
-                  I.getArgOperand(0), 0 /* Alignment */,
-                  Monotonic, CrossThread);
-  setValue(&I, L);
-  DAG.setRoot(L.getValue(1));
-  return 0;
 }
 
 // implVisitAluOverflow - Lower arithmetic overflow instrinsics.
@@ -4764,8 +4760,14 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     return 0;
   }
   case Intrinsic::eh_sjlj_setjmp: {
-    setValue(&I, DAG.getNode(ISD::EH_SJLJ_SETJMP, dl, MVT::i32, getRoot(),
-                             getValue(I.getArgOperand(0))));
+    SDValue Ops[2];
+    Ops[0] = getRoot();
+    Ops[1] = getValue(I.getArgOperand(0));
+    SDValue Op = DAG.getNode(ISD::EH_SJLJ_SETJMP, dl,
+                             DAG.getVTList(MVT::i32, MVT::Other),
+                             Ops, 2);
+    setValue(&I, Op.getValue(0));
+    DAG.setRoot(Op.getValue(1));
     return 0;
   }
   case Intrinsic::eh_sjlj_longjmp: {
@@ -5109,52 +5111,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                                         rw==1)); /* write */
     return 0;
   }
-  case Intrinsic::memory_barrier: {
-    SDValue Ops[6];
-    Ops[0] = getRoot();
-    for (int x = 1; x < 6; ++x)
-      Ops[x] = getValue(I.getArgOperand(x - 1));
-
-    DAG.setRoot(DAG.getNode(ISD::MEMBARRIER, dl, MVT::Other, &Ops[0], 6));
-    return 0;
-  }
-  case Intrinsic::atomic_cmp_swap: {
-    SDValue Root = getRoot();
-    SDValue L =
-      DAG.getAtomic(ISD::ATOMIC_CMP_SWAP, getCurDebugLoc(),
-                    getValue(I.getArgOperand(1)).getValueType().getSimpleVT(),
-                    Root,
-                    getValue(I.getArgOperand(0)),
-                    getValue(I.getArgOperand(1)),
-                    getValue(I.getArgOperand(2)),
-                    MachinePointerInfo(I.getArgOperand(0)), 0 /* Alignment */,
-                    Monotonic, CrossThread);
-    setValue(&I, L);
-    DAG.setRoot(L.getValue(1));
-    return 0;
-  }
-  case Intrinsic::atomic_load_add:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_ADD);
-  case Intrinsic::atomic_load_sub:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_SUB);
-  case Intrinsic::atomic_load_or:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_OR);
-  case Intrinsic::atomic_load_xor:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_XOR);
-  case Intrinsic::atomic_load_and:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_AND);
-  case Intrinsic::atomic_load_nand:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_NAND);
-  case Intrinsic::atomic_load_max:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_MAX);
-  case Intrinsic::atomic_load_min:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_MIN);
-  case Intrinsic::atomic_load_umin:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_UMIN);
-  case Intrinsic::atomic_load_umax:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_LOAD_UMAX);
-  case Intrinsic::atomic_swap:
-    return implVisitBinaryAtomic(I, ISD::ATOMIC_SWAP);
 
   case Intrinsic::invariant_start:
   case Intrinsic::lifetime_start:
@@ -5250,6 +5206,8 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
     unsigned CallSiteIndex = MMI.getCurrentCallSite();
     if (CallSiteIndex) {
       MMI.setCallSiteBeginLabel(BeginLabel, CallSiteIndex);
+      LPadToCallSiteMap[LandingPad].push_back(CallSiteIndex);
+
       // Now that the call site is handled, stop tracking it.
       MMI.setCurrentCallSite(0);
     }

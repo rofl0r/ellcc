@@ -46,6 +46,17 @@ void test() {
   // Perserve the original formatting for unsigned integers.
   unsigned long val = 42;
   printf("%X", val);
+
+  typedef __SIZE_TYPE__ size_t;
+  typedef __INTMAX_TYPE__ intmax_t;
+  typedef __UINTMAX_TYPE__ uintmax_t;
+  typedef __PTRDIFF_TYPE__ ptrdiff_t;
+
+  // size_t, etc.
+  printf("%f", (size_t) 42);
+  printf("%f", (intmax_t) 42);
+  printf("%f", (uintmax_t) 42);
+  printf("%f", (ptrdiff_t) 42);
 }
 
 // Validate the fixes...
@@ -68,3 +79,7 @@ void test() {
 // CHECK: printf("%s", "foo");
 // CHECK: printf("%1$p", (void *)0);
 // CHECK: printf("%lX", val);
+// CHECK: printf("%zu", (size_t) 42);
+// CHECK: printf("%jd", (intmax_t) 42);
+// CHECK: printf("%ju", (uintmax_t) 42);
+// CHECK: printf("%td", (ptrdiff_t) 42);

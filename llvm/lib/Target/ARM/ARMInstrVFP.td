@@ -31,6 +31,12 @@ def arm_fmdrr  : SDNode<"ARMISD::VMOVDRR", SDT_VMOVDRR>;
 // Operand Definitions.
 //
 
+// 8-bit floating-point immediate encodings.
+def FPImmOperand : AsmOperandClass {
+  let Name = "FPImm";
+  let ParserMethod = "parseFPImm";
+}
+
 def vfp_f32imm : Operand<f32>,
                  PatLeaf<(f32 fpimm), [{
       return ARM_AM::getFP32Imm(N->getValueAPF()) != -1;
@@ -40,6 +46,7 @@ def vfp_f32imm : Operand<f32>,
       return CurDAG->getTargetConstant(enc, MVT::i32);
     }]>> {
   let PrintMethod = "printFPImmOperand";
+  let ParserMatchClass = FPImmOperand;
 }
 
 def vfp_f64imm : Operand<f64>,
@@ -51,6 +58,7 @@ def vfp_f64imm : Operand<f64>,
       return CurDAG->getTargetConstant(enc, MVT::i32);
     }]>> {
   let PrintMethod = "printFPImmOperand";
+  let ParserMatchClass = FPImmOperand;
 }
 
 
@@ -1148,3 +1156,10 @@ def FCONSTS : VFPAI<(outs SPR:$Sd), (ins vfp_f32imm:$imm),
   let Inst{3-0}   = imm{3-0};
 }
 }
+
+//===----------------------------------------------------------------------===//
+// Assembler aliases.
+//
+
+def : VFP2InstAlias<"fmstat${p}", (FMSTAT pred:$p)>;
+

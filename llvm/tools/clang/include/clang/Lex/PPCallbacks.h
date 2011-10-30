@@ -42,8 +42,11 @@ public:
   /// EnteringFile indicates whether this is because we are entering a new
   /// #include'd file (when true) or whether we're exiting one because we ran
   /// off the end (when false).
+  ///
+  /// \param PrevFID the file that was exited if \arg Reason is ExitFile. 
   virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
-                           SrcMgr::CharacteristicKind FileType) {
+                           SrcMgr::CharacteristicKind FileType,
+                           FileID PrevFID = FileID()) {
   }
 
   /// FileSkipped - This callback is invoked whenever a source file is
@@ -159,6 +162,10 @@ public:
   virtual void MacroUndefined(const Token &MacroNameTok, const MacroInfo *MI) {
   }
   
+  /// Defined - This hook is called whenever the 'defined' operator is seen.
+  virtual void Defined(const Token &MacroNameTok) {
+  }
+  
   /// SourceRangeSkipped - This hook is called when a source range is skipped.
   /// \param Range The SourceRange that was skipped. The range begins at the
   /// #if/#else directive and ends after the #endif/#else directive.
@@ -211,9 +218,10 @@ public:
   }
 
   virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
-                           SrcMgr::CharacteristicKind FileType) {
-    First->FileChanged(Loc, Reason, FileType);
-    Second->FileChanged(Loc, Reason, FileType);
+                           SrcMgr::CharacteristicKind FileType,
+                           FileID PrevFID) {
+    First->FileChanged(Loc, Reason, FileType, PrevFID);
+    Second->FileChanged(Loc, Reason, FileType, PrevFID);
   }
 
   virtual void FileSkipped(const FileEntry &ParentFile,
@@ -290,6 +298,11 @@ public:
   virtual void MacroUndefined(const Token &MacroNameTok, const MacroInfo *MI) {
     First->MacroUndefined(MacroNameTok, MI);
     Second->MacroUndefined(MacroNameTok, MI);
+  }
+
+  virtual void Defined(const Token &MacroNameTok) {
+    First->Defined(MacroNameTok);
+    Second->Defined(MacroNameTok);
   }
 
   virtual void SourceRangeSkipped(SourceRange Range) {

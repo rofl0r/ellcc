@@ -1,4 +1,4 @@
-// // RUN: %clang_cc1 -triple x86_64-apple-darwin11 -fobjc-nonfragile-abi -fsyntax-only -fobjc-arc -verify %s
+// // RUN: %clang_cc1 -triple x86_64-apple-darwin11 -fsyntax-only -fobjc-arc -verify %s
 
 typedef const struct __CFString * CFStringRef;
 
@@ -69,4 +69,51 @@ void test1(int cond) {
   x = (id) (cond ? [object newString] : (void*) 0);
   x = (id) (cond ? (void*) 0 : [object newString]);
   x = (id) (cond ? (CFStringRef) @"help" : [object newString]); // a bit questionable
+}
+
+// rdar://problem/10246264
+@interface CFTaker
+- (void) takeOrdinary: (CFStringRef) arg;
+- (void) takeVariadic: (int) n, ...;
+- (void) takeConsumed: (CFStringRef __attribute__((cf_consumed))) arg;
+@end
+void testCFTaker(CFTaker *taker, id string) {
+  [taker takeOrdinary: (CFStringRef) string];
+  [taker takeVariadic: 1, (CFStringRef) string];
+  [taker takeConsumed: (CFStringRef) string]; // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+}
+
+void takeCFOrdinaryUnaudited(CFStringRef arg);
+void takeCFVariadicUnaudited(int n, ...);
+void takeCFConsumedUnaudited(CFStringRef __attribute__((cf_consumed)) arg);
+#pragma clang arc_cf_code_audited begin
+void takeCFOrdinaryAudited(CFStringRef arg);
+void takeCFVariadicAudited(int n, ...);
+void takeCFConsumedAudited(CFStringRef __attribute__((cf_consumed)) arg);
+#pragma clang arc_cf_code_audited end
+
+void testTakerFunctions(id string) {
+  takeCFOrdinaryUnaudited((CFStringRef) string); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+  takeCFVariadicUnaudited(1, (CFStringRef) string); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+  takeCFConsumedUnaudited((CFStringRef) string); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+
+  void (*taker)(CFStringRef) = 0;
+  taker((CFStringRef) string); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+
+  takeCFOrdinaryAudited((CFStringRef) string);
+  takeCFVariadicAudited(1, (CFStringRef) string);
+  takeCFConsumedAudited((CFStringRef) string); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+}
+
+void testTakerFunctions_parens(id string) {
+  takeCFOrdinaryUnaudited(((CFStringRef) string)); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+  takeCFVariadicUnaudited(1, ((CFStringRef) string)); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+  takeCFConsumedUnaudited(((CFStringRef) string)); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+
+  void (*taker)(CFStringRef) = 0;
+  taker(((CFStringRef) string)); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
+
+  takeCFOrdinaryAudited(((CFStringRef) string));
+  takeCFVariadicAudited(1, ((CFStringRef) string));
+  takeCFConsumedAudited(((CFStringRef) string)); // expected-error {{cast of Objective-C pointer type 'id' to C pointer type 'CFStringRef'}} expected-note {{use __bridge to}} expected-note {{use __bridge_retained to}}
 }

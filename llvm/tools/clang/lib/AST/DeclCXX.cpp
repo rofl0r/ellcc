@@ -77,14 +77,19 @@ void
 CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
                         unsigned NumBases) {
   ASTContext &C = getASTContext();
-  
-  // C++ [dcl.init.aggr]p1:
-  //   An aggregate is an array or a class (clause 9) with [...]
-  //   no base classes [...].
-  data().Aggregate = false;
 
   if (!data().Bases.isOffset() && data().NumBases > 0)
     C.Deallocate(data().getBases());
+
+  if (NumBases) {
+    // C++ [dcl.init.aggr]p1:
+    //   An aggregate is [...] a class with [...] no base classes [...].
+    data().Aggregate = false;
+
+    // C++ [class]p4:
+    //   A POD-struct is an aggregate class...
+    data().PlainOldData = false;
+  }
 
   // The set of seen virtual base types.
   llvm::SmallPtrSet<CanQualType, 8> SeenVBaseTypes;
@@ -105,14 +110,6 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
     CXXRecordDecl *BaseClassDecl
       = cast<CXXRecordDecl>(BaseType->getAs<RecordType>()->getDecl());
 
-    // C++ [dcl.init.aggr]p1:
-    //   An aggregate is [...] a class with [...] no base classes [...].
-    data().Aggregate = false;    
-    
-    // C++ [class]p4:
-    //   A POD-struct is an aggregate class...
-    data().PlainOldData = false;
-    
     // A class with a non-empty base class is not empty.
     // FIXME: Standard ref?
     if (!BaseClassDecl->isEmpty()) {
@@ -653,6 +650,13 @@ NotASpecialMember:;
   
   // Handle non-static data members.
   if (FieldDecl *Field = dyn_cast<FieldDecl>(D)) {
+    // C++ [class.bit]p2:
+    //   A declaration for a bit-field that omits the identifier declares an 
+    //   unnamed bit-field. Unnamed bit-fields are not members and cannot be 
+    //   initialized.
+    if (Field->isUnnamedBitfield())
+      return;
+    
     // C++ [dcl.init.aggr]p1:
     //   An aggregate is an array or a class (clause 9) with [...] no
     //   private or protected non-static data members (clause 11).
@@ -712,7 +716,11 @@ NotASpecialMember:;
     }
 
     // Record if this field is the first non-literal field or base.
-    if (!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType())
+    // As a slight variation on the standard, we regard mutable members as being
+    // non-literal, since mutating a constexpr variable would break C++11
+    // constant expression semantics.
+    if ((!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType()) ||
+        Field->isMutable())
       data().HasNonLiteralTypeFieldsOrBases = true;
 
     if (Field->hasInClassInitializer()) {
@@ -823,15 +831,11 @@ NotASpecialMember:;
 
     // If this is not a zero-length bit-field, then the class is not empty.
     if (data().Empty) {
-      if (!Field->getBitWidth())
+      if (!Field->isBitField() ||
+          (!Field->getBitWidth()->isTypeDependent() &&
+           !Field->getBitWidth()->isValueDependent() &&
+           Field->getBitWidthValue(Context) != 0))
         data().Empty = false;
-      else if (!Field->getBitWidth()->isTypeDependent() &&
-               !Field->getBitWidth()->isValueDependent()) {
-        llvm::APSInt Bits;
-        if (Field->getBitWidth()->isIntegerConstantExpr(Bits, Context))
-          if (!!Bits)
-            data().Empty = false;
-      } 
     }
   }
   

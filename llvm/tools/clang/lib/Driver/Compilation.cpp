@@ -77,7 +77,7 @@ void Compilation::PrintJob(raw_ostream &OS, const Job &J,
     for (ArgStringList::const_iterator it = C->getArguments().begin(),
            ie = C->getArguments().end(); it != ie; ++it) {
       OS << ' ';
-      if (!Quote) {
+      if (!Quote && !std::strpbrk(*it, " \"\\$")) {
         OS << *it;
         continue;
       }

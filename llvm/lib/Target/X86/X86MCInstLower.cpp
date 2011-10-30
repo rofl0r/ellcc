@@ -527,6 +527,22 @@ ReSimplify:
   case X86::XOR16ri:    SimplifyShortImmForm(OutMI, X86::XOR16i16);  break;
   case X86::XOR32ri:    SimplifyShortImmForm(OutMI, X86::XOR32i32);  break;
   case X86::XOR64ri32:  SimplifyShortImmForm(OutMI, X86::XOR64i32);  break;
+
+  case X86::MORESTACK_RET:
+    OutMI.setOpcode(X86::RET);
+    break;
+
+  case X86::MORESTACK_RET_RESTORE_R10: {
+    MCInst retInst;
+
+    OutMI.setOpcode(X86::MOV64rr);
+    OutMI.addOperand(MCOperand::CreateReg(X86::R10));
+    OutMI.addOperand(MCOperand::CreateReg(X86::RAX));
+
+    retInst.setOpcode(X86::RET);
+    AsmPrinter.OutStreamer.EmitInstruction(retInst);
+    break;
+  }
   }
 }
 
@@ -592,6 +608,8 @@ static void LowerTlsAddr(MCStreamer &OutStreamer,
 }
 
 void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
+  OutStreamer.EmitCodeRegion();
+
   X86MCInstLower MCInstLowering(Mang, *MF, *this);
   switch (MI->getOpcode()) {
   case TargetOpcode::DBG_VALUE:
@@ -608,7 +626,7 @@ void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     if (OutStreamer.hasRawTextSupport())
       OutStreamer.EmitRawText(StringRef("\t#MEMBARRIER"));
     return;
-        
+
 
   case X86::EH_RETURN:
   case X86::EH_RETURN64: {

@@ -119,8 +119,6 @@ namespace {
 
     void SimplifyAndExtend(Loop *L, SCEVExpander &Rewriter, LPPassManager &LPM);
 
-    void SimplifyCongruentIVs(Loop *L);
-
     void RewriteLoopExitValues(Loop *L, SCEVExpander &Rewriter);
 
     void RewriteIVExpressions(Loop *L, SCEVExpander &Rewriter);
@@ -723,10 +721,11 @@ namespace {
   // extend operations. This information is recorded by CollectExtend and
   // provides the input to WidenIV.
   struct WideIVInfo {
+    PHINode *NarrowIV;
     Type *WidestNativeType; // Widest integer type created [sz]ext
     bool IsSigned;          // Was an sext user seen before a zext?
 
-    WideIVInfo() : WidestNativeType(0), IsSigned(false) {}
+    WideIVInfo() : NarrowIV(0), WidestNativeType(0), IsSigned(false) {}
   };
 
   class WideIVVisitor : public IVVisitor {
@@ -736,8 +735,9 @@ namespace {
   public:
     WideIVInfo WI;
 
-    WideIVVisitor(ScalarEvolution *SCEV, const TargetData *TData) :
-      SE(SCEV), TD(TData) {}
+    WideIVVisitor(PHINode *NarrowIV, ScalarEvolution *SCEV,
+                  const TargetData *TData) :
+      SE(SCEV), TD(TData) { WI.NarrowIV = NarrowIV; }
 
     // Implement the interface used by simplifyUsersOfIV.
     virtual void visitCast(CastInst *Cast);
@@ -814,10 +814,10 @@ class WidenIV {
   SmallVector<NarrowIVDefUse, 8> NarrowIVUsers;
 
 public:
-  WidenIV(PHINode *PN, const WideIVInfo &WI, LoopInfo *LInfo,
+  WidenIV(const WideIVInfo &WI, LoopInfo *LInfo,
           ScalarEvolution *SEv, DominatorTree *DTree,
           SmallVectorImpl<WeakVH> &DI) :
-    OrigPhi(PN),
+    OrigPhi(WI.NarrowIV),
     WideType(WI.WidestNativeType),
     IsSigned(WI.IsSigned),
     LI(LInfo),
@@ -918,40 +918,6 @@ Instruction *WidenIV::CloneIVUser(NarrowIVDefUse DU) {
     return WideBO;
   }
   llvm_unreachable(0);
-}
-
-/// HoistStep - Attempt to hoist an IV increment above a potential use.
-///
-/// To successfully hoist, two criteria must be met:
-/// - IncV operands dominate InsertPos and
-/// - InsertPos dominates IncV
-///
-/// Meeting the second condition means that we don't need to check all of IncV's
-/// existing uses (it's moving up in the domtree).
-///
-/// This does not yet recursively hoist the operands, although that would
-/// not be difficult.
-static bool HoistStep(Instruction *IncV, Instruction *InsertPos,
-                      const DominatorTree *DT)
-{
-  if (DT->dominates(IncV, InsertPos))
-    return true;
-
-  if (!DT->dominates(InsertPos->getParent(), IncV->getParent()))
-    return false;
-
-  if (IncV->mayHaveSideEffects())
-    return false;
-
-  // Attempt to hoist IncV
-  for (User::op_iterator OI = IncV->op_begin(), OE = IncV->op_end();
-       OI != OE; ++OI) {
-    Instruction *OInst = dyn_cast<Instruction>(OI);
-    if (OInst && !DT->dominates(OInst, InsertPos))
-      return false;
-  }
-  IncV->moveBefore(InsertPos);
-  return true;
 }
 
 /// No-wrap operations can transfer sign extension of their result to their
@@ -1084,9 +1050,9 @@ Instruction *WidenIV::WidenIVUse(NarrowIVDefUse DU) {
   // Reuse the IV increment that SCEVExpander created as long as it dominates
   // NarrowUse.
   Instruction *WideUse = 0;
-  if (WideAddRec == WideIncExpr && HoistStep(WideInc, DU.NarrowUse, DT)) {
+  if (WideAddRec == WideIncExpr
+      && SCEVExpander::hoistStep(WideInc, DU.NarrowUse, DT))
     WideUse = WideInc;
-  }
   else {
     WideUse = CloneIVUser(DU);
     if (!WideUse)
@@ -1217,7 +1183,7 @@ PHINode *WidenIV::CreateWideIV(SCEVExpander &Rewriter) {
 void IndVarSimplify::SimplifyAndExtend(Loop *L,
                                        SCEVExpander &Rewriter,
                                        LPPassManager &LPM) {
-  std::map<PHINode *, WideIVInfo> WideIVMap;
+  SmallVector<WideIVInfo, 8> WideIVs;
 
   SmallVector<PHINode*, 8> LoopPhis;
   for (BasicBlock::iterator I = L->getHeader()->begin(); isa<PHINode>(I); ++I) {
@@ -1238,72 +1204,22 @@ void IndVarSimplify::SimplifyAndExtend(Loop *L,
       PHINode *CurrIV = LoopPhis.pop_back_val();
 
       // Information about sign/zero extensions of CurrIV.
-      WideIVVisitor WIV(SE, TD);
+      WideIVVisitor WIV(CurrIV, SE, TD);
 
       Changed |= simplifyUsersOfIV(CurrIV, SE, &LPM, DeadInsts, &WIV);
 
       if (WIV.WI.WidestNativeType) {
-        WideIVMap[CurrIV] = WIV.WI;
+        WideIVs.push_back(WIV.WI);
       }
     } while(!LoopPhis.empty());
 
-    for (std::map<PHINode *, WideIVInfo>::const_iterator I = WideIVMap.begin(),
-           E = WideIVMap.end(); I != E; ++I) {
-      WidenIV Widener(I->first, I->second, LI, SE, DT, DeadInsts);
+    for (; !WideIVs.empty(); WideIVs.pop_back()) {
+      WidenIV Widener(WideIVs.back(), LI, SE, DT, DeadInsts);
       if (PHINode *WidePhi = Widener.CreateWideIV(Rewriter)) {
         Changed = true;
         LoopPhis.push_back(WidePhi);
       }
     }
-    WideIVMap.clear();
-  }
-}
-
-/// SimplifyCongruentIVs - Check for congruent phis in this loop header and
-/// replace them with their chosen representative.
-///
-void IndVarSimplify::SimplifyCongruentIVs(Loop *L) {
-  DenseMap<const SCEV *, PHINode *> ExprToIVMap;
-  for (BasicBlock::iterator I = L->getHeader()->begin(); isa<PHINode>(I); ++I) {
-    PHINode *Phi = cast<PHINode>(I);
-    if (!SE->isSCEVable(Phi->getType()))
-      continue;
-
-    const SCEV *S = SE->getSCEV(Phi);
-    std::pair<DenseMap<const SCEV *, PHINode *>::const_iterator, bool> Tmp =
-      ExprToIVMap.insert(std::make_pair(S, Phi));
-    if (Tmp.second)
-      continue;
-    PHINode *OrigPhi = Tmp.first->second;
-
-    // If one phi derives from the other via GEPs, types may differ.
-    if (OrigPhi->getType() != Phi->getType())
-      continue;
-
-    // Replacing the congruent phi is sufficient because acyclic redundancy
-    // elimination, CSE/GVN, should handle the rest. However, once SCEV proves
-    // that a phi is congruent, it's almost certain to be the head of an IV
-    // user cycle that is isomorphic with the original phi. So it's worth
-    // eagerly cleaning up the common case of a single IV increment.
-    if (BasicBlock *LatchBlock = L->getLoopLatch()) {
-      Instruction *OrigInc =
-        cast<Instruction>(OrigPhi->getIncomingValueForBlock(LatchBlock));
-      Instruction *IsomorphicInc =
-        cast<Instruction>(Phi->getIncomingValueForBlock(LatchBlock));
-      if (OrigInc != IsomorphicInc &&
-          OrigInc->getType() == IsomorphicInc->getType() &&
-          SE->getSCEV(OrigInc) == SE->getSCEV(IsomorphicInc) &&
-          HoistStep(OrigInc, IsomorphicInc, DT)) {
-        DEBUG(dbgs() << "INDVARS: Eliminated congruent iv.inc: "
-              << *IsomorphicInc << '\n');
-        IsomorphicInc->replaceAllUsesWith(OrigInc);
-        DeadInsts.push_back(IsomorphicInc);
-      }
-    }
-    DEBUG(dbgs() << "INDVARS: Eliminated congruent iv: " << *Phi << '\n');
-    ++NumElimIV;
-    Phi->replaceAllUsesWith(OrigPhi);
-    DeadInsts.push_back(Phi);
   }
 }
 
@@ -1642,8 +1558,7 @@ LinearFunctionTestReplace(Loop *L,
   }
 
   // For unit stride, IVLimit = Start + BECount with 2's complement overflow.
-  // So for, non-zero start compute the IVLimit here.
-  bool isPtrIV = false;
+  // So for non-zero start compute the IVLimit here.
   Type *CmpTy = CntTy;
   const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(IndVar));
   assert(AR && AR->getLoop() == L && AR->isAffine() && "bad loop counter");
@@ -1655,8 +1570,7 @@ LinearFunctionTestReplace(Loop *L,
     // Note that for without EnableIVRewrite, we never run SCEVExpander on a
     // pointer type, because we must preserve the existing GEPs. Instead we
     // directly generate a GEP later.
-    if (IVInit->getType()->isPointerTy()) {
-      isPtrIV = true;
+    if (CmpIndVar->getType()->isPointerTy()) {
       CmpTy = SE->getEffectiveSCEVType(IVInit->getType());
       IVLimit = SE->getTruncateOrSignExtend(IVLimit, CmpTy);
     }
@@ -1674,21 +1588,25 @@ LinearFunctionTestReplace(Loop *L,
 
   assert(SE->isLoopInvariant(IVLimit, L) &&
          "Computed iteration count is not loop invariant!");
+  assert( !IVLimit->getType()->isPointerTy() &&
+          "Should not expand pointer types" );
   Value *ExitCnt = Rewriter.expandCodeFor(IVLimit, CmpTy, BI);
 
   // Create a gep for IVInit + IVLimit from on an existing pointer base.
-  assert(isPtrIV == IndVar->getType()->isPointerTy() &&
-         "IndVar type must match IVInit type");
-  if (isPtrIV) {
-      Value *IVStart = IndVar->getIncomingValueForBlock(L->getLoopPreheader());
-      assert(AR->getStart() == SE->getSCEV(IVStart) && "bad loop counter");
-      assert(SE->getSizeOfExpr(
-               cast<PointerType>(IVStart->getType())->getElementType())->isOne()
-             && "unit stride pointer IV must be i8*");
+  //
+  // In the presence of null pointer values, the SCEV expression may be an
+  // integer type while the IV is a pointer type. Ensure that the compare
+  // operands are always the same type by checking the IV type here.
+  if (CmpIndVar->getType()->isPointerTy()) {
+    Value *IVStart = IndVar->getIncomingValueForBlock(L->getLoopPreheader());
+    assert(AR->getStart() == SE->getSCEV(IVStart) && "bad loop counter");
+    assert(SE->getSizeOfExpr(
+             cast<PointerType>(IVStart->getType())->getElementType())->isOne()
+           && "unit stride pointer IV must be i8*");
 
-      Builder.SetInsertPoint(L->getLoopPreheader()->getTerminator());
-      ExitCnt = Builder.CreateGEP(IVStart, ExitCnt, "lftr.limit");
-      Builder.SetInsertPoint(BI);
+    Builder.SetInsertPoint(L->getLoopPreheader()->getTerminator());
+    ExitCnt = Builder.CreateGEP(IVStart, ExitCnt, "lftr.limit");
+    Builder.SetInsertPoint(BI);
   }
 
   // Insert a new icmp_ne or icmp_eq instruction before the branch.
@@ -1764,11 +1682,12 @@ void IndVarSimplify::SinkUnusedInvariants(Loop *L) {
     if (isa<LandingPadInst>(I))
       continue;
 
-    // Don't sink static AllocaInsts out of the entry block, which would
-    // turn them into dynamic allocas!
-    if (AllocaInst *AI = dyn_cast<AllocaInst>(I))
-      if (AI->isStaticAlloca())
-        continue;
+    // Don't sink alloca: we never want to sink static alloca's out of the
+    // entry block, and correctly sinking dynamic alloca's requires
+    // checks for stacksave/stackrestore intrinsics.
+    // FIXME: Refactor this check somehow?
+    if (isa<AllocaInst>(I))
+      continue;
 
     // Determine if there is a use in or before the loop (direct or
     // otherwise).
@@ -1848,6 +1767,9 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Create a rewriter object which we'll use to transform the code with.
   SCEVExpander Rewriter(*SE, "indvars");
+#ifndef NDEBUG
+  Rewriter.setDebugType(DEBUG_TYPE);
+#endif
 
   // Eliminate redundant IV users.
   //
@@ -1875,7 +1797,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Eliminate redundant IV cycles.
   if (!EnableIVRewrite)
-    SimplifyCongruentIVs(L);
+    NumElimIV += Rewriter.replaceCongruentIVs(L, DT, DeadInsts);
 
   // Compute the type of the largest recurrence expression, and decide whether
   // a canonical induction variable should be inserted.

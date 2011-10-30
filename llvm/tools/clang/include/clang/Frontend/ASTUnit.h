@@ -147,20 +147,6 @@ private:
   /// the next.
   unsigned NumStoredDiagnosticsFromDriver;
   
-  /// \brief Temporary files that should be removed when the ASTUnit is 
-  /// destroyed.
-  SmallVector<llvm::sys::Path, 4> TemporaryFiles;
-  
-  /// \brief Simple hack to allow us to assert that ASTUnit is not being
-  /// used concurrently, which is not supported.
-  ///
-  /// Clients should create instances of the ConcurrencyCheck class whenever
-  /// using the ASTUnit in a way that isn't intended to be concurrent, which is
-  /// just about any usage.
-  unsigned int ConcurrencyCheckValue;
-  static const unsigned int CheckLocked = 28573289;
-  static const unsigned int CheckUnlocked = 9803453;
-
   /// \brief Counter that determines when we want to try building a
   /// precompiled preamble.
   ///
@@ -171,10 +157,7 @@ private:
   /// building the precompiled preamble fails, we won't try again for
   /// some number of calls.
   unsigned PreambleRebuildCounter;
-  
-  /// \brief The file in which the precompiled preamble is stored.
-  std::string PreambleFile;
-  
+
 public:
   class PreambleData {
     const FileEntry *File;
@@ -406,21 +389,37 @@ private:
                                                         unsigned MaxLines = 0);
   void RealizeTopLevelDeclsFromPreamble();
   
+  /// \brief Allows us to assert that ASTUnit is not being used concurrently,
+  /// which is not supported.
+  ///
+  /// Clients should create instances of the ConcurrencyCheck class whenever
+  /// using the ASTUnit in a way that isn't intended to be concurrent, which is
+  /// just about any usage.
+  /// Becomes a noop in release mode; only useful for debug mode checking.
+  class ConcurrencyState {
+    void *Mutex; // a llvm::sys::MutexImpl in debug;
+
+  public:
+    ConcurrencyState();
+    ~ConcurrencyState();
+
+    void start();
+    void finish();
+  };
+  ConcurrencyState ConcurrencyCheckValue;
+
 public:
   class ConcurrencyCheck {
-    volatile ASTUnit &Self;
+    ASTUnit &Self;
     
   public:
     explicit ConcurrencyCheck(ASTUnit &Self)
       : Self(Self) 
     { 
-      assert(Self.ConcurrencyCheckValue == CheckUnlocked && 
-             "Concurrent access to ASTUnit!");
-      Self.ConcurrencyCheckValue = CheckLocked;
+      Self.ConcurrencyCheckValue.start();
     }
-    
     ~ConcurrencyCheck() {
-      Self.ConcurrencyCheckValue = CheckUnlocked;
+      Self.ConcurrencyCheckValue.finish();
     }
   };
   friend class ConcurrencyCheck;
@@ -444,6 +443,8 @@ public:
   const ASTContext &getASTContext() const { return *Ctx; }
         ASTContext &getASTContext()       { return *Ctx; }
 
+  void setASTContext(ASTContext *ctx) { Ctx = ctx; }
+
   bool hasSema() const { return TheSema; }
   Sema &getSema() const { 
     assert(TheSema && "ASTUnit does not have a Sema object!");
@@ -460,9 +461,7 @@ public:
   /// \brief Add a temporary file that the ASTUnit depends on.
   ///
   /// This file will be erased when the ASTUnit is destroyed.
-  void addTemporaryFile(const llvm::sys::Path &TempFile) {
-    TemporaryFiles.push_back(TempFile);
-  }
+  void addTemporaryFile(const llvm::sys::Path &TempFile);
                         
   bool getOnlyLocalDecls() const { return OnlyLocalDecls; }
 
@@ -538,6 +537,11 @@ public:
   /// preamble, otherwise it returns \arg Loc.
   SourceLocation mapLocationToPreamble(SourceLocation Loc);
 
+  bool isInPreambleFileID(SourceLocation Loc);
+  bool isInMainFileID(SourceLocation Loc);
+  SourceLocation getStartOfMainFileID();
+  SourceLocation getEndOfPreambleFileID();
+
   /// \brief \see mapLocationFromPreamble.
   SourceRange mapRangeFromPreamble(SourceRange R) {
     return SourceRange(mapLocationFromPreamble(R.getBegin()),
@@ -551,17 +555,26 @@ public:
   }
   
   // Retrieve the diagnostics associated with this AST
-  typedef const StoredDiagnostic *stored_diag_iterator;
-  stored_diag_iterator stored_diag_begin() const { 
+  typedef StoredDiagnostic *stored_diag_iterator;
+  typedef const StoredDiagnostic *stored_diag_const_iterator;
+  stored_diag_const_iterator stored_diag_begin() const { 
     return StoredDiagnostics.begin(); 
   }
-  stored_diag_iterator stored_diag_end() const { 
+  stored_diag_iterator stored_diag_begin() { 
+    return StoredDiagnostics.begin(); 
+  }
+  stored_diag_const_iterator stored_diag_end() const { 
+    return StoredDiagnostics.end(); 
+  }
+  stored_diag_iterator stored_diag_end() { 
     return StoredDiagnostics.end(); 
   }
   unsigned stored_diag_size() const { return StoredDiagnostics.size(); }
-  
-  SmallVector<StoredDiagnostic, 4> &getStoredDiagnostics() { 
-    return StoredDiagnostics; 
+
+  stored_diag_iterator stored_diag_afterDriver_begin() {
+    if (NumStoredDiagnosticsFromDriver > StoredDiagnostics.size())
+      NumStoredDiagnosticsFromDriver = 0;
+    return StoredDiagnostics.begin() + NumStoredDiagnosticsFromDriver; 
   }
 
   typedef std::vector<CachedCodeCompletionResult>::iterator
@@ -635,9 +648,13 @@ public:
   ///
   /// \param Action - The ASTFrontendAction to invoke. Its ownership is not
   /// transfered.
+  ///
+  /// \param Unit - optionally an already created ASTUnit. Its ownership is not
+  /// transfered.
   static ASTUnit *LoadFromCompilerInvocationAction(CompilerInvocation *CI,
                               llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
-                                             ASTFrontendAction *Action = 0);
+                                             ASTFrontendAction *Action = 0,
+                                             ASTUnit *Unit = 0);
 
   /// LoadFromCompilerInvocation - Create an ASTUnit from a source file, via a
   /// CompilerInvocation object.

@@ -846,7 +846,7 @@ protected:
   ///
   /// \returns the first/last pair of declarations.
   static std::pair<Decl *, Decl *>
-  BuildDeclChain(const SmallVectorImpl<Decl*> &Decls);
+  BuildDeclChain(const SmallVectorImpl<Decl*> &Decls, bool FieldsAlreadyLoaded);
 
    DeclContext(Decl::Kind K)
      : DeclKind(K), ExternalLexicalStorage(false),
@@ -1232,6 +1232,16 @@ public:
   /// semantic context via makeDeclVisibleInContext.
   void addDecl(Decl *D);
 
+  /// @brief Add the declaration D into this context, but suppress
+  /// searches for external declarations with the same name.
+  ///
+  /// Although analogous in function to addDecl, this removes an
+  /// important check.  This is only useful if the Decl is being
+  /// added in response to an external search; in all other cases,
+  /// addDecl() is the right function to use.
+  /// See the ASTImporter for use cases.
+  void addDeclInternal(Decl *D);
+
   /// @brief Add the declaration D to this context without modifying
   /// any lookup tables.
   ///
@@ -1262,6 +1272,15 @@ public:
   lookup_result lookup(DeclarationName Name);
   lookup_const_result lookup(DeclarationName Name) const;
 
+  /// \brief A simplistic name lookup mechanism that performs name lookup
+  /// into this declaration context without consulting the external source.
+  ///
+  /// This function should almost never be used, because it subverts the 
+  /// usual relationship between a DeclContext and the external source.
+  /// See the ASTImporter for the (few, but important) use cases.
+  void localUncachedLookup(DeclarationName Name, 
+                           llvm::SmallVectorImpl<NamedDecl *> &Results);
+  
   /// @brief Makes a declaration visible within this context.
   ///
   /// This routine makes the declaration D visible to name lookup
@@ -1345,12 +1364,22 @@ public:
 
 private:
   void LoadLexicalDeclsFromExternalStorage() const;
+    
+  /// @brief Makes a declaration visible within this context, but 
+  /// suppresses searches for external declarations with the same
+  /// name.
+  ///
+  /// Analogous to makeDeclVisibleInContext, but for the exclusive
+  /// use of addDeclInternal().
+  void makeDeclVisibleInContextInternal(NamedDecl *D,
+                                        bool Recoverable = true);
 
   friend class DependentDiagnostic;
   StoredDeclsMap *CreateStoredDeclsMap(ASTContext &C) const;
 
   void buildLookup(DeclContext *DCtx);
-  void makeDeclVisibleInContextImpl(NamedDecl *D);
+  void makeDeclVisibleInContextWithFlags(NamedDecl *D, bool Internal, bool Recoverable);
+  void makeDeclVisibleInContextImpl(NamedDecl *D, bool Internal);
 };
 
 inline bool Decl::isTemplateParameter() const {

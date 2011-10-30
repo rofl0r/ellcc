@@ -19,6 +19,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
+#include "clang/Analysis/ProgramPoint.h"
 #include <vector>
 
 namespace clang {
@@ -38,8 +39,8 @@ namespace ento {
   class ExplodedNodeSet;
   class ExplodedGraph;
   class ProgramState;
-  class EndOfFunctionNodeBuilder;
-  class BranchNodeBuilder;
+  class NodeBuilder;
+  struct NodeBuilderContext;
   class MemRegion;
   class SymbolReaper;
 
@@ -221,18 +222,22 @@ public:
   void runCheckersForBind(ExplodedNodeSet &Dst,
                           const ExplodedNodeSet &Src,
                           SVal location, SVal val,
-                          const Stmt *S, ExprEngine &Eng);
+                          const Stmt *S, ExprEngine &Eng,
+                          ProgramPoint::Kind PointKind);
 
   /// \brief Run checkers for end of analysis.
   void runCheckersForEndAnalysis(ExplodedGraph &G, BugReporter &BR,
                                  ExprEngine &Eng);
 
   /// \brief Run checkers for end of path.
-  void runCheckersForEndPath(EndOfFunctionNodeBuilder &B, ExprEngine &Eng);
+  void runCheckersForEndPath(NodeBuilderContext &BC,
+                             ExplodedNodeSet &Dst,
+                             ExprEngine &Eng);
 
   /// \brief Run checkers for branch condition.
   void runCheckersForBranchCondition(const Stmt *condition,
-                                     BranchNodeBuilder &B, ExprEngine &Eng);
+                                     ExplodedNodeSet &Dst, ExplodedNode *Pred,
+                                     ExprEngine &Eng);
 
   /// \brief Run checkers for live symbols.
   ///
@@ -320,19 +325,21 @@ public:
   typedef CheckerFn<void (const ObjCMessage &, CheckerContext &)>
       CheckObjCMessageFunc;
   
-  typedef CheckerFn<void (const SVal &location, bool isLoad, CheckerContext &)>
+  typedef CheckerFn<void (const SVal &location, bool isLoad, const Stmt *S,
+                          CheckerContext &)>
       CheckLocationFunc;
   
-  typedef CheckerFn<void (const SVal &location, const SVal &val,
-                          CheckerContext &)> CheckBindFunc;
+  typedef CheckerFn<void (const SVal &location, const SVal &val, 
+                          const Stmt *S, CheckerContext &)> 
+      CheckBindFunc;
   
   typedef CheckerFn<void (ExplodedGraph &, BugReporter &, ExprEngine &)>
       CheckEndAnalysisFunc;
   
-  typedef CheckerFn<void (EndOfFunctionNodeBuilder &, ExprEngine &)>
+  typedef CheckerFn<void (CheckerContext &)>
       CheckEndPathFunc;
   
-  typedef CheckerFn<void (const Stmt *, BranchNodeBuilder &, ExprEngine &)>
+  typedef CheckerFn<void (const Stmt *, CheckerContext &)>
       CheckBranchConditionFunc;
   
   typedef CheckerFn<void (SymbolReaper &, CheckerContext &)>
@@ -354,6 +361,11 @@ public:
   
   typedef CheckerFn<bool (const CallExpr *, CheckerContext &)>
       EvalCallFunc;
+
+  typedef CheckerFn<bool (const CallExpr *, ExprEngine &Eng,
+                                            ExplodedNode *Pred,
+                                            ExplodedNodeSet &Dst)>
+      InlineCallFunc;
 
   typedef CheckerFn<void (const TranslationUnitDecl *,
                           AnalysisManager&, BugReporter &)>
@@ -388,6 +400,8 @@ public:
   void _registerForEvalAssume(EvalAssumeFunc checkfn);
 
   void _registerForEvalCall(EvalCallFunc checkfn);
+
+  void _registerForInlineCall(InlineCallFunc checkfn);
 
   void _registerForEndOfTranslationUnit(CheckEndOfTranslationUnit checkfn);
 
@@ -510,6 +524,8 @@ private:
   std::vector<EvalAssumeFunc> EvalAssumeCheckers;
 
   std::vector<EvalCallFunc> EvalCallCheckers;
+
+  std::vector<InlineCallFunc> InlineCallCheckers;
 
   std::vector<CheckEndOfTranslationUnit> EndOfTranslationUnitCheckers;
 

@@ -666,6 +666,8 @@ TryAgain:
         
     case tok::pp___export_macro__:
       return HandleMacroExportDirective(Result);
+    case tok::pp___private_macro__:
+      return HandleMacroPrivateDirective(Result);
     }
     break;
   }
@@ -772,9 +774,13 @@ void Preprocessor::HandleLineDirective(Token &Tok) {
 
   // Enforce C99 6.10.4p3: "The digit sequence shall not specify ... a
   // number greater than 2147483647".  C90 requires that the line # be <= 32767.
-  unsigned LineLimit = Features.C99 ? 2147483648U : 32768U;
+  unsigned LineLimit = 32768U;
+  if (Features.C99 || Features.CPlusPlus0x)
+    LineLimit = 2147483648U;
   if (LineNo >= LineLimit)
     Diag(DigitTok, diag::ext_pp_line_too_big) << LineLimit;
+  else if (Features.CPlusPlus0x && LineNo >= 32768U)
+    Diag(DigitTok, diag::warn_cxx98_compat_pp_line_too_big);
 
   int FilenameID = -1;
   Token StrTok;
@@ -1031,13 +1037,44 @@ void Preprocessor::HandleMacroExportDirective(Token &Tok) {
   
   // If the macro is not defined, this is an error.
   if (MI == 0) {
-    Diag(MacroNameTok, diag::err_pp_export_non_macro)
+    Diag(MacroNameTok, diag::err_pp_visibility_non_macro)
       << MacroNameTok.getIdentifierInfo();
     return;
   }
   
   // Note that this macro has now been exported.
-  MI->setExportLocation(MacroNameTok.getLocation());
+  MI->setVisibility(/*IsPublic=*/true, MacroNameTok.getLocation());
+  
+  // If this macro definition came from a PCH file, mark it
+  // as having changed since serialization.
+  if (MI->isFromAST())
+    MI->setChangedAfterLoad();
+}
+
+/// \brief Handle a #__private_macro__ directive.
+void Preprocessor::HandleMacroPrivateDirective(Token &Tok) {
+  Token MacroNameTok;
+  ReadMacroName(MacroNameTok, 2);
+  
+  // Error reading macro name?  If so, diagnostic already issued.
+  if (MacroNameTok.is(tok::eod))
+    return;
+  
+  // Check to see if this is the last token on the #__private_macro__ line.
+  CheckEndOfDirective("__private_macro__");
+  
+  // Okay, we finally have a valid identifier to undef.
+  MacroInfo *MI = getMacroInfo(MacroNameTok.getIdentifierInfo());
+  
+  // If the macro is not defined, this is an error.
+  if (MI == 0) {
+    Diag(MacroNameTok, diag::err_pp_visibility_non_macro)
+      << MacroNameTok.getIdentifierInfo();
+    return;
+  }
+  
+  // Note that this macro has now been marked private.
+  MI->setVisibility(/*IsPublic=*/false, MacroNameTok.getLocation());
   
   // If this macro definition came from a PCH file, mark it
   // as having changed since serialization.
@@ -1365,8 +1402,10 @@ bool Preprocessor::ReadMacroDefinitionArgList(MacroInfo *MI) {
       Diag(Tok, diag::err_pp_expected_ident_in_arg_list);
       return true;
     case tok::ellipsis:  // #define X(... -> C99 varargs
-      if (!Features.C99 && !Features.CPlusPlus0x)
-        Diag(Tok, diag::ext_variadic_macro);
+      if (!Features.C99)
+        Diag(Tok, Features.CPlusPlus0x ? 
+             diag::warn_cxx98_compat_variadic_macro :
+             diag::ext_variadic_macro);
 
       // Lex the token after the identifier.
       LexUnexpandedToken(Tok);
@@ -1490,7 +1529,7 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok) {
 
     // Read the first token after the arg list for down below.
     LexUnexpandedToken(Tok);
-  } else if (Features.C99) {
+  } else if (Features.C99 || Features.CPlusPlus0x) {
     // C99 requires whitespace between the macro definition and the body.  Emit
     // a diagnostic for something like "#define X+".
     Diag(Tok, diag::ext_c99_whitespace_required_after_macro_name);

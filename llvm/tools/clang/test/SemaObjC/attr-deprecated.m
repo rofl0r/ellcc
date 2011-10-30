@@ -9,7 +9,7 @@
 
 @implementation A
 + (void)F __attribute__((deprecated))
-{	// expected-warning {{method attribute can only be specified on method declarations}}
+{
   [self F]; // no warning, since the caller is also deprecated.
 }
 
@@ -85,12 +85,21 @@ int t5() {
 __attribute ((deprecated))  
 @interface DEPRECATED {
   @public int ivar; 
+  DEPRECATED *ivar2; // no warning.
 } 
 - (int) instancemethod;
+- (DEPRECATED *) meth; // no warning.
 @property  int prop; 
 @end
 
-@interface DEPRECATED (Category) // expected-warning {{warning: 'DEPRECATED' is deprecated}}
+@interface DEPRECATED (Category) // no warning.
+- (DEPRECATED *) meth2; // no warning.
+@end
+
+@interface DEPRECATED (Category2) // no warning.
+@end
+
+@implementation DEPRECATED (Category2) // expected-warning {{warning: 'DEPRECATED' is deprecated}}
 @end
 
 @interface NS : DEPRECATED  // expected-warning {{warning: 'DEPRECATED' is deprecated}}

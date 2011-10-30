@@ -38,6 +38,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/SelectionDAG.h"
@@ -107,6 +108,7 @@ void ARMTargetLowering::addTypeForNEON(EVT VT, EVT PromotedLdStVT,
   EVT ElemTy = VT.getVectorElementType();
   if (ElemTy != MVT::i64 && ElemTy != MVT::f64)
     setOperationAction(ISD::SETCC, VT.getSimpleVT(), Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, VT.getSimpleVT(), Custom);
   setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT.getSimpleVT(), Custom);
   if (ElemTy != MVT::i32) {
     setOperationAction(ISD::SINT_TO_FP, VT.getSimpleVT(), Expand);
@@ -421,6 +423,13 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setLibcallName(RTLIB::MEMSET,  "__aeabi_memset");
   }
 
+  // Use divmod compiler-rt calls for iOS 5.0 and later.
+  if (Subtarget->getTargetTriple().getOS() == Triple::IOS &&
+      !Subtarget->getTargetTriple().isOSVersionLT(5, 0)) {
+    setLibcallName(RTLIB::SDIVREM_I32, "__divmodsi4");
+    setLibcallName(RTLIB::UDIVREM_I32, "__udivmodsi4");
+  }
+
   if (Subtarget->isThumb1Only())
     addRegisterClass(MVT::i32, ARM::tGPRRegisterClass);
   else
@@ -511,6 +520,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setTargetDAGCombine(ISD::FP_TO_SINT);
     setTargetDAGCombine(ISD::FP_TO_UINT);
     setTargetDAGCombine(ISD::FDIV);
+
+    setLoadExtAction(ISD::EXTLOAD, MVT::v4i8, Expand);
   }
 
   computeRegisterProperties();
@@ -741,6 +752,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
 
   //// temporary - rewrite interface to use type
   maxStoresPerMemcpy = maxStoresPerMemcpyOptSize = 1;
+  maxStoresPerMemset = 16;
+  maxStoresPerMemsetOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
 
   // On ARM arguments smaller than 4 bytes are extended, so all arguments
   // are at least 4 bytes aligned.
@@ -976,7 +989,7 @@ Sched::Preference ARMTargetLowering::getSchedulingPreference(SDNode *N) const {
     if (VT == MVT::Glue || VT == MVT::Other)
       continue;
     if (VT.isFloatingPoint() || VT.isVector())
-      return Sched::Latency;
+      return Sched::ILP;
   }
 
   if (!N->isMachineOpcode())
@@ -991,7 +1004,7 @@ Sched::Preference ARMTargetLowering::getSchedulingPreference(SDNode *N) const {
     return Sched::RegPressure;
   if (!Itins->isEmpty() &&
       Itins->getOperandCycle(MCID.getSchedClass(), 0) > 2)
-    return Sched::Latency;
+    return Sched::ILP;
 
   return Sched::RegPressure;
 }
@@ -1214,8 +1227,8 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   MachineFunction &MF = DAG.getMachineFunction();
   bool IsStructRet    = (Outs.empty()) ? false : Outs[0].Flags.isSRet();
   bool IsSibCall = false;
-  // Temporarily disable tail calls so things don't break.
-  if (!EnableARMTailCalls)
+  // Disable tail calls if they're not supported.
+  if (!EnableARMTailCalls && !Subtarget->supportsTailCall())
     isTailCall = false;
   if (isTailCall) {
     // Check if it's really possible to do a tail call.
@@ -2202,7 +2215,8 @@ SDValue
 ARMTargetLowering::LowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const {
   DebugLoc dl = Op.getDebugLoc();
   SDValue Val = DAG.getConstant(0, MVT::i32);
-  return DAG.getNode(ARMISD::EH_SJLJ_SETJMP, dl, MVT::i32, Op.getOperand(0),
+  return DAG.getNode(ARMISD::EH_SJLJ_SETJMP, dl,
+                     DAG.getVTList(MVT::i32, MVT::Other), Op.getOperand(0),
                      Op.getOperand(1), Val);
 }
 
@@ -3935,8 +3949,7 @@ SDValue ARMTargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
       }
 
       // Try an immediate VMVN.
-      uint64_t NegatedImm = (SplatBits.getZExtValue() ^
-                             ((1LL << SplatBitSize) - 1));
+      uint64_t NegatedImm = (~SplatBits).getZExtValue();
       Val = isNEONModifiedImm(NegatedImm,
                                       SplatUndef.getZExtValue(), SplatBitSize,
                                       DAG, VmovVT, VT.is128BitVector(),
@@ -4048,6 +4061,14 @@ SDValue ARMTargetLowering::ReconstructShuffle(SDValue Op,
     else if (V.getOpcode() != ISD::EXTRACT_VECTOR_ELT) {
       // A shuffle can only come from building a vector from various
       // elements of other vectors.
+      return SDValue();
+    } else if (V.getOperand(0).getValueType().getVectorElementType() !=
+               VT.getVectorElementType()) {
+      // This code doesn't know how to handle shuffles where the vector
+      // element types do not match (this happens because type legalization
+      // promotes the return type of EXTRACT_VECTOR_ELT).
+      // FIXME: It might be appropriate to extend this code to handle
+      // mismatched types.
       return SDValue();
     }
 
@@ -4432,6 +4453,15 @@ static SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) {
   return SDValue();
 }
 
+static SDValue LowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) {
+  // INSERT_VECTOR_ELT is legal only for immediate indexes.
+  SDValue Lane = Op.getOperand(2);
+  if (!isa<ConstantSDNode>(Lane))
+    return SDValue();
+
+  return Op;
+}
+
 static SDValue LowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) {
   // EXTRACT_VECTOR_ELT is legal only for immediate indexes.
   SDValue Lane = Op.getOperand(1);
@@ -4508,11 +4538,10 @@ static bool isExtendedBUILD_VECTOR(SDNode *N, SelectionDAG &DAG,
       unsigned EltSize = VT.getVectorElementType().getSizeInBits();
       unsigned HalfSize = EltSize / 2;
       if (isSigned) {
-        int64_t SExtVal = C->getSExtValue();
-        if ((SExtVal >> HalfSize) != (SExtVal >> EltSize))
+        if (!isIntN(HalfSize, C->getSExtValue()))
           return false;
       } else {
-        if ((C->getZExtValue() >> HalfSize) != 0)
+        if (!isUIntN(HalfSize, C->getZExtValue()))
           return false;
       }
       continue;
@@ -4884,9 +4913,9 @@ static SDValue LowerAtomicLoadStore(SDValue Op, SelectionDAG &DAG) {
 static void
 ReplaceATOMIC_OP_64(SDNode *Node, SmallVectorImpl<SDValue>& Results,
                     SelectionDAG &DAG, unsigned NewOp) {
-  EVT T = Node->getValueType(0);
   DebugLoc dl = Node->getDebugLoc();
-  assert (T == MVT::i64 && "Only know how to expand i64 atomics");
+  assert (Node->getValueType(0) == MVT::i64 &&
+          "Only know how to expand i64 atomics");
 
   SmallVector<SDValue, 6> Ops;
   Ops.push_back(Node->getOperand(0)); // Chain
@@ -4955,6 +4984,7 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SETCC:         return LowerVSETCC(Op, DAG);
   case ISD::BUILD_VECTOR:  return LowerBUILD_VECTOR(Op, DAG, Subtarget);
   case ISD::VECTOR_SHUFFLE: return LowerVECTOR_SHUFFLE(Op, DAG);
+  case ISD::INSERT_VECTOR_ELT: return LowerINSERT_VECTOR_ELT(Op, DAG);
   case ISD::EXTRACT_VECTOR_ELT: return LowerEXTRACT_VECTOR_ELT(Op, DAG);
   case ISD::CONCAT_VECTORS: return LowerCONCAT_VECTORS(Op, DAG);
   case ISD::FLT_ROUNDS_:   return LowerFLT_ROUNDS_(Op, DAG);
@@ -5482,6 +5512,551 @@ ARMTargetLowering::EmitAtomicBinary64(MachineInstr *MI, MachineBasicBlock *BB,
   return BB;
 }
 
+/// EmitBasePointerRecalculation - For functions using a base pointer, we
+/// rematerialize it (via the frame pointer).
+void ARMTargetLowering::
+EmitBasePointerRecalculation(MachineInstr *MI, MachineBasicBlock *MBB,
+                             MachineBasicBlock *DispatchBB) const {
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  const ARMBaseInstrInfo *AII = static_cast<const ARMBaseInstrInfo*>(TII);
+  MachineFunction &MF = *MI->getParent()->getParent();
+  ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
+  const ARMBaseRegisterInfo &RI = AII->getRegisterInfo();
+
+  if (!RI.hasBasePointer(MF)) return;
+
+  MachineBasicBlock::iterator MBBI = MI;
+
+  int32_t NumBytes = AFI->getFramePtrSpillOffset();
+  unsigned FramePtr = RI.getFrameRegister(MF);
+  assert(MF.getTarget().getFrameLowering()->hasFP(MF) &&
+         "Base pointer without frame pointer?");
+
+  if (AFI->isThumb2Function())
+    llvm::emitT2RegPlusImmediate(*MBB, MBBI, MI->getDebugLoc(), ARM::R6,
+                                 FramePtr, -NumBytes, ARMCC::AL, 0, *AII);
+  else if (AFI->isThumbFunction())
+    llvm::emitThumbRegPlusImmediate(*MBB, MBBI, MI->getDebugLoc(), ARM::R6,
+                                    FramePtr, -NumBytes, *AII, RI);
+  else
+    llvm::emitARMRegPlusImmediate(*MBB, MBBI, MI->getDebugLoc(), ARM::R6,
+                                  FramePtr, -NumBytes, ARMCC::AL, 0, *AII);
+
+  if (!RI.needsStackRealignment(MF)) return;
+
+  // If there's dynamic realignment, adjust for it.
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  unsigned MaxAlign = MFI->getMaxAlignment();
+  assert(!AFI->isThumb1OnlyFunction());
+
+  // Emit bic r6, r6, MaxAlign
+  unsigned bicOpc = AFI->isThumbFunction() ? ARM::t2BICri : ARM::BICri;
+  AddDefaultCC(
+    AddDefaultPred(
+      BuildMI(*MBB, MBBI, MI->getDebugLoc(), TII->get(bicOpc), ARM::R6)
+      .addReg(ARM::R6, RegState::Kill)
+      .addImm(MaxAlign - 1)));
+}
+
+/// SetupEntryBlockForSjLj - Insert code into the entry block that creates and
+/// registers the function context.
+void ARMTargetLowering::
+SetupEntryBlockForSjLj(MachineInstr *MI, MachineBasicBlock *MBB,
+                       MachineBasicBlock *DispatchBB, int FI) const {
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  DebugLoc dl = MI->getDebugLoc();
+  MachineFunction *MF = MBB->getParent();
+  MachineRegisterInfo *MRI = &MF->getRegInfo();
+  MachineConstantPool *MCP = MF->getConstantPool();
+  ARMFunctionInfo *AFI = MF->getInfo<ARMFunctionInfo>();
+  const Function *F = MF->getFunction();
+
+  bool isThumb = Subtarget->isThumb();
+  bool isThumb2 = Subtarget->isThumb2();
+
+  unsigned PCLabelId = AFI->createPICLabelUId();
+  unsigned PCAdj = (isThumb || isThumb2) ? 4 : 8;
+  ARMConstantPoolValue *CPV =
+    ARMConstantPoolMBB::Create(F->getContext(), DispatchBB, PCLabelId, PCAdj);
+  unsigned CPI = MCP->getConstantPoolIndex(CPV, 4);
+
+  const TargetRegisterClass *TRC =
+    isThumb ? ARM::tGPRRegisterClass : ARM::GPRRegisterClass;
+
+  // Grab constant pool and fixed stack memory operands.
+  MachineMemOperand *CPMMO =
+    MF->getMachineMemOperand(MachinePointerInfo::getConstantPool(),
+                             MachineMemOperand::MOLoad, 4, 4);
+
+  MachineMemOperand *FIMMOSt =
+    MF->getMachineMemOperand(MachinePointerInfo::getFixedStack(FI),
+                             MachineMemOperand::MOStore, 4, 4);
+
+  EmitBasePointerRecalculation(MI, MBB, DispatchBB);
+
+  // Load the address of the dispatch MBB into the jump buffer.
+  if (isThumb2) {
+    // Incoming value: jbuf
+    //   ldr.n  r5, LCPI1_1
+    //   orr    r5, r5, #1
+    //   add    r5, pc
+    //   str    r5, [$jbuf, #+4] ; &jbuf[1]
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::t2LDRpci), NewVReg1)
+                   .addConstantPoolIndex(CPI)
+                   .addMemOperand(CPMMO));
+    // Set the low bit because of thumb mode.
+    unsigned NewVReg2 = MRI->createVirtualRegister(TRC);
+    AddDefaultCC(
+      AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::t2ORRri), NewVReg2)
+                     .addReg(NewVReg1, RegState::Kill)
+                     .addImm(0x01)));
+    unsigned NewVReg3 = MRI->createVirtualRegister(TRC);
+    BuildMI(*MBB, MI, dl, TII->get(ARM::tPICADD), NewVReg3)
+      .addReg(NewVReg2, RegState::Kill)
+      .addImm(PCLabelId);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::t2STRi12))
+                   .addReg(NewVReg3, RegState::Kill)
+                   .addFrameIndex(FI)
+                   .addImm(36)  // &jbuf[1] :: pc
+                   .addMemOperand(FIMMOSt));
+  } else if (isThumb) {
+    // Incoming value: jbuf
+    //   ldr.n  r1, LCPI1_4
+    //   add    r1, pc
+    //   mov    r2, #1
+    //   orrs   r1, r2
+    //   add    r2, $jbuf, #+4 ; &jbuf[1]
+    //   str    r1, [r2]
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tLDRpci), NewVReg1)
+                   .addConstantPoolIndex(CPI)
+                   .addMemOperand(CPMMO));
+    unsigned NewVReg2 = MRI->createVirtualRegister(TRC);
+    BuildMI(*MBB, MI, dl, TII->get(ARM::tPICADD), NewVReg2)
+      .addReg(NewVReg1, RegState::Kill)
+      .addImm(PCLabelId);
+    // Set the low bit because of thumb mode.
+    unsigned NewVReg3 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tMOVi8), NewVReg3)
+                   .addReg(ARM::CPSR, RegState::Define)
+                   .addImm(1));
+    unsigned NewVReg4 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tORR), NewVReg4)
+                   .addReg(ARM::CPSR, RegState::Define)
+                   .addReg(NewVReg2, RegState::Kill)
+                   .addReg(NewVReg3, RegState::Kill));
+    unsigned NewVReg5 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tADDrSPi), NewVReg5)
+                   .addFrameIndex(FI)
+                   .addImm(36)); // &jbuf[1] :: pc
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tSTRi))
+                   .addReg(NewVReg4, RegState::Kill)
+                   .addReg(NewVReg5, RegState::Kill)
+                   .addImm(0)
+                   .addMemOperand(FIMMOSt));
+  } else {
+    // Incoming value: jbuf
+    //   ldr  r1, LCPI1_1
+    //   add  r1, pc, r1
+    //   str  r1, [$jbuf, #+4] ; &jbuf[1]
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::LDRi12),  NewVReg1)
+                   .addConstantPoolIndex(CPI)
+                   .addImm(0)
+                   .addMemOperand(CPMMO));
+    unsigned NewVReg2 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::PICADD), NewVReg2)
+                   .addReg(NewVReg1, RegState::Kill)
+                   .addImm(PCLabelId));
+    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::STRi12))
+                   .addReg(NewVReg2, RegState::Kill)
+                   .addFrameIndex(FI)
+                   .addImm(36)  // &jbuf[1] :: pc
+                   .addMemOperand(FIMMOSt));
+  }
+}
+
+MachineBasicBlock *ARMTargetLowering::
+EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  DebugLoc dl = MI->getDebugLoc();
+  MachineFunction *MF = MBB->getParent();
+  MachineRegisterInfo *MRI = &MF->getRegInfo();
+  ARMFunctionInfo *AFI = MF->getInfo<ARMFunctionInfo>();
+  MachineFrameInfo *MFI = MF->getFrameInfo();
+  int FI = MFI->getFunctionContextIndex();
+
+  const TargetRegisterClass *TRC =
+    Subtarget->isThumb() ? ARM::tGPRRegisterClass : ARM::GPRRegisterClass;
+
+  // Get a mapping of the call site numbers to all of the landing pads they're
+  // associated with.
+  DenseMap<unsigned, SmallVector<MachineBasicBlock*, 2> > CallSiteNumToLPad;
+  unsigned MaxCSNum = 0;
+  MachineModuleInfo &MMI = MF->getMMI();
+  for (MachineFunction::iterator BB = MF->begin(), E = MF->end(); BB != E; ++BB) {
+    if (!BB->isLandingPad()) continue;
+
+    // FIXME: We should assert that the EH_LABEL is the first MI in the landing
+    // pad.
+    for (MachineBasicBlock::iterator
+           II = BB->begin(), IE = BB->end(); II != IE; ++II) {
+      if (!II->isEHLabel()) continue;
+
+      MCSymbol *Sym = II->getOperand(0).getMCSymbol();
+      if (!MMI.hasCallSiteLandingPad(Sym)) continue;
+
+      SmallVectorImpl<unsigned> &CallSiteIdxs = MMI.getCallSiteLandingPad(Sym);
+      for (SmallVectorImpl<unsigned>::iterator
+             CSI = CallSiteIdxs.begin(), CSE = CallSiteIdxs.end();
+           CSI != CSE; ++CSI) {
+        CallSiteNumToLPad[*CSI].push_back(BB);
+        MaxCSNum = std::max(MaxCSNum, *CSI);
+      }
+      break;
+    }
+  }
+
+  // Get an ordered list of the machine basic blocks for the jump table.
+  std::vector<MachineBasicBlock*> LPadList;
+  SmallPtrSet<MachineBasicBlock*, 64> InvokeBBs;
+  LPadList.reserve(CallSiteNumToLPad.size());
+  for (unsigned I = 1; I <= MaxCSNum; ++I) {
+    SmallVectorImpl<MachineBasicBlock*> &MBBList = CallSiteNumToLPad[I];
+    for (SmallVectorImpl<MachineBasicBlock*>::iterator
+           II = MBBList.begin(), IE = MBBList.end(); II != IE; ++II) {
+      LPadList.push_back(*II);
+      InvokeBBs.insert((*II)->pred_begin(), (*II)->pred_end());
+    }
+  }
+
+  assert(!LPadList.empty() &&
+         "No landing pad destinations for the dispatch jump table!");
+
+  // Create the jump table and associated information.
+  MachineJumpTableInfo *JTI =
+    MF->getOrCreateJumpTableInfo(MachineJumpTableInfo::EK_Inline);
+  unsigned MJTI = JTI->createJumpTableIndex(LPadList);
+  unsigned UId = AFI->createJumpTableUId();
+
+  // Create the MBBs for the dispatch code.
+
+  // Shove the dispatch's address into the return slot in the function context.
+  MachineBasicBlock *DispatchBB = MF->CreateMachineBasicBlock();
+  DispatchBB->setIsLandingPad();
+
+  MachineBasicBlock *TrapBB = MF->CreateMachineBasicBlock();
+  BuildMI(TrapBB, dl, TII->get(Subtarget->isThumb() ? ARM::tTRAP : ARM::TRAP));
+  DispatchBB->addSuccessor(TrapBB);
+
+  MachineBasicBlock *DispContBB = MF->CreateMachineBasicBlock();
+  DispatchBB->addSuccessor(DispContBB);
+
+  // Insert and MBBs.
+  MF->insert(MF->end(), DispatchBB);
+  MF->insert(MF->end(), DispContBB);
+  MF->insert(MF->end(), TrapBB);
+
+  // Insert code into the entry block that creates and registers the function
+  // context.
+  SetupEntryBlockForSjLj(MI, MBB, DispatchBB, FI);
+
+  MachineMemOperand *FIMMOLd =
+    MF->getMachineMemOperand(MachinePointerInfo::getFixedStack(FI),
+                             MachineMemOperand::MOLoad |
+                             MachineMemOperand::MOVolatile, 4, 4);
+
+  unsigned NumLPads = LPadList.size();
+  if (Subtarget->isThumb2()) {
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::t2LDRi12), NewVReg1)
+                   .addFrameIndex(FI)
+                   .addImm(4)
+                   .addMemOperand(FIMMOLd));
+
+    if (NumLPads < 256) {
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::t2CMPri))
+                     .addReg(NewVReg1)
+                     .addImm(LPadList.size()));
+    } else {
+      unsigned VReg1 = MRI->createVirtualRegister(TRC);
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::t2MOVi16), VReg1)
+                     .addImm(NumLPads & 0xFFFF));
+
+      unsigned VReg2 = VReg1;
+      if ((NumLPads & 0xFFFF0000) != 0) {
+        VReg2 = MRI->createVirtualRegister(TRC);
+        AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::t2MOVTi16), VReg2)
+                       .addReg(VReg1)
+                       .addImm(NumLPads >> 16));
+      }
+
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::t2CMPrr))
+                     .addReg(NewVReg1)
+                     .addReg(VReg2));
+    }
+
+    BuildMI(DispatchBB, dl, TII->get(ARM::t2Bcc))
+      .addMBB(TrapBB)
+      .addImm(ARMCC::HI)
+      .addReg(ARM::CPSR);
+
+    unsigned NewVReg3 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::t2LEApcrelJT),NewVReg3)
+                   .addJumpTableIndex(MJTI)
+                   .addImm(UId));
+
+    unsigned NewVReg4 = MRI->createVirtualRegister(TRC);
+    AddDefaultCC(
+      AddDefaultPred(
+        BuildMI(DispContBB, dl, TII->get(ARM::t2ADDrs), NewVReg4)
+        .addReg(NewVReg3, RegState::Kill)
+        .addReg(NewVReg1)
+        .addImm(ARM_AM::getSORegOpc(ARM_AM::lsl, 2))));
+
+    BuildMI(DispContBB, dl, TII->get(ARM::t2BR_JT))
+      .addReg(NewVReg4, RegState::Kill)
+      .addReg(NewVReg1)
+      .addJumpTableIndex(MJTI)
+      .addImm(UId);
+  } else if (Subtarget->isThumb()) {
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::tLDRspi), NewVReg1)
+                   .addFrameIndex(FI)
+                   .addImm(1)
+                   .addMemOperand(FIMMOLd));
+
+    if (NumLPads < 256) {
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::tCMPi8))
+                     .addReg(NewVReg1)
+                     .addImm(NumLPads));
+    } else {
+      MachineConstantPool *ConstantPool = MF->getConstantPool();
+      Type *Int32Ty = Type::getInt32Ty(MF->getFunction()->getContext());
+      const Constant *C = ConstantInt::get(Int32Ty, NumLPads);
+
+      // MachineConstantPool wants an explicit alignment.
+      unsigned Align = getTargetData()->getPrefTypeAlignment(Int32Ty);
+      if (Align == 0)
+        Align = getTargetData()->getTypeAllocSize(C->getType());
+      unsigned Idx = ConstantPool->getConstantPoolIndex(C, Align);
+
+      unsigned VReg1 = MRI->createVirtualRegister(TRC);
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::tLDRpci))
+                     .addReg(VReg1, RegState::Define)
+                     .addConstantPoolIndex(Idx));
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::tCMPr))
+                     .addReg(NewVReg1)
+                     .addReg(VReg1));
+    }
+
+    BuildMI(DispatchBB, dl, TII->get(ARM::tBcc))
+      .addMBB(TrapBB)
+      .addImm(ARMCC::HI)
+      .addReg(ARM::CPSR);
+
+    unsigned NewVReg2 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tLSLri), NewVReg2)
+                   .addReg(ARM::CPSR, RegState::Define)
+                   .addReg(NewVReg1)
+                   .addImm(2));
+
+    unsigned NewVReg3 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tLEApcrelJT), NewVReg3)
+                   .addJumpTableIndex(MJTI)
+                   .addImm(UId));
+
+    unsigned NewVReg4 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tADDrr), NewVReg4)
+                   .addReg(ARM::CPSR, RegState::Define)
+                   .addReg(NewVReg2, RegState::Kill)
+                   .addReg(NewVReg3));
+
+    MachineMemOperand *JTMMOLd =
+      MF->getMachineMemOperand(MachinePointerInfo::getJumpTable(),
+                               MachineMemOperand::MOLoad, 4, 4);
+
+    unsigned NewVReg5 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tLDRi), NewVReg5)
+                   .addReg(NewVReg4, RegState::Kill)
+                   .addImm(0)
+                   .addMemOperand(JTMMOLd));
+
+    unsigned NewVReg6 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::tADDrr), NewVReg6)
+                   .addReg(ARM::CPSR, RegState::Define)
+                   .addReg(NewVReg5, RegState::Kill)
+                   .addReg(NewVReg3));
+
+    BuildMI(DispContBB, dl, TII->get(ARM::tBR_JTr))
+      .addReg(NewVReg6, RegState::Kill)
+      .addJumpTableIndex(MJTI)
+      .addImm(UId);
+  } else {
+    unsigned NewVReg1 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::LDRi12), NewVReg1)
+                   .addFrameIndex(FI)
+                   .addImm(4)
+                   .addMemOperand(FIMMOLd));
+
+    if (NumLPads < 256) {
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::CMPri))
+                     .addReg(NewVReg1)
+                     .addImm(NumLPads));
+    } else if (Subtarget->hasV6T2Ops() && isUInt<16>(NumLPads)) {
+      unsigned VReg1 = MRI->createVirtualRegister(TRC);
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::MOVi16), VReg1)
+                     .addImm(NumLPads & 0xFFFF));
+
+      unsigned VReg2 = VReg1;
+      if ((NumLPads & 0xFFFF0000) != 0) {
+        VReg2 = MRI->createVirtualRegister(TRC);
+        AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::MOVTi16), VReg2)
+                       .addReg(VReg1)
+                       .addImm(NumLPads >> 16));
+      }
+
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::CMPrr))
+                     .addReg(NewVReg1)
+                     .addReg(VReg2));
+    } else {
+      MachineConstantPool *ConstantPool = MF->getConstantPool();
+      Type *Int32Ty = Type::getInt32Ty(MF->getFunction()->getContext());
+      const Constant *C = ConstantInt::get(Int32Ty, NumLPads);
+
+      // MachineConstantPool wants an explicit alignment.
+      unsigned Align = getTargetData()->getPrefTypeAlignment(Int32Ty);
+      if (Align == 0)
+        Align = getTargetData()->getTypeAllocSize(C->getType());
+      unsigned Idx = ConstantPool->getConstantPoolIndex(C, Align);
+
+      unsigned VReg1 = MRI->createVirtualRegister(TRC);
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::LDRcp))
+                     .addReg(VReg1, RegState::Define)
+                     .addConstantPoolIndex(Idx)
+                     .addImm(0));
+      AddDefaultPred(BuildMI(DispatchBB, dl, TII->get(ARM::CMPrr))
+                     .addReg(NewVReg1)
+                     .addReg(VReg1, RegState::Kill));
+    }
+
+    BuildMI(DispatchBB, dl, TII->get(ARM::Bcc))
+      .addMBB(TrapBB)
+      .addImm(ARMCC::HI)
+      .addReg(ARM::CPSR);
+
+    unsigned NewVReg3 = MRI->createVirtualRegister(TRC);
+    AddDefaultCC(
+      AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::MOVsi), NewVReg3)
+                     .addReg(NewVReg1)
+                     .addImm(ARM_AM::getSORegOpc(ARM_AM::lsl, 2))));
+    unsigned NewVReg4 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(BuildMI(DispContBB, dl, TII->get(ARM::LEApcrelJT), NewVReg4)
+                   .addJumpTableIndex(MJTI)
+                   .addImm(UId));
+
+    MachineMemOperand *JTMMOLd =
+      MF->getMachineMemOperand(MachinePointerInfo::getJumpTable(),
+                               MachineMemOperand::MOLoad, 4, 4);
+    unsigned NewVReg5 = MRI->createVirtualRegister(TRC);
+    AddDefaultPred(
+      BuildMI(DispContBB, dl, TII->get(ARM::LDRrs), NewVReg5)
+      .addReg(NewVReg3, RegState::Kill)
+      .addReg(NewVReg4)
+      .addImm(0)
+      .addMemOperand(JTMMOLd));
+
+    BuildMI(DispContBB, dl, TII->get(ARM::BR_JTadd))
+      .addReg(NewVReg5, RegState::Kill)
+      .addReg(NewVReg4)
+      .addJumpTableIndex(MJTI)
+      .addImm(UId);
+  }
+
+  // Add the jump table entries as successors to the MBB.
+  MachineBasicBlock *PrevMBB = 0;
+  for (std::vector<MachineBasicBlock*>::iterator
+         I = LPadList.begin(), E = LPadList.end(); I != E; ++I) {
+    MachineBasicBlock *CurMBB = *I;
+    if (PrevMBB != CurMBB)
+      DispContBB->addSuccessor(CurMBB);
+    PrevMBB = CurMBB;
+  }
+
+  // N.B. the order the invoke BBs are processed in doesn't matter here.
+  const ARMBaseInstrInfo *AII = static_cast<const ARMBaseInstrInfo*>(TII);
+  const ARMBaseRegisterInfo &RI = AII->getRegisterInfo();
+  const unsigned *SavedRegs = RI.getCalleeSavedRegs(MF);
+  SmallVector<MachineBasicBlock*, 64> MBBLPads;
+  for (SmallPtrSet<MachineBasicBlock*, 64>::iterator
+         I = InvokeBBs.begin(), E = InvokeBBs.end(); I != E; ++I) {
+    MachineBasicBlock *BB = *I;
+
+    // Remove the landing pad successor from the invoke block and replace it
+    // with the new dispatch block.
+    SmallVector<MachineBasicBlock*, 4> Successors(BB->succ_begin(),
+                                                  BB->succ_end());
+    while (!Successors.empty()) {
+      MachineBasicBlock *SMBB = Successors.pop_back_val();
+      if (SMBB->isLandingPad()) {
+        BB->removeSuccessor(SMBB);
+        MBBLPads.push_back(SMBB);
+      }
+    }
+
+    BB->addSuccessor(DispatchBB);
+
+    // Find the invoke call and mark all of the callee-saved registers as
+    // 'implicit defined' so that they're spilled. This prevents code from
+    // moving instructions to before the EH block, where they will never be
+    // executed.
+    for (MachineBasicBlock::reverse_iterator
+           II = BB->rbegin(), IE = BB->rend(); II != IE; ++II) {
+      if (!II->getDesc().isCall()) continue;
+
+      DenseMap<unsigned, bool> DefRegs;
+      for (MachineInstr::mop_iterator
+             OI = II->operands_begin(), OE = II->operands_end();
+           OI != OE; ++OI) {
+        if (!OI->isReg()) continue;
+        DefRegs[OI->getReg()] = true;
+      }
+
+      MachineInstrBuilder MIB(&*II);
+
+      for (unsigned i = 0; SavedRegs[i] != 0; ++i) {
+        unsigned Reg = SavedRegs[i];
+        if (Subtarget->isThumb2() &&
+            !ARM::tGPRRegisterClass->contains(Reg) &&
+            !ARM::hGPRRegisterClass->contains(Reg))
+          continue;
+        else if (Subtarget->isThumb1Only() &&
+                 !ARM::tGPRRegisterClass->contains(Reg))
+          continue;
+        else if (!Subtarget->isThumb() &&
+                 !ARM::GPRRegisterClass->contains(Reg))
+          continue;
+        if (!DefRegs[Reg])
+          MIB.addReg(Reg, RegState::ImplicitDefine | RegState::Dead);
+      }
+
+      break;
+    }
+  }
+
+  // Mark all former landing pads as non-landing pads. The dispatch is the only
+  // landing pad now.
+  for (SmallVectorImpl<MachineBasicBlock*>::iterator
+         I = MBBLPads.begin(), E = MBBLPads.end(); I != E; ++I)
+    (*I)->setIsLandingPad(false);
+
+  // The instruction is gone now.
+  MI->eraseFromParent();
+
+  return MBB;
+}
+
 static
 MachineBasicBlock *OtherSucc(MachineBasicBlock *MBB, MachineBasicBlock *Succ) {
   for (MachineBasicBlock::succ_iterator I = MBB->succ_begin(),
@@ -5756,13 +6331,101 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     MI->eraseFromParent();   // The pseudo instruction is gone now.
     return BB;
   }
+
+  case ARM::Int_eh_sjlj_setjmp:
+  case ARM::Int_eh_sjlj_setjmp_nofp:
+  case ARM::tInt_eh_sjlj_setjmp:
+  case ARM::t2Int_eh_sjlj_setjmp:
+  case ARM::t2Int_eh_sjlj_setjmp_nofp:
+    EmitSjLjDispatchBlock(MI, BB);
+    return BB;
+
+  case ARM::ABS:
+  case ARM::t2ABS: {
+    // To insert an ABS instruction, we have to insert the
+    // diamond control-flow pattern.  The incoming instruction knows the
+    // source vreg to test against 0, the destination vreg to set,
+    // the condition code register to branch on, the
+    // true/false values to select between, and a branch opcode to use.
+    // It transforms
+    //     V1 = ABS V0
+    // into
+    //     V2 = MOVS V0
+    //     BCC                      (branch to SinkBB if V0 >= 0)
+    //     RSBBB: V3 = RSBri V2, 0  (compute ABS if V2 < 0)
+    //     SinkBB: V1 = PHI(V2, V3)
+    const BasicBlock *LLVM_BB = BB->getBasicBlock();
+    MachineFunction::iterator BBI = BB;
+    ++BBI;
+    MachineFunction *Fn = BB->getParent();
+    MachineBasicBlock *RSBBB = Fn->CreateMachineBasicBlock(LLVM_BB);
+    MachineBasicBlock *SinkBB  = Fn->CreateMachineBasicBlock(LLVM_BB);
+    Fn->insert(BBI, RSBBB);
+    Fn->insert(BBI, SinkBB);
+
+    unsigned int ABSSrcReg = MI->getOperand(1).getReg();
+    unsigned int ABSDstReg = MI->getOperand(0).getReg();
+    bool isThumb2 = Subtarget->isThumb2();
+    MachineRegisterInfo &MRI = Fn->getRegInfo();
+    // In Thumb mode S must not be specified if source register is the SP or
+    // PC and if destination register is the SP, so restrict register class
+    unsigned NewMovDstReg = MRI.createVirtualRegister(
+      isThumb2 ? ARM::rGPRRegisterClass : ARM::GPRRegisterClass);
+    unsigned NewRsbDstReg = MRI.createVirtualRegister(
+      isThumb2 ? ARM::rGPRRegisterClass : ARM::GPRRegisterClass);
+
+    // Transfer the remainder of BB and its successor edges to sinkMBB.
+    SinkBB->splice(SinkBB->begin(), BB,
+      llvm::next(MachineBasicBlock::iterator(MI)),
+      BB->end());
+    SinkBB->transferSuccessorsAndUpdatePHIs(BB);
+
+    BB->addSuccessor(RSBBB);
+    BB->addSuccessor(SinkBB);
+
+    // fall through to SinkMBB
+    RSBBB->addSuccessor(SinkBB);
+
+    // insert a movs at the end of BB
+    BuildMI(BB, dl, TII->get(isThumb2 ? ARM::t2MOVr : ARM::MOVr),
+      NewMovDstReg)
+      .addReg(ABSSrcReg, RegState::Kill)
+      .addImm((unsigned)ARMCC::AL).addReg(0)
+      .addReg(ARM::CPSR, RegState::Define);
+
+    // insert a bcc with opposite CC to ARMCC::MI at the end of BB
+    BuildMI(BB, dl,
+      TII->get(isThumb2 ? ARM::t2Bcc : ARM::Bcc)).addMBB(SinkBB)
+      .addImm(ARMCC::getOppositeCondition(ARMCC::MI)).addReg(ARM::CPSR);
+
+    // insert rsbri in RSBBB
+    // Note: BCC and rsbri will be converted into predicated rsbmi
+    // by if-conversion pass
+    BuildMI(*RSBBB, RSBBB->begin(), dl,
+      TII->get(isThumb2 ? ARM::t2RSBri : ARM::RSBri), NewRsbDstReg)
+      .addReg(NewMovDstReg, RegState::Kill)
+      .addImm(0).addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
+
+    // insert PHI in SinkBB,
+    // reuse ABSDstReg to not change uses of ABS instruction
+    BuildMI(*SinkBB, SinkBB->begin(), dl,
+      TII->get(ARM::PHI), ABSDstReg)
+      .addReg(NewRsbDstReg).addMBB(RSBBB)
+      .addReg(NewMovDstReg).addMBB(BB);
+
+    // remove ABS instruction
+    MI->eraseFromParent();
+
+    // return last added BB
+    return SinkBB;
+  }
   }
 }
 
 void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
                                                       SDNode *Node) const {
-  const MCInstrDesc &MCID = MI->getDesc();
-  if (!MCID.hasPostISelHook()) {
+  const MCInstrDesc *MCID = &MI->getDesc();
+  if (!MCID->hasPostISelHook()) {
     assert(!convertAddSubFlagsOpcode(MI->getOpcode()) &&
            "Pseudo flag-setting opcodes must be marked with 'hasPostISelHook'");
     return;
@@ -5773,20 +6436,28 @@ void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
   // operand is still set to noreg. If needed, set the optional operand's
   // register to CPSR, and remove the redundant implicit def.
   //
-  // e.g. ADCS (...opt:%noreg, CPSR<imp-def>) -> ADC (... opt:CPSR<def>).
+  // e.g. ADCS (..., CPSR<imp-def>) -> ADC (... opt:CPSR<def>).
 
   // Rename pseudo opcodes.
   unsigned NewOpc = convertAddSubFlagsOpcode(MI->getOpcode());
   if (NewOpc) {
     const ARMBaseInstrInfo *TII =
       static_cast<const ARMBaseInstrInfo*>(getTargetMachine().getInstrInfo());
-    MI->setDesc(TII->get(NewOpc));
+    MCID = &TII->get(NewOpc);
+
+    assert(MCID->getNumOperands() == MI->getDesc().getNumOperands() + 1 &&
+           "converted opcode should be the same except for cc_out");
+
+    MI->setDesc(*MCID);
+
+    // Add the optional cc_out operand
+    MI->addOperand(MachineOperand::CreateReg(0, /*isDef=*/true));
   }
-  unsigned ccOutIdx = MCID.getNumOperands() - 1;
+  unsigned ccOutIdx = MCID->getNumOperands() - 1;
 
   // Any ARM instruction that sets the 's' bit should specify an optional
   // "cc_out" operand in the last operand position.
-  if (!MCID.hasOptionalDef() || !MCID.OpInfo[ccOutIdx].isOptionalDef()) {
+  if (!MCID->hasOptionalDef() || !MCID->OpInfo[ccOutIdx].isOptionalDef()) {
     assert(!NewOpc && "Optional cc_out operand required");
     return;
   }
@@ -5794,7 +6465,7 @@ void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
   // since we already have an optional CPSR def.
   bool definesCPSR = false;
   bool deadCPSR = false;
-  for (unsigned i = MCID.getNumOperands(), e = MI->getNumOperands();
+  for (unsigned i = MCID->getNumOperands(), e = MI->getNumOperands();
        i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
     if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR) {

@@ -320,6 +320,9 @@ public:
   /// GFI - Garbage collection metadata for the function.
   GCFunctionInfo *GFI;
 
+  /// LPadToCallSiteMap - Map a landing pad to the call site indexes.
+  DenseMap<MachineBasicBlock*, SmallVector<unsigned, 4> > LPadToCallSiteMap;
+
   /// HasTailCall - This is set to true if a call in the current
   /// block has been translated as a tail call. In this case,
   /// no subsequent DAG nodes should be created.
@@ -552,7 +555,6 @@ private:
     llvm_unreachable("UserOp2 should not exist at instruction selection time!");
   }
   
-  const char *implVisitBinaryAtomic(const CallInst& I, ISD::NodeType Op);
   const char *implVisitAluOverflow(const CallInst &I, ISD::NodeType Op);
 
   void HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB);

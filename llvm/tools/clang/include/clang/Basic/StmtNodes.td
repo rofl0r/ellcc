@@ -78,6 +78,9 @@ def ParenListExpr : DStmt<Expr>;
 def VAArgExpr : DStmt<Expr>;
 def GenericSelectionExpr : DStmt<Expr>;
 
+// Atomic expressions
+def AtomicExpr : DStmt<Expr>;
+
 // GNU Extensions.
 def AddrLabelExpr : DStmt<Expr>;
 def StmtExpr : DStmt<Expr>;
@@ -152,6 +155,7 @@ def CXXUuidofExpr : DStmt<Expr>;
 def SEHTryStmt : Stmt;
 def SEHExceptStmt : Stmt;
 def SEHFinallyStmt : Stmt;
+def MSDependentExistsStmt : Stmt;
 
 // OpenCL Extensions.
 def AsTypeExpr : DStmt<Expr>;

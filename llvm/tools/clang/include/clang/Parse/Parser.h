@@ -112,6 +112,9 @@ class Parser : public CodeCompletionHandler {
   IdentifierInfo *Ident__exception_info, *Ident___exception_info, *Ident_GetExceptionInfo; // __except filter expression
   IdentifierInfo *Ident__abnormal_termination, *Ident___abnormal_termination, *Ident_AbnormalTermination; // __finally
 
+  /// Contextual keywords for Microsoft extensions.
+  IdentifierInfo *Ident__except;
+  
   /// Ident_super - IdentifierInfo for "super", to support fast
   /// comparison.
   IdentifierInfo *Ident_super;
@@ -179,6 +182,8 @@ class Parser : public CodeCompletionHandler {
   /// declaration is finished.
   DelayedCleanupPool TopLevelDeclCleanupPool;
 
+  IdentifierInfo *getSEHExceptKeyword();
+  
 public:
   Parser(Preprocessor &PP, Sema &Actions);
   ~Parser();
@@ -409,6 +414,85 @@ private:
     return PP.LookAhead(0);
   }
 
+  /// \brief Tracks information about the current nesting depth of 
+  /// opening delimiters of each kind.
+  class DelimiterTracker {
+  private:
+    friend class Parser;
+
+    unsigned Paren, Brace, Square, Less, LLLess;
+    unsigned& get(tok::TokenKind t) {
+      switch (t) {
+      default: llvm_unreachable("Unexpected balanced token");
+      case tok::l_brace:  return Brace;
+      case tok::l_paren:  return Paren;
+      case tok::l_square: return Square;
+      case tok::less:  return Less;
+      case tok::lesslessless:  return LLLess;
+      }
+    }
+
+    void push(tok::TokenKind t) {
+      get(t)++;
+    }
+
+    void pop(tok::TokenKind t) {
+      get(t)--;
+    }
+
+    unsigned getDepth(tok::TokenKind t) {
+      return get(t);
+    }
+
+  public:
+    DelimiterTracker() : Paren(0), Brace(0), Square(0), Less(0), LLLess(0) { }
+  };
+
+  /// \brief RAII class that helps handle the parsing of an open/close delimiter
+  /// pair, such as braces { ... } or parentheses ( ... ).
+  class BalancedDelimiterTracker {
+    tok::TokenKind Kind, Close;
+    Parser& P;
+    bool Cleanup;
+    const unsigned MaxDepth;
+    SourceLocation LOpen, LClose;
+  
+    void assignClosingDelimiter() {
+      switch (Kind) {
+      default: llvm_unreachable("Unexpected balanced token");
+      case tok::l_brace:  Close = tok::r_brace; break;
+      case tok::l_paren:  Close = tok::r_paren; break;
+      case tok::l_square: Close = tok::r_square; break;
+      case tok::less:  Close = tok::greater; break;
+      case tok::lesslessless:  Close = tok::greatergreatergreater; break;
+      }
+    }
+
+  public:
+    BalancedDelimiterTracker(Parser& p, tok::TokenKind k) 
+      : Kind(k), P(p), Cleanup(false), MaxDepth(256) {
+      assignClosingDelimiter();
+    }
+
+    ~BalancedDelimiterTracker() {
+      if (Cleanup)
+        P.QuantityTracker.pop(Kind);
+    }
+
+    SourceLocation getOpenLocation() const { return LOpen; }
+    SourceLocation getCloseLocation() const { return LClose; }
+    SourceRange getRange() const { return SourceRange(LOpen, LClose); }
+
+    bool consumeOpen();
+    bool expectAndConsume(unsigned DiagID, 
+                          const char *Msg = "", 
+                          tok::TokenKind SkipToTok = tok::unknown);
+    bool consumeClose();
+    void skipToEnd();
+  };
+
+  DelimiterTracker QuantityTracker;
+
   /// getTypeAnnotation - Read a parsed type out of an annotation token.
   static ParsedType getTypeAnnotation(Token &Tok) {
     return ParsedType::getFromOpaquePtr(Tok.getAnnotationValue());
@@ -436,7 +520,10 @@ private:
       Tok.setAnnotationValue(ER.get());
   }
 
-  bool TryAnnotateTypeOrScopeToken(bool EnteringContext = false);
+  // If NeedType is true, then TryAnnotateTypeOrScopeToken will try harder to
+  // find a type name by attempting typo correction.
+  bool TryAnnotateTypeOrScopeToken(bool EnteringContext = false,
+                                   bool NeedType = false);
   bool TryAnnotateCXXScopeToken(bool EnteringContext = false);
 
   /// TryAltiVecToken - Check for context-sensitive AltiVec identifier tokens,
@@ -520,16 +607,13 @@ private:
     explicit ObjCDeclContextSwitch(Parser &p) : P(p), 
                DC(p.getObjCDeclContext()) {
       if (DC)
-        P.Actions.ActOnObjCContainerFinishDefinition();
+        P.Actions.ActOnObjCTemporaryExitContainerContext(cast<DeclContext>(DC));
     }
     ~ObjCDeclContextSwitch() {
       if (DC)
-        P.Actions.ActOnObjCContainerStartDefinition(DC);
+        P.Actions.ActOnObjCReenterContainerContext(cast<DeclContext>(DC));
     }
   };
-
-  SourceLocation MatchRHSPunctuation(tok::TokenKind RHSTok,
-                                     SourceLocation LHSLoc);
 
   /// ExpectAndConsume - The parser expects that 'ExpectedTok' is next in the
   /// input.  If so, it is consumed and false is returned.
@@ -1047,7 +1131,8 @@ private:
   void DeallocateParsedClasses(ParsingClass *Class);
   void PopParsingClass(Sema::ParsingClassState);
 
-  Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
+  Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, AttributeList *AccessAttrs,
+                                ParsingDeclarator &D,
                                 const ParsedTemplateInfo &TemplateInfo,
                                 const VirtSpecifiers& VS, ExprResult& Init);
   void ParseCXXNonStaticMemberInitializer(Decl *VarD);
@@ -1217,10 +1302,8 @@ private:
                                         SourceLocation &RParenLoc);
 
   ExprResult ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
-                                                    ParsedType &CastTy,
-                                                    SourceLocation LParenLoc,
-                                                    SourceLocation &RParenLoc);
-
+                                            ParsedType &CastTy,
+                                            BalancedDelimiterTracker &Tracker);
   ExprResult ParseCompoundLiteralExpression(ParsedType Ty,
                                                   SourceLocation LParenLoc,
                                                   SourceLocation RParenLoc);
@@ -1405,7 +1488,40 @@ private:
   StmtResult ParseReturnStatement(ParsedAttributes &Attr);
   StmtResult ParseAsmStatement(bool &msAsm);
   StmtResult ParseMicrosoftAsmStatement(SourceLocation AsmLoc);
-  bool ParseMicrosoftIfExistsCondition(bool& Result);
+  
+  /// \brief Describes the behavior that should be taken for an __if_exists
+  /// block.
+  enum IfExistsBehavior {
+    /// \brief Parse the block; this code is always used.
+    IEB_Parse,
+    /// \brief Skip the block entirely; this code is never used.
+    IEB_Skip,
+    /// \brief Parse the block as a dependent block, which may be used in
+    /// some template instantiations but not others.
+    IEB_Dependent
+  };
+  
+  /// \brief Describes the condition of a Microsoft __if_exists or 
+  /// __if_not_exists block.
+  struct IfExistsCondition {
+    /// \brief The location of the initial keyword.
+    SourceLocation KeywordLoc;
+    /// \brief Whether this is an __if_exists block (rather than an 
+    /// __if_not_exists block).
+    bool IsIfExists;
+    
+    /// \brief Nested-name-specifier preceding the name.
+    CXXScopeSpec SS;
+    
+    /// \brief The name we're looking for.
+    UnqualifiedId Name;
+
+    /// \brief The behavior of this __if_exists or __if_not_exists block
+    /// should.
+    IfExistsBehavior Behavior;
+};
+  
+  bool ParseMicrosoftIfExistsCondition(IfExistsCondition& Result);
   void ParseMicrosoftIfExistsStatement(StmtVector &Stmts);
   void ParseMicrosoftIfExistsExternalDeclaration();
   void ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
@@ -1469,6 +1585,7 @@ private:
                                         ParsedAttributes &attrs,
                                         bool RequireSemi,
                                         ForRangeInit *FRI = 0);
+  bool MightBeDeclarator(unsigned Context);
   DeclGroupPtrTy ParseDeclGroup(ParsingDeclSpec &DS, unsigned Context,
                                 bool AllowFunctionDefinitions,
                                 SourceLocation *DeclEnd = 0,
@@ -1768,8 +1885,10 @@ private:
   void ParseTypeofSpecifier(DeclSpec &DS);
   void ParseDecltypeSpecifier(DeclSpec &DS);
   void ParseUnderlyingTypeSpecifier(DeclSpec &DS);
-  
-  ExprResult ParseAlignArgument(SourceLocation Start);
+  void ParseAtomicSpecifier(DeclSpec &DS);
+
+  ExprResult ParseAlignArgument(SourceLocation Start,
+                                SourceLocation &EllipsisLoc);
   void ParseAlignmentSpecifier(ParsedAttributes &Attrs,
                                SourceLocation *endLoc = 0);
 
@@ -1822,8 +1941,9 @@ private:
                                  bool CXX0XAttributesAllowed = true);
   void ParseDirectDeclarator(Declarator &D);
   void ParseParenDeclarator(Declarator &D);
-  void ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
+  void ParseFunctionDeclarator(Declarator &D,
                                ParsedAttributes &attrs,
+                               BalancedDelimiterTracker &Tracker,
                                bool RequiresArg = false);
   bool isFunctionDeclaratorIdentifierList();
   void ParseFunctionDeclaratorIdentifierList(
@@ -1848,8 +1968,8 @@ private:
                            std::vector<IdentifierInfo*>& Ident,
                            std::vector<SourceLocation>& NamespaceLoc,
                            unsigned int index, SourceLocation& InlineLoc,
-                           SourceLocation& LBrace, ParsedAttributes& attrs,
-                           SourceLocation& RBraceLoc);
+                           ParsedAttributes& attrs,
+                           BalancedDelimiterTracker &Tracker);
   Decl *ParseLinkage(ParsingDeclSpec &DS, unsigned Context);
   Decl *ParseUsingDirectiveOrDeclaration(unsigned Context,
                                          const ParsedTemplateInfo &TemplateInfo,
@@ -1873,7 +1993,6 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ 9: classes [class] and C structs/unions.
-  TypeResult ParseClassName(SourceLocation &EndLocation, CXXScopeSpec &SS);
   void ParseClassSpecifier(tok::TokenKind TagTokKind, SourceLocation TagLoc,
                            DeclSpec &DS,
                 const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
@@ -1883,7 +2002,7 @@ private:
                                    Decl *TagDecl);
   ExprResult ParseCXXMemberInitializer(bool IsFunction,
                                        SourceLocation &EqualLoc);
-  void ParseCXXClassMemberDeclaration(AccessSpecifier AS,
+  void ParseCXXClassMemberDeclaration(AccessSpecifier AS, AttributeList *Attr,
                 const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
                                  ParsingDeclRAIIObject *DiagsFromTParams = 0);
   void ParseConstructorInitializer(Decl *ConstructorDecl);
@@ -1893,6 +2012,8 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ 10: Derived classes [class.derived]
+  TypeResult ParseBaseTypeSpecifier(SourceLocation &BaseLoc, 
+                                    SourceLocation &EndLocation);
   void ParseBaseClause(Decl *ClassDecl);
   BaseResult ParseBaseSpecifier(Decl *ClassDecl);
   AccessSpecifier getAccessSpecifierIfPresent() const;
@@ -1919,17 +2040,20 @@ private:
 
   // C++ 14.1: Template Parameters [temp.param]
   Decl *ParseDeclarationStartingWithTemplate(unsigned Context,
-                                                 SourceLocation &DeclEnd,
-                                                 AccessSpecifier AS = AS_none);
+                                             SourceLocation &DeclEnd,
+                                             AccessSpecifier AS = AS_none,
+                                             AttributeList *AccessAttrs = 0);
   Decl *ParseTemplateDeclarationOrSpecialization(unsigned Context,
-                                                     SourceLocation &DeclEnd,
-                                                     AccessSpecifier AS);
+                                                 SourceLocation &DeclEnd,
+                                                 AccessSpecifier AS,
+                                                 AttributeList *AccessAttrs);
   Decl *ParseSingleDeclarationAfterTemplate(
                                        unsigned Context,
                                        const ParsedTemplateInfo &TemplateInfo,
                                        ParsingDeclRAIIObject &DiagsFromParams,
                                        SourceLocation &DeclEnd,
-                                       AccessSpecifier AS=AS_none);
+                                       AccessSpecifier AS=AS_none,
+                                       AttributeList *AccessAttrs = 0);
   bool ParseTemplateParameters(unsigned Depth,
                                SmallVectorImpl<Decl*> &TemplateParams,
                                SourceLocation &LAngleLoc,

@@ -35,7 +35,7 @@ struct Y {
 
 void jump_over_var_with_dtor() {
   goto end; // expected-warning{{goto into protected scope}}
-  Y y; // expected-note {{jump bypasses variable initialization}}
+  Y y; // expected-note {{jump bypasses variable with a non-trivial destructor}}
  end:
     ;
 }
@@ -126,12 +126,12 @@ public:
 };
 
 template <class T>
-void function_missing_typename()
+void function_missing_typename(const T::Type param)// expected-warning {{missing 'typename' prior to dependent type name}}
 {
     const T::Type var = 2; // expected-warning {{missing 'typename' prior to dependent type name}}
 }
 
-template void function_missing_typename<D>();
+template void function_missing_typename<D>(const D::Type param);
 
 }
 

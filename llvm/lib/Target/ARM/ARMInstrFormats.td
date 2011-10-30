@@ -227,6 +227,10 @@ class  tInstAlias<string Asm, dag Result, bit Emit = 0b1>
       : InstAlias<Asm, Result, Emit>, Requires<[IsThumb]>;
 class t2InstAlias<string Asm, dag Result, bit Emit = 0b1>
       : InstAlias<Asm, Result, Emit>, Requires<[IsThumb2]>;
+class VFP2InstAlias<string Asm, dag Result, bit Emit = 0b1>
+      : InstAlias<Asm, Result, Emit>, Requires<[HasVFP2]>;
+class VFP3InstAlias<string Asm, dag Result, bit Emit = 0b1>
+      : InstAlias<Asm, Result, Emit>, Requires<[HasVFP3]>;
 
 //===----------------------------------------------------------------------===//
 // ARM Instruction templates.
@@ -477,6 +481,8 @@ class AIswp<bit b, dag oops, dag iops, string opc, list<dag> pattern>
   let Inst{15-12} = Rt;
   let Inst{11-4} = 0b00001001;
   let Inst{3-0} = Rt2;
+
+  let DecoderMethod = "DecodeSwap";
 }
 
 // addrmode1 instructions
@@ -1947,7 +1953,6 @@ class NVDupLane<bits<4> op19_16, bit op6, dag oops, dag iops,
 
   bits<5> Vd;
   bits<5> Vm;
-  bits<4> lane;
 
   let Inst{22}     = Vd{4};
   let Inst{15-12} = Vd{3-0};

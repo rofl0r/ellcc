@@ -338,16 +338,17 @@ struct StrCmpOpt : public LibCallOptimization {
     bool HasStr1 = GetConstantStringInfo(Str1P, Str1);
     bool HasStr2 = GetConstantStringInfo(Str2P, Str2);
 
-    if (HasStr1 && Str1.empty()) // strcmp("", x) -> *x
-      return B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"), CI->getType());
-
-    if (HasStr2 && Str2.empty()) // strcmp(x,"") -> *x
-      return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
-
     // strcmp(x, y)  -> cnst  (if both x and y are constant strings)
     if (HasStr1 && HasStr2)
       return ConstantInt::get(CI->getType(),
-                                     strcmp(Str1.c_str(),Str2.c_str()));
+                              StringRef(Str1).compare(Str2));
+
+    if (HasStr1 && Str1.empty()) // strcmp("", x) -> -*x
+      return B.CreateNeg(B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"),
+                                      CI->getType()));
+
+    if (HasStr2 && Str2.empty()) // strcmp(x,"") -> *x
+      return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
 
     // strcmp(P, "x") -> memcmp(P, "x", 2)
     uint64_t Len1 = GetStringLength(Str1P);
@@ -400,16 +401,20 @@ struct StrNCmpOpt : public LibCallOptimization {
     bool HasStr1 = GetConstantStringInfo(Str1P, Str1);
     bool HasStr2 = GetConstantStringInfo(Str2P, Str2);
 
-    if (HasStr1 && Str1.empty())  // strncmp("", x, n) -> *x
-      return B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"), CI->getType());
+    // strncmp(x, y)  -> cnst  (if both x and y are constant strings)
+    if (HasStr1 && HasStr2) {
+      StringRef SubStr1 = StringRef(Str1).substr(0, Length);
+      StringRef SubStr2 = StringRef(Str2).substr(0, Length);
+      return ConstantInt::get(CI->getType(), SubStr1.compare(SubStr2));
+    }
+
+    if (HasStr1 && Str1.empty())  // strncmp("", x, n) -> -*x
+      return B.CreateNeg(B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"),
+                                      CI->getType()));
 
     if (HasStr2 && Str2.empty())  // strncmp(x, "", n) -> *x
       return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
 
-    // strncmp(x, y)  -> cnst  (if both x and y are constant strings)
-    if (HasStr1 && HasStr2)
-      return ConstantInt::get(CI->getType(),
-                              strncmp(Str1.c_str(), Str2.c_str(), Length));
     return 0;
   }
 };
@@ -1118,10 +1123,8 @@ struct PrintFOpt : public LibCallOptimization {
       // Create a string literal with no \n on it.  We expect the constant merge
       // pass to be run after this pass, to merge duplicate strings.
       FormatStr.erase(FormatStr.end()-1);
-      Constant *C = ConstantArray::get(*Context, FormatStr, true);
-      C = new GlobalVariable(*Callee->getParent(), C->getType(), true,
-                             GlobalVariable::InternalLinkage, C, "str");
-      EmitPutS(C, B, TD);
+      Value *GV = B.CreateGlobalString(FormatStr, "str");
+      EmitPutS(GV, B, TD);
       return CI->use_empty() ? (Value*)CI :
                     ConstantInt::get(CI->getType(), FormatStr.size()+1);
     }

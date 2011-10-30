@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -verify -std=c++0x %s
+// RUN: %clang_cc1 -verify -std=c++11 %s
 // RUN: cp %s %t
-// RUN: not %clang_cc1 -x c++ -std=c++0x -fixit %t
-// RUN: %clang_cc1 -Wall -pedantic -x c++ -std=c++0x %t
+// RUN: not %clang_cc1 -x c++ -std=c++11 -fixit %t
+// RUN: %clang_cc1 -Wall -pedantic -x c++ -std=c++11 %t
 
 /* This is a test of the various code modification hints that only
    apply in C++0x. */
@@ -40,14 +40,9 @@ namespace Constexpr {
   // FIXME: Provide FixIts for static data members too.
 #if 0
   struct S {
-    static constexpr int a = 0;
-
     static constexpr int b; // xpected-error {{requires an initializer}}
     // -> const int b;
   };
-
-  constexpr int S::a; // xpected-error {{requires an initializer}}
-  // -> const int S::a;
 
   constexpr int S::b = 0;
 #endif
@@ -56,4 +51,10 @@ namespace Constexpr {
     static char *const p = 0; // expected-error {{requires 'constexpr' specifier}}
     // -> constexpr static char *const p = 0;
   };
+}
+
+namespace SemiCommaTypo {
+  int m {},
+  n [[]], // expected-error {{expected ';' at end of declaration}}
+  int o;
 }

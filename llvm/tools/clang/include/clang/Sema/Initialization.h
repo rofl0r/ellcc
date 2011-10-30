@@ -568,10 +568,12 @@ public:
       /// When Kind == SK_ConstructorInitialization or SK_ListConstruction,
       /// the constructor to be called.
       ///
-      /// Always a FunctionDecl.
+      /// Always a FunctionDecl, plus a Boolean flag telling if it was
+      /// selected from an overloaded set having size greater than 1.
       /// For conversion decls, the naming class is the source type.
       /// For construct decls, the naming class is the target type.
       struct {
+        bool HadMultipleCandidates;
         FunctionDecl *Function;
         DeclAccessPair FoundDecl;
       } Function;
@@ -640,7 +642,10 @@ public:
     /// \brief Initialization of an incomplete type.
     FK_Incomplete,
     /// \brief List initialization failed at some point.
-    FK_ListInitializationFailed
+    FK_ListInitializationFailed,
+    /// \brief Initializer has a placeholder type which cannot be
+    /// resolved by initialization.
+    FK_PlaceholderType
   };
   
 private:

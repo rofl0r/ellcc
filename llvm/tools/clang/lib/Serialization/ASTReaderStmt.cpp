@@ -327,6 +327,7 @@ void ASTStmtReader::VisitDeclRefExpr(DeclRefExpr *E) {
   E->DeclRefExprBits.HasQualifier = Record[Idx++];
   E->DeclRefExprBits.HasFoundDecl = Record[Idx++];
   E->DeclRefExprBits.HasExplicitTemplateArgs = Record[Idx++];
+  E->DeclRefExprBits.HadMultipleCandidates = Record[Idx++];
   unsigned NumTemplateArgs = 0;
   if (E->hasExplicitTemplateArgs())
     NumTemplateArgs = Record[Idx++];
@@ -773,6 +774,25 @@ void ASTStmtReader::VisitGenericSelectionExpr(GenericSelectionExpr *E) {
   E->RParenLoc = ReadSourceLocation(Record, Idx);
 }
 
+void ASTStmtReader::VisitAtomicExpr(AtomicExpr *E) {
+  VisitExpr(E);
+  E->setOp(AtomicExpr::AtomicOp(Record[Idx++]));
+  E->setPtr(Reader.ReadSubExpr());
+  E->setOrder(Reader.ReadSubExpr());
+  E->setNumSubExprs(2);
+  if (E->getOp() != AtomicExpr::Load) {
+    E->setVal1(Reader.ReadSubExpr());
+    E->setNumSubExprs(3);
+  }
+  if (E->isCmpXChg()) {
+    E->setOrderFail(Reader.ReadSubExpr());
+    E->setVal2(Reader.ReadSubExpr());
+    E->setNumSubExprs(5);
+  }
+  E->setBuiltinLoc(ReadSourceLocation(Record, Idx));
+  E->setRParenLoc(ReadSourceLocation(Record, Idx));
+}
+
 //===----------------------------------------------------------------------===//
 // Objective-C Expressions and Statements
 
@@ -841,6 +861,8 @@ void ASTStmtReader::VisitObjCMessageExpr(ObjCMessageExpr *E) {
   VisitExpr(E);
   assert(Record[Idx] == E->getNumArgs());
   ++Idx;
+  unsigned NumStoredSelLocs = Record[Idx++];
+  E->SelLocsKind = Record[Idx++]; 
   E->setDelegateInitCall(Record[Idx++]);
   ObjCMessageExpr::ReceiverKind Kind
     = static_cast<ObjCMessageExpr::ReceiverKind>(Record[Idx++]);
@@ -871,10 +893,13 @@ void ASTStmtReader::VisitObjCMessageExpr(ObjCMessageExpr *E) {
 
   E->LBracLoc = ReadSourceLocation(Record, Idx);
   E->RBracLoc = ReadSourceLocation(Record, Idx);
-  E->SelectorLoc = ReadSourceLocation(Record, Idx);
 
   for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
     E->setArg(I, Reader.ReadSubExpr());
+
+  SourceLocation *Locs = E->getStoredSelLocs();
+  for (unsigned I = 0; I != NumStoredSelLocs; ++I)
+    Locs[I] = ReadSourceLocation(Record, Idx);
 }
 
 void ASTStmtReader::VisitObjCForCollectionStmt(ObjCForCollectionStmt *S) {
@@ -967,6 +992,15 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Reader.ReadSubStmt());
 }
 
+void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
+  VisitStmt(S);
+  S->KeywordLoc = ReadSourceLocation(Record, Idx);
+  S->IsIfExists = Record[Idx++];
+  S->QualifierLoc = Reader.ReadNestedNameSpecifierLoc(F, Record, Idx);
+  ReadDeclarationNameInfo(S->NameInfo, Record, Idx);
+  S->SubStmt = Reader.ReadSubStmt();
+}
+
 void ASTStmtReader::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
   VisitCallExpr(E);
   E->setOperator((OverloadedOperatorKind)Record[Idx++]);
@@ -981,7 +1015,8 @@ void ASTStmtReader::VisitCXXConstructExpr(CXXConstructExpr *E) {
     E->setArg(I, Reader.ReadSubExpr());
   E->setConstructor(ReadDeclAs<CXXConstructorDecl>(Record, Idx));
   E->setLocation(ReadSourceLocation(Record, Idx));
-  E->setElidable(Record[Idx++]);  
+  E->setElidable(Record[Idx++]);
+  E->setHadMultipleCandidates(Record[Idx++]);
   E->setRequiresZeroInitialization(Record[Idx++]);
   E->setConstructionKind((CXXConstructExpr::ConstructionKind)Record[Idx++]);
   E->ParenRange = ReadSourceRange(Record, Idx);
@@ -1085,6 +1120,7 @@ void ASTStmtReader::VisitCXXNewExpr(CXXNewExpr *E) {
   E->Initializer = Record[Idx++];
   E->UsualArrayDeleteWantsSize = Record[Idx++];
   bool isArray = Record[Idx++];
+  E->setHadMultipleCandidates(Record[Idx++]);
   unsigned NumPlacementArgs = Record[Idx++];
   unsigned NumCtorArgs = Record[Idx++];
   E->setOperatorNew(ReadDeclAs<FunctionDecl>(Record, Idx));
@@ -1417,6 +1453,10 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
 
   ReadingKindTracker ReadingKind(Read_Stmt, *this);
   llvm::BitstreamCursor &Cursor = F.DeclsCursor;
+  
+  // Map of offset to previously deserialized stmt. The offset points
+  /// just after the stmt record.
+  llvm::DenseMap<uint64_t, Stmt *> StmtEntries;
 
 #ifndef NDEBUG
   unsigned PrevNumStmts = StmtStack.size();
@@ -1456,9 +1496,17 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
     Idx = 0;
     Record.clear();
     bool Finished = false;
+    bool IsStmtReference = false;
     switch ((StmtCode)Cursor.ReadRecord(Code, Record)) {
     case STMT_STOP:
       Finished = true;
+      break;
+
+    case STMT_REF_PTR:
+      IsStmtReference = true;
+      assert(StmtEntries.find(Record[0]) != StmtEntries.end() &&
+             "No stmt was recorded for this offset reference!");
+      S = StmtEntries[Record[Idx++]];
       break;
 
     case STMT_NULL_PTR:
@@ -1544,7 +1592,7 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
         /*HasFoundDecl=*/Record[ASTStmtReader::NumExprFields + 1],
         /*HasExplicitTemplateArgs=*/Record[ASTStmtReader::NumExprFields + 2],
         /*NumTemplateArgs=*/Record[ASTStmtReader::NumExprFields + 2] ?
-          Record[ASTStmtReader::NumExprFields + 3] : 0);
+          Record[ASTStmtReader::NumExprFields + 4] : 0);
       break;
 
     case EXPR_INTEGER_LITERAL:
@@ -1618,7 +1666,9 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
         for (unsigned i = 0; i != NumTemplateArgs; ++i)
           ArgInfo.addArgument(ReadTemplateArgumentLoc(F, Record, Idx));
       }
-      
+
+      bool HadMultipleCandidates = Record[Idx++];
+
       NamedDecl *FoundD = ReadDeclAs<NamedDecl>(F, Record, Idx);
       AccessSpecifier AS = (AccessSpecifier)Record[Idx++];
       DeclAccessPair FoundDecl = DeclAccessPair::make(FoundD, AS);
@@ -1637,6 +1687,8 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
                              HasExplicitTemplateArgs ? &ArgInfo : 0, T, VK, OK);
       ReadDeclarationNameLoc(F, cast<MemberExpr>(S)->MemberDNLoc,
                              MemberD->getDeclName(), Record, Idx);
+      if (HadMultipleCandidates)
+        cast<MemberExpr>(S)->setHadMultipleCandidates(true);
       break;
     }
 
@@ -1747,7 +1799,8 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
       break;
     case EXPR_OBJC_MESSAGE_EXPR:
       S = ObjCMessageExpr::CreateEmpty(Context,
-                                     Record[ASTStmtReader::NumExprFields]);
+                                     Record[ASTStmtReader::NumExprFields],
+                                     Record[ASTStmtReader::NumExprFields + 1]);
       break;
     case EXPR_OBJC_ISA:
       S = new (Context) ObjCIsaExpr(Empty);
@@ -1803,6 +1856,13 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
       S = new (Context) CXXForRangeStmt(Empty);
       break;
 
+    case STMT_MS_DEPENDENT_EXISTS:
+      S = new (Context) MSDependentExistsStmt(SourceLocation(), true,
+                                              NestedNameSpecifierLoc(),
+                                              DeclarationNameInfo(),
+                                              0);
+      break;
+        
     case EXPR_CXX_OPERATOR_CALL:
       S = new (Context) CXXOperatorCallExpr(Context, Empty);
       break;
@@ -1997,6 +2057,10 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
     case EXPR_ASTYPE:
       S = new (Context) AsTypeExpr(Empty);
       break;
+
+    case EXPR_ATOMIC:
+      S = new (Context) AtomicExpr(Empty);
+      break;
     }
     
     // We hit a STMT_STOP, so we're done with this expression.
@@ -2005,8 +2069,11 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
 
     ++NumStatementsRead;
 
-    if (S)
+    if (S && !IsStmtReference) {
       Reader.Visit(S);
+      StmtEntries[Cursor.GetCurrentBitNo()] = S;
+    }
+
 
     assert(Idx == Record.size() && "Invalid deserialization of statement");
     StmtStack.push_back(S);

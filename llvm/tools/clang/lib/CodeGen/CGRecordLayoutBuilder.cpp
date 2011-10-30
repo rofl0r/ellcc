@@ -363,8 +363,7 @@ CGBitFieldInfo CGBitFieldInfo::MakeInfo(CodeGenTypes &Types,
 
 void CGRecordLayoutBuilder::LayoutBitField(const FieldDecl *D,
                                            uint64_t fieldOffset) {
-  uint64_t fieldSize =
-    D->getBitWidth()->EvaluateAsInt(Types.getContext()).getZExtValue();
+  uint64_t fieldSize = D->getBitWidthValue(Types.getContext());
 
   if (fieldSize == 0)
     return;
@@ -492,8 +491,7 @@ llvm::Type *
 CGRecordLayoutBuilder::LayoutUnionField(const FieldDecl *Field,
                                         const ASTRecordLayout &Layout) {
   if (Field->isBitField()) {
-    uint64_t FieldSize =
-      Field->getBitWidth()->EvaluateAsInt(Types.getContext()).getZExtValue();
+    uint64_t FieldSize = Field->getBitWidthValue(Types.getContext());
 
     // Ignore zero sized bit fields.
     if (FieldSize == 0)
@@ -671,7 +669,13 @@ CGRecordLayoutBuilder::LayoutNonVirtualBases(const CXXRecordDecl *RD,
 
   // Check if we need to add a vtable pointer.
   if (RD->isDynamicClass()) {
-    if (!PrimaryBase) {
+    if (PrimaryBase) {
+      if (!Layout.isPrimaryBaseVirtual())
+        LayoutNonVirtualBase(PrimaryBase, CharUnits::Zero());
+      else
+        LayoutVirtualBase(PrimaryBase, CharUnits::Zero());
+    } else if (Types.getContext().getTargetInfo().getCXXABI() !=
+               CXXABI_Microsoft) {
       llvm::Type *FunctionType =
         llvm::FunctionType::get(llvm::Type::getInt32Ty(Types.getLLVMContext()),
                                 /*isVarArg=*/true);
@@ -680,11 +684,7 @@ CGRecordLayoutBuilder::LayoutNonVirtualBases(const CXXRecordDecl *RD,
       assert(NextFieldOffset.isZero() &&
              "VTable pointer must come first!");
       AppendField(CharUnits::Zero(), VTableTy->getPointerTo());
-    } else {
-      if (!Layout.isPrimaryBaseVirtual())
-        LayoutNonVirtualBase(PrimaryBase, CharUnits::Zero());
-      else
-        LayoutVirtualBase(PrimaryBase, CharUnits::Zero());
+      
     }
   }
 
