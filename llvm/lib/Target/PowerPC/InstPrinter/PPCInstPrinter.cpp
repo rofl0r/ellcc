@@ -274,14 +274,14 @@ void PPCInstPrinter::printSymbolLo(const MCInst *MI, unsigned OpNo,
   // flag of a subtraction.  See the FIXME in GetSymbolRef in PPCMCInstLower.
   if (MI->getOperand(OpNo).isExpr() &&
       isa<MCBinaryExpr>(MI->getOperand(OpNo).getExpr())) {
-#if RICH        // FIXME: Need a way to select gnu syntax.
-    O << "lo16(";
-    printOperand(MI, OpNo, O);
-    O << ')';
-#else
-    printOperand(MI, OpNo, O);
-    O << "@l";
-#endif
+    if (isDarwinSyntax()) {
+      O << "lo16(";
+      printOperand(MI, OpNo, O);
+      O << ')';
+    } else {
+      printOperand(MI, OpNo, O);
+      O << "@l";
+    }
   } else {
     printOperand(MI, OpNo, O);
   }
@@ -296,14 +296,14 @@ void PPCInstPrinter::printSymbolHi(const MCInst *MI, unsigned OpNo,
   // flag of a subtraction.  See the FIXME in GetSymbolRef in PPCMCInstLower.
   if (MI->getOperand(OpNo).isExpr() &&
       isa<MCBinaryExpr>(MI->getOperand(OpNo).getExpr())) {
-#if RICH        // FIXME: Need a way to select gnu syntax.
-    O << "ha16(";
-    printOperand(MI, OpNo, O);
-    O << ')';
-#else
-    printOperand(MI, OpNo, O);
-    O << "@ha";
-#endif
+    if (1 || isDarwinSyntax()) {
+      O << "ha16(";
+      printOperand(MI, OpNo, O);
+      O << ')';
+    } else {
+      printOperand(MI, OpNo, O);
+      O << "@ha";
+    }
   } else {
     printOperand(MI, OpNo, O);
   }
