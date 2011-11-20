@@ -1087,117 +1087,6 @@ QualType CodeGenFunction::TypeOfSelfObject() {
   return PTy->getPointeeType();
 }
 
-LValue
-CodeGenFunction::EmitObjCPropertyRefLValue(const ObjCPropertyRefExpr *E) {
-  // This is a special l-value that just issues sends when we load or
-  // store through it.
-
-  // For certain base kinds, we need to emit the base immediately.
-  llvm::Value *Base;
-  if (E->isSuperReceiver())
-    Base = LoadObjCSelf();
-  else if (E->isClassReceiver())
-    Base = CGM.getObjCRuntime().GetClass(Builder, E->getClassReceiver());
-  else
-    Base = EmitScalarExpr(E->getBase());
-  return LValue::MakePropertyRef(E, Base);
-}
-
-static RValue GenerateMessageSendSuper(CodeGenFunction &CGF,
-                                       ReturnValueSlot Return,
-                                       QualType ResultType,
-                                       Selector S,
-                                       llvm::Value *Receiver,
-                                       const CallArgList &CallArgs) {
-  const ObjCMethodDecl *OMD = cast<ObjCMethodDecl>(CGF.CurFuncDecl);
-  bool isClassMessage = OMD->isClassMethod();
-  bool isCategoryImpl = isa<ObjCCategoryImplDecl>(OMD->getDeclContext());
-  return CGF.CGM.getObjCRuntime()
-                .GenerateMessageSendSuper(CGF, Return, ResultType,
-                                          S, OMD->getClassInterface(),
-                                          isCategoryImpl, Receiver,
-                                          isClassMessage, CallArgs);
-}
-
-RValue CodeGenFunction::EmitLoadOfPropertyRefLValue(LValue LV,
-                                                    ReturnValueSlot Return) {
-  const ObjCPropertyRefExpr *E = LV.getPropertyRefExpr();
-  QualType ResultType = E->getGetterResultType();
-  Selector S;
-  const ObjCMethodDecl *method;
-  if (E->isExplicitProperty()) {
-    const ObjCPropertyDecl *Property = E->getExplicitProperty();
-    S = Property->getGetterName();
-    method = Property->getGetterMethodDecl();
-  } else {
-    method = E->getImplicitPropertyGetter();
-    S = method->getSelector();
-  }
-
-  llvm::Value *Receiver = LV.getPropertyRefBaseAddr();
-
-  if (CGM.getLangOptions().ObjCAutoRefCount) {
-    QualType receiverType;
-    if (E->isSuperReceiver())
-      receiverType = E->getSuperReceiverType();
-    else if (E->isClassReceiver())
-      receiverType = getContext().getObjCClassType();
-    else
-      receiverType = E->getBase()->getType();
-  }
-
-  // Accesses to 'super' follow a different code path.
-  if (E->isSuperReceiver())
-    return AdjustRelatedResultType(*this, E, method,
-                                   GenerateMessageSendSuper(*this, Return, 
-                                                            ResultType,
-                                                            S, Receiver, 
-                                                            CallArgList()));
-  const ObjCInterfaceDecl *ReceiverClass
-    = (E->isClassReceiver() ? E->getClassReceiver() : 0);
-  return AdjustRelatedResultType(*this, E, method,
-          CGM.getObjCRuntime().
-             GenerateMessageSend(*this, Return, ResultType, S,
-                                 Receiver, CallArgList(), ReceiverClass));
-}
-
-void CodeGenFunction::EmitStoreThroughPropertyRefLValue(RValue Src,
-                                                        LValue Dst) {
-  const ObjCPropertyRefExpr *E = Dst.getPropertyRefExpr();
-  Selector S = E->getSetterSelector();
-  QualType ArgType = E->getSetterArgType();
-  
-  // FIXME. Other than scalars, AST is not adequate for setter and
-  // getter type mismatches which require conversion.
-  if (Src.isScalar()) {
-    llvm::Value *SrcVal = Src.getScalarVal();
-    QualType DstType = getContext().getCanonicalType(ArgType);
-    llvm::Type *DstTy = ConvertType(DstType);
-    if (SrcVal->getType() != DstTy)
-      Src = 
-        RValue::get(EmitScalarConversion(SrcVal, E->getType(), DstType));
-  }
-  
-  CallArgList Args;
-  Args.add(Src, ArgType);
-
-  llvm::Value *Receiver = Dst.getPropertyRefBaseAddr();
-  QualType ResultType = getContext().VoidTy;
-
-  if (E->isSuperReceiver()) {
-    GenerateMessageSendSuper(*this, ReturnValueSlot(),
-                             ResultType, S, Receiver, Args);
-    return;
-  }
-
-  const ObjCInterfaceDecl *ReceiverClass
-    = (E->isClassReceiver() ? E->getClassReceiver() : 0);
-
-  CGM.getObjCRuntime().GenerateMessageSend(*this, ReturnValueSlot(),
-                                           ResultType, S, Receiver, Args,
-                                           ReceiverClass);
-}
-
 void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
   llvm::Constant *EnumerationMutationFn =
     CGM.getObjCRuntime().EnumerationMutationFunction();
@@ -2231,10 +2120,64 @@ static bool shouldEmitSeparateBlockRetain(const Expr *e) {
   return true;
 }
 
+/// Try to emit a PseudoObjectExpr at +1.
+///
+/// This massively duplicates emitPseudoObjectRValue.
+static TryEmitResult tryEmitARCRetainPseudoObject(CodeGenFunction &CGF,
+                                                  const PseudoObjectExpr *E) {
+  llvm::SmallVector<CodeGenFunction::OpaqueValueMappingData, 4> opaques;
+
+  // Find the result expression.
+  const Expr *resultExpr = E->getResultExpr();
+  assert(resultExpr);
+  TryEmitResult result;
+
+  for (PseudoObjectExpr::const_semantics_iterator
+         i = E->semantics_begin(), e = E->semantics_end(); i != e; ++i) {
+    const Expr *semantic = *i;
+
+    // If this semantic expression is an opaque value, bind it
+    // to the result of its source expression.
+    if (const OpaqueValueExpr *ov = dyn_cast<OpaqueValueExpr>(semantic)) {
+      typedef CodeGenFunction::OpaqueValueMappingData OVMA;
+      OVMA opaqueData;
+
+      // If this semantic is the result of the pseudo-object
+      // expression, try to evaluate the source as +1.
+      if (ov == resultExpr) {
+        assert(!OVMA::shouldBindAsLValue(ov));
+        result = tryEmitARCRetainScalarExpr(CGF, ov->getSourceExpr());
+        opaqueData = OVMA::bind(CGF, ov, RValue::get(result.getPointer()));
+
+      // Otherwise, just bind it.
+      } else {
+        opaqueData = OVMA::bind(CGF, ov, ov->getSourceExpr());
+      }
+      opaques.push_back(opaqueData);
+
+    // Otherwise, if the expression is the result, evaluate it
+    // and remember the result.
+    } else if (semantic == resultExpr) {
+      result = tryEmitARCRetainScalarExpr(CGF, semantic);
+
+    // Otherwise, evaluate the expression in an ignored context.
+    } else {
+      CGF.EmitIgnoredExpr(semantic);
+    }
+  }
+
+  // Unbind all the opaques now.
+  for (unsigned i = 0, e = opaques.size(); i != e; ++i)
+    opaques[i].unbind(CGF);
+
+  return result;
+}
+
 static TryEmitResult
 tryEmitARCRetainScalarExpr(CodeGenFunction &CGF, const Expr *e) {
   // Look through cleanups.
   if (const ExprWithCleanups *cleanups = dyn_cast<ExprWithCleanups>(e)) {
+    CGF.enterFullExpression(cleanups);
     CodeGenFunction::RunCleanupsScope scope(CGF);
     return tryEmitARCRetainScalarExpr(CGF, cleanups->getSubExpr());
   }
@@ -2329,12 +2272,6 @@ tryEmitARCRetainScalarExpr(CodeGenFunction &CGF, const Expr *e) {
         return TryEmitResult(result, true);
       }
 
-      case CK_GetObjCProperty: {
-        llvm::Value *result = emitARCRetainCall(CGF, ce);
-        if (resultType) result = CGF.Builder.CreateBitCast(result, resultType);
-        return TryEmitResult(result, true);
-      }
-
       default:
         break;
       }
@@ -2356,6 +2293,17 @@ tryEmitARCRetainScalarExpr(CodeGenFunction &CGF, const Expr *e) {
       llvm::Value *result = emitARCRetainCall(CGF, e);
       if (resultType) result = CGF.Builder.CreateBitCast(result, resultType);
       return TryEmitResult(result, true);
+
+    // Look through pseudo-object expressions.
+    } else if (const PseudoObjectExpr *pseudo = dyn_cast<PseudoObjectExpr>(e)) {
+      TryEmitResult result
+        = tryEmitARCRetainPseudoObject(CGF, pseudo);
+      if (resultType) {
+        llvm::Value *value = result.getPointer();
+        value = CGF.Builder.CreateBitCast(value, resultType);
+        result.setPointer(value);
+      }
+      return result;
     }
 
     // Conservatively halt the search at any other expression kind.
@@ -2429,10 +2377,12 @@ llvm::Value *CodeGenFunction::EmitObjCThrowOperand(const Expr *expr) {
     //   @throw A().foo;
     // where a full retain+autorelease is required and would
     // otherwise happen after the destructor for the temporary.
-    CodeGenFunction::RunCleanupsScope cleanups(*this);
-    if (const ExprWithCleanups *ewc = dyn_cast<ExprWithCleanups>(expr))
+    if (const ExprWithCleanups *ewc = dyn_cast<ExprWithCleanups>(expr)) {
+      enterFullExpression(ewc);
       expr = ewc->getSubExpr();
+    }
 
+    CodeGenFunction::RunCleanupsScope cleanups(*this);
     return EmitARCRetainAutoreleaseScalarExpr(expr);
   }
 

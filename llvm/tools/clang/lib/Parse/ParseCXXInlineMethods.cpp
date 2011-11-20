@@ -24,8 +24,10 @@ using namespace clang;
 Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
                                       AttributeList *AccessAttrs,
                                       ParsingDeclarator &D,
-                                const ParsedTemplateInfo &TemplateInfo,
-                                const VirtSpecifiers& VS, ExprResult& Init) {
+                                      const ParsedTemplateInfo &TemplateInfo,
+                                      const VirtSpecifiers& VS, 
+                                      FunctionDefinitionKind DefinitionKind,
+                                      ExprResult& Init) {
   assert(D.isFunctionDeclarator() && "This isn't a function declarator!");
   assert((Tok.is(tok::l_brace) || Tok.is(tok::colon) || Tok.is(tok::kw_try) ||
           Tok.is(tok::equal)) &&
@@ -36,7 +38,7 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
           TemplateInfo.TemplateParams ? TemplateInfo.TemplateParams->size() : 0);
 
   Decl *FnD;
-  D.setFunctionDefinition(true);
+  D.setFunctionDefinitionKind(DefinitionKind);
   if (D.getDeclSpec().isFriendSpecified())
     FnD = Actions.ActOnFriendFunctionDecl(getCurScope(), D,
                                           move(TemplateParams));
@@ -63,6 +65,11 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
 
   if (Tok.is(tok::equal)) {
     ConsumeToken();
+
+    if (!FnD) {
+      SkipUntil(tok::semi);
+      return 0;
+    }
 
     bool Delete = false;
     SourceLocation KWLoc;
@@ -103,8 +110,7 @@ Decl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
   if (getLang().DelayedTemplateParsing && 
       ((Actions.CurContext->isDependentContext() ||
         TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate) && 
-        !Actions.IsInsideALocalClassWithinATemplateFunction()) &&
-        !D.getDeclSpec().isFriendSpecified()) {
+        !Actions.IsInsideALocalClassWithinATemplateFunction())) {
 
     if (FnD) {
       LateParsedTemplatedFunction *LPT =

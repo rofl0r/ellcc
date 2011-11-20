@@ -20,6 +20,7 @@
 #include "clang/Sema/CodeCompleteConsumer.h"
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/PreprocessingRecord.h"
+#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemOptions.h"
@@ -69,6 +70,7 @@ class GlobalCodeCompletionAllocator
 ///
 class ASTUnit : public ModuleLoader {
 private:
+  llvm::IntrusiveRefCntPtr<LangOptions>       LangOpts;
   llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics;
   llvm::IntrusiveRefCntPtr<FileManager>       FileMgr;
   llvm::IntrusiveRefCntPtr<SourceManager>     SourceMgr;
@@ -76,6 +78,7 @@ private:
   llvm::IntrusiveRefCntPtr<TargetInfo>        Target;
   llvm::IntrusiveRefCntPtr<Preprocessor>      PP;
   llvm::IntrusiveRefCntPtr<ASTContext>        Ctx;
+  ASTReader *Reader;
 
   FileSystemOptions FileSystemOpts;
 
@@ -126,6 +129,14 @@ private:
   // source. In the long term we should make the Index library use efficient and
   // more scalable search mechanisms.
   std::vector<Decl*> TopLevelDecls;
+
+  /// \brief Sorted (by file offset) vector of pairs of file offset/Decl.
+  typedef SmallVector<std::pair<unsigned, Decl *>, 64> LocDeclsTy;
+  typedef llvm::DenseMap<FileID, LocDeclsTy *> FileDeclsTy;
+
+  /// \brief Map from FileID to the file-level declarations that it contains.
+  /// The files and decls are only local (and non-preamble) ones.
+  FileDeclsTy FileDecls;
   
   /// The name of the original source file used to generate this ASTUnit.
   std::string OriginalSourceFile;
@@ -263,6 +274,8 @@ private:
                                   SourceManager &SrcMan,
                       const SmallVectorImpl<StoredDiagnostic> &Diags,
                             SmallVectorImpl<StoredDiagnostic> &Out);
+
+  void clearFileLevelDecls();
 
 public:
   /// \brief A cached code-completion result, which may be introduced in one of
@@ -504,6 +517,15 @@ public:
   void addTopLevelDecl(Decl *D) {
     TopLevelDecls.push_back(D);
   }
+
+  /// \brief Add a new local file-level declaration.
+  void addFileLevelDecl(Decl *D);
+
+  /// \brief Get the decls that are contained in a file in the Offset/Length
+  /// range. \arg Length can be 0 to indicate a point at \arg Offset instead of
+  /// a range. 
+  void findFileRegionDecls(FileID File, unsigned Offset, unsigned Length,
+                           SmallVectorImpl<Decl *> &Decls);
 
   /// \brief Add a new top-level declaration, identified by its ID in
   /// the precompiled preamble.

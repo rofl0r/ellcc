@@ -98,7 +98,7 @@ public:
   /// identifiers.  C++ describes lookup completely differently:
   /// certain lookups merely "ignore" certain kinds of declarations,
   /// usually based on whether the declaration is of a type, etc.
-  /// 
+  ///
   /// These are meant as bitmasks, so that searches in
   /// C++ can look into the "tag" namespace during ordinary lookup.
   ///
@@ -243,7 +243,7 @@ private:
   /// evaluated context or not, e.g. functions used in uninstantiated templates
   /// are regarded as "referenced" but not "used".
   unsigned Referenced : 1;
-  
+
 protected:
   /// Access - Used by C++ decls for the access specifier.
   // NOTE: VC++ treats enums as signed, avoid using the AccessSpecifier enum
@@ -252,9 +252,6 @@ protected:
 
   /// \brief Whether this declaration was loaded from an AST file.
   unsigned FromASTFile : 1;
-  
-  /// ChangedAfterLoad - if this declaration has changed since being loaded
-  unsigned ChangedAfterLoad : 1;
 
   /// \brief Whether this declaration is private to the module in which it was
   /// defined.
@@ -267,12 +264,12 @@ protected:
   ///
   /// This field is only valid for NamedDecls subclasses.
   mutable unsigned HasCachedLinkage : 1;
-  
+
   /// \brief If \c HasCachedLinkage, the linkage of this declaration.
   ///
   /// This field is only valid for NamedDecls subclasses.
   mutable unsigned CachedLinkage : 2;
-  
+
   friend class ASTDeclWriter;
   friend class ASTDeclReader;
 
@@ -285,10 +282,10 @@ protected:
     : NextDeclInContext(0), DeclCtx(DC),
       Loc(L), DeclKind(DK), InvalidDecl(0),
       HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0), ChangedAfterLoad(false),
+      Access(AS_none), FromASTFile(0),
       ModulePrivate(0),
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
-      HasCachedLinkage(0) 
+      HasCachedLinkage(0)
   {
     if (Decl::CollectingStats()) add(DK);
   }
@@ -296,7 +293,7 @@ protected:
   Decl(Kind DK, EmptyShell Empty)
     : NextDeclInContext(0), DeclKind(DK), InvalidDecl(0),
       HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0), ChangedAfterLoad(false),
+      Access(AS_none), FromASTFile(0),
       ModulePrivate(0),
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       HasCachedLinkage(0)
@@ -389,11 +386,11 @@ public:
   attr_iterator attr_end() const {
     return hasAttrs() ? getAttrs().end() : 0;
   }
-  
+
   template <typename T>
   void dropAttr() {
     if (!HasAttrs) return;
-    
+
     AttrVec &Attrs = getAttrs();
     for (unsigned i = 0, e = Attrs.size(); i != e; /* in loop */) {
       if (isa<T>(Attrs[i])) {
@@ -406,7 +403,7 @@ public:
     if (Attrs.empty())
       HasAttrs = false;
   }
-    
+
   template <typename T>
   specific_attr_iterator<T> specific_attr_begin() const {
     return specific_attr_iterator<T>(attr_begin());
@@ -504,19 +501,6 @@ public:
   /// \brief Determine whether this declaration came from an AST file (such as
   /// a precompiled header or module) rather than having been parsed.
   bool isFromASTFile() const { return FromASTFile; }
-  
-  /// \brief Query whether this declaration was changed in a significant way
-  /// since being loaded from an AST file.
-  ///
-  /// In an epic violation of layering, what is "significant" is entirely
-  /// up to the serialization system, but implemented in AST and Sema.
-  bool isChangedSinceDeserialization() const { return ChangedAfterLoad; }
-
-  /// \brief Mark this declaration as having changed since deserialization, or
-  /// reset the flag.
-  void setChangedSinceDeserialization(bool Changed) {
-    ChangedAfterLoad = Changed;
-  }
 
   unsigned getIdentifierNamespace() const {
     return IdentifierNamespace;
@@ -673,7 +657,7 @@ public:
 
   /// \brief Whether this declaration is a parameter pack.
   bool isParameterPack() const;
-  
+
   /// \brief returns true if this declaration is a template
   bool isTemplateDecl() const;
 
@@ -722,7 +706,7 @@ public:
     unsigned mask
       = (IdentifierNamespace & (IDNS_TagFriend | IDNS_OrdinaryFriend));
     if (!mask) return FOK_None;
-    return (IdentifierNamespace & (IDNS_Tag | IDNS_Ordinary) ? 
+    return (IdentifierNamespace & (IDNS_Tag | IDNS_Ordinary) ?
               FOK_Declared : FOK_Undeclared);
   }
 
@@ -886,11 +870,11 @@ public:
   }
 
   DeclContext *getLookupParent();
-  
+
   const DeclContext *getLookupParent() const {
     return const_cast<DeclContext*>(this)->getLookupParent();
   }
-  
+
   ASTContext &getParentASTContext() const {
     return cast<Decl>(this)->getASTContext();
   }
@@ -973,6 +957,14 @@ public:
   /// \brief Determine whether this declaration context encloses the
   /// declaration context DC.
   bool Encloses(const DeclContext *DC) const;
+
+  /// \brief Find the nearest non-closure ancestor of this context,
+  /// i.e. the innermost semantic parent of this context which is not
+  /// a closure.  A context may be its own non-closure ancestor.
+  DeclContext *getNonClosureAncestor();
+  const DeclContext *getNonClosureAncestor() const {
+    return const_cast<DeclContext*>(this)->getNonClosureAncestor();
+  }
 
   /// getPrimaryContext - There may be many different
   /// declarations of the same entity (including forward declarations
@@ -1133,13 +1125,13 @@ public:
       return tmp;
     }
 
-    friend bool
-    operator==(const specific_decl_iterator& x, const specific_decl_iterator& y) {
+    friend bool operator==(const specific_decl_iterator& x,
+                           const specific_decl_iterator& y) {
       return x.Current == y.Current;
     }
 
-    friend bool
-    operator!=(const specific_decl_iterator& x, const specific_decl_iterator& y) {
+    friend bool operator!=(const specific_decl_iterator& x,
+                           const specific_decl_iterator& y) {
       return x.Current != y.Current;
     }
   };
@@ -1207,13 +1199,13 @@ public:
       return tmp;
     }
 
-    friend bool
-    operator==(const filtered_decl_iterator& x, const filtered_decl_iterator& y) {
+    friend bool operator==(const filtered_decl_iterator& x,
+                           const filtered_decl_iterator& y) {
       return x.Current == y.Current;
     }
 
-    friend bool
-    operator!=(const filtered_decl_iterator& x, const filtered_decl_iterator& y) {
+    friend bool operator!=(const filtered_decl_iterator& x,
+                           const filtered_decl_iterator& y) {
       return x.Current != y.Current;
     }
   };
@@ -1275,12 +1267,12 @@ public:
   /// \brief A simplistic name lookup mechanism that performs name lookup
   /// into this declaration context without consulting the external source.
   ///
-  /// This function should almost never be used, because it subverts the 
+  /// This function should almost never be used, because it subverts the
   /// usual relationship between a DeclContext and the external source.
   /// See the ASTImporter for the (few, but important) use cases.
-  void localUncachedLookup(DeclarationName Name, 
+  void localUncachedLookup(DeclarationName Name,
                            llvm::SmallVectorImpl<NamedDecl *> &Results);
-  
+
   /// @brief Makes a declaration visible within this context.
   ///
   /// This routine makes the declaration D visible to name lookup
@@ -1352,7 +1344,7 @@ public:
   bool isDeclInLexicalTraversal(const Decl *D) const {
     return D && (D->NextDeclInContext || D == FirstDecl || D == LastDecl);
   }
-  
+
   static bool classof(const Decl *D);
   static bool classof(const DeclContext *D) { return true; }
 #define DECL(NAME, BASE)
@@ -1364,8 +1356,8 @@ public:
 
 private:
   void LoadLexicalDeclsFromExternalStorage() const;
-    
-  /// @brief Makes a declaration visible within this context, but 
+
+  /// @brief Makes a declaration visible within this context, but
   /// suppresses searches for external declarations with the same
   /// name.
   ///
@@ -1378,7 +1370,8 @@ private:
   StoredDeclsMap *CreateStoredDeclsMap(ASTContext &C) const;
 
   void buildLookup(DeclContext *DCtx);
-  void makeDeclVisibleInContextWithFlags(NamedDecl *D, bool Internal, bool Recoverable);
+  void makeDeclVisibleInContextWithFlags(NamedDecl *D, bool Internal,
+                                         bool Recoverable);
   void makeDeclVisibleInContextImpl(NamedDecl *D, bool Internal);
 };
 

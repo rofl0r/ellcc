@@ -114,6 +114,8 @@ def fdebug_compilation_dir : Separate<"-fdebug-compilation-dir">,
   HelpText<"The compilation directory to embed in the debug info.">;
 def dwarf_debug_flags : Separate<"-dwarf-debug-flags">,
   HelpText<"The string to embed in the Dwarf debug flags record.">;
+def faddress_sanitizer: Flag<"-faddress-sanitizer">,
+  HelpText<"Enable AddressSanitizer instrumentation (memory error detection)">;
 def fforbid_guard_variables : Flag<"-fforbid-guard-variables">,
   HelpText<"Emit an error if a C++ static local initializer would need a guard variable">;
 def g : Flag<"-g">, HelpText<"Generate source level debug information">;
@@ -131,6 +133,8 @@ def no_implicit_float : Flag<"-no-implicit-float">,
   HelpText<"Don't generate implicit floating point instructions (x86-only)">;
 def finstrument_functions : Flag<"-finstrument-functions">,
   HelpText<"Generate calls to instrument function entry and exit">;
+def fno_limit_debug_info : Flag<"-fno-limit-debug-info">,
+  HelpText<"Do not limit debug information produced to reduce size of debug binary">;
 def fno_merge_all_constants : Flag<"-fno-merge-all-constants">,
   HelpText<"Disallow merging of constants.">;
 def fno_threadsafe_statics : Flag<"-fno-threadsafe-statics">,
@@ -196,6 +200,8 @@ def mms_bitfields : Flag<"-mms-bitfields">,
   HelpText<"Set the default structure layout to be compatible with the Microsoft compiler standard.">;
 def mstackrealign : Flag<"-mstackrealign">,
   HelpText<"Force realign the stack at entry to every function.">;
+def mlink_bitcode_file : Separate<"-mlink-bitcode-file">,
+  HelpText<"Link the given bitcode file before performing optimizations.">;
 def O : Joined<"-O">, HelpText<"Optimization level">;
 def Os : Flag<"-Os">, HelpText<"Optimize for size">;
 def Oz : Flag<"-Oz">, HelpText<"Optimize for size, regardless of performance">;
@@ -228,7 +234,7 @@ def dump_build_information : Separate<"-dump-build-information">,
   HelpText<"output a dump of some build information to a file">;
 def diagnostic_log_file : Separate<"-diagnostic-log-file">,
   HelpText<"Filename (or -) to log diagnostics to">;
-def diagnostic_serialized_file : Separate<"-diagnostic-serialized-file">,
+def diagnostic_serialized_file : Separate<"-serialize-diagnostic-file">,
   MetaVarName<"<filename>">,
   HelpText<"File for serializing diagnostics in a binary format">;
 def fno_show_column : Flag<"-fno-show-column">,
@@ -373,6 +379,8 @@ def print_decl_contexts : Flag<"-print-decl-contexts">,
   HelpText<"Print DeclContexts and their Decls">;
 def emit_module : Flag<"-emit-module">,
   HelpText<"Generate pre-compiled module file">;
+def emit_module_from_map : Flag<"-emit-module-from-map">,
+  HelpText<"Generate pre-compiled module file from module map">;
 def emit_pth : Flag<"-emit-pth">,
   HelpText<"Generate pre-tokenized header file">;
 def emit_pch : Flag<"-emit-pch">,
@@ -606,6 +614,8 @@ def fdeprecated_macro : Flag<"-fdeprecated-macro">,
   HelpText<"Defines the __DEPRECATED macro">;
 def fno_deprecated_macro : Flag<"-fno-deprecated-macro">,
   HelpText<"Undefines the __DEPRECATED macro">;
+def fapple_pragma_pack : Flag<"-fapple-pragma-pack">,
+  HelpText<"Enable Apple gcc-compatible #pragma pack handling">;
 
 //===----------------------------------------------------------------------===//
 // Header Search Options
@@ -620,6 +630,9 @@ def nobuiltininc : Flag<"-nobuiltininc">,
 def fmodule_cache_path : Separate<"-fmodule-cache-path">, 
   MetaVarName<"<directory>">,
   HelpText<"Specify the module cache path">;           
+def fmodule_name : Joined<"-fmodule-name=">, 
+  MetaVarName<"<name>">,
+  HelpText<"Specify the name of the module to build">;           
 def fdisable_module_hash : Flag<"-fdisable-module-hash">,
   HelpText<"Disable the module hash">;
 def fauto_module_import : Flag<"-fauto-module-import">,
@@ -653,6 +666,17 @@ def isystem : JoinedOrSeparate<"-isystem">, MetaVarName<"<directory>">,
 def iwithsysroot : JoinedOrSeparate<"-iwithsysroot">,MetaVarName<"<directory>">,
   HelpText<"Add directory to SYSTEM include search path, "
            "absolute paths are relative to -isysroot">;
+def internal_isystem : JoinedOrSeparate<"-internal-isystem">,
+  MetaVarName<"<directory>">,
+  HelpText<"Add directory to the internal system include search path; these "
+           "are assumed to not be user-provided and are used to model system "
+           "and standard headers' paths.">;
+def internal_externc_isystem : JoinedOrSeparate<"-internal-externc-isystem">,
+  MetaVarName<"<directory>">,
+  HelpText<"Add directory to the internal system include search path with "
+           "implicit extern \"C\" semantics; these are assumed to not be "
+           "user-provided and are used to model system and standard headers' "
+           "paths.">;
 def iprefix : JoinedOrSeparate<"-iprefix">, MetaVarName<"<prefix>">,
   HelpText<"Set the -iwithprefix/-iwithprefixbefore prefix">;
 def iwithprefix : JoinedOrSeparate<"-iwithprefix">, MetaVarName<"<dir>">,

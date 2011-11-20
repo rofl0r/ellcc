@@ -45,6 +45,7 @@ namespace llvm {
 namespace clang {
   class APValue;
   class ASTContext;
+  class BlockDecl;
   class CXXDestructorDecl;
   class CXXForRangeStmt;
   class CXXTryStmt;
@@ -610,6 +611,9 @@ public:
 
   unsigned NextCleanupDestIndex;
 
+  /// FirstBlockInfo - The head of a singly-linked-list of block layouts.
+  CGBlockInfo *FirstBlockInfo;
+
   /// EHResumeBlock - Unified block containing a call to llvm.eh.resume.
   llvm::BasicBlock *EHResumeBlock;
 
@@ -625,10 +629,6 @@ public:
   llvm::BasicBlock *EmitLandingPad();
 
   llvm::BasicBlock *getInvokeDestImpl();
-
-  /// Set up the last cleaup that was pushed as a conditional
-  /// full-expression cleanup.
-  void initFullExprCleanup();
 
   template <class T>
   typename DominatingValue<T>::saved_type saveValueInCond(T value) {
@@ -740,6 +740,10 @@ public:
     initFullExprCleanup();
   }
 
+  /// Set up the last cleaup that was pushed as a conditional
+  /// full-expression cleanup.
+  void initFullExprCleanup();
+
   /// PushDestructorCleanup - Push a cleanup to call the
   /// complete-object destructor of an object of the given type at the
   /// given address.  Does nothing if T is not a C++ class type with a
@@ -759,11 +763,23 @@ public:
   /// DeactivateCleanupBlock - Deactivates the given cleanup block.
   /// The block cannot be reactivated.  Pops it if it's the top of the
   /// stack.
-  void DeactivateCleanupBlock(EHScopeStack::stable_iterator Cleanup);
+  ///
+  /// \param DominatingIP - An instruction which is known to
+  ///   dominate the current IP (if set) and which lies along
+  ///   all paths of execution between the current IP and the
+  ///   the point at which the cleanup comes into scope.
+  void DeactivateCleanupBlock(EHScopeStack::stable_iterator Cleanup,
+                              llvm::Instruction *DominatingIP);
 
   /// ActivateCleanupBlock - Activates an initially-inactive cleanup.
   /// Cannot be used to resurrect a deactivated cleanup.
-  void ActivateCleanupBlock(EHScopeStack::stable_iterator Cleanup);
+  ///
+  /// \param DominatingIP - An instruction which is known to
+  ///   dominate the current IP (if set) and which lies along
+  ///   all paths of execution between the current IP and the
+  ///   the point at which the cleanup comes into scope.
+  void ActivateCleanupBlock(EHScopeStack::stable_iterator Cleanup,
+                            llvm::Instruction *DominatingIP);
 
   /// \brief Enters a new scope for capturing cleanups, all of which
   /// will be executed once the scope is exited.
@@ -919,6 +935,12 @@ public:
   /// one branch or the other of a conditional expression.
   bool isInConditionalBranch() const { return OutermostConditional != 0; }
 
+  void setBeforeOutermostConditional(llvm::Value *value, llvm::Value *addr) {
+    assert(isInConditionalBranch());
+    llvm::BasicBlock *block = OutermostConditional->getStartingBlock();
+    new llvm::StoreInst(value, addr, &block->back());    
+  }
+
   /// An RAII object to record that we're evaluating a statement
   /// expression.
   class StmtExprEvaluation {
@@ -950,18 +972,91 @@ public:
 
   public:
     PeepholeProtection() : Inst(0) {}
-  };  
+  };
 
-  /// An RAII object to set (and then clear) a mapping for an OpaqueValueExpr.
-  class OpaqueValueMapping {
-    CodeGenFunction &CGF;
+  /// A non-RAII class containing all the information about a bound
+  /// opaque value.  OpaqueValueMapping, below, is a RAII wrapper for
+  /// this which makes individual mappings very simple; using this
+  /// class directly is useful when you have a variable number of
+  /// opaque values or don't want the RAII functionality for some
+  /// reason.
+  class OpaqueValueMappingData {
     const OpaqueValueExpr *OpaqueValue;
     bool BoundLValue;
     CodeGenFunction::PeepholeProtection Protection;
 
+    OpaqueValueMappingData(const OpaqueValueExpr *ov,
+                           bool boundLValue)
+      : OpaqueValue(ov), BoundLValue(boundLValue) {}
+  public:
+    OpaqueValueMappingData() : OpaqueValue(0) {}
+
+    static bool shouldBindAsLValue(const Expr *expr) {
+      // gl-values should be bound as l-values for obvious reasons.
+      // Records should be bound as l-values because IR generation
+      // always keeps them in memory.  Expressions of function type
+      // act exactly like l-values but are formally required to be
+      // r-values in C.
+      return expr->isGLValue() ||
+             expr->getType()->isRecordType() ||
+             expr->getType()->isFunctionType();
+    }
+
+    static OpaqueValueMappingData bind(CodeGenFunction &CGF,
+                                       const OpaqueValueExpr *ov,
+                                       const Expr *e) {
+      if (shouldBindAsLValue(ov))
+        return bind(CGF, ov, CGF.EmitLValue(e));
+      return bind(CGF, ov, CGF.EmitAnyExpr(e));
+    }
+
+    static OpaqueValueMappingData bind(CodeGenFunction &CGF,
+                                       const OpaqueValueExpr *ov,
+                                       const LValue &lv) {
+      assert(shouldBindAsLValue(ov));
+      CGF.OpaqueLValues.insert(std::make_pair(ov, lv));
+      return OpaqueValueMappingData(ov, true);
+    }
+
+    static OpaqueValueMappingData bind(CodeGenFunction &CGF,
+                                       const OpaqueValueExpr *ov,
+                                       const RValue &rv) {
+      assert(!shouldBindAsLValue(ov));
+      CGF.OpaqueRValues.insert(std::make_pair(ov, rv));
+
+      OpaqueValueMappingData data(ov, false);
+
+      // Work around an extremely aggressive peephole optimization in
+      // EmitScalarConversion which assumes that all other uses of a
+      // value are extant.
+      data.Protection = CGF.protectFromPeepholes(rv);
+
+      return data;
+    }
+
+    bool isValid() const { return OpaqueValue != 0; }
+    void clear() { OpaqueValue = 0; }
+
+    void unbind(CodeGenFunction &CGF) {
+      assert(OpaqueValue && "no data to unbind!");
+
+      if (BoundLValue) {
+        CGF.OpaqueLValues.erase(OpaqueValue);
+      } else {
+        CGF.OpaqueRValues.erase(OpaqueValue);
+        CGF.unprotectFromPeepholes(Protection);
+      }
+    }
+  };
+
+  /// An RAII object to set (and then clear) a mapping for an OpaqueValueExpr.
+  class OpaqueValueMapping {
+    CodeGenFunction &CGF;
+    OpaqueValueMappingData Data;
+
   public:
     static bool shouldBindAsLValue(const Expr *expr) {
-      return expr->isGLValue() || expr->getType()->isRecordType();
+      return OpaqueValueMappingData::shouldBindAsLValue(expr);
     }
 
     /// Build the opaque value mapping for the given conditional
@@ -971,75 +1066,34 @@ public:
     ///
     OpaqueValueMapping(CodeGenFunction &CGF,
                        const AbstractConditionalOperator *op) : CGF(CGF) {
-      if (isa<ConditionalOperator>(op)) {
-        OpaqueValue = 0;
-        BoundLValue = false;
+      if (isa<ConditionalOperator>(op))
+        // Leave Data empty.
         return;
-      }
 
       const BinaryConditionalOperator *e = cast<BinaryConditionalOperator>(op);
-      init(e->getOpaqueValue(), e->getCommon());
+      Data = OpaqueValueMappingData::bind(CGF, e->getOpaqueValue(),
+                                          e->getCommon());
     }
 
     OpaqueValueMapping(CodeGenFunction &CGF,
                        const OpaqueValueExpr *opaqueValue,
                        LValue lvalue)
-      : CGF(CGF), OpaqueValue(opaqueValue), BoundLValue(true) {
-      assert(opaqueValue && "no opaque value expression!");
-      assert(shouldBindAsLValue(opaqueValue));
-      initLValue(lvalue);
+      : CGF(CGF), Data(OpaqueValueMappingData::bind(CGF, opaqueValue, lvalue)) {
     }
 
     OpaqueValueMapping(CodeGenFunction &CGF,
                        const OpaqueValueExpr *opaqueValue,
                        RValue rvalue)
-      : CGF(CGF), OpaqueValue(opaqueValue), BoundLValue(false) {
-      assert(opaqueValue && "no opaque value expression!");
-      assert(!shouldBindAsLValue(opaqueValue));
-      initRValue(rvalue);
+      : CGF(CGF), Data(OpaqueValueMappingData::bind(CGF, opaqueValue, rvalue)) {
     }
 
     void pop() {
-      assert(OpaqueValue && "mapping already popped!");
-      popImpl();
-      OpaqueValue = 0;
+      Data.unbind(CGF);
+      Data.clear();
     }
 
     ~OpaqueValueMapping() {
-      if (OpaqueValue) popImpl();
-    }
-
-  private:
-    void popImpl() {
-      if (BoundLValue)
-        CGF.OpaqueLValues.erase(OpaqueValue);
-      else {
-        CGF.OpaqueRValues.erase(OpaqueValue);
-        CGF.unprotectFromPeepholes(Protection);
-      }
-    }
-
-    void init(const OpaqueValueExpr *ov, const Expr *e) {
-      OpaqueValue = ov;
-      BoundLValue = shouldBindAsLValue(ov);
-      assert(BoundLValue == shouldBindAsLValue(e)
-             && "inconsistent expression value kinds!");
-      if (BoundLValue)
-        initLValue(CGF.EmitLValue(e));
-      else
-        initRValue(CGF.EmitAnyExpr(e));
-    }
-
-    void initLValue(const LValue &lv) {
-      CGF.OpaqueLValues.insert(std::make_pair(OpaqueValue, lv));
-    }
-
-    void initRValue(const RValue &rv) {
-      // Work around an extremely aggressive peephole optimization in
-      // EmitScalarConversion which assumes that all other uses of a
-      // value are extant.
-      Protection = CGF.protectFromPeepholes(rv);
-      CGF.OpaqueRValues.insert(std::make_pair(OpaqueValue, rv));
+      if (Data.isValid()) Data.unbind(CGF);
     }
   };
   
@@ -1137,6 +1191,7 @@ private:
 
 public:
   CodeGenFunction(CodeGenModule &cgm);
+  ~CodeGenFunction();
 
   CodeGenTypes &getTypes() const { return CGM.getTypes(); }
   ASTContext &getContext() const { return CGM.getContext(); }
@@ -1265,6 +1320,8 @@ public:
   //===--------------------------------------------------------------------===//
 
   llvm::Value *EmitBlockLiteral(const BlockExpr *);
+  llvm::Value *EmitBlockLiteral(const CGBlockInfo &Info);
+  static void destroyBlockInfos(CGBlockInfo *info);
   llvm::Constant *BuildDescriptorBlockDecl(const BlockExpr *,
                                            const CGBlockInfo &Info,
                                            llvm::StructType *,
@@ -1481,6 +1538,15 @@ public:
   //===--------------------------------------------------------------------===//
 
   LValue MakeAddrLValue(llvm::Value *V, QualType T, unsigned Alignment = 0) {
+    return LValue::MakeAddr(V, T, Alignment, getContext(),
+                            CGM.getTBAAInfo(T));
+  }
+  LValue MakeNaturalAlignAddrLValue(llvm::Value *V, QualType T) {
+    unsigned Alignment;
+    if (T->isIncompleteType())
+      Alignment = 0;
+    else
+      Alignment = getContext().getTypeAlignInChars(T).getQuantity();
     return LValue::MakeAddr(V, T, Alignment, getContext(),
                             CGM.getTBAAInfo(T));
   }
@@ -1969,15 +2035,12 @@ public:
   RValue EmitLoadOfLValue(LValue V);
   RValue EmitLoadOfExtVectorElementLValue(LValue V);
   RValue EmitLoadOfBitfieldLValue(LValue LV);
-  RValue EmitLoadOfPropertyRefLValue(LValue LV,
-                                 ReturnValueSlot Return = ReturnValueSlot());
 
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
   /// is 'Ty'.
   void EmitStoreThroughLValue(RValue Src, LValue Dst);
   void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst);
-  void EmitStoreThroughPropertyRefLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as
   /// EmitStoreThroughLValue.
@@ -2015,6 +2078,10 @@ public:
   LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
+  RValue EmitPseudoObjectRValue(const PseudoObjectExpr *e,
+                                AggValueSlot slot = AggValueSlot::ignored());
+  LValue EmitPseudoObjectLValue(const PseudoObjectExpr *e);
+
   llvm::Value *EmitIvarOffset(const ObjCInterfaceDecl *Interface,
                               const ObjCIvarDecl *Ivar);
   LValue EmitLValueForAnonRecordField(llvm::Value* Base,
@@ -2041,12 +2108,10 @@ public:
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
-  LValue EmitExprWithCleanupsLValue(const ExprWithCleanups *E);
   LValue EmitCXXTypeidLValue(const CXXTypeidExpr *E);
 
   LValue EmitObjCMessageExprLValue(const ObjCMessageExpr *E);
   LValue EmitObjCIvarRefLValue(const ObjCIvarRefExpr *E);
-  LValue EmitObjCPropertyRefLValue(const ObjCPropertyRefExpr *E);
   LValue EmitStmtExprLValue(const StmtExpr *E);
   LValue EmitPointerToDataMemberBinaryExpr(const BinaryOperator *E);
   LValue EmitObjCSelectorLValue(const ObjCSelectorExpr *E);
@@ -2316,8 +2381,11 @@ public:
   void EmitSynthesizedCXXCopyCtor(llvm::Value *Dest, llvm::Value *Src,
                                   const Expr *Exp);
 
-  RValue EmitExprWithCleanups(const ExprWithCleanups *E,
-                              AggValueSlot Slot =AggValueSlot::ignored());
+  void enterFullExpression(const ExprWithCleanups *E) {
+    if (E->getNumObjects() == 0) return;
+    enterNonTrivialFullExpression(E);
+  }
+  void enterNonTrivialFullExpression(const ExprWithCleanups *E);
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
 

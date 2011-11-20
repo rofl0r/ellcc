@@ -220,6 +220,29 @@ void ExprEngine::processCFGElement(const CFGElement E, ExplodedNode *Pred,
   currentBuilderContext = 0;
 }
 
+static bool shouldRemoveDeadBindings(AnalysisManager &AMgr,
+                                     const CFGStmt S,
+                                     const ExplodedNode *Pred,
+                                     const LocationContext *LC) {
+  
+  // Are we never purging state values?
+  if (AMgr.getPurgeMode() == PurgeNone)
+    return false;
+
+  // Is this the beginning of a basic block?
+  if (isa<BlockEntrance>(Pred->getLocation()))
+    return true;
+
+  // Is this on a non-expression?
+  if (!isa<Expr>(S.getStmt()))
+    return true;
+  
+  // Is this an expression that is consumed by another expression?  If so,
+  // postpone cleaning out the state.
+  ParentMap &PM = LC->getAnalysisDeclContext()->getParentMap();
+  return !PM.isConsumedExpr(cast<Expr>(S.getStmt()));
+}
+
 void ExprEngine::ProcessStmt(const CFGStmt S,
                              ExplodedNode *Pred) {
   // TODO: Use RAII to remove the unnecessary, tagged nodes.
@@ -244,7 +267,7 @@ void ExprEngine::ProcessStmt(const CFGStmt S,
   const LocationContext *LC = EntryNode->getLocationContext();
   SymbolReaper SymReaper(LC, currentStmt, SymMgr, getStoreManager());
 
-  if (AMgr.getPurgeMode() != PurgeNone) {
+  if (shouldRemoveDeadBindings(AMgr, S, Pred, LC)) {
     getCheckerManager().runCheckersForLiveSymbols(CleanedState, SymReaper);
 
     const StackFrameContext *SFC = LC->getCurrentStackFrame();
@@ -432,11 +455,12 @@ void ExprEngine::ProcessTemporaryDtor(const CFGTemporaryDtor D,
                                       ExplodedNodeSet &Dst) {}
 
 void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred, 
-                       ExplodedNodeSet &Dst) {
+                       ExplodedNodeSet &DstTop) {
   PrettyStackTraceLoc CrashInfo(getContext().getSourceManager(),
                                 S->getLocStart(),
                                 "Error evaluating statement");
-  StmtNodeBuilder Bldr(Pred, Dst, *currentBuilderContext);
+  ExplodedNodeSet Dst;
+  StmtNodeBuilder Bldr(Pred, DstTop, *currentBuilderContext);
 
   // Expressions to ignore.
   if (const Expr *Ex = dyn_cast<Expr>(S))
@@ -853,6 +877,21 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       }
       else
         VisitUnaryOperator(U, Pred, Dst);
+      Bldr.addNodes(Dst);
+      break;
+    }
+
+    case Stmt::PseudoObjectExprClass: {
+      Bldr.takeNodes(Pred);
+      const ProgramState *state = Pred->getState();
+      const PseudoObjectExpr *PE = cast<PseudoObjectExpr>(S);
+      if (const Expr *Result = PE->getResultExpr()) { 
+        SVal V = state->getSVal(Result);
+        Bldr.generateNode(S, Pred, state->BindExpr(S, V));
+      }
+      else
+        Bldr.generateNode(S, Pred, state->BindExpr(S, UnknownVal()));
+
       Bldr.addNodes(Dst);
       break;
     }
@@ -1283,9 +1322,10 @@ void ExprEngine::VisitLvalArraySubscriptExpr(const ArraySubscriptExpr *A,
 
 /// VisitMemberExpr - Transfer function for member expressions.
 void ExprEngine::VisitMemberExpr(const MemberExpr *M, ExplodedNode *Pred,
-                                 ExplodedNodeSet &Dst) {
+                                 ExplodedNodeSet &TopDst) {
 
-  StmtNodeBuilder Bldr(Pred, Dst, *currentBuilderContext);
+  StmtNodeBuilder Bldr(Pred, TopDst, *currentBuilderContext);
+  ExplodedNodeSet Dst;
   Decl *member = M->getMemberDecl();
   if (VarDecl *VD = dyn_cast<VarDecl>(member)) {
     assert(M->isLValue());
@@ -1593,7 +1633,7 @@ ExprEngine::getEagerlyAssumeTags() {
 }
 
 void ExprEngine::evalEagerlyAssume(ExplodedNodeSet &Dst, ExplodedNodeSet &Src,
-                                     const Expr *Ex) {
+                                   const Expr *Ex) {
   StmtNodeBuilder Bldr(Src, Dst, *currentBuilderContext);
   
   for (ExplodedNodeSet::iterator I=Src.begin(), E=Src.end(); I!=E; ++I) {

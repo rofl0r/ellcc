@@ -25,9 +25,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include <deque>
 
-using namespace clang;
-
-namespace {
+namespace clang {
   class ASTNodeImporter : public TypeVisitor<ASTNodeImporter, QualType>,
                           public DeclVisitor<ASTNodeImporter, Decl *>,
                           public StmtVisitor<ASTNodeImporter, Stmt *> {
@@ -102,6 +100,7 @@ namespace {
     bool IsStructuralMatch(EnumDecl *FromEnum, EnumDecl *ToRecord);
     bool IsStructuralMatch(ClassTemplateDecl *From, ClassTemplateDecl *To);
     Decl *VisitDecl(Decl *D);
+    Decl *VisitTranslationUnitDecl(TranslationUnitDecl *D);
     Decl *VisitNamespaceDecl(NamespaceDecl *D);
     Decl *VisitTypedefNameDecl(TypedefNameDecl *D, bool IsAlias);
     Decl *VisitTypedefDecl(TypedefDecl *D);
@@ -154,6 +153,7 @@ namespace {
     Expr *VisitCStyleCastExpr(CStyleCastExpr *E);
   };
 }
+using namespace clang;
 
 //----------------------------------------------------------------------------
 // Structural Equivalence
@@ -1774,8 +1774,8 @@ ASTNodeImporter::ImportDeclarationNameLoc(const DeclarationNameInfo &From,
     To.setNamedTypeInfo(Importer.Import(FromTInfo));
     return;
   }
-    llvm_unreachable("Unknown name kind.");
   }
+  llvm_unreachable("Unknown name kind.");
 }
 
 void ASTNodeImporter::ImportDeclContext(DeclContext *FromDC, bool ForceImport) {
@@ -1801,6 +1801,47 @@ bool ASTNodeImporter::ImportDefinition(RecordDecl *From, RecordDecl *To,
   // Add base classes.
   if (CXXRecordDecl *ToCXX = dyn_cast<CXXRecordDecl>(To)) {
     CXXRecordDecl *FromCXX = cast<CXXRecordDecl>(From);
+
+    struct CXXRecordDecl::DefinitionData &ToData = ToCXX->data();
+    struct CXXRecordDecl::DefinitionData &FromData = FromCXX->data();
+    ToData.UserDeclaredConstructor = FromData.UserDeclaredConstructor;
+    ToData.UserDeclaredCopyConstructor = FromData.UserDeclaredCopyConstructor;
+    ToData.UserDeclaredMoveConstructor = FromData.UserDeclaredMoveConstructor;
+    ToData.UserDeclaredCopyAssignment = FromData.UserDeclaredCopyAssignment;
+    ToData.UserDeclaredMoveAssignment = FromData.UserDeclaredMoveAssignment;
+    ToData.UserDeclaredDestructor = FromData.UserDeclaredDestructor;
+    ToData.Aggregate = FromData.Aggregate;
+    ToData.PlainOldData = FromData.PlainOldData;
+    ToData.Empty = FromData.Empty;
+    ToData.Polymorphic = FromData.Polymorphic;
+    ToData.Abstract = FromData.Abstract;
+    ToData.IsStandardLayout = FromData.IsStandardLayout;
+    ToData.HasNoNonEmptyBases = FromData.HasNoNonEmptyBases;
+    ToData.HasPrivateFields = FromData.HasPrivateFields;
+    ToData.HasProtectedFields = FromData.HasProtectedFields;
+    ToData.HasPublicFields = FromData.HasPublicFields;
+    ToData.HasMutableFields = FromData.HasMutableFields;
+    ToData.HasTrivialDefaultConstructor = FromData.HasTrivialDefaultConstructor;
+    ToData.HasConstexprNonCopyMoveConstructor
+      = FromData.HasConstexprNonCopyMoveConstructor;
+    ToData.HasTrivialCopyConstructor = FromData.HasTrivialCopyConstructor;
+    ToData.HasTrivialMoveConstructor = FromData.HasTrivialMoveConstructor;
+    ToData.HasTrivialCopyAssignment = FromData.HasTrivialCopyAssignment;
+    ToData.HasTrivialMoveAssignment = FromData.HasTrivialMoveAssignment;
+    ToData.HasTrivialDestructor = FromData.HasTrivialDestructor;
+    ToData.HasNonLiteralTypeFieldsOrBases
+      = FromData.HasNonLiteralTypeFieldsOrBases;
+    ToData.UserProvidedDefaultConstructor
+      = FromData.UserProvidedDefaultConstructor;
+    ToData.DeclaredDefaultConstructor = FromData.DeclaredDefaultConstructor;
+    ToData.DeclaredCopyConstructor = FromData.DeclaredCopyConstructor;
+    ToData.DeclaredMoveConstructor = FromData.DeclaredMoveConstructor;
+    ToData.DeclaredCopyAssignment = FromData.DeclaredCopyAssignment;
+    ToData.DeclaredMoveAssignment = FromData.DeclaredMoveAssignment;
+    ToData.DeclaredDestructor = FromData.DeclaredDestructor;
+    ToData.FailedImplicitMoveConstructor
+      = FromData.FailedImplicitMoveConstructor;
+    ToData.FailedImplicitMoveAssignment = FromData.FailedImplicitMoveAssignment;
     
     SmallVector<CXXBaseSpecifier *, 4> Bases;
     for (CXXRecordDecl::base_class_iterator 
@@ -1988,6 +2029,15 @@ Decl *ASTNodeImporter::VisitDecl(Decl *D) {
   Importer.FromDiag(D->getLocation(), diag::err_unsupported_ast_node)
     << D->getDeclKindName();
   return 0;
+}
+
+Decl *ASTNodeImporter::VisitTranslationUnitDecl(TranslationUnitDecl *D) {
+  TranslationUnitDecl *ToD = 
+    Importer.getToContext().getTranslationUnitDecl();
+    
+  Importer.Imported(D, ToD);
+    
+  return ToD;
 }
 
 Decl *ASTNodeImporter::VisitNamespaceDecl(NamespaceDecl *D) {
@@ -3071,9 +3121,10 @@ Decl *ASTNodeImporter::VisitObjCProtocolDecl(ObjCProtocolDecl *D) {
                                          Name.getAsIdentifierInfo(), Loc,
                                          Importer.Import(D->getAtStartLoc()),
                                          D->isInitiallyForwardDecl());
-      ToProto->setForwardDecl(D->isForwardDecl());
       ToProto->setLexicalDeclContext(LexicalDC);
       LexicalDC->addDeclInternal(ToProto);
+      if (D->isInitiallyForwardDecl() && !D->isForwardDecl())
+        ToProto->completedForwardDecl();
     }
     Importer.Imported(D, ToProto);
 
@@ -3132,11 +3183,12 @@ Decl *ASTNodeImporter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *D) {
       ToIface = ObjCInterfaceDecl::Create(Importer.getToContext(), DC,
                                           Importer.Import(D->getAtStartLoc()),
                                           Name.getAsIdentifierInfo(), Loc,
-                                          D->isForwardDecl(),
+                                          D->isInitiallyForwardDecl(),
                                           D->isImplicitInterfaceDecl());
-      ToIface->setForwardDecl(D->isForwardDecl());
       ToIface->setLexicalDeclContext(LexicalDC);
       LexicalDC->addDeclInternal(ToIface);
+      if (D->isInitiallyForwardDecl() && !D->isForwardDecl())
+        ToIface->completedForwardDecl();
     }
     Importer.Imported(D, ToIface);
 
@@ -3180,6 +3232,17 @@ Decl *ASTNodeImporter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *D) {
 
     // Check for consistency of superclasses.
     DeclarationName FromSuperName, ToSuperName;
+    
+    // If the superclass hasn't been imported yet, do so before checking.
+    ObjCInterfaceDecl *DSuperClass = D->getSuperClass();
+    ObjCInterfaceDecl *ToIfaceSuperClass = ToIface->getSuperClass();
+    
+    if (DSuperClass && !ToIfaceSuperClass) {
+      Decl *ImportedSuperClass = Importer.Import(DSuperClass);
+      ObjCInterfaceDecl *ImportedSuperIface = cast<ObjCInterfaceDecl>(ImportedSuperClass);
+      ToIface->setSuperClass(ImportedSuperIface);
+    }
+
     if (D->getSuperClass())
       FromSuperName = Importer.Import(D->getSuperClass()->getDeclName());
     if (ToIface->getSuperClass())

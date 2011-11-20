@@ -217,6 +217,13 @@ void ObjCInterfaceDecl::mergeClassExtensionProtocolList(
   AllReferencedProtocols.set(ProtocolRefs.data(), ProtocolRefs.size(), C);
 }
 
+void ObjCInterfaceDecl::completedForwardDecl() {
+  assert(isForwardDecl() && "Only valid to call for forward refs");
+  ForwardDecl = false;
+  if (ASTMutationListener *L = getASTContext().getASTMutationListener())
+    L->CompletedObjCForwardRef(this);
+}
+
 /// getFirstClassExtension - Find first class extension of the given class.
 ObjCCategoryDecl* ObjCInterfaceDecl::getFirstClassExtension() const {
   for (ObjCCategoryDecl *CDecl = getCategoryList(); CDecl;
@@ -573,17 +580,26 @@ void ObjCMethodDecl::createImplicitParams(ASTContext &Context,
 
   bool selfIsPseudoStrong = false;
   bool selfIsConsumed = false;
-  if (isInstanceMethod() && Context.getLangOptions().ObjCAutoRefCount) {
-    selfIsConsumed = hasAttr<NSConsumesSelfAttr>();
+  
+  if (Context.getLangOptions().ObjCAutoRefCount) {
+    if (isInstanceMethod()) {
+      selfIsConsumed = hasAttr<NSConsumesSelfAttr>();
 
-    // 'self' is always __strong.  It's actually pseudo-strong except
-    // in init methods (or methods labeled ns_consumes_self), though.
-    Qualifiers qs;
-    qs.setObjCLifetime(Qualifiers::OCL_Strong);
-    selfTy = Context.getQualifiedType(selfTy, qs);
+      // 'self' is always __strong.  It's actually pseudo-strong except
+      // in init methods (or methods labeled ns_consumes_self), though.
+      Qualifiers qs;
+      qs.setObjCLifetime(Qualifiers::OCL_Strong);
+      selfTy = Context.getQualifiedType(selfTy, qs);
 
-    // In addition, 'self' is const unless this is an init method.
-    if (getMethodFamily() != OMF_init && !selfIsConsumed) {
+      // In addition, 'self' is const unless this is an init method.
+      if (getMethodFamily() != OMF_init && !selfIsConsumed) {
+        selfTy = selfTy.withConst();
+        selfIsPseudoStrong = true;
+      }
+    }
+    else {
+      assert(isClassMethod());
+      // 'self' is always const in class methods.
       selfTy = selfTy.withConst();
       selfIsPseudoStrong = true;
     }
@@ -638,7 +654,8 @@ ObjCInterfaceDecl(DeclContext *DC, SourceLocation atLoc, IdentifierInfo *Id,
     TypeForDecl(0), SuperClass(0),
     CategoryList(0), IvarList(0),
     InitiallyForwardDecl(FD), ForwardDecl(FD),
-    InternalInterface(isInternal), ExternallyCompleted(false) {
+    ExternallyCompleted(false) {
+  setImplicit(isInternal);
 }
 
 void ObjCInterfaceDecl::LoadExternalDefinition() const {
@@ -911,6 +928,13 @@ ObjCMethodDecl *ObjCProtocolDecl::lookupMethod(Selector Sel,
     if ((MethodDecl = (*I)->lookupMethod(Sel, isInstance)))
       return MethodDecl;
   return NULL;
+}
+
+void ObjCProtocolDecl::completedForwardDecl() {
+  assert(isForwardDecl() && "Only valid to call for forward refs");
+  isForwardProtoDecl = false;
+  if (ASTMutationListener *L = getASTContext().getASTMutationListener())
+    L->CompletedObjCForwardRef(this);
 }
 
 //===----------------------------------------------------------------------===//

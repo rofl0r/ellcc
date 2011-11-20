@@ -552,7 +552,8 @@ Decl *TemplateDeclInstantiator::VisitFriendDecl(FriendDecl *D) {
     if (!InstTy)
       return 0;
 
-    FriendDecl *FD = SemaRef.CheckFriendTypeDecl(D->getFriendLoc(), InstTy);
+    FriendDecl *FD = SemaRef.CheckFriendTypeDecl(D->getLocation(),
+                                                 D->getFriendLoc(), InstTy);
     if (!FD)
       return 0;
 
@@ -1037,8 +1038,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
   LocalInstantiationScope Scope(SemaRef, MergeWithParentScope);
 
   SmallVector<ParmVarDecl *, 4> Params;
-  TypeSourceInfo *TInfo = D->getTypeSourceInfo();
-  TInfo = SubstFunctionType(D, Params);
+  TypeSourceInfo *TInfo = SubstFunctionType(D, Params);
   if (!TInfo)
     return 0;
   QualType T = TInfo->getType();
@@ -1525,6 +1525,12 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   Method->setAccess(D->getAccess());
 
   SemaRef.CheckOverrideControl(Method);
+
+  // If a function is defined as defaulted or deleted, mark it as such now.
+  if (D->isDefaulted())
+    Method->setDefaulted();
+  if (D->isDeletedAsWritten())
+    Method->setDeletedAsWritten();
 
   if (FunctionTemplate) {
     // If there's a function template, let our caller handle it.
@@ -2472,6 +2478,9 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
   if (Inst)
     return;
 
+  // Copy the inner loc start from the pattern.
+  Function->setInnerLocStart(PatternDecl->getInnerLocStart());
+
   // If we're performing recursive template instantiation, create our own
   // queue of pending implicit instantiations that we will instantiate later,
   // while we're still within our own instantiation context.
@@ -2743,7 +2752,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
 
     if (Init->isPackExpansion()) {
       // This is a pack expansion. We should expand it now.
-      TypeLoc BaseTL = Init->getBaseClassInfo()->getTypeLoc();
+      TypeLoc BaseTL = Init->getTypeSourceInfo()->getTypeLoc();
       SmallVector<UnexpandedParameterPack, 2> Unexpanded;
       collectUnexpandedParameterPacks(BaseTL, Unexpanded);
       bool ShouldExpand = false;
@@ -2773,7 +2782,7 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
         }
 
         // Instantiate the base type.
-        TypeSourceInfo *BaseTInfo = SubstType(Init->getBaseClassInfo(),
+        TypeSourceInfo *BaseTInfo = SubstType(Init->getTypeSourceInfo(),
                                               TemplateArgs,
                                               Init->getSourceLocation(),
                                               New->getDeclName());
@@ -2808,20 +2817,25 @@ Sema::InstantiateMemInitializers(CXXConstructorDecl *New,
     }
 
     MemInitResult NewInit;
-    if (Init->isBaseInitializer()) {
-      TypeSourceInfo *BaseTInfo = SubstType(Init->getBaseClassInfo(),
-                                            TemplateArgs,
-                                            Init->getSourceLocation(),
-                                            New->getDeclName());
-      if (!BaseTInfo) {
+    if (Init->isDelegatingInitializer() || Init->isBaseInitializer()) {
+      TypeSourceInfo *TInfo = SubstType(Init->getTypeSourceInfo(),
+                                        TemplateArgs,
+                                        Init->getSourceLocation(),
+                                        New->getDeclName());
+      if (!TInfo) {
         AnyErrors = true;
         New->setInvalidDecl();
         continue;
       }
 
       MultiInitializer MultiInit(CreateMultiInitializer(NewArgs, Init));
-      NewInit = BuildBaseInitializer(BaseTInfo->getType(), BaseTInfo, MultiInit,
-                                     New->getParent(), EllipsisLoc);
+      
+      if (Init->isBaseInitializer())
+        NewInit = BuildBaseInitializer(TInfo->getType(), TInfo, MultiInit,
+                                       New->getParent(), EllipsisLoc);
+      else
+        NewInit = BuildDelegatingInitializer(TInfo, MultiInit, 
+                                  cast<CXXRecordDecl>(CurContext->getParent()));
     } else if (Init->isMemberInitializer()) {
       FieldDecl *Member = cast_or_null<FieldDecl>(FindInstantiatedDecl(
                                                      Init->getMemberLocation(),
@@ -3142,75 +3156,49 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
     if (!Record->isDependentContext())
       return D;
 
-    // If the RecordDecl is actually the injected-class-name or a
-    // "templated" declaration for a class template, class template
-    // partial specialization, or a member class of a class template,
-    // substitute into the injected-class-name of the class template
-    // or partial specialization to find the new DeclContext.
-    QualType T;
+    // Determine whether this record is the "templated" declaration describing
+    // a class template or class template partial specialization.
     ClassTemplateDecl *ClassTemplate = Record->getDescribedClassTemplate();
-
-    if (ClassTemplate) {
-      T = ClassTemplate->getInjectedClassNameSpecialization();
-    } else if (ClassTemplatePartialSpecializationDecl *PartialSpec
-                 = dyn_cast<ClassTemplatePartialSpecializationDecl>(Record)) {
-      ClassTemplate = PartialSpec->getSpecializedTemplate();
-
-      // If we call SubstType with an InjectedClassNameType here we
-      // can end up in an infinite loop.
-      T = Context.getTypeDeclType(Record);
-      assert(isa<InjectedClassNameType>(T) &&
-             "type of partial specialization is not an InjectedClassNameType");
-      T = cast<InjectedClassNameType>(T)->getInjectedSpecializationType();
-    }
-
-    if (!T.isNull()) {
-      // Substitute into the injected-class-name to get the type
-      // corresponding to the instantiation we want, which may also be
-      // the current instantiation (if we're in a template
-      // definition). This substitution should never fail, since we
-      // know we can instantiate the injected-class-name or we
-      // wouldn't have gotten to the injected-class-name!
-
-      // FIXME: Can we use the CurrentInstantiationScope to avoid this
-      // extra instantiation in the common case?
-      T = SubstType(T, TemplateArgs, Loc, DeclarationName());
-      assert(!T.isNull() && "Instantiation of injected-class-name cannot fail.");
-
-      if (!T->isDependentType()) {
-        assert(T->isRecordType() && "Instantiation must produce a record type");
-        return T->getAs<RecordType>()->getDecl();
+    if (ClassTemplate)
+      ClassTemplate = ClassTemplate->getCanonicalDecl();
+    else if (ClassTemplatePartialSpecializationDecl *PartialSpec
+               = dyn_cast<ClassTemplatePartialSpecializationDecl>(Record))
+      ClassTemplate = PartialSpec->getSpecializedTemplate()->getCanonicalDecl();
+    
+    // Walk the current context to find either the record or an instantiation of
+    // it.
+    DeclContext *DC = CurContext;
+    while (!DC->isFileContext()) {
+      // If we're performing substitution while we're inside the template
+      // definition, we'll find our own context. We're done.
+      if (DC->Equals(Record))
+        return Record;
+      
+      if (CXXRecordDecl *InstRecord = dyn_cast<CXXRecordDecl>(DC)) {
+        // Check whether we're in the process of instantiating a class template
+        // specialization of the template we're mapping.
+        if (ClassTemplateSpecializationDecl *InstSpec
+                      = dyn_cast<ClassTemplateSpecializationDecl>(InstRecord)){
+          ClassTemplateDecl *SpecTemplate = InstSpec->getSpecializedTemplate();
+          if (ClassTemplate && isInstantiationOf(ClassTemplate, SpecTemplate))
+            return InstRecord;
+        }
+      
+        // Check whether we're in the process of instantiating a member class.
+        if (isInstantiationOf(Record, InstRecord))
+          return InstRecord;
       }
-
-      // We are performing "partial" template instantiation to create
-      // the member declarations for the members of a class template
-      // specialization. Therefore, D is actually referring to something
-      // in the current instantiation. Look through the current
-      // context, which contains actual instantiations, to find the
-      // instantiation of the "current instantiation" that D refers
-      // to.
-      bool SawNonDependentContext = false;
-      for (DeclContext *DC = CurContext; !DC->isFileContext();
-           DC = DC->getParent()) {
-        if (ClassTemplateSpecializationDecl *Spec
-                          = dyn_cast<ClassTemplateSpecializationDecl>(DC))
-          if (isInstantiationOf(ClassTemplate,
-                                Spec->getSpecializedTemplate()))
-            return Spec;
-
-        if (!DC->isDependentContext())
-          SawNonDependentContext = true;
+      
+      
+      // Move to the outer template scope.
+      if (FunctionDecl *FD = dyn_cast<FunctionDecl>(DC)) {
+        if (FD->getFriendObjectKind() && FD->getDeclContext()->isFileContext()){
+          DC = FD->getLexicalDeclContext();
+          continue;
+        }
       }
-
-      // We're performing "instantiation" of a member of the current
-      // instantiation while we are type-checking the
-      // definition. Compute the declaration context and return that.
-      assert(!SawNonDependentContext &&
-             "No dependent context while instantiating record");
-      DeclContext *DC = computeDeclContext(T);
-      assert(DC &&
-             "Unable to find declaration for the current instantiation");
-      return cast<CXXRecordDecl>(DC);
+      
+      DC = DC->getParent();
     }
 
     // Fall through to deal with other dependent record types (e.g.,

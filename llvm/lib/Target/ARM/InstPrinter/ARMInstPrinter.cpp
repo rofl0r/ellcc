@@ -18,7 +18,6 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -101,7 +100,9 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
 
   // A8.6.123 PUSH
   if ((Opcode == ARM::STMDB_UPD || Opcode == ARM::t2STMDB_UPD) &&
-      MI->getOperand(0).getReg() == ARM::SP) {
+      MI->getOperand(0).getReg() == ARM::SP &&
+      MI->getNumOperands() > 5) {
+    // Should only print PUSH if there are at least two registers in the list.
     O << '\t' << "push";
     printPredicateOperand(MI, 2, O);
     if (Opcode == ARM::t2STMDB_UPD)
@@ -122,7 +123,9 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
 
   // A8.6.122 POP
   if ((Opcode == ARM::LDMIA_UPD || Opcode == ARM::t2LDMIA_UPD) &&
-      MI->getOperand(0).getReg() == ARM::SP) {
+      MI->getOperand(0).getReg() == ARM::SP &&
+      MI->getNumOperands() > 5) {
+    // Should only print POP if there are at least two registers in the list.
     O << '\t' << "pop";
     printPredicateOperand(MI, 2, O);
     if (Opcode == ARM::t2LDMIA_UPD)
@@ -963,7 +966,8 @@ void ARMInstPrinter::printNEONModImmOperand(const MCInst *MI, unsigned OpNum,
   unsigned EncodedImm = MI->getOperand(OpNum).getImm();
   unsigned EltBits;
   uint64_t Val = ARM_AM::decodeNEONModImm(EncodedImm, EltBits);
-  O << "#0x" << utohexstr(Val);
+  O << "#0x";
+  O.write_hex(Val);
 }
 
 void ARMInstPrinter::printImmPlusOneOperand(const MCInst *MI, unsigned OpNum,

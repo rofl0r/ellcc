@@ -1046,12 +1046,12 @@ SVal RegionStoreManager::RetrieveElement(Store store,
       // clients of RetrieveElement().
       if (i < 0)
         return UndefinedVal();
-      int64_t byteLength = Str->getByteLength();
-      // Technically, only i == byteLength is guaranteed to be null.
+      int64_t length = Str->getLength();
+      // Technically, only i == length is guaranteed to be null.
       // However, such overflows should be caught before reaching this point;
       // the only time such an access would be made is if a string literal was
       // used to initialize a larger array.
-      char c = (i >= byteLength) ? '\0' : Str->getString()[i];
+      char c = (i >= length) ? '\0' : Str->getCodeUnit(i);
       return svalBuilder.makeIntVal(c, T);
     }
   }
@@ -1506,10 +1506,14 @@ StoreRef RegionStoreManager::BindStruct(Store store, const TypedValueRegion* R,
   RecordDecl::field_iterator FI, FE;
   StoreRef newStore(store, *this);
   
-  for (FI = RD->field_begin(), FE = RD->field_end(); FI != FE; ++FI, ++VI) {
+  for (FI = RD->field_begin(), FE = RD->field_end(); FI != FE; ++FI) {
 
     if (VI == VE)
       break;
+
+    // Skip any unnamed bitfields to stay in sync with the initializers.
+    if ((*FI)->isUnnamedBitfield())
+      continue;
 
     QualType FTy = (*FI)->getType();
     const FieldRegion* FR = MRMgr.getFieldRegion(*FI, R);
@@ -1520,6 +1524,7 @@ StoreRef RegionStoreManager::BindStruct(Store store, const TypedValueRegion* R,
       newStore = BindStruct(newStore.getStore(), FR, *VI);
     else
       newStore = Bind(newStore.getStore(), svalBuilder.makeLoc(FR), *VI);
+    ++VI;
   }
 
   // There may be fewer values in the initialize list than the fields of struct.

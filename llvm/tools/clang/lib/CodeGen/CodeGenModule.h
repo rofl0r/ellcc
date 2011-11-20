@@ -26,7 +26,6 @@
 #include "llvm/Module.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ValueHandle.h"
 
@@ -565,6 +564,10 @@ public:
   /// -fconstant-string-class=class_name option.
   llvm::Constant *GetAddrOfConstantString(const StringLiteral *Literal);
 
+  /// GetConstantArrayFromStringLiteral - Return a constant array for the given
+  /// string.
+  llvm::Constant *GetConstantArrayFromStringLiteral(const StringLiteral *E);
+
   /// GetAddrOfConstantStringFromLiteral - Return a pointer to a constant array
   /// for the given string literal.
   llvm::Constant *GetAddrOfConstantStringFromLiteral(const StringLiteral *S);
@@ -715,9 +718,13 @@ public:
   /// as a return type.
   bool ReturnTypeUsesSRet(const CGFunctionInfo &FI);
 
-  /// ReturnTypeUsesSret - Return true iff the given type uses 'fpret' when used
-  /// as a return type.
+  /// ReturnTypeUsesFPRet - Return true iff the given type uses 'fpret' when
+  /// used as a return type.
   bool ReturnTypeUsesFPRet(QualType ResultType);
+
+  /// ReturnTypeUsesFP2Ret - Return true iff the given type uses 'fp2ret' when
+  /// used as a return type.
+  bool ReturnTypeUsesFP2Ret(QualType ResultType);
 
   /// ConstructAttributeList - Get the LLVM attributes and calling convention to
   /// use for a particular function type.

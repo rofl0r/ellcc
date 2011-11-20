@@ -102,7 +102,39 @@ namespace SrcMgr {
 
     /// NumLines - The number of lines in this ContentCache.  This is only valid
     /// if SourceLineCache is non-null.
-    unsigned NumLines;
+    unsigned NumLines : 31;
+
+    /// \brief Indicates whether the buffer itself was provided to override
+    /// the actual file contents.
+    ///
+    /// When true, the original entry may be a virtual file that does not
+    /// exist.
+    unsigned BufferOverridden : 1;
+    
+    ContentCache(const FileEntry *Ent = 0)
+      : Buffer(0, false), OrigEntry(Ent), ContentsEntry(Ent),
+        SourceLineCache(0), NumLines(0), BufferOverridden(false) {}
+    
+    ContentCache(const FileEntry *Ent, const FileEntry *contentEnt)
+      : Buffer(0, false), OrigEntry(Ent), ContentsEntry(contentEnt),
+        SourceLineCache(0), NumLines(0), BufferOverridden(false) {}
+    
+    ~ContentCache();
+    
+    /// The copy ctor does not allow copies where source object has either
+    ///  a non-NULL Buffer or SourceLineCache.  Ownership of allocated memory
+    ///  is not transferred, so this is a logical error.
+    ContentCache(const ContentCache &RHS)
+      : Buffer(0, false), SourceLineCache(0), BufferOverridden(false)
+    {
+      OrigEntry = RHS.OrigEntry;
+      ContentsEntry = RHS.ContentsEntry;
+      
+      assert (RHS.Buffer.getPointer() == 0 && RHS.SourceLineCache == 0 &&
+              "Passed ContentCache object cannot own a buffer.");
+      
+      NumLines = RHS.NumLines;
+    }
 
     /// getBuffer - Returns the memory buffer for the associated content.
     ///
@@ -157,31 +189,6 @@ namespace SrcMgr {
     /// \brief Determine whether the buffer should be freed.
     bool shouldFreeBuffer() const {
       return (Buffer.getInt() & DoNotFreeFlag) == 0;
-    }
-
-    ContentCache(const FileEntry *Ent = 0)
-      : Buffer(0, false), OrigEntry(Ent), ContentsEntry(Ent),
-        SourceLineCache(0), NumLines(0) {}
-
-    ContentCache(const FileEntry *Ent, const FileEntry *contentEnt)
-      : Buffer(0, false), OrigEntry(Ent), ContentsEntry(contentEnt),
-        SourceLineCache(0), NumLines(0) {}
-
-    ~ContentCache();
-
-    /// The copy ctor does not allow copies where source object has either
-    ///  a non-NULL Buffer or SourceLineCache.  Ownership of allocated memory
-    ///  is not transferred, so this is a logical error.
-    ContentCache(const ContentCache &RHS)
-      : Buffer(0, false), SourceLineCache(0)
-    {
-      OrigEntry = RHS.OrigEntry;
-      ContentsEntry = RHS.ContentsEntry;
-
-      assert (RHS.Buffer.getPointer() == 0 && RHS.SourceLineCache == 0 &&
-              "Passed ContentCache object cannot own a buffer.");
-
-      NumLines = RHS.NumLines;
     }
 
   private:
@@ -641,8 +648,9 @@ public:
   /// specified memory buffer.  This does no caching of the buffer and takes
   /// ownership of the MemoryBuffer, so only pass a MemoryBuffer to this once.
   FileID createFileIDForMemBuffer(const llvm::MemoryBuffer *Buffer,
-                                  int LoadedID = 0, unsigned LoadedOffset = 0) {
-    return createFileID(createMemBufferContentCache(Buffer), SourceLocation(),
+                                  int LoadedID = 0, unsigned LoadedOffset = 0,
+                                 SourceLocation IncludeLoc = SourceLocation()) {
+    return createFileID(createMemBufferContentCache(Buffer), IncludeLoc,
                         SrcMgr::C_User, LoadedID, LoadedOffset);
   }
 
@@ -880,7 +888,11 @@ public:
   /// offset from the start of the buffer of the location.
   std::pair<FileID, unsigned> getDecomposedLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
-    return std::make_pair(FID, Loc.getOffset()-getSLocEntry(FID).getOffset());
+    bool Invalid = false;
+    const SrcMgr::SLocEntry &E = getSLocEntry(FID, &Invalid);
+    if (Invalid)
+      return std::make_pair(FileID(), 0);
+    return std::make_pair(FID, Loc.getOffset()-E.getOffset());
   }
 
   /// getDecomposedExpansionLoc - Decompose the specified location into a raw
@@ -889,7 +901,10 @@ public:
   std::pair<FileID, unsigned>
   getDecomposedExpansionLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
-    const SrcMgr::SLocEntry *E = &getSLocEntry(FID);
+    bool Invalid = false;
+    const SrcMgr::SLocEntry *E = &getSLocEntry(FID, &Invalid);
+    if (Invalid)
+      return std::make_pair(FileID(), 0);
 
     unsigned Offset = Loc.getOffset()-E->getOffset();
     if (Loc.isFileID())
@@ -904,7 +919,10 @@ public:
   std::pair<FileID, unsigned>
   getDecomposedSpellingLoc(SourceLocation Loc) const {
     FileID FID = getFileID(Loc);
-    const SrcMgr::SLocEntry *E = &getSLocEntry(FID);
+    bool Invalid = false;
+    const SrcMgr::SLocEntry *E = &getSLocEntry(FID, &Invalid);
+    if (Invalid)
+      return std::make_pair(FileID(), 0);
 
     unsigned Offset = Loc.getOffset()-E->getOffset();
     if (Loc.isFileID())
@@ -1258,6 +1276,17 @@ public:
   /// \brief Returns true if \arg Loc did not come from a PCH/Module.
   bool isLocalSourceLocation(SourceLocation Loc) const {
     return Loc.getOffset() < NextLocalOffset;
+  }
+
+  /// \brief Returns true if \arg FID came from a PCH/Module.
+  bool isLoadedFileID(FileID FID) const {
+    assert(FID.ID != -1 && "Using FileID sentinel value");
+    return FID.ID < 0;
+  }
+
+  /// \brief Returns true if \arg FID did not come from a PCH/Module.
+  bool isLocalFileID(FileID FID) const {
+    return !isLoadedFileID(FID);
   }
 
 private:

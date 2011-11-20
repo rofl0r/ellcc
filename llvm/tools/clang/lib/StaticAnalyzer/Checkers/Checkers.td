@@ -28,6 +28,7 @@ def DeadCodeExperimental : Package<"deadcode">, InPackage<Experimental>, Hidden;
 
 def Security : Package <"security">;
 def SecurityExperimental : Package<"security">, InPackage<Experimental>, Hidden;
+def Taint : Package<"taint">, InPackage<SecurityExperimental>, Hidden;  
 
 def Unix : Package<"unix">;
 def UnixExperimental : Package<"unix">, InPackage<Experimental>, Hidden;
@@ -218,6 +219,18 @@ def MallocOverflowSecurityChecker : Checker<"MallocOverflow">,
 } // end "security.experimental"
 
 //===----------------------------------------------------------------------===//
+// Taint checkers.
+//===----------------------------------------------------------------------===//
+
+let ParentPackage = Taint in {
+
+def GenericTaintChecker : Checker<"TaintPropagation">,
+  HelpText<"Generate taint information used by other checkers">,
+  DescFile<"GenericTaintChecker.cpp">;
+
+} // end "experimental.security.taint"
+
+//===----------------------------------------------------------------------===//
 // Unix API checkers.
 //===----------------------------------------------------------------------===//
 
@@ -291,7 +304,7 @@ def ClassReleaseChecker : Checker<"ClassRelease">,
   DescFile<"BasicObjCFoundationChecks.cpp">;
 
 def VariadicMethodTypeChecker : Checker<"VariadicMethodTypes">,
-  HelpText<"Check for passing non-Objective-C types to variadic methods that expect"
+  HelpText<"Check for passing non-Objective-C types to variadic methods that expect "
            "only Objective-C types">,
   DescFile<"BasicObjCFoundationChecks.cpp">;
 

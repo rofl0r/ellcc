@@ -198,7 +198,7 @@ TargetMachine::TargetMachine(const Target &T,
     MCSaveTempLabels(false),
     MCUseLoc(true),
     MCUseCFI(true),
-    MCUseDwarfDirectory(true) {
+    MCUseDwarfDirectory(false) {
   // Typically it will be subtargets that will adjust FloatABIType from Default
   // to Soft or Hard.
   if (UseSoftFloat)
@@ -224,6 +224,14 @@ CodeModel::Model TargetMachine::getCodeModel() const {
   if (!CodeGenInfo)
     return CodeModel::Default;
   return CodeGenInfo->getCodeModel();
+}
+
+/// getOptLevel - Returns the optimization level: None, Less,
+/// Default, or Aggressive.
+CodeGenOpt::Level TargetMachine::getOptLevel() const {
+  if (!CodeGenInfo)
+    return CodeGenOpt::Default;
+  return CodeGenInfo->getOptLevel();
 }
 
 bool TargetMachine::getAsmVerbosityDefault() {

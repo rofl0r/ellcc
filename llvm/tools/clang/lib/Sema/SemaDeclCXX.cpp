@@ -1534,11 +1534,11 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       DeclContext *DC = 0;
       if ((DC = computeDeclContext(SS, false)) && DC->Equals(CurContext))
         Diag(D.getIdentifierLoc(), diag::warn_member_extra_qualification)
-        << Name << FixItHint::CreateRemoval(SS.getRange());
+          << Name << FixItHint::CreateRemoval(SS.getRange());
       else
         Diag(D.getIdentifierLoc(), diag::err_member_qualification)
           << Name << SS.getRange();
-       
+      
       SS.clear();
     }
 
@@ -2125,13 +2125,12 @@ Sema::BuildMemberInitializer(ValueDecl *Member,
 MemInitResult
 Sema::BuildDelegatingInitializer(TypeSourceInfo *TInfo,
                                  const MultiInitializer &Args,
-                                 SourceLocation NameLoc,
                                  CXXRecordDecl *ClassDecl) {
-  SourceLocation Loc = TInfo->getTypeLoc().getLocalSourceRange().getBegin();
+  SourceLocation NameLoc = TInfo->getTypeLoc().getLocalSourceRange().getBegin();
   if (!LangOpts.CPlusPlus0x)
-    return Diag(Loc, diag::err_delegating_ctor)
+    return Diag(NameLoc, diag::err_delegating_ctor)
       << TInfo->getTypeLoc().getLocalSourceRange();
-  Diag(Loc, diag::warn_cxx98_compat_delegating_ctor);
+  Diag(NameLoc, diag::warn_cxx98_compat_delegating_ctor);
 
   // Initialize the object.
   InitializedEntity DelegationEntity = InitializedEntity::InitializeDelegation(
@@ -2144,10 +2143,8 @@ Sema::BuildDelegatingInitializer(TypeSourceInfo *TInfo,
   if (DelegationInit.isInvalid())
     return true;
 
-  CXXConstructExpr *ConExpr = cast<CXXConstructExpr>(DelegationInit.get());
-  CXXConstructorDecl *Constructor
-    = ConExpr->getConstructor();
-  assert(Constructor && "Delegating constructor with no target?");
+  assert(cast<CXXConstructExpr>(DelegationInit.get())->getConstructor() &&
+         "Delegating constructor with no target?");
 
   CheckImplicitConversions(DelegationInit.get(), Args.getStartLoc());
 
@@ -2158,9 +2155,7 @@ Sema::BuildDelegatingInitializer(TypeSourceInfo *TInfo,
   if (DelegationInit.isInvalid())
     return true;
 
-  assert(!CurContext->isDependentContext());
-  return new (Context) CXXCtorInitializer(Context, Loc, Args.getStartLoc(),
-                                          Constructor,
+  return new (Context) CXXCtorInitializer(Context, TInfo, Args.getStartLoc(), 
                                           DelegationInit.takeAs<Expr>(),
                                           Args.getEndLoc());
 }
@@ -2210,7 +2205,7 @@ Sema::BuildBaseInitializer(QualType BaseType, TypeSourceInfo *BaseTInfo,
   if (!Dependent) { 
     if (Context.hasSameUnqualifiedType(QualType(ClassDecl->getTypeForDecl(),0),
                                        BaseType))
-      return BuildDelegatingInitializer(BaseTInfo, Args, BaseLoc, ClassDecl);
+      return BuildDelegatingInitializer(BaseTInfo, Args, ClassDecl);
 
     FindBaseInitializer(*this, ClassDecl, BaseType, DirectBaseSpec, 
                         VirtualBaseSpec);
@@ -2418,7 +2413,7 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
     // Suppress copying zero-width bitfields.
     if (Field->isBitField() && Field->getBitWidthValue(SemaRef.Context) == 0)
       return false;
-    
+        
     Expr *MemberExprBase = 
       DeclRefExpr::Create(SemaRef.Context, NestedNameSpecifierLoc(), Param, 
                           Loc, ParamType, VK_LValue, 0);
@@ -2654,6 +2649,22 @@ static bool isWithinAnonymousUnion(IndirectFieldDecl *F) {
   return false;
 }
 
+/// \brief Determine whether the given type is an incomplete or zero-lenfgth
+/// array type.
+static bool isIncompleteOrZeroLengthArrayType(ASTContext &Context, QualType T) {
+  if (T->isIncompleteArrayType())
+    return true;
+  
+  while (const ConstantArrayType *ArrayT = Context.getAsConstantArrayType(T)) {
+    if (!ArrayT->getSize())
+      return true;
+    
+    T = ArrayT->getElementType();
+  }
+  
+  return false;
+}
+
 static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
                                     FieldDecl *Field, 
                                     IndirectFieldDecl *Indirect = 0) {
@@ -2687,6 +2698,10 @@ static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
   // explicitly specified.
   if (Field->getParent()->isUnion() ||
       (Indirect && isWithinAnonymousUnion(Indirect)))
+    return false;
+
+  // Don't initialize incomplete or zero-length arrays.
+  if (isIncompleteOrZeroLengthArrayType(SemaRef.Context, Field->getType()))
     return false;
 
   // Don't try to build an implicit initializer if there were semantic
@@ -2827,13 +2842,7 @@ bool Sema::SetCtorInitializers(CXXConstructorDecl *Constructor,
       //   initialized.
       if (F->isUnnamedBitfield())
         continue;
-      
-      if (F->getType()->isIncompleteArrayType()) {
-        assert(ClassDecl->hasFlexibleArrayMember() &&
-               "Incomplete array type is not valid");
-        continue;
-      }
-      
+            
       // If we're not generating the implicit copy/move constructor, then we'll
       // handle anonymous struct/union fields based on their individual
       // indirect fields.
@@ -3000,12 +3009,12 @@ DiagnoseBaseOrMemInitializerOrder(Sema &SemaRef,
       if (PrevInit->isAnyMemberInitializer())
         D << 0 << PrevInit->getAnyMember()->getDeclName();
       else
-        D << 1 << PrevInit->getBaseClassInfo()->getType();
+        D << 1 << PrevInit->getTypeSourceInfo()->getType();
       
       if (Init->isAnyMemberInitializer())
         D << 0 << Init->getAnyMember()->getDeclName();
       else
-        D << 1 << Init->getBaseClassInfo()->getType();
+        D << 1 << Init->getTypeSourceInfo()->getType();
 
       // Move back to the initializer's location in the ideal list.
       for (IdealIndex = 0; IdealIndex != NumIdealInits; ++IdealIndex)
@@ -3056,11 +3065,9 @@ bool CheckRedundantUnionInit(Sema &S,
                              RedundantUnionMap &Unions) {
   FieldDecl *Field = Init->getAnyMember();
   RecordDecl *Parent = Field->getParent();
-  if (!Parent->isAnonymousStructOrUnion())
-    return false;
-
   NamedDecl *Child = Field;
-  do {
+
+  while (Parent->isAnonymousStructOrUnion() || Parent->isUnion()) {
     if (Parent->isUnion()) {
       UnionEntry &En = Unions[Parent];
       if (En.first && En.first != Child) {
@@ -3071,15 +3078,18 @@ bool CheckRedundantUnionInit(Sema &S,
         S.Diag(En.second->getSourceLocation(), diag::note_previous_initializer)
           << 0 << En.second->getSourceRange();
         return true;
-      } else if (!En.first) {
+      } 
+      if (!En.first) {
         En.first = Child;
         En.second = Init;
       }
+      if (!Parent->isAnonymousStructOrUnion())
+        return false;
     }
 
     Child = Parent;
     Parent = cast<RecordDecl>(Parent->getDeclContext());
-  } while (Parent->isAnonymousStructOrUnion());
+  }
 
   return false;
 }
@@ -3174,6 +3184,11 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
     FieldDecl *Field = *I;
     if (Field->isInvalidDecl())
       continue;
+    
+    // Don't destroy incomplete or zero-length arrays.
+    if (isIncompleteOrZeroLengthArrayType(Context, Field->getType()))
+      continue;
+
     QualType FieldType = Context.getBaseElementType(Field->getType());
     
     const RecordType* RT = FieldType->getAs<RecordType>();
@@ -8958,16 +8973,6 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
   
   Expr *Init = Result.get();
   CheckImplicitConversions(Init, LParenLoc);
-  
-  if (VDecl->isConstexpr() && !VDecl->isInvalidDecl() &&
-      !Init->isValueDependent() &&
-      !Init->isConstantInitializer(Context,
-                                   VDecl->getType()->isReferenceType())) {
-    // FIXME: Improve this diagnostic to explain why the initializer is not
-    // a constant expression.
-    Diag(VDecl->getLocation(), diag::err_constexpr_var_requires_const_init)
-      << VDecl << Init->getSourceRange();
-  }
 
   Init = MaybeCreateExprWithCleanups(Init);
   VDecl->setInit(Init);
@@ -9646,7 +9651,8 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
 /// \brief Perform semantic analysis of the given friend type declaration.
 ///
 /// \returns A friend declaration that.
-FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation FriendLoc, 
+FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation Loc,
+                                      SourceLocation FriendLoc,
                                       TypeSourceInfo *TSInfo) {
   assert(TSInfo && "NULL TypeSourceInfo for friend type declaration");
   
@@ -9703,7 +9709,7 @@ FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation FriendLoc,
   // FIXME: C++0x has some syntactic restrictions on friend type declarations
   // in [class.friend]p3 that we do not implement.
   
-  return FriendDecl::Create(Context, CurContext, FriendLoc, TSInfo, FriendLoc);
+  return FriendDecl::Create(Context, CurContext, Loc, TSInfo, FriendLoc);
 }
 
 /// Handle a friend tag declaration where the scope specifier was
@@ -9900,7 +9906,7 @@ Decl *Sema::ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                                    TSI,
                                    DS.getFriendSpecLoc());
   else
-    D = CheckFriendTypeDecl(DS.getFriendSpecLoc(), TSI);
+    D = CheckFriendTypeDecl(Loc, DS.getFriendSpecLoc(), TSI);
   
   if (!D)
     return 0;
@@ -10035,7 +10041,7 @@ Decl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D,
              diag::err_friend_is_member);
 
     DCScope = getScopeForDeclContext(S, DC);
-
+    
     // C++ [class.friend]p6:
     //   A function can be defined in a friend declaration of a class if and 
     //   only if the class is a non-local class (9.8), the function name is
@@ -10127,6 +10133,15 @@ Decl *Sema::ActOnFriendFunctionDecl(Scope *S, Declarator &D,
     }
   }
 
+  // FIXME: This is an egregious hack to cope with cases where the scope stack
+  // does not contain the declaration context, i.e., in an out-of-line 
+  // definition of a class.
+  Scope FakeDCScope(S, Scope::DeclScope, Diags);
+  if (!DCScope) {
+    FakeDCScope.setEntity(DC);
+    DCScope = &FakeDCScope;
+  }
+  
   bool AddToScope = true;
   NamedDecl *ND = ActOnFunctionDeclarator(DCScope, D, DC, TInfo, Previous,
                                           move(TemplateParams), AddToScope);

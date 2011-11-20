@@ -526,12 +526,6 @@ static std::string GenMacroLocals(const std::string &proto, StringRef typestr) {
   for (unsigned i = 1, e = proto.size(); i != e; ++i, ++arg) {
     // Do not create a temporary for an immediate argument.
     // That would defeat the whole point of using a macro!
-    // FIXME: For other (non-immediate) arguments that are used directly, a
-    // local temporary (or some other method) is still needed to get the
-    // correct type checking, even if that temporary is not used for anything.
-    // This is omitted for now because it turns out the the use of
-    // "__extension__" in the macro disables any warnings from the pointer
-    // assignment.
     if (MacroArgUsedDirectly(proto, i))
       continue;
     generatedLocal = true;
@@ -833,7 +827,6 @@ static std::string GenOpString(OpKind op, const std::string &proto,
 
 static unsigned GetNeonEnum(const std::string &proto, StringRef typestr) {
   unsigned mod = proto[0];
-  unsigned ret = 0;
 
   if (mod == 'v' || mod == 'f')
     mod = proto[1];
@@ -851,35 +844,32 @@ static unsigned GetNeonEnum(const std::string &proto, StringRef typestr) {
   // Based on the modifying character, change the type and width if necessary.
   type = ModType(mod, type, quad, poly, usgn, scal, cnst, pntr);
 
-  if (usgn)
-    ret |= 0x08;
-  if (quad && proto[1] != 'g')
-    ret |= 0x10;
-
+  NeonTypeFlags::EltType ET;
   switch (type) {
     case 'c':
-      ret |= poly ? 5 : 0;
+      ET = poly ? NeonTypeFlags::Poly8 : NeonTypeFlags::Int8;
       break;
     case 's':
-      ret |= poly ? 6 : 1;
+      ET = poly ? NeonTypeFlags::Poly16 : NeonTypeFlags::Int16;
       break;
     case 'i':
-      ret |= 2;
+      ET = NeonTypeFlags::Int32;
       break;
     case 'l':
-      ret |= 3;
+      ET = NeonTypeFlags::Int64;
       break;
     case 'h':
-      ret |= 7;
+      ET = NeonTypeFlags::Float16;
       break;
     case 'f':
-      ret |= 4;
+      ET = NeonTypeFlags::Float32;
       break;
     default:
       throw "unhandled type!";
       break;
   }
-  return ret;
+  NeonTypeFlags Flags(ET, usgn, quad && proto[1] != 'g');
+  return Flags.getFlags();
 }
 
 // Generate the definition for this intrinsic, e.g. __builtin_neon_cls(a)
@@ -1346,14 +1336,46 @@ void NeonEmitter::runHeader(raw_ostream &OS) {
         mask |= 1 << GetNeonEnum(Proto, TypeVec[ti]);
       }
     }
-    if (mask)
+
+    // Check if the builtin function has a pointer or const pointer argument.
+    int PtrArgNum = -1;
+    bool HasConstPtr = false;
+    for (unsigned arg = 1, arge = Proto.size(); arg != arge; ++arg) {
+      char ArgType = Proto[arg];
+      if (ArgType == 'c') {
+        HasConstPtr = true;
+        PtrArgNum = arg - 1;
+        break;
+      }
+      if (ArgType == 'p') {
+        PtrArgNum = arg - 1;
+        break;
+      }
+    }
+    // For sret builtins, adjust the pointer argument index.
+    if (PtrArgNum >= 0 && (Proto[0] >= '2' && Proto[0] <= '4'))
+      PtrArgNum += 1;
+
+    if (mask) {
       OS << "case ARM::BI__builtin_neon_"
          << MangleName(name, TypeVec[si], ClassB)
-         << ": mask = " << "0x" << utohexstr(mask) << "; break;\n";
-    if (qmask)
+         << ": mask = " << "0x" << utohexstr(mask);
+      if (PtrArgNum >= 0)
+        OS << "; PtrArgNum = " << PtrArgNum;
+      if (HasConstPtr)
+        OS << "; HasConstPtr = true";
+      OS << "; break;\n";
+    }
+    if (qmask) {
       OS << "case ARM::BI__builtin_neon_"
          << MangleName(name, TypeVec[qi], ClassB)
-         << ": mask = " << "0x" << utohexstr(qmask) << "; break;\n";
+         << ": mask = " << "0x" << utohexstr(qmask);
+      if (PtrArgNum >= 0)
+        OS << "; PtrArgNum = " << PtrArgNum;
+      if (HasConstPtr)
+        OS << "; HasConstPtr = true";
+      OS << "; break;\n";
+    }
   }
   OS << "#endif\n\n";
 

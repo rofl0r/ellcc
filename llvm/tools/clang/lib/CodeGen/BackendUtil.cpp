@@ -115,6 +115,11 @@ static void addObjCARCOptPass(const PassManagerBuilder &Builder, PassManagerBase
     PM.add(createObjCARCOptPass());
 }
 
+static void addAddressSanitizerPass(const PassManagerBuilder &Builder,
+                                    PassManagerBase &PM) {
+  PM.add(createAddressSanitizerPass());
+}
+
 void EmitAssemblyHelper::CreatePasses() {
   unsigned OptLevel = CodeGenOpts.OptimizationLevel;
   CodeGenOptions::InliningMethod Inlining = CodeGenOpts.Inlining;
@@ -140,6 +145,11 @@ void EmitAssemblyHelper::CreatePasses() {
                            addObjCARCExpandPass);
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addObjCARCOptPass);
+  }
+
+  if (CodeGenOpts.AddressSanitizer) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
+                           addAddressSanitizerPass);
   }
   
   // Figure out TargetLibraryInfo.
@@ -296,8 +306,16 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     RM = llvm::Reloc::DynamicNoPIC;
   }
 
+  CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
+  switch (CodeGenOpts.OptimizationLevel) {
+  default: break;
+  case 0: OptLevel = CodeGenOpt::None; break;
+  case 3: OptLevel = CodeGenOpt::Aggressive; break;
+  }
+
   TargetMachine *TM = TheTarget->createTargetMachine(Triple, TargetOpts.CPU,
-                                                     FeaturesStr, RM, CM);
+                                                     FeaturesStr, RM, CM,
+                                                     OptLevel);
 
   if (CodeGenOpts.RelaxAll)
     TM->setMCRelaxAll(true);
@@ -305,20 +323,13 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     TM->setMCSaveTempLabels(true);
   if (CodeGenOpts.NoDwarf2CFIAsm)
     TM->setMCUseCFI(false);
-  if (CodeGenOpts.NoDwarfDirectoryAsm)
-    TM->setMCUseDwarfDirectory(false);
+  if (!CodeGenOpts.NoDwarfDirectoryAsm)
+    TM->setMCUseDwarfDirectory(true);
   if (CodeGenOpts.NoExecStack)
     TM->setMCNoExecStack(true);
 
   // Create the code generator passes.
   PassManager *PM = getCodeGenPasses();
-  CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
-
-  switch (CodeGenOpts.OptimizationLevel) {
-  default: break;
-  case 0: OptLevel = CodeGenOpt::None; break;
-  case 3: OptLevel = CodeGenOpt::Aggressive; break;
-  }
 
   // Normal mode, emit a .s or .o file by running the code generator. Note,
   // this also adds codegenerator level optimization passes.
@@ -336,7 +347,7 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   if (LangOpts.ObjCAutoRefCount)
     PM->add(createObjCARCContractPass());
 
-  if (TM->addPassesToEmitFile(*PM, OS, CGFT, OptLevel,
+  if (TM->addPassesToEmitFile(*PM, OS, CGFT,
                               /*DisableVerify=*/!CodeGenOpts.VerifyModule)) {
     Diags.Report(diag::err_fe_unable_to_interface_with_target);
     return false;

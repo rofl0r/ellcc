@@ -250,7 +250,8 @@ void CompilerInstance::createPreprocessor() {
     PTHMgr = PTHManager::Create(PPOpts.TokenCache, getDiagnostics());
 
   // Create the Preprocessor.
-  HeaderSearch *HeaderInfo = new HeaderSearch(getFileManager());
+  HeaderSearch *HeaderInfo = new HeaderSearch(getFileManager(), 
+                                              getDiagnostics());
   PP = new Preprocessor(getDiagnostics(), getLangOpts(), &getTarget(),
                         getSourceManager(), *HeaderInfo, *this, PTHMgr,
                         /*OwnsHeaderSearch=*/true);
@@ -277,9 +278,7 @@ void CompilerInstance::createPreprocessor() {
     llvm::sys::path::append(SpecificModuleCache,
                             getInvocation().getModuleHash());
   PP->getHeaderSearchInfo().configureModules(SpecificModuleCache,
-    getPreprocessorOpts().ModuleBuildPath.empty()
-      ? std::string()
-      : getPreprocessorOpts().ModuleBuildPath.back());
+                                             getLangOpts().CurrentModule);
 
   // Handle generating dependencies, if requested.
   const DependencyOutputOptions &DepOpts = getDependencyOutputOpts();
@@ -639,7 +638,7 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
   if (getHeaderSearchOpts().Verbose)
     OS << "clang -cc1 version " CLANG_VERSION_STRING
        << " based upon " << PACKAGE_STRING
-       << " hosted on " << llvm::sys::getHostTriple() << "\n";
+       << " default target " << llvm::sys::getDefaultTargetTriple() << "\n";
 
   if (getFrontendOpts().ShowTimers)
     createFrontendTimer();
@@ -988,8 +987,11 @@ static void compileModule(CompilerInstance &ImportingInstance,
 
   // For any options that aren't intended to affect how a module is built,
   // reset them to their default values.
-  Invocation->getLangOpts().resetNonModularOptions();
+  Invocation->getLangOpts()->resetNonModularOptions();
   Invocation->getPreprocessorOpts().resetNonModularOptions();
+
+  // Note the name of the module we're building.
+  Invocation->getLangOpts()->CurrentModule = ModuleName;
 
   // Note that this module is part of the module build path, so that we
   // can detect cycles in the module graph.
@@ -1002,7 +1004,7 @@ static void compileModule(CompilerInstance &ImportingInstance,
   FrontendOpts.DisableFree = false;
   FrontendOpts.Inputs.clear();
   FrontendOpts.Inputs.push_back(
-    std::make_pair(getSourceInputKindFromOptions(Invocation->getLangOpts()),
+    std::make_pair(getSourceInputKindFromOptions(*Invocation->getLangOpts()),
                                                  UmbrellaHeader));
 
   Invocation->getDiagnosticOpts().VerifyDiagnostics = 0;

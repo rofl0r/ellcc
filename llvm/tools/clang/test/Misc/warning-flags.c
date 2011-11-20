@@ -17,7 +17,7 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (279):
+CHECK: Warnings without flags (274):
 CHECK-NEXT:   ext_anon_param_requires_type_specifier
 CHECK-NEXT:   ext_anonymous_struct_union_qualified
 CHECK-NEXT:   ext_array_init_copy
@@ -56,7 +56,6 @@ CHECK-NEXT:   ext_missing_varargs_arg
 CHECK-NEXT:   ext_missing_whitespace_after_macro_name
 CHECK-NEXT:   ext_new_paren_array_nonconst
 CHECK-NEXT:   ext_nonstandard_escape
-CHECK-NEXT:   ext_offsetof_extended_field_designator
 CHECK-NEXT:   ext_param_not_declared
 CHECK-NEXT:   ext_param_promoted_not_compatible_with_prototype
 CHECK-NEXT:   ext_paste_comma
@@ -111,7 +110,6 @@ CHECK-NEXT:   warn_attribute_iboutlet
 CHECK-NEXT:   warn_attribute_ignored
 CHECK-NEXT:   warn_attribute_ignored_for_field_of_type
 CHECK-NEXT:   warn_attribute_malloc_pointer_only
-CHECK-NEXT:   warn_attribute_method_def
 CHECK-NEXT:   warn_attribute_nonnull_no_pointers
 CHECK-NEXT:   warn_attribute_precede_definition
 CHECK-NEXT:   warn_attribute_sentinel_named_arguments
@@ -162,7 +160,6 @@ CHECK-NEXT:   warn_drv_pch_not_first_include
 CHECK-NEXT:   warn_drv_pipe_ignored_with_save_temps
 CHECK-NEXT:   warn_drv_preprocessed_input_file_unused
 CHECK-NEXT:   warn_drv_unsupported_option_argument
-CHECK-NEXT:   warn_drv_unused_argument
 CHECK-NEXT:   warn_dup_category_def
 CHECK-NEXT:   warn_duplicate_protocol_def
 CHECK-NEXT:   warn_enum_too_large
@@ -185,8 +182,6 @@ CHECK-NEXT:   warn_hex_escape_too_large
 CHECK-NEXT:   warn_ignoring_ftabstop_value
 CHECK-NEXT:   warn_illegal_constant_array_size
 CHECK-NEXT:   warn_implements_nscopying
-CHECK-NEXT:   warn_implicit_decl_requires_setjmp
-CHECK-NEXT:   warn_implicit_decl_requires_stdio
 CHECK-NEXT:   warn_incompatible_qualified_id
 CHECK-NEXT:   warn_initializer_string_for_char_array_too_long
 CHECK-NEXT:   warn_inline_namespace_reopened_noninline

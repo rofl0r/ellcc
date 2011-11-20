@@ -118,11 +118,6 @@ namespace llvm {
   ///
   FunctionPass *createGreedyRegisterAllocator();
 
-  /// LinearScanRegisterAllocation Pass - This pass implements the linear scan
-  /// register allocation algorithm, a global register allocator.
-  ///
-  FunctionPass *createLinearScanRegisterAllocator();
-
   /// PBQPRegisterAllocation Pass - This pass implements the Partitioned Boolean
   /// Quadratic Prograaming (PBQP) based register allocator.
   ///
@@ -158,6 +153,11 @@ namespace llvm {
   /// MachineBlockPlacement Pass - This pass places basic blocks based on branch
   /// probabilities.
   FunctionPass *createMachineBlockPlacementPass();
+
+  /// MachineBlockPlacementStats Pass - This pass collects statistics about the
+  /// basic block placement using branch probabilities and block frequency
+  /// information.
+  FunctionPass *createMachineBlockPlacementStatsPass();
 
   /// Code Placement Pass - This pass optimize code placement and aligns loop
   /// headers to target specific alignment boundary.

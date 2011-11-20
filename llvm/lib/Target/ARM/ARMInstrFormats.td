@@ -174,7 +174,7 @@ def s_cc_out : OptionalDefOperand<OtherVT, (ops CCR), (ops (i32 CPSR))> {
 
 // ARM special operands for disassembly only.
 //
-def SetEndAsmOperand : AsmOperandClass {
+def SetEndAsmOperand : ImmAsmOperand {
   let Name = "SetEndImm";
   let ParserMethod = "parseSetEndImm";
 }
@@ -290,6 +290,32 @@ class InstThumb<AddrMode am, int sz, IndexMode im,
   let DecoderNamespace = "Thumb";
 }
 
+// Pseudo-instructions for alternate assembly syntax (never used by codegen).
+// These are aliases that require C++ handling to convert to the target
+// instruction, while InstAliases can be handled directly by tblgen.
+class AsmPseudoInst<string asm, dag iops>
+  : InstTemplate<AddrModeNone, 0, IndexModeNone, Pseudo, GenericDomain,
+                 "", NoItinerary> {
+  let OutOperandList = (outs);
+  let InOperandList = iops;
+  let Pattern = [];
+  let isCodeGenOnly = 0; // So we get asm matcher for it.
+  let AsmString = asm;
+  let isPseudo = 1;
+}
+
+class ARMAsmPseudo<string asm, dag iops> : AsmPseudoInst<asm, iops>,
+        Requires<[IsARM]>;
+class tAsmPseudo<string asm, dag iops> : AsmPseudoInst<asm, iops>,
+        Requires<[IsThumb]>;
+class t2AsmPseudo<string asm, dag iops> : AsmPseudoInst<asm, iops>,
+        Requires<[IsThumb2]>;
+class VFP2AsmPseudo<string asm, dag iops> : AsmPseudoInst<asm, iops>,
+        Requires<[HasVFP2]>;
+class NEONAsmPseudo<string asm, dag iops> : AsmPseudoInst<asm, iops>,
+        Requires<[HasNEON]>;
+
+// Pseudo instructions for the code generator.
 class PseudoInst<dag oops, dag iops, InstrItinClass itin, list<dag> pattern>
   : InstTemplate<AddrModeNone, 0, IndexModeNone, Pseudo,
                  GenericDomain, "", itin> {
@@ -794,7 +820,7 @@ class AMiscA1I<bits<8> opcod, bits<4> opc7_4, dag oops, dag iops,
 }
 
 // PKH instructions
-def PKHLSLAsmOperand : AsmOperandClass {
+def PKHLSLAsmOperand : ImmAsmOperand {
   let Name = "PKHLSLImm";
   let ParserMethod = "parsePKHLSLImm";
 }
@@ -1964,4 +1990,77 @@ class NVDupLane<bits<4> op19_16, bit op6, dag oops, dag iops,
 // for single-precision FP.
 class NEONFPPat<dag pattern, dag result> : Pat<pattern, result> {
   list<Predicate> Predicates = [HasNEON,UseNEONForFP];
+}
+
+// VFP/NEON Instruction aliases for type suffices.
+class VFPDataTypeInstAlias<string opc, string dt, string asm, dag Result> :
+  InstAlias<!strconcat(opc, dt, asm), Result>;
+multiclass VFPDT8ReqInstAlias<string opc, string asm, dag Result> {
+  def I8 : VFPDataTypeInstAlias<opc, ".i8", asm, Result>;
+  def S8 : VFPDataTypeInstAlias<opc, ".s8", asm, Result>;
+  def U8 : VFPDataTypeInstAlias<opc, ".u8", asm, Result>;
+  def F8 : VFPDataTypeInstAlias<opc, ".p8", asm, Result>;
+}
+// VFPDT8ReqInstAlias plus plain ".8"
+multiclass VFPDT8InstAlias<string opc, string asm, dag Result> {
+  def _8 : VFPDataTypeInstAlias<opc, ".8", asm, Result>;
+  defm : VFPDT8ReqInstAlias<opc, asm, Result>;
+}
+multiclass VFPDT16ReqInstAlias<string opc, string asm, dag Result> {
+  def I16 : VFPDataTypeInstAlias<opc, ".i16", asm, Result>;
+  def S16 : VFPDataTypeInstAlias<opc, ".s16", asm, Result>;
+  def U16 : VFPDataTypeInstAlias<opc, ".u16", asm, Result>;
+  def F16 : VFPDataTypeInstAlias<opc, ".p16", asm, Result>;
+}
+// VFPDT16ReqInstAlias plus plain ".16"
+multiclass VFPDT16InstAlias<string opc, string asm, dag Result> {
+  def _16 : VFPDataTypeInstAlias<opc, ".16", asm, Result>;
+  defm : VFPDT16ReqInstAlias<opc, asm, Result>;
+}
+multiclass VFPDT32ReqInstAlias<string opc, string asm, dag Result> {
+  def I32 : VFPDataTypeInstAlias<opc, ".i32", asm, Result>;
+  def S32 : VFPDataTypeInstAlias<opc, ".s32", asm, Result>;
+  def U32 : VFPDataTypeInstAlias<opc, ".u32", asm, Result>;
+  def F32 : VFPDataTypeInstAlias<opc, ".f32", asm, Result>;
+  def F   : VFPDataTypeInstAlias<opc, ".f",   asm, Result>;
+}
+// VFPDT32ReqInstAlias plus plain ".32"
+multiclass VFPDT32InstAlias<string opc, string asm, dag Result> {
+  def _32 : VFPDataTypeInstAlias<opc, ".32", asm, Result>;
+  defm : VFPDT32ReqInstAlias<opc, asm, Result>;
+}
+multiclass VFPDT64ReqInstAlias<string opc, string asm, dag Result> {
+  def I64 : VFPDataTypeInstAlias<opc, ".i64", asm, Result>;
+  def S64 : VFPDataTypeInstAlias<opc, ".s64", asm, Result>;
+  def U64 : VFPDataTypeInstAlias<opc, ".u64", asm, Result>;
+  def F64 : VFPDataTypeInstAlias<opc, ".f64", asm, Result>;
+  def D   : VFPDataTypeInstAlias<opc, ".d",   asm, Result>;
+}
+// VFPDT64ReqInstAlias plus plain ".64"
+multiclass VFPDT64InstAlias<string opc, string asm, dag Result> {
+  def _64 : VFPDataTypeInstAlias<opc, ".64", asm, Result>;
+  defm : VFPDT64ReqInstAlias<opc, asm, Result>;
+}
+multiclass VFPDT64NoF64ReqInstAlias<string opc, string asm, dag Result> {
+  def I64 : VFPDataTypeInstAlias<opc, ".i64", asm, Result>;
+  def S64 : VFPDataTypeInstAlias<opc, ".s64", asm, Result>;
+  def U64 : VFPDataTypeInstAlias<opc, ".u64", asm, Result>;
+  def D   : VFPDataTypeInstAlias<opc, ".d",   asm, Result>;
+}
+// VFPDT64ReqInstAlias plus plain ".64"
+multiclass VFPDT64NoF64InstAlias<string opc, string asm, dag Result> {
+  def _64 : VFPDataTypeInstAlias<opc, ".64", asm, Result>;
+  defm : VFPDT64ReqInstAlias<opc, asm, Result>;
+}
+multiclass VFPDTAnyInstAlias<string opc, string asm, dag Result> {
+  defm : VFPDT8InstAlias<opc, asm, Result>;
+  defm : VFPDT16InstAlias<opc, asm, Result>;
+  defm : VFPDT32InstAlias<opc, asm, Result>;
+  defm : VFPDT64InstAlias<opc, asm, Result>;
+}
+multiclass VFPDTAnyNoF64InstAlias<string opc, string asm, dag Result> {
+  defm : VFPDT8InstAlias<opc, asm, Result>;
+  defm : VFPDT16InstAlias<opc, asm, Result>;
+  defm : VFPDT32InstAlias<opc, asm, Result>;
+  defm : VFPDT64NoF64InstAlias<opc, asm, Result>;
 }

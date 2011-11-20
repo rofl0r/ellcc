@@ -558,8 +558,7 @@ void ASTDeclReader::VisitObjCInterfaceDecl(ObjCInterfaceDecl *ID) {
   // We will rebuild this list lazily.
   ID->setIvarList(0);
   ID->InitiallyForwardDecl = Record[Idx++];
-  ID->setForwardDecl(Record[Idx++]);
-  ID->setImplicitInterfaceDecl(Record[Idx++]);
+  ID->ForwardDecl = Record[Idx++];
   ID->setSuperClassLoc(ReadSourceLocation(Record, Idx));
   ID->setLocEnd(ReadSourceLocation(Record, Idx));
 }
@@ -576,7 +575,7 @@ void ASTDeclReader::VisitObjCIvarDecl(ObjCIvarDecl *IVD) {
 void ASTDeclReader::VisitObjCProtocolDecl(ObjCProtocolDecl *PD) {
   VisitObjCContainerDecl(PD);
   PD->InitiallyForwardDecl = Record[Idx++];
-  PD->setForwardDecl(Record[Idx++]);
+  PD->isForwardProtoDecl = Record[Idx++];
   PD->setLocEnd(ReadSourceLocation(Record, Idx));
   unsigned NumProtoRefs = Record[Idx++];
   SmallVector<ObjCProtocolDecl *, 16> ProtoRefs;
@@ -1449,8 +1448,10 @@ ASTReader::RecordLocation
 ASTReader::DeclCursorForID(DeclID ID, unsigned &RawLocation) {
   // See if there's an override.
   DeclReplacementMap::iterator It = ReplacedDecls.find(ID);
-  if (It != ReplacedDecls.end())
-    return RecordLocation(It->second.first, It->second.second);
+  if (It != ReplacedDecls.end()) {
+    RawLocation = It->second.RawLoc;
+    return RecordLocation(It->second.Mod, It->second.Offset);
+  }
 
   GlobalDeclMapType::iterator I = GlobalDeclMap.find(ID);
   assert(I != GlobalDeclMap.end() && "Corrupted global declaration map");
@@ -1770,9 +1771,11 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
 
   // Load any relevant update records.
   loadDeclUpdateRecords(ID, D);
-  
+
+  // Load the category chain after recursive loading is finished.
   if (ObjCChainedCategoriesInterfaces.count(ID))
-    loadObjCChainedCategories(ID, cast<ObjCInterfaceDecl>(D));
+    PendingChainedObjCCategories.push_back(
+                                std::make_pair(cast<ObjCInterfaceDecl>(D), ID));
   
   // If we have deserialized a declaration that has a definition the
   // AST consumer might need to know about, queue it.

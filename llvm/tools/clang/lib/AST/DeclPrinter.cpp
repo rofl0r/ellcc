@@ -376,7 +376,7 @@ void DeclPrinter::VisitEnumConstantDecl(EnumConstantDecl *D) {
 
 void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
   if (!Policy.SuppressSpecifiers) {
-    switch (D->getStorageClass()) {
+    switch (D->getStorageClassAsWritten()) {
     case SC_None: break;
     case SC_Extern: Out << "extern "; break;
     case SC_Static: Out << "static "; break;
@@ -596,8 +596,9 @@ void DeclPrinter::VisitLabelDecl(LabelDecl *D) {
 
 
 void DeclPrinter::VisitVarDecl(VarDecl *D) {
-  if (!Policy.SuppressSpecifiers && D->getStorageClass() != SC_None)
-    Out << VarDecl::getStorageClassSpecifierString(D->getStorageClass()) << " ";
+  StorageClass SCAsWritten = D->getStorageClassAsWritten();
+  if (!Policy.SuppressSpecifiers && SCAsWritten != SC_None)
+    Out << VarDecl::getStorageClassSpecifierString(SCAsWritten) << " ";
 
   if (!Policy.SuppressSpecifiers && D->isThreadSpecified())
     Out << "__thread ";
@@ -616,7 +617,7 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
       Out << "(";
     else {
         CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(Init);
-        if (!CCE || CCE->getConstructor()->isCopyConstructor())
+        if (!CCE || CCE->getConstructor()->isCopyOrMoveConstructor())
           Out << " = ";
     }
     Init->printPretty(Out, Context, 0, Policy, Indentation);

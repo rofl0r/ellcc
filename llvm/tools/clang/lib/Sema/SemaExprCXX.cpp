@@ -1861,14 +1861,17 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
       }
     }
 
+    // Perform lvalue-to-rvalue cast, if needed.
+    Ex = DefaultLvalueConversion(Ex.take());
+
     // C++ [expr.delete]p2:
     //   [Note: a pointer to a const type can be the operand of a
     //   delete-expression; it is not necessary to cast away the constness
     //   (5.2.11) of the pointer expression before it is used as the operand
     //   of the delete-expression. ]
     if (!Context.hasSameType(Ex.get()->getType(), Context.VoidPtrTy))
-      Ex = Owned(ImplicitCastExpr::Create(Context, Context.VoidPtrTy, CK_NoOp,
-                                          Ex.take(), 0, VK_RValue));
+      Ex = Owned(ImplicitCastExpr::Create(Context, Context.VoidPtrTy,
+                                          CK_BitCast, Ex.take(), 0, VK_RValue));
 
     if (Pointee->isArrayType() && !ArrayForm) {
       Diag(StartLoc, diag::warn_delete_array_type)
@@ -2096,6 +2099,12 @@ static ExprResult BuildCXXCastArgument(Sema &S,
                                                  HadMultipleCandidates);
     if (Result.isInvalid())
       return ExprError();
+    // Record usage of conversion in an implicit cast.
+    Result = S.Owned(ImplicitCastExpr::Create(S.Context,
+                                              Result.get()->getType(),
+                                              CK_UserDefinedConversion,
+                                              Result.get(), 0,
+                                              Result.get()->getValueKind()));
 
     S.CheckMemberOperatorAccess(CastLoc, From, /*arg*/ 0, FoundDecl);
 
@@ -2129,6 +2138,7 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
       FunctionDecl *FD = ICS.UserDefined.ConversionFunction;
       CastKind CastKind;
       QualType BeforeToType;
+      assert(FD && "FIXME: aggregate initialization from init list");
       if (const CXXConversionDecl *Conv = dyn_cast<CXXConversionDecl>(FD)) {
         CastKind = CK_UserDefinedConversion;
 
@@ -4079,11 +4089,6 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
       ObjCMethodDecl *D = 0;
       if (ObjCMessageExpr *Send = dyn_cast<ObjCMessageExpr>(E)) {
         D = Send->getMethodDecl();
-      } else {
-        CastExpr *CE = cast<CastExpr>(E);
-        assert(CE->getCastKind() == CK_GetObjCProperty);
-        const ObjCPropertyRefExpr *PRE = CE->getSubExpr()->getObjCProperty();
-        D = (PRE->isImplicitProperty() ? PRE->getImplicitPropertyGetter() : 0);
       }
 
       ReturnsRetained = (D && D->hasAttr<NSReturnsRetainedAttr>());
@@ -4095,6 +4100,10 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
           D && D->getMethodFamily() == OMF_performSelector)
         return Owned(E);
     }
+
+    // Don't reclaim an object of Class type.
+    if (!ReturnsRetained && E->getType()->isObjCARCImplicitlyUnretainedType())
+      return Owned(E);
 
     ExprNeedsCleanups = true;
 
@@ -4126,29 +4135,10 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
                           PDiag(diag::err_access_dtor_temp)
                             << E->getType());
 
-    ExprTemporaries.push_back(Temp);
+    // We need a cleanup, but we don't need to remember the temporary.
     ExprNeedsCleanups = true;
   }
   return Owned(CXXBindTemporaryExpr::Create(Context, Temp, E));
-}
-
-Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
-  assert(SubExpr && "sub expression can't be null!");
-
-  unsigned FirstTemporary = ExprEvalContexts.back().NumTemporaries;
-  assert(ExprTemporaries.size() >= FirstTemporary);
-  assert(ExprNeedsCleanups || ExprTemporaries.size() == FirstTemporary);
-  if (!ExprNeedsCleanups)
-    return SubExpr;
-
-  Expr *E = ExprWithCleanups::Create(Context, SubExpr,
-                                     ExprTemporaries.begin() + FirstTemporary,
-                                     ExprTemporaries.size() - FirstTemporary);
-  ExprTemporaries.erase(ExprTemporaries.begin() + FirstTemporary,
-                        ExprTemporaries.end());
-  ExprNeedsCleanups = false;
-
-  return E;
 }
 
 ExprResult
@@ -4157,6 +4147,25 @@ Sema::MaybeCreateExprWithCleanups(ExprResult SubExpr) {
     return ExprError();
 
   return Owned(MaybeCreateExprWithCleanups(SubExpr.take()));
+}
+
+Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
+  assert(SubExpr && "sub expression can't be null!");
+
+  unsigned FirstCleanup = ExprEvalContexts.back().NumCleanupObjects;
+  assert(ExprCleanupObjects.size() >= FirstCleanup);
+  assert(ExprNeedsCleanups || ExprCleanupObjects.size() == FirstCleanup);
+  if (!ExprNeedsCleanups)
+    return SubExpr;
+
+  ArrayRef<ExprWithCleanups::CleanupObject> Cleanups
+    = llvm::makeArrayRef(ExprCleanupObjects.begin() + FirstCleanup,
+                         ExprCleanupObjects.size() - FirstCleanup);
+
+  Expr *E = ExprWithCleanups::Create(Context, SubExpr, Cleanups);
+  DiscardCleanupsInEvaluationContext();
+
+  return E;
 }
 
 Stmt *Sema::MaybeCreateStmtWithCleanups(Stmt *SubStmt) {
@@ -4557,7 +4566,7 @@ ExprResult Sema::BuildCXXMemberCallExpr(Expr *E, NamedDecl *FoundDecl,
 
   MemberExpr *ME =
       new (Context) MemberExpr(Exp.take(), /*IsArrow=*/false, Method,
-                               SourceLocation(), Method->getType(),
+                               SourceLocation(), Context.BoundMemberTy,
                                VK_RValue, OK_Ordinary);
   if (HadMultipleCandidates)
     ME->setHadMultipleCandidates(true);

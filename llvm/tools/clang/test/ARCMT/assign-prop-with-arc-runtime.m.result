@@ -22,7 +22,7 @@ typedef _NSCachedAttributedString *BadClassForWeak;
   Forw *__unsafe_unretained not_safe3;
   Foo *assign_plus1;
 }
-@property (readonly) Foo *x;
+@property (weak, readonly) Foo *x;
 @property (weak) Foo *w;
 @property (weak) Foo *q1, *q2;
 @property (unsafe_unretained) WeakOptOut *oo;
@@ -31,8 +31,8 @@ typedef _NSCachedAttributedString *BadClassForWeak;
 @property (unsafe_unretained) NSObject *not_safe2;
 @property (unsafe_unretained) Forw *not_safe3;
 @property (readonly) Foo *assign_plus1;
-@property (strong, readonly) Foo *assign_plus2;
-@property (strong, readonly) Foo *assign_plus3;
+@property (readonly) Foo *assign_plus2;
+@property (readonly) Foo *assign_plus3;
 
 @property (weak) Foo *no_user_ivar1;
 @property (weak, readonly) Foo *no_user_ivar2;
@@ -57,12 +57,12 @@ typedef _NSCachedAttributedString *BadClassForWeak;
 @end
 
 @interface TestExt
-@property (strong,readonly) TestExt *x1;
+@property (readonly) TestExt *x1;
 @property (weak, readonly) TestExt *x2;
 @end
 
 @interface TestExt()
-@property (strong,readwrite) TestExt *x1;
+@property (readwrite) TestExt *x1;
 @property (weak, readwrite) TestExt *x2;
 @end
 

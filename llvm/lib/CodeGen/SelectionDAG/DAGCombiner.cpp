@@ -22,7 +22,6 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLowering.h"
@@ -279,7 +278,7 @@ namespace {
 
   public:
     DAGCombiner(SelectionDAG &D, AliasAnalysis &A, CodeGenOpt::Level OL)
-      : DAG(D), TLI(D.getTargetLoweringInfo()), Level(Unrestricted),
+      : DAG(D), TLI(D.getTargetLoweringInfo()), Level(BeforeLegalizeTypes),
         OptLevel(OL), LegalOperations(false), LegalTypes(false), AA(A) {}
 
     /// Run - runs the dag combiner on all nodes in the work list
@@ -944,8 +943,8 @@ bool DAGCombiner::PromoteLoad(SDValue Op) {
 void DAGCombiner::Run(CombineLevel AtLevel) {
   // set the instance variables, so that the various visit routines may use it.
   Level = AtLevel;
-  LegalOperations = Level >= NoIllegalOperations;
-  LegalTypes = Level >= NoIllegalTypes;
+  LegalOperations = Level >= AfterLegalizeVectorOps;
+  LegalTypes = Level >= AfterLegalizeTypes;
 
   // Add all the dag nodes to the worklist.
   WorkList.reserve(DAG.allnodes_size());
@@ -4564,6 +4563,16 @@ SDValue DAGCombiner::visitANY_EXTEND(SDNode *N) {
 SDValue DAGCombiner::GetDemandedBits(SDValue V, const APInt &Mask) {
   switch (V.getOpcode()) {
   default: break;
+  case ISD::Constant: {
+    const ConstantSDNode *CV = cast<ConstantSDNode>(V.getNode());
+    assert(CV != 0 && "Const value should be ConstSDNode.");
+    const APInt &CVal = CV->getAPIntValue();
+    APInt NewVal = CVal & Mask;
+    if (NewVal != CVal) {
+      return DAG.getConstant(NewVal, V.getValueType());
+    }
+    break;
+  }
   case ISD::OR:
   case ISD::XOR:
     // If the LHS or RHS don't contribute bits to the or, drop them.
@@ -4702,7 +4711,8 @@ SDValue DAGCombiner::ReduceLoadWidth(SDNode *N) {
   if (ExtType == ISD::NON_EXTLOAD)
     Load =  DAG.getLoad(VT, N0.getDebugLoc(), LN0->getChain(), NewPtr,
                         LN0->getPointerInfo().getWithOffset(PtrOff),
-                        LN0->isVolatile(), LN0->isNonTemporal(), NewAlign);
+                        LN0->isVolatile(), LN0->isNonTemporal(),
+                        LN0->isInvariant(), NewAlign);
   else
     Load = DAG.getExtLoad(ExtType, N0.getDebugLoc(), VT, LN0->getChain(),NewPtr,
                           LN0->getPointerInfo().getWithOffset(PtrOff),
@@ -4931,7 +4941,7 @@ SDValue DAGCombiner::CombineConsecutiveLoads(SDNode *N, EVT VT) {
         (!LegalOperations || TLI.isOperationLegal(ISD::LOAD, VT)))
       return DAG.getLoad(VT, N->getDebugLoc(), LD1->getChain(),
                          LD1->getBasePtr(), LD1->getPointerInfo(),
-                         false, false, Align);
+                         false, false, false, Align);
   }
 
   return SDValue();
@@ -5001,7 +5011,7 @@ SDValue DAGCombiner::visitBITCAST(SDNode *N) {
       SDValue Load = DAG.getLoad(VT, N->getDebugLoc(), LN0->getChain(),
                                  LN0->getBasePtr(), LN0->getPointerInfo(),
                                  LN0->isVolatile(), LN0->isNonTemporal(),
-                                 OrigAlign);
+                                 LN0->isInvariant(), OrigAlign);
       AddToWorkList(N);
       CombineTo(N0.getNode(),
                 DAG.getNode(ISD::BITCAST, N0.getDebugLoc(),
@@ -5460,7 +5470,7 @@ SDValue DAGCombiner::visitSINT_TO_FP(SDNode *N) {
   // fold (sint_to_fp c1) -> c1fp
   if (N0C && OpVT != MVT::ppcf128 &&
       // ...but only if the target supports immediate floating-point values
-      (Level == llvm::Unrestricted ||
+      (!LegalOperations ||
        TLI.isOperationLegalOrCustom(llvm::ISD::ConstantFP, VT)))
     return DAG.getNode(ISD::SINT_TO_FP, N->getDebugLoc(), VT, N0);
 
@@ -5485,7 +5495,7 @@ SDValue DAGCombiner::visitUINT_TO_FP(SDNode *N) {
   // fold (uint_to_fp c1) -> c1fp
   if (N0C && OpVT != MVT::ppcf128 &&
       // ...but only if the target supports immediate floating-point values
-      (Level == llvm::Unrestricted ||
+      (!LegalOperations ||
        TLI.isOperationLegalOrCustom(llvm::ISD::ConstantFP, VT)))
     return DAG.getNode(ISD::UINT_TO_FP, N->getDebugLoc(), VT, N0);
 
@@ -5864,7 +5874,7 @@ SDValue DAGCombiner::visitBR_CC(SDNode *N) {
 /// the add / subtract in and all of its other uses are redirected to the
 /// new load / store.
 bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
-  if (!LegalOperations)
+  if (Level < AfterLegalizeDAG)
     return false;
 
   bool isLoad = true;
@@ -5996,7 +6006,7 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
 /// load / store effectively and all of its uses are redirected to the
 /// new load / store.
 bool DAGCombiner::CombineToPostIndexedLoadStore(SDNode *N) {
-  if (!LegalOperations)
+  if (Level < AfterLegalizeDAG)
     return false;
 
   bool isLoad = true;
@@ -6219,7 +6229,7 @@ SDValue DAGCombiner::visitLOAD(SDNode *N) {
         ReplLoad = DAG.getLoad(N->getValueType(0), LD->getDebugLoc(),
                                BetterChain, Ptr, LD->getPointerInfo(),
                                LD->isVolatile(), LD->isNonTemporal(),
-                               LD->getAlignment());
+                               LD->isInvariant(), LD->getAlignment());
       } else {
         ReplLoad = DAG.getExtLoad(LD->getExtensionType(), LD->getDebugLoc(),
                                   LD->getValueType(0),
@@ -6483,7 +6493,7 @@ SDValue DAGCombiner::ReduceLoadOpStoreWidth(SDNode *N) {
                                   LD->getChain(), NewPtr,
                                   LD->getPointerInfo().getWithOffset(PtrOff),
                                   LD->isVolatile(), LD->isNonTemporal(),
-                                  NewAlign);
+                                  LD->isInvariant(), NewAlign);
       SDValue NewVal = DAG.getNode(Opc, Value.getDebugLoc(), NewVT, NewLD,
                                    DAG.getConstant(NewImm, NewVT));
       SDValue NewST = DAG.getStore(Chain, N->getDebugLoc(),
@@ -6543,7 +6553,7 @@ SDValue DAGCombiner::TransformFPLoadStorePair(SDNode *N) {
     SDValue NewLD = DAG.getLoad(IntVT, Value.getDebugLoc(),
                                 LD->getChain(), LD->getBasePtr(),
                                 LD->getPointerInfo(),
-                                false, false, LDAlign);
+                                false, false, false, LDAlign);
 
     SDValue NewST = DAG.getStore(NewLD.getValue(1), N->getDebugLoc(),
                                  NewLD, ST->getBasePtr(),
@@ -6926,9 +6936,23 @@ SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
                            DAG.getConstant(PtrOff, PtrType));
     }
 
-    return DAG.getLoad(LVT, N->getDebugLoc(), LN0->getChain(), NewPtr,
-                       LN0->getPointerInfo().getWithOffset(PtrOff),
-                       LN0->isVolatile(), LN0->isNonTemporal(), Align);
+    // The replacement we need to do here is a little tricky: we need to
+    // replace an extractelement of a load with a load.
+    // Use ReplaceAllUsesOfValuesWith to do the replacement.
+    SDValue Load = DAG.getLoad(LVT, N->getDebugLoc(), LN0->getChain(), NewPtr,
+                               LN0->getPointerInfo().getWithOffset(PtrOff),
+                               LN0->isVolatile(), LN0->isNonTemporal(), 
+                               LN0->isInvariant(), Align);
+    WorkListRemover DeadNodes(*this);
+    SDValue From[] = { SDValue(N, 0), SDValue(LN0,1) };
+    SDValue To[] = { Load.getValue(0), Load.getValue(1) };
+    DAG.ReplaceAllUsesOfValuesWith(From, To, 2, &DeadNodes);
+    // Since we're explcitly calling ReplaceAllUses, add the new node to the
+    // worklist explicitly as well.
+    AddToWorkList(Load.getNode());
+    // Make sure to revisit this node to clean it up; it will usually be dead.
+    AddToWorkList(N);
+    return SDValue(N, 0);
   }
 
   return SDValue();
@@ -6936,7 +6960,103 @@ SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
 
 SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   unsigned NumInScalars = N->getNumOperands();
+  DebugLoc dl = N->getDebugLoc();
   EVT VT = N->getValueType(0);
+  // Check to see if this is a BUILD_VECTOR of a bunch of values
+  // which come from any_extend or zero_extend nodes. If so, we can create
+  // a new BUILD_VECTOR using bit-casts which may enable other BUILD_VECTOR
+  // optimizations. We do not handle sign-extend because we can't fill the sign
+  // using shuffles.
+  EVT SourceType = MVT::Other;
+  bool allAnyExt = true;
+  for (unsigned i = 0; i < NumInScalars; ++i) {
+    SDValue In = N->getOperand(i);
+    // Ignore undef inputs.
+    if (In.getOpcode() == ISD::UNDEF) continue;
+
+    bool AnyExt  = In.getOpcode() == ISD::ANY_EXTEND;
+    bool ZeroExt = In.getOpcode() == ISD::ZERO_EXTEND;
+
+    // Abort if the element is not an extension.
+    if (!ZeroExt && !AnyExt) {
+      SourceType = MVT::Other;
+      break;
+    }
+
+    // The input is a ZeroExt or AnyExt. Check the original type.
+    EVT InTy = In.getOperand(0).getValueType();
+
+    // Check that all of the widened source types are the same.
+    if (SourceType == MVT::Other)
+      // First time.
+      SourceType = InTy;
+    else if (InTy != SourceType) {
+      // Multiple income types. Abort.
+      SourceType = MVT::Other;
+      break;
+    }
+
+    // Check if all of the extends are ANY_EXTENDs.
+    allAnyExt &= AnyExt;
+  }
+
+
+  // In order to have valid types, all of the inputs must be extended from the
+  // same source type and all of the inputs must be any or zero extend.
+  // Scalar sizes must be a power of two.
+  EVT OutScalarTy = N->getValueType(0).getScalarType();
+  bool validTypes = SourceType != MVT::Other &&
+                 isPowerOf2_32(OutScalarTy.getSizeInBits()) &&
+                 isPowerOf2_32(SourceType.getSizeInBits());
+
+  // We perform this optimization post type-legalization because
+  // the type-legalizer often scalarizes integer-promoted vectors.
+  // Performing this optimization before may create bit-casts which
+  // will be type-legalized to complex code sequences.
+  // We perform this optimization only before the operation legalizer because we
+  // may introduce illegal operations.
+  if (LegalTypes && !LegalOperations && validTypes) {
+    bool isLE = TLI.isLittleEndian();
+    unsigned ElemRatio = OutScalarTy.getSizeInBits()/SourceType.getSizeInBits();
+    assert(ElemRatio > 1 && "Invalid element size ratio");
+    SDValue Filler = allAnyExt ? DAG.getUNDEF(SourceType):
+                                 DAG.getConstant(0, SourceType);
+
+    unsigned NewBVElems = ElemRatio * N->getValueType(0).getVectorNumElements();
+    SmallVector<SDValue, 8> Ops(NewBVElems, Filler);
+
+    // Populate the new build_vector
+    for (unsigned i=0; i < N->getNumOperands(); ++i) {
+      SDValue Cast = N->getOperand(i);
+      assert((Cast.getOpcode() == ISD::ANY_EXTEND ||
+              Cast.getOpcode() == ISD::ZERO_EXTEND ||
+              Cast.getOpcode() == ISD::UNDEF) && "Invalid cast opcode");
+      SDValue In;
+      if (Cast.getOpcode() == ISD::UNDEF)
+        In = DAG.getUNDEF(SourceType);
+      else
+        In = Cast->getOperand(0);
+      unsigned Index = isLE ? (i * ElemRatio) :
+                              (i * ElemRatio + (ElemRatio - 1));
+
+      assert(Index < Ops.size() && "Invalid index");
+      Ops[Index] = In;
+    }
+
+    // The type of the new BUILD_VECTOR node.
+    EVT VecVT = EVT::getVectorVT(*DAG.getContext(), SourceType, NewBVElems);
+    assert(VecVT.getSizeInBits() == N->getValueType(0).getSizeInBits() &&
+           "Invalid vector size");
+    // Check if the new vector type is legal.
+    if (!isTypeLegal(VecVT)) return SDValue();
+
+    // Make the new BUILD_VECTOR.
+    SDValue BV = DAG.getNode(ISD::BUILD_VECTOR, N->getDebugLoc(),
+                                 VecVT, &Ops[0], Ops.size());
+
+    // Bitcast to the desired type.
+    return DAG.getNode(ISD::BITCAST, dl, N->getValueType(0), BV);
+  }
 
   // Check to see if this is a BUILD_VECTOR of a bunch of EXTRACT_VECTOR_ELT
   // operations.  If so, and if the EXTRACT_VECTOR_ELT vector inputs come from
@@ -7401,7 +7521,7 @@ bool DAGCombiner::SimplifySelectOps(SDNode *TheSelect, SDValue LHS,
                          // FIXME: Discards pointer info.
                          LLD->getChain(), Addr, MachinePointerInfo(),
                          LLD->isVolatile(), LLD->isNonTemporal(),
-                         LLD->getAlignment());
+                         LLD->isInvariant(), LLD->getAlignment());
     } else {
       Load = DAG.getExtLoad(LLD->getExtensionType() == ISD::EXTLOAD ?
                             RLD->getExtensionType() : LLD->getExtensionType(),
@@ -7517,7 +7637,7 @@ SDValue DAGCombiner::SimplifySelectCC(DebugLoc DL, SDValue N0, SDValue N1,
         AddToWorkList(CPIdx.getNode());
         return DAG.getLoad(TV->getValueType(0), DL, DAG.getEntryNode(), CPIdx,
                            MachinePointerInfo::getConstantPool(), false,
-                           false, Alignment);
+                           false, false, Alignment);
 
       }
     }
@@ -7726,7 +7846,7 @@ SDValue DAGCombiner::SimplifySetCC(EVT VT, SDValue N0,
 /// <http://the.wall.riscom.net/books/proc/ppc/cwg/code2.html>
 SDValue DAGCombiner::BuildSDIV(SDNode *N) {
   std::vector<SDNode*> Built;
-  SDValue S = TLI.BuildSDIV(N, DAG, &Built);
+  SDValue S = TLI.BuildSDIV(N, DAG, LegalOperations, &Built);
 
   for (std::vector<SDNode*>::iterator ii = Built.begin(), ee = Built.end();
        ii != ee; ++ii)
@@ -7740,7 +7860,7 @@ SDValue DAGCombiner::BuildSDIV(SDNode *N) {
 /// <http://the.wall.riscom.net/books/proc/ppc/cwg/code2.html>
 SDValue DAGCombiner::BuildUDIV(SDNode *N) {
   std::vector<SDNode*> Built;
-  SDValue S = TLI.BuildUDIV(N, DAG, &Built);
+  SDValue S = TLI.BuildUDIV(N, DAG, LegalOperations, &Built);
 
   for (std::vector<SDNode*>::iterator ii = Built.begin(), ee = Built.end();
        ii != ee; ++ii)

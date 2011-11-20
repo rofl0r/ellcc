@@ -17,6 +17,10 @@ if( NOT WIN32 OR MSYS OR CYGWIN )
   # must keep llvm-config as the first entry on the list of tools to
   # be built.
   add_subdirectory(llvm-config)
+
+  # We currently require 'sed' to build llvm-config-2, so don't try to build it
+  # on pure Win32.
+  add_subdirectory(llvm-config-2)
 endif()
 
 add_subdirectory(opt)

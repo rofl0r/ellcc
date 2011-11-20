@@ -1063,6 +1063,9 @@ void ASTWriter::WriteLanguageOptions(const LangOptions &LangOpts) {
 #define ENUM_LANGOPT(Name, Type, Bits, Default, Description) \
   Record.push_back(static_cast<unsigned>(LangOpts.get##Name()));
 #include "clang/Basic/LangOptions.def"  
+  
+  Record.push_back(LangOpts.CurrentModule.size());
+  Record.append(LangOpts.CurrentModule.begin(), LangOpts.CurrentModule.end());
   Stream.EmitRecord(LANGUAGE_OPTIONS, Record);
 }
 
@@ -1171,6 +1174,7 @@ static unsigned CreateSLocFileAbbrev(llvm::BitstreamWriter &Stream) {
   // FileEntry fields.
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 12)); // Size
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 32)); // Modification time
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // BufferOverridden
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8)); // NumCreatedFIDs
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 24)); // FirstDeclIndex
   Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8)); // NumDecls
@@ -1220,14 +1224,14 @@ namespace {
   // Trait used for the on-disk hash table of header search information.
   class HeaderFileInfoTrait {
     ASTWriter &Writer;
-    HeaderSearch &HS;
+    const HeaderSearch &HS;
     
     // Keep track of the framework names we've used during serialization.
     SmallVector<char, 128> FrameworkStringData;
     llvm::StringMap<unsigned> FrameworkNameOffset;
     
   public:
-    HeaderFileInfoTrait(ASTWriter &Writer, HeaderSearch &HS) 
+    HeaderFileInfoTrait(ASTWriter &Writer, const HeaderSearch &HS) 
       : Writer(Writer), HS(HS) { }
     
     typedef const char *key_type;
@@ -1306,7 +1310,7 @@ namespace {
 /// \param HS The header search structure to save.
 ///
 /// \param Chain Whether we're creating a chained AST file.
-void ASTWriter::WriteHeaderSearch(HeaderSearch &HS, StringRef isysroot) {
+void ASTWriter::WriteHeaderSearch(const HeaderSearch &HS, StringRef isysroot) {
   SmallVector<const FileEntry *, 16> FilesByUID;
   HS.getFileMgr().GetUniqueIDMapping(FilesByUID);
   
@@ -1322,7 +1326,9 @@ void ASTWriter::WriteHeaderSearch(HeaderSearch &HS, StringRef isysroot) {
     if (!File)
       continue;
 
-    const HeaderFileInfo &HFI = HS.header_file_begin()[UID];
+    // Use HeaderSearch's getFileInfo to make sure we get the HeaderFileInfo
+    // from the external source if it was not provided already.
+    const HeaderFileInfo &HFI = HS.getFileInfo(File);
     if (HFI.External && Chain)
       continue;
 
@@ -1416,7 +1422,8 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     // Figure out which record code to use.
     unsigned Code;
     if (SLoc->isFile()) {
-      if (SLoc->getFile().getContentCache()->OrigEntry) {
+      const SrcMgr::ContentCache *Cache = SLoc->getFile().getContentCache();
+      if (Cache->OrigEntry) {
         Code = SM_SLOC_FILE_ENTRY;
         SLocFileEntryOffsets.push_back(Stream.GetCurrentBitNo());
       } else
@@ -1437,7 +1444,7 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
       const SrcMgr::ContentCache *Content = File.getContentCache();
       if (Content->OrigEntry) {
         assert(Content->OrigEntry == Content->ContentsEntry &&
-               "Writing to AST an overriden file is not supported");
+               "Writing to AST an overridden file is not supported");
 
         // The source location entry is a file. The blob associated
         // with this entry is the file name.
@@ -1445,7 +1452,7 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
         // Emit size/modification time for this file.
         Record.push_back(Content->OrigEntry->getSize());
         Record.push_back(Content->OrigEntry->getModificationTime());
-
+        Record.push_back(Content->BufferOverridden);
         Record.push_back(File.NumCreatedFIDs);
         
         FileDeclIDsTy::iterator FDI = FileDeclIDs.find(SLoc);
@@ -1456,7 +1463,7 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
           Record.push_back(0);
           Record.push_back(0);
         }
-
+        
         // Turn the file name into an absolute path, if it isn't already.
         const char *Filename = Content->OrigEntry->getName();
         llvm::SmallString<128> FilePath(Filename);
@@ -1472,6 +1479,16 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
 
         Filename = adjustFilenameForRelocatablePCH(Filename, isysroot);
         Stream.EmitRecordWithBlob(SLocFileAbbrv, Record, Filename);
+        
+        if (Content->BufferOverridden) {
+          Record.clear();
+          Record.push_back(SM_SLOC_BUFFER_BLOB);
+          const llvm::MemoryBuffer *Buffer
+            = Content->getBuffer(PP.getDiagnostics(), PP.getSourceManager());
+          Stream.EmitRecordWithBlob(SLocBufferBlobAbbrv, Record,
+                                    StringRef(Buffer->getBufferStart(),
+                                              Buffer->getBufferSize() + 1));          
+        }
       } else {
         // The source location entry is a buffer. The blob associated
         // with this entry contains the contents of the buffer.
@@ -2960,8 +2977,6 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
        I != E; ++I) {
     if (!(*I)->isFromASTFile())
       NewGlobalDecls.push_back(std::make_pair((*I)->getKind(), GetDeclRef(*I)));
-    else if ((*I)->isChangedSinceDeserialization())
-      (void)GetDeclRef(*I); // Make sure it's written, but don't record it.
   }
   
   llvm::BitCodeAbbrev *Abv = new llvm::BitCodeAbbrev();
@@ -2992,10 +3007,8 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
     }
   }
   
-  // Resolve any declaration pointers within the declaration updates block and
-  // chained Objective-C categories block to declaration IDs.
+  // Resolve any declaration pointers within the declaration updates block.
   ResolveDeclUpdatesBlocks();
-  ResolveChainedObjCCategories();
   
   // Form the record of special types.
   RecordData SpecialTypes;
@@ -3008,6 +3021,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   AddTypeRef(Context.ObjCIdRedefinitionType, SpecialTypes);
   AddTypeRef(Context.ObjCClassRedefinitionType, SpecialTypes);
   AddTypeRef(Context.ObjCSelRedefinitionType, SpecialTypes);
+  AddTypeRef(Context.getucontext_tType(), SpecialTypes);
   
   // Keep writing types and declarations until all types and
   // declarations have been written.
@@ -3183,7 +3197,7 @@ void ASTWriter::ResolveDeclUpdatesBlocks() {
     const Decl *D = I->first;
     UpdateRecord &URec = I->second;
     
-    if (DeclsToRewrite.count(D))
+    if (isRewritten(D))
       continue; // The decl will be written completely
 
     unsigned Idx = 0, N = URec.size();
@@ -3216,7 +3230,7 @@ void ASTWriter::WriteDeclUpdatesBlocks() {
     const Decl *D = I->first;
     UpdateRecord &URec = I->second;
 
-    if (DeclsToRewrite.count(D))
+    if (isRewritten(D))
       continue; // The decl will be written completely,no need to store updates.
 
     uint64_t Offset = Stream.GetCurrentBitNo();
@@ -3234,23 +3248,13 @@ void ASTWriter::WriteDeclReplacementsBlock() {
     return;
 
   RecordData Record;
-  for (SmallVector<std::pair<DeclID, uint64_t>, 16>::iterator
+  for (SmallVector<ReplacedDeclInfo, 16>::iterator
            I = ReplacedDecls.begin(), E = ReplacedDecls.end(); I != E; ++I) {
-    Record.push_back(I->first);
-    Record.push_back(I->second);
+    Record.push_back(I->ID);
+    Record.push_back(I->Offset);
+    Record.push_back(I->Loc);
   }
   Stream.EmitRecord(DECL_REPLACEMENTS, Record);
-}
-
-void ASTWriter::ResolveChainedObjCCategories() {
-  for (SmallVector<ChainedObjCCategoriesData, 16>::iterator
-       I = LocalChainedObjCCategories.begin(),
-       E = LocalChainedObjCCategories.end(); I != E; ++I) {
-    ChainedObjCCategoriesData &Data = *I;
-    Data.InterfaceID = GetDeclRef(Data.Interface);
-    Data.TailCategoryID = GetDeclRef(Data.TailCategory);
-  }
-
 }
 
 void ASTWriter::WriteChainedObjCCategories() {
@@ -3262,13 +3266,16 @@ void ASTWriter::WriteChainedObjCCategories() {
          I = LocalChainedObjCCategories.begin(),
          E = LocalChainedObjCCategories.end(); I != E; ++I) {
     ChainedObjCCategoriesData &Data = *I;
+    if (isRewritten(Data.Interface))
+      continue;
+
+    assert(Data.Interface->getCategoryList());
     serialization::DeclID
         HeadCatID = getDeclID(Data.Interface->getCategoryList());
-    assert(HeadCatID != 0 && "Category not written ?");
 
-    Record.push_back(Data.InterfaceID);
+    Record.push_back(getDeclID(Data.Interface));
     Record.push_back(HeadCatID);
-    Record.push_back(Data.TailCategoryID);
+    Record.push_back(getDeclID(Data.TailCategory));
   }
   Stream.EmitRecord(OBJC_CHAINED_CATEGORIES, Record);
 }
@@ -3462,12 +3469,6 @@ DeclID ASTWriter::GetDeclRef(const Decl *D) {
     // enqueue it in the list of declarations to emit.
     ID = NextDeclID++;
     DeclTypesToEmit.push(const_cast<Decl *>(D));
-  } else if (ID < FirstDeclID && D->isChangedSinceDeserialization()) {
-    // We don't add it to the replacement collection here, because we don't
-    // have the offset yet.
-    DeclTypesToEmit.push(const_cast<Decl *>(D));
-    // Reset the flag, so that we don't add this decl multiple times.
-    const_cast<Decl *>(D)->setChangedSinceDeserialization(false);
   }
 
   return ID;
@@ -3880,11 +3881,11 @@ void ASTWriter::AddCXXCtorInitializers(
 
     if (Init->isBaseInitializer()) {
       Record.push_back(CTOR_INITIALIZER_BASE);
-      AddTypeSourceInfo(Init->getBaseClassInfo(), Record);
+      AddTypeSourceInfo(Init->getTypeSourceInfo(), Record);
       Record.push_back(Init->isBaseVirtual());
     } else if (Init->isDelegatingInitializer()) {
       Record.push_back(CTOR_INITIALIZER_DELEGATING);
-      AddDeclRef(Init->getTargetConstructor(), Record);
+      AddTypeSourceInfo(Init->getTypeSourceInfo(), Record);
     } else if (Init->isMemberInitializer()){
       Record.push_back(CTOR_INITIALIZER_MEMBER);
       AddDeclRef(Init->getMember(), Record);
@@ -4132,6 +4133,36 @@ void ASTWriter::AddedObjCCategoryToInterface(const ObjCCategoryDecl *CatD,
     return; // We already recorded that the tail of a category chain should be
             // attached to an interface.
 
-  ChainedObjCCategoriesData Data =  { IFD, CatD, 0, 0 };
+  ChainedObjCCategoriesData Data =  { IFD, CatD };
   LocalChainedObjCCategories.push_back(Data);
+}
+
+void ASTWriter::CompletedObjCForwardRef(const ObjCContainerDecl *D) {
+  assert(!WritingAST && "Already writing the AST!");
+  if (!D->isFromASTFile())
+    return; // Declaration not imported from PCH.
+
+  RewriteDecl(D);
+}
+
+void ASTWriter::AddedObjCPropertyInClassExtension(const ObjCPropertyDecl *Prop,
+                                          const ObjCPropertyDecl *OrigProp,
+                                          const ObjCCategoryDecl *ClassExt) {
+  const ObjCInterfaceDecl *D = ClassExt->getClassInterface();
+  if (!D)
+    return;
+
+  assert(!WritingAST && "Already writing the AST!");
+  if (!D->isFromASTFile())
+    return; // Declaration not imported from PCH.
+
+  RewriteDecl(D);
+}
+
+void ASTWriter::UpdatedAttributeList(const Decl *D) {
+  assert(!WritingAST && "Already writing the AST!");
+  if (!D->isFromASTFile())
+    return; // Declaration not imported from PCH.
+
+  RewriteDecl(D);
 }

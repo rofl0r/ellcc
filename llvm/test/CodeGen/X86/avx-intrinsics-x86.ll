@@ -315,24 +315,31 @@ declare i32 @llvm.x86.sse2.movmsk.pd(<2 x double>) nounwind readnone
 
 
 define void @test_x86_sse2_movnt_dq(i8* %a0, <2 x i64> %a1) {
+  ; CHECK: test_x86_sse2_movnt_dq
   ; CHECK: movl
   ; CHECK: vmovntdq
-  call void @llvm.x86.sse2.movnt.dq(i8* %a0, <2 x i64> %a1)
+  ; add operation forces the execution domain.
+  %a2 = add <2 x i64> %a1, <i64 1, i64 1>
+  call void @llvm.x86.sse2.movnt.dq(i8* %a0, <2 x i64> %a2)
   ret void
 }
 declare void @llvm.x86.sse2.movnt.dq(i8*, <2 x i64>) nounwind
 
 
 define void @test_x86_sse2_movnt_pd(i8* %a0, <2 x double> %a1) {
+  ; CHECK test_x86_sse2_movnt_pd
   ; CHECK: movl
   ; CHECK: vmovntpd
-  call void @llvm.x86.sse2.movnt.pd(i8* %a0, <2 x double> %a1)
+  ; fadd operation forces the execution domain.
+  %a2 = fadd <2 x double> %a1, <double 0x0, double 0x4200000000000000>
+  call void @llvm.x86.sse2.movnt.pd(i8* %a0, <2 x double> %a2)
   ret void
 }
 declare void @llvm.x86.sse2.movnt.pd(i8*, <2 x double>) nounwind
 
 
 define <2 x double> @test_x86_sse2_mul_sd(<2 x double> %a0, <2 x double> %a1) {
+  ; CHECK: test_x86_sse2_mul_sd
   ; CHECK: vmulsd
   %res = call <2 x double> @llvm.x86.sse2.mul.sd(<2 x double> %a0, <2 x double> %a1) ; <<2 x double>> [#uses=1]
   ret <2 x double> %res
@@ -749,6 +756,7 @@ declare <2 x double> @llvm.x86.sse2.sqrt.sd(<2 x double>) nounwind readnone
 
 
 define void @test_x86_sse2_storel_dq(i8* %a0, <4 x i32> %a1) {
+  ; CHECK: test_x86_sse2_storel_dq
   ; CHECK: movl
   ; CHECK: vmovq
   call void @llvm.x86.sse2.storel.dq(i8* %a0, <4 x i32> %a1)
@@ -758,6 +766,7 @@ declare void @llvm.x86.sse2.storel.dq(i8*, <4 x i32>) nounwind
 
 
 define void @test_x86_sse2_storeu_dq(i8* %a0, <16 x i8> %a1) {
+  ; CHECK: test_x86_sse2_storeu_dq
   ; CHECK: movl
   ; CHECK: vmovdqu
   call void @llvm.x86.sse2.storeu.dq(i8* %a0, <16 x i8> %a1)
@@ -767,15 +776,18 @@ declare void @llvm.x86.sse2.storeu.dq(i8*, <16 x i8>) nounwind
 
 
 define void @test_x86_sse2_storeu_pd(i8* %a0, <2 x double> %a1) {
+  ; CHECK: test_x86_sse2_storeu_pd
   ; CHECK: movl
   ; CHECK: vmovupd
-  call void @llvm.x86.sse2.storeu.pd(i8* %a0, <2 x double> %a1)
+  %a2 = fadd <2 x double> %a1, <double 0x0, double 0x4200000000000000>
+  call void @llvm.x86.sse2.storeu.pd(i8* %a0, <2 x double> %a2)
   ret void
 }
 declare void @llvm.x86.sse2.storeu.pd(i8*, <2 x double>) nounwind
 
 
 define <2 x double> @test_x86_sse2_sub_sd(<2 x double> %a0, <2 x double> %a1) {
+  ; CHECK: test_x86_sse2_sub_sd
   ; CHECK: vsubsd
   %res = call <2 x double> @llvm.x86.sse2.sub.sd(<2 x double> %a0, <2 x double> %a1) ; <<2 x double>> [#uses=1]
   ret <2 x double> %res
@@ -964,12 +976,12 @@ define <2 x i64> @test_x86_sse41_movntdqa(i8* %a0) {
 declare <2 x i64> @llvm.x86.sse41.movntdqa(i8*) nounwind readonly
 
 
-define <16 x i8> @test_x86_sse41_mpsadbw(<16 x i8> %a0, <16 x i8> %a1) {
+define <8 x i16> @test_x86_sse41_mpsadbw(<16 x i8> %a0, <16 x i8> %a1) {
   ; CHECK: vmpsadbw
-  %res = call <16 x i8> @llvm.x86.sse41.mpsadbw(<16 x i8> %a0, <16 x i8> %a1, i32 7) ; <<16 x i8>> [#uses=1]
-  ret <16 x i8> %res
+  %res = call <8 x i16> @llvm.x86.sse41.mpsadbw(<16 x i8> %a0, <16 x i8> %a1, i32 7) ; <<8 x i16>> [#uses=1]
+  ret <8 x i16> %res
 }
-declare <16 x i8> @llvm.x86.sse41.mpsadbw(<16 x i8>, <16 x i8>, i32) nounwind readnone
+declare <8 x i16> @llvm.x86.sse41.mpsadbw(<16 x i8>, <16 x i8>, i32) nounwind readnone
 
 
 define <8 x i16> @test_x86_sse41_packusdw(<4 x i32> %a0, <4 x i32> %a1) {
@@ -1743,12 +1755,12 @@ define <4 x i32> @test_x86_ssse3_phadd_d_128(<4 x i32> %a0, <4 x i32> %a1) {
 declare <4 x i32> @llvm.x86.ssse3.phadd.d.128(<4 x i32>, <4 x i32>) nounwind readnone
 
 
-define <4 x i32> @test_x86_ssse3_phadd_sw_128(<4 x i32> %a0, <4 x i32> %a1) {
+define <8 x i16> @test_x86_ssse3_phadd_sw_128(<8 x i16> %a0, <8 x i16> %a1) {
   ; CHECK: vphaddsw
-  %res = call <4 x i32> @llvm.x86.ssse3.phadd.sw.128(<4 x i32> %a0, <4 x i32> %a1) ; <<4 x i32>> [#uses=1]
-  ret <4 x i32> %res
+  %res = call <8 x i16> @llvm.x86.ssse3.phadd.sw.128(<8 x i16> %a0, <8 x i16> %a1) ; <<8 x i16>> [#uses=1]
+  ret <8 x i16> %res
 }
-declare <4 x i32> @llvm.x86.ssse3.phadd.sw.128(<4 x i32>, <4 x i32>) nounwind readnone
+declare <8 x i16> @llvm.x86.ssse3.phadd.sw.128(<8 x i16>, <8 x i16>) nounwind readnone
 
 
 define <8 x i16> @test_x86_ssse3_phadd_w_128(<8 x i16> %a0, <8 x i16> %a1) {
@@ -1783,12 +1795,12 @@ define <8 x i16> @test_x86_ssse3_phsub_w_128(<8 x i16> %a0, <8 x i16> %a1) {
 declare <8 x i16> @llvm.x86.ssse3.phsub.w.128(<8 x i16>, <8 x i16>) nounwind readnone
 
 
-define <8 x i16> @test_x86_ssse3_pmadd_ub_sw_128(<8 x i16> %a0, <8 x i16> %a1) {
+define <8 x i16> @test_x86_ssse3_pmadd_ub_sw_128(<16 x i8> %a0, <16 x i8> %a1) {
   ; CHECK: vpmaddubsw
-  %res = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<8 x i16> %a0, <8 x i16> %a1) ; <<8 x i16>> [#uses=1]
+  %res = call <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8> %a0, <16 x i8> %a1) ; <<8 x i16>> [#uses=1]
   ret <8 x i16> %res
 }
-declare <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<8 x i16>, <8 x i16>) nounwind readnone
+declare <8 x i16> @llvm.x86.ssse3.pmadd.ub.sw.128(<16 x i8>, <16 x i8>) nounwind readnone
 
 
 define <8 x i16> @test_x86_ssse3_pmul_hr_sw_128(<8 x i16> %a0, <8 x i16> %a1) {
@@ -2009,7 +2021,9 @@ declare <32 x i8> @llvm.x86.avx.ldu.dq.256(i8*) nounwind readonly
 
 define <32 x i8> @test_x86_avx_loadu_dq_256(i8* %a0) {
   ; CHECK: vmovdqu
-  %res = call <32 x i8> @llvm.x86.avx.loadu.dq.256(i8* %a0) ; <<32 x i8>> [#uses=1]
+  %a1 = call <32 x i8> @llvm.x86.avx.loadu.dq.256(i8* %a0) ; <<32 x i8>> [#uses=1]
+  ; add operation forces the execution domain.
+  %res = add <32 x i8> %a1, <i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1>
   ret <32 x i8> %res
 }
 declare <32 x i8> @llvm.x86.avx.loadu.dq.256(i8*) nounwind readonly
@@ -2017,7 +2031,9 @@ declare <32 x i8> @llvm.x86.avx.loadu.dq.256(i8*) nounwind readonly
 
 define <4 x double> @test_x86_avx_loadu_pd_256(i8* %a0) {
   ; CHECK: vmovupd
-  %res = call <4 x double> @llvm.x86.avx.loadu.pd.256(i8* %a0) ; <<4 x double>> [#uses=1]
+  %a1 = call <4 x double> @llvm.x86.avx.loadu.pd.256(i8* %a0) ; <<4 x double>> [#uses=1]
+  ; add operation forces the execution domain.
+  %res = fadd <4 x double> %a1, <double 0x0, double 0x0, double 0x0, double 0x0>
   ret <4 x double> %res
 }
 declare <4 x double> @llvm.x86.avx.loadu.pd.256(i8*) nounwind readonly
@@ -2145,7 +2161,9 @@ declare i32 @llvm.x86.avx.movmsk.ps.256(<8 x float>) nounwind readnone
 
 define void @test_x86_avx_movnt_dq_256(i8* %a0, <4 x i64> %a1) {
   ; CHECK: vmovntdq
-  call void @llvm.x86.avx.movnt.dq.256(i8* %a0, <4 x i64> %a1)
+  ; add operation forces the execution domain.
+  %a2 = add <4 x i64> %a1, <i64 1, i64 1, i64 1, i64 1>
+  call void @llvm.x86.avx.movnt.dq.256(i8* %a0, <4 x i64> %a2)
   ret void
 }
 declare void @llvm.x86.avx.movnt.dq.256(i8*, <4 x i64>) nounwind
@@ -2153,7 +2171,8 @@ declare void @llvm.x86.avx.movnt.dq.256(i8*, <4 x i64>) nounwind
 
 define void @test_x86_avx_movnt_pd_256(i8* %a0, <4 x double> %a1) {
   ; CHECK: vmovntpd
-  call void @llvm.x86.avx.movnt.pd.256(i8* %a0, <4 x double> %a1)
+  %a2 = fadd <4 x double> %a1, <double 0x0, double 0x0, double 0x0, double 0x0>
+  call void @llvm.x86.avx.movnt.pd.256(i8* %a0, <4 x double> %a2)
   ret void
 }
 declare void @llvm.x86.avx.movnt.pd.256(i8*, <4 x double>) nounwind
@@ -2246,7 +2265,9 @@ declare <8 x float> @llvm.x86.avx.sqrt.ps.256(<8 x float>) nounwind readnone
 
 define void @test_x86_avx_storeu_dq_256(i8* %a0, <32 x i8> %a1) {
   ; CHECK: vmovdqu
-  call void @llvm.x86.avx.storeu.dq.256(i8* %a0, <32 x i8> %a1)
+  ; add operation forces the execution domain.
+  %a2 = add <32 x i8> %a1, <i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1>
+  call void @llvm.x86.avx.storeu.dq.256(i8* %a0, <32 x i8> %a2)
   ret void
 }
 declare void @llvm.x86.avx.storeu.dq.256(i8*, <32 x i8>) nounwind
@@ -2254,7 +2275,9 @@ declare void @llvm.x86.avx.storeu.dq.256(i8*, <32 x i8>) nounwind
 
 define void @test_x86_avx_storeu_pd_256(i8* %a0, <4 x double> %a1) {
   ; CHECK: vmovupd
-  call void @llvm.x86.avx.storeu.pd.256(i8* %a0, <4 x double> %a1)
+  ; add operation forces the execution domain.
+  %a2 = fadd <4 x double> %a1, <double 0x0, double 0x0, double 0x0, double 0x0>
+  call void @llvm.x86.avx.storeu.pd.256(i8* %a0, <4 x double> %a2)
   ret void
 }
 declare void @llvm.x86.avx.storeu.pd.256(i8*, <4 x double>) nounwind
@@ -2292,20 +2315,20 @@ define <8 x float> @test_x86_avx_vbroadcastf128_ps_256(i8* %a0) {
 declare <8 x float> @llvm.x86.avx.vbroadcastf128.ps.256(i8*) nounwind readonly
 
 
-define <4 x float> @test_x86_avx_vbroadcastss(i8* %a0) {
+define <4 x float> @test_x86_avx_vbroadcast_ss(i8* %a0) {
   ; CHECK: vbroadcastss
-  %res = call <4 x float> @llvm.x86.avx.vbroadcastss(i8* %a0) ; <<4 x float>> [#uses=1]
+  %res = call <4 x float> @llvm.x86.avx.vbroadcast.ss(i8* %a0) ; <<4 x float>> [#uses=1]
   ret <4 x float> %res
 }
-declare <4 x float> @llvm.x86.avx.vbroadcastss(i8*) nounwind readonly
+declare <4 x float> @llvm.x86.avx.vbroadcast.ss(i8*) nounwind readonly
 
 
-define <8 x float> @test_x86_avx_vbroadcastss_256(i8* %a0) {
+define <8 x float> @test_x86_avx_vbroadcast_ss_256(i8* %a0) {
   ; CHECK: vbroadcastss
-  %res = call <8 x float> @llvm.x86.avx.vbroadcastss.256(i8* %a0) ; <<8 x float>> [#uses=1]
+  %res = call <8 x float> @llvm.x86.avx.vbroadcast.ss.256(i8* %a0) ; <<8 x float>> [#uses=1]
   ret <8 x float> %res
 }
-declare <8 x float> @llvm.x86.avx.vbroadcastss.256(i8*) nounwind readonly
+declare <8 x float> @llvm.x86.avx.vbroadcast.ss.256(i8*) nounwind readonly
 
 
 define <2 x double> @test_x86_avx_vextractf128_pd_256(<4 x double> %a0) {

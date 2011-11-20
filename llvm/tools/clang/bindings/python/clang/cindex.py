@@ -111,9 +111,20 @@ class SourceLocation(Structure):
         if self._data is None:
             f, l, c, o = c_object_p(), c_uint(), c_uint(), c_uint()
             SourceLocation_loc(self, byref(f), byref(l), byref(c), byref(o))
-            f = File(f) if f else None
+            if f:
+                f = File(f)
+            else:
+                f = None
             self._data = (f, int(l.value), int(c.value), int(o.value))
         return self._data
+
+    @staticmethod
+    def from_position(tu, file, line, column):
+        """
+        Retrieve the source location associated with a given file/line/column in
+        a particular translation unit.
+        """
+        return SourceLocation_getLocation(tu, file, line, column)
 
     @property
     def file(self):
@@ -136,8 +147,12 @@ class SourceLocation(Structure):
         return self._get_instantiation()[3]
 
     def __repr__(self):
+        if self.file:
+            filename = self.file.name
+        else:
+            filename = None
         return "<SourceLocation file %r, line %r, column %r>" % (
-            self.file.name if self.file else None, self.line, self.column)
+            filename, self.line, self.column)
 
 class SourceRange(Structure):
     """
@@ -215,8 +230,8 @@ class Diagnostic(object):
                 return int(_clang_getDiagnosticNumRanges(self.diag))
 
             def __getitem__(self, key):
-		if (key >= len(self)):
-			raise IndexError
+                if (key >= len(self)):
+                    raise IndexError
                 return _clang_getDiagnosticRange(self.diag, key)
 
         return RangeIterator(self)
@@ -817,6 +832,10 @@ class Cursor(Structure):
     """
     _fields_ = [("_kind_id", c_int), ("xdata", c_int), ("data", c_void_p * 3)]
 
+    @staticmethod
+    def from_location(tu, location):
+        return Cursor_get(tu, location)
+
     def __eq__(self, other):
         return Cursor_eq(self, other)
 
@@ -1362,7 +1381,9 @@ class Index(ClangObject):
     def read(self, path):
         """Load the translation unit from the given AST file."""
         ptr = TranslationUnit_read(self, path)
-        return TranslationUnit(ptr) if ptr else None
+        if ptr:
+            return TranslationUnit(ptr)
+        return None
 
     def parse(self, path, args = [], unsaved_files = [], options = 0):
         """
@@ -1395,7 +1416,9 @@ class Index(ClangObject):
         ptr = TranslationUnit_parse(self, path, arg_array, len(args),
                                     unsaved_files_array, len(unsaved_files),
                                     options)
-        return TranslationUnit(ptr) if ptr else None
+        if ptr:
+            return TranslationUnit(ptr)
+        return None
 
 
 class TranslationUnit(ClangObject):
@@ -1514,14 +1537,20 @@ class TranslationUnit(ClangObject):
                                            unsaved_files_array,
                                            len(unsaved_files),
                                            options)
-        return CodeCompletionResults(ptr) if ptr else None
-
+        if ptr:
+            return CodeCompletionResults(ptr)
+        return None
 
 class File(ClangObject):
     """
     The File class represents a particular source file that is part of a
     translation unit.
     """
+
+    @staticmethod
+    def from_name(translation_unit, file_name):
+        """Retrieve a file handle within the given translation unit."""
+        return File(File_getFile(translation_unit, file_name))
 
     @property
     def name(self):
@@ -1532,6 +1561,12 @@ class File(ClangObject):
     def time(self):
         """Return the last modification time of the file."""
         return File_time(self)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return "<File: %s>" % (self.name)
 
 class FileInclusion(object):
     """
@@ -1568,6 +1603,10 @@ SourceLocation_loc = lib.clang_getInstantiationLocation
 SourceLocation_loc.argtypes = [SourceLocation, POINTER(c_object_p),
                                POINTER(c_uint), POINTER(c_uint),
                                POINTER(c_uint)]
+
+SourceLocation_getLocation = lib.clang_getLocation
+SourceLocation_getLocation.argtypes = [TranslationUnit, File, c_uint, c_uint]
+SourceLocation_getLocation.restype = SourceLocation
 
 # Source Range Functions
 SourceRange_getRange = lib.clang_getRange
@@ -1759,6 +1798,10 @@ TranslationUnit_includes.argtypes = [TranslationUnit,
                                      py_object]
 
 # File Functions
+File_getFile = lib.clang_getFile
+File_getFile.argtypes = [TranslationUnit, c_char_p]
+File_getFile.restype = c_object_p
+
 File_name = lib.clang_getFileName
 File_name.argtypes = [File]
 File_name.restype = _CXString

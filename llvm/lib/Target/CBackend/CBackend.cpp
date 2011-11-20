@@ -1660,7 +1660,7 @@ bool CWriter::doInitialization(Module &M) {
 #if 0
   std::string Triple = TheModule->getTargetTriple();
   if (Triple.empty())
-    Triple = llvm::sys::getHostTriple();
+    Triple = llvm::sys::getDefaultTargetTriple();
 
   std::string E;
   if (const Target *Match = TargetRegistry::lookupTarget(Triple, E))
@@ -3167,7 +3167,7 @@ std::string CWriter::InterpretASMConstraint(InlineAsm::ConstraintInfo& c) {
   const MCAsmInfo *TargetAsm;
   std::string Triple = TheModule->getTargetTriple();
   if (Triple.empty())
-    Triple = llvm::sys::getHostTriple();
+    Triple = llvm::sys::getDefaultTargetTriple();
 
   std::string E;
   if (const Target *Match = TargetRegistry::lookupTarget(Triple, E))
@@ -3604,7 +3604,6 @@ void CWriter::visitExtractValueInst(ExtractValueInst &EVI) {
 bool CTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                          formatted_raw_ostream &o,
                                          CodeGenFileType FileType,
-                                         CodeGenOpt::Level OptLevel,
                                          bool DisableVerify) {
   if (FileType != TargetMachine::CGFT_AssemblyFile) return true;
 

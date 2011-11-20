@@ -17,6 +17,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ASTMutationListener.h"
 #include "llvm/ADT/DenseSet.h"
 
 using namespace clang;
@@ -137,6 +138,7 @@ Decl *Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
                                            FD, GetterSel, SetterSel,
                                            isAssign, isReadWrite,
                                            Attributes,
+                                           ODS.getPropertyAttributes(),
                                            isOverridingProperty, TSI,
                                            MethodImplKind);
       if (Res) {
@@ -150,7 +152,9 @@ Decl *Sema::ActOnProperty(Scope *S, SourceLocation AtLoc,
   ObjCPropertyDecl *Res = CreatePropertyDecl(S, ClassDecl, AtLoc, FD,
                                              GetterSel, SetterSel,
                                              isAssign, isReadWrite,
-                                             Attributes, TSI, MethodImplKind);
+                                             Attributes,
+                                             ODS.getPropertyAttributes(),
+                                             TSI, MethodImplKind);
   if (lexicalDC)
     Res->setLexicalDeclContext(lexicalDC);
 
@@ -201,6 +205,7 @@ Sema::HandlePropertyInClassExtension(Scope *S,
                                      const bool isAssign,
                                      const bool isReadWrite,
                                      const unsigned Attributes,
+                                     const unsigned AttributesAsWritten,
                                      bool *isOverridingProperty,
                                      TypeSourceInfo *T,
                                      tok::ObjCKeywordKind MethodImplKind) {
@@ -231,7 +236,7 @@ Sema::HandlePropertyInClassExtension(Scope *S,
     ObjCPropertyDecl::Create(Context, DC, FD.D.getIdentifierLoc(),
                              PropertyId, AtLoc, T);
   PDecl->setPropertyAttributesAsWritten(
-                                   makePropertyAttributesAsWritten(Attributes));
+                          makePropertyAttributesAsWritten(AttributesAsWritten));
   if (Attributes & ObjCDeclSpec::DQ_PR_readonly)
     PDecl->setPropertyAttributes(ObjCPropertyDecl::OBJC_PR_readonly);
   if (Attributes & ObjCDeclSpec::DQ_PR_readwrite)
@@ -260,13 +265,15 @@ Sema::HandlePropertyInClassExtension(Scope *S,
     ObjCPropertyDecl *PDecl =
       CreatePropertyDecl(S, CCPrimary, AtLoc,
                          FD, GetterSel, SetterSel, isAssign, isReadWrite,
-                         Attributes, T, MethodImplKind, DC);
+                         Attributes,AttributesAsWritten, T, MethodImplKind, DC);
 
     // A case of continuation class adding a new property in the class. This
     // is not what it was meant for. However, gcc supports it and so should we.
     // Make sure setter/getters are declared here.
     ProcessPropertyDecl(PDecl, CCPrimary, /* redeclaredProperty = */ 0,
                         /* lexicalDC = */ CDecl);
+    if (ASTMutationListener *L = Context.getASTMutationListener())
+      L->AddedObjCPropertyInClassExtension(PDecl, /*OrigProp=*/0, CDecl);
     return PDecl;
   }
   if (PIDecl->getType().getCanonicalType() 
@@ -339,6 +346,8 @@ Sema::HandlePropertyInClassExtension(Scope *S,
   *isOverridingProperty = true;
   // Make sure setter decl is synthesized, and added to primary class's list.
   ProcessPropertyDecl(PIDecl, CCPrimary, PDecl, CDecl);
+  if (ASTMutationListener *L = Context.getASTMutationListener())
+    L->AddedObjCPropertyInClassExtension(PDecl, PIDecl, CDecl);
   return 0;
 }
 
@@ -351,6 +360,7 @@ ObjCPropertyDecl *Sema::CreatePropertyDecl(Scope *S,
                                            const bool isAssign,
                                            const bool isReadWrite,
                                            const unsigned Attributes,
+                                           const unsigned AttributesAsWritten,
                                            TypeSourceInfo *TInfo,
                                            tok::ObjCKeywordKind MethodImplKind,
                                            DeclContext *lexicalDC){
@@ -402,7 +412,7 @@ ObjCPropertyDecl *Sema::CreatePropertyDecl(Scope *S,
   PDecl->setGetterName(GetterSel);
   PDecl->setSetterName(SetterSel);
   PDecl->setPropertyAttributesAsWritten(
-                                   makePropertyAttributesAsWritten(Attributes));
+                          makePropertyAttributesAsWritten(AttributesAsWritten));
 
   if (Attributes & ObjCDeclSpec::DQ_PR_readonly)
     PDecl->setPropertyAttributes(ObjCPropertyDecl::OBJC_PR_readonly);
@@ -1765,13 +1775,12 @@ void Sema::CheckObjCPropertyAttributes(Decl *PDecl,
                       ObjCDeclSpec::DQ_PR_unsafe_unretained |
                       ObjCDeclSpec::DQ_PR_retain | ObjCDeclSpec::DQ_PR_strong |
                       ObjCDeclSpec::DQ_PR_weak)) &&
-      !(Attributes & ObjCDeclSpec::DQ_PR_readonly) &&
       PropertyTy->isObjCObjectPointerType()) {
       if (getLangOptions().ObjCAutoRefCount)
         // With arc,  @property definitions should default to (strong) when 
-        // not specified
+        // not specified; including when property is 'readonly'.
         PropertyDecl->setPropertyAttributes(ObjCPropertyDecl::OBJC_PR_strong);
-      else {
+      else if (!(Attributes & ObjCDeclSpec::DQ_PR_readonly)) {
           // Skip this warning in gc-only mode.
           if (getLangOptions().getGC() != LangOptions::GCOnly)
             Diag(Loc, diag::warn_objc_property_no_assignment_attribute);
@@ -1798,4 +1807,9 @@ void Sema::CheckObjCPropertyAttributes(Decl *PDecl,
            !(Attributes & ObjCDeclSpec::DQ_PR_strong) &&
            PropertyTy->isBlockPointerType())
       Diag(Loc, diag::warn_objc_property_retain_of_block);
+  
+  if ((Attributes & ObjCDeclSpec::DQ_PR_readonly) &&
+      (Attributes & ObjCDeclSpec::DQ_PR_setter))
+    Diag(Loc, diag::warn_objc_readonly_property_has_setter);
+      
 }

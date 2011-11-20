@@ -1,0 +1,8 @@
+module libA {
+  module a1 { header "a1.h" }
+  header "a2.h"
+}
+
+module libB {
+  header "b1.h"
+}

@@ -611,6 +611,17 @@ bool CodeGenModule::ReturnTypeUsesFPRet(QualType ResultType) {
   return false;
 }
 
+bool CodeGenModule::ReturnTypeUsesFP2Ret(QualType ResultType) {
+  if (const ComplexType *CT = ResultType->getAs<ComplexType>()) {
+    if (const BuiltinType *BT = CT->getElementType()->getAs<BuiltinType>()) {
+      if (BT->getKind() == BuiltinType::LongDouble)
+        return getContext().getTargetInfo().useObjCFP2RetForComplexLongDouble();
+    }
+  }
+
+  return false;
+}
+
 llvm::FunctionType *CodeGenTypes::GetFunctionType(GlobalDecl GD) {
   const CGFunctionInfo &FI = getFunctionInfo(GD);
 
@@ -1047,10 +1058,11 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
       // If this structure was expanded into multiple arguments then
       // we need to create a temporary and reconstruct it from the
       // arguments.
-      llvm::Value *Temp = CreateMemTemp(Ty, Arg->getName() + ".addr");
-      llvm::Function::arg_iterator End =
-        ExpandTypeFromArgs(Ty, MakeAddrLValue(Temp, Ty), AI);
-      EmitParmDecl(*Arg, Temp, ArgNo);
+      llvm::AllocaInst *Alloca = CreateMemTemp(Ty);
+      Alloca->setAlignment(getContext().getDeclAlign(Arg).getQuantity());
+      LValue LV = MakeAddrLValue(Alloca, Ty, Alloca->getAlignment());
+      llvm::Function::arg_iterator End = ExpandTypeFromArgs(Ty, LV, AI);
+      EmitParmDecl(*Arg, Alloca, ArgNo);
 
       // Name the arguments used in expansion and increment AI.
       unsigned Index = 0;
@@ -1501,7 +1513,10 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
       llvm::Value *EltAddr = Builder.CreateConstGEP2_32(Addr, 0, Elt);
       LValue LV = MakeAddrLValue(EltAddr, EltTy);
       RValue EltRV;
-      if (CodeGenFunction::hasAggregateLLVMType(EltTy))
+      if (EltTy->isAnyComplexType())
+        // FIXME: Volatile?
+        EltRV = RValue::getComplex(LoadComplexFromAddr(LV.getAddress(), false));
+      else if (CodeGenFunction::hasAggregateLLVMType(EltTy))
         EltRV = RValue::getAggregate(LV.getAddress());
       else
         EltRV = EmitLoadOfLValue(LV);
@@ -1519,13 +1534,16 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
       // FIXME: What are the right qualifiers here?
       LValue LV = EmitLValueForField(Addr, FD, 0);
       RValue FldRV;
-      if (CodeGenFunction::hasAggregateLLVMType(FT))
+      if (FT->isAnyComplexType())
+        // FIXME: Volatile?
+        FldRV = RValue::getComplex(LoadComplexFromAddr(LV.getAddress(), false));
+      else if (CodeGenFunction::hasAggregateLLVMType(FT))
         FldRV = RValue::getAggregate(LV.getAddress());
       else
         FldRV = EmitLoadOfLValue(LV);
       ExpandTypeToArgs(FT, FldRV, Args, IRFuncTy);
     }
-  } else if (isa<ComplexType>(Ty)) {
+  } else if (Ty->isAnyComplexType()) {
     ComplexPairTy CV = RV.getComplexVal();
     Args.push_back(CV.first);
     Args.push_back(CV.second);

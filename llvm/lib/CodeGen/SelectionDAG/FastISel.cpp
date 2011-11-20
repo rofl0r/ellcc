@@ -39,6 +39,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "isel"
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/Instructions.h"
@@ -58,7 +59,11 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/Statistic.h"
 using namespace llvm;
+
+STATISTIC(NumFastIselSuccessIndependent, "Number of insts selected by target-independent selector");
+STATISTIC(NumFastIselSuccessTarget, "Number of insts selected by target-specific selector");
 
 /// startNewBlock - Set the current block to which generated machine
 /// instructions will be appended, and clear the local CSE map.
@@ -94,6 +99,11 @@ bool FastISel::hasTrivialKill(const Value *V) const {
   if (const CastInst *Cast = dyn_cast<CastInst>(I))
     if (Cast->isNoopCast(TD.getIntPtrType(Cast->getContext())) &&
         !hasTrivialKill(Cast->getOperand(0)))
+      return false;
+
+  // GEPs with all zero indices are trivially coalesced by fast-isel.
+  if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I))
+    if (GEP->hasAllZeroIndices() && !hasTrivialKill(GEP->getOperand(0)))
       return false;
 
   // Only instructions with a single use in the same basic block are considered
@@ -427,6 +437,11 @@ bool FastISel::SelectGetElementPtr(const User *I) {
 
   bool NIsKill = hasTrivialKill(I->getOperand(0));
 
+  // Keep a running tab of the total offset to coalesce multiple N = N + Offset
+  // into a single N = N + TotalOffset.
+  uint64_t TotalOffs = 0;
+  // FIXME: What's a good SWAG number for MaxOffs?
+  uint64_t MaxOffs = 2048;
   Type *Ty = I->getOperand(0)->getType();
   MVT VT = TLI.getPointerTy();
   for (GetElementPtrInst::const_op_iterator OI = I->op_begin()+1,
@@ -436,14 +451,15 @@ bool FastISel::SelectGetElementPtr(const User *I) {
       unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
       if (Field) {
         // N = N + Offset
-        uint64_t Offs = TD.getStructLayout(StTy)->getElementOffset(Field);
-        // FIXME: This can be optimized by combining the add with a
-        // subsequent one.
-        N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, Offs, VT);
-        if (N == 0)
-          // Unhandled operand. Halt "fast" selection and bail.
-          return false;
-        NIsKill = true;
+        TotalOffs += TD.getStructLayout(StTy)->getElementOffset(Field);
+        if (TotalOffs >= MaxOffs) {
+          N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, TotalOffs, VT);
+          if (N == 0)
+            // Unhandled operand. Halt "fast" selection and bail.
+            return false;
+          NIsKill = true;
+          TotalOffs = 0;
+        }
       }
       Ty = StTy->getElementType(Field);
     } else {
@@ -452,14 +468,26 @@ bool FastISel::SelectGetElementPtr(const User *I) {
       // If this is a constant subscript, handle it quickly.
       if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
         if (CI->isZero()) continue;
-        uint64_t Offs =
+        // N = N + Offset
+        TotalOffs += 
           TD.getTypeAllocSize(Ty)*cast<ConstantInt>(CI)->getSExtValue();
-        N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, Offs, VT);
+        if (TotalOffs >= MaxOffs) {
+          N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, TotalOffs, VT);
+          if (N == 0)
+            // Unhandled operand. Halt "fast" selection and bail.
+            return false;
+          NIsKill = true;
+          TotalOffs = 0;
+        }
+        continue;
+      }
+      if (TotalOffs) {
+        N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, TotalOffs, VT);
         if (N == 0)
           // Unhandled operand. Halt "fast" selection and bail.
           return false;
         NIsKill = true;
-        continue;
+        TotalOffs = 0;
       }
 
       // N = N + Idx * ElementSize;
@@ -483,6 +511,12 @@ bool FastISel::SelectGetElementPtr(const User *I) {
         // Unhandled operand. Halt "fast" selection and bail.
         return false;
     }
+  }
+  if (TotalOffs) {
+    N = FastEmit_ri_(VT, ISD::ADD, N, NIsKill, TotalOffs, VT);
+    if (N == 0)
+      // Unhandled operand. Halt "fast" selection and bail.
+      return false;
   }
 
   // We successfully emitted code for the given LLVM Instruction.
@@ -760,12 +794,14 @@ FastISel::SelectInstruction(const Instruction *I) {
 
   // First, try doing target-independent selection.
   if (SelectOperator(I, I->getOpcode())) {
+    ++NumFastIselSuccessIndependent;
     DL = DebugLoc();
     return true;
   }
 
   // Next, try calling the target to attempt to handle the instruction.
   if (TargetSelectInstruction(I)) {
+    ++NumFastIselSuccessTarget;
     DL = DebugLoc();
     return true;
   }

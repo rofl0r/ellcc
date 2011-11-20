@@ -94,7 +94,7 @@ public:
     Custom      // Use the LowerOperation hook to implement custom lowering.
   };
 
-  /// LegalizeAction - This enum indicates whether a types are legal for a
+  /// LegalizeTypeAction - This enum indicates whether a types are legal for a
   /// target, and if not, what action should be used to make them valid.
   enum LegalizeTypeAction {
     TypeLegal,           // The target natively supports this type.
@@ -1595,9 +1595,9 @@ public:
   //
   SDValue BuildExactSDIV(SDValue Op1, SDValue Op2, DebugLoc dl,
                          SelectionDAG &DAG) const;
-  SDValue BuildSDIV(SDNode *N, SelectionDAG &DAG,
+  SDValue BuildSDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
                       std::vector<SDNode*>* Created) const;
-  SDValue BuildUDIV(SDNode *N, SelectionDAG &DAG,
+  SDValue BuildUDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
                       std::vector<SDNode*>* Created) const;
 
 

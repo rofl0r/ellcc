@@ -823,14 +823,21 @@ static QualType handleComplexIntConversion(Sema &S, ExprResult &LHS,
 
   if (LHSComplexInt) {
     // int -> _Complex int
+    // FIXME: This needs to take integer ranks into account
+    RHS = S.ImpCastExprToType(RHS.take(), LHSComplexInt->getElementType(),
+                              CK_IntegralCast);
     RHS = S.ImpCastExprToType(RHS.take(), LHSType, CK_IntegralRealToComplex);
     return LHSType;
   }
 
   assert(RHSComplexInt);
   // int -> _Complex int
-  if (!IsCompAssign)
+  // FIXME: This needs to take integer ranks into account
+  if (!IsCompAssign) {
+    LHS = S.ImpCastExprToType(LHS.take(), RHSComplexInt->getElementType(),
+                              CK_IntegralCast);
     LHS = S.ImpCastExprToType(LHS.take(), RHSType, CK_IntegralRealToComplex);
+  }
   return RHSType;
 }
 
@@ -1141,7 +1148,7 @@ Sema::ActOnStringLiteral(const Token *StringToks, unsigned NumStringToks) {
     StrTy = Context.Char16Ty;
   else if (Literal.isUTF32())
     StrTy = Context.Char32Ty;
-  else if (Literal.Pascal)
+  else if (Literal.isPascal())
     StrTy = Context.UnsignedCharTy;
 
   StringLiteral::StringKind Kind = StringLiteral::Ascii;
@@ -1304,7 +1311,7 @@ static CaptureResult shouldCaptureValueReference(Sema &S, SourceLocation loc,
   // Okay, we descended all the way to the block that defines the variable.
   // Actually try to capture it.
   QualType type = var->getType();
-
+  
   // Prohibit variably-modified types.
   if (type->isVariablyModifiedType()) {
     S.Diag(loc, diag::err_ref_vm_type);
@@ -1513,10 +1520,17 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
         // Don't give errors about ambiguities in this lookup.
         R.suppressDiagnostics();
 
+        // During a default argument instantiation the CurContext points
+        // to a CXXMethodDecl; but we can't apply a this-> fixit inside a
+        // function parameter list, hence add an explicit check.
+        bool isDefaultArgument = !ActiveTemplateInstantiations.empty() &&
+                              ActiveTemplateInstantiations.back().Kind ==
+            ActiveTemplateInstantiation::DefaultFunctionArgumentInstantiation;
         CXXMethodDecl *CurMethod = dyn_cast<CXXMethodDecl>(CurContext);
         bool isInstance = CurMethod &&
                           CurMethod->isInstance() &&
-                          DC == CurMethod->getParent();
+                          DC == CurMethod->getParent() && !isDefaultArgument;
+                          
 
         // Give a code modification hint to insert 'this->'.
         // TODO: fixit for inserting 'Base<T>::' in the other cases.
@@ -1527,7 +1541,7 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
           CXXMethodDecl *DepMethod = cast_or_null<CXXMethodDecl>(
               CurMethod->getInstantiatedFromMemberFunction());
           if (DepMethod) {
-            if (getLangOptions().MicrosoftExt)
+            if (getLangOptions().MicrosoftMode)
               diagnostic = diag::warn_found_via_dependent_bases_lookup;
             Diag(R.getNameLoc(), diagnostic) << Name
               << FixItHint::CreateInsertion(R.getNameLoc(), "this->");
@@ -1553,12 +1567,23 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
             Diag(R.getNameLoc(), diagnostic) << Name;
           }
         } else {
+          if (getLangOptions().MicrosoftMode)
+            diagnostic = diag::warn_found_via_dependent_bases_lookup;
           Diag(R.getNameLoc(), diagnostic) << Name;
         }
 
         // Do we really want to note all of these?
         for (LookupResult::iterator I = R.begin(), E = R.end(); I != E; ++I)
           Diag((*I)->getLocation(), diag::note_dependent_var_use);
+
+        // Return true if we are inside a default argument instantiation
+        // and the found name refers to an instance member function, otherwise
+        // the function calling DiagnoseEmptyLookup will try to create an
+        // implicit member call and this is wrong for default argument.
+        if (isDefaultArgument && ((*R.begin())->isCXXInstanceMember())) {
+          Diag(R.getNameLoc(), diag::err_member_call_without_object);
+          return true;
+        }
 
         // Tell the callee to try to recover.
         return false;
@@ -1968,12 +1993,13 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
     }
   } else if (CurMethod->isInstanceMethod()) {
     // We should warn if a local variable hides an ivar.
-    ObjCInterfaceDecl *IFace = CurMethod->getClassInterface();
-    ObjCInterfaceDecl *ClassDeclared;
-    if (ObjCIvarDecl *IV = IFace->lookupInstanceVariable(II, ClassDeclared)) {
-      if (IV->getAccessControl() != ObjCIvarDecl::Private ||
-          IFace == ClassDeclared)
-        Diag(Loc, diag::warn_ivar_use_hidden) << IV->getDeclName();
+    if (ObjCInterfaceDecl *IFace = CurMethod->getClassInterface()) {
+      ObjCInterfaceDecl *ClassDeclared;
+      if (ObjCIvarDecl *IV = IFace->lookupInstanceVariable(II, ClassDeclared)) {
+        if (IV->getAccessControl() != ObjCIvarDecl::Private ||
+            IFace == ClassDeclared)
+          Diag(Loc, diag::warn_ivar_use_hidden) << IV->getDeclName();
+      }
     }
   }
 
@@ -3290,12 +3316,18 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
   // be properly destroyed.
   // FIXME: We should really be rebuilding the default argument with new
   // bound temporaries; see the comment in PR5810.
-  for (unsigned i = 0, e = Param->getNumDefaultArgTemporaries(); i != e; ++i) {
-    CXXTemporary *Temporary = Param->getDefaultArgTemporary(i);
-    MarkDeclarationReferenced(Param->getDefaultArg()->getLocStart(), 
-                    const_cast<CXXDestructorDecl*>(Temporary->getDestructor()));
-    ExprTemporaries.push_back(Temporary);
+  // We don't need to do that with block decls, though, because
+  // blocks in default argument expression can never capture anything.
+  if (isa<ExprWithCleanups>(Param->getInit())) {
+    // Set the "needs cleanups" bit regardless of whether there are
+    // any explicit objects.
     ExprNeedsCleanups = true;
+
+    // Append all the objects to the cleanup list.  Right now, this
+    // should always be a no-op, because blocks in default argument
+    // expressions should never be able to capture anything.
+    assert(!cast<ExprWithCleanups>(Param->getInit())->getNumObjects() &&
+           "default argument expression has capturing blocks?");
   }
 
   // We already type-checked the argument, so we know it works. 
@@ -3962,10 +3994,7 @@ Sema::ActOnInitList(SourceLocation LBraceLoc, MultiExprArg InitArgList,
   // Immediately handle non-overload placeholders.  Overloads can be
   // resolved contextually, but everything else here can't.
   for (unsigned I = 0; I != NumInit; ++I) {
-    if (const BuiltinType *pty
-          = InitList[I]->getType()->getAsPlaceholderType()) {
-      if (pty->getKind() == BuiltinType::Overload) continue;
-
+    if (InitList[I]->getType()->isNonOverloadPlaceholderType()) {
       ExprResult result = CheckPlaceholderExpr(InitList[I]);
 
       // Ignore failures; dropping the entire initializer list because
@@ -7049,7 +7078,9 @@ static bool CheckForModifiableLvalue(Expr *E, SourceLocation Loc, Sema &S) {
           //  - self
           ObjCMethodDecl *method = S.getCurMethodDecl();
           if (method && var == method->getSelfDecl())
-            Diag = diag::err_typecheck_arr_assign_self;
+            Diag = method->isClassMethod()
+              ? diag::err_typecheck_arc_assign_self_class_method
+              : diag::err_typecheck_arc_assign_self;
 
           //  - fast enumeration variables
           else
@@ -7468,7 +7499,7 @@ static QualType CheckAddressOfOperand(Sema &S, ExprResult &OrigOp,
     // The operand must be either an l-value or a function designator
     if (!op->getType()->isFunctionType()) {
       // Use a special diagnostic for loads from property references.
-      if (isa<ObjCPropertyRefExpr>(op->IgnoreImplicit()->IgnoreParens())) {
+      if (isa<PseudoObjectExpr>(op)) {
         AddressOfError = AO_Property_Expansion;
       } else {
         // FIXME: emit more specific diag...
@@ -7483,9 +7514,6 @@ static QualType CheckAddressOfOperand(Sema &S, ExprResult &OrigOp,
   } else if (op->getObjectKind() == OK_VectorComponent) {
     // The operand cannot be an element of a vector
     AddressOfError = AO_Vector_Element;
-  } else if (op->getObjectKind() == OK_ObjCProperty) {
-    // cannot take address of a property expression.
-    AddressOfError = AO_Property_Expansion;
   } else if (dcl) { // C99 6.5.3.2p1
     // We have an lvalue with a decl. Make sure the decl is not declared
     // with the register storage-class specifier.
@@ -8611,6 +8639,10 @@ void Sema::ActOnBlockStart(SourceLocation CaretLoc, Scope *CurScope) {
     PushDeclContext(CurScope, Block);
   else
     CurContext = Block;
+
+  // Enter a new evaluation context to insulate the block from any
+  // cleanups from the enclosing full-expression.
+  PushExpressionEvaluationContext(PotentiallyEvaluated);  
 }
 
 void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
@@ -8738,6 +8770,10 @@ void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
 /// ActOnBlockError - If there is an error parsing a block, this callback
 /// is invoked to pop the information about the block from the action impl.
 void Sema::ActOnBlockError(SourceLocation CaretLoc, Scope *CurScope) {
+  // Leave the expression-evaluation context.
+  DiscardCleanupsInEvaluationContext();
+  PopExpressionEvaluationContext();
+
   // Pop off CurBlock, handle nested blocks.
   PopDeclContext();
   PopFunctionOrBlockScope();
@@ -8750,6 +8786,10 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
   // If blocks are disabled, emit an error.
   if (!LangOpts.Blocks)
     Diag(CaretLoc, diag::err_blocks_disable);
+
+  // Leave the expression-evaluation context.
+  assert(!ExprNeedsCleanups && "cleanups within block not correctly bound!");
+  PopExpressionEvaluationContext();
 
   BlockScopeInfo *BSI = cast<BlockScopeInfo>(FunctionScopes.back());
   
@@ -8829,6 +8869,13 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
   BlockExpr *Result = new (Context) BlockExpr(BSI->TheDecl, BlockTy);
   const AnalysisBasedWarnings::Policy &WP = AnalysisWarnings.getDefaultPolicy();
   PopFunctionOrBlockScope(&WP, Result->getBlockDecl(), Result);
+
+  // If the block isn't obviously global, i.e. it captures anything at
+  // all, mark this full-expression as needing a cleanup.
+  if (Result->getBlockDecl()->hasCaptures()) {
+    ExprCleanupObjects.push_back(Result->getBlockDecl());
+    ExprNeedsCleanups = true;
+  }
 
   return Owned(Result);
 }
@@ -8951,8 +8998,15 @@ static void MakeObjCStringLiteralFixItHint(Sema& SemaRef, QualType DstType,
       return;
   }
 
-  // Strip off any parens and casts.
-  StringLiteral *SL = dyn_cast<StringLiteral>(SrcExpr->IgnoreParenCasts());
+  // Ignore any parens, implicit casts (should only be
+  // array-to-pointer decays), and not-so-opaque values.  The last is
+  // important for making this trigger for property assignments.
+  SrcExpr = SrcExpr->IgnoreParenImpCasts();
+  if (OpaqueValueExpr *OV = dyn_cast<OpaqueValueExpr>(SrcExpr))
+    if (OV->getSourceExpr())
+      SrcExpr = OV->getSourceExpr()->IgnoreParenImpCasts();
+
+  StringLiteral *SL = dyn_cast<StringLiteral>(SrcExpr);
   if (!SL || !SL->isAscii())
     return;
 
@@ -9153,7 +9207,7 @@ void
 Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext) {
   ExprEvalContexts.push_back(
              ExpressionEvaluationContextRecord(NewContext,
-                                               ExprTemporaries.size(),
+                                               ExprCleanupObjects.size(),
                                                ExprNeedsCleanups));
   ExprNeedsCleanups = false;
 }
@@ -9190,8 +9244,8 @@ void Sema::PopExpressionEvaluationContext() {
   // the expression in that context: they aren't relevant because they
   // will never be constructed.
   if (Rec.Context == Unevaluated) {
-    ExprTemporaries.erase(ExprTemporaries.begin() + Rec.NumTemporaries,
-                          ExprTemporaries.end());
+    ExprCleanupObjects.erase(ExprCleanupObjects.begin() + Rec.NumCleanupObjects,
+                             ExprCleanupObjects.end());
     ExprNeedsCleanups = Rec.ParentNeedsCleanups;
 
   // Otherwise, merge the contexts together.
@@ -9204,9 +9258,9 @@ void Sema::PopExpressionEvaluationContext() {
 }
 
 void Sema::DiscardCleanupsInEvaluationContext() {
-  ExprTemporaries.erase(
-              ExprTemporaries.begin() + ExprEvalContexts.back().NumTemporaries,
-              ExprTemporaries.end());
+  ExprCleanupObjects.erase(
+         ExprCleanupObjects.begin() + ExprEvalContexts.back().NumCleanupObjects,
+         ExprCleanupObjects.end());
   ExprNeedsCleanups = false;
 }
 
@@ -9447,6 +9501,12 @@ namespace {
     void VisitMemberExpr(MemberExpr *E) {
       S.MarkDeclarationReferenced(E->getMemberLoc(), E->getMemberDecl());
       Inherited::VisitMemberExpr(E);
+    }
+    
+    void VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E) {
+      S.MarkDeclarationReferenced(E->getLocStart(),
+            const_cast<CXXDestructorDecl*>(E->getTemporary()->getDestructor()));
+      Visit(E->getSubExpr());
     }
     
     void VisitCXXNewExpr(CXXNewExpr *E) {

@@ -305,7 +305,10 @@ void UserDefinedConversionSequence::DebugPrint() const {
     Before.DebugPrint();
     OS << " -> ";
   }
-  OS << '\'' << *ConversionFunction << '\'';
+  if (ConversionFunction)
+    OS << '\'' << *ConversionFunction << '\'';
+  else
+    OS << "aggregate initialization";
   if (After.First || After.Second || After.Third) {
     OS << " -> ";
     After.DebugPrint();
@@ -2701,11 +2704,15 @@ CompareImplicitConversionSequences(Sema &S,
   if (ICS1.getKind() != ICS2.getKind())
     return ImplicitConversionSequence::Indistinguishable;
 
+  ImplicitConversionSequence::CompareKind Result =
+      ImplicitConversionSequence::Indistinguishable;
+
   // Two implicit conversion sequences of the same form are
   // indistinguishable conversion sequences unless one of the
   // following rules apply: (C++ 13.3.3.2p3):
   if (ICS1.isStandard())
-    return CompareStandardConversionSequences(S, ICS1.Standard, ICS2.Standard);
+    Result = CompareStandardConversionSequences(S,
+                                                ICS1.Standard, ICS2.Standard);
   else if (ICS1.isUserDefined()) {
     // User-defined conversion sequence U1 is a better conversion
     // sequence than another user-defined conversion sequence U2 if
@@ -2715,12 +2722,21 @@ CompareImplicitConversionSequences(Sema &S,
     // U2 (C++ 13.3.3.2p3).
     if (ICS1.UserDefined.ConversionFunction ==
           ICS2.UserDefined.ConversionFunction)
-      return CompareStandardConversionSequences(S,
-                                                ICS1.UserDefined.After,
-                                                ICS2.UserDefined.After);
+      Result = CompareStandardConversionSequences(S,
+                                                  ICS1.UserDefined.After,
+                                                  ICS2.UserDefined.After);
   }
 
-  return ImplicitConversionSequence::Indistinguishable;
+  // List-initialization sequence L1 is a better conversion sequence than
+  // list-initialization sequence L2 if L1 converts to std::initializer_list<X>
+  // for some X and L2 does not.
+  if (Result == ImplicitConversionSequence::Indistinguishable &&
+      ICS1.isListInitializationSequence() &&
+      ICS2.isListInitializationSequence()) {
+    // FIXME: Find out if ICS1 converts to initializer_list and ICS2 doesn't.
+  }
+
+  return Result;
 }
 
 static bool hasSimilarType(ASTContext &Context, QualType T1, QualType T2) {
@@ -3780,6 +3796,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
 
   ImplicitConversionSequence Result;
   Result.setBad(BadConversionSequence::no_conversion, From, ToType);
+  Result.setListInitializationSequence();
 
   // C++11 [over.ics.list]p2:
   //   If the parameter type is std::initializer_list<X> or "array of X" and
@@ -3805,8 +3822,24 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
   //   Otherwise, if the parameter has an aggregate type which can be
   //   initialized from the initializer list [...] the implicit conversion
   //   sequence is a user-defined conversion sequence.
-  // FIXME: Implement this.
   if (ToType->isAggregateType()) {
+    // Type is an aggregate, argument is an init list. At this point it comes
+    // down to checking whether the initialization works.
+    // FIXME: Find out whether this parameter is consumed or not.
+    InitializedEntity Entity =
+        InitializedEntity::InitializeParameter(S.Context, ToType,
+                                               /*Consumed=*/false);
+    if (S.CanPerformCopyInitialization(Entity, S.Owned(From))) {
+      Result.setUserDefined();
+      Result.UserDefined.Before.setAsIdentityConversion();
+      // Initializer lists don't have a type.
+      Result.UserDefined.Before.setFromType(QualType());
+      Result.UserDefined.Before.setAllToTypes(QualType());
+
+      Result.UserDefined.After.setAsIdentityConversion();
+      Result.UserDefined.After.setFromType(ToType);
+      Result.UserDefined.After.setAllToTypes(ToType);
+    }
     return Result;
   }
 
@@ -4057,7 +4090,7 @@ Sema::PerformObjectArgumentInitialization(Expr *From,
 
   if (!Context.hasSameType(From->getType(), DestType))
     From = ImpCastExprToType(From, DestType, CK_NoOp,
-                      From->getType()->isPointerType() ? VK_RValue : VK_LValue).take();
+                             From->getValueKind()).take();
   return Owned(From);
 }
 
@@ -4276,8 +4309,11 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
                                                  HadMultipleCandidates);
       if (Result.isInvalid())
         return ExprError();
-
-      From = Result.get();
+      // Record usage of conversion in an implicit cast.
+      From = ImplicitCastExpr::Create(Context, Result.get()->getType(),
+                                      CK_UserDefinedConversion,
+                                      Result.get(), 0,
+                                      Result.get()->getValueKind());
     }
 
     // We'll complain below about a non-integral condition type.
@@ -4304,8 +4340,11 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
                                                HadMultipleCandidates);
     if (Result.isInvalid())
       return ExprError();
-
-    From = Result.get();
+    // Record usage of conversion in an implicit cast.
+    From = ImplicitCastExpr::Create(Context, Result.get()->getType(),
+                                    CK_UserDefinedConversion,
+                                    Result.get(), 0,
+                                    Result.get()->getValueKind());
     break;
   }
 
@@ -8150,7 +8189,9 @@ public:
       << OvlExpr->getSourceRange();
     S.NoteAllOverloadCandidates(OvlExpr);
   }
-  
+
+  bool hadMultipleCandidates() const { return (OvlExpr->getNumDecls() > 1); }
+
   int getNumMatches() const { return Matches.size(); }
   
   FunctionDecl* getMatchingFunctionDecl() const {
@@ -8180,16 +8221,18 @@ public:
 /// resolved, and NULL otherwise. When @p Complain is true, this
 /// routine will emit diagnostics if there is an error.
 FunctionDecl *
-Sema::ResolveAddressOfOverloadedFunction(Expr *AddressOfExpr, QualType TargetType,
-                                    bool Complain,
-                                    DeclAccessPair &FoundResult) {
-
+Sema::ResolveAddressOfOverloadedFunction(Expr *AddressOfExpr,
+                                         QualType TargetType,
+                                         bool Complain,
+                                         DeclAccessPair &FoundResult,
+                                         bool *pHadMultipleCandidates) {
   assert(AddressOfExpr->getType() == Context.OverloadTy);
-  
-  AddressOfFunctionResolver Resolver(*this, AddressOfExpr, TargetType, Complain);
+
+  AddressOfFunctionResolver Resolver(*this, AddressOfExpr, TargetType,
+                                     Complain);
   int NumMatches = Resolver.getNumMatches();
   FunctionDecl* Fn = 0;
-  if ( NumMatches == 0 && Complain) {
+  if (NumMatches == 0 && Complain) {
     if (Resolver.IsInvalidFormOfPointerToMemberFunction())
       Resolver.ComplainIsInvalidFormOfPointerToMemberFunction();
     else
@@ -8205,7 +8248,9 @@ Sema::ResolveAddressOfOverloadedFunction(Expr *AddressOfExpr, QualType TargetTyp
     if (Complain)
       CheckAddressOfMemberAccess(AddressOfExpr, FoundResult);
   }
-  
+
+  if (pHadMultipleCandidates)
+    *pHadMultipleCandidates = Resolver.hadMultipleCandidates();
   return Fn;
 }
 
@@ -8672,8 +8717,8 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
     // create a type dependent CallExpr. The goal is to postpone name lookup
     // to instantiation time to be able to search into type dependent base
     // classes.
-    if (getLangOptions().MicrosoftExt && CurContext->isDependentContext() && 
-        isa<CXXMethodDecl>(CurContext)) {
+    if (getLangOptions().MicrosoftMode && CurContext->isDependentContext() && 
+        (isa<CXXMethodDecl>(CurContext) || isa<CXXRecordDecl>(CurContext))) {
       CallExpr *CE = new (Context) CallExpr(Context, Fn, Args, NumArgs,
                                           Context.DependentTy, VK_RValue,
                                           RParenLoc);
@@ -8728,6 +8773,13 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
         << getDeletedOrUnavailableSuffix(Best->Function)
         << Fn->getSourceRange();
       CandidateSet.NoteCandidates(*this, OCD_AllCandidates, Args, NumArgs);
+
+      // We emitted an error for the unvailable/deleted function call but keep
+      // the call in the AST.
+      FunctionDecl *FDecl = Best->Function;
+      Fn = FixOverloadedFunctionReference(Fn, Best->FoundDecl, FDecl);
+      return BuildResolvedCallExpr(Fn, FDecl, LParenLoc, Args, NumArgs,
+                                   RParenLoc, ExecConfig);
     }
     break;
   }
@@ -9770,6 +9822,10 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
                                              Conv, HadMultipleCandidates);
     if (Call.isInvalid())
       return ExprError();
+    // Record usage of conversion in an implicit cast.
+    Call = Owned(ImplicitCastExpr::Create(Context, Call.get()->getType(),
+                                          CK_UserDefinedConversion,
+                                          Call.get(), 0, VK_RValue));
 
     return ActOnCallExpr(S, Call.get(), LParenLoc, MultiExprArg(Args, NumArgs),
                          RParenLoc);

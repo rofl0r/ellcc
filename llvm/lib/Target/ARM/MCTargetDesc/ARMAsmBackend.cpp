@@ -60,15 +60,15 @@ public:
 // ARMFixupKinds.h.
 //
 // Name                      Offset (bits) Size (bits)     Flags
-{ "fixup_arm_ldst_pcrel_12", 1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_ldst_pcrel_12", 0,            32,  MCFixupKindInfo::FKF_IsPCRel },
 { "fixup_t2_ldst_pcrel_12",  0,            32,  MCFixupKindInfo::FKF_IsPCRel |
                                    MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
-{ "fixup_arm_pcrel_10",      1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_pcrel_10",      0,            32,  MCFixupKindInfo::FKF_IsPCRel },
 { "fixup_t2_pcrel_10",       0,            32,  MCFixupKindInfo::FKF_IsPCRel |
                                    MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
 { "fixup_thumb_adr_pcrel_10",0,            8,   MCFixupKindInfo::FKF_IsPCRel |
                                    MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
-{ "fixup_arm_adr_pcrel_12",  1,            24,  MCFixupKindInfo::FKF_IsPCRel },
+{ "fixup_arm_adr_pcrel_12",  0,            32,  MCFixupKindInfo::FKF_IsPCRel },
 { "fixup_t2_adr_pcrel_12",   0,            32,  MCFixupKindInfo::FKF_IsPCRel |
                                    MCFixupKindInfo::FKF_IsAlignedDownTo32Bits},
 { "fixup_arm_condbranch",    0,            24,  MCFixupKindInfo::FKF_IsPCRel },
@@ -138,7 +138,7 @@ bool ARMAsmBackend::WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
   const uint16_t Thumb1_16bitNopEncoding = 0x46c0; // using MOV r8,r8
   const uint16_t Thumb2_16bitNopEncoding = 0xbf00; // NOP
   const uint32_t ARMv4_NopEncoding = 0xe1a0000; // using MOV r0,r0
-  const uint32_t ARMv6T2_NopEncoding = 0xe3207800; // NOP
+  const uint32_t ARMv6T2_NopEncoding = 0xe320f000; // NOP
   if (isThumb()) {
     const uint16_t nopEncoding = hasNOP() ? Thumb2_16bitNopEncoding
                                           : Thumb1_16bitNopEncoding;

@@ -18,6 +18,7 @@
 #include "clang/Sema/Lookup.h"
 #include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
@@ -198,7 +199,7 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
       Diag(Loc, diag::warn_unused_result) << R1 << R2;
       return;
     }
-  } else if (isa<ObjCPropertyRefExpr>(E)) {
+  } else if (isa<PseudoObjectExpr>(E)) {
     DiagID = diag::warn_unused_property_expr;
   } else if (const CXXFunctionalCastExpr *FC
                                        = dyn_cast<CXXFunctionalCastExpr>(E)) {
@@ -1059,13 +1060,13 @@ Sema::ActOnObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
   ObjCInterfaceDecl *iface = objectType->getInterface();
 
   // If we have a forward-declared type, we can't do this check.
-  if (iface && iface->isForwardDecl()) {
-    // This is ill-formed under ARC.
-    if (getLangOptions().ObjCAutoRefCount) {
-      Diag(forLoc, diag::err_arc_collection_forward)
-        << pointerType->getPointeeType() << collection->getSourceRange();
-    }
-
+  // Under ARC, it is an error not to have a forward-declared class.
+  if (iface && 
+      RequireCompleteType(forLoc, QualType(objectType, 0),
+                          getLangOptions().ObjCAutoRefCount
+                            ? PDiag(diag::err_arc_collection_forward)
+                                << collection->getSourceRange()
+                          : PDiag(0))) {
     // Otherwise, if we have any useful type information, check that
     // the type declares the appropriate method.
   } else if (iface || !objectType->qual_empty()) {
@@ -1650,14 +1651,29 @@ const VarDecl *Sema::getCopyElisionCandidate(QualType ReturnType,
   if (!VD)
     return 0;
 
-  if (VD->hasLocalStorage() && !VD->isExceptionVariable() &&
-      !VD->getType()->isReferenceType() && !VD->hasAttr<BlocksAttr>() &&
-      !VD->getType().isVolatileQualified() &&
-      ((VD->getKind() == Decl::Var) ||
-       (AllowFunctionParameter && VD->getKind() == Decl::ParmVar)))
-    return VD;
+  // ...object (other than a function or catch-clause parameter)...
+  if (VD->getKind() != Decl::Var &&
+      !(AllowFunctionParameter && VD->getKind() == Decl::ParmVar))
+    return 0;
+  if (VD->isExceptionVariable()) return 0;
 
-  return 0;
+  // ...automatic...
+  if (!VD->hasLocalStorage()) return 0;
+
+  // ...non-volatile...
+  if (VD->getType().isVolatileQualified()) return 0;
+  if (VD->getType()->isReferenceType()) return 0;
+
+  // __block variables can't be allocated in a way that permits NRVO.
+  if (VD->hasAttr<BlocksAttr>()) return 0;
+
+  // Variables with higher required alignment than their type's ABI
+  // alignment cannot use NRVO.
+  if (VD->hasAttr<AlignedAttr>() &&
+      Context.getDeclAlign(VD) > Context.getTypeAlignInChars(VD->getType()))
+    return 0;
+
+  return VD;
 }
 
 /// \brief Perform the initialization of a potentially-movable value, which

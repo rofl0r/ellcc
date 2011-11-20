@@ -227,8 +227,9 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     ObjCIdDecl(0), ObjCSelDecl(0), ObjCClassDecl(0),
     CFConstantStringTypeDecl(0), ObjCInstanceTypeDecl(0),
     FILEDecl(0), 
-    jmp_bufDecl(0), sigjmp_bufDecl(0), BlockDescriptorType(0), 
-    BlockDescriptorExtendedType(0), cudaConfigureCallDecl(0),
+    jmp_bufDecl(0), sigjmp_bufDecl(0), ucontext_tDecl(0),
+    BlockDescriptorType(0), BlockDescriptorExtendedType(0),
+    cudaConfigureCallDecl(0),
     NullTypeSourceInfo(QualType()),
     SourceMgr(SM), LangOpts(LOpts), 
     AddrSpaceMap(0), Target(t), PrintingPolicy(LOpts),
@@ -1259,6 +1260,17 @@ void ASTContext::setObjCImplementation(ObjCCategoryDecl *CatD,
                            ObjCCategoryImplDecl *ImplD) {
   assert(CatD && ImplD && "Passed null params");
   ObjCImpls[CatD] = ImplD;
+}
+
+ObjCInterfaceDecl *ASTContext::getObjContainingInterface(NamedDecl *ND) const {
+  if (ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(ND->getDeclContext()))
+    return ID;
+  if (ObjCCategoryDecl *CD = dyn_cast<ObjCCategoryDecl>(ND->getDeclContext()))
+    return CD->getClassInterface();
+  if (ObjCImplDecl *IMD = dyn_cast<ObjCImplDecl>(ND->getDeclContext()))
+    return IMD->getClassInterface();
+
+  return 0;
 }
 
 /// \brief Get the copy initialization expression of VarDecl,or NULL if 
@@ -2874,7 +2886,7 @@ static QualType getDecltypeForExpr(const Expr *e, const ASTContext &Context) {
 /// DecltypeType AST's. The only motivation to unique these nodes would be
 /// memory savings. Since decltype(t) is fairly uncommon, space shouldn't be
 /// an issue. This doesn't effect the type checker, since it operates
-/// on canonical type's (which are always unique).
+/// on canonical types (which are always unique).
 QualType ASTContext::getDecltypeType(Expr *e) const {
   DecltypeType *dt;
   
@@ -6322,6 +6334,15 @@ static QualType DecodeTypeFromStr(const char *&Str, const ASTContext &Context,
 
     if (Type.isNull()) {
       Error = ASTContext::GE_Missing_setjmp;
+      return QualType();
+    }
+    break;
+  case 'K':
+    assert(HowLong == 0 && !Signed && !Unsigned && "Bad modifiers for 'K'!");
+    Type = Context.getucontext_tType();
+
+    if (Type.isNull()) {
+      Error = ASTContext::GE_Missing_ucontext;
       return QualType();
     }
     break;

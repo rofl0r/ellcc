@@ -223,7 +223,6 @@ llvm::DIFile CGDebugInfo::getOrCreateFile(SourceLocation Loc) {
 
   DIFileCache[fname] = F;
   return F;
-
 }
 
 /// getOrCreateMainFile - Get the file info for main compile unit.
@@ -523,7 +522,6 @@ llvm::DIType CGDebugInfo::CreatePointerLikeType(unsigned Tag,
                                                 const Type *Ty, 
                                                 QualType PointeeTy,
                                                 llvm::DIFile Unit) {
-
   if (Tag == llvm::dwarf::DW_TAG_reference_type)
     return DBuilder.createReferenceType(CreatePointeeType(PointeeTy, Unit));
                                     
@@ -534,8 +532,8 @@ llvm::DIType CGDebugInfo::CreatePointerLikeType(unsigned Tag,
   uint64_t Size = CGM.getContext().getTargetInfo().getPointerWidth(AS);
   uint64_t Align = CGM.getContext().getTypeAlign(Ty);
 
-  return 
-    DBuilder.createPointerType(CreatePointeeType(PointeeTy, Unit), Size, Align);
+  return DBuilder.createPointerType(CreatePointeeType(PointeeTy, Unit),
+                                    Size, Align);
 }
 
 llvm::DIType CGDebugInfo::CreateType(const BlockPointerType *Ty,
@@ -601,8 +599,7 @@ llvm::DIType CGDebugInfo::CreateType(const BlockPointerType *Ty,
   return BlockLiteralGeneric;
 }
 
-llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty,
-                                     llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty, llvm::DIFile Unit) {
   // Typedefs are derived from some other type.  If we have a typedef of a
   // typedef, make sure to emit the whole chain.
   llvm::DIType Src = getOrCreateType(Ty->getDecl()->getUnderlyingType(), Unit);
@@ -612,11 +609,11 @@ llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty,
   // declared.
   unsigned Line = getLineNumber(Ty->getDecl()->getLocation());
   const TypedefNameDecl *TyDecl = Ty->getDecl();
-  llvm::DIDescriptor TydefContext =
+  llvm::DIDescriptor TypedefContext =
     getContextDescriptor(cast<Decl>(Ty->getDecl()->getDeclContext()));
 
   return  
-    DBuilder.createTypedef(Src, TyDecl->getName(), Unit, Line, TydefContext);
+    DBuilder.createTypedef(Src, TyDecl->getName(), Unit, Line, TypedefContext);
 }
 
 llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
@@ -754,7 +751,7 @@ CGDebugInfo::getOrCreateMethodType(const CXXMethodDecl *Method,
       unsigned AS = CGM.getContext().getTargetAddressSpace(PointeeTy);
       uint64_t Size = CGM.getContext().getTargetInfo().getPointerWidth(AS);
       uint64_t Align = CGM.getContext().getTypeAlign(ThisPtrTy);
-      llvm::DIType PointeeType =  getOrCreateType(PointeeTy, Unit);
+      llvm::DIType PointeeType = getOrCreateType(PointeeTy, Unit);
       llvm::DIType ThisPtrType =
         DBuilder.createArtificialType
         (DBuilder.createPointerType(PointeeType, Size, Align));
@@ -780,14 +777,13 @@ CGDebugInfo::getOrCreateMethodType(const CXXMethodDecl *Method,
 /// isFunctionLocalClass - Return true if CXXRecordDecl is defined 
 /// inside a function.
 static bool isFunctionLocalClass(const CXXRecordDecl *RD) {
-  if (const CXXRecordDecl *NRD = 
-      dyn_cast<CXXRecordDecl>(RD->getDeclContext()))
+  if (const CXXRecordDecl *NRD = dyn_cast<CXXRecordDecl>(RD->getDeclContext()))
     return isFunctionLocalClass(NRD);
-  else if (isa<FunctionDecl>(RD->getDeclContext()))
+  if (isa<FunctionDecl>(RD->getDeclContext()))
     return true;
   return false;
-  
 }
+
 /// CreateCXXMemberFunction - A helper function to create a DISubprogram for
 /// a single member function GlobalDecl.
 llvm::DISubprogram
@@ -855,7 +851,7 @@ CGDebugInfo::CreateCXXMemberFunction(const CXXMethodDecl *Method,
                           Virtuality, VIndex, ContainingType,
                           Flags, CGM.getLangOptions().Optimize);
   
-  SPCache[Method] = llvm::WeakVH(SP);
+  SPCache[Method->getCanonicalDecl()] = llvm::WeakVH(SP);
 
   return SP;
 }
@@ -1051,7 +1047,7 @@ CollectVTableInfo(const CXXRecordDecl *RD, llvm::DIFile Unit,
 /// getOrCreateRecordType - Emit record type's standalone debug info. 
 llvm::DIType CGDebugInfo::getOrCreateRecordType(QualType RTy, 
                                                 SourceLocation Loc) {
-  llvm::DIType T =  getOrCreateType(RTy, getOrCreateFile(Loc));
+  llvm::DIType T = getOrCreateType(RTy, getOrCreateFile(Loc));
   DBuilder.retainType(T);
   return T;
 }
@@ -1351,17 +1347,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   return RealDecl;
 }
 
-llvm::DIType CGDebugInfo::CreateType(const TagType *Ty) {
-  if (const RecordType *RT = dyn_cast<RecordType>(Ty))
-    return CreateType(RT);
-  else if (const EnumType *ET = dyn_cast<EnumType>(Ty))
-    return CreateEnumType(ET->getDecl());
-
-  return llvm::DIType();
-}
-
-llvm::DIType CGDebugInfo::CreateType(const VectorType *Ty,
-                                     llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::CreateType(const VectorType *Ty, llvm::DIFile Unit) {
   llvm::DIType ElementTy = getOrCreateType(Ty->getElementType(), Unit);
   int64_t NumElems = Ty->getNumElements();
   int64_t LowerBound = 0;
@@ -1575,8 +1561,7 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
 
 /// getOrCreateType - Get the type from the cache or create a new
 /// one if necessary.
-llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty,
-                                          llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
   if (Ty.isNull())
     return llvm::DIType();
 
@@ -1601,8 +1586,7 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty,
 }
 
 /// CreateTypeNode - Create a new debug type node.
-llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
-                                         llvm::DIFile Unit) {
+llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile Unit) {
   // Handle qualifiers, which recursively handles what they refer to.
   if (Ty.hasLocalQualifiers())
     return CreateQualifiedType(Ty, Unit);
@@ -1627,15 +1611,20 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty,
     return CreateType(cast<ObjCObjectType>(Ty), Unit);
   case Type::ObjCInterface:
     return CreateType(cast<ObjCInterfaceType>(Ty), Unit);
-  case Type::Builtin: return CreateType(cast<BuiltinType>(Ty));
-  case Type::Complex: return CreateType(cast<ComplexType>(Ty));
-  case Type::Pointer: return CreateType(cast<PointerType>(Ty), Unit);
+  case Type::Builtin:
+    return CreateType(cast<BuiltinType>(Ty));
+  case Type::Complex:
+    return CreateType(cast<ComplexType>(Ty));
+  case Type::Pointer:
+    return CreateType(cast<PointerType>(Ty), Unit);
   case Type::BlockPointer:
     return CreateType(cast<BlockPointerType>(Ty), Unit);
-  case Type::Typedef: return CreateType(cast<TypedefType>(Ty), Unit);
+  case Type::Typedef:
+    return CreateType(cast<TypedefType>(Ty), Unit);
   case Type::Record:
+    return CreateType(cast<RecordType>(Ty));
   case Type::Enum:
-    return CreateType(cast<TagType>(Ty));
+    return CreateEnumType(cast<EnumType>(Ty)->getDecl());
   case Type::FunctionProto:
   case Type::FunctionNoProto:
     return CreateType(cast<FunctionType>(Ty), Unit);
@@ -1701,7 +1690,7 @@ llvm::DISubprogram CGDebugInfo::getFunctionDeclaration(const Decl *D) {
   getContextDescriptor(cast<Decl>(D->getDeclContext()));
 
   llvm::DenseMap<const FunctionDecl *, llvm::WeakVH>::iterator
-    MI = SPCache.find(FD);
+    MI = SPCache.find(FD->getCanonicalDecl());
   if (MI != SPCache.end()) {
     llvm::DISubprogram SP(dyn_cast_or_null<llvm::MDNode>(&*MI->second));
     if (SP.isSubprogram() && !llvm::DISubprogram(SP).isDefinition())
@@ -1712,7 +1701,7 @@ llvm::DISubprogram CGDebugInfo::getFunctionDeclaration(const Decl *D) {
          E = FD->redecls_end(); I != E; ++I) {
     const FunctionDecl *NextFD = *I;
     llvm::DenseMap<const FunctionDecl *, llvm::WeakVH>::iterator
-      MI = SPCache.find(NextFD);
+      MI = SPCache.find(NextFD->getCanonicalDecl());
     if (MI != SPCache.end()) {
       llvm::DISubprogram SP(dyn_cast_or_null<llvm::MDNode>(&*MI->second));
       if (SP.isSubprogram() && !llvm::DISubprogram(SP).isDefinition())
@@ -1729,7 +1718,7 @@ llvm::DIType CGDebugInfo::getOrCreateFunctionType(const Decl * D,
                                                   llvm::DIFile F) {
   if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D))
     return getOrCreateMethodType(Method, F);
-  else if (const ObjCMethodDecl *OMethod = dyn_cast<ObjCMethodDecl>(D)) {
+  if (const ObjCMethodDecl *OMethod = dyn_cast<ObjCMethodDecl>(D)) {
     // Add "self" and "_cmd"
     SmallVector<llvm::Value *, 16> Elts;
 
@@ -1768,9 +1757,9 @@ void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, QualType FnType,
   llvm::DIDescriptor FDContext(Unit);
   llvm::DIArray TParamsArray;
   if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-    // If there is a DISubprogram for  this function available then use it.
+    // If there is a DISubprogram for this function available then use it.
     llvm::DenseMap<const FunctionDecl *, llvm::WeakVH>::iterator
-      FI = SPCache.find(FD);
+      FI = SPCache.find(FD->getCanonicalDecl());
     if (FI != SPCache.end()) {
       llvm::DIDescriptor SP(dyn_cast_or_null<llvm::MDNode>(&*FI->second));
       if (SP.isSubprogram() && llvm::DISubprogram(SP).isDefinition()) {
@@ -2321,7 +2310,6 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
 /// EmitGlobalVariable - Emit information about a global variable.
 void CGDebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
                                      const VarDecl *D) {
-  
   // Create global variable debug descriptor.
   llvm::DIFile Unit = getOrCreateFile(D->getLocation());
   unsigned LineNo = getLineNumber(D->getLocation());
@@ -2338,7 +2326,7 @@ void CGDebugInfo::EmitGlobalVariable(llvm::GlobalVariable *Var,
     QualType ET = CGM.getContext().getAsArrayType(T)->getElementType();
 
     T = CGM.getContext().getConstantArrayType(ET, ConstVal,
-                                           ArrayType::Normal, 0);
+                                              ArrayType::Normal, 0);
   }
   StringRef DeclName = D->getName();
   StringRef LinkageName;

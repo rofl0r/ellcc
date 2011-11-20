@@ -378,7 +378,7 @@ void test16(void) {
   [v test16_6: 0];
 }
 
-@class Test17;
+@class Test17; // expected-note 2{{forward declaration of class here}}
 @protocol Test17p
 - (void) test17;
 + (void) test17;
@@ -502,18 +502,18 @@ void test26(id y) {
   id myProp2;
 }
 @property id x;
-@property (readonly) id ro; // expected-note {{declared here}}
+@property (readonly) id ro;
 @property (readonly) id custom_ro;
 @property int y;
 
-@property (readonly) id myProp1;
+@property (readonly) __weak id myProp1;
 @property (readonly) id myProp2;
 @property (readonly) __strong id myProp3;
 @end
 
 @implementation Test27
 @synthesize x;
-@synthesize ro; // expected-error {{ARC forbids synthesizing a property of an Objective-C object with unspecified ownership or storage attribute}}
+@synthesize ro;
 @synthesize y;
 
 @synthesize myProp1 = _myProp1;
@@ -651,7 +651,7 @@ void test36(int first, ...) {
   __builtin_va_end(arglist);
 }
 
-@class Test37;
+@class Test37; // expected-note{{forward declaration of class here}}
 void test37(Test37 *c) {
   for (id y in c) { // expected-error {{collection expression type 'Test37' is a forward declaration}}
     (void) y;

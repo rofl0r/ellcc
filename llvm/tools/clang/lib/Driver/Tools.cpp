@@ -157,16 +157,8 @@ static void addProfileRT(const ToolChain &TC, const ArgList &Args,
   // the link line. We cannot do the same thing because unlike gcov there is a
   // libprofile_rt.so. We used to use the -l:libprofile_rt.a syntax, but that is
   // not supported by old linkers.
-  Twine ProfileRT =
-    Twine(TC.getDriver().Dir) + "/../lib/" + "libprofile_rt.a";
-
-  if (Triple.isOSDarwin()) {
-    // On Darwin, if the static library doesn't exist try the dylib.
-    bool Exists;
-    if (llvm::sys::fs::exists(ProfileRT.str(), Exists) || !Exists)
-      ProfileRT =
-        Twine(TC.getDriver().Dir) + "/../lib/" + "libprofile_rt.dylib";
-  }
+  std::string ProfileRT =
+    std::string(TC.getDriver().Dir) + "/../lib/libprofile_rt.a";
 
   CmdArgs.push_back(Args.MakeArgString(ProfileRT));
 }
@@ -203,7 +195,8 @@ static void AddIncludeDirectoryList(const ArgList &Args,
   }
 }
 
-void Clang::AddPreprocessingOptions(const Driver &D,
+void Clang::AddPreprocessingOptions(Compilation &C,
+                                    const Driver &D,
                                     const ArgList &Args,
                                     ArgStringList &CmdArgs,
                                     const InputInfo &Output,
@@ -364,16 +357,6 @@ void Clang::AddPreprocessingOptions(const Driver &D,
   Args.AddAllArgs(CmdArgs, options::OPT_I_Group, options::OPT_F,
                   options::OPT_index_header_map);
 
-  // Add C++ include arguments, if needed.
-  types::ID InputType = Inputs[0].getType();
-  if (types::isCXX(InputType)) {
-    bool ObjCXXAutoRefCount
-      = types::isObjC(InputType) && isObjCAutoRefCount(Args);
-    getToolChain().AddClangCXXStdlibIncludeArgs(Args, CmdArgs,
-                                                ObjCXXAutoRefCount);
-    Args.AddAllArgs(CmdArgs, options::OPT_stdlib_EQ);
-  }
-
   // Add -Wp, and -Xassembler if using the preprocessor.
 
   // FIXME: There is a very unfortunate problem here, some troubled
@@ -413,6 +396,8 @@ void Clang::AddPreprocessingOptions(const Driver &D,
   Args.AddAllArgs(CmdArgs, options::OPT_fauto_module_import);
 
   // Parse additional include paths from environment variables.
+  // FIXME: We should probably sink the logic for handling these from the
+  // frontend into the driver. It will allow deleting 4 otherwise unused flags.
   // CPATH - included following the user specified includes (but prior to
   // builtin and standard includes).
   AddIncludeDirectoryList(Args, CmdArgs, "-I", ::getenv("CPATH"));
@@ -428,6 +413,13 @@ void Clang::AddPreprocessingOptions(const Driver &D,
   // OBJCPLUS_INCLUDE_PATH - system includes enabled when compiling ObjC++.
   AddIncludeDirectoryList(Args, CmdArgs, "-objcxx-isystem",
                           ::getenv("OBJCPLUS_INCLUDE_PATH"));
+
+  // Add C++ include arguments, if needed.
+  if (types::isCXX(Inputs[0].getType()))
+    getToolChain().AddClangCXXStdlibIncludeArgs(Args, CmdArgs);
+
+  // Add system include arguments.
+  getToolChain().AddClangSystemIncludeArgs(Args, CmdArgs);
 }
 
 /// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
@@ -1132,17 +1124,9 @@ static bool ShouldDisableCFI(const ArgList &Args,
   if (TC.getTriple().isOSDarwin()) {
     // The native darwin assembler doesn't support cfi directives, so
     // we disable them if we think the .s file will be passed to it.
-
-    // FIXME: Duplicated code with ToolChains.cpp
-    // FIXME: This doesn't belong here, but ideally we will support static soon
-    // anyway.
-    bool HasStatic = (Args.hasArg(options::OPT_mkernel) ||
-                      Args.hasArg(options::OPT_static) ||
-                      Args.hasArg(options::OPT_fapple_kext));
-    bool IsIADefault = TC.IsIntegratedAssemblerDefault() && !HasStatic;
     bool UseIntegratedAs = Args.hasFlag(options::OPT_integrated_as,
                                         options::OPT_no_integrated_as,
-                                        IsIADefault);
+                                        TC.IsIntegratedAssemblerDefault());
     bool UseCFI = Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
                                options::OPT_fno_dwarf2_cfi_asm,
                                UseIntegratedAs);
@@ -1573,8 +1557,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // wrong.
   Args.ClaimAllArgs(options::OPT_g_Group);
   if (Arg *A = Args.getLastArg(options::OPT_g_Group))
-    if (!A->getOption().matches(options::OPT_g0))
+    if (!A->getOption().matches(options::OPT_g0)) {
       CmdArgs.push_back("-g");
+    }
 
   Args.AddAllArgs(CmdArgs, options::OPT_ffunction_sections);
   Args.AddAllArgs(CmdArgs, options::OPT_fdata_sections);
@@ -1643,7 +1628,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   //
   // FIXME: Support -fpreprocessed
   if (types::getPreprocessedType(InputType) != types::TY_INVALID)
-    AddPreprocessingOptions(D, Args, CmdArgs, Output, Inputs);
+    AddPreprocessingOptions(C, D, Args, CmdArgs, Output, Inputs);
 
   // Don't warn about "clang -c -DPIC -fPIC test.i" because libtool.m4 assumes
   // that "The compiler can only warn and ignore the option if not recognized".
@@ -1813,9 +1798,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_femit_all_decls);
   Args.AddLastArg(CmdArgs, options::OPT_fheinous_gnu_extensions);
   Args.AddLastArg(CmdArgs, options::OPT_flimit_debug_info);
+  Args.AddLastArg(CmdArgs, options::OPT_fno_limit_debug_info);
   Args.AddLastArg(CmdArgs, options::OPT_fno_operator_names);
   if (getToolChain().SupportsProfiling())
     Args.AddLastArg(CmdArgs, options::OPT_pg);
+
+  if (Args.hasFlag(options::OPT_faddress_sanitizer,
+                   options::OPT_fno_address_sanitizer, false))
+    CmdArgs.push_back("-faddress-sanitizer");
 
   // -flax-vector-conversions is default.
   if (!Args.hasFlag(options::OPT_flax_vector_conversions,
@@ -2097,6 +2087,16 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (ARC) {
     CmdArgs.push_back("-fobjc-arc");
 
+    // FIXME: It seems like this entire block, and several around it should be
+    // wrapped in isObjC, but for now we just use it here as this is where it
+    // was being used previously.
+    if (types::isCXX(InputType) && types::isObjC(InputType)) {
+      if (getToolChain().GetCXXStdlibType(Args) == ToolChain::CST_Libcxx)
+        CmdArgs.push_back("-fobjc-arc-cxxlib=libc++");
+      else
+        CmdArgs.push_back("-fobjc-arc-cxxlib=libstdc++");
+    }
+
     // Allow the user to enable full exceptions code emission.
     // We define off for Objective-CC, on for Objective-C++.
     if (Args.hasFlag(options::OPT_fobjc_arc_exceptions,
@@ -2288,6 +2288,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       D.Diag(diag::warn_drv_clang_unsupported) << A->getAsString(Args);
   }
 
+  if (Args.hasFlag(options::OPT_fapple_pragma_pack,
+                   options::OPT_fno_apple_pragma_pack, false))
+    CmdArgs.push_back("-fapple-pragma-pack");
+
   // Default to -fno-builtin-str{cat,cpy} on Darwin for ARM.
   //
   // FIXME: This is disabled until clang -cc1 supports -fno-builtin-foo. PR4941.
@@ -2313,6 +2317,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_dM);
   Args.AddLastArg(CmdArgs, options::OPT_dD);
+  
+  // Handle serialized diagnostics.
+  if (Arg *A = Args.getLastArg(options::OPT__serialize_diags)) {
+    CmdArgs.push_back("-serialize-diagnostic-file");
+    CmdArgs.push_back(Args.MakeArgString(A->getValue(Args)));
+  }
 
   // Forward -Xclang arguments to -cc1, and -mllvm arguments to the LLVM option
   // parser.
@@ -3243,7 +3253,7 @@ void darwin::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     if (Args.hasArg(options::OPT_gstabs))
       CmdArgs.push_back("--gstabs");
     else if (Args.hasArg(options::OPT_g_Group))
-      CmdArgs.push_back("--gdwarf2");
+      CmdArgs.push_back("-g");
   }
 
   // Derived from asm spec.
@@ -3680,8 +3690,6 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
       !Args.hasArg(options::OPT_nostartfiles)) {
     // endfile_spec is empty.
   }
-
-  addProfileRT(getToolChain(), Args, CmdArgs, getToolChain().getTriple());
 
   Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
   Args.AddAllArgs(CmdArgs, options::OPT_F);
@@ -4438,6 +4446,14 @@ void linuxtools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("elf32ppclinux");
   else if (ToolChain.getArch() == llvm::Triple::ppc64)
     CmdArgs.push_back("elf64ppc");
+  else if (ToolChain.getArch() == llvm::Triple::mips)
+    CmdArgs.push_back("elf32btsmip");
+  else if (ToolChain.getArch() == llvm::Triple::mipsel)
+    CmdArgs.push_back("elf32ltsmip");
+  else if (ToolChain.getArch() == llvm::Triple::mips64)
+    CmdArgs.push_back("elf64btsmip");
+  else if (ToolChain.getArch() == llvm::Triple::mips64el)
+    CmdArgs.push_back("elf64ltsmip");
   else
     CmdArgs.push_back("elf_x86_64");
 
@@ -4461,6 +4477,9 @@ void linuxtools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     else if (ToolChain.getArch() == llvm::Triple::arm ||
              ToolChain.getArch() == llvm::Triple::thumb)
       CmdArgs.push_back("/lib/ld-linux.so.3");
+    else if (ToolChain.getArch() == llvm::Triple::mips ||
+             ToolChain.getArch() == llvm::Triple::mipsel)
+      CmdArgs.push_back("/lib/ld.so.1");
     else if (ToolChain.getArch() == llvm::Triple::ppc)
       CmdArgs.push_back("/lib/ld.so.1");
     else if (ToolChain.getArch() == llvm::Triple::ppc64)
@@ -4549,7 +4568,7 @@ void linuxtools::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   addProfileRT(getToolChain(), Args, CmdArgs, getToolChain().getTriple());
 
-  if (Args.hasArg(options::OPT_use_gold_plugin)) {
+  if (D.IsUsingLTO(Args) || Args.hasArg(options::OPT_use_gold_plugin)) {
     CmdArgs.push_back("-plugin");
     std::string Plugin = ToolChain.getDriver().Dir + "/../lib/LLVMgold.so";
     CmdArgs.push_back(Args.MakeArgString(Plugin));

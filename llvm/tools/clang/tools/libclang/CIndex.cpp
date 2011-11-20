@@ -19,12 +19,11 @@
 #include "CXType.h"
 #include "CXSourceLocation.h"
 #include "CIndexDiagnostic.h"
+#include "CursorVisitor.h"
 
 #include "clang/Basic/Version.h"
 
-#include "clang/AST/DeclVisitor.h"
 #include "clang/AST/StmtVisitor.h"
-#include "clang/AST/TypeLocVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -59,6 +58,7 @@ CXTranslationUnit cxtu::MakeCXTranslationUnit(ASTUnit *TU) {
   CXTranslationUnit D = new CXTranslationUnitImpl();
   D->TUData = TU;
   D->StringPool = createCXStringPool();
+  D->Diagnostics = 0;
   return D;
 }
 
@@ -66,18 +66,6 @@ cxtu::CXTUOwner::~CXTUOwner() {
   if (TU)
     clang_disposeTranslationUnit(TU);
 }
-
-/// \brief The result of comparing two source ranges.
-enum RangeComparisonResult {
-  /// \brief Either the ranges overlap or one of the ranges is invalid.
-  RangeOverlap,
-
-  /// \brief The first range ends before the second range starts.
-  RangeBefore,
-
-  /// \brief The first range starts after the second range ends.
-  RangeAfter
-};
 
 /// \brief Compare two source ranges to determine their relative position in
 /// the translation unit.
@@ -139,225 +127,6 @@ CXSourceRange cxloc::translateSourceRange(const SourceManager &SM,
 // Cursor visitor.
 //===----------------------------------------------------------------------===//
 
-namespace {
-  
-class VisitorJob {
-public:
-  enum Kind { DeclVisitKind, StmtVisitKind, MemberExprPartsKind,
-              TypeLocVisitKind, OverloadExprPartsKind,
-              DeclRefExprPartsKind, LabelRefVisitKind,
-              ExplicitTemplateArgsVisitKind,
-              NestedNameSpecifierLocVisitKind,
-              DeclarationNameInfoVisitKind,
-              MemberRefVisitKind, SizeOfPackExprPartsKind };
-protected:
-  void *data[3];
-  CXCursor parent;
-  Kind K;
-  VisitorJob(CXCursor C, Kind k, void *d1, void *d2 = 0, void *d3 = 0)
-    : parent(C), K(k) {
-    data[0] = d1;
-    data[1] = d2;
-    data[2] = d3;
-  }
-public:
-  Kind getKind() const { return K; }
-  const CXCursor &getParent() const { return parent; }
-  static bool classof(VisitorJob *VJ) { return true; }
-};
-  
-typedef SmallVector<VisitorJob, 10> VisitorWorkList;
-
-// Cursor visitor.
-class CursorVisitor : public DeclVisitor<CursorVisitor, bool>,
-                      public TypeLocVisitor<CursorVisitor, bool>
-{
-  /// \brief The translation unit we are traversing.
-  CXTranslationUnit TU;
-  ASTUnit *AU;
-
-  /// \brief The parent cursor whose children we are traversing.
-  CXCursor Parent;
-
-  /// \brief The declaration that serves at the parent of any statement or
-  /// expression nodes.
-  Decl *StmtParent;
-
-  /// \brief The visitor function.
-  CXCursorVisitor Visitor;
-
-  /// \brief The opaque client data, to be passed along to the visitor.
-  CXClientData ClientData;
-
-  /// \brief Whether we should visit the preprocessing record entries last, 
-  /// after visiting other declarations.
-  bool VisitPreprocessorLast;
-
-  /// \brief Whether we should visit the preprocessing record entries that are
-  /// #included inside the \arg RegionOfInterest.
-  bool VisitIncludedPreprocessingEntries;
-  
-  /// \brief When valid, a source range to which the cursor should restrict
-  /// its search.
-  SourceRange RegionOfInterest;
-
-  // FIXME: Eventually remove.  This part of a hack to support proper
-  // iteration over all Decls contained lexically within an ObjC container.
-  DeclContext::decl_iterator *DI_current;
-  DeclContext::decl_iterator DE_current;
-
-  // Cache of pre-allocated worklists for data-recursion walk of Stmts.
-  SmallVector<VisitorWorkList*, 5> WorkListFreeList;
-  SmallVector<VisitorWorkList*, 5> WorkListCache;
-
-  using DeclVisitor<CursorVisitor, bool>::Visit;
-  using TypeLocVisitor<CursorVisitor, bool>::Visit;
-
-  /// \brief Determine whether this particular source range comes before, comes
-  /// after, or overlaps the region of interest.
-  ///
-  /// \param R a half-open source range retrieved from the abstract syntax tree.
-  RangeComparisonResult CompareRegionOfInterest(SourceRange R);
-
-  class SetParentRAII {
-    CXCursor &Parent;
-    Decl *&StmtParent;
-    CXCursor OldParent;
-
-  public:
-    SetParentRAII(CXCursor &Parent, Decl *&StmtParent, CXCursor NewParent)
-      : Parent(Parent), StmtParent(StmtParent), OldParent(Parent)
-    {
-      Parent = NewParent;
-      if (clang_isDeclaration(Parent.kind))
-        StmtParent = getCursorDecl(Parent);
-    }
-
-    ~SetParentRAII() {
-      Parent = OldParent;
-      if (clang_isDeclaration(Parent.kind))
-        StmtParent = getCursorDecl(Parent);
-    }
-  };
-
-public:
-  CursorVisitor(CXTranslationUnit TU, CXCursorVisitor Visitor,
-                CXClientData ClientData,
-                bool VisitPreprocessorLast,
-                bool VisitIncludedPreprocessingEntries = false,
-                SourceRange RegionOfInterest = SourceRange())
-    : TU(TU), AU(static_cast<ASTUnit*>(TU->TUData)),
-      Visitor(Visitor), ClientData(ClientData),
-      VisitPreprocessorLast(VisitPreprocessorLast),
-      VisitIncludedPreprocessingEntries(VisitIncludedPreprocessingEntries),
-      RegionOfInterest(RegionOfInterest), DI_current(0)
-  {
-    Parent.kind = CXCursor_NoDeclFound;
-    Parent.data[0] = 0;
-    Parent.data[1] = 0;
-    Parent.data[2] = 0;
-    StmtParent = 0;
-  }
-
-  ~CursorVisitor() {
-    // Free the pre-allocated worklists for data-recursion.
-    for (SmallVectorImpl<VisitorWorkList*>::iterator
-          I = WorkListCache.begin(), E = WorkListCache.end(); I != E; ++I) {
-      delete *I;
-    }
-  }
-
-  ASTUnit *getASTUnit() const { return static_cast<ASTUnit*>(TU->TUData); }
-  CXTranslationUnit getTU() const { return TU; }
-
-  bool Visit(CXCursor Cursor, bool CheckedRegionOfInterest = false);
-  
-  bool visitPreprocessedEntitiesInRegion();
-
-  bool shouldVisitIncludedPreprocessingEntries() const {
-    return VisitIncludedPreprocessingEntries;
-  }
-
-  template<typename InputIterator>
-  bool visitPreprocessedEntities(InputIterator First, InputIterator Last,
-                                 PreprocessingRecord &PPRec,
-                                 FileID FID = FileID());
-
-  bool VisitChildren(CXCursor Parent);
-
-  // Declaration visitors
-  bool VisitTypeAliasDecl(TypeAliasDecl *D);
-  bool VisitAttributes(Decl *D);
-  bool VisitBlockDecl(BlockDecl *B);
-  bool VisitCXXRecordDecl(CXXRecordDecl *D);
-  llvm::Optional<bool> shouldVisitCursor(CXCursor C);
-  bool VisitDeclContext(DeclContext *DC);
-  bool VisitTranslationUnitDecl(TranslationUnitDecl *D);
-  bool VisitTypedefDecl(TypedefDecl *D);
-  bool VisitTagDecl(TagDecl *D);
-  bool VisitClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *D);
-  bool VisitClassTemplatePartialSpecializationDecl(
-                                     ClassTemplatePartialSpecializationDecl *D);
-  bool VisitTemplateTypeParmDecl(TemplateTypeParmDecl *D);
-  bool VisitEnumConstantDecl(EnumConstantDecl *D);
-  bool VisitDeclaratorDecl(DeclaratorDecl *DD);
-  bool VisitFunctionDecl(FunctionDecl *ND);
-  bool VisitFieldDecl(FieldDecl *D);
-  bool VisitVarDecl(VarDecl *);
-  bool VisitNonTypeTemplateParmDecl(NonTypeTemplateParmDecl *D);
-  bool VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
-  bool VisitClassTemplateDecl(ClassTemplateDecl *D);
-  bool VisitTemplateTemplateParmDecl(TemplateTemplateParmDecl *D);
-  bool VisitObjCMethodDecl(ObjCMethodDecl *ND);
-  bool VisitObjCContainerDecl(ObjCContainerDecl *D);
-  bool VisitObjCCategoryDecl(ObjCCategoryDecl *ND);
-  bool VisitObjCProtocolDecl(ObjCProtocolDecl *PID);
-  bool VisitObjCPropertyDecl(ObjCPropertyDecl *PD);
-  bool VisitObjCInterfaceDecl(ObjCInterfaceDecl *D);
-  bool VisitObjCImplDecl(ObjCImplDecl *D);
-  bool VisitObjCCategoryImplDecl(ObjCCategoryImplDecl *D);
-  bool VisitObjCImplementationDecl(ObjCImplementationDecl *D);
-  // FIXME: ObjCCompatibleAliasDecl requires aliased-class locations.
-  bool VisitObjCForwardProtocolDecl(ObjCForwardProtocolDecl *D);
-  bool VisitObjCClassDecl(ObjCClassDecl *D);
-  bool VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *PD);
-  bool VisitLinkageSpecDecl(LinkageSpecDecl *D);
-  bool VisitNamespaceDecl(NamespaceDecl *D);
-  bool VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
-  bool VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
-  bool VisitUsingDecl(UsingDecl *D);
-  bool VisitUnresolvedUsingValueDecl(UnresolvedUsingValueDecl *D);
-  bool VisitUnresolvedUsingTypenameDecl(UnresolvedUsingTypenameDecl *D);
-  
-  // Name visitor
-  bool VisitDeclarationNameInfo(DeclarationNameInfo Name);
-  bool VisitNestedNameSpecifier(NestedNameSpecifier *NNS, SourceRange Range);
-  bool VisitNestedNameSpecifierLoc(NestedNameSpecifierLoc NNS);
-  
-  // Template visitors
-  bool VisitTemplateParameters(const TemplateParameterList *Params);
-  bool VisitTemplateName(TemplateName Name, SourceLocation Loc);
-  bool VisitTemplateArgumentLoc(const TemplateArgumentLoc &TAL);
-  
-  // Type visitors
-#define ABSTRACT_TYPELOC(CLASS, PARENT)
-#define TYPELOC(CLASS, PARENT) \
-  bool Visit##CLASS##TypeLoc(CLASS##TypeLoc TyLoc);
-#include "clang/AST/TypeLocNodes.def"
-
-  bool VisitTagTypeLoc(TagTypeLoc TL);
-  bool VisitArrayTypeLoc(ArrayTypeLoc TL);
-  bool VisitFunctionTypeLoc(FunctionTypeLoc TL, bool SkipResultType = false);
-
-  // Data-recursive visitor functions.
-  bool IsInRegionOfInterest(CXCursor C);
-  bool RunVisitorWorkList(VisitorWorkList &WL);
-  void EnqueueWorkList(VisitorWorkList &WL, Stmt *S);
-  LLVM_ATTRIBUTE_NOINLINE bool Visit(Stmt *S);
-};
-
-} // end anonymous namespace
-
 static SourceRange getRawCursorExtent(CXCursor C);
 static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr);
 
@@ -417,7 +186,7 @@ static bool visitPreprocessedEntitiesInRange(SourceRange R,
   SourceManager &SM = Visitor.getASTUnit()->getSourceManager();
   FileID FID;
   
-  if (!Visitor.shouldVisitIncludedPreprocessingEntries()) {
+  if (!Visitor.shouldVisitIncludedEntities()) {
     // If the begin/end of the range lie in the same FileID, do the optimization
     // where we skip preprocessed entities that do not come from the same FileID.
     FID = SM.getFileID(R.getBegin());
@@ -429,6 +198,157 @@ static bool visitPreprocessedEntitiesInRange(SourceRange R,
     Entities = PPRec.getPreprocessedEntitiesInRange(R);
   return Visitor.visitPreprocessedEntities(Entities.first, Entities.second,
                                            PPRec, FID);
+}
+
+void CursorVisitor::visitFileRegion() {
+  if (RegionOfInterest.isInvalid())
+    return;
+
+  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
+  SourceManager &SM = Unit->getSourceManager();
+  
+  std::pair<FileID, unsigned>
+    Begin = SM.getDecomposedLoc(SM.getFileLoc(RegionOfInterest.getBegin())), 
+    End = SM.getDecomposedLoc(SM.getFileLoc(RegionOfInterest.getEnd())); 
+
+  if (End.first != Begin.first) {
+    // If the end does not reside in the same file, try to recover by
+    // picking the end of the file of begin location.
+    End.first = Begin.first;
+    End.second = SM.getFileIDSize(Begin.first);
+  }
+
+  assert(Begin.first == End.first);
+  if (Begin.second > End.second)
+    return;
+  
+  FileID File = Begin.first;
+  unsigned Offset = Begin.second;
+  unsigned Length = End.second - Begin.second;
+
+  if (!VisitPreprocessorLast &&
+      Unit->getPreprocessor().getPreprocessingRecord())
+    visitPreprocessedEntitiesInRegion();
+
+  visitDeclsFromFileRegion(File, Offset, Length);
+
+  if (VisitPreprocessorLast &&
+      Unit->getPreprocessor().getPreprocessingRecord())
+    visitPreprocessedEntitiesInRegion();
+}
+
+static bool isInLexicalContext(Decl *D, DeclContext *DC) {
+  if (!DC)
+    return false;
+
+  for (DeclContext *DeclDC = D->getLexicalDeclContext();
+         DeclDC; DeclDC = DeclDC->getLexicalParent()) {
+    if (DeclDC == DC)
+      return true;
+  }
+  return false;
+}
+
+void CursorVisitor::visitDeclsFromFileRegion(FileID File,
+                                             unsigned Offset, unsigned Length) {
+  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
+  SourceManager &SM = Unit->getSourceManager();
+  SourceRange Range = RegionOfInterest;
+
+  SmallVector<Decl *, 16> Decls;
+  Unit->findFileRegionDecls(File, Offset, Length, Decls);
+
+  // If we didn't find any file level decls for the file, try looking at the
+  // file that it was included from.
+  while (Decls.empty()) {
+    bool Invalid = false;
+    const SrcMgr::SLocEntry &SLEntry = SM.getSLocEntry(File, &Invalid);
+    if (Invalid)
+      return;
+
+    SourceLocation Outer;
+    if (SLEntry.isFile())
+      Outer = SLEntry.getFile().getIncludeLoc();
+    else
+      Outer = SLEntry.getExpansion().getExpansionLocStart();
+    if (Outer.isInvalid())
+      return;
+
+    llvm::tie(File, Offset) = SM.getDecomposedExpansionLoc(Outer);
+    Length = 0;
+    Unit->findFileRegionDecls(File, Offset, Length, Decls);
+  }
+
+  assert(!Decls.empty());
+
+  bool VisitedAtLeastOnce = false;
+  DeclContext *CurDC = 0;
+  SmallVector<Decl *, 16>::iterator DIt = Decls.begin();
+  for (SmallVector<Decl *, 16>::iterator DE = Decls.end(); DIt != DE; ++DIt) {
+    Decl *D = *DIt;
+
+    if (isInLexicalContext(D, CurDC))
+      continue;
+
+    CurDC = dyn_cast<DeclContext>(D);
+
+    // We handle forward decls via ObjCClassDecl.
+    if (ObjCInterfaceDecl *InterD = dyn_cast<ObjCInterfaceDecl>(D)) {
+      if (InterD->isForwardDecl())
+        continue;
+      // An interface that started as a forward decl may have changed location
+      // because its @interface was parsed.
+      if (InterD->isInitiallyForwardDecl() &&
+          !SM.isInFileID(SM.getFileLoc(InterD->getLocation()), File))
+        continue;
+    }
+
+    if (TagDecl *TD = dyn_cast<TagDecl>(D))
+      if (!TD->isFreeStanding())
+        continue;
+
+    RangeComparisonResult CompRes = RangeCompare(SM, D->getSourceRange(),Range);
+    if (CompRes == RangeBefore)
+      continue;
+    if (CompRes == RangeAfter)
+      break;
+
+    assert(CompRes == RangeOverlap);
+    VisitedAtLeastOnce = true;
+
+    if (isa<ObjCContainerDecl>(D)) {
+      FileDI_current = &DIt;
+      FileDE_current = DE;
+    } else {
+      FileDI_current = 0;
+    }
+
+    if (Visit(MakeCXCursor(D, TU, Range), /*CheckedRegionOfInterest=*/true))
+      break;
+  }
+
+  if (VisitedAtLeastOnce)
+    return;
+
+  // No Decls overlapped with the range. Move up the lexical context until there
+  // is a context that contains the range or we reach the translation unit
+  // level.
+  DeclContext *DC = DIt == Decls.begin() ? (*DIt)->getLexicalDeclContext()
+                                         : (*(DIt-1))->getLexicalDeclContext();
+
+  while (DC && !DC->isTranslationUnit()) {
+    Decl *D = cast<Decl>(DC);
+    SourceRange CurDeclRange = D->getSourceRange();
+    if (CurDeclRange.isInvalid())
+      break;
+
+    if (RangeCompare(SM, CurDeclRange, Range) == RangeOverlap) {
+      Visit(MakeCXCursor(D, TU, Range), /*CheckedRegionOfInterest=*/true);
+      break;
+    }
+
+    DC = D->getLexicalDeclContext();
+  }
 }
 
 bool CursorVisitor::visitPreprocessedEntitiesInRegion() {
@@ -828,8 +748,8 @@ bool CursorVisitor::VisitFunctionDecl(FunctionDecl *ND) {
           if (Visit(MakeCursorMemberRef(Init->getAnyMember(),
                                         Init->getMemberLocation(), TU)))
             return true;
-        } else if (TypeSourceInfo *BaseInfo = Init->getBaseClassInfo()) {
-          if (Visit(BaseInfo->getTypeLoc()))
+        } else if (TypeSourceInfo *TInfo = Init->getTypeSourceInfo()) {
+          if (Visit(TInfo->getTypeLoc()))
             return true;
         }
         
@@ -926,6 +846,27 @@ bool CursorVisitor::VisitObjCMethodDecl(ObjCMethodDecl *ND) {
   return false;
 }
 
+template <typename DeclIt>
+static void addRangedDeclsInContainer(DeclIt *DI_current, DeclIt DE_current,
+                                      SourceManager &SM, SourceLocation EndLoc,
+                                      SmallVectorImpl<Decl *> &Decls) {
+  DeclIt next = *DI_current;
+  while (++next != DE_current) {
+    Decl *D_next = *next;
+    if (!D_next)
+      break;
+    SourceLocation L = D_next->getLocStart();
+    if (!L.isValid())
+      break;
+    if (SM.isBeforeInTranslationUnit(L, EndLoc)) {
+      *DI_current = next;
+      Decls.push_back(D_next);
+      continue;
+    }
+    break;
+  }
+}
+
 namespace {
   struct ContainerDeclsSort {
     SourceManager &SM;
@@ -944,7 +885,7 @@ bool CursorVisitor::VisitObjCContainerDecl(ObjCContainerDecl *D) {
   // an @implementation can lexically contain Decls that are not properly
   // nested in the AST.  When we identify such cases, we need to retrofit
   // this nesting here.
-  if (!DI_current)
+  if (!DI_current && !FileDI_current)
     return VisitDeclContext(D);
 
   // Scan the Decls that immediately come after the container
@@ -955,20 +896,12 @@ bool CursorVisitor::VisitObjCContainerDecl(ObjCContainerDecl *D) {
   SourceLocation EndLoc = D->getSourceRange().getEnd();
   SourceManager &SM = AU->getSourceManager();
   if (EndLoc.isValid()) {
-    DeclContext::decl_iterator next = *DI_current;
-    while (++next != DE_current) {
-      Decl *D_next = *next;
-      if (!D_next)
-        break;
-      SourceLocation L = D_next->getLocStart();
-      if (!L.isValid())
-        break;
-      if (SM.isBeforeInTranslationUnit(L, EndLoc)) {
-        *DI_current = next;
-        DeclsInContainer.push_back(D_next);
-        continue;
-      }
-      break;
+    if (DI_current) {
+      addRangedDeclsInContainer(DI_current, DE_current, SM, EndLoc,
+                                DeclsInContainer);
+    } else {
+      addRangedDeclsInContainer(FileDI_current, FileDE_current, SM, EndLoc,
+                                DeclsInContainer);
     }
   }
 
@@ -1825,6 +1758,8 @@ public:
   void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
   void VisitVAArgExpr(VAArgExpr *E);
   void VisitSizeOfPackExpr(SizeOfPackExpr *E);
+  void VisitPseudoObjectExpr(PseudoObjectExpr *E);
+  void VisitOpaqueValueExpr(OpaqueValueExpr *E);
   
 private:
   void AddDeclarationNameInfo(Stmt *S);
@@ -2132,6 +2067,17 @@ void EnqueueVisitor::VisitVAArgExpr(VAArgExpr *E) {
 }
 void EnqueueVisitor::VisitSizeOfPackExpr(SizeOfPackExpr *E) {
   WL.push_back(SizeOfPackExprParts(E, Parent));
+}
+void EnqueueVisitor::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
+  // If the opaque value has a source expression, just transparently
+  // visit that.  This is useful for (e.g.) pseudo-object expressions.
+  if (Expr *SourceExpr = E->getSourceExpr())
+    return Visit(SourceExpr);
+  AddStmt(E);
+}
+void EnqueueVisitor::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
+  // Treat the expression like its syntactic form.
+  Visit(E->getSyntacticForm());
 }
 
 void CursorVisitor::EnqueueWorkList(VisitorWorkList &WL, Stmt *S) {
@@ -2660,6 +2606,7 @@ void clang_disposeTranslationUnit(CXTranslationUnit CTUnit) {
 
     delete static_cast<ASTUnit *>(CTUnit->TUData);
     disposeCXStringPool(CTUnit->StringPool);
+    delete static_cast<CXDiagnosticSetImpl *>(CTUnit->Diagnostics);
     delete CTUnit;
   }
 }
@@ -2680,6 +2627,11 @@ static void clang_reparseTranslationUnit_Impl(void *UserData) {
   ReparseTranslationUnitInfo *RTUI =
     static_cast<ReparseTranslationUnitInfo*>(UserData);
   CXTranslationUnit TU = RTUI->TU;
+
+  // Reset the associated diagnostics.
+  delete static_cast<CXDiagnosticSetImpl*>(TU->Diagnostics);
+  TU->Diagnostics = 0;
+
   unsigned num_unsaved_files = RTUI->num_unsaved_files;
   struct CXUnsavedFile *unsaved_files = RTUI->unsaved_files;
   unsigned options = RTUI->options;
@@ -2753,232 +2705,6 @@ CXCursor clang_getTranslationUnitCursor(CXTranslationUnit TU) {
 } // end: extern "C"
 
 //===----------------------------------------------------------------------===//
-// CXSourceLocation and CXSourceRange Operations.
-//===----------------------------------------------------------------------===//
-
-extern "C" {
-CXSourceLocation clang_getNullLocation() {
-  CXSourceLocation Result = { { 0, 0 }, 0 };
-  return Result;
-}
-
-unsigned clang_equalLocations(CXSourceLocation loc1, CXSourceLocation loc2) {
-  return (loc1.ptr_data[0] == loc2.ptr_data[0] &&
-          loc1.ptr_data[1] == loc2.ptr_data[1] &&
-          loc1.int_data == loc2.int_data);
-}
-
-CXSourceLocation clang_getLocation(CXTranslationUnit tu,
-                                   CXFile file,
-                                   unsigned line,
-                                   unsigned column) {
-  if (!tu || !file)
-    return clang_getNullLocation();
-  
-  bool Logging = ::getenv("LIBCLANG_LOGGING");
-  ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
-  ASTUnit::ConcurrencyCheck Check(*CXXUnit);
-  const FileEntry *File = static_cast<const FileEntry *>(file);
-  SourceLocation SLoc = CXXUnit->getLocation(File, line, column);
-  if (SLoc.isInvalid()) {
-    if (Logging)
-      llvm::errs() << "clang_getLocation(\"" << File->getName() 
-                   << "\", " << line << ", " << column << ") = invalid\n";
-    return clang_getNullLocation();
-  }
-
-  if (Logging)
-    llvm::errs() << "clang_getLocation(\"" << File->getName() 
-                 << "\", " << line << ", " << column << ") = " 
-                 << SLoc.getRawEncoding() << "\n";
-
-  return cxloc::translateSourceLocation(CXXUnit->getASTContext(), SLoc);
-}
-
-CXSourceLocation clang_getLocationForOffset(CXTranslationUnit tu,
-                                            CXFile file,
-                                            unsigned offset) {
-  if (!tu || !file)
-    return clang_getNullLocation();
-  
-  ASTUnit *CXXUnit = static_cast<ASTUnit *>(tu->TUData);
-  SourceLocation SLoc 
-    = CXXUnit->getLocation(static_cast<const FileEntry *>(file), offset);
-  if (SLoc.isInvalid()) return clang_getNullLocation();
-
-  return cxloc::translateSourceLocation(CXXUnit->getASTContext(), SLoc);
-}
-
-CXSourceRange clang_getNullRange() {
-  CXSourceRange Result = { { 0, 0 }, 0, 0 };
-  return Result;
-}
-
-CXSourceRange clang_getRange(CXSourceLocation begin, CXSourceLocation end) {
-  if (begin.ptr_data[0] != end.ptr_data[0] ||
-      begin.ptr_data[1] != end.ptr_data[1])
-    return clang_getNullRange();
-
-  CXSourceRange Result = { { begin.ptr_data[0], begin.ptr_data[1] },
-                           begin.int_data, end.int_data };
-  return Result;
-}
-
-unsigned clang_equalRanges(CXSourceRange range1, CXSourceRange range2)
-{
-  return range1.ptr_data[0] == range2.ptr_data[0]
-      && range1.ptr_data[1] == range2.ptr_data[1]
-      && range1.begin_int_data == range2.begin_int_data
-      && range1.end_int_data == range2.end_int_data;
-}
-
-int clang_Range_isNull(CXSourceRange range) {
-  return clang_equalRanges(range, clang_getNullRange());
-}
-
-} // end: extern "C"
-
-static void createNullLocation(CXFile *file, unsigned *line,
-                               unsigned *column, unsigned *offset) {
-  if (file)
-   *file = 0;
-  if (line)
-   *line = 0;
-  if (column)
-   *column = 0;
-  if (offset)
-   *offset = 0;
-  return;
-}
-
-extern "C" {
-void clang_getExpansionLocation(CXSourceLocation location,
-                                CXFile *file,
-                                unsigned *line,
-                                unsigned *column,
-                                unsigned *offset) {
-  SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
-
-  if (!location.ptr_data[0] || Loc.isInvalid()) {
-    createNullLocation(file, line, column, offset);
-    return;
-  }
-
-  const SourceManager &SM =
-    *static_cast<const SourceManager*>(location.ptr_data[0]);
-  SourceLocation ExpansionLoc = SM.getExpansionLoc(Loc);
-
-  // Check that the FileID is invalid on the expansion location.
-  // This can manifest in invalid code.
-  FileID fileID = SM.getFileID(ExpansionLoc);
-  bool Invalid = false;
-  const SrcMgr::SLocEntry &sloc = SM.getSLocEntry(fileID, &Invalid);
-  if (Invalid || !sloc.isFile()) {
-    createNullLocation(file, line, column, offset);
-    return;
-  }
-
-  if (file)
-    *file = (void *)SM.getFileEntryForSLocEntry(sloc);
-  if (line)
-    *line = SM.getExpansionLineNumber(ExpansionLoc);
-  if (column)
-    *column = SM.getExpansionColumnNumber(ExpansionLoc);
-  if (offset)
-    *offset = SM.getDecomposedLoc(ExpansionLoc).second;
-}
-
-void clang_getPresumedLocation(CXSourceLocation location,
-                               CXString *filename,
-                               unsigned *line,
-                               unsigned *column) {
-  SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
-
-  if (!location.ptr_data[0] || Loc.isInvalid()) {
-    if (filename)
-      *filename = createCXString("");
-    if (line)
-      *line = 0;
-    if (column)
-      *column = 0;
-  }
-  else {
-	const SourceManager &SM =
-        *static_cast<const SourceManager*>(location.ptr_data[0]);
-    PresumedLoc PreLoc = SM.getPresumedLoc(Loc);
-
-    if (filename)
-      *filename = createCXString(PreLoc.getFilename());
-    if (line)
-      *line = PreLoc.getLine();
-    if (column)
-      *column = PreLoc.getColumn();
-  }
-}
-
-void clang_getInstantiationLocation(CXSourceLocation location,
-                                    CXFile *file,
-                                    unsigned *line,
-                                    unsigned *column,
-                                    unsigned *offset) {
-  // Redirect to new API.
-  clang_getExpansionLocation(location, file, line, column, offset);
-}
-
-void clang_getSpellingLocation(CXSourceLocation location,
-                               CXFile *file,
-                               unsigned *line,
-                               unsigned *column,
-                               unsigned *offset) {
-  SourceLocation Loc = SourceLocation::getFromRawEncoding(location.int_data);
-
-  if (!location.ptr_data[0] || Loc.isInvalid())
-    return createNullLocation(file, line, column, offset);
-
-  const SourceManager &SM =
-    *static_cast<const SourceManager*>(location.ptr_data[0]);
-  SourceLocation SpellLoc = Loc;
-  if (SpellLoc.isMacroID()) {
-    SourceLocation SimpleSpellingLoc = SM.getImmediateSpellingLoc(SpellLoc);
-    if (SimpleSpellingLoc.isFileID() &&
-        SM.getFileEntryForID(SM.getDecomposedLoc(SimpleSpellingLoc).first))
-      SpellLoc = SimpleSpellingLoc;
-    else
-      SpellLoc = SM.getExpansionLoc(SpellLoc);
-  }
-
-  std::pair<FileID, unsigned> LocInfo = SM.getDecomposedLoc(SpellLoc);
-  FileID FID = LocInfo.first;
-  unsigned FileOffset = LocInfo.second;
-
-  if (FID.isInvalid())
-    return createNullLocation(file, line, column, offset);
-
-  if (file)
-    *file = (void *)SM.getFileEntryForID(FID);
-  if (line)
-    *line = SM.getLineNumber(FID, FileOffset);
-  if (column)
-    *column = SM.getColumnNumber(FID, FileOffset);
-  if (offset)
-    *offset = FileOffset;
-}
-
-CXSourceLocation clang_getRangeStart(CXSourceRange range) {
-  CXSourceLocation Result = { { range.ptr_data[0], range.ptr_data[1] },
-                              range.begin_int_data };
-  return Result;
-}
-
-CXSourceLocation clang_getRangeEnd(CXSourceRange range) {
-  CXSourceLocation Result = { { range.ptr_data[0], range.ptr_data[1] },
-                              range.end_int_data };
-  return Result;
-}
-
-} // end: extern "C"
-
-//===----------------------------------------------------------------------===//
 // CXFile Operations.
 //===----------------------------------------------------------------------===//
 
@@ -3039,6 +2765,11 @@ static Decl *getDeclFromExpr(Stmt *E) {
     return RE->getDecl();
   if (ObjCPropertyRefExpr *PRE = dyn_cast<ObjCPropertyRefExpr>(E))
     return PRE->isExplicitProperty() ? PRE->getExplicitProperty() : 0;
+  if (PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E))
+    return getDeclFromExpr(POE->getSyntacticForm());
+  if (OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E))
+    if (Expr *Src = OVE->getSourceExpr())
+      return getDeclFromExpr(Src);
       
   if (CallExpr *CE = dyn_cast<CallExpr>(E))
     return getDeclFromExpr(CE->getCallee());
@@ -3967,16 +3698,12 @@ CXCursor cxcursor::getCursor(CXTranslationUnit TU, SourceLocation SLoc) {
   
   CXCursor Result = MakeCXCursorInvalid(CXCursor_NoDeclFound);
   if (SLoc.isValid()) {
-    // FIXME: Would be great to have a "hint" cursor, then walk from that
-    // hint cursor upward until we find a cursor whose source range encloses
-    // the region of interest, rather than starting from the translation unit.
     GetCursorData ResultData(CXXUnit->getSourceManager(), SLoc, Result);
-    CXCursor Parent = clang_getTranslationUnitCursor(TU);
     CursorVisitor CursorVis(TU, GetCursorVisitor, &ResultData,
                             /*VisitPreprocessorLast=*/true, 
-                            /*VisitIncludedPreprocessingEntries=*/false,
+                            /*VisitIncludedEntities=*/false,
                             SourceLocation(SLoc));
-    CursorVis.VisitChildren(Parent);
+    CursorVis.visitFileRegion();
   }
 
   return Result;
@@ -4804,17 +4531,14 @@ public:
       AnnotateVis(tu,
                   AnnotateTokensVisitor, this,
                   /*VisitPreprocessorLast=*/true,
-                  /*VisitIncludedPreprocessingEntries=*/false,
+                  /*VisitIncludedEntities=*/false,
                   RegionOfInterest),
       SrcMgr(static_cast<ASTUnit*>(tu->TUData)->getSourceManager()),
       HasContextSensitiveKeywords(false) { }
 
   void VisitChildren(CXCursor C) { AnnotateVis.VisitChildren(C); }
   enum CXChildVisitResult Visit(CXCursor cursor, CXCursor parent);
-  void AnnotateTokens(CXCursor parent);
-  void AnnotateTokens() {
-    AnnotateTokens(clang_getTranslationUnitCursor(AnnotateVis.getTU()));
-  }
+  void AnnotateTokens();
   
   /// \brief Determine whether the annotator saw any cursors that have 
   /// context-sensitive keywords.
@@ -4824,10 +4548,10 @@ public:
 };
 }
 
-void AnnotateTokensWorker::AnnotateTokens(CXCursor parent) {
+void AnnotateTokensWorker::AnnotateTokens() {
   // Walk the AST within the region of interest, annotating tokens
   // along the way.
-  VisitChildren(parent);
+  AnnotateVis.visitFileRegion();
 
   for (unsigned I = 0 ; I < TokIdx ; ++I) {
     AnnotateTokensData::iterator Pos = Annotated.find(Tokens[I].int_data[1]);
@@ -4843,6 +4567,9 @@ void AnnotateTokensWorker::AnnotateTokens(CXCursor parent) {
 
   const CXCursor &C = clang_getNullCursor();
   for (unsigned I = TokIdx ; I < NumTokens ; ++I) {
+    if (I < PreprocessingTokIdx && clang_isPreprocessing(Cursors[I].kind))
+      continue;
+
     AnnotateTokensData::iterator Pos = Annotated.find(Tokens[I].int_data[1]);
     Cursors[I] = (Pos == Annotated.end()) ? C : Pos->second;
   }
@@ -5281,7 +5008,7 @@ static void clang_annotateTokensImpl(void *UserData) {
     CursorVisitor MacroArgMarker(TU,
                                  MarkMacroArgTokensVisitorDelegate, &Visitor,
                                  /*VisitPreprocessorLast=*/true,
-                                 /*VisitIncludedPreprocessingEntries=*/false,
+                                 /*VisitIncludedEntities=*/false,
                                  RegionOfInterest);
     MacroArgMarker.visitPreprocessedEntitiesInRegion();
   }
@@ -5555,6 +5282,10 @@ void clang_getOverriddenCursors(CXCursor cursor,
 
   SmallVector<CXCursor, 8> Overridden;
   cxcursor::getOverriddenCursors(cursor, Overridden);
+
+  // Don't allocate memory if we have no overriden cursors.
+  if (Overridden.size() == 0)
+    return;
 
   *num_overridden = Overridden.size();
   *overridden = new CXCursor [Overridden.size()];

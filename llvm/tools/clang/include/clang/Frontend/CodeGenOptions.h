@@ -35,6 +35,7 @@ public:
     Mixed = 2
   };
 
+  unsigned AddressSanitizer  : 1; /// Enable AddressSanitizer.
   unsigned AsmVerbose        : 1; /// -dA, -fverbose-asm.
   unsigned ObjCAutoRefCountExceptions : 1; /// Whether ARC should be EH-safe.
   unsigned CUDAIsDevice      : 1; /// Set when compiling for CUDA device.
@@ -128,6 +129,9 @@ public:
   /// The float precision limit to use, if non-empty.
   std::string LimitFloatPrecision;
 
+  /// The name of the bitcode file to link before optzns.
+  std::string LinkBitcodeFile;
+
   /// The kind of inlining to perform.
   InliningMethod Inlining;
 
@@ -148,6 +152,7 @@ public:
 
 public:
   CodeGenOptions() {
+    AddressSanitizer = 0;
     AsmVerbose = 0;
     CUDAIsDevice = 0;
     CXAAtExit = 1;

@@ -191,11 +191,12 @@ createInvocationForMigration(CompilerInvocation &origCI) {
   std::string define = getARCMTMacroName();
   define += '=';
   CInvok->getPreprocessorOpts().addMacroDef(define);
-  CInvok->getLangOpts().ObjCAutoRefCount = true;
+  CInvok->getLangOpts()->ObjCAutoRefCount = true;
+  CInvok->getLangOpts()->setGC(LangOptions::NonGC);
   CInvok->getDiagnosticOpts().ErrorLimit = 0;
   CInvok->getDiagnosticOpts().Warnings.push_back(
                                             "error=arc-unsafe-retained-assign");
-  CInvok->getLangOpts().ObjCRuntimeHasWeak = HasARCRuntime(origCI);
+  CInvok->getLangOpts()->ObjCRuntimeHasWeak = HasARCRuntime(origCI);
 
   return CInvok.take();
 }
@@ -223,10 +224,12 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
                                  DiagnosticConsumer *DiagClient,
                                  bool emitPremigrationARCErrors,
                                  StringRef plistOut) {
-  if (!origCI.getLangOpts().ObjC1)
+  if (!origCI.getLangOpts()->ObjC1)
     return false;
 
-  std::vector<TransformFn> transforms = arcmt::getAllTransformations();
+  LangOptions::GCMode OrigGCMode = origCI.getLangOpts()->getGC();
+
+  std::vector<TransformFn> transforms = arcmt::getAllTransformations(OrigGCMode);
   assert(!transforms.empty());
 
   llvm::OwningPtr<CompilerInvocation> CInvok;
@@ -287,7 +290,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
   std::vector<SourceLocation> ARCMTMacroLocs;
 
   TransformActions testAct(*Diags, capturedDiags, Ctx, Unit->getPreprocessor());
-  MigrationPass pass(Ctx, Unit->getSema(), testAct, ARCMTMacroLocs);
+  MigrationPass pass(Ctx, OrigGCMode, Unit->getSema(), testAct, ARCMTMacroLocs);
 
   for (unsigned i=0, e = transforms.size(); i != e; ++i)
     transforms[i](pass);
@@ -298,7 +301,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
   // If we are migrating code that gets the '-fobjc-arc' flag, make sure
   // to remove it so that we don't get errors from normal compilation.
-  origCI.getLangOpts().ObjCAutoRefCount = false;
+  origCI.getLangOpts()->ObjCAutoRefCount = false;
 
   return capturedDiags.hasErrors() || testAct.hasReportedErrors();
 }
@@ -313,8 +316,10 @@ static bool applyTransforms(CompilerInvocation &origCI,
                             StringRef outputDir,
                             bool emitPremigrationARCErrors,
                             StringRef plistOut) {
-  if (!origCI.getLangOpts().ObjC1)
+  if (!origCI.getLangOpts()->ObjC1)
     return false;
+
+  LangOptions::GCMode OrigGCMode = origCI.getLangOpts()->getGC();
 
   // Make sure checking is successful first.
   CompilerInvocation CInvokForCheck(origCI);
@@ -328,7 +333,7 @@ static bool applyTransforms(CompilerInvocation &origCI,
   
   MigrationProcess migration(CInvok, DiagClient, outputDir);
 
-  std::vector<TransformFn> transforms = arcmt::getAllTransformations();
+  std::vector<TransformFn> transforms = arcmt::getAllTransformations(OrigGCMode);
   assert(!transforms.empty());
 
   for (unsigned i=0, e = transforms.size(); i != e; ++i) {
@@ -341,12 +346,12 @@ static bool applyTransforms(CompilerInvocation &origCI,
       new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
 
   if (outputDir.empty()) {
-    origCI.getLangOpts().ObjCAutoRefCount = true;
+    origCI.getLangOpts()->ObjCAutoRefCount = true;
     return migration.getRemapper().overwriteOriginal(*Diags);
   } else {
     // If we are migrating code that gets the '-fobjc-arc' flag, make sure
     // to remove it so that we don't get errors from normal compilation.
-    origCI.getLangOpts().ObjCAutoRefCount = false;
+    origCI.getLangOpts()->ObjCAutoRefCount = false;
     return migration.getRemapper().flushToDisk(outputDir, *Diags);
   }
 }
@@ -537,7 +542,8 @@ bool MigrationProcess::applyTransform(TransformFn trans,
 
   Rewriter rewriter(Ctx.getSourceManager(), Ctx.getLangOptions());
   TransformActions TA(*Diags, capturedDiags, Ctx, Unit->getPreprocessor());
-  MigrationPass pass(Ctx, Unit->getSema(), TA, ARCMTMacroLocs);
+  MigrationPass pass(Ctx, OrigCI.getLangOpts()->getGC(),
+                     Unit->getSema(), TA, ARCMTMacroLocs);
 
   trans(pass);
 

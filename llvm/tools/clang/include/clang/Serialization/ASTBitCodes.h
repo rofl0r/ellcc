@@ -452,7 +452,8 @@ namespace clang {
       SM_SLOC_BUFFER_ENTRY = 2,
       /// \brief Describes a blob that contains the data for a buffer
       /// entry. This kind of record always directly follows a
-      /// SM_SLOC_BUFFER_ENTRY record.
+      /// SM_SLOC_BUFFER_ENTRY record or a SM_SLOC_FILE_ENTRY with an
+      /// overridden buffer.
       SM_SLOC_BUFFER_BLOB = 3,
       /// \brief Describes a source location entry (SLocEntry) for a
       /// macro expansion.
@@ -692,15 +693,17 @@ namespace clang {
       /// \brief C FILE typedef type
       SPECIAL_TYPE_FILE                        = 3,
       /// \brief C jmp_buf typedef type
-      SPECIAL_TYPE_jmp_buf                     = 4,
+      SPECIAL_TYPE_JMP_BUF                     = 4,
       /// \brief C sigjmp_buf typedef type
-      SPECIAL_TYPE_sigjmp_buf                  = 5,
+      SPECIAL_TYPE_SIGJMP_BUF                  = 5,
       /// \brief Objective-C "id" redefinition type
       SPECIAL_TYPE_OBJC_ID_REDEFINITION        = 6,
       /// \brief Objective-C "Class" redefinition type
       SPECIAL_TYPE_OBJC_CLASS_REDEFINITION     = 7,
       /// \brief Objective-C "SEL" redefinition type
-      SPECIAL_TYPE_OBJC_SEL_REDEFINITION       = 8
+      SPECIAL_TYPE_OBJC_SEL_REDEFINITION       = 8,
+      /// \brief C ucontext_t typedef type
+      SPECIAL_TYPE_UCONTEXT_T                  = 9
     };
     
     /// \brief The number of special type IDs.
@@ -1000,6 +1003,8 @@ namespace clang {
       EXPR_BLOCK_DECL_REF,
       /// \brief A GenericSelectionExpr record.
       EXPR_GENERIC_SELECTION,
+      /// \brief A PseudoObjectExpr record.
+      EXPR_PSEUDO_OBJECT,
       /// \brief An AtomicExpr record.
       EXPR_ATOMIC,
 

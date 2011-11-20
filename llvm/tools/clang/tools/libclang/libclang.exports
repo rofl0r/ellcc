@@ -2,6 +2,9 @@ clang_CXCursorSet_contains
 clang_CXCursorSet_insert
 clang_CXXMethod_isStatic
 clang_CXXMethod_isVirtual
+clang_Cursor_getTranslationUnit
+clang_Cursor_isNull
+clang_Range_isNull
 clang_annotateTokens
 clang_codeCompleteAt
 clang_codeCompleteGetContainerKind
@@ -20,8 +23,6 @@ clang_createCXCursorSet
 clang_createIndex
 clang_createTranslationUnit
 clang_createTranslationUnitFromSourceFile
-clang_Cursor_getTranslationUnit
-clang_Cursor_isNull
 clang_defaultCodeCompleteOptions
 clang_defaultDiagnosticDisplayOptions
 clang_defaultEditingTranslationUnitOptions
@@ -31,6 +32,7 @@ clang_disposeCXCursorSet
 clang_disposeCXTUResourceUsage
 clang_disposeCodeCompleteResults
 clang_disposeDiagnostic
+clang_disposeDiagnosticSet
 clang_disposeIndex
 clang_disposeOverriddenCursors
 clang_disposeString
@@ -52,9 +54,10 @@ clang_getCXTUResourceUsage
 clang_getCXXAccessSpecifier
 clang_getCanonicalCursor
 clang_getCanonicalType
+clang_getChildDiagnostics
 clang_getClangVersion
-clang_getCompletionAvailability
 clang_getCompletionAnnotation
+clang_getCompletionAvailability
 clang_getCompletionChunkCompletionString
 clang_getCompletionChunkKind
 clang_getCompletionChunkText
@@ -85,6 +88,7 @@ clang_getDiagnostic
 clang_getDiagnosticCategory
 clang_getDiagnosticCategoryName
 clang_getDiagnosticFixIt
+clang_getDiagnosticInSet
 clang_getDiagnosticLocation
 clang_getDiagnosticNumFixIts
 clang_getDiagnosticNumRanges
@@ -92,6 +96,7 @@ clang_getDiagnosticOption
 clang_getDiagnosticRange
 clang_getDiagnosticSeverity
 clang_getDiagnosticSpelling
+clang_getExpansionLocation
 clang_getFile
 clang_getFileName
 clang_getFileTime
@@ -106,6 +111,7 @@ clang_getNullLocation
 clang_getNullRange
 clang_getNumCompletionChunks
 clang_getNumDiagnostics
+clang_getNumDiagnosticsInSet
 clang_getNumOverloadedDecls
 clang_getOverloadedDecl
 clang_getOverriddenCursors
@@ -129,8 +135,15 @@ clang_getTranslationUnitSpelling
 clang_getTypeDeclaration
 clang_getTypeKindSpelling
 clang_hashCursor
+clang_index_getIBOutletCollectionAttrInfo
+clang_index_getObjCCategoryDeclInfo
+clang_index_getObjCContainerDeclInfo
+clang_index_getObjCInterfaceDeclInfo
+clang_index_getObjCProtocolRefListInfo
+clang_index_isEntityObjCContainerKind
 clang_indexLoc_getCXSourceLocation
 clang_indexLoc_getFileLocation
+clang_indexSourceFile
 clang_indexTranslationUnit
 clang_isAttribute
 clang_isConstQualifiedType
@@ -148,8 +161,8 @@ clang_isTranslationUnit
 clang_isUnexposed
 clang_isVirtualBase
 clang_isVolatileQualifiedType
+clang_loadDiagnostics
 clang_parseTranslationUnit
-clang_Range_isNull
 clang_remap_dispose
 clang_remap_getFilenames
 clang_remap_getNumFiles

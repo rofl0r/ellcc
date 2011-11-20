@@ -20,7 +20,7 @@ constexpr int s1::mi2 = 0;
 // not a definition of an object
 constexpr extern int i2; // expected-error {{constexpr variable declaration must be a definition}}
 // not a literal type
-constexpr notlit nl1; // expected-error {{declaration of constexpr variable 'nl1' requires an initializer}}
+constexpr notlit nl1; // expected-error {{constexpr variable 'nl1' must be initialized by a constant expression}}
 // function parameters
 void f2(constexpr int i) {} // expected-error {{function parameter cannot be constexpr}}
 // non-static member
@@ -117,8 +117,7 @@ constexpr int square(int x) {
   return x * x;
 }
 
-// FIXME: The initializer is a constant expression.
-constexpr pixel large(4); // unexpected-error {{must be initialized by a constant expression}}
+constexpr pixel large(4);
 
 int next(constexpr int x) { // expected-error {{function parameter cannot be constexpr}}
       return x + 1;

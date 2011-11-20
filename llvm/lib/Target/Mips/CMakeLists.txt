@@ -1,12 +1,13 @@
 set(LLVM_TARGET_DEFINITIONS Mips.td)
 
-llvm_tablegen(MipsGenRegisterInfo.inc -gen-register-info)
-llvm_tablegen(MipsGenInstrInfo.inc -gen-instr-info)
-llvm_tablegen(MipsGenCodeEmitter.inc -gen-emitter)
-llvm_tablegen(MipsGenAsmWriter.inc -gen-asm-writer)
-llvm_tablegen(MipsGenDAGISel.inc -gen-dag-isel)
-llvm_tablegen(MipsGenCallingConv.inc -gen-callingconv)
-llvm_tablegen(MipsGenSubtargetInfo.inc -gen-subtarget)
+tablegen(LLVM MipsGenRegisterInfo.inc -gen-register-info)
+tablegen(LLVM MipsGenInstrInfo.inc -gen-instr-info)
+tablegen(LLVM MipsGenCodeEmitter.inc -gen-emitter)
+tablegen(LLVM MipsGenMCCodeEmitter.inc -gen-emitter -mc-emitter)
+tablegen(LLVM MipsGenAsmWriter.inc -gen-asm-writer)
+tablegen(LLVM MipsGenDAGISel.inc -gen-dag-isel)
+tablegen(LLVM MipsGenCallingConv.inc -gen-callingconv)
+tablegen(LLVM MipsGenSubtargetInfo.inc -gen-subtarget)
 tablegen(MipsGenIntrinsics.inc -gen-tgt-intrinsic)
 add_public_tablegen_target(MipsCommonTableGen)
 
@@ -22,7 +23,6 @@ add_llvm_target(MipsCodeGen
   MipsISelLowering.cpp
   MipsFrameLowering.cpp
   MipsMCInstLower.cpp
-  MipsMCSymbolRefExpr.cpp
   MipsRegisterInfo.cpp
   MipsSubtarget.cpp
   MipsTargetMachine.cpp

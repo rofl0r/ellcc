@@ -989,9 +989,11 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
     // If the name of the template was qualified, we must be defining the
     // template out-of-line.
     if (!SS.isInvalid() && !Invalid && !PrevClassTemplate &&
-        !(TUK == TUK_Friend && CurContext->isDependentContext()))
+        !(TUK == TUK_Friend && CurContext->isDependentContext())) {
       Diag(NameLoc, diag::err_member_def_does_not_match)
         << Name << SemanticContext << SS.getRange();
+      Invalid = true;
+    }
   }
 
   CXXRecordDecl *NewClass =
@@ -4453,6 +4455,9 @@ Sema::TemplateParameterListsAreEqual(TemplateParameterList *New,
 /// false. Otherwise, issues a diagnostic and returns true.
 bool
 Sema::CheckTemplateDeclScope(Scope *S, TemplateParameterList *TemplateParams) {
+  if (!S)
+    return false;
+
   // Find the nearest enclosing declaration scope.
   while ((S->getFlags() & Scope::DeclScope) == 0 ||
          (S->getFlags() & Scope::TemplateParamScope) != 0)
@@ -5214,7 +5219,7 @@ Decl *Sema::ActOnStartOfFunctionTemplateDef(Scope *FnBodyScope,
 
   Scope *ParentScope = FnBodyScope->getParent();
 
-  D.setFunctionDefinition(true);
+  D.setFunctionDefinitionKind(FDK_Definition);
   Decl *DP = HandleDeclarator(ParentScope, D,
                               move(TemplateParameterLists));
   if (FunctionTemplateDecl *FunctionTemplate
@@ -6629,10 +6634,6 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     DiagID = diag::err_typename_nested_not_type;
     Referenced = Result.getFoundDecl();
     break;
-
-
-    llvm_unreachable("unresolved using decl in non-dependent context");
-    return QualType();
 
   case LookupResult::FoundOverloaded:
     DiagID = diag::err_typename_nested_not_type;

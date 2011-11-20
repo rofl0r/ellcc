@@ -229,29 +229,21 @@ EmitExprForReferenceBinding(CodeGenFunction &CGF, const Expr *E,
   if (const CXXDefaultArgExpr *DAE = dyn_cast<CXXDefaultArgExpr>(E))
     E = DAE->getExpr();
   
-  if (const ExprWithCleanups *TE = dyn_cast<ExprWithCleanups>(E)) {
+  if (const ExprWithCleanups *EWC = dyn_cast<ExprWithCleanups>(E)) {
+    CGF.enterFullExpression(EWC);
     CodeGenFunction::RunCleanupsScope Scope(CGF);
 
-    return EmitExprForReferenceBinding(CGF, TE->getSubExpr(), 
+    return EmitExprForReferenceBinding(CGF, EWC->getSubExpr(), 
                                        ReferenceTemporary, 
                                        ReferenceTemporaryDtor,
                                        ObjCARCReferenceLifetimeType,
                                        InitializedDecl);
   }
 
-  if (const ObjCPropertyRefExpr *PRE = 
-      dyn_cast<ObjCPropertyRefExpr>(E->IgnoreParenImpCasts()))
-    if (PRE->getGetterResultType()->isReferenceType())
-      E = PRE;
-    
   RValue RV;
   if (E->isGLValue()) {
     // Emit the expression as an lvalue.
     LValue LV = CGF.EmitLValue(E);
-    if (LV.isPropertyRef()) {
-      RV = CGF.EmitLoadOfPropertyRefLValue(LV);
-      return RV.getScalarVal();
-    }
     
     if (LV.isSimple())
       return LV.getAddress();
@@ -644,6 +636,9 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
   switch (E->getStmtClass()) {
   default: return EmitUnsupportedLValue(E, "l-value expression");
 
+  case Expr::ObjCPropertyRefExprClass:
+    llvm_unreachable("cannot emit a property reference directly");
+
   case Expr::ObjCSelectorExprClass:
   return EmitObjCSelectorLValue(cast<ObjCSelectorExpr>(E));
   case Expr::ObjCIsaExprClass:
@@ -672,6 +667,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitStringLiteralLValue(cast<StringLiteral>(E));
   case Expr::ObjCEncodeExprClass:
     return EmitObjCEncodeExprLValue(cast<ObjCEncodeExpr>(E));
+  case Expr::PseudoObjectExprClass:
+    return EmitPseudoObjectLValue(cast<PseudoObjectExpr>(E));
 
   case Expr::BlockDeclRefExprClass:
     return EmitBlockDeclRefLValue(cast<BlockDeclRefExpr>(E));
@@ -681,8 +678,14 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitCXXConstructLValue(cast<CXXConstructExpr>(E));
   case Expr::CXXBindTemporaryExprClass:
     return EmitCXXBindTemporaryLValue(cast<CXXBindTemporaryExpr>(E));
-  case Expr::ExprWithCleanupsClass:
-    return EmitExprWithCleanupsLValue(cast<ExprWithCleanups>(E));
+
+  case Expr::ExprWithCleanupsClass: {
+    const ExprWithCleanups *cleanups = cast<ExprWithCleanups>(E);
+    enterFullExpression(cleanups);
+    RunCleanupsScope Scope(*this);
+    return EmitLValue(cleanups->getSubExpr());
+  }
+
   case Expr::CXXScalarValueInitExprClass:
     return EmitNullInitializationLValue(cast<CXXScalarValueInitExpr>(E));
   case Expr::CXXDefaultArgExprClass:
@@ -694,8 +697,6 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitObjCMessageExprLValue(cast<ObjCMessageExpr>(E));
   case Expr::ObjCIvarRefExprClass:
     return EmitObjCIvarRefLValue(cast<ObjCIvarRefExpr>(E));
-  case Expr::ObjCPropertyRefExprClass:
-    return EmitObjCPropertyRefLValue(cast<ObjCPropertyRefExpr>(E));
   case Expr::StmtExprClass:
     return EmitStmtExprLValue(cast<StmtExpr>(E));
   case Expr::UnaryOperatorClass:
@@ -833,11 +834,8 @@ RValue CodeGenFunction::EmitLoadOfLValue(LValue LV) {
   if (LV.isExtVectorElt())
     return EmitLoadOfExtVectorElementLValue(LV);
 
-  if (LV.isBitField())
-    return EmitLoadOfBitfieldLValue(LV);
-
-  assert(LV.isPropertyRef() && "Unknown LValue type!");
-  return EmitLoadOfPropertyRefLValue(LV);
+  assert(LV.isBitField() && "Unknown LValue type!");
+  return EmitLoadOfBitfieldLValue(LV);
 }
 
 RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV) {
@@ -966,11 +964,8 @@ void CodeGenFunction::EmitStoreThroughLValue(RValue Src, LValue Dst) {
     if (Dst.isExtVectorElt())
       return EmitStoreThroughExtVectorComponentLValue(Src, Dst);
 
-    if (Dst.isBitField())
-      return EmitStoreThroughBitfieldLValue(Src, Dst);
-
-    assert(Dst.isPropertyRef() && "Unknown LValue type");
-    return EmitStoreThroughPropertyRefLValue(Src, Dst);
+    assert(Dst.isBitField() && "Unknown LValue type");
+    return EmitStoreThroughBitfieldLValue(Src, Dst);
   }
 
   // There's special magic for assigning into an ARC-qualified l-value.
@@ -1324,14 +1319,19 @@ static LValue EmitGlobalVarDeclLValue(CodeGenFunction &CGF,
          "Var decl must have external storage or be a file var decl!");
 
   llvm::Value *V = CGF.CGM.GetAddrOfGlobalVar(VD);
-  if (VD->getType()->isReferenceType())
-    V = CGF.Builder.CreateLoad(V);
-  
-  V = EmitBitCastOfLValueToProperType(CGF, V,
-                                CGF.getTypes().ConvertTypeForMem(E->getType()));
-
+  llvm::Type *RealVarTy = CGF.getTypes().ConvertTypeForMem(VD->getType());
+  V = EmitBitCastOfLValueToProperType(CGF, V, RealVarTy);
   unsigned Alignment = CGF.getContext().getDeclAlign(VD).getQuantity();
-  LValue LV = CGF.MakeAddrLValue(V, E->getType(), Alignment);
+  QualType T = E->getType();
+  LValue LV;
+  if (VD->getType()->isReferenceType()) {
+    llvm::LoadInst *LI = CGF.Builder.CreateLoad(V);
+    LI->setAlignment(Alignment);
+    V = LI;
+    LV = CGF.MakeNaturalAlignAddrLValue(V, T);
+  } else {
+    LV = CGF.MakeAddrLValue(V, E->getType(), Alignment);
+  }
   setObjCGCLValueClass(CGF.getContext(), E, LV);
   return LV;
 }
@@ -1358,6 +1358,7 @@ static LValue EmitFunctionDeclLValue(CodeGenFunction &CGF,
 LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
   const NamedDecl *ND = E->getDecl();
   unsigned Alignment = getContext().getDeclAlign(ND).getQuantity();
+  QualType T = E->getType();
 
   if (ND->hasAttr<WeakRefAttr>()) {
     const ValueDecl *VD = cast<ValueDecl>(ND);
@@ -1382,14 +1383,17 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
 
     if (VD->hasAttr<BlocksAttr>())
       V = BuildBlockByrefAddress(V, VD);
-    
-    if (VD->getType()->isReferenceType())
-      V = Builder.CreateLoad(V);
 
-    V = EmitBitCastOfLValueToProperType(*this, V,
-                                    getTypes().ConvertTypeForMem(E->getType()));
+    LValue LV;
+    if (VD->getType()->isReferenceType()) {
+      llvm::LoadInst *LI = Builder.CreateLoad(V);
+      LI->setAlignment(Alignment);
+      V = LI;
+      LV = MakeNaturalAlignAddrLValue(V, T);
+    } else {
+      LV = MakeAddrLValue(V, T, Alignment);
+    }
 
-    LValue LV = MakeAddrLValue(V, E->getType(), Alignment);
     if (NonGCable) {
       LV.getQuals().removeObjCGCAttr();
       LV.setNonGC(true);
@@ -1848,6 +1852,7 @@ LValue CodeGenFunction::EmitLValueForField(llvm::Value *baseAddr,
 
   const RecordDecl *rec = field->getParent();
   QualType type = field->getType();
+  unsigned alignment = getContext().getDeclAlign(field).getQuantity();
 
   bool mayAlias = rec->hasAttr<MayAliasAttr>();
 
@@ -1864,6 +1869,7 @@ LValue CodeGenFunction::EmitLValueForField(llvm::Value *baseAddr,
     if (const ReferenceType *refType = type->getAs<ReferenceType>()) {
       llvm::LoadInst *load = Builder.CreateLoad(addr, "ref");
       if (cvr & Qualifiers::Volatile) load->setVolatile(true);
+      load->setAlignment(alignment);
 
       if (CGM.shouldUseTBAA()) {
         llvm::MDNode *tbaa;
@@ -1877,6 +1883,10 @@ LValue CodeGenFunction::EmitLValueForField(llvm::Value *baseAddr,
       addr = load;
       mayAlias = false;
       type = refType->getPointeeType();
+      if (type->isIncompleteType())
+        alignment = 0;
+      else
+        alignment = getContext().getTypeAlignInChars(type).getQuantity();
       cvr = 0; // qualifiers don't recursively apply to referencee
     }
   }
@@ -1892,7 +1902,6 @@ LValue CodeGenFunction::EmitLValueForField(llvm::Value *baseAddr,
   if (field->hasAttr<AnnotateAttr>())
     addr = EmitFieldAnnotations(field, addr);
 
-  unsigned alignment = getContext().getDeclAlign(field).getQuantity();
   LValue LV = MakeAddrLValue(addr, type, alignment);
   LV.getQuals().addCVRQualifiers(cvr);
 
@@ -2022,21 +2031,6 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_Dependent:
     llvm_unreachable("dependent cast kind in IR gen!");
 
-  case CK_GetObjCProperty: {
-    LValue LV = EmitLValue(E->getSubExpr());
-    assert(LV.isPropertyRef());
-    RValue RV = EmitLoadOfPropertyRefLValue(LV);
-
-    // Property is an aggregate r-value.
-    if (RV.isAggregate()) {
-      return MakeAddrLValue(RV.getAggregateAddr(), E->getType());
-    }
-
-    // Implicit property returns an l-value.
-    assert(RV.isScalar());
-    return MakeAddrLValue(RV.getScalarVal(), E->getSubExpr()->getType());
-  }
-
   case CK_NoOp:
   case CK_LValueToRValue:
     if (!E->getSubExpr()->Classify(getContext()).isPRValue() 
@@ -2164,7 +2158,7 @@ LValue CodeGenFunction::EmitNullInitializationLValue(
 }
 
 LValue CodeGenFunction::EmitOpaqueValueLValue(const OpaqueValueExpr *e) {
-  assert(e->isGLValue() || e->getType()->isRecordType());
+  assert(OpaqueValueMappingData::shouldBindAsLValue(e));
   return getOpaqueLValueMapping(e);
 }
 
@@ -2767,4 +2761,87 @@ void CodeGenFunction::SetFPAccuracy(llvm::Value *Val, unsigned AccuracyN,
 
   cast<llvm::Instruction>(Val)->setMetadata(llvm::LLVMContext::MD_fpaccuracy,
                                             Node);
+}
+
+namespace {
+  struct LValueOrRValue {
+    LValue LV;
+    RValue RV;
+  };
+}
+
+static LValueOrRValue emitPseudoObjectExpr(CodeGenFunction &CGF,
+                                           const PseudoObjectExpr *E,
+                                           bool forLValue,
+                                           AggValueSlot slot) {
+  llvm::SmallVector<CodeGenFunction::OpaqueValueMappingData, 4> opaques;
+
+  // Find the result expression, if any.
+  const Expr *resultExpr = E->getResultExpr();
+  LValueOrRValue result;
+
+  for (PseudoObjectExpr::const_semantics_iterator
+         i = E->semantics_begin(), e = E->semantics_end(); i != e; ++i) {
+    const Expr *semantic = *i;
+
+    // If this semantic expression is an opaque value, bind it
+    // to the result of its source expression.
+    if (const OpaqueValueExpr *ov = dyn_cast<OpaqueValueExpr>(semantic)) {
+
+      // If this is the result expression, we may need to evaluate
+      // directly into the slot.
+      typedef CodeGenFunction::OpaqueValueMappingData OVMA;
+      OVMA opaqueData;
+      if (ov == resultExpr && ov->isRValue() && !forLValue &&
+          CodeGenFunction::hasAggregateLLVMType(ov->getType()) &&
+          !ov->getType()->isAnyComplexType()) {
+        CGF.EmitAggExpr(ov->getSourceExpr(), slot);
+
+        LValue LV = CGF.MakeAddrLValue(slot.getAddr(), ov->getType());
+        opaqueData = OVMA::bind(CGF, ov, LV);
+        result.RV = slot.asRValue();
+
+      // Otherwise, emit as normal.
+      } else {
+        opaqueData = OVMA::bind(CGF, ov, ov->getSourceExpr());
+
+        // If this is the result, also evaluate the result now.
+        if (ov == resultExpr) {
+          if (forLValue)
+            result.LV = CGF.EmitLValue(ov);
+          else
+            result.RV = CGF.EmitAnyExpr(ov, slot);
+        }
+      }
+
+      opaques.push_back(opaqueData);
+
+    // Otherwise, if the expression is the result, evaluate it
+    // and remember the result.
+    } else if (semantic == resultExpr) {
+      if (forLValue)
+        result.LV = CGF.EmitLValue(semantic);
+      else
+        result.RV = CGF.EmitAnyExpr(semantic, slot);
+
+    // Otherwise, evaluate the expression in an ignored context.
+    } else {
+      CGF.EmitIgnoredExpr(semantic);
+    }
+  }
+
+  // Unbind all the opaques now.
+  for (unsigned i = 0, e = opaques.size(); i != e; ++i)
+    opaques[i].unbind(CGF);
+
+  return result;
+}
+
+RValue CodeGenFunction::EmitPseudoObjectRValue(const PseudoObjectExpr *E,
+                                               AggValueSlot slot) {
+  return emitPseudoObjectExpr(*this, E, false, slot).RV;
+}
+
+LValue CodeGenFunction::EmitPseudoObjectLValue(const PseudoObjectExpr *E) {
+  return emitPseudoObjectExpr(*this, E, true, AggValueSlot::ignored()).LV;
 }

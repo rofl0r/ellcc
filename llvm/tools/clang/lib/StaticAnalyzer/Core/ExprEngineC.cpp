@@ -179,8 +179,7 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
   ExplodedNodeSet dstPreStmt;
   getCheckerManager().runCheckersForPreStmt(dstPreStmt, Pred, CastE, *this);
   
-  if (CastE->getCastKind() == CK_LValueToRValue ||
-      CastE->getCastKind() == CK_GetObjCProperty) {
+  if (CastE->getCastKind() == CK_LValueToRValue) {
     for (ExplodedNodeSet::iterator I = dstPreStmt.begin(), E = dstPreStmt.end();
          I!=E; ++I) {
       ExplodedNode *subExprNode = *I;
@@ -206,8 +205,6 @@ void ExprEngine::VisitCast(const CastExpr *CastE, const Expr *Ex,
     switch (CastE->getCastKind()) {
       case CK_LValueToRValue:
         llvm_unreachable("LValueToRValue casts handled earlier.");
-      case CK_GetObjCProperty:
-        llvm_unreachable("GetObjCProperty casts handled earlier.");
       case CK_ToVoid:
         continue;
         // The analyzer doesn't do anything special with these casts,
@@ -364,13 +361,15 @@ void ExprEngine::VisitDeclStmt(const DeclStmt *DS, ExplodedNode *Pred,
       // UnknownVal.
       if ((InitVal.isUnknown() ||
            !getConstraintManager().canReasonAbout(InitVal)) &&
-          !VD->getType()->isReferenceType()) {
+          !VD->getType()->isReferenceType() &&
+          !Pred->getState()->isTainted(InitVal)) {
         InitVal = svalBuilder.getConjuredSymbolVal(NULL, InitEx,
                                  currentBuilderContext->getCurrentBlockCount());
       }
       B.takeNodes(N);
-      evalBind(Dst, DS, N, state->getLValue(VD, LC), InitVal, true);
-      B.addNodes(Dst);
+      ExplodedNodeSet Dst2;
+      evalBind(Dst2, DS, N, state->getLValue(VD, LC), InitVal, true);
+      B.addNodes(Dst2);
     }
     else {
       B.generateNode(DS, N,state->bindDeclWithNoInit(state->getRegion(VD, LC)));
@@ -539,11 +538,9 @@ void ExprEngine::VisitUnaryOperator(const UnaryOperator* U,
                                     ExplodedNode *Pred,
                                     ExplodedNodeSet &Dst) {
   StmtNodeBuilder Bldr(Pred, Dst, *currentBuilderContext);
-  bool IncDec = false;
   switch (U->getOpcode()) {
     default: {
       Bldr.takeNodes(Pred);
-      IncDec = true;
       ExplodedNodeSet Tmp;
       VisitIncrementDecrementOperator(U, Pred, Tmp);
       Bldr.addNodes(Tmp);

@@ -1902,7 +1902,7 @@ bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
   MadeIRChange = false;
   
   DEBUG(errs() << "\n\nINSTCOMBINE ITERATION #" << Iteration << " on "
-        << F.getNameStr() << "\n");
+               << F.getName() << "\n");
 
   {
     // Do a depth-first traversal of the function, populate the worklist with
@@ -2028,9 +2028,10 @@ bool InstCombiner::DoOneIteration(Function &F, unsigned Iteration) {
         BasicBlock *InstParent = I->getParent();
         BasicBlock::iterator InsertPos = I;
 
-        if (!isa<PHINode>(Result))        // If combining a PHI, don't insert
-          while (isa<PHINode>(InsertPos)) // middle of a block of PHIs.
-            ++InsertPos;
+        // If we replace a PHI with something that isn't a PHI, fix up the
+        // insertion point.
+        if (!isa<PHINode>(Result) && isa<PHINode>(InsertPos))
+          InsertPos = InstParent->getFirstInsertionPt();
 
         InstParent->getInstList().insert(InsertPos, Result);
 

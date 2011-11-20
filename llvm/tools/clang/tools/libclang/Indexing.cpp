@@ -40,10 +40,25 @@ namespace {
 class IndexPPCallbacks : public PPCallbacks {
   Preprocessor &PP;
   IndexingContext &IndexCtx;
+  bool IsMainFileEntered;
 
 public:
   IndexPPCallbacks(Preprocessor &PP, IndexingContext &indexCtx)
-    : PP(PP), IndexCtx(indexCtx) { }
+    : PP(PP), IndexCtx(indexCtx), IsMainFileEntered(false) { }
+
+  virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
+                          SrcMgr::CharacteristicKind FileType, FileID PrevFID) {
+    if (IsMainFileEntered)
+      return;
+
+    SourceManager &SM = PP.getSourceManager();
+    SourceLocation MainFileLoc = SM.getLocForStartOfFile(SM.getMainFileID());
+
+    if (Loc == MainFileLoc && Reason == PPCallbacks::EnterFile) {
+      IsMainFileEntered = true;
+      IndexCtx.enteredMainFile(SM.getFileEntryForID(SM.getMainFileID()));
+    }
+  }
 
   virtual void InclusionDirective(SourceLocation HashLoc,
                                   const Token &IncludeTok,
@@ -60,47 +75,16 @@ public:
 
   /// MacroDefined - This hook is called whenever a macro definition is seen.
   virtual void MacroDefined(const Token &Id, const MacroInfo *MI) {
-    if (MI->isBuiltinMacro())
-      return;
-    if (IndexCtx.isNotFromSourceFile(MI->getDefinitionLoc()))
-      return;
-
-    SourceLocation Loc = MI->getDefinitionLoc();
-    SourceLocation DefBegin = MI->tokens_empty() ? Loc
-                                     : MI->getReplacementToken(0).getLocation();
-    IndexCtx.ppMacroDefined(Loc,
-                            Id.getIdentifierInfo()->getName(),
-                            DefBegin,
-                            MI->getDefinitionLength(PP.getSourceManager()),
-                            MI);
   }
 
   /// MacroUndefined - This hook is called whenever a macro #undef is seen.
   /// MI is released immediately following this callback.
   virtual void MacroUndefined(const Token &MacroNameTok, const MacroInfo *MI) {
-    if (MI->isBuiltinMacro())
-      return;
-    if (IndexCtx.isNotFromSourceFile(MI->getDefinitionLoc()))
-      return;
-
-    SourceLocation Loc = MacroNameTok.getLocation();
-    IndexCtx.ppMacroUndefined(Loc,
-                            MacroNameTok.getIdentifierInfo()->getName(),
-                            MI);
   }
 
   /// MacroExpands - This is called by when a macro invocation is found.
   virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo* MI,
                             SourceRange Range) {
-    if (MI->isBuiltinMacro())
-      return;
-    if (IndexCtx.isNotFromSourceFile(MI->getDefinitionLoc()))
-      return;
-
-    SourceLocation Loc = MacroNameTok.getLocation();
-    IndexCtx.ppMacroExpanded(Loc,
-                             MacroNameTok.getIdentifierInfo()->getName(),
-                             MI);
   }
   
   /// SourceRangeSkipped - This hook is called when a source range is skipped.
@@ -125,15 +109,15 @@ public:
 
   virtual void Initialize(ASTContext &Context) {
     IndexCtx.setASTContext(Context);
-    IndexCtx.invokeStartedTranslationUnit();
+    IndexCtx.startedTranslationUnit();
   }
 
   virtual void HandleTranslationUnit(ASTContext &Ctx) {
-    IndexCtx.invokeFinishedTranslationUnit();
   }
 
-  virtual void HandleTopLevelDecl(DeclGroupRef DG) {
+  virtual bool HandleTopLevelDecl(DeclGroupRef DG) {
     IndexCtx.indexDeclGroupRef(DG);
+    return !IndexCtx.shouldAbort();
   }
 
   /// \brief Handle the specified top-level declaration that occurred inside
@@ -150,28 +134,8 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// IndexingDiagnosticConsumer
+// CaptureDiagnosticConsumer
 //===----------------------------------------------------------------------===//
-
-class IndexingDiagnosticConsumer : public DiagnosticConsumer {
-  IndexingContext &IndexCtx;
-  
-public:
-  explicit IndexingDiagnosticConsumer(IndexingContext &indexCtx)
-    : IndexCtx(indexCtx) {}
-  
-  virtual void HandleDiagnostic(DiagnosticsEngine::Level Level,
-                                const Diagnostic &Info) {
-    // Default implementation (Warnings/errors count).
-    DiagnosticConsumer::HandleDiagnostic(Level, Info);
-
-    IndexCtx.handleDiagnostic(StoredDiagnostic(Level, Info));
-  }
-
-  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const {
-    return new IgnoringDiagConsumer();
-  }
-};
 
 class CaptureDiagnosticConsumer : public DiagnosticConsumer {
   SmallVector<StoredDiagnostic, 4> Errors;
@@ -204,8 +168,6 @@ public:
 
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
                                          StringRef InFile) {
-    CI.getDiagnostics().setClient(new IndexingDiagnosticConsumer(IndexCtx),
-                                  /*own=*/true);
     IndexCtx.setASTContext(CI.getASTContext());
     Preprocessor &PP = CI.getPreprocessor();
     PP.addPPCallbacks(new IndexPPCallbacks(PP, IndexCtx));
@@ -217,10 +179,10 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// clang_indexTranslationUnit Implementation
+// clang_indexSourceFileUnit Implementation
 //===----------------------------------------------------------------------===//
 
-struct IndexTranslationUnitInfo {
+struct IndexSourceFileInfo {
   CXIndex CIdx;
   CXClientData client_data;
   IndexerCallbacks *index_callbacks;
@@ -248,9 +210,9 @@ struct MemBufferOwner {
 
 } // anonymous namespace
 
-static void clang_indexTranslationUnit_Impl(void *UserData) {
-  IndexTranslationUnitInfo *ITUI =
-    static_cast<IndexTranslationUnitInfo*>(UserData);
+static void clang_indexSourceFile_Impl(void *UserData) {
+  IndexSourceFileInfo *ITUI =
+    static_cast<IndexSourceFileInfo*>(UserData);
   CXIndex CIdx = ITUI->CIdx;
   CXClientData client_data = ITUI->client_data;
   IndexerCallbacks *client_index_callbacks = ITUI->index_callbacks;
@@ -350,7 +312,7 @@ static void clang_indexTranslationUnit_Impl(void *UserData) {
   // (often very broken) source code, where spell-checking can have a
   // significant negative impact on performance (particularly when 
   // precompiled headers are involved), we disable it.
-  CInvok->getLangOpts().SpellChecking = false;
+  CInvok->getLangOpts()->SpellChecking = false;
 
   if (!requestedToGetTU)
     CInvok->getPreprocessorOpts().DetailedRecord = false;
@@ -384,12 +346,221 @@ static void clang_indexTranslationUnit_Impl(void *UserData) {
 }
 
 //===----------------------------------------------------------------------===//
+// clang_indexTranslationUnit Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+struct IndexTranslationUnitInfo {
+  CXTranslationUnit TU;
+  CXClientData client_data;
+  IndexerCallbacks *index_callbacks;
+  unsigned index_callbacks_size;
+  unsigned index_options;
+  int result;
+};
+
+} // anonymous namespace
+
+static void indexPreprocessingRecord(ASTUnit &Unit, IndexingContext &IdxCtx) {
+  Preprocessor &PP = Unit.getPreprocessor();
+  if (!PP.getPreprocessingRecord())
+    return;
+
+  PreprocessingRecord &PPRec = *PP.getPreprocessingRecord();
+
+  // FIXME: Only deserialize inclusion directives.
+  // FIXME: Only deserialize stuff from the last chained PCH, not the PCH/Module
+  // that it depends on.
+
+  bool OnlyLocal = !Unit.isMainFileAST() && Unit.getOnlyLocalDecls();
+  PreprocessingRecord::iterator I, E;
+  if (OnlyLocal) {
+    I = PPRec.local_begin();
+    E = PPRec.local_end();
+  } else {
+    I = PPRec.begin();
+    E = PPRec.end();
+  }
+
+  for (; I != E; ++I) {
+    PreprocessedEntity *PPE = *I;
+
+    if (InclusionDirective *ID = dyn_cast<InclusionDirective>(PPE)) {
+      IdxCtx.ppIncludedFile(ID->getSourceRange().getBegin(), ID->getFileName(),
+                     ID->getFile(), ID->getKind() == InclusionDirective::Import,
+                     !ID->wasInQuotes());
+    }
+  }
+}
+
+static void indexTranslationUnit(ASTUnit &Unit, IndexingContext &IdxCtx) {
+  // FIXME: Only deserialize stuff from the last chained PCH, not the PCH/Module
+  // that it depends on.
+
+  bool OnlyLocal = !Unit.isMainFileAST() && Unit.getOnlyLocalDecls();
+
+  if (OnlyLocal) {
+    for (ASTUnit::top_level_iterator TL = Unit.top_level_begin(),
+                                  TLEnd = Unit.top_level_end();
+           TL != TLEnd; ++TL) {
+      IdxCtx.indexTopLevelDecl(*TL);
+      if (IdxCtx.shouldAbort())
+        return;
+    }
+
+  } else {
+    TranslationUnitDecl *TUDecl = Unit.getASTContext().getTranslationUnitDecl();
+    for (TranslationUnitDecl::decl_iterator
+           I = TUDecl->decls_begin(), E = TUDecl->decls_end(); I != E; ++I) {
+      IdxCtx.indexTopLevelDecl(*I);
+      if (IdxCtx.shouldAbort())
+        return;
+    }
+  }
+}
+
+static void indexDiagnostics(CXTranslationUnit TU, IndexingContext &IdxCtx) {
+  // FIXME: Create a CXDiagnosticSet from TU;
+  // IdxCtx.handleDiagnosticSet(Set);
+}
+
+static void clang_indexTranslationUnit_Impl(void *UserData) {
+  IndexTranslationUnitInfo *ITUI =
+    static_cast<IndexTranslationUnitInfo*>(UserData);
+  CXTranslationUnit TU = ITUI->TU;
+  CXClientData client_data = ITUI->client_data;
+  IndexerCallbacks *client_index_callbacks = ITUI->index_callbacks;
+  unsigned index_callbacks_size = ITUI->index_callbacks_size;
+  unsigned index_options = ITUI->index_options;
+  ITUI->result = 1; // init as error.
+
+  if (!TU)
+    return;
+  if (!client_index_callbacks || index_callbacks_size == 0)
+    return;
+
+  IndexerCallbacks CB;
+  memset(&CB, 0, sizeof(CB));
+  unsigned ClientCBSize = index_callbacks_size < sizeof(CB)
+                                  ? index_callbacks_size : sizeof(CB);
+  memcpy(&CB, client_index_callbacks, ClientCBSize);
+
+  llvm::OwningPtr<IndexingContext> IndexCtx;
+  IndexCtx.reset(new IndexingContext(client_data, CB, index_options, TU));
+
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar<IndexingContext>
+    IndexCtxCleanup(IndexCtx.get());
+
+  llvm::OwningPtr<IndexingConsumer> IndexConsumer;
+  IndexConsumer.reset(new IndexingConsumer(*IndexCtx));
+
+  // Recover resources if we crash before exiting this method.
+  llvm::CrashRecoveryContextCleanupRegistrar<IndexingConsumer>
+    IndexConsumerCleanup(IndexConsumer.get());
+
+  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
+  if (!Unit)
+    return;
+
+  FileManager &FileMgr = Unit->getFileManager();
+
+  if (Unit->getOriginalSourceFileName().empty())
+    IndexCtx->enteredMainFile(0);
+  else
+    IndexCtx->enteredMainFile(FileMgr.getFile(Unit->getOriginalSourceFileName()));
+
+  IndexConsumer->Initialize(Unit->getASTContext());
+
+  indexPreprocessingRecord(*Unit, *IndexCtx);
+  indexTranslationUnit(*Unit, *IndexCtx);
+  indexDiagnostics(TU, *IndexCtx);
+
+  ITUI->result = 0;
+}
+
+//===----------------------------------------------------------------------===//
 // libclang public APIs.
 //===----------------------------------------------------------------------===//
 
 extern "C" {
 
-int clang_indexTranslationUnit(CXIndex CIdx,
+int clang_index_isEntityObjCContainerKind(CXIdxEntityKind K) {
+  return CXIdxEntity_ObjCClass <= K && K <= CXIdxEntity_ObjCCategory;
+}
+
+const CXIdxObjCContainerDeclInfo *
+clang_index_getObjCContainerDeclInfo(const CXIdxDeclInfo *DInfo) {
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  if (const ObjCContainerDeclInfo *
+        ContInfo = dyn_cast<ObjCContainerDeclInfo>(DI))
+    return &ContInfo->ObjCContDeclInfo;
+
+  return 0;
+}
+
+const CXIdxObjCInterfaceDeclInfo *
+clang_index_getObjCInterfaceDeclInfo(const CXIdxDeclInfo *DInfo) {
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  if (const ObjCInterfaceDeclInfo *
+        InterInfo = dyn_cast<ObjCInterfaceDeclInfo>(DI))
+    return &InterInfo->ObjCInterDeclInfo;
+
+  return 0;
+}
+
+const CXIdxObjCCategoryDeclInfo *
+clang_index_getObjCCategoryDeclInfo(const CXIdxDeclInfo *DInfo){
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  if (const ObjCCategoryDeclInfo *
+        CatInfo = dyn_cast<ObjCCategoryDeclInfo>(DI))
+    return &CatInfo->ObjCCatDeclInfo;
+
+  return 0;
+}
+
+const CXIdxObjCProtocolRefListInfo *
+clang_index_getObjCProtocolRefListInfo(const CXIdxDeclInfo *DInfo) {
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  
+  if (const ObjCInterfaceDeclInfo *
+        InterInfo = dyn_cast<ObjCInterfaceDeclInfo>(DI))
+    return InterInfo->ObjCInterDeclInfo.protocols;
+  
+  if (const ObjCProtocolDeclInfo *
+        ProtInfo = dyn_cast<ObjCProtocolDeclInfo>(DI))
+    return &ProtInfo->ObjCProtoRefListInfo;
+
+  return 0;
+}
+
+const CXIdxIBOutletCollectionAttrInfo *
+clang_index_getIBOutletCollectionAttrInfo(const CXIdxAttrInfo *AInfo) {
+  if (!AInfo)
+    return 0;
+
+  const AttrInfo *DI = static_cast<const AttrInfo *>(AInfo);
+  if (const IBOutletCollectionInfo *
+        IBInfo = dyn_cast<IBOutletCollectionInfo>(DI))
+    return &IBInfo->IBCollInfo;
+
+  return 0;
+}
+
+int clang_indexSourceFile(CXIndex CIdx,
                                 CXClientData client_data,
                                 IndexerCallbacks *index_callbacks,
                                 unsigned index_callbacks_size,
@@ -401,21 +572,22 @@ int clang_indexTranslationUnit(CXIndex CIdx,
                                 unsigned num_unsaved_files,
                                 CXTranslationUnit *out_TU,
                                 unsigned TU_options) {
-  IndexTranslationUnitInfo ITUI = { CIdx, client_data, index_callbacks,
+
+  IndexSourceFileInfo ITUI = { CIdx, client_data, index_callbacks,
                                     index_callbacks_size, index_options,
                                     source_filename, command_line_args,
                                     num_command_line_args, unsaved_files,
                                     num_unsaved_files, out_TU, TU_options, 0 };
 
   if (getenv("LIBCLANG_NOTHREADS")) {
-    clang_indexTranslationUnit_Impl(&ITUI);
+    clang_indexSourceFile_Impl(&ITUI);
     return ITUI.result;
   }
 
   llvm::CrashRecoveryContext CRC;
 
-  if (!RunSafely(CRC, clang_indexTranslationUnit_Impl, &ITUI)) {
-    fprintf(stderr, "libclang: crash detected during parsing: {\n");
+  if (!RunSafely(CRC, clang_indexSourceFile_Impl, &ITUI)) {
+    fprintf(stderr, "libclang: crash detected during indexing source file: {\n");
     fprintf(stderr, "  'source_filename' : '%s'\n", source_filename);
     fprintf(stderr, "  'command_line_args' : [");
     for (int i = 0; i != num_command_line_args; ++i) {
@@ -444,8 +616,33 @@ int clang_indexTranslationUnit(CXIndex CIdx,
   return ITUI.result;
 }
 
+int clang_indexTranslationUnit(CXTranslationUnit TU,
+                               CXClientData client_data,
+                               IndexerCallbacks *index_callbacks,
+                               unsigned index_callbacks_size,
+                               unsigned index_options) {
+
+  IndexTranslationUnitInfo ITUI = { TU, client_data, index_callbacks,
+                                    index_callbacks_size, index_options, 0 };
+
+  if (getenv("LIBCLANG_NOTHREADS")) {
+    clang_indexTranslationUnit_Impl(&ITUI);
+    return ITUI.result;
+  }
+
+  llvm::CrashRecoveryContext CRC;
+
+  if (!RunSafely(CRC, clang_indexTranslationUnit_Impl, &ITUI)) {
+    fprintf(stderr, "libclang: crash detected during indexing TU\n");
+    
+    return 1;
+  }
+
+  return ITUI.result;
+}
+
 void clang_indexLoc_getFileLocation(CXIdxLoc location,
-                                    CXIdxFile *indexFile,
+                                    CXIdxClientFile *indexFile,
                                     CXFile *file,
                                     unsigned *line,
                                     unsigned *column,

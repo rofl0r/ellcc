@@ -2032,8 +2032,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         ASM = ArrayType::Normal;
         D.setInvalidType(true);
       }
-      T = S.BuildArrayType(T, ASM, ArraySize,
-                           Qualifiers::fromCVRMask(ATI.TypeQuals),
+      T = S.BuildArrayType(T, ASM, ArraySize, ATI.TypeQuals,
                            SourceRange(DeclType.Loc, DeclType.EndLoc), Name);
       break;
     }
@@ -2383,6 +2382,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     // C++0x [dcl.constexpr]p8: A constexpr specifier for a non-static member
     // function that is not a constructor declares that function to be const.
     if (D.getDeclSpec().isConstexprSpecified() && !FreeFunction &&
+        D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_static &&
         D.getName().getKind() != UnqualifiedId::IK_ConstructorName &&
         D.getName().getKind() != UnqualifiedId::IK_ConstructorTemplateId &&
         !(FnTy->getTypeQuals() & DeclSpec::TQ_const)) {
@@ -3258,8 +3258,21 @@ static void HandleAddressSpaceTypeAttribute(QualType &Type,
 static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
                                        AttributeList &attr,
                                        QualType &type) {
-  if (!type->isObjCRetainableType() && !type->isDependentType())
-    return false;
+  bool NonObjCPointer = false;
+
+  if (!type->isDependentType()) {
+    if (const PointerType *ptr = type->getAs<PointerType>()) {
+      QualType pointee = ptr->getPointeeType();
+      if (pointee->isObjCRetainableType() || pointee->isPointerType())
+        return false;
+      // It is important not to lose the source info that there was an attribute
+      // applied to non-objc pointer. We will create an attributed type but
+      // its type will be the same as the original type.
+      NonObjCPointer = true;
+    } else if (!type->isObjCRetainableType()) {
+      return false;
+    }
+  }
 
   Sema &S = state.getSema();
   SourceLocation AttrLoc = attr.getLoc();
@@ -3300,10 +3313,25 @@ static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
   if (!S.getLangOptions().ObjCAutoRefCount)
     return true;
 
+  if (NonObjCPointer) {
+    StringRef name = attr.getName()->getName();
+    switch (lifetime) {
+    case Qualifiers::OCL_None:
+    case Qualifiers::OCL_ExplicitNone:
+      break;
+    case Qualifiers::OCL_Strong: name = "__strong"; break;
+    case Qualifiers::OCL_Weak: name = "__weak"; break;
+    case Qualifiers::OCL_Autoreleasing: name = "__autoreleasing"; break;
+    }
+    S.Diag(AttrLoc, diag::warn_objc_object_attribute_wrong_type)
+      << name << type;
+  }
+
   Qualifiers qs;
   qs.setObjCLifetime(lifetime);
   QualType origType = type;
-  type = S.Context.getQualifiedType(type, qs);
+  if (!NonObjCPointer)
+    type = S.Context.getQualifiedType(type, qs);
 
   // If we have a valid source location for the attribute, use an
   // AttributedType instead.
@@ -3313,7 +3341,7 @@ static bool handleObjCOwnershipTypeAttr(TypeProcessingState &state,
 
   // Forbid __weak if the runtime doesn't support it.
   if (lifetime == Qualifiers::OCL_Weak &&
-      !S.getLangOptions().ObjCRuntimeHasWeak) {
+      !S.getLangOptions().ObjCRuntimeHasWeak && !NonObjCPointer) {
 
     // Actually, delay this until we know what we're parsing.
     if (S.DelayedDiagnostics.shouldDelayDiagnostics()) {
@@ -4070,21 +4098,36 @@ bool Sema::RequireCompleteType(SourceLocation Loc, QualType T,
     return true;
 
   const TagType *Tag = T->getAs<TagType>();
+  const ObjCInterfaceType *IFace = 0;
+  
+  if (Tag) {
+    // Avoid diagnosing invalid decls as incomplete.
+    if (Tag->getDecl()->isInvalidDecl())
+      return true;
 
-  // Avoid diagnosing invalid decls as incomplete.
-  if (Tag && Tag->getDecl()->isInvalidDecl())
-    return true;
-
-  // Give the external AST source a chance to complete the type.
-  if (Tag && Tag->getDecl()->hasExternalLexicalStorage()) {
-    Context.getExternalSource()->CompleteType(Tag->getDecl());
-    if (!Tag->isIncompleteType())
-      return false;
+    // Give the external AST source a chance to complete the type.
+    if (Tag->getDecl()->hasExternalLexicalStorage()) {
+      Context.getExternalSource()->CompleteType(Tag->getDecl());
+      if (!Tag->isIncompleteType())
+        return false;
+    }
   }
-
+  else if ((IFace = T->getAs<ObjCInterfaceType>())) {
+    // Avoid diagnosing invalid decls as incomplete.
+    if (IFace->getDecl()->isInvalidDecl())
+      return true;
+    
+    // Give the external AST source a chance to complete the type.
+    if (IFace->getDecl()->hasExternalLexicalStorage()) {
+      Context.getExternalSource()->CompleteType(IFace->getDecl());
+      if (!IFace->isIncompleteType())
+        return false;
+    }
+  }
+    
   // We have an incomplete type. Produce a diagnostic.
   Diag(Loc, PD) << T;
-
+    
   // If we have a note, produce it.
   if (!Note.first.isInvalid())
     Diag(Note.first, Note.second);
@@ -4095,7 +4138,11 @@ bool Sema::RequireCompleteType(SourceLocation Loc, QualType T,
     Diag(Tag->getDecl()->getLocation(),
          Tag->isBeingDefined() ? diag::note_type_being_defined
                                : diag::note_forward_declaration)
-        << QualType(Tag, 0);
+      << QualType(Tag, 0);
+  
+  // If the Objective-C class was a forward declaration, produce a note.
+  if (IFace && !IFace->getDecl()->isInvalidDecl())
+    Diag(IFace->getDecl()->getLocation(), diag::note_forward_class);
 
   return true;
 }

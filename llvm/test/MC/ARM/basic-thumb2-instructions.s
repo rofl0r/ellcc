@@ -1228,12 +1228,18 @@ _func:
         mul r3, r4, r6
         it eq
         muleq r3, r4, r5
+        it le
+        mulle r4, r4, r8
+        mul r6, r5
 
 @ CHECK: muls	r3, r4, r3              @ encoding: [0x63,0x43]
 @ CHECK: mul	r3, r4, r3              @ encoding: [0x04,0xfb,0x03,0xf3]
 @ CHECK: mul	r3, r4, r6              @ encoding: [0x04,0xfb,0x06,0xf3]
 @ CHECK: it	eq                      @ encoding: [0x08,0xbf]
 @ CHECK: muleq	r3, r4, r5              @ encoding: [0x04,0xfb,0x05,0xf3]
+@ CHECK: it	le                      @ encoding: [0xd8,0xbf]
+@ CHECK: mulle	r4, r4, r8              @ encoding: [0x04,0xfb,0x08,0xf4]
+@ CHECK: mul	r6, r6, r5              @ encoding: [0x06,0xfb,0x05,0xf6]
 
 
 @------------------------------------------------------------------------------
@@ -1435,6 +1441,21 @@ _func:
 @ CHECK: pli	[r8, r2, lsl #2]        @ encoding: [0x18,0xf9,0x22,0xf0]
 @ CHECK: pli	[sp, r2, lsl #1]        @ encoding: [0x1d,0xf9,0x12,0xf0]
 @ CHECK: pli	[sp, r2]                @ encoding: [0x1d,0xf9,0x02,0xf0]
+
+@------------------------------------------------------------------------------
+@ POP (alias)
+@------------------------------------------------------------------------------
+        pop {r2, r9}
+
+@ CHECK: pop.w	{r2, r9}                @ encoding: [0xbd,0xe8,0x04,0x02]
+
+
+@------------------------------------------------------------------------------
+@ PUSH (alias)
+@------------------------------------------------------------------------------
+        push {r2, r9}
+
+@ CHECK: push.w	{r2, r9}                @ encoding: [0x2d,0xe9,0x04,0x02]
 
 
 @------------------------------------------------------------------------------
@@ -2303,11 +2324,13 @@ _func:
         stmdb r4, {r5, r6}
         stmdb r5!, {r3, r8}
         stmea r5!, {r3, r8}
+        stmdb.w r5, {r0, r1}
 
 @ CHECK: stmdb	r4, {r4, r5, r8, r9}    @ encoding: [0x04,0xe9,0x30,0x03]
 @ CHECK: stmdb	r4, {r5, r6}            @ encoding: [0x04,0xe9,0x60,0x00]
 @ CHECK: stmdb	r5!, {r3, r8}           @ encoding: [0x25,0xe9,0x08,0x01]
 @ CHECK: stm.w	r5!, {r3, r8}           @ encoding: [0xa5,0xe8,0x08,0x01]
+@ CHECK: stmdb	r5, {r0, r1}            @ encoding: [0x05,0xe9,0x03,0x00]
 
 
 @------------------------------------------------------------------------------

@@ -1312,6 +1312,12 @@ NamedDecl *Sema::LazilyCreateBuiltin(IdentifierInfo *II, unsigned bid,
       Diag(Loc, diag::warn_implicit_decl_requires_setjmp)
         << Context.BuiltinInfo.GetName(BID);
     return 0;
+
+  case ASTContext::GE_Missing_ucontext:
+    if (ForRedeclaration)
+      Diag(Loc, diag::warn_implicit_decl_requires_ucontext)
+        << Context.BuiltinInfo.GetName(BID);
+    return 0;
   }
 
   if (!ForRedeclaration && Context.BuiltinInfo.isPredefinedLibFunction(BID)) {
@@ -3145,7 +3151,7 @@ static bool RebuildDeclaratorInCurrentInstantiation(Sema &S, Declarator &D,
 }
 
 Decl *Sema::ActOnDeclarator(Scope *S, Declarator &D) {
-  D.setFunctionDefinition(false);
+  D.setFunctionDefinitionKind(FDK_Declaration);
   return HandleDeclarator(S, D, MultiTemplateParamsArg(*this));
 }
 
@@ -3233,13 +3239,23 @@ Decl *Sema::HandleDeclarator(Scope *S, Declarator &D,
         // class X {
         //   void X::f();
         // };
-        if (CurContext->Equals(DC))
+        if (CurContext->Equals(DC)) {
           Diag(D.getIdentifierLoc(), diag::warn_member_extra_qualification)
             << Name << FixItHint::CreateRemoval(D.getCXXScopeSpec().getRange());
-        else
+        } else {
           Diag(D.getIdentifierLoc(), diag::err_member_qualification)
             << Name << D.getCXXScopeSpec().getRange();
-        
+          
+          // C++ constructors and destructors with incorrect scopes can break
+          // our AST invariants by having the wrong underlying types. If
+          // that's the case, then drop this declaration entirely.
+          if ((Name.getNameKind() == DeclarationName::CXXConstructorName ||
+               Name.getNameKind() == DeclarationName::CXXDestructorName) &&
+              !Context.hasSameType(Name.getCXXNameType(),
+                 Context.getTypeDeclType(cast<CXXRecordDecl>(CurContext))))
+            return 0;
+        }
+
         // Pretend that this qualifier was not here.
         D.getCXXScopeSpec().clear();
       }
@@ -3651,6 +3667,8 @@ Sema::ActOnTypedefNameDecl(Scope *S, DeclContext *DC, TypedefNameDecl *NewTD,
         Context.setjmp_bufDecl(NewTD);
       else if (II->isStr("sigjmp_buf"))
         Context.setsigjmp_bufDecl(NewTD);
+      else if (II->isStr("ucontext_t"))
+        Context.setucontext_tDecl(NewTD);
       else if (II->isStr("__builtin_va_list"))
         Context.setBuiltinVaListType(Context.getTypedefType(NewTD));
     }
@@ -4793,7 +4811,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     // scope specifier, or is the object of a friend declaration, the
     // lexical context will be different from the semantic context.
     NewFD->setLexicalDeclContext(CurContext);
-    
+        
     // Match up the template parameter lists with the scope specifier, then
     // determine whether we have a template or a template specialization.
     bool Invalid = false;
@@ -4985,10 +5003,26 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       NewFD->setAccess(AS_public);
     }
 
+    // If a function is defined as defaulted or deleted, mark it as such now.
+    switch (D.getFunctionDefinitionKind()) {
+      case FDK_Declaration:
+      case FDK_Definition:
+        break;
+        
+      case FDK_Defaulted:
+        NewFD->setDefaulted();
+        break;
+        
+      case FDK_Deleted:
+        NewFD->setDeletedAsWritten();
+        break;
+    }
+
     if (isa<CXXMethodDecl>(NewFD) && DC == CurContext &&
         D.isFunctionDefinition()) {
-      // A method is implicitly inline if it's defined in its class
-      // definition.
+      // C++ [class.mfct]p2:
+      //   A member function may be defined (8.4) in its class definition, in 
+      //   which case it is an inline member function (7.1.2)
       NewFD->setImplicitlyInline();
     }
 
@@ -6165,17 +6199,6 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
   if (!VDecl->isInvalidDecl())
     checkUnsafeAssigns(VDecl->getLocation(), VDecl->getType(), Init);
 
-  if (VDecl->isConstexpr() && !VDecl->isInvalidDecl() &&
-      !VDecl->getType()->isDependentType() &&
-      !Init->isTypeDependent() && !Init->isValueDependent() &&
-      !Init->isConstantInitializer(Context,
-                                   VDecl->getType()->isReferenceType())) {
-    // FIXME: Improve this diagnostic to explain why the initializer is not
-    // a constant expression.
-    Diag(VDecl->getLocation(), diag::err_constexpr_var_requires_const_init)
-      << VDecl << Init->getSourceRange();
-  }
-  
   Init = MaybeCreateExprWithCleanups(Init);
   // Attach the initializer to the decl.
   VDecl->setInit(Init);
@@ -6240,16 +6263,12 @@ void Sema::ActOnUninitializedDecl(Decl *RealDecl,
       return;
     }
 
-    // C++0x [dcl.constexpr]p9: An object or reference declared constexpr must
-    // have an initializer.
     // C++0x [class.static.data]p3: A static data member can be declared with
     // the constexpr specifier; if so, its declaration shall specify
     // a brace-or-equal-initializer.
-    //
-    // A static data member's definition may inherit an initializer from an
-    // in-class declaration.
-    if (Var->isConstexpr() && !Var->getAnyInitializer()) {
-      Diag(Var->getLocation(), diag::err_constexpr_var_requires_init)
+    if (Var->isConstexpr() && Var->isStaticDataMember() &&
+        !Var->isThisDeclarationADefinition()) {
+      Diag(Var->getLocation(), diag::err_constexpr_static_mem_var_requires_init)
         << Var->getDeclName();
       Var->setInvalidDecl();
       return;
@@ -6507,15 +6526,21 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     }
   }
 
-  // Check for global constructors.
+  Expr *Init = var->getInit();
+  bool IsGlobal = var->hasGlobalStorage() && !var->isStaticLocal();
+
   if (!var->getDeclContext()->isDependentContext() &&
-      var->hasGlobalStorage() &&
-      !var->isStaticLocal() &&
-      var->getInit() &&
-      !var->getInit()->isConstantInitializer(Context,
-                                             baseType->isReferenceType()))
-    Diag(var->getLocation(), diag::warn_global_constructor)
-      << var->getInit()->getSourceRange();
+      (var->isConstexpr() || IsGlobal) && Init &&
+      !Init->isConstantInitializer(Context, baseType->isReferenceType())) {
+    // FIXME: Improve this diagnostic to explain why the initializer is not
+    // a constant expression.
+    if (var->isConstexpr())
+      Diag(var->getLocation(), diag::err_constexpr_var_requires_const_init)
+        << var << Init->getSourceRange();
+    if (IsGlobal)
+      Diag(var->getLocation(), diag::warn_global_constructor)
+        << Init->getSourceRange();
+  }
 
   // Require the destructor.
   if (const RecordType *recordType = baseType->getAs<RecordType>())
@@ -6875,7 +6900,7 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope,
   assert(D.isFunctionDeclarator() && "Not a function declarator!");
   Scope *ParentScope = FnBodyScope->getParent();
 
-  D.setFunctionDefinition(true);
+  D.setFunctionDefinitionKind(FDK_Definition);
   Decl *DP = HandleDeclarator(ParentScope, D,
                               MultiTemplateParamsArg(*this));
   return ActOnStartOfFunctionDef(FnBodyScope, DP);
@@ -7173,8 +7198,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     // deletion in some later function.
     if (PP.getDiagnostics().hasErrorOccurred() ||
         PP.getDiagnostics().getSuppressAllDiagnostics()) {
-      ExprTemporaries.clear();
-      ExprNeedsCleanups = false;
+      DiscardCleanupsInEvaluationContext();
     } else if (!isa<FunctionTemplateDecl>(dcl)) {
       // Since the body is valid, issue any analysis-based warnings that are
       // enabled.
@@ -7185,7 +7209,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
         !CheckConstexprFunctionBody(FD, Body))
       FD->setInvalidDecl();
 
-    assert(ExprTemporaries.empty() && "Leftover temporaries in function");
+    assert(ExprCleanupObjects.empty() && "Leftover temporaries in function");
     assert(!ExprNeedsCleanups && "Unaccounted cleanups in function");
   }
   
@@ -7198,8 +7222,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   // been leftover. This ensures that these temporaries won't be picked up for
   // deletion in some later function.
   if (getDiagnostics().hasErrorOccurred()) {
-    ExprTemporaries.clear();
-    ExprNeedsCleanups = false;
+    DiscardCleanupsInEvaluationContext();
   }
 
   return dcl;
@@ -9802,6 +9825,7 @@ void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,
     unsigned NewWidth;
     bool NewSign;
     if (!getLangOptions().CPlusPlus &&
+        !Enum->isFixed() &&
         isRepresentableIntegerValue(Context, InitVal, Context.IntTy)) {
       NewTy = Context.IntTy;
       NewWidth = IntWidth;

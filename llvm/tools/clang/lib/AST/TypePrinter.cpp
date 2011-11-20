@@ -600,6 +600,9 @@ void TypePrinter::AppendScope(DeclContext *DC, std::string &Buffer) {
   unsigned OldSize = Buffer.size();
 
   if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
+    if (Policy.SuppressUnwrittenScope && 
+        (NS->isAnonymousNamespace() || NS->isInline()))
+      return;
     if (NS->getIdentifier())
       Buffer += NS->getNameAsString();
     else
@@ -620,6 +623,8 @@ void TypePrinter::AppendScope(DeclContext *DC, std::string &Buffer) {
       Buffer += Typedef->getIdentifier()->getName();
     else if (Tag->getIdentifier())
       Buffer += Tag->getIdentifier()->getName();
+    else
+      return;
   }
 
   if (Buffer.size() != OldSize)
@@ -1157,9 +1162,21 @@ void Qualifiers::getAsStringInternal(std::string &S,
   AppendTypeQualList(S, getCVRQualifiers());
   if (unsigned addrspace = getAddressSpace()) {
     if (!S.empty()) S += ' ';
-    S += "__attribute__((address_space(";
-    S += llvm::utostr_32(addrspace);
-    S += ")))";
+    switch (addrspace) {
+      case LangAS::opencl_global:
+        S += "__global";
+        break;
+      case LangAS::opencl_local:
+        S += "__local";
+        break;
+      case LangAS::opencl_constant:
+        S += "__constant";
+        break;
+      default:
+        S += "__attribute__((address_space(";
+        S += llvm::utostr_32(addrspace);
+        S += ")))";
+    }
   }
   if (Qualifiers::GC gc = getObjCGCAttr()) {
     if (!S.empty()) S += ' ';

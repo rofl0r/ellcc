@@ -131,7 +131,6 @@ public:
   void VisitObjCIvarRefExpr(ObjCIvarRefExpr *E) {
     EmitAggLoadOfLValue(E);
   }
-  void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E);
 
   void VisitAbstractConditionalOperator(const AbstractConditionalOperator *CO);
   void VisitChooseExpr(const ChooseExpr *CE);
@@ -147,6 +146,15 @@ public:
   void VisitCXXTypeidExpr(CXXTypeidExpr *E) { EmitAggLoadOfLValue(E); }
   void VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E);
   void VisitOpaqueValueExpr(OpaqueValueExpr *E);
+
+  void VisitPseudoObjectExpr(PseudoObjectExpr *E) {
+    if (E->isGLValue()) {
+      LValue LV = CGF.EmitPseudoObjectLValue(E);
+      return EmitFinalDestCopy(E, LV);
+    }
+
+    CGF.EmitPseudoObjectRValue(E, EnsureSlot(E->getType()));
+  }
 
   void VisitVAArgExpr(VAArgExpr *E);
 
@@ -325,15 +333,6 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
                 "should have been unpacked before we got here");
   }
 
-  case CK_GetObjCProperty: {
-    LValue LV =
-      CGF.EmitObjCPropertyRefLValue(E->getSubExpr()->getObjCProperty());
-    assert(LV.isPropertyRef());
-    RValue RV = CGF.EmitLoadOfPropertyRefLValue(LV, getReturnValueSlot());
-    EmitMoveFromReturnSlot(E, RV);
-    break;
-  }
-
   case CK_LValueToRValue: // hope for downstream optimization
   case CK_NoOp:
   case CK_UserDefinedConversion:
@@ -405,11 +404,6 @@ void AggExprEmitter::VisitObjCMessageExpr(ObjCMessageExpr *E) {
   EmitMoveFromReturnSlot(E, RV);
 }
 
-void AggExprEmitter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
-  llvm_unreachable("direct property access not surrounded by "
-                   "lvalue-to-rvalue cast");
-}
-
 void AggExprEmitter::VisitBinComma(const BinaryOperator *E) {
   CGF.EmitIgnoredExpr(E->getLHS());
   Visit(E->getRHS());
@@ -457,29 +451,13 @@ void AggExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   
   LValue LHS = CGF.EmitLValue(E->getLHS());
 
-  // We have to special case property setters, otherwise we must have
-  // a simple lvalue (no aggregates inside vectors, bitfields).
-  if (LHS.isPropertyRef()) {
-    const ObjCPropertyRefExpr *RE = LHS.getPropertyRefExpr();
-    QualType ArgType = RE->getSetterArgType();
-    RValue Src;
-    if (ArgType->isReferenceType())
-      Src = CGF.EmitReferenceBindingToExpr(E->getRHS(), 0);
-    else {
-      AggValueSlot Slot = EnsureSlot(E->getRHS()->getType());
-      CGF.EmitAggExpr(E->getRHS(), Slot);
-      Src = Slot.asRValue();
-    }
-    CGF.EmitStoreThroughPropertyRefLValue(Src, LHS);
-  } else {
-    // Codegen the RHS so that it stores directly into the LHS.
-    AggValueSlot LHSSlot =
-      AggValueSlot::forLValue(LHS, AggValueSlot::IsDestructed, 
-                              needsGC(E->getLHS()->getType()),
-                              AggValueSlot::IsAliased);
-    CGF.EmitAggExpr(E->getRHS(), LHSSlot, false);
-    EmitFinalDestCopy(E, LHS, true);
-  }
+  // Codegen the RHS so that it stores directly into the LHS.
+  AggValueSlot LHSSlot =
+    AggValueSlot::forLValue(LHS, AggValueSlot::IsDestructed, 
+                            needsGC(E->getLHS()->getType()),
+                            AggValueSlot::IsAliased);
+  CGF.EmitAggExpr(E->getRHS(), LHSSlot, false);
+  EmitFinalDestCopy(E, LHS, true);
 }
 
 void AggExprEmitter::
@@ -558,7 +536,9 @@ AggExprEmitter::VisitCXXConstructExpr(const CXXConstructExpr *E) {
 }
 
 void AggExprEmitter::VisitExprWithCleanups(ExprWithCleanups *E) {
-  CGF.EmitExprWithCleanups(E, Dest);
+  CGF.enterFullExpression(E);
+  CodeGenFunction::RunCleanupsScope cleanups(CGF);
+  Visit(E->getSubExpr());
 }
 
 void AggExprEmitter::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
@@ -707,6 +687,7 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
     QualType::DestructionKind dtorKind = elementType.isDestructedType();
     llvm::AllocaInst *endOfInit = 0;
     EHScopeStack::stable_iterator cleanup;
+    llvm::Instruction *cleanupDominator = 0;
     if (CGF.needsEHCleanup(dtorKind)) {
       // In principle we could tell the cleanup where we are more
       // directly, but the control flow can get so varied here that it
@@ -714,7 +695,7 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
       // alloca.
       endOfInit = CGF.CreateTempAlloca(begin->getType(),
                                        "arrayinit.endOfInit");
-      Builder.CreateStore(begin, endOfInit);
+      cleanupDominator = Builder.CreateStore(begin, endOfInit);
       CGF.pushIrregularPartialArrayCleanup(begin, endOfInit, elementType,
                                            CGF.getDestroyer(dtorKind));
       cleanup = CGF.EHStack.stable_begin();
@@ -814,7 +795,7 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
     }
 
     // Leave the partial-array cleanup if we entered one.
-    if (dtorKind) CGF.DeactivateCleanupBlock(cleanup);
+    if (dtorKind) CGF.DeactivateCleanupBlock(cleanup, cleanupDominator);
 
     return;
   }
@@ -863,6 +844,7 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
   // We'll need to enter cleanup scopes in case any of the member
   // initializers throw an exception.
   SmallVector<EHScopeStack::stable_iterator, 16> cleanups;
+  llvm::Instruction *cleanupDominator = 0;
 
   // Here we iterate over the fields; this makes it simpler to both
   // default-initialize fields and skip over unnamed fields.
@@ -906,6 +888,9 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
           = field->getType().isDestructedType()) {
       assert(LV.isSimple());
       if (CGF.needsEHCleanup(dtorKind)) {
+        if (!cleanupDominator)
+          cleanupDominator = CGF.Builder.CreateUnreachable(); // placeholder
+
         CGF.pushDestroy(EHCleanup, LV.getAddress(), field->getType(),
                         CGF.getDestroyer(dtorKind), false);
         cleanups.push_back(CGF.EHStack.stable_begin());
@@ -925,7 +910,11 @@ void AggExprEmitter::VisitInitListExpr(InitListExpr *E) {
   // Deactivate all the partial cleanups in reverse order, which
   // generally means popping them.
   for (unsigned i = cleanups.size(); i != 0; --i)
-    CGF.DeactivateCleanupBlock(cleanups[i-1]);
+    CGF.DeactivateCleanupBlock(cleanups[i-1], cleanupDominator);
+
+  // Destroy the placeholder if we made one.
+  if (cleanupDominator)
+    cleanupDominator->eraseFromParent();
 }
 
 //===----------------------------------------------------------------------===//

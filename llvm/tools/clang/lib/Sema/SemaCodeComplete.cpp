@@ -1189,11 +1189,9 @@ namespace {
     virtual void FoundDecl(NamedDecl *ND, NamedDecl *Hiding, DeclContext *Ctx,
                            bool InBaseClass) {
       bool Accessible = true;
-      if (Ctx) {
-        if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Ctx))
-          Accessible = Results.getSema().IsSimplyAccessible(ND, Class);
-        // FIXME: ObjC access checks are missing.
-      }
+      if (Ctx)
+        Accessible = Results.getSema().IsSimplyAccessible(ND, Ctx);
+      
       ResultBuilder::Result Result(ND, 0, false, Accessible);
       Results.AddResult(Result, CurContext, Hiding, InBaseClass);
     }
@@ -1381,6 +1379,7 @@ static PrintingPolicy getCompletionPrintingPolicy(Sema &S) {
   PrintingPolicy Policy = S.getPrintingPolicy();
   Policy.AnonymousTagLocations = false;
   Policy.SuppressStrongLifetime = true;
+  Policy.SuppressUnwrittenScope = true;
   return Policy;
 }
 
@@ -1999,25 +1998,20 @@ static void MaybeAddSentinel(ASTContext &Context, NamedDecl *FunctionOrMethod,
     }
 }
 
-static void appendWithSpace(std::string &Result, StringRef Text) {
-  if (!Result.empty())
-    Result += ' ';
-  Result += Text.str();
-}
 static std::string formatObjCParamQualifiers(unsigned ObjCQuals) {
   std::string Result;
   if (ObjCQuals & Decl::OBJC_TQ_In)
-    appendWithSpace(Result, "in");
+    Result += "in ";
   else if (ObjCQuals & Decl::OBJC_TQ_Inout)
-    appendWithSpace(Result, "inout");
+    Result += "inout ";
   else if (ObjCQuals & Decl::OBJC_TQ_Out)
-    appendWithSpace(Result, "out");
+    Result += "out ";
   if (ObjCQuals & Decl::OBJC_TQ_Bycopy)
-    appendWithSpace(Result, "bycopy");
+    Result += "bycopy ";
   else if (ObjCQuals & Decl::OBJC_TQ_Byref)
-    appendWithSpace(Result, "byref");
+    Result += "byref ";
   if (ObjCQuals & Decl::OBJC_TQ_Oneway)
-    appendWithSpace(Result, "oneway");
+    Result += "oneway ";
   return Result;
 }
 

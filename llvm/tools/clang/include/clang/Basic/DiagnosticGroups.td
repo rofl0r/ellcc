@@ -26,6 +26,7 @@ def : DiagGroup<"attributes">;
 def : DiagGroup<"bad-function-cast">;
 def Availability : DiagGroup<"availability">;
 def BoolConversions : DiagGroup<"bool-conversions">;
+def BuiltinRequiresHeader : DiagGroup<"builtin-requires-header">;
 def CXXCompat: DiagGroup<"c++-compat">;
 def CastAlign : DiagGroup<"cast-align">;
 def : DiagGroup<"cast-qual">;
@@ -55,7 +56,17 @@ def ExtraTokens : DiagGroup<"extra-tokens">;
 def FormatExtraArgs : DiagGroup<"format-extra-args">;
 def FormatZeroLength : DiagGroup<"format-zero-length">;
 
-def CXX98Compat : DiagGroup<"c++98-compat">;
+def CXX98CompatBindToTemporaryCopy :
+  DiagGroup<"c++98-compat-bind-to-temporary-copy">;
+def CXX98CompatLocalTypeTemplateArgs :
+  DiagGroup<"c++98-compat-local-type-template-args">;
+def CXX98CompatUnnamedTypeTemplateArgs :
+  DiagGroup<"c++98-compat-unnamed-type-template-args">;
+
+def CXX98Compat : DiagGroup<"c++98-compat",
+                            [CXX98CompatBindToTemporaryCopy,
+                             CXX98CompatLocalTypeTemplateArgs,
+                             CXX98CompatUnnamedTypeTemplateArgs]>;
 // Warnings for C++11 features which are Extensions in C++98 mode.
 def CXX98CompatPedantic : DiagGroup<"c++98-compat-pedantic", [CXX98Compat]>;
 
@@ -81,7 +92,8 @@ def : DiagGroup<"inline">;
 def : DiagGroup<"int-to-pointer-cast">;
 def : DiagGroup<"invalid-pch">;
 def LiteralRange : DiagGroup<"literal-range">;
-def LocalTypeTemplateArgs : DiagGroup<"local-type-template-args">;
+def LocalTypeTemplateArgs : DiagGroup<"local-type-template-args",
+                                      [CXX98CompatLocalTypeTemplateArgs]>;
 def MalformedWarningCheck : DiagGroup<"malformed-warning-check">;
 def Main : DiagGroup<"main">;
 def MissingBraces : DiagGroup<"missing-braces">;
@@ -110,18 +122,20 @@ def OverlengthStrings : DiagGroup<"overlength-strings">;
 def OverloadedVirtual : DiagGroup<"overloaded-virtual">;
 def ObjCMissingSuperCalls : DiagGroup<"objc-missing-super-calls">;
 def ObjCRetainBlockProperty : DiagGroup<"objc-noncopy-retain-block-property">;
+def ObjCReadonlyPropertyHasSetter : DiagGroup<"objc-readonly-with-setter-property">;
 def ObjCContinuationPropertyType :DiagGroup<"objc-continuation-property-type">;
 def Packed : DiagGroup<"packed">;
 def Padded : DiagGroup<"padded">;
 def PointerArith : DiagGroup<"pointer-arith">;
 def PoundWarning : DiagGroup<"#warnings">,
                    DiagCategory<"#warning Directive">;
-def PoundPragmaMessage : DiagGroup<"#pragma messages">,
+def PoundPragmaMessage : DiagGroup<"#pragma-messages">,
                          DiagCategory<"#pragma message Directive">;
 def : DiagGroup<"pointer-to-int-cast">;
 def : DiagGroup<"redundant-decls">;
 def ReturnType : DiagGroup<"return-type">;
-def BindToTemporaryCopy : DiagGroup<"bind-to-temporary-copy">;
+def BindToTemporaryCopy : DiagGroup<"bind-to-temporary-copy",
+                                    [CXX98CompatBindToTemporaryCopy]>;
 def SelfAssignment : DiagGroup<"self-assign">;
 def SemiBeforeMethodBody : DiagGroup<"semicolon-before-method-body">;
 def Sentinel : DiagGroup<"sentinel">;
@@ -169,7 +183,8 @@ def Uninitialized  : DiagGroup<"uninitialized">;
 def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
 def UnknownPragmas : DiagGroup<"unknown-pragmas">;
 def UnknownAttributes : DiagGroup<"attributes">;
-def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args">;
+def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args",
+                                        [CXX98CompatUnnamedTypeTemplateArgs]>;
 def UnusedArgument : DiagGroup<"unused-argument">;
 def UnusedComparison : DiagGroup<"unused-comparison">;
 def UnusedExceptionParameter : DiagGroup<"unused-exception-parameter">;

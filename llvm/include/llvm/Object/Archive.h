@@ -34,6 +34,10 @@ public:
       return (Parent == other.Parent) && (Data.begin() == other.Data.begin());
     }
 
+    bool operator <(const Child &other) const {
+      return Data.begin() < other.Data.begin();
+    }
+
     Child getNext() const;
     error_code getName(StringRef &Result) const;
     int getLastModified() const;
@@ -50,6 +54,7 @@ public:
   class child_iterator {
     Child child;
   public:
+    child_iterator() : child(Child(0, StringRef())) {}
     child_iterator(const Child &c) : child(c) {}
     const Child* operator->() const {
       return &child;
@@ -63,8 +68,53 @@ public:
       return !(*this == other);
     }
 
+    bool operator <(const child_iterator &other) const {
+      return child < other.child;
+    }
+
     child_iterator& operator++() {  // Preincrement
       child = child.getNext();
+      return *this;
+    }
+  };
+
+  class Symbol {
+    const Archive *Parent;
+    uint32_t SymbolIndex;
+    uint32_t StringIndex; // Extra index to the string.
+
+  public:
+    bool operator ==(const Symbol &other) const {
+      return (Parent == other.Parent) && (SymbolIndex == other.SymbolIndex);
+    }
+
+    Symbol(const Archive *p, uint32_t symi, uint32_t stri)
+      : Parent(p)
+      , SymbolIndex(symi)
+      , StringIndex(stri) {}
+    error_code getName(StringRef &Result) const;
+    error_code getMember(child_iterator &Result) const;
+    Symbol getNext() const;
+  };
+
+  class symbol_iterator {
+    Symbol symbol;
+  public:
+    symbol_iterator(const Symbol &s) : symbol(s) {}
+    const Symbol *operator->() const {
+      return &symbol;
+    }
+
+    bool operator==(const symbol_iterator &other) const {
+      return symbol == other.symbol;
+    }
+
+    bool operator!=(const symbol_iterator &other) const {
+      return !(*this == other);
+    }
+
+    symbol_iterator& operator++() {  // Preincrement
+      symbol = symbol.getNext();
       return *this;
     }
   };
@@ -74,6 +124,9 @@ public:
   child_iterator begin_children(bool skip_internal = true) const;
   child_iterator end_children() const;
 
+  symbol_iterator begin_symbols() const;
+  symbol_iterator end_symbols() const;
+
   // Cast methods.
   static inline bool classof(Archive const *v) { return true; }
   static inline bool classof(Binary const *v) {
@@ -81,6 +134,7 @@ public:
   }
 
 private:
+  child_iterator SymbolTable;
   child_iterator StringTable;
 };
 

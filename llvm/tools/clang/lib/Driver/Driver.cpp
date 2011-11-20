@@ -365,6 +365,12 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   CCCIsCPP = true;
   CCGenDiagnostics = true;
 
+  // Save the original job command(s).
+  std::string Cmd;
+  llvm::raw_string_ostream OS(Cmd);
+  C.PrintJob(OS, C.getJobs(), "\n", false);
+  OS.flush();
+
   // Clear stale state and suppress tool output.
   C.initCompilationForDiagnostics();
   Diags.Reset();
@@ -441,11 +447,26 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   // If the command succeeded, we are done.
   if (Res == 0) {
     Diag(clang::diag::note_drv_command_failed_diag_msg)
-      << "Preprocessed source(s) are located at:";
+      << "Preprocessed source(s) and associated run script(s) are located at:";
     ArgStringList Files = C.getTempFiles();
     for (ArgStringList::const_iterator it = Files.begin(), ie = Files.end();
-         it != ie; ++it)
+         it != ie; ++it) {
       Diag(clang::diag::note_drv_command_failed_diag_msg) << *it;
+
+      std::string Err;
+      std::string Script = StringRef(*it).rsplit('.').first;
+      Script += ".sh";
+      llvm::raw_fd_ostream ScriptOS(Script.c_str(), Err,
+                                    llvm::raw_fd_ostream::F_Excl |
+                                    llvm::raw_fd_ostream::F_Binary);
+      if (!Err.empty()) {
+        Diag(clang::diag::note_drv_command_failed_diag_msg)
+          << "Error generating run script: " + Script + " " + Err;
+      } else {
+        ScriptOS << Cmd;
+        Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
+      }
+    }
   } else {
     // Failure, remove preprocessed files.
     if (!C.getArgs().hasArg(options::OPT_save_temps))
@@ -494,7 +515,7 @@ int Driver::ExecuteCompilation(const Compilation &C,
     // FIXME: See FIXME above regarding result code interpretation.
     if (Res < 0)
       Diag(clang::diag::err_drv_command_signalled)
-        << FailingTool.getShortName() << -Res;
+        << FailingTool.getShortName();
     else
       Diag(clang::diag::err_drv_command_failed)
         << FailingTool.getShortName() << Res;
@@ -985,11 +1006,12 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
 
   // Construct the actions to perform.
   ActionList LinkerInputs;
+  unsigned NumSteps = 0;
   for (unsigned i = 0, e = Inputs.size(); i != e; ++i) {
     types::ID InputType = Inputs[i].first;
     const Arg *InputArg = Inputs[i].second;
 
-    unsigned NumSteps = types::getNumCompilationPhases(InputType);
+    NumSteps = types::getNumCompilationPhases(InputType);
     assert(NumSteps && "Invalid number of steps!");
 
     // If the first step comes after the final phase we are doing as part of
@@ -1057,7 +1079,7 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
 
   // If we are linking, claim any options which are obviously only used for
   // compilation.
-  if (FinalPhase == phases::Link)
+  if (FinalPhase == phases::Link && (NumSteps == 1))
     Args.ClaimAllArgs(options::OPT_CompileOnly_Group);
 }
 
@@ -1217,17 +1239,9 @@ static const Tool &SelectToolForJob(Compilation &C, const ToolChain *TC,
   // bottom up, so what we are actually looking for is an assembler job with a
   // compiler input.
 
-  // FIXME: This doesn't belong here, but ideally we will support static soon
-  // anyway.
-  bool HasStatic = (C.getArgs().hasArg(options::OPT_mkernel) ||
-                    C.getArgs().hasArg(options::OPT_static) ||
-                    C.getArgs().hasArg(options::OPT_fapple_kext));
-  bool IsDarwin = TC->getTriple().isOSDarwin();
-  bool IsIADefault = TC->IsIntegratedAssemblerDefault() &&
-    !(HasStatic && IsDarwin);
   if (C.getArgs().hasFlag(options::OPT_integrated_as,
-                         options::OPT_no_integrated_as,
-                         IsIADefault) &&
+                          options::OPT_no_integrated_as,
+                          TC->IsIntegratedAssemblerDefault()) &&
       !C.getArgs().hasArg(options::OPT_save_temps) &&
       isa<AssembleJobAction>(JA) &&
       Inputs->size() == 1 && isa<CompileJobAction>(*Inputs->begin())) {

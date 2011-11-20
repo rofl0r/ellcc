@@ -16,7 +16,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/VectorExtras.h"
@@ -130,7 +129,7 @@ namespace {
 void ClangDiagsDefsEmitter::run(raw_ostream &OS) {
   // Write the #if guard
   if (!Component.empty()) {
-    std::string ComponentName = UppercaseString(Component);
+    std::string ComponentName = StringRef(Component).upper();
     OS << "#ifdef " << ComponentName << "START\n";
     OS << "__" << ComponentName << "START = DIAG_START_" << ComponentName
        << ",\n";
@@ -304,6 +303,10 @@ void ClangDiagGroupsEmitter::run(raw_ostream &OS) {
     OS << "  { ";
     OS << I->first.size() << ", ";
     OS << "\"";
+    if (I->first.find_first_not_of("abcdefghijklmnopqrstuvwxyz"
+                                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                   "0123456789!@#$%^*-+=:?")!=std::string::npos)
+      throw "Invalid character in diagnostic group '" + I->first + "'";
     OS.write_escaped(I->first) << "\","
                                << std::string(MaxLen-I->first.size()+1, ' ');
     

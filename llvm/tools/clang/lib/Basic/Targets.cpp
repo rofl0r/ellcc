@@ -1310,6 +1310,7 @@ class X86TargetInfo : public TargetInfo {
     CK_K8SSE3,
     CK_Opteron,
     CK_OpteronSSE3,
+    CK_AMDFAM10,
 
     /// This specification is deprecated and will be removed in the future.
     /// Users should prefer \see CK_K8.
@@ -1409,6 +1410,7 @@ public:
       .Case("k8-sse3", CK_K8SSE3)
       .Case("opteron", CK_Opteron)
       .Case("opteron-sse3", CK_OpteronSSE3)
+      .Case("amdfam10", CK_AMDFAM10)
       .Case("x86-64", CK_x86_64)
       .Case("geode", CK_Geode)
       .Default(CK_Generic);
@@ -1469,6 +1471,7 @@ public:
     case CK_K8SSE3:
     case CK_Opteron:
     case CK_OpteronSSE3:
+    case CK_AMDFAM10:
     case CK_x86_64:
       return true;
     }
@@ -1487,11 +1490,9 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   Features["ssse3"] = false;
   Features["sse41"] = false;
   Features["sse42"] = false;
+  Features["sse4a"] = false;
   Features["aes"] = false;
   Features["avx"] = false;
-
-  // LLVM does not currently recognize this.
-  // Features["sse4a"] = false;
 
   // FIXME: This *really* should not be here.
 
@@ -1589,6 +1590,11 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabled(Features, "sse3", true);
     setFeatureEnabled(Features, "3dnowa", true);
     break;
+  case CK_AMDFAM10:
+    setFeatureEnabled(Features, "sse3", true);
+    setFeatureEnabled(Features, "sse4a", true);
+    setFeatureEnabled(Features, "3dnowa", true);
+    break;
   case CK_C3_2:
     setFeatureEnabled(Features, "mmx", true);
     setFeatureEnabled(Features, "sse", true);
@@ -1632,6 +1638,8 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "avx")
       Features["avx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] = true;
+    else if (Name == "sse4a")
+      Features["sse4a"] = true;
   } else {
     if (Name == "mmx")
       Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = false;
@@ -1658,6 +1666,8 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["aes"] = false;
     else if (Name == "avx")
       Features["avx"] = false;
+    else if (Name == "sse4a")
+      Features["sse4a"] = false;
   }
 
   return true;
@@ -1853,6 +1863,11 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__k8");
     Builder.defineMacro("__k8__");
     Builder.defineMacro("__tune_k8__");
+    break;
+  case CK_AMDFAM10:
+    Builder.defineMacro("__amdfam10");
+    Builder.defineMacro("__amdfam10__");
+    Builder.defineMacro("__tune_amdfam10__");
     break;
   case CK_Geode:
     Builder.defineMacro("__geode");
@@ -2261,6 +2276,9 @@ public:
 
     // Use fpret only for long double.
     RealTypeUsesObjCFPRet = (1 << TargetInfo::LongDouble);
+
+    // Use fp2ret for _Complex long double.
+    ComplexLongDoubleUsesFP2Ret = true;
 
     // x86-64 has atomics up to 16 bytes.
     // FIXME: Once the backend is fixed, increase MaxAtomicInlineWidth to 128
@@ -2809,6 +2827,7 @@ public:
     DefineStd(Builder, "sparc", Opts);
     Builder.defineMacro("__sparcv8");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
+    Builder.defineMacro("__BIG_ENDIAN__");
 
     if (SoftFloat) {
       Builder.defineMacro("SOFT_FLOAT", "1");
@@ -3066,10 +3085,7 @@ protected:
   std::string ABI;
 public:
   MipsTargetInfoBase(const std::string& triple, const std::string& ABIStr)
-    : TargetInfo(triple), ABI(ABIStr) {
-    SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
-  }
+    : TargetInfo(triple), ABI(ABIStr) {}
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) = 0;
   virtual bool setCPU(const std::string &Name) {
@@ -3131,6 +3147,8 @@ public:
                                      TargetInfo::ConstraintInfo &Info) const {
     switch (*Name) {
     default:
+      return false;
+        
     case 'r': // CPU registers.
     case 'd': // Equivalent to "r" unless generating MIPS16 code.
     case 'y': // Equivalent to "r", backwards compatibility only.
@@ -3158,7 +3176,10 @@ public:
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
 public:
   Mips32TargetInfoBase(const std::string& triple) :
-    MipsTargetInfoBase(triple, "o32") {}
+    MipsTargetInfoBase(triple, "o32") {
+    SizeType = UnsignedInt;
+    PtrDiffType = SignedInt;
+  }
   virtual bool setABI(const std::string &Name) {
     if ((Name == "o32") || (Name == "eabi")) {
       ABI = Name;
@@ -3168,6 +3189,10 @@ public:
   }
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
+    Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
+    Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
+    Builder.defineMacro("_MIPS_SZLONG", Twine(getLongWidth()));
+
     if (ABI == "o32") {
       Builder.defineMacro("__mips_o32");
       Builder.defineMacro("_ABIO32", "1");
@@ -3267,6 +3292,7 @@ public:
     Builder.defineMacro("_MIPSEB");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
     getArchDefines(Opts, Builder);
+    Builder.defineMacro("__BIG_ENDIAN__");
   }
 };
 
@@ -3284,6 +3310,7 @@ public:
     Builder.defineMacro("_MIPSEL");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
     getArchDefines(Opts, Builder);
+    Builder.defineMacro("__LITTLE_ENDIAN__");
   }
 };
 

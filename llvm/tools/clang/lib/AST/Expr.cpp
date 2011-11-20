@@ -29,6 +29,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cstring>
 using namespace clang;
 
 /// isKnownToHaveBooleanValue - Return true if this is an integer expression
@@ -184,21 +185,29 @@ static void computeDeclRefDependence(NamedDecl *D, QualType T,
   
   //  (VD) - a constant with integral or enumeration type and is
   //         initialized with an expression that is value-dependent.
+  //  (VD) - a constant with literal type and is initialized with an
+  //         expression that is value-dependent [C++11].
+  //  (VD) - FIXME: Missing from the standard:
+  //       -  an entity with reference type and is initialized with an
+  //          expression that is value-dependent [C++11]
   if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
-    if (Var->getType()->isIntegralOrEnumerationType() &&
-        Var->getType().getCVRQualifiers() == Qualifiers::Const) {
+    if ((D->getASTContext().getLangOptions().CPlusPlus0x ?
+           Var->getType()->isLiteralType() :
+           Var->getType()->isIntegralOrEnumerationType()) &&
+        (Var->getType().getCVRQualifiers() == Qualifiers::Const ||
+         Var->getType()->isReferenceType())) {
       if (const Expr *Init = Var->getAnyInitializer())
         if (Init->isValueDependent()) {
           ValueDependent = true;
           InstantiationDependent = true;
         }
-    } 
-    
+    }
+
     // (VD) - FIXME: Missing from the standard: 
     //      -  a member function or a static data member of the current 
     //         instantiation
-    else if (Var->isStaticDataMember() && 
-             Var->getDeclContext()->isDependentContext()) {
+    if (Var->isStaticDataMember() && 
+        Var->getDeclContext()->isDependentContext()) {
       ValueDependent = true;
       InstantiationDependent = true;
     }
@@ -212,8 +221,7 @@ static void computeDeclRefDependence(NamedDecl *D, QualType T,
   if (isa<CXXMethodDecl>(D) && D->getDeclContext()->isDependentContext()) {
     ValueDependent = true;
     InstantiationDependent = true;
-    return;
-  }  
+  }
 }
 
 void DeclRefExpr::computeDependence() {
@@ -482,6 +490,29 @@ double FloatingLiteral::getValueAsApproximateDouble() const {
   return V.convertToDouble();
 }
 
+int StringLiteral::mapCharByteWidth(TargetInfo const &target,StringKind k) {
+  int CharByteWidth;
+  switch(k) {
+    case Ascii:
+    case UTF8:
+      CharByteWidth = target.getCharWidth();
+      break;
+    case Wide:
+      CharByteWidth = target.getWCharWidth();
+      break;
+    case UTF16:
+      CharByteWidth = target.getChar16Width();
+      break;
+    case UTF32:
+      CharByteWidth = target.getChar32Width();
+  }
+  assert((CharByteWidth & 7) == 0 && "Assumes character size is byte multiple");
+  CharByteWidth /= 8;
+  assert((CharByteWidth==1 || CharByteWidth==2 || CharByteWidth==4)
+         && "character byte widths supported are 1, 2, and 4 only");
+  return CharByteWidth;
+}
+
 StringLiteral *StringLiteral::Create(ASTContext &C, StringRef Str,
                                      StringKind Kind, bool Pascal, QualType Ty,
                                      const SourceLocation *Loc,
@@ -494,12 +525,8 @@ StringLiteral *StringLiteral::Create(ASTContext &C, StringRef Str,
   StringLiteral *SL = new (Mem) StringLiteral(Ty);
 
   // OPTIMIZE: could allocate this appended to the StringLiteral.
-  char *AStrData = new (C, 1) char[Str.size()];
-  memcpy(AStrData, Str.data(), Str.size());
-  SL->StrData = AStrData;
-  SL->ByteLength = Str.size();
-  SL->Kind = Kind;
-  SL->IsPascal = Pascal;
+  SL->setString(C,Str,Kind,Pascal);
+
   SL->TokLocs[0] = Loc[0];
   SL->NumConcatenated = NumStrs;
 
@@ -513,17 +540,46 @@ StringLiteral *StringLiteral::CreateEmpty(ASTContext &C, unsigned NumStrs) {
                          sizeof(SourceLocation)*(NumStrs-1),
                          llvm::alignOf<StringLiteral>());
   StringLiteral *SL = new (Mem) StringLiteral(QualType());
-  SL->StrData = 0;
-  SL->ByteLength = 0;
+  SL->CharByteWidth = 0;
+  SL->Length = 0;
   SL->NumConcatenated = NumStrs;
   return SL;
 }
 
-void StringLiteral::setString(ASTContext &C, StringRef Str) {
-  char *AStrData = new (C, 1) char[Str.size()];
-  memcpy(AStrData, Str.data(), Str.size());
-  StrData = AStrData;
-  ByteLength = Str.size();
+void StringLiteral::setString(ASTContext &C, StringRef Str,
+                              StringKind Kind, bool IsPascal) {
+  //FIXME: we assume that the string data comes from a target that uses the same
+  // code unit size and endianess for the type of string.
+  this->Kind = Kind;
+  this->IsPascal = IsPascal;
+  
+  CharByteWidth = mapCharByteWidth(C.getTargetInfo(),Kind);
+  assert((Str.size()%CharByteWidth == 0)
+         && "size of data must be multiple of CharByteWidth");
+  Length = Str.size()/CharByteWidth;
+
+  switch(CharByteWidth) {
+    case 1: {
+      char *AStrData = new (C) char[Length];
+      std::memcpy(AStrData,Str.data(),Str.size());
+      StrData.asChar = AStrData;
+      break;
+    }
+    case 2: {
+      uint16_t *AStrData = new (C) uint16_t[Length];
+      std::memcpy(AStrData,Str.data(),Str.size());
+      StrData.asUInt16 = AStrData;
+      break;
+    }
+    case 4: {
+      uint32_t *AStrData = new (C) uint32_t[Length];
+      std::memcpy(AStrData,Str.data(),Str.size());
+      StrData.asUInt32 = AStrData;
+      break;
+    }
+    default:
+      assert(false && "unsupported CharByteWidth");
+  }
 }
 
 /// getLocationOfByte - Return a source location that points to the specified
@@ -778,7 +834,7 @@ void CallExpr::setNumArgs(ASTContext& C, unsigned NumArgs) {
 
 /// isBuiltinCall - If this is a call to a builtin, return the builtin ID.  If
 /// not, return 0.
-unsigned CallExpr::isBuiltinCall(const ASTContext &Context) const {
+unsigned CallExpr::isBuiltinCall() const {
   // All simple function calls (e.g. func()) are implicitly cast to pointer to
   // function. As a result, we try and obtain the DeclRefExpr from the
   // ImplicitCastExpr.
@@ -1035,7 +1091,6 @@ void CastExpr::CheckCastConsistency() const {
 
   case CK_Dependent:
   case CK_LValueToRValue:
-  case CK_GetObjCProperty:
   case CK_NoOp:
   case CK_PointerToBoolean:
   case CK_IntegralToBoolean:
@@ -1061,8 +1116,6 @@ const char *CastExpr::getCastKindName() const {
     return "LValueBitCast";
   case CK_LValueToRValue:
     return "LValueToRValue";
-  case CK_GetObjCProperty:
-    return "GetObjCProperty";
   case CK_NoOp:
     return "NoOp";
   case CK_BaseToDerived:
@@ -1644,6 +1697,19 @@ bool Expr::isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
     Loc = getExprLoc();
     R1 = getSourceRange();
     return true;
+
+  case PseudoObjectExprClass: {
+    const PseudoObjectExpr *PO = cast<PseudoObjectExpr>(this);
+
+    // Only complain about things that have the form of a getter.
+    if (isa<UnaryOperator>(PO->getSyntacticForm()) ||
+        isa<BinaryOperator>(PO->getSyntacticForm()))
+      return false;
+
+    Loc = getExprLoc();
+    R1 = getSourceRange();
+    return true;
+  }
 
   case StmtExprClass: {
     // Statement exprs don't logically have side effects themselves, but are
@@ -2409,15 +2475,20 @@ bool Expr::isConstantInitializer(ASTContext &Ctx, bool IsForRef) const {
     const CXXConstructExpr *CE = cast<CXXConstructExpr>(this);
 
     // Only if it's
-    // 1) an application of the trivial default constructor or
-    if (!CE->getConstructor()->isTrivial()) return false;
-    if (!CE->getNumArgs()) return true;
+    if (CE->getConstructor()->isTrivial()) {
+      // 1) an application of the trivial default constructor or
+      if (!CE->getNumArgs()) return true;
 
-    // 2) an elidable trivial copy construction of an operand which is
-    //    itself a constant initializer.  Note that we consider the
-    //    operand on its own, *not* as a reference binding.
-    return CE->isElidable() &&
-           CE->getArg(0)->isConstantInitializer(Ctx, false);
+      // 2) an elidable trivial copy construction of an operand which is
+      //    itself a constant initializer.  Note that we consider the
+      //    operand on its own, *not* as a reference binding.
+      if (CE->isElidable() &&
+          CE->getArg(0)->isConstantInitializer(Ctx, false))
+        return true;
+    }
+
+    // 3) a foldable constexpr constructor.
+    break;
   }
   case CompoundLiteralExprClass: {
     // This handles gcc's extension that allows global initializers like
@@ -2549,6 +2620,9 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
   } else if (const MaterializeTemporaryExpr *M 
                                    = dyn_cast<MaterializeTemporaryExpr>(this)) {
     return M->GetTemporaryExpr()->isNullPointerConstant(Ctx, NPC);
+  } else if (const OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(this)) {
+    if (const Expr *Source = OVE->getSourceExpr())
+      return Source->isNullPointerConstant(Ctx, NPC);
   }
 
   // C++0x nullptr_t is always a null pointer constant.
@@ -3255,6 +3329,72 @@ const OpaqueValueExpr *OpaqueValueExpr::findInCopyConstruct(const Expr *e) {
   while (const ImplicitCastExpr *ice = dyn_cast<ImplicitCastExpr>(e))
     e = ice->getSubExpr();
   return cast<OpaqueValueExpr>(e);
+}
+
+PseudoObjectExpr *PseudoObjectExpr::Create(ASTContext &Context, EmptyShell sh,
+                                           unsigned numSemanticExprs) {
+  void *buffer = Context.Allocate(sizeof(PseudoObjectExpr) +
+                                    (1 + numSemanticExprs) * sizeof(Expr*),
+                                  llvm::alignOf<PseudoObjectExpr>());
+  return new(buffer) PseudoObjectExpr(sh, numSemanticExprs);
+}
+
+PseudoObjectExpr::PseudoObjectExpr(EmptyShell shell, unsigned numSemanticExprs)
+  : Expr(PseudoObjectExprClass, shell) {
+  PseudoObjectExprBits.NumSubExprs = numSemanticExprs + 1;
+}
+
+PseudoObjectExpr *PseudoObjectExpr::Create(ASTContext &C, Expr *syntax,
+                                           ArrayRef<Expr*> semantics,
+                                           unsigned resultIndex) {
+  assert(syntax && "no syntactic expression!");
+  assert(semantics.size() && "no semantic expressions!");
+
+  QualType type;
+  ExprValueKind VK;
+  if (resultIndex == NoResult) {
+    type = C.VoidTy;
+    VK = VK_RValue;
+  } else {
+    assert(resultIndex < semantics.size());
+    type = semantics[resultIndex]->getType();
+    VK = semantics[resultIndex]->getValueKind();
+    assert(semantics[resultIndex]->getObjectKind() == OK_Ordinary);
+  }
+
+  void *buffer = C.Allocate(sizeof(PseudoObjectExpr) +
+                              (1 + semantics.size()) * sizeof(Expr*),
+                            llvm::alignOf<PseudoObjectExpr>());
+  return new(buffer) PseudoObjectExpr(type, VK, syntax, semantics,
+                                      resultIndex);
+}
+
+PseudoObjectExpr::PseudoObjectExpr(QualType type, ExprValueKind VK,
+                                   Expr *syntax, ArrayRef<Expr*> semantics,
+                                   unsigned resultIndex)
+  : Expr(PseudoObjectExprClass, type, VK, OK_Ordinary,
+         /*filled in at end of ctor*/ false, false, false, false) {
+  PseudoObjectExprBits.NumSubExprs = semantics.size() + 1;
+  PseudoObjectExprBits.ResultIndex = resultIndex + 1;
+
+  for (unsigned i = 0, e = semantics.size() + 1; i != e; ++i) {
+    Expr *E = (i == 0 ? syntax : semantics[i-1]);
+    getSubExprsBuffer()[i] = E;
+
+    if (E->isTypeDependent())
+      ExprBits.TypeDependent = true;
+    if (E->isValueDependent())
+      ExprBits.ValueDependent = true;
+    if (E->isInstantiationDependent())
+      ExprBits.InstantiationDependent = true;
+    if (E->containsUnexpandedParameterPack())
+      ExprBits.ContainsUnexpandedParameterPack = true;
+
+    if (isa<OpaqueValueExpr>(E))
+      assert(cast<OpaqueValueExpr>(E)->getSourceExpr() != 0 &&
+             "opaque-value semantic expressions for pseudo-object "
+             "operations must have sources");
+  }
 }
 
 //===----------------------------------------------------------------------===//

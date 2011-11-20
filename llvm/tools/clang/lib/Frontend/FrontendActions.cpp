@@ -9,6 +9,7 @@
 
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/AST/ASTConsumer.h"
+#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Pragma.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/Parser.h"
@@ -109,6 +110,182 @@ bool GeneratePCHAction::ComputeASTConsumerArguments(CompilerInstance &CI,
   if (!OS)
     return true;
 
+  OutputFile = CI.getFrontendOpts().OutputFile;
+  return false;
+}
+
+ASTConsumer *GenerateModuleAction::CreateASTConsumer(CompilerInstance &CI,
+                                                     StringRef InFile) {
+  std::string Sysroot;
+  std::string OutputFile;
+  raw_ostream *OS = 0;
+  if (ComputeASTConsumerArguments(CI, InFile, Sysroot, OutputFile, OS))
+    return 0;
+  
+  return new PCHGenerator(CI.getPreprocessor(), OutputFile, /*MakeModule=*/true, 
+                          Sysroot, OS);
+}
+
+/// \brief Collect the set of header includes needed to construct the given 
+/// module.
+///
+/// \param Module The module we're collecting includes from.
+/// \param ExplicitOnly Whether we should only add headers from explicit 
+static void collectModuleHeaderIncludes(const LangOptions &LangOpts,
+                                        ModuleMap::Module *Module,
+                                        bool ExplicitOnly,
+                                        llvm::SmallString<256> &Includes) {
+  if (!ExplicitOnly || Module->IsExplicit) {
+    // Add includes for each of these headers.
+    for (unsigned I = 0, N = Module->Headers.size(); I != N; ++I) {
+      if (LangOpts.ObjC1)
+        Includes += "#import \"";
+      else
+        Includes += "#include \"";
+      Includes += Module->Headers[I]->getName();
+      Includes += "\"\n";
+    }
+  }
+  
+  // Recurse into submodules.
+  for (llvm::StringMap<ModuleMap::Module *>::iterator
+            Sub = Module->SubModules.begin(),
+         SubEnd = Module->SubModules.end();
+       Sub != SubEnd; ++Sub) {
+    collectModuleHeaderIncludes(LangOpts, Sub->getValue(), 
+                                ExplicitOnly && !Module->IsExplicit,
+                                Includes);
+  }
+}
+
+bool GenerateModuleAction::BeginSourceFileAction(CompilerInstance &CI, 
+                                                 StringRef Filename) {
+  // Find the module map file.  
+  const FileEntry *ModuleMap = CI.getFileManager().getFile(Filename);
+  if (!ModuleMap)  {
+    CI.getDiagnostics().Report(diag::err_module_map_not_found)
+      << Filename;
+    return false;
+  }
+  
+  // Parse the module map file.
+  HeaderSearch &HS = CI.getPreprocessor().getHeaderSearchInfo();
+  if (HS.loadModuleMapFile(ModuleMap))
+    return false;
+  
+  if (CI.getLangOpts().CurrentModule.empty()) {
+    CI.getDiagnostics().Report(diag::err_missing_module_name);
+    
+    // FIXME: Eventually, we could consider asking whether there was just
+    // a single module described in the module map, and use that as a 
+    // default. Then it would be fairly trivial to just "compile" a module
+    // map with a single module (the common case).
+    return false;
+  }
+  
+  // Dig out the module definition.
+  ModuleMap::Module *Module = HS.getModule(CI.getLangOpts().CurrentModule,
+                                           /*AllowSearch=*/false);
+  if (!Module) {
+    CI.getDiagnostics().Report(diag::err_missing_module)
+      << CI.getLangOpts().CurrentModule << Filename;
+    
+    return false;
+  }
+  
+  // Collect the set of #includes we need to build the module.
+  llvm::SmallString<256> HeaderContents;
+  collectModuleHeaderIncludes(CI.getLangOpts(), Module, 
+                              Module->UmbrellaHeader != 0, HeaderContents);
+  if (Module->UmbrellaHeader && HeaderContents.empty()) {
+    // Simple case: we have an umbrella header and there are no additional
+    // includes, we can just parse the umbrella header directly.
+    setCurrentFile(Module->UmbrellaHeader->getName(), getCurrentFileKind());
+    return true;
+  }
+  
+  FileManager &FileMgr = CI.getFileManager();
+  llvm::SmallString<128> HeaderName;
+  time_t ModTime;
+  if (Module->UmbrellaHeader) {
+    // Read in the umbrella header.
+    // FIXME: Go through the source manager; the umbrella header may have
+    // been overridden.
+    std::string ErrorStr;
+    llvm::MemoryBuffer *UmbrellaContents
+      = FileMgr.getBufferForFile(Module->UmbrellaHeader, &ErrorStr);
+    if (!UmbrellaContents) {
+      CI.getDiagnostics().Report(diag::err_missing_umbrella_header)
+        << Module->UmbrellaHeader->getName() << ErrorStr;
+      return false;
+    }
+    
+    // Combine the contents of the umbrella header with the automatically-
+    // generated includes.
+    llvm::SmallString<256> OldContents = HeaderContents;
+    HeaderContents = UmbrellaContents->getBuffer();
+    HeaderContents += "\n\n";
+    HeaderContents += "/* Module includes */\n";
+    HeaderContents += OldContents;
+
+    // Pretend that we're parsing the umbrella header.
+    HeaderName = Module->UmbrellaHeader->getName();
+    ModTime = Module->UmbrellaHeader->getModificationTime();
+    
+    delete UmbrellaContents;
+  } else {
+    // Pick an innocuous-sounding name for the umbrella header.
+    HeaderName = Module->Name + ".h";
+    if (FileMgr.getFile(HeaderName, /*OpenFile=*/false, 
+                        /*CacheFailure=*/false)) {
+      // Try again!
+      HeaderName = Module->Name + "-module.h";      
+      if (FileMgr.getFile(HeaderName, /*OpenFile=*/false, 
+                          /*CacheFailure=*/false)) {
+        // Pick something ridiculous and go with it.
+        HeaderName = Module->Name + "-module.hmod";
+      }
+    }
+    ModTime = time(0);
+  }
+  
+  // Remap the contents of the header name we're using to our synthesized
+  // buffer.
+  const FileEntry *HeaderFile = FileMgr.getVirtualFile(HeaderName, 
+                                                       HeaderContents.size(), 
+                                                       ModTime);
+  llvm::MemoryBuffer *HeaderContentsBuf
+    = llvm::MemoryBuffer::getMemBufferCopy(HeaderContents);
+  CI.getSourceManager().overrideFileContents(HeaderFile, HeaderContentsBuf);
+  
+  setCurrentFile(HeaderName, getCurrentFileKind());
+  return true;
+}
+
+bool GenerateModuleAction::ComputeASTConsumerArguments(CompilerInstance &CI,
+                                                       StringRef InFile,
+                                                       std::string &Sysroot,
+                                                       std::string &OutputFile,
+                                                       raw_ostream *&OS) {
+  // If no output file was provided, figure out where this module would go
+  // in the module cache.
+  if (CI.getFrontendOpts().OutputFile.empty()) {
+    HeaderSearch &HS = CI.getPreprocessor().getHeaderSearchInfo();
+    llvm::SmallString<256> ModuleFileName(HS.getModuleCachePath());
+    llvm::sys::path::append(ModuleFileName, 
+                            CI.getLangOpts().CurrentModule + ".pcm");
+    CI.getFrontendOpts().OutputFile = ModuleFileName.str();
+  }
+  
+  // We use createOutputFile here because this is exposed via libclang, and we
+  // must disable the RemoveFileOnSignal behavior.
+  // We use a temporary to avoid race conditions.
+  OS = CI.createOutputFile(CI.getFrontendOpts().OutputFile, /*Binary=*/true,
+                           /*RemoveFileOnSignal=*/false, InFile,
+                           /*Extension=*/"", /*useTemporary=*/true);
+  if (!OS)
+    return true;
+  
   OutputFile = CI.getFrontendOpts().OutputFile;
   return false;
 }

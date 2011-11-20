@@ -184,6 +184,13 @@ void OnDiskData::Cleanup() {
   CleanPreambleFile();
 }
 
+void ASTUnit::clearFileLevelDecls() {
+  for (FileDeclsTy::iterator
+         I = FileDecls.begin(), E = FileDecls.end(); I != E; ++I)
+    delete I->second;
+  FileDecls.clear();
+}
+
 void ASTUnit::CleanTemporaryFiles() {
   getOnDiskData(this).CleanTemporaryFiles();
 }
@@ -204,7 +211,7 @@ const unsigned DefaultPreambleRebuildInterval = 5;
 static llvm::sys::cas_flag ActiveASTUnitObjects;
 
 ASTUnit::ASTUnit(bool _MainFileIsAST)
-  : OnlyLocalDecls(false), CaptureDiagnostics(false),
+  : Reader(0), OnlyLocalDecls(false), CaptureDiagnostics(false),
     MainFileIsAST(_MainFileIsAST), 
     TUKind(TU_Complete), WantTiming(getenv("LIBCLANG_TIMING")),
     OwnsRemappedFileBuffers(true),
@@ -223,6 +230,8 @@ ASTUnit::ASTUnit(bool _MainFileIsAST)
 }
 
 ASTUnit::~ASTUnit() {
+  clearFileLevelDecls();
+
   // Clean up the temporary files and the preamble file.
   removeOnDiskEntry(this);
 
@@ -655,7 +664,8 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
   AST->FileMgr = new FileManager(FileSystemOpts);
   AST->SourceMgr = new SourceManager(AST->getDiagnostics(),
                                      AST->getFileManager());
-  AST->HeaderInfo.reset(new HeaderSearch(AST->getFileManager()));
+  AST->HeaderInfo.reset(new HeaderSearch(AST->getFileManager(),
+                                         AST->getDiagnostics()));
   
   for (unsigned I = 0; I != NumRemappedFiles; ++I) {
     FilenameOrMemBuf fileOrBuf = RemappedFiles[I].second;
@@ -774,6 +784,7 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
   AST->TheSema.reset(new Sema(PP, Context, *AST->Consumer));
   AST->TheSema->Initialize();
   ReaderPtr->InitializeSema(*AST->TheSema);
+  AST->Reader = ReaderPtr;
 
   return AST.take();
 }
@@ -840,24 +851,46 @@ public:
     : Unit(_Unit), Hash(Hash) {
     Hash = 0;
   }
-  
-  void HandleTopLevelDecl(DeclGroupRef D) {
-    for (DeclGroupRef::iterator it = D.begin(), ie = D.end(); it != ie; ++it) {
-      Decl *D = *it;
-      // FIXME: Currently ObjC method declarations are incorrectly being
-      // reported as top-level declarations, even though their DeclContext
-      // is the containing ObjC @interface/@implementation.  This is a
-      // fundamental problem in the parser right now.
-      if (isa<ObjCMethodDecl>(D))
-        continue;
 
-      AddTopLevelDeclarationToHash(D, Hash);
-      Unit.addTopLevelDecl(D);
+  void handleTopLevelDecl(Decl *D) {
+    if (!D)
+      return;
+
+    // FIXME: Currently ObjC method declarations are incorrectly being
+    // reported as top-level declarations, even though their DeclContext
+    // is the containing ObjC @interface/@implementation.  This is a
+    // fundamental problem in the parser right now.
+    if (isa<ObjCMethodDecl>(D))
+      return;
+
+    AddTopLevelDeclarationToHash(D, Hash);
+    Unit.addTopLevelDecl(D);
+
+    handleFileLevelDecl(D);
+  }
+
+  void handleFileLevelDecl(Decl *D) {
+    Unit.addFileLevelDecl(D);
+    if (NamespaceDecl *NSD = dyn_cast<NamespaceDecl>(D)) {
+      for (NamespaceDecl::decl_iterator
+             I = NSD->decls_begin(), E = NSD->decls_end(); I != E; ++I)
+        handleFileLevelDecl(*I);
     }
+  }
+
+  bool HandleTopLevelDecl(DeclGroupRef D) {
+    for (DeclGroupRef::iterator it = D.begin(), ie = D.end(); it != ie; ++it)
+      handleTopLevelDecl(*it);
+    return true;
   }
 
   // We're not interested in "interesting" decls.
   void HandleInterestingDecl(DeclGroupRef) {}
+
+  void HandleTopLevelDeclInObjCContainer(DeclGroupRef D) {
+    for (DeclGroupRef::iterator it = D.begin(), ie = D.end(); it != ie; ++it)
+      handleTopLevelDecl(*it);
+  }
 };
 
 class TopLevelDeclTrackerAction : public ASTFrontendAction {
@@ -894,7 +927,7 @@ public:
     Hash = 0;
   }
 
-  virtual void HandleTopLevelDecl(DeclGroupRef D) {
+  virtual bool HandleTopLevelDecl(DeclGroupRef D) {
     for (DeclGroupRef::iterator it = D.begin(), ie = D.end(); it != ie; ++it) {
       Decl *D = *it;
       // FIXME: Currently ObjC method declarations are incorrectly being
@@ -906,6 +939,7 @@ public:
       AddTopLevelDeclarationToHash(D, Hash);
       TopLevelDecls.push_back(D);
     }
+    return true;
   }
 
   virtual void HandleTranslationUnit(ASTContext &Ctx) {
@@ -1009,15 +1043,18 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
 
   // Configure the various subsystems.
   // FIXME: Should we retain the previous file manager?
+  LangOpts = &Clang->getLangOpts();
   FileSystemOpts = Clang->getFileSystemOpts();
   FileMgr = new FileManager(FileSystemOpts);
   SourceMgr = new SourceManager(getDiagnostics(), *FileMgr);
   TheSema.reset();
   Ctx = 0;
   PP = 0;
+  Reader = 0;
   
   // Clear out old caches and data.
   TopLevelDecls.clear();
+  clearFileLevelDecls();
   CleanTemporaryFiles();
 
   if (!OverrideMainBuffer) {
@@ -1089,6 +1126,7 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   Clang->setSourceManager(0);
   Clang->setFileManager(0);
   Target = &Clang->getTarget();
+  Reader = Clang->getModuleManager();
   
   Act->EndSourceFile();
 
@@ -1212,7 +1250,7 @@ ASTUnit::ComputePreamble(CompilerInvocation &Invocation,
   }
   
   return std::make_pair(Buffer, Lexer::ComputePreamble(Buffer,
-                                                       Invocation.getLangOpts(),
+                                                       *Invocation.getLangOpts(),
                                                        MaxLines));
 }
 
@@ -1357,8 +1395,6 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
 
         // Set the state of the diagnostic object to mimic its state
         // after parsing the preamble.
-        // FIXME: This won't catch any #pragma push warning changes that
-        // have occurred in the preamble.
         getDiagnostics().Reset();
         ProcessWarningOptions(getDiagnostics(), 
                               PreambleInvocation->getDiagnosticOpts());
@@ -1681,6 +1717,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
   AST->TheSema.reset();
   AST->Ctx = 0;
   AST->PP = 0;
+  AST->Reader = 0;
   
   // Create a file manager object to provide access to and cache the filesystem.
   Clang->setFileManager(&AST->getFileManager());
@@ -1715,6 +1752,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
   Clang->setSourceManager(0);
   Clang->setFileManager(0);
   AST->Target = &Clang->getTarget();
+  AST->Reader = Clang->getModuleManager();
   
   Act->EndSourceFile();
 
@@ -1842,7 +1880,7 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST.reset(new ASTUnit(false));
   ConfigureDiags(Diags, ArgBegin, ArgEnd, *AST, CaptureDiagnostics);
   AST->Diagnostics = Diags;
-
+  Diags = 0; // Zero out now to ease cleanup during crash recovery.
   AST->FileSystemOpts = CI->getFileSystemOpts();
   AST->FileMgr = new FileManager(AST->FileSystemOpts);
   AST->OnlyLocalDecls = OnlyLocalDecls;
@@ -1852,17 +1890,12 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST->NumStoredDiagnosticsFromDriver = StoredDiagnostics.size();
   AST->StoredDiagnostics.swap(StoredDiagnostics);
   AST->Invocation = CI;
+  CI = 0; // Zero out now to ease cleanup during crash recovery.
   AST->NestedMacroExpansions = NestedMacroExpansions;
   
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<ASTUnit>
     ASTUnitCleanup(AST.get());
-  llvm::CrashRecoveryContextCleanupRegistrar<CompilerInvocation,
-    llvm::CrashRecoveryContextReleaseRefCleanup<CompilerInvocation> >
-    CICleanup(CI.getPtr());
-  llvm::CrashRecoveryContextCleanupRegistrar<DiagnosticsEngine,
-    llvm::CrashRecoveryContextReleaseRefCleanup<DiagnosticsEngine> >
-    DiagCleanup(Diags.getPtr());
 
   return AST->LoadFromCompilerInvocation(PrecompilePreamble) ? 0 : AST.take();
 }
@@ -1870,6 +1903,8 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
 bool ASTUnit::Reparse(RemappedFile *RemappedFiles, unsigned NumRemappedFiles) {
   if (!Invocation)
     return true;
+
+  clearFileLevelDecls();
   
   SimpleTimer ParsingTimer(WantTiming);
   ParsingTimer.setOutput("Reparsing " + getMainFileName());
@@ -1905,11 +1940,11 @@ bool ASTUnit::Reparse(RemappedFile *RemappedFiles, unsigned NumRemappedFiles) {
     OverrideMainBuffer = getMainBufferWithPrecompiledPreamble(*Invocation);
     
   // Clear out the diagnostics state.
-  if (!OverrideMainBuffer) {
-    getDiagnostics().Reset();
-    ProcessWarningOptions(getDiagnostics(), Invocation->getDiagnosticOpts());
-  }
-  
+  getDiagnostics().Reset();
+  ProcessWarningOptions(getDiagnostics(), Invocation->getDiagnosticOpts());
+  if (OverrideMainBuffer)
+    getDiagnostics().setNumWarnings(NumWarningsInPreamble);
+
   // Parse the sources
   bool Result = Parse(OverrideMainBuffer);
   
@@ -2198,7 +2233,7 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
   FrontendOpts.CodeCompletionAt.Column = Column;
 
   // Set the language options appropriately.
-  LangOpts = CCInvocation->getLangOpts();
+  LangOpts = *CCInvocation->getLangOpts();
 
   llvm::OwningPtr<CompilerInstance> Clang(new CompilerInstance());
 
@@ -2438,6 +2473,88 @@ void ASTUnit::TranslateStoredDiagnostics(
                                       SD.getMessage(), Loc, Ranges, FixIts));
   }
   Result.swap(Out);
+}
+
+static inline bool compLocDecl(std::pair<unsigned, Decl *> L,
+                               std::pair<unsigned, Decl *> R) {
+  return L.first < R.first;
+}
+
+void ASTUnit::addFileLevelDecl(Decl *D) {
+  assert(D);
+  
+  // We only care about local declarations.
+  if (D->isFromASTFile())
+    return;
+
+  SourceManager &SM = *SourceMgr;
+  SourceLocation Loc = D->getLocation();
+  if (Loc.isInvalid() || !SM.isLocalSourceLocation(Loc))
+    return;
+
+  // We only keep track of the file-level declarations of each file.
+  if (!D->getLexicalDeclContext()->isFileContext())
+    return;
+
+  SourceLocation FileLoc = SM.getFileLoc(Loc);
+  assert(SM.isLocalSourceLocation(FileLoc));
+  FileID FID;
+  unsigned Offset;
+  llvm::tie(FID, Offset) = SM.getDecomposedLoc(FileLoc);
+  if (FID.isInvalid())
+    return;
+
+  LocDeclsTy *&Decls = FileDecls[FID];
+  if (!Decls)
+    Decls = new LocDeclsTy();
+
+  std::pair<unsigned, Decl *> LocDecl(Offset, D);
+
+  if (Decls->empty() || Decls->back().first <= Offset) {
+    Decls->push_back(LocDecl);
+    return;
+  }
+
+  LocDeclsTy::iterator
+    I = std::upper_bound(Decls->begin(), Decls->end(), LocDecl, compLocDecl);
+
+  Decls->insert(I, LocDecl);
+}
+
+void ASTUnit::findFileRegionDecls(FileID File, unsigned Offset, unsigned Length,
+                                  SmallVectorImpl<Decl *> &Decls) {
+  if (File.isInvalid())
+    return;
+
+  if (SourceMgr->isLoadedFileID(File)) {
+    assert(Ctx->getExternalSource() && "No external source!");
+    return Ctx->getExternalSource()->FindFileRegionDecls(File, Offset, Length,
+                                                         Decls);
+  }
+
+  FileDeclsTy::iterator I = FileDecls.find(File);
+  if (I == FileDecls.end())
+    return;
+
+  LocDeclsTy &LocDecls = *I->second;
+  if (LocDecls.empty())
+    return;
+
+  LocDeclsTy::iterator
+    BeginIt = std::lower_bound(LocDecls.begin(), LocDecls.end(),
+                               std::make_pair(Offset, (Decl*)0), compLocDecl);
+  if (BeginIt != LocDecls.begin())
+    --BeginIt;
+
+  LocDeclsTy::iterator
+    EndIt = std::upper_bound(LocDecls.begin(), LocDecls.end(),
+                             std::make_pair(Offset+Length, (Decl*)0),
+                             compLocDecl);
+  if (EndIt != LocDecls.end())
+    ++EndIt;
+  
+  for (LocDeclsTy::iterator DIt = BeginIt; DIt != EndIt; ++DIt)
+    Decls.push_back(DIt->second);
 }
 
 SourceLocation ASTUnit::getLocation(const FileEntry *File,

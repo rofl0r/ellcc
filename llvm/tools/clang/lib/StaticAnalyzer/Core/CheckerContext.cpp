@@ -16,4 +16,16 @@
 using namespace clang;
 using namespace ento;
 
-CheckerContext::~CheckerContext() {}
+StringRef CheckerContext::getCalleeName(const CallExpr *CE) const {
+  const ProgramState *State = getState();
+  const Expr *Callee = CE->getCallee();
+  SVal L = State->getSVal(Callee);
+
+  const FunctionDecl *funDecl = L.getAsFunctionDecl();
+  if (!funDecl)
+    return StringRef();
+  IdentifierInfo *funI = funDecl->getIdentifier();
+  if (!funI)
+    return StringRef();
+  return funI->getName();
+}

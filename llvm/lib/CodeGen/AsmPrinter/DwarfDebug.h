@@ -302,6 +302,10 @@ class DwarfDebug {
   MCSymbol *DwarfDebugLocSectionSym;
   MCSymbol *FunctionBeginSym, *FunctionEndSym;
 
+  // As an optimization, there is no need to emit an entry in the directory
+  // table for the same directory as DW_at_comp_dir.
+  StringRef CompilationDir;
+
 private:
 
   /// assignAbbrevNumber - Define a unique number for the abbreviation.
@@ -363,10 +367,22 @@ private:
   ///
   void emitEndOfLineMatrix(unsigned SectionEnd);
 
-  /// emitDebugPubNames - Emit visible names into a debug pubnames section.
-  ///
-  void emitDebugPubNames();
+  /// emitAccelNames - Emit visible names into a hashed accelerator table
+  /// section.
+  void emitAccelNames();
+  
+  /// emitAccelObjC - Emit objective C classes and categories into a hashed
+  /// accelerator table section.
+  void emitAccelObjC();
 
+  /// emitAccelNamespace - Emit namespace dies into a hashed accelerator
+  /// table.
+  void emitAccelNamespaces();
+
+  /// emitAccelTypes() - Emit type dies into a hashed accelerator table.
+  ///
+  void emitAccelTypes();
+  
   /// emitDebugPubTypes - Emit visible types into a debug pubtypes section.
   ///
   void emitDebugPubTypes();

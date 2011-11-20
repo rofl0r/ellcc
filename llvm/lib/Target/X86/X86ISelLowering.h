@@ -172,11 +172,17 @@ namespace llvm {
       /// ANDNP - Bitwise Logical AND NOT of Packed FP values.
       ANDNP,
 
-      /// PSIGNB/W/D - Copy integer sign.
-      PSIGNB, PSIGNW, PSIGND,
+      /// PSIGN - Copy integer sign.
+      PSIGN,
 
       /// BLEND family of opcodes
       BLENDV,
+
+      /// HADD - Integer horizontal add.
+      HADD,
+
+      /// HSUB - Integer horizontal sub.
+      HSUB,
 
       /// FHADD - Floating point horizontal add.
       FHADD,

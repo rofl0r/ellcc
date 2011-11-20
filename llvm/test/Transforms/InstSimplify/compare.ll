@@ -204,6 +204,24 @@ define i1 @select4(i1 %cond) {
 ; CHECK: ret i1 %cond
 }
 
+define i1 @select5(i32 %x) {
+; CHECK: @select5
+  %c = icmp eq i32 %x, 0
+  %s = select i1 %c, i32 1, i32 %x
+  %c2 = icmp eq i32 %s, 0
+  ret i1 %c2
+; CHECK: ret i1 false
+}
+
+define i1 @select6(i32 %x) {
+; CHECK: @select6
+  %c = icmp sgt i32 %x, 0
+  %s = select i1 %c, i32 %x, i32 4
+  %c2 = icmp eq i32 %s, 0
+  ret i1 %c2
+; CHECK: ret i1 %c2
+}
+
 define i1 @urem1(i32 %X, i32 %Y) {
 ; CHECK: @urem1
   %A = urem i32 %X, %Y
@@ -323,6 +341,16 @@ define i1 @udiv5(i32 %X) {
   ret i1 %C
 ; CHECK: ret i1 false
 }
+
+; PR11340
+define i1 @udiv6(i32 %X) nounwind {
+; CHECK: @udiv6
+  %A = udiv i32 1, %X
+  %C = icmp eq i32 %A, 0
+  ret i1 %C
+; CHECK: ret i1 %C
+}
+
 
 define i1 @sdiv1(i32 %X) {
 ; CHECK: @sdiv1

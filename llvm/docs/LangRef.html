@@ -635,7 +635,7 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
       be merged with equivalent globals.  These linkage types are otherwise the
       same as their non-<tt>odr</tt> versions.</dd>
 
-  <dt><tt><b><a name="linkage_external">external</a></b></tt>:</dt>
+  <dt><tt><b><a name="linkage_external">external</a></b></tt></dt>
   <dd>If none of the above identifiers are used, the global is externally
       visible, meaning that it participates in linkage and can be used to
       resolve external symbol references.</dd>
@@ -932,7 +932,7 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
    alignments must be a power of 2.</p>
 
 <p>If the <tt>unnamed_addr</tt> attribute is given, the address is know to not
-  be significant and two identical functions can be merged</p>.
+   be significant and two identical functions can be merged.</p>
 
 <h5>Syntax:</h5>
 <pre class="doc_code">
@@ -1903,9 +1903,6 @@ in signal handlers).</p>
    possible to have a two dimensional array, using an array as the element type
    of another array.</p>
 
-</div>
-  
-
 <!-- _______________________________________________________________________ -->
 <h4>
   <a name="t_aggregate">Aggregate Types</a>
@@ -2208,6 +2205,8 @@ in signal handlers).</p>
     <td class="left">Vector of 2 64-bit integer values.</td>
   </tr>
 </table>
+
+</div>
 
 </div>
 
@@ -2977,12 +2976,15 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
    point type.  It expresses the maximum relative error of the result of
    that instruction, in ULPs. ULP is defined as follows:</p>
 
-<blockquote><p>
-If x is a real number that lies between two finite consecutive floating-point
-numbers a and b, without being equal to one of them, then ulp(x) = |b - a|,
-otherwise ulp(x) is the distance between the two non-equal finite
-floating-point numbers nearest x. Moreover, ulp(NaN) is NaN.
-</p></blockquote>
+<blockquote>
+
+<p>If <tt>x</tt> is a real number that lies between two finite consecutive
+   floating-point numbers <tt>a</tt> and <tt>b</tt>, without being equal to one
+   of them, then <tt>ulp(x) = |b - a|</tt>, otherwise <tt>ulp(x)</tt> is the
+   distance between the two non-equal finite floating-point numbers nearest
+   <tt>x</tt>. Moreover, <tt>ulp(NaN)</tt> is <tt>NaN</tt>.</p>
+
+</blockquote>
 
 <p>The maximum relative error may be any rational number.  The metadata node
    shall consist of a pair of unsigned integers respectively representing
@@ -3024,26 +3026,29 @@ href="#linkage_appending">appending linkage</a>.  This array contains a list of
 pointers to global variables and functions which may optionally have a pointer
 cast formed of bitcast or getelementptr.  For example, a legal use of it is:</p>
 
+<div class="doc_code">
 <pre>
-  @X = global i8 4
-  @Y = global i32 123
+@X = global i8 4
+@Y = global i32 123
 
-  @llvm.used = appending global [2 x i8*] [
-     i8* @X,
-     i8* bitcast (i32* @Y to i8*)
-  ], section "llvm.metadata"
+@llvm.used = appending global [2 x i8*] [
+   i8* @X,
+   i8* bitcast (i32* @Y to i8*)
+], section "llvm.metadata"
 </pre>
+</div>
 
 <p>If a global variable appears in the <tt>@llvm.used</tt> list, then the
-compiler, assembler, and linker are required to treat the symbol as if there is
-a reference to the global that it cannot see.  For example, if a variable has
-internal linkage and no references other than that from the <tt>@llvm.used</tt>
-list, it cannot be deleted.  This is commonly used to represent references from
-inline asms and other things the compiler cannot "see", and corresponds to
-"attribute((used))" in GNU C.</p>
+   compiler, assembler, and linker are required to treat the symbol as if there
+   is a reference to the global that it cannot see.  For example, if a variable
+   has internal linkage and no references other than that from
+   the <tt>@llvm.used</tt> list, it cannot be deleted.  This is commonly used to
+   represent references from inline asms and other things the compiler cannot
+   "see", and corresponds to "<tt>attribute((used))</tt>" in GNU C.</p>
 
 <p>On some targets, the code generator must emit a directive to the assembler or
-object file to prevent the assembler and linker from molesting the symbol.</p>
+   object file to prevent the assembler and linker from molesting the
+   symbol.</p>
 
 </div>
 
@@ -3057,13 +3062,13 @@ object file to prevent the assembler and linker from molesting the symbol.</p>
 <div>
 
 <p>The <tt>@llvm.compiler.used</tt> directive is the same as the
-<tt>@llvm.used</tt> directive, except that it only prevents the compiler from
-touching the symbol.  On targets that support it, this allows an intelligent
-linker to optimize references to the symbol without being impeded as it would be
-by <tt>@llvm.used</tt>.</p>
+   <tt>@llvm.used</tt> directive, except that it only prevents the compiler from
+   touching the symbol.  On targets that support it, this allows an intelligent
+   linker to optimize references to the symbol without being impeded as it would
+   be by <tt>@llvm.used</tt>.</p>
 
 <p>This is a rare construct that should only be used in rare circumstances, and
-should not be exposed to source languages.</p>
+   should not be exposed to source languages.</p>
 
 </div>
 
@@ -3073,12 +3078,19 @@ should not be exposed to source languages.</p>
 </h3>
 
 <div>
+
+<div class="doc_code">
 <pre>
 %0 = type { i32, void ()* }
 @llvm.global_ctors = appending global [1 x %0] [%0 { i32 65535, void ()* @ctor }]
 </pre>
-<p>The <tt>@llvm.global_ctors</tt> array contains a list of constructor functions and associated priorities.  The functions referenced by this array will be called in ascending order of priority (i.e. lowest first) when the module is loaded.  The order of functions with the same priority is not defined.
-</p>
+</div>
+
+<p>The <tt>@llvm.global_ctors</tt> array contains a list of constructor
+   functions and associated priorities.  The functions referenced by this array
+   will be called in ascending order of priority (i.e. lowest first) when the
+   module is loaded.  The order of functions with the same priority is not
+   defined.</p>
 
 </div>
 
@@ -3088,13 +3100,18 @@ should not be exposed to source languages.</p>
 </h3>
 
 <div>
+
+<div class="doc_code">
 <pre>
 %0 = type { i32, void ()* }
 @llvm.global_dtors = appending global [1 x %0] [%0 { i32 65535, void ()* @dtor }]
 </pre>
+</div>
 
-<p>The <tt>@llvm.global_dtors</tt> array contains a list of destructor functions and associated priorities.  The functions referenced by this array will be called in descending order of priority (i.e. highest first) when the module is loaded.  The order of functions with the same priority is not defined.
-</p>
+<p>The <tt>@llvm.global_dtors</tt> array contains a list of destructor functions
+   and associated priorities.  The functions referenced by this array will be
+   called in descending order of priority (i.e. highest first) when the module
+   is loaded.  The order of functions with the same priority is not defined.</p>
 
 </div>
 
@@ -6385,8 +6402,6 @@ declare void @llvm.va_end(i8*)
 
 </div>
 
-</div>
-
 <!-- ======================================================================= -->
 <h3>
   <a name="int_gc">Accurate Garbage Collection Intrinsics</a>
@@ -7082,8 +7097,6 @@ LLVM</a>.</p>
 
 </div>
 
-</div>
-
 <!-- _______________________________________________________________________ -->
 <h4>
   <a name="int_exp">'<tt>llvm.exp.*</tt>' Intrinsic</a>
@@ -7148,6 +7161,9 @@ LLVM</a>.</p>
 <p>This function returns the same values as the libm <tt>log</tt> functions
    would, and handles error conditions in the same way.</p>
 
+</div>
+
+<!-- _______________________________________________________________________ -->
 <h4>
   <a name="int_fma">'<tt>llvm.fma.*</tt>' Intrinsic</a>
 </h4>
@@ -7178,6 +7194,8 @@ LLVM</a>.</p>
 <h5>Semantics:</h5>
 <p>This function returns the same values as the libm <tt>fma</tt> functions
    would.</p>
+
+</div>
 
 </div>
 
@@ -8182,7 +8200,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-10-27 14:19:14 -0500 (Thu, 27 Oct 2011) $
+  Last modified: $Date: 2011-11-09 13:33:56 -0600 (Wed, 09 Nov 2011) $
 </address>
 
 </body>

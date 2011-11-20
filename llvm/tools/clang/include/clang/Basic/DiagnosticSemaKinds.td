@@ -257,10 +257,16 @@ def note_please_include_header : Note<
 def note_previous_builtin_declaration : Note<"%0 is a builtin with type %1">;
 def warn_implicit_decl_requires_stdio : Warning<
   "declaration of built-in function '%0' requires inclusion of the header "
-  "<stdio.h>">;
+  "<stdio.h>">,
+  InGroup<BuiltinRequiresHeader>;
 def warn_implicit_decl_requires_setjmp : Warning<
   "declaration of built-in function '%0' requires inclusion of the header "
-  "<setjmp.h>">;
+  "<setjmp.h>">,
+  InGroup<BuiltinRequiresHeader>;
+def warn_implicit_decl_requires_ucontext : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<ucontext.h>">,
+  InGroup<BuiltinRequiresHeader>;
 def warn_redecl_library_builtin : Warning<
   "incompatible redeclaration of library function %0">;
 def err_builtin_definition : Error<"definition of builtin function %0">;
@@ -367,6 +373,8 @@ def warn_property_attribute : Warning<
 def warn_property_types_are_incompatible : Warning<
   "property type %0 is incompatible with type %1 inherited from %2">;
 def err_undef_interface : Error<"cannot find interface declaration for %0">;
+def err_category_forward_interface : Error<
+  "cannot define %select{category|class extension}0 for undefined class %1">;
 def err_class_extension_after_impl : Error<
   "cannot declare class extension for %0 after class implementation">;
 def note_implementation_declared : Note<
@@ -502,6 +510,9 @@ def warn_objc_property_copy_missing_on_block : Warning<
 def warn_objc_property_retain_of_block : Warning<
     "retain'ed block property does not copy the block "
     "- use copy attribute instead">, InGroup<ObjCRetainBlockProperty>;
+def warn_objc_readonly_property_has_setter : Warning<
+    "setter cannot be specified for a readonly property">,
+    InGroup<ObjCReadonlyPropertyHasSetter>;
 def warn_atomic_property_rule : Warning<
   "writable atomic property %0 cannot pair a synthesized %select{getter|setter}1 "
   "with a user defined %select{getter|setter}2">,
@@ -1110,7 +1121,7 @@ def warn_cxx98_compat_temp_copy : Warning<
   "of type %2 when binding a reference to a temporary would %select{invoke "
   "an inaccessible constructor|find no viable constructor|find ambiguous "
   "constructors|invoke a deleted constructor}0 in C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
+  InGroup<CXX98CompatBindToTemporaryCopy>, DefaultIgnore;
 
 // C++11 decltype
 def err_cannot_determine_declared_type_of_overloaded_function : Error<
@@ -1247,8 +1258,8 @@ def err_constexpr_no_declarators : Error<
   "constexpr can only be used in variable and function declarations">;
 def err_invalid_constexpr_var_decl : Error<
   "constexpr variable declaration must be a definition">;
-def err_constexpr_var_requires_init : Error<
-  "declaration of constexpr variable %0 requires an initializer">;
+def err_constexpr_static_mem_var_requires_init : Error<
+  "declaration of constexpr static data member %0 requires an initializer">;
 def err_constexpr_var_requires_const_init : Error<
   "constexpr variable %0 must be initialized by a constant expression">;
 def err_constexpr_redecl_mismatch : Error<
@@ -1695,9 +1706,10 @@ def warn_attribute_ibaction: Warning<
   "ibaction attribute can only be applied to Objective-C instance methods">;
 def err_iboutletcollection_type : Error<
   "invalid type %0 as argument of iboutletcollection attribute">;
-def err_iboutlet_object_type : Error<
+def warn_iboutlet_object_type : Warning<
   "%select{ivar|property}2 with %0 attribute must "
-  "be an object type (invalid %1)">;
+  "be an object type (invalid %1)">,
+  InGroup<DiagGroup<"invalid-iboutlet">>;
 def err_attribute_overloadable_not_function : Error<
   "'overloadable' attribute can only be applied to a function">;
 def err_attribute_overloadable_missing : Error<
@@ -2153,10 +2165,10 @@ def ext_template_arg_unnamed_type : ExtWarn<
   "template argument uses unnamed type">, InGroup<UnnamedTypeTemplateArgs>;
 def warn_cxx98_compat_template_arg_local_type : Warning<
   "local type %0 as template argument is incompatible with C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
+  InGroup<CXX98CompatLocalTypeTemplateArgs>, DefaultIgnore;
 def warn_cxx98_compat_template_arg_unnamed_type : Warning<
   "unnamed type as template argument is incompatible with C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
+  InGroup<CXX98CompatUnnamedTypeTemplateArgs>, DefaultIgnore;
 def note_template_unnamed_type_here : Note<
   "unnamed type used in template argument was declared here">;
 def err_template_arg_overload_type : Error<
@@ -3043,7 +3055,7 @@ def err_arc_mismatched_cast : Error<
   "an Objective-C pointer|an indirect pointer to an Objective-C pointer}1"
   " to %3 is disallowed with ARC">;
 def err_arc_nolifetime_behavior : Error<
-  "explicit ownership qualifier on cast result would have no effect">;
+  "explicit ownership qualifier on cast result has no effect">;
 def err_arc_objc_object_in_struct : Error<
   "ARC forbids Objective-C objects in structs or unions">;
 def err_arc_objc_property_default_assign_on_object : Error<
@@ -3068,8 +3080,10 @@ def note_arc_gained_method_convention : Note<
   "declaration in interface is not in the '%select{alloc|copy|init|new}0' "
   "family because %select{its result type is not an object pointer|"
   "its result type is unrelated to its receiver type}1">;
-def err_typecheck_arr_assign_self : Error<
+def err_typecheck_arc_assign_self : Error<
   "cannot assign to 'self' outside of a method in the init family">;
+def err_typecheck_arc_assign_self_class_method : Error<
+  "cannot assign to 'self' in a class method">;
 def err_typecheck_arr_assign_enumeration : Error<
   "fast enumeration variables can't be modified in ARC by default; "
   "declare the variable __strong to allow this">;
@@ -3252,7 +3266,8 @@ def err_offsetof_record_type : Error<
   "offsetof requires struct, union, or class type, %0 invalid">;
 def err_offsetof_array_type : Error<"offsetof requires array type, %0 invalid">;
 def ext_offsetof_extended_field_designator : Extension<
-  "using extended field designator is an extension">;
+  "using extended field designator is an extension">,
+  InGroup<DiagGroup<"extended-offsetof">>;
 def warn_offsetof_non_pod_type : ExtWarn<"offset of on non-POD type %0">,
   InGroup<InvalidOffsetof>;
 def err_offsetof_bitfield : Error<"cannot compute offset of bit-field %0">;
@@ -3604,7 +3619,7 @@ def err_property_not_as_forward_class : Error<
   "property %0 refers to an incomplete Objective-C class %1 "
   "(with no @interface available)">;
 def note_forward_class : Note<
-  "forward class is declared here">;
+  "forward declaration of class here">;
 def err_duplicate_property : Error<
   "property has a previous declaration">;
 def ext_gnu_void_ptr : Extension<
@@ -4331,7 +4346,7 @@ def err_only_constructors_take_base_inits : Error<
 def err_multiple_mem_initialization : Error <
   "multiple initializations given for non-static member %0">;
 def err_multiple_mem_union_initialization : Error <
-  "initializing multiple members of anonymous union">;
+  "initializing multiple members of union">;
 def err_multiple_base_initialization : Error <
   "multiple initializations given for base %0">;
 
@@ -4967,7 +4982,8 @@ def error_protected_ivar_access : Error<"instance variable %0 is protected">,
   AccessControl;
 def warn_maynot_respond : Warning<"%0 may not respond to %1">;
 def warn_attribute_method_def : Warning<
-  "method attribute can only be specified on method declarations">;
+  "method attribute can only be specified on method declarations">,
+  InGroup<DiagGroup<"mismatched-method-attributes">>;
 def ext_typecheck_base_super : Warning<
   "method parameter type %0 does not match "
   "super class method parameter type %1">, InGroup<SuperSubClassMismatch>, DefaultIgnore;

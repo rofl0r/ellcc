@@ -89,6 +89,9 @@ static cl::opt<bool> DisableSchedCriticalPath(
 static cl::opt<bool> DisableSchedHeight(
   "disable-sched-height", cl::Hidden, cl::init(false),
   cl::desc("Disable scheduled-height priority in sched=list-ilp"));
+static cl::opt<bool> Disable2AddrHack(
+  "disable-2addr-hack", cl::Hidden, cl::init(true),
+  cl::desc("Disable scheduler's two-address hack"));
 
 static cl::opt<int> MaxReorderWindow(
   "max-sched-reorder", cl::Hidden, cl::init(6),
@@ -264,7 +267,7 @@ private:
 
 /// GetCostForDef - Looks up the register class and cost for a given definition.
 /// Typically this just means looking up the representative register class,
-/// but for untyped values (MVT::untyped) it means inspecting the node's
+/// but for untyped values (MVT::Untyped) it means inspecting the node's
 /// opcode to determine what register class is being generated.
 static void GetCostForDef(const ScheduleDAGSDNodes::RegDefIter &RegDefPos,
                           const TargetLowering *TLI,
@@ -275,7 +278,7 @@ static void GetCostForDef(const ScheduleDAGSDNodes::RegDefIter &RegDefPos,
 
   // Special handling for untyped values.  These values can only come from
   // the expansion of custom DAG-to-DAG patterns.
-  if (VT == MVT::untyped) {
+  if (VT == MVT::Untyped) {
     const SDNode *Node = RegDefPos.GetNode();
     unsigned Opcode = Node->getMachineOpcode();
 
@@ -315,8 +318,10 @@ void ScheduleDAGRRList::Schedule() {
   IssueCount = 0;
   MinAvailableCycle = DisableSchedCycles ? 0 : UINT_MAX;
   NumLiveRegs = 0;
-  LiveRegDefs.resize(TRI->getNumRegs(), NULL);
-  LiveRegGens.resize(TRI->getNumRegs(), NULL);
+  // Allocate slots for each physical register, plus one for a special register
+  // to track the virtual resource of a calling sequence.
+  LiveRegDefs.resize(TRI->getNumRegs() + 1, NULL);
+  LiveRegGens.resize(TRI->getNumRegs() + 1, NULL);
 
   // Build the scheduling graph.
   BuildSchedGraph(NULL);
@@ -386,6 +391,109 @@ void ScheduleDAGRRList::ReleasePred(SUnit *SU, const SDep *PredEdge) {
   }
 }
 
+/// IsChainDependent - Test if Outer is reachable from Inner through
+/// chain dependencies.
+static bool IsChainDependent(SDNode *Outer, SDNode *Inner,
+                             unsigned NestLevel,
+                             const TargetInstrInfo *TII) {
+  SDNode *N = Outer;
+  for (;;) {
+    if (N == Inner)
+      return true;
+    // For a TokenFactor, examine each operand. There may be multiple ways
+    // to get to the CALLSEQ_BEGIN, but we need to find the path with the
+    // most nesting in order to ensure that we find the corresponding match.
+    if (N->getOpcode() == ISD::TokenFactor) {
+      for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i)
+        if (IsChainDependent(N->getOperand(i).getNode(), Inner, NestLevel, TII))
+          return true;
+      return false;
+    }
+    // Check for a lowered CALLSEQ_BEGIN or CALLSEQ_END.
+    if (N->isMachineOpcode()) {
+      if (N->getMachineOpcode() ==
+          (unsigned)TII->getCallFrameDestroyOpcode()) {
+        ++NestLevel;
+      } else if (N->getMachineOpcode() ==
+                 (unsigned)TII->getCallFrameSetupOpcode()) {
+        if (NestLevel == 0)
+          return false;
+        --NestLevel;
+      }
+    }
+    // Otherwise, find the chain and continue climbing.
+    for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i)
+      if (N->getOperand(i).getValueType() == MVT::Other) {
+        N = N->getOperand(i).getNode();
+        goto found_chain_operand;
+      }
+    return false;
+  found_chain_operand:;
+    if (N->getOpcode() == ISD::EntryToken)
+      return false;
+  }
+}
+
+/// FindCallSeqStart - Starting from the (lowered) CALLSEQ_END node, locate
+/// the corresponding (lowered) CALLSEQ_BEGIN node.
+///
+/// NestLevel and MaxNested are used in recursion to indcate the current level
+/// of nesting of CALLSEQ_BEGIN and CALLSEQ_END pairs, as well as the maximum
+/// level seen so far.
+///
+/// TODO: It would be better to give CALLSEQ_END an explicit operand to point
+/// to the corresponding CALLSEQ_BEGIN to avoid needing to search for it.
+static SDNode *
+FindCallSeqStart(SDNode *N, unsigned &NestLevel, unsigned &MaxNest,
+                 const TargetInstrInfo *TII) {
+  for (;;) {
+    // For a TokenFactor, examine each operand. There may be multiple ways
+    // to get to the CALLSEQ_BEGIN, but we need to find the path with the
+    // most nesting in order to ensure that we find the corresponding match.
+    if (N->getOpcode() == ISD::TokenFactor) {
+      SDNode *Best = 0;
+      unsigned BestMaxNest = MaxNest;
+      for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
+        unsigned MyNestLevel = NestLevel;
+        unsigned MyMaxNest = MaxNest;
+        if (SDNode *New = FindCallSeqStart(N->getOperand(i).getNode(),
+                                           MyNestLevel, MyMaxNest, TII))
+          if (!Best || (MyMaxNest > BestMaxNest)) {
+            Best = New;
+            BestMaxNest = MyMaxNest;
+          }
+      }
+      assert(Best);
+      MaxNest = BestMaxNest;
+      return Best;
+    }
+    // Check for a lowered CALLSEQ_BEGIN or CALLSEQ_END.
+    if (N->isMachineOpcode()) {
+      if (N->getMachineOpcode() ==
+          (unsigned)TII->getCallFrameDestroyOpcode()) {
+        ++NestLevel;
+        MaxNest = std::max(MaxNest, NestLevel);
+      } else if (N->getMachineOpcode() ==
+                 (unsigned)TII->getCallFrameSetupOpcode()) {
+        assert(NestLevel != 0);
+        --NestLevel;
+        if (NestLevel == 0)
+          return N;
+      }
+    }
+    // Otherwise, find the chain and continue climbing.
+    for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i)
+      if (N->getOperand(i).getValueType() == MVT::Other) {
+        N = N->getOperand(i).getNode();
+        goto found_chain_operand;
+      }
+    return 0;
+  found_chain_operand:;
+    if (N->getOpcode() == ISD::EntryToken)
+      return 0;
+  }
+}
+
 /// Call ReleasePred for each predecessor, then update register live def/gen.
 /// Always update LiveRegDefs for a register dependence even if the current SU
 /// also defines the register. This effectively create one large live range
@@ -423,6 +531,25 @@ void ScheduleDAGRRList::ReleasePredecessors(SUnit *SU) {
       }
     }
   }
+
+  // If we're scheduling a lowered CALLSEQ_END, find the corresponding
+  // CALLSEQ_BEGIN. Inject an artificial physical register dependence between
+  // these nodes, to prevent other calls from being interscheduled with them.
+  unsigned CallResource = TRI->getNumRegs();
+  if (!LiveRegDefs[CallResource])
+    for (SDNode *Node = SU->getNode(); Node; Node = Node->getGluedNode())
+      if (Node->isMachineOpcode() &&
+          Node->getMachineOpcode() == (unsigned)TII->getCallFrameDestroyOpcode()) {
+        unsigned NestLevel = 0;
+        unsigned MaxNest = 0;
+        SDNode *N = FindCallSeqStart(Node, NestLevel, MaxNest, TII);
+
+        SUnit *Def = &SUnits[N->getNodeId()];
+        ++NumLiveRegs;
+        LiveRegDefs[CallResource] = Def;
+        LiveRegGens[CallResource] = SU;
+        break;
+      }
 }
 
 /// Check to see if any of the pending instructions are ready to issue.  If
@@ -605,6 +732,20 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
       LiveRegGens[I->getReg()] = NULL;
     }
   }
+  // Release the special call resource dependence, if this is the beginning
+  // of a call.
+  unsigned CallResource = TRI->getNumRegs();
+  if (LiveRegDefs[CallResource] == SU)
+    for (const SDNode *SUNode = SU->getNode(); SUNode;
+         SUNode = SUNode->getGluedNode()) {
+      if (SUNode->isMachineOpcode() &&
+          SUNode->getMachineOpcode() == (unsigned)TII->getCallFrameSetupOpcode()) {
+        assert(NumLiveRegs > 0 && "NumLiveRegs is already zero!");
+        --NumLiveRegs;
+        LiveRegDefs[CallResource] = NULL;
+        LiveRegGens[CallResource] = NULL;
+      }
+    }
 
   resetVRegCycle(SU);
 
@@ -660,6 +801,33 @@ void ScheduleDAGRRList::UnscheduleNodeBottomUp(SUnit *SU) {
       LiveRegGens[I->getReg()] = NULL;
     }
   }
+
+  // Reclaim the special call resource dependence, if this is the beginning
+  // of a call.
+  unsigned CallResource = TRI->getNumRegs();
+  for (const SDNode *SUNode = SU->getNode(); SUNode;
+       SUNode = SUNode->getGluedNode()) {
+    if (SUNode->isMachineOpcode() &&
+        SUNode->getMachineOpcode() == (unsigned)TII->getCallFrameSetupOpcode()) {
+      ++NumLiveRegs;
+      LiveRegDefs[CallResource] = SU;
+      LiveRegGens[CallResource] = NULL;
+    }
+  }
+
+  // Release the special call resource dependence, if this is the end
+  // of a call.
+  if (LiveRegGens[CallResource] == SU)
+    for (const SDNode *SUNode = SU->getNode(); SUNode;
+         SUNode = SUNode->getGluedNode()) {
+      if (SUNode->isMachineOpcode() &&
+          SUNode->getMachineOpcode() == (unsigned)TII->getCallFrameDestroyOpcode()) {
+        assert(NumLiveRegs > 0 && "NumLiveRegs is already zero!");
+        --NumLiveRegs;
+        LiveRegDefs[CallResource] = NULL;
+        LiveRegGens[CallResource] = NULL;
+      }
+    }
 
   for (SUnit::succ_iterator I = SU->Succs.begin(), E = SU->Succs.end();
        I != E; ++I) {
@@ -778,6 +946,11 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
   if (TryUnfold) {
     SmallVector<SDNode*, 2> NewNodes;
     if (!TII->unfoldMemoryOperand(*DAG, N, NewNodes))
+      return NULL;
+
+    // unfolding an x86 DEC64m operation results in store, dec, load which
+    // can't be handled here so quit
+    if (NewNodes.size() == 3)
       return NULL;
 
     DEBUG(dbgs() << "Unfolding SU #" << SU->NodeNum << "\n");
@@ -1083,6 +1256,20 @@ DelayForLiveRegsBottomUp(SUnit *SU, SmallVector<unsigned, 4> &LRegs) {
 
     if (!Node->isMachineOpcode())
       continue;
+    // If we're in the middle of scheduling a call, don't begin scheduling
+    // another call. Also, don't allow any physical registers to be live across
+    // the call.
+    if (Node->getMachineOpcode() == (unsigned)TII->getCallFrameDestroyOpcode()) {
+      // Check the special calling-sequence resource.
+      unsigned CallResource = TRI->getNumRegs();
+      if (LiveRegDefs[CallResource]) {
+        SDNode *Gen = LiveRegGens[CallResource]->getNode();
+        while (SDNode *Glued = Gen->getGluedNode())
+          Gen = Glued;
+        if (!IsChainDependent(Gen, Node, 0, TII) && RegAdded.insert(CallResource))
+          LRegs.push_back(CallResource);
+      }
+    }
     const MCInstrDesc &MCID = TII->get(Node->getMachineOpcode());
     if (!MCID.ImplicitDefs)
       continue;
@@ -2449,7 +2636,8 @@ bool ilp_ls_rr_sort::operator()(SUnit *left, SUnit *right) const {
 void RegReductionPQBase::initNodes(std::vector<SUnit> &sunits) {
   SUnits = &sunits;
   // Add pseudo dependency edges for two-address nodes.
-  AddPseudoTwoAddrDeps();
+  if (!Disable2AddrHack)
+    AddPseudoTwoAddrDeps();
   // Reroute edges to nodes with multiple uses.
   if (!TracksRegPressure)
     PrescheduleNodesWithMultipleUses();
