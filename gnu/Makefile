@@ -16,10 +16,10 @@ all install clean veryclean check:: gnu-build
 
 DOCDIRS := gnu-build/binutils gnu-build/gdb
 
-install-html:: gnu-build
+install::
 	@for dir in $(DOCDIRS) ; do \
-	  echo Making $@ in $$dir ; \
-	  $(MAKE) -C $$dir $@ || exit 1; \
+	  echo Making install-html in $$dir ; \
+	  $(MAKE) -C $$dir install-html || exit 1; \
 	done
 
 install::
