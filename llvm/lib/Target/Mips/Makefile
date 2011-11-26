@@ -15,7 +15,7 @@ TARGET = Mips
 BUILT_SOURCES = MipsGenRegisterInfo.inc MipsGenInstrInfo.inc \
                 MipsGenAsmWriter.inc MipsGenCodeEmitter.inc \
                 MipsGenDAGISel.inc MipsGenCallingConv.inc \
-		MipsGenSubtargetInfo.inc MipsGenIntrinsics.inc \
+		MipsGenIntrinsics.inc \
                 MipsGenSubtargetInfo.inc MipsGenMCCodeEmitter.inc
 
 DIRS = InstPrinter TargetInfo MCTargetDesc

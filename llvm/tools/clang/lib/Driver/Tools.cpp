@@ -789,7 +789,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   CmdArgs.push_back(ABIName);
 
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
-  StringRef FloatABI;
+  StringRef FloatABI = "hard";
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
                                options::OPT_mhard_float)) {
     if (A->getOption().matches(options::OPT_msoft_float))
@@ -812,7 +812,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     CmdArgs.push_back("-msoft-float");
   } else {
     assert(FloatABI == "hard" && "Invalid float abi!");
-    CmdArgs.push_back("-mhard-float");
+    // RICH: CmdArgs.push_back("-mhard-float");
   }
 }
 
@@ -4855,7 +4855,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   llvm::Triple Triple = getToolChain().getTriple();
 
   CmdArgs.push_back("-m");
-  const char* emulation;
+  StringRef emulation;
   bool hash = true;
   bool buildID = true;
   switch (Triple.getArch()) {
@@ -4880,7 +4880,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       break;
     default: emulation = "unknown";
   }
-  CmdArgs.push_back(emulation);
+  CmdArgs.push_back(Args.MakeArgString(emulation));
 
   if (buildID) {
       CmdArgs.push_back("--build-id");
@@ -4937,9 +4937,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // Find the relative path to the libraries:
-  // <bindir>/../lib/<arch>-<os>
+  // Find the relative path to the libraries and linker scripts:
+  // <bindir>/../ldscripts/<os>
+  // <bindir>/../lib/<arch>/<os>
   // <bindir>/../lib/<arch>
+  CmdArgs.push_back("-nostdlib");
+  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/ldscripts/"
+    + Triple.getOSTypeName(Triple.getOS())));
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
     + Triple.getArchTypeName(Triple.getArch()) + "/"
     + Triple.getOSTypeName(Triple.getOS())));
@@ -4953,8 +4957,12 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
-  if (!Args.hasArg(options::OPT_T))
-    CmdArgs.push_back("-Ttarget.ld");
+  if (!Args.hasArg(options::OPT_T)) {
+    // RICH: Other linker command files choices.
+    StringRef extension = ".x";
+    CmdArgs.push_back(Args.MakeArgString("-T" + 
+      emulation + extension));
+  }
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nodefaultlibs)) {
