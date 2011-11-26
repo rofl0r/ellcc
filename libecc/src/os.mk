@@ -2,6 +2,7 @@
 
 # The target processor.
 TARGET = $(shell basename `cd ../..; pwd`)
+ARCH ?= $(TARGET)
 # The target operating system.
 OS = $(shell basename `cd ../; pwd`)
 # The base of the library name.
@@ -53,6 +54,7 @@ $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)
 
 install: all
+	mkdir -p $(LIBDIR)
 	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
 
 clean:

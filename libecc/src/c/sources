@@ -45,5 +45,5 @@ VPATH := $(VPATH):$(SRCPATH)/c/time
 SRCS += localtime.c asctime.c strftime.c
 
 # Target specific sources.
-VPATH := $(VPATH):$(SRCPATH)/c/$(TARGET)
+VPATH := $(VPATH):$(SRCPATH)/c/$(ARCH)
 SRCS += setjmp.S
