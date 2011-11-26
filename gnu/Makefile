@@ -1,6 +1,7 @@
 # Build ELLCC.
 
 # Get the names of the subdirectories.
+
 SUBDIRS := gnu-build/binutils gnu-build/gdb  gnu-build/qemu \
 	   gnu-build/binutils/arm-elf        gnu-build/binutils/ppc64-elf \
 	   gnu-build/binutils/i386-elf       gnu-build/binutils/ppc-elf \
@@ -9,6 +10,14 @@ SUBDIRS := gnu-build/binutils gnu-build/gdb  gnu-build/qemu \
 
 all install clean veryclean check:: gnu-build
 	@for dir in $(SUBDIRS) ; do \
+	  echo Making $@ in $$dir ; \
+	  $(MAKE) -C $$dir $@ || exit 1; \
+	done
+
+DOCDIRS := gnu-build/binutils gnu-build/gdb
+
+install-html:: gnu-build
+	@for dir in $(DOCDIRS) ; do \
 	  echo Making $@ in $$dir ; \
 	  $(MAKE) -C $$dir $@ || exit 1; \
 	done
