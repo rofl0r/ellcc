@@ -22,9 +22,17 @@ AR = ../../../../bin/ecc-ar
 
 CFLAGS = -Werror -MD -MP -O1
 
+ifdef CPU
+    MCPU = -mcpu=$(CPU)
+endif
+
+ifdef FLOAT
+    MFLOAT = -m$(FLOAT)-float
+endif
+
 .SUFFIXES: .c .o
 .c.o:
-	${CC} -g -c ${CFLAGS} $<
+	${CC} $(MCPU) $(MFLOAT) -g -c ${CFLAGS} $<
 
 VPATH := ../../../src/$(LIB)
 

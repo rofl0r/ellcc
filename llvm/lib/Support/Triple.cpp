@@ -331,7 +331,8 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
   else if (ArchName == "msp430")
     return msp430;
   else if (ArchName == "mips" || ArchName == "mipseb" ||
-           ArchName == "mipsallegrex")
+           ArchName == "mipsallegrex" ||
+           ArchName.startswith("mips32r"))
     return mips;
   else if (ArchName == "mipsel" || ArchName == "mipsallegrexel" ||
            ArchName == "psp")

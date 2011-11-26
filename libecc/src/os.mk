@@ -24,11 +24,19 @@ AR = ../../../../../bin/ecc-ar
 
 CFLAGS = -Werror -MD -MP -O1 -fno-builtin
 
+ifdef CPU
+    MCPU = -mcpu=$(CPU)
+endif
+
+ifdef FLOAT
+    MFLOAT = -m$(FLOAT)-float
+endif
+
 .SUFFIXES: .c .S .o
 .c.o:
-	${CC} -g -c ${CFLAGS} $<
+	${CC} $(MCPU) $(MFLOAT) -g -c ${CFLAGS} $<
 .S.o:
-	${CC} -c ${CFLAGS} $<
+	${CC} $(MCPU) -c ${CFLAGS} $<
 
 SRCPATH := ../../../../src
 

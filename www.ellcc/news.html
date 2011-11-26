@@ -46,6 +46,14 @@
  cellpadding="2" cellspacing="0">
         <tbody>
           <tr>
+            <td style="vertical-align: top;">November 26, 2011<br>
+            </td>
+            <td style="vertical-align: top;">Added support for building
+libraries and programs for the armv7 and mips32r2 architectures for
+both hard FPUs and software floating point support.<br>
+            </td>
+          </tr>
+          <tr>
             <td style="vertical-align: top;">November 20, 2011<br>
             </td>
             <td style="vertical-align: top;">Updated
@@ -127,11 +135,11 @@ regression tests on ppc64, vaargs seems to be functional now. tcsh now
 builds for arm, i386, microblaze,
 ppc, ppc64, and x86_64. In QEMU user mode tcsh for arm, i386, ppc, and
 x86_64 runs and the "set" and "exit" commands work as expected. The ppc
-can run a few "ls" commands before coredump. The arm, i386, ppc64, and
+can run a few "ls" commands before core dump. The arm, i386, ppc64, and
 x86_64 can run one "ls" command and then hang. I suspect a SIGCHLD
-problem. The Startup under QEMU fails for microblaze. The ppc64 tcsh
+problem. The Start up under QEMU fails for microblaze. The ppc64 tcsh
 starts, but displays no prompt. The "set" command works, but the "exit"
-command coredumps.<br>
+command core dumps.<br>
             </td>
           </tr>
           <tr>

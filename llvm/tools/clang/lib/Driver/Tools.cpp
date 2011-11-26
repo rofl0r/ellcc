@@ -429,17 +429,19 @@ static const char *getARMTargetCPU(const ArgList &Args,
                                    const llvm::Triple &Triple) {
   // FIXME: Warn on inconsistent use of -mcpu and -march.
 
-  // If we have -mcpu=, use that.
-  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
-    return A->getValue(Args);
-
   StringRef MArch;
-  if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
-    // Otherwise, if we have -march= choose the base CPU for that arch.
+  //
+  // If we have -mcpu=, use that.
+  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
     MArch = A->getValue(Args);
   } else {
-    // Otherwise, use the Arch from the triple.
-    MArch = Triple.getArchName();
+    if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+      // Otherwise, if we have -march= choose the base CPU for that arch.
+      MArch = A->getValue(Args);
+    } else {
+      // Otherwise, use the Arch from the triple.
+      MArch = Triple.getArchName();
+    }
   }
 
   return llvm::StringSwitch<const char *>(MArch)
@@ -592,8 +594,8 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
         break;
       default:
         // Assume "soft", but warn the user we are guessing.
-        FloatABI = "soft";
-        D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+        FloatABI = "hard";
+        // RICH: D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
         break;
       }
     }
@@ -727,7 +729,8 @@ void Clang::AddMBlazeTargetArgs(const ArgList &Args,
 
 // Get default architecture.
 static const char* getMipsArchFromCPU(StringRef CPUName) {
-  if (CPUName == "mips32r1" || CPUName == "4ke")
+  if (CPUName == "mips32r1" || CPUName == "4ke" ||
+      CPUName == "mips32r2")
     return "mips";
 
   assert((CPUName == "mips64r1" || CPUName == "mips64r2") &&
@@ -740,6 +743,9 @@ static const char* getMipsArchFromCPU(StringRef CPUName) {
 static const char* getMipsCPUFromArch(StringRef ArchName, const Driver &D) {
   if (ArchName == "mips" || ArchName == "mipsel")
     return "mips32r1";
+  else if (ArchName == "mips32r2" || ArchName == "mips32r2el" ||
+           ArchName == "mips32r2sf" || ArchName == "mips32r2elsf")
+    return "mips32r2";
   else if (ArchName == "mips64" || ArchName == "mips64el")
     return "mips64r1";
   else
@@ -750,7 +756,9 @@ static const char* getMipsCPUFromArch(StringRef ArchName, const Driver &D) {
 
 // Get default ABI.
 static const char* getMipsABIFromArch(StringRef ArchName) {
-    if (ArchName == "mips" || ArchName == "mipsel")
+    if (ArchName == "mips" || ArchName == "mipsel" ||
+        ArchName == "mips32r2" || ArchName == "mips32r2el" ||
+        ArchName == "mips32r2sf" || ArchName == "mips32r2elsf")
       return "o32";
     
     assert((ArchName == "mips64" || ArchName == "mips64el") &&
@@ -764,6 +772,7 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
 
   StringRef ArchName;
   const char *CPUName;
+  StringRef FloatABI = "hard";
 
   // Set target cpu and architecture.
   if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
@@ -774,6 +783,9 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     ArchName = Args.MakeArgString(getToolChain().getArchName());
     CPUName = getMipsCPUFromArch(ArchName, D);
   }
+
+  if (ArchName.endswith("sf"))
+    FloatABI = "soft";
 
   CmdArgs.push_back("-target-cpu");
   CmdArgs.push_back(CPUName);
@@ -789,7 +801,6 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   CmdArgs.push_back(ABIName);
 
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
-  StringRef FloatABI = "hard";
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
                                options::OPT_mhard_float)) {
     if (A->getOption().matches(options::OPT_msoft_float))
@@ -4862,6 +4873,8 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     case llvm::Triple::arm: emulation = "armelf"; break;
     case llvm::Triple::mips: emulation = "elf32ebmip";
       hash = false;
+      // RICH: if (Arg *A = Args.getLastArg(options::OPT_msoft_float)
+        
       break;
     case llvm::Triple::mipsel: emulation = "elf32elmip";
       hash = false;
