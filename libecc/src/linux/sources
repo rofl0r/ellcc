@@ -11,3 +11,7 @@ SRCS += brk.c fcntl.c stat.c chmod.c fstat.c lseek.c unlink.c \
         umask.c getgroups.c setgroups.c setrlimit.c getrlimit.c dup.c \
         readlink.c creat.c sigsuspend.c fork.c pipe.c getrusage.c execve.c \
         nanosleep.c wait4.c setitimer.c getitimer.c getdents.c _getcwd.c
+
+# Target specific sources.
+VPATH := $(VPATH):$(SRCPATH)/$(OS)/$(ARCH)
+SRCS += start.S

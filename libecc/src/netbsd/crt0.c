@@ -4,7 +4,6 @@
  */
 #include <stdlib.h>             // exit()
 #include <string.h>             // strrchr()
-#include <asm/_start.h>         // _start()
 
 static char *initial_env[] = { 0 };
 
