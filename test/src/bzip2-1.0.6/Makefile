@@ -14,7 +14,7 @@
 
 SHELL=/bin/sh
 
-all: ecc arm armv7 i386 microblaze ppc mips mips32r2 x86_64 ppc64
+all: ecc arm armv7 i386 microblaze ppc mips mips32r2 mips32r2sf x86_64 ppc64
 
 arm armv7 i386 microblaze mips nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
@@ -24,7 +24,7 @@ armv7:
 	$(MAKE) clean
 	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-arm bzip2all
 
-mips32r2:
+mips32r2 mips32r2sf:
 	$(MAKE) clean
 	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-mips bzip2all
 

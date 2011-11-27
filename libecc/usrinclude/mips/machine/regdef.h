@@ -81,6 +81,7 @@
 #define k1	$27
 #define gp	$28	/* global pointer */
 #define sp	$29	/* stack pointer */
+#define fp	$30	/* the frame pointer, if used */
 #define s8	$30	/* one more callee saved */
 #define ra	$31	/* return address */
 
