@@ -1,17 +1,28 @@
-#include <machine/regdef.h>
+#define _LOCORE
+#include <machine/asm.h>
+#include <machine/cpuregs.h>
 
 /** The initial entry point.
  */
         .text
-        .globl  _start
-        .align  2
-        .ent    _start
-_start:
-        .mask   0x00000000,0
-        .fmask  0x00000000,0
-        subu    fp, fp, fp              // Zero the frame pointer
-        la      gp, _gp
+/** The beginning of the .text section is given on the command line for stand
+ * alone programs. For the Mips, the reset address is 0xbfc00000. The
+ * ecc command line should contain "-Wl,-Ttext,bfc00000,-Tdata,a0000010".
+ */
+        .set    noreorder
+        mfc0    k0, MIPS_COP_0_STATUS
+        li      k1, MIPS3_SR_NMI
+        and     k0, k0, k1              // Check for an NMI.
+        beqz    k0, _start              // Jump if reset.
         nop
+        la      k0, _nmi                // Vector to the NMI handler.
+        jr      k0
+        nop
+
+_start:
+        la      sp, _stack              // Set up the stack pointer.
+        la      gp, _gp                 // Initialize the global pointer.
+
         lw      a0, (sp)                // Get argc...
         nop
         addu    a1, sp, 4               // ... and argv ...
