@@ -9,7 +9,7 @@ SUBDIRS := $(dir $(MAKEFILES))
 all install clean veryclean:
 	@for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
-	  $(MAKE) ARCH=arm -C $$dir $@ || exit 1; \
+	  $(MAKE) -C $$dir $@ || exit 1; \
 	done
 
 copy:

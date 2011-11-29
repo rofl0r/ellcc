@@ -35,5 +35,3 @@ _start:
         nop
         b       .                       // Never gets here.
         nop
-        .end    _start
-        .size   _start, .-_start
