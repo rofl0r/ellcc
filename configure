@@ -26,7 +26,7 @@ bin=`cd bin; pwd`
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build
 cd llvm-build
-../llvm/configure --prefix=$prefix --enable-optimized
+../llvm/configure --prefix=$prefix --enable-optimized || exit 1
 cd ..
 
 # Configure for GNU tools.

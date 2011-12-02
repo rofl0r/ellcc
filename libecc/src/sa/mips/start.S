@@ -15,7 +15,7 @@
         and     k0, k0, k1              // Check for an NMI.
         beqz    k0, _start              // Jump if reset.
         nop
-        la      k0, _nmi                // Vector to the NMI handler.
+        la      k0, _nmi_handler        // Vector to the NMI handler.
         jr      k0
         nop
 

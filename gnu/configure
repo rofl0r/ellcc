@@ -90,18 +90,19 @@ cd gnu-build
 qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
     ppc-softmmu ppc64-softmmu sparc-softmmu"
 
-# RICH: This should be conditional based on host.
-# The QEMU Linux user space targets.
-qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
+if [ `uname` = "Linux" ] ; then 
+    # The QEMU Linux user space targets.
+    qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
     microblaze-linux-user mips-linux-user mipsel-linux-user \
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
+fi
 
 p=qemu
 echo Configuring package $p for $targets
 mkdir $p
 cd $p
 ../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix --disable-strip \
-  --target-list="$qemu_target_list"
+  --target-list="$qemu_target_list" --disable-guest-agent
 if [ $? -ne 0 ] ; then
   echo configure for $p failed
   exit 1
