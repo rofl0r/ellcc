@@ -4,5 +4,9 @@
 #include <asm/unistd.h>
 
         .text
+        .ent    _exit
 _exit:
-        syscall __NR_exit
+        li      v0, __NR_exit
+        syscall
+        .end    _exit
+        .globl  _exit

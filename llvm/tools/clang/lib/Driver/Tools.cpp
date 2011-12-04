@@ -4932,11 +4932,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     assert(Output.isNothing() && "Invalid output.");
   }
 
+  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + Triple.getArchTypeName(Triple.getArch()) + "/"
+        + ArchName + "/"
+        // RICH + Triple.getArchTypeName(Triple.getArch()) + "/"
         + Triple.getOSTypeName(Triple.getOS()) + "/crt0.o"));
 #if RICH
       CmdArgs.push_back(Args.MakeArgString(
@@ -4958,10 +4960,12 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/ldscripts/"
     + Triple.getOSTypeName(Triple.getOS())));
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-    + Triple.getArchTypeName(Triple.getArch()) + "/"
+    + ArchName + "/"
+    // RICH: + Triple.getArchTypeName(Triple.getArch()) + "/"
     + Triple.getOSTypeName(Triple.getOS())));
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-    + Triple.getArchTypeName(Triple.getArch())));
+    + ArchName));
+    // RICH: + Triple.getArchTypeName(Triple.getArch())));
 
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);

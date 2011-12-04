@@ -3,9 +3,9 @@ VPATH := $(VPATH):$(SRCPATH)/$(OS)
 # Startup code.
 CRTSRCS = crt0.c
 
-SRCS += 
+SRCS += on_reset.c on_bootstrap.c
 
 # Target specific sources.
 VPATH := $(VPATH):$(SRCPATH)/$(OS)/$(ARCH)
-SRCS += start.S _exit.S write.S
+SRCS += start.S _exit.S write.S nmi_handler.S
 

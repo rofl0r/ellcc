@@ -179,7 +179,8 @@
 
 #define	MIPS_SR_MX		0x01000000	/* MIPS64 */
 #define	MIPS_SR_PX		0x00800000	/* MIPS64 */
-#define	MIPS_SR_BEV		0x00400000	/* Use boot exception vector */
+#define	MIPS_SR_BEV		0x00400000	// Use the boot exception vector.
+#define	MIPS_SR_BEV_BIT	        22	        // Use the boot exception vector bit.
 #define	MIPS_SR_TS		0x00200000
 
 	/* r4k and r3k differences, see below */
@@ -245,6 +246,7 @@
 #define	MIPS3_SR_PX		0x00800000		/* MIPS64 */
 #define	MIPS3_SR_SR		0x00100000
 #define	MIPS3_SR_NMI		0x00080000		/* MIPS32/64 */
+#define	MIPS3_SR_NMI_BIT	19		        /* MIPS32/64 */
 #define	MIPS3_SR_DIAG_CH	0x00040000
 #define	MIPS3_SR_DIAG_CE	0x00020000
 #define	MIPS3_SR_DIAG_PE	0x00010000
@@ -279,6 +281,106 @@
 #define	MIPS_SR_ERL		MIPS3_SR_ERL
 #define	MIPS_SR_EXL		MIPS3_SR_EXL
 
+
+/*
+ * The interrupt control register. (MIPS_COP_0_INTCTL)
+ */
+
+#define MIPS_INTC_IPTI          0xE0000000              // Timer interrupt IP.
+#define MIPS_INTC_IPTI_BIT      29                      // Timer interrupt IP low bit. 
+#define MIPS_INTC_IPTI_SIZE     3                       // Timer interrupt IP size. 
+
+#define MIPS_INTC_IPPCI         0x1C000000              // Performance counter interrupt IP.
+#define MIPS_INTC_IPPCI_BIT     26                      // Performance counter interrupt IP low bit. 
+#define MIPS_INTC_IPPCI_SIZE    3                       // Performance counter interrupt IP size. 
+
+#define MIPS_INTC_IPFDC         0x03800000              // Fast debug channel interrupt IP.
+#define MIPS_INTC_IPFDC_BIT     23                      // Fast debug channel interrupt IP low bit. 
+#define MIPS_INTC_IPFDC_SIZE    3                       // Fast debug channel interrupt IP size. 
+
+// Interrupt sources for the previous fields.
+#define MIPS_INTC_HW0           2                       // Use hardware interrupt source 0. 
+#define MIPS_INTC_HW1           3                       // Use hardware interrupt source 1. 
+#define MIPS_INTC_HW2           4                       // Use hardware interrupt source 2. 
+#define MIPS_INTC_HW3           5                       // Use hardware interrupt source 3. 
+#define MIPS_INTC_HW4           6                       // Use hardware interrupt source 4. 
+#define MIPS_INTC_HW5           7                       // Use hardware interrupt source 5. 
+
+#define MIPS_INTC_ASE           0x007C0000              // MicroController ASE.
+#define MIPS_INTC_ASE_BIT       14                      // MicroController ASE low bit. 
+#define MIPS_INTC_ASE_SIZE      5                       // MicroController ASE size. 
+
+#define MIPS_INTC_VS            0x000003E0              // Vector spacing.
+#define MIPS_INTC_VS_BIT        5                       // Vector spacing low bit. 
+#define MIPS_INTC_VS_SIZE       5                       // Vector spacing size. 
+#define MIPS_INTC_VS_0          0x000                   // Vector spacing 0 bytes.
+#define MIPS_INTC_VS_32         0x020                   // Vector spacing 32 bytes.
+#define MIPS_INTC_VS_64         0x040                   // Vector spacing 64 bytes.
+#define MIPS_INTC_VS_128        0x080                   // Vector spacing 128 bytes.
+#define MIPS_INTC_VS_256        0x100                   // Vector spacing 256 bytes.
+#define MIPS_INTC_VS_512        0x200                   // Vector spacing 512 bytes.
+
+/*
+ * The shadow register status and control register. (MIPS_COP_0_SRSCTL)
+ */
+#define MIPS_SRSC_HSS           0x3C000000              // Highest shadow set. 
+#define MIPS_SRSC_HSS_BIT       26                      // Highest shadow set low bit. 
+#define MIPS_SRSC_HSS_SIZE      4                       // Highest shadow set size. 
+#define MIPS_SRSC_EICSS         0x003C0000              // EIC interrupt mode shadow set. 
+#define MIPS_SRSC_EICSS_BIT     18                      // EIC interrupt mode shadow set low bit. 
+#define MIPS_SRSC_EICSS_SIZE    4                       // EIC interrupt mode shadow set size. 
+#define MIPS_SRSC_ESS           0x0000F000              // Exception shadow set. 
+#define MIPS_SRSC_ESS_BIT       12                      // Exception shadow set low bit. 
+#define MIPS_SRSC_ESS_SIZE      4                       // Exception shadow set size. 
+#define MIPS_SRSC_PSS           0x000003C0              // Previous shadow set. 
+#define MIPS_SRSC_PSS_BIT       6                       // Previous shadow set low bit. 
+#define MIPS_SRSC_PSS_SIZE      4                       // Previous shadow set size. 
+#define MIPS_SRSC_CSS           0x0000000F              // Current shadow set. 
+#define MIPS_SRSC_CSS_BIT       0                       // Current shadow set low bit. 
+#define MIPS_SRSC_CSS_SIZE      4                       // Current shadow set size. 
+
+/*
+ * The cause register. (MIPS_COP_0_CAUSE)
+ */
+#define MIPS_CAUSE_BD           0x80000000              // Exception in branch delay slot.
+#define MIPS_CAUSE_BD_BIT       31                      // Exception in branch delay slot bit.
+#define MIPS_CAUSE_TI           0x40000000              // Timer interrupt.
+#define MIPS_CAUSE_TI_BIT       30                      // Timer interrupt bit.
+#define MIPS_CAUSE_CE           0x30000000              // Coprocessor unit number.
+#define MIPS_CAUSE_CE_BIT       28                      // Coprocessor unit number low bit.
+#define MIPS_CAUSE_CE_SIZE      2                       // Coprocessor unit number size.
+#define MIPS_CAUSE_DC           0x08000000              // Disable count register.
+#define MIPS_CAUSE_DC_BIT       27                      // Disable count register bit.
+#define MIPS_CAUSE_PCI          0x04000000              // Performance counter interrupt.
+#define MIPS_CAUSE_PCI_BIT      26                      // Performance counter interrupt bit.
+#define MIPS_CAUSE_IV           0x00800000              // Interrupt vector.
+#define MIPS_CAUSE_IV_BIT       23                      // Interrupt vector bit.
+#define MIPS_CAUSE_WP           0x00400000              // Watch.
+#define MIPS_CAUSE_WP_BIT       22                      // Watch bit.
+#define MIPS_CAUSE_FDCI         0x00200000              // Fast debug channel interrupt.
+#define MIPS_CAUSE_FDCI_BIT     21                      // Fast debug channel interrupt bit.
+#define MIPS_CAUSE_IP7          0x00008000              // Interrupt 7 pending.
+#define MIPS_CAUSE_IP7_BIT      15                      // Interrupt 7 pending bit.
+#define MIPS_CAUSE_IP6          0x00004000              // Interrupt 6 pending.
+#define MIPS_CAUSE_IP6_BIT      14                      // Interrupt 6 pending bit.
+#define MIPS_CAUSE_IP5          0x00002000              // Interrupt 5 pending.
+#define MIPS_CAUSE_IP5_BIT      13                      // Interrupt 5 pending bit.
+#define MIPS_CAUSE_IP4          0x00001000              // Interrupt 4 pending.
+#define MIPS_CAUSE_IP4_BIT      12                      // Interrupt 4 pending bit.
+#define MIPS_CAUSE_IP3          0x00000800              // Interrupt 3 pending.
+#define MIPS_CAUSE_IP3_BIT      11                      // Interrupt 3 pending bit.
+#define MIPS_CAUSE_IP2          0x00000400              // Interrupt 3 pending.
+#define MIPS_CAUSE_IP2_BIT      10                      // Interrupt 3 pending bit.
+#define MIPS_CAUSE_RIPL         0x0000FC00              // Requested interrupt priority level.
+#define MIPS_CAUSE_RIPL_BIT     20                      // Requested interrupt priority level low bit.
+#define MIPS_CAUSE_RIPL_SIZE    6                       // Requested interrupt priority level size.
+#define MIPS_CAUSE_IP1          0x00000200              // Request software interrupt 1.
+#define MIPS_CAUSE_IP1_BIT      9                       // Request software interrupt 1 bit.
+#define MIPS_CAUSE_IP0          0x00000100              // Request software interrupt 0.
+#define MIPS_CAUSE_IP0_BIT      8                       // Request software interrupt 0 bit.
+#define MIPS_CAUSE_EXC_CODE     0x0000FC00              // Exception code.
+#define MIPS_CAUSE_EXC_CODE_BIT 2                       // Exception code low bit.
+#define MIPS_CAUSE_EXC_CODE_SIZE 5                      // Exception code size.
 
 /*
  * The interrupt masks.
@@ -317,7 +419,7 @@
 #define	MIPS3_CNTXT_BAD_VPN2	0x007FFFF0
 
 /*
- * The bits in the MIPS3 config register.
+ * The bits in the MIPS3 config register. (MIPS_COP_0_CONFIG)
  *
  *	bit 0..5: R/W, Bit 6..31: R/O
  */
@@ -471,7 +573,9 @@
  *  9	MIPS_COP_0_COUNT	.333 Count register.
  * 10	MIPS_COP_0_TLB_HI	3636 TLB entry high.
  * 11	MIPS_COP_0_COMPARE	.333 Compare (against Count).
- * 12	MIPS_COP_0_STATUS	3333 Status register.
+ * 12/0	MIPS_COP_0_STATUS	3333 Status register.
+ * 12/1	MIPS_COP_0_INTCTL	3333 Interrupt system status and control.
+ * 12/2	MIPS_COP_0_SRSCTL	3333 Shadow register set status and control.
  * 13	MIPS_COP_0_CAUSE	3333 Exception cause register.
  * 14	MIPS_COP_0_EXC_PC	3636 Exception PC.
  * 15	MIPS_COP_0_PRID		3333 Processor revision identifier.
@@ -505,51 +609,53 @@
 #else
 #define	_(n)	n
 #endif
-#define	MIPS_COP_0_TLB_INDEX	_(0)
-#define	MIPS_COP_0_TLB_RANDOM	_(1)
+#define	MIPS_COP_0_TLB_INDEX	_(0), 0
+#define	MIPS_COP_0_TLB_RANDOM	_(1), 0
 	/* Name and meaning of	TLB bits for $2 differ on r3k and r4k. */
 
-#define	MIPS_COP_0_TLB_CONTEXT	_(4)
+#define	MIPS_COP_0_TLB_CONTEXT	_(4), 0
 					/* $5 and $6 new with MIPS-III */
-#define	MIPS_COP_0_BAD_VADDR	_(8)
-#define	MIPS_COP_0_TLB_HI	_(10)
-#define	MIPS_COP_0_STATUS	_(12)
-#define	MIPS_COP_0_CAUSE	_(13)
-#define	MIPS_COP_0_EXC_PC	_(14)
-#define	MIPS_COP_0_PRID		_(15)
-
+#define	MIPS_COP_0_BAD_VADDR	_(8), 0
+#define	MIPS_COP_0_TLB_HI	_(10), 0
+#define	MIPS_COP_0_STATUS	_(12), 0
+#define	MIPS_COP_0_INTCTL	_(12), 1
+#define	MIPS_COP_0_SRSCTL	_(12), 2
+#define	MIPS_COP_0_CAUSE	_(13), 0
+#define	MIPS_COP_0_EXC_PC	_(14), 0
+#define	MIPS_COP_0_PRID		_(15), 0
+#define	MIPS_COP_0_EBASE	_(15), 1
 
 /* MIPS-I */
-#define	MIPS_COP_0_TLB_LOW	_(2)
+#define	MIPS_COP_0_TLB_LOW	_(2), 0
 
 /* MIPS-III */
-#define	MIPS_COP_0_TLB_LO0	_(2)
-#define	MIPS_COP_0_TLB_LO1	_(3)
+#define	MIPS_COP_0_TLB_LO0	_(2), 0
+#define	MIPS_COP_0_TLB_LO1	_(3), 0
 
-#define	MIPS_COP_0_TLB_PG_MASK	_(5)
-#define	MIPS_COP_0_TLB_WIRED	_(6)
+#define	MIPS_COP_0_TLB_PG_MASK	_(5), 0
+#define	MIPS_COP_0_TLB_WIRED	_(6), 0
 
-#define	MIPS_COP_0_COUNT	_(9)
-#define	MIPS_COP_0_COMPARE	_(11)
+#define	MIPS_COP_0_COUNT	_(9), 0
+#define	MIPS_COP_0_COMPARE	_(11), 0
 
-#define	MIPS_COP_0_CONFIG	_(16)
-#define	MIPS_COP_0_LLADDR	_(17)
-#define	MIPS_COP_0_WATCH_LO	_(18)
-#define	MIPS_COP_0_WATCH_HI	_(19)
-#define	MIPS_COP_0_TLB_XCONTEXT _(20)
-#define	MIPS_COP_0_ECC		_(26)
-#define	MIPS_COP_0_CACHE_ERR	_(27)
-#define	MIPS_COP_0_TAG_LO	_(28)
-#define	MIPS_COP_0_TAG_HI	_(29)
-#define	MIPS_COP_0_ERROR_PC	_(30)
+#define	MIPS_COP_0_CONFIG	_(16), 0
+#define	MIPS_COP_0_LLADDR	_(17), 0
+#define	MIPS_COP_0_WATCH_LO	_(18), 0
+#define	MIPS_COP_0_WATCH_HI	_(19), 0
+#define	MIPS_COP_0_TLB_XCONTEXT _(20), 0
+#define	MIPS_COP_0_ECC		_(26), 0
+#define	MIPS_COP_0_CACHE_ERR	_(27), 0
+#define	MIPS_COP_0_TAG_LO	_(28), 0
+#define	MIPS_COP_0_TAG_HI	_(29), 0
+#define	MIPS_COP_0_ERROR_PC	_(30), 0
 
 /* MIPS32/64 */
-#define	MIPS_COP_0_DEBUG	_(23)
-#define	MIPS_COP_0_DEPC		_(24)
-#define	MIPS_COP_0_PERFCNT	_(25)
-#define	MIPS_COP_0_DATA_LO	_(28)
-#define	MIPS_COP_0_DATA_HI	_(29)
-#define	MIPS_COP_0_DESAVE	_(31)
+#define	MIPS_COP_0_DEBUG	_(23), 0
+#define	MIPS_COP_0_DEPC		_(24), 0
+#define	MIPS_COP_0_PERFCNT	_(25), 0
+#define	MIPS_COP_0_DATA_LO	_(28), 0
+#define	MIPS_COP_0_DATA_HI	_(29), 0
+#define	MIPS_COP_0_DESAVE	_(31), 0
 
 /*
  * Values for the code field in a break instruction.

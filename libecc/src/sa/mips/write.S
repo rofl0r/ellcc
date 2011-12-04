@@ -4,5 +4,9 @@
 #include <asm/unistd.h>
 
         .text
-_exit:
-        syscall __NR_write
+        .ent    write
+write:
+        li      v0, __NR_write
+        syscall
+        .end    write
+        .globl  write

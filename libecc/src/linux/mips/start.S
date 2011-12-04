@@ -19,6 +19,7 @@ _start:
         addu    a2, a2, a2
         addu    a2, a2, a2              // ... a2 = argc * 4 ...
         addu    a2, a2, a1              // ... and compute environ.
+        addi    sp, sp, 16              // Leave space for arguments 0..3 (o32 abi).
         lw      t9, %call16(_estart)(gp)
         jalr    t9                      // Let's go!
         nop
