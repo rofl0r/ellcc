@@ -4831,6 +4831,14 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
                                      const ArgList &Args,
                                      const char *LinkingOutput) const {
   ArgStringList CmdArgs;
+  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
+  bool needEB = false;
+  bool needEL = false;
+  if (ArchName.endswith("ebsf") || ArchName.endswith("eb")) {
+    needEB = true;
+  } else if (ArchName.endswith("elsf") || ArchName.endswith("el")) {
+    needEL = true;
+  }
 
   Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
                        options::OPT_Xassembler);
@@ -4846,7 +4854,18 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   llvm::Triple Triple = getToolChain().getTriple();
   if (Triple.getArch() == llvm::Triple::ppc) {
-      CmdArgs.push_back("-a32");
+    CmdArgs.push_back("-a32");
+    if (needEB) {
+      CmdArgs.push_back("-be");
+    } else if (needEL) {
+      CmdArgs.push_back("-le");
+    }
+  } else {
+    if (needEB) {
+      CmdArgs.push_back("-EB");
+    } else if (needEL) {
+      CmdArgs.push_back("-EL");
+    }
   }
   std::string As = Triple.getArchTypeName(Triple.getArch());
   As += "-elf-as";
@@ -4862,19 +4881,34 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                  const char *LinkingOutput) const {
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
-
   llvm::Triple Triple = getToolChain().getTriple();
-
+  bool needEB = false;
+  bool needEL = false;
+  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
+  if (ArchName.endswith("ebsf") || ArchName.endswith("eb")) {
+    needEB = true;
+  } else if (ArchName.endswith("elsf") || ArchName.endswith("el")) {
+    needEL = true;
+  }
   CmdArgs.push_back("-m");
   StringRef emulation;
   bool hash = true;
   bool buildID = true;
   switch (Triple.getArch()) {
-    case llvm::Triple::arm: emulation = "armelf"; break;
-    case llvm::Triple::mips: emulation = "elf32ebmip";
+    case llvm::Triple::arm:
+      if (needEB) {
+        emulation = "armelfb";
+      } else {
+        emulation = "armelf";
+      }
+      break;
+    case llvm::Triple::mips:
       hash = false;
-      // RICH: if (Arg *A = Args.getLastArg(options::OPT_msoft_float)
-        
+      if (needEL) {
+        emulation = "elf32elmip";
+      } else {
+        emulation = "elf32ebmip";
+      }
       break;
     case llvm::Triple::mipsel: emulation = "elf32elmip";
       hash = false;
@@ -4932,7 +4966,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     assert(Output.isNothing() && "Invalid output.");
   }
 
-  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_shared)) {
