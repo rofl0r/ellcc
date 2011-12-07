@@ -113,7 +113,7 @@ reset:
          * the linker can change the jal to a jalx, if necessary,
          * depending on whether the target code is MIPS16 or MIPS32.
          */
-        addi    sp, sp, 16              // Leave space for arguments 0..3 (o32 abi).
+        addi    sp, sp, -16             // Leave space for arguments 0..3 (o32 abi).
         la      t0,_estart_jmp
         jr      t0
         nop
