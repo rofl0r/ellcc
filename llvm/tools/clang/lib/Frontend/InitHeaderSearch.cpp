@@ -340,15 +340,19 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       // usrinclude/<os>
       // usrinclude
       // RICH: This seems like a hack. May need to revisit.
+      StringRef arch = triple.getArchTypeName(triple.getArch());
+      if (arch.startswith("mips")) {
+        arch = "mips";
+      }
       llvm::sys::Path P0(HSOpts.ResourceDir);
       P0.appendComponent("usrinclude");
-      P0.appendComponent(triple.getArchTypeName(triple.getArch()));
+      P0.appendComponent(arch);
       P0.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P0.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P1(HSOpts.ResourceDir);
       P1.appendComponent("usrinclude");
-      P1.appendComponent(triple.getArchTypeName(triple.getArch()));
+      P1.appendComponent(arch);
       AddPath(P1.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P2(HSOpts.ResourceDir);

@@ -4868,6 +4868,9 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
   std::string As = Triple.getArchTypeName(Triple.getArch());
+  if (As == "mipsel") {
+    As = "mips";
+  }
   As += "-elf-as";
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath(As.c_str()));

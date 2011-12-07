@@ -330,17 +330,17 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
     return cellspu;
   else if (ArchName == "msp430")
     return msp430;
-  else if (ArchName == "mips" || ArchName == "mipseb" ||
-           ArchName == "mipsallegrex" ||
-           ArchName.startswith("mips32r"))
-    return mips;
-  else if (ArchName == "mipsel" || ArchName == "mipsallegrexel" ||
-           ArchName == "psp")
-    return mipsel;
   else if (ArchName == "mips64" || ArchName == "mips64eb")
     return mips64;
   else if (ArchName == "mips64el")
     return mips64el;
+  else if (ArchName == "mipsel" || ArchName == "psp" ||
+           (ArchName.startswith("mips") &&
+            (ArchName.endswith("elsf") || ArchName.endswith("el"))))
+    return mips;
+    // RICH: return mipsel;
+  else if (ArchName.startswith("mips"))
+    return mips;
   else if (ArchName == "sparc")
     return sparc;
   else if (ArchName == "sparcv9")
