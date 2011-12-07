@@ -60,6 +60,7 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
 
   case mblaze:  return "mblaze";
 
+  case mipsel:
   case mips:    return "mips";
 
   case nios2:   return "nios2";
@@ -337,8 +338,7 @@ Triple::ArchType Triple::ParseArch(StringRef ArchName) {
   else if (ArchName == "mipsel" || ArchName == "psp" ||
            (ArchName.startswith("mips") &&
             (ArchName.endswith("elsf") || ArchName.endswith("el"))))
-    return mips;
-    // RICH: return mipsel;
+    return mipsel;
   else if (ArchName.startswith("mips"))
     return mips;
   else if (ArchName == "sparc")
