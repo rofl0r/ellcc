@@ -530,9 +530,7 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #endif  /* HAVE_MORECORE */
 #endif  /* DARWIN */
 
-#ifndef LACKS_SYS_TYPES_H
-#include <sys/types.h>  /* For size_t */
-#endif  /* LACKS_SYS_TYPES_H */
+#include <stddef.h>     // For size_t.
 
 #if (defined(__GNUC__) && ((defined(__i386__) || defined(__x86_64__)))) || (defined(_MSC_VER) && _MSC_VER>=1310)
 #define SPIN_LOCKS_AVAILABLE 1

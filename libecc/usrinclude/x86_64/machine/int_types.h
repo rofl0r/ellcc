@@ -62,7 +62,7 @@ typedef	unsigned long long int __uint64_t;
 
 /* 7.18.1.4 Integer types capable of holding object pointers */
 
-typedef	int		       __intptr_t;
-typedef	unsigned int	      __uintptr_t;
+typedef	long int	       __intptr_t;
+typedef	unsigned long int      __uintptr_t;
 
 #endif	/* !_I386_INT_TYPES_H_ */

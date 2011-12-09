@@ -55,9 +55,9 @@ typedef	_BSD_TIME_T_	time_t;
 #undef	_BSD_TIME_T_
 #endif
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
 #ifdef	_BSD_CLOCKID_T_

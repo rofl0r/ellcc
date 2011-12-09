@@ -272,10 +272,9 @@ typedef	_BSD_CLOCK_T_		clock_t;
 #undef	_BSD_CLOCK_T_
 #endif
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_		size_t;
+#ifndef _SIZE_T
 #define _SIZE_T
-#undef	_BSD_SIZE_T_
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
 #ifdef	_BSD_SSIZE_T_

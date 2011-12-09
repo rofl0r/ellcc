@@ -42,10 +42,12 @@
 #include <sys/ansi.h>
 
 #include <machine/ansi.h>
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
+
 #ifdef	_BSD_SSIZE_T_
 typedef	_BSD_SSIZE_T_	ssize_t;
 #undef	_BSD_SSIZE_T_

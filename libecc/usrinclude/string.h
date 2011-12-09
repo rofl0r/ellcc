@@ -35,9 +35,9 @@
 #define	_STRING_H_
 #include <machine/ansi.h>
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
 #include <sys/null.h>

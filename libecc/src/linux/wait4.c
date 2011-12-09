@@ -6,5 +6,5 @@
 
 pid_t wait4(pid_t pid, int *status, int options, struct rusage *rusage)
 {
-    return INLINE_SYSCALL(wait4, 4, (int)pid, status, options, rusage);
+    return INLINE_SYSCALL(wait4, 4, (int)pid, status, options, (unsigned long)rusage);
 }

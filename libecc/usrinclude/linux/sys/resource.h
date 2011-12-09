@@ -95,10 +95,11 @@ struct	rusage {
 #define RLIMIT_NICE     13              /* nice limit */
 #define RLIMIT_RTPRIO   14              /* realtime priority */
 #define RLIMIT_NLIMITS  15
-#define RLIM_NLIMITS    RLIMIT_NLIMITS
 
 #if defined(_NETBSD_SOURCE)
 #define	RLIM_NLIMITS	16		/* number of resource limits */
+#else
+#define RLIM_NLIMITS    RLIMIT_NLIMITS
 #endif
 
 #define	RLIM_INFINITY	(~((u_quad_t)1 << 63))	/* no limit */

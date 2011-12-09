@@ -36,9 +36,9 @@
 #include <sys/inttypes.h>
 #include <machine/ansi.h>
 
-#if defined(_BSD_WCHAR_T_) && !defined(__cplusplus)
-typedef	_BSD_WCHAR_T_	wchar_t;
-#undef	_BSD_WCHAR_T_
+#if !defined(_WCHAR_T) && !defined(__cplusplus)
+#define _WCHAR_T
+typedef	__WCHAR_TYPE__	wchar_t;
 #endif
 
 __BEGIN_DECLS

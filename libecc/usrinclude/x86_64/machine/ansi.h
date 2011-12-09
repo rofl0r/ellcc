@@ -48,8 +48,6 @@
  *	#endif
  */
 #define	_BSD_CLOCK_T_		unsigned long	/* clock() */
-#define	_BSD_PTRDIFF_T_		int		/* ptr1 - ptr2 */
-#define	_BSD_SIZE_T_		unsigned long	/* sizeof() */
 #define	_BSD_SSIZE_T_		int		/* byte count or error */
 #define	_BSD_TIME_T_		__int64_t	/* time() */
 #if __GNUC_PREREQ__(2, 96)

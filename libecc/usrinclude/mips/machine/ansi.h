@@ -48,8 +48,6 @@
  */
 #define	_BSD_CLOCK_T_		unsigned long	/* clock() */
 
-#define	_BSD_PTRDIFF_T_		__typeof__(((int*)0)-((int*)0))
-#define	_BSD_SIZE_T_		__typeof__(sizeof(int))
 // RICH: FIXME
 #define	_BSD_SSIZE_T_		long		/* byte count or error */
 

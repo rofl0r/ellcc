@@ -34,15 +34,19 @@ LIBNAME = lib$(LIB).a
 # The target library directory.
 LIBDIR  = ../../../lib/$(TARGET)
 
-# The build compiler.
-CC = ../../../../bin/$(TARGET)-elf-ecc
-# The base compiler.
-ECC = ../../../../bin/ecc
+ifeq ($(XCC),)
+  # The build compiler.
+  CC = ../../../../bin/$(TARGET)-elf-ecc
+  # The base compiler.
+  ECC = ../../../../bin/ecc
 
-# The archiver.
-AR = ../../../../bin/ecc-ar
+  # The archiver.
+  AR = ../../../../bin/ecc-ar
+else
+  CC = $(XCC)
+endif
 
-CFLAGS = -Werror -MD -MP -O1
+CFLAGS += -Werror -MD -MP -O1
 
 ifdef CPU
     MCPU = -mcpu=$(CPU)
@@ -68,8 +72,12 @@ DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
 all: $(CC) $(LIBNAME)
 
+ifneq ($(ECC),)
 $(CC): $(ECC)
 	ln -sf ecc $(CC)
+else
+$(CC):
+endif
 
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)

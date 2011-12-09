@@ -49,9 +49,9 @@
 #include <machine/int_types.h>
 #include <machine/ansi.h>
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
 #if defined(_POSIX_C_SOURCE) || defined(_XOPEN_SOURCE) || \

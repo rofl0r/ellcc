@@ -43,14 +43,14 @@
 
 #include <machine/ansi.h>
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
-#if defined(_BSD_WCHAR_T_) && !defined(__cplusplus)
-typedef	_BSD_WCHAR_T_	wchar_t;
-#undef	_BSD_WCHAR_T_
+#if !defined(_WCHAR_T) && !defined(__cplusplus)
+#define _WCHAR_T
+typedef	__WCHAR_TYPE__	wchar_t;
 #endif
 
 typedef struct {
