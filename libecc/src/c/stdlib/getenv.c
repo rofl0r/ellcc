@@ -48,8 +48,6 @@ __RCSID("$NetBSD: getenv.c,v 1.35 2010/11/14 22:04:36 tron Exp $");
 #include "reentrant.h"
 #include "local.h"
 
-__weak_alias(getenv_r, _getenv_r)
-
 /*
  * getenv --
  *	Returns ptr to value associated with name, if any, else NULL.
@@ -77,6 +75,8 @@ getenv(const char *name)
 	
 	return result;
 }
+
+// RICH: int getenv_r(const char *name, char *buf, size_t len) __weak_alias(_getenv_r);
 
 int
 getenv_r(const char *name, char *buf, size_t len)

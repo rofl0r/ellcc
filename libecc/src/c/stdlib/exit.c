@@ -40,20 +40,13 @@ __RCSID("$NetBSD: exit.c,v 1.13 2010/09/09 10:19:31 skrll Exp $");
 
 #include <stdlib.h>
 #include <unistd.h>
-#ifdef _LIBC
 #include "reentrant.h"
 #include "atexit.h"
-#endif
 
-#ifdef _LIBC
 extern void __libc_init(void);
-#ifndef __lint
 static void (*force_ref)(void) __used = __libc_init;
-#endif
-#endif
 
 void (*__cleanup) __P((void));
-void _fini(void);
 
 /*
  * Exit, flushing stdio buffers if necessary.
@@ -61,10 +54,7 @@ void _fini(void);
 void
 exit(int status)
 {
-        _fini();        // Call the destructors.
-#ifdef _LIBC
 	__cxa_finalize(NULL);
-#endif
 	if (__cleanup)
 		(*__cleanup)();
 	_exit(status);

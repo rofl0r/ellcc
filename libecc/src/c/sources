@@ -3,7 +3,7 @@ CFLAGS += -I$(SRCPATH)/c/include
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
-        putchar.c merge.c random.c
+        putchar.c merge.c random.c atexit.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
@@ -43,6 +43,12 @@ SRCS +=	strtod.c dtoa.c ldtoa.c gdtoa.c dmisc.c gethex.c gmisc.c strtord.c \
 
 VPATH := $(VPATH):$(SRCPATH)/c/time
 SRCS += localtime.c asctime.c strftime.c
+
+VPATH := $(VPATH):$(SRCPATH)/c/misc
+SRCS += initfini.c
+
+VPATH := $(VPATH):$(SRCPATH)/c/thread-stub
+SRCS += __isthreaded.c  thread-stub.c
 
 # Target specific sources.
 VPATH := $(VPATH):$(SRCPATH)/c/$(ARCH)

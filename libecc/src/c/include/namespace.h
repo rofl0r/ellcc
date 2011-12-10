@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-#if RICH
+#ifdef RICH
 
 #ifndef __lint__
 #define aio_suspend	_aio_suspend

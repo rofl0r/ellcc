@@ -84,6 +84,9 @@
  *
  */
 
+#ifndef _reentrant_h_
+#define _reentrant_h_
+
 #ifdef _REENTRANT
 
 /*
@@ -144,6 +147,7 @@ __END_DECLS
 #define	mutex_unlock(m)		__libc_mutex_unlock((m))
 #define	mutex_destroy(m)	__libc_mutex_destroy((m))
 
+#define mutexattr_declare(attr) mutexattr_t attr
 #define	mutexattr_init(ma)	__libc_mutexattr_init((ma))
 #define	mutexattr_settype(ma, t) __libc_mutexattr_settype((ma), (t))
 #define	mutexattr_destroy(ma)	__libc_mutexattr_destroy((ma))
@@ -229,6 +233,9 @@ __END_DECLS
 #else /* _REENTRANT */
 
 #define	mutex_init(m, a)
+#define mutexattr_declare(attr)
+#define	mutexattr_init(attr)
+#define mutexattr_settype(attr, type)
 #define	mutex_lock(m)
 #define	mutex_trylock(m)
 #define	mutex_unlock(m)
@@ -264,3 +271,4 @@ __END_DECLS
 #define	FUNLOCKFILE(fp)		
 
 #endif /* _REENTRANT */
+#endif /* _reentrant_h_ */

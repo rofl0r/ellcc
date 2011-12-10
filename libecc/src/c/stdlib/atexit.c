@@ -114,15 +114,15 @@ atexit_handler_alloc(void *dso)
 }
 
 /*
- * Initialize atexit_mutex with the PTHREAD_MUTEX_RECURSIVE attribute.
+ * Initialize atexit_mutex with the MUTEX_TYPE_RECURSIVE attribute.
  * Note that __cxa_finalize may generate calls to __cxa_atexit.
  */
 void
 __libc_atexit_init(void)
 {
-	mutexattr_t atexit_mutex_attr;
+	mutexattr_declare(atexit_mutex_attr);
 	mutexattr_init(&atexit_mutex_attr);
-	mutexattr_settype(&atexit_mutex_attr, PTHREAD_MUTEX_RECURSIVE);
+	mutexattr_settype(&atexit_mutex_attr, MUTEX_TYPE_RECURSIVE);
 	mutex_init(&atexit_mutex, &atexit_mutex_attr);
 }
 

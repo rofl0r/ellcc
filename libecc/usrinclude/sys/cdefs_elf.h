@@ -61,7 +61,8 @@
     __asm(".weak " _C_LABEL_STRING(#alias) "\n"			\
 	    _C_LABEL_STRING(#alias) " = " _C_LABEL_STRING(#sym));
 #else
-#define	__weak_alias(alias,sym)
+// RICH #define	__weak_alias(sym) __attribute__ ((weak, alias (#sym)))
+#define	__weak_alias(alias, sym)
 #endif
 
 /* Do not use __weak_extern, use __weak_reference instead */
