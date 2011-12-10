@@ -17,6 +17,7 @@ char **environ = &initial_env[0];
 char *__progname;
 
 extern int main(int argc, char **argv, char **environ);
+extern void _init(void);
 
 extern char __bss_start[];              // The start of the unitialized data section.
 extern char _end[];                     // The end of the unitialized data section.
@@ -49,6 +50,7 @@ void _estart(int argc, char **argv, char **_environ)
     // Initialize the non-const initialized data section.
     memcpy(_data_begin, _data_image_begin, _data_end - _data_begin);
 
+    _init();            // Call the constructors.
     int status = main(argc, argv, environ);
     exit(status);
 }

@@ -417,6 +417,11 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
     return;
   }
 
+  if (triple.getVendor() == llvm::Triple::ELLCC) {
+      // RICH: Add C++ specific paths.
+      return;
+  }
+
   switch (os) {
   case llvm::Triple::Linux:
   case llvm::Triple::Win32:

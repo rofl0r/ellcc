@@ -4975,15 +4975,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
         + Triple.getOSTypeName(Triple.getOS()) + "/crt0.o"));
-#if RICH
-      CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtbegin.o")));
-#endif
+      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+        + ArchName + "/"
+        + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
     } else {
-#if RICH
-      CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtbeginS.o")));
-#endif
+      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+        + ArchName + "/"
+        + Triple.getOSTypeName(Triple.getOS()) + "/crtbeginS.o"));
     }
   }
 
@@ -5028,17 +5026,17 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-lcompiler-rt");
   }
 
-#if RICH
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_shared))
-      CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtend.o")));
+      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+        + ArchName + "/"
+        + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o"));
     else
-      CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtendS.o")));
+      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
+        + ArchName + "/"
+        + Triple.getOSTypeName(Triple.getOS()) + "/crtendS.o"));
   }
-#endif
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("ecc-ld"));

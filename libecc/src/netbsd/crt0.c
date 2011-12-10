@@ -9,6 +9,7 @@ char **environ;
 char *__progname;
 
 extern int main(int argc, char **argv, char **environ);
+extern void _init(void);
 
 void _estart(int argc, char **argv, char **_environ)
 {
@@ -19,6 +20,7 @@ void _estart(int argc, char **argv, char **_environ)
         }
     }
     environ = _environ;
+    _init();            // Call the constructors.
     int status = main(argc, argv, environ);
     exit(status);
 }

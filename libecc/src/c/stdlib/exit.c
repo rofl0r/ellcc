@@ -53,6 +53,7 @@ static void (*force_ref)(void) __used = __libc_init;
 #endif
 
 void (*__cleanup) __P((void));
+void _fini(void);
 
 /*
  * Exit, flushing stdio buffers if necessary.
@@ -60,7 +61,7 @@ void (*__cleanup) __P((void));
 void
 exit(int status)
 {
-
+        _fini();        // Call the destructors.
 #ifdef _LIBC
 	__cxa_finalize(NULL);
 #endif

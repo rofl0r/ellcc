@@ -1,7 +1,7 @@
 VPATH := $(VPATH):$(SRCPATH)/$(OS)
 
 # Startup code.
-CRTSRCS = crt0.c
+CRTSRCS = crt0.c crtbegin.c crtend.c
 
 SRCS += brk.c fcntl.c stat.c chmod.c fstat.c lseek.c unlink.c \
         chown.c _exit.c getpid.c lstat.c utime.c close.c fchmod.c \
