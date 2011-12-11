@@ -2,7 +2,7 @@
 # The name of the external compiler.
 TOOL_DIR = /opt/microchip/mplabc32/v2.01
 TOOL_BIN_DIR = $(TOOL_DIR)/bin
-XCC = $(TOOL_BIN_DIR)/pic32-gcc -v
+XCC = $(TOOL_BIN_DIR)/pic32-gcc
 # The archive building program.
 AR = $(TOOL_BIN_DIR)/pic32-ar
 # ARCH should be one of arm, i386, microblaze, mips, nios2, ppc64, ppc, sparc, or x86_64.
