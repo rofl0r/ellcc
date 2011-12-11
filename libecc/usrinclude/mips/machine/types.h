@@ -39,43 +39,7 @@
 
 #include <sys/cdefs.h>
 #include <sys/featuretest.h>
-
-/*
- * 7.18.1 Integer types
- */
-
-/* 7.18.1.1 Exact-width integer types */
-
-typedef signed char              __int8_t;
-typedef unsigned char           __uint8_t;
-typedef short int               __int16_t;
-typedef unsigned short int     __uint16_t;
-typedef int                     __int32_t;
-typedef unsigned int           __uint32_t;
-#ifdef __COMPILER_INT64__
-typedef __COMPILER_INT64__      __int64_t;
-typedef __COMPILER_UINT64__    __uint64_t;
-#elif defined(_LP64)
-typedef long int                __int64_t;
-typedef unsigned long int      __uint64_t;
-#else
-/* LONGLONG */
-typedef long long int           __int64_t;
-/* LONGLONG */
-typedef unsigned long long int __uint64_t;
-#endif
-
-#define __BIT_TYPES_DEFINED__
-
-/* 7.18.1.4 Integer types capable of holding object pointers */
-
-#ifndef __mips_o32
-typedef long int               __intptr_t;
-typedef unsigned long int     __uintptr_t;
-#else
-typedef int                    __intptr_t;
-typedef unsigned int          __uintptr_t;
-#endif
+#include <machine/int_types.h>
 
 /*
  * Note that mips_reg_t is distinct from the register_t defined
