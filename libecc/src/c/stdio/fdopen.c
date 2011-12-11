@@ -54,14 +54,11 @@ __RCSID("$NetBSD: fdopen.c,v 1.15 2008/03/13 15:40:00 christos Exp $");
 #include "reentrant.h"
 #include "local.h"
 
-#ifdef __weak_alias
-__weak_alias(fdopen,_fdopen)
-#endif
+FILE *
+fdopen(int fd, const char *mode) __weak_alias(_fdopen);
 
 FILE *
-fdopen(fd, mode)
-	int fd;
-	const char *mode;
+_fdopen(int fd, const char *mode)
 {
 	FILE *fp;
 	int flags, oflags, fdflags, tmp;

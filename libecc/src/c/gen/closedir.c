@@ -51,15 +51,14 @@ __RCSID("$NetBSD: closedir.c,v 1.16 2010/09/26 02:26:59 yamt Exp $");
 
 #include "dirent_private.h"
 
-#ifdef __weak_alias
-__weak_alias(closedir,_closedir)
-#endif
+int
+closedir(DIR *dirp) __weak_alias(_closedir);
 
 /*
  * close a directory.
  */
 int
-closedir(DIR *dirp)
+_closedir(DIR *dirp)
 {
 	int fd;
 

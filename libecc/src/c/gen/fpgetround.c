@@ -41,9 +41,7 @@ __RCSID("$NetBSD: fpgetround.c,v 1.4 2006/02/25 02:28:55 wiz Exp $");
 #include <sys/types.h>
 #include <ieeefp.h>
 
-#ifdef __weak_alias
-__weak_alias(fpgetround,_fpgetround)
-#endif
+fp_rnd fpgetround(void) __weak_alias(_fpgetround);
 
 /*
  * Return the current FP rounding mode
@@ -52,8 +50,7 @@ __weak_alias(fpgetround,_fpgetround)
  */
 
 fp_rnd
-fpgetround()
+_fpgetround(void)
 {
-
 	return(FP_RN);
 }

@@ -44,14 +44,8 @@ __RCSID("$NetBSD: compat_errlist.c,v 1.2 2006/10/31 00:38:07 cbiere Exp $");
 
 #define __LIBC12_SOURCE__
 #include <errno.h>
-#ifdef __weak_alias
-__weak_alias(sys_errlist, _sys_errlist)
-__weak_alias(__sys_errlist, _sys_errlist)
-__weak_alias(sys_nerr, _sys_nerr)
-__weak_alias(__sys_nerr, _sys_nerr)
-#endif
 
-const char *const sys_errlist[] = {
+const char *const _sys_errlist[] = {
 	"Undefined error: 0",			/*  0 - ENOERROR */
 	"Operation not permitted",		/*  1 - EPERM */
 	"No such file or directory",		/*  2 - ENOENT */
@@ -152,4 +146,11 @@ const char *const sys_errlist[] = {
 
 	"Inappropriate file type or format",	/* 79 - EFTYPE */
 };
-const int sys_nerr = { sizeof(sys_errlist) / sizeof(sys_errlist[0]) };
+const int _sys_nerr = { sizeof(_sys_errlist) / sizeof(_sys_errlist[0]) };
+
+extern const char *const sys_errlist[sizeof(_sys_errlist) / sizeof(_sys_errlist[0])]
+   __weak_alias(_sys_errlist);
+extern const char *const __sys_errlist[sizeof(_sys_errlist) / sizeof(_sys_errlist[0])]
+   __weak_alias(_sys_errlist);
+extern const int sys_nerr __weak_alias(_sys_nerr);
+extern const int __sys_nerr __weak_alias(_sys_nerr);

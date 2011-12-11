@@ -65,12 +65,12 @@ __RCSID("$NetBSD: mi_vector_hash.c,v 1.3 2010/03/19 18:11:30 joerg Exp $");
 
 #define FIXED_SEED	0x9e3779b9	/* Golden ratio, arbitrary constant */
 
-#ifdef __weak_alias
-__weak_alias(mi_vector_hash, _mi_vector_hash)
-#endif
-
 void
 mi_vector_hash(const void * __restrict key, size_t len, uint32_t seed,
+    uint32_t hashes[3]) __weak_alias(_mi_vector_hash);
+
+void
+_mi_vector_hash(const void * __restrict key, size_t len, uint32_t seed,
     uint32_t hashes[3])
 {
 	static const uint32_t mask[4] = {

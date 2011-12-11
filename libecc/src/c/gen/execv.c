@@ -42,16 +42,13 @@ __RCSID("$NetBSD: execv.c,v 1.9 2005/11/29 13:30:49 christos Exp $");
 #include <unistd.h>
 #include "reentrant.h"
 
-#ifdef __weak_alias
-__weak_alias(execv,_execv)
-#endif
+int
+execv(const char *name, char * const *argv) __weak_alias(_execv);
 
 extern char **environ;
 
 int
-execv(name, argv)
-	const char *name;
-	char * const *argv;
+_execv(const char *name, char * const *argv)
 {
 	return execve(name, argv, environ);
 }

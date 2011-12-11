@@ -50,14 +50,13 @@ __RCSID("$NetBSD: execvp.c,v 1.30 2007/07/20 12:41:07 yamt Exp $");
 #include <sys/syslimits.h>
 #include "reentrant.h"
 
-#ifdef __weak_alias
-__weak_alias(execvp,_execvp)
-#endif
+int
+execvp(const char *name, char * const *argv) __weak_alias(_execvp);
 
 extern char **environ;
 
 int
-execvp(const char *name, char * const *argv)
+_execvp(const char *name, char * const *argv)
 {
 	const char **memp;
 	int cnt;

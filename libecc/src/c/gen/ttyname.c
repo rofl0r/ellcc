@@ -54,15 +54,15 @@ __RCSID("$NetBSD: ttyname.c,v 1.24 2008/06/25 11:47:29 ad Exp $");
 #include <unistd.h>
 #include <sys/ioctl.h>
 
-#ifdef __weak_alias
-__weak_alias(ttyname,_ttyname)
-__weak_alias(ttyname_r,_ttyname_r)
-#endif
+char *
+ttyname(int fd) __weak_alias(_ttyname);
+int
+ttyname_r(int fd, char *buf, size_t len) __weak_alias(_ttyname_r);
 
 static int oldttyname(const struct stat *, char *, size_t);
 
 int
-ttyname_r(int fd, char *buf, size_t len)
+_ttyname_r(int fd, char *buf, size_t len)
 {
 	struct stat sb;
 	struct termios ttyb;
@@ -167,7 +167,7 @@ oldttyname(const struct stat *sb, char *buf, size_t len)
 }
 
 char *
-ttyname(int fd)
+_ttyname(int fd)
 {
 	static char buf[MAXPATHLEN];
 	int rv;

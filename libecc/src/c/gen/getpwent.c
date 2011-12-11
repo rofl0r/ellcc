@@ -127,11 +127,9 @@ __RCSID("$NetBSD: getpwent.c,v 1.77 2010/03/23 20:28:59 drochner Exp $");
 
 #define	_PASSWD_COMPAT	/* "passwd" defaults to compat, so always provide it */
 
-#ifdef __weak_alias
-__weak_alias(endpwent,_endpwent)
-__weak_alias(setpassent,_setpassent)
-__weak_alias(setpwent,_setpwent)
-#endif
+void endpwent(void) __weak_alias(_endpwent);
+int setpassent(int stayopen) __weak_alias(_setpassent);
+void setpwent(void) __weak_alias(_setpwent);
 
 #if RICH
 
@@ -2550,7 +2548,7 @@ getpwuid_r(uid_t uid, struct passwd *pwd, char *buffer, size_t buflen,
 }
 
 void
-endpwent(void)
+_endpwent(void)
 {
 #if RICH
 	static const ns_dtab dtab[] = {
@@ -2571,7 +2569,7 @@ endpwent(void)
 
 /*ARGSUSED*/
 int
-setpassent(int stayopen)
+_setpassent(int stayopen)
 {
 #if RICH
 	static const ns_dtab dtab[] = {
@@ -2595,7 +2593,7 @@ setpassent(int stayopen)
 }
 
 void
-setpwent(void)
+_setpwent(void)
 {
 #if RICH
 	static const ns_dtab dtab[] = {

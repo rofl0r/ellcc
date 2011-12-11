@@ -43,12 +43,11 @@ __RCSID("$NetBSD: execle.c,v 1.11 2008/01/09 11:26:03 simonb Exp $");
 #include <stdlib.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(execle,_execle)
-#endif
+int
+execle(const char *name, const char *arg, ...) __weak_alias(_execle);
 
 int
-execle(const char *name, const char *arg, ...)
+_execle(const char *name, const char *arg, ...)
 {
 #if defined(__i386__) || defined(__m68k__)
 	va_list ap;

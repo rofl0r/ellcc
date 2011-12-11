@@ -52,17 +52,21 @@
 #define	__indr_reference(sym,alias)	/* nada, since we do weak refs */
 
 #if __STDC__
+#if RICH
 #define	__strong_alias(alias,sym)	       				\
     __asm(".global " _C_LABEL_STRING(#alias) "\n"			\
 	    _C_LABEL_STRING(#alias) " = " _C_LABEL_STRING(#sym));
+#else
+#define	__strong_alias(sym) __attribute__ ((alias (#sym)))
+#endif
 
 #if RICH
 #define	__weak_alias(alias,sym)						\
     __asm(".weak " _C_LABEL_STRING(#alias) "\n"			\
 	    _C_LABEL_STRING(#alias) " = " _C_LABEL_STRING(#sym));
 #else
-// RICH #define	__weak_alias(sym) __attribute__ ((weak, alias (#sym)))
-#define	__weak_alias(alias, sym)
+#define	__weak_alias(sym) __attribute__ ((weak, alias (#sym)))
+// RICH #define	__weak_alias(sym)
 #endif
 
 /* Do not use __weak_extern, use __weak_reference instead */

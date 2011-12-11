@@ -44,14 +44,10 @@ __RCSID("$NetBSD: cfsetospeed.c,v 1.7 2003/08/07 16:44:12 agc Exp $");
 #include <stdio.h>
 #include <termios.h>
 
-#ifdef __weak_alias
-__weak_alias(cfsetospeed,_cfsetospeed)
-#endif
+int cfsetospeed(struct termios *t, speed_t speed) __weak_alias(_cfsetospeed);
 
 int
-cfsetospeed(t, speed)
-	struct termios *t;
-	speed_t speed;
+_cfsetospeed(struct termios *t, speed_t speed)
 {
 
 	_DIAGASSERT(t != NULL);

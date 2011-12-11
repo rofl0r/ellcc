@@ -45,13 +45,11 @@ __RCSID("$NetBSD: strdup.c,v 1.13 2003/08/07 16:43:50 agc Exp $");
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __weak_alias
-__weak_alias(strdup,_strdup)
-#endif
+char *
+strdup(const char *str) __weak_alias(_strdup);
 
 char *
-strdup(str)
-	const char *str;
+_strdup(const char *str)
 {
 	size_t len;
 	char *copy;

@@ -46,13 +46,11 @@ __RCSID("$NetBSD: uname.c,v 1.10 2007/01/15 22:26:35 cbiere Exp $");
 #include <assert.h>
 #include <errno.h>
 
-#ifdef __weak_alias
-__weak_alias(uname,_uname)
-#endif
+int
+uname(struct utsname *name) __weak_alias(_uname);
 
 int
-uname(name)
-	struct utsname *name;
+_uname(struct utsname *name)
 {
 #if RICH
 	int mib[2];

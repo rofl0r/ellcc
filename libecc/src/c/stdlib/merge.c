@@ -63,10 +63,6 @@ __RCSID("$NetBSD: merge.c,v 1.12 2009/02/12 03:12:36 lukem Exp $");
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __weak_alias
-__weak_alias(mergesort,_mergesort)
-#endif
-
 static void setup __P((u_char *, u_char *, size_t, size_t,
     int (*)(const void *, const void *)));
 static void insertionsort __P((u_char *, size_t, size_t,
@@ -104,11 +100,15 @@ static void insertionsort __P((u_char *, size_t, size_t,
     ((u_char *)0 +							\
     (((u_char *)(void *)(p) + PSIZE - 1 - (u_char *) 0) & ~(PSIZE - 1))))
 
+int
+mergesort(void *base, size_t nmemb, size_t size,
+    int (*cmp) __P((const void *, const void *))) __weak_alias(_mergesort);
+
 /*
  * Arguments are as for qsort.
  */
 int
-mergesort(base, nmemb, size, cmp)
+_mergesort(base, nmemb, size, cmp)
 	void *base;
 	size_t nmemb;
 	size_t size;

@@ -45,15 +45,13 @@ __RCSID("$NetBSD: execl.c,v 1.16 2008/01/09 11:26:03 simonb Exp $");
 #include <unistd.h>
 #include "reentrant.h"
 
-#ifdef __weak_alias
-__weak_alias(execl,_execl)
-#endif
-
+int
+execl(const char *name, const char *arg, ...) __weak_alias(_execl);
 
 extern char **environ;
 
 int
-execl(const char *name, const char *arg, ...)
+_execl(const char *name, const char *arg, ...)
 {
 	int r;
 #if defined(__i386__) || defined(__m68k__)

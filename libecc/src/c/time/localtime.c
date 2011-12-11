@@ -27,17 +27,17 @@ __RCSID("$NetBSD: localtime.c,v 1.50 2010/12/17 23:11:57 christos Exp $");
 #include "fcntl.h"
 #include "reentrant.h"
 
-#if defined(__weak_alias)
-__weak_alias(ctime_r,_ctime_r)
-__weak_alias(ctime_rz,_ctime_rz)
-__weak_alias(daylight,_daylight)
-__weak_alias(mktime_z,_mktime_z)
-__weak_alias(localtime_r,_localtime_r)
-__weak_alias(localtime_rz,_localtime_rz)
-__weak_alias(posix2time,_posix2time)
-__weak_alias(posix2time_z,_posix2time_z)
-__weak_alias(tzname,_tzname)
-#endif
+char *ctime_r(const time_t *const timep, char *buf) __weak_alias(_ctime_r);
+char *ctime_rz(const timezone_t sp, const time_t * timep, char *buf)
+    __weak_alias(_ctime_rz);
+time_t mktime_z(const timezone_t sp, struct tm *tmp) __weak_alias(_mktime_z);
+struct tm *localtime_r(const time_t * __restrict timep, struct tm *tmp)
+    __weak_alias(_localtime_r);
+struct tm *localtime_rz(const timezone_t sp, const time_t * __restrict timep,
+    struct tm *tmp) __weak_alias(_localtime_rz);
+time_t posix2time(time_t t) __weak_alias(_posix2time);
+time_t posix2time_z(const timezone_t sp, time_t t) __weak_alias(_posix2time_z);
+extern __aconst char * tzname[2] __weak_alias(_tzname);
 
 #include "float.h"	/* for FLT_MAX and DBL_MAX */
 
@@ -218,14 +218,14 @@ static int		gmt_is_set;
 
 #if !defined(__LIBC12_SOURCE__)
 
-__aconst char *		tzname[2] = {
+__aconst char *		_tzname[2] = {
 	(__aconst char *)__UNCONST(wildabbr),
 	(__aconst char *)__UNCONST(wildabbr)
 };
 
 #else
 
-extern __aconst char *	tzname[2];
+extern __aconst char *	_tzname[2];
 
 #endif
 
@@ -244,11 +244,12 @@ static rwlock_t lcl_lock = RWLOCK_INITIALIZER;
 static struct tm	tm;
 
 #ifdef USG_COMPAT
+extern int daylight __weak_alias(_daylight);
 #if !defined(__LIBC12_SOURCE__)
 long 			timezone = 0;
-int			daylight = 0;
+int			_daylight = 0;
 #else
-extern int		daylight;
+extern int		_daylight;
 extern long		timezone __RENAME(__timezone13);
 #endif
 #endif /* defined USG_COMPAT */
@@ -325,27 +326,27 @@ settzname(void)
 	timezone_t const	sp = lclptr;
 	int			i;
 
-	tzname[0] = (__aconst char *)__UNCONST(wildabbr);
-	tzname[1] = (__aconst char *)__UNCONST(wildabbr);
+	_tzname[0] = (__aconst char *)__UNCONST(wildabbr);
+	_tzname[1] = (__aconst char *)__UNCONST(wildabbr);
 #ifdef USG_COMPAT
-	daylight = 0;
+	_daylight = 0;
 	timezone = 0;
 #endif /* defined USG_COMPAT */
 #ifdef ALTZONE
 	altzone = 0;
 #endif /* defined ALTZONE */
 	if (sp == NULL) {
-		tzname[0] = tzname[1] = (__aconst char *)__UNCONST(gmt);
+		_tzname[0] = _tzname[1] = (__aconst char *)__UNCONST(gmt);
 		return;
 	}
 	for (i = 0; i < sp->typecnt; ++i) {
 		const struct ttinfo * const	ttisp = &sp->ttis[i];
 
-		tzname[ttisp->tt_isdst] =
+		_tzname[ttisp->tt_isdst] =
 			&sp->chars[ttisp->tt_abbrind];
 #ifdef USG_COMPAT
 		if (ttisp->tt_isdst)
-			daylight = 1;
+			_daylight = 1;
 		if (i == 0 || !ttisp->tt_isdst)
 			timezone = -(ttisp->tt_gmtoff);
 #endif /* defined USG_COMPAT */
@@ -355,14 +356,14 @@ settzname(void)
 #endif /* defined ALTZONE */
 	}
 	/*
-	** And to get the latest zone names into tzname. . .
+	** And to get the latest zone names into _tzname. . .
 	*/
 	for (i = 0; i < sp->timecnt; ++i) {
 		register const struct ttinfo * const	ttisp =
 							&sp->ttis[
 								sp->types[i]];
 
-		tzname[ttisp->tt_isdst] =
+		_tzname[ttisp->tt_isdst] =
 			&sp->chars[ttisp->tt_abbrind];
 	}
 	settzname_z(sp);
@@ -1397,7 +1398,7 @@ localsub(const timezone_t sp, const time_t * const timep, const long offset,
 	*/
 	result = timesub(sp, &t, ttisp->tt_gmtoff, tmp);
 	tmp->tm_isdst = ttisp->tt_isdst;
-	tzname[tmp->tm_isdst] = &sp->chars[ttisp->tt_abbrind];
+	_tzname[tmp->tm_isdst] = &sp->chars[ttisp->tt_abbrind];
 #ifdef TM_ZONE
 	tmp->TM_ZONE = &sp->chars[ttisp->tt_abbrind];
 #endif /* defined TM_ZONE */
@@ -1409,11 +1410,20 @@ localsub(const timezone_t sp, const time_t * const timep, const long offset,
 */
 
 struct tm *
-localtime_r(const time_t * __restrict timep, struct tm *tmp)
+_localtime_rz(const timezone_t sp, const time_t * __restrict timep, struct tm *tmp)
+{
+	if (sp == NULL)
+		return gmtsub(NULL, timep, 0L, tmp);
+	else
+		return localsub(sp, timep, 0L, tmp);
+}
+
+struct tm *
+_localtime_r(const time_t * __restrict timep, struct tm *tmp)
 {
 	rwlock_rdlock(&lcl_lock);
 	tzset_unlocked();
-	tmp = localtime_rz(lclptr, timep, tmp);
+	tmp = _localtime_rz(lclptr, timep, tmp);
 	rwlock_unlock(&lcl_lock);
 	return tmp;
 }
@@ -1421,16 +1431,7 @@ localtime_r(const time_t * __restrict timep, struct tm *tmp)
 struct tm *
 localtime(const time_t *const timep)
 {
-	return localtime_r(timep, &tm);
-}
-
-struct tm *
-localtime_rz(const timezone_t sp, const time_t * __restrict timep, struct tm *tmp)
-{
-	if (sp == NULL)
-		return gmtsub(NULL, timep, 0L, tmp);
-	else
-		return localsub(sp, timep, 0L, tmp);
+	return _localtime_r(timep, &tm);
 }
 
 /*
@@ -1671,22 +1672,22 @@ ctime(const time_t *const timep)
 }
 
 char *
-ctime_r(const time_t *const timep, char *buf)
+_ctime_r(const time_t *const timep, char *buf)
 {
 	struct tm	mytm, *rtm;
 
-	rtm = localtime_r(timep, &mytm);
+	rtm = _localtime_r(timep, &mytm);
 	if (rtm == NULL)
 		return NULL;
 	return asctime_r(rtm, buf);
 }
 
 char *
-ctime_rz(const timezone_t sp, const time_t * timep, char *buf)
+_ctime_rz(const timezone_t sp, const time_t * timep, char *buf)
 {
 	struct tm	mytm, *rtm;
 
-	rtm = localtime_rz(sp, timep, &mytm);
+	rtm = _localtime_rz(sp, timep, &mytm);
 	if (rtm == NULL)
 		return NULL;
 	return asctime_r(rtm, buf);
@@ -2031,7 +2032,7 @@ time1(const timezone_t sp, struct tm *const tmp, subfun_t funcp,
 }
 
 time_t
-mktime_z(const timezone_t sp, struct tm *tmp)
+_mktime_z(const timezone_t sp, struct tm *tmp)
 {
 	if (sp == NULL)
 		return time1(NULL, tmp, gmtsub, 0L);
@@ -2046,7 +2047,7 @@ mktime(struct tm * const	tmp)
 
 	rwlock_wrlock(&lcl_lock);
 	tzset_unlocked();
-	result = mktime_z(lclptr, tmp);
+	result = _mktime_z(lclptr, tmp);
 	rwlock_unlock(&lcl_lock);
 	return result;
 }
@@ -2058,7 +2059,7 @@ timelocal_z(const timezone_t sp, struct tm *tmp)
 {
 	if (tmp != NULL)
 		tmp->tm_isdst = -1;	/* in case it wasn't initialized */
-	return mktime_z(sp, tmp);
+	return _mktime_z(sp, tmp);
 }
 
 time_t
@@ -2150,7 +2151,7 @@ time2posix(time_t t)
 }
 
 time_t
-posix2time_z(const timezone_t sp, time_t t)
+_posix2time_z(const timezone_t sp, time_t t)
 {
 	time_t	x;
 	time_t	y;
@@ -2186,13 +2187,13 @@ posix2time_z(const timezone_t sp, time_t t)
 
 
 time_t
-posix2time(time_t t)
+_posix2time(time_t t)
 {
 	time_t result;
 
 	rwlock_wrlock(&lcl_lock);
 	tzset_unlocked();
-	result = posix2time_z(lclptr, t);
+	result = _posix2time_z(lclptr, t);
 	rwlock_unlock(&lcl_lock);
 	return result;
 }

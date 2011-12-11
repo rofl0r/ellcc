@@ -46,14 +46,10 @@ __RCSID("$NetBSD: tcgetattr.c,v 1.9 2003/08/07 16:44:13 agc Exp $");
 #include <stdio.h>
 #include <termios.h>
 
-#ifdef __weak_alias
-__weak_alias(tcgetattr,_tcgetattr)
-#endif
+int tcgetattr(int fd, struct termios *t) __weak_alias(_tcgetattr);
 
 int
-tcgetattr(fd, t)
-	int fd;
-	struct termios *t;
+_tcgetattr(int fd, struct termios *t)
 {
 
 	_DIAGASSERT(t != NULL);

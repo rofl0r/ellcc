@@ -38,13 +38,10 @@ __RCSID("$NetBSD: sleep.c,v 1.22 2008/04/28 20:22:59 martin Exp $");
 #include <time.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(sleep,_sleep)
-#endif
+unsigned int sleep(unsigned int seconds) __weak_alias(_sleep);
 
 unsigned int
-sleep(seconds)
-	unsigned int seconds;
+_sleep(unsigned int seconds)
 {
 	struct timespec rqt, rmt;
 

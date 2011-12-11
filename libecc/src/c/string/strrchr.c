@@ -45,7 +45,8 @@ __RCSID("$NetBSD: strrchr.c,v 1.5 2009/07/17 19:37:57 dsl Exp $");
 #include <lib/libkern/libkern.h>
 #endif
 
-__strong_alias(rindex, strrchr)
+char *rindex(const char *p, int ch) __strong_alias(strrchr);
+
 char *
 strrchr(const char *p, int ch)
 {

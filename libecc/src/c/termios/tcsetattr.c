@@ -46,14 +46,11 @@ __RCSID("$NetBSD: tcsetattr.c,v 1.8 2003/08/07 16:44:14 agc Exp $");
 #include <stdio.h>
 #include <termios.h>
 
-#ifdef __weak_alias
-__weak_alias(tcsetattr,_tcsetattr)
-#endif
+int tcsetattr(int fd, int opt, const struct termios *t)
+    __weak_alias(_tcsetattr);
 
 int
-tcsetattr(fd, opt, t)
-	int fd, opt;
-	const struct termios *t;
+_tcsetattr(int fd, int opt, const struct termios *t)
 {
 	struct termios localterm;
 

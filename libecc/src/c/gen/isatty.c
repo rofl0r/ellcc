@@ -45,13 +45,11 @@ __RCSID("$NetBSD: isatty.c,v 1.12 2003/08/07 16:42:51 agc Exp $");
 #include <termios.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(isatty,_isatty)
-#endif
+int
+isatty(int fd) __weak_alias(_isatty);
 
 int
-isatty(fd)
-	int fd;
+_isatty(int fd)
 {
 	struct termios t;
 

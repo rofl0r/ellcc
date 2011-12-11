@@ -46,13 +46,11 @@ __RCSID("$NetBSD: errx.c,v 1.14 2007/06/18 14:13:54 ginsbach Exp $");
 #include <err.h>
 #include <stdarg.h>
 
-#ifdef __weak_alias
-__weak_alias(errx, _errx)
-#endif
+__dead void errx(int eval, const char *fmt, ...) __weak_alias(_errx);
 
 #if !HAVE_ERR_H
 __dead void
-errx(int eval, const char *fmt, ...)
+_errx(int eval, const char *fmt, ...)
 {
 	va_list ap;
 

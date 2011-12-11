@@ -56,12 +56,11 @@ __RCSID("$NetBSD: snprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $");
 #define snprintf _snprintf
 #endif
 
-#ifdef __weak_alias
-__weak_alias(snprintf,_snprintf)
-#endif
+int
+snprintf(char *str, size_t n, char const *fmt, ...) __weak_alias(_snprintf);
 
 int
-snprintf(char *str, size_t n, char const *fmt, ...)
+_snprintf(char *str, size_t n, char const *fmt, ...)
 {
 	int ret;
 	va_list ap;

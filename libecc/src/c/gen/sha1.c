@@ -72,12 +72,12 @@ __RCSID("$NetBSD: sha1.c,v 1.6 2009/11/06 20:31:18 joerg Exp $");
 
 
 #if !defined(_KERNEL) && !defined(_STANDALONE)
-#if defined(__weak_alias)
-__weak_alias(SHA1Transform,_SHA1Transform)
-__weak_alias(SHA1Init,_SHA1Init)
-__weak_alias(SHA1Update,_SHA1Update)
-__weak_alias(SHA1Final,_SHA1Final)
-#endif
+void SHA1Transform(uint32_t state[5], const uint8_t buffer[64])
+    __weak_alias(_SHA1Transform);
+void SHA1Init(SHA1_CTX *context) __weak_alias(_SHA1Init);
+void SHA1Update(SHA1_CTX *context, const uint8_t *data, unsigned int len)
+    __weak_alias(_SHA1Update);
+void SHA1Final(uint8_t digest[20], SHA1_CTX *context) __weak_alias(_SHA1Final);
 #endif
 
 typedef union {
@@ -147,7 +147,7 @@ do_R4(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d, uint32_t *e, CHAR64LON
 /*
  * Hash a single 512-bit block. This is the core of the algorithm.
  */
-void SHA1Transform(uint32_t state[5], const uint8_t buffer[64])
+void _SHA1Transform(uint32_t state[5], const uint8_t buffer[64])
 {
     uint32_t a, b, c, d, e;
     CHAR64LONG16 *block;
@@ -217,7 +217,7 @@ void SHA1Transform(uint32_t state[5], const uint8_t buffer[64])
 /*
  * SHA1Init - Initialize new context
  */
-void SHA1Init(SHA1_CTX *context)
+void _SHA1Init(SHA1_CTX *context)
 {
 
     _DIAGASSERT(context != 0);
@@ -235,7 +235,7 @@ void SHA1Init(SHA1_CTX *context)
 /*
  * Run your data through this.
  */
-void SHA1Update(SHA1_CTX *context, const uint8_t *data, unsigned int len)
+void _SHA1Update(SHA1_CTX *context, const uint8_t *data, unsigned int len)
 {
     unsigned int i, j;
 
@@ -262,7 +262,7 @@ void SHA1Update(SHA1_CTX *context, const uint8_t *data, unsigned int len)
 /*
  * Add padding and return the message digest.
  */
-void SHA1Final(uint8_t digest[20], SHA1_CTX *context)
+void _SHA1Final(uint8_t digest[20], SHA1_CTX *context)
 {
     unsigned int i;
     uint8_t finalcount[8];

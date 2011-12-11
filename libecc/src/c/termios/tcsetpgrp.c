@@ -47,12 +47,10 @@ __RCSID("$NetBSD: tcsetpgrp.c,v 1.9 2003/08/07 16:44:14 agc Exp $");
 #include <termios.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(tcsetpgrp,_tcsetpgrp)
-#endif
+int tcsetpgrp(int fd, pid_t pgrp) __weak_alias(_tcsetpgrp);
 
 int
-tcsetpgrp(int fd, pid_t pgrp)
+_tcsetpgrp(int fd, pid_t pgrp)
 {
 	int s;
 

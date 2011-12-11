@@ -44,12 +44,10 @@ __RCSID("$NetBSD: getpagesize.c,v 1.10 2009/12/14 01:04:46 matt Exp $");
 #include <assert.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(getpagesize,_getpagesize)
-#endif
+int getpagesize(void) __weak_alias(_getpagesize);
 
 int
-getpagesize()
+_getpagesize(void)
 {
 #if RICH
 	static int pagsz;

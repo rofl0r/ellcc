@@ -45,13 +45,11 @@ __RCSID("$NetBSD: alarm.c,v 1.10 2003/08/07 16:42:45 agc Exp $");
 #include <sys/time.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(alarm,_alarm)
-#endif
+unsigned int
+alarm(unsigned int secs) __weak_alias(_alarm);
 
 unsigned int
-alarm(secs)
-	unsigned int secs;
+_alarm(unsigned int secs)
 {
 	struct itimerval it, oitv;
 	struct itimerval *itp = &it;

@@ -46,12 +46,13 @@ __RCSID("$NetBSD: random.c,v 1.3 2005/12/21 14:23:58 christos Exp $");
 #include <stdlib.h>
 #include "reentrant.h"
 
-#ifdef __weak_alias
-__weak_alias(initstate,_initstate)
-__weak_alias(random,_random)
-__weak_alias(setstate,_setstate)
-__weak_alias(srandom,_srandom)
-#endif
+char *
+initstate(unsigned long seed, char *arg_state, size_t n)
+    __weak_alias(_initstate);
+long
+random(void) __weak_alias(_random);
+char *
+setstate(char *arg_state) __weak_alias(_setstate);
 
 
 #ifdef _REENTRANT
@@ -334,7 +335,7 @@ srandom(unsigned long x)
  * complain about mis-alignment, but you should disregard these messages.
  */
 char *
-initstate(
+_initstate(
 	unsigned long seed,		/* seed for R.N.G. */
 	char *arg_state,		/* pointer to state array */
 	size_t n)			/* # bytes of state info */
@@ -406,7 +407,7 @@ initstate(
  * complain about mis-alignment, but you should disregard these messages.
  */
 char *
-setstate(char *arg_state)		/* pointer to state array */
+_setstate(char *arg_state)		/* pointer to state array */
 {
 	int *new_state;
 	int type;
@@ -496,7 +497,7 @@ random_unlocked(void)
 }
 
 long
-random(void)
+_random(void)
 {
 	long r;
 
@@ -507,7 +508,7 @@ random(void)
 }
 #else
 long
-random(void)
+_random(void)
 {
 	static u_long randseed = 1;
 	long x, hi, lo, t;

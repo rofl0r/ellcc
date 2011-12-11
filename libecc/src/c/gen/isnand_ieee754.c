@@ -48,9 +48,8 @@ __RCSID("$NetBSD: isnand_ieee754.c,v 1.1 2004/03/04 23:42:39 kleink Exp $");
 #include <math.h>
 
 /* libc.so.12 ABI compatbility */
-#ifdef __weak_alias
-__weak_alias(isnan,__isnand)
-#endif
+int
+isnand(double x) __weak_alias(__isnand);
 
 /*
  * 7.12.3.4 isnan - test for a NaN

@@ -50,12 +50,10 @@ __RCSID("$NetBSD: telldir.c,v 1.19 2008/05/04 18:53:26 tonnerre Exp $");
 
 #include "dirent_private.h"
 
-#ifdef __weak_alias
-__weak_alias(telldir,_telldir)
-#endif
+long telldir(DIR *dirp) __weak_alias(_telldir);
 
 long
-telldir(DIR *dirp)
+_telldir(DIR *dirp)
 {
 	long rv;
 #ifdef _REENTRANT

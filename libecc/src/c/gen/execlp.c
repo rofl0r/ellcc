@@ -43,12 +43,11 @@ __RCSID("$NetBSD: execlp.c,v 1.11 2008/01/09 11:26:03 simonb Exp $");
 #include <stdlib.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(execlp,_execlp)
-#endif
+int
+execlp(const char *name, const char *arg, ...) __weak_alias(_execlp);
 
 int
-execlp(const char *name, const char *arg, ...)
+_execlp(const char *name, const char *arg, ...)
 {
 #if defined(__i386__) || defined(__m68k__)
 	return execvp(name, __UNCONST(&arg));

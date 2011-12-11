@@ -44,16 +44,13 @@ __RCSID("$NetBSD: signal.c,v 1.12 2003/08/07 16:42:56 agc Exp $");
 #include "namespace.h"
 #include <signal.h>
 
-#ifdef __weak_alias
-__weak_alias(signal,_signal)
-#endif
+sig_t
+signal(int s, sig_t a) __weak_alias(_signal);
 
 sigset_t __sigintr;		/* shared with siginterrupt */
 
 sig_t
-signal(s, a)
-	int s;
-	sig_t a;
+_signal(int s, sig_t a)
 {
 	struct sigaction sa, osa;
 

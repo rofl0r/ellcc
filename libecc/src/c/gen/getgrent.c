@@ -120,17 +120,19 @@ __RCSID("$NetBSD: getgrent.c,v 1.62 2008/04/28 20:22:59 martin Exp $");
 
 // RICH: #include "gr_private.h"
 
-#ifdef __weak_alias
-__weak_alias(endgrent,_endgrent)
-__weak_alias(getgrent,_getgrent)
-__weak_alias(getgrent_r,_getgrent_r)
-__weak_alias(getgrgid,_getgrgid)
-__weak_alias(getgrgid_r,_getgrgid_r)
-__weak_alias(getgrnam,_getgrnam)
-__weak_alias(getgrnam_r,_getgrnam_r)
-__weak_alias(setgrent,_setgrent)
-__weak_alias(setgroupent,_setgroupent)
-#endif
+void endgrent(void) __weak_alias(_endgrent);
+struct group *getgrent(void) __weak_alias(_getgrent);
+int getgrent_r(struct group *grp, char *buffer, size_t buflen,
+    struct group **result) __weak_alias(_getgrent_r);
+struct group *getgrgid(gid_t gid) __weak_alias(_getgrgid);
+int getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
+    struct group **result) __weak_alias(_getgrgid_r);
+struct group *getgrnam(const char *name) __weak_alias(_getgrnam);
+int getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
+	struct group **result) __weak_alias(_getgrnam_r);
+void setgrent(void) __weak_alias(_setgrent);
+int
+setgroupent(int stayopen) __weak_alias(_setgroupent);
 
 #if RICH
 #ifdef _REENTRANT
@@ -1723,7 +1725,7 @@ _compat_getgrnam_r(void *nsrv, void *nscb, va_list ap)
 		 */
 
 struct group *
-getgrent(void)
+_getgrent(void)
 {
 #if RICH
 	int		rv;
@@ -1748,7 +1750,7 @@ getgrent(void)
 }
 
 int
-getgrent_r(struct group *grp, char *buffer, size_t buflen,
+_getgrent_r(struct group *grp, char *buffer, size_t buflen,
     struct group **result)
 {
 #if RICH
@@ -1780,7 +1782,7 @@ getgrent_r(struct group *grp, char *buffer, size_t buflen,
 
 
 struct group *
-getgrgid(gid_t gid)
+_getgrgid(gid_t gid)
 {
 #if RICH
 	int		rv;
@@ -1805,7 +1807,7 @@ getgrgid(gid_t gid)
 }
 
 int
-getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
+_getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
 	struct group **result)
 {
 #if RICH
@@ -1842,7 +1844,7 @@ getgrgid_r(gid_t gid, struct group *grp, char *buffer, size_t buflen,
 }
 
 struct group *
-getgrnam(const char *name)
+_getgrnam(const char *name)
 {
 #if RICH
 	int		rv;
@@ -1867,7 +1869,7 @@ getgrnam(const char *name)
 }
 
 int
-getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
+_getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
 	struct group **result)
 {
 #if RICH
@@ -1905,7 +1907,7 @@ getgrnam_r(const char *name, struct group *grp, char *buffer, size_t buflen,
 }
 
 void
-endgrent(void)
+_endgrent(void)
 {
 #if RICH
 	static const ns_dtab dtab[] = {
@@ -1925,7 +1927,7 @@ endgrent(void)
 }
 
 int
-setgroupent(int stayopen)
+_setgroupent(int stayopen)
 {
 #if RICH
 	static const ns_dtab dtab[] = {
@@ -1949,7 +1951,7 @@ setgroupent(int stayopen)
 }
 
 void
-setgrent(void)
+_setgrent(void)
 {
 #if RICH
 	static const ns_dtab dtab[] = {

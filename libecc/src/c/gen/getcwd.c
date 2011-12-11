@@ -53,10 +53,8 @@ __RCSID("$NetBSD: getcwd.c,v 1.46 2010/01/01 19:59:21 dholland Exp $");
 
 #include "extern.h"
 
-#ifdef __weak_alias
-__weak_alias(getcwd,_getcwd)
-__weak_alias(realpath,_realpath)
-#endif
+char *getcwd(char *pt, size_t size) __weak_alias(_getcwd);
+char *realpath(const char *path, char *resolved) __weak_alias(_realpath);
 
 /*
  * char *realpath(const char *path, char resolved[MAXPATHLEN]);
@@ -66,7 +64,7 @@ __weak_alias(realpath,_realpath)
  * in which case the path which caused trouble is left in (resolved).
  */
 char *
-realpath(const char *path, char *resolved)
+_realpath(const char *path, char *resolved)
 {
 	struct stat sb;
 	int idx = 0, n, nlnk = 0;
@@ -212,7 +210,7 @@ loop:
 #endif
 
 char *
-getcwd(char *pt, size_t size)
+_getcwd(char *pt, size_t size)
 {
 	char *npt;
 

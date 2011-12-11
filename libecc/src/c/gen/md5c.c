@@ -77,11 +77,12 @@ typedef uint32_t UINT4;
 #define S43 15
 #define S44 21
 
-#if !defined(_KERNEL) && !defined(_STANDALONE) && defined(__weak_alias)
-__weak_alias(MD5Init,_MD5Init)
-__weak_alias(MD5Update,_MD5Update)
-__weak_alias(MD5Final,_MD5Final)
-__weak_alias(MD5Transform,_MD5Transform)
+#if !defined(_KERNEL) && !defined(_STANDALONE)
+void MD5Init(MD5_CTX *context) __weak_alias(_MD5Init);
+void MD5Update(MD5_CTX *context, const unsigned char *input,
+    unsigned int inputLen) __weak_alias(_MD5Update);
+void MD5Final(unsigned char digest[16], MD5_CTX *context)
+    __weak_alias(_MD5Final);
 #endif
 
 static void MD5Transform __P((UINT4 [4], const unsigned char [64]));
@@ -175,7 +176,7 @@ static const unsigned char PADDING[64] = {
  * MD5 initialization. Begins an MD5 operation, writing a new context.
  */
 void
-MD5Init(MD5_CTX *context)
+_MD5Init(MD5_CTX *context)
 {
 
 	_DIAGASSERT(context != 0);
@@ -195,7 +196,7 @@ MD5Init(MD5_CTX *context)
  * context.
  */
 void
-MD5Update(MD5_CTX *context,
+_MD5Update(MD5_CTX *context,
 	const unsigned char *input,	/* input block */
 	unsigned int inputLen)		/* length of input block */
 {
@@ -236,7 +237,7 @@ MD5Update(MD5_CTX *context,
  * message digest and zeroing the context.
  */
 void
-MD5Final(unsigned char digest[16],	/* message digest */
+_MD5Final(unsigned char digest[16],	/* message digest */
 	MD5_CTX *context)		/* context */
 {
 	unsigned char bits[8];

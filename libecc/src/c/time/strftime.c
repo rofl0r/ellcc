@@ -73,9 +73,9 @@ static const char	sccsid[] = "@(#)strftime.c	5.4 (Berkeley) 3/14/89";
 #include "fcntl.h"
 #include "locale.h"
 
-#ifdef __weak_alias
-__weak_alias(strftime_z, _strftime_z)
-#endif
+size_t strftime_z(const timezone_t sp, char * const s, const size_t maxsize,
+    const char * const format, const struct tm * const	t)
+    __weak_alias(_strftime_z);
 
 #include "sys/localedef.h"
 #define Locale	_CurrentTimeLocale
@@ -99,7 +99,7 @@ extern char *	tzname[];
 #define IN_ALL	3
 
 size_t
-strftime_z(const timezone_t sp, char * const s, const size_t maxsize,
+_strftime_z(const timezone_t sp, char * const s, const size_t maxsize,
     const char * const format, const struct tm * const	t)
 {
 	char *	p;
@@ -581,7 +581,7 @@ strftime(char * const s, const size_t maxsize,
     const char * const format, const struct tm * const	t)
 {
 	tzset();
-	return strftime_z(NULL, s, maxsize, format, t);
+	return _strftime_z(NULL, s, maxsize, format, t);
 }
 
 static char *

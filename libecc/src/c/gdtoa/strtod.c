@@ -61,17 +61,12 @@ static CONST double tinytens[] = { 1e-16, 1e-32, 1e-64, 1e-128,
 #endif
 
 #ifndef __HAVE_LONG_DOUBLE
-__strong_alias(_strtold, strtod)
-__weak_alias(strtold, _strtold)
+long double _strtold(CONST char *s00, char **se) __strong_alias(strtod);
+long double strtold(CONST char *s00, char **se) __weak_alias(_strtold);
 #endif
 
- double
-strtod
-#ifdef KR_headers
-	(s00, se) CONST char *s00; char **se;
-#else
-	(CONST char *s00, char **se)
-#endif
+double
+strtod(CONST char *s00, char **se)
 {
 #ifdef Avoid_Underflow
 	int scale;

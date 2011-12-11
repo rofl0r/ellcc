@@ -39,9 +39,7 @@ __RCSID("$NetBSD: arc4random.c,v 1.9 2005/12/24 21:11:16 perry Exp $");
 #include <sys/time.h>
 // RICH: #include <sys/sysctl.h>
 
-#ifdef __weak_alias
-__weak_alias(arc4random,_arc4random)
-#endif
+u_int32_t arc4random() __weak_alias(_arc4random);
 
 struct arc4_stream {
 	u_int8_t i;
@@ -188,7 +186,7 @@ arc4random_addrandom(dat, datlen)
 }
 
 u_int32_t
-arc4random()
+_arc4random()
 {
 	if (!rs_initialized)
 		arc4random_stir();

@@ -26,9 +26,7 @@ __RCSID("$NetBSD: asctime.c,v 1.13 2009/12/31 22:49:16 mlelstv Exp $");
 #include "private.h"
 #include "tzfile.h"
 
-#ifdef __weak_alias
-__weak_alias(asctime_r,_asctime_r)
-#endif
+char *asctime_r(const struct tm *timeptr, char *buf) __weak_alias(_asctime_r);
 
 /*
 ** Some systems only handle "%.2d"; others only handle "%02d";
@@ -94,9 +92,7 @@ static char	buf_asctime[MAX_ASCTIME_BUF_SIZE];
 #define	ASCTIME_BUFLEN	(3 * 2 + 5 * INT_STRLEN_MAXIMUM(int) + 3 + 2 + 1 + 1)
 
 char *
-asctime_r(timeptr, buf)
-register const struct tm *	timeptr;
-char *				buf;
+_asctime_r(const struct tm *timeptr, char *buf)
 {
 	static const char	*wday_name[7] = {
 		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -151,5 +147,5 @@ char *
 asctime(timeptr)
 register const struct tm *	timeptr;
 {
-	return asctime_r(timeptr, buf_asctime);
+	return _asctime_r(timeptr, buf_asctime);
 }

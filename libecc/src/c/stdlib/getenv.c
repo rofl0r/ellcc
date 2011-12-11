@@ -76,10 +76,10 @@ getenv(const char *name)
 	return result;
 }
 
-// RICH: int getenv_r(const char *name, char *buf, size_t len) __weak_alias(_getenv_r);
+int getenv_r(const char *name, char *buf, size_t len) __weak_alias(_getenv_r);
 
 int
-getenv_r(const char *name, char *buf, size_t len)
+_getenv_r(const char *name, char *buf, size_t len)
 {
 	size_t l_name;
 	int rv;

@@ -49,9 +49,8 @@ __RCSID("$NetBSD: fseeko.c,v 1.8 2009/01/31 00:08:05 lukem Exp $");
 #include "reentrant.h"
 #include "local.h"
 
-#ifdef __weak_alias
-__weak_alias(fseeko, _fseeko)
-#endif
+int
+fseeko(FILE *fp, off_t offset, int whence) __weak_alias(_fseeko);
 
 #define	POS_ERR	(-(fpos_t)1)
 
@@ -60,7 +59,7 @@ __weak_alias(fseeko, _fseeko)
  * `Whence' must be one of the three SEEK_* macros.
  */
 int
-fseeko(FILE *fp, off_t offset, int whence)
+_fseeko(FILE *fp, off_t offset, int whence)
 {
 	fpos_t (*seekfn)(void *, fpos_t, int);
 	fpos_t target, curoff;
