@@ -1,0 +1,3 @@
+VPATH := $(VPATH):$(SRCPATH)/profile-rt/lib
+SRCS = BasicBlockTracing.c CommonProfiling.c GCDAProfiling.c PathProfiling.c \
+       EdgeProfiling.c OptimalEdgeProfiling.c
