@@ -50,13 +50,11 @@ __RCSID("$NetBSD: vwarn.c,v 1.14 2007/06/18 14:13:54 ginsbach Exp $");
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __weak_alias
-__weak_alias(vwarn, _vwarn)
-#endif
+void vwarn(const char *fmt, _BSD_VA_LIST_ ap) __weak_alias(_vwarn);
 
 #if !HAVE_ERR_H
 void
-vwarn(const char *fmt, _BSD_VA_LIST_ ap)
+_vwarn(const char *fmt, _BSD_VA_LIST_ ap)
 {
 	int sverrno;
 

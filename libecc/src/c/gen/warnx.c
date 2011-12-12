@@ -46,13 +46,11 @@ __RCSID("$NetBSD: warnx.c,v 1.14 2007/06/18 14:13:54 ginsbach Exp $");
 #include <err.h>
 #include <stdarg.h>
 
-#ifdef __weak_alias
-__weak_alias(warnx, _warnx)
-#endif
+void warnx(const char *fmt, ...) __weak_alias(_warnx);
 
 #if !HAVE_ERR_H
 void
-warnx(const char *fmt, ...)
+_warnx(const char *fmt, ...)
 {
 	va_list ap;
 

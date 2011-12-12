@@ -41,9 +41,8 @@ __RCSID("$NetBSD: getopt.c,v 1.28 2009/03/20 13:56:57 joerg Exp $");
 #include <string.h>
 #include <unistd.h>
 
-#ifdef __weak_alias
-__weak_alias(getopt,_getopt)
-#endif
+int getopt(int nargc, char * const nargv[], const char *ostr)
+    __weak_alias(_getopt);
 
 int	opterr = 1,		/* if error message should be printed */
 	optind = 1,		/* index into parent argv vector */
@@ -60,7 +59,7 @@ char	*optarg;		/* argument associated with option */
  *	Parse argc/argv argument vector.
  */
 int
-getopt(int nargc, char * const nargv[], const char *ostr)
+_getopt(int nargc, char * const nargv[], const char *ostr)
 {
 	static const char *place = EMSG;	/* option letter processing */
 	char *oli;				/* option letter list index */

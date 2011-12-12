@@ -1,7 +1,7 @@
-/*	$NetBSD: err.c,v 1.26 2007/06/18 14:13:54 ginsbach Exp $	*/
+/* $NetBSD: echo.c,v 1.18 2008/09/18 05:42:08 dholland Exp $	*/
 
-/*-
- * Copyright (c) 1993
+/*
+ * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,33 +29,55 @@
  * SUCH DAMAGE.
  */
 
-#if HAVE_NBTOOL_CONFIG_H
-#include "nbtool_config.h"
-#endif
-
 #include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
+#ifndef lint
+__COPYRIGHT(
+"@(#) Copyright (c) 1989, 1993\
+ The Regents of the University of California.  All rights reserved.");
+#endif /* not lint */
+
+#ifndef lint
 #if 0
-static char sccsid[] = "@(#)err.c	8.1 (Berkeley) 6/4/93";
+static char sccsid[] = "@(#)echo.c	8.1 (Berkeley) 5/31/93";
 #else
-__RCSID("$NetBSD: err.c,v 1.26 2007/06/18 14:13:54 ginsbach Exp $");
+__RCSID("$NetBSD: echo.c,v 1.18 2008/09/18 05:42:08 dholland Exp $");
 #endif
-#endif /* LIBC_SCCS and not lint */
+#endif /* not lint */
 
-#include "namespace.h"
-#include <err.h>
-#include <stdarg.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-__dead void err(int eval, const char *fmt, ...) __weak_alias(_err);
+int main(int, char *[]);
 
-#if !HAVE_ERR_H
-__dead void
-_err(int eval, const char *fmt, ...)
+/* ARGSUSED */
+int
+main(int argc, char *argv[])
 {
-	va_list ap;
+	int nflag;
 
-	va_start(ap, fmt);
-	verr(eval, fmt, ap);
-	va_end(ap);
+	setprogname(argv[0]);
+	(void)setlocale(LC_ALL, "");
+
+	/* This utility may NOT do getopt(3) option parsing. */
+	if (*++argv && !strcmp(*argv, "-n")) {
+		++argv;
+		nflag = 1;
+	}
+	else
+		nflag = 0;
+
+	while (*argv) {
+		(void)printf("%s", *argv);
+		if (*++argv)
+			(void)putchar(' ');
+	}
+	if (nflag == 0)
+		(void)putchar('\n');
+	fflush(stdout);
+	if (ferror(stdout))
+		exit(1);
+	exit(0);
+	/* NOTREACHED */
 }
-#endif

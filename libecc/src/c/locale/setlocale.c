@@ -39,6 +39,8 @@ __RCSID("$NetBSD: setlocale.c,v 1.58 2010/06/07 13:52:30 tnozaki Exp $");
 #include <string.h>
 #include <unistd.h>
 
+#if RICH
+
 #include "setlocale_local.h"
 
 const char *_PathLocale = NULL;
@@ -129,13 +131,18 @@ __setlocale(int category, const char *name)
 	}
 	return NULL;
 }
+#endif
 
 char *
 setlocale(int category, const char *locale)
 {
+#if RICH
 
 	/* locale may be NULL */
 
 	__mb_len_max_runtime = MB_LEN_MAX;
 	return __setlocale(category, locale);
+#else
+        return NULL;
+#endif
 }

@@ -110,4 +110,7 @@
 
 #define MB_LEN_MAX		32	/* Allow ISO/IEC 2022 */
 
+#include <machine/limits.h>
+#include <sys/syslimits.h>
+
 #endif
