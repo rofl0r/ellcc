@@ -5019,6 +5019,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-lm");
     }
 
+    if (Args.hasArg(options::OPT_fprofile_arcs) ||
+        Args.hasArg(options::OPT_fprofile_generate) ||
+        Args.hasArg(options::OPT_fcreate_profile) ||
+        Args.hasArg(options::OPT_coverage)) {
+      CmdArgs.push_back("-lprofile-rt");
+    }
+
     if (Args.hasArg(options::OPT_pthread))
       CmdArgs.push_back("-pthread");
     if (!Args.hasArg(options::OPT_shared))

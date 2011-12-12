@@ -60,10 +60,10 @@ OBJS= blocksort.o  \
 bzip2all: libbz2.a bzip2$(EXT) bzip2recover test
 
 bzip2$(EXT): libbz2.a bzip2.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2$(EXT) bzip2.o -L. -lbz2 -lprofile-rt
+	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2$(EXT) bzip2.o -L. -lbz2
 
 bzip2recover: bzip2recover.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2recover bzip2recover.o -lprofile-rt
+	$(CC) $(CFLAGS) $(LDFLAGS) -o bzip2recover bzip2recover.o
 
 libbz2.a: $(OBJS)
 	rm -f libbz2.a
