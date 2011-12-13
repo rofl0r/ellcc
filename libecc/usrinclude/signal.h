@@ -45,13 +45,13 @@
 #include <sys/signal.h>
 
 #if defined(_NETBSD_SOURCE)
-extern const char *const *sys_signame;
+extern const char *const *sys_signame __strong_alias(__sys_signame);
 #ifndef __SYS_SIGLIST_DECLARED
 #define __SYS_SIGLIST_DECLARED
 /* also in unistd.h */
-extern const char *const *sys_siglist;
+extern const char *const *sys_siglist __strong_alias(__sys_siglist);
 #endif /* __SYS_SIGLIST_DECLARED */
-extern const int sys_nsig;
+extern const int sys_nsig __strong_alias(__sys_nsig);
 #endif
 
 __BEGIN_DECLS

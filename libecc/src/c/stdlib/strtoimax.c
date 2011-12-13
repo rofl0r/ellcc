@@ -42,11 +42,12 @@ __RCSID("$NetBSD: strtoimax.c,v 1.7 2008/09/10 18:08:58 joerg Exp $");
 #include <stdint.h>
 #include <stdlib.h>
 
-#define	_FUNCNAME	strtoimax
+#define	_FUNCNAME	_strtoimax
 #define	__INT		intmax_t
 #define	__INT_MIN	INTMAX_MIN
 #define	__INT_MAX	INTMAX_MAX
 
 #include "_strtol.h"
 
-__strong_alias(_strtoimax, strtoimax)
+__INT strtoimax(const char *nptr, char **endptr, int base)
+    __strong_alias(_strtoimax);

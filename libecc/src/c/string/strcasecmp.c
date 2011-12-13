@@ -43,17 +43,14 @@ __RCSID("$NetBSD: strcasecmp.c,v 1.2 2007/06/04 18:19:27 christos Exp $");
 #include <assert.h>
 #include <ctype.h>
 #include <string.h>
-#ifdef __weak_alias
-__weak_alias(strcasecmp,_strcasecmp)
-__weak_alias(strncasecmp,_strncasecmp)
-#endif
+int strcasecmp(const char *s1, const char *s2) __weak_alias(_strcasecmp);
 #else
 #include <lib/libkern/libkern.h>
 #include <machine/limits.h>
 #endif 
 
 int
-strcasecmp(const char *s1, const char *s2)
+_strcasecmp(const char *s1, const char *s2)
 {
 	const unsigned char *us1 = (const unsigned char *)s1,
 			*us2 = (const unsigned char *)s2;

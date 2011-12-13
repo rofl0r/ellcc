@@ -3,7 +3,7 @@ CFLAGS += -I$(SRCPATH)/c/include
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
-        putchar.c merge.c random.c atexit.c getopt.c
+        putchar.c merge.c random.c atexit.c getopt.c strtoimax.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
@@ -14,7 +14,7 @@ SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fp
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
         strcpy.c strncmp.c strstr.c strerror.c strcspn.c strlcpy.c strerror_r.c strrchr.c \
-        strchr.c bcopy.c memmove.c strlcat.c
+        strchr.c bcopy.c memmove.c strlcat.c strcasecmp.c strncasecmp.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \

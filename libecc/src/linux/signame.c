@@ -41,7 +41,7 @@ __RCSID("$NetBSD: signame.c,v 1.13 2005/09/13 01:44:09 christos Exp $");
 #include <signal.h>
 #include <unistd.h>
 
-static const char *const __signame14[] = {
+static const char *const __signame[] = {
 	"Signal 0",	/* 0 */
 	"HUP",		/* 1 SIGHUP */
 	"INT",		/* 2 SIGINT */
@@ -49,63 +49,31 @@ static const char *const __signame14[] = {
 	"ILL",		/* 4 SIGILL */
 	"TRAP",		/* 5 SIGTRAP */
 	"ABRT",		/* 6 SIGABRT */
-	"EMT",		/* 7 SIGEMT */
+	"BUS",		/* 7 SIGBUS */
 	"FPE",		/* 8 SIGFPE */
 	"KILL",		/* 9 SIGKILL */
-	"BUS",		/* 10 SIGBUS */
+	"USR1",		/* 10 SIGUSR1 */
 	"SEGV",		/* 11 SIGSEGV */
-	"SYS",		/* 12 SIGSYS */
+	"USR2",		/* 12 SIGUSR2 */
 	"PIPE",		/* 13 SIGPIPE */
 	"ALRM",		/* 14 SIGALRM */
 	"TERM",		/* 15 SIGTERM */
-	"URG",		/* 16 SIGURG */
-	"STOP",		/* 17 SIGSTOP */
-	"TSTP",		/* 18 SIGTSTP */
-	"CONT",		/* 19 SIGCONT */
-	"CHLD",		/* 20 SIGCHLD */
+	"STKFLT",	/* 16 SIGSTKFLT */
+	"CHLD",		/* 17 SIGCHLD */
+	"CONT",		/* 18 SIGCONT */
+	"STOP",		/* 19 SIGSTOP */
+	"TSTP",		/* 20 SIGTSTP */
 	"TTIN",		/* 21 SIGTTIN */
 	"TTOU",		/* 22 SIGTTOU */
-	"IO",		/* 23 SIGIO */
+	"URG",		/* 23 SIGURG */
 	"XCPU",		/* 24 SIGXCPU */
 	"XFSZ",		/* 25 SIGXFSZ */
 	"VTALRM",	/* 26 SIGVTALRM */
 	"PROF",		/* 27 SIGPROF */
 	"WINCH",	/* 28 SIGWINCH */
-	"INFO",		/* 29 SIGINFO */
-	"USR1",		/* 30 SIGUSR1 */
-	"USR2",		/* 31 SIGUSR2 */
-	"PWR",		/* 32 SIGPWR */
-	"RT0",		/* 33 SIGRTMIN + 0 */
-	"RT1",		/* 34 SIGRTMIN + 1 */
-	"RT2",		/* 35 SIGRTMIN + 2 */
-	"RT3",		/* 36 SIGRTMIN + 3 */
-	"RT4",		/* 37 SIGRTMIN + 4 */
-	"RT5",		/* 38 SIGRTMIN + 5 */
-	"RT6",		/* 39 SIGRTMIN + 6 */
-	"RT7",		/* 40 SIGRTMIN + 7 */
-	"RT8",		/* 41 SIGRTMIN + 8 */
-	"RT9",		/* 42 SIGRTMIN + 9 */
-	"RT10",		/* 43 SIGRTMIN + 10 */
-	"RT11",		/* 44 SIGRTMIN + 11 */
-	"RT12",		/* 45 SIGRTMIN + 12 */
-	"RT13",		/* 46 SIGRTMIN + 13 */
-	"RT14",		/* 47 SIGRTMIN + 14 */
-	"RT15",		/* 48 SIGRTMIN + 15 */
-	"RT16",		/* 49 SIGRTMIN + 16 */
-	"RT17",		/* 50 SIGRTMIN + 17 */
-	"RT18",		/* 51 SIGRTMIN + 18 */
-	"RT19",		/* 52 SIGRTMIN + 19 */
-	"RT20",		/* 53 SIGRTMIN + 20 */
-	"RT21",		/* 54 SIGRTMIN + 21 */
-	"RT22",		/* 55 SIGRTMIN + 22 */
-	"RT23",		/* 56 SIGRTMIN + 23 */
-	"RT24",		/* 57 SIGRTMIN + 24 */
-	"RT25",		/* 58 SIGRTMIN + 25 */
-	"RT26",		/* 59 SIGRTMIN + 26 */
-	"RT27",		/* 60 SIGRTMIN + 27 */
-	"RT28",		/* 61 SIGRTMIN + 28 */
-	"RT29",		/* 62 SIGRTMIN + 29 */
-	"RT30",		/* 63 SIGRTMIN + 30 */
+	"IO",		/* 29 SIGIO */
+	"PWR",		/* 30 SIGPWR */
+	"SYS",		/* 31 SIGSYS */
 };
 
-const char * const *__sys_signame14 = __signame14;
+const char * const *__sys_signame = __signame;
