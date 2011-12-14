@@ -3693,7 +3693,18 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     return new PTX64TargetInfo(T);
 
   case llvm::Triple::mblaze:
-    return new MBlazeTargetInfo(T);
+    switch (os) {
+    case llvm::Triple::Linux:
+      return new LinuxTargetInfo<MBlazeTargetInfo>(T);
+    case llvm::Triple::RTEMS:
+      return new RTEMSTargetInfo<MBlazeTargetInfo>(T);
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<MBlazeTargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<MBlazeTargetInfo>(T);
+    default:
+      return new MBlazeTargetInfo(T);
+    }
 
   case llvm::Triple::sparc:
     switch (os) {

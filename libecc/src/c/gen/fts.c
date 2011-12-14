@@ -55,7 +55,7 @@ __RCSID("$NetBSD: fts.c,v 1.40 2009/11/02 17:17:34 stacktic Exp $");
 #include <string.h>
 #include <unistd.h>
 
-#if ! HAVE_NBTOOL_CONFIG_H
+#if !defined(__linux__)
 #define	HAVE_STRUCT_DIRENT_D_NAMLEN
 #endif
 
@@ -93,7 +93,7 @@ static int	 fts_safe_changedir(const FTS *, const FTSENT *, int,
 #define	BNAMES		2		/* fts_children, names only */
 #define	BREAD		3		/* fts_read */
 
-#ifndef DTF_HIDEW
+#if defined(__linux__)
 #undef FTS_WHITEOUT
 #endif
 
