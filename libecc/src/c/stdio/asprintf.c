@@ -43,11 +43,11 @@ __RCSID("$NetBSD: asprintf.c,v 1.18 2009/10/25 20:44:13 christos Exp $");
 #include "local.h"
 
 #ifdef __weak_alias
-__weak_alias(asprintf, _asprintf)
+int asprintf(char **str, char const *fmt, ...) __weak_alias(_asprintf);
 #endif
 
 int
-asprintf(char **str, char const *fmt, ...)
+_asprintf(char **str, char const *fmt, ...)
 {
 	int ret;
 	va_list ap;

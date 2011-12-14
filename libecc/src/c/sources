@@ -3,13 +3,13 @@ CFLAGS += -I$(SRCPATH)/c/include
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
-        putchar.c merge.c random.c atexit.c getopt.c strtoimax.c
+        putchar.c merge.c random.c atexit.c getopt.c strtoimax.c strtoll.c strcoll.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
         fputc.c printf.c vfprintf.c fprintf.c fwrite.c fgetc.c remove.c fclose.c ungetc.c \
         fread.c fopen.c fdopen.c rget.c refill.c rewind.c fseek.c flags.c perror.c fseeko.c \
-        snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c
+        snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c mkstemp.c asprintf.c gettemp.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
@@ -50,6 +50,9 @@ SRCS += initfini.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/thread-stub
 SRCS += __isthreaded.c  thread-stub.c
+
+VPATH := $(VPATH):$(SRCPATH)/c/regex
+SRCS += regcomp.c regerror.c regexec.c regfree.c
 
 # Target specific sources.
 VPATH := $(VPATH):$(SRCPATH)/c/$(ARCH)

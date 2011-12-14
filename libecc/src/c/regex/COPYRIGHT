@@ -1,7 +1,29 @@
-/*	$NetBSD: mkstemp.c,v 1.10 2008/10/20 10:28:38 apb Exp $	*/
+$NetBSD: COPYRIGHT,v 1.5 2003/08/07 16:43:19 agc Exp $
 
-/*
- * Copyright (c) 1987, 1993
+Copyright 1992, 1993, 1994 Henry Spencer.  All rights reserved.
+This software is not subject to any license of the American Telephone
+and Telegraph Company or of the Regents of the University of California.
+
+Permission is granted to anyone to use this software for any purpose on
+any computer system, and to alter it and redistribute it, subject
+to the following restrictions:
+
+1. The author is not responsible for the consequences of use of this
+   software, no matter how awful, even if they arise from flaws in it.
+
+2. The origin of this software must not be misrepresented, either by
+   explicit claim or by omission.  Since few users ever read sources,
+   credits must appear in the documentation.
+
+3. Altered versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.  Since few users
+   ever read sources, credits must appear in the documentation.
+
+4. This notice may not be removed or altered.
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+/*-
+ * Copyright (c) 1994
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,48 +49,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)COPYRIGHT	8.1 (Berkeley) 3/16/94
  */
-
-#if HAVE_NBTOOL_CONFIG_H
-#include "nbtool_config.h"
-#endif
-
-#if !HAVE_NBTOOL_CONFIG_H || !HAVE_MKSTEMP
-
-#include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-#if 0
-static char sccsid[] = "@(#)mktemp.c	8.1 (Berkeley) 6/4/93";
-#else
-__RCSID("$NetBSD: mkstemp.c,v 1.10 2008/10/20 10:28:38 apb Exp $");
-#endif
-#endif /* LIBC_SCCS and not lint */
-
-#include "namespace.h"
-
-#if HAVE_NBTOOL_CONFIG_H
-#define	GETTEMP		__nbcompat_gettemp
-#else
-#include <assert.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include "reentrant.h"
-#include "local.h"
-#define	GETTEMP		__gettemp
-#endif
-
-int mkstemp(char *path) __weak_alias(_mkstemp);
-
-int
-_mkstemp(char *path)
-{
-	int fd;
-
-	_DIAGASSERT(path != NULL);
-
-	return (GETTEMP(path, &fd, 0) ? fd : -1);
-}
-
-#endif /* !HAVE_NBTOOL_CONFIG_H || !HAVE_MKSTEMP */

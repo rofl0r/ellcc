@@ -1,7 +1,7 @@
-/*	$NetBSD: mkstemp.c,v 1.10 2008/10/20 10:28:38 apb Exp $	*/
+/* $NetBSD: extern.h,v 1.15 2006/07/16 16:22:24 jschauma Exp $ */
 
-/*
- * Copyright (c) 1987, 1993
+/*-
+ * Copyright (c) 1991, 1993, 1994
  *	The Regents of the University of California.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,48 +27,34 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	@(#)extern.h	8.2 (Berkeley) 4/1/94
  */
 
-#if HAVE_NBTOOL_CONFIG_H
-#include "nbtool_config.h"
-#endif
+#ifndef _EXTERN_H_
+#define _EXTERN_H_
 
-#if !HAVE_NBTOOL_CONFIG_H || !HAVE_MKSTEMP
+typedef struct {
+	char *p_end;			/* pointer to NULL at end of path */
+	char *target_end;		/* pointer to end of target base */
+	char p_path[MAXPATHLEN + 1];	/* pointer to the start of a path */
+} PATH_T;
+
+extern PATH_T to;
+extern uid_t myuid;
+extern int Rflag, rflag, Hflag, Lflag, Pflag, fflag, iflag, pflag, Nflag;
+extern mode_t myumask;
 
 #include <sys/cdefs.h>
-#if defined(LIBC_SCCS) && !defined(lint)
-#if 0
-static char sccsid[] = "@(#)mktemp.c	8.1 (Berkeley) 6/4/93";
-#else
-__RCSID("$NetBSD: mkstemp.c,v 1.10 2008/10/20 10:28:38 apb Exp $");
-#endif
-#endif /* LIBC_SCCS and not lint */
 
-#include "namespace.h"
+__BEGIN_DECLS
+int	copy_fifo(struct stat *, int);
+int	copy_file(FTSENT *, int);
+int	copy_link(FTSENT *, int);
+int	copy_special(struct stat *, int);
+int	set_utimes(const char *, struct stat *);
+int	setfile(struct stat *, int);
+void	usage(void) __attribute__((__noreturn__));
+__END_DECLS
 
-#if HAVE_NBTOOL_CONFIG_H
-#define	GETTEMP		__nbcompat_gettemp
-#else
-#include <assert.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include "reentrant.h"
-#include "local.h"
-#define	GETTEMP		__gettemp
-#endif
-
-int mkstemp(char *path) __weak_alias(_mkstemp);
-
-int
-_mkstemp(char *path)
-{
-	int fd;
-
-	_DIAGASSERT(path != NULL);
-
-	return (GETTEMP(path, &fd, 0) ? fd : -1);
-}
-
-#endif /* !HAVE_NBTOOL_CONFIG_H || !HAVE_MKSTEMP */
+#endif /* !_EXTERN_H_ */
