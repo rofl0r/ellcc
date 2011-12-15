@@ -82,6 +82,7 @@
 #define LONG_BIT	32
 #define WORD_BIT	32
 
+#if RICH
 #define DBL_DIG		15
 #define DBL_MAX		1.7976931348623157E+308
 #define DBL_MIN		2.2250738585072014E-308
@@ -89,6 +90,7 @@
 #define FLT_DIG		6
 #define FLT_MAX		3.40282347E+38F
 #define FLT_MIN		1.17549435E-38F
+#endif // RICH
 #endif
 
 #endif /* _I386_LIMITS_H_ */

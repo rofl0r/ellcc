@@ -77,3 +77,4 @@ static const char *const __signame[] = {
 };
 
 const char * const *__sys_signame = __signame;
+extern const char *const *sys_signame __strong_alias(__sys_signame);

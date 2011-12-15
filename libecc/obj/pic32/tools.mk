@@ -11,8 +11,8 @@ CFLAGS = -std=gnu99 -nostdinc
 # Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 XCCINCDIR = $(shell $(XCC) -print-search-dirs | grep install: | sed  "s/install: //")include
 CFLAGS += -I$(XCCINCDIR)
-CFLAGS += -I$(DOFF)/../../usrinclude
 CFLAGS += -I$(DOFF)/../../usrinclude/$(ARCH)/$(OS)
 CFLAGS += -I$(DOFF)/../../usrinclude/$(ARCH) 
 CFLAGS += -I$(DOFF)/../../usrinclude/$(OS)
+CFLAGS += -I$(DOFF)/../../usrinclude
 CFLAGS += -I$(TOOL_DIR)/pic32mx/include

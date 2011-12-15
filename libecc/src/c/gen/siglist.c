@@ -108,5 +108,7 @@ static const char *const __siglist14[] = {
 };
 
 const int __sys_nsig14 = sizeof(__siglist14) / sizeof(__siglist14[0]);
+extern const int sys_nsig __strong_alias(__sys_nsig);
 
 const char * const *__sys_siglist14 = __siglist14;
+extern const char *const *sys_siglist __strong_alias(__sys_siglist);
