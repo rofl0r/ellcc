@@ -50,18 +50,11 @@ __RCSID("$NetBSD: strerror_r.c,v 1.2 2005/07/30 15:21:21 christos Exp $");
 #include <string.h>
 #include "extern.h"
 
-#ifdef _LIBC
-# ifdef __weak_alias
-__weak_alias(strerror_r, _strerror_r)
-# endif
-#endif
+int strerror_r(int num, char *buf, size_t buflen)
+    __weak_alias(_strerror_r);
 
 int
-#ifdef _LIBC
 _strerror_r(int num, char *buf, size_t buflen)
-#else
-strerror_r(int num, char *buf, size_t buflen)
-#endif
 {
 #define	UPREFIX	"Unknown error: %u"
 	unsigned int errnum = num;
@@ -77,9 +70,9 @@ strerror_r(int num, char *buf, size_t buflen)
 	if (errnum < (unsigned int) sys_nerr) {
 #ifdef NLS
 		slen = strlcpy(buf, catgets(catd, 1, (int)errnum,
-		    sys_errlist[errnum]), buflen); 
+		    _sys_errlist[errnum]), buflen); 
 #else
-		slen = strlcpy(buf, sys_errlist[errnum], buflen); 
+		slen = strlcpy(buf, _sys_errlist[errnum], buflen); 
 #endif
 	} else {
 #ifdef NLS

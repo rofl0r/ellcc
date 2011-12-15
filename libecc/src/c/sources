@@ -25,7 +25,7 @@ SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee
         bswap16.c bswap32.c bswap64.c fpgetround.c getcwd.c isnanf_ieee754.c isinff_ieee754.c \
         fpclassifyl_ieee754.c fpclassifyd_ieee754.c fpclassifyf_ieee754.c \
         warn.c warnx.c vwarn.c vwarnx.c _warn.c err.c errx.c verr.c verrx.c _err.c \
-        fts.c
+        fts.c setmode.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \

@@ -57,10 +57,12 @@ __RCSID("$NetBSD: setmode.c,v 1.31 2005/10/01 20:08:01 christos Exp $");
 #include <stdio.h>
 #endif
 
-#ifdef __weak_alias
-__weak_alias(getmode,_getmode)
-__weak_alias(setmode,_setmode)
+#if defined(__linux__)
+#define S_ISTXT 0
 #endif
+
+mode_t getmode(const void *bbox, mode_t omode) __weak_alias(_getmode);
+void *setmode(const char *p) __weak_alias(_setmode);
 
 #define	SET_LEN	6		/* initial # of bitcmd struct to malloc */
 #define	SET_LEN_INCR 4		/* # of bitcmd structs to add as needed */
@@ -90,9 +92,7 @@ static void	 dumpmode __P((BITCMD *));
  * bits) followed by a '+' (set bits).
  */
 mode_t
-getmode(bbox, omode)
-	const void *bbox;
-	mode_t omode;
+_getmode(const void *bbox, mode_t omode)
 {
 	const BITCMD *set;
 	mode_t clrval, newmode, value;
@@ -178,8 +178,7 @@ common:			if (set->cmd2 & CMD2_CLR) {
 #define	STANDARD_BITS	(S_ISUID|S_ISGID|S_IRWXU|S_IRWXG|S_IRWXO)
 
 void *
-setmode(p)
-	const char *p;
+_setmode(const char *p)
 {
 	int serrno;
 	char op, *ep;
@@ -367,9 +366,7 @@ out:
 }
 
 static BITCMD *
-addcmd(set, op, who, oparg, mask)
-	BITCMD *set;
-	mode_t oparg, who, op, mask;
+addcmd(BITCMD *set, mode_t oparg, mode_t who, mode_t op, mode_t mask)
 {
 
 	_DIAGASSERT(set != NULL);

@@ -143,9 +143,11 @@ done:	argv += optind;
 		}
 	} else if (!hflag)
 		fts_options |= FTS_COMFOLLOW;
+#if !defined(__linux__)
 	if (hflag)
 		change_mode = lchmod;
 	else
+#endif
 		change_mode = chmod;
 
 	mode = *argv;

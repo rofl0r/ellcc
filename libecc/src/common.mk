@@ -56,7 +56,7 @@ endif
 
 .SUFFIXES: .c .S .o
 .c.o:
-	${CC} $(MCPU) $(MFLOAT) -g -c ${CFLAGS} $<
+	${CC} $(MCPU) $(MFLOAT) -c ${CFLAGS} $<
 .S.o:
 	${CC} $(MCPU) -c ${CFLAGS} $<
 

@@ -31,6 +31,8 @@
 
 #include <sys/cdefs.h>
 
+extern const char *const _sys_errlist[];
+
 #ifdef RICH
 
 #ifndef __lint__

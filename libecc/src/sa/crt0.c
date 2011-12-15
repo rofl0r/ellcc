@@ -32,6 +32,8 @@ void _estart(int argc, char **argv, char **_environ)
         __progname = strrchr(argv[0], '/');
         if (__progname == NULL) {
             __progname = argv[0];
+        } else {
+            ++__progname;
         }
     } else {
         _argv[0] = "main";

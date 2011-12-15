@@ -17,11 +17,6 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#if !defined(_KERNEL) && !defined(_STANDALONE)
-#if HAVE_NBTOOL_CONFIG_H
-#include "nbtool_config.h"
-#endif
-
 #include <sys/cdefs.h>
 #if defined(LIBC_SCCS) && !defined(lint)
 __RCSID("$NetBSD: strlcpy.c,v 1.3 2007/06/04 18:19:27 christos Exp $");
@@ -34,24 +29,17 @@ __RCSID("$NetBSD: strlcpy.c,v 1.3 2007/06/04 18:19:27 christos Exp $");
 #include <assert.h>
 #include <string.h>
 
-#ifdef _LIBC
-# ifdef __weak_alias
-__weak_alias(strlcpy, _strlcpy)
-# endif
-#endif
-#else
-#include <lib/libkern/libkern.h>
-#endif /* !_KERNEL && !_STANDALONE */
+size_t strlcpy(char *dst, const char *src, size_t siz)
+    __weak_alias(_strlcpy);
 
 
-#if !HAVE_STRLCPY
 /*
  * Copy src to string dst of size siz.  At most siz-1 characters
  * will be copied.  Always NUL terminates (unless siz == 0).
  * Returns strlen(src); if retval >= siz, truncation occurred.
  */
 size_t
-strlcpy(char *dst, const char *src, size_t siz)
+_strlcpy(char *dst, const char *src, size_t siz)
 {
 	char *d = dst;
 	const char *s = src;
@@ -78,4 +66,3 @@ strlcpy(char *dst, const char *src, size_t siz)
 
 	return(s - src - 1);	/* count does not include NUL */
 }
-#endif
