@@ -29,49 +29,29 @@ DIR = $(shell basename `pwd`)
 # The target program directory.
 PROGDIR  = $(LEVEL)/../../bin/$(TARGET)$(OSDIR)/$(DIR)
 
-ifeq ($(XCC),)
-  # The build compiler.
-  CC = ../$(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc
-else
-  CC = $(XCC)
-endif
-
-CFLAGS += -Werror -MD -MP -O1
-
-ifdef CPU
-    MCPU = -mcpu=$(CPU)
-endif
-
-ifdef FLOAT
-    MFLOAT = -m$(FLOAT)-float
-endif
-
-.SUFFIXES: .c .S .o
-.c.o:
-	${CC} $(MCPU) $(MFLOAT) -c ${CFLAGS} $<
-.S.o:
-	${CC} $(MCPU) -c ${CFLAGS} $<
-
-
 # Build the library.
 SRCPATH := $(LEVEL)/../../src
 DIRPATH = $(SRCPATH)/$(DIR)
 # The programs to build.
 PROGRAMS = $(shell cd $(DIRPATH); echo *)
 
-all: $(PROGRAMS:%=%.all)
+all: $(PROGRAMS)
 
-$(PROGRAMS:%=%.all):
-	@echo build $(@:%.all=%)
-	@mkdir -p $(@:%.all=%)
-	@if [ -e $(DIRPATH)/$(@:%.all=%)/Makefile ] ; then \
-	  $(MAKE) CC=$(CC) PROG=$(@:%.all=%) VPATH=$(DIRPATH)/$(@:%.all=%) \
-	    CFLAGS="$(CFLAGS)" SRCS=$(shell cd $(DIRPATH)/$(@:%.all=%); echo *.c) \
-	    -C $(@:%.all=%) $(@:%.all=%) -f $(DIRPATH)/$(@:%.all=%)/Makefile ; \
+.PHONY: $(PROGRAMS)
+
+$(PROGRAMS):
+	@echo build $@
+	@mkdir -p $@
+	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
+	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    TARGET=$(TARGET) ARCH=$(ARCH) \
+	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
-	  $(MAKE) CC=$(CC) PROG=$(@:%.all=%) VPATH=../$(DIRPATH)/$(@:%.all=%) \
-	    CFLAGS="$(CFLAGS)" SRCS=$(shell cd $(DIRPATH)/$(@:%.all=%); echo *.c) \
-	    -C $(@:%.all=%) $(@:%.all=%) -f ../$(SRCPATH)/Makefile ; \
+	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    TARGET=$(TARGET) ARCH=$(ARCH) \
+	    -C $@ $@ -f ../$(SRCPATH)/Makefile ; \
 	fi
 
 install: $(PROGRAMS:%=%.install)
@@ -79,9 +59,10 @@ install: $(PROGRAMS:%=%.install)
 $(PROGRAMS:%=%.install):
 	@echo install $(@:%.install=%)
 	@mkdir -p $(@:%.install=%)
-	@if [ -e $(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
-	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
-	    install -f $(DIRPATH)/$(@:%.install=%)/Makefile ; \
+	@if [ -e ../$(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
+	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    -C $(@:%.install=%) \
+	    install -f ../$(DIRPATH)/$(@:%.install=%)/Makefile ; \
 	else \
 	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
 	    install -f ../$(SRCPATH)/Makefile ; \
@@ -92,11 +73,12 @@ clean: $(PROGRAMS:%=%.clean)
 $(PROGRAMS:%=%.clean):
 	@echo clean $(@:%.clean=%)
 	@mkdir -p $(@:%.clean=%)
-	@if [ -e $(DIRPATH)/$(@:%.clean=%)/Makefile ] ; then \
-	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.clean=%) -C $(@:%.clean=%) \
-	    clean -f $(DIRPATH)/$(@:%.clean=%)/Makefile ; \
+	@if [ -e ../$(DIRPATH)/$(@:%.clean=%)/Makefile ] ; then \
+	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    -C $(@:%.clean=%) \
+	    clean -f ../$(DIRPATH)/$(@:%.clean=%)/Makefile ; \
 	else \
-	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.clean=%) -C $(@:%.clean=%) \
+	  $(MAKE) -C $(@:%.clean=%) \
 	    clean -f ../$(SRCPATH)/Makefile ; \
 	fi
 
