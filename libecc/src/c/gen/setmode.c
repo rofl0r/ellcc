@@ -57,7 +57,7 @@ __RCSID("$NetBSD: setmode.c,v 1.31 2005/10/01 20:08:01 christos Exp $");
 #include <stdio.h>
 #endif
 
-#if defined(__linux__)
+#if !defined(S_ISTXT)
 #define S_ISTXT 0
 #endif
 
