@@ -14,4 +14,4 @@ CFLAGS += -I$(DOFF)/usrinclude/$(OS)
 CFLAGS += -I$(DOFF)/usrinclude
 OSLIBDIR = $(DOFF)/lib/$(XCC)/$(OS)
 LDFLAGS += -nostdlib $(OSLIBDIR)/crt0.o $(OSLIBDIR)/crtbegin.o
-LDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lc -lcompiler-rt
+LDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lc -lcompiler-rt $(OSLIBDIR)/crtend.o
