@@ -4,7 +4,7 @@ XCC = gcc
 # The archive building program.
 AR = ar
 # ARCH should be one of arm, i386, microblaze, mips, nios2, ppc64, ppc, sparc, or x86_64.
-ARCH = x86_64
+ARCH = $(shell uname -m)
 CFLAGS = -std=gnu99 -nostdinc
 # Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 XCCINCDIR = $(shell $(XCC) -print-search-dirs | grep install: | sed  "s/install: //")include
