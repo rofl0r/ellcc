@@ -38,17 +38,12 @@
 
 #include <machine/ansi.h>
 
-#ifdef	_BSD_SIZE_T_
-typedef	_BSD_SIZE_T_	size_t;
-#undef	_BSD_SIZE_T_
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __typeof__(sizeof(int)) size_t;
 #endif
 
 #include <sys/ansi.h>
-
-#ifndef	mode_t
-typedef	__mode_t	mode_t;
-#define	mode_t		__mode_t
-#endif
 
 #ifndef	off_t
 typedef	__off_t		off_t;		/* file offset */

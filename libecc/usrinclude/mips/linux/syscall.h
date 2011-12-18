@@ -170,10 +170,10 @@
     unsigned int result, err;					        \
     asm volatile (".set noreorder\n\t"                                  \
                   "li $v0, %2       # syscall " #name "\n\t"            \
-	          "subu sp, 32\n\t"                                     \
-	          "sw %7, 16(sp)\n\t"                                   \
+	          "addi $29, $29, -32\n\t"                              \
+	          "sw %7, 16($29)\n\t"                                  \
 	          "syscall\n\t"                                         \
-	          "addiu sp, 32\n\t"                                    \
+	          "addi $29, $29, 32\n\t"                               \
 	          ".set reorder"                                        \
                    : "={v0}" (result), "={a3}" (err)                    \
                    : "i" (SYS_CONSTANT(name)),                          \
@@ -201,15 +201,14 @@
  */
 #define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5)      \
     ({                                                                  \
-    alloca(4);          /* Force a frame pointer. */                    \
     unsigned int result, err;					        \
     asm volatile (".set noreorder\n\t"                                  \
                   "li $v0, %2       # syscall " #name "\n\t"            \
-	          "subu sp, 32\n\t"                                     \
-	          "sw %7, 16(sp)\n\t"                                   \
-	          "sw %8, 20(sp)\n\t"                                   \
+	          "addi $29, $29, -32\n\t"                              \
+	          "sw %7, 16($29)\n\t"                                  \
+	          "sw %8, 20($29)\n\t"                                  \
 	          "syscall\n\t"                                         \
-	          "addiu sp, 32\n\t"                                    \
+	          "addi $29, $29, 32\n\t"                               \
 	          ".set reorder"                                        \
                    : "={v0}" (result), "={a3}" (err)                    \
                    : "i" (SYS_CONSTANT(name)),                          \
@@ -239,16 +238,15 @@
  */
 #define INLINE_SYSCALL_7(name, arg0, arg1, arg2, arg3, arg4, arg5, arg6)\
     ({                                                                  \
-    alloca(4);          /* Force a frame pointer. */                    \
     unsigned int result, err;					        \
     asm volatile (".set noreorder\n\t"                                  \
                   "li $v0, %2       # syscall " #name "\n\t"            \
-	          "subu sp, 32\n\t"                                     \
-	          "sw %7, 16(sp)\n\t"                                   \
-	          "sw %8, 20(sp)\n\t"                                   \
-	          "sw %9, 24(sp)\n\t"                                   \
+	          "addi $29, $29, -32\n\t"                              \
+	          "sw %7, 16($29)\n\t"                                  \
+	          "sw %8, 20($29)\n\t"                                  \
+	          "sw %9, 24($29)\n\t"                                  \
 	          "syscall\n\t"                                         \
-	          "addiu sp, 32\n\t"                                    \
+	          "addi $29, $29, 32\n\t"                               \
 	          ".set reorder"                                        \
                    : "={v0}" (result), "={a3}" (err)                    \
                    : "i" (SYS_CONSTANT(name)),                          \

@@ -1961,6 +1961,7 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   case 'c': // ecx.
   case 'd': // edx.
   case 'S': // esi.
+  case 'B': // ebp.
   case 'D': // edi.
   case 'A': // edx:eax.
   case 'f': // any x87 floating point stack register.
@@ -2003,6 +2004,7 @@ X86TargetInfo::convertConstraint(const char *&Constraint) const {
   case 'c': return std::string("{cx}");
   case 'd': return std::string("{dx}");
   case 'S': return std::string("{si}");
+  case 'B': return std::string("{bp}");
   case 'D': return std::string("{di}");
   case 'p': // address
     return std::string("im");

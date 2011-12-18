@@ -334,11 +334,15 @@ setfile(struct stat *fs, int fd)
 		}
 		fs->st_mode &= ~(S_ISUID | S_ISGID);
 	}
+#if defined(__linux__)
+#define lchmod chmod
+#endif
 	if (fd ? fchmod(fd, fs->st_mode) : lchmod(to.p_path, fs->st_mode)) {
 		warn("chmod: %s", to.p_path);
 		rval = 1;
 	}
 
+#if !defined(__linux__)
 	if (!islink && !Nflag) {
 		unsigned long fflags = fs->st_flags;
 		/*
@@ -357,6 +361,7 @@ setfile(struct stat *fs, int fd)
 				rval = 1;
 			}
 	}
+#endif
 	/* if fd is non-zero, caller must call set_utimes() after close() */
 	if (fd == 0 && set_utimes(to.p_path, fs))
 	    rval = 1;

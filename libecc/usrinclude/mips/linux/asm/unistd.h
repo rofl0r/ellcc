@@ -18,7 +18,7 @@
 #define __NR_time (__NR_SYSCALL_BASE + 13)
 #define __NR_mknod (__NR_SYSCALL_BASE + 14)
 #define __NR_chmod (__NR_SYSCALL_BASE + 15)
-#define __NR_lchown32 (__NR_SYSCALL_BASE + 16)
+#define __NR_lchown (__NR_SYSCALL_BASE + 16)
 #define __NR_break (__NR_SYSCALL_BASE + 17)
 #define __NR_unused18 (__NR_SYSCALL_BASE + 18)
 #define __NR_lseek (__NR_SYSCALL_BASE + 19)

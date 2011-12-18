@@ -7,8 +7,8 @@
 /*
  * No reason this can't be common
  */
-#define __MIPSEB__      // RICH
-#if defined(__MIPSEB__)
+#define _MIPSEL
+#if defined(_MIPSEB)
 # if defined(__mips_n32) || defined(__mips_n64)
 #  define	_MACHINE_ARCH	mips64eb
 #  define	MACHINE_ARCH	"mips64eb"
@@ -18,7 +18,7 @@
 #  define	_MACHINE_ARCH	mipseb
 #  define	MACHINE_ARCH	"mipseb"
 # endif
-#elif defined(__MIPSEL__)
+#elif defined(_MIPSEL)
 # if defined(__mips_n32) || defined(__mips_n64)
 #  define	_MACHINE_ARCH	mips64el
 #  define	MACHINE_ARCH	"mips64el"
@@ -82,6 +82,10 @@
 #define NBSEG		(NBPG*NPTEPG)	/* bytes/segment */
 #define	SEGOFSET	(NBSEG-1)	/* byte offset into segment */
 #define	SEGSHIFT	(2*PGSHIFT-2)	/* LOG2(NBSEG) */
+
+#ifndef MAXPHYS
+#define	MAXPHYS		(64 * 1024)	/* max raw I/O transfer size */
+#endif
 
 /*
  * Minimum and maximum sizes of the kernel malloc arena in PAGE_SIZE-sized

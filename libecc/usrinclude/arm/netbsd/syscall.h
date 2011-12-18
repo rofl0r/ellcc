@@ -197,7 +197,7 @@
  * @param arg5 The sixth argument.
  * @param arg6 The seventh argument.
  */
-#define INLINE_SYSCALL_6(name, arg0, arg1, arg2, arg3, arg4, arg5, arg6)\
+#define INLINE_SYSCALL_7(name, arg0, arg1, arg2, arg3, arg4, arg5, arg6)\
     ({                                                                  \
     unsigned int result;                                                \
     asm volatile ("swi %8       @ syscall " #name                       \
