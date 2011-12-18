@@ -2,7 +2,6 @@
 LEVEL=../..
 OS = $(shell basename `cd ../; pwd`)
 OSDIR = /$(OS)
-CFLAGS += -fno-builtin
 
 # The target processor.
 TARGET = $(shell basename `cd ../..; pwd`)
@@ -51,12 +50,12 @@ $(PROGRAMS):
 	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
 	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
-	    TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
 	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
-	    TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
