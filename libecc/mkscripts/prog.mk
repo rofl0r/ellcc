@@ -7,8 +7,8 @@ CFLAGS += -Werror -MD -MP -O1
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = ../$(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc
-  CXX = ../$(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc++
+  CC = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc
+  CXX = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc++
 else
   CC = $(XCC)
   CXX = $(XCXX)
@@ -21,7 +21,6 @@ endif
 	$(CXX) $(MCPU) -c $(CFLAGS) $<
 
 $(PROG): $(OBJS)
-	echo LDFLAGS $(LDFLAGS)
 	$(CC) -o $(PROG) $(LDFLAGS) $(OBJS) $(LDEXTRA)
 
 clean:

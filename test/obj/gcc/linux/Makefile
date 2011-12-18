@@ -11,9 +11,3 @@ all install clean veryclean:
 	  echo Making $@ in $$dir ; \
 	  $(MAKE) -C $$dir $@ || exit 1; \
 	done
-
-copy:
-	@test -d ../src || (echo Not at the top level.; exit 1)
-	@for dir in $(SUBDIRS) ; do \
-	  cp Makefile $$dir; \
-	done

@@ -1,5 +1,11 @@
+# Build rules for a set of OS specific programs.
+LEVEL=../..
+OS = $(shell basename `cd ../; pwd`)
+OSDIR = /$(OS)
+CFLAGS += -fno-builtin
+
 # The target processor.
-TARGET = $(shell basename `cd $(LEVEL); pwd`)
+TARGET = $(shell basename `cd ../..; pwd`)
 
 # Determine the architecture.
 ifneq ($(filter arm%, $(TARGET)),)
@@ -44,14 +50,14 @@ $(PROGRAMS):
 	@mkdir -p $@
 	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
 	    TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
 	    TARGET=$(TARGET) ARCH=$(ARCH) \
-	    -C $@ $@ -f ../$(SRCPATH)/Makefile ; \
+	    -C $@ $@ -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
 install: $(PROGRAMS:%=%.install)
@@ -61,11 +67,13 @@ $(PROGRAMS:%=%.install):
 	@mkdir -p $(@:%.install=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
 	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
 	    -C $(@:%.install=%) \
 	    install -f ../$(DIRPATH)/$(@:%.install=%)/Makefile ; \
 	else \
 	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
-	    install -f ../$(SRCPATH)/Makefile ; \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    install -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
 clean: $(PROGRAMS:%=%.clean)
@@ -75,11 +83,13 @@ $(PROGRAMS:%=%.clean):
 	@mkdir -p $(@:%.clean=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.clean=%)/Makefile ] ; then \
 	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
 	    -C $(@:%.clean=%) \
 	    clean -f ../$(DIRPATH)/$(@:%.clean=%)/Makefile ; \
 	else \
 	  $(MAKE) -C $(@:%.clean=%) \
-	    clean -f ../$(SRCPATH)/Makefile ; \
+	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    clean -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
 veryclean: $(PROGRAMS:%=%.veryclean)

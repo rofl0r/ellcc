@@ -1,2 +1,3 @@
-include ../../tools.mk
-include ../../../../src/os.mk
+-include ../../tools.mk
+ELLCC ?= $(shell cd ../../../../..; pwd)
+include $(ELLCC)/libecc/mkscripts/progs.mk
