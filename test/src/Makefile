@@ -8,15 +8,17 @@ CFLAGS += -Werror -MD -MP -O1
 ifeq ($(XCC),)
   # The build compiler.
   CC = ../$(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc
+  CXX = ../$(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc++
 else
   CC = $(XCC)
+  CXX = $(XCXX)
 endif
 
-.SUFFIXES: .c .S .o
+.SUFFIXES: .c .cxx .o
 .c.o:
 	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS) $<
 .cxx.o:
-	$(CC) $(MCPU) -c $(CFLAGS) $<
+	$(CXX) $(MCPU) -c $(CFLAGS) $<
 
 $(PROG): $(OBJS)
 	echo LDFLAGS $(LDFLAGS)
