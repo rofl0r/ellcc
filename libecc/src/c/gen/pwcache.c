@@ -97,11 +97,11 @@ __RCSID("$NetBSD: pwcache.c,v 1.31 2010/03/23 20:28:59 drochner Exp $");
 #define	user_from_uid	__nbcompat_user_from_uid
 #endif
 
-#ifdef __weak_alias
-__weak_alias(user_from_uid,_user_from_uid)
-__weak_alias(group_from_gid,_group_from_gid)
-__weak_alias(pwcache_groupdb,_pwcache_groupdb)
-#endif
+const char *user_from_uid(uid_t uid, int noname) __weak_alias(_user_from_uid);
+const char *group_from_gid(gid_t gid, int noname) __weak_alias(_group_from_gid);
+int pwcache_groupdb(int (*)(int), void (*)(void), 
+                    struct group *(*)(const char *),
+	            struct group *(*)(gid_t)) __weak_alias(_pwcache_groupdb);
 
 #if !HAVE_PWCACHE_USERDB || HAVE_NBTOOL_CONFIG_H
 #include "pwcache.h"
@@ -257,7 +257,7 @@ grptb_start(void)
  *	Pointer to stored name (or a empty string)
  */
 const char *
-user_from_uid(uid_t uid, int noname)
+_user_from_uid(uid_t uid, int noname)
 {
 	struct passwd *pw;
 	UIDC *ptr, **pptr;
@@ -326,7 +326,7 @@ user_from_uid(uid_t uid, int noname)
  *	Pointer to stored name (or a empty string)
  */
 const char *
-group_from_gid(gid_t gid, int noname)
+_group_from_gid(gid_t gid, int noname)
 {
 	struct group *gr;
 	GIDC *ptr, **pptr;
@@ -553,7 +553,7 @@ pwcache_userdb(
 }
 
 int
-pwcache_groupdb(
+_pwcache_groupdb(
 	int		(*a_setgroupent)(int),
 	void		(*a_endgrent)(void),
 	struct group *	(*a_getgrnam)(const char *),
