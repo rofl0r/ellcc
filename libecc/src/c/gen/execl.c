@@ -59,7 +59,6 @@ _execl(const char *name, const char *arg, ...)
 	return r;
 #else
 	va_list ap;
-	char **argv;
 	int i;
 
 	va_start(ap, arg);
@@ -67,10 +66,15 @@ _execl(const char *name, const char *arg, ...)
 		continue;
 	va_end(ap);
 
+#if RICH
+	char **argv;
 	if ((argv = alloca(i * sizeof (char *))) == NULL) {
 		errno = ENOMEM;
 		return -1;
 	}
+#else
+        char *argv[i];
+#endif
 	
 	va_start(ap, arg);
 	argv[0] = __UNCONST(arg);

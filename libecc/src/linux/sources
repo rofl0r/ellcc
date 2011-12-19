@@ -12,7 +12,8 @@ SRCS += brk.c fcntl.c stat.c chmod.c fstat.c lseek.c unlink.c \
         readlink.c creat.c sigsuspend.c fork.c pipe.c getrusage.c execve.c \
         nanosleep.c wait4.c setitimer.c getitimer.c getdents.c _getcwd.c \
         mkdir.c link.c symlink.c signame.c fchdir.c lutimes.c lchmod.c \
-        lchown.c mknod.c mkfifo.c mmap.c madvise.c munmap.c sync.c fsync.c
+        lchown.c mknod.c mkfifo.c mmap.c madvise.c munmap.c sync.c fsync.c \
+        rename.c vfork.c
 
 # Target specific sources.
 VPATH := $(VPATH):$(SRCPATH)/$(OS)/$(ARCH)

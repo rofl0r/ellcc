@@ -44,14 +44,10 @@ __RCSID("$NetBSD: wait.c,v 1.8 2003/08/07 16:43:00 agc Exp $");
 #include <sys/wait.h>
 #include <sys/resource.h>
 
-#ifdef __weak_alias
-__weak_alias(wait,_wait)
-#endif
-
+pid_t wait(int *istat) __weak_alias(_wait);
 
 pid_t
-wait(istat)
-	int *istat;
+_wait(int *istat)
 {
 	return (wait4(WAIT_ANY, istat, 0, (struct rusage *)0));
 }
