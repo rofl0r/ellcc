@@ -34,7 +34,7 @@ __RCSID("$NetBSD: strcspn.c,v 1.17 2009/07/30 21:42:06 dsl Exp $");
 #include <string.h>
 
 /* 64bit version is in strspn.c */
-#if !RICH || ULONG_MAX != 0xffffffffffffffffull
+#if ULONG_MAX != 0xffffffffffffffffull
 
 size_t
 strcspn(const char *s, const char *charset)
