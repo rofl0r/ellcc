@@ -161,10 +161,10 @@ towctrans(wint_t wc, wctrans_t charmap)
 	return (*p->towctrans)(wc);
 }
 
-__weak_alias(wcwidth,_wcwidth)
+int wcwidth(wchar_t wc) __weak_alias(_wcwidth);
 
 int
-wcwidth(wchar_t wc)
+_wcwidth(wchar_t wc)
 { 
 	int c;
 

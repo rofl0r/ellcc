@@ -46,14 +46,10 @@ __RCSID("$NetBSD: getbsize.c,v 1.16 2005/11/29 03:11:59 christos Exp $");
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __weak_alias
-__weak_alias(getbsize,_getbsize)
-#endif
+char *getbsize(int *headerlenp, long *blocksizep) __weak_alias(_getbsize);
 
 char *
-getbsize(headerlenp, blocksizep)
-	int *headerlenp;
-	long *blocksizep;
+_getbsize(int *headerlenp, long *blocksizep)
 {
 	static char header[20];
 	long n, max, mul, blocksize;

@@ -67,14 +67,16 @@ __RCSID("$NetBSD: vis.c,v 1.41 2009/11/23 10:08:47 plunky Exp $");
 #include <vis.h>
 #include <stdlib.h>
 
-#ifdef __weak_alias
-__weak_alias(strsvis,_strsvis)
-__weak_alias(strsvisx,_strsvisx)
-__weak_alias(strvis,_strvis)
-__weak_alias(strvisx,_strvisx)
-__weak_alias(svis,_svis)
-__weak_alias(vis,_vis)
-#endif
+int strsvis(char *dst, const char *csrc, int flag, const char *extra)
+    __weak_alias(_strsvis);
+int strsvisx(char *dst, const char *csrc, size_t len, int flag, const char *extra)
+    __weak_alias(_strsvisx);
+int strvis(char *dst, const char *src, int flag) __weak_alias(_strvis);
+int strvisx(char *dst, const char *src, size_t len, int flag)
+    __weak_alias(_strvisx);
+char *svis(char *dst, int c, int flag, int nextc, const char *extra)
+    __weak_alias(_svis);
+char *vis(char *dst, int c, int flag, int nextc) __weak_alias(_vis);
 
 #if !HAVE_VIS || !HAVE_SVIS
 #include <ctype.h>
@@ -262,7 +264,7 @@ getvisfun(int flag)
  *	  pointed to by `extra'
  */
 char *
-svis(char *dst, int c, int flag, int nextc, const char *extra)
+_svis(char *dst, int c, int flag, int nextc, const char *extra)
 {
 	char *nextra = NULL;
 	visfun_t f;
@@ -298,7 +300,7 @@ svis(char *dst, int c, int flag, int nextc, const char *extra)
  *	This is useful for encoding a block of data.
  */
 int
-strsvis(char *dst, const char *csrc, int flag, const char *extra)
+_strsvis(char *dst, const char *csrc, int flag, const char *extra)
 {
 	int c;
 	char *start;
@@ -324,7 +326,7 @@ strsvis(char *dst, const char *csrc, int flag, const char *extra)
 
 
 int
-strsvisx(char *dst, const char *csrc, size_t len, int flag, const char *extra)
+_strsvisx(char *dst, const char *csrc, size_t len, int flag, const char *extra)
 {
 	unsigned char c;
 	char *start;
@@ -357,7 +359,7 @@ strsvisx(char *dst, const char *csrc, size_t len, int flag, const char *extra)
  * vis - visually encode characters
  */
 char *
-vis(char *dst, int c, int flag, int nextc)
+_vis(char *dst, int c, int flag, int nextc)
 {
 	char *extra = NULL;
 	unsigned char uc = (unsigned char)c;
@@ -389,7 +391,7 @@ vis(char *dst, int c, int flag, int nextc)
  *	This is useful for encoding a block of data.
  */
 int
-strvis(char *dst, const char *src, int flag)
+_strvis(char *dst, const char *src, int flag)
 {
 	char *extra = NULL;
 	int rv;
@@ -406,7 +408,7 @@ strvis(char *dst, const char *src, int flag)
 
 
 int
-strvisx(char *dst, const char *src, size_t len, int flag)
+_strvisx(char *dst, const char *src, size_t len, int flag)
 {
 	char *extra = NULL;
 	int rv;
