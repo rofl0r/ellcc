@@ -40,7 +40,7 @@
 
 // RICH: Save signal/restore mask.
 
-// RICH: #include "assym.h"
+#include "machine/mcontext.h"
 
 // RICH: #include "SYS.h"
 // RICH: Added these:
@@ -66,32 +66,41 @@
  * The previous signal state is NOT restored.
  */
 
-	.set	noreorder
 
+#if defined(__mips_n32) || defined(__mips_n64)
+#define REGSIZ 8
+#else
+#define REGSIZ 4
+#endif
+
+#define OFFSETOF(reg) (_REG_ ## reg * REGSIZ)
+
+	.set	noreorder
 LEAF(setjmp)
 	REG_PROLOGUE
 	REG_LI	v0, 0xACEDBADE			# sigcontext magic number
-	REG_S	ra, _OFFSETOF_SC_PC(a0)		# sc_pc = return address
-	REG_S	v0, _OFFSETOF_SC_REGS(a0)	#   saved in sc_regs[0]
-	REG_S	s0, _OFFSETOF_SC_REGS_S0(a0)
-	REG_S	s1, _OFFSETOF_SC_REGS_S1(a0)
-	REG_S	s2, _OFFSETOF_SC_REGS_S2(a0)
-	REG_S	s3, _OFFSETOF_SC_REGS_S3(a0)
-	REG_S	s4, _OFFSETOF_SC_REGS_S4(a0)
-	REG_S	s5, _OFFSETOF_SC_REGS_S5(a0)
-	REG_S	s6, _OFFSETOF_SC_REGS_S6(a0)
-	REG_S	s7, _OFFSETOF_SC_REGS_S7(a0)
-	REG_S	sp, _OFFSETOF_SC_REGS_SP(a0)
-	REG_S	s8, _OFFSETOF_SC_REGS_S8(a0)
+	REG_S	ra, OFFSETOF(EPC)(a0)		# sc_pc = return address
+	REG_S	v0, OFFSETOF(R0)(a0)	        # saved on top of the zero register,
+	REG_S	s0, OFFSETOF(S0)(a0)
+	REG_S	s1, OFFSETOF(S1)(a0)
+	REG_S	s2, OFFSETOF(S2)(a0)
+	REG_S	s3, OFFSETOF(S3)(a0)
+	REG_S	s4, OFFSETOF(S4)(a0)
+	REG_S	s5, OFFSETOF(S5)(a0)
+	REG_S	s6, OFFSETOF(S6)(a0)
+	REG_S	s7, OFFSETOF(S7)(a0)
+	REG_S	sp, OFFSETOF(SP)(a0)
+	REG_S	s8, OFFSETOF(S8)(a0)
 #if defined(__mips_n32) || defined(__mips_n64)
-	REG_S	gp, _OFFSETOF_SC_REGS_GP(a0)	# newabi gp is callee-saved
+	REG_S	gp, OFFSETOF(GP)(a0)	        # newabi gp is callee-saved
 #endif
 	/*
 	 * In N32, FP registers F20, F22, F24, F26, F28, F30 are callee-saved.
 	 * In N64, FP registers F23 .. F31 are callee-saved.
 	 * In O32, FP registers F20 .. F23 are callee-saved.
 	 */
-#ifndef SOFTFLOAT_FOR_GCC
+#if RICH        // Need to define _SOFT_FLOAT appropriately in the front end.
+#ifndef _SOFT_FLOAT
 	cfc1	v0, $31				# too bad cant check if FP used
 	INT_S	v0, _OFFSETOF_SC_FPREGS_FCSR(a0)
 #if defined(__mips_n64) || defined(__mips_n32)
@@ -114,7 +123,9 @@ LEAF(setjmp)
 	FP_S	$f29, _OFFSETOF_SC_FPREGS_F29(a0)
 	FP_S	$f31, _OFFSETOF_SC_FPREGS_F31(a0)
 #endif
-#endif	/* SOFTFLOAT_FOR_GCC */
+#endif	/* _SOFT_FLOAT */
+#endif
+
 	REG_EPILOGUE
 
 	j	ra
@@ -127,27 +138,28 @@ LEAF(longjmp)
 	SAVE_GP(CALLFRAME_GP)
 
 	REG_PROLOGUE
-	REG_L		v0, _OFFSETOF_SC_REGS(a0)	# get magic number
-	REG_L		ra, _OFFSETOF_SC_PC(a0)
+	REG_L		v0, OFFSETOF(R0)(a0)	# get magic number
+	REG_L		ra, OFFSETOF(EPC)(a0)
 	REG_LI		t0, 0xACEDBADE
 	bne		v0, t0, botch		# jump if error
 	PTR_ADDU	sp, sp, CALLFRAME_SIZ	# does not matter, sanity
-	REG_S		a1, _OFFSETOF_SC_REGS_V0(a0)	# save return value
-	REG_L		s0, _OFFSETOF_SC_REGS_S0(a0)
-	REG_L		s1, _OFFSETOF_SC_REGS_S1(a0)
-	REG_L		s2, _OFFSETOF_SC_REGS_S2(a0)
-	REG_L		s3, _OFFSETOF_SC_REGS_S3(a0)
-	REG_L		s4, _OFFSETOF_SC_REGS_S4(a0)
-	REG_L		s5, _OFFSETOF_SC_REGS_S5(a0)
-	REG_L		s6, _OFFSETOF_SC_REGS_S6(a0)
-	REG_L		s7, _OFFSETOF_SC_REGS_S7(a0)
+	REG_S		a1, OFFSETOF(V0)(a0)	# save return value
+	REG_L		s0, OFFSETOF(S0)(a0)
+	REG_L		s1, OFFSETOF(S1)(a0)
+	REG_L		s2, OFFSETOF(S2)(a0)
+	REG_L		s3, OFFSETOF(S3)(a0)
+	REG_L		s4, OFFSETOF(S4)(a0)
+	REG_L		s5, OFFSETOF(S5)(a0)
+	REG_L		s6, OFFSETOF(S6)(a0)
+	REG_L		s7, OFFSETOF(S7)(a0)
 #if defined(__mips_n32) || defined(__mips_n64)
-	REG_L		gp, _OFFSETOF_SC_REGS_GP(a0)
+	REG_L		gp, OFFSETOF(GP)(a0)
 #endif
+	REG_L		sp, OFFSETOF(SP)(a0)
+	REG_L		s8, OFFSETOF(S8)(a0)
+#if RICH        // Need to define _SOFT_FLOAT appropriately in the front end.
+#ifndef _SOFT_FLOAT
 	# get fpu status
-	REG_L		sp, _OFFSETOF_SC_REGS_SP(a0)
-	REG_L		s8, _OFFSETOF_SC_REGS_S8(a0)
-#ifndef SOFTFLOAT_FOR_GCC
 	INT_L		v0, _OFFSETOF_SC_FPREGS_FCSR(a0)
 	ctc1		v0, $31
 	/*
@@ -175,7 +187,8 @@ LEAF(longjmp)
 	FP_L	$f29, _OFFSETOF_SC_FPREGS_F29(a0)
 	FP_L	$f31, _OFFSETOF_SC_FPREGS_F31(a0)
 #endif
-#endif	/* SOFTFLOAT_FOR_GCC */
+#endif	/* _SOFT_FLOAT */
+#endif
 
 	REG_EPILOGUE
 	move	v0, a1			# get return value in 1st arg
