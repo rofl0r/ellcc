@@ -172,7 +172,7 @@ typedef	int32_t		off_t;		/* file offset */
 #define	off_t		int32_t
 #endif
 
-typedef	uint16_t	pid_t;		/* process id */
+typedef	int32_t	        pid_t;		/* process id */
 typedef int32_t		lwpid_t;	/* LWP id */
 typedef uint64_t	rlim_t;		/* resource limit */
 typedef	int32_t		segsz_t;	/* segment size */

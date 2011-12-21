@@ -44,7 +44,7 @@
 #include <sys/featuretest.h>
 #include <sys/sigtypes.h>
 
-#define _NSIG		65
+#define _NSIG		32
 
 #if defined(_NETBSD_SOURCE)
 #define NSIG _NSIG
@@ -62,6 +62,7 @@
 #define	SIGFPE		8	/* floating point exception */
 #define	SIGKILL		9	/* kill (cannot be caught or ignored) */
 #define	SIGUSR1		10	/* user defined signal 1 */
+#define SIGINFO         SIGUSR1 /* For NetBSD compatability */
 #define	SIGSEGV		11	/* segmentation violation */
 #define	SIGUSR2		12	/* user defined signal 2 */
 #define	SIGPIPE		13	/* write on a pipe with no one to read it */
@@ -87,7 +88,7 @@
 #define	SIGSYS		31	/* bad argument to system call */
 
 #define	SIGRTMIN	32
-#define	SIGRTMAX	(_NSIG - 1)
+#define	SIGRTMAX	_NSIG
 
 #ifndef _KERNEL
 #include <sys/cdefs.h>

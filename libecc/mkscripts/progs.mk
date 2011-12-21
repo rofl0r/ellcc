@@ -48,13 +48,13 @@ $(PROGRAMS):
 	@echo build $@
 	@mkdir -p $@
 	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
-	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
-	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
@@ -65,13 +65,13 @@ $(PROGRAMS:%=%.install):
 	@echo install $(@:%.install=%)
 	@mkdir -p $(@:%.install=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
-	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    -C $(@:%.install=%) \
 	    install -f ../$(DIRPATH)/$(@:%.install=%)/Makefile ; \
 	else \
 	  $(MAKE) VPATH=$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    install -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
@@ -81,13 +81,13 @@ $(PROGRAMS:%=%.clean):
 	@echo clean $(@:%.clean=%)
 	@mkdir -p $(@:%.clean=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.clean=%)/Makefile ] ; then \
-	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ CFLAGS="$(CFLAGS)" \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	  $(MAKE) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    -C $(@:%.clean=%) \
 	    clean -f ../$(DIRPATH)/$(@:%.clean=%)/Makefile ; \
 	else \
 	  $(MAKE) -C $(@:%.clean=%) \
-	    ELLCC="$(ELLCC)" LDFLAGS="$(LDFLAGS)" LDEXTRA="$(LDEXTRA)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    clean -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 

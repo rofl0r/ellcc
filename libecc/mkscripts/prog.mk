@@ -1,4 +1,5 @@
 SRCS := $(shell cd $(VPATH); echo *.c *.cxx *.y *.l) 
+-include $(VPATH)/sources
 SRCS := $(SRCS:*.%=)
 BASENAMES := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)
@@ -16,12 +17,12 @@ endif
 
 .SUFFIXES: .c .cxx .o
 .c.o:
-	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS) $<
+	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS) $(XCFLAGS) $<
 .cxx.o:
-	$(CXX) $(MCPU) -c $(CFLAGS) $<
+	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXLAGS) $<
 
 $(PROG): $(OBJS)
-	$(CC) -o $(PROG) $(LDFLAGS) $(OBJS) $(LDEXTRA)
+	$(CC) -o $(PROG) $(LDFLAGS) $(XLDFLAGS) $(OBJS) $(LDEXTRA) $(XLDEXTRA)
 
 clean:
 	rm -fr *.o

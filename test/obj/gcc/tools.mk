@@ -3,15 +3,15 @@
 XCC = gcc
 # ARCH should be one of arm, i386, microblaze, mips, nios2, ppc64, ppc, sparc, or x86_64.
 ARCH := $(shell uname -m)
-CFLAGS = -std=gnu99 -nostdinc
+XCFLAGS = -std=gnu99 -nostdinc
 # Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 XCCINCDIR = $(shell $(XCC) -print-search-dirs | grep install: | sed  "s/install: //")include
-CFLAGS += -I$(XCCINCDIR)
+XCFLAGS += -I$(XCCINCDIR)
 DOFF = ../../../../../../libecc
-CFLAGS += -I$(DOFF)/usrinclude/$(ARCH)/$(OS)
-CFLAGS += -I$(DOFF)/usrinclude/$(ARCH) 
-CFLAGS += -I$(DOFF)/usrinclude/$(OS)
-CFLAGS += -I$(DOFF)/usrinclude
+XCFLAGS += -I$(DOFF)/usrinclude/$(ARCH)/$(OS)
+XCFLAGS += -I$(DOFF)/usrinclude/$(ARCH) 
+XCFLAGS += -I$(DOFF)/usrinclude/$(OS)
+XCFLAGS += -I$(DOFF)/usrinclude
 OSLIBDIR = $(DOFF)/lib/$(XCC)/$(OS)
-LDFLAGS += -nostdlib $(OSLIBDIR)/crt0.o $(OSLIBDIR)/crtbegin.o
-LDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lc -lcompiler-rt $(OSLIBDIR)/crtend.o
+XLDFLAGS += -nostdlib $(OSLIBDIR)/crt0.o $(OSLIBDIR)/crtbegin.o
+XLDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lc -lcompiler-rt $(OSLIBDIR)/crtend.o

@@ -157,6 +157,7 @@ typedef	uint16_t	dev_t;		/* device number */
 typedef	uint32_t	fixpt_t;	/* fixed point number */
 
 typedef	uint16_t	gid_t;		/* group id */
+#define gid_t           uint16_t
 
 typedef	int		idtype_t;	/* type of the id */
 typedef	uint16_t	id_t;		/* group id, process id or user id */
@@ -172,13 +173,14 @@ typedef	int32_t	off_t;		        /* file offset */
 #define	off_t		int32_t
 #endif
 
-typedef	uint16_t	pid_t;		/* process id */
+typedef	int32_t	        pid_t;		/* process id */
 typedef int32_t		lwpid_t;	/* LWP id */
 typedef uint64_t	rlim_t;		/* resource limit */
 typedef	int32_t		segsz_t;	/* segment size */
 typedef	int32_t		swblk_t;	/* swap offset */
 
 typedef	uint16_t	uid_t;		/* user id */
+#define uid_t           uint16_t
 
 typedef int		mqd_t;
 

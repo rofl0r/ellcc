@@ -157,6 +157,7 @@ typedef	uint64_t	dev_t;		/* device number */
 typedef	uint32_t	fixpt_t;	/* fixed point number */
 
 typedef	uint32_t	gid_t;		/* group id */
+#define gid_t           uint32_t
 
 typedef	int		idtype_t;	/* type of the id */
 typedef	uint32_t	id_t;		/* group id, process id or user id */
@@ -179,6 +180,7 @@ typedef	int32_t		segsz_t;	/* segment size */
 typedef	int32_t		swblk_t;	/* swap offset */
 
 typedef	uint32_t	uid_t;		/* user id */
+#define uid_t           uint32_t
 
 typedef int		mqd_t;
 

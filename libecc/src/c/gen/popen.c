@@ -58,10 +58,8 @@ __RCSID("$NetBSD: popen.c,v 1.30 2010/11/14 18:11:42 tron Exp $");
 #include "env.h"
 #include "reentrant.h"
 
-#ifdef __weak_alias
-__weak_alias(popen,_popen)
-__weak_alias(pclose,_pclose)
-#endif
+FILE *popen(const char *command, const char *type) __weak_alias(_popen);
+int pclose(FILE *iop) __weak_alias(_pclose);
 
 static struct pid {
 	struct pid *next;
@@ -77,7 +75,7 @@ static rwlock_t pidlist_lock = RWLOCK_INITIALIZER;
 #endif
 
 FILE *
-popen(const char *command, const char *type)
+_popen(const char *command, const char *type)
 {
 	struct pid *cur, *old;
 	FILE *iop;
@@ -109,13 +107,13 @@ popen(const char *command, const char *type)
 		return (NULL);
 	}
 
-	(void)rwlock_rdlock(&pidlist_lock);
+	rwlock_rdlock(&pidlist_lock);
 	(void)__readlockenv();
 	switch (pid = vfork()) {
 	case -1:			/* Error. */
 		serrno = errno;
 		(void)__unlockenv();
-		(void)rwlock_unlock(&pidlist_lock);
+		rwlock_unlock(&pidlist_lock);
 		free(cur);
 		(void)close(pdes[0]);
 		(void)close(pdes[1]);
@@ -175,7 +173,7 @@ popen(const char *command, const char *type)
 	cur->pid =  pid;
 	cur->next = pidlist;
 	pidlist = cur;
-	(void)rwlock_unlock(&pidlist_lock);
+	rwlock_unlock(&pidlist_lock);
 
 	return (iop);
 }
@@ -186,8 +184,7 @@ popen(const char *command, const char *type)
  *	if already `pclosed', or waitpid returns an error.
  */
 int
-pclose(iop)
-	FILE *iop;
+_pclose(FILE *iop)
 {
 	struct pid *cur, *last;
 	int pstat;
@@ -202,7 +199,7 @@ pclose(iop)
 		if (cur->fp == iop)
 			break;
 	if (cur == NULL) {
-		(void)rwlock_unlock(&pidlist_lock);
+		rwlock_unlock(&pidlist_lock);
 		return (-1);
 	}
 
@@ -214,7 +211,7 @@ pclose(iop)
 	else
 		last->next = cur->next;
 
-	(void)rwlock_unlock(&pidlist_lock);
+	rwlock_unlock(&pidlist_lock);
 
 	do {
 		pid = waitpid(cur->pid, &pstat, 0);

@@ -3,13 +3,15 @@ CFLAGS += -I$(SRCPATH)/c/include
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
-        putchar.c merge.c random.c atexit.c getopt.c strtoimax.c strtoll.c strcoll.c
+        putchar.c merge.c random.c atexit.c getopt.c strtoimax.c strtoll.c strcoll.c atol.c \
+        bsearch.c system.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
         fputc.c printf.c vfprintf.c fprintf.c fwrite.c fgetc.c remove.c fclose.c ungetc.c \
         fread.c fopen.c fdopen.c rget.c refill.c rewind.c fseek.c flags.c perror.c fseeko.c \
-        snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c mkstemp.c asprintf.c gettemp.c
+        snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c mkstemp.c asprintf.c gettemp.c \
+        ftell.c setbuffer.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
@@ -26,7 +28,7 @@ SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee
         bswap16.c bswap32.c bswap64.c fpgetround.c getcwd.c isnanf_ieee754.c isinff_ieee754.c \
         fpclassifyl_ieee754.c fpclassifyd_ieee754.c fpclassifyf_ieee754.c \
         warn.c warnx.c vwarn.c vwarnx.c _warn.c err.c errx.c verr.c verrx.c _err.c \
-        fts.c setmode.c pwcache.c wait.c waitpid.c getbsize.c humanize_number.c vis.c
+        fts.c setmode.c pwcache.c wait.c waitpid.c getbsize.c humanize_number.c vis.c popen.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \

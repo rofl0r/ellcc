@@ -63,7 +63,6 @@ __RCSID("$NetBSD: ls.c,v 1.67 2010/07/08 20:43:34 rmind Exp $");
 #include <termios.h>
 #include <pwd.h>
 #include <grp.h>
-#include <util.h>
 
 #include "ls.h"
 #include "extern.h"
