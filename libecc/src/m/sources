@@ -1,0 +1,2 @@
+VPATH := $(VPATH):$(SRCPATH)/m/src
+SRCS += s_floor.c
