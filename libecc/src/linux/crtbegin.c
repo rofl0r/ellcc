@@ -26,6 +26,7 @@
  */
 
 #include <sys/param.h>
+#include <stdlib.h>
 
 typedef void (*fptr)(void);
 
@@ -38,9 +39,9 @@ do_ctors(void)
     fptr *fpp;
 
     for(fpp = ctor_list + 1;  *fpp != 0;  ++fpp)
-    ;
+        ;
     while(--fpp > ctor_list)
-    (**fpp)();
+        (**fpp)();
 }
 
 static void
@@ -49,7 +50,7 @@ do_dtors(void)
     fptr *fpp;
 
     for(fpp = dtor_list + 1;  *fpp != 0;  ++fpp)
-    (**fpp)();
+        (**fpp)();
 }
 
 /*
@@ -64,12 +65,6 @@ static void (*p_do_dtors)(void) = do_dtors;
 
 extern void _init(void) __attribute__((section(".init")));
 
-void
-_init(void)
-{
-    (*p_do_ctors)();
-}
-
 extern void _fini(void) __attribute__((section(".fini")));
 
 void
@@ -77,3 +72,11 @@ _fini(void)
 {
     (*p_do_dtors)();
 }
+
+void
+_init(void)
+{
+    (*p_do_ctors)();
+    atexit(_fini);
+}
+

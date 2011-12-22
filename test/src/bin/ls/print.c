@@ -55,7 +55,6 @@ __RCSID("$NetBSD: print.c,v 1.48 2010/08/18 02:53:54 enami Exp $");
 #include <time.h>
 #include <tzfile.h>
 #include <unistd.h>
-#include <util.h>
 
 #include "ls.h"
 #include "extern.h"

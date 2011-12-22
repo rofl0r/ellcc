@@ -3,6 +3,8 @@ SRCS := $(shell cd $(VPATH); echo *.c *.cxx *.y *.l)
 SRCS := $(SRCS:*.%=)
 BASENAMES := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)
+DEPENDSRCS := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
+DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
 CFLAGS += -Werror -MD -MP -O1
 
@@ -28,3 +30,5 @@ clean:
 	rm -fr *.o
 
 install:
+
+-include $(DEPENDFILES) ""

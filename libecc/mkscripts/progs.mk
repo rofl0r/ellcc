@@ -5,6 +5,14 @@ OSDIR = /$(OS)
 
 # The target processor.
 TARGET = $(shell basename `cd ../..; pwd`)
+# Check for code coverage.
+COV := $(shell basename $(TARGET) .cov)
+ifneq ($(TARGET),$(COV))
+    TARGET := $(COV)
+    XCFLAGS += -fprofile-arcs -ftest-coverage
+    XCXXFLAGS += -fprofile-arcs -ftest-coverage
+    XLDFLAGS += -coverage
+endif
 
 # Determine the architecture.
 ifneq ($(filter arm%, $(TARGET)),)

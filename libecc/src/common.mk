@@ -1,5 +1,16 @@
 # The target processor.
-TARGET = $(shell basename `cd $(LEVEL); pwd`)
+TARGET := $(shell basename `cd $(LEVEL); pwd`)
+# Check for code coverage.
+COV := $(shell basename $(TARGET) .cov)
+ifneq ($(TARGET),$(COV))
+    TARGET := $(COV)
+    CFLAGS += -fprofile-arcs -ftest-coverage
+    CXXFLAGS += -fprofile-arcs -ftest-coverage
+    LDFLAGS += -coverage
+    COV := .cov
+else
+    COV :=
+endif
 
 # Determine the architecture.
 ifneq ($(filter arm%, $(TARGET)),)
@@ -30,7 +41,7 @@ LIB = $(shell basename `pwd`)
 LIBNAME = lib$(LIB).a
 
 # The target library directory.
-LIBDIR  = $(LEVEL)/../../lib/$(TARGET)$(OSDIR)
+LIBDIR  = $(LEVEL)/../../lib/$(TARGET)$(COV)$(OSDIR)
 
 ifeq ($(XCC),)
   # The build compiler.
@@ -98,4 +109,3 @@ veryclean: clean
 	rm -f $(LIBNAME)
 
 -include $(DEPENDFILES) ""
-

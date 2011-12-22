@@ -146,8 +146,8 @@ void llvm_gcda_increment_indirect_counter(uint32_t *predecessor,
     ++*counter;
 #ifdef DEBUG_GCDAPROFILING
   else
-    printf("llvmgcda: increment_indirect_counter counters=%x, pred=%u\n",
-           state_table_row, *predecessor);
+    printf("llvmgcda: increment_indirect_counter counters=%p, pred=%u\n",
+           counters, *predecessor);
 #endif
 }
 
