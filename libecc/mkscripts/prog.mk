@@ -27,7 +27,7 @@ $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $(LDFLAGS) $(XLDFLAGS) $(OBJS) $(LDEXTRA) $(XLDEXTRA)
 
 clean:
-	rm -fr *.o
+	rm -fr *.o *.d *.gcda *.gcno $(PROG)
 
 install:
 

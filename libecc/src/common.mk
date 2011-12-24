@@ -103,7 +103,7 @@ install: all
 	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
 
 clean:
-	rm -f *.o *.d
+	rm -f *.o *.d *.gcda *.gcno
 
 veryclean: clean
 	rm -f $(LIBNAME)
