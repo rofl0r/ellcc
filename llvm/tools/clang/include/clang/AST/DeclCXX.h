@@ -104,6 +104,7 @@ namespace clang {
 /// Also note that this class has nothing to do with so-called
 /// "access declarations" (C++98 11.3 [class.access.dcl]).
 class AccessSpecDecl : public Decl {
+  virtual void anchor();
   /// ColonLoc - The location of the ':'.
   SourceLocation ColonLoc;
 
@@ -365,9 +366,33 @@ class CXXRecordDecl : public RecordDecl {
     bool HasTrivialDefaultConstructor : 1;
 
     /// HasConstexprNonCopyMoveConstructor - True when this class has at least
-    /// one constexpr constructor which is neither the copy nor move
-    /// constructor.
+    /// one user-declared constexpr constructor which is neither the copy nor
+    /// move constructor.
     bool HasConstexprNonCopyMoveConstructor : 1;
+
+    /// DefaultedDefaultConstructorIsConstexpr - True if a defaulted default
+    /// constructor for this class would be constexpr.
+    bool DefaultedDefaultConstructorIsConstexpr : 1;
+
+    /// DefaultedCopyConstructorIsConstexpr - True if a defaulted copy
+    /// constructor for this class would be constexpr.
+    bool DefaultedCopyConstructorIsConstexpr : 1;
+
+    /// DefaultedMoveConstructorIsConstexpr - True if a defaulted move
+    /// constructor for this class would be constexpr.
+    bool DefaultedMoveConstructorIsConstexpr : 1;
+
+    /// HasConstexprDefaultConstructor - True if this class has a constexpr
+    /// default constructor (either user-declared or implicitly declared).
+    bool HasConstexprDefaultConstructor : 1;
+
+    /// HasConstexprCopyConstructor - True if this class has a constexpr copy
+    /// constructor (either user-declared or implicitly declared).
+    bool HasConstexprCopyConstructor : 1;
+
+    /// HasConstexprMoveConstructor - True if this class has a constexpr move
+    /// constructor (either user-declared or implicitly declared).
+    bool HasConstexprMoveConstructor : 1;
 
     /// HasTrivialCopyConstructor - True when this class has a trivial copy
     /// constructor.
@@ -945,19 +970,62 @@ public:
   /// mutable field.
   bool hasMutableFields() const { return data().HasMutableFields; }
 
-  // hasTrivialDefaultConstructor - Whether this class has a trivial default
-  // constructor
-  // (C++0x [class.ctor]p5)
+  /// hasTrivialDefaultConstructor - Whether this class has a trivial default
+  /// constructor (C++11 [class.ctor]p5).
   bool hasTrivialDefaultConstructor() const {
     return data().HasTrivialDefaultConstructor &&
            (!data().UserDeclaredConstructor ||
              data().DeclaredDefaultConstructor);
   }
 
-  // hasConstexprNonCopyMoveConstructor - Whether this class has at least one
-  // constexpr constructor other than the copy or move constructors.
+  /// hasConstexprNonCopyMoveConstructor - Whether this class has at least one
+  /// constexpr constructor other than the copy or move constructors.
   bool hasConstexprNonCopyMoveConstructor() const {
-    return data().HasConstexprNonCopyMoveConstructor;
+    return data().HasConstexprNonCopyMoveConstructor ||
+           (!hasUserDeclaredConstructor() &&
+            defaultedDefaultConstructorIsConstexpr());
+  }
+
+  /// defaultedDefaultConstructorIsConstexpr - Whether a defaulted default
+  /// constructor for this class would be constexpr.
+  bool defaultedDefaultConstructorIsConstexpr() const {
+    return data().DefaultedDefaultConstructorIsConstexpr;
+  }
+
+  /// defaultedCopyConstructorIsConstexpr - Whether a defaulted copy
+  /// constructor for this class would be constexpr.
+  bool defaultedCopyConstructorIsConstexpr() const {
+    return data().DefaultedCopyConstructorIsConstexpr;
+  }
+
+  /// defaultedMoveConstructorIsConstexpr - Whether a defaulted move
+  /// constructor for this class would be constexpr.
+  bool defaultedMoveConstructorIsConstexpr() const {
+    return data().DefaultedMoveConstructorIsConstexpr;
+  }
+
+  /// hasConstexprDefaultConstructor - Whether this class has a constexpr
+  /// default constructor.
+  bool hasConstexprDefaultConstructor() const {
+    return data().HasConstexprDefaultConstructor ||
+           (!data().UserDeclaredConstructor &&
+            data().DefaultedDefaultConstructorIsConstexpr && isLiteral());
+  }
+
+  /// hasConstexprCopyConstructor - Whether this class has a constexpr copy
+  /// constructor.
+  bool hasConstexprCopyConstructor() const {
+    return data().HasConstexprCopyConstructor ||
+           (!data().DeclaredCopyConstructor &&
+            data().DefaultedCopyConstructorIsConstexpr && isLiteral());
+  }
+
+  /// hasConstexprMoveConstructor - Whether this class has a constexpr move
+  /// constructor.
+  bool hasConstexprMoveConstructor() const {
+    return data().HasConstexprMoveConstructor ||
+           (needsImplicitMoveConstructor() &&
+            data().DefaultedMoveConstructorIsConstexpr && isLiteral());
   }
 
   // hasTrivialCopyConstructor - Whether this class has a trivial copy
@@ -1316,6 +1384,7 @@ public:
 /// CXXMethodDecl - Represents a static or instance method of a
 /// struct/union/class.
 class CXXMethodDecl : public FunctionDecl {
+  virtual void anchor();
 protected:
   CXXMethodDecl(Kind DK, CXXRecordDecl *RD, SourceLocation StartLoc,
                 const DeclarationNameInfo &NameInfo,
@@ -1325,9 +1394,9 @@ protected:
     : FunctionDecl(DK, RD, StartLoc, NameInfo, T, TInfo,
                    (isStatic ? SC_Static : SC_None),
                    SCAsWritten, isInline, isConstexpr) {
-      if (EndLocation.isValid())
-        setRangeEnd(EndLocation);
-    }
+    if (EndLocation.isValid())
+      setRangeEnd(EndLocation);
+  }
 
 public:
   static CXXMethodDecl *Create(ASTContext &C, CXXRecordDecl *RD,
@@ -1690,6 +1759,7 @@ public:
 /// };
 /// @endcode
 class CXXConstructorDecl : public CXXMethodDecl {
+  virtual void anchor();
   /// IsExplicitSpecified - Whether this constructor declaration has the
   /// 'explicit' keyword specified.
   bool IsExplicitSpecified : 1;
@@ -1918,6 +1988,7 @@ public:
 /// };
 /// @endcode
 class CXXDestructorDecl : public CXXMethodDecl {
+  virtual void anchor();
   /// ImplicitlyDefined - Whether this destructor was implicitly
   /// defined by the compiler. When false, the destructor was defined
   /// by the user. In C++03, this flag will have the same value as
@@ -1989,6 +2060,7 @@ public:
 /// };
 /// @endcode
 class CXXConversionDecl : public CXXMethodDecl {
+  virtual void anchor();
   /// IsExplicitSpecified - Whether this conversion function declaration is
   /// marked "explicit", meaning that it can only be applied when the user
   /// explicitly wrote a cast. This is a C++0x feature.
@@ -2045,6 +2117,7 @@ public:
 ///   extern "C" void foo();
 ///
 class LinkageSpecDecl : public Decl, public DeclContext {
+  virtual void anchor();
 public:
   /// LanguageIDs - Used to represent the language in a linkage
   /// specification.  The values are part of the serialization abi for
@@ -2117,9 +2190,10 @@ public:
 ///    using namespace std;
 ///
 // NB: UsingDirectiveDecl should be Decl not NamedDecl, but we provide
-// artificial name, for all using-directives in order to store
+// artificial names for all using-directives in order to store
 // them in DeclContext effectively.
 class UsingDirectiveDecl : public NamedDecl {
+  virtual void anchor();
   /// \brief The location of the "using" keyword.
   SourceLocation UsingLoc;
 
@@ -2219,6 +2293,8 @@ public:
 /// namespace Foo = Bar;
 /// @endcode
 class NamespaceAliasDecl : public NamedDecl {
+  virtual void anchor();
+
   /// \brief The location of the "namespace" keyword.
   SourceLocation NamespaceLoc;
 
@@ -2308,6 +2384,8 @@ public:
 /// }
 ///
 class UsingShadowDecl : public NamedDecl {
+  virtual void anchor();
+
   /// The referenced declaration.
   NamedDecl *Underlying;
 
@@ -2367,6 +2445,8 @@ public:
 /// UsingDecl - Represents a C++ using-declaration. For example:
 ///    using someNameSpace::someIdentifier;
 class UsingDecl : public NamedDecl {
+  virtual void anchor();
+
   /// \brief The source location of the "using" location itself.
   SourceLocation UsingLocation;
 
@@ -2497,6 +2577,8 @@ public:
 ///   using Base<T>::foo;
 /// };
 class UnresolvedUsingValueDecl : public ValueDecl {
+  virtual void anchor();
+
   /// \brief The source location of the 'using' keyword
   SourceLocation UsingLocation;
 
@@ -2564,6 +2646,8 @@ public:
 /// The type associated with a unresolved using typename decl is
 /// currently always a typename type.
 class UnresolvedUsingTypenameDecl : public TypeDecl {
+  virtual void anchor();
+
   /// \brief The source location of the 'using' keyword
   SourceLocation UsingLocation;
 
@@ -2612,6 +2696,7 @@ public:
 
 /// StaticAssertDecl - Represents a C++0x static_assert declaration.
 class StaticAssertDecl : public Decl {
+  virtual void anchor();
   Expr *AssertExpr;
   StringLiteral *Message;
   SourceLocation RParenLoc;

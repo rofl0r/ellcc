@@ -297,10 +297,15 @@ public:
   const ProgramState* addTaint(SymbolRef S,
                                TaintTagType Kind = TaintTagGeneric) const;
 
+  /// Create a new state in which the region symbol is marked as tainted.
+  const ProgramState* addTaint(const MemRegion *R,
+                               TaintTagType Kind = TaintTagGeneric) const;
+
   /// Check if the statement is tainted in the current state.
   bool isTainted(const Stmt *S, TaintTagType Kind = TaintTagGeneric) const;
   bool isTainted(SVal V, TaintTagType Kind = TaintTagGeneric) const;
   bool isTainted(const SymExpr* Sym, TaintTagType Kind = TaintTagGeneric) const;
+  bool isTainted(const MemRegion *Reg, TaintTagType Kind=TaintTagGeneric) const;
 
   //==---------------------------------------------------------------------==//
   // Accessing the Generic Data Map (GDM).
@@ -356,12 +361,14 @@ public:
   }
 
   // Pretty-printing.
-  void print(raw_ostream &Out, CFG &C, const char *nl = "\n",
+  void print(raw_ostream &Out, CFG *C, const char *nl = "\n",
              const char *sep = "") const;
 
-  void printStdErr(CFG &C) const;
+  void dump(CFG &C) const;
 
   void printDOT(raw_ostream &Out, CFG &C) const;
+
+  void dump() const;
 
 private:
   /// Increments the number of times this state is referenced by ExplodeNodes.
@@ -799,6 +806,7 @@ CB ProgramState::scanReachableSymbols(const MemRegion * const *beg,
 /// A Utility class that allows to visit the reachable symbols using a custom
 /// SymbolVisitor.
 class ScanReachableSymbols : public SubRegionMap::Visitor  {
+  virtual void anchor();
   typedef llvm::DenseMap<const void*, unsigned> VisitedItems;
 
   VisitedItems visited;

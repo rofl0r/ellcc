@@ -74,9 +74,6 @@ Preprocessor::Preprocessor(DiagnosticsEngine &diags, LangOptions &opts,
 
 Preprocessor::~Preprocessor() {
   assert(BacktrackPositions.empty() && "EnableBacktrack/Backtrack imbalance!");
-  assert(((MacroExpandingLexersStack.empty() && MacroExpandedTokens.empty()) ||
-          isCodeCompletionReached()) &&
-         "Preprocessor::HandleEndOfTokenLexer should have cleared those");
 
   while (!IncludeMacroStack.empty()) {
     delete IncludeMacroStack.back().TheLexer;
@@ -372,7 +369,12 @@ void Preprocessor::CreateString(const char *Buf, unsigned Len, Token &Tok,
     Tok.setLiteralData(DestPtr);
 }
 
-
+Module *Preprocessor::getCurrentModule() {
+  if (getLangOptions().CurrentModule.empty())
+    return 0;
+  
+  return getHeaderSearchInfo().getModule(getLangOptions().CurrentModule);
+}
 
 //===----------------------------------------------------------------------===//
 // Preprocessor Initialization Methods
@@ -549,6 +551,8 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
   if (II.getTokenID() == tok::kw___import_module__ &&
       !InMacroArgs && !DisableMacroExpansion) {
     ModuleImportLoc = Identifier.getLocation();
+    ModuleImportPath.clear();
+    ModuleImportExpectsIdentifier = true;
     CurLexerKind = CLK_LexAfterModuleImport;
   }
 }
@@ -570,17 +574,33 @@ void Preprocessor::LexAfterModuleImport(Token &Result) {
 
   // The token sequence 
   //
-  //   __import_module__ identifier
+  //   __import_module__ identifier (. identifier)*
   //
   // indicates a module import directive. We already saw the __import_module__
-  // keyword, so now we're looking for the identifier.
-  if (Result.getKind() != tok::identifier)
+  // keyword, so now we're looking for the identifiers.
+  if (ModuleImportExpectsIdentifier && Result.getKind() == tok::identifier) {
+    // We expected to see an identifier here, and we did; continue handling
+    // identifiers.
+    ModuleImportPath.push_back(std::make_pair(Result.getIdentifierInfo(),
+                                              Result.getLocation()));
+    ModuleImportExpectsIdentifier = false;
+    CurLexerKind = CLK_LexAfterModuleImport;
     return;
+  }
   
-  // Load the module.
-  (void)TheModuleLoader.loadModule(ModuleImportLoc,
-                                   *Result.getIdentifierInfo(), 
-                                   Result.getLocation());
+  // If we're expecting a '.' or a ';', and we got a '.', then wait until we
+  // see the next identifier.
+  if (!ModuleImportExpectsIdentifier && Result.getKind() == tok::period) {
+    ModuleImportExpectsIdentifier = true;
+    CurLexerKind = CLK_LexAfterModuleImport;
+    return;
+  }
+
+  // If we have a non-empty module path, load the named module.
+  if (!ModuleImportPath.empty())
+    (void)TheModuleLoader.loadModule(ModuleImportLoc, ModuleImportPath,
+                                     Module::MacrosVisible,
+                                     /*IsIncludeDirective=*/false);
 }
 
 void Preprocessor::AddCommentHandler(CommentHandler *Handler) {

@@ -256,6 +256,10 @@ def MallocChecker : Checker<"Malloc">,
   HelpText<"Check for potential memory leaks, double free, and use-after-free problems">,
   DescFile<"MallocChecker.cpp">;
 
+def MallocSizeofChecker : Checker<"MallocSizeof">,
+  HelpText<"Check for dubious malloc arguments involving sizeof">,
+  DescFile<"MallocSizeofChecker.cpp">;
+
 def PthreadLockChecker : Checker<"PthreadLock">,
   HelpText<"Simple lock -> unlock checker">,
   DescFile<"PthreadLockChecker.cpp">;
@@ -391,6 +395,10 @@ def CFGDumper : Checker<"DumpCFG">,
 def AnalyzerStatsChecker : Checker<"Stats">,
   HelpText<"Emit warnings with analyzer statistics">,
   DescFile<"AnalyzerStatsChecker.cpp">;
+
+def TaintTesterChecker : Checker<"TaintTest">,
+  HelpText<"Mark tainted symbols as such.">,
+  DescFile<"TaintTesterChecker.cpp">;
 
 } // end "debug"
 

@@ -168,6 +168,22 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
     *MayBePseudoDestructor = false;
   }
 
+  if (Tok.is(tok::kw_decltype) || Tok.is(tok::annot_decltype)) {
+    DeclSpec DS(AttrFactory);
+    SourceLocation DeclLoc = Tok.getLocation();
+    SourceLocation EndLoc  = ParseDecltypeSpecifier(DS);
+    if (Tok.isNot(tok::coloncolon)) {
+      AnnotateExistingDecltypeSpecifier(DS, DeclLoc, EndLoc);
+      return false;
+    }
+    
+    SourceLocation CCLoc = ConsumeToken();
+    if (Actions.ActOnCXXNestedNameSpecifierDecltype(SS, DS, CCLoc))
+      SS.SetInvalid(SourceRange(DeclLoc, CCLoc));
+
+    HasScopeSpecifier = true;
+  }
+
   while (true) {
     if (HasScopeSpecifier) {
       // C++ [basic.lookup.classref]p5:
@@ -1003,6 +1019,17 @@ Parser::ParseCXXPseudoDestructor(ExprArg Base, SourceLocation OpLoc,
   // Parse the tilde.
   assert(Tok.is(tok::tilde) && "ParseOptionalCXXScopeSpecifier fail");
   SourceLocation TildeLoc = ConsumeToken();
+
+  if (Tok.is(tok::kw_decltype) && !FirstTypeName.isValid() && SS.isEmpty()) {
+    DeclSpec DS(AttrFactory);
+    ParseDecltypeSpecifier(DS);
+    if (DS.getTypeSpecType() == TST_error)
+      return ExprError();
+    return Actions.ActOnPseudoDestructorExpr(getCurScope(), Base, OpLoc, 
+                                             OpKind, TildeLoc, DS, 
+                                             Tok.is(tok::l_paren));
+  }
+
   if (!Tok.is(tok::identifier)) {
     Diag(Tok, diag::err_destructor_tilde_identifier);
     return ExprError();
@@ -1950,6 +1977,16 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     
     // Parse the '~'.
     SourceLocation TildeLoc = ConsumeToken();
+
+    if (SS.isEmpty() && Tok.is(tok::kw_decltype)) {
+      DeclSpec DS(AttrFactory);
+      SourceLocation EndLoc = ParseDecltypeSpecifier(DS);
+      if (ParsedType Type = Actions.getDestructorType(DS, ObjectType)) {
+        Result.setDestructorName(TildeLoc, Type, EndLoc);
+        return false;
+      }
+      return true;
+    }
     
     // Parse the class-name.
     if (Tok.isNot(tok::identifier)) {
@@ -2241,6 +2278,7 @@ static UnaryTypeTrait UnaryTypeTraitFromTokKind(tok::TokenKind kind) {
   case tok::kw___is_const:                   return UTT_IsConst;
   case tok::kw___is_empty:                return UTT_IsEmpty;
   case tok::kw___is_enum:                 return UTT_IsEnum;
+  case tok::kw___is_final:                 return UTT_IsFinal;
   case tok::kw___is_floating_point:          return UTT_IsFloatingPoint;
   case tok::kw___is_function:                return UTT_IsFunction;
   case tok::kw___is_fundamental:             return UTT_IsFundamental;

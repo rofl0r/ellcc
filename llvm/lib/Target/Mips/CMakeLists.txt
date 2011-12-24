@@ -23,25 +23,13 @@ add_llvm_target(MipsCodeGen
   MipsISelLowering.cpp
   MipsFrameLowering.cpp
   MipsMCInstLower.cpp
+  MipsMachineFunction.cpp
   MipsRegisterInfo.cpp
   MipsSubtarget.cpp
   MipsTargetMachine.cpp
   MipsTargetObjectFile.cpp
   MipsSelectionDAGInfo.cpp
   MipsIntrinsicInfo.cpp
-  )
-
-add_llvm_library_dependencies(LLVMMipsCodeGen
-  LLVMAsmPrinter
-  LLVMCodeGen
-  LLVMCore
-  LLVMMC
-  LLVMMipsAsmPrinter
-  LLVMMipsDesc
-  LLVMMipsInfo
-  LLVMSelectionDAG
-  LLVMSupport
-  LLVMTarget
   )
 
 add_subdirectory(InstPrinter)

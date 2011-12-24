@@ -169,23 +169,36 @@ static bool Is32BitMemOperand(const MCInst &MI, unsigned Op) {
   return false;
 }
 
-/// StartsWithGlobalOffsetTable - Return true for the simple cases where this
-/// expression starts with _GLOBAL_OFFSET_TABLE_. This is a needed to support
-/// PIC on ELF i386 as that symbol is magic. We check only simple case that
+/// StartsWithGlobalOffsetTable - Check if this expression starts with
+///  _GLOBAL_OFFSET_TABLE_ and if it is of the form
+///  _GLOBAL_OFFSET_TABLE_-symbol. This is needed to support PIC on ELF
+/// i386 as _GLOBAL_OFFSET_TABLE_ is magical. We check only simple case that
 /// are know to be used: _GLOBAL_OFFSET_TABLE_ by itself or at the start
 /// of a binary expression.
-static bool StartsWithGlobalOffsetTable(const MCExpr *Expr) {
+enum GlobalOffsetTableExprKind {
+  GOT_None,
+  GOT_Normal,
+  GOT_SymDiff
+};
+static GlobalOffsetTableExprKind
+StartsWithGlobalOffsetTable(const MCExpr *Expr) {
+  const MCExpr *RHS = 0;
   if (Expr->getKind() == MCExpr::Binary) {
     const MCBinaryExpr *BE = static_cast<const MCBinaryExpr *>(Expr);
     Expr = BE->getLHS();
+    RHS = BE->getRHS();
   }
 
   if (Expr->getKind() != MCExpr::SymbolRef)
-    return false;
+    return GOT_None;
 
   const MCSymbolRefExpr *Ref = static_cast<const MCSymbolRefExpr*>(Expr);
   const MCSymbol &S = Ref->getSymbol();
-  return S.getName() == "_GLOBAL_OFFSET_TABLE_";
+  if (S.getName() != "_GLOBAL_OFFSET_TABLE_")
+    return GOT_None;
+  if (RHS && RHS->getKind() == MCExpr::SymbolRef)
+    return GOT_SymDiff;
+  return GOT_Normal;
 }
 
 void X86MCCodeEmitter::
@@ -209,12 +222,15 @@ EmitImmediate(const MCOperand &DispOp, unsigned Size, MCFixupKind FixupKind,
 
   // If we have an immoffset, add it to the expression.
   if ((FixupKind == FK_Data_4 ||
-       FixupKind == MCFixupKind(X86::reloc_signed_4byte)) &&
-      StartsWithGlobalOffsetTable(Expr)) {
-    assert(ImmOffset == 0);
+       FixupKind == MCFixupKind(X86::reloc_signed_4byte))) {
+    GlobalOffsetTableExprKind Kind = StartsWithGlobalOffsetTable(Expr);
+    if (Kind != GOT_None) {
+      assert(ImmOffset == 0);
 
-    FixupKind = MCFixupKind(X86::reloc_global_offset_table);
-    ImmOffset = CurByte;
+      FixupKind = MCFixupKind(X86::reloc_global_offset_table);
+      if (Kind == GOT_Normal)
+        ImmOffset = CurByte;
+    }
   }
 
   // If the fixup is pc-relative, we need to bias the value to be relative to
@@ -415,6 +431,13 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   // opcode extension, or ignored, depending on the opcode byte)
   unsigned char VEX_W = 0;
 
+  // XOP_W: opcode specific, same bit as VEX_W, but used to
+  // swap operand 3 and 4 for FMA4 and XOP instructions
+  unsigned char XOP_W = 0;
+
+  // XOP: Use XOP prefix byte 0x8f instead of VEX.
+  unsigned char XOP = 0;
+
   // VEX_5M (VEX m-mmmmm field):
   //
   //  0b00000: Reserved for future use
@@ -422,7 +445,8 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   //  0b00010: implied 0F 38 leading opcode bytes
   //  0b00011: implied 0F 3A leading opcode bytes
   //  0b00100-0b11111: Reserved for future use
-  //
+  //  0b01000: XOP map select - 08h instructions with imm byte
+  //  0b10001: XOP map select - 09h instructions with no imm byte
   unsigned char VEX_5M = 0x1;
 
   // VEX_4V (VEX vvvv field): a register specifier
@@ -453,6 +477,12 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   if ((TSFlags >> X86II::VEXShift) & X86II::VEX_W)
     VEX_W = 1;
 
+  if ((TSFlags >> X86II::VEXShift) & X86II::XOP_W)
+    XOP_W = 1;
+
+  if ((TSFlags >> X86II::VEXShift) & X86II::XOP)
+    XOP = 1;
+
   if ((TSFlags >> X86II::VEXShift) & X86II::VEX_L)
     VEX_L = 1;
 
@@ -482,12 +512,19 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   case X86II::XD:  // F2 0F
     VEX_PP = 0x3;
     break;
+  case X86II::XOP8:
+    VEX_5M = 0x8;
+    break;
+  case X86II::XOP9:
+    VEX_5M = 0x9;
+    break;
   case X86II::A6:  // Bypass: Not used by VEX
   case X86II::A7:  // Bypass: Not used by VEX
   case X86II::TB:  // Bypass: Not used by VEX
   case 0:
     break;  // No prefix!
   }
+
 
   // Set the vector length to 256-bit if YMM0-YMM15 is used
   for (unsigned i = 0; i != MI.getNumOperands(); ++i) {
@@ -529,6 +566,9 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
     //  src1(ModR/M), MemAddr, imm8
     //  src1(ModR/M), MemAddr, src2(VEX_I8IMM)
     //
+    //  FMA4:
+    //  dst(ModR/M.reg), src1(VEX_4V), src2(ModR/M), src3(VEX_I8IMM)
+    //  dst(ModR/M.reg), src1(VEX_4V), src2(VEX_I8IMM), src3(ModR/M),
     if (X86II::isX86_64ExtendedReg(MI.getOperand(0).getReg()))
       VEX_R = 0x0;
 
@@ -620,16 +660,16 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   //
   unsigned char LastByte = VEX_PP | (VEX_L << 2) | (VEX_4V << 3);
 
-  if (VEX_B && VEX_X && !VEX_W && (VEX_5M == 1)) { // 2 byte VEX prefix
+  if (VEX_B && VEX_X && !VEX_W && !XOP && (VEX_5M == 1)) { // 2 byte VEX prefix
     EmitByte(0xC5, CurByte, OS);
     EmitByte(LastByte | (VEX_R << 7), CurByte, OS);
     return;
   }
 
   // 3 byte VEX prefix
-  EmitByte(0xC4, CurByte, OS);
+  EmitByte(XOP ? 0x8F : 0xC4, CurByte, OS);
   EmitByte(VEX_R << 7 | VEX_X << 6 | VEX_B << 5 | VEX_5M, CurByte, OS);
-  EmitByte(LastByte | (VEX_W << 7), CurByte, OS);
+  EmitByte(LastByte | ((VEX_W | XOP_W) << 7), CurByte, OS);
 }
 
 /// DetermineREXPrefix - Determine if the MCInst has to be encoded with a X86-64
@@ -889,6 +929,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   // It uses the VEX.VVVV field?
   bool HasVEX_4V = (TSFlags >> X86II::VEXShift) & X86II::VEX_4V;
   bool HasVEX_4VOp3 = (TSFlags >> X86II::VEXShift) & X86II::VEX_4VOp3;
+  bool HasXOP_W = (TSFlags >> X86II::VEXShift) & X86II::XOP_W;
+  unsigned XOP_W_I8IMMOperand = 2;
 
   // Determine where the memory operand starts, if present.
   int MemoryOperand = X86II::getMemoryOperandNo(TSFlags, Opcode);
@@ -961,9 +1003,14 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     if (HasVEX_4V) // Skip 1st src (which is encoded in VEX_VVVV)
       SrcRegNum++;
 
+    if(HasXOP_W) // Skip 2nd src (which is encoded in I8IMM)
+      SrcRegNum++;
+
     EmitRegModRMByte(MI.getOperand(SrcRegNum),
                      GetX86RegNum(MI.getOperand(CurOp)), CurByte, OS);
-    CurOp = SrcRegNum + 1;
+
+    // 2 operands skipped with HasXOP_W, comensate accordingly
+    CurOp = HasXOP_W ? SrcRegNum : SrcRegNum + 1;
     if (HasVEX_4VOp3)
       ++CurOp;
     break;
@@ -975,6 +1022,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
       ++AddrOperands;
       ++FirstMemOp;  // Skip the register source (which is encoded in VEX_VVVV).
     }
+    if(HasXOP_W) // Skip second register source (encoded in I8IMM)
+      ++FirstMemOp;
 
     EmitByte(BaseOpcode, CurByte, OS);
 
@@ -1062,12 +1111,24 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   // according to the right size for the instruction.
   if (CurOp != NumOps) {
     // The last source register of a 4 operand instruction in AVX is encoded
-    // in bits[7:4] of a immediate byte, and bits[3:0] are ignored.
+    // in bits[7:4] of a immediate byte.
     if ((TSFlags >> X86II::VEXShift) & X86II::VEX_I8IMM) {
-      const MCOperand &MO = MI.getOperand(CurOp++);
+      const MCOperand &MO = MI.getOperand(HasXOP_W ? XOP_W_I8IMMOperand
+                                                   : CurOp);
+      CurOp++;
       bool IsExtReg = X86II::isX86_64ExtendedReg(MO.getReg());
       unsigned RegNum = (IsExtReg ? (1 << 7) : 0);
       RegNum |= GetX86RegNum(MO) << 4;
+      // If there is an additional 5th operand it must be an immediate, which
+      // is encoded in bits[3:0]
+      if(CurOp != NumOps) {
+        const MCOperand &MIMM = MI.getOperand(CurOp++);
+        if(MIMM.isImm()) {
+          unsigned Val = MIMM.getImm();
+          assert(Val < 16 && "Immediate operand value out of range");
+          RegNum |= Val;
+        }
+      }
       EmitImmediate(MCOperand::CreateImm(RegNum), 1, FK_Data_1, CurByte, OS,
                     Fixups);
     } else {

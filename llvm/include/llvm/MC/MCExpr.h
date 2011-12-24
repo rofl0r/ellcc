@@ -176,13 +176,16 @@ public:
     VK_PPC_GAS_HA16,     // symbol@ha
     VK_PPC_GAS_LO16,      // symbol@l
 
-    VK_Mips_None,
     VK_Mips_GPREL,
     VK_Mips_GOT_CALL,
+    VK_Mips_GOT16,
     VK_Mips_GOT,
     VK_Mips_ABS_HI,
     VK_Mips_ABS_LO,
     VK_Mips_TLSGD,
+    VK_Mips_TLSLDM,
+    VK_Mips_DTPREL_HI,
+    VK_Mips_DTPREL_LO,
     VK_Mips_GOTTPREL,
     VK_Mips_TPREL_HI,
     VK_Mips_TPREL_LO,

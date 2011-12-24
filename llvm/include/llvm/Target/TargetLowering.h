@@ -36,27 +36,19 @@
 #include <vector>
 
 namespace llvm {
-  class AllocaInst;
-  class APFloat;
   class CallInst;
   class CCState;
-  class Function;
   class FastISel;
   class FunctionLoweringInfo;
   class ImmutableCallSite;
   class MachineBasicBlock;
   class MachineFunction;
-  class MachineFrameInfo;
   class MachineInstr;
   class MachineJumpTableInfo;
   class MCContext;
   class MCExpr;
-  class SDNode;
-  class SDValue;
-  class SelectionDAG;
   template<typename T> class SmallVectorImpl;
   class TargetData;
-  class TargetMachine;
   class TargetRegisterClass;
   class TargetLoweringObjectFile;
   class Value;
@@ -520,8 +512,19 @@ public:
   /// AllowUnknown is true, this will return MVT::Other for types with no EVT
   /// counterpart (e.g. structs), otherwise it will assert.
   EVT getValueType(Type *Ty, bool AllowUnknown = false) const {
-    EVT VT = EVT::getEVT(Ty, AllowUnknown);
-    return VT == MVT::iPTR ? PointerTy : VT;
+    // Lower scalar pointers to native pointer types.
+    if (Ty->isPointerTy()) return PointerTy;
+
+    if (Ty->isVectorTy()) {
+      VectorType *VTy = cast<VectorType>(Ty);
+      Type *Elm = VTy->getElementType();
+      // Lower vectors of pointers to native pointer types.
+      if (Elm->isPointerTy()) 
+        Elm = EVT(PointerTy).getTypeForEVT(Ty->getContext());
+      return EVT::getVectorVT(Ty->getContext(), EVT::getEVT(Elm, false),
+                       VTy->getNumElements());
+    }
+    return EVT::getEVT(Ty, AllowUnknown);
   }
 
   /// getByValTypeAlignment - Return the desired alignment for ByVal aggregate

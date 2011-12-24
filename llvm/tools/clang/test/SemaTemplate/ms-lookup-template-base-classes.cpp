@@ -98,3 +98,48 @@ void foo()
 }
 
 }
+
+
+namespace lookup_dependent_base_class_friend {
+
+template <class T>
+class B {
+public:
+  static void g();  // expected-note {{must qualify identifier to find this declaration in dependent base class}} 
+};
+
+template <class T>
+class A : public B<T> {
+public:
+  friend void foo(A<T> p){
+    g(); // expected-warning {{use of identifier 'g' found via unqualified lookup into dependent bases of class templates is a Microsoft extension}}
+  }
+};
+
+int main2()
+{
+  A<int> a;
+  foo(a); // expected-note {{requested here}}
+}
+
+}
+
+
+namespace lookup_dependent_base_no_typo_correction {
+
+class C {
+public:
+  int m_hWnd;
+};
+
+template <class T>
+class A : public T {
+public:
+  void f(int hWnd) {
+    m_hWnd = 1;
+  }
+};
+
+template class A<C>;
+
+}

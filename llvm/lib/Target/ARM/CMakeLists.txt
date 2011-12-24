@@ -33,6 +33,7 @@ add_llvm_target(ARMCodeGen
   ARMJITInfo.cpp
   ARMLoadStoreOptimizer.cpp
   ARMMCInstLower.cpp
+  ARMMachineFunctionInfo.cpp
   ARMRegisterInfo.cpp
   ARMSelectionDAGInfo.cpp
   ARMSubtarget.cpp
@@ -46,20 +47,6 @@ add_llvm_target(ARMCodeGen
   Thumb2InstrInfo.cpp
   Thumb2RegisterInfo.cpp
   Thumb2SizeReduction.cpp
-  )
-
-add_llvm_library_dependencies(LLVMARMCodeGen
-  LLVMARMAsmPrinter
-  LLVMARMDesc
-  LLVMARMInfo
-  LLVMAnalysis
-  LLVMAsmPrinter
-  LLVMCodeGen
-  LLVMCore
-  LLVMMC
-  LLVMSelectionDAG
-  LLVMSupport
-  LLVMTarget
   )
 
 # workaround for hanging compilation on MSVC9, 10

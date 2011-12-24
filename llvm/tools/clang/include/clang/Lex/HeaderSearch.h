@@ -135,9 +135,6 @@ class HeaderSearch {
   /// \brief The path to the module cache.
   std::string ModuleCachePath;
   
-  /// \brief The name of the module we're building.
-  std::string BuildingModule;
-  
   /// FileInfo - This contains all of the preprocessor-specific data about files
   /// that are included.  The vector is indexed by the FileEntry's UID.
   ///
@@ -207,11 +204,18 @@ public:
     //LookupFileCache.clear();
   }
 
-  /// \brief Set the path to the module cache and the name of the module
-  /// we're building
-  void configureModules(StringRef CachePath, StringRef BuildingModule) {
+  /// AddSearchPath - Add an additional search path.
+  void AddSearchPath(const DirectoryLookup &dir, bool isAngled) {
+    unsigned idx = isAngled ? SystemDirIdx : AngledDirIdx;
+    SearchDirs.insert(SearchDirs.begin() + idx, dir);
+    if (!isAngled)
+      AngledDirIdx++;
+    SystemDirIdx++;
+  }
+
+  /// \brief Set the path to the module cache.
+  void setModuleCachePath(StringRef CachePath) {
     ModuleCachePath = CachePath;
-    this->BuildingModule = BuildingModule;
   }
   
   /// \brief Retrieve the path to the module cache.
@@ -266,7 +270,8 @@ public:
                               const FileEntry *CurFileEnt,
                               SmallVectorImpl<char> *SearchPath,
                               SmallVectorImpl<char> *RelativePath,
-                              ModuleMap::Module **SuggestedModule);
+                              Module **SuggestedModule,
+                              bool SkipCache = false);
 
   /// LookupSubframeworkHeader - Look up a subframework for the specified
   /// #include file.  For example, if #include'ing <HIToolbox/HIToolbox.h> from
@@ -340,19 +345,17 @@ public:
   /// \brief Search in the module cache path for a module with the given
   /// name.
   ///
+  /// \param Module The module that was found with the given name, which 
+  /// describes the module and how to build it.
+  ///
   /// \param If non-NULL, will be set to the module file name we expected to
   /// find (regardless of whether it was actually found or not).
   ///
-  /// \param UmbrellaHeader If non-NULL, and no module was found in the module
-  /// cache, this routine will search in the framework paths to determine
-  /// whether a module can be built from an umbrella header. If so, the pointee
-  /// will be set to the path of the umbrella header.
-  ///
-  /// \returns A file describing the named module, if available, or NULL to
-  /// indicate that the module could not be found.
+  /// \returns A file describing the named module, if already available in the
+  /// cases, or NULL to indicate that the module could not be found.
   const FileEntry *lookupModule(StringRef ModuleName,
-                                std::string *ModuleFileName = 0,
-                                std::string *UmbrellaHeader = 0);
+                                Module *&Module,
+                                std::string *ModuleFileName = 0);
   
   void IncrementFrameworkLookupCount() { ++NumFrameworkLookups; }
 
@@ -366,7 +369,7 @@ public:
   bool hasModuleMap(StringRef Filename, const DirectoryEntry *Root);
   
   /// \brief Retrieve the module that corresponds to the given file, if any.
-  ModuleMap::Module *findModuleForHeader(const FileEntry *File);
+  Module *findModuleForHeader(const FileEntry *File);
   
   
   /// \brief Read the contents of the given module map file.
@@ -386,7 +389,7 @@ public:
   /// the header search path. Otherwise, the module must already be known.
   ///
   /// \returns The module, if found; otherwise, null.
-  ModuleMap::Module *getModule(StringRef Name, bool AllowSearch = true);
+  Module *getModule(StringRef Name, bool AllowSearch = true);
 
   /// \brief Retrieve a module with the given name, which may be part of the
   /// given framework.
@@ -396,7 +399,7 @@ public:
   /// \param Dir The framework directory (e.g., ModuleName.framework).
   ///
   /// \returns The module, if found; otherwise, null.
-  ModuleMap::Module *getFrameworkModule(StringRef Name, 
+  Module *getFrameworkModule(StringRef Name, 
                                         const DirectoryEntry *Dir);
 
   /// \brief Retrieve the module map.
@@ -444,6 +447,9 @@ public:
   void PrintStats();
   
   size_t getTotalMemory() const;
+
+  static std::string NormalizeDashIncludePath(StringRef File,
+                                              FileManager &FileMgr);
 
 private:
   /// \brief Describes what happened when we tried to load a module map file.

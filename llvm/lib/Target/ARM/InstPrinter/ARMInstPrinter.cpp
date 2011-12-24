@@ -436,6 +436,12 @@ void ARMInstPrinter::printAM3PreOrOffsetIndexOp(const MCInst *MI, unsigned Op,
 
 void ARMInstPrinter::printAddrMode3Operand(const MCInst *MI, unsigned Op,
                                            raw_ostream &O) {
+  const MCOperand &MO1 = MI->getOperand(Op);
+  if (!MO1.isReg()) {   //  For label symbolic references.
+    printOperand(MI, Op, O);
+    return;
+  }
+
   const MCOperand &MO3 = MI->getOperand(Op+2);
   unsigned IdxMode = ARM_AM::getAM3IdxMode(MO3.getImm());
 
@@ -885,6 +891,11 @@ void ARMInstPrinter::printT2AddrModeImm8s4Operand(const MCInst *MI,
   const MCOperand &MO1 = MI->getOperand(OpNum);
   const MCOperand &MO2 = MI->getOperand(OpNum+1);
 
+  if (!MO1.isReg()) {   //  For label symbolic references.
+    printOperand(MI, OpNum, O);
+    return;
+  }
+
   O << "[" << getRegisterName(MO1.getReg());
 
   int32_t OffImm = (int32_t)MO2.getImm() / 4;
@@ -990,6 +1001,16 @@ void ARMInstPrinter::printRotImmOperand(const MCInst *MI, unsigned OpNum,
   }
 }
 
+void ARMInstPrinter::printFBits16(const MCInst *MI, unsigned OpNum,
+                                  raw_ostream &O) {
+  O << "#" << 16 - MI->getOperand(OpNum).getImm();
+}
+
+void ARMInstPrinter::printFBits32(const MCInst *MI, unsigned OpNum,
+                                  raw_ostream &O) {
+  O << "#" << 32 - MI->getOperand(OpNum).getImm();
+}
+
 void ARMInstPrinter::printVectorIndex(const MCInst *MI, unsigned OpNum,
                                       raw_ostream &O) {
   O << "[" << MI->getOperand(OpNum).getImm() << "]";
@@ -1029,3 +1050,39 @@ void ARMInstPrinter::printVectorListFour(const MCInst *MI, unsigned OpNum,
     << getRegisterName(MI->getOperand(OpNum).getReg() + 2) << ", "
     << getRegisterName(MI->getOperand(OpNum).getReg() + 3) << "}";
 }
+
+void ARMInstPrinter::printVectorListOneAllLanes(const MCInst *MI,
+                                                unsigned OpNum,
+                                                raw_ostream &O) {
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << "[]}";
+}
+
+void ARMInstPrinter::printVectorListTwoAllLanes(const MCInst *MI,
+                                                unsigned OpNum,
+                                                raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << "[], "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 1) << "[]}";
+}
+
+void ARMInstPrinter::printVectorListTwoSpaced(const MCInst *MI, unsigned OpNum,
+                                              raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << ", "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 2) << "}";
+}
+
+void ARMInstPrinter::printVectorListTwoSpacedAllLanes(const MCInst *MI,
+                                                      unsigned OpNum,
+                                                      raw_ostream &O) {
+  // Normally, it's not safe to use register enum values directly with
+  // addition to get the next register, but for VFP registers, the
+  // sort order is guaranteed because they're all of the form D<n>.
+  O << "{" << getRegisterName(MI->getOperand(OpNum).getReg()) << "[], "
+    << getRegisterName(MI->getOperand(OpNum).getReg() + 2) << "[]}";
+}
+

@@ -34,26 +34,32 @@ extern "C" void LLVMInitializeARMTarget() {
   RegisterTargetMachine<ThumbTargetMachine> Y(TheThumbTarget);
 }
 
+
 /// TargetMachine ctor - Create an ARM architecture model.
 ///
 ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, StringRef TT,
                                            StringRef CPU, StringRef FS,
+                                           const TargetOptions &Options,
                                            Reloc::Model RM, CodeModel::Model CM,
                                            CodeGenOpt::Level OL)
-  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM, OL),
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     Subtarget(TT, CPU, FS),
     JITInfo(),
     InstrItins(Subtarget.getInstrItineraryData()) {
   // Default to soft float ABI
-  if (FloatABIType == FloatABI::Default)
-    FloatABIType = FloatABI::Soft;
+  if (Options.FloatABIType == FloatABI::Default)
+    this->Options.FloatABIType = FloatABI::Soft;
 }
+
+void ARMTargetMachine::anchor() { }
 
 ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
                                    StringRef CPU, StringRef FS,
+                                   const TargetOptions &Options,
                                    Reloc::Model RM, CodeModel::Model CM,
                                    CodeGenOpt::Level OL)
-  : ARMBaseTargetMachine(T, TT, CPU, FS, RM, CM, OL), InstrInfo(Subtarget),
+  : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    InstrInfo(Subtarget),
     DataLayout(Subtarget.isAPCS_ABI() ?
                std::string("e-p:32:32-f64:32:64-i64:32:64-"
                            "v128:32:128-v64:32:64-n32-S32") :
@@ -71,11 +77,14 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
                        "support ARM mode execution!");
 }
 
+void ThumbTargetMachine::anchor() { }
+
 ThumbTargetMachine::ThumbTargetMachine(const Target &T, StringRef TT,
                                        StringRef CPU, StringRef FS,
+                                       const TargetOptions &Options,
                                        Reloc::Model RM, CodeModel::Model CM,
                                        CodeGenOpt::Level OL)
-  : ARMBaseTargetMachine(T, TT, CPU, FS, RM, CM, OL),
+  : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     InstrInfo(Subtarget.hasThumb2()
               ? ((ARMBaseInstrInfo*)new Thumb2InstrInfo(Subtarget))
               : ((ARMBaseInstrInfo*)new Thumb1InstrInfo(Subtarget))),
@@ -143,10 +152,16 @@ bool ARMBaseTargetMachine::addPreSched2(PassManagerBase &PM) {
 }
 
 bool ARMBaseTargetMachine::addPreEmitPass(PassManagerBase &PM) {
-  if (Subtarget.isThumb2() && !Subtarget.prefers32BitThumb())
-    PM.add(createThumb2SizeReductionPass());
+  if (Subtarget.isThumb2()) {
+    if (!Subtarget.prefers32BitThumb())
+      PM.add(createThumb2SizeReductionPass());
+
+    // Constant island pass work on unbundled instructions.
+    PM.add(createUnpackMachineBundlesPass());
+  }
 
   PM.add(createARMConstantIslandPass());
+
   return true;
 }
 

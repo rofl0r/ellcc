@@ -135,7 +135,6 @@ void initializeLoopInfoPass(PassRegistry&);
 void initializeLoopInstSimplifyPass(PassRegistry&);
 void initializeLoopRotatePass(PassRegistry&);
 void initializeLoopSimplifyPass(PassRegistry&);
-void initializeLoopSplitterPass(PassRegistry&);
 void initializeLoopStrengthReducePass(PassRegistry&);
 void initializeGlobalMergePass(PassRegistry&);
 void initializeLoopUnrollPass(PassRegistry&);
@@ -232,6 +231,7 @@ void initializeUnreachableMachineBlockElimPass(PassRegistry&);
 void initializeVerifierPass(PassRegistry&);
 void initializeVirtRegMapPass(PassRegistry&);
 void initializeInstSimplifierPass(PassRegistry&);
+void initializeUnpackMachineBundlesPass(PassRegistry&);
 
 }
 

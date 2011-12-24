@@ -1094,3 +1094,13 @@ llvm::Value *CodeGenFunction::getNormalCleanupDestSlot() {
       CreateTempAlloca(Builder.getInt32Ty(), "cleanup.dest.slot");
   return NormalCleanupDest;
 }
+
+/// Emits all the code to cause the given temporary to be cleaned up.
+void CodeGenFunction::EmitCXXTemporary(const CXXTemporary *Temporary,
+                                       QualType TempType,
+                                       llvm::Value *Ptr) {
+  // This local is a GCC and MSVC compiler workaround.
+  Destroyer *destroyer = &destroyCXXObject;
+  pushDestroy(NormalAndEHCleanup, Ptr, TempType, *destroyer,
+              /*useEHCleanup*/ true);
+}

@@ -19,6 +19,7 @@ class raw_ostream;
 namespace clang {
 class DiagnosticConsumer;
 class DiagnosticsEngine;
+class DiagnosticOptions;
 
 namespace serialized_diags {
   
@@ -53,7 +54,7 @@ enum RecordIDs {
 /// (via libclang) without needing to parse Clang's command line output.
 ///
 DiagnosticConsumer *create(llvm::raw_ostream *OS,
-                           DiagnosticsEngine &Diags);
+                           const DiagnosticOptions &diags);
 
 } // end serialized_diags namespace
 } // end clang namespace

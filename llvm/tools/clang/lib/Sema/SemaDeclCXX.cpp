@@ -2633,6 +2633,19 @@ struct BaseAndFieldInfo {
     else
       IIK = IIK_Default;
   }
+  
+  bool isImplicitCopyOrMove() const {
+    switch (IIK) {
+    case IIK_Copy:
+    case IIK_Move:
+      return true;
+      
+    case IIK_Default:
+      return false;
+    }
+    
+    return false;
+  }
 };
 }
 
@@ -2678,7 +2691,7 @@ static bool CollectFieldInitializer(Sema &SemaRef, BaseAndFieldInfo &Info,
   // C++0x [class.base.init]p8: if the entity is a non-static data member that
   // has a brace-or-equal-initializer, the entity is initialized as specified
   // in [dcl.init].
-  if (Field->hasInClassInitializer()) {
+  if (Field->hasInClassInitializer() && !Info.isImplicitCopyOrMove()) {
     CXXCtorInitializer *Init;
     if (Indirect)
       Init = new (SemaRef.Context) CXXCtorInitializer(SemaRef.Context, Indirect,
@@ -3743,6 +3756,18 @@ void Sema::CheckExplicitlyDefaultedDefaultConstructor(CXXConstructorDecl *CD) {
                           *ExceptionType = Context.getFunctionType(
                          Context.VoidTy, 0, 0, EPI)->getAs<FunctionProtoType>();
 
+  // C++11 [dcl.fct.def.default]p2:
+  //   An explicitly-defaulted function may be declared constexpr only if it
+  //   would have been implicitly declared as constexpr,
+  if (CD->isConstexpr()) {
+    if (!CD->getParent()->defaultedDefaultConstructorIsConstexpr()) {
+      Diag(CD->getLocStart(), diag::err_incorrect_defaulted_constexpr)
+        << CXXDefaultConstructor;
+      HadError = true;
+    }
+  }
+  //   and may have an explicit exception-specification only if it is compatible
+  //   with the exception-specification on the implicit declaration.
   if (CtorType->hasExceptionSpec()) {
     if (CheckEquivalentExceptionSpec(
           PDiag(diag::err_incorrect_defaulted_exception_spec)
@@ -3752,11 +3777,20 @@ void Sema::CheckExplicitlyDefaultedDefaultConstructor(CXXConstructorDecl *CD) {
           CtorType, CD->getLocation())) {
       HadError = true;
     }
-  } else if (First) {
-    // We set the declaration to have the computed exception spec here.
-    // We know there are no parameters.
+  }
+
+  //   If a function is explicitly defaulted on its first declaration,
+  if (First) {
+    //  -- it is implicitly considered to be constexpr if the implicit
+    //     definition would be,
+    CD->setConstexpr(CD->getParent()->defaultedDefaultConstructorIsConstexpr());
+
+    //  -- it is implicitly considered to have the same
+    //     exception-specification as if it had been implicitly declared
+    //
+    // FIXME: a compatible, but different, explicit exception specification
+    // will be silently overridden. We should issue a warning if this happens.
     EPI.ExtInfo = CtorType->getExtInfo();
-    CD->setType(Context.getFunctionType(Context.VoidTy, 0, 0, EPI));
   }
 
   if (HadError) {
@@ -3810,6 +3844,18 @@ void Sema::CheckExplicitlyDefaultedCopyConstructor(CXXConstructorDecl *CD) {
     HadError = true;
   }
 
+  // C++11 [dcl.fct.def.default]p2:
+  //   An explicitly-defaulted function may be declared constexpr only if it
+  //   would have been implicitly declared as constexpr,
+  if (CD->isConstexpr()) {
+    if (!CD->getParent()->defaultedCopyConstructorIsConstexpr()) {
+      Diag(CD->getLocStart(), diag::err_incorrect_defaulted_constexpr)
+        << CXXCopyConstructor;
+      HadError = true;
+    }
+  }
+  //   and may have an explicit exception-specification only if it is compatible
+  //   with the exception-specification on the implicit declaration.
   if (CtorType->hasExceptionSpec()) {
     if (CheckEquivalentExceptionSpec(
           PDiag(diag::err_incorrect_defaulted_exception_spec)
@@ -3819,10 +3865,23 @@ void Sema::CheckExplicitlyDefaultedCopyConstructor(CXXConstructorDecl *CD) {
           CtorType, CD->getLocation())) {
       HadError = true;
     }
-  } else if (First) {
-    // We set the declaration to have the computed exception spec here.
-    // We duplicate the one parameter type.
+  }
+
+  //   If a function is explicitly defaulted on its first declaration,
+  if (First) {
+    //  -- it is implicitly considered to be constexpr if the implicit
+    //     definition would be,
+    CD->setConstexpr(CD->getParent()->defaultedCopyConstructorIsConstexpr());
+
+    //  -- it is implicitly considered to have the same
+    //     exception-specification as if it had been implicitly declared, and
+    //
+    // FIXME: a compatible, but different, explicit exception specification
+    // will be silently overridden. We should issue a warning if this happens.
     EPI.ExtInfo = CtorType->getExtInfo();
+
+    //  -- [...] it shall have the same parameter type as if it had been
+    //     implicitly declared.
     CD->setType(Context.getFunctionType(Context.VoidTy, &ArgType, 1, EPI));
   }
 
@@ -3904,7 +3963,8 @@ void Sema::CheckExplicitlyDefaultedCopyAssignment(CXXMethodDecl *MD) {
           OperType, MD->getLocation())) {
       HadError = true;
     }
-  } else if (First) {
+  }
+  if (First) {
     // We set the declaration to have the computed exception spec here.
     // We duplicate the one parameter type.
     EPI.RefQualifier = OperType->getRefQualifier();
@@ -3961,6 +4021,18 @@ void Sema::CheckExplicitlyDefaultedMoveConstructor(CXXConstructorDecl *CD) {
     HadError = true;
   }
 
+  // C++11 [dcl.fct.def.default]p2:
+  //   An explicitly-defaulted function may be declared constexpr only if it
+  //   would have been implicitly declared as constexpr,
+  if (CD->isConstexpr()) {
+    if (!CD->getParent()->defaultedMoveConstructorIsConstexpr()) {
+      Diag(CD->getLocStart(), diag::err_incorrect_defaulted_constexpr)
+        << CXXMoveConstructor;
+      HadError = true;
+    }
+  }
+  //   and may have an explicit exception-specification only if it is compatible
+  //   with the exception-specification on the implicit declaration.
   if (CtorType->hasExceptionSpec()) {
     if (CheckEquivalentExceptionSpec(
           PDiag(diag::err_incorrect_defaulted_exception_spec)
@@ -3970,10 +4042,23 @@ void Sema::CheckExplicitlyDefaultedMoveConstructor(CXXConstructorDecl *CD) {
           CtorType, CD->getLocation())) {
       HadError = true;
     }
-  } else if (First) {
-    // We set the declaration to have the computed exception spec here.
-    // We duplicate the one parameter type.
+  }
+
+  //   If a function is explicitly defaulted on its first declaration,
+  if (First) {
+    //  -- it is implicitly considered to be constexpr if the implicit
+    //     definition would be,
+    CD->setConstexpr(CD->getParent()->defaultedMoveConstructorIsConstexpr());
+
+    //  -- it is implicitly considered to have the same
+    //     exception-specification as if it had been implicitly declared, and
+    //
+    // FIXME: a compatible, but different, explicit exception specification
+    // will be silently overridden. We should issue a warning if this happens.
     EPI.ExtInfo = CtorType->getExtInfo();
+
+    //  -- [...] it shall have the same parameter type as if it had been
+    //     implicitly declared.
     CD->setType(Context.getFunctionType(Context.VoidTy, &ArgType, 1, EPI));
   }
 
@@ -4053,7 +4138,8 @@ void Sema::CheckExplicitlyDefaultedMoveAssignment(CXXMethodDecl *MD) {
           OperType, MD->getLocation())) {
       HadError = true;
     }
-  } else if (First) {
+  }
+  if (First) {
     // We set the declaration to have the computed exception spec here.
     // We duplicate the one parameter type.
     EPI.RefQualifier = OperType->getRefQualifier();
@@ -4100,7 +4186,8 @@ void Sema::CheckExplicitlyDefaultedDestructor(CXXDestructorDecl *DD) {
       DD->setInvalidDecl();
       return;
     }
-  } else if (First) {
+  }
+  if (First) {
     // We set the declaration to have the computed exception spec here.
     // There are no parameters.
     EPI.ExtInfo = DtorType->getExtInfo();
@@ -6779,16 +6866,12 @@ CXXConstructorDecl *Sema::DeclareImplicitDefaultConstructor(
   DeclarationName Name
     = Context.DeclarationNames.getCXXConstructorName(ClassType);
   DeclarationNameInfo NameInfo(Name, ClassLoc);
-  CXXConstructorDecl *DefaultCon
-    = CXXConstructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
-                                 Context.getFunctionType(Context.VoidTy,
-                                                         0, 0, EPI),
-                                 /*TInfo=*/0,
-                                 /*isExplicit=*/false,
-                                 /*isInline=*/true,
-                                 /*isImplicitlyDeclared=*/true,
-                                 // FIXME: apply the rules for definitions here
-                                 /*isConstexpr=*/false);
+  CXXConstructorDecl *DefaultCon = CXXConstructorDecl::Create(
+      Context, ClassDecl, ClassLoc, NameInfo,
+      Context.getFunctionType(Context.VoidTy, 0, 0, EPI), /*TInfo=*/0,
+      /*isExplicit=*/false, /*isInline=*/true, /*isImplicitlyDeclared=*/true,
+      /*isConstexpr=*/ClassDecl->defaultedDefaultConstructorIsConstexpr() &&
+        getLangOptions().CPlusPlus0x);
   DefaultCon->setAccess(AS_public);
   DefaultCon->setDefaulted();
   DefaultCon->setImplicit();
@@ -8463,21 +8546,17 @@ CXXConstructorDecl *Sema::DeclareImplicitCopyConstructor(
   DeclarationNameInfo NameInfo(Name, ClassLoc);
 
   //   An implicitly-declared copy constructor is an inline public
-  //   member of its class. 
-  CXXConstructorDecl *CopyConstructor
-    = CXXConstructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
-                                 Context.getFunctionType(Context.VoidTy,
-                                                         &ArgType, 1, EPI),
-                                 /*TInfo=*/0,
-                                 /*isExplicit=*/false,
-                                 /*isInline=*/true,
-                                 /*isImplicitlyDeclared=*/true,
-                                 // FIXME: apply the rules for definitions here
-                                 /*isConstexpr=*/false);
+  //   member of its class.
+  CXXConstructorDecl *CopyConstructor = CXXConstructorDecl::Create(
+      Context, ClassDecl, ClassLoc, NameInfo,
+      Context.getFunctionType(Context.VoidTy, &ArgType, 1, EPI), /*TInfo=*/0,
+      /*isExplicit=*/false, /*isInline=*/true, /*isImplicitlyDeclared=*/true,
+      /*isConstexpr=*/ClassDecl->defaultedCopyConstructorIsConstexpr() &&
+        getLangOptions().CPlusPlus0x);
   CopyConstructor->setAccess(AS_public);
   CopyConstructor->setDefaulted();
   CopyConstructor->setTrivial(ClassDecl->hasTrivialCopyConstructor());
-  
+
   // Note that we have declared this constructor.
   ++ASTContext::NumImplicitCopyConstructorsDeclared;
   
@@ -8583,12 +8662,7 @@ Sema::ComputeDefaultedMoveCtorExceptionSpec(CXXRecordDecl *ClassDecl) {
   for (RecordDecl::field_iterator F = ClassDecl->field_begin(),
                                FEnd = ClassDecl->field_end();
        F != FEnd; ++F) {
-    if (F->hasInClassInitializer()) {
-      if (Expr *E = F->getInClassInitializer())
-        ExceptSpec.CalledExpr(E);
-      else if (!F->isInvalidDecl())
-        ExceptSpec.SetDelayed();
-    } else if (const RecordType *RecordTy
+    if (const RecordType *RecordTy
               = Context.getBaseElementType(F->getType())->getAs<RecordType>()) {
       CXXRecordDecl *FieldRecDecl = cast<CXXRecordDecl>(RecordTy->getDecl());
       CXXConstructorDecl *Constructor = LookupMovingConstructor(FieldRecDecl);
@@ -8623,21 +8697,17 @@ CXXConstructorDecl *Sema::DeclareImplicitMoveConstructor(
 
   // C++0x [class.copy]p11:
   //   An implicitly-declared copy/move constructor is an inline public
-  //   member of its class. 
-  CXXConstructorDecl *MoveConstructor
-    = CXXConstructorDecl::Create(Context, ClassDecl, ClassLoc, NameInfo,
-                                 Context.getFunctionType(Context.VoidTy,
-                                                         &ArgType, 1, EPI),
-                                 /*TInfo=*/0,
-                                 /*isExplicit=*/false,
-                                 /*isInline=*/true,
-                                 /*isImplicitlyDeclared=*/true,
-                                 // FIXME: apply the rules for definitions here
-                                 /*isConstexpr=*/false);
+  //   member of its class.
+  CXXConstructorDecl *MoveConstructor = CXXConstructorDecl::Create(
+      Context, ClassDecl, ClassLoc, NameInfo,
+      Context.getFunctionType(Context.VoidTy, &ArgType, 1, EPI), /*TInfo=*/0,
+      /*isExplicit=*/false, /*isInline=*/true, /*isImplicitlyDeclared=*/true,
+      /*isConstexpr=*/ClassDecl->defaultedMoveConstructorIsConstexpr() &&
+        getLangOptions().CPlusPlus0x);
   MoveConstructor->setAccess(AS_public);
   MoveConstructor->setDefaulted();
   MoveConstructor->setTrivial(ClassDecl->hasTrivialMoveConstructor());
-  
+
   // Add the parameter to the constructor.
   ParmVarDecl *FromParam = ParmVarDecl::Create(Context, MoveConstructor,
                                                ClassLoc, ClassLoc,
@@ -9520,6 +9590,10 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
                                     ExDeclType, TInfo, SC_None, SC_None);
   ExDecl->setExceptionVariable(true);
   
+  // In ARC, infer 'retaining' for variables of retainable type.
+  if (getLangOptions().ObjCAutoRefCount && inferObjCARCLifetime(ExDecl))
+    Invalid = true;
+
   if (!Invalid && !ExDeclType->isDependentType()) {
     if (const RecordType *recordType = ExDeclType->getAs<RecordType>()) {
       // C++ [except.handle]p16:
@@ -9624,18 +9698,15 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
   StringLiteral *AssertMessage = cast<StringLiteral>(AssertMessageExpr_);
 
   if (!AssertExpr->isTypeDependent() && !AssertExpr->isValueDependent()) {
-    llvm::APSInt Value(32);
-    if (!AssertExpr->isIntegerConstantExpr(Value, Context)) {
-      Diag(StaticAssertLoc,
-           diag::err_static_assert_expression_is_not_constant) <<
-        AssertExpr->getSourceRange();
+    llvm::APSInt Cond;
+    if (VerifyIntegerConstantExpression(AssertExpr, &Cond,
+                             diag::err_static_assert_expression_is_not_constant,
+                                        /*AllowFold=*/false))
       return 0;
-    }
 
-    if (Value == 0) {
+    if (!Cond)
       Diag(StaticAssertLoc, diag::err_static_assert_failed)
         << AssertMessage->getString() << AssertExpr->getSourceRange();
-    }
   }
 
   if (DiagnoseUnexpandedParameterPack(AssertExpr, UPPC_StaticAssertExpression))
@@ -10506,7 +10577,8 @@ void Sema::MarkVTableUsed(SourceLocation Loc, CXXRecordDecl *Class,
   // not have a vtable.
   if (!Class->isDynamicClass() || Class->isDependentContext() ||
       CurContext->isDependentContext() ||
-      ExprEvalContexts.back().Context == Unevaluated)
+      ExprEvalContexts.back().Context == Unevaluated ||
+      ExprEvalContexts.back().Context == ConstantEvaluated)
     return;
 
   // Try to insert this class into the map.
@@ -10609,7 +10681,10 @@ bool Sema::DefineUsedVTables() {
       if (!KeyFunction || 
           (KeyFunction->hasBody(KeyFunctionDef) && 
            KeyFunctionDef->isInlined()))
-        Diag(Class->getLocation(), diag::warn_weak_vtable) << Class;
+        Diag(Class->getLocation(), Class->getTemplateSpecializationKind() ==
+             TSK_ExplicitInstantiationDefinition 
+             ? diag::warn_weak_template_vtable : diag::warn_weak_vtable) 
+          << Class;
     }
   }
   VTableUses.clear();

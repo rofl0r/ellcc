@@ -12,12 +12,15 @@
 
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Lex/ModuleLoader.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/OwningPtr.h"
 #include <cassert>
 #include <list>
 #include <string>
+#include <utility>
 
 namespace llvm {
 class raw_fd_ostream;
@@ -32,8 +35,10 @@ class CodeCompleteConsumer;
 class DiagnosticsEngine;
 class DiagnosticConsumer;
 class ExternalASTSource;
+class FileEntry;
 class FileManager;
 class FrontendAction;
+class Module;
 class Preprocessor;
 class Sema;
 class SourceManager;
@@ -94,6 +99,18 @@ class CompilerInstance : public ModuleLoader {
   /// \brief Non-owning reference to the ASTReader, if one exists.
   ASTReader *ModuleManager;
 
+  /// \brief The set of top-level modules that has already been loaded,
+  /// along with the module map
+  llvm::DenseMap<const IdentifierInfo *, Module *> KnownModules;
+  
+  /// \brief The location of the module-import keyword for the last module
+  /// import. 
+  SourceLocation LastModuleImportLoc;
+  
+  /// \brief The result of the last module import.
+  ///
+  Module *LastModuleImportResult;
+  
   /// \brief Holds information about the output file.
   ///
   /// If TempFilename is not empty we must rename it to Filename at the end.
@@ -624,9 +641,9 @@ public:
 
   /// }
   
-  virtual ModuleKey loadModule(SourceLocation ImportLoc, 
-                               IdentifierInfo &ModuleName,
-                               SourceLocation ModuleNameLoc);
+  virtual Module *loadModule(SourceLocation ImportLoc, ModuleIdPath Path,
+                             Module::NameVisibilityKind Visibility,
+                             bool IsInclusionDirective);
 };
 
 } // end namespace clang

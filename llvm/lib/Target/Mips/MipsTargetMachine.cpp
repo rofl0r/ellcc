@@ -34,51 +34,59 @@ extern "C" void LLVMInitializeMipsTarget() {
 // Using CodeModel::Large enables different CALL behavior.
 MipsTargetMachine::
 MipsTargetMachine(const Target &T, StringRef TT,
-                  StringRef CPU, StringRef FS,
+                  StringRef CPU, StringRef FS, const TargetOptions &Options,
                   Reloc::Model RM, CodeModel::Model CM,
                   CodeGenOpt::Level OL,
-                  bool isLittle):
-  LLVMTargetMachine(T, TT, CPU, FS, RM, CM, OL),
-  Subtarget(TT, CPU, FS, isLittle),
-  DataLayout(isLittle ?
-             (Subtarget.isABI_N64() ?
-              "e-p:64:64:64-i8:8:32-i16:16:32-i64:64:64-f128:128:128-n32" :
-              "e-p:32:32:32-i8:8:32-i16:16:32-i64:64:64-n32") :
-             (Subtarget.isABI_N64() ?
-              "E-p:64:64:64-i8:8:32-i16:16:32-i64:64:64-f128:128:128-n32" :
-              "E-p:32:32:32-i8:8:32-i16:16:32-i64:64:64-n32")),
-  InstrInfo(*this),
-  FrameLowering(Subtarget),
-  TLInfo(*this), TSInfo(*this), JITInfo() {
+                  bool isLittle)
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    Subtarget(TT, CPU, FS, isLittle),
+    DataLayout(isLittle ?
+               (Subtarget.isABI_N64() ?
+                "e-p:64:64:64-i8:8:32-i16:16:32-i64:64:64-f128:128:128-n32" :
+                "e-p:32:32:32-i8:8:32-i16:16:32-i64:64:64-n32") :
+               (Subtarget.isABI_N64() ?
+                "E-p:64:64:64-i8:8:32-i16:16:32-i64:64:64-f128:128:128-n32" :
+                "E-p:32:32:32-i8:8:32-i16:16:32-i64:64:64-n32")),
+    InstrInfo(*this),
+    FrameLowering(Subtarget),
+    TLInfo(*this), TSInfo(*this), JITInfo() {
 }
+
+void MipsebTargetMachine::anchor() { }
 
 MipsebTargetMachine::
 MipsebTargetMachine(const Target &T, StringRef TT,
-                    StringRef CPU, StringRef FS,
+                    StringRef CPU, StringRef FS, const TargetOptions &Options,
                     Reloc::Model RM, CodeModel::Model CM,
-                    CodeGenOpt::Level OL) :
-  MipsTargetMachine(T, TT, CPU, FS, RM, CM, OL, false) {}
+                    CodeGenOpt::Level OL)
+  : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {}
+
+void MipselTargetMachine::anchor() { }
 
 MipselTargetMachine::
 MipselTargetMachine(const Target &T, StringRef TT,
-                    StringRef CPU, StringRef FS,
+                    StringRef CPU, StringRef FS, const TargetOptions &Options,
                     Reloc::Model RM, CodeModel::Model CM,
-                    CodeGenOpt::Level OL) :
-  MipsTargetMachine(T, TT, CPU, FS, RM, CM, OL, true) {}
+                    CodeGenOpt::Level OL)
+  : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
+
+void Mips64ebTargetMachine::anchor() { }
 
 Mips64ebTargetMachine::
 Mips64ebTargetMachine(const Target &T, StringRef TT,
-                      StringRef CPU, StringRef FS,
+                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
-                      CodeGenOpt::Level OL) :
-  MipsTargetMachine(T, TT, CPU, FS, RM, CM, OL, false) {}
+                      CodeGenOpt::Level OL)
+  : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {}
+
+void Mips64elTargetMachine::anchor() { }
 
 Mips64elTargetMachine::
 Mips64elTargetMachine(const Target &T, StringRef TT,
-                      StringRef CPU, StringRef FS,
+                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
-                      CodeGenOpt::Level OL) :
-  MipsTargetMachine(T, TT, CPU, FS, RM, CM, OL, true) {}
+                      CodeGenOpt::Level OL)
+  : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
 
 // Install an instruction selector pass using
 // the ISelDag to gen Mips code.
@@ -120,4 +128,3 @@ bool MipsTargetMachine::addCodeEmitter(PassManagerBase &PM,
   PM.add(createMipsJITCodeEmitterPass(*this, JCE));
   return false;
 }
-

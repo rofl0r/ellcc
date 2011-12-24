@@ -2898,7 +2898,7 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
     Expr *SourceExpr = Input.getSourceDeclExpression();
     if (SourceExpr) {
       EnterExpressionEvaluationContext Unevaluated(getSema(),
-                                                   Sema::Unevaluated);
+                                                   Sema::ConstantEvaluated);
       ExprResult E = getDerived().TransformExpr(SourceExpr);
       SourceExpr = (E.isInvalid() ? 0 : E.take());
     }
@@ -2932,9 +2932,9 @@ bool TreeTransform<Derived>::TransformTemplateArgument(
     llvm_unreachable("Caller should expand pack expansions");
 
   case TemplateArgument::Expression: {
-    // Template argument expressions are not potentially evaluated.
+    // Template argument expressions are constant expressions.
     EnterExpressionEvaluationContext Unevaluated(getSema(),
-                                                 Sema::Unevaluated);
+                                                 Sema::ConstantEvaluated);
 
     Expr *InputExpr = Input.getSourceExpression();
     if (!InputExpr) InputExpr = Input.getArgument().getAsExpr();
@@ -3182,6 +3182,9 @@ QualType TreeTransform<Derived>::TransformType(QualType T) {
 
 template<typename Derived>
 TypeSourceInfo *TreeTransform<Derived>::TransformType(TypeSourceInfo *DI) {
+  // Refine the base location to the type's location.
+  TemporaryBase Rebase(*this, DI->getTypeLoc().getBeginLoc(),
+                       getDerived().getBaseEntity());
   if (getDerived().AlreadyTransformed(DI->getType()))
     return DI;
 
@@ -3595,7 +3598,8 @@ TreeTransform<Derived>::TransformConstantArrayType(TypeLocBuilder &TLB,
 
   Expr *Size = TL.getSizeExpr();
   if (Size) {
-    EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+    EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                                 Sema::ConstantEvaluated);
     Size = getDerived().TransformExpr(Size).template takeAs<Expr>();
   }
   NewTL.setSizeExpr(Size);
@@ -3640,9 +3644,6 @@ TreeTransform<Derived>::TransformVariableArrayType(TypeLocBuilder &TLB,
   if (ElementType.isNull())
     return QualType();
 
-  // Array bounds are not potentially evaluated contexts
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
-
   ExprResult SizeResult
     = getDerived().TransformExpr(T->getSizeExpr());
   if (SizeResult.isInvalid())
@@ -3680,8 +3681,9 @@ TreeTransform<Derived>::TransformDependentSizedArrayType(TypeLocBuilder &TLB,
   if (ElementType.isNull())
     return QualType();
 
-  // Array bounds are not potentially evaluated contexts
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  // Array bounds are constant expressions.
+  EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                               Sema::ConstantEvaluated);
 
   // Prefer the expression from the TypeLoc;  the other may have been uniqued.
   Expr *origSize = TL.getSizeExpr();
@@ -3728,8 +3730,9 @@ QualType TreeTransform<Derived>::TransformDependentSizedExtVectorType(
   if (ElementType.isNull())
     return QualType();
 
-  // Vector sizes are not potentially evaluated contexts
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  // Vector sizes are constant expressions.
+  EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                               Sema::ConstantEvaluated);
 
   ExprResult Size = getDerived().TransformExpr(T->getSizeExpr());
   if (Size.isInvalid())
@@ -6104,8 +6107,14 @@ TreeTransform<Derived>::TransformOpaqueValueExpr(OpaqueValueExpr *E) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformPseudoObjectExpr(PseudoObjectExpr *E) {
-  // Rebuild the syntactic form.
-  ExprResult result = getDerived().TransformExpr(E->getSyntacticForm());
+  // Rebuild the syntactic form.  The original syntactic form has
+  // opaque-value expressions in it, so strip those away and rebuild
+  // the result.  This is a really awful way of doing this, but the
+  // better solution (rebuilding the semantic expressions and
+  // rebinding OVEs as necessary) doesn't work; we'd need
+  // TreeTransform to not strip away implicit conversions.
+  Expr *newSyntacticForm = SemaRef.recreateSyntacticForm(E);
+  ExprResult result = getDerived().TransformExpr(newSyntacticForm);
   if (result.isInvalid()) return ExprError();
 
   // If that gives us a pseudo-object result back, the pseudo-object
@@ -6198,7 +6207,7 @@ TreeTransform<Derived>::TransformCallExpr(CallExpr *E) {
   if (!getDerived().AlwaysRebuild() &&
       Callee.get() == E->getCallee() &&
       !ArgChanged)
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);;
 
   // FIXME: Wrong source location information for the '('.
   SourceLocation FakeLParenLoc
@@ -6411,7 +6420,7 @@ TreeTransform<Derived>::TransformCompoundLiteralExpr(CompoundLiteralExpr *E) {
   if (!getDerived().AlwaysRebuild() &&
       OldT == NewT &&
       Init.get() == E->getInitializer())
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);
 
   // Note: the expression type doesn't necessarily match the
   // type-as-written, but that's okay, because it should always be
@@ -6606,7 +6615,7 @@ TreeTransform<Derived>::TransformStmtExpr(StmtExpr *E) {
 
   if (!getDerived().AlwaysRebuild() &&
       SubStmt.get() == E->getSubStmt())
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);
 
   return getDerived().RebuildStmtExpr(E->getLParenLoc(),
                                       SubStmt.get(),
@@ -6718,7 +6727,7 @@ TreeTransform<Derived>::TransformCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
       Callee.get() == E->getCallee() &&
       First.get() == E->getArg(0) &&
       (E->getNumArgs() != 2 || Second.get() == E->getArg(1)))
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);
 
   return getDerived().RebuildCXXOperatorCallExpr(E->getOperator(),
                                                  E->getOperatorLoc(),
@@ -6756,7 +6765,7 @@ TreeTransform<Derived>::TransformCUDAKernelCallExpr(CUDAKernelCallExpr *E) {
   if (!getDerived().AlwaysRebuild() &&
       Callee.get() == E->getCallee() &&
       !ArgChanged)
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);
 
   // FIXME: Wrong source location information for the '('.
   SourceLocation FakeLParenLoc
@@ -6907,9 +6916,6 @@ TreeTransform<Derived>::TransformCXXUuidofExpr(CXXUuidofExpr *E) {
                                              E->getLocEnd());
   }
 
-  // We don't know whether the expression is potentially evaluated until
-  // after we perform semantic analysis, so the expression is potentially
-  // potentially evaluated.
   EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
 
   ExprResult SubExpr = getDerived().TransformExpr(E->getExprOperand());
@@ -7960,7 +7966,7 @@ TreeTransform<Derived>::TransformObjCMessageExpr(ObjCMessageExpr *E) {
     // If nothing changed, just retain the existing message send.
     if (!getDerived().AlwaysRebuild() &&
         ReceiverTypeInfo == E->getClassReceiverTypeInfo() && !ArgChanged)
-      return SemaRef.Owned(E);
+      return SemaRef.MaybeBindToTemporary(E);
 
     // Build a new class message send.
     SmallVector<SourceLocation, 16> SelLocs;
@@ -7985,7 +7991,7 @@ TreeTransform<Derived>::TransformObjCMessageExpr(ObjCMessageExpr *E) {
   // If nothing changed, just retain the existing message send.
   if (!getDerived().AlwaysRebuild() &&
       Receiver.get() == E->getInstanceReceiver() && !ArgChanged)
-    return SemaRef.Owned(E);
+    return SemaRef.MaybeBindToTemporary(E);
   
   // Build a new instance message send.
   SmallVector<SourceLocation, 16> SelLocs;
@@ -8112,6 +8118,8 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   // in above, CapturesCXXThis need be set here from the block
   // expression.
   blockScope->CapturesCXXThis = oldBlock->capturesCXXThis();
+  blockScope->TheDecl->setBlockMissingReturnType(
+                         oldBlock->blockMissingReturnType());
   
   SmallVector<ParmVarDecl*, 4> params;
   SmallVector<QualType, 4> paramTypes;
@@ -8121,7 +8129,7 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
                                                oldBlock->param_begin(),
                                                oldBlock->param_size(),
                                                0, paramTypes, &params))
-    return true;
+    return ExprError();
 
   const FunctionType *exprFunctionType = E->getFunctionType();
   QualType exprResultType = exprFunctionType->getResultType();

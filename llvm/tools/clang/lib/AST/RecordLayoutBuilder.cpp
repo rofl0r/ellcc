@@ -1399,10 +1399,8 @@ void RecordLayoutBuilder::Layout(const CXXRecordDecl *RD) {
   }
 
   // Finally, round the size of the total struct up to the alignment
-  // of the struct itself.  Amazingly, this does not occur in the MS
-  // ABI after virtual base layout.
-  if (!isMicrosoftCXXABI() || RD->getNumVBases())
-    FinishLayout(RD);
+  // of the struct itself.
+  FinishLayout(RD);
 
 #ifndef NDEBUG
   // Check that we have base offsets for all bases.
@@ -1485,13 +1483,21 @@ void RecordLayoutBuilder::LayoutFields(const RecordDecl *D) {
         uint64_t TypeSize = FieldInfo.first;
         unsigned FieldAlign = FieldInfo.second;
         // This check is needed for 'long long' in -m32 mode.
-        if (TypeSize > FieldAlign)
+        if (TypeSize > FieldAlign &&
+            (Context.hasSameType(FD->getType(), 
+                                Context.UnsignedLongLongTy) 
+             ||Context.hasSameType(FD->getType(), 
+                                   Context.LongLongTy)))
           FieldAlign = TypeSize;
         FieldInfo = Context.getTypeInfo(LastFD->getType());
         uint64_t TypeSizeLastFD = FieldInfo.first;
         unsigned FieldAlignLastFD = FieldInfo.second;
         // This check is needed for 'long long' in -m32 mode.
-        if (TypeSizeLastFD > FieldAlignLastFD)
+        if (TypeSizeLastFD > FieldAlignLastFD &&
+            (Context.hasSameType(LastFD->getType(), 
+                                Context.UnsignedLongLongTy)
+             || Context.hasSameType(LastFD->getType(), 
+                                    Context.LongLongTy)))
           FieldAlignLastFD = TypeSizeLastFD;
         
         if (TypeSizeLastFD != TypeSize) {
@@ -1642,7 +1648,10 @@ void RecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   unsigned FieldAlign = FieldInfo.second;
   
   // This check is needed for 'long long' in -m32 mode.
-  if (IsMsStruct && (TypeSize > FieldAlign))
+  if (IsMsStruct && (TypeSize > FieldAlign) && 
+      (Context.hasSameType(D->getType(), 
+                           Context.UnsignedLongLongTy) 
+       || Context.hasSameType(D->getType(), Context.LongLongTy)))
     FieldAlign = TypeSize;
 
   if (ZeroLengthBitfield) {
@@ -1692,18 +1701,20 @@ void RecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   UnpackedFieldAlign = std::max(UnpackedFieldAlign, D->getMaxAlignment());
 
   // The maximum field alignment overrides the aligned attribute.
-  if (!MaxFieldAlignment.isZero()) {
+  if (!MaxFieldAlignment.isZero() && FieldSize != 0) {
     unsigned MaxFieldAlignmentInBits = Context.toBits(MaxFieldAlignment);
     FieldAlign = std::min(FieldAlign, MaxFieldAlignmentInBits);
     UnpackedFieldAlign = std::min(UnpackedFieldAlign, MaxFieldAlignmentInBits);
   }
 
   // Check if we need to add padding to give the field the correct alignment.
-  if (FieldSize == 0 || (FieldOffset & (FieldAlign-1)) + FieldSize > TypeSize)
+  if (FieldSize == 0 || (MaxFieldAlignment.isZero() &&
+                         (FieldOffset & (FieldAlign-1)) + FieldSize > TypeSize))
     FieldOffset = llvm::RoundUpToAlignment(FieldOffset, FieldAlign);
 
   if (FieldSize == 0 ||
-      (UnpackedFieldOffset & (UnpackedFieldAlign-1)) + FieldSize > TypeSize)
+      (MaxFieldAlignment.isZero() &&
+       (UnpackedFieldOffset & (UnpackedFieldAlign-1)) + FieldSize > TypeSize))
     UnpackedFieldOffset = llvm::RoundUpToAlignment(UnpackedFieldOffset,
                                                    UnpackedFieldAlign);
 
@@ -1882,6 +1893,13 @@ void RecordLayoutBuilder::FinishLayout(const NamedDecl *D) {
     else
       setSize(CharUnits::One());
   }
+
+  // MSVC doesn't round up to the alignment of the record with virtual bases.
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D)) {
+    if (isMicrosoftCXXABI() && RD->getNumVBases())
+      return;
+  }
+
   // Finally, round the size of the record up to the alignment of the
   // record itself.
   uint64_t UnpaddedSize = getSizeInBits() - UnfilledBitsInLastByte;
@@ -2143,7 +2161,9 @@ const CXXMethodDecl *ASTContext::getKeyFunction(const CXXRecordDecl *RD) {
 const ASTRecordLayout &
 ASTContext::getObjCLayout(const ObjCInterfaceDecl *D,
                           const ObjCImplementationDecl *Impl) const {
-  assert(!D->isForwardDecl() && "Invalid interface decl!");
+  // Retrieve the definition
+  D = D->getDefinition();
+  assert(D && D->isThisDeclarationADefinition() && "Invalid interface decl!");
 
   // Look up this layout, if already laid out, return what we have.
   ObjCContainerDecl *Key =

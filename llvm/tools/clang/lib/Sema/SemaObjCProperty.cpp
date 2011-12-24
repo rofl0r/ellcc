@@ -279,7 +279,7 @@ Sema::HandlePropertyInClassExtension(Scope *S,
   if (PIDecl->getType().getCanonicalType() 
       != PDecl->getType().getCanonicalType()) {
     Diag(AtLoc, 
-         diag::warn_type_mismatch_continuation_class) << PDecl->getType();
+         diag::err_type_mismatch_continuation_class) << PDecl->getType();
     Diag(PIDecl->getLocation(), diag::note_property_declare);
   }
     
@@ -648,13 +648,21 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
           Qualifiers::ObjCLifetime lifetime =
             getImpliedARCOwnership(kind, PropertyIvarType);
           assert(lifetime && "no lifetime for property?");
-
-          if (lifetime == Qualifiers::OCL_Weak &&
-              !getLangOptions().ObjCRuntimeHasWeak) {
-            Diag(PropertyLoc, diag::err_arc_weak_no_runtime);
-            Diag(property->getLocation(), diag::note_property_declare);
+          if (lifetime == Qualifiers::OCL_Weak) {
+            bool err = false;
+            if (const ObjCObjectPointerType *ObjT =
+                PropertyIvarType->getAs<ObjCObjectPointerType>())
+              if (ObjT->getInterfaceDecl()->isArcWeakrefUnavailable()) {
+                Diag(PropertyLoc, diag::err_arc_weak_unavailable_property);
+                Diag(property->getLocation(), diag::note_property_declare);
+                err = true;
+              }
+            if (!err && !getLangOptions().ObjCRuntimeHasWeak) {
+              Diag(PropertyLoc, diag::err_arc_weak_no_runtime);
+              Diag(property->getLocation(), diag::note_property_declare);
+            }
           }
-
+          
           Qualifiers qs;
           qs.addObjCLifetime(lifetime);
           PropertyIvarType = Context.getQualifiedType(PropertyIvarType, qs);   
@@ -682,7 +690,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
       // Note! I deliberately want it to fall thru so, we have a
       // a property implementation and to avoid future warnings.
     } else if (getLangOptions().ObjCNonFragileABI &&
-               ClassDeclared != IDecl) {
+               !declaresSameEntity(ClassDeclared, IDecl)) {
       Diag(PropertyLoc, diag::error_ivar_in_superclass_use)
       << property->getDeclName() << Ivar->getDeclName()
       << ClassDeclared->getDeclName();
@@ -862,7 +870,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
       }
       // Issue diagnostics only if Ivar belongs to current class.
       if (Ivar && Ivar->getSynthesize() && 
-          IC->getClassInterface() == ClassDeclared) {
+          declaresSameEntity(IC->getClassInterface(), ClassDeclared)) {
         Diag(Ivar->getLocation(), diag::err_undeclared_var_use) 
         << PropertyId;
         Ivar->setInvalidDecl();
@@ -1320,7 +1328,13 @@ void Sema::DefaultSynthesizeProperties(Scope *S, ObjCImplDecl* IMPDecl,
       if (IMPDecl->getInstanceMethod(Prop->getSetterName()))
         continue;
     }
-
+    if (isa<ObjCProtocolDecl>(Prop->getDeclContext())) {
+      // We won't auto-synthesize properties declared in protocols.
+      Diag(IMPDecl->getLocation(), 
+           diag::warn_auto_synthesizing_protocol_property);
+      Diag(Prop->getLocation(), diag::note_property_declare);
+      continue;
+    }
 
     // We use invalid SourceLocations for the synthesized ivars since they
     // aren't really synthesized at a particular location; they just exist.

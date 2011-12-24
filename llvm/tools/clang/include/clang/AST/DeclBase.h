@@ -244,6 +244,12 @@ private:
   /// are regarded as "referenced" but not "used".
   unsigned Referenced : 1;
 
+  /// \brief Whether this declaration is a top-level declaration (function,
+  /// global variable, etc.) that is lexically inside an objc container
+  /// definition.
+  /// FIXME: Consider setting the lexical context to the objc container.
+  unsigned TopLevelDeclInObjCContainer : 1;
+
 protected:
   /// Access - Used by C++ decls for the access specifier.
   // NOTE: VC++ treats enums as signed, avoid using the AccessSpecifier enum
@@ -272,6 +278,7 @@ protected:
 
   friend class ASTDeclWriter;
   friend class ASTDeclReader;
+  friend class ASTReader;
 
 private:
   void CheckAccessDeclContext() const;
@@ -282,7 +289,7 @@ protected:
     : NextDeclInContext(0), DeclCtx(DC),
       Loc(L), DeclKind(DK), InvalidDecl(0),
       HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0),
+      TopLevelDeclInObjCContainer(false), Access(AS_none), FromASTFile(0),
       ModulePrivate(0),
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       HasCachedLinkage(0)
@@ -293,7 +300,7 @@ protected:
   Decl(Kind DK, EmptyShell Empty)
     : NextDeclInContext(0), DeclKind(DK), InvalidDecl(0),
       HasAttrs(false), Implicit(false), Used(false), Referenced(false),
-      Access(AS_none), FromASTFile(0),
+      TopLevelDeclInObjCContainer(false), Access(AS_none), FromASTFile(0),
       ModulePrivate(0),
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       HasCachedLinkage(0)
@@ -452,6 +459,17 @@ public:
 
   void setReferenced(bool R = true) { Referenced = R; }
 
+  /// \brief Whether this declaration is a top-level declaration (function,
+  /// global variable, etc.) that is lexically inside an objc container
+  /// definition.
+  bool isTopLevelDeclInObjCContainer() const {
+    return TopLevelDeclInObjCContainer;
+  }
+
+  void setTopLevelDeclInObjCContainer(bool V = true) {
+    TopLevelDeclInObjCContainer = V;
+  }
+
   /// \brief Determine the availability of the given declaration.
   ///
   /// This routine will determine the most restrictive availability of
@@ -571,7 +589,7 @@ public:
 
   /// \brief Whether this particular Decl is a canonical one.
   bool isCanonicalDecl() const { return getCanonicalDecl() == this; }
-
+  
 protected:
   /// \brief Returns the next redeclaration or itself if this is the only decl.
   ///
@@ -742,6 +760,17 @@ protected:
   ASTMutationListener *getASTMutationListener() const;
 };
 
+/// \brief Determine whether two declarations declare the same entity.
+inline bool declaresSameEntity(const Decl *D1, const Decl *D2) {
+  if (!D1 || !D2)
+    return false;
+  
+  if (D1 == D2)
+    return true;
+  
+  return D1->getCanonicalDecl() == D2->getCanonicalDecl();
+}
+  
 /// PrettyStackTraceDecl - If a crash occurs, indicate that it happened when
 /// doing something to a specific decl.
 class PrettyStackTraceDecl : public llvm::PrettyStackTraceEntry {

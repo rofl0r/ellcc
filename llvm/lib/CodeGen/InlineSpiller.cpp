@@ -759,7 +759,7 @@ void InlineSpiller::eliminateRedundantSpills(LiveInterval &SLI, VNInfo *VNI) {
     // Find all spills and copies of VNI.
     for (MachineRegisterInfo::use_nodbg_iterator UI = MRI.use_nodbg_begin(Reg);
          MachineInstr *MI = UI.skipInstruction();) {
-      if (!MI->isCopy() && !MI->getDesc().mayStore())
+      if (!MI->isCopy() && !MI->mayStore())
         continue;
       SlotIndex Idx = LIS.getInstructionIndex(MI);
       if (LI->getVNInfoAt(Idx) != VNI)
@@ -878,7 +878,7 @@ bool InlineSpiller::reMaterializeFor(LiveInterval &VirtReg,
 
   // Before rematerializing into a register for a single instruction, try to
   // fold a load into the instruction. That avoids allocating a new register.
-  if (RM.OrigMI->getDesc().canFoldAsLoad() &&
+  if (RM.OrigMI->canFoldAsLoad() &&
       foldMemoryOperand(MI, Ops, RM.OrigMI)) {
     Edit->markRematerialized(RM.ParentVNI);
     ++NumFoldedLoads;
@@ -957,7 +957,7 @@ void InlineSpiller::reMaterializeAll() {
   if (DeadDefs.empty())
     return;
   DEBUG(dbgs() << "Remat created " << DeadDefs.size() << " dead defs.\n");
-  Edit->eliminateDeadDefs(DeadDefs, LIS, VRM, TII);
+  Edit->eliminateDeadDefs(DeadDefs, LIS, VRM, TII, RegsToSpill);
 
   // Get rid of deleted and empty intervals.
   for (unsigned i = RegsToSpill.size(); i != 0; --i) {
@@ -1240,7 +1240,7 @@ void InlineSpiller::spillAll() {
   // Hoisted spills may cause dead code.
   if (!DeadDefs.empty()) {
     DEBUG(dbgs() << "Eliminating " << DeadDefs.size() << " dead defs\n");
-    Edit->eliminateDeadDefs(DeadDefs, LIS, VRM, TII);
+    Edit->eliminateDeadDefs(DeadDefs, LIS, VRM, TII, RegsToSpill);
   }
 
   // Finally delete the SnippetCopies.

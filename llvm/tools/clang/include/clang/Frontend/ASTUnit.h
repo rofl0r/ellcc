@@ -628,7 +628,8 @@ public:
 
   /// \brief Create a ASTUnit. Gets ownership of the passed CompilerInvocation. 
   static ASTUnit *create(CompilerInvocation *CI,
-                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags);
+                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                         bool CaptureDiagnostics = false);
 
   /// \brief Create a ASTUnit from an AST file.
   ///
@@ -673,10 +674,20 @@ public:
   ///
   /// \param Unit - optionally an already created ASTUnit. Its ownership is not
   /// transfered.
+  ///
+  /// \param Persistent - if true the returned ASTUnit will be complete.
+  /// false means the caller is only interested in getting info through the
+  /// provided \see Action.
   static ASTUnit *LoadFromCompilerInvocationAction(CompilerInvocation *CI,
                               llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              ASTFrontendAction *Action = 0,
-                                             ASTUnit *Unit = 0);
+                                             ASTUnit *Unit = 0,
+                                             bool Persistent = true,
+                                      StringRef ResourceFilesPath = StringRef(),
+                                             bool OnlyLocalDecls = false,
+                                             bool CaptureDiagnostics = false,
+                                             bool PrecompilePreamble = false,
+                                       bool CacheCodeCompletionResults = false);
 
   /// LoadFromCompilerInvocation - Create an ASTUnit from a source file, via a
   /// CompilerInvocation object.
@@ -770,9 +781,9 @@ public:
   /// \returns True if an error occurred, false otherwise.
   bool serialize(raw_ostream &OS);
   
-  virtual ModuleKey loadModule(SourceLocation ImportLoc, 
-                               IdentifierInfo &ModuleName,
-                               SourceLocation ModuleNameLoc) {
+  virtual Module *loadModule(SourceLocation ImportLoc, ModuleIdPath Path,
+                             Module::NameVisibilityKind Visibility,
+                             bool IsInclusionDirective) {
     // ASTUnit doesn't know how to load modules (not that this matters).
     return 0;
   }

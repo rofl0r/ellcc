@@ -484,3 +484,25 @@ void PR11249()
     *p = 0xDEADBEEF;  // no-warning
 }
 
+// Handle doing a load from the memory associated with the code for
+// a function.
+extern double nan( const char * );
+double PR11450() {
+  double NaN = *(double*) nan;
+  return NaN;
+}
+
+// Test that 'this' is assumed non-null upon analyzing the entry to a "top-level"
+// function (i.e., when not analyzing from a specific caller).
+struct TestNullThis {
+  int field;
+  void test();
+};
+
+void TestNullThis::test() {
+  int *p = &field;
+  if (p)
+    return;
+  field = 2; // no-warning
+}
+

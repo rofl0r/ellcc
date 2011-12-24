@@ -62,34 +62,42 @@ bool Sema::CanUseDecl(NamedDecl *D) {
   return true;
 }
 
-static AvailabilityResult DiagnoseAvailabilityOfDecl(Sema &S,
+AvailabilityResult 
+Sema::DiagnoseAvailabilityOfDecl(
                               NamedDecl *D, SourceLocation Loc,
                               const ObjCInterfaceDecl *UnknownObjCClass) {
   // See if this declaration is unavailable or deprecated.
   std::string Message;
   AvailabilityResult Result = D->getAvailability(&Message);
+  if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(D))
+    if (Result == AR_Available) {
+      const DeclContext *DC = ECD->getDeclContext();
+      if (const EnumDecl *TheEnumDecl = dyn_cast<EnumDecl>(DC))
+        Result = TheEnumDecl->getAvailability(&Message);
+    }
+  
   switch (Result) {
     case AR_Available:
     case AR_NotYetIntroduced:
       break;
             
     case AR_Deprecated:
-      S.EmitDeprecationWarning(D, Message, Loc, UnknownObjCClass);
+      EmitDeprecationWarning(D, Message, Loc, UnknownObjCClass);
       break;
             
     case AR_Unavailable:
-      if (S.getCurContextAvailability() != AR_Unavailable) {
+      if (getCurContextAvailability() != AR_Unavailable) {
         if (Message.empty()) {
           if (!UnknownObjCClass)
-            S.Diag(Loc, diag::err_unavailable) << D->getDeclName();
+            Diag(Loc, diag::err_unavailable) << D->getDeclName();
           else
-            S.Diag(Loc, diag::warn_unavailable_fwdclass_message) 
+            Diag(Loc, diag::warn_unavailable_fwdclass_message) 
               << D->getDeclName();
         }
         else 
-          S.Diag(Loc, diag::err_unavailable_message) 
+          Diag(Loc, diag::err_unavailable_message) 
             << D->getDeclName() << Message;
-          S.Diag(D->getLocation(), diag::note_unavailable_here) 
+          Diag(D->getLocation(), diag::note_unavailable_here) 
           << isa<FunctionDecl>(D) << false;
       }
       break;
@@ -144,22 +152,11 @@ bool Sema::DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
       return true;
     }
   }
-  AvailabilityResult Result =
-    DiagnoseAvailabilityOfDecl(*this, D, Loc, UnknownObjCClass);
+  DiagnoseAvailabilityOfDecl(D, Loc, UnknownObjCClass);
 
   // Warn if this is used but marked unused.
   if (D->hasAttr<UnusedAttr>())
     Diag(Loc, diag::warn_used_but_marked_unused) << D->getDeclName();
-  // For available enumerator, it will become unavailable/deprecated
-  // if its enum declaration is as such.
-  if (Result == AR_Available)
-    if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(D)) {
-      const DeclContext *DC = ECD->getDeclContext();
-      if (const EnumDecl *TheEnumDecl = dyn_cast<EnumDecl>(DC))
-        DiagnoseAvailabilityOfDecl(*this,
-                          const_cast< EnumDecl *>(TheEnumDecl), 
-                          Loc, UnknownObjCClass);
-    }
   return false;
 }
 
@@ -1202,7 +1199,8 @@ diagnoseUncapturableValueReference(Sema &S, SourceLocation loc,
                                    VarDecl *var, DeclContext *DC) {
   switch (S.ExprEvalContexts.back().Context) {
   case Sema::Unevaluated:
-    // The argument will never be evaluated, so don't complain.
+  case Sema::ConstantEvaluated:
+    // The argument will never be evaluated at runtime, so don't complain.
     return CR_NoCapture;
 
   case Sema::PotentiallyEvaluated:
@@ -1511,8 +1509,8 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
   // unqualified lookup.  This is useful when (for example) the
   // original lookup would not have found something because it was a
   // dependent name.
-  for (DeclContext *DC = SS.isEmpty() ? CurContext : 0;
-       DC; DC = DC->getParent()) {
+  DeclContext *DC = SS.isEmpty() ? CurContext : 0;
+  while (DC) {
     if (isa<CXXRecordDecl>(DC)) {
       LookupQualifiedName(R, DC);
 
@@ -1591,6 +1589,17 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
 
       R.clear();
     }
+
+    // In Microsoft mode, if we are performing lookup from within a friend
+    // function definition declared at class scope then we must set
+    // DC to the lexical parent to be able to search into the parent
+    // class.
+    if (getLangOptions().MicrosoftMode && isa<FunctionDecl>(DC) &&
+        cast<FunctionDecl>(DC)->getFriendObjectKind() &&
+        DC->getLexicalParent()->isRecord())
+      DC = DC->getLexicalParent();
+    else
+      DC = DC->getParent();
   }
 
   // We didn't find anything, so try to correct for a typo.
@@ -1967,7 +1976,7 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
 
       // Diagnose the use of an ivar outside of the declaring class.
       if (IV->getAccessControl() == ObjCIvarDecl::Private &&
-          ClassDeclared != IFace)
+          !declaresSameEntity(ClassDeclared, IFace))
         Diag(Loc, diag::error_private_ivar_access) << IV->getDeclName();
 
       // FIXME: This should use a new expr for a direct reference, don't
@@ -1997,10 +2006,16 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
       ObjCInterfaceDecl *ClassDeclared;
       if (ObjCIvarDecl *IV = IFace->lookupInstanceVariable(II, ClassDeclared)) {
         if (IV->getAccessControl() != ObjCIvarDecl::Private ||
-            IFace == ClassDeclared)
+            declaresSameEntity(IFace, ClassDeclared))
           Diag(Loc, diag::warn_ivar_use_hidden) << IV->getDeclName();
       }
     }
+  } else if (Lookup.isSingleResult() &&
+             Lookup.getFoundDecl()->isDefinedOutsideFunctionOrMethod()) {
+    // If accessing a stand-alone ivar in a class method, this is an error.
+    if (const ObjCIvarDecl *IV = dyn_cast<ObjCIvarDecl>(Lookup.getFoundDecl()))
+      return ExprError(Diag(Loc, diag::error_ivar_use_in_class_method)
+                       << IV->getDeclName());
   }
 
   if (Lookup.empty() && II && AllowBuiltinCreation) {
@@ -3684,6 +3699,11 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
   }
 
   // If we're directly calling a function, get the appropriate declaration.
+  if (Fn->getType() == Context.UnknownAnyTy) {
+    ExprResult result = rebuildUnknownAnyFunction(*this, Fn);
+    if (result.isInvalid()) return ExprError();
+    Fn = result.take();
+  }
 
   Expr *NakedFn = Fn->IgnoreParens();
 
@@ -6190,11 +6210,9 @@ QualType Sema::CheckSubtractionOperands(ExprResult &LHS, ExprResult &RHS,
       if (!checkArithmeticOpPointerOperand(*this, Loc, LHS.get()))
         return QualType();
 
-      Expr *IExpr = RHS.get()->IgnoreParenCasts();
-      UnaryOperator negRex(IExpr, UO_Minus, IExpr->getType(), VK_RValue,
-                           OK_Ordinary, IExpr->getExprLoc());
       // Check array bounds for pointer arithemtic
-      CheckArrayAccess(LHS.get()->IgnoreParenCasts(), &negRex);
+      CheckArrayAccess(LHS.get(), RHS.get(), /*ArraySubscriptExpr*/0,
+                       /*AllowOnePastEnd*/true, /*IndexNegated*/true);
 
       if (CompLHSTy) *CompLHSTy = LHS.get()->getType();
       return LHS.get()->getType();
@@ -8244,6 +8262,48 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
                                            VK, OK, OpLoc));
 }
 
+/// \brief Determine whether the given expression is a qualified member
+/// access expression, of a form that could be turned into a pointer to member
+/// with the address-of operator.
+static bool isQualifiedMemberAccess(Expr *E) {
+  if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
+    if (!DRE->getQualifier())
+      return false;
+    
+    ValueDecl *VD = DRE->getDecl();
+    if (!VD->isCXXClassMember())
+      return false;
+    
+    if (isa<FieldDecl>(VD) || isa<IndirectFieldDecl>(VD))
+      return true;
+    if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(VD))
+      return Method->isInstance();
+      
+    return false;
+  }
+  
+  if (UnresolvedLookupExpr *ULE = dyn_cast<UnresolvedLookupExpr>(E)) {
+    if (!ULE->getQualifier())
+      return false;
+    
+    for (UnresolvedLookupExpr::decls_iterator D = ULE->decls_begin(),
+                                           DEnd = ULE->decls_end();
+         D != DEnd; ++D) {
+      if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(*D)) {
+        if (Method->isInstance())
+          return true;
+      } else {
+        // Overload set does not contain methods.
+        break;
+      }
+    }
+    
+    return false;
+  }
+  
+  return false;
+}
+
 ExprResult Sema::BuildUnaryOp(Scope *S, SourceLocation OpLoc,
                               UnaryOperatorKind Opc, Expr *Input) {
   // First things first: handle placeholders so that the
@@ -8273,7 +8333,8 @@ ExprResult Sema::BuildUnaryOp(Scope *S, SourceLocation OpLoc,
   }
 
   if (getLangOptions().CPlusPlus && Input->getType()->isOverloadableType() &&
-      UnaryOperator::getOverloadedOperator(Opc) != OO_None) {
+      UnaryOperator::getOverloadedOperator(Opc) != OO_None &&
+      !(Opc == UO_AddrOf && isQualifiedMemberAccess(Input))) {
     // Find all of the overloaded operators visible from this
     // point. We perform both an operator-name lookup from the local
     // scope and an argument-dependent lookup based on the types of
@@ -8703,8 +8764,10 @@ void Sema::ActOnBlockArguments(Declarator &ParamInfo, Scope *CurScope) {
   // return type.  TODO:  what should we do with declarators like:
   //   ^ * { ... }
   // If the answer is "apply template argument deduction"....
-  if (RetTy != Context.DependentTy)
+  if (RetTy != Context.DependentTy) {
     CurBlock->ReturnType = RetTy;
+    CurBlock->TheDecl->setBlockMissingReturnType(false);
+  }
 
   // Push block parameters from the declarator if we had them.
   SmallVector<ParmVarDecl*, 8> Params;
@@ -9028,6 +9091,7 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
   FixItHint Hint;
   ConversionFixItGenerator ConvHints;
   bool MayHaveConvFixit = false;
+  bool MayHaveFunctionDiff = false;
 
   switch (ConvTy) {
   default: llvm_unreachable("Unknown conversion type");
@@ -9117,6 +9181,7 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
     ConvHints.tryToFixConversion(SrcExpr, SrcType, DstType, *this);
     MayHaveConvFixit = true;
     isInvalid = true;
+    MayHaveFunctionDiff = true;
     break;
   }
 
@@ -9155,7 +9220,14 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
   }
   if (MayHaveConvFixit) { FDiag << (unsigned) (ConvHints.Kind); }
 
+  if (MayHaveFunctionDiff)
+    HandleFunctionTypeMismatch(FDiag, SecondType, FirstType);
+
   Diag(Loc, FDiag);
+
+  if (SecondType == Context.OverloadTy)
+    NoteAllOverloadCandidates(OverloadExpr::find(SrcExpr).Expression,
+                              FirstType);
 
   if (CheckInferredResultType)
     EmitRelatedResultTypeNote(SrcExpr);
@@ -9165,38 +9237,60 @@ bool Sema::DiagnoseAssignmentResult(AssignConvertType ConvTy,
   return isInvalid;
 }
 
-bool Sema::VerifyIntegerConstantExpression(const Expr *E, llvm::APSInt *Result){
-  llvm::APSInt ICEResult;
-  if (E->isIntegerConstantExpr(ICEResult, Context)) {
-    if (Result)
-      *Result = ICEResult;
-    return false;
+bool Sema::VerifyIntegerConstantExpression(const Expr *E, llvm::APSInt *Result,
+                                           unsigned DiagID, bool AllowFold) {
+  // Circumvent ICE checking in C++11 to avoid evaluating the expression twice
+  // in the non-ICE case.
+  if (!getLangOptions().CPlusPlus0x) {
+    if (E->isIntegerConstantExpr(Context)) {
+      if (Result)
+        *Result = E->EvaluateKnownConstInt(Context);
+      return false;
+    }
   }
 
   Expr::EvalResult EvalResult;
+  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  EvalResult.Diag = &Notes;
 
-  if (!E->EvaluateAsRValue(EvalResult, Context) || !EvalResult.Val.isInt() ||
-      EvalResult.HasSideEffects) {
-    Diag(E->getExprLoc(), diag::err_expr_not_ice) << E->getSourceRange();
+  // Try to evaluate the expression, and produce diagnostics explaining why it's
+  // not a constant expression as a side-effect.
+  bool Folded = E->EvaluateAsRValue(EvalResult, Context) &&
+                EvalResult.Val.isInt() && !EvalResult.HasSideEffects;
 
-    if (EvalResult.Diag) {
-      // We only show the note if it's not the usual "invalid subexpression"
-      // or if it's actually in a subexpression.
-      if (EvalResult.Diag != diag::note_invalid_subexpr_in_ice ||
-          E->IgnoreParens() != EvalResult.DiagExpr->IgnoreParens())
-        Diag(EvalResult.DiagLoc, EvalResult.Diag);
+  // In C++11, we can rely on diagnostics being produced for any expression
+  // which is not a constant expression. If no diagnostics were produced, then
+  // this is a constant expression.
+  if (Folded && getLangOptions().CPlusPlus0x && Notes.empty()) {
+    if (Result)
+      *Result = EvalResult.Val.getInt();
+    return false;
+  }
+
+  if (!Folded || !AllowFold) {
+    Diag(E->getSourceRange().getBegin(),
+         DiagID ? DiagID : unsigned(diag::err_expr_not_ice))
+      << E->getSourceRange();
+
+    // We only show the notes if they're not the usual "invalid subexpression"
+    // or if they are actually in a subexpression.
+    if (Notes.size() != 1 ||
+        Notes[0].second.getDiagID() != diag::note_invalid_subexpr_in_const_expr
+        || Notes[0].first != E->IgnoreParens()->getExprLoc()) {
+      for (unsigned I = 0, N = Notes.size(); I != N; ++I)
+        Diag(Notes[I].first, Notes[I].second);
     }
 
     return true;
   }
 
-  Diag(E->getExprLoc(), diag::ext_expr_not_ice) <<
-    E->getSourceRange();
+  Diag(E->getSourceRange().getBegin(), diag::ext_expr_not_ice)
+    << E->getSourceRange();
 
-  if (EvalResult.Diag &&
-      Diags.getDiagnosticLevel(diag::ext_expr_not_ice, EvalResult.DiagLoc)
+  if (Diags.getDiagnosticLevel(diag::ext_expr_not_ice, E->getExprLoc())
           != DiagnosticsEngine::Ignored)
-    Diag(EvalResult.DiagLoc, EvalResult.Diag);
+    for (unsigned I = 0, N = Notes.size(); I != N; ++I)
+      Diag(Notes[I].first, Notes[I].second);
 
   if (Result)
     *Result = EvalResult.Val.getInt();
@@ -9243,7 +9337,7 @@ void Sema::PopExpressionEvaluationContext() {
   // temporaries that we may have created as part of the evaluation of
   // the expression in that context: they aren't relevant because they
   // will never be constructed.
-  if (Rec.Context == Unevaluated) {
+  if (Rec.Context == Unevaluated || Rec.Context == ConstantEvaluated) {
     ExprCleanupObjects.erase(ExprCleanupObjects.begin() + Rec.NumCleanupObjects,
                              ExprCleanupObjects.end());
     ExprNeedsCleanups = Rec.ParentNeedsCleanups;
@@ -9304,6 +9398,16 @@ void Sema::MarkDeclarationReferenced(SourceLocation Loc, Decl *D) {
     case Unevaluated:
       // We are in an expression that is not potentially evaluated; do nothing.
       return;
+
+    case ConstantEvaluated:
+      // We are in an expression that will be evaluated during translation; in
+      // C++11, we need to define any functions which are used in case they're
+      // constexpr, whereas in C++98, we only need to define static data members
+      // of class templates.
+      if (!getLangOptions().CPlusPlus ||
+          (!getLangOptions().CPlusPlus0x && !isa<VarDecl>(D)))
+        return;
+      break;
 
     case PotentiallyEvaluated:
       // We are in a potentially-evaluated expression, so this declaration is
@@ -9387,6 +9491,11 @@ void Sema::MarkDeclarationReferenced(SourceLocation Loc, Decl *D) {
             cast<CXXRecordDecl>(Function->getDeclContext())->isLocalClass())
           PendingLocalImplicitInstantiations.push_back(std::make_pair(Function,
                                                                       Loc));
+        else if (Function->getTemplateInstantiationPattern()->isConstexpr())
+          // Do not defer instantiations of constexpr functions, to avoid the
+          // expression evaluator needing to call back into Sema if it sees a
+          // call to such a function.
+          InstantiateFunctionDefinition(Loc, Function);
         else
           PendingInstantiations.push_back(std::make_pair(Function, Loc));
       }
@@ -9422,7 +9531,12 @@ void Sema::MarkDeclarationReferenced(SourceLocation Loc, Decl *D) {
         // This is a modification of an existing AST node. Notify listeners.
         if (ASTMutationListener *L = getASTMutationListener())
           L->StaticDataMemberInstantiated(Var);
-        PendingInstantiations.push_back(std::make_pair(Var, Loc));
+        if (Var->isUsableInConstantExpressions())
+          // Do not defer instantiations of variables which could be used in a
+          // constant expression.
+          InstantiateStaticDataMemberDefinition(Loc, Var);
+        else
+          PendingInstantiations.push_back(std::make_pair(Var, Loc));
       }
     }
 
@@ -9574,6 +9688,10 @@ bool Sema::DiagRuntimeBehavior(SourceLocation Loc, const Stmt *Statement,
   switch (ExprEvalContexts.back().Context) {
   case Unevaluated:
     // The argument will never be evaluated, so don't complain.
+    break;
+
+  case ConstantEvaluated:
+    // Relevant diagnostics should be produced by constant evaluation.
     break;
 
   case PotentiallyEvaluated:
@@ -10092,6 +10210,10 @@ ExprResult Sema::checkUnknownAnyCast(SourceRange TypeRange, QualType CastType,
   CastKind = CK_NoOp;
 
   return CastExpr;
+}
+
+ExprResult Sema::forceUnknownAnyToType(Expr *E, QualType ToType) {
+  return RebuildUnknownAnyExpr(*this, ToType).Visit(E);
 }
 
 static ExprResult diagnoseUnknownAnyExpr(Sema &S, Expr *E) {

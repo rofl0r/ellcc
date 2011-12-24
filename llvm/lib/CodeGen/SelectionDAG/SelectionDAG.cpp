@@ -840,9 +840,9 @@ unsigned SelectionDAG::getEVTAlignment(EVT VT) const {
 }
 
 // EntryNode could meaningfully have debug info if we can find it...
-SelectionDAG::SelectionDAG(const TargetMachine &tm)
+SelectionDAG::SelectionDAG(const TargetMachine &tm, CodeGenOpt::Level OL)
   : TM(tm), TLI(*tm.getTargetLowering()), TSI(*tm.getSelectionDAGInfo()),
-    EntryNode(ISD::EntryToken, DebugLoc(), getVTList(MVT::Other)),
+    OptLevel(OL), EntryNode(ISD::EntryToken, DebugLoc(), getVTList(MVT::Other)),
     Root(getEntryNode()), Ordering(0) {
   AllNodes.push_back(&EntryNode);
   Ordering = new SDNodeOrdering();
@@ -1856,7 +1856,9 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, const APInt &Mask,
     return;
   }
   case ISD::CTTZ:
+  case ISD::CTTZ_ZERO_UNDEF:
   case ISD::CTLZ:
+  case ISD::CTLZ_ZERO_UNDEF:
   case ISD::CTPOP: {
     unsigned LowBits = Log2_32(BitWidth)+1;
     KnownZero = APInt::getHighBitsSet(BitWidth, BitWidth - LowBits);
@@ -2334,7 +2336,7 @@ bool SelectionDAG::isBaseWithConstantOffset(SDValue Op) const {
 
 bool SelectionDAG::isKnownNeverNaN(SDValue Op) const {
   // If we're told that NaNs won't happen, assume they won't.
-  if (NoNaNsFPMath)
+  if (getTarget().Options.NoNaNsFPMath)
     return true;
 
   // If the value is a constant, we can obviously see if it is a NaN or not.
@@ -2429,8 +2431,10 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     case ISD::CTPOP:
       return getConstant(Val.countPopulation(), VT);
     case ISD::CTLZ:
+    case ISD::CTLZ_ZERO_UNDEF:
       return getConstant(Val.countLeadingZeros(), VT);
     case ISD::CTTZ:
+    case ISD::CTTZ_ZERO_UNDEF:
       return getConstant(Val.countTrailingZeros(), VT);
     }
   }
@@ -2607,7 +2611,7 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     break;
   case ISD::FNEG:
     // -(X-Y) -> (Y-X) is unsafe because when X==Y, -0.0 != +0.0
-    if (UnsafeFPMath && OpOpcode == ISD::FSUB)
+    if (getTarget().Options.UnsafeFPMath && OpOpcode == ISD::FSUB)
       return getNode(ISD::FSUB, DL, VT, Operand.getNode()->getOperand(1),
                      Operand.getNode()->getOperand(0));
     if (OpOpcode == ISD::FNEG)  // --X -> X
@@ -2742,7 +2746,7 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
   case ISD::FMUL:
   case ISD::FDIV:
   case ISD::FREM:
-    if (UnsafeFPMath) {
+    if (getTarget().Options.UnsafeFPMath) {
       if (Opcode == ISD::FADD) {
         // 0+x --> x
         if (ConstantFPSDNode *CFP = dyn_cast<ConstantFPSDNode>(N1))
@@ -3065,7 +3069,7 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     case ISD::FMUL:
     case ISD::FDIV:
     case ISD::FREM:
-      if (UnsafeFPMath)
+      if (getTarget().Options.UnsafeFPMath)
         return N2;
       break;
     case ISD::MUL:
@@ -4914,6 +4918,20 @@ SDNode *SelectionDAG::SelectNodeTo(SDNode *N, unsigned MachineOpc,
   return N;
 }
 
+/// UpdadeDebugLocOnMergedSDNode - If the opt level is -O0 then it throws away
+/// the line number information on the merged node since it is not possible to
+/// preserve the information that operation is associated with multiple lines.
+/// This will make the debugger working better at -O0, were there is a higher
+/// probability having other instructions associated with that line.
+///
+SDNode *SelectionDAG::UpdadeDebugLocOnMergedSDNode(SDNode *N, DebugLoc OLoc) {
+  DebugLoc NLoc = N->getDebugLoc();
+  if (!(NLoc.isUnknown()) && (OptLevel == CodeGenOpt::None) && (OLoc != NLoc)) {
+    N->setDebugLoc(DebugLoc());
+  }
+  return N;
+}
+
 /// MorphNodeTo - This *mutates* the specified node to have the specified
 /// return type, opcode, and operands.
 ///
@@ -4935,7 +4953,7 @@ SDNode *SelectionDAG::MorphNodeTo(SDNode *N, unsigned Opc,
     FoldingSetNodeID ID;
     AddNodeIDNode(ID, Opc, VTs, Ops, NumOps);
     if (SDNode *ON = CSEMap.FindNodeOrInsertPos(ID, IP))
-      return ON;
+      return UpdadeDebugLocOnMergedSDNode(ON, N->getDebugLoc());
   }
 
   if (!RemoveNodeFromCSEMaps(N))
@@ -5139,8 +5157,9 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc DL, SDVTList VTs,
     FoldingSetNodeID ID;
     AddNodeIDNode(ID, ~Opcode, VTs, Ops, NumOps);
     IP = 0;
-    if (SDNode *E = CSEMap.FindNodeOrInsertPos(ID, IP))
-      return cast<MachineSDNode>(E);
+    if (SDNode *E = CSEMap.FindNodeOrInsertPos(ID, IP)) {
+      return cast<MachineSDNode>(UpdadeDebugLocOnMergedSDNode(E, DL));
+    }
   }
 
   // Allocate a new MachineSDNode.
@@ -5943,7 +5962,6 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::EH_RETURN: return "EH_RETURN";
   case ISD::EH_SJLJ_SETJMP: return "EH_SJLJ_SETJMP";
   case ISD::EH_SJLJ_LONGJMP: return "EH_SJLJ_LONGJMP";
-  case ISD::EH_SJLJ_DISPATCHSETUP: return "EH_SJLJ_DISPATCHSETUP";
   case ISD::ConstantPool:  return "ConstantPool";
   case ISD::ExternalSymbol: return "ExternalSymbol";
   case ISD::BlockAddress:  return "BlockAddress";
@@ -6112,10 +6130,12 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::TRAP:               return "trap";
 
   // Bit manipulation
-  case ISD::BSWAP:   return "bswap";
-  case ISD::CTPOP:   return "ctpop";
-  case ISD::CTTZ:    return "cttz";
-  case ISD::CTLZ:    return "ctlz";
+  case ISD::BSWAP:           return "bswap";
+  case ISD::CTPOP:           return "ctpop";
+  case ISD::CTTZ:            return "cttz";
+  case ISD::CTTZ_ZERO_UNDEF: return "cttz_zero_undef";
+  case ISD::CTLZ:            return "ctlz";
+  case ISD::CTLZ_ZERO_UNDEF: return "ctlz_zero_undef";
 
   // Trampolines
   case ISD::INIT_TRAMPOLINE: return "init_trampoline";
@@ -6146,6 +6166,11 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
     case ISD::SETLT:   return "setlt";
     case ISD::SETLE:   return "setle";
     case ISD::SETNE:   return "setne";
+
+    case ISD::SETTRUE:   return "settrue";
+    case ISD::SETTRUE2:  return "settrue2";
+    case ISD::SETFALSE:  return "setfalse";
+    case ISD::SETFALSE2: return "setfalse2";
     }
   }
 }
@@ -6554,20 +6579,15 @@ unsigned SelectionDAG::InferPtrAlignment(SDValue Ptr) const {
   const GlobalValue *GV;
   int64_t GVOffset = 0;
   if (TLI.isGAPlusOffset(Ptr.getNode(), GV, GVOffset)) {
-    // If GV has specified alignment, then use it. Otherwise, use the preferred
-    // alignment.
-    unsigned Align = GV->getAlignment();
-    if (!Align) {
-      if (const GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV)) {
-        if (GVar->hasInitializer()) {
-          const TargetData *TD = TLI.getTargetData();
-          Align = TD->getPreferredAlignment(GVar);
-        }
-      }
-      if (!Align)
-        Align = TLI.getTargetData()->getABITypeAlignment(GV->getType());
-    }
-    return MinAlign(Align, GVOffset);
+    unsigned PtrWidth = TLI.getPointerTy().getSizeInBits();
+    APInt AllOnes = APInt::getAllOnesValue(PtrWidth);
+    APInt KnownZero(PtrWidth, 0), KnownOne(PtrWidth, 0);
+    llvm::ComputeMaskedBits(const_cast<GlobalValue*>(GV), AllOnes,
+                            KnownZero, KnownOne, TLI.getTargetData());
+    unsigned AlignBits = KnownZero.countTrailingOnes();
+    unsigned Align = AlignBits ? 1 << std::min(31U, AlignBits) : 0;
+    if (Align)
+      return MinAlign(Align, GVOffset);
   }
 
   // If this is a direct reference to a stack slot, use information about the

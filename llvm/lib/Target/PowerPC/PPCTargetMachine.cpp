@@ -28,10 +28,11 @@ extern "C" void LLVMInitializePowerPCTarget() {
 
 PPCTargetMachine::PPCTargetMachine(const Target &T, StringRef TT,
                                    StringRef CPU, StringRef FS,
+                                   const TargetOptions &Options,
                                    Reloc::Model RM, CodeModel::Model CM,
                                    CodeGenOpt::Level OL,
                                    bool is64Bit)
-  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM, OL),
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     Subtarget(TT, CPU, FS, is64Bit),
     DataLayout(Subtarget.getTargetDataString()), InstrInfo(*this),
     FrameLowering(Subtarget), JITInfo(*this, is64Bit),
@@ -43,19 +44,24 @@ PPCTargetMachine::PPCTargetMachine(const Target &T, StringRef TT,
 /// groups, which typically degrades performance.
 bool PPCTargetMachine::getEnableTailMergeDefault() const { return false; }
 
+void PPC32TargetMachine::anchor() { }
+
 PPC32TargetMachine::PPC32TargetMachine(const Target &T, StringRef TT, 
                                        StringRef CPU, StringRef FS,
+                                       const TargetOptions &Options,
                                        Reloc::Model RM, CodeModel::Model CM,
                                        CodeGenOpt::Level OL)
-  : PPCTargetMachine(T, TT, CPU, FS, RM, CM, OL, false) {
+  : PPCTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {
 }
 
+void PPC64TargetMachine::anchor() { }
 
 PPC64TargetMachine::PPC64TargetMachine(const Target &T, StringRef TT, 
                                        StringRef CPU,  StringRef FS,
+                                       const TargetOptions &Options,
                                        Reloc::Model RM, CodeModel::Model CM,
                                        CodeGenOpt::Level OL)
-  : PPCTargetMachine(T, TT, CPU, FS, RM, CM, OL, true) {
+  : PPCTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {
 }
 
 
@@ -81,7 +87,7 @@ bool PPCTargetMachine::addCodeEmitter(PassManagerBase &PM,
   if (Subtarget.isPPC64())
     // Temporary workaround for the inability of PPC64 JIT to handle jump
     // tables.
-    DisableJumpTables = true;      
+    Options.DisableJumpTables = true;      
   
   // Inform the subtarget that we are in JIT mode.  FIXME: does this break macho
   // writing?

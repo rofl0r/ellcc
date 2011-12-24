@@ -63,8 +63,22 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
 
     // Special handling for calls.
     if (isa<CallInst>(II) || isa<InvokeInst>(II)) {
-      if (isa<DbgInfoIntrinsic>(II))
-        continue;  // Debug intrinsics don't count as size.
+      if (const IntrinsicInst *IntrinsicI = dyn_cast<IntrinsicInst>(II)) {
+        switch (IntrinsicI->getIntrinsicID()) {
+        default: break;
+        case Intrinsic::dbg_declare:
+        case Intrinsic::dbg_value:
+        case Intrinsic::invariant_start:
+        case Intrinsic::invariant_end:
+        case Intrinsic::lifetime_start:
+        case Intrinsic::lifetime_end:
+        case Intrinsic::objectsize:
+        case Intrinsic::ptr_annotation:
+        case Intrinsic::var_annotation:
+          // These intrinsics don't count as size.
+          continue;
+        }
+      }
 
       ImmutableCallSite CS(cast<Instruction>(II));
 
@@ -72,7 +86,7 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
         // If a function is both internal and has a single use, then it is
         // extremely likely to get inlined in the future (it was probably
         // exposed by an interleaved devirtualization pass).
-        if (F->hasInternalLinkage() && F->hasOneUse())
+        if (!CS.isNoInline() && F->hasInternalLinkage() && F->hasOneUse())
           ++NumInlineCandidates;
 
         // If this call is to function itself, then the function is recursive.
@@ -138,7 +152,7 @@ void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
   // FIXME: This logic isn't really right; we can safely inline functions
   // with indirectbr's as long as no other function or global references the
   // blockaddress of a block within the current function.  And as a QOI issue,
-  // if someone is using a blockaddress wihtout an indirectbr, and that
+  // if someone is using a blockaddress without an indirectbr, and that
   // reference somehow ends up in another function or global, we probably
   // don't want to inline this function.
   if (isa<IndirectBrInst>(BB->getTerminator()))
@@ -232,10 +246,12 @@ unsigned CodeMetrics::CountCodeReductionForAlloca(Value *V) {
 /// from the specified function.
 void CodeMetrics::analyzeFunction(Function *F, const TargetData *TD) {
   // If this function contains a call that "returns twice" (e.g., setjmp or
-  // _setjmp), never inline it. This is a hack because we depend on the user
-  // marking their local variables as volatile if they are live across a setjmp
-  // call, and they probably won't do this in callers.
-  callsSetJmp = F->callsFunctionThatReturnsTwice();
+  // _setjmp) and it isn't marked with "returns twice" itself, never inline it.
+  // This is a hack because we depend on the user marking their local variables
+  // as volatile if they are live across a setjmp call, and they probably
+  // won't do this in callers.
+  exposesReturnsTwice = F->callsFunctionThatReturnsTwice() &&
+    !F->hasFnAttr(Attribute::ReturnsTwice);
 
   // Look at the size of the callee.
   for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
@@ -265,7 +281,7 @@ void InlineCostAnalyzer::FunctionInfo::analyzeFunction(Function *F,
 /// NeverInline - returns true if the function should never be inlined into
 /// any caller
 bool InlineCostAnalyzer::FunctionInfo::NeverInline() {
-  return (Metrics.callsSetJmp || Metrics.isRecursive ||
+  return (Metrics.exposesReturnsTwice || Metrics.isRecursive ||
           Metrics.containsIndirectBr);
 }
 // getSpecializationBonus - The heuristic used to determine the per-call
@@ -420,7 +436,7 @@ int InlineCostAnalyzer::getInlineSize(CallSite CS, Function *Callee) {
   InlineCost += CalleeFI->Metrics.NumCalls * InlineConstants::CallPenalty;
 
   // Look at the size of the callee. Each instruction counts as 5.
-  InlineCost += CalleeFI->Metrics.NumInsts*InlineConstants::InstrCost;
+  InlineCost += CalleeFI->Metrics.NumInsts * InlineConstants::InstrCost;
 
   return InlineCost;
 }
@@ -634,7 +650,7 @@ InlineCostAnalyzer::growCachedCostInfo(Function *Caller, Function *Callee) {
 
   // FIXME: If any of these three are true for the callee, the callee was
   // not inlined into the caller, so I think they're redundant here.
-  CallerMetrics.callsSetJmp |= CalleeMetrics.callsSetJmp;
+  CallerMetrics.exposesReturnsTwice |= CalleeMetrics.exposesReturnsTwice;
   CallerMetrics.isRecursive |= CalleeMetrics.isRecursive;
   CallerMetrics.containsIndirectBr |= CalleeMetrics.containsIndirectBr;
 

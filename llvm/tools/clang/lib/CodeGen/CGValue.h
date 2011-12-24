@@ -16,6 +16,7 @@
 #define CLANG_CODEGEN_CGVALUE_H
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/CharUnits.h"
 #include "clang/AST/Type.h"
 
 namespace llvm {
@@ -150,12 +151,14 @@ class LValue {
   llvm::MDNode *TBAAInfo;
 
 private:
-  void Initialize(QualType Type, Qualifiers Quals, unsigned Alignment = 0,
+  void Initialize(QualType Type, Qualifiers Quals,
+                  CharUnits Alignment = CharUnits(),
                   llvm::MDNode *TBAAInfo = 0) {
     this->Type = Type;
     this->Quals = Quals;
-    this->Alignment = Alignment;
-    assert(this->Alignment == Alignment && "Alignment exceeds allowed max!");
+    this->Alignment = Alignment.getQuantity();
+    assert(this->Alignment == Alignment.getQuantity() &&
+           "Alignment exceeds allowed max!");
 
     // Initialize Objective-C flags.
     this->Ivar = this->ObjIsArray = this->NonGC = this->GlobalObjCRef = false;
@@ -219,7 +222,8 @@ public:
 
   unsigned getAddressSpace() const { return Quals.getAddressSpace(); }
 
-  unsigned getAlignment() const { return Alignment; }
+  CharUnits getAlignment() const { return CharUnits::fromQuantity(Alignment); }
+  void setAlignment(CharUnits A) { Alignment = A.getQuantity(); }
 
   // simple lvalue
   llvm::Value *getAddress() const { assert(isSimple()); return V; }
@@ -250,7 +254,7 @@ public:
   }
 
   static LValue MakeAddr(llvm::Value *address, QualType type,
-                         unsigned alignment, ASTContext &Context,
+                         CharUnits alignment, ASTContext &Context,
                          llvm::MDNode *TBAAInfo = 0) {
     Qualifiers qs = type.getQualifiers();
     qs.setObjCGCAttr(Context.getObjCGCAttrKind(type));
@@ -298,6 +302,11 @@ public:
     R.Initialize(type, type.getQualifiers());
     return R;
   }
+
+  RValue asAggregateRValue() const {
+    // FIMXE: Alignment
+    return RValue::getAggregate(getAddress(), isVolatileQualified());
+  }
 };
 
 /// An aggregate value slot.
@@ -307,6 +316,8 @@ class AggValueSlot {
 
   // Qualifiers
   Qualifiers Quals;
+
+  unsigned short Alignment;
 
   /// DestructedFlag - This is set to true if some external code is
   /// responsible for setting up a destructor for the slot.  Otherwise
@@ -346,11 +357,8 @@ public:
   /// ignored - Returns an aggregate value slot indicating that the
   /// aggregate value is being ignored.
   static AggValueSlot ignored() {
-    AggValueSlot AV;
-    AV.Addr = 0;
-    AV.Quals = Qualifiers();
-    AV.DestructedFlag = AV.ObjCGCFlag = AV.ZeroedFlag = AV.AliasedFlag = false;
-    return AV;
+    return forAddr(0, CharUnits(), Qualifiers(), IsNotDestructed,
+                   DoesNotNeedGCBarriers, IsNotAliased);
   }
 
   /// forAddr - Make a slot for an aggregate value.
@@ -363,13 +371,15 @@ public:
   ///   for calling destructors on this object
   /// \param needsGC - true if the slot is potentially located
   ///   somewhere that ObjC GC calls should be emitted for
-  static AggValueSlot forAddr(llvm::Value *addr, Qualifiers quals,
+  static AggValueSlot forAddr(llvm::Value *addr, CharUnits align,
+                              Qualifiers quals,
                               IsDestructed_t isDestructed,
                               NeedsGCBarriers_t needsGC,
                               IsAliased_t isAliased,
                               IsZeroed_t isZeroed = IsNotZeroed) {
     AggValueSlot AV;
     AV.Addr = addr;
+    AV.Alignment = align.getQuantity();
     AV.Quals = quals;
     AV.DestructedFlag = isDestructed;
     AV.ObjCGCFlag = needsGC;
@@ -382,8 +392,8 @@ public:
                                 NeedsGCBarriers_t needsGC,
                                 IsAliased_t isAliased,
                                 IsZeroed_t isZeroed = IsNotZeroed) {
-    return forAddr(LV.getAddress(), LV.getQuals(),
-                   isDestructed, needsGC, isAliased, isZeroed);
+    return forAddr(LV.getAddress(), LV.getAlignment(),
+                   LV.getQuals(), isDestructed, needsGC, isAliased, isZeroed);
   }
 
   IsDestructed_t isExternallyDestructed() const {
@@ -415,10 +425,15 @@ public:
     return Addr == 0;
   }
 
+  CharUnits getAlignment() const {
+    return CharUnits::fromQuantity(Alignment);
+  }
+
   IsAliased_t isPotentiallyAliased() const {
     return IsAliased_t(AliasedFlag);
   }
 
+  // FIXME: Alignment?
   RValue asRValue() const {
     return RValue::getAggregate(getAddr(), isVolatile());
   }

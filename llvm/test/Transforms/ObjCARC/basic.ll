@@ -167,7 +167,7 @@ entry:
 loop:
   %c = bitcast i32* %x to i8*
   call void @objc_release(i8* %c) nounwind
-  %j = volatile load i1* %q
+  %j = load volatile i1* %q
   br i1 %j, label %loop, label %return
 
 return:
@@ -190,7 +190,7 @@ entry:
 loop:
   %a = bitcast i32* %x to i8*
   %0 = call i8* @objc_retain(i8* %a) nounwind
-  %j = volatile load i1* %q
+  %j = load volatile i1* %q
   br i1 %j, label %loop, label %return
 
 return:
@@ -1528,9 +1528,11 @@ define void @test52(i8** %zz, i8** %pp) {
 
 ; Like test52, but the pointer has function type, so it's assumed to
 ; be not reference counted.
+; Oops. That's wrong. Clang sometimes uses function types gratuitously.
+; See rdar://10551239.
 
 ; CHECK: define void @test53(
-; CHECK-NOT: @objc_
+; CHECK: @objc_
 ; CHECK: }
 define void @test53(void ()** %zz, i8** %pp) {
   %p = load i8** %pp

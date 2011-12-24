@@ -882,16 +882,14 @@ SVal RegionStoreManager::Retrieve(Store store, Loc L, QualType T) {
 
   const MemRegion *MR = cast<loc::MemRegionVal>(L).getRegion();
 
-  if (isa<AllocaRegion>(MR) || isa<SymbolicRegion>(MR)) {
+  if (isa<AllocaRegion>(MR) ||
+      isa<SymbolicRegion>(MR) ||
+      isa<CodeTextRegion>(MR)) {
     if (T.isNull()) {
       const SymbolicRegion *SR = cast<SymbolicRegion>(MR);
       T = SR->getSymbol()->getType(Ctx);
     }
     MR = GetElementZeroRegion(MR, T);
-  }
-
-  if (isa<CodeTextRegion>(MR)) {
-    llvm_unreachable("Why load from a code text region?");
   }
 
   // FIXME: Perhaps this method should just take a 'const MemRegion*' argument
@@ -1722,9 +1720,9 @@ void removeDeadBindingsWorker::VisitBinding(SVal V) {
   if (const MemRegion *R = V.getAsRegion())
     AddToWorkList(R);
 
-    // Update the set of live symbols.
-  for (SVal::symbol_iterator SI=V.symbol_begin(), SE=V.symbol_end();
-       SI!=SE;++SI)
+  // Update the set of live symbols.
+  for (SymExpr::symbol_iterator SI = V.symbol_begin(), SE = V.symbol_end();
+       SI!=SE; ++SI)
     SymReaper.markLive(*SI);
 }
 
@@ -1812,7 +1810,7 @@ StoreRef RegionStoreManager::removeDeadBindings(Store store,
       SymReaper.maybeDead(SymR->getSymbol());
 
     SVal X = I.getData();
-    SVal::symbol_iterator SI = X.symbol_begin(), SE = X.symbol_end();
+    SymExpr::symbol_iterator SI = X.symbol_begin(), SE = X.symbol_end();
     for (; SI != SE; ++SI)
       SymReaper.maybeDead(*SI);
   }

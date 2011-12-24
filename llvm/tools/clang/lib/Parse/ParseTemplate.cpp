@@ -31,8 +31,9 @@ Parser::ParseDeclarationStartingWithTemplate(unsigned Context,
   ObjCDeclContextSwitch ObjCDC(*this);
   
   if (Tok.is(tok::kw_template) && NextToken().isNot(tok::less)) {
-    return ParseExplicitInstantiation(SourceLocation(), ConsumeToken(),
-                                           DeclEnd);
+    return ParseExplicitInstantiation(Context,
+                                      SourceLocation(), ConsumeToken(),
+                                      DeclEnd, AS);
   }
   return ParseTemplateDeclarationOrSpecialization(Context, DeclEnd, AS,
                                                   AccessAttrs);
@@ -262,18 +263,12 @@ Parser::ParseSingleDeclarationAfterTemplate(
   if (DeclaratorInfo.isFunctionDeclarator() &&
       isStartOfFunctionDefinition(DeclaratorInfo)) {
     if (DS.getStorageClassSpec() == DeclSpec::SCS_typedef) {
-      Diag(Tok, diag::err_function_declared_typedef);
-
-      if (Tok.is(tok::l_brace)) {
-        // This recovery skips the entire function body. It would be nice
-        // to simply call ParseFunctionDefinition() below, however Sema
-        // assumes the declarator represents a function, not a typedef.
-        ConsumeBrace();
-        SkipUntil(tok::r_brace, true);
-      } else {
-        SkipUntil(tok::semi);
-      }
-      return 0;
+      // Recover by ignoring the 'typedef'. This was probably supposed to be
+      // the 'typename' keyword, which we should have already suggested adding
+      // if it's appropriate.
+      Diag(DS.getStorageClassSpecLoc(), diag::err_function_declared_typedef)
+        << FixItHint::CreateRemoval(DS.getStorageClassSpecLoc());
+      DS.ClearStorageClassSpecs();
     }
     return ParseFunctionDefinition(DeclaratorInfo, TemplateInfo);
   }
@@ -1113,17 +1108,19 @@ Parser::ParseTemplateArgumentList(TemplateArgList &TemplateArgs) {
 ///         'extern' [opt] 'template' declaration
 ///
 /// Note that the 'extern' is a GNU extension and C++0x feature.
-Decl *Parser::ParseExplicitInstantiation(SourceLocation ExternLoc,
+Decl *Parser::ParseExplicitInstantiation(unsigned Context,
+                                         SourceLocation ExternLoc,
                                          SourceLocation TemplateLoc,
-                                         SourceLocation &DeclEnd) {
+                                         SourceLocation &DeclEnd,
+                                         AccessSpecifier AS) {
   // This isn't really required here.
   ParsingDeclRAIIObject ParsingTemplateParams(*this);
 
-  return ParseSingleDeclarationAfterTemplate(Declarator::FileContext,
+  return ParseSingleDeclarationAfterTemplate(Context,
                                              ParsedTemplateInfo(ExternLoc,
                                                                 TemplateLoc),
                                              ParsingTemplateParams,
-                                             DeclEnd, AS_none);
+                                             DeclEnd, AS);
 }
 
 SourceRange Parser::ParsedTemplateInfo::getSourceRange() const {

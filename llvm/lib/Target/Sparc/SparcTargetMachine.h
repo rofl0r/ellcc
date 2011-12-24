@@ -34,9 +34,9 @@ class SparcTargetMachine : public LLVMTargetMachine {
   SparcFrameLowering FrameLowering;
 public:
   SparcTargetMachine(const Target &T, StringRef TT,
-                     StringRef CPU, StringRef FS,
+                     StringRef CPU, StringRef FS, const TargetOptions &Options,
                      Reloc::Model RM, CodeModel::Model CM,
-                     CodeGenOpt::Level OL,  bool is64bit);
+                     CodeGenOpt::Level OL, bool is64bit);
 
   virtual const SparcInstrInfo *getInstrInfo() const { return &InstrInfo; }
   virtual const TargetFrameLowering  *getFrameLowering() const {
@@ -62,9 +62,11 @@ public:
 /// SparcV8TargetMachine - Sparc 32-bit target machine
 ///
 class SparcV8TargetMachine : public SparcTargetMachine {
+  virtual void anchor();
 public:
   SparcV8TargetMachine(const Target &T, StringRef TT,
                        StringRef CPU, StringRef FS,
+                       const TargetOptions &Options,
                        Reloc::Model RM, CodeModel::Model CM,
                        CodeGenOpt::Level OL);
 };
@@ -72,9 +74,11 @@ public:
 /// SparcV9TargetMachine - Sparc 64-bit target machine
 ///
 class SparcV9TargetMachine : public SparcTargetMachine {
+  virtual void anchor();
 public:
   SparcV9TargetMachine(const Target &T, StringRef TT,
                        StringRef CPU, StringRef FS,
+                       const TargetOptions &Options,
                        Reloc::Model RM, CodeModel::Model CM,
                        CodeGenOpt::Level OL);
 };

@@ -80,18 +80,19 @@ def t2_so_imm : Operand<i32>, ImmLeaf<i32, [{
 // only used on aliases (Pat<> and InstAlias<>). The actual encoding
 // is handled by the destination instructions, which use t2_so_imm.
 def t2_so_imm_not_asmoperand : AsmOperandClass { let Name = "T2SOImmNot"; }
-def t2_so_imm_not : Operand<i32>,
-                    PatLeaf<(imm), [{
+def t2_so_imm_not : Operand<i32>, PatLeaf<(imm), [{
   return ARM_AM::getT2SOImmVal(~((uint32_t)N->getZExtValue())) != -1;
 }], t2_so_imm_not_XFORM> {
   let ParserMatchClass = t2_so_imm_not_asmoperand;
 }
 
 // t2_so_imm_neg - Match an immediate that is a negation of a t2_so_imm.
-def t2_so_imm_neg : Operand<i32>,
-                    PatLeaf<(imm), [{
+def t2_so_imm_neg_asmoperand : AsmOperandClass { let Name = "T2SOImmNeg"; }
+def t2_so_imm_neg : Operand<i32>, PatLeaf<(imm), [{
   return ARM_AM::getT2SOImmVal(-((uint32_t)N->getZExtValue())) != -1;
-}], t2_so_imm_neg_XFORM>;
+}], t2_so_imm_neg_XFORM> {
+  let ParserMatchClass = t2_so_imm_neg_asmoperand;
+}
 
 /// imm0_4095 predicate - True if the 32-bit immediate is in the range [0.4095].
 def imm0_4095 : Operand<i32>,
@@ -1333,7 +1334,7 @@ def t2STRDi8 : T2Ii8s4<1, 0, 0, (outs),
 
 let mayStore = 1, neverHasSideEffects = 1 in {
 def t2STR_PRE  : T2Ipreldst<0, 0b10, 0, 1, (outs GPRnopc:$Rn_wb),
-                            (ins rGPR:$Rt, t2addrmode_imm8:$addr),
+                            (ins GPRnopc:$Rt, t2addrmode_imm8:$addr),
                             AddrModeT2_i8, IndexModePre, IIC_iStore_iu,
                             "str", "\t$Rt, $addr!",
                             "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
@@ -1357,13 +1358,13 @@ def t2STRB_PRE  : T2Ipreldst<0, 0b00, 0, 1, (outs GPRnopc:$Rn_wb),
 } // mayStore = 1, neverHasSideEffects = 1
 
 def t2STR_POST : T2Ipostldst<0, 0b10, 0, 0, (outs GPRnopc:$Rn_wb),
-                            (ins rGPR:$Rt, addr_offset_none:$Rn,
+                            (ins GPRnopc:$Rt, addr_offset_none:$Rn,
                                  t2am_imm8_offset:$offset),
                             AddrModeT2_i8, IndexModePost, IIC_iStore_iu,
                           "str", "\t$Rt, $Rn$offset",
                           "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
              [(set GPRnopc:$Rn_wb,
-                  (post_store rGPR:$Rt, addr_offset_none:$Rn,
+                  (post_store GPRnopc:$Rt, addr_offset_none:$Rn,
                               t2am_imm8_offset:$offset))]>;
 
 def t2STRH_POST : T2Ipostldst<0, 0b01, 0, 0, (outs GPRnopc:$Rn_wb),
@@ -3211,17 +3212,17 @@ def t2Bcc : T2I<(outs), (ins brtarget:$target), IIC_Br,
   let DecoderMethod = "DecodeThumb2BCCInstruction";
 }
 
-// Tail calls. The Darwin version of thumb tail calls uses a t2 branch, so
+// Tail calls. The IOS version of thumb tail calls uses a t2 branch, so
 // it goes here.
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-  // Darwin version.
+  // IOS version.
   let Defs = [R0, R1, R2, R3, R9, R12, QQQQ0, QQQQ2, QQQQ3, PC],
       Uses = [SP] in
   def tTAILJMPd: tPseudoExpand<(outs),
                    (ins uncondbrtarget:$dst, pred:$p, variable_ops),
                    4, IIC_Br, [],
                    (t2B uncondbrtarget:$dst, pred:$p)>,
-                 Requires<[IsThumb2, IsDarwin]>;
+                 Requires<[IsThumb2, IsIOS]>;
 }
 
 // IT block
@@ -3971,6 +3972,18 @@ def : t2InstAlias<"push${p} $regs", (t2STMDB_UPD SP, pred:$p, reglist:$regs)>;
 def : t2InstAlias<"pop${p}.w $regs", (t2LDMIA_UPD SP, pred:$p, reglist:$regs)>;
 def : t2InstAlias<"pop${p} $regs", (t2LDMIA_UPD SP, pred:$p, reglist:$regs)>;
 
+// STMIA/STMIA_UPD aliases w/o the optional .w suffix
+def : t2InstAlias<"stm${p} $Rn, $regs",
+                  (t2STMIA GPR:$Rn, pred:$p, reglist:$regs)>;
+def : t2InstAlias<"stm${p} $Rn!, $regs",
+                  (t2STMIA_UPD GPR:$Rn, pred:$p, reglist:$regs)>;
+
+// LDMIA/LDMIA_UPD aliases w/o the optional .w suffix
+def : t2InstAlias<"ldm${p} $Rn, $regs",
+                  (t2LDMIA GPR:$Rn, pred:$p, reglist:$regs)>;
+def : t2InstAlias<"ldm${p} $Rn!, $regs",
+                  (t2LDMIA_UPD GPR:$Rn, pred:$p, reglist:$regs)>;
+
 // STMDB/STMDB_UPD aliases w/ the optional .w suffix
 def : t2InstAlias<"stmdb${p}.w $Rn, $regs",
                   (t2STMDB GPR:$Rn, pred:$p, reglist:$regs)>;
@@ -4084,8 +4097,55 @@ def : t2InstAlias<"sxth${p} $Rd, $Rm$rot",
 // for isel.
 def : t2InstAlias<"mov${p} $Rd, $imm",
                   (t2MVNi rGPR:$Rd, t2_so_imm_not:$imm, pred:$p, zero_reg)>;
+def : t2InstAlias<"mvn${p} $Rd, $imm",
+                  (t2MOVi rGPR:$Rd, t2_so_imm_not:$imm, pred:$p, zero_reg)>;
+// Same for AND <--> BIC
+def : t2InstAlias<"bic${s}${p} $Rd, $Rn, $imm",
+                  (t2ANDri rGPR:$Rd, rGPR:$Rn, so_imm_not:$imm,
+                           pred:$p, cc_out:$s)>;
+def : t2InstAlias<"bic${s}${p} $Rdn, $imm",
+                  (t2ANDri rGPR:$Rdn, rGPR:$Rdn, so_imm_not:$imm,
+                           pred:$p, cc_out:$s)>;
+def : t2InstAlias<"and${s}${p} $Rd, $Rn, $imm",
+                  (t2BICri rGPR:$Rd, rGPR:$Rn, so_imm_not:$imm,
+                           pred:$p, cc_out:$s)>;
+def : t2InstAlias<"and${s}${p} $Rdn, $imm",
+                  (t2BICri rGPR:$Rdn, rGPR:$Rdn, so_imm_not:$imm,
+                           pred:$p, cc_out:$s)>;
+// Likewise, "add Rd, t2_so_imm_neg" -> sub
+def : t2InstAlias<"add${s}${p} $Rd, $Rn, $imm",
+                  (t2SUBri GPRnopc:$Rd, GPRnopc:$Rn, t2_so_imm_neg:$imm,
+                           pred:$p, cc_out:$s)>;
+def : t2InstAlias<"add${s}${p} $Rd, $imm",
+                  (t2SUBri GPRnopc:$Rd, GPRnopc:$Rd, t2_so_imm_neg:$imm,
+                           pred:$p, cc_out:$s)>;
+// Same for CMP <--> CMN via t2_so_imm_neg
+def : t2InstAlias<"cmp${p} $Rd, $imm",
+                  (t2CMNzri rGPR:$Rd, t2_so_imm_neg:$imm, pred:$p)>;
+def : t2InstAlias<"cmn${p} $Rd, $imm",
+                  (t2CMPri rGPR:$Rd, t2_so_imm_neg:$imm, pred:$p)>;
 
 
 // Wide 'mul' encoding can be specified with only two operands.
 def : t2InstAlias<"mul${p} $Rn, $Rm",
-                  (t2MUL rGPR:$Rn, rGPR:$Rn, rGPR:$Rm, pred:$p)>;
+                  (t2MUL rGPR:$Rn, rGPR:$Rm, rGPR:$Rn, pred:$p)>;
+
+// "neg" is and alias for "rsb rd, rn, #0"
+def : t2InstAlias<"neg${s}${p} $Rd, $Rm",
+                  (t2RSBri rGPR:$Rd, rGPR:$Rm, 0, pred:$p, cc_out:$s)>;
+
+// MOV so_reg assembler pseudos. InstAlias isn't expressive enough for
+// these, unfortunately.
+def t2MOVsi: t2AsmPseudo<"mov${p} $Rd, $shift",
+                         (ins rGPR:$Rd, t2_so_reg:$shift, pred:$p)>;
+def t2MOVSsi: t2AsmPseudo<"movs${p} $Rd, $shift",
+                          (ins rGPR:$Rd, t2_so_reg:$shift, pred:$p)>;
+
+def t2MOVsr: t2AsmPseudo<"mov${p} $Rd, $shift",
+                         (ins rGPR:$Rd, so_reg_reg:$shift, pred:$p)>;
+def t2MOVSsr: t2AsmPseudo<"movs${p} $Rd, $shift",
+                          (ins rGPR:$Rd, so_reg_reg:$shift, pred:$p)>;
+
+// ADR w/o the .w suffix
+def : t2InstAlias<"adr${p} $Rd, $addr",
+                  (t2ADR rGPR:$Rd, t2adrlabel:$addr, pred:$p)>;

@@ -39,7 +39,7 @@ namespace llvm {
     MipsJITInfo JITInfo;
   public:
     MipsTargetMachine(const Target &T, StringRef TT,
-                      StringRef CPU, StringRef FS,
+                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
                       CodeGenOpt::Level OL,
                       bool isLittle);
@@ -85,9 +85,10 @@ namespace llvm {
 /// MipsebTargetMachine - Mips32 big endian target machine.
 ///
 class MipsebTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   MipsebTargetMachine(const Target &T, StringRef TT,
-                      StringRef CPU, StringRef FS,
+                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
                       CodeGenOpt::Level OL);
 };
@@ -95,9 +96,10 @@ public:
 /// MipselTargetMachine - Mips32 little endian target machine.
 ///
 class MipselTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   MipselTargetMachine(const Target &T, StringRef TT,
-                      StringRef CPU, StringRef FS,
+                      StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
                       CodeGenOpt::Level OL);
 };
@@ -105,9 +107,11 @@ public:
 /// Mips64ebTargetMachine - Mips64 big endian target machine.
 ///
 class Mips64ebTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   Mips64ebTargetMachine(const Target &T, StringRef TT,
                         StringRef CPU, StringRef FS,
+                        const TargetOptions &Options,
                         Reloc::Model RM, CodeModel::Model CM,
                         CodeGenOpt::Level OL);
 };
@@ -115,9 +119,11 @@ public:
 /// Mips64elTargetMachine - Mips64 little endian target machine.
 ///
 class Mips64elTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   Mips64elTargetMachine(const Target &T, StringRef TT,
                         StringRef CPU, StringRef FS,
+                        const TargetOptions &Options,
                         Reloc::Model RM, CodeModel::Model CM,
                         CodeGenOpt::Level OL);
 };

@@ -284,9 +284,6 @@ bool Parser::SkipUntil(const tok::TokenKind *Toks, unsigned NumToks,
       ConsumeStringToken();
       break;
         
-    case tok::at:
-      return false;
-      
     case tok::semi:
       if (StopAtSemi)
         return false;
@@ -369,6 +366,8 @@ Parser::~Parser() {
   for (LateParsedTemplateMapT::iterator it = LateParsedTemplateMap.begin();
       it != LateParsedTemplateMap.end(); ++it)
     delete it->second;
+
+  clearLateParsedObjCMethods();
 
   // Remove the pragma handlers we installed.
   PP.RemovePragmaHandler(AlignHandler.get());
@@ -657,7 +656,8 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
              diag::ext_extern_template) << SourceRange(ExternLoc, TemplateLoc);
       SourceLocation DeclEnd;
       return Actions.ConvertDeclToDeclGroup(
-                  ParseExplicitInstantiation(ExternLoc, TemplateLoc, DeclEnd));
+                  ParseExplicitInstantiation(Declarator::FileContext,
+                                             ExternLoc, TemplateLoc, DeclEnd));
     }
     // FIXME: Detect C++ linkage specifications here?
     goto dont_know;
@@ -883,7 +883,7 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     D.getMutableDeclSpec().abort();
 
     if (DP) {
-      LateParsedTemplatedFunction *LPT = new LateParsedTemplatedFunction(this, DP);
+      LateParsedTemplatedFunction *LPT = new LateParsedTemplatedFunction(DP);
 
       FunctionDecl *FnD = 0;
       if (FunctionTemplateDecl *FunTmpl = dyn_cast<FunctionTemplateDecl>(DP))
@@ -1102,15 +1102,22 @@ void Parser::ParseKNRParamDeclarations(Declarator &D) {
 ///         string-literal
 ///
 Parser::ExprResult Parser::ParseAsmStringLiteral() {
-  if (!isTokenStringLiteral()) {
-    Diag(Tok, diag::err_expected_string_literal);
-    return ExprError();
+  switch (Tok.getKind()) {
+    case tok::string_literal:
+      break;
+    case tok::wide_string_literal: {
+      SourceLocation L = Tok.getLocation();
+      Diag(Tok, diag::err_asm_operand_wide_string_literal)
+        << SourceRange(L, L);
+      return ExprError();
+    }
+    default:
+      Diag(Tok, diag::err_expected_string_literal);
+      return ExprError();
   }
 
   ExprResult Res(ParseStringLiteralExpression());
   if (Res.isInvalid()) return move(Res);
-
-  // TODO: Diagnose: wide string literal in 'asm'
 
   return move(Res);
 }
@@ -1193,8 +1200,8 @@ TemplateIdAnnotation *Parser::takeTemplateIdAnnotation(const Token &tok) {
 /// as the current tokens, so only call it in contexts where these are invalid.
 bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext, bool NeedType) {
   assert((Tok.is(tok::identifier) || Tok.is(tok::coloncolon)
-          || Tok.is(tok::kw_typename) || Tok.is(tok::annot_cxxscope)) &&
-         "Cannot be a type or scope token!");
+          || Tok.is(tok::kw_typename) || Tok.is(tok::annot_cxxscope)
+          || Tok.is(tok::kw_decltype)) && "Cannot be a type or scope token!");
 
   if (Tok.is(tok::kw_typename)) {
     // Parse a C++ typename-specifier, e.g., "typename T::type".
@@ -1373,8 +1380,8 @@ bool Parser::TryAnnotateCXXScopeToken(bool EnteringContext) {
   assert(getLang().CPlusPlus &&
          "Call sites of this function should be guarded by checking for C++");
   assert((Tok.is(tok::identifier) || Tok.is(tok::coloncolon) ||
-          (Tok.is(tok::annot_template_id) && NextToken().is(tok::coloncolon)))&&
-         "Cannot be a type or scope token!");
+          (Tok.is(tok::annot_template_id) && NextToken().is(tok::coloncolon)) ||
+         Tok.is(tok::kw_decltype)) && "Cannot be a type or scope token!");
 
   CXXScopeSpec SS;
   if (ParseOptionalCXXScopeSpecifier(SS, ParsedType(), EnteringContext))
@@ -1568,16 +1575,29 @@ Parser::DeclGroupPtrTy Parser::ParseModuleImport() {
          "Improper start to module import");
   SourceLocation ImportLoc = ConsumeToken();
   
-  // Parse the module name.
-  if (!Tok.is(tok::identifier)) {
-    Diag(Tok, diag::err_module_expected_ident);
-    SkipUntil(tok::semi);
-    return DeclGroupPtrTy();
-  }
+  llvm::SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> Path;
   
-  IdentifierInfo &ModuleName = *Tok.getIdentifierInfo();
-  SourceLocation ModuleNameLoc = ConsumeToken();
-  DeclResult Import = Actions.ActOnModuleImport(ImportLoc, ModuleName, ModuleNameLoc);
+  // Parse the module path.
+  do {
+    if (!Tok.is(tok::identifier)) {
+      Diag(Tok, diag::err_module_expected_ident);
+      SkipUntil(tok::semi);
+      return DeclGroupPtrTy();
+    }
+    
+    // Record this part of the module path.
+    Path.push_back(std::make_pair(Tok.getIdentifierInfo(), Tok.getLocation()));
+    ConsumeToken();
+    
+    if (Tok.is(tok::period)) {
+      ConsumeToken();
+      continue;
+    }
+    
+    break;
+  } while (true);
+  
+  DeclResult Import = Actions.ActOnModuleImport(ImportLoc, Path);
   ExpectAndConsumeSemi(diag::err_module_expected_semi);
   if (Import.isInvalid())
     return DeclGroupPtrTy();

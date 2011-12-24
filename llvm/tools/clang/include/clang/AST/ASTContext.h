@@ -326,6 +326,9 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   typedef llvm::DenseMap<const VarDecl *, unsigned> ParameterIndexTable;
   ParameterIndexTable ParamIndices;  
   
+  ImportDecl *FirstLocalImport;
+  ImportDecl *LastLocalImport;
+  
   TranslationUnitDecl *TUDecl;
 
   /// SourceMgr - The associated SourceManager object.
@@ -480,6 +483,56 @@ public:
   /// Overridden method.
   void addOverriddenMethod(const CXXMethodDecl *Method, 
                            const CXXMethodDecl *Overridden);
+  
+  /// \brief Notify the AST context that a new import declaration has been
+  /// parsed or implicitly created within this translation unit.
+  void addedLocalImportDecl(ImportDecl *Import);
+
+  static ImportDecl *getNextLocalImport(ImportDecl *Import) {
+    return Import->NextLocalImport;
+  }
+  
+  /// \brief Iterator that visits import declarations.
+  class import_iterator {
+    ImportDecl *Import;
+    
+  public:
+    typedef ImportDecl               *value_type;
+    typedef ImportDecl               *reference;
+    typedef ImportDecl               *pointer;
+    typedef int                       difference_type;
+    typedef std::forward_iterator_tag iterator_category;
+    
+    import_iterator() : Import() { }
+    explicit import_iterator(ImportDecl *Import) : Import(Import) { }
+    
+    reference operator*() const { return Import; }
+    pointer operator->() const { return Import; }
+    
+    import_iterator &operator++() {
+      Import = ASTContext::getNextLocalImport(Import);
+      return *this;
+    }
+
+    import_iterator operator++(int) {
+      import_iterator Other(*this);
+      ++(*this);
+      return Other;
+    }
+    
+    friend bool operator==(import_iterator X, import_iterator Y) {
+      return X.Import == Y.Import;
+    }
+
+    friend bool operator!=(import_iterator X, import_iterator Y) {
+      return X.Import != Y.Import;
+    }
+  };
+  
+  import_iterator local_import_begin() const { 
+    return import_iterator(FirstLocalImport); 
+  }
+  import_iterator local_import_end() const { return import_iterator(); }
   
   TranslationUnitDecl *getTranslationUnitDecl() const { return TUDecl; }
 
@@ -800,7 +853,8 @@ public:
   QualType getPackExpansionType(QualType Pattern,
                                 llvm::Optional<unsigned> NumExpansions);
 
-  QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl) const;
+  QualType getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
+                                ObjCInterfaceDecl *PrevDecl = 0) const;
 
   QualType getObjCObjectType(QualType Base,
                              ObjCProtocolDecl * const *Protocols,
@@ -1007,7 +1061,8 @@ public:
   ///
   /// \returns true if an error occurred (e.g., because one of the parameter
   /// types is incomplete), false otherwise.
-  bool getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl, std::string &S)
+  bool getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl, std::string &S,
+                                    bool Extended = false)
     const;
 
   /// getObjCEncodingForBlock - Return the encoded type for this block
@@ -1764,13 +1819,20 @@ private:
                                   const FieldDecl *Field,
                                   bool OutermostType = false,
                                   bool EncodingProperty = false,
-                                  bool StructField = false) const;
+                                  bool StructField = false,
+                                  bool EncodeBlockParameters = false,
+                                  bool EncodeClassNames = false) const;
 
   // Adds the encoding of the structure's members.
   void getObjCEncodingForStructureImpl(RecordDecl *RD, std::string &S,
                                        const FieldDecl *Field,
                                        bool includeVBases = true) const;
- 
+
+  // Adds the encoding of a method parameter or return type.
+  void getObjCEncodingForMethodParameter(Decl::ObjCDeclQualifier QT,
+                                         QualType T, std::string& S,
+                                         bool Extended) const;
+
   const ASTRecordLayout &
   getObjCLayout(const ObjCInterfaceDecl *D,
                 const ObjCImplementationDecl *Impl) const;

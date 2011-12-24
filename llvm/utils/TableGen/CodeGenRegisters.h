@@ -101,9 +101,16 @@ namespace llvm {
     // super-class.
     void inheritProperties(CodeGenRegBank&);
 
-    // Map SubRegIndex -> sub-class
+    // Map SubRegIndex -> sub-class.  This is the largest sub-class where all
+    // registers have a SubRegIndex sub-register.
     DenseMap<Record*, CodeGenRegisterClass*> SubClassWithSubReg;
 
+    // Map SubRegIndex -> set of super-reg classes.  This is all register
+    // classes SuperRC such that:
+    //
+    //   R:SubRegIndex in this RC for all R in SuperRC.
+    //
+    DenseMap<Record*, SmallPtrSet<CodeGenRegisterClass*, 8> > SuperRegClasses;
   public:
     unsigned EnumValue;
     std::string Namespace;
@@ -156,6 +163,15 @@ namespace llvm {
 
     void setSubClassWithSubReg(Record *SubIdx, CodeGenRegisterClass *SubRC) {
       SubClassWithSubReg[SubIdx] = SubRC;
+    }
+
+    // getSuperRegClasses - Returns a bit vector of all register classes
+    // containing only SubIdx super-registers of this class.
+    void getSuperRegClasses(Record *SubIdx, BitVector &Out) const;
+
+    // addSuperRegClass - Add a class containing only SudIdx super-registers.
+    void addSuperRegClass(Record *SubIdx, CodeGenRegisterClass *SuperRC) {
+      SuperRegClasses[SubIdx].insert(SuperRC);
     }
 
     // getSubClasses - Returns a constant BitVector of subclasses indexed by
@@ -237,8 +253,17 @@ namespace llvm {
     // Add RC to *2RC maps.
     void addToMaps(CodeGenRegisterClass*);
 
+    // Create a synthetic sub-class if it is missing.
+    CodeGenRegisterClass *getOrCreateSubClass(const CodeGenRegisterClass *RC,
+                                              const CodeGenRegister::Set *Membs,
+                                              StringRef Name);
+
     // Infer missing register classes.
     void computeInferredRegisterClasses();
+    void inferCommonSubClass(CodeGenRegisterClass *RC);
+    void inferSubClassWithSubReg(CodeGenRegisterClass *RC);
+    void inferMatchingSuperRegClass(CodeGenRegisterClass *RC,
+                                    unsigned FirstSubRegRC = 0);
 
     // Composite SubRegIndex instances.
     // Map (SubRegIndex, SubRegIndex) -> SubRegIndex.

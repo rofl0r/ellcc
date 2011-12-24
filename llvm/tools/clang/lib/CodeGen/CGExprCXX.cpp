@@ -750,17 +750,17 @@ static void StoreAnyExprIntoOneUnit(CodeGenFunction &CGF, const CXXNewExpr *E,
   const Expr *Init = E->getConstructorArg(0);
   QualType AllocType = E->getAllocatedType();
 
-  unsigned Alignment =
-    CGF.getContext().getTypeAlignInChars(AllocType).getQuantity();
+  CharUnits Alignment = CGF.getContext().getTypeAlignInChars(AllocType);
   if (!CGF.hasAggregateLLVMType(AllocType))
-    CGF.EmitScalarInit(Init, 0, CGF.MakeAddrLValue(NewPtr, AllocType, Alignment),
+    CGF.EmitScalarInit(Init, 0, CGF.MakeAddrLValue(NewPtr, AllocType,
+                                                   Alignment),
                        false);
   else if (AllocType->isAnyComplexType())
     CGF.EmitComplexExprIntoAddr(Init, NewPtr, 
                                 AllocType.isVolatileQualified());
   else {
     AggValueSlot Slot
-      = AggValueSlot::forAddr(NewPtr, AllocType.getQualifiers(),
+      = AggValueSlot::forAddr(NewPtr, Alignment, AllocType.getQualifiers(),
                               AggValueSlot::IsDestructed,
                               AggValueSlot::DoesNotNeedGCBarriers,
                               AggValueSlot::IsNotAliased);
@@ -828,7 +828,7 @@ CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
   StoreAnyExprIntoOneUnit(*this, E, curPtr);
 
   // Leave the cleanup if we entered one.
-  if (cleanup != EHStack.stable_end()) {
+  if (cleanupDominator) {
     DeactivateCleanupBlock(cleanup, cleanupDominator);
     cleanupDominator->eraseFromParent();
   }
@@ -883,7 +883,8 @@ static void EmitNewInitializer(CodeGenFunction &CGF, const CXXNewExpr *E,
                                      RequiresZeroInitialization);
       return;
     } else if (E->getNumConstructorArgs() == 1 &&
-               isa<ImplicitValueInitExpr>(E->getConstructorArg(0))) {
+               isa<ImplicitValueInitExpr>(E->getConstructorArg(0)) &&
+               CGF.CGM.getTypes().isZeroInitializable(ElementType)) {
       // Optimization: since zero initialization will just set the memory
       // to all zeroes, generate a single memset to do it in one shot.
       EmitZeroMemSet(CGF, ElementType, NewPtr, AllocSizeWithoutCookie);

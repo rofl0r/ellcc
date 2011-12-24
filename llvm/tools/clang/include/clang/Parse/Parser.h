@@ -147,6 +147,9 @@ class Parser : public CodeCompletionHandler {
 
   /// \brief Identifier for "unavailable".
   IdentifierInfo *Ident_unavailable;
+  
+  /// \brief Identifier for "message".
+  IdentifierInfo *Ident_message;
 
   /// C++0x contextual keywords.
   mutable IdentifierInfo *Ident_final;
@@ -401,6 +404,9 @@ private:
     // Cut off parsing by acting as if we reached the end-of-file.
     Tok.setKind(tok::eof);
   }
+
+  /// \brief Clear and free the cached objc methods.
+  void clearLateParsedObjCMethods();
 
   /// \brief Handle the annotation token produced for #pragma unused(...)
   void HandlePragmaUnused();
@@ -713,6 +719,7 @@ public:
 private:
   void SuggestParentheses(SourceLocation Loc, unsigned DK,
                           SourceRange ParenRange);
+  void CheckNestedObjCContexts(SourceLocation AtLoc);
 
   /// SkipUntil - Read tokens until we get to the specified token, then consume
   /// it (unless DontConsume is true).  Because we cannot guarantee that the
@@ -1121,7 +1128,7 @@ private:
   /// \brief Contains a late templated function.
   /// Will be parsed at the end of the translation unit.
   struct LateParsedTemplatedFunction {
-    explicit LateParsedTemplatedFunction(Parser* P, Decl *MD)
+    explicit LateParsedTemplatedFunction(Decl *MD)
       : D(MD) {}
 
     CachedTokens Toks;
@@ -1201,7 +1208,7 @@ private:
   // Objective-C External Declarations
   Parser::DeclGroupPtrTy ParseObjCAtDirectives();
   Parser::DeclGroupPtrTy ParseObjCAtClassDeclaration(SourceLocation atLoc);
-  Decl *ParseObjCAtInterfaceDeclaration(SourceLocation atLoc,
+  Decl *ParseObjCAtInterfaceDeclaration(SourceLocation AtLoc,
                                         ParsedAttributes &prefixAttrs);
   void ParseObjCClassInstanceVariables(Decl *interfaceDecl,
                                        tok::ObjCKeywordKind visibility,
@@ -1222,7 +1229,7 @@ private:
   typedef SmallVector<LexedMethod*, 2> LateParsedObjCMethodContainer;
   LateParsedObjCMethodContainer LateParsedObjCMethods;
 
-  Decl *ParseObjCAtImplementationDeclaration(SourceLocation atLoc);
+  Decl *ParseObjCAtImplementationDeclaration(SourceLocation AtLoc);
   DeclGroupPtrTy ParseObjCAtEndDeclaration(SourceRange atEnd);
   Decl *ParseObjCAtAliasDeclaration(SourceLocation atLoc);
   Decl *ParseObjCPropertySynthesize(SourceLocation atLoc);
@@ -1459,9 +1466,9 @@ private:
   bool isSimpleObjCMessageExpression();
   ExprResult ParseObjCMessageExpression();
   ExprResult ParseObjCMessageExpressionBody(SourceLocation LBracloc,
-                                                  SourceLocation SuperLoc,
-                                                  ParsedType ReceiverType,
-                                                  ExprArg ReceiverExpr);
+                                            SourceLocation SuperLoc,
+                                            ParsedType ReceiverType,
+                                            ExprArg ReceiverExpr);
   ExprResult ParseAssignmentExprWithObjCMessageExprStart(
       SourceLocation LBracloc, SourceLocation SuperLoc,
       ParsedType ReceiverType, ExprArg ReceiverExpr);
@@ -1470,12 +1477,13 @@ private:
   //===--------------------------------------------------------------------===//
   // C99 6.8: Statements and Blocks.
 
-  StmtResult ParseStatement() {
+  StmtResult ParseStatement(SourceLocation *TrailingElseLoc = NULL) {
     StmtVector Stmts(Actions);
-    return ParseStatementOrDeclaration(Stmts, true);
+    return ParseStatementOrDeclaration(Stmts, true, TrailingElseLoc);
   }
   StmtResult ParseStatementOrDeclaration(StmtVector& Stmts,
-                                         bool OnlyStatement = false);
+                                         bool OnlyStatement,
+                                        SourceLocation *TrailingElseLoc = NULL);
   StmtResult ParseExprStatement(ParsedAttributes &Attrs);
   StmtResult ParseLabeledStatement(ParsedAttributes &Attr);
   StmtResult ParseCaseStatement(ParsedAttributes &Attr,
@@ -1492,11 +1500,15 @@ private:
                                  Decl *&DeclResult,
                                  SourceLocation Loc,
                                  bool ConvertToBoolean);
-  StmtResult ParseIfStatement(ParsedAttributes &Attr);
-  StmtResult ParseSwitchStatement(ParsedAttributes &Attr);
-  StmtResult ParseWhileStatement(ParsedAttributes &Attr);
+  StmtResult ParseIfStatement(ParsedAttributes &Attr,
+                              SourceLocation *TrailingElseLoc);
+  StmtResult ParseSwitchStatement(ParsedAttributes &Attr,
+                                  SourceLocation *TrailingElseLoc);
+  StmtResult ParseWhileStatement(ParsedAttributes &Attr,
+                                 SourceLocation *TrailingElseLoc);
   StmtResult ParseDoStatement(ParsedAttributes &Attr);
-  StmtResult ParseForStatement(ParsedAttributes &Attr);
+  StmtResult ParseForStatement(ParsedAttributes &Attr,
+                               SourceLocation *TrailingElseLoc);
   StmtResult ParseGotoStatement(ParsedAttributes &Attr);
   StmtResult ParseContinueStatement(ParsedAttributes &Attr);
   StmtResult ParseBreakStatement(ParsedAttributes &Attr);
@@ -1541,6 +1553,8 @@ private:
   void ParseMicrosoftIfExistsExternalDeclaration();
   void ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
                                               AccessSpecifier& CurAS);
+  bool ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
+                                              bool &InitExprsOk);
   bool ParseAsmOperandsOpt(SmallVectorImpl<IdentifierInfo *> &Names,
                            SmallVectorImpl<Expr *> &Constraints,
                            SmallVectorImpl<Expr *> &Exprs);
@@ -1674,13 +1688,13 @@ private:
     return isDeclarationSpecifier(true);
   }
 
-  /// isSimpleDeclaration - Disambiguates between a declaration or an
-  /// expression, mainly used for the C 'clause-1' or the C++
+  /// isForInitDeclaration - Disambiguates between a declaration or an
+  /// expression in the context of the C 'clause-1' or the C++
   // 'for-init-statement' part of a 'for' statement.
   /// Returns true for declaration, false for expression.
-  bool isSimpleDeclaration() {
+  bool isForInitDeclaration() {
     if (getLang().CPlusPlus)
-      return isCXXSimpleDeclaration();
+      return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/true);
     return isDeclarationSpecifier(true);
   }
 
@@ -1725,7 +1739,7 @@ private:
   /// If during the disambiguation process a parsing error is encountered,
   /// the function returns true to let the declaration parsing code handle it.
   /// Returns false if the statement is disambiguated as expression.
-  bool isCXXSimpleDeclaration();
+  bool isCXXSimpleDeclaration(bool AllowForRangeDecl);
 
   /// isCXXFunctionDeclarator - Disambiguates between a function declarator or
   /// a constructor-style initializer, when parsing declaration statements.
@@ -1799,7 +1813,7 @@ private:
   // They all consume tokens, so backtracking should be used after calling them.
 
   TPResult TryParseDeclarationSpecifier();
-  TPResult TryParseSimpleDeclaration();
+  TPResult TryParseSimpleDeclaration(bool AllowForRangeDecl);
   TPResult TryParseTypeofSpecifier();
   TPResult TryParseProtocolQualifiers();
   TPResult TryParseInitDeclaratorList();
@@ -1898,7 +1912,10 @@ private:
 
 
   void ParseTypeofSpecifier(DeclSpec &DS);
-  void ParseDecltypeSpecifier(DeclSpec &DS);
+  SourceLocation ParseDecltypeSpecifier(DeclSpec &DS);
+  void AnnotateExistingDecltypeSpecifier(const DeclSpec &DS, 
+                                         SourceLocation StartLoc,
+                                         SourceLocation EndLoc);
   void ParseUnderlyingTypeSpecifier(DeclSpec &DS);
   void ParseAtomicSpecifier(DeclSpec &DS);
 
@@ -2102,9 +2119,11 @@ private:
   bool ParseTemplateArgumentList(TemplateArgList &TemplateArgs);
   ParsedTemplateArgument ParseTemplateTemplateArgument();
   ParsedTemplateArgument ParseTemplateArgument();
-  Decl *ParseExplicitInstantiation(SourceLocation ExternLoc,
-                                        SourceLocation TemplateLoc,
-                                        SourceLocation &DeclEnd);
+  Decl *ParseExplicitInstantiation(unsigned Context,
+                                   SourceLocation ExternLoc,
+                                   SourceLocation TemplateLoc,
+                                   SourceLocation &DeclEnd,
+                                   AccessSpecifier AS = AS_none);
 
   //===--------------------------------------------------------------------===//
   // Modules

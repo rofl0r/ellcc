@@ -107,13 +107,6 @@ namespace ISD {
     // and returns an outchain.
     EH_SJLJ_LONGJMP,
 
-    // OUTCHAIN = EH_SJLJ_DISPATCHSETUP(INCHAIN, setjmpval)
-    // This corresponds to the eh.sjlj.dispatchsetup intrinsic. It takes an
-    // input chain and the value returning from setjmp as inputs and returns an
-    // outchain. By default, this does nothing. Targets can lower this to unwind
-    // setup code if needed.
-    EH_SJLJ_DISPATCHSETUP,
-
     // TargetConstant* - Like Constant*, but the DAG does not do any folding,
     // simplification, or lowering of the constant. They are used for constants
     // which are known to fit in the immediate fields of their users, or for
@@ -318,6 +311,9 @@ namespace ISD {
 
     /// Byte Swap and Counting operators.
     BSWAP, CTTZ, CTLZ, CTPOP,
+
+    /// Bit counting operators with an undefined result for zero inputs.
+    CTTZ_ZERO_UNDEF, CTLZ_ZERO_UNDEF,
 
     // Select(COND, TRUEVAL, FALSEVAL).  If the type of the boolean COND is not
     // i1 then the high bits must conform to getBooleanContents.

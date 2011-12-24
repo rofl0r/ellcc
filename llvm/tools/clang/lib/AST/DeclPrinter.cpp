@@ -19,6 +19,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/Basic/Module.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
 
@@ -58,6 +59,7 @@ namespace {
     void VisitLabelDecl(LabelDecl *D);
     void VisitParmVarDecl(ParmVarDecl *D);
     void VisitFileScopeAsmDecl(FileScopeAsmDecl *D);
+    void VisitImportDecl(ImportDecl *D);
     void VisitStaticAssertDecl(StaticAssertDecl *D);
     void VisitNamespaceDecl(NamespaceDecl *D);
     void VisitUsingDirectiveDecl(UsingDirectiveDecl *D);
@@ -85,6 +87,7 @@ namespace {
 
     void PrintTemplateParameters(const TemplateParameterList *Params,
                                  const TemplateArgumentList *Args);
+    void prettyPrintAttributes(Decl *D);
   };
 }
 
@@ -180,6 +183,16 @@ raw_ostream& DeclPrinter::Indent(unsigned Indentation) {
   for (unsigned i = 0; i != Indentation; ++i)
     Out << "  ";
   return Out;
+}
+
+void DeclPrinter::prettyPrintAttributes(Decl *D) {
+  if (D->hasAttrs()) {
+    AttrVec &Attrs = D->getAttrs();
+    for (AttrVec::const_iterator i=Attrs.begin(), e=Attrs.end(); i!=e; ++i) {
+        Attr *A = *i;
+        A->printPretty(Out, Context);
+    }
+  }
 }
 
 void DeclPrinter::ProcessDeclGroup(SmallVectorImpl<Decl*>& Decls) {
@@ -320,6 +333,7 @@ void DeclPrinter::VisitTypedefDecl(TypedefDecl *D) {
       Out << "__module_private__ ";
   }
   Out << S;
+  prettyPrintAttributes(D);
 }
 
 void DeclPrinter::VisitTypeAliasDecl(TypeAliasDecl *D) {
@@ -350,6 +364,7 @@ void DeclPrinter::VisitEnumDecl(EnumDecl *D) {
     VisitDeclContext(D);
     Indent() << "}";
   }
+  prettyPrintAttributes(D);
 }
 
 void DeclPrinter::VisitRecordDecl(RecordDecl *D) {
@@ -466,12 +481,6 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
       }
     }
 
-    if (D->hasAttr<NoReturnAttr>())
-      Proto += " __attribute((noreturn))";
-
-    if (D->hasAttr<ReturnsTwiceAttr>())
-      Proto += " __attribute((returns_twice))";
-
     if (CXXConstructorDecl *CDecl = dyn_cast<CXXConstructorDecl>(D)) {
       bool HasInitializerList = false;
       for (CXXConstructorDecl::init_const_iterator B = CDecl->init_begin(),
@@ -542,6 +551,7 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
   }
 
   Out << Proto;
+  prettyPrintAttributes(D);
 
   if (D->isPure())
     Out << " = 0";
@@ -588,6 +598,7 @@ void DeclPrinter::VisitFieldDecl(FieldDecl *D) {
     Out << " = ";
     Init->printPretty(Out, Context, 0, Policy, Indentation);
   }
+  prettyPrintAttributes(D);
 }
 
 void DeclPrinter::VisitLabelDecl(LabelDecl *D) {
@@ -624,6 +635,7 @@ void DeclPrinter::VisitVarDecl(VarDecl *D) {
     if (D->hasCXXDirectInitializer())
       Out << ")";
   }
+  prettyPrintAttributes(D);
 }
 
 void DeclPrinter::VisitParmVarDecl(ParmVarDecl *D) {
@@ -634,6 +646,11 @@ void DeclPrinter::VisitFileScopeAsmDecl(FileScopeAsmDecl *D) {
   Out << "__asm (";
   D->getAsmString()->printPretty(Out, Context, 0, Policy, Indentation);
   Out << ")";
+}
+
+void DeclPrinter::VisitImportDecl(ImportDecl *D) {
+  Out << "__import_module__ " << D->getImportedModule()->getFullModuleName()
+      << ";\n";
 }
 
 void DeclPrinter::VisitStaticAssertDecl(StaticAssertDecl *D) {
@@ -883,6 +900,11 @@ void DeclPrinter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *OID) {
   std::string I = OID->getNameAsString();
   ObjCInterfaceDecl *SID = OID->getSuperClass();
 
+  if (!OID->isThisDeclarationADefinition()) {
+    Out << "@class " << I << ";";
+    return;
+  }
+  
   if (SID)
     Out << "@interface " << I << " : " << *SID;
   else

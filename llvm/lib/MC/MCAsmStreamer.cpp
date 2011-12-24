@@ -154,6 +154,7 @@ public:
   virtual void EmitCOFFSymbolStorageClass(int StorageClass);
   virtual void EmitCOFFSymbolType(int Type);
   virtual void EndCOFFSymbolDef();
+  virtual void EmitCOFFSecRel32(MCSymbol const *Symbol);
   virtual void EmitELFSize(MCSymbol *Symbol, const MCExpr *Value);
   virtual void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,
                                 unsigned ByteAlignment);
@@ -467,6 +468,11 @@ void MCAsmStreamer::EmitCOFFSymbolType (int Type) {
 
 void MCAsmStreamer::EndCOFFSymbolDef() {
   OS << "\t.endef";
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitCOFFSecRel32(MCSymbol const *Symbol) {
+  OS << "\t.secrel32\t" << *Symbol << '\n';
   EmitEOL();
 }
 
@@ -1283,6 +1289,10 @@ void MCAsmStreamer::Finish() {
   // Dump out the dwarf file & directory tables and line tables.
   if (getContext().hasDwarfFiles() && !UseLoc)
     MCDwarfFileTable::Emit(this);
+
+  // If we are generating dwarf for assembly source files dump out the sections.
+  if (getContext().getGenDwarfForAssembly())
+    MCGenDwarfInfo::Emit(this);
 
   if (!UseCFI)
     EmitFrames(false);

@@ -454,7 +454,7 @@ void ExeDepsFix::processDefs(MachineInstr *MI, bool Kill) {
   assert(!MI->isDebugValue() && "Won't process debug values");
   const MCInstrDesc &MCID = MI->getDesc();
   for (unsigned i = 0,
-         e = MCID.isVariadic() ? MI->getNumOperands() : MCID.getNumDefs();
+         e = MI->isVariadic() ? MI->getNumOperands() : MCID.getNumDefs();
          i != e; ++i) {
     MachineOperand &MO = MI->getOperand(i);
     if (!MO.isReg())
@@ -600,6 +600,9 @@ void ExeDepsFix::visitSoftInstr(MachineInstr *mi, unsigned mask) {
   while (!Regs.empty()) {
     if (!dv) {
       dv = Regs.pop_back_val().Value;
+      // Force the first dv to match the current instruction.
+      dv->AvailableDomains = dv->getCommonDomains(available);
+      assert(dv->AvailableDomains && "Domain should have been filtered");
       continue;
     }
 
@@ -617,9 +620,10 @@ void ExeDepsFix::visitSoftInstr(MachineInstr *mi, unsigned mask) {
   }
 
   // dv is the DomainValue we are going to use for this instruction.
-  if (!dv)
+  if (!dv) {
     dv = alloc();
-  dv->AvailableDomains = available;
+    dv->AvailableDomains = available;
+  }
   dv->Instrs.push_back(mi);
 
   // Finally set all defs and non-collapsed uses to dv.
@@ -650,11 +654,10 @@ bool ExeDepsFix::runOnMachineFunction(MachineFunction &mf) {
   bool anyregs = false;
   for (TargetRegisterClass::const_iterator I = RC->begin(), E = RC->end();
        I != E; ++I)
-    for (const unsigned *AI = TRI->getOverlaps(*I); *AI; ++AI)
-      if (MF->getRegInfo().isPhysRegUsed(*AI)) {
-        anyregs = true;
-        break;
-      }
+    if (MF->getRegInfo().isPhysRegOrOverlapUsed(*I)) {
+      anyregs = true;
+      break;
+    }
   if (!anyregs) return false;
 
   // Initialize the AliasMap on the first use.

@@ -14,6 +14,7 @@
 #ifndef LLVM_TARGET_TARGETMACHINE_H
 #define LLVM_TARGET_TARGETMACHINE_H
 
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include <cassert>
@@ -63,7 +64,7 @@ class TargetMachine {
   void operator=(const TargetMachine &);  // DO NOT IMPLEMENT
 protected: // Can only create subclasses.
   TargetMachine(const Target &T, StringRef TargetTriple,
-                StringRef CPU, StringRef FS);
+                StringRef CPU, StringRef FS, const TargetOptions &Options);
 
   /// getSubtargetImpl - virtual method implemented by subclasses that returns
   /// a reference to that target's TargetSubtargetInfo-derived member variable.
@@ -100,6 +101,8 @@ public:
   const StringRef getTargetTriple() const { return TargetTriple; }
   const StringRef getTargetCPU() const { return TargetCPU; }
   const StringRef getTargetFeatureString() const { return TargetFS; }
+
+  TargetOptions Options;
 
   // Interfaces to the major aspects of target machine information:
   // -- Instruction opcode and operand information
@@ -249,7 +252,7 @@ public:
   virtual bool addPassesToEmitFile(PassManagerBase &,
                                    formatted_raw_ostream &,
                                    CodeGenFileType,
-                                   bool = true) {
+                                   bool /*DisableVerify*/ = true) {
     return true;
   }
 
@@ -261,7 +264,7 @@ public:
   ///
   virtual bool addPassesToEmitMachineCode(PassManagerBase &,
                                           JITCodeEmitter &,
-                                          bool = true) {
+                                          bool /*DisableVerify*/ = true) {
     return true;
   }
 
@@ -273,7 +276,7 @@ public:
   virtual bool addPassesToEmitMC(PassManagerBase &,
                                  MCContext *&,
                                  raw_ostream &,
-                                 bool = true) {
+                                 bool /*DisableVerify*/ = true) {
     return true;
   }
 };
@@ -284,9 +287,19 @@ public:
 class LLVMTargetMachine : public TargetMachine {
 protected: // Can only create subclasses.
   LLVMTargetMachine(const Target &T, StringRef TargetTriple,
-                    StringRef CPU, StringRef FS,
+                    StringRef CPU, StringRef FS, TargetOptions Options,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL);
+
+  /// printNoVerify - Add a pass to dump the machine function, if debugging is
+  /// enabled.
+  ///
+  void printNoVerify(PassManagerBase &PM, const char *Banner) const;
+
+  /// printAndVerify - Add a pass to dump then verify the machine function, if
+  /// those steps are enabled.
+  ///
+  void printAndVerify(PassManagerBase &PM, const char *Banner) const;
 
 private:
   /// addCommonCodeGenPasses - Add standard LLVM codegen passes used for

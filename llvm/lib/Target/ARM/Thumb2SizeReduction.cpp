@@ -452,7 +452,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
 
   // Add the 16-bit load / store instruction.
   DebugLoc dl = MI->getDebugLoc();
-  MachineInstrBuilder MIB = BuildMI(MBB, *MI, dl, TII->get(Opc));
+  MachineInstrBuilder MIB = BuildMI(MBB, MI, dl, TII->get(Opc));
   if (!isLdStMul) {
     MIB.addOperand(MI->getOperand(0));
     MIB.addOperand(MI->getOperand(1));
@@ -478,7 +478,7 @@ Thumb2SizeReduce::ReduceLoadStore(MachineBasicBlock &MBB, MachineInstr *MI,
 
   DEBUG(errs() << "Converted 32-bit: " << *MI << "       to 16-bit: " << *MIB);
 
-  MBB.erase(MI);
+  MBB.erase_instr(MI);
   ++NumLdSts;
   return true;
 }
@@ -513,7 +513,7 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
         MI->getOperand(MCID.getNumOperands()-1).getReg() == ARM::CPSR)
       return false;
 
-    MachineInstrBuilder MIB = BuildMI(MBB, *MI, MI->getDebugLoc(),
+    MachineInstrBuilder MIB = BuildMI(MBB, MI, MI->getDebugLoc(),
                                       TII->get(ARM::tADDrSPi))
       .addOperand(MI->getOperand(0))
       .addOperand(MI->getOperand(1))
@@ -525,7 +525,7 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
 
     DEBUG(errs() << "Converted 32-bit: " << *MI << "       to 16-bit: " <<*MIB);
 
-    MBB.erase(MI);
+    MBB.erase_instr(MI);
     ++NumNarrows;
     return true;
   }
@@ -533,8 +533,7 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
   if (Entry.LowRegs1 && !VerifyLowRegs(MI))
     return false;
 
-  const MCInstrDesc &MCID = MI->getDesc();
-  if (MCID.mayLoad() || MCID.mayStore())
+  if (MI->mayLoad() || MI->mayStore())
     return ReduceLoadStore(MBB, MI, Entry);
 
   switch (Opc) {
@@ -654,7 +653,7 @@ Thumb2SizeReduce::ReduceTo2Addr(MachineBasicBlock &MBB, MachineInstr *MI,
 
   // Add the 16-bit instruction.
   DebugLoc dl = MI->getDebugLoc();
-  MachineInstrBuilder MIB = BuildMI(MBB, *MI, dl, NewMCID);
+  MachineInstrBuilder MIB = BuildMI(MBB, MI, dl, NewMCID);
   MIB.addOperand(MI->getOperand(0));
   if (NewMCID.hasOptionalDef()) {
     if (HasCC)
@@ -678,7 +677,7 @@ Thumb2SizeReduce::ReduceTo2Addr(MachineBasicBlock &MBB, MachineInstr *MI,
 
   DEBUG(errs() << "Converted 32-bit: " << *MI << "       to 16-bit: " << *MIB);
 
-  MBB.erase(MI);
+  MBB.erase_instr(MI);
   ++Num2Addrs;
   return true;
 }
@@ -745,7 +744,7 @@ Thumb2SizeReduce::ReduceToNarrow(MachineBasicBlock &MBB, MachineInstr *MI,
 
   // Add the 16-bit instruction.
   DebugLoc dl = MI->getDebugLoc();
-  MachineInstrBuilder MIB = BuildMI(MBB, *MI, dl, NewMCID);
+  MachineInstrBuilder MIB = BuildMI(MBB, MI, dl, NewMCID);
   MIB.addOperand(MI->getOperand(0));
   if (NewMCID.hasOptionalDef()) {
     if (HasCC)
@@ -785,7 +784,7 @@ Thumb2SizeReduce::ReduceToNarrow(MachineBasicBlock &MBB, MachineInstr *MI,
 
   DEBUG(errs() << "Converted 32-bit: " << *MI << "       to 16-bit: " << *MIB);
 
-  MBB.erase(MI);
+  MBB.erase_instr(MI);
   ++NumNarrows;
   return true;
 }
@@ -830,16 +829,22 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
   // Yes, CPSR could be livein.
   bool LiveCPSR = MBB.isLiveIn(ARM::CPSR);
   MachineInstr *CPSRDef = 0;
+  MachineInstr *BundleMI = 0;
 
   // If this BB loops back to itself, conservatively avoid narrowing the
   // first instruction that does partial flag update.
   bool IsSelfLoop = MBB.isSuccessor(&MBB);
-  MachineBasicBlock::iterator MII = MBB.begin(), E = MBB.end();
-  MachineBasicBlock::iterator NextMII;
+  MachineBasicBlock::instr_iterator MII = MBB.instr_begin(), E = MBB.instr_end();
+  MachineBasicBlock::instr_iterator NextMII;
   for (; MII != E; MII = NextMII) {
     NextMII = llvm::next(MII);
 
     MachineInstr *MI = &*MII;
+    if (MI->isBundle()) {
+      BundleMI = MI;
+      continue;
+    }
+
     LiveCPSR = UpdateCPSRUse(*MI, LiveCPSR);
 
     unsigned Opcode = MI->getOpcode();
@@ -850,7 +855,7 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
       if (Entry.Special) {
         if (ReduceSpecial(MBB, MI, Entry, LiveCPSR, CPSRDef, IsSelfLoop)) {
           Modified = true;
-          MachineBasicBlock::iterator I = prior(NextMII);
+          MachineBasicBlock::instr_iterator I = prior(NextMII);
           MI = &*I;
         }
         goto ProcessNext;
@@ -860,7 +865,7 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
       if (Entry.NarrowOpc2 &&
           ReduceTo2Addr(MBB, MI, Entry, LiveCPSR, CPSRDef, IsSelfLoop)) {
         Modified = true;
-        MachineBasicBlock::iterator I = prior(NextMII);
+        MachineBasicBlock::instr_iterator I = prior(NextMII);
         MI = &*I;
         goto ProcessNext;
       }
@@ -869,15 +874,27 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
       if (Entry.NarrowOpc1 &&
           ReduceToNarrow(MBB, MI, Entry, LiveCPSR, CPSRDef, IsSelfLoop)) {
         Modified = true;
-        MachineBasicBlock::iterator I = prior(NextMII);
+        MachineBasicBlock::instr_iterator I = prior(NextMII);
         MI = &*I;
       }
     }
 
   ProcessNext:
+    if (NextMII != E && MI->isInsideBundle() && !NextMII->isInsideBundle()) {
+      // FIXME: Since post-ra scheduler operates on bundles, the CPSR kill
+      // marker is only on the BUNDLE instruction. Process the BUNDLE
+      // instruction as we finish with the bundled instruction to work around
+      // the inconsistency.
+      if (BundleMI->killsRegister(ARM::CPSR))
+        LiveCPSR = false;
+      MachineOperand *MO = BundleMI->findRegisterDefOperand(ARM::CPSR);
+      if (MO && !MO->isDead())
+        LiveCPSR = true;
+    }
+
     bool DefCPSR = false;
     LiveCPSR = UpdateCPSRDef(*MI, LiveCPSR, DefCPSR);
-    if (MI->getDesc().isCall()) {
+    if (MI->isCall()) {
       // Calls don't really set CPSR.
       CPSRDef = 0;
       IsSelfLoop = false;

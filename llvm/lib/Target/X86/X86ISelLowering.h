@@ -268,32 +268,14 @@ namespace llvm {
       MOVLHPS,
       MOVLHPD,
       MOVHLPS,
-      MOVHLPD,
       MOVLPS,
       MOVLPD,
       MOVSD,
       MOVSS,
-      UNPCKLPS,
-      UNPCKLPD,
-      VUNPCKLPSY,
-      VUNPCKLPDY,
-      UNPCKHPS,
-      UNPCKHPD,
-      VUNPCKHPSY,
-      VUNPCKHPDY,
-      PUNPCKLBW,
-      PUNPCKLWD,
-      PUNPCKLDQ,
-      PUNPCKLQDQ,
-      PUNPCKHBW,
-      PUNPCKHWD,
-      PUNPCKHDQ,
-      PUNPCKHQDQ,
-      VPERMILPS,
-      VPERMILPSY,
-      VPERMILPD,
-      VPERMILPDY,
-      VPERM2F128,
+      UNPCKL,
+      UNPCKH,
+      VPERMILP,
+      VPERM2X128,
       VBROADCAST,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
@@ -414,21 +396,23 @@ namespace llvm {
 
     /// isUNPCKLMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to UNPCKL.
-    bool isUNPCKLMask(ShuffleVectorSDNode *N, bool V2IsSplat = false);
+    bool isUNPCKLMask(ShuffleVectorSDNode *N, bool HasAVX2,
+                      bool V2IsSplat = false);
 
     /// isUNPCKHMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to UNPCKH.
-    bool isUNPCKHMask(ShuffleVectorSDNode *N, bool V2IsSplat = false);
+    bool isUNPCKHMask(ShuffleVectorSDNode *N, bool HasAVX2,
+                      bool V2IsSplat = false);
 
     /// isUNPCKL_v_undef_Mask - Special case of isUNPCKLMask for canonical form
     /// of vector_shuffle v, v, <0, 4, 1, 5>, i.e. vector_shuffle v, undef,
     /// <0, 0, 1, 1>
-    bool isUNPCKL_v_undef_Mask(ShuffleVectorSDNode *N);
+    bool isUNPCKL_v_undef_Mask(ShuffleVectorSDNode *N, bool HasAVX2);
 
     /// isUNPCKH_v_undef_Mask - Special case of isUNPCKHMask for canonical form
     /// of vector_shuffle v, v, <2, 6, 3, 7>, i.e. vector_shuffle v, undef,
     /// <2, 2, 3, 3>
-    bool isUNPCKH_v_undef_Mask(ShuffleVectorSDNode *N);
+    bool isUNPCKH_v_undef_Mask(ShuffleVectorSDNode *N, bool HasAVX2);
 
     /// isMOVLMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVSS,
@@ -469,10 +453,6 @@ namespace llvm {
     /// getShufflePSHUFLWImmediate - Return the appropriate immediate to shuffle
     /// the specified VECTOR_SHUFFLE mask with PSHUFLW instruction.
     unsigned getShufflePSHUFLWImmediate(SDNode *N);
-
-    /// getShufflePALIGNRImmediate - Return the appropriate immediate to shuffle
-    /// the specified VECTOR_SHUFFLE mask with the PALIGNR instruction.
-    unsigned getShufflePALIGNRImmediate(SDNode *N);
 
     /// getExtractVEXTRACTF128Immediate - Return the appropriate
     /// immediate to extract the specified EXTRACT_SUBVECTOR index

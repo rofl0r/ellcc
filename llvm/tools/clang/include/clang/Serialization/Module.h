@@ -26,7 +26,8 @@
 namespace clang {
 
 class DeclContext;
-
+class Module;
+  
 namespace serialization {
 
 /// \brief Specifies the kind of module that has been loaded.
@@ -54,10 +55,10 @@ struct DeclContextInfo {
 /// of some sort loaded as the main file, all of which are specific formulations
 /// of the general notion of a "module". A module may depend on any number of
 /// other modules.
-class Module {
+class ModuleFile {
 public:
-  Module(ModuleKind Kind);
-  ~Module();
+  ModuleFile(ModuleKind Kind);
+  ~ModuleFile();
 
   // === General information ===
 
@@ -200,6 +201,16 @@ public:
   /// search information.
   const char *HeaderFileFrameworkStrings;
 
+  // === Submodule information ===  
+  /// \brief The number of submodules in this module.
+  unsigned LocalNumSubmodules;
+  
+  /// \brief Base submodule ID for submodules local to this module.
+  serialization::SubmoduleID BaseSubmoduleID;
+  
+  /// \brief Remapping table for submodule IDs in this module.
+  ContinuousRangeMap<uint32_t, int, 2> SubmoduleRemap;
+  
   // === Selectors ===
 
   /// \brief The number of selectors new to this file.
@@ -249,6 +260,15 @@ public:
   /// \brief Remapping table for declaration IDs in this module.
   ContinuousRangeMap<uint32_t, int, 2> DeclRemap;
 
+  /// \brief Mapping from the module files that this module file depends on
+  /// to the base declaration ID for that module as it is understood within this
+  /// module.
+  ///
+  /// This is effectively a reverse global-to-local mapping for declaration
+  /// IDs, so that we can interpret a true global ID (for this translation unit)
+  /// as a local ID (for this module file).
+  llvm::DenseMap<ModuleFile *, serialization::DeclID> GlobalToLocalDeclIDs;
+
   /// \brief The number of C++ base specifier sets in this AST file.
   unsigned LocalNumCXXBaseSpecifiers;
 
@@ -275,6 +295,13 @@ public:
   /// \brief Array of file-level DeclIDs sorted by file.
   const serialization::DeclID *FileSortedDecls;
 
+  /// \brief Array of redeclaration information within this module file,
+  /// sorted by the first declaration ID.
+  const serialization::LocalRedeclarationsInfo *RedeclarationsInfo;
+
+  /// \brief The number of redeclaration info entries in RedeclarationsInfo.
+  unsigned LocalNumRedeclarationsInfos;
+  
   // === Types ===
 
   /// \brief The number of types in this AST file.
@@ -302,10 +329,10 @@ public:
   void *StatCache;
 
   /// \brief List of modules which depend on this module
-  llvm::SetVector<Module *> ImportedBy;
+  llvm::SetVector<ModuleFile *> ImportedBy;
 
   /// \brief List of modules which this module depends on
-  llvm::SetVector<Module *> Imports;
+  llvm::SetVector<ModuleFile *> Imports;
 
   /// \brief Determine whether this module was directly imported at
   /// any point during translation.

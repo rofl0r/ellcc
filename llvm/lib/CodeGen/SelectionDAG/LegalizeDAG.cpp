@@ -785,7 +785,6 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
   case ISD::FRAME_TO_ARGS_OFFSET:
   case ISD::EH_SJLJ_SETJMP:
   case ISD::EH_SJLJ_LONGJMP:
-  case ISD::EH_SJLJ_DISPATCHSETUP:
     // These operations lie about being legal: when they claim to be legal,
     // they should actually be expanded.
     Action = TLI.getOperationAction(Node->getOpcode(), Node->getValueType(0));
@@ -2383,6 +2382,9 @@ SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
 
     return Op;
   }
+  case ISD::CTLZ_ZERO_UNDEF:
+    // This trivially expands to CTLZ.
+    return DAG.getNode(ISD::CTLZ, dl, Op.getValueType(), Op);
   case ISD::CTLZ: {
     // for now, we do this:
     // x = x | (x >> 1);
@@ -2404,6 +2406,9 @@ SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
     Op = DAG.getNOT(dl, Op, VT);
     return DAG.getNode(ISD::CTPOP, dl, VT, Op);
   }
+  case ISD::CTTZ_ZERO_UNDEF:
+    // This trivially expands to CTTZ.
+    return DAG.getNode(ISD::CTTZ, dl, Op.getValueType(), Op);
   case ISD::CTTZ: {
     // for now, we use: { return popcount(~x & (x - 1)); }
     // unless the target has ctlz but not ctpop, in which case we use:
@@ -2518,7 +2523,9 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
   switch (Node->getOpcode()) {
   case ISD::CTPOP:
   case ISD::CTLZ:
+  case ISD::CTLZ_ZERO_UNDEF:
   case ISD::CTTZ:
+  case ISD::CTTZ_ZERO_UNDEF:
     Tmp1 = ExpandBitCount(Node->getOpcode(), Node->getOperand(0), dl);
     Results.push_back(Tmp1);
     break;
@@ -2538,7 +2545,6 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
   case ISD::PREFETCH:
   case ISD::VAEND:
   case ISD::EH_SJLJ_LONGJMP:
-  case ISD::EH_SJLJ_DISPATCHSETUP:
     // If the target didn't expand these, there's nothing to do, so just
     // preserve the chain and be done.
     Results.push_back(Node->getOperand(0));
@@ -3421,20 +3427,24 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
   SDValue Tmp1, Tmp2, Tmp3;
   switch (Node->getOpcode()) {
   case ISD::CTTZ:
+  case ISD::CTTZ_ZERO_UNDEF:
   case ISD::CTLZ:
+  case ISD::CTLZ_ZERO_UNDEF:
   case ISD::CTPOP:
     // Zero extend the argument.
     Tmp1 = DAG.getNode(ISD::ZERO_EXTEND, dl, NVT, Node->getOperand(0));
-    // Perform the larger operation.
+    // Perform the larger operation. For CTPOP and CTTZ_ZERO_UNDEF, this is
+    // already the correct result.
     Tmp1 = DAG.getNode(Node->getOpcode(), dl, NVT, Tmp1);
     if (Node->getOpcode() == ISD::CTTZ) {
-      //if Tmp1 == sizeinbits(NVT) then Tmp1 = sizeinbits(Old VT)
+      // FIXME: This should set a bit in the zero extended value instead.
       Tmp2 = DAG.getSetCC(dl, TLI.getSetCCResultType(NVT),
                           Tmp1, DAG.getConstant(NVT.getSizeInBits(), NVT),
                           ISD::SETEQ);
       Tmp1 = DAG.getNode(ISD::SELECT, dl, NVT, Tmp2,
                           DAG.getConstant(OVT.getSizeInBits(), NVT), Tmp1);
-    } else if (Node->getOpcode() == ISD::CTLZ) {
+    } else if (Node->getOpcode() == ISD::CTLZ ||
+               Node->getOpcode() == ISD::CTLZ_ZERO_UNDEF) {
       // Tmp1 = Tmp1 - (sizeinbits(NVT) - sizeinbits(Old VT))
       Tmp1 = DAG.getNode(ISD::SUB, dl, NVT, Tmp1,
                           DAG.getConstant(NVT.getSizeInBits() -

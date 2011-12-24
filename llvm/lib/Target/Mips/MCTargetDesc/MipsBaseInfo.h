@@ -31,8 +31,9 @@ namespace MipsII {
 
     MO_NO_FLAG,
 
-    /// MO_GOT - Represents the offset into the global offset table at which
+    /// MO_GOT16 - Represents the offset into the global offset table at which
     /// the address the relocation entry symbol resides during execution.
+    MO_GOT16,
     MO_GOT,
 
     /// MO_GOT_CALL - Represents the offset into the global offset table at
@@ -54,6 +55,13 @@ namespace MipsII {
     // the module ID and TSL block offset reside during execution (General
     // Dynamic TLS).
     MO_TLSGD,
+
+    /// MO_TLSLDM - Represents the offset into the global offset table at which
+    // the module ID and TSL block offset reside during execution (Local
+    // Dynamic TLS).
+    MO_TLSLDM,
+    MO_DTPREL_HI,
+    MO_DTPREL_LO,
 
     /// MO_GOTTPREL - Represents the offset from the thread pointer (Initial
     // Exec TLS).
@@ -180,6 +188,7 @@ inline static unsigned getMipsRegisterNumbering(unsigned RegEnum)
   case Mips::D14:
     return 28;
   case Mips::SP: case Mips::SP_64: case Mips::F29: case Mips::D29_64:
+  case Mips::HWR29:
     return 29;
   case Mips::FP: case Mips::FP_64: case Mips::F30: case Mips::D30_64:
   case Mips::D15: 

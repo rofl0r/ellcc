@@ -353,6 +353,7 @@ KEYWORD(__is_class                  , KEYCXX)
 KEYWORD(__is_convertible_to         , KEYCXX)
 KEYWORD(__is_empty                  , KEYCXX)
 KEYWORD(__is_enum                   , KEYCXX)
+KEYWORD(__is_final                  , KEYCXX)
 // Tentative name - there's no implementation of std::is_literal_type yet.
 KEYWORD(__is_literal                , KEYCXX)
 // Name for GCC 4.6 compatibility - people have already written libraries using
@@ -501,7 +502,7 @@ ALIAS("_thiscall"    , __thiscall , KEYMS)
 ALIAS("_uuidof"      , __uuidof   , KEYMS | KEYBORLAND)
 ALIAS("_inline"      , inline     , KEYMS)
 ALIAS("_declspec"    , __declspec , KEYMS)
-ALIAS("__interface"  , class      , KEYMS)
+ALIAS("__interface"  , struct     , KEYMS)
 
 // Borland Extensions which should be disabled in strict conformance mode.
 ALIAS("_pascal"      , __pascal   , KEYBORLAND)
@@ -559,6 +560,8 @@ ANNOTATION(template_id)  // annotation for a C++ template-id that names a
                          // function template specialization (not a type),
                          // e.g., "std::swap<int>"
 ANNOTATION(primary_expr) // annotation for a primary expression
+ANNOTATION(decltype)     // annotation for a decltype expression,
+                         // e.g., "decltype(foo.bar())"
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

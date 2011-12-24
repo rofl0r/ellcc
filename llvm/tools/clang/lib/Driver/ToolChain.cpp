@@ -216,6 +216,22 @@ void ToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   // Each toolchain should provide the appropriate include flags.
 }
 
+ToolChain::RuntimeLibType ToolChain::GetRuntimeLibType(
+  const ArgList &Args) const
+{
+  if (Arg *A = Args.getLastArg(options::OPT_rtlib_EQ)) {
+    StringRef Value = A->getValue(Args);
+    if (Value == "compiler-rt")
+      return ToolChain::RLT_CompilerRT;
+    if (Value == "libgcc")
+      return ToolChain::RLT_Libgcc;
+    getDriver().Diag(diag::err_drv_invalid_rtlib_name)
+      << A->getAsString(Args);
+  }
+
+  return GetDefaultRuntimeLibType();
+}
+
 ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
   if (Arg *A = Args.getLastArg(options::OPT_stdlib_EQ)) {
     StringRef Value = A->getValue(Args);
@@ -228,6 +244,40 @@ ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
   }
 
   return ToolChain::CST_Libstdcxx;
+}
+
+/// \brief Utility function to add a system include directory to CC1 arguments.
+/*static*/ void ToolChain::addSystemInclude(const ArgList &DriverArgs,
+                                            ArgStringList &CC1Args,
+                                            const Twine &Path) {
+  CC1Args.push_back("-internal-isystem");
+  CC1Args.push_back(DriverArgs.MakeArgString(Path));
+}
+
+/// \brief Utility function to add a system include directory with extern "C"
+/// semantics to CC1 arguments.
+///
+/// Note that this should be used rarely, and only for directories that
+/// historically and for legacy reasons are treated as having implicit extern
+/// "C" semantics. These semantics are *ignored* by and large today, but its
+/// important to preserve the preprocessor changes resulting from the
+/// classification.
+/*static*/ void ToolChain::addExternCSystemInclude(const ArgList &DriverArgs,
+                                                   ArgStringList &CC1Args,
+                                                   const Twine &Path) {
+  CC1Args.push_back("-internal-externc-isystem");
+  CC1Args.push_back(DriverArgs.MakeArgString(Path));
+}
+
+/// \brief Utility function to add a list of system include directories to CC1.
+/*static*/ void ToolChain::addSystemIncludes(const ArgList &DriverArgs,
+                                             ArgStringList &CC1Args,
+                                             ArrayRef<StringRef> Paths) {
+  for (ArrayRef<StringRef>::iterator I = Paths.begin(), E = Paths.end();
+       I != E; ++I) {
+    CC1Args.push_back("-internal-isystem");
+    CC1Args.push_back(DriverArgs.MakeArgString(*I));
+  }
 }
 
 void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,

@@ -175,7 +175,7 @@ protected:
 
 public:
   llvm::Type *ShortTy, *IntTy, *LongTy, *LongLongTy;
-  llvm::Type *Int8PtrTy;
+  llvm::Type *Int8PtrTy, *Int8PtrPtrTy;
 
   /// ObjectPtrTy - LLVM type for object handles (typeof(id))
   llvm::Type *ObjectPtrTy;
@@ -516,7 +516,8 @@ public:
     llvm::Type *params[] = { CGM.Int32Ty->getPointerTo() };
     return CGM.CreateRuntimeFunction(llvm::FunctionType::get(CGM.Int32Ty,
                                                              params, false),
-                                     "_setjmp");
+                                     "_setjmp",
+                                     llvm::Attribute::ReturnsTwice);
   }
 
 public:
@@ -765,10 +766,11 @@ protected:
   llvm::Constant *GetMethodVarName(IdentifierInfo *Ident);
 
   /// GetMethodVarType - Return a unique constant for the given
-  /// selector's name. The return value has type char *.
+  /// method's type encoding string. The return value has type char *.
 
   // FIXME: This is a horrible name.
-  llvm::Constant *GetMethodVarType(const ObjCMethodDecl *D);
+  llvm::Constant *GetMethodVarType(const ObjCMethodDecl *D,
+                                   bool Extended = false);
   llvm::Constant *GetMethodVarType(const FieldDecl *D);
 
   /// GetPropertyName - Return a unique constant for the given
@@ -814,6 +816,12 @@ protected:
                                    const Decl *Container,
                                    const ObjCContainerDecl *OCD,
                                    const ObjCCommonTypesHelper &ObjCTypes);
+
+  /// EmitProtocolMethodTypes - Generate the array of extended method type 
+  /// strings. The return value has type Int8PtrPtrTy.
+  llvm::Constant *EmitProtocolMethodTypes(Twine Name, 
+                                          const ConstantVector &MethodTypes,
+                                       const ObjCCommonTypesHelper &ObjCTypes);
 
   /// PushProtocolProperties - Push protocol's property on the input stack.
   void PushProtocolProperties(llvm::SmallPtrSet<const IdentifierInfo*, 16> &PropertySet,
@@ -984,7 +992,8 @@ private:
   llvm::Constant *
   EmitProtocolExtension(const ObjCProtocolDecl *PD,
                         const ConstantVector &OptInstanceMethods,
-                        const ConstantVector &OptClassMethods);
+                        const ConstantVector &OptClassMethods,
+                        const ConstantVector &MethodTypesExt);
 
   /// EmitProtocolList - Generate the list of referenced
   /// protocols. The return value has type ProtocolListPtrTy.
@@ -1785,6 +1794,7 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocol(const ObjCProtocolDecl *PD) {
   // Construct method lists.
   std::vector<llvm::Constant*> InstanceMethods, ClassMethods;
   std::vector<llvm::Constant*> OptInstanceMethods, OptClassMethods;
+  std::vector<llvm::Constant*> MethodTypesExt, OptMethodTypesExt;
   for (ObjCProtocolDecl::instmeth_iterator
          i = PD->instmeth_begin(), e = PD->instmeth_end(); i != e; ++i) {
     ObjCMethodDecl *MD = *i;
@@ -1794,8 +1804,10 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocol(const ObjCProtocolDecl *PD) {
     
     if (MD->getImplementationControl() == ObjCMethodDecl::Optional) {
       OptInstanceMethods.push_back(C);
+      OptMethodTypesExt.push_back(GetMethodVarType(MD, true));
     } else {
       InstanceMethods.push_back(C);
+      MethodTypesExt.push_back(GetMethodVarType(MD, true));
     }
   }
 
@@ -1808,13 +1820,19 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocol(const ObjCProtocolDecl *PD) {
 
     if (MD->getImplementationControl() == ObjCMethodDecl::Optional) {
       OptClassMethods.push_back(C);
+      OptMethodTypesExt.push_back(GetMethodVarType(MD, true));
     } else {
       ClassMethods.push_back(C);
+      MethodTypesExt.push_back(GetMethodVarType(MD, true));
     }
   }
 
+  MethodTypesExt.insert(MethodTypesExt.end(),
+                        OptMethodTypesExt.begin(), OptMethodTypesExt.end());
+
   llvm::Constant *Values[] = {
-    EmitProtocolExtension(PD, OptInstanceMethods, OptClassMethods),
+    EmitProtocolExtension(PD, OptInstanceMethods, OptClassMethods, 
+                          MethodTypesExt),
     GetClassName(PD->getIdentifier()),
     EmitProtocolList("\01L_OBJC_PROTOCOL_REFS_" + PD->getName(),
                      PD->protocol_begin(),
@@ -1874,12 +1892,14 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocolRef(const ObjCProtocolDecl *PD) {
   struct objc_method_description_list *optional_instance_methods;
   struct objc_method_description_list *optional_class_methods;
   struct objc_property_list *instance_properties;
+  const char ** extendedMethodTypes;
   };
 */
 llvm::Constant *
 CGObjCMac::EmitProtocolExtension(const ObjCProtocolDecl *PD,
                                  const ConstantVector &OptInstanceMethods,
-                                 const ConstantVector &OptClassMethods) {
+                                 const ConstantVector &OptClassMethods,
+                                 const ConstantVector &MethodTypesExt) {
   uint64_t Size =
     CGM.getTargetData().getTypeAllocSize(ObjCTypes.ProtocolExtensionTy);
   llvm::Constant *Values[] = {
@@ -1892,12 +1912,14 @@ CGObjCMac::EmitProtocolExtension(const ObjCProtocolDecl *PD,
                        "__OBJC,__cat_cls_meth,regular,no_dead_strip",
                        OptClassMethods),
     EmitPropertyList("\01L_OBJC_$_PROP_PROTO_LIST_" + PD->getName(), 0, PD,
-                     ObjCTypes)
+                     ObjCTypes),
+    EmitProtocolMethodTypes("\01L_OBJC_PROTOCOL_METHOD_TYPES_" + PD->getName(),
+                            MethodTypesExt, ObjCTypes)
   };
 
   // Return null if no extension bits are used.
   if (Values[1]->isNullValue() && Values[2]->isNullValue() &&
-      Values[3]->isNullValue())
+      Values[3]->isNullValue() && Values[4]->isNullValue())
     return llvm::Constant::getNullValue(ObjCTypes.ProtocolExtensionPtrTy);
 
   llvm::Constant *Init =
@@ -2034,6 +2056,25 @@ llvm::Constant *CGObjCCommonMac::EmitPropertyList(Twine Name,
                       (ObjCABI == 2) ? 8 : 4,
                       true);
   return llvm::ConstantExpr::getBitCast(GV, ObjCTypes.PropertyListPtrTy);
+}
+
+llvm::Constant *CGObjCCommonMac::EmitProtocolMethodTypes(Twine Name,
+                                      const ConstantVector &MethodTypes,
+                                      const ObjCCommonTypesHelper &ObjCTypes) {
+  // Return null for empty list.
+  if (MethodTypes.empty())
+    return llvm::Constant::getNullValue(ObjCTypes.Int8PtrPtrTy);
+
+  llvm::ArrayType *AT = llvm::ArrayType::get(ObjCTypes.Int8PtrTy,
+                                             MethodTypes.size());
+  llvm::Constant *Init = llvm::ConstantArray::get(AT, MethodTypes);
+
+  llvm::GlobalVariable *GV = 
+    CreateMetadataVar(Name, Init,
+                      (ObjCABI == 2) ? "__DATA, __objc_const" : 0,
+                      (ObjCABI == 2) ? 8 : 4,
+                      true);
+  return llvm::ConstantExpr::getBitCast(GV, ObjCTypes.Int8PtrPtrTy);
 }
 
 /*
@@ -3004,6 +3045,7 @@ void CGObjCMac::EmitTryOrSynchronizedStmt(CodeGen::CodeGenFunction &CGF,
   llvm::CallInst *SetJmpResult =
     CGF.Builder.CreateCall(ObjCTypes.getSetJmpFn(), SetJmpBuffer, "setjmp_result");
   SetJmpResult->setDoesNotThrow();
+  SetJmpResult->setCanReturnTwice();
 
   // If setjmp returned 0, enter the protected block; otherwise,
   // branch to the handler.
@@ -3069,6 +3111,7 @@ void CGObjCMac::EmitTryOrSynchronizedStmt(CodeGen::CodeGenFunction &CGF,
         CGF.Builder.CreateCall(ObjCTypes.getSetJmpFn(), SetJmpBuffer,
                                "setjmp.result");
       SetJmpResult->setDoesNotThrow();
+      SetJmpResult->setCanReturnTwice();
 
       llvm::Value *Threw =
         CGF.Builder.CreateIsNotNull(SetJmpResult, "did_catch_exception");
@@ -4023,11 +4066,12 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarType(const FieldDecl *Field) {
   return getConstantGEP(VMContext, Entry, 0, 0);
 }
 
-llvm::Constant *CGObjCCommonMac::GetMethodVarType(const ObjCMethodDecl *D) {
+llvm::Constant *CGObjCCommonMac::GetMethodVarType(const ObjCMethodDecl *D,
+                                                  bool Extended) {
   std::string TypeStr;
   if (CGM.getContext().getObjCEncodingForMethodDecl(
                                                 const_cast<ObjCMethodDecl*>(D),
-                                                    TypeStr))
+                                                    TypeStr, Extended))
     return 0;
 
   llvm::GlobalVariable *&Entry = MethodVarTypes[TypeStr];
@@ -4151,6 +4195,7 @@ ObjCCommonTypesHelper::ObjCCommonTypesHelper(CodeGen::CodeGenModule &cgm)
   LongTy = Types.ConvertType(Ctx.LongTy);
   LongLongTy = Types.ConvertType(Ctx.LongLongTy);
   Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
+  Int8PtrPtrTy = llvm::PointerType::getUnqual(Int8PtrTy);
 
   ObjectPtrTy = Types.ConvertType(Ctx.getObjCIdType());
   PtrObjectPtrTy = llvm::PointerType::getUnqual(ObjectPtrTy);
@@ -4252,12 +4297,13 @@ ObjCTypesHelper::ObjCTypesHelper(CodeGen::CodeGenModule &cgm)
   //   struct _objc_method_description_list *optional_instance_methods;
   //   struct _objc_method_description_list *optional_class_methods;
   //   struct _objc_property_list *instance_properties;
+  //   const char ** extendedMethodTypes;
   // }
   ProtocolExtensionTy =
     llvm::StructType::create("struct._objc_protocol_extension",
                              IntTy, MethodDescriptionListPtrTy,
                              MethodDescriptionListPtrTy, PropertyListPtrTy,
-                             NULL);
+                             Int8PtrPtrTy, NULL);
 
   // struct _objc_protocol_extension *
   ProtocolExtensionPtrTy = llvm::PointerType::getUnqual(ProtocolExtensionTy);
@@ -4430,6 +4476,7 @@ ObjCNonFragileABITypesHelper::ObjCNonFragileABITypesHelper(CodeGen::CodeGenModul
   //   const struct _prop_list_t * properties;
   //   const uint32_t size;  // sizeof(struct _protocol_t)
   //   const uint32_t flags;  // = 0
+  //   const char ** extendedMethodTypes;
   // }
 
   // Holder for struct _protocol_list_t *
@@ -4441,7 +4488,8 @@ ObjCNonFragileABITypesHelper::ObjCNonFragileABITypesHelper(CodeGen::CodeGenModul
                              llvm::PointerType::getUnqual(ProtocolListnfABITy),
                              MethodListnfABIPtrTy, MethodListnfABIPtrTy,
                              MethodListnfABIPtrTy, MethodListnfABIPtrTy,
-                             PropertyListPtrTy, IntTy, IntTy, NULL);
+                             PropertyListPtrTy, IntTy, IntTy, Int8PtrPtrTy,
+                             NULL);
 
   // struct _protocol_t*
   ProtocolnfABIPtrTy = llvm::PointerType::getUnqual(ProtocolnfABITy);
@@ -5352,6 +5400,7 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocolRef(
 ///   const struct _prop_list_t * properties;
 ///   const uint32_t size;  // sizeof(struct _protocol_t)
 ///   const uint32_t flags;  // = 0
+///   const char ** extendedMethodTypes;
 /// }
 /// @endcode
 ///
@@ -5367,6 +5416,7 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
   // Construct method lists.
   std::vector<llvm::Constant*> InstanceMethods, ClassMethods;
   std::vector<llvm::Constant*> OptInstanceMethods, OptClassMethods;
+  std::vector<llvm::Constant*> MethodTypesExt, OptMethodTypesExt;
   for (ObjCProtocolDecl::instmeth_iterator
          i = PD->instmeth_begin(), e = PD->instmeth_end(); i != e; ++i) {
     ObjCMethodDecl *MD = *i;
@@ -5376,8 +5426,10 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
     
     if (MD->getImplementationControl() == ObjCMethodDecl::Optional) {
       OptInstanceMethods.push_back(C);
+      OptMethodTypesExt.push_back(GetMethodVarType(MD, true));
     } else {
       InstanceMethods.push_back(C);
+      MethodTypesExt.push_back(GetMethodVarType(MD, true));
     }
   }
 
@@ -5390,12 +5442,17 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
 
     if (MD->getImplementationControl() == ObjCMethodDecl::Optional) {
       OptClassMethods.push_back(C);
+      OptMethodTypesExt.push_back(GetMethodVarType(MD, true));
     } else {
       ClassMethods.push_back(C);
+      MethodTypesExt.push_back(GetMethodVarType(MD, true));
     }
   }
 
-  llvm::Constant *Values[10];
+  MethodTypesExt.insert(MethodTypesExt.end(),
+                        OptMethodTypesExt.begin(), OptMethodTypesExt.end());
+
+  llvm::Constant *Values[11];
   // isa is NULL
   Values[0] = llvm::Constant::getNullValue(ObjCTypes.ObjectPtrTy);
   Values[1] = GetClassName(PD->getIdentifier());
@@ -5425,6 +5482,9 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
     CGM.getTargetData().getTypeAllocSize(ObjCTypes.ProtocolnfABITy);
   Values[8] = llvm::ConstantInt::get(ObjCTypes.IntTy, Size);
   Values[9] = llvm::Constant::getNullValue(ObjCTypes.IntTy);
+  Values[10] = EmitProtocolMethodTypes("\01l_OBJC_$_PROTOCOL_METHOD_TYPES_"
+                                       + PD->getName(),
+                                       MethodTypesExt, ObjCTypes);
   llvm::Constant *Init = llvm::ConstantStruct::get(ObjCTypes.ProtocolnfABITy,
                                                    Values);
 

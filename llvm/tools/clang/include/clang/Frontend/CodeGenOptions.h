@@ -35,7 +35,6 @@ public:
     Mixed = 2
   };
 
-  unsigned AddressSanitizer  : 1; /// Enable AddressSanitizer.
   unsigned AsmVerbose        : 1; /// -dA, -fverbose-asm.
   unsigned ObjCAutoRefCountExceptions : 1; /// Whether ARC should be EH-safe.
   unsigned CUDAIsDevice      : 1; /// Set when compiling for CUDA device.
@@ -106,6 +105,11 @@ public:
   unsigned VerifyModule      : 1; /// Control whether the module should be run
                                   /// through the LLVM Verifier.
 
+  unsigned StackRealignment  : 1; /// Control whether to permit stack
+                                  /// realignment.
+  unsigned StackAlignment;        /// Overrides default stack alignment,
+                                  /// if not 0.
+
   /// The code model to use (-mcmodel).
   std::string CodeModel;
 
@@ -152,7 +156,6 @@ public:
 
 public:
   CodeGenOptions() {
-    AddressSanitizer = 0;
     AsmVerbose = 0;
     CUDAIsDevice = 0;
     CXAAtExit = 1;
@@ -200,6 +203,8 @@ public:
     UnwindTables = 0;
     UseRegisterSizedBitfieldAccess = 0;
     VerifyModule = 1;
+    StackRealignment = 0;
+    StackAlignment = 0;
 
     Inlining = NoInlining;
     RelocationModel = "pic";

@@ -25,7 +25,7 @@ namespace clang {
     typedef ASTReader::RecordData RecordData;
     
     ASTReader &Reader;
-    Module &F;
+    ModuleFile &F;
     llvm::BitstreamCursor &DeclsCursor;
     const ASTReader::RecordData &Record;
     unsigned &Idx;
@@ -66,7 +66,7 @@ namespace clang {
     }
 
   public:
-    ASTStmtReader(ASTReader &Reader, Module &F,
+    ASTStmtReader(ASTReader &Reader, ModuleFile &F,
                   llvm::BitstreamCursor &Cursor,
                   const ASTReader::RecordData &Record, unsigned &Idx)
       : Reader(Reader), F(F), DeclsCursor(Cursor), Record(Record), Idx(Idx) { }
@@ -568,8 +568,6 @@ ASTStmtReader::VisitBinaryConditionalOperator(BinaryConditionalOperator *E) {
   E->SubExprs[BinaryConditionalOperator::RHS] = Reader.ReadSubExpr();
   E->QuestionLoc = ReadSourceLocation(Record, Idx);
   E->ColonLoc = ReadSourceLocation(Record, Idx);
-
-  E->getOpaqueValue()->setSourceExpr(E->getCommon());
 }
 
 void ASTStmtReader::VisitImplicitCastExpr(ImplicitCastExpr *E) {
@@ -787,8 +785,6 @@ void ASTStmtReader::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
   // Read all the semantic expressions.
   for (unsigned i = 0; i != numSemanticExprs; ++i) {
     Expr *subExpr = Reader.ReadSubExpr();
-    if (isa<OpaqueValueExpr>(subExpr))
-      cast<OpaqueValueExpr>(subExpr)->setSourceExpr(Reader.ReadSubExpr());
     E->getSubExprsBuffer()[i+1] = subExpr;
   }
 }
@@ -1376,7 +1372,7 @@ void ASTStmtReader::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
 
 void ASTStmtReader::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   VisitExpr(E);
-  Idx++; // skip ID
+  E->SourceExpr = Reader.ReadSubExpr();
   E->Loc = ReadSourceLocation(Record, Idx);
 }
 
@@ -1440,7 +1436,7 @@ void ASTStmtReader::VisitAsTypeExpr(AsTypeExpr *E) {
 // ASTReader Implementation
 //===----------------------------------------------------------------------===//
 
-Stmt *ASTReader::ReadStmt(Module &F) {
+Stmt *ASTReader::ReadStmt(ModuleFile &F) {
   switch (ReadingKind) {
   case Read_Decl:
   case Read_Type:
@@ -1453,7 +1449,7 @@ Stmt *ASTReader::ReadStmt(Module &F) {
   return 0;
 }
 
-Expr *ASTReader::ReadExpr(Module &F) {
+Expr *ASTReader::ReadExpr(ModuleFile &F) {
   return cast_or_null<Expr>(ReadStmt(F));
 }
 
@@ -1468,7 +1464,7 @@ Expr *ASTReader::ReadSubExpr() {
 // the stack, with expressions having operands removing those operands from the
 // stack. Evaluation terminates when we see a STMT_STOP record, and
 // the single remaining expression on the stack is our result.
-Stmt *ASTReader::ReadStmtFromStream(Module &F) {
+Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
   ReadingKindTracker ReadingKind(Read_Stmt, *this);
   llvm::BitstreamCursor &Cursor = F.DeclsCursor;
@@ -2055,20 +2051,9 @@ Stmt *ASTReader::ReadStmtFromStream(Module &F) {
       S = new (Context) MaterializeTemporaryExpr(Empty);
       break;
         
-    case EXPR_OPAQUE_VALUE: {
-      unsigned key = Record[ASTStmtReader::NumExprFields];
-      OpaqueValueExpr *&expr = OpaqueValueExprs[key];
-
-      // If we already have an entry for this opaque value expression,
-      // don't bother reading it again.
-      if (expr) {
-        StmtStack.push_back(expr);
-        continue;
-      }
-
-      S = expr = new (Context) OpaqueValueExpr(Empty);
+    case EXPR_OPAQUE_VALUE:
+      S = new (Context) OpaqueValueExpr(Empty);
       break;
-    }
 
     case EXPR_CUDA_KERNEL_CALL:
       S = new (Context) CUDAKernelCallExpr(Context, Empty);

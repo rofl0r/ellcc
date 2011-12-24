@@ -26,10 +26,11 @@ extern "C" void LLVMInitializeSparcTarget() {
 ///
 SparcTargetMachine::SparcTargetMachine(const Target &T, StringRef TT, 
                                        StringRef CPU, StringRef FS,
+                                       const TargetOptions &Options,
                                        Reloc::Model RM, CodeModel::Model CM,
                                        CodeGenOpt::Level OL,
                                        bool is64bit)
-  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM, OL),
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     Subtarget(TT, CPU, FS, is64bit),
     DataLayout(Subtarget.getDataLayout()),
     TLInfo(*this), TSInfo(*this), InstrInfo(Subtarget),
@@ -50,18 +51,26 @@ bool SparcTargetMachine::addPreEmitPass(PassManagerBase &PM){
   return true;
 }
 
+void SparcV8TargetMachine::anchor() { }
+
 SparcV8TargetMachine::SparcV8TargetMachine(const Target &T,
                                            StringRef TT, StringRef CPU,
-                                           StringRef FS, Reloc::Model RM,
+                                           StringRef FS,
+                                           const TargetOptions &Options,
+                                           Reloc::Model RM,
                                            CodeModel::Model CM,
                                            CodeGenOpt::Level OL)
-  : SparcTargetMachine(T, TT, CPU, FS, RM, CM, OL, false) {
+  : SparcTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {
 }
+
+void SparcV9TargetMachine::anchor() { }
 
 SparcV9TargetMachine::SparcV9TargetMachine(const Target &T, 
                                            StringRef TT,  StringRef CPU,
-                                           StringRef FS, Reloc::Model RM,
+                                           StringRef FS,
+                                           const TargetOptions &Options,
+                                           Reloc::Model RM,
                                            CodeModel::Model CM,
                                            CodeGenOpt::Level OL)
-  : SparcTargetMachine(T, TT, CPU, FS, RM, CM, OL, true) {
+  : SparcTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {
 }

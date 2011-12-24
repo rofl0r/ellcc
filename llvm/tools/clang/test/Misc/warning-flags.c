@@ -17,7 +17,7 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (274):
+CHECK: Warnings without flags (269):
 CHECK-NEXT:   ext_anon_param_requires_type_specifier
 CHECK-NEXT:   ext_anonymous_struct_union_qualified
 CHECK-NEXT:   ext_array_init_copy
@@ -28,7 +28,6 @@ CHECK-NEXT:   ext_designated_init
 CHECK-NEXT:   ext_designated_init_cxx
 CHECK-NEXT:   ext_duplicate_declspec
 CHECK-NEXT:   ext_ellipsis_exception_spec
-CHECK-NEXT:   ext_embedded_directive
 CHECK-NEXT:   ext_empty_fnmacro_arg
 CHECK-NEXT:   ext_empty_source_file
 CHECK-NEXT:   ext_enum_friend
@@ -57,7 +56,6 @@ CHECK-NEXT:   ext_missing_whitespace_after_macro_name
 CHECK-NEXT:   ext_new_paren_array_nonconst
 CHECK-NEXT:   ext_nonstandard_escape
 CHECK-NEXT:   ext_param_not_declared
-CHECK-NEXT:   ext_param_promoted_not_compatible_with_prototype
 CHECK-NEXT:   ext_paste_comma
 CHECK-NEXT:   ext_plain_complex
 CHECK-NEXT:   ext_pp_bad_vaargs_use
@@ -128,7 +126,6 @@ CHECK-NEXT:   warn_bad_receiver_type
 CHECK-NEXT:   warn_bitfield_width_exceeds_type_size
 CHECK-NEXT:   warn_bool_switch_condition
 CHECK-NEXT:   warn_braces_around_scalar_init
-CHECK-NEXT:   warn_builtin_unknown
 CHECK-NEXT:   warn_c_kext
 CHECK-NEXT:   warn_call_to_pure_virtual_member_function_from_ctor_dtor
 CHECK-NEXT:   warn_call_wrong_number_of_arguments
@@ -265,8 +262,6 @@ CHECK-NEXT:   warn_remainder_by_zero
 CHECK-NEXT:   warn_root_inst_method_not_found
 CHECK-NEXT:   warn_second_parameter_of_va_start_not_last_named_argument
 CHECK-NEXT:   warn_second_parameter_to_va_arg_never_compatible
-CHECK-NEXT:   warn_setter_getter_impl_required
-CHECK-NEXT:   warn_setter_getter_impl_required_in_category
 CHECK-NEXT:   warn_standalone_specifier
 CHECK-NEXT:   warn_static_inline_explicit_inst_ignored
 CHECK-NEXT:   warn_static_non_static

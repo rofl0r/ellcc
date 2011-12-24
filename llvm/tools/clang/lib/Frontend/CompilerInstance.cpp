@@ -11,6 +11,7 @@
 #include "clang/Sema/Sema.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
@@ -169,7 +170,7 @@ static void SetupSerializedDiagnostics(const DiagnosticOptions &DiagOpts,
   }
   
   DiagnosticConsumer *SerializedConsumer =
-    clang::serialized_diags::create(OS.take(), Diags);
+    clang::serialized_diags::create(OS.take(), DiagOpts);
 
   
   Diags.setClient(new ChainedDiagnosticConsumer(Diags.takeClient(),
@@ -277,8 +278,7 @@ void CompilerInstance::createPreprocessor() {
   if (!getHeaderSearchOpts().DisableModuleHash)
     llvm::sys::path::append(SpecificModuleCache,
                             getInvocation().getModuleHash());
-  PP->getHeaderSearchInfo().configureModules(SpecificModuleCache,
-                                             getLangOpts().CurrentModule);
+  PP->getHeaderSearchInfo().setModuleCachePath(SpecificModuleCache);
 
   // Handle generating dependencies, if requested.
   const DependencyOutputOptions &DepOpts = getDependencyOutputOpts();
@@ -659,6 +659,9 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
     }
   }
 
+  // Notify the diagnostic client that all files were processed.
+  getDiagnostics().getClient()->finish();
+
   if (getDiagnosticOpts().ShowCarets) {
     // We can have multiple diagnostics sharing one diagnostic client.
     // Get the total number of warnings/errors from the client.
@@ -696,16 +699,17 @@ static InputKind getSourceInputKindFromOptions(const LangOptions &LangOpts) {
 }
 
 namespace {
-  struct CompileModuleData {
+  struct CompileModuleMapData {
     CompilerInstance &Instance;
-    GeneratePCHAction &CreateModuleAction;
+    GenerateModuleAction &CreateModuleAction;
   };
 }
 
 /// \brief Helper function that executes the module-generating action under
 /// a crash recovery context.
-static void doCompileModule(void *UserData) {
-  CompileModuleData &Data = *reinterpret_cast<CompileModuleData *>(UserData);
+static void doCompileMapModule(void *UserData) {
+  CompileModuleMapData &Data
+    = *reinterpret_cast<CompileModuleMapData *>(UserData);
   Data.Instance.ExecuteAction(Data.CreateModuleAction);
 }
 
@@ -958,13 +962,11 @@ void LockFileManager::waitForUnlock() {
   // Give up.
 }
 
-/// \brief Compile a module file for the given module name with the given
-/// umbrella header, using the options provided by the importing compiler
-/// instance.
+/// \brief Compile a module file for the given module, using the options 
+/// provided by the importing compiler instance.
 static void compileModule(CompilerInstance &ImportingInstance,
-                          StringRef ModuleName,
-                          StringRef ModuleFileName,
-                          StringRef UmbrellaHeader) {
+                          Module *Module,
+                          StringRef ModuleFileName) {
   LockFileManager Locked(ModuleFileName);
   switch (Locked) {
   case LockFileManager::LFS_Error:
@@ -981,38 +983,69 @@ static void compileModule(CompilerInstance &ImportingInstance,
     break;
   }
 
+  ModuleMap &ModMap 
+    = ImportingInstance.getPreprocessor().getHeaderSearchInfo().getModuleMap();
+    
   // Construct a compiler invocation for creating this module.
   llvm::IntrusiveRefCntPtr<CompilerInvocation> Invocation
     (new CompilerInvocation(ImportingInstance.getInvocation()));
 
+  PreprocessorOptions &PPOpts = Invocation->getPreprocessorOpts();
+  
   // For any options that aren't intended to affect how a module is built,
   // reset them to their default values.
   Invocation->getLangOpts()->resetNonModularOptions();
-  Invocation->getPreprocessorOpts().resetNonModularOptions();
+  PPOpts.resetNonModularOptions();
 
   // Note the name of the module we're building.
-  Invocation->getLangOpts()->CurrentModule = ModuleName;
+  Invocation->getLangOpts()->CurrentModule = Module->getTopLevelModuleName();
 
   // Note that this module is part of the module build path, so that we
   // can detect cycles in the module graph.
-  Invocation->getPreprocessorOpts().ModuleBuildPath.push_back(ModuleName);
+  PPOpts.ModuleBuildPath.push_back(Module->getTopLevelModuleName());
 
+  // If there is a module map file, build the module using the module map.
   // Set up the inputs/outputs so that we build the module from its umbrella
   // header.
   FrontendOptions &FrontendOpts = Invocation->getFrontendOpts();
   FrontendOpts.OutputFile = ModuleFileName.str();
   FrontendOpts.DisableFree = false;
   FrontendOpts.Inputs.clear();
-  FrontendOpts.Inputs.push_back(
-    std::make_pair(getSourceInputKindFromOptions(*Invocation->getLangOpts()),
-                                                 UmbrellaHeader));
+  InputKind IK = getSourceInputKindFromOptions(*Invocation->getLangOpts());
 
+  // Get or create the module map that we'll use to build this module.
+  llvm::SmallString<128> TempModuleMapFileName;
+  if (const FileEntry *ModuleMapFile
+                                  = ModMap.getContainingModuleMapFile(Module)) {
+    // Use the module map where this module resides.
+    FrontendOpts.Inputs.push_back(std::make_pair(IK, ModuleMapFile->getName()));
+  } else {
+    // Create a temporary module map file.
+    TempModuleMapFileName = Module->Name;
+    TempModuleMapFileName += "-%%%%%%%%.map";
+    int FD;
+    if (llvm::sys::fs::unique_file(TempModuleMapFileName.str(), FD, 
+                                   TempModuleMapFileName,
+                                   /*makeAbsolute=*/true)
+          != llvm::errc::success) {
+      ImportingInstance.getDiagnostics().Report(diag::err_module_map_temp_file)
+        << TempModuleMapFileName;
+      return;
+    }
+    // Print the module map to this file.
+    llvm::raw_fd_ostream OS(FD, /*shouldClose=*/true);
+    Module->print(OS);
+    FrontendOpts.Inputs.push_back(
+      std::make_pair(IK, TempModuleMapFileName.str().str()));
+  }
+
+  // Don't free the remapped file buffers; they are owned by our caller.
+  PPOpts.RetainRemappedFileBuffers = true;
+    
   Invocation->getDiagnosticOpts().VerifyDiagnostics = 0;
-
-
   assert(ImportingInstance.getInvocation().getModuleHash() ==
-           Invocation->getModuleHash() && "Module hash mismatch!");
-
+         Invocation->getModuleHash() && "Module hash mismatch!");
+  
   // Construct a compiler instance that will be used to actually create the
   // module.
   CompilerInstance Instance;
@@ -1021,21 +1054,39 @@ static void compileModule(CompilerInstance &ImportingInstance,
                              &ImportingInstance.getDiagnosticClient(),
                              /*ShouldOwnClient=*/true,
                              /*ShouldCloneClient=*/true);
-
+  
   // Construct a module-generating action.
-  GeneratePCHAction CreateModuleAction(true);
-
+  GenerateModuleAction CreateModuleAction;
+  
   // Execute the action to actually build the module in-place. Use a separate
   // thread so that we get a stack large enough.
   const unsigned ThreadStackSize = 8 << 20;
   llvm::CrashRecoveryContext CRC;
-  CompileModuleData Data = { Instance, CreateModuleAction };
-  CRC.RunSafelyOnThread(&doCompileModule, &Data, ThreadStackSize);
+  CompileModuleMapData Data = { Instance, CreateModuleAction };
+  CRC.RunSafelyOnThread(&doCompileMapModule, &Data, ThreadStackSize);
+  
+  // Delete the temporary module map file.
+  // FIXME: Even though we're executing under crash protection, it would still
+  // be nice to do this with RemoveFileOnSignal when we can. However, that
+  // doesn't make sense for all clients, so clean this up manually.
+  if (!TempModuleMapFileName.empty())
+    llvm::sys::Path(TempModuleMapFileName).eraseFromDisk();
 }
 
-ModuleKey CompilerInstance::loadModule(SourceLocation ImportLoc,
-                                       IdentifierInfo &ModuleName,
-                                       SourceLocation ModuleNameLoc) {
+Module *CompilerInstance::loadModule(SourceLocation ImportLoc, 
+                                     ModuleIdPath Path,
+                                     Module::NameVisibilityKind Visibility,
+                                     bool IsInclusionDirective) {
+  // If we've already handled this import, just return the cached result.
+  // This one-element cache is important to eliminate redundant diagnostics
+  // when both the preprocessor and parser see the same import declaration.
+  if (!ImportLoc.isInvalid() && LastModuleImportLoc == ImportLoc) {
+    // Make the named module visible.
+    if (LastModuleImportResult)
+      ModuleManager->makeModuleVisible(LastModuleImportResult, Visibility);
+    return LastModuleImportResult;
+  }
+  
   // Determine what file we're searching from.
   SourceManager &SourceMgr = getSourceManager();
   SourceLocation ExpandedImportLoc = SourceMgr.getExpansionLoc(ImportLoc);
@@ -1044,98 +1095,208 @@ ModuleKey CompilerInstance::loadModule(SourceLocation ImportLoc,
   if (!CurFile)
     CurFile = SourceMgr.getFileEntryForID(SourceMgr.getMainFileID());
 
-  // Search for a module with the given name.
-  std::string UmbrellaHeader;
-  std::string ModuleFileName;
-  const FileEntry *ModuleFile
-    = PP->getHeaderSearchInfo().lookupModule(ModuleName.getName(),
-                                             &ModuleFileName,
-                                             &UmbrellaHeader);
+  StringRef ModuleName = Path[0].first->getName();
+  SourceLocation ModuleNameLoc = Path[0].second;
 
-  bool BuildingModule = false;
-  if (!ModuleFile && !UmbrellaHeader.empty()) {
-    // We didn't find the module, but there is an umbrella header that
-    // can be used to create the module file. Create a separate compilation
-    // module to do so.
+  clang::Module *Module = 0;
+  const FileEntry *ModuleFile = 0;
+  
+  // If we don't already have information on this module, load the module now.
+  llvm::DenseMap<const IdentifierInfo *, clang::Module *>::iterator Known
+    = KnownModules.find(Path[0].first);
+  if (Known != KnownModules.end()) {
+    // Retrieve the cached top-level module.
+    Module = Known->second;    
+  } else if (ModuleName == getLangOpts().CurrentModule) {
+    // This is the module we're building. 
+    Module = PP->getHeaderSearchInfo().getModuleMap().findModule(ModuleName);
+    Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
+  } else {
+    // Search for a module with the given name.
+    std::string ModuleFileName;
+    ModuleFile
+      = PP->getHeaderSearchInfo().lookupModule(ModuleName, Module,
+                                               &ModuleFileName);
 
-    // Check whether there is a cycle in the module graph.
-    SmallVectorImpl<std::string> &ModuleBuildPath
-      = getPreprocessorOpts().ModuleBuildPath;
-    SmallVectorImpl<std::string>::iterator Pos
-      = std::find(ModuleBuildPath.begin(), ModuleBuildPath.end(),
-                  ModuleName.getName());
-    if (Pos != ModuleBuildPath.end()) {
-      llvm::SmallString<256> CyclePath;
-      for (; Pos != ModuleBuildPath.end(); ++Pos) {
-        CyclePath += *Pos;
-        CyclePath += " -> ";
+    bool BuildingModule = false;
+    if (!ModuleFile && Module) {
+      // The module is not cached, but we have a module map from which we can
+      // build the module.
+
+      // Check whether there is a cycle in the module graph.
+      SmallVectorImpl<std::string> &ModuleBuildPath
+        = getPreprocessorOpts().ModuleBuildPath;
+      SmallVectorImpl<std::string>::iterator Pos
+        = std::find(ModuleBuildPath.begin(), ModuleBuildPath.end(), ModuleName);
+      if (Pos != ModuleBuildPath.end()) {
+        llvm::SmallString<256> CyclePath;
+        for (; Pos != ModuleBuildPath.end(); ++Pos) {
+          CyclePath += *Pos;
+          CyclePath += " -> ";
+        }
+        CyclePath += ModuleName;
+
+        getDiagnostics().Report(ModuleNameLoc, diag::err_module_cycle)
+          << ModuleName << CyclePath;
+        return 0;
       }
-      CyclePath += ModuleName.getName();
 
-      getDiagnostics().Report(ModuleNameLoc, diag::err_module_cycle)
-        << ModuleName.getName() << CyclePath;
+      getDiagnostics().Report(ModuleNameLoc, diag::warn_module_build)
+        << ModuleName;
+      BuildingModule = true;
+      compileModule(*this, Module, ModuleFileName);
+      ModuleFile = FileMgr->getFile(ModuleFileName);
+    }
+
+    if (!ModuleFile) {
+      getDiagnostics().Report(ModuleNameLoc,
+                              BuildingModule? diag::err_module_not_built
+                                            : diag::err_module_not_found)
+        << ModuleName
+        << SourceRange(ImportLoc, ModuleNameLoc);
       return 0;
     }
 
-    getDiagnostics().Report(ModuleNameLoc, diag::warn_module_build)
-      << ModuleName.getName();
-    BuildingModule = true;
-    compileModule(*this, ModuleName.getName(), ModuleFileName, UmbrellaHeader);
-    ModuleFile = PP->getHeaderSearchInfo().lookupModule(ModuleName.getName());
-  }
+    // If we don't already have an ASTReader, create one now.
+    if (!ModuleManager) {
+      if (!hasASTContext())
+        createASTContext();
 
-  if (!ModuleFile) {
-    getDiagnostics().Report(ModuleNameLoc,
-                            BuildingModule? diag::err_module_not_built
-                                          : diag::err_module_not_found)
-      << ModuleName.getName()
-      << SourceRange(ImportLoc, ModuleNameLoc);
-    return 0;
-  }
-
-  // If we don't already have an ASTReader, create one now.
-  if (!ModuleManager) {
-    if (!hasASTContext())
-      createASTContext();
-
-    std::string Sysroot = getHeaderSearchOpts().Sysroot;
-    const PreprocessorOptions &PPOpts = getPreprocessorOpts();
-    ModuleManager = new ASTReader(getPreprocessor(), *Context,
-                                  Sysroot.empty() ? "" : Sysroot.c_str(),
-                                  PPOpts.DisablePCHValidation,
-                                  PPOpts.DisableStatCache);
-    if (hasASTConsumer()) {
-      ModuleManager->setDeserializationListener(
-        getASTConsumer().GetASTDeserializationListener());
-      getASTContext().setASTMutationListener(
-        getASTConsumer().GetASTMutationListener());
+      std::string Sysroot = getHeaderSearchOpts().Sysroot;
+      const PreprocessorOptions &PPOpts = getPreprocessorOpts();
+      ModuleManager = new ASTReader(getPreprocessor(), *Context,
+                                    Sysroot.empty() ? "" : Sysroot.c_str(),
+                                    PPOpts.DisablePCHValidation,
+                                    PPOpts.DisableStatCache);
+      if (hasASTConsumer()) {
+        ModuleManager->setDeserializationListener(
+          getASTConsumer().GetASTDeserializationListener());
+        getASTContext().setASTMutationListener(
+          getASTConsumer().GetASTMutationListener());
+      }
+      llvm::OwningPtr<ExternalASTSource> Source;
+      Source.reset(ModuleManager);
+      getASTContext().setExternalSource(Source);
+      if (hasSema())
+        ModuleManager->InitializeSema(getSema());
+      if (hasASTConsumer())
+        ModuleManager->StartTranslationUnit(&getASTConsumer());
     }
-    llvm::OwningPtr<ExternalASTSource> Source;
-    Source.reset(ModuleManager);
-    getASTContext().setExternalSource(Source);
-    if (hasSema())
-      ModuleManager->InitializeSema(getSema());
-    if (hasASTConsumer())
-      ModuleManager->StartTranslationUnit(&getASTConsumer());
+
+    // Try to load the module we found.
+    switch (ModuleManager->ReadAST(ModuleFile->getName(),
+                                   serialization::MK_Module)) {
+    case ASTReader::Success:
+      break;
+
+    case ASTReader::IgnorePCH:
+      // FIXME: The ASTReader will already have complained, but can we showhorn
+      // that diagnostic information into a more useful form?
+      KnownModules[Path[0].first] = 0;
+      return 0;
+
+    case ASTReader::Failure:
+      // Already complained, but note now that we failed.
+      KnownModules[Path[0].first] = 0;
+      return 0;
+    }
+    
+    if (!Module) {
+      // If we loaded the module directly, without finding a module map first,
+      // we'll have loaded the module's information from the module itself.
+      Module = PP->getHeaderSearchInfo().getModuleMap()
+                 .findModule((Path[0].first->getName()));
+    }
+    
+    // Cache the result of this top-level module lookup for later.
+    Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
   }
-
-  // Try to load the module we found.
-  switch (ModuleManager->ReadAST(ModuleFile->getName(),
-                                 serialization::MK_Module)) {
-  case ASTReader::Success:
-    break;
-
-  case ASTReader::IgnorePCH:
-    // FIXME: The ASTReader will already have complained, but can we showhorn
-    // that diagnostic information into a more useful form?
+  
+  // If we never found the module, fail.
+  if (!Module)
     return 0;
-
-  case ASTReader::Failure:
-    // Already complained.
-    return 0;
+  
+  // Verify that the rest of the module path actually corresponds to
+  // a submodule.
+  if (Path.size() > 1) {
+    for (unsigned I = 1, N = Path.size(); I != N; ++I) {
+      StringRef Name = Path[I].first->getName();
+      llvm::StringMap<clang::Module *>::iterator Pos
+        = Module->SubModules.find(Name);
+      
+      if (Pos == Module->SubModules.end()) {
+        // Attempt to perform typo correction to find a module name that works.
+        llvm::SmallVector<StringRef, 2> Best;
+        unsigned BestEditDistance = (std::numeric_limits<unsigned>::max)();
+        
+        for (llvm::StringMap<clang::Module *>::iterator
+                  J = Module->SubModules.begin(), 
+               JEnd = Module->SubModules.end();
+             J != JEnd; ++J) {
+          unsigned ED = Name.edit_distance(J->getValue()->Name,
+                                           /*AllowReplacements=*/true,
+                                           BestEditDistance);
+          if (ED <= BestEditDistance) {
+            if (ED < BestEditDistance)
+              Best.clear();
+            Best.push_back(J->getValue()->Name);
+          }
+        }
+        
+        // If there was a clear winner, user it.
+        if (Best.size() == 1) {
+          getDiagnostics().Report(Path[I].second, 
+                                  diag::err_no_submodule_suggest)
+            << Path[I].first << Module->getFullModuleName() << Best[0]
+            << SourceRange(Path[0].second, Path[I-1].second)
+            << FixItHint::CreateReplacement(SourceRange(Path[I].second),
+                                            Best[0]);
+          Pos = Module->SubModules.find(Best[0]);
+        }
+      }
+      
+      if (Pos == Module->SubModules.end()) {
+        // No submodule by this name. Complain, and don't look for further
+        // submodules.
+        getDiagnostics().Report(Path[I].second, diag::err_no_submodule)
+          << Path[I].first << Module->getFullModuleName()
+          << SourceRange(Path[0].second, Path[I-1].second);
+        break;
+      }
+      
+      Module = Pos->getValue();
+    }
   }
-
-  // FIXME: The module file's FileEntry makes a poor key indeed!
-  return (ModuleKey)ModuleFile;
+  
+  // Make the named module visible, if it's not already part of the module
+  // we are parsing.
+  if (ModuleName != getLangOpts().CurrentModule) {
+    if (!Module->IsFromModuleFile) {
+      // We have an umbrella header or directory that doesn't actually include
+      // all of the headers within the directory it covers. Complain about
+      // this missing submodule and recover by forgetting that we ever saw
+      // this submodule.
+      // FIXME: Should we detect this at module load time? It seems fairly
+      // expensive (and rare).
+      getDiagnostics().Report(ImportLoc, diag::warn_missing_submodule)
+        << Module->getFullModuleName()
+        << SourceRange(Path.front().second, Path.back().second);
+      
+      return 0;
+    }
+    ModuleManager->makeModuleVisible(Module, Visibility);
+  }
+  
+  // If this module import was due to an inclusion directive, create an 
+  // implicit import declaration to capture it in the AST.
+  if (IsInclusionDirective && hasASTContext()) {
+    TranslationUnitDecl *TU = getASTContext().getTranslationUnitDecl();
+    TU->addDecl(ImportDecl::CreateImplicit(getASTContext(), TU,
+                                           ImportLoc, Module, 
+                                           Path.back().second));
+  }
+  
+  LastModuleImportLoc = ImportLoc;
+  LastModuleImportResult = Module;
+  return Module;
 }
-

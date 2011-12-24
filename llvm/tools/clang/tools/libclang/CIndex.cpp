@@ -151,7 +151,11 @@ bool CursorVisitor::Visit(CXCursor Cursor, bool CheckedRegionOfInterest) {
 
   if (clang_isDeclaration(Cursor.kind)) {
     Decl *D = getCursorDecl(Cursor);
-    assert(D && "Invalid declaration cursor");
+    if (!D) {
+      assert(0 && "Invalid declaration cursor");
+      return true; // abort.
+    }
+    
     // Ignore implicit declarations, unless it's an objc method because
     // currently we should report implicit methods for properties when indexing.
     if (D->isImplicit() && !isa<ObjCMethodDecl>(D))
@@ -189,8 +193,8 @@ static bool visitPreprocessedEntitiesInRange(SourceRange R,
   if (!Visitor.shouldVisitIncludedEntities()) {
     // If the begin/end of the range lie in the same FileID, do the optimization
     // where we skip preprocessed entities that do not come from the same FileID.
-    FID = SM.getFileID(R.getBegin());
-    if (FID != SM.getFileID(R.getEnd()))
+    FID = SM.getFileID(SM.getFileLoc(R.getBegin()));
+    if (FID != SM.getFileID(SM.getFileLoc(R.getEnd())))
       FID = FileID();
   }
 
@@ -226,14 +230,13 @@ void CursorVisitor::visitFileRegion() {
   unsigned Offset = Begin.second;
   unsigned Length = End.second - Begin.second;
 
-  if (!VisitPreprocessorLast &&
-      Unit->getPreprocessor().getPreprocessingRecord())
-    visitPreprocessedEntitiesInRegion();
+  if (!VisitDeclsOnly && !VisitPreprocessorLast)
+    if (visitPreprocessedEntitiesInRegion())
+      return; // visitation break.
 
   visitDeclsFromFileRegion(File, Offset, Length);
 
-  if (VisitPreprocessorLast &&
-      Unit->getPreprocessor().getPreprocessingRecord())
+  if (!VisitDeclsOnly && VisitPreprocessorLast)
     visitPreprocessedEntitiesInRegion();
 }
 
@@ -260,7 +263,7 @@ void CursorVisitor::visitDeclsFromFileRegion(FileID File,
 
   // If we didn't find any file level decls for the file, try looking at the
   // file that it was included from.
-  while (Decls.empty()) {
+  while (Decls.empty() || Decls.front()->isTopLevelDeclInObjCContainer()) {
     bool Invalid = false;
     const SrcMgr::SLocEntry &SLEntry = SM.getSLocEntry(File, &Invalid);
     if (Invalid)
@@ -286,6 +289,8 @@ void CursorVisitor::visitDeclsFromFileRegion(FileID File,
   SmallVector<Decl *, 16>::iterator DIt = Decls.begin();
   for (SmallVector<Decl *, 16>::iterator DE = Decls.end(); DIt != DE; ++DIt) {
     Decl *D = *DIt;
+    if (D->getSourceRange().isInvalid())
+      continue;
 
     if (isInLexicalContext(D, CurDC))
       continue;
@@ -294,12 +299,7 @@ void CursorVisitor::visitDeclsFromFileRegion(FileID File,
 
     // We handle forward decls via ObjCClassDecl.
     if (ObjCInterfaceDecl *InterD = dyn_cast<ObjCInterfaceDecl>(D)) {
-      if (InterD->isForwardDecl())
-        continue;
-      // An interface that started as a forward decl may have changed location
-      // because its @interface was parsed.
-      if (InterD->isInitiallyForwardDecl() &&
-          !SM.isInFileID(SM.getFileLoc(InterD->getLocation()), File))
+      if (!InterD->isThisDeclarationADefinition())
         continue;
     }
 
@@ -352,6 +352,9 @@ void CursorVisitor::visitDeclsFromFileRegion(FileID File,
 }
 
 bool CursorVisitor::visitPreprocessedEntitiesInRegion() {
+  if (!AU->getPreprocessor().getPreprocessingRecord())
+    return false;
+
   PreprocessingRecord &PPRec
     = *AU->getPreprocessor().getPreprocessingRecord();
   SourceManager &SM = AU->getSourceManager();
@@ -1057,7 +1060,7 @@ bool CursorVisitor::VisitObjCForwardProtocolDecl(ObjCForwardProtocolDecl *D) {
 
 bool CursorVisitor::VisitObjCClassDecl(ObjCClassDecl *D) {
   if (Visit(MakeCursorObjCClassRef(D->getForwardInterfaceDecl(), 
-                                   D->getForwardDecl()->getLocation(), TU)))
+                                   D->getNameLoc(), TU)))
       return true;
   return false;
 }
@@ -1733,6 +1736,7 @@ public:
   void VisitCXXTypeidExpr(CXXTypeidExpr *E);
   void VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr *E);
   void VisitCXXUuidofExpr(CXXUuidofExpr *E);
+  void VisitCXXCatchStmt(CXXCatchStmt *S);
   void VisitDeclRefExpr(DeclRefExpr *D);
   void VisitDeclStmt(DeclStmt *S);
   void VisitDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E);
@@ -1905,6 +1909,12 @@ void EnqueueVisitor::VisitCXXUuidofExpr(CXXUuidofExpr *E) {
   if (E->isTypeOperand())
     AddTypeLoc(E->getTypeOperandSourceInfo());
 }
+
+void EnqueueVisitor::VisitCXXCatchStmt(CXXCatchStmt *S) {
+  EnqueueChildren(S);
+  AddDecl(S->getExceptionDecl());
+}
+
 void EnqueueVisitor::VisitDeclRefExpr(DeclRefExpr *DR) {
   if (DR->hasExplicitTemplateArgs()) {
     AddExplicitTemplateArgs(&DR->getExplicitTemplateArgs());
@@ -2073,7 +2083,6 @@ void EnqueueVisitor::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   // visit that.  This is useful for (e.g.) pseudo-object expressions.
   if (Expr *SourceExpr = E->getSourceExpr())
     return Visit(SourceExpr);
-  AddStmt(E);
 }
 void EnqueueVisitor::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
   // Treat the expression like its syntactic form.
@@ -2322,6 +2331,13 @@ RefNamePieces buildPieces(unsigned NameFlags, bool IsMemberRefExpr,
 static llvm::sys::Mutex EnableMultithreadingMutex;
 static bool EnabledMultithreading;
 
+static void fatal_error_handler(void *user_data, const std::string& reason) {
+  // Write the result out to stderr avoiding errs() because raw_ostreams can
+  // call report_fatal_error.
+  fprintf(stderr, "LIBCLANG FATAL ERROR: %s\n", reason.c_str());
+  ::abort();
+}
+
 extern "C" {
 CXIndex clang_createIndex(int excludeDeclarationsFromPCH,
                           int displayDiagnostics) {
@@ -2337,6 +2353,7 @@ CXIndex clang_createIndex(int excludeDeclarationsFromPCH,
   {
     llvm::sys::ScopedLock L(EnableMultithreadingMutex);
     if (!EnabledMultithreading) {
+      llvm::install_fatal_error_handler(fatal_error_handler, 0);
       llvm::llvm_start_multithreaded();
       EnabledMultithreading = true;
     }
@@ -2860,7 +2877,10 @@ unsigned clang_visitChildrenWithBlock(CXCursor parent,
 }
 
 static CXString getDeclSpelling(Decl *D) {
-  NamedDecl *ND = dyn_cast_or_null<NamedDecl>(D);
+  if (!D)
+    return createCXString("");
+
+  NamedDecl *ND = dyn_cast<NamedDecl>(D);
   if (!ND) {
     if (ObjCPropertyImplDecl *PropImpl =dyn_cast<ObjCPropertyImplDecl>(D))
       if (ObjCPropertyDecl *Property = PropImpl->getPropertyDecl())
@@ -3000,6 +3020,11 @@ CXString clang_getCursorSpelling(CXCursor C) {
   if (C.kind == CXCursor_AnnotateAttr) {
     AnnotateAttr *AA = cast<AnnotateAttr>(cxcursor::getCursorAttr(C));
     return createCXString(AA->getAnnotation());
+  }
+
+  if (C.kind == CXCursor_AsmLabelAttr) {
+    AsmLabelAttr *AA = cast<AsmLabelAttr>(cxcursor::getCursorAttr(C));
+    return createCXString(AA->getLabel());
   }
 
   return createCXString("");
@@ -3325,6 +3350,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
       return createCXString("attribute(override)");
   case CXCursor_AnnotateAttr:
     return createCXString("attribute(annotate)");
+  case CXCursor_AsmLabelAttr:
+    return createCXString("asm label");
   case CXCursor_PreprocessingDirective:
     return createCXString("preprocessing directive");
   case CXCursor_MacroDefinition:
@@ -3403,23 +3430,23 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
   
   if (clang_isDeclaration(cursor.kind)) {
     // Avoid having the implicit methods override the property decls.
-    if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(getCursorDecl(cursor)))
+    if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(cursor)))
       if (MD->isImplicit())
         return CXChildVisit_Break;
   }
 
   if (clang_isExpression(cursor.kind) &&
       clang_isDeclaration(BestCursor->kind)) {
-    Decl *D = getCursorDecl(*BestCursor);
-
-    // Avoid having the cursor of an expression replace the declaration cursor
-    // when the expression source range overlaps the declaration range.
-    // This can happen for C++ constructor expressions whose range generally
-    // include the variable declaration, e.g.:
-    //  MyCXXClass foo; // Make sure pointing at 'foo' returns a VarDecl cursor.
-    if (D->getLocation().isValid() && Data->TokenBeginLoc.isValid() &&
-        D->getLocation() == Data->TokenBeginLoc)
-      return CXChildVisit_Break;
+    if (Decl *D = getCursorDecl(*BestCursor)) {
+      // Avoid having the cursor of an expression replace the declaration cursor
+      // when the expression source range overlaps the declaration range.
+      // This can happen for C++ constructor expressions whose range generally
+      // include the variable declaration, e.g.:
+      //  MyCXXClass foo; // Make sure pointing at 'foo' returns a VarDecl cursor.
+      if (D->getLocation().isValid() && Data->TokenBeginLoc.isValid() &&
+          D->getLocation() == Data->TokenBeginLoc)
+        return CXChildVisit_Break;
+    }
   }
 
   // If our current best cursor is the construction of a temporary object, 
@@ -3665,6 +3692,9 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
     return clang_getNullLocation();
 
   Decl *D = getCursorDecl(C);
+  if (!D)
+    return clang_getNullLocation();
+
   SourceLocation Loc = D->getLocation();
   // FIXME: Multiple variables declared in a single declaration
   // currently lack the information needed to correctly determine their
@@ -3780,6 +3810,9 @@ static SourceRange getRawCursorExtent(CXCursor C) {
 
   if (C.kind >= CXCursor_FirstDecl && C.kind <= CXCursor_LastDecl) {
     Decl *D = cxcursor::getCursorDecl(C);
+    if (!D)
+      return SourceRange();
+
     SourceRange R = D->getSourceRange();
     // FIXME: Multiple variables declared in a single declaration
     // currently lack the information needed to correctly determine their
@@ -3800,6 +3833,9 @@ static SourceRange getRawCursorExtent(CXCursor C) {
 static SourceRange getFullCursorExtent(CXCursor C, SourceManager &SrcMgr) {
   if (C.kind >= CXCursor_FirstDecl && C.kind <= CXCursor_LastDecl) {
     Decl *D = cxcursor::getCursorDecl(C);
+    if (!D)
+      return SourceRange();
+
     SourceRange R = D->getSourceRange();
 
     // Adjust the start of the location for declarations preceded by
@@ -3850,6 +3886,8 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
   CXTranslationUnit tu = getCursorTU(C);
   if (clang_isDeclaration(C.kind)) {
     Decl *D = getCursorDecl(C);
+    if (!D)
+      return clang_getNullCursor();
     if (UsingDecl *Using = dyn_cast<UsingDecl>(D))
       return MakeCursorOverloadedDeclRef(Using, D->getLocation(), tu);
     if (ObjCClassDecl *Classes = dyn_cast<ObjCClassDecl>(D))
@@ -3905,8 +3943,13 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
     case CXCursor_ObjCProtocolRef: {
       return MakeCXCursor(getCursorObjCProtocolRef(C).first, tu);
 
-    case CXCursor_ObjCClassRef:
-      return MakeCXCursor(getCursorObjCClassRef(C).first, tu );
+    case CXCursor_ObjCClassRef: {
+      ObjCInterfaceDecl *Class = getCursorObjCClassRef(C).first;
+      if (ObjCInterfaceDecl *Def = Class->getDefinition())
+        return MakeCXCursor(Def, tu);
+
+      return MakeCXCursor(Class, tu);
+    }
 
     case CXCursor_TypeRef:
       return MakeCXCursor(getCursorTypeRef(C).first, tu );
@@ -3996,6 +4039,7 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::Block:
   case Decl::Label:  // FIXME: Is this right??
   case Decl::ClassScopeFunctionSpecialization:
+  case Decl::Import:
     return C;
 
   // Declaration kinds that don't make any sense here, but are
@@ -4103,8 +4147,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
     // the definition; when we were provided with the interface,
     // produce the @implementation as the definition.
     if (WasReference) {
-      if (!cast<ObjCInterfaceDecl>(D)->isForwardDecl())
-        return C;
+      if (ObjCInterfaceDecl *Def = cast<ObjCInterfaceDecl>(D)->getDefinition())
+        return MakeCXCursor(Def, TU);
     } else if (ObjCImplementationDecl *Impl
                               = cast<ObjCInterfaceDecl>(D)->getImplementation())
       return MakeCXCursor(Impl, TU);
@@ -4118,8 +4162,8 @@ CXCursor clang_getCursorDefinition(CXCursor C) {
   case Decl::ObjCCompatibleAlias:
     if (ObjCInterfaceDecl *Class
           = cast<ObjCCompatibleAliasDecl>(D)->getClassInterface())
-      if (!Class->isForwardDecl())
-        return MakeCXCursor(Class, TU);
+      if (ObjCInterfaceDecl *Def = Class->getDefinition())
+        return MakeCXCursor(Def, TU);
 
     return clang_getNullCursor();
 
@@ -4750,10 +4794,10 @@ AnnotateTokensWorker::Visit(CXCursor cursor, CXCursor parent) {
     Decl *D = cxcursor::getCursorDecl(cursor);
     
     SourceLocation StartLoc;
-    if (const DeclaratorDecl *DD = dyn_cast<DeclaratorDecl>(D)) {
+    if (const DeclaratorDecl *DD = dyn_cast_or_null<DeclaratorDecl>(D)) {
       if (TypeSourceInfo *TI = DD->getTypeSourceInfo())
         StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
-    } else if (TypedefDecl *Typedef = dyn_cast<TypedefDecl>(D)) {
+    } else if (TypedefDecl *Typedef = dyn_cast_or_null<TypedefDecl>(D)) {
       if (TypeSourceInfo *TI = Typedef->getTypeSourceInfo())
         StartLoc = TI->getTypeLoc().getSourceRange().getBegin();
     }
@@ -5137,6 +5181,9 @@ CXLinkageKind clang_getCursorLinkage(CXCursor cursor) {
 //===----------------------------------------------------------------------===//
 
 static CXLanguageKind getDeclLanguage(const Decl *D) {
+  if (!D)
+    return CXLanguage_C;
+
   switch (D->getKind()) {
     default:
       break;

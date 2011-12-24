@@ -442,10 +442,12 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
   TheCU->addUInt(ScopeDIE, dwarf::DW_AT_call_file, 0, TheCU->getID());
   TheCU->addUInt(ScopeDIE, dwarf::DW_AT_call_line, 0, DL.getLineNumber());
 
+  // Add name to the name table, we do this here because we're guaranteed
+  // to have concrete versions of our DW_TAG_inlined_subprogram nodes.
+  addSubprogramNames(TheCU, InlinedSP, ScopeDIE);
+  
   return ScopeDIE;
 }
-
-
 
 /// constructScopeDIE - Construct a DIE for this scope.
 DIE *DwarfDebug::constructScopeDIE(CompileUnit *TheCU, LexicalScope *Scope) {
@@ -1051,7 +1053,8 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
       }
 
       // The value is valid until the next DBG_VALUE or clobber.
-      DotDebugLocEntries.push_back(getDebugLocEntry(Asm, FLabel, SLabel, Begin));
+      DotDebugLocEntries.push_back(getDebugLocEntry(Asm, FLabel, SLabel,
+                                                    Begin));
     }
     DotDebugLocEntries.push_back(DotDebugLocEntry());
   }
@@ -1414,7 +1417,7 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   
   DIE *CurFnDIE = constructScopeDIE(TheCU, FnScope);
   
-  if (!DisableFramePointerElim(*MF))
+  if (!MF->getTarget().Options.DisableFramePointerElim(*MF))
     TheCU->addUInt(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr,
                    dwarf::DW_FORM_flag, 1);
 

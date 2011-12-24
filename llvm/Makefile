@@ -27,11 +27,11 @@ LEVEL := .
 ifneq ($(findstring llvmCore, $(RC_ProjectName)),llvmCore)  # Normal build (not "Apple-style").
 
 ifeq ($(BUILD_DIRS_ONLY),1)
-  DIRS := lib/Support lib/TableGen utils tools/llvm-config-2
+  DIRS := lib/Support lib/TableGen utils tools/llvm-config
   OPTIONAL_DIRS := tools/clang/utils/TableGen
 else
   DIRS := lib/Support lib/TableGen utils lib/VMCore lib tools/llvm-shlib \
-          tools/llvm-config tools/llvm-config-2 tools runtime docs unittests
+          tools/llvm-config tools runtime docs unittests
   OPTIONAL_DIRS := projects bindings
 endif
 
@@ -68,16 +68,10 @@ endif
 
 ifeq ($(MAKECMDGOALS),install-clang)
   DIRS := tools/clang/tools/driver tools/clang/lib/Headers \
+          tools/clang/tools/libclang tools/clang/tools/c-index-test \
+          tools/clang/include/clang-c \
           tools/clang/runtime tools/clang/docs \
           tools/lto runtime
-  OPTIONAL_DIRS :=
-  NO_INSTALL = 1
-endif
-
-ifeq ($(MAKECMDGOALS),install-clang-c)
-  DIRS := tools/clang/tools/driver tools/clang/lib/Headers \
-          tools/clang/tools/libclang tools/clang/tools/c-index-test \
-	  tools/clang/include/clang-c
   OPTIONAL_DIRS :=
   NO_INSTALL = 1
 endif
@@ -169,7 +163,6 @@ clang-only: all
 tools-only: all
 libs-only: all
 install-clang: install
-install-clang-c: install
 install-libs: install
 
 # If SHOW_DIAGNOSTICS is enabled, clear the diagnostics file first.

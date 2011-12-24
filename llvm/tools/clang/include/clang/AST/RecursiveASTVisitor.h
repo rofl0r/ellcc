@@ -1131,6 +1131,8 @@ DEF_TRAVERSE_DECL(FileScopeAsmDecl, {
     TRY_TO(TraverseStmt(D->getAsmString()));
   })
 
+DEF_TRAVERSE_DECL(ImportDecl, { })
+
 DEF_TRAVERSE_DECL(FriendDecl, {
     // Friend is either decl or a type.
     if (D->getFriendType())
@@ -1564,6 +1566,8 @@ DEF_TRAVERSE_DECL(FieldDecl, {
     TRY_TO(TraverseDeclaratorHelper(D));
     if (D->isBitField())
       TRY_TO(TraverseStmt(D->getBitWidth()));
+    else if (D->hasInClassInitializer())
+      TRY_TO(TraverseStmt(D->getInClassInitializer()));
   })
 
 DEF_TRAVERSE_DECL(ObjCAtDefsFieldDecl, {

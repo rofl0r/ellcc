@@ -118,12 +118,40 @@
 	vld2.16	{d16, d17, d18, d19}, [r0, :128]
 	vld2.32	{d16, d17, d18, d19}, [r0, :256]
 
+	vld2.8	{d19, d20}, [r0, :64]!
+	vld2.16	{d16, d17}, [r0, :128]!
+	vld2.32	{q10}, [r0]!
+	vld2.8	{d4-d7}, [r0, :64]!
+	vld2.16	{d1, d2, d3, d4}, [r0, :128]!
+	vld2.32	{q7, q8}, [r0, :256]!
+
+	vld2.8	{d19, d20}, [r0, :64], r6
+	vld2.16	{d16, d17}, [r0, :128], r6
+	vld2.32	{q10}, [r0], r6
+	vld2.8	{d4-d7}, [r0, :64], r6
+	vld2.16	{d1, d2, d3, d4}, [r0, :128], r6
+	vld2.32	{q7, q8}, [r0, :256], r6
+
 @ CHECK: vld2.8	{d16, d17}, [r0, :64]   @ encoding: [0x1f,0x08,0x60,0xf4]
 @ CHECK: vld2.16 {d16, d17}, [r0, :128] @ encoding: [0x6f,0x08,0x60,0xf4]
 @ CHECK: vld2.32 {d16, d17}, [r0] @ encoding: [0x8f,0x08,0x60,0xf4]
 @ CHECK: vld2.8	{d16, d17, d18, d19}, [r0, :64] @ encoding: [0x1f,0x03,0x60,0xf4]
 @ CHECK: vld2.16 {d16, d17, d18, d19}, [r0, :128] @ encoding: [0x6f,0x03,0x60,0xf4]
 @ CHECK: vld2.32 {d16, d17, d18, d19}, [r0, :256] @ encoding: [0xbf,0x03,0x60,0xf4]
+
+@ CHECK: vld2.8	{d19, d20}, [r0, :64]!  @ encoding: [0x1d,0x38,0x60,0xf4]
+@ CHECK: vld2.16 {d16, d17}, [r0, :128]! @ encoding: [0x6d,0x08,0x60,0xf4]
+@ CHECK: vld2.32 {d20, d21}, [r0]!       @ encoding: [0x8d,0x48,0x60,0xf4]
+@ CHECK: vld2.8	{d4, d5, d6, d7}, [r0, :64]! @ encoding: [0x1d,0x43,0x20,0xf4]
+@ CHECK: vld2.16 {d1, d2, d3, d4}, [r0, :128]! @ encoding: [0x6d,0x13,0x20,0xf4]
+@ CHECK: vld2.32 {d14, d15, d16, d17}, [r0, :256]! @ encoding: [0xbd,0xe3,0x20,0xf4]
+
+@ CHECK: vld2.8	{d19, d20}, [r0, :64], r6 @ encoding: [0x16,0x38,0x60,0xf4]
+@ CHECK: vld2.16 {d16, d17}, [r0, :128], r6 @ encoding: [0x66,0x08,0x60,0xf4]
+@ CHECK: vld2.32 {d20, d21}, [r0], r6    @ encoding: [0x86,0x48,0x60,0xf4]
+@ CHECK: vld2.8	{d4, d5, d6, d7}, [r0, :64], r6 @ encoding: [0x16,0x43,0x20,0xf4]
+@ CHECK: vld2.16 {d1, d2, d3, d4}, [r0, :128], r6 @ encoding: [0x66,0x13,0x20,0xf4]
+@ CHECK: vld2.32 {d14, d15, d16, d17}, [r0, :256], r6 @ encoding: [0xb6,0xe3,0x20,0xf4]
 
 
 @	vld3.8	{d16, d17, d18}, [r0, :64]
@@ -168,26 +196,68 @@
 @ FIXME: vld4.32 {d17, d19, d21, d23}, [r0]! @ encoding: [0x8d,0x11,0x60,0xf4]
 
 
-@	vld1.8	{d16[3]}, [r0]
-@	vld1.16	{d16[2]}, [r0, :16]
-@	vld1.32	{d16[1]}, [r0, :32]
+	vld1.8 {d4[]}, [r1]
+	vld1.8 {d4[]}, [r1]!
+	vld1.8 {d4[]}, [r1], r3
+	vld1.8 {d4[], d5[]}, [r1]
+	vld1.8 {d4[], d5[]}, [r1]!
+	vld1.8 {d4[], d5[]}, [r1], r3
 
-@ FIXME: vld1.8	{d16[3]}, [r0]          @ encoding: [0x6f,0x00,0xe0,0xf4]
-@ FIXME: vld1.16 {d16[2]}, [r0, :16]    @ encoding: [0x9f,0x04,0xe0,0xf4]
-@ FIXME: vld1.32 {d16[1]}, [r0, :32]    @ encoding: [0xbf,0x08,0xe0,0xf4]
+@ CHECK: vld1.8	{d4[]}, [r1]            @ encoding: [0x0f,0x4c,0xa1,0xf4]
+@ CHECK: vld1.8	{d4[]}, [r1]!           @ encoding: [0x0d,0x4c,0xa1,0xf4]
+@ CHECK: vld1.8	{d4[]}, [r1], r3        @ encoding: [0x03,0x4c,0xa1,0xf4]
+@ CHECK: vld1.8	{d4[], d5[]}, [r1]      @ encoding: [0x2f,0x4c,0xa1,0xf4]
+@ CHECK: vld1.8	{d4[], d5[]}, [r1]!     @ encoding: [0x2d,0x4c,0xa1,0xf4]
+@ CHECK: vld1.8	{d4[], d5[]}, [r1], r3  @ encoding: [0x23,0x4c,0xa1,0xf4]
+
+	vld1.8	{d16[3]}, [r0]
+	vld1.16	{d16[2]}, [r0, :16]
+	vld1.32	{d16[1]}, [r0, :32]
+        vld1.p8 d12[6], [r2]!
+        vld1.i8 d12[6], [r2], r2
+        vld1.u16 d12[3], [r2]!
+        vld1.16 d12[2], [r2], r2
+
+@ CHECK: vld1.8	{d16[3]}, [r0]          @ encoding: [0x6f,0x00,0xe0,0xf4]
+@ CHECK: vld1.16 {d16[2]}, [r0, :16]    @ encoding: [0x9f,0x04,0xe0,0xf4]
+@ CHECK: vld1.32 {d16[1]}, [r0, :32]    @ encoding: [0xbf,0x08,0xe0,0xf4]
+@ CHECK: vld1.8	{d12[6]}, [r2]!         @ encoding: [0xcd,0xc0,0xa2,0xf4]
+@ CHECK: vld1.8	{d12[6]}, [r2], r2      @ encoding: [0xc2,0xc0,0xa2,0xf4]
+@ CHECK: vld1.16 {d12[3]}, [r2]!        @ encoding: [0xcd,0xc4,0xa2,0xf4]
+@ CHECK: vld1.16 {d12[2]}, [r2], r2     @ encoding: [0x82,0xc4,0xa2,0xf4]
 
 
-@	vld2.8	{d16[1], d17[1]}, [r0, :16]
-@	vld2.16	{d16[1], d17[1]}, [r0, :32]
-@	vld2.32	{d16[1], d17[1]}, [r0]
-@	vld2.16	{d17[1], d19[1]}, [r0]
-@	vld2.32	{d17[0], d19[0]}, [r0, :64]
+	vld2.8	{d16[1], d17[1]}, [r0, :16]
+	vld2.16	{d16[1], d17[1]}, [r0, :32]
+	vld2.32	{d16[1], d17[1]}, [r0]
+	vld2.16	{d17[1], d19[1]}, [r0]
+	vld2.32	{d17[0], d19[0]}, [r0, :64]
+	vld2.32	{d17[0], d19[0]}, [r0, :64]!
+        vld2.8 {d2[4], d3[4]}, [r2], r3
+        vld2.8 {d2[4], d3[4]}, [r2]!
+        vld2.8 {d2[4], d3[4]}, [r2]
+        vld2.32 {d22[], d23[]}, [r1]
+        vld2.32 {d22[], d24[]}, [r1]
+        vld2.32 {d10[ ],d11[ ]}, [r3]!
+        vld2.32 {d14[ ],d16[ ]}, [r4]!
+        vld2.32 {d22[ ],d23[ ]}, [r5], r4
+        vld2.32 {d22[ ],d24[ ]}, [r6], r4
 
-@ FIXME: vld2.8	{d16[1], d17[1]}, [r0, :16] @ encoding: [0x3f,0x01,0xe0,0xf4]
-@ FIXME: vld2.16 {d16[1], d17[1]}, [r0, :32] @ encoding: [0x5f,0x05,0xe0,0xf4]
-@ FIXME: vld2.32 {d16[1], d17[1]}, [r0]  @ encoding: [0x8f,0x09,0xe0,0xf4]
-@ FIXME: vld2.16 {d17[1], d19[1]}, [r0]  @ encoding: [0x6f,0x15,0xe0,0xf4]
-@ FIXME: vld2.32 {d17[0], d19[0]}, [r0, :64] @ encoding: [0x5f,0x19,0xe0,0xf4]
+@ CHECK: vld2.8	{d16[1], d17[1]}, [r0, :16] @ encoding: [0x3f,0x01,0xe0,0xf4]
+@ CHECK: vld2.16 {d16[1], d17[1]}, [r0, :32] @ encoding: [0x5f,0x05,0xe0,0xf4]
+@ CHECK: vld2.32 {d16[1], d17[1]}, [r0]  @ encoding: [0x8f,0x09,0xe0,0xf4]
+@ CHECK: vld2.16 {d17[1], d19[1]}, [r0]  @ encoding: [0x6f,0x15,0xe0,0xf4]
+@ CHECK: vld2.32 {d17[0], d19[0]}, [r0, :64] @ encoding: [0x5f,0x19,0xe0,0xf4]
+@ CHECK: vld2.32 {d17[0], d19[0]}, [r0, :64]! @ encoding: [0x5d,0x19,0xe0,0xf4]
+@ CHECK: vld2.8	{d2[4], d3[4]}, [r2], r3 @ encoding: [0x83,0x21,0xa2,0xf4]
+@ CHECK: vld2.8	{d2[4], d3[4]}, [r2]!   @ encoding: [0x8d,0x21,0xa2,0xf4]
+@ CHECK: vld2.8	{d2[4], d3[4]}, [r2]    @ encoding: [0x8f,0x21,0xa2,0xf4]
+@ CHECK: vld2.32 {d22[], d23[]}, [r1]    @ encoding: [0x8f,0x6d,0xe1,0xf4]
+@ CHECK: vld2.32 {d22[], d24[]}, [r1]    @ encoding: [0xaf,0x6d,0xe1,0xf4]
+@ CHECK: vld2.32 {d10[], d11[]}, [r3]!   @ encoding: [0x8d,0xad,0xa3,0xf4]
+@ CHECK: vld2.32 {d14[], d16[]}, [r4]!   @ encoding: [0xad,0xed,0xa4,0xf4]
+@ CHECK: vld2.32 {d22[], d23[]}, [r5], r4 @ encoding: [0x84,0x6d,0xe5,0xf4]
+@ CHECK: vld2.32 {d22[], d24[]}, [r6], r4 @ encoding: [0xa4,0x6d,0xe6,0xf4]
 
 
 @	vld3.8	{d16[1], d17[1], d18[1]}, [r0]

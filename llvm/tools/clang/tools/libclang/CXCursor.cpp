@@ -46,6 +46,7 @@ static CXCursorKind GetCursorKind(const Attr *A) {
     case attr::Final: return CXCursor_CXXFinalAttr;
     case attr::Override: return CXCursor_CXXOverrideAttr;
     case attr::Annotate: return CXCursor_AnnotateAttr;
+    case attr::AsmLabel: return CXCursor_AsmLabelAttr;
   }
 
   return CXCursor_UnexposedAttr;
@@ -588,9 +589,9 @@ cxcursor::getCursorMemberRef(CXCursor C) {
                                        reinterpret_cast<uintptr_t>(C.data[1])));  
 }
 
-CXCursor cxcursor::MakeCursorCXXBaseSpecifier(CXXBaseSpecifier *B,
+CXCursor cxcursor::MakeCursorCXXBaseSpecifier(const CXXBaseSpecifier *B,
                                               CXTranslationUnit TU){
-  CXCursor C = { CXCursor_CXXBaseSpecifier, 0, { B, 0, TU } };
+  CXCursor C = { CXCursor_CXXBaseSpecifier, 0, { (void*)B, 0, TU } };
   return C;  
 }
 
@@ -745,8 +746,10 @@ ASTContext &cxcursor::getCursorContext(CXCursor Cursor) {
 }
 
 ASTUnit *cxcursor::getCursorASTUnit(CXCursor Cursor) {
-  return static_cast<ASTUnit *>(static_cast<CXTranslationUnit>(Cursor.data[2])
-                                  ->TUData);
+  CXTranslationUnit TU = static_cast<CXTranslationUnit>(Cursor.data[2]);
+  if (!TU)
+    return 0;
+  return static_cast<ASTUnit *>(TU->TUData);
 }
 
 CXTranslationUnit cxcursor::getCursorTU(CXCursor Cursor) {
@@ -1016,8 +1019,7 @@ CXCompletionString clang_getCursorCompletionString(CXCursor cursor) {
   enum CXCursorKind kind = clang_getCursorKind(cursor);
   if (clang_isDeclaration(kind)) {
     Decl *decl = getCursorDecl(cursor);
-    if (isa<NamedDecl>(decl)) {
-      NamedDecl *namedDecl = (NamedDecl *)decl;
+    if (NamedDecl *namedDecl = dyn_cast_or_null<NamedDecl>(decl)) {
       ASTUnit *unit = getCursorASTUnit(cursor);
       if (unit->hasSema()) {
         Sema &S = unit->getSema();

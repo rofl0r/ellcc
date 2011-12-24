@@ -167,6 +167,14 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// lexed, if any.
   SourceLocation ModuleImportLoc;
 
+  /// \brief The module import path that we're currently processing.
+  llvm::SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> 
+    ModuleImportPath;
+  
+  /// \brief Whether the module import expectes an identifier next. Otherwise,
+  /// it expects a '.' or ';'.
+  bool ModuleImportExpectsIdentifier;
+  
   /// \brief The source location of the currently-active
   /// #pragma clang arc_cf_code_audited begin.
   SourceLocation PragmaARCCFCodeAuditedLoc;
@@ -985,6 +993,9 @@ public:
   unsigned getCounterValue() const { return CounterValue; }
   void setCounterValue(unsigned V) { CounterValue = V; }
 
+  /// \brief Retrieves the module that we're currently building, if any.
+  Module *getCurrentModule();
+  
   /// AllocateMacroInfo - Allocate a new MacroInfo object with the provide
   ///  SourceLocation.
   MacroInfo *AllocateMacroInfo(SourceLocation L);
@@ -1008,7 +1019,8 @@ public:
                               const DirectoryLookup *&CurDir,
                               SmallVectorImpl<char> *SearchPath,
                               SmallVectorImpl<char> *RelativePath,
-                              ModuleMap::Module **SuggestedModule);
+                              Module **SuggestedModule,
+                              bool SkipCache = false);
 
   /// GetCurLookup - The DirectoryLookup structure used to find the current
   /// FileEntry, if CurLexer is non-null and if applicable.  This allows us to

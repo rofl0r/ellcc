@@ -136,6 +136,8 @@ LLVMTypeKind LLVMGetTypeKind(LLVMTypeRef Ty) {
     assert(false && "Unhandled TypeID.");
   case Type::VoidTyID:
     return LLVMVoidTypeKind;
+  case Type::HalfTyID:
+    return LLVMHalfTypeKind;
   case Type::FloatTyID:
     return LLVMFloatTypeKind;
   case Type::DoubleTyID:
@@ -222,6 +224,9 @@ unsigned LLVMGetIntTypeWidth(LLVMTypeRef IntegerTy) {
 
 /*--.. Operations on real types ............................................--*/
 
+LLVMTypeRef LLVMHalfTypeInContext(LLVMContextRef C) {
+  return (LLVMTypeRef) Type::getHalfTy(*unwrap(C));
+}
 LLVMTypeRef LLVMFloatTypeInContext(LLVMContextRef C) {
   return (LLVMTypeRef) Type::getFloatTy(*unwrap(C));
 }
@@ -241,6 +246,9 @@ LLVMTypeRef LLVMX86MMXTypeInContext(LLVMContextRef C) {
   return (LLVMTypeRef) Type::getX86_MMXTy(*unwrap(C));
 }
 
+LLVMTypeRef LLVMHalfType(void) {
+  return LLVMHalfTypeInContext(LLVMGetGlobalContext());
+}
 LLVMTypeRef LLVMFloatType(void) {
   return LLVMFloatTypeInContext(LLVMGetGlobalContext());
 }
@@ -556,6 +564,17 @@ void LLVMGetNamedMetadataOperands(LLVMModuleRef M, const char* name, LLVMValueRe
     return;
   for (unsigned i=0;i<N->getNumOperands();i++)
     Dest[i] = wrap(N->getOperand(i));
+}
+
+void LLVMAddNamedMetadataOperand(LLVMModuleRef M, const char* name,
+                                 LLVMValueRef Val)
+{
+  NamedMDNode *N = unwrap(M)->getOrInsertNamedMetadata(name);
+  if (!N)
+    return;
+  MDNode *Op = Val ? unwrap<MDNode>(Val) : NULL;
+  if (Op)
+    N->addOperand(Op);
 }
 
 /*--.. Operations on scalar constants ......................................--*/

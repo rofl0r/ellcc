@@ -141,6 +141,7 @@ def warn_implicit_function_decl : Warning<
 def ext_implicit_function_decl : ExtWarn<
   "implicit declaration of function %0 is invalid in C99">,
   InGroup<ImplicitFunctionDeclare>;
+def note_function_suggestion : Note<"did you mean %0?">;
 
 def err_ellipsis_first_arg : Error<
   "ISO C requires a named argument before '...'">;
@@ -272,7 +273,7 @@ def warn_redecl_library_builtin : Warning<
 def err_builtin_definition : Error<"definition of builtin function %0">;
 def err_types_compatible_p_in_cplusplus : Error<
   "__builtin_types_compatible_p is not valid in C++">;
-def warn_builtin_unknown : Warning<"use of unknown builtin %0">, DefaultError;
+def err_builtin_unknown : Error<"use of unknown builtin %0">;
 def warn_dyn_class_memaccess : Warning<
   "%select{destination for|source of|first operand of|second operand of}0 this "
   "%1 call is a pointer to dynamic class %2; vtable pointer will be "
@@ -484,11 +485,12 @@ def warn_strict_multiple_method_decl : Warning<
   "multiple methods named %0 found">, InGroup<StrictSelector>, DefaultIgnore;
 def warn_accessor_property_type_mismatch : Warning<
   "type of property %0 does not match type of accessor %1">;
-def note_declared_at : Note<"declared here">;
 def note_method_declared_at : Note<"method declared here">;
 def err_setter_type_void : Error<"type of setter must be void">;
 def err_duplicate_method_decl : Error<"duplicate declaration of method %0">;
-def err_missing_atend : Error<"'@end' is missing in implementation context">;
+def warn_duplicate_method_decl : 
+  Warning<"multiple declarations of method %0 found and ignored">, 
+  InGroup<MethodDuplicate>;
 def err_objc_var_decl_inclass : 
     Error<"cannot declare variable inside @interface or @protocol">;
 def error_missing_method_context : Error<
@@ -526,6 +528,10 @@ def warn_owning_getter_rule : Warning<
   "property's synthesized getter follows Cocoa naming"
   " convention for returning 'owned' objects">,
   InGroup<DiagGroup<"objc-property-matches-cocoa-ownership-rule">>;
+def warn_auto_synthesizing_protocol_property :Warning<
+  "auto property synthesis will not synthesize property"
+  " declared in a protocol">,
+  InGroup<DiagGroup<"objc-protocol-property-synthesis">>;
 def warn_property_getter_owning_mismatch : Warning<
   "property declared as returning non-retained objects"
   "; getter returning retained objects">;
@@ -539,9 +545,9 @@ def warn_default_atomic_custom_getter_setter : Warning<
 def err_use_continuation_class : Error<
   "illegal redeclaration of property in continuation class %0"
   " (attribute must be 'readwrite', while its primary must be 'readonly')">;
-def warn_type_mismatch_continuation_class : Warning<
+def err_type_mismatch_continuation_class : Error<
   "type of property %0 in continuation class does not match "
-  "property type in primary class">, InGroup<ObjCContinuationPropertyType>;
+  "property type in primary class">;
 def err_use_continuation_class_redeclaration_readwrite : Error<
   "illegal redeclaration of 'readwrite' property in continuation class %0"
   " (perhaps you intended this to be a 'readwrite' redeclaration of a "
@@ -701,6 +707,10 @@ def warn_weak_vtable : Warning<
   "%0 has no out-of-line virtual method definitions; its vtable will be "
   "emitted in every translation unit">,
   InGroup<DiagGroup<"weak-vtables">>, DefaultIgnore;
+def warn_weak_template_vtable : Warning<
+  "explicit template instantiation %0 will emit a vtable in every "
+  "translation unit">,
+  InGroup<DiagGroup<"weak-template-vtables">>, DefaultIgnore;
 
 def ext_using_undefined_std : ExtWarn<
   "using directive refers to implicitly-defined namespace 'std'">;
@@ -1014,7 +1024,16 @@ def err_init_conversion_failed : Error<
   "cannot initialize %select{a variable|a parameter|return object|an "
   "exception object|a member subobject|an array element|a new value|a value|a "
   "base class|a constructor delegation|a vector element}0 of type %1 with an "
-  "%select{rvalue|lvalue}2 of type %3">;
+  "%select{rvalue|lvalue}2 of type %3"
+  "%select{|: different classes (%5 vs %6)"
+  "|: different number of parameters (%5 vs %6)"
+  "|: type mismatch at %ordinal5 parameter (%6 vs %7)"
+  "|: different return type (%5 vs %6)"
+  "|: different qualifiers ("
+  "%select{none|const|restrict|const and restrict|volatile|const and volatile|"
+  "volatile and restrict|const, volatile, and restrict}5 vs "
+  "%select{none|const|restrict|const and restrict|volatile|const and volatile|"
+  "volatile and restrict|const, volatile, and restrict}6)}4">;
 
 def err_lvalue_to_rvalue_ref : Error<"rvalue reference to type %0 cannot bind "
   "to lvalue of type %1">;
@@ -1025,6 +1044,9 @@ def err_lvalue_to_rvalue_ambig_ref : Error<"rvalue reference cannot bind to lval
 def err_not_reference_to_const_init : Error<
   "%select{non-const|volatile}0 lvalue reference to type %1 cannot be "
   "initialized with a %select{value|temporary}2 of type %3">;
+def err_lvalue_reference_bind_to_initlist : Error<
+  "%select{non-const|volatile}0 lvalue reference to type %1 cannot bind to an "
+  "initializer list temporary">;
 def err_lvalue_reference_bind_to_temporary : Error<
   "%select{non-const|volatile}0 lvalue reference to type %1 cannot bind to a "
   "temporary of type %2">;
@@ -1129,6 +1151,8 @@ def err_cannot_determine_declared_type_of_overloaded_function : Error<
 def warn_cxx98_compat_decltype : Warning<
   "'decltype' type specifier is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def err_decltype_in_declarator : Error<
+    "'decltype' cannot be used to name a declaration">;
     
 // C++11 auto
 def warn_cxx98_compat_auto_type_specifier : Warning<
@@ -1336,10 +1360,9 @@ def warn_cxx98_compat_unicode_type : Warning<
 // Objective-C++
 def err_objc_decls_may_only_appear_in_global_scope : Error<
   "Objective-C declarations may only appear in global scope">;
+// Attributes
 def err_nsobject_attribute : Error<
   "__attribute ((NSObject)) is for pointer types only">;
-
-// Attributes
 def err_attribute_can_be_applied_only_to_symbol_declaration : Error<
   "%0 attribute can be applied only to symbol declaration">;
 def err_attributes_are_not_compatible : Error<
@@ -1442,6 +1465,8 @@ def warn_redeclaration_without_attribute_prev_attribute_ignored : Warning<
 def warn_attribute_ignored : Warning<"%0 attribute ignored">;
 def warn_unknown_attribute_ignored : Warning<
   "unknown attribute %0 ignored">, InGroup<UnknownAttributes>;
+def warn_declspec_attribute_ignored : Warning<
+  "attribute %0 is ignored, place it after \"%select{class|struct|union|enum}1\" to apply attribute to type declaration">, InGroup<IgnoredAttributes>;
 def warn_attribute_precede_definition : Warning<
   "attribute declaration must precede definition">;
 def warn_attribute_void_function_method : Warning<
@@ -1451,6 +1476,9 @@ def warn_attribute_weak_on_field : Warning<
   "__weak attribute cannot be specified on a field declaration">;
 def warn_gc_attribute_weak_on_local : Warning<
   "Objective-C GC does not allow weak variables on the stack">;
+def warn_nsobject_attribute : Warning<
+  "__attribute ((NSObject)) may be put on a typedef only, "
+  "attribute is ignored">, InGroup<NSobjectAttribute>;
 def warn_attribute_weak_on_local : Warning<
   "__weak attribute cannot be specified on an automatic variable">;
 def warn_weak_identifier_undeclared : Warning<
@@ -1636,6 +1664,13 @@ def warn_impcast_bool_to_null_pointer : Warning<
 def warn_impcast_null_pointer_to_integer : Warning<
     "implicit conversion of NULL constant to integer">,
     InGroup<DiagGroup<"conversion">>, DefaultIgnore;
+def warn_impcast_function_to_bool : Warning<
+    "address of function %q0 will always evaluate to 'true'">,
+    InGroup<BoolConversions>;
+def note_function_to_bool_silence : Note<
+    "prefix with the address-of operator to silence this warning">;
+def note_function_to_bool_call : Note<
+    "suffix with parentheses to turn this into a function call">;
 
 def warn_cast_align : Warning<
   "cast from %0 to %1 increases required alignment from %2 to %3">,
@@ -1790,7 +1825,8 @@ def note_default_argument_declared_here : Note<
 
 def ext_param_promoted_not_compatible_with_prototype : ExtWarn<
   "promoted type %0 of K&R function parameter is not compatible with the "
-  "parameter type %1 declared in a previous prototype">;
+  "parameter type %1 declared in a previous prototype">,
+  InGroup<KNRPromotedParameter>;
 
 
 // C++ Overloading Semantic Analysis.
@@ -1823,7 +1859,16 @@ def note_ovl_candidate : Note<"candidate "
     "is the implicit move constructor|"
     "is the implicit copy assignment operator|"
     "is the implicit move assignment operator|"
-    "is an inherited constructor}0%1">;
+    "is an inherited constructor}0%1"
+    "%select{| has different class (expected %3 but has %4)"
+    "| has different number of parameters (expected %3 but has %4)"
+    "| has type mismatch at %ordinal3 parameter (expected %4 but has %5)"
+    "| has different return type (%3 expected but has %4)"
+    "| has different qualifiers (expected "
+    "%select{none|const|restrict|const and restrict|volatile|const and volatile"
+    "|volatile and restrict|const, volatile, and restrict}3 but found "
+    "%select{none|const|restrict|const and restrict|volatile|const and volatile"
+    "|volatile and restrict|const, volatile, and restrict}4)}2">;
 
 def note_ovl_candidate_inherited_constructor : Note<"inherited from here">;
 def note_ovl_candidate_bad_deduction : Note<
@@ -2384,7 +2429,7 @@ def err_template_recursion_depth_exceeded : Error<
   "recursive template instantiation exceeded maximum depth of %0">,
   DefaultFatal, NoSFINAE;
 def note_template_recursion_depth : Note<
-  "use -ftemplate-depth-N to increase recursive template instantiation depth">;
+  "use -ftemplate-depth=N to increase recursive template instantiation depth">;
 
 def err_template_instantiate_within_definition : Error<
   "%select{implicit|explicit}0 instantiation of template %1 within its"
@@ -3024,7 +3069,7 @@ def ext_flexible_array_empty_aggregate_gnu : Extension<
 def ext_flexible_array_union_gnu : Extension<
   "flexible array member %0 in a union is a GNU extension">, InGroup<GNU>;
 
-let CategoryName = "ARC Issue" in {
+let CategoryName = "ARC Semantic Issue" in {
 
 // ARC-mode diagnostics.
 
@@ -3036,6 +3081,9 @@ def err_arc_unsupported_weak_class : Error<
   "class is incompatible with __weak references">;
 def err_arc_weak_unavailable_assign : Error<
   "assignment of a weak-unavailable object to a __weak object">;
+def err_arc_weak_unavailable_property : Error<
+  "synthesis of a weak-unavailable property is disallowed "
+  "because it requires synthesis of an ivar of the __weak object">;
 def err_arc_convesion_of_weak_unavailable : Error<
   "%select{implicit conversion|cast}0 of weak-unavailable object of type %1 to"
   " a __weak object of type %2">;
@@ -3057,7 +3105,7 @@ def err_arc_mismatched_cast : Error<
 def err_arc_nolifetime_behavior : Error<
   "explicit ownership qualifier on cast result has no effect">;
 def err_arc_objc_object_in_struct : Error<
-  "ARC forbids Objective-C objects in structs or unions">;
+  "ARC forbids %select{Objective-C objects|blocks}0 in structs or unions">;
 def err_arc_objc_property_default_assign_on_object : Error<
   "ARC forbids synthesizing a property of an Objective-C object "
   "with unspecified ownership or storage attribute">;
@@ -3715,10 +3763,12 @@ def err_incomplete_type_objc_at_encode : Error<
 def warn_setter_getter_impl_required : Warning<
   "property %0 requires method %1 to be defined - "
   "use @synthesize, @dynamic or provide a method implementation "
-  "in this class implementation">;
+  "in this class implementation">,
+  InGroup<ObjCPropertyImpl>;
 def warn_setter_getter_impl_required_in_category : Warning<
   "property %0 requires method %1 to be defined - "
-  "use @dynamic or provide a method implementation in this category">;
+  "use @dynamic or provide a method implementation in this category">,
+  InGroup<ObjCPropertyImpl>;
 def note_property_impl_required : Note<
   "implementation is here">;
 def note_parameter_named_here : Note<
@@ -3968,6 +4018,8 @@ def err_typecheck_deleted_function : Error<
   "conversion function from %0 to %1 invokes a deleted function">;
   
 def err_expected_class_or_namespace : Error<"expected a class or namespace">;
+def err_expected_class : Error<"%0 is not a class%select{ or namespace|, "
+  "namespace, or scoped enumeration}1">;
 def err_missing_qualified_for_redecl : Error<
   "must qualify the name %0 to declare %q1 in this scope">;
 def err_invalid_declarator_scope : Error<
@@ -4022,11 +4074,24 @@ def err_typecheck_convert_incompatible : Error<
   "%select{from incompatible type|to parameter of incompatible type|"
   "from a function with incompatible result type|to incompatible type|"
   "with an expression of incompatible type|to parameter of incompatible type|"
-  "to incompatible type}2 %1; "
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">;
+  "to incompatible type}2 %1"
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3"
+  "%select{|: different classes (%5 vs %6)"
+  "|: different number of parameters (%5 vs %6)"
+  "|: type mismatch at %ordinal5 parameter (%6 vs %7)"
+  "|: different return type (%5 vs %6)"
+  "|: different qualifiers ("
+  "%select{none|const|restrict|const and restrict|volatile|const and volatile|"
+  "volatile and restrict|const, volatile, and restrict}5 vs "
+  "%select{none|const|restrict|const and restrict|volatile|const and volatile|"
+  "volatile and restrict|const, volatile, and restrict}6)}4">;
+def err_typecheck_missing_return_type_incompatible : Error<
+  "return type %0 must match previous return type %1 when block"
+  " literal has unspecified explicit return type">;
+
 def warn_incompatible_qualified_id : Warning<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
@@ -4620,6 +4685,9 @@ def err_incorrect_defaulted_exception_spec : Error<
   "copy constructor|move constructor|copy assignment operator|move assignment "
   "operator|destructor}0 does not match the "
   "calculated one">;
+def err_incorrect_defaulted_constexpr : Error<
+  "defaulted definition of %select{default constructor|copy constructor|"
+  "move constructor}0 is not constexpr">;
 def err_out_of_line_default_deletes : Error<
   "defaulting this %select{default constructor|copy constructor|move "
   "constructor|copy assignment operator|move assignment operator|destructor}0 "
@@ -4633,10 +4701,10 @@ def warn_ptr_arith_exceeds_bounds : Warning<
   "contains %1 element%s2)">,
   InGroup<DiagGroup<"array-bounds-pointer-arithmetic">>, DefaultIgnore;
 def warn_array_index_precedes_bounds : Warning<
-  "array index of '%0' indexes before the beginning of the array">,
+  "array index %0 is before the beginning of the array">,
   InGroup<DiagGroup<"array-bounds">>;
 def warn_array_index_exceeds_bounds : Warning<
-  "array index of '%0' indexes past the end of an array (that contains %1 "
+  "array index %0 is past the end of the array (which contains %1 "
   "element%s2)">, InGroup<DiagGroup<"array-bounds">>;
 def note_array_index_out_of_bounds : Note<
   "array %0 declared here">;
@@ -4982,7 +5050,7 @@ def error_protected_ivar_access : Error<"instance variable %0 is protected">,
   AccessControl;
 def warn_maynot_respond : Warning<"%0 may not respond to %1">;
 def warn_attribute_method_def : Warning<
-  "method attribute can only be specified on method declarations">,
+  "attributes on method implementation and its declaration must match">,
   InGroup<DiagGroup<"mismatched-method-attributes">>;
 def ext_typecheck_base_super : Warning<
   "method parameter type %0 does not match "
@@ -5090,8 +5158,6 @@ def note_related_result_type_inferred : Note<
 }
 
 let CategoryName = "Modules Issue" in {
-def err_module_private_follows_public : Error<
-  "__module_private__ declaration of %0 follows public declaration">;
 def err_module_private_specialization : Error<
   "%select{template|partial|member}0 specialization cannot be "
   "declared __module_private__">;

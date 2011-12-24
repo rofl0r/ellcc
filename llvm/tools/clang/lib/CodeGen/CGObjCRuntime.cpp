@@ -41,7 +41,7 @@ static uint64_t LookupFieldBitOffset(CodeGen::CodeGenModule &CGM,
   // If we know have an implementation (and the ivar is in it) then
   // look up in the implementation layout.
   const ASTRecordLayout *RL;
-  if (ID && ID->getClassInterface() == Container)
+  if (ID && declaresSameEntity(ID->getClassInterface(), Container))
     RL = &CGM.getContext().getASTObjCImplementationLayout(ID);
   else
     RL = &CGM.getContext().getASTObjCInterfaceLayout(Container);
@@ -93,7 +93,7 @@ LValue CGObjCRuntime::EmitValueForIvarAtOffset(CodeGen::CodeGenFunction &CGF,
   V = CGF.Builder.CreateBitCast(V, llvm::PointerType::getUnqual(LTy));
 
   if (!Ivar->isBitField()) {
-    LValue LV = CGF.MakeAddrLValue(V, IvarTy);
+    LValue LV = CGF.MakeNaturalAlignAddrLValue(V, IvarTy);
     LV.getQuals().addCVRQualifiers(CVRQualifiers);
     return LV;
   }

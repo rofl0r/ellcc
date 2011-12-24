@@ -353,6 +353,22 @@ public:
     return false;
   }
 
+  /// isProfitableToUnpredicate - Return true if it's profitable to unpredicate
+  /// one side of a 'diamond', i.e. two sides of if-else predicated on mutually
+  /// exclusive predicates.
+  /// e.g.
+  ///   subeq  r0, r1, #1
+  ///   addne  r0, r1, #1
+  /// =>
+  ///   sub    r0, r1, #1
+  ///   addne  r0, r1, #1
+  ///
+  /// This may be profitable is conditional instructions are always executed.
+  virtual bool isProfitableToUnpredicate(MachineBasicBlock &TMBB,
+                                         MachineBasicBlock &FMBB) const {
+    return false;
+  }
+
   /// copyPhysReg - Emit instructions to copy a pair of physical registers.
   virtual void copyPhysReg(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MI, DebugLoc DL,
@@ -535,7 +551,7 @@ public:
 
   /// isUnpredicatedTerminator - Returns true if the instruction is a
   /// terminator instruction that has not been predicated.
-  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const = 0;
 
   /// PredicateInstruction - Convert the instruction into a predicated
   /// instruction. It returns true if the operation was successful.
@@ -646,7 +662,16 @@ public:
 
   virtual int getOperandLatency(const InstrItineraryData *ItinData,
                                 SDNode *DefNode, unsigned DefIdx,
-                                SDNode *UseNode, unsigned UseIdx) const;
+                                SDNode *UseNode, unsigned UseIdx) const = 0;
+
+  /// getOutputLatency - Compute and return the output dependency latency of a
+  /// a given pair of defs which both target the same register. This is usually
+  /// one.
+  virtual unsigned getOutputLatency(const InstrItineraryData *ItinData,
+                                    const MachineInstr *DefMI, unsigned DefIdx,
+                                    const MachineInstr *DepMI) const {
+    return 1;
+  }
 
   /// getInstrLatency - Compute the instruction latency of a given instruction.
   /// If the instruction has higher cost when predicated, it's returned via
@@ -656,7 +681,7 @@ public:
                               unsigned *PredCost = 0) const;
 
   virtual int getInstrLatency(const InstrItineraryData *ItinData,
-                              SDNode *Node) const;
+                              SDNode *Node) const = 0;
 
   /// isHighLatencyDef - Return true if this opcode has high latency to its
   /// result.
@@ -814,6 +839,7 @@ public:
   virtual bool hasStoreToStackSlot(const MachineInstr *MI,
                                    const MachineMemOperand *&MMO,
                                    int &FrameIndex) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
   virtual bool PredicateInstruction(MachineInstr *MI,
                             const SmallVectorImpl<MachineOperand> &Pred) const;
   virtual void reMaterialize(MachineBasicBlock &MBB,
@@ -829,6 +855,13 @@ public:
   virtual bool isSchedulingBoundary(const MachineInstr *MI,
                                     const MachineBasicBlock *MBB,
                                     const MachineFunction &MF) const;
+  using TargetInstrInfo::getOperandLatency;
+  virtual int getOperandLatency(const InstrItineraryData *ItinData,
+                                SDNode *DefNode, unsigned DefIdx,
+                                SDNode *UseNode, unsigned UseIdx) const;
+  using TargetInstrInfo::getInstrLatency;
+  virtual int getInstrLatency(const InstrItineraryData *ItinData,
+                              SDNode *Node) const;
 
   bool usePreRAHazardRecognizer() const;
 

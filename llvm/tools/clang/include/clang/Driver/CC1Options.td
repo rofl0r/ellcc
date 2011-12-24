@@ -166,6 +166,10 @@ def mdebug_pass : Separate<"-mdebug-pass">,
   HelpText<"Enable additional debug output">;
 def mdisable_fp_elim : Flag<"-mdisable-fp-elim">,
   HelpText<"Disable frame pointer elimination optimization">;
+def menable_no_infinities : Flag<"-menable-no-infs">,
+  HelpText<"Allow optimization to assume there are no infinities.">;
+def menable_no_nans : Flag<"-menable-no-nans">,
+  HelpText<"Allow optimization to assume there are no NaNs.">;
 def mfloat_abi : Separate<"-mfloat-abi">,
   HelpText<"The float ABI to use">;
 def mno_global_merge : Flag<"-mno-global-merge">,
@@ -200,6 +204,8 @@ def mms_bitfields : Flag<"-mms-bitfields">,
   HelpText<"Set the default structure layout to be compatible with the Microsoft compiler standard.">;
 def mstackrealign : Flag<"-mstackrealign">,
   HelpText<"Force realign the stack at entry to every function.">;
+def mstack_alignment : Joined<"-mstack-alignment=">,
+  HelpText<"Set the stack alignment">;
 def mlink_bitcode_file : Separate<"-mlink-bitcode-file">,
   HelpText<"Link the given bitcode file before performing optimizations.">;
 def O : Joined<"-O">, HelpText<"Optimization level">;
@@ -285,6 +291,8 @@ def fmacro_backtrace_limit : Separate<"-fmacro-backtrace-limit">, MetaVarName<"<
   HelpText<"Set the maximum number of entries to print in a macro expansion backtrace (0 = no limit).">;
 def ftemplate_backtrace_limit : Separate<"-ftemplate-backtrace-limit">, MetaVarName<"<N>">,
   HelpText<"Set the maximum number of entries to print in a template instantiation backtrace (0 = no limit).">;
+def fconstexpr_backtrace_limit : Separate<"-fconstexpr-backtrace-limit">, MetaVarName<"<N>">,
+  HelpText<"Set the maximum number of entries to print in a constexpr evaluation backtrace (0 = no limit).">;
 def fmessage_length : Separate<"-fmessage-length">, MetaVarName<"<N>">,
   HelpText<"Format message diagnostics so that they fit within N columns or fewer, when possible.">;
 def fcolor_diagnostics : Flag<"-fcolor-diagnostics">,
@@ -378,9 +386,7 @@ def ast_view : Flag<"-ast-view">,
 def print_decl_contexts : Flag<"-print-decl-contexts">,
   HelpText<"Print DeclContexts and their Decls">;
 def emit_module : Flag<"-emit-module">,
-  HelpText<"Generate pre-compiled module file">;
-def emit_module_from_map : Flag<"-emit-module-from-map">,
-  HelpText<"Generate pre-compiled module file from module map">;
+  HelpText<"Generate pre-compiled module file from a module map">;
 def emit_pth : Flag<"-emit-pth">,
   HelpText<"Generate pre-tokenized header file">;
 def emit_pch : Flag<"-emit-pch">,
@@ -584,6 +590,8 @@ def fvisibility_inlines_hidden : Flag<"-fvisibility-inlines-hidden">,
   HelpText<"Give inline C++ member functions default visibility by default">;
 def ftemplate_depth : Separate<"-ftemplate-depth">,
   HelpText<"Maximum depth of recursive template instantiation">;
+def fconstexpr_depth : Separate<"-fconstexpr-depth">,
+  HelpText<"Maximum depth of recursive constexpr function calls">;
 def Wlarge_by_value_copy : Separate<"-Wlarge-by-value-copy">,
   HelpText<"Warn if a function definition returns or accepts an object larger "
            "in bytes that a given value">;
@@ -715,6 +723,8 @@ def undef : Flag<"-undef">, MetaVarName<"<macro>">,
   HelpText<"undef all system defines">;
 def detailed_preprocessing_record : Flag<"-detailed-preprocessing-record">,
   HelpText<"include a detailed record of preprocessing actions">;
+def mqdsp6_compat : Flag<"-mqdsp6-compat">,
+  HelpText<"Enable hexagon-qdsp6 backward compatibility">;
 
 //===----------------------------------------------------------------------===//
 // Preprocessed Output Options

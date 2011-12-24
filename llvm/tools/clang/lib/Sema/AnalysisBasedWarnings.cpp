@@ -241,19 +241,8 @@ struct CheckFallThroughDiagnostics {
     
     // Don't suggest that template instantiations be marked "noreturn"
     bool isTemplateInstantiation = false;
-    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Func)) {
-      switch (Function->getTemplateSpecializationKind()) {
-      case TSK_Undeclared:
-      case TSK_ExplicitSpecialization:
-        break;
-        
-      case TSK_ImplicitInstantiation:
-      case TSK_ExplicitInstantiationDeclaration:
-      case TSK_ExplicitInstantiationDefinition:
-        isTemplateInstantiation = true;
-        break;
-      }
-    }
+    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(Func))
+      isTemplateInstantiation = Function->isTemplateInstantiation();
         
     if (!isVirtualMethod && !isTemplateInstantiation)
       D.diag_NeverFallThroughOrReturn =
@@ -645,6 +634,7 @@ struct SortDiagBySourceLocation {
   }
 };
 
+namespace {
 class ThreadSafetyReporter : public clang::thread_safety::ThreadSafetyHandler {
   Sema &S;
   DiagList Warnings;
@@ -755,6 +745,7 @@ class ThreadSafetyReporter : public clang::thread_safety::ThreadSafetyHandler {
 };
 }
 }
+}
 
 //===----------------------------------------------------------------------===//
 // AnalysisBasedWarnings - Worker object used by Sema to execute analysis-based
@@ -845,8 +836,8 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   // prototyping, but we need a way for analyses to say what expressions they
   // expect to always be CFGElements and then fill in the BuildOptions
   // appropriately.  This is essentially a layering violation.
-  if (P.enableCheckUnreachable) {
-    // Unreachable code analysis requires a linearized CFG.
+  if (P.enableCheckUnreachable || P.enableThreadSafetyAnalysis) {
+    // Unreachable code analysis and thread safety require a linearized CFG.
     AC.getCFGBuildOptions().setAllAlwaysAdd();
   }
   else {
@@ -914,8 +905,17 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   }
 
   // Warning: check for unreachable code
-  if (P.enableCheckUnreachable)
-    CheckUnreachable(S, AC);
+  if (P.enableCheckUnreachable) {
+    // Only check for unreachable code on non-template instantiations.
+    // Different template instantiations can effectively change the control-flow
+    // and it is very difficult to prove that a snippet of code in a template
+    // is unreachable for all instantiations.
+    bool isTemplateInstantiation = false;
+    if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(D))
+      isTemplateInstantiation = Function->isTemplateInstantiation();
+    if (!isTemplateInstantiation)
+      CheckUnreachable(S, AC);
+  }
 
   // Check for thread safety violations
   if (P.enableThreadSafetyAnalysis) {

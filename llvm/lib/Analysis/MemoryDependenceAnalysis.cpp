@@ -336,7 +336,7 @@ getLoadLoadClobberFullWidthSize(const Value *MemLocBase, int64_t MemLocOffs,
 namespace {
   /// Only find pointer captures which happen before the given instruction. Uses
   /// the dominator tree to determine whether one instruction is before another.
-  struct CapturesBefore {
+  struct CapturesBefore : public CaptureTracker {
     CapturesBefore(const Instruction *I, DominatorTree *DT)
       : BeforeHere(I), DT(DT), Captured(false) {}
 
@@ -375,13 +375,13 @@ MemoryDependenceAnalysis::getModRefInfo(const Instruction *Inst,
   // with a smarter AA in place, this test is just wasting compile time.
   if (!DT) return AliasAnalysis::ModRef;
   const Value *Object = GetUnderlyingObject(MemLoc.Ptr, TD);
-  if (!isIdentifiedObject(Object) || isa<GlobalVariable>(Object))
+  if (!isIdentifiedObject(Object) || isa<GlobalValue>(Object))
     return AliasAnalysis::ModRef;
   ImmutableCallSite CS(Inst);
   if (!CS.getInstruction()) return AliasAnalysis::ModRef;
 
   CapturesBefore CB(Inst, DT);
-  llvm::PointerMayBeCaptured(Object, CB);
+  llvm::PointerMayBeCaptured(Object, &CB);
 
   if (isa<Constant>(Object) || CS.getInstruction() == Object || CB.Captured)
     return AliasAnalysis::ModRef;
@@ -393,8 +393,7 @@ MemoryDependenceAnalysis::getModRefInfo(const Instruction *Inst,
     // pointer were passed to arguments that were neither of these, then it
     // couldn't be no-capture.
     if (!(*CI)->getType()->isPointerTy() ||
-        (!CS.paramHasAttr(ArgNo+1, Attribute::NoCapture) &&
-         !CS.paramHasAttr(ArgNo+1, Attribute::ByVal)))
+        (!CS.doesNotCapture(ArgNo) && !CS.isByValArgument(ArgNo)))
       continue;
 
     // If this is a no-capture pointer argument, see if we can tell that it

@@ -128,11 +128,21 @@ public:
 
   void printPCLabel(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printT2LdrLabelOperand(const MCInst *MI, unsigned OpNum, raw_ostream &O);
+  void printFBits16(const MCInst *MI, unsigned OpNum, raw_ostream &O);
+  void printFBits32(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorIndex(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListOne(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListTwo(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListThree(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListFour(const MCInst *MI, unsigned OpNum, raw_ostream &O);
+  void printVectorListOneAllLanes(const MCInst *MI, unsigned OpNum,
+                                  raw_ostream &O);
+  void printVectorListTwoAllLanes(const MCInst *MI, unsigned OpNum,
+                                  raw_ostream &O);
+  void printVectorListTwoSpaced(const MCInst *MI, unsigned OpNum,
+                                raw_ostream &O);
+  void printVectorListTwoSpacedAllLanes(const MCInst *MI, unsigned OpNum,
+                                        raw_ostream &O);
 };
 
 } // end namespace llvm

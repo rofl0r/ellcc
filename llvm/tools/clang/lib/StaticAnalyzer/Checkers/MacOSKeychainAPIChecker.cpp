@@ -281,18 +281,12 @@ void MacOSKeychainAPIChecker::
 
 void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
                                            CheckerContext &C) const {
-  const ProgramState *State = C.getState();
-  const Expr *Callee = CE->getCallee();
-  SVal L = State->getSVal(Callee);
   unsigned idx = InvalidIdx;
+  const ProgramState *State = C.getState();
 
-  const FunctionDecl *funDecl = L.getAsFunctionDecl();
-  if (!funDecl)
+  StringRef funName = C.getCalleeName(CE);
+  if (funName.empty())
     return;
-  IdentifierInfo *funI = funDecl->getIdentifier();
-  if (!funI)
-    return;
-  StringRef funName = funI->getName();
 
   // If it is a call to an allocator function, it could be a double allocation.
   idx = getTrackedFunctionIndex(funName, true);
@@ -420,14 +414,16 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
     return;
   }
 
-  // If the return status is undefined or is error, report a bad call to free.
-  if (!definitelyDidnotReturnError(AS->Region, State, C.getSValBuilder())) {
+  // If the buffer can be null and the return status can be an error,
+  // report a bad call to free.
+  if (State->assume(cast<DefinedSVal>(ArgSVal), false) &&
+      !definitelyDidnotReturnError(AS->Region, State, C.getSValBuilder())) {
     ExplodedNode *N = C.addTransition(State);
     if (!N)
       return;
     initBugType();
     BugReport *Report = new BugReport(*BT,
-        "Call to free data when error was returned during allocation.", N);
+        "Only call free if a valid (non-NULL) buffer was returned.", N);
     Report->addVisitor(new SecKeychainBugVisitor(ArgSM));
     Report->addRange(ArgExpr->getSourceRange());
     C.EmitReport(Report);

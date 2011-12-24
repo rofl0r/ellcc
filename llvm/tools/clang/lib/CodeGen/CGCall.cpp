@@ -831,7 +831,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
       // FALL THROUGH
     case ABIArgInfo::Direct:
       if (RegParm > 0 &&
-          (ParamType->isIntegerType() || ParamType->isPointerType())) {
+          (ParamType->isIntegerType() || ParamType->isPointerType() ||
+           ParamType->isReferenceType())) {
         RegParm -=
         (Context.getTypeSize(ParamType) + PointerWidth - 1) / PointerWidth;
         if (RegParm >= 0)
@@ -1059,8 +1060,9 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
       // we need to create a temporary and reconstruct it from the
       // arguments.
       llvm::AllocaInst *Alloca = CreateMemTemp(Ty);
-      Alloca->setAlignment(getContext().getDeclAlign(Arg).getQuantity());
-      LValue LV = MakeAddrLValue(Alloca, Ty, Alloca->getAlignment());
+      CharUnits Align = getContext().getDeclAlign(Arg);
+      Alloca->setAlignment(Align.getQuantity());
+      LValue LV = MakeAddrLValue(Alloca, Ty, Align);
       llvm::Function::arg_iterator End = ExpandTypeFromArgs(Ty, LV, AI);
       EmitParmDecl(*Arg, Alloca, ArgNo);
 
@@ -1462,8 +1464,7 @@ void CodeGenFunction::EmitCallArg(CallArgList &args, const Expr *E,
       cast<CastExpr>(E)->getCastKind() == CK_LValueToRValue) {
     LValue L = EmitLValue(cast<CastExpr>(E)->getSubExpr());
     assert(L.isSimple());
-    args.add(RValue::getAggregate(L.getAddress(), L.isVolatileQualified()),
-             type, /*NeedsCopy*/true);
+    args.add(L.asAggregateRValue(), type, /*NeedsCopy*/true);
     return;
   }
 
@@ -1517,7 +1518,7 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
         // FIXME: Volatile?
         EltRV = RValue::getComplex(LoadComplexFromAddr(LV.getAddress(), false));
       else if (CodeGenFunction::hasAggregateLLVMType(EltTy))
-        EltRV = RValue::getAggregate(LV.getAddress());
+        EltRV = LV.asAggregateRValue();
       else
         EltRV = EmitLoadOfLValue(LV);
       ExpandTypeToArgs(EltTy, EltRV, Args, IRFuncTy);
@@ -1538,7 +1539,7 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
         // FIXME: Volatile?
         FldRV = RValue::getComplex(LoadComplexFromAddr(LV.getAddress(), false));
       else if (CodeGenFunction::hasAggregateLLVMType(FT))
-        FldRV = RValue::getAggregate(LV.getAddress());
+        FldRV = LV.asAggregateRValue();
       else
         FldRV = EmitLoadOfLValue(LV);
       ExpandTypeToArgs(FT, FldRV, Args, IRFuncTy);

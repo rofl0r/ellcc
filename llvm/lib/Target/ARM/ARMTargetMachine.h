@@ -41,6 +41,7 @@ private:
 public:
   ARMBaseTargetMachine(const Target &T, StringRef TT,
                        StringRef CPU, StringRef FS,
+                       const TargetOptions &Options,
                        Reloc::Model RM, CodeModel::Model CM,
                        CodeGenOpt::Level OL);
 
@@ -62,6 +63,7 @@ public:
 /// ARMTargetMachine - ARM target machine.
 ///
 class ARMTargetMachine : public ARMBaseTargetMachine {
+  virtual void anchor();
   ARMInstrInfo        InstrInfo;
   const TargetData    DataLayout;       // Calculates type size & alignment
   ARMELFWriterInfo    ELFWriterInfo;
@@ -71,6 +73,7 @@ class ARMTargetMachine : public ARMBaseTargetMachine {
  public:
   ARMTargetMachine(const Target &T, StringRef TT,
                    StringRef CPU, StringRef FS,
+                   const TargetOptions &Options,
                    Reloc::Model RM, CodeModel::Model CM,
                    CodeGenOpt::Level OL);
 
@@ -101,6 +104,7 @@ class ARMTargetMachine : public ARMBaseTargetMachine {
 ///   Thumb-1 and Thumb-2.
 ///
 class ThumbTargetMachine : public ARMBaseTargetMachine {
+  virtual void anchor();
   // Either Thumb1InstrInfo or Thumb2InstrInfo.
   OwningPtr<ARMBaseInstrInfo> InstrInfo;
   const TargetData    DataLayout;   // Calculates type size & alignment
@@ -112,6 +116,7 @@ class ThumbTargetMachine : public ARMBaseTargetMachine {
 public:
   ThumbTargetMachine(const Target &T, StringRef TT,
                      StringRef CPU, StringRef FS,
+                     const TargetOptions &Options,
                      Reloc::Model RM, CodeModel::Model CM,
                      CodeGenOpt::Level OL);
 

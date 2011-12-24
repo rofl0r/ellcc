@@ -488,6 +488,11 @@ llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
 
   // Limit debug info for the pointee type.
 
+  // If we have an existing type, use that, it's still smaller than creating
+  // a new type.
+  llvm::DIType Ty = getTypeOrNull(PointeeTy);
+  if (Ty.Verify()) return Ty;
+
   // Handle qualifiers.
   if (PointeeTy.hasLocalQualifiers())
     return CreateQualifiedType(PointeeTy, Unit);
@@ -499,7 +504,12 @@ llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
     llvm::DIDescriptor FDContext =
       getContextDescriptor(cast<Decl>(RD->getDeclContext()));
 
-    if (RD->isStruct())
+    CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
+    if (CXXDecl)
+      return DBuilder.createClassType(FDContext, RD->getName(), DefUnit,
+                                      Line, 0, 0, 0, llvm::DIType::FlagFwdDecl,
+                                      llvm::DIType(), llvm::DIArray());
+    else if (RD->isStruct())
       return DBuilder.createStructType(FDContext, RD->getName(), DefUnit,
                                        Line, 0, 0, llvm::DIType::FlagFwdDecl,
                                        llvm::DIArray());
@@ -507,12 +517,8 @@ llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
       return DBuilder.createUnionType(FDContext, RD->getName(), DefUnit,
                                       Line, 0, 0, llvm::DIType::FlagFwdDecl,
                                       llvm::DIArray());
-    else {
-      assert(RD->isClass() && "Unknown RecordType!");
-      return DBuilder.createClassType(FDContext, RD->getName(), DefUnit,
-                                      Line, 0, 0, 0, llvm::DIType::FlagFwdDecl,
-                                      llvm::DIType(), llvm::DIArray());
-    }
+    else
+      llvm_unreachable("Unknown RecordDecl type!");
   }
   return getOrCreateType(PointeeTy, Unit);
 
@@ -1175,11 +1181,13 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
     else if (CXXDecl->isDynamicClass()) 
       ContainingType = FwdDecl;
 
-   RealDecl = DBuilder.createClassType(RDContext, RDName, DefUnit, Line,
-                                       Size, Align, 0, 0, llvm::DIType(),
-                                       Elements, ContainingType,
-                                       TParamsArray);
-  } else 
+    // FIXME: This could be a struct type giving a default visibility different
+    // than C++ class type, but needs llvm metadata changes first.
+    RealDecl = DBuilder.createClassType(RDContext, RDName, DefUnit, Line,
+                                        Size, Align, 0, 0, llvm::DIType(),
+                                        Elements, ContainingType,
+                                        TParamsArray);
+  } else
     RealDecl = DBuilder.createStructType(RDContext, RDName, DefUnit, Line,
                                          Size, Align, 0, Elements);
 
@@ -1211,13 +1219,16 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
 
   // If this is just a forward declaration return a special forward-declaration
   // debug type since we won't be able to lay out the entire type.
-  if (ID->isForwardDecl()) {
+  ObjCInterfaceDecl *Def = ID->getDefinition();
+  if (!Def) {
     llvm::DIType FwdDecl =
       DBuilder.createStructType(Unit, ID->getName(),
-                                DefUnit, Line, 0, 0, 0,
+                                DefUnit, Line, 0, 0,
+                                llvm::DIDescriptor::FlagFwdDecl,
                                 llvm::DIArray(), RuntimeLang);
     return FwdDecl;
   }
+  ID = Def;
 
   // To handle a recursive interface, we first generate a debug descriptor
   // for the struct as a forward declaration. Then (if it is a definition)
@@ -1559,15 +1570,12 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
   return T;
 }
 
-/// getOrCreateType - Get the type from the cache or create a new
-/// one if necessary.
-llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
-  if (Ty.isNull())
-    return llvm::DIType();
+/// getType - Get the type from the cache or return null type if it doesn't exist.
+llvm::DIType CGDebugInfo::getTypeOrNull(QualType Ty) {
 
   // Unwrap the type as needed for debug information.
   Ty = UnwrapTypeForDebugInfo(Ty);
-
+  
   // Check for existing entry.
   llvm::DenseMap<void *, llvm::WeakVH>::iterator it =
     TypeCache.find(Ty.getAsOpaquePtr());
@@ -1576,6 +1584,21 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
     if (&*it->second)
       return llvm::DIType(cast<llvm::MDNode>(it->second));
   }
+
+  return llvm::DIType();
+}
+
+/// getOrCreateType - Get the type from the cache or create a new
+/// one if necessary.
+llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
+  if (Ty.isNull())
+    return llvm::DIType();
+
+  // Unwrap the type as needed for debug information.
+  Ty = UnwrapTypeForDebugInfo(Ty);
+  
+  llvm::DIType T = getTypeOrNull(Ty);
+  if (T.Verify()) return T;
 
   // Otherwise create the type.
   llvm::DIType Res = CreateTypeNode(Ty, Unit);

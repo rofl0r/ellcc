@@ -65,6 +65,7 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
   class RefCountedBaseVPTR {
     mutable unsigned ref_cnt;
+    virtual void anchor();
 
   protected:
     RefCountedBaseVPTR() : ref_cnt(0) {}
@@ -156,7 +157,12 @@ namespace llvm {
       other.Obj = Obj;
       Obj = tmp;
     }
-    
+
+    void reset() {
+      release();
+      Obj = 0;
+    }
+
     void resetWithoutRelease() {
       Obj = 0;
     }

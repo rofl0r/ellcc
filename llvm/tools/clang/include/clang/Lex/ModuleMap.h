@@ -17,6 +17,7 @@
 #define LLVM_CLANG_LEX_MODULEMAP_H
 
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/Module.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -35,75 +36,6 @@ class DiagnosticsEngine;
 class ModuleMapParser;
   
 class ModuleMap {
-public:
-  /// \brief Describes a module or submodule.
-  struct Module {
-    /// \brief The name of this module.
-    std::string Name;
-    
-    /// \brief The location of the module definition.
-    SourceLocation DefinitionLoc;
-    
-    /// \brief The parent of this module. This will be NULL for the top-level
-    /// module.
-    Module *Parent;
-
-    /// \brief The umbrella header, if any.
-    ///
-    /// Only the top-level module can have an umbrella header.
-    const FileEntry *UmbrellaHeader;
-
-    /// \brief The submodules of this module, indexed by name.
-    llvm::StringMap<Module *> SubModules;
-
-    /// \brief The headers that are part of this module.
-    llvm::SmallVector<const FileEntry *, 2> Headers;
-    
-    /// \brief Whether this is a framework module.
-    bool IsFramework;
-    
-    /// \brief Whether this is an explicit submodule.
-    bool IsExplicit;
-    
-    /// \brief Construct a top-level module.
-    explicit Module(StringRef Name, SourceLocation DefinitionLoc,
-                    bool IsFramework)
-      : Name(Name), DefinitionLoc(DefinitionLoc), Parent(0), UmbrellaHeader(0),
-        IsFramework(IsFramework), IsExplicit(false) { }
-    
-    /// \brief Construct  a new module or submodule.
-    Module(StringRef Name, SourceLocation DefinitionLoc, Module *Parent, 
-           bool IsFramework, bool IsExplicit)
-      : Name(Name), DefinitionLoc(DefinitionLoc), Parent(Parent), 
-        UmbrellaHeader(0), IsFramework(IsFramework), IsExplicit(IsExplicit) {
-    }
-     
-    ~Module();
-    
-    /// \brief Determine whether this module is a submodule.
-    bool isSubModule() const { return Parent != 0; }
-    
-    /// \brief Determine whether this module is a part of a framework,
-    /// either because it is a framework module or because it is a submodule
-    /// of a framework module.
-    bool isPartOfFramework() const {
-      for (const Module *Mod = this; Mod; Mod = Mod->Parent) 
-        if (Mod->IsFramework)
-          return true;
-      
-      return false;
-    }
-    
-    
-    /// \brief Retrieve the full name of this module, including the path from
-    /// its top-level module.
-    std::string getFullModuleName() const;
-    
-    /// \brief Retrieve the name of the top-level module.
-    StringRef getTopLevelModuleName() const;
-  };
-  
-private:
   SourceManager *SourceMgr;
   llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
   LangOptions LangOpts;
@@ -124,6 +56,22 @@ private:
   llvm::DenseMap<const DirectoryEntry *, Module *> UmbrellaDirs;
   
   friend class ModuleMapParser;
+  
+  /// \brief Resolve the given export declaration into an actual export
+  /// declaration.
+  ///
+  /// \param Mod The module in which we're resolving the export declaration.
+  ///
+  /// \param Unresolved The export declaration to resolve.
+  ///
+  /// \param Complain Whether this routine should complain about unresolvable
+  /// exports.
+  ///
+  /// \returns The resolved export declaration, which will have a NULL pointer
+  /// if the export could not be resolved.
+  Module::ExportDecl 
+  resolveExport(Module *Mod, const Module::UnresolvedExportDecl &Unresolved,
+                bool Complain);
   
 public:
   /// \brief Construct a new module map.
@@ -154,12 +102,93 @@ public:
   ///
   /// \returns The named module, if known; otherwise, returns null.
   Module *findModule(StringRef Name);
+
+  /// \brief Retrieve a module with the given name using lexical name lookup,
+  /// starting at the given context.
+  ///
+  /// \param The name of the module to look up.
+  ///
+  /// \param Context The module context, from which we will perform lexical
+  /// name lookup.
+  ///
+  /// \returns The named module, if known; otherwise, returns null.
+  Module *lookupModuleUnqualified(StringRef Name, Module *Context);
+
+  /// \brief Retrieve a module with the given name within the given context,
+  /// using direct (qualified) name lookup.
+  ///
+  /// \param The name of the module to look up.
+  /// 
+  /// \param Context The module for which we will look for a submodule. If
+  /// null, we will look for a top-level module.
+  ///
+  /// \returns The named submodule, if known; otherwose, returns null.
+  Module *lookupModuleQualified(StringRef Name, Module *Context);
   
+  /// \brief Find a new module or submodule, or create it if it does not already
+  /// exist.
+  ///
+  /// \param Name The name of the module to find or create.
+  ///
+  /// \param Parent The module that will act as the parent of this submodule,
+  /// or NULL to indicate that this is a top-level module.
+  ///
+  /// \param IsFramework Whether this is a framework module.
+  ///
+  /// \param IsExplicit Whether this is an explicit submodule.
+  ///
+  /// \returns The found or newly-created module, along with a boolean value
+  /// that will be true if the module is newly-created.
+  std::pair<Module *, bool> findOrCreateModule(StringRef Name, Module *Parent, 
+                                               bool IsFramework,
+                                               bool IsExplicit);
+                       
   /// \brief Infer the contents of a framework module map from the given
   /// framework directory.
   Module *inferFrameworkModule(StringRef ModuleName, 
-                               const DirectoryEntry *FrameworkDir);
-                               
+                               const DirectoryEntry *FrameworkDir,
+                               Module *Parent);
+  
+  /// \brief Retrieve the module map file containing the definition of the given
+  /// module.
+  ///
+  /// \param Module The module whose module map file will be returned, if known.
+  ///
+  /// \returns The file entry for the module map file containing the given
+  /// module, or NULL if the module definition was inferred.
+  const FileEntry *getContainingModuleMapFile(Module *Module);
+
+  /// \brief Resolve all of the unresolved exports in the given module.
+  ///
+  /// \param Mod The module whose exports should be resolved.
+  ///
+  /// \param Complain Whether to emit diagnostics for failures.
+  ///
+  /// \returns true if any errors were encountered while resolving exports,
+  /// false otherwise.
+  bool resolveExports(Module *Mod, bool Complain);
+
+  /// \brief Infers the (sub)module based on the given source location and 
+  /// source manager.
+  ///
+  /// \param Loc The location within the source that we are querying, along
+  /// with its source manager.
+  ///
+  /// \returns The module that owns this source location, or null if no
+  /// module owns this source location.
+  Module *inferModuleFromLocation(FullSourceLoc Loc);
+  
+  /// \brief Sets the umbrella header of the given module to the given
+  /// header.
+  void setUmbrellaHeader(Module *Mod, const FileEntry *UmbrellaHeader);
+
+  /// \brief Sets the umbrella directory of the given module to the given
+  /// directory.
+  void setUmbrellaDir(Module *Mod, const DirectoryEntry *UmbrellaDir);
+
+  /// \brief Adds this header to the given module.
+  void addHeader(Module *Mod, const FileEntry *Header);
+  
   /// \brief Parse the given module map file, and record any modules we 
   /// encounter.
   ///

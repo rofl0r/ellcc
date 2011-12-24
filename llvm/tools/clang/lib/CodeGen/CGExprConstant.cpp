@@ -870,7 +870,8 @@ public:
       // Note that due to the nature of compound literals, this is guaranteed
       // to be the only use of the variable, so we just generate it here.
       CompoundLiteralExpr *CLE = cast<CompoundLiteralExpr>(E);
-      llvm::Constant* C = Visit(CLE->getInitializer());
+      llvm::Constant* C = CGM.EmitConstantExpr(CLE->getInitializer(),
+                                               CLE->getType(), CGF);
       // FIXME: "Leaked" on failure.
       if (C)
         C = new llvm::GlobalVariable(CGM.getModule(), C->getType(),
@@ -1087,6 +1088,12 @@ llvm::Constant *CodeGenModule::EmitConstantExpr(const Expr *E,
   return C;
 }
 
+llvm::Constant *
+CodeGenModule::GetAddrOfConstantCompoundLiteral(const CompoundLiteralExpr *E) {
+  assert(E->isFileScope() && "not a file-scope compound literal expr");
+  return ConstExprEmitter(*this, 0).EmitLValue(E);
+}
+
 static uint64_t getFieldOffset(ASTContext &C, const FieldDecl *field) {
   const ASTRecordLayout &layout = C.getASTRecordLayout(field->getParent());
   return layout.getFieldOffset(field->getFieldIndex());
@@ -1237,13 +1244,17 @@ static llvm::Constant *EmitNullConstant(CodeGenModule &CGM,
   for (RecordDecl::field_iterator I = record->field_begin(),
          E = record->field_end(); I != E; ++I) {
     const FieldDecl *field = *I;
-    
-    // Ignore bit fields.
-    if (field->isBitField())
-      continue;
-    
-    unsigned fieldIndex = layout.getLLVMFieldNo(field);
-    elements[fieldIndex] = CGM.EmitNullConstant(field->getType());
+
+    // Fill in non-bitfields. (Bitfields always use a zero pattern, which we
+    // will fill in later.)
+    if (!field->isBitField()) {
+      unsigned fieldIndex = layout.getLLVMFieldNo(field);
+      elements[fieldIndex] = CGM.EmitNullConstant(field->getType());
+    }
+
+    // For unions, stop after the first named field.
+    if (record->isUnion() && field->getDeclName())
+      break;
   }
 
   // Fill in the virtual bases, if we're working with the complete object.

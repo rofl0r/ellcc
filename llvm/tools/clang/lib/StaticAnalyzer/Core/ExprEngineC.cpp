@@ -43,8 +43,7 @@ void ExprEngine::VisitBinaryOperator(const BinaryOperator* B,
     if (Op == BO_Assign) {
       // EXPERIMENTAL: "Conjured" symbols.
       // FIXME: Handle structs.
-      if (RightV.isUnknown() ||
-          !getConstraintManager().canReasonAbout(RightV)) {
+      if (RightV.isUnknown()) {
         unsigned Count = currentBuilderContext->getCurrentBlockCount();
         RightV = svalBuilder.getConjuredSymbolVal(NULL, B->getRHS(), Count);
       }
@@ -122,8 +121,7 @@ void ExprEngine::VisitBinaryOperator(const BinaryOperator* B,
       
       SVal LHSVal;
       
-      if (Result.isUnknown() ||
-          !getConstraintManager().canReasonAbout(Result)) {
+      if (Result.isUnknown()) {
         
         unsigned Count = currentBuilderContext->getCurrentBlockCount();
         
@@ -359,10 +357,7 @@ void ExprEngine::VisitDeclStmt(const DeclStmt *DS, ExplodedNode *Pred,
       
       // Recover some path-sensitivity if a scalar value evaluated to
       // UnknownVal.
-      if ((InitVal.isUnknown() ||
-           !getConstraintManager().canReasonAbout(InitVal)) &&
-          !VD->getType()->isReferenceType() &&
-          !Pred->getState()->isTainted(InitVal)) {
+      if (InitVal.isUnknown()) {
         InitVal = svalBuilder.getConjuredSymbolVal(NULL, InitEx,
                                  currentBuilderContext->getCurrentBlockCount());
       }
@@ -727,7 +722,7 @@ void ExprEngine::VisitIncrementDecrementOperator(const UnaryOperator* U,
       SVal Result = evalBinOp(state, Op, V2, RHS, U->getType());
       
       // Conjure a new symbol if necessary to recover precision.
-      if (Result.isUnknown() || !getConstraintManager().canReasonAbout(Result)){
+      if (Result.isUnknown()){
         DefinedOrUnknownSVal SymVal =
         svalBuilder.getConjuredSymbolVal(NULL, Ex,
                                  currentBuilderContext->getCurrentBlockCount());

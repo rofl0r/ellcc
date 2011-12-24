@@ -62,7 +62,7 @@ bool Parser::isCXXDeclarationStatement() {
     return true;
     // simple-declaration
   default:
-    return isCXXSimpleDeclaration();
+    return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/false);
   }
 }
 
@@ -75,7 +75,11 @@ bool Parser::isCXXDeclarationStatement() {
 /// simple-declaration:
 ///   decl-specifier-seq init-declarator-list[opt] ';'
 ///
-bool Parser::isCXXSimpleDeclaration() {
+/// (if AllowForRangeDecl specified)
+/// for ( for-range-declaration : for-range-initializer ) statement
+/// for-range-declaration: 
+///    attribute-specifier-seqopt type-specifier-seq declarator
+bool Parser::isCXXSimpleDeclaration(bool AllowForRangeDecl) {
   // C++ 6.8p1:
   // There is an ambiguity in the grammar involving expression-statements and
   // declarations: An expression-statement with a function-style explicit type
@@ -112,7 +116,7 @@ bool Parser::isCXXSimpleDeclaration() {
   // We need tentative parsing...
 
   TentativeParsingAction PA(*this);
-  TPR = TryParseSimpleDeclaration();
+  TPR = TryParseSimpleDeclaration(AllowForRangeDecl);
   PA.Revert();
 
   // In case of an error, let the declaration parsing code handle it.
@@ -130,7 +134,12 @@ bool Parser::isCXXSimpleDeclaration() {
 /// simple-declaration:
 ///   decl-specifier-seq init-declarator-list[opt] ';'
 ///
-Parser::TPResult Parser::TryParseSimpleDeclaration() {
+/// (if AllowForRangeDecl specified)
+/// for ( for-range-declaration : for-range-initializer ) statement
+/// for-range-declaration: 
+///    attribute-specifier-seqopt type-specifier-seq declarator
+///
+Parser::TPResult Parser::TryParseSimpleDeclaration(bool AllowForRangeDecl) {
   // We know that we have a simple-type-specifier/typename-specifier followed
   // by a '('.
   assert(isCXXDeclarationSpecifier() == TPResult::Ambiguous());
@@ -150,7 +159,7 @@ Parser::TPResult Parser::TryParseSimpleDeclaration() {
   if (TPR != TPResult::Ambiguous())
     return TPR;
 
-  if (Tok.isNot(tok::semi))
+  if (Tok.isNot(tok::semi) && (!AllowForRangeDecl || Tok.isNot(tok::colon)))
     return TPResult::False();
 
   return TPResult::Ambiguous();
@@ -670,6 +679,7 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___is_convertible_to:
   case tok::kw___is_empty:
   case tok::kw___is_enum:
+  case tok::kw___is_final:
   case tok::kw___is_literal:
   case tok::kw___is_literal_type:
   case tok::kw___is_pod:
@@ -705,7 +715,6 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw_wchar_t:
   case tok::kw_char16_t:
   case tok::kw_char32_t:
-  case tok::kw_decltype:
   case tok::kw___underlying_type:
   case tok::kw_thread_local:
   case tok::kw__Decimal32:
@@ -847,13 +856,14 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
     if (Next.is(tok::kw_new) ||    // ::new
         Next.is(tok::kw_delete))   // ::delete
       return TPResult::False();
-
+  }
+    // Fall through.
+  case tok::kw_decltype:
     // Annotate typenames and C++ scope specifiers.  If we get one, just
     // recurse to handle whatever we get.
     if (TryAnnotateTypeOrScopeToken())
       return TPResult::Error();
     return isCXXDeclarationSpecifier();
-  }
       
     // decl-specifier:
     //   storage-class-specifier
@@ -1029,7 +1039,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
   }
 
   // C++0x decltype support.
-  case tok::kw_decltype:
+  case tok::annot_decltype:
     return TPResult::True();
 
   // C++0x type traits support

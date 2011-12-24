@@ -778,7 +778,7 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(IMPORTS);
   RECORD(REFERENCED_SELECTOR_POOL);
   RECORD(TU_UPDATE_LEXICAL);
-  RECORD(REDECLS_UPDATE_LATEST);
+  RECORD(LOCAL_REDECLARATIONS);
   RECORD(SEMA_DECL_REFS);
   RECORD(WEAK_UNDECLARED_IDENTIFIERS);
   RECORD(PENDING_IMPLICIT_INSTANTIATIONS);
@@ -798,6 +798,9 @@ void ASTWriter::WriteBlockInfoBlock() {
   RECORD(KNOWN_NAMESPACES);
   RECORD(MODULE_OFFSET_MAP);
   RECORD(SOURCE_MANAGER_LINE_TABLE);
+  RECORD(OBJC_CHAINED_CATEGORIES);
+  RECORD(FILE_SORTED_DECLS);
+  RECORD(IMPORTED_MODULES);
   
   // SourceManager Block.
   BLOCK(SOURCE_MANAGER_BLOCK);
@@ -1657,8 +1660,9 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
   for (Preprocessor::macro_iterator I = PP.macro_begin(Chain == 0), 
                                     E = PP.macro_end(Chain == 0);
        I != E; ++I) {
+    const IdentifierInfo *Name = I->first;
     if (!IsModule || I->second->isPublic()) {
-      MacroDefinitionsSeen.insert(I->first);
+      MacroDefinitionsSeen.insert(Name);
       MacrosToEmit.push_back(std::make_pair(I->first, I->second));
     }
   }
@@ -1843,6 +1847,195 @@ void ASTWriter::WritePreprocessorDetail(PreprocessingRecord &PPRec) {
     Stream.EmitRecordWithBlob(PPEOffsetAbbrev, Record,
                               data(PreprocessedEntityOffsets));
   }
+}
+
+unsigned ASTWriter::getSubmoduleID(Module *Mod) {
+  llvm::DenseMap<Module *, unsigned>::iterator Known = SubmoduleIDs.find(Mod);
+  if (Known != SubmoduleIDs.end())
+    return Known->second;
+  
+  return SubmoduleIDs[Mod] = NextSubmoduleID++;
+}
+
+/// \brief Compute the number of modules within the given tree (including the
+/// given module).
+static unsigned getNumberOfModules(Module *Mod) {
+  unsigned ChildModules = 0;
+  for (llvm::StringMap<Module *>::iterator Sub = Mod->SubModules.begin(),
+                                        SubEnd = Mod->SubModules.end();
+       Sub != SubEnd; ++Sub)
+    ChildModules += getNumberOfModules(Sub->getValue());
+  
+  return ChildModules + 1;
+}
+
+void ASTWriter::WriteSubmodules(Module *WritingModule) {
+  // Determine the dependencies of our module and each of it's submodules.
+  // FIXME: This feels like it belongs somewhere else, but there are no
+  // other consumers of this information.
+  SourceManager &SrcMgr = PP->getSourceManager();
+  ModuleMap &ModMap = PP->getHeaderSearchInfo().getModuleMap();
+  for (ASTContext::import_iterator I = Context->local_import_begin(),
+                                IEnd = Context->local_import_end();
+       I != IEnd; ++I) {
+    if (Module *ImportedFrom
+          = ModMap.inferModuleFromLocation(FullSourceLoc(I->getLocation(), 
+                                                         SrcMgr))) {
+      ImportedFrom->Imports.push_back(I->getImportedModule());
+    }
+  }
+  
+  // Enter the submodule description block.
+  Stream.EnterSubblock(SUBMODULE_BLOCK_ID, NUM_ALLOWED_ABBREVS_SIZE);
+  
+  // Write the abbreviations needed for the submodules block.
+  using namespace llvm;
+  BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(SUBMODULE_DEFINITION));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // ID
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Parent
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsFramework
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsExplicit
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // InferExplicit...
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsExplicit
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // InferExportWild...
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Name
+  unsigned DefinitionAbbrev = Stream.EmitAbbrev(Abbrev);
+
+  Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(SUBMODULE_UMBRELLA_HEADER));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Name
+  unsigned UmbrellaAbbrev = Stream.EmitAbbrev(Abbrev);
+
+  Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(SUBMODULE_HEADER));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Name
+  unsigned HeaderAbbrev = Stream.EmitAbbrev(Abbrev);
+
+  Abbrev = new BitCodeAbbrev();
+  Abbrev->Add(BitCodeAbbrevOp(SUBMODULE_UMBRELLA_DIR));
+  Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob)); // Name
+  unsigned UmbrellaDirAbbrev = Stream.EmitAbbrev(Abbrev);
+
+  // Write the submodule metadata block.
+  RecordData Record;
+  Record.push_back(getNumberOfModules(WritingModule));
+  Record.push_back(FirstSubmoduleID - NUM_PREDEF_SUBMODULE_IDS);
+  Stream.EmitRecord(SUBMODULE_METADATA, Record);
+  
+  // Write all of the submodules.
+  std::queue<Module *> Q;
+  Q.push(WritingModule);
+  while (!Q.empty()) {
+    Module *Mod = Q.front();
+    Q.pop();
+    unsigned ID = getSubmoduleID(Mod);
+    
+    // Emit the definition of the block.
+    Record.clear();
+    Record.push_back(SUBMODULE_DEFINITION);
+    Record.push_back(ID);
+    if (Mod->Parent) {
+      assert(SubmoduleIDs[Mod->Parent] && "Submodule parent not written?");
+      Record.push_back(SubmoduleIDs[Mod->Parent]);
+    } else {
+      Record.push_back(0);
+    }
+    Record.push_back(Mod->IsFramework);
+    Record.push_back(Mod->IsExplicit);
+    Record.push_back(Mod->InferSubmodules);
+    Record.push_back(Mod->InferExplicitSubmodules);
+    Record.push_back(Mod->InferExportWildcard);
+    Stream.EmitRecordWithBlob(DefinitionAbbrev, Record, Mod->Name);
+    
+    // Emit the umbrella header, if there is one.
+    if (const FileEntry *UmbrellaHeader = Mod->getUmbrellaHeader()) {
+      Record.clear();
+      Record.push_back(SUBMODULE_UMBRELLA_HEADER);
+      Stream.EmitRecordWithBlob(UmbrellaAbbrev, Record, 
+                                UmbrellaHeader->getName());
+    } else if (const DirectoryEntry *UmbrellaDir = Mod->getUmbrellaDir()) {
+      Record.clear();
+      Record.push_back(SUBMODULE_UMBRELLA_DIR);
+      Stream.EmitRecordWithBlob(UmbrellaDirAbbrev, Record, 
+                                UmbrellaDir->getName());      
+    }
+    
+    // Emit the headers.
+    for (unsigned I = 0, N = Mod->Headers.size(); I != N; ++I) {
+      Record.clear();
+      Record.push_back(SUBMODULE_HEADER);
+      Stream.EmitRecordWithBlob(HeaderAbbrev, Record, 
+                                Mod->Headers[I]->getName());
+    }
+
+    // Emit the imports. 
+    if (!Mod->Imports.empty()) {
+      Record.clear();
+      for (unsigned I = 0, N = Mod->Imports.size(); I != N; ++I) {
+        unsigned ImportedID = getSubmoduleID(Mod->Imports[I]);
+        assert(ImportedID && "Unknown submodule!");                                           
+        Record.push_back(ImportedID);
+      }
+      Stream.EmitRecord(SUBMODULE_IMPORTS, Record);
+    }
+
+    // Emit the exports. 
+    if (!Mod->Exports.empty()) {
+      Record.clear();
+      for (unsigned I = 0, N = Mod->Exports.size(); I != N; ++I) {
+        if (Module *Exported = Mod->Exports[I].getPointer()) {
+          unsigned ExportedID = SubmoduleIDs[Exported];
+          assert(ExportedID > 0 && "Unknown submodule ID?");
+          Record.push_back(ExportedID);
+        } else {
+          Record.push_back(0);
+        }
+        
+        Record.push_back(Mod->Exports[I].getInt());
+      }
+      Stream.EmitRecord(SUBMODULE_EXPORTS, Record);
+    }
+    
+    // Queue up the submodules of this module.
+    llvm::SmallVector<StringRef, 2> SubModules;
+    
+    // Sort the submodules first, so we get a predictable ordering in the AST
+    // file.
+    for (llvm::StringMap<Module *>::iterator 
+              Sub = Mod->SubModules.begin(),
+           SubEnd = Mod->SubModules.end();
+         Sub != SubEnd; ++Sub)
+      SubModules.push_back(Sub->getKey());
+    llvm::array_pod_sort(SubModules.begin(), SubModules.end());
+    
+    for (unsigned I = 0, N = SubModules.size(); I != N; ++I)
+      Q.push(Mod->SubModules[SubModules[I]]);
+  }
+  
+  Stream.ExitBlock();
+  
+  assert((NextSubmoduleID - FirstSubmoduleID
+            == getNumberOfModules(WritingModule)) && "Wrong # of submodules");
+}
+
+serialization::SubmoduleID 
+ASTWriter::inferSubmoduleIDFromLocation(SourceLocation Loc) {
+  if (Loc.isInvalid() || !WritingModule)
+    return 0; // No submodule
+    
+  // Find the module that owns this location.
+  ModuleMap &ModMap = PP->getHeaderSearchInfo().getModuleMap();
+  Module *OwningMod 
+    = ModMap.inferModuleFromLocation(FullSourceLoc(Loc,PP->getSourceManager()));
+  if (!OwningMod)
+    return 0;
+  
+  // Check whether this submodule is part of our own module.
+  if (WritingModule != OwningMod && !OwningMod->isSubModuleOf(WritingModule))
+    return 0;
+  
+  return getSubmoduleID(OwningMod);
 }
 
 void ASTWriter::WritePragmaDiagnosticMappings(const DiagnosticsEngine &Diag) {
@@ -2293,7 +2486,7 @@ public:
     if (isInterestingIdentifier(II, Macro)) {
       DataLen += 2; // 2 bytes for builtin ID, flags
       if (hasMacroDefinition(II, Macro))
-        DataLen += 4;
+        DataLen += 8;
       
       for (IdentifierResolver::iterator D = IdResolver.begin(II),
                                      DEnd = IdResolver.end();
@@ -2328,6 +2521,7 @@ public:
     uint32_t Bits = 0;
     bool HasMacroDefinition = hasMacroDefinition(II, Macro);
     Bits = (uint32_t)II->getObjCOrBuiltinID();
+    assert((Bits & 0x7ff) == Bits && "ObjCOrBuiltinID too big for ASTReader.");
     Bits = (Bits << 1) | unsigned(HasMacroDefinition);
     Bits = (Bits << 1) | unsigned(II->isExtensionToken());
     Bits = (Bits << 1) | unsigned(II->isPoisoned());
@@ -2335,9 +2529,12 @@ public:
     Bits = (Bits << 1) | unsigned(II->isCPlusPlusOperatorKeyword());
     clang::io::Emit16(Out, Bits);
 
-    if (HasMacroDefinition)
+    if (HasMacroDefinition) {
       clang::io::Emit32(Out, Writer.getMacroOffset(II));
-
+      clang::io::Emit32(Out, 
+        Writer.inferSubmoduleIDFromLocation(Macro->getDefinitionLoc()));
+    }
+    
     // Emit the declaration IDs in reverse order, because the
     // IdentifierResolver provides the declarations as they would be
     // visible (e.g., the function "stat" would come before the struct
@@ -2706,6 +2903,25 @@ void ASTWriter::WriteOpenCLExtensions(Sema &SemaRef) {
   Stream.EmitRecord(OPENCL_EXTENSIONS, Record);
 }
 
+void ASTWriter::WriteMergedDecls() {
+  if (!Chain || Chain->MergedDecls.empty())
+    return;
+  
+  RecordData Record;
+  for (ASTReader::MergedDeclsMap::iterator I = Chain->MergedDecls.begin(),
+                                        IEnd = Chain->MergedDecls.end();
+       I != IEnd; ++I) {
+    DeclID CanonID = I->first->isFromASTFile()? Chain->DeclToID[I->first]
+                                              : getDeclID(I->first);
+    assert(CanonID && "Merged declaration not known?");
+    
+    Record.push_back(CanonID);
+    Record.push_back(I->second.size());
+    Record.append(I->second.begin(), I->second.end());
+  }
+  Stream.EmitRecord(MERGED_DECLARATIONS, Record);
+}
+
 //===----------------------------------------------------------------------===//
 // General Serialization Routines
 //===----------------------------------------------------------------------===//
@@ -2764,10 +2980,13 @@ void ASTWriter::SetSelectorOffset(Selector Sel, uint32_t Offset) {
 }
 
 ASTWriter::ASTWriter(llvm::BitstreamWriter &Stream)
-  : Stream(Stream), Context(0), Chain(0), WritingAST(false),
+  : Stream(Stream), Context(0), PP(0), Chain(0), WritingModule(0),
+    WritingAST(false),
     FirstDeclID(NUM_PREDEF_DECL_IDS), NextDeclID(FirstDeclID),
     FirstTypeID(NUM_PREDEF_TYPE_IDS), NextTypeID(FirstTypeID),
     FirstIdentID(NUM_PREDEF_IDENT_IDS), NextIdentID(FirstIdentID), 
+    FirstSubmoduleID(NUM_PREDEF_SUBMODULE_IDS), 
+    NextSubmoduleID(FirstSubmoduleID),
     FirstSelectorID(NUM_PREDEF_SELECTOR_IDS), NextSelectorID(FirstSelectorID),
     CollectedStmts(&StmtsToEmit),
     NumStatements(0), NumMacros(0), NumLexicalDeclContexts(0),
@@ -2791,7 +3010,7 @@ ASTWriter::~ASTWriter() {
 
 void ASTWriter::WriteAST(Sema &SemaRef, MemorizeStatCalls *StatCalls,
                          const std::string &OutputFile,
-                         bool IsModule, StringRef isysroot) {
+                         Module *WritingModule, StringRef isysroot) {
   WritingAST = true;
   
   // Emit the file header.
@@ -2803,8 +3022,12 @@ void ASTWriter::WriteAST(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   WriteBlockInfoBlock();
 
   Context = &SemaRef.Context;
-  WriteASTCore(SemaRef, StatCalls, isysroot, OutputFile, IsModule);
+  PP = &SemaRef.PP;
+  this->WritingModule = WritingModule;
+  WriteASTCore(SemaRef, StatCalls, isysroot, OutputFile, WritingModule);
   Context = 0;
+  PP = 0;
+  this->WritingModule = 0;
   
   WritingAST = false;
 }
@@ -2820,9 +3043,14 @@ static void AddLazyVectorDecls(ASTWriter &Writer, Vector &Vec,
 
 void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
                              StringRef isysroot,
-                             const std::string &OutputFile, bool IsModule) {
+                             const std::string &OutputFile, 
+                             Module *WritingModule) {
   using namespace llvm;
 
+  // Make sure that the AST reader knows to finalize itself.
+  if (Chain)
+    Chain->finalizeForWriting();
+  
   ASTContext &Context = SemaRef.Context;
   Preprocessor &PP = SemaRef.PP;
 
@@ -3022,7 +3250,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
   AddTypeRef(Context.ObjCClassRedefinitionType, SpecialTypes);
   AddTypeRef(Context.ObjCSelRedefinitionType, SpecialTypes);
   AddTypeRef(Context.getucontext_tType(), SpecialTypes);
-  
+
   // Keep writing types and declarations until all types and
   // declarations have been written.
   Stream.EnterSubblock(DECLTYPES_BLOCK_ID, NUM_ALLOWED_ABBREVS_SIZE);
@@ -3054,6 +3282,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
     //   identifier-id:i32
     //   preprocessed-entity-id:i32
     //   macro-definition-id:i32
+    //   submodule-id:i32
     //   selector-id:i32
     //   declaration-id:i32
     //   c++-base-specifiers-id:i32
@@ -3067,7 +3296,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
     {
       llvm::raw_svector_ostream Out(Buffer);
       for (ModuleManager::ModuleConstIterator M = Chain->ModuleMgr.begin(),
-           MEnd = Chain->ModuleMgr.end();
+                                           MEnd = Chain->ModuleMgr.end();
            M != MEnd; ++M) {
         StringRef FileName = (*M)->FileName;
         io::Emit16(Out, FileName.size());
@@ -3075,6 +3304,7 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
         io::Emit32(Out, (*M)->SLocEntryBaseOffset);
         io::Emit32(Out, (*M)->BaseIdentifierID);
         io::Emit32(Out, (*M)->BasePreprocessedEntityID);
+        io::Emit32(Out, (*M)->BaseSubmoduleID);
         io::Emit32(Out, (*M)->BaseSelectorID);
         io::Emit32(Out, (*M)->BaseDeclID);
         io::Emit32(Out, (*M)->BaseTypeIndex);
@@ -3085,12 +3315,11 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
     Stream.EmitRecordWithBlob(ModuleOffsetMapAbbrev, Record,
                               Buffer.data(), Buffer.size());
   }
-
-  WritePreprocessor(PP, IsModule);
+  WritePreprocessor(PP, WritingModule != 0);
   WriteHeaderSearch(PP.getHeaderSearchInfo(), isysroot);
   WriteSelectors(SemaRef);
   WriteReferencedSelectorsPool(SemaRef);
-  WriteIdentifierTable(PP, SemaRef.IdResolver, IsModule);
+  WriteIdentifierTable(PP, SemaRef.IdResolver, WritingModule != 0);
   WriteFPPragmaOptions(SemaRef.getFPOptions());
   WriteOpenCLExtensions(SemaRef);
 
@@ -3099,20 +3328,11 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
 
   WriteCXXBaseSpecifiersOffsets();
   
-  Stream.EmitRecord(SPECIAL_TYPES, SpecialTypes);
+  // If we're emitting a module, write out the submodule information.  
+  if (WritingModule)
+    WriteSubmodules(WritingModule);
 
-  /// Build a record containing first declarations from a chained PCH and the
-  /// most recent declarations in this AST that they point to.
-  RecordData FirstLatestDeclIDs;
-  for (FirstLatestDeclMap::iterator I = FirstLatestDecls.begin(), 
-                                    E = FirstLatestDecls.end(); 
-       I != E; ++I) {
-    AddDeclRef(I->first, FirstLatestDeclIDs);
-    AddDeclRef(I->second, FirstLatestDeclIDs);
-  }
-  
-  if (!FirstLatestDeclIDs.empty())
-    Stream.EmitRecord(REDECLS_UPDATE_LATEST, FirstLatestDeclIDs);
+  Stream.EmitRecord(SPECIAL_TYPES, SpecialTypes);
 
   // Write the record containing external, unnamed definitions.
   if (!ExternalDefinitions.empty())
@@ -3175,10 +3395,52 @@ void ASTWriter::WriteASTCore(Sema &SemaRef, MemorizeStatCalls *StatCalls,
        I != E; ++I)
     WriteDeclContextVisibleUpdate(*I);
 
+  if (!WritingModule) {
+    // Write the submodules that were imported, if any.
+    RecordData ImportedModules;
+    for (ASTContext::import_iterator I = Context.local_import_begin(),
+                                  IEnd = Context.local_import_end();
+         I != IEnd; ++I) {
+      assert(SubmoduleIDs.find(I->getImportedModule()) != SubmoduleIDs.end());
+      ImportedModules.push_back(SubmoduleIDs[I->getImportedModule()]);
+    }
+    if (!ImportedModules.empty()) {
+      // Sort module IDs.
+      llvm::array_pod_sort(ImportedModules.begin(), ImportedModules.end());
+      
+      // Unique module IDs.
+      ImportedModules.erase(std::unique(ImportedModules.begin(), 
+                                        ImportedModules.end()),
+                            ImportedModules.end());
+      
+      Stream.EmitRecord(IMPORTED_MODULES, ImportedModules);
+    }
+  }
+  
   WriteDeclUpdatesBlocks();
   WriteDeclReplacementsBlock();
   WriteChainedObjCCategories();
+  WriteMergedDecls();
+  
+  if (!LocalRedeclarations.empty()) {
+    // Sort the local redeclarations info by the first declaration ID,
+    // since the reader will be perforing binary searches on this information.
+    llvm::array_pod_sort(LocalRedeclarations.begin(),LocalRedeclarations.end());
+    
+    llvm::BitCodeAbbrev *Abbrev = new BitCodeAbbrev();
+    Abbrev->Add(BitCodeAbbrevOp(LOCAL_REDECLARATIONS));
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // # of entries
+    Abbrev->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Blob));
+    unsigned AbbrevID = Stream.EmitAbbrev(Abbrev);
 
+    Record.clear();
+    Record.push_back(LOCAL_REDECLARATIONS);
+    Record.push_back(LocalRedeclarations.size());
+    Stream.EmitRecordWithBlob(AbbrevID, Record, 
+      reinterpret_cast<char*>(LocalRedeclarations.data()),
+      LocalRedeclarations.size() * sizeof(LocalRedeclarationsInfo));
+  }
+  
   // Some simple statistics
   Record.clear();
   Record.push_back(NumStatements);
@@ -3207,6 +3469,7 @@ void ASTWriter::ResolveDeclUpdatesBlocks() {
       case UPD_CXX_ADDED_IMPLICIT_MEMBER:
       case UPD_CXX_ADDED_TEMPLATE_SPECIALIZATION:
       case UPD_CXX_ADDED_ANONYMOUS_NAMESPACE:
+      case UPD_OBJC_SET_CLASS_DEFINITIONDATA:
         URec[Idx] = GetDeclRef(reinterpret_cast<Decl *>(URec[Idx]));
         ++Idx;
         break;
@@ -3971,6 +4234,7 @@ void ASTWriter::ReaderInitialized(ASTReader *Reader) {
   assert(FirstDeclID == NextDeclID &&
          FirstTypeID == NextTypeID &&
          FirstIdentID == NextIdentID &&
+         FirstSubmoduleID == NextSubmoduleID &&
          FirstSelectorID == NextSelectorID &&
          "Setting chain after writing has started.");
 
@@ -3979,11 +4243,13 @@ void ASTWriter::ReaderInitialized(ASTReader *Reader) {
   FirstDeclID = NUM_PREDEF_DECL_IDS + Chain->getTotalNumDecls();
   FirstTypeID = NUM_PREDEF_TYPE_IDS + Chain->getTotalNumTypes();
   FirstIdentID = NUM_PREDEF_IDENT_IDS + Chain->getTotalNumIdentifiers();
+  FirstSubmoduleID = NUM_PREDEF_SUBMODULE_IDS + Chain->getTotalNumSubmodules();
   FirstSelectorID = NUM_PREDEF_SELECTOR_IDS + Chain->getTotalNumSelectors();
   NextDeclID = FirstDeclID;
   NextTypeID = FirstTypeID;
   NextIdentID = FirstIdentID;
   NextSelectorID = FirstSelectorID;
+  NextSubmoduleID = FirstSubmoduleID;
 }
 
 void ASTWriter::IdentifierRead(IdentID ID, IdentifierInfo *II) {
@@ -4015,6 +4281,15 @@ void ASTWriter::MacroDefinitionRead(serialization::PreprocessedEntityID ID,
                                     MacroDefinition *MD) {
   assert(MacroDefinitions.find(MD) == MacroDefinitions.end());
   MacroDefinitions[MD] = ID;
+}
+
+void ASTWriter::MacroVisible(IdentifierInfo *II) {
+  DeserializedMacroNames.push_back(II);
+}
+
+void ASTWriter::ModuleRead(serialization::SubmoduleID ID, Module *Mod) {
+  assert(SubmoduleIDs.find(Mod) == SubmoduleIDs.end());
+  SubmoduleIDs[Mod] = ID;
 }
 
 void ASTWriter::CompletedTagDefinition(const TagDecl *D) {
@@ -4139,10 +4414,26 @@ void ASTWriter::AddedObjCCategoryToInterface(const ObjCCategoryDecl *CatD,
 
 void ASTWriter::CompletedObjCForwardRef(const ObjCContainerDecl *D) {
   assert(!WritingAST && "Already writing the AST!");
-  if (!D->isFromASTFile())
-    return; // Declaration not imported from PCH.
+  if (D->isFromASTFile())
+    RewriteDecl(D);
 
-  RewriteDecl(D);
+  if (const ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(D)) {
+    for (ObjCInterfaceDecl::redecl_iterator I = ID->redecls_begin(), 
+                                            E = ID->redecls_end(); 
+         I != E; ++I) {
+      if (*I == ID)
+        continue;
+      
+      // We are interested when a PCH decl is modified.
+      if (I->isFromASTFile()) {
+        UpdateRecord &Record = DeclUpdates[*I];
+        Record.push_back(UPD_OBJC_SET_CLASS_DEFINITIONDATA);
+        assert((*I)->hasDefinition());
+        assert((*I)->getDefinition() == D);
+        Record.push_back(reinterpret_cast<uint64_t>(D)); // the DefinitionDecl
+      }
+    }
+  }
 }
 
 void ASTWriter::AddedObjCPropertyInClassExtension(const ObjCPropertyDecl *Prop,

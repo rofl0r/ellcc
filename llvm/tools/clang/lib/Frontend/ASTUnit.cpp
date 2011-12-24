@@ -27,6 +27,7 @@
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendOptions.h"
+#include "clang/Frontend/MultiplexConsumer.h"
 #include "clang/Frontend/Utils.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
@@ -217,6 +218,7 @@ ASTUnit::ASTUnit(bool _MainFileIsAST)
     OwnsRemappedFileBuffers(true),
     NumStoredDiagnosticsFromDriver(0),
     PreambleRebuildCounter(0), SavedMainFileBuffer(0), PreambleBuffer(0),
+    NumWarningsInPreamble(0),
     ShouldCacheCodeCompletionResults(false),
     NestedMacroExpansions(true),
     CompletionCacheTopLevelHashValue(0),
@@ -922,7 +924,7 @@ class PrecompilePreambleConsumer : public PCHGenerator {
 public:
   PrecompilePreambleConsumer(ASTUnit &Unit, const Preprocessor &PP, 
                              StringRef isysroot, raw_ostream *Out)
-    : PCHGenerator(PP, "", /*IsModule=*/false, isysroot, Out), Unit(Unit),
+    : PCHGenerator(PP, "", 0, isysroot, Out), Unit(Unit),
       Hash(Unit.getCurrentTopLevelHashValue()) {
     Hash = 0;
   }
@@ -1632,10 +1634,11 @@ StringRef ASTUnit::getMainFileName() const {
 }
 
 ASTUnit *ASTUnit::create(CompilerInvocation *CI,
-                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags) {
+                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                         bool CaptureDiagnostics) {
   llvm::OwningPtr<ASTUnit> AST;
   AST.reset(new ASTUnit(false));
-  ConfigureDiags(Diags, 0, 0, *AST, /*CaptureDiagnostics=*/false);
+  ConfigureDiags(Diags, 0, 0, *AST, CaptureDiagnostics);
   AST->Diagnostics = Diags;
   AST->Invocation = CI;
   AST->FileSystemOpts = CI->getFileSystemOpts();
@@ -1648,21 +1651,33 @@ ASTUnit *ASTUnit::create(CompilerInvocation *CI,
 ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
                               llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              ASTFrontendAction *Action,
-                                             ASTUnit *Unit) {
+                                             ASTUnit *Unit,
+                                             bool Persistent,
+                                             StringRef ResourceFilesPath,
+                                             bool OnlyLocalDecls,
+                                             bool CaptureDiagnostics,
+                                             bool PrecompilePreamble,
+                                             bool CacheCodeCompletionResults) {
   assert(CI && "A CompilerInvocation is required");
 
   llvm::OwningPtr<ASTUnit> OwnAST;
   ASTUnit *AST = Unit;
   if (!AST) {
     // Create the AST unit.
-    OwnAST.reset(create(CI, Diags));
+    OwnAST.reset(create(CI, Diags, CaptureDiagnostics));
     AST = OwnAST.get();
   }
   
-  AST->OnlyLocalDecls = false;
-  AST->CaptureDiagnostics = false;
+  if (!ResourceFilesPath.empty()) {
+    // Override the resources path.
+    CI->getHeaderSearchOpts().ResourceDir = ResourceFilesPath;
+  }
+  AST->OnlyLocalDecls = OnlyLocalDecls;
+  AST->CaptureDiagnostics = CaptureDiagnostics;
+  if (PrecompilePreamble)
+    AST->PreambleRebuildCounter = 2;
   AST->TUKind = Action ? Action->getTranslationUnitKind() : TU_Complete;
-  AST->ShouldCacheCodeCompletionResults = false;
+  AST->ShouldCacheCodeCompletionResults = CacheCodeCompletionResults;
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<ASTUnit>
@@ -1741,7 +1756,17 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
                             Clang->getFrontendOpts().Inputs[0].second,
                             Clang->getFrontendOpts().Inputs[0].first))
     return 0;
-  
+
+  if (Persistent && !TrackerAct) {
+    Clang->getPreprocessor().addPPCallbacks(
+     new MacroDefinitionTrackerPPCallbacks(AST->getCurrentTopLevelHashValue()));
+    std::vector<ASTConsumer*> Consumers;
+    if (Clang->hasASTConsumer())
+      Consumers.push_back(Clang->takeASTConsumer());
+    Consumers.push_back(new TopLevelDeclTrackerConsumer(*AST,
+                                           AST->getCurrentTopLevelHashValue()));
+    Clang->setASTConsumer(new MultiplexConsumer(Consumers));
+  }
   Act->Execute();
   
   // Steal the created target, context, and preprocessor.
@@ -2398,7 +2423,7 @@ bool ASTUnit::serialize(raw_ostream &OS) {
   llvm::BitstreamWriter Stream(Buffer);
   ASTWriter Writer(Stream);
   // FIXME: Handle modules
-  Writer.WriteAST(getSema(), 0, std::string(), /*IsModule=*/false, "");
+  Writer.WriteAST(getSema(), 0, std::string(), 0, "");
   
   // Write the generated bitstream to "Out".
   if (!Buffer.empty())
@@ -2431,7 +2456,7 @@ void ASTUnit::TranslateStoredDiagnostics(
   SmallVector<StoredDiagnostic, 4> Result;
   Result.reserve(Diags.size());
   assert(MMan && "Don't have a module manager");
-  serialization::Module *Mod = MMan->ModuleMgr.lookup(ModName);
+  serialization::ModuleFile *Mod = MMan->ModuleMgr.lookup(ModName);
   assert(Mod && "Don't have preamble module");
   SLocRemap &Remap = Mod->SLocRemap;
   for (unsigned I = 0, N = Diags.size(); I != N; ++I) {
@@ -2544,6 +2569,13 @@ void ASTUnit::findFileRegionDecls(FileID File, unsigned Offset, unsigned Length,
     BeginIt = std::lower_bound(LocDecls.begin(), LocDecls.end(),
                                std::make_pair(Offset, (Decl*)0), compLocDecl);
   if (BeginIt != LocDecls.begin())
+    --BeginIt;
+
+  // If we are pointing at a top-level decl inside an objc container, we need
+  // to backtrack until we find it otherwise we will fail to report that the
+  // region overlaps with an objc container.
+  while (BeginIt != LocDecls.begin() &&
+         BeginIt->second->isTopLevelDeclInObjCContainer())
     --BeginIt;
 
   LocDeclsTy::iterator

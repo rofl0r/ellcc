@@ -1528,9 +1528,9 @@ X86InstrInfo::convertToThreeAddressWithLEA(unsigned MIOpc,
       leaInReg2 = RegInfo.createVirtualRegister(&X86::GR32_NOSPRegClass);
       // Build and insert into an implicit UNDEF value. This is OK because
       // well be shifting and then extracting the lower 16-bits.
-      BuildMI(*MFI, MIB, MI->getDebugLoc(), get(X86::IMPLICIT_DEF), leaInReg2);
+      BuildMI(*MFI, &*MIB, MI->getDebugLoc(), get(X86::IMPLICIT_DEF),leaInReg2);
       InsMI2 =
-        BuildMI(*MFI, MIB, MI->getDebugLoc(), get(TargetOpcode::COPY))
+        BuildMI(*MFI, &*MIB, MI->getDebugLoc(), get(TargetOpcode::COPY))
         .addReg(leaInReg2, RegState::Define, X86::sub_16bit)
         .addReg(Src2, getKillRegState(isKill2));
       addRegReg(MIB, leaInReg, true, leaInReg2, true);
@@ -2040,13 +2040,12 @@ X86::CondCode X86::GetOppositeBranchCondition(X86::CondCode CC) {
 }
 
 bool X86InstrInfo::isUnpredicatedTerminator(const MachineInstr *MI) const {
-  const MCInstrDesc &MCID = MI->getDesc();
-  if (!MCID.isTerminator()) return false;
+  if (!MI->isTerminator()) return false;
 
   // Conditional branch is a special case.
-  if (MCID.isBranch() && !MCID.isBarrier())
+  if (MI->isBranch() && !MI->isBarrier())
     return true;
-  if (!MCID.isPredicable())
+  if (!MI->isPredicable())
     return true;
   return !isPredicated(MI);
 }
@@ -2072,7 +2071,7 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 
     // A terminator that isn't a branch can't easily be handled by this
     // analysis.
-    if (!I->getDesc().isBranch())
+    if (!I->isBranch())
       return true;
 
     // Handle unconditional branches.
@@ -2556,6 +2555,8 @@ bool X86InstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
   bool HasAVX = TM.getSubtarget<X86Subtarget>().hasAVX();
   switch (MI->getOpcode()) {
   case X86::V_SET0:
+  case X86::FsFLD0SS:
+  case X86::FsFLD0SD:
     return Expand2AddrUndef(MI, get(HasAVX ? X86::VXORPSrr : X86::XORPSrr));
   case X86::TEST8ri_NOREX:
     MI->setDesc(get(X86::TEST8ri));
@@ -2771,7 +2772,9 @@ static bool hasPartialRegUpdate(unsigned Opcode) {
   case X86::RCPSSr:
   case X86::RCPSSr_Int:
   case X86::ROUNDSDr:
+  case X86::ROUNDSDr_Int:
   case X86::ROUNDSSr:
+  case X86::ROUNDSSr_Int:
   case X86::RSQRTSSr:
   case X86::RSQRTSSr_Int:
   case X86::SQRTSSr:
@@ -2783,7 +2786,9 @@ static bool hasPartialRegUpdate(unsigned Opcode) {
   case X86::Int_VCVTSS2SDrr:
   case X86::VRCPSSr:
   case X86::VROUNDSDr:
+  case X86::VROUNDSDr_Int:
   case X86::VROUNDSSr:
+  case X86::VROUNDSSr_Int:
   case X86::VRSQRTSSr:
   case X86::VSQRTSSr:
     return true;
@@ -2902,6 +2907,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     switch (LoadMI->getOpcode()) {
     case X86::AVX_SET0PSY:
     case X86::AVX_SET0PDY:
+    case X86::AVX2_SETALLONES:
       Alignment = 32;
       break;
     case X86::V_SET0:
@@ -2910,11 +2916,9 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Alignment = 16;
       break;
     case X86::FsFLD0SD:
-    case X86::VFsFLD0SD:
       Alignment = 8;
       break;
     case X86::FsFLD0SS:
-    case X86::VFsFLD0SS:
       Alignment = 4;
       break;
     default:
@@ -2947,10 +2951,9 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   case X86::AVX_SET0PSY:
   case X86::AVX_SET0PDY:
   case X86::AVX_SETALLONES:
+  case X86::AVX2_SETALLONES:
   case X86::FsFLD0SD:
-  case X86::FsFLD0SS:
-  case X86::VFsFLD0SD:
-  case X86::VFsFLD0SS: {
+  case X86::FsFLD0SS: {
     // Folding a V_SET0 or V_SETALLONES as a load, to ease register pressure.
     // Create a constant-pool entry and operands to load from it.
 
@@ -2976,16 +2979,17 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     MachineConstantPool &MCP = *MF.getConstantPool();
     Type *Ty;
     unsigned Opc = LoadMI->getOpcode();
-    if (Opc == X86::FsFLD0SS || Opc == X86::VFsFLD0SS)
+    if (Opc == X86::FsFLD0SS)
       Ty = Type::getFloatTy(MF.getFunction()->getContext());
-    else if (Opc == X86::FsFLD0SD || Opc == X86::VFsFLD0SD)
+    else if (Opc == X86::FsFLD0SD)
       Ty = Type::getDoubleTy(MF.getFunction()->getContext());
     else if (Opc == X86::AVX_SET0PSY || Opc == X86::AVX_SET0PDY)
       Ty = VectorType::get(Type::getFloatTy(MF.getFunction()->getContext()), 8);
     else
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 4);
 
-    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX_SETALLONES);
+    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX_SETALLONES ||
+                      Opc == X86::AVX2_SETALLONES);
     const Constant *C = IsAllOnes ? Constant::getAllOnesValue(Ty) :
                                     Constant::getNullValue(Ty);
     unsigned CPI = MCP.getConstantPoolIndex(C, Alignment);
@@ -3566,7 +3570,13 @@ static const unsigned ReplaceableInstrsAVX2[][3] = {
   { X86::VORPSYrm,     X86::VORPDYrm,     X86::VPORYrm     },
   { X86::VORPSYrr,     X86::VORPDYrr,     X86::VPORYrr     },
   { X86::VXORPSYrm,    X86::VXORPDYrm,    X86::VPXORYrm    },
-  { X86::VXORPSYrr,    X86::VXORPDYrr,    X86::VPXORYrr    }
+  { X86::VXORPSYrr,    X86::VXORPDYrr,    X86::VPXORYrr    },
+  { X86::VEXTRACTF128mr, X86::VEXTRACTF128mr, X86::VEXTRACTI128mr },
+  { X86::VEXTRACTF128rr, X86::VEXTRACTF128rr, X86::VEXTRACTI128rr },
+  { X86::VINSERTF128rm,  X86::VINSERTF128rm,  X86::VINSERTI128rm },
+  { X86::VINSERTF128rr,  X86::VINSERTF128rr,  X86::VINSERTI128rr },
+  { X86::VPERM2F128rm,   X86::VPERM2F128rm,   X86::VPERM2I128rm },
+  { X86::VPERM2F128rr,   X86::VPERM2F128rr,   X86::VPERM2I128rr }
 };
 
 // FIXME: Some shuffle and unpack instructions have equivalents in different
@@ -3603,8 +3613,11 @@ void X86InstrInfo::setExecutionDomain(MachineInstr *MI, unsigned Domain) const {
   uint16_t dom = (MI->getDesc().TSFlags >> X86II::SSEDomainShift) & 3;
   assert(dom && "Not an SSE instruction");
   const unsigned *table = lookup(MI->getOpcode(), dom);
-  if (!table) // try the other table
+  if (!table) { // try the other table
+    assert((TM.getSubtarget<X86Subtarget>().hasAVX2() || Domain < 3) &&
+           "256-bit vector operations only available in AVX2");
     table = lookupAVX2(MI->getOpcode(), dom);
+  }
   assert(table && "Cannot change domain");
   MI->setDesc(get(table[Domain-1]));
 }

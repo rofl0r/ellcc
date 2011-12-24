@@ -40,50 +40,9 @@
 
 #include "llvm/Config/config.h" // for CXX_INCLUDE_ROOT
 
-// Include the necessary headers to interface with the Windows registry and
-// environment.
-#ifdef _MSC_VER
-  #define WIN32_LEAN_AND_MEAN
-  #define NOGDI
-  #define NOMINMAX
-  #include <Windows.h>
-#endif
-
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
 using namespace clang;
-
-/// \brief Utility function to add a system include directory to CC1 arguments.
-static void addSystemInclude(const ArgList &DriverArgs, ArgStringList &CC1Args,
-                             const Twine &Path) {
-  CC1Args.push_back("-internal-isystem");
-  CC1Args.push_back(DriverArgs.MakeArgString(Path));
-}
-
-/// \brief Utility function to add a system include directory with extern "C"
-/// semantics to CC1 arguments.
-///
-/// Note that this should be used rarely, and only for directories that
-/// historically and for legacy reasons are treated as having implicit extern
-/// "C" semantics. These semantics are *ignored* by and large today, but its
-/// important to preserve the preprocessor changes resulting from the
-/// classification.
-static void addExternCSystemInclude(const ArgList &DriverArgs,
-                                    ArgStringList &CC1Args, const Twine &Path) {
-  CC1Args.push_back("-internal-externc-isystem");
-  CC1Args.push_back(DriverArgs.MakeArgString(Path));
-}
-
-/// \brief Utility function to add a list of system include directories to CC1.
-static void addSystemIncludes(const ArgList &DriverArgs,
-                              ArgStringList &CC1Args,
-                              ArrayRef<StringRef> Paths) {
-  for (ArrayRef<StringRef>::iterator I = Paths.begin(), E = Paths.end();
-       I != E; ++I) {
-    CC1Args.push_back("-internal-isystem");
-    CC1Args.push_back(DriverArgs.MakeArgString(*I));
-  }
-}
 
 /// Darwin - Darwin tool chain for i386 and x86_64.
 
@@ -232,6 +191,8 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
 
   return Triple.getTriple();
 }
+
+void Generic_ELF::anchor() {}
 
 Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
                          const ActionList &Inputs) const {
@@ -440,6 +401,16 @@ void DarwinClang::AddLinkRuntimeLib(const ArgList &Args,
 
 void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
                                         ArgStringList &CmdArgs) const {
+  // Darwin only supports the compiler-rt based runtime libraries.
+  switch (GetRuntimeLibType(Args)) {
+  case ToolChain::RLT_CompilerRT:
+    break;
+  default:
+    getDriver().Diag(diag::err_drv_unsupported_rtlib_for_platform)
+      << Args.getLastArg(options::OPT_rtlib_EQ)->getValue(Args) << "darwin";
+    return;
+  }
+
   // Darwin doesn't support real static executables, don't link any runtime
   // libraries with -static.
   if (Args.hasArg(options::OPT_static))
@@ -464,6 +435,25 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
       AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_ios.a");
     } else {
       AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_osx.a");
+    }
+  }
+
+  // Add ASAN runtime library, if required. Dynamic libraries and bundles
+  // should not be linked with the runtime library.
+  if (Args.hasFlag(options::OPT_faddress_sanitizer,
+                   options::OPT_fno_address_sanitizer, false)) {
+    if (Args.hasArg(options::OPT_dynamiclib) ||
+        Args.hasArg(options::OPT_bundle)) return;
+    if (isTargetIPhoneOS()) {
+      getDriver().Diag(diag::err_drv_clang_unsupported_per_platform)
+        << "-faddress-sanitizer";
+    } else {
+      AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.asan_osx.a");
+
+      // The ASAN runtime library requires C++ and CoreFoundation.
+      AddCXXStdlibLibArgs(Args, CmdArgs);
+      CmdArgs.push_back("-framework");
+      CmdArgs.push_back("CoreFoundation");
     }
   }
 
@@ -1227,14 +1217,17 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(const Driver &D)
     static const char *const PPCLibDirs[] = { "/lib32", "/lib" };
     static const char *const PPCTriples[] = {
       "powerpc-linux-gnu",
-      "powerpc-unknown-linux-gnu"
+      "powerpc-unknown-linux-gnu",
+      "powerpc-suse-linux"
     };
     LibDirs.append(PPCLibDirs, PPCLibDirs + llvm::array_lengthof(PPCLibDirs));
     Triples.append(PPCTriples, PPCTriples + llvm::array_lengthof(PPCTriples));
   } else if (HostArch == llvm::Triple::ppc64) {
     static const char *const PPC64LibDirs[] = { "/lib64", "/lib" };
     static const char *const PPC64Triples[] = {
-      "powerpc64-unknown-linux-gnu"
+      "powerpc64-unknown-linux-gnu",
+      "powerpc64-suse-linux",
+      "ppc64-redhat-linux"
     };
     LibDirs.append(PPC64LibDirs,
                    PPC64LibDirs + llvm::array_lengthof(PPC64LibDirs));
@@ -1279,6 +1272,16 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
         continue;
       if (CandidateVersion <= Version)
         continue;
+
+      // Some versions of SUSE and Fedora on ppc64 put 32-bit libs
+      // in what would normally be GccInstallPath and put the 64-bit
+      // libs in a subdirectory named 64. We need the 64-bit libs
+      // for linking.
+      bool UseSlash64 = false;
+      if (HostArch == llvm::Triple::ppc64 &&
+            llvm::sys::fs::exists(LI->path() + "/64/crtbegin.o"))
+        UseSlash64 = true;
+
       if (!llvm::sys::fs::exists(LI->path() + "/crtbegin.o"))
         continue;
 
@@ -1289,6 +1292,7 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
       // Linux.
       GccInstallPath = LibDir + Suffixes[i] + "/" + VersionText.str();
       GccParentLibPath = GccInstallPath + InstallSuffixes[i];
+      if (UseSlash64) GccInstallPath = GccInstallPath + "/64";
       IsValid = true;
     }
   }
@@ -1363,6 +1367,73 @@ const char *Generic_GCC::GetDefaultRelocationModel() const {
 const char *Generic_GCC::GetForcedPicModel() const {
   return 0;
 }
+/// Hexagon Toolchain
+
+Hexagon_TC::Hexagon_TC(const HostInfo &Host, const llvm::Triple& Triple)
+  : ToolChain(Host, Triple) {
+  getProgramPaths().push_back(getDriver().getInstalledDir());
+  if (getDriver().getInstalledDir() != getDriver().Dir.c_str())
+    getProgramPaths().push_back(getDriver().Dir);
+}
+
+Hexagon_TC::~Hexagon_TC() {
+  // Free tool implementations.
+  for (llvm::DenseMap<unsigned, Tool*>::iterator
+         it = Tools.begin(), ie = Tools.end(); it != ie; ++it)
+    delete it->second;
+}
+
+Tool &Hexagon_TC::SelectTool(const Compilation &C,
+                             const JobAction &JA,
+                             const ActionList &Inputs) const {
+  Action::ActionClass Key;
+  //   if (JA.getKind () == Action::CompileJobClass)
+  //     Key = JA.getKind ();
+  //     else
+
+  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
+    Key = Action::AnalyzeJobClass;
+  else
+    Key = JA.getKind();
+  //   if ((JA.getKind () == Action::CompileJobClass)
+  //     && (JA.getType () != types::TY_LTO_BC)) {
+  //     Key = JA.getKind ();
+  //   }
+
+  Tool *&T = Tools[Key];
+  if (!T) {
+    switch (Key) {
+    case Action::InputClass:
+    case Action::BindArchClass:
+      assert(0 && "Invalid tool kind.");
+    case Action::AnalyzeJobClass:
+      T = new tools::Clang(*this); break;
+    case Action::AssembleJobClass:
+      T = new tools::hexagon::Assemble(*this); break;
+    case Action::LinkJobClass:
+      T = new tools::hexagon::Link(*this); break;
+    default:
+      assert(false && "Unsupported action for Hexagon target.");
+    }
+  }
+
+  return *T;
+}
+
+bool Hexagon_TC::IsUnwindTablesDefault() const {
+  // FIXME: Gross; we should probably have some separate target
+  // definition, possibly even reusing the one in clang.
+  return getArchName() == "x86_64";
+}
+
+const char *Hexagon_TC::GetDefaultRelocationModel() const {
+  return "static";
+}
+
+const char *Hexagon_TC::GetForcedPicModel() const {
+  return 0;
+} // End Hexagon
+
 
 /// TCEToolChain - A tool chain using the llvm bitcode tools to perform
 /// all subcommands. See http://tce.cs.tut.fi for our peculiar target.
@@ -1569,11 +1640,9 @@ Tool &NetBSD::SelectTool(const Compilation &C, const JobAction &JA,
 /// Minix - Minix tool chain which can call as(1) and ld(1) directly.
 
 Minix::Minix(const HostInfo &Host, const llvm::Triple& Triple)
-  : Generic_GCC(Host, Triple) {
+  : Generic_ELF(Host, Triple) {
   getFilePaths().push_back(getDriver().Dir + "/../lib");
   getFilePaths().push_back("/usr/lib");
-  getFilePaths().push_back("/usr/gnu/lib");
-  getFilePaths().push_back("/usr/gnu/lib/gcc/i686-pc-minix/4.4.3");
 }
 
 Tool &Minix::SelectTool(const Compilation &C, const JobAction &JA,
@@ -1841,13 +1910,24 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
   if (Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb)
     ExtraOpts.push_back("-X");
 
-  if (IsRedhat(Distro) || IsOpenSuse(Distro) || Distro == UbuntuMaverick ||
-      Distro == UbuntuNatty || Distro == UbuntuOneiric)
-    ExtraOpts.push_back("--hash-style=gnu");
+  const bool IsMips = Arch == llvm::Triple::mips ||
+                      Arch == llvm::Triple::mipsel ||
+                      Arch == llvm::Triple::mips64 ||
+                      Arch == llvm::Triple::mips64el;
 
-  if (IsDebian(Distro) || IsOpenSuse(Distro) || Distro == UbuntuLucid ||
-      Distro == UbuntuJaunty || Distro == UbuntuKarmic)
-    ExtraOpts.push_back("--hash-style=both");
+  // Do not use 'gnu' hash style for Mips targets because .gnu.hash
+  // and the MIPS ABI require .dynsym to be sorted in different ways.
+  // .gnu.hash needs symbols to be grouped by hash code whereas the MIPS
+  // ABI requires a mapping between the GOT and the symbol table.
+  if (!IsMips) {
+    if (IsRedhat(Distro) || IsOpenSuse(Distro) || Distro == UbuntuMaverick ||
+        Distro == UbuntuNatty || Distro == UbuntuOneiric)
+      ExtraOpts.push_back("--hash-style=gnu");
+
+    if (IsDebian(Distro) || IsOpenSuse(Distro) || Distro == UbuntuLucid ||
+        Distro == UbuntuJaunty || Distro == UbuntuKarmic)
+      ExtraOpts.push_back("--hash-style=both");
+  }
 
   if (IsRedhat(Distro))
     ExtraOpts.push_back("--no-add-needed");
@@ -1874,8 +1954,15 @@ Linux::Linux(const HostInfo &Host, const llvm::Triple &Triple)
                          getArch() == llvm::Triple::mipsel ||
                          getArch() == llvm::Triple::ppc);
 
-  const std::string Suffix32 = Arch == llvm::Triple::x86_64 ? "/32" : "";
-  const std::string Suffix64 = Arch == llvm::Triple::x86_64 ? "" : "/64";
+  StringRef Suffix32;
+  StringRef Suffix64;
+  if (Arch == llvm::Triple::x86_64 || Arch == llvm::Triple::ppc64) {
+    Suffix32 = "/32";
+    Suffix64 = "";
+  } else {
+    Suffix32 = "";
+    Suffix64 = "/64";
+  }
   const std::string Suffix = Is32Bits ? Suffix32 : Suffix64;
   const std::string Multilib = Is32Bits ? "lib32" : "lib64";
   const std::string MultiarchTriple = getMultiarchTriple(Triple, SysRoot);
@@ -2045,9 +2132,10 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   addExternCSystemInclude(DriverArgs, CC1Args, D.SysRoot + "/usr/include");
 }
 
-static bool addLibStdCXXIncludePaths(Twine Base, Twine TargetArchDir,
-                                     const ArgList &DriverArgs,
-                                     ArgStringList &CC1Args) {
+/// \brief Helper to add the thre variant paths for a libstdc++ installation.
+/*static*/ bool Linux::addLibStdCXXIncludePaths(Twine Base, Twine TargetArchDir,
+                                                const ArgList &DriverArgs,
+                                                ArgStringList &CC1Args) {
   if (!llvm::sys::fs::exists(Base))
     return false;
   addSystemInclude(DriverArgs, CC1Args, Base);
@@ -2192,323 +2280,4 @@ Tool &ELLCC::SelectTool(const Compilation &C, const JobAction &JA,
   }
 
   return *T;
-}
-
-Windows::Windows(const HostInfo &Host, const llvm::Triple& Triple)
-  : ToolChain(Host, Triple) {
-}
-
-Tool &Windows::SelectTool(const Compilation &C, const JobAction &JA,
-                          const ActionList &Inputs) const {
-  Action::ActionClass Key;
-  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
-    Key = Action::AnalyzeJobClass;
-  else
-    Key = JA.getKind();
-
-  bool UseIntegratedAs = C.getArgs().hasFlag(options::OPT_integrated_as,
-                                             options::OPT_no_integrated_as,
-                                             IsIntegratedAssemblerDefault());
-
-  Tool *&T = Tools[Key];
-  if (!T) {
-    switch (Key) {
-    case Action::InputClass:
-    case Action::BindArchClass:
-    case Action::LipoJobClass:
-    case Action::DsymutilJobClass:
-    case Action::VerifyJobClass:
-      llvm_unreachable("Invalid tool kind.");
-    case Action::PreprocessJobClass:
-    case Action::PrecompileJobClass:
-    case Action::AnalyzeJobClass:
-    case Action::CompileJobClass:
-      T = new tools::Clang(*this); break;
-    case Action::AssembleJobClass:
-      if (!UseIntegratedAs && getTriple().getEnvironment() == llvm::Triple::MachO)
-        T = new tools::darwin::Assemble(*this);
-      else
-        T = new tools::ClangAs(*this);
-      break;
-    case Action::LinkJobClass:
-      T = new tools::visualstudio::Link(*this); break;
-    }
-  }
-
-  return *T;
-}
-
-bool Windows::IsIntegratedAssemblerDefault() const {
-  return true;
-}
-
-bool Windows::IsUnwindTablesDefault() const {
-  // FIXME: Gross; we should probably have some separate target
-  // definition, possibly even reusing the one in clang.
-  return getArchName() == "x86_64";
-}
-
-const char *Windows::GetDefaultRelocationModel() const {
-  return "static";
-}
-
-const char *Windows::GetForcedPicModel() const {
-  if (getArchName() == "x86_64")
-    return "pic";
-  return 0;
-}
-
-// FIXME: This probably should goto to some platform utils place.
-#ifdef _MSC_VER
-
-/// \brief Read registry string.
-/// This also supports a means to look for high-versioned keys by use
-/// of a $VERSION placeholder in the key path.
-/// $VERSION in the key path is a placeholder for the version number,
-/// causing the highest value path to be searched for and used.
-/// I.e. "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\$VERSION".
-/// There can be additional characters in the component.  Only the numberic
-/// characters are compared.
-static bool getSystemRegistryString(const char *keyPath, const char *valueName,
-                                    char *value, size_t maxLength) {
-  HKEY hRootKey = NULL;
-  HKEY hKey = NULL;
-  const char* subKey = NULL;
-  DWORD valueType;
-  DWORD valueSize = maxLength - 1;
-  long lResult;
-  bool returnValue = false;
-
-  if (strncmp(keyPath, "HKEY_CLASSES_ROOT\\", 18) == 0) {
-    hRootKey = HKEY_CLASSES_ROOT;
-    subKey = keyPath + 18;
-  } else if (strncmp(keyPath, "HKEY_USERS\\", 11) == 0) {
-    hRootKey = HKEY_USERS;
-    subKey = keyPath + 11;
-  } else if (strncmp(keyPath, "HKEY_LOCAL_MACHINE\\", 19) == 0) {
-    hRootKey = HKEY_LOCAL_MACHINE;
-    subKey = keyPath + 19;
-  } else if (strncmp(keyPath, "HKEY_CURRENT_USER\\", 18) == 0) {
-    hRootKey = HKEY_CURRENT_USER;
-    subKey = keyPath + 18;
-  } else {
-    return false;
-  }
-
-  const char *placeHolder = strstr(subKey, "$VERSION");
-  char bestName[256];
-  bestName[0] = '\0';
-  // If we have a $VERSION placeholder, do the highest-version search.
-  if (placeHolder) {
-    const char *keyEnd = placeHolder - 1;
-    const char *nextKey = placeHolder;
-    // Find end of previous key.
-    while ((keyEnd > subKey) && (*keyEnd != '\\'))
-      keyEnd--;
-    // Find end of key containing $VERSION.
-    while (*nextKey && (*nextKey != '\\'))
-      nextKey++;
-    size_t partialKeyLength = keyEnd - subKey;
-    char partialKey[256];
-    if (partialKeyLength > sizeof(partialKey))
-      partialKeyLength = sizeof(partialKey);
-    strncpy(partialKey, subKey, partialKeyLength);
-    partialKey[partialKeyLength] = '\0';
-    HKEY hTopKey = NULL;
-    lResult = RegOpenKeyEx(hRootKey, partialKey, 0, KEY_READ, &hTopKey);
-    if (lResult == ERROR_SUCCESS) {
-      char keyName[256];
-      int bestIndex = -1;
-      double bestValue = 0.0;
-      DWORD index, size = sizeof(keyName) - 1;
-      for (index = 0; RegEnumKeyEx(hTopKey, index, keyName, &size, NULL,
-          NULL, NULL, NULL) == ERROR_SUCCESS; index++) {
-        const char *sp = keyName;
-        while (*sp && !isdigit(*sp))
-          sp++;
-        if (!*sp)
-          continue;
-        const char *ep = sp + 1;
-        while (*ep && (isdigit(*ep) || (*ep == '.')))
-          ep++;
-        char numBuf[32];
-        strncpy(numBuf, sp, sizeof(numBuf) - 1);
-        numBuf[sizeof(numBuf) - 1] = '\0';
-        double value = strtod(numBuf, NULL);
-        if (value > bestValue) {
-          bestIndex = (int)index;
-          bestValue = value;
-          strcpy(bestName, keyName);
-        }
-        size = sizeof(keyName) - 1;
-      }
-      // If we found the highest versioned key, open the key and get the value.
-      if (bestIndex != -1) {
-        // Append rest of key.
-        strncat(bestName, nextKey, sizeof(bestName) - 1);
-        bestName[sizeof(bestName) - 1] = '\0';
-        // Open the chosen key path remainder.
-        lResult = RegOpenKeyEx(hTopKey, bestName, 0, KEY_READ, &hKey);
-        if (lResult == ERROR_SUCCESS) {
-          lResult = RegQueryValueEx(hKey, valueName, NULL, &valueType,
-            (LPBYTE)value, &valueSize);
-          if (lResult == ERROR_SUCCESS)
-            returnValue = true;
-          RegCloseKey(hKey);
-        }
-      }
-      RegCloseKey(hTopKey);
-    }
-  } else {
-    lResult = RegOpenKeyEx(hRootKey, subKey, 0, KEY_READ, &hKey);
-    if (lResult == ERROR_SUCCESS) {
-      lResult = RegQueryValueEx(hKey, valueName, NULL, &valueType,
-        (LPBYTE)value, &valueSize);
-      if (lResult == ERROR_SUCCESS)
-        returnValue = true;
-      RegCloseKey(hKey);
-    }
-  }
-  return returnValue;
-}
-
-/// \brief Get Windows SDK installation directory.
-static bool getWindowsSDKDir(std::string &path) {
-  char windowsSDKInstallDir[256];
-  // Try the Windows registry.
-  bool hasSDKDir = getSystemRegistryString(
-   "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Microsoft SDKs\\Windows\\$VERSION",
-                                           "InstallationFolder",
-                                           windowsSDKInstallDir,
-                                           sizeof(windowsSDKInstallDir) - 1);
-    // If we have both vc80 and vc90, pick version we were compiled with.
-  if (hasSDKDir && windowsSDKInstallDir[0]) {
-    path = windowsSDKInstallDir;
-    return true;
-  }
-  return false;
-}
-
-  // Get Visual Studio installation directory.
-static bool getVisualStudioDir(std::string &path) {
-  // First check the environment variables that vsvars32.bat sets.
-  const char* vcinstalldir = getenv("VCINSTALLDIR");
-  if (vcinstalldir) {
-    char *p = const_cast<char *>(strstr(vcinstalldir, "\\VC"));
-    if (p)
-      *p = '\0';
-    path = vcinstalldir;
-    return true;
-  }
-
-  char vsIDEInstallDir[256];
-  char vsExpressIDEInstallDir[256];
-  // Then try the windows registry.
-  bool hasVCDir = getSystemRegistryString(
-    "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\$VERSION",
-    "InstallDir", vsIDEInstallDir, sizeof(vsIDEInstallDir) - 1);
-  bool hasVCExpressDir = getSystemRegistryString(
-    "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VCExpress\\$VERSION",
-    "InstallDir", vsExpressIDEInstallDir, sizeof(vsExpressIDEInstallDir) - 1);
-    // If we have both vc80 and vc90, pick version we were compiled with.
-  if (hasVCDir && vsIDEInstallDir[0]) {
-    char *p = (char*)strstr(vsIDEInstallDir, "\\Common7\\IDE");
-    if (p)
-      *p = '\0';
-    path = vsIDEInstallDir;
-    return true;
-  }
-
-  if (hasVCExpressDir && vsExpressIDEInstallDir[0]) {
-    char *p = (char*)strstr(vsExpressIDEInstallDir, "\\Common7\\IDE");
-    if (p)
-      *p = '\0';
-    path = vsExpressIDEInstallDir;
-    return true;
-  }
-
-  // Try the environment.
-  const char *vs100comntools = getenv("VS100COMNTOOLS");
-  const char *vs90comntools = getenv("VS90COMNTOOLS");
-  const char *vs80comntools = getenv("VS80COMNTOOLS");
-  const char *vscomntools = NULL;
-
-  // Try to find the version that we were compiled with
-  if(false) {}
-  #if (_MSC_VER >= 1600)  // VC100
-  else if(vs100comntools) {
-    vscomntools = vs100comntools;
-  }
-  #elif (_MSC_VER == 1500) // VC80
-  else if(vs90comntools) {
-    vscomntools = vs90comntools;
-  }
-  #elif (_MSC_VER == 1400) // VC80
-  else if(vs80comntools) {
-    vscomntools = vs80comntools;
-  }
-  #endif
-  // Otherwise find any version we can
-  else if (vs100comntools)
-    vscomntools = vs100comntools;
-  else if (vs90comntools)
-    vscomntools = vs90comntools;
-  else if (vs80comntools)
-    vscomntools = vs80comntools;
-
-  if (vscomntools && *vscomntools) {
-    const char *p = strstr(vscomntools, "\\Common7\\Tools");
-    path = p ? std::string(vscomntools, p) : vscomntools;
-    return true;
-  }
-  return false;
-}
-
-#endif // _MSC_VER
-
-void Windows::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
-                                        ArgStringList &CC1Args) const {
-  if (DriverArgs.hasArg(options::OPT_nostdinc))
-    return;
-
-  if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
-    llvm::sys::Path P(getDriver().ResourceDir);
-    P.appendComponent("include");
-    addSystemInclude(DriverArgs, CC1Args, P.str());
-  }
-
-  if (DriverArgs.hasArg(options::OPT_nostdlibinc))
-    return;
-
-  std::string VSDir;
-  std::string WindowsSDKDir;
-
-#ifdef _MSC_VER
-  // When built with access to the proper Windows APIs, try to actually find
-  // the correct include paths first.
-  if (getVisualStudioDir(VSDir)) {
-    addSystemInclude(DriverArgs, CC1Args, VSDir + "\\VC\\include");
-    if (getWindowsSDKDir(WindowsSDKDir))
-      addSystemInclude(DriverArgs, CC1Args, WindowsSDKDir + "\\include");
-    else
-      addSystemInclude(DriverArgs, CC1Args,
-                       VSDir + "\\VC\\PlatformSDK\\Include");
-    return;
-  }
-#endif // _MSC_VER
-
-  // As a fallback, select default install paths.
-  const StringRef Paths[] = {
-    "C:/Program Files/Microsoft Visual Studio 10.0/VC/include",
-    "C:/Program Files/Microsoft Visual Studio 9.0/VC/include",
-    "C:/Program Files/Microsoft Visual Studio 9.0/VC/PlatformSDK/Include",
-    "C:/Program Files/Microsoft Visual Studio 8/VC/include",
-    "C:/Program Files/Microsoft Visual Studio 8/VC/PlatformSDK/Include"
-  };
-  addSystemIncludes(DriverArgs, CC1Args, Paths);
-}
-
-void Windows::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
-                                           ArgStringList &CC1Args) const {
-  // FIXME: There should probably be logic here to find libc++ on Windows.
 }

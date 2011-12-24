@@ -34,13 +34,14 @@
 #include "LiveRangeEdit.h"
 #include "RenderMachineFunction.h"
 #include "Spiller.h"
-#include "Splitter.h"
 #include "VirtRegMap.h"
 #include "RegisterCoalescer.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/CalcSpillWeights.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/RegAllocPBQP.h"
+#include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -68,11 +69,6 @@ pbqpCoalescing("pbqp-coalescing",
                 cl::desc("Attempt coalescing during PBQP register allocation."),
                 cl::init(false), cl::Hidden);
 
-static cl::opt<bool>
-pbqpPreSplitting("pbqp-pre-splitting",
-                 cl::desc("Pre-split before PBQP register allocation."),
-                 cl::init(false), cl::Hidden);
-
 namespace {
 
 ///
@@ -93,7 +89,6 @@ public:
     initializeCalculateSpillWeightsPass(*PassRegistry::getPassRegistry());
     initializeLiveStacksPass(*PassRegistry::getPassRegistry());
     initializeMachineLoopInfoPass(*PassRegistry::getPassRegistry());
-    initializeLoopSplitterPass(*PassRegistry::getPassRegistry());
     initializeVirtRegMapPass(*PassRegistry::getPassRegistry());
     initializeRenderMachineFunctionPass(*PassRegistry::getPassRegistry());
   }
@@ -444,6 +439,9 @@ void PBQPBuilderWithCoalescing::addVirtRegCoalesce(
 
 
 void RegAllocPBQP::getAnalysisUsage(AnalysisUsage &au) const {
+  au.setPreservesCFG();
+  au.addRequired<AliasAnalysis>();
+  au.addPreserved<AliasAnalysis>();
   au.addRequired<SlotIndexes>();
   au.addPreserved<SlotIndexes>();
   au.addRequired<LiveIntervals>();
@@ -454,10 +452,10 @@ void RegAllocPBQP::getAnalysisUsage(AnalysisUsage &au) const {
   au.addRequired<CalculateSpillWeights>();
   au.addRequired<LiveStacks>();
   au.addPreserved<LiveStacks>();
+  au.addRequired<MachineDominatorTree>();
+  au.addPreserved<MachineDominatorTree>();
   au.addRequired<MachineLoopInfo>();
   au.addPreserved<MachineLoopInfo>();
-  if (pbqpPreSplitting)
-    au.addRequired<LoopSplitter>();
   au.addRequired<VirtRegMap>();
   au.addRequired<RenderMachineFunction>();
   MachineFunctionPass::getAnalysisUsage(au);

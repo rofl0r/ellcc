@@ -40,7 +40,8 @@ class DependentFunctionTemplateSpecializationInfo;
 class TypeLoc;
 class UnresolvedSetImpl;
 class LabelStmt;
-
+class Module;
+  
 /// \brief A container of type source information.
 ///
 /// A client can read the relevant info using TypeLoc wrappers, e.g:
@@ -66,6 +67,7 @@ public:
 
 /// TranslationUnitDecl - The top declaration context.
 class TranslationUnitDecl : public Decl, public DeclContext {
+  virtual void anchor();
   ASTContext &Ctx;
 
   /// The (most recently entered) anonymous namespace for this
@@ -98,6 +100,7 @@ public:
 /// NamedDecl - This represents a decl with a name.  Many decls have names such
 /// as ObjCMethodDecl, but not @class, etc.
 class NamedDecl : public Decl {
+  virtual void anchor();
   /// Name - The name of this declaration, which is typically a normal
   /// identifier but may also be a special kind of name (C++
   /// constructor, Objective-C selector, etc.)
@@ -319,6 +322,7 @@ inline raw_ostream &operator<<(raw_ostream &OS, const NamedDecl &ND) {
 /// location of the statement.  For GNU local labels (__label__), the decl
 /// location is where the __label__ is.
 class LabelDecl : public NamedDecl {
+  virtual void anchor();
   LabelStmt *TheStmt;
   /// LocStart - For normal labels, this is the same as the main declaration
   /// label, i.e., the location of the identifier; for GNU local labels,
@@ -354,6 +358,7 @@ public:
 
 /// NamespaceDecl - Represent a C++ namespace.
 class NamespaceDecl : public NamedDecl, public DeclContext {
+  virtual void anchor();
   bool IsInline : 1;
 
   /// LocStart - The starting location of the source range, pointing
@@ -497,6 +502,7 @@ public:
 /// an lvalue) a function (in which case it is a function designator) or
 /// an enum constant.
 class ValueDecl : public NamedDecl {
+  virtual void anchor();
   QualType DeclType;
 
 protected:
@@ -506,6 +512,12 @@ protected:
 public:
   QualType getType() const { return DeclType; }
   void setType(QualType newType) { DeclType = newType; }
+
+  /// \brief Determine whether this symbol is weakly-imported,
+  ///        or declared with the weak or weak-ref attr.
+  bool isWeak() const {
+    return hasAttr<WeakAttr>() || hasAttr<WeakRefAttr>() || isWeakImported();
+  }
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -657,8 +669,9 @@ struct EvaluatedStmt {
   /// integral constant expression.
   bool CheckingICE : 1;
 
-  /// \brief Whether this statement is an integral constant
-  /// expression. Only valid if CheckedICE is true.
+  /// \brief Whether this statement is an integral constant expression,
+  /// or in C++11, whether the statement is a constant expression. Only
+  /// valid if CheckedICE is true.
   bool IsICE : 1;
 
   Stmt *Value;
@@ -1012,41 +1025,19 @@ public:
   /// \endcode
   bool extendsLifetimeOfTemporary() const;
 
-  EvaluatedStmt *EnsureEvaluatedStmt() const {
-    EvaluatedStmt *Eval = Init.dyn_cast<EvaluatedStmt *>();
-    if (!Eval) {
-      Stmt *S = Init.get<Stmt *>();
-      Eval = new (getASTContext()) EvaluatedStmt;
-      Eval->Value = S;
-      Init = Eval;
-    }
-    return Eval;
-  }
+  /// \brief Determine whether this variable's value can be used in a
+  /// constant expression, according to the relevant language standard.
+  /// This only checks properties of the declaration, and does not check
+  /// whether the initializer is in fact a constant expression.
+  bool isUsableInConstantExpressions() const;
 
-  /// \brief Check whether we are in the process of checking whether the
-  /// initializer can be evaluated.
-  bool isEvaluatingValue() const {
-    if (EvaluatedStmt *Eval = Init.dyn_cast<EvaluatedStmt *>())
-      return Eval->IsEvaluating;
+  EvaluatedStmt *ensureEvaluatedStmt() const;
 
-    return false;
-  }
-
-  /// \brief Note that we now are checking whether the initializer can be
-  /// evaluated.
-  void setEvaluatingValue() const {
-    EvaluatedStmt *Eval = EnsureEvaluatedStmt();
-    Eval->IsEvaluating = true;
-  }
-
-  /// \brief Note that constant evaluation has computed the given
-  /// value for this variable's initializer.
-  void setEvaluatedValue(const APValue &Value) const {
-    EvaluatedStmt *Eval = EnsureEvaluatedStmt();
-    Eval->IsEvaluating = false;
-    Eval->WasEvaluated = true;
-    Eval->Evaluated = Value;
-  }
+  /// \brief Attempt to evaluate the value of the initializer attached to this
+  /// declaration, and produce notes explaining why it cannot be evaluated or is
+  /// not a constant expression. Returns true if evaluation succeeded.
+  /// The value can be obtained by calling getEvaluatedValue.
+  bool evaluateValue(llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 
   /// \brief Return the already-evaluated value of this variable's
   /// initializer, or NULL if the value is not yet known. Returns pointer
@@ -1068,8 +1059,9 @@ public:
     return false;
   }
 
-  /// \brief Determines whether the initializer is an integral
-  /// constant expression.
+  /// \brief Determines whether the initializer is an integral constant
+  /// expression, or in C++11, whether the initializer is a constant
+  /// expression.
   ///
   /// \pre isInitKnownICE()
   bool isInitICE() const {
@@ -1078,30 +1070,9 @@ public:
     return Init.get<EvaluatedStmt *>()->IsICE;
   }
 
-  /// \brief Check whether we are in the process of checking the initializer
-  /// is an integral constant expression.
-  bool isCheckingICE() const {
-    if (EvaluatedStmt *Eval = Init.dyn_cast<EvaluatedStmt *>())
-      return Eval->CheckingICE;
-
-    return false;
-  }
-
-  /// \brief Note that we now are checking whether the initializer is an
-  /// integral constant expression.
-  void setCheckingICE() const {
-    EvaluatedStmt *Eval = EnsureEvaluatedStmt();
-    Eval->CheckingICE = true;
-  }
-
-  /// \brief Note that we now know whether the initializer is an
-  /// integral constant expression.
-  void setInitKnownICE(bool IsICE) const {
-    EvaluatedStmt *Eval = EnsureEvaluatedStmt();
-    Eval->CheckingICE = false;
-    Eval->CheckedICE = true;
-    Eval->IsICE = IsICE;
-  }
+  /// \brief Determine whether the value of the initializer attached to this
+  /// declaration is an integral constant expression.
+  bool checkInitIsICE() const;
 
   void setCXXDirectInitializer(bool T) { VarDeclBits.HasCXXDirectInit = T; }
 
@@ -1177,6 +1148,7 @@ public:
 };
 
 class ImplicitParamDecl : public VarDecl {
+  virtual void anchor();
 public:
   static ImplicitParamDecl *Create(ASTContext &C, DeclContext *DC,
                                    SourceLocation IdLoc, IdentifierInfo *Id,
@@ -1909,6 +1881,10 @@ public:
   /// be implicitly instantiated.
   bool isImplicitlyInstantiable() const;
 
+  /// \brief Determines if the given function was instantiated from a
+  /// function template.
+  bool isTemplateInstantiation() const;
+
   /// \brief Retrieve the function declaration from which this function could
   /// be instantiated, if it is an instantiation (rather than a non-template
   /// or a specialization, for example).
@@ -2176,6 +2152,7 @@ public:
 /// field injected from an anonymous union/struct into the parent scope.
 /// IndirectFieldDecl are always implicit.
 class IndirectFieldDecl : public ValueDecl {
+  virtual void anchor();
   NamedDecl **Chaining;
   unsigned ChainingSize;
 
@@ -2215,6 +2192,7 @@ public:
 /// TypeDecl - Represents a declaration of a type.
 ///
 class TypeDecl : public NamedDecl {
+  virtual void anchor();
   /// TypeForDecl - This indicates the Type object that represents
   /// this TypeDecl.  It is a cache maintained by
   /// ASTContext::getTypedefType, ASTContext::getTagDeclType, and
@@ -2256,6 +2234,7 @@ public:
 
 /// Base class for declarations which introduce a typedef-name.
 class TypedefNameDecl : public TypeDecl, public Redeclarable<TypedefNameDecl> {
+  virtual void anchor();
   /// UnderlyingType - This is the type the typedef is set to.
   TypeSourceInfo *TInfo;
 
@@ -2583,6 +2562,7 @@ public:
 /// EnumDecl - Represents an enum.  As an extension, we allow forward-declared
 /// enums.
 class EnumDecl : public TagDecl {
+  virtual void anchor();
   /// IntegerType - This represent the integer type that the enum corresponds
   /// to for code generation purposes.  Note that the enumerator constants may
   /// have a different type than this does.
@@ -2902,6 +2882,7 @@ private:
 };
 
 class FileScopeAsmDecl : public Decl {
+  virtual void anchor();
   StringLiteral *AsmString;
   SourceLocation RParenLoc;
   FileScopeAsmDecl(DeclContext *DC, StringLiteral *asmstring,
@@ -2976,6 +2957,7 @@ private:
   // FIXME: This can be packed into the bitfields in Decl.
   bool IsVariadic : 1;
   bool CapturesCXXThis : 1;
+  bool BlockMissingReturnType : 1;
   /// ParamInfo - new[]'d array of pointers to ParmVarDecls for the formal
   /// parameters of this function.  This is null if a prototype or if there are
   /// no formals.
@@ -2992,6 +2974,7 @@ protected:
   BlockDecl(DeclContext *DC, SourceLocation CaretLoc)
     : Decl(Block, DC, CaretLoc), DeclContext(Block),
       IsVariadic(false), CapturesCXXThis(false),
+      BlockMissingReturnType(true),
       ParamInfo(0), NumParams(0), Body(0),
       SignatureAsWritten(0), Captures(0), NumCaptures(0) {}
 
@@ -3049,6 +3032,8 @@ public:
   capture_const_iterator capture_end() const { return Captures + NumCaptures; }
 
   bool capturesCXXThis() const { return CapturesCXXThis; }
+  bool blockMissingReturnType() const { return BlockMissingReturnType; }
+  void setBlockMissingReturnType(bool val) { BlockMissingReturnType = val; }
 
   bool capturesVariable(const VarDecl *var) const;
 
@@ -3071,6 +3056,74 @@ public:
   }
 };
 
+/// \brief Describes a module import declaration, which makes the contents
+/// of the named module visible in the current translation unit.
+///
+/// An import declaration imports the named module (or submodule). For example:
+/// \code
+///   __import_module__ std.vector;
+/// \endcode
+///
+/// Import declarations can also be implicitly generated from #include/#import 
+/// directives.
+class ImportDecl : public Decl {
+  /// \brief The imported module, along with a bit that indicates whether
+  /// we have source-location information for each identifier in the module
+  /// name. 
+  ///
+  /// When the bit is false, we only have a single source location for the
+  /// end of the import declaration.
+  llvm::PointerIntPair<Module *, 1, bool> ImportedAndComplete;
+  
+  /// \brief The next import in the list of imports local to the translation
+  /// unit being parsed (not loaded from an AST file).
+  ImportDecl *NextLocalImport;
+  
+  friend class ASTReader;
+  friend class ASTDeclReader;
+  friend class ASTContext;
+  
+  ImportDecl(DeclContext *DC, SourceLocation ImportLoc, Module *Imported,
+             ArrayRef<SourceLocation> IdentifierLocs);
+
+  ImportDecl(DeclContext *DC, SourceLocation ImportLoc, Module *Imported,
+             SourceLocation EndLoc);
+
+  ImportDecl(EmptyShell Empty) : Decl(Import, Empty), NextLocalImport() { }
+  
+public:
+  /// \brief Create a new module import declaration.
+  static ImportDecl *Create(ASTContext &C, DeclContext *DC, 
+                            SourceLocation ImportLoc, Module *Imported,
+                            ArrayRef<SourceLocation> IdentifierLocs);
+  
+  /// \brief Create a new module import declaration for an implicitly-generated
+  /// import.
+  static ImportDecl *CreateImplicit(ASTContext &C, DeclContext *DC, 
+                                    SourceLocation ImportLoc, Module *Imported, 
+                                    SourceLocation EndLoc);
+  
+  /// \brief Create a new module import declaration.
+  static ImportDecl *CreateEmpty(ASTContext &C, unsigned NumLocations);
+  
+  /// \brief Retrieve the module that was imported by the import declaration.
+  Module *getImportedModule() const { return ImportedAndComplete.getPointer(); }
+  
+  /// \brief Retrieves the locations of each of the identifiers that make up
+  /// the complete module name in the import declaration.
+  ///
+  /// This will return an empty array if the locations of the individual
+  /// identifiers aren't available.
+  ArrayRef<SourceLocation> getIdentifierLocs() const;
+  
+  virtual SourceRange getSourceRange() const;
+  
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classof(const ImportDecl *D) { return true; }
+  static bool classofKind(Kind K) { return K == Import; }
+};
+  
+
 /// Insertion operator for diagnostics.  This allows sending NamedDecl's
 /// into a diagnostic with <<.
 inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
@@ -3078,6 +3131,12 @@ inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
   DB.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
                   DiagnosticsEngine::ak_nameddecl);
   return DB;
+}
+inline const PartialDiagnostic &operator<<(const PartialDiagnostic &PD,
+                                           const NamedDecl* ND) {
+  PD.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
+                  DiagnosticsEngine::ak_nameddecl);
+  return PD;
 }
 
 template<typename decl_type>

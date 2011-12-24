@@ -79,7 +79,7 @@ LLVMBuildTool	:= $(PROJ_SRC_ROOT)/utils/llvm-build/llvm-build
 # The files we are going to generate using llvm-build.
 LLVMBuildMakeFrag := $(PROJ_OBJ_ROOT)/Makefile.llvmbuild
 LLVMConfigLibraryDependenciesInc := \
-	$(PROJ_OBJ_ROOT)/tools/llvm-config-2/LibraryDependencies.inc
+	$(PROJ_OBJ_ROOT)/tools/llvm-config/LibraryDependencies.inc
 
 # This is for temporary backwards compatibility.
 ifndef TARGET_NATIVE_ARCH
@@ -319,9 +319,12 @@ ifeq ($(ENABLE_PROFILING),1)
   KEEP_SYMBOLS := 1
 endif
 
-#ifeq ($(ENABLE_VISIBILITY_INLINES_HIDDEN),1)
-#    CXX.Flags += -fvisibility-inlines-hidden
-#endif
+ifeq ($(ENABLE_VISIBILITY_INLINES_HIDDEN),1)
+# FIXME: clang's -fvisibility-inlines-hidden is broken for shared libs. PR11642.
+ifneq ($(ENABLE_SHARED),1)
+    CXX.Flags += -fvisibility-inlines-hidden
+endif
+endif
 
 ifdef ENABLE_EXPENSIVE_CHECKS
   # GNU libstdc++ uses RTTI if you define _GLIBCXX_DEBUG, which we did above.
@@ -528,9 +531,9 @@ ifndef LLVM_TBLGEN
   endif
 endif
 ifeq ($(LLVM_CROSS_COMPILING),1)
-  LLVM_CONFIG := $(BuildLLVMToolDir)/llvm-config-2$(BUILD_EXEEXT)
+  LLVM_CONFIG := $(BuildLLVMToolDir)/llvm-config$(BUILD_EXEEXT)
 else
-  LLVM_CONFIG := $(LLVMToolDir)/llvm-config-2$(EXEEXT)
+  LLVM_CONFIG := $(LLVMToolDir)/llvm-config$(EXEEXT)
 endif
 ifndef LLVMLD
 LLVMLD    := $(LLVMToolDir)/llvm-ld$(EXEEXT)
@@ -1503,12 +1506,19 @@ install-local::
 uninstall-local::
 	$(Echo) Uninstall circumvented with NO_INSTALL
 else
-DestTool = $(DESTDIR)$(PROJ_bindir)/$(TOOLEXENAME)
+
+ifdef INTERNAL_TOOL
+ToolBinDir = $(DESTDIR)$(PROJ_internal_prefix)/bin
+else
+ToolBinDir = $(DESTDIR)$(PROJ_bindir)
+endif
+DestTool = $(ToolBinDir)/$(TOOLEXENAME)
 
 install-local:: $(DestTool)
 
-$(DestTool): $(ToolBuildPath) $(DESTDIR)$(PROJ_bindir)
+$(DestTool): $(ToolBuildPath)
 	$(Echo) Installing $(BuildMode) $(DestTool)
+	$(Verb) $(MKDIR) $(ToolBinDir)
 	$(Verb) $(ProgInstall) $(ToolBuildPath) $(DestTool)
 
 uninstall-local::
@@ -1517,7 +1527,7 @@ uninstall-local::
 
 # TOOLALIAS install.
 ifdef TOOLALIAS
-DestToolAlias = $(DESTDIR)$(PROJ_bindir)/$(TOOLALIAS)$(EXEEXT)
+DestToolAlias = $(ToolBinDir)/$(TOOLALIAS)$(EXEEXT)
 
 install-local:: $(DestToolAlias)
 
@@ -1851,6 +1861,9 @@ $(ObjDir)/ARMGenDecoderTables.inc.tmp : ARM.td $(ObjDir)/.dir $(LLVM_TBLGEN)
 	$(Echo) "Building $(<F) decoder tables with tblgen"
 	$(Verb) $(LLVMTableGen) -gen-arm-decoder -o $(call SYSPATH, $@) $<
 
+$(ObjDir)/%GenDFAPacketizer.inc.tmp : %.td $(ObjDir)/.dir $(LLVM_TBLGEN)
+	$(Echo) "Building $(<F) DFA packetizer tables with tblgen"
+	$(Verb) $(LLVMTableGen) -gen-dfa-packetizer -o $(call SYSPATH, $@) $<
 
 clean-local::
 	-$(Verb) $(RM) -f $(INCFiles)
@@ -2276,6 +2289,7 @@ printvars::
 	$(Echo) "LLVM_SRC_ROOT: " '$(LLVM_SRC_ROOT)'
 	$(Echo) "LLVM_OBJ_ROOT: " '$(LLVM_OBJ_ROOT)'
 	$(Echo) "PROJ_prefix  : " '$(PROJ_prefix)'
+	$(Echo) "PROJ_internal_prefix  : " '$(PROJ_internal_prefix)'
 	$(Echo) "PROJ_bindir  : " '$(PROJ_bindir)'
 	$(Echo) "PROJ_libdir  : " '$(PROJ_libdir)'
 	$(Echo) "PROJ_etcdir  : " '$(PROJ_etcdir)'

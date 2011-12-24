@@ -73,9 +73,14 @@ Value *SCEVExpander::InsertNoopCastOfTo(Value *V, Type *Ty) {
          "InsertNoopCastOfTo cannot change sizes!");
 
   // Short-circuit unnecessary bitcasts.
-  if (Op == Instruction::BitCast && V->getType() == Ty)
-    return V;
-
+  if (Op == Instruction::BitCast) {
+    if (V->getType() == Ty)
+      return V;
+    if (CastInst *CI = dyn_cast<CastInst>(V)) {
+      if (CI->getOperand(0)->getType() == Ty)
+        return CI->getOperand(0);
+    }
+  }
   // Short-circuit unnecessary inttoptr<->ptrtoint casts.
   if ((Op == Instruction::PtrToInt || Op == Instruction::IntToPtr) &&
       SE.getTypeSizeInBits(Ty) == SE.getTypeSizeInBits(V->getType())) {
@@ -929,6 +934,36 @@ bool SCEVExpander::isExpandedAddRecExprPHI(PHINode *PN, Instruction *IncV,
   }
 }
 
+/// expandIVInc - Expand an IV increment at Builder's current InsertPos.
+/// Typically this is the LatchBlock terminator or IVIncInsertPos, but we may
+/// need to materialize IV increments elsewhere to handle difficult situations.
+Value *SCEVExpander::expandIVInc(PHINode *PN, Value *StepV, const Loop *L,
+                                 Type *ExpandTy, Type *IntTy,
+                                 bool useSubtract) {
+  Value *IncV;
+  // If the PHI is a pointer, use a GEP, otherwise use an add or sub.
+  if (ExpandTy->isPointerTy()) {
+    PointerType *GEPPtrTy = cast<PointerType>(ExpandTy);
+    // If the step isn't constant, don't use an implicitly scaled GEP, because
+    // that would require a multiply inside the loop.
+    if (!isa<ConstantInt>(StepV))
+      GEPPtrTy = PointerType::get(Type::getInt1Ty(SE.getContext()),
+                                  GEPPtrTy->getAddressSpace());
+    const SCEV *const StepArray[1] = { SE.getSCEV(StepV) };
+    IncV = expandAddToGEP(StepArray, StepArray+1, GEPPtrTy, IntTy, PN);
+    if (IncV->getType() != PN->getType()) {
+      IncV = Builder.CreateBitCast(IncV, PN->getType());
+      rememberInstruction(IncV);
+    }
+  } else {
+    IncV = useSubtract ?
+      Builder.CreateSub(PN, StepV, Twine(IVName) + ".iv.next") :
+      Builder.CreateAdd(PN, StepV, Twine(IVName) + ".iv.next");
+    rememberInstruction(IncV);
+  }
+  return IncV;
+}
+
 /// getAddRecExprPHILiterally - Helper for expandAddRecExprLiterally. Expand
 /// the base addrec, which is the addrec without any non-loop-dominating
 /// values, and return the PHI.
@@ -984,6 +1019,16 @@ SCEVExpander::getAddRecExprPHILiterally(const SCEVAddRecExpr *Normalized,
   BasicBlock *SaveInsertBB = Builder.GetInsertBlock();
   BasicBlock::iterator SaveInsertPt = Builder.GetInsertPoint();
 
+  // Another AddRec may need to be recursively expanded below. For example, if
+  // this AddRec is quadratic, the StepV may itself be an AddRec in this
+  // loop. Remove this loop from the PostIncLoops set before expanding such
+  // AddRecs. Otherwise, we cannot find a valid position for the step
+  // (i.e. StepV can never dominate its loop header).  Ideally, we could do
+  // SavedIncLoops.swap(PostIncLoops), but we generally have a single element,
+  // so it's not worth implementing SmallPtrSet::swap.
+  PostIncLoopSet SavedPostIncLoops = PostIncLoops;
+  PostIncLoops.clear();
+
   // Expand code for the start value.
   Value *StartV = expandCodeFor(Normalized->getStart(), ExpandTy,
                                 L->getHeader()->begin());
@@ -993,16 +1038,16 @@ SCEVExpander::getAddRecExprPHILiterally(const SCEVAddRecExpr *Normalized,
          SE.DT->properlyDominates(cast<Instruction>(StartV)->getParent(),
                                   L->getHeader()));
 
-  // Expand code for the step value. Insert instructions right before the
-  // terminator corresponding to the back-edge. Do this before creating the PHI
-  // so that PHI reuse code doesn't see an incomplete PHI. If the stride is
-  // negative, insert a sub instead of an add for the increment (unless it's a
-  // constant, because subtracts of constants are canonicalized to adds).
+  // Expand code for the step value. Do this before creating the PHI so that PHI
+  // reuse code doesn't see an incomplete PHI.
   const SCEV *Step = Normalized->getStepRecurrence(SE);
-  bool isPointer = ExpandTy->isPointerTy();
-  bool isNegative = !isPointer && isNonConstantNegative(Step);
-  if (isNegative)
+  // If the stride is negative, insert a sub instead of an add for the increment
+  // (unless it's a constant, because subtracts of constants are canonicalized
+  // to adds).
+  bool useSubtract = !ExpandTy->isPointerTy() && isNonConstantNegative(Step);
+  if (useSubtract)
     Step = SE.getNegativeSCEV(Step);
+  // Expand the step somewhere that dominates the loop header.
   Value *StepV = expandCodeFor(Step, IntTy, L->getHeader()->begin());
 
   // Create the PHI.
@@ -1023,39 +1068,24 @@ SCEVExpander::getAddRecExprPHILiterally(const SCEVAddRecExpr *Normalized,
       continue;
     }
 
-    // Create a step value and add it to the PHI. If IVIncInsertLoop is
-    // non-null and equal to the addrec's loop, insert the instructions
-    // at IVIncInsertPos.
+    // Create a step value and add it to the PHI.
+    // If IVIncInsertLoop is non-null and equal to the addrec's loop, insert the
+    // instructions at IVIncInsertPos.
     Instruction *InsertPos = L == IVIncInsertLoop ?
       IVIncInsertPos : Pred->getTerminator();
     Builder.SetInsertPoint(InsertPos);
-    Value *IncV;
-    // If the PHI is a pointer, use a GEP, otherwise use an add or sub.
-    if (isPointer) {
-      PointerType *GEPPtrTy = cast<PointerType>(ExpandTy);
-      // If the step isn't constant, don't use an implicitly scaled GEP, because
-      // that would require a multiply inside the loop.
-      if (!isa<ConstantInt>(StepV))
-        GEPPtrTy = PointerType::get(Type::getInt1Ty(SE.getContext()),
-                                    GEPPtrTy->getAddressSpace());
-      const SCEV *const StepArray[1] = { SE.getSCEV(StepV) };
-      IncV = expandAddToGEP(StepArray, StepArray+1, GEPPtrTy, IntTy, PN);
-      if (IncV->getType() != PN->getType()) {
-        IncV = Builder.CreateBitCast(IncV, PN->getType());
-        rememberInstruction(IncV);
-      }
-    } else {
-      IncV = isNegative ?
-        Builder.CreateSub(PN, StepV, Twine(IVName) + ".iv.next") :
-        Builder.CreateAdd(PN, StepV, Twine(IVName) + ".iv.next");
-      rememberInstruction(IncV);
-    }
+    Value *IncV = expandIVInc(PN, StepV, L, ExpandTy, IntTy, useSubtract);
+
     PN->addIncoming(IncV, Pred);
   }
 
   // Restore the original insert point.
   if (SaveInsertBB)
     restoreInsertPoint(SaveInsertBB, SaveInsertPt);
+
+  // After expanding subexpressions, restore the PostIncLoops set so the caller
+  // can ensure that IVIncrement dominates the current uses.
+  PostIncLoops = SavedPostIncLoops;
 
   // Remember this PHI, even in post-inc mode.
   InsertedValues.insert(PN);
@@ -1124,10 +1154,31 @@ Value *SCEVExpander::expandAddRecExprLiterally(const SCEVAddRecExpr *S) {
     // For an expansion to use the postinc form, the client must call
     // expandCodeFor with an InsertPoint that is either outside the PostIncLoop
     // or dominated by IVIncInsertPos.
-    assert((!isa<Instruction>(Result) ||
-            SE.DT->dominates(cast<Instruction>(Result),
-                             Builder.GetInsertPoint())) &&
-           "postinc expansion does not dominate use");
+    if (isa<Instruction>(Result)
+        && !SE.DT->dominates(cast<Instruction>(Result),
+                             Builder.GetInsertPoint())) {
+      // The induction variable's postinc expansion does not dominate this use.
+      // IVUsers tries to prevent this case, so it is rare. However, it can
+      // happen when an IVUser outside the loop is not dominated by the latch
+      // block. Adjusting IVIncInsertPos before expansion begins cannot handle
+      // all cases. Consider a phi outide whose operand is replaced during
+      // expansion with the value of the postinc user. Without fundamentally
+      // changing the way postinc users are tracked, the only remedy is
+      // inserting an extra IV increment. StepV might fold into PostLoopOffset,
+      // but hopefully expandCodeFor handles that.
+      bool useSubtract =
+        !ExpandTy->isPointerTy() && isNonConstantNegative(Step);
+      if (useSubtract)
+        Step = SE.getNegativeSCEV(Step);
+      // Expand the step somewhere that dominates the loop header.
+      BasicBlock *SaveInsertBB = Builder.GetInsertBlock();
+      BasicBlock::iterator SaveInsertPt = Builder.GetInsertPoint();
+      Value *StepV = expandCodeFor(Step, IntTy, L->getHeader()->begin());
+      // Restore the insertion point to the place where the caller has
+      // determined dominates all uses.
+      restoreInsertPoint(SaveInsertBB, SaveInsertPt);
+      Result = expandIVInc(PN, StepV, L, ExpandTy, IntTy, useSubtract);
+    }
   }
 
   // Re-apply any non-loop-dominating scale.

@@ -72,7 +72,7 @@ ARMInterworking("arm-interworking", cl::Hidden,
   cl::desc("Enable / disable ARM interworking (for debugging only)"),
   cl::init(true));
 
-namespace llvm {
+namespace {
   class ARMCCState : public CCState {
   public:
     ARMCCState(CallingConv::ID CC, bool isVarArg, MachineFunction &MF,
@@ -432,7 +432,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     addRegisterClass(MVT::i32, ARM::tGPRRegisterClass);
   else
     addRegisterClass(MVT::i32, ARM::GPRRegisterClass);
-  if (!UseSoftFloat && Subtarget->hasVFP2() && !Subtarget->isThumb1Only()) {
+  if (!TM.Options.UseSoftFloat && Subtarget->hasVFP2() &&
+      !Subtarget->isThumb1Only()) {
     addRegisterClass(MVT::f32, ARM::SPRRegisterClass);
     if (!Subtarget->isFPOnlySP())
       addRegisterClass(MVT::f64, ARM::DPRRegisterClass);
@@ -467,13 +468,23 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
 
     // v2f64 is legal so that QR subregs can be extracted as f64 elements, but
     // neither Neon nor VFP support any arithmetic operations on it.
+    // The same with v4f32. But keep in mind that vadd, vsub, vmul are natively
+    // supported for v4f32.
     setOperationAction(ISD::FADD, MVT::v2f64, Expand);
     setOperationAction(ISD::FSUB, MVT::v2f64, Expand);
     setOperationAction(ISD::FMUL, MVT::v2f64, Expand);
+    // FIXME: Code duplication: FDIV and FREM are expanded always, see
+    // ARMTargetLowering::addTypeForNEON method for details.
     setOperationAction(ISD::FDIV, MVT::v2f64, Expand);
     setOperationAction(ISD::FREM, MVT::v2f64, Expand);
+    // FIXME: Create unittest.
+    // In another words, find a way when "copysign" appears in DAG with vector
+    // operands.
     setOperationAction(ISD::FCOPYSIGN, MVT::v2f64, Expand);
+    // FIXME: Code duplication: SETCC has custom operation action, see
+    // ARMTargetLowering::addTypeForNEON method for details.
     setOperationAction(ISD::SETCC, MVT::v2f64, Expand);
+    // FIXME: Create unittest for FNEG and for FABS.
     setOperationAction(ISD::FNEG, MVT::v2f64, Expand);
     setOperationAction(ISD::FABS, MVT::v2f64, Expand);
     setOperationAction(ISD::FSQRT, MVT::v2f64, Expand);
@@ -486,11 +497,23 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::FLOG10, MVT::v2f64, Expand);
     setOperationAction(ISD::FEXP, MVT::v2f64, Expand);
     setOperationAction(ISD::FEXP2, MVT::v2f64, Expand);
+    // FIXME: Create unittest for FCEIL, FTRUNC, FRINT, FNEARBYINT, FFLOOR.
     setOperationAction(ISD::FCEIL, MVT::v2f64, Expand);
     setOperationAction(ISD::FTRUNC, MVT::v2f64, Expand);
     setOperationAction(ISD::FRINT, MVT::v2f64, Expand);
     setOperationAction(ISD::FNEARBYINT, MVT::v2f64, Expand);
     setOperationAction(ISD::FFLOOR, MVT::v2f64, Expand);
+    
+    setOperationAction(ISD::FSQRT, MVT::v4f32, Expand);
+    setOperationAction(ISD::FSIN, MVT::v4f32, Expand);
+    setOperationAction(ISD::FCOS, MVT::v4f32, Expand);
+    setOperationAction(ISD::FPOWI, MVT::v4f32, Expand);
+    setOperationAction(ISD::FPOW, MVT::v4f32, Expand);
+    setOperationAction(ISD::FLOG, MVT::v4f32, Expand);
+    setOperationAction(ISD::FLOG2, MVT::v4f32, Expand);
+    setOperationAction(ISD::FLOG10, MVT::v4f32, Expand);
+    setOperationAction(ISD::FEXP, MVT::v4f32, Expand);
+    setOperationAction(ISD::FEXP2, MVT::v4f32, Expand);
 
     // Neon does not support some operations on v1i64 and v2i64 types.
     setOperationAction(ISD::MUL, MVT::v1i64, Expand);
@@ -586,6 +609,10 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   if (!Subtarget->hasV5TOps() || Subtarget->isThumb1Only())
     setOperationAction(ISD::CTLZ, MVT::i32, Expand);
 
+  // These just redirect to CTTZ and CTLZ on ARM.
+  setOperationAction(ISD::CTTZ_ZERO_UNDEF  , MVT::i32  , Expand);
+  setOperationAction(ISD::CTLZ_ZERO_UNDEF  , MVT::i32  , Expand);
+
   // Only ARMv6 has BSWAP.
   if (!Subtarget->hasV6Ops())
     setOperationAction(ISD::BSWAP, MVT::i32, Expand);
@@ -674,7 +701,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   }
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
 
-  if (!UseSoftFloat && Subtarget->hasVFP2() && !Subtarget->isThumb1Only()) {
+  if (!TM.Options.UseSoftFloat && Subtarget->hasVFP2() &&
+      !Subtarget->isThumb1Only()) {
     // Turn f64->i64 into VMOVRRD, i64 -> f64 to VMOVDRR
     // iff target supports vfp2.
     setOperationAction(ISD::BITCAST, MVT::i64, Custom);
@@ -712,7 +740,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::FCOS,      MVT::f64, Expand);
   setOperationAction(ISD::FREM,      MVT::f64, Expand);
   setOperationAction(ISD::FREM,      MVT::f32, Expand);
-  if (!UseSoftFloat && Subtarget->hasVFP2() && !Subtarget->isThumb1Only()) {
+  if (!TM.Options.UseSoftFloat && Subtarget->hasVFP2() &&
+      !Subtarget->isThumb1Only()) {
     setOperationAction(ISD::FCOPYSIGN, MVT::f64, Custom);
     setOperationAction(ISD::FCOPYSIGN, MVT::f32, Custom);
   }
@@ -723,7 +752,7 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
   setOperationAction(ISD::FMA, MVT::f32, Expand);
 
   // Various VFP goodness
-  if (!UseSoftFloat && !Subtarget->isThumb1Only()) {
+  if (!TM.Options.UseSoftFloat && !Subtarget->isThumb1Only()) {
     // int <-> fp are custom expanded into bit_convert + ARMISD ops.
     if (Subtarget->hasVFP2()) {
       setOperationAction(ISD::SINT_TO_FP, MVT::i32, Custom);
@@ -751,7 +780,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
 
   setStackPointerRegisterToSaveRestore(ARM::SP);
 
-  if (UseSoftFloat || Subtarget->isThumb1Only() || !Subtarget->hasVFP2())
+  if (TM.Options.UseSoftFloat || Subtarget->isThumb1Only() ||
+      !Subtarget->hasVFP2())
     setSchedulingPreference(Sched::RegPressure);
   else
     setSchedulingPreference(Sched::Hybrid);
@@ -1092,7 +1122,8 @@ CCAssignFn *ARMTargetLowering::CCAssignFnForNode(CallingConv::ID CC,
     if (!Subtarget->isAAPCS_ABI())
       return (Return ? RetCC_ARM_APCS : CC_ARM_APCS);
     else if (Subtarget->hasVFP2() &&
-             FloatABIType == FloatABI::Hard && !isVarArg)
+             getTargetMachine().Options.FloatABIType == FloatABI::Hard &&
+             !isVarArg)
       return (Return ? RetCC_ARM_AAPCS_VFP : CC_ARM_AAPCS_VFP);
     return (Return ? RetCC_ARM_AAPCS : CC_ARM_AAPCS);
   }
@@ -2951,7 +2982,7 @@ SDValue ARMTargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
 
   assert(LHS.getValueType() == MVT::f32 || LHS.getValueType() == MVT::f64);
 
-  if (UnsafeFPMath &&
+  if (getTargetMachine().Options.UnsafeFPMath &&
       (CC == ISD::SETEQ || CC == ISD::SETOEQ ||
        CC == ISD::SETNE || CC == ISD::SETUNE)) {
     SDValue Result = OptimizeVFPBrcond(Op, DAG);
@@ -3978,9 +4009,8 @@ SDValue ARMTargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
       }
 
       // Use vmov.f32 to materialize other v2f32 and v4f32 splats.
-      if (VT == MVT::v2f32 || VT == MVT::v4f32) {
-        ConstantFPSDNode *C = cast<ConstantFPSDNode>(Op.getOperand(0));
-        int ImmVal = ARM_AM::getFP32Imm(C->getValueAPF());
+      if ((VT == MVT::v2f32 || VT == MVT::v4f32) && SplatBitSize == 32) {
+        int ImmVal = ARM_AM::getFP32Imm(SplatBits);
         if (ImmVal != -1) {
           SDValue Val = DAG.getTargetConstant(ImmVal, MVT::i32);
           return DAG.getNode(ARMISD::VMOVFPIMM, dl, VT, Val);
@@ -5762,7 +5792,12 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
                              MachineMemOperand::MOLoad |
                              MachineMemOperand::MOVolatile, 4, 4);
 
-  BuildMI(DispatchBB, dl, TII->get(ARM::eh_sjlj_dispatchsetup));
+  if (AFI->isThumb1OnlyFunction())
+    BuildMI(DispatchBB, dl, TII->get(ARM::tInt_eh_sjlj_dispatchsetup));
+  else if (!Subtarget->hasVFP2())
+    BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup_nofp));
+  else 
+    BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup));
 
   unsigned NumLPads = LPadList.size();
   if (Subtarget->isThumb2()) {
@@ -6010,7 +6045,7 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
     // executed.
     for (MachineBasicBlock::reverse_iterator
            II = BB->rbegin(), IE = BB->rend(); II != IE; ++II) {
-      if (!II->getDesc().isCall()) continue;
+      if (!II->isCall()) continue;
 
       DenseMap<unsigned, bool> DefRegs;
       for (MachineInstr::mop_iterator
@@ -6421,13 +6456,13 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 
 void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
                                                       SDNode *Node) const {
-  const MCInstrDesc *MCID = &MI->getDesc();
-  if (!MCID->hasPostISelHook()) {
+  if (!MI->hasPostISelHook()) {
     assert(!convertAddSubFlagsOpcode(MI->getOpcode()) &&
            "Pseudo flag-setting opcodes must be marked with 'hasPostISelHook'");
     return;
   }
 
+  const MCInstrDesc *MCID = &MI->getDesc();
   // Adjust potentially 's' setting instructions after isel, i.e. ADC, SBC, RSB,
   // RSC. Coming out of isel, they have an implicit CPSR def, but the optional
   // operand is still set to noreg. If needed, set the optional operand's
@@ -6454,7 +6489,7 @@ void ARMTargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
 
   // Any ARM instruction that sets the 's' bit should specify an optional
   // "cc_out" operand in the last operand position.
-  if (!MCID->hasOptionalDef() || !MCID->OpInfo[ccOutIdx].isOptionalDef()) {
+  if (!MI->hasOptionalDef() || !MCID->OpInfo[ccOutIdx].isOptionalDef()) {
     assert(!NewOpc && "Optional cc_out operand required");
     return;
   }
@@ -7948,7 +7983,7 @@ static SDValue PerformSELECT_CCCombine(SDNode *N, SelectionDAG &DAG,
     // will return -0, so vmin can only be used for unsafe math or if one of
     // the operands is known to be nonzero.
     if ((CC == ISD::SETLE || CC == ISD::SETOLE || CC == ISD::SETULE) &&
-        !UnsafeFPMath &&
+        !DAG.getTarget().Options.UnsafeFPMath &&
         !(DAG.isKnownNeverZero(LHS) || DAG.isKnownNeverZero(RHS)))
       break;
     Opcode = IsReversed ? ARMISD::FMAX : ARMISD::FMIN;
@@ -7970,7 +8005,7 @@ static SDValue PerformSELECT_CCCombine(SDNode *N, SelectionDAG &DAG,
     // will return +0, so vmax can only be used for unsafe math or if one of
     // the operands is known to be nonzero.
     if ((CC == ISD::SETGE || CC == ISD::SETOGE || CC == ISD::SETUGE) &&
-        !UnsafeFPMath &&
+        !DAG.getTarget().Options.UnsafeFPMath &&
         !(DAG.isKnownNeverZero(LHS) || DAG.isKnownNeverZero(RHS)))
       break;
     Opcode = IsReversed ? ARMISD::FMIN : ARMISD::FMAX;

@@ -191,6 +191,8 @@ def err_label_end_of_compound_statement : Error<
 def err_address_of_label_outside_fn : Error<
   "use of address-of-label extension outside of a function body">;
 def err_expected_string_literal : Error<"expected string literal">;
+def err_asm_operand_wide_string_literal : Error<
+  "cannot use wide string literal in 'asm'">;
 def err_expected_asm_operand : Error<
   "expected string literal or '[' for asm operand">, CatInlineAsm;
 def err_expected_selector_for_method : Error<
@@ -242,6 +244,8 @@ def ext_for_range : ExtWarn<
 def warn_cxx98_compat_for_range : Warning<
   "range-based for loop is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def err_for_range_expected_decl : Error<
+  "for range declaration must declare a variable">;
 def err_argument_required_after_attribute : Error<
   "argument required after attribute">;
 def err_missing_param : Error<"expected parameter declarator">;
@@ -311,16 +315,21 @@ def err_expected_minus_or_plus : Error<
   "method type specifier must start with '-' or '+'">;
 def err_objc_no_attributes_on_category : Error<
   "attributes may not be specified on a category">;
-def err_objc_missing_end : Error<"missing @end">;
+def err_objc_missing_end : Error<"missing '@end'">;
+def note_objc_container_start : Note<
+  "%select{class|protocol|category|class extension|implementation"
+  "|category implementation}0 started here">;
 def warn_objc_protocol_qualifier_missing_id : Warning<
   "protocol qualifiers without 'id' is archaic">;
 def err_objc_unknown_at : Error<"expected an Objective-C directive after '@'">;
 def err_illegal_super_cast : Error<
   "cannot cast 'super' (it isn't an expression)">;
 
-let CategoryName = "Automatic Reference Counting Issue" in {
+let CategoryName = "ARC Parse Issue" in {
 def err_arc_bridge_retain : Error<
   "unknown cast annotation __bridge_retain; did you mean __bridge_retained?">;
+def err_arc_bridge_cast_nonarc : Error<
+  "'%0' casts are only allowed when using ARC">;
 }
   
 def err_objc_illegal_visibility_spec : Error<
@@ -350,8 +359,8 @@ def err_missing_id_definition : Error<"cannot find definition of 'id'">;
 def err_missing_proto_definition : Error<
   "cannot find definition of 'Protocol'">;
 def err_missing_class_definition : Error<"cannot find definition of 'Class'">;
-def err_expected_implementation : Error<
-  "@end must appear in an @implementation context">;
+def err_expected_objc_container : Error<
+  "'@end' must appear in an Objective-C context">;
 def error_property_ivar_decl : Error<
   "property synthesize requires specification of an ivar">;
 def err_synthesized_property_name : Error<
@@ -378,6 +387,9 @@ def err_expected_equal_after_declarator : Error<
   "expected '=' after declarator">;
 def warn_parens_disambiguated_as_function_decl : Warning<
   "parentheses were disambiguated as a function declarator">;
+def warn_dangling_else : Warning<
+  "add explicit braces to avoid dangling else">,
+  InGroup<DanglingElse>;
 def err_expected_member_or_base_name : Error<
   "expected class member or base class name">;
 def err_expected_lbrace_after_base_specifiers : Error<

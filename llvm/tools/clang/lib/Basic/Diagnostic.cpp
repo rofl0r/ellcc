@@ -53,6 +53,7 @@ DiagnosticsEngine::DiagnosticsEngine(
 
   ErrorLimit = 0;
   TemplateBacktraceLimit = 0;
+  ConstexprBacktraceLimit = 0;
 
   Reset();
 }
@@ -823,6 +824,8 @@ StoredDiagnostic::~StoredDiagnostic() { }
 ///  DiagnosticConsumer should be included in the number of diagnostics
 ///  reported by DiagnosticsEngine.
 bool DiagnosticConsumer::IncludeInDiagnosticCounts() const { return true; }
+
+void IgnoringDiagConsumer::anchor() { }
 
 PartialDiagnostic::StorageAllocator::StorageAllocator() {
   for (unsigned I = 0; I != NumCached; ++I)

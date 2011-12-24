@@ -473,6 +473,7 @@ def HasSSE4A     : Predicate<"Subtarget->hasSSE4A()">;
 
 def HasAVX       : Predicate<"Subtarget->hasAVX()">;
 def HasAVX2      : Predicate<"Subtarget->hasAVX2()">;
+def HasXMM       : Predicate<"Subtarget->hasXMM()">;
 def HasXMMInt    : Predicate<"Subtarget->hasXMMInt()">;
 
 def HasPOPCNT    : Predicate<"Subtarget->hasPOPCNT()">;
@@ -480,6 +481,7 @@ def HasAES       : Predicate<"Subtarget->hasAES()">;
 def HasCLMUL     : Predicate<"Subtarget->hasCLMUL()">;
 def HasFMA3      : Predicate<"Subtarget->hasFMA3()">;
 def HasFMA4      : Predicate<"Subtarget->hasFMA4()">;
+def HasXOP       : Predicate<"Subtarget->hasXOP()">;
 def HasMOVBE     : Predicate<"Subtarget->hasMOVBE()">;
 def HasRDRAND    : Predicate<"Subtarget->hasRDRAND()">;
 def HasF16C      : Predicate<"Subtarget->hasF16C()">;
@@ -1502,6 +1504,9 @@ include "X86InstrFragmentsSIMD.td"
 // FMA - Fused Multiply-Add support (requires FMA)
 include "X86InstrFMA.td"
 
+// XOP
+include "X86InstrXOP.td"
+
 // SSE, MMX and 3DNow! vector support.
 include "X86InstrSSE.td"
 include "X86InstrMMX.td"
@@ -1523,10 +1528,11 @@ def : MnemonicAlias<"call", "calll">, Requires<[In32BitMode]>;
 def : MnemonicAlias<"call", "callq">, Requires<[In64BitMode]>;
 
 def : MnemonicAlias<"cbw",  "cbtw">;
+def : MnemonicAlias<"cwde", "cwtl">;
 def : MnemonicAlias<"cwd",  "cwtd">;
 def : MnemonicAlias<"cdq", "cltd">;
-def : MnemonicAlias<"cwde", "cwtl">;
 def : MnemonicAlias<"cdqe", "cltq">;
+def : MnemonicAlias<"cqo", "cqto">;
 
 // lret maps to lretl, it is not ambiguous with lretq.
 def : MnemonicAlias<"lret", "lretl">;

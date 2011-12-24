@@ -1,33 +1,24 @@
-// RUN: %clang_cc1 -triple i686-linux -fsyntax-only -verify -std=c++11 %s
-
-// This version of static_assert just requires a foldable value as the
-// expression, not an ICE.
-// FIXME: Once we implement the C++11 ICE rules, most uses of this here should
-// be converted to static_assert.
-#define static_assert_fold(expr, str) \
-    static_assert(__builtin_constant_p(expr), "not an integral constant expression"); \
-    static_assert(__builtin_constant_p(expr) ? expr : true, str)
+// RUN: %clang_cc1 -triple i686-linux -fsyntax-only -verify -std=c++11 -pedantic %s -Wno-comment
 
 namespace StaticAssertFoldTest {
 
 int x;
-static_assert_fold(++x, "test"); // expected-error {{not an integral constant expression}}
-static_assert_fold(false, "test"); // expected-error {{test}}
+static_assert(++x, "test"); // expected-error {{not an integral constant expression}}
+static_assert(false, "test"); // expected-error {{test}}
 
 }
 
-// FIXME: support const T& parameters here.
-//template<typename T> constexpr T id(const T &t) { return t; }
-template<typename T> constexpr T id(T t) { return t; }
-// FIXME: support templates here.
-//template<typename T> constexpr T min(const T &a, const T &b) {
-//  return a < b ? a : b;
-//}
-//template<typename T> constexpr T max(const T &a, const T &b) {
-//  return a < b ? b : a;
-//}
-constexpr int min(const int &a, const int &b) { return a < b ? a : b; }
-constexpr int max(const int &a, const int &b) { return a < b ? b : a; }
+typedef decltype(sizeof(char)) size_t;
+
+template<typename T> constexpr T id(const T &t) { return t; }
+template<typename T> constexpr T min(const T &a, const T &b) {
+  return a < b ? a : b;
+}
+template<typename T> constexpr T max(const T &a, const T &b) {
+  return a < b ? b : a;
+}
+template<typename T, size_t N> constexpr T *begin(T (&xs)[N]) { return xs; }
+template<typename T, size_t N> constexpr T *end(T (&xs)[N]) { return xs + N; }
 
 struct MemberZero {
   constexpr int zero() { return 0; }
@@ -46,34 +37,34 @@ namespace DerivedToVBaseCast {
   D d;
   constexpr B *p = &d;
   constexpr C *q = &d;
-  static_assert_fold((void*)p != (void*)q, "");
-  static_assert_fold((A*)p == (A*)q, "");
-  static_assert_fold((Aa*)p != (Aa*)q, "");
+  static_assert((void*)p != (void*)q, "");
+  static_assert((A*)p == (A*)q, "");
+  static_assert((Aa*)p != (Aa*)q, "");
 
   constexpr B &pp = d;
   constexpr C &qq = d;
-  static_assert_fold((void*)&pp != (void*)&qq, "");
-  static_assert_fold(&(A&)pp == &(A&)qq, "");
-  static_assert_fold(&(Aa&)pp != &(Aa&)qq, "");
+  static_assert((void*)&pp != (void*)&qq, "");
+  static_assert(&(A&)pp == &(A&)qq, "");
+  static_assert(&(Aa&)pp != &(Aa&)qq, "");
 
   constexpr V *v = p;
   constexpr V *w = q;
   constexpr V *x = (A*)p;
-  static_assert_fold(v == w, "");
-  static_assert_fold(v == x, "");
+  static_assert(v == w, "");
+  static_assert(v == x, "");
 
-  static_assert_fold((U*)&d == p, "");
-  static_assert_fold((U*)&d == q, "");
-  static_assert_fold((U*)&d == v, "");
-  static_assert_fold((U*)&d == w, "");
-  static_assert_fold((U*)&d == x, "");
+  static_assert((U*)&d == p, "");
+  static_assert((U*)&d == q, "");
+  static_assert((U*)&d == v, "");
+  static_assert((U*)&d == w, "");
+  static_assert((U*)&d == x, "");
 
   struct X {};
   struct Y1 : virtual X {};
   struct Y2 : X {};
   struct Z : Y1, Y2 {};
   Z z;
-  static_assert_fold((X*)(Y1*)&z != (X*)(Y2*)&z, "");
+  static_assert((X*)(Y1*)&z != (X*)(Y2*)&z, "");
 
 }
 
@@ -94,33 +85,37 @@ namespace TemplateArgumentConversion {
   template<int n> struct IntParam {};
 
   using IntParam0 = IntParam<0>;
-  // FIXME: This should be accepted once we implement the new ICE rules.
-  using IntParam0 = IntParam<id(0)>; // expected-error {{not an integral constant expression}}
-  using IntParam0 = IntParam<MemberZero().zero>; // expected-error {{did you mean to call it with no arguments?}} expected-error {{not an integral constant expression}}
+  using IntParam0 = IntParam<id(0)>;
+  using IntParam0 = IntParam<MemberZero().zero>; // expected-error {{did you mean to call it with no arguments?}}
 }
 
 namespace CaseStatements {
   void f(int n) {
     switch (n) {
     // FIXME: Produce the 'add ()' fixit for this.
-    case MemberZero().zero: // desired-error {{did you mean to call it with no arguments?}} expected-error {{not an integer constant expression}}
-    // FIXME: This should be accepted once we implement the new ICE rules.
-    case id(1): // expected-error {{not an integer constant expression}}
+    case MemberZero().zero: // desired-error {{did you mean to call it with no arguments?}} expected-error {{not an integer constant expression}} expected-note {{non-literal type '<bound member function type>'}}
+    case id(1):
       return;
     }
   }
 }
 
 extern int &Recurse1;
-int &Recurse2 = Recurse1, &Recurse1 = Recurse2;
-constexpr int &Recurse3 = Recurse2; // expected-error {{must be initialized by a constant expression}}
+int &Recurse2 = Recurse1; // expected-note 2{{declared here}} expected-note {{initializer of 'Recurse1' is not a constant expression}}
+int &Recurse1 = Recurse2; // expected-note {{declared here}} expected-note {{initializer of 'Recurse2' is not a constant expression}}
+constexpr int &Recurse3 = Recurse2; // expected-error {{must be initialized by a constant expression}} expected-note {{initializer of 'Recurse2' is not a constant expression}}
+
+extern const int RecurseA;
+const int RecurseB = RecurseA; // expected-note {{declared here}}
+const int RecurseA = 10;
+constexpr int RecurseC = RecurseB; // expected-error {{must be initialized by a constant expression}} expected-note {{initializer of 'RecurseB' is not a constant expression}}
 
 namespace MemberEnum {
   struct WithMemberEnum {
     enum E { A = 42 };
   } wme;
 
-  static_assert_fold(wme.A == 42, "");
+  static_assert(wme.A == 42, "");
 }
 
 namespace DefaultArguments {
@@ -132,11 +127,11 @@ constexpr int Sum(int a = 0, const int &b = 0, const int *c = &z, char d = 0) {
 const int four = 4;
 constexpr int eight = 8;
 constexpr const int twentyseven = 27;
-static_assert_fold(Sum() == 0, "");
-static_assert_fold(Sum(1) == 1, "");
-static_assert_fold(Sum(1, four) == 5, "");
-static_assert_fold(Sum(1, eight, &twentyseven) == 36, "");
-static_assert_fold(Sum(1, 2, &four, eight) == 15, "");
+static_assert(Sum() == 0, "");
+static_assert(Sum(1) == 1, "");
+static_assert(Sum(1, four) == 5, "");
+static_assert(Sum(1, eight, &twentyseven) == 36, "");
+static_assert(Sum(1, 2, &four, eight) == 15, "");
 
 }
 
@@ -144,18 +139,18 @@ namespace Ellipsis {
 
 // Note, values passed through an ellipsis can't actually be used.
 constexpr int F(int a, ...) { return a; }
-static_assert_fold(F(0) == 0, "");
-static_assert_fold(F(1, 0) == 1, "");
-static_assert_fold(F(2, "test") == 2, "");
-static_assert_fold(F(3, &F) == 3, "");
-int k = 0;
-static_assert_fold(F(4, k) == 3, ""); // expected-error {{constant expression}}
+static_assert(F(0) == 0, "");
+static_assert(F(1, 0) == 1, "");
+static_assert(F(2, "test") == 2, "");
+static_assert(F(3, &F) == 3, "");
+int k = 0; // expected-note {{here}}
+static_assert(F(4, k) == 3, ""); // expected-error {{constant expression}} expected-note {{read of non-const variable 'k'}}
 
 }
 
 namespace Recursion {
   constexpr int fib(int n) { return n > 1 ? fib(n-1) + fib(n-2) : n; }
-  static_assert_fold(fib(11) == 89, "");
+  static_assert(fib(11) == 89, "");
 
   constexpr int gcd_inner(int a, int b) {
     return b == 0 ? a : gcd_inner(b, a % b);
@@ -164,7 +159,7 @@ namespace Recursion {
     return gcd_inner(max(a, b), min(a, b));
   }
 
-  static_assert_fold(gcd(1749237, 5628959) == 7, "");
+  static_assert(gcd(1749237, 5628959) == 7, "");
 }
 
 namespace FunctionCast {
@@ -173,7 +168,7 @@ namespace FunctionCast {
   constexpr int f() { return 1; }
   typedef double (*DoubleFn)();
   typedef int (*IntFn)();
-  int a[(int)DoubleFn(f)()]; // expected-error {{variable length array}}
+  int a[(int)DoubleFn(f)()]; // expected-error {{variable length array}} expected-warning{{extension}}
   int b[(int)IntFn(f)()];    // ok
 }
 
@@ -184,9 +179,9 @@ namespace StaticMemberFunction {
   } s;
 
   constexpr int n = s.f(19);
-  static_assert_fold(S::f(19) == 800, "");
-  static_assert_fold(s.f(19) == 800, "");
-  static_assert_fold(n == 800, "");
+  static_assert(S::f(19) == 800, "");
+  static_assert(s.f(19) == 800, "");
+  static_assert(n == 800, "");
 
   constexpr int (*sf1)(int) = &S::f;
   constexpr int (*sf2)(int) = &s.f;
@@ -196,33 +191,33 @@ namespace StaticMemberFunction {
 namespace ParameterScopes {
 
   const int k = 42;
-  constexpr const int &ObscureTheTruth(const int &a) { return a; }
-  constexpr const int &MaybeReturnJunk(bool b, const int a) {
-    return ObscureTheTruth(b ? a : k);
+  constexpr const int &ObscureTheTruth(const int &a) { return a; } // expected-note 3{{reference to 'a' cannot be returned from a constexpr function}}
+  constexpr const int &MaybeReturnJunk(bool b, const int a) { // expected-note 2{{declared here}}
+    return ObscureTheTruth(b ? a : k); // expected-note 2{{in call to 'ObscureTheTruth(a)'}}
   }
-  static_assert_fold(MaybeReturnJunk(false, 0) == 42, ""); // ok
-  constexpr int a = MaybeReturnJunk(true, 0); // expected-error {{constant expression}}
+  static_assert(MaybeReturnJunk(false, 0) == 42, ""); // ok
+  constexpr int a = MaybeReturnJunk(true, 0); // expected-error {{constant expression}} expected-note {{in call to 'MaybeReturnJunk(1, 0)'}}
 
-  constexpr const int MaybeReturnNonstaticRef(bool b, const int a) {
+  constexpr const int MaybeReturnNonstaticRef(bool b, const int a) { // expected-note {{here}}
     // If ObscureTheTruth returns a reference to 'a', the result is not a
     // constant expression even though 'a' is still in scope.
-    return ObscureTheTruth(b ? a : k);
+    return ObscureTheTruth(b ? a : k); // expected-note {{in call to 'ObscureTheTruth(a)'}}
   }
-  static_assert_fold(MaybeReturnNonstaticRef(false, 0) == 42, ""); // ok
-  constexpr int b = MaybeReturnNonstaticRef(true, 0); // expected-error {{constant expression}}
+  static_assert(MaybeReturnNonstaticRef(false, 0) == 42, ""); // ok
+  constexpr int b = MaybeReturnNonstaticRef(true, 0); // expected-error {{constant expression}} expected-note {{in call to 'MaybeReturnNonstaticRef(1, 0)'}}
 
   constexpr int InternalReturnJunk(int n) {
     // FIXME: We should reject this: it never produces a constant expression.
-    return MaybeReturnJunk(true, n);
+    return MaybeReturnJunk(true, n); // expected-note {{in call to 'MaybeReturnJunk(1, 0)'}}
   }
-  constexpr int n3 = InternalReturnJunk(0); // expected-error {{must be initialized by a constant expression}}
+  constexpr int n3 = InternalReturnJunk(0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'InternalReturnJunk(0)'}}
 
   constexpr int LToR(int &n) { return n; }
   constexpr int GrabCallersArgument(bool which, int a, int b) {
     return LToR(which ? b : a);
   }
-  static_assert_fold(GrabCallersArgument(false, 1, 2) == 1, "");
-  static_assert_fold(GrabCallersArgument(true, 4, 8) == 8, "");
+  static_assert(GrabCallersArgument(false, 1, 2) == 1, "");
+  static_assert(GrabCallersArgument(true, 4, 8) == 8, "");
 
 }
 
@@ -233,12 +228,12 @@ namespace Pointers {
   }
 
   const int x = 1, y = 10, z = 100;
-  static_assert_fold(f(23, &x, &y, &z) == 788, "");
+  static_assert(f(23, &x, &y, &z) == 788, "");
 
   constexpr int g(int n, int a, int b, int c) {
     return f(n, &a, &b, &c);
   }
-  static_assert_fold(g(23, x, y, z) == 788, "");
+  static_assert(g(23, x, y, z) == 788, "");
 
 }
 
@@ -251,19 +246,19 @@ namespace FunctionPointers {
   constexpr auto Select(int n) -> int (*)(int) {
     return n == 2 ? &Double : n == 3 ? &Triple : n == 4 ? &Quadruple : 0;
   }
-  constexpr int Apply(int (*F)(int), int n) { return F(n); }
+  constexpr int Apply(int (*F)(int), int n) { return F(n); } // expected-note {{subexpression}}
 
-  static_assert_fold(1 + Apply(Select(4), 5) + Apply(Select(3), 7) == 42, "");
+  static_assert(1 + Apply(Select(4), 5) + Apply(Select(3), 7) == 42, "");
 
-  constexpr int Invalid = Apply(Select(0), 0); // expected-error {{must be initialized by a constant expression}}
+  constexpr int Invalid = Apply(Select(0), 0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'Apply(0, 0)'}}
 
 }
 
 namespace PointerComparison {
 
 int x, y;
-static_assert_fold(&x == &y, "false"); // expected-error {{false}}
-static_assert_fold(&x != &y, "");
+static_assert(&x == &y, "false"); // expected-error {{false}}
+static_assert(&x != &y, "");
 constexpr bool g1 = &x == &y;
 constexpr bool g2 = &x != &y;
 constexpr bool g3 = &x <= &y; // expected-error {{must be initialized by a constant expression}}
@@ -272,45 +267,66 @@ constexpr bool g5 = &x < &y; // expected-error {{must be initialized by a consta
 constexpr bool g6 = &x > &y; // expected-error {{must be initialized by a constant expression}}
 
 struct S { int x, y; } s;
-static_assert_fold(&s.x == &s.y, "false"); // expected-error {{false}}
-static_assert_fold(&s.x != &s.y, "");
-static_assert_fold(&s.x <= &s.y, "");
-static_assert_fold(&s.x >= &s.y, "false"); // expected-error {{false}}
-static_assert_fold(&s.x < &s.y, "");
-static_assert_fold(&s.x > &s.y, "false"); // expected-error {{false}}
+static_assert(&s.x == &s.y, "false"); // expected-error {{false}}
+static_assert(&s.x != &s.y, "");
+static_assert(&s.x <= &s.y, "");
+static_assert(&s.x >= &s.y, "false"); // expected-error {{false}}
+static_assert(&s.x < &s.y, "");
+static_assert(&s.x > &s.y, "false"); // expected-error {{false}}
 
-static_assert_fold(0 == &y, "false"); // expected-error {{false}}
-static_assert_fold(0 != &y, "");
+static_assert(0 == &y, "false"); // expected-error {{false}}
+static_assert(0 != &y, "");
 constexpr bool n3 = 0 <= &y; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n4 = 0 >= &y; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n5 = 0 < &y; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n6 = 0 > &y; // expected-error {{must be initialized by a constant expression}}
 
-static_assert_fold(&x == 0, "false"); // expected-error {{false}}
-static_assert_fold(&x != 0, "");
+static_assert(&x == 0, "false"); // expected-error {{false}}
+static_assert(&x != 0, "");
 constexpr bool n9 = &x <= 0; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n10 = &x >= 0; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n11 = &x < 0; // expected-error {{must be initialized by a constant expression}}
 constexpr bool n12 = &x > 0; // expected-error {{must be initialized by a constant expression}}
 
-static_assert_fold(&x == &x, "");
-static_assert_fold(&x != &x, "false"); // expected-error {{false}}
-static_assert_fold(&x <= &x, "");
-static_assert_fold(&x >= &x, "");
-static_assert_fold(&x < &x, "false"); // expected-error {{false}}
-static_assert_fold(&x > &x, "false"); // expected-error {{false}}
+static_assert(&x == &x, "");
+static_assert(&x != &x, "false"); // expected-error {{false}}
+static_assert(&x <= &x, "");
+static_assert(&x >= &x, "");
+static_assert(&x < &x, "false"); // expected-error {{false}}
+static_assert(&x > &x, "false"); // expected-error {{false}}
 
 constexpr S* sptr = &s;
-// FIXME: This is not a constant expression; check we reject this and move this
-// test elsewhere.
-constexpr bool dyncast = sptr == dynamic_cast<S*>(sptr);
+constexpr bool dyncast = sptr == dynamic_cast<S*>(sptr); // expected-error {{constant expression}} expected-note {{dynamic_cast}}
+
+struct Str {
+  // FIXME: In C++ mode, we should say 'integral' not 'integer'
+  int a : dynamic_cast<S*>(sptr) == dynamic_cast<S*>(sptr); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{dynamic_cast is not allowed in a constant expression}}
+  int b : reinterpret_cast<S*>(sptr) == reinterpret_cast<S*>(sptr); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{reinterpret_cast is not allowed in a constant expression}}
+  int c : (S*)(long)(sptr) == (S*)(long)(sptr); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
+  int d : (S*)(42) == (S*)(42); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
+  int e : (Str*)(sptr) == (Str*)(sptr); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
+  int f : &(Str&)(*sptr) == &(Str&)(*sptr); // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
+  int g : (S*)(void*)(sptr) == sptr; // \
+    expected-warning {{not integer constant expression}} \
+    expected-note {{cast from 'void *' is not allowed in a constant expression}}
+};
 
 extern char externalvar[];
-// FIXME: This is not a constant expression; check we reject this and move this
-// test elsewhere.
-constexpr bool constaddress = (void *)externalvar == (void *)0x4000UL;  // expected-error {{must be initialized by a constant expression}}
+constexpr bool constaddress = (void *)externalvar == (void *)0x4000UL; // expected-error {{must be initialized by a constant expression}}
 constexpr bool litaddress = "foo" == "foo"; // expected-error {{must be initialized by a constant expression}} expected-warning {{unspecified}}
-static_assert_fold(0 != "foo", "");
+static_assert(0 != "foo", "");
 
 }
 
@@ -322,10 +338,10 @@ constexpr int n = f(1);
 constexpr bool same(const int &a, const int &b) { return &a == &b; }
 constexpr bool sameTemporary(const int &n) { return same(n, n); }
 
-static_assert_fold(n, "");
-static_assert_fold(!same(4, 4), "");
-static_assert_fold(same(n, n), "");
-static_assert_fold(sameTemporary(9), "");
+static_assert(n, "");
+static_assert(!same(4, 4), "");
+static_assert(same(n, n), "");
+static_assert(sameTemporary(9), "");
 
 }
 
@@ -335,29 +351,24 @@ constexpr int strcmp_ce(const char *p, const char *q) {
 
 namespace StringLiteral {
 
-// FIXME: Refactor this once we support constexpr templates.
-constexpr int MangleChars(const char *p) {
-  return *p + 3 * (*p ? MangleChars(p+1) : 0);
-}
-constexpr int MangleChars(const char16_t *p) {
-  return *p + 3 * (*p ? MangleChars(p+1) : 0);
-}
-constexpr int MangleChars(const char32_t *p) {
+template<typename Char>
+constexpr int MangleChars(const Char *p) {
   return *p + 3 * (*p ? MangleChars(p+1) : 0);
 }
 
-static_assert_fold(MangleChars("constexpr!") == 1768383, "");
-static_assert_fold(MangleChars(u"constexpr!") == 1768383, "");
-static_assert_fold(MangleChars(U"constexpr!") == 1768383, "");
+static_assert(MangleChars("constexpr!") == 1768383, "");
+static_assert(MangleChars(u"constexpr!") == 1768383, "");
+static_assert(MangleChars(U"constexpr!") == 1768383, "");
 
 constexpr char c0 = "nought index"[0];
 constexpr char c1 = "nice index"[10];
-constexpr char c2 = "nasty index"[12]; // expected-error {{must be initialized by a constant expression}} expected-warning {{indexes past the end}}
-constexpr char c3 = "negative index"[-1]; // expected-error {{must be initialized by a constant expression}} expected-warning {{indexes before the beginning}}
+constexpr char c2 = "nasty index"[12]; // expected-error {{must be initialized by a constant expression}} expected-warning {{is past the end}} expected-note {{read of dereferenced one-past-the-end pointer}}
+// FIXME: block the pointer arithmetic with undefined behavior here
+constexpr char c3 = "negative index"[-1]; // expected-error {{must be initialized by a constant expression}} expected-warning {{is before the beginning}} expected-note {{read of dereferenced one-past-the-end pointer}}
 constexpr char c4 = ((char*)(int*)"no reinterpret_casts allowed")[14]; // expected-error {{must be initialized by a constant expression}}
 
 constexpr const char *p = "test" + 2;
-static_assert_fold(*p == 's', "");
+static_assert(*p == 's', "");
 
 constexpr const char *max_iter(const char *a, const char *b) {
   return *a < *b ? b : a;
@@ -366,71 +377,100 @@ constexpr const char *max_element(const char *a, const char *b) {
   return (a+1 >= b) ? a : max_iter(a, max_element(a+1, b));
 }
 
-constexpr const char *begin(const char (&arr)[45]) { return arr; }
-constexpr const char *end(const char (&arr)[45]) { return arr + 45; }
-
 constexpr char str[] = "the quick brown fox jumped over the lazy dog";
 constexpr const char *max = max_element(begin(str), end(str));
-static_assert_fold(*max == 'z', "");
-static_assert_fold(max == str + 38, "");
+static_assert(*max == 'z', "");
+static_assert(max == str + 38, "");
 
-static_assert_fold(strcmp_ce("hello world", "hello world") == 0, "");
-static_assert_fold(strcmp_ce("hello world", "hello clang") > 0, "");
-static_assert_fold(strcmp_ce("constexpr", "test") < 0, "");
-static_assert_fold(strcmp_ce("", " ") < 0, "");
+static_assert(strcmp_ce("hello world", "hello world") == 0, "");
+static_assert(strcmp_ce("hello world", "hello clang") > 0, "");
+static_assert(strcmp_ce("constexpr", "test") < 0, "");
+static_assert(strcmp_ce("", " ") < 0, "");
+
+struct S {
+  int n : "foo"[4]; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer is not allowed in a constant expression}}
+};
+
+struct T {
+  char c[6];
+  constexpr T() : c{"foo"} {}
+};
+constexpr T t;
+
+static_assert(t.c[0] == 'f', "");
+static_assert(t.c[1] == 'o', "");
+static_assert(t.c[2] == 'o', "");
+static_assert(t.c[3] == 0, "");
+static_assert(t.c[4] == 0, "");
+static_assert(t.c[5] == 0, "");
+static_assert(t.c[6] == 0, ""); // expected-error {{constant expression}} expected-note {{one-past-the-end}}
 
 }
 
 namespace Array {
 
-// FIXME: Use templates for these once we support constexpr templates.
-constexpr int Sum(const int *begin, const int *end) {
+template<typename Iter>
+constexpr auto Sum(Iter begin, Iter end) -> decltype(+*begin) {
   return begin == end ? 0 : *begin + Sum(begin+1, end);
 }
-constexpr const int *begin(const int (&xs)[5]) { return xs; }
-constexpr const int *end(const int (&xs)[5]) { return xs + 5; }
 
 constexpr int xs[] = { 1, 2, 3, 4, 5 };
 constexpr int ys[] = { 5, 4, 3, 2, 1 };
 constexpr int sum_xs = Sum(begin(xs), end(xs));
-static_assert_fold(sum_xs == 15, "");
+static_assert(sum_xs == 15, "");
 
 constexpr int ZipFoldR(int (*F)(int x, int y, int c), int n,
                        const int *xs, const int *ys, int c) {
-  return n ? F(*xs, *ys, ZipFoldR(F, n-1, xs+1, ys+1, c)) : c;
+  return n ? F(
+               *xs, // expected-note {{read of dereferenced one-past-the-end pointer}}
+               *ys,
+               ZipFoldR(F, n-1, xs+1, ys+1, c)) // \
+      expected-note {{in call to 'ZipFoldR(&SubMul, 2, &xs[4], &ys[4], 1)'}} \
+      expected-note {{in call to 'ZipFoldR(&SubMul, 1, &xs[5], &ys[5], 1)'}}
+           : c;
 }
 constexpr int MulAdd(int x, int y, int c) { return x * y + c; }
 constexpr int InnerProduct = ZipFoldR(MulAdd, 5, xs, ys, 0);
-static_assert_fold(InnerProduct == 35, "");
+static_assert(InnerProduct == 35, "");
 
 constexpr int SubMul(int x, int y, int c) { return (x - y) * c; }
 constexpr int DiffProd = ZipFoldR(SubMul, 2, xs+3, ys+3, 1);
-static_assert_fold(DiffProd == 8, "");
-static_assert_fold(ZipFoldR(SubMul, 3, xs+3, ys+3, 1), ""); // expected-error {{constant expression}}
+static_assert(DiffProd == 8, "");
+static_assert(ZipFoldR(SubMul, 3, xs+3, ys+3, 1), ""); // \
+      expected-error {{constant expression}} \
+      expected-note {{in call to 'ZipFoldR(&SubMul, 3, &xs[3], &ys[3], 1)'}}
 
 constexpr const int *p = xs + 3;
 constexpr int xs4 = p[1]; // ok
-constexpr int xs5 = p[2]; // expected-error {{constant expression}}
+constexpr int xs5 = p[2]; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
 constexpr int xs0 = p[-3]; // ok
-constexpr int xs_1 = p[-4]; // expected-error {{constant expression}}
+// FIXME: check pointer arithmetic here
+constexpr int xs_1 = p[-4]; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
 
 constexpr int zs[2][2][2][2] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-static_assert_fold(zs[0][0][0][0] == 1, "");
-static_assert_fold(zs[1][1][1][1] == 16, "");
-static_assert_fold(zs[0][0][0][2] == 3, ""); // expected-error {{constant expression}}
-static_assert_fold((&zs[0][0][0][2])[-1] == 2, "");
-static_assert_fold(**(**(zs + 1) + 1) == 11, "");
-static_assert_fold(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1) == 11, "");
+static_assert(zs[0][0][0][0] == 1, "");
+static_assert(zs[1][1][1][1] == 16, "");
+static_assert(zs[0][0][0][2] == 3, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+static_assert((&zs[0][0][0][2])[-1] == 2, "");
+static_assert(**(**(zs + 1) + 1) == 11, "");
+static_assert(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1) == 11, "");
 
-constexpr int arr[40] = { 1, 2, 3, [8] = 4 };
+constexpr int fail(const int &p) {
+  return (&p)[64]; // expected-note {{read of dereferenced one-past-the-end pointer}}
+}
+static_assert(fail(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1)) == 11, ""); // \
+expected-error {{static_assert expression is not an integral constant expression}} \
+expected-note {{in call to 'fail(zs[1][0][1][0])'}}
+
+constexpr int arr[40] = { 1, 2, 3, [8] = 4 }; // expected-warning {{extension}}
 constexpr int SumNonzero(const int *p) {
   return *p + (*p ? SumNonzero(p+1) : 0);
 }
 constexpr int CountZero(const int *p, const int *q) {
   return p == q ? 0 : (*p == 0) + CountZero(p+1, q);
 }
-static_assert_fold(SumNonzero(arr) == 6, "");
-static_assert_fold(CountZero(arr, arr + 40) == 36, "");
+static_assert(SumNonzero(arr) == 6, "");
+static_assert(CountZero(arr, arr + 40) == 36, "");
 
 struct ArrayElem {
   constexpr ArrayElem() : n(0) {}
@@ -441,7 +481,7 @@ struct ArrayRVal {
   constexpr ArrayRVal() {}
   ArrayElem elems[10];
 };
-static_assert_fold(ArrayRVal().elems[3].f() == 0, "");
+static_assert(ArrayRVal().elems[3].f() == 0, "");
 
 }
 
@@ -464,7 +504,7 @@ namespace Class {
 
 struct A { constexpr A(int a, int b) : k(a + b) {} int k; };
 constexpr int fn(const A &a) { return a.k; }
-static_assert_fold(fn(A(4,5)) == 9, "");
+static_assert(fn(A(4,5)) == 9, "");
 
 struct B { int n; int m; } constexpr b = { 0, b.n }; // expected-warning {{uninitialized}}
 struct C {
@@ -475,31 +515,26 @@ struct D {
   C c;
   constexpr D() : c(&c) {}
 };
-static_assert_fold(D().c.n == 42, "");
+static_assert(D().c.n == 42, "");
 
 struct E {
-  constexpr E() : p(&p) {}
+  constexpr E() : p(&p) {} // expected-note {{pointer to temporary cannot be used to initialize a member in a constant expression}}
   void *p;
 };
-constexpr const E &e1 = E(); // expected-error {{constant expression}}
+constexpr const E &e1 = E(); // expected-error {{constant expression}} expected-note {{in call to 'E()'}} expected-note {{temporary created here}}
 // This is a constant expression if we elide the copy constructor call, and
 // is not a constant expression if we don't! But we do, so it is.
-// FIXME: The move constructor is not currently implicitly defined as constexpr.
-// We notice this when evaluating an expression which uses it, but not when
-// checking its initializer.
-constexpr E e2 = E(); // unexpected-error {{constant expression}}
-static_assert_fold(e2.p == &e2.p, ""); // unexpected-error {{constant expression}}
-// FIXME: We don't pass through the fact that 'this' is ::e3 when checking the
-// initializer of this declaration.
-constexpr E e3; // unexpected-error {{constant expression}}
-static_assert_fold(e3.p == &e3.p, "");
+constexpr E e2 = E();
+static_assert(e2.p == &e2.p, "");
+constexpr E e3;
+static_assert(e3.p == &e3.p, "");
 
 extern const class F f;
 struct F {
   constexpr F() : p(&f.p) {}
   const void *p;
 };
-constexpr F f = F();
+constexpr F f;
 
 struct G {
   struct T {
@@ -516,10 +551,10 @@ struct G {
   constexpr G() : t(&t) {}
 } constexpr g;
 
-static_assert_fold(g.t.u1.a == 42, ""); // expected-error {{constant expression}}
-static_assert_fold(g.t.u1.b == 42, "");
-static_assert_fold(g.t.u2.c == 42, "");
-static_assert_fold(g.t.u2.d == 42, ""); // expected-error {{constant expression}}
+static_assert(g.t.u1.a == 42, ""); // expected-error {{constant expression}} expected-note {{read of member 'a' of union with active member 'b'}}
+static_assert(g.t.u1.b == 42, "");
+static_assert(g.t.u2.c == 42, "");
+static_assert(g.t.u2.d == 42, ""); // expected-error {{constant expression}} expected-note {{read of member 'd' of union with active member 'c'}}
 
 struct S {
   int a, b;
@@ -532,12 +567,12 @@ struct S {
 
 S global(43, &global);
 
-static_assert_fold(S(15, &global).b == 15, "");
+static_assert(S(15, &global).b == 15, "");
 
 constexpr bool CheckS(const S &s) {
   return s.a == 5 && s.b == 27 && s.p == &global && s.d == 27. && s.q[3] == 'l';
 }
-static_assert_fold(CheckS(S(27, &global)), "");
+static_assert(CheckS(S(27, &global)), "");
 
 struct Arr {
   char arr[3];
@@ -547,7 +582,7 @@ constexpr int hash(Arr &&a) {
   return a.arr[0] + a.arr[1] * 0x100 + a.arr[2] * 0x10000;
 }
 constexpr int k = hash(Arr());
-static_assert_fold(k == 0x007a7978, "");
+static_assert(k == 0x007a7978, "");
 
 
 struct AggregateInit {
@@ -560,14 +595,15 @@ struct AggregateInit {
 
 constexpr AggregateInit agg1 = { "hello"[0] };
 
-static_assert_fold(strcmp_ce(&agg1.c, "hello") == 0, "");
-static_assert_fold(agg1.n == 0, "");
-static_assert_fold(agg1.d == 0.0, "");
-static_assert_fold(agg1.arr[-1] == 0, ""); // expected-error {{constant expression}}
-static_assert_fold(agg1.arr[0] == 0, "");
-static_assert_fold(agg1.arr[4] == 0, "");
-static_assert_fold(agg1.arr[5] == 0, ""); // expected-error {{constant expression}}
-static_assert_fold(agg1.p == nullptr, "");
+static_assert(strcmp_ce(&agg1.c, "hello") == 0, "");
+static_assert(agg1.n == 0, "");
+static_assert(agg1.d == 0.0, "");
+// FIXME: check pointer arithmetic here.
+static_assert(agg1.arr[-1] == 0, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end}}
+static_assert(agg1.arr[0] == 0, "");
+static_assert(agg1.arr[4] == 0, "");
+static_assert(agg1.arr[5] == 0, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end}}
+static_assert(agg1.p == nullptr, "");
 
 namespace SimpleDerivedClass {
 
@@ -579,7 +615,7 @@ struct D : B {
   constexpr D(int n) : B(n) {}
 };
 constexpr D d(3);
-static_assert_fold(d.a == 3, "");
+static_assert(d.a == 3, "");
 
 }
 
@@ -592,10 +628,7 @@ struct Base : Bottom {
 struct Base2 : Bottom {
   constexpr Base2(const int &r) : r(r) {}
   int q = 123;
-  // FIXME: When we track the global for which we are computing the initializer,
-  // use a reference here.
-  //const int &r;
-  int r;
+  const int &r;
 };
 struct Derived : Base, Base2 {
   constexpr Derived() : Base(76), Base2(a) {}
@@ -609,43 +642,43 @@ constexpr bool operator==(const Base &a, const Base &b) {
 constexpr Base base;
 constexpr Base base2(76);
 constexpr Derived derived;
-static_assert_fold(derived.a == 76, "");
-static_assert_fold(derived.b[2] == 's', "");
-static_assert_fold(derived.c == 76 + 'e', "");
-static_assert_fold(derived.q == 123, "");
-static_assert_fold(derived.r == 76, "");
-static_assert_fold(&derived.r == &derived.a, ""); // expected-error {{}}
+static_assert(derived.a == 76, "");
+static_assert(derived.b[2] == 's', "");
+static_assert(derived.c == 76 + 'e', "");
+static_assert(derived.q == 123, "");
+static_assert(derived.r == 76, "");
+static_assert(&derived.r == &derived.a, "");
 
-static_assert_fold(!(derived == base), "");
-static_assert_fold(derived == base2, "");
+static_assert(!(derived == base), "");
+static_assert(derived == base2, "");
 
 constexpr Bottom &bot1 = (Base&)derived;
 constexpr Bottom &bot2 = (Base2&)derived;
-static_assert_fold(&bot1 != &bot2, "");
+static_assert(&bot1 != &bot2, "");
 
 constexpr Bottom *pb1 = (Base*)&derived;
 constexpr Bottom *pb2 = (Base2*)&derived;
-static_assert_fold(pb1 != pb2, "");
-static_assert_fold(pb1 == &bot1, "");
-static_assert_fold(pb2 == &bot2, "");
+static_assert(pb1 != pb2, "");
+static_assert(pb1 == &bot1, "");
+static_assert(pb2 == &bot2, "");
 
 constexpr Base2 &fail = (Base2&)bot1; // expected-error {{constant expression}}
 constexpr Base &fail2 = (Base&)*pb2; // expected-error {{constant expression}}
 constexpr Base2 &ok2 = (Base2&)bot2;
-static_assert_fold(&ok2 == &derived, "");
+static_assert(&ok2 == &derived, "");
 
 constexpr Base2 *pfail = (Base2*)pb1; // expected-error {{constant expression}}
 constexpr Base *pfail2 = (Base*)&bot2; // expected-error {{constant expression}}
 constexpr Base2 *pok2 = (Base2*)pb2;
-static_assert_fold(pok2 == &derived, "");
-static_assert_fold(&ok2 == pok2, "");
-static_assert_fold((Base2*)(Derived*)(Base*)pb1 == pok2, "");
-static_assert_fold((Derived*)(Base*)pb1 == (Derived*)pok2, "");
+static_assert(pok2 == &derived, "");
+static_assert(&ok2 == pok2, "");
+static_assert((Base2*)(Derived*)(Base*)pb1 == pok2, "");
+static_assert((Derived*)(Base*)pb1 == (Derived*)pok2, "");
 
 constexpr Base *nullB = 42 - 6 * 7;
-static_assert_fold((Bottom*)nullB == 0, "");
-static_assert_fold((Derived*)nullB == 0, "");
-static_assert_fold((void*)(Bottom*)nullB == (void*)(Derived*)nullB, "");
+static_assert((Bottom*)nullB == 0, "");
+static_assert((Derived*)nullB == 0, "");
+static_assert((void*)(Bottom*)nullB == (void*)(Derived*)nullB, "");
 
 }
 
@@ -668,13 +701,13 @@ constexpr int S::f() {
 // The T temporary is implicitly cast to an S subobject, but we can recover the
 // T full-object via a base-to-derived cast, or a derived-to-base-casted member
 // pointer.
-static_assert_fold(T(3).f() == 3, "");
+static_assert(T(3).f() == 3, "");
 
 constexpr int f(const S &s) {
   return static_cast<const T&>(s).n;
 }
 constexpr int n = f(T(5));
-static_assert_fold(f(T(5)) == 5, "");
+static_assert(f(T(5)) == 5, "");
 
 }
 
@@ -685,13 +718,13 @@ union U {
   int b;
 };
 
-constexpr U u[4] = { { .a = 0 }, { .b = 1 }, { .a = 2 }, { .b = 3 } };
-static_assert_fold(u[0].a == 0, "");
-static_assert_fold(u[0].b, ""); // expected-error {{constant expression}}
-static_assert_fold(u[1].b == 1, "");
-static_assert_fold((&u[1].b)[1] == 2, ""); // expected-error {{constant expression}}
-static_assert_fold(*(&(u[1].b) + 1 + 1) == 3, ""); // expected-error {{constant expression}}
-static_assert_fold((&(u[1]) + 1 + 1)->b == 3, "");
+constexpr U u[4] = { { .a = 0 }, { .b = 1 }, { .a = 2 }, { .b = 3 } }; // expected-warning 4{{extension}}
+static_assert(u[0].a == 0, "");
+static_assert(u[0].b, ""); // expected-error {{constant expression}} expected-note {{read of member 'b' of union with active member 'a'}}
+static_assert(u[1].b == 1, "");
+static_assert((&u[1].b)[1] == 2, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+static_assert(*(&(u[1].b) + 1 + 1) == 3, ""); // expected-error {{constant expression}} expected-note {{subexpression}}
+static_assert((&(u[1]) + 1 + 1)->b == 3, "");
 
 }
 
@@ -702,10 +735,10 @@ namespace MemberPointer {
     constexpr int f() { return n + 3; }
   };
   constexpr A a(7);
-  static_assert_fold(A(5).*&A::n == 5, "");
-  static_assert_fold((&a)->*&A::n == 7, "");
-  static_assert_fold((A(8).*&A::f)() == 11, "");
-  static_assert_fold(((&a)->*&A::f)() == 10, "");
+  static_assert(A(5).*&A::n == 5, "");
+  static_assert((&a)->*&A::n == 7, "");
+  static_assert((A(8).*&A::f)() == 11, "");
+  static_assert(((&a)->*&A::f)() == 10, "");
 
   struct B : A {
     constexpr B(int n, int m) : A(n), m(m) {}
@@ -713,18 +746,18 @@ namespace MemberPointer {
     constexpr int g() { return n + m + 1; }
   };
   constexpr B b(9, 13);
-  static_assert_fold(B(4, 11).*&A::n == 4, "");
-  static_assert_fold(B(4, 11).*&B::m == 11, "");
-  static_assert_fold(B(4, 11).*(int(A::*))&B::m == 11, "");
-  static_assert_fold((&b)->*&A::n == 9, "");
-  static_assert_fold((&b)->*&B::m == 13, "");
-  static_assert_fold((&b)->*(int(A::*))&B::m == 13, "");
-  static_assert_fold((B(4, 11).*&A::f)() == 7, "");
-  static_assert_fold((B(4, 11).*&B::g)() == 16, "");
-  static_assert_fold((B(4, 11).*(int(A::*)()const)&B::g)() == 16, "");
-  static_assert_fold(((&b)->*&A::f)() == 12, "");
-  static_assert_fold(((&b)->*&B::g)() == 23, "");
-  static_assert_fold(((&b)->*(int(A::*)()const)&B::g)() == 23, "");
+  static_assert(B(4, 11).*&A::n == 4, "");
+  static_assert(B(4, 11).*&B::m == 11, "");
+  static_assert(B(4, 11).*(int(A::*))&B::m == 11, "");
+  static_assert((&b)->*&A::n == 9, "");
+  static_assert((&b)->*&B::m == 13, "");
+  static_assert((&b)->*(int(A::*))&B::m == 13, "");
+  static_assert((B(4, 11).*&A::f)() == 7, "");
+  static_assert((B(4, 11).*&B::g)() == 16, "");
+  static_assert((B(4, 11).*(int(A::*)()const)&B::g)() == 16, "");
+  static_assert(((&b)->*&A::f)() == 12, "");
+  static_assert(((&b)->*&B::g)() == 23, "");
+  static_assert(((&b)->*(int(A::*)()const)&B::g)() == 23, "");
 
   struct S {
     constexpr S(int m, int n, int (S::*pf)() const, int S::*pn) :
@@ -746,8 +779,8 @@ namespace MemberPointer {
 
   constexpr S s(2, 5, &S::f, &S::m);
 
-  static_assert_fold((s.*&S::f)() == 2, "");
-  static_assert_fold((s.*s.pf)() == 2, "");
+  static_assert((s.*&S::f)() == 2, "");
+  static_assert((s.*s.pf)() == 2, "");
 
   template<int n> struct T : T<n-1> {};
   template<> struct T<0> { int n; };
@@ -757,28 +790,28 @@ namespace MemberPointer {
   T<30> t30;
 
   constexpr int (T<10>::*deepn) = &T<0>::n;
-  static_assert_fold(&(t17.*deepn) == &t17.n, "");
+  static_assert(&(t17.*deepn) == &t17.n, "");
 
   constexpr int (T<15>::*deepm) = (int(T<10>::*))&T<30>::m;
   constexpr int *pbad = &(t17.*deepm); // expected-error {{constant expression}}
-  static_assert_fold(&(t30.*deepm) == &t30.m, "");
+  static_assert(&(t30.*deepm) == &t30.m, "");
 
   constexpr T<5> *p17_5 = &t17;
   constexpr T<13> *p17_13 = (T<13>*)p17_5;
   constexpr T<23> *p17_23 = (T<23>*)p17_13; // expected-error {{constant expression}}
-  static_assert_fold(&(p17_5->*(int(T<3>::*))deepn) == &t17.n, "");
-  static_assert_fold(&(p17_13->*deepn) == &t17.n, "");
+  static_assert(&(p17_5->*(int(T<3>::*))deepn) == &t17.n, "");
+  static_assert(&(p17_13->*deepn) == &t17.n, "");
   constexpr int *pbad2 = &(p17_13->*(int(T<9>::*))deepm); // expected-error {{constant expression}}
 
   constexpr T<5> *p30_5 = &t30;
   constexpr T<23> *p30_23 = (T<23>*)p30_5;
   constexpr T<13> *p30_13 = p30_23;
-  static_assert_fold(&(p30_5->*(int(T<3>::*))deepn) == &t30.n, "");
-  static_assert_fold(&(p30_13->*deepn) == &t30.n, "");
-  static_assert_fold(&(p30_23->*deepn) == &t30.n, "");
-  static_assert_fold(&(p30_5->*(int(T<2>::*))deepm) == &t30.m, "");
-  static_assert_fold(&(((T<17>*)p30_13)->*deepm) == &t30.m, "");
-  static_assert_fold(&(p30_23->*deepm) == &t30.m, "");
+  static_assert(&(p30_5->*(int(T<3>::*))deepn) == &t30.n, "");
+  static_assert(&(p30_13->*deepn) == &t30.n, "");
+  static_assert(&(p30_23->*deepn) == &t30.n, "");
+  static_assert(&(p30_5->*(int(T<2>::*))deepm) == &t30.m, "");
+  static_assert(&(((T<17>*)p30_13)->*deepm) == &t30.m, "");
+  static_assert(&(p30_23->*deepm) == &t30.m, "");
 }
 
 namespace ArrayBaseDerived {
@@ -795,7 +828,7 @@ namespace ArrayBaseDerived {
   constexpr Derived a[10];
   constexpr Derived *pd3 = const_cast<Derived*>(&a[3]);
   constexpr Base *pb3 = const_cast<Derived*>(&a[3]);
-  static_assert_fold(pb3 == pd3, "");
+  static_assert(pb3 == pd3, "");
 
   // pb3 does not point to an array element.
   constexpr Base *pb4 = pb3 + 1; // ok, one-past-the-end pointer.
@@ -813,18 +846,19 @@ namespace ArrayBaseDerived {
 
   // pd3a still points to the Derived array.
   constexpr Derived *pd6 = pd3a + 3;
-  static_assert_fold(pd6 == &a[6], "");
+  static_assert(pd6 == &a[6], "");
   constexpr Derived *pd9 = pd6 + 3;
   constexpr Derived *pd10 = pd6 + 4;
   constexpr int pd9n = pd9->n; // ok
-  constexpr int err_pd10n = pd10->n; // expected-error {{constant expression}}
+  constexpr int err_pd10n = pd10->n; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
   constexpr int pd0n = pd10[-10].n;
-  constexpr int err_pdminus1n = pd10[-11].n; // expected-error {{constant expression}}
+  // FIXME: check pointer arithmetic here.
+  constexpr int err_pdminus1n = pd10[-11].n; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
 
   constexpr Base *pb9 = pd9;
   constexpr const int *(Base::*pfb)() const =
       static_cast<const int *(Base::*)() const>(&Derived::f);
-  static_assert_fold((pb9->*pfb)() == &a[9].n, "");
+  static_assert((pb9->*pfb)() == &a[9].n, "");
 }
 
 namespace Complex {
@@ -856,19 +890,19 @@ public:
 
 constexpr complex i = complex(0, 1);
 constexpr complex k = (3 + 4*i) * (6 - 4*i);
-static_assert_fold(complex(1,0).real() == 1, "");
-static_assert_fold(complex(1,0).imag() == 0, "");
-static_assert_fold(((complex)1).imag() == 0, "");
-static_assert_fold(k.real() == 34, "");
-static_assert_fold(k.imag() == 12, "");
-static_assert_fold(k - 34 == 12*i, "");
-static_assert_fold((complex)1 == complex(1), "");
-static_assert_fold((complex)1 != complex(0, 1), "");
-static_assert_fold(complex(1) == complex(1), "");
-static_assert_fold(complex(1) != complex(0, 1), "");
+static_assert(complex(1,0).real() == 1, "");
+static_assert(complex(1,0).imag() == 0, "");
+static_assert(((complex)1).imag() == 0, "");
+static_assert(k.real() == 34, "");
+static_assert(k.imag() == 12, "");
+static_assert(k - 34 == 12*i, "");
+static_assert((complex)1 == complex(1), "");
+static_assert((complex)1 != complex(0, 1), "");
+static_assert(complex(1) == complex(1), "");
+static_assert(complex(1) != complex(0, 1), "");
 constexpr complex makeComplex(int re, int im) { return complex(re, im); }
-static_assert_fold(makeComplex(1,0) == complex(1), "");
-static_assert_fold(makeComplex(1,0) != complex(0, 1), "");
+static_assert(makeComplex(1,0) == complex(1), "");
+static_assert(makeComplex(1,0) != complex(0, 1), "");
 
 class complex_wrap : public complex {
 public:
@@ -876,14 +910,54 @@ public:
   constexpr complex_wrap(const complex_wrap &o) : complex(o) {}
 };
 
-static_assert_fold((complex_wrap)1 == complex(1), "");
-static_assert_fold((complex)1 != complex_wrap(0, 1), "");
-static_assert_fold(complex(1) == complex_wrap(1), "");
-static_assert_fold(complex_wrap(1) != complex(0, 1), "");
+static_assert((complex_wrap)1 == complex(1), "");
+static_assert((complex)1 != complex_wrap(0, 1), "");
+static_assert(complex(1) == complex_wrap(1), "");
+static_assert(complex_wrap(1) != complex(0, 1), "");
 constexpr complex_wrap makeComplexWrap(int re, int im) {
   return complex_wrap(re, im);
 }
-static_assert_fold(makeComplexWrap(1,0) == complex(1), "");
-static_assert_fold(makeComplexWrap(1,0) != complex(0, 1), "");
+static_assert(makeComplexWrap(1,0) == complex(1), "");
+static_assert(makeComplexWrap(1,0) != complex(0, 1), "");
+
+}
+
+namespace PR11595 {
+  struct A { constexpr bool operator==(int x) { return true; } };
+  struct B { B(); A& x; };
+  static_assert(B().x == 3, "");  // expected-error {{constant expression}} expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
+
+  constexpr bool f(int k) {
+    return B().x == k; // expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
+  }
+  constexpr int n = f(1); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'f(1)'}}
+}
+
+namespace ExprWithCleanups {
+  struct A { A(); ~A(); int get(); };
+  constexpr int get(bool FromA) { return FromA ? A().get() : 1; }
+  constexpr int n = get(false);
+}
+
+namespace Volatile {
+
+volatile constexpr int n1 = 0; // expected-note {{here}}
+volatile const int n2 = 0; // expected-note {{here}}
+int n3 = 37; // expected-note {{declared here}}
+
+constexpr int m1 = n1; // expected-error {{constant expression}} expected-note {{read of volatile object 'n1'}}
+constexpr int m2 = n2; // expected-error {{constant expression}} expected-note {{read of volatile object 'n2'}}
+
+struct T { int n; };
+const T t = { 42 }; // expected-note {{declared here}}
+
+constexpr int f(volatile int &&r) {
+  return r; // expected-note {{read of volatile temporary is not allowed in a constant expression}}
+}
+struct S {
+  int k : f(0); // expected-error {{constant expression}} expected-note {{temporary created here}} expected-note {{in call to 'f(0)'}}
+  int l : n3; // expected-error {{constant expression}} expected-note {{read of non-const variable}}
+  int m : t.n; // expected-error {{constant expression}} expected-note {{read of non-constexpr variable}}
+};
 
 }

@@ -39,6 +39,11 @@ public:
     CST_Libstdcxx
   };
 
+  enum RuntimeLibType {
+    RLT_CompilerRT,
+    RLT_Libgcc
+  };
+
 private:
   const HostInfo &Host;
   const llvm::Triple Triple;
@@ -53,6 +58,19 @@ private:
 
 protected:
   ToolChain(const HostInfo &Host, const llvm::Triple &_Triple);
+
+  /// \name Utilities for implementing subclasses.
+  ///@{
+  static void addSystemInclude(const ArgList &DriverArgs,
+                               ArgStringList &CC1Args,
+                               const Twine &Path);
+  static void addExternCSystemInclude(const ArgList &DriverArgs,
+                                      ArgStringList &CC1Args,
+                                      const Twine &Path);
+  static void addSystemIncludes(const ArgList &DriverArgs,
+                                ArgStringList &CC1Args,
+                                ArrayRef<StringRef> Paths);
+  ///@}
 
 public:
   virtual ~ToolChain();
@@ -143,6 +161,11 @@ public:
     return 0;
   }
 
+  /// GetDefaultRuntimeLibType - Get the default runtime library variant to use.
+  virtual RuntimeLibType GetDefaultRuntimeLibType() const {
+    return ToolChain::RLT_Libgcc;
+  }
+
   /// IsUnwindTablesDefault - Does this tool chain use -funwind-tables
   /// by default.
   virtual bool IsUnwindTablesDefault() const = 0;
@@ -201,6 +224,10 @@ public:
   /// include headers from standard system header directories.
   virtual void AddClangSystemIncludeArgs(const ArgList &DriverArgs,
                                          ArgStringList &CC1Args) const;
+
+  // GetRuntimeLibType - Determine the runtime library type to use with the
+  // given compilation arguments.
+  virtual RuntimeLibType GetRuntimeLibType(const ArgList &Args) const;
 
   // GetCXXStdlibType - Determine the C++ standard library type to use with the
   // given compilation arguments.

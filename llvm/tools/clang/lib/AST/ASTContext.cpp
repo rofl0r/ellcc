@@ -230,7 +230,8 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     jmp_bufDecl(0), sigjmp_bufDecl(0), ucontext_tDecl(0),
     BlockDescriptorType(0), BlockDescriptorExtendedType(0),
     cudaConfigureCallDecl(0),
-    NullTypeSourceInfo(QualType()),
+    NullTypeSourceInfo(QualType()), 
+    FirstLocalImport(), LastLocalImport(),
     SourceMgr(SM), LangOpts(LOpts), 
     AddrSpaceMap(0), Target(t), PrintingPolicy(LOpts),
     Idents(idents), Selectors(sels),
@@ -682,6 +683,19 @@ void ASTContext::addOverriddenMethod(const CXXMethodDecl *Method,
   OverriddenMethods[Method].push_back(Overridden);
 }
 
+void ASTContext::addedLocalImportDecl(ImportDecl *Import) {
+  assert(!Import->NextLocalImport && "Import declaration already in the chain");
+  assert(!Import->isFromASTFile() && "Non-local import declaration");
+  if (!FirstLocalImport) {
+    FirstLocalImport = Import;
+    LastLocalImport = Import;
+    return;
+  }
+  
+  LastLocalImport->NextLocalImport = Import;
+  LastLocalImport = Import;
+}
+
 //===----------------------------------------------------------------------===//
 //                         Type Sizing and Analysis
 //===----------------------------------------------------------------------===//
@@ -838,7 +852,9 @@ ASTContext::getTypeInfo(const Type *T) const {
     const ConstantArrayType *CAT = cast<ConstantArrayType>(T);
 
     std::pair<uint64_t, unsigned> EltInfo = getTypeInfo(CAT->getElementType());
-    Width = EltInfo.first*CAT->getSize().getZExtValue();
+    uint64_t Size = CAT->getSize().getZExtValue();
+    assert((Size == 0 || EltInfo.first <= (uint64_t)(-1)/Size) && "Overflow in array type bit size evaluation");
+    Width = EltInfo.first*Size;
     Align = EltInfo.second;
     Width = llvm::RoundUpToAlignment(Width, Align);
     break;
@@ -2792,11 +2808,21 @@ QualType ASTContext::getObjCObjectPointerType(QualType ObjectT) const {
 
 /// getObjCInterfaceType - Return the unique reference to the type for the
 /// specified ObjC interface decl. The list of protocols is optional.
-QualType ASTContext::getObjCInterfaceType(const ObjCInterfaceDecl *Decl) const {
+QualType ASTContext::getObjCInterfaceType(const ObjCInterfaceDecl *Decl,
+                                          ObjCInterfaceDecl *PrevDecl) const {
   if (Decl->TypeForDecl)
     return QualType(Decl->TypeForDecl, 0);
 
-  // FIXME: redeclarations?
+  if (PrevDecl) {
+    assert(PrevDecl->TypeForDecl && "previous decl has no TypeForDecl");
+    Decl->TypeForDecl = PrevDecl->TypeForDecl;
+    return QualType(PrevDecl->TypeForDecl, 0);
+  }
+
+  // Prefer the definition, if there is one.
+  if (const ObjCInterfaceDecl *Def = Decl->getDefinition())
+    Decl = Def;
+  
   void *Mem = Allocate(sizeof(ObjCInterfaceType), TypeAlignment);
   ObjCInterfaceType *T = new (Mem) ObjCInterfaceType(Decl);
   Decl->TypeForDecl = T;
@@ -4080,15 +4106,32 @@ bool ASTContext::getObjCEncodingForFunctionDecl(const FunctionDecl *Decl,
   return false;
 }
 
+/// getObjCEncodingForMethodParameter - Return the encoded type for a single
+/// method parameter or return type. If Extended, include class names and 
+/// block object types.
+void ASTContext::getObjCEncodingForMethodParameter(Decl::ObjCDeclQualifier QT,
+                                                   QualType T, std::string& S,
+                                                   bool Extended) const {
+  // Encode type qualifer, 'in', 'inout', etc. for the parameter.
+  getObjCEncodingForTypeQualifier(QT, S);
+  // Encode parameter type.
+  getObjCEncodingForTypeImpl(T, S, true, true, 0,
+                             true     /*OutermostType*/,
+                             false    /*EncodingProperty*/, 
+                             false    /*StructField*/, 
+                             Extended /*EncodeBlockParameters*/, 
+                             Extended /*EncodeClassNames*/);
+}
+
 /// getObjCEncodingForMethodDecl - Return the encoded type for this method
 /// declaration.
 bool ASTContext::getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl,
-                                              std::string& S) const {
+                                              std::string& S, 
+                                              bool Extended) const {
   // FIXME: This is not very efficient.
-  // Encode type qualifer, 'in', 'inout', etc. for the return type.
-  getObjCEncodingForTypeQualifier(Decl->getObjCDeclQualifier(), S);
-  // Encode result type.
-  getObjCEncodingForType(Decl->getResultType(), S);
+  // Encode return type.
+  getObjCEncodingForMethodParameter(Decl->getObjCDeclQualifier(), 
+                                    Decl->getResultType(), S, Extended);
   // Compute size of all parameters.
   // Start with computing size of a pointer in number of bytes.
   // FIXME: There might(should) be a better way of doing this computation!
@@ -4126,10 +4169,8 @@ bool ASTContext::getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl,
         PType = PVDecl->getType();
     } else if (PType->isFunctionType())
       PType = PVDecl->getType();
-    // Process argument qualifiers for user supplied arguments; such as,
-    // 'in', 'inout', etc.
-    getObjCEncodingForTypeQualifier(PVDecl->getObjCDeclQualifier(), S);
-    getObjCEncodingForType(PType, S);
+    getObjCEncodingForMethodParameter(PVDecl->getObjCDeclQualifier(), 
+                                      PType, S, Extended);
     S += charUnitsToString(ParmOffset);
     ParmOffset += getObjCEncodingTypeSize(PType);
   }
@@ -4355,7 +4396,9 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
                                             const FieldDecl *FD,
                                             bool OutermostType,
                                             bool EncodingProperty,
-                                            bool StructField) const {
+                                            bool StructField,
+                                            bool EncodeBlockParameters,
+                                            bool EncodeClassNames) const {
   if (T->getAs<BuiltinType>()) {
     if (FD && FD->isBitField())
       return EncodeBitField(this, S, T, FD);
@@ -4534,8 +4577,40 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
     return;
   }
 
-  if (T->isBlockPointerType()) {
+  if (const BlockPointerType *BT = T->getAs<BlockPointerType>()) {
     S += "@?"; // Unlike a pointer-to-function, which is "^?".
+    if (EncodeBlockParameters) {
+      const FunctionType *FT = BT->getPointeeType()->getAs<FunctionType>();
+      
+      S += '<';
+      // Block return type
+      getObjCEncodingForTypeImpl(FT->getResultType(), S, 
+                                 ExpandPointedToStructures, ExpandStructures, 
+                                 FD, 
+                                 false /* OutermostType */, 
+                                 EncodingProperty, 
+                                 false /* StructField */, 
+                                 EncodeBlockParameters, 
+                                 EncodeClassNames);
+      // Block self
+      S += "@?";
+      // Block parameters
+      if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FT)) {
+        for (FunctionProtoType::arg_type_iterator I = FPT->arg_type_begin(),
+               E = FPT->arg_type_end(); I && (I != E); ++I) {
+          getObjCEncodingForTypeImpl(*I, S, 
+                                     ExpandPointedToStructures, 
+                                     ExpandStructures, 
+                                     FD, 
+                                     false /* OutermostType */, 
+                                     EncodingProperty, 
+                                     false /* StructField */, 
+                                     EncodeBlockParameters, 
+                                     EncodeClassNames);
+        }
+      }
+      S += '>';
+    }
     return;
   }
 
@@ -4581,7 +4656,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
       getObjCEncodingForTypeImpl(getObjCIdType(), S,
                                  ExpandPointedToStructures,
                                  ExpandStructures, FD);
-      if (FD || EncodingProperty) {
+      if (FD || EncodingProperty || EncodeClassNames) {
         // Note that we do extended encoding of protocol qualifer list
         // Only when doing ivar or property encoding.
         S += '"';
@@ -4610,7 +4685,8 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
     }
 
     S += '@';
-    if (OPT->getInterfaceDecl() && (FD || EncodingProperty)) {
+    if (OPT->getInterfaceDecl() && 
+        (FD || EncodingProperty || EncodeClassNames)) {
       S += '"';
       S += OPT->getInterfaceDecl()->getIdentifier()->getName();
       for (ObjCObjectPointerType::qual_iterator I = OPT->qual_begin(),
@@ -5403,7 +5479,7 @@ QualType ASTContext::areCommonBaseCompatible(
   const ObjCObjectType *RHS = Rptr->getObjectType();
   const ObjCInterfaceDecl* LDecl = LHS->getInterface();
   const ObjCInterfaceDecl* RDecl = RHS->getInterface();
-  if (!LDecl || !RDecl || (LDecl == RDecl))
+  if (!LDecl || !RDecl || (declaresSameEntity(LDecl, RDecl)))
     return QualType();
   
   do {

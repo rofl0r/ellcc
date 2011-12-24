@@ -2201,10 +2201,10 @@ CFRefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
     }
     else {
       const FunctionDecl *FD = cast<FunctionDecl>(D);
-      os << " is return from a function whose name ('"
+      os << " is returned from a function whose name ('"
          << FD->getNameAsString()
          << "') does not contain 'Copy' or 'Create'.  This violates the naming"
-            " convention rules given the Memory Management Guide for Core"
+            " convention rules given in the Memory Management Guide for Core"
             " Foundation";
     }    
   }
@@ -2990,10 +2990,7 @@ void RetainCountChecker::processNonLeakError(const ProgramState *St,
 bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
   // Get the callee. We're only interested in simple C functions.
   const ProgramState *state = C.getState();
-  const Expr *Callee = CE->getCallee();
-  SVal L = state->getSVal(Callee);
-
-  const FunctionDecl *FD = L.getAsFunctionDecl();
+  const FunctionDecl *FD = C.getCalleeDecl(CE);
   if (!FD)
     return false;
 
@@ -3015,7 +3012,7 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
   // See if it's one of the specific functions we know how to eval.
   bool canEval = false;
 
-  QualType ResultTy = FD->getResultType();
+  QualType ResultTy = CE->getCallReturnType();
   if (ResultTy->isObjCIdType()) {
     // Handle: id NSMakeCollectable(CFTypeRef)
     canEval = II->isStr("NSMakeCollectable");
@@ -3470,7 +3467,8 @@ RetainCountChecker::getDeadSymbolTag(SymbolRef sym) const {
   if (!tag) {
     llvm::SmallString<64> buf;
     llvm::raw_svector_ostream out(buf);
-    out << "RetainCountChecker : Dead Symbol : " << sym->getSymbolID();
+    out << "RetainCountChecker : Dead Symbol : ";
+    sym->dumpToStream(out);
     tag = new SimpleProgramPointTag(out.str());
   }
   return tag;  
@@ -3535,7 +3533,7 @@ static void PrintPool(raw_ostream &Out, SymbolRef Sym,
                       const ProgramState *State) {
   Out << ' ';
   if (Sym)
-    Out << Sym->getSymbolID();
+    Sym->dumpToStream(Out);
   else
     Out << "<pool>";
   Out << ":{";

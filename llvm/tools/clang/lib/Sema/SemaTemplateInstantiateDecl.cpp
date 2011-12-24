@@ -66,17 +66,16 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
     // FIXME: This should be generalized to more than just the AlignedAttr.
     if (const AlignedAttr *Aligned = dyn_cast<AlignedAttr>(TmplAttr)) {
       if (Aligned->isAlignmentDependent()) {
-        // The alignment expression is not potentially evaluated.
-        EnterExpressionEvaluationContext Unevaluated(*this,
-                                                     Sema::Unevaluated);
-
         if (Aligned->isAlignmentExpr()) {
+          // The alignment expression is a constant expression.
+          EnterExpressionEvaluationContext Unevaluated(*this,
+                                                       Sema::ConstantEvaluated);
+
           ExprResult Result = SubstExpr(Aligned->getAlignmentExpr(),
                                         TemplateArgs);
           if (!Result.isInvalid())
             AddAlignedAttr(Aligned->getLocation(), New, Result.takeAs<Expr>());
-        }
-        else {
+        } else {
           TypeSourceInfo *Result = SubstType(Aligned->getAlignmentType(),
                                              TemplateArgs,
                                              Aligned->getLocation(),
@@ -351,11 +350,16 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
                         Sema::LookupOrdinaryName, Sema::ForRedeclaration);
   if (D->isStaticDataMember())
     SemaRef.LookupQualifiedName(Previous, Owner, false);
+  
+  // In ARC, infer 'retaining' for variables of retainable type.
+  if (SemaRef.getLangOptions().ObjCAutoRefCount && 
+      SemaRef.inferObjCARCLifetime(Var))
+    Var->setInvalidDecl();
+
   SemaRef.CheckVariableDeclaration(Var, Previous);
 
   if (D->isOutOfLine()) {
-    if (!D->isStaticDataMember())
-      D->getLexicalDeclContext()->addDecl(Var);
+    D->getLexicalDeclContext()->addDecl(Var);
     Owner->makeDeclVisibleInContext(Var);
   } else {
     Owner->addDecl(Var);
@@ -374,7 +378,7 @@ Decl *TemplateDeclInstantiator::VisitVarDecl(VarDecl *D) {
     // We already have an initializer in the class.
   } else if (D->getInit()) {
     if (Var->isStaticDataMember() && !D->isOutOfLine())
-      SemaRef.PushExpressionEvaluationContext(Sema::Unevaluated);
+      SemaRef.PushExpressionEvaluationContext(Sema::ConstantEvaluated);
     else
       SemaRef.PushExpressionEvaluationContext(Sema::PotentiallyEvaluated);
 
@@ -456,8 +460,9 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
   if (Invalid)
     BitWidth = 0;
   else if (BitWidth) {
-    // The bit-width expression is not potentially evaluated.
-    EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+    // The bit-width expression is a constant expression.
+    EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                                 Sema::ConstantEvaluated);
 
     ExprResult InstantiatedBitWidth
       = SemaRef.SubstExpr(BitWidth, TemplateArgs);
@@ -585,8 +590,9 @@ Decl *TemplateDeclInstantiator::VisitFriendDecl(FriendDecl *D) {
 Decl *TemplateDeclInstantiator::VisitStaticAssertDecl(StaticAssertDecl *D) {
   Expr *AssertExpr = D->getAssertExpr();
 
-  // The expression in a static assertion is not potentially evaluated.
-  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+  // The expression in a static assertion is a constant expression.
+  EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                               Sema::ConstantEvaluated);
 
   ExprResult InstantiatedAssertExpr
     = SemaRef.SubstExpr(AssertExpr, TemplateArgs);
@@ -647,9 +653,9 @@ Decl *TemplateDeclInstantiator::VisitEnumDecl(EnumDecl *D) {
     // The specified value for the enumerator.
     ExprResult Value = SemaRef.Owned((Expr *)0);
     if (Expr *UninstValue = EC->getInitExpr()) {
-      // The enumerator's value expression is not potentially evaluated.
+      // The enumerator's value expression is a constant expression.
       EnterExpressionEvaluationContext Unevaluated(SemaRef,
-                                                   Sema::Unevaluated);
+                                                   Sema::ConstantEvaluated);
 
       Value = SemaRef.SubstExpr(UninstValue, TemplateArgs);
     }
@@ -862,7 +868,14 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
   // Finish handling of friends.
   if (isFriend) {
     DC->makeDeclVisibleInContext(Inst, /*Recoverable*/ false);
+    Inst->setLexicalDeclContext(Owner);
+    RecordInst->setLexicalDeclContext(Owner);
     return Inst;
+  }
+
+  if (D->isOutOfLine()) {
+    Inst->setLexicalDeclContext(D->getLexicalDeclContext());
+    RecordInst->setLexicalDeclContext(D->getLexicalDeclContext());
   }
 
   Owner->addDecl(Inst);
@@ -2308,11 +2321,12 @@ TemplateDeclInstantiator::InitFunctionInstantiation(FunctionDecl *New,
     }
     Expr *NoexceptExpr = 0;
     if (Expr *OldNoexceptExpr = Proto->getNoexceptExpr()) {
-      EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
+      EnterExpressionEvaluationContext Unevaluated(SemaRef,
+                                                   Sema::ConstantEvaluated);
       ExprResult E = SemaRef.SubstExpr(OldNoexceptExpr, TemplateArgs);
       if (E.isUsable())
         E = SemaRef.CheckBooleanCondition(E.get(), E.get()->getLocStart());
-    
+
       if (E.isUsable()) {
         SourceLocation ErrLoc;
         llvm::APSInt NoexceptVal;

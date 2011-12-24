@@ -576,8 +576,13 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   REG("VecListThreeD");
   REG("VecListFourD");
   REG("VecListTwoQ");
+  REG("VecListOneDAllLanes");
+  REG("VecListTwoDAllLanes");
+  REG("VecListTwoQAllLanes");
 
   IMM("i32imm");
+  IMM("fbits16");
+  IMM("fbits32");
   IMM("i32imm_hilo16");
   IMM("bf_inv_mask_imm");
   IMM("lsb_pos_imm");
@@ -608,6 +613,14 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("nImmSplatI64");
   IMM("nImmVMOVI32");
   IMM("nImmVMOVF32");
+  IMM("imm8");
+  IMM("imm16");
+  IMM("imm32");
+  IMM("imm1_7");
+  IMM("imm1_15");
+  IMM("imm1_31");
+  IMM("imm0_1");
+  IMM("imm0_3");
   IMM("imm0_7");
   IMM("imm0_15");
   IMM("imm0_255");
@@ -746,7 +759,7 @@ static void ARMPopulateOperands(
       errs() << "Operand type: " << rec.getName() << '\n';
       errs() << "Operand name: " << operandInfo.Name << '\n';
       errs() << "Instruction name: " << inst.TheDef->getName() << '\n';
-      llvm_unreachable("Unhandled type");
+      throw("Unhandled type in EDEmitter");
     }
   }
 }

@@ -78,30 +78,35 @@ void MipsAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
   // Enclose unaligned load or store with .macro & .nomacro directives.
   if (isUnalignedLoadStore(Opc)) {
-    MCInst Directive;
-    Directive.setOpcode(Mips::MACRO);
-    OutStreamer.EmitInstruction(Directive);
-    OutStreamer.EmitInstruction(TmpInst0);
-    Directive.setOpcode(Mips::NOMACRO);
-    OutStreamer.EmitInstruction(Directive);
+    if (OutStreamer.hasRawTextSupport()) {
+      MCInst Directive;
+      Directive.setOpcode(Mips::MACRO);
+      OutStreamer.EmitInstruction(Directive);
+      OutStreamer.EmitInstruction(TmpInst0);
+      Directive.setOpcode(Mips::NOMACRO);
+      OutStreamer.EmitInstruction(Directive);
+    } else {
+      MCInstLowering.LowerUnalignedLoadStore(MI, MCInsts);
+      for (SmallVector<MCInst, 4>::iterator I = MCInsts.begin(); I
+          != MCInsts.end(); ++I)
+        OutStreamer.EmitInstruction(*I);
+    }
     return;
   }
 
   if (!OutStreamer.hasRawTextSupport()) {
     // Lower CPLOAD and CPRESTORE
-    if (Opc == Mips::CPLOAD) {
+    if (Opc == Mips::CPLOAD)
       MCInstLowering.LowerCPLOAD(MI, MCInsts);
+    else if (Opc == Mips::CPRESTORE)
+      MCInstLowering.LowerCPRESTORE(MI, MCInsts);
+    
+    if (!MCInsts.empty()) {
       for (SmallVector<MCInst, 4>::iterator I = MCInsts.begin();
            I != MCInsts.end(); ++I)
         OutStreamer.EmitInstruction(*I);
       return;
     }
-
-    if (Opc == Mips::CPRESTORE) {
-      MCInstLowering.LowerCPRESTORE(MI, TmpInst0);
-      OutStreamer.EmitInstruction(TmpInst0);
-      return;
-    } 
   }
 
   OutStreamer.EmitInstruction(TmpInst0);
@@ -310,9 +315,9 @@ bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
   // Otherwise, check the last instruction.
   // Check if the last terminator is an unconditional branch.
   MachineBasicBlock::const_iterator I = Pred->end();
-  while (I != Pred->begin() && !(--I)->getDesc().isTerminator()) ;
+  while (I != Pred->begin() && !(--I)->isTerminator()) ;
 
-  return !I->getDesc().isBarrier();
+  return !I->isBarrier();
 }
 
 // Print out an operand for an inline asm expression.
@@ -454,7 +459,8 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
   // Tell the assembler which ABI we are using
   if (OutStreamer.hasRawTextSupport())
-    OutStreamer.EmitRawText("\t.section .mdebug." + Twine(getCurrentABIString()));
+    OutStreamer.EmitRawText("\t.section .mdebug." +
+                            Twine(getCurrentABIString()));
 
   // TODO: handle O64 ABI
   if (OutStreamer.hasRawTextSupport()) {

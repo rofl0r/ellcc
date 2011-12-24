@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -verify %s
+// RUN: %clang_cc1 -fsyntax-only -verify -Wno-bool-conversions %s
 
 typedef __typeof__(((int*)0)-((int*)0)) ptrdiff_t;
 
@@ -100,8 +100,8 @@ int main()
   { (void) reinterpret_cast<int>(two); } //expected-error {{reinterpret_cast}}
   { (void) reinterpret_cast<int (*)(char, double)>(two); } //expected-error {{reinterpret_cast}}
 
-  { bool b = (twoT<int>); } // ok
-  { bool b = (twoT<int, int>); } //ok
+  { bool b = (twoT<int>); } 
+  { bool b = (twoT<int, int>); } 
 
   { bool b = &twoT<int>; //&foo<int>; }
     b = &(twoT<int>); }
@@ -116,7 +116,7 @@ int main()
   { ptrdiff_t x = (ptrdiff_t) &twoT<int,int>;
   x = (ptrdiff_t) &twoT<int>; }
 
-  { oneT<int>;   &oneT<int>; } //expected-warning 2{{ expression result unused }}
+  { oneT<int>;   &oneT<int>; } //expected-warning 2{{expression result unused}}
   { static_cast<void>(cant_resolve<int>); } // expected-error {{address of overload}}
   { bool b = cant_resolve<int>; } // expected-error {{address of overload}}
   { (void) cant_resolve<int>; } // expected-error {{address of overload}}

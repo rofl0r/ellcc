@@ -284,8 +284,8 @@ def int_expect : Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>,
 let Properties = [IntrNoMem] in {
   def int_bswap: Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>]>;
   def int_ctpop: Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>]>;
-  def int_ctlz : Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>]>;
-  def int_cttz : Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>]>;
+  def int_ctlz : Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>, llvm_i1_ty]>;
+  def int_cttz : Intrinsic<[llvm_anyint_ty], [LLVMMatchType<0>, llvm_i1_ty]>;
 }
 
 //===------------------------ Debugger Intrinsics -------------------------===//
@@ -326,7 +326,6 @@ let Properties = [IntrNoMem] in {
   def int_eh_sjlj_callsite         : Intrinsic<[], [llvm_i32_ty]>;
 }
 def int_eh_sjlj_functioncontext : Intrinsic<[], [llvm_ptr_ty]>;
-def int_eh_sjlj_dispatch_setup  : Intrinsic<[], [llvm_i32_ty]>;
 def int_eh_sjlj_setjmp          : Intrinsic<[llvm_i32_ty], [llvm_ptr_ty]>;
 def int_eh_sjlj_longjmp         : Intrinsic<[], [llvm_ptr_ty]>;
 
@@ -445,3 +444,4 @@ include "llvm/IntrinsicsARM.td"
 include "llvm/IntrinsicsCellSPU.td"
 include "llvm/IntrinsicsXCore.td"
 include "llvm/IntrinsicsPTX.td"
+include "llvm/IntrinsicsHexagon.td"

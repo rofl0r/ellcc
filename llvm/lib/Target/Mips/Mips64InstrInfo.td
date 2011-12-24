@@ -25,16 +25,24 @@ def uimm16_64      : Operand<i64> {
 
 // Transformation Function - get Imm - 32.
 def Subtract32 : SDNodeXForm<imm, [{
-  return getI32Imm((unsigned)N->getZExtValue() - 32);
+  return getImm(N, (unsigned)N->getZExtValue() - 32);
 }]>;
 
-// shamt field must fit in 5 bits.
-def immZExt5_64 : ImmLeaf<i64, [{return Imm == (Imm & 0x1f);}]>;
+// shamt must fit in 6 bits.
+def immZExt6 : ImmLeaf<i32, [{return Imm == (Imm & 0x3f);}]>;
 
-// imm32_63 predicate - True if imm is in range [32, 63].
-def imm32_63 : ImmLeaf<i32,
-                       [{return (int32_t)Imm >= 32 && (int32_t)Imm < 64;}],
-                       Subtract32>;
+// Is a 32-bit int.
+def immSExt32 : ImmLeaf<i64, [{return isInt<32>(Imm);}]>;
+
+// Transformation Function - get the higher 16 bits.
+def HIGHER : SDNodeXForm<imm, [{
+  return getImm(N, (N->getZExtValue() >> 32) & 0xFFFF);
+}]>;
+
+// Transformation Function - get the highest 16 bits.
+def HIGHEST : SDNodeXForm<imm, [{
+  return getImm(N, (N->getZExtValue() >> 48) & 0xFFFF);
+}]>;
 
 //===----------------------------------------------------------------------===//
 // Instructions specific format
@@ -43,12 +51,7 @@ def imm32_63 : ImmLeaf<i32,
 // 64-bit shift instructions.
 class shift_rotate_imm64<bits<6> func, bits<5> isRotate, string instr_asm,
                          SDNode OpNode>:
-  shift_rotate_imm<func, isRotate, instr_asm, OpNode, immZExt5, shamt,
-                   CPU64Regs>;
-
-class shift_rotate_imm64_32<bits<6> func, bits<5> isRotate, string instr_asm,
-                            SDNode OpNode>:
-  shift_rotate_imm<func, isRotate, instr_asm, OpNode, imm32_63, shamt,
+  shift_rotate_imm<func, isRotate, instr_asm, OpNode, immZExt6, shamt,
                    CPU64Regs>;
 
 // Jump and Link (Call)
@@ -131,9 +134,6 @@ def NOR64    : LogicNOR<0x00, 0x27, "nor", CPU64Regs>;
 def DSLL     : shift_rotate_imm64<0x38, 0x00, "dsll", shl>;
 def DSRL     : shift_rotate_imm64<0x3a, 0x00, "dsrl", srl>;
 def DSRA     : shift_rotate_imm64<0x3b, 0x00, "dsra", sra>;
-def DSLL32   : shift_rotate_imm64_32<0x3c, 0x00, "dsll32", shl>;
-def DSRL32   : shift_rotate_imm64_32<0x3e, 0x00, "dsrl32", srl>;
-def DSRA32   : shift_rotate_imm64_32<0x3f, 0x00, "dsra32", sra>;
 def DSLLV    : shift_rotate_reg<0x24, 0x00, "dsllv", shl, CPU64Regs>;
 def DSRLV    : shift_rotate_reg<0x26, 0x00, "dsrlv", srl, CPU64Regs>;
 def DSRAV    : shift_rotate_reg<0x27, 0x00, "dsrav", sra, CPU64Regs>;
@@ -141,7 +141,6 @@ def DSRAV    : shift_rotate_reg<0x27, 0x00, "dsrav", sra, CPU64Regs>;
 // Rotate Instructions
 let Predicates = [HasMips64r2] in {
   def DROTR    : shift_rotate_imm64<0x3a, 0x01, "drotr", rotr>;
-  def DROTR32  : shift_rotate_imm64_32<0x3e, 0x01, "drotr32", rotr>;
   def DROTRV   : shift_rotate_reg<0x16, 0x01, "drotrv", rotr, CPU64Regs>;
 }
 
@@ -200,11 +199,28 @@ def MFLO64 : MoveFromLOHI<0x12, "mflo", CPU64Regs, [LO64]>;
 def DCLZ : CountLeading0<0x24, "dclz", CPU64Regs>;
 def DCLO : CountLeading1<0x25, "dclo", CPU64Regs>;
 
+/// Double Word Swap Bytes/HalfWords
+def DSBH : SubwordSwap<0x24, 0x2, "dsbh", CPU64Regs>;
+def DSHD : SubwordSwap<0x24, 0x5, "dshd", CPU64Regs>;
+
 def LEA_ADDiu64 : EffectiveAddress<"addiu\t$rt, $addr", CPU64Regs, mem_ea_64>;
 
 let Uses = [SP_64] in
 def DynAlloc64 : EffectiveAddress<"daddiu\t$rt, $addr", CPU64Regs, mem_ea_64>,
                  Requires<[IsN64]>;
+
+def RDHWR64 : ReadHardware<CPU64Regs, HWRegs64>;
+
+def DEXT : ExtBase<3, "dext", CPU64Regs>;
+def DINS : InsBase<7, "dins", CPU64Regs>;
+
+def DSLL64_32 : FR<0x3c, 0x00, (outs CPU64Regs:$rd), (ins CPURegs:$rt),
+                   "dsll\t$rd, $rt, 32", [], IIAlu>;
+
+def SLL64_32 : FR<0x0, 0x00, (outs CPU64Regs:$rd), (ins CPURegs:$rt),
+                  "sll\t$rd, $rt, 0", [], IIAlu>;
+def SLL64_64 : FR<0x0, 0x00, (outs CPU64Regs:$rd), (ins CPU64Regs:$rt),
+                  "sll\t$rd, $rt, 0", [], IIAlu>;
 
 //===----------------------------------------------------------------------===//
 //  Arbitrary patterns that map to one or more instructions
@@ -215,20 +231,37 @@ def : Pat<(i64 immSExt16:$in),
           (DADDiu ZERO_64, imm:$in)>;
 def : Pat<(i64 immZExt16:$in),
           (ORi64 ZERO_64, imm:$in)>;
+def : Pat<(i64 immLUiOpnd:$in),
+          (LUi64 (HI16 imm:$in))>;
+
+// 32-bit immediates
+def : Pat<(i64 immSExt32:$imm),
+          (ORi64 (LUi64 (HI16 imm:$imm)), (LO16 imm:$imm))>;
 
 // Arbitrary immediates
 def : Pat<(i64 imm:$imm),
-          (ORi64 (LUi64 (HI16 imm:$imm)), (LO16 imm:$imm))>;
+          (ORi64 (DSLL (ORi64 (DSLL (ORi64 (LUi64 (HIGHEST imm:$imm)),
+           (HIGHER imm:$imm)), 16), (HI16 imm:$imm)), 16),
+           (LO16 imm:$imm))>;
 
 // extended loads
 let Predicates = [NotN64] in {
-  def : Pat<(extloadi32_a addr:$a), (DSRL32 (DSLL32 (LW64 addr:$a), 0), 0)>;
-  def : Pat<(zextloadi32_u addr:$a), (DSRL32 (DSLL32 (ULW64 addr:$a), 0), 0)>;
+  def : Pat<(i64 (extloadi1  addr:$src)), (LB64 addr:$src)>;
+  def : Pat<(i64 (extloadi8  addr:$src)), (LB64 addr:$src)>;
+  def : Pat<(i64 (extloadi16_a addr:$src)), (LH64 addr:$src)>;
+  def : Pat<(i64 (extloadi16_u addr:$src)), (ULH64 addr:$src)>;
+  def : Pat<(i64 (extloadi32_a addr:$src)), (LW64 addr:$src)>;
+  def : Pat<(i64 (extloadi32_u addr:$src)), (ULW64 addr:$src)>;
+  def : Pat<(zextloadi32_u addr:$a), (DSRL (DSLL (ULW64 addr:$a), 32), 32)>;
 }
 let Predicates = [IsN64] in {
-  def : Pat<(extloadi32_a addr:$a), (DSRL32 (DSLL32 (LW64_P8 addr:$a), 0), 0)>;
-  def : Pat<(zextloadi32_u addr:$a), 
-            (DSRL32 (DSLL32 (ULW64_P8 addr:$a), 0), 0)>;
+  def : Pat<(i64 (extloadi1  addr:$src)), (LB64_P8 addr:$src)>;
+  def : Pat<(i64 (extloadi8  addr:$src)), (LB64_P8 addr:$src)>;
+  def : Pat<(i64 (extloadi16_a addr:$src)), (LH64_P8 addr:$src)>;
+  def : Pat<(i64 (extloadi16_u addr:$src)), (ULH64_P8 addr:$src)>;
+  def : Pat<(i64 (extloadi32_a addr:$src)), (LW64_P8 addr:$src)>;
+  def : Pat<(i64 (extloadi32_u addr:$src)), (ULW64_P8 addr:$src)>;
+  def : Pat<(zextloadi32_u addr:$a), (DSRL (DSLL (ULW64_P8 addr:$a), 32), 32)>;
 }
 
 // hi/lo relocs
@@ -236,11 +269,13 @@ def : Pat<(MipsHi tglobaladdr:$in), (LUi64 tglobaladdr:$in)>;
 def : Pat<(MipsHi tblockaddress:$in), (LUi64 tblockaddress:$in)>;
 def : Pat<(MipsHi tjumptable:$in), (LUi64 tjumptable:$in)>;
 def : Pat<(MipsHi tconstpool:$in), (LUi64 tconstpool:$in)>;
+def : Pat<(MipsHi tglobaltlsaddr:$in), (LUi64 tglobaltlsaddr:$in)>;
 
 def : Pat<(MipsLo tglobaladdr:$in), (DADDiu ZERO_64, tglobaladdr:$in)>;
 def : Pat<(MipsLo tblockaddress:$in), (DADDiu ZERO_64, tblockaddress:$in)>;
 def : Pat<(MipsLo tjumptable:$in), (DADDiu ZERO_64, tjumptable:$in)>;
 def : Pat<(MipsLo tconstpool:$in), (DADDiu ZERO_64, tconstpool:$in)>;
+def : Pat<(MipsLo tglobaltlsaddr:$in), (DADDiu ZERO_64, tglobaltlsaddr:$in)>;
 
 def : Pat<(add CPU64Regs:$hi, (MipsLo tglobaladdr:$lo)),
           (DADDiu CPU64Regs:$hi, tglobaladdr:$lo)>;
@@ -250,6 +285,15 @@ def : Pat<(add CPU64Regs:$hi, (MipsLo tjumptable:$lo)),
           (DADDiu CPU64Regs:$hi, tjumptable:$lo)>;
 def : Pat<(add CPU64Regs:$hi, (MipsLo tconstpool:$lo)),
           (DADDiu CPU64Regs:$hi, tconstpool:$lo)>;
+def : Pat<(add CPU64Regs:$hi, (MipsLo tglobaltlsaddr:$lo)),
+          (DADDiu CPU64Regs:$hi, tglobaltlsaddr:$lo)>;
+
+def : WrapperPat<tglobaladdr, DADDiu, GP_64>;
+def : WrapperPat<tconstpool, DADDiu, GP_64>;
+def : WrapperPat<texternalsym, DADDiu, GP_64>;
+def : WrapperPat<tblockaddress, DADDiu, GP_64>;
+def : WrapperPat<tjumptable, DADDiu, GP_64>;
+def : WrapperPat<tglobaltlsaddr, DADDiu, GP_64>;
 
 defm : BrcondPats<CPU64Regs, BEQ64, BNE64, SLT64, SLTu64, SLTi64, SLTiu64,
                   ZERO_64>;
@@ -268,3 +312,13 @@ def : Pat<(MipsDynAlloc addr:$f), (DynAlloc64 addr:$f)>, Requires<[IsN64]>;
 def : Pat<(i32 (trunc CPU64Regs:$src)),
           (SLL (EXTRACT_SUBREG CPU64Regs:$src, sub_32), 0)>, Requires<[IsN64]>;
  
+// 32-to-64-bit extension
+def : Pat<(i64 (anyext CPURegs:$src)), (SLL64_32 CPURegs:$src)>;
+def : Pat<(i64 (zext CPURegs:$src)), (DSRL (DSLL64_32 CPURegs:$src), 32)>;
+def : Pat<(i64 (sext CPURegs:$src)), (SLL64_32 CPURegs:$src)>;
+
+// Sign extend in register
+def : Pat<(i64 (sext_inreg CPU64Regs:$src, i32)), (SLL64_64 CPU64Regs:$src)>;
+
+// bswap pattern
+def : Pat<(bswap CPU64Regs:$rt), (DSHD (DSBH CPU64Regs:$rt))>;

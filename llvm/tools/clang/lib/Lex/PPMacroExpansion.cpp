@@ -24,7 +24,7 @@
 #include "clang/Lex/LiteralSupport.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstdio>
@@ -115,6 +115,11 @@ static bool isTrivialSingleTokenExpansion(const MacroInfo *MI,
 
   // If the token isn't an identifier, it's always literally expanded.
   if (II == 0) return true;
+
+  // If the information about this identifier is out of date, update it from
+  // the external source.
+  if (II->isOutOfDate())
+    PP.getExternalSource()->updateOutOfDateIdentifier(*II);
 
   // If the identifier is a macro, and if that macro is enabled, it may be
   // expanded so it's not a trivial expansion.
@@ -583,6 +588,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
   const LangOptions &LangOpts = PP.getLangOptions();
 
   return llvm::StringSwitch<bool>(II->getName())
+           .Case("address_sanitizer", LangOpts.AddressSanitizer)
            .Case("attribute_analyzer_noreturn", true)
            .Case("attribute_availability", true)
            .Case("attribute_cf_returns_not_retained", true)
@@ -674,6 +680,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
                  PP.getIdentifierInfo("__is_empty")->getTokenID()
                                                             != tok::identifier)
            .Case("is_enum", LangOpts.CPlusPlus)
+           .Case("is_final", LangOpts.CPlusPlus)
            .Case("is_literal", LangOpts.CPlusPlus)
            .Case("is_standard_layout", LangOpts.CPlusPlus)
            // __is_pod is available only if the horrible

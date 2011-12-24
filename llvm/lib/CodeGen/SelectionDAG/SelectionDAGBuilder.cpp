@@ -47,6 +47,7 @@
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/CommandLine.h"
@@ -812,9 +813,11 @@ void RegsForValue::AddInlineAsmOperands(unsigned Code, bool HasMatching,
   }
 }
 
-void SelectionDAGBuilder::init(GCFunctionInfo *gfi, AliasAnalysis &aa) {
+void SelectionDAGBuilder::init(GCFunctionInfo *gfi, AliasAnalysis &aa,
+                               const TargetLibraryInfo *li) {
   AA = &aa;
   GFI = gfi;
+  LibInfo = li;
   TD = DAG.getTarget().getTargetData();
   LPadToCallSiteMap.clear();
 }
@@ -1284,8 +1287,8 @@ bool SelectionDAGBuilder::isExportableFromCurrentBlock(const Value *V,
 }
 
 /// Return branch probability calculated by BranchProbabilityInfo for IR blocks.
-uint32_t SelectionDAGBuilder::getEdgeWeight(MachineBasicBlock *Src,
-                                            MachineBasicBlock *Dst) {
+uint32_t SelectionDAGBuilder::getEdgeWeight(const MachineBasicBlock *Src,
+                                            const MachineBasicBlock *Dst) const {
   BranchProbabilityInfo *BPI = FuncInfo.BPI;
   if (!BPI)
     return 0;
@@ -1335,6 +1338,8 @@ SelectionDAGBuilder::EmitBranchForMergedCondition(const Value *Cond,
         Condition = getICmpCondCode(IC->getPredicate());
       } else if (const FCmpInst *FC = dyn_cast<FCmpInst>(Cond)) {
         Condition = getFCmpCondCode(FC->getPredicate());
+        if (TM.Options.NoNaNsFPMath)
+          Condition = getFCmpCodeWithoutNaN(Condition);
       } else {
         Condition = ISD::SETEQ; // silence warning.
         llvm_unreachable("Unknown compare instruction");
@@ -1810,8 +1815,8 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
   CopyToExportRegsIfNeeded(&I);
 
   // Update successor info
-  InvokeMBB->addSuccessor(Return);
-  InvokeMBB->addSuccessor(LandingPad);
+  addSuccessorWithWeight(InvokeMBB, Return);
+  addSuccessorWithWeight(InvokeMBB, LandingPad);
 
   // Drop into normal successor.
   DAG.setRoot(DAG.getNode(ISD::BR, getCurDebugLoc(),
@@ -2002,7 +2007,7 @@ bool SelectionDAGBuilder::handleSmallSwitchRange(CaseRec& CR,
 }
 
 static inline bool areJTsAllowed(const TargetLowering &TLI) {
-  return !DisableJumpTables &&
+  return !TLI.getTargetMachine().Options.DisableJumpTables &&
           (TLI.isOperationLegalOrCustom(ISD::BR_JT, MVT::Other) ||
            TLI.isOperationLegalOrCustom(ISD::BRIND, MVT::Other));
 }
@@ -2625,6 +2630,8 @@ void SelectionDAGBuilder::visitFCmp(const User &I) {
   SDValue Op1 = getValue(I.getOperand(0));
   SDValue Op2 = getValue(I.getOperand(1));
   ISD::CondCode Condition = getFCmpCondCode(predicate);
+  if (TM.Options.NoNaNsFPMath)
+    Condition = getFCmpCodeWithoutNaN(Condition);
   EVT DestVT = TLI.getValueType(I.getType());
   setValue(&I, DAG.getSetCC(getCurDebugLoc(), DestVT, Op1, Op2, Condition));
 }
@@ -3095,7 +3102,7 @@ void SelectionDAGBuilder::visitGetElementPtr(const User &I) {
           unsigned Amt = ElementSize.logBase2();
           IdxN = DAG.getNode(ISD::SHL, getCurDebugLoc(),
                              N.getValueType(), IdxN,
-                             DAG.getConstant(Amt, TLI.getPointerTy()));
+                             DAG.getConstant(Amt, IdxN.getValueType()));
         } else {
           SDValue Scale = DAG.getConstant(ElementSize, TLI.getPointerTy());
           IdxN = DAG.getNode(ISD::MUL, getCurDebugLoc(),
@@ -4775,11 +4782,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                             getRoot(), getValue(I.getArgOperand(0))));
     return 0;
   }
-  case Intrinsic::eh_sjlj_dispatch_setup: {
-    DAG.setRoot(DAG.getNode(ISD::EH_SJLJ_DISPATCHSETUP, dl, MVT::Other,
-                            getRoot(), getValue(I.getArgOperand(0))));
-    return 0;
-  }
 
   case Intrinsic::x86_mmx_pslli_w:
   case Intrinsic::x86_mmx_pslli_d:
@@ -4946,14 +4948,18 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     return 0;
   case Intrinsic::cttz: {
     SDValue Arg = getValue(I.getArgOperand(0));
+    ConstantInt *CI = cast<ConstantInt>(I.getArgOperand(1));
     EVT Ty = Arg.getValueType();
-    setValue(&I, DAG.getNode(ISD::CTTZ, dl, Ty, Arg));
+    setValue(&I, DAG.getNode(CI->isZero() ? ISD::CTTZ : ISD::CTTZ_ZERO_UNDEF,
+                             dl, Ty, Arg));
     return 0;
   }
   case Intrinsic::ctlz: {
     SDValue Arg = getValue(I.getArgOperand(0));
+    ConstantInt *CI = cast<ConstantInt>(I.getArgOperand(1));
     EVT Ty = Arg.getValueType();
-    setValue(&I, DAG.getNode(ISD::CTLZ, dl, Ty, Arg));
+    setValue(&I, DAG.getNode(CI->isZero() ? ISD::CTLZ : ISD::CTLZ_ZERO_UNDEF,
+                             dl, Ty, Arg));
     return 0;
   }
   case Intrinsic::ctpop: {
@@ -5064,7 +5070,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
 
   case Intrinsic::trap: {
-    StringRef TrapFuncName = getTrapFunctionName();
+    StringRef TrapFuncName = TM.Options.getTrapFunctionName();
     if (TrapFuncName.empty()) {
       DAG.setRoot(DAG.getNode(ISD::TRAP, dl,MVT::Other, getRoot()));
       return 0;
@@ -5226,7 +5232,7 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
 
   // If there's a possibility that fast-isel has already selected some amount
   // of the current basic block, don't emit a tail call.
-  if (isTailCall && EnableFastISel)
+  if (isTailCall && TM.Options.EnableFastISel)
     isTailCall = false;
 
   std::pair<SDValue,SDValue> Result =
@@ -5510,7 +5516,9 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
     // can't be a library call.
     if (!F->hasLocalLinkage() && F->hasName()) {
       StringRef Name = F->getName();
-      if (Name == "copysign" || Name == "copysignf" || Name == "copysignl") {
+      if ((LibInfo->has(LibFunc::copysign) && Name == "copysign") ||
+          (LibInfo->has(LibFunc::copysignf) && Name == "copysignf") ||
+          (LibInfo->has(LibFunc::copysignl) && Name == "copysignl")) {
         if (I.getNumArgOperands() == 2 &&   // Basic sanity checks.
             I.getArgOperand(0)->getType()->isFloatingPointTy() &&
             I.getType() == I.getArgOperand(0)->getType() &&
@@ -5521,7 +5529,9 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
                                    LHS.getValueType(), LHS, RHS));
           return;
         }
-      } else if (Name == "fabs" || Name == "fabsf" || Name == "fabsl") {
+      } else if ((LibInfo->has(LibFunc::fabs) && Name == "fabs") ||
+                 (LibInfo->has(LibFunc::fabsf) && Name == "fabsf") ||
+                 (LibInfo->has(LibFunc::fabsl) && Name == "fabsl")) {
         if (I.getNumArgOperands() == 1 &&   // Basic sanity checks.
             I.getArgOperand(0)->getType()->isFloatingPointTy() &&
             I.getType() == I.getArgOperand(0)->getType()) {
@@ -5530,7 +5540,9 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
                                    Tmp.getValueType(), Tmp));
           return;
         }
-      } else if (Name == "sin" || Name == "sinf" || Name == "sinl") {
+      } else if ((LibInfo->has(LibFunc::sin) && Name == "sin") ||
+                 (LibInfo->has(LibFunc::sinf) && Name == "sinf") ||
+                 (LibInfo->has(LibFunc::sinl) && Name == "sinl")) {
         if (I.getNumArgOperands() == 1 &&   // Basic sanity checks.
             I.getArgOperand(0)->getType()->isFloatingPointTy() &&
             I.getType() == I.getArgOperand(0)->getType() &&
@@ -5540,7 +5552,9 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
                                    Tmp.getValueType(), Tmp));
           return;
         }
-      } else if (Name == "cos" || Name == "cosf" || Name == "cosl") {
+      } else if ((LibInfo->has(LibFunc::cos) && Name == "cos") ||
+                 (LibInfo->has(LibFunc::cosf) && Name == "cosf") ||
+                 (LibInfo->has(LibFunc::cosl) && Name == "cosl")) {
         if (I.getNumArgOperands() == 1 &&   // Basic sanity checks.
             I.getArgOperand(0)->getType()->isFloatingPointTy() &&
             I.getType() == I.getArgOperand(0)->getType() &&
@@ -5550,13 +5564,92 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
                                    Tmp.getValueType(), Tmp));
           return;
         }
-      } else if (Name == "sqrt" || Name == "sqrtf" || Name == "sqrtl") {
+      } else if ((LibInfo->has(LibFunc::sqrt) && Name == "sqrt") ||
+                 (LibInfo->has(LibFunc::sqrtf) && Name == "sqrtf") ||
+                 (LibInfo->has(LibFunc::sqrtl) && Name == "sqrtl")) {
         if (I.getNumArgOperands() == 1 &&   // Basic sanity checks.
             I.getArgOperand(0)->getType()->isFloatingPointTy() &&
             I.getType() == I.getArgOperand(0)->getType() &&
             I.onlyReadsMemory()) {
           SDValue Tmp = getValue(I.getArgOperand(0));
           setValue(&I, DAG.getNode(ISD::FSQRT, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::floor) && Name == "floor") ||
+                 (LibInfo->has(LibFunc::floorf) && Name == "floorf") ||
+                 (LibInfo->has(LibFunc::floorl) && Name == "floorl")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FFLOOR, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::nearbyint) && Name == "nearbyint") ||
+                 (LibInfo->has(LibFunc::nearbyintf) && Name == "nearbyintf") ||
+                 (LibInfo->has(LibFunc::nearbyintl) && Name == "nearbyintl")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FNEARBYINT, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::ceil) && Name == "ceil") ||
+                 (LibInfo->has(LibFunc::ceilf) && Name == "ceilf") ||
+                 (LibInfo->has(LibFunc::ceill) && Name == "ceill")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FCEIL, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::rint) && Name == "rint") ||
+                 (LibInfo->has(LibFunc::rintf) && Name == "rintf") ||
+                 (LibInfo->has(LibFunc::rintl) && Name == "rintl")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FRINT, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::trunc) && Name == "trunc") ||
+                 (LibInfo->has(LibFunc::truncf) && Name == "truncf") ||
+                 (LibInfo->has(LibFunc::truncl) && Name == "truncl")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FTRUNC, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::log2) && Name == "log2") ||
+                 (LibInfo->has(LibFunc::log2f) && Name == "log2f") ||
+                 (LibInfo->has(LibFunc::log2l) && Name == "log2l")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FLOG2, getCurDebugLoc(),
+                                   Tmp.getValueType(), Tmp));
+          return;
+        }
+      } else if ((LibInfo->has(LibFunc::exp2) && Name == "exp2") ||
+                 (LibInfo->has(LibFunc::exp2f) && Name == "exp2f") ||
+                 (LibInfo->has(LibFunc::exp2l) && Name == "exp2l")) {
+        if (I.getNumArgOperands() == 1 && // Basic sanity checks.
+            I.getArgOperand(0)->getType()->isFloatingPointTy() &&
+            I.getType() == I.getArgOperand(0)->getType()) {
+          SDValue Tmp = getValue(I.getArgOperand(0));
+          setValue(&I, DAG.getNode(ISD::FEXP2, getCurDebugLoc(),
                                    Tmp.getValueType(), Tmp));
           return;
         }
@@ -6516,10 +6609,10 @@ SelectionDAGBuilder::CopyValueToVirtualRegister(const Value *V, unsigned Reg) {
 /// isOnlyUsedInEntryBlock - If the specified argument is only used in the
 /// entry block, return true.  This includes arguments used by switches, since
 /// the switch may expand into multiple basic blocks.
-static bool isOnlyUsedInEntryBlock(const Argument *A) {
+static bool isOnlyUsedInEntryBlock(const Argument *A, bool FastISel) {
   // With FastISel active, we may be splitting blocks, so force creation
   // of virtual registers for all non-dead arguments.
-  if (EnableFastISel)
+  if (FastISel)
     return A->use_empty();
 
   const BasicBlock *Entry = A->getParent()->begin();
@@ -6709,7 +6802,7 @@ void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
                                      SDB->getCurDebugLoc());
 
     SDB->setValue(I, Res);
-    if (!EnableFastISel && Res.getOpcode() == ISD::BUILD_PAIR) {
+    if (!TM.Options.EnableFastISel && Res.getOpcode() == ISD::BUILD_PAIR) {
       if (LoadSDNode *LNode = 
           dyn_cast<LoadSDNode>(Res.getOperand(0).getNode()))
         if (FrameIndexSDNode *FI =
@@ -6719,7 +6812,7 @@ void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
 
     // If this argument is live outside of the entry block, insert a copy from
     // wherever we got it to the vreg that other BB's will reference it as.
-    if (!EnableFastISel && Res.getOpcode() == ISD::CopyFromReg) {
+    if (!TM.Options.EnableFastISel && Res.getOpcode() == ISD::CopyFromReg) {
       // If we can, though, try to skip creating an unnecessary vreg.
       // FIXME: This isn't very clean... it would be nice to make this more
       // general.  It's also subtly incompatible with the hacks FastISel
@@ -6730,7 +6823,7 @@ void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
         continue;
       }
     }
-    if (!isOnlyUsedInEntryBlock(I)) {
+    if (!isOnlyUsedInEntryBlock(I, TM.Options.EnableFastISel)) {
       FuncInfo->InitializeRegForValue(I);
       SDB->CopyToExportRegsIfNeeded(I);
     }

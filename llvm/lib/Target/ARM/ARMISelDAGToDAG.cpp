@@ -1579,6 +1579,26 @@ static unsigned getVLDSTRegisterUpdateOpcode(unsigned Opc) {
   case ARM::VST1q16PseudoWB_fixed: return ARM::VST1q16PseudoWB_register;
   case ARM::VST1q32PseudoWB_fixed: return ARM::VST1q32PseudoWB_register;
   case ARM::VST1q64PseudoWB_fixed: return ARM::VST1q64PseudoWB_register;
+  case ARM::VST1d64TPseudoWB_fixed: return ARM::VST1d64TPseudoWB_register;
+  case ARM::VST1d64QPseudoWB_fixed: return ARM::VST1d64QPseudoWB_register;
+
+  case ARM::VLD2d8PseudoWB_fixed: return ARM::VLD2d8PseudoWB_register;
+  case ARM::VLD2d16PseudoWB_fixed: return ARM::VLD2d16PseudoWB_register;
+  case ARM::VLD2d32PseudoWB_fixed: return ARM::VLD2d32PseudoWB_register;
+  case ARM::VLD2q8PseudoWB_fixed: return ARM::VLD2q8PseudoWB_register;
+  case ARM::VLD2q16PseudoWB_fixed: return ARM::VLD2q16PseudoWB_register;
+  case ARM::VLD2q32PseudoWB_fixed: return ARM::VLD2q32PseudoWB_register;
+
+  case ARM::VST2d8PseudoWB_fixed: return ARM::VST2d8PseudoWB_register;
+  case ARM::VST2d16PseudoWB_fixed: return ARM::VST2d16PseudoWB_register;
+  case ARM::VST2d32PseudoWB_fixed: return ARM::VST2d32PseudoWB_register;
+  case ARM::VST2q8PseudoWB_fixed: return ARM::VST2q8PseudoWB_register;
+  case ARM::VST2q16PseudoWB_fixed: return ARM::VST2q16PseudoWB_register;
+  case ARM::VST2q32PseudoWB_fixed: return ARM::VST2q32PseudoWB_register;
+
+  case ARM::VLD2DUPd8PseudoWB_fixed: return ARM::VLD2DUPd8PseudoWB_register;
+  case ARM::VLD2DUPd16PseudoWB_fixed: return ARM::VLD2DUPd16PseudoWB_register;
+  case ARM::VLD2DUPd32PseudoWB_fixed: return ARM::VLD2DUPd32PseudoWB_register;
   }
   return Opc; // If not one we handle, return it unchanged.
 }
@@ -1646,13 +1666,13 @@ SDNode *ARMDAGToDAGISel::SelectVLD(SDNode *N, bool isUpdating, unsigned NumVecs,
     Ops.push_back(Align);
     if (isUpdating) {
       SDValue Inc = N->getOperand(AddrOpIdx + 1);
-      // FIXME: VLD1 fixed increment doesn't need Reg0. Remove the reg0
+      // FIXME: VLD1/VLD2 fixed increment doesn't need Reg0. Remove the reg0
       // case entirely when the rest are updated to that form, too.
-      if (NumVecs == 1 && !isa<ConstantSDNode>(Inc.getNode()))
+      if ((NumVecs == 1 || NumVecs == 2) && !isa<ConstantSDNode>(Inc.getNode()))
         Opc = getVLDSTRegisterUpdateOpcode(Opc);
-      // We use a VST1 for v1i64 even if the pseudo says vld2/3/4, so
+      // We use a VLD1 for v1i64 even if the pseudo says vld2/3/4, so
       // check for that explicitly too. Horribly hacky, but temporary.
-      if ((NumVecs != 1 && Opc != ARM::VLD1q64PseudoWB_fixed) ||
+      if ((NumVecs != 1 && NumVecs != 2 && Opc != ARM::VLD1q64PseudoWB_fixed) ||
           !isa<ConstantSDNode>(Inc.getNode()))
         Ops.push_back(isa<ConstantSDNode>(Inc.getNode()) ? Reg0 : Inc);
     }
@@ -1796,9 +1816,9 @@ SDNode *ARMDAGToDAGISel::SelectVST(SDNode *N, bool isUpdating, unsigned NumVecs,
     Ops.push_back(Align);
     if (isUpdating) {
       SDValue Inc = N->getOperand(AddrOpIdx + 1);
-      // FIXME: VST1 fixed increment doesn't need Reg0. Remove the reg0
+      // FIXME: VST1/VST2 fixed increment doesn't need Reg0. Remove the reg0
       // case entirely when the rest are updated to that form, too.
-      if (NumVecs == 1 && !isa<ConstantSDNode>(Inc.getNode()))
+      if (NumVecs <= 2 && !isa<ConstantSDNode>(Inc.getNode()))
         Opc = getVLDSTRegisterUpdateOpcode(Opc);
       // We use a VST1 for v1i64 even if the pseudo says vld2/3/4, so
       // check for that explicitly too. Horribly hacky, but temporary.
@@ -2027,8 +2047,14 @@ SDNode *ARMDAGToDAGISel::SelectVLDDup(SDNode *N, bool isUpdating,
   Ops.push_back(MemAddr);
   Ops.push_back(Align);
   if (isUpdating) {
+    // fixed-stride update instructions don't have an explicit writeback
+    // operand. It's implicit in the opcode itself.
     SDValue Inc = N->getOperand(2);
-    Ops.push_back(isa<ConstantSDNode>(Inc.getNode()) ? Reg0 : Inc);
+    if (!isa<ConstantSDNode>(Inc.getNode()))
+      Ops.push_back(Inc);
+    // FIXME: VLD3 and VLD4 haven't been updated to that form yet.
+    else if (NumVecs > 2)
+      Ops.push_back(Reg0);
   }
   Ops.push_back(Pred);
   Ops.push_back(Reg0);
@@ -2782,8 +2808,9 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
   }
 
   case ARMISD::VLD2DUP_UPD: {
-    unsigned Opcodes[] = { ARM::VLD2DUPd8Pseudo_UPD, ARM::VLD2DUPd16Pseudo_UPD,
-                           ARM::VLD2DUPd32Pseudo_UPD };
+    unsigned Opcodes[] = { ARM::VLD2DUPd8PseudoWB_fixed,
+                           ARM::VLD2DUPd16PseudoWB_fixed,
+                           ARM::VLD2DUPd32PseudoWB_fixed };
     return SelectVLDDup(N, true, 2, Opcodes);
   }
 
@@ -2810,10 +2837,13 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
   }
 
   case ARMISD::VLD2_UPD: {
-    unsigned DOpcodes[] = { ARM::VLD2d8Pseudo_UPD, ARM::VLD2d16Pseudo_UPD,
-                            ARM::VLD2d32Pseudo_UPD, ARM::VLD1q64PseudoWB_fixed};
-    unsigned QOpcodes[] = { ARM::VLD2q8Pseudo_UPD, ARM::VLD2q16Pseudo_UPD,
-                            ARM::VLD2q32Pseudo_UPD };
+    unsigned DOpcodes[] = { ARM::VLD2d8PseudoWB_fixed,
+                            ARM::VLD2d16PseudoWB_fixed,
+                            ARM::VLD2d32PseudoWB_fixed,
+                            ARM::VLD1q64PseudoWB_fixed};
+    unsigned QOpcodes[] = { ARM::VLD2q8PseudoWB_fixed,
+                            ARM::VLD2q16PseudoWB_fixed,
+                            ARM::VLD2q32PseudoWB_fixed };
     return SelectVLD(N, true, 2, DOpcodes, QOpcodes, 0);
   }
 
@@ -2876,16 +2906,19 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
   }
 
   case ARMISD::VST2_UPD: {
-    unsigned DOpcodes[] = { ARM::VST2d8Pseudo_UPD, ARM::VST2d16Pseudo_UPD,
-                            ARM::VST2d32Pseudo_UPD, ARM::VST1q64PseudoWB_fixed};
-    unsigned QOpcodes[] = { ARM::VST2q8Pseudo_UPD, ARM::VST2q16Pseudo_UPD,
-                            ARM::VST2q32Pseudo_UPD };
+    unsigned DOpcodes[] = { ARM::VST2d8PseudoWB_fixed,
+                            ARM::VST2d16PseudoWB_fixed,
+                            ARM::VST2d32PseudoWB_fixed,
+                            ARM::VST1q64PseudoWB_fixed};
+    unsigned QOpcodes[] = { ARM::VST2q8PseudoWB_fixed,
+                            ARM::VST2q16PseudoWB_fixed,
+                            ARM::VST2q32PseudoWB_fixed };
     return SelectVST(N, true, 2, DOpcodes, QOpcodes, 0);
   }
 
   case ARMISD::VST3_UPD: {
     unsigned DOpcodes[] = { ARM::VST3d8Pseudo_UPD, ARM::VST3d16Pseudo_UPD,
-                            ARM::VST3d32Pseudo_UPD, ARM::VST1d64TPseudo_UPD };
+                            ARM::VST3d32Pseudo_UPD,ARM::VST1d64TPseudoWB_fixed};
     unsigned QOpcodes0[] = { ARM::VST3q8Pseudo_UPD,
                              ARM::VST3q16Pseudo_UPD,
                              ARM::VST3q32Pseudo_UPD };
@@ -2897,7 +2930,7 @@ SDNode *ARMDAGToDAGISel::Select(SDNode *N) {
 
   case ARMISD::VST4_UPD: {
     unsigned DOpcodes[] = { ARM::VST4d8Pseudo_UPD, ARM::VST4d16Pseudo_UPD,
-                            ARM::VST4d32Pseudo_UPD, ARM::VST1d64QPseudo_UPD };
+                            ARM::VST4d32Pseudo_UPD,ARM::VST1d64QPseudoWB_fixed};
     unsigned QOpcodes0[] = { ARM::VST4q8Pseudo_UPD,
                              ARM::VST4q16Pseudo_UPD,
                              ARM::VST4q32Pseudo_UPD };

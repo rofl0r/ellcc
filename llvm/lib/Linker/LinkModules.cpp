@@ -38,9 +38,14 @@ class TypeMapTy : public ValueMapTypeRemapper {
   /// case we need to roll back.
   SmallVector<Type*, 16> SpeculativeTypes;
   
-  /// DefinitionsToResolve - This is a list of non-opaque structs in the source
-  /// module that are mapped to an opaque struct in the destination module.
-  SmallVector<StructType*, 16> DefinitionsToResolve;
+  /// SrcDefinitionsToResolve - This is a list of non-opaque structs in the
+  /// source module that are mapped to an opaque struct in the destination
+  /// module.
+  SmallVector<StructType*, 16> SrcDefinitionsToResolve;
+  
+  /// DstResolvedOpaqueTypes - This is the set of opaque types in the
+  /// destination modules who are getting a body from the source module.
+  SmallPtrSet<StructType*, 16> DstResolvedOpaqueTypes;
 public:
   
   /// addTypeMapping - Indicate that the specified type in the destination
@@ -118,11 +123,17 @@ bool TypeMapTy::areTypesIsomorphic(Type *DstTy, Type *SrcTy) {
       return true;
     }
 
-    // Mapping a non-opaque source type to an opaque dest.  Keep the dest, but
-    // fill it in later.  This doesn't need to be speculative.
+    // Mapping a non-opaque source type to an opaque dest.  If this is the first
+    // type that we're mapping onto this destination type then we succeed.  Keep
+    // the dest, but fill it in later.  This doesn't need to be speculative.  If
+    // this is the second (different) type that we're trying to map onto the
+    // same opaque type then we fail.
     if (cast<StructType>(DstTy)->isOpaque()) {
+      // We can only map one source type onto the opaque destination type.
+      if (!DstResolvedOpaqueTypes.insert(cast<StructType>(DstTy)))
+        return false;
+      SrcDefinitionsToResolve.push_back(SSTy);
       Entry = DstTy;
-      DefinitionsToResolve.push_back(SSTy);
       return true;
     }
   }
@@ -137,6 +148,7 @@ bool TypeMapTy::areTypesIsomorphic(Type *DstTy, Type *SrcTy) {
   if (PointerType *PT = dyn_cast<PointerType>(DstTy)) {
     if (PT->getAddressSpace() != cast<PointerType>(SrcTy)->getAddressSpace())
       return false;
+    
   } else if (FunctionType *FT = dyn_cast<FunctionType>(DstTy)) {
     if (FT->isVarArg() != cast<FunctionType>(SrcTy)->isVarArg())
       return false;
@@ -174,9 +186,9 @@ void TypeMapTy::linkDefinedTypeBodies() {
   SmallString<16> TmpName;
   
   // Note that processing entries in this loop (calling 'get') can add new
-  // entries to the DefinitionsToResolve vector.
-  while (!DefinitionsToResolve.empty()) {
-    StructType *SrcSTy = DefinitionsToResolve.pop_back_val();
+  // entries to the SrcDefinitionsToResolve vector.
+  while (!SrcDefinitionsToResolve.empty()) {
+    StructType *SrcSTy = SrcDefinitionsToResolve.pop_back_val();
     StructType *DstSTy = cast<StructType>(MappedTypes[SrcSTy]);
     
     // TypeMap is a many-to-one mapping, if there were multiple types that
@@ -204,6 +216,8 @@ void TypeMapTy::linkDefinedTypeBodies() {
       TmpName.clear();
     }
   }
+  
+  DstResolvedOpaqueTypes.clear();
 }
 
 
@@ -213,7 +227,7 @@ Type *TypeMapTy::get(Type *Ty) {
   Type *Result = getImpl(Ty);
   
   // If this caused a reference to any struct type, resolve it before returning.
-  if (!DefinitionsToResolve.empty())
+  if (!SrcDefinitionsToResolve.empty())
     linkDefinedTypeBodies();
   return Result;
 }
@@ -304,8 +318,10 @@ Type *TypeMapTy::getImpl(Type *Ty) {
   
   // Otherwise we create a new type and resolve its body later.  This will be
   // resolved by the top level of get().
-  DefinitionsToResolve.push_back(STy);
-  return *Entry = StructType::create(STy->getContext());
+  SrcDefinitionsToResolve.push_back(STy);
+  StructType *DTy = StructType::create(STy->getContext());
+  DstResolvedOpaqueTypes.insert(DTy);
+  return *Entry = DTy;
 }
 
 
@@ -542,6 +558,37 @@ void ModuleLinker::computeTypeMapping() {
     if (GlobalValue *DGV = getLinkedToGlobal(I))
       TypeMap.addTypeMapping(DGV->getType(), I->getType());
   }
+  
+  // Incorporate types by name, scanning all the types in the source module.
+  // At this point, the destination module may have a type "%foo = { i32 }" for
+  // example.  When the source module got loaded into the same LLVMContext, if
+  // it had the same type, it would have been renamed to "%foo.42 = { i32 }".
+  // Though it isn't required for correctness, attempt to link these up to clean
+  // up the IR.
+  std::vector<StructType*> SrcStructTypes;
+  SrcM->findUsedStructTypes(SrcStructTypes);
+  
+  SmallPtrSet<StructType*, 32> SrcStructTypesSet(SrcStructTypes.begin(),
+                                                 SrcStructTypes.end());
+  
+  for (unsigned i = 0, e = SrcStructTypes.size(); i != e; ++i) {
+    StructType *ST = SrcStructTypes[i];
+    if (!ST->hasName()) continue;
+    
+    // Check to see if there is a dot in the name followed by a digit.
+    size_t DotPos = ST->getName().rfind('.');
+    if (DotPos == 0 || DotPos == StringRef::npos ||
+        ST->getName().back() == '.' || !isdigit(ST->getName()[DotPos+1]))
+      continue;
+    
+    // Check to see if the destination module has a struct with the prefix name.
+    if (StructType *DST = DstM->getTypeByName(ST->getName().substr(0, DotPos)))
+      // Don't use it if this actually came from the source module.  They're in
+      // the same LLVMContext after all.
+      if (!SrcStructTypesSet.count(DST))
+        TypeMap.addTypeMapping(DST, ST);
+  }
+  
   
   // Don't bother incorporating aliases, they aren't generally typed well.
   
@@ -843,7 +890,7 @@ void ModuleLinker::linkFunctionBody(Function *Dst, Function *Src) {
   } else {
     // Clone the body of the function into the dest function.
     SmallVector<ReturnInst*, 8> Returns; // Ignore returns.
-    CloneFunctionInto(Dst, Src, ValueMap, false, Returns);
+    CloneFunctionInto(Dst, Src, ValueMap, false, Returns, "", NULL, &TypeMap);
   }
   
   // There is no need to map the arguments anymore.

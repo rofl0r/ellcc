@@ -29,6 +29,7 @@
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/Lex/ModuleLoader.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TemplateKinds.h"
 #include "clang/Basic/TypeTraits.h"
@@ -126,6 +127,7 @@ namespace clang {
   class ParmVarDecl;
   class Preprocessor;
   class PseudoDestructorTypeStorage;
+  class PseudoObjectExpr;
   class QualType;
   class StandardConversionSequence;
   class Stmt;
@@ -510,11 +512,16 @@ public:
   /// evaluated at run-time, if at all.
   enum ExpressionEvaluationContext {
     /// \brief The current expression and its subexpressions occur within an
-    /// unevaluated operand (C++0x [expr]p8), such as a constant expression
-    /// or the subexpression of \c sizeof, where the type or the value of the
-    /// expression may be significant but no code will be generated to evaluate
-    /// the value of the expression at run time.
+    /// unevaluated operand (C++11 [expr]p7), such as the subexpression of
+    /// \c sizeof, where the type of the expression may be significant but
+    /// no code will be generated to evaluate the value of the expression at
+    /// run time.
     Unevaluated,
+
+    /// \brief The current expression and its subexpressions occur within a
+    /// constant expression. Such a context is not potentially-evaluated in
+    /// C++98, but is potentially-evaluated in C++11.
+    ConstantEvaluated,
 
     /// \brief The current expression is potentially evaluated at run time,
     /// which means that code may be generated to evaluate the value of the
@@ -1109,18 +1116,8 @@ public:
   ///
   /// \param ImportLoc The location of the '__import_module__' keyword.
   ///
-  /// \param ModuleName The name of the module.
-  ///
-  /// \param ModuleNameLoc The location of the module name.
-  DeclResult ActOnModuleImport(SourceLocation ImportLoc,
-                               IdentifierInfo &ModuleName,
-                               SourceLocation ModuleNameLoc);
-
-  /// \brief Diagnose that \p New is a module-private redeclaration of
-  /// \p Old.
-  void diagnoseModulePrivateRedeclaration(NamedDecl *New, NamedDecl *Old,
-                                          SourceLocation ModulePrivateKeyword
-                                            = SourceLocation());
+  /// \param Path The module access path.
+  DeclResult ActOnModuleImport(SourceLocation ImportLoc, ModuleIdPath Path);
 
   /// \brief Retrieve a suitable printing policy.
   PrintingPolicy getPrintingPolicy() const;
@@ -1399,7 +1396,10 @@ public:
   bool IsBlockPointerConversion(QualType FromType, QualType ToType,
                                 QualType& ConvertedType);
   bool FunctionArgTypesAreEqual(const FunctionProtoType *OldType,
-                                const FunctionProtoType *NewType);
+                                const FunctionProtoType *NewType,
+                                unsigned *ArgPos = 0);
+  void HandleFunctionTypeMismatch(PartialDiagnostic &PDiag,
+                                  QualType FromType, QualType ToType);
 
   CastKind PrepareCastToObjCObjectPointer(ExprResult &E);
   bool CheckPointerConversion(Expr *From, QualType ToType,
@@ -1542,11 +1542,11 @@ public:
                                         bool StdNamespaceIsAssociated = false);
 
   // Emit as a 'note' the specific overload candidate
-  void NoteOverloadCandidate(FunctionDecl *Fn);
+  void NoteOverloadCandidate(FunctionDecl *Fn, QualType DestType = QualType());
 
   // Emit as a series of 'note's all template and non-templates
   // identified by the expression Expr
-  void NoteAllOverloadCandidates(Expr* E);
+  void NoteAllOverloadCandidates(Expr* E, QualType DestType = QualType());
 
   // [PossiblyAFunctionType]  -->   [Return]
   // NonFunctionType --> NonFunctionType
@@ -2275,6 +2275,9 @@ public:
   bool CanUseDecl(NamedDecl *D);
   bool DiagnoseUseOfDecl(NamedDecl *D, SourceLocation Loc,
                          const ObjCInterfaceDecl *UnknownObjCClass=0);
+  AvailabilityResult DiagnoseAvailabilityOfDecl(NamedDecl *D, 
+                              SourceLocation Loc,
+                              const ObjCInterfaceDecl *UnknownObjCClass);
   std::string getDeletedOrUnavailableSuffix(const FunctionDecl *FD);
   bool DiagnosePropertyAccessorMismatch(ObjCPropertyDecl *PD,
                                         ObjCMethodDecl *Getter,
@@ -3016,6 +3019,8 @@ public:
                                ParsedType ObjectType,
                                bool EnteringContext);
 
+  ParsedType getDestructorType(const DeclSpec& DS, ParsedType ObjectType);
+
   // Checks that reinterpret casts don't have undefined behavior.
   void CheckCompatibleReinterpretCast(QualType SrcType, QualType DestType,
                                       bool IsDereference, SourceRange Range);
@@ -3244,6 +3249,13 @@ public:
                                        UnqualifiedId &SecondTypeName,
                                        bool HasTrailingLParen);
 
+  ExprResult ActOnPseudoDestructorExpr(Scope *S, Expr *Base,
+                                       SourceLocation OpLoc,
+                                       tok::TokenKind OpKind,
+                                       SourceLocation TildeLoc, 
+                                       const DeclSpec& DS,
+                                       bool HasTrailingLParen);
+
   /// MaybeCreateExprWithCleanups - If the current full-expression
   /// requires any cleanups, surround it with a ExprWithCleanups node.
   /// Otherwise, just returns the passed-in expression.
@@ -3324,6 +3336,10 @@ public:
                                    ParsedType ObjectType,
                                    bool EnteringContext,
                                    CXXScopeSpec &SS);
+
+  bool ActOnCXXNestedNameSpecifierDecltype(CXXScopeSpec &SS,
+                                           const DeclSpec &DS, 
+                                           SourceLocation ColonColonLoc);
 
   bool IsInvalidUnlessNestedName(Scope *S, CXXScopeSpec &SS,
                                  IdentifierInfo &Identifier,
@@ -4642,7 +4658,8 @@ public:
                                            const PartialDiagnostic &NoneDiag,
                                            const PartialDiagnostic &AmbigDiag,
                                         const PartialDiagnostic &CandidateDiag,
-                                        bool Complain = true);
+                                        bool Complain = true,
+                                        QualType TargetType = QualType());
 
   ClassTemplatePartialSpecializationDecl *
   getMoreSpecializedPartialSpecialization(
@@ -5167,6 +5184,17 @@ public:
                           const MultiLevelTemplateArgumentList &TemplateArgs);
 
   // Objective-C declarations.
+  enum ObjCContainerKind {
+    OCK_None = -1,
+    OCK_Interface = 0,
+    OCK_Protocol,
+    OCK_Category,
+    OCK_ClassExtension,
+    OCK_Implementation,
+    OCK_CategoryImplementation
+  };
+  ObjCContainerKind getObjCContainerKind() const;
+
   Decl *ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
                                  IdentifierInfo *ClassName,
                                  SourceLocation ClassLoc,
@@ -5269,10 +5297,10 @@ public:
   void MatchOneProtocolPropertiesInClass(Decl *CDecl,
                                          ObjCProtocolDecl *PDecl);
 
-  void ActOnAtEnd(Scope *S, SourceRange AtEnd,
-                  Decl **allMethods = 0, unsigned allNum = 0,
-                  Decl **allProperties = 0, unsigned pNum = 0,
-                  DeclGroupPtrTy *allTUVars = 0, unsigned tuvNum = 0);
+  Decl *ActOnAtEnd(Scope *S, SourceRange AtEnd,
+                   Decl **allMethods = 0, unsigned allNum = 0,
+                   Decl **allProperties = 0, unsigned pNum = 0,
+                   DeclGroupPtrTy *allTUVars = 0, unsigned tuvNum = 0);
 
   Decl *ActOnProperty(Scope *S, SourceLocation AtLoc,
                       FieldDeclarator &FD, ObjCDeclSpec &ODS,
@@ -5802,6 +5830,7 @@ public:
                                          BinaryOperatorKind Opcode,
                                          Expr *LHS, Expr *RHS);
   ExprResult checkPseudoObjectRValue(Expr *E);
+  Expr *recreateSyntacticForm(PseudoObjectExpr *E);
 
   QualType CheckConditionalOperands( // C99 6.5.15
     ExprResult &Cond, ExprResult &LHS, ExprResult &RHS,
@@ -5870,6 +5899,10 @@ public:
                                  Expr *CastExpr, CastKind &CastKind,
                                  ExprValueKind &VK, CXXCastPath &Path);
 
+  /// \brief Force an expression with unknown-type to an expression of the
+  /// given type.
+  ExprResult forceUnknownAnyToType(Expr *E, QualType ToType);
+                             
   // CheckVectorCast - check type constraints for vectors.
   // Since vectors are an extension, there are no C standard reference for this.
   // We allow casting between vectors and integer datatypes of the same size.
@@ -5975,10 +6008,12 @@ public:
   /// in the global scope.
   bool CheckObjCDeclScope(Decl *D);
 
-  /// VerifyIntegerConstantExpression - verifies that an expression is an ICE,
+  /// VerifyIntegerConstantExpression - Verifies that an expression is an ICE,
   /// and reports the appropriate diagnostics. Returns false on success.
   /// Can optionally return the value of the expression.
-  bool VerifyIntegerConstantExpression(const Expr *E, llvm::APSInt *Result = 0);
+  bool VerifyIntegerConstantExpression(const Expr *E, llvm::APSInt *Result = 0,
+                                       unsigned DiagId = 0,
+                                       bool AllowFold = true);
 
   /// VerifyBitField - verifies that a bit field expression is an ICE and has
   /// the correct width, and that the field type is valid.
@@ -6163,7 +6198,8 @@ public:
 
 private:
   void CheckArrayAccess(const Expr *BaseExpr, const Expr *IndexExpr,
-                        bool isSubscript=false, bool AllowOnePastEnd=true);
+                        const ArraySubscriptExpr *ASE=0,
+                        bool AllowOnePastEnd=true, bool IndexNegated=false);
   void CheckArrayAccess(const Expr *E);
   bool CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall);
   bool CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall);

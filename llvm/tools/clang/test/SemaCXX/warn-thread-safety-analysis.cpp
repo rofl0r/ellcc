@@ -36,6 +36,18 @@ class  __attribute__((lockable)) Mutex {
   void LockWhen(const int &cond) __attribute__((exclusive_lock_function));
 };
 
+class __attribute__((scoped_lockable)) MutexLock {
+ public:
+  MutexLock(Mutex *mu) __attribute__((exclusive_lock_function(mu)));
+  ~MutexLock() __attribute__((unlock_function));
+};
+
+class __attribute__((scoped_lockable)) ReaderMutexLock {
+ public:
+  ReaderMutexLock(Mutex *mu) __attribute__((exclusive_lock_function(mu)));
+  ~ReaderMutexLock() __attribute__((unlock_function));
+};
+
 
 Mutex sls_mu;
 
@@ -161,7 +173,7 @@ void sls_fun_bad_2() {
 
 void sls_fun_bad_3() {
   sls_mu.Lock(); // \
-    // expected-warning{{mutex 'sls_mu' is still locked at the end of function 'sls_fun_bad_3'}}
+    // expected-warning{{mutex 'sls_mu' is still locked at the end of function}}
 }
 
 void sls_fun_bad_4() {
@@ -229,7 +241,7 @@ void sls_fun_bad_9() {
 
 void sls_fun_bad_10() {
   sls_mu.Lock(); // \
-    // expected-warning{{mutex 'sls_mu' is still locked at the end of function 'sls_fun_bad_10'}} \
+    // expected-warning{{mutex 'sls_mu' is still locked at the end of function}} \
     // expected-warning{{expecting mutex 'sls_mu' to be locked at start of each loop}}
   while(getBool()) {
     sls_mu.Unlock();
@@ -278,7 +290,7 @@ void aa_fun_bad_2() {
 
 void aa_fun_bad_3() {
   glock.globalLock(); // \
-    // expected-warning{{mutex 'aa_mu' is still locked at the end of function 'aa_fun_bad_3'}}
+    // expected-warning{{mutex 'aa_mu' is still locked at the end of function}}
 }
 
 //--------------------------------------------------//
@@ -291,19 +303,19 @@ Mutex wmu;
 class WeirdMethods {
   WeirdMethods() {
     wmu.Lock(); // \
-      // expected-warning {{mutex 'wmu' is still locked at the end of function 'WeirdMethods'}}
+      // expected-warning {{mutex 'wmu' is still locked at the end of function}}
   }
   ~WeirdMethods() {
     wmu.Lock(); // \
-      // expected-warning {{mutex 'wmu' is still locked at the end of function '~WeirdMethods'}}
+      // expected-warning {{mutex 'wmu' is still locked at the end of function}}
   }
   void operator++() {
     wmu.Lock(); // \
-      // expected-warning {{mutex 'wmu' is still locked at the end of function 'operator++'}}
+      // expected-warning {{mutex 'wmu' is still locked at the end of function}}
   }
   operator int*() {
     wmu.Lock(); // \
-      // expected-warning {{mutex 'wmu' is still locked at the end of function 'operator int *'}}
+      // expected-warning {{mutex 'wmu' is still locked at the end of function}}
     return 0;
   }
 };
@@ -1549,3 +1561,47 @@ namespace template_member_test {
   template struct W<int>; // expected-note {{here}}
 
 }
+
+namespace test_scoped_lockable {
+
+struct TestScopedLockable {
+  Mutex mu1;
+  Mutex mu2;
+  int a __attribute__((guarded_by(mu1)));
+  int b __attribute__((guarded_by(mu2)));
+
+  bool getBool();
+
+  void foo1() {
+    MutexLock mulock(&mu1);
+    a = 5;
+  }
+
+  void foo2() {
+    ReaderMutexLock mulock1(&mu1);
+    if (getBool()) {
+      MutexLock mulock2a(&mu2);
+      b = a + 1;
+    }
+    else {
+      MutexLock mulock2b(&mu2);
+      b = a + 2;
+    }
+  }
+
+  void foo3() {
+    MutexLock mulock_a(&mu1);
+    MutexLock mulock_b(&mu1); // \
+      // expected-warning {{locking 'mu1' that is already locked}}
+  }   // expected-warning {{unlocking 'mu1' that was not locked}}
+
+  void foo4() {
+    MutexLock mulock1(&mu1), mulock2(&mu2);
+    a = b+1;
+    b = a+1;
+  }
+};
+
+} // end namespace test_scoped_lockable
+
+

@@ -78,14 +78,29 @@ ifeq ($(OS),Darwin)
 RuntimeDirs += darwin
 RuntimeLibrary.darwin.Configs := \
 	eprintf 10.4 osx ios cc_kext \
-	profile_osx profile_ios
+	asan_osx profile_osx profile_ios
 
 # On Darwin, fake Clang into using the iOS assembler (since compiler-rt wants to
 # build ARM bits).
-ifeq ($(OS),Darwin)
 CLANG_CCFLAGS += -ccc-install-dir \
 	/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/
 endif
+
+# On Linux, include a library which has all the runtime functions.
+ifeq ($(OS),Linux)
+RuntimeDirs += linux
+RuntimeLibrary.linux.Configs :=
+
+# We currently only try to generate runtime libraries on x86.
+ifeq ($(ARCH),x86)
+RuntimeLibrary.linux.Configs += \
+	full-i386 profile-i386 asan-i386
+endif
+ifeq ($(ARCH),x86_64)
+RuntimeLibrary.linux.Configs += \
+	full-x86_64 profile-x86_64 asan-x86_64
+endif
+
 endif
 
 ####

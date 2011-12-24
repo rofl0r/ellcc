@@ -43,7 +43,7 @@ namespace {
 class EmitAssemblyHelper {
   DiagnosticsEngine &Diags;
   const CodeGenOptions &CodeGenOpts;
-  const TargetOptions &TargetOpts;
+  const clang::TargetOptions &TargetOpts;
   const LangOptions &LangOpts;
   Module *TheModule;
 
@@ -87,7 +87,8 @@ private:
 
 public:
   EmitAssemblyHelper(DiagnosticsEngine &_Diags,
-                     const CodeGenOptions &CGOpts, const TargetOptions &TOpts,
+                     const CodeGenOptions &CGOpts,
+                     const clang::TargetOptions &TOpts,
                      const LangOptions &LOpts,
                      Module *M)
     : Diags(_Diags), CodeGenOpts(CGOpts), TargetOpts(TOpts), LangOpts(LOpts),
@@ -147,8 +148,10 @@ void EmitAssemblyHelper::CreatePasses() {
                            addObjCARCOptPass);
   }
 
-  if (CodeGenOpts.AddressSanitizer) {
+  if (LangOpts.AddressSanitizer) {
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
+                           addAddressSanitizerPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
                            addAddressSanitizerPass);
   }
   
@@ -215,35 +218,6 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   // FIXME: Expose these capabilities via actual APIs!!!! Aside from just
   // being gross, this is also totally broken if we ever care about
   // concurrency.
-
-  // Set frame pointer elimination mode.
-  if (!CodeGenOpts.DisableFPElim) {
-    llvm::NoFramePointerElim = false;
-    llvm::NoFramePointerElimNonLeaf = false;
-  } else if (CodeGenOpts.OmitLeafFramePointer) {
-    llvm::NoFramePointerElim = false;
-    llvm::NoFramePointerElimNonLeaf = true;
-  } else {
-    llvm::NoFramePointerElim = true;
-    llvm::NoFramePointerElimNonLeaf = true;
-  }
-
-  // Set float ABI type.
-  if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
-    llvm::FloatABIType = llvm::FloatABI::Soft;
-  else if (CodeGenOpts.FloatABI == "hard")
-    llvm::FloatABIType = llvm::FloatABI::Hard;
-  else {
-    assert(CodeGenOpts.FloatABI.empty() && "Invalid float abi!");
-    llvm::FloatABIType = llvm::FloatABI::Default;
-  }
-
-  llvm::LessPreciseFPMADOption = CodeGenOpts.LessPreciseFPMAD;
-  llvm::NoInfsFPMath = CodeGenOpts.NoInfsFPMath;
-  llvm::NoNaNsFPMath = CodeGenOpts.NoNaNsFPMath;
-  NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
-  llvm::UnsafeFPMath = CodeGenOpts.UnsafeFPMath;
-  llvm::UseSoftFloat = CodeGenOpts.SoftFloat;
 
   TargetMachine::setAsmVerbosityDefault(CodeGenOpts.AsmVerbose);
 
@@ -313,9 +287,42 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   case 3: OptLevel = CodeGenOpt::Aggressive; break;
   }
 
+  llvm::TargetOptions Options;
+
+  // Set frame pointer elimination mode.
+  if (!CodeGenOpts.DisableFPElim) {
+    Options.NoFramePointerElim = false;
+    Options.NoFramePointerElimNonLeaf = false;
+  } else if (CodeGenOpts.OmitLeafFramePointer) {
+    Options.NoFramePointerElim = false;
+    Options.NoFramePointerElimNonLeaf = true;
+  } else {
+    Options.NoFramePointerElim = true;
+    Options.NoFramePointerElimNonLeaf = true;
+  }
+
+  // Set float ABI type.
+  if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
+    Options.FloatABIType = llvm::FloatABI::Soft;
+  else if (CodeGenOpts.FloatABI == "hard")
+    Options.FloatABIType = llvm::FloatABI::Hard;
+  else {
+    assert(CodeGenOpts.FloatABI.empty() && "Invalid float abi!");
+    Options.FloatABIType = llvm::FloatABI::Default;
+  }
+
+  Options.LessPreciseFPMADOption = CodeGenOpts.LessPreciseFPMAD;
+  Options.NoInfsFPMath = CodeGenOpts.NoInfsFPMath;
+  Options.NoNaNsFPMath = CodeGenOpts.NoNaNsFPMath;
+  Options.NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
+  Options.UnsafeFPMath = CodeGenOpts.UnsafeFPMath;
+  Options.UseSoftFloat = CodeGenOpts.SoftFloat;
+  Options.StackAlignmentOverride = CodeGenOpts.StackAlignment;
+  Options.RealignStack = CodeGenOpts.StackRealignment;
+
   TargetMachine *TM = TheTarget->createTargetMachine(Triple, TargetOpts.CPU,
-                                                     FeaturesStr, RM, CM,
-                                                     OptLevel);
+                                                     FeaturesStr, Options,
+                                                     RM, CM, OptLevel);
 
   if (CodeGenOpts.RelaxAll)
     TM->setMCRelaxAll(true);
@@ -410,7 +417,7 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action, raw_ostream *OS) {
 
 void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
                               const CodeGenOptions &CGOpts,
-                              const TargetOptions &TOpts,
+                              const clang::TargetOptions &TOpts,
                               const LangOptions &LOpts,
                               Module *M,
                               BackendAction Action, raw_ostream *OS) {

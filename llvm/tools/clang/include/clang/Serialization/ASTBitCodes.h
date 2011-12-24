@@ -127,7 +127,7 @@ namespace clang {
     /// \brief The number of predefined identifier IDs.
     const unsigned int NUM_PREDEF_IDENT_IDS = 1;
     
-    /// \brief An ID number that refers to an ObjC selctor in an AST file.
+    /// \brief An ID number that refers to an ObjC selector in an AST file.
     typedef uint32_t SelectorID;
 
     /// \brief The number of predefined selector IDs.
@@ -140,6 +140,12 @@ namespace clang {
     /// \brief An ID number that refers to an entity in the detailed
     /// preprocessing record.
     typedef uint32_t PreprocessedEntityID;
+
+    /// \brief An ID number that refers to a submodule in a module file.
+    typedef uint32_t SubmoduleID;
+    
+    /// \brief The number of predefined submodule IDs.
+    const unsigned int NUM_PREDEF_SUBMODULE_IDS = 1;
 
     /// \brief Source range/offset of a preprocessed entity.
     struct PPEntityOffset {
@@ -198,7 +204,10 @@ namespace clang {
       DECL_UPDATES_BLOCK_ID,
       
       /// \brief The block containing the detailed preprocessing record.
-      PREPROCESSOR_DETAIL_BLOCK_ID
+      PREPROCESSOR_DETAIL_BLOCK_ID,
+      
+      /// \brief The block containing the submodule structure.
+      SUBMODULE_BLOCK_ID
     };
 
     /// \brief Record types that occur within the AST block itself.
@@ -357,10 +366,10 @@ namespace clang {
       /// \brief Record code for an update to the TU's lexically contained
       /// declarations.
       TU_UPDATE_LEXICAL = 28,
-
-      /// \brief Record code for an update to first decls pointing to the
-      /// latest redeclarations.
-      REDECLS_UPDATE_LATEST = 29,
+      
+      /// \brief Record code for the array describing the first/last local
+      /// redeclarations of each entity.
+      LOCAL_REDECLARATIONS = 29,
 
       /// \brief Record code for declarations that Sema keeps references of.
       SEMA_DECL_REFS = 30,
@@ -436,10 +445,17 @@ namespace clang {
 
       /// \brief Record code for ObjC categories in a module that are chained to
       /// an interface.
-      OBJC_CHAINED_CATEGORIES,
+      OBJC_CHAINED_CATEGORIES = 49,
 
       /// \brief Record code for a file sorted array of DeclIDs in a module.
-      FILE_SORTED_DECLS
+      FILE_SORTED_DECLS = 50,
+      
+      /// \brief Record code for an array of all of the (sub)modules that were
+      /// imported by the AST file.
+      IMPORTED_MODULES = 51,
+      
+      /// \brief Record code for the set of merged declarations in an AST file.
+      MERGED_DECLARATIONS = 52
     };
 
     /// \brief Record types used within a source manager block.
@@ -490,6 +506,28 @@ namespace clang {
       /// \brief Describes an inclusion directive within the preprocessing
       /// record.
       PPD_INCLUSION_DIRECTIVE = 2
+    };
+    
+    /// \brief Record types used within a submodule description block.
+    enum SubmoduleRecordTypes {
+      /// \brief Metadata for submodules as a whole.
+      SUBMODULE_METADATA = 0,
+      /// \brief Defines the major attributes of a submodule, including its
+      /// name and parent.
+      SUBMODULE_DEFINITION = 1,
+      /// \brief Specifies the umbrella header used to create this module,
+      /// if any.
+      SUBMODULE_UMBRELLA_HEADER = 2,
+      /// \brief Specifies a header that falls into this (sub)module.
+      SUBMODULE_HEADER = 3,
+      /// \brief Specifies an umbrella directory.
+      SUBMODULE_UMBRELLA_DIR = 4,
+      /// \brief Specifies the submodules that are imported by this 
+      /// submodule.
+      SUBMODULE_IMPORTS = 5,
+      /// \brief Specifies the submodules that are re-exported from this 
+      /// submodule.
+      SUBMODULE_EXPORTS = 6
     };
     
     /// \defgroup ASTAST AST file AST constants
@@ -883,7 +921,9 @@ namespace clang {
       DECL_EXPANDED_NON_TYPE_TEMPLATE_PARM_PACK,
       /// \brief A ClassScopeFunctionSpecializationDecl record a class scope
       /// function specialization. (Microsoft extension).
-      DECL_CLASS_SCOPE_FUNCTION_SPECIALIZATION
+      DECL_CLASS_SCOPE_FUNCTION_SPECIALIZATION,
+      /// \brief An ImportDecl recording a module import.
+      DECL_IMPORT
     };
 
     /// \brief Record codes for each kind of statement or expression.
@@ -1151,6 +1191,33 @@ namespace clang {
       CTOR_INITIALIZER_DELEGATING,
       CTOR_INITIALIZER_MEMBER,
       CTOR_INITIALIZER_INDIRECT_MEMBER
+    };
+
+    /// \brief Describes the redeclarations of a declaration.
+    struct LocalRedeclarationsInfo {
+      DeclID FirstID;      // The ID of the first declaration
+      DeclID FirstLocalID; // The ID of the first local declaration
+      DeclID LastLocalID;  // The ID of the last local declaration
+      
+      friend bool operator<(const LocalRedeclarationsInfo &X,
+                            const LocalRedeclarationsInfo &Y) {
+        return X.FirstID < Y.FirstID;
+      }
+      
+      friend bool operator>(const LocalRedeclarationsInfo &X,
+                            const LocalRedeclarationsInfo &Y) {
+        return X.FirstID > Y.FirstID;
+      }
+      
+      friend bool operator<=(const LocalRedeclarationsInfo &X,
+                             const LocalRedeclarationsInfo &Y) {
+        return X.FirstID <= Y.FirstID;
+      }
+      
+      friend bool operator>=(const LocalRedeclarationsInfo &X,
+                             const LocalRedeclarationsInfo &Y) {
+        return X.FirstID >= Y.FirstID;
+      }
     };
 
     /// @}

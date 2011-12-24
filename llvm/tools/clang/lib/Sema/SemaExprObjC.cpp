@@ -512,6 +512,9 @@ ObjCMethodDecl *Sema::LookupPrivateClassMethod(Selector Sel,
 
 ObjCMethodDecl *Sema::LookupPrivateInstanceMethod(Selector Sel,
                                               ObjCInterfaceDecl *ClassDecl) {
+  if (!ClassDecl->hasDefinition())
+    return 0;
+
   ObjCMethodDecl *Method = 0;
   while (ClassDecl && !Method) {
     // If we have implementations in scope, check "private" methods.
@@ -1211,9 +1214,13 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
   // and determine receiver type.
   if (Receiver) {
     if (Receiver->hasPlaceholderType()) {
-      ExprResult result = CheckPlaceholderExpr(Receiver);
-      if (result.isInvalid()) return ExprError();
-      Receiver = result.take();
+      ExprResult Result;
+      if (Receiver->getType() == Context.UnknownAnyTy)
+        Result = forceUnknownAnyToType(Receiver, Context.getObjCIdType());
+      else
+        Result = CheckPlaceholderExpr(Receiver);
+      if (Result.isInvalid()) return ExprError();
+      Receiver = Result.take();
     }
 
     if (Receiver->isTypeDependent()) {
@@ -1250,6 +1257,9 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
         Method = LookupFactoryMethodInGlobalPool(Sel, 
                                                  SourceRange(LBracLoc, RBracLoc),
                                                  receiverIsId);
+      if (Method)
+        DiagnoseAvailabilityOfDecl(Method, Loc, 0);
+      
     } else if (ReceiverType->isObjCClassType() ||
                ReceiverType->isObjCQualifiedClassType()) {
       // Handle messages to Class.
@@ -1332,12 +1342,10 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
             return ExprError();
           
           forwardClass = OCIType->getInterfaceDecl();
+          Method = 0;
+        } else {
+          Method = ClassDecl->lookupInstanceMethod(Sel);
         }
-        
-        // FIXME: consider using LookupInstanceMethodInGlobalPool, since it will be
-        // faster than the following method (which can do *many* linear searches).
-        // The idea is to add class info to MethodPool.
-        Method = ClassDecl->lookupInstanceMethod(Sel);
 
         if (!Method)
           // Search protocol qualifiers.

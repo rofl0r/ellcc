@@ -20,7 +20,7 @@ constexpr int s1::mi2 = 0;
 // not a definition of an object
 constexpr extern int i2; // expected-error {{constexpr variable declaration must be a definition}}
 // not a literal type
-constexpr notlit nl1; // expected-error {{constexpr variable 'nl1' must be initialized by a constant expression}}
+constexpr notlit nl1; // expected-error {{constexpr variable 'nl1' must be initialized by a constant expression}} expected-note {{non-literal type 'const notlit' cannot be used in a constant expression}}
 // function parameters
 void f2(constexpr int i) {} // expected-error {{function parameter cannot be constexpr}}
 // non-static member
@@ -88,8 +88,7 @@ template <> int S::g() const; // desired-error {{non-constexpr declaration of 'g
 template <> char S::g() { return 0; } // expected-error {{no function template matches}}
 template <> double S::g() const { return 0; } // ok
 
-// FIXME: The initializer is a constant expression.
-constexpr int i3 = ft(1); // unexpected-error {{must be initialized by a constant expression}}
+constexpr int i3 = ft(1);
 
 void test() {
   // ignore constexpr when instantiating with non-literal
@@ -98,7 +97,7 @@ void test() {
 }
 
 // Examples from the standard:
-constexpr int square(int x);
+constexpr int square(int x); // expected-note {{declared here}}
 constexpr int bufsz = 1024;
 
 constexpr struct pixel { // expected-error {{struct cannot be marked constexpr}}
@@ -108,10 +107,10 @@ constexpr struct pixel { // expected-error {{struct cannot be marked constexpr}}
 };
 
 constexpr pixel::pixel(int a)
-  : x(square(a)), y(square(a))
+  : x(square(a)), y(square(a)) // expected-note {{undefined function 'square' cannot be used in a constant expression}}
   { }
 
-constexpr pixel small(2); // expected-error {{must be initialized by a constant expression}}
+constexpr pixel small(2); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'pixel(2)'}}
 
 constexpr int square(int x) {
   return x * x;
