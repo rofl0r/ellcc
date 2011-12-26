@@ -55,6 +55,15 @@ else
   CC = $(XCC)
 endif
 
+ifeq ($(XCXX),)
+  # The build C++ compiler.
+  CXX = $(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc++
+  # The base C++ compiler.
+  EXX = $(LEVEL)/../../../bin/ecc++
+else
+  CXX = $(XCXX)
+endif
+
 CFLAGS += -Werror -MD -MP -O1
 
 ifdef CPU
@@ -65,9 +74,13 @@ ifdef FLOAT
     MFLOAT = -m$(FLOAT)-float
 endif
 
-.SUFFIXES: .c .S .o
+.SUFFIXES: .c .cpp .cxx .S .o
 .c.o:
 	${CC} $(MCPU) $(MFLOAT) -c ${CFLAGS} $<
+.cpp.o:
+	${CXX} $(MCPU) $(MFLOAT) -c ${CXXFLAGS} $<
+.cxx.o:
+	${CXX} $(MCPU) $(MFLOAT) -c ${CXXFLAGS} $<
 .S.o:
 	${CC} $(MCPU) -c ${CFLAGS} $<
 
@@ -77,22 +90,29 @@ SRCPATH := $(LEVEL)/../../src
 VPATH :=
 include $(SRCPATH)/$(LIB)/sources $(EXTRASRCS)
 
-BASENAMES := $(basename $(filter %.c %.S, $(SRCS)))
+BASENAMES := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)
 
 CRTBASENAMES := $(basename $(filter %.c, $(CRTSRCS)))
 CRTOBJS := $(CRTBASENAMES:%=%.o)
 
-DEPENDSRCS := $(basename $(filter %.c %.S, $(SRCS) $(CRTSRCS)))
+DEPENDSRCS := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-all: $(CC) $(LIBNAME) $(CRTOBJS)
+all: $(CC) $(CXX) $(LIBNAME) $(CRTOBJS)
 
 ifneq ($(ECC),)
 $(CC): $(ECC)
 	ln -sf ecc $(CC)
 else
 $(CC):
+endif
+
+ifneq ($(EXX),)
+$(CXX): $(EXX)
+	ln -sf ecc++ $(CXX)
+else
+$(CXX):
 endif
 
 $(LIBNAME): $(OBJS)
