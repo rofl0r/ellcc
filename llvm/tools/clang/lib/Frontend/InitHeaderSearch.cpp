@@ -419,6 +419,9 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
 
   if (triple.getVendor() == llvm::Triple::ELLCC) {
       // RICH: Add C++ specific paths.
+      llvm::sys::Path P(HSOpts.ResourceDir);
+      P.appendComponent("usrinclude/c++");
+      AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
       return;
   }
 
