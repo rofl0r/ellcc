@@ -94,7 +94,7 @@ bool GCOVFunction::read(GCOVBuffer &Buff, GCOVFormat Format) {
   Buff.readInt(); // Function header length
   Ident = Buff.readInt(); 
   Buff.readInt(); // Checksum #1
-  if (Format != GCNO_402)
+  if (Format != GCNO_402 && Format != GCNO_404)
     Buff.readInt(); // Checksum #2
 
   Name = Buff.readString();
@@ -104,6 +104,7 @@ bool GCOVFunction::read(GCOVBuffer &Buff, GCOVFormat Format) {
   if (Format == GCDA_402 || Format == GCDA_404) {
     Buff.readArcTag();
     uint32_t Count = Buff.readInt() / 2;
+    if (Count > Blocks.size()) Count = Blocks.size();   // RICH
     for (unsigned i = 0, e = Count; i != e; ++i) {
       Blocks[i]->addCount(Buff.readInt64());
     }
