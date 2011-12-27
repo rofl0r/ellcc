@@ -104,9 +104,9 @@ bool GCOVFunction::read(GCOVBuffer &Buff, GCOVFormat Format) {
   if (Format == GCDA_402 || Format == GCDA_404) {
     Buff.readArcTag();
     uint32_t Count = Buff.readInt() / 2;
-    if (Count > Blocks.size()) Count = Blocks.size();   // RICH
     for (unsigned i = 0, e = Count; i != e; ++i) {
-      Blocks[i]->addCount(Buff.readInt64());
+      if (i < Blocks.size())    // RICH
+        Blocks[i]->addCount(Buff.readInt64());
     }
     return true;;
   }
