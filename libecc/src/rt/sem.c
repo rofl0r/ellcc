@@ -92,18 +92,18 @@ static void sem_free(sem_t sem);
 
 static LIST_HEAD(, _sem_st) named_sems = LIST_HEAD_INITIALIZER(&named_sems);
 
-int _librt_sem_init(sem_t *sem, int pshared, unsigned int value)
-    __weak_alias(sem_init);
-int _librt_sem_destroy(sem_t *sem) __weak_alias(sem_destroy);
-sem_t *_librt_sem_open(const char *name, int oflag, ...)
-    __weak_alias(sem_open);
-int _librt_sem_close(sem_t *sem) __weak_alias(sem_close);
-int _librt_sem_unlink(const char *name) __weak_alias(sem_unlink);
-int _librt_sem_wait(sem_t *sem) __weak_alias(sem_wait);
-int _librt_sem_trywait(sem_t *sem) __weak_alias(sem_trywait);
-int _librt_sem_post(sem_t *sem) __weak_alias(sem_post);
-int _librt_sem_getvalue(sem_t * __restrict sem, int * __restrict sval)
-    __weak_alias(sem_getvalue);
+int sem_init(sem_t *sem, int pshared, unsigned int value)
+    __weak_alias(_librt_sem_init);
+int sem_destroy(sem_t *sem) __weak_alias(_librt_sem_destroy);
+sem_t *sem_open(const char *name, int oflag, ...)
+    __weak_alias(_librt_sem_open);
+int sem_close(sem_t *sem) __weak_alias(_librt_sem_close);
+int sem_unlink(const char *name) __weak_alias(_librt_sem_unlink);
+int sem_wait(sem_t *sem) __weak_alias(_librt_sem_wait);
+int sem_trywait(sem_t *sem) __weak_alias(_librt_sem_trywait);
+int sem_post(sem_t *sem) __weak_alias(_librt_sem_post);
+int sem_getvalue(sem_t * __restrict sem, int * __restrict sval)
+    __weak_alias(_librt_sem_getvalue);
 
 static void
 sem_free(sem_t sem)
@@ -188,8 +188,10 @@ _librt_sem_open(const char *name, int oflag, ...)
 
 	if (oflag & O_CREAT) {
 		va_start(ap, oflag);
+#if RICH // This causes a ppc code generation error: Track it down.
 		mode = va_arg(ap, int);
 		value = va_arg(ap, unsigned int);
+#endif
 		va_end(ap);
 	}
 

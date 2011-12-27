@@ -199,8 +199,10 @@ sem_open(const char *name, int oflag, ...)
 
 	if (oflag & O_CREAT) {
 		va_start(ap, oflag);
+#if RICH // This causes a ppc code generation error: Track it down.
 		mode = va_arg(ap, int);
 		value = va_arg(ap, unsigned int);
+#endif
 		va_end(ap);
 	}
 

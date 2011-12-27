@@ -49,6 +49,8 @@
 #define __GETSP __asm volatile ("movl %%esp, %0" : "=g" (ret));
 #elif defined(__mips__)
 #define __GETSP __asm volatile ("move %0, $sp" : "=r" (ret));
+#elif defined(__microblaze__)
+#define __GETSP __asm volatile ("add %0, r1, r0" : "=r" (ret));
 #elif defined(__ppc__) || defined(__ppc64__)
 #define __GETSP __asm volatile ("mr %0,1" : "=r" (ret));
 #elif defined(__sparc__) || defined(__sparc64__)
