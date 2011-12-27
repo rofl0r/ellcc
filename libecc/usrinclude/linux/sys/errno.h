@@ -140,6 +140,7 @@
 #define	EPROTONOSUPPORT	93		/* Protocol not supported */
 #define	ESOCKTNOSUPPORT	94		/* Socket type not supported */
 #define	EOPNOTSUPP	95		/* Operation not supported */
+#define ENOTSUP         EOPNOTSUPP      /* Linux does not have an ENOTSUP error code. */
 #define	EPFNOSUPPORT	96		/* Protocol family not supported */
 #define	EAFNOSUPPORT	97		/* Address family not supported by protocol family */
 #define	EADDRINUSE	98		/* Address already in use */

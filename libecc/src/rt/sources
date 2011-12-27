@@ -1,0 +1,6 @@
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)
+CFLAGS += -I$(SRCPATH)/$(LIB)
+
+SRCS += sem.c
+
+# pset.c

@@ -1,0 +1,8 @@
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)
+CFLAGS += -I$(SRCPATH)/$(LIB)
+
+SRCS += pthread_attr.c pthread_barrier.c pthread.c \
+        pthread_cond.c pthread_misc.c pthread_mutex.c pthread_rwlock.c \
+        pthread_specific.c pthread_spin.c pthread_tsd.c sem.c
+
+# pthread_cancelstub.c pthread_compat.c pthread_lock.c res_state.c
