@@ -35,6 +35,7 @@ else ifneq ($(filter x86_64%, $(TARGET)),)
   ARCH := x86_64
 endif
 ARCH ?= $(TARGET)
+EXE ?= "qemu-$(ARCH) "
 
 # The base of the directory name.
 DIR = $(shell basename `pwd`)
@@ -73,14 +74,34 @@ $(PROGRAMS:%=%.install):
 	@echo install $(@:%.install=%)
 	@mkdir -p $(@:%.install=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
-	  $(MAKE) PROG=$(@:%.install=%) VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	  $(MAKE) XCC=$(XCC) PROG=$(@:%.install=%) VPATH=../$(DIRPATH)/$(@:%.install=%) XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $(@:%.install=%) \
 	    install -f ../$(DIRPATH)/$(@:%.install=%)/Makefile ; \
 	else \
-	  $(MAKE) PROG=$(@:%.install=%) VPATH=$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
-	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
+	  $(MAKE) XCC=$(XCC) PROG=$(@:%.install=%) VPATH=../$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
+	    XCFLAGS="$(XCFLAGS)" ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    install -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
+	fi
+
+check: $(PROGRAMS:%=%.check)
+
+$(PROGRAMS:%=%.check):
+	@echo check $(@:%.check=%)
+	@mkdir -p $(@:%.check=%)
+	@if [ -e ../$(DIRPATH)/$(@:%.check=%)/Makefile ] ; then \
+	  $(MAKE) XCC=$(XCC) PROG=$(@:%.check=%) VPATH=../$(DIRPATH)/$(@:%.check=%) XCFLAGS="$(XCFLAGS)" \
+	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
+	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    -C $(@:%.check=%) \
+	    check -f ../$(DIRPATH)/$(@:%.check=%)/Makefile ; \
+	else \
+	  $(MAKE) XCC=$(XCC) PROG=$(@:%.check=%) VPATH=../$(DIRPATH)/$(@:%.check=%) -C $(@:%.check=%) \
+	    XCFLAGS="$(XCFLAGS)" ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
+	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    check -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
 clean: $(PROGRAMS:%=%.clean)

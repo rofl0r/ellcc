@@ -29,6 +29,9 @@ $(PROG): $(OBJS)
 clean:
 	rm -fr *.o *.d *.gcda *.gcno $(PROG)
 
-install:
+install: $(PROG)
+
+check: $(PROG)
+	@$(EXE)$(PROG)
 
 -include $(DEPENDFILES) ""
