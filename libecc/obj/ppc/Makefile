@@ -1,15 +1,23 @@
 # Build subdirectories.
 
+# Define a subset for a quick sanity build
+# SUBDIRS = 
+# Define directories to ignore.
+# IGNORE = 
+# Define subdirectories to ignore.
+# SUBIGNORE = 
+
 # Find Makefiles
 MAKEFILES := $(shell echo */Makefile)
 
 # Get the names of the subdirectories.
-SUBDIRS := $(dir $(MAKEFILES))
+SUBDIRS ?= $(patsubst %/,%,$(dir $(MAKEFILES)))
+SUBDIRS := $(filter-out $(IGNORE), $(SUBDIRS))
 
-all install clean veryclean:
+all install clean veryclean check:
 	@for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
-	  $(MAKE) -C $$dir $@ || exit 1; \
+	  $(MAKE) IGNORE=$(SUBIGNORE) -C $$dir $@ || exit 1; \
 	done
 
 copy:

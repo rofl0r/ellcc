@@ -1,5 +1,5 @@
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)
-CFLAGS += -I$(SRCPATH)/$(LIB)
+CFLAGS += -I$(SRCPATH)/$(LIB) -D__LIBPTHREAD_SOURCE__
 
 SRCS += pthread_attr.c pthread_barrier.c pthread.c \
         pthread_cond.c pthread_misc.c pthread_mutex.c pthread_rwlock.c \

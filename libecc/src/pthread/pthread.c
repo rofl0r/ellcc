@@ -112,19 +112,17 @@ vaddr_t pthread__threadmask = (vaddr_t)~((1 << _STACKSIZE_LG) - 1);
 
 int _sys___sigprocmask14(int, const sigset_t *, sigset_t *);
 
-#if RICH
 // Create strong aliases for the libc library stubs.
-pthread_t pthread_self(void) __strong_alias(__libc_thr_self);
-int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+pthread_t __libc_thr_self(void) __strong_alias(pthread_self);
+int __libc_thr_create(pthread_t *thread, const pthread_attr_t *attr,
 	           void *(*startfunc)(void *), void *arg)
-    __strong_alias(__libc_thr_create);
-void pthread_exit(void *retval) __strong_alias(__libc_thr_exit);
-int *pthread__errno(void) __strong_alias(__libc_thr_errno);
-int pthread_setcancelstate(int state, int *oldstate)
-    __strong_alias(__libc_thr_setcancelstate);
-int pthread_equal(pthread_t t1, pthread_t t2) __strong_alias(__libc_thr_equal);
-void pthread__init(void) __strong_alias(__libc_thr_init);
-#endif
+    __strong_alias(pthread_create);
+void __libc_thr_exit(void *retval) __strong_alias(pthread_exit);
+int *__libc_thr_errno(void) __strong_alias(pthread__errno);
+int __libc_thr_setcancelstate(int state, int *oldstate)
+    __strong_alias(pthread_setcancelstate);
+int __libc_thr_equal(pthread_t t1, pthread_t t2) __strong_alias(pthread_equal);
+void __libc_thr_init(void) __strong_alias(pthread__init);
 
 /*
  * Static library kludge.  Place a reference to a symbol any library

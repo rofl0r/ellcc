@@ -36,6 +36,21 @@
 
 #include <time.h>	/* For timespec */
 // RICH: #include <sched.h>
+// RICH: Definitions from sched.h.
+typedef struct _cpuset cpuset_t;
+struct sched_param {
+            int     sched_priority;
+};
+/*
+ * Scheduling policies required by IEEE Std 1003.1-2001
+ */
+#define SCHED_NONE      -1
+#define SCHED_OTHER     0
+#define SCHED_FIFO      1
+#define SCHED_RR        2
+
+// RICH: End of sched.h.
+
 #include <sys/featuretest.h>
 
 #include <pthread_types.h>
@@ -63,12 +78,10 @@ int	pthread_attr_setguardsize(pthread_attr_t *, size_t);
 int	pthread_attr_getinheritsched(const pthread_attr_t * __restrict,
 	    int * __restrict);
 int	pthread_attr_setinheritsched(pthread_attr_t *, int);
-#if RICH
 int	pthread_attr_getschedparam(const pthread_attr_t * __restrict,
 	    struct sched_param * __restrict);
 int	pthread_attr_setschedparam(pthread_attr_t * __restrict,
     const struct sched_param * __restrict);
-#endif
 int	pthread_attr_getschedpolicy(const pthread_attr_t * __restrict,
 	    int * __restrict);
 int	pthread_attr_setschedpolicy(pthread_attr_t *, int);
@@ -183,20 +196,16 @@ int	pthread_barrier_destroy(pthread_barrier_t *);
 int	pthread_barrierattr_init(pthread_barrierattr_t *);
 int	pthread_barrierattr_destroy(pthread_barrierattr_t *);
 
-#if RICH
 int	pthread_getschedparam(pthread_t, int * __restrict,
 	    struct sched_param * __restrict);
 int	pthread_setschedparam(pthread_t, int, const struct sched_param *);
-#endif
 int	pthread_setschedprio(pthread_t, int);
 
 int 	*pthread__errno(void);
 
 #if defined(_NETBSD_SOURCE)
-#if RICH
 int	pthread_getaffinity_np(pthread_t, size_t, cpuset_t *);
 int	pthread_setaffinity_np(pthread_t, size_t, cpuset_t *);
-#endif
 int	pthread_getattr_np(pthread_t, pthread_attr_t *);
 
 int	pthread_mutex_held_np(pthread_mutex_t *);
