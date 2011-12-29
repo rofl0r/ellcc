@@ -1,2 +1,7 @@
 VPATH := $(VPATH):$(SRCPATH)/m/src
-SRCS += s_floor.c
+SRCS += s_floor.c w_sqrt.c e_sqrt.c w_atan2.c e_atan2.c k_standard.c s_atan.c \
+        s_matherr.c s_lib_version.c w_log.c e_log.c w_hypot.c e_hypot.c s_rint.c \
+        s_finite.c
+
+VPATH := $(VPATH):$(SRCPATH)/m/complex
+SRCS += cacos.c casin.c creal.c cimag.c csqrt.c clog.c cabs.c

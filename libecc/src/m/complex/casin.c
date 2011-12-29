@@ -33,9 +33,7 @@
 #include <complex.h>
 #include <math.h>
 
-#ifdef __weak_alias
-__weak_alias(casin, _casin)
-#endif
+// RICH: double complex _casin(double complex z) __weak_alias(casin);
 
 double complex
 casin(double complex z)
