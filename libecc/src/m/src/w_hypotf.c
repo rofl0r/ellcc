@@ -27,7 +27,7 @@ __RCSID("$NetBSD: w_hypotf.c,v 1.7 2007/08/10 21:20:36 drochner Exp $");
 #include "math_private.h"
 
 #ifdef __weak_alias
-__weak_alias(hypotf, _hypotf)
+// RICH: __weak_alias(hypotf, _hypotf)
 #endif
 
 float

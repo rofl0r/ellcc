@@ -34,7 +34,7 @@
 #include <math.h>
 
 #ifdef __weak_alias
-__weak_alias(casinf, _casinf)
+// RICH __weak_alias(casinf, _casinf)
 #endif
 
 float complex
