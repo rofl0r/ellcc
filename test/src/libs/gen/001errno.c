@@ -2,7 +2,7 @@
 #include <errno.h>
 
 TEST_GROUP(Errno)
-    // 7.5
+    // C99 7.5
     TEST(EDOM > 0, "EDOM is positive");
     TEST(EILSEQ > 0, "EILSEQ is positive");
     TEST(ERANGE > 0, "ERANGE is positive");

@@ -3,12 +3,12 @@
 
 TEST_GROUP(Float)
     int i;
-    // 7.7
-    // 5.2.4.2.2.6
+    // C99 7.7
+    // C99 5.2.4.2.2/6
     TEST(FLT_ROUNDS >= -1 && FLT_ROUNDS <= 3, "FLT_ROUNDS is OK");
-    // 5.2.4.2.2.7
+    // C99 5.2.4.2.2/7
     TEST(FLT_EVAL_METHOD >= -1 && FLT_EVAL_METHOD <= 2, "FLT_EVAL_METHOD is OK");
-    // 5.2.4.2.2.8
+    // C99 5.2.4.2.2/8
     TEST(FLT_RADIX >= 2, "The radix is >= 2");
     i = FLT_MANT_DIG;
     i = DBL_MANT_DIG;
