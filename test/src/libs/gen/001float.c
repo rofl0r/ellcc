@@ -38,6 +38,5 @@ TEST_GROUP(Float)
     TEST(FLT_MIN <= 1E-37, "The float maximum value <= 1E-37");
     TEST(DBL_MIN <= 1E-37, "The double maximum value <= 1E-37");
     TEST(LDBL_MIN <= 1E-37, "The long double maximum value <= 1E-37");
-
 END_GROUP
 
