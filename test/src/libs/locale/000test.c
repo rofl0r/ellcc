@@ -1,3 +1,3 @@
 #include <ecc_test.h>
 
-TEST_INIT(Stdlib, 1);
+TEST_INIT(Locale, 1);
