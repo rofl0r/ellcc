@@ -30,7 +30,7 @@
 __RCSID("$NetBSD: fenv.c,v 1.3 2010/08/01 06:34:38 taca Exp $");
 
 #include <sys/param.h>
-#include <sys/sysctl.h>
+// RICH: #include <sys/sysctl.h>
 #include <assert.h>
 #include <fenv.h>
 #include <stddef.h>
@@ -122,7 +122,7 @@ static void __test_sse(void)
 	size_t oldlen = sizeof(__HAS_SSE);
 	int rv;
 
-	rv = sysctlbyname("machdep.sse", &__HAS_SSE, &oldlen, NULL, 0);
+	rv = -1; // RICH: sysctlbyname("machdep.sse", &__HAS_SSE, &oldlen, NULL, 0);
 	if (rv == -1)
 		__HAS_SSE = 0;
 }

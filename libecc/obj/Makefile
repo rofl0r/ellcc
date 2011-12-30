@@ -6,7 +6,7 @@ SUBDIRS = gcc.cov x86_64 mips
 # Define directories to ignore.
 IGNORE = nios2 pic32 sparc
 # Define subdirectories to ignore.
-SUBIGNORE = netbsd
+SUBIGNORE = netbsd sa
 
 # Find Makefiles
 MAKEFILES := $(shell echo */Makefile)
