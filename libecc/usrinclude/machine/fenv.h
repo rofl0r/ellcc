@@ -25,11 +25,13 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _AMD64_FENV_H_
-#define _AMD64_FENV_H_
+#ifndef	_MACHINE_FENV_H_
+#define	_MACHINE_FENV_H_
 
 #include <sys/stdint.h>
-#include <machine/fpu.h>
+
+/* This is a machine independent noop version of fenv.
+ */
 
 /*
  * Each symbol representing a floating point exception expands to an integer
@@ -38,56 +40,37 @@
  *
  * We use such values that allow direct bitwise operations on FPU/SSE registers.
  */
-#define	FE_INVALID	0x01	/* 000000000001 */
-#define	FE_DENORMAL	0x02	/* 000000000010 */
-#define	FE_DIVBYZERO	0x04	/* 000000000100 */
-#define	FE_OVERFLOW	0x08	/* 000000001000 */
-#define	FE_UNDERFLOW	0x10	/* 000000010000 */
-#define	FE_INEXACT	0x20	/* 000000100000 */
+// RICH: #define	FE_INVALID	0x01	/* 000000000001 */
+// RICH: #define	FE_DENORMAL	0x02	/* 000000000010 */
+// RICH: #define	FE_DIVBYZERO	0x04	/* 000000000100 */
+// RICH: #define	FE_OVERFLOW	0x08	/* 000000001000 */
+// RICH: #define	FE_UNDERFLOW	0x10	/* 000000010000 */
+// RICH: #define	FE_INEXACT	0x20	/* 000000100000 */
 
 /*
  * The following symbol is simply the bitwise-inclusive OR of all floating-point
- * exception constants defined above
+ * exception constants defined above.
  */
-#define FE_ALL_EXCEPT   \
-  (FE_DIVBYZERO | FE_INEXACT | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW)
+// RICH: #define FE_ALL_EXCEPT	(FE_DIVBYZERO | FE_DENORMAL | FE_INEXACT | \
+			 FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW)
 
-/*
- * Each symbol representing the rounding direction, expands to an integer
- * constant expression whose value is distinct non-negative value.
- *
- * We use such values that allow direct bitwise operations on FPU/SSE registers.
- */
-#define	FE_TONEAREST	0x000	/* 000000000000 */
-#define	FE_DOWNWARD	0x400	/* 010000000000 */
-#define	FE_UPWARD	0x800	/* 100000000000 */
-#define	FE_TOWARDZERO	0xC00	/* 110000000000 */
-
-/*
- * As compared to the x87 control word, the SSE unit's control word
- * has the rounding control bits offset by 3 and the exception mask
- * bits offset by 7.
- */
-#define	_X87_ROUNDING_MASK	0xC00		/* 110000000000 */
-#define	_SSE_ROUNDING_MASK	(0xC00 << 3)
-#define	_SSE_ROUND_SHIFT	3
-#define	_SSE_EMASK_SHIFT	7
+#define FE_ALL_EXCEPT 0
 
 /*
  * fenv_t represents the entire floating-point environment
  */
 typedef struct {
-	struct {
-		uint32_t control;	/* Control word register */
-		uint32_t status;	/* Status word register */
-		uint32_t tag;		/* Tag word register */
-		uint32_t others[4];	/* EIP, Pointer Selector, etc */
-	} x87;
-
-	uint32_t mxcsr;			/* Control and status register */
 } fenv_t;
 
-extern fenv_t		__fe_dfl_env;
+/*
+ * The following constant represents the default floating-point environment
+ * (that is, the one installed at program startup) and has type pointer to
+ * const-qualified fenv_t.
+ *
+ * It can be used as an argument to the functions within the <fenv.h> header
+ * that manage the floating-point environment.
+ */
+extern  fenv_t		__fe_dfl_env;
 #define FE_DFL_ENV      ((const fenv_t *) &__fe_dfl_env)
 
 /*
@@ -104,4 +87,4 @@ extern fenv_t		__fe_dfl_env;
  */
 typedef uint32_t fexcept_t;
 
-#endif /* ! _AMD64_FENV_H_ */
+#endif	/* ! _MACHINE_FENV_H_ */

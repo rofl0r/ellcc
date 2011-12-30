@@ -1,3 +1,8 @@
+# Target specific sources are used first.
+VPATH := $(VPATH):$(SRCPATH)/m/$(ARCH)
+# i386 and x86_64 only. Currently other targets use the noop implementation in m/src/fenv.c
+SRCS += fenv.c
+
 VPATH := $(VPATH):$(SRCPATH)/m/src
 SRCS += s_floor.c w_sqrt.c e_sqrt.c w_atan2.c e_atan2.c k_standard.c s_atan.c \
         s_matherr.c s_lib_version.c w_log.c e_log.c w_hypot.c e_hypot.c s_rint.c \
