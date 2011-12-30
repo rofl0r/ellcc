@@ -7,5 +7,9 @@ TEST_GROUP(Errno)
     TEST(EILSEQ > 0, "EILSEQ is positive");
     TEST(ERANGE > 0, "ERANGE is positive");
     TEST(EDOM != EILSEQ && EDOM != ERANGE && EILSEQ != ERANGE, "Error values are unique");
+    errno = 0;
+    TEST(errno == 0, "errno is an lvalue");
+    errno = 1;
+    TEST(errno == 1, "errno is a modifiable lvalue");
 END_GROUP
 
