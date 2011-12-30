@@ -45,7 +45,7 @@ __RCSID("$NetBSD: imaxdiv.c,v 1.1 2008/08/04 21:29:27 matt Exp $");
 #include <inttypes.h>		/* imaxdiv_t */
 
 #ifdef __weak_alias
-__weak_alias(imaxdiv, _imaxdiv)
+// RICH: __weak_alias(imaxdiv, _imaxdiv)
 #endif
 
 /* LONGLONG */
