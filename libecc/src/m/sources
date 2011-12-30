@@ -2,8 +2,15 @@ VPATH := $(VPATH):$(SRCPATH)/m/src
 SRCS += s_floor.c w_sqrt.c e_sqrt.c w_atan2.c e_atan2.c k_standard.c s_atan.c \
         s_matherr.c s_lib_version.c w_log.c e_log.c w_hypot.c e_hypot.c s_rint.c \
         s_finite.c w_sqrtf.c e_sqrtf.c w_logf.c e_logf.c s_isnanf.c w_atan2f.c e_atan2f.c \
-        w_hypotf.c e_hypotf.c s_atanf.c s_finitef.c
+        w_hypotf.c e_hypotf.c s_atanf.c s_finitef.c w_cosh.c e_cosh.c w_sinh.c e_sinh.c \
+        w_exp.c e_exp.c s_expm1.c w_expf.c e_expf.c w_coshf.c e_coshf.c w_sinhf.c e_sinhf.c \
+        s_expm1f.c s_cos.c k_cos.c s_sin.c k_sin.c s_cosf.c k_cosf.c s_sinf.c k_sinf.c \
+        e_rem_pio2.c k_rem_pio2.c e_rem_pio2f.c k_rem_pio2f.c s_scalbn.c s_scalbnf.c \
+        s_floorf.c w_pow.c e_pow.c w_powf.c e_powf.c
 
 VPATH := $(VPATH):$(SRCPATH)/m/complex
 SRCS += cacos.c casin.c creal.c cimag.c csqrt.c clog.c cabs.c cacosf.c casinf.c \
-        crealf.c cimagf.c csqrtf.c clogf.c cabsf.c
+        crealf.c cimagf.c csqrtf.c clogf.c cabsf.c catan.c catanf.c cephes_subr.c \
+        cephes_subrf.c ccos.c ccosf.c csin.c csinf.c ctan.c ctanf.c cacosh.c cacoshf.c \
+        casinh.c casinhf.c catanh.c catanhf.c ccosh.c ccoshf.c csinh.c csinhf.c ctanh.c ctanhf.c \
+        cexp.c cexpf.c cpow.c cpowf.c carg.c cargf.c conj.c conjf.c cproj.c cprojf.c

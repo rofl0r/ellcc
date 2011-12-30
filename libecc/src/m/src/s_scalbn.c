@@ -27,7 +27,7 @@ __RCSID("$NetBSD: s_scalbn.c,v 1.14 2010/04/23 19:17:07 drochner Exp $");
 #include "math_private.h"
 
 #ifdef __weak_alias
-__weak_alias(scalbn, _scalbn)
+// RICH: __weak_alias(scalbn, _scalbn)
 #endif
 
 static const double

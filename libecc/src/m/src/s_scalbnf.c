@@ -23,7 +23,7 @@ __RCSID("$NetBSD: s_scalbnf.c,v 1.9 2010/04/23 19:17:07 drochner Exp $");
 #include "math_private.h"
 
 #ifdef __weak_alias
-__weak_alias(scalbnf, _scalbnf)
+// RICH: __weak_alias(scalbnf, _scalbnf)
 #endif
 
 static const float

@@ -33,7 +33,7 @@
 #include <complex.h>
 #include <math.h>
 
-// RICH: double complex _casin(double complex z) __weak_alias(casin);
+// RICH: double complex casin(double complex z) __weak_alias(_casin);
 
 double complex
 casin(double complex z)

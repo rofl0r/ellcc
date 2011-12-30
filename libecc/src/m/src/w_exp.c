@@ -24,7 +24,7 @@ __RCSID("$NetBSD: w_exp.c,v 1.10 2007/08/20 16:01:40 drochner Exp $");
 #include "math_private.h"
 
 #ifdef __weak_alias
-__weak_alias(exp, _exp)
+// RICH: __weak_alias(exp, _exp)
 #endif
 
 static const double

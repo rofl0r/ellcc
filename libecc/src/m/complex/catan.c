@@ -35,7 +35,7 @@
 #include "cephes_subr.h"
 
 #ifdef __weak_alias
-__weak_alias(catan, _catan)
+// RICH: __weak_alias(catan, _catan)
 #endif
 
 #define MAXNUM 1.0e308
