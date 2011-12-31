@@ -271,6 +271,7 @@ double	logb(double);
 double	nextafter(double, double);
 double	remainder(double, double);
 double	rint(double);
+double	nearbyint(double);
 double	scalb(double, double);
 #endif /* (_XOPEN_SOURCE - 0) >= 500 || defined(_NETBSD_SOURCE)*/
 #endif /* _XOPEN_SOURCE || _NETBSD_SOURCE */
@@ -352,6 +353,7 @@ float	lgammaf(float);
 float	ceilf(float);
 float	floorf(float);
 float	rintf(float);
+float	nearbyintf(float);
 double	round(double);
 float	roundf(float);
 double	trunc(double);

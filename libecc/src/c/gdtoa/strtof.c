@@ -35,7 +35,7 @@ THIS SOFTWARE.
 #include "gdtoaimp.h"
 
 #ifdef __weak_alias
-__weak_alias(strtof, _strtof)
+// RICH: __weak_alias(strtof, _strtof)
 #endif
 
  float

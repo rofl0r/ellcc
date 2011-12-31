@@ -24,11 +24,13 @@ __RCSID("$NetBSD: strtold_subr.c,v 1.1 2006/03/15 17:35:18 kleink Exp $");
 #include "gdtoa.h"
 
 #ifdef __weak_alias
-__weak_alias(strtold, _strtold)
+// RICH: __weak_alias(strtold, _strtold)
 #endif
 
+#if RICH
 #ifndef __HAVE_LONG_DOUBLE
 #error no extended-precision long double type
+#endif
 #endif
 
 #ifndef GDTOA_LD_FMT
