@@ -11,7 +11,15 @@ SRCS += s_floor.c w_sqrt.c e_sqrt.c w_atan2.c e_atan2.c k_standard.c s_atan.c \
         w_exp.c e_exp.c s_expm1.c w_expf.c e_expf.c w_coshf.c e_coshf.c w_sinhf.c e_sinhf.c \
         s_expm1f.c s_cos.c k_cos.c s_sin.c k_sin.c s_cosf.c k_cosf.c s_sinf.c k_sinf.c \
         e_rem_pio2.c k_rem_pio2.c e_rem_pio2f.c k_rem_pio2f.c s_scalbn.c s_scalbnf.c \
-        s_floorf.c w_pow.c e_pow.c w_powf.c e_powf.c
+        s_floorf.c w_pow.c e_pow.c w_powf.c e_powf.c s_ilogb.c s_ilogbf.c w_acosf.c e_acosf.c \
+        w_asinf.c e_asinf.c s_tanf.c k_tanf.c w_acosh.c e_acosh.c w_acoshf.c e_acoshf.c \
+        s_log1p.c s_log1pf.c s_asinh.c s_asinhf.c w_atanh.c e_atanh.c w_atanhf.c e_atanhf.c \
+        s_tanhf.c s_frexp.c s_frexpf.c s_ldexp.c s_ldexpf.c w_log10.c e_log10.c w_log10f.c \
+        e_log10f.c s_logb.c s_logbf.c w_log2.c e_log2.c w_log2f.c e_log2f.c s_exp2f.c \
+        s_modf.c s_modff.c s_scalbln.c s_scalblnf.c s_cbrt.c s_cbrtf.c s_erf.c s_erff.c \
+        w_lgamma.c w_lgammaf.c e_lgamma_r.c e_lgammaf_r.c s_signgam.c w_tgamma.c w_tgammaf.c \
+
+        # e_tgamma_r.c e_tgammaf_r.c
 
 VPATH := $(VPATH):$(SRCPATH)/m/complex
 SRCS += cacos.c casin.c creal.c cimag.c csqrt.c clog.c cabs.c cacosf.c casinf.c \

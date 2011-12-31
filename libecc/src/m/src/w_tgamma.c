@@ -1,4 +1,4 @@
-/* @(#)w_gamma.c 5.1 93/09/24 */
+/* @(#)w_tgamma.c 5.1 93/09/24 */
 /*
  * ====================================================
  * Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
@@ -12,20 +12,20 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBM_SCCS) && !defined(lint)
-__RCSID("$NetBSD: w_gamma.c,v 1.11 2002/05/26 22:02:00 wiz Exp $");
+__RCSID("$NetBSD: w_tgamma.c,v 1.11 2002/05/26 22:02:00 wiz Exp $");
 #endif
 
-/* double gamma(double x)
+/* double tgamma(double x)
  * Return the logarithm of the Gamma function of x.
  *
- * Method: call gamma_r
+ * Method: call tgamma_r
  */
 
 #include "math.h"
 #include "math_private.h"
 
 double
-gamma(double x)
+tgamma(double x)
 {
 #ifdef _IEEE_LIBM
 	return __ieee754_lgamma_r(x,&signgam);
@@ -35,9 +35,9 @@ gamma(double x)
         if(_LIB_VERSION == _IEEE_) return y;
         if(!finite(y)&&finite(x)) {
             if(floor(x)==x&&x<=0.0)
-                return __kernel_standard(x,x,41); /* gamma pole */
+                return __kernel_standard(x,x,41); /* tgamma pole */
             else
-                return __kernel_standard(x,x,40); /* gamma overflow */
+                return __kernel_standard(x,x,40); /* tgamma overflow */
         } else
             return y;
 #endif

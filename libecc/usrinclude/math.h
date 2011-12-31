@@ -21,6 +21,21 @@
 #include <sys/cdefs.h>
 #include <sys/featuretest.h>
 
+#if defined(__FLT_EVAL_METHOD__)
+#if __FLT_EVAL_METHOD__ == 0
+typedef float float_t;
+typedef double double_t;
+#elif __FLT_EVAL_METHOD__ == 1
+typedef double float_t;
+typedef double double_t;
+#elif __FLT_EVAL_METHOD__ == 3
+typedef long double float_t;
+typedef long double double_t;
+#endif
+#else
+#error __FLT_EVAL_METHOD__ is not defined
+#endif
+
 union __float_u {
 	unsigned char __dummy[sizeof(float)];
 	float __val;
@@ -115,6 +130,15 @@ extern const union __float_u __nanf;
 /* NetBSD extensions */
 #define	_FP_LOMD	0x80		/* range for machine-specific classes */
 #define	_FP_HIMD	0xff
+
+/* 7.12#8 ilogb macros */
+#define FP_ILOGB0       (-__INT_MAX__)
+#define FP_ILOGBNAN     (__INT_MAX__)
+
+/* 7.12#9 error macros */
+#define MATH_ERRNO      1
+#define MATH_ERREXCEPT  2
+#define math_errorhandling 0            // RICH: i386 and x86_64?
 
 #endif /* !_ANSI_SOURCE && ... */
 
@@ -224,7 +248,7 @@ double	fmod(double, double);
 #if defined(_XOPEN_SOURCE) || defined(_NETBSD_SOURCE)
 double	erf(double);
 double	erfc(double);
-double	gamma(double);
+double	tgamma(double);
 double	hypot(double, double);
 int	finite(double);
 double	j0(double);
@@ -306,6 +330,7 @@ float	log1pf(float);
 float	logbf(float);
 float	modff(float, float *);
 float	scalbnf(float, int);
+float	scalblnf(float, long);
 
 /* 7.12.7 power / absolute */
 
@@ -416,6 +441,7 @@ double	significand(double);
  */
 double	copysign(double, double);
 double	scalbn(double, int);
+double	scalbln(double, long);
 
 /*
  * BSD math library entry points
@@ -426,10 +452,10 @@ double	drem(double, double);
 
 #if defined(_NETBSD_SOURCE) || defined(_REENTRANT)
 /*
- * Reentrant version of gamma & lgamma; passes signgam back by reference
+ * Reentrant version of tgamma & lgamma; passes signgam back by reference
  * as the second argument; user must allocate space for signgam.
  */
-double	gamma_r(double, int *);
+double	tgamma_r(double, int *);
 double	lgamma_r(double, int *);
 #endif /* _NETBSD_SOURCE || _REENTRANT */
 
@@ -438,7 +464,7 @@ double	lgamma_r(double, int *);
 
 /* float versions of ANSI/POSIX functions */
 
-float	gammaf(float);
+float	tgammaf(float);
 int	isinff(float);
 int	isnanf(float);
 int	finitef(float);
@@ -464,11 +490,11 @@ float	dremf(float, float);
 
 #if defined(_NETBSD_SOURCE) || defined(_REENTRANT)
 /*
- * Float versions of reentrant version of gamma & lgamma; passes
+ * Float versions of reentrant version of tgamma & lgamma; passes
  * signgam back by reference as the second argument; user must
  * allocate space for signgam.
  */
-float	gammaf_r(float, int *);
+float	tgammaf_r(float, int *);
 float	lgammaf_r(float, int *);
 #endif /* !... || _REENTRANT */
 

@@ -1,4 +1,4 @@
-/* w_gammaf.c -- float version of w_gamma.c.
+/* w_tgammaf.c -- float version of w_tgamma.c.
  * Conversion to float by Ian Lance Taylor, Cygnus Support, ian@cygnus.com.
  */
 
@@ -15,14 +15,14 @@
 
 #include <sys/cdefs.h>
 #if defined(LIBM_SCCS) && !defined(lint)
-__RCSID("$NetBSD: w_gammaf.c,v 1.8 2002/05/26 22:02:01 wiz Exp $");
+__RCSID("$NetBSD: w_tgammaf.c,v 1.8 2002/05/26 22:02:01 wiz Exp $");
 #endif
 
 #include "math.h"
 #include "math_private.h"
 
 float
-gammaf(float x)
+tgammaf(float x)
 {
 #ifdef _IEEE_LIBM
 	return __ieee754_lgammaf_r(x,&signgam);
@@ -32,10 +32,10 @@ gammaf(float x)
         if(_LIB_VERSION == _IEEE_) return y;
         if(!finitef(y)&&finitef(x)) {
             if(floorf(x)==x&&x<=(float)0.0)
-	        /* gammaf pole */
+	        /* tgammaf pole */
                 return (float)__kernel_standard((double)x,(double)x,141);
             else
-	        /* gammaf overflow */
+	        /* tgammaf overflow */
                 return (float)__kernel_standard((double)x,(double)x,140);
         } else
             return y;
