@@ -25,6 +25,10 @@ __RCSID("$NetBSD: s_nextafter.c,v 1.11 2002/05/26 22:01:57 wiz Exp $");
 #include "math.h"
 #include "math_private.h"
 
+#if __SIZEOF_LONG_DOUBLE__ == __SIZEOF_DOUBLE__
+long double nextafterl(long double x, long double y) __weak_alias(nextafter);
+#endif
+
 double
 nextafter(double x, double y)
 {

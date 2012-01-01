@@ -34,6 +34,10 @@ __FBSDID("$FreeBSD: src/lib/msun/src/s_fmin.c,v 1.1 2004/06/30 07:04:01 das Exp 
 
 #include <machine/ieee.h>
 
+#if __SIZEOF_LONG_DOUBLE__ == __SIZEOF_DOUBLE__
+long double fminl(long double x, long double y) __weak_alias(fmin);
+#endif
+
 double
 fmin(double x, double y)
 {
