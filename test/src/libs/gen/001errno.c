@@ -6,7 +6,7 @@ TEST_GROUP(Errno)
     TEST(EDOM > 0, "EDOM is positive");
     TEST(EILSEQ > 0, "EILSEQ is positive");
     TEST(ERANGE > 0, "ERANGE is positive");
-    TEST(EDOM != EILSEQ && EDOM != ERANGE && EILSEQ != ERANGE, "Error values are unique");
+    TEST(EDOM != EILSEQ && EDOM != ERANGE && EILSEQ != ERANGE, "Error values are distinct");
     errno = 0;
     TEST(errno == 0, "errno is an lvalue");
     errno = 1;

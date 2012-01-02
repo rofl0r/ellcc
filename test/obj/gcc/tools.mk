@@ -14,4 +14,5 @@ XCFLAGS += -I$(DOFF)/usrinclude/$(OS)
 XCFLAGS += -I$(DOFF)/usrinclude
 OSLIBDIR = $(DOFF)/lib/$(XCC)/$(OS)
 XLDFLAGS += -nostdlib $(OSLIBDIR)/crt0.o $(OSLIBDIR)/crtbegin.o
-XLDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lc -lcompiler-rt $(OSLIBDIR)/crtend.o
+XLDEXTRA = -L$(OSLIBDIR) -L$(DOFF)/lib/$(XCC) -lm -lc -lcompiler-rt $(OSLIBDIR)/crtend.o
+EXE = ./

@@ -44,7 +44,7 @@
 #include <sys/featuretest.h>
 #include <sys/sigtypes.h>
 
-#define _NSIG		32
+#define _NSIG		64
 
 #if defined(_NETBSD_SOURCE)
 #define NSIG _NSIG

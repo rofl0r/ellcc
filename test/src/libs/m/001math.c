@@ -186,7 +186,7 @@ TEST_GROUP(Math)
     // C99 7.12.7.2
     d = fabs(0.0);
     f = fabsf(0.0);
-    // RICH: ld = fabsl(0.0);
+    ld = fabsl(0.0);
     // C99 7.12.7.3
     d = hypot(2.0, 2.0);
     f = hypotf(2.0, 2.0);
@@ -268,7 +268,7 @@ TEST_GROUP(Math)
     // C99 7.12.11.1
     d = copysign(4.0, -2.0);
     f = copysignf(4.0, -2.0);
-    // RICH: ld = copysignl(4.0, -2.0);
+    ld = copysignl(4.0, -2.0);
     // C99 7.12.11.2
     d = nan("");
     f = nanf("");

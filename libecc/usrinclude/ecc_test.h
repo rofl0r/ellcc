@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 extern int unittest_count;                      ///< The test counter.
 extern int unittest_failures;                   ///< The failure counter.
@@ -43,6 +44,7 @@ int main(int argc, char **argv)                                         \
 static void test ## which(void)                                         \
     __attribute__((__destructor__, __used__));                          \
 static void test ## which(void) {                                       \
+    errno = 0;                                                          \
     unittest_group = #which;                                            \
     if (unittest_verbose) {                                             \
         fprintf(stdout, "%s Test Group " #which " in %s\n", unittest_category, __FILE__); }
