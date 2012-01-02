@@ -29,7 +29,7 @@ SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee
         fpclassifyl_ieee754.c fpclassifyd_ieee754.c fpclassifyf_ieee754.c \
         warn.c warnx.c vwarn.c vwarnx.c _warn.c err.c errx.c verr.c verrx.c _err.c \
         fts.c setmode.c pwcache.c wait.c waitpid.c getbsize.c humanize_number.c vis.c popen.c \
-        setjmperr.c signbitd_ieee754.c isfinited_ieee754.c isfinitef_ieee754.c
+        setjmperr.c signbitd_ieee754.c isfinited_ieee754.c isfinitef_ieee754.c signbitf_ieee754.c \
 
 VPATH := $(VPATH):$(SRCPATH)/c/termios
 SRCS += tcgetattr.c tcsetpgrp.c tcgetpgrp.c tcsetattr.c cfsetispeed.c cfgetispeed.c \

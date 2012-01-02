@@ -6,7 +6,8 @@ OBJS := $(BASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-CFLAGS += -g -Werror -MD -MP -O1
+CFLAGS += -g -Werror -MD -MP
+CXXFLAGS += -g -Werror -MD -MP
 
 ifeq ($(XCC),)
   # The build compiler.
