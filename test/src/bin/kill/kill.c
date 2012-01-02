@@ -224,6 +224,7 @@ printsignals(FILE *fp)
 
 	for (len = 0, sig = 1; sig < NSIG; sig++) {
 		name = sys_signame[sig];
+                if (name == NULL) break;
 		nl = 1 + strlen(name);
 
 		if (len + nl >= termwidth) {

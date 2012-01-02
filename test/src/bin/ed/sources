@@ -1,1 +1,2 @@
 CFLAGS += -Wno-format-zero-length
+STDIN = echo q

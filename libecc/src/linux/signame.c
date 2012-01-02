@@ -74,6 +74,7 @@ static const char *const __signame[] = {
 	"IO",		/* 29 SIGIO */
 	"PWR",		/* 30 SIGPWR */
 	"SYS",		/* 31 SIGSYS */
+        NULL,
 };
 
 const char * const *__sys_signame = __signame;

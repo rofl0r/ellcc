@@ -32,7 +32,15 @@ clean:
 
 install: $(PROG)
 
+ifneq ($(STDIN),)
+INPUT := $(STDIN) |
+endif
+
+ifneq ($(STDOUT),)
+OUTPUT := | $(STDOUT)
+endif
+
 check: $(PROG)
-	@$(EXE)$(PROG)
+	$(INPUT) $(EXE)$(PROG) $(ARGS) $(OUTPUT) || exit 1
 
 -include $(DEPENDFILES) ""

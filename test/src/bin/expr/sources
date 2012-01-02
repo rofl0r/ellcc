@@ -1,0 +1,2 @@
+ARGS = 1 + 2
+STDOUT = cmp $(VPATH)/testoutput

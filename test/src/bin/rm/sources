@@ -1,0 +1,3 @@
+INPUT = touch file ;
+ARGS = file
+OUTPUT = && test ! -e file

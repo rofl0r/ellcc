@@ -110,7 +110,7 @@ $(PROGRAMS:%=%.clean):
 	@echo clean $(@:%.clean=%)
 	@mkdir -p $(@:%.clean=%)
 	@if [ -e ../$(DIRPATH)/$(@:%.clean=%)/Makefile ] ; then \
-	  $(MAKE) PROG=$(@:%.clean=%) VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
+	  $(MAKE) PROG=$(@:%.clean=%) VPATH=../$(DIRPATH)/$(@:%.clean=%) XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
 	    -C $(@:%.clean=%) \
 	    clean -f ../$(DIRPATH)/$(@:%.clean=%)/Makefile ; \
