@@ -1,6 +1,10 @@
 # Library private includes.
 CFLAGS += -I$(SRCPATH)/c/include
 
+# Target specific sources.
+VPATH := $(VPATH):$(SRCPATH)/c/$(ARCH)
+SRCS += setjmp.S isnanl.c isinfl.c isfinitel.c signbitl.c
+
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
         putchar.c merge.c random.c atexit.c getopt.c strtoimax.c strtoll.c strcoll.c atol.c \
@@ -59,6 +63,3 @@ SRCS += __isthreaded.c  thread-stub.c
 VPATH := $(VPATH):$(SRCPATH)/c/regex
 SRCS += regcomp.c regerror.c regexec.c regfree.c
 
-# Target specific sources.
-VPATH := $(VPATH):$(SRCPATH)/c/$(ARCH)
-SRCS += setjmp.S

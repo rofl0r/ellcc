@@ -33,7 +33,7 @@ __FBSDID("$FreeBSD: src/lib/msun/src/s_fminl.c,v 1.1 2004/06/30 07:04:01 das Exp
 #include <math.h>
 
 #include <machine/ieee.h>
-#ifdef EXT_EXP_INFNAN
+#if defined(EXT_EXP_INFNAN) && EXT_FRACBITS == 64
 long double
 fminl(long double x, long double y)
 {

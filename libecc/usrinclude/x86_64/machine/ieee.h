@@ -40,13 +40,12 @@
  *	@(#)ieee.h	8.1 (Berkeley) 6/11/93
  */
 
+#include <machine/endian.h>
 /*
  * ieee.h defines the machine-dependent layout of the machine's IEEE
  * floating point.  It does *not* define (yet?) any of the rounding
  * mode bits, exceptions, and so forth.
  */
-
-#include <sys/ieee754.h>
 
 #define	EXT_EXPBITS	15
 #define EXT_FRACHBITS	32
@@ -115,3 +114,6 @@ union ieee_ext_u {
 
 #define LDBL_NBIT	0x80000000
 #define mask_nbit_l(u)	((u).extu_frach &= ~LDBL_NBIT)
+
+#include <sys/ieee754.h>
+

@@ -149,4 +149,65 @@ union ieee_double_u {
 	double			dblu_d;
 	struct ieee_double	dblu_dbl;
 };
+
+#ifndef EXT_EXPBITS
+
+/*
+ * The SPARC architecture defines the following IEEE 754 compliant
+ * 128-bit extended-precision format, which is supported only by the
+ * v9 toolchain.
+ */
+
+#define	EXT_EXPBITS	15
+#define EXT_FRACHBITS	16
+#define	EXT_FRACHMBITS	32
+#define	EXT_FRACLMBITS	32
+#define	EXT_FRACLBITS	32
+#define	EXT_FRACBITS	(EXT_FRACLBITS + EXT_FRACLMBITS + EXT_FRACHMBITS + EXT_FRACHBITS)
+
+#define	EXT_TO_ARRAY32(u, a) do {			\
+	(a)[0] = (uint32_t)(u).extu_ext.ext_fracl;	\
+	(a)[1] = (uint32_t)(u).extu_ext.ext_fraclm;	\
+	(a)[2] = (uint32_t)(u).extu_ext.ext_frachm;	\
+	(a)[3] = (uint32_t)(u).extu_ext.ext_frach;	\
+} while(/*CONSTCOND*/0)
+
+struct ieee_ext {
+#if _BYTE_ORDER == _BIG_ENDIAN
+	u_int	ext_sign:1;
+	u_int	ext_exp:EXT_EXPBITS;
+	u_int	ext_frach:EXT_FRACHBITS;
+	u_int	ext_frachm;
+	u_int	ext_fraclm;
+	u_int	ext_fracl;
+#else
+	u_int	ext_fracl;
+	u_int	ext_fraclm;
+	u_int	ext_frachm;
+	u_int	ext_frach:EXT_FRACHBITS;
+	u_int	ext_exp:EXT_EXPBITS;
+	u_int	ext_sign:1;
+#endif
+};
+
+#define extu_exp	extu_ext.ext_exp
+#define extu_sign	extu_ext.ext_sign
+#define extu_fracl	extu_ext.ext_fracl
+#define extu_frach	extu_ext.ext_frach
+
+#define LDBL_NBIT	0x80000000
+#define mask_nbit_l(u)	((u).extu_frach &= ~LDBL_NBIT)
+
+#define	EXT_EXP_INFNAN	0x7fff
+#define	EXT_EXP_INF	0x7fff
+#define	EXT_EXP_NAN	0x7fff
+#define	EXT_EXP_BIAS	16383
+
+union ieee_ext_u {
+	long double		extu_ld;
+	struct ieee_ext		extu_ext;
+};
+
+#endif
+
 #endif /* _SYS_IEEE754_H_ */

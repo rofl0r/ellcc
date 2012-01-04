@@ -19,10 +19,7 @@ __RCSID("$NetBSD: s_nextafterl.c,v 1.2 2010/09/17 20:39:39 christos Exp $");
 #include <math.h>
 #include <machine/ieee.h>
 
-#ifdef EXT_EXP_INFNAN
-#if LDBL_MAX_EXP != 0x4000
-#error "Unsupported long double format"
-#endif
+#if defined(EXT_EXP_INFNAN) && EXT_FRACBITS == 64
 
 /*
  * IEEE functions
