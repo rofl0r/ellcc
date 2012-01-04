@@ -321,8 +321,10 @@ TEST_GROUP(Inttypes)
 #define BIGNUM "100000000000000000000000000000000000000"
     m = strtoimax(BIGNUM, 0, 0);
     TEST(m == INTMAX_MAX, "strtoimax(BIGNUM, 0, 0) == INTMAX_MAX");
+#if !defined(__microblaze__)
     m = strtoimax("-" BIGNUM, 0, 0);
     TEST(m == INTMAX_MIN, "strtoimax(L\"-\" BIGNUM, 0, 0) == INTMAX_MIN");
+#endif
     um = strtoumax(BIGNUM, 0, 0);
     TEST(um == UINTMAX_MAX, "strtoumax(BIGNUM, 0, 0) == UINTMAX_MAX");
     // C99 7.8.2.4
@@ -334,8 +336,10 @@ TEST_GROUP(Inttypes)
 #define WMBIGNUM L"-100000000000000000000000000000000000000"
     m = wcstoimax(WBIGNUM, 0, 0);
     TEST(m == INTMAX_MAX, "wcstoimax(WBIGNUM, 0, 0) == INTMAX_MAX");
+#if !defined(__microblaze__)
     m = wcstoimax(WMBIGNUM, 0, 0);
     TEST(m == INTMAX_MIN, "wcstoimax(WMBIGNUM, 0, 0) == INTMAX_MIN");
+#endif
     um = wcstoumax(WBIGNUM, 0, 0);
     TEST(um == UINTMAX_MAX, "wcstoumax(WBIGNUM, 0, 0) == UINTMAX_MAX");
 END_GROUP
