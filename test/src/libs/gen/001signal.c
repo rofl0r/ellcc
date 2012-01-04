@@ -44,7 +44,7 @@ TEST_GROUP(Signal)
 #endif
     // C99 7.14.1.2
     // RICH:
-#if !defined(__arm__) && !defined(__microblaze__) && !defined(__ppc64__) && !defined(__x86_64__)
+#if !defined(__arm__) && !defined(__i386__) && !defined(__microblaze__) && !defined(__ppc64__) && !defined(__x86_64__)
     TEST(raise(SIGINT) == 0, "Raise a signal");
     TEST(i == 1, "The signal handler has been called");
 #endif
