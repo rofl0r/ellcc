@@ -35,7 +35,16 @@ else ifneq ($(filter x86_64%, $(TARGET)),)
   ARCH := x86_64
 endif
 ARCH ?= $(TARGET)
-EXE ?= "$(ELLCC)/bin/qemu-$(ARCH) "
+
+# RICH: There should be a better way to do this.
+EARCH = $(ARCH)
+ifneq ($(filter mipsel%, $(TARGET)),)
+  EARCH := mipsel
+else ifneq ($(filter mips32r2el%, $(TARGET)),)
+  EARCH := mipsel
+endif
+
+EXE ?= "$(ELLCC)/bin/qemu-$(EARCH) "
 
 # The base of the directory name.
 DIR = $(shell basename `pwd`)

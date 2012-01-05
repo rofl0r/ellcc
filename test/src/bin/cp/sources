@@ -1,2 +1,6 @@
+ifeq ($(ARCH),mips)
+    NOCHECK = 1
+endif
+
 ARGS = cp.o cp.copy
 OUTPUT = ; test -e cp.copy

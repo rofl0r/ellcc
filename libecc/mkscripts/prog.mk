@@ -24,8 +24,13 @@ endif
 .cxx.o:
 	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXLAGS) $<
 
+ifeq ($(NOMAKE),)
 $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $(LDFLAGS) $(XLDFLAGS) $(OBJS) $(LDEXTRA) $(XLDEXTRA)
+else
+NOCHECK = 1
+$(PROC):
+endif
 
 clean:
 	rm -fr *.o *.d *.gcda *.gcno $(PROG)
@@ -40,7 +45,11 @@ ifneq ($(STDOUT),)
 OUTPUT := | $(STDOUT)
 endif
 
+ifeq ($(NOCHECK),)
 check: $(PROG)
 	$(INPUT) $(EXE)$(PROG) $(ARGS) $(OUTPUT) || exit 1
+else
+check:
+endif
 
 -include $(DEPENDFILES) ""

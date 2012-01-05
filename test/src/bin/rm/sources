@@ -1,3 +1,9 @@
+ifeq ($(ARCH),ppc)
+    NOMAKE = 1
+endif
+ifeq ($(ARCH),ppc64)
+    NOMAKE = 1
+endif
 INPUT = touch file ;
 ARGS = file
 OUTPUT = && test ! -e file
