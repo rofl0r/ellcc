@@ -1,1 +1,1 @@
-# RICH: STDOUT = grep ls.o
+STDOUT = grep ls.o
