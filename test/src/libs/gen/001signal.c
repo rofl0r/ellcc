@@ -1,7 +1,7 @@
 #include <ecc_test.h>
 #include <signal.h>
 
-// C99 7.14/2
+TEST_TRACE(C99 7.14/2)
 static volatile sig_atomic_t i = 0;
 
 static void handler(int sig)
@@ -10,7 +10,7 @@ static void handler(int sig)
 }
 
 TEST_GROUP(Signal)
-    // C99 7.14/3
+    TEST_TRACE(C99 7.14/3)
     TEST(SIG_DFL != SIG_ERR && SIG_DFL != SIG_IGN,
          "SIG_DLF has a distinct value");
     TEST(SIG_ERR != SIG_IGN,
@@ -36,17 +36,15 @@ TEST_GROUP(Signal)
     TEST(SIGSEGV != SIGTERM,
          "SIGSEGV has a distinct value");
     TEST(SIGTERM > 0, "SIGSEGV is a positive value");
-    // C99 7.14.1.1
+    TEST_TRACE(C99 7.14.1.1)
     signal(SIGINT, handler);
-    // C99 7.14.1.1/8
-#if !defined(__microblaze__)
-    TEST(signal(SIGINT, handler) == handler, "The previous signal is correct");
-#endif
-    // C99 7.14.1.2
-    // RICH:
-#if !defined(__arm__) && !defined(__i386__) && !defined(__microblaze__) && !defined(__ppc64__) && !defined(__x86_64__)
-    TEST(raise(SIGINT) == 0, "Raise a signal");
-    TEST(i == 1, "The signal handler has been called");
-#endif
+    TEST_TRACE(C99 7.14.1.1/8)
+    TEST_EXCLUDE(MICROBLAZE)
+        TEST(signal(SIGINT, handler) == handler, "The previous signal is correct");
+    TEST_TRACE(C99 7.14.1.2)
+    TEST_EXCLUDE(ARM|I386|MICROBLAZE|PPC64|X86_64) {
+        TEST(raise(SIGINT) == 0, "Raise a signal");
+        TEST(i == 1, "The signal handler has been called");
+    }
 END_GROUP
 

@@ -47,7 +47,7 @@
     } while(0)
 
 TEST_GROUP(Ctype)
-    // C99 7.4.1.1
+    TEST_TRACE(C99 7.4.1.1)
     CTESTGROUP(ALL, ISNOT, isalnum);
     CTESTGROUP(ALNUM, IS, isalnum);
     CTESTGROUP(ALPHA, IS, isalnum);
@@ -62,7 +62,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isalnum);
     CTESTGROUP(XDIGIT, IS, isalnum);
 
-    // C99 7.4.1.2
+    TEST_TRACE(C99 7.4.1.2)
     CTESTGROUP(ALL, ISNOT, isalpha);
     CTESTGROUP(ALNUM, ISNOT, isalpha);
     CTESTGROUP(ALPHA, IS, isalpha);
@@ -77,7 +77,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isalpha);
     CTESTGROUP(XDIGIT, ISNOT, isalpha);
 
-    // C99 7.4.1.3
+    TEST_TRACE(C99 7.4.1.3)
     CTESTGROUP(ALL, ISNOT, isblank);
     CTESTGROUP(ALNUM, ISNOT, isblank);
     CTESTGROUP(ALPHA, ISNOT, isblank);
@@ -92,7 +92,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isblank);
     CTESTGROUP(XDIGIT, ISNOT, isblank);
 
-    // C99 7.4.1.4
+    TEST_TRACE(C99 7.4.1.4)
     CTESTGROUP(ALL, ISNOT, iscntrl);
     CTESTGROUP(ALNUM, ISNOT, iscntrl);
     CTESTGROUP(ALPHA, ISNOT, iscntrl);
@@ -107,7 +107,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, iscntrl);
     CTESTGROUP(XDIGIT, ISNOT, iscntrl);
 
-    // C99 7.4.1.5
+    TEST_TRACE(C99 7.4.1.5)
     CTESTGROUP(ALL, ISNOT, isdigit);
     CTESTGROUP(ALNUM, ISNOT, isdigit);
     CTESTGROUP(ALPHA, ISNOT, isdigit);
@@ -122,7 +122,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isdigit);
     CTESTGROUP(XDIGIT, ISNOT, isdigit);
 
-    // C99 7.4.1.6
+    TEST_TRACE(C99 7.4.1.6)
     CTESTGROUP(ALL, ISNOT, isgraph);
     CTESTGROUP(ALNUM, IS, isgraph);
     CTESTGROUP(ALPHA, IS, isgraph);
@@ -137,7 +137,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isgraph);
     CTESTGROUP(XDIGIT, IS, isgraph);
 
-    // C99 7.4.1.7
+    TEST_TRACE(C99 7.4.1.7)
     CTESTGROUP(ALL, ISNOT, islower);
     CTESTGROUP(ALNUM, ISNOT, islower);
     CTESTGROUP(ALPHA, ISNOT, islower);
@@ -152,7 +152,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, islower);
     CTESTGROUP(XDIGIT, ISNOT, islower);
 
-    // C99 7.4.1.8
+    TEST_TRACE(C99 7.4.1.8)
     CTESTGROUP(ALL, ISNOT, isprint);
     CTESTGROUP(ALNUM, IS, isprint);
     CTESTGROUP(ALPHA, IS, isprint);
@@ -167,7 +167,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, IS, isprint);
     CTESTGROUP(XDIGIT, IS, isprint);
     
-    // C99 7.4.1.9
+    TEST_TRACE(C99 7.4.1.9)
     CTESTGROUP(ALL, ISNOT, ispunct);
     CTESTGROUP(ALNUM, ISNOT, ispunct);
     CTESTGROUP(ALPHA, ISNOT, ispunct);
@@ -182,7 +182,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, ispunct);
     CTESTGROUP(XDIGIT, ISNOT, ispunct);
 
-    // C99 7.4.1.10
+    TEST_TRACE(C99 7.4.1.10)
     CTESTGROUP(ALL, ISNOT, isspace);
     CTESTGROUP(ALNUM, ISNOT, isspace);
     CTESTGROUP(ALPHA, ISNOT, isspace);
@@ -197,7 +197,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isspace);
     CTESTGROUP(XDIGIT, ISNOT, isspace);
 
-    // C99 7.4.1.11
+    TEST_TRACE(C99 7.4.1.11)
     CTESTGROUP(ALL, ISNOT, isupper);
     CTESTGROUP(ALNUM, ISNOT, isupper);
     CTESTGROUP(ALPHA, ISNOT, isupper);
@@ -212,7 +212,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isupper);
     CTESTGROUP(XDIGIT, ISNOT, isupper);
 
-    // C99 7.4.1.12
+    TEST_TRACE(C99 7.4.1.12)
     CTESTGROUP(ALL, ISNOT, isxdigit);
     CTESTGROUP(ALNUM, ISNOT, isxdigit);
     CTESTGROUP(ALPHA, ISNOT, isxdigit);
@@ -227,11 +227,11 @@ TEST_GROUP(Ctype)
     CTESTGROUP(PRINT, ISNOT, isxdigit);
     CTESTGROUP(XDIGIT, IS, isxdigit);
 
-    // C99 7.4.1.1
+    TEST_TRACE(C99 7.4.1.1)
     CTESTMAP(UC, LC, tolower);
     CTESTMAP(ALLUC, ALLLC, tolower);
 
-    // C99 7.4.1.2
+    TEST_TRACE(C99 7.4.1.2)
     CTESTMAP(LC, UC, toupper);
     CTESTMAP(ALLLC, ALLUC, toupper);
 END_GROUP

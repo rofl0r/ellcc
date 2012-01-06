@@ -3,8 +3,8 @@
 #include <limits.h>
 
 TEST_GROUP(Locale)
-    // C99 7.11
-    // C99 7.11/2
+    TEST_TRACE(C99 7.11)
+    TEST_TRACE(C99 7.11/2)
     static struct lconv check = {
         .decimal_point = ".",
         .thousands_sep = "",
@@ -32,7 +32,7 @@ TEST_GROUP(Locale)
         .int_n_sign_posn = CHAR_MAX,
     };
  
-    // C99 7.11/3
+    TEST_TRACE(C99 7.11/3)
     TEST(LC_ALL != LC_COLLATE && LC_ALL != LC_CTYPE
       && LC_ALL != LC_MONETARY && LC_ALL != LC_NUMERIC
       && LC_ALL != LC_TIME, "LC_ALL has a distinct value");
@@ -45,10 +45,10 @@ TEST_GROUP(Locale)
       && LC_MONETARY != LC_TIME, "LC_MONETARY has a distinct value");
     TEST(LC_NUMERIC != LC_TIME, "LC_NUMERIC has a distinct value");
 
-    // C99 7.11.1
+    TEST_TRACE(C99 7.11.1)
     char *current = setlocale(LC_ALL, "C");
     // RICH: TEST(current != 0, "setlocale(LC_ALL, \"C\") returns a string");
-    // C99 7.11.2
+    TEST_TRACE(C99 7.11.2)
     struct lconv *lconv;
     lconv = localeconv();
     TEST(lconv != 0, "localconv() returns a pointer");

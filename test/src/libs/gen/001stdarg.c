@@ -3,23 +3,23 @@
 
 int vfunc(int count, ...)
 {
-    // C99 7.15/3
+    TEST_TRACE(C99 7.15/3)
     va_list ap;
     int i0, i1, ci1;
-    // C99 7.15.1.4
+    TEST_TRACE(C99 7.15.1.4)
     va_start(ap, count);
     TEST(count == 2, "Have two arguments");
-    // C99 7.15.1.1
+    TEST_TRACE(C99 7.15.1.1)
     i0 = va_arg(ap, int);
-    // C99 7.15.1.2
+    TEST_TRACE(C99 7.15.1.2)
     va_list cap;
     va_copy(cap, ap);
     i1 = va_arg(ap, int);
-#if !defined(__ppc__)
-    ci1 = va_arg(cap, int);
-    TEST(i1 == ci1, "A copy of the va_list was made");
-#endif
-    // C99 7.15.1.3
+    TEST_EXCLUDE(PPC) {
+        ci1 = va_arg(cap, int);
+        TEST(i1 == ci1, "A copy of the va_list was made");
+    }
+    TEST_TRACE(C99 7.15.1.3)
     va_end(ap);
     va_end(cap);
     return i0 + i1;

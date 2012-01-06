@@ -8,7 +8,7 @@
 #define DOTEST(name, op) \
     TEST(strcmp(str(name), #op) == 0, #name " == " str(#op))
 TEST_GROUP(ISO646)
-    // C99 7.9
+    TEST_TRACE(C99 7.9)
     DOTEST(and, &&);
     DOTEST(and_eq, &=);
     DOTEST(bitand, &);

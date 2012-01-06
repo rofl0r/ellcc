@@ -2,9 +2,9 @@
 #include <stdbool.h>
 
 TEST_GROUP(Stdbool)
-    // C99 7.16/2
+    TEST_TRACE(C99 7.16/2)
     bool flag;
-    // C99 7.16/3
+    TEST_TRACE(C99 7.16/3)
     flag = true;
     TEST(flag == 1, "true is equal to 1");
     flag = false;

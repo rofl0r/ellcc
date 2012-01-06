@@ -5,8 +5,8 @@
     TEST(name op value, #name " " #op " " #value)
 TEST_GROUP(Limits)
     int i;
-    // C99 7.10
-    // C99 5.2.4.2.1
+    TEST_TRACE(C99 7.10)
+    TEST_TRACE(C99 5.2.4.2.1)
     DOTEST(CHAR_BIT, >=, 8);
     DOTEST(SCHAR_MIN, <=, -127);
     DOTEST(SCHAR_MAX, >=, 127);
@@ -24,7 +24,7 @@ TEST_GROUP(Limits)
     DOTEST(LLONG_MIN, <=, -9223372036854775807LL);
     DOTEST(LLONG_MAX, >=, -9223372036854775807LL);
     DOTEST(ULLONG_MAX, >=, 18446744073709551615ULL);
-    // C99 5.2.4.2.1/2
+    TEST_TRACE(C99 5.2.4.2.1/2)
 #ifdef __CHAR_UNSIGNED__
     DOTEST(CHAR_MAX, >=, UCHAR_MAX);
 #else

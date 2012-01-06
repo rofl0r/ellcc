@@ -3,10 +3,10 @@
 
 TEST_GROUP(Inttypes)
     char *p;
-    // C99 7.8
-    // C99 7.8/2
+    TEST_TRACE(C99 7.8)
+    TEST_TRACE(C99 7.8/2)
     imaxdiv_t maxdiv;
-    // C99 7.8.1/2
+    TEST_TRACE(C99 7.8.1/2)
     p = PRIdMAX;
     p = PRIiMAX;
     p = PRIoMAX;
@@ -304,14 +304,14 @@ TEST_GROUP(Inttypes)
     p = SCNxLEAST8;
     p = SCNxFAST8;
 #endif
-    // C99 7.8.2.1
+    TEST_TRACE(C99 7.8.2.1)
     TEST(imaxabs((intmax_t)-10) == 10, "imaxabs of -10 is 10");
     TEST(imaxabs((intmax_t)10) == 10, "imaxabs of 10 is 10");
-    // C99 7.8.2.2
+    TEST_TRACE(C99 7.8.2.2)
     maxdiv = imaxdiv((intmax_t)123, (intmax_t)10);
     TEST(maxdiv.quot == 12, "123 / 10 = 12");
     TEST(maxdiv.rem == 3, "123 %% 10 = 3");
-    // C99 7.8.2.3
+    TEST_TRACE(C99 7.8.2.3)
     intmax_t m;
     m = strtoimax("100", 0, 0);
     TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100");
@@ -321,13 +321,13 @@ TEST_GROUP(Inttypes)
 #define BIGNUM "100000000000000000000000000000000000000"
     m = strtoimax(BIGNUM, 0, 0);
     TEST(m == INTMAX_MAX, "strtoimax(BIGNUM, 0, 0) == INTMAX_MAX");
-#if !defined(__microblaze__)
-    m = strtoimax("-" BIGNUM, 0, 0);
-    TEST(m == INTMAX_MIN, "strtoimax(L\"-\" BIGNUM, 0, 0) == INTMAX_MIN");
-#endif
+    TEST_EXCLUDE(MICROBLAZE) {
+        m = strtoimax("-" BIGNUM, 0, 0);
+        TEST(m == INTMAX_MIN, "strtoimax(L\"-\" BIGNUM, 0, 0) == INTMAX_MIN");
+    }
     um = strtoumax(BIGNUM, 0, 0);
     TEST(um == UINTMAX_MAX, "strtoumax(BIGNUM, 0, 0) == UINTMAX_MAX");
-    // C99 7.8.2.4
+    TEST_TRACE(C99 7.8.2.4)
     m = wcstoimax(L"100", 0, 0);
     TEST(m == 100, "wcstoimax(L\"100\", 0, 0) == 100");
     um = wcstoumax(L"100", 0, 0);
@@ -336,10 +336,10 @@ TEST_GROUP(Inttypes)
 #define WMBIGNUM L"-100000000000000000000000000000000000000"
     m = wcstoimax(WBIGNUM, 0, 0);
     TEST(m == INTMAX_MAX, "wcstoimax(WBIGNUM, 0, 0) == INTMAX_MAX");
-#if !defined(__microblaze__)
+    TEST_EXCLUDE(MICROBLAZE) {
     m = wcstoimax(WMBIGNUM, 0, 0);
     TEST(m == INTMAX_MIN, "wcstoimax(WMBIGNUM, 0, 0) == INTMAX_MIN");
-#endif
+    }
     um = wcstoumax(WBIGNUM, 0, 0);
     TEST(um == UINTMAX_MAX, "wcstoumax(WBIGNUM, 0, 0) == UINTMAX_MAX");
 END_GROUP
