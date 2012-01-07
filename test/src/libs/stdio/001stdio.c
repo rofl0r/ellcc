@@ -28,6 +28,8 @@ TEST_GROUP(Stdio)
     f = stdin;
     f = stdout;
     TEST_TRACE(C99 7.19.4.1)
-    TEST(remove("/tmp/unlikely filename") != 0, "remove() fails as expected");
+    TEST(remove("unlikely filename") != 0, "remove() fails as expected");
+    TEST_TRACE(C99 7.19.4.2)
+    TEST(rename("unlikely filename", "very unlikely filename") != 0, "rename() fails as expected");
 END_GROUP
 
