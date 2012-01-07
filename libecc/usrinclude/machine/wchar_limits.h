@@ -1,4 +1,4 @@
-/*	$NetBSD: wchar_limits.h,v 1.3 2008/04/28 20:23:14 martin Exp $	*/
+/*	$NetBSD: wchar_limits.h,v 1.2 2008/04/28 20:23:24 martin Exp $	*/
 
 /*-
  * Copyright (c) 2004 The NetBSD Foundation, Inc.
@@ -29,19 +29,41 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _ARM_WCHAR_LIMITS_H_
-#define _ARM_WCHAR_LIMITS_H_
+#ifndef _MACHINE_WCHAR_LIMITS_H_
+#define _MACHINE_WCHAR_LIMITS_H_
 
 /*
  * 7.18.3 Limits of other integer types
  */
 
-/* limits of wchar_t */
-#define	WCHAR_MIN	(-0x7fffffff-1)			/* wchar_t	  */
-#define	WCHAR_MAX	0x7fffffff			/* wchar_t	  */
-
 /* limits of wint_t */
-#define	WINT_MIN	(-0x7fffffff-1)			/* wint_t	  */
-#define	WINT_MAX	0x7fffffff			/* wint_t	  */
+#if defined(__WINT_WIDTH__)
+  #if defined(__WINT_UNSIGNED__)
+    #define WINT_MIN       __UINTN_C(__WINT_WIDTH__, 0)
+    #define WINT_MAX       __UINTN_MAX(__WINT_WIDTH__)
+  #else
+    #define WINT_MIN       __INTN_MIN(__WINT_WIDTH__)
+    #define WINT_MAX       __INTN_MAX(__WINT_WIDTH__)
+  #endif
+#else
+  #define WINT_MIN       __WINT_MIN__
+  #define WINT_MAX       __WINT_MAX__
+#endif
 
-#endif /* !_ARM_WCHAR_LIMITS_H_ */
+/* limits of wchar_t */
+#if !defined(WCHAR_MAX)
+  #define WCHAR_MAX __WCHAR_MAX__
+#endif
+#if defined(__WCHAR_WIDTH__)
+  #if !defined(WCHAR_MIN)
+    #if __WCHAR_MAX__ == __INTN_MAX(__WCHAR_WIDTH__)
+      #define WCHAR_MIN __INTN_MIN(__WCHAR_WIDTH__)
+    #else
+      #define WCHAR_MIN __UINTN_C(__WCHAR_WIDTH__, 0)
+    #endif
+  #endif
+#else
+  #define WCHAR_MIN __WCHAR_MIN__
+#endif
+
+#endif /* !_MACHINE_WCHAR_LIMITS_H_ */

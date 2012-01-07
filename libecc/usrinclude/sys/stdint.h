@@ -87,12 +87,12 @@ typedef	__uintptr_t	uintptr_t;
 
 #include <machine/int_mwgwtypes.h>
 
-#if !defined(__cplusplus) || defined(__STDC_LIMIT_MACROS)
-#include <machine/int_limits.h>
-#endif
-
 #if !defined(__cplusplus) || defined(__STDC_CONSTANT_MACROS)
 #include <machine/int_const.h>
+#endif
+
+#if !defined(__cplusplus) || defined(__STDC_LIMIT_MACROS)
+#include <machine/int_limits.h>
 #endif
 
 #include <machine/wchar_limits.h>
