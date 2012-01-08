@@ -28,11 +28,21 @@ TEST_GROUP(Stdio)
     f = stdin;
     f = stdout;
     TEST_TRACE(C99 7.19.4.1)
-    TEST(remove("unlikely filename") != 0, "remove() fails as expected");
+    TEST(remove("unlikely filename") != 0, "remove(unlikely filename) fails as expected");
     TEST_TRACE(C99 7.19.4.2)
     TEST(rename("unlikely filename", "very unlikely filename") != 0, "rename() fails as expected");
     TEST_TRACE(C99 7.19.4.3)
     f = tmpfile();
     TEST(f != NULL, "Have a file pointer from tmpfile()");
+    TEST_TRACE(C99 7.19.5.1)
+    TEST(fclose(f) == 0, "fclose() is successful");
+    TEST_TRACE(C99 7.19.5.2)
+    TEST(fflush(f) == EOF, "fflush() is unsuccessful");
+    TEST_TRACE(C99 7.19.5.3)
+    f = fopen("tmp", "w");
+    TEST(f != NULL, "fopen(tmp) is successful");
+    TEST(fclose(f) == 0, "fclose() is successful");
+    TEST(remove("tmp") == 0, "remove(tmp) works as expected");
+    TEST(fopen("unlikely filename", "r") == NULL, "fopen(unlikely filename) fails as expected");
 END_GROUP
 
