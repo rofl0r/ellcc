@@ -32,6 +32,8 @@
 #ifndef _MACHINE_INT_LIMITS_H_
 #define _MACHINE_INT_LIMITS_H_
 
+#include <machine/stdint_macros.h>
+
 /* C99 7.18.2.1 Limits of exact-width integer types. 
  * C99 7.18.2.2 Limits of minimum-width integer types.
  * C99 7.18.2.3 Limits of fastest minimum-width integer types.
@@ -272,13 +274,6 @@
 # define INT_FAST8_MAX    __INT_LEAST8_MAX
 # define UINT_FAST8_MAX  __UINT_LEAST8_MAX
 #endif /* __INT_LEAST8_MIN */
-
-/* Some utility macros */
-#define  __INTN_MIN(n)  __stdint_join3( INT, n, _MIN)
-#define  __INTN_MAX(n)  __stdint_join3( INT, n, _MAX)
-#define __UINTN_MAX(n)  __stdint_join3(UINT, n, _MAX)
-#define  __INTN_C(n, v) __stdint_join3( INT, n, _C(v))
-#define __UINTN_C(n, v) __stdint_join3(UINT, n, _C(v))
 
 /* C99 7.18.2.4 Limits of integer types capable of holding object pointers. */
 /* C99 7.18.3 Limits of other integer types. */

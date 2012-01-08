@@ -32,6 +32,8 @@
 #ifndef _MACHINE_WCHAR_LIMITS_H_
 #define _MACHINE_WCHAR_LIMITS_H_
 
+#include <machine/stdint_macros.h>
+
 /*
  * 7.18.3 Limits of other integer types
  */

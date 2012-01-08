@@ -72,8 +72,8 @@
 #  define INT64_C(v) __int_c(v, __int64_c_suffix)
 #  define UINT64_C(v) __uint_c(v, __int64_c_suffix)
 # else
-#  define INT64_C(v) v
-#  define UINT64_C(v) v ## U
+#  define INT64_C(v) v ## LL
+#  define UINT64_C(v) v ## ULL
 # endif /* __int64_c_suffix */
 #endif /* __int_least64_t */
 
@@ -86,8 +86,8 @@
 #  define __int16_c_suffix __INT56_C_SUFFIX__
 #  define __int8_c_suffix  __INT56_C_SUFFIX__
 # else
-#  define INT56_C(v) v
-#  define UINT56_C(v) v ## U
+#  define INT56_C(v) v ## LL
+#  define UINT56_C(v) v ## ULL
 #  undef __int32_c_suffix
 #  undef __int16_c_suffix
 #  undef  __int8_c_suffix
@@ -102,8 +102,8 @@
 #  define __int16_c_suffix __INT48_C_SUFFIX__
 #  define __int8_c_suffix  __INT48_C_SUFFIX__
 # else
-#  define INT48_C(v) v
-#  define UINT48_C(v) v ## U
+#  define INT48_C(v) v ## LL
+#  define UINT48_C(v) v ## ULL
 #  undef __int32_c_suffix
 #  undef __int16_c_suffix
 #  undef  __int8_c_suffix
@@ -118,8 +118,8 @@
 #  define __int16_c_suffix __INT40_C_SUFFIX__
 #  define __int8_c_suffix  __INT40_C_SUFFIX__
 # else
-#  define INT40_C(v) v
-#  define UINT40_C(v) v ## U
+#  define INT40_C(v) v ## LL
+#  define UINT40_C(v) v ## ULL
 #  undef __int32_c_suffix
 #  undef __int16_c_suffix
 #  undef  __int8_c_suffix

@@ -28,7 +28,7 @@
 
 #include <math.h>
 #include <sys/ieee754.h>
-#include <machine/limits.h>
+#include <limits.h>
 #include "math_private.h"
 
 #ifndef LROUNDNAME
