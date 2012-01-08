@@ -1,6 +1,2 @@
-ifeq ($(ARCH),mips)
-    NOCHECK = 1
-endif
-
 CFLAGS += -Wno-format-zero-length
 STDIN = echo q

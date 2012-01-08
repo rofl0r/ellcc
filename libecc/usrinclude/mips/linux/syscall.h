@@ -49,7 +49,7 @@
                    : "i" (SYS_CONSTANT(name))                           \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -71,7 +71,7 @@
                      "{a0}" (arg0)                                      \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -95,7 +95,7 @@
                      "{a1}" (arg1)                                      \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -121,7 +121,7 @@
                      "{a2}" (arg2)                                      \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -151,7 +151,7 @@
                      "{a3}" (arg3)                                      \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -184,7 +184,7 @@
                      "r" (arg4)                                         \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -220,7 +220,7 @@
                      "r" (arg5)                                         \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \
@@ -259,7 +259,7 @@
                      "r" (arg6)                                         \
                    : SYSCALL_CLOBBERS);                                 \
     if (IS_SYSCALL_ERROR(err)) {                                        \
-        __set_errno(SYSCALL_ERRNO(err));                                \
+        __set_errno(SYSCALL_ERRNO(result));                             \
         result = -1;                                                    \
     }                                                                   \
     (int) result;                                                       \

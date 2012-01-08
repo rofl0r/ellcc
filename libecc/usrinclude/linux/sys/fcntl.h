@@ -68,25 +68,52 @@
  * Kernel encoding of open mode; separate read and write bits that are
  * independently testable: 1 greater than the above.
  */
-#define	O_CREAT		0x00000040	/* create if nonexistent */
-#define	O_EXCL		0x00000080	/* error if already exists */
-#define	O_NOCTTY	0x00000100	/* don't assign controlling terminal */
-#define	O_TRUNC		0x00000200	/* truncate to zero length */
-#define	O_APPEND	0x00000400	/* set append mode */
-#define	O_NONBLOCK	0x00000800	/* no delay */
-#define	O_NDELAY	O_NONBLOCK	/* compat */
-#define	O_SYNC		0x00001000	/* synchronous writes */
-#define	O_FSYNC		O_SYNC		/* compat */
-#define	O_ASYNC		0x00002000	/* signal pgrp when data ready */
+#if defined(__mips__)
+  #define	O_APPEND	0x00000008	/* set append mode */
+  #define	O_SYNC		0x00000010	/* synchronous writes */
+  #define	O_FSYNC		O_SYNC		/* compat */
+  #define	O_NONBLOCK	0x00000080	/* no delay */
+  #define	O_NDELAY	O_NONBLOCK	/* compat */
+  #define	O_CREAT		0x00000100	/* create if nonexistent */
+  #define	O_TRUNC		0x00000200	/* truncate to zero length */
+  #define	O_EXCL		0x00000400	/* error if already exists */
+  #define	O_NOCTTY	0x00000800	/* don't assign controlling terminal */
+  #define       O_LARGEFILE     0x00002000      /* allow large file opens */
+  #define	O_DIRECT	0x00008000	/* direct I/O hint */
+  #define	O_DIRECTORY	0x00010000	/* fail if not a directory */
+  #define	O_NOFOLLOW	0x00020000	/* don't follow symlinks on the last */
+#else
+  #define	O_CREAT		0x00000040	/* create if nonexistent */
+  #define	O_EXCL		0x00000080	/* error if already exists */
+  #define	O_NOCTTY	0x00000100	/* don't assign controlling terminal */
+  #define	O_TRUNC		0x00000200	/* truncate to zero length */
+  #define	O_APPEND	0x00000400	/* set append mode */
+  #define	O_NONBLOCK	0x00000800	/* no delay */
+  #define	O_NDELAY	O_NONBLOCK	/* compat */
+  #define	O_SYNC		0x00001000	/* synchronous writes */
+  #define	O_FSYNC		O_SYNC		/* compat */
+  #define	O_ASYNC		0x00002000	/* signal pgrp when data ready */
 
-#ifdef __USE_GNU
-#define	O_DIRECT	0x00004000	/* direct I/O hint */
-#define	O_DIRECTORY	0x00010000	/* fail if not a directory */
-#define	O_NOFOLLOW	0x00020000	/* don't follow symlinks on the last */
-					/* path component */
-#define O_NOATIME       0x00040000      /* Don't set atime */
-#define O_CLOEXEC       0x00080000      /* Close on exec */
+  #if defined(__arm__)
+    #define	O_DIRECTORY	0x00004000	/* fail if not a directory */
+    #define	O_NOFOLLOW	0x00008000	/* don't follow symlinks on the last */
+    #define	O_DIRECT	0x00010000	/* direct I/O hint */
+    #define     O_LARGEFILE     0x00020000      /* allow large file opens */
+  #elif defined(__microblaze__) || defined(__ppc__)
+    #define	O_DIRECTORY	0x00004000	/* fail if not a directory */
+    #define	O_NOFOLLOW	0x00008000	/* don't follow symlinks on the last */
+    #define     O_LARGEFILE     0x00010000      /* allow large file opens */
+    #define	O_DIRECT	0x00020000	/* direct I/O hint */
+  #else
+    #define	O_DIRECT	0x00004000	/* direct I/O hint */
+    #define     O_LARGEFILE     0x00008000      /* allow large file opens */
+    #define	O_DIRECTORY	0x00010000	/* fail if not a directory */
+    #define	O_NOFOLLOW	0x00020000	/* don't follow symlinks on the last */
+  #endif
 #endif
+
+#define         O_NOATIME       0x00040000      /* Don't set atime */
+#define         O_CLOEXEC       0x00080000      /* Close on exec */
 
 /* defined by POSIX 1003.1; BSD default, but required to be bitwise distinct */
 
