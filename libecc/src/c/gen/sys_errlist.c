@@ -45,10 +45,8 @@ __RCSID("$NetBSD: compat_errlist.c,v 1.2 2006/10/31 00:38:07 cbiere Exp $");
 #define __LIBC12_SOURCE__
 #include <errno.h>
 
-#if RICH        // Weak references dont seem to work for variables (arrays?).
-extern const char *const sys_errlist[] __weak_alias(_sys_errlist);
-extern const char *const __sys_errlist[] __weak_alias(_sys_errlist);
-#endif
+extern const char *const sys_errlist[1] __weak_alias(_sys_errlist);
+extern const char *const __sys_errlist[1] __weak_alias(_sys_errlist);
 extern const int sys_nerr __weak_alias(_sys_nerr);
 extern const int __sys_nerr __weak_alias(_sys_nerr);
 
