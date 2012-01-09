@@ -44,7 +44,12 @@ TEST_GROUP(Stdio)
     TEST(fclose(f) == 0, "fclose() is successful");
     TEST(remove("tmp") == 0, "remove(tmp) works as expected");
     TEST(fopen("unlikely filename", "r") == NULL, "fopen(unlikely filename) fails as expected");
-    TEST_TRACE(C99 7.19.5.3)
+    TEST_TRACE(C99 7.19.5.4)
     TEST(freopen("unlikely filename", "r", stdin) == NULL, "freopen(unlikely filename) fails as expected");
+    TEST_TRACE(C99 7.19.5.5)
+    setbuf(stderr, NULL);
+    TEST_TRACE(C99 7.19.5.6)
+    f = tmpfile();
+    TEST(setvbuf(f, NULL, _IOFBF, 256) == 0, "setvbuf() succeeds");
 END_GROUP
 
