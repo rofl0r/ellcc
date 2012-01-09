@@ -66,9 +66,7 @@ __RCSID("$NetBSD: vfscanf.c,v 1.41 2010/12/16 17:42:27 wiz Exp $");
  * namespace.h method; stdio routines explicitly use the internal name
  * __svfscanf.
  */
-#ifdef __weak_alias
-__weak_alias(vfscanf,__svfscanf)
-#endif
+int vfscanf(FILE *fp, char const *fmt0, va_list ap) __weak_alias(__svfscanf);
 
 #define	BUF		513	/* Maximum length of numeric string. */
 

@@ -15,7 +15,7 @@ SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fp
         fputc.c printf.c vfprintf.c fprintf.c fwrite.c fgetc.c remove.c fclose.c ungetc.c \
         fread.c fopen.c fdopen.c rget.c refill.c rewind.c fseek.c flags.c perror.c fseeko.c \
         snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c mkstemp.c asprintf.c gettemp.c \
-        ftell.c setbuffer.c tmpfile.c freopen.c
+        ftell.c setbuffer.c tmpfile.c freopen.c fscanf.c vfscanf.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
@@ -48,8 +48,7 @@ SRCS += localeconv.c current_locale.c global_locale.c tolower_.c ctype_.c touppe
 
 VPATH := $(VPATH):$(SRCPATH)/c/gdtoa
 SRCS +=	strtod.c dtoa.c ldtoa.c gdtoa.c dmisc.c gethex.c gmisc.c strtord.c \
-        hd_init.c hexnan.c misc.c smisc.c strtodg.c sum.c ulp.c _strtof.c _strtold.c \
-        strtord.c hdtoa.c strtof.c
+        hd_init.c hexnan.c misc.c smisc.c strtodg.c sum.c ulp.c strtord.c hdtoa.c strtof.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/time
 SRCS += localtime.c asctime.c strftime.c

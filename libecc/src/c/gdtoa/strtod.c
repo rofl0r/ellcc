@@ -65,6 +65,14 @@ long double _strtold(CONST char *s00, char **se) __strong_alias(strtod);
 long double strtold(CONST char *s00, char **se) __weak_alias(_strtold);
 #endif
 
+#if defined(__i386__) || defined(__x86_64__) // RICH: http://ellcc.org/bugzilla/show_bug.cgi?id=22
+long double
+strtold(CONST char *s00, char **se)
+{
+    return strtod(s00, se);
+}
+#endif
+
 double
 strtod(CONST char *s00, char **se)
 {

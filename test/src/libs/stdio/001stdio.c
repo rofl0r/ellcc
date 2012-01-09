@@ -8,6 +8,7 @@ TEST_GROUP(Stdio)
     fpos_t fpos;
     int i;
     char *p;
+    char buffer[100];
     TEST_TRACE(C99 7.19.1/3)
     p = NULL;
     TEST(_IOFBF != _IOLBF && _IOFBF != _IONBF,
@@ -51,5 +52,15 @@ TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.5.6)
     f = tmpfile();
     TEST(setvbuf(f, NULL, _IOFBF, 256) == 0, "setvbuf() succeeds");
+    TEST_TRACE(C99 7.19.6.1)
+    // See 001format.c for more extensive format checking.
+    TEST(fprintf(f, "hello world\n") == 12, "fprintf(hello world\n) returns 12");
+    TEST_TRACE(C99 7.19.9.5)
+    rewind(f);
+    TEST_TRACE(C99 7.19.6.2)
+    TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
+    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
+    TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
+    TEST(strcmp(buffer, "world") == 0, "fscanf succeeded");
 END_GROUP
 

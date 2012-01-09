@@ -3,7 +3,7 @@
 #include <string.h>
 
 TEST_GROUP(Format)
-    TEST_TRACE(C99 7.19)
+    TEST_TRACE(C99 7.19.6)
     char buffer[10240];
 
     int length = sprintf(buffer, "hello\n");
