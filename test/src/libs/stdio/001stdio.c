@@ -62,5 +62,23 @@ TEST_GROUP(Stdio)
     TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
     TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
     TEST(strcmp(buffer, "world") == 0, "fscanf succeeded");
+    TEST_TRACE(C99 7.19.6.3)
+    TEST(printf("") == 0, "printf() does nothing");
+    TEST_TRACE(C99 7.19.6.4)
+    TEST(scanf("") == 0, "scanf() does nothing");
+    TEST_TRACE(C99 7.19.6.5)
+    memset(buffer, 1, sizeof(buffer));
+    TEST(snprintf(buffer, 0, "%s", "hello world") == 11, "snprintf() with 0");
+    TEST(buffer[0] == 1, "snprintf() did not change the buffer");
+    TEST(snprintf(buffer, 1, "%s", "hello world") == 11, "snprintf() with 1");
+    TEST(buffer[0] == 0, "snprintf() added a trailing nul");
+    TEST(snprintf(buffer, sizeof(buffer), "%s", "hello world") == 11, "snprintf(hello world)");
+    TEST(strcmp(buffer, "hello world") == 0, "snprintf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.6.6)
+    TEST(sprintf(buffer, "%s", "hello world") == 11, "sprintf(hello world)");
+    TEST(strcmp(buffer, "hello world") == 0, "sprintf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.6.7)
+    TEST(sscanf("hello world", "%s", buffer) == 1, "sscanf(hello world)");
+    TEST(strcmp(buffer, "hello") == 0, "sscanf(hello world) succeeds");
 END_GROUP
 
