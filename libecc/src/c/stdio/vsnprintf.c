@@ -54,16 +54,11 @@ __RCSID("$NetBSD: vsnprintf.c,v 1.22 2007/10/26 19:48:14 christos Exp $");
 #define vsnprintf _vsnprintf
 #endif
 
-#ifdef __weak_alias
-__weak_alias(vsnprintf,_vsnprintf)
-#endif
+int vsnprintf(char *str, size_t n, const char *fmt, _BSD_VA_LIST_ ap)
+    __weak_alias(_vsnprintf);
 
 int
-vsnprintf(str, n, fmt, ap)
-	char *str;
-	size_t n;
-	const char *fmt;
-	_BSD_VA_LIST_ ap;
+_vsnprintf(char *str, size_t n, const char *fmt, _BSD_VA_LIST_ ap)
 {
 	int ret;
 	FILE f;

@@ -1,5 +1,76 @@
 #include <ecc_test.h>
 #include <stdio.h>
+#include <stdarg.h>
+
+static int myfprintf(FILE *f, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.8)
+    int result = vfprintf(f, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int myfscanf(FILE *f, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.9)
+    int result = vfscanf(f, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int myprintf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.8)
+    int result = vprintf(format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int myscanf(const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.9)
+    int result = vscanf(format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int mysnprintf(char *s, size_t n, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.12)
+    int result = vsnprintf(s, n, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int mysprintf(char *s, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.13)
+    int result = vsprintf(s, format, ap);
+    va_end(ap);
+    return result;
+}
+
+static int mysscanf(char *s, const char *format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+    TEST_TRACE(C99 7.19.6.14)
+    int result = vsscanf(s, format, ap);
+    va_end(ap);
+    return result;
+}
 
 TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.1/2)
@@ -62,6 +133,7 @@ TEST_GROUP(Stdio)
     TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
     TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
     TEST(strcmp(buffer, "world") == 0, "fscanf succeeded");
+    fclose(f);
     TEST_TRACE(C99 7.19.6.3)
     TEST(printf("") == 0, "printf() does nothing");
     TEST_TRACE(C99 7.19.6.4)
@@ -80,5 +152,27 @@ TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.6.7)
     TEST(sscanf("hello world", "%s", buffer) == 1, "sscanf(hello world)");
     TEST(strcmp(buffer, "hello") == 0, "sscanf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.6.8)
+    f = tmpfile();
+    TEST(myfprintf(f, "hello world\n") == 12, "myfprintf(hello world\n) returns 12");
+    rewind(f);
+    TEST_TRACE(C99 7.19.6.9)
+    TEST(myfscanf(f, "%s", buffer) == 1, "myfscanf(%%s\\n) returns 1");
+    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
+    fclose(f);
+    TEST_TRACE(C99 7.19.6.10)
+    TEST(myprintf("") == 0, "myprintf() does nothing");
+    TEST_TRACE(C99 7.19.6.11)
+    TEST(myscanf("") == 0, "myscanf() does nothing");
+    TEST_TRACE(C99 7.19.6.12)
+    memset(buffer, 1, sizeof(buffer));
+    TEST(mysnprintf(buffer, sizeof(buffer), "%s", "hello world") == 11, "mysnprintf(hello world)");
+    TEST(strcmp(buffer, "hello world") == 0, "mysnprintf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.6.13)
+    TEST(mysprintf(buffer, "%s", "hello world") == 11, "mysprintf(hello world)");
+    TEST(strcmp(buffer, "hello world") == 0, "mysprintf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.6.14)
+    TEST(mysscanf("hello world", "%s", buffer) == 1, "mysscanf(hello world)");
+    TEST(strcmp(buffer, "hello") == 0, "mysscanf(hello world) succeeds");
 END_GROUP
 
