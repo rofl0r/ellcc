@@ -234,9 +234,33 @@ TEST_GROUP(Stdio)
     TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
     TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
     TEST(putc('o', f) == 'o', "fputc(o) returns 'o'");
-    TEST(putc('\n', f) == '\n', "fgetc( ) returns '\n'");
+    TEST(putc('\n', f) == '\n', "fgetc( ) returns '\\n'");
     rewind(f);
     TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
+    fclose(f);
     TEST(strcmp(buffer, "hello\n") == 0, "fgets succeeds");
+    TEST_TRACE(C99 7.19.7.9)
+    TEST(putchar('#') == '#' && putchar('\n') == '\n', "putchar succeeds");
+    TEST_TRACE(C99 7.19.7.10)
+    TEST(puts("# hello world") >= 0, "puts succeeds");
+    TEST_TRACE(C99 7.19.8.2)
+    f = tmpfile();
+    memset(buffer, 0xAA, sizeof(buffer));
+    TEST(fwrite(buffer, sizeof(buffer), 1, f) == 1, "fwrite returns 1");
+    TEST_TRACE(C99 7.19.8.1)
+    rewind(f);
+    char buffer2[sizeof(buffer)];
+    TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
+    TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fwrite and fread succeed");
+    TEST_TRACE(C99 7.19.9.1)
+    rewind(f);
+    TEST(fgetpos(f, &fpos) == 0, "fgetpos succeeds");
+    TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
+    TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fwrite and fread succeed");
+    TEST_TRACE(C99 7.19.9.3)
+    TEST(fsetpos(f, &fpos) == 0, "fsetpos succeeds");
+    memset(buffer2, 0, sizeof(buffer));
+    TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
+    TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fwrite and fread succeed");
 END_GROUP
 

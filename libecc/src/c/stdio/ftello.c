@@ -44,16 +44,13 @@ __RCSID("$NetBSD: ftello.c,v 1.4 2003/08/07 16:43:26 agc Exp $");
 #include "reentrant.h"
 #include "local.h"
 
-#ifdef __weak_alias
-__weak_alias(ftello, _ftello)
-#endif
+off_t ftello(FILE *fp) __weak_alias(_ftello);
 
 /*
  * ftell: return current offset.
  */
 off_t
-ftello(fp)
-	FILE *fp;
+_ftello(FILE *fp)
 {
 	fpos_t pos;
 

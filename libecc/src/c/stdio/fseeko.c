@@ -43,8 +43,8 @@ __RCSID("$NetBSD: fseeko.c,v 1.8 2009/01/31 00:08:05 lukem Exp $");
 
 #include <assert.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include "reentrant.h"
 #include "local.h"

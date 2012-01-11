@@ -50,12 +50,11 @@ __RCSID("$NetBSD: fsetpos.c,v 1.10 2003/08/07 16:43:25 agc Exp $");
  * fsetpos: like fseek.
  */
 int
-fsetpos(iop, pos)
-	FILE *iop;
-	const fpos_t *pos;
+fsetpos(FILE *iop, const fpos_t *pos)
 {
 	_DIAGASSERT(iop != NULL);
 	_DIAGASSERT(pos != NULL);
 
-	return (fseeko(iop, (off_t)*pos, SEEK_SET));
+        off_t offset = *pos;
+	return (fseeko(iop, offset, SEEK_SET));
 }
