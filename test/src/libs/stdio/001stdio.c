@@ -117,7 +117,9 @@ TEST_GROUP(Stdio)
     TEST(remove("tmp") == 0, "remove(tmp) works as expected");
     TEST(fopen("unlikely filename", "r") == NULL, "fopen(unlikely filename) fails as expected");
     TEST_TRACE(C99 7.19.5.4)
-    TEST(freopen("unlikely filename", "r", stdin) == NULL, "freopen(unlikely filename) fails as expected");
+    f = tmpfile();
+    TEST(freopen("unlikely filename", "r", f) == NULL, "freopen(unlikely filename) fails as expected");
+    fclose(f);
     TEST_TRACE(C99 7.19.5.5)
     setbuf(stderr, NULL);
     TEST_TRACE(C99 7.19.5.6)
@@ -125,14 +127,14 @@ TEST_GROUP(Stdio)
     TEST(setvbuf(f, NULL, _IOFBF, 256) == 0, "setvbuf() succeeds");
     TEST_TRACE(C99 7.19.6.1)
     // See 001format.c for more extensive format checking.
-    TEST(fprintf(f, "hello world\n") == 12, "fprintf(hello world\n) returns 12");
+    TEST(fprintf(f, "hello world\n") == 12, "fprintf(hello world\\n) returns 12");
     TEST_TRACE(C99 7.19.9.5)
     rewind(f);
     TEST_TRACE(C99 7.19.6.2)
     TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
-    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
+    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeds");
     TEST(fscanf(f, "%s", buffer) == 1, "fscanf(%%s\\n) returns 1");
-    TEST(strcmp(buffer, "world") == 0, "fscanf succeeded");
+    TEST(strcmp(buffer, "world") == 0, "fscanf succeeds");
     fclose(f);
     TEST_TRACE(C99 7.19.6.3)
     TEST(printf("") == 0, "printf() does nothing");
@@ -158,7 +160,7 @@ TEST_GROUP(Stdio)
     rewind(f);
     TEST_TRACE(C99 7.19.6.9)
     TEST(myfscanf(f, "%s", buffer) == 1, "myfscanf(%%s\\n) returns 1");
-    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeded");
+    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeds");
     fclose(f);
     TEST_TRACE(C99 7.19.6.10)
     TEST(myprintf("") == 0, "myprintf() does nothing");
@@ -188,7 +190,7 @@ TEST_GROUP(Stdio)
     rewind(f);
     TEST_TRACE(C99 7.19.7.2)
     TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
-    TEST(strcmp(buffer, "hello\n") == 0, "fgets succeeded");
+    TEST(strcmp(buffer, "hello\n") == 0, "fgets succeeds");
     TEST(fgets(buffer, sizeof(buffer), f) == NULL, "fgets() returns NULL");
     fclose(f);
     TEST_TRACE(C99 7.19.7.3)
@@ -203,6 +205,38 @@ TEST_GROUP(Stdio)
     TEST(fputs("world\n", f) >= 0, "fputs(world\\n) succeeds");
     rewind(f);
     TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
-    TEST(strcmp(buffer, "hello world\n") == 0, "fgets succeeded");
+    TEST(strcmp(buffer, "hello world\n") == 0, "fgets succeeds");
+    fclose(f);
+    TEST_TRACE(C99 7.19.7.5)
+    f = tmpfile();
+    TEST(fprintf(f, "hello\n") == 6, "fprintf(hello\\n) returns 6");
+    rewind(f);
+    TEST(getc(f) == 'h', "fgetc() returns 'h'");
+    TEST(getc(f) == 'e', "fgetc() returns 'e'");
+    TEST(getc(f) == 'l', "fgetc() returns 'l'");
+    TEST(getc(f) == 'l', "fgetc() returns 'l'");
+    TEST(getc(f) == 'o', "fgetc() returns 'o'");
+    TEST(getc(f) == '\n', "fgetc() returns '\\n'");
+    TEST(getc(f) == EOF, "fgetc() returns EOF");
+    fclose(f);
+    TEST_TRACE(C99 7.19.7.11)
+    TEST(ungetc('A', stdin) == 'A', "ungetc succeeds");
+    TEST_TRACE(C99 7.19.7.6)
+    TEST(getchar()  == 'A', "getchar succeeds");
+    TEST_TRACE(C99 7.19.7.7)
+    TEST(ungetc('\n', stdin) == '\n', "ungetc succeeds");
+    TEST(gets(buffer) == buffer, "gets returns buffer");
+    TEST(strcmp(buffer, "") == 0, "gets succeeds");
+    TEST_TRACE(C99 7.19.7.8)
+    f = tmpfile();
+    TEST(putc('h', f) == 'h', "fputc(h) returns 'h'");
+    TEST(putc('e', f) == 'e', "fputc(e) returns 'e'");
+    TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
+    TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
+    TEST(putc('o', f) == 'o', "fputc(o) returns 'o'");
+    TEST(putc('\n', f) == '\n', "fgetc( ) returns '\n'");
+    rewind(f);
+    TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
+    TEST(strcmp(buffer, "hello\n") == 0, "fgets succeeds");
 END_GROUP
 
