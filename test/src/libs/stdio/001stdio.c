@@ -154,7 +154,7 @@ TEST_GROUP(Stdio)
     TEST(strcmp(buffer, "hello") == 0, "sscanf(hello world) succeeds");
     TEST_TRACE(C99 7.19.6.8)
     f = tmpfile();
-    TEST(myfprintf(f, "hello world\n") == 12, "myfprintf(hello world\n) returns 12");
+    TEST(myfprintf(f, "hello world\n") == 12, "myfprintf(hello world\\n) returns 12");
     rewind(f);
     TEST_TRACE(C99 7.19.6.9)
     TEST(myfscanf(f, "%s", buffer) == 1, "myfscanf(%%s\\n) returns 1");
@@ -174,5 +174,35 @@ TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.6.14)
     TEST(mysscanf("hello world", "%s", buffer) == 1, "mysscanf(hello world)");
     TEST(strcmp(buffer, "hello") == 0, "mysscanf(hello world) succeeds");
+    TEST_TRACE(C99 7.19.7.1)
+    f = tmpfile();
+    TEST(fprintf(f, "hello\n") == 6, "fprintf(hello\\n) returns 6");
+    rewind(f);
+    TEST(fgetc(f) == 'h', "fgetc() returns 'h'");
+    TEST(fgetc(f) == 'e', "fgetc() returns 'e'");
+    TEST(fgetc(f) == 'l', "fgetc() returns 'l'");
+    TEST(fgetc(f) == 'l', "fgetc() returns 'l'");
+    TEST(fgetc(f) == 'o', "fgetc() returns 'o'");
+    TEST(fgetc(f) == '\n', "fgetc() returns '\\n'");
+    TEST(fgetc(f) == EOF, "fgetc() returns EOF");
+    rewind(f);
+    TEST_TRACE(C99 7.19.7.2)
+    TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
+    TEST(strcmp(buffer, "hello\n") == 0, "fgets succeeded");
+    TEST(fgets(buffer, sizeof(buffer), f) == NULL, "fgets() returns NULL");
+    fclose(f);
+    TEST_TRACE(C99 7.19.7.3)
+    f = tmpfile();
+    TEST(fputc('h', f) == 'h', "fputc(h) returns 'h'");
+    TEST(fputc('e', f) == 'e', "fputc(e) returns 'e'");
+    TEST(fputc('l', f) == 'l', "fputc(l) returns 'l'");
+    TEST(fputc('l', f) == 'l', "fputc(l) returns 'l'");
+    TEST(fputc('o', f) == 'o', "fputc(o) returns 'o'");
+    TEST(fputc(' ', f) == ' ', "fgetc( ) returns ' '");
+    TEST_TRACE(C99 7.19.7.4)
+    TEST(fputs("world\n", f) >= 0, "fputs(world\\n) succeeds");
+    rewind(f);
+    TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
+    TEST(strcmp(buffer, "hello world\n") == 0, "fgets succeeded");
 END_GROUP
 
