@@ -8,7 +8,8 @@ SRCS += setjmp.S isnanl.c isinfl.c isfinitel.c signbitl.c
 VPATH := $(VPATH):$(SRCPATH)/c/stdlib
 SRCS += exit.c malloc.c abort.c getenv.c _env.c atoi.c strtol.c strtoul.c atof.c mi_vector_hash.c \
         putchar.c merge.c random.c atexit.c getopt.c strtoimax.c strtoll.c strcoll.c atol.c \
-        bsearch.c system.c imaxabs.c imaxdiv.c strtoumax.c wcstoimax.c wcstoumax.c
+        bsearch.c system.c imaxabs.c imaxdiv.c strtoumax.c wcstoimax.c wcstoumax.c atoll.c \
+        strtoull.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/stdio
 SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fputs.c wbuf.c \
