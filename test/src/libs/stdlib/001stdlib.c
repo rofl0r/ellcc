@@ -1,5 +1,6 @@
 #include <ecc_test.h>
 #include <stdlib.h>
+#include <limits.h>
 
 TEST_GROUP(Stdlib)
     float f;
@@ -11,6 +12,17 @@ TEST_GROUP(Stdlib)
     unsigned long long ull;
     char *p;
     TEST_TRACE(C99 7.20)
+    TEST_TRACE(C99 7.20/2)
+    size_t size;
+    wchar_t wchar;
+    div_t div;
+    ldiv_t ldiv;
+    lldiv_t lldiv;
+    TEST_TRACE(C99 7.20/2)
+    i = EXIT_FAILURE;
+    i = EXIT_SUCCESS;
+    TEST(RAND_MAX >= 32767, "RAND_MAX >= 32767");
+    TEST(MB_CUR_MAX <= MB_LEN_MAX, "MB_CUR_MAX <= MB_LEN_MAX");
     TEST_TRACE(C99 7.20.1.1)
     d = atof("1.0");
     TEST(d == 1.0, "atof(1.0) == 1.0");
@@ -35,4 +47,12 @@ TEST_GROUP(Stdlib)
     TEST(ll == 12345678901234LL && *p == '\0', "strtoll(12345678901234LL) == 12345678901234LL");
     ull = strtoull("12345678901234", &p, 0);
     TEST(ull == 12345678901234LL && *p == '\0', "strtoull(12345678901234LL) == 12345678901234LL");
+    TEST_TRACE(C99 7.20.2.1)
+    i = rand();
+    TEST(i >= 0 && i <= RAND_MAX, "rand() >= 0 && <= RAND_MAX");
+    TEST_TRACE(C99 7.20.2.2)
+    srand(1);
+    TEST(rand() == i, "rand() == srand(1)");
+    TEST_EXCLUDE(MICROBLAZE) TEST_BUG("http://ellcc.org/bugzilla/show_bug.cgi?id=23")
+        TEST(rand() != rand(), "rand() != rand()");
 END_GROUP

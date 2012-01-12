@@ -142,13 +142,13 @@ TEST_GROUP(Math)
     f = ilogbf(0.0);
     // RICH: ld = ilogbl(0.0);
     TEST(ilogb(0.0) == FP_ILOGB0, "ilogb(0.0) == FP_ILOGB0");
-    TEST_EXCLUDE(ARM)
+    TEST_EXCLUDE(ARM) TEST_BUG("http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
     TEST_TRACE(C99 7.12.6.6)
     d = ldexp(1.0, 1);
     f = ldexpf(1.0, 1);
     // RICH: ld = ldexpl(1.0, 1);
-    TEST_EXCLUDE(ARM)
+    TEST_EXCLUDE(ARM) TEST_BUG("http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
     TEST_TRACE(C99 7.12.6.7)
     d = log(0.0);
