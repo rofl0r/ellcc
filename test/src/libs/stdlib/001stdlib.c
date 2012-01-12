@@ -55,4 +55,24 @@ TEST_GROUP(Stdlib)
     TEST(rand() == i, "rand() == srand(1)");
     TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=23")
         TEST(rand() != rand(), "rand() != rand()");
+    TEST_TRACE(C99 7.20.3.1)
+    p = calloc(100, sizeof(char));
+    TEST(p != NULL, "calloc() returned a pointer");
+    int flag = 1;
+    for (i = 0; i < 100; ++i) {
+        if (p[i] != 0) {
+            flag = 0;
+        }
+    }
+    TEST(flag, "calloc() returned zeroed memory");
+    TEST_TRACE(C99 7.20.3.2)
+    free(p);
+    free(NULL);
+    TEST_TRACE(C99 7.20.3.3)
+    p = malloc(100);
+    TEST(p != NULL, "malloc() returned a pointer");
+    TEST_TRACE(C99 7.20.3.4)
+    p = realloc(p, 200);
+    TEST(p != NULL, "realloc() returned a pointer");
+    free(p);
 END_GROUP
