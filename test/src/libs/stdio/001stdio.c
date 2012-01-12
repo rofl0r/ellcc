@@ -252,12 +252,22 @@ TEST_GROUP(Stdio)
     char buffer2[sizeof(buffer)];
     TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
     TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fwrite and fread succeed");
-    TEST_TRACE(C99 7.19.9.1)
     rewind(f);
+    TEST_TRACE(C99 7.19.9.1)
     TEST(fgetpos(f, &fpos) == 0, "fgetpos succeeds");
+    TEST_TRACE(C99 7.19.9.4)
+    long int li = ftell(f);
+    TEST(li != -1L, "ftell succeeds");
     TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
     TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fwrite and fread succeed");
+    TEST_TRACE(C99 7.19.9.2)
+    TEST(fseek(f, li, SEEK_SET) == 0, "fseek returns 0");
+    TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
+    TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fread succeeds");
     TEST_TRACE(C99 7.19.9.3)
+    TEST(fsetpos(f, &fpos) == 0, "fsetpos returns 0");
+    TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
+    TEST(memcmp(buffer, buffer2, sizeof(buffer)) == 0, "fread succeeds");
     TEST(fsetpos(f, &fpos) == 0, "fsetpos succeeds");
     memset(buffer2, 0, sizeof(buffer));
     TEST(fread(buffer2, sizeof(buffer), 2, f) == 1, "fread returns 1");
