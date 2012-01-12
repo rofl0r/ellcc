@@ -131,13 +131,9 @@ static void test ## which(void) {                                       \
  */
 #define TEST_TRACE(ref)
 
-/** Reference a bug.
- */
-#define TEST_BUG(ref)
-
 /** Define a test exclusion set.
  */
-#define TEST_EXCLUDE(set) if (!(set))
+#define TEST_EXCLUDE(set, bug) if (!(set))
 
 /** Perform a test.
  */

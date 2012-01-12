@@ -53,6 +53,6 @@ TEST_GROUP(Stdlib)
     TEST_TRACE(C99 7.20.2.2)
     srand(1);
     TEST(rand() == i, "rand() == srand(1)");
-    TEST_EXCLUDE(MICROBLAZE) TEST_BUG("http://ellcc.org/bugzilla/show_bug.cgi?id=23")
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=23")
         TEST(rand() != rand(), "rand() != rand()");
 END_GROUP

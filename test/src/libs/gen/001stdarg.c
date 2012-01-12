@@ -15,7 +15,7 @@ int vfunc(int count, ...)
     va_list cap;
     va_copy(cap, ap);
     i1 = va_arg(ap, int);
-    TEST_EXCLUDE(PPC) { TEST_BUG("http://ellcc.org/bugzilla/show_bug.cgi?id=21")
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=21") {
         ci1 = va_arg(cap, int);
         TEST(i1 == ci1, "A copy of the va_list was made");
     }
