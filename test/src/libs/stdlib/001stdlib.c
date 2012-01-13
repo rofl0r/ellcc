@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <limits.h>
 
+static void func(void)
+{
+}
+
 TEST_GROUP(Stdlib)
     float f;
     double d;
@@ -75,4 +79,18 @@ TEST_GROUP(Stdlib)
     p = realloc(p, 200);
     TEST(p != NULL, "realloc() returned a pointer");
     free(p);
+    TEST_TRACE(C99 7.20.1.1)
+    void (*ap)(void) = abort;
+    TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=25")
+        TEST((abort(), 1), "abort()");
+    TEST_TRACE(C99 7.20.1.2)
+    TEST(atexit(func) == 0, "func is registered with atexit()");
+    TEST_TRACE(C99 7.20.1.3)
+    void (*ep)(int) = exit;
+    TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=26")
+        TEST((exit(0), 1), "exit()");
+    TEST_TRACE(C99 7.20.1.4)
+    ep = _Exit;
+    TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=27")
+        TEST((_Exit(0), 1), "_Exit()");
 END_GROUP

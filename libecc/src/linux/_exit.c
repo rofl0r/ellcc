@@ -1,5 +1,8 @@
 #include <syscall.h>
 #include <abort-instr.h>
+#include <sys/cdefs.h>
+
+void _Exit(int status) __weak_alias(_exit);
 
 void _exit(int status)
 {

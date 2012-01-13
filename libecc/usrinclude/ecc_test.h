@@ -76,15 +76,15 @@ extern const char *__test_group;              ///< The current test group.
 
 /** All known processors
  */
-#define TEST_ALL_PROCESSORS \
-    (ARM + GCC + I386 + MICROBLAZE + MIPS + MIPSEL + NIOS2 + PPC + PPC64 + SPARC + X86_64)
+#define ALL_PROCESSORS \
+    (ARM + GCC + I386 + MICROBLAZE + MIPS + NIOS2 + PPC + PPC64 + SPARC + X86_64)
 
 /** Check for exactly one processor definition.
  */
-#if TEST_ALL_PROCESSORS == 0
+#if ALL_PROCESSORS == 0
 #error Unknown processor
 #endif
-#if TEST_ALL_PROCESSORS != 1
+#if ALL_PROCESSORS != 1
   #if !GCC
   #error Multiple processor definitions
   #endif
