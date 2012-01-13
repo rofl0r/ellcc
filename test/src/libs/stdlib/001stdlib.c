@@ -6,6 +6,11 @@ static void func(void)
 {
 }
 
+static int compar(const void *a, const void *b)
+{
+    return *(int *)a - *(int *)b;
+}
+
 TEST_GROUP(Stdlib)
     float f;
     double d;
@@ -79,18 +84,36 @@ TEST_GROUP(Stdlib)
     p = realloc(p, 200);
     TEST(p != NULL, "realloc() returned a pointer");
     free(p);
-    TEST_TRACE(C99 7.20.1.1)
+    TEST_TRACE(C99 7.20.4.1)
     void (*ap)(void) = abort;
     TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=25")
         TEST((abort(), 1), "abort()");
-    TEST_TRACE(C99 7.20.1.2)
+    TEST_TRACE(C99 7.20.4.2)
     TEST(atexit(func) == 0, "func is registered with atexit()");
-    TEST_TRACE(C99 7.20.1.3)
+    TEST_TRACE(C99 7.20.4.3)
     void (*ep)(int) = exit;
     TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=26")
         TEST((exit(0), 1), "exit()");
-    TEST_TRACE(C99 7.20.1.4)
+    TEST_TRACE(C99 7.20.4.4)
     ep = _Exit;
     TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=27")
         TEST((_Exit(0), 1), "_Exit()");
+    TEST_TRACE(C99 7.20.4.5)
+    TEST(getenv("VERY UNLIKELY NAME") == NULL, "getenv() is here");
+    TEST_TRACE(C99 7.20.4.6)
+    TEST(system(NULL) != 0, "system() says there is a command interpreter");
+    TEST_TRACE(C99 7.20.5)
+    int array[] = { 8, 3, 9, 1, 4, 7, 0, 2, 6 };        // 5 is missing.
+    #define NMEMB (sizeof(array) / sizeof(array[0]))
+    static const int sarray[NMEMB] =  { 0, 1, 2, 3, 4, 6, 7, 8, 9 };
+    TEST_TRACE(C99 7.20.5.2)
+    qsort(array, NMEMB, sizeof(int), compar);
+    TEST(memcmp(array, sarray, sizeof(array)) == 0, "qsort() works");
+    TEST_TRACE(C99 7.20.5.1)
+    i = 2;
+    void *v = bsearch(&i, array, NMEMB, sizeof(int), compar);
+    TEST(v != NULL && *(int *)v == 2, "bsearch() finds an existing value");
+    i = 5;
+    v = bsearch(&i, array, NMEMB, sizeof(int), compar);
+    TEST(v == NULL, "bsearch() does not find a non-existant value");
 END_GROUP
