@@ -24,9 +24,9 @@ TEST_GROUP(Stdlib)
     TEST_TRACE(C99 7.20/2)
     size_t size;
     wchar_t wchar;
-    div_t div;
-    ldiv_t ldiv;
-    lldiv_t lldiv;
+    div_t rdiv;
+    ldiv_t rldiv;
+    lldiv_t rlldiv;
     TEST_TRACE(C99 7.20/2)
     i = EXIT_FAILURE;
     i = EXIT_SUCCESS;
@@ -116,4 +116,20 @@ TEST_GROUP(Stdlib)
     i = 5;
     v = bsearch(&i, array, NMEMB, sizeof(int), compar);
     TEST(v == NULL, "bsearch() does not find a non-existant value");
+    TEST_TRACE(C99 7.20.6.1)
+    TEST(abs(10) == 10, "abs(10) == 10");
+    TEST(abs(-10) == 10, "abs(-10) == 10");
+    TEST(labs(10L) == 10L, "labs(10L) == 10L");
+    TEST(labs(-10L) == 10L, "labs(-10L) == 10L");
+    TEST(llabs(10LL) == 10LL, "llabs(10LL) == 10LL");
+    TEST(llabs(-10LL) == 10LL, "llabs(-10LL) == 10LL");
+    TEST_TRACE(C99 7.20.6.2)
+    rdiv = div(13, 5);
+    TEST(rdiv.quot == 2 && rdiv.rem == 3, "div(13,5) is 2 rem 3");
+    rldiv = ldiv(13L, 5L);
+    TEST(rldiv.quot == 2L && rldiv.rem == 3L, "ldiv(13L,5L) is 2L rem 3L");
+    TEST_EXCLUDE(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=28") {
+        rlldiv = lldiv(13LL, 5LL);
+        TEST(rlldiv.quot == 2LL && rlldiv.rem == 3LL, "lldiv(13LL,5LL) is 2LL rem 3LL");
+    }
 END_GROUP

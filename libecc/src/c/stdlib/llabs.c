@@ -41,14 +41,11 @@ __RCSID("$NetBSD: llabs.c,v 1.3 2003/08/07 16:43:41 agc Exp $");
 #include "namespace.h"
 #include <stdlib.h>
 
-#ifdef __weak_alias
-__weak_alias(llabs, _llabs)
-#endif
+long long int llabs(long long int j) __weak_alias(_llabs);
 
 /* LONGLONG */
 long long int
-llabs(j)
-	long long int j;
+_llabs(long long int j)
 {
 	return (j < 0 ? -j : j);
 }

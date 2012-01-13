@@ -44,14 +44,11 @@ __RCSID("$NetBSD: lldiv.c,v 1.3 2003/08/07 16:43:41 agc Exp $");
 #include "namespace.h"
 #include <stdlib.h>		/* lldiv_t */
 
-#ifdef __weak_alias
-__weak_alias(lldiv, _lldiv)
-#endif
+lldiv_t lldiv(long long int num, long long int denom) __weak_alias(_lldiv);
 
 /* LONGLONG */
 lldiv_t
-lldiv(num, denom)
-	long long int num, denom;
+_lldiv(long long int num, long long int denom)
 {
 	lldiv_t r;
 
