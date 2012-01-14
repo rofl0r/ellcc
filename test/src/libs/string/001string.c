@@ -3,6 +3,7 @@
 
 TEST_GROUP(String)
     TEST_TRACE(C99 7.21)
+    int i;
     size_t size;
     char *p = NULL;
     static const char zeros[100];
@@ -17,6 +18,15 @@ TEST_GROUP(String)
     TEST_TRACE(C99 7.21.6.1)
     TEST(memset(dst, 0, 100) == dst, "memset() returns the destination");
     TEST(memcmp(dst, zeros, 100) == 0, "memcmp() finds all zeros");
+    TEST(memset(dst, 1, 100) == dst, "memset() returns the destination");
+    int flag = 1;
+    for (i = 0; i < 100; ++i) {
+        if (dst[i] != 1) {
+            flag = 0;
+            break;
+        }
+    }
+    TEST(flag == 1, "memset(1) works");
     TEST_TRACE(C99 7.21.2.2)
     TEST(memmove(dst, src, 100) == dst, "memmove() returns the destination");
     TEST(memcmp(dst, src, 100) == 0, "memcmp() matches");
@@ -47,4 +57,38 @@ TEST_GROUP(String)
     TEST_TRACE(C99 7.21.4.5)
     TEST(strxfrm(dst, src, 100) >= 0, "strxfrm() returns a positive value");
     TEST(strcmp(dst, src) == 0, "strcmp() matches");
+    TEST_TRACE(C99 7.21.5.1)
+    TEST(strcpy(dst, "abcdefabcdef") == dst, "strcpy() returns the destination");
+    TEST(memchr(dst, 'd', 100) == &dst[3], "memchr() finds 'd'");
+    TEST(memchr(dst, 'z', 100) == NULL, "memchr() does not find 'z'");
+    TEST_TRACE(C99 7.21.5.2)
+    TEST(strchr(dst, 'd') == &dst[3], "strchr() finds 'd'");
+    TEST(strchr(dst, 'z') == NULL, "strchr() does not find 'z'");
+    TEST_TRACE(C99 7.21.5.3)
+    TEST(strcspn(dst, "zd") == 3, "strcspn() finds 'd'");
+    TEST_TRACE(C99 7.21.5.4)
+    TEST(strpbrk(dst, "zd") == &dst[3], "strcspn() finds 'd'");
+    TEST_TRACE(C99 7.21.5.5)
+    TEST(strrchr(dst, 'd') == &dst[6 + 3], "strrchr() finds 'd'");
+    TEST(strrchr(dst, 'z') == NULL, "strrchr() does not find 'z'");
+    TEST_TRACE(C99 7.21.5.6)
+    TEST(strspn(dst, "zcxayb") == 3, "strspn() finds 'd'");
+    TEST_TRACE(C99 7.21.5.7)
+    TEST(strstr(dst, "def") == &dst[3], "strcspn() finds 'def'");
+    TEST(strstr(dst, "fed") == NULL, "strcspn() does not find 'fed'");
+    TEST_TRACE(C99 7.21.5.8)
+    // Adapted from C99 7.21.5.8/8
+    strcpy(dst, "?a???b,,,#c");
+    p = strtok(dst, "?");
+    TEST(p != NULL && strcmp(p, "a") == 0, "strtok() found the first token");
+    p = strtok(NULL, ",");
+    TEST(p != NULL && strcmp(p, "??b") == 0, "strtok() found the second token");
+    p = strtok(NULL, "#,");
+    TEST(p != NULL && strcmp(p, "c") == 0, "strtok() found the third token");
+    p = strtok(NULL, "?");
+    TEST(p == NULL, "strtok() returns NULL");
+    TEST_TRACE(C99 7.21.6.2)
+    TEST(strerror(0) != NULL, "strerror() returns a string");
+    TEST_TRACE(C99 7.21.6.3)
+    TEST(strlen(src) == 6, "strlen(\"abcdef\") is 6");
 END_GROUP

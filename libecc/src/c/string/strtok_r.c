@@ -43,15 +43,11 @@ __RCSID("$NetBSD: strtok_r.c,v 1.9 2003/08/07 16:43:53 agc Exp $");
 #include <assert.h>
 #include <string.h>
 
-#ifdef __weak_alias
-__weak_alias(strtok_r,_strtok_r)
-#endif
+char *strtok_r(char *s, const char *delim, char **lasts)
+    __weak_alias(_strtok_r);
 
 char *
-strtok_r(s, delim, lasts)
-	char *s;
-	const char *delim;
-	char **lasts;
+_strtok_r(char *s, const char *delim, char **lasts)
 {
 	const char *spanp;
 	int c, sc;
