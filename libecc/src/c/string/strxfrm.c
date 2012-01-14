@@ -50,10 +50,7 @@ __RCSID("$NetBSD: strxfrm.c,v 1.11 2003/08/07 16:43:53 agc Exp $");
  * on the original untransformed strings would return.
  */
 size_t
-strxfrm(dst, src, n)
-	char *dst;
-	const char *src;
-	size_t n;
+strxfrm(char *dst, const char *src, size_t n)
 {
 	size_t srclen, copysize;
 

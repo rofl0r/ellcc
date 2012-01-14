@@ -23,7 +23,7 @@ VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
         strcpy.c strncmp.c strstr.c strerror.c strcspn.c strlcpy.c strerror_r.c strrchr.c \
         strchr.c bcopy.c memmove.c strlcat.c strcasecmp.c strncasecmp.c strncat.c strmode.c \
-        strspn.c
+        strspn.c strxfrm.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
