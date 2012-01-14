@@ -21,4 +21,6 @@ TEST_GROUP(Time)
     tm.tm_wday = 6;
     tm.tm_yday = 11;
     tm.tm_isdst = 1;
+    TEST_TRACE(C99 7.23.2.1)
+    c = clock();
 END_GROUP
