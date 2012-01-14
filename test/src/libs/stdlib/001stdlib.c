@@ -145,4 +145,12 @@ TEST_GROUP(Stdlib)
     TEST(wctomb(mbbuf, L'a') == 1, "L'a' is a one byte multibyte character");
     TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
         TEST(mbbuf[0] == 'a', "L'a' is 'a'");
+    TEST_TRACE(C99 7.20.8.1)
+    wchar_t wcbuf[10];
+    TEST(mbstowcs(wcbuf, "a", 10) == 1, "\"a\" is one multibyte character");
+    TEST(wcbuf[0] == L'a', "'a' is L'a'");
+    TEST_TRACE(C99 7.20.8.2)
+    char buf[100];
+    TEST(wcstombs(buf, wcbuf, 100) == 1, "L\"a\" converts to a 1 byte multibyte character");
+    TEST(strcmp(buf, "a") == 0, "L\"a\" is equal to \"a\"");
 END_GROUP
