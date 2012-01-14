@@ -132,4 +132,17 @@ TEST_GROUP(Stdlib)
         rlldiv = lldiv(13LL, 5LL);
         TEST(rlldiv.quot == 2LL && rlldiv.rem == 3LL, "lldiv(13LL,5LL) is 2LL rem 3LL");
     }
+    TEST_TRACE(C99 7.20.7.1)
+    TEST(mblen("", 1) == 0, "mblen(\"\") == 0");
+    TEST(mblen("a", 1) == 1, "mblen(\"a\") == 1");
+    TEST_TRACE(C99 7.20.7.2)
+    TEST(mbtowc(&wchar, "", 1) == 0, "mbtowc(\"\") == 0");
+    TEST(wchar == L'\0', "the result is L'\\0'");
+    TEST(mbtowc(&wchar, "a", 1) == 1, "mbtowc(\"a\") == 1");
+    TEST(wchar == L'a', "the result is L'a'");
+    TEST_TRACE(C99 7.20.7.3)
+    char mbbuf[MB_CUR_MAX];
+    TEST(wctomb(mbbuf, L'a') == 1, "L'a' is a one byte multibyte character");
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
+        TEST(mbbuf[0] == 'a', "L'a' is 'a'");
 END_GROUP
