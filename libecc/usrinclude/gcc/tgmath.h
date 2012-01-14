@@ -53,12 +53,7 @@
 #define	__TG_IS_LREAL_P(t)	(__TG_IS_LDOUBLE_P(t) || __TG_IS_LCOMPLEX_P(t))
 
 // RICH: We don't have long double versions, yet.
-#define acosl acos      // RICH
-#define cacosl cacos    // RICH
-#define asinl asin      // RICH
-#define casinl casin    // RICH
-#define atanl atan      // RICH
-#define catanl catan    // RICH
+#define __L(x)             // RICH: x ## l
 
 #define	__TG_IS_COMPLEX_P(t)					\
 	(__TG_IS_FCOMPLEX_P(t)					\
@@ -69,14 +64,14 @@
 	__TG_CHOOSE(__TG_IS_##ftype##_P(a),			\
 		    fn##f(a),					\
 		    __TG_CHOOSE(__TG_IS_##ltype##_P(a),		\
-				fn##l(a),			\
+				__L(fn)(a),			\
 				fn(a)))
 
 #define	__TG_GFN1x(fn, a, b, ftype, ltype)			\
 	__TG_CHOOSE(__TG_IS_##ftype##_P(a),			\
 		    fn##f((a), (b)),				\
 		    __TG_CHOOSE(__TG_IS_##ltype##_P(a),		\
-				fn##l((a), (b)),		\
+				__L(fn)((a), (b)),		\
 				fn((a), (b))))
 
 #define	__TG_GFN2(fn, a, b, ftype, ltype)			\
@@ -85,7 +80,7 @@
 		    fn##f((a), (b)),				\
 		    __TG_CHOOSE(__TG_IS_##ltype##_P(a)		\
 				|| __TG_IS_##ltype##_P(b),	\
-				fn##l((a), (b)),		\
+				__L(fn)((a), (b)),		\
 				fn((a), (b))))
 
 #define	__TG_GFN2x(fn, a, b, c, ftype, ltype)			\
@@ -94,7 +89,7 @@
 		    fn##f((a), (b), (c)),			\
 		    __TG_CHOOSE(__TG_IS_##ltype##_P(a)		\
 				|| __TG_IS_##ltype##_P(b),	\
-				fn##l((a), (b), (c)),		\
+				__L(fn)((a), (b), (c)),		\
 				fn((a), (b), (c))))
 
 #define	__TG_GFN3(fn, a, b, c, ftype, ltype)			\
@@ -105,7 +100,7 @@
 		    __TG_CHOOSE(__TG_IS_##ltype##_P(a)		\
 				|| __TG_IS_##ltype##_P(b)	\
 				|| __TG_IS_##ltype##_P(c),	\
-				fn##l((a), (b), (c)),		\
+				__L(fn)((a), (b), (c)),		\
 				fn((a), (b), (c))))
 
 

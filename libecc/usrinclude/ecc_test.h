@@ -135,6 +135,10 @@ static void test ## which(void) {                                       \
  */
 #define TEST_EXCLUDE(set, bug) if (!(set))
 
+/** Define an unsupported test.
+ */
+#define TEST_UNSUPPORTED(x)
+
 /** Perform a test.
  */
 #define TEST(cond, ...)                                                 \
