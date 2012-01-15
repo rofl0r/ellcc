@@ -12,15 +12,23 @@ TEST_GROUP(Time)
     p = NULL;
     c = CLOCKS_PER_SEC;
     TEST_TRACE(C99 7.23/4)
-    tm.tm_sec = 59;
-    tm.tm_min = 9;
-    tm.tm_hour = 13;
-    tm.tm_mday = 14;
-    tm.tm_mon = 0;
-    tm.tm_year = 112;
-    tm.tm_wday = 6;
-    tm.tm_yday = 11;
-    tm.tm_isdst = 1;
+    const struct tm ctm = {
+        .tm_sec = 59,
+        .tm_min = 9,
+        .tm_hour = 13,
+        .tm_mday = 14,
+        .tm_mon = 0,
+        .tm_year = 112,
+        .tm_wday = 6,
+        .tm_yday = 11,
+        .tm_isdst = 1,
+    };
     TEST_TRACE(C99 7.23.2.1)
     c = clock();
+    TEST_TRACE(C99 7.23.2.3)
+    tm = ctm;
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
+        t = mktime(&tm);
 END_GROUP
