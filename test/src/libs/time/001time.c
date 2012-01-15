@@ -20,7 +20,7 @@ TEST_GROUP(Time)
         .tm_mon = 0,
         .tm_year = 2012 - 1900,
         .tm_wday = 6,
-        .tm_yday = 11,
+        .tm_yday = 13,
         .tm_isdst = 0,
     };
     TEST_TRACE(C99 7.23.2.1)
@@ -29,8 +29,21 @@ TEST_GROUP(Time)
     tm = ctm;
     TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32") {
         t = mktime(&tm);
+        TEST_TRACE(C99 7.23.3.4)
+        struct tm *rtm = localtime(&t); // NOTE: mktime() assumes tm is in local time.
+        TEST(rtm != NULL, "localtime() returns a broken-down time");
+        TEST(rtm->tm_sec == ctm.tm_sec, "seconds match");
+        TEST(rtm->tm_min == ctm.tm_min, "minutes match");
+        TEST(rtm->tm_hour == ctm.tm_hour, "hours match");
+        TEST(rtm->tm_mday == ctm.tm_mday, "day of month matches");
+        TEST(rtm->tm_mon == ctm.tm_mon, "months match");
+        TEST(rtm->tm_year == ctm.tm_year, "years match");
+        TEST(rtm->tm_wday == ctm.tm_wday, "week days match");
+        TEST(rtm->tm_yday == ctm.tm_yday, "day of year matches");
+        TEST(rtm->tm_isdst == ctm.tm_isdst, "daylight savings time matches");
+    }
     TEST_TRACE(C99 7.23.2.3)
     TEST(time(&t) == t, "time() directly and indirectly returns the time");
     TEST_TRACE(C99 7.23.2.2)
