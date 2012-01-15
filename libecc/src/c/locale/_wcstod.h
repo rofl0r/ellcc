@@ -41,6 +41,10 @@
 #ifndef __WCSTOD_H_
 #define __WCSTOD_H_
 
+_RETURN_TYPE
+_FUNCNAME(const wchar_t * __restrict nptr, wchar_t ** __restrict endptr)
+    __weak_alias(__FUNCNAME);
+
 /*
  * Convert a string to a double-precision number.
  *
@@ -52,7 +56,7 @@
  * for at least the digits, radix character and letters.
  */
 _RETURN_TYPE
-_FUNCNAME(const wchar_t * __restrict nptr, wchar_t ** __restrict endptr)
+__FUNCNAME(const wchar_t * __restrict nptr, wchar_t ** __restrict endptr)
 {
 	const wchar_t *src, *start;
 	_RETURN_TYPE val;

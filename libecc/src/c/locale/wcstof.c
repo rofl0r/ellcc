@@ -41,9 +41,8 @@ __RCSID("$NetBSD: wcstof.c,v 1.3 2008/04/25 16:43:00 christos Exp $");
 #include <wchar.h>
 #include <wctype.h>
 
-__weak_alias(wcstof,_wcstof)
-
 #define _FUNCNAME	wcstof
+#define __FUNCNAME	_wcstof
 #define _RETURN_TYPE	float
 #define _STRTOD_FUNC	strtof
 

@@ -17,13 +17,15 @@ SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fp
         fread.c fopen.c fdopen.c rget.c refill.c rewind.c fseek.c flags.c perror.c fseeko.c \
         snprintf.c sprintf.c fgets.c qsort.c setbuf.c setvbuf.c mkstemp.c asprintf.c gettemp.c \
         ftell.c setbuffer.c tmpfile.c freopen.c fscanf.c vfscanf.c scanf.c sscanf.c vprintf.c \
-        vscanf.c vsnprintf.c vsprintf.c vsscanf.c gets.c fgetpos.c fsetpos.c ftello.c
+        vscanf.c vsnprintf.c vsprintf.c vsscanf.c gets.c fgetpos.c fsetpos.c ftello.c fwprintf.c \
+        vfwprintf.c fputwc.c fwscanf.c vfwscanf.c fgetwc.c ungetwc.c fwide.c swprintf.c \
+        vswprintf.c swscanf.c vswscanf.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
         strcpy.c strncmp.c strstr.c strerror.c strcspn.c strlcpy.c strerror_r.c strrchr.c \
         strchr.c bcopy.c memmove.c strlcat.c strcasecmp.c strncasecmp.c strncat.c strmode.c \
-        strspn.c strxfrm.c strpbrk.c strtok.c strtok_r.c
+        strspn.c strxfrm.c strpbrk.c strtok.c strtok_r.c wmemchr.c wcslen.c wcscmp.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/gen
 SRCS += raise.c time.c isatty.c signal.c sigfuncs.c isinfd_ieee754.c isnand_ieee754.c rb.c \
@@ -46,7 +48,7 @@ CFLAGS += -I$(SRCPATH)/c/locale
 VPATH := $(VPATH):$(SRCPATH)/c/locale
 SRCS += localeconv.c current_locale.c global_locale.c tolower_.c ctype_.c toupper_.c \
         bsdctype.c _def_monetary.c _def_numeric.c _def_messages.c __mb_cur_max.c \
-        _def_time.c setlocale.c iswctype_sb.c \
+        _def_time.c setlocale.c iswctype_sb.c wcstod.c wcstof.c wcstold.c \
         multibyte_sb.c # RICH: Multibyte stubs.
 
 VPATH := $(VPATH):$(SRCPATH)/c/gdtoa
