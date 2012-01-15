@@ -54,7 +54,7 @@ SRCS +=	strtod.c dtoa.c ldtoa.c gdtoa.c dmisc.c gethex.c gmisc.c strtord.c \
         hd_init.c hexnan.c misc.c smisc.c strtodg.c sum.c ulp.c strtord.c hdtoa.c strtof.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/time
-SRCS += localtime.c asctime.c strftime.c
+SRCS += localtime.c asctime.c strftime.c difftime.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/misc
 SRCS += initfini.c
