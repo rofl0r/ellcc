@@ -160,7 +160,7 @@ TEST_GROUP(Stdio)
     rewind(f);
     TEST_TRACE(C99 7.19.6.9)
     TEST(myfscanf(f, "%s", buffer) == 1, "myfscanf(%%s\\n) returns 1");
-    TEST(strcmp(buffer, "hello") == 0, "fscanf succeeds");
+    TEST(strcmp(buffer, "hello") == 0, "myfscanf succeeds");
     fclose(f);
     TEST_TRACE(C99 7.19.6.10)
     TEST(myprintf("") == 0, "myprintf() does nothing");
@@ -168,13 +168,13 @@ TEST_GROUP(Stdio)
     TEST(myscanf("") == 0, "myscanf() does nothing");
     TEST_TRACE(C99 7.19.6.12)
     memset(buffer, 1, sizeof(buffer));
-    TEST(mysnprintf(buffer, sizeof(buffer), "%s", "hello world") == 11, "mysnprintf(hello world)");
+    TEST(mysnprintf(buffer, sizeof(buffer), "%s", "hello world") == 11, "mysnprintf(hello world) returns 11");
     TEST(strcmp(buffer, "hello world") == 0, "mysnprintf(hello world) succeeds");
     TEST_TRACE(C99 7.19.6.13)
-    TEST(mysprintf(buffer, "%s", "hello world") == 11, "mysprintf(hello world)");
+    TEST(mysprintf(buffer, "%s", "hello world") == 11, "mysprintf(hello world) returns 11");
     TEST(strcmp(buffer, "hello world") == 0, "mysprintf(hello world) succeeds");
     TEST_TRACE(C99 7.19.6.14)
-    TEST(mysscanf("hello world", "%s", buffer) == 1, "mysscanf(hello world)");
+    TEST(mysscanf("hello world", "%s", buffer) == 1, "mysscanf(hello world) returns 1");
     TEST(strcmp(buffer, "hello") == 0, "mysscanf(hello world) succeeds");
     TEST_TRACE(C99 7.19.7.1)
     f = tmpfile();

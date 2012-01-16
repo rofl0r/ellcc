@@ -19,7 +19,7 @@ SRCS += puts.c fvwrite.c findfp.c fwalk.c wsetup.c fflush.c stdio.c makebuf.c fp
         ftell.c setbuffer.c tmpfile.c freopen.c fscanf.c vfscanf.c scanf.c sscanf.c vprintf.c \
         vscanf.c vsnprintf.c vsprintf.c vsscanf.c gets.c fgetpos.c fsetpos.c ftello.c fwprintf.c \
         vfwprintf.c fputwc.c fwscanf.c vfwscanf.c fgetwc.c ungetwc.c fwide.c swprintf.c \
-        vswprintf.c swscanf.c vswscanf.c
+        vswprintf.c swscanf.c vswscanf.c vwprintf.c vwscanf.c wprintf.c wscanf.c
 
 VPATH := $(VPATH):$(SRCPATH)/c/string
 SRCS += strlen.c memcpy.c memchr.c memset.c memcmp.c strdup.c strncpy.c strcmp.c strcat.c \
