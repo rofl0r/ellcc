@@ -40,7 +40,7 @@ TEST_GROUP(Math)
     TEST_TRACE(C99 7.12/9)
     TEST(MATH_ERRNO == 1, "MATH_ERRNO is valid");
     TEST(MATH_ERREXCEPT == 2, "MATH_ERREXCEPT is valid");
-    i = math_errorhandling;
+    i = math_errhandling;
     TEST_TRACE(C99 7.12.3.1)
     TEST(fpclassify(0.0) == FP_ZERO, "fpclassify(1.0) == FP_ZERO");
     TEST(fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");

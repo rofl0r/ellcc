@@ -138,7 +138,7 @@ extern const union __float_u __nanf;
 /* 7.12#9 error macros */
 #define MATH_ERRNO      1
 #define MATH_ERREXCEPT  2
-#define math_errorhandling 0            // RICH: i386 and x86_64?
+#define math_errhandling 0              // RICH: i386 and x86_64?
 
 #endif /* !_ANSI_SOURCE && ... */
 

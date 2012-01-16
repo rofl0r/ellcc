@@ -7,6 +7,7 @@ XCFLAGS = -std=gnu99 -nostdinc
 # Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 XCCINCDIR = $(shell $(XCC) -print-search-dirs | grep install: | sed  "s/install: //")include
 XCFLAGS += -I$(XCCINCDIR)
+XCFLAGS += -I../../../../../../test/include
 DOFF = ../../../../../../libecc
 XCFLAGS += -I$(DOFF)/usrinclude/$(ARCH)/$(OS)
 XCFLAGS += -I$(DOFF)/usrinclude/$(ARCH) 

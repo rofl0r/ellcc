@@ -4,7 +4,8 @@
 TEST_GROUP(Fenv)
     TEST_TRACE(C99 7.6)
     #pragma FENV_ACCESS ON
-    fenv_t fenv = *FE_DFL_ENV;
+    const fenv_t *fenvp = FE_DFL_ENV;
+    fenv_t fenv;
     fexcept_t fexcept = FE_ALL_EXCEPT;
     int i;
     TEST_TRACE(C99 7.6.2.1)
