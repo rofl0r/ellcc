@@ -212,13 +212,13 @@ TEST_GROUP(Stdio)
     f = tmpfile();
     TEST(fprintf(f, "hello\n") == 6, "fprintf(hello\\n) returns 6");
     rewind(f);
-    TEST(getc(f) == 'h', "fgetc() returns 'h'");
-    TEST(getc(f) == 'e', "fgetc() returns 'e'");
-    TEST(getc(f) == 'l', "fgetc() returns 'l'");
-    TEST(getc(f) == 'l', "fgetc() returns 'l'");
-    TEST(getc(f) == 'o', "fgetc() returns 'o'");
-    TEST(getc(f) == '\n', "fgetc() returns '\\n'");
-    TEST(getc(f) == EOF, "fgetc() returns EOF");
+    TEST(getc(f) == 'h', "getc() returns 'h'");
+    TEST(getc(f) == 'e', "getc() returns 'e'");
+    TEST(getc(f) == 'l', "getc() returns 'l'");
+    TEST(getc(f) == 'l', "getc() returns 'l'");
+    TEST(getc(f) == 'o', "getc() returns 'o'");
+    TEST(getc(f) == '\n', "getc() returns '\\n'");
+    TEST(getc(f) == EOF, "getc() returns EOF");
     fclose(f);
     TEST_TRACE(C99 7.19.7.11)
     TEST(ungetc('A', stdin) == 'A', "ungetc succeeds");
@@ -230,12 +230,12 @@ TEST_GROUP(Stdio)
     TEST(strcmp(buffer, "") == 0, "gets succeeds");
     TEST_TRACE(C99 7.19.7.8)
     f = tmpfile();
-    TEST(putc('h', f) == 'h', "fputc(h) returns 'h'");
-    TEST(putc('e', f) == 'e', "fputc(e) returns 'e'");
-    TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
-    TEST(putc('l', f) == 'l', "fputc(l) returns 'l'");
-    TEST(putc('o', f) == 'o', "fputc(o) returns 'o'");
-    TEST(putc('\n', f) == '\n', "fgetc( ) returns '\\n'");
+    TEST(putc('h', f) == 'h', "putc(h) returns 'h'");
+    TEST(putc('e', f) == 'e', "putc(e) returns 'e'");
+    TEST(putc('l', f) == 'l', "putc(l) returns 'l'");
+    TEST(putc('l', f) == 'l', "putc(l) returns 'l'");
+    TEST(putc('o', f) == 'o', "putc(o) returns 'o'");
+    TEST(putc('\n', f) == '\n', "putc( ) returns '\\n'");
     rewind(f);
     TEST(fgets(buffer, sizeof(buffer), f) == buffer, "fgets() returns buffer");
     fclose(f);

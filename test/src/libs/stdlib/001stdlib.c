@@ -17,6 +17,7 @@ TEST_GROUP(Stdlib)
     long double ld;
     int i;
     long l;
+    unsigned long ul;
     long long ll;
     unsigned long long ull;
     char *p;
@@ -52,6 +53,8 @@ TEST_GROUP(Stdlib)
     TEST_TRACE(C99 7.20.1.4)
     l = strtol("12345678", &p, 0);
     TEST(l == 12345678L && *p == '\0', "strtol(12345678L) == 12345678L");
+    ul = strtoul("12345678", &p, 0);
+    TEST(ul == 12345678UL && *p == '\0', "strtoul(12345678UL) == 12345678UL");
     ll = strtoll("12345678901234", &p, 0);
     TEST(ll == 12345678901234LL && *p == '\0', "strtoll(12345678901234LL) == 12345678901234LL");
     ull = strtoull("12345678901234", &p, 0);

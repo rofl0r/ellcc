@@ -6,21 +6,22 @@ TEST_GROUP(String)
     int i;
     size_t size;
     char *p = NULL;
-    static const char zeros[100];
-    static const char src[100] = "abcdef";
-    char dst[100];
+#define CHARBUFSIZ 100
+    static const char zeros[CHARBUFSIZ];
+    static const char src[CHARBUFSIZ] = "abcdef";
+    char dst[CHARBUFSIZ];
     TEST_TRACE(C99 7.21.2.1)
-    TEST(memcpy(dst, src, 100) == dst, "memcpy() returns the destination");
+    TEST(memcpy(dst, src, CHARBUFSIZ) == dst, "memcpy() returns the destination");
     TEST_TRACE(C99 7.21.4.1)
-    TEST(memcmp(dst, src, 100) == 0, "memcmp() matches");
+    TEST(memcmp(dst, src, CHARBUFSIZ) == 0, "memcmp() matches");
     dst[0] = 'A';
-    TEST(memcmp(dst, src, 100) != 0, "memcmp() doesn't match");
+    TEST(memcmp(dst, src, CHARBUFSIZ) != 0, "memcmp() doesn't match");
     TEST_TRACE(C99 7.21.6.1)
-    TEST(memset(dst, 0, 100) == dst, "memset() returns the destination");
-    TEST(memcmp(dst, zeros, 100) == 0, "memcmp() finds all zeros");
-    TEST(memset(dst, 1, 100) == dst, "memset() returns the destination");
+    TEST(memset(dst, 0, CHARBUFSIZ) == dst, "memset() returns the destination");
+    TEST(memcmp(dst, zeros, CHARBUFSIZ) == 0, "memcmp() finds all zeros");
+    TEST(memset(dst, 1, CHARBUFSIZ) == dst, "memset() returns the destination");
     int flag = 1;
-    for (i = 0; i < 100; ++i) {
+    for (i = 0; i < CHARBUFSIZ; ++i) {
         if (dst[i] != 1) {
             flag = 0;
             break;
@@ -28,10 +29,10 @@ TEST_GROUP(String)
     }
     TEST(flag == 1, "memset(1) works");
     TEST_TRACE(C99 7.21.2.2)
-    TEST(memmove(dst, src, 100) == dst, "memmove() returns the destination");
-    TEST(memcmp(dst, src, 100) == 0, "memcmp() matches");
+    TEST(memmove(dst, src, CHARBUFSIZ) == dst, "memmove() returns the destination");
+    TEST(memcmp(dst, src, CHARBUFSIZ) == 0, "memcmp() matches");
     TEST_TRACE(C99 7.21.2.3)
-    TEST(memset(dst, 0, 100) == dst, "memset() returns the destination");
+    TEST(memset(dst, 0, CHARBUFSIZ) == dst, "memset() returns the destination");
     TEST(strcpy(dst, src) == dst, "strcpy() returns the destination");
     TEST_TRACE(C99 7.21.4.2)
     TEST(strcmp(dst, src) == 0, "strcmp() matches");
@@ -39,9 +40,9 @@ TEST_GROUP(String)
     TEST(strcmp(dst, src) != 0, "strcmp() doesn't match");
     TEST_TRACE(C99 7.21.2.4)
     // Fill dst with non-zero values.
-    TEST(memset(dst, 1, 100) == dst, "memset() returns the destination");
-    TEST(strncpy(dst, src, 100) == dst, "strncpy() returns the destination");
-    TEST(memcmp(dst, src, 100) == 0, "memcmp() matches");
+    TEST(memset(dst, 1, CHARBUFSIZ) == dst, "memset() returns the destination");
+    TEST(strncpy(dst, src, CHARBUFSIZ) == dst, "strncpy() returns the destination");
+    TEST(memcmp(dst, src, CHARBUFSIZ) == 0, "memcmp() matches");
     TEST_TRACE(C99 7.21.3.1)
     TEST(strcat(dst, src) == dst, "strcat() returns the destination");
     TEST(strcmp(dst, "abcdefabcdef") == 0, "strcmp() matches");
@@ -55,12 +56,12 @@ TEST_GROUP(String)
     TEST_TRACE(C99 7.21.4.4)
     TEST(strncmp(dst, "abcdzzz", 4) == 0, "strncmp() matches");
     TEST_TRACE(C99 7.21.4.5)
-    TEST(strxfrm(dst, src, 100) >= 0, "strxfrm() returns a positive value");
+    TEST(strxfrm(dst, src, CHARBUFSIZ) >= 0, "strxfrm() returns a positive value");
     TEST(strcmp(dst, src) == 0, "strcmp() matches");
     TEST_TRACE(C99 7.21.5.1)
     TEST(strcpy(dst, "abcdefabcdef") == dst, "strcpy() returns the destination");
-    TEST(memchr(dst, 'd', 100) == &dst[3], "memchr() finds 'd'");
-    TEST(memchr(dst, 'z', 100) == NULL, "memchr() does not find 'z'");
+    TEST(memchr(dst, 'd', CHARBUFSIZ) == &dst[3], "memchr() finds 'd'");
+    TEST(memchr(dst, 'z', CHARBUFSIZ) == NULL, "memchr() does not find 'z'");
     TEST_TRACE(C99 7.21.5.2)
     TEST(strchr(dst, 'd') == &dst[3], "strchr() finds 'd'");
     TEST(strchr(dst, 'z') == NULL, "strchr() does not find 'z'");
@@ -74,8 +75,8 @@ TEST_GROUP(String)
     TEST_TRACE(C99 7.21.5.6)
     TEST(strspn(dst, "zcxayb") == 3, "strspn() finds 'd'");
     TEST_TRACE(C99 7.21.5.7)
-    TEST(strstr(dst, "def") == &dst[3], "strcspn() finds 'def'");
-    TEST(strstr(dst, "fed") == NULL, "strcspn() does not find 'fed'");
+    TEST(strstr(dst, "def") == &dst[3], "strstr() finds 'def'");
+    TEST(strstr(dst, "fed") == NULL, "strstr() does not find 'fed'");
     TEST_TRACE(C99 7.21.5.8)
     // Adapted from C99 7.21.5.8/8
     strcpy(dst, "?a???b,,,#c");
