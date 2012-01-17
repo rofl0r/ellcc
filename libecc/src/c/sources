@@ -52,7 +52,7 @@ SRCS += localeconv.c current_locale.c global_locale.c tolower_.c ctype_.c touppe
         bsdctype.c _def_monetary.c _def_numeric.c _def_messages.c __mb_cur_max.c \
         _def_time.c setlocale.c iswctype_sb.c wcstod.c wcstof.c wcstold.c wcstol.c wcstoul.c \
         wcstoll.c wcstoull.c wcscoll.c wcsxfrm.c wcschr.c wcscspn.c wcspbrk.c wcsrchr.c wcsspn.c \
-        wcsstr.c wcstok.c \
+        wcsstr.c wcstok.c wcsftime.c \
         multibyte_sb.c # RICH: Multibyte stubs.
 
 VPATH := $(VPATH):$(SRCPATH)/c/gdtoa

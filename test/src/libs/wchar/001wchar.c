@@ -1,6 +1,7 @@
 #include <ecc_test.h>
 #include <wchar.h>
 #include <stdarg.h>
+#include <time.h>
 
 static int myfwprintf(FILE *f, const wchar_t *format, ...)
 {
@@ -72,6 +73,17 @@ TEST_GROUP(Wchar)
     long long ll;
     unsigned long long ull;
     FILE *f;
+    const struct tm ctm = {
+        .tm_sec = 59,
+        .tm_min = 9,
+        .tm_hour = 13,
+        .tm_mday = 14,
+        .tm_mon = 0,
+        .tm_year = 2012 - 1900,
+        .tm_wday = 6,
+        .tm_yday = 13,
+        .tm_isdst = 0,
+    };
     TEST_TRACE(C99 7.24/2)
     wchar_t wchar;
     size_t size;
@@ -297,5 +309,15 @@ TEST_GROUP(Wchar)
             flag = 0;
             break;
         }
+    }
+
+    TEST_TRACE(C99 7.24.5.1)
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
+    {
+        size = wcsftime(buffer, WCHARBUFSIZ, L"format", &ctm);
+        TEST(size == 6, "wcsftime() returns the number of bytes written");
+        TEST(wcscmp(buffer, L"format") == 0, "wcsftime() copies non-format characters");
     }
 END_GROUP
