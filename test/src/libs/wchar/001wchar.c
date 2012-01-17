@@ -117,11 +117,25 @@ TEST_GROUP(Wchar)
     TEST(myswscanf(L"hello world", L"%ls", buffer) == 1, "myswscanf(hello world) returns 1");
     TEST(wcscmp(buffer, L"hello") == 0, "myswscanf(hello world) succeeds");
     TEST_TRACE(C99 7.24.2.9)
-    TEST(mywprintf(L"") == 0, "mywprintf() does nothing");
+    TEST_EXCLUDE(HOST, "http://ellcc.org/bugzilla/show_bug.cgi?id=37")
+        TEST(mywprintf(L"") == 0, "mywprintf() does nothing");
     TEST_TRACE(C99 7.24.2.10)
     TEST(mywscanf(L"") == 0, "mywscanf() does nothing");
     TEST_TRACE(C99 7.24.2.11)
-    TEST(wprintf(L"") == 0, "wprintf() does nothing");
+    TEST_EXCLUDE(HOST, "http://ellcc.org/bugzilla/show_bug.cgi?id=37")
+        TEST(wprintf(L"") == 0, "wprintf() does nothing");
     TEST_TRACE(C99 7.24.2.12)
     TEST(wscanf(L"") == 0, "wscanf() does nothing");
+    TEST_TRACE(C99 7.24.3.1)
+    f = tmpfile();
+    TEST(fwprintf(f, L"hello\n") == 6, "fwprintf(hello\\n) returns 6");
+    rewind(f);
+    TEST(fgetwc(f) == L'h', "fgetwc() returns 'h'");
+    TEST(fgetwc(f) == L'e', "fgetwc() returns 'e'");
+    TEST(fgetwc(f) == L'l', "fgetwc() returns 'l'");
+    TEST(fgetwc(f) == L'l', "fgetwc() returns 'l'");
+    TEST(fgetwc(f) == L'o', "fgetwc() returns 'o'");
+    TEST(fgetwc(f) == L'\n', "fgetwc() returns '\\n'");
+    TEST(fgetwc(f) == WEOF, "fgetwc() returns EOF");
+    fclose(f);
 END_GROUP

@@ -32,6 +32,11 @@ extern const char *__test_group;              ///< The current test group.
 #else
 #define GCC 0
 #endif
+#if defined(__host__)
+#define HOST 1
+#else
+#define HOST 0
+#endif
 #if defined(__i386__)
 #define I386 1
 #else
