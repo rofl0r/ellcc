@@ -106,7 +106,7 @@ const char *__test_category = "";                                       \
 const char *__test_group = "";                                          \
 static void done(void) { TEST_DONE(); }                                 \
 static void finish(void) __attribute__((__constructor__, __used__));    \
-static void finish(void) { atexit(done); }                              \
+static void finish(void) { if (!HOST) atexit(done); }                   \
 int main(int argc, char **argv)                                         \
 {                                                                       \
     __test_verbose = verbose;                                           \
@@ -161,6 +161,7 @@ static void test ## which(void) {                                       \
             fprintf(stderr, __VA_ARGS__);                               \
             fprintf(stderr, "\n");                                      \
             ++__test_failures;                                          \
+            if (HOST) TEST_DONE();                                      \
         } else if (__test_verbose) {                                    \
             fprintf(stdout, "PASS: %s:%d: %s(%s): ", file, __LINE__,    \
                     __test_category, __test_group);                     \
@@ -178,7 +179,7 @@ static void test ## which(void) {                                       \
         fprintf(stdout, "    %d test%s failed\n", __test_failures,      \
                 __test_failures == 1 ? "" : "s");                       \
         if (__test_failures > 0) {                                      \
-            fprintf(stderr, "%s unit tests completed\n", __FILE__);     \
+            fprintf(stderr, "%s unit tests completed\n", __test_category); \
             fprintf(stderr, "    %d tests run\n", __test_count);        \
             fprintf(stderr, "    %d test%s failed\n", __test_failures,  \
                 __test_failures == 1 ? "" : "s");                       \
