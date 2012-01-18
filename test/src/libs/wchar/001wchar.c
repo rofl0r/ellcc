@@ -310,7 +310,6 @@ TEST_GROUP(Wchar)
             break;
         }
     }
-
     TEST_TRACE(C99 7.24.5.1)
     TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
@@ -320,4 +319,15 @@ TEST_GROUP(Wchar)
         TEST(size == 6, "wcsftime() returns the number of bytes written");
         TEST(wcscmp(buffer, L"format") == 0, "wcsftime() copies non-format characters");
     }
+    TEST_TRACE(C99 7.24.6.1.1)
+    TEST(btowc('A') == L'A', "btowc('A') == L'A'");
+    TEST(btowc(EOF) == WEOF, "btowc(EOF) == WEOF");
+    TEST_TRACE(C99 7.24.6.1.2)
+    TEST(wctob(L'A') == 'A', "wctob(L'A') == 'A'");
+    TEST_TRACE(C99 7.24.6.2.1)
+    TEST(mbsinit(NULL) != 0, "mbsinit(NULL) != 0");
+    TEST_TRACE(C99 7.24.6.3.1)
+    memset(&mbstate, 0, sizeof(mbstate));
+    TEST(mbrlen("", 1, &mbstate) == 0, "mbrlen(\"\") returns 0");
+    TEST(mbrlen("A", 1, &mbstate) == 1, "mbrlen(\"A\") returns 1");
 END_GROUP
