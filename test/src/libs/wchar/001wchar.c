@@ -96,6 +96,7 @@ TEST_GROUP(Wchar)
     static const wchar_t zeros[WCHARBUFSIZ];
     wchar_t dst[WCHARBUFSIZ];
     wchar_t buffer[WCHARBUFSIZ];
+    char mbc[MB_CUR_MAX];
     TEST_TRACE(C99 7.24/3)
     f = NULL;
     wint = WCHAR_MIN;
@@ -330,4 +331,24 @@ TEST_GROUP(Wchar)
     memset(&mbstate, 0, sizeof(mbstate));
     TEST(mbrlen("", 1, &mbstate) == 0, "mbrlen(\"\") returns 0");
     TEST(mbrlen("A", 1, &mbstate) == 1, "mbrlen(\"A\") returns 1");
+    TEST_TRACE(C99 7.24.6.3.2)
+    TEST(mbrtowc(NULL, "", 1, &mbstate) == 0, "mbrtowc(\"\") returns 0");
+    TEST(mbrtowc(NULL, "A", 1, &mbstate) == 1, "mbrtowc(\"A\") returns 1");
+    TEST(mbrtowc(&wchar, "", 1, &mbstate) == 0, "mbrtowc(\"\") returns 0");
+    TEST(wchar == L'\0', "the converted value is '\\0'");
+    TEST(mbrtowc(&wchar, "A", 1, &mbstate) == 1, "mbrtowc(\"A\") returns 1");
+    TEST(wchar == L'A', "the converted value is 'A'");
+    TEST_TRACE(C99 7.24.6.3.3)
+    TEST(wcrtomb(mbc, L'A', &mbstate) == 1, "wcrtomb(\"A\") returns 1");
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
+        TEST(mbc[0] == 'A', "the multibyte character is 'A'");
+    TEST_TRACE(C99 7.24.6.4.1)
+    const char *mbsrc = "a";
+    TEST(mbsrtowcs(buffer, &mbsrc, WCHARBUFSIZ, &mbstate) == 1, "\"a\" is one multibyte character");
+    TEST(buffer[0] == L'a', "'a' is L'a'");
+    TEST_TRACE(C99 7.24.6.4.2)
+    const wchar_t *wcsrc = L"A";
+    TEST(wcsrtombs(mbc, &wcsrc, MB_CUR_MAX, &mbstate) == 1, "\"a\" is one multibyte character");
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
+        TEST(mbc[0] == 'A', "L'A' is 'A'");
 END_GROUP
