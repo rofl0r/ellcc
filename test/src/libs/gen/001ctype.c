@@ -66,8 +66,8 @@ TEST_GROUP(Ctype)
     CTESTGROUP(ALL, ISNOT, isalpha);
     CTESTGROUP(ALNUM, ISNOT, isalpha);
     CTESTGROUP(ALPHA, IS, isalpha);
-    CTESTGROUP(BLANK, ISNOT, isalnum);
-    CTESTGROUP(CNTRL, ISNOT, isalnum);
+    CTESTGROUP(BLANK, ISNOT, isalpha);
+    CTESTGROUP(CNTRL, ISNOT, isalpha);
     CTESTGROUP(DIGIT, ISNOT, isalpha);
     CTESTGROUP(GRAPH, ISNOT, isalpha);
     CTESTGROUP(LC, IS, isalpha);
