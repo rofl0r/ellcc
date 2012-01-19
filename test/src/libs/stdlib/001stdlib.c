@@ -65,7 +65,7 @@ TEST_GROUP(Stdlib)
     TEST_TRACE(C99 7.20.2.2)
     srand(1);
     TEST(rand() == i, "rand() == srand(1)");
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=23")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=23")
         TEST(rand() != rand(), "rand() != rand()");
     TEST_TRACE(C99 7.20.3.1)
     p = calloc(100, sizeof(char));
