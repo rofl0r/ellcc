@@ -17,7 +17,7 @@
 /* Returns: a * b */
 
 si_int
-__mulsi3(si_int a, si_int b)
+__mulsi3(su_int a, su_int b)
 {
     si_int r = 0;
     while (a) {
