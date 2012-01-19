@@ -29,7 +29,7 @@ TEST_GROUP(Time)
     c = clock();
     TEST_TRACE(C99 7.23.2.3)
     tm = ctm;
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
     TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
     {
@@ -56,7 +56,7 @@ TEST_GROUP(Time)
     TEST_TRACE(C99 7.23.2.2)
     TEST(difftime(t, t) == 0.0, "difftime() with identical times is 0.0");
     TEST_TRACE(C99 7.23.3.1)
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
     TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
     {
