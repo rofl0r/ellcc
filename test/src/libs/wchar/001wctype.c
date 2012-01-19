@@ -442,7 +442,7 @@ TEST_GROUP(Ctype)
     CTESTMAP(LC, UC, towupper);
     CTESTMAP(ALLLC, ALLUC, towupper);
 
-    TEST_EXCLUDE(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=40")
+    TEST_RESOLVED(ALL_PROCESSORS, "http://ellcc.org/bugzilla/show_bug.cgi?id=40")
     {
         TEST_TRACE(C99 7.25.3.2.1)
         CTESTMAP2(UC, LC, tolower);
@@ -452,5 +452,6 @@ TEST_GROUP(Ctype)
     }
     TEST_TRACE(C99 7.25.3.2.2)
     TEST(wctrans("nonsense trans") == 0, "wctrans(nonsense trans) == 0");
+    TEST(wctrans("tolower") != 0, "wctrans(tolower) != 0");
 END_GROUP
 

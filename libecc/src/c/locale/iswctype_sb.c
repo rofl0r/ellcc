@@ -114,8 +114,8 @@ struct _wctrans_priv_t {
 };
 
 static const struct _wctrans_priv_t _wctrans_decl[] = {
-    { "upper", &towupper },
-    { "lower", &towlower },
+    { "toupper", &towupper },
+    { "tolower", &towlower },
 };
 static const size_t _wctrans_decl_size =
     sizeof(_wctrans_decl) / sizeof(struct _wctrans_priv_t);
