@@ -11,4 +11,3 @@ all install clean veryclean check:
 	  echo Making $@ in $$dir ; \
 	  $(MAKE) -C $$dir $@ || exit 1; \
 	done
-
