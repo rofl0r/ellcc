@@ -276,8 +276,71 @@ software license.</span><br style="font-family: monospace;">
       <span style="font-family: monospace;">[~/ellcc/test/src/bzip2-1.0.6]
 main%</span><br>
       </div>
+      <h2><a name="A_More_Complete_Sanity_Check"></a>A More Complete
+Sanity Check</h2>
+I've started to add unit and regression testing to ELLCC. The tests
+compile and run various programs for all the ELLCC targets as well as
+two sanity checks. For the first sanity check, libecc and the test
+programs are built by gcc rather than ecc and the entire test suite is
+run on the gcc compiled versions. The second sanity check involves
+running the test suite compiled by gcc but using the normal host
+libraries.<br>
       <br>
-      <span style="font-family: monospace;"></span>Good luck!<br>
+You can run the regression tests by going into the tests/obj directory:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ellcc] main% cd test/obj<br>
+[~/ellcc/test/obj] main% ls<br>
+arm/&nbsp;&nbsp;&nbsp; armv7sf/&nbsp; host/&nbsp;
+Makefile&nbsp;&nbsp;&nbsp;&nbsp; mips/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2elsf/&nbsp; mipsel/&nbsp; pic32/&nbsp; ppc64/&nbsp; x86_64/<br>
+armv7/&nbsp; gcc/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; i386/&nbsp;
+microblaze/&nbsp; mips32r2/&nbsp; mips32r2sf/&nbsp;&nbsp;&nbsp;
+nios2/&nbsp;&nbsp; ppc/&nbsp;&nbsp;&nbsp; sparc/&nbsp; x86_64.cov/<br>
+      <br>
+      </code></div>
+The various directories target the specific targets. The gcc/libecc
+tests are built under the gcc direcory and the gcc/hostlib tests are
+built under the host directory. Executables in these directories are
+run natively on the build system. The rest of the directories are used
+to build the target specific binaries that are run using the target
+specific qemu emulator.<br>
+      <br>
+To run the tests, simply type:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ellcc/test/obj] main%
+make check</code><br>
+      </div>
+      <br>
+You'll get a lot of output but if the compilation and execution of each
+test works, the entire test run should complete without error.<br>
+      <br>
+      <div style="margin-left: 40px;"><code>...<br>
+PASS: 001wctype.c:432: Wchar(Ctype): Group XDIGIT IS xdigit<br>
+PASS: 001wctype.c:436: Wchar(Ctype): wctype(nonsense type) == 0<br>
+PASS: 001wctype.c:439: Wchar(Ctype): Map from UC to LC towlower<br>
+PASS: 001wctype.c:440: Wchar(Ctype): Map from ALLUC to ALLLC towlower<br>
+PASS: 001wctype.c:442: Wchar(Ctype): Map from LC to UC towupper<br>
+PASS: 001wctype.c:443: Wchar(Ctype): Map from ALLLC to ALLUC towupper<br>
+PASS: 001wctype.c:448: Wchar(Ctype): Map from UC to LC tolower<br>
+PASS: 001wctype.c:449: Wchar(Ctype): Map from ALLUC to ALLLC tolower<br>
+PASS: 001wctype.c:450: Wchar(Ctype): Map from LC to UC toupper<br>
+PASS: 001wctype.c:451: Wchar(Ctype): Map from ALLLC to ALLUC toupper<br>
+PASS: 001wctype.c:454: Wchar(Ctype): wctrans(nonsense trans) == 0<br>
+PASS: 001wctype.c:455: Wchar(Ctype): wctrans(tolower) != 0<br>
+Wchar unit tests completed<br>
+&nbsp;&nbsp;&nbsp; 457 tests run<br>
+&nbsp;&nbsp;&nbsp; 0 tests failed<br>
+make[4]: Leaving directory
+`/home/rich/ellcc/test/obj/x86_64/linux/libs/wchar'<br>
+make[3]: Leaving directory `/home/rich/ellcc/test/obj/x86_64/linux/libs'<br>
+make[2]: Leaving directory `/home/rich/ellcc/test/obj/x86_64/linux'<br>
+make[1]: Leaving directory `/home/rich/ellcc/test/obj/x86_64'<br>
+[~/ellcc/test/obj] main%<br>
+      </code></div>
+      <span style="font-family: monospace;"></span><br>
+The sources for the various tests are under the test/src directory.<br>
+      <br>
+Good luck!<br>
       <span style="font-family: monospace;"></span> <span
  style="font-family: monospace;"><br>
       </span> <code></code><code></code><span
