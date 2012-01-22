@@ -95,7 +95,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
     // 'addi r1, r1, <amt>'
     MachineInstr *Old = I;
     int Amount = Old->getOperand(0).getImm() + 4;
-    if (Amount != 0) {
+    if (Amount != 4) {
       // We need to keep the stack aligned properly.  To do this, we round the
       // amount of space needed for the outgoing arguments up to the next
       // alignment boundary.

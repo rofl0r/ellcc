@@ -340,7 +340,7 @@ TEST_GROUP(Wchar)
     TEST(wchar == L'A', "the converted value is 'A'");
     TEST_TRACE(C99 7.24.6.3.3)
     TEST(wcrtomb(mbc, L'A', &mbstate) == 1, "wcrtomb(\"A\") returns 1");
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
         TEST(mbc[0] == 'A', "the multibyte character is 'A'");
     TEST_TRACE(C99 7.24.6.4.1)
     const char *mbsrc = "a";
@@ -349,6 +349,6 @@ TEST_GROUP(Wchar)
     TEST_TRACE(C99 7.24.6.4.2)
     const wchar_t *wcsrc = L"A";
     TEST(wcsrtombs(mbc, &wcsrc, MB_CUR_MAX, &mbstate) == 1, "\"a\" is one multibyte character");
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=38")
         TEST(mbc[0] == 'A', "L'A' is 'A'");
 END_GROUP

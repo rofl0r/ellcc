@@ -146,7 +146,7 @@ TEST_GROUP(Stdlib)
     TEST_TRACE(C99 7.20.7.3)
     char mbbuf[MB_CUR_MAX];
     TEST(wctomb(mbbuf, L'a') == 1, "L'a' is a one byte multibyte character");
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=29")
         TEST(mbbuf[0] == 'a', "L'a' is 'a'");
     TEST_TRACE(C99 7.20.8.1)
     wchar_t wcbuf[10];
