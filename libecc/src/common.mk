@@ -66,6 +66,11 @@ endif
 
 CFLAGS += -Werror -MD -MP -O1
 
+ifndef NODEBUG
+  CFLAGS += -g
+  LDFLAGS += -g
+endif
+
 ifdef CPU
     MCPU = -mcpu=$(CPU)
 endif

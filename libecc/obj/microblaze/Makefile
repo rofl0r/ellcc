@@ -7,6 +7,10 @@
 # Define subdirectories to ignore.
 # SUBIGNORE = 
 
+# Define NODEBUG to inhibit debug information.
+# http://ellcc.org/bugzilla/show_bug.cgi?id=43
+NODEBUG = 1
+
 # Find Makefiles
 MAKEFILES := $(shell echo */Makefile)
 
@@ -17,7 +21,7 @@ SUBDIRS := $(filter-out $(IGNORE), $(SUBDIRS))
 all install clean veryclean check:
 	@for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
-	  $(MAKE) IGNORE=$(SUBIGNORE) -C $$dir $@ || exit 1; \
+	  $(MAKE) NODEBUG=$(NODEBUG) IGNORE=$(SUBIGNORE) -C $$dir $@ || exit 1; \
 	done
 
 copy:
