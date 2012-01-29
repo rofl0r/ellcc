@@ -686,6 +686,9 @@ CodeGenTypes::GetFunctionType(const CGFunctionInfo &FI, bool isVariadic) {
 
     case ABIArgInfo::Extend:
     case ABIArgInfo::Direct: {
+      // Insert a padding type to ensure proper alignment.
+      if (llvm::Type *PaddingType = argAI.getPaddingType())
+        argTypes.push_back(PaddingType);
       // If the coerce-to type is a first class aggregate, flatten it.  Either
       // way is semantically identical, but fast-isel and the optimizer
       // generally likes scalar values better than FCAs.
@@ -730,8 +733,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
                                            const Decl *TargetDecl,
                                            AttributeListType &PAL,
                                            unsigned &CallingConv) {
-  unsigned FuncAttrs = 0;
-  unsigned RetAttrs = 0;
+  llvm::Attributes FuncAttrs;
+  llvm::Attributes RetAttrs;
 
   CallingConv = FI.getEffectiveCallingConvention();
 
@@ -817,7 +820,7 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
          ie = FI.arg_end(); it != ie; ++it) {
     QualType ParamType = it->type;
     const ABIArgInfo &AI = it->info;
-    unsigned Attributes = 0;
+    llvm::Attributes Attrs;
 
     // 'restrict' -> 'noalias' is done in EmitFunctionProlog when we
     // have the corresponding parameter variable.  It doesn't make
@@ -825,9 +828,9 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     switch (AI.getKind()) {
     case ABIArgInfo::Extend:
       if (ParamType->isSignedIntegerOrEnumerationType())
-        Attributes |= llvm::Attribute::SExt;
+        Attrs |= llvm::Attribute::SExt;
       else if (ParamType->isUnsignedIntegerOrEnumerationType())
-        Attributes |= llvm::Attribute::ZExt;
+        Attrs |= llvm::Attribute::ZExt;
       // FALL THROUGH
     case ABIArgInfo::Direct:
       if (RegParm > 0 &&
@@ -836,9 +839,12 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
         RegParm -=
         (Context.getTypeSize(ParamType) + PointerWidth - 1) / PointerWidth;
         if (RegParm >= 0)
-          Attributes |= llvm::Attribute::InReg;
+          Attrs |= llvm::Attribute::InReg;
       }
       // FIXME: handle sseregparm someday...
+
+      // Increment Index if there is padding.
+      Index += (AI.getPaddingType() != 0);
 
       if (llvm::StructType *STy =
             dyn_cast<llvm::StructType>(AI.getCoerceToType()))
@@ -847,9 +853,9 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
 
     case ABIArgInfo::Indirect:
       if (AI.getIndirectByVal())
-        Attributes |= llvm::Attribute::ByVal;
+        Attrs |= llvm::Attribute::ByVal;
 
-      Attributes |=
+      Attrs |=
         llvm::Attribute::constructAlignmentFromInt(AI.getIndirectAlign());
       // byval disables readnone and readonly.
       FuncAttrs &= ~(llvm::Attribute::ReadOnly |
@@ -871,8 +877,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     }
     }
 
-    if (Attributes)
-      PAL.push_back(llvm::AttributeWithIndex::get(Index, Attributes));
+    if (Attrs)
+      PAL.push_back(llvm::AttributeWithIndex::get(Index, Attrs));
     ++Index;
   }
   if (FuncAttrs)
@@ -982,6 +988,10 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
 
     case ABIArgInfo::Extend:
     case ABIArgInfo::Direct: {
+      // Skip the dummy padding argument.
+      if (ArgI.getPaddingType())
+        ++AI;
+
       // If we have the trivial case, handle it with no muss and fuss.
       if (!isa<llvm::StructType>(ArgI.getCoerceToType()) &&
           ArgI.getCoerceToType() == ConvertType(Ty) &&
@@ -1658,6 +1668,12 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
     case ABIArgInfo::Extend:
     case ABIArgInfo::Direct: {
+      // Insert a padding argument to ensure proper alignment.
+      if (llvm::Type *PaddingType = ArgInfo.getPaddingType()) {
+        Args.push_back(llvm::UndefValue::get(PaddingType));
+        ++IRArgNo;
+      }
+
       if (!isa<llvm::StructType>(ArgInfo.getCoerceToType()) &&
           ArgInfo.getCoerceToType() == ConvertType(info_it->type) &&
           ArgInfo.getDirectOffset() == 0) {

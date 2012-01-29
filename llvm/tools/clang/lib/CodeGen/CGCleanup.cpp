@@ -84,7 +84,6 @@ RValue DominatingValue<RValue>::saved_type::restore(CodeGenFunction &CGF) {
   }
 
   llvm_unreachable("bad saved r-value kind");
-  return RValue();
 }
 
 /// Push an entry of the given size onto this protected-scope stack.
@@ -1099,8 +1098,6 @@ llvm::Value *CodeGenFunction::getNormalCleanupDestSlot() {
 void CodeGenFunction::EmitCXXTemporary(const CXXTemporary *Temporary,
                                        QualType TempType,
                                        llvm::Value *Ptr) {
-  // This local is a GCC and MSVC compiler workaround.
-  Destroyer *destroyer = &destroyCXXObject;
-  pushDestroy(NormalAndEHCleanup, Ptr, TempType, *destroyer,
+  pushDestroy(NormalAndEHCleanup, Ptr, TempType, destroyCXXObject,
               /*useEHCleanup*/ true);
 }

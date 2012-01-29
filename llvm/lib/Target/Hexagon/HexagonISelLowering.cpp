@@ -113,8 +113,6 @@ CC_Hexagon_VarArg (unsigned ValNo, MVT ValVT,
     return false;
   }
   llvm_unreachable(0);
-
-  return true;
 }
 
 
@@ -645,7 +643,7 @@ bool HexagonTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
     return false;
   }
 
-  bool isInc;
+  bool isInc = false;
   bool isLegal = getIndexedAddressParts(Op, VT, isSEXTLoad, Base, Offset,
                                         isInc, DAG);
   // ShiftAmount = number of left-shifted bits in the Hexagon instruction.

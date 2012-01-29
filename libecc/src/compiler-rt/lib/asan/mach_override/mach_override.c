@@ -108,18 +108,26 @@ typedef	struct	{
 allocateBranchIsland(
 		BranchIsland	**island,
 		int				allocateHigh,
-		void *originalFunctionAddress);
+		void *originalFunctionAddress) __attribute__((visibility("hidden")));
 
 	mach_error_t
 freeBranchIsland(
-		BranchIsland	*island );
+		BranchIsland	*island ) __attribute__((visibility("hidden")));
+
+	mach_error_t
+defaultIslandMalloc(
+	  void **ptr, size_t unused_size, void *hint) __attribute__((visibility("hidden")));
+
+	mach_error_t
+defaultIslandFree(
+   	void *ptr) __attribute__((visibility("hidden")));
 
 #if defined(__ppc__) || defined(__POWERPC__)
 	mach_error_t
 setBranchIslandTarget(
 		BranchIsland	*island,
 		const void		*branchTo,
-		long			instruction );
+		long			instruction ) __attribute__((visibility("hidden")));
 #endif 
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -127,11 +135,11 @@ mach_error_t
 setBranchIslandTarget_i386(
 						   BranchIsland	*island,
 						   const void		*branchTo,
-						   char*			instructions );
+						   char*			instructions ) __attribute__((visibility("hidden")));
 void 
 atomic_mov64(
 		uint64_t *targetAddress,
-		uint64_t value );
+		uint64_t value ) __attribute__((visibility("hidden")));
 
 	static Boolean 
 eatKnownInstructions( 
@@ -140,7 +148,7 @@ eatKnownInstructions(
 	int				*howManyEaten, 
 	char			*originalInstructions,
 	int				*originalInstructionCount, 
-	uint8_t			*originalInstructionSizes );
+	uint8_t			*originalInstructionSizes ) __attribute__((visibility("hidden")));
 
 	static void
 fixupInstructions(
@@ -148,7 +156,7 @@ fixupInstructions(
     void		*escapeIsland,
     void		*instructionsToFix,
 	int			instructionCount,
-	uint8_t		*instructionSizes );
+	uint8_t		*instructionSizes ) __attribute__((visibility("hidden")));
 #endif
 
 /*******************************************************************************
@@ -175,11 +183,37 @@ mach_error_t makeIslandExecutable(void *address) {
 }
 #endif
 
+		mach_error_t
+defaultIslandMalloc(
+	void **ptr, size_t unused_size, void *hint) {
+  return allocateBranchIsland( (BranchIsland**)ptr, kAllocateHigh, hint );
+}
+		mach_error_t
+defaultIslandFree(
+	void *ptr) {
+	return freeBranchIsland(ptr);
+}
+
     mach_error_t
-mach_override_ptr(
+__asan_mach_override_ptr(
 	void *originalFunctionAddress,
     const void *overrideFunctionAddress,
     void **originalFunctionReentryIsland )
+{
+  return __asan_mach_override_ptr_custom(originalFunctionAddress,
+		overrideFunctionAddress,
+		originalFunctionReentryIsland,
+		defaultIslandMalloc,
+		defaultIslandFree);
+}
+
+    mach_error_t
+__asan_mach_override_ptr_custom(
+	void *originalFunctionAddress,
+    const void *overrideFunctionAddress,
+    void **originalFunctionReentryIsland,
+		island_malloc *alloc,
+		island_free *dealloc)
 {
 	assert( originalFunctionAddress );
 	assert( overrideFunctionAddress );
@@ -276,10 +310,9 @@ mach_override_ptr(
 	
 	//	Allocate and target the escape island to the overriding function.
 	BranchIsland	*escapeIsland = NULL;
-	if( !err )	
-		err = allocateBranchIsland( &escapeIsland, kAllocateHigh, originalFunctionAddress );
-		if (err) fprintf(stderr, "err = %x %s:%d\n", err, __FILE__, __LINE__);
-
+	if( !err )
+		err = alloc( (void**)&escapeIsland, sizeof(BranchIsland), originalFunctionAddress );
+	if ( err ) fprintf(stderr, "err = %x %s:%d\n", err, __FILE__, __LINE__);
 	
 #if defined(__ppc__) || defined(__POWERPC__)
 	if( !err )
@@ -319,7 +352,7 @@ mach_override_ptr(
 	//  technically our original function.
 	BranchIsland	*reentryIsland = NULL;
 	if( !err && originalFunctionReentryIsland ) {
-		err = allocateBranchIsland( &reentryIsland, kAllocateHigh, escapeIsland);
+		err = alloc( (void**)&reentryIsland, sizeof(BranchIsland), escapeIsland);
 		if( !err )
 			*originalFunctionReentryIsland = reentryIsland;
 	}
@@ -383,9 +416,9 @@ mach_override_ptr(
 	//	Clean up on error.
 	if( err ) {
 		if( reentryIsland )
-			freeBranchIsland( reentryIsland );
+			dealloc( reentryIsland );
 		if( escapeIsland )
-			freeBranchIsland( escapeIsland );
+			dealloc( escapeIsland );
 	}
 
 #ifdef DEBUG_DISASM
@@ -627,6 +660,7 @@ static AsmInstructionMatch possibleInstructions[] = {
 	{ 0x2, {0xFF, 0xFF}, {0x31, 0xC0} },						// xor %eax, %eax
 	{ 0x3, {0xFF, 0x4F, 0x00}, {0x8B, 0x45, 0x00} },  // mov $imm(%ebp), %reg
 	{ 0x3, {0xFF, 0x4C, 0x00}, {0x8B, 0x40, 0x00} },  // mov $imm(%eax-%edx), %reg
+	{ 0x3, {0xFF, 0xCF, 0x00}, {0x8B, 0x4D, 0x00} },  // mov $imm(%rpb), %reg
 	{ 0x3, {0xFF, 0x4F, 0x00}, {0x8A, 0x4D, 0x00} },  // mov $imm(%ebp), %cl
 	{ 0x4, {0xFF, 0xFF, 0xFF, 0x00}, {0x8B, 0x4C, 0x24, 0x00} },  			// mov $imm(%esp), %ecx
 	{ 0x4, {0xFF, 0x00, 0x00, 0x00}, {0x8B, 0x00, 0x00, 0x00} },  			// mov r16,r/m16 or r32,r/m32

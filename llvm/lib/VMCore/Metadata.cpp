@@ -163,12 +163,13 @@ static const Function *assertLocalFunction(const MDNode *N) {
 const Function *MDNode::getFunction() const {
 #ifndef NDEBUG
   return assertLocalFunction(this);
-#endif
+#else
   if (!isFunctionLocal()) return NULL;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
     if (const Function *F = getFunctionForValue(getOperand(i)))
       return F;
   return NULL;
+#endif
 }
 
 // destroy - Delete this node.  Only when there are no uses.
@@ -470,9 +471,11 @@ void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
   }
 
   // Otherwise, we're removing metadata from an instruction.
-  assert(hasMetadataHashEntry() &&
-         getContext().pImpl->MetadataStore.count(this) &&
+  assert((hasMetadataHashEntry() ==
+          getContext().pImpl->MetadataStore.count(this)) &&
          "HasMetadata bit out of date!");
+  if (!hasMetadataHashEntry())
+    return;  // Nothing to remove!
   LLVMContextImpl::MDMapTy &Info = getContext().pImpl->MetadataStore[this];
 
   // Common case is removing the only entry.

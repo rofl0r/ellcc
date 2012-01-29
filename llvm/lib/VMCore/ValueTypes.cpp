@@ -101,7 +101,6 @@ std::string EVT::getEVTString() const {
     if (isInteger())
       return "i" + utostr(getSizeInBits());
     llvm_unreachable("Invalid EVT!");
-    return "?";
   case MVT::i1:      return "i1";
   case MVT::i8:      return "i8";
   case MVT::i16:     return "i16";
@@ -135,6 +134,7 @@ std::string EVT::getEVTString() const {
   case MVT::v4i64:   return "v4i64";
   case MVT::v8i64:   return "v8i64";
   case MVT::v2f32:   return "v2f32";
+  case MVT::v2f16:   return "v2f16";
   case MVT::v4f32:   return "v4f32";
   case MVT::v8f32:   return "v8f32";
   case MVT::v2f64:   return "v2f64";
@@ -182,6 +182,7 @@ Type *EVT::getTypeForEVT(LLVMContext &Context) const {
   case MVT::v2i64:   return VectorType::get(Type::getInt64Ty(Context), 2);
   case MVT::v4i64:   return VectorType::get(Type::getInt64Ty(Context), 4);
   case MVT::v8i64:   return VectorType::get(Type::getInt64Ty(Context), 8);
+  case MVT::v2f16:   return VectorType::get(Type::getHalfTy(Context), 2);
   case MVT::v2f32:   return VectorType::get(Type::getFloatTy(Context), 2);
   case MVT::v4f32:   return VectorType::get(Type::getFloatTy(Context), 4);
   case MVT::v8f32:   return VectorType::get(Type::getFloatTy(Context), 8);
@@ -199,7 +200,6 @@ EVT EVT::getEVT(Type *Ty, bool HandleUnknown){
   default:
     if (HandleUnknown) return MVT(MVT::Other);
     llvm_unreachable("Unknown type!");
-    return MVT::isVoid;
   case Type::VoidTyID:
     return MVT::isVoid;
   case Type::IntegerTyID:

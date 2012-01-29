@@ -259,3 +259,25 @@ void MachineRegisterInfo::dumpUses(unsigned Reg) const {
     I.getOperand().getParent()->dump();
 }
 #endif
+
+void MachineRegisterInfo::freezeReservedRegs(const MachineFunction &MF) {
+  ReservedRegs = TRI->getReservedRegs(MF);
+}
+
+bool MachineRegisterInfo::isConstantPhysReg(unsigned PhysReg,
+                                            const MachineFunction &MF) const {
+  assert(TargetRegisterInfo::isPhysicalRegister(PhysReg));
+
+  // Check if any overlapping register is modified.
+  for (const unsigned *R = TRI->getOverlaps(PhysReg); *R; ++R)
+    if (!def_empty(*R))
+      return false;
+
+  // Check if any overlapping register is allocatable so it may be used later.
+  if (AllocatableRegs.empty())
+    AllocatableRegs = TRI->getAllocatableSet(MF);
+  for (const unsigned *R = TRI->getOverlaps(PhysReg); *R; ++R)
+    if (AllocatableRegs.test(*R))
+      return false;
+  return true;
+}

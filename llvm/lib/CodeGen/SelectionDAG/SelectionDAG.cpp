@@ -383,7 +383,9 @@ static void AddNodeIDCustom(FoldingSetNodeID &ID, const SDNode *N) {
   case ISD::Register:
     ID.AddInteger(cast<RegisterSDNode>(N)->getReg());
     break;
-
+  case ISD::RegisterMask:
+    ID.AddPointer(cast<RegisterMaskSDNode>(N)->getRegMask());
+    break;
   case ISD::SRCVALUE:
     ID.AddPointer(cast<SrcValueSDNode>(N)->getValue());
     break;
@@ -1375,6 +1377,20 @@ SDValue SelectionDAG::getRegister(unsigned RegNo, EVT VT) {
   return SDValue(N, 0);
 }
 
+SDValue SelectionDAG::getRegisterMask(const uint32_t *RegMask) {
+  FoldingSetNodeID ID;
+  AddNodeIDNode(ID, ISD::RegisterMask, getVTList(MVT::Untyped), 0, 0);
+  ID.AddPointer(RegMask);
+  void *IP = 0;
+  if (SDNode *E = CSEMap.FindNodeOrInsertPos(ID, IP))
+    return SDValue(E, 0);
+
+  SDNode *N = new (NodeAllocator) RegisterMaskSDNode(RegMask);
+  CSEMap.InsertNode(N, IP);
+  AllNodes.push_back(N);
+  return SDValue(N, 0);
+}
+
 SDValue SelectionDAG::getEHLabel(DebugLoc dl, SDValue Root, MCSymbol *Label) {
   FoldingSetNodeID ID;
   SDValue Ops[] = { Root };
@@ -2229,8 +2245,7 @@ unsigned SelectionDAG::ComputeNumSignBits(SDValue Op, unsigned Depth) const{
 
     Tmp2 = ComputeNumSignBits(Op.getOperand(1), Depth+1);
     if (Tmp2 == 1) return 1;
-      return std::min(Tmp, Tmp2)-1;
-    break;
+    return std::min(Tmp, Tmp2)-1;
 
   case ISD::SUB:
     Tmp2 = ComputeNumSignBits(Op.getOperand(1), Depth+1);
@@ -2259,8 +2274,7 @@ unsigned SelectionDAG::ComputeNumSignBits(SDValue Op, unsigned Depth) const{
     // is, at worst, one more bit than the inputs.
     Tmp = ComputeNumSignBits(Op.getOperand(0), Depth+1);
     if (Tmp == 1) return 1;  // Early out.
-      return std::min(Tmp, Tmp2)-1;
-    break;
+    return std::min(Tmp, Tmp2)-1;
   case ISD::TRUNCATE:
     // FIXME: it's tricky to do anything useful for this, but it is an important
     // case for targets like X86.
@@ -2571,17 +2585,18 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
            "Vector element count mismatch!");
     if (OpOpcode == ISD::TRUNCATE)
       return getNode(ISD::TRUNCATE, DL, VT, Operand.getNode()->getOperand(0));
-    else if (OpOpcode == ISD::ZERO_EXTEND || OpOpcode == ISD::SIGN_EXTEND ||
-             OpOpcode == ISD::ANY_EXTEND) {
+    if (OpOpcode == ISD::ZERO_EXTEND || OpOpcode == ISD::SIGN_EXTEND ||
+        OpOpcode == ISD::ANY_EXTEND) {
       // If the source is smaller than the dest, we still need an extend.
       if (Operand.getNode()->getOperand(0).getValueType().getScalarType()
             .bitsLT(VT.getScalarType()))
         return getNode(OpOpcode, DL, VT, Operand.getNode()->getOperand(0));
-      else if (Operand.getNode()->getOperand(0).getValueType().bitsGT(VT))
+      if (Operand.getNode()->getOperand(0).getValueType().bitsGT(VT))
         return getNode(ISD::TRUNCATE, DL, VT, Operand.getNode()->getOperand(0));
-      else
-        return Operand.getNode()->getOperand(0);
+      return Operand.getNode()->getOperand(0);
     }
+    if (OpOpcode == ISD::UNDEF)
+      return getUNDEF(VT);
     break;
   case ISD::BITCAST:
     // Basic sanity checking.
@@ -3143,16 +3158,14 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
   case ISD::SELECT:
     if (N1C) {
      if (N1C->getZExtValue())
-        return N2;             // select true, X, Y -> X
-      else
-        return N3;             // select false, X, Y -> Y
+       return N2;             // select true, X, Y -> X
+     return N3;             // select false, X, Y -> Y
     }
 
     if (N2 == N3) return N2;   // select C, X, X -> X
     break;
   case ISD::VECTOR_SHUFFLE:
     llvm_unreachable("should use getVectorShuffle constructor!");
-    break;
   case ISD::INSERT_SUBVECTOR: {
     SDValue Index = N3;
     if (VT.isSimple() && N1.getValueType().isSimple()
@@ -5945,7 +5958,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::BasicBlock:    return "BasicBlock";
   case ISD::VALUETYPE:     return "ValueType";
   case ISD::Register:      return "Register";
-
+  case ISD::RegisterMask:  return "RegisterMask";
   case ISD::Constant:      return "Constant";
   case ISD::ConstantFP:    return "ConstantFP";
   case ISD::GlobalAddress: return "GlobalAddress";

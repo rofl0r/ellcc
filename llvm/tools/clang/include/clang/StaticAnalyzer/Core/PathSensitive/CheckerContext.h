@@ -55,7 +55,7 @@ public:
   /// the state of the program before the checker ran. Note, checkers should
   /// not retain the node in their state since the nodes might get invalidated.
   ExplodedNode *getPredecessor() { return Pred; }
-  const ProgramState *getState() const { return Pred->getState(); }
+  ProgramStateRef getState() const { return Pred->getState(); }
 
   /// \brief Returns the number of times the current block has been visited
   /// along the analyzed path.
@@ -66,7 +66,11 @@ public:
   ASTContext &getASTContext() {
     return Eng.getContext();
   }
-  
+
+  const LangOptions &getLangOptions() const {
+    return Eng.getContext().getLangOptions();
+  }
+
   const LocationContext *getLocationContext() const {
     return Pred->getLocationContext();
   }
@@ -107,7 +111,7 @@ public:
   ///        tag is specified, a default tag, unique to the given checker,
   ///        will be used. Tags are used to prevent states generated at
   ///        different sites from caching out.
-  ExplodedNode *addTransition(const ProgramState *State,
+  ExplodedNode *addTransition(ProgramStateRef State,
                               const ProgramPointTag *Tag = 0) {
     return addTransitionImpl(State, false, 0, Tag);
   }
@@ -127,7 +131,7 @@ public:
   /// @param Tag The tag to uniquely identify the creation site.
   /// @param IsSink Mark the new node as sink, which will stop exploration of
   ///               the given path.
-  ExplodedNode *addTransition(const ProgramState *State,
+  ExplodedNode *addTransition(ProgramStateRef State,
                              ExplodedNode *Pred,
                              const ProgramPointTag *Tag = 0,
                              bool IsSink = false) {
@@ -136,7 +140,7 @@ public:
 
   /// \brief Generate a sink node. Generating sink stops exploration of the
   /// given path.
-  ExplodedNode *generateSink(const ProgramState *state = 0) {
+  ExplodedNode *generateSink(ProgramStateRef state = 0) {
     return addTransitionImpl(state ? state : getState(), true);
   }
 
@@ -149,10 +153,31 @@ public:
   const FunctionDecl *getCalleeDecl(const CallExpr *CE) const;
 
   /// \brief Get the name of the called function (path-sensitive).
-  StringRef getCalleeName(const CallExpr *CE) const;
+  StringRef getCalleeName(const FunctionDecl *FunDecl) const;
+
+  /// \brief Get the name of the called function (path-sensitive).
+  StringRef getCalleeName(const CallExpr *CE) const {
+    const FunctionDecl *FunDecl = getCalleeDecl(CE);
+    return getCalleeName(FunDecl);
+  }
+
+  /// Given a function declaration and a name checks if this is a C lib
+  /// function with the given name.
+  bool isCLibraryFunction(const FunctionDecl *FD, StringRef Name);
+
+  /// \brief Depending on wither the location corresponds to a macro, return 
+  /// either the macro name or the token spelling.
+  ///
+  /// This could be useful when checkers' logic depends on whether a function
+  /// is called with a given macro argument. For example:
+  ///   s = socket(AF_INET,..)
+  /// If AF_INET is a macro, the result should be treated as a source of taint.
+  ///
+  /// \sa clang::Lexer::getSpelling(), clang::Lexer::getImmediateMacroName().
+  StringRef getMacroNameOrSpelling(SourceLocation &Loc);
 
 private:
-  ExplodedNode *addTransitionImpl(const ProgramState *State,
+  ExplodedNode *addTransitionImpl(ProgramStateRef State,
                                  bool MarkAsSink,
                                  ExplodedNode *P = 0,
                                  const ProgramPointTag *Tag = 0) {

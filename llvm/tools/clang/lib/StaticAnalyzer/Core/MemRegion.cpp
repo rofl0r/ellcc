@@ -18,7 +18,9 @@
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/Analysis/Support/BumpVector.h"
 #include "clang/AST/CharUnits.h"
+#include "clang/AST/DeclObjC.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/Basic/SourceManager.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -219,6 +221,17 @@ DefinedOrUnknownSVal StringRegion::getExtent(SValBuilder &svalBuilder) const {
                                 svalBuilder.getArrayIndexType());
 }
 
+ObjCIvarRegion::ObjCIvarRegion(const ObjCIvarDecl *ivd, const MemRegion* sReg)
+  : DeclRegion(ivd, sReg, ObjCIvarRegionKind) {}
+
+const ObjCIvarDecl *ObjCIvarRegion::getDecl() const {
+  return cast<ObjCIvarDecl>(D);
+}
+
+QualType ObjCIvarRegion::getValueType() const {
+  return getDecl()->getType();
+}
+
 QualType CXXBaseObjectRegion::getValueType() const {
   return QualType(decl->getTypeForDecl(), 0);
 }
@@ -283,6 +296,12 @@ void CXXThisRegion::ProfileRegion(llvm::FoldingSetNodeID &ID,
 
 void CXXThisRegion::Profile(llvm::FoldingSetNodeID &ID) const {
   CXXThisRegion::ProfileRegion(ID, ThisPointerTy, superRegion);
+}
+
+void ObjCIvarRegion::ProfileRegion(llvm::FoldingSetNodeID& ID,
+                                   const ObjCIvarDecl *ivd,
+                                   const MemRegion* superRegion) {
+  DeclRegion::ProfileRegion(ID, ivd, superRegion, ObjCIvarRegionKind);
 }
 
 void DeclRegion::ProfileRegion(llvm::FoldingSetNodeID& ID, const Decl *D,
@@ -459,10 +478,6 @@ void FieldRegion::dumpToStream(raw_ostream &os) const {
   os << superRegion << "->" << *getDecl();
 }
 
-void NonStaticGlobalSpaceRegion::dumpToStream(raw_ostream &os) const {
-  os << "NonStaticGlobalSpaceRegion";
-}
-
 void ObjCIvarRegion::dumpToStream(raw_ostream &os) const {
   os << "ivar{" << superRegion << ',' << *getDecl() << '}';
 }
@@ -489,6 +504,22 @@ void RegionRawOffset::dumpToStream(raw_ostream &os) const {
 
 void StaticGlobalSpaceRegion::dumpToStream(raw_ostream &os) const {
   os << "StaticGlobalsMemSpace{" << CR << '}';
+}
+
+void NonStaticGlobalSpaceRegion::dumpToStream(raw_ostream &os) const {
+  os << "NonStaticGlobalSpaceRegion";
+}
+
+void GlobalInternalSpaceRegion::dumpToStream(raw_ostream &os) const {
+  os << "GlobalInternalSpaceRegion";
+}
+
+void GlobalSystemSpaceRegion::dumpToStream(raw_ostream &os) const {
+  os << "GlobalSystemSpaceRegion";
+}
+
+void GlobalImmutableSpaceRegion::dumpToStream(raw_ostream &os) const {
+  os << "GlobalImmutableSpaceRegion";
 }
 
 //===----------------------------------------------------------------------===//
@@ -542,10 +573,18 @@ MemRegionManager::getStackArgumentsRegion(const StackFrameContext *STC) {
 }
 
 const GlobalsSpaceRegion
-*MemRegionManager::getGlobalsRegion(const CodeTextRegion *CR) {
-  if (!CR)
-    return LazyAllocate(globals);
+*MemRegionManager::getGlobalsRegion(MemRegion::Kind K,
+                                    const CodeTextRegion *CR) {
+  if (!CR) {
+    if (K == MemRegion::GlobalSystemSpaceRegionKind)
+      return LazyAllocate(SystemGlobals);
+    if (K == MemRegion::GlobalImmutableSpaceRegionKind)
+      return LazyAllocate(ImmutableGlobals);
+    assert(K == MemRegion::GlobalInternalSpaceRegionKind);
+    return LazyAllocate(InternalGlobals);
+  }
 
+  assert(K == MemRegion::StaticGlobalSpaceRegionKind);
   StaticGlobalSpaceRegion *&R = StaticsGlobalSpaceRegions[CR];
   if (R)
     return R;
@@ -570,7 +609,6 @@ const MemSpaceRegion *MemRegionManager::getCodeRegion() {
 //===----------------------------------------------------------------------===//
 // Constructing regions.
 //===----------------------------------------------------------------------===//
-
 const StringRegion* MemRegionManager::getStringRegion(const StringLiteral* Str){
   return getSubRegion<StringRegion>(Str, getGlobalsRegion());
 }
@@ -579,9 +617,31 @@ const VarRegion* MemRegionManager::getVarRegion(const VarDecl *D,
                                                 const LocationContext *LC) {
   const MemRegion *sReg = 0;
 
-  if (D->hasGlobalStorage() && !D->isStaticLocal())
-    sReg = getGlobalsRegion();
-  else {
+  if (D->hasGlobalStorage() && !D->isStaticLocal()) {
+
+    // First handle the globals defined in system headers.
+    if (C.getSourceManager().isInSystemHeader(D->getLocation())) {
+      // Whitelist the system globals which often DO GET modified, assume the
+      // rest are immutable.
+      if (D->getName().find("errno") != StringRef::npos)
+        sReg = getGlobalsRegion(MemRegion::GlobalSystemSpaceRegionKind);
+      else
+        sReg = getGlobalsRegion(MemRegion::GlobalImmutableSpaceRegionKind);
+
+    // Treat other globals as GlobalInternal unless they are constants.
+    } else {
+      QualType GQT = D->getType();
+      const Type *GT = GQT.getTypePtrOrNull();
+      // TODO: We could walk the complex types here and see if everything is
+      // constified.
+      if (GT && GQT.isConstQualified() && GT->isArithmeticType())
+        sReg = getGlobalsRegion(MemRegion::GlobalImmutableSpaceRegionKind);
+      else
+        sReg = getGlobalsRegion();
+    }
+  
+  // Finally handle static locals.  
+  } else {
     // FIXME: Once we implement scope handling, we will need to properly lookup
     // 'D' to the proper LocationContext.
     const DeclContext *DC = D->getDeclContext();
@@ -599,13 +659,15 @@ const VarRegion* MemRegionManager::getVarRegion(const VarDecl *D,
         assert(D->isStaticLocal());
         const Decl *D = STC->getDecl();
         if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-          sReg = getGlobalsRegion(getFunctionTextRegion(FD));
+          sReg = getGlobalsRegion(MemRegion::StaticGlobalSpaceRegionKind,
+                                  getFunctionTextRegion(FD));
         else if (const BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
           const BlockTextRegion *BTR =
             getBlockTextRegion(BD,
                      C.getCanonicalType(BD->getSignatureAsWritten()->getType()),
                      STC->getAnalysisDeclContext());
-          sReg = getGlobalsRegion(BTR);
+          sReg = getGlobalsRegion(MemRegion::StaticGlobalSpaceRegionKind,
+                                  BTR);
         }
         else {
           // FIXME: For ObjC-methods, we need a new CodeTextRegion.  For now

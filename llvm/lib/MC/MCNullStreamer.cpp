@@ -80,8 +80,8 @@ namespace {
     virtual void EmitCodeAlignment(unsigned ByteAlignment,
                                    unsigned MaxBytesToEmit = 0) {}
 
-    virtual void EmitValueToOffset(const MCExpr *Offset,
-                                   unsigned char Value = 0) {}
+    virtual bool EmitValueToOffset(const MCExpr *Offset,
+                                   unsigned char Value = 0) { return false; }
     
     virtual void EmitFileDirective(StringRef Filename) {}
     virtual bool EmitDwarfFileDirective(unsigned FileNo, StringRef Directory,
@@ -94,7 +94,7 @@ namespace {
                                        StringRef FileName) {}
     virtual void EmitInstruction(const MCInst &Inst) {}
 
-    virtual void Finish() {}
+    virtual void FinishImpl() {}
     
     /// @}
   };

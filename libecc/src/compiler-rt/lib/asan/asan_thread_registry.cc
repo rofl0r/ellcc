@@ -17,50 +17,12 @@
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
 
-#include <limits.h>
-
 namespace __asan {
 
 static AsanThreadRegistry asan_thread_registry(__asan::LINKER_INITIALIZED);
 
 AsanThreadRegistry &asanThreadRegistry() {
   return asan_thread_registry;
-}
-
-// Dark magic below. In order to be able to notice that we're not handling
-// some thread creation routines (e.g. on Mac OS) we want to distinguish the
-// thread that used to have a corresponding AsanThread object from the thread
-// that never had one. That's why upon AsanThread destruction we set the
-// pthread_key value to some odd number (that's not a valid pointer), instead
-// of NULL.
-// Because the TSD destructor for a non-NULL key value is called iteratively,
-// we increase the value by two, keeping it an invalid pointer.
-// Because the TSD implementations are allowed to call such a destructor
-// infinitely (see
-// http://pubs.opengroup.org/onlinepubs/009604499/functions/pthread_key_create.html
-// ), we exit the program after a certain number of iterations.
-static void DestroyAsanTsd(void *tsd) {
-  intptr_t iter = (intptr_t)tsd;
-  if (iter % 2 == 0) {
-    // The pointer is valid.
-    AsanThread *t = (AsanThread*)tsd;
-    if (t != asanThreadRegistry().GetMain()) {
-      delete t;
-    }
-    iter = 1;
-  } else {
-    // The pointer is invalid -- we've already destroyed the TSD before.
-    // If |iter| is too big, we're in the infinite loop. This should be
-    // impossible on the systems AddressSanitizer was tested on.
-    CHECK(iter < 4 * PTHREAD_DESTRUCTOR_ITERATIONS);
-    iter += 2;
-  }
-  CHECK(0 == pthread_setspecific(asanThreadRegistry().GetTlsKey(),
-                                 (void*)iter));
-  if (FLAG_v >= 2) {
-    Report("DestroyAsanTsd: writing %p to the TSD slot of thread %p\n",
-           (void*)iter, pthread_self());
-  }
 }
 
 AsanThreadRegistry::AsanThreadRegistry(LinkerInitialized x)
@@ -70,26 +32,23 @@ AsanThreadRegistry::AsanThreadRegistry(LinkerInitialized x)
       mu_(x) { }
 
 void AsanThreadRegistry::Init() {
-  CHECK(0 == pthread_key_create(&tls_key_, DestroyAsanTsd));
-  tls_key_created_ = true;
-  SetCurrent(&main_thread_);
+  AsanTSDInit();
   main_thread_.set_summary(&main_thread_summary_);
   main_thread_summary_.set_thread(&main_thread_);
-  thread_summaries_[0] = &main_thread_summary_;
-  n_threads_ = 1;
+  RegisterThread(&main_thread_);
+  SetCurrent(&main_thread_);
 }
 
-void AsanThreadRegistry::RegisterThread(AsanThread *thread, int parent_tid,
-                                        AsanStackTrace *stack) {
+void AsanThreadRegistry::RegisterThread(AsanThread *thread) {
   ScopedLock lock(&mu_);
-  CHECK(n_threads_ > 0);
   int tid = n_threads_;
   n_threads_++;
   CHECK(n_threads_ < kMaxNumberOfThreads);
-  AsanThreadSummary *summary = new AsanThreadSummary(tid, parent_tid, stack);
-  summary->set_thread(thread);
+
+  AsanThreadSummary *summary = thread->summary();
+  CHECK(summary != NULL);
+  summary->set_tid(tid);
   thread_summaries_[tid] = summary;
-  thread->set_summary(summary);
 }
 
 void AsanThreadRegistry::UnregisterThread(AsanThread *thread) {
@@ -105,45 +64,34 @@ AsanThread *AsanThreadRegistry::GetMain() {
 }
 
 AsanThread *AsanThreadRegistry::GetCurrent() {
-  CHECK(tls_key_created_);
-  AsanThread *thread = (AsanThread*)pthread_getspecific(tls_key_);
-  if ((!thread || (intptr_t)thread % 2) && FLAG_v >= 2) {
-    Report("GetCurrent: %p for thread %p\n", thread, pthread_self());
+  AsanThreadSummary *summary = (AsanThreadSummary *)AsanTSDGet();
+  if (!summary) {
+#ifdef ANDROID
+    // On Android, libc constructor is called _after_ asan_init, and cleans up
+    // TSD. Try to figure out if this is still the main thread by the stack
+    // address. We are not entirely sure that we have correct main thread
+    // limits, so only do this magic on Android, and only if the found thread is
+    // the main thread.
+    AsanThread* thread = FindThreadByStackAddress((uintptr_t)&summary);
+    if (thread->tid() == 0) {
+      SetCurrent(thread);
+      return thread;
+    }
+#endif
+    return 0;
   }
-  if ((intptr_t)thread % 2) {
-    // Invalid pointer -- we've deleted the AsanThread already. Return NULL as
-    // if the TSD was empty.
-    // TODO(glider): if the code in the client TSD destructor calls
-    // pthread_create(), we'll set the parent tid of the spawned thread to NULL,
-    // although the creation stack will belong to the current thread. This may
-    // confuse the user, but is quite unlikely.
-    return NULL;
-  } else {
-    // NULL or valid pointer to AsanThread.
-    return thread;
-  }
+  return summary->thread();
 }
 
 void AsanThreadRegistry::SetCurrent(AsanThread *t) {
-  if (FLAG_v >=2) {
-    Report("SetCurrent: %p for thread %p\n", t, pthread_self());
+  CHECK(t->summary());
+  if (FLAG_v >= 2) {
+    Report("SetCurrent: %p for thread %p\n", t->summary(), GetThreadSelf());
   }
   // Make sure we do not reset the current AsanThread.
-  intptr_t old_key = (intptr_t)pthread_getspecific(tls_key_);
-  CHECK(!old_key || old_key % 2);
-  CHECK(0 == pthread_setspecific(tls_key_, t));
-  CHECK(pthread_getspecific(tls_key_) == t);
-}
-
-pthread_key_t AsanThreadRegistry::GetTlsKey() {
-  return tls_key_;
-}
-
-// Returns true iff DestroyAsanTsd() was already called for this thread.
-bool AsanThreadRegistry::IsCurrentThreadDying() {
-  CHECK(tls_key_created_);
-  intptr_t thread = (intptr_t)pthread_getspecific(tls_key_);
-  return (bool)(thread % 2);
+  CHECK(AsanTSDGet() == 0);
+  AsanTSDSet(t->summary());
+  CHECK(AsanTSDGet() == t->summary());
 }
 
 AsanStats &AsanThreadRegistry::GetCurrentThreadStats() {
@@ -188,7 +136,10 @@ AsanThreadSummary *AsanThreadRegistry::FindByTid(int tid) {
 
 AsanThread *AsanThreadRegistry::FindThreadByStackAddress(uintptr_t addr) {
   ScopedLock lock(&mu_);
-  for (int tid = 0; tid < n_threads_; tid++) {
+  // Main thread (tid = 0) stack limits are pretty much guessed; for the other
+  // threads we ask libpthread, so their limits must be correct.
+  // Scanning the thread list backwards makes this function more reliable.
+  for (int tid = n_threads_ - 1; tid >= 0; tid--) {
     AsanThread *t = thread_summaries_[tid]->thread();
     if (!t) continue;
     if (t->fake_stack().AddrIsInFakeStack(addr) || t->AddrIsInStack(addr)) {

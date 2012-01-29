@@ -33,11 +33,11 @@ struct NonConstexpr3 {
   int m : NonConstexpr2().n; // expected-error {{constant expression}} expected-note {{undefined constructor 'NonConstexpr2'}}
 };
 struct NonConstexpr4 {
-  NonConstexpr4();
+  NonConstexpr4(); // expected-note {{declared here}}
   int n;
 };
 struct NonConstexpr5 {
-  int n : NonConstexpr4().n; // expected-error {{constant expression}} expected-note {{non-literal type 'NonConstexpr4' cannot be used in a constant expression}}
+  int n : NonConstexpr4().n; // expected-error {{constant expression}} expected-note {{non-constexpr constructor 'NonConstexpr4' cannot be used in a constant expression}}
 };
 
 // - an invocation of an undefined constexpr function or an undefined
@@ -119,7 +119,7 @@ namespace UndefinedBehavior {
     switch (n) {
     case (int)4.4e9: // expected-error {{constant expression}} expected-note {{value 4.4E+9 is outside the range of representable values of type 'int'}}
     case (int)(unsigned)(long long)4.4e9: // ok
-    case (float)1e300: // expected-error {{constant expression}} expected-note {{value 1.0E+300 is outside the range of representable values of type 'float'}}
+    case (int)(float)1e300: // expected-error {{constant expression}} expected-note {{value 1.0E+300 is outside the range of representable values of type 'float'}}
     case (int)((float)1e37 / 1e30): // ok
     case (int)(__fp16)65536: // expected-error {{constant expression}} expected-note {{value 65536 is outside the range of representable values of type 'half'}}
       break;
@@ -134,9 +134,31 @@ namespace UndefinedBehavior {
   constexpr const int &f(const int *q) {
     return q[0]; // expected-note {{dereferenced pointer past the end of subobject of 's' is not a constant expression}}
   }
+  constexpr int n = (f(p), 0); // expected-error {{constant expression}} expected-note {{in call to 'f(&s.m + 1)'}}
   struct T {
-    int n : f(p); // expected-error {{not an integer constant expression}} expected-note {{in call to 'f(&s.m + 1)'}}
+    int n : f(p); // expected-error {{not an integral constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
   };
+
+  namespace Ptr {
+    struct A {};
+    struct B : A { int n; };
+    B a[3][3];
+    constexpr B *p = a[0] + 4; // expected-error {{constant expression}} expected-note {{element 4 of array of 3 elements}}
+    B b = {};
+    constexpr A *pa = &b + 1; // expected-error {{constant expression}} expected-note {{base class of pointer past the end}}
+    constexpr B *pb = (B*)((A*)&b + 1); // expected-error {{constant expression}} expected-note {{derived class of pointer past the end}}
+    constexpr const int *pn = &(&b + 1)->n; // expected-error {{constant expression}} expected-note {{field of pointer past the end}}
+    constexpr B *parr = &a[3][0]; // expected-error {{constant expression}} expected-note {{array element of pointer past the end}}
+
+    constexpr A *na = nullptr;
+    constexpr B *nb = nullptr;
+    constexpr A &ra = *nb; // expected-error {{constant expression}} expected-note {{cannot access base class of null pointer}}
+    constexpr B &rb = (B&)*na; // expected-error {{constant expression}} expected-note {{cannot access derived class of null pointer}}
+    static_assert((A*)nb == 0, "");
+    static_assert((B*)na == 0, "");
+    constexpr const int &nf = nb->n; // expected-error {{constant expression}} expected-note {{cannot access field of null pointer}}
+    constexpr const int &np = (*(int(*)[4])nullptr)[2]; // expected-error {{constant expression}} expected-note {{cannot access array element of null pointer}}
+  }
 }
 
 // - a lambda-expression (5.1.2);
@@ -280,11 +302,10 @@ namespace std {
 namespace TypeId {
   struct S { virtual void f(); };
   constexpr S *p = 0;
-  constexpr const std::type_info &ti1 = typeid(*p); // expected-error {{must be initialized by a constant expression}}
+  constexpr const std::type_info &ti1 = typeid(*p); // expected-error {{must be initialized by a constant expression}} expected-note {{typeid applied to expression of polymorphic type 'TypeId::S'}}
 
-  // FIXME: Implement typeid evaluation.
   struct T {} t;
-  constexpr const std::type_info &ti2 = typeid(t); // unexpected-error {{must be initialized by a constant expression}}
+  constexpr const std::type_info &ti2 = typeid(t);
 }
 
 // - a new-expression (5.3.4);
@@ -377,7 +398,7 @@ namespace Throw {
 }
 
 // PR9999
-template<bool v>
+template<unsigned int v>
 class bitWidthHolding {
 public:
   static const
@@ -399,3 +420,6 @@ struct and_or {
 
 static const bool and_value = and_or<true>::and_value;
 static const bool or_value = and_or<true>::or_value;
+
+static_assert(and_value == false, "");
+static_assert(or_value == true, "");

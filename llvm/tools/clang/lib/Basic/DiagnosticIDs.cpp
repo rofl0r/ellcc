@@ -532,7 +532,6 @@ DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, unsigned DiagClass,
     (diag::kind)DiagID);
 
   switch (MappingInfo.getMapping()) {
-  default: llvm_unreachable("Unknown mapping!");
   case diag::MAP_IGNORE:
     Result = DiagnosticIDs::Ignored;
     break;
@@ -681,6 +680,12 @@ bool DiagnosticIDs::getDiagnosticsInGroup(
 
   getDiagnosticsInGroup(Found, Diags);
   return false;
+}
+
+void DiagnosticIDs::getAllDiagnostics(
+                               llvm::SmallVectorImpl<diag::kind> &Diags) const {
+  for (unsigned i = 0; i != StaticDiagInfoSize; ++i)
+    Diags.push_back(StaticDiagInfo[i].DiagID);
 }
 
 StringRef DiagnosticIDs::getNearestWarningOption(StringRef Group) {

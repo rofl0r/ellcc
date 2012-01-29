@@ -176,7 +176,7 @@ static ScanfSpecifierResult ParseScanfSpecifier(FormatStringHandler &H,
   }
   ScanfConversionSpecifier CS(conversionPosition, k);
   if (k == ScanfConversionSpecifier::ScanListArg) {
-    if (!ParseScanList(H, CS, I, E))
+    if (ParseScanList(H, CS, I, E))
       return true;
   }
   FS.setConversionSpecifier(CS);
@@ -218,8 +218,11 @@ ScanfArgTypeResult ScanfSpecifier::getArgType(ASTContext &Ctx) const {
           return ScanfArgTypeResult();
         case LengthModifier::AsPtrDiff:
           return ScanfArgTypeResult(Ctx.getPointerDiffType(), "ptrdiff_t *");
-        case LengthModifier::AsLongDouble: return ScanfArgTypeResult::Invalid();
+        case LengthModifier::AsLongDouble:
+          // GNU extension.
+          return ArgTypeResult(Ctx.LongLongTy);
         case LengthModifier::AsAllocate: return ScanfArgTypeResult::Invalid();
+        case LengthModifier::AsMAllocate: return ScanfArgTypeResult::Invalid();
       }
 
     // Unsigned int.
@@ -241,8 +244,11 @@ ScanfArgTypeResult ScanfSpecifier::getArgType(ASTContext &Ctx) const {
         case LengthModifier::AsPtrDiff:
           // FIXME: Unsigned version of ptrdiff_t?
           return ScanfArgTypeResult();
-        case LengthModifier::AsLongDouble: return ScanfArgTypeResult::Invalid();
+        case LengthModifier::AsLongDouble:
+          // GNU extension.
+          return ArgTypeResult(Ctx.UnsignedLongLongTy);
         case LengthModifier::AsAllocate: return ScanfArgTypeResult::Invalid();
+        case LengthModifier::AsMAllocate: return ScanfArgTypeResult::Invalid();
       }
 
     // Float.
@@ -271,15 +277,24 @@ ScanfArgTypeResult ScanfSpecifier::getArgType(ASTContext &Ctx) const {
         case LengthModifier::None: return ScanfArgTypeResult::CStrTy;
         case LengthModifier::AsLong:
           return ScanfArgTypeResult(ScanfArgTypeResult::WCStrTy, "wchar_t *");
+        case LengthModifier::AsAllocate:
+        case LengthModifier::AsMAllocate:
+          return ScanfArgTypeResult(ArgTypeResult::CStrTy);
         default:
           return ScanfArgTypeResult::Invalid();
       }
     case ConversionSpecifier::CArg:
     case ConversionSpecifier::SArg:
       // FIXME: Mac OS X specific?
-      if (LM.getKind() == LengthModifier::None)
-        return ScanfArgTypeResult(ScanfArgTypeResult::WCStrTy, "wchar_t *");
-      return ScanfArgTypeResult::Invalid();
+      switch (LM.getKind()) {
+        case LengthModifier::None:
+          return ScanfArgTypeResult(ScanfArgTypeResult::WCStrTy, "wchar_t *");
+        case LengthModifier::AsAllocate:
+        case LengthModifier::AsMAllocate:
+          return ScanfArgTypeResult(ArgTypeResult::WCStrTy, "wchar_t **");
+        default:
+          return ScanfArgTypeResult::Invalid();
+      }
 
     // Pointer.
     case ConversionSpecifier::pArg:
@@ -451,7 +466,7 @@ bool ScanfArgTypeResult::matchesType(ASTContext& C, QualType argTy) const {
     }
   }
 
-  return false; // Unreachable, but we still get a warning.
+  llvm_unreachable("Invalid ScanfArgTypeResult Kind!");
 }
 
 QualType ScanfArgTypeResult::getRepresentativeType(ASTContext &C) const {
@@ -468,7 +483,7 @@ QualType ScanfArgTypeResult::getRepresentativeType(ASTContext &C) const {
       return C.getPointerType(A.getRepresentativeType(C));
   }
 
-  return QualType(); // Not reachable.
+  llvm_unreachable("Invalid ScanfArgTypeResult Kind!");
 }
 
 std::string ScanfArgTypeResult::getRepresentativeTypeName(ASTContext& C) const {

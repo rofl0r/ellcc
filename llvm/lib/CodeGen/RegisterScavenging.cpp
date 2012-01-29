@@ -96,7 +96,7 @@ void RegScavenger::enterBasicBlock(MachineBasicBlock *mbb) {
 
     // Create callee-saved registers bitvector.
     CalleeSavedRegs.resize(NumPhysRegs);
-    const unsigned *CSRegs = TRI->getCalleeSavedRegs();
+    const unsigned *CSRegs = TRI->getCalleeSavedRegs(&MF);
     if (CSRegs != NULL)
       for (unsigned i = 0; CSRegs[i]; ++i)
         CalleeSavedRegs.set(CSRegs[i]);
@@ -205,7 +205,12 @@ void RegScavenger::forward() {
             SubUsed = true;
             break;
           }
-        assert(SubUsed && "Using an undefined register!");
+#ifndef NDEBUG
+        if (!SubUsed) {
+          MBB->getParent()->verify(NULL, "In Register Scavenger");
+          llvm_unreachable("Using an undefined register!");
+        }
+#endif
         (void)SubUsed;
       }
       assert((!EarlyClobberRegs.test(Reg) || MI->isRegTiedToDefOperand(i)) &&

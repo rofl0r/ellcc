@@ -104,12 +104,9 @@ def SDT_X86EHRET : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 def SDT_X86TCRET : SDTypeProfile<0, 2, [SDTCisPtrTy<0>, SDTCisVT<1, i32>]>;
 
 def SDT_X86MEMBARRIER : SDTypeProfile<0, 0, []>;
-def SDT_X86MEMBARRIERNoSSE : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
 def X86MemBarrier : SDNode<"X86ISD::MEMBARRIER", SDT_X86MEMBARRIER,
                             [SDNPHasChain]>;
-def X86MemBarrierNoSSE : SDNode<"X86ISD::MEMBARRIER", SDT_X86MEMBARRIERNoSSE,
-                                [SDNPHasChain]>;
 def X86MFence : SDNode<"X86ISD::MFENCE", SDT_X86MEMBARRIER,
                         [SDNPHasChain]>;
 def X86SFence : SDNode<"X86ISD::SFENCE", SDT_X86MEMBARRIER,
@@ -251,10 +248,31 @@ def ptr_rc_nosp : PointerLikeRegClass<1>;
 
 // *mem - Operand definitions for the funky X86 addressing mode operands.
 //
-def X86MemAsmOperand : AsmOperandClass {
-  let Name = "Mem";
-  let SuperClasses = [];
+def X86MemAsmOperand : AsmOperandClass { 
+ let Name = "Mem"; let PredicateMethod = "isMem"; 
 }
+def X86Mem8AsmOperand : AsmOperandClass { 
+  let Name = "Mem8"; let PredicateMethod = "isMem8";
+}
+def X86Mem16AsmOperand : AsmOperandClass { 
+  let Name = "Mem16"; let PredicateMethod = "isMem16";
+}
+def X86Mem32AsmOperand : AsmOperandClass { 
+  let Name = "Mem32"; let PredicateMethod = "isMem32";
+}
+def X86Mem64AsmOperand : AsmOperandClass { 
+  let Name = "Mem64"; let PredicateMethod = "isMem64";
+}
+def X86Mem80AsmOperand : AsmOperandClass { 
+  let Name = "Mem80"; let PredicateMethod = "isMem80";
+}
+def X86Mem128AsmOperand : AsmOperandClass { 
+  let Name = "Mem128"; let PredicateMethod = "isMem128";
+}
+def X86Mem256AsmOperand : AsmOperandClass { 
+  let Name = "Mem256"; let PredicateMethod = "isMem256";
+}
+
 def X86AbsMemAsmOperand : AsmOperandClass {
   let Name = "AbsMem";
   let SuperClasses = [X86MemAsmOperand];
@@ -271,17 +289,28 @@ def opaque48mem : X86MemOperand<"printopaquemem">;
 def opaque80mem : X86MemOperand<"printopaquemem">;
 def opaque512mem : X86MemOperand<"printopaquemem">;
 
-def i8mem   : X86MemOperand<"printi8mem">;
-def i16mem  : X86MemOperand<"printi16mem">;
-def i32mem  : X86MemOperand<"printi32mem">;
-def i64mem  : X86MemOperand<"printi64mem">;
-def i128mem : X86MemOperand<"printi128mem">;
-def i256mem : X86MemOperand<"printi256mem">;
-def f32mem  : X86MemOperand<"printf32mem">;
-def f64mem  : X86MemOperand<"printf64mem">;
-def f80mem  : X86MemOperand<"printf80mem">;
-def f128mem : X86MemOperand<"printf128mem">;
-def f256mem : X86MemOperand<"printf256mem">;
+def i8mem   : X86MemOperand<"printi8mem"> { 
+  let ParserMatchClass = X86Mem8AsmOperand; }
+def i16mem  : X86MemOperand<"printi16mem"> { 
+  let ParserMatchClass = X86Mem16AsmOperand; }
+def i32mem  : X86MemOperand<"printi32mem"> { 
+  let ParserMatchClass = X86Mem32AsmOperand; }
+def i64mem  : X86MemOperand<"printi64mem"> { 
+  let ParserMatchClass = X86Mem64AsmOperand; }
+def i128mem : X86MemOperand<"printi128mem"> { 
+  let ParserMatchClass = X86Mem128AsmOperand; }
+def i256mem : X86MemOperand<"printi256mem"> { 
+  let ParserMatchClass = X86Mem256AsmOperand; }
+def f32mem  : X86MemOperand<"printf32mem"> { 
+  let ParserMatchClass = X86Mem32AsmOperand; }
+def f64mem  : X86MemOperand<"printf64mem"> { 
+  let ParserMatchClass = X86Mem64AsmOperand; }
+def f80mem  : X86MemOperand<"printf80mem"> { 
+  let ParserMatchClass = X86Mem80AsmOperand; }
+def f128mem : X86MemOperand<"printf128mem"> { 
+  let ParserMatchClass = X86Mem128AsmOperand; }
+def f256mem : X86MemOperand<"printf256mem">{ 
+  let ParserMatchClass = X86Mem256AsmOperand; }
 }
 
 // A version of i8mem for use on x86-64 that uses GR64_NOREX instead of
@@ -289,7 +318,7 @@ def f256mem : X86MemOperand<"printf256mem">;
 def i8mem_NOREX : Operand<i64> {
   let PrintMethod = "printi8mem";
   let MIOperandInfo = (ops GR64_NOREX, i8imm, GR64_NOREX_NOSP, i32imm, i8imm);
-  let ParserMatchClass = X86MemAsmOperand;
+  let ParserMatchClass = X86Mem8AsmOperand;
   let OperandType = "OPERAND_MEMORY";
 }
 
@@ -303,7 +332,7 @@ def ptr_rc_tailcall : PointerLikeRegClass<2>;
 def i32mem_TC : Operand<i32> {
   let PrintMethod = "printi32mem";
   let MIOperandInfo = (ops GR32_TC, i8imm, GR32_TC, i32imm, i8imm);
-  let ParserMatchClass = X86MemAsmOperand;
+  let ParserMatchClass = X86Mem32AsmOperand;
   let OperandType = "OPERAND_MEMORY";
 }
 
@@ -314,7 +343,7 @@ def i64mem_TC : Operand<i64> {
   let PrintMethod = "printi64mem";
   let MIOperandInfo = (ops ptr_rc_tailcall, i8imm,
                        ptr_rc_tailcall, i32imm, i8imm);
-  let ParserMatchClass = X86MemAsmOperand;
+  let ParserMatchClass = X86Mem64AsmOperand;
   let OperandType = "OPERAND_MEMORY";
 }
 
@@ -470,11 +499,8 @@ def HasSSSE3     : Predicate<"Subtarget->hasSSSE3()">;
 def HasSSE41     : Predicate<"Subtarget->hasSSE41()">;
 def HasSSE42     : Predicate<"Subtarget->hasSSE42()">;
 def HasSSE4A     : Predicate<"Subtarget->hasSSE4A()">;
-
 def HasAVX       : Predicate<"Subtarget->hasAVX()">;
 def HasAVX2      : Predicate<"Subtarget->hasAVX2()">;
-def HasXMM       : Predicate<"Subtarget->hasXMM()">;
-def HasXMMInt    : Predicate<"Subtarget->hasXMMInt()">;
 
 def HasPOPCNT    : Predicate<"Subtarget->hasPOPCNT()">;
 def HasAES       : Predicate<"Subtarget->hasAES()">;
@@ -489,8 +515,8 @@ def HasFSGSBase  : Predicate<"Subtarget->hasFSGSBase()">;
 def HasLZCNT     : Predicate<"Subtarget->hasLZCNT()">;
 def HasBMI       : Predicate<"Subtarget->hasBMI()">;
 def HasBMI2      : Predicate<"Subtarget->hasBMI2()">;
-def FPStackf32   : Predicate<"!Subtarget->hasXMM()">;
-def FPStackf64   : Predicate<"!Subtarget->hasXMMInt()">;
+def FPStackf32   : Predicate<"!Subtarget->hasSSE1()">;
+def FPStackf64   : Predicate<"!Subtarget->hasSSE2()">;
 def HasCmpxchg16b: Predicate<"Subtarget->hasCmpxchg16b()">;
 def In32BitMode  : Predicate<"!Subtarget->is64Bit()">,
                              AssemblerPredicate<"!Mode64Bit">;

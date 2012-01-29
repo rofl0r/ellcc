@@ -19,6 +19,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/UnresolvedSet.h"
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace clang {
@@ -135,9 +136,7 @@ public:
                                 SourceLocation ColonLoc) {
     return new (C) AccessSpecDecl(AS, DC, ASLoc, ColonLoc);
   }
-  static AccessSpecDecl *Create(ASTContext &C, EmptyShell Empty) {
-    return new (C) AccessSpecDecl(Empty);
-  }
+  static AccessSpecDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -349,6 +348,9 @@ class CXXRecordDecl : public RecordDecl {
     /// \brief True if this class (or any subobject) has mutable fields.
     bool HasMutableFields : 1;
 
+    /// \brief True if there no non-field members declared by the user.
+    bool HasOnlyCMembers : 1;
+
     /// HasTrivialDefaultConstructor - True when, if this class has a default
     /// constructor, this default constructor is trivial.
     ///
@@ -502,6 +504,9 @@ class CXXRecordDecl : public RecordDecl {
     /// declared but would have been deleted.
     bool FailedImplicitMoveAssignment : 1;
 
+    /// \brief Whether this class describes a C++ lambda.
+    bool IsLambda : 1;
+
     /// NumBases - The number of base class specifiers in Bases.
     unsigned NumBases;
 
@@ -614,11 +619,18 @@ public:
     return cast<CXXRecordDecl>(RecordDecl::getCanonicalDecl());
   }
 
-  const CXXRecordDecl *getPreviousDeclaration() const {
-    return cast_or_null<CXXRecordDecl>(RecordDecl::getPreviousDeclaration());
+  const CXXRecordDecl *getPreviousDecl() const {
+    return cast_or_null<CXXRecordDecl>(RecordDecl::getPreviousDecl());
   }
-  CXXRecordDecl *getPreviousDeclaration() {
-    return cast_or_null<CXXRecordDecl>(RecordDecl::getPreviousDeclaration());
+  CXXRecordDecl *getPreviousDecl() {
+    return cast_or_null<CXXRecordDecl>(RecordDecl::getPreviousDecl());
+  }
+
+  const CXXRecordDecl *getMostRecentDecl() const {
+    return cast_or_null<CXXRecordDecl>(RecordDecl::getMostRecentDecl());
+  }
+  CXXRecordDecl *getMostRecentDecl() {
+    return cast_or_null<CXXRecordDecl>(RecordDecl::getMostRecentDecl());
   }
 
   CXXRecordDecl *getDefinition() const {
@@ -632,7 +644,7 @@ public:
                                SourceLocation StartLoc, SourceLocation IdLoc,
                                IdentifierInfo *Id, CXXRecordDecl* PrevDecl=0,
                                bool DelayTypeCreation = false);
-  static CXXRecordDecl *Create(const ASTContext &C, EmptyShell Empty);
+  static CXXRecordDecl *CreateDeserialized(const ASTContext &C, unsigned ID);
 
   bool isDynamicClass() const {
     return data().Polymorphic || data().NumVBases != 0;
@@ -910,6 +922,11 @@ public:
   /// This value is used for lazy creation of destructors.
   bool hasDeclaredDestructor() const { return data().DeclaredDestructor; }
 
+  /// \brief Determine whether this class describes a lambda function object.
+  bool isLambda() const { return hasDefinition() && data().IsLambda; }
+  
+  void setLambda(bool Lambda = true) { data().IsLambda = Lambda; }
+
   /// getConversions - Retrieve the overload set containing all of the
   /// conversion functions in this class.
   UnresolvedSetImpl *getConversionFunctions() {
@@ -947,6 +964,10 @@ public:
   /// reference data members, no user-defined copy assignment operator and no
   /// user-defined destructor.
   bool isPOD() const { return data().PlainOldData; }
+
+  /// \brief True if this class is C-like, without C++-specific features, e.g.
+  /// it contains only public fields, no bases, tag kind is not 'class', etc.
+  bool isCLike() const;
 
   /// isEmpty - Whether this class is empty (C++0x [meta.unary.prop]), which
   /// means it has a virtual function, virtual base, data member (other than
@@ -1409,6 +1430,8 @@ public:
                                bool isConstexpr,
                                SourceLocation EndLocation);
 
+  static CXXMethodDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   bool isStatic() const { return getStorageClass() == SC_Static; }
   bool isInstance() const { return !isStatic(); }
 
@@ -1791,7 +1814,7 @@ class CXXConstructorDecl : public CXXMethodDecl {
   }
 
 public:
-  static CXXConstructorDecl *Create(ASTContext &C, EmptyShell Empty);
+  static CXXConstructorDecl *CreateDeserialized(ASTContext &C, unsigned ID);
   static CXXConstructorDecl *Create(ASTContext &C, CXXRecordDecl *RD,
                                     SourceLocation StartLoc,
                                     const DeclarationNameInfo &NameInfo,
@@ -2010,13 +2033,13 @@ class CXXDestructorDecl : public CXXMethodDecl {
   }
 
 public:
-  static CXXDestructorDecl *Create(ASTContext& C, EmptyShell Empty);
   static CXXDestructorDecl *Create(ASTContext &C, CXXRecordDecl *RD,
                                    SourceLocation StartLoc,
                                    const DeclarationNameInfo &NameInfo,
                                    QualType T, TypeSourceInfo* TInfo,
                                    bool isInline,
                                    bool isImplicitlyDeclared);
+  static CXXDestructorDecl *CreateDeserialized(ASTContext & C, unsigned ID);
 
   /// isImplicitlyDefined - Whether this destructor was implicitly
   /// defined. If false, then this destructor was defined by the
@@ -2076,7 +2099,6 @@ class CXXConversionDecl : public CXXMethodDecl {
       IsExplicitSpecified(isExplicitSpecified) { }
 
 public:
-  static CXXConversionDecl *Create(ASTContext &C, EmptyShell Empty);
   static CXXConversionDecl *Create(ASTContext &C, CXXRecordDecl *RD,
                                    SourceLocation StartLoc,
                                    const DeclarationNameInfo &NameInfo,
@@ -2084,6 +2106,7 @@ public:
                                    bool isInline, bool isExplicit,
                                    bool isConstexpr,
                                    SourceLocation EndLocation);
+  static CXXConversionDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// IsExplicitSpecified - Whether this conversion function declaration is
   /// marked "explicit", meaning that it can only be applied when the user
@@ -2147,7 +2170,8 @@ public:
                                  SourceLocation ExternLoc,
                                  SourceLocation LangLoc, LanguageIDs Lang,
                                  SourceLocation RBraceLoc = SourceLocation());
-
+  static LinkageSpecDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   /// \brief Return the language specified by this linkage specification.
   LanguageIDs getLanguage() const { return Language; }
   /// \brief Set the language specified by this linkage specification.
@@ -2272,7 +2296,8 @@ public:
                                     SourceLocation IdentLoc,
                                     NamedDecl *Nominated,
                                     DeclContext *CommonAncestor);
-
+  static UsingDirectiveDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   SourceRange getSourceRange() const {
     return SourceRange(UsingLoc, getLocation());
   }
@@ -2363,6 +2388,8 @@ public:
                                     SourceLocation IdentLoc,
                                     NamedDecl *Namespace);
 
+  static NamespaceAliasDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   virtual SourceRange getSourceRange() const {
     return SourceRange(NamespaceLoc, IdentLoc);
   }
@@ -2413,6 +2440,8 @@ public:
     return new (C) UsingShadowDecl(DC, Loc, Using, Target);
   }
 
+  static UsingShadowDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   /// \brief Gets the underlying declaration which has been brought into the
   /// local scope.
   NamedDecl *getTargetDecl() const { return Underlying; }
@@ -2458,18 +2487,16 @@ class UsingDecl : public NamedDecl {
   DeclarationNameLoc DNLoc;
 
   /// \brief The first shadow declaration of the shadow decl chain associated
-  /// with this using declaration.
-  UsingShadowDecl *FirstUsingShadow;
-
-  // \brief Has 'typename' keyword.
-  bool IsTypeName;
+  /// with this using declaration. The bool member of the pair store whether
+  /// this decl has the 'typename' keyword.
+  llvm::PointerIntPair<UsingShadowDecl *, 1, bool> FirstUsingShadow;
 
   UsingDecl(DeclContext *DC, SourceLocation UL,
             NestedNameSpecifierLoc QualifierLoc,
             const DeclarationNameInfo &NameInfo, bool IsTypeNameArg)
     : NamedDecl(Using, DC, NameInfo.getLoc(), NameInfo.getName()),
       UsingLocation(UL), QualifierLoc(QualifierLoc),
-      DNLoc(NameInfo.getInfo()), FirstUsingShadow(0),IsTypeName(IsTypeNameArg) {
+      DNLoc(NameInfo.getInfo()), FirstUsingShadow(0, IsTypeNameArg) {
   }
 
 public:
@@ -2493,10 +2520,10 @@ public:
   }
 
   /// \brief Return true if the using declaration has 'typename'.
-  bool isTypeName() const { return IsTypeName; }
+  bool isTypeName() const { return FirstUsingShadow.getInt(); }
 
   /// \brief Sets whether the using declaration has 'typename'.
-  void setTypeName(bool TN) { IsTypeName = TN; }
+  void setTypeName(bool TN) { FirstUsingShadow.setInt(TN); }
 
   /// \brief Iterates through the using shadow declarations assosiated with
   /// this using declaration.
@@ -2537,7 +2564,7 @@ public:
   };
 
   shadow_iterator shadow_begin() const {
-    return shadow_iterator(FirstUsingShadow);
+    return shadow_iterator(FirstUsingShadow.getPointer());
   }
   shadow_iterator shadow_end() const { return shadow_iterator(); }
 
@@ -2556,6 +2583,8 @@ public:
                            const DeclarationNameInfo &NameInfo,
                            bool IsTypeNameArg);
 
+  static UsingDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   SourceRange getSourceRange() const {
     return SourceRange(UsingLocation, getNameInfo().getEndLoc());
   }
@@ -2624,6 +2653,9 @@ public:
            NestedNameSpecifierLoc QualifierLoc,
            const DeclarationNameInfo &NameInfo);
 
+  static UnresolvedUsingValueDecl *
+  CreateDeserialized(ASTContext &C, unsigned ID);
+
   SourceRange getSourceRange() const {
     return SourceRange(UsingLocation, getNameInfo().getEndLoc());
   }
@@ -2689,6 +2721,9 @@ public:
            SourceLocation TypenameLoc, NestedNameSpecifierLoc QualifierLoc,
            SourceLocation TargetNameLoc, DeclarationName TargetName);
 
+  static UnresolvedUsingTypenameDecl *
+  CreateDeserialized(ASTContext &C, unsigned ID);
+
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classof(const UnresolvedUsingTypenameDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == UnresolvedUsingTypename; }
@@ -2712,7 +2747,8 @@ public:
                                   SourceLocation StaticAssertLoc,
                                   Expr *AssertExpr, StringLiteral *Message,
                                   SourceLocation RParenLoc);
-
+  static StaticAssertDecl *CreateDeserialized(ASTContext &C, unsigned ID);
+  
   Expr *getAssertExpr() { return AssertExpr; }
   const Expr *getAssertExpr() const { return AssertExpr; }
 

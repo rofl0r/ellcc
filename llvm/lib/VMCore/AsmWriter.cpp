@@ -89,7 +89,6 @@ enum PrefixType {
 static void PrintLLVMName(raw_ostream &OS, StringRef Name, PrefixType Prefix) {
   assert(!Name.empty() && "Cannot get empty name!");
   switch (Prefix) {
-  default: llvm_unreachable("Bad prefix!");
   case NoPrefix: break;
   case GlobalPrefix: OS << '@'; break;
   case LabelPrefix:  break;
@@ -856,6 +855,37 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
     }
     return;
   }
+  
+  if (const ConstantDataArray *CA = dyn_cast<ConstantDataArray>(CV)) {
+    // As a special case, print the array as a string if it is an array of
+    // i8 with ConstantInt values.
+    if (CA->isString()) {
+      Out << "c\"";
+      PrintEscapedString(CA->getAsString(), Out);
+      Out << '"';
+      return;
+    }
+
+    Type *ETy = CA->getType()->getElementType();
+    Out << '[';
+    if (CA->getNumOperands()) {
+      TypePrinter.print(ETy, Out);
+      Out << ' ';
+      WriteAsOperandInternal(Out, CA->getElementAsConstant(0),
+                             &TypePrinter, Machine,
+                             Context);
+      for (unsigned i = 1, e = CA->getNumOperands(); i != e; ++i) {
+        Out << ", ";
+        TypePrinter.print(ETy, Out);
+        Out << ' ';
+        WriteAsOperandInternal(Out, CA->getElementAsConstant(i), &TypePrinter,
+                               Machine, Context);
+      }
+      Out << ']';
+    }
+    return;
+  }
+
 
   if (const ConstantStruct *CS = dyn_cast<ConstantStruct>(CV)) {
     if (CS->getType()->isPacked())
@@ -887,21 +917,19 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
     return;
   }
 
-  if (const ConstantVector *CP = dyn_cast<ConstantVector>(CV)) {
-    Type *ETy = CP->getType()->getElementType();
-    assert(CP->getNumOperands() > 0 &&
-           "Number of operands for a PackedConst must be > 0");
+  if (isa<ConstantVector>(CV) || isa<ConstantDataVector>(CV)) {
+    Type *ETy = CV->getType()->getVectorElementType();
     Out << '<';
     TypePrinter.print(ETy, Out);
     Out << ' ';
-    WriteAsOperandInternal(Out, CP->getOperand(0), &TypePrinter, Machine,
-                           Context);
-    for (unsigned i = 1, e = CP->getNumOperands(); i != e; ++i) {
+    WriteAsOperandInternal(Out, CV->getAggregateElement(0U), &TypePrinter,
+                           Machine, Context);
+    for (unsigned i = 1, e = CV->getType()->getVectorNumElements(); i != e;++i){
       Out << ", ";
       TypePrinter.print(ETy, Out);
       Out << ' ';
-      WriteAsOperandInternal(Out, CP->getOperand(i), &TypePrinter, Machine,
-                             Context);
+      WriteAsOperandInternal(Out, CV->getAggregateElement(i), &TypePrinter,
+                             Machine, Context);
     }
     Out << '>';
     return;
@@ -1167,7 +1195,6 @@ void AssemblyWriter::writeAtomic(AtomicOrdering Ordering,
     return;
 
   switch (SynchScope) {
-  default: Out << " <bad scope " << int(SynchScope) << ">"; break;
   case SingleThread: Out << " singlethread"; break;
   case CrossThread: break;
   }

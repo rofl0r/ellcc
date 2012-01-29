@@ -185,10 +185,26 @@ public:
 
   /// SelectorPtrTy - LLVM type for selector handles (typeof(SEL))
   llvm::Type *SelectorPtrTy;
+  
+private:
   /// ProtocolPtrTy - LLVM type for external protocol handles
   /// (typeof(Protocol))
   llvm::Type *ExternalProtocolPtrTy;
-
+  
+public:
+  llvm::Type *getExternalProtocolPtrTy() {
+    if (!ExternalProtocolPtrTy) {
+      // FIXME: It would be nice to unify this with the opaque type, so that the
+      // IR comes out a bit cleaner.
+      CodeGen::CodeGenTypes &Types = CGM.getTypes();
+      ASTContext &Ctx = CGM.getContext();
+      llvm::Type *T = Types.ConvertType(Ctx.getObjCProtoType());
+      ExternalProtocolPtrTy = llvm::PointerType::getUnqual(T);
+    }
+    
+    return ExternalProtocolPtrTy;
+  }
+  
   // SuperCTy - clang type for struct objc_super.
   QualType SuperCTy;
   // SuperPtrCTy - clang type for struct objc_super *.
@@ -271,6 +287,25 @@ public:
                                                   FunctionType::ExtInfo()),
                             false);
     return CGM.CreateRuntimeFunction(FTy, "objc_copyStruct");
+  }
+  
+  /// This routine declares and returns address of:
+  /// void objc_copyCppObjectAtomic(
+  ///         void *dest, const void *src, 
+  ///         void (*copyHelper) (void *dest, const void *source));
+  llvm::Constant *getCppAtomicObjectFunction() {
+    CodeGen::CodeGenTypes &Types = CGM.getTypes();
+    ASTContext &Ctx = CGM.getContext();
+    /// void objc_copyCppObjectAtomic(void *dest, const void *src, void *helper);
+    SmallVector<CanQualType,3> Params;
+    Params.push_back(Ctx.VoidPtrTy);
+    Params.push_back(Ctx.VoidPtrTy);
+    Params.push_back(Ctx.VoidPtrTy);
+    llvm::FunctionType *FTy =
+    Types.GetFunctionType(Types.getFunctionInfo(Ctx.VoidTy, Params,
+                                                FunctionType::ExtInfo()),
+                          false);
+    return CGM.CreateRuntimeFunction(FTy, "objc_copyCppObjectAtomic");
   }
   
   llvm::Constant *getEnumerationMutationFn() {
@@ -1056,6 +1091,7 @@ public:
   virtual llvm::Constant *GetPropertySetFunction();
   virtual llvm::Constant *GetGetStructFunction();
   virtual llvm::Constant *GetSetStructFunction();
+  virtual llvm::Constant *GetCppAtomicObjectFunction();
   virtual llvm::Constant *EnumerationMutationFunction();
 
   virtual void EmitTryStmt(CodeGen::CodeGenFunction &CGF,
@@ -1318,6 +1354,9 @@ public:
   virtual llvm::Constant *GetGetStructFunction() {
     return ObjCTypes.getCopyStructFn();
   }
+  virtual llvm::Constant *GetCppAtomicObjectFunction() {
+    return ObjCTypes.getCppAtomicObjectFunction();
+  }
   
   virtual llvm::Constant *EnumerationMutationFunction() {
     return ObjCTypes.getEnumerationMutationFn();
@@ -1353,63 +1392,6 @@ public:
                                       const ObjCInterfaceDecl *Interface,
                                       const ObjCIvarDecl *Ivar);
 };
-
-/// A helper class for performing the null-initialization of a return
-/// value.
-struct NullReturnState {
-  llvm::BasicBlock *NullBB;
-  llvm::BasicBlock *callBB;
-  NullReturnState() : NullBB(0), callBB(0) {}
-
-  void init(CodeGenFunction &CGF, llvm::Value *receiver) {
-    // Make blocks for the null-init and call edges.
-    NullBB = CGF.createBasicBlock("msgSend.nullinit");
-    callBB = CGF.createBasicBlock("msgSend.call");
-
-    // Check for a null receiver and, if there is one, jump to the
-    // null-init test.
-    llvm::Value *isNull = CGF.Builder.CreateIsNull(receiver);
-    CGF.Builder.CreateCondBr(isNull, NullBB, callBB);
-
-    // Otherwise, start performing the call.
-    CGF.EmitBlock(callBB);
-  }
-
-  RValue complete(CodeGenFunction &CGF, RValue result, QualType resultType) {
-    if (!NullBB) return result;
-
-    // Finish the call path.
-    llvm::BasicBlock *contBB = CGF.createBasicBlock("msgSend.cont");
-    if (CGF.HaveInsertPoint()) CGF.Builder.CreateBr(contBB);
-
-    // Emit the null-init block and perform the null-initialization there.
-    CGF.EmitBlock(NullBB);
-    if (!resultType->isAnyComplexType()) {
-      assert(result.isAggregate() && "null init of non-aggregate result?");
-      CGF.EmitNullInitialization(result.getAggregateAddr(), resultType);
-      // Jump to the continuation block.
-      CGF.EmitBlock(contBB);
-      return result;
-    }
-
-    // _Complex type
-    // FIXME. Now easy to handle any other scalar type whose result is returned
-    // in memory due to ABI limitations.
-    CGF.EmitBlock(contBB);
-    CodeGenFunction::ComplexPairTy CallCV = result.getComplexVal();
-    llvm::Type *MemberType = CallCV.first->getType();
-    llvm::Constant *ZeroCV = llvm::Constant::getNullValue(MemberType);
-    // Create phi instruction for scalar complex value.
-    llvm::PHINode *PHIReal = CGF.Builder.CreatePHI(MemberType, 2);
-    PHIReal->addIncoming(ZeroCV, NullBB);
-    PHIReal->addIncoming(CallCV.first, callBB);
-    llvm::PHINode *PHIImag = CGF.Builder.CreatePHI(MemberType, 2);
-    PHIImag->addIncoming(ZeroCV, NullBB);
-    PHIImag->addIncoming(CallCV.second, callBB);
-    return RValue::getComplex(PHIReal, PHIImag);
-  }
-};
-
 } // end anonymous namespace
 
 /* *** Helper Functions *** */
@@ -1477,7 +1459,6 @@ llvm::Constant *CGObjCMac::GetEHType(QualType T) {
     return CGM.GetAddrOfRTTIDescriptor(T,  /*ForEH=*/true);
   
   llvm_unreachable("asking for catch type for ObjC type in fragile runtime");
-  return 0;
 }
 
 /// Generate a constant CFString object.
@@ -1617,7 +1598,23 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
 
   llvm::Constant *Fn = NULL;
   if (CGM.ReturnTypeUsesSRet(FnInfo)) {
-    if (!IsSuper) nullReturn.init(CGF, Arg0);
+    if (!IsSuper) {
+      bool nullCheckAlreadyDone = false;
+      // We have already done this computation once and flag could have been
+      // passed down. But such cases are extremely rare and we do this lazily,
+      // instead of absorbing cost of passing down a flag for all cases.
+      if (CGM.getLangOptions().ObjCAutoRefCount && Method)
+        for (ObjCMethodDecl::param_const_iterator i = Method->param_begin(), 
+             e = Method->param_end(); i != e; ++i) {
+          if ((*i)->hasAttr<NSConsumedAttr>()) {
+            nullCheckAlreadyDone = true;
+            break;
+          } 
+        }
+      if (!nullCheckAlreadyDone)
+        nullReturn.init(CGF, Arg0);
+    }
+    
     Fn = (ObjCABI == 2) ?  ObjCTypes.getSendStretFn2(IsSuper)
       : ObjCTypes.getSendStretFn(IsSuper);
   } else if (CGM.ReturnTypeUsesFPRet(ResultType)) {
@@ -1746,7 +1743,7 @@ llvm::Value *CGObjCMac::GenerateProtocolRef(CGBuilderTy &Builder,
   LazySymbols.insert(&CGM.getContext().Idents.get("Protocol"));
 
   return llvm::ConstantExpr::getBitCast(GetProtocolRef(PD),
-                                        ObjCTypes.ExternalProtocolPtrTy);
+                                        ObjCTypes.getExternalProtocolPtrTy());
 }
 
 void CGObjCCommonMac::GenerateProtocol(const ObjCProtocolDecl *PD) {
@@ -1786,6 +1783,10 @@ llvm::Constant *CGObjCMac::GetOrEmitProtocol(const ObjCProtocolDecl *PD) {
   // Early exit if a defining object has already been generated.
   if (Entry && Entry->hasInitializer())
     return Entry;
+
+  // Use the protocol definition, if there is one.
+  if (const ObjCProtocolDecl *Def = PD->getDefinition())
+    PD = Def;
 
   // FIXME: I don't understand why gcc generates this, or where it is
   // resolved. Investigate. Its also wasteful to look this up over and over.
@@ -2635,6 +2636,10 @@ llvm::Constant *CGObjCMac::GetGetStructFunction() {
 }
 llvm::Constant *CGObjCMac::GetSetStructFunction() {
   return ObjCTypes.getCopyStructFn();
+}
+
+llvm::Constant *CGObjCMac::GetCppAtomicObjectFunction() {
+  return ObjCTypes.getCppAtomicObjectFunction();
 }
 
 llvm::Constant *CGObjCMac::EnumerationMutationFunction() {
@@ -4186,7 +4191,8 @@ CGObjCNonFragileABIMac::CGObjCNonFragileABIMac(CodeGen::CodeGenModule &cgm)
 /* *** */
 
 ObjCCommonTypesHelper::ObjCCommonTypesHelper(CodeGen::CodeGenModule &cgm)
-  : VMContext(cgm.getLLVMContext()), CGM(cgm) {
+  : VMContext(cgm.getLLVMContext()), CGM(cgm), ExternalProtocolPtrTy(0) 
+{
   CodeGen::CodeGenTypes &Types = CGM.getTypes();
   ASTContext &Ctx = CGM.getContext();
 
@@ -4200,11 +4206,6 @@ ObjCCommonTypesHelper::ObjCCommonTypesHelper(CodeGen::CodeGenModule &cgm)
   ObjectPtrTy = Types.ConvertType(Ctx.getObjCIdType());
   PtrObjectPtrTy = llvm::PointerType::getUnqual(ObjectPtrTy);
   SelectorPtrTy = Types.ConvertType(Ctx.getObjCSelType());
-
-  // FIXME: It would be nice to unify this with the opaque type, so that the IR
-  // comes out a bit cleaner.
-  llvm::Type *T = Types.ConvertType(Ctx.getObjCProtoType());
-  ExternalProtocolPtrTy = llvm::PointerType::getUnqual(T);
 
   // I'm not sure I like this. The implicit coordination is a bit
   // gross. We should solve this in a reasonable fashion because this
@@ -4725,8 +4726,6 @@ bool CGObjCNonFragileABIMac::isVTableDispatchedSelector(Selector Sel) {
   // At various points we've experimented with using vtable-based
   // dispatch for all methods.
   switch (CGM.getCodeGenOpts().getObjCDispatchMethod()) {
-  default:
-    llvm_unreachable("Invalid dispatch method!");
   case CodeGenOptions::Legacy:
     return false;
   case CodeGenOptions::NonLegacy:
@@ -5082,7 +5081,7 @@ llvm::Value *CGObjCNonFragileABIMac::GenerateProtocolRef(CGBuilderTy &Builder,
   //
   llvm::Constant *Init =
     llvm::ConstantExpr::getBitCast(GetOrEmitProtocol(PD),
-                                   ObjCTypes.ExternalProtocolPtrTy);
+                                   ObjCTypes.getExternalProtocolPtrTy());
 
   std::string ProtocolName("\01l_OBJC_PROTOCOL_REFERENCE_$_");
   ProtocolName += PD->getName();
@@ -5413,6 +5412,10 @@ llvm::Constant *CGObjCNonFragileABIMac::GetOrEmitProtocol(
   if (Entry && Entry->hasInitializer())
     return Entry;
 
+  // Use the protocol definition, if there is one.
+  if (const ObjCProtocolDecl *Def = PD->getDefinition())
+    PD = Def;
+  
   // Construct method lists.
   std::vector<llvm::Constant*> InstanceMethods, ClassMethods;
   std::vector<llvm::Constant*> OptInstanceMethods, OptClassMethods;

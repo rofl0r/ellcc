@@ -17,6 +17,7 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -57,7 +58,8 @@ void MCExpr::print(raw_ostream &OS) const {
         SRE.getKind() == MCSymbolRefExpr::VK_ARM_GOT ||
         SRE.getKind() == MCSymbolRefExpr::VK_ARM_GOTOFF ||
         SRE.getKind() == MCSymbolRefExpr::VK_ARM_TPOFF ||
-        SRE.getKind() == MCSymbolRefExpr::VK_ARM_GOTTPOFF)
+        SRE.getKind() == MCSymbolRefExpr::VK_ARM_GOTTPOFF ||
+        SRE.getKind() == MCSymbolRefExpr::VK_ARM_TARGET1)
       OS << MCSymbolRefExpr::getVariantKindName(SRE.getKind());
     else if (SRE.getKind() != MCSymbolRefExpr::VK_None &&
              SRE.getKind() != MCSymbolRefExpr::VK_PPC_DARWIN_HA16 &&
@@ -70,7 +72,6 @@ void MCExpr::print(raw_ostream &OS) const {
   case MCExpr::Unary: {
     const MCUnaryExpr &UE = cast<MCUnaryExpr>(*this);
     switch (UE.getOpcode()) {
-    default: assert(0 && "Invalid opcode!");
     case MCUnaryExpr::LNot:  OS << '!'; break;
     case MCUnaryExpr::Minus: OS << '-'; break;
     case MCUnaryExpr::Not:   OS << '~'; break;
@@ -91,7 +92,6 @@ void MCExpr::print(raw_ostream &OS) const {
     }
 
     switch (BE.getOpcode()) {
-    default: assert(0 && "Invalid opcode!");
     case MCBinaryExpr::Add:
       // Print "X-42" instead of "X+-42".
       if (const MCConstantExpr *RHSC = dyn_cast<MCConstantExpr>(BE.getRHS())) {
@@ -171,7 +171,6 @@ const MCSymbolRefExpr *MCSymbolRefExpr::Create(StringRef Name, VariantKind Kind,
 
 StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   switch (Kind) {
-  default:
   case VK_Invalid: return "<<invalid>>";
   case VK_None: return "<<none>>";
 
@@ -195,6 +194,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_ARM_TPOFF: return "(tpoff)";
   case VK_ARM_GOTTPOFF: return "(gottpoff)";
   case VK_ARM_TLSGD: return "(tlsgd)";
+  case VK_ARM_TARGET1: return "(target1)";
   case VK_PPC_TOC: return "toc";
   case VK_PPC_DARWIN_HA16: return "ha16";
   case VK_PPC_DARWIN_LO16: return "lo16";
@@ -219,6 +219,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_Mips_GOT_PAGE: return "GOT_PAGE";
   case VK_Mips_GOT_OFST: return "GOT_OFST";
   }
+  llvm_unreachable("Invalid variant kind");
 }
 
 MCSymbolRefExpr::VariantKind

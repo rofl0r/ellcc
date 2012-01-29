@@ -544,6 +544,8 @@ void StmtPrinter::VisitSEHFinallyStmt(SEHFinallyStmt *Node) {
 void StmtPrinter::VisitDeclRefExpr(DeclRefExpr *Node) {
   if (NestedNameSpecifier *Qualifier = Node->getQualifier())
     Qualifier->print(OS, Policy);
+  if (Node->hasTemplateKeyword())
+    OS << "template ";
   OS << Node->getNameInfo();
   if (Node->hasExplicitTemplateArgs())
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
@@ -556,6 +558,8 @@ void StmtPrinter::VisitDependentScopeDeclRefExpr(
                                            DependentScopeDeclRefExpr *Node) {
   if (NestedNameSpecifier *Qualifier = Node->getQualifier())
     Qualifier->print(OS, Policy);
+  if (Node->hasTemplateKeyword())
+    OS << "template ";
   OS << Node->getNameInfo();
   if (Node->hasExplicitTemplateArgs())
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
@@ -567,6 +571,8 @@ void StmtPrinter::VisitDependentScopeDeclRefExpr(
 void StmtPrinter::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *Node) {
   if (Node->getQualifier())
     Node->getQualifier()->print(OS, Policy);
+  if (Node->hasTemplateKeyword())
+    OS << "template ";
   OS << Node->getNameInfo();
   if (Node->hasExplicitTemplateArgs())
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
@@ -710,16 +716,27 @@ void StmtPrinter::VisitStringLiteral(StringLiteral *Str) {
   case StringLiteral::UTF32: OS << 'U'; break;
   }
   OS << '"';
+  static char Hex[] = "0123456789ABCDEF";
 
-  // FIXME: this doesn't print wstrings right.
-  StringRef StrData = Str->getString();
-  for (StringRef::iterator I = StrData.begin(), E = StrData.end(); 
-                                                             I != E; ++I) {
-    unsigned char Char = *I;
-
-    switch (Char) {
+  for (unsigned I = 0, N = Str->getLength(); I != N; ++I) {
+    switch (uint32_t Char = Str->getCodeUnit(I)) {
     default:
-      if (isprint(Char))
+      // FIXME: Is this the best way to print wchar_t?
+      if (Char > 0xff) {
+        assert(Char <= 0x10ffff && "invalid unicode codepoint");
+        if (Char > 0xffff)
+          OS << "\\U00"
+             << Hex[(Char >> 20) & 15]
+             << Hex[(Char >> 16) & 15];
+        else
+          OS << "\\u";
+        OS << Hex[(Char >> 12) & 15]
+           << Hex[(Char >>  8) & 15]
+           << Hex[(Char >>  4) & 15]
+           << Hex[(Char >>  0) & 15];
+        break;
+      }
+      if (Char <= 0xff && isprint(Char))
         OS << (char)Char;
       else  // Output anything hard as an octal escape.
         OS << '\\'
@@ -872,9 +889,9 @@ void StmtPrinter::VisitMemberExpr(MemberExpr *Node) {
   OS << (Node->isArrow() ? "->" : ".");
   if (NestedNameSpecifier *Qualifier = Node->getQualifier())
     Qualifier->print(OS, Policy);
-
+  if (Node->hasTemplateKeyword())
+    OS << "template ";
   OS << Node->getMemberNameInfo();
-
   if (Node->hasExplicitTemplateArgs())
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
                                                     Node->getTemplateArgs(),
@@ -1041,6 +1058,9 @@ void StmtPrinter::VisitPseudoObjectExpr(PseudoObjectExpr *Node) {
 void StmtPrinter::VisitAtomicExpr(AtomicExpr *Node) {
   const char *Name = 0;
   switch (Node->getOp()) {
+    case AtomicExpr::Init:
+      Name = "__atomic_init(";
+      break;
     case AtomicExpr::Load:
       Name = "__atomic_load(";
       break;
@@ -1083,7 +1103,8 @@ void StmtPrinter::VisitAtomicExpr(AtomicExpr *Node) {
     PrintExpr(Node->getVal2());
     OS << ", ";
   }
-  PrintExpr(Node->getOrder());
+  if (Node->getOp() != AtomicExpr::Init)
+    PrintExpr(Node->getOrder());
   if (Node->isCmpXChg()) {
     OS << ", ";
     PrintExpr(Node->getOrderFail());
@@ -1356,12 +1377,9 @@ void StmtPrinter::VisitCXXDependentScopeMemberExpr(
   }
   if (NestedNameSpecifier *Qualifier = Node->getQualifier())
     Qualifier->print(OS, Policy);
-  else if (Node->hasExplicitTemplateArgs())
-    // FIXME: Track use of "template" keyword explicitly?
+  if (Node->hasTemplateKeyword())
     OS << "template ";
-
   OS << Node->getMemberNameInfo();
-
   if (Node->hasExplicitTemplateArgs()) {
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
                                                     Node->getTemplateArgs(),
@@ -1377,11 +1395,9 @@ void StmtPrinter::VisitUnresolvedMemberExpr(UnresolvedMemberExpr *Node) {
   }
   if (NestedNameSpecifier *Qualifier = Node->getQualifier())
     Qualifier->print(OS, Policy);
-
-  // FIXME: this might originally have been written with 'template'
-
+  if (Node->hasTemplateKeyword())
+    OS << "template ";
   OS << Node->getMemberNameInfo();
-
   if (Node->hasExplicitTemplateArgs()) {
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
                                                     Node->getTemplateArgs(),

@@ -302,9 +302,6 @@ public:
   /// The first argument is the property being queried.
   /// The second argument indicates whether the query should look inside
   /// instruction bundles.
-  /// If the third argument is true, than the query can return true when *any*
-  /// of the bundled instructions has the queried property. If it's false, then
-  /// this can return true iff *all* of the instructions have the property.
   bool hasProperty(unsigned Flag, QueryType Type = AnyInBundle) const;
 
   /// isVariadic - Return true if this instruction can have a variable number of
@@ -744,7 +741,7 @@ public:
   /// isRegTiedToUseOperand - Given the index of a register def operand,
   /// check if the register def is tied to a source operand, due to either
   /// two-address elimination or inline assembly constraints. Returns the
-  /// first tied use operand index by reference is UseOpIdx is not null.
+  /// first tied use operand index by reference if UseOpIdx is not null.
   bool isRegTiedToUseOperand(unsigned DefOpIdx, unsigned *UseOpIdx = 0) const;
 
   /// isRegTiedToDefOperand - Return true if the use operand of the specified
@@ -775,6 +772,10 @@ public:
   bool addRegisterKilled(unsigned IncomingReg,
                          const TargetRegisterInfo *RegInfo,
                          bool AddIfNotFound = false);
+
+  /// clearRegisterKills - Clear all kill flags affecting Reg.  If RegInfo is
+  /// provided, this includes super-register kills.
+  void clearRegisterKills(unsigned Reg, const TargetRegisterInfo *RegInfo);
 
   /// addRegisterDead - We have determined MI defined a register without a use.
   /// Look for the operand that defines it and mark it as IsDead. If

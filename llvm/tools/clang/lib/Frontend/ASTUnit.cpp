@@ -262,6 +262,8 @@ ASTUnit::~ASTUnit() {
   }    
 }
 
+void ASTUnit::setPreprocessor(Preprocessor *pp) { PP = pp; }
+
 /// \brief Determine the set of code-completion contexts in which this 
 /// declaration should be shown.
 static unsigned getDeclShowContexts(NamedDecl *ND,
@@ -667,7 +669,8 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
   AST->SourceMgr = new SourceManager(AST->getDiagnostics(),
                                      AST->getFileManager());
   AST->HeaderInfo.reset(new HeaderSearch(AST->getFileManager(),
-                                         AST->getDiagnostics()));
+                                         AST->getDiagnostics(),
+                                         AST->ASTFileLangOpts));
   
   for (unsigned I = 0; I != NumRemappedFiles; ++I) {
     FilenameOrMemBuf fileOrBuf = RemappedFiles[I].second;
@@ -826,22 +829,7 @@ void AddTopLevelDeclarationToHash(Decl *D, unsigned &Hash) {
       Hash = llvm::HashString(NameStr, Hash);
     }
     return;
-  }
-  
-  if (ObjCForwardProtocolDecl *Forward 
-      = dyn_cast<ObjCForwardProtocolDecl>(D)) {
-    for (ObjCForwardProtocolDecl::protocol_iterator 
-         P = Forward->protocol_begin(),
-         PEnd = Forward->protocol_end();
-         P != PEnd; ++P)
-      AddTopLevelDeclarationToHash(*P, Hash);
-    return;
-  }
-  
-  if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(D)) {
-    AddTopLevelDeclarationToHash(Class->getForwardInterfaceDecl(), Hash);
-    return;
-  }
+  }  
 }
 
 class TopLevelDeclTrackerConsumer : public ASTConsumer {
@@ -1015,7 +1003,7 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
     CCInvocation(new CompilerInvocation(*Invocation));
 
   Clang->setInvocation(CCInvocation.getPtr());
-  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].second;
+  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].File;
     
   // Set up diagnostics, capturing any diagnostics that would
   // otherwise be dropped.
@@ -1038,9 +1026,9 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   
   assert(Clang->getFrontendOpts().Inputs.size() == 1 &&
          "Invocation must have exactly one source file!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_AST &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_AST &&
          "FIXME: AST inputs not yet supported here!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_LLVM_IR &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_LLVM_IR &&
          "IR inputs not support here!");
 
   // Configure the various subsystems.
@@ -1107,8 +1095,7 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   llvm::CrashRecoveryContextCleanupRegistrar<TopLevelDeclTrackerAction>
     ActCleanup(Act.get());
 
-  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0].second,
-                            Clang->getFrontendOpts().Inputs[0].first))
+  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0]))
     goto error;
 
   if (OverrideMainBuffer) {
@@ -1194,7 +1181,7 @@ ASTUnit::ComputePreamble(CompilerInvocation &Invocation,
   // command line (to another file) or directly through the compiler invocation
   // (to a memory buffer).
   llvm::MemoryBuffer *Buffer = 0;
-  llvm::sys::PathWithStatus MainFilePath(FrontendOpts.Inputs[0].second);
+  llvm::sys::PathWithStatus MainFilePath(FrontendOpts.Inputs[0].File);
   if (const llvm::sys::FileStatus *MainFileStatus = MainFilePath.getFileStatus()) {
     // Check whether there is a file-file remapping of the main file
     for (PreprocessorOptions::remapped_file_iterator
@@ -1244,7 +1231,7 @@ ASTUnit::ComputePreamble(CompilerInvocation &Invocation,
   
   // If the main source file was not remapped, load it now.
   if (!Buffer) {
-    Buffer = getBufferForFile(FrontendOpts.Inputs[0].second);
+    Buffer = getBufferForFile(FrontendOpts.Inputs[0].File);
     if (!Buffer)
       return std::make_pair((llvm::MemoryBuffer*)0, std::make_pair(0, true));    
     
@@ -1406,7 +1393,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
         // buffer size we reserved when creating the preamble.
         return CreatePaddedMainFileBuffer(NewPreamble.first, 
                                           PreambleReservedSize,
-                                          FrontendOpts.Inputs[0].second);
+                                          FrontendOpts.Inputs[0].File);
       }
     }
 
@@ -1459,7 +1446,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
 
   // Save the preamble text for later; we'll need to compare against it for
   // subsequent reparses.
-  StringRef MainFilename = PreambleInvocation->getFrontendOpts().Inputs[0].second;
+  StringRef MainFilename = PreambleInvocation->getFrontendOpts().Inputs[0].File;
   Preamble.assign(FileMgr->getFile(MainFilename),
                   NewPreamble.first->getBufferStart(), 
                   NewPreamble.first->getBufferStart() 
@@ -1469,7 +1456,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   delete PreambleBuffer;
   PreambleBuffer
     = llvm::MemoryBuffer::getNewUninitMemBuffer(PreambleReservedSize,
-                                                FrontendOpts.Inputs[0].second);
+                                                FrontendOpts.Inputs[0].File);
   memcpy(const_cast<char*>(PreambleBuffer->getBufferStart()), 
          NewPreamble.first->getBufferStart(), Preamble.size());
   memset(const_cast<char*>(PreambleBuffer->getBufferStart()) + Preamble.size(), 
@@ -1477,7 +1464,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   const_cast<char*>(PreambleBuffer->getBufferEnd())[-1] = '\n';  
   
   // Remap the main source file to the preamble buffer.
-  llvm::sys::PathWithStatus MainFilePath(FrontendOpts.Inputs[0].second);
+  llvm::sys::PathWithStatus MainFilePath(FrontendOpts.Inputs[0].File);
   PreprocessorOpts.addRemappedFile(MainFilePath.str(), PreambleBuffer);
   
   // Tell the compiler invocation to generate a temporary precompiled header.
@@ -1495,7 +1482,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
     CICleanup(Clang.get());
 
   Clang->setInvocation(&*PreambleInvocation);
-  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].second;
+  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].File;
   
   // Set up diagnostics, capturing all of the diagnostics produced.
   Clang->setDiagnostics(&getDiagnostics());
@@ -1521,9 +1508,9 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   
   assert(Clang->getFrontendOpts().Inputs.size() == 1 &&
          "Invocation must have exactly one source file!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_AST &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_AST &&
          "FIXME: AST inputs not yet supported here!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_LLVM_IR &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_LLVM_IR &&
          "IR inputs not support here!");
   
   // Clear out old caches and data.
@@ -1542,8 +1529,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   
   llvm::OwningPtr<PrecompilePreambleAction> Act;
   Act.reset(new PrecompilePreambleAction(*this));
-  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0].second,
-                            Clang->getFrontendOpts().Inputs[0].first)) {
+  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0])) {
     llvm::sys::Path(FrontendOpts.OutputFile).eraseFromDisk();
     Preamble.clear();
     PreambleRebuildCounter = DefaultPreambleRebuildInterval;
@@ -1611,7 +1597,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
   
   return CreatePaddedMainFileBuffer(NewPreamble.first, 
                                     PreambleReservedSize,
-                                    FrontendOpts.Inputs[0].second);
+                                    FrontendOpts.Inputs[0].File);
 }
 
 void ASTUnit::RealizeTopLevelDeclsFromPreamble() {
@@ -1630,7 +1616,7 @@ void ASTUnit::RealizeTopLevelDeclsFromPreamble() {
 }
 
 StringRef ASTUnit::getMainFileName() const {
-  return Invocation->getFrontendOpts().Inputs[0].second;
+  return Invocation->getFrontendOpts().Inputs[0].File;
 }
 
 ASTUnit *ASTUnit::create(CompilerInvocation *CI,
@@ -1702,7 +1688,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
     CICleanup(Clang.get());
 
   Clang->setInvocation(CI);
-  AST->OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].second;
+  AST->OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].File;
     
   // Set up diagnostics, capturing any diagnostics that would
   // otherwise be dropped.
@@ -1723,9 +1709,9 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
   
   assert(Clang->getFrontendOpts().Inputs.size() == 1 &&
          "Invocation must have exactly one source file!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_AST &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_AST &&
          "FIXME: AST inputs not yet supported here!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_LLVM_IR &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_LLVM_IR &&
          "IR inputs not supported here!");
 
   // Configure the various subsystems.
@@ -1752,9 +1738,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
   llvm::CrashRecoveryContextCleanupRegistrar<TopLevelDeclTrackerAction>
     ActCleanup(TrackerAct.get());
 
-  if (!Act->BeginSourceFile(*Clang.get(),
-                            Clang->getFrontendOpts().Inputs[0].second,
-                            Clang->getFrontendOpts().Inputs[0].first))
+  if (!Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0]))
     return 0;
 
   if (Persistent && !TrackerAct) {
@@ -2267,7 +2251,7 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
     CICleanup(Clang.get());
 
   Clang->setInvocation(&*CCInvocation);
-  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].second;
+  OriginalSourceFile = Clang->getFrontendOpts().Inputs[0].File;
     
   // Set up diagnostics, capturing any diagnostics produced.
   Clang->setDiagnostics(&Diag);
@@ -2293,9 +2277,9 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
   
   assert(Clang->getFrontendOpts().Inputs.size() == 1 &&
          "Invocation must have exactly one source file!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_AST &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_AST &&
          "FIXME: AST inputs not yet supported here!");
-  assert(Clang->getFrontendOpts().Inputs[0].first != IK_LLVM_IR &&
+  assert(Clang->getFrontendOpts().Inputs[0].Kind != IK_LLVM_IR &&
          "IR inputs not support here!");
 
   
@@ -2370,8 +2354,7 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
   
   llvm::OwningPtr<SyntaxOnlyAction> Act;
   Act.reset(new SyntaxOnlyAction);
-  if (Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0].second,
-                           Clang->getFrontendOpts().Inputs[0].first)) {
+  if (Act->BeginSourceFile(*Clang.get(), Clang->getFrontendOpts().Inputs[0])) {
     if (OverrideMainBuffer) {
       std::string ModName = getPreambleFile(this);
       TranslateStoredDiagnostics(Clang->getModuleManager(), ModName,
@@ -2406,7 +2389,7 @@ CXSaveError ASTUnit::Save(StringRef File) {
   if (Out.has_error())
     return CXSaveError_Unknown;
 
-  if (llvm::error_code ec = llvm::sys::fs::rename(TempPath.str(), File)) {
+  if (llvm::sys::fs::rename(TempPath.str(), File)) {
     bool exists;
     llvm::sys::fs::remove(TempPath.str(), exists);
     return CXSaveError_Unknown;

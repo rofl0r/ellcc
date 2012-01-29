@@ -1,4 +1,4 @@
-__import_module__ redecl_merge_top;
+@import redecl_merge_top;
 
 @interface Super
 @end
@@ -8,6 +8,24 @@ __import_module__ redecl_merge_top;
 @end
 
 @class B;
+
+@protocol P1
+- (void)protoMethod1;
+@end
+
+@protocol P1;
+
+@protocol P2;
+
+@protocol P2;
+
+@protocol P2;
+
+struct S1;
+struct S2;
+
+void consume_S1(struct S1*);
+struct S2 *produce_S2(void);
 
 // Test declarations in different modules with no common initial
 // declaration.
@@ -30,6 +48,36 @@ int *explicit_func(void);
 
 struct explicit_struct;
 
+@protocol P4, P3;
+@protocol P3;
+@protocol P3;
+@protocol P3;
+
+struct S3;
+struct S4;
+
+void consume_S3(struct S3*);
+struct S4 *produce_S4(void);
+
+typedef int T1;
+typedef double T2;
+
+int func0(int);
+int func1(int);
+int func1(int);
+int func1(int);
+int func1(int);
+static int func2(int);
+
+
+
+
+// Spacing matters!
+extern int var1;
+extern int var2;
+
+static double var3;
+
 #ifdef __cplusplus
 template<typename T> class Vector { 
 public:
@@ -38,5 +86,9 @@ public:
 #endif
 
 int ONE;
-__import_module__ redecl_merge_top.Explicit;
+@import redecl_merge_top.Explicit;
 const int one = ONE;
+
+@interface ClassWithDef 
+- (void)method;
+@end

@@ -72,11 +72,21 @@ SBOutputDirReferencePrefix = "Ref"
 
 # The list of checkers used during analyzes.
 # Currently, consists of all the non experimental checkers.
-Checkers="core,deadcode,cplusplus,security,unix,osx,cocoa"
+Checkers="experimental.security.taint,core,deadcode,cplusplus,security,unix,osx,cocoa"
 
 Verbose = 1
 
 IsReferenceBuild = False
+
+# Make sure we flush the output after every print statement.
+class flushfile(object):
+    def __init__(self, f):
+        self.f = f
+    def write(self, x):
+        self.f.write(x)
+        self.f.flush()
+
+sys.stdout = flushfile(sys.stdout)
 
 def getProjectMapPath():
     ProjectMapPath = os.path.join(os.path.abspath(os.curdir), 
@@ -122,7 +132,7 @@ def runScanBuild(Dir, SBOutputDir, PBuildLogFile):
     if not os.path.exists(BuildScriptPath):
         print "Error: build script is not defined: %s" % BuildScriptPath
         sys.exit(-1)       
-    SBOptions = "-plist -o " + SBOutputDir + " "
+    SBOptions = "-plist-html -o " + SBOutputDir + " "
     SBOptions += "-enable-checker " + Checkers + " "  
     try:
         SBCommandFile = open(BuildScriptPath, "r")
@@ -298,8 +308,7 @@ def checkBuild(SBOutputDir):
     finally:
         SummaryLog.close()
     
-    print "Error: analysis failed. See ", \
-          os.path.join(SBOutputDir, FailuresSummaryFileName)
+    print "Error: analysis failed. See ", SummaryPath
     sys.exit(-1)       
 
 # Auxiliary object to discard stdout.
@@ -398,7 +407,6 @@ def testAll(InIsReferenceBuild = False):
                 print "Error: Second entry in the ProjectMapFile should be 0 or 1."
                 raise Exception()              
             testProject(I[0], InIsReferenceBuild, int(I[1]))
-            sys.stdout.flush()
     except:
         print "Error occurred. Premature termination."
         raise                            

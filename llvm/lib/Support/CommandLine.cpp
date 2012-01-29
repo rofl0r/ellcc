@@ -292,12 +292,6 @@ static inline bool ProvideOption(Option *Handler, StringRef ArgName,
     break;
   case ValueOptional:
     break;
-
-  default:
-    errs() << ProgramName
-         << ": Bad ValueMask flag! CommandLine usage error:"
-         << Handler->getValueExpectedFlag() << "\n";
-    llvm_unreachable(0);
   }
 
   // If this isn't a multi-arg option, just run the handler.
@@ -888,7 +882,6 @@ bool Option::addOccurrence(unsigned pos, StringRef ArgName,
   case OneOrMore:
   case ZeroOrMore:
   case ConsumeAfter: break;
-  default: return error("bad num occurrences flag value!");
   }
 
   return handleOccurrence(pos, ArgName, Value);
@@ -1352,7 +1345,7 @@ class VersionPrinter {
 public:
   void print() {
     raw_ostream &OS = outs();
-    OS << "Low Level Virtual Machine (http://llvm.org/):\n"
+    OS << "LLVM (http://llvm.org/):\n"
        << "  " << PACKAGE_NAME << " version " << PACKAGE_VERSION;
 #ifdef LLVM_VERSION_INFO
     OS << LLVM_VERSION_INFO;

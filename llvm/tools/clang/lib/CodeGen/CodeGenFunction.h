@@ -43,7 +43,6 @@ namespace llvm {
 }
 
 namespace clang {
-  class APValue;
   class ASTContext;
   class BlockDecl;
   class CXXDestructorDecl;
@@ -1138,7 +1137,7 @@ private:
   };
   SmallVector<BreakContinue, 8> BreakContinueStack;
 
-  /// SwitchInsn - This is nearest current switch instruction. It is null if if
+  /// SwitchInsn - This is nearest current switch instruction. It is null if
   /// current context is not in a switch.
   llvm::SwitchInst *SwitchInsn;
 
@@ -1245,27 +1244,27 @@ public:
   void pushIrregularPartialArrayCleanup(llvm::Value *arrayBegin,
                                         llvm::Value *arrayEndPointer,
                                         QualType elementType,
-                                        Destroyer &destroyer);
+                                        Destroyer *destroyer);
   void pushRegularPartialArrayCleanup(llvm::Value *arrayBegin,
                                       llvm::Value *arrayEnd,
                                       QualType elementType,
-                                      Destroyer &destroyer);
+                                      Destroyer *destroyer);
 
   void pushDestroy(QualType::DestructionKind dtorKind,
                    llvm::Value *addr, QualType type);
   void pushDestroy(CleanupKind kind, llvm::Value *addr, QualType type,
-                   Destroyer &destroyer, bool useEHCleanupForArray);
-  void emitDestroy(llvm::Value *addr, QualType type, Destroyer &destroyer,
+                   Destroyer *destroyer, bool useEHCleanupForArray);
+  void emitDestroy(llvm::Value *addr, QualType type, Destroyer *destroyer,
                    bool useEHCleanupForArray);
   llvm::Function *generateDestroyHelper(llvm::Constant *addr,
                                         QualType type,
-                                        Destroyer &destroyer,
+                                        Destroyer *destroyer,
                                         bool useEHCleanupForArray);
   void emitArrayDestroy(llvm::Value *begin, llvm::Value *end,
-                        QualType type, Destroyer &destroyer,
+                        QualType type, Destroyer *destroyer,
                         bool checkZeroLength, bool useEHCleanup);
 
-  Destroyer &getDestroyer(QualType::DestructionKind destructionKind);
+  Destroyer *getDestroyer(QualType::DestructionKind destructionKind);
 
   /// Determines whether an EH cleanup is required to destroy a type
   /// with the given destruction kind.
@@ -1301,7 +1300,8 @@ public:
   void GenerateObjCGetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
 
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
                                   ObjCMethodDecl *MD, bool ctor);
@@ -1311,7 +1311,8 @@ public:
   void GenerateObjCSetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
   bool IndirectObjCSetterArg(const CGFunctionInfo &FI);
   bool IvarTypeWithAggrGCObjects(QualType Ty);
 
@@ -1334,6 +1335,10 @@ public:
 
   llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
   llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
+  llvm::Constant *GenerateObjCAtomicSetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
+  llvm::Constant *GenerateObjCAtomicGetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
 
   void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
 
@@ -2024,13 +2029,14 @@ public:
   /// the LLVM value representation.
   void EmitStoreOfScalar(llvm::Value *Value, llvm::Value *Addr,
                          bool Volatile, unsigned Alignment, QualType Ty,
-                         llvm::MDNode *TBAAInfo = 0);
+                         llvm::MDNode *TBAAInfo = 0, bool isInit=false);
 
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
   /// care to appropriately convert from the memory representation to
   /// the LLVM value representation.  The l-value must be a simple
-  /// l-value.
-  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue);
+  /// l-value.  The isInit flag indicates whether this is an initialization.
+  /// If so, atomic qualifiers are ignored and the store is always non-atomic.
+  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue, bool isInit=false);
 
   /// EmitLoadOfLValue - Given an expression that represents a value lvalue,
   /// this method emits the address of the lvalue, then loads the result as an
@@ -2042,7 +2048,7 @@ public:
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
   /// is 'Ty'.
-  void EmitStoreThroughLValue(RValue Src, LValue Dst);
+  void EmitStoreThroughLValue(RValue Src, LValue Dst, bool isInit=false);
   void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as
@@ -2621,7 +2627,75 @@ template <> struct DominatingValue<RValue> {
   }
 };
 
+/// A helper class for performing the null-initialization of a return
+/// value.
+struct NullReturnState {
+  llvm::BasicBlock *NullBB;
+  llvm::BasicBlock *callBB;
+  NullReturnState() : NullBB(0), callBB(0) {}
+  
+  void init(CodeGenFunction &CGF, llvm::Value *receiver) {
+    // Make blocks for the null-init and call edges.
+    NullBB = CGF.createBasicBlock("msgSend.nullinit");
+    callBB = CGF.createBasicBlock("msgSend.call");
+    
+    // Check for a null receiver and, if there is one, jump to the
+    // null-init test.
+    llvm::Value *isNull = CGF.Builder.CreateIsNull(receiver);
+    CGF.Builder.CreateCondBr(isNull, NullBB, callBB);
+    
+    // Otherwise, start performing the call.
+    CGF.EmitBlock(callBB);
+  }
+  
+  RValue complete(CodeGenFunction &CGF, RValue result, QualType resultType) {
+    if (!NullBB) return result;
+    
+    llvm::Value *NullInitPtr = 0;
+    if (result.isScalar() && !resultType->isVoidType()) {
+      NullInitPtr = CGF.CreateTempAlloca(result.getScalarVal()->getType());
+      CGF.Builder.CreateStore(result.getScalarVal(), NullInitPtr);
+    }
+    // Finish the call path.
+    llvm::BasicBlock *contBB = CGF.createBasicBlock("msgSend.cont");
+    if (CGF.HaveInsertPoint()) CGF.Builder.CreateBr(contBB);
+    
+    // Emit the null-init block and perform the null-initialization there.
+    CGF.EmitBlock(NullBB);
+    if (result.isScalar()) {
+      if (NullInitPtr)
+        CGF.EmitNullInitialization(NullInitPtr, resultType);
+      // Jump to the continuation block.
+      CGF.EmitBlock(contBB);
+      return NullInitPtr ? RValue::get(CGF.Builder.CreateLoad(NullInitPtr))
+      : result;
+    }
+    
+    if (!resultType->isAnyComplexType()) {
+      assert(result.isAggregate() && "null init of non-aggregate result?");
+      CGF.EmitNullInitialization(result.getAggregateAddr(), resultType);
+      // Jump to the continuation block.
+      CGF.EmitBlock(contBB);
+      return result;
+    }
+    
+    // _Complex type
+    // FIXME. Now easy to handle any other scalar type whose result is returned
+    // in memory due to ABI limitations.
+    CGF.EmitBlock(contBB);
+    CodeGenFunction::ComplexPairTy CallCV = result.getComplexVal();
+    llvm::Type *MemberType = CallCV.first->getType();
+    llvm::Constant *ZeroCV = llvm::Constant::getNullValue(MemberType);
+    // Create phi instruction for scalar complex value.
+    llvm::PHINode *PHIReal = CGF.Builder.CreatePHI(MemberType, 2);
+    PHIReal->addIncoming(ZeroCV, NullBB);
+    PHIReal->addIncoming(CallCV.first, callBB);
+    llvm::PHINode *PHIImag = CGF.Builder.CreatePHI(MemberType, 2);
+    PHIImag->addIncoming(ZeroCV, NullBB);
+    PHIImag->addIncoming(CallCV.second, callBB);
+    return RValue::getComplex(PHIReal, PHIImag);
+  }
+};
 }  // end namespace CodeGen
 }  // end namespace clang
-
 #endif

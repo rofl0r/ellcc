@@ -107,7 +107,6 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   bool KeepComments : 1;
   bool KeepMacroComments : 1;
   bool SuppressIncludeNotFoundError : 1;
-  bool AutoModuleImport : 1;
 
   // State that changes while the preprocessor runs:
   bool InMacroArgs : 1;            // True if parsing fn macro invocation args.
@@ -163,7 +162,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// for preprocessing.
   SourceLocation CodeCompletionFileLoc;
 
-  /// \brief The source location of the __import_module__ keyword we just
+  /// \brief The source location of the 'import' contextual keyword we just 
   /// lexed, if any.
   SourceLocation ModuleImportLoc;
 
@@ -397,11 +396,6 @@ public:
     return SuppressIncludeNotFoundError;
   }
 
-  /// \brief Specify whether automatic module imports are enabled.
-  void setAutoModuleImport(bool AutoModuleImport = true) {
-    this->AutoModuleImport = AutoModuleImport;
-  }
-
   /// isCurrentLexer - Return true if we are lexing directly from the specified
   /// lexer.
   bool isCurrentLexer(const PreprocessorLexer *L) const {
@@ -439,7 +433,8 @@ public:
 
   /// setMacroInfo - Specify a macro for this identifier.
   ///
-  void setMacroInfo(IdentifierInfo *II, MacroInfo *MI);
+  void setMacroInfo(IdentifierInfo *II, MacroInfo *MI,
+                    bool LoadedFromAST = false);
 
   /// macro_iterator/macro_begin/macro_end - This allows you to walk the current
   /// state of the macro table.  This visits every currently-defined macro.
@@ -689,6 +684,10 @@ public:
       CachedTokens[CachedLexPos-1] = Tok;
   }
 
+  /// \brief Recompute the current lexer kind based on the CurLexer/CurPTHLexer/
+  /// CurTokenLexer pointers.
+  void recomputeCurLexerKind();
+  
   /// \brief Specify the point at which code-completion will be performed.
   ///
   /// \param File the file in which code completion should occur. If
@@ -832,6 +831,17 @@ public:
     return *SourceMgr.getCharacterData(Tok.getLocation(), Invalid);
   }
 
+  /// \brief Retrieve the name of the immediate macro expansion.
+  ///
+  /// This routine starts from a source location, and finds the name of the macro
+  /// responsible for its immediate expansion. It looks through any intervening
+  /// macro argument expansions to compute this. It returns a StringRef which
+  /// refers to the SourceManager-owned buffer of the source where that macro
+  /// name is spelled. Thus, the result shouldn't out-live the SourceManager.
+  StringRef getImmediateMacroName(SourceLocation Loc) {
+    return Lexer::getImmediateMacroName(Loc, SourceMgr, getLangOptions());
+  }
+
   /// CreateString - Plop the specified string into a scratch buffer and set the
   /// specified token's location and length to it.  If specified, the source
   /// location provides a location of the expansion point of the token.
@@ -860,14 +870,23 @@ public:
 
   /// \brief Returns true if the given MacroID location points at the first
   /// token of the macro expansion.
-  bool isAtStartOfMacroExpansion(SourceLocation loc) const {
-    return Lexer::isAtStartOfMacroExpansion(loc, SourceMgr, Features);
+  ///
+  /// \param MacroBegin If non-null and function returns true, it is set to
+  /// begin location of the macro.
+  bool isAtStartOfMacroExpansion(SourceLocation loc,
+                                 SourceLocation *MacroBegin = 0) const {
+    return Lexer::isAtStartOfMacroExpansion(loc, SourceMgr, Features,
+                                            MacroBegin);
   }
 
   /// \brief Returns true if the given MacroID location points at the last
   /// token of the macro expansion.
-  bool isAtEndOfMacroExpansion(SourceLocation loc) const {
-    return Lexer::isAtEndOfMacroExpansion(loc, SourceMgr, Features);
+  ///
+  /// \param MacroBegin If non-null and function returns true, it is set to
+  /// end location of the macro.
+  bool isAtEndOfMacroExpansion(SourceLocation loc,
+                               SourceLocation *MacroEnd = 0) const {
+    return Lexer::isAtEndOfMacroExpansion(loc, SourceMgr, Features, MacroEnd);
   }
 
   /// DumpToken - Print the token to stderr, used for debugging.
@@ -1203,7 +1222,7 @@ private:
   void HandleDigitDirective(Token &Tok);
   void HandleUserDiagnosticDirective(Token &Tok, bool isWarning);
   void HandleIdentSCCSDirective(Token &Tok);
-  void HandleMacroExportDirective(Token &Tok);
+  void HandleMacroPublicDirective(Token &Tok);
   void HandleMacroPrivateDirective(Token &Tok);
 
   // File inclusion.

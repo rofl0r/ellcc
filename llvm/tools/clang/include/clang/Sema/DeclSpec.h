@@ -1250,7 +1250,6 @@ struct DeclaratorChunk {
 
   void destroy() {
     switch (Kind) {
-    default: llvm_unreachable("Unknown decl type!");
     case DeclaratorChunk::Function:      return Fun.destroy();
     case DeclaratorChunk::Pointer:       return Ptr.destroy();
     case DeclaratorChunk::BlockPointer:  return Cls.destroy();
@@ -1416,6 +1415,7 @@ public:
     CXXCatchContext,     // C++ catch exception-declaration
     ObjCCatchContext,    // Objective-C catch exception-declaration
     BlockLiteralContext,  // Block literal declarator.
+    LambdaExprContext,   // Lambda-expression declarator.
     TemplateTypeArgContext, // Template type argument.
     AliasDeclContext,    // C++0x alias-declaration.
     AliasTemplateContext // C++0x alias-declaration template.
@@ -1466,6 +1466,10 @@ private:
 
   /// Extension - true if the declaration is preceded by __extension__.
   bool Extension : 1;
+
+  /// \brief If this is the second or subsequent declarator in this declaration,
+  /// the location of the comma before this declarator.
+  SourceLocation CommaLoc;
 
   /// \brief If provided, the source location of the ellipsis used to describe
   /// this declarator as a parameter pack.
@@ -1556,6 +1560,8 @@ public:
     Attrs.clear();
     AsmLabel = 0;
     InlineParamsUsed = false;
+    CommaLoc = SourceLocation();
+    EllipsisLoc = SourceLocation();
   }
 
   /// mayOmitIdentifier - Return true if the identifier is either optional or
@@ -1582,6 +1588,7 @@ public:
     case CXXCatchContext:
     case ObjCCatchContext:
     case BlockLiteralContext:
+    case LambdaExprContext:
     case TemplateTypeArgContext:
       return true;
     }
@@ -1612,6 +1619,7 @@ public:
     case ObjCParameterContext:
     case ObjCResultContext:
     case BlockLiteralContext:
+    case LambdaExprContext:
     case TemplateTypeArgContext:
       return false;
     }
@@ -1622,6 +1630,13 @@ public:
   /// followed by a C++ direct initializer, e.g. "int x(1);".
   bool mayBeFollowedByCXXDirectInit() const {
     if (hasGroupingParens()) return false;
+
+    if (getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_typedef)
+      return false;
+
+    if (getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_extern &&
+        Context != FileContext)
+      return false;
 
     switch (Context) {
     case FileContext:
@@ -1643,6 +1658,7 @@ public:
     case AliasDeclContext:
     case AliasTemplateContext:
     case BlockLiteralContext:
+    case LambdaExprContext:
     case TemplateTypeArgContext:
       return false;
     }
@@ -1731,7 +1747,6 @@ public:
         return !DeclTypeInfo[i].Arr.NumElts;
       }
       llvm_unreachable("Invalid type chunk");
-      return false;
     }
     return false;
   }
@@ -1756,7 +1771,6 @@ public:
         return false;
       }
       llvm_unreachable("Invalid type chunk");
-      return false;
     }
     return false;
   }
@@ -1835,7 +1849,11 @@ public:
 
   void setGroupingParens(bool flag) { GroupingParens = flag; }
   bool hasGroupingParens() const { return GroupingParens; }
-  
+
+  bool isFirstDeclarator() const { return !CommaLoc.isValid(); }
+  SourceLocation getCommaLoc() const { return CommaLoc; }
+  void setCommaLoc(SourceLocation CL) { CommaLoc = CL; }
+
   bool hasEllipsis() const { return EllipsisLoc.isValid(); }
   SourceLocation getEllipsisLoc() const { return EllipsisLoc; }
   void setEllipsisLoc(SourceLocation EL) { EllipsisLoc = EL; }

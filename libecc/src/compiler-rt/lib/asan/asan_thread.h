@@ -30,10 +30,10 @@ class AsanThread;
 class AsanThreadSummary {
  public:
   explicit AsanThreadSummary(LinkerInitialized) { }  // for T0.
-  AsanThreadSummary(int tid, int parent_tid, AsanStackTrace *stack)
-      : tid_(tid),
-        parent_tid_(parent_tid),
+  AsanThreadSummary(int parent_tid, AsanStackTrace *stack)
+      : parent_tid_(parent_tid),
         announced_(false) {
+    tid_ = -1;
     if (stack) {
       stack_ = *stack;
     }
@@ -48,6 +48,7 @@ class AsanThreadSummary {
     }
   }
   int tid() { return tid_; }
+  void set_tid(int tid) { tid_ = tid; }
   AsanThread *thread() { return thread_; }
   void set_thread(AsanThread *thread) { thread_ = thread; }
  private:
@@ -62,9 +63,9 @@ class AsanThreadSummary {
 class AsanThread {
  public:
   explicit AsanThread(LinkerInitialized);  // for T0.
-  AsanThread(int parent_tid, void *(*start_routine) (void *),
-             void *arg, AsanStackTrace *stack);
-  ~AsanThread();
+  static AsanThread *Create(int parent_tid, void *(*start_routine) (void *),
+                            void *arg, AsanStackTrace *stack);
+  void Destroy();
 
   void Init();  // Should be called from the thread itself.
   void *ThreadStart();

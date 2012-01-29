@@ -192,7 +192,6 @@ bool MachineOperand::isIdenticalTo(const MachineOperand &Other) const {
     return false;
 
   switch (getType()) {
-  default: llvm_unreachable("Unrecognized operand type");
   case MachineOperand::MO_Register:
     return getReg() == Other.getReg() && isDef() == Other.isDef() &&
            getSubReg() == Other.getSubReg();
@@ -217,11 +216,14 @@ bool MachineOperand::isIdenticalTo(const MachineOperand &Other) const {
            getOffset() == Other.getOffset();
   case MachineOperand::MO_BlockAddress:
     return getBlockAddress() == Other.getBlockAddress();
+  case MO_RegisterMask:
+    return getRegMask() == Other.getRegMask();
   case MachineOperand::MO_MCSymbol:
     return getMCSymbol() == Other.getMCSymbol();
   case MachineOperand::MO_Metadata:
     return getMetadata() == Other.getMetadata();
   }
+  llvm_unreachable("Invalid machine operand type");
 }
 
 /// print - Print the specified machine operand.
@@ -324,6 +326,9 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
     WriteAsOperand(OS, getBlockAddress(), /*PrintType=*/false);
     OS << '>';
     break;
+  case MachineOperand::MO_RegisterMask:
+    OS << (getRegMask() ? "<regmask>" : "<regmask:null>");
+    break;
   case MachineOperand::MO_Metadata:
     OS << '<';
     WriteAsOperand(OS, getMetadata(), /*PrintType=*/false);
@@ -332,8 +337,6 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
   case MachineOperand::MO_MCSymbol:
     OS << "<MCSym=" << *getMCSymbol() << '>';
     break;
-  default:
-    llvm_unreachable("Unrecognized operand type");
   }
 
   if (unsigned TF = getTargetFlags())
@@ -1702,6 +1705,20 @@ bool MachineInstr::addRegisterKilled(unsigned IncomingReg,
     return true;
   }
   return Found;
+}
+
+void MachineInstr::clearRegisterKills(unsigned Reg,
+                                      const TargetRegisterInfo *RegInfo) {
+  if (!TargetRegisterInfo::isPhysicalRegister(Reg))
+    RegInfo = 0;
+  for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = getOperand(i);
+    if (!MO.isReg() || !MO.isUse() || !MO.isKill())
+      continue;
+    unsigned OpReg = MO.getReg();
+    if (OpReg == Reg || (RegInfo && RegInfo->isSuperRegister(Reg, OpReg)))
+      MO.setIsKill(false);
+  }
 }
 
 bool MachineInstr::addRegisterDead(unsigned IncomingReg,

@@ -625,7 +625,6 @@ void ReturnInst::setSuccessorV(unsigned idx, BasicBlock *NewSucc) {
 
 BasicBlock *ReturnInst::getSuccessorV(unsigned idx) const {
   llvm_unreachable("ReturnInst has no successors!");
-  return 0;
 }
 
 ReturnInst::~ReturnInst() {
@@ -655,7 +654,6 @@ void UnwindInst::setSuccessorV(unsigned idx, BasicBlock *NewSucc) {
 
 BasicBlock *UnwindInst::getSuccessorV(unsigned idx) const {
   llvm_unreachable("UnwindInst has no successors!");
-  return 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -690,7 +688,6 @@ void ResumeInst::setSuccessorV(unsigned idx, BasicBlock *NewSucc) {
 
 BasicBlock *ResumeInst::getSuccessorV(unsigned idx) const {
   llvm_unreachable("ResumeInst has no successors!");
-  return 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -717,7 +714,6 @@ void UnreachableInst::setSuccessorV(unsigned idx, BasicBlock *NewSucc) {
 
 BasicBlock *UnreachableInst::getSuccessorV(unsigned idx) const {
   llvm_unreachable("UnwindInst has no successors!");
-  return 0;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1580,52 +1576,83 @@ ShuffleVectorInst::ShuffleVectorInst(Value *V1, Value *V2, Value *Mask,
 
 bool ShuffleVectorInst::isValidOperands(const Value *V1, const Value *V2,
                                         const Value *Mask) {
+  // V1 and V2 must be vectors of the same type.
   if (!V1->getType()->isVectorTy() || V1->getType() != V2->getType())
     return false;
   
+  // Mask must be vector of i32.
   VectorType *MaskTy = dyn_cast<VectorType>(Mask->getType());
   if (MaskTy == 0 || !MaskTy->getElementType()->isIntegerTy(32))
     return false;
 
   // Check to see if Mask is valid.
+  if (isa<UndefValue>(Mask) || isa<ConstantAggregateZero>(Mask))
+    return true;
+
   if (const ConstantVector *MV = dyn_cast<ConstantVector>(Mask)) {
-    VectorType *VTy = cast<VectorType>(V1->getType());
+    unsigned V1Size = cast<VectorType>(V1->getType())->getNumElements();
     for (unsigned i = 0, e = MV->getNumOperands(); i != e; ++i) {
-      if (ConstantInt* CI = dyn_cast<ConstantInt>(MV->getOperand(i))) {
-        if (CI->uge(VTy->getNumElements()*2))
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(MV->getOperand(i))) {
+        if (CI->uge(V1Size*2))
           return false;
       } else if (!isa<UndefValue>(MV->getOperand(i))) {
         return false;
       }
     }
-  } else if (!isa<UndefValue>(Mask) && !isa<ConstantAggregateZero>(Mask)) {
-    // The bitcode reader can create a place holder for a forward reference
-    // used as the shuffle mask. When this occurs, the shuffle mask will
-    // fall into this case and fail. To avoid this error, do this bit of
-    // ugliness to allow such a mask pass.
-    if (const ConstantExpr* CE = dyn_cast<ConstantExpr>(Mask)) {
-      if (CE->getOpcode() == Instruction::UserOp1)
-        return true;
-    }
-    return false;
+    return true;
   }
-  return true;
+  
+  if (const ConstantDataSequential *CDS =
+        dyn_cast<ConstantDataSequential>(Mask)) {
+    unsigned V1Size = cast<VectorType>(V1->getType())->getNumElements();
+    for (unsigned i = 0, e = MaskTy->getNumElements(); i != e; ++i)
+      if (CDS->getElementAsInteger(i) >= V1Size*2)
+        return false;
+    return true;
+  }
+  
+  // The bitcode reader can create a place holder for a forward reference
+  // used as the shuffle mask. When this occurs, the shuffle mask will
+  // fall into this case and fail. To avoid this error, do this bit of
+  // ugliness to allow such a mask pass.
+  if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(Mask))
+    if (CE->getOpcode() == Instruction::UserOp1)
+      return true;
+
+  return false;
 }
 
 /// getMaskValue - Return the index from the shuffle mask for the specified
 /// output result.  This is either -1 if the element is undef or a number less
 /// than 2*numelements.
-int ShuffleVectorInst::getMaskValue(unsigned i) const {
-  const Constant *Mask = cast<Constant>(getOperand(2));
-  if (isa<UndefValue>(Mask)) return -1;
-  if (isa<ConstantAggregateZero>(Mask)) return 0;
-  const ConstantVector *MaskCV = cast<ConstantVector>(Mask);
-  assert(i < MaskCV->getNumOperands() && "Index out of range");
-
-  if (isa<UndefValue>(MaskCV->getOperand(i)))
+int ShuffleVectorInst::getMaskValue(Constant *Mask, unsigned i) {
+  assert(i < Mask->getType()->getVectorNumElements() && "Index out of range");
+  if (ConstantDataSequential *CDS =dyn_cast<ConstantDataSequential>(Mask))
+    return CDS->getElementAsInteger(i);
+  Constant *C = Mask->getAggregateElement(i);
+  if (isa<UndefValue>(C))
     return -1;
-  return cast<ConstantInt>(MaskCV->getOperand(i))->getZExtValue();
+  return cast<ConstantInt>(C)->getZExtValue();
 }
+
+/// getShuffleMask - Return the full mask for this instruction, where each
+/// element is the element number and undef's are returned as -1.
+void ShuffleVectorInst::getShuffleMask(Constant *Mask,
+                                       SmallVectorImpl<int> &Result) {
+  unsigned NumElts = Mask->getType()->getVectorNumElements();
+  
+  if (ConstantDataSequential *CDS=dyn_cast<ConstantDataSequential>(Mask)) {
+    for (unsigned i = 0; i != NumElts; ++i)
+      Result.push_back(CDS->getElementAsInteger(i));
+    return;
+  }    
+  for (unsigned i = 0; i != NumElts; ++i) {
+    Constant *C = Mask->getAggregateElement(i);
+    Result.push_back(isa<UndefValue>(C) ? -1 :
+                     cast<ConstantInt>(C)->getZExtValue());
+  }
+}
+
 
 //===----------------------------------------------------------------------===//
 //                             InsertValueInst Class
@@ -1877,46 +1904,27 @@ BinaryOperator *BinaryOperator::CreateNUWNeg(Value *Op, const Twine &Name,
 BinaryOperator *BinaryOperator::CreateFNeg(Value *Op, const Twine &Name,
                                            Instruction *InsertBefore) {
   Value *zero = ConstantFP::getZeroValueForNegation(Op->getType());
-  return new BinaryOperator(Instruction::FSub,
-                            zero, Op,
+  return new BinaryOperator(Instruction::FSub, zero, Op,
                             Op->getType(), Name, InsertBefore);
 }
 
 BinaryOperator *BinaryOperator::CreateFNeg(Value *Op, const Twine &Name,
                                            BasicBlock *InsertAtEnd) {
   Value *zero = ConstantFP::getZeroValueForNegation(Op->getType());
-  return new BinaryOperator(Instruction::FSub,
-                            zero, Op,
+  return new BinaryOperator(Instruction::FSub, zero, Op,
                             Op->getType(), Name, InsertAtEnd);
 }
 
 BinaryOperator *BinaryOperator::CreateNot(Value *Op, const Twine &Name,
                                           Instruction *InsertBefore) {
-  Constant *C;
-  if (VectorType *PTy = dyn_cast<VectorType>(Op->getType())) {
-    C = Constant::getAllOnesValue(PTy->getElementType());
-    C = ConstantVector::get(
-                              std::vector<Constant*>(PTy->getNumElements(), C));
-  } else {
-    C = Constant::getAllOnesValue(Op->getType());
-  }
-  
+  Constant *C = Constant::getAllOnesValue(Op->getType());
   return new BinaryOperator(Instruction::Xor, Op, C,
                             Op->getType(), Name, InsertBefore);
 }
 
 BinaryOperator *BinaryOperator::CreateNot(Value *Op, const Twine &Name,
                                           BasicBlock *InsertAtEnd) {
-  Constant *AllOnes;
-  if (VectorType *PTy = dyn_cast<VectorType>(Op->getType())) {
-    // Create a vector of all ones values.
-    Constant *Elt = Constant::getAllOnesValue(PTy->getElementType());
-    AllOnes = ConstantVector::get(
-                            std::vector<Constant*>(PTy->getNumElements(), Elt));
-  } else {
-    AllOnes = Constant::getAllOnesValue(Op->getType());
-  }
-  
+  Constant *AllOnes = Constant::getAllOnesValue(Op->getType());
   return new BinaryOperator(Instruction::Xor, Op, AllOnes,
                             Op->getType(), Name, InsertAtEnd);
 }
@@ -1924,10 +1932,8 @@ BinaryOperator *BinaryOperator::CreateNot(Value *Op, const Twine &Name,
 
 // isConstantAllOnes - Helper function for several functions below
 static inline bool isConstantAllOnes(const Value *V) {
-  if (const ConstantInt *CI = dyn_cast<ConstantInt>(V))
-    return CI->isAllOnesValue();
-  if (const ConstantVector *CV = dyn_cast<ConstantVector>(V))
-    return CV->isAllOnesValue();
+  if (const Constant *C = dyn_cast<Constant>(V))
+    return C->isAllOnesValue();
   return false;
 }
 
@@ -2273,7 +2279,6 @@ unsigned CastInst::isEliminableCastPair(
       assert(0 && "Error in CastResults table!!!");
       return 0;
   }
-  return 0;
 }
 
 CastInst *CastInst::Create(Instruction::CastOps op, Value *S, Type *Ty, 
@@ -2295,8 +2300,8 @@ CastInst *CastInst::Create(Instruction::CastOps op, Value *S, Type *Ty,
     case BitCast:  return new BitCastInst  (S, Ty, Name, InsertBefore);
     default:
       assert(0 && "Invalid opcode provided");
+      return 0;
   }
-  return 0;
 }
 
 CastInst *CastInst::Create(Instruction::CastOps op, Value *S, Type *Ty,
@@ -2318,8 +2323,8 @@ CastInst *CastInst::Create(Instruction::CastOps op, Value *S, Type *Ty,
     case BitCast:  return new BitCastInst  (S, Ty, Name, InsertAtEnd);
     default:
       assert(0 && "Invalid opcode provided");
+      return 0;
   }
-  return 0;
 }
 
 CastInst *CastInst::CreateZExtOrBitCast(Value *S, Type *Ty, 
@@ -2676,13 +2681,19 @@ CastInst::castIsValid(Instruction::CastOps op, Value *S, Type *DstTy) {
     return SrcTy->isFPOrFPVectorTy() && DstTy->isIntOrIntVectorTy() &&
       SrcLength == DstLength;
   case Instruction::PtrToInt:
-    if (SrcTy->getNumElements() != DstTy->getNumElements())
+    if (isa<VectorType>(SrcTy) != isa<VectorType>(DstTy))
       return false;
+    if (VectorType *VT = dyn_cast<VectorType>(SrcTy))
+      if (VT->getNumElements() != cast<VectorType>(DstTy)->getNumElements())
+        return false;
     return SrcTy->getScalarType()->isPointerTy() &&
            DstTy->getScalarType()->isIntegerTy();
   case Instruction::IntToPtr:
-    if (SrcTy->getNumElements() != DstTy->getNumElements())
+    if (isa<VectorType>(SrcTy) != isa<VectorType>(DstTy))
       return false;
+    if (VectorType *VT = dyn_cast<VectorType>(SrcTy))
+      if (VT->getNumElements() != cast<VectorType>(DstTy)->getNumElements())
+        return false;
     return SrcTy->getScalarType()->isIntegerTy() &&
            DstTy->getScalarType()->isPointerTy();
   case Instruction::BitCast:
@@ -3475,15 +3486,11 @@ ExtractElementInst *ExtractElementInst::clone_impl() const {
 }
 
 InsertElementInst *InsertElementInst::clone_impl() const {
-  return InsertElementInst::Create(getOperand(0),
-                                   getOperand(1),
-                                   getOperand(2));
+  return InsertElementInst::Create(getOperand(0), getOperand(1), getOperand(2));
 }
 
 ShuffleVectorInst *ShuffleVectorInst::clone_impl() const {
-  return new ShuffleVectorInst(getOperand(0),
-                           getOperand(1),
-                           getOperand(2));
+  return new ShuffleVectorInst(getOperand(0), getOperand(1), getOperand(2));
 }
 
 PHINode *PHINode::clone_impl() const {

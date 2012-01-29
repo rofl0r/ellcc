@@ -4,7 +4,9 @@ if [ $# -ne 1 ] ; then
     exit 1
 fi
 svn merge --accept edit http://ellcc.org/svn/vendor/llvm/svn-$1 http://ellcc.org/svn/vendor/llvm/current llvm
-cd libecc/src
-svn merge --accept edit http://ellcc.org/svn/vendor/compiler-rt/svn-$1 http://ellcc.org/svn/vendor/compiler-rt/current compiler-rt
-cd ../../llvm/tools
+cd llvm/tools
 svn merge --accept edit http://ellcc.org/svn/vendor/clang/svn-$1 http://ellcc.org/svn/vendor/clang/current clang
+cd ../../libecc/src
+svn merge --accept edit http://ellcc.org/svn/vendor/compiler-rt/svn-$1 http://ellcc.org/svn/vendor/compiler-rt/current compiler-rt
+cd c++
+svn merge --accept edit http://ellcc.org/svn/vendor/libcxx/svn-$1 http://ellcc.org/svn/vendor/libcxx/current libcxx 

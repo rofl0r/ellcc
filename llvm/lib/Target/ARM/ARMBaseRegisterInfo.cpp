@@ -63,26 +63,12 @@ ARMBaseRegisterInfo::ARMBaseRegisterInfo(const ARMBaseInstrInfo &tii,
 
 const unsigned*
 ARMBaseRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  static const unsigned CalleeSavedRegs[] = {
-    ARM::LR, ARM::R11, ARM::R10, ARM::R9, ARM::R8,
-    ARM::R7, ARM::R6,  ARM::R5,  ARM::R4,
+  return (STI.isTargetIOS()) ? CSR_iOS_SaveList : CSR_AAPCS_SaveList;
+}
 
-    ARM::D15, ARM::D14, ARM::D13, ARM::D12,
-    ARM::D11, ARM::D10, ARM::D9,  ARM::D8,
-    0
-  };
-
-  static const unsigned iOSCalleeSavedRegs[] = {
-    // iOS ABI deviates from ARM standard ABI. R9 is not a callee-saved
-    // register.
-    ARM::LR,  ARM::R7,  ARM::R6, ARM::R5, ARM::R4,
-    ARM::R11, ARM::R10, ARM::R8,
-
-    ARM::D15, ARM::D14, ARM::D13, ARM::D12,
-    ARM::D11, ARM::D10, ARM::D9,  ARM::D8,
-    0
-  };
-  return (STI.isTargetIOS()) ? iOSCalleeSavedRegs : CalleeSavedRegs;
+const uint32_t*
+ARMBaseRegisterInfo::getCallPreservedMask(CallingConv::ID) const {
+  return (STI.isTargetIOS()) ? CSR_iOS_RegMask : CSR_AAPCS_RegMask;
 }
 
 BitVector ARMBaseRegisterInfo::
@@ -528,13 +514,28 @@ bool ARMBaseRegisterInfo::hasBasePointer(const MachineFunction &MF) const {
 
 bool ARMBaseRegisterInfo::canRealignStack(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const MachineRegisterInfo *MRI = &MF.getRegInfo();
   const ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
   // We can't realign the stack if:
   // 1. Dynamic stack realignment is explicitly disabled,
   // 2. This is a Thumb1 function (it's not useful, so we don't bother), or
   // 3. There are VLAs in the function and the base pointer is disabled.
-  return (MF.getTarget().Options.RealignStack && !AFI->isThumb1OnlyFunction() &&
-          (!MFI->hasVarSizedObjects() || EnableBasePointer));
+  if (!MF.getTarget().Options.RealignStack)
+    return false;
+  if (AFI->isThumb1OnlyFunction())
+    return false;
+  // Stack realignment requires a frame pointer.  If we already started
+  // register allocation with frame pointer elimination, it is too late now.
+  if (!MRI->canReserveReg(FramePtr))
+    return false;
+  // We may also need a base pointer if there are dynamic allocas.
+  if (!MFI->hasVarSizedObjects())
+    return true;
+  if (!EnableBasePointer)
+    return false;
+  // A base pointer is required and allowed.  Check that it isn't too late to
+  // reserve it.
+  return MRI->canReserveReg(BasePtr);
 }
 
 bool ARMBaseRegisterInfo::
@@ -568,12 +569,10 @@ ARMBaseRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
 
 unsigned ARMBaseRegisterInfo::getEHExceptionRegister() const {
   llvm_unreachable("What is the exception register");
-  return 0;
 }
 
 unsigned ARMBaseRegisterInfo::getEHHandlerRegister() const {
   llvm_unreachable("What is the exception handler register");
-  return 0;
 }
 
 unsigned ARMBaseRegisterInfo::getRegisterPairEven(unsigned Reg,
@@ -822,7 +821,6 @@ getFrameIndexInstrOffset(const MachineInstr *MI, int Idx) const {
   }
   default:
     llvm_unreachable("Unsupported addressing mode!");
-    break;
   }
 
   return InstrOffs * Scale;
@@ -1018,7 +1016,6 @@ bool ARMBaseRegisterInfo::isFrameOffsetLegal(const MachineInstr *MI,
     break;
   default:
     llvm_unreachable("Unsupported addressing mode!");
-    break;
   }
 
   Offset += getFrameIndexInstrOffset(MI, i);

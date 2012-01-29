@@ -13,7 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "regcoalescing"
+#define DEBUG_TYPE "regalloc"
 #include "RegisterCoalescer.h"
 #include "LiveDebugVariables.h"
 #include "RegisterClassInfo.h"
@@ -553,10 +553,12 @@ bool RegisterCoalescer::AdjustCopiesBackFrom(const CoalescerPair &CP,
   if (UIdx != -1) {
     ValLREndInst->getOperand(UIdx).setIsKill(false);
   }
-
-  // If the copy instruction was killing the destination register before the
-  // merge, find the last use and trim the live range. That will also add the
-  // isKill marker.
+  
+  // Rewrite the copy. If the copy instruction was killing the destination
+  // register before the merge, find the last use and trim the live range. That
+  // will also add the isKill marker.
+  CopyMI->substituteRegister(IntA.reg, IntB.reg, CP.getSubIdx(),
+                             *TRI);
   if (ALR->end == CopyIdx)
     LIS->shrinkToUses(&IntA);
 
@@ -850,8 +852,8 @@ bool RegisterCoalescer::ReMaterializeTrivialDef(LiveInterval &SrcInt,
       RemoveCopyFlag(MO.getReg(), CopyMI);
   }
 
-  NewMI->copyImplicitOps(CopyMI);
   LIS->ReplaceMachineInstrInMaps(CopyMI, NewMI);
+  NewMI->copyImplicitOps(CopyMI);
   CopyMI->eraseFromParent();
   ReMatCopies.insert(CopyMI);
   ReMatDefs.insert(DefMI);
@@ -1279,7 +1281,7 @@ bool RegisterCoalescer::JoinCopy(MachineInstr *CopyMI, bool &Again) {
     }
   }
 
-  // SrcReg is guarateed to be the register whose live interval that is
+  // SrcReg is guaranteed to be the register whose live interval that is
   // being merged.
   LIS->removeInterval(CP.getSrcReg());
 
@@ -1431,6 +1433,31 @@ bool RegisterCoalescer::JoinIntervals(CoalescerPair &CP) {
   // than the full interfeence check below. We allow overlapping live ranges
   // only when one is a copy of the other.
   if (CP.isPhys()) {
+    // Optimization for reserved registers like ESP.
+    // We can only merge with a reserved physreg if RHS has a single value that
+    // is a copy of CP.DstReg().  The live range of the reserved register will
+    // look like a set of dead defs - we don't properly track the live range of
+    // reserved registers.
+    if (RegClassInfo.isReserved(CP.getDstReg())) {
+      assert(CP.isFlipped() && RHS.containsOneValue() &&
+             "Invalid join with reserved register");
+      // Deny any overlapping intervals.  This depends on all the reserved
+      // register live ranges to look like dead defs.
+      for (const unsigned *AS = TRI->getOverlaps(CP.getDstReg()); *AS; ++AS) {
+        if (!LIS->hasInterval(*AS))
+          continue;
+        if (RHS.overlaps(LIS->getInterval(*AS))) {
+          DEBUG(dbgs() << "\t\tInterference: " << PrintReg(*AS, TRI) << '\n');
+          return false;
+        }
+      }
+      // Skip any value computations, we are not adding new values to the
+      // reserved register.  Also skip merging the live ranges, the reserved
+      // register live range doesn't need to be accurate as long as all the
+      // defs are there.
+      return true;
+    }
+
     for (const unsigned *AS = TRI->getAliasSet(CP.getDstReg()); *AS; ++AS){
       if (!LIS->hasInterval(*AS))
         continue;
@@ -1905,8 +1932,8 @@ bool RegisterCoalescer::runOnMachineFunction(MachineFunction &fn) {
           unsigned Reg = MO.getReg();
           if (!Reg)
             continue;
+          DeadDefs.push_back(Reg);
           if (TargetRegisterInfo::isVirtualRegister(Reg)) {
-            DeadDefs.push_back(Reg);
             // Remat may also enable register class inflation.
             if (RegClassInfo.isProperSubClass(MRI->getRegClass(Reg)))
               InflateRegs.push_back(Reg);

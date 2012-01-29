@@ -17,7 +17,6 @@
 namespace clang {
   class FileEntry;
   class ObjCPropertyDecl;
-  class ObjCClassDecl;
   class ClassTemplateDecl;
   class FunctionTemplateDecl;
   class TypeAliasTemplateDecl;
@@ -128,7 +127,7 @@ struct ObjCInterfaceDeclInfo : public ObjCContainerDeclInfo {
   ObjCInterfaceDeclInfo(const ObjCInterfaceDecl *D)
     : ObjCContainerDeclInfo(Info_ObjCInterface,
                             /*isForwardRef=*/false,
-                          /*isRedeclaration=*/D->getPreviousDeclaration() != 0,
+                          /*isRedeclaration=*/D->getPreviousDecl() != 0,
                             /*isImplementation=*/false) { }
 
   static bool classof(const DeclInfo *D) {
@@ -143,7 +142,7 @@ struct ObjCProtocolDeclInfo : public ObjCContainerDeclInfo {
   ObjCProtocolDeclInfo(const ObjCProtocolDecl *D)
     : ObjCContainerDeclInfo(Info_ObjCProtocol,
                             /*isForwardRef=*/false,
-                            /*isRedeclaration=*/D->isInitiallyForwardDecl(),
+                            /*isRedeclaration=*/D->getPreviousDecl(),
                             /*isImplementation=*/false) { }
 
   static bool classof(const DeclInfo *D) {
@@ -320,9 +319,14 @@ public:
   ASTContext &getASTContext() const { return *Ctx; }
 
   void setASTContext(ASTContext &ctx);
+  void setPreprocessor(Preprocessor &PP);
 
   bool suppressRefs() const {
     return IndexOptions & CXIndexOpt_SuppressRedundantRefs;
+  }
+
+  bool indexFunctionLocalSymbols() const {
+    return IndexOptions & CXIndexOpt_IndexFunctionLocalSymbols;
   }
 
   bool shouldAbort();
@@ -370,13 +374,8 @@ public:
   
   bool handleTypedefName(const TypedefNameDecl *D);
 
-  bool handleObjCClass(const ObjCClassDecl *D);
   bool handleObjCInterface(const ObjCInterfaceDecl *D);
   bool handleObjCImplementation(const ObjCImplementationDecl *D);
-
-  bool handleObjCForwardProtocol(const ObjCProtocolDecl *D,
-                                 SourceLocation Loc,
-                                 bool isRedeclaration);
 
   bool handleObjCProtocol(const ObjCProtocolDecl *D);
 

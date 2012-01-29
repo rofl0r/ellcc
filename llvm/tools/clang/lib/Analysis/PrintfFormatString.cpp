@@ -259,7 +259,8 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
   if (CS.isIntArg())
     switch (LM.getKind()) {
       case LengthModifier::AsLongDouble:
-        return ArgTypeResult::Invalid();
+        // GNU extension.
+        return Ctx.LongLongTy;
       case LengthModifier::None: return Ctx.IntTy;
       case LengthModifier::AsChar: return ArgTypeResult::AnyCharTy;
       case LengthModifier::AsShort: return Ctx.ShortTy;
@@ -273,13 +274,15 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
       case LengthModifier::AsPtrDiff:
         return ArgTypeResult(Ctx.getPointerDiffType(), "ptrdiff_t");
       case LengthModifier::AsAllocate:
+      case LengthModifier::AsMAllocate:
         return ArgTypeResult::Invalid();
     }
 
   if (CS.isUIntArg())
     switch (LM.getKind()) {
       case LengthModifier::AsLongDouble:
-        return ArgTypeResult::Invalid();
+        // GNU extension.
+        return Ctx.UnsignedLongLongTy;
       case LengthModifier::None: return Ctx.UnsignedIntTy;
       case LengthModifier::AsChar: return Ctx.UnsignedCharTy;
       case LengthModifier::AsShort: return Ctx.UnsignedShortTy;
@@ -294,6 +297,7 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
         // version of ptrdiff_t?
         return ArgTypeResult();
       case LengthModifier::AsAllocate:
+      case LengthModifier::AsMAllocate:
         return ArgTypeResult::Invalid();
     }
 
@@ -315,6 +319,8 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
       return ArgTypeResult(Ctx.WCharTy, "wchar_t");
     case ConversionSpecifier::pArg:
       return ArgTypeResult::CPointerTy;
+    case ConversionSpecifier::ObjCObjArg:
+      return ArgTypeResult::ObjCPointerTy;
     default:
       break;
   }

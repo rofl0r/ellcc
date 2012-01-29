@@ -12,6 +12,7 @@ tablegen(MipsGenIntrinsics.inc -gen-tgt-intrinsic)
 add_public_tablegen_target(MipsCommonTableGen)
 
 add_llvm_target(MipsCodeGen
+  MipsAnalyzeImmediate.cpp
   MipsAsmPrinter.cpp
   MipsCodeEmitter.cpp
   MipsDelaySlotFiller.cpp
@@ -35,3 +36,4 @@ add_llvm_target(MipsCodeGen
 add_subdirectory(InstPrinter)
 add_subdirectory(TargetInfo)
 add_subdirectory(MCTargetDesc)
+add_subdirectory(AsmParser)

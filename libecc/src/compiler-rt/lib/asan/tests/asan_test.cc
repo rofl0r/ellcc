@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <setjmp.h>
@@ -28,6 +29,8 @@
 
 #ifndef __APPLE__
 #include <malloc.h>
+#else
+#include <CoreFoundation/CFString.h>
 #endif  // __APPLE__
 
 #ifdef __APPLE__
@@ -59,89 +62,6 @@ static inline uint32_t my_rand(uint32_t* state) {
 }
 
 static uint32_t global_seed = 0;
-
-class ObjdumpOfMyself {
- public:
-  explicit ObjdumpOfMyself(const string &binary) {
-    is_correct = true;
-    string objdump_name = APPLE ? "gobjdump" : "objdump";
-    string prog = objdump_name + " -d " + binary;
-    // TODO(glider): popen() succeeds even if the file does not exist.
-    FILE *pipe = popen(prog.c_str(), "r");
-    string objdump;
-    if (pipe) {
-      const int kBuffSize = 4096;
-      char buff[kBuffSize+1];
-      int read_bytes;
-      while ((read_bytes = fread(buff, 1, kBuffSize, pipe)) > 0) {
-        buff[read_bytes] = 0;
-        objdump.append(buff);
-      }
-      pclose(pipe);
-    } else {
-      is_correct = false;
-    }
-    // cut the objdump into functions
-    string fn, next_fn;
-    size_t next_start;
-    for (size_t start = fn_start(objdump, 0, &fn);
-         start != string::npos;
-         start = next_start, fn = next_fn) {
-      next_start = fn_start(objdump, start, &next_fn);
-      // fprintf(stderr, "start: %d next_start = %d fn: %s\n",
-      //        (int)start, (int)next_start, fn.c_str());
-      // Mac OS adds the "_" prefix to function names.
-      if (fn.find(APPLE ? "_Disasm" : "Disasm") == string::npos) {
-        continue;
-      }
-      string fn_body = objdump.substr(start, next_start - start);
-      // fprintf(stderr, "%s:\n%s", fn.c_str(), fn_body.c_str());
-      functions_[fn] = fn_body;
-    }
-  }
-
-  string &GetFuncDisasm(const string &fn) {
-    return functions_[fn];
-  }
-
-  int CountInsnInFunc(const string &fn, const vector<string> &insns) {
-    // Mac OS adds the "_" prefix to function names.
-    string fn_ref = APPLE ? "_" + fn : fn;
-    const string &disasm = GetFuncDisasm(fn_ref);
-    if (disasm.empty()) return -1;
-    size_t counter = 0;
-    for (size_t i = 0; i < insns.size(); i++) {
-      size_t pos = 0;
-      while ((pos = disasm.find(insns[i], pos)) != string::npos) {
-        counter++;
-        pos++;
-      }
-    }
-    return counter;
-  }
-
-  bool IsCorrect() { return is_correct; }
-
- private:
-  size_t fn_start(const string &objdump, size_t start_pos, string *fn) {
-    size_t pos = objdump.find(">:\n", start_pos);
-    if (pos == string::npos)
-      return string::npos;
-    size_t beg = pos;
-    while (beg > 0 && objdump[beg - 1] != '<')
-      beg--;
-    *fn = objdump.substr(beg, pos - beg);
-    return pos + 3;
-  }
-
-  map<string, string> functions_;
-  bool is_correct;
-};
-
-static ObjdumpOfMyself *objdump_of_myself() {
-  static ObjdumpOfMyself *o = new ObjdumpOfMyself(progname);
-  return o;
-}
 
 const size_t kLargeMalloc = 1 << 24;
 
@@ -219,8 +139,13 @@ void uaf_test(int size, int off) {
   asan_write((T*)(p + off));
 }
 
-TEST(AddressSanitizer, ADDRESS_SANITIZER_MacroTest) {
-  EXPECT_EQ(1, ADDRESS_SANITIZER);
+TEST(AddressSanitizer, HasFeatureAddressSanitizerTest) {
+#if defined(__has_feature) && __has_feature(address_sanitizer)
+  bool asan = 1;
+#else
+  bool asan = 0;
+#endif
+  EXPECT_EQ(true, asan);
 }
 
 TEST(AddressSanitizer, SimpleDeathTest) {
@@ -249,16 +174,15 @@ TEST(AddressSanitizer, VariousMallocsTest) {
   *c = 0;
   delete c;
 
-#ifndef __APPLE__
-  // cfree
-  cfree(Ident(malloc(1)));
-
+#if !defined(__APPLE__) && !defined(ANDROID)
   // fprintf(stderr, "posix_memalign\n");
   int *pm;
   int pm_res = posix_memalign((void**)&pm, kPageSize, kPageSize);
   EXPECT_EQ(0, pm_res);
   free(pm);
+#endif
 
+#if !defined(__APPLE__)
   int *ma = (int*)memalign(kPageSize, kPageSize);
   EXPECT_EQ(0, (uintptr_t)ma % kPageSize);
   ma[123] = 0;
@@ -597,6 +521,25 @@ TEST(AddressSanitizer, ReallocTest) {
     EXPECT_EQ(3, ptr[3]);
   }
 }
+
+#ifndef __APPLE__
+static const char *kMallocUsableSizeErrorMsg =
+  "AddressSanitizer attempting to call malloc_usable_size()";
+
+TEST(AddressSanitizer, MallocUsableSizeTest) {
+  const size_t kArraySize = 100;
+  char *array = Ident((char*)malloc(kArraySize));
+  int *int_ptr = Ident(new int);
+  EXPECT_EQ(0, malloc_usable_size(NULL));
+  EXPECT_EQ(kArraySize, malloc_usable_size(array));
+  EXPECT_EQ(sizeof(int), malloc_usable_size(int_ptr));
+  EXPECT_DEATH(malloc_usable_size((void*)0x123), kMallocUsableSizeErrorMsg);
+  EXPECT_DEATH(malloc_usable_size(array + kArraySize / 2),
+               kMallocUsableSizeErrorMsg);
+  free(array);
+  EXPECT_DEATH(malloc_usable_size(array), kMallocUsableSizeErrorMsg);
+}
+#endif
 
 void WrongFree() {
   int *x = (int*)malloc(100 * sizeof(int));
@@ -1048,11 +991,16 @@ TEST(AddressSanitizer, StrLenOOBTest) {
   free(heap_string);
 }
 
+static inline char* MallocAndMemsetString(size_t size) {
+  char *s = Ident((char*)malloc(size));
+  memset(s, 'z', size);
+  return s;
+}
+
 #ifndef __APPLE__
 TEST(AddressSanitizer, StrNLenOOBTest) {
   size_t size = Ident(123);
-  char *str = Ident((char*)malloc(size));
-  memset(str, 'z', size);
+  char *str = MallocAndMemsetString(size);
   // Normal strnlen calls.
   Ident(strnlen(str - 1, 0));
   Ident(strnlen(str, size));
@@ -1071,9 +1019,8 @@ TEST(AddressSanitizer, StrNLenOOBTest) {
 
 TEST(AddressSanitizer, StrDupOOBTest) {
   size_t size = Ident(42);
-  char *str = Ident((char*)malloc(size));
+  char *str = MallocAndMemsetString(size);
   char *new_str;
-  memset(str, 'z', size);
   // Normal strdup calls.
   str[size - 1] = '\0';
   new_str = strdup(str);
@@ -1155,8 +1102,7 @@ TEST(AddressSanitizer, StrNCpyOOBTest) {
 typedef char*(*PointerToStrChr)(const char*, int);
 void RunStrChrTest(PointerToStrChr StrChr) {
   size_t size = Ident(100);
-  char *str = Ident((char*)malloc(size));
-  memset(str, 'z', size);
+  char *str = MallocAndMemsetString(size);
   str[10] = 'q';
   str[11] = '\0';
   EXPECT_EQ(str, StrChr(str, 'z'));
@@ -1179,113 +1125,226 @@ TEST(AddressSanitizer, StrCmpAndFriendsLogicTest) {
   // strcmp
   EXPECT_EQ(0, strcmp("", ""));
   EXPECT_EQ(0, strcmp("abcd", "abcd"));
-  EXPECT_EQ(-1, strcmp("ab", "ac"));
-  EXPECT_EQ(-1, strcmp("abc", "abcd"));
-  EXPECT_EQ(1, strcmp("acc", "abc"));
-  EXPECT_EQ(1, strcmp("abcd", "abc"));
+  EXPECT_GT(0, strcmp("ab", "ac"));
+  EXPECT_GT(0, strcmp("abc", "abcd"));
+  EXPECT_LT(0, strcmp("acc", "abc"));
+  EXPECT_LT(0, strcmp("abcd", "abc"));
 
   // strncmp
   EXPECT_EQ(0, strncmp("a", "b", 0));
   EXPECT_EQ(0, strncmp("abcd", "abcd", 10));
   EXPECT_EQ(0, strncmp("abcd", "abcef", 3));
-  EXPECT_EQ(-1, strncmp("abcde", "abcfa", 4));
-  EXPECT_EQ(-1, strncmp("a", "b", 5));
-  EXPECT_EQ(-1, strncmp("bc", "bcde", 4));
-  EXPECT_EQ(1, strncmp("xyz", "xyy", 10));
-  EXPECT_EQ(1, strncmp("baa", "aaa", 1));
-  EXPECT_EQ(1, strncmp("zyx", "", 2));
+  EXPECT_GT(0, strncmp("abcde", "abcfa", 4));
+  EXPECT_GT(0, strncmp("a", "b", 5));
+  EXPECT_GT(0, strncmp("bc", "bcde", 4));
+  EXPECT_LT(0, strncmp("xyz", "xyy", 10));
+  EXPECT_LT(0, strncmp("baa", "aaa", 1));
+  EXPECT_LT(0, strncmp("zyx", "", 2));
+
+  // strcasecmp
+  EXPECT_EQ(0, strcasecmp("", ""));
+  EXPECT_EQ(0, strcasecmp("zzz", "zzz"));
+  EXPECT_EQ(0, strcasecmp("abCD", "ABcd"));
+  EXPECT_GT(0, strcasecmp("aB", "Ac"));
+  EXPECT_GT(0, strcasecmp("ABC", "ABCd"));
+  EXPECT_LT(0, strcasecmp("acc", "abc"));
+  EXPECT_LT(0, strcasecmp("ABCd", "abc"));
+
+  // strncasecmp
+  EXPECT_EQ(0, strncasecmp("a", "b", 0));
+  EXPECT_EQ(0, strncasecmp("abCD", "ABcd", 10));
+  EXPECT_EQ(0, strncasecmp("abCd", "ABcef", 3));
+  EXPECT_GT(0, strncasecmp("abcde", "ABCfa", 4));
+  EXPECT_GT(0, strncasecmp("a", "B", 5));
+  EXPECT_GT(0, strncasecmp("bc", "BCde", 4));
+  EXPECT_LT(0, strncasecmp("xyz", "xyy", 10));
+  EXPECT_LT(0, strncasecmp("Baa", "aaa", 1));
+  EXPECT_LT(0, strncasecmp("zyx", "", 2));
+
+  // memcmp
+  EXPECT_EQ(0, memcmp("a", "b", 0));
+  EXPECT_EQ(0, memcmp("ab\0c", "ab\0c", 4));
+  EXPECT_GT(0, memcmp("\0ab", "\0ac", 3));
+  EXPECT_GT(0, memcmp("abb\0", "abba", 4));
+  EXPECT_LT(0, memcmp("ab\0cd", "ab\0c\0", 5));
+  EXPECT_LT(0, memcmp("zza", "zyx", 3));
 }
 
-static inline char* MallocAndMemsetString(size_t size) {
-  char *s = Ident((char*)malloc(size));
-  memset(s, 'z', size);
-  return s;
-}
-
-TEST(AddressSanitizer, StrCmpOOBTest) {
+typedef int(*PointerToStrCmp)(const char*, const char*);
+void RunStrCmpTest(PointerToStrCmp StrCmp) {
   size_t size = Ident(100);
   char *s1 = MallocAndMemsetString(size);
   char *s2 = MallocAndMemsetString(size);
   s1[size - 1] = '\0';
   s2[size - 1] = '\0';
-  // Normal strcmp calls
-  Ident(strcmp(s1, s2));
-  Ident(strcmp(s1, s2 + size - 1));
-  Ident(strcmp(s1 + size - 1, s2 + size - 1));
+  // Normal StrCmp calls
+  Ident(StrCmp(s1, s2));
+  Ident(StrCmp(s1, s2 + size - 1));
+  Ident(StrCmp(s1 + size - 1, s2 + size - 1));
   s1[size - 1] = 'z';
   s2[size - 1] = 'x';
-  Ident(strcmp(s1, s2));
+  Ident(StrCmp(s1, s2));
   // One of arguments points to not allocated memory.
-  EXPECT_DEATH(Ident(strcmp)(s1 - 1, s2), LeftOOBErrorMessage(1));
-  EXPECT_DEATH(Ident(strcmp)(s1, s2 - 1), LeftOOBErrorMessage(1));
-  EXPECT_DEATH(Ident(strcmp)(s1 + size, s2), RightOOBErrorMessage(0));
-  EXPECT_DEATH(Ident(strcmp)(s1, s2 + size), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrCmp)(s1 - 1, s2), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(StrCmp)(s1, s2 - 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(StrCmp)(s1 + size, s2), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrCmp)(s1, s2 + size), RightOOBErrorMessage(0));
   // Hit unallocated memory and die.
   s2[size - 1] = 'z';
-  EXPECT_DEATH(Ident(strcmp)(s1, s1), RightOOBErrorMessage(0));
-  EXPECT_DEATH(Ident(strcmp)(s1 + size - 1, s2), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrCmp)(s1, s1), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrCmp)(s1 + size - 1, s2), RightOOBErrorMessage(0));
+  free(s1);
+  free(s2);
+}
+
+TEST(AddressSanitizer, StrCmpOOBTest) {
+  RunStrCmpTest(&strcmp);
+}
+
+TEST(AddressSanitizer, StrCaseCmpOOBTest) {
+  RunStrCmpTest(&strcasecmp);
+}
+
+typedef int(*PointerToStrNCmp)(const char*, const char*, size_t);
+void RunStrNCmpTest(PointerToStrNCmp StrNCmp) {
+  size_t size = Ident(100);
+  char *s1 = MallocAndMemsetString(size);
+  char *s2 = MallocAndMemsetString(size);
+  s1[size - 1] = '\0';
+  s2[size - 1] = '\0';
+  // Normal StrNCmp calls
+  Ident(StrNCmp(s1, s2, size + 2));
+  s1[size - 1] = 'z';
+  s2[size - 1] = 'x';
+  Ident(StrNCmp(s1 + size - 2, s2 + size - 2, size));
+  s2[size - 1] = 'z';
+  Ident(StrNCmp(s1 - 1, s2 - 1, 0));
+  Ident(StrNCmp(s1 + size - 1, s2 + size - 1, 1));
+  // One of arguments points to not allocated memory.
+  EXPECT_DEATH(Ident(StrNCmp)(s1 - 1, s2, 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(StrNCmp)(s1, s2 - 1, 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(StrNCmp)(s1 + size, s2, 1), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrNCmp)(s1, s2 + size, 1), RightOOBErrorMessage(0));
+  // Hit unallocated memory and die.
+  EXPECT_DEATH(Ident(StrNCmp)(s1 + 1, s2 + 1, size), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(StrNCmp)(s1 + size - 1, s2, 2), RightOOBErrorMessage(0));
   free(s1);
   free(s2);
 }
 
 TEST(AddressSanitizer, StrNCmpOOBTest) {
+  RunStrNCmpTest(&strncmp);
+}
+
+TEST(AddressSanitizer, StrNCaseCmpOOBTest) {
+  RunStrNCmpTest(&strncasecmp);
+}
+
+TEST(AddressSanitizer, MemCmpOOBTest) {
   size_t size = Ident(100);
   char *s1 = MallocAndMemsetString(size);
   char *s2 = MallocAndMemsetString(size);
+  // Normal memcmp calls.
+  Ident(memcmp(s1, s2, size));
+  Ident(memcmp(s1 + size - 1, s2 + size - 1, 1));
+  Ident(memcmp(s1 - 1, s2 - 1, 0));
+  // One of arguments points to not allocated memory.
+  EXPECT_DEATH(Ident(memcmp)(s1 - 1, s2, 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(memcmp)(s1, s2 - 1, 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(Ident(memcmp)(s1 + size, s2, 1), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(memcmp)(s1, s2 + size, 1), RightOOBErrorMessage(0));
+  // Hit unallocated memory and die.
+  EXPECT_DEATH(Ident(memcmp)(s1 + 1, s2 + 1, size), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(memcmp)(s1 + size - 1, s2, 2), RightOOBErrorMessage(0));
+  // Zero bytes are not terminators and don't prevent from OOB.
   s1[size - 1] = '\0';
   s2[size - 1] = '\0';
-  // Normal strncmp calls
-  Ident(strncmp(s1, s2, size + 2));
-  s1[size - 1] = 'z';
-  s2[size - 1] = 'x';
-  Ident(strncmp(s1 + size - 2, s2 + size - 2, size));
-  s2[size - 1] = 'z';
-  Ident(strncmp(s1 - 1, s2 - 1, 0));
-  Ident(strncmp(s1 + size - 1, s2 + size - 1, 1));
-  // One of arguments points to not allocated memory.
-  EXPECT_DEATH(Ident(strncmp)(s1 - 1, s2, 1), LeftOOBErrorMessage(1));
-  EXPECT_DEATH(Ident(strncmp)(s1, s2 - 1, 1), LeftOOBErrorMessage(1));
-  EXPECT_DEATH(Ident(strncmp)(s1 + size, s2, 1), RightOOBErrorMessage(0));
-  EXPECT_DEATH(Ident(strncmp)(s1, s2 + size, 1), RightOOBErrorMessage(0));
-  // Hit unallocated memory and die.
-  EXPECT_DEATH(Ident(strncmp)(s1 + 1, s2 + 1, size), RightOOBErrorMessage(0));
-  EXPECT_DEATH(Ident(strncmp)(s1 + size - 1, s2, 2), RightOOBErrorMessage(0));
+  EXPECT_DEATH(Ident(memcmp)(s1, s2, size + 1), RightOOBErrorMessage(0));
   free(s1);
   free(s2);
 }
 
-static const char *kOverlapErrorMessage = "strcpy-param-overlap";
+TEST(AddressSanitizer, StrCatOOBTest) {
+  size_t to_size = Ident(100);
+  char *to = MallocAndMemsetString(to_size);
+  to[0] = '\0';
+  size_t from_size = Ident(20);
+  char *from = MallocAndMemsetString(from_size);
+  from[from_size - 1] = '\0';
+  // Normal strcat calls.
+  strcat(to, from);
+  strcat(to, from);
+  strcat(to + from_size, from + from_size - 2);
+  // Catenate empty string is not always an error.
+  strcat(to - 1, from + from_size - 1);
+  // One of arguments points to not allocated memory.
+  EXPECT_DEATH(strcat(to - 1, from), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(strcat(to, from - 1), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(strcat(to + to_size, from), RightOOBErrorMessage(0));
+  EXPECT_DEATH(strcat(to, from + from_size), RightOOBErrorMessage(0));
+
+  // "from" is not zero-terminated.
+  from[from_size - 1] = 'z';
+  EXPECT_DEATH(strcat(to, from), RightOOBErrorMessage(0));
+  from[from_size - 1] = '\0';
+  // "to" is not zero-terminated.
+  memset(to, 'z', to_size);
+  EXPECT_DEATH(strcat(to, from), RightOOBErrorMessage(0));
+  // "to" is too short to fit "from".
+  to[to_size - from_size + 1] = '\0';
+  EXPECT_DEATH(strcat(to, from), RightOOBErrorMessage(0));
+  // length of "to" is just enough.
+  strcat(to, from + 1);
+}
+
+static string OverlapErrorMessage(const string &func) {
+  return func + "-param-overlap";
+}
 
 TEST(AddressSanitizer, StrArgsOverlapTest) {
   size_t size = Ident(100);
   char *str = Ident((char*)malloc(size));
 
-#if 0
   // Check "memcpy". Use Ident() to avoid inlining.
   memset(str, 'z', size);
   Ident(memcpy)(str + 1, str + 11, 10);
   Ident(memcpy)(str, str, 0);
-  EXPECT_DEATH(Ident(memcpy)(str, str + 14, 15), kOverlapErrorMessage);
-  EXPECT_DEATH(Ident(memcpy)(str + 14, str, 15), kOverlapErrorMessage);
-  EXPECT_DEATH(Ident(memcpy)(str + 20, str + 20, 1), kOverlapErrorMessage);
-#endif
+  EXPECT_DEATH(Ident(memcpy)(str, str + 14, 15), OverlapErrorMessage("memcpy"));
+  EXPECT_DEATH(Ident(memcpy)(str + 14, str, 15), OverlapErrorMessage("memcpy"));
+
+  // We do not treat memcpy with to==from as a bug.
+  // See http://llvm.org/bugs/show_bug.cgi?id=11763.
+  // EXPECT_DEATH(Ident(memcpy)(str + 20, str + 20, 1),
+  //              OverlapErrorMessage("memcpy"));
 
   // Check "strcpy".
   memset(str, 'z', size);
   str[9] = '\0';
   strcpy(str + 10, str);
-  EXPECT_DEATH(strcpy(str + 9, str), kOverlapErrorMessage);
-  EXPECT_DEATH(strcpy(str, str + 4), kOverlapErrorMessage);
+  EXPECT_DEATH(strcpy(str + 9, str), OverlapErrorMessage("strcpy"));
+  EXPECT_DEATH(strcpy(str, str + 4), OverlapErrorMessage("strcpy"));
   strcpy(str, str + 5);
 
   // Check "strncpy".
   memset(str, 'z', size);
   strncpy(str, str + 10, 10);
-  EXPECT_DEATH(strncpy(str, str + 9, 10), kOverlapErrorMessage);
-  EXPECT_DEATH(strncpy(str + 9, str, 10), kOverlapErrorMessage);
+  EXPECT_DEATH(strncpy(str, str + 9, 10), OverlapErrorMessage("strncpy"));
+  EXPECT_DEATH(strncpy(str + 9, str, 10), OverlapErrorMessage("strncpy"));
   str[10] = '\0';
   strncpy(str + 11, str, 20);
-  EXPECT_DEATH(strncpy(str + 10, str, 20), kOverlapErrorMessage);
+  EXPECT_DEATH(strncpy(str + 10, str, 20), OverlapErrorMessage("strncpy"));
+
+  // Check "strcat".
+  memset(str, 'z', size);
+  str[10] = '\0';
+  str[20] = '\0';
+  strcat(str, str + 10);
+  strcat(str, str + 11);
+  str[10] = '\0';
+  strcat(str + 11, str);
+  EXPECT_DEATH(strcat(str, str + 9), OverlapErrorMessage("strcat"));
+  EXPECT_DEATH(strcat(str + 9, str), OverlapErrorMessage("strcat"));
+  EXPECT_DEATH(strcat(str + 10, str), OverlapErrorMessage("strcat"));
 
   free(str);
 }
@@ -1445,76 +1504,6 @@ TEST(AddressSanitizer, StrDupTest) {
   free(strdup(Ident("123")));
 }
 
-TEST(AddressSanitizer, ObjdumpTest) {
-  ObjdumpOfMyself *o = objdump_of_myself();
-  EXPECT_TRUE(o->IsCorrect());
-}
-
-extern "C" {
-__attribute__((noinline))
-static void DisasmSimple() {
-  Ident(0);
-}
-
-__attribute__((noinline))
-static void DisasmParamWrite(int *a) {
-  *a = 1;
-}
-
-__attribute__((noinline))
-static void DisasmParamInc(int *a) {
-  (*a)++;
-}
-
-__attribute__((noinline))
-static void DisasmParamReadIfWrite(int *a) {
-  if (*a)
-    *a = 1;
-}
-
-__attribute__((noinline))
-static int DisasmParamIfReadWrite(int *a, int cond) {
-  int res = 0;
-  if (cond)
-    res = *a;
-  *a = 0;
-  return res;
-}
-
-static int GLOBAL;
-
-__attribute__((noinline))
-static void DisasmWriteGlob() {
-  GLOBAL = 1;
-}
-}  // extern "C"
-
-TEST(AddressSanitizer, DisasmTest) {
-  int a;
-  DisasmSimple();
-  DisasmParamWrite(&a);
-  DisasmParamInc(&a);
-  Ident(DisasmWriteGlob)();
-  DisasmParamReadIfWrite(&a);
-
-  a = 7;
-  EXPECT_EQ(7, DisasmParamIfReadWrite(&a, Ident(1)));
-  EXPECT_EQ(0, a);
-
-  ObjdumpOfMyself *o = objdump_of_myself();
-  vector<string> insns;
-  insns.push_back("ud2");
-  insns.push_back("__asan_report_");
-  EXPECT_EQ(0, o->CountInsnInFunc("DisasmSimple", insns));
-  EXPECT_EQ(1, o->CountInsnInFunc("DisasmParamWrite", insns));
-  EXPECT_EQ(1, o->CountInsnInFunc("DisasmParamInc", insns));
-  EXPECT_EQ(0, o->CountInsnInFunc("DisasmWriteGlob", insns));
-
-  // TODO(kcc): implement these (needs just one __asan_report).
-  EXPECT_EQ(2, o->CountInsnInFunc("DisasmParamReadIfWrite", insns));
-  EXPECT_EQ(2, o->CountInsnInFunc("DisasmParamIfReadWrite", insns));
-}
-
 // Currently we create and poison redzone at right of global variables.
 char glob5[5];
 static char static110[110];
@@ -1666,6 +1655,17 @@ TEST(AddressSanitizer, MlockTest) {
   EXPECT_EQ(0, mlock((void*)0x12345, 0x5678));
   EXPECT_EQ(0, munlockall());
   EXPECT_EQ(0, munlock((void*)0x987, 0x654));
+}
+
+struct LargeStruct {
+  int foo[100];
+};
+
+// Test for bug http://llvm.org/bugs/show_bug.cgi?id=11763.
+// Struct copy should not cause asan warning even if lhs == rhs.
+TEST(AddressSanitizer, LargeStructCopyTest) {
+  LargeStruct a;
+  *Ident(&a) = *Ident(&a);
 }
 
 // ------------------ demo tests; run each one-by-one -------------
@@ -1896,6 +1896,14 @@ TEST(AddressSanitizerMac, DISABLED_TSDWorkqueueTest) {
   pthread_join(th, NULL);
   pthread_key_delete(test_key);
 }
+
+// Test that CFStringCreateCopy does not copy constant strings.
+TEST(AddressSanitizerMac, CFStringCreateCopy) {
+  CFStringRef str = CFSTR("Hello world!\n");
+  CFStringRef str2 = CFStringCreateCopy(0, str);
+  EXPECT_EQ(str, str2);
+}
+
 #endif  // __APPLE__
 
 int main(int argc, char **argv) {

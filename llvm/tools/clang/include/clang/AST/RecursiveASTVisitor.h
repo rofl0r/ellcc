@@ -1162,14 +1162,6 @@ DEF_TRAVERSE_DECL(ClassScopeFunctionSpecializationDecl, {
 
 DEF_TRAVERSE_DECL(LinkageSpecDecl, { })
 
-DEF_TRAVERSE_DECL(ObjCClassDecl, {
-    // FIXME: implement this
-  })
-
-DEF_TRAVERSE_DECL(ObjCForwardProtocolDecl, {
-    // FIXME: implement this
-  })
-
 DEF_TRAVERSE_DECL(ObjCPropertyImplDecl, {
     // FIXME: implement this
   })
@@ -1365,8 +1357,6 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionInstantiations(
     case TSK_Undeclared:           // Declaration of the template definition.
     case TSK_ExplicitSpecialization:
       break;
-    default:
-      llvm_unreachable("Unknown specialization kind.");
     }
   }
 

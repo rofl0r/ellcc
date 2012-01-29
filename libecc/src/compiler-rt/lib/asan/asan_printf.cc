@@ -18,15 +18,16 @@
 #include "asan_interceptors.h"
 
 #include <stdarg.h>
+#include <stdio.h>
 
 namespace __asan {
 
 void RawWrite(const char *buffer) {
   static const char *kRawWriteError = "RawWrite can't output requested buffer!";
-  ssize_t length = (ssize_t)internal_strlen(buffer);
-  if (length != asan_write(2, buffer, length)) {
-    asan_write(2, kRawWriteError, internal_strlen(kRawWriteError));
-    ASAN_DIE;
+  size_t length = (size_t)internal_strlen(buffer);
+  if (length != AsanWrite(2, buffer, length)) {
+    AsanWrite(2, kRawWriteError, internal_strlen(kRawWriteError));
+    AsanDie();
   }
 }
 
@@ -167,7 +168,7 @@ int SNPrintf(char *buffer, size_t length, const char *format, ...) {
 void Report(const char *format, ...) {
   const int kLen = 1024 * 4;
   char buffer[kLen];
-  int needed_length = SNPrintf(buffer, kLen, "==%d== ", getpid());
+  int needed_length = SNPrintf(buffer, kLen, "==%d== ", GetPid());
   RAW_CHECK_MSG(needed_length < kLen, "Buffer in Report is too short!\n");
   va_list args;
   va_start(args, format);
@@ -176,6 +177,19 @@ void Report(const char *format, ...) {
   va_end(args);
   RAW_CHECK_MSG(needed_length < kLen, "Buffer in Report is too short!\n");
   RawWrite(buffer);
+}
+
+int SScanf(const char *str, const char *format, ...) {
+#ifndef _WIN32
+  va_list args;
+  va_start(args, format);
+  int res = vsscanf(str, format, args);
+  va_end(args);
+  return res;
+#else
+  UNIMPLEMENTED();
+  return -1;
+#endif
 }
 
 }  // namespace __asan

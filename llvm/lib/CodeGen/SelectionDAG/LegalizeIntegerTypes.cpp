@@ -212,9 +212,6 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BITCAST(SDNode *N) {
   DebugLoc dl = N->getDebugLoc();
 
   switch (getTypeAction(InVT)) {
-  default:
-    assert(false && "Unknown type action!");
-    break;
   case TargetLowering::TypeLegal:
     break;
   case TargetLowering::TypePromoteInteger:
@@ -252,9 +249,11 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BITCAST(SDNode *N) {
     return DAG.getNode(ISD::BITCAST, dl, NOutVT, InOp);
   }
   case TargetLowering::TypeWidenVector:
-    if (OutVT.bitsEq(NInVT))
-      // The input is widened to the same size.  Convert to the widened value.
-      return DAG.getNode(ISD::BITCAST, dl, OutVT, GetWidenedVector(InOp));
+    // The input is widened to the same size. Convert to the widened value.
+    // Make sure that the outgoing value is not a vector, because this would
+    // make us bitcast between two vectors which are legalized in different ways.
+    if (NOutVT.bitsEq(NInVT) && !NOutVT.isVector())
+      return DAG.getNode(ISD::BITCAST, dl, NOutVT, GetWidenedVector(InOp));
   }
 
   return DAG.getNode(ISD::ANY_EXTEND, dl, NOutVT,
@@ -489,7 +488,11 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SELECT(SDNode *N) {
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_VSELECT(SDNode *N) {
-  SDValue Mask = GetPromotedInteger(N->getOperand(0));
+  SDValue Mask = N->getOperand(0);
+  EVT OpTy = N->getOperand(1).getValueType();
+
+  // Promote all the way up to the canonical SetCC type.
+  Mask = PromoteTargetBoolean(Mask, TLI.getSetCCResultType(OpTy));
   SDValue LHS = GetPromotedInteger(N->getOperand(1));
   SDValue RHS = GetPromotedInteger(N->getOperand(2));
   return DAG.getNode(ISD::VSELECT, N->getDebugLoc(),
@@ -1176,7 +1179,6 @@ std::pair <SDValue, SDValue> DAGTypeLegalizer::ExpandAtomic(SDNode *Node) {
   switch (Opc) {
   default:
     llvm_unreachable("Unhandled atomic intrinsic Expand!");
-    break;
   case ISD::ATOMIC_SWAP:
     switch (VT.SimpleTy) {
     default: llvm_unreachable("Unexpected value type for atomic!");
@@ -1498,8 +1500,6 @@ ExpandShiftWithUnknownAmountBit(SDNode *N, SDValue &Lo, SDValue &Hi) {
     Hi = DAG.getNode(ISD::SELECT, dl, NVT, isShort, HiS, HiL);
     return true;
   }
-
-  return false;
 }
 
 void DAGTypeLegalizer::ExpandIntRes_ADDSUB(SDNode *N,

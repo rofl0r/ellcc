@@ -1370,7 +1370,6 @@ void CXXNameMangler::mangleType(TemplateName TN) {
 
   case TemplateName::OverloadedTemplate:
     llvm_unreachable("can't mangle an overloaded template name as a <type>");
-    break;
 
   case TemplateName::DependentTemplate: {
     const DependentTemplateName *Dependent = TN.getAsDependentTemplateName();
@@ -1741,7 +1740,6 @@ void CXXNameMangler::mangleType(const BuiltinType *T) {
 #include "clang/AST/BuiltinTypes.def"
   case BuiltinType::Dependent:
     llvm_unreachable("mangling a placeholder type");
-    break;
   case BuiltinType::ObjCId: Out << "11objc_object"; break;
   case BuiltinType::ObjCClass: Out << "10objc_class"; break;
   case BuiltinType::ObjCSel: Out << "13objc_selector"; break;
@@ -2226,7 +2224,6 @@ recurse:
   case Expr::ParenListExprClass:
   case Expr::CXXScalarValueInitExprClass:
     llvm_unreachable("unexpected statement kind");
-    break;
 
   // FIXME: invent manglings for all these.
   case Expr::BlockExprClass:
@@ -2899,11 +2896,26 @@ void CXXNameMangler::mangleTemplateArg(const NamedDecl *P,
     Out << "Dp";
     mangleType(A.getAsTemplateOrTemplatePattern());
     break;
-  case TemplateArgument::Expression:
+  case TemplateArgument::Expression: {
+    // It's possible to end up with a DeclRefExpr here in certain
+    // dependent cases, in which case we should mangle as a
+    // declaration.
+    const Expr *E = A.getAsExpr()->IgnoreParens();
+    if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E)) {
+      const ValueDecl *D = DRE->getDecl();
+      if (isa<VarDecl>(D) || isa<FunctionDecl>(D)) {
+        Out << "L";
+        mangle(D, "_Z");
+        Out << 'E';
+        break;
+      }
+    }
+    
     Out << 'X';
-    mangleExpression(A.getAsExpr());
+    mangleExpression(E);
     Out << 'E';
     break;
+  }
   case TemplateArgument::Integral:
     mangleIntegerLiteral(A.getIntegralType(), *A.getAsIntegral());
     break;

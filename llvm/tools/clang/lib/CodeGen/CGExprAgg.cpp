@@ -337,6 +337,8 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
 
   case CK_LValueToRValue: // hope for downstream optimization
   case CK_NoOp:
+  case CK_AtomicToNonAtomic:
+  case CK_NonAtomicToAtomic:
   case CK_UserDefinedConversion:
   case CK_ConstructorConversion:
     assert(CGF.getContext().hasSameUnqualifiedType(E->getSubExpr()->getType(),
@@ -347,7 +349,6 @@ void AggExprEmitter::VisitCastExpr(CastExpr *E) {
       
   case CK_LValueBitCast:
     llvm_unreachable("should not be emitting lvalue bitcast as rvalue");
-    break;
 
   case CK_Dependent:
   case CK_BitCast:

@@ -31,7 +31,6 @@ def BuiltinRequiresHeader : DiagGroup<"builtin-requires-header">;
 def CXXCompat: DiagGroup<"c++-compat">;
 def CastAlign : DiagGroup<"cast-align">;
 def : DiagGroup<"cast-qual">;
-def CatchIncompleteExtension : DiagGroup<"catch-incomplete-type-extensions">;
 def : DiagGroup<"char-align">;
 def Comment : DiagGroup<"comment">;
 def : DiagGroup<"ctor-dtor-privacy">;
@@ -72,7 +71,12 @@ def CXX98Compat : DiagGroup<"c++98-compat",
 def CXX98CompatPedantic : DiagGroup<"c++98-compat-pedantic", [CXX98Compat]>;
 
 def CXX11Narrowing : DiagGroup<"c++11-narrowing">;
+
+// Original name of this warning in Clang
 def : DiagGroup<"c++0x-narrowing", [CXX11Narrowing]>;
+
+// Name of this warning in GCC
+def : DiagGroup<"narrowing", [CXX11Narrowing]>;
 
 def CXX11Compat : DiagGroup<"c++11-compat", [CXX11Narrowing]>;
 def : DiagGroup<"c++0x-compat", [CXX11Compat]>;
@@ -118,6 +122,7 @@ def InitializerOverrides : DiagGroup<"initializer-overrides">;
 def NonNull : DiagGroup<"nonnull">;
 def : DiagGroup<"nonportable-cfstrings">;
 def NonVirtualDtor : DiagGroup<"non-virtual-dtor">;
+def OveralignedType : DiagGroup<"over-aligned">;
 def : DiagGroup<"old-style-cast">;
 def : DiagGroup<"old-style-definition">;
 def OutOfLineDeclaration : DiagGroup<"out-of-line-declaration">;
@@ -179,7 +184,8 @@ def : DiagGroup<"strict-prototypes">;
 def StrictSelector : DiagGroup<"strict-selector-match">;
 def MethodDuplicate : DiagGroup<"duplicate-method-match">;
 def SwitchEnum     : DiagGroup<"switch-enum">;
-def Switch         : DiagGroup<"switch", [SwitchEnum]>;
+def CoveredSwitchDefault : DiagGroup<"covered-switch-default">;
+def Switch         : DiagGroup<"switch", [CoveredSwitchDefault]>;
 def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
@@ -231,6 +237,7 @@ def OverridingMethodMismatch : DiagGroup<"overriding-method-mismatch">;
 def : DiagGroup<"variadic-macros">;
 def VariadicMacros : DiagGroup<"variadic-macros">;
 def VectorConversions : DiagGroup<"vector-conversions">;      // clang specific
+def VexingParse : DiagGroup<"vexing-parse">;
 def VLA : DiagGroup<"vla">;
 def VolatileRegisterVar : DiagGroup<"volatile-register-var">;
 
@@ -343,8 +350,8 @@ def : DiagGroup<"c++0x-extensions", [CXX11]>;
 def DelegatingCtorCycles :
   DiagGroup<"delegating-ctor-cycles">;
 
-// A warning group for warnings about using C1X features as extensions.
-def C1X : DiagGroup<"c1x-extensions">;
+// A warning group for warnings about using C11 features as extensions.
+def C11 : DiagGroup<"c11-extensions">;
 
 // A warning group for warnings about using C99 features as extensions.
 def C99 : DiagGroup<"c99-extensions">;

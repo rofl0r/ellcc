@@ -479,6 +479,60 @@ llvm::DIType CGDebugInfo::CreateType(const PointerType *Ty,
                                Ty->getPointeeType(), Unit);
 }
 
+// Creates a forward declaration for a RecordDecl in the given context.
+llvm::DIType CGDebugInfo::createRecordFwdDecl(const RecordDecl *RD,
+					      llvm::DIDescriptor Ctx) {
+
+  llvm::DIFile DefUnit = getOrCreateFile(RD->getLocation());
+  unsigned Line = getLineNumber(RD->getLocation());
+  const CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
+  
+  if (CXXDecl)
+    return DBuilder.createClassType(Ctx, RD->getName(), DefUnit,
+				    Line, 0, 0, 0,
+				    llvm::DIType::FlagFwdDecl,
+				    llvm::DIType(), llvm::DIArray());
+  else if (RD->isStruct())
+    return DBuilder.createStructType(Ctx, RD->getName(), DefUnit,
+				     Line, 0, 0, llvm::DIType::FlagFwdDecl,
+				     llvm::DIArray());
+  else if (RD->isUnion())
+    return DBuilder.createUnionType(Ctx, RD->getName(), DefUnit,
+				    Line, 0, 0, llvm::DIType::FlagFwdDecl,
+				    llvm::DIArray());
+  else
+    llvm_unreachable("Unknown RecordDecl type!");
+}
+
+// Walk up the context chain and create forward decls for record decls,
+// and normal descriptors for namespaces.
+llvm::DIDescriptor CGDebugInfo::createContextChain(const Decl *Context) {
+  if (!Context)
+    return TheCU;
+
+  // See if we already have the parent.
+  llvm::DenseMap<const Decl *, llvm::WeakVH>::iterator
+    I = RegionMap.find(Context);
+  if (I != RegionMap.end())
+    return llvm::DIDescriptor(dyn_cast_or_null<llvm::MDNode>(&*I->second));
+  
+  // Check namespace.
+  if (const NamespaceDecl *NSDecl = dyn_cast<NamespaceDecl>(Context))
+    return llvm::DIDescriptor(getOrCreateNameSpace(NSDecl));
+
+  if (const RecordDecl *RD = dyn_cast<RecordDecl>(Context)) {
+    if (!RD->isDependentType()) {
+      llvm::DIDescriptor FDContext =
+        createContextChain(cast<Decl>(RD->getDeclContext()));
+      llvm::DIType Ty = createRecordFwdDecl(RD, FDContext);
+
+      RegionMap[Context] = llvm::WeakVH(Ty);
+      return llvm::DIDescriptor(Ty);
+    }
+  }
+  return TheCU;
+}
+
 /// CreatePointeeType - Create Pointee type. If Pointee is a record
 /// then emit record's fwd if debug info size reduction is enabled.
 llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
@@ -499,26 +553,9 @@ llvm::DIType CGDebugInfo::CreatePointeeType(QualType PointeeTy,
 
   if (const RecordType *RTy = dyn_cast<RecordType>(PointeeTy)) {
     RecordDecl *RD = RTy->getDecl();
-    llvm::DIFile DefUnit = getOrCreateFile(RD->getLocation());
-    unsigned Line = getLineNumber(RD->getLocation());
     llvm::DIDescriptor FDContext =
       getContextDescriptor(cast<Decl>(RD->getDeclContext()));
-
-    CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
-    if (CXXDecl)
-      return DBuilder.createClassType(FDContext, RD->getName(), DefUnit,
-                                      Line, 0, 0, 0, llvm::DIType::FlagFwdDecl,
-                                      llvm::DIType(), llvm::DIArray());
-    else if (RD->isStruct())
-      return DBuilder.createStructType(FDContext, RD->getName(), DefUnit,
-                                       Line, 0, 0, llvm::DIType::FlagFwdDecl,
-                                       llvm::DIArray());
-    else if (RD->isUnion())
-      return DBuilder.createUnionType(FDContext, RD->getName(), DefUnit,
-                                      Line, 0, 0, llvm::DIType::FlagFwdDecl,
-                                      llvm::DIArray());
-    else
-      llvm_unreachable("Unknown RecordDecl type!");
+    return createRecordFwdDecl(RD, FDContext);
   }
   return getOrCreateType(PointeeTy, Unit);
 
@@ -642,6 +679,34 @@ llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
 
   llvm::DIType DbgTy = DBuilder.createSubroutineType(Unit, EltTypeArray);
   return DbgTy;
+}
+
+
+void CGDebugInfo::
+CollectRecordStaticVars(const RecordDecl *RD, llvm::DIType FwdDecl) {
+  
+  for (RecordDecl::decl_iterator I = RD->decls_begin(), E = RD->decls_end();
+       I != E; ++I)
+    if (const VarDecl *V = dyn_cast<VarDecl>(*I)) {
+      if (V->getInit()) {
+        const APValue *Value = V->evaluateValue();
+        if (Value && Value->isInt()) {
+          llvm::ConstantInt *CI
+            = llvm::ConstantInt::get(CGM.getLLVMContext(), Value->getInt());
+          
+          // Create the descriptor for static variable.
+          llvm::DIFile VUnit = getOrCreateFile(V->getLocation());
+          StringRef VName = V->getName();
+          llvm::DIType VTy = getOrCreateType(V->getType(), VUnit);
+          // Do not use DIGlobalVariable for enums.
+          if (VTy.getTag() != llvm::dwarf::DW_TAG_enumeration_type) {
+            DBuilder.createStaticVariable(FwdDecl, VName, VName, VUnit,
+                                          getLineNumber(V->getLocation()),
+                                          VTy, true, CI);
+          }
+        }
+      }
+    }
 }
 
 llvm::DIType CGDebugInfo::createFieldType(StringRef name,
@@ -863,7 +928,7 @@ CGDebugInfo::CreateCXXMemberFunction(const CXXMethodDecl *Method,
 }
 
 /// CollectCXXMemberFunctions - A helper function to collect debug info for
-/// C++ member functions.This is used while creating debug info entry for 
+/// C++ member functions. This is used while creating debug info entry for 
 /// a Record.
 void CGDebugInfo::
 CollectCXXMemberFunctions(const CXXRecordDecl *RD, llvm::DIFile Unit,
@@ -887,7 +952,7 @@ void CGDebugInfo::
 CollectCXXFriends(const CXXRecordDecl *RD, llvm::DIFile Unit,
                 SmallVectorImpl<llvm::Value *> &EltTys,
                 llvm::DIType RecordTy) {
-  for (CXXRecordDecl::friend_iterator BI =  RD->friend_begin(),
+  for (CXXRecordDecl::friend_iterator BI = RD->friend_begin(),
          BE = RD->friend_end(); BI != BE; ++BI) {
     if ((*BI)->isUnsupportedFriend())
       continue;
@@ -1017,7 +1082,7 @@ llvm::DIType CGDebugInfo::getOrCreateVTablePtrType(llvm::DIFile Unit) {
 
 /// getVTableName - Get vtable name for the given Class.
 StringRef CGDebugInfo::getVTableName(const CXXRecordDecl *RD) {
-  // Otherwise construct gdb compatible name name.
+  // Construct gdb compatible name name.
   std::string Name = "_vptr$" + RD->getNameAsString();
 
   // Copy this name on the side and use its reference.
@@ -1061,11 +1126,11 @@ llvm::DIType CGDebugInfo::getOrCreateRecordType(QualType RTy,
 /// CreateType - get structure or union type.
 llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   RecordDecl *RD = Ty->getDecl();
-  llvm::DIFile Unit = getOrCreateFile(RD->getLocation());
 
   // Get overall information about the record type for the debug info.
   llvm::DIFile DefUnit = getOrCreateFile(RD->getLocation());
   unsigned Line = getLineNumber(RD->getLocation());
+  StringRef RDName = RD->getName();
 
   // Records and classes and unions can all be recursive.  To handle them, we
   // first generate a debug descriptor for the struct as a forward declaration.
@@ -1073,20 +1138,17 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   // its members.  Finally, we create a descriptor for the complete type (which
   // may refer to the forward decl if the struct is recursive) and replace all
   // uses of the forward declaration with the final definition.
-  llvm::DIDescriptor FDContext =
-    getContextDescriptor(cast<Decl>(RD->getDeclContext()));
+
+  llvm::DIDescriptor RDContext;
+  if (CGM.getCodeGenOpts().LimitDebugInfo)
+    RDContext = createContextChain(cast<Decl>(RD->getDeclContext()));
+  else
+    RDContext = getContextDescriptor(cast<Decl>(RD->getDeclContext()));
 
   // If this is just a forward declaration, construct an appropriately
   // marked node and just return it.
-  if (!RD->getDefinition()) {
-    llvm::DIType FwdDecl =
-      DBuilder.createStructType(FDContext, RD->getName(),
-                                DefUnit, Line, 0, 0,
-                                llvm::DIDescriptor::FlagFwdDecl,
-                                llvm::DIArray());
-
-      return FwdDecl;
-  }
+  if (!RD->getDefinition())
+    return createRecordFwdDecl(RD, RDContext);
 
   llvm::DIType FwdDecl = DBuilder.createTemporaryType(DefUnit);
 
@@ -1102,45 +1164,26 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   // Convert all the elements.
   SmallVector<llvm::Value *, 16> EltTys;
 
+  // Note: The split of CXXDecl information here is intentional, the
+  // gdb tests will depend on a certain ordering at printout. The debug
+  // information offsets are still correct if we merge them all together
+  // though.
   const CXXRecordDecl *CXXDecl = dyn_cast<CXXRecordDecl>(RD);
   if (CXXDecl) {
-    CollectCXXBases(CXXDecl, Unit, EltTys, FwdDecl);
-    CollectVTableInfo(CXXDecl, Unit, EltTys);
+    CollectCXXBases(CXXDecl, DefUnit, EltTys, FwdDecl);
+    CollectVTableInfo(CXXDecl, DefUnit, EltTys);
   }
-  
-  // Collect static variables with initializers.
-  for (RecordDecl::decl_iterator I = RD->decls_begin(), E = RD->decls_end();
-       I != E; ++I)
-    if (const VarDecl *V = dyn_cast<VarDecl>(*I)) {
-      if (const Expr *Init = V->getInit()) {
-        Expr::EvalResult Result;
-        if (Init->EvaluateAsRValue(Result, CGM.getContext()) &&
-            Result.Val.isInt()) {
-          llvm::ConstantInt *CI 
-            = llvm::ConstantInt::get(CGM.getLLVMContext(), Result.Val.getInt());
-          
-          // Create the descriptor for static variable.
-          llvm::DIFile VUnit = getOrCreateFile(V->getLocation());
-          StringRef VName = V->getName();
-          llvm::DIType VTy = getOrCreateType(V->getType(), VUnit);
-          // Do not use DIGlobalVariable for enums.
-          if (VTy.getTag() != llvm::dwarf::DW_TAG_enumeration_type) {
-            DBuilder.createStaticVariable(FwdDecl, VName, VName, VUnit,
-                                          getLineNumber(V->getLocation()),
-                                          VTy, true, CI);
-          }
-        }
-      }
-    }
 
-  CollectRecordFields(RD, Unit, EltTys, FwdDecl);
+  // Collect static variables with initializers and other fields.
+  CollectRecordStaticVars(RD, FwdDecl);
+  CollectRecordFields(RD, DefUnit, EltTys, FwdDecl);
   llvm::DIArray TParamsArray;
   if (CXXDecl) {
-    CollectCXXMemberFunctions(CXXDecl, Unit, EltTys, FwdDecl);
-    CollectCXXFriends(CXXDecl, Unit, EltTys, FwdDecl);
+    CollectCXXMemberFunctions(CXXDecl, DefUnit, EltTys, FwdDecl);
+    CollectCXXFriends(CXXDecl, DefUnit, EltTys, FwdDecl);
     if (const ClassTemplateSpecializationDecl *TSpecial
         = dyn_cast<ClassTemplateSpecializationDecl>(RD))
-      TParamsArray = CollectCXXTemplateParams(TSpecial, Unit);
+      TParamsArray = CollectCXXTemplateParams(TSpecial, DefUnit);
   }
 
   LexicalBlockStack.pop_back();
@@ -1149,9 +1192,6 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   if (RI != RegionMap.end())
     RegionMap.erase(RI);
 
-  llvm::DIDescriptor RDContext =  
-    getContextDescriptor(cast<Decl>(RD->getDeclContext()));
-  StringRef RDName = RD->getName();
   uint64_t Size = CGM.getContext().getTypeSize(Ty);
   uint64_t Align = CGM.getContext().getTypeAlign(Ty);
   llvm::DIArray Elements = DBuilder.getOrCreateArray(EltTys);
@@ -1176,7 +1216,7 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
           break;
       }
       ContainingType = 
-        getOrCreateType(QualType(PBase->getTypeForDecl(), 0), Unit);
+        getOrCreateType(QualType(PBase->getTypeForDecl(), 0), DefUnit);
     }
     else if (CXXDecl->isDynamicClass()) 
       ContainingType = FwdDecl;
@@ -1194,7 +1234,7 @@ llvm::DIType CGDebugInfo::CreateType(const RecordType *Ty) {
   // Now that we have a real decl for the struct, replace anything using the
   // old decl with the new one.  This will recursively update the debug info.
   llvm::DIType(FwdDeclNode).replaceAllUsesWith(RealDecl);
-  RegionMap[RD] = llvm::WeakVH(RealDecl);
+  RegionMap[Ty->getDecl()] = llvm::WeakVH(RealDecl);
   return llvm::DIType(RealDecl);
 }
 
@@ -1566,8 +1606,6 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
     if (T == LastT)
       return T;
   } while (true);
-  
-  return T;
 }
 
 /// getType - Get the type from the cache or return null type if it doesn't exist.
@@ -1678,7 +1716,6 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile Unit) {
   case Type::UnaryTransform:
   case Type::Auto:
     llvm_unreachable("type should have been unwrapped!");
-    return llvm::DIType();      
   }
   
   assert(Diag && "Fall through without a diagnostic?");

@@ -110,6 +110,12 @@ public:
         CorrectionDecls.front() == 0;
   }
 
+  // Check if this TypoCorrection is the given keyword.
+  template<std::size_t StrLen>
+  bool isKeyword(const char (&Str)[StrLen]) const {
+    return isKeyword() && getCorrectionAsIdentifierInfo()->isStr(Str);
+  }
+
   // Returns true if the correction either is a keyword or has a known decl.
   bool isResolved() const { return !CorrectionDecls.empty(); }
 
@@ -122,6 +128,11 @@ public:
     return isKeyword() ? CorrectionDecls.end() : CorrectionDecls.begin();
   }
   decl_iterator end() { return CorrectionDecls.end(); }
+  typedef llvm::SmallVector<NamedDecl*, 1>::const_iterator const_decl_iterator;
+  const_decl_iterator begin() const {
+    return isKeyword() ? CorrectionDecls.end() : CorrectionDecls.begin();
+  }
+  const_decl_iterator end() const { return CorrectionDecls.end(); }
 
 private:
   bool hasCorrectionDecl() const {
@@ -133,6 +144,44 @@ private:
   NestedNameSpecifier *CorrectionNameSpec;
   llvm::SmallVector<NamedDecl*, 1> CorrectionDecls;
   unsigned EditDistance;
+};
+
+/// @brief Base class for callback objects used by Sema::CorrectTypo to check
+/// the validity of a potential typo correction.
+class CorrectionCandidateCallback {
+ public:
+  CorrectionCandidateCallback()
+      : WantTypeSpecifiers(true), WantExpressionKeywords(true),
+        WantCXXNamedCasts(true), WantRemainingKeywords(true),
+        WantObjCSuper(false),
+        IsObjCIvarLookup(false) {}
+
+  virtual ~CorrectionCandidateCallback() {}
+
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    return true;
+  }
+
+  // Flags for context-dependent keywords.
+  // TODO: Expand these to apply to non-keywords or possibly remove them.
+  bool WantTypeSpecifiers;
+  bool WantExpressionKeywords;
+  bool WantCXXNamedCasts;
+  bool WantRemainingKeywords;
+  bool WantObjCSuper;
+  // Temporary hack for the one case where a CorrectTypoContext enum is used
+  // when looking up results.
+  bool IsObjCIvarLookup;
+};
+
+/// @brief Simple template class for restricting typo correction candidates
+/// to ones having a single Decl* of the given type.
+template <class C>
+class DeclFilterCCC : public CorrectionCandidateCallback {
+ public:
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    return candidate.getCorrectionDeclAs<C>();
+  }
 };
 
 }

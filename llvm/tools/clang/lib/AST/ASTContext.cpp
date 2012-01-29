@@ -193,7 +193,7 @@ CXXABI *ASTContext::createCXXABI(const TargetInfo &T) {
   case CXXABI_Microsoft:
     return CreateMicrosoftCXXABI(*this);
   }
-  return 0;
+  llvm_unreachable("Invalid CXXABI type!");
 }
 
 static const LangAS::Map *getAddressSpaceMap(const TargetInfo &T,
@@ -224,7 +224,7 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     SubstTemplateTemplateParmPacks(this_()),
     GlobalNestedNameSpecifier(0), 
     Int128Decl(0), UInt128Decl(0),
-    ObjCIdDecl(0), ObjCSelDecl(0), ObjCClassDecl(0),
+    ObjCIdDecl(0), ObjCSelDecl(0), ObjCClassDecl(0), ObjCProtocolClassDecl(0),
     CFConstantStringTypeDecl(0), ObjCInstanceTypeDecl(0),
     FILEDecl(0), 
     jmp_bufDecl(0), sigjmp_bufDecl(0), ucontext_tDecl(0),
@@ -833,7 +833,6 @@ ASTContext::getTypeInfo(const Type *T) const {
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
 #include "clang/AST/TypeNodes.def"
     llvm_unreachable("Should not see dependent types");
-    break;
 
   case Type::FunctionNoProto:
   case Type::FunctionProto:
@@ -1195,10 +1194,10 @@ void ASTContext::CollectInheritedProtocols(const Decl *CDecl,
     for (ObjCInterfaceDecl::all_protocol_iterator P = OI->all_referenced_protocol_begin(),
          PE = OI->all_referenced_protocol_end(); P != PE; ++P) {
       ObjCProtocolDecl *Proto = (*P);
-      Protocols.insert(Proto);
+      Protocols.insert(Proto->getCanonicalDecl());
       for (ObjCProtocolDecl::protocol_iterator P = Proto->protocol_begin(),
            PE = Proto->protocol_end(); P != PE; ++P) {
-        Protocols.insert(*P);
+        Protocols.insert((*P)->getCanonicalDecl());
         CollectInheritedProtocols(*P, Protocols);
       }
     }
@@ -1216,7 +1215,7 @@ void ASTContext::CollectInheritedProtocols(const Decl *CDecl,
     for (ObjCCategoryDecl::protocol_iterator P = OC->protocol_begin(),
          PE = OC->protocol_end(); P != PE; ++P) {
       ObjCProtocolDecl *Proto = (*P);
-      Protocols.insert(Proto);
+      Protocols.insert(Proto->getCanonicalDecl());
       for (ObjCProtocolDecl::protocol_iterator P = Proto->protocol_begin(),
            PE = Proto->protocol_end(); P != PE; ++P)
         CollectInheritedProtocols(*P, Protocols);
@@ -1225,7 +1224,7 @@ void ASTContext::CollectInheritedProtocols(const Decl *CDecl,
     for (ObjCProtocolDecl::protocol_iterator P = OP->protocol_begin(),
          PE = OP->protocol_end(); P != PE; ++P) {
       ObjCProtocolDecl *Proto = (*P);
-      Protocols.insert(Proto);
+      Protocols.insert(Proto->getCanonicalDecl());
       for (ObjCProtocolDecl::protocol_iterator P = Proto->protocol_begin(),
            PE = Proto->protocol_end(); P != PE; ++P)
         CollectInheritedProtocols(*P, Protocols);
@@ -2195,7 +2194,7 @@ QualType ASTContext::getInjectedClassNameType(CXXRecordDecl *Decl,
   assert(NeedsInjectedClassNameType(Decl));
   if (Decl->TypeForDecl) {
     assert(isa<InjectedClassNameType>(Decl->TypeForDecl));
-  } else if (CXXRecordDecl *PrevDecl = Decl->getPreviousDeclaration()) {
+  } else if (CXXRecordDecl *PrevDecl = Decl->getPreviousDecl()) {
     assert(PrevDecl->TypeForDecl && "previous declaration has no type");
     Decl->TypeForDecl = PrevDecl->TypeForDecl;
     assert(isa<InjectedClassNameType>(Decl->TypeForDecl));
@@ -2221,12 +2220,12 @@ QualType ASTContext::getTypeDeclTypeSlow(const TypeDecl *Decl) const {
          "Template type parameter types are always available.");
 
   if (const RecordDecl *Record = dyn_cast<RecordDecl>(Decl)) {
-    assert(!Record->getPreviousDeclaration() &&
+    assert(!Record->getPreviousDecl() &&
            "struct/union has previous declaration");
     assert(!NeedsInjectedClassNameType(Record));
     return getRecordType(Record);
   } else if (const EnumDecl *Enum = dyn_cast<EnumDecl>(Decl)) {
-    assert(!Enum->getPreviousDeclaration() &&
+    assert(!Enum->getPreviousDecl() &&
            "enum has previous declaration");
     return getEnumType(Enum);
   } else if (const UnresolvedUsingTypenameDecl *Using =
@@ -2259,7 +2258,7 @@ ASTContext::getTypedefType(const TypedefNameDecl *Decl,
 QualType ASTContext::getRecordType(const RecordDecl *Decl) const {
   if (Decl->TypeForDecl) return QualType(Decl->TypeForDecl, 0);
 
-  if (const RecordDecl *PrevDecl = Decl->getPreviousDeclaration())
+  if (const RecordDecl *PrevDecl = Decl->getPreviousDecl())
     if (PrevDecl->TypeForDecl)
       return QualType(Decl->TypeForDecl = PrevDecl->TypeForDecl, 0); 
 
@@ -2272,7 +2271,7 @@ QualType ASTContext::getRecordType(const RecordDecl *Decl) const {
 QualType ASTContext::getEnumType(const EnumDecl *Decl) const {
   if (Decl->TypeForDecl) return QualType(Decl->TypeForDecl, 0);
 
-  if (const EnumDecl *PrevDecl = Decl->getPreviousDeclaration())
+  if (const EnumDecl *PrevDecl = Decl->getPreviousDecl())
     if (PrevDecl->TypeForDecl)
       return QualType(Decl->TypeForDecl = PrevDecl->TypeForDecl, 0); 
 
@@ -2710,8 +2709,12 @@ static bool areSortedAndUniqued(ObjCProtocolDecl * const *Protocols,
                                 unsigned NumProtocols) {
   if (NumProtocols == 0) return true;
 
+  if (Protocols[0]->getCanonicalDecl() != Protocols[0])
+    return false;
+  
   for (unsigned i = 1; i != NumProtocols; ++i)
-    if (!CmpProtocolNames(Protocols[i-1], Protocols[i]))
+    if (!CmpProtocolNames(Protocols[i-1], Protocols[i]) ||
+        Protocols[i]->getCanonicalDecl() != Protocols[i])
       return false;
   return true;
 }
@@ -2723,6 +2726,10 @@ static void SortAndUniqueProtocols(ObjCProtocolDecl **Protocols,
   // Sort protocols, keyed by name.
   std::sort(Protocols, Protocols+NumProtocols, CmpProtocolNames);
 
+  // Canonicalize.
+  for (unsigned I = 0, N = NumProtocols; I != N; ++I)
+    Protocols[I] = Protocols[I]->getCanonicalDecl();
+  
   // Remove duplicates.
   ProtocolsEnd = std::unique(Protocols, ProtocolsEnd);
   NumProtocols = ProtocolsEnd-Protocols;
@@ -3399,8 +3406,7 @@ ASTContext::getCanonicalNestedNameSpecifier(NestedNameSpecifier *NNS) const {
     return NNS;
   }
 
-  // Required to silence a GCC warning
-  return 0;
+  llvm_unreachable("Invalid NestedNameSpecifier::Kind!");
 }
 
 
@@ -3561,7 +3567,7 @@ QualType ASTContext::getFloatingTypeOfSizeWithinDomain(QualType Size,
   FloatingRank EltRank = getFloatingRank(Size);
   if (Domain->isComplexType()) {
     switch (EltRank) {
-    default: llvm_unreachable("getFloatingRank(): illegal value for rank");
+    case HalfRank: llvm_unreachable("Complex half is not supported");
     case FloatRank:      return FloatComplexTy;
     case DoubleRank:     return DoubleComplexTy;
     case LongDoubleRank: return LongDoubleComplexTy;
@@ -3570,11 +3576,12 @@ QualType ASTContext::getFloatingTypeOfSizeWithinDomain(QualType Size,
 
   assert(Domain->isRealFloatingType() && "Unknown domain!");
   switch (EltRank) {
-  default: llvm_unreachable("getFloatingRank(): illegal value for rank");
+  case HalfRank: llvm_unreachable("Half ranks are not valid here");
   case FloatRank:      return FloatTy;
   case DoubleRank:     return DoubleTy;
   case LongDoubleRank: return LongDoubleTy;
   }
+  llvm_unreachable("getFloatingRank(): illegal value for rank");
 }
 
 /// getFloatingTypeOrder - Compare the rank of the two specified floating
@@ -4899,10 +4906,6 @@ TypedefDecl *ASTContext::getObjCSelDecl() const {
   return ObjCSelDecl;
 }
 
-void ASTContext::setObjCProtoType(QualType QT) {
-  ObjCProtoType = QT;
-}
-
 TypedefDecl *ASTContext::getObjCClassDecl() const {
   if (!ObjCClassDecl) {
     QualType T = getObjCObjectType(ObjCBuiltinClassTy, 0, 0);
@@ -4915,6 +4918,19 @@ TypedefDecl *ASTContext::getObjCClassDecl() const {
   }
   
   return ObjCClassDecl;
+}
+
+ObjCInterfaceDecl *ASTContext::getObjCProtocolDecl() const {
+  if (!ObjCProtocolClassDecl) {
+    ObjCProtocolClassDecl 
+      = ObjCInterfaceDecl::Create(*this, getTranslationUnitDecl(), 
+                                  SourceLocation(),
+                                  &Idents.get("Protocol"),
+                                  /*PrevDecl=*/0,
+                                  SourceLocation(), true);    
+  }
+  
+  return ObjCProtocolClassDecl;
 }
 
 void ASTContext::setObjCConstantStringInterface(ObjCInterfaceDecl *Decl) {
@@ -5178,7 +5194,7 @@ bool ASTContext::areCompatibleVectorTypes(QualType FirstVec,
 bool
 ASTContext::ProtocolCompatibleWithProtocol(ObjCProtocolDecl *lProto,
                                            ObjCProtocolDecl *rProto) const {
-  if (lProto == rProto)
+  if (declaresSameEntity(lProto, rProto))
     return true;
   for (ObjCProtocolDecl::protocol_iterator PI = rProto->protocol_begin(),
        E = rProto->protocol_end(); PI != E; ++PI)
@@ -5917,7 +5933,14 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
       if (ETy->getDecl()->getIntegerType() == LHSCan.getUnqualifiedType())
         return LHS;
     }
-
+    // allow block pointer type to match an 'id' type.
+    if (OfBlockPointer && !BlockReturnType) {
+       if (LHS->isObjCIdType() && RHS->isBlockPointerType())
+         return LHS;
+      if (RHS->isObjCIdType() && LHS->isBlockPointerType())
+        return RHS;
+    }
+    
     return QualType();
   }
 
@@ -6078,7 +6101,7 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
                                           LHS->getAs<ObjCObjectPointerType>(),
                                           RHS->getAs<ObjCObjectPointerType>(),
                                           BlockReturnType))
-      return LHS;
+        return LHS;
       return QualType();
     }
     if (canAssignObjCInterfaces(LHS->getAs<ObjCObjectPointerType>(),
@@ -6086,10 +6109,10 @@ QualType ASTContext::mergeTypes(QualType LHS, QualType RHS,
       return LHS;
 
     return QualType();
-    }
+  }
   }
 
-  return QualType();
+  llvm_unreachable("Invalid Type::Class!");
 }
 
 bool ASTContext::FunctionTypesMatchOnNSConsumedAttrs(
@@ -6452,6 +6475,9 @@ static QualType DecodeTypeFromStr(const char *&Str, const ASTContext &Context,
     case 'D':
       Type = Context.getVolatileType(Type);
       break;
+    case 'R':
+      Type = Type.withRestrict();
+      break;
     }
   }
   
@@ -6604,7 +6630,7 @@ GVALinkage ASTContext::GetGVALinkageForVariable(const VarDecl *VD) {
     }
   }
 
-  return GVA_StrongExternal;
+  llvm_unreachable("Invalid Linkage!");
 }
 
 bool ASTContext::DeclMustBeEmitted(const Decl *D) {

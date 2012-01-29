@@ -14,13 +14,35 @@
 #ifndef ASAN_INTERNAL_H
 #define ASAN_INTERNAL_H
 
-#if !defined(__linux__) && !defined(__APPLE__)
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32)
 # error "This operating system is not supported by AddressSanitizer"
 #endif
 
+#include <stdlib.h>  // for size_t, uintptr_t, etc.
+
+#if !defined(_WIN32)
 #include <stdint.h>  // for __WORDSIZE
-#include <stdlib.h>  // for size_t
-#include <unistd.h>  // for _exit
+#else
+// There's no <stdint.h> in Visual Studio 9, so we have to define [u]int*_t.
+typedef unsigned __int8  uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+typedef unsigned __int64 uint64_t;
+typedef __int8           int8_t;
+typedef __int16          int16_t;
+typedef __int32          int32_t;
+typedef __int64          int64_t;
+
+// Visual Studio does not define ssize_t.
+#ifdef _WIN64
+typedef int64_t ssize_t;
+#define __WORDSIZE 64
+#else
+typedef int32_t ssize_t;
+#define __WORDSIZE 32
+#endif
+
+#endif  // _WIN32
 
 // If __WORDSIZE was undefined by the platform, define it in terms of the
 // compiler built-in __LP64__.
@@ -32,21 +54,16 @@
 #endif
 #endif
 
-#ifdef ANDROID
-#include <sys/atomics.h>
+#if !defined(__has_feature)
+#define __has_feature(x) 0
 #endif
 
-#ifdef ADDRESS_SANITIZER
+#if defined(__has_feature) && __has_feature(address_sanitizer)
 # error "The AddressSanitizer run-time should not be"
         " instrumented by AddressSanitizer"
 #endif
 
 // Build-time configuration options.
-
-// If set, sysinfo/sysinfo.h will be used to iterate over /proc/maps.
-#ifndef ASAN_USE_SYSINFO
-# define ASAN_USE_SYSINFO 1
-#endif
 
 // If set, asan will install its own SEGV signal handler.
 #ifndef ASAN_NEEDS_SEGV
@@ -83,16 +100,49 @@ bool DescribeAddrIfGlobal(uintptr_t addr);
 // asan_malloc_linux.cc / asan_malloc_mac.cc
 void ReplaceSystemMalloc();
 
+void OutOfMemoryMessageAndDie(const char *mem_type, size_t size);
+
 // asan_linux.cc / asan_mac.cc
 void *AsanDoesNotSupportStaticLinkage();
-void *asan_mmap(void *addr, size_t length, int prot, int flags,
-                int fd, uint64_t offset);
-ssize_t asan_write(int fd, const void *buf, size_t count);
+int AsanOpenReadonly(const char* filename);
+const char *AsanGetEnv(const char *name);
+
+void *AsanMmapFixedNoReserve(uintptr_t fixed_addr, size_t size);
+void *AsanMmapFixedReserve(uintptr_t fixed_addr, size_t size);
+void *AsanMprotect(uintptr_t fixed_addr, size_t size);
+void *AsanMmapSomewhereOrDie(size_t size, const char *where);
+void AsanUnmapOrDie(void *ptr, size_t size);
+
+void AsanDisableCoreDumper();
+void GetPcSpBp(void *context, uintptr_t *pc, uintptr_t *sp, uintptr_t *bp);
+
+size_t AsanRead(int fd, void *buf, size_t count);
+size_t AsanWrite(int fd, const void *buf, size_t count);
+int AsanClose(int fd);
+
+bool AsanInterceptsSignal(int signum);
+void InstallSignalHandlers();
+int GetPid();
+uintptr_t GetThreadSelf();
+int AtomicInc(int *a);
+
+// Wrapper for TLS/TSD.
+void AsanTSDInit();
+void *AsanTSDGet();
+void AsanTSDSet(void *tsd);
+
+// Opens the file 'file_name" and reads up to 'max_len' bytes.
+// The resulting buffer is mmaped and stored in '*buff'.
+// The size of the mmaped region is stored in '*buff_size',
+// Returns the number of read bytes or 0 if file can not be opened.
+size_t ReadFileToBuffer(const char *file_name, char **buff,
+                        size_t *buff_size, size_t max_len);
 
 // asan_printf.cc
 void RawWrite(const char *buffer);
 int SNPrint(char *buffer, size_t length, const char *format, ...);
 void Printf(const char *format, ...);
+int SScanf(const char *str, const char *format, ...);
 void Report(const char *format, ...);
 
 // Don't use std::min and std::max, to minimize dependency on libstdc++.
@@ -108,7 +158,6 @@ void PoisonShadowPartialRightRedzone(uintptr_t addr,
                                      uintptr_t size,
                                      uintptr_t redzone_size,
                                      uint8_t value);
-
 
 extern size_t FLAG_quarantine_size;
 extern int    FLAG_demangle;
@@ -127,6 +176,7 @@ extern bool   FLAG_use_fake_stack;
 extern size_t FLAG_max_malloc_fill_size;
 extern int    FLAG_exitcode;
 extern bool   FLAG_allow_user_poisoning;
+extern bool   FLAG_handle_segv;
 
 extern int asan_inited;
 // Used to avoid infinite recursion in __asan_init().
@@ -134,9 +184,7 @@ extern bool asan_init_is_running;
 
 enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 
-#ifndef ASAN_DIE
-#define ASAN_DIE _exit(FLAG_exitcode)
-#endif  // ASAN_DIE
+void AsanDie();
 
 #define CHECK(cond) do { if (!(cond)) { \
   CheckFailed(#cond, __FILE__, __LINE__); \
@@ -145,7 +193,7 @@ enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 #define RAW_CHECK_MSG(expr, msg) do { \
   if (!(expr)) { \
     RawWrite(msg); \
-    ASAN_DIE; \
+    AsanDie(); \
   } \
 } while (0)
 
@@ -160,8 +208,14 @@ const size_t kWordSizeInBits = 8 * kWordSize;
 const size_t kPageSizeBits = 12;
 const size_t kPageSize = 1UL << kPageSizeBits;
 
+#ifndef _WIN32
 #define GET_CALLER_PC() (uintptr_t)__builtin_return_address(0)
 #define GET_CURRENT_FRAME() (uintptr_t)__builtin_frame_address(0)
+#else
+// TODO(timurrrr): implement.
+#define GET_CALLER_PC() (uintptr_t)0
+#define GET_CURRENT_FRAME() (uintptr_t)0
+#endif
 
 #define GET_BP_PC_SP \
   uintptr_t bp = GET_CURRENT_FRAME();              \
@@ -185,6 +239,16 @@ const int kAsanInternalHeapMagic = 0xfe;
 static const uintptr_t kCurrentStackFrameMagic = 0x41B58AB3;
 static const uintptr_t kRetiredStackFrameMagic = 0x45E0360E;
 
+// --------------------------- Bit twiddling ------- {{{1
+inline bool IsPowerOfTwo(size_t x) {
+  return (x & (x - 1)) == 0;
+}
+
+inline size_t RoundUpTo(size_t size, size_t boundary) {
+  CHECK(IsPowerOfTwo(boundary));
+  return (size + boundary - 1) & ~(boundary - 1);
+}
+
 // -------------------------- LowLevelAllocator ----- {{{1
 // A simple low-level memory allocator for internal use.
 class LowLevelAllocator {
@@ -197,23 +261,6 @@ class LowLevelAllocator {
   char *allocated_end_;
   char *allocated_current_;
 };
-
-// -------------------------- Atomic ---------------- {{{1
-static inline int AtomicInc(int *a) {
-#ifdef ANDROID
-  return __atomic_inc(a) + 1;
-#else
-  return __sync_add_and_fetch(a, 1);
-#endif
-}
-
-static inline int AtomicDec(int *a) {
-#ifdef ANDROID
-  return __atomic_dec(a) - 1;
-#else
-  return __sync_add_and_fetch(a, -1);
-#endif
-}
 
 }  // namespace __asan
 

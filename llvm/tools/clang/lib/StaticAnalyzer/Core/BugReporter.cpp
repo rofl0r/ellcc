@@ -17,6 +17,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ParentMap.h"
 #include "clang/AST/StmtObjC.h"
@@ -343,7 +344,7 @@ static const VarDecl* GetMostRecentVarDeclBinding(const ExplodedNode *N,
     if (!DR)
       continue;
 
-    SVal Y = N->getState()->getSVal(DR);
+    SVal Y = N->getState()->getSVal(DR, N->getLocationContext());
 
     if (X != Y)
       continue;
@@ -364,7 +365,7 @@ class NotableSymbolHandler
 : public StoreManager::BindingsHandler {
 
   SymbolRef Sym;
-  const ProgramState *PrevSt;
+  ProgramStateRef PrevSt;
   const Stmt *S;
   ProgramStateManager& VMgr;
   const ExplodedNode *Pred;
@@ -374,7 +375,7 @@ class NotableSymbolHandler
 public:
 
   NotableSymbolHandler(SymbolRef sym,
-                       const ProgramState *prevst,
+                       ProgramStateRef prevst,
                        const Stmt *s,
                        ProgramStateManager& vmgr,
                        const ExplodedNode *pred,
@@ -458,7 +459,7 @@ static void HandleNotableSymbol(const ExplodedNode *N,
                                 PathDiagnostic& PD) {
 
   const ExplodedNode *Pred = N->pred_empty() ? 0 : *N->pred_begin();
-  const ProgramState *PrevSt = Pred ? Pred->getState() : 0;
+  ProgramStateRef PrevSt = Pred ? Pred->getState() : 0;
 
   if (!PrevSt)
     return;

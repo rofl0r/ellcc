@@ -101,6 +101,15 @@ def analyzer_checker_help : Flag<"-analyzer-checker-help">,
   HelpText<"Display the list of analyzer checkers that are available">;
 
 //===----------------------------------------------------------------------===//
+// Migrator Options
+//===----------------------------------------------------------------------===//
+def migrator_no_nsalloc_error : Flag<"-no-ns-alloc-error">,
+  HelpText<"Do not error on use of NSAllocateCollectable/NSReallocateCollectable">;
+
+def migrator_no_finalize_removal : Flag<"-no-finalize-removal">,
+  HelpText<"Do not remove finalize method in gc mode">;
+
+//===----------------------------------------------------------------------===//
 // CodeGen Options
 //===----------------------------------------------------------------------===//
 
@@ -166,10 +175,15 @@ def mdebug_pass : Separate<"-mdebug-pass">,
   HelpText<"Enable additional debug output">;
 def mdisable_fp_elim : Flag<"-mdisable-fp-elim">,
   HelpText<"Disable frame pointer elimination optimization">;
+def mdisable_tail_calls : Flag<"-mdisable-tail-calls">,
+  HelpText<"Disable tail call optimization, keeping the call stack accurate">;
 def menable_no_infinities : Flag<"-menable-no-infs">,
   HelpText<"Allow optimization to assume there are no infinities.">;
 def menable_no_nans : Flag<"-menable-no-nans">,
   HelpText<"Allow optimization to assume there are no NaNs.">;
+def menable_unsafe_fp_math : Flag<"-menable-unsafe-fp-math">,
+  HelpText<"Allow unsafe floating-point math optimizations which may decrease "
+           "precision">;
 def mfloat_abi : Separate<"-mfloat-abi">,
   HelpText<"The float ABI to use">;
 def mno_global_merge : Flag<"-mno-global-merge">,
@@ -437,14 +451,25 @@ def ftime_report : Flag<"-ftime-report">,
   HelpText<"Print the amount of time each phase of compilation takes">;
 def fdump_record_layouts : Flag<"-fdump-record-layouts">,
   HelpText<"Dump record layout information">;
+def fdump_record_layouts_simple : Flag<"-fdump-record-layouts-simple">,
+  HelpText<"Dump record layout information in a simple form used for testing">;
 def fix_what_you_can : Flag<"-fix-what-you-can">,
   HelpText<"Apply fix-it advice even in the presence of unfixable errors">;
+def fix_only_warnings : Flag<"-fix-only-warnings">,
+  HelpText<"Apply fix-it advice only for warnings, not errors">;
+def fixit_recompile : Flag<"-fixit-recompile">,
+  HelpText<"Apply fix-it changes and recompile">;
+def fixit_to_temp : Flag<"-fixit-to-temporary">,
+  HelpText<"Apply fix-it changes to temporary files">;
 
 // Generic forwarding to LLVM options. This should only be used for debugging
 // and experimental features.
 def mllvm : Separate<"-mllvm">,
   HelpText<"Additional arguments to forward to LLVM's option processing">;
 
+def foverride_record_layout_EQ : Joined<"-foverride-record-layout=">,
+  HelpText<"Override record layouts with those in the given file">;
+  
 //===----------------------------------------------------------------------===//
 // Language Options
 //===----------------------------------------------------------------------===//
@@ -482,6 +507,10 @@ def fcxx_exceptions : Flag<"-fcxx-exceptions">,
   HelpText<"Enable C++ exceptions">;
 def fsjlj_exceptions : Flag<"-fsjlj-exceptions">,
   HelpText<"Use SjLj style exceptions">;
+def ffast_math : Flag<"-ffast-math">,
+  HelpText<"Enable the *frontend*'s 'fast-math' mode. This has no effect on "
+           "optimizations, but provides a preprocessor macro __FAST_MATH__ the "
+           "same as GCC's -ffast-math flag.">;
 def ffreestanding : Flag<"-ffreestanding">,
   HelpText<"Assert that the compilation takes place in a freestanding environment">;
 def fgnu_runtime : Flag<"-fgnu-runtime">,
@@ -643,9 +672,8 @@ def fmodule_name : Joined<"-fmodule-name=">,
   HelpText<"Specify the name of the module to build">;           
 def fdisable_module_hash : Flag<"-fdisable-module-hash">,
   HelpText<"Disable the module hash">;
-def fauto_module_import : Flag<"-fauto-module-import">,
-  HelpText<"Automatically translate #include/#import into module imports "
-           "when possible">;
+def fmodules : Flag<"-fmodules">,
+  HelpText<"Enable the 'modules' language feature">;
            
 def F : JoinedOrSeparate<"-F">, MetaVarName<"<directory>">,
   HelpText<"Add directory to framework include search path">;

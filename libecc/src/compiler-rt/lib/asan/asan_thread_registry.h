@@ -30,16 +30,13 @@ class AsanThreadRegistry {
  public:
   explicit AsanThreadRegistry(LinkerInitialized);
   void Init();
-  void RegisterThread(AsanThread *thread, int parent_tid,
-                      AsanStackTrace *stack);
+  void RegisterThread(AsanThread *thread);
   void UnregisterThread(AsanThread *thread);
 
   AsanThread *GetMain();
   // Get the current thread. May return NULL.
   AsanThread *GetCurrent();
   void SetCurrent(AsanThread *t);
-  pthread_key_t GetTlsKey();
-  bool IsCurrentThreadDying();
 
   int GetCurrentTidOrMinusOne() {
     AsanThread *t = GetCurrent();
@@ -72,12 +69,6 @@ class AsanThreadRegistry {
   AsanStats accumulated_stats_;
   int n_threads_;
   AsanLock mu_;
-  // For each thread tls_key_ stores the pointer to the corresponding
-  // AsanThread.
-  pthread_key_t tls_key_;
-  // This flag is updated only once at program startup, and then read
-  // by concurrent threads.
-  bool tls_key_created_;
 };
 
 // Returns a single instance of registry.

@@ -27,6 +27,13 @@
 #include "llvm/OperandTraits.h"
 using namespace llvm;
 
+void BitcodeReader::materializeForwardReferencedFunctions() {
+  while (!BlockAddrFwdRefs.empty()) {
+    Function *F = BlockAddrFwdRefs.begin()->first;
+    F->Materialize();
+  }
+}
+
 void BitcodeReader::FreeState() {
   if (BufferOwned)
     delete Buffer;
@@ -454,8 +461,8 @@ bool BitcodeReader::ParseAttributeBlock() {
       // If Function attributes are using index 0 then transfer them
       // to index ~0. Index 0 is used for return value attributes but used to be
       // used for function attributes.
-      Attributes RetAttribute = Attribute::None;
-      Attributes FnAttribute = Attribute::None;
+      Attributes RetAttribute;
+      Attributes FnAttribute;
       for (unsigned i = 0, e = Record.size(); i != e; i += 2) {
         // FIXME: remove in LLVM 3.0
         // The alignment is stored as a 16-bit raw value from bits 31--16.
@@ -465,23 +472,24 @@ bool BitcodeReader::ParseAttributeBlock() {
         if (Alignment && !isPowerOf2_32(Alignment))
           return Error("Alignment is not a power of two.");
 
-        Attributes ReconstitutedAttr = Record[i+1] & 0xffff;
+        Attributes ReconstitutedAttr(Record[i+1] & 0xffff);
         if (Alignment)
           ReconstitutedAttr |= Attribute::constructAlignmentFromInt(Alignment);
-        ReconstitutedAttr |= (Record[i+1] & (0xffffull << 32)) >> 11;
-        Record[i+1] = ReconstitutedAttr;
+        ReconstitutedAttr |=
+            Attributes((Record[i+1] & (0xffffull << 32)) >> 11);
 
+        Record[i+1] = ReconstitutedAttr.Raw();
         if (Record[i] == 0)
-          RetAttribute = Record[i+1];
+          RetAttribute = ReconstitutedAttr;
         else if (Record[i] == ~0U)
-          FnAttribute = Record[i+1];
+          FnAttribute = ReconstitutedAttr;
       }
 
-      unsigned OldRetAttrs = (Attribute::NoUnwind|Attribute::NoReturn|
+      Attributes OldRetAttrs = (Attribute::NoUnwind|Attribute::NoReturn|
                               Attribute::ReadOnly|Attribute::ReadNone);
 
       if (FnAttribute == Attribute::None && RetAttribute != Attribute::None &&
-          (RetAttribute & OldRetAttrs) != 0) {
+          (RetAttribute & OldRetAttrs)) {
         if (FnAttribute == Attribute::None) { // add a slot so they get added.
           Record.push_back(~0U);
           Record.push_back(0);
@@ -498,8 +506,9 @@ bool BitcodeReader::ParseAttributeBlock() {
         } else if (Record[i] == ~0U) {
           if (FnAttribute != Attribute::None)
             Attrs.push_back(AttributeWithIndex::get(~0U, FnAttribute));
-        } else if (Record[i+1] != Attribute::None)
-          Attrs.push_back(AttributeWithIndex::get(Record[i], Record[i+1]));
+        } else if (Attributes(Record[i+1]) != Attribute::None)
+          Attrs.push_back(AttributeWithIndex::get(Record[i],
+                                                  Attributes(Record[i+1])));
       }
 
       MAttributes.push_back(AttrListPtr::get(Attrs.begin(), Attrs.end()));
@@ -615,7 +624,7 @@ bool BitcodeReader::ParseTypeTableBody() {
       // FUNCTION: [vararg, attrid, retty, paramty x N]
       if (Record.size() < 3)
         return Error("Invalid FUNCTION type record");
-      std::vector<Type*> ArgTys;
+      SmallVector<Type*, 8> ArgTys;
       for (unsigned i = 3, e = Record.size(); i != e; ++i) {
         if (Type *T = getTypeByID(Record[i]))
           ArgTys.push_back(T);
@@ -634,7 +643,7 @@ bool BitcodeReader::ParseTypeTableBody() {
       // FUNCTION: [vararg, retty, paramty x N]
       if (Record.size() < 2)
         return Error("Invalid FUNCTION type record");
-      std::vector<Type*> ArgTys;
+      SmallVector<Type*, 8> ArgTys;
       for (unsigned i = 2, e = Record.size(); i != e; ++i) {
         if (Type *T = getTypeByID(Record[i]))
           ArgTys.push_back(T);
@@ -652,7 +661,7 @@ bool BitcodeReader::ParseTypeTableBody() {
     case bitc::TYPE_CODE_STRUCT_ANON: {  // STRUCT: [ispacked, eltty x N]
       if (Record.size() < 1)
         return Error("Invalid STRUCT type record");
-      std::vector<Type*> EltTys;
+      SmallVector<Type*, 8> EltTys;
       for (unsigned i = 1, e = Record.size(); i != e; ++i) {
         if (Type *T = getTypeByID(Record[i]))
           EltTys.push_back(T);
@@ -1061,7 +1070,7 @@ bool BitcodeReader::ParseConstants() {
         return Error("Invalid CST_AGGREGATE record");
 
       unsigned Size = Record.size();
-      std::vector<Constant*> Elts;
+      SmallVector<Constant*, 16> Elts;
 
       if (StructType *STy = dyn_cast<StructType>(CurTy)) {
         for (unsigned i = 0; i != Size; ++i)
@@ -1091,7 +1100,7 @@ bool BitcodeReader::ParseConstants() {
       Type *EltTy = ATy->getElementType();
 
       unsigned Size = Record.size();
-      std::vector<Constant*> Elts;
+      SmallVector<Constant*, 16> Elts;
       for (unsigned i = 0; i != Size; ++i)
         Elts.push_back(ConstantInt::get(EltTy, Record[i]));
       V = ConstantArray::get(ATy, Elts);
@@ -1105,7 +1114,7 @@ bool BitcodeReader::ParseConstants() {
       Type *EltTy = ATy->getElementType();
 
       unsigned Size = Record.size();
-      std::vector<Constant*> Elts;
+      SmallVector<Constant*, 16> Elts;
       for (unsigned i = 0; i != Size; ++i)
         Elts.push_back(ConstantInt::get(EltTy, Record[i]));
       Elts.push_back(Constant::getNullValue(EltTy));
@@ -2779,6 +2788,9 @@ Module *llvm::getLazyBitcodeModule(MemoryBuffer *Buffer,
   }
   // Have the BitcodeReader dtor delete 'Buffer'.
   R->setBufferOwned(true);
+
+  R->materializeForwardReferencedFunctions();
+
   return M;
 }
 

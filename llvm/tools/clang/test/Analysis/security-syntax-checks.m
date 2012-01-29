@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=experimental.security.SecuritySyntactic %s -verify
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DUSE_BUILTINS -analyzer-checker=experimental.security.SecuritySyntactic %s -verify
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DVARIANT -analyzer-checker=experimental.security.SecuritySyntactic %s -verify
-// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DUSE_BUILTINS -DVARIANT -analyzer-checker=experimental.security.SecuritySyntactic %s -verify
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -analyzer-checker=security.insecureAPI,security.FloatLoopCounter %s -verify
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DUSE_BUILTINS -analyzer-checker=security.insecureAPI,security.FloatLoopCounter %s -verify
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DVARIANT -analyzer-checker=security.insecureAPI,security.FloatLoopCounter %s -verify
+// RUN: %clang_cc1 -triple i386-apple-darwin10 -analyze -DUSE_BUILTINS -DVARIANT -analyzer-checker=security.insecureAPI,security.FloatLoopCounter %s -verify
 
 #ifdef USE_BUILTINS
 # define BUILTIN(f) __builtin_ ## f
@@ -175,3 +175,25 @@ pid_t vfork(void);
 void test_vfork() {
   vfork(); //expected-warning{{Call to function 'vfork' is insecure as it can lead to denial of service situations in the parent process.}}
 }
+
+//===----------------------------------------------------------------------===
+// mkstemp()
+//===----------------------------------------------------------------------===
+
+char *mkdtemp(char *template);
+int mkstemps(char *template, int suffixlen);
+int mkstemp(char *template);
+char *mktemp(char *template);
+
+void test_mkstemp() {
+  mkstemp("XX"); // expected-warning {{Call to 'mkstemp' should have at least 6 'X's in the format string to be secure (2 'X's seen)}}
+  mkstemp("XXXXXX");
+  mkstemp("XXXXXXX");
+  mkstemps("XXXXXX", 0);
+  mkstemps("XXXXXX", 1); // expected-warning {{5 'X's seen}}
+  mkstemps("XXXXXX", 2); // expected-warning {{Call to 'mkstemps' should have at least 6 'X's in the format string to be secure (4 'X's seen, 2 characters used as a suffix)}}
+  mkdtemp("XX"); // expected-warning {{2 'X's seen}}
+  mkstemp("X"); // expected-warning {{Call to 'mkstemp' should have at least 6 'X's in the format string to be secure (1 'X' seen)}}
+  mkdtemp("XXXXXX");
+}
+

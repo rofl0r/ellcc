@@ -495,8 +495,10 @@ Value *InstCombiner::dyn_castNegVal(Value *V) const {
   if (ConstantInt *C = dyn_cast<ConstantInt>(V))
     return ConstantExpr::getNeg(C);
 
-  if (ConstantVector *C = dyn_cast<ConstantVector>(V))
-    if (C->getType()->getElementType()->isIntegerTy())
+  if (Constant *C = dyn_cast<Constant>(V))
+    // FIXME: Remove ConstantVector
+    if ((isa<ConstantVector>(C) || isa<ConstantDataVector>(C)) &&
+        C->getType()->getVectorElementType()->isIntegerTy())
       return ConstantExpr::getNeg(C);
 
   return 0;
@@ -514,8 +516,10 @@ Value *InstCombiner::dyn_castFNegVal(Value *V) const {
   if (ConstantFP *C = dyn_cast<ConstantFP>(V))
     return ConstantExpr::getFNeg(C);
 
-  if (ConstantVector *C = dyn_cast<ConstantVector>(V))
-    if (C->getType()->getElementType()->isFloatingPointTy())
+  if (Constant *C = dyn_cast<Constant>(V))
+    // FIXME: Remove ConstantVector
+    if ((isa<ConstantVector>(C) || isa<ConstantDataVector>(C)) &&
+        C->getType()->getVectorElementType()->isFloatingPointTy())
       return ConstantExpr::getFNeg(C);
 
   return 0;
@@ -1270,24 +1274,16 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
     return ReplaceInstUsesWith(EV, Agg);
 
   if (Constant *C = dyn_cast<Constant>(Agg)) {
-    if (isa<UndefValue>(C))
-      return ReplaceInstUsesWith(EV, UndefValue::get(EV.getType()));
-      
-    if (isa<ConstantAggregateZero>(C))
-      return ReplaceInstUsesWith(EV, Constant::getNullValue(EV.getType()));
-
-    if (isa<ConstantArray>(C) || isa<ConstantStruct>(C)) {
-      // Extract the element indexed by the first index out of the constant
-      Value *V = C->getOperand(*EV.idx_begin());
-      if (EV.getNumIndices() > 1)
-        // Extract the remaining indices out of the constant indexed by the
-        // first index
-        return ExtractValueInst::Create(V, EV.getIndices().slice(1));
-      else
-        return ReplaceInstUsesWith(EV, V);
+    if (Constant *C2 = C->getAggregateElement(*EV.idx_begin())) {
+      if (EV.getNumIndices() == 0)
+        return ReplaceInstUsesWith(EV, C2);
+      // Extract the remaining indices out of the constant indexed by the
+      // first index
+      return ExtractValueInst::Create(C2, EV.getIndices().slice(1));
     }
     return 0; // Can't handle other constants
-  } 
+  }
+  
   if (InsertValueInst *IV = dyn_cast<InsertValueInst>(Agg)) {
     // We're extracting from an insertvalue instruction, compare the indices
     const unsigned *exti, *exte, *insi, *inse;

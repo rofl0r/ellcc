@@ -335,6 +335,9 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       MCOp = LowerSymbolOperand(MO,
                      AsmPrinter.GetBlockAddressSymbol(MO.getBlockAddress()));
       break;
+    case MachineOperand::MO_RegisterMask:
+      // Ignore call clobbers.
+      continue;
     }
     
     OutMI.addOperand(MCOp);
@@ -373,6 +376,7 @@ ReSimplify:
   case X86::AVX_SET0PDY:   LowerUnaryToTwoAddr(OutMI, X86::VXORPDYrr); break;
   case X86::AVX_SETALLONES:  LowerUnaryToTwoAddr(OutMI, X86::VPCMPEQDrr); break;
   case X86::AVX2_SETALLONES: LowerUnaryToTwoAddr(OutMI, X86::VPCMPEQDYrr);break;
+  case X86::AVX2_SET0:     LowerUnaryToTwoAddr(OutMI, X86::VPXORYrr); break;
 
   case X86::MOV16r0:
     LowerSubReg32_Op0(OutMI, X86::MOV32r0);   // MOV16r0 -> MOV32r0

@@ -61,6 +61,8 @@ private:
   bool needsSet(const MCExpr *Value);
 
   void EmitRegisterName(int64_t Register);
+  virtual void EmitCFIStartProcImpl(MCDwarfFrameInfo &Frame);
+  virtual void EmitCFIEndProcImpl(MCDwarfFrameInfo &Frame);
 
 public:
   MCAsmStreamer(MCContext &Context, formatted_raw_ostream &os,
@@ -197,7 +199,7 @@ public:
   virtual void EmitCodeAlignment(unsigned ByteAlignment,
                                  unsigned MaxBytesToEmit = 0);
 
-  virtual void EmitValueToOffset(const MCExpr *Offset,
+  virtual bool EmitValueToOffset(const MCExpr *Offset,
                                  unsigned char Value = 0);
 
   virtual void EmitFileDirective(StringRef Filename);
@@ -209,8 +211,6 @@ public:
                                      StringRef FileName);
 
   virtual void EmitCFISections(bool EH, bool Debug);
-  virtual void EmitCFIStartProc();
-  virtual void EmitCFIEndProc();
   virtual void EmitCFIDefCfa(int64_t Register, int64_t Offset);
   virtual void EmitCFIDefCfaOffset(int64_t Offset);
   virtual void EmitCFIDefCfaRegister(int64_t Register);
@@ -222,6 +222,7 @@ public:
   virtual void EmitCFISameValue(int64_t Register);
   virtual void EmitCFIRelOffset(int64_t Register, int64_t Offset);
   virtual void EmitCFIAdjustCfaOffset(int64_t Adjustment);
+  virtual void EmitCFISignalFrame();
 
   virtual void EmitWin64EHStartProc(const MCSymbol *Symbol);
   virtual void EmitWin64EHEndProc();
@@ -255,7 +256,7 @@ public:
   /// indicated by the hasRawTextSupport() predicate.
   virtual void EmitRawText(StringRef String);
 
-  virtual void Finish();
+  virtual void FinishImpl();
 
   /// @}
 };
@@ -340,7 +341,6 @@ void MCAsmStreamer::EmitLabel(MCSymbol *Symbol) {
 
 void MCAsmStreamer::EmitAssemblerFlag(MCAssemblerFlag Flag) {
   switch (Flag) {
-  default: assert(0 && "Invalid flag!");
   case MCAF_SyntaxUnified:         OS << "\t.syntax unified"; break;
   case MCAF_SubsectionsViaSymbols: OS << ".subsections_via_symbols"; break;
   case MCAF_Code16:                OS << '\t'<< MAI.getCode16Directive(); break;
@@ -744,11 +744,12 @@ void MCAsmStreamer::EmitCodeAlignment(unsigned ByteAlignment,
                        1, MaxBytesToEmit);
 }
 
-void MCAsmStreamer::EmitValueToOffset(const MCExpr *Offset,
+bool MCAsmStreamer::EmitValueToOffset(const MCExpr *Offset,
                                       unsigned char Value) {
   // FIXME: Verify that Offset is associated with the current section.
   OS << ".org " << *Offset << ", " << (unsigned) Value;
   EmitEOL();
+  return false;
 }
 
 
@@ -841,21 +842,25 @@ void MCAsmStreamer::EmitCFISections(bool EH, bool Debug) {
   EmitEOL();
 }
 
-void MCAsmStreamer::EmitCFIStartProc() {
-  MCStreamer::EmitCFIStartProc();
-
-  if (!UseCFI)
+void MCAsmStreamer::EmitCFIStartProcImpl(MCDwarfFrameInfo &Frame) {
+  if (!UseCFI) {
+    RecordProcStart(Frame);
     return;
+  }
 
   OS << "\t.cfi_startproc";
   EmitEOL();
 }
 
-void MCAsmStreamer::EmitCFIEndProc() {
-  MCStreamer::EmitCFIEndProc();
-
-  if (!UseCFI)
+void MCAsmStreamer::EmitCFIEndProcImpl(MCDwarfFrameInfo &Frame) {
+  if (!UseCFI) {
+    RecordProcEnd(Frame);
     return;
+  }
+
+  // Put a dummy non-null value in Frame.End to mark that this frame has been
+  // closed.
+  Frame.End = (MCSymbol *) 1;
 
   OS << "\t.cfi_endproc";
   EmitEOL();
@@ -987,6 +992,16 @@ void MCAsmStreamer::EmitCFIAdjustCfaOffset(int64_t Adjustment) {
     return;
 
   OS << "\t.cfi_adjust_cfa_offset " << Adjustment;
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitCFISignalFrame() {
+  MCStreamer::EmitCFISignalFrame();
+
+  if (!UseCFI)
+    return;
+
+  OS << "\t.cif_signal_frame";
   EmitEOL();
 }
 
@@ -1285,7 +1300,7 @@ void MCAsmStreamer::EmitRawText(StringRef String) {
   EmitEOL();
 }
 
-void MCAsmStreamer::Finish() {
+void MCAsmStreamer::FinishImpl() {
   // Dump out the dwarf file & directory tables and line tables.
   if (getContext().hasDwarfFiles() && !UseLoc)
     MCDwarfFileTable::Emit(this);

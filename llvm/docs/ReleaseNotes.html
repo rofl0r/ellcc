@@ -351,6 +351,14 @@ Release Notes</a>.</h1>
   represent combinations of constraints from instructions and sub-registers.
   The synthetic register classes inherit most of their properties form their
   closest user-defined super-class.</li>
+  <li><code>MachineRegisterInfo</code> now allows the reserved registers to be
+  frozen when register allocation starts.  Target hooks should use the
+  <code>MRI->canReserveReg(FramePtr)</code> method to avoid accidentally
+  disabling frame pointer elimination during register allocation.</li>
+  <li>A new kind of <code>MachineOperand</code> provides a compact
+  representation of large clobber lists on call instructions.  The register
+  mask operand references a bit mask of preserved registers. Everything else is
+  clobbered.</li>
 </ul>
 </div>
 
@@ -521,7 +529,7 @@ Release Notes</a>.</h1>
   src="http://www.w3.org/Icons/valid-html401-blue" alt="Valid HTML 4.01"></a>
 
   <a href="http://llvm.org/">LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-12-20 02:02:50 -0600 (Tue, 20 Dec 2011) $
+  Last modified: $Date: 2012-01-16 13:22:00 -0600 (Mon, 16 Jan 2012) $
 </address>
 
 </body>

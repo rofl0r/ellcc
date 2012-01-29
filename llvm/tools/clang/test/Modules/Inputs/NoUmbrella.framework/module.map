@@ -1,4 +1,9 @@
-framework module NoUmbrella {
+framework module NoUmbrella [system] {
   umbrella "Headers"
   module * { }
+
+  module unavailable {
+    requires unavailable
+    header "Boom.h"
+  }
 }

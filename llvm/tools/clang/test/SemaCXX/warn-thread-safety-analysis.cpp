@@ -1605,3 +1605,299 @@ struct TestScopedLockable {
 } // end namespace test_scoped_lockable
 
 
+namespace FunctionAttrTest {
+
+class Foo {
+public:
+  Mutex mu_;
+  int a GUARDED_BY(mu_);
+};
+
+Foo fooObj;
+
+void foo() EXCLUSIVE_LOCKS_REQUIRED(fooObj.mu_);
+
+void bar() {
+  foo();  // expected-warning {{calling function 'foo' requires exclusive lock on 'mu_'}}
+  fooObj.mu_.Lock();
+  foo();
+  fooObj.mu_.Unlock();
+}
+
+};  // end namespace FunctionAttrTest
+
+
+struct TestTryLock {
+  Mutex mu;
+  int a GUARDED_BY(mu);
+  bool cond;
+
+  void foo1() {
+    if (mu.TryLock()) {
+      a = 1;
+      mu.Unlock();
+    }
+  }
+
+  void foo2() {
+    if (!mu.TryLock()) return;
+    a = 2;
+    mu.Unlock();
+  }
+
+  void foo3() {
+    bool b = mu.TryLock();
+    if (b) {
+      a = 3;
+      mu.Unlock();
+    }
+  }
+
+  void foo4() {
+    bool b = mu.TryLock();
+    if (!b) return;
+    a = 4;
+    mu.Unlock();
+  }
+
+  void foo5() {
+    while (mu.TryLock()) {
+      a = a + 1;
+      mu.Unlock();
+    }
+  }
+
+  void foo6() {
+    bool b = mu.TryLock();
+    b = !b;
+    if (b) return;
+    a = 6;
+    mu.Unlock();
+  }
+
+  void foo7() {
+    bool b1 = mu.TryLock();
+    bool b2 = !b1;
+    bool b3 = !b2;
+    if (b3) {
+      a = 7;
+      mu.Unlock();
+    }
+  }
+
+  // Test use-def chains: join points
+  void foo8() {
+    bool b  = mu.TryLock();
+    bool b2 = b;
+    if (cond)
+      b = true;
+    if (b) {    // b should be unknown at this point, becuase of the join point
+      a = 8;    // expected-warning {{writing variable 'a' requires locking 'mu' exclusively}}
+    }
+    if (b2) {   // b2 should be known at this point.
+      a = 8;
+      mu.Unlock();
+    }
+  }
+
+  // Test use-def-chains: back edges
+  void foo9() {
+    bool b = mu.TryLock();
+
+    for (int i = 0; i < 10; ++i);
+
+    if (b) {  // b is still known, because the loop doesn't alter it
+      a = 9;
+      mu.Unlock();
+    }
+  }
+
+  // Test use-def chains: back edges
+  void foo10() {
+    bool b = mu.TryLock();
+
+    while (cond) {
+      if (b) {   // b should be uknown at this point b/c of the loop
+        a = 10;  // expected-warning {{writing variable 'a' requires locking 'mu' exclusively}}
+      }
+      b = !b;
+    }
+  }
+};  // end TestTrylock
+
+
+namespace TestTemplateAttributeInstantiation {
+
+class Foo1 {
+public:
+  Mutex mu_;
+  int a GUARDED_BY(mu_);
+};
+
+class Foo2 {
+public:
+  int a GUARDED_BY(mu_);
+  Mutex mu_;
+};
+
+
+class Bar {
+public:
+  // Test non-dependent expressions in attributes on template functions
+  template <class T>
+  void barND(Foo1 *foo, T *fooT) EXCLUSIVE_LOCKS_REQUIRED(foo->mu_) {
+    foo->a = 0;
+  }
+
+  // Test dependent expressions in attributes on template functions
+  template <class T>
+  void barD(Foo1 *foo, T *fooT) EXCLUSIVE_LOCKS_REQUIRED(fooT->mu_) {
+    fooT->a = 0;
+  }
+};
+
+
+template <class T>
+class BarT {
+public:
+  Foo1 fooBase;
+  T    fooBaseT;
+
+  // Test non-dependent expression in ordinary method on template class
+  void barND() EXCLUSIVE_LOCKS_REQUIRED(fooBase.mu_) {
+    fooBase.a = 0;
+  }
+
+  // Test dependent expressions in ordinary methods on template class
+  void barD() EXCLUSIVE_LOCKS_REQUIRED(fooBaseT.mu_) {
+    fooBaseT.a = 0;
+  }
+
+  // Test dependent expressions in template method in template class
+  template <class T2>
+  void barTD(T2 *fooT) EXCLUSIVE_LOCKS_REQUIRED(fooBaseT.mu_, fooT->mu_) {
+    fooBaseT.a = 0;
+    fooT->a = 0;
+  }
+};
+
+template <class T>
+class Cell {
+public:
+  Mutex mu_;
+  // Test dependent guarded_by
+  T data GUARDED_BY(mu_);
+
+  void fooEx() EXCLUSIVE_LOCKS_REQUIRED(mu_) {
+    data = 0;
+  }
+
+  void foo() {
+    mu_.Lock();
+    data = 0;
+    mu_.Unlock();
+  }
+};
+
+void test() {
+  Bar b;
+  BarT<Foo2> bt;
+  Foo1 f1;
+  Foo2 f2;
+
+  f1.mu_.Lock();
+  f2.mu_.Lock();
+  bt.fooBase.mu_.Lock();
+  bt.fooBaseT.mu_.Lock();
+
+  b.barND(&f1, &f2);
+  b.barD(&f1, &f2);
+  bt.barND();
+  bt.barD();
+  bt.barTD(&f2);
+
+  f1.mu_.Unlock();
+  bt.barTD(&f1);  // \
+    // expected-warning {{calling function 'barTD' requires exclusive lock on 'mu_'}}
+
+  bt.fooBase.mu_.Unlock();
+  bt.fooBaseT.mu_.Unlock();
+  f2.mu_.Unlock();
+
+  Cell<int> cell;
+  cell.data = 0; // \
+    // expected-warning {{writing variable 'data' requires locking 'mu_' exclusively}}
+  cell.foo();
+  cell.mu_.Lock();
+  cell.fooEx();
+  cell.mu_.Unlock();
+}
+
+
+template <class T>
+class CellDelayed {
+public:
+  // Test dependent guarded_by
+  T data GUARDED_BY(mu_);
+
+  void fooEx(CellDelayed<T> *other) EXCLUSIVE_LOCKS_REQUIRED(mu_, other->mu_) {
+    this->data = other->data;
+  }
+
+  template <class T2>
+  void fooExT(CellDelayed<T2> *otherT) EXCLUSIVE_LOCKS_REQUIRED(mu_, otherT->mu_) {
+    this->data = otherT->data;
+  }
+
+  void foo() {
+    mu_.Lock();
+    data = 0;
+    mu_.Unlock();
+  }
+
+  Mutex mu_;
+};
+
+void testDelayed() {
+  CellDelayed<int> celld;
+  CellDelayed<int> celld2;
+  celld.foo();
+  celld.mu_.Lock();
+  celld2.mu_.Lock();
+
+  celld.fooEx(&celld2);
+  celld.fooExT(&celld2);
+
+  celld2.mu_.Unlock();
+  celld.mu_.Unlock();
+}
+
+};  // end namespace TestTemplateAttributeInstantiation
+
+
+namespace FunctionDeclDefTest {
+
+class Foo {
+public:
+  Mutex mu_;
+  int a GUARDED_BY(mu_);
+
+  virtual void foo1(Foo *f_declared) EXCLUSIVE_LOCKS_REQUIRED(f_declared->mu_);
+};
+
+// EXCLUSIVE_LOCKS_REQUIRED should be applied, and rewritten to f_defined->mu_
+void Foo::foo1(Foo *f_defined) {
+  f_defined->a = 0;
+};
+
+void test() {
+  Foo myfoo;
+  myfoo.foo1(&myfoo);  // \
+    // expected-warning {{calling function 'foo1' requires exclusive lock on 'mu_'}}
+  myfoo.mu_.Lock();
+  myfoo.foo1(&myfoo);
+  myfoo.mu_.Unlock();
+}
+
+};
+

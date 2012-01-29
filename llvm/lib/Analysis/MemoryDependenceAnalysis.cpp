@@ -329,8 +329,6 @@ getLoadLoadClobberFullWidthSize(const Value *MemLocBase, int64_t MemLocOffs,
     
     NewLoadByteSize <<= 1;
   }
-  
-  return 0;
 }
 
 namespace {
@@ -349,7 +347,8 @@ namespace {
       return true;
     }
 
-    bool captured(Instruction *I) {
+    bool captured(Use *U) {
+      Instruction *I = cast<Instruction>(U->getUser());
       if (BeforeHere != I && DT->dominates(BeforeHere, I))
         return false;
       Captured = true;

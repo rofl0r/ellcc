@@ -3,6 +3,7 @@
 // RUN: diff %t %s.result
 // RUN: arcmt-test --args -triple x86_64-apple-macosx10.7 -fsyntax-only -fobjc-gc-only -x objective-c++ %s > %t
 // RUN: diff %t %s.result
+// DISABLE: mingw32
 
 #include "Common.h"
 #include "GC.h"
@@ -77,4 +78,15 @@ __attribute__((objc_arc_weak_reference_unavailable))
 -(void)test1:(CFTypeRef *)cft {
   id x = NSMakeCollectable(cft);
 }
+@end
+
+// rdar://10532449
+@interface rdar10532449
+@property (assign) id assign_prop;
+@property (assign, readonly) id __strong strong_readonly_prop;
+@property (assign) id __weak weak_prop;
+@end
+
+@implementation rdar10532449
+@synthesize assign_prop, strong_readonly_prop, weak_prop;
 @end

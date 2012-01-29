@@ -84,6 +84,9 @@ namespace llvm {
   /// RegisteCoalescer pass - This pass merges live ranges to eliminate copies.
   extern char &RegisterCoalescerPassID;
 
+  /// MachineScheduler pass - This pass schedules machine instructions.
+  extern char &MachineSchedulerID;
+
   /// SpillPlacement analysis. Suggest optimal placement of spill code between
   /// basic blocks.
   ///
@@ -193,6 +196,10 @@ namespace llvm {
   /// instructions.
   FunctionPass *createMachineSinkingPass();
 
+  /// createMachineCopyPropagationPass - This pass performs copy propagation on
+  /// machine instructions.
+  FunctionPass *createMachineCopyPropagationPass();
+
   /// createPeepholeOptimizerPass - This pass performs peephole optimizations -
   /// like extension and comparison eliminations.
   FunctionPass *createPeepholeOptimizerPass();
@@ -241,6 +248,11 @@ namespace llvm {
   /// createUnpackMachineBundles - This pass unpack machine instruction bundles.
   ///
   FunctionPass *createUnpackMachineBundlesPass();
+
+  /// createFinalizeMachineBundles - This pass finalize machine instruction
+  /// bundles (created earlier, e.g. during pre-RA scheduling).
+  ///
+  FunctionPass *createFinalizeMachineBundlesPass();
 
 } // End llvm namespace
 

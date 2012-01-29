@@ -16,7 +16,6 @@
 #include "CodeGenModule.h"
 #include "CGObjCRuntime.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/Basic/TargetBuiltins.h"
@@ -215,7 +214,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     return RValue::get(Builder.CreateCall2(CGM.getIntrinsic(Intrinsic::vacopy),
                                            DstPtr, SrcPtr));
   }
-  case Builtin::BI__builtin_abs: {
+  case Builtin::BI__builtin_abs: 
+  case Builtin::BI__builtin_labs:
+  case Builtin::BI__builtin_llabs: {
     Value *ArgValue = EmitScalarExpr(E->getArg(0));
 
     Value *NegOp = Builder.CreateNeg(ArgValue, "neg");
@@ -228,6 +229,7 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
 
     return RValue::get(Result);
   }
+  case Builtin::BI__builtin_ctzs:
   case Builtin::BI__builtin_ctz:
   case Builtin::BI__builtin_ctzl:
   case Builtin::BI__builtin_ctzll: {
@@ -237,12 +239,14 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     Value *F = CGM.getIntrinsic(Intrinsic::cttz, ArgType);
 
     llvm::Type *ResultType = ConvertType(E->getType());
-    Value *Result = Builder.CreateCall2(F, ArgValue, Builder.getTrue());
+    Value *ZeroUndef = Builder.getInt1(Target.isCLZForZeroUndef());
+    Value *Result = Builder.CreateCall2(F, ArgValue, ZeroUndef);
     if (Result->getType() != ResultType)
       Result = Builder.CreateIntCast(Result, ResultType, /*isSigned*/true,
                                      "cast");
     return RValue::get(Result);
   }
+  case Builtin::BI__builtin_clzs:
   case Builtin::BI__builtin_clz:
   case Builtin::BI__builtin_clzl:
   case Builtin::BI__builtin_clzll: {
@@ -252,7 +256,8 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     Value *F = CGM.getIntrinsic(Intrinsic::ctlz, ArgType);
 
     llvm::Type *ResultType = ConvertType(E->getType());
-    Value *Result = Builder.CreateCall2(F, ArgValue, Builder.getTrue());
+    Value *ZeroUndef = Builder.getInt1(Target.isCLZForZeroUndef());
+    Value *Result = Builder.CreateCall2(F, ArgValue, ZeroUndef);
     if (Result->getType() != ResultType)
       Result = Builder.CreateIntCast(Result, ResultType, /*isSigned*/true,
                                      "cast");
@@ -1192,7 +1197,6 @@ Value *CodeGenFunction::EmitTargetBuiltinExpr(unsigned BuiltinID,
 static llvm::VectorType *GetNeonType(LLVMContext &C, NeonTypeFlags TypeFlags) {
   int IsQuad = TypeFlags.isQuad();
   switch (TypeFlags.getEltType()) {
-  default: break;
   case NeonTypeFlags::Int8:
   case NeonTypeFlags::Poly8:
     return llvm::VectorType::get(llvm::Type::getInt8Ty(C), 8 << IsQuad);
@@ -1206,14 +1210,13 @@ static llvm::VectorType *GetNeonType(LLVMContext &C, NeonTypeFlags TypeFlags) {
     return llvm::VectorType::get(llvm::Type::getInt64Ty(C), 1 << IsQuad);
   case NeonTypeFlags::Float32:
     return llvm::VectorType::get(llvm::Type::getFloatTy(C), 2 << IsQuad);
-  };
-  return 0;
+  }
+  llvm_unreachable("Invalid NeonTypeFlags element type!");
 }
 
 Value *CodeGenFunction::EmitNeonSplat(Value *V, Constant *C) {
   unsigned nElts = cast<llvm::VectorType>(V->getType())->getNumElements();
-  SmallVector<Constant*, 16> Indices(nElts, C);
-  Value* SV = llvm::ConstantVector::get(Indices);
+  Value* SV = llvm::ConstantVector::getSplat(nElts, C);
   return Builder.CreateShuffleVector(V, V, SV, "lane");
 }
 
@@ -1233,13 +1236,11 @@ Value *CodeGenFunction::EmitNeonCall(Function *F, SmallVectorImpl<Value*> &Ops,
 
 Value *CodeGenFunction::EmitNeonShiftVector(Value *V, llvm::Type *Ty, 
                                             bool neg) {
-  ConstantInt *CI = cast<ConstantInt>(V);
-  int SV = CI->getSExtValue();
+  int SV = cast<ConstantInt>(V)->getSExtValue();
   
   llvm::VectorType *VTy = cast<llvm::VectorType>(Ty);
   llvm::Constant *C = ConstantInt::get(VTy->getElementType(), neg ? -SV : SV);
-  SmallVector<llvm::Constant*, 16> CV(VTy->getNumElements(), C);
-  return llvm::ConstantVector::get(CV);
+  return llvm::ConstantVector::getSplat(VTy->getNumElements(), C);
 }
 
 /// GetPointeeAlignment - Given an expression with a pointer type, find the
@@ -1957,8 +1958,8 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
     for (unsigned vi = 0; vi != 2; ++vi) {
       SmallVector<Constant*, 16> Indices;
       for (unsigned i = 0, e = VTy->getNumElements(); i != e; i += 2) {
-        Indices.push_back(ConstantInt::get(Int32Ty, i+vi));
-        Indices.push_back(ConstantInt::get(Int32Ty, i+e+vi));
+        Indices.push_back(Builder.getInt32(i+vi));
+        Indices.push_back(Builder.getInt32(i+e+vi));
       }
       Value *Addr = Builder.CreateConstInBoundsGEP1_32(Ops[0], vi);
       SV = llvm::ConstantVector::get(Indices);
@@ -2019,7 +2020,7 @@ BuildVector(const SmallVectorImpl<llvm::Value*> &Ops) {
 
   // If this is a constant vector, create a ConstantVector.
   if (AllConstants) {
-    std::vector<llvm::Constant*> CstOps;
+    SmallVector<llvm::Constant*, 16> CstOps;
     for (unsigned i = 0, e = Ops.size(); i != e; ++i)
       CstOps.push_back(cast<Constant>(Ops[i]));
     return llvm::ConstantVector::get(CstOps);
@@ -2030,8 +2031,7 @@ BuildVector(const SmallVectorImpl<llvm::Value*> &Ops) {
     llvm::UndefValue::get(llvm::VectorType::get(Ops[0]->getType(), Ops.size()));
 
   for (unsigned i = 0, e = Ops.size(); i != e; ++i)
-    Result = Builder.CreateInsertElement(Result, Ops[i],
-               llvm::ConstantInt::get(llvm::Type::getInt32Ty(getLLVMContext()), i));
+    Result = Builder.CreateInsertElement(Result, Ops[i], Builder.getInt32(i));
 
   return Result;
 }
@@ -4551,5 +4551,4 @@ Value *CodeGenFunction::EmitPPCBuiltinExpr(unsigned BuiltinID,
     return Builder.CreateCall(F, Ops, "");
   }
   }
-  return 0;
 }

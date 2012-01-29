@@ -897,37 +897,56 @@ bool Type::isConstantSizeType() const {
 /// isIncompleteType - Return true if this is an incomplete type (C99 6.2.5p1)
 /// - a type that can describe objects, but which lacks information needed to
 /// determine its size.
-bool Type::isIncompleteType() const {
+bool Type::isIncompleteType(NamedDecl **Def) const {
+  if (Def)
+    *Def = 0;
+  
   switch (CanonicalType->getTypeClass()) {
   default: return false;
   case Builtin:
     // Void is the only incomplete builtin type.  Per C99 6.2.5p19, it can never
     // be completed.
     return isVoidType();
-  case Enum:
+  case Enum: {
+    EnumDecl *EnumD = cast<EnumType>(CanonicalType)->getDecl();
+    if (Def)
+      *Def = EnumD;
+    
     // An enumeration with fixed underlying type is complete (C++0x 7.2p3).
-    if (cast<EnumType>(CanonicalType)->getDecl()->isFixed())
-        return false;
-    // Fall through.
-  case Record:
+    if (EnumD->isFixed())
+      return false;
+    
+    return !EnumD->isCompleteDefinition();
+  }
+  case Record: {
     // A tagged type (struct/union/enum/class) is incomplete if the decl is a
     // forward declaration, but not a full definition (C99 6.2.5p22).
-    return !cast<TagType>(CanonicalType)->getDecl()->isCompleteDefinition();
+    RecordDecl *Rec = cast<RecordType>(CanonicalType)->getDecl();
+    if (Def)
+      *Def = Rec;
+    return !Rec->isCompleteDefinition();
+  }
   case ConstantArray:
     // An array is incomplete if its element type is incomplete
     // (C++ [dcl.array]p1).
     // We don't handle variable arrays (they're not allowed in C++) or
     // dependent-sized arrays (dependent types are never treated as incomplete).
-    return cast<ArrayType>(CanonicalType)->getElementType()->isIncompleteType();
+    return cast<ArrayType>(CanonicalType)->getElementType()
+             ->isIncompleteType(Def);
   case IncompleteArray:
     // An array of unknown size is an incomplete type (C99 6.2.5p22).
     return true;
   case ObjCObject:
     return cast<ObjCObjectType>(CanonicalType)->getBaseType()
-                                                         ->isIncompleteType();
-  case ObjCInterface:
+             ->isIncompleteType(Def);
+  case ObjCInterface: {
     // ObjC interfaces are incomplete if they are @class, not @interface.
-    return !cast<ObjCInterfaceType>(CanonicalType)->getDecl()->hasDefinition();
+    ObjCInterfaceDecl *Interface
+      = cast<ObjCInterfaceType>(CanonicalType)->getDecl();
+    if (Def)
+      *Def = Interface;
+    return !Interface->hasDefinition();
+  }
   }
 }
 
@@ -1126,15 +1145,13 @@ bool Type::isLiteralType() const {
   if (BaseTy->isIncompleteType())
     return false;
 
-  // Objective-C lifetime types are not literal types.
-  if (BaseTy->isObjCRetainableType())
-    return false;
-  
   // C++0x [basic.types]p10:
   //   A type is a literal type if it is:
   //    -- a scalar type; or
-  // As an extension, Clang treats vector types as literal types.
-  if (BaseTy->isScalarType() || BaseTy->isVectorType())
+  // As an extension, Clang treats vector types and complex types as
+  // literal types.
+  if (BaseTy->isScalarType() || BaseTy->isVectorType() ||
+      BaseTy->isAnyComplexType())
     return true;
   //    -- a reference type; or
   if (BaseTy->isReferenceType())
@@ -1347,7 +1364,6 @@ TypeWithKeyword::getTagTypeKindForTypeSpec(unsigned TypeSpec) {
   }
   
   llvm_unreachable("Type specifier is not a tag type kind.");
-  return TTK_Union;
 }
 
 ElaboratedTypeKeyword
@@ -1402,7 +1418,6 @@ TypeWithKeyword::getKeywordName(ElaboratedTypeKeyword Keyword) {
   }
 
   llvm_unreachable("Unknown elaborated type keyword.");
-  return "";
 }
 
 DependentTemplateSpecializationType::DependentTemplateSpecializationType(
@@ -1462,7 +1477,6 @@ const char *Type::getTypeClassName() const {
   }
   
   llvm_unreachable("Invalid type class.");
-  return 0;
 }
 
 const char *BuiltinType::getName(const PrintingPolicy &Policy) const {
@@ -1504,7 +1518,6 @@ const char *BuiltinType::getName(const PrintingPolicy &Policy) const {
   }
   
   llvm_unreachable("Invalid builtin type.");
-  return 0;
 }
 
 QualType QualType::getNonLValueExprType(ASTContext &Context) const {
@@ -1527,7 +1540,6 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   switch (CC) {
   case CC_Default: 
     llvm_unreachable("no name for default cc");
-    return "";
 
   case CC_C: return "cdecl";
   case CC_X86StdCall: return "stdcall";
@@ -1539,7 +1551,6 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   }
 
   llvm_unreachable("Invalid calling convention.");
-  return "";
 }
 
 FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
@@ -1722,7 +1733,10 @@ void DependentTypeOfExprType::Profile(llvm::FoldingSetNodeID &ID,
 }
 
 DecltypeType::DecltypeType(Expr *E, QualType underlyingType, QualType can)
-  : Type(Decltype, can, E->isTypeDependent(), 
+  // C++11 [temp.type]p2: "If an expression e involves a template parameter,
+  // decltype(e) denotes a unique dependent type." Hence a decltype type is
+  // type-dependent even if its expression is only instantiation-dependent.
+  : Type(Decltype, can, E->isInstantiationDependent(),
          E->isInstantiationDependent(),
          E->getType()->isVariablyModifiedType(), 
          E->containsUnexpandedParameterPack()), 
@@ -1786,14 +1800,6 @@ bool TagType::isBeingDefined() const {
 
 CXXRecordDecl *InjectedClassNameType::getDecl() const {
   return cast<CXXRecordDecl>(getInterestingTagDecl(Decl));
-}
-
-bool RecordType::classof(const TagType *TT) {
-  return isa<RecordDecl>(TT->getDecl());
-}
-
-bool EnumType::classof(const TagType *TT) {
-  return isa<EnumDecl>(TT->getDecl());
 }
 
 IdentifierInfo *TemplateTypeParmType::getIdentifier() const {
@@ -1875,7 +1881,9 @@ TemplateSpecializationType(TemplateName T,
          Canon.isNull()? T.isDependent() : Canon->isDependentType(),
          Canon.isNull()? T.isDependent() 
                        : Canon->isInstantiationDependentType(),
-         false, T.containsUnexpandedParameterPack()),
+         false,
+         Canon.isNull()? T.containsUnexpandedParameterPack()
+                       : Canon->containsUnexpandedParameterPack()),
     Template(T), NumArgs(NumArgs) {
   assert(!T.getAsDependentTemplateName() && 
          "Use DependentTemplateSpecializationType for dependent template-name");
@@ -1908,7 +1916,7 @@ TemplateSpecializationType(TemplateName T,
     if (Args[Arg].getKind() == TemplateArgument::Type &&
         Args[Arg].getAsType()->isVariablyModifiedType())
       setVariablyModified();
-    if (Args[Arg].containsUnexpandedParameterPack())
+    if (Canon.isNull() && Args[Arg].containsUnexpandedParameterPack())
       setContainsUnexpandedParameterPack();
 
     new (&TemplateArgs[Arg]) TemplateArgument(Args[Arg]);
@@ -1973,21 +1981,22 @@ namespace {
 
 /// \brief The cached properties of a type.
 class CachedProperties {
-  char linkage;
-  char visibility;
+  NamedDecl::LinkageInfo LV;
   bool local;
   
 public:
-  CachedProperties(Linkage linkage, Visibility visibility, bool local)
-    : linkage(linkage), visibility(visibility), local(local) {}
+  CachedProperties(NamedDecl::LinkageInfo LV, bool local)
+    : LV(LV), local(local) {}
   
-  Linkage getLinkage() const { return (Linkage) linkage; }
-  Visibility getVisibility() const { return (Visibility) visibility; }
+  Linkage getLinkage() const { return LV.linkage(); }
+  Visibility getVisibility() const { return LV.visibility(); }
+  bool isVisibilityExplicit() const { return LV.visibilityExplicit(); }
   bool hasLocalOrUnnamedType() const { return local; }
   
   friend CachedProperties merge(CachedProperties L, CachedProperties R) {
-    return CachedProperties(minLinkage(L.getLinkage(), R.getLinkage()),
-                            minVisibility(L.getVisibility(), R.getVisibility()),
+    NamedDecl::LinkageInfo MergedLV = L.LV;
+    MergedLV.merge(R.LV);
+    return CachedProperties(MergedLV,
                          L.hasLocalOrUnnamedType() | R.hasLocalOrUnnamedType());
   }
 };
@@ -2007,9 +2016,10 @@ public:
 
   static CachedProperties get(const Type *T) {
     ensure(T);
-    return CachedProperties(T->TypeBits.getLinkage(),
-                            T->TypeBits.getVisibility(),
-                            T->TypeBits.hasLocalOrUnnamedType());
+    NamedDecl::LinkageInfo LV(T->TypeBits.getLinkage(),
+                              T->TypeBits.getVisibility(),
+                              T->TypeBits.isVisibilityExplicit());
+    return CachedProperties(LV, T->TypeBits.hasLocalOrUnnamedType());
   }
 
   static void ensure(const Type *T) {
@@ -2023,6 +2033,8 @@ public:
       ensure(CT);
       T->TypeBits.CacheValidAndVisibility =
         CT->TypeBits.CacheValidAndVisibility;
+      T->TypeBits.CachedExplicitVisibility =
+        CT->TypeBits.CachedExplicitVisibility;
       T->TypeBits.CachedLinkage = CT->TypeBits.CachedLinkage;
       T->TypeBits.CachedLocalOrUnnamed = CT->TypeBits.CachedLocalOrUnnamed;
       return;
@@ -2031,6 +2043,7 @@ public:
     // Compute the cached properties and then set the cache.
     CachedProperties Result = computeCachedProperties(T);
     T->TypeBits.CacheValidAndVisibility = Result.getVisibility() + 1U;
+    T->TypeBits.CachedExplicitVisibility = Result.isVisibilityExplicit();
     assert(T->TypeBits.isCacheValid() &&
            T->TypeBits.getVisibility() == Result.getVisibility());
     T->TypeBits.CachedLinkage = Result.getLinkage();
@@ -2058,13 +2071,13 @@ static CachedProperties computeCachedProperties(const Type *T) {
 #include "clang/AST/TypeNodes.def"
     // Treat instantiation-dependent types as external.
     assert(T->isInstantiationDependentType());
-    return CachedProperties(ExternalLinkage, DefaultVisibility, false);
+    return CachedProperties(NamedDecl::LinkageInfo(), false);
 
   case Type::Builtin:
     // C++ [basic.link]p8:
     //   A type is said to have linkage if and only if:
     //     - it is a fundamental type (3.9.1); or
-    return CachedProperties(ExternalLinkage, DefaultVisibility, false);
+    return CachedProperties(NamedDecl::LinkageInfo(), false);
 
   case Type::Record:
   case Type::Enum: {
@@ -2078,7 +2091,7 @@ static CachedProperties computeCachedProperties(const Type *T) {
     bool IsLocalOrUnnamed =
       Tag->getDeclContext()->isFunctionOrMethod() ||
       (!Tag->getIdentifier() && !Tag->getTypedefNameForAnonDecl());
-    return CachedProperties(LV.linkage(), LV.visibility(), IsLocalOrUnnamed);
+    return CachedProperties(LV, IsLocalOrUnnamed);
   }
 
     // C++ [basic.link]p8:
@@ -2118,7 +2131,7 @@ static CachedProperties computeCachedProperties(const Type *T) {
   case Type::ObjCInterface: {
     NamedDecl::LinkageInfo LV =
       cast<ObjCInterfaceType>(T)->getDecl()->getLinkageAndVisibility();
-    return CachedProperties(LV.linkage(), LV.visibility(), false);
+    return CachedProperties(LV, false);
   }
   case Type::ObjCObject:
     return Cache::get(cast<ObjCObjectType>(T)->getBaseType());
@@ -2132,7 +2145,8 @@ static CachedProperties computeCachedProperties(const Type *T) {
 
   // C++ [basic.link]p8:
   //   Names not covered by these rules have no linkage.
-  return CachedProperties(NoLinkage, DefaultVisibility, false);
+  NamedDecl::LinkageInfo LV(NoLinkage, DefaultVisibility, false);
+  return CachedProperties(LV, false);
 }
 
 /// \brief Determine the linkage of this type.
@@ -2145,6 +2159,11 @@ Linkage Type::getLinkage() const {
 Visibility Type::getVisibility() const {
   Cache::ensure(this);
   return TypeBits.getVisibility();
+}
+
+bool Type::isVisibilityExplicit() const {
+  Cache::ensure(this);
+  return TypeBits.isVisibilityExplicit();
 }
 
 bool Type::hasUnnamedOrLocalType() const {

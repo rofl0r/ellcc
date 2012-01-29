@@ -81,8 +81,6 @@ namespace {
     MachineLoop *CurLoop;          // The current loop we are working on.
     MachineBasicBlock *CurPreheader; // The preheader for CurLoop.
 
-    BitVector AllocatableSet;
-
     // Track 'estimated' register pressure.
     SmallSet<unsigned, 32> RegSeen;
     SmallVector<unsigned, 8> RegPressure;
@@ -165,7 +163,9 @@ namespace {
 
     /// ProcessMI - Examine the instruction for potentai LICM candidate. Also
     /// gather register def and frame object update information.
-    void ProcessMI(MachineInstr *MI, unsigned *PhysRegDefs,
+    void ProcessMI(MachineInstr *MI,
+                   BitVector &PhysRegDefs,
+                   BitVector &PhysRegClobbers,
                    SmallSet<int, 32> &StoredFIs,
                    SmallVector<CandidateInfo, 32> &Candidates);
 
@@ -331,7 +331,6 @@ bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
   MFI = MF.getFrameInfo();
   MRI = &MF.getRegInfo();
   InstrItins = TM->getInstrItineraryData();
-  AllocatableSet = TRI->getAllocatableSet(MF);
 
   if (PreRegAlloc) {
     // Estimate register pressure during pre-regalloc pass.
@@ -395,7 +394,8 @@ static bool InstructionStoresToFI(const MachineInstr *MI, int FI) {
 /// ProcessMI - Examine the instruction for potentai LICM candidate. Also
 /// gather register def and frame object update information.
 void MachineLICM::ProcessMI(MachineInstr *MI,
-                            unsigned *PhysRegDefs,
+                            BitVector &PhysRegDefs,
+                            BitVector &PhysRegClobbers,
                             SmallSet<int, 32> &StoredFIs,
                             SmallVector<CandidateInfo, 32> &Candidates) {
   bool RuledOut = false;
@@ -414,6 +414,16 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
       continue;
     }
 
+    // We can't hoist an instruction defining a physreg that is clobbered in
+    // the loop.
+    if (MO.isRegMask()) {
+      if (const uint32_t *Mask = MO.getRegMask())
+        PhysRegClobbers.setBitsNotInMask(Mask);
+      else
+        PhysRegClobbers.set();
+      continue;
+    }
+
     if (!MO.isReg())
       continue;
     unsigned Reg = MO.getReg();
@@ -423,7 +433,7 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
            "Not expecting virtual register!");
 
     if (!MO.isDef()) {
-      if (Reg && PhysRegDefs[Reg])
+      if (Reg && (PhysRegDefs.test(Reg) || PhysRegClobbers.test(Reg)))
         // If it's using a non-loop-invariant register, then it's obviously not
         // safe to hoist.
         HasNonInvariantUse = true;
@@ -431,9 +441,8 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
     }
 
     if (MO.isImplicit()) {
-      ++PhysRegDefs[Reg];
-      for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS)
-        ++PhysRegDefs[*AS];
+      for (const unsigned *AS = TRI->getOverlaps(Reg); *AS; ++AS)
+        PhysRegClobbers.set(*AS);
       if (!MO.isDead())
         // Non-dead implicit def? This cannot be hoisted.
         RuledOut = true;
@@ -450,14 +459,17 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
       Def = Reg;
 
     // If we have already seen another instruction that defines the same
-    // register, then this is not safe.
-    if (++PhysRegDefs[Reg] > 1)
-      // MI defined register is seen defined by another instruction in
-      // the loop, it cannot be a LICM candidate.
-      RuledOut = true;
-    for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS)
-      if (++PhysRegDefs[*AS] > 1)
+    // register, then this is not safe.  Two defs is indicated by setting a
+    // PhysRegClobbers bit.
+    for (const unsigned *AS = TRI->getOverlaps(Reg); *AS; ++AS) {
+      if (PhysRegDefs.test(*AS))
+        PhysRegClobbers.set(*AS);
+      if (PhysRegClobbers.test(*AS))
+        // MI defined register is seen defined by another instruction in
+        // the loop, it cannot be a LICM candidate.
         RuledOut = true;
+      PhysRegDefs.set(*AS);
+    }
   }
 
   // Only consider reloads for now and remats which do not have register
@@ -474,8 +486,8 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
 /// invariants out to the preheader.
 void MachineLICM::HoistRegionPostRA() {
   unsigned NumRegs = TRI->getNumRegs();
-  unsigned *PhysRegDefs = new unsigned[NumRegs];
-  std::fill(PhysRegDefs, PhysRegDefs + NumRegs, 0);
+  BitVector PhysRegDefs(NumRegs); // Regs defined once in the loop.
+  BitVector PhysRegClobbers(NumRegs); // Regs defined more than once.
 
   SmallVector<CandidateInfo, 32> Candidates;
   SmallSet<int, 32> StoredFIs;
@@ -497,16 +509,15 @@ void MachineLICM::HoistRegionPostRA() {
     for (MachineBasicBlock::livein_iterator I = BB->livein_begin(),
            E = BB->livein_end(); I != E; ++I) {
       unsigned Reg = *I;
-      ++PhysRegDefs[Reg];
-      for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS)
-        ++PhysRegDefs[*AS];
+      for (const unsigned *AS = TRI->getOverlaps(Reg); *AS; ++AS)
+        PhysRegDefs.set(*AS);
     }
 
     SpeculationState = SpeculateUnknown;
     for (MachineBasicBlock::iterator
            MII = BB->begin(), E = BB->end(); MII != E; ++MII) {
       MachineInstr *MI = &*MII;
-      ProcessMI(MI, PhysRegDefs, StoredFIs, Candidates);
+      ProcessMI(MI, PhysRegDefs, PhysRegClobbers, StoredFIs, Candidates);
     }
   }
 
@@ -520,14 +531,15 @@ void MachineLICM::HoistRegionPostRA() {
         StoredFIs.count(Candidates[i].FI))
       continue;
 
-    if (PhysRegDefs[Candidates[i].Def] == 1) {
+    if (!PhysRegClobbers.test(Candidates[i].Def)) {
       bool Safe = true;
       MachineInstr *MI = Candidates[i].MI;
       for (unsigned j = 0, ee = MI->getNumOperands(); j != ee; ++j) {
         const MachineOperand &MO = MI->getOperand(j);
         if (!MO.isReg() || MO.isDef() || !MO.getReg())
           continue;
-        if (PhysRegDefs[MO.getReg()]) {
+        if (PhysRegDefs.test(MO.getReg()) ||
+            PhysRegClobbers.test(MO.getReg())) {
           // If it's using a non-loop-invariant register, then it's obviously
           // not safe to hoist.
           Safe = false;
@@ -538,8 +550,6 @@ void MachineLICM::HoistRegionPostRA() {
         HoistPostRA(MI, Candidates[i].Def);
     }
   }
-
-  delete[] PhysRegDefs;
 }
 
 /// AddToLiveIns - Add register 'Reg' to the livein sets of BBs in the current
@@ -572,16 +582,8 @@ void MachineLICM::HoistPostRA(MachineInstr *MI, unsigned Def) {
 
   // Now move the instructions to the predecessor, inserting it before any
   // terminator instructions.
-  DEBUG({
-      dbgs() << "Hoisting " << *MI;
-      if (Preheader->getBasicBlock())
-        dbgs() << " to MachineBasicBlock "
-               << Preheader->getName();
-      if (MI->getParent()->getBasicBlock())
-        dbgs() << " from MachineBasicBlock "
-               << MI->getParent()->getName();
-      dbgs() << "\n";
-    });
+  DEBUG(dbgs() << "Hoisting to BB#" << Preheader->getNumber() << " from BB#"
+               << MI->getParent()->getNumber() << ": " << *MI);
 
   // Splice the instruction to the preheader.
   MachineBasicBlock *MBB = MI->getParent();
@@ -633,8 +635,8 @@ void MachineLICM::ExitScope(MachineBasicBlock *MBB) {
 /// dominator tree node if its a leaf or all of its children are done. Walk
 /// up the dominator tree to destroy ancestors which are now done.
 void MachineLICM::ExitScopeIfDone(MachineDomTreeNode *Node,
-                                  DenseMap<MachineDomTreeNode*, unsigned> &OpenChildren,
-                                  DenseMap<MachineDomTreeNode*, MachineDomTreeNode*> &ParentMap) {
+                DenseMap<MachineDomTreeNode*, unsigned> &OpenChildren,
+                DenseMap<MachineDomTreeNode*, MachineDomTreeNode*> &ParentMap) {
   if (OpenChildren[Node])
     return;
 
@@ -905,18 +907,8 @@ bool MachineLICM::IsLoopInvariantInst(MachineInstr &I) {
         // If the physreg has no defs anywhere, it's just an ambient register
         // and we can freely move its uses. Alternatively, if it's allocatable,
         // it could get allocated to something with a def during allocation.
-        if (!MRI->def_empty(Reg))
+        if (!MRI->isConstantPhysReg(Reg, *I.getParent()->getParent()))
           return false;
-        if (AllocatableSet.test(Reg))
-          return false;
-        // Check for a def among the register's aliases too.
-        for (const unsigned *Alias = TRI->getAliasSet(Reg); *Alias; ++Alias) {
-          unsigned AliasReg = *Alias;
-          if (!MRI->def_empty(AliasReg))
-            return false;
-          if (AllocatableSet.test(AliasReg))
-            return false;
-        }
         // Otherwise it's safe to move.
         continue;
       } else if (!MO.isDead()) {

@@ -189,7 +189,6 @@ static std::string getTypePrefix(Type *Ty) {
   case Type::VectorTyID:   return "packed_";
   default:                 return "other_";
   }
-  return "unknown_";
 }
 
 void CppWriter::error(const std::string& msg) {
@@ -301,7 +300,6 @@ void CppWriter::printLinkageType(GlobalValue::LinkageTypes LT) {
 
 void CppWriter::printVisibilityType(GlobalValue::VisibilityTypes VisType) {
   switch (VisType) {
-  default: llvm_unreachable("Unknown GVar visibility");
   case GlobalValue::DefaultVisibility:
     Out << "GlobalValue::DefaultVisibility";
     break;
@@ -443,7 +441,7 @@ void CppWriter::printAttributes(const AttrListPtr &PAL,
     for (unsigned i = 0; i < PAL.getNumSlots(); ++i) {
       unsigned index = PAL.getSlot(i).Index;
       Attributes attrs = PAL.getSlot(i).Attrs;
-      Out << "PAWI.Index = " << index << "U; PAWI.Attrs = 0 ";
+      Out << "PAWI.Index = " << index << "U; PAWI.Attrs = Attribute::None ";
 #define HANDLE_ATTR(X)                 \
       if (attrs & Attribute::X)      \
         Out << " | Attribute::" #X;  \
@@ -700,9 +698,7 @@ void CppWriter::printConstant(const Constant *CV) {
     printCFP(CFP);
     Out << ";";
   } else if (const ConstantArray *CA = dyn_cast<ConstantArray>(CV)) {
-    if (CA->isString() &&
-        CA->getType()->getElementType() ==
-            Type::getInt8Ty(CA->getContext())) {
+    if (CA->isString()) {
       Out << "Constant* " << constName <<
              " = ConstantArray::get(mod->getContext(), \"";
       std::string tmp = CA->getAsString();
@@ -759,6 +755,41 @@ void CppWriter::printConstant(const Constant *CV) {
   } else if (isa<UndefValue>(CV)) {
     Out << "UndefValue* " << constName << " = UndefValue::get("
         << typeName << ");";
+  } else if (const ConstantDataSequential *CDS =
+               dyn_cast<ConstantDataSequential>(CV)) {
+    if (CDS->isString()) {
+      Out << "Constant *" << constName <<
+      " = ConstantDataArray::getString(mod->getContext(), \"";
+      StringRef Str = CA->getAsString();
+      bool nullTerminate = false;
+      if (Str.back() == 0) {
+        Str = Str.drop_back();
+        nullTerminate = true;
+      }
+      printEscapedString(Str);
+      // Determine if we want null termination or not.
+      if (nullTerminate)
+        Out << "\", true);";
+      else
+        Out << "\", false);";// No null terminator
+    } else {
+      // TODO: Could generate more efficient code generating CDS calls instead.
+      Out << "std::vector<Constant*> " << constName << "_elems;";
+      nl(Out);
+      for (unsigned i = 0; i != CDS->getNumElements(); ++i) {
+        Constant *Elt = CDS->getElementAsConstant(i);
+        printConstant(Elt);
+        Out << constName << "_elems.push_back(" << getCppName(Elt) << ");";
+        nl(Out);
+      }
+      Out << "Constant* " << constName;
+      
+      if (isa<ArrayType>(CDS->getType()))
+        Out << " = ConstantArray::get(";
+      else
+        Out << " = ConstantVector::get(";
+      Out << typeName << ", " << constName << "_elems);";
+    }
   } else if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(CV)) {
     if (CE->getOpcode() == Instruction::GetElementPtr) {
       Out << "std::vector<Constant*> " << constName << "_indices;";
@@ -2049,8 +2080,6 @@ bool CppWriter::runOnModule(Module &M) {
       fname = "makeLLVMType";
     printType(fname,tgtname);
     break;
-   default:
-    error("Invalid generation option");
   }
 
   return false;

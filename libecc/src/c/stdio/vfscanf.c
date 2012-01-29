@@ -1077,8 +1077,6 @@ reswitch:
 			else
 				goto parsedone;
 			break;
-		default:
-			abort();
 		}
 		*p++ = c;
 		if (--fp->_r > 0)

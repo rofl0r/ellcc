@@ -57,7 +57,7 @@ namespace llvm {
     /// The ID number of this value.
     unsigned id;
 
-    /// The index of the defining instruction (if isDefAccurate() returns true).
+    /// The index of the defining instruction.
     SlotIndex def;
 
     /// VNInfo constructor.
@@ -403,6 +403,14 @@ namespace llvm {
     LiveRange *getLiveRangeContaining(SlotIndex Idx) {
       iterator I = FindLiveRangeContaining(Idx);
       return I == end() ? 0 : &*I;
+    }
+
+    const LiveRange *getLiveRangeBefore(SlotIndex Idx) const {
+      return getLiveRangeContaining(Idx.getPrevSlot());
+    }
+
+    LiveRange *getLiveRangeBefore(SlotIndex Idx) {
+      return getLiveRangeContaining(Idx.getPrevSlot());
     }
 
     /// getVNInfoAt - Return the VNInfo that is live at Idx, or NULL.

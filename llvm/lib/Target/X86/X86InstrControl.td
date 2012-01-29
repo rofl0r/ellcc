@@ -43,8 +43,10 @@ let isBarrier = 1, isBranch = 1, isTerminator = 1 in {
                         "jmp\t$dst", [(br bb:$dst)]>;
   def JMP_1 : Ii8PCRel<0xEB, RawFrm, (outs), (ins brtarget8:$dst),
                        "jmp\t$dst", []>;
+  // FIXME : Intel syntax for JMP64pcrel32 such that it is not ambiguious
+  // with JMP_1.
   def JMP64pcrel32 : I<0xE9, RawFrm, (outs), (ins brtarget:$dst),
-                       "jmp{q}\t$dst", []>;
+                       "jmpq\t$dst", []>;
 }
 
 // Conditional Branches.
@@ -247,7 +249,7 @@ let isCall = 1, isCodeGenOnly = 1 in
   let Defs = [RAX, RCX, RDX, R8, R9, R10, R11,
               FP0, FP1, FP2, FP3, FP4, FP5, FP6, ST0, ST1,
               MM0, MM1, MM2, MM3, MM4, MM5, MM6, MM7,
-              XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, EFLAGS],
+              XMM0, XMM1, XMM2, XMM3, XMM4, XMM5, YMM_HI_6_15, EFLAGS],
       Uses = [RSP] in {
     def WINCALL64pcrel32 : Ii32PCRel<0xE8, RawFrm,
                              (outs), (ins i64i32imm_pcrel:$dst, variable_ops),

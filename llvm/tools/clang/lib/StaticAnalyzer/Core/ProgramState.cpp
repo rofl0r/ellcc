@@ -56,8 +56,8 @@ ProgramStateManager::~ProgramStateManager() {
     I->second.second(I->second.first);
 }
 
-const ProgramState*
-ProgramStateManager::removeDeadBindings(const ProgramState *state,
+ProgramStateRef 
+ProgramStateManager::removeDeadBindings(ProgramStateRef state,
                                    const StackFrameContext *LCtx,
                                    SymbolReaper& SymReaper) {
 
@@ -80,7 +80,7 @@ ProgramStateManager::removeDeadBindings(const ProgramState *state,
   return getPersistentState(NewState);
 }
 
-const ProgramState *ProgramStateManager::MarshalState(const ProgramState *state,
+ProgramStateRef ProgramStateManager::MarshalState(ProgramStateRef state,
                                             const StackFrameContext *InitLoc) {
   // make up an empty state for now.
   ProgramState State(this,
@@ -91,7 +91,7 @@ const ProgramState *ProgramStateManager::MarshalState(const ProgramState *state,
   return getPersistentState(State);
 }
 
-const ProgramState *ProgramState::bindCompoundLiteral(const CompoundLiteralExpr *CL,
+ProgramStateRef ProgramState::bindCompoundLiteral(const CompoundLiteralExpr *CL,
                                             const LocationContext *LC,
                                             SVal V) const {
   const StoreRef &newStore = 
@@ -99,21 +99,21 @@ const ProgramState *ProgramState::bindCompoundLiteral(const CompoundLiteralExpr 
   return makeWithStore(newStore);
 }
 
-const ProgramState *ProgramState::bindDecl(const VarRegion* VR, SVal IVal) const {
+ProgramStateRef ProgramState::bindDecl(const VarRegion* VR, SVal IVal) const {
   const StoreRef &newStore =
     getStateManager().StoreMgr->BindDecl(getStore(), VR, IVal);
   return makeWithStore(newStore);
 }
 
-const ProgramState *ProgramState::bindDeclWithNoInit(const VarRegion* VR) const {
+ProgramStateRef ProgramState::bindDeclWithNoInit(const VarRegion* VR) const {
   const StoreRef &newStore =
     getStateManager().StoreMgr->BindDeclWithNoInit(getStore(), VR);
   return makeWithStore(newStore);
 }
 
-const ProgramState *ProgramState::bindLoc(Loc LV, SVal V) const {
+ProgramStateRef ProgramState::bindLoc(Loc LV, SVal V) const {
   ProgramStateManager &Mgr = getStateManager();
-  const ProgramState *newState = makeWithStore(Mgr.StoreMgr->Bind(getStore(), 
+  ProgramStateRef newState = makeWithStore(Mgr.StoreMgr->Bind(getStore(), 
                                                              LV, V));
   const MemRegion *MR = LV.getAsRegion();
   if (MR && Mgr.getOwningEngine())
@@ -122,34 +122,34 @@ const ProgramState *ProgramState::bindLoc(Loc LV, SVal V) const {
   return newState;
 }
 
-const ProgramState *ProgramState::bindDefault(SVal loc, SVal V) const {
+ProgramStateRef ProgramState::bindDefault(SVal loc, SVal V) const {
   ProgramStateManager &Mgr = getStateManager();
   const MemRegion *R = cast<loc::MemRegionVal>(loc).getRegion();
   const StoreRef &newStore = Mgr.StoreMgr->BindDefault(getStore(), R, V);
-  const ProgramState *new_state = makeWithStore(newStore);
+  ProgramStateRef new_state = makeWithStore(newStore);
   return Mgr.getOwningEngine() ? 
            Mgr.getOwningEngine()->processRegionChange(new_state, R) : 
            new_state;
 }
 
-const ProgramState *
+ProgramStateRef 
 ProgramState::invalidateRegions(ArrayRef<const MemRegion *> Regions,
                                 const Expr *E, unsigned Count,
                                 StoreManager::InvalidatedSymbols *IS,
-                                bool invalidateGlobals) const {
+                                const CallOrObjCMessage *Call) const {
   if (!IS) {
     StoreManager::InvalidatedSymbols invalidated;
     return invalidateRegionsImpl(Regions, E, Count,
-                                 invalidated, invalidateGlobals);
+                                 invalidated, Call);
   }
-  return invalidateRegionsImpl(Regions, E, Count, *IS, invalidateGlobals);
+  return invalidateRegionsImpl(Regions, E, Count, *IS, Call);
 }
 
-const ProgramState *
+ProgramStateRef 
 ProgramState::invalidateRegionsImpl(ArrayRef<const MemRegion *> Regions,
                                     const Expr *E, unsigned Count,
                                     StoreManager::InvalidatedSymbols &IS,
-                                    bool invalidateGlobals) const {
+                                    const CallOrObjCMessage *Call) const {
   ProgramStateManager &Mgr = getStateManager();
   SubEngine* Eng = Mgr.getOwningEngine();
  
@@ -157,18 +157,18 @@ ProgramState::invalidateRegionsImpl(ArrayRef<const MemRegion *> Regions,
     StoreManager::InvalidatedRegions Invalidated;
     const StoreRef &newStore
       = Mgr.StoreMgr->invalidateRegions(getStore(), Regions, E, Count, IS,
-                                        invalidateGlobals, &Invalidated);
-    const ProgramState *newState = makeWithStore(newStore);
+                                        Call, &Invalidated);
+    ProgramStateRef newState = makeWithStore(newStore);
     return Eng->processRegionChanges(newState, &IS, Regions, Invalidated);
   }
 
   const StoreRef &newStore =
     Mgr.StoreMgr->invalidateRegions(getStore(), Regions, E, Count, IS,
-                                    invalidateGlobals, NULL);
+                                    Call, NULL);
   return makeWithStore(newStore);
 }
 
-const ProgramState *ProgramState::unbindLoc(Loc LV) const {
+ProgramStateRef ProgramState::unbindLoc(Loc LV) const {
   assert(!isa<loc::MemRegionVal>(LV) && "Use invalidateRegion instead.");
 
   Store OldStore = getStore();
@@ -180,9 +180,11 @@ const ProgramState *ProgramState::unbindLoc(Loc LV) const {
   return makeWithStore(newStore);
 }
 
-const ProgramState *ProgramState::enterStackFrame(const StackFrameContext *frame) const {
+ProgramStateRef 
+ProgramState::enterStackFrame(const LocationContext *callerCtx,
+                              const StackFrameContext *calleeCtx) const {
   const StoreRef &new_store =
-    getStateManager().StoreMgr->enterStackFrame(this, frame);
+    getStateManager().StoreMgr->enterStackFrame(this, callerCtx, calleeCtx);
   return makeWithStore(new_store);
 }
 
@@ -239,9 +241,12 @@ SVal ProgramState::getSVal(Loc location, QualType T) const {
   return V;
 }
 
-const ProgramState *ProgramState::BindExpr(const Stmt *S, SVal V, bool Invalidate) const{
-  Environment NewEnv = getStateManager().EnvMgr.bindExpr(Env, S, V,
-                                                         Invalidate);
+ProgramStateRef ProgramState::BindExpr(const Stmt *S,
+                                           const LocationContext *LCtx,
+                                           SVal V, bool Invalidate) const{
+  Environment NewEnv =
+    getStateManager().EnvMgr.bindExpr(Env, EnvironmentEntry(S, LCtx), V,
+                                      Invalidate);
   if (NewEnv == Env)
     return this;
 
@@ -250,10 +255,14 @@ const ProgramState *ProgramState::BindExpr(const Stmt *S, SVal V, bool Invalidat
   return getStateManager().getPersistentState(NewSt);
 }
 
-const ProgramState *ProgramState::bindExprAndLocation(const Stmt *S, SVal location,
-                                            SVal V) const {
+ProgramStateRef 
+ProgramState::bindExprAndLocation(const Stmt *S, const LocationContext *LCtx,
+                                  SVal location,
+                                  SVal V) const {
   Environment NewEnv =
-    getStateManager().EnvMgr.bindExprAndLocation(Env, S, location, V);
+    getStateManager().EnvMgr.bindExprAndLocation(Env,
+                                                 EnvironmentEntry(S, LCtx),
+                                                 location, V);
 
   if (NewEnv == Env)
     return this;
@@ -263,7 +272,7 @@ const ProgramState *ProgramState::bindExprAndLocation(const Stmt *S, SVal locati
   return getStateManager().getPersistentState(NewSt);
 }
 
-const ProgramState *ProgramState::assumeInBound(DefinedOrUnknownSVal Idx,
+ProgramStateRef ProgramState::assumeInBound(DefinedOrUnknownSVal Idx,
                                       DefinedOrUnknownSVal UpperBound,
                                       bool Assumption) const {
   if (Idx.isUnknown() || UpperBound.isUnknown())
@@ -308,7 +317,7 @@ const ProgramState *ProgramState::assumeInBound(DefinedOrUnknownSVal Idx,
   return CM.assume(this, cast<DefinedSVal>(inBound), Assumption);
 }
 
-const ProgramState *ProgramStateManager::getInitialState(const LocationContext *InitLoc) {
+ProgramStateRef ProgramStateManager::getInitialState(const LocationContext *InitLoc) {
   ProgramState State(this,
                 EnvMgr.getInitialEnvironment(),
                 StoreMgr->getInitialStore(InitLoc),
@@ -330,15 +339,15 @@ void ProgramStateManager::recycleUnusedStates() {
   recentlyAllocatedStates.clear();
 }
 
-const ProgramState *ProgramStateManager::getPersistentStateWithGDM(
-                                                     const ProgramState *FromState,
-                                                     const ProgramState *GDMState) {
+ProgramStateRef ProgramStateManager::getPersistentStateWithGDM(
+                                                     ProgramStateRef FromState,
+                                                     ProgramStateRef GDMState) {
   ProgramState NewState = *FromState;
   NewState.GDM = GDMState->GDM;
   return getPersistentState(NewState);
 }
 
-const ProgramState *ProgramStateManager::getPersistentState(ProgramState &State) {
+ProgramStateRef ProgramStateManager::getPersistentState(ProgramState &State) {
 
   llvm::FoldingSetNodeID ID;
   State.Profile(ID);
@@ -361,7 +370,7 @@ const ProgramState *ProgramStateManager::getPersistentState(ProgramState &State)
   return newState;
 }
 
-const ProgramState *ProgramState::makeWithStore(const StoreRef &store) const {
+ProgramStateRef ProgramState::makeWithStore(const StoreRef &store) const {
   ProgramState NewSt = *this;
   NewSt.setStore(store);
   return getStateManager().getPersistentState(NewSt);
@@ -380,114 +389,44 @@ void ProgramState::setStore(const StoreRef &newStore) {
 //  State pretty-printing.
 //===----------------------------------------------------------------------===//
 
-static bool IsEnvLoc(const Stmt *S) {
-  // FIXME: This is a layering violation.  Should be in environment.
-  return (bool) (((uintptr_t) S) & 0x1);
-}
-
-void ProgramState::print(raw_ostream &Out, CFG *C,
+void ProgramState::print(raw_ostream &Out,
                          const char *NL, const char *Sep) const {
   // Print the store.
   ProgramStateManager &Mgr = getStateManager();
   Mgr.getStoreManager().print(getStore(), Out, NL, Sep);
-  bool isFirst = true;
 
-  // FIXME: All environment printing should be moved inside Environment.
-  if (C) {
-    // Print Subexpression bindings.
-    for (Environment::iterator I = Env.begin(), E = Env.end(); I != E; ++I) {
-      if (C->isBlkExpr(I.getKey()) || IsEnvLoc(I.getKey()))
-        continue;
+  // Print out the environment.
+  Env.print(Out, NL, Sep);
 
-      if (isFirst) {
-        Out << NL << NL << "Sub-Expressions:" << NL;
-        isFirst = false;
-      } else {
-        Out << NL;
-      }
-
-      Out << " (" << (void*) I.getKey() << ") ";
-      LangOptions LO; // FIXME.
-      I.getKey()->printPretty(Out, 0, PrintingPolicy(LO));
-      Out << " : " << I.getData();
-    }
-
-    // Print block-expression bindings.
-    isFirst = true;
-    for (Environment::iterator I = Env.begin(), E = Env.end(); I != E; ++I) {
-      if (!C->isBlkExpr(I.getKey()))
-        continue;
-
-      if (isFirst) {
-        Out << NL << NL << "Block-level Expressions:" << NL;
-        isFirst = false;
-      } else {
-        Out << NL;
-      }
-
-      Out << " (" << (void*) I.getKey() << ") ";
-      LangOptions LO; // FIXME.
-      I.getKey()->printPretty(Out, 0, PrintingPolicy(LO));
-      Out << " : " << I.getData();
-    }
-  } else {
-    // Print All bindings - no info to differentiate block from subexpressions.
-    for (Environment::iterator I = Env.begin(), E = Env.end(); I != E; ++I) {
-      if (IsEnvLoc(I.getKey()))
-        continue;
-
-      if (isFirst) {
-        Out << NL << NL << "Expressions:" << NL;
-        isFirst = false;
-      } else {
-        Out << NL;
-      }
-
-      Out << " (" << (void*) I.getKey() << ") ";
-      LangOptions LO; // FIXME.
-      I.getKey()->printPretty(Out, 0, PrintingPolicy(LO));
-      Out << " : " << I.getData();
-    }
-  }
-
-  // Print locations.
-  isFirst = true;
-  
-  for (Environment::iterator I = Env.begin(), E = Env.end(); I != E; ++I) {
-    if (!IsEnvLoc(I.getKey()))
-      continue;
-    
-    if (isFirst) {
-      Out << NL << NL << "Load/store locations:" << NL;
-      isFirst = false;
-    } else {
-      Out << NL;
-    }
-
-    const Stmt *S = (Stmt*) (((uintptr_t) I.getKey()) & ((uintptr_t) ~0x1));
-    
-    Out << " (" << (void*) S << ") ";
-    LangOptions LO; // FIXME.
-    S->printPretty(Out, 0, PrintingPolicy(LO));
-    Out << " : " << I.getData();
-  }
-
+  // Print out the constraints.
   Mgr.getConstraintManager().print(this, Out, NL, Sep);
 
   // Print checker-specific data.
   Mgr.getOwningEngine()->printState(Out, this, NL, Sep);
 }
 
-void ProgramState::printDOT(raw_ostream &Out, CFG &C) const {
-  print(Out, &C, "\\l", "\\|");
-}
-
-void ProgramState::dump(CFG &C) const {
-  print(llvm::errs(), &C);
+void ProgramState::printDOT(raw_ostream &Out) const {
+  print(Out, "\\l", "\\|");
 }
 
 void ProgramState::dump() const {
-  print(llvm::errs(), 0);
+  print(llvm::errs());
+}
+
+void ProgramState::printTaint(raw_ostream &Out,
+                              const char *NL, const char *Sep) const {
+  TaintMapImpl TM = get<TaintMap>();
+
+  if (!TM.isEmpty())
+    Out <<"Tainted Symbols:" << NL;
+
+  for (TaintMapImpl::iterator I = TM.begin(), E = TM.end(); I != E; ++I) {
+    Out << I->first << " : " << I->second << NL;
+  }
+}
+
+void ProgramState::dumpTaint() const {
+  printTaint(llvm::errs());
 }
 
 //===----------------------------------------------------------------------===//
@@ -512,7 +451,7 @@ ProgramStateManager::FindGDMContext(void *K,
   return p.first;
 }
 
-const ProgramState *ProgramStateManager::addGDM(const ProgramState *St, void *Key, void *Data){
+ProgramStateRef ProgramStateManager::addGDM(ProgramStateRef St, void *Key, void *Data){
   ProgramState::GenericDataMap M1 = St->getGDM();
   ProgramState::GenericDataMap M2 = GDMFactory.add(M1, Key, Data);
 
@@ -524,7 +463,7 @@ const ProgramState *ProgramStateManager::addGDM(const ProgramState *St, void *Ke
   return getPersistentState(NewSt);
 }
 
-const ProgramState *ProgramStateManager::removeGDM(const ProgramState *state, void *Key) {
+ProgramStateRef ProgramStateManager::removeGDM(ProgramStateRef state, void *Key) {
   ProgramState::GenericDataMap OldM = state->getGDM();
   ProgramState::GenericDataMap NewM = GDMFactory.remove(OldM, Key);
 
@@ -653,41 +592,48 @@ bool ProgramState::scanReachableSymbols(const MemRegion * const *I,
   return true;
 }
 
-const ProgramState* ProgramState::addTaint(const Stmt *S,
+ProgramStateRef ProgramState::addTaint(const Stmt *S,
+                                           const LocationContext *LCtx,
                                            TaintTagType Kind) const {
   if (const Expr *E = dyn_cast_or_null<Expr>(S))
     S = E->IgnoreParens();
 
-  SymbolRef Sym = getSVal(S).getAsSymbol();
+  SymbolRef Sym = getSVal(S, LCtx).getAsSymbol();
   if (Sym)
     return addTaint(Sym, Kind);
 
-  const MemRegion *R = getSVal(S).getAsRegion();
+  const MemRegion *R = getSVal(S, LCtx).getAsRegion();
   addTaint(R, Kind);
 
   // Cannot add taint, so just return the state.
   return this;
 }
 
-const ProgramState* ProgramState::addTaint(const MemRegion *R,
+ProgramStateRef ProgramState::addTaint(const MemRegion *R,
                                            TaintTagType Kind) const {
   if (const SymbolicRegion *SR = dyn_cast_or_null<SymbolicRegion>(R))
     return addTaint(SR->getSymbol(), Kind);
   return this;
 }
 
-const ProgramState* ProgramState::addTaint(SymbolRef Sym,
+ProgramStateRef ProgramState::addTaint(SymbolRef Sym,
                                            TaintTagType Kind) const {
-  const ProgramState *NewState = set<TaintMap>(Sym, Kind);
+  // If this is a symbol cast, remove the cast before adding the taint. Taint
+  // is cast agnostic.
+  while (const SymbolCast *SC = dyn_cast<SymbolCast>(Sym))
+    Sym = SC->getOperand();
+
+  ProgramStateRef NewState = set<TaintMap>(Sym, Kind);
   assert(NewState);
   return NewState;
 }
 
-bool ProgramState::isTainted(const Stmt *S, TaintTagType Kind) const {
+bool ProgramState::isTainted(const Stmt *S, const LocationContext *LCtx,
+                             TaintTagType Kind) const {
   if (const Expr *E = dyn_cast_or_null<Expr>(S))
     S = E->IgnoreParens();
 
-  SVal val = getSVal(S);
+  SVal val = getSVal(S, LCtx);
   return isTainted(val, Kind);
 }
 
@@ -717,7 +663,7 @@ bool ProgramState::isTainted(const MemRegion *Reg, TaintTagType K) const {
   return false;
 }
 
-bool ProgramState::isTainted(const SymExpr* Sym, TaintTagType Kind) const {
+bool ProgramState::isTainted(SymbolRef Sym, TaintTagType Kind) const {
   if (!Sym)
     return false;
   
@@ -736,6 +682,10 @@ bool ProgramState::isTainted(const SymExpr* Sym, TaintTagType Kind) const {
     // If memory region is tainted, data is also tainted.
     if (const SymbolRegionValue *SRV = dyn_cast<SymbolRegionValue>(*SI))
       Tainted = Tainted || isTainted(SRV->getRegion(), Kind);
+
+    // If If this is a SymbolCast from a tainted value, it's also tainted.
+    if (const SymbolCast *SC = dyn_cast<SymbolCast>(*SI))
+      Tainted = Tainted || isTainted(SC->getOperand(), Kind);
 
     if (Tainted)
       return true;

@@ -276,38 +276,6 @@ static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
   return false;
 }
 
-static Constant *getAggregateConstantElement(Constant *Agg, Constant *Idx) {
-  ConstantInt *CI = dyn_cast<ConstantInt>(Idx);
-  if (!CI) return 0;
-  unsigned IdxV = CI->getZExtValue();
-
-  if (ConstantStruct *CS = dyn_cast<ConstantStruct>(Agg)) {
-    if (IdxV < CS->getNumOperands()) return CS->getOperand(IdxV);
-  } else if (ConstantArray *CA = dyn_cast<ConstantArray>(Agg)) {
-    if (IdxV < CA->getNumOperands()) return CA->getOperand(IdxV);
-  } else if (ConstantVector *CP = dyn_cast<ConstantVector>(Agg)) {
-    if (IdxV < CP->getNumOperands()) return CP->getOperand(IdxV);
-  } else if (isa<ConstantAggregateZero>(Agg)) {
-    if (StructType *STy = dyn_cast<StructType>(Agg->getType())) {
-      if (IdxV < STy->getNumElements())
-        return Constant::getNullValue(STy->getElementType(IdxV));
-    } else if (SequentialType *STy =
-               dyn_cast<SequentialType>(Agg->getType())) {
-      return Constant::getNullValue(STy->getElementType());
-    }
-  } else if (isa<UndefValue>(Agg)) {
-    if (StructType *STy = dyn_cast<StructType>(Agg->getType())) {
-      if (IdxV < STy->getNumElements())
-        return UndefValue::get(STy->getElementType(IdxV));
-    } else if (SequentialType *STy =
-               dyn_cast<SequentialType>(Agg->getType())) {
-      return UndefValue::get(STy->getElementType());
-    }
-  }
-  return 0;
-}
-
-
 /// CleanupConstantGlobalUsers - We just marked GV constant.  Loop over all
 /// users of the global, cleaning up the obvious ones.  This is largely just a
 /// quick scan over the use list to clean up the easy and obvious cruft.  This
@@ -520,8 +488,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const TargetData &TD) {
     NewGlobals.reserve(STy->getNumElements());
     const StructLayout &Layout = *TD.getStructLayout(STy);
     for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
-      Constant *In = getAggregateConstantElement(Init,
-                    ConstantInt::get(Type::getInt32Ty(STy->getContext()), i));
+      Constant *In = Init->getAggregateElement(i);
       assert(In && "Couldn't get element of initializer?");
       GlobalVariable *NGV = new GlobalVariable(STy->getElementType(i), false,
                                                GlobalVariable::InternalLinkage,
@@ -553,8 +520,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const TargetData &TD) {
     uint64_t EltSize = TD.getTypeAllocSize(STy->getElementType());
     unsigned EltAlign = TD.getABITypeAlignment(STy->getElementType());
     for (unsigned i = 0, e = NumElements; i != e; ++i) {
-      Constant *In = getAggregateConstantElement(Init,
-                    ConstantInt::get(Type::getInt32Ty(Init->getContext()), i));
+      Constant *In = Init->getAggregateElement(i);
       assert(In && "Couldn't get element of initializer?");
 
       GlobalVariable *NGV = new GlobalVariable(STy->getElementType(), false,
@@ -1210,7 +1176,6 @@ static Value *GetHeapSROAValue(Value *V, unsigned FieldNo,
     PHIsToRewrite.push_back(std::make_pair(PN, FieldNo));
   } else {
     llvm_unreachable("Unknown usable value");
-    Result = 0;
   }
 
   return FieldVals[FieldNo] = Result;
@@ -2069,7 +2034,8 @@ static Constant *getVal(DenseMap<Value*, Constant*> &ComputedValues, Value *V) {
 
 static inline bool 
 isSimpleEnoughValueToCommit(Constant *C,
-                            SmallPtrSet<Constant*, 8> &SimpleConstants);
+                            SmallPtrSet<Constant*, 8> &SimpleConstants,
+                            const TargetData *TD);
 
 
 /// isSimpleEnoughValueToCommit - Return true if the specified constant can be
@@ -2081,7 +2047,8 @@ isSimpleEnoughValueToCommit(Constant *C,
 /// in SimpleConstants to avoid having to rescan the same constants all the
 /// time.
 static bool isSimpleEnoughValueToCommitHelper(Constant *C,
-                                   SmallPtrSet<Constant*, 8> &SimpleConstants) {
+                                   SmallPtrSet<Constant*, 8> &SimpleConstants,
+                                   const TargetData *TD) {
   // Simple integer, undef, constant aggregate zero, global addresses, etc are
   // all supported.
   if (C->getNumOperands() == 0 || isa<BlockAddress>(C) ||
@@ -2093,7 +2060,7 @@ static bool isSimpleEnoughValueToCommitHelper(Constant *C,
       isa<ConstantVector>(C)) {
     for (unsigned i = 0, e = C->getNumOperands(); i != e; ++i) {
       Constant *Op = cast<Constant>(C->getOperand(i));
-      if (!isSimpleEnoughValueToCommit(Op, SimpleConstants))
+      if (!isSimpleEnoughValueToCommit(Op, SimpleConstants, TD))
         return false;
     }
     return true;
@@ -2105,34 +2072,42 @@ static bool isSimpleEnoughValueToCommitHelper(Constant *C,
   ConstantExpr *CE = cast<ConstantExpr>(C);
   switch (CE->getOpcode()) {
   case Instruction::BitCast:
+    // Bitcast is fine if the casted value is fine.
+    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants, TD);
+
   case Instruction::IntToPtr:
   case Instruction::PtrToInt:
-    // These casts are always fine if the casted value is.
-    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants);
+    // int <=> ptr is fine if the int type is the same size as the
+    // pointer type.
+    if (!TD || TD->getTypeSizeInBits(CE->getType()) !=
+               TD->getTypeSizeInBits(CE->getOperand(0)->getType()))
+      return false;
+    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants, TD);
       
   // GEP is fine if it is simple + constant offset.
   case Instruction::GetElementPtr:
     for (unsigned i = 1, e = CE->getNumOperands(); i != e; ++i)
       if (!isa<ConstantInt>(CE->getOperand(i)))
         return false;
-    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants);
+    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants, TD);
       
   case Instruction::Add:
     // We allow simple+cst.
     if (!isa<ConstantInt>(CE->getOperand(1)))
       return false;
-    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants);
+    return isSimpleEnoughValueToCommit(CE->getOperand(0), SimpleConstants, TD);
   }
   return false;
 }
 
 static inline bool 
 isSimpleEnoughValueToCommit(Constant *C,
-                            SmallPtrSet<Constant*, 8> &SimpleConstants) {
+                            SmallPtrSet<Constant*, 8> &SimpleConstants,
+                            const TargetData *TD) {
   // If we already checked this constant, we win.
   if (!SimpleConstants.insert(C)) return true;
   // Check the constant.
-  return isSimpleEnoughValueToCommitHelper(C, SimpleConstants);
+  return isSimpleEnoughValueToCommitHelper(C, SimpleConstants, TD);
 }
 
 
@@ -2199,23 +2174,11 @@ static Constant *EvaluateStoreInto(Constant *Init, Constant *Val,
     return Val;
   }
 
-  std::vector<Constant*> Elts;
+  SmallVector<Constant*, 32> Elts;
   if (StructType *STy = dyn_cast<StructType>(Init->getType())) {
-
     // Break up the constant into its elements.
-    if (ConstantStruct *CS = dyn_cast<ConstantStruct>(Init)) {
-      for (User::op_iterator i = CS->op_begin(), e = CS->op_end(); i != e; ++i)
-        Elts.push_back(cast<Constant>(*i));
-    } else if (isa<ConstantAggregateZero>(Init)) {
-      for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
-        Elts.push_back(Constant::getNullValue(STy->getElementType(i)));
-    } else if (isa<UndefValue>(Init)) {
-      for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
-        Elts.push_back(UndefValue::get(STy->getElementType(i)));
-    } else {
-      llvm_unreachable("This code is out of sync with "
-             " ConstantFoldLoadThroughGEPConstantExpr");
-    }
+    for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
+      Elts.push_back(Init->getAggregateElement(i));
 
     // Replace the element that we are supposed to.
     ConstantInt *CU = cast<ConstantInt>(Addr->getOperand(OpNo));
@@ -2234,22 +2197,11 @@ static Constant *EvaluateStoreInto(Constant *Init, Constant *Val,
   if (ArrayType *ATy = dyn_cast<ArrayType>(InitTy))
     NumElts = ATy->getNumElements();
   else
-    NumElts = cast<VectorType>(InitTy)->getNumElements();
+    NumElts = InitTy->getVectorNumElements();
 
   // Break up the array into elements.
-  if (ConstantArray *CA = dyn_cast<ConstantArray>(Init)) {
-    for (User::op_iterator i = CA->op_begin(), e = CA->op_end(); i != e; ++i)
-      Elts.push_back(cast<Constant>(*i));
-  } else if (ConstantVector *CV = dyn_cast<ConstantVector>(Init)) {
-    for (User::op_iterator i = CV->op_begin(), e = CV->op_end(); i != e; ++i)
-      Elts.push_back(cast<Constant>(*i));
-  } else if (isa<ConstantAggregateZero>(Init)) {
-    Elts.assign(NumElts, Constant::getNullValue(InitTy->getElementType()));
-  } else {
-    assert(isa<UndefValue>(Init) && "This code is out of sync with "
-           " ConstantFoldLoadThroughGEPConstantExpr");
-    Elts.assign(NumElts, UndefValue::get(InitTy->getElementType()));
-  }
+  for (uint64_t i = 0, e = NumElts; i != e; ++i)
+    Elts.push_back(Init->getAggregateElement(i));
 
   assert(CI->getZExtValue() < NumElts);
   Elts[CI->getZExtValue()] =
@@ -2353,7 +2305,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
 
       // If this might be too difficult for the backend to handle (e.g. the addr
       // of one global variable divided by another) then we can't commit it.
-      if (!isSimpleEnoughValueToCommit(Val, SimpleConstants))
+      if (!isSimpleEnoughValueToCommit(Val, SimpleConstants, TD))
         return false;
         
       if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Ptr))

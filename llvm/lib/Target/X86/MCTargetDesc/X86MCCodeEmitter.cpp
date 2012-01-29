@@ -85,7 +85,7 @@ public:
     }
   }
 
-  void EmitImmediate(const MCOperand &Disp,
+  void EmitImmediate(const MCOperand &Disp, SMLoc Loc,
                      unsigned ImmSize, MCFixupKind FixupKind,
                      unsigned &CurByte, raw_ostream &OS,
                      SmallVectorImpl<MCFixup> &Fixups,
@@ -202,8 +202,8 @@ StartsWithGlobalOffsetTable(const MCExpr *Expr) {
 }
 
 void X86MCCodeEmitter::
-EmitImmediate(const MCOperand &DispOp, unsigned Size, MCFixupKind FixupKind,
-              unsigned &CurByte, raw_ostream &OS,
+EmitImmediate(const MCOperand &DispOp, SMLoc Loc, unsigned Size,
+              MCFixupKind FixupKind, unsigned &CurByte, raw_ostream &OS,
               SmallVectorImpl<MCFixup> &Fixups, int ImmOffset) const {
   const MCExpr *Expr = NULL;
   if (DispOp.isImm()) {
@@ -249,7 +249,7 @@ EmitImmediate(const MCOperand &DispOp, unsigned Size, MCFixupKind FixupKind,
                                    Ctx);
 
   // Emit a symbolic constant as a fixup and 4 zeros.
-  Fixups.push_back(MCFixup::Create(CurByte, Expr, FixupKind));
+  Fixups.push_back(MCFixup::Create(CurByte, Expr, FixupKind, Loc));
   EmitConstant(0, Size, CurByte, OS);
 }
 
@@ -285,7 +285,7 @@ void X86MCCodeEmitter::EmitMemModRMByte(const MCInst &MI, unsigned Op,
     // expression to emit.
     int ImmSize = X86II::hasImm(TSFlags) ? X86II::getSizeOfImm(TSFlags) : 0;
 
-    EmitImmediate(Disp, 4, MCFixupKind(FixupKind),
+    EmitImmediate(Disp, MI.getLoc(), 4, MCFixupKind(FixupKind),
                   CurByte, OS, Fixups, -ImmSize);
     return;
   }
@@ -309,7 +309,7 @@ void X86MCCodeEmitter::EmitMemModRMByte(const MCInst &MI, unsigned Op,
 
     if (BaseReg == 0) {          // [disp32]     in X86-32 mode
       EmitByte(ModRMByte(0, RegOpcodeField, 5), CurByte, OS);
-      EmitImmediate(Disp, 4, FK_Data_4, CurByte, OS, Fixups);
+      EmitImmediate(Disp, MI.getLoc(), 4, FK_Data_4, CurByte, OS, Fixups);
       return;
     }
 
@@ -325,13 +325,13 @@ void X86MCCodeEmitter::EmitMemModRMByte(const MCInst &MI, unsigned Op,
     // Otherwise, if the displacement fits in a byte, encode as [REG+disp8].
     if (Disp.isImm() && isDisp8(Disp.getImm())) {
       EmitByte(ModRMByte(1, RegOpcodeField, BaseRegNo), CurByte, OS);
-      EmitImmediate(Disp, 1, FK_Data_1, CurByte, OS, Fixups);
+      EmitImmediate(Disp, MI.getLoc(), 1, FK_Data_1, CurByte, OS, Fixups);
       return;
     }
 
     // Otherwise, emit the most general non-SIB encoding: [REG+disp32]
     EmitByte(ModRMByte(2, RegOpcodeField, BaseRegNo), CurByte, OS);
-    EmitImmediate(Disp, 4, MCFixupKind(X86::reloc_signed_4byte), CurByte, OS,
+    EmitImmediate(Disp, MI.getLoc(), 4, MCFixupKind(X86::reloc_signed_4byte), CurByte, OS,
                   Fixups);
     return;
   }
@@ -390,10 +390,10 @@ void X86MCCodeEmitter::EmitMemModRMByte(const MCInst &MI, unsigned Op,
 
   // Do we need to output a displacement?
   if (ForceDisp8)
-    EmitImmediate(Disp, 1, FK_Data_1, CurByte, OS, Fixups);
+    EmitImmediate(Disp, MI.getLoc(), 1, FK_Data_1, CurByte, OS, Fixups);
   else if (ForceDisp32 || Disp.getImm() != 0)
-    EmitImmediate(Disp, 4, MCFixupKind(X86::reloc_signed_4byte), CurByte, OS,
-                  Fixups);
+    EmitImmediate(Disp, MI.getLoc(), 4, MCFixupKind(X86::reloc_signed_4byte),
+                  CurByte, OS, Fixups);
 }
 
 /// EmitVEXOpcodePrefix - AVX instructions are encoded using a opcode prefix
@@ -430,10 +430,6 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   // VEX_W: opcode specific (use like REX.W, or used for
   // opcode extension, or ignored, depending on the opcode byte)
   unsigned char VEX_W = 0;
-
-  // XOP_W: opcode specific, same bit as VEX_W, but used to
-  // swap operand 3 and 4 for FMA4 and XOP instructions
-  unsigned char XOP_W = 0;
 
   // XOP: Use XOP prefix byte 0x8f instead of VEX.
   unsigned char XOP = 0;
@@ -476,9 +472,6 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
 
   if ((TSFlags >> X86II::VEXShift) & X86II::VEX_W)
     VEX_W = 1;
-
-  if ((TSFlags >> X86II::VEXShift) & X86II::XOP_W)
-    XOP_W = 1;
 
   if ((TSFlags >> X86II::VEXShift) & X86II::XOP)
     XOP = 1;
@@ -669,7 +662,7 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
   // 3 byte VEX prefix
   EmitByte(XOP ? 0x8F : 0xC4, CurByte, OS);
   EmitByte(VEX_R << 7 | VEX_X << 6 | VEX_B << 5 | VEX_5M, CurByte, OS);
-  EmitByte(LastByte | ((VEX_W | XOP_W) << 7), CurByte, OS);
+  EmitByte(LastByte | (VEX_W << 7), CurByte, OS);
 }
 
 /// DetermineREXPrefix - Determine if the MCInst has to be encoded with a X86-64
@@ -929,8 +922,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   // It uses the VEX.VVVV field?
   bool HasVEX_4V = (TSFlags >> X86II::VEXShift) & X86II::VEX_4V;
   bool HasVEX_4VOp3 = (TSFlags >> X86II::VEXShift) & X86II::VEX_4VOp3;
-  bool HasXOP_W = (TSFlags >> X86II::VEXShift) & X86II::XOP_W;
-  unsigned XOP_W_I8IMMOperand = 2;
+  bool HasMemOp4 = (TSFlags >> X86II::VEXShift) & X86II::MemOp4;
+  const unsigned MemOp4_I8IMMOperand = 2;
 
   // Determine where the memory operand starts, if present.
   int MemoryOperand = X86II::getMemoryOperandNo(TSFlags, Opcode);
@@ -959,17 +952,19 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     break;
   case X86II::RawFrmImm8:
     EmitByte(BaseOpcode, CurByte, OS);
-    EmitImmediate(MI.getOperand(CurOp++),
+    EmitImmediate(MI.getOperand(CurOp++), MI.getLoc(),
                   X86II::getSizeOfImm(TSFlags), getImmFixupKind(TSFlags),
                   CurByte, OS, Fixups);
-    EmitImmediate(MI.getOperand(CurOp++), 1, FK_Data_1, CurByte, OS, Fixups);
+    EmitImmediate(MI.getOperand(CurOp++), MI.getLoc(), 1, FK_Data_1, CurByte,
+                  OS, Fixups);
     break;
   case X86II::RawFrmImm16:
     EmitByte(BaseOpcode, CurByte, OS);
-    EmitImmediate(MI.getOperand(CurOp++),
+    EmitImmediate(MI.getOperand(CurOp++), MI.getLoc(),
                   X86II::getSizeOfImm(TSFlags), getImmFixupKind(TSFlags),
                   CurByte, OS, Fixups);
-    EmitImmediate(MI.getOperand(CurOp++), 2, FK_Data_2, CurByte, OS, Fixups);
+    EmitImmediate(MI.getOperand(CurOp++), MI.getLoc(), 2, FK_Data_2, CurByte,
+                  OS, Fixups);
     break;
 
   case X86II::AddRegFrm:
@@ -1003,14 +998,14 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     if (HasVEX_4V) // Skip 1st src (which is encoded in VEX_VVVV)
       SrcRegNum++;
 
-    if(HasXOP_W) // Skip 2nd src (which is encoded in I8IMM)
+    if(HasMemOp4) // Skip 2nd src (which is encoded in I8IMM)
       SrcRegNum++;
 
     EmitRegModRMByte(MI.getOperand(SrcRegNum),
                      GetX86RegNum(MI.getOperand(CurOp)), CurByte, OS);
 
-    // 2 operands skipped with HasXOP_W, comensate accordingly
-    CurOp = HasXOP_W ? SrcRegNum : SrcRegNum + 1;
+    // 2 operands skipped with HasMemOp4, comensate accordingly
+    CurOp = HasMemOp4 ? SrcRegNum : SrcRegNum + 1;
     if (HasVEX_4VOp3)
       ++CurOp;
     break;
@@ -1022,7 +1017,7 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
       ++AddrOperands;
       ++FirstMemOp;  // Skip the register source (which is encoded in VEX_VVVV).
     }
-    if(HasXOP_W) // Skip second register source (encoded in I8IMM)
+    if(HasMemOp4) // Skip second register source (encoded in I8IMM)
       ++FirstMemOp;
 
     EmitByte(BaseOpcode, CurByte, OS);
@@ -1113,7 +1108,7 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     // The last source register of a 4 operand instruction in AVX is encoded
     // in bits[7:4] of a immediate byte.
     if ((TSFlags >> X86II::VEXShift) & X86II::VEX_I8IMM) {
-      const MCOperand &MO = MI.getOperand(HasXOP_W ? XOP_W_I8IMMOperand
+      const MCOperand &MO = MI.getOperand(HasMemOp4 ? MemOp4_I8IMMOperand
                                                    : CurOp);
       CurOp++;
       bool IsExtReg = X86II::isX86_64ExtendedReg(MO.getReg());
@@ -1129,8 +1124,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
           RegNum |= Val;
         }
       }
-      EmitImmediate(MCOperand::CreateImm(RegNum), 1, FK_Data_1, CurByte, OS,
-                    Fixups);
+      EmitImmediate(MCOperand::CreateImm(RegNum), MI.getLoc(), 1, FK_Data_1,
+                    CurByte, OS, Fixups);
     } else {
       unsigned FixupKind;
       // FIXME: Is there a better way to know that we need a signed relocation?
@@ -1141,7 +1136,7 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
         FixupKind = X86::reloc_signed_4byte;
       else
         FixupKind = getImmFixupKind(TSFlags);
-      EmitImmediate(MI.getOperand(CurOp++),
+      EmitImmediate(MI.getOperand(CurOp++), MI.getLoc(),
                     X86II::getSizeOfImm(TSFlags), MCFixupKind(FixupKind),
                     CurByte, OS, Fixups);
     }

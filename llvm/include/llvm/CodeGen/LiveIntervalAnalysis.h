@@ -269,15 +269,14 @@ namespace llvm {
     /// within a single basic block.
     bool intervalIsInOneMBB(const LiveInterval &li) const;
 
-    /// getLastSplitPoint - Return the last possible insertion point in mbb for
-    /// spilling and splitting code. This is the first terminator, or the call
-    /// instruction if li is live into a landing pad successor.
-    MachineBasicBlock::iterator getLastSplitPoint(const LiveInterval &li,
-                                                  MachineBasicBlock *mbb) const;
-
     /// addKillFlags - Add kill flags to any instruction that kills a virtual
     /// register.
     void addKillFlags();
+
+    /// moveInstr - Move MachineInstr mi to insertPt, updating the live
+    /// intervals of mi's operands to reflect the new position. The insertion
+    /// point can be above or below mi, but must be in the same basic block.
+    void moveInstr(MachineBasicBlock::iterator insertPt, MachineInstr* mi);
 
   private:
     /// computeIntervals - Compute live intervals.

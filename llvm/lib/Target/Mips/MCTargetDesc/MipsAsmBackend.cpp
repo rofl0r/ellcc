@@ -71,12 +71,14 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
 namespace {
 class MipsAsmBackend : public MCAsmBackend {
 public:
-  MipsAsmBackend(const Target &T) : MCAsmBackend() {}
+  uint8_t OSABI;
+  MipsAsmBackend(const Target &T, uint8_t OSABI_) :
+    MCAsmBackend(), OSABI(OSABI_) {}
 
   /// ApplyFixup - Apply the \arg Value for given \arg Fixup into the provided
   /// data fragment, at the offset specified by the fixup and following the
   /// fixup kind as appropriate.
-  void ApplyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
+  void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
                   uint64_t Value) const {
     MCFixupKind Kind = Fixup.getKind();
     Value = adjustFixupValue((unsigned)Kind, Value);
@@ -153,7 +155,7 @@ public:
   /// relaxation.
   ///
   /// \param Inst - The instruction to test.
-  bool MayNeedRelaxation(const MCInst &Inst) const {
+  bool mayNeedRelaxation(const MCInst &Inst) const {
     return false;
   }
 
@@ -174,7 +176,7 @@ public:
   /// \param Inst - The instruction to relax, which may be the same
   /// as the output.
   /// \parm Res [output] - On return, the relaxed instruction.
-  void RelaxInstruction(const MCInst &Inst, MCInst &Res) const {
+  void relaxInstruction(const MCInst &Inst, MCInst &Res) const {
   }
   
   /// @}
@@ -184,17 +186,15 @@ public:
   /// it should return an error.
   ///
   /// \return - True on success.
-  bool WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
+  bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
     return true;
   }
 };
 
 class MipsEB_AsmBackend : public MipsAsmBackend {
 public:
-  uint8_t OSABI;
-
   MipsEB_AsmBackend(const Target &T, uint8_t _OSABI)
-    : MipsAsmBackend(T), OSABI(_OSABI) {}
+    : MipsAsmBackend(T, _OSABI) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
     return createMipsELFObjectWriter(OS, /*IsLittleEndian*/ false, OSABI);
@@ -203,10 +203,8 @@ public:
 
 class MipsEL_AsmBackend : public MipsAsmBackend {
 public:
-  uint8_t OSABI;
-
   MipsEL_AsmBackend(const Target &T, uint8_t _OSABI)
-    : MipsAsmBackend(T), OSABI(_OSABI) {}
+    : MipsAsmBackend(T, _OSABI) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
     return createMipsELFObjectWriter(OS, /*IsLittleEndian*/ true, OSABI);
@@ -214,11 +212,12 @@ public:
 };
 } // namespace
 
-MCAsmBackend *llvm::createMipsAsmBackend(const Target &T, StringRef TT) {
-  Triple TheTriple(TT);
+MCAsmBackend *llvm::createMipsBEAsmBackend(const Target &T, StringRef TT) {
+  uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(Triple(TT).getOS());
+  return new MipsEB_AsmBackend(T, OSABI);
+}
 
-  // just return little endian for now
-  //
+MCAsmBackend *llvm::createMipsLEAsmBackend(const Target &T, StringRef TT) {
   uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(Triple(TT).getOS());
   return new MipsEL_AsmBackend(T, OSABI);
 }

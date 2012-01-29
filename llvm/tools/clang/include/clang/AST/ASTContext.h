@@ -202,11 +202,12 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   /// \brief The typedef for the predefined 'SEL' type.
   mutable TypedefDecl *ObjCSelDecl;
 
-  QualType ObjCProtoType;
-
   /// \brief The typedef for the predefined 'Class' type.
   mutable TypedefDecl *ObjCClassDecl;
-  
+
+  /// \brief The typedef for the predefined 'Protocol' class in Objective-C.
+  mutable ObjCInterfaceDecl *ObjCProtocolClassDecl;
+
   // Typedefs which may be provided defining the structure of Objective-C
   // pseudo-builtins
   QualType ObjCIdRedefinitionType;
@@ -1104,9 +1105,6 @@ public:
     return getTypeDeclType(getObjCSelDecl());
   }
 
-  void setObjCProtoType(QualType QT);
-  QualType getObjCProtoType() const { return ObjCProtoType; }
-
   /// \brief Retrieve the typedef declaration corresponding to the predefined
   /// Objective-C 'Class' type.
   TypedefDecl *getObjCClassDecl() const;
@@ -1118,6 +1116,15 @@ public:
     return getTypeDeclType(getObjCClassDecl());
   }
 
+  /// \brief Retrieve the Objective-C class declaration corresponding to 
+  /// the predefined 'Protocol' class.
+  ObjCInterfaceDecl *getObjCProtocolDecl() const;
+  
+  /// \brief Retrieve the type of the Objective-C "Protocol" class.
+  QualType getObjCProtoType() const {
+    return getObjCInterfaceType(getObjCProtocolDecl());
+  }
+  
   void setBuiltinVaListType(QualType T);
   QualType getBuiltinVaListType() const { return BuiltinVaListType; }
 
@@ -1293,7 +1300,8 @@ public:
   const ASTRecordLayout &getASTObjCInterfaceLayout(const ObjCInterfaceDecl *D)
     const;
 
-  void DumpRecordLayout(const RecordDecl *RD, raw_ostream &OS) const;
+  void DumpRecordLayout(const RecordDecl *RD, raw_ostream &OS,
+                        bool Simple = false) const;
 
   /// getASTObjCImplementationLayout - Get or compute information about
   /// the layout of the specified Objective-C implementation. This may
@@ -1308,6 +1316,9 @@ public:
   /// ...the first non-pure virtual function that is not inline at the point
   /// of class definition.
   const CXXMethodDecl *getKeyFunction(const CXXRecordDecl *RD);
+
+  /// Get the offset of a FieldDecl or IndirectFieldDecl, in bits.
+  uint64_t getFieldOffset(const ValueDecl *FD) const;
 
   bool isNearlyEmpty(const CXXRecordDecl *RD) const;
 

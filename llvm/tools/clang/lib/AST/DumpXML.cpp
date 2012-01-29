@@ -66,7 +66,6 @@ template <class Impl> struct XMLDeclVisitor {
 
   void dispatch(Decl *D) {
     switch (D->getKind()) {
-      default: llvm_unreachable("Decl that isn't part of DeclNodes.inc!");
 #define DECL(DERIVED, BASE) \
       case Decl::DERIVED: \
         DISPATCH(dispatch##DERIVED##DeclAttrs, DERIVED##Decl); \
@@ -121,7 +120,6 @@ template <class Impl> struct XMLTypeVisitor {
 
   void dispatch(Type *T) {
     switch (T->getTypeClass()) {
-      default: llvm_unreachable("Type that isn't part of TypeNodes.inc!");
 #define TYPE(DERIVED, BASE) \
       case Type::DERIVED: \
         DISPATCH(dispatch##DERIVED##TypeAttrs, DERIVED##Type); \
@@ -167,7 +165,6 @@ static StringRef getTypeKindName(Type *T) {
   }
 
   llvm_unreachable("unknown type kind!");
-  return "unknown_type";
 }
 
 struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
@@ -411,7 +408,7 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
   }
 
   template <class T> void visitRedeclarableAttrs(T *D) {
-    if (T *Prev = D->getPreviousDeclaration())
+    if (T *Prev = D->getPreviousDecl())
       setPointer("previous", Prev);
   }
 
@@ -740,11 +737,6 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
     visitDeclContext(D);
   }
 
-  // ObjCClassDecl
-  void visitObjCClassDeclChildren(ObjCClassDecl *D) {
-    visitDeclRef(D->getForwardInterfaceDecl());
-  }
-
   // ObjCInterfaceDecl
   void visitCategoryList(ObjCCategoryDecl *D) {
     if (!D) return;
@@ -815,18 +807,11 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
     }
   }
 
-  // ObjCForwardProtocolDecl
-  void visitObjCForwardProtocolDeclChildren(ObjCForwardProtocolDecl *D) {
-    for (ObjCForwardProtocolDecl::protocol_iterator
-           I = D->protocol_begin(), E = D->protocol_end(); I != E; ++I)
-      visitDeclRef(*I);
-  }
-
   // ObjCProtocolDecl
-  void visitObjCProtocolDeclAttrs(ObjCProtocolDecl *D) {
-    setFlag("forward_decl", D->isForwardDecl());
-  }
   void visitObjCProtocolDeclChildren(ObjCProtocolDecl *D) {
+    if (!D->isThisDeclarationADefinition())
+      return;
+    
     if (D->protocol_begin() != D->protocol_end()) {
       TemporaryContainer C(*this, "protocols");
       for (ObjCInterfaceDecl::protocol_iterator
@@ -835,6 +820,9 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
     }
   }
   void visitObjCProtocolDeclAsContext(ObjCProtocolDecl *D) {
+    if (!D->isThisDeclarationADefinition())
+      return;
+    
     visitDeclContext(D);
   }
 

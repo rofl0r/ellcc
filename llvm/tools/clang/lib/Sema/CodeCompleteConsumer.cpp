@@ -71,8 +71,8 @@ bool CodeCompletionContext::wantConstructorResults() const {
   case CCC_ObjCCategoryName:
     return false;
   }
-  
-  return false;
+
+  llvm_unreachable("Invalid CodeCompletionContext::Kind!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -93,7 +93,6 @@ CodeCompletionString::Chunk::Chunk(ChunkKind Kind, const char *Text)
 
   case CK_Optional:
     llvm_unreachable("Optional strings cannot be created from text");
-    break;
       
   case CK_LeftParen:
     this->Text = "(";
@@ -330,8 +329,8 @@ CodeCompleteConsumer::OverloadCandidate::getFunctionType() const {
   case CK_FunctionType:
     return Type;
   }
-  
-  return 0;
+
+  llvm_unreachable("Invalid CandidateKind!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -424,8 +423,17 @@ void CodeCompletionResult::computeCursorKindAndAvailability(bool Accessible) {
         Availability = CXAvailability_NotAvailable;
       
     CursorKind = getCursorKindForDecl(Declaration);
-    if (CursorKind == CXCursor_UnexposedDecl)
-      CursorKind = CXCursor_NotImplemented;
+    if (CursorKind == CXCursor_UnexposedDecl) {
+      // FIXME: Forward declarations of Objective-C classes and protocols 
+      // are not directly exposed, but we want code completion to treat them 
+      // like a definition.
+      if (isa<ObjCInterfaceDecl>(Declaration))
+        CursorKind = CXCursor_ObjCInterfaceDecl;
+      else if (isa<ObjCProtocolDecl>(Declaration))
+        CursorKind = CXCursor_ObjCProtocolDecl;
+      else
+        CursorKind = CXCursor_NotImplemented;
+    }
     break;
 
   case RK_Macro:

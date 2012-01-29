@@ -169,6 +169,7 @@ public:
     AT_analyzer_noreturn,
     AT_annotate,
     AT_arc_weakref_unavailable,
+    AT_objc_requires_property_definitions,
     AT_availability,      // Clang-specific
     AT_base_check,
     AT_blocks,
@@ -217,6 +218,7 @@ public:
     AT_naked,
     AT_neon_polyvector_type,    // Clang-specific.
     AT_neon_vector_type,        // Clang-specific.
+    AT_no_address_safety_analysis,
     AT_no_instrument_function,
     AT_no_thread_safety_analysis,
     AT_nocommon,

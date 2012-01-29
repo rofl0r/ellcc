@@ -23,6 +23,7 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
+#include "clang/Sema/TypoCorrection.h"
 #include "clang/Basic/PrettyStackTrace.h"
 #include "RAIIObjectsForParser.h"
 #include "llvm/ADT/SmallVector.h"
@@ -174,8 +175,8 @@ static prec::Level getBinOpPrecedence(tok::TokenKind Kind,
 ///       expression: [C99 6.5.17]
 ///         assignment-expression ...[opt]
 ///         expression ',' assignment-expression ...[opt]
-ExprResult Parser::ParseExpression() {
-  ExprResult LHS(ParseAssignmentExpression());
+ExprResult Parser::ParseExpression(TypeCastState isTypeCast) {
+  ExprResult LHS(ParseAssignmentExpression(isTypeCast));
   return ParseRHSOfBinaryExpression(move(LHS), prec::Comma);
 }
 
@@ -211,7 +212,7 @@ Parser::ParseExpressionWithLeadingExtension(SourceLocation ExtLoc) {
 }
 
 /// ParseAssignmentExpression - Parse an expr that doesn't include commas.
-ExprResult Parser::ParseAssignmentExpression() {
+ExprResult Parser::ParseAssignmentExpression(TypeCastState isTypeCast) {
   if (Tok.is(tok::code_completion)) {
     Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Expression);
     cutOffParsing();
@@ -221,7 +222,9 @@ ExprResult Parser::ParseAssignmentExpression() {
   if (Tok.is(tok::kw_throw))
     return ParseThrowExpression();
 
-  ExprResult LHS = ParseCastExpression(/*isUnaryExpression=*/false);
+  ExprResult LHS = ParseCastExpression(/*isUnaryExpression=*/false,
+                                       /*isAddressOfOperand=*/false,
+                                       isTypeCast);
   return ParseRHSOfBinaryExpression(move(LHS), prec::Assignment);
 }
 
@@ -312,8 +315,8 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
         SourceLocation FILoc = Tok.getLocation();
         const char *FIText = ": ";
         const SourceManager &SM = PP.getSourceManager();
-        if (FILoc.isFileID() || PP.isAtStartOfMacroExpansion(FILoc)) {
-          FILoc = SM.getExpansionLoc(FILoc);
+        if (FILoc.isFileID() || PP.isAtStartOfMacroExpansion(FILoc, &FILoc)) {
+          assert(FILoc.isFileID());
           bool IsInvalid = false;
           const char *SourcePtr =
             SM.getCharacterData(FILoc.getLocWithOffset(-1), &IsInvalid);
@@ -417,7 +420,7 @@ Parser::ParseRHSOfBinaryExpression(ExprResult LHS, prec::Level MinPrec) {
 ///
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,
-                                       bool isTypeCast) {
+                                       TypeCastState isTypeCast) {
   bool NotCastExpr;
   ExprResult Res = ParseCastExpression(isUnaryExpression,
                                        isAddressOfOperand,
@@ -426,6 +429,29 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   if (NotCastExpr)
     Diag(Tok, diag::err_expected_expression);
   return move(Res);
+}
+
+namespace {
+class CastExpressionIdValidator : public CorrectionCandidateCallback {
+ public:
+  CastExpressionIdValidator(bool AllowTypes, bool AllowNonTypes)
+      : AllowNonTypes(AllowNonTypes) {
+    WantTypeSpecifiers = AllowTypes;
+  }
+
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    NamedDecl *ND = candidate.getCorrectionDecl();
+    if (!ND)
+      return candidate.isKeyword();
+
+    if (isa<TypeDecl>(ND))
+      return WantTypeSpecifiers;
+    return AllowNonTypes;
+  }
+
+ private:
+  bool AllowNonTypes;
+};
 }
 
 /// ParseCastExpression - Parse a cast-expression, or, if isUnaryExpression is
@@ -466,7 +492,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 /// [C++]   boolean-literal  [C++ 2.13.5]
 /// [C++0x] 'nullptr'        [C++0x 2.14.7]
 ///         '(' expression ')'
-/// [C1X]   generic-selection
+/// [C11]   generic-selection
 ///         '__func__'        [C99 6.4.2.2]
 /// [GNU]   '__FUNCTION__'
 /// [GNU]   '__PRETTY_FUNCTION__'
@@ -592,7 +618,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
 ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
                                        bool isAddressOfOperand,
                                        bool &NotCastExpr,
-                                       bool isTypeCast) {
+                                       TypeCastState isTypeCast) {
   ExprResult Res;
   tok::TokenKind SavedKind = Tok.getKind();
   NotCastExpr = false;
@@ -623,7 +649,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       ColonProtectionRAIIObject X(*this, false);
 
       Res = ParseParenExpression(ParenExprType, false/*stopIfCastExr*/,
-                                 isTypeCast, CastTy, RParenLoc);
+                                 isTypeCast == IsTypeCast, CastTy, RParenLoc);
     }
 
     switch (ParenExprType) {
@@ -769,9 +795,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     // not.
     UnqualifiedId Name;
     CXXScopeSpec ScopeSpec;
+    SourceLocation TemplateKWLoc;
+    CastExpressionIdValidator Validator(isTypeCast != NotTypeCast,
+                                        isTypeCast != IsTypeCast);
     Name.setIdentifier(&II, ILoc);
-    Res = Actions.ActOnIdExpression(getCurScope(), ScopeSpec, Name, 
-                                    Tok.is(tok::l_paren), isAddressOfOperand);
+    Res = Actions.ActOnIdExpression(getCurScope(), ScopeSpec, TemplateKWLoc,
+                                    Name, Tok.is(tok::l_paren),
+                                    isAddressOfOperand, &Validator);
     break;
   }
   case tok::char_constant:     // constant: character-constant
@@ -794,7 +824,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::utf32_string_literal:
     Res = ParseStringLiteralExpression();
     break;
-  case tok::kw__Generic:   // primary-expression: generic-selection [C1X 6.5.1]
+  case tok::kw__Generic:   // primary-expression: generic-selection [C11 6.5.1]
     Res = ParseGenericSelectionExpression();
     break;
   case tok::kw___builtin_va_arg:
@@ -914,6 +944,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     }
     // Fall through
       
+  case tok::annot_decltype:
   case tok::kw_char:
   case tok::kw_wchar_t:
   case tok::kw_char16_t:
@@ -1132,8 +1163,13 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::l_square:
     if (getLang().CPlusPlus0x) {
       if (getLang().ObjC1) {
+        // C++11 lambda expressions and Objective-C message sends both start with a
+        // square bracket.  There are three possibilities here:
+        // we have a valid lambda expression, we have an invalid lambda
+        // expression, or we have something that doesn't appear to be a lambda.
+        // If we're in the last case, we fall back to ParseObjCMessageExpression.
         Res = TryParseLambdaExpression();
-        if (Res.isInvalid())
+        if (!Res.isInvalid() && !Res.get())
           Res = ParseObjCMessageExpression();
         break;
       }
@@ -1368,19 +1404,19 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       // names a real destructor.
       // Allow explicit constructor calls in Microsoft mode.
       // FIXME: Add support for explicit call of template constructor.
+      SourceLocation TemplateKWLoc;
       UnqualifiedId Name;
       if (ParseUnqualifiedId(SS, 
                              /*EnteringContext=*/false, 
                              /*AllowDestructorName=*/true,
                              /*AllowConstructorName=*/ getLang().MicrosoftExt, 
-                             ObjectType,
-                             Name))
+                             ObjectType, TemplateKWLoc, Name))
         LHS = ExprError();
       
       if (!LHS.isInvalid())
         LHS = Actions.ActOnMemberAccessExpr(getCurScope(), LHS.take(), OpLoc, 
-                                            OpKind, SS, Name, ObjCImpDecl,
-                                            Tok.is(tok::l_paren));
+                                            OpKind, SS, TemplateKWLoc, Name,
+                                            ObjCImpDecl, Tok.is(tok::l_paren));
       break;
     }
     case tok::plusplus:    // postfix-expression: postfix-expression '++'
@@ -1437,14 +1473,6 @@ Parser::ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
       return ExprError();
     }
 
-    // C++0x [expr.sizeof]p1:
-    //   [...] The operand is either an expression, which is an unevaluated
-    //   operand (Clause 5) [...]
-    //
-    // The GNU typeof and GNU/C++11 alignof extensions also behave as
-    // unevaluated operands.
-    EnterExpressionEvaluationContext Unevaluated(Actions,
-                                                 Sema::Unevaluated);
     Operand = ParseCastExpression(true/*isUnaryExpression*/);
   } else {
     // If it starts with a '(', we know that it is either a parenthesized
@@ -1454,14 +1482,6 @@ Parser::ParseExprAfterUnaryExprOrTypeTrait(const Token &OpTok,
     ParenParseOption ExprType = CastExpr;
     SourceLocation LParenLoc = Tok.getLocation(), RParenLoc;
 
-    // C++0x [expr.sizeof]p1:
-    //   [...] The operand is either an expression, which is an unevaluated
-    //   operand (Clause 5) [...]
-    //
-    // The GNU typeof and GNU/C++11 alignof extensions also behave as
-    // unevaluated operands.
-    EnterExpressionEvaluationContext Unevaluated(Actions,
-                                                 Sema::Unevaluated);
     Operand = ParseParenExpression(ExprType, true/*stopIfCastExpr*/, 
                                    false, CastTy, RParenLoc);
     CastRange = SourceRange(LParenLoc, RParenLoc);
@@ -1549,6 +1569,8 @@ ExprResult Parser::ParseUnaryExprOrTypeTraitExpression() {
 
   if (OpTok.is(tok::kw_alignof))
     Diag(OpTok, diag::warn_cxx98_compat_alignof);
+
+  EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated);
 
   bool isCastExpr;
   ParsedType CastTy;
@@ -1962,7 +1984,7 @@ Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
         // TODO: For cast expression with CastTy.
         Result = ParseCastExpression(/*isUnaryExpression=*/false,
                                      /*isAddressOfOperand=*/false,
-                                     /*isTypeCast=*/true);
+                                     /*isTypeCast=*/IsTypeCast);
         if (!Result.isInvalid()) {
           Result = Actions.ActOnCastExpr(getCurScope(), OpenLoc,
                                          DeclaratorInfo, CastTy, 
@@ -1989,7 +2011,7 @@ Parser::ParseParenExpression(ParenParseOption &ExprType, bool stopIfCastExpr,
   } else {
     InMessageExpressionRAIIObject InMessage(*this, false);
     
-    Result = ParseExpression();
+    Result = ParseExpression(MaybeTypeCast);
     ExprType = SimpleExpr;
 
     // Don't build a paren expression unless we actually match a ')'.
@@ -2050,8 +2072,8 @@ ExprResult Parser::ParseStringLiteralExpression() {
   return Actions.ActOnStringLiteral(&StringToks[0], StringToks.size());
 }
 
-/// ParseGenericSelectionExpression - Parse a C1X generic-selection
-/// [C1X 6.5.1.1].
+/// ParseGenericSelectionExpression - Parse a C11 generic-selection
+/// [C11 6.5.1.1].
 ///
 ///    generic-selection:
 ///           _Generic ( assignment-expression , generic-assoc-list )
@@ -2065,8 +2087,8 @@ ExprResult Parser::ParseGenericSelectionExpression() {
   assert(Tok.is(tok::kw__Generic) && "_Generic keyword expected");
   SourceLocation KeyLoc = ConsumeToken();
 
-  if (!getLang().C1X)
-    Diag(KeyLoc, diag::ext_c1x_generic_selection);
+  if (!getLang().C11)
+    Diag(KeyLoc, diag::ext_c11_generic_selection);
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen))
@@ -2074,7 +2096,7 @@ ExprResult Parser::ParseGenericSelectionExpression() {
 
   ExprResult ControllingExpr;
   {
-    // C1X 6.5.1.1p3 "The controlling expression of a generic selection is
+    // C11 6.5.1.1p3 "The controlling expression of a generic selection is
     // not evaluated."
     EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated);
     ControllingExpr = ParseAssignmentExpression();
@@ -2095,7 +2117,7 @@ ExprResult Parser::ParseGenericSelectionExpression() {
   while (1) {
     ParsedType Ty;
     if (Tok.is(tok::kw_default)) {
-      // C1X 6.5.1.1p2 "A generic selection shall have no more than one default
+      // C11 6.5.1.1p2 "A generic selection shall have no more than one default
       // generic association."
       if (!DefaultLoc.isInvalid()) {
         Diag(Tok, diag::err_duplicate_default_assoc);

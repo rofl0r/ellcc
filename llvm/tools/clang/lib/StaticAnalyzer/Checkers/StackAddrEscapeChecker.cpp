@@ -119,7 +119,7 @@ void StackAddrEscapeChecker::checkPreStmt(const ReturnStmt *RS,
   if (!RetE)
     return;
  
-  SVal V = C.getState()->getSVal(RetE);
+  SVal V = C.getState()->getSVal(RetE, C.getLocationContext());
   const MemRegion *R = V.getAsRegion();
 
   if (!R || !R->hasStackStorage())
@@ -137,7 +137,7 @@ void StackAddrEscapeChecker::checkPreStmt(const ReturnStmt *RS,
 }
 
 void StackAddrEscapeChecker::checkEndPath(CheckerContext &Ctx) const {
-  const ProgramState *state = Ctx.getState();
+  ProgramStateRef state = Ctx.getState();
 
   // Iterate over all bindings to global variables and see if it contains
   // a memory region in the stack space.

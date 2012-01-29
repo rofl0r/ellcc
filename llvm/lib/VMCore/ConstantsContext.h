@@ -211,11 +211,11 @@ public:
 /// used behind the scenes to implement getelementpr constant exprs.
 class GetElementPtrConstantExpr : public ConstantExpr {
   virtual void anchor();
-  GetElementPtrConstantExpr(Constant *C, const std::vector<Constant*> &IdxList,
+  GetElementPtrConstantExpr(Constant *C, ArrayRef<Constant*> IdxList,
                             Type *DestTy);
 public:
   static GetElementPtrConstantExpr *Create(Constant *C,
-                                           const std::vector<Constant*>&IdxList,
+                                           ArrayRef<Constant*> IdxList,
                                            Type *DestTy,
                                            unsigned Flags) {
     GetElementPtrConstantExpr *Result =
@@ -458,7 +458,6 @@ struct ConstantCreator<ConstantExpr, Type, ExprMapKeyType> {
       return new CompareConstantExpr(Ty, Instruction::FCmp, V.subclassdata,
                                      V.operands[0], V.operands[1]);
     llvm_unreachable("Invalid ConstantExpr!");
-    return 0;
   }
 };
 
@@ -478,13 +477,6 @@ struct ConstantKeyData<ConstantExpr> {
   }
 };
 
-// ConstantAggregateZero does not take extra "value" argument...
-template<class ValType>
-struct ConstantCreator<ConstantAggregateZero, Type, ValType> {
-  static ConstantAggregateZero *create(Type *Ty, const ValType &V){
-    return new ConstantAggregateZero(Ty);
-  }
-};
 
 template<>
 struct ConstantKeyData<ConstantVector> {
@@ -495,14 +487,6 @@ struct ConstantKeyData<ConstantVector> {
     for (unsigned i = 0, e = CP->getNumOperands(); i != e; ++i)
       Elements.push_back(CP->getOperand(i));
     return Elements;
-  }
-};
-
-template<>
-struct ConstantKeyData<ConstantAggregateZero> {
-  typedef char ValType;
-  static ValType getValType(ConstantAggregateZero *C) {
-    return 0;
   }
 };
 
@@ -530,37 +514,6 @@ struct ConstantKeyData<ConstantStruct> {
   }
 };
 
-// ConstantPointerNull does not take extra "value" argument...
-template<class ValType>
-struct ConstantCreator<ConstantPointerNull, PointerType, ValType> {
-  static ConstantPointerNull *create(PointerType *Ty, const ValType &V){
-    return new ConstantPointerNull(Ty);
-  }
-};
-
-template<>
-struct ConstantKeyData<ConstantPointerNull> {
-  typedef char ValType;
-  static ValType getValType(ConstantPointerNull *C) {
-    return 0;
-  }
-};
-
-// UndefValue does not take extra "value" argument...
-template<class ValType>
-struct ConstantCreator<UndefValue, Type, ValType> {
-  static UndefValue *create(Type *Ty, const ValType &V) {
-    return new UndefValue(Ty);
-  }
-};
-
-template<>
-struct ConstantKeyData<UndefValue> {
-  typedef char ValType;
-  static ValType getValType(UndefValue *C) {
-    return 0;
-  }
-};
 
 template<>
 struct ConstantCreator<InlineAsm, PointerType, InlineAsmKeyType> {

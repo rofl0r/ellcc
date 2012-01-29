@@ -92,9 +92,8 @@ namespace TemplateArgumentConversion {
 namespace CaseStatements {
   void f(int n) {
     switch (n) {
-    // FIXME: Produce the 'add ()' fixit for this.
-    case MemberZero().zero: // desired-error {{did you mean to call it with no arguments?}} expected-error {{not an integer constant expression}} expected-note {{non-literal type '<bound member function type>'}}
-    case id(1):
+    case MemberZero().zero: // expected-error {{did you mean to call it with no arguments?}} expected-note {{previous}}
+    case id(0): // expected-error {{duplicate case value '0'}}
       return;
     }
   }
@@ -168,7 +167,7 @@ namespace FunctionCast {
   constexpr int f() { return 1; }
   typedef double (*DoubleFn)();
   typedef int (*IntFn)();
-  int a[(int)DoubleFn(f)()]; // expected-error {{variable length array}} expected-warning{{extension}}
+  int a[(int)DoubleFn(f)()]; // expected-error {{variable length array}} expected-warning{{C99 feature}}
   int b[(int)IntFn(f)()];    // ok
 }
 
@@ -207,7 +206,9 @@ namespace ParameterScopes {
   constexpr int b = MaybeReturnNonstaticRef(true, 0); // expected-error {{constant expression}} expected-note {{in call to 'MaybeReturnNonstaticRef(1, 0)'}}
 
   constexpr int InternalReturnJunk(int n) {
-    // FIXME: We should reject this: it never produces a constant expression.
+    // TODO: We could reject this: it never produces a constant expression.
+    // However, we currently don't evaluate function calls while testing for
+    // potential constant expressions, for performance.
     return MaybeReturnJunk(true, n); // expected-note {{in call to 'MaybeReturnJunk(1, 0)'}}
   }
   constexpr int n3 = InternalReturnJunk(0); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'InternalReturnJunk(0)'}}
@@ -299,27 +300,26 @@ constexpr S* sptr = &s;
 constexpr bool dyncast = sptr == dynamic_cast<S*>(sptr); // expected-error {{constant expression}} expected-note {{dynamic_cast}}
 
 struct Str {
-  // FIXME: In C++ mode, we should say 'integral' not 'integer'
   int a : dynamic_cast<S*>(sptr) == dynamic_cast<S*>(sptr); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{dynamic_cast is not allowed in a constant expression}}
   int b : reinterpret_cast<S*>(sptr) == reinterpret_cast<S*>(sptr); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{reinterpret_cast is not allowed in a constant expression}}
   int c : (S*)(long)(sptr) == (S*)(long)(sptr); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
   int d : (S*)(42) == (S*)(42); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
   int e : (Str*)(sptr) == (Str*)(sptr); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
   int f : &(Str&)(*sptr) == &(Str&)(*sptr); // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{cast which performs the conversions of a reinterpret_cast is not allowed in a constant expression}}
   int g : (S*)(void*)(sptr) == sptr; // \
-    expected-warning {{not integer constant expression}} \
+    expected-warning {{not an integral constant expression}} \
     expected-note {{cast from 'void *' is not allowed in a constant expression}}
 };
 
@@ -357,15 +357,16 @@ constexpr int MangleChars(const Char *p) {
 }
 
 static_assert(MangleChars("constexpr!") == 1768383, "");
+static_assert(MangleChars(u8"constexpr!") == 1768383, "");
+static_assert(MangleChars(L"constexpr!") == 1768383, "");
 static_assert(MangleChars(u"constexpr!") == 1768383, "");
 static_assert(MangleChars(U"constexpr!") == 1768383, "");
 
 constexpr char c0 = "nought index"[0];
 constexpr char c1 = "nice index"[10];
 constexpr char c2 = "nasty index"[12]; // expected-error {{must be initialized by a constant expression}} expected-warning {{is past the end}} expected-note {{read of dereferenced one-past-the-end pointer}}
-// FIXME: block the pointer arithmetic with undefined behavior here
-constexpr char c3 = "negative index"[-1]; // expected-error {{must be initialized by a constant expression}} expected-warning {{is before the beginning}} expected-note {{read of dereferenced one-past-the-end pointer}}
-constexpr char c4 = ((char*)(int*)"no reinterpret_casts allowed")[14]; // expected-error {{must be initialized by a constant expression}}
+constexpr char c3 = "negative index"[-1]; // expected-error {{must be initialized by a constant expression}} expected-warning {{is before the beginning}} expected-note {{cannot refer to element -1 of array of 15 elements}}
+constexpr char c4 = ((char*)(int*)"no reinterpret_casts allowed")[14]; // expected-error {{must be initialized by a constant expression}} expected-note {{cast which performs the conversions of a reinterpret_cast}}
 
 constexpr const char *p = "test" + 2;
 static_assert(*p == 's', "");
@@ -405,6 +406,12 @@ static_assert(t.c[4] == 0, "");
 static_assert(t.c[5] == 0, "");
 static_assert(t.c[6] == 0, ""); // expected-error {{constant expression}} expected-note {{one-past-the-end}}
 
+struct U {
+  wchar_t chars[6];
+  int n;
+} constexpr u = { { L"test" }, 0 };
+static_assert(u.chars[2] == L's', "");
+
 }
 
 namespace Array {
@@ -443,9 +450,9 @@ static_assert(ZipFoldR(SubMul, 3, xs+3, ys+3, 1), ""); // \
 constexpr const int *p = xs + 3;
 constexpr int xs4 = p[1]; // ok
 constexpr int xs5 = p[2]; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+constexpr int xs6 = p[3]; // expected-error {{constant expression}} expected-note {{cannot refer to element 6}}
 constexpr int xs0 = p[-3]; // ok
-// FIXME: check pointer arithmetic here
-constexpr int xs_1 = p[-4]; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+constexpr int xs_1 = p[-4]; // expected-error {{constant expression}} expected-note {{cannot refer to element -1}}
 
 constexpr int zs[2][2][2][2] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
 static_assert(zs[0][0][0][0] == 1, "");
@@ -453,16 +460,18 @@ static_assert(zs[1][1][1][1] == 16, "");
 static_assert(zs[0][0][0][2] == 3, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
 static_assert((&zs[0][0][0][2])[-1] == 2, "");
 static_assert(**(**(zs + 1) + 1) == 11, "");
-static_assert(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1) == 11, "");
+static_assert(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1) == 11, ""); // expected-error {{constant expression}} expected-note {{cannot refer to element -1 of array of 2 elements in a constant expression}}
+static_assert(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][2] - 2) == 11, "");
+constexpr int err_zs_1_2_0_0 = zs[1][2][0][0]; // expected-error {{constant expression}} expected-note {{cannot access array element of pointer past the end}}
 
 constexpr int fail(const int &p) {
-  return (&p)[64]; // expected-note {{read of dereferenced one-past-the-end pointer}}
+  return (&p)[64]; // expected-note {{cannot refer to element 64 of array of 2 elements}}
 }
-static_assert(fail(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][-1] + 1)) == 11, ""); // \
+static_assert(fail(*(&(&(*(*&(&zs[2] - 1)[0] + 2 - 2))[2])[-1][2] - 2)) == 11, ""); // \
 expected-error {{static_assert expression is not an integral constant expression}} \
 expected-note {{in call to 'fail(zs[1][0][1][0])'}}
 
-constexpr int arr[40] = { 1, 2, 3, [8] = 4 }; // expected-warning {{extension}}
+constexpr int arr[40] = { 1, 2, 3, [8] = 4 }; // expected-warning {{C99 feature}}
 constexpr int SumNonzero(const int *p) {
   return *p + (*p ? SumNonzero(p+1) : 0);
 }
@@ -518,7 +527,7 @@ struct D {
 static_assert(D().c.n == 42, "");
 
 struct E {
-  constexpr E() : p(&p) {} // expected-note {{pointer to temporary cannot be used to initialize a member in a constant expression}}
+  constexpr E() : p(&p) {} // expected-note {{pointer to subobject of temporary cannot be used to initialize a member in a constant expression}}
   void *p;
 };
 constexpr const E &e1 = E(); // expected-error {{constant expression}} expected-note {{in call to 'E()'}} expected-note {{temporary created here}}
@@ -598,8 +607,7 @@ constexpr AggregateInit agg1 = { "hello"[0] };
 static_assert(strcmp_ce(&agg1.c, "hello") == 0, "");
 static_assert(agg1.n == 0, "");
 static_assert(agg1.d == 0.0, "");
-// FIXME: check pointer arithmetic here.
-static_assert(agg1.arr[-1] == 0, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end}}
+static_assert(agg1.arr[-1] == 0, ""); // expected-error {{constant expression}} expected-note {{cannot refer to element -1}}
 static_assert(agg1.arr[0] == 0, "");
 static_assert(agg1.arr[4] == 0, "");
 static_assert(agg1.arr[5] == 0, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end}}
@@ -662,13 +670,13 @@ static_assert(pb1 != pb2, "");
 static_assert(pb1 == &bot1, "");
 static_assert(pb2 == &bot2, "");
 
-constexpr Base2 &fail = (Base2&)bot1; // expected-error {{constant expression}}
-constexpr Base &fail2 = (Base&)*pb2; // expected-error {{constant expression}}
+constexpr Base2 &fail = (Base2&)bot1; // expected-error {{constant expression}} expected-note {{cannot cast object of dynamic type 'const Class::Derived' to type 'Class::Base2'}}
+constexpr Base &fail2 = (Base&)*pb2; // expected-error {{constant expression}} expected-note {{cannot cast object of dynamic type 'const Class::Derived' to type 'Class::Base'}}
 constexpr Base2 &ok2 = (Base2&)bot2;
 static_assert(&ok2 == &derived, "");
 
-constexpr Base2 *pfail = (Base2*)pb1; // expected-error {{constant expression}}
-constexpr Base *pfail2 = (Base*)&bot2; // expected-error {{constant expression}}
+constexpr Base2 *pfail = (Base2*)pb1; // expected-error {{constant expression}} expected-note {{cannot cast object of dynamic type 'const Class::Derived' to type 'Class::Base2'}}
+constexpr Base *pfail2 = (Base*)&bot2; // expected-error {{constant expression}} expected-note {{cannot cast object of dynamic type 'const Class::Derived' to type 'Class::Base'}}
 constexpr Base2 *pok2 = (Base2*)pb2;
 static_assert(pok2 == &derived, "");
 static_assert(&ok2 == pok2, "");
@@ -679,6 +687,28 @@ constexpr Base *nullB = 42 - 6 * 7;
 static_assert((Bottom*)nullB == 0, "");
 static_assert((Derived*)nullB == 0, "");
 static_assert((void*)(Bottom*)nullB == (void*)(Derived*)nullB, "");
+
+namespace ConversionOperators {
+
+struct T {
+  constexpr T(int n) : k(5*n - 3) {}
+  constexpr operator int() { return k; }
+  int k;
+};
+
+struct S {
+  constexpr S(int n) : k(2*n + 1) {}
+  constexpr operator int() { return k; }
+  constexpr operator T() { return T(k); }
+  int k;
+};
+
+constexpr bool check(T a, T b) { return a == b.k; }
+
+static_assert(S(5) == 11, "");
+static_assert(check(S(5), 11), "");
+
+}
 
 }
 
@@ -709,6 +739,9 @@ constexpr int f(const S &s) {
 constexpr int n = f(T(5));
 static_assert(f(T(5)) == 5, "");
 
+constexpr bool b(int n) { return &n; }
+static_assert(b(0), "");
+
 }
 
 namespace Union {
@@ -718,13 +751,25 @@ union U {
   int b;
 };
 
-constexpr U u[4] = { { .a = 0 }, { .b = 1 }, { .a = 2 }, { .b = 3 } }; // expected-warning 4{{extension}}
+constexpr U u[4] = { { .a = 0 }, { .b = 1 }, { .a = 2 }, { .b = 3 } }; // expected-warning 4{{C99 feature}}
 static_assert(u[0].a == 0, "");
 static_assert(u[0].b, ""); // expected-error {{constant expression}} expected-note {{read of member 'b' of union with active member 'a'}}
 static_assert(u[1].b == 1, "");
 static_assert((&u[1].b)[1] == 2, ""); // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
-static_assert(*(&(u[1].b) + 1 + 1) == 3, ""); // expected-error {{constant expression}} expected-note {{subexpression}}
+static_assert(*(&(u[1].b) + 1 + 1) == 3, ""); // expected-error {{constant expression}} expected-note {{cannot refer to element 2 of non-array object}}
 static_assert((&(u[1]) + 1 + 1)->b == 3, "");
+
+constexpr U v = {};
+static_assert(v.a == 0, "");
+
+union Empty {};
+constexpr Empty e = {};
+
+// Make sure we handle trivial copy constructors for unions.
+constexpr U x = {42};
+constexpr U y = x;
+static_assert(y.a == 42, "");
+static_assert(y.b == 42, ""); // expected-error {{constant expression}} expected-note {{'b' of union with active member 'a'}}
 
 }
 
@@ -798,7 +843,7 @@ namespace MemberPointer {
 
   constexpr T<5> *p17_5 = &t17;
   constexpr T<13> *p17_13 = (T<13>*)p17_5;
-  constexpr T<23> *p17_23 = (T<23>*)p17_13; // expected-error {{constant expression}}
+  constexpr T<23> *p17_23 = (T<23>*)p17_13; // expected-error {{constant expression}} expected-note {{cannot cast object of dynamic type 'T<17>' to type 'T<23>'}}
   static_assert(&(p17_5->*(int(T<3>::*))deepn) == &t17.n, "");
   static_assert(&(p17_13->*deepn) == &t17.n, "");
   constexpr int *pbad2 = &(p17_13->*(int(T<9>::*))deepm); // expected-error {{constant expression}}
@@ -832,15 +877,15 @@ namespace ArrayBaseDerived {
 
   // pb3 does not point to an array element.
   constexpr Base *pb4 = pb3 + 1; // ok, one-past-the-end pointer.
-  constexpr int pb4n = pb4->n; // expected-error {{constant expression}}
-  constexpr Base *err_pb5 = pb3 + 2; // FIXME: reject this.
-  constexpr int err_pb5n = err_pb5->n; // expected-error {{constant expression}}
-  constexpr Base *err_pb2 = pb3 - 1; // FIXME: reject this.
-  constexpr int err_pb2n = err_pb2->n; // expected-error {{constant expression}}
+  constexpr int pb4n = pb4->n; // expected-error {{constant expression}} expected-note {{cannot access field of pointer past the end}}
+  constexpr Base *err_pb5 = pb3 + 2; // expected-error {{constant expression}} expected-note {{cannot refer to element 2}} expected-note {{here}}
+  constexpr int err_pb5n = err_pb5->n; // expected-error {{constant expression}} expected-note {{initializer of 'err_pb5' is not a constant expression}}
+  constexpr Base *err_pb2 = pb3 - 1; // expected-error {{constant expression}} expected-note {{cannot refer to element -1}} expected-note {{here}}
+  constexpr int err_pb2n = err_pb2->n; // expected-error {{constant expression}} expected-note {{initializer of 'err_pb2'}}
   constexpr Base *pb3a = pb4 - 1;
 
   // pb4 does not point to a Derived.
-  constexpr Derived *err_pd4 = (Derived*)pb4; // expected-error {{constant expression}}
+  constexpr Derived *err_pd4 = (Derived*)pb4; // expected-error {{constant expression}} expected-note {{cannot access derived class of pointer past the end}}
   constexpr Derived *pd3a = (Derived*)pb3a;
   constexpr int pd3n = pd3a->n;
 
@@ -850,10 +895,9 @@ namespace ArrayBaseDerived {
   constexpr Derived *pd9 = pd6 + 3;
   constexpr Derived *pd10 = pd6 + 4;
   constexpr int pd9n = pd9->n; // ok
-  constexpr int err_pd10n = pd10->n; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+  constexpr int err_pd10n = pd10->n; // expected-error {{constant expression}} expected-note {{cannot access base class of pointer past the end}}
   constexpr int pd0n = pd10[-10].n;
-  // FIXME: check pointer arithmetic here.
-  constexpr int err_pdminus1n = pd10[-11].n; // expected-error {{constant expression}} expected-note {{read of dereferenced one-past-the-end pointer}}
+  constexpr int err_pdminus1n = pd10[-11].n; // expected-error {{constant expression}} expected-note {{cannot refer to element -1 of}}
 
   constexpr Base *pb9 = pd9;
   constexpr const int *(Base::*pfb)() const =
@@ -927,10 +971,9 @@ namespace PR11595 {
   struct B { B(); A& x; };
   static_assert(B().x == 3, "");  // expected-error {{constant expression}} expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
 
-  constexpr bool f(int k) {
+  constexpr bool f(int k) { // expected-error {{constexpr function never produces a constant expression}}
     return B().x == k; // expected-note {{non-literal type 'PR11595::B' cannot be used in a constant expression}}
   }
-  constexpr int n = f(1); // expected-error {{must be initialized by a constant expression}} expected-note {{in call to 'f(1)'}}
 }
 
 namespace ExprWithCleanups {
@@ -960,4 +1003,90 @@ struct S {
   int m : t.n; // expected-error {{constant expression}} expected-note {{read of non-constexpr variable}}
 };
 
+}
+
+namespace ExternConstexpr {
+  extern constexpr int n = 0;
+  extern constexpr int m; // expected-error {{constexpr variable declaration must be a definition}}
+  void f() {
+    extern constexpr int i; // expected-error {{constexpr variable declaration must be a definition}}
+    constexpr int j = 0;
+    constexpr int k; // expected-error {{default initialization of an object of const type}}
+  }
+}
+
+namespace ComplexConstexpr {
+  constexpr _Complex float test1 = {};
+  constexpr _Complex float test2 = {1};
+  constexpr _Complex double test3 = {1,2};
+  constexpr _Complex int test4 = {4};
+  constexpr _Complex int test5 = 4;
+  constexpr _Complex int test6 = {5,6};
+  typedef _Complex float fcomplex;
+  constexpr fcomplex test7 = fcomplex();
+}
+
+namespace InstantiateCaseStmt {
+  template<int x> constexpr int f() { return x; }
+  template<int x> int g(int c) { switch(c) { case f<x>(): return 1; } return 0; }
+  int gg(int c) { return g<4>(c); }
+}
+
+namespace ConvertedConstantExpr {
+  extern int &m;
+  extern int &n;
+
+  constexpr int k = 4;
+  int &m = const_cast<int&>(k);
+
+  // If we have nothing more interesting to say, ensure we don't produce a
+  // useless note and instead just point to the non-constant subexpression.
+  enum class E {
+    em = m,
+    en = n, // expected-error {{not a constant expression}}
+    eo = (m +
+          n // expected-error {{not a constant expression}}
+          ),
+    eq = reinterpret_cast<int>((int*)0) // expected-error {{not a constant expression}} expected-note {{reinterpret_cast}}
+  };
+}
+
+namespace IndirectField {
+  struct S {
+    struct { // expected-warning {{GNU extension}}
+      union {
+        struct { // expected-warning {{GNU extension}}
+          int a;
+          int b;
+        };
+        int c;
+      };
+      int d;
+    };
+    union {
+      int e;
+      int f;
+    };
+    constexpr S(int a, int b, int d, int e) : a(a), b(b), d(d), e(e) {}
+    constexpr S(int c, int d, int f) : c(c), d(d), f(f) {}
+  };
+
+  constexpr S s1(1, 2, 3, 4);
+  constexpr S s2(5, 6, 7);
+
+  // FIXME: The diagnostics here do a very poor job of explaining which unnamed
+  // member is active and which is requested.
+  static_assert(s1.a == 1, "");
+  static_assert(s1.b == 2, "");
+  static_assert(s1.c == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s1.d == 3, "");
+  static_assert(s1.e == 4, "");
+  static_assert(s1.f == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+
+  static_assert(s2.a == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.b == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.c == 5, "");
+  static_assert(s2.d == 6, "");
+  static_assert(s2.e == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
+  static_assert(s2.f == 7, "");
 }

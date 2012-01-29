@@ -69,7 +69,7 @@ const MCSymbol *ARMELFObjectWriter::ExplicitRelSym(const MCAssembler &Asm,
                                                    const MCFragment &F,
                                                    const MCFixup &Fixup,
                                                    bool IsPCRel) const {
-  const MCSymbol &Symbol = Target.getSymA()->getSymbol();
+  const MCSymbol &Symbol = Target.getSymA()->getSymbol().AliasedSymbol();
   bool EmitThisSym = false;
 
   const MCSectionELF &Section =
@@ -217,7 +217,7 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
     default: llvm_unreachable("invalid fixup kind!");
     case FK_Data_4:
       switch (Modifier) {
-      default: llvm_unreachable("Unsupported Modifier"); break;
+      default: llvm_unreachable("Unsupported Modifier");
       case MCSymbolRefExpr::VK_ARM_GOT:
         Type = ELF::R_ARM_GOT_BREL;
         break;
@@ -236,7 +236,10 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
       case MCSymbolRefExpr::VK_ARM_GOTOFF:
         Type = ELF::R_ARM_GOTOFF32;
         break;
-      }
+      case MCSymbolRefExpr::VK_ARM_TARGET1:
+        Type = ELF::R_ARM_TARGET1;
+        break;
+      } 
       break;
     case ARM::fixup_arm_ldst_pcrel_12:
     case ARM::fixup_arm_pcrel_10:

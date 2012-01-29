@@ -29,6 +29,7 @@ CodeGenRegister::CodeGenRegister(Record *R, unsigned Enum)
   : TheDef(R),
     EnumValue(Enum),
     CostPerUse(R->getValueAsInt("CostPerUse")),
+    CoveredBySubRegs(R->getValueAsBit("CoveredBySubRegs")),
     SubRegsComplete(false)
 {}
 
@@ -215,30 +216,40 @@ struct TupleExpander : SetTheory::Expander {
       for (unsigned i = 0, e = Proto->getValues().size(); i != e; ++i) {
         RecordVal RV = Proto->getValues()[i];
 
+        // Skip existing fields, like NAME.
+        if (NewReg->getValue(RV.getNameInit()))
+          continue;
+
+        StringRef Field = RV.getName();
+
         // Replace the sub-register list with Tuple.
-        if (RV.getName() == "SubRegs")
+        if (Field == "SubRegs")
           RV.setValue(ListInit::get(Tuple, RegisterRecTy));
 
         // Provide a blank AsmName. MC hacks are required anyway.
-        if (RV.getName() == "AsmName")
+        if (Field == "AsmName")
           RV.setValue(BlankName);
 
         // CostPerUse is aggregated from all Tuple members.
-        if (RV.getName() == "CostPerUse")
+        if (Field == "CostPerUse")
           RV.setValue(IntInit::get(CostPerUse));
 
+        // Composite registers are always covered by sub-registers.
+        if (Field == "CoveredBySubRegs")
+          RV.setValue(BitInit::get(true));
+
         // Copy fields from the RegisterTuples def.
-        if (RV.getName() == "SubRegIndices" ||
-            RV.getName() == "CompositeIndices") {
-          NewReg->addValue(*Def->getValue(RV.getName()));
+        if (Field == "SubRegIndices" ||
+            Field == "CompositeIndices") {
+          NewReg->addValue(*Def->getValue(Field));
           continue;
         }
 
         // Some fields get their default uninitialized value.
-        if (RV.getName() == "DwarfNumbers" ||
-            RV.getName() == "DwarfAlias" ||
-            RV.getName() == "Aliases") {
-          if (const RecordVal *DefRV = RegisterCl->getValue(RV.getName()))
+        if (Field == "DwarfNumbers" ||
+            Field == "DwarfAlias" ||
+            Field == "Aliases") {
+          if (const RecordVal *DefRV = RegisterCl->getValue(Field))
             NewReg->addValue(*DefRV);
           continue;
         }
@@ -330,7 +341,7 @@ CodeGenRegisterClass::CodeGenRegisterClass(CodeGenRegBank &RegBank, Record *R)
   SpillAlignment = R->getValueAsInt("Alignment");
   CopyCost = R->getValueAsInt("CopyCost");
   Allocatable = R->getValueAsBit("isAllocatable");
-  AltOrderSelect = R->getValueAsCode("AltOrderSelect");
+  AltOrderSelect = R->getValueAsString("AltOrderSelect");
 }
 
 // Create an inferred register class that was missing from the .td files.
@@ -523,6 +534,7 @@ CodeGenRegisterClass::getSuperRegClasses(Record *SubIdx, BitVector &Out) const {
 CodeGenRegBank::CodeGenRegBank(RecordKeeper &Records) : Records(Records) {
   // Configure register Sets to understand register classes and tuples.
   Sets.addFieldExpander("RegisterClass", "MemberList");
+  Sets.addFieldExpander("CalleeSavedRegs", "SaveList");
   Sets.addExpander("RegisterTuples", new TupleExpander());
 
   // Read in the user-defined (named) sub-register indices.
@@ -987,4 +999,46 @@ CodeGenRegBank::getRegClassForRegister(Record *R) {
     return 0;
   }
   return FoundRC;
+}
+
+BitVector CodeGenRegBank::computeCoveredRegisters(ArrayRef<Record*> Regs) {
+  SetVector<CodeGenRegister*> Set;
+
+  // First add Regs with all sub-registers.
+  for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
+    CodeGenRegister *Reg = getReg(Regs[i]);
+    if (Set.insert(Reg))
+      // Reg is new, add all sub-registers.
+      // The pre-ordering is not important here.
+      Reg->addSubRegsPreOrder(Set);
+  }
+
+  // Second, find all super-registers that are completely covered by the set.
+  for (unsigned i = 0; i != Set.size(); ++i) {
+    const CodeGenRegister::SuperRegList &SR = Set[i]->getSuperRegs();
+    for (unsigned j = 0, e = SR.size(); j != e; ++j) {
+      CodeGenRegister *Super = SR[j];
+      if (!Super->CoveredBySubRegs || Set.count(Super))
+        continue;
+      // This new super-register is covered by its sub-registers.
+      bool AllSubsInSet = true;
+      const CodeGenRegister::SubRegMap &SRM = Super->getSubRegs();
+      for (CodeGenRegister::SubRegMap::const_iterator I = SRM.begin(),
+             E = SRM.end(); I != E; ++I)
+        if (!Set.count(I->second)) {
+          AllSubsInSet = false;
+          break;
+        }
+      // All sub-registers in Set, add Super as well.
+      // We will visit Super later to recheck its super-registers.
+      if (AllSubsInSet)
+        Set.insert(Super);
+    }
+  }
+
+  // Convert to BitVector.
+  BitVector BV(Registers.size() + 1);
+  for (unsigned i = 0, e = Set.size(); i != e; ++i)
+    BV.set(Set[i]->EnumValue);
+  return BV;
 }

@@ -321,8 +321,7 @@ public:
   /// block.  This is the same as using operator[] on this class.
   ///
   inline DomTreeNodeBase<NodeT> *getNode(NodeT *BB) const {
-    typename DomTreeNodeMapType::const_iterator I = DomTreeNodes.find(BB);
-    return I != DomTreeNodes.end() ? I->second : 0;
+    return DomTreeNodes.lookup(BB);
   }
 
   /// getRootNode - This returns the entry node for the CFG of the function.  If
@@ -623,9 +622,8 @@ protected:
   }
 
   DomTreeNodeBase<NodeT> *getNodeForBlock(NodeT *BB) {
-    typename DomTreeNodeMapType::iterator I = this->DomTreeNodes.find(BB);
-    if (I != this->DomTreeNodes.end() && I->second)
-      return I->second;
+    if (DomTreeNodeBase<NodeT> *Node = getNode(BB))
+      return Node;
 
     // Haven't calculated this node yet?  Get or calculate the node for the
     // immediate dominator.
@@ -641,8 +639,7 @@ protected:
   }
 
   inline NodeT *getIDom(NodeT *BB) const {
-    typename DenseMap<NodeT*, NodeT*>::const_iterator I = IDoms.find(BB);
-    return I != IDoms.end() ? I->second : 0;
+    return IDoms.lookup(BB);
   }
 
   inline void addRoot(NodeT* BB) {
@@ -755,6 +752,12 @@ public:
   // dominates - Return true if A dominates B. This performs the
   // special checks necessary if A and B are in the same basic block.
   bool dominates(const Instruction *A, const Instruction *B) const;
+
+  /// properlyDominates - Use this instead of dominates() to determine whether a
+  /// user of A can be hoisted above B.
+  bool properlyDominates(const Instruction *A, const Instruction *B) const {
+    return A != B && dominates(A, B);
+  }
 
   bool properlyDominates(const DomTreeNode *A, const DomTreeNode *B) const {
     return DT->properlyDominates(A, B);

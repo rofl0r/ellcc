@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
+#include "clang/AST/StmtObjC.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
@@ -38,8 +39,8 @@ void ObjCAtSyncChecker::checkPreStmt(const ObjCAtSynchronizedStmt *S,
                                      CheckerContext &C) const {
 
   const Expr *Ex = S->getSynchExpr();
-  const ProgramState *state = C.getState();
-  SVal V = state->getSVal(Ex);
+  ProgramStateRef state = C.getState();
+  SVal V = state->getSVal(Ex, C.getLocationContext());
 
   // Uninitialized value used for the mutex?
   if (isa<UndefinedVal>(V)) {
@@ -59,7 +60,7 @@ void ObjCAtSyncChecker::checkPreStmt(const ObjCAtSynchronizedStmt *S,
     return;
 
   // Check for null mutexes.
-  const ProgramState *notNullState, *nullState;
+  ProgramStateRef notNullState, nullState;
   llvm::tie(notNullState, nullState) = state->assume(cast<DefinedSVal>(V));
 
   if (nullState) {

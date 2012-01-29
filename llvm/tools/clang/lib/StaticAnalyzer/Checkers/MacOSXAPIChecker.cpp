@@ -56,8 +56,9 @@ void MacOSXAPIChecker::CheckDispatchOnce(CheckerContext &C, const CallExpr *CE,
 
   // Check if the first argument is stack allocated.  If so, issue a warning
   // because that's likely to be bad news.
-  const ProgramState *state = C.getState();
-  const MemRegion *R = state->getSVal(CE->getArg(0)).getAsRegion();
+  ProgramStateRef state = C.getState();
+  const MemRegion *R =
+    state->getSVal(CE->getArg(0), C.getLocationContext()).getAsRegion();
   if (!R || !isa<StackSpaceRegion>(R->getMemorySpace()))
     return;
 

@@ -55,10 +55,12 @@ void FunctionScopeInfo::Clear() {
 }
 
 BlockScopeInfo::~BlockScopeInfo() { }
+LambdaScopeInfo::~LambdaScopeInfo() { }
 
-PrintingPolicy Sema::getPrintingPolicy() const {
+PrintingPolicy Sema::getPrintingPolicy(const ASTContext &Context,
+                                       const Preprocessor &PP) {
   PrintingPolicy Policy = Context.getPrintingPolicy();
-  Policy.Bool = getLangOptions().Bool;
+  Policy.Bool = Context.getLangOptions().Bool;
   if (!Policy.Bool) {
     if (MacroInfo *BoolMacro = PP.getMacroInfo(&Context.Idents.get("bool"))) {
       Policy.Bool = BoolMacro->isObjectLike() && 
@@ -75,19 +77,6 @@ void Sema::ActOnTranslationUnitScope(Scope *S) {
   PushDeclContext(S, Context.getTranslationUnitDecl());
 
   VAListTagName = PP.getIdentifierInfo("__va_list_tag");
-
-  if (PP.getLangOptions().ObjC1) {
-    // Synthesize "@class Protocol;
-    if (Context.getObjCProtoType().isNull()) {
-      ObjCInterfaceDecl *ProtocolDecl =
-        ObjCInterfaceDecl::Create(Context, CurContext, SourceLocation(),
-                                  &Context.Idents.get("Protocol"),
-                                  /*PrevDecl=*/0,
-                                  SourceLocation(), true);
-      Context.setObjCProtoType(Context.getObjCInterfaceType(ProtocolDecl));
-      PushOnScopeChains(ProtocolDecl, TUScope, false);
-    }  
-  }
 }
 
 Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
@@ -100,7 +89,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     CurContext(0), OriginalLexicalContext(0),
     PackContext(0), MSStructPragmaOn(false), VisContext(0),
     ExprNeedsCleanups(false), LateTemplateParser(0), OpaqueParser(0),
-    IdResolver(pp), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
+    IdResolver(pp), StdInitializerList(0), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
     GlobalNewDeleteDeclared(false), 
     ObjCShouldCallSuperDealloc(false),
     ObjCShouldCallSuperFinalize(false),
@@ -172,6 +161,11 @@ void Sema::Initialize() {
     DeclarationName Class = &Context.Idents.get("Class");
     if (IdResolver.begin(Class) == IdResolver.end())
       PushOnScopeChains(Context.getObjCClassDecl(), TUScope);
+
+    // Create the built-in forward declaratino for 'Protocol'.
+    DeclarationName Protocol = &Context.Idents.get("Protocol");
+    if (IdResolver.begin(Protocol) == IdResolver.end())
+      PushOnScopeChains(Context.getObjCProtocolDecl(), TUScope);
   }
 }
 
@@ -320,7 +314,7 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
 
     // Later redecls may add new information resulting in not having to warn,
     // so check again.
-    DeclToCheck = FD->getMostRecentDeclaration();
+    DeclToCheck = FD->getMostRecentDecl();
     if (DeclToCheck != FD)
       return !SemaRef->ShouldWarnIfUnusedFileScopedDecl(DeclToCheck);
   }
@@ -334,7 +328,7 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
 
     // Later redecls may add new information resulting in not having to warn,
     // so check again.
-    DeclToCheck = VD->getMostRecentDeclaration();
+    DeclToCheck = VD->getMostRecentDecl();
     if (DeclToCheck != VD)
       return !SemaRef->ShouldWarnIfUnusedFileScopedDecl(DeclToCheck);
   }
@@ -503,10 +497,10 @@ void Sema::ActOnEndOfTranslationUnit() {
         ModMap.resolveExports(Mod, /*Complain=*/false);
         
         // Queue the submodules, so their exports will also be resolved.
-        for (llvm::StringMap<Module *>::iterator Sub = Mod->SubModules.begin(),
-             SubEnd = Mod->SubModules.end();
+        for (Module::submodule_iterator Sub = Mod->submodule_begin(),
+                                     SubEnd = Mod->submodule_end();
              Sub != SubEnd; ++Sub) {
-          Stack.push_back(Sub->getValue());
+          Stack.push_back(*Sub);
         }
       }
     }
@@ -635,8 +629,15 @@ void Sema::ActOnEndOfTranslationUnit() {
 DeclContext *Sema::getFunctionLevelDeclContext() {
   DeclContext *DC = CurContext;
 
-  while (isa<BlockDecl>(DC) || isa<EnumDecl>(DC))
-    DC = DC->getParent();
+  while (true) {
+    if (isa<BlockDecl>(DC) || isa<EnumDecl>(DC)) {
+      DC = DC->getParent();
+    } else if (isa<CXXMethodDecl>(DC) &&
+               cast<CXXRecordDecl>(DC->getParent())->isLambda()) {
+      DC = DC->getParent()->getParent();
+    }
+    else break;
+  }
 
   return DC;
 }
@@ -828,8 +829,12 @@ void Sema::PushBlockScope(Scope *BlockScope, BlockDecl *Block) {
                                               BlockScope, Block));
 }
 
-void Sema::PopFunctionOrBlockScope(const AnalysisBasedWarnings::Policy *WP,
-                                   const Decl *D, const BlockExpr *blkExpr) {
+void Sema::PushLambdaScope(CXXRecordDecl *Lambda) {
+  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics(), Lambda));
+}
+
+void Sema::PopFunctionScopeInfo(const AnalysisBasedWarnings::Policy *WP,
+                                const Decl *D, const BlockExpr *blkExpr) {
   FunctionScopeInfo *Scope = FunctionScopes.pop_back_val();  
   assert(!FunctionScopes.empty() && "mismatched push/pop!");
   
@@ -864,13 +869,17 @@ BlockScopeInfo *Sema::getCurBlock() {
   return dyn_cast<BlockScopeInfo>(FunctionScopes.back());  
 }
 
+LambdaScopeInfo *Sema::getCurLambda() {
+  if (FunctionScopes.empty())
+    return 0;
+  
+  return dyn_cast<LambdaScopeInfo>(FunctionScopes.back());  
+}
+
 // Pin this vtable to this file.
 ExternalSemaSource::~ExternalSemaSource() {}
 
-std::pair<ObjCMethodList, ObjCMethodList>
-ExternalSemaSource::ReadMethodPool(Selector Sel) {
-  return std::pair<ObjCMethodList, ObjCMethodList>();
-}
+void ExternalSemaSource::ReadMethodPool(Selector Sel) { }
 
 void ExternalSemaSource::ReadKnownNamespaces(
                            SmallVectorImpl<NamespaceDecl *> &Namespaces) {  

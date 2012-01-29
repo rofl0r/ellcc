@@ -79,6 +79,7 @@ void initializeCallGraphAnalysisGroup(PassRegistry&);
 void initializeCodeGenPreparePass(PassRegistry&);
 void initializeConstantMergePass(PassRegistry&);
 void initializeConstantPropagationPass(PassRegistry&);
+void initializeMachineCopyPropagationPass(PassRegistry&);
 void initializeCorrelatedValuePropagationPass(PassRegistry&);
 void initializeDAEPass(PassRegistry&);
 void initializeDAHPass(PassRegistry&);
@@ -155,6 +156,7 @@ void initializeMachineLICMPass(PassRegistry&);
 void initializeMachineLoopInfoPass(PassRegistry&);
 void initializeMachineLoopRangesPass(PassRegistry&);
 void initializeMachineModuleInfoPass(PassRegistry&);
+void initializeMachineSchedulerPass(PassRegistry&);
 void initializeMachineSinkingPass(PassRegistry&);
 void initializeMachineVerifierPassPass(PassRegistry&);
 void initializeMemCpyOptPass(PassRegistry&);
@@ -166,6 +168,7 @@ void initializeNoAAPass(PassRegistry&);
 void initializeNoProfileInfoPass(PassRegistry&);
 void initializeNoPathProfileInfoPass(PassRegistry&);
 void initializeObjCARCAliasAnalysisPass(PassRegistry&);
+void initializeObjCARCAPElimPass(PassRegistry&);
 void initializeObjCARCExpandPass(PassRegistry&);
 void initializeObjCARCContractPass(PassRegistry&);
 void initializeObjCARCOptPass(PassRegistry&);
@@ -232,6 +235,7 @@ void initializeVerifierPass(PassRegistry&);
 void initializeVirtRegMapPass(PassRegistry&);
 void initializeInstSimplifierPass(PassRegistry&);
 void initializeUnpackMachineBundlesPass(PassRegistry&);
+void initializeFinalizeMachineBundlesPass(PassRegistry&);
 
 }
 

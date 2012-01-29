@@ -64,7 +64,7 @@ bool TGParser::AddValue(Record *CurRec, SMLoc Loc, const RecordVal &RV) {
   if (CurRec == 0)
     CurRec = &CurMultiClass->Rec;
 
-  if (RecordVal *ERV = CurRec->getValue(RV.getName())) {
+  if (RecordVal *ERV = CurRec->getValue(RV.getNameInit())) {
     // The value already exists in the class, treat this as a set.
     if (ERV->setValue(RV.getValue()))
       return Error(Loc, "New definition of '" + RV.getName() + "' of type '" +
@@ -318,7 +318,6 @@ Init *TGParser::ParseObjectName(MultiClass *CurMultiClass) {
     // Some of these can also begin values but we disallow those cases
     // because they are unlikely to be useful.
     return StringInit::get(GetNewAnonymousName());
-    break;
   default:
     break;
   }
@@ -595,11 +594,11 @@ bool TGParser::ParseOptionalBitList(std::vector<unsigned> &Ranges) {
 /// ParseType - Parse and return a tblgen type.  This returns null on error.
 ///
 ///   Type ::= STRING                       // string type
+///   Type ::= CODE                         // code type
 ///   Type ::= BIT                          // bit type
 ///   Type ::= BITS '<' INTVAL '>'          // bits<x> type
 ///   Type ::= INT                          // int type
 ///   Type ::= LIST '<' Type '>'            // list<x> type
-///   Type ::= CODE                         // code type
 ///   Type ::= DAG                          // dag type
 ///   Type ::= ClassID                      // Record Type
 ///
@@ -607,9 +606,9 @@ RecTy *TGParser::ParseType() {
   switch (Lex.getCode()) {
   default: TokError("Unknown token when expecting a type"); return 0;
   case tgtok::String: Lex.Lex(); return StringRecTy::get();
+  case tgtok::Code:   Lex.Lex(); return StringRecTy::get();
   case tgtok::Bit:    Lex.Lex(); return BitRecTy::get();
   case tgtok::Int:    Lex.Lex(); return IntRecTy::get();
-  case tgtok::Code:   Lex.Lex(); return CodeRecTy::get();
   case tgtok::Dag:    Lex.Lex(); return DagRecTy::get();
   case tgtok::Id:
     if (Record *R = ParseClassID()) return RecordRecTy::get(R);
@@ -722,7 +721,6 @@ Init *TGParser::ParseOperation(Record *CurRec) {
   default:
     TokError("unknown operation");
     return 0;
-    break;
   case tgtok::XHead:
   case tgtok::XTail:
   case tgtok::XEmpty:
@@ -1026,8 +1024,6 @@ Init *TGParser::ParseOperation(Record *CurRec) {
                                                              CurMultiClass);
   }
   }
-  TokError("could not parse operation");
-  return 0;
 }
 
 /// ParseOperatorType - Parse a type for an operator.  This returns
@@ -1088,7 +1084,6 @@ Init *TGParser::ParseSimpleValue(Record *CurRec, RecTy *ItemType,
     // still exists in some .td files.  Ignore it.
     Lex.Lex();  // Skip '#'.
     return ParseSimpleValue(CurRec, ItemType, Mode);
-    break;
   case tgtok::IntVal: R = IntInit::get(Lex.getCurIntVal()); Lex.Lex(); break;
   case tgtok::StrVal: {
     std::string Val = Lex.getCurStrVal();
@@ -1104,7 +1099,7 @@ Init *TGParser::ParseSimpleValue(Record *CurRec, RecTy *ItemType,
     break;
   }
   case tgtok::CodeFragment:
-    R = CodeInit::get(Lex.getCurStrVal());
+    R = StringInit::get(Lex.getCurStrVal());
     Lex.Lex();
     break;
   case tgtok::question:
@@ -1516,6 +1511,10 @@ std::vector<Init*> TGParser::ParseValueList(Record *CurRec, Record *ArgsRec,
   unsigned int ArgN = 0;
   if (ArgsRec != 0 && EltTy == 0) {
     const std::vector<Init *> &TArgs = ArgsRec->getTemplateArgs();
+    if (!TArgs.size()) {
+      TokError("template argument provided to non-template class");
+      return std::vector<Init*>();
+    }
     const RecordVal *RV = ArgsRec->getValue(TArgs[ArgN]);
     if (!RV) {
       errs() << "Cannot find template arg " << ArgN << " (" << TArgs[ArgN]
@@ -1776,7 +1775,7 @@ bool TGParser::ParseDef(MultiClass *CurMultiClass) {
     // Top-level def definition.
 
     // Ensure redefinition doesn't happen.
-    if (Records.getDef(CurRec->getName())) {
+    if (Records.getDef(CurRec->getNameInitAsString())) {
       Error(DefLoc, "def '" + CurRec->getNameInitAsString()
             + "' already defined");
       return true;

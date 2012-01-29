@@ -54,6 +54,14 @@ static void DefineStd(MacroBuilder &Builder, StringRef MacroName,
   Builder.defineMacro("__" + MacroName + "__");
 }
 
+static void defineCPUMacros(MacroBuilder &Builder, StringRef CPUName,
+                            bool Tuning = true) {
+  Builder.defineMacro("__" + CPUName);
+  Builder.defineMacro("__" + CPUName + "__");
+  if (Tuning)
+    Builder.defineMacro("__tune_" + CPUName + "__");
+}
+
 //===----------------------------------------------------------------------===//
 // Defines specific to certain operating systems.
 //===----------------------------------------------------------------------===//
@@ -140,7 +148,7 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     }
   }
 
-  // If -ccc-host-triple arch-pc-win32-macho option specified, we're
+  // If -target arch-pc-win32-macho option specified, we're
   // generating code for Win32 ABI. No need to emit
   // __ENVIRONMENT_XX_OS_VERSION_MIN_REQUIRED__.
   if (PlatformName == "win32") {
@@ -564,6 +572,8 @@ public:
     NumRecords = clang::PPC::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
 
+  virtual bool isCLZForZeroUndef() const { return false; }
+
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const;
 
@@ -892,7 +902,10 @@ public:
     : DarwinTargetInfo<PPC32TargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     BoolWidth = BoolAlign = 32; //XXX support -mone-byte-bool?
+    LongLongAlign = 32;
     SuitableAlign = 128;
+    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:32:64-f32:32:32-f64:64:64-v128:128:128-n32";
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -1210,15 +1223,18 @@ const TargetInfo::AddlRegName AddlRegNames[] = {
 // most of the implementation can be shared.
 class X86TargetInfo : public TargetInfo {
   enum X86SSEEnum {
-    NoSSE, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42
+    NoSSE, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42, AVX, AVX2
   } SSELevel;
   enum MMX3DNowEnum {
     NoMMX3DNow, MMX, AMD3DNow, AMD3DNowAthlon
   } MMX3DNowLevel;
 
   bool HasAES;
-  bool HasAVX;
-  bool HasAVX2;
+  bool HasLZCNT;
+  bool HasBMI;
+  bool HasBMI2;
+  bool HasPOPCNT;
+  bool HasFMA4;
 
   /// \brief Enumeration of all of the X86 CPUs supported by Clang.
   ///
@@ -1332,12 +1348,20 @@ class X86TargetInfo : public TargetInfo {
     CK_Opteron,
     CK_OpteronSSE3,
     CK_AMDFAM10,
+    //@}
 
-    /// \name K10
-    /// K10 architecture processors.
+    /// \name Bobcat
+    /// Bobcat architecture processors.
+    //@{
+    CK_BTVER1,
+    //@}
+
+    /// \name Bulldozer
+    /// Bulldozer architecture processors.
     //@{
     CK_BDVER1,
     CK_BDVER2,
+    //@}
 
     /// This specification is deprecated and will be removed in the future.
     /// Users should prefer \see CK_K8.
@@ -1355,9 +1379,14 @@ class X86TargetInfo : public TargetInfo {
 public:
   X86TargetInfo(const std::string& triple)
     : TargetInfo(triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
-      HasAES(false), HasAVX(false), HasAVX2(false), CPU(CK_Generic) {
+      HasAES(false), HasLZCNT(false), HasBMI(false), HasBMI2(false),
+      HasPOPCNT(false), HasFMA4(false), CPU(CK_Generic) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
+  }
+  virtual unsigned getFloatEvalMethod() const {
+    // X87 evaluates with 80 bits "long double" precision.
+    return SSELevel == NoSSE ? 2 : 0;
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
@@ -1393,7 +1422,7 @@ public:
   virtual void getDefaultFeatures(llvm::StringMap<bool> &Features) const;
   virtual void HandleTargetFeatures(std::vector<std::string> &Features);
   virtual const char* getABI() const {
-    if (PointerWidth == 64 && HasAVX)
+    if (PointerWidth == 64 && SSELevel >= AVX)
       return "avx";
     else if (PointerWidth == 32 && MMX3DNowLevel == NoMMX3DNow)
       return "no-mmx";
@@ -1444,6 +1473,7 @@ public:
       .Case("opteron", CK_Opteron)
       .Case("opteron-sse3", CK_OpteronSSE3)
       .Case("amdfam10", CK_AMDFAM10)
+      .Case("btver1", CK_BTVER1)
       .Case("bdver1", CK_BDVER1)
       .Case("bdver2", CK_BDVER2)
       .Case("x86-64", CK_x86_64)
@@ -1508,6 +1538,7 @@ public:
     case CK_Opteron:
     case CK_OpteronSSE3:
     case CK_AMDFAM10:
+    case CK_BTVER1:
     case CK_BDVER1:
     case CK_BDVER2:
     case CK_x86_64:
@@ -1532,6 +1563,11 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   Features["aes"] = false;
   Features["avx"] = false;
   Features["avx2"] = false;
+  Features["lzcnt"] = false;
+  Features["bmi"] = false;
+  Features["bmi2"] = false;
+  Features["popcnt"] = false;
+  Features["fma4"] = false;
 
   // FIXME: This *really* should not be here.
 
@@ -1576,8 +1612,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     break;
   case CK_Penryn:
     setFeatureEnabled(Features, "mmx", true);
-    setFeatureEnabled(Features, "sse4", true);
-    Features["sse42"] = false;
+    setFeatureEnabled(Features, "sse4.1", true);
     break;
   case CK_Atom:
     setFeatureEnabled(Features, "mmx", true);
@@ -1599,6 +1634,9 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabled(Features, "mmx", true);
     setFeatureEnabled(Features, "sse4", true);
     setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "lzcnt", true);
+    setFeatureEnabled(Features, "bmi", true);
+    setFeatureEnabled(Features, "bmi2", true);
     //setFeatureEnabled(Features, "avx2", true);
     break;
   case CK_K6:
@@ -1640,6 +1678,9 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabled(Features, "sse4a", true);
     setFeatureEnabled(Features, "3dnowa", true);
     break;
+  case CK_BTVER1:
+    setFeatureEnabled(Features, "ssse3", true);
+    setFeatureEnabled(Features, "sse4a", true);
   case CK_BDVER1:
   case CK_BDVER2:
     setFeatureEnabled(Features, "sse4", true);
@@ -1679,7 +1720,8 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
         Features["ssse3"] = true;
     else if (Name == "sse4" || Name == "sse4.2")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
-        Features["ssse3"] = Features["sse41"] = Features["sse42"] = true;
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = true;
     else if (Name == "sse4.1")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = true;
@@ -1692,25 +1734,39 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "avx")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
-        Features["avx"] = true;
+        Features["popcnt"] = Features["avx"] = true;
     else if (Name == "avx2")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
-        Features["avx"] = Features["avx2"] = true;
+        Features["popcnt"] = Features["avx"] = Features["avx2"] = true;
+    else if (Name == "fma4")
+        Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["fma4"] = true;
     else if (Name == "sse4a")
-      Features["mmx"] = Features["sse4a"] = true;
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["lzcnt"] = Features["popcnt"] = Features["sse4a"] = true;
+    else if (Name == "lzcnt")
+      Features["lzcnt"] = true;
+    else if (Name == "bmi")
+      Features["bmi"] = true;
+    else if (Name == "bmi2")
+      Features["bmi2"] = true;
+    else if (Name == "popcnt")
+      Features["popcnt"] = true;
   } else {
     if (Name == "mmx")
       Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = false;
     else if (Name == "sse")
       Features["sse"] = Features["sse2"] = Features["sse3"] =
-        Features["ssse3"] = Features["sse41"] = Features["sse42"] = false;
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["sse4a"] = false;
     else if (Name == "sse2")
       Features["sse2"] = Features["sse3"] = Features["ssse3"] =
-        Features["sse41"] = Features["sse42"] = false;
+        Features["sse41"] = Features["sse42"] = Features["sse4a"] = false;
     else if (Name == "sse3")
       Features["sse3"] = Features["ssse3"] = Features["sse41"] =
-        Features["sse42"] = false;
+        Features["sse42"] = Features["sse4a"] = false;
     else if (Name == "ssse3")
       Features["ssse3"] = Features["sse41"] = Features["sse42"] = false;
     else if (Name == "sse4" || Name == "sse4.1")
@@ -1724,11 +1780,21 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "aes")
       Features["aes"] = false;
     else if (Name == "avx")
-      Features["avx"] = Features["avx2"] = false;
+      Features["avx"] = Features["avx2"] = Features["fma4"] = false;
     else if (Name == "avx2")
       Features["avx2"] = false;
     else if (Name == "sse4a")
       Features["sse4a"] = false;
+    else if (Name == "lzcnt")
+      Features["lzcnt"] = false;
+    else if (Name == "bmi")
+      Features["bmi"] = false;
+    else if (Name == "bmi2")
+      Features["bmi2"] = false;
+    else if (Name == "popcnt")
+      Features["popcnt"] = false;
+    else if (Name == "fma4")
+      Features["fma4"] = false;
   }
 
   return true;
@@ -1748,20 +1814,35 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
       continue;
     }
 
-    // FIXME: Not sure yet how to treat AVX in regard to SSE levels.
-    // For now let it be enabled together with other SSE levels.
-    if (Features[i].substr(1) == "avx2") {
-      HasAVX = true;
-      HasAVX2 = true;
+    if (Features[i].substr(1) == "lzcnt") {
+      HasLZCNT = true;
       continue;
     }
-    if (Features[i].substr(1) == "avx") {
-      HasAVX = true;
+
+    if (Features[i].substr(1) == "bmi") {
+      HasBMI = true;
+      continue;
+    }
+
+    if (Features[i].substr(1) == "bmi2") {
+      HasBMI2 = true;
+      continue;
+    }
+
+    if (Features[i].substr(1) == "popcnt") {
+      HasPOPCNT = true;
+      continue;
+    }
+
+    if (Features[i].substr(1) == "fma4") {
+      HasFMA4 = true;
       continue;
     }
 
     assert(Features[i][0] == '+' && "Invalid target feature!");
     X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Features[i].substr(1))
+      .Case("avx2", AVX2)
+      .Case("avx", AVX)
       .Case("sse42", SSE42)
       .Case("sse41", SSE41)
       .Case("ssse3", SSSE3)
@@ -1819,9 +1900,7 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_WinChipC6:
   case CK_WinChip2:
   case CK_C3:
-    Builder.defineMacro("__i486");
-    Builder.defineMacro("__i486__");
-    Builder.defineMacro("__tune_i486__");
+    defineCPUMacros(Builder, "i486");
     break;
   case CK_PentiumMMX:
     Builder.defineMacro("__pentium_mmx__");
@@ -1829,12 +1908,8 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     // Fallthrough
   case CK_i586:
   case CK_Pentium:
-    Builder.defineMacro("__i586");
-    Builder.defineMacro("__i586__");
-    Builder.defineMacro("__tune_i586__");
-    Builder.defineMacro("__pentium");
-    Builder.defineMacro("__pentium__");
-    Builder.defineMacro("__tune_pentium__");
+    defineCPUMacros(Builder, "i586");
+    defineCPUMacros(Builder, "pentium");
     break;
   case CK_Pentium3:
   case CK_Pentium3M:
@@ -1858,35 +1933,25 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   case CK_Pentium4:
   case CK_Pentium4M:
-    Builder.defineMacro("__pentium4");
-    Builder.defineMacro("__pentium4__");
-    Builder.defineMacro("__tune_pentium4__");
+    defineCPUMacros(Builder, "pentium4");
     break;
   case CK_Yonah:
   case CK_Prescott:
   case CK_Nocona:
-    Builder.defineMacro("__nocona");
-    Builder.defineMacro("__nocona__");
-    Builder.defineMacro("__tune_nocona__");
+    defineCPUMacros(Builder, "nocona");
     break;
   case CK_Core2:
   case CK_Penryn:
-    Builder.defineMacro("__core2");
-    Builder.defineMacro("__core2__");
-    Builder.defineMacro("__tune_core2__");
+    defineCPUMacros(Builder, "core2");
     break;
   case CK_Atom:
-    Builder.defineMacro("__atom");
-    Builder.defineMacro("__atom__");
-    Builder.defineMacro("__tune_atom__");
+    defineCPUMacros(Builder, "atom");
     break;
   case CK_Corei7:
   case CK_Corei7AVX:
   case CK_CoreAVXi:
   case CK_CoreAVX2:
-    Builder.defineMacro("__corei7");
-    Builder.defineMacro("__corei7__");
-    Builder.defineMacro("__tune_corei7__");
+    defineCPUMacros(Builder, "corei7");
     break;
   case CK_K6_2:
     Builder.defineMacro("__k6_2__");
@@ -1902,18 +1967,14 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     }
     // Fallthrough
   case CK_K6:
-    Builder.defineMacro("__k6");
-    Builder.defineMacro("__k6__");
-    Builder.defineMacro("__tune_k6__");
+    defineCPUMacros(Builder, "k6");
     break;
   case CK_Athlon:
   case CK_AthlonThunderbird:
   case CK_Athlon4:
   case CK_AthlonXP:
   case CK_AthlonMP:
-    Builder.defineMacro("__athlon");
-    Builder.defineMacro("__athlon__");
-    Builder.defineMacro("__tune_athlon__");
+    defineCPUMacros(Builder, "athlon");
     if (SSELevel != NoSSE) {
       Builder.defineMacro("__athlon_sse__");
       Builder.defineMacro("__tune_athlon_sse__");
@@ -1927,29 +1988,22 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_Athlon64:
   case CK_Athlon64SSE3:
   case CK_AthlonFX:
-    Builder.defineMacro("__k8");
-    Builder.defineMacro("__k8__");
-    Builder.defineMacro("__tune_k8__");
+    defineCPUMacros(Builder, "k8");
     break;
   case CK_AMDFAM10:
-    Builder.defineMacro("__amdfam10");
-    Builder.defineMacro("__amdfam10__");
-    Builder.defineMacro("__tune_amdfam10__");
+    defineCPUMacros(Builder, "amdfam10");
+    break;
+  case CK_BTVER1:
+    defineCPUMacros(Builder, "btver1");
     break;
   case CK_BDVER1:
-    Builder.defineMacro("__bdver1");
-    Builder.defineMacro("__bdver1__");
-    Builder.defineMacro("__tune__bdver1__");
+    defineCPUMacros(Builder, "bdver1");
     break;
   case CK_BDVER2:
-    Builder.defineMacro("__bdver2");
-    Builder.defineMacro("__bdver2__");
-    Builder.defineMacro("__tune__bdver2__");
+    defineCPUMacros(Builder, "bdver2");
     break;
   case CK_Geode:
-    Builder.defineMacro("__geode");
-    Builder.defineMacro("__geode__");
-    Builder.defineMacro("__tune_geode__");
+    defineCPUMacros(Builder, "geode");
     break;
   }
 
@@ -1965,13 +2019,27 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasAES)
     Builder.defineMacro("__AES__");
 
-  if (HasAVX)
-    Builder.defineMacro("__AVX__");
-  if (HasAVX2)
-    Builder.defineMacro("__AVX2__");
+  if (HasLZCNT)
+    Builder.defineMacro("__LZCNT__");
+
+  if (HasBMI)
+    Builder.defineMacro("__BMI__");
+
+  if (HasBMI2)
+    Builder.defineMacro("__BMI2__");
+
+  if (HasPOPCNT)
+    Builder.defineMacro("__POPCNT__");
+
+  if (HasFMA4)
+    Builder.defineMacro("__FMA4__");
 
   // Each case falls through to the previous one here.
   switch (SSELevel) {
+  case AVX2:
+    Builder.defineMacro("__AVX2__");
+  case AVX:
+    Builder.defineMacro("__AVX__");
   case SSE42:
     Builder.defineMacro("__SSE4_2__");
   case SSE41:
@@ -1992,6 +2060,8 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
 
   if (Opts.MicrosoftExt && PointerWidth == 32) {
     switch (SSELevel) {
+    case AVX2:
+    case AVX:
     case SSE42:
     case SSE41:
     case SSSE3:
@@ -2071,7 +2141,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
       ++Name;
     return *Name == '}';
   }
-  return false;
 }
 
 
@@ -2132,6 +2201,20 @@ public:
     if (RegNo == 0) return 0;
     if (RegNo == 1) return 2;
     return -1;
+  }
+};
+} // end anonymous namespace
+
+namespace {
+class NetBSDI386TargetInfo : public NetBSDTargetInfo<X86_32TargetInfo> {
+public:
+  NetBSDI386TargetInfo(const std::string &triple) :
+    NetBSDTargetInfo<X86_32TargetInfo>(triple) {
+  }
+
+  virtual unsigned getFloatEvalMethod() const {
+    // NetBSD defaults to "double" rounding
+    return 1;
   }
 };
 } // end anonymous namespace
@@ -2613,7 +2696,7 @@ public:
                                  const std::string &Name,
                                  bool Enabled) const {
     if (Name == "soft-float" || Name == "soft-float-abi" ||
-        Name == "vfp2" || Name == "vfp3" || Name == "neon") {
+        Name == "vfp2" || Name == "vfp3" || Name == "neon" || Name == "d16") {
       Features[Name] = Enabled;
     } else
       return false;
@@ -2733,6 +2816,7 @@ public:
     Records = BuiltinInfo;
     NumRecords = clang::ARM::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
+  virtual bool isCLZForZeroUndef() const { return false; }
   virtual const char *getVAListDeclaration() const {
     return "typedef void* __builtin_va_list;";
   }
@@ -2928,7 +3012,19 @@ public:
   virtual const char *getClobbers() const {
     return "";
   }
+
+  static const char *getHexagonCPUSuffix(StringRef Name) {
+    return llvm::StringSwitch<const char*>(Name)
+      .Case("hexagonv2", "2")
+      .Case("hexagonv3", "3")
+      .Case("hexagonv4", "4")
+      .Default(0);
+  }
+
   virtual bool setCPU(const std::string &Name) {
+    if (!getHexagonCPUSuffix(Name))
+      return false;
+
     CPU = Name;
     return true;
   }
@@ -3389,7 +3485,6 @@ public:
         ++Name;
       return *Name == '}';
     }
-    return false;
   }
 
   virtual const char *getClobbers() const {
@@ -3973,7 +4068,7 @@ static TargetInfo *AllocateTarget(const std::string &T) {
     case llvm::Triple::DragonFly:
       return new DragonFlyBSDTargetInfo<X86_32TargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<X86_32TargetInfo>(T);
+      return new NetBSDI386TargetInfo(T);
     case llvm::Triple::OpenBSD:
       return new OpenBSDI386TargetInfo(T);
     case llvm::Triple::FreeBSD:

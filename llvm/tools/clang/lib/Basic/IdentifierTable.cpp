@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <cstdio>
 
 using namespace clang;
@@ -40,6 +41,7 @@ IdentifierInfo::IdentifierInfo() {
   ChangedAfterLoad = false;
   RevertedTokenID = false;
   OutOfDate = false;
+  IsImport = false;
   FETokenInfo = 0;
   Entry = 0;
 }
@@ -95,7 +97,7 @@ namespace {
     KEYNOCXX = 0x80,
     KEYBORLAND = 0x100,
     KEYOPENCL = 0x200,
-    KEYC1X = 0x400,
+    KEYC11 = 0x400,
     KEYARC = 0x800,
     KEYALL = 0x0fff
   };
@@ -124,7 +126,7 @@ static void AddKeyword(StringRef Keyword,
   else if (LangOpts.AltiVec && (Flags & KEYALTIVEC)) AddResult = 2;
   else if (LangOpts.OpenCL && (Flags & KEYOPENCL)) AddResult = 2;
   else if (!LangOpts.CPlusPlus && (Flags & KEYNOCXX)) AddResult = 2;
-  else if (LangOpts.C1X && (Flags & KEYC1X)) AddResult = 2;
+  else if (LangOpts.C11 && (Flags & KEYC11)) AddResult = 2;
   // We treat bridge casts as objective-C keywords so we can warn on them
   // in non-arc mode.
   else if (LangOpts.ObjC2 && (Flags & KEYARC)) AddResult = 2;
@@ -216,7 +218,7 @@ tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
   CASE( 6, 'i', 'n', ifndef);
   CASE( 6, 'i', 'p', import);
   CASE( 6, 'p', 'a', pragma);
-
+      
   CASE( 7, 'd', 'f', defined);
   CASE( 7, 'i', 'c', include);
   CASE( 7, 'w', 'r', warning);
@@ -224,10 +226,11 @@ tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
   CASE( 8, 'u', 'a', unassert);
   CASE(12, 'i', 'c', include_next);
 
-  CASE(16, '_', 'i', __include_macros);
-  CASE(16, '_', 'e', __export_macro__);
+  CASE(14, '_', 'p', __public_macro);
       
-  CASE(17, '_', 'p', __private_macro__);
+  CASE(15, '_', 'p', __private_macro);
+
+  CASE(16, '_', 'i', __include_macros);
 #undef CASE
 #undef HASH
   }
@@ -501,5 +504,5 @@ const char *clang::getOperatorSpelling(OverloadedOperatorKind Operator) {
 #include "clang/Basic/OperatorKinds.def"
   }
 
-  return 0;
+  llvm_unreachable("Invalid OverloadedOperatorKind!");
 }

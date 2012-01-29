@@ -271,7 +271,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
   // the function tries to identify a target as prefix. E.g.
   // "x86_64-linux-clang" as interpreted as suffix "clang" with
   // target prefix "x86_64-linux". If such a target prefix is found,
-  // is gets added via -ccc-host-triple as implicit first argument.
+  // is gets added via -target as implicit first argument.
   static const struct {
     const char *Suffix;
     bool IsCXX;

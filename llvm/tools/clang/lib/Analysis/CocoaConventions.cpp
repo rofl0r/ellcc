@@ -58,7 +58,6 @@ cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S,
     return CreateRule;
   }
   llvm_unreachable("unexpected naming convention");
-  return NoConvention;
 }
 
 bool cocoa::isRefType(QualType RetTy, StringRef Prefix,
@@ -68,7 +67,9 @@ bool cocoa::isRefType(QualType RetTy, StringRef Prefix,
     StringRef TDName = TD->getDecl()->getIdentifier()->getName();
     if (TDName.startswith(Prefix) && TDName.endswith("Ref"))
       return true;
-    
+    // XPC unfortunately uses CF-style function names, but aren't CF types.
+    if (TDName.startswith("xpc_"))
+      return false;
     RetTy = TD->getDecl()->getUnderlyingType();
   }
   
@@ -174,6 +175,4 @@ bool coreFoundation::followsCreateRule(const FunctionDecl *fn) {
     // If we matched a lowercase character, it isn't the end of the
     // word.  Keep scanning.
   }
-  
-  return false;
 }

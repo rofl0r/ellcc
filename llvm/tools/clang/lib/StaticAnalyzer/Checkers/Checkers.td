@@ -27,6 +27,7 @@ def DeadCode : Package<"deadcode">;
 def DeadCodeExperimental : Package<"deadcode">, InPackage<Experimental>, Hidden;
 
 def Security : Package <"security">;
+def InsecureAPI : Package<"insecureAPI">, InPackage<Security>;
 def SecurityExperimental : Package<"security">, InPackage<Experimental>, Hidden;
 def Taint : Package<"taint">, InPackage<SecurityExperimental>, Hidden;  
 
@@ -164,6 +165,10 @@ def IteratorsChecker : Checker<"Iterators">,
   HelpText<"Check improper uses of STL vector iterators">,
   DescFile<"IteratorsChecker.cpp">;
 
+def VirtualCallChecker : Checker<"VirtualCall">,
+  HelpText<"Check virtual function calls during construction or destruction">, 
+  DescFile<"VirtualCallChecker.cpp">;
+
 } // end: "cplusplus.experimental"
 
 //===----------------------------------------------------------------------===//
@@ -175,14 +180,13 @@ let ParentPackage = DeadCode in {
 def DeadStoresChecker : Checker<"DeadStores">,
   HelpText<"Check for values stored to variables that are never read afterwards">,
   DescFile<"DeadStoresChecker.cpp">;
+} // end DeadCode
+
+let ParentPackage = DeadCodeExperimental in {
 
 def IdempotentOperationChecker : Checker<"IdempotentOperations">,
   HelpText<"Warn about idempotent operations">,
   DescFile<"IdempotentOperationChecker.cpp">;
-
-} // end DeadCode
-
-let ParentPackage = DeadCodeExperimental in {
 
 def UnreachableCodeChecker : Checker<"UnreachableCode">,
   HelpText<"Check unreachable code">,
@@ -194,11 +198,39 @@ def UnreachableCodeChecker : Checker<"UnreachableCode">,
 // Security checkers.
 //===----------------------------------------------------------------------===//
 
-let ParentPackage = SecurityExperimental in {
+let ParentPackage = InsecureAPI in {
+  def gets : Checker<"gets">,
+    HelpText<"Warn on uses of the 'gets' function">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def getpw : Checker<"getpw">,
+    HelpText<"Warn on uses of the 'getpw' function">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def mktemp : Checker<"mktemp">,
+    HelpText<"Warn on uses of the 'mktemp' function">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def mkstemp : Checker<"mkstemp">,
+    HelpText<"Warn when 'mkstemp' is passed fewer than 6 X's in the format string">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def rand : Checker<"rand">,
+    HelpText<"Warn on uses of the 'rand', 'random', and related functions">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def strcpy : Checker<"strcpy">,
+    HelpText<"Warn on uses of the 'strcpy' and 'strcat' functions">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def vfork : Checker<"vfork">,
+    HelpText<"Warn on uses of the 'vfork' function">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+  def UncheckedReturn : Checker<"UncheckedReturn">,
+    HelpText<"Warn on uses of functions whose return values must be always checked">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+}
+let ParentPackage = Security in {
+  def FloatLoopCounter : Checker<"FloatLoopCounter">,
+    HelpText<"Warn on using a floating point value as a loop counter (CERT: FLP30-C, FLP30-CPP)">,
+    DescFile<"CheckSecuritySyntaxOnly.cpp">;
+}
 
-def SecuritySyntaxChecker : Checker<"SecuritySyntactic">,
-  HelpText<"Perform quick security API checks that require no data flow">,
-  DescFile<"CheckSecuritySyntaxOnly.cpp">;
+let ParentPackage = SecurityExperimental in {
 
 def ArrayBoundChecker : Checker<"ArrayBound">,
   HelpText<"Warn about buffer overflows (older checker)">,
@@ -335,6 +367,10 @@ def RetainCountChecker : Checker<"RetainCount">,
 } // end "cocoa"
 
 let ParentPackage = CocoaExperimental in {
+
+def ObjCContainersASTChecker : Checker<"ContainerAPI">,
+  HelpText<"Check for common pitfalls when using 'CFArray', 'CFDictionary', 'CFSet' APIs">,
+  DescFile<"ObjCContainersASTChecker.cpp">;
 
 def ObjCSelfInitChecker : Checker<"SelfInit">,
   HelpText<"Check that 'self' is properly initialized inside an initializer method">,

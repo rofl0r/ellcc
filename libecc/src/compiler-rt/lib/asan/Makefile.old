@@ -77,7 +77,6 @@ ARCH=x86_64
 
 ASAN_STACK=1
 ASAN_GLOBALS=1
-ASAN_USE_CALL=1
 ASAN_SCALE=0  # default will be used
 ASAN_OFFSET=-1  #default will be used
 ASAN_UAR=0
@@ -137,11 +136,9 @@ COMMON_ASAN_DEFINES=\
 
 CLANG_ASAN_CXX=$(CLANG_CXX) \
 	       -faddress-sanitizer \
-	       -DADDRESS_SANITIZER=1 \
 		$(BLACKLIST)  \
 		-mllvm -asan-stack=$(ASAN_STACK)      \
 		-mllvm -asan-globals=$(ASAN_GLOBALS)  \
-		-mllvm -asan-use-call=$(ASAN_USE_CALL) \
 		-mllvm -asan-mapping-scale=$(ASAN_SCALE) \
 		-mllvm -asan-mapping-offset-log=$(ASAN_OFFSET) \
 		-mllvm -asan-use-after-return=$(ASAN_UAR) \
@@ -152,7 +149,6 @@ CLANG_ASAN_LD=$(CLANG_CXX) -faddress-sanitizer
 GCC_ASAN_PATH=SET_FROM_COMMAND_LINE
 GCC_ASAN_CXX=$(GCC_ASAN_PATH)/g++ \
 	     -faddress-sanitizer \
-	     -DADDRESS_SANITIZER=1 \
 	     $(COMMON_ASAN_DEFINES)
 
 GCC_ASAN_LD=$(GCC_ASAN_PATH)/g++ -ldl -lpthread
@@ -182,9 +178,7 @@ RTL_HDR=asan_allocator.h \
 	asan_stats.h \
 	asan_thread.h \
 	asan_thread_registry.h \
-	mach_override/mach_override.h \
-	sysinfo/basictypes.h \
-	sysinfo/sysinfo.h
+	mach_override/mach_override.h
 
 LIBASAN_OBJ=$(BIN)/asan_rtl$(SUFF).o \
 	    $(BIN)/asan_allocator$(SUFF).o  \
@@ -195,13 +189,13 @@ LIBASAN_OBJ=$(BIN)/asan_rtl$(SUFF).o \
 	    $(BIN)/asan_malloc_linux$(SUFF).o \
 	    $(BIN)/asan_malloc_mac$(SUFF).o \
 	    $(BIN)/asan_poisoning$(SUFF).o  \
+	    $(BIN)/asan_posix$(SUFF).o  \
 	    $(BIN)/asan_printf$(SUFF).o  \
 	    $(BIN)/asan_stack$(SUFF).o  \
 	    $(BIN)/asan_stats$(SUFF).o  \
 	    $(BIN)/asan_thread$(SUFF).o  \
 	    $(BIN)/asan_thread_registry$(SUFF).o  \
-	    $(BIN)/mach_override/mach_override$(SUFF).o \
-	    $(BIN)/sysinfo/sysinfo$(SUFF).o
+	    $(BIN)/mach_override/mach_override$(SUFF).o
 
 GTEST_ROOT=third_party/googletest
 GTEST_INCLUDE=-I$(GTEST_ROOT)/include
@@ -232,7 +226,6 @@ lib32:
 
 $(BIN):
 	mkdir -p $(BIN)
-	mkdir -p $(BIN)/sysinfo
 	mkdir -p $(BIN)/mach_override
 
 clang:
@@ -264,8 +257,8 @@ $(BIN)/%_test$(SUFF).o: tests/%_test.mm $(RTL_HDR) $(MAKEFILE)
 	$(ASAN_CXX) $(GTEST_INCLUDE) -I. -g -c $< -O2 -o $@ -ObjC $(PIE) $(CFLAGS)
 
 $(BIN)/%$(SUFF).o: %.cc $(RTL_HDR) $(MAKEFILE)
-	$(CXX) $(PIE) $(CFLAGS) -fPIC -c -O2 -fno-exceptions -o $@ -g $< -Ithird_party \
-		-DASAN_USE_SYSINFO=1 \
+	$(CXX) $(PIE) $(CFLAGS) -fPIC -c -O2 -fno-exceptions -funwind-tables \
+		-o $@ -g $< -Ithird_party \
 		-DASAN_NEEDS_SEGV=$(ASAN_NEEDS_SEGV) \
 		-DASAN_HAS_EXCEPTIONS=$(ASAN_HAS_EXCEPTIONS) \
 		-DASAN_FLEXIBLE_MAPPING_AND_OFFSET=$(ASAN_FLEXIBLE_MAPPING_AND_OFFSET) \
@@ -273,7 +266,6 @@ $(BIN)/%$(SUFF).o: %.cc $(RTL_HDR) $(MAKEFILE)
 
 $(BIN)/%$(SUFF).o: %.c $(RTL_HDR) $(MAKEFILE)
 	$(CC) $(PIE) $(CFLAGS) -fPIC -c -O2 -o $@ -g $< -Ithird_party \
-		-DASAN_USE_SYSINFO=1 \
 		$(ASAN_FLAGS)
 
 ifeq ($(OS),darwin)

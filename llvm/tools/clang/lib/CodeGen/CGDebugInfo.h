@@ -139,6 +139,7 @@ class CGDebugInfo {
                                AccessSpecifier AS, uint64_t offsetInBits,
                                llvm::DIFile tunit,
                                llvm::DIDescriptor scope);
+  void CollectRecordStaticVars(const RecordDecl *, llvm::DIType);
   void CollectRecordFields(const RecordDecl *Decl, llvm::DIFile F,
                            SmallVectorImpl<llvm::Value *> &E,
                            llvm::DIType RecordTy);
@@ -231,6 +232,13 @@ private:
 
   /// getContextDescriptor - Get context info for the decl.
   llvm::DIDescriptor getContextDescriptor(const Decl *Decl);
+
+  /// createRecordFwdDecl - Create a forward decl for a RecordType in a given
+  /// context.
+  llvm::DIType createRecordFwdDecl(const RecordDecl *, llvm::DIDescriptor);
+  
+  /// createContextChain - Create a set of decls for the context chain.
+  llvm::DIDescriptor createContextChain(const Decl *Decl);
 
   /// getCurrentDirname - Return current directory name.
   StringRef getCurrentDirname();

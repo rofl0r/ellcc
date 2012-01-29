@@ -23,11 +23,6 @@ namespace llvm {
   class BlockAddress;
   class GCStrategy;
   class Constant;
-  class ConstantArray;
-  class ConstantFP;
-  class ConstantInt;
-  class ConstantStruct;
-  class ConstantVector;
   class GCMetadataPrinter;
   class GlobalValue;
   class GlobalVariable;
@@ -37,8 +32,6 @@ namespace llvm {
   class MachineLocation;
   class MachineLoopInfo;
   class MachineLoop;
-  class MachineConstantPool;
-  class MachineConstantPoolEntry;
   class MachineConstantPoolValue;
   class MachineJumpTableInfo;
   class MachineModuleInfo;
@@ -270,6 +263,13 @@ namespace llvm {
 
     virtual void EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV);
 
+    /// EmitXXStructor - Targets can override this to change how global
+    /// constants that are part of a C++ static/global constructor list are
+    /// emitted.
+    virtual void EmitXXStructor(const Constant *CV) {
+      EmitGlobalConstant(CV);
+    }
+
     /// isBlockOnlyReachableByFallthough - Return true if the basic block has
     /// exactly one predecessor and the control transfer mechanism between
     /// the predecessor and this block is a fall-through.
@@ -473,7 +473,7 @@ namespace llvm {
                             const MachineBasicBlock *MBB,
                             unsigned uid) const;
     void EmitLLVMUsedList(const Constant *List);
-    void EmitXXStructorList(const Constant *List);
+    void EmitXXStructorList(const Constant *List, bool isCtor);
     GCMetadataPrinter *GetOrCreateGCPrinter(GCStrategy *C);
   };
 }

@@ -1143,6 +1143,10 @@ define void @f() optsize { ... }
 </pre>
 
 <dl>
+  <dt><tt><b>address_safety</b></tt></dt>
+  <dd>This attribute indicates that the address safety analysis
+  is enabled for this function.  </dd>
+
   <dt><tt><b>alignstack(&lt;<em>n</em>&gt;)</b></tt></dt>
   <dd>This attribute indicates that, when emitting the prologue and epilogue,
       the backend should forcibly align the stack pointer. Specify the
@@ -1610,7 +1614,7 @@ that determines which other atomic instructions on the same address they
 <i>synchronize with</i>.  These semantics are borrowed from Java and C++0x,
 but are somewhat more colloquial. If these descriptions aren't precise enough,
 check those specs (see spec references in the
-<a href="Atomic.html#introduction">atomics guide</a>).
+<a href="Atomics.html#introduction">atomics guide</a>).
 <a href="#i_fence"><code>fence</code></a> instructions
 treat these orderings somewhat differently since they don't take an address.
 See that instruction's documentation for details.</p>
@@ -6013,9 +6017,6 @@ Loop:       ; Infinite loop that counts from 0 on up...
   %X = select i1 true, i8 17, i8 42          <i>; yields i8:17</i>
 </pre>
 
-<p>Note that the code generator does not yet support conditions
-   with vector type.</p>
-
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -6182,8 +6183,8 @@ freestanding environments and non-C-based languages.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;resultval&gt; = landingpad &lt;somety&gt; personality &lt;type&gt; &lt;pers_fn&gt; &lt;clause&gt;+
-  &lt;resultval&gt; = landingpad &lt;somety&gt; personality &lt;type&gt; &lt;pers_fn&gt; cleanup &lt;clause&gt;*
+  &lt;resultval&gt; = landingpad &lt;resultty&gt; personality &lt;type&gt; &lt;pers_fn&gt; &lt;clause&gt;+
+  &lt;resultval&gt; = landingpad &lt;resultty&gt; personality &lt;type&gt; &lt;pers_fn&gt; cleanup &lt;clause&gt;*
 
   &lt;clause&gt; := catch &lt;type&gt; &lt;value&gt;
   &lt;clause&gt; := filter &lt;array constant type&gt; &lt;array constant&gt;
@@ -6197,7 +6198,7 @@ freestanding environments and non-C-based languages.</p>
    <i><tt>catch</tt></i> portion of a <i><tt>try/catch</tt></i> sequence. It
    defines values supplied by the personality function (<tt>pers_fn</tt>) upon
    re-entry to the function. The <tt>resultval</tt> has the
-   type <tt>somety</tt>.</p>
+   type <tt>resultty</tt>.</p>
 
 <h5>Arguments:</h5>
 <p>This instruction takes a <tt>pers_fn</tt> value. This is the personality
@@ -6221,7 +6222,11 @@ freestanding environments and non-C-based languages.</p>
 
 <p>The clauses are applied in order from top to bottom. If two
    <tt>landingpad</tt> instructions are merged together through inlining, the
-   clauses from the calling function are appended to the list of clauses.</p>
+   clauses from the calling function are appended to the list of clauses.
+   When the call stack is being unwound due to an exception being thrown, the
+   exception is compared against each <tt>clause</tt> in turn.  If it doesn't
+   match any of the clauses, and the <tt>cleanup</tt> flag is not set, then
+   unwinding continues further up the call stack.</p>
 
 <p>The <tt>landingpad</tt> instruction has several restrictions:</p>
 
@@ -8283,7 +8288,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-12-16 18:04:22 -0600 (Fri, 16 Dec 2011) $
+  Last modified: $Date: 2012-01-23 02:47:21 -0600 (Mon, 23 Jan 2012) $
 </address>
 
 </body>

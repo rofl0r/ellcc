@@ -2768,8 +2768,7 @@ CFGBlock *CFGBuilder::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E,
 CFGBlock *CFGBuilder::VisitCXXConstructExpr(CXXConstructExpr *C,
                                             AddStmtChoice asc) {
   autoCreateBlock();
-  if (!C->isElidable())
-    appendStmt(Block, C);
+  appendStmt(Block, C);
 
   return VisitChildren(C);
 }
@@ -3091,7 +3090,6 @@ CFGImplicitDtor::getDestructorDecl(ASTContext &astContext) const {
       return 0;
   }
   llvm_unreachable("getKind() returned bogus value");
-  return 0;
 }
 
 bool CFGImplicitDtor::isNoReturn(ASTContext &astContext) const {

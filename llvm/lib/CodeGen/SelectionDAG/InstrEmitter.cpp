@@ -351,6 +351,8 @@ void InstrEmitter::AddOperand(MachineInstr *MI, SDValue Op,
     MI->addOperand(MachineOperand::CreateFPImm(CFP));
   } else if (RegisterSDNode *R = dyn_cast<RegisterSDNode>(Op)) {
     MI->addOperand(MachineOperand::CreateReg(R->getReg(), false));
+  } else if (RegisterMaskSDNode *RM = dyn_cast<RegisterMaskSDNode>(Op)) {
+    MI->addOperand(MachineOperand::CreateRegMask(RM->getRegMask()));
   } else if (GlobalAddressSDNode *TGA = dyn_cast<GlobalAddressSDNode>(Op)) {
     MI->addOperand(MachineOperand::CreateGA(TGA->getGlobal(), TGA->getOffset(),
                                             TGA->getTargetFlags()));
@@ -574,14 +576,19 @@ void InstrEmitter::EmitRegSequence(SDNode *Node,
   for (unsigned i = 1; i != NumOps; ++i) {
     SDValue Op = Node->getOperand(i);
     if ((i & 1) == 0) {
-      unsigned SubIdx = cast<ConstantSDNode>(Op)->getZExtValue();
-      unsigned SubReg = getVR(Node->getOperand(i-1), VRBaseMap);
-      const TargetRegisterClass *TRC = MRI->getRegClass(SubReg);
-      const TargetRegisterClass *SRC =
+      RegisterSDNode *R = dyn_cast<RegisterSDNode>(Node->getOperand(i-1));
+      // Skip physical registers as they don't have a vreg to get and we'll
+      // insert copies for them in TwoAddressInstructionPass anyway.
+      if (!R || !TargetRegisterInfo::isPhysicalRegister(R->getReg())) {
+        unsigned SubIdx = cast<ConstantSDNode>(Op)->getZExtValue();
+        unsigned SubReg = getVR(Node->getOperand(i-1), VRBaseMap);
+        const TargetRegisterClass *TRC = MRI->getRegClass(SubReg);
+        const TargetRegisterClass *SRC =
         TRI->getMatchingSuperRegClass(RC, TRC, SubIdx);
-      if (SRC && SRC != RC) {
-        MRI->setRegClass(NewVReg, SRC);
-        RC = SRC;
+        if (SRC && SRC != RC) {
+          MRI->setRegClass(NewVReg, SRC);
+          RC = SRC;
+        }
       }
     }
     AddOperand(MI, Op, i+1, &II, VRBaseMap, /*IsDebug=*/false,
@@ -794,10 +801,8 @@ EmitSpecialNode(SDNode *Node, bool IsClone, bool IsCloned,
     Node->dump();
 #endif
     llvm_unreachable("This target-independent node should have been selected!");
-    break;
   case ISD::EntryToken:
     llvm_unreachable("EntryToken should have been excluded from the schedule!");
-    break;
   case ISD::MERGE_VALUES:
   case ISD::TokenFactor: // fall thru
     break;

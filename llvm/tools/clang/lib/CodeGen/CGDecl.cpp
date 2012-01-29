@@ -65,8 +65,6 @@ void CodeGenFunction::EmitDecl(const Decl &D) {
   case Decl::AccessSpec:
   case Decl::LinkageSpec:
   case Decl::ObjCPropertyImpl:
-  case Decl::ObjCClass:
-  case Decl::ObjCForwardProtocol:
   case Decl::FileScopeAsm:
   case Decl::Friend:
   case Decl::FriendTemplate:
@@ -205,7 +203,7 @@ CodeGenFunction::CreateStaticVarDecl(const VarDecl &D,
 llvm::GlobalVariable *
 CodeGenFunction::AddInitializerToStaticVarDecl(const VarDecl &D,
                                                llvm::GlobalVariable *GV) {
-  llvm::Constant *Init = CGM.EmitConstantExpr(D.getInit(), D.getType(), this);
+  llvm::Constant *Init = CGM.EmitConstantInit(D, this);
 
   // If constant emission failed, then this should be a C++ static
   // initializer.
@@ -312,12 +310,12 @@ namespace {
     DestroyObject(llvm::Value *addr, QualType type,
                   CodeGenFunction::Destroyer *destroyer,
                   bool useEHCleanupForArray)
-      : addr(addr), type(type), destroyer(*destroyer),
+      : addr(addr), type(type), destroyer(destroyer),
         useEHCleanupForArray(useEHCleanupForArray) {}
 
     llvm::Value *addr;
     QualType type;
-    CodeGenFunction::Destroyer &destroyer;
+    CodeGenFunction::Destroyer *destroyer;
     bool useEHCleanupForArray;
 
     void Emit(CodeGenFunction &CGF, Flags flags) {
@@ -432,7 +430,7 @@ static void EmitAutoVarWithLifetime(CodeGenFunction &CGF, const VarDecl &var,
     break;
 
   case Qualifiers::OCL_Strong: {
-    CodeGenFunction::Destroyer &destroyer =
+    CodeGenFunction::Destroyer *destroyer =
       (var.hasAttr<ObjCPreciseLifetimeAttr>()
        ? CodeGenFunction::destroyARCStrongPrecise
        : CodeGenFunction::destroyARCStrongImprecise);
@@ -496,7 +494,7 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
     llvm::Value *value = EmitScalarExpr(init);
     if (capturedByInit)
       drillIntoBlockVariable(*this, lvalue, cast<VarDecl>(D));
-    EmitStoreThroughLValue(RValue::get(value), lvalue);
+    EmitStoreThroughLValue(RValue::get(value), lvalue, true);
     return;
   }
 
@@ -537,7 +535,7 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
 
     // Otherwise just do a simple store.
     else
-      EmitStoreOfScalar(zero, tempLV);
+      EmitStoreOfScalar(zero, tempLV, /* isInitialization */ true);
   }
 
   // Emit the initializer.
@@ -583,19 +581,19 @@ void CodeGenFunction::EmitScalarInit(const Expr *init,
   // both __weak and __strong, but __weak got filtered out above.
   if (accessedByInit && lifetime == Qualifiers::OCL_Strong) {
     llvm::Value *oldValue = EmitLoadOfScalar(lvalue);
-    EmitStoreOfScalar(value, lvalue);
+    EmitStoreOfScalar(value, lvalue, /* isInitialization */ true);
     EmitARCRelease(oldValue, /*precise*/ false);
     return;
   }
 
-  EmitStoreOfScalar(value, lvalue);
+  EmitStoreOfScalar(value, lvalue, /* isInitialization */ true);
 }
 
 /// EmitScalarInit - Initialize the given lvalue with the given object.
 void CodeGenFunction::EmitScalarInit(llvm::Value *init, LValue lvalue) {
   Qualifiers::ObjCLifetime lifetime = lvalue.getObjCLifetime();
   if (!lifetime)
-    return EmitStoreThroughLValue(RValue::get(init), lvalue);
+    return EmitStoreThroughLValue(RValue::get(init), lvalue, true);
 
   switch (lifetime) {
   case Qualifiers::OCL_None:
@@ -619,7 +617,7 @@ void CodeGenFunction::EmitScalarInit(llvm::Value *init, LValue lvalue) {
     break;
   }
 
-  EmitStoreOfScalar(init, lvalue);
+  EmitStoreOfScalar(init, lvalue, /* isInitialization */ true);
 }
 
 /// canEmitInitWithFewStoresAfterMemset - Decide whether we can emit the
@@ -971,7 +969,13 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   llvm::Value *Loc =
     capturedByInit ? emission.Address : emission.getObjectAddress(*this);
 
-  if (!emission.IsConstantAggregate) {
+  llvm::Constant *constant = 0;
+  if (emission.IsConstantAggregate) {
+    assert(!capturedByInit && "constant init contains a capturing block?");
+    constant = CGM.EmitConstantInit(D, this);
+  }
+
+  if (!constant) {
     LValue lv = MakeAddrLValue(Loc, type, alignment);
     lv.setNonGC(true);
     return EmitExprAsInit(Init, &D, lv, capturedByInit);
@@ -979,12 +983,7 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
 
   // If this is a simple aggregate initialization, we can optimize it
   // in various ways.
-  assert(!capturedByInit && "constant init contains a capturing block?");
-
   bool isVolatile = type.isVolatileQualified();
-
-  llvm::Constant *constant = CGM.EmitConstantExpr(D.getInit(), type, this);
-  assert(constant != 0 && "Wasn't a simple constant init?");
 
   llvm::Value *SizeVal =
     llvm::ConstantInt::get(IntPtrTy,
@@ -1046,7 +1045,7 @@ void CodeGenFunction::EmitExprAsInit(const Expr *init,
     RValue rvalue = EmitReferenceBindingToExpr(init, D);
     if (capturedByInit)
       drillIntoBlockVariable(*this, lvalue, cast<VarDecl>(D));
-    EmitStoreThroughLValue(rvalue, lvalue);
+    EmitStoreThroughLValue(rvalue, lvalue, true);
   } else if (!hasAggregateLLVMType(type)) {
     EmitScalarInit(init, D, lvalue, capturedByInit);
   } else if (type->isAnyComplexType()) {
@@ -1112,7 +1111,7 @@ void CodeGenFunction::emitAutoVarTypeCleanup(
   }
 
   // If we haven't chosen a more specific destroyer, use the default.
-  if (!destroyer) destroyer = &getDestroyer(dtorKind);
+  if (!destroyer) destroyer = getDestroyer(dtorKind);
 
   // Use an EH cleanup in array destructors iff the destructor itself
   // is being pushed as an EH cleanup.
@@ -1156,25 +1155,18 @@ void CodeGenFunction::EmitAutoVarCleanups(const AutoVarEmission &emission) {
     enterByrefCleanup(emission);
 }
 
-CodeGenFunction::Destroyer &
+CodeGenFunction::Destroyer *
 CodeGenFunction::getDestroyer(QualType::DestructionKind kind) {
-  // This is surprisingly compiler-dependent.  GCC 4.2 can't bind
-  // references to functions directly in returns, and using '*&foo'
-  // confuses MSVC.  Luckily, the following code pattern works in both.
-  Destroyer *destroyer = 0;
   switch (kind) {
   case QualType::DK_none: llvm_unreachable("no destroyer for trivial dtor");
   case QualType::DK_cxx_destructor:
-    destroyer = &destroyCXXObject;
-    break;
+    return destroyCXXObject;
   case QualType::DK_objc_strong_lifetime:
-    destroyer = &destroyARCStrongPrecise;
-    break;
+    return destroyARCStrongPrecise;
   case QualType::DK_objc_weak_lifetime:
-    destroyer = &destroyARCWeak;
-    break;
+    return destroyARCWeak;
   }
-  return *destroyer;
+  llvm_unreachable("Unknown DestructionKind");
 }
 
 /// pushDestroy - Push the standard destructor for the given type.
@@ -1188,7 +1180,7 @@ void CodeGenFunction::pushDestroy(QualType::DestructionKind dtorKind,
 }
 
 void CodeGenFunction::pushDestroy(CleanupKind cleanupKind, llvm::Value *addr,
-                                  QualType type, Destroyer &destroyer,
+                                  QualType type, Destroyer *destroyer,
                                   bool useEHCleanupForArray) {
   pushFullExprCleanup<DestroyObject>(cleanupKind, addr, type,
                                      destroyer, useEHCleanupForArray);
@@ -1206,7 +1198,7 @@ void CodeGenFunction::pushDestroy(CleanupKind cleanupKind, llvm::Value *addr,
 ///   used when destroying array elements, in case one of the
 ///   destructions throws an exception
 void CodeGenFunction::emitDestroy(llvm::Value *addr, QualType type,
-                                  Destroyer &destroyer,
+                                  Destroyer *destroyer,
                                   bool useEHCleanupForArray) {
   const ArrayType *arrayType = getContext().getAsArrayType(type);
   if (!arrayType)
@@ -1243,7 +1235,7 @@ void CodeGenFunction::emitDestroy(llvm::Value *addr, QualType type,
 void CodeGenFunction::emitArrayDestroy(llvm::Value *begin,
                                        llvm::Value *end,
                                        QualType type,
-                                       Destroyer &destroyer,
+                                       Destroyer *destroyer,
                                        bool checkZeroLength,
                                        bool useEHCleanup) {
   assert(!type->isArrayType());
@@ -1294,7 +1286,7 @@ void CodeGenFunction::emitArrayDestroy(llvm::Value *begin,
 static void emitPartialArrayDestroy(CodeGenFunction &CGF,
                                     llvm::Value *begin, llvm::Value *end,
                                     QualType type,
-                                    CodeGenFunction::Destroyer &destroyer) {
+                                    CodeGenFunction::Destroyer *destroyer) {
   // If the element type is itself an array, drill down.
   unsigned arrayDepth = 0;
   while (const ArrayType *arrayType = CGF.getContext().getAsArrayType(type)) {
@@ -1327,13 +1319,13 @@ namespace {
     llvm::Value *ArrayBegin;
     llvm::Value *ArrayEnd;
     QualType ElementType;
-    CodeGenFunction::Destroyer &Destroyer;
+    CodeGenFunction::Destroyer *Destroyer;
   public:
     RegularPartialArrayDestroy(llvm::Value *arrayBegin, llvm::Value *arrayEnd,
                                QualType elementType,
                                CodeGenFunction::Destroyer *destroyer)
       : ArrayBegin(arrayBegin), ArrayEnd(arrayEnd),
-        ElementType(elementType), Destroyer(*destroyer) {}
+        ElementType(elementType), Destroyer(destroyer) {}
 
     void Emit(CodeGenFunction &CGF, Flags flags) {
       emitPartialArrayDestroy(CGF, ArrayBegin, ArrayEnd,
@@ -1348,14 +1340,14 @@ namespace {
     llvm::Value *ArrayBegin;
     llvm::Value *ArrayEndPointer;
     QualType ElementType;
-    CodeGenFunction::Destroyer &Destroyer;
+    CodeGenFunction::Destroyer *Destroyer;
   public:
     IrregularPartialArrayDestroy(llvm::Value *arrayBegin,
                                  llvm::Value *arrayEndPointer,
                                  QualType elementType,
                                  CodeGenFunction::Destroyer *destroyer)
       : ArrayBegin(arrayBegin), ArrayEndPointer(arrayEndPointer),
-        ElementType(elementType), Destroyer(*destroyer) {}
+        ElementType(elementType), Destroyer(destroyer) {}
 
     void Emit(CodeGenFunction &CGF, Flags flags) {
       llvm::Value *arrayEnd = CGF.Builder.CreateLoad(ArrayEndPointer);
@@ -1378,10 +1370,10 @@ namespace {
 void CodeGenFunction::pushIrregularPartialArrayCleanup(llvm::Value *arrayBegin,
                                                  llvm::Value *arrayEndPointer,
                                                        QualType elementType,
-                                                       Destroyer &destroyer) {
+                                                       Destroyer *destroyer) {
   pushFullExprCleanup<IrregularPartialArrayDestroy>(EHCleanup,
                                                     arrayBegin, arrayEndPointer,
-                                                    elementType, &destroyer);
+                                                    elementType, destroyer);
 }
 
 /// pushRegularPartialArrayCleanup - Push an EH cleanup to destroy
@@ -1397,10 +1389,10 @@ void CodeGenFunction::pushIrregularPartialArrayCleanup(llvm::Value *arrayBegin,
 void CodeGenFunction::pushRegularPartialArrayCleanup(llvm::Value *arrayBegin,
                                                      llvm::Value *arrayEnd,
                                                      QualType elementType,
-                                                     Destroyer &destroyer) {
+                                                     Destroyer *destroyer) {
   pushFullExprCleanup<RegularPartialArrayDestroy>(EHCleanup,
                                                   arrayBegin, arrayEnd,
-                                                  elementType, &destroyer);
+                                                  elementType, destroyer);
 }
 
 namespace {
@@ -1506,7 +1498,7 @@ void CodeGenFunction::EmitParmDecl(const VarDecl &D, llvm::Value *Arg,
     if (doStore) {
       LValue lv = MakeAddrLValue(DeclPtr, Ty,
                                  getContext().getDeclAlign(&D));
-      EmitStoreOfScalar(Arg, lv);
+      EmitStoreOfScalar(Arg, lv, /* isInitialization */ true);
     }
   }
 

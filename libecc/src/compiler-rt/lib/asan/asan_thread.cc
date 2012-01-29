@@ -13,14 +13,11 @@
 //===----------------------------------------------------------------------===//
 #include "asan_allocator.h"
 #include "asan_interceptors.h"
+#include "asan_procmaps.h"
+#include "asan_stack.h"
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
 #include "asan_mapping.h"
-
-#include <sys/mman.h>
-#include <pthread.h>
-#include <stdlib.h>
-#include <string.h>
 
 namespace __asan {
 
@@ -29,42 +26,42 @@ AsanThread::AsanThread(LinkerInitialized x)
       malloc_storage_(x),
       stats_(x) { }
 
-AsanThread::AsanThread(int parent_tid, void *(*start_routine) (void *),
-                       void *arg, AsanStackTrace *stack)
-    : start_routine_(start_routine),
-      arg_(arg) {
-  asanThreadRegistry().RegisterThread(this, parent_tid, stack);
+AsanThread *AsanThread::Create(int parent_tid, void *(*start_routine) (void *),
+                               void *arg, AsanStackTrace *stack) {
+  size_t size = RoundUpTo(sizeof(AsanThread), kPageSize);
+  AsanThread *thread = (AsanThread*)AsanMmapSomewhereOrDie(size, __FUNCTION__);
+  thread->start_routine_ = start_routine;
+  thread->arg_ = arg;
+
+  AsanThreadSummary *summary = new AsanThreadSummary(parent_tid, stack);
+  summary->set_thread(thread);
+  thread->set_summary(summary);
+
+  return thread;
 }
 
-AsanThread::~AsanThread() {
-  asanThreadRegistry().UnregisterThread(this);
-  fake_stack().Cleanup();
+void AsanThread::Destroy() {
   // We also clear the shadow on thread destruction because
   // some code may still be executing in later TSD destructors
   // and we don't want it to have any poisoned stack.
   ClearShadowForThreadStack();
-}
-
-void AsanThread::ClearShadowForThreadStack() {
-  uintptr_t shadow_bot = MemToShadow(stack_bottom_);
-  uintptr_t shadow_top = MemToShadow(stack_top_);
-  real_memset((void*)shadow_bot, 0, shadow_top - shadow_bot);
+  fake_stack().Cleanup();
+  size_t size = RoundUpTo(sizeof(AsanThread), kPageSize);
+  AsanUnmapOrDie(this, size);
 }
 
 void AsanThread::Init() {
   SetThreadStackTopAndBottom();
-  fake_stack_.Init(stack_size());
-  if (FLAG_v >= 1) {
-    int local = 0;
-    Report("T%d: stack [%p,%p) size 0x%lx; local=%p, pthread_self=%p\n",
-           tid(), stack_bottom_, stack_top_,
-           stack_top_ - stack_bottom_, &local, pthread_self());
-  }
-
   CHECK(AddrIsInMem(stack_bottom_));
   CHECK(AddrIsInMem(stack_top_));
-
   ClearShadowForThreadStack();
+  if (FLAG_v >= 1) {
+    int local = 0;
+    Report("T%d: stack [%p,%p) size 0x%lx; local=%p\n",
+           tid(), stack_bottom_, stack_top_,
+           stack_top_ - stack_bottom_, &local);
+  }
+  fake_stack_.Init(stack_size());
 }
 
 void *AsanThread::ThreadStart() {
@@ -85,7 +82,14 @@ void *AsanThread::ThreadStart() {
     Report("T%d exited\n", tid());
   }
 
+  asanThreadRegistry().UnregisterThread(this);
+  this->Destroy();
+
   return res;
+}
+
+void AsanThread::ClearShadowForThreadStack() {
+  PoisonShadow(stack_bottom_, stack_top_ - stack_bottom_, 0);
 }
 
 const char *AsanThread::GetFrameNameByAddr(uintptr_t addr, uintptr_t *offset) {
@@ -110,34 +114,6 @@ const char *AsanThread::GetFrameNameByAddr(uintptr_t addr, uintptr_t *offset) {
   }
   *offset = 0;
   return "UNKNOWN";
-}
-
-void AsanThread::SetThreadStackTopAndBottom() {
-#ifdef __APPLE__
-  size_t stacksize = pthread_get_stacksize_np(pthread_self());
-  void *stackaddr = pthread_get_stackaddr_np(pthread_self());
-  stack_top_ = (uintptr_t)stackaddr;
-  stack_bottom_ = stack_top_ - stacksize;
-  int local;
-  CHECK(AddrIsInStack((uintptr_t)&local));
-#else
-  pthread_attr_t attr;
-  CHECK(pthread_getattr_np(pthread_self(), &attr) == 0);
-  size_t stacksize = 0;
-  void *stackaddr = NULL;
-  pthread_attr_getstack(&attr, &stackaddr, &stacksize);
-  pthread_attr_destroy(&attr);
-
-  stack_top_ = (uintptr_t)stackaddr + stacksize;
-  stack_bottom_ = (uintptr_t)stackaddr;
-  // When running with unlimited stack size, we still want to set some limit.
-  // The unlimited stack size is caused by 'ulimit -s unlimited'.
-  // Also, for some reason, GNU make spawns subrocesses with unlimited stack.
-  if (stacksize > kMaxThreadStackSize) {
-    stack_bottom_ = stack_top_ - kMaxThreadStackSize;
-  }
-  CHECK(AddrIsInStack((uintptr_t)&attr));
-#endif
 }
 
 }  // namespace __asan

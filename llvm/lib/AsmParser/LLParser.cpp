@@ -874,7 +874,7 @@ bool LLParser::ParseOptionalAddrSpace(unsigned &AddrSpace) {
 /// ParseOptionalAttrs - Parse a potentially empty attribute list.  AttrKind
 /// indicates what kind of attribute list this is: 0: function arg, 1: result,
 /// 2: function attr.
-bool LLParser::ParseOptionalAttrs(unsigned &Attrs, unsigned AttrKind) {
+bool LLParser::ParseOptionalAttrs(Attributes &Attrs, unsigned AttrKind) {
   Attrs = Attribute::None;
   LocTy AttrLoc = Lex.getLoc();
 
@@ -919,6 +919,7 @@ bool LLParser::ParseOptionalAttrs(unsigned &Attrs, unsigned AttrKind) {
     case lltok::kw_noimplicitfloat: Attrs |= Attribute::NoImplicitFloat; break;
     case lltok::kw_naked:           Attrs |= Attribute::Naked; break;
     case lltok::kw_nonlazybind:     Attrs |= Attribute::NonLazyBind; break;
+    case lltok::kw_address_safety:  Attrs |= Attribute::AddressSafety; break;
 
     case lltok::kw_alignstack: {
       unsigned Alignment;
@@ -1042,13 +1043,11 @@ bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
   case lltok::kw_cc: {
       unsigned ArbitraryCC;
       Lex.Lex();
-      if (ParseUInt32(ArbitraryCC)) {
+      if (ParseUInt32(ArbitraryCC))
         return true;
-      } else
-        CC = static_cast<CallingConv::ID>(ArbitraryCC);
-        return false;
+      CC = static_cast<CallingConv::ID>(ArbitraryCC);
+      return false;
     }
-    break;
   }
 
   Lex.Lex();
@@ -1353,8 +1352,8 @@ bool LLParser::ParseParameterList(SmallVectorImpl<ParamInfo> &ArgList,
     // Parse the argument.
     LocTy ArgLoc;
     Type *ArgTy = 0;
-    unsigned ArgAttrs1 = Attribute::None;
-    unsigned ArgAttrs2 = Attribute::None;
+    Attributes ArgAttrs1;
+    Attributes ArgAttrs2;
     Value *V;
     if (ParseType(ArgTy, ArgLoc))
       return true;
@@ -1394,7 +1393,7 @@ bool LLParser::ParseArgumentList(SmallVectorImpl<ArgInfo> &ArgList,
   } else {
     LocTy TypeLoc = Lex.getLoc();
     Type *ArgTy = 0;
-    unsigned Attrs;
+    Attributes Attrs;
     std::string Name;
 
     if (ParseType(ArgTy) ||
@@ -1461,7 +1460,7 @@ bool LLParser::ParseFunctionType(Type *&Result) {
   for (unsigned i = 0, e = ArgList.size(); i != e; ++i) {
     if (!ArgList[i].Name.empty())
       return Error(ArgList[i].Loc, "argument name invalid in function type");
-    if (ArgList[i].Attrs != 0)
+    if (ArgList[i].Attrs)
       return Error(ArgList[i].Loc,
                    "argument attributes invalid in function type");
   }
@@ -2438,7 +2437,6 @@ bool LLParser::ConvertValIDToValue(Type *Ty, ValID &ID, Value *&V,
     return Error(ID.Loc, "functions are not values, refer to them as pointers");
 
   switch (ID.Kind) {
-  default: llvm_unreachable("Unknown ValID!");
   case ValID::t_LocalID:
     if (!PFS) return Error(ID.Loc, "invalid use of function-local name");
     V = PFS->GetVal(ID.UIntVal, Ty, ID.Loc);
@@ -2550,6 +2548,7 @@ bool LLParser::ConvertValIDToValue(Type *Ty, ValID &ID, Value *&V,
       return Error(ID.Loc, "constant expression type mismatch");
     return false;
   }
+  llvm_unreachable("Invalid ValID");
 }
 
 bool LLParser::ParseValue(Type *Ty, Value *&V, PerFunctionState *PFS) {
@@ -2586,7 +2585,8 @@ bool LLParser::ParseFunctionHeader(Function *&Fn, bool isDefine) {
   LocTy LinkageLoc = Lex.getLoc();
   unsigned Linkage;
 
-  unsigned Visibility, RetAttrs;
+  unsigned Visibility;
+  Attributes RetAttrs;
   CallingConv::ID CC;
   Type *RetType = 0;
   LocTy RetTypeLoc = Lex.getLoc();
@@ -2650,7 +2650,7 @@ bool LLParser::ParseFunctionHeader(Function *&Fn, bool isDefine) {
 
   SmallVector<ArgInfo, 8> ArgList;
   bool isVarArg;
-  unsigned FuncAttrs;
+  Attributes FuncAttrs;
   std::string Section;
   unsigned Alignment;
   std::string GC;
@@ -3162,7 +3162,7 @@ bool LLParser::ParseIndirectBr(Instruction *&Inst, PerFunctionState &PFS) {
 ///       OptionalAttrs 'to' TypeAndValue 'unwind' TypeAndValue
 bool LLParser::ParseInvoke(Instruction *&Inst, PerFunctionState &PFS) {
   LocTy CallLoc = Lex.getLoc();
-  unsigned RetAttrs, FnAttrs;
+  Attributes RetAttrs, FnAttrs;
   CallingConv::ID CC;
   Type *RetType = 0;
   LocTy RetTypeLoc;
@@ -3561,7 +3561,7 @@ bool LLParser::ParseLandingPad(Instruction *&Inst, PerFunctionState &PFS) {
 ///       ParameterList OptionalAttrs
 bool LLParser::ParseCall(Instruction *&Inst, PerFunctionState &PFS,
                          bool isTail) {
-  unsigned RetAttrs, FnAttrs;
+  Attributes RetAttrs, FnAttrs;
   CallingConv::ID CC;
   Type *RetType = 0;
   LocTy RetTypeLoc;

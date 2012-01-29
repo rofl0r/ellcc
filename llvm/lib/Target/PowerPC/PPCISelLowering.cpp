@@ -17,7 +17,6 @@
 #include "PPCTargetMachine.h"
 #include "MCTargetDesc/PPCPredicates.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/VectorExtras.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -1915,12 +1914,11 @@ PPCTargetLowering::LowerFormalArguments_Darwin(
     for (unsigned ArgNo = 0, e = Ins.size(); ArgNo != e;
          ++ArgNo) {
       EVT ObjectVT = Ins[ArgNo].VT;
-      unsigned ObjSize = ObjectVT.getSizeInBits()/8;
       ISD::ArgFlagsTy Flags = Ins[ArgNo].Flags;
 
       if (Flags.isByVal()) {
         // ObjSize is the true size, ArgSize rounded up to multiple of regs.
-        ObjSize = Flags.getByValSize();
+        unsigned ObjSize = Flags.getByValSize();
         unsigned ArgSize =
                 ((ObjSize + PtrByteSize - 1)/PtrByteSize) * PtrByteSize;
         VecArgOffset += ArgSize;
@@ -4259,8 +4257,7 @@ SDValue PPCTargetLowering::LowerVECTOR_SHUFFLE(SDValue Op,
 
   // Check to see if this is a shuffle of 4-byte values.  If so, we can use our
   // perfect shuffle table to emit an optimal matching sequence.
-  SmallVector<int, 16> PermMask;
-  SVOp->getMask(PermMask);
+  ArrayRef<int> PermMask = SVOp->getMask();
 
   unsigned PFIndexes[4];
   bool isFourElementShuffle = true;
@@ -4572,7 +4569,6 @@ SDValue PPCTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::RETURNADDR:         return LowerRETURNADDR(Op, DAG);
   case ISD::FRAMEADDR:          return LowerFRAMEADDR(Op, DAG);
   }
-  return SDValue();
 }
 
 void PPCTargetLowering::ReplaceNodeResults(SDNode *N,

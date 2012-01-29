@@ -186,7 +186,7 @@ void AggressiveAntiDepBreaker::StartBlock(MachineBasicBlock *BB) {
   // callee-saved register that is not saved in the prolog.
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   BitVector Pristine = MFI->getPristineRegs(BB);
-  for (const unsigned *I = TRI->getCalleeSavedRegs(); *I; ++I) {
+  for (const unsigned *I = TRI->getCalleeSavedRegs(&MF); *I; ++I) {
     unsigned Reg = *I;
     if (!IsReturnBlock && !Pristine.test(Reg)) continue;
     for (const unsigned *Alias = TRI->getOverlaps(Reg);
@@ -779,6 +779,9 @@ unsigned AggressiveAntiDepBreaker::BreakAntiDependencies(
   for (MachineBasicBlock::iterator I = End, E = Begin;
        I != E; --Count) {
     MachineInstr *MI = --I;
+
+    if (MI->isDebugValue())
+      continue;
 
     DEBUG(dbgs() << "Anti: ");
     DEBUG(MI->dump());

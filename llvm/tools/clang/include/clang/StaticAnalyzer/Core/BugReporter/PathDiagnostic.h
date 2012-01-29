@@ -48,20 +48,18 @@ class PathDiagnostic;
 class PathDiagnosticConsumer {
   virtual void anchor();
 public:
-  PathDiagnosticConsumer() {}
+  PathDiagnosticConsumer() : flushed(false) {}
+  virtual ~PathDiagnosticConsumer();
 
-  virtual ~PathDiagnosticConsumer() {}
-  
-  virtual void
-  FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade = 0) = 0;
-  
-  void FlushDiagnostics(SmallVectorImpl<std::string> &FilesMade) {
-    FlushDiagnostics(&FilesMade);
-  }
-  
+  void FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade);
+
+  virtual void FlushDiagnosticsImpl(std::vector<const PathDiagnostic *> &Diags,
+                                    SmallVectorImpl<std::string> *FilesMade)
+                                    = 0;
+
   virtual StringRef getName() const = 0;
   
-  void HandlePathDiagnostic(const PathDiagnostic* D);
+  void HandlePathDiagnostic(PathDiagnostic *D);
 
   enum PathGenerationScheme { Minimal, Extensive };
   virtual PathGenerationScheme getGenerationScheme() const { return Minimal; }
@@ -70,10 +68,8 @@ public:
   virtual bool useVerboseDescription() const { return true; }
 
 protected:
-  /// The actual logic for handling path diagnostics, as implemented
-  /// by subclasses of PathDiagnosticConsumer.
-  virtual void HandlePathDiagnosticImpl(const PathDiagnostic* D) = 0;
-
+  bool flushed;
+  llvm::FoldingSet<PathDiagnostic> Diags;
 };
 
 //===----------------------------------------------------------------------===//
@@ -129,6 +125,7 @@ public:
     : K(StmtK), S(s), D(0), SM(&sm),
       Loc(genLocation(SourceLocation(), lac)),
       Range(genRange(lac)) {
+    assert(S);
     assert(Loc.isValid());
     assert(Range.isValid());
   }
@@ -137,6 +134,7 @@ public:
   PathDiagnosticLocation(const Decl *d, const SourceManager &sm)
     : K(DeclK), S(0), D(d), SM(&sm),
       Loc(genLocation()), Range(genRange()) {
+    assert(D);
     assert(Loc.isValid());
     assert(Range.isValid());
   }
@@ -595,6 +593,8 @@ public:
   }
   
   void Profile(llvm::FoldingSetNodeID &ID) const;
+  
+  void FullProfile(llvm::FoldingSetNodeID &ID) const;
 };  
 
 } // end GR namespace

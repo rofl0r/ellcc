@@ -393,13 +393,11 @@ static void handleGuardedByAttr(Sema &S, Decl *D, const AttributeList &Attr,
   if (pointer && !checkIsPointer(S, D, Attr))
     return;
 
-  if (Arg->isTypeDependent())
-    // FIXME: handle attributes with dependent types
-    return;
-
-  // check that the argument is lockable object
-  if (!checkForLockableRecord(S, D, Attr, getRecordType(Arg->getType())))
-    return;
+  if (!Arg->isTypeDependent()) {
+    if (!checkForLockableRecord(S, D, Attr, getRecordType(Arg->getType())))
+      return;
+    // FIXME -- semantic checks for dependent attributes
+  }
 
   if (pointer)
     D->addAttr(::new (S.Context) PtGuardedByAttr(Attr.getRange(),
@@ -443,6 +441,23 @@ static void handleNoThreadSafetyAttr(Sema &S, Decl *D,
   }
 
   D->addAttr(::new (S.Context) NoThreadSafetyAnalysisAttr(Attr.getRange(),
+                                                          S.Context));
+}
+
+static void handleNoAddressSafetyAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  assert(!Attr.isInvalid());
+
+  if (!checkAttributeNumArgs(S, Attr, 0))
+    return;
+
+  if (!isa<FunctionDecl>(D) && !isa<FunctionTemplateDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunctionOrMethod;
+    return;
+  }
+
+  D->addAttr(::new (S.Context) NoAddressSafetyAnalysisAttr(Attr.getRange(),
                                                           S.Context));
 }
 
@@ -684,10 +699,12 @@ static void handleExtVectorTypeAttr(Sema &S, Scope *scope, Decl *D,
   // Special case where the argument is a template id.
   if (Attr.getParameterName()) {
     CXXScopeSpec SS;
+    SourceLocation TemplateKWLoc;
     UnqualifiedId id;
     id.setIdentifier(Attr.getParameterName(), Attr.getLoc());
     
-    ExprResult Size = S.ActOnIdExpression(scope, SS, id, false, false);
+    ExprResult Size = S.ActOnIdExpression(scope, SS, TemplateKWLoc, id,
+                                          false, false);
     if (Size.isInvalid())
       return;
     
@@ -1055,8 +1072,6 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
       }
       break;
     }
-    default:
-      llvm_unreachable("Unknown ownership attribute");
     } // switch
 
     // Check we don't have a conflict with another ownership attribute.
@@ -1107,7 +1122,6 @@ static bool hasEffectivelyInternalLinkage(NamedDecl *D) {
     return false;
   }
   llvm_unreachable("unknown linkage kind!");
-  return false;
 }
 
 static void handleWeakRefAttr(Sema &S, Decl *D, const AttributeList &Attr) {
@@ -1579,6 +1593,23 @@ static void handleArcWeakrefUnavailableAttr(Sema &S, Decl *D,
                                           Attr.getRange(), S.Context));
 }
 
+static void handleObjCRequiresPropertyDefsAttr(Sema &S, Decl *D, 
+                                            const AttributeList &Attr) {
+  if (!isa<ObjCInterfaceDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_suppress_autosynthesis);
+    return;
+  }
+  
+  unsigned NumArgs = Attr.getNumArgs();
+  if (NumArgs > 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_too_many_arguments) << 0;
+    return;
+  }
+  
+  D->addAttr(::new (S.Context) ObjCRequiresPropertyDefsAttr(
+                                 Attr.getRange(), S.Context));
+}
+
 static void handleAvailabilityAttr(Sema &S, Decl *D,
                                    const AttributeList &Attr) {
   IdentifierInfo *Platform = Attr.getParameterName();
@@ -1861,10 +1892,11 @@ static void handleSentinelAttr(Sema &S, Decl *D, const AttributeList &Attr) {
       S.Diag(Attr.getLoc(), diag::warn_attribute_sentinel_not_variadic) << 0;
       return;
     }
-  } else if (isa<BlockDecl>(D)) {
-    // Note! BlockDecl is typeless. Variadic diagnostics will be issued by the
-    // caller.
-    ;
+  } else if (BlockDecl *BD = dyn_cast<BlockDecl>(D)) {
+    if (!BD->isVariadic()) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_sentinel_not_variadic) << 1;
+      return;
+    }
   } else if (const VarDecl *V = dyn_cast<VarDecl>(D)) {
     QualType Ty = V->getType();
     if (Ty->isBlockPointerType() || Ty->isFunctionPointerType()) {
@@ -2221,8 +2253,7 @@ static FormatAttrKind getFormatAttrKind(StringRef Format) {
 
   // Otherwise, check for supported formats.
   if (Format == "scanf" || Format == "printf" || Format == "printf0" ||
-      Format == "strfmon" || Format == "cmn_err" || Format == "strftime" ||
-      Format == "NSString" || Format == "CFString" || Format == "vcmn_err" ||
+      Format == "strfmon" || Format == "cmn_err" || Format == "vcmn_err" ||
       Format == "zcmn_err" ||
       Format == "kprintf")  // OpenBSD.
     return SupportedFormat;
@@ -2991,7 +3022,6 @@ static void handleCallConvAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
   default:
     llvm_unreachable("unexpected attribute kind");
-    return;
   }
 }
 
@@ -3040,7 +3070,7 @@ bool Sema::CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC) {
     }
     // FALLS THROUGH
   }
-  default: llvm_unreachable("unexpected attribute kind"); return true;
+  default: llvm_unreachable("unexpected attribute kind");
   }
 
   return false;
@@ -3226,7 +3256,7 @@ static void handleNSReturnsRetainedAttr(Sema &S, Decl *D,
   bool typeOK;
   bool cf;
   switch (Attr.getKind()) {
-  default: llvm_unreachable("invalid ownership attribute"); return;
+  default: llvm_unreachable("invalid ownership attribute");
   case AttributeList::AT_ns_returns_autoreleased:
   case AttributeList::AT_ns_returns_retained:
   case AttributeList::AT_ns_returns_not_retained:
@@ -3603,6 +3633,9 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_arc_weakref_unavailable: 
     handleArcWeakrefUnavailableAttr (S, D, Attr); 
     break;
+  case AttributeList::AT_objc_requires_property_definitions: 
+    handleObjCRequiresPropertyDefsAttr (S, D, Attr); 
+    break;
   case AttributeList::AT_unused:      handleUnusedAttr      (S, D, Attr); break;
   case AttributeList::AT_returns_twice:
     handleReturnsTwiceAttr(S, D, Attr);
@@ -3662,6 +3695,9 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
     break;
   case AttributeList::AT_scoped_lockable:
     handleLockableAttr(S, D, Attr, /*scoped = */true);
+    break;
+  case AttributeList::AT_no_address_safety_analysis:
+    handleNoAddressSafetyAttr(S, D, Attr);
     break;
   case AttributeList::AT_no_thread_safety_analysis:
     handleNoThreadSafetyAttr(S, D, Attr);
@@ -3998,7 +4034,7 @@ void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
 
   // We only want to actually emit delayed diagnostics when we
   // successfully parsed a decl.
-  if (decl && !decl->isInvalidDecl()) {
+  if (decl) {
     // We emit all the active diagnostics, not just those starting
     // from the saved state.  The idea is this:  we get one push for a
     // decl spec and another for each declarator;  in a decl group like:
@@ -4013,7 +4049,9 @@ void Sema::DelayedDiagnostics::popParsingDecl(Sema &S, ParsingDeclState state,
 
       switch (diag.Kind) {
       case DelayedDiagnostic::Deprecation:
-        S.HandleDelayedDeprecationCheck(diag, decl);
+        // Don't bother giving deprecation diagnostics if the decl is invalid.
+        if (!decl->isInvalidDecl())
+          S.HandleDelayedDeprecationCheck(diag, decl);
         break;
 
       case DelayedDiagnostic::Access:

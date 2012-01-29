@@ -256,6 +256,9 @@ public:
     return *LongDoubleFormat;
   }
 
+  /// getFloatEvalMethod - Return the value for the C99 FLT_EVAL_METHOD macro.
+  virtual unsigned getFloatEvalMethod() const { return 0; }
+
   // getLargeArrayMinWidth/Align - Return the minimum array size that is
   // 'large' and its alignment.
   unsigned getLargeArrayMinWidth() const { return LargeArrayMinWidth; }
@@ -353,6 +356,13 @@ public:
   /// across the current set of primary and secondary targets.
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const = 0;
+
+  /// isCLZForZeroUndef - The __builtin_clz* and __builtin_ctz* built-in
+  /// functions are specified to have undefined results for zero inputs, but
+  /// on targets that support these operations in a way that provides
+  /// well-defined results for zero without loss of performance, it is a good
+  /// idea to avoid optimizing based on that undef behavior.
+  virtual bool isCLZForZeroUndef() const { return true; }
 
   /// getVAListDeclaration - Return the declaration to use for
   /// __builtin_va_list, which is target-specific.

@@ -47,16 +47,17 @@ MacroInfo *Preprocessor::getInfoForMacro(IdentifierInfo *II) const {
 
 /// setMacroInfo - Specify a macro for this identifier.
 ///
-void Preprocessor::setMacroInfo(IdentifierInfo *II, MacroInfo *MI) {
+void Preprocessor::setMacroInfo(IdentifierInfo *II, MacroInfo *MI,
+                                bool LoadedFromAST) {
   if (MI) {
     Macros[II] = MI;
     II->setHasMacroDefinition(true);
-    if (II->isFromAST())
+    if (II->isFromAST() && !LoadedFromAST)
       II->setChangedSinceDeserialization();
   } else if (II->hasMacroDefinition()) {
     Macros.erase(II);
     II->setHasMacroDefinition(false);
-    if (II->isFromAST())
+    if (II->isFromAST() && !LoadedFromAST)
       II->setChangedSinceDeserialization();
   }
 }
@@ -305,8 +306,10 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
     // unexpandable.
     if (IdentifierInfo *NewII = Identifier.getIdentifierInfo()) {
       if (MacroInfo *NewMI = getMacroInfo(NewII))
-        if (!NewMI->isEnabled() || NewMI == MI)
+        if (!NewMI->isEnabled() || NewMI == MI) {
           Identifier.setFlag(Token::DisableExpand);
+          Diag(Identifier, diag::pp_disabled_macro_expansion);
+        }
     }
 
     // Since this is not an identifier token, it can't be macro expanded, so
@@ -615,20 +618,23 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
                  LangOpts.ObjCRuntimeHasWeak)
            .Case("objc_fixed_enum", LangOpts.ObjC2)
            .Case("objc_instancetype", LangOpts.ObjC2)
+           .Case("objc_modules", LangOpts.ObjC2 && LangOpts.Modules)
            .Case("objc_nonfragile_abi", LangOpts.ObjCNonFragileABI)
            .Case("objc_weak_class", LangOpts.ObjCNonFragileABI)
            .Case("ownership_holds", true)
            .Case("ownership_returns", true)
            .Case("ownership_takes", true)
            .Case("arc_cf_code_audited", true)
-           // C1X features
-           .Case("c_alignas", LangOpts.C1X)
-           .Case("c_generic_selections", LangOpts.C1X)
-           .Case("c_static_assert", LangOpts.C1X)
+           // C11 features
+           .Case("c_alignas", LangOpts.C11)
+           .Case("c_atomic", LangOpts.C11)
+           .Case("c_generic_selections", LangOpts.C11)
+           .Case("c_static_assert", LangOpts.C11)
            // C++0x features
            .Case("cxx_access_control_sfinae", LangOpts.CPlusPlus0x)
            .Case("cxx_alias_templates", LangOpts.CPlusPlus0x)
            .Case("cxx_alignas", LangOpts.CPlusPlus0x)
+           .Case("cxx_atomic", LangOpts.CPlusPlus0x)
            .Case("cxx_attributes", LangOpts.CPlusPlus0x)
            .Case("cxx_auto_type", LangOpts.CPlusPlus0x)
          //.Case("cxx_constexpr", false);
@@ -695,6 +701,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("is_trivial", LangOpts.CPlusPlus)
            .Case("is_trivially_copyable", LangOpts.CPlusPlus)
            .Case("is_union", LangOpts.CPlusPlus)
+           .Case("modules", LangOpts.Modules)
            .Case("tls", PP.getTargetInfo().isTLSSupported())
            .Case("underlying_type", LangOpts.CPlusPlus)
            .Default(false);
@@ -718,11 +725,13 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
   // Because we inherit the feature list from HasFeature, this string switch
   // must be less restrictive than HasFeature's.
   return llvm::StringSwitch<bool>(II->getName())
-           // C1X features supported by other languages as extensions.
+           // C11 features supported by other languages as extensions.
            .Case("c_alignas", true)
+           .Case("c_atomic", true)
            .Case("c_generic_selections", true)
            .Case("c_static_assert", true)
            // C++0x features supported by other languages as extensions.
+           .Case("cxx_atomic", LangOpts.CPlusPlus)
            .Case("cxx_deleted_functions", LangOpts.CPlusPlus)
            .Case("cxx_explicit_conversions", LangOpts.CPlusPlus)
            .Case("cxx_inline_namespaces", LangOpts.CPlusPlus)

@@ -10,6 +10,7 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <cstring>
 using namespace llvm;
 
@@ -43,7 +44,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case amdil:   return "amdil";
   }
 
-  return "<invalid>";
+  llvm_unreachable("Invalid ArchType!");
 }
 
 const char *Triple::getArchTypePrefix(ArchType Kind) {
@@ -93,7 +94,7 @@ const char *Triple::getVendorTypeName(VendorType Kind) {
   case SCEI: return "scei";
   }
 
-  return "<invalid>";
+  llvm_unreachable("Invalid VendorType!");
 }
 
 const char *Triple::getOSTypeName(OSType Kind) {
@@ -125,19 +126,21 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case NativeClient: return "nacl";
   }
 
-  return "<invalid>";
+  llvm_unreachable("Invalid OSType");
 }
 
 const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   switch (Kind) {
   case UnknownEnvironment: return "unknown";
   case GNU: return "gnu";
+  case GNUEABIHF: return "gnueabihf";
   case GNUEABI: return "gnueabi";
   case EABI: return "eabi";
   case MachO: return "macho";
+  case ANDROIDEABI: return "androideabi";
   }
 
-  return "<invalid>";
+  llvm_unreachable("Invalid EnvironmentType!");
 }
 
 Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
@@ -435,12 +438,16 @@ Triple::OSType Triple::ParseOS(StringRef OSName) {
 Triple::EnvironmentType Triple::ParseEnvironment(StringRef EnvironmentName) {
   if (EnvironmentName.startswith("eabi"))
     return EABI;
+  else if (EnvironmentName.startswith("gnueabihf"))
+    return GNUEABIHF;
   else if (EnvironmentName.startswith("gnueabi"))
     return GNUEABI;
   else if (EnvironmentName.startswith("gnu"))
     return GNU;
   else if (EnvironmentName.startswith("macho"))
     return MachO;
+  else if (EnvironmentName.startswith("androideabi"))
+    return ANDROIDEABI;
   else
     return UnknownEnvironment;
 }

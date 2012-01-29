@@ -72,6 +72,8 @@ static cl::opt<bool> DisableLSR("disable-lsr", cl::Hidden,
     cl::desc("Disable Loop Strength Reduction Pass"));
 static cl::opt<bool> DisableCGP("disable-cgp", cl::Hidden,
     cl::desc("Disable Codegen Prepare"));
+static cl::opt<bool> DisableCopyProp("disable-copyprop", cl::Hidden,
+    cl::desc("Disable Copy Propagation pass"));
 static cl::opt<bool> PrintLSR("print-lsr-output", cl::Hidden,
     cl::desc("Print LLVM IR produced by the loop-reduce pass"));
 static cl::opt<bool> PrintISelInput("print-isel-input", cl::Hidden,
@@ -82,8 +84,6 @@ static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
     cl::desc("Show encoding in .s output"));
 static cl::opt<bool> ShowMCInst("show-mc-inst", cl::Hidden,
     cl::desc("Show instruction structure in .s output"));
-static cl::opt<bool> EnableMCLogging("enable-mc-api-logging", cl::Hidden,
-    cl::desc("Enable MC API logging"));
 static cl::opt<bool> VerifyMachineCode("verify-machineinstrs", cl::Hidden,
     cl::desc("Verify generated machine code"),
     cl::init(getenv("LLVM_VERIFY_MACHINEINSTRS")!=NULL));
@@ -94,11 +94,11 @@ AsmVerbose("asm-verbose", cl::desc("Add comments to directives."),
 
 static bool getVerboseAsm() {
   switch (AsmVerbose) {
-  default:
   case cl::BOU_UNSET: return TargetMachine::getAsmVerbosityDefault();
   case cl::BOU_TRUE:  return true;
   case cl::BOU_FALSE: return false;
   }
+  llvm_unreachable("Invalid verbose asm state");
 }
 
 // Enable or disable FastISel. Both options are needed, because
@@ -143,7 +143,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   OwningPtr<MCStreamer> AsmStreamer;
 
   switch (FileType) {
-  default: return true;
   case CGFT_AssemblyFile: {
     MCInstPrinter *InstPrinter =
       getTarget().createMCInstPrinter(MAI.getAssemblerDialect(), MAI, STI);
@@ -190,9 +189,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     AsmStreamer.reset(createNullStreamer(*Context));
     break;
   }
-
-  if (EnableMCLogging)
-    AsmStreamer.reset(createLoggingStreamer(AsmStreamer.take(), errs()));
 
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.
   FunctionPass *Printer = getTarget().createAsmPrinter(*this, *AsmStreamer);
@@ -365,9 +361,9 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
 
   // Install a MachineModuleInfo class, which is an immutable pass that holds
   // all the per-module stuff we're generating, including MCContext.
-  MachineModuleInfo *MMI = new MachineModuleInfo(*getMCAsmInfo(),
-                                                 *getRegisterInfo(),
-                                     &getTargetLowering()->getObjFileLowering());
+  MachineModuleInfo *MMI =
+    new MachineModuleInfo(*getMCAsmInfo(), *getRegisterInfo(),
+                          &getTargetLowering()->getObjFileLowering());
   PM.add(MMI);
   OutContext = &MMI->getContext(); // Return the MCContext specifically by-ref.
 
@@ -452,22 +448,9 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   if (addPostRegAlloc(PM))
     printAndVerify(PM, "After PostRegAlloc passes");
 
-  PM.add(createExpandPostRAPseudosPass());
-  printAndVerify(PM, "After ExpandPostRAPseudos");
-
   // Insert prolog/epilog code.  Eliminate abstract frame index references...
   PM.add(createPrologEpilogCodeInserter());
   printAndVerify(PM, "After PrologEpilogCodeInserter");
-
-  // Run pre-sched2 passes.
-  if (addPreSched2(PM))
-    printAndVerify(PM, "After PreSched2 passes");
-
-  // Second pass scheduler.
-  if (getOptLevel() != CodeGenOpt::None && !DisablePostRA) {
-    PM.add(createPostRAScheduler(getOptLevel()));
-    printAndVerify(PM, "After PostRAScheduler");
-  }
 
   // Branch folding must be run after regalloc and prolog/epilog insertion.
   if (getOptLevel() != CodeGenOpt::None && !DisableBranchFold) {
@@ -479,6 +462,26 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   if (getOptLevel() != CodeGenOpt::None && !DisableTailDuplicate) {
     PM.add(createTailDuplicatePass(false));
     printNoVerify(PM, "After TailDuplicate");
+  }
+
+  // Copy propagation.
+  if (getOptLevel() != CodeGenOpt::None && !DisableCopyProp) {
+    PM.add(createMachineCopyPropagationPass());
+    printNoVerify(PM, "After copy propagation pass");
+  }
+
+  // Expand pseudo instructions before second scheduling pass.
+  PM.add(createExpandPostRAPseudosPass());
+  printNoVerify(PM, "After ExpandPostRAPseudos");
+
+  // Run pre-sched2 passes.
+  if (addPreSched2(PM))
+    printNoVerify(PM, "After PreSched2 passes");
+
+  // Second pass scheduler.
+  if (getOptLevel() != CodeGenOpt::None && !DisablePostRA) {
+    PM.add(createPostRAScheduler(getOptLevel()));
+    printNoVerify(PM, "After PostRAScheduler");
   }
 
   PM.add(createGCMachineCodeAnalysisPass());

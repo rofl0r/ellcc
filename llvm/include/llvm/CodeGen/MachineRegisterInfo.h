@@ -57,7 +57,16 @@ class MachineRegisterInfo {
   /// so that the code generator knows which callee save registers to save and
   /// for other target specific uses.
   BitVector UsedPhysRegs;
-  
+
+  /// ReservedRegs - This is a bit vector of reserved registers.  The target
+  /// may change its mind about which registers should be reserved.  This
+  /// vector is the frozen set of reserved registers when register allocation
+  /// started.
+  BitVector ReservedRegs;
+
+  /// AllocatableRegs - From TRI->getAllocatableSet.
+  mutable BitVector AllocatableRegs;
+
   /// LiveIns/LiveOuts - Keep track of the physical registers that are
   /// livein/liveout of the function.  Live in values are typically arguments in
   /// registers, live out values are typically return values in registers.
@@ -209,7 +218,12 @@ public:
 #ifndef NDEBUG
   void dumpUses(unsigned RegNo) const;
 #endif
-  
+
+  /// isConstantPhysReg - Returns true if PhysReg is unallocatable and constant
+  /// throughout the function.  It is safe to move instructions that read such
+  /// a physreg.
+  bool isConstantPhysReg(unsigned PhysReg, const MachineFunction &MF) const;
+
   //===--------------------------------------------------------------------===//
   // Virtual Register Info
   //===--------------------------------------------------------------------===//
@@ -308,6 +322,37 @@ public:
   /// closePhysRegsUsed - Expand UsedPhysRegs to its transitive closure over
   /// subregisters. That means that if R is used, so are all subregisters.
   void closePhysRegsUsed(const TargetRegisterInfo&);
+
+
+  //===--------------------------------------------------------------------===//
+  // Reserved Register Info
+  //===--------------------------------------------------------------------===//
+  //
+  // The set of reserved registers must be invariant during register
+  // allocation.  For example, the target cannot suddenly decide it needs a
+  // frame pointer when the register allocator has already used the frame
+  // pointer register for something else.
+  //
+  // These methods can be used by target hooks like hasFP() to avoid changing
+  // the reserved register set during register allocation.
+
+  /// freezeReservedRegs - Called by the register allocator to freeze the set
+  /// of reserved registers before allocation begins.
+  void freezeReservedRegs(const MachineFunction&);
+
+  /// reservedRegsFrozen - Returns true after freezeReservedRegs() was called
+  /// to ensure the set of reserved registers stays constant.
+  bool reservedRegsFrozen() const {
+    return !ReservedRegs.empty();
+  }
+
+  /// canReserveReg - Returns true if PhysReg can be used as a reserved
+  /// register.  Any register can be reserved before freezeReservedRegs() is
+  /// called.
+  bool canReserveReg(unsigned PhysReg) const {
+    return !reservedRegsFrozen() || ReservedRegs.test(PhysReg);
+  }
+
 
   //===--------------------------------------------------------------------===//
   // LiveIn/LiveOut Management

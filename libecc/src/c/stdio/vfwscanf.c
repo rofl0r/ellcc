@@ -878,8 +878,6 @@ reswitch:
 			else
 				goto parsedone;
 			break;
-		default:
-			abort();
 		}
 		*p++ = c;
 		c = WEOF;

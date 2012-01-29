@@ -4,6 +4,7 @@
 
 int scanf(const char *restrict format, ...);
 int getchar(void);
+typedef __typeof(sizeof(int)) size_t;
 
 #define BUFSIZE 10
 int Buffer[BUFSIZE];
@@ -149,6 +150,35 @@ void stdinTest3() {
   int iii;
   fscanf(*ppp, "%d", &iii);
   int jjj = iii;// expected-warning + {{tainted}}
+}
+
+// Test that stdin does not get invalidated by calls.
+void foo();
+void stdinTest4() {
+  int i;
+  fscanf(stdin, "%d", &i);
+  foo();
+  int j = i; // expected-warning + {{tainted}}
+}
+
+int getw(FILE *);
+void getwTest() {
+  int i = getw(stdin); // expected-warning + {{tainted}}
+}
+
+typedef long ssize_t;
+ssize_t getline(char ** __restrict, size_t * __restrict, FILE * __restrict);
+int  printf(const char * __restrict, ...);
+void free(void *ptr);
+void getlineTest(void) {
+  FILE *fp;
+  char *line = 0;
+  size_t len = 0;
+  ssize_t read;
+  while ((read = getline(&line, &len, stdin)) != -1) {
+    printf("%s", line); // expected-warning + {{tainted}}
+  }
+  free(line); // expected-warning + {{tainted}}
 }
 
 // Test propagation functions - the ones that propagate taint from arguments to

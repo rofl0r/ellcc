@@ -130,7 +130,7 @@ namespace ento {
 }
 }
 
-static SelfFlagEnum getSelfFlags(SVal val, const ProgramState *state) {
+static SelfFlagEnum getSelfFlags(SVal val, ProgramStateRef state) {
   if (SymbolRef sym = val.getAsSymbol())
     if (const unsigned *attachedFlags = state->get<SelfFlag>(sym))
       return (SelfFlagEnum)*attachedFlags;
@@ -141,7 +141,7 @@ static SelfFlagEnum getSelfFlags(SVal val, CheckerContext &C) {
   return getSelfFlags(val, C.getState());
 }
 
-static void addSelfFlag(const ProgramState *state, SVal val,
+static void addSelfFlag(ProgramStateRef state, SVal val,
                         SelfFlagEnum flag, CheckerContext &C) {
   // We tag the symbol that the SVal wraps.
   if (SymbolRef sym = val.getAsSymbol())
@@ -156,7 +156,7 @@ static bool hasSelfFlag(SVal val, SelfFlagEnum flag, CheckerContext &C) {
 /// points to and is an object that did not come from the result of calling
 /// an initializer.
 static bool isInvalidSelf(const Expr *E, CheckerContext &C) {
-  SVal exprVal = C.getState()->getSVal(E);
+  SVal exprVal = C.getState()->getSVal(E, C.getLocationContext());
   if (!hasSelfFlag(exprVal, SelfFlag_Self, C))
     return false; // value did not come from 'self'.
   if (hasSelfFlag(exprVal, SelfFlag_InitRes, C))
@@ -199,14 +199,14 @@ void ObjCSelfInitChecker::checkPostObjCMessage(ObjCMessage msg,
 
   if (isInitMessage(msg)) {
     // Tag the return value as the result of an initializer.
-    const ProgramState *state = C.getState();
+    ProgramStateRef state = C.getState();
     
     // FIXME this really should be context sensitive, where we record
     // the current stack frame (for IPA).  Also, we need to clean this
     // value out when we return from this method.
     state = state->set<CalledInit>(true);
     
-    SVal V = state->getSVal(msg.getOriginExpr());
+    SVal V = state->getSVal(msg.getOriginExpr(), C.getLocationContext());
     addSelfFlag(state, V, SelfFlag_InitRes, C);
     return;
   }
@@ -259,10 +259,10 @@ void ObjCSelfInitChecker::checkPreStmt(const ReturnStmt *S,
 
 void ObjCSelfInitChecker::checkPreStmt(const CallExpr *CE,
                                        CheckerContext &C) const {
-  const ProgramState *state = C.getState();
+  ProgramStateRef state = C.getState();
   for (CallExpr::const_arg_iterator
          I = CE->arg_begin(), E = CE->arg_end(); I != E; ++I) {
-    SVal argV = state->getSVal(*I);
+    SVal argV = state->getSVal(*I, C.getLocationContext());
     if (isSelfVar(argV, C)) {
       unsigned selfFlags = getSelfFlags(state->getSVal(cast<Loc>(argV)), C);
       C.addTransition(state->set<PreCallSelfFlags>(selfFlags));
@@ -277,10 +277,11 @@ void ObjCSelfInitChecker::checkPreStmt(const CallExpr *CE,
 
 void ObjCSelfInitChecker::checkPostStmt(const CallExpr *CE,
                                         CheckerContext &C) const {
-  const ProgramState *state = C.getState();
+  ProgramStateRef state = C.getState();
+  const LocationContext *LCtx = C.getLocationContext();
   for (CallExpr::const_arg_iterator
          I = CE->arg_begin(), E = CE->arg_end(); I != E; ++I) {
-    SVal argV = state->getSVal(*I);
+    SVal argV = state->getSVal(*I, LCtx);
     if (isSelfVar(argV, C)) {
       SelfFlagEnum prevFlags = (SelfFlagEnum)state->get<PreCallSelfFlags>();
       state = state->remove<PreCallSelfFlags>();
@@ -289,7 +290,7 @@ void ObjCSelfInitChecker::checkPostStmt(const CallExpr *CE,
     } else if (hasSelfFlag(argV, SelfFlag_Self, C)) {
       SelfFlagEnum prevFlags = (SelfFlagEnum)state->get<PreCallSelfFlags>();
       state = state->remove<PreCallSelfFlags>();
-      addSelfFlag(state, state->getSVal(CE), prevFlags, C);
+      addSelfFlag(state, state->getSVal(CE, LCtx), prevFlags, C);
       return;
     }
   }
@@ -300,7 +301,7 @@ void ObjCSelfInitChecker::checkLocation(SVal location, bool isLoad,
                                         CheckerContext &C) const {
   // Tag the result of a load from 'self' so that we can easily know that the
   // value is the object that 'self' points to.
-  const ProgramState *state = C.getState();
+  ProgramStateRef state = C.getState();
   if (isSelfVar(location, C))
     addSelfFlag(state, state->getSVal(cast<Loc>(location)), SelfFlag_Self, C);
 }

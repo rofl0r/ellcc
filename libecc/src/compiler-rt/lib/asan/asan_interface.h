@@ -15,7 +15,12 @@
 #ifndef ASAN_INTERFACE_H
 #define ASAN_INTERFACE_H
 
+#if !defined(_WIN32)
 #include <stdint.h>  // for __WORDSIZE
+#else
+// The __attribute__ keyword is not understood by Visual Studio.
+#define __attribute__(x)
+#endif
 #include <stdlib.h>  // for size_t
 
 // This header should NOT include any other headers from ASan runtime.
@@ -75,7 +80,7 @@ extern "C" {
   void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 
 // User code should use macro instead of functions.
-#ifdef ADDRESS_SANITIZER
+#if defined(__has_feature) && __has_feature(address_sanitizer)
 #define ASAN_POISON_MEMORY_REGION(addr, size) \
   __asan_poison_memory_region((addr), (size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
@@ -107,11 +112,11 @@ extern "C" {
   // memory, returns the maximal possible allocation size, otherwise returns
   // "size".
   size_t __asan_get_estimated_allocated_size(size_t size);
-  // Returns true if p is NULL or if p was returned by the ASan allocator and
+  // Returns true if p was returned by the ASan allocator and
   // is not yet freed.
   bool __asan_get_ownership(const void *p);
   // Returns the number of bytes reserved for the pointer p.
-  // Requires (get_ownership(p) == true).
+  // Requires (get_ownership(p) == true) or (p == NULL).
   size_t __asan_get_allocated_size(const void *p);
   // Number of bytes, allocated and not yet freed by the application.
   size_t __asan_get_current_allocated_bytes();

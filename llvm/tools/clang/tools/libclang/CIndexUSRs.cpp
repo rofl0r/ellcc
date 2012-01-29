@@ -75,9 +75,7 @@ public:
   void VisitNamespaceAliasDecl(NamespaceAliasDecl *D);
   void VisitFunctionTemplateDecl(FunctionTemplateDecl *D);
   void VisitClassTemplateDecl(ClassTemplateDecl *D);
-  void VisitObjCClassDecl(ObjCClassDecl *CD);
   void VisitObjCContainerDecl(ObjCContainerDecl *CD);
-  void VisitObjCForwardProtocolDecl(ObjCForwardProtocolDecl *P);
   void VisitObjCMethodDecl(ObjCMethodDecl *MD);
   void VisitObjCPropertyDecl(ObjCPropertyDecl *D);
   void VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *D);
@@ -310,18 +308,6 @@ void USRGenerator::VisitObjCMethodDecl(ObjCMethodDecl *D) {
   N.printName(Out);
 }
 
-void USRGenerator::VisitObjCClassDecl(ObjCClassDecl *D) {
-  // FIXME: @class declarations can refer to multiple classes.  We need
-  //  to be able to traverse these.
-  IgnoreResults = true;
-}
-
-void USRGenerator::VisitObjCForwardProtocolDecl(ObjCForwardProtocolDecl *D) {
-  // FIXME: @protocol declarations can refer to multiple protocols.  We need
-  //  to be able to traverse these.
-  IgnoreResults = true;
-}
-
 void USRGenerator::VisitObjCContainerDecl(ObjCContainerDecl *D) {
   switch (D->getKind()) {
     default:
@@ -409,7 +395,7 @@ void USRGenerator::VisitTagDecl(TagDecl *D) {
       case TTK_Struct: Out << "@ST"; break;
       case TTK_Class:  Out << "@CT"; break;
       case TTK_Union:  Out << "@UT"; break;
-      case TTK_Enum: llvm_unreachable("enum template"); break;
+      case TTK_Enum: llvm_unreachable("enum template");
       }
       VisitTemplateParameterList(ClassTmpl->getTemplateParameters());
     } else if (ClassTemplatePartialSpecializationDecl *PartialSpec
@@ -420,7 +406,7 @@ void USRGenerator::VisitTagDecl(TagDecl *D) {
       case TTK_Struct: Out << "@SP"; break;
       case TTK_Class:  Out << "@CP"; break;
       case TTK_Union:  Out << "@UP"; break;
-      case TTK_Enum: llvm_unreachable("enum partial specialization"); break;
+      case TTK_Enum: llvm_unreachable("enum partial specialization");
       }      
       VisitTemplateParameterList(PartialSpec->getTemplateParameters());
     }

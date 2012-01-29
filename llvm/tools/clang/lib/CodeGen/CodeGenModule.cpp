@@ -57,7 +57,6 @@ static CGCXXABI &createCXXABI(CodeGenModule &CGM) {
   }
 
   llvm_unreachable("invalid C++ ABI kind");
-  return *CreateItaniumCXXABI(CGM);
 }
 
 
@@ -883,8 +882,9 @@ namespace {
       unsigned BuiltinID = FD->getBuiltinID();
       if (!BuiltinID)
         return true;
-      const char *BuiltinName = BI.GetName(BuiltinID) + strlen("__builtin_");
-      if (Name == BuiltinName) {
+      StringRef BuiltinName = BI.GetName(BuiltinID);
+      if (BuiltinName.startswith("__builtin_") &&
+          Name == BuiltinName.slice(strlen("__builtin_"), StringRef::npos)) {
         Result = true;
         return false;
       }
@@ -900,7 +900,7 @@ bool
 CodeGenModule::isTriviallyRecursive(const FunctionDecl *FD) {
   StringRef Name;
   if (getCXXABI().getMangleContext().shouldMangleDeclName(FD)) {
-    // asm labels are a special king of mangling we have to support.
+    // asm labels are a special kind of mangling we have to support.
     AsmLabelAttr *Attr = FD->getAttr<AsmLabelAttr>();
     if (!Attr)
       return false;
@@ -1019,6 +1019,14 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
   if (ExtraAttrs != llvm::Attribute::None)
     F->addFnAttr(ExtraAttrs);
 
+  if (Features.AddressSanitizer) {
+    // When AddressSanitizer is enabled, set AddressSafety attribute
+    // unless __attribute__((no_address_safety_analysis)) is used.
+    const FunctionDecl *FD = cast_or_null<FunctionDecl>(D.getDecl());
+    if (!FD || !FD->hasAttr<NoAddressSafetyAnalysisAttr>())
+      F->addFnAttr(llvm::Attribute::AddressSafety);
+  }
+
   // This is the first use or definition of a mangled name.  If there is a
   // deferred decl with this name, remember that we need to emit it at the end
   // of the file.
@@ -1054,7 +1062,7 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
           break;
         }
       }
-      FD = FD->getPreviousDeclaration();
+      FD = FD->getPreviousDecl();
     } while (FD);
   }
 
@@ -1339,9 +1347,8 @@ CodeGenModule::getVTableLinkage(const CXXRecordDecl *RD) {
   case TSK_ExplicitInstantiationDefinition:
       return llvm::GlobalVariable::WeakODRLinkage;
   }
-  
-  // Silence GCC warning.
-  return llvm::GlobalVariable::LinkOnceODRLinkage;
+
+  llvm_unreachable("Invalid TemplateSpecializationKind!");
 }
 
 CharUnits CodeGenModule::GetTargetTypeStoreSize(llvm::Type *Ty) const {
@@ -1354,7 +1361,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   QualType ASTTy = D->getType();
   bool NonConstInit = false;
 
-  const Expr *InitExpr = D->getAnyInitializer();
+  const VarDecl *InitDecl;
+  const Expr *InitExpr = D->getAnyInitializer(InitDecl);
   
   if (!InitExpr) {
     // This is a tentative definition; tentative definitions are
@@ -1369,12 +1377,12 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
     assert(!ASTTy->isIncompleteType() && "Unexpected incomplete type");
     Init = EmitNullConstant(D->getType());
   } else {
-    Init = EmitConstantExpr(InitExpr, D->getType());       
+    Init = EmitConstantInit(*InitDecl);
     if (!Init) {
       QualType T = InitExpr->getType();
       if (D->getType()->isReferenceType())
         T = D->getType();
-      
+
       if (getLangOptions().CPlusPlus) {
         Init = EmitNullConstant(T);
         NonConstInit = true;
@@ -1848,24 +1856,20 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   llvm::Constant *C = llvm::ConstantArray::get(VMContext, Entry.getKey().str());
 
   llvm::GlobalValue::LinkageTypes Linkage;
-  bool isConstant;
-  if (isUTF16) {
+  if (isUTF16)
     // FIXME: why do utf strings get "_" labels instead of "L" labels?
     Linkage = llvm::GlobalValue::InternalLinkage;
-    // Note: -fwritable-strings doesn't make unicode CFStrings writable, but
-    // does make plain ascii ones writable.
-    isConstant = true;
-  } else {
+  else
     // FIXME: With OS X ld 123.2 (xcode 4) and LTO we would get a linker error
     // when using private linkage. It is not clear if this is a bug in ld
     // or a reasonable new restriction.
     Linkage = llvm::GlobalValue::LinkerPrivateLinkage;
-    isConstant = !Features.WritableStrings;
-  }
   
+  // Note: -fwritable-strings doesn't make the backing store strings of
+  // CFStrings writable. (See <rdar://problem/10657500>)
   llvm::GlobalVariable *GV =
-    new llvm::GlobalVariable(getModule(), C->getType(), isConstant, Linkage, C,
-                             ".str");
+    new llvm::GlobalVariable(getModule(), C->getType(), /*isConstant=*/true,
+                             Linkage, C, ".str");
   GV->setUnnamedAddr(true);
   if (isUTF16) {
     CharUnits Align = getContext().getTypeAlignInChars(getContext().ShortTy);
@@ -2122,6 +2126,7 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S) {
                              !Features.WritableStrings,
                              llvm::GlobalValue::PrivateLinkage,
                              C,".str");
+
   GV->setAlignment(Align.getQuantity());
   GV->setUnnamedAddr(true);
   
@@ -2375,8 +2380,6 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   // Objective-C Decls
 
   // Forward declarations, no (immediate) code generation.
-  case Decl::ObjCClass:
-  case Decl::ObjCForwardProtocol:
   case Decl::ObjCInterface:
     break;
   
@@ -2387,10 +2390,13 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
   }
 
-  case Decl::ObjCProtocol:
-    ObjCRuntime->GenerateProtocol(cast<ObjCProtocolDecl>(D));
+  case Decl::ObjCProtocol: {
+    ObjCProtocolDecl *Proto = cast<ObjCProtocolDecl>(D);
+    if (Proto->isThisDeclarationADefinition())
+      ObjCRuntime->GenerateProtocol(Proto);
     break;
-
+  }
+      
   case Decl::ObjCCategoryImpl:
     // Categories have properties but don't support synthesize so we
     // can ignore them here.

@@ -18,7 +18,7 @@ void f() {
 int a() {
   const int t=t; // expected-note {{declared here}}
   switch(1) { // expected-warning {{no case matching constant switch condition '1'}}
-    case t:; // expected-error {{not an integer constant expression}} expected-note {{initializer of 't' is not a constant expression}}
+    case t:; // expected-error {{not an integral constant expression}} expected-note {{initializer of 't' is not a constant expression}}
   }
 }
 
@@ -48,7 +48,7 @@ void pr6373(const unsigned x = 0) {
 namespace rdar9204520 {
   
 struct A {
-  static const int B = int(0.75 * 1000 * 1000); // expected-warning {{not a constant expression, accepted as an extension}}
+  static const int B = int(0.75 * 1000 * 1000); // expected-warning {{not a constant expression; folding it to a constant is a GNU extension}}
 };
 
 int foo() { return A::B; }

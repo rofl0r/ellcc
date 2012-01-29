@@ -243,7 +243,7 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
   ++stats::evaluateFixup;
 
   if (!Fixup.getValue()->EvaluateAsRelocatable(Target, Layout))
-    report_fatal_error("expected relocatable expression");
+    getContext().FatalError(Fixup.getLoc(), "expected relocatable expression");
 
   bool IsPCRel = Backend.getFixupKindInfo(
     Fixup.getKind()).Flags & MCFixupKindInfo::FKF_IsPCRel;
@@ -273,13 +273,10 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
 
   Value = Target.getConstant();
 
-  bool IsThumb = false;
   if (const MCSymbolRefExpr *A = Target.getSymA()) {
     const MCSymbol &Sym = A->getSymbol().AliasedSymbol();
     if (Sym.isDefined())
       Value += Layout.getSymbolOffset(&getSymbolData(Sym));
-    if (isThumbFunc(&Sym))
-      IsThumb = true;
   }
   if (const MCSymbolRefExpr *B = Target.getSymB()) {
     const MCSymbol &Sym = B->getSymbol().AliasedSymbol();
@@ -302,12 +299,8 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
     Value -= Offset;
   }
 
-  // ARM fixups based from a thumb function address need to have the low
-  // bit set. The actual value is always at least 16-bit aligned, so the
-  // low bit is normally clear and available for use as an ISA flag for
-  // interworking.
-  if (IsThumb)
-    Value |= 1;
+  // Let the backend adjust the fixup value if necessary.
+  Backend.processFixupValue(*this, Layout, Fixup, DF, Target, Value);
 
   return IsResolved;
 }
@@ -412,7 +405,7 @@ static void WriteFragmentData(const MCAssembler &Asm, const MCAsmLayout &Layout,
     // bytes left to fill use the the Value and ValueSize to fill the rest.
     // If we are aligning with nops, ask that target to emit the right data.
     if (AF.hasEmitNops()) {
-      if (!Asm.getBackend().WriteNopData(Count, OW))
+      if (!Asm.getBackend().writeNopData(Count, OW))
         report_fatal_error("unable to write nop sequence of " +
                           Twine(Count) + " bytes");
       break;
@@ -622,7 +615,7 @@ void MCAssembler::Finish() {
                ie3 = DF->fixup_end(); it3 != ie3; ++it3) {
           MCFixup &Fixup = *it3;
           uint64_t FixedValue = handleFixup(Layout, *DF, Fixup);
-          getBackend().ApplyFixup(Fixup, DF->getContents().data(),
+          getBackend().applyFixup(Fixup, DF->getContents().data(),
                                   DF->getContents().size(), FixedValue);
         }
       }
@@ -632,7 +625,7 @@ void MCAssembler::Finish() {
                ie3 = IF->fixup_end(); it3 != ie3; ++it3) {
           MCFixup &Fixup = *it3;
           uint64_t FixedValue = handleFixup(Layout, *IF, Fixup);
-          getBackend().ApplyFixup(Fixup, IF->getCode().data(),
+          getBackend().applyFixup(Fixup, IF->getCode().data(),
                                   IF->getCode().size(), FixedValue);
         }
       }
@@ -665,7 +658,7 @@ bool MCAssembler::fragmentNeedsRelaxation(const MCInstFragment *IF,
   // If this inst doesn't ever need relaxation, ignore it. This occurs when we
   // are intentionally pushing out inst fragments, or because we relaxed a
   // previous instruction to one that doesn't need relaxation.
-  if (!getBackend().MayNeedRelaxation(IF->getInst()))
+  if (!getBackend().mayNeedRelaxation(IF->getInst()))
     return false;
 
   for (MCInstFragment::const_fixup_iterator it = IF->fixup_begin(),
@@ -689,7 +682,7 @@ bool MCAssembler::relaxInstruction(MCAsmLayout &Layout,
   // Relax the fragment.
 
   MCInst Relaxed;
-  getBackend().RelaxInstruction(IF.getInst(), Relaxed);
+  getBackend().relaxInstruction(IF.getInst(), Relaxed);
 
   // Encode the new instruction.
   //

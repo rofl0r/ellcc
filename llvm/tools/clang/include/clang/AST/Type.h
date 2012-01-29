@@ -639,6 +639,14 @@ public:
   QualType withVolatile() const {
     return withFastQualifiers(Qualifiers::Volatile);
   }
+  
+  /// Add the restrict qualifier to this QualType.
+  void addRestrict() {
+    addFastQualifiers(Qualifiers::Restrict);
+  }
+  QualType withRestrict() const {
+    return withFastQualifiers(Qualifiers::Restrict);
+  }
 
   QualType withCVRQualifiers(unsigned CVR) const {
     return withFastQualifiers(CVR);
@@ -1088,6 +1096,9 @@ private:
     /// LangOptions::VisibilityMode+1.
     mutable unsigned CacheValidAndVisibility : 2;
 
+    /// \brief True if the visibility was set explicitly in the source code.
+    mutable unsigned CachedExplicitVisibility : 1;
+
     /// \brief Linkage of this type.
     mutable unsigned CachedLinkage : 2;
 
@@ -1104,6 +1115,10 @@ private:
       assert(isCacheValid() && "getting linkage from invalid cache");
       return static_cast<Visibility>(CacheValidAndVisibility-1);
     }
+    bool isVisibilityExplicit() const {
+      assert(isCacheValid() && "getting linkage from invalid cache");
+      return CachedExplicitVisibility;
+    }
     Linkage getLinkage() const {
       assert(isCacheValid() && "getting linkage from invalid cache");
       return static_cast<Linkage>(CachedLinkage);
@@ -1113,7 +1128,7 @@ private:
       return CachedLocalOrUnnamed;
     }
   };
-  enum { NumTypeBits = 18 };
+  enum { NumTypeBits = 19 };
 
 protected:
   // These classes allow subclasses to somewhat cleanly pack bitfields
@@ -1267,6 +1282,7 @@ protected:
     TypeBits.VariablyModified = VariablyModified;
     TypeBits.ContainsUnexpandedParameterPack = ContainsUnexpandedParameterPack;
     TypeBits.CacheValidAndVisibility = 0;
+    TypeBits.CachedExplicitVisibility = false;
     TypeBits.CachedLocalOrUnnamed = false;
     TypeBits.CachedLinkage = NoLinkage;
     TypeBits.FromAST = false;
@@ -1324,7 +1340,11 @@ public:
   /// A type that can describe objects, but which lacks information needed to
   /// determine its size (e.g. void, or a fwd declared struct). Clients of this
   /// routine will need to determine if the size is actually required.
-  bool isIncompleteType() const;
+  ///
+  /// \brief Def If non-NULL, and the type refers to some kind of declaration
+  /// that can be completed (such as a C struct, C++ class, or Objective-C
+  /// class), will be set to the declaration.
+  bool isIncompleteType(NamedDecl **Def = 0) const;
 
   /// isIncompleteOrObjectType - Return true if this is an incomplete or object
   /// type, in other words, not a function type.
@@ -1455,7 +1475,7 @@ public:
   bool isCARCBridgableType() const;
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
-  bool isAtomicType() const;                    // C1X _Atomic()
+  bool isAtomicType() const;                    // C11 _Atomic()
 
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
@@ -1638,6 +1658,9 @@ public:
 
   /// \brief Determine the visibility of this type.
   Visibility getVisibility() const;
+
+  /// \brief Return true if the visibility was explicitly set is the code.
+  bool isVisibilityExplicit() const;
 
   /// \brief Determine the linkage and visibility of this type.
   std::pair<Linkage,Visibility> getLinkageAndVisibility() const;
@@ -3055,6 +3078,8 @@ class TagType : public Type {
   /// TagDecl that declares the entity.
   TagDecl * decl;
 
+  friend class ASTReader;
+  
 protected:
   TagType(TypeClass TC, const TagDecl *D, QualType can);
 
@@ -3069,8 +3094,6 @@ public:
     return T->getTypeClass() >= TagFirst && T->getTypeClass() <= TagLast;
   }
   static bool classof(const TagType *) { return true; }
-  static bool classof(const RecordType *) { return true; }
-  static bool classof(const EnumType *) { return true; }
 };
 
 /// RecordType - This is a helper class that allows the use of isa/cast/dyncast
@@ -3096,10 +3119,7 @@ public:
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
-  static bool classof(const TagType *T);
-  static bool classof(const Type *T) {
-    return isa<TagType>(T) && classof(cast<TagType>(T));
-  }
+  static bool classof(const Type *T) { return T->getTypeClass() == Record; }
   static bool classof(const RecordType *) { return true; }
 };
 
@@ -3118,10 +3138,7 @@ public:
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
-  static bool classof(const TagType *T);
-  static bool classof(const Type *T) {
-    return isa<TagType>(T) && classof(cast<TagType>(T));
-  }
+  static bool classof(const Type *T) { return T->getTypeClass() == Enum; }
   static bool classof(const EnumType *) { return true; }
 };
 
@@ -4145,6 +4162,7 @@ class ObjCInterfaceType : public ObjCObjectType {
     : ObjCObjectType(Nonce_ObjCInterface),
       Decl(const_cast<ObjCInterfaceDecl*>(D)) {}
   friend class ASTContext;  // ASTContext creates these.
+  friend class ASTReader;
   friend class ObjCInterfaceDecl;
 
 public:

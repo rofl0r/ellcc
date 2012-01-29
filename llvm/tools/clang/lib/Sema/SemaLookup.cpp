@@ -1053,24 +1053,6 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   return !R.empty();
 }
 
-/// \brief Retrieve the previous declaration of D.
-static NamedDecl *getPreviousDeclaration(NamedDecl *D) {
-  if (TagDecl *TD = dyn_cast<TagDecl>(D))
-    return TD->getPreviousDeclaration();
-  if (VarDecl *VD = dyn_cast<VarDecl>(D))
-    return VD->getPreviousDeclaration();
-  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    return FD->getPreviousDeclaration();
-  if (RedeclarableTemplateDecl *RTD = dyn_cast<RedeclarableTemplateDecl>(D))
-    return RTD->getPreviousDeclaration();
-  if (TypedefNameDecl *TD = dyn_cast<TypedefNameDecl>(D))
-    return TD->getPreviousDeclaration();
-  if (ObjCInterfaceDecl *ID = dyn_cast<ObjCInterfaceDecl>(D))
-    return ID->getPreviousDeclaration();
-  
-  return 0;
-}
-
 /// \brief Retrieve the visible declaration corresponding to D, if any.
 ///
 /// This routine determines whether the declaration D is visible in the current
@@ -1083,9 +1065,12 @@ static NamedDecl *getVisibleDecl(NamedDecl *D) {
   if (LookupResult::isVisible(D))
     return D;
   
-  while ((D = getPreviousDeclaration(D))) {
-    if (LookupResult::isVisible(D))
-      return D;
+  for (Decl::redecl_iterator RD = D->redecls_begin(), RDEnd = D->redecls_end();
+       RD != RDEnd; ++RD) {
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(*RD)) {
+      if (LookupResult::isVisible(ND))
+        return ND;
+    }
   }
   
   return 0;
@@ -1169,36 +1154,56 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
         
         // If this declaration is module-private and it came from an AST
         // file, we can't see it.
-        NamedDecl *D = R.isForRedeclaration()? *I : getVisibleDecl(*I);
+        NamedDecl *D = R.isHiddenDeclarationVisible()? *I : getVisibleDecl(*I);
         if (!D)
           continue;
                 
         R.addDecl(D);
 
-        if ((*I)->getAttr<OverloadableAttr>()) {
-          // If this declaration has the "overloadable" attribute, we
-          // might have a set of overloaded functions.
-
-          // Figure out what scope the identifier is in.
-          while (!(S->getFlags() & Scope::DeclScope) ||
-                 !S->isDeclScope(*I))
+        // Check whether there are any other declarations with the same name
+        // and in the same scope.
+        if (I != IEnd) {
+          // Find the scope in which this declaration was declared (if it
+          // actually exists in a Scope).
+          while (S && !S->isDeclScope(D))
             S = S->getParent();
+          
+          // If the scope containing the declaration is the translation unit,
+          // then we'll need to perform our checks based on the matching
+          // DeclContexts rather than matching scopes.
+          if (S && isNamespaceOrTranslationUnitScope(S))
+            S = 0;
 
-          // Find the last declaration in this scope (with the same
-          // name, naturally).
+          // Compute the DeclContext, if we need it.
+          DeclContext *DC = 0;
+          if (!S)
+            DC = (*I)->getDeclContext()->getRedeclContext();
+            
           IdentifierResolver::iterator LastI = I;
           for (++LastI; LastI != IEnd; ++LastI) {
-            if (!S->isDeclScope(*LastI))
-              break;
+            if (S) {
+              // Match based on scope.
+              if (!S->isDeclScope(*LastI))
+                break;
+            } else {
+              // Match based on DeclContext.
+              DeclContext *LastDC 
+                = (*LastI)->getDeclContext()->getRedeclContext();
+              if (!LastDC->Equals(DC))
+                break;
+            }
             
-            D = getVisibleDecl(*LastI);
+            // If the declaration isn't in the right namespace, skip it.
+            if (!(*LastI)->isInIdentifierNamespace(IDNS))
+              continue;
+                        
+            D = R.isHiddenDeclarationVisible()? *LastI : getVisibleDecl(*LastI);
             if (D)
               R.addDecl(D);
           }
+
+          R.resolveKind();
         }
-
-        R.resolveKind();
-
         return true;
       }
   } else {
@@ -1727,7 +1732,6 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
   }
 
   llvm_unreachable("unknown ambiguity kind");
-  return true;
 }
 
 namespace {
@@ -2178,9 +2182,10 @@ NamedDecl *Sema::LookupSingleName(Scope *S, DeclarationName Name,
 
 /// \brief Find the protocol with the given name, if any.
 ObjCProtocolDecl *Sema::LookupProtocol(IdentifierInfo *II,
-                                       SourceLocation IdLoc) {
+                                       SourceLocation IdLoc,
+                                       RedeclarationKind Redecl) {
   Decl *D = LookupSingleName(TUScope, II, IdLoc,
-                             LookupObjCProtocolName);
+                             LookupObjCProtocolName, Redecl);
   return cast_or_null<ObjCProtocolDecl>(D);
 }
 
@@ -2536,7 +2541,7 @@ void ADLResult::insert(NamedDecl *New) {
 
   FunctionDecl *Cursor = NewFD;
   while (true) {
-    Cursor = Cursor->getPreviousDeclaration();
+    Cursor = Cursor->getPreviousDecl();
 
     // If we got to the end without finding OldFD, OldFD is the newer
     // declaration;  leave things as they are.
@@ -2754,8 +2759,10 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
     Result.getSema().ForceDeclarationOfImplicitMembers(Class);
 
   // Enumerate all of the results in this context.
-  for (DeclContext *CurCtx = Ctx->getPrimaryContext(); CurCtx;
-       CurCtx = CurCtx->getNextContext()) {
+  llvm::SmallVector<DeclContext *, 2> Contexts;
+  Ctx->collectAllContexts(Contexts);
+  for (unsigned I = 0, N = Contexts.size(); I != N; ++I) {
+    DeclContext *CurCtx = Contexts[I];
     for (DeclContext::decl_iterator D = CurCtx->decls_begin(),
                                  DEnd = CurCtx->decls_end();
          D != DEnd; ++D) {
@@ -2764,24 +2771,6 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
           Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
           Visited.add(ND);
         }
-      } else if (ObjCForwardProtocolDecl *ForwardProto
-                                      = dyn_cast<ObjCForwardProtocolDecl>(*D)) {
-        for (ObjCForwardProtocolDecl::protocol_iterator
-                  P = ForwardProto->protocol_begin(),
-               PEnd = ForwardProto->protocol_end();
-             P != PEnd;
-             ++P) {
-          if (NamedDecl *ND = Result.getAcceptableDecl(*P)) {
-            Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
-            Visited.add(ND);
-          }
-        }
-      } else if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(*D)) {
-          ObjCInterfaceDecl *IFace = Class->getForwardInterfaceDecl();
-          if (NamedDecl *ND = Result.getAcceptableDecl(IFace)) {
-            Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
-            Visited.add(ND);
-          }
       }
       
       // Visit transparent contexts and inline namespaces inside this context.
@@ -3340,13 +3329,13 @@ static void LookupPotentialTypoResult(Sema &SemaRef,
                                       Scope *S, CXXScopeSpec *SS,
                                       DeclContext *MemberContext,
                                       bool EnteringContext,
-                                      Sema::CorrectTypoContext CTC) {
+                                      bool isObjCIvarLookup) {
   Res.suppressDiagnostics();
   Res.clear();
   Res.setLookupName(Name);
   if (MemberContext) {
     if (ObjCInterfaceDecl *Class = dyn_cast<ObjCInterfaceDecl>(MemberContext)) {
-      if (CTC == Sema::CTC_ObjCIvarLookup) {
+      if (isObjCIvarLookup) {
         if (ObjCIvarDecl *Ivar = Class->lookupInstanceVariable(Name)) {
           Res.addDecl(Ivar);
           Res.resolveKind();
@@ -3387,61 +3376,11 @@ static void LookupPotentialTypoResult(Sema &SemaRef,
 /// \brief Add keywords to the consumer as possible typo corrections.
 static void AddKeywordsToConsumer(Sema &SemaRef,
                                   TypoCorrectionConsumer &Consumer,
-                                  Scope *S, Sema::CorrectTypoContext CTC) {
-  // Add context-dependent keywords.
-  bool WantTypeSpecifiers = false;
-  bool WantExpressionKeywords = false;
-  bool WantCXXNamedCasts = false;
-  bool WantRemainingKeywords = false;
-  switch (CTC) {
-    case Sema::CTC_Unknown:
-      WantTypeSpecifiers = true;
-      WantExpressionKeywords = true;
-      WantCXXNamedCasts = true;
-      WantRemainingKeywords = true;
+                                  Scope *S, CorrectionCandidateCallback &CCC) {
+  if (CCC.WantObjCSuper)
+    Consumer.addKeywordResult("super");
 
-      if (ObjCMethodDecl *Method = SemaRef.getCurMethodDecl())
-        if (Method->getClassInterface() &&
-            Method->getClassInterface()->getSuperClass())
-          Consumer.addKeywordResult("super");
-
-      break;
-
-    case Sema::CTC_NoKeywords:
-      break;
-
-    case Sema::CTC_Type:
-      WantTypeSpecifiers = true;
-      break;
-
-    case Sema::CTC_ObjCMessageReceiver:
-      Consumer.addKeywordResult("super");
-      // Fall through to handle message receivers like expressions.
-
-    case Sema::CTC_Expression:
-      if (SemaRef.getLangOptions().CPlusPlus)
-        WantTypeSpecifiers = true;
-      WantExpressionKeywords = true;
-      // Fall through to get C++ named casts.
-
-    case Sema::CTC_CXXCasts:
-      WantCXXNamedCasts = true;
-      break;
-
-    case Sema::CTC_ObjCPropertyLookup:
-      // FIXME: Add "isa"?
-      break;
-
-    case Sema::CTC_MemberLookup:
-      if (SemaRef.getLangOptions().CPlusPlus)
-        Consumer.addKeywordResult("template");
-      break;
-
-    case Sema::CTC_ObjCIvarLookup:
-      break;
-  }
-
-  if (WantTypeSpecifiers) {
+  if (CCC.WantTypeSpecifiers) {
     // Add type-specifier keywords to the set of results.
     const char *CTypeSpecs[] = {
       "char", "const", "double", "enum", "float", "int", "long", "short",
@@ -3480,14 +3419,14 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
       Consumer.addKeywordResult("typeof");
   }
 
-  if (WantCXXNamedCasts && SemaRef.getLangOptions().CPlusPlus) {
+  if (CCC.WantCXXNamedCasts && SemaRef.getLangOptions().CPlusPlus) {
     Consumer.addKeywordResult("const_cast");
     Consumer.addKeywordResult("dynamic_cast");
     Consumer.addKeywordResult("reinterpret_cast");
     Consumer.addKeywordResult("static_cast");
   }
 
-  if (WantExpressionKeywords) {
+  if (CCC.WantExpressionKeywords) {
     Consumer.addKeywordResult("sizeof");
     if (SemaRef.getLangOptions().Bool || SemaRef.getLangOptions().CPlusPlus) {
       Consumer.addKeywordResult("false");
@@ -3513,7 +3452,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
     }
   }
 
-  if (WantRemainingKeywords) {
+  if (CCC.WantRemainingKeywords) {
     if (SemaRef.getCurFunctionOrMethodDecl() || SemaRef.getCurBlock()) {
       // Statements.
       const char *CStmts[] = {
@@ -3577,14 +3516,15 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
 /// \param SS the nested-name-specifier that precedes the name we're
 /// looking for, if present.
 ///
+/// \param CCC A CorrectionCandidateCallback object that provides further
+/// validation of typo correction candidates. It also provides flags for
+/// determining the set of keywords permitted.
+///
 /// \param MemberContext if non-NULL, the context in which to look for
 /// a member access expression.
 ///
 /// \param EnteringContext whether we're entering the context described by
 /// the nested-name-specifier SS.
-///
-/// \param CTC The context in which typo correction occurs, which impacts the
-/// set of keywords permitted.
 ///
 /// \param OPT when non-NULL, the search for visible declarations will
 /// also walk the protocols in the qualified interfaces of \p OPT.
@@ -3596,9 +3536,9 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
 TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
                                  Sema::LookupNameKind LookupKind,
                                  Scope *S, CXXScopeSpec *SS,
+                                 CorrectionCandidateCallback *CCC,
                                  DeclContext *MemberContext,
                                  bool EnteringContext,
-                                 CorrectTypoContext CTC,
                                  const ObjCObjectPointerType *OPT) {
   if (Diags.hasFatalErrorOccurred() || !getLangOptions().SpellChecking)
     return TypoCorrection();
@@ -3629,6 +3569,11 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
 
   TypoCorrectionConsumer Consumer(*this, Typo);
 
+  // If a callback object returns true for an empty typo correction candidate,
+  // assume it does not do any actual validation of the candidates.
+  TypoCorrection EmptyCorrection;
+  bool ValidatingCallback = CCC && !CCC->ValidateCandidate(EmptyCorrection);
+
   // Perform name lookup to find visible, similarly-named entities.
   bool IsUnqualifiedLookup = false;
   if (MemberContext) {
@@ -3658,44 +3603,51 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     IsUnqualifiedLookup = true;
     UnqualifiedTyposCorrectedMap::iterator Cached
       = UnqualifiedTyposCorrected.find(Typo);
+    if (Cached != UnqualifiedTyposCorrected.end()) {
+      // Add the cached value, unless it's a keyword or fails validation. In the
+      // keyword case, we'll end up adding the keyword below.
+      if (Cached->second) {
+        if (!Cached->second.isKeyword() &&
+            (!CCC || CCC->ValidateCandidate(Cached->second)))
+          Consumer.addCorrection(Cached->second);
+      } else {
+        // Only honor no-correction cache hits when a callback that will validate
+        // correction candidates is not being used.
+        if (!ValidatingCallback)
+          return TypoCorrection();
+      }
+    }
     if (Cached == UnqualifiedTyposCorrected.end()) {
       // Provide a stop gap for files that are just seriously broken.  Trying
       // to correct all typos can turn into a HUGE performance penalty, causing
       // some files to take minutes to get rejected by the parser.
       if (TyposCorrected + UnqualifiedTyposCorrected.size() >= 20)
         return TypoCorrection();
+    }
 
-      // For unqualified lookup, look through all of the names that we have
-      // seen in this translation unit.
-      for (IdentifierTable::iterator I = Context.Idents.begin(),
-                                  IEnd = Context.Idents.end();
-           I != IEnd; ++I)
-        Consumer.FoundName(I->getKey());
+    // For unqualified lookup, look through all of the names that we have
+    // seen in this translation unit.
+    for (IdentifierTable::iterator I = Context.Idents.begin(),
+                                IEnd = Context.Idents.end();
+         I != IEnd; ++I)
+      Consumer.FoundName(I->getKey());
 
-      // Walk through identifiers in external identifier sources.
-      if (IdentifierInfoLookup *External
-                              = Context.Idents.getExternalIdentifierLookup()) {
-        llvm::OwningPtr<IdentifierIterator> Iter(External->getIdentifiers());
-        do {
-          StringRef Name = Iter->Next();
-          if (Name.empty())
-            break;
+    // Walk through identifiers in external identifier sources.
+    if (IdentifierInfoLookup *External
+                            = Context.Idents.getExternalIdentifierLookup()) {
+      llvm::OwningPtr<IdentifierIterator> Iter(External->getIdentifiers());
+      do {
+        StringRef Name = Iter->Next();
+        if (Name.empty())
+          break;
 
-          Consumer.FoundName(Name);
-        } while (true);
-      }
-    } else {
-      // Use the cached value, unless it's a keyword. In the keyword case, we'll
-      // end up adding the keyword below.
-      if (!Cached->second)
-        return TypoCorrection();
-
-      if (!Cached->second.isKeyword())
-        Consumer.addCorrection(Cached->second);
+        Consumer.FoundName(Name);
+      } while (true);
     }
   }
 
-  AddKeywordsToConsumer(*this, Consumer, S,  CTC);
+  CorrectionCandidateCallback DefaultCCC;
+  AddKeywordsToConsumer(*this, Consumer, S, CCC ? *CCC : DefaultCCC);
 
   // If we haven't found anything, we're done.
   if (Consumer.empty()) {
@@ -3735,7 +3687,8 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       Namespaces.AddNamespace(KNI->first);
   }
 
-  // Weed out any names that could not be found by name lookup.
+  // Weed out any names that could not be found by name lookup or, if a
+  // CorrectionCandidateCallback object was provided, failed validation.
   llvm::SmallPtrSet<IdentifierInfo*, 16> QualifiedResults;
   LookupResult TmpRes(*this, TypoName, LookupKind);
   TmpRes.suppressDiagnostics();
@@ -3745,16 +3698,21 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     for (TypoCorrectionConsumer::result_iterator I = DI->second->begin(),
                                               IEnd = DI->second->end();
          I != IEnd; /* Increment in loop. */) {
-      // If the item already has been looked up or is a keyword, keep it
+      // If the item already has been looked up or is a keyword, keep it.
+      // If a validator callback object was given, drop the correction
+      // unless it passes validation.
       if (I->second.isResolved()) {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         ++I;
+        if (CCC && !CCC->ValidateCandidate(Prev->second))
+          DI->second->erase(Prev);
         continue;
       }
 
       // Perform name lookup on this name.
       IdentifierInfo *Name = I->second.getCorrectionAsIdentifierInfo();
       LookupPotentialTypoResult(*this, TmpRes, Name, S, SS, MemberContext,
-                                EnteringContext, CTC);
+                                EnteringContext, CCC && CCC->IsObjCIvarLookup);
 
       switch (TmpRes.getResultKind()) {
       case LookupResult::NotFound:
@@ -3776,19 +3734,27 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
         return TypoCorrection();
 
       case LookupResult::FoundOverloaded: {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         // Store all of the Decls for overloaded symbols
         for (LookupResult::iterator TRD = TmpRes.begin(),
                                  TRDEnd = TmpRes.end();
              TRD != TRDEnd; ++TRD)
           I->second.addCorrectionDecl(*TRD);
         ++I;
+        if (CCC && !CCC->ValidateCandidate(Prev->second))
+          DI->second->erase(Prev);
         break;
       }
 
-      case LookupResult::Found:
+      case LookupResult::Found: {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         I->second.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
         ++I;
+        if (CCC && !CCC->ValidateCandidate(Prev->second))
+          DI->second->erase(Prev);
         break;
+      }
+
       }
     }
 
@@ -3820,6 +3786,8 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
           TmpRes.setLookupName(*QRI);
           if (!LookupQualifiedName(TmpRes, Ctx)) continue;
 
+          // Any corrections added below will be validated in subsequent
+          // iterations of the main while() loop over the Consumer's contents.
           switch (TmpRes.getResultKind()) {
           case LookupResult::Found:
             Consumer.addName((*QRI)->getName(), TmpRes.getAsSingle<NamedDecl>(),
@@ -3855,8 +3823,10 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
   ED = Consumer.begin()->first;
 
   if (ED > 0 && Typo->getName().size() / ED < 3) {
-    // If this was an unqualified lookup, note that no correction was found.
-    if (IsUnqualifiedLookup)
+    // If this was an unqualified lookup and we believe the callback
+    // object wouldn't have filtered out possible corrections, note
+    // that no correction was found.
+    if (IsUnqualifiedLookup && !ValidatingCallback)
       (void)UnqualifiedTyposCorrected[Typo];
 
     return TypoCorrection();
@@ -3893,7 +3863,12 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
 
     return Result;
   }
-  else if (BestResults.size() > 1 && CTC == CTC_ObjCMessageReceiver
+  else if (BestResults.size() > 1
+           // Ugly hack equivalent to CTC == CTC_ObjCMessageReceiver;
+           // WantObjCSuper is only true for CTC_ObjCMessageReceiver and for
+           // some instances of CTC_Unknown, while WantRemainingKeywords is true
+           // for CTC_Unknown but not for CTC_ObjCMessageReceiver.
+           && CCC && CCC->WantObjCSuper && !CCC->WantRemainingKeywords
            && BestResults["super"].isKeyword()) {
     // Prefer 'super' when we're completing in a message-receiver
     // context.
@@ -3909,7 +3884,9 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     return BestResults["super"];
   }
 
-  if (IsUnqualifiedLookup)
+  // If this was an unqualified lookup and we believe the callback object did
+  // not filter out possible corrections, note that no correction was found.
+  if (IsUnqualifiedLookup && !ValidatingCallback)
     (void)UnqualifiedTyposCorrected[Typo];
 
   return TypoCorrection();

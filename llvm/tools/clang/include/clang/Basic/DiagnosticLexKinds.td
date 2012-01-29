@@ -107,6 +107,8 @@ def warn_extraneous_char_constant : Warning<
   "extraneous characters in character constant ignored">;
 def warn_char_constant_too_large : Warning<
   "character constant too long for its type">;
+def err_multichar_utf_character_literal : Error<
+  "Unicode character literals may not contain multiple characters">;
 def err_exponent_has_no_digits : Error<"exponent has no digits">;
 def ext_imaginary_constant : Extension<"imaginary constants are an extension">;
 def err_hexconstant_requires_exponent : Error<
@@ -121,8 +123,8 @@ def warn_hex_escape_too_large : ExtWarn<"hex escape sequence out of range">;
 def ext_string_too_long : Extension<"string literal of length %0 exceeds "
   "maximum length %1 that %select{C90|ISO C99|C++}2 compilers are required to "
   "support">, InGroup<OverlengthStrings>;
-def warn_ucn_escape_too_large : ExtWarn<
-  "character unicode escape sequence too long for its type">, InGroup<Unicode>;
+def err_character_too_large : Error<
+  "character too large for enclosing character literal type">;
 def warn_ucn_not_valid_in_c89 : ExtWarn<
   "unicode escape sequences are only valid in C99 or C++">, InGroup<Unicode>;
 def warn_cxx98_compat_unicode_literal : Warning<
@@ -131,7 +133,9 @@ def warn_cxx98_compat_unicode_literal : Warning<
 def err_unsupported_string_concat : Error<
   "unsupported non-standard concatenation of string literals">;
 def err_bad_string_encoding : Error<
-  "illegal sequence in string literal">;
+  "illegal character encoding in string literal">;
+def err_bad_character_encoding : Error<
+  "illegal character encoding in character literal">;
   
 //===----------------------------------------------------------------------===//
 // PTH Diagnostics
@@ -167,6 +171,9 @@ def pp_out_of_date_dependency : Warning<
 def pp_undef_builtin_macro : Warning<"undefining builtin macro">;
 def pp_redef_builtin_macro : Warning<"redefining builtin macro">,
   InGroup<DiagGroup<"builtin-macro-redefined">>;
+def pp_disabled_macro_expansion : Warning<
+  "disabled expansion of recursive macro">, DefaultIgnore,
+  InGroup<DiagGroup<"disabled-macro-expansion">>;
 def pp_macro_not_used : Warning<"macro is not used">, DefaultIgnore,
   InGroup<DiagGroup<"unused-macros">>;
 def warn_pp_undef_identifier : Warning<
@@ -384,6 +391,8 @@ def err_mmap_expected_module_name : Error<"expected module name">;
 def err_mmap_expected_lbrace : Error<"expected '{' to start module '%0'">;
 def err_mmap_expected_rbrace : Error<"expected '}'">;
 def note_mmap_lbrace_match : Note<"to match this '{'">;
+def err_mmap_expected_rsquare : Error<"expected ']' to close attribute">;
+def note_mmap_lsquare_match : Note<"to match this ']'">;
 def err_mmap_expected_member : Error<
   "expected umbrella, header, submodule, or module export">;
 def err_mmap_expected_header : Error<"expected a header name after '%0'">;
@@ -421,7 +430,11 @@ def err_mmap_explicit_top_level : Error<
   "'explicit' is not permitted on top-level modules">;
 def err_mmap_nested_submodule_id : Error<
   "qualified module name can only be used to define modules at the top level">;
-  
+def err_mmap_expected_feature : Error<"expected a feature name">;
+def err_mmap_expected_attribute : Error<"expected an attribute name">;
+def warn_mmap_unknown_attribute : Warning<"unknown attribute '%0'">,
+  InGroup<IgnoredAttributes>;
+
 def warn_auto_module_import : Warning<
   "treating #%select{include|import|include_next|__include_macros}0 as an "
   "import of module '%1'">, InGroup<AutoImport>, DefaultIgnore;

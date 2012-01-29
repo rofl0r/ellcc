@@ -219,16 +219,20 @@ namespace llvm {
       // VZEXT_MOVL - Vector move low and zero extend.
       VZEXT_MOVL,
 
-      // VSHL, VSRL - Vector logical left / right shift.
-      VSHL, VSRL,
+      // VSHL, VSRL - 128-bit vector logical left / right shift
+      VSHLDQ, VSRLDQ,
 
-      // CMPPD, CMPPS - Vector double/float comparison.
-      // CMPPD, CMPPS - Vector double/float comparison.
-      CMPPD, CMPPS,
+      // VSHL, VSRL, VSRA - Vector shift elements
+      VSHL, VSRL, VSRA,
+
+      // VSHLI, VSRLI, VSRAI - Vector shift elements by immediate
+      VSHLI, VSRLI, VSRAI,
+
+      // CMPP - Vector packed double/float comparison.
+      CMPP,
 
       // PCMP* - Vector integer comparisons.
-      PCMPEQB, PCMPEQW, PCMPEQD, PCMPEQQ,
-      PCMPGTB, PCMPGTW, PCMPGTD, PCMPGTQ,
+      PCMPEQ, PCMPGT,
 
       // ADD, SUB, SMUL, etc. - Arithmetic operations with FLAGS results.
       ADD, SUB, ADC, SBB, SMUL,
@@ -256,15 +260,10 @@ namespace llvm {
       PSHUFD,
       PSHUFHW,
       PSHUFLW,
-      PSHUFHW_LD,
-      PSHUFLW_LD,
-      SHUFPD,
-      SHUFPS,
+      SHUFP,
       MOVDDUP,
       MOVSHDUP,
       MOVSLDUP,
-      MOVSHDUP_LD,
-      MOVSLDUP_LD,
       MOVLHPS,
       MOVLHPD,
       MOVHLPS,
@@ -374,7 +373,7 @@ namespace llvm {
 
     /// isSHUFPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to SHUFP*.
-    bool isSHUFPMask(ShuffleVectorSDNode *N);
+    bool isSHUFPMask(ShuffleVectorSDNode *N, bool HasAVX);
 
     /// isMOVHLPSMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVHLPS.
@@ -443,8 +442,8 @@ namespace llvm {
 
     /// getShuffleSHUFImmediate - Return the appropriate immediate to shuffle
     /// the specified isShuffleMask VECTOR_SHUFFLE mask with PSHUF* and SHUFP*
-    /// instructions.
-    unsigned getShuffleSHUFImmediate(SDNode *N);
+    /// instructions. Handles 128-bit and 256-bit.
+    unsigned getShuffleSHUFImmediate(ShuffleVectorSDNode *N);
 
     /// getShufflePSHUFHWImmediate - Return the appropriate immediate to shuffle
     /// the specified VECTOR_SHUFFLE mask with PSHUFHW instruction.
@@ -823,6 +822,7 @@ namespace llvm {
     SDValue LowerADJUST_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerCTLZ_ZERO_UNDEF(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTTZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerADD(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSUB(SDValue Op, SelectionDAG &DAG) const;

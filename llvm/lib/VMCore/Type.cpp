@@ -47,14 +47,6 @@ Type *Type::getScalarType() {
   return this;
 }
 
-/// getNumElements - If this is a vector type, return the number of elements,
-/// otherwise return zero.
-unsigned Type::getNumElements() {
-  if (VectorType *VTy = dyn_cast<VectorType>(this))
-    return VTy->getNumElements();
-  return 0;
-}
-
 /// isIntegerTy - Return true if this is an IntegerType of the specified width.
 bool Type::isIntegerTy(unsigned Bitwidth) const {
   return isIntegerTy() && cast<IntegerType>(this)->getBitWidth() == Bitwidth;
@@ -66,7 +58,7 @@ bool Type::isIntegerTy(unsigned Bitwidth) const {
 bool Type::isIntOrIntVectorTy() const {
   if (isIntegerTy())
     return true;
-  if (ID != Type::VectorTyID) return false;
+  if (getTypeID() != Type::VectorTyID) return false;
   
   return cast<VectorType>(this)->getElementType()->isIntegerTy();
 }
@@ -74,11 +66,12 @@ bool Type::isIntOrIntVectorTy() const {
 /// isFPOrFPVectorTy - Return true if this is a FP type or a vector of FP types.
 ///
 bool Type::isFPOrFPVectorTy() const {
-  if (ID == Type::HalfTyID || ID == Type::FloatTyID || ID == Type::DoubleTyID ||
-      ID == Type::FP128TyID || ID == Type::X86_FP80TyID || 
-      ID == Type::PPC_FP128TyID)
+  if (getTypeID() == Type::HalfTyID || getTypeID() == Type::FloatTyID ||
+      getTypeID() == Type::DoubleTyID ||
+      getTypeID() == Type::FP128TyID || getTypeID() == Type::X86_FP80TyID || 
+      getTypeID() == Type::PPC_FP128TyID)
     return true;
-  if (ID != Type::VectorTyID) return false;
+  if (getTypeID() != Type::VectorTyID) return false;
   
   return cast<VectorType>(this)->getElementType()->isFloatingPointTy();
 }
@@ -167,12 +160,12 @@ int Type::getFPMantissaWidth() const {
   if (const VectorType *VTy = dyn_cast<VectorType>(this))
     return VTy->getElementType()->getFPMantissaWidth();
   assert(isFloatingPointTy() && "Not a floating point type!");
-  if (ID == HalfTyID) return 11;
-  if (ID == FloatTyID) return 24;
-  if (ID == DoubleTyID) return 53;
-  if (ID == X86_FP80TyID) return 64;
-  if (ID == FP128TyID) return 113;
-  assert(ID == PPC_FP128TyID && "unknown fp type");
+  if (getTypeID() == HalfTyID) return 11;
+  if (getTypeID() == FloatTyID) return 24;
+  if (getTypeID() == DoubleTyID) return 53;
+  if (getTypeID() == X86_FP80TyID) return 64;
+  if (getTypeID() == FP128TyID) return 113;
+  assert(getTypeID() == PPC_FP128TyID && "unknown fp type");
   return -1;
 }
 
@@ -203,6 +196,59 @@ bool Type::isSizedDerivedType() const {
 
   return true;
 }
+
+//===----------------------------------------------------------------------===//
+//                         Subclass Helper Methods
+//===----------------------------------------------------------------------===//
+
+unsigned Type::getIntegerBitWidth() const {
+  return cast<IntegerType>(this)->getBitWidth();
+}
+
+bool Type::isFunctionVarArg() const {
+  return cast<FunctionType>(this)->isVarArg();
+}
+
+Type *Type::getFunctionParamType(unsigned i) const {
+  return cast<FunctionType>(this)->getParamType(i);
+}
+
+unsigned Type::getFunctionNumParams() const {
+  return cast<FunctionType>(this)->getNumParams();
+}
+
+StringRef Type::getStructName() const {
+  return cast<StructType>(this)->getName();
+}
+
+unsigned Type::getStructNumElements() const {
+  return cast<StructType>(this)->getNumElements();
+}
+
+Type *Type::getStructElementType(unsigned N) const {
+  return cast<StructType>(this)->getElementType(N);
+}
+
+
+
+Type *Type::getSequentialElementType() const {
+  return cast<SequentialType>(this)->getElementType();
+}
+
+uint64_t Type::getArrayNumElements() const {
+  return cast<ArrayType>(this)->getNumElements();
+}
+
+unsigned Type::getVectorNumElements() const {
+  return cast<VectorType>(this)->getNumElements();
+}
+
+unsigned Type::getPointerAddressSpace() const {
+  return cast<PointerType>(this)->getAddressSpace();
+}
+
+
+
 
 //===----------------------------------------------------------------------===//
 //                          Primitive 'Type' data
@@ -707,7 +753,12 @@ PointerType *PointerType::get(Type *EltTy, unsigned AddressSpace) {
 
 PointerType::PointerType(Type *E, unsigned AddrSpace)
   : SequentialType(PointerTyID, E) {
+#ifndef NDEBUG
+  const unsigned oldNCT = NumContainedTys;
+#endif
   setSubclassData(AddrSpace);
+  // Check for miscompile. PR11652.
+  assert(oldNCT == NumContainedTys && "bitfield written out of bounds?");
 }
 
 PointerType *Type::getPointerTo(unsigned addrs) {

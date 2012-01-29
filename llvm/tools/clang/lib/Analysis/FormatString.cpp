@@ -200,7 +200,7 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
     case 'L': lmKind = LengthModifier::AsLongDouble; ++I; break;
     case 'q': lmKind = LengthModifier::AsLongLong;   ++I; break;
     case 'a':
-      if (IsScanf && !LO.C99 && !LO.CPlusPlus) {
+      if (IsScanf && !LO.C99 && !LO.CPlusPlus0x) {
         // For scanf in C90, look at the next character to see if this should
         // be parsed as the GNU extension 'a' length modifier. If not, this
         // will be parsed as a conversion specifier.
@@ -210,6 +210,13 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
           break;
         }
         --I;
+      }
+      return false;
+    case 'm':
+      if (IsScanf) {
+        lmKind = LengthModifier::AsMAllocate;
+        ++I;
+        break;
       }
       return false;
   }
@@ -330,12 +337,11 @@ bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
         argTy->isNullPtrType();
 
     case ObjCPointerTy:
-      return argTy->getAs<ObjCObjectPointerType>() != NULL;
+      return argTy->getAs<ObjCObjectPointerType>() ||
+             argTy->getAs<BlockPointerType>();
   }
 
-  // FIXME: Should be unreachable, but Clang is currently emitting
-  // a warning.
-  return false;
+  llvm_unreachable("Invalid ArgTypeResult Kind!");
 }
 
 QualType ArgTypeResult::getRepresentativeType(ASTContext &C) const {
@@ -362,9 +368,7 @@ QualType ArgTypeResult::getRepresentativeType(ASTContext &C) const {
     }
   }
 
-  // FIXME: Should be unreachable, but Clang is currently emitting
-  // a warning.
-  return QualType();
+  llvm_unreachable("Invalid ArgTypeResult Kind!");
 }
 
 std::string ArgTypeResult::getRepresentativeTypeName(ASTContext &C) const {
@@ -409,6 +413,8 @@ analyze_format_string::LengthModifier::toString() const {
     return "L";
   case AsAllocate:
     return "a";
+  case AsMAllocate:
+    return "m";
   case None:
     return "";
   }
@@ -526,6 +532,7 @@ bool FormatSpecifier::hasValidLengthModifier() const {
         case ConversionSpecifier::nArg:
         case ConversionSpecifier::cArg:
         case ConversionSpecifier::sArg:
+        case ConversionSpecifier::ScanListArg:
           return true;
         default:
           return false;
@@ -542,6 +549,14 @@ bool FormatSpecifier::hasValidLengthModifier() const {
         case ConversionSpecifier::gArg:
         case ConversionSpecifier::GArg:
           return true;
+        // GNU extension.
+        case ConversionSpecifier::dArg:
+        case ConversionSpecifier::iArg:
+        case ConversionSpecifier::oArg:
+        case ConversionSpecifier::uArg:
+        case ConversionSpecifier::xArg:
+        case ConversionSpecifier::XArg:
+          return true;
         default:
           return false;
       }
@@ -550,10 +565,23 @@ bool FormatSpecifier::hasValidLengthModifier() const {
       switch (CS.getKind()) {
         case ConversionSpecifier::sArg:
         case ConversionSpecifier::SArg:
+        case ConversionSpecifier::ScanListArg:
+          return true;
+        default:
+          return false;
+      }
+
+    case LengthModifier::AsMAllocate:
+      switch (CS.getKind()) {
+        case ConversionSpecifier::cArg:
+        case ConversionSpecifier::CArg:
+        case ConversionSpecifier::sArg:
+        case ConversionSpecifier::SArg:
+        case ConversionSpecifier::ScanListArg:
           return true;
         default:
           return false;
       }
   }
-  return false;
+  llvm_unreachable("Invalid LengthModifier Kind!");
 }

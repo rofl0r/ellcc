@@ -299,6 +299,22 @@ void ARMAsmPrinter::EmitFunctionEntryLabel() {
   OutStreamer.EmitLabel(CurrentFnSym);
 }
 
+void ARMAsmPrinter::EmitXXStructor(const Constant *CV) {
+  uint64_t Size = TM.getTargetData()->getTypeAllocSize(CV->getType());
+  assert(Size && "C++ constructor pointer had zero size!");
+
+  const GlobalValue *GV = dyn_cast<GlobalValue>(CV);
+  assert(GV && "C++ constructor pointer was not a GlobalValue!");
+
+  const MCExpr *E = MCSymbolRefExpr::Create(Mang->getSymbol(GV),
+                                            (Subtarget->isTargetDarwin()
+                                             ? MCSymbolRefExpr::VK_None
+                                             : MCSymbolRefExpr::VK_ARM_TARGET1),
+                                            OutContext);
+  
+  OutStreamer.EmitValue(E, Size);
+}
+
 /// runOnMachineFunction - This uses the EmitInstruction()
 /// method to print assembly for each instruction.
 ///
@@ -719,15 +735,25 @@ void ARMAsmPrinter::emitAttributes() {
 
   if (Subtarget->hasNEON() && emitFPU) {
     /* NEON is not exactly a VFP architecture, but GAS emit one of
-     * neon/vfpv3/vfpv2 for .fpu parameters */
-    AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon");
+     * neon/neon-vfpv4/vfpv3/vfpv2 for .fpu parameters */
+    if (Subtarget->hasNEONVFP4())
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon-vfpv4");
+    else
+     AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon");
     /* If emitted for NEON, omit from VFP below, since you can have both
      * NEON and VFP in build attributes but only one .fpu */
     emitFPU = false;
   }
 
+  /* VFPv4 + .fpu */
+  if (Subtarget->hasVFP4()) {
+    AttrEmitter->EmitAttribute(ARMBuildAttrs::VFP_arch,
+                               ARMBuildAttrs::AllowFPv4A);
+    if (emitFPU)
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::VFP_arch, "vfpv4");
+
   /* VFPv3 + .fpu */
-  if (Subtarget->hasVFP3()) {
+  } else if (Subtarget->hasVFP3()) {
     AttrEmitter->EmitAttribute(ARMBuildAttrs::VFP_arch,
                                ARMBuildAttrs::AllowFPv3A);
     if (emitFPU)
@@ -817,7 +843,6 @@ static MCSymbol *getPICLabel(const char *Prefix, unsigned FunctionNumber,
 static MCSymbolRefExpr::VariantKind
 getModifierVariantKind(ARMCP::ARMCPModifier Modifier) {
   switch (Modifier) {
-  default: llvm_unreachable("Unknown modifier!");
   case ARMCP::no_modifier: return MCSymbolRefExpr::VK_None;
   case ARMCP::TLSGD:       return MCSymbolRefExpr::VK_ARM_TLSGD;
   case ARMCP::TPOFF:       return MCSymbolRefExpr::VK_ARM_TPOFF;
@@ -825,7 +850,7 @@ getModifierVariantKind(ARMCP::ARMCPModifier Modifier) {
   case ARMCP::GOT:         return MCSymbolRefExpr::VK_ARM_GOT;
   case ARMCP::GOTOFF:      return MCSymbolRefExpr::VK_ARM_GOTOFF;
   }
-  return MCSymbolRefExpr::VK_None;
+  llvm_unreachable("Invalid ARMCPModifier!");
 }
 
 MCSymbol *ARMAsmPrinter::GetARMGVSymbol(const GlobalValue *GV) {
@@ -1108,6 +1133,7 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
       break;
     case ARM::STR_PRE_IMM:
     case ARM::STR_PRE_REG:
+    case ARM::t2STR_PRE:
       assert(MI->getOperand(2).getReg() == ARM::SP &&
              "Only stack pointer as a source reg is supported");
       RegList.push_back(SrcReg);
@@ -1123,12 +1149,14 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
         MI->dump();
         assert(0 && "Unsupported opcode for unwinding information");
       case ARM::MOVr:
+      case ARM::tMOVr:
         Offset = 0;
         break;
       case ARM::ADDri:
         Offset = -MI->getOperand(2).getImm();
         break;
       case ARM::SUBri:
+      case ARM::t2SUBri:
         Offset = MI->getOperand(2).getImm();
         break;
       case ARM::tSUBspi:

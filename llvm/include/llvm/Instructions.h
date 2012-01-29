@@ -1670,10 +1670,33 @@ public:
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
+  Constant *getMask() const {
+    return reinterpret_cast<Constant*>(getOperand(2));
+  }
+  
   /// getMaskValue - Return the index from the shuffle mask for the specified
   /// output result.  This is either -1 if the element is undef or a number less
   /// than 2*numelements.
-  int getMaskValue(unsigned i) const;
+  static int getMaskValue(Constant *Mask, unsigned i);
+
+  int getMaskValue(unsigned i) const {
+    return getMaskValue(getMask(), i);
+  }
+  
+  /// getShuffleMask - Return the full mask for this instruction, where each
+  /// element is the element number and undef's are returned as -1.
+  static void getShuffleMask(Constant *Mask, SmallVectorImpl<int> &Result);
+
+  void getShuffleMask(SmallVectorImpl<int> &Result) const {
+    return getShuffleMask(getMask(), Result);
+  }
+
+  SmallVector<int, 16> getShuffleMask() const {
+    SmallVector<int, 16> Mask;
+    getShuffleMask(Mask);
+    return Mask;
+  }
+
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const ShuffleVectorInst *) { return true; }

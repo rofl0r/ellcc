@@ -49,7 +49,7 @@ private:
                           ExplodedNode *N) const;
 
   void HandleNilReceiver(CheckerContext &C,
-                         const ProgramState *state,
+                         ProgramStateRef state,
                          ObjCMessage msg) const;
 
   static void LazyInit_BT(const char *desc, llvm::OwningPtr<BugType> &BT) {
@@ -133,7 +133,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
                 return true;
             }
             else {
-              const SVal &V = StoreMgr.Retrieve(store, loc::MemRegionVal(FR));
+              const SVal &V = StoreMgr.getBinding(store, loc::MemRegionVal(FR));
               if (V.isUndef())
                 return true;
             }
@@ -193,7 +193,8 @@ void CallAndMessageChecker::checkPreStmt(const CallExpr *CE,
                                          CheckerContext &C) const{
 
   const Expr *Callee = CE->getCallee()->IgnoreParens();
-  SVal L = C.getState()->getSVal(Callee);
+  const LocationContext *LCtx = C.getLocationContext();
+  SVal L = C.getState()->getSVal(Callee, LCtx);
 
   if (L.isUndef()) {
     if (!BT_call_undef)
@@ -210,7 +211,7 @@ void CallAndMessageChecker::checkPreStmt(const CallExpr *CE,
     EmitBadCall(BT_call_null.get(), C, CE);
   }
 
-  PreVisitProcessArgs(C, CallOrObjCMessage(CE, C.getState()),
+  PreVisitProcessArgs(C, CallOrObjCMessage(CE, C.getState(), LCtx),
                       "Function call argument is an uninitialized value",
                       BT_call_arg);
 }
@@ -218,11 +219,12 @@ void CallAndMessageChecker::checkPreStmt(const CallExpr *CE,
 void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
                                                 CheckerContext &C) const {
 
-  const ProgramState *state = C.getState();
+  ProgramStateRef state = C.getState();
+  const LocationContext *LCtx = C.getLocationContext();
 
   // FIXME: Handle 'super'?
   if (const Expr *receiver = msg.getInstanceReceiver()) {
-    SVal recVal = state->getSVal(receiver);
+    SVal recVal = state->getSVal(receiver, LCtx);
     if (recVal.isUndef()) {
       if (ExplodedNode *N = C.generateSink()) {
         if (!BT_msg_undef)
@@ -240,7 +242,7 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
       // Bifurcate the state into nil and non-nil ones.
       DefinedOrUnknownSVal receiverVal = cast<DefinedOrUnknownSVal>(recVal);
   
-      const ProgramState *notNilState, *nilState;
+      ProgramStateRef notNilState, nilState;
       llvm::tie(notNilState, nilState) = state->assume(receiverVal);
   
       // Handle receiver must be nil.
@@ -255,7 +257,8 @@ void CallAndMessageChecker::checkPreObjCMessage(ObjCMessage msg,
                      "Argument for property setter is an uninitialized value"
                    : "Argument in message expression is an uninitialized value";
   // Check for any arguments that are uninitialized/undefined.
-  PreVisitProcessArgs(C, CallOrObjCMessage(msg, state), bugDesc, BT_msg_arg);
+  PreVisitProcessArgs(C, CallOrObjCMessage(msg, state, LCtx),
+                      bugDesc, BT_msg_arg);
 }
 
 void CallAndMessageChecker::emitNilReceiverBug(CheckerContext &C,
@@ -290,7 +293,7 @@ static bool supportsNilWithFloatRet(const llvm::Triple &triple) {
 }
 
 void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
-                                              const ProgramState *state,
+                                              ProgramStateRef state,
                                               ObjCMessage msg) const {
   ASTContext &Ctx = C.getASTContext();
 
@@ -298,11 +301,12 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
   // return different values depending on the return type and the architecture.
   QualType RetTy = msg.getType(Ctx);
   CanQualType CanRetTy = Ctx.getCanonicalType(RetTy);
+  const LocationContext *LCtx = C.getLocationContext();
 
   if (CanRetTy->isStructureOrClassType()) {
     // Structure returns are safe since the compiler zeroes them out.
     SVal V = C.getSValBuilder().makeZeroVal(msg.getType(Ctx));
-    C.addTransition(state->BindExpr(msg.getOriginExpr(), V));
+    C.addTransition(state->BindExpr(msg.getOriginExpr(), LCtx, V));
     return;
   }
 
@@ -339,7 +343,7 @@ void CallAndMessageChecker::HandleNilReceiver(CheckerContext &C,
     // of this case unless we have *a lot* more knowledge.
     //
     SVal V = C.getSValBuilder().makeZeroVal(msg.getType(Ctx));
-    C.addTransition(state->BindExpr(msg.getOriginExpr(), V));
+    C.addTransition(state->BindExpr(msg.getOriginExpr(), LCtx, V));
     return;
   }
 

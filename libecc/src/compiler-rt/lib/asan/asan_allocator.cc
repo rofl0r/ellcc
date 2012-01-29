@@ -35,11 +35,6 @@
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
 
-#include <sys/mman.h>
-#include <stdint.h>
-#include <string.h>
-#include <unistd.h>
-
 namespace __asan {
 
 #define  REDZONE FLAG_redzone
@@ -60,36 +55,48 @@ static const size_t kMaxAllowedMallocSize = 3UL << 30;  // 3G
 static const size_t kMaxAllowedMallocSize = 8UL << 30;  // 8G
 #endif
 
-static void OutOfMemoryMessage(const char *mem_type, size_t size) {
-  AsanThread *t = asanThreadRegistry().GetCurrent();
-  CHECK(t);
-  Report("ERROR: AddressSanitizer failed to allocate "
-         "0x%lx (%lu) bytes (%s) in T%d\n",
-         size, size, mem_type, t->tid());
-}
-
 static inline bool IsAligned(uintptr_t a, uintptr_t alignment) {
   return (a & (alignment - 1)) == 0;
 }
 
-static inline bool IsPowerOfTwo(size_t x) {
-  return (x & (x - 1)) == 0;
-}
+#ifdef _WIN32
+#include <intrin.h>
+#endif
 
 static inline size_t Log2(size_t x) {
   CHECK(IsPowerOfTwo(x));
+#if defined(_WIN64)
+  unsigned long ret;  // NOLINT
+  _BitScanForward64(&ret, x);
+  return ret;
+#elif defined(_WIN32)
+  unsigned long ret;  // NOLINT
+  _BitScanForward(&ret, x);
+  return ret;
+#else
   return __builtin_ctzl(x);
+#endif
 }
 
-static inline size_t RoundUpTo(size_t size, size_t boundary) {
-  CHECK(IsPowerOfTwo(boundary));
-  return (size + boundary - 1) & ~(boundary - 1);
+static inline size_t clz(size_t x) {
+#if defined(_WIN64)
+  unsigned long ret;  // NOLINT
+  _BitScanReverse64(&ret, x);
+  return ret;
+#elif defined(_WIN32)
+  unsigned long ret;  // NOLINT
+  _BitScanReverse(&ret, x);
+  return ret;
+#else
+  return __builtin_clzl(x);
+#endif
 }
 
 static inline size_t RoundUpToPowerOfTwo(size_t size) {
   CHECK(size);
   if (IsPowerOfTwo(size)) return size;
-  size_t up = __WORDSIZE - __builtin_clzl(size);
+
+  size_t up = __WORDSIZE - clz(size);
   CHECK(size < (1ULL << up));
   CHECK(size > (1ULL << (up - 1)));
   return 1UL << up;
@@ -132,14 +139,7 @@ static void PoisonHeapPartialRightRedzone(uintptr_t mem, size_t size) {
 
 static uint8_t *MmapNewPagesAndPoisonShadow(size_t size) {
   CHECK(IsAligned(size, kPageSize));
-  uint8_t *res = (uint8_t*)asan_mmap(0, size,
-                   PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANON, -1, 0);
-  if (res == (uint8_t*)-1) {
-    OutOfMemoryMessage(__FUNCTION__, size);
-    PRINT_CURRENT_STACK();
-    ASAN_DIE;
-  }
+  uint8_t *res = (uint8_t*)AsanMmapSomewhereOrDie(size, __FUNCTION__);
   PoisonShadow((uintptr_t)res, size, kAsanHeapLeftRedzoneMagic);
   if (FLAG_debug) {
     Printf("ASAN_MMAP: [%p, %p)\n", res, res + size);
@@ -370,6 +370,7 @@ class MallocInfo {
   // page_groups_ grows. This can be fixed by increasing kMinMmapSize,
   // but a better solution is to speed up the search somehow.
   size_t AllocationSize(uintptr_t ptr) {
+    if (!ptr) return 0;
     ScopedLock lock(&mu_);
 
     // first, check if this is our memory
@@ -840,7 +841,21 @@ int asan_posix_memalign(void **memptr, size_t alignment, size_t size,
   return 0;
 }
 
-size_t __asan_mz_size(const void *ptr) {
+size_t asan_malloc_usable_size(void *ptr, AsanStackTrace *stack) {
+  CHECK(stack);
+  if (ptr == NULL) return 0;
+  size_t usable_size = malloc_info.AllocationSize((uintptr_t)ptr);
+  if (usable_size == 0) {
+    Report("ERROR: AddressSanitizer attempting to call malloc_usable_size() "
+           "for pointer which is not owned: %p\n", ptr);
+    stack->PrintStack();
+    Describe((uintptr_t)ptr, 1);
+    ShowStatsAndAbort();
+  }
+  return usable_size;
+}
+
+size_t asan_mz_size(const void *ptr) {
   return malloc_info.AllocationSize((uintptr_t)ptr);
 }
 
@@ -848,11 +863,11 @@ void DescribeHeapAddress(uintptr_t addr, uintptr_t access_size) {
   Describe(addr, access_size);
 }
 
-void __asan_mz_force_lock() {
+void asan_mz_force_lock() {
   malloc_info.ForceLock();
 }
 
-void __asan_mz_force_unlock() {
+void asan_mz_force_unlock() {
   malloc_info.ForceUnlock();
 }
 
@@ -929,8 +944,7 @@ void FakeStack::Cleanup() {
     if (mem) {
       PoisonShadow(mem, ClassMmapSize(i), 0);
       allocated_size_classes_[i] = 0;
-      int munmap_res = munmap((void*)mem, ClassMmapSize(i));
-      CHECK(munmap_res == 0);
+      AsanUnmapOrDie((void*)mem, ClassMmapSize(i));
     }
   }
 }
@@ -941,10 +955,8 @@ size_t FakeStack::ClassMmapSize(size_t size_class) {
 
 void FakeStack::AllocateOneSizeClass(size_t size_class) {
   CHECK(ClassMmapSize(size_class) >= kPageSize);
-  uintptr_t new_mem = (uintptr_t)asan_mmap(0, ClassMmapSize(size_class),
-                                             PROT_READ | PROT_WRITE,
-                                             MAP_PRIVATE | MAP_ANON, -1, 0);
-  CHECK(new_mem != (uintptr_t)-1);
+  uintptr_t new_mem = (uintptr_t)AsanMmapSomewhereOrDie(
+      ClassMmapSize(size_class), __FUNCTION__);
   // Printf("T%d new_mem[%ld]: %p-%p mmap %ld\n",
   //       asanThreadRegistry().GetCurrent()->tid(),
   //       size_class, new_mem, new_mem + ClassMmapSize(size_class),
@@ -1031,8 +1043,7 @@ size_t __asan_get_estimated_allocated_size(size_t size) {
 }
 
 bool __asan_get_ownership(const void *p) {
-  return (p == NULL) ||
-      (malloc_info.AllocationSize((uintptr_t)p) > 0);
+  return malloc_info.AllocationSize((uintptr_t)p) > 0;
 }
 
 size_t __asan_get_allocated_size(const void *p) {
@@ -1040,8 +1051,11 @@ size_t __asan_get_allocated_size(const void *p) {
   size_t allocated_size = malloc_info.AllocationSize((uintptr_t)p);
   // Die if p is not malloced or if it is already freed.
   if (allocated_size == 0) {
-    Printf("__asan_get_allocated_size failed, ptr=%p is not owned\n", p);
+    Report("ERROR: AddressSanitizer attempting to call "
+           "__asan_get_allocated_size() for pointer which is "
+           "not owned: %p\n", p);
     PRINT_CURRENT_STACK();
+    Describe((uintptr_t)p, 1);
     ShowStatsAndAbort();
   }
   return allocated_size;

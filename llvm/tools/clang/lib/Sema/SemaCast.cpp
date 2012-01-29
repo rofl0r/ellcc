@@ -295,8 +295,6 @@ Sema::BuildCXXNamedCast(SourceLocation OpLoc, tok::TokenKind Kind,
                                                  OpLoc, Parens.getEnd()));
   }
   }
-
-  return ExprError();
 }
 
 /// Try to diagnose a failed overloaded cast.  Returns true if
@@ -346,7 +344,6 @@ static bool tryDiagnoseOverloadedCast(Sema &S, CastType CT,
 
   switch (sequence.getFailedOverloadResult()) {
   case OR_Success: llvm_unreachable("successful failed overload");
-    return false;
   case OR_No_Viable_Function:
     if (candidates.empty())
       msg = diag::err_ovl_no_conversion_in_cast;
@@ -529,11 +526,12 @@ CastsAwayConstness(Sema &Self, QualType SrcType, QualType DestType,
 /// Refer to C++ 5.2.7 for details. Dynamic casts are used mostly for runtime-
 /// checked downcasts in class hierarchies.
 void CastOperation::CheckDynamicCast() {
-  if (ValueKind == VK_RValue && !isPlaceholder(BuiltinType::Overload)) {
+  if (ValueKind == VK_RValue)
     SrcExpr = Self.DefaultFunctionArrayLvalueConversion(SrcExpr.take());
-    if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
-      return;
-  }
+  else if (isPlaceholder())
+    SrcExpr = Self.CheckPlaceholderExpr(SrcExpr.take());
+  if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
+    return;
 
   QualType OrigSrcType = SrcExpr.get()->getType();
   QualType DestType = Self.Context.getCanonicalType(this->DestType);
@@ -662,11 +660,12 @@ void CastOperation::CheckDynamicCast() {
 /// const char *str = "literal";
 /// legacy_function(const_cast\<char*\>(str));
 void CastOperation::CheckConstCast() {
-  if (ValueKind == VK_RValue && !isPlaceholder(BuiltinType::Overload)) {
+  if (ValueKind == VK_RValue)
     SrcExpr = Self.DefaultFunctionArrayLvalueConversion(SrcExpr.take());
-    if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
-      return;
-  }
+  else if (isPlaceholder())
+    SrcExpr = Self.CheckPlaceholderExpr(SrcExpr.take());
+  if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
+    return;
 
   unsigned msg = diag::err_bad_cxx_cast_generic;
   if (TryConstCast(Self, SrcExpr.get(), DestType, /*CStyle*/false, msg) != TC_Success
@@ -681,11 +680,12 @@ void CastOperation::CheckConstCast() {
 /// like this:
 /// char *bytes = reinterpret_cast\<char*\>(int_ptr);
 void CastOperation::CheckReinterpretCast() {
-  if (ValueKind == VK_RValue && !isPlaceholder(BuiltinType::Overload)) {
+  if (ValueKind == VK_RValue && !isPlaceholder(BuiltinType::Overload))
     SrcExpr = Self.DefaultFunctionArrayLvalueConversion(SrcExpr.take());
-    if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
-      return;
-  }
+  else
+    checkNonOverloadPlaceholders();
+  if (SrcExpr.isInvalid()) // if conversion failed, don't report another error
+    return;
 
   unsigned msg = diag::err_bad_cxx_cast_generic;
   TryCastResult tcr = 
@@ -1894,6 +1894,11 @@ void CastOperation::CheckCStyleCast() {
   if (SrcExpr.isInvalid())
     return;
   QualType SrcType = SrcExpr.get()->getType();
+
+  // You can cast an _Atomic(T) to anything you can cast a T to.
+  if (const AtomicType *AtomicSrcType = SrcType->getAs<AtomicType>())
+    SrcType = AtomicSrcType->getValueType();
+
   assert(!SrcType->isPlaceholderType());
 
   if (Self.RequireCompleteType(OpRange.getBegin(), DestType,
