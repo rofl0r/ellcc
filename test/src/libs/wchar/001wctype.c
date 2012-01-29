@@ -261,7 +261,7 @@ TEST_GROUP(Ctype)
     CTESTGROUP(XDIGIT, IS, iswxdigit);
 
     TEST_TRACE(C99 7.25.2.2.1)
-    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=39")
     {
         CTESTGROUP2(ALL, ISNOT, alnum);
         CTESTGROUP2(ALNUM, IS, alnum);

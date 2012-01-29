@@ -30,8 +30,8 @@ TEST_GROUP(Time)
     TEST_TRACE(C99 7.23.2.3)
     tm = ctm;
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
-    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
+    TEST_RESOLVED(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
     {
         t = mktime(&tm);
         TEST_TRACE(C99 7.23.3.4)
@@ -57,8 +57,8 @@ TEST_GROUP(Time)
     TEST(difftime(t, t) == 0.0, "difftime() with identical times is 0.0");
     TEST_TRACE(C99 7.23.3.1)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
-    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
+    TEST_RESOLVED(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
     {
         p = asctime(&ctm);
         TEST(strcmp(p, "Sat Jan 14 13:09:59 2012\n") == 0, "asctime() succeeds");

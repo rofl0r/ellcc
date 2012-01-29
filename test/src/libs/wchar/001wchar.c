@@ -313,8 +313,8 @@ TEST_GROUP(Wchar)
     }
     TEST_TRACE(C99 7.24.5.1)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
-    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
+    TEST_RESOLVED(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
     {
         size = wcsftime(buffer, WCHARBUFSIZ, L"format", &ctm);
         TEST(size == 6, "wcsftime() returns the number of bytes written");

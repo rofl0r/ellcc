@@ -131,7 +131,7 @@ TEST_GROUP(Stdlib)
     TEST(rdiv.quot == 2 && rdiv.rem == 3, "div(13,5) is 2 rem 3");
     rldiv = ldiv(13L, 5L);
     TEST(rldiv.quot == 2L && rldiv.rem == 3L, "ldiv(13L,5L) is 2L rem 3L");
-    TEST_EXCLUDE(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=28") {
+    TEST_RESOLVED(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=28") {
         rlldiv = lldiv(13LL, 5LL);
         TEST(rlldiv.quot == 2LL && rlldiv.rem == 3LL, "lldiv(13LL,5LL) is 2LL rem 3LL");
     }
