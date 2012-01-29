@@ -1,7 +1,6 @@
 /* Target-dependent code for the Sanyo Xstormy16a (LC590000) processor.
 
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2001-2005, 2007-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -263,12 +262,13 @@ xstormy16_push_dummy_call (struct gdbarch *gdbarch,
       /* Put argument into registers wordwise.  */
       val = value_contents (args[i]);
       for (j = 0; j < typelen; j += xstormy16_reg_size)
-	regcache_cooked_write_unsigned (regcache, argreg++,
-			extract_unsigned_integer (val + j,
-						  typelen - j ==
-						  1 ? 1 :
-						  xstormy16_reg_size,
-						  byte_order));
+	{
+	  ULONGEST regval;
+	  int size = (typelen - j == 1) ? 1 : xstormy16_reg_size;
+
+	  regval = extract_unsigned_integer (val + j, size, byte_order);
+	  regcache_cooked_write_unsigned (regcache, argreg++, regval);
+	}
     }
 
   /* Align SP */

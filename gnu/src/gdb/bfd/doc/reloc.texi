@@ -811,8 +811,8 @@ between two procedure entry points is < 2^21, or else a hint.
 Alpha thread-local storage relocations.
 @end deffn
 @deffn {} BFD_RELOC_MIPS_JMP
-Bits 27..2 of the relocation address shifted right 2 bits;
-simple reloc otherwise.
+@deffnx {} BFD_RELOC_MICROMIPS_JMP
+The MIPS jump instruction.
 @end deffn
 @deffn {} BFD_RELOC_MIPS16_JMP
 The MIPS16 jump instruction.
@@ -859,42 +859,75 @@ to compensate for the borrow when the low bits are added.
 MIPS16 low 16 bits.
 @end deffn
 @deffn {} BFD_RELOC_MIPS_LITERAL
+@deffnx {} BFD_RELOC_MICROMIPS_LITERAL
 Relocation against a MIPS literal section.
 @end deffn
+@deffn {} BFD_RELOC_MICROMIPS_7_PCREL_S1
+@deffnx {} BFD_RELOC_MICROMIPS_10_PCREL_S1
+@deffnx {} BFD_RELOC_MICROMIPS_16_PCREL_S1
+microMIPS PC-relative relocations.
+@end deffn
+@deffn {} BFD_RELOC_MICROMIPS_GPREL16
+@deffnx {} BFD_RELOC_MICROMIPS_HI16
+@deffnx {} BFD_RELOC_MICROMIPS_HI16_S
+@deffnx {} BFD_RELOC_MICROMIPS_LO16
+microMIPS versions of generic BFD relocs.
+@end deffn
 @deffn {} BFD_RELOC_MIPS_GOT16
+@deffnx {} BFD_RELOC_MICROMIPS_GOT16
 @deffnx {} BFD_RELOC_MIPS_CALL16
+@deffnx {} BFD_RELOC_MICROMIPS_CALL16
 @deffnx {} BFD_RELOC_MIPS_GOT_HI16
+@deffnx {} BFD_RELOC_MICROMIPS_GOT_HI16
 @deffnx {} BFD_RELOC_MIPS_GOT_LO16
+@deffnx {} BFD_RELOC_MICROMIPS_GOT_LO16
 @deffnx {} BFD_RELOC_MIPS_CALL_HI16
+@deffnx {} BFD_RELOC_MICROMIPS_CALL_HI16
 @deffnx {} BFD_RELOC_MIPS_CALL_LO16
+@deffnx {} BFD_RELOC_MICROMIPS_CALL_LO16
 @deffnx {} BFD_RELOC_MIPS_SUB
+@deffnx {} BFD_RELOC_MICROMIPS_SUB
 @deffnx {} BFD_RELOC_MIPS_GOT_PAGE
+@deffnx {} BFD_RELOC_MICROMIPS_GOT_PAGE
 @deffnx {} BFD_RELOC_MIPS_GOT_OFST
+@deffnx {} BFD_RELOC_MICROMIPS_GOT_OFST
 @deffnx {} BFD_RELOC_MIPS_GOT_DISP
+@deffnx {} BFD_RELOC_MICROMIPS_GOT_DISP
 @deffnx {} BFD_RELOC_MIPS_SHIFT5
 @deffnx {} BFD_RELOC_MIPS_SHIFT6
 @deffnx {} BFD_RELOC_MIPS_INSERT_A
 @deffnx {} BFD_RELOC_MIPS_INSERT_B
 @deffnx {} BFD_RELOC_MIPS_DELETE
 @deffnx {} BFD_RELOC_MIPS_HIGHEST
+@deffnx {} BFD_RELOC_MICROMIPS_HIGHEST
 @deffnx {} BFD_RELOC_MIPS_HIGHER
+@deffnx {} BFD_RELOC_MICROMIPS_HIGHER
 @deffnx {} BFD_RELOC_MIPS_SCN_DISP
+@deffnx {} BFD_RELOC_MICROMIPS_SCN_DISP
 @deffnx {} BFD_RELOC_MIPS_REL16
 @deffnx {} BFD_RELOC_MIPS_RELGOT
 @deffnx {} BFD_RELOC_MIPS_JALR
+@deffnx {} BFD_RELOC_MICROMIPS_JALR
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPMOD32
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPREL32
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPMOD64
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPREL64
 @deffnx {} BFD_RELOC_MIPS_TLS_GD
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_GD
 @deffnx {} BFD_RELOC_MIPS_TLS_LDM
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_LDM
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPREL_HI16
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_DTPREL_HI16
 @deffnx {} BFD_RELOC_MIPS_TLS_DTPREL_LO16
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_DTPREL_LO16
 @deffnx {} BFD_RELOC_MIPS_TLS_GOTTPREL
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_GOTTPREL
 @deffnx {} BFD_RELOC_MIPS_TLS_TPREL32
 @deffnx {} BFD_RELOC_MIPS_TLS_TPREL64
 @deffnx {} BFD_RELOC_MIPS_TLS_TPREL_HI16
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_TPREL_HI16
 @deffnx {} BFD_RELOC_MIPS_TLS_TPREL_LO16
+@deffnx {} BFD_RELOC_MICROMIPS_TLS_TPREL_LO16
 MIPS ELF relocations.
 @end deffn
 @deffn {} BFD_RELOC_MIPS_COPY
@@ -2094,6 +2127,40 @@ instructions
 This is a 6 bit reloc for the AVR that stores offset for adiw/sbiw
 instructions
 @end deffn
+@deffn {} BFD_RELOC_RL78_NEG8
+@deffnx {} BFD_RELOC_RL78_NEG16
+@deffnx {} BFD_RELOC_RL78_NEG24
+@deffnx {} BFD_RELOC_RL78_NEG32
+@deffnx {} BFD_RELOC_RL78_16_OP
+@deffnx {} BFD_RELOC_RL78_24_OP
+@deffnx {} BFD_RELOC_RL78_32_OP
+@deffnx {} BFD_RELOC_RL78_8U
+@deffnx {} BFD_RELOC_RL78_16U
+@deffnx {} BFD_RELOC_RL78_24U
+@deffnx {} BFD_RELOC_RL78_DIR3U_PCREL
+@deffnx {} BFD_RELOC_RL78_DIFF
+@deffnx {} BFD_RELOC_RL78_GPRELB
+@deffnx {} BFD_RELOC_RL78_GPRELW
+@deffnx {} BFD_RELOC_RL78_GPRELL
+@deffnx {} BFD_RELOC_RL78_SYM
+@deffnx {} BFD_RELOC_RL78_OP_SUBTRACT
+@deffnx {} BFD_RELOC_RL78_OP_NEG
+@deffnx {} BFD_RELOC_RL78_OP_AND
+@deffnx {} BFD_RELOC_RL78_OP_SHRA
+@deffnx {} BFD_RELOC_RL78_ABS8
+@deffnx {} BFD_RELOC_RL78_ABS16
+@deffnx {} BFD_RELOC_RL78_ABS16_REV
+@deffnx {} BFD_RELOC_RL78_ABS32
+@deffnx {} BFD_RELOC_RL78_ABS32_REV
+@deffnx {} BFD_RELOC_RL78_ABS16U
+@deffnx {} BFD_RELOC_RL78_ABS16UW
+@deffnx {} BFD_RELOC_RL78_ABS16UL
+@deffnx {} BFD_RELOC_RL78_RELAX
+@deffnx {} BFD_RELOC_RL78_HI16
+@deffnx {} BFD_RELOC_RL78_HI8
+@deffnx {} BFD_RELOC_RL78_LO16
+Renesas RL78 Relocations.
+@end deffn
 @deffn {} BFD_RELOC_RX_NEG8
 @deffnx {} BFD_RELOC_RX_NEG16
 @deffnx {} BFD_RELOC_RX_NEG24
@@ -2891,6 +2958,199 @@ value in a word.  The relocation is relative offset from
 This is used to tell the dynamic linker to copy the value out of
 the dynamic object into the runtime process image.
 @end deffn
+@deffn {} BFD_RELOC_TILEPRO_COPY
+@deffnx {} BFD_RELOC_TILEPRO_GLOB_DAT
+@deffnx {} BFD_RELOC_TILEPRO_JMP_SLOT
+@deffnx {} BFD_RELOC_TILEPRO_RELATIVE
+@deffnx {} BFD_RELOC_TILEPRO_BROFF_X1
+@deffnx {} BFD_RELOC_TILEPRO_JOFFLONG_X1
+@deffnx {} BFD_RELOC_TILEPRO_JOFFLONG_X1_PLT
+@deffnx {} BFD_RELOC_TILEPRO_IMM8_X0
+@deffnx {} BFD_RELOC_TILEPRO_IMM8_Y0
+@deffnx {} BFD_RELOC_TILEPRO_IMM8_X1
+@deffnx {} BFD_RELOC_TILEPRO_IMM8_Y1
+@deffnx {} BFD_RELOC_TILEPRO_DEST_IMM8_X1
+@deffnx {} BFD_RELOC_TILEPRO_MT_IMM15_X1
+@deffnx {} BFD_RELOC_TILEPRO_MF_IMM15_X1
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_LO_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_LO_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_HI_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_HI_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_HA_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_HA_PCREL
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_GOT
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_GOT
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_GOT_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_GOT_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_GOT_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_GOT_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_GOT_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_GOT_HA
+@deffnx {} BFD_RELOC_TILEPRO_MMSTART_X0
+@deffnx {} BFD_RELOC_TILEPRO_MMEND_X0
+@deffnx {} BFD_RELOC_TILEPRO_MMSTART_X1
+@deffnx {} BFD_RELOC_TILEPRO_MMEND_X1
+@deffnx {} BFD_RELOC_TILEPRO_SHAMT_X0
+@deffnx {} BFD_RELOC_TILEPRO_SHAMT_X1
+@deffnx {} BFD_RELOC_TILEPRO_SHAMT_Y0
+@deffnx {} BFD_RELOC_TILEPRO_SHAMT_Y1
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_GD
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_GD
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_GD_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_GD_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_GD_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_GD_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_GD_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_GD_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_IE
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_IE
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_IE_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_IE_LO
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_IE_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_IE_HI
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X0_TLS_IE_HA
+@deffnx {} BFD_RELOC_TILEPRO_IMM16_X1_TLS_IE_HA
+@deffnx {} BFD_RELOC_TILEPRO_TLS_DTPMOD32
+@deffnx {} BFD_RELOC_TILEPRO_TLS_DTPOFF32
+@deffnx {} BFD_RELOC_TILEPRO_TLS_TPOFF32
+Tilera TILEPro Relocations.
+@end deffn
+@deffn {} BFD_RELOC_TILEGX_HW0
+@deffnx {} BFD_RELOC_TILEGX_HW1
+@deffnx {} BFD_RELOC_TILEGX_HW2
+@deffnx {} BFD_RELOC_TILEGX_HW3
+@deffnx {} BFD_RELOC_TILEGX_HW0_LAST
+@deffnx {} BFD_RELOC_TILEGX_HW1_LAST
+@deffnx {} BFD_RELOC_TILEGX_HW2_LAST
+@deffnx {} BFD_RELOC_TILEGX_COPY
+@deffnx {} BFD_RELOC_TILEGX_GLOB_DAT
+@deffnx {} BFD_RELOC_TILEGX_JMP_SLOT
+@deffnx {} BFD_RELOC_TILEGX_RELATIVE
+@deffnx {} BFD_RELOC_TILEGX_BROFF_X1
+@deffnx {} BFD_RELOC_TILEGX_JUMPOFF_X1
+@deffnx {} BFD_RELOC_TILEGX_JUMPOFF_X1_PLT
+@deffnx {} BFD_RELOC_TILEGX_IMM8_X0
+@deffnx {} BFD_RELOC_TILEGX_IMM8_Y0
+@deffnx {} BFD_RELOC_TILEGX_IMM8_X1
+@deffnx {} BFD_RELOC_TILEGX_IMM8_Y1
+@deffnx {} BFD_RELOC_TILEGX_DEST_IMM8_X1
+@deffnx {} BFD_RELOC_TILEGX_MT_IMM14_X1
+@deffnx {} BFD_RELOC_TILEGX_MF_IMM14_X1
+@deffnx {} BFD_RELOC_TILEGX_MMSTART_X0
+@deffnx {} BFD_RELOC_TILEGX_MMEND_X0
+@deffnx {} BFD_RELOC_TILEGX_SHAMT_X0
+@deffnx {} BFD_RELOC_TILEGX_SHAMT_X1
+@deffnx {} BFD_RELOC_TILEGX_SHAMT_Y0
+@deffnx {} BFD_RELOC_TILEGX_SHAMT_Y1
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW3
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW3
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_LAST
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW3_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW3_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_LAST_PCREL
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW3_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW3_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_LAST_GOT
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW3_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW3_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_LAST_TLS_GD
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW3_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW3_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW0_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW0_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW1_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW1_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X0_HW2_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_IMM16_X1_HW2_LAST_TLS_IE
+@deffnx {} BFD_RELOC_TILEGX_TLS_DTPMOD64
+@deffnx {} BFD_RELOC_TILEGX_TLS_DTPOFF64
+@deffnx {} BFD_RELOC_TILEGX_TLS_TPOFF64
+@deffnx {} BFD_RELOC_TILEGX_TLS_DTPMOD32
+@deffnx {} BFD_RELOC_TILEGX_TLS_DTPOFF32
+@deffnx {} BFD_RELOC_TILEGX_TLS_TPOFF32
+Tilera TILE-Gx Relocations.
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_SIMM8
+Adapteva EPIPHANY - 8 bit signed pc-relative displacement
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_SIMM24
+Adapteva EPIPHANY - 24 bit signed pc-relative displacement
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_HIGH
+Adapteva EPIPHANY - 16 most-significant bits of absolute address
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_LOW
+Adapteva EPIPHANY - 16 least-significant bits of absolute address
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_SIMM11
+Adapteva EPIPHANY - 11 bit signed number - add/sub immediate
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_IMM11
+Adapteva EPIPHANY - 11 bit sign-magnitude number (ld/st displacement)
+@end deffn
+@deffn {} BFD_RELOC_EPIPHANY_IMM8
+Adapteva EPIPHANY - 8 bit immediate for 16 bit mov instruction.
+@end deffn
 
 @example
 
@@ -2954,6 +3214,17 @@ bfd_boolean bfd_generic_gc_sections
 @strong{Description}@*
 Provides default handling for relaxing for back ends which
 don't do section gc -- i.e., does nothing.
+
+@findex bfd_generic_lookup_section_flags
+@subsubsection @code{bfd_generic_lookup_section_flags}
+@strong{Synopsis}
+@example
+void bfd_generic_lookup_section_flags
+   (struct bfd_link_info *, struct flag_info *);
+@end example
+@strong{Description}@*
+Provides default handling for section flags lookup
+-- i.e., does nothing.
 
 @findex bfd_generic_merge_sections
 @subsubsection @code{bfd_generic_merge_sections}

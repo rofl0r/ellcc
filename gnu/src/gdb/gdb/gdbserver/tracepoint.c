@@ -1,5 +1,5 @@
 /* Tracepoint code for remote server for GDB.
-   Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 2009-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -110,6 +110,9 @@ trace_vdebug (const char *fmt, ...)
 # define gdb_tp_heap_buffer gdb_agent_gdb_tp_heap_buffer
 # define gdb_jump_pad_buffer gdb_agent_gdb_jump_pad_buffer
 # define gdb_jump_pad_buffer_end gdb_agent_gdb_jump_pad_buffer_end
+# define gdb_trampoline_buffer gdb_agent_gdb_trampoline_buffer
+# define gdb_trampoline_buffer_end gdb_agent_gdb_trampoline_buffer_end
+# define gdb_trampoline_buffer_error gdb_agent_gdb_trampoline_buffer_error
 # define collecting gdb_agent_collecting
 # define gdb_collect gdb_agent_gdb_collect
 # define stop_tracing gdb_agent_stop_tracing
@@ -148,6 +151,9 @@ struct ipa_sym_addresses
   CORE_ADDR addr_gdb_tp_heap_buffer;
   CORE_ADDR addr_gdb_jump_pad_buffer;
   CORE_ADDR addr_gdb_jump_pad_buffer_end;
+  CORE_ADDR addr_gdb_trampoline_buffer;
+  CORE_ADDR addr_gdb_trampoline_buffer_end;
+  CORE_ADDR addr_gdb_trampoline_buffer_error;
   CORE_ADDR addr_collecting;
   CORE_ADDR addr_gdb_collect;
   CORE_ADDR addr_stop_tracing;
@@ -192,6 +198,9 @@ static struct
   IPA_SYM(gdb_tp_heap_buffer),
   IPA_SYM(gdb_jump_pad_buffer),
   IPA_SYM(gdb_jump_pad_buffer_end),
+  IPA_SYM(gdb_trampoline_buffer),
+  IPA_SYM(gdb_trampoline_buffer_end),
+  IPA_SYM(gdb_trampoline_buffer_error),
   IPA_SYM(collecting),
   IPA_SYM(gdb_collect),
   IPA_SYM(stop_tracing),
@@ -320,13 +329,11 @@ maybe_write_ipa_ust_not_loaded (char *buffer)
 void
 tracepoint_look_up_symbols (void)
 {
-  int all_ok;
   int i;
 
   if (all_tracepoint_symbols_looked_up)
     return;
 
-  all_ok = 1;
   for (i = 0; i < sizeof (symbol_list) / sizeof (symbol_list[0]); i++)
     {
       CORE_ADDR *addrp =
@@ -336,11 +343,11 @@ tracepoint_look_up_symbols (void)
 	{
 	  if (debug_threads)
 	    fprintf (stderr, "symbol `%s' not found\n", symbol_list[i].name);
-	  all_ok = 0;
+	  return;
 	}
     }
 
-  all_tracepoint_symbols_looked_up = all_ok;
+  all_tracepoint_symbols_looked_up = 1;
 }
 
 #endif
@@ -485,6 +492,14 @@ static const char *gdb_agent_op_names [gdb_agent_op_last] =
 #undef DEFOP
   };
 
+static const unsigned char gdb_agent_op_sizes [gdb_agent_op_last] =
+  {
+    0
+#define DEFOP(NAME, SIZE, DATA_SIZE, CONSUMED, PRODUCED, VALUE)  , SIZE
+#include "ax.def"
+#undef DEFOP
+  };
+
 struct agent_expr
 {
   int length;
@@ -617,6 +632,9 @@ struct tracepoint
      Note that while-stepping steps are not counted as "hits".  */
   long hit_count;
 
+  /* Cached sum of the sizes of traceframes created by this point.  */
+  long traceframe_usage;
+
   CORE_ADDR compiled_cond;
 
   /* Link to the next tracepoint in the list.  */
@@ -651,6 +669,12 @@ struct tracepoint
      past the end).*/
   CORE_ADDR jump_pad;
   CORE_ADDR jump_pad_end;
+
+  /* The address range of the piece of the trampoline buffer that was
+     assigned to this fast tracepoint.  (_end is actually one byte
+     past the end).  */
+  CORE_ADDR trampoline;
+  CORE_ADDR trampoline_end;
 
   /* The list of actions to take while in a stepping loop.  These
      fields are only valid for patch-based tracepoints.  */
@@ -1123,6 +1147,27 @@ static const char *tracing_stop_reason = "tnotrun";
 
 static int tracing_stop_tpnum;
 
+/* 64-bit timestamps for the trace run's start and finish, expressed
+   in microseconds from the Unix epoch.  */
+
+LONGEST tracing_start_time;
+LONGEST tracing_stop_time;
+
+/* The (optional) user-supplied name of the user that started the run.
+   This is an arbitrary string, and may be NULL.  */
+
+char *tracing_user_name;
+
+/* Optional user-supplied text describing the run.  This is
+   an arbitrary string, and may be NULL.  */
+
+char *tracing_notes;
+
+/* Optional user-supplied text explaining a tstop command.  This is an
+   arbitrary string, and may be NULL.  */
+
+char *tracing_stop_note;
+
 #endif
 
 /* Functions local to this file.  */
@@ -1203,6 +1248,9 @@ static enum eval_result_type eval_agent_expr (struct tracepoint_hit_ctx *ctx,
 
 static int agent_mem_read (struct traceframe *tframe,
 			   unsigned char *to, CORE_ADDR from, ULONGEST len);
+static int agent_mem_read_string (struct traceframe *tframe,
+				  unsigned char *to, CORE_ADDR from,
+				  ULONGEST len);
 static int agent_tsv_read (struct traceframe *tframe, int n);
 
 #ifndef IN_PROCESS_AGENT
@@ -1236,7 +1284,13 @@ static void do_action_at_tracepoint (struct tracepoint_hit_ctx *ctx,
 
 #ifndef IN_PROCESS_AGENT
 static struct tracepoint *fast_tracepoint_from_ipa_tpoint_address (CORE_ADDR);
+
+static void install_tracepoint (struct tracepoint *, char *own_buf);
+static void download_tracepoint (struct tracepoint *);
+static int install_fast_tracepoint (struct tracepoint *, char *errbuf);
 #endif
+
+static LONGEST get_timestamp (void);
 
 #if defined(__GNUC__)
 #  define memory_barrier() asm volatile ("" : : : "memory")
@@ -1534,8 +1588,9 @@ trace_buffer_alloc (size_t amt)
 
 #ifdef IN_PROCESS_AGENT
   /* Build the tentative token.  */
-  commit_count = (((prev & 0x0007ff00) + 0x100) & 0x0007ff00);
-  commit = (((prev & 0x0007ff00) << 12)
+  commit_count = (((prev & GDBSERVER_FLUSH_COUNT_MASK_CURR) + 0x100)
+		  & GDBSERVER_FLUSH_COUNT_MASK_CURR);
+  commit = (((prev & GDBSERVER_FLUSH_COUNT_MASK_CURR) << 12)
 	    | commit_count
 	    | curr);
 
@@ -1567,8 +1622,8 @@ trace_buffer_alloc (size_t amt)
 
     refetch = trace_buffer_ctrl_curr;
 
-    if ((refetch == commit
-	 || ((refetch & 0x7ff00000) >> 12) == commit_count))
+    if (refetch == commit
+	|| ((refetch & GDBSERVER_FLUSH_COUNT_MASK_PREV) >> 12) == commit_count)
       {
 	/* effective */
 	trace_debug ("change is effective: (prev=%08x, commit=%08x, "
@@ -1631,12 +1686,13 @@ free_space (void)
 
 static int seen_step_action_flag;
 
-/* Create a tracepoint (location) with given number and address.  */
+/* Create a tracepoint (location) with given number and address.  Add this
+   new tracepoint to list and sort this list.  */
 
 static struct tracepoint *
 add_tracepoint (int num, CORE_ADDR addr)
 {
-  struct tracepoint *tpoint;
+  struct tracepoint *tpoint, **tp_next;
 
   tpoint = xmalloc (sizeof (struct tracepoint));
   tpoint->number = num;
@@ -1656,10 +1712,31 @@ add_tracepoint (int num, CORE_ADDR addr)
   tpoint->handle = NULL;
   tpoint->next = NULL;
 
-  if (!last_tracepoint)
-    tracepoints = tpoint;
-  else
-    last_tracepoint->next = tpoint;
+  /* Find a place to insert this tracepoint into list in order to keep
+     the tracepoint list still in the ascending order.  There may be
+     multiple tracepoints at the same address as TPOINT's, and this
+     guarantees TPOINT is inserted after all the tracepoints which are
+     set at the same address.  For example, fast tracepoints A, B, C are
+     set at the same address, and D is to be insert at the same place as
+     well,
+
+     -->| A |--> | B |-->| C |->...
+
+     One jump pad was created for tracepoint A, B, and C, and the target
+     address of A is referenced/used in jump pad.  So jump pad will let
+     inferior jump to A.  If D is inserted in front of A, like this,
+
+     -->| D |-->| A |--> | B |-->| C |->...
+
+     without updating jump pad, D is not reachable during collect, which
+     is wrong.  As we can see, the order of B, C and D doesn't matter, but
+     A should always be the `first' one.  */
+  for (tp_next = &tracepoints;
+       (*tp_next) != NULL && (*tp_next)->address <= tpoint->address;
+       tp_next = &(*tp_next)->next)
+    ;
+  tpoint->next = *tp_next;
+  *tp_next = tpoint;
   last_tracepoint = tpoint;
 
   seen_step_action_flag = 0;
@@ -2214,9 +2291,6 @@ clear_installed_tracepoints (void)
   /* Restore any bytes overwritten by tracepoints.  */
   for (tpoint = tracepoints; tpoint; tpoint = tpoint->next)
     {
-      if (!tpoint->enabled)
-	continue;
-
       /* Catch the case where we might try to remove a tracepoint that
 	 was never actually installed.  */
       if (tpoint->handle == NULL)
@@ -2262,6 +2336,8 @@ static void
 cmd_qtdp (char *own_buf)
 {
   int tppacket;
+  /* Whether there is a trailing hyphen at the end of the QTDP packet.  */
+  int trail_hyphen = 0;
   ULONGEST num;
   ULONGEST addr;
   ULONGEST count;
@@ -2339,7 +2415,10 @@ cmd_qtdp (char *own_buf)
 	    trace_debug ("Unknown optional tracepoint field");
 	}
       if (*packet == '-')
-	trace_debug ("Also has actions\n");
+	{
+	  trail_hyphen = 1;
+	  trace_debug ("Also has actions\n");
+	}
 
       trace_debug ("Defined %stracepoint %d at 0x%s, "
 		   "enabled %d step %ld pass %ld",
@@ -2355,6 +2434,29 @@ cmd_qtdp (char *own_buf)
       trace_debug ("Tracepoint error: tracepoint %d at 0x%s not found",
 		   (int) num, paddress (addr));
       write_enn (own_buf);
+      return;
+    }
+
+  /* Install tracepoint during tracing only once for each tracepoint location.
+     For each tracepoint loc, GDB may send multiple QTDP packets, and we can
+     determine the last QTDP packet for one tracepoint location by checking
+     trailing hyphen in QTDP packet.  */
+  if (tracing && !trail_hyphen)
+    {
+      /* Pause all threads temporarily while we patch tracepoints.  */
+      pause_all (0);
+
+      /* download_tracepoint will update global `tracepoints'
+	 list, so it is unsafe to leave threads in jump pad.  */
+      stabilize_threads ();
+
+      /* Freeze threads.  */
+      pause_all (1);
+
+      download_tracepoint (tpoint);
+      install_tracepoint (tpoint, own_buf);
+
+      unpause_all (1);
       return;
     }
 
@@ -2452,6 +2554,73 @@ cmd_qtdv (char *own_buf)
   set_trace_state_variable_value (num, (LONGEST) val);
 
   write_ok (own_buf);
+}
+
+static void
+cmd_qtenable_disable (char *own_buf, int enable)
+{
+  char *packet = own_buf;
+  ULONGEST num, addr;
+  struct tracepoint *tp;
+
+  packet += strlen (enable ? "QTEnable:" : "QTDisable:");
+  packet = unpack_varlen_hex (packet, &num);
+  ++packet; /* skip a colon */
+  packet = unpack_varlen_hex (packet, &addr);
+
+  tp = find_tracepoint (num, addr);
+
+  if (tp)
+    {
+      if ((enable && tp->enabled) || (!enable && !tp->enabled))
+	{
+	  trace_debug ("Tracepoint %d at 0x%s is already %s",
+		       (int) num, paddress (addr),
+		       enable ? "enabled" : "disabled");
+	  write_ok (own_buf);
+	  return;
+	}
+
+      trace_debug ("%s tracepoint %d at 0x%s",
+		   enable ? "Enabling" : "Disabling",
+		   (int) num, paddress (addr));
+
+      tp->enabled = enable;
+
+      if (tp->type == fast_tracepoint || tp->type == static_tracepoint)
+	{
+	  int ret;
+	  int offset = offsetof (struct tracepoint, enabled);
+	  CORE_ADDR obj_addr = tp->obj_addr_on_target + offset;
+
+	  ret = prepare_to_access_memory ();
+	  if (ret)
+	    {
+	      trace_debug ("Failed to temporarily stop inferior threads");
+	      write_enn (own_buf);
+	      return;
+	    }
+	  
+	  ret = write_inferior_integer (obj_addr, enable);
+	  done_accessing_memory ();
+	  
+	  if (ret)
+	    {
+	      trace_debug ("Cannot write enabled flag into "
+			   "inferior process memory");
+	      write_enn (own_buf);
+	      return;
+	    }
+	}
+
+      write_ok (own_buf);
+    }
+  else
+    {
+      trace_debug ("Tracepoint %d at 0x%s not found",
+		   (int) num, paddress (addr));
+      write_enn (own_buf);
+    }
 }
 
 static void
@@ -2584,57 +2753,83 @@ claim_jump_space (ULONGEST used)
   gdb_jump_pad_head += used;
 }
 
-/* Sort tracepoints by PC, using a bubble sort.  */
+static CORE_ADDR trampoline_buffer_head = 0;
+static CORE_ADDR trampoline_buffer_tail;
 
-static void
-sort_tracepoints (void)
+/* Reserve USED bytes from the trampoline buffer and return the
+   address of the start of the reserved space in TRAMPOLINE.  Returns
+   non-zero if the space is successfully claimed.  */
+
+int
+claim_trampoline_space (ULONGEST used, CORE_ADDR *trampoline)
 {
-  struct tracepoint *lst, *tmp, *prev = NULL;
-  int i, j, n = 0;
+  if (!trampoline_buffer_head)
+    {
+      if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer,
+				      &trampoline_buffer_tail))
+	{
+	  fatal ("error extracting trampoline_buffer");
+	  return 0;
+	}
 
-  if (tracepoints == NULL)
-    return;
+      if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer_end,
+				      &trampoline_buffer_head))
+	{
+	  fatal ("error extracting trampoline_buffer_end");
+	  return 0;
+	}
+    }
 
-  /* Count nodes.  */
-  for (tmp = tracepoints; tmp->next; tmp = tmp->next)
-    n++;
+  /* Start claiming space from the top of the trampoline space.  If
+     the space is located at the bottom of the virtual address space,
+     this reduces the possibility that corruption will occur if a null
+     pointer is used to write to memory.  */
+  if (trampoline_buffer_head - trampoline_buffer_tail < used)
+    {
+      trace_debug ("claim_trampoline_space failed to reserve %s bytes",
+		   pulongest (used));
+      return 0;
+    }
 
-  for (i = 0; i < n - 1; i++)
-    for (j = 0, lst = tracepoints;
-	 lst && lst->next && (j <= n - 1 - i);
-	 j++)
-      {
-	/* If we're at beginning, the start node is the prev
-	   node.  */
-	if (j == 0)
-	  prev = lst;
+  trampoline_buffer_head -= used;
 
-	/* Compare neighbors.  */
-	if (lst->next->address < lst->address)
-	  {
-	    struct tracepoint *p;
+  trace_debug ("claim_trampoline_space reserves %s bytes at %s",
+	       pulongest (used), paddress (trampoline_buffer_head));
 
-	    /* Swap'em.  */
-	    tmp = (lst->next ? lst->next->next : NULL);
+  *trampoline = trampoline_buffer_head;
+  return 1;
+}
 
-	    if (j == 0 && prev == tracepoints)
-	      tracepoints = lst->next;
+/* Returns non-zero if there is space allocated for use in trampolines
+   for fast tracepoints.  */
 
-	    p = lst->next;
-	    prev->next = lst->next;
-	    lst->next->next = lst;
-	    lst->next = tmp;
-	    prev = p;
-	  }
-	else
-	  {
-	    lst = lst->next;
-	    /* Keep track of the previous node.  We need it if we need
-	       to swap nodes.  */
-	    if (j != 0)
-	      prev = prev->next;
-	  }
-      }
+int
+have_fast_tracepoint_trampoline_buffer (char *buf)
+{
+  CORE_ADDR trampoline_end, errbuf;
+
+  if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer_end,
+				  &trampoline_end))
+    {
+      fatal ("error extracting trampoline_buffer_end");
+      return 0;
+    }
+  
+  if (buf)
+    {
+      buf[0] = '\0';
+      strcpy (buf, "was claiming");
+      if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer_error,
+				  &errbuf))
+	{
+	  fatal ("error extracting errbuf");
+	  return 0;
+	}
+
+      read_inferior_memory (errbuf, (unsigned char *) buf, 100);
+    }
+
+  return trampoline_end != 0;
 }
 
 /* Ask the IPA to probe the marker at ADDRESS.  Returns -1 if running
@@ -2664,27 +2859,168 @@ probe_marker_at (CORE_ADDR address, char *errout)
   return err;
 }
 
+static void
+clone_fast_tracepoint (struct tracepoint *to, const struct tracepoint *from)
+{
+  to->jump_pad = from->jump_pad;
+  to->jump_pad_end = from->jump_pad_end;
+  to->trampoline = from->trampoline;
+  to->trampoline_end = from->trampoline_end;
+  to->adjusted_insn_addr = from->adjusted_insn_addr;
+  to->adjusted_insn_addr_end = from->adjusted_insn_addr_end;
+  to->handle = from->handle;
+
+  gdb_assert (from->handle);
+  inc_ref_fast_tracepoint_jump ((struct fast_tracepoint_jump *) from->handle);
+}
+
 #define MAX_JUMP_SIZE 20
 
-static void
-cmd_qtstart (char *packet)
-{
-  struct tracepoint *tpoint, *prev_ftpoint, *prev_stpoint;
-  int slow_tracepoint_count, fast_count;
-  CORE_ADDR jump_entry;
+/* Install fast tracepoint.  Return 0 if successful, otherwise return
+   non-zero.  */
 
+static int
+install_fast_tracepoint (struct tracepoint *tpoint, char *errbuf)
+{
+  CORE_ADDR jentry, jump_entry;
+  CORE_ADDR trampoline;
+  ULONGEST trampoline_size;
+  int err = 0;
   /* The jump to the jump pad of the last fast tracepoint
      installed.  */
   unsigned char fjump[MAX_JUMP_SIZE];
   ULONGEST fjump_size;
 
+  if (tpoint->orig_size < target_get_min_fast_tracepoint_insn_len ())
+    {
+      trace_debug ("Requested a fast tracepoint on an instruction "
+		   "that is of less than the minimum length.");
+      return 0;
+    }
+
+  jentry = jump_entry = get_jump_space_head ();
+
+  trampoline = 0;
+  trampoline_size = 0;
+
+  /* Install the jump pad.  */
+  err = install_fast_tracepoint_jump_pad (tpoint->obj_addr_on_target,
+					  tpoint->address,
+					  ipa_sym_addrs.addr_gdb_collect,
+					  ipa_sym_addrs.addr_collecting,
+					  tpoint->orig_size,
+					  &jentry,
+					  &trampoline, &trampoline_size,
+					  fjump, &fjump_size,
+					  &tpoint->adjusted_insn_addr,
+					  &tpoint->adjusted_insn_addr_end,
+					  errbuf);
+
+  if (err)
+    return 1;
+
+  /* Wire it in.  */
+  tpoint->handle = set_fast_tracepoint_jump (tpoint->address, fjump,
+					     fjump_size);
+
+  if (tpoint->handle != NULL)
+    {
+      tpoint->jump_pad = jump_entry;
+      tpoint->jump_pad_end = jentry;
+      tpoint->trampoline = trampoline;
+      tpoint->trampoline_end = trampoline + trampoline_size;
+
+      /* Pad to 8-byte alignment.  */
+      jentry = ((jentry + 7) & ~0x7);
+      claim_jump_space (jentry - jump_entry);
+    }
+
+  return 0;
+}
+
+
+/* Install tracepoint TPOINT, and write reply message in OWN_BUF.  */
+
+static void
+install_tracepoint (struct tracepoint *tpoint, char *own_buf)
+{
+  tpoint->handle = NULL;
+  *own_buf = '\0';
+
+  if (tpoint->type == trap_tracepoint)
+    {
+      /* Tracepoints are installed as memory breakpoints.  Just go
+	 ahead and install the trap.  The breakpoints module
+	 handles duplicated breakpoints, and the memory read
+	 routine handles un-patching traps from memory reads.  */
+      tpoint->handle = set_breakpoint_at (tpoint->address,
+					  tracepoint_handler);
+    }
+  else if (tpoint->type == fast_tracepoint || tpoint->type == static_tracepoint)
+    {
+      struct tracepoint *tp;
+
+      if (!in_process_agent_loaded ())
+	{
+	  trace_debug ("Requested a %s tracepoint, but fast "
+		       "tracepoints aren't supported.",
+		       tpoint->type == static_tracepoint ? "static" : "fast");
+	  write_e_ipa_not_loaded (own_buf);
+	  return;
+	}
+      if (tpoint->type == static_tracepoint && !in_process_agent_loaded_ust ())
+	{
+	  trace_debug ("Requested a static tracepoint, but static "
+		       "tracepoints are not supported.");
+	  write_e_ust_not_loaded (own_buf);
+	  return;
+	}
+
+      /* Find another fast or static tracepoint at the same address.  */
+      for (tp = tracepoints; tp; tp = tp->next)
+	{
+	  if (tp->address == tpoint->address && tp->type == tpoint->type
+	      && tp->number != tpoint->number)
+	    break;
+	}
+
+      if (tpoint->type == fast_tracepoint)
+	{
+	  if (tp) /* TPOINT is installed at the same address as TP.  */
+	    clone_fast_tracepoint (tpoint, tp);
+	  else
+	    install_fast_tracepoint (tpoint, own_buf);
+	}
+      else
+	{
+	  if (tp)
+	    tpoint->handle = (void *) -1;
+	  else
+	    {
+	      if (probe_marker_at (tpoint->address, own_buf) == 0)
+		tpoint->handle = (void *) -1;
+	    }
+	}
+
+    }
+  else
+    internal_error (__FILE__, __LINE__, "Unknown tracepoint type");
+
+  if (tpoint->handle == NULL)
+    {
+      if (*own_buf == '\0')
+	write_enn (own_buf);
+    }
+  else
+    write_ok (own_buf);
+}
+
+static void
+cmd_qtstart (char *packet)
+{
+  struct tracepoint *tpoint, *prev_ftpoint, *prev_stpoint;
+
   trace_debug ("Starting the trace");
-
-  slow_tracepoint_count = fast_count = 0;
-
-  /* Sort tracepoints by ascending address.  This makes installing
-     fast tracepoints at the same address easier to handle. */
-  sort_tracepoints ();
 
   /* Pause all threads temporarily while we patch tracepoints.  */
   pause_all (0);
@@ -2718,14 +3054,10 @@ cmd_qtstart (char *packet)
     {
       /* Ensure all the hit counts start at zero.  */
       tpoint->hit_count = 0;
-
-      if (!tpoint->enabled)
-	continue;
+      tpoint->traceframe_usage = 0;
 
       if (tpoint->type == trap_tracepoint)
 	{
-	  ++slow_tracepoint_count;
-
 	  /* Tracepoints are installed as memory breakpoints.  Just go
 	     ahead and install the trap.  The breakpoints module
 	     handles duplicated breakpoints, and the memory read
@@ -2735,8 +3067,6 @@ cmd_qtstart (char *packet)
 	}
       else if (tpoint->type == fast_tracepoint)
 	{
-	  ++fast_count;
-
 	  if (maybe_write_ipa_not_loaded (packet))
 	    {
 	      trace_debug ("Requested a fast tracepoint, but fast "
@@ -2745,55 +3075,11 @@ cmd_qtstart (char *packet)
 	    }
 
 	  if (prev_ftpoint != NULL && prev_ftpoint->address == tpoint->address)
-	    {
-	      tpoint->handle = set_fast_tracepoint_jump (tpoint->address,
-							 fjump,
-							 fjump_size);
-	      tpoint->jump_pad = prev_ftpoint->jump_pad;
-	      tpoint->jump_pad_end = prev_ftpoint->jump_pad_end;
-	      tpoint->adjusted_insn_addr = prev_ftpoint->adjusted_insn_addr;
-	      tpoint->adjusted_insn_addr_end
-		= prev_ftpoint->adjusted_insn_addr_end;
-	    }
+	    clone_fast_tracepoint (tpoint, prev_ftpoint);
 	  else
 	    {
-	      CORE_ADDR jentry;
-	      int err = 0;
-
-	      prev_ftpoint = NULL;
-
-	      jentry = jump_entry = get_jump_space_head ();
-
-	      /* Install the jump pad.  */
-	      err = install_fast_tracepoint_jump_pad
-		(tpoint->obj_addr_on_target,
-		 tpoint->address,
-		 ipa_sym_addrs.addr_gdb_collect,
-		 ipa_sym_addrs.addr_collecting,
-		 tpoint->orig_size,
-		 &jentry,
-		 fjump, &fjump_size,
-		 &tpoint->adjusted_insn_addr,
-		 &tpoint->adjusted_insn_addr_end);
-
-	      /* Wire it in.  */
-	      if (!err)
-		tpoint->handle = set_fast_tracepoint_jump (tpoint->address,
-							   fjump, fjump_size);
-
-	      if (tpoint->handle != NULL)
-		{
-		  tpoint->jump_pad = jump_entry;
-		  tpoint->jump_pad_end = jentry;
-
-		  /* Pad to 8-byte alignment.  */
-		  jentry = ((jentry + 7) & ~0x7);
-		  claim_jump_space (jentry - jump_entry);
-
-		  /* So that we can handle multiple fast tracepoints
-		     at the same address easily.  */
-		  prev_ftpoint = tpoint;
-		}
+	      if (install_fast_tracepoint (tpoint, packet) == 0)
+		prev_ftpoint = tpoint;
 	    }
 	}
       else if (tpoint->type == static_tracepoint)
@@ -2845,6 +3131,7 @@ cmd_qtstart (char *packet)
   trace_buffer_is_full = 0;
   expr_eval_result = expr_eval_no_error;
   error_tracepoint = NULL;
+  tracing_start_time = get_timestamp ();
 
   /* Tracing is now active, hits will now start being logged.  */
   tracing = 1;
@@ -2914,6 +3201,7 @@ stop_tracing (void)
 	fatal ("Error clearing tracing variable in lib");
     }
 
+  tracing_stop_time = get_timestamp ();
   tracing_stop_reason = "t???";
   tracing_stop_tpnum = 0;
   if (stopping_tracepoint)
@@ -3094,6 +3382,26 @@ static void
 cmd_qtstatus (char *packet)
 {
   char *stop_reason_rsp = NULL;
+  char *buf1, *buf2, *buf3, *str;
+  int slen;
+
+  /* Translate the plain text of the notes back into hex for
+     transmission.  */
+
+  str = (tracing_user_name ? tracing_user_name : "");
+  slen = strlen (str);
+  buf1 = (char *) alloca (slen * 2 + 1);
+  hexify (buf1, str, slen);
+
+  str = (tracing_notes ? tracing_notes : "");
+  slen = strlen (str);
+  buf2 = (char *) alloca (slen * 2 + 1);
+  hexify (buf2, str, slen);
+
+  str = (tracing_stop_note ? tracing_stop_note : "");
+  slen = strlen (str);
+  buf3 = (char *) alloca (slen * 2 + 1);
+  hexify (buf3, str, slen);
 
   trace_debug ("Returning trace status as %d, stop reason %s",
 	       tracing, tracing_stop_reason);
@@ -3110,7 +3418,7 @@ cmd_qtstatus (char *packet)
   stop_reason_rsp = (char *) tracing_stop_reason;
 
   /* The user visible error string in terror needs to be hex encoded.
-     We leave it as plain string in `tracepoint_stop_reason' to ease
+     We leave it as plain string in `tracing_stop_reason' to ease
      debugging.  */
   if (strncmp (stop_reason_rsp, "terror:", strlen ("terror:")) == 0)
     {
@@ -3126,19 +3434,58 @@ cmd_qtstatus (char *packet)
       convert_int_to_ascii ((gdb_byte *) result_name, p, strlen (result_name));
     }
 
+  /* If this was a forced stop, include any stop note that was supplied.  */
+  if (strcmp (stop_reason_rsp, "tstop") == 0)
+    {
+      stop_reason_rsp = alloca (strlen ("tstop:") + strlen (buf3) + 1);
+      strcpy (stop_reason_rsp, "tstop:");
+      strcat (stop_reason_rsp, buf3);
+    }
+
   sprintf (packet,
 	   "T%d;"
 	   "%s:%x;"
 	   "tframes:%x;tcreated:%x;"
 	   "tfree:%x;tsize:%s;"
 	   "circular:%d;"
-	   "disconn:%d",
+	   "disconn:%d;"
+	   "starttime:%s;stoptime:%s;"
+	   "username:%s:;notes:%s:",
 	   tracing ? 1 : 0,
 	   stop_reason_rsp, tracing_stop_tpnum,
 	   traceframe_count, traceframes_created,
 	   free_space (), phex_nz (trace_buffer_hi - trace_buffer_lo, 0),
 	   circular_trace_buffer,
-	   disconnected_tracing);
+	   disconnected_tracing,
+	   plongest (tracing_start_time), plongest (tracing_stop_time),
+	   buf1, buf2);
+}
+
+static void
+cmd_qtp (char *own_buf)
+{
+  ULONGEST num, addr;
+  struct tracepoint *tpoint;
+  char *packet = own_buf;
+
+  packet += strlen ("qTP:");
+
+  packet = unpack_varlen_hex (packet, &num);
+  ++packet; /* skip a colon */
+  packet = unpack_varlen_hex (packet, &addr);
+
+  /* See if we already have this tracepoint.  */
+  tpoint = find_tracepoint (num, addr);
+
+  if (!tpoint)
+    {
+      trace_debug ("Tracepoint error: tracepoint %d at 0x%s not found",
+		   (int) num, paddress (addr));
+      write_enn (own_buf);
+      return;
+    }
+
+  sprintf (own_buf, "V%lx:%lx", tpoint->hit_count, tpoint->traceframe_usage);
 }
 
 /* State variables to help return all the tracepoint bits.  */
@@ -3368,6 +3715,15 @@ cmd_qtstmat (char *packet)
     run_inferior_command (packet);
 }
 
+/* Return the minimum instruction size needed for fast tracepoints as a
+   hexadecimal number.  */
+
+static void
+cmd_qtminftpilen (char *packet)
+{
+  sprintf (packet, "%x", target_get_min_fast_tracepoint_insn_len ());
+}
+
 /* Respond to qTBuffer packet with a block of raw data from the trace
    buffer.  GDB may ask for a lot, but we are allowed to reply with
    only as much as will fit within packet limits or whatever.  */
@@ -3443,6 +3799,63 @@ cmd_bigqtbuffer (char *own_buf)
     write_enn (own_buf);
 }
 
+static void
+cmd_qtnotes (char *own_buf)
+{
+  size_t nbytes;
+  char *saved, *user, *notes, *stopnote;
+  char *packet = own_buf;
+
+  packet += strlen ("QTNotes:");
+
+  while (*packet)
+    {
+      if (strncmp ("user:", packet, strlen ("user:")) == 0)
+	{
+	  packet += strlen ("user:");
+	  saved = packet;
+	  packet = strchr (packet, ';');
+	  nbytes = (packet - saved) / 2;
+	  user = xmalloc (nbytes + 1);
+	  nbytes = unhexify (user, saved, nbytes);
+	  user[nbytes] = '\0';
+	  ++packet; /* skip the semicolon */
+	  trace_debug ("User is '%s'", user);
+	  tracing_user_name = user;
+	}
+      else if (strncmp ("notes:", packet, strlen ("notes:")) == 0)
+	{
+	  packet += strlen ("notes:");
+	  saved = packet;
+	  packet = strchr (packet, ';');
+	  nbytes = (packet - saved) / 2;
+	  notes = xmalloc (nbytes + 1);
+	  nbytes = unhexify (notes, saved, nbytes);
+	  notes[nbytes] = '\0';
+	  ++packet; /* skip the semicolon */
+	  trace_debug ("Notes is '%s'", notes);
+	  tracing_notes = notes;
+	}
+      else if (strncmp ("tstop:", packet, strlen ("tstop:")) == 0)
+	{
+	  packet += strlen ("tstop:");
+	  saved = packet;
+	  packet = strchr (packet, ';');
+	  nbytes = (packet - saved) / 2;
+	  stopnote = xmalloc (nbytes + 1);
+	  nbytes = unhexify (stopnote, saved, nbytes);
+	  stopnote[nbytes] = '\0';
+	  ++packet; /* skip the semicolon */
+	  trace_debug ("tstop note is '%s'", stopnote);
+	  tracing_stop_note = stopnote;
+	}
+      else
+	break;
+    }
+
+  write_ok (own_buf);
+}
+
 int
 handle_tracepoint_general_set (char *packet)
 {
@@ -3459,6 +3872,16 @@ handle_tracepoint_general_set (char *packet)
   else if (strncmp ("QTDPsrc:", packet, strlen ("QTDPsrc:")) == 0)
     {
       cmd_qtdpsrc (packet);
+      return 1;
+    }
+  else if (strncmp ("QTEnable:", packet, strlen ("QTEnable:")) == 0)
+    {
+      cmd_qtenable_disable (packet, 1);
+      return 1;
+    }
+  else if (strncmp ("QTDisable:", packet, strlen ("QTDisable:")) == 0)
+    {
+      cmd_qtenable_disable (packet, 0);
       return 1;
     }
   else if (strncmp ("QTDV:", packet, strlen ("QTDV:")) == 0)
@@ -3497,6 +3920,11 @@ handle_tracepoint_general_set (char *packet)
       cmd_bigqtbuffer (packet);
       return 1;
     }
+  else if (strncmp ("QTNotes:", packet, strlen ("QTNotes:")) == 0)
+    {
+      cmd_qtnotes (packet);
+      return 1;
+    }
 
   return 0;
 }
@@ -3507,6 +3935,11 @@ handle_tracepoint_query (char *packet)
   if (strcmp ("qTStatus", packet) == 0)
     {
       cmd_qtstatus (packet);
+      return 1;
+    }
+  else if (strncmp ("qTP:", packet, strlen ("qTP:")) == 0)
+    {
+      cmd_qtp (packet);
       return 1;
     }
   else if (strcmp ("qTfP", packet) == 0)
@@ -3552,6 +3985,11 @@ handle_tracepoint_query (char *packet)
   else if (strncmp ("qTSTMat:", packet, strlen ("qTSTMat:")) == 0)
     {
       cmd_qtstmat (packet);
+      return 1;
+    }
+  else if (strcmp ("qTMinFTPILen", packet) == 0)
+    {
+      cmd_qtminftpilen (packet);
       return 1;
     }
 
@@ -4574,6 +5012,13 @@ eval_agent_expr (struct tracepoint_hit_ctx *ctx,
 	  agent_tsv_read (tframe, arg);
 	  break;
 
+	case gdb_agent_op_tracenz:
+	  agent_mem_read_string (tframe, NULL, (CORE_ADDR) stack[--sp],
+				 (ULONGEST) top);
+	  if (--sp >= 0)
+	    top = stack[sp];
+	  break;
+
 	  /* GDB never (currently) generates any of these ops.  */
 	case gdb_agent_op_float:
 	case gdb_agent_op_ref_float:
@@ -4653,6 +5098,66 @@ agent_mem_read (struct traceframe *tframe,
       trace_debug ("%d bytes recorded", blocklen);
       remaining -= blocklen;
       from += blocklen;
+    }
+  return 0;
+}
+
+static int
+agent_mem_read_string (struct traceframe *tframe,
+		       unsigned char *to, CORE_ADDR from, ULONGEST len)
+{
+  unsigned char *buf, *mspace;
+  ULONGEST remaining = len;
+  unsigned short blocklen, i;
+
+  /* To save a bit of space, block lengths are 16-bit, so break large
+     requests into multiple blocks.  Bordering on overkill for strings,
+     but it could happen that someone specifies a large max length.  */
+  while (remaining > 0)
+    {
+      size_t sp;
+
+      blocklen = (remaining > 65535 ? 65535 : remaining);
+      /* We want working space to accumulate nonzero bytes, since
+	 traceframes must have a predecided size (otherwise it gets
+	 harder to wrap correctly for the circular case, etc).  */
+      buf = (unsigned char *) xmalloc (blocklen + 1);
+      for (i = 0; i < blocklen; ++i)
+	{
+	  /* Read the string one byte at a time, in case the string is
+	     at the end of a valid memory area - we don't want a
+	     correctly-terminated string to engender segvio
+	     complaints.  */
+	  read_inferior_memory (from + i, buf + i, 1);
+
+	  if (buf[i] == '\0')
+	    {
+	      blocklen = i + 1;
+	      /* Make sure outer loop stops now too.  */
+	      remaining = blocklen;
+	      break;
+	    }
+	}
+      sp = 1 + sizeof (from) + sizeof (blocklen) + blocklen;
+      mspace = add_traceframe_block (tframe, sp);
+      if (mspace == NULL)
+	{
+	  xfree (buf);
+	  return 1;
+	}
+      /* Identify block as a memory block.  */
+      *mspace = 'M';
+      ++mspace;
+      /* Record address and size.  */
+      memcpy ((void *) mspace, (void *) &from, sizeof (from));
+      mspace += sizeof (from);
+      memcpy ((void *) mspace, (void *) &blocklen, sizeof (blocklen));
+      mspace += sizeof (blocklen);
+      /* Copy the string contents.  */
+      memcpy ((void *) mspace, (void *) buf, blocklen);
+      remaining -= blocklen;
+      from += blocklen;
+      xfree (buf);
     }
   return 0;
 }
@@ -5103,6 +5608,23 @@ fast_tracepoint_from_jump_pad_address (CORE_ADDR pc)
   return NULL;
 }
 
+/* Return the first fast tracepoint whose trampoline contains PC.  */
+
+static struct tracepoint *
+fast_tracepoint_from_trampoline_address (CORE_ADDR pc)
+{
+  struct tracepoint *tpoint;
+
+  for (tpoint = tracepoints; tpoint; tpoint = tpoint->next)
+    {
+      if (tpoint->type == fast_tracepoint
+	  && tpoint->trampoline <= pc && pc < tpoint->trampoline_end)
+	return tpoint;
+    }
+
+  return NULL;
+}
+
 /* Return GDBserver's tracepoint that matches the IP Agent's
    tracepoint object that lives at IPA_TPOINT_OBJ in the IP Agent's
    address space.  */
@@ -5165,6 +5687,8 @@ fast_tracepoint_collecting (CORE_ADDR thread_area,
 {
   CORE_ADDR ipa_collecting;
   CORE_ADDR ipa_gdb_jump_pad_buffer, ipa_gdb_jump_pad_buffer_end;
+  CORE_ADDR ipa_gdb_trampoline_buffer;
+  CORE_ADDR ipa_gdb_trampoline_buffer_end;
   struct tracepoint *tpoint;
   int needs_breakpoint;
 
@@ -5203,6 +5727,13 @@ fast_tracepoint_collecting (CORE_ADDR thread_area,
 				  &ipa_gdb_jump_pad_buffer_end))
     fatal ("error extracting `gdb_jump_pad_buffer_end'");
 
+  if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer,
+				  &ipa_gdb_trampoline_buffer))
+    fatal ("error extracting `gdb_trampoline_buffer'");
+  if (read_inferior_data_pointer (ipa_sym_addrs.addr_gdb_trampoline_buffer_end,
+				  &ipa_gdb_trampoline_buffer_end))
+    fatal ("error extracting `gdb_trampoline_buffer_end'");
+
   if (ipa_gdb_jump_pad_buffer <= stop_pc
       && stop_pc < ipa_gdb_jump_pad_buffer_end)
     {
@@ -5230,6 +5761,30 @@ fast_tracepoint_collecting (CORE_ADDR thread_area,
       if (tpoint->jump_pad <= stop_pc
 	  && stop_pc < tpoint->adjusted_insn_addr)
 	needs_breakpoint =  1;
+    }
+  else if (ipa_gdb_trampoline_buffer <= stop_pc
+	   && stop_pc < ipa_gdb_trampoline_buffer_end)
+    {
+      /* We can tell which tracepoint(s) the thread is collecting by
+	 matching the trampoline address back to the tracepoint.  */
+      tpoint = fast_tracepoint_from_trampoline_address (stop_pc);
+      if (tpoint == NULL)
+	{
+	  warning ("in trampoline, but no matching tpoint?");
+	  return 0;
+	}
+      else
+	{
+	  trace_debug ("in trampoline of tpoint (%d, %s); trampoline(%s, %s)",
+		       tpoint->number, paddress (tpoint->address),
+		       paddress (tpoint->trampoline),
+		       paddress (tpoint->trampoline_end));
+	}
+
+      /* Have not reached jump pad yet, but treat the trampoline as a
+	 part of the jump pad that is before the adjusted original
+	 instruction.  */
+      needs_breakpoint = 1;
     }
   else
     {
@@ -5343,8 +5898,6 @@ gdb_collect (struct tracepoint *tpoint, unsigned char *regs)
   ctx.base.type = fast_tracepoint;
   ctx.regs = regs;
   ctx.regcache_initted = 0;
-  ctx.tpoint = tpoint;
-
   /* Wrap the regblock in a register cache (in the stack, we don't
      want to malloc here).  */
   ctx.regspace = alloca (register_cache_size ());
@@ -5354,30 +5907,49 @@ gdb_collect (struct tracepoint *tpoint, unsigned char *regs)
       return;
     }
 
-  /* Test the condition if present, and collect if true.  */
-  if (tpoint->cond == NULL
-      || condition_true_at_tracepoint ((struct tracepoint_hit_ctx *) &ctx,
-				       tpoint))
+  for (ctx.tpoint = tpoint;
+       ctx.tpoint != NULL && ctx.tpoint->address == tpoint->address;
+       ctx.tpoint = ctx.tpoint->next)
     {
-      collect_data_at_tracepoint ((struct tracepoint_hit_ctx *) &ctx,
-				  tpoint->address, tpoint);
+      if (!ctx.tpoint->enabled)
+	continue;
 
-      /* Note that this will cause original insns to be written back
-	 to where we jumped from, but that's OK because we're jumping
-	 back to the next whole instruction.  This will go badly if
-	 instruction restoration is not atomic though.  */
-      if (stopping_tracepoint
-	  || trace_buffer_is_full
-	  || expr_eval_result != expr_eval_no_error)
-	stop_tracing ();
-    }
-  else
-    {
-      /* If there was a condition and it evaluated to false, the only
-	 way we would stop tracing is if there was an error during
-	 condition expression evaluation.  */
-      if (expr_eval_result != expr_eval_no_error)
-	stop_tracing ();
+      /* Multiple tracepoints of different types, such as fast tracepoint and
+	 static tracepoint, can be set at the same address.  */
+      if (ctx.tpoint->type != tpoint->type)
+	continue;
+
+      /* Test the condition if present, and collect if true.  */
+      if (ctx.tpoint->cond == NULL
+	  || condition_true_at_tracepoint ((struct tracepoint_hit_ctx *) &ctx,
+					   ctx.tpoint))
+	{
+	  collect_data_at_tracepoint ((struct tracepoint_hit_ctx *) &ctx,
+				      ctx.tpoint->address, ctx.tpoint);
+
+	  /* Note that this will cause original insns to be written back
+	     to where we jumped from, but that's OK because we're jumping
+	     back to the next whole instruction.  This will go badly if
+	     instruction restoration is not atomic though.  */
+	  if (stopping_tracepoint
+	      || trace_buffer_is_full
+	      || expr_eval_result != expr_eval_no_error)
+	    {
+	      stop_tracing ();
+	      break;
+	    }
+	}
+      else
+	{
+	  /* If there was a condition and it evaluated to false, the only
+	     way we would stop tracing is if there was an error during
+	     condition expression evaluation.  */
+	  if (expr_eval_result != expr_eval_no_error)
+	    {
+	      stop_tracing ();
+	      break;
+	    }
+	}
     }
 }
 
@@ -5591,6 +6163,42 @@ emit_void_call_2 (CORE_ADDR fn, int arg1)
   target_emit_ops ()->emit_void_call_2 (fn, arg1);
 }
 
+static void
+emit_eq_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_eq_goto (offset_p, size_p);
+}
+
+static void
+emit_ne_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_ne_goto (offset_p, size_p);
+}
+
+static void
+emit_lt_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_lt_goto (offset_p, size_p);
+}
+
+static void
+emit_ge_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_ge_goto (offset_p, size_p);
+}
+
+static void
+emit_gt_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_gt_goto (offset_p, size_p);
+}
+
+static void
+emit_le_goto (int *offset_p, int *size_p)
+{
+  target_emit_ops ()->emit_le_goto (offset_p, size_p);
+}
+
 static enum eval_result_type compile_bytecodes (struct agent_expr *aexpr);
 
 static void
@@ -5640,6 +6248,30 @@ compile_tracepoint_condition (struct tracepoint *tpoint,
   *jump_entry += 16;
 }
 
+/* Scan an agent expression for any evidence that the given PC is the
+   target of a jump bytecode in the expression.  */
+
+int
+is_goto_target (struct agent_expr *aexpr, int pc)
+{
+  int i;
+  unsigned char op;
+
+  for (i = 0; i < aexpr->length; i += 1 + gdb_agent_op_sizes[op])
+    {
+      op = aexpr->bytes[i];
+
+      if (op == gdb_agent_op_goto || op == gdb_agent_op_if_goto)
+	{
+	  int target = (aexpr->bytes[i + 1] << 8) + aexpr->bytes[i + 2];
+	  if (target == pc)
+	    return 1;
+	}
+    }
+
+  return 0;
+}
+
 /* Given an agent expression, turn it into native code.  */
 
 static enum eval_result_type
@@ -5647,7 +6279,7 @@ compile_bytecodes (struct agent_expr *aexpr)
 {
   int pc = 0;
   int done = 0;
-  unsigned char op;
+  unsigned char op, next_op;
   int arg;
   /* This is only used to build 64-bit value for constants.  */
   ULONGEST top;
@@ -5759,11 +6391,64 @@ compile_bytecodes (struct agent_expr *aexpr)
 	  break;
 
 	case gdb_agent_op_equal:
-	  emit_equal ();
+	  next_op = aexpr->bytes[pc];
+	  if (next_op == gdb_agent_op_if_goto
+	      && !is_goto_target (aexpr, pc)
+	      && target_emit_ops ()->emit_eq_goto)
+	    {
+	      trace_debug ("Combining equal & if_goto");
+	      pc += 1;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_eq_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else if (next_op == gdb_agent_op_log_not
+		   && (aexpr->bytes[pc + 1] == gdb_agent_op_if_goto)
+		   && !is_goto_target (aexpr, pc + 1)
+		   && target_emit_ops ()->emit_ne_goto)
+	    {
+	      trace_debug ("Combining equal & log_not & if_goto");
+	      pc += 2;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_ne_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else
+	    emit_equal ();
 	  break;
 
 	case gdb_agent_op_less_signed:
-	  emit_less_signed ();
+	  next_op = aexpr->bytes[pc];
+	  if (next_op == gdb_agent_op_if_goto
+	      && !is_goto_target (aexpr, pc))
+	    {
+	      trace_debug ("Combining less_signed & if_goto");
+	      pc += 1;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_lt_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else if (next_op == gdb_agent_op_log_not
+		   && !is_goto_target (aexpr, pc)
+		   && (aexpr->bytes[pc + 1] == gdb_agent_op_if_goto)
+		   && !is_goto_target (aexpr, pc + 1))
+	    {
+	      trace_debug ("Combining less_signed & log_not & if_goto");
+	      pc += 2;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_ge_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else
+	    emit_less_signed ();
 	  break;
 
 	case gdb_agent_op_less_unsigned:
@@ -5874,7 +6559,38 @@ compile_bytecodes (struct agent_expr *aexpr)
 	  break;
 
 	case gdb_agent_op_swap:
-	  emit_swap ();
+	  next_op = aexpr->bytes[pc];
+	  /* Detect greater-than comparison sequences.  */
+	  if (next_op == gdb_agent_op_less_signed
+	      && !is_goto_target (aexpr, pc)
+	      && (aexpr->bytes[pc + 1] == gdb_agent_op_if_goto)
+	      && !is_goto_target (aexpr, pc + 1))
+	    {
+	      trace_debug ("Combining swap & less_signed & if_goto");
+	      pc += 2;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_gt_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else if (next_op == gdb_agent_op_less_signed
+		   && !is_goto_target (aexpr, pc)
+		   && (aexpr->bytes[pc + 1] == gdb_agent_op_log_not)
+		   && !is_goto_target (aexpr, pc + 1)
+		   && (aexpr->bytes[pc + 2] == gdb_agent_op_if_goto)
+		   && !is_goto_target (aexpr, pc + 2))
+	    {
+	      trace_debug ("Combining swap & less_signed & log_not & if_goto");
+	      pc += 3;
+	      aentry->pc = pc;
+	      arg = aexpr->bytes[pc++];
+	      arg = (arg << 8) + aexpr->bytes[pc++];
+	      aentry->goto_pc = arg;
+	      emit_le_goto (&(aentry->from_offset), &(aentry->from_size));
+	    }
+	  else
+	    emit_swap ();
 	  break;
 
 	case gdb_agent_op_getv:
@@ -6024,6 +6740,179 @@ download_agent_expr (struct agent_expr *expr)
 /* Align V up to N bits.  */
 #define UALIGN(V, N) (((V) + ((N) - 1)) & ~((N) - 1))
 
+/* Sync tracepoint with IPA, but leave maintenance of linked list to caller.  */
+
+static void
+download_tracepoint_1 (struct tracepoint *tpoint)
+{
+  struct tracepoint target_tracepoint;
+  CORE_ADDR tpptr = 0;
+
+  gdb_assert (tpoint->type == fast_tracepoint
+	      || tpoint->type == static_tracepoint);
+
+  if (tpoint->cond != NULL && target_emit_ops () != NULL)
+    {
+      CORE_ADDR jentry, jump_entry;
+
+      jentry = jump_entry = get_jump_space_head ();
+
+      if (tpoint->cond != NULL)
+	{
+	  /* Pad to 8-byte alignment. (needed?)  */
+	  /* Actually this should be left for the target to
+	     decide.  */
+	  jentry = UALIGN (jentry, 8);
+
+	  compile_tracepoint_condition (tpoint, &jentry);
+	}
+
+      /* Pad to 8-byte alignment.  */
+      jentry = UALIGN (jentry, 8);
+      claim_jump_space (jentry - jump_entry);
+    }
+
+  target_tracepoint = *tpoint;
+
+  tpptr = target_malloc (sizeof (*tpoint));
+  tpoint->obj_addr_on_target = tpptr;
+
+  /* Write the whole object.  We'll fix up its pointers in a bit.
+     Assume no next for now.  This is fixed up above on the next
+     iteration, if there's any.  */
+  target_tracepoint.next = NULL;
+  /* Need to clear this here too, since we're downloading the
+     tracepoints before clearing our own copy.  */
+  target_tracepoint.hit_count = 0;
+
+  write_inferior_memory (tpptr, (unsigned char *) &target_tracepoint,
+			 sizeof (target_tracepoint));
+
+  if (tpoint->cond)
+    write_inferior_data_ptr (tpptr + offsetof (struct tracepoint,
+					       cond),
+			     download_agent_expr (tpoint->cond));
+
+  if (tpoint->numactions)
+    {
+      int i;
+      CORE_ADDR actions_array;
+
+      /* The pointers array.  */
+      actions_array
+	= target_malloc (sizeof (*tpoint->actions) * tpoint->numactions);
+      write_inferior_data_ptr (tpptr + offsetof (struct tracepoint,
+						 actions),
+			       actions_array);
+
+      /* Now for each pointer, download the action.  */
+      for (i = 0; i < tpoint->numactions; i++)
+	{
+	  CORE_ADDR ipa_action = 0;
+	  struct tracepoint_action *action = tpoint->actions[i];
+
+	  switch (action->type)
+	    {
+	    case 'M':
+	      ipa_action
+		= target_malloc (sizeof (struct collect_memory_action));
+	      write_inferior_memory (ipa_action,
+				     (unsigned char *) action,
+				     sizeof (struct collect_memory_action));
+	      break;
+	    case 'R':
+	      ipa_action
+		= target_malloc (sizeof (struct collect_registers_action));
+	      write_inferior_memory (ipa_action,
+				     (unsigned char *) action,
+				     sizeof (struct collect_registers_action));
+	      break;
+	    case 'X':
+	      {
+		CORE_ADDR expr;
+		struct eval_expr_action *eaction
+		  = (struct eval_expr_action *) action;
+
+		ipa_action = target_malloc (sizeof (*eaction));
+		write_inferior_memory (ipa_action,
+				       (unsigned char *) eaction,
+				       sizeof (*eaction));
+
+		expr = download_agent_expr (eaction->expr);
+		write_inferior_data_ptr
+		  (ipa_action + offsetof (struct eval_expr_action, expr),
+		   expr);
+		break;
+	      }
+	    case 'L':
+	      ipa_action = target_malloc
+		(sizeof (struct collect_static_trace_data_action));
+	      write_inferior_memory
+		(ipa_action,
+		 (unsigned char *) action,
+		 sizeof (struct collect_static_trace_data_action));
+	      break;
+	    default:
+	      trace_debug ("unknown trace action '%c', ignoring",
+			   action->type);
+	      break;
+	    }
+
+	  if (ipa_action != 0)
+	    write_inferior_data_ptr
+	      (actions_array + i * sizeof (sizeof (*tpoint->actions)),
+	       ipa_action);
+	}
+    }
+}
+
+static void
+download_tracepoint (struct tracepoint *tpoint)
+{
+  struct tracepoint *tp, *tp_prev;
+
+  if (tpoint->type != fast_tracepoint
+      && tpoint->type != static_tracepoint)
+    return;
+
+  download_tracepoint_1 (tpoint);
+
+  /* Find the previous entry of TPOINT, which is fast tracepoint or
+     static tracepoint.  */
+  tp_prev = NULL;
+  for (tp = tracepoints; tp != tpoint; tp = tp->next)
+    {
+      if (tp->type == fast_tracepoint || tp->type == static_tracepoint)
+	tp_prev = tp;
+    }
+
+  if (tp_prev)
+    {
+      CORE_ADDR tp_prev_target_next_addr;
+
+      /* Insert TPOINT after TP_PREV in IPA.  */
+      if (read_inferior_data_pointer (tp_prev->obj_addr_on_target
+				      + offsetof (struct tracepoint, next),
+				      &tp_prev_target_next_addr))
+	fatal ("error reading `tp_prev->next'");
+
+      /* tpoint->next = tp_prev->next */
+      write_inferior_data_ptr (tpoint->obj_addr_on_target
+			       + offsetof (struct tracepoint, next),
+			       tp_prev_target_next_addr);
+      /* tp_prev->next = tpoint */
+      write_inferior_data_ptr (tp_prev->obj_addr_on_target
+			       + offsetof (struct tracepoint, next),
+			       tpoint->obj_addr_on_target);
+    }
+  else
+    /* First object in list, set the head pointer in the
+       inferior.  */
+    write_inferior_data_ptr (ipa_sym_addrs.addr_tracepoints,
+			     tpoint->obj_addr_on_target);
+
+}
+
 static void
 download_tracepoints (void)
 {
@@ -6035,39 +6924,15 @@ download_tracepoints (void)
 
   for (tpoint = tracepoints; tpoint; tpoint = tpoint->next)
     {
-      struct tracepoint target_tracepoint;
-
       if (tpoint->type != fast_tracepoint
 	  && tpoint->type != static_tracepoint)
 	continue;
 
-      /* Maybe download a compiled condition.  */
-      if (tpoint->cond != NULL && target_emit_ops () != NULL)
-	{
-	  CORE_ADDR jentry, jump_entry;
-
-	  jentry = jump_entry = get_jump_space_head ();
-
-	  if (tpoint->cond != NULL)
-	    {
-	      /* Pad to 8-byte alignment. (needed?)  */
-	      /* Actually this should be left for the target to
-		 decide.  */
-	      jentry = UALIGN (jentry, 8);
-
-	      compile_tracepoint_condition (tpoint, &jentry);
-	    }
-
-	  /* Pad to 8-byte alignment.  */
-	  jentry = UALIGN (jentry, 8);
-	  claim_jump_space (jentry - jump_entry);
-	}
-
-      target_tracepoint = *tpoint;
-
       prev_tpptr = tpptr;
-      tpptr = target_malloc (sizeof (*tpoint));
-      tpoint->obj_addr_on_target = tpptr;
+
+      download_tracepoint_1 (tpoint);
+
+      tpptr = tpoint->obj_addr_on_target;
 
       if (tpoint == tracepoints)
 	{
@@ -6080,94 +6945,6 @@ download_tracepoints (void)
 	  write_inferior_data_ptr (prev_tpptr + offsetof (struct tracepoint,
 							  next),
 				   tpptr);
-	}
-
-      /* Write the whole object.  We'll fix up its pointers in a bit.
-	 Assume no next for now.  This is fixed up above on the next
-	 iteration, if there's any.  */
-      target_tracepoint.next = NULL;
-      /* Need to clear this here too, since we're downloading the
-	 tracepoints before clearing our own copy.  */
-      target_tracepoint.hit_count = 0;
-
-      write_inferior_memory (tpptr, (unsigned char *) &target_tracepoint,
-			     sizeof (target_tracepoint));
-
-      if (tpoint->cond)
-	write_inferior_data_ptr (tpptr + offsetof (struct tracepoint,
-						   cond),
-				 download_agent_expr (tpoint->cond));
-
-      if (tpoint->numactions)
-	{
-	  int i;
-	  CORE_ADDR actions_array;
-
-	  /* The pointers array.  */
-	  actions_array
-	    = target_malloc (sizeof (*tpoint->actions) * tpoint->numactions);
-	  write_inferior_data_ptr (tpptr + offsetof (struct tracepoint,
-						     actions),
-				   actions_array);
-
-	  /* Now for each pointer, download the action.  */
-	  for (i = 0; i < tpoint->numactions; i++)
-	    {
-	      CORE_ADDR ipa_action = 0;
-	      struct tracepoint_action *action = tpoint->actions[i];
-
-	      switch (action->type)
-		{
-		case 'M':
-		  ipa_action
-		    = target_malloc (sizeof (struct collect_memory_action));
-		  write_inferior_memory (ipa_action,
-					 (unsigned char *) action,
-					 sizeof (struct collect_memory_action));
-		  break;
-		case 'R':
-		  ipa_action
-		    = target_malloc (sizeof (struct collect_registers_action));
-		  write_inferior_memory (ipa_action,
-					 (unsigned char *) action,
-					 sizeof (struct collect_registers_action));
-		  break;
-		case 'X':
-		  {
-		    CORE_ADDR expr;
-		    struct eval_expr_action *eaction
-		      = (struct eval_expr_action *) action;
-
-		    ipa_action = target_malloc (sizeof (*eaction));
-		    write_inferior_memory (ipa_action,
-					   (unsigned char *) eaction,
-					   sizeof (*eaction));
-
-		    expr = download_agent_expr (eaction->expr);
-		    write_inferior_data_ptr
-		      (ipa_action + offsetof (struct eval_expr_action, expr),
-		       expr);
-		    break;
-		  }
-		case 'L':
-		  ipa_action = target_malloc
-		    (sizeof (struct collect_static_trace_data_action));
-		  write_inferior_memory
-		    (ipa_action,
-		     (unsigned char *) action,
-		     sizeof (struct collect_static_trace_data_action));
-		  break;
-		default:
-		  trace_debug ("unknown trace action '%c', ignoring",
-			       action->type);
-		  break;
-		}
-
-	      if (ipa_action != 0)
-		write_inferior_data_ptr
-		  (actions_array + i * sizeof (sizeof (*tpoint->actions)),
-		   ipa_action);
-	    }
 	}
     }
 }
@@ -6304,10 +7081,10 @@ upload_fast_traceframes (void)
 
     /* Update the token, with new counters, and the GDBserver stamp
        bit.  Alway reuse the current TBC index.  */
-    prev = ipa_trace_buffer_ctrl_curr & 0x0007ff00;
-    counter = (prev + 0x100) & 0x0007ff00;
+    prev = ipa_trace_buffer_ctrl_curr & GDBSERVER_FLUSH_COUNT_MASK_CURR;
+    counter = (prev + 0x100) & GDBSERVER_FLUSH_COUNT_MASK_CURR;
 
-    ipa_trace_buffer_ctrl_curr = (0x80000000
+    ipa_trace_buffer_ctrl_curr = (GDBSERVER_UPDATED_FLUSH_COUNT_BIT
 				  | (prev << 12)
 				  | counter
 				  | curr_tbctrl_idx);
@@ -6598,7 +7375,7 @@ ust_marker_to_static_tracepoint (const struct marker *mdata)
 
   for (tpoint = tracepoints; tpoint; tpoint = tpoint->next)
     {
-      if (!tpoint->enabled || tpoint->type != static_tracepoint)
+      if (tpoint->type != static_tracepoint)
 	continue;
 
       if (tpoint->address == (uintptr_t) mdata->location)
@@ -6650,6 +7427,12 @@ gdb_probe (const struct marker *mdata, void *probe_private,
 		   "loc:0x%p, ch:\"%s\",n:\"%s\",f:\"%s\"",
 		   mdata->location, mdata->channel,
 		   mdata->name, mdata->format);
+      return;
+    }
+
+  if (!tpoint->enabled)
+    {
+      trace_debug ("gdb_probe: tracepoint disabled");
       return;
     }
 
@@ -7391,6 +8174,24 @@ gdb_ust_init (void)
 IP_AGENT_EXPORT char *gdb_tp_heap_buffer;
 IP_AGENT_EXPORT char *gdb_jump_pad_buffer;
 IP_AGENT_EXPORT char *gdb_jump_pad_buffer_end;
+IP_AGENT_EXPORT char *gdb_trampoline_buffer;
+IP_AGENT_EXPORT char *gdb_trampoline_buffer_end;
+IP_AGENT_EXPORT char *gdb_trampoline_buffer_error;
+
+/* Record the result of getting buffer space for fast tracepoint
+   trampolines.  Any error message is copied, since caller may not be
+   using persistent storage.  */
+
+void
+set_trampoline_buffer_space (CORE_ADDR begin, CORE_ADDR end, char *errmsg)
+{
+  gdb_trampoline_buffer = (char *) (uintptr_t) begin;
+  gdb_trampoline_buffer_end = (char *) (uintptr_t) end;
+  if (errmsg)
+    strncpy (gdb_trampoline_buffer_error, errmsg, 99);
+  else
+    strcpy (gdb_trampoline_buffer_error, "no buffer passed");
+}
 
 static void __attribute__ ((constructor))
 initialize_tracepoint_ftlib (void)
@@ -7404,8 +8205,12 @@ initialize_tracepoint_ftlib (void)
 
 #endif /* IN_PROCESS_AGENT */
 
+/* Return a timestamp, expressed as microseconds of the usual Unix
+   time.  (As the result is a 64-bit number, it will not overflow any
+   time soon.)  */
+
 static LONGEST
-tsv_get_timestamp (void)
+get_timestamp (void)
 {
    struct timeval tv;
 
@@ -7429,7 +8234,7 @@ initialize_tracepoint (void)
      variable numbered 1, it will be renumbered.)  */
   create_trace_state_variable (1, 0);
   set_trace_state_variable_name (1, "trace_timestamp");
-  set_trace_state_variable_getter (1, tsv_get_timestamp);
+  set_trace_state_variable_getter (1, get_timestamp);
 
 #ifdef IN_PROCESS_AGENT
   {
@@ -7451,6 +8256,16 @@ initialize_tracepoint (void)
 initialize_tracepoint: mprotect(%p, %d, PROT_READ|PROT_EXEC) failed with %s",
 	     gdb_jump_pad_buffer, pagesize * 20, strerror (errno));
   }
+
+  gdb_trampoline_buffer = gdb_trampoline_buffer_end = 0;
+
+  /* It's not a fatal error for something to go wrong with trampoline
+     buffer setup, but it can be mysterious, so create a channel to
+     report back on what went wrong, using a fixed size since we may
+     not be able to allocate space later when the problem occurs.  */
+  gdb_trampoline_buffer_error = xmalloc (IPA_BUFSIZ);
+
+  strcpy (gdb_trampoline_buffer_error, "No errors reported");
 
   initialize_low_tracepoint ();
 #endif

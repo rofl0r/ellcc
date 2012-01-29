@@ -1,6 +1,6 @@
 /* BFD back-end for VMS archive files.
 
-   Copyright 2010 Free Software Foundation, Inc.
+   Copyright 2010, 2011 Free Software Foundation, Inc.
    Written by Tristan Gingold <gingold@adacore.com>, AdaCore.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -1196,11 +1196,13 @@ vms_lib_bstat (struct bfd *abfd ATTRIBUTE_UNUSED,
 
 static void *
 vms_lib_bmmap (struct bfd *abfd ATTRIBUTE_UNUSED,
-	      void *addr ATTRIBUTE_UNUSED,
-	      bfd_size_type len ATTRIBUTE_UNUSED,
-	      int prot ATTRIBUTE_UNUSED,
-	      int flags ATTRIBUTE_UNUSED,
-	      file_ptr offset ATTRIBUTE_UNUSED)
+               void *addr ATTRIBUTE_UNUSED,
+               bfd_size_type len ATTRIBUTE_UNUSED,
+               int prot ATTRIBUTE_UNUSED,
+               int flags ATTRIBUTE_UNUSED,
+               file_ptr offset ATTRIBUTE_UNUSED,
+               void **map_addr ATTRIBUTE_UNUSED,
+               bfd_size_type *map_len ATTRIBUTE_UNUSED)
 {
   return (void *) -1;
 }
@@ -1540,18 +1542,24 @@ get_idxlen (struct lib_index *idx, bfd_boolean is_elfidx)
 {
   if (is_elfidx)
     {
+      /* 9 is the size of struct vms_elfidx without keyname.  */
       if (idx->namlen > MAX_KEYLEN)
-        return 9 + sizeof (struct vms_rfa);
+        return 9 + sizeof (struct vms_kbn);
       else
         return 9 + idx->namlen;
     }
   else
-    return 7 + idx->namlen;
+    {
+      /* 7 is the size of struct vms_idx without keyname.  */
+      return 7 + idx->namlen;
+    }
 }
 
-/* Write the index.  VBN is the first vbn to be used, and will contain
-   on return the last vbn.
+/* Write the index composed by NBR symbols contained in IDX.
+   VBN is the first vbn to be used, and will contain on return the last vbn.
    Can be called with ABFD set to NULL just to size the index.
+   If not null, TOPVBN will be assigned to the vbn of the root index tree.
+   IS_ELFIDX is true for elfidx (ie ia64) indexes layout.
    Return TRUE on success.  */
 
 static bfd_boolean
@@ -1635,9 +1643,11 @@ vms_write_index (bfd *abfd,
                         }
                       *(unsigned short *)kbn_blk = 0;
                     }
+                  /* Allocate a new block for the keys.  */
                   kbn_vbn = (*vbn)++;
                   kbn_sz = VMS_BLOCK_SIZE - 2;
                 }
+              /* Size of the chunk written to the current key block.  */
               if (kl + sizeof (struct vms_kbn) > kbn_sz)
                 kl_chunk = kbn_sz - sizeof (struct vms_kbn);
               else
@@ -2268,6 +2278,7 @@ const bfd_target vms_lib_txt_vec =
   0,				/* symbol_leading_char.  */
   ' ',				/* ar_pad_char.  */
   15,				/* ar_max_namelen.  */
+  0,				/* match priority.  */
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,
   bfd_getl32, bfd_getl_signed_32, bfd_putl32,
   bfd_getl16, bfd_getl_signed_16, bfd_putl16,

@@ -1,4 +1,4 @@
-/* Copyright (C) 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -256,7 +256,7 @@ tlb_value_write (struct value *v, struct value *fromval)
   error (_("Impossible to change the Thread Local Base"));
 }
 
-static struct lval_funcs tlb_value_funcs =
+static const struct lval_funcs tlb_value_funcs =
   {
     tlb_value_read,
     tlb_value_write
@@ -391,7 +391,7 @@ windows_xfer_shared_library (const char* so_name, CORE_ADDR load_addr,
   obstack_grow_str (obstack, p);
   xfree (p);
   obstack_grow_str (obstack, "\"><segment address=\"");
-  /* The symbols in a dll are offset by 0x1000, which is the the
+  /* The symbols in a dll are offset by 0x1000, which is the
      offset from 0 of the first byte in an image - because of the file
      header and the section alignment.  */
   obstack_grow_str (obstack, paddress (gdbarch, load_addr + 0x1000));

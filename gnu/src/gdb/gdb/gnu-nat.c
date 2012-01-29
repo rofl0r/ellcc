@@ -1,6 +1,6 @@
 /* Interface GDB to the GNU Hurd.
-   Copyright (C) 1992, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2006, 2007,
-   2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1992, 1995-2001, 2006-2012 Free Software Foundation,
+   Inc.
 
    This file is part of GDB.
 
@@ -2114,7 +2114,8 @@ gnu_create_inferior (struct target_ops *ops,
 
   inf_debug (inf, "creating inferior");
 
-  pid = fork_inferior (exec_file, allargs, env, trace_me, NULL, NULL, NULL);
+  pid = fork_inferior (exec_file, allargs, env, trace_me,
+                       NULL, NULL, NULL, NULL);
 
   /* Attach to the now stopped child, which is actually a shell...  */
   inf_debug (inf, "attaching to child: %d", pid);

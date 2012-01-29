@@ -1,6 +1,6 @@
 /* Definitions for remote debugging interface for ROM monitors.
-   Copyright (C) 1990, 1991, 1992, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1990-1992, 1994-2000, 2007-2012 Free Software
+   Foundation, Inc.
    Contributed by Cygnus Support. Written by Rob Savoye for Cygnus.
 
    This file is part of GDB.
@@ -226,7 +226,7 @@ struct monitor_ops
 
 #define MO_PRINT_PROGRAM_OUTPUT 0x200000
 
-/* Some dump bytes commands align the first data with the preceeding
+/* Some dump bytes commands align the first data with the preceding
    16 byte boundary.  Some print blanks and start at the exactly the
    requested boundary.  */
 

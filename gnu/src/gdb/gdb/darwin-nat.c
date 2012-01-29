@@ -1,5 +1,5 @@
 /* Darwin support for GDB, the GNU debugger.
-   Copyright (C) 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 2008-2012 Free Software Foundation, Inc.
 
    Contributed by AdaCore.
 
@@ -53,6 +53,7 @@
 #include <sys/proc.h>
 #include <libproc.h>
 #include <sys/syscall.h>
+#include <spawn.h>
 
 #include <mach/mach_error.h>
 #include <mach/mach_vm.h>
@@ -233,13 +234,25 @@ unparse_exception_type (unsigned int i)
     }
 }
 
+/* Set errno to zero, and then call ptrace with the given arguments.
+   If inferior debugging traces are on, then also print a debug
+   trace.
+
+   The returned value is the same as the value returned by ptrace,
+   except in the case where that value is -1 but errno is zero.
+   This case is documented to be a non-error situation, so we
+   return zero in that case. */
+
 static int
 darwin_ptrace (const char *name,
 	       int request, int pid, PTRACE_TYPE_ARG3 arg3, int arg4)
 {
   int ret;
 
+  errno = 0;
   ret = ptrace (request, pid, (caddr_t) arg3, arg4);
+  if (ret == -1 && errno == 0)
+    ret = 0;
 
   inferior_debug (4, _("ptrace (%s, %d, 0x%x, %d): %d (%s)\n"),
                   name, pid, arg3, arg4, ret,
@@ -603,8 +616,11 @@ darwin_decode_exception_message (mach_msg_header_t *hdr,
     return -1;
   *pthread = thread;
 
+  /* The thread should be running.  However we have observed cases where a thread
+     got a SIGTTIN message after being stopped.  */
+  gdb_assert (thread->msg_state != DARWIN_MESSAGE);
+
   /* Finish decoding.  */
-  gdb_assert (thread->msg_state == DARWIN_RUNNING);
   thread->event.header = *hdr;
   thread->event.thread_port = thread_port;
   thread->event.task_port = task_port;
@@ -1301,7 +1317,10 @@ darwin_kill_inferior (struct target_ops *ops)
       darwin_stop_inferior (inf);
 
       res = PTRACE (PT_KILL, inf->pid, 0, 0);
-      gdb_assert (res == 0);
+      if (res != 0)
+        warning (_("Failed to kill inferior: ptrace returned %d "
+	           "[%s] (pid=%d)"),
+		 res, safe_strerror (errno), inf->pid);
 
       darwin_reply_to_all_pending_messages (inf);
 
@@ -1489,12 +1508,46 @@ darwin_ptrace_him (int pid)
 }
 
 static void
+darwin_execvp (const char *file, char * const argv[], char * const env[])
+{
+  posix_spawnattr_t attr;
+  short ps_flags = 0;
+  int res;
+
+  res = posix_spawnattr_init (&attr);
+  if (res != 0)
+    {
+      fprintf_unfiltered
+        (gdb_stderr, "Cannot initialize attribute for posix_spawn\n");
+      return;
+    }
+
+  /* Do like execve: replace the image.  */
+  ps_flags = POSIX_SPAWN_SETEXEC;
+
+  /* Disable ASLR.  The constant doesn't look to be available outside the
+     kernel include files.  */
+#ifndef _POSIX_SPAWN_DISABLE_ASLR
+#define _POSIX_SPAWN_DISABLE_ASLR 0x0100
+#endif
+  ps_flags |= _POSIX_SPAWN_DISABLE_ASLR;
+  res = posix_spawnattr_setflags (&attr, ps_flags);
+  if (res != 0)
+    {
+      fprintf_unfiltered (gdb_stderr, "Cannot set posix_spawn flags\n");
+      return;
+    }
+
+  posix_spawnp (NULL, argv[0], NULL, &attr, argv, env);
+}
+
+static void
 darwin_create_inferior (struct target_ops *ops, char *exec_file,
 			char *allargs, char **env, int from_tty)
 {
   /* Do the hard work.  */
   fork_inferior (exec_file, allargs, env, darwin_ptrace_me, darwin_ptrace_him,
-		 darwin_pre_ptrace, NULL);
+		 darwin_pre_ptrace, NULL, darwin_execvp);
 
   /* Return now in case of error.  */
   if (ptid_equal (inferior_ptid, null_ptid))
@@ -1601,7 +1654,11 @@ darwin_detach (struct target_ops *ops, char *args, int from_tty)
 
   darwin_reply_to_all_pending_messages (inf);
 
-  darwin_resume_inferior (inf);
+  /* When using ptrace, we have just performed a PT_DETACH, which
+     resumes the inferior.  On the other hand, when we are not using
+     ptrace, we need to resume its execution ourselves.  */
+  if (inf->private->no_ptrace)
+    darwin_resume_inferior (inf);
 
   darwin_mourn_inferior (ops);
 }
@@ -1637,7 +1694,7 @@ darwin_thread_alive (struct target_ops *ops, ptid_t ptid)
    copy it to RDADDR in gdb's address space.
    If WRADDR is not NULL, write gdb's LEN bytes from WRADDR and copy it
    to ADDR in inferior task's address space.
-   Return 0 on failure; number of bytes read / writen  otherwise.  */
+   Return 0 on failure; number of bytes read / writen otherwise.  */
 static int
 darwin_read_write_inferior (task_t task, CORE_ADDR addr,
 			    char *rdaddr, const char *wraddr, int length)
@@ -1766,6 +1823,32 @@ out:
   return length;
 }
 
+/* Read LENGTH bytes at offset ADDR of task_dyld_info for TASK, and copy them
+   to RDADDR.
+   Return 0 on failure; number of bytes read / writen otherwise.  */
+
+static int
+darwin_read_dyld_info (task_t task, CORE_ADDR addr, char *rdaddr, int length)
+{
+  struct task_dyld_info task_dyld_info;
+  mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
+  int sz = TASK_DYLD_INFO_COUNT * sizeof (natural_t);
+  kern_return_t kret;
+
+  if (addr >= sz)
+    return 0;
+
+  kret = task_info (task, TASK_DYLD_INFO, (task_info_t) &task_dyld_info, &count);
+  MACH_CHECK_ERROR (kret);
+  if (kret != KERN_SUCCESS)
+    return -1;
+  /* Truncate.  */
+  if (addr + length > sz)
+    length = sz - addr;
+  memcpy (rdaddr, (char *)&task_dyld_info + addr, length);
+  return length;
+}
+
 
 /* Return 0 on failure, number of bytes handled otherwise.  TARGET
    is ignored.  */
@@ -1802,11 +1885,22 @@ darwin_xfer_partial (struct target_ops *ops,
      host_address_to_string (readbuf), host_address_to_string (writebuf),
      inf->pid);
 
-  if (object != TARGET_OBJECT_MEMORY)
-    return -1;
+  switch (object)
+    {
+    case TARGET_OBJECT_MEMORY:
+      return darwin_read_write_inferior (inf->private->task, offset,
+                                         readbuf, writebuf, len);
+    case TARGET_OBJECT_DARWIN_DYLD_INFO:
+      if (writebuf != NULL || readbuf == NULL)
+        {
+          /* Support only read.  */
+          return -1;
+        }
+      return darwin_read_dyld_info (inf->private->task, offset, readbuf, len);
+    default:
+      return -1;
+    }
 
-  return darwin_read_write_inferior (inf->private->task, offset,
-				     readbuf, writebuf, len);
 }
 
 static void

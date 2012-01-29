@@ -1,4 +1,4 @@
-# Copyright 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+# Copyright 2008-2012 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ set bp_location [gdb_get_line_number "set breakpoint here" $hdrfile]
 # Set a breakpoint with multiple locations.
 
 gdb_test "break $hdrfile:$bp_location" \
-    "Breakpoint.*at.* file .*$hdrfile, line.*\\(2 locations\\).*" \
+    "Breakpoint.*at.*: $hdrfile:$bp_location. \\(2 locations\\).*" \
     "set breakpoint"
 
 gdb_run_cmd
@@ -101,7 +101,19 @@ gdb_expect {
     }
 }
 
-gdb_continue_to_end "disabled breakpoint 1.2"
+gdb_test_multiple "info break" "disabled breakpoint 1.2" {
+    -re "1\.2.* n .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
+	pass "disabled breakpoint 1.2"
+    }
+    -re "1\.2.* y .* at .*$hdrfile:$bp_location.*$gdb_prompt $" {
+	# When inferior is restarted, breakpoint locations will be updated.
+	# On uclinux, it is not guaranteed that new inferior is located the
+	# same address as previous one, so status/state of breakpoint location
+	# will loose.  The heuristic of GDB should be improved.
+	setup_kfail gdb/12924 "*-*-uclinux*"
+	fail "disabled breakpoint 1.2"
+    }    
+}
 
 # Make sure we can set a breakpoint on a source statement that spans
 # multiple lines.
@@ -116,7 +128,7 @@ if { ![runto_main] } {
 }
 
 gdb_test "break $hdrfile:$bp_location" \
-    "Breakpoint.*at.* file .*$hdrfile, line.*\\(2 locations\\).*" \
+    "Breakpoint.*at.*: $hdrfile:$bp_location. \\(2 locations\\).*" \
     "set multi_line_foo breakpoint"
 gdb_test "continue" \
     ".*Breakpoint.*multi_line_foo \\(i=0\\).*" \

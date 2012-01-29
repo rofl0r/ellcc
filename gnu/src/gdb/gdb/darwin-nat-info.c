@@ -1,6 +1,5 @@
 /* Darwin support for GDB, the GNU debugger.
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright 1997-2002, 2008-2012 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
 
@@ -620,6 +619,7 @@ darwin_debug_regions_recurse (task_t task)
   kern_return_t kret;
   int ret;
   struct cleanup *table_chain;
+  struct ui_out *uiout = current_uiout;
 
   table_chain = make_cleanup_ui_out_table_begin_end (uiout, 9, -1, "regions");
 

@@ -1,8 +1,6 @@
 /* Remote debugging interface for MIPS remote debugging protocol.
 
-   Copyright (C) 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1993-2004, 2006-2012 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.  Written by Ian Lance Taylor
    <ian@cygnus.com>.
@@ -3343,7 +3341,13 @@ static void
 pmon_download (char *buffer, int length)
 {
   if (tftp_in_use)
-    fwrite (buffer, 1, length, tftp_file);
+    {
+      size_t written;
+
+      written = fwrite (buffer, 1, length, tftp_file);
+      if (written < length)
+	perror_with_name (tftp_localname);
+    }
   else
     serial_write (udp_in_use ? udp_desc : mips_desc, buffer, length);
 }

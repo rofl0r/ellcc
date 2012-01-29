@@ -2087,8 +2087,8 @@ yyreduce:
 			      if (innermost_block == 0 || 
 				  contained_in (block_found, innermost_block))
 				innermost_block = block_found;
-			      write_exp_elt_opcode (OP_OBJC_SELF);
-			      write_exp_elt_opcode (OP_OBJC_SELF);
+			      write_exp_elt_opcode (OP_THIS);
+			      write_exp_elt_opcode (OP_THIS);
 			      write_exp_elt_opcode (STRUCTOP_PTR);
 			      write_exp_string (yyvsp[0].ssym.stoken);
 			      write_exp_elt_opcode (STRUCTOP_PTR);

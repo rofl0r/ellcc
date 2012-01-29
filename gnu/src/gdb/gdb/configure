@@ -666,6 +666,8 @@ python_prog_path
 LTLIBEXPAT
 LIBEXPAT
 HAVE_LIBEXPAT
+JIT_READER_DIR
+TARGET_PTR
 READLINE_TEXI_INCFLAG
 READLINE_CFLAGS
 READLINE_DEPS
@@ -700,7 +702,6 @@ MKDIR_P
 INSTALL_STRIP_PROGRAM
 STRIP
 install_sh
-MAKEINFO
 AUTOHEADER
 AUTOMAKE
 AUTOCONF
@@ -711,6 +712,9 @@ am__isrc
 INSTALL_DATA
 INSTALL_SCRIPT
 INSTALL_PROGRAM
+MAKEINFO_EXTRA_FLAGS
+MAKEINFOFLAGS
+MAKEINFO
 PACKAGE
 GNULIB_STDINT_H
 LIBGNU_LTLIBDEPS
@@ -961,7 +965,9 @@ with_pkgversion
 with_bugurl
 with_zlib
 with_libiconv_prefix
+with_iconv_bin
 with_system_readline
+with_jit_reader_dir
 with_expat
 with_gnu_ld
 enable_rpath
@@ -1660,7 +1666,10 @@ Optional Packages:
   --with-zlib             include zlib support (auto/yes/no) default=auto
   --with-libiconv-prefix=DIR
                           search for libiconv in DIR/include and DIR/lib
+  --with-iconv-bin=PATH   specify where to find the iconv program
   --with-system-readline  use installed readline library
+  --with-jit-reader-dir=PATH
+                          directory to load the JIT readers from
   --with-expat            include expat support (auto/yes/no)
   --with-gnu-ld           assume the C compiler uses GNU ld default=no
   --with-libexpat-prefix[=DIR]  search for libexpat in DIR/include and DIR/lib
@@ -7149,6 +7158,81 @@ _ACEOF
 
 
 
+# Do we have a single-tree copy of texinfo?  Even if we do, we can't
+# rely on it - libiberty is built before texinfo.
+# Extract the first word of "makeinfo", so it can be a program name with args.
+set dummy makeinfo; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if test "${ac_cv_prog_MAKEINFO+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  if test -n "$MAKEINFO"; then
+  ac_cv_prog_MAKEINFO="$MAKEINFO" # Let the user override the test.
+else
+as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if { test -f "$as_dir/$ac_word$ac_exec_ext" && $as_test_x "$as_dir/$ac_word$ac_exec_ext"; }; then
+    ac_cv_prog_MAKEINFO="makeinfo"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+fi
+fi
+MAKEINFO=$ac_cv_prog_MAKEINFO
+if test -n "$MAKEINFO"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $MAKEINFO" >&5
+$as_echo "$MAKEINFO" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+if test "x$MAKEINFO" = "x"; then
+  as_fn_error "makeinfo is required for compilation" "$LINENO" 5
+else
+  case "$MAKEINFO" in
+    */missing\ makeinfo*)
+      as_fn_error "makeinfo is required for compilation" "$LINENO" 5
+      ;;
+  esac
+fi
+
+
+# --split-size=5000000 may be already in $MAKEINFO from parent configure.
+# Re-running configure in gdb/ would lose it so ensure it stays present.
+MAKEINFOFLAGS=${MAKEINFOFLAGS---split-size=5000000}
+
+
+MAKEINFO_EXTRA_FLAGS=""
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether $MAKEINFO supports @click" >&5
+$as_echo_n "checking whether $MAKEINFO supports @click... " >&6; }
+if test "${gdb_cv_have_makeinfo_click+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  echo '@clicksequence{a @click{} b}' >conftest.texinfo
+  if eval "$MAKEINFO conftest.texinfo >&5 2>&5"; then
+    gdb_cv_have_makeinfo_click=yes
+  else
+    gdb_cv_have_makeinfo_click=no
+  fi
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gdb_cv_have_makeinfo_click" >&5
+$as_echo "$gdb_cv_have_makeinfo_click" >&6; }
+if test x"$gdb_cv_have_makeinfo_click" = xyes; then
+  MAKEINFO_EXTRA_FLAGS="$MAKEINFO_EXTRA_FLAGS -DHAVE_MAKEINFO_CLICK"
+fi
+
+
 # GDB does not use automake, but gnulib does.  This line lets us
 # generate its Makefile.in.
 am__api_version='1.11'
@@ -9523,6 +9607,57 @@ _ACEOF
   fi
 
 
+# GDB may fork/exec the iconv program to get the list of supported character
+# sets.  Allow the user to specify where to find it.
+# There are several factors affecting the choice of option name:
+# - There is already --with-libiconv-prefix but we can't use it, it specifies
+#   the build-time location of libiconv files.
+# - The program we need to find is iconv, which comes with glibc.  The user
+#   doesn't necessarily have libiconv installed.  Therefore naming this
+#   --with-libiconv-foo feels wrong.
+# - We want the path to be relocatable, but GDB_AC_DEFINE_RELOCATABLE is
+#   defined to work on directories not files (though it really doesn't know
+#   the difference).
+# - Calling this --with-iconv-prefix is perceived to cause too much confusion
+#   with --with-libiconv-prefix.
+# Putting these together is why the option name is --with-iconv-bin.
+
+
+# Check whether --with-iconv-bin was given.
+if test "${with_iconv_bin+set}" = set; then :
+  withval=$with_iconv_bin; iconv_bin="${withval}"
+
+cat >>confdefs.h <<_ACEOF
+#define ICONV_BIN "${iconv_bin}"
+_ACEOF
+
+
+  if test "x$exec_prefix" = xNONE || test "x$exec_prefix" = 'x${prefix}'; then
+     if test "x$prefix" = xNONE; then
+     	test_prefix=/usr/local
+     else
+	test_prefix=$prefix
+     fi
+  else
+     test_prefix=$exec_prefix
+  fi
+  value=0
+  case ${iconv_bin} in
+     "${test_prefix}"|"${test_prefix}/"*|\
+	'${exec_prefix}'|'${exec_prefix}/'*)
+     value=1
+     ;;
+  esac
+
+cat >>confdefs.h <<_ACEOF
+#define ICONV_BIN_RELOCATABLE $value
+_ACEOF
+
+
+
+fi
+
+
 # On alpha-osf, it appears that libtermcap and libcurses are not compatible.
 # There is a very specific comment in /usr/include/curses.h explaining that
 # termcap routines built into libcurses must not be used.
@@ -9743,39 +9878,6 @@ if test "$with_system_readline" = yes; then
   READLINE_DEPS=
   READLINE_CFLAGS=
   READLINE_TEXI_INCFLAG=
-
-  # readline-6.0 started to use the name `_rl_echoing_p'.
-  # `$(READLINE_DIR)/' of bundled readline would not resolve in configure.
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for readline_echoing_p" >&5
-$as_echo_n "checking for readline_echoing_p... " >&6; }
-  save_LIBS=$LIBS
-  LIBS="$LIBS $READLINE"
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-int
-main ()
-{
-extern int readline_echoing_p;
-				    return readline_echoing_p;
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  READLINE_ECHOING_P=yes
-else
-  READLINE_ECHOING_P=no
-
-$as_echo "#define readline_echoing_p _rl_echoing_p" >>confdefs.h
-
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-  LIBS="$save_LIBS"
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $READLINE_ECHOING_P" >&5
-$as_echo "$READLINE_ECHOING_P" >&6; }
 else
   READLINE='$(READLINE_DIR)/libreadline.a'
   READLINE_DEPS='$(READLINE)'
@@ -9783,6 +9885,232 @@ else
   READLINE_TEXI_INCFLAG='-I $(READLINE_DIR)'
 fi
 
+
+
+
+
+# Generate jit-reader.h
+
+# This is typedeffed to GDB_CORE_ADDR in jit-reader.h
+TARGET_PTR=
+
+# The cast to long int works around a bug in the HP C Compiler
+# version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
+# declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
+# This bug is HP SR number 8606223364.
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking size of unsigned long long" >&5
+$as_echo_n "checking size of unsigned long long... " >&6; }
+if test "${ac_cv_sizeof_unsigned_long_long+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  if ac_fn_c_compute_int "$LINENO" "(long int) (sizeof (unsigned long long))" "ac_cv_sizeof_unsigned_long_long"        "$ac_includes_default"; then :
+
+else
+  if test "$ac_cv_type_unsigned_long_long" = yes; then
+     { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+{ as_fn_set_status 77
+as_fn_error "cannot compute sizeof (unsigned long long)
+See \`config.log' for more details." "$LINENO" 5; }; }
+   else
+     ac_cv_sizeof_unsigned_long_long=0
+   fi
+fi
+
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_unsigned_long_long" >&5
+$as_echo "$ac_cv_sizeof_unsigned_long_long" >&6; }
+
+
+
+cat >>confdefs.h <<_ACEOF
+#define SIZEOF_UNSIGNED_LONG_LONG $ac_cv_sizeof_unsigned_long_long
+_ACEOF
+
+
+# The cast to long int works around a bug in the HP C Compiler
+# version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
+# declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
+# This bug is HP SR number 8606223364.
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking size of unsigned long" >&5
+$as_echo_n "checking size of unsigned long... " >&6; }
+if test "${ac_cv_sizeof_unsigned_long+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  if ac_fn_c_compute_int "$LINENO" "(long int) (sizeof (unsigned long))" "ac_cv_sizeof_unsigned_long"        "$ac_includes_default"; then :
+
+else
+  if test "$ac_cv_type_unsigned_long" = yes; then
+     { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+{ as_fn_set_status 77
+as_fn_error "cannot compute sizeof (unsigned long)
+See \`config.log' for more details." "$LINENO" 5; }; }
+   else
+     ac_cv_sizeof_unsigned_long=0
+   fi
+fi
+
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_unsigned_long" >&5
+$as_echo "$ac_cv_sizeof_unsigned_long" >&6; }
+
+
+
+cat >>confdefs.h <<_ACEOF
+#define SIZEOF_UNSIGNED_LONG $ac_cv_sizeof_unsigned_long
+_ACEOF
+
+
+# The cast to long int works around a bug in the HP C Compiler
+# version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
+# declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
+# This bug is HP SR number 8606223364.
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking size of unsigned __int128" >&5
+$as_echo_n "checking size of unsigned __int128... " >&6; }
+if test "${ac_cv_sizeof_unsigned___int128+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  if ac_fn_c_compute_int "$LINENO" "(long int) (sizeof (unsigned __int128))" "ac_cv_sizeof_unsigned___int128"        "$ac_includes_default"; then :
+
+else
+  if test "$ac_cv_type_unsigned___int128" = yes; then
+     { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+{ as_fn_set_status 77
+as_fn_error "cannot compute sizeof (unsigned __int128)
+See \`config.log' for more details." "$LINENO" 5; }; }
+   else
+     ac_cv_sizeof_unsigned___int128=0
+   fi
+fi
+
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_unsigned___int128" >&5
+$as_echo "$ac_cv_sizeof_unsigned___int128" >&6; }
+
+
+
+cat >>confdefs.h <<_ACEOF
+#define SIZEOF_UNSIGNED___INT128 $ac_cv_sizeof_unsigned___int128
+_ACEOF
+
+
+
+if test "x${ac_cv_sizeof_unsigned_long}" = "x8"; then
+  TARGET_PTR="unsigned long"
+elif test "x${ac_cv_sizeof_unsigned_long_long}" = "x8"; then
+  TARGET_PTR="unsigned long long"
+elif test "x${ac_cv_sizeof_unsigned___int128}" = "x16"; then
+  TARGET_PTR="unsigned __int128"
+else
+  TARGET_PTR="unsigned long"
+fi
+
+
+ac_config_files="$ac_config_files jit-reader.h:jit-reader.in"
+
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing dlopen" >&5
+$as_echo_n "checking for library containing dlopen... " >&6; }
+if test "${ac_cv_search_dlopen+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char dlopen ();
+int
+main ()
+{
+return dlopen ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' dl; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_dlopen=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if test "${ac_cv_search_dlopen+set}" = set; then :
+  break
+fi
+done
+if test "${ac_cv_search_dlopen+set}" = set; then :
+
+else
+  ac_cv_search_dlopen=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_dlopen" >&5
+$as_echo "$ac_cv_search_dlopen" >&6; }
+ac_res=$ac_cv_search_dlopen
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
+
+
+
+
+# Check whether --with-jit-reader-dir was given.
+if test "${with_jit_reader_dir+set}" = set; then :
+  withval=$with_jit_reader_dir;
+    JIT_READER_DIR=$withval
+else
+  JIT_READER_DIR=${libdir}/gdb
+fi
+
+
+  test "x$prefix" = xNONE && prefix="$ac_default_prefix"
+  test "x$exec_prefix" = xNONE && exec_prefix='${prefix}'
+  ac_define_dir=`eval echo $JIT_READER_DIR`
+  ac_define_dir=`eval echo $ac_define_dir`
+
+cat >>confdefs.h <<_ACEOF
+#define JIT_READER_DIR "$ac_define_dir"
+_ACEOF
+
+
+
+
+  if test "x$exec_prefix" = xNONE || test "x$exec_prefix" = 'x${prefix}'; then
+     if test "x$prefix" = xNONE; then
+     	test_prefix=/usr/local
+     else
+	test_prefix=$prefix
+     fi
+  else
+     test_prefix=$exec_prefix
+  fi
+  value=0
+  case ${ac_define_dir} in
+     "${test_prefix}"|"${test_prefix}/"*|\
+	'${exec_prefix}'|'${exec_prefix}/'*)
+     value=1
+     ;;
+  esac
+
+cat >>confdefs.h <<_ACEOF
+#define JIT_READER_DIR_RELOCATABLE $value
+_ACEOF
 
 
 
@@ -11336,7 +11664,8 @@ for ac_header in nlist.h machine/reg.h poll.h sys/poll.h proc_service.h \
 		  sys/resource.h sys/procfs.h sys/ptrace.h ptrace.h \
 		  sys/reg.h sys/debugreg.h sys/select.h sys/syscall.h \
 		  sys/types.h sys/wait.h wait.h termios.h termio.h \
-		  sgtty.h unistd.h elf_hp.h ctype.h time.h locale.h
+		  sgtty.h unistd.h elf_hp.h ctype.h time.h locale.h \
+                  dlfcn.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -16692,6 +17021,7 @@ do
     "config.h") CONFIG_HEADERS="$CONFIG_HEADERS config.h:config.in" ;;
     "depdir") CONFIG_COMMANDS="$CONFIG_COMMANDS depdir" ;;
     "depfiles") CONFIG_COMMANDS="$CONFIG_COMMANDS depfiles" ;;
+    "jit-reader.h") CONFIG_FILES="$CONFIG_FILES jit-reader.h:jit-reader.in" ;;
     "$ac_config_links_1") CONFIG_LINKS="$CONFIG_LINKS $ac_config_links_1" ;;
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     ".gdbinit") CONFIG_FILES="$CONFIG_FILES .gdbinit:gdbinit.in" ;;

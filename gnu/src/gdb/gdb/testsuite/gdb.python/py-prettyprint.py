@@ -1,4 +1,4 @@
-# Copyright (C) 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+# Copyright (C) 2008-2012 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 # printers.
 
 import re
+import gdb
 
 # Test returning a Value from a printer.
 class string_print:
@@ -161,6 +162,18 @@ class pp_ls:
     def display_hint (self):
         return 'string'
 
+class pp_hint_error:
+    "Throw error from display_hint"
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        return 'hint_error_val'
+
+    def display_hint (self):
+        raise Exception("hint failed")
+
 class pp_outer:
     "Print struct outer"
 
@@ -173,6 +186,18 @@ class pp_outer:
     def children (self):
         yield 's', self.val['s']
         yield 'x', self.val['x']
+
+class MemoryErrorString:
+    "Raise an error"
+
+    def __init__(self, val):
+        self.val = val
+
+    def to_string(self):
+        raise gdb.MemoryError ("Cannot access memory.");
+
+    def display_hint (self):
+        return 'string'
 
 def lookup_function (val):
     "Look-up and return a pretty-printer that can print val."
@@ -245,6 +270,11 @@ def register_pretty_printers ():
 
     pretty_printers_dict[re.compile ('^struct outerstruct$')]  = pp_outer
     pretty_printers_dict[re.compile ('^outerstruct$')]  = pp_outer
+
+    pretty_printers_dict[re.compile ('^struct hint_error$')]  = pp_hint_error
+    pretty_printers_dict[re.compile ('^hint_error$')]  = pp_hint_error
+
+    pretty_printers_dict[re.compile ('^memory_error$')]  = MemoryErrorString
 
 pretty_printers_dict = {}
 

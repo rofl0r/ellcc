@@ -1,4 +1,4 @@
-# Copyright (C) 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+# Copyright (C) 2008-2012 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -47,7 +47,9 @@ gdb_test_multiple "python print 23" "verify python support" {
 
       # If Python is not supported, verify that sourcing a python script
       # causes an error.
-      gdb_test "source $srcdir/$subdir/source2.py" "Error in sourced command file:.*"
+      gdb_test "source $srcdir/$subdir/source2.py" \
+	  "Error in sourced command file:.*" \
+	  "source source2.py when python disabled"
       return -1
     }
     -re "$gdb_prompt $"	{}
@@ -73,7 +75,9 @@ gdb_py_test_multiple "indented multi-line python command" \
   "foo ()" "" \
   "end" "hello, world!"
 
-gdb_test "source $srcdir/$subdir/source2.py" "yes"
+gdb_test "source $srcdir/$subdir/source2.py" "yes" "source source2.py"
+
+gdb_test "source -s source2.py" "yes" "source -s source2.py"
 
 gdb_test "python print gdb.current_objfile()" "None"
 gdb_test "python print gdb.objfiles()" "\\\[\\\]"
@@ -106,7 +110,13 @@ gdb_test_no_output "set height $lines"
 
 set test "verify pagination beforehand"
 gdb_test_multiple "python print \"\\n\" * $lines" $test {
-    -re "---Type <return> to continue, or q <return> to quit---$" {
+    -re "---Type <return>" {
+	exp_continue
+    }
+    -re " to continue, or q <return>" {
+	exp_continue
+    }
+    -re " to quit---$" {
 	pass $test
     }
 }
@@ -116,7 +126,13 @@ gdb_test "python if gdb.execute('python print \"\\\\n\" * $lines', to_string=Tru
 
 set test "verify pagination afterwards"
 gdb_test_multiple "python print \"\\n\" * $lines" $test {
-    -re "---Type <return> to continue, or q <return> to quit---$" {
+    -re "---Type <return>" {
+	exp_continue
+    }
+    -re " to continue, or q <return>" {
+	exp_continue
+    }
+    -re " to quit---$" {
 	pass $test
     }
 }
@@ -153,14 +169,14 @@ gdb_py_test_silent_cmd "python symtab = gdb.decode_line()" "test decode_line cur
 gdb_test "python print len(symtab)" "2" "Test decode_line current location"
 gdb_test "python print symtab\[0\]" "None" "Test decode_line expression parse"
 gdb_test "python print len(symtab\[1\])" "1" "Test decode_line current location"
-gdb_test "python print symtab\[1\]\[0\].symtab" "gdb/testsuite/gdb.python/python.c.*" "Test decode_line current locationn filename"
+gdb_test "python print symtab\[1\]\[0\].symtab" ".*gdb.python/python.c.*" "Test decode_line current locationn filename"
 gdb_test "python print symtab\[1\]\[0\].line" "22" "Test decode_line current location line number"
 
 gdb_py_test_silent_cmd "python symtab = gdb.decode_line(\"python.c:26 if foo\")" "test decode_line python.c:26" 1
 gdb_test "python print len(symtab)" "2" "Test decode_line python.c:26 length"
 gdb_test "python print symtab\[0\]" "if foo" "Test decode_line expression parse"
 gdb_test "python print len(symtab\[1\])" "1" "Test decode_line python.c:26 length"
-gdb_test "python print symtab\[1\]\[0\].symtab" "gdb/testsuite/gdb.python/python.c.*" "Test decode_line python.c:26 filename"
+gdb_test "python print symtab\[1\]\[0\].symtab" ".*gdb.python/python.c.*" "Test decode_line python.c:26 filename"
 gdb_test "python print symtab\[1\]\[0\].line" "26" "Test decode_line python.c:26 line number"
 
 gdb_test "python gdb.decode_line(\"randomfunc\")" \
@@ -168,7 +184,7 @@ gdb_test "python gdb.decode_line(\"randomfunc\")" \
 gdb_py_test_silent_cmd "python symtab = gdb.decode_line(\"func1\")" "test decode_line func1()" 1
 gdb_test "python print len(symtab)" "2" "Test decode_line func1 length"
 gdb_test "python print len(symtab\[1\])" "1" "Test decode_line func1 length"
-gdb_test "python print symtab\[1\]\[0\].symtab" "gdb/testsuite/gdb.python/python-1.c.*" "Test decode_line func1 filename"
+gdb_test "python print symtab\[1\]\[0\].symtab" ".*gdb.python/python-1.c.*" "Test decode_line func1 filename"
 gdb_test "python print symtab\[1\]\[0\].line" "19" "Test decode_line func1 line number"
 
 # gdb.write
@@ -178,3 +194,177 @@ gdb_test "python gdb.write(\"Foo\\n\")" "Foo" "Test default write"
 gdb_test "python gdb.write(\"Error stream\\n\", stream=gdb.STDERR)" "Error stream" "Test stderr write"
 gdb_test "python gdb.write(\"Normal stream\\n\", stream=gdb.STDOUT)" "Normal stream" "Test stdout write"
 gdb_test "python gdb.write(\"Log stream\\n\", stream=gdb.STDLOG)" "Log stream" "Test stdlog write"
+
+# print-stack
+gdb_test "show python print-stack" \
+    "The mode of Python stack printing on error is \"message\".*" \
+    "Test print-backtrace show setting. Default is message."
+gdb_py_test_silent_cmd "set python print-stack full" \
+    "Test print-backtrace set setting" 1
+gdb_test "show python print-stack" \
+    "The mode of Python stack printing on error is \"full\".*" \
+    "Test print-backtrace show setting to full."
+
+# Test prompt substituion
+
+gdb_py_test_multiple "prompt substitution" \
+  "python" "" \
+  "someCounter = 0" "" \
+  "def prompt(current):" "" \
+  "   global someCounter" "" \
+  "   if (current == \"testfake \"):" "" \
+  "      return None" "" \
+  "   someCounter = someCounter + 1" "" \
+  "   return \"py prompt \" + str (someCounter) + \" \"" "" \
+  "end" ""
+
+gdb_py_test_multiple "prompt substitution readline" \
+  "python" "" \
+  "pCounter = 0" "" \
+  "def program_prompt(current):" "" \
+  "   global pCounter" "" \
+  "   if (current == \">\"):" "" \
+  "      pCounter = pCounter + 1" "" \
+  "      return \"python line \" + str (pCounter) + \": \"" "" \
+  "   return None" "" \
+  "end" ""
+
+set newprompt "py prompt 1"
+set newprompt2 "py prompt 2"
+set testfake "testfake"
+
+gdb_test_multiple "python gdb.prompt_hook = prompt" "set the hook" {
+    -re "\[\r\n\]$newprompt $" {
+	pass "set hook"
+    }
+}
+
+gdb_test_multiple "set prompt testfake " "set testfake prompt in GDB" {
+    -re "\[\r\n\]$testfake $" {
+	pass "set prompt testfake"
+    }
+}
+
+gdb_test_multiple "show prompt" "show testfake prompt" {
+    -re "Gdb's prompt is \"$testfake \"..* $" {
+	pass "show prompt shows guarded prompt"
+    }
+}
+
+gdb_test_multiple "set prompt blah " "set blah in GDB" {
+    -re "\[\r\n\]$newprompt2 $" {
+	pass "set prompt blah overriden"
+    }
+}
+
+gdb_test_multiple "python gdb.prompt_hook = None" "Delete hook" {
+    -re "\[\r\n\]$newprompt2 $" {
+	pass "Delete old hook"
+    }
+}
+
+gdb_test_multiple "set prompt $gdb_prompt " "set default prompt" {
+    -re "\[\r\n\]$gdb_prompt $" {
+	pass "set default prompt"
+    }
+}
+
+gdb_test_multiple "python gdb.prompt_hook = program_prompt" "set the hook" {
+    -re "\[\r\n\]$gdb_prompt $" {
+	pass "set programming hook"
+    }
+}
+
+gdb_test_multiple "python" "test we ignore substituion for seconday prompts" {
+    -re "\r\n>$" {
+	pass "readline secondary are not substituted"
+    }
+}
+
+gdb_test_multiple "end" "end programming" {
+    -re "\[\r\n\]$gdb_prompt $" {
+	pass "end programming"
+    }
+}
+
+gdb_py_test_multiple "prompt substitution readline" \
+  "python" "" \
+  "import gdb.command.prompt" "" \
+  "end" ""
+
+gdb_test_multiple "set extended-prompt one two three " \
+    "set basic extended prompt" {
+    -re "\[\r\n\]one two three $" {
+	pass "set basic extended prompt"
+    }
+}
+
+gdb_test_multiple "set extended-prompt \\w " \
+    "set extended prompt working directory" {
+    -re "\[\r\n\].*gdb.*testsuite.* $" {
+	pass "set extended prompt working directory"
+    }
+}
+
+gdb_test_multiple "set extended-prompt some param \\p{python print-stack} " \
+    "set extended prompt parameter" {
+    -re "\[\r\n\]some param full $" {
+	pass "set extended prompt parameter"
+    }
+}
+
+# Start with a fresh gdb.
+clean_restart ${testfile}
+
+# The following tests require execution.
+
+if ![runto_main] then {
+    fail "Can't run to main"
+    return 0
+}
+
+# print-stack settings
+gdb_test "show python print-stack" \
+    "The mode of Python stack printing on error is \"message\".*" \
+    "Test print-backtrace show setting. Default is message."
+gdb_py_test_silent_cmd "set python print-stack full" \
+    "Test print-backtrace set setting" 1
+gdb_test "show python print-stack" \
+    "The mode of Python stack printing on error is \"full\".*" \
+    "Test print-backtrace show setting to full."
+gdb_py_test_silent_cmd "set python print-stack none" \
+    "Test print-backtrace set setting" 1
+gdb_test "show python print-stack" \
+    "The mode of Python stack printing on error is \"none\".*" \
+    "Test print-backtrace show setting to none."
+
+gdb_py_test_silent_cmd "set python print-stack message" \
+    "Test print-backtrace set setting" 1
+
+gdb_py_test_multiple "prompt substitution readline" \
+  "python" "" \
+  "pCounter = 0" "" \
+  "def error_prompt(current):" "" \
+  "   raise RuntimeError(\"Python exception called\")" "" \
+  "end" ""
+
+gdb_test_multiple "python gdb.prompt_hook = error_prompt" "set the hook" {
+    -re "Python Exception <type 'exceptions.RuntimeError'> Python exception called.*" {
+	pass "set hook"
+    }
+}
+
+gdb_py_test_silent_cmd "python gdb.prompt_hook = None" \
+    "set the hook to default" 1
+
+gdb_py_test_silent_cmd "set python print-stack full" \
+    "Test print-backtrace set setting" 1
+
+gdb_test_multiple "python gdb.prompt_hook = error_prompt" "set the hook" {
+    -re "Traceback.*File.*line.*RuntimeError.*Python exception called.*" {
+	pass "set hook"
+    }
+}
+
+gdb_py_test_silent_cmd "python gdb.prompt_hook = None" \
+    "set the hook to default" 1

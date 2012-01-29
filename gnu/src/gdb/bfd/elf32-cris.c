@@ -1,6 +1,6 @@
 /* CRIS-specific support for 32-bit ELF.
    Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010  Free Software Foundation, Inc.
+   2010, 2011 Free Software Foundation, Inc.
    Contributed by Axis Communications AB.
    Written by Hans-Peter Nilsson, based on elf32-fr30.c
    PIC and shlib bits based primarily on elf32-m68k.c and elf32-i386.c.
@@ -1166,7 +1166,11 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		      || r_type == R_CRIS_16_PCREL
 		      || r_type == R_CRIS_32_PCREL))
 		relocation = 0;
-	      else if (!info->relocatable && unresolved_reloc)
+	      else if (!info->relocatable && unresolved_reloc
+		       && (_bfd_elf_section_offset (output_bfd, info,
+						    input_section,
+						    rel->r_offset)
+			   != (bfd_vma) -1))
 		{
 		  _bfd_error_handler
 		    (_("%B, section %A: unresolvable relocation %s against symbol `%s'"),
@@ -2663,6 +2667,9 @@ cris_elf_gc_sweep_hook (bfd *abfd,
 	  /* For local symbols, treat these like GOT relocs.  */
 	  if (h == NULL)
 	    goto local_got_reloc;
+	  else
+	    /* For global symbols, adjust the reloc-specific refcount.  */
+	    elf_cris_hash_entry (h)->gotplt_refcount--;
 	  /* Fall through.  */
 
 	case R_CRIS_32_PLT_GOTREL:
@@ -2671,10 +2678,14 @@ cris_elf_gc_sweep_hook (bfd *abfd,
 	    local_got_refcounts[-1]--;
 	  /* Fall through.  */
 
+	case R_CRIS_8:
+	case R_CRIS_16:
+	case R_CRIS_32:
 	case R_CRIS_8_PCREL:
 	case R_CRIS_16_PCREL:
 	case R_CRIS_32_PCREL:
 	case R_CRIS_32_PLT_PCREL:
+	  /* Negate the increment we did in cris_elf_check_relocs.  */
 	  if (h != NULL)
 	    {
 	      if (ELF_ST_VISIBILITY (h->other) == STV_DEFAULT
@@ -2733,8 +2744,10 @@ elf_cris_adjust_gotplt_to_got (h, p)
 {
   struct bfd_link_info *info = (struct bfd_link_info *) p;
 
-  if (h->root.root.type == bfd_link_hash_warning)
-    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
+  /* A GOTPLT reloc, when activated, is supposed to be included into
+     the PLT refcount.  */
+  BFD_ASSERT (h->gotplt_refcount == 0
+	      || h->gotplt_refcount <= h->root.plt.refcount);
 
   /* If nobody wanted a GOTPLT with this symbol, we're done.  */
   if (h->gotplt_refcount <= 0)
@@ -3570,6 +3583,12 @@ cris_elf_check_relocs (bfd *abfd,
 		 sec,
 		 cris_elf_howto_table[r_type].name);
 	    }
+
+	  /* We don't need to handle relocs into sections not going into
+	     the "real" output.  */
+	  if ((sec->flags & SEC_ALLOC) == 0)
+	    break;
+
 	  if (h != NULL)
 	    {
 	      h->non_got_ref = 1;
@@ -3597,11 +3616,6 @@ cris_elf_check_relocs (bfd *abfd,
 
 	  /* No need to do anything if we're not creating a shared object.  */
 	  if (! info->shared)
-	    break;
-
-	  /* We don't need to handle relocs into sections not going into
-	     the "real" output.  */
-	  if ((sec->flags & SEC_ALLOC) == 0)
 	    break;
 
 	  /* We may need to create a reloc section in the dynobj and made room
@@ -3956,9 +3970,6 @@ elf_cris_discard_excess_dso_dynamics (h, inf)
   struct elf_cris_pcrel_relocs_copied *s;
   struct bfd_link_info *info = (struct bfd_link_info *) inf;
 
-  if (h->root.root.type == bfd_link_hash_warning)
-    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
-
   /* If a symbol has been forced local or we have found a regular
      definition for the symbolic link case, then we won't be needing
      any relocs.  */
@@ -4013,9 +4024,6 @@ elf_cris_discard_excess_program_dynamics (h, inf)
      PTR inf;
 {
   struct bfd_link_info *info = (struct bfd_link_info *) inf;
-
-  if (h->root.root.type == bfd_link_hash_warning)
-    h = (struct elf_cris_link_hash_entry *) h->root.root.u.i.link;
 
   /* If we're not creating a shared library and have a symbol which is
      referred to by .got references, but the symbol is defined locally,

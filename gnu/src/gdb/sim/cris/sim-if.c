@@ -1,6 +1,5 @@
 /* Main simulator entry points specific to the CRIS.
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2012 Free Software Foundation, Inc.
    Contributed by Axis Communications.
 
 This file is part of the GNU simulators.
@@ -1093,13 +1092,6 @@ sim_create_inferior (SIM_DESC sd, struct bfd *abfd,
      FIXME: Do archaeology to find out more.  */
 
   return SIM_RC_OK;
-}
-
-void
-sim_do_command (SIM_DESC sd, char *cmd)
-{
-  if (sim_args_command (sd, cmd) != SIM_RC_OK)
-    sim_io_eprintf (sd, "Unknown command `%s'\n", cmd);
 }
 
 /* Disassemble an instruction.  */

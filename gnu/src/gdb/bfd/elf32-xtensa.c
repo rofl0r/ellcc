@@ -1,5 +1,5 @@
 /* Xtensa-specific support for 32-bit ELF.
-   Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010
+   Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -1531,9 +1531,6 @@ elf_xtensa_allocate_dynrelocs (struct elf_link_hash_entry *h, void *arg)
   if (h->root.type == bfd_link_hash_indirect)
     return TRUE;
 
-  if (h->root.type == bfd_link_hash_warning)
-    h = (struct elf_link_hash_entry *) h->root.u.i.link;
-
   info = (struct bfd_link_info *) arg;
   htab = elf_xtensa_hash_table (info);
   if (htab == NULL)
@@ -3061,7 +3058,9 @@ elf_xtensa_relocate_section (bfd *output_bfd,
 	 not process them.  */
       if (unresolved_reloc
 	  && !((input_section->flags & SEC_DEBUGGING) != 0
-	       && h->def_dynamic))
+	       && h->def_dynamic)
+	  && _bfd_elf_section_offset (output_bfd, info, input_section,
+				      rel->r_offset) != (bfd_vma) -1)
 	{
 	  (*_bfd_error_handler)
 	    (_("%B(%A+0x%lx): unresolvable %s relocation against symbol `%s'"),
@@ -3466,7 +3465,7 @@ elf_xtensa_merge_private_bfd_data (bfd *ibfd, bfd *obfd)
   unsigned out_mach, in_mach;
   flagword out_flag, in_flag;
 
-  /* Check if we have the same endianess.  */
+  /* Check if we have the same endianness.  */
   if (!_bfd_generic_verify_endian_match (ibfd, obfd))
     return FALSE;
 

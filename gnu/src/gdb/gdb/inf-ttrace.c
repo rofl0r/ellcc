@@ -1,7 +1,6 @@
 /* Low-level child interface to ttrace.
 
-   Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2004-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -650,7 +649,7 @@ inf_ttrace_create_inferior (struct target_ops *ops, char *exec_file,
   gdb_assert (inf_ttrace_vfork_ppid == -1);
 
   pid = fork_inferior (exec_file, allargs, env, inf_ttrace_me, NULL,
-		       inf_ttrace_prepare, NULL);
+		       inf_ttrace_prepare, NULL, NULL);
 
   inf_ttrace_him (ops, pid);
 }

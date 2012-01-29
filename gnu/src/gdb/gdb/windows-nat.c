@@ -1,7 +1,6 @@
 /* Target-vector operations for controlling windows child processes, for GDB.
 
-   Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1995-2012 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions, A Red Hat Company.
 
@@ -40,6 +39,7 @@
 #include <imagehlp.h>
 #include <psapi.h>
 #ifdef __CYGWIN__
+#include <wchar.h>
 #include <sys/cygwin.h>
 #include <cygwin/version.h>
 #endif
@@ -112,7 +112,6 @@ static struct target_ops windows_ops;
 /* The starting and ending address of the cygwin1.dll text segment.  */
   static CORE_ADDR cygwin_load_start;
   static CORE_ADDR cygwin_load_end;
-# if CYGWIN_VERSION_DLL_MAKE_COMBINED(CYGWIN_VERSION_API_MAJOR,CYGWIN_VERSION_API_MINOR) >= 181
 #   define __USEWIDE
     typedef wchar_t cygwin_buf_t;
     static DWORD WINAPI (*GetModuleFileNameEx) (HANDLE, HMODULE,
@@ -121,21 +120,6 @@ static struct target_ops windows_ops;
 #   define CreateProcess CreateProcessW
 #   define GetModuleFileNameEx_name "GetModuleFileNameExW"
 #   define bad_GetModuleFileNameEx bad_GetModuleFileNameExW
-# else
-#   define CCP_POSIX_TO_WIN_W 1
-#   define CCP_WIN_W_TO_POSIX 3
-#   define cygwin_conv_path(op, from, to, size)  \
-         (op == CCP_WIN_W_TO_POSIX) ? \
-         cygwin_conv_to_full_posix_path (from, to) : \
-         cygwin_conv_to_win32_path (from, to)
-    typedef char cygwin_buf_t;
-    static DWORD WINAPI (*GetModuleFileNameEx) (HANDLE, HMODULE, LPSTR, DWORD);
-#   define STARTUPINFO STARTUPINFOA
-#   define CreateProcess CreateProcessA
-#   define GetModuleFileNameEx_name "GetModuleFileNameExA"
-#   define bad_GetModuleFileNameEx bad_GetModuleFileNameExA
-#   define CW_SET_DOS_FILE_WARNING -1	/* no-op this for older Cygwin */
-# endif
 #endif
 
 static int have_saved_context;	/* True if we've saved context from a
@@ -517,7 +501,7 @@ windows_store_inferior_registers (struct target_ops *ops,
     do_windows_store_inferior_registers (regcache, r);
 }
 
-/* Get the name of a given module at at given base address.  If base_address
+/* Get the name of a given module at given base address.  If base_address
    is zero return the first loaded module (which is always the name of the
    executable).  */
 static int
@@ -760,7 +744,7 @@ windows_make_so (const char *name, LPVOID load_addr)
 	  return so;
 	}
 
-      /* The symbols in a dll are offset by 0x1000, which is the the
+      /* The symbols in a dll are offset by 0x1000, which is the
 	 offset from 0 of the first byte in an image - because of the
 	 file header and the section alignment.  */
       cygwin_load_start = (CORE_ADDR) (uintptr_t) ((char *)
@@ -1731,7 +1715,7 @@ do_initial_windows_stuff (struct target_ops *ops, DWORD pid, int attaching)
   while (1)
     {
       stop_after_trap = 1;
-      wait_for_inferior (0);
+      wait_for_inferior ();
       tp = inferior_thread ();
       if (tp->suspend.stop_signal != TARGET_SIGNAL_TRAP)
 	resume (0, tp->suspend.stop_signal);
@@ -1968,6 +1952,40 @@ windows_set_console_info (STARTUPINFO *si, DWORD *flags)
   *flags |= CREATE_NEW_CONSOLE;
 }
 
+#ifndef __CYGWIN__
+/* Function called by qsort to sort environment strings.  */
+
+static int
+envvar_cmp (const void *a, const void *b)
+{
+  const char **p = (const char **) a;
+  const char **q = (const char **) b;
+  return strcasecmp (*p, *q);
+}
+#endif
+
+#ifdef __CYGWIN__
+static void
+clear_win32_environment (char **env)
+{
+  int i;
+  size_t len;
+  wchar_t *copy = NULL, *equalpos;
+
+  for (i = 0; env[i] && *env[i]; i++)
+    {
+      len = mbstowcs (NULL, env[i], 0) + 1;
+      copy = (wchar_t *) xrealloc (copy, len * sizeof (wchar_t));
+      mbstowcs (copy, env[i], len);
+      equalpos = wcschr (copy, L'=');
+      if (equalpos)
+        *equalpos = L'\0';
+      SetEnvironmentVariableW (copy, NULL);
+    }
+  xfree (copy);
+}
+#endif
+
 /* Start an inferior windows child process and sets inferior_ptid to its pid.
    EXEC_FILE is the file to run.
    ALLARGS is a string containing the arguments to the program.
@@ -1985,6 +2003,8 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
   cygwin_buf_t *toexec;
   cygwin_buf_t *cygallargs;
   cygwin_buf_t *args;
+  char **old_env = NULL;
+  PWCHAR w32_env;
   size_t len;
   int tty;
   int ostdin, ostdout, ostderr;
@@ -1994,6 +2014,12 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
   char *toexec;
   char *args;
   HANDLE tty;
+  char *w32env;
+  char *temp;
+  size_t envlen;
+  int i;
+  size_t envsize;
+  char **env;
 #endif
   PROCESS_INFORMATION pi;
   BOOL ret;
@@ -2065,8 +2091,23 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
   strcat (args, cygallargs);
 #endif
 
-  /* Prepare the environment vars for CreateProcess.  */
-  cygwin_internal (CW_SYNC_WINENV);
+#ifdef CW_CVT_ENV_TO_WINENV
+  /* First try to create a direct Win32 copy of the POSIX environment. */
+  w32_env = (PWCHAR) cygwin_internal (CW_CVT_ENV_TO_WINENV, in_env);
+  if (w32_env != (PWCHAR) -1)
+    flags |= CREATE_UNICODE_ENVIRONMENT;
+  else
+    /* If that fails, fall back to old method tweaking GDB's environment. */
+#endif
+    {
+      /* Reset all Win32 environment variables to avoid leftover on next run. */
+      clear_win32_environment (environ);
+      /* Prepare the environment vars for CreateProcess.  */
+      old_env = environ;
+      environ = in_env;
+      cygwin_internal (CW_SYNC_WINENV);
+      w32_env = NULL;
+    }
 
   if (!inferior_io_terminal)
     tty = ostdin = ostdout = ostderr = -1;
@@ -2096,10 +2137,22 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
 		       NULL,	/* thread */
 		       TRUE,	/* inherit handles */
 		       flags,	/* start flags */
-		       NULL,	/* environment */
+		       w32_env,	/* environment */
 		       NULL,	/* current directory */
 		       &si,
 		       &pi);
+  if (w32_env)
+    /* Just free the Win32 environment, if it could be created. */
+    free (w32_env);
+  else
+    {
+      /* Reset all environment variables to avoid leftover on next run. */
+      clear_win32_environment (in_env);
+      /* Restore normal GDB environment variables.  */
+      environ = old_env;
+      cygwin_internal (CW_SYNC_WINENV);
+    }
+
   if (tty >= 0)
     {
       close (tty);
@@ -2141,6 +2194,31 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
 	}
     }
 
+  /* CreateProcess takes the environment list as a null terminated set of
+     strings (i.e. two nulls terminate the list).  */
+
+  /* Get total size for env strings.  */
+  for (envlen = 0, i = 0; in_env[i] && *in_env[i]; i++)
+    envlen += strlen (in_env[i]) + 1;
+
+  envsize = sizeof (in_env[0]) * (i + 1);
+  env = (char **) alloca (envsize);
+  memcpy (env, in_env, envsize);
+  /* Windows programs expect the environment block to be sorted.  */
+  qsort (env, i, sizeof (char *), envvar_cmp);
+
+  w32env = alloca (envlen + 1);
+
+  /* Copy env strings into new buffer.  */
+  for (temp = w32env, i = 0; env[i] && *env[i]; i++)
+    {
+      strcpy (temp, env[i]);
+      temp += strlen (temp) + 1;
+    }
+
+  /* Final nil string to terminate new env.  */
+  *temp = 0;
+
   windows_init_thread_list ();
   ret = CreateProcessA (0,
 			args,	/* command line */
@@ -2148,7 +2226,7 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
 			NULL,	/* thread */
 			TRUE,	/* inherit handles */
 			flags,	/* start flags */
-			NULL,	/* environment */
+			w32env,	/* environment */
 			NULL,	/* current directory */
 			&si,
 			&pi);

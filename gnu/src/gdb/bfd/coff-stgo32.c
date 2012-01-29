@@ -1,6 +1,6 @@
 /* BFD back-end for Intel 386 COFF files (DJGPP variant with a stub).
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2005, 2006, 2007, 2009
-   Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2005, 2006, 2007, 2009,
+   2011  Free Software Foundation, Inc.
    Written by Robert Hoehne.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -95,6 +95,10 @@ create_go32_stub PARAMS ((bfd *));
 #define COFF_ADJUST_AUX_OUT_PRE adjust_aux_out_pre
 #define COFF_ADJUST_AUX_OUT_POST adjust_aux_out_post
 
+static const bfd_target *go32_check_format (bfd *abfd);
+
+#define COFF_CHECK_FORMAT go32_check_format
+
 static bfd_boolean
   go32_stubbed_coff_bfd_copy_private_bfd_data PARAMS ((bfd *, bfd *));
 
@@ -102,9 +106,9 @@ static bfd_boolean
 
 #include "coff-i386.c"
 
-/* This macro is used, because I cannot assume the endianess of the
+/* This macro is used, because I cannot assume the endianness of the
    host system.  */
-#define _H(index) (H_GET_16 (abfd, (header+index*2)))
+#define _H(index) (H_GET_16 (abfd, (header + index * 2)))
 
 /* These bytes are a 2048-byte DOS executable, which loads the COFF
    image into memory and then runs it. It is called 'stub'.  */
@@ -413,4 +417,24 @@ go32_stubbed_coff_bfd_copy_private_bfd_data  (ibfd, obfd)
 	    GO32_STUBSIZE);
 
   return TRUE;
+}
+
+/* coff_object_p only checks 2 bytes F_MAGIC at GO32_STUBSIZE inside the file
+   which is too fragile.  */
+
+static const bfd_target *
+go32_check_format (bfd *abfd)
+{
+  char mz[2];
+
+  if (bfd_bread (mz, 2, abfd) != 2 || mz[0] != 'M' || mz[1] != 'Z')
+    {
+      bfd_set_error (bfd_error_wrong_format);
+      return NULL;
+    }
+
+  if (bfd_seek (abfd, 0, SEEK_SET) != 0)
+    return NULL;
+
+  return coff_object_p (abfd);
 }

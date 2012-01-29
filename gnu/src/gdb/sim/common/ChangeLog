@@ -1,8 +1,151 @@
-2011-05-17  Mike Frysinger  <vapier@gentoo.org>
+2012-01-02  Joel Brobecker  <brobecker@adacore.com>
+
+	* dv-sockser.h, sim-assert.h, sim-fpu.c: Reformat the copyright
+	header.
+
+2011-12-19  Joel Brobecker  <brobecker@adacore.com>
+
+	* Make-common.in (hw-config.h): Work around bug in Solaris 2.8
+	system bourne shell.
+
+2011-12-03  Mike Frysinger  <vapier@gentoo.org>
+
+	* syscall.c (cb_get_string): Rename from "get_string".
+	(get_path): Rename get_string call to cb_get_string.
+
+2011-12-03  Mike Frysinger  <vapier@gentoo.org>
+
+	* Make-common.in (VPATH): Add $(srccom).
+	(DEP): Delete.
+	(DEPMODE, DEPDIR, depcomp, COMPILE.pre, COMPILE.post, COMPILE,
+	POSTCOMPILE): New variables.
+	(.c.o): Replace recipe with call to $(COMPILE) and $(POSTCOMPILE).
+	Include dependency files, when using GNU Make.  Delete all
+	dependency-only rules.
+	* aclocal.m4: Include ../../config/depstand.m4.  Call
+	ZW_CREATE_DEPDIR and ZW_PROG_COMPILER_DEPENDENCIES.
+	(MAKE, GMAKE): New substs.
+
+2011-11-07  Mike Frysinger  <vapier@gentoo.org>
+
+	PR sim/13161
+	* configure.ac (AC_CHECK_FUNCS): Add posix_fallocate.
+	* configure, config.in: Regenerate.
+	* dv-cfi.c (attach_cfi_regs): Check for HAVE_POSIX_FALLOCATE.
+
+2011-10-19  Mike Frysinger  <vapier@gentoo.org>
+
+	* acinclude.m4: Call AC_CHECK_LIB when $hardware contains cfi.
+
+2011-10-18  John Wehle  <john@feith.com>  (tiny patch)
+
+	* sim-profile.c (profile_info): Only print the title once.
+
+2011-10-17  Mike Frysinger  <vapier@gentoo.org>
+
+	* acinclude.m4: Rename from aclocal.m4.
+	* aclocal.m4: Regenerate.
+
+2011-10-17  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4: Change AC_PREREQ comment to 2.64.
+	* common.m4: Delete.
+	* configure.ac: Change AC_PREREQ to 2.64.  Replace AC_CONFIG_HEADER
+	call and common.m4 include with SIM_AC_COMMON(cconfig.h).
+	* configure: Regenerate.
+
+2011-10-14  Alexey Makhalov  <makhaloff@gmail.com>
+
+	* sim-alu.h (ALU32_AND): Clear carry flag.
+	(ALU32_AND): Clear carry flag.
+
+2011-10-09  Mike Frysinger  <vapier@gentoo.org>
+
+	* dv-cfi.c: Include stdbool.h.
+
+2011-10-09  Mike Frysinger  <vapier@gentoo.org>
+
+	* dv-cfi.c: Replace devices.h include with hw-base.h and hw-main.h.
+
+2011-10-04  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4 (SIM_AC_COMMON): Call AM_ZLIB, ACX_PKGVERSION, and
+	ACX_BUGURL.  Define PKGVERSION and REPORT_BUGS_TO.
+
+2011-07-12  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-command.c: Include sim-options.h.
+
+2011-07-12  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4: Move sinclude comment after AC_INIT comment.
+
+2011-07-12  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4 (SIM_AC_COMMON): Call AC_REQUIRE on AC_PROG_CC.
+	Delete direct call to AC_PROG_CC.
+
+2011-07-05  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-command.c: New file.
+	* Make-common.in (SIM_NEW_COMMON_OBJS): Add sim-command.o.
+	(sim-command.o): New rule.
+
+2011-05-27  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-options.c (standard_option_handler): Remove arg[0] check
+	when freeing simulator_sysroot.  Only strdup arg when arg[0] is
+	not an empty string, otherwise assign "" back to it.
+
+2011-05-26  Mike Frysinger  <vapier@gentoo.org>
+
+	* nltvals.def: Regenerate to include Blackfin syscalls again.
+
+2011-05-25  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-trace.c (OPTION_TRACE_SYSCALL): New enum.
+	(trace_options): Handle "trace-syscall" with OPTION_TRACE_SYSCALL.
+	(trace_option_handler): Handle OPTION_TRACE_SYSCALL.
+	(trace_idx_to_str): Likewise.
+	* sim-trace.h (TRACE_SYSCALL_IDX): New enum.
+	(TRACE_syscall): Define.
+	(WITH_TRACE_SYSCALL_P): Likewise.
+	(TRACE_SYSCALL_P): Likewise.
+
+2011-05-23  Mike Frysinger  <vapier@gentoo.org>
+
+	* dv-glue.c (hw_glue_finish): Move "name" to function scope and
+	remove now-unnecessary sub-scope for glue->type setting.
+	Check to see if the "reg" property exists before we use it, and
+	if it doesn't exist, error out for "glue" devices.
+
+2011-05-23  Mike Frysinger  <vapier@gentoo.org>
+
+	* dv-glue.c (hw_glue_finish): Set type to glue_or when name is
+	glue-or, and set type to glue_xor when name is glue-xor.
+	(hw_glue_port_event): Return immediately when type is glue_io
+	or unmatched.  Handle glue_or and glue_xor types.  Move HW_TRACE
+	and hw_port_event calls from glue_and to end of function.
+
+2011-05-11  Mike Frysinger  <vapier@gentoo.org>
+
+	* callback.c, dv-pal.c, dv-sockser.c, hw-base.c, hw-device.c,
+	hw-instances.c, hw-ports.c, hw-properties.c, hw-tree.c, sim-abort.c,
+	sim-arange.c, sim-config.c, sim-core.c, sim-engine.c, sim-events.c,
+	sim-hw.c, sim-io.c, sim-memopt.c, sim-options.c, sim-profile.c,
+	sim-resume.c, sim-stop.c, syscall.c: Add space before parenthesis
+	around function arguments.
+
+2011-04-14  Mike Frysinger  <vapier@gentoo.org>
+
+	* sim-options.c (complete_option_list, sim_complete_command):
+	New functions.
+
+2011-04-02  Mike Frysinger  <vapier@gentoo.org>
 
 	* dv-glue.c: Fix up style.
 
-2011-05-17  Mike Frysinger  <vapier@gentoo.org>
+2011-04-02  Mike Frysinger  <vapier@gentoo.org>
 
 	* hw-alloc.c (hw_alloc_data): Adjust brace.
 	* hw-base.c (hw_base_data): Likewise.

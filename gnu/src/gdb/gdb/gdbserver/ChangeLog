@@ -1,13 +1,556 @@
+2012-01-06  Joel Brobecker  <brobecker@adacore.com>
+
+	* terminal.h: Reformat copyright header.
+
+2012-01-02  Joel Brobecker  <brobecker@adacore.com>
+
+	* server.c (gdbserver_version): Update copyright year.
+	* gdbreplay.c (gdbreplay_version): Likewise.
+
+2011-12-13  Yao Qi  <yao@codesourcery.com>
+
+	* tracepoint.c (trace_buffer_alloc): Replace magic numbers with
+	macros.
+	(upload_fast_traceframes, upload_fast_traceframes): Likewise.
+
+2011-12-08  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* linux-low.c (linux_kill): Skip PTRACE_KILL if LWP does not exist.
+	Print new debug message for such case.
+
+2011-12-06  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Fix overlapping memcpy.
+	* mem-break.c (set_raw_breakpoint_at): New variable buf.  Use it for
+	the read_inferior_memory transfer.
+	(delete_fast_tracepoint_jump): New variable buf.  Use it for the
+	write_inferior_memory transfer.
+	(set_fast_tracepoint_jump): New variable buf.  Use it for the
+	read_inferior_memory and write_inferior_memory transfers.
+	(uninsert_fast_tracepoint_jumps_at, reinsert_fast_tracepoint_jumps_at)
+	(delete_raw_breakpoint, uninsert_raw_breakpoint): New variable buf.
+	Use it for the write_inferior_memory transfer.
+	(check_mem_read, check_mem_write): New gdb_asserts for overlapping
+	buffers.
+
+2011-12-06  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* linux-low.c (fetch_register, store_register): Make code
+	consistent, fix formatting.
+
+2011-12-06  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* linux-low.c (usr_store_inferior_registers): Factor out code
+	to handle individual registers into...
+	(store_register): ... this new function.
+
+2011-12-06  Ulrich Weigand  <uweigand@de.ibm.com>
+
+	* Makefile.in (s390-linux32v1.o, s390-linux32v1.c): New rules.
+	(s390-linux32v2.o, s390-linux32v2.c): Likewise.
+	(s390-linux64v1.o, s390-linux64v1.c): Likewise.
+	(s390-linux64v2.o, s390-linux64v2.c): Likewise.
+	(s390x-linux64v1.o, s390x-linux64v1.c): Likewise.
+	(s390x-linux64v2.o, s390x-linux64v2.c): Likewise.
+	* configure.srv [s390*-*-linux*] (srv_regobj): Add new objects.
+	(srv_xmlfiles): Add new XML files.
+
+	* linux-s390-low.c: Include "elf/common.h", <sys/ptrace.h>,
+	and <sys/uio.h>.
+	(PTRACE_GETREGSET, PTRACE_SETREGSET): Define if undefined.
+	(init_registers_s390_linux32v1): Add prototype.
+	(init_registers_s390_linux32v2): Likewise.
+	(init_registers_s390_linux64v1): Likewise.
+	(init_registers_s390_linux64v2): Likewise.
+	(init_registers_s390x_linux64v1): Likewise.
+	(init_registers_s390x_linux64v2): Likewise.
+	(s390_num_regs): Increment to 52.
+	(s390_regmap): Add orig_r2 register.
+	(s390_num_regs_3264): Increment to 68.
+	(s390_regmap_3264): Add orig_r2 register.
+	(s390_collect_ptrace_register): Handle orig_r2 register.
+	(s390_supply_ptrace_register): Likewise.
+	(s390_fill_last_break): New function.
+	(s390_store_last_break): Likewise.
+	(s390_fill_system_call): New function.
+	(s390_store_system_call): Likewise.
+	(target_regsets): Handle NT_S390_LAST_BREAK and NT_S390_SYSTEM_CALL
+	register sets.
+	(s390_check_regset): New function.
+	(s390_arch_setup): Check for presence of NT_S390_LAST_BREAK and
+	NT_S390_SYSTEM_CALL regsets and use appropriate description.
+	Update target_regsets for available register sets.
+
+2011-12-02  Paul Pluzhnikov  <ppluzhnikov@google.com>
+	    Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* linux-low.c (get_phdr_phnum_from_proc_auxv, get_dynamic, get_r_debug)
+	(read_one_ptr, struct link_map_offsets, linux_qxfer_libraries_svr4):
+	New.
+	(struct linux_target_ops): Install linux_qxfer_libraries_svr4.
+	* linux-low.h (struct process_info_private): New member r_debug.
+	* server.c (handle_qxfer_libraries): Call
+	the_target->qxfer_libraries_svr4.
+	(handle_qxfer_libraries_svr4): New function.
+	(qxfer_packets): New entry "libraries-svr4".
+	(handle_query): Check QXFER_LIBRARIES_SVR4 and report libraries-svr4.
+	* target.h (struct target_ops): New member qxfer_libraries_svr4.
+	* remote.c (remote_xfer_partial): Call add_packet_config_cmd for
+	PACKET_qXfer_libraries_svr4.
+
+2011-11-30  Ulrich Weigand  <uweigand@de.ibm.com>
+
+	* linux-s390-low.c (s390_collect_ptrace_register): Fully convert
+	PSW address/mask between 8-byte and 16-byte formats.
+	(s390_supply_ptrace_register): Likewise.
+	(s390_get_pc, s390_set_pc): 4-byte PSW address always includes
+	basic addressing mode bit.
+
+2011-11-24  Stan Shebs  <stan@codesourcery.com>
+
+	* tracepoint.c (cmd_qtstatus): Use plongest instead of %llx.
+
+2011-11-17  Stan Shebs  <stan@codesourcery.com>
+
+	* tracepoint.c (struct tracepoint): New field traceframe_usage.
+	(tracing_start_time): New global.
+	(tracing_stop_time): New global.
+	(tracing_user_name): New global.
+	(tracing_notes): New global.
+	(tracing_stop_note): New global.
+	(cmd_qtstart): Set traceframe_usage, start_time.
+	(stop_tracing): Set stop_time.
+	(cmd_qtstatus): Report additional status.
+	(cmd_qtp): New function.
+	(handle_tracepoint_query): Call it.
+	(cmd_qtnotes): New function.
+	(handle_tracepoint_general_set): Call it.
+	(get_timestamp): Rename from tsv_get_timestamp.
+
+2011-11-14  Stan Shebs  <stan@codesourcery.com>
+	    Kwok Cheung Yeung  <kcy@codesourcery.com>
+
+	* linux-x86-low.c (small_jump_insn): New.
+	(i386_install_fast_tracepoint_jump_pad): Add arguments for
+	trampoline and error message, build a trampoline and issue a small
+	jump instruction to it.
+	(x86_install_fast_tracepoint_jump_pad): Add arguments for
+	trampoline and error message.
+	(x86_get_min_fast_tracepoint_insn_len): New.
+	(the_low_target): Add call to x86_get_min_fast_tracepoint_insn_len.
+	* linux-low.h (struct linux_target_ops): Add arguments to
+	install_fast_tracepoint_jump_pad operation, add new operation.
+	* linux-low.c (linux_install_fast_tracepoint_jump_pad): Add
+	arguments.
+	(linux_get_min_fast_tracepoint_insn_len): New function.
+	(linux_target_op): Add new operation.
+	* tracepoint.c (gdb_trampoline_buffer): New IPA variable.
+	(gdb_trampoline_buffer_end): Ditto.
+	(gdb_trampoline_buffer_error): Ditto.
+	(struct ipa_sym_addresses): Add fields for new IPA variables.
+	(symbol_list): Add entries for new IPA variables.
+	(struct tracepoint): Add fields to hold the address range of the
+	trampoline used by the tracepoint.
+	(trampoline_buffer_head): New static variable.
+	(trampoline_buffer_tail): Ditto.
+	(claim_trampoline_space): New function.
+	(have_fast_tracepoint_trampoline_buffer): New function.
+	(clone_fast_tracepoint): Fill in trampoline fields of tracepoint
+	structure.
+	(install_fast_tracepoint): Ditto, also add error buffer argument.
+	(cmd_qtminftpilen): New function.
+	(handle_tracepoint_query): Add response to qTMinFTPILen packet.
+	(fast_tracepoint_from_trampoline_address): New function.
+	(fast_tracepoint_collecting): Handle trampoline as part of jump
+	pad space.
+	(set_trampoline_buffer_space): New function.
+	(initialize_tracepoint): Initialize new IPA variables.
+	* target.h (struct target_ops): Add arguments to
+	install_fast_tracepoint_jump_pad operation, add new
+	get_min_fast_tracepoint_insn_len operation.
+	(target_get_min_fast_tracepoint_insn_len): New.
+	(install_fast_tracepoint_jump_pad): Add arguments.
+	* server.h (IPA_BUFSIZ): Define.
+	* linux-i386-ipa.c: Include extra header files.
+	(initialize_fast_tracepoint_trampoline_buffer): New function.
+	(initialize_low_tracepoint): Call it.
+	* server.h (set_trampoline_buffer_space): Declare.
+	(claim_trampoline_space): Ditto.
+	(have_fast_tracepoint_trampoline_buffer): Ditto.
+
+2011-11-14  Yao Qi  <yao@codesourcery.com>
+
+	* server.c (handle_query): Handle InstallInTrace for qSupported.
+	* tracepoint.c (add_tracepoint): Sort list.
+	(install_tracepoint, download_tracepoint): New.
+	(cmd_qtdp): Call them to install and download tracepoints.
+	(sort_tracepoints): Removed.
+	(cmd_qtstart): Update.
+
+2011-11-14  Yao Qi  <yao@codesourcery.com>
+
+	* mem-break.c (inc_ref_fast_tracepoint_jump): New.
+	* mem-break.h: Declare.
+	* tracepoint.c (cmd_qtstart): Move some code to ...
+	(clone_fast_tracepoint, install_fast_tracepoint): ... here.
+	New.
+	(download_tracepoints): Move some code to ...
+	(download_tracepoint_1): ... here.  New.
+
+2011-11-08  Yao Qi  <yao@codesourcery.com>
+
+	* remote-utils.c (relocate_instruction): A comment fix.
+
+2011-11-07  Joel Brobecker  <brobecker@adacore.com>
+
+	* win32-i386-low.c (dr_status_mirror, dr_control_mirror): Delete.
+	(i386_dr_low_get_control, i386_dr_low_get_status): Use
+	dr_status_mirror and dr_control_mirror from debug_reg_state.
+	(i386_dr_low_get_status): Use debug_reg_state.dr_status_mirror
+	(i386_initial_stuff): Remove use of deleted globals.
+	(i386_get_thread_context, i386_set_thread_context,
+	i386_thread_added): Use dr_status_mirror and dr_control_mirror
+	from debug_reg_state.
+
+2011-11-05  Yao Qi  <yao@codesourcery.com>
+
+	* tracepoint.c (gdb_collect): Loop over tracepoints of same
+	address as TPOINT's.
+
+2011-11-02  Stan Shebs  <stan@codesourcery.com>
+
+	* tracepoint.c (agent_mem_read_string): New function.
+	(eval_agent_expr): Call it for tracenz.
+	* server.c (handle_query): Report support for tracenz.
+
+2011-11-02  Yao Qi  <yao@codesourcery.com>
+
+	* tracepoint.c (cmd_qtstart): Remove unused local variables.
+
+2011-11-02  Yao Qi  <yao@codesourcery.com>
+
+	* target.h: Fix a typo in comment.
+
+2011-10-31  Pedro Alves  <pedro@codesourcery.com>
+
+	* mem-break.c (check_mem_write): Add `myaddr' parameter.  Don't
+	clobber the breakpoints' shadows with fast tracepoint jumps.
+	* mem-break.h (check_mem_write): Add `myaddr' parameter.
+	* target.c (write_inferior_memory): Also pass MYADDR down to
+	check_mem_write.
+
+2011-10-07  Ulrich Weigand  <ulrich.weigand@linaro.org>
+
+	* configure.ac: Check support for personality routine.
+	* configure: Regenerate.
+	* config.in: Likewise.
+	* linux-low.c: Include <sys/personality.h>.
+	Define ADDR_NO_RANDOMIZE if necessary.
+	(linux_create_inferior): Disable address space randomization when
+	forking inferior, if requested.
+	(linux_supports_disable_randomization): New function.
+	(linux_target_ops): Install it.
+	* server.h (disable_randomization): Declare.
+	* server.c (disable_randomization): New global variable.
+	(handle_general_set): Handle QDisableRandomization.
+	(handle_query): Likewise for qSupported.
+	(main): Support --disable-randomization and --no-disable-randomization
+	command line arguments.
+	* target.h (struct target_ops): Add supports_disable_randomization.
+	(target_supports_disable_randomization): New macro.
+
+2011-09-29  Mike Frysinger  <vapier@gentoo.org>
+
+	* linux-low.c (target_loadseg): Add defined PTRACE_GETFDPIC to the
+	ifdef check.
+	[PT_GETDSBT] (target_loadmap): Wrap in a defined PT_GETDSBT check.
+	[!PT_GETDSBT] (target_loadmap): New definition.
+	(LINUX_LOADMAP, LINUX_LOADMAP_EXEC, LINUX_LOADMAP_INTERP): Define.
+	(linux_read_loadmap): Change PTRACE_GETDSBT_EXEC to
+	LINUX_LOADMAP_EXEC, PTRACE_GETDSBT_INTERP to LINUX_LOADMAP_INTERP,
+	and PT_GETDSBT to LINUX_LOADMAP.
+	[!PT_GETDSBT] (linux_read_loadmap): Define to NULL.
+	(linux_target_ops): Delete unnecessary ifdef PT_GETDSBT check.
+
+2011-09-21  Ulrich Weigand  <ulrich.weigand@linaro.org>
+
+	* linux-arm-low.c (struct arm_linux_hwbp_cap): Remove.
+	(arm_linux_hwbp_cap): New static variable.
+	(arm_linux_get_hwbp_cap): Replace by ...
+	(arm_linux_init_hwbp_cap): ... this new function.
+	(arm_linux_get_hw_breakpoint_count): Use arm_linux_hwbp_cap.
+	(arm_linux_get_hw_watchpoint_count): Likewise.
+	(arm_linux_get_hw_watchpoint_max_length): Likewise.
+	(arm_arch_setup): Call arm_linux_init_hwbp_cap.
+	(arm_prepare_to_resume): Use perror_with_name instead of error.
+
+2011-09-21  Ulrich Weigand  <ulrich.weigand@linaro.org>
+
+	* linux-arm-low.c: Include <signal.h>.
+	(PTRACE_GETHBPREGS, PTRACE_SETHBPREGS): Define if necessary.
+	(struct arm_linux_hwbp_cap): New data type.
+	(arm_hwbp_type, arm_hwbp_control_t): New typedefs.
+	(struct arm_linux_hw_breakpoint): New data type.
+	(MAX_BPTS, MAX_WPTS): Define.
+	(struct arch_process_info, struct arch_lwp_info): New data types.
+	(arm_linux_get_hwbp_cap): New function.
+	(arm_linux_get_hw_breakpoint_count): Likewise.
+	(arm_linux_get_hw_watchpoint_count): Likewise.
+	(arm_linux_get_hw_watchpoint_max_length): Likewise.
+	(arm_hwbp_control_initialize): Likewise.
+	(arm_hwbp_control_is_enabled): Likewise.
+	(arm_hwbp_control_is_initialized): Likewise.
+	(arm_hwbp_control_disable): Likewise.
+	(arm_linux_hw_breakpoint_equal): Likewise.
+	(arm_linux_hw_point_initialize): Likewise.
+	(struct update_registers_data): New data structure.
+	(update_registers_callback: New function.
+	(arm_insert_point): Likewise.
+	(arm_remove_point): Likewise.
+	(arm_stopped_by_watchpoint): Likewise.
+	(arm_stopped_data_address): Likewise.
+	(arm_new_process): Likewise.
+	(arm_new_thread): Likewise.
+	(arm_prepare_to_resume): Likewise.
+	(the_low_target): Register arm_insert_point, arm_remove_point,
+	arm_stopped_by_watchpoint, arm_stopped_data_address, arm_new_process,
+	arm_new_thread, and arm_prepare_to_resume.
+
+2011-09-15  Stan Shebs  <stan@codesourcery.com>
+
+	* server.h (struct emit_ops): Add compare-goto fields.
+	* tracepoint.c (gdb_agent_op_sizes): New table.
+	(emit_eq_goto): New function.
+	(emit_ne_goto): New function.
+	(emit_lt_goto): New function.
+	(emit_le_goto): New function.
+	(emit_gt_goto): New function.
+	(emit_ge_goto): New function.
+	(is_goto_target): New function.
+	(compile_bytecodes): Recognize special cases of compare-goto
+	combinations and call specialized emitters for them.
+	* linux-x86-low.c (amd64_emit_eq_goto): New function.
+	(amd64_emit_ne_goto): New function.
+	(amd64_emit_lt_goto): New function.
+	(amd64_emit_le_goto): New function.
+	(amd64_emit_gt_goto): New function.
+	(amd64_emit_ge_goto): New function.
+	(amd64_emit_ops): Add the new functions.
+	(i386_emit_eq_goto): New function.
+	(i386_emit_ne_goto): New function.
+	(i386_emit_lt_goto): New function.
+	(i386_emit_le_goto): New function.
+	(i386_emit_gt_goto): New function.
+	(i386_emit_ge_goto): New function.
+	(i386_emit_ops): Add the new functions.
+
+2011-09-08  Stan Shebs  <stan@codesourcery.com>
+
+	* linux-x86-low.c (i386_emit_prologue): Save %ebx.
+	(i386_emit_epilogue): Restore %ebx.
+
+2011-08-31  Jie Zhang  <jzhang918@gmail.com>
+
+	* server.c (step_thread): Remove definition.
+	(process_serial_event): Don't handle Hs.
+	* server.h (step_thread): Remove declaration.
+	* target.c (set_desired_inferior): Remove use of step_thread.
+
+2011-08-24  Luis Machado  <lgustavo@codesourcery.com>
+
+	* linux-low.c: Include linux-procfs.h.
+	(linux_attach_lwp_1): Update comments.
+	(linux_attach): Scan for existing threads when attaching to a
+	process that is the tgid.
+	* Makefile.in: Update dependencies.
+
+2011-08-24  Luis Machado  <lgustavo@codesourcery.com>
+
+	* configure.srv: Add linux-procfs.o dependencies.
+
+2011-08-14  Yao Qi  <yao@codesourcery.com>
+
+	* target.h (struct target_ops): Fix indent.
+	* win32-low.c (win32_target_ops): Fix comment.
+
+2011-08-14  Andrew Jenner  <andrew@codesourcery.com>
+	    Yao Qi  <yao@codesourcery.com>
+
+	* Makefile.in (clean): Remove tic6x-*.c files.
+	(linux-tic6x-low.o, tic6x-c62x-linux.o, tic6x-c64x-linux.o): New rules.
+	(tic6x-c64xp-linux.o, tic6x-c62x-linux.c, tic6x-c64x-linux.c): Likewise.
+	(tic6x-c64xp-linux.c): Likewise.
+	* configure.srv: Add support for tic6x-*-uclinux.
+	* linux-tic6x-low.c: New.
+	* linux-low.c (PT_TEXT_ADDR, PT_DATA_ADDR, PT_TEXT_END_ADDR): Define.
+
+2011-08-14  Andrew Stubbs <ams@codesourcery.com>
+	    Yao Qi  <yao@codesourcery.com>
+
+	* target.h (struct target_ops): Add read_loadmap.
+	* linux-low.c (struct target_loadseg): New type.
+	(struct target_loadmap): New type.
+	(linux_read_loadmap): New function.
+	(linux_target_ops): Add linux_read_loadmap.
+	* server.c (handle_query): Support qXfer:fdpic:read packet.
+	* win32-low.c (win32_target_ops): Initialize field `read_loadmap' to NULL.
+
+2011-08-05  Eli Zaretskii  <eliz@gnu.org>
+
+	* win32-low.c: Include <stdint.h>.
+
+2011-07-22  Pedro Alves  <pedro@codesourcery.com>
+
+	* i386-low.c (i386_insert_aligned_watchpoint): Don't pass the info
+	to the inferior here.
+	(i386_remove_aligned_watchpoint): Ditto.
+	(i386_handle_nonaligned_watchpoint): Return immediate on fail to
+	fit part of the watchpoint in the debug registers.
+	(i386_update_inferior_debug_regs): New.
+	(i386_low_insert_watchpoint): Work on a local mirror of the debug
+	registers, and only update the inferior on success.
+	(i386_low_remove_watchpoint): Ditto.
+
+2011-07-22  Kwok Cheung Yeung  <kcy@codesourcery.com>
+
+	* linux-low.c (compare_ints, unique, list_threads, show_process,
+	linux_core_of_thread): Delete.
+	(linux_target_ops): Change linux_core_of_thread to
+	linux_common_core_of_thread.
+	(linux_qxfer_osdata): Defer to linux_common_xfer_osdata.
+	* utils.c (malloc_failure): Change type of argument.
+	(xmalloc, xrealloc, xcalloc, xsnprintf): Delete.
+	* Makefile.in (SFILES): Add common/common-utils.c, common/xml-utils.c,
+	common/linux-osdata.c, common/ptid.c and common/buffer.c.
+	(OBS): Add xml-utils.o, common-utils.o, ptid.o and buffer.o.
+	(IPA_OBJS): Add common-utils-ipa.o.
+	(ptid_h, linux_osdata_h): New macros.
+	(server_h): Add common/common-utils.h, common/xml-utils.h,
+	common/buffer.h, common/gdb_assert.h, common/gdb_locale.h and
+	common/ptid.h.
+	(common-utils-ipa.o, common-utils.o, xml-utils.o, linux-osdata.o,
+	ptid.o, buffer.o): New rules.
+	(linux-low.o): Add common/linux-osdata.h as a dependency.
+	* configure.srv (srv_tgtobj): Add linux-osdata.o to Linux targets.
+	* configure.ac: Add AC_HEADER_DIRENT check.
+	* config.in: Regenerate.
+	* configure: Regenerate.
+	* remote-utils.c (xml_escape_text): Delete.
+	(buffer_grow, buffer_free, buffer_init, buffer_finish,
+	buffer_xml_printf): Move to common/buffer.c.
+	* server.c (main): Remove call to initialize_inferiors.
+	* server.h (struct ptid, ptid_t, minus_one_ptid, null_ptid,
+	ptid_build, pid_to_ptid, ptid_get_pid, ptid_get_lwp, ptid_get_tid,
+	ptid_equal, ptid_is_pid, initialize_inferiors, xml_escape_text,
+	internal_error, gdb_assert, gdb_assert_fail): Delete.
+	(struct buffer, buffer_grow, buffer_free, buffer_init, buffer_finish,
+	buffer_xml_printf, buffer_grow_str, buffer_grow_str0): Move to
+	common/buffer.h.
+	* inferiors.c (null_ptid, minus_one_ptid, ptid_build, pid_to_ptid,
+	ptid_get_pid, ptid_get_lwp, ptid_get_tid, ptid_equal, ptid_is_pid,
+	initialize_inferiors): Delete.
+
+2011-07-20  Pedro Alves  <pedro@codesourcery.com>
+
+	* tracepoint.c (tracepoint_look_up_symbols): Return upon the first
+	symbol error.
+
 2011-05-31  Pedro Alves  <pedro@codesourcery.com>
 
 	* linux-x86-low.c (i386_dr_low_get_addr): Fix off by one in
 	assertion.
 	* win32-i386-low.c (i386_dr_low_get_addr): Ditto.
 
+2011-05-26  Yao Qi  <yao@codesourcery.com>
+
+	* Makefile.in (thread-db.o): Track dependence to
+	common/gdb_thread_db.h.
+	* thread-db.c: include gdb_thread_db.h from right place.
+
 2011-05-16  Adrian Cornish  <gnu@bluedreamer.com>
 
 	* linux-i386-ipa.c (supply_static_tracepoint_registers): Pass
 	__FILE__ and __LINE__ to internal_error.
+
+2011-05-13  Doug Evans  <dje@google.com>
+
+	* thread-db.c (try_thread_db_load_from_sdir): New function.
+	(try_thread_db_load_from_dir): New function.
+	(thread_db_load_search): Handle $sdir, ignore $pdir.
+	Remove trying of system directories if search of
+	libthread-db-search-path fails,	that is now done via $sdir.
+
+2011-05-12  Kwok Cheung Yeung  <kcy@codesourcery.com>
+
+	* server.c (handle_query): Add EnableDisableTracepoints to the list
+	of supported features.
+	* tracepoint.c (clear_installed_tracepoints): Uninstall	disabled
+	tracepoints.
+ 	(cmd_qtenable_disable): New.
+ 	(cmd_qtstart): Install tracepoints even if disabled.
+ 	(handle_tracepoint_general_set): Add call to cmd_qtenable_disable on
+ 	receiving a QTEnable or QTDisable packet.
+ 	(gdb_collect): Skip data collection if fast tracepoint is disabled.
+ 	(ust_marker_to_static_tracepoint): Do not ignore disabled static
+ 	tracepoints.
+ 	(gdb_probe): Skip data collection if static tracepoint is disabled.
+
+2011-05-10  Doug Evans  <dje@google.com>
+
+	* thread-db.c (thread_db_handle_monitor_command): Handle elided path.
+
+2011-05-04  Doug Evans  <dje@google.com>
+
+	* linux-low.c (linux_join): Skip process lookup.
+	* spu-low.c (spu_join): Ditto.
+	* server.c (join_inferiors_callback): Delete.
+	(process_serial_event): For 'D' packet (detach) call join_inferior
+	directly.
+
+2011-05-04  Joseph Myers  <joseph@codesourcery.com>
+
+	* README: Don't mention xscale*-*-linux*.
+	* configure.srv (xscale*-*-linux*): Don't handle target.
+
+2011-04-27  Nathan Froyd  <froydnj@codesourcery.com>
+
+	* linux-x86-low.c (amd64_emit_const): Call memcpy instead of
+	casting pointers.
+	(amd64_emit_reg, amd64_emit_int_call_1, amd64_emit_void_call_2):
+	(i386_emit_const, i386_emit_reg, i386_emit_int_call_1):
+	(i386_emit_void_call_2): Likewise.
+
+2011-04-26  Yao Qi  <yao@codesourcery.com>
+
+        * linux-low.c: Move common macros to linux-ptrace.h.
+        Include linux-ptrace.h.
+	* Makefile.in (linux_ptrace_h): New.
+	(linux-low.o): Depends on linux-ptrace.h.
+
+2011-04-24  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* remote-utils.c (handle_accept_event): Close LISTEN_DESC only if
+	RUN_ONCE.  Comment for the LISTEN_DESC delete_file_handler call.
+	(remote_prepare): New function with most of the TCP code from ...
+	(remote_open): ... here.  Detect PORT here unconditionally.  Move also
+	setting transport_is_reliable.
+	* server.c (run_once): New variable.
+	(gdbserver_usage): Document it.
+	(main): Set run_once for `--once'.  Call remote_prepare.  Exit after
+	the first run if RUN_ONCE.
+	* server.h (run_once, remote_prepare): New declarations.
+
+2011-04-19  Tom Tromey  <tromey@redhat.com>
+
+	* win32-low.c (handle_load_dll): Remove duplicate "the".
+
+2011-04-07  Pierre Muller  <muller@ics.u-strasbg.fr>
+
+	Remove support for old Cygwin 1.5 versions.
+	* win32-low.c (win32_create_inferior): Use new cygwin_path_list
+	function to avoid warning.
+	(win32_add_one_solib): Use cygwin_conv_path function to avoid
+	warning.
 
 2011-03-18  Pierre Muller  <muller@ics.u-strasbg.fr>
 

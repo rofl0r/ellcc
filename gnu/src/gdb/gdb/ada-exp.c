@@ -2976,12 +2976,12 @@ write_var_or_type (struct block *block, struct stoken name0)
 	     FIXME pnh 7/20/2007. */
 	  if (nsyms == 1)
 	    {
-	      struct symbol *renaming =
+	      struct symbol *ren_sym =
 		ada_find_renaming_symbol (SYMBOL_LINKAGE_NAME (syms[0].sym), 
 					  syms[0].block);
 
-	      if (renaming != NULL)
-		syms[0].sym = renaming;
+	      if (ren_sym != NULL)
+		syms[0].sym = ren_sym;
 	    }
 
 	  type_sym = select_possible_type_sym (syms, nsyms);
@@ -3138,8 +3138,12 @@ convert_char_literal (struct type *type, LONGEST val)
   char name[7];
   int f;
 
-  if (type == NULL || TYPE_CODE (type) != TYPE_CODE_ENUM)
+  if (type == NULL)
     return val;
+  type = check_typedef (type);
+  if (TYPE_CODE (type) != TYPE_CODE_ENUM)
+    return val;
+
   xsnprintf (name, sizeof (name), "QU%02x", (int) val);
   for (f = 0; f < TYPE_NFIELDS (type); f += 1)
     {

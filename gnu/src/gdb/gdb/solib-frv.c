@@ -1,6 +1,5 @@
 /* Handle FR-V (FDPIC) shared libraries for GDB, the GNU Debugger.
-   Copyright (C) 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2004, 2007-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -239,108 +238,7 @@ static void frv_relocate_main_executable (void);
 static CORE_ADDR main_got (void);
 static int enable_break2 (void);
 
-/*
-
-   LOCAL FUNCTION
-
-   bfd_lookup_symbol -- lookup the value for a specific symbol
-
-   SYNOPSIS
-
-   CORE_ADDR bfd_lookup_symbol (bfd *abfd, char *symname)
-
-   DESCRIPTION
-
-   An expensive way to lookup the value of a single symbol for
-   bfd's that are only temporary anyway.  This is used by the
-   shared library support to find the address of the debugger
-   interface structures in the shared library.
-
-   Note that 0 is specifically allowed as an error return (no
-   such symbol).
- */
-
-static CORE_ADDR
-bfd_lookup_symbol (bfd *abfd, char *symname)
-{
-  long storage_needed;
-  asymbol *sym;
-  asymbol **symbol_table;
-  unsigned int number_of_symbols;
-  unsigned int i;
-  struct cleanup *back_to;
-  CORE_ADDR symaddr = 0;
-
-  storage_needed = bfd_get_symtab_upper_bound (abfd);
-
-  if (storage_needed > 0)
-    {
-      symbol_table = (asymbol **) xmalloc (storage_needed);
-      back_to = make_cleanup (xfree, symbol_table);
-      number_of_symbols = bfd_canonicalize_symtab (abfd, symbol_table);
-
-      for (i = 0; i < number_of_symbols; i++)
-	{
-	  sym = *symbol_table++;
-	  if (strcmp (sym->name, symname) == 0)
-	    {
-	      /* Bfd symbols are section relative.  */
-	      symaddr = sym->value + sym->section->vma;
-	      break;
-	    }
-	}
-      do_cleanups (back_to);
-    }
-
-  if (symaddr)
-    return symaddr;
-
-  /* Look for the symbol in the dynamic string table too.  */
-
-  storage_needed = bfd_get_dynamic_symtab_upper_bound (abfd);
-
-  if (storage_needed > 0)
-    {
-      symbol_table = (asymbol **) xmalloc (storage_needed);
-      back_to = make_cleanup (xfree, symbol_table);
-      number_of_symbols = bfd_canonicalize_dynamic_symtab (abfd, symbol_table);
-
-      for (i = 0; i < number_of_symbols; i++)
-	{
-	  sym = *symbol_table++;
-	  if (strcmp (sym->name, symname) == 0)
-	    {
-	      /* Bfd symbols are section relative.  */
-	      symaddr = sym->value + sym->section->vma;
-	      break;
-	    }
-	}
-      do_cleanups (back_to);
-    }
-
-  return symaddr;
-}
-
-
-/*
-
-  LOCAL FUNCTION
-
-  open_symbol_file_object
-
-  SYNOPSIS
-
-  void open_symbol_file_object (void *from_tty)
-
-  DESCRIPTION
-
-  If no open symbol file, attempt to locate and open the main symbol
-  file.
-
-  If FROM_TTYP dereferences to a non-zero integer, allow messages to
-  be printed.  This parameter is a pointer rather than an int because
-  open_symbol_file_object() is called via catch_errors() and
-  catch_errors() requires a pointer argument.  */
+/* Implement the "open_symbol_file_object" target_so_ops method.  */
 
 static int
 open_symbol_file_object (void *from_ttyp)
@@ -413,24 +311,7 @@ lm_base (void)
 }
 
 
-/* LOCAL FUNCTION
-
-   frv_current_sos -- build a list of currently loaded shared objects
-
-   SYNOPSIS
-
-   struct so_list *frv_current_sos ()
-
-   DESCRIPTION
-
-   Build a list of `struct so_list' objects describing the shared
-   objects currently loaded in the inferior.  This list does not
-   include an entry for the main executable file.
-
-   Note that we only gather information directly available from the
-   inferior --- we don't examine any of the shared library files
-   themselves.  The declaration of `struct so_list' says which fields
-   we provide values for.  */
+/* Implement the "current_sos" target_so_ops method.  */
 
 static struct so_list *
 frv_current_sos (void)
@@ -601,17 +482,15 @@ enable_break_failure_warning (void)
 	   "and track explicitly loaded dynamic code."));
 }
 
-/*
+/* Helper function for gdb_bfd_lookup_symbol.  */
 
-   LOCAL FUNCTION
+static int
+cmp_name (asymbol *sym, void *data)
+{
+  return (strcmp (sym->name, (const char *) data) == 0);
+}
 
-   enable_break -- arrange for dynamic linker to hit breakpoint
-
-   SYNOPSIS
-
-   int enable_break (void)
-
-   DESCRIPTION
+/* Arrange for dynamic linker to hit breakpoint.
 
    The dynamic linkers has, as part of its debugger interface, support
    for arranging for the inferior to hit a breakpoint after mapping in
@@ -631,9 +510,7 @@ enable_break_failure_warning (void)
    using the interpreter's loadmap.  Once the relocated address
    is known, we fetch the value (address) corresponding to r_brk
    and then use that value to fetch the entry point of the function
-   we're interested in.
-
- */
+   we're interested in.  */
 
 static int enable_break2_done = 0;
 
@@ -739,7 +616,8 @@ enable_break2 (void)
 	    interp_plt_sect_low + bfd_section_size (tmp_bfd, interp_sect);
 	}
 
-      addr = bfd_lookup_symbol (tmp_bfd, "_dl_debug_addr");
+      addr = gdb_bfd_lookup_symbol (tmp_bfd, cmp_name, "_dl_debug_addr");
+
       if (addr == 0)
 	{
 	  warning (_("Could not find symbol _dl_debug_addr "
@@ -884,28 +762,12 @@ enable_break (void)
   return 1;
 }
 
-/*
-
-   LOCAL FUNCTION
-
-   special_symbol_handling -- additional shared library symbol handling
-
-   SYNOPSIS
-
-   void special_symbol_handling ()
-
-   DESCRIPTION
-
-   Once the symbols from a shared object have been loaded in the usual
-   way, we are called to do any system specific symbol handling that 
-   is needed.
-
- */
+/* Implement the "special_symbol_handling" target_so_ops method.  */
 
 static void
 frv_special_symbol_handling (void)
 {
-  /* Nothing needed (yet) for FRV.  */
+  /* Nothing needed for FRV.  */
 }
 
 static void
@@ -983,27 +845,11 @@ frv_relocate_main_executable (void)
   main_executable_lm_info->got_value = main_got ();
 }
 
-/*
+/* Implement the "create_inferior_hook" target_solib_ops method.
 
-   GLOBAL FUNCTION
-
-   frv_solib_create_inferior_hook -- shared library startup support
-
-   SYNOPSIS
-
-   void frv_solib_create_inferior_hook ()
-
-   DESCRIPTION
-
-   When gdb starts up the inferior, it nurses it along (through the
-   shell) until it is ready to execute it's first instruction.  At this
-   point, this function gets called via expansion of the macro
-   SOLIB_CREATE_INFERIOR_HOOK.
-
-   For the FR-V shared library ABI (FDPIC), the main executable
-   needs to be relocated.  The shared library breakpoints also need
-   to be enabled.
- */
+   For the FR-V shared library ABI (FDPIC), the main executable needs
+   to be relocated.  The shared library breakpoints also need to be
+   enabled.  */
 
 static void
 frv_solib_create_inferior_hook (int from_tty)
@@ -1108,7 +954,7 @@ frv_fdpic_find_global_pointer (CORE_ADDR addr)
       so = so->next;
     }
 
-  /* Didn't find it it any of the shared objects.  So assume it's in the
+  /* Didn't find it in any of the shared objects.  So assume it's in the
      main executable.  */
   return main_got ();
 }

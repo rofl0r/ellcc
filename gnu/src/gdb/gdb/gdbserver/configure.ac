@@ -1,6 +1,5 @@
 dnl Autoconf configure script for GDB server.
-dnl Copyright (C) 2000, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-dnl 2010, 2011 Free Software Foundation, Inc.
+dnl Copyright (C) 2000, 2002-2012 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
 dnl
@@ -35,6 +34,7 @@ AC_PROG_INSTALL
 AC_ARG_PROGRAM
 
 AC_HEADER_STDC
+AC_HEADER_DIRENT
 
 AC_FUNC_ALLOCA
 AC_CHECK_HEADERS(sgtty.h termio.h termios.h sys/reg.h string.h dnl
@@ -356,6 +356,29 @@ AC_COMPILE_IFELSE(AC_LANG_PROGRAM([]),
 		        [gdbsrv_cv_have_visibility_hidden=yes],
 	        	[gdbsrv_cv_have_visibility_hidden=no])
 CFLAGS="$saved_cflags"
+
+dnl Check if we can disable the virtual address space randomization.
+dnl The functionality of setarch -R.
+AC_CHECK_DECLS([ADDR_NO_RANDOMIZE],,, [#include <sys/personality.h>])
+define([PERSONALITY_TEST], [AC_LANG_PROGRAM([#include <sys/personality.h>], [
+#      if !HAVE_DECL_ADDR_NO_RANDOMIZE
+#       define ADDR_NO_RANDOMIZE 0x0040000
+#      endif
+       /* Test the flag could be set and stays set.  */
+       personality (personality (0xffffffff) | ADDR_NO_RANDOMIZE);
+       if (!(personality (personality (0xffffffff)) & ADDR_NO_RANDOMIZE))
+           return 1])])
+AC_RUN_IFELSE([PERSONALITY_TEST],
+              [gdbsrv_cv_have_personality=true],
+              [gdbsrv_cv_have_personality=false],
+              [AC_LINK_IFELSE([PERSONALITY_TEST],
+                              [gdbsrv_cv_have_personality=true],
+                              [gdbsrv_cv_have_personality=false])])
+if $gdbsrv_cv_have_personality
+then
+    AC_DEFINE([HAVE_PERSONALITY], 1,
+              [Define if you support the personality syscall.])
+fi
 
 
 IPA_DEPFILES=""

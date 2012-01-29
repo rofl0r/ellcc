@@ -1,6 +1,4 @@
-# Copyright (C) 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-# 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-# Free Software Foundation, Inc.
+# Copyright (C) 1989-2012 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -109,9 +107,12 @@ FLEX = flex
 YLWRAP = $(srcdir)/../ylwrap
 
 # where to find makeinfo, preferably one designed for texinfo-2
-MAKEINFO=makeinfo
+MAKEINFO = @MAKEINFO@
+MAKEINFOFLAGS = @MAKEINFOFLAGS@
+MAKEINFO_EXTRA_FLAGS = @MAKEINFO_EXTRA_FLAGS@
+MAKEINFO_CMD = $(MAKEINFO) $(MAKEINFOFLAGS) $(MAKEINFO_EXTRA_FLAGS)
 
-MAKEHTML = $(MAKEINFO) --html
+MAKEHTML = $(MAKEINFO_CMD) --html
 MAKEHTMLFLAGS =
 
 # Set this up with gcc if you have gnu ld and the loader will print out
@@ -215,8 +216,7 @@ SUBDIR_MI_SRCS = \
 	mi/mi-main.c mi/mi-parse.c mi/mi-getopt.c
 SUBDIR_MI_DEPS =
 SUBDIR_MI_LDFLAGS=
-SUBDIR_MI_CFLAGS= \
-	-DMI_OUT=1
+SUBDIR_MI_CFLAGS=
 
 #
 # TUI sub directory definitions
@@ -285,11 +285,13 @@ SUBDIR_PYTHON_OBS = \
 	py-evtregistry.o \
 	py-evts.o \
 	py-exitedevent.o \
+	py-finishbreakpoint.o \
 	py-frame.o \
 	py-function.o \
 	py-inferior.o \
 	py-infthread.o \
 	py-lazy-string.o \
+	py-newobjfileevent.o \
 	py-objfile.o \
 	py-param.o \
 	py-prettyprint.o \
@@ -315,11 +317,13 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-evtregistry.c \
 	python/py-evts.c \
 	python/py-exitedevent.c \
+	python/py-finishbreakpoint.c \
 	python/py-frame.c \
 	python/py-function.c \
 	python/py-inferior.c \
 	python/py-infthread.c \
 	python/py-lazy-string.c \
+	python/py-newobjfileevent.c \
 	python/py-objfile.c \
 	python/py-param.c \
 	python/py-prettyprint.c \
@@ -491,7 +495,8 @@ RUNTESTFLAGS=
 
 # XML files to build in to GDB.
 XMLFILES = $(srcdir)/features/gdb-target.dtd $(srcdir)/features/xinclude.dtd \
-	$(srcdir)/features/library-list.dtd $(srcdir)/features/osdata.dtd \
+	$(srcdir)/features/library-list.dtd \
+	$(srcdir)/features/library-list-svr4.dtd $(srcdir)/features/osdata.dtd \
 	$(srcdir)/features/threads.dtd $(srcdir)/features/traceframe-info.dtd
 
 # This is ser-unix.o for any system which supports a v7/BSD/SYSV/POSIX
@@ -566,6 +571,7 @@ ALL_TARGET_OBS = \
 	sparc-linux-tdep.o sparcnbsd-tdep.o sparcobsd-tdep.o \
 	sparc-sol2-tdep.o sparc-tdep.o \
 	spu-tdep.o spu-multiarch.o solib-spu.o \
+	tic6x-tdep.o tic6x-linux-tdep.o \
 	v850-tdep.o \
 	vaxnbsd-tdep.o vaxobsd-tdep.o vax-tdep.o \
 	xstormy16-tdep.o \
@@ -575,7 +581,7 @@ ALL_TARGET_OBS = \
 	nbsd-tdep.o obsd-tdep.o \
 	sol2-tdep.o \
 	solib-frv.o solib-irix.o solib-svr4.o solib-target.o \
-	solib-som.o solib-pa64.o solib-darwin.o \
+	solib-som.o solib-pa64.o solib-darwin.o solib-dsbt.o \
 	dbug-rom.o dink32-rom.o ppcbug-rom.o m32r-rom.o dsrec.o monitor.o \
 	remote-m32r-sdi.o remote-mips.o \
 	xcoffread.o \
@@ -612,6 +618,8 @@ FLAGS_TO_PASS = \
 	"LDFLAGS=$(LDFLAGS)" \
 	"RANLIB=$(RANLIB)" \
 	"MAKEINFO=$(MAKEINFO)" \
+	"MAKEINFOFLAGS=$(MAKEINFOFLAGS)" \
+	"MAKEINFO_EXTRA_FLAGS=$(MAKEINFO_EXTRA_FLAGS)" \
 	"MAKEHTML=$(MAKEHTML)" \
 	"MAKEHTMLFLAGS=$(MAKEHTMLFLAGS)" \
 	"INSTALL=$(INSTALL)" \
@@ -689,12 +697,13 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	block.c blockframe.c breakpoint.c buildsym.c \
 	c-exp.y c-lang.c c-typeprint.c c-valprint.c \
 	charset.c cli-out.c coffread.c coff-pe-read.c \
-	complaints.c completer.c corefile.c \
+	complaints.c completer.c continuations.c corefile.c \
 	cp-abi.c cp-support.c cp-namespace.c cp-valprint.c \
 	d-lang.c d-valprint.c \
 	cp-name-parser.y \
 	dbxread.c demangle.c dictionary.c disasm.c doublest.c dummy-frame.c \
 	dwarf2expr.c dwarf2loc.c dwarf2read.c dwarf2-frame.c \
+	dwarf2-frame-tailcall.c \
 	elfread.c environ.c eval.c event-loop.c event-top.c \
 	exceptions.c expprint.c \
 	f-exp.y f-lang.c f-typeprint.c f-valprint.c filesystem.c \
@@ -719,7 +728,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	prologue-value.c psymtab.c \
 	regcache.c reggroups.c remote.c remote-fileio.c reverse.c \
 	sentinel-frame.c \
-	serial.c ser-base.c ser-unix.c \
+	serial.c ser-base.c ser-unix.c skip.c \
 	solib.c solib-target.c source.c \
 	stabsread.c stack.c std-regs.c symfile.c symfile-mem.c symmisc.c \
 	symtab.c \
@@ -738,7 +747,9 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	jit.c \
 	xml-syscall.c \
 	annotate.c common/signals.c copying.c dfp.c gdb.c inf-child.c \
-	regset.c sol-thread.c windows-termcap.c
+	regset.c sol-thread.c windows-termcap.c \
+	common/common-utils.c common/xml-utils.c \
+	common/ptid.c common/buffer.c gdb-dlfcn.c
 
 LINTFILES = $(SFILES) $(YYFILES) $(CONFIG_SRCS) init.c
 
@@ -756,7 +767,10 @@ osf-share/cma_util.h osf-share/RIOS/cma_thread_io.h \
 osf-share/cma_errors.h osf-share/cma_tcb_defs.h osf-share/cma_attr.h \
 osf-share/cma_stack_int.h osf-share/cma_init.h \
 osf-share/cma_deb_core.h osf-share/AT386/cma_thread_io.h \
-osf-share/cma_sched.h proc-utils.h arm-tdep.h ax-gdb.h ppcnbsd-tdep.h \
+osf-share/cma_sched.h \
+common/gdb_signals.h common/gdb_thread_db.h common/i386-xstate.h \
+common/linux-ptrace.h \
+proc-utils.h arm-tdep.h ax-gdb.h ppcnbsd-tdep.h	\
 cli-out.h gdb_expat.h breakpoint.h infcall.h obsd-tdep.h \
 exec.h m32r-tdep.h osabi.h gdbcore.h solib-som.h \
 i386bsd-nat.h xml-support.h xml-tdesc.h alphabsd-tdep.h gdb_obstack.h \
@@ -766,9 +780,9 @@ cli/cli-decode.h cli/cli-cmds.h cli/cli-dump.h cli/cli-utils.h \
 cli/cli-script.h macrotab.h symtab.h version.h gnulib/wchar.in.h \
 gnulib/string.in.h gnulib/str-two-way.h \
 gnulib/stdint.in.h remote.h gdb.h sparc-nat.h \
-gdbthread.h dwarf2-frame.h nbsd-nat.h dcache.h \
+gdbthread.h dwarf2-frame.h dwarf2-frame-tailcall.h nbsd-nat.h dcache.h \
 amd64-nat.h s390-tdep.h arm-linux-tdep.h exceptions.h macroscope.h \
-gdbarch.h bsd-uthread.h gdb_thread_db.h gdb_stat.h memory-map.h	memrange.h \
+gdbarch.h bsd-uthread.h gdb_stat.h memory-map.h	memrange.h \
 mdebugread.h m88k-tdep.h stabsread.h hppa-linux-offsets.h linux-fork.h \
 ser-unix.h inf-ptrace.h terminal.h ui-out.h frame-base.h \
 f-lang.h dwarf2loc.h value.h sparc-tdep.h defs.h target-descriptions.h \
@@ -786,14 +800,14 @@ expression.h score-tdep.h gdb_select.h ser-tcp.h buildsym.h valprint.h \
 call-cmds.h typeprint.h mi/mi-getopt.h mi/mi-parse.h mi/mi-console.h \
 mi/mi-out.h mi/mi-main.h mi/mi-common.h mi/mi-cmds.h linux-nat.h \
 complaints.h gdb_proc_service.h gdb_regex.h xtensa-tdep.h inf-loop.h \
-gdb_wait.h gdb_assert.h solib.h ppc-tdep.h cp-support.h glibc-tdep.h \
+gdb_wait.h common/gdb_assert.h solib.h ppc-tdep.h cp-support.h glibc-tdep.h \
 interps.h auxv.h gdbcmd.h tramp-frame.h mipsnbsd-tdep.h	\
 amd64-linux-tdep.h linespec.h i387-tdep.h mn10300-tdep.h \
 sparc64-tdep.h monitor.h ppcobsd-tdep.h srec.h solib-pa64.h \
 coff-pe-read.h parser-defs.h gdb_ptrace.h mips-linux-tdep.h \
 m68k-tdep.h spu-tdep.h jv-lang.h environ.h solib-irix.h amd64-tdep.h \
 doublest.h regset.h hppa-tdep.h ppc-linux-tdep.h rs6000-tdep.h \
-gdb_locale.h gdb_dirent.h arch-utils.h trad-frame.h gnu-nat.h \
+common/gdb_locale.h common/gdb_dirent.h arch-utils.h trad-frame.h gnu-nat.h \
 language.h nbsd-tdep.h wrapper.h solib-svr4.h \
 macroexp.h ui-file.h regcache.h gdb_string.h tracepoint.h i386-tdep.h \
 inf-child.h p-lang.h event-top.h gdbtypes.h user-regs.h \
@@ -806,7 +820,7 @@ remote-fileio.h i386-linux-tdep.h vax-tdep.h objc-lang.h \
 sentinel-frame.h bcache.h symfile.h windows-tdep.h linux-tdep.h \
 gdb_usleep.h jit.h xml-syscall.h microblaze-tdep.h \
 psymtab.h psympriv.h progspace.h bfin-tdep.h ia64-hpux-tdep.h \
-amd64-darwin-tdep.h charset-list.h common/gdb_signals.h common/i386-xstate.h \
+amd64-darwin-tdep.h charset-list.h \
 config/djgpp/langinfo.h config/djgpp/nl_types.h darwin-nat.h \
 dicos-tdep.h filesystem.h gcore.h gdb_wchar.h hppabsd-tdep.h \
 i386-darwin-tdep.h i386-nat.h linux-record.h moxie-tdep.h \
@@ -814,11 +828,13 @@ osdata.h procfs.h python/py-event.h python/py-events.h python/py-stopevent.h \
 python/python-internal.h python/python.h ravenscar-thread.h record.h \
 solib-darwin.h solib-ia64-hpux.h solib-spu.h windows-nat.h xcoffread.h \
 gnulib/extra/arg-nonnull.h gnulib/extra/c++defs.h gnulib/extra/warn-on-use.h \
-gnulib/stddef.in.h inline-frame.h
+gnulib/stddef.in.h inline-frame.h skip.h \
+common/common-utils.h common/xml-utils.h common/buffer.h common/ptid.h \
+common/linux-osdata.h gdb-dlfcn.h
 
 # Header files that already have srcdir in them, or which are in objdir.
 
-HFILES_WITH_SRCDIR = ../bfd/bfd.h
+HFILES_WITH_SRCDIR = ../bfd/bfd.h jit-reader.h
 
 
 # GDB "info" files, which should be included in their entirety
@@ -849,7 +865,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	auxv.o \
 	bfd-target.o \
 	blockframe.o breakpoint.o findvar.o regcache.o \
-	charset.o disasm.o dummy-frame.o dfp.o \
+	charset.o continuations.o disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symmisc.o linespec.o dictionary.o \
 	infcall.o \
@@ -872,7 +888,7 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	bcache.o objfiles.o observer.o minsyms.o maint.o demangle.o \
 	dbxread.o coffread.o coff-pe-read.o \
 	dwarf2read.o mipsread.o stabsread.o corefile.o \
-	dwarf2expr.o dwarf2loc.o dwarf2-frame.o \
+	dwarf2expr.o dwarf2loc.o dwarf2-frame.o dwarf2-frame-tailcall.o \
 	ada-lang.o c-lang.o d-lang.o f-lang.o objc-lang.o \
 	ada-tasks.o \
 	ui-out.o cli-out.o \
@@ -896,10 +912,12 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	trad-frame.o \
 	tramp-frame.o \
 	solib.o solib-target.o \
-	prologue-value.o memory-map.o memrange.o xml-support.o xml-syscall.o \
+	prologue-value.o memory-map.o memrange.o \
+	xml-support.o xml-syscall.o xml-utils.o \
 	target-descriptions.o target-memory.o xml-tdesc.o xml-builtin.o \
 	inferior.o osdata.o gdb_usleep.o record.o gcore.o \
-	jit.o progspace.o
+	jit.o progspace.o skip.o \
+	common-utils.o buffer.o ptid.o gdb-dlfcn.o
 
 TSOBS = inflow.o
 
@@ -933,7 +951,7 @@ DISTSTUFF = $(YYFILES)
 
 
 # All generated files which can be included by another file.
-generated_files = config.h observer.h observer.inc ada-lex.c \
+generated_files = config.h observer.h observer.inc ada-lex.c jit-reader.h \
 	$(GNULIB_H) $(NAT_GENERATED_FILES)
 
 .c.o:
@@ -1018,7 +1036,9 @@ install-only: $(CONFIG_INSTALL)
 		$(SHELL) $(srcdir)/../mkinstalldirs \
 			$(DESTDIR)$(man1dir) ; \
 		$(INSTALL_DATA) $(srcdir)/gdb.1 \
-			$(DESTDIR)$(man1dir)/$$transformed_name.1
+			$(DESTDIR)$(man1dir)/$$transformed_name.1 ; \
+		$(SHELL) $(srcdir)/../mkinstalldirs $(DESTDIR)$(includedir)/gdb ; \
+		$(INSTALL_DATA) jit-reader.h $(DESTDIR)$(includedir)/gdb/jit-reader.h
 	@$(MAKE) DO=install "DODIRS=$(SUBDIRS)" $(FLAGS_TO_PASS) subdir_do
 .PHONY: install-tui
 install-tui:
@@ -1209,7 +1229,7 @@ gdb1$(EXEEXT): gdb$(EXEEXT)
 # with `make TAGS' and not have to say `rm TAGS' first.
 
 GDB_NM_FILE = @GDB_NM_FILE@
-TAGS: $(DEPFILES) $(TAGFILES_NO_SRCDIR) $(TAGFILES_WITH_SRCDIR)
+TAGS: $(TAGFILES_NO_SRCDIR) $(TAGFILES_WITH_SRCDIR)
 	@echo Making TAGS
 	@etags $(srcdir)/$(GDB_NM_FILE) \
 	`(for i in $(DEPFILES) $(TAGFILES_NO_SRCDIR); do \
@@ -1246,7 +1266,7 @@ distclean: clean
 	rm -f gdbserver/config.status gdbserver/config.log
 	rm -f gdbserver/tm.h gdbserver/xm.h gdbserver/nm.h
 	rm -f gdbserver/Makefile gdbserver/config.cache
-	rm -f nm.h config.status config.h stamp-h .gdbinit
+	rm -f nm.h config.status config.h stamp-h .gdbinit jit-reader.h
 	rm -f y.output yacc.acts yacc.tmp y.tab.h
 	rm -f config.log config.cache
 	rm -f Makefile
@@ -1312,6 +1332,9 @@ data-directory/Makefile: data-directory/Makefile.in config.status @frags@
 	  CONFIG_LINKS= \
 	  $(SHELL) config.status
 
+jit-reader.h: $(srcdir)/jit-reader.in
+	$(SHELL) config.status $@
+
 config.h: stamp-h ; @true
 stamp-h: $(srcdir)/config.in config.status
 	CONFIG_HEADERS=config.h:config.in \
@@ -1327,6 +1350,7 @@ ACLOCAL = aclocal
 ACLOCAL_AMFLAGS = -I gnulib/m4 -I ../config
 aclocal_m4_deps = \
 	configure.ac \
+	gnulib/m4/00gnulib.m4 \
 	gnulib/m4/extensions.m4 \
 	gnulib/m4/gnulib-common.m4 \
 	gnulib/m4/gnulib-comp.m4 \
@@ -1334,10 +1358,16 @@ aclocal_m4_deps = \
 	gnulib/m4/longlong.m4 \
 	gnulib/m4/memchr.m4 \
 	gnulib/m4/memmem.m4 \
-	gnulib/m4/onceonly_2_57.m4 \
+	gnulib/m4/mmap-anon.m4 \
+	gnulib/m4/multiarch.m4 \
+	gnulib/m4/onceonly.m4 \
+	gnulib/m4/stddef_h.m4 \
 	gnulib/m4/stdint.m4 \
 	gnulib/m4/string_h.m4 \
-	gnulib/m4/wchar.m4 \
+	gnulib/m4/warn-on-use.m4 \
+	gnulib/m4/wchar_h.m4 \
+	gnulib/m4/wchar_t.m4 \
+	gnulib/m4/wint_t.m4 \
 	../config/extensions.m4 \
 	../config/lead-dot.m4 \
 	../config/proginstall.m4 \
@@ -1924,6 +1954,30 @@ signals.o: $(srcdir)/common/signals.c
 	$(COMPILE) $(srcdir)/common/signals.c
 	$(POSTCOMPILE)
 
+common-utils.o: ${srcdir}/common/common-utils.c
+	$(COMPILE) $(srcdir)/common/common-utils.c
+	$(POSTCOMPILE)
+
+xml-utils.o: ${srcdir}/common/xml-utils.c
+	$(COMPILE) $(srcdir)/common/xml-utils.c
+	$(POSTCOMPILE)
+
+ptid.o: ${srcdir}/common/ptid.c
+	$(COMPILE) $(srcdir)/common/ptid.c
+	$(POSTCOMPILE)
+
+buffer.o: ${srcdir}/common/buffer.c
+	$(COMPILE) $(srcdir)/common/buffer.c
+	$(POSTCOMPILE)
+
+linux-osdata.o: ${srcdir}/common/linux-osdata.c
+	$(COMPILE) $(srcdir)/common/linux-osdata.c
+	$(POSTCOMPILE)
+
+linux-procfs.o: $(srcdir)/common/linux-procfs.c
+	$(COMPILE) $(srcdir)/common/linux-procfs.c
+	$(POSTCOMPILE)
+
 #
 # gdb/tui/ dependencies
 #
@@ -2055,6 +2109,10 @@ py-exitedevent.o: $(srcdir)/python/py-exitedevent.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-exitedevent.c
 	$(POSTCOMPILE)
 
+py-finishbreakpoint.o: $(srcdir)/python/py-finishbreakpoint.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-finishbreakpoint.c
+	$(POSTCOMPILE)
+
 py-frame.o: $(srcdir)/python/py-frame.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-frame.c
 	$(POSTCOMPILE)
@@ -2073,6 +2131,10 @@ py-infthread.o: $(srcdir)/python/py-infthread.c
 
 py-lazy-string.o: $(srcdir)/python/py-lazy-string.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-lazy-string.c
+	$(POSTCOMPILE)
+
+py-newobjfileevent.o: $(srcdir)/python/py-newobjfileevent.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-newobjfileevent.c
 	$(POSTCOMPILE)
 
 py-objfile.o: $(srcdir)/python/py-objfile.c

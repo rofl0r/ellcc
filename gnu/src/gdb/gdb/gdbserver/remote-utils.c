@@ -1,7 +1,5 @@
 /* Remote utility routines for the remote server for GDB.
-   Copyright (C) 1986, 1989, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1986, 1989, 1993-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -170,14 +168,21 @@ handle_accept_event (int err, gdb_client_data client_data)
 	      (char *) &tmp, sizeof (tmp));
 
 #ifndef USE_WIN32API
-  close (listen_desc);		/* No longer need this */
-
   signal (SIGPIPE, SIG_IGN);	/* If we don't do this, then gdbserver simply
 				   exits when the remote side dies.  */
-#else
-  closesocket (listen_desc);	/* No longer need this */
 #endif
 
+  if (run_once)
+    {
+#ifndef USE_WIN32API
+      close (listen_desc);		/* No longer need this */
+#else
+      closesocket (listen_desc);	/* No longer need this */
+#endif
+    }
+
+  /* Even if !RUN_ONCE no longer notice new connections.  Still keep the
+     descriptor open for add_file_handler to wait for a new connection.  */
   delete_file_handler (listen_desc);
 
   /* Convert IP address to string.  */
@@ -198,6 +203,62 @@ handle_accept_event (int err, gdb_client_data client_data)
   target_async (0);
 
   return 0;
+}
+
+/* Prepare for a later connection to a remote debugger.
+   NAME is the filename used for communication.  */
+
+void
+remote_prepare (char *name)
+{
+  char *port_str;
+#ifdef USE_WIN32API
+  static int winsock_initialized;
+#endif
+  int port;
+  struct sockaddr_in sockaddr;
+  socklen_t tmp;
+  char *port_end;
+
+  port_str = strchr (name, ':');
+  if (port_str == NULL)
+    {
+      transport_is_reliable = 0;
+      return;
+    }
+
+  port = strtoul (port_str + 1, &port_end, 10);
+  if (port_str[1] == '\0' || *port_end != '\0')
+    fatal ("Bad port argument: %s", name);
+
+#ifdef USE_WIN32API
+  if (!winsock_initialized)
+    {
+      WSADATA wsad;
+
+      WSAStartup (MAKEWORD (1, 0), &wsad);
+      winsock_initialized = 1;
+    }
+#endif
+
+  listen_desc = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (listen_desc == -1)
+    perror_with_name ("Can't open socket");
+
+  /* Allow rapid reuse of this port. */
+  tmp = 1;
+  setsockopt (listen_desc, SOL_SOCKET, SO_REUSEADDR, (char *) &tmp,
+	      sizeof (tmp));
+
+  sockaddr.sin_family = PF_INET;
+  sockaddr.sin_port = htons (port);
+  sockaddr.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind (listen_desc, (struct sockaddr *) &sockaddr, sizeof (sockaddr))
+      || listen (listen_desc, 1))
+    perror_with_name ("Can't bind address");
+
+  transport_is_reliable = 1;
 }
 
 /* Open a connection to a remote debugger.
@@ -274,8 +335,6 @@ remote_open (char *name)
 
       fprintf (stderr, "Remote debugging using %s\n", name);
 
-      transport_is_reliable = 0;
-
       enable_async_notification (remote_desc);
 
       /* Register the event loop handler.  */
@@ -284,64 +343,22 @@ remote_open (char *name)
     }
   else
     {
-#ifdef USE_WIN32API
-      static int winsock_initialized;
-#endif
       int port;
+      socklen_t len;
       struct sockaddr_in sockaddr;
-      socklen_t tmp;
-      char *port_end;
 
-      port = strtoul (port_str + 1, &port_end, 10);
-      if (port_str[1] == '\0' || *port_end != '\0')
-	fatal ("Bad port argument: %s", name);
-
-#ifdef USE_WIN32API
-      if (!winsock_initialized)
-	{
-	  WSADATA wsad;
-
-	  WSAStartup (MAKEWORD (1, 0), &wsad);
-	  winsock_initialized = 1;
-	}
-#endif
-
-      listen_desc = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
-      if (listen_desc == -1)
-	perror_with_name ("Can't open socket");
-
-      /* Allow rapid reuse of this port. */
-      tmp = 1;
-      setsockopt (listen_desc, SOL_SOCKET, SO_REUSEADDR, (char *) &tmp,
-		  sizeof (tmp));
-
-      sockaddr.sin_family = PF_INET;
-      sockaddr.sin_port = htons (port);
-      sockaddr.sin_addr.s_addr = INADDR_ANY;
-
-      if (bind (listen_desc, (struct sockaddr *) &sockaddr, sizeof (sockaddr))
-	  || listen (listen_desc, 1))
-	perror_with_name ("Can't bind address");
-
-      /* If port is zero, a random port will be selected, and the
-	 fprintf below needs to know what port was selected.  */
-      if (port == 0)
-	{
-	  socklen_t len = sizeof (sockaddr);
-	  if (getsockname (listen_desc,
-			   (struct sockaddr *) &sockaddr, &len) < 0
-	      || len < sizeof (sockaddr))
-	    perror_with_name ("Can't determine port");
-	  port = ntohs (sockaddr.sin_port);
-	}
+      len = sizeof (sockaddr);
+      if (getsockname (listen_desc,
+		       (struct sockaddr *) &sockaddr, &len) < 0
+	  || len < sizeof (sockaddr))
+	perror_with_name ("Can't determine port");
+      port = ntohs (sockaddr.sin_port);
 
       fprintf (stderr, "Listening on port %d\n", port);
       fflush (stderr);
 
       /* Register the event loop handler.  */
       add_file_handler (listen_desc, handle_accept_event, NULL);
-
-      transport_is_reliable = 1;
     }
 }
 
@@ -1594,7 +1611,7 @@ look_up_one_symbol (const char *name, CORE_ADDR *addrp, int may_ask_gdb)
    where we want the instruction to be copied (and possibly adjusted)
    to.  On output, it points to one past the end of the resulting
    instruction(s).  The effect of executing the instruction at TO
-   shall be the same as if executing it at FROM.  For example, call
+   shall be the same as if executing it at OLDLOC.  For example, call
    instructions that implicitly push the return address on the stack
    should be adjusted to return to the instruction after OLDLOC;
    relative branches, and other PC-relative instructions need the
@@ -1693,170 +1710,6 @@ monitor_output (const char *msg)
 
   putpkt (buf);
   free (buf);
-}
-
-/* Return a malloc allocated string with special characters from TEXT
-   replaced by entity references.  */
-
-char *
-xml_escape_text (const char *text)
-{
-  char *result;
-  int i, special;
-
-  /* Compute the length of the result.  */
-  for (i = 0, special = 0; text[i] != '\0'; i++)
-    switch (text[i])
-      {
-      case '\'':
-      case '\"':
-	special += 5;
-	break;
-      case '&':
-	special += 4;
-	break;
-      case '<':
-      case '>':
-	special += 3;
-	break;
-      default:
-	break;
-      }
-
-  /* Expand the result.  */
-  result = xmalloc (i + special + 1);
-  for (i = 0, special = 0; text[i] != '\0'; i++)
-    switch (text[i])
-      {
-      case '\'':
-	strcpy (result + i + special, "&apos;");
-	special += 5;
-	break;
-      case '\"':
-	strcpy (result + i + special, "&quot;");
-	special += 5;
-	break;
-      case '&':
-	strcpy (result + i + special, "&amp;");
-	special += 4;
-	break;
-      case '<':
-	strcpy (result + i + special, "&lt;");
-	special += 3;
-	break;
-      case '>':
-	strcpy (result + i + special, "&gt;");
-	special += 3;
-	break;
-      default:
-	result[i + special] = text[i];
-	break;
-      }
-  result[i + special] = '\0';
-
-  return result;
-}
-
-void
-buffer_grow (struct buffer *buffer, const char *data, size_t size)
-{
-  char *new_buffer;
-  size_t new_buffer_size;
-
-  if (size == 0)
-    return;
-
-  new_buffer_size = buffer->buffer_size;
-
-  if (new_buffer_size == 0)
-    new_buffer_size = 1;
-
-  while (buffer->used_size + size > new_buffer_size)
-    new_buffer_size *= 2;
-  new_buffer = realloc (buffer->buffer, new_buffer_size);
-  if (!new_buffer)
-    abort ();
-  memcpy (new_buffer + buffer->used_size, data, size);
-  buffer->buffer = new_buffer;
-  buffer->buffer_size = new_buffer_size;
-  buffer->used_size += size;
-}
-
-void
-buffer_free (struct buffer *buffer)
-{
-  if (!buffer)
-    return;
-
-  free (buffer->buffer);
-  buffer->buffer = NULL;
-  buffer->buffer_size = 0;
-  buffer->used_size = 0;
-}
-
-void
-buffer_init (struct buffer *buffer)
-{
-  memset (buffer, 0, sizeof (*buffer));
-}
-
-char*
-buffer_finish (struct buffer *buffer)
-{
-  char *ret = buffer->buffer;
-  buffer->buffer = NULL;
-  buffer->buffer_size = 0;
-  buffer->used_size = 0;
-  return ret;
-}
-
-void
-buffer_xml_printf (struct buffer *buffer, const char *format, ...)
-{
-  va_list ap;
-  const char *f;
-  const char *prev;
-  int percent = 0;
-
-  va_start (ap, format);
-
-  prev = format;
-  for (f = format; *f; f++)
-    {
-      if (percent)
-       {
-	 switch (*f)
-	   {
-	   case 's':
-	     {
-	       char *p;
-	       char *a = va_arg (ap, char *);
-	       buffer_grow (buffer, prev, f - prev - 1);
-	       p = xml_escape_text (a);
-	       buffer_grow_str (buffer, p);
-	       free (p);
-	       prev = f + 1;
-	     }
-	     break;
-	   case 'd':
-	     {
-	       int i = va_arg (ap, int);
-	       char b[sizeof ("4294967295")];
-
-	       buffer_grow (buffer, prev, f - prev - 1);
-	       sprintf (b, "%d", i);
-	       buffer_grow_str (buffer, b);
-	       prev = f + 1;
-	     }
-	   }
-	 percent = 0;
-       }
-      else if (*f == '%')
-       percent = 1;
-    }
-
-  buffer_grow_str (buffer, prev);
-  va_end (ap);
 }
 
 #endif

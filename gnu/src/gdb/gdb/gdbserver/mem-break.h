@@ -1,6 +1,5 @@
 /* Memory breakpoint interfaces for the remote server for GDB.
-   Copyright (C) 2002, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002, 2005, 2007-2012 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -102,9 +101,11 @@ void check_mem_read (CORE_ADDR mem_addr, unsigned char *buf, int mem_len);
 
 /* See if any breakpoints shadow the target memory area from MEM_ADDR
    to MEM_ADDR + MEM_LEN.  Update the data to be written to the target
-   (in BUF) if necessary, as well as the original data for any breakpoints.  */
+   (in BUF, a copy of MYADDR on entry) if necessary, as well as the
+   original data for any breakpoints.  */
 
-void check_mem_write (CORE_ADDR mem_addr, unsigned char *buf, int mem_len);
+void check_mem_write (CORE_ADDR mem_addr,
+		      unsigned char *buf, const unsigned char *myaddr, int mem_len);
 
 /* Set the byte pattern to insert for memory breakpoints.  This function
    must be called before any breakpoints are set.  */
@@ -134,6 +135,9 @@ void validate_breakpoints (void);
 struct fast_tracepoint_jump *set_fast_tracepoint_jump (CORE_ADDR where,
 						       unsigned char *insn,
 						       ULONGEST length);
+
+/* Increment reference counter of JP.  */
+void inc_ref_fast_tracepoint_jump (struct fast_tracepoint_jump *jp);
 
 /* Delete fast tracepoint jump TODEL from our tables, and uninsert if
    from memory.  */

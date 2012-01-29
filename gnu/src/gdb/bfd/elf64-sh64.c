@@ -1,6 +1,6 @@
 /* SuperH SH64-specific support for 64-bit ELF
    Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-   2010  Free Software Foundation, Inc.
+   2010, 2011 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1630,7 +1630,11 @@ sh_elf64_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 				 STT_DATALABEL on the way to it.  */
 			      | ((h->other & STO_SH5_ISA32) != 0
 				 && ! seen_stt_datalabel));
-	      else if (!info->relocatable)
+	      else if (!info->relocatable
+		       && (_bfd_elf_section_offset (output_bfd, info,
+						    input_section,
+						    rel->r_offset)
+			   != (bfd_vma) -1))
 		{
 		  (*_bfd_error_handler)
 		    (_("%B(%A+0x%lx): unresolvable %s relocation against symbol `%s'"),
@@ -3421,9 +3425,6 @@ sh64_elf64_discard_copies (struct elf_sh64_link_hash_entry *h,
 			   void *ignore ATTRIBUTE_UNUSED)
 {
   struct elf_sh64_pcrel_relocs_copied *s;
-
-  if (h->root.root.type == bfd_link_hash_warning)
-    h = (struct elf_sh64_link_hash_entry *) h->root.root.u.i.link;
 
   /* We only discard relocs for symbols defined in a regular object.  */
   if (!h->root.def_regular)

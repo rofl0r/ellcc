@@ -1,4 +1,4 @@
-# Copyright (C) 2009, 2010, 2011 Free Software Foundation, Inc.
+# Copyright (C) 2009-2012 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -75,7 +75,7 @@ gdb_py_test_silent_cmd "python str = gdb.inferiors()\[0\].read_memory (addr, 5)"
 gdb_py_test_silent_cmd "python str\[1\] = 'a'" "change str" 0
 gdb_py_test_silent_cmd "python gdb.inferiors()\[0\].write_memory (addr, str)" \
   "write str" 1
-gdb_test "print str" " = 0x\[\[:xdigit:\]\]+ \"hallo, testsuite\"" \
+gdb_test "print str" " = \"hallo, testsuite\"" \
   "ensure str was changed in the inferior"
 
 # Test memory search.
@@ -206,8 +206,18 @@ gdb_test "python print inf_list\[0\].is_valid()" "True" \
          "Check inferior validity"
 gdb_test "python print inf_list\[1\].is_valid()" "True" \
          "Check inferior validity"
-gdb_test_no_output "remove-inferiors 2" "remove-inferiors 2"
+gdb_test_no_output "remove-inferiors 2" "remove-inferiors 3"
 gdb_test "python print inf_list\[0\].is_valid()" "False" \
          "Check inferior validity"
 gdb_test "python print inf_list\[1\].is_valid()" "True" \
          "Check inferior validity"
+
+# Test gdb.selected_inferior()
+gdb_test "inferior 1" ".*" "Switch to first inferior"
+gdb_test "py print gdb.selected_inferior().num" "1" "First inferior selected"
+
+gdb_test "add-inferior" "Added inferior 3" "Create new inferior"
+gdb_test "inferior 3" ".*" "Switch to third inferior"
+gdb_test "py print gdb.selected_inferior().num" "3" "Third inferior selected"
+gdb_test "inferior 1" ".*" "Switch to first inferior"
+gdb_test_no_output "remove-inferiors 3" "Remove second inferior"

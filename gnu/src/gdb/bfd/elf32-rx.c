@@ -1,5 +1,5 @@
 /* Renesas RX specific support for 32-bit ELF.
-   Copyright (C) 2008, 2009, 2010
+   Copyright (C) 2008, 2009, 2010, 2011
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -27,6 +27,12 @@
 #include "libiberty.h"
 
 #define RX_OPCODE_BIG_ENDIAN 0
+
+/* This is a meta-target that's used only with objcopy, to avoid the
+   endian-swap we would otherwise get.  We check for this in
+   rx_elf_object_p().  */
+const bfd_target bfd_elf32_rx_be_ns_vec;
+const bfd_target bfd_elf32_rx_be_vec;
 
 #ifdef DEBUG
 char * rx_get_reloc (long);
@@ -457,6 +463,13 @@ rx_elf_relocate_section
   struct elf_link_hash_entry ** sym_hashes;
   Elf_Internal_Rela *           rel;
   Elf_Internal_Rela *           relend;
+  bfd_boolean			pid_mode;
+  bfd_boolean			saw_subtract = FALSE;
+
+  if (elf_elfheader (output_bfd)->e_flags & E_FLAG_RX_PID)
+    pid_mode = TRUE;
+  else
+    pid_mode = FALSE;
 
   symtab_hdr = & elf_tdata (input_bfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (input_bfd);
@@ -482,6 +495,9 @@ rx_elf_relocate_section
       sym    = NULL;
       sec    = NULL;
       relocation = 0;
+
+      if (rx_stack_top == 0)
+	saw_subtract = FALSE;
 
       if (r_symndx < symtab_hdr->sh_info)
 	{
@@ -548,6 +564,28 @@ rx_elf_relocate_section
       _bfd_error_handler (_("%B:%A: Warning: deprecated Red Hat reloc " type " detected against: %s."), \
       input_bfd, input_section, name)
 
+      /* Check for unsafe relocs in PID mode.  These are any relocs where
+	 an absolute address is being computed.  There are special cases
+	 for relocs against symbols that are known to be referenced in
+	 crt0.o before the PID base address register has been initialised.  */
+#define UNSAFE_FOR_PID							\
+  do									\
+    {									\
+      if (pid_mode							\
+          && sec != NULL						\
+	  && sec->flags & SEC_READONLY					\
+	  && !(input_section->flags & SEC_DEBUGGING)			\
+	  && strcmp (name, "__pid_base") != 0				\
+	  && strcmp (name, "__gp") != 0					\
+	  && strcmp (name, "__romdatastart") != 0			\
+	  && !saw_subtract)						\
+	_bfd_error_handler (_("%B(%A): unsafe PID relocation %s at 0x%08lx (against %s in %s)"), \
+			    input_bfd, input_section, howto->name,	\
+			    input_section->output_section->vma + input_section->output_offset + rel->r_offset, \
+			    name, sec->name);				\
+    }									\
+  while (0)
+
       /* Opcode relocs are always big endian.  Data relocs are bi-endian.  */
       switch (r_type)
 	{
@@ -568,16 +606,19 @@ rx_elf_relocate_section
 	  WARN_REDHAT ("RX_RH_8_NEG");
 	  relocation = - relocation;
 	case R_RX_DIR8S_PCREL:
+	  UNSAFE_FOR_PID;
 	  RANGE (-128, 127);
 	  OP (0) = relocation;
 	  break;
 
 	case R_RX_DIR8S:
+	  UNSAFE_FOR_PID;
 	  RANGE (-128, 255);
 	  OP (0) = relocation;
 	  break;
 
 	case R_RX_DIR8U:
+	  UNSAFE_FOR_PID;
 	  RANGE (0, 255);
 	  OP (0) = relocation;
 	  break;
@@ -586,6 +627,7 @@ rx_elf_relocate_section
 	  WARN_REDHAT ("RX_RH_16_NEG");
 	  relocation = - relocation;
 	case R_RX_DIR16S_PCREL:
+	  UNSAFE_FOR_PID;
 	  RANGE (-32768, 32767);
 #if RX_OPCODE_BIG_ENDIAN
 #else
@@ -596,6 +638,7 @@ rx_elf_relocate_section
 
 	case R_RX_RH_16_OP:
 	  WARN_REDHAT ("RX_RH_16_OP");
+	  UNSAFE_FOR_PID;
 	  RANGE (-32768, 32767);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (1) = relocation;
@@ -607,6 +650,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_DIR16S:
+	  UNSAFE_FOR_PID;
 	  RANGE (-32768, 65535);
 	  if (BIGE (output_bfd) && !(input_section->flags & SEC_CODE))
 	    {
@@ -621,6 +665,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_DIR16U:
+	  UNSAFE_FOR_PID;
 	  RANGE (0, 65536);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (1) = relocation;
@@ -632,6 +677,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_DIR16:
+	  UNSAFE_FOR_PID;
 	  RANGE (-32768, 65536);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (1) = relocation;
@@ -643,6 +689,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_DIR16_REV:
+	  UNSAFE_FOR_PID;
 	  RANGE (-32768, 65536);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (0) = relocation;
@@ -660,6 +707,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_RH_24_NEG:
+	  UNSAFE_FOR_PID;
 	  WARN_REDHAT ("RX_RH_24_NEG");
 	  relocation = - relocation;
 	case R_RX_DIR24S_PCREL:
@@ -676,6 +724,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_RH_24_OP:
+	  UNSAFE_FOR_PID;
 	  WARN_REDHAT ("RX_RH_24_OP");
 	  RANGE (-0x800000, 0x7fffff);
 #if RX_OPCODE_BIG_ENDIAN
@@ -690,6 +739,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_DIR24S:
+	  UNSAFE_FOR_PID;
 	  RANGE (-0x800000, 0x7fffff);
 	  if (BIGE (output_bfd) && !(input_section->flags & SEC_CODE))
 	    {
@@ -706,6 +756,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_RH_24_UNS:
+	  UNSAFE_FOR_PID;
 	  WARN_REDHAT ("RX_RH_24_UNS");
 	  RANGE (0, 0xffffff);
 #if RX_OPCODE_BIG_ENDIAN
@@ -720,6 +771,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_RH_32_NEG:
+	  UNSAFE_FOR_PID;
 	  WARN_REDHAT ("RX_RH_32_NEG");
 	  relocation = - relocation;
 #if RX_OPCODE_BIG_ENDIAN
@@ -736,6 +788,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_RH_32_OP:
+	  UNSAFE_FOR_PID;
 	  WARN_REDHAT ("RX_RH_32_OP");
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (3) = relocation;
@@ -915,6 +968,7 @@ rx_elf_relocate_section
 	  /* Complex reloc handling:  */
 
 	case R_RX_ABS32:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (3) = relocation;
@@ -930,6 +984,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS32_REV:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 #if RX_OPCODE_BIG_ENDIAN
 	  OP (0) = relocation;
@@ -946,6 +1001,7 @@ rx_elf_relocate_section
 
 	case R_RX_ABS24S_PCREL:
 	case R_RX_ABS24S:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (-0x800000, 0x7fffff);
 	  if (BIGE (output_bfd) && !(input_section->flags & SEC_CODE))
@@ -963,6 +1019,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS16:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (-32768, 65535);
 #if RX_OPCODE_BIG_ENDIAN
@@ -975,6 +1032,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS16_REV:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (-32768, 65535);
 #if RX_OPCODE_BIG_ENDIAN
@@ -1003,6 +1061,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS16U:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (0, 65536);
 #if RX_OPCODE_BIG_ENDIAN
@@ -1015,6 +1074,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS16UL:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  relocation >>= 2;
 	  RANGE (0, 65536);
@@ -1028,6 +1088,7 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS16UW:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  relocation >>= 1;
 	  RANGE (0, 65536);
@@ -1041,18 +1102,21 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS8:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (-128, 255);
 	  OP (0) = relocation;
 	  break;
 
 	case R_RX_ABS8U:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  RANGE (0, 255);
 	  OP (0) = relocation;
 	  break;
 
 	case R_RX_ABS8UL:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  relocation >>= 2;
 	  RANGE (0, 255);
@@ -1060,14 +1124,16 @@ rx_elf_relocate_section
 	  break;
 
 	case R_RX_ABS8UW:
+	  UNSAFE_FOR_PID;
 	  RX_STACK_POP (relocation);
 	  relocation >>= 1;
 	  RANGE (0, 255);
 	  OP (0) = relocation;
 	  break;
 
-	case R_RX_ABS8S_PCREL:
 	case R_RX_ABS8S:
+	  UNSAFE_FOR_PID;
+	case R_RX_ABS8S_PCREL:
 	  RX_STACK_POP (relocation);
 	  RANGE (-128, 127);
 	  OP (0) = relocation;
@@ -1077,7 +1143,8 @@ rx_elf_relocate_section
 	  if (r_symndx < symtab_hdr->sh_info)
 	    RX_STACK_PUSH (sec->output_section->vma
 			   + sec->output_offset
-			   + sym->st_value);
+			   + sym->st_value
+			   + rel->r_addend);
 	  else
 	    {
 	      if (h != NULL
@@ -1085,7 +1152,8 @@ rx_elf_relocate_section
 		      || h->root.type == bfd_link_hash_defweak))
 		RX_STACK_PUSH (h->root.u.def.value
 			       + sec->output_section->vma
-			       + sec->output_offset);
+			       + sec->output_offset
+			       + rel->r_addend);
 	      else
 		_bfd_error_handler (_("Warning: RX_SYM reloc with an unknown symbol"));
 	    }
@@ -1116,6 +1184,7 @@ rx_elf_relocate_section
 	  {
 	    int32_t tmp1, tmp2;
 
+	    saw_subtract = TRUE;
 	    RX_STACK_POP (tmp1);
 	    RX_STACK_POP (tmp2);
 	    tmp2 -= tmp1;
@@ -1138,6 +1207,7 @@ rx_elf_relocate_section
 	  {
 	    int32_t tmp1, tmp2;
 
+	    saw_subtract = TRUE;
 	    RX_STACK_POP (tmp1);
 	    RX_STACK_POP (tmp2);
 	    tmp1 /= tmp2;
@@ -2855,13 +2925,16 @@ rx_elf_set_private_flags (bfd * abfd, flagword flags)
 }
 
 static bfd_boolean no_warn_mismatch = FALSE;
+static bfd_boolean ignore_lma = TRUE;
 
-void bfd_elf32_rx_set_target_flags (bfd_boolean);
+void bfd_elf32_rx_set_target_flags (bfd_boolean, bfd_boolean);
 
 void
-bfd_elf32_rx_set_target_flags (bfd_boolean user_no_warn_mismatch)
+bfd_elf32_rx_set_target_flags (bfd_boolean user_no_warn_mismatch,
+			       bfd_boolean user_ignore_lma)
 {
   no_warn_mismatch = user_no_warn_mismatch;
+  ignore_lma = user_ignore_lma;
 }
 
 /* Merge backend specific data from an object file to the output
@@ -2885,7 +2958,7 @@ rx_elf_merge_private_bfd_data (bfd * ibfd, bfd * obfd)
     }
   else if (old_flags != new_flags)
     {
-      flagword known_flags = E_FLAG_RX_64BIT_DOUBLES | E_FLAG_RX_DSP;
+      flagword known_flags = E_FLAG_RX_64BIT_DOUBLES | E_FLAG_RX_DSP | E_FLAG_RX_PID;
 
       if ((old_flags ^ new_flags) & known_flags)
 	{
@@ -2951,8 +3024,75 @@ elf32_rx_machine (bfd * abfd)
 static bfd_boolean
 rx_elf_object_p (bfd * abfd)
 {
+  int i;
+  unsigned int u;
+  Elf_Internal_Phdr *phdr = elf_tdata (abfd)->phdr;
+  int nphdrs = elf_elfheader (abfd)->e_phnum;
+  sec_ptr bsec;
+  static int saw_be = FALSE;
+
+  /* We never want to automatically choose the non-swapping big-endian
+     target.  The user can only get that explicitly, such as with -I
+     and objcopy.  */
+  if (abfd->xvec == &bfd_elf32_rx_be_ns_vec
+      && abfd->target_defaulted)
+    return FALSE;
+
+  /* BFD->target_defaulted is not set to TRUE when a target is chosen
+     as a fallback, so we check for "scanning" to know when to stop
+     using the non-swapping target.  */
+  if (abfd->xvec == &bfd_elf32_rx_be_ns_vec
+      && saw_be)
+    return FALSE;
+  if (abfd->xvec == &bfd_elf32_rx_be_vec)
+    saw_be = TRUE;
+
   bfd_default_set_arch_mach (abfd, bfd_arch_rx,
 			     elf32_rx_machine (abfd));
+
+  /* For each PHDR in the object, we must find some section that
+     corresponds (based on matching file offsets) and use its VMA
+     information to reconstruct the p_vaddr field we clobbered when we
+     wrote it out.  */
+  for (i=0; i<nphdrs; i++)
+    {
+      for (u=0; u<elf_tdata(abfd)->num_elf_sections; u++)
+	{
+	  Elf_Internal_Shdr *sec = elf_tdata(abfd)->elf_sect_ptr[u];
+
+	  if (phdr[i].p_offset <= (bfd_vma) sec->sh_offset
+	      && (bfd_vma)sec->sh_offset <= phdr[i].p_offset + (phdr[i].p_filesz - 1))
+	    {
+	      /* Found one!  The difference between the two addresses,
+		 plus the difference between the two file offsets, is
+		 enough information to reconstruct the lma.  */
+
+	      /* Example where they aren't:
+		 PHDR[1] = lma fffc0100 offset 00002010 size 00000100
+		 SEC[6]  = vma 00000050 offset 00002050 size 00000040
+
+		 The correct LMA for the section is fffc0140 + (2050-2010).
+	      */
+
+	      phdr[i].p_vaddr = sec->sh_addr + (sec->sh_offset - phdr[i].p_offset);
+	      break;
+	    }
+	}
+
+      /* We must update the bfd sections as well, so we don't stop
+	 with one match.  */
+      bsec = abfd->sections;
+      while (bsec)
+	{
+	  if (phdr[i].p_vaddr <= bsec->vma
+	      && bsec->vma <= phdr[i].p_vaddr + (phdr[i].p_filesz - 1))
+	    {
+	      bsec->lma = phdr[i].p_paddr + (bsec->vma - phdr[i].p_vaddr);
+	    }
+	  bsec = bsec->next;
+	}
+    }
+
   return TRUE;
 }
  
@@ -3305,13 +3445,12 @@ rx_final_link (bfd * abfd, struct bfd_link_info * info)
 #endif
       if (o->flags & SEC_CODE
 	  && bfd_big_endian (abfd)
-	  && (o->size % 4 || o->rawsize % 4))
+	  && o->size % 4)
 	{
 #ifdef DJDEBUG
 	  fprintf (stderr, "adjusting...\n");
 #endif
 	  o->size += 4 - (o->size % 4);
-	  o->rawsize += 4 - (o->rawsize % 4);
 	}
     }
 
@@ -3333,22 +3472,24 @@ elf32_rx_modify_program_headers (bfd * abfd ATTRIBUTE_UNUSED,
   phdr = tdata->phdr;
   count = tdata->program_header_size / bed->s->sizeof_phdr;
 
-  for (i = count; i-- != 0; )
-    if (phdr[i].p_type == PT_LOAD)
-      {
-	/* The Renesas tools expect p_paddr to be zero.  However,
-	   there is no other way to store the writable data in ROM for
-	   startup initialization.  So, we let the linker *think*
-	   we're using paddr and vaddr the "usual" way, but at the
-	   last minute we move the paddr into the vaddr (which is what
-	   the simulator uses) and zero out paddr.  Note that this
-	   does not affect the section headers, just the program
-	   headers.  We hope.  */
+  if (ignore_lma)
+    for (i = count; i-- != 0;)
+      if (phdr[i].p_type == PT_LOAD)
+	{
+	  /* The Renesas tools expect p_paddr to be zero.  However,
+	     there is no other way to store the writable data in ROM for
+	     startup initialization.  So, we let the linker *think*
+	     we're using paddr and vaddr the "usual" way, but at the
+	     last minute we move the paddr into the vaddr (which is what
+	     the simulator uses) and zero out paddr.  Note that this
+	     does not affect the section headers, just the program
+	     headers.  We hope.  */
 	  phdr[i].p_vaddr = phdr[i].p_paddr;
-	  /* If we zero out p_paddr, then the LMA in the section table
+#if 0	  /* If we zero out p_paddr, then the LMA in the section table
 	     becomes wrong.  */
-	  /*phdr[i].p_paddr = 0;*/
-      }
+	  phdr[i].p_paddr = 0;
+#endif
+	}
 
   return TRUE;
 }
@@ -3380,5 +3521,23 @@ elf32_rx_modify_program_headers (bfd * abfd ATTRIBUTE_UNUSED,
 #define bfd_elf32_set_section_contents		rx_set_section_contents
 #define bfd_elf32_bfd_final_link		rx_final_link
 #define bfd_elf32_bfd_relax_section		elf32_rx_relax_section_wrapper
+
+#include "elf32-target.h"
+
+/* We define a second big-endian target that doesn't have the custom
+   section get/set hooks, for times when we want to preserve the
+   pre-swapped .text sections (like objcopy).  */
+
+#undef  TARGET_BIG_SYM
+#define TARGET_BIG_SYM		bfd_elf32_rx_be_ns_vec
+#undef  TARGET_BIG_NAME
+#define TARGET_BIG_NAME		"elf32-rx-be-ns"
+#undef  TARGET_LITTLE_SYM
+
+#undef bfd_elf32_get_section_contents
+#undef bfd_elf32_set_section_contents
+
+#undef	elf32_bed
+#define elf32_bed				elf32_rx_be_ns_bed
 
 #include "elf32-target.h"

@@ -1,7 +1,6 @@
 /* Native-dependent code for GNU/Linux on MIPS processors.
 
-   Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
-   2011 Free Software Foundation, Inc.
+   Copyright (C) 2001-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -871,12 +870,11 @@ static int
 write_watchpoint_regs (void)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
   int tid;
 
-  ALL_LWPS (lp, ptid)
+  ALL_LWPS (lp)
     {
-      tid = ptid_get_lwp (ptid);
+      tid = ptid_get_lwp (lp->ptid);
       if (ptrace (PTRACE_SET_WATCH_REGS, tid, &watch_mirror) == -1)
 	perror_with_name (_("Couldn't write debug register"));
     }

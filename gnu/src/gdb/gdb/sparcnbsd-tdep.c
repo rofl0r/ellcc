@@ -1,7 +1,6 @@
 /* Target-dependent code for NetBSD/sparc.
 
-   Copyright (C) 2002, 2003, 2004, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2002-2004, 2006-2012 Free Software Foundation, Inc.
    Contributed by Wasabi Systems, Inc.
 
    This file is part of GDB.
@@ -202,7 +201,7 @@ sparc32nbsd_sigcontext_frame_cache (struct frame_info *this_frame,
 
       /* Since we couldn't find the frame's function, the cache was
          initialized under the assumption that we're frameless.  */
-      cache->frameless_p = 0;
+      sparc_record_save_insn (cache);
       addr = get_frame_register_unsigned (this_frame, SPARC_FP_REGNUM);
       cache->base = addr;
     }

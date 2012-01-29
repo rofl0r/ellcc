@@ -1,7 +1,6 @@
 /* Target-dependent code for Analog Devices Blackfin processor, for GDB.
 
-   Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2005-2012 Free Software Foundation, Inc.
 
    Contributed by Analog Devices, Inc.
 
@@ -623,7 +622,7 @@ bfin_extract_return_value (struct type *type,
   while (len > 0)
     {
       regcache_cooked_read_unsigned (regs, regno++, &tmp);
-      store_unsigned_integer (valbuf, (len > 4 ? 4 : len), tmp, byte_order);
+      store_unsigned_integer (valbuf, (len > 4 ? 4 : len), byte_order, tmp);
       len -= 4;
       valbuf += 4;
     }

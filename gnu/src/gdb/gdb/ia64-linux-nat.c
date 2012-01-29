@@ -1,8 +1,7 @@
 /* Functions specific to running gdb native on IA-64 running
    GNU/Linux.
 
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1999-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -535,7 +534,6 @@ ia64_linux_insert_watchpoint (CORE_ADDR addr, int len, int rw,
 			      struct expression *cond)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
   int idx;
   long dbr_addr, dbr_mask;
   int max_watchpoints = 4;
@@ -576,10 +574,10 @@ ia64_linux_insert_watchpoint (CORE_ADDR addr, int len, int rw,
 
   debug_registers[2 * idx] = dbr_addr;
   debug_registers[2 * idx + 1] = dbr_mask;
-  ALL_LWPS (lp, ptid)
+  ALL_LWPS (lp)
     {
-      store_debug_register_pair (ptid, idx, &dbr_addr, &dbr_mask);
-      enable_watchpoints_in_psr (ptid);
+      store_debug_register_pair (lp->ptid, idx, &dbr_addr, &dbr_mask);
+      enable_watchpoints_in_psr (lp->ptid);
     }
 
   return 0;
@@ -603,15 +601,14 @@ ia64_linux_remove_watchpoint (CORE_ADDR addr, int len, int type,
       if ((dbr_mask & (0x3UL << 62)) && addr == (CORE_ADDR) dbr_addr)
 	{
 	  struct lwp_info *lp;
-	  ptid_t ptid;
 
 	  debug_registers[2 * idx] = 0;
 	  debug_registers[2 * idx + 1] = 0;
 	  dbr_addr = 0;
 	  dbr_mask = 0;
 
-	  ALL_LWPS (lp, ptid)
-	    store_debug_register_pair (ptid, idx, &dbr_addr, &dbr_mask);
+	  ALL_LWPS (lp)
+	    store_debug_register_pair (lp->ptid, idx, &dbr_addr, &dbr_mask);
 
 	  return 0;
 	}

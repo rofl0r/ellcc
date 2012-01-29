@@ -1,8 +1,6 @@
 /* Remote debugging interface for boot monitors, for GDB.
 
-   Copyright (C) 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1990-2002, 2006-2012 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support.  Written by Rob Savoye for Cygnus.
    Resurrected from the ashes by Stu Grossman.
@@ -843,6 +841,8 @@ monitor_open (char *args, struct monitor_ops *mon_ops, int from_tty)
   /* Give monitor_wait something to read.  */
 
   monitor_printf (current_monitor->line_term);
+
+  init_wait_for_inferior ();
 
   start_remote (from_tty);
 }
@@ -1862,7 +1862,7 @@ monitor_read_memory (CORE_ADDR memaddr, char *myaddr, int len)
 
   len = min (len, 16);
 
-  /* Some dumpers align the first data with the preceeding 16
+  /* Some dumpers align the first data with the preceding 16
      byte boundary.  Some print blanks and start at the
      requested boundary.  EXACT_DUMPADDR  */
 

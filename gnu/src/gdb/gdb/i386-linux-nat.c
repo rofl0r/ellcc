@@ -1,7 +1,6 @@
 /* Native-dependent code for GNU/Linux i386.
 
-   Copyright (C) 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008,
-   2009, 2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1999-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -665,20 +664,11 @@ i386_linux_dr_get (ptid_t ptid, int regnum)
   if (tid == 0)
     tid = PIDGET (ptid);
 
-  /* FIXME: kettenis/2001-03-27: Calling perror_with_name if the
-     ptrace call fails breaks debugging remote targets.  The correct
-     way to fix this is to add the hardware breakpoint and watchpoint
-     stuff to the target vector.  For now, just return zero if the
-     ptrace call fails.  */
   errno = 0;
   value = ptrace (PTRACE_PEEKUSER, tid,
 		  offsetof (struct user, u_debugreg[regnum]), 0);
   if (errno != 0)
-#if 0
     perror_with_name (_("Couldn't read debug register"));
-#else
-    return 0;
-#endif
 
   return value;
 }
@@ -707,11 +697,10 @@ static void
 i386_linux_dr_set_control (unsigned long control)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
 
   i386_linux_dr[DR_CONTROL] = control;
-  ALL_LWPS (lp, ptid)
-    i386_linux_dr_set (ptid, DR_CONTROL, control);
+  ALL_LWPS (lp)
+    i386_linux_dr_set (lp->ptid, DR_CONTROL, control);
 }
 
 /* Set address REGNUM (zero based) to ADDR in all LWPs of LWP_LIST.  */
@@ -720,13 +709,12 @@ static void
 i386_linux_dr_set_addr (int regnum, CORE_ADDR addr)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
 
   gdb_assert (regnum >= 0 && regnum <= DR_LASTADDR - DR_FIRSTADDR);
 
   i386_linux_dr[DR_FIRSTADDR + regnum] = addr;
-  ALL_LWPS (lp, ptid)
-    i386_linux_dr_set (ptid, DR_FIRSTADDR + regnum, addr);
+  ALL_LWPS (lp)
+    i386_linux_dr_set (lp->ptid, DR_FIRSTADDR + regnum, addr);
 }
 
 /* Set address REGNUM (zero based) to zero in all LWPs of LWP_LIST.  */
@@ -751,15 +739,14 @@ static void
 i386_linux_dr_unset_status (unsigned long mask)
 {
   struct lwp_info *lp;
-  ptid_t ptid;
 
-  ALL_LWPS (lp, ptid)
+  ALL_LWPS (lp)
     {
       unsigned long value;
-      
-      value = i386_linux_dr_get (ptid, DR_STATUS);
+
+      value = i386_linux_dr_get (lp->ptid, DR_STATUS);
       value &= ~mask;
-      i386_linux_dr_set (ptid, DR_STATUS, value);
+      i386_linux_dr_set (lp->ptid, DR_STATUS, value);
     }
 }
 
@@ -893,7 +880,8 @@ i386_linux_resume (struct target_ops *ops,
 
 	      regcache_cooked_read_unsigned (regcache, I386_ESP_REGNUM, &sp);
 	      if (syscall == SYS_rt_sigreturn)
-		addr = read_memory_integer (sp + 8, 4, byte_order) + 20;
+		addr = read_memory_unsigned_integer (sp + 8, 4, byte_order)
+		  + 20;
 	      else
 		addr = sp;
 

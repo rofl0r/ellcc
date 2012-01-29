@@ -1,5 +1,5 @@
-# Copyright 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2001, 2002, 2003,
-# 2004, 2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+# Copyright 1992-1999, 2001-2004, 2006-2012 Free Software Foundation,
+# Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -728,7 +728,6 @@ proc do_tests { } {
     gdb_reinitialize_dir $srcdir/$subdir
     gdb_load $binfile
 
-    gdb_test_no_output "set language c++"
     gdb_test_no_output "set width 0"
 
     if { ![runto_main] } then {
@@ -736,6 +735,7 @@ proc do_tests { } {
 	return
     }
 
+    gdb_test_no_output "set language c++"
     test_ptype_si
     test_ptype_mi
     test_ptype_vi

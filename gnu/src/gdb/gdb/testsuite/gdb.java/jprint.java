@@ -1,7 +1,6 @@
 // jprint.java test program.
 //
-// Copyright 2004, 2010
-// Free Software Foundation, Inc.
+// Copyright 2004, 2010-2012 Free Software Foundation, Inc.
 //
 // Written by Jeff Johnston <jjohnstn@redhat.com> 
 // Contributed by Red Hat
@@ -42,6 +41,7 @@ class jvclass {
     
 public class jprint extends jvclass {
   public static Properties props = new Properties ();
+  public static String hi = "hi maude";
 
   public int dothat (int x) {
     int y = x + 3;

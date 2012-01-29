@@ -1,7 +1,6 @@
 /* Native-dependent code for SPARC.
 
-   Copyright (C) 2003, 2004, 2005, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2005, 2007-2012 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -159,7 +158,9 @@ sparc_fetch_inferior_registers (struct target_ops *ops,
 
   if (regnum == SPARC_G0_REGNUM)
     {
-      regcache_raw_supply (regcache, SPARC_G0_REGNUM, NULL);
+      gdb_byte zero[8] = { 0 };
+
+      regcache_raw_supply (regcache, SPARC_G0_REGNUM, &zero);
       return;
     }
 

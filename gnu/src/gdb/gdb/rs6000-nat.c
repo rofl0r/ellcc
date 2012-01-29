@@ -1,8 +1,7 @@
 /* IBM RS/6000 native-dependent code for GDB, the GNU debugger.
 
-   Copyright (C) 1986, 1987, 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997,
-   1998, 1999, 2000, 2001, 2002, 2003, 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1986-1987, 1989, 1991-2004, 2007-2012 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -614,7 +613,7 @@ exec_one_dummy_insn (struct regcache *regcache)
 
   do
     {
-      pid = wait (&status);
+      pid = waitpid (PIDGET (inferior_ptid), &status, 0);
     }
   while (pid != PIDGET (inferior_ptid));
 

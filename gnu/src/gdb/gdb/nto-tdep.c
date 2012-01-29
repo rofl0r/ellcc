@@ -1,7 +1,6 @@
 /* nto-tdep.c - general QNX Neutrino target functionality.
 
-   Copyright (C) 2003, 2004, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 2003-2004, 2007-2012 Free Software Foundation, Inc.
 
    Contributed by QNX Software Systems Ltd.
 
@@ -59,9 +58,9 @@ nto_target (void)
 #ifdef __CYGWIN__
   static char buf[PATH_MAX];
   if (p)
-    cygwin_conv_to_posix_path (p, buf);
+    cygwin_conv_path (CCP_WIN_A_TO_POSIX, p, buf, PATH_MAX);
   else
-    cygwin_conv_to_posix_path (default_nto_target, buf);
+    cygwin_conv_path (CCP_WIN_A_TO_POSIX, default_nto_target, buf, PATH_MAX);
   return buf;
 #else
   return p ? p : default_nto_target;
@@ -233,7 +232,7 @@ nto_parse_redirection (char *pargv[], const char **pin, const char **pout,
   return argv;
 }
 
-/* The struct lm_info, LM_ADDR, and nto_truncate_ptr are copied from
+/* The struct lm_info, lm_addr, and nto_truncate_ptr are copied from
    solib-svr4.c to support nto_relocate_section_addresses
    which is different from the svr4 version.  */
 
@@ -259,7 +258,7 @@ struct lm_info
 
 
 static CORE_ADDR
-LM_ADDR (struct so_list *so)
+lm_addr (struct so_list *so)
 {
   if (so->lm_info->l_addr == (CORE_ADDR)-1)
     {
@@ -310,8 +309,8 @@ nto_relocate_section_addresses (struct so_list *so, struct target_section *sec)
   Elf_Internal_Phdr *phdr = find_load_phdr (sec->bfd);
   unsigned vaddr = phdr ? phdr->p_vaddr : 0;
 
-  sec->addr = nto_truncate_ptr (sec->addr + LM_ADDR (so) - vaddr);
-  sec->endaddr = nto_truncate_ptr (sec->endaddr + LM_ADDR (so) - vaddr);
+  sec->addr = nto_truncate_ptr (sec->addr + lm_addr (so) - vaddr);
+  sec->endaddr = nto_truncate_ptr (sec->endaddr + lm_addr (so) - vaddr);
 }
 
 /* This is cheating a bit because our linker code is in libc.so.  If we

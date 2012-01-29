@@ -1,6 +1,6 @@
 /* Matsushita 10300 specific support for 32-bit ELF
    Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2008, 2009, 2010 Free Software Foundation, Inc.
+   2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1499,7 +1499,10 @@ mn10300_elf_relocate_section (bfd *output_bfd,
 	       obscure cases sec->output_section will be NULL.  */
 	    relocation = 0;
 
-	  else if (!info->relocatable && unresolved_reloc)
+	  else if (!info->relocatable && unresolved_reloc
+		   && _bfd_elf_section_offset (output_bfd, info, input_section,
+					       rel->r_offset) != (bfd_vma) -1)
+
 	    (*_bfd_error_handler)
 	      (_("%B(%A+0x%lx): unresolvable %s relocation against symbol `%s'"),
 	       input_bfd,
@@ -1601,9 +1604,6 @@ elf32_mn10300_finish_hash_table_entry (struct bfd_hash_entry *gen_entry,
   unsigned int byte_count = 0;
 
   entry = (struct elf32_mn10300_link_hash_entry *) gen_entry;
-
-  if (entry->root.root.type == bfd_link_hash_warning)
-    entry = (struct elf32_mn10300_link_hash_entry *) entry->root.root.u.i.link;
 
   /* If we already know we want to convert "call" to "calls" for calls
      to this symbol, then return now.  */
@@ -3604,8 +3604,8 @@ mn10300_elf_relax_section (bfd *abfd,
 			&& (value & 0x8000))
 		      continue;
 
-		    /* mov imm16, an zero-extends the immediate.  */
-		    if (code == 0xdc
+		    /* "mov imm16, an" zero-extends the immediate.  */
+		    if ((code & 0xfc) == 0xdc
 			&& (long) value < 0)
 		      continue;
 
@@ -4881,6 +4881,22 @@ _bfd_mn10300_elf_reloc_type_class (const Elf_Internal_Rela *rela)
     default:			return reloc_class_normal;
     }
 }
+
+/* Allocate space for an MN10300 extension to the bfd elf data structure.  */
+
+static bfd_boolean
+mn10300_elf_mkobject (bfd *abfd)
+{
+  /* We do not actually need any extra room in the bfd elf data structure.
+     But we do need the object_id of the structure to be set to
+     MN10300_ELF_DATA so that elflink.c:elf_link_add_object_symols() will call
+     our mn10300_elf_check_relocs function which will then allocate space in
+     the .got section for any GOT based relocs.  */
+  return bfd_elf_allocate_object (abfd, sizeof (struct elf_obj_tdata),
+				  MN10300_ELF_DATA);
+}
+
+#define bfd_elf32_mkobject	mn10300_elf_mkobject
 
 #ifndef ELF_ARCH
 #define TARGET_LITTLE_SYM	bfd_elf32_mn10300_vec

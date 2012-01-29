@@ -284,6 +284,11 @@ typedef struct bfd_section
      sections.  */
 #define SEC_COFF_SHARED_LIBRARY 0x4000000
 
+  /* This input section should be copied to output in reverse order
+     as an array of pointers.  This is for ELF linker internal use
+     only.  */
+#define SEC_ELF_REVERSE_COPY 0x4000000
+
   /* This section contains data which may be shared with other
      executables or shared objects. This is for COFF only.  */
 #define SEC_COFF_SHARED 0x8000000
@@ -468,6 +473,9 @@ typedef struct bfd_section
   /* The BFD which owns the section.  */
   bfd *owner;
 
+  /* INPUT_SECTION_FLAGS if specified in the linker script.  */
+  struct flag_info *section_flag_info;
+
   /* A symbol which points at this section only.  */
   struct bfd_symbol *symbol;
   struct bfd_symbol **symbol_ptr_ptr;
@@ -645,6 +653,9 @@ extern asection bfd_ind_section;
                                                                        \
   /* target_index, used_by_bfd, constructor_chain, owner,          */  \
      0,            NULL,        NULL,              NULL,               \
+                                                                       \
+  /* flag_info,                                                    */  \
+     NULL,                                                             \
                                                                        \
   /* symbol,                    symbol_ptr_ptr,                    */  \
      (struct bfd_symbol *) SYM, &SEC.symbol,                           \

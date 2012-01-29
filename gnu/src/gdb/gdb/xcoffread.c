@@ -1,7 +1,5 @@
 /* Read AIX xcoff symbol tables and convert to internal format, for GDB.
-   Copyright (C) 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995,
-   1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2007, 2008, 2009,
-   2010, 2011 Free Software Foundation, Inc.
+   Copyright (C) 1986-2004, 2007-2012 Free Software Foundation, Inc.
    Derived from coffread.c, dbxread.c, and a lot of hacking.
    Contributed by IBM Corporation.
 
@@ -151,6 +149,24 @@ struct coff_symfile_info
     /* Offset in data section to TOC anchor.  */
     CORE_ADDR toc_offset;
   };
+
+/* XCOFF names for dwarf sections.  There is no compressed sections.  */
+
+static const struct dwarf2_debug_sections dwarf2_xcoff_names = {
+  { ".dwinfo", NULL },
+  { ".dwabrev", NULL },
+  { ".dwline", NULL },
+  { ".dwloc", NULL },
+  { NULL, NULL }, /* debug_macinfo */
+  { NULL, NULL }, /* debug_macro */
+  { ".dwstr", NULL },
+  { ".dwrnges", NULL },
+  { NULL, NULL }, /* debug_types */
+  { ".dwframe", NULL },
+  { NULL, NULL }, /* eh_frame */
+  { NULL, NULL }, /* gdb_index */
+  23
+};
 
 static void
 bf_notfound_complaint (void)
@@ -757,6 +773,10 @@ return_after_cleanup:
 static void
 aix_process_linenos (void)
 {
+  /* There is no linenos to read if there are only dwarf info.  */
+  if (this_symtab_psymtab == NULL)
+    return;
+
   /* Process line numbers and enter them into line vector.  */
   process_linenos (last_source_start_addr, cur_src_end_addr);
 }
@@ -944,7 +964,7 @@ read_xcoff_symtab (struct partial_symtab *pst)
     ((struct coff_symfile_info *) objfile->deprecated_sym_private)->strtbl;
   char *debugsec =
     ((struct coff_symfile_info *) objfile->deprecated_sym_private)->debugsec;
-  char *debugfmt = bfd_xcoff_is_xcoff64 (abfd) ? "XCOFF64" : "XCOFF";
+  const char *debugfmt = bfd_xcoff_is_xcoff64 (abfd) ? "XCOFF64" : "XCOFF";
 
   struct internal_syment symbol[1];
   union internal_auxent main_aux;
@@ -961,7 +981,7 @@ read_xcoff_symtab (struct partial_symtab *pst)
   struct coff_symbol fcn_stab_saved = { 0 };
 
   /* fcn_cs_saved is global because process_xcoff_symbol needs it.  */
-  union internal_auxent fcn_aux_saved;
+  union internal_auxent fcn_aux_saved = main_aux;
   struct context_stack *new;
 
   char *filestring = " _start_ ";	/* Name of the current file.  */
@@ -1585,7 +1605,11 @@ process_xcoff_symbol (struct coff_symbol *cs, struct objfile *objfile)
 	     where we need to, which is not necessarily super-clean,
 	     but seems workable enough.  */
 
-	  if (*name == ':' || (pp = (char *) strchr (name, ':')) == NULL)
+	  if (*name == ':')
+	    return NULL;
+
+	  pp = strchr (name, ':');
+	  if (pp == NULL)
 	    return NULL;
 
 	  ++pp;
@@ -1906,6 +1930,8 @@ xcoff_symfile_finish (struct objfile *objfile)
       inclTable = NULL;
     }
   inclIndx = inclLength = inclDepth = 0;
+
+  dwarf2_free_objfile (objfile);
 }
 
 
@@ -2619,7 +2645,7 @@ scan_xcoff_symtab (struct objfile *objfile)
 	    swap_sym (&symbol, &main_aux[0], &namestring, &sraw_symbol,
 		      &ssymnum, objfile);
 
-	    p = (char *) strchr (namestring, ':');
+	    p = strchr (namestring, ':');
 	    if (!p)
 	      continue;			/* Not a debugging symbol.   */
 
@@ -3017,6 +3043,13 @@ xcoff_initial_scan (struct objfile *objfile, int symfile_flags)
      minimal symbols for this objfile.  */
 
   install_minimal_symbols (objfile);
+
+  /* DWARF2 sections.  */
+
+  if (dwarf2_has_info (objfile, &dwarf2_xcoff_names))
+    dwarf2_build_psymtabs (objfile);
+
+  dwarf2_build_frame_info (objfile);
 
   do_cleanups (back_to);
 }

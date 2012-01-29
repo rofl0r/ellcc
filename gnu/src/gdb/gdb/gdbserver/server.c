@@ -1,7 +1,6 @@
 /* Main code for remote server for GDB.
-   Copyright (C) 1989, 1993, 1994, 1995, 1997, 1998, 1999, 2000, 2002, 2003,
-   2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
-   Free Software Foundation, Inc.
+   Copyright (C) 1989, 1993-1995, 1997-2000, 2002-2012 Free Software
+   Foundation, Inc.
 
    This file is part of GDB.
 
@@ -32,7 +31,6 @@
 
 ptid_t cont_thread;
 ptid_t general_thread;
-ptid_t step_thread;
 
 int server_waiting;
 
@@ -40,8 +38,15 @@ static int extended_protocol;
 static int response_needed;
 static int exit_requested;
 
+/* --once: Exit after the first connection has closed.  */
+int run_once;
+
 int multi_process;
 int non_stop;
+
+/* Whether we should attempt to disable the operating system's address
+   space randomization feature before starting an inferior.  */
+int disable_randomization = 1;
 
 static char **program_argv, **wrapper_argv;
 
@@ -495,6 +500,27 @@ handle_general_set (char *own_buf)
       return;
     }
 
+  if (strncmp ("QDisableRandomization:", own_buf,
+	       strlen ("QDisableRandomization:")) == 0)
+    {
+      char *packet = own_buf + strlen ("QDisableRandomization:");
+      ULONGEST setting;
+
+      unpack_varlen_hex (packet, &setting);
+      disable_randomization = setting;
+
+      if (remote_debug)
+	{
+	  if (disable_randomization)
+	    fprintf (stderr, "[address space randomization disabled]\n");
+	  else
+	    fprintf (stderr, "[address space randomization enabled]\n");
+	}
+
+      write_ok (own_buf);
+      return;
+    }
+
   if (target_supports_tracepoints ()
       && handle_tracepoint_general_set (own_buf))
     return;
@@ -915,6 +941,10 @@ handle_qxfer_libraries (const char *annex,
   if (annex[0] != '\0' || !target_running ())
     return -1;
 
+  /* Do not confuse this packet with qXfer:libraries-svr4:read.  */
+  if (the_target->qxfer_libraries_svr4 != NULL)
+    return 0;
+
   /* Over-estimate the necessary memory.  Assume that every character
      in the library name must be escaped.  */
   total_len = 64;
@@ -963,6 +993,23 @@ handle_qxfer_libraries (const char *annex,
   memcpy (readbuf, document + offset, len);
   free (document);
   return len;
+}
+
+/* Handle qXfer:libraries-svr4:read.  */
+
+static int
+handle_qxfer_libraries_svr4 (const char *annex,
+			     gdb_byte *readbuf, const gdb_byte *writebuf,
+			     ULONGEST offset, LONGEST len)
+{
+  if (writebuf != NULL)
+    return -2;
+
+  if (annex[0] != '\0' || !target_running ()
+      || the_target->qxfer_libraries_svr4 == NULL)
+    return -1;
+
+  return the_target->qxfer_libraries_svr4 (annex, readbuf, writebuf, offset, len);
 }
 
 /* Handle qXfer:osadata:read.  */
@@ -1168,11 +1215,28 @@ handle_qxfer_traceframe_info (const char *annex,
   return len;
 }
 
+/* Handle qXfer:fdpic:read.  */
+
+static int
+handle_qxfer_fdpic (const char *annex, gdb_byte *readbuf,
+		    const gdb_byte *writebuf, ULONGEST offset, LONGEST len)
+{
+  if (the_target->read_loadmap == NULL)
+    return -2;
+
+  if (!target_running ())
+    return -1;
+
+  return (*the_target->read_loadmap) (annex, offset, readbuf, len);
+}
+
 static const struct qxfer qxfer_packets[] =
   {
     { "auxv", handle_qxfer_auxv },
+    { "fdpic", handle_qxfer_fdpic},
     { "features", handle_qxfer_features },
     { "libraries", handle_qxfer_libraries },
+    { "libraries-svr4", handle_qxfer_libraries_svr4 },
     { "osdata", handle_qxfer_osdata },
     { "siginfo", handle_qxfer_siginfo },
     { "spu", handle_qxfer_spu },
@@ -1493,9 +1557,14 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 
       sprintf (own_buf, "PacketSize=%x;QPassSignals+", PBUFSIZ - 1);
 
-      /* We do not have any hook to indicate whether the target backend
-	 supports qXfer:libraries:read, so always report it.  */
-      strcat (own_buf, ";qXfer:libraries:read+");
+      if (the_target->qxfer_libraries_svr4 != NULL)
+	strcat (own_buf, ";qXfer:libraries-svr4:read+");
+      else
+	{
+	  /* We do not have any hook to indicate whether the non-SVR4 target
+	     backend supports qXfer:libraries:read, so always report it.  */
+	  strcat (own_buf, ";qXfer:libraries:read+");
+	}
 
       if (the_target->read_auxv != NULL)
 	strcat (own_buf, ";qXfer:auxv:read+");
@@ -1505,6 +1574,9 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 
       if (the_target->qxfer_siginfo != NULL)
 	strcat (own_buf, ";qXfer:siginfo:read+;qXfer:siginfo:write+");
+
+      if (the_target->read_loadmap != NULL)
+	strcat (own_buf, ";qXfer:fdpic:read+");
 
       /* We always report qXfer:features:read, as targets may
 	 install XML files on a subsequent call to arch_setup.
@@ -1524,6 +1596,9 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
       if (target_supports_non_stop ())
 	strcat (own_buf, ";QNonStop+");
 
+      if (target_supports_disable_randomization ())
+	strcat (own_buf, ";QDisableRandomization+");
+
       strcat (own_buf, ";qXfer:threads:read+");
 
       if (target_supports_tracepoints ())
@@ -1535,8 +1610,11 @@ handle_query (char *own_buf, int packet_len, int *new_packet_len_p)
 	  if (gdb_supports_qRelocInsn && target_supports_fast_tracepoints ())
 	    strcat (own_buf, ";FastTracepoints+");
 	  strcat (own_buf, ";StaticTracepoints+");
+	  strcat (own_buf, ";InstallInTrace+");
 	  strcat (own_buf, ";qXfer:statictrace:read+");
 	  strcat (own_buf, ";qXfer:traceframe-info:read+");
+	  strcat (own_buf, ";EnableDisableTracepoints+");
+	  strcat (own_buf, ";tracenz+");
 	}
 
       return;
@@ -2291,7 +2369,7 @@ static void
 gdbserver_version (void)
 {
   printf ("GNU gdbserver %s%s\n"
-	  "Copyright (C) 2011 Free Software Foundation, Inc.\n"
+	  "Copyright (C) 2012 Free Software Foundation, Inc.\n"
 	  "gdbserver is free software, covered by the "
 	  "GNU General Public License.\n"
 	  "This gdbserver was configured as \"%s\"\n",
@@ -2312,7 +2390,9 @@ gdbserver_usage (FILE *stream)
 	   "  --debug               Enable general debugging output.\n"
 	   "  --remote-debug        Enable remote protocol debugging output.\n"
 	   "  --version             Display version information and exit.\n"
-	   "  --wrapper WRAPPER --  Run WRAPPER to start new programs.\n");
+	   "  --wrapper WRAPPER --  Run WRAPPER to start new programs.\n"
+	   "  --once                Exit after the first connection has "
+								  "closed.\n");
   if (REPORT_BUGS_TO[0] && stream == stdout)
     fprintf (stream, "Report bugs to \"%s\".\n", REPORT_BUGS_TO);
 }
@@ -2437,17 +2517,6 @@ detach_or_kill_for_exit (void)
   for_each_inferior (&all_processes, detach_or_kill_inferior_callback);
 }
 
-static void
-join_inferiors_callback (struct inferior_list_entry *entry)
-{
-  struct process_info *process = (struct process_info *) entry;
-
-  /* If we are attached, then we can exit.  Otherwise, we need to hang
-     around doing nothing, until the child is gone.  */
-  if (!process->attached)
-    join_inferior (ptid_get_pid (process->head.id));
-}
-
 int
 main (int argc, char *argv[])
 {
@@ -2536,6 +2605,12 @@ main (int argc, char *argv[])
 		}
 	    }
 	}
+      else if (strcmp (*next_arg, "--disable-randomization") == 0)
+	disable_randomization = 1;
+      else if (strcmp (*next_arg, "--no-disable-randomization") == 0)
+	disable_randomization = 0;
+      else if (strcmp (*next_arg, "--once") == 0)
+	run_once = 1;
       else
 	{
 	  fprintf (stderr, "Unknown argument: %s\n", *next_arg);
@@ -2585,7 +2660,6 @@ main (int argc, char *argv[])
       exit (1);
     }
 
-  initialize_inferiors ();
   initialize_async_io ();
   initialize_low ();
   if (target_supports_tracepoints ())
@@ -2648,6 +2722,8 @@ main (int argc, char *argv[])
       exit (1);
     }
 
+  remote_prepare (port);
+
   while (1)
     {
       noack_mode = 0;
@@ -2676,7 +2752,7 @@ main (int argc, char *argv[])
 	 getpkt to fail; close the connection and reopen it at the
 	 top of the loop.  */
 
-      if (exit_requested)
+      if (exit_requested || run_once)
 	{
 	  detach_or_kill_for_exit ();
 	  exit (0);
@@ -2842,8 +2918,7 @@ process_serial_event (void)
 	      /* If we are attached, then we can exit.  Otherwise, we
 		 need to hang around doing nothing, until the child is
 		 gone.  */
-	      for_each_inferior (&all_processes,
-				 join_inferiors_callback);
+	      join_inferior (pid);
 	      exit (0);
 	    }
 	}
@@ -2915,8 +2990,6 @@ process_serial_event (void)
 	    }
 	  else if (own_buf[1] == 'c')
 	    cont_thread = thread_id;
-	  else if (own_buf[1] == 's')
-	    step_thread = thread_id;
 
 	  write_ok (own_buf);
 	}

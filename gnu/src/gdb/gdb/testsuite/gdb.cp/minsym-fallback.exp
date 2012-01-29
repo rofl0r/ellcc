@@ -1,4 +1,4 @@
-# Copyright (C) 2011 Free Software Foundation, Inc.
+# Copyright (C) 2011-2012 Free Software Foundation, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ set objmainfile $objdir/$subdir/${testfile}-main.o
 set binfile $objdir/$subdir/$executable
 if {[gdb_compile $srcdir/$subdir/$srcfile $objfile object {}] != ""
     || [gdb_compile $srcdir/$subdir/$srcmainfile $objmainfile object {debug}] != ""
-    || [gdb_compile "$objfile $objmainfile" $binfile executable {}] != ""} {
+    || [gdb_compile "$objfile $objmainfile" $binfile executable {c++}] != ""} {
     untested ${testfile}.exp
     return -1
 }
