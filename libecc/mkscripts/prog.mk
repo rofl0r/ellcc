@@ -29,7 +29,8 @@ $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $(LDFLAGS) $(XLDFLAGS) $(OBJS) $(LDEXTRA) $(XLDEXTRA)
 else
 NOCHECK = 1
-$(PROC):
+$(PROG):
+	@echo $(PROG) for $(ARCH) is being skipped
 endif
 
 clean:
