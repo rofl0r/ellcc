@@ -24,13 +24,13 @@ endif
 .cxx.o:
 	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXLAGS) $<
 
-ifeq ($(NOMAKE),)
+ifeq ($(EXCLUDE),)
 $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $(LDFLAGS) $(XLDFLAGS) $(OBJS) $(LDEXTRA) $(XLDEXTRA)
 else
 NOCHECK = 1
 $(PROG):
-	@echo $(PROG) for $(ARCH) is being skipped
+	@echo $(PROG) for $(ARCH) is being skipped: $(EXCLUDE)
 endif
 
 clean:
