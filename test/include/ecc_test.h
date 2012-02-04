@@ -15,6 +15,8 @@
 
 extern int __test_count;                      ///< The test counter.
 extern int __test_failures;                   ///< The failure counter.
+extern int __test_expected_failures;          ///< The expected failure counter.
+extern int __test_unexpected_passes;          ///< The unexpected pass counter.
 extern int __test_verbose;                    ///< The test verbosity control.
 extern const char *__test_cases;              ///< The current test cases.
 extern const char *__test_category;           ///< The current test category.
@@ -100,6 +102,8 @@ extern const char *__test_group;              ///< The current test group.
 #define TEST_INIT(name, verbose)                                        \
 int __test_count;                                                       \
 int __test_failures;                                                    \
+int __test_expected_failures;                                           \
+int __test_unexpected_passes;                                           \
 int __test_verbose;                                                     \
 const char *__test_cases = "";                                          \
 const char *__test_category = "";                                       \
@@ -174,6 +178,33 @@ static void test ## which(void) {                                       \
         }                                                               \
     } while (0)
 
+/** Perform a test that is expected to fail.
+ */
+#define TEST_FAIL(set, cond, ...)                                       \
+    if (set) do {                                                       \
+        ++__test_count;                                                 \
+        const char *file = strrchr(__FILE__, '/');                      \
+        if (file == NULL) file = __FILE__; else ++file;                 \
+        if (!(cond)) {                                                   \
+            fprintf(stdout, "XFAIL: %s:%d: %s(%s): ", file, __LINE__,   \
+                    __test_category, __test_group);                     \
+            fprintf(stdout, __VA_ARGS__);                               \
+            fprintf(stdout, "\n");                                      \
+            fprintf(stderr, "XFAIL: %s:%d: %s(%s): ", file, __LINE__,   \
+                    __test_category, __test_group);                     \
+            fprintf(stderr, __VA_ARGS__);                               \
+            fprintf(stderr, "\n");                                      \
+            ++__test_expected_failures;                                 \
+            if (HOST) TEST_DONE();                                      \
+        } else if (__test_verbose) {                                    \
+            fprintf(stdout, "XPASS: %s:%d: %s(%s): ", file, __LINE__,   \
+                    __test_category, __test_group);                     \
+            ++__test_unexpected_passes;                                 \
+            fprintf(stdout, __VA_ARGS__);                               \
+            fprintf(stdout, "\n");                                      \
+        }                                                               \
+    } while (0)
+
 /** Complete testing.
  */
 #define TEST_DONE()                                                     \
@@ -182,11 +213,24 @@ static void test ## which(void) {                                       \
         fprintf(stdout, "    %d tests run\n", __test_count);            \
         fprintf(stdout, "    %d test%s failed\n", __test_failures,      \
                 __test_failures == 1 ? "" : "s");                       \
-        if (__test_failures > 0) {                                      \
+        if (__test_expected_failures) {                                 \
+            fprintf(stdout, "    %d test%s failed as expected\n",       \
+                    __test_expected_failures,                           \
+                    __test_expected_failures == 1 ? "" : "s");          \
+        }                                                               \
+        if (__test_unexpected_passes) {                                 \
+            fprintf(stdout, "    %d test%s did not fail as expected\n", \
+                    __test_unexpected_passes,                           \
+                    __test_unexpected_passes == 1 ? "" : "s");          \
+        }                                                               \
+        if (__test_failures > 0 || __test_unexpected_passes > 0) {      \
             fprintf(stderr, "%s unit tests completed\n", __test_category); \
             fprintf(stderr, "    %d tests run\n", __test_count);        \
             fprintf(stderr, "    %d test%s failed\n", __test_failures,  \
                 __test_failures == 1 ? "" : "s");                       \
+            fprintf(stderr, "    %d test%s did not fail as expected\n", \
+                __test_unexpected_passes,                               \
+                __test_unexpected_passes == 1 ? "" : "s");              \
             exit(EXIT_FAILURE);                                         \
         } else {                                                        \
             exit(EXIT_SUCCESS);                                         \
