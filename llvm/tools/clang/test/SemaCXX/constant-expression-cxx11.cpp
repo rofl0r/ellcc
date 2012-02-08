@@ -37,6 +37,7 @@ namespace DerivedToVBaseCast {
   D d;
   constexpr B *p = &d;
   constexpr C *q = &d;
+
   static_assert((void*)p != (void*)q, "");
   static_assert((A*)p == (A*)q, "");
   static_assert((Aa*)p != (Aa*)q, "");
@@ -65,7 +66,6 @@ namespace DerivedToVBaseCast {
   struct Z : Y1, Y2 {};
   Z z;
   static_assert((X*)(Y1*)&z != (X*)(Y2*)&z, "");
-
 }
 
 namespace ConstCast {
@@ -666,7 +666,7 @@ static_assert(&bot1 != &bot2, "");
 
 constexpr Bottom *pb1 = (Base*)&derived;
 constexpr Bottom *pb2 = (Base2*)&derived;
-static_assert(pb1 != pb2, "");
+static_assert(&pb1 != &pb2, "");
 static_assert(pb1 == &bot1, "");
 static_assert(pb2 == &bot2, "");
 
@@ -827,6 +827,18 @@ namespace MemberPointer {
   static_assert((s.*&S::f)() == 2, "");
   static_assert((s.*s.pf)() == 2, "");
 
+  static_assert(pf == &S::f, "");
+  static_assert(pf == s.*&S::pf, "");
+  static_assert(pm == &S::m, "");
+  static_assert(pm != pn, "");
+  static_assert(s.pn != pn, "");
+  static_assert(s.pn == pm, "");
+  static_assert(pg != nullptr, "");
+  static_assert(pf != nullptr, "");
+  static_assert((int S::*)nullptr == nullptr, "");
+  static_assert(pg == pg, ""); // expected-error {{constant expression}} expected-note {{comparison of pointer to virtual member function 'g' has unspecified value}}
+  static_assert(pf != pg, ""); // expected-error {{constant expression}} expected-note {{comparison of pointer to virtual member function 'g' has unspecified value}}
+
   template<int n> struct T : T<n-1> {};
   template<> struct T<0> { int n; };
   template<> struct T<30> : T<29> { int m; };
@@ -836,10 +848,13 @@ namespace MemberPointer {
 
   constexpr int (T<10>::*deepn) = &T<0>::n;
   static_assert(&(t17.*deepn) == &t17.n, "");
+  static_assert(deepn == &T<2>::n, "");
 
   constexpr int (T<15>::*deepm) = (int(T<10>::*))&T<30>::m;
   constexpr int *pbad = &(t17.*deepm); // expected-error {{constant expression}}
   static_assert(&(t30.*deepm) == &t30.m, "");
+  static_assert(deepm == &T<50>::m, "");
+  static_assert(deepm != deepn, "");
 
   constexpr T<5> *p17_5 = &t17;
   constexpr T<13> *p17_13 = (T<13>*)p17_5;
@@ -857,6 +872,14 @@ namespace MemberPointer {
   static_assert(&(p30_5->*(int(T<2>::*))deepm) == &t30.m, "");
   static_assert(&(((T<17>*)p30_13)->*deepm) == &t30.m, "");
   static_assert(&(p30_23->*deepm) == &t30.m, "");
+
+  struct Base { int n; };
+  template<int N> struct Mid : Base {};
+  struct Derived : Mid<0>, Mid<1> {};
+  static_assert(&Mid<0>::n == &Mid<1>::n, "");
+  static_assert((int Derived::*)(int Mid<0>::*)&Mid<0>::n !=
+                (int Derived::*)(int Mid<1>::*)&Mid<1>::n, "");
+  static_assert(&Mid<0>::n == (int Mid<0>::*)&Base::n, "");
 }
 
 namespace ArrayBaseDerived {
@@ -988,17 +1011,23 @@ volatile constexpr int n1 = 0; // expected-note {{here}}
 volatile const int n2 = 0; // expected-note {{here}}
 int n3 = 37; // expected-note {{declared here}}
 
-constexpr int m1 = n1; // expected-error {{constant expression}} expected-note {{read of volatile object 'n1'}}
-constexpr int m2 = n2; // expected-error {{constant expression}} expected-note {{read of volatile object 'n2'}}
+constexpr int m1 = n1; // expected-error {{constant expression}} expected-note {{read of volatile-qualified type 'const volatile int'}}
+constexpr int m2 = n2; // expected-error {{constant expression}} expected-note {{read of volatile-qualified type 'const volatile int'}}
+constexpr int m1b = const_cast<const int&>(n1); // expected-error {{constant expression}} expected-note {{read of volatile object 'n1'}}
+constexpr int m2b = const_cast<const int&>(n2); // expected-error {{constant expression}} expected-note {{read of volatile object 'n2'}}
 
 struct T { int n; };
 const T t = { 42 }; // expected-note {{declared here}}
 
 constexpr int f(volatile int &&r) {
-  return r; // expected-note {{read of volatile temporary is not allowed in a constant expression}}
+  return r; // expected-note {{read of volatile-qualified type 'volatile int'}}
+}
+constexpr int g(volatile int &&r) {
+  return const_cast<int&>(r); // expected-note {{read of volatile temporary is not allowed in a constant expression}}
 }
 struct S {
-  int k : f(0); // expected-error {{constant expression}} expected-note {{temporary created here}} expected-note {{in call to 'f(0)'}}
+  int j : f(0); // expected-error {{constant expression}} expected-note {{in call to 'f(0)'}}
+  int k : g(0); // expected-error {{constant expression}} expected-note {{temporary created here}} expected-note {{in call to 'g(0)'}}
   int l : n3; // expected-error {{constant expression}} expected-note {{read of non-const variable}}
   int m : t.n; // expected-error {{constant expression}} expected-note {{read of non-constexpr variable}}
 };
@@ -1089,4 +1118,18 @@ namespace IndirectField {
   static_assert(s2.d == 6, "");
   static_assert(s2.e == 0, ""); // expected-error {{constant expression}} expected-note {{union with active member}}
   static_assert(s2.f == 7, "");
+}
+
+namespace Fold {
+
+  // This macro forces its argument to be constant-folded, even if it's not
+  // otherwise a constant expression.
+  #define fold(x) (__builtin_constant_p(x) ? (x) : (x))
+
+  constexpr int n = (int)(char*)123; // expected-error {{constant expression}} expected-note {{reinterpret_cast}}
+  constexpr int m = fold((int)(char*)123); // ok
+  static_assert(m == 123, "");
+
+  #undef fold
+
 }

@@ -35,6 +35,10 @@
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
 
+#ifdef _WIN32
+#include <intrin.h>
+#endif
+
 namespace __asan {
 
 #define  REDZONE FLAG_redzone
@@ -59,10 +63,6 @@ static inline bool IsAligned(uintptr_t a, uintptr_t alignment) {
   return (a & (alignment - 1)) == 0;
 }
 
-#ifdef _WIN32
-#include <intrin.h>
-#endif
-
 static inline size_t Log2(size_t x) {
   CHECK(IsPowerOfTwo(x));
 #if defined(_WIN64)
@@ -78,28 +78,21 @@ static inline size_t Log2(size_t x) {
 #endif
 }
 
-static inline size_t clz(size_t x) {
-#if defined(_WIN64)
-  unsigned long ret;  // NOLINT
-  _BitScanReverse64(&ret, x);
-  return ret;
-#elif defined(_WIN32)
-  unsigned long ret;  // NOLINT
-  _BitScanReverse(&ret, x);
-  return ret;
-#else
-  return __builtin_clzl(x);
-#endif
-}
-
 static inline size_t RoundUpToPowerOfTwo(size_t size) {
   CHECK(size);
   if (IsPowerOfTwo(size)) return size;
 
-  size_t up = __WORDSIZE - clz(size);
-  CHECK(size < (1ULL << up));
-  CHECK(size > (1ULL << (up - 1)));
-  return 1UL << up;
+  unsigned long up;  // NOLINT
+#if defined(_WIN64)
+  _BitScanReverse64(&up, size);
+#elif defined(_WIN32)
+  _BitScanReverse(&up, size);
+#else
+  up = __WORDSIZE - 1 - __builtin_clzl(size);
+#endif
+  CHECK(size < (1ULL << (up + 1)));
+  CHECK(size > (1ULL << up));
+  return 1UL << (up + 1);
 }
 
 static inline size_t SizeClassToSize(uint8_t size_class) {
@@ -747,6 +740,7 @@ static uint8_t *Reallocate(uint8_t *old_ptr, size_t new_size,
   size_t memcpy_size = Min(new_size, old_size);
   uint8_t *new_ptr = Allocate(0, new_size, stack);
   if (new_ptr) {
+    CHECK(real_memcpy != NULL);
     real_memcpy(new_ptr, old_ptr, memcpy_size);
     Deallocate(old_ptr, stack);
   }
@@ -873,7 +867,7 @@ void asan_mz_force_unlock() {
 
 // ---------------------- Fake stack-------------------- {{{1
 FakeStack::FakeStack() {
-  CHECK(real_memset);
+  CHECK(real_memset != NULL);
   real_memset(this, 0, sizeof(*this));
 }
 

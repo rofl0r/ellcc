@@ -31,6 +31,18 @@ def err_cce_narrowing : Error<
   "%select{case value|enumerator value|non-type template argument}0 "
   "%select{cannot be narrowed from type %2 to %3|"
   "evaluates to %2, which cannot be narrowed to type %3}1">;
+def err_ice_not_integral : Error<
+  "integral constant expression must have integral or unscoped enumeration "
+  "type, not %0">;
+def err_ice_incomplete_type : Error<
+  "integral constant expression has incomplete class type %0">;
+def err_ice_explicit_conversion : Error<
+  "integral constant expression requires explicit conversion from %0 to %1">;
+def note_ice_conversion_here : Note<
+  "conversion to %select{integral|enumeration}0 type %1 declared here">;
+def err_ice_ambiguous_conversion : Error<
+  "ambiguous conversion from type %0 to an integral or unscoped "
+  "enumeration type">;
 
 // Semantic analysis of constant literals.
 def ext_predef_outside_function : Warning<
@@ -314,6 +326,15 @@ def warn_strlcpycat_wrong_size : Warning<
   InGroup<DiagGroup<"strlcpy-strlcat-size">>;
 def note_strlcpycat_wrong_size : Note<
   "change size argument to be the size of the destination">;
+  
+def warn_strncat_large_size : Warning<
+  "the value of the size argument in 'strncat' is too large, might lead to a " 
+  "buffer overflow">, InGroup<StrncatSize>, DefaultIgnore;
+def warn_strncat_src_size : Warning<"size argument in 'strncat' call appears " 
+  "to be size of the source">, InGroup<StrncatSize>, DefaultIgnore;
+def note_strncat_wrong_size : Note<
+  "change the argument to be the free space in the destination buffer minus " 
+  "the terminating null byte">;
 
 /// main()
 // static/inline main() are not errors in C, just in C++.
@@ -321,6 +342,8 @@ def warn_static_main : Warning<"'main' should not be declared static">,
     InGroup<Main>;
 def err_static_main : Error<"'main' is not allowed to be declared static">;
 def err_inline_main : Error<"'main' is not allowed to be declared inline">;
+def err_constexpr_main : Error<
+  "'main' is not allowed to be declared constexpr">;
 def err_main_template_decl : Error<"'main' cannot be a template">;
 def err_main_returns_nonint : Error<"'main' must return 'int'">;
 def err_main_surplus_args : Error<"too many parameters (%0) for 'main': "
@@ -363,6 +386,14 @@ def warn_pragma_unused_expected_var_arg : Warning<
   "only variables can be arguments to '#pragma unused'">;
 def err_unsupported_pragma_weak : Error<
   "using '#pragma weak' to refer to an undeclared identifier is not yet supported">;
+def err_pragma_push_visibility_mismatch : Error<
+  "#pragma visibility push with no matching #pragma visibility pop">;
+def note_surrounding_namespace_ends_here : Note<
+  "surrounding namespace with visibility attribute ends here">;
+def err_pragma_pop_visibility_mismatch : Error<
+  "#pragma visibility pop with no matching #pragma visibility push">;
+def note_surrounding_namespace_starts_here : Note<
+  "surrounding namespace with visibility attribute starts here">;
 
 /// Objective-C parser diagnostics
 def err_duplicate_class_def : Error<
@@ -400,6 +431,8 @@ def note_implementation_declared : Note<
   "class implementation is declared here">;
 def note_class_declared : Note<
   "class is declared here">;
+def note_receiver_is_id : Note<
+  "receiver is treated with 'id' type for purpose of method lookup">;
 def note_suppressed_class_declare : Note<
   "class with specified objc_requires_property_definitions attribute is declared here">;
 def warn_dup_category_def : Warning<
@@ -1623,12 +1656,13 @@ def warn_no_unlock : Warning<
   "mutex '%0' is still locked at the end of function">,
   InGroup<ThreadSafety>, DefaultIgnore;
 // FIXME: improve the error message about locks not in scope
-def warn_lock_at_end_of_scope : Warning<
-  "mutex '%0' is still locked at the end of its scope">,
+def warn_lock_some_predecessors : Warning<
+  "mutex '%0' is not locked on every path through here">,
   InGroup<ThreadSafety>, DefaultIgnore;
 def warn_expecting_lock_held_on_loop : Warning<
   "expecting mutex '%0' to be locked at start of each loop">,
   InGroup<ThreadSafety>, DefaultIgnore;
+def note_locked_here : Note<"mutex acquired here">;
 def warn_lock_exclusive_and_shared : Warning<
   "mutex '%0' is locked exclusively and shared in the same scope">,
   InGroup<ThreadSafety>, DefaultIgnore;
@@ -1740,6 +1774,9 @@ def warn_transparent_union_attribute_zero_fields : Warning<
 def warn_attribute_type_not_supported : Warning<
   "'%0' attribute argument not supported: %1">;
 def warn_attribute_unknown_visibility : Warning<"unknown visibility '%0'">;
+def warn_attribute_protected_visibility :
+  Warning<"target does not support 'protected' visibility; using 'default'">,
+  InGroup<DiagGroup<"unsupported-visibility">>;
 def err_unknown_machine_mode : Error<"unknown machine mode %0">;
 def err_unsupported_machine_mode : Error<"unsupported machine mode %0">;
 def err_mode_not_primitive : Error<
@@ -2875,6 +2912,9 @@ def err_vm_func_decl : Error<
   "function declaration cannot have variably modified type">;
 def err_array_too_large : Error<
   "array is too large (%0 elements)">;
+def warn_array_new_too_large : Warning<"array is too large (%0 elements)">,
+  // FIXME PR11644: ", will throw std::bad_array_new_length at runtime"
+  InGroup<DiagGroup<"bad-array-new-length">>;
 
 // -Wpadded, -Wpacked
 def warn_padded_struct_field : Warning<
@@ -2890,6 +2930,9 @@ def warn_unnecessary_packed : Warning<
   "packed attribute is unnecessary for %0">, InGroup<Packed>, DefaultIgnore;
 
 def err_typecheck_negative_array_size : Error<"array size is negative">;
+def warn_typecheck_negative_array_new_size : Warning<"array size is negative">,
+  // FIXME PR11644: ", will throw std::bad_array_new_length at runtime"
+  InGroup<DiagGroup<"bad-array-new-length">>;
 def warn_typecheck_function_qualifiers : Warning<
   "qualifier on function type %0 has unspecified behavior">;
 def err_typecheck_invalid_restrict_not_pointer : Error<
@@ -3248,6 +3291,9 @@ def err_arc_may_not_respond : Error<
   "no visible @interface for %0 declares the selector %1">;
 def err_arc_receiver_forward_instance : Error<
   "receiver type %0 for instance message is a forward declaration">;
+def warn_receiver_forward_instance : Warning<
+  "receiver type %0 for instance message is a forward declaration">,
+  InGroup<DiagGroup<"receiver-forward-class">>, DefaultIgnore;
 def err_arc_collection_forward : Error<
   "collection expression type %0 is a forward declaration">;
 def err_arc_multiple_method_decl : Error< 
@@ -3306,9 +3352,11 @@ def err_arc_cast_requires_bridge : Error<
 def note_arc_bridge : Note<
   "use __bridge to convert directly (no change in ownership)">;
 def note_arc_bridge_transfer : Note<
-  "use __bridge_transfer to transfer ownership of a +1 %0 into ARC">;
+  "use %select{__bridge_transfer|CFBridgingRelease call}1 to transfer "
+  "ownership of a +1 %0 into ARC">;
 def note_arc_bridge_retained : Note<
-  "use __bridge_retained to make an ARC object available as a +1 %0">;
+  "use %select{__bridge_retained|CFBridgingRetain call}1 to make an "
+  "ARC object available as a +1 %0">;
 
 } // ARC Casting category
 
@@ -3940,7 +3988,8 @@ def err_placement_new_non_placement_delete : Error<
   "'new' expression with placement arguments refers to non-placement "
   "'operator delete'">;
 def err_array_size_not_integral : Error<
-  "array size expression must have integral or enumerated type, not %0">;
+  "array size expression must have integral or %select{|unscoped }0"
+  "enumeration type, not %1">;
 def err_array_size_incomplete_type : Error<
   "array size expression has incomplete class type %0">;
 def err_array_size_explicit_conversion : Error<
@@ -4063,8 +4112,20 @@ def err_capture_does_not_name_variable : Error<
   "%0 in capture list does not name a variable">;
 def err_capture_non_automatic_variable : Error<
   "%0 cannot be captured because it does not have automatic storage duration">;
-def err_implicit_this_capture : Error<
-  "'this' cannot be implicitly captured in this context">;
+def err_this_capture : Error<
+  "'this' cannot be %select{implicitly |}0captured in this context">;
+def err_lambda_capture_block : Error<
+  "__block variable %0 cannot be captured in a lambda expression">;
+def err_lambda_capture_anonymous_var : Error<
+  "unnamed variable cannot be implicitly captured in a lambda expression">;
+def err_lambda_capture_vm_type : Error<
+  "variable %0 with variably modified type cannot be captured in "
+  "a lambda expression">;
+def err_lambda_impcap : Error<
+  "variable %0 cannot be implicitly captured in a lambda with no "
+  "capture-default specified">;
+def note_lambda_decl : Note<"lambda expression begins here">;
+
 
 def err_operator_arrow_circular : Error<
   "circular pointer delegation detected">;
@@ -4540,9 +4601,11 @@ def ext_in_class_initializer_non_constant : Extension<
 
 // C++ anonymous unions and GNU anonymous structs/unions
 def ext_anonymous_union : Extension<
-  "anonymous unions are a GNU extension in C">, InGroup<GNU>;
-def ext_anonymous_struct : Extension<
+  "anonymous unions are a C11 extension">, InGroup<C11>;
+def ext_gnu_anonymous_struct : Extension<
   "anonymous structs are a GNU extension">, InGroup<GNU>;
+def ext_c11_anonymous_struct : Extension<
+  "anonymous structs are a C11 extension">, InGroup<C11>;
 def err_anonymous_union_not_static : Error<
   "anonymous unions at namespace or global scope must be declared 'static'">;
 def err_anonymous_union_with_storage_spec : Error<

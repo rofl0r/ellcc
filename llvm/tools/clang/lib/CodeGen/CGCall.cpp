@@ -1100,6 +1100,17 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
   assert(AI == Fn->arg_end() && "Argument mismatch!");
 }
 
+static void eraseUnusedBitCasts(llvm::Instruction *insn) {
+  while (insn->use_empty()) {
+    llvm::BitCastInst *bitcast = dyn_cast<llvm::BitCastInst>(insn);
+    if (!bitcast) return;
+
+    // This is "safe" because we would have used a ConstantExpr otherwise.
+    insn = cast<llvm::Instruction>(bitcast->getOperand(0));
+    bitcast->eraseFromParent();
+  }
+}
+
 /// Try to emit a fused autorelease of a return result.
 static llvm::Value *tryEmitFusedAutoreleaseOfResult(CodeGenFunction &CGF,
                                                     llvm::Value *result) {
@@ -1178,15 +1189,98 @@ static llvm::Value *tryEmitFusedAutoreleaseOfResult(CodeGenFunction &CGF,
   return CGF.Builder.CreateBitCast(result, resultType);
 }
 
+/// If this is a +1 of the value of an immutable 'self', remove it.
+static llvm::Value *tryRemoveRetainOfSelf(CodeGenFunction &CGF,
+                                          llvm::Value *result) {
+  // This is only applicable to a method with an immutable 'self'.
+  const ObjCMethodDecl *method = dyn_cast<ObjCMethodDecl>(CGF.CurCodeDecl);
+  if (!method) return 0;
+  const VarDecl *self = method->getSelfDecl();
+  if (!self->getType().isConstQualified()) return 0;
+
+  // Look for a retain call.
+  llvm::CallInst *retainCall =
+    dyn_cast<llvm::CallInst>(result->stripPointerCasts());
+  if (!retainCall ||
+      retainCall->getCalledValue() != CGF.CGM.getARCEntrypoints().objc_retain)
+    return 0;
+
+  // Look for an ordinary load of 'self'.
+  llvm::Value *retainedValue = retainCall->getArgOperand(0);
+  llvm::LoadInst *load =
+    dyn_cast<llvm::LoadInst>(retainedValue->stripPointerCasts());
+  if (!load || load->isAtomic() || load->isVolatile() || 
+      load->getPointerOperand() != CGF.GetAddrOfLocalVar(self))
+    return 0;
+
+  // Okay!  Burn it all down.  This relies for correctness on the
+  // assumption that the retain is emitted as part of the return and
+  // that thereafter everything is used "linearly".
+  llvm::Type *resultType = result->getType();
+  eraseUnusedBitCasts(cast<llvm::Instruction>(result));
+  assert(retainCall->use_empty());
+  retainCall->eraseFromParent();
+  eraseUnusedBitCasts(cast<llvm::Instruction>(retainedValue));
+
+  return CGF.Builder.CreateBitCast(load, resultType);
+}
+
 /// Emit an ARC autorelease of the result of a function.
+///
+/// \return the value to actually return from the function
 static llvm::Value *emitAutoreleaseOfResult(CodeGenFunction &CGF,
                                             llvm::Value *result) {
+  // If we're returning 'self', kill the initial retain.  This is a
+  // heuristic attempt to "encourage correctness" in the really unfortunate
+  // case where we have a return of self during a dealloc and we desperately
+  // need to avoid the possible autorelease.
+  if (llvm::Value *self = tryRemoveRetainOfSelf(CGF, result))
+    return self;
+
   // At -O0, try to emit a fused retain/autorelease.
   if (CGF.shouldUseFusedARCCalls())
     if (llvm::Value *fused = tryEmitFusedAutoreleaseOfResult(CGF, result))
       return fused;
 
   return CGF.EmitARCAutoreleaseReturnValue(result);
+}
+
+/// Heuristically search for a dominating store to the return-value slot.
+static llvm::StoreInst *findDominatingStoreToReturnValue(CodeGenFunction &CGF) {
+  // If there are multiple uses of the return-value slot, just check
+  // for something immediately preceding the IP.  Sometimes this can
+  // happen with how we generate implicit-returns; it can also happen
+  // with noreturn cleanups.
+  if (!CGF.ReturnValue->hasOneUse()) {
+    llvm::BasicBlock *IP = CGF.Builder.GetInsertBlock();
+    if (IP->empty()) return 0;
+    llvm::StoreInst *store = dyn_cast<llvm::StoreInst>(&IP->back());
+    if (!store) return 0;
+    if (store->getPointerOperand() != CGF.ReturnValue) return 0;
+    assert(!store->isAtomic() && !store->isVolatile()); // see below
+    return store;
+  }
+
+  llvm::StoreInst *store =
+    dyn_cast<llvm::StoreInst>(CGF.ReturnValue->use_back());
+  if (!store) return 0;
+
+  // These aren't actually possible for non-coerced returns, and we
+  // only care about non-coerced returns on this code path.
+  assert(!store->isAtomic() && !store->isVolatile());
+
+  // Now do a first-and-dirty dominance check: just walk up the
+  // single-predecessors chain from the current insertion point.
+  llvm::BasicBlock *StoreBB = store->getParent();
+  llvm::BasicBlock *IP = CGF.Builder.GetInsertBlock();
+  while (IP != StoreBB) {
+    if (!(IP = IP->getSinglePredecessor()))
+      return 0;
+  }
+
+  // Okay, the store's basic block dominates the insertion point; we
+  // can do our thing.
+  return store;
 }
 
 void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI) {
@@ -1223,16 +1317,9 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI) {
       // The internal return value temp always will have pointer-to-return-type
       // type, just do a load.
 
-      // If the instruction right before the insertion point is a store to the
-      // return value, we can elide the load, zap the store, and usually zap the
-      // alloca.
-      llvm::BasicBlock *InsertBB = Builder.GetInsertBlock();
-      llvm::StoreInst *SI = 0;
-      if (InsertBB->empty() ||
-          !(SI = dyn_cast<llvm::StoreInst>(&InsertBB->back())) ||
-          SI->getPointerOperand() != ReturnValue || SI->isVolatile()) {
-        RV = Builder.CreateLoad(ReturnValue);
-      } else {
+      // If there is a dominating store to ReturnValue, we can elide
+      // the load, zap the store, and usually zap the alloca.
+      if (llvm::StoreInst *SI = findDominatingStoreToReturnValue(*this)) {
         // Get the stored value and nuke the now-dead store.
         RetDbgLoc = SI->getDebugLoc();
         RV = SI->getValueOperand();
@@ -1243,6 +1330,10 @@ void CodeGenFunction::EmitFunctionEpilog(const CGFunctionInfo &FI) {
           cast<llvm::AllocaInst>(ReturnValue)->eraseFromParent();
           ReturnValue = 0;
         }
+
+      // Otherwise, we have to do a simple load.
+      } else {
+        RV = Builder.CreateLoad(ReturnValue);
       }
     } else {
       llvm::Value *V = ReturnValue;

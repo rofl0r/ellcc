@@ -2018,7 +2018,8 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
   }
   case lltok::kw_c:  // c "foo"
     Lex.Lex();
-    ID.ConstantVal = ConstantArray::get(Context, Lex.getStrVal(), false);
+    ID.ConstantVal = ConstantDataArray::getString(Context, Lex.getStrVal(),
+                                                  false);
     if (ParseToken(lltok::StringConstant, "expected string")) return true;
     ID.Kind = ValID::t_Constant;
     return false;
@@ -3455,7 +3456,7 @@ bool LLParser::ParseShuffleVector(Instruction *&Inst, PerFunctionState &PFS) {
     return true;
 
   if (!ShuffleVectorInst::isValidOperands(Op0, Op1, Op2))
-    return Error(Loc, "invalid extractelement operands");
+    return Error(Loc, "invalid shufflevector operands");
 
   Inst = new ShuffleVectorInst(Op0, Op1, Op2);
   return false;

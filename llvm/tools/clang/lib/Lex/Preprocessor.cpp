@@ -40,7 +40,7 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Capacity.h"
@@ -167,7 +167,9 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
     Ident__exception_info = Ident__exception_code = Ident__abnormal_termination = 0;
     Ident___exception_info = Ident___exception_code = Ident___abnormal_termination = 0;
     Ident_GetExceptionInfo = Ident_GetExceptionCode = Ident_AbnormalTermination = 0;
-  } 
+  }
+  
+  HeaderInfo.setTarget(Target);
 }
 
 void Preprocessor::setPTHManager(PTHManager* pm) {
@@ -334,6 +336,21 @@ void Preprocessor::CodeCompleteNaturalLanguage() {
   setCodeCompletionReached();
 }
 
+void Preprocessor::setCodeCompletionReached() {
+  assert(isCodeCompletionEnabled() && "Code-completion not enabled!");
+  CodeCompletionReached = true;
+  // Silence any diagnostics that occur after we hit the code-completion.
+  getDiagnostics().setSuppressAllDiagnostics(true);
+}
+
+DiagnosticBuilder Preprocessor::Diag(SourceLocation Loc, unsigned DiagID) const{
+  return Diags->Report(Loc, DiagID);
+}
+
+DiagnosticBuilder Preprocessor::Diag(const Token &Tok, unsigned DiagID) const {
+  return Diags->Report(Tok.getLocation(), DiagID);
+}
+
 /// getSpelling - This method is used to get the spelling of a token into a
 /// SmallVector. Note that the returned StringRef may not point to the
 /// supplied buffer if a copy can be avoided.
@@ -383,7 +400,7 @@ Module *Preprocessor::getCurrentModule() {
   if (getLangOptions().CurrentModule.empty())
     return 0;
   
-  return getHeaderSearchInfo().getModule(getLangOptions().CurrentModule);
+  return getHeaderSearchInfo().lookupModule(getLangOptions().CurrentModule);
 }
 
 //===----------------------------------------------------------------------===//
@@ -453,7 +470,7 @@ IdentifierInfo *Preprocessor::LookUpIdentifierInfo(Token &Identifier) const {
                                            Identifier.getLength()));
   } else {
     // Cleaning needed, alloca a buffer, clean into it, then use the buffer.
-    llvm::SmallString<64> IdentifierBuffer;
+    SmallString<64> IdentifierBuffer;
     StringRef CleanedStr = getSpelling(Identifier, IdentifierBuffer);
     II = getIdentifierInfo(CleanedStr);
   }

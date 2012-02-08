@@ -2209,7 +2209,7 @@ bool SelectionDAGBuilder::handleBTSplitSwitchCase(CaseRec& CR,
 
   CaseRange LHSR(CR.Range.first, Pivot);
   CaseRange RHSR(Pivot, CR.Range.second);
-  Constant *C = Pivot->Low;
+  const Constant *C = Pivot->Low;
   MachineBasicBlock *FalseBB = 0, *TrueBB = 0;
 
   // We know that we branch to the LHS if the Value being switched on is
@@ -2402,14 +2402,14 @@ size_t SelectionDAGBuilder::Clusterify(CaseVector& Cases,
 
   BranchProbabilityInfo *BPI = FuncInfo.BPI;
   // Start with "simple" cases
-  for (size_t i = 1; i < SI.getNumSuccessors(); ++i) {
-    BasicBlock *SuccBB = SI.getSuccessor(i);
+  for (size_t i = 0; i < SI.getNumCases(); ++i) {
+    BasicBlock *SuccBB = SI.getCaseSuccessor(i);
     MachineBasicBlock *SMBB = FuncInfo.MBBMap[SuccBB];
 
     uint32_t ExtraWeight = BPI ? BPI->getEdgeWeight(SI.getParent(), SuccBB) : 0;
 
-    Cases.push_back(Case(SI.getSuccessorValue(i),
-                         SI.getSuccessorValue(i),
+    Cases.push_back(Case(SI.getCaseValue(i),
+                         SI.getCaseValue(i),
                          SMBB, ExtraWeight));
   }
   std::sort(Cases.begin(), Cases.end(), CaseCmp());
@@ -2476,7 +2476,7 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
 
   // If there is only the default destination, branch to it if it is not the
   // next basic block.  Otherwise, just fall through.
-  if (SI.getNumCases() == 1) {
+  if (!SI.getNumCases()) {
     // Update machine-CFG edges.
 
     // If this is not a fall-through branch, emit the branch.
@@ -4684,43 +4684,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
     if (!DI.getDebugLoc().isUnknown() && MMI.hasDebugInfo())
       MMI.setVariableDbgInfo(Variable, FI, DI.getDebugLoc());
-    return 0;
-  }
-  case Intrinsic::eh_exception: {
-    // Insert the EXCEPTIONADDR instruction.
-    assert(FuncInfo.MBB->isLandingPad() &&
-           "Call to eh.exception not in landing pad!");
-    SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
-    SDValue Ops[1];
-    Ops[0] = DAG.getRoot();
-    SDValue Op = DAG.getNode(ISD::EXCEPTIONADDR, dl, VTs, Ops, 1);
-    setValue(&I, Op);
-    DAG.setRoot(Op.getValue(1));
-    return 0;
-  }
-
-  case Intrinsic::eh_selector: {
-    MachineBasicBlock *CallMBB = FuncInfo.MBB;
-    MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
-    if (CallMBB->isLandingPad())
-      AddCatchInfo(I, &MMI, CallMBB);
-    else {
-#ifndef NDEBUG
-      FuncInfo.CatchInfoLost.insert(&I);
-#endif
-      // FIXME: Mark exception selector register as live in.  Hack for PR1508.
-      unsigned Reg = TLI.getExceptionSelectorRegister();
-      if (Reg) FuncInfo.MBB->addLiveIn(Reg);
-    }
-
-    // Insert the EHSELECTION instruction.
-    SDVTList VTs = DAG.getVTList(TLI.getPointerTy(), MVT::Other);
-    SDValue Ops[2];
-    Ops[0] = getValue(I.getArgOperand(0));
-    Ops[1] = getRoot();
-    SDValue Op = DAG.getNode(ISD::EHSELECTION, dl, VTs, Ops, 2);
-    DAG.setRoot(Op.getValue(1));
-    setValue(&I, DAG.getSExtOrTrunc(Op, dl, MVT::i32));
     return 0;
   }
 

@@ -14,6 +14,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   BasicObjCFoundationChecks.cpp
   BuiltinFunctionChecker.cpp
   CStringChecker.cpp
+  CStringSyntaxChecker.cpp
   CallAndMessageChecker.cpp
   CastSizeChecker.cpp
   CastToStructChecker.cpp
@@ -44,6 +45,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   OSAtomicChecker.cpp
   ObjCAtSyncChecker.cpp
   ObjCContainersASTChecker.cpp
+  ObjCContainersChecker.cpp
   ObjCSelfInitChecker.cpp
   ObjCUnusedIVarsChecker.cpp
   PointerArithChecker.cpp

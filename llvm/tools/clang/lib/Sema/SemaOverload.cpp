@@ -2893,7 +2893,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
     // Record the standard conversion we used and the conversion function.
     if (CXXConstructorDecl *Constructor
           = dyn_cast<CXXConstructorDecl>(Best->Function)) {
-      S.MarkDeclarationReferenced(From->getLocStart(), Constructor);
+      S.MarkFunctionReferenced(From->getLocStart(), Constructor);
 
       // C++ [over.ics.user]p1:
       //   If the user-defined conversion is specified by a
@@ -2923,7 +2923,7 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
     }
     if (CXXConversionDecl *Conversion
                  = dyn_cast<CXXConversionDecl>(Best->Function)) {
-      S.MarkDeclarationReferenced(From->getLocStart(), Conversion);
+      S.MarkFunctionReferenced(From->getLocStart(), Conversion);
 
       // C++ [over.ics.user]p1:
       //
@@ -3793,7 +3793,7 @@ FindConversionForRefInit(Sema &S, ImplicitConversionSequence &ICS,
       return false;
 
     if (Best->Function)
-      S.MarkDeclarationReferenced(DeclLoc, Best->Function);
+      S.MarkFunctionReferenced(DeclLoc, Best->Function);
     ICS.setUserDefined();
     ICS.UserDefined.Before = Best->Conversions[0].Standard;
     ICS.UserDefined.After = Best->FinalConversion;
@@ -4185,6 +4185,7 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
       Result.UserDefined.After.setAsIdentityConversion();
       Result.UserDefined.After.setFromType(ToType);
       Result.UserDefined.After.setAllToTypes(ToType);
+      Result.UserDefined.ConversionFunction = 0;
     }
     return Result;
   }
@@ -4646,6 +4647,7 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
 
   // Check for a narrowing implicit conversion.
   APValue PreNarrowingValue;
+  bool Diagnosed = false;
   switch (SCS->getNarrowingKind(Context, Result.get(), PreNarrowingValue)) {
   case NK_Variable_Narrowing:
     // Implicit conversion to a narrower type, and the value is not a constant
@@ -4657,11 +4659,13 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
     Diag(From->getSourceRange().getBegin(), diag::err_cce_narrowing)
       << CCE << /*Constant*/1
       << PreNarrowingValue.getAsString(Context, QualType()) << T;
+    Diagnosed = true;
     break;
 
   case NK_Type_Narrowing:
     Diag(From->getSourceRange().getBegin(), diag::err_cce_narrowing)
       << CCE << /*Constant*/0 << From->getType() << T;
+    Diagnosed = true;
     break;
   }
 
@@ -4674,11 +4678,18 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
     // The expression can't be folded, so we can't keep it at this position in
     // the AST.
     Result = ExprError();
-  } else if (Notes.empty()) {
-    // It's a constant expression.
+  } else {
     Value = Eval.Val.getInt();
-    return Result;
+
+    if (Notes.empty()) {
+      // It's a constant expression.
+      return Result;
+    }
   }
+
+  // Only issue one narrowing diagnostic.
+  if (Diagnosed)
+    return Result;
 
   // It's not a constant expression. Produce an appropriate diagnostic.
   if (Notes.size() == 1 &&
@@ -4690,7 +4701,7 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
     for (unsigned I = 0; I < Notes.size(); ++I)
       Diag(Notes[I].first, Notes[I].second);
   }
-  return ExprError();
+  return Result;
 }
 
 /// dropPointerConversions - If the given standard conversion sequence
@@ -4752,6 +4763,13 @@ ExprResult Sema::PerformContextuallyConvertToObjCPointer(Expr *From) {
   return ExprError();
 }
 
+/// Determine whether the provided type is an integral type, or an enumeration
+/// type of a permitted flavor.
+static bool isIntegralOrEnumerationType(QualType T, bool AllowScopedEnum) {
+  return AllowScopedEnum ? T->isIntegralOrEnumerationType()
+                         : T->isIntegralOrUnscopedEnumerationType();
+}
+
 /// \brief Attempt to convert the given expression to an integral or
 /// enumeration type.
 ///
@@ -4786,6 +4804,9 @@ ExprResult Sema::PerformContextuallyConvertToObjCPointer(Expr *From) {
 /// \param ConvDiag The diagnostic to be emitted if we are calling a conversion
 /// function, which may be an extension in this case.
 ///
+/// \param AllowScopedEnumerations Specifies whether conversions to scoped
+/// enumerations should be considered.
+///
 /// \returns The expression, converted to an integral or enumeration type if
 /// successful.
 ExprResult
@@ -4796,7 +4817,8 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
                                      const PartialDiagnostic &ExplicitConvNote,
                                          const PartialDiagnostic &AmbigDiag,
                                          const PartialDiagnostic &AmbigNote,
-                                         const PartialDiagnostic &ConvDiag) {
+                                         const PartialDiagnostic &ConvDiag,
+                                         bool AllowScopedEnumerations) {
   // We can't perform any more checking for type-dependent expressions.
   if (From->isTypeDependent())
     return Owned(From);
@@ -4810,7 +4832,7 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
 
   // If the expression already has integral or enumeration type, we're golden.
   QualType T = From->getType();
-  if (T->isIntegralOrEnumerationType())
+  if (isIntegralOrEnumerationType(T, AllowScopedEnumerations))
     return DefaultLvalueConversion(From);
 
   // FIXME: Check for missing '()' if T is a function type?
@@ -4819,8 +4841,8 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
   // expression of integral or enumeration type.
   const RecordType *RecordTy = T->getAs<RecordType>();
   if (!RecordTy || !getLangOptions().CPlusPlus) {
-    Diag(Loc, NotIntDiag)
-      << T << From->getSourceRange();
+    if (NotIntDiag.getDiagID())
+      Diag(Loc, NotIntDiag) << T << From->getSourceRange();
     return Owned(From);
   }
 
@@ -4841,19 +4863,21 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
        I != E;
        ++I) {
     if (CXXConversionDecl *Conversion
-          = dyn_cast<CXXConversionDecl>((*I)->getUnderlyingDecl()))
-      if (Conversion->getConversionType().getNonReferenceType()
-            ->isIntegralOrEnumerationType()) {
+          = dyn_cast<CXXConversionDecl>((*I)->getUnderlyingDecl())) {
+      if (isIntegralOrEnumerationType(
+            Conversion->getConversionType().getNonReferenceType(),
+            AllowScopedEnumerations)) {
         if (Conversion->isExplicit())
           ExplicitConversions.addDecl(I.getDecl(), I.getAccess());
         else
           ViableConversions.addDecl(I.getDecl(), I.getAccess());
       }
+    }
   }
 
   switch (ViableConversions.size()) {
   case 0:
-    if (ExplicitConversions.size() == 1) {
+    if (ExplicitConversions.size() == 1 && ExplicitConvDiag.getDiagID()) {
       DeclAccessPair Found = ExplicitConversions[0];
       CXXConversionDecl *Conversion
         = cast<CXXConversionDecl>(Found->getUnderlyingDecl());
@@ -4924,6 +4948,9 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
   }
 
   default:
+    if (!AmbigDiag.getDiagID())
+      return Owned(From);
+
     Diag(Loc, AmbigDiag)
       << T << From->getSourceRange();
     for (unsigned I = 0, N = ViableConversions.size(); I != N; ++I) {
@@ -4936,9 +4963,9 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
     return Owned(From);
   }
 
-  if (!From->getType()->isIntegralOrEnumerationType())
-    Diag(Loc, NotIntDiag)
-      << From->getType() << From->getSourceRange();
+  if (!isIntegralOrEnumerationType(From->getType(), AllowScopedEnumerations) &&
+      NotIntDiag.getDiagID())
+    Diag(Loc, NotIntDiag) << From->getType() << From->getSourceRange();
 
   return DefaultLvalueConversion(From);
 }
@@ -8807,7 +8834,7 @@ Sema::ResolveAddressOfOverloadedFunction(Expr *AddressOfExpr,
     Fn = Resolver.getMatchingFunctionDecl();
     assert(Fn);
     FoundResult = *Resolver.getMatchingFunctionAccessPair();
-    MarkDeclarationReferenced(AddressOfExpr->getLocStart(), Fn);
+    MarkFunctionReferenced(AddressOfExpr->getLocStart(), Fn);
     if (Complain)
       CheckAddressOfMemberAccess(AddressOfExpr, FoundResult);
   }
@@ -9370,7 +9397,7 @@ Sema::BuildOverloadedCallExpr(Scope *S, Expr *Fn, UnresolvedLookupExpr *ULE,
   switch (CandidateSet.BestViableFunction(*this, Fn->getLocStart(), Best)) {
   case OR_Success: {
     FunctionDecl *FDecl = Best->Function;
-    MarkDeclarationReferenced(Fn->getExprLoc(), FDecl);
+    MarkFunctionReferenced(Fn->getExprLoc(), FDecl);
     CheckUnresolvedLookupAccess(ULE, Best->FoundDecl);
     DiagnoseUseOfDecl(FDecl, ULE->getNameLoc());
     Fn = FixOverloadedFunctionReference(Fn, Best->FoundDecl, FDecl);
@@ -9524,7 +9551,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
       // We matched an overloaded operator. Build a call to that
       // operator.
 
-      MarkDeclarationReferenced(OpLoc, FnDecl);
+      MarkFunctionReferenced(OpLoc, FnDecl);
 
       // Convert the arguments.
       if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(FnDecl)) {
@@ -9745,7 +9772,7 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
         // We matched an overloaded operator. Build a call to that
         // operator.
 
-        MarkDeclarationReferenced(OpLoc, FnDecl);
+        MarkFunctionReferenced(OpLoc, FnDecl);
 
         // Convert the arguments.
         if (CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(FnDecl)) {
@@ -9952,7 +9979,7 @@ Sema::CreateOverloadedArraySubscriptExpr(SourceLocation LLoc,
         // We matched an overloaded operator. Build a call to that
         // operator.
 
-        MarkDeclarationReferenced(LLoc, FnDecl);
+        MarkFunctionReferenced(LLoc, FnDecl);
 
         CheckMemberOperatorAccess(LLoc, Args[0], Args[1], Best->FoundDecl);
         DiagnoseUseOfDecl(Best->FoundDecl, LLoc);
@@ -10201,7 +10228,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
                                             Best)) {
     case OR_Success:
       Method = cast<CXXMethodDecl>(Best->Function);
-      MarkDeclarationReferenced(UnresExpr->getMemberLoc(), Method);
+      MarkFunctionReferenced(UnresExpr->getMemberLoc(), Method);
       FoundDecl = Best->FoundDecl;
       CheckUnresolvedMemberAccess(UnresExpr, Best->FoundDecl);
       DiagnoseUseOfDecl(Best->FoundDecl, UnresExpr->getNameLoc());
@@ -10466,7 +10493,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
                          RParenLoc);
   }
 
-  MarkDeclarationReferenced(LParenLoc, Best->Function);
+  MarkFunctionReferenced(LParenLoc, Best->Function);
   CheckMemberOperatorAccess(LParenLoc, Object.get(), 0, Best->FoundDecl);
   DiagnoseUseOfDecl(Best->FoundDecl, LParenLoc);
 
@@ -10656,7 +10683,7 @@ Sema::BuildOverloadedArrowExpr(Scope *S, Expr *Base, SourceLocation OpLoc) {
     return ExprError();
   }
 
-  MarkDeclarationReferenced(OpLoc, Best->Function);
+  MarkFunctionReferenced(OpLoc, Best->Function);
   CheckMemberOperatorAccess(OpLoc, Base, 0, Best->FoundDecl);
   DiagnoseUseOfDecl(Best->FoundDecl, OpLoc);
 

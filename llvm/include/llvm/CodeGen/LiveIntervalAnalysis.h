@@ -63,9 +63,6 @@ namespace llvm {
     /// allocatableRegs_ - A bit vector of allocatable registers.
     BitVector allocatableRegs_;
 
-    /// CloneMIs - A list of clones as result of re-materialization.
-    std::vector<MachineInstr*> CloneMIs;
-
   public:
     static char ID; // Pass identification, replacement for typeid
     LiveIntervals() : MachineFunctionPass(ID) {
@@ -162,14 +159,6 @@ namespace llvm {
 
     SlotIndexes *getSlotIndexes() const {
       return indexes_;
-    }
-
-    SlotIndex getZeroIndex() const {
-      return indexes_->getZeroIndex();
-    }
-
-    SlotIndex getInvalidIndex() const {
-      return indexes_->getInvalidIndex();
     }
 
     /// isNotInMIMap - returns true if the specified machine instr has been
@@ -309,8 +298,7 @@ namespace llvm {
     void handlePhysicalRegisterDef(MachineBasicBlock* mbb,
                                    MachineBasicBlock::iterator mi,
                                    SlotIndex MIIdx, MachineOperand& MO,
-                                   LiveInterval &interval,
-                                   MachineInstr *CopyMI);
+                                   LiveInterval &interval);
 
     /// handleLiveInRegister - Create interval for a livein register.
     void handleLiveInRegister(MachineBasicBlock* mbb,

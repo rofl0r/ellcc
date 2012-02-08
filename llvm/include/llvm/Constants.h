@@ -352,17 +352,6 @@ public:
   // ConstantArray accessors
   static Constant *get(ArrayType *T, ArrayRef<Constant*> V);
                              
-  /// This method constructs a ConstantArray and initializes it with a text
-  /// string. The default behavior (AddNull==true) causes a null terminator to
-  /// be placed at the end of the array. This effectively increases the length
-  /// of the array by one (you've been warned).  However, in some situations 
-  /// this is not desired so if AddNull==false then the string is copied without
-  /// null termination.
-  
-  // FIXME Remove this.
-  static Constant *get(LLVMContext &Context, StringRef Initializer,
-                       bool AddNull = true);
-  
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
@@ -372,31 +361,6 @@ public:
   inline ArrayType *getType() const {
     return reinterpret_cast<ArrayType*>(Value::getType());
   }
-
-  // FIXME: String methods will eventually be removed.
-  
-  
-  /// isString - This method returns true if the array is an array of i8 and
-  /// the elements of the array are all ConstantInt's.
-  bool isString() const;
-
-  /// isCString - This method returns true if the array is a string (see
-  /// @verbatim
-  /// isString) and it ends in a null byte \0 and does not contains any other
-  /// @endverbatim
-  /// null bytes except its terminator.
-  bool isCString() const;
-
-  /// getAsString - If this array is isString(), then this method converts the
-  /// array to an std::string and returns it.  Otherwise, it asserts out.
-  ///
-  std::string getAsString() const;
-
-  /// getAsCString - If this array is isCString(), then this method converts the
-  /// array (without the trailing null byte) to an std::string and returns it.
-  /// Otherwise, it asserts out.
-  ///
-  std::string getAsCString() const;
 
   virtual void destroyConstant();
   virtual void replaceUsesOfWithOnConstant(Value *From, Value *To, Use *U);
@@ -561,10 +525,13 @@ public:
 };
   
 //===----------------------------------------------------------------------===//
-/// ConstantDataSequential - A vector or array of data that contains no
-/// relocations, and whose element type is a simple 1/2/4/8-byte integer or
-/// float/double.  This is the common base class of ConstantDataArray and
-/// ConstantDataVector.
+/// ConstantDataSequential - A vector or array constant whose element type is a
+/// simple 1/2/4/8-byte integer or float/double, and whose elements are just
+/// simple data values (i.e. ConstantInt/ConstantFP).  This Constant node has no
+/// operands because it stores all of the elements of the constant as densely
+/// packed data, instead of as Value*'s.
+///
+/// This is the common base class of ConstantDataArray and ConstantDataVector.
 ///
 class ConstantDataSequential : public Constant {
   friend class LLVMContextImpl;
@@ -581,7 +548,7 @@ class ConstantDataSequential : public Constant {
   ConstantDataSequential(const ConstantDataSequential &);    // DO NOT IMPLEMENT
 protected:
   explicit ConstantDataSequential(Type *ty, ValueTy VT, const char *Data)
-    : Constant(ty, VT, 0, 0), DataElements(Data) {}
+    : Constant(ty, VT, 0, 0), DataElements(Data), Next(0) {}
   ~ConstantDataSequential() { delete Next; }
   
   static Constant *getImpl(StringRef Bytes, Type *Ty);
@@ -612,7 +579,7 @@ public:
   float getElementAsFloat(unsigned i) const;
   
   /// getElementAsDouble - If this is an sequential container of doubles, return
-  /// the specified element as a float.
+  /// the specified element as a double.
   double getElementAsDouble(unsigned i) const;
   
   /// getElementAsConstant - Return a Constant for a specified index's element.
@@ -683,9 +650,11 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-/// ConstantDataArray - An array of data that contains no relocations, and whose
-/// element type is a simple 1/2/4/8-byte integer or float/double.
-///
+/// ConstantDataArray - An array constant whose element type is a simple
+/// 1/2/4/8-byte integer or float/double, and whose elements are just simple
+/// data values (i.e. ConstantInt/ConstantFP).  This Constant node has no
+/// operands because it stores all of the elements of the constant as densely
+/// packed data, instead of as Value*'s.
 class ConstantDataArray : public ConstantDataSequential {
   void *operator new(size_t, unsigned);            // DO NOT IMPLEMENT
   ConstantDataArray(const ConstantDataArray &);    // DO NOT IMPLEMENT
@@ -734,9 +703,11 @@ public:
 };
   
 //===----------------------------------------------------------------------===//
-/// ConstantDataVector - A vector of data that contains no relocations, and
-/// whose element type is a simple 1/2/4/8-byte integer or float/double.
-///
+/// ConstantDataVector - A vector constant whose element type is a simple
+/// 1/2/4/8-byte integer or float/double, and whose elements are just simple
+/// data values (i.e. ConstantInt/ConstantFP).  This Constant node has no
+/// operands because it stores all of the elements of the constant as densely
+/// packed data, instead of as Value*'s.
 class ConstantDataVector : public ConstantDataSequential {
   void *operator new(size_t, unsigned);              // DO NOT IMPLEMENT
   ConstantDataVector(const ConstantDataVector &);    // DO NOT IMPLEMENT

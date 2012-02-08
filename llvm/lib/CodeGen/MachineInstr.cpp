@@ -327,7 +327,7 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
     OS << '>';
     break;
   case MachineOperand::MO_RegisterMask:
-    OS << (getRegMask() ? "<regmask>" : "<regmask:null>");
+    OS << "<regmask>";
     break;
   case MachineOperand::MO_Metadata:
     OS << '<';
@@ -1793,16 +1793,21 @@ void MachineInstr::addRegisterDefined(unsigned IncomingReg,
                                        true  /*IsImp*/));
 }
 
-void MachineInstr::setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRegs,
+void MachineInstr::setPhysRegsDeadExcept(ArrayRef<unsigned> UsedRegs,
                                          const TargetRegisterInfo &TRI) {
+  bool HasRegMask = false;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
     MachineOperand &MO = getOperand(i);
+    if (MO.isRegMask()) {
+      HasRegMask = true;
+      continue;
+    }
     if (!MO.isReg() || !MO.isDef()) continue;
     unsigned Reg = MO.getReg();
-    if (Reg == 0) continue;
+    if (!TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
     bool Dead = true;
-    for (SmallVectorImpl<unsigned>::const_iterator I = UsedRegs.begin(),
-         E = UsedRegs.end(); I != E; ++I)
+    for (ArrayRef<unsigned>::iterator I = UsedRegs.begin(), E = UsedRegs.end();
+         I != E; ++I)
       if (TRI.regsOverlap(*I, Reg)) {
         Dead = false;
         break;
@@ -1810,6 +1815,13 @@ void MachineInstr::setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRe
     // If there are no uses, including partial uses, the def is dead.
     if (Dead) MO.setIsDead();
   }
+
+  // This is a call with a register mask operand.
+  // Mask clobbers are always dead, so add defs for the non-dead defines.
+  if (HasRegMask)
+    for (ArrayRef<unsigned>::iterator I = UsedRegs.begin(), E = UsedRegs.end();
+         I != E; ++I)
+      addRegisterDefined(*I, &TRI);
 }
 
 unsigned

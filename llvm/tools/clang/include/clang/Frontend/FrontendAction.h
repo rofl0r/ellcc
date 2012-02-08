@@ -28,7 +28,7 @@ class CompilerInstance;
 /// the frontend.
 class FrontendAction {
   FrontendInputFile CurrentInput;
-  llvm::OwningPtr<ASTUnit> CurrentASTUnit;
+  OwningPtr<ASTUnit> CurrentASTUnit;
   CompilerInstance *Instance;
   friend class ASTMergeAction;
   friend class WrapperFrontendAction;
@@ -85,7 +85,7 @@ protected:
 
   /// EndSourceFileAction - Callback at the end of processing a single input;
   /// this is guaranteed to only be called following a successful call to
-  /// BeginSourceFileAction (and BeingSourceFile).
+  /// BeginSourceFileAction (and BeginSourceFile).
   virtual void EndSourceFileAction() {}
 
   /// @}
@@ -183,8 +183,8 @@ public:
   /// automatically be shared with the AST file in between \see
   /// BeginSourceFile() and \see EndSourceFile().
   ///
-  /// \return True on success; the compilation of this file should be aborted
-  /// and neither Execute nor EndSourceFile should be called.
+  /// \return True on success; on failure the compilation of this file should
+  /// be aborted and neither Execute nor EndSourceFile should be called.
   bool BeginSourceFile(CompilerInstance &CI, const FrontendInputFile &Input);
 
   /// Execute - Set the source managers main input file, and run the action.
@@ -248,7 +248,7 @@ public:
 /// implements every virtual method in the FrontendAction interface by
 /// forwarding to the wrapped action.
 class WrapperFrontendAction : public FrontendAction {
-  llvm::OwningPtr<FrontendAction> WrappedAction;
+  OwningPtr<FrontendAction> WrappedAction;
 
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,

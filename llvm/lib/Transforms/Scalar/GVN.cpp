@@ -780,7 +780,7 @@ static int AnalyzeLoadFromClobberingWrite(Type *LoadTy, Value *LoadPtr,
                                           Value *WritePtr,
                                           uint64_t WriteSizeInBits,
                                           const TargetData &TD) {
-  // If the loaded or stored value is an first class array or struct, don't try
+  // If the loaded or stored value is a first class array or struct, don't try
   // to transform them.  We need to be able to bitcast to integer.
   if (LoadTy->isStructTy() || LoadTy->isArrayTy())
     return -1;
@@ -977,7 +977,7 @@ static Value *GetStoreValueForLoad(Value *SrcVal, unsigned Offset,
   return CoerceAvailableValueToLoadType(SrcVal, LoadTy, InsertPt, TD);
 }
 
-/// GetStoreValueForLoad - This function is called when we have a
+/// GetLoadValueForLoad - This function is called when we have a
 /// memdep query of a load that ends up being a clobbering load.  This means
 /// that the load *may* provide bits used by the load but we can't be sure
 /// because the pointers don't mustalias.  Check this case to see if there is
@@ -1278,14 +1278,14 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
   // If we had to process more than one hundred blocks to find the
   // dependencies, this load isn't worth worrying about.  Optimizing
   // it will be too expensive.
-  if (Deps.size() > 100)
+  unsigned NumDeps = Deps.size();
+  if (NumDeps > 100)
     return false;
 
   // If we had a phi translation failure, we'll have a single entry which is a
   // clobber in the current block.  Reject this early.
-  if (Deps.size() == 1
-      && !Deps[0].getResult().isDef() && !Deps[0].getResult().isClobber())
-  {
+  if (NumDeps == 1 &&
+      !Deps[0].getResult().isDef() && !Deps[0].getResult().isClobber()) {
     DEBUG(
       dbgs() << "GVN: non-local load ";
       WriteAsOperand(dbgs(), LI);
@@ -1298,10 +1298,10 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
   // where we have a value available in repl, also keep track of whether we see
   // dependencies that produce an unknown value for the load (such as a call
   // that could potentially clobber the load).
-  SmallVector<AvailableValueInBlock, 16> ValuesPerBlock;
-  SmallVector<BasicBlock*, 16> UnavailableBlocks;
+  SmallVector<AvailableValueInBlock, 64> ValuesPerBlock;
+  SmallVector<BasicBlock*, 64> UnavailableBlocks;
 
-  for (unsigned i = 0, e = Deps.size(); i != e; ++i) {
+  for (unsigned i = 0, e = NumDeps; i != e; ++i) {
     BasicBlock *DepBB = Deps[i].getBB();
     MemDepResult DepInfo = Deps[i].getResult();
 
@@ -2085,8 +2085,8 @@ bool GVN::processInstruction(Instruction *I) {
     Value *SwitchCond = SI->getCondition();
     BasicBlock *Parent = SI->getParent();
     bool Changed = false;
-    for (unsigned i = 1, e = SI->getNumCases(); i != e; ++i) {
-      BasicBlock *Dst = SI->getSuccessor(i);
+    for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i) {
+      BasicBlock *Dst = SI->getCaseSuccessor(i);
       if (isOnlyReachableViaThisEdge(Parent, Dst, DT))
         Changed |= propagateEquality(SwitchCond, SI->getCaseValue(i), Dst);
     }

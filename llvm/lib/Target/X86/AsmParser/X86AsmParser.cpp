@@ -34,7 +34,6 @@ struct X86Operand;
 class X86AsmParser : public MCTargetAsmParser {
   MCSubtargetInfo &STI;
   MCAsmParser &Parser;
-
 private:
   MCAsmParser &getParser() const { return Parser; }
 
@@ -105,6 +104,10 @@ public:
                                 SmallVectorImpl<MCParsedAsmOperand*> &Operands);
 
   virtual bool ParseDirective(AsmToken DirectiveID);
+
+  bool isParsingIntelSyntax() {
+    return getParser().getAssemblerDialect();
+  }
 };
 } // end anonymous namespace
 
@@ -470,8 +473,7 @@ bool X86AsmParser::isDstOp(X86Operand &Op) {
 bool X86AsmParser::ParseRegister(unsigned &RegNo,
                                  SMLoc &StartLoc, SMLoc &EndLoc) {
   RegNo = 0;
-  bool IntelSyntax = getParser().getAssemblerDialect();
-  if (!IntelSyntax) {
+  if (!isParsingIntelSyntax()) {
     const AsmToken &TokPercent = Parser.getTok();
     assert(TokPercent.is(AsmToken::Percent) && "Invalid token kind!");
     StartLoc = TokPercent.getLoc();
@@ -480,7 +482,7 @@ bool X86AsmParser::ParseRegister(unsigned &RegNo,
 
   const AsmToken &Tok = Parser.getTok();
   if (Tok.isNot(AsmToken::Identifier)) {
-    if (IntelSyntax) return true;
+    if (isParsingIntelSyntax()) return true;
     return Error(StartLoc, "invalid register name",
                  SMRange(StartLoc, Tok.getEndLoc()));
   }
@@ -564,7 +566,7 @@ bool X86AsmParser::ParseRegister(unsigned &RegNo,
   }
 
   if (RegNo == 0) {
-    if (IntelSyntax) return true;
+    if (isParsingIntelSyntax()) return true;
     return Error(StartLoc, "invalid register name",
                  SMRange(StartLoc, Tok.getEndLoc()));
   }
@@ -575,7 +577,7 @@ bool X86AsmParser::ParseRegister(unsigned &RegNo,
 }
 
 X86Operand *X86AsmParser::ParseOperand() {
-  if (getParser().getAssemblerDialect())
+  if (isParsingIntelSyntax())
     return ParseIntelOperand();
   return ParseATTOperand();
 }
@@ -978,9 +980,8 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
 
   Operands.push_back(X86Operand::CreateToken(PatchedName, NameLoc));
 
-  if (ExtraImmOp)
+  if (ExtraImmOp && !isParsingIntelSyntax())
     Operands.push_back(X86Operand::CreateImm(ExtraImmOp, NameLoc, NameLoc));
-
 
   // Determine whether this is an instruction prefix.
   bool isPrefix =
@@ -1034,6 +1035,9 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
     Parser.Lex(); // Consume the EndOfStatement
   else if (isPrefix && getLexer().is(AsmToken::Slash))
     Parser.Lex(); // Consume the prefix separator Slash
+
+  if (ExtraImmOp && isParsingIntelSyntax())
+    Operands.push_back(X86Operand::CreateImm(ExtraImmOp, NameLoc, NameLoc));
 
   // This is a terrible hack to handle "out[bwl]? %al, (%dx)" ->
   // "outb %al, %dx".  Out doesn't take a memory form, but this is a widely
@@ -1170,7 +1174,7 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
        Name.startswith("rcl") || Name.startswith("rcr") ||
        Name.startswith("rol") || Name.startswith("ror")) &&
       Operands.size() == 3) {
-    if (getParser().getAssemblerDialect()) {
+    if (isParsingIntelSyntax()) {
       // Intel syntax
       X86Operand *Op1 = static_cast<X86Operand*>(Operands[2]);
       if (Op1->isImm() && isa<MCConstantExpr>(Op1->getImm()) &&
@@ -1485,8 +1489,8 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   MCInst Inst;
 
   // First, try a direct match.
-  switch (MatchInstructionImpl(Operands, Inst, OrigErrorInfo, 
-                               getParser().getAssemblerDialect())) {
+  switch (MatchInstructionImpl(Operands, Inst, OrigErrorInfo,
+                               isParsingIntelSyntax())) {
   default: break;
   case Match_Success:
     // Some instructions need post-processing to, for example, tweak which
@@ -1640,6 +1644,17 @@ bool X86AsmParser::ParseDirective(AsmToken DirectiveID) {
     return ParseDirectiveWord(2, DirectiveID.getLoc());
   else if (IDVal.startswith(".code"))
     return ParseDirectiveCode(IDVal, DirectiveID.getLoc());
+  else if (IDVal.startswith(".intel_syntax")) {
+    getParser().setAssemblerDialect(1);
+    if (getLexer().isNot(AsmToken::EndOfStatement)) {
+      if(Parser.getTok().getString() == "noprefix") {
+	// FIXME : Handle noprefix
+	Parser.Lex();
+      } else
+	return true;
+    }
+    return false;
+  }
   return true;
 }
 

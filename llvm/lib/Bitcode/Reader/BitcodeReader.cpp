@@ -1092,35 +1092,78 @@ bool BitcodeReader::ParseConstants() {
       }
       break;
     }
-    case bitc::CST_CODE_STRING: { // STRING: [values]
-      if (Record.empty())
-        return Error("Invalid CST_AGGREGATE record");
-
-      ArrayType *ATy = cast<ArrayType>(CurTy);
-      Type *EltTy = ATy->getElementType();
-
-      unsigned Size = Record.size();
-      SmallVector<Constant*, 16> Elts;
-      for (unsigned i = 0; i != Size; ++i)
-        Elts.push_back(ConstantInt::get(EltTy, Record[i]));
-      V = ConstantArray::get(ATy, Elts);
-      break;
-    }
+    case bitc::CST_CODE_STRING:    // STRING: [values]
     case bitc::CST_CODE_CSTRING: { // CSTRING: [values]
       if (Record.empty())
-        return Error("Invalid CST_AGGREGATE record");
-
-      ArrayType *ATy = cast<ArrayType>(CurTy);
-      Type *EltTy = ATy->getElementType();
+        return Error("Invalid CST_STRING record");
 
       unsigned Size = Record.size();
-      SmallVector<Constant*, 16> Elts;
+      SmallString<16> Elts;
       for (unsigned i = 0; i != Size; ++i)
-        Elts.push_back(ConstantInt::get(EltTy, Record[i]));
-      Elts.push_back(Constant::getNullValue(EltTy));
-      V = ConstantArray::get(ATy, Elts);
+        Elts.push_back(Record[i]);
+      V = ConstantDataArray::getString(Context, Elts,
+                                       BitCode == bitc::CST_CODE_CSTRING);
       break;
     }
+    case bitc::CST_CODE_DATA: {// DATA: [n x value]
+      if (Record.empty())
+        return Error("Invalid CST_DATA record");
+      
+      Type *EltTy = cast<SequentialType>(CurTy)->getElementType();
+      unsigned Size = Record.size();
+      
+      if (EltTy->isIntegerTy(8)) {
+        SmallVector<uint8_t, 16> Elts(Record.begin(), Record.end());
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else if (EltTy->isIntegerTy(16)) {
+        SmallVector<uint16_t, 16> Elts(Record.begin(), Record.end());
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else if (EltTy->isIntegerTy(32)) {
+        SmallVector<uint32_t, 16> Elts(Record.begin(), Record.end());
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else if (EltTy->isIntegerTy(64)) {
+        SmallVector<uint64_t, 16> Elts(Record.begin(), Record.end());
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else if (EltTy->isFloatTy()) {
+        SmallVector<float, 16> Elts;
+        for (unsigned i = 0; i != Size; ++i) {
+          union { uint32_t I; float F; };
+          I = Record[i];
+          Elts.push_back(F);
+        }
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else if (EltTy->isDoubleTy()) {
+        SmallVector<double, 16> Elts;
+        for (unsigned i = 0; i != Size; ++i) {
+          union { uint64_t I; double F; };
+          I = Record[i];
+          Elts.push_back(F);
+        }
+        if (isa<VectorType>(CurTy))
+          V = ConstantDataVector::get(Context, Elts);
+        else
+          V = ConstantDataArray::get(Context, Elts);
+      } else {
+        return Error("Unknown element type in CE_DATA");
+      }
+      break;
+    }
+
     case bitc::CST_CODE_CE_BINOP: {  // CE_BINOP: [opcode, opval, opval]
       if (Record.size() < 3) return Error("Invalid CE_BINOP record");
       int Opc = GetDecodedBinaryOpcode(Record[0], CurTy);

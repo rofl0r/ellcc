@@ -9,10 +9,6 @@
 
 #include "ToolChains.h"
 
-#ifdef HAVE_CLANG_CONFIG_H
-# include "clang/Config/config.h"
-#endif
-
 #include "clang/Driver/Arg.h"
 #include "clang/Driver/ArgList.h"
 #include "clang/Driver/Compilation.h"
@@ -37,7 +33,11 @@
 
 #include <cstdlib> // ::getenv
 
-#include "llvm/Config/config.h" // for CXX_INCLUDE_ROOT
+#ifdef HAVE_CLANG_CONFIG_H
+# include "clang/Config/config.h"
+#endif
+
+#include "llvm/Config/config.h" // for GCC_INSTALL_PREFIX
 
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
@@ -45,23 +45,24 @@ using namespace clang;
 
 /// Darwin - Darwin tool chain for i386 and x86_64.
 
-Darwin::Darwin(const Driver &D, const llvm::Triple& Triple,
-               const std::string &UserTriple)
-  : ToolChain(D, Triple, UserTriple), TargetInitialized(false),
+Darwin::Darwin(const Driver &D, const llvm::Triple& Triple)
+  : ToolChain(D, Triple), TargetInitialized(false),
     ARCRuntimeForSimulator(ARCSimulator_None),
     LibCXXForSimulator(LibCXXSimulator_None)
 {
-  // Compute the initial Darwin version based on the host.
-  bool HadExtra;
-  std::string OSName = Triple.getOSName();
-  if (!Driver::GetReleaseVersion(&OSName.c_str()[6],
-                                 DarwinVersion[0], DarwinVersion[1],
-                                 DarwinVersion[2], HadExtra))
-    getDriver().Diag(diag::err_drv_invalid_darwin_version) << OSName;
-
+  // Compute the initial Darwin version from the triple
+  unsigned Major, Minor, Micro;
+  if (!Triple.getMacOSXVersion(Major, Minor, Micro))
+    getDriver().Diag(diag::err_drv_invalid_darwin_version) <<
+      Triple.getOSName();
   llvm::raw_string_ostream(MacosxVersionMin)
-    << "10." << std::max(0, (int)DarwinVersion[0] - 4) << '.'
-    << DarwinVersion[1];
+    << Major << '.' << Minor << '.' << Micro;
+
+  // FIXME: DarwinVersion is only used to find GCC's libexec directory.
+  // It should be removed when we stop supporting that.
+  DarwinVersion[0] = Minor + 4;
+  DarwinVersion[1] = Micro;
+  DarwinVersion[2] = 0;
 }
 
 types::ID Darwin::LookupTypeForExtension(const char *Ext) const {
@@ -183,7 +184,7 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
   unsigned Version[3];
   getTargetVersion(Version);
 
-  llvm::SmallString<16> Str;
+  SmallString<16> Str;
   llvm::raw_svector_ostream(Str)
     << (isTargetIPhoneOS() ? "ios" : "macosx")
     << Version[0] << "." << Version[1] << "." << Version[2];
@@ -251,9 +252,8 @@ Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
 }
 
 
-DarwinClang::DarwinClang(const Driver &D, const llvm::Triple& Triple,
-                         const std::string &UserTriple)
-  : Darwin(D, Triple, UserTriple)
+DarwinClang::DarwinClang(const Driver &D, const llvm::Triple& Triple)
+  : Darwin(D, Triple)
 {
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
@@ -1116,34 +1116,6 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     const Driver &D,
     const llvm::Triple &TargetTriple)
     : IsValid(false) {
-  // FIXME: Using CXX_INCLUDE_ROOT is here is a bit of a hack, but
-  // avoids adding yet another option to configure/cmake.
-  // It would probably be cleaner to break it in two variables
-  // CXX_GCC_ROOT with just /foo/bar
-  // CXX_GCC_VER with 4.5.2
-  // Then we would have
-  // CXX_INCLUDE_ROOT = CXX_GCC_ROOT/include/c++/CXX_GCC_VER
-  // and this function would return
-  // CXX_GCC_ROOT/lib/gcc/CXX_INCLUDE_ARCH/CXX_GCC_VER
-  llvm::SmallString<128> CxxIncludeRoot(CXX_INCLUDE_ROOT);
-  if (CxxIncludeRoot != "") {
-    // This is of the form /foo/bar/include/c++/4.5.2/
-    if (CxxIncludeRoot.back() == '/')
-      llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the /
-    StringRef Version = llvm::sys::path::filename(CxxIncludeRoot);
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the version
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the c++
-    llvm::sys::path::remove_filename(CxxIncludeRoot); // remove the include
-    GCCInstallPath = CxxIncludeRoot.str();
-    GCCInstallPath.append("/lib/gcc/");
-    GCCInstallPath.append(CXX_INCLUDE_ARCH);
-    GCCInstallPath.append("/");
-    GCCInstallPath.append(Version);
-    GCCParentLibPath = GCCInstallPath + "/../../..";
-    IsValid = true;
-    return;
-  }
-
   llvm::Triple MultiarchTriple = getMultiarchAlternateTriple(TargetTriple);
   llvm::Triple::ArchType TargetArch = TargetTriple.getArch();
   // The library directories which may contain GCC installations.
@@ -1159,9 +1131,18 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
   // Compute the set of prefixes for our search.
   SmallVector<std::string, 8> Prefixes(D.PrefixDirs.begin(),
                                        D.PrefixDirs.end());
-  Prefixes.push_back(D.SysRoot);
-  Prefixes.push_back(D.SysRoot + "/usr");
-  Prefixes.push_back(D.InstalledDir + "/..");
+
+  SmallString<128> CxxInstallRoot(GCC_INSTALL_PREFIX);
+  if (CxxInstallRoot != "") {
+    if (CxxInstallRoot.back() == '/')
+      llvm::sys::path::remove_filename(CxxInstallRoot); // remove the /
+
+    Prefixes.push_back(CxxInstallRoot.str());
+  } else {
+    Prefixes.push_back(D.SysRoot);
+    Prefixes.push_back(D.SysRoot + "/usr");
+    Prefixes.push_back(D.InstalledDir + "/..");
+  }
 
   // Loop over the various components which exist and select the best GCC
   // installation available. GCC installs are ranked by version number.
@@ -1389,9 +1370,8 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
   }
 }
 
-Generic_GCC::Generic_GCC(const Driver &D, const llvm::Triple& Triple,
-                         const std::string &UserTriple)
-  : ToolChain(D, Triple, UserTriple), GCCInstallation(getDriver(), Triple) {
+Generic_GCC::Generic_GCC(const Driver &D, const llvm::Triple& Triple)
+  : ToolChain(D, Triple), GCCInstallation(getDriver(), Triple) {
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
     getProgramPaths().push_back(getDriver().Dir);
@@ -1461,9 +1441,8 @@ const char *Generic_GCC::GetForcedPicModel() const {
 }
 /// Hexagon Toolchain
 
-Hexagon_TC::Hexagon_TC(const Driver &D, const llvm::Triple& Triple,
-                       const std::string &UserTriple)
-  : ToolChain(D, Triple, UserTriple) {
+Hexagon_TC::Hexagon_TC(const Driver &D, const llvm::Triple& Triple)
+  : ToolChain(D, Triple) {
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir.c_str())
     getProgramPaths().push_back(getDriver().Dir);
@@ -1532,9 +1511,8 @@ const char *Hexagon_TC::GetForcedPicModel() const {
 /// all subcommands. See http://tce.cs.tut.fi for our peculiar target.
 /// Currently does not support anything else but compilation.
 
-TCEToolChain::TCEToolChain(const Driver &D, const llvm::Triple& Triple,
-                          const std::string &UserTriple)
-  : ToolChain(D, Triple, UserTriple) {
+TCEToolChain::TCEToolChain(const Driver &D, const llvm::Triple& Triple)
+  : ToolChain(D, Triple) {
   // Path mangling to find libexec
   std::string Path(getDriver().Dir);
 
@@ -1586,9 +1564,8 @@ Tool &TCEToolChain::SelectTool(const Compilation &C,
 
 /// OpenBSD - OpenBSD tool chain which can call as(1) and ld(1) directly.
 
-OpenBSD::OpenBSD(const Driver &D, const llvm::Triple& Triple,
-                 const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+OpenBSD::OpenBSD(const Driver &D, const llvm::Triple& Triple)
+  : Generic_ELF(D, Triple) {
   getFilePaths().push_back(getDriver().Dir + "/../lib");
   getFilePaths().push_back("/usr/lib");
 }
@@ -1627,9 +1604,8 @@ Tool &OpenBSD::SelectTool(const Compilation &C, const JobAction &JA,
 
 /// FreeBSD - FreeBSD tool chain which can call as(1) and ld(1) directly.
 
-FreeBSD::FreeBSD(const Driver &D, const llvm::Triple& Triple,
-                 const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+FreeBSD::FreeBSD(const Driver &D, const llvm::Triple& Triple)
+  : Generic_ELF(D, Triple) {
 
   // When targeting 32-bit platforms, look for '/usr/lib32/crt1.o' and fall
   // back to '/usr/lib' if it doesn't exist.
@@ -1674,9 +1650,8 @@ Tool &FreeBSD::SelectTool(const Compilation &C, const JobAction &JA,
 
 /// NetBSD - NetBSD tool chain which can call as(1) and ld(1) directly.
 
-NetBSD::NetBSD(const Driver &D, const llvm::Triple& Triple,
-               const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+NetBSD::NetBSD(const Driver &D, const llvm::Triple& Triple)
+  : Generic_ELF(D, Triple) {
 
   if (getDriver().UseStdLib) {
     // When targeting a 32-bit platform, try the special directory used on
@@ -1725,9 +1700,8 @@ Tool &NetBSD::SelectTool(const Compilation &C, const JobAction &JA,
 
 /// Minix - Minix tool chain which can call as(1) and ld(1) directly.
 
-Minix::Minix(const Driver &D, const llvm::Triple& Triple,
-             const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+Minix::Minix(const Driver &D, const llvm::Triple& Triple)
+  : Generic_ELF(D, Triple) {
   getFilePaths().push_back(getDriver().Dir + "/../lib");
   getFilePaths().push_back("/usr/lib");
 }
@@ -1757,9 +1731,8 @@ Tool &Minix::SelectTool(const Compilation &C, const JobAction &JA,
 
 /// AuroraUX - AuroraUX tool chain which can call as(1) and ld(1) directly.
 
-AuroraUX::AuroraUX(const Driver &D, const llvm::Triple& Triple,
-                   const std::string &UserTriple)
-  : Generic_GCC(D, Triple, UserTriple) {
+AuroraUX::AuroraUX(const Driver &D, const llvm::Triple& Triple)
+  : Generic_GCC(D, Triple) {
 
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
@@ -1850,7 +1823,7 @@ static bool IsUbuntu(enum LinuxDistro Distro) {
 }
 
 static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
-  llvm::OwningPtr<llvm::MemoryBuffer> File;
+  OwningPtr<llvm::MemoryBuffer> File;
   if (!llvm::MemoryBuffer::getFile("/etc/lsb-release", File)) {
     StringRef Data = File.get()->getBuffer();
     SmallVector<StringRef, 8> Lines;
@@ -1974,9 +1947,8 @@ static void addPathIfExists(Twine Path, ToolChain::path_list &Paths) {
   if (llvm::sys::fs::exists(Path)) Paths.push_back(Path.str());
 }
 
-Linux::Linux(const Driver &D, const llvm::Triple &Triple,
-             const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+Linux::Linux(const Driver &D, const llvm::Triple &Triple)
+  : Generic_ELF(D, Triple) {
   llvm::Triple::ArchType Arch = Triple.getArch();
   const std::string &SysRoot = getDriver().SysRoot;
 
@@ -2242,22 +2214,6 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
     return;
   }
 
-  const llvm::Triple &TargetTriple = getTriple();
-
-  StringRef CxxIncludeRoot(CXX_INCLUDE_ROOT);
-  if (!CxxIncludeRoot.empty()) {
-    StringRef CxxIncludeArch(CXX_INCLUDE_ARCH);
-    if (CxxIncludeArch.empty())
-      CxxIncludeArch = TargetTriple.str();
-
-    addLibStdCXXIncludePaths(
-      CxxIncludeRoot,
-      CxxIncludeArch + (isTarget64Bit() ? CXX_INCLUDE_64BIT_DIR
-                                        : CXX_INCLUDE_32BIT_DIR),
-      DriverArgs, CC1Args);
-    return;
-  }
-
   // We need a detected GCC installation on Linux to provide libstdc++'s
   // headers. We handled the libc++ case above.
   if (!GCCInstallation.isValid())
@@ -2284,9 +2240,8 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
 
 /// DragonFly - DragonFly tool chain which can call as(1) and ld(1) directly.
 
-DragonFly::DragonFly(const Driver &D, const llvm::Triple& Triple,
-                     const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+DragonFly::DragonFly(const Driver &D, const llvm::Triple& Triple)
+  : Generic_ELF(D, Triple) {
 
   // Path mangling to find libexec
   getProgramPaths().push_back(getDriver().getInstalledDir());
@@ -2323,9 +2278,8 @@ Tool &DragonFly::SelectTool(const Compilation &C, const JobAction &JA,
 
 /// ELLCC - ELLCC tool chain which can call as(1) and ld(1) directly.
 
-ELLCC::ELLCC(const Driver &D, const llvm::Triple &Triple,
-             const std::string &UserTriple)
-  : Generic_ELF(D, Triple, UserTriple) {
+ELLCC::ELLCC(const Driver &D, const llvm::Triple &Triple)
+  : Generic_ELF(D, Triple) {
   getFilePaths().push_back(getDriver().Dir + "/../libecc");
 }
 

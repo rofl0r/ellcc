@@ -528,8 +528,11 @@ unsigned MachineJumpTableInfo::getEntrySize(const TargetData &TD) const {
   // The size of a jump table entry is 4 bytes unless the entry is just the
   // address of a block, in which case it is the pointer size.
   switch (getEntryKind()) {
+  default: llvm_unreachable("Unknown jump table encoding!");
   case MachineJumpTableInfo::EK_BlockAddress:
     return TD.getPointerSize();
+  case MachineJumpTableInfo::EK_GPRel64BlockAddress:
+    return 8;
   case MachineJumpTableInfo::EK_GPRel32BlockAddress:
   case MachineJumpTableInfo::EK_LabelDifference32:
   case MachineJumpTableInfo::EK_Custom32:
@@ -537,8 +540,6 @@ unsigned MachineJumpTableInfo::getEntrySize(const TargetData &TD) const {
   case MachineJumpTableInfo::EK_Inline:
     return 0;
   }
-  assert(0 && "Unknown jump table encoding!");
-  return ~0;
 }
 
 /// getEntryAlignment - Return the alignment of each entry in the jump table.
@@ -547,8 +548,11 @@ unsigned MachineJumpTableInfo::getEntryAlignment(const TargetData &TD) const {
   // entry is just the address of a block, in which case it is the pointer
   // alignment.
   switch (getEntryKind()) {
+  default: llvm_unreachable("Unknown jump table encoding!");
   case MachineJumpTableInfo::EK_BlockAddress:
     return TD.getPointerABIAlignment();
+  case MachineJumpTableInfo::EK_GPRel64BlockAddress:
+    return TD.getABIIntegerTypeAlignment(64);
   case MachineJumpTableInfo::EK_GPRel32BlockAddress:
   case MachineJumpTableInfo::EK_LabelDifference32:
   case MachineJumpTableInfo::EK_Custom32:
@@ -556,8 +560,6 @@ unsigned MachineJumpTableInfo::getEntryAlignment(const TargetData &TD) const {
   case MachineJumpTableInfo::EK_Inline:
     return 1;
   }
-  assert(0 && "Unknown jump table encoding!");
-  return ~0;
 }
 
 /// createJumpTableIndex - Create a new jump table entry in the jump table info.

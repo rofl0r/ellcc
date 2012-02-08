@@ -833,33 +833,15 @@ AC_ARG_WITH(c-include-dirs,
 AC_DEFINE_UNQUOTED(C_INCLUDE_DIRS,"$withval",
                    [Directories clang will search for headers])
 
-AC_ARG_WITH(cxx-include-root,
-  AS_HELP_STRING([--with-cxx-include-root],
-    [Directory with the libstdc++ headers.]),,
+# Clang normally uses the system c++ headers and libraries. With this option,
+# clang will use the ones provided by a gcc installation instead. This option should
+# be passed the same value that was used with --prefix when configuring gcc.
+AC_ARG_WITH(gcc-toolchain,
+  AS_HELP_STRING([--with-gcc-toolchain],
+    [Directory where gcc is installed.]),,
     withval="")
-AC_DEFINE_UNQUOTED(CXX_INCLUDE_ROOT,"$withval",
-                   [Directory with the libstdc++ headers.])
-
-AC_ARG_WITH(cxx-include-arch,
-  AS_HELP_STRING([--with-cxx-include-arch],
-    [Architecture of the libstdc++ headers.]),,
-    withval="")
-AC_DEFINE_UNQUOTED(CXX_INCLUDE_ARCH,"$withval",
-                   [Arch the libstdc++ headers.])
-
-AC_ARG_WITH(cxx-include-32bit-dir,
-  AS_HELP_STRING([--with-cxx-include-32bit-dir],
-    [32 bit multilib dir.]),,
-    withval="")
-AC_DEFINE_UNQUOTED(CXX_INCLUDE_32BIT_DIR,"$withval",
-                   [32 bit multilib directory.])
-
-AC_ARG_WITH(cxx-include-64bit-dir,
-  AS_HELP_STRING([--with-cxx-include-64bit-dir],
-    [64 bit multilib directory.]),,
-    withval="")
-AC_DEFINE_UNQUOTED(CXX_INCLUDE_64BIT_DIR,"$withval",
-                   [64 bit multilib directory.])
+AC_DEFINE_UNQUOTED(GCC_INSTALL_PREFIX,"$withval",
+                   [Directory where gcc is installed.])
 
 dnl Allow linking of LLVM with GPLv3 binutils code.
 AC_ARG_WITH(binutils-include,
@@ -1586,8 +1568,17 @@ AC_CONFIG_FILES([llvm.spec])
 
 dnl Configure doxygen's configuration file
 AC_CONFIG_FILES([docs/doxygen.cfg])
-if test -f ${srcdir}/tools/clang/README.txt; then
-  AC_CONFIG_FILES([tools/clang/docs/doxygen.cfg])
+
+dnl Configure clang, if present
+if test "${clang_src_root}" = ""; then
+  clang_src_root="$srcdir/tools/clang"
+fi
+if test -f ${clang_src_root}/README.txt; then
+  dnl Use variables to stay under 80 columns.
+  configh="include/clang/Config/config.h"
+  doxy="docs/doxygen.cfg"
+  AC_CONFIG_HEADERS([tools/clang/${configh}:${clang_src_root}/${configh}.in])
+  AC_CONFIG_FILES([tools/clang/${doxy}:${clang_src_root}/${doxy}.in])
 fi
 
 dnl OCaml findlib META file

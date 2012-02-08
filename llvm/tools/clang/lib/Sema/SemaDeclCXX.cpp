@@ -32,6 +32,7 @@
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include <map>
 #include <set>
@@ -836,15 +837,16 @@ static void CheckConstexprCtorInitializer(Sema &SemaRef,
 /// the permitted types of statement. C++11 [dcl.constexpr]p3,p4.
 ///
 /// \return true if the body is OK, false if we have diagnosed a problem.
-bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body) {
+bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body,
+                                      bool IsInstantiation) {
   if (isa<CXXTryStmt>(Body)) {
-    // C++0x [dcl.constexpr]p3:
+    // C++11 [dcl.constexpr]p3:
     //  The definition of a constexpr function shall satisfy the following
     //  constraints: [...]
     // - its function-body shall be = delete, = default, or a
     //   compound-statement
     //
-    // C++0x [dcl.constexpr]p4:
+    // C++11 [dcl.constexpr]p4:
     //  In the definition of a constexpr constructor, [...]
     // - its function-body shall not be a function-try-block;
     Diag(Body->getLocStart(), diag::err_constexpr_function_try_block)
@@ -972,8 +974,23 @@ bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body) {
     }
   }
 
+  // C++11 [dcl.constexpr]p5:
+  //   if no function argument values exist such that the function invocation
+  //   substitution would produce a constant expression, the program is
+  //   ill-formed; no diagnostic required.
+  // C++11 [dcl.constexpr]p3:
+  //   - every constructor call and implicit conversion used in initializing the
+  //     return value shall be one of those allowed in a constant expression.
+  // C++11 [dcl.constexpr]p4:
+  //   - every constructor involved in initializing non-static data members and
+  //     base class sub-objects shall be a constexpr constructor.
+  //
+  // FIXME: We currently disable this check inside system headers, to work
+  // around early STL implementations which contain constexpr functions which
+  // can't produce constant expressions.
   llvm::SmallVector<PartialDiagnosticAt, 8> Diags;
-  if (!Expr::isPotentialConstantExpr(Dcl, Diags)) {
+  if (!Context.getSourceManager().isInSystemHeader(Dcl->getLocation()) &&
+      !IsInstantiation && !Expr::isPotentialConstantExpr(Dcl, Diags)) {
     Diag(Dcl->getLocation(), diag::err_constexpr_function_never_constant_expr)
       << isa<CXXConstructorDecl>(Dcl);
     for (size_t I = 0, N = Diags.size(); I != N; ++I)
@@ -1882,7 +1899,7 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
       MemInitializerValidatorCCC Validator(ClassDecl);
       if (R.empty() && BaseType.isNull() &&
           (Corr = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-                              &Validator, ClassDecl))) {
+                              Validator, ClassDecl))) {
         std::string CorrectedStr(Corr.getAsString(getLangOptions()));
         std::string CorrectedQuotedStr(Corr.getQuoted(getLangOptions()));
         if (FieldDecl *Member = Corr.getCorrectionDeclAs<FieldDecl>()) {
@@ -2382,13 +2399,13 @@ BuildImplicitBaseInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
     ParmVarDecl *Param = Constructor->getParamDecl(0);
     QualType ParamType = Param->getType().getNonReferenceType();
 
-    SemaRef.MarkDeclarationReferenced(Constructor->getLocation(), Param);
-
     Expr *CopyCtorArg = 
       DeclRefExpr::Create(SemaRef.Context, NestedNameSpecifierLoc(),
                           SourceLocation(), Param,
                           Constructor->getLocation(), ParamType,
                           VK_LValue, 0);
+
+    SemaRef.MarkDeclRefReferenced(cast<DeclRefExpr>(CopyCtorArg));
 
     // Cast to the base class to avoid ambiguities.
     QualType ArgTy = 
@@ -2454,8 +2471,6 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
     ParmVarDecl *Param = Constructor->getParamDecl(0);
     QualType ParamType = Param->getType().getNonReferenceType();
 
-    SemaRef.MarkDeclarationReferenced(Constructor->getLocation(), Param);
-
     // Suppress copying zero-width bitfields.
     if (Field->isBitField() && Field->getBitWidthValue(SemaRef.Context) == 0)
       return false;
@@ -2464,6 +2479,8 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
       DeclRefExpr::Create(SemaRef.Context, NestedNameSpecifierLoc(),
                           SourceLocation(), Param,
                           Loc, ParamType, VK_LValue, 0);
+
+    SemaRef.MarkDeclRefReferenced(cast<DeclRefExpr>(MemberExprBase));
 
     if (Moving) {
       MemberExprBase = CastForMoving(SemaRef, MemberExprBase);
@@ -2509,7 +2526,7 @@ BuildImplicitMemberInitializer(Sema &SemaRef, CXXConstructorDecl *Constructor,
       // Create the iteration variable for this array index.
       IdentifierInfo *IterationVarName = 0;
       {
-        llvm::SmallString<8> Str;
+        SmallString<8> Str;
         llvm::raw_svector_ostream OS(Str);
         OS << "__i" << IndexVariables.size();
         IterationVarName = &SemaRef.Context.Idents.get(OS.str());
@@ -2796,7 +2813,7 @@ Sema::SetDelegatingInitializer(CXXConstructorDecl *Constructor,
   Constructor->setCtorInitializers(initializer);
 
   if (CXXDestructorDecl *Dtor = LookupDestructor(Constructor->getParent())) {
-    MarkDeclarationReferenced(Initializer->getSourceLocation(), Dtor);
+    MarkFunctionReferenced(Initializer->getSourceLocation(), Dtor);
     DiagnoseUseOfDecl(Dtor, Initializer->getSourceLocation());
   }
 
@@ -3272,7 +3289,7 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
                             << Field->getDeclName()
                             << FieldType);
 
-    MarkDeclarationReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
+    MarkFunctionReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
   }
 
   llvm::SmallPtrSet<const RecordType *, 8> DirectVirtualBases;
@@ -3304,7 +3321,7 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
                             << Base->getType()
                             << Base->getSourceRange());
     
-    MarkDeclarationReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
+    MarkFunctionReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
   }
   
   // Virtual bases.
@@ -3332,7 +3349,7 @@ Sema::MarkBaseAndMemberDestructorsReferenced(SourceLocation Location,
                           PDiag(diag::err_access_dtor_vbase)
                             << VBase->getType());
 
-    MarkDeclarationReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
+    MarkFunctionReferenced(Location, const_cast<CXXDestructorDecl*>(Dtor));
   }
 }
 
@@ -5306,7 +5323,7 @@ bool Sema::CheckDestructor(CXXDestructorDecl *Destructor) {
     if (FindDeallocationFunction(Loc, RD, Name, OperatorDelete))
       return true;
 
-    MarkDeclarationReferenced(Loc, OperatorDelete);
+    MarkFunctionReferenced(Loc, OperatorDelete);
     
     Destructor->setOperatorDelete(OperatorDelete);
   }
@@ -5683,7 +5700,7 @@ Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
 
   // FIXME: Should we be merging attributes?
   if (const VisibilityAttr *Attr = Namespc->getAttr<VisibilityAttr>())
-    PushNamespaceVisibilityAttr(Attr);
+    PushNamespaceVisibilityAttr(Attr, Loc);
 
   if (IsStd)
     StdNamespace = Namespc;
@@ -5758,7 +5775,7 @@ void Sema::ActOnFinishNamespaceDef(Decl *Dcl, SourceLocation RBrace) {
   Namespc->setRBraceLoc(RBrace);
   PopDeclContext();
   if (Namespc->hasAttr<VisibilityAttr>())
-    PopPragmaVisibility();
+    PopPragmaVisibility(true, RBrace);
 }
 
 CXXRecordDecl *Sema::getStdBadAlloc() const {
@@ -5806,9 +5823,6 @@ bool Sema::isStdInitializerList(QualType Ty, QualType *Element) {
     ClassTemplateSpecializationDecl *Specialization =
         dyn_cast<ClassTemplateSpecializationDecl>(RT->getDecl());
     if (!Specialization)
-      return false;
-
-    if (Specialization->getSpecializationKind() != TSK_ImplicitInstantiation)
       return false;
 
     Template = Specialization->getSpecializedTemplate();
@@ -5953,7 +5967,7 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
   R.clear();
   if (TypoCorrection Corrected = S.CorrectTypo(R.getLookupNameInfo(),
                                                R.getLookupKind(), Sc, &SS,
-                                               &Validator)) {
+                                               Validator)) {
     std::string CorrectedStr(Corrected.getAsString(S.getLangOptions()));
     std::string CorrectedQuotedStr(Corrected.getQuoted(S.getLangOptions()));
     if (DeclContext *DC = S.computeDeclContext(SS, false))
@@ -7638,7 +7652,7 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
   // Create the iteration variable.
   IdentifierInfo *IterationVarName = 0;
   {
-    llvm::SmallString<8> Str;
+    SmallString<8> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << "__i" << Depth;
     IterationVarName = &S.Context.Idents.get(OS.str());
@@ -9030,7 +9044,7 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
     CheckNonNullArguments(NonNull, ExprArgs.get(), ConstructLoc);
   }
 
-  MarkDeclarationReferenced(ConstructLoc, Constructor);
+  MarkFunctionReferenced(ConstructLoc, Constructor);
   return Owned(CXXConstructExpr::Create(Context, DeclInitType, ConstructLoc,
                                         Constructor, Elidable, Exprs, NumExprs,
                                         HadMultipleCandidates, RequiresZeroInit,
@@ -9052,7 +9066,7 @@ bool Sema::InitializeVarWithConstructor(VarDecl *VD,
 
   Expr *Temp = TempResult.takeAs<Expr>();
   CheckImplicitConversions(Temp, VD->getLocation());
-  MarkDeclarationReferenced(VD->getLocation(), Constructor);
+  MarkFunctionReferenced(VD->getLocation(), Constructor);
   Temp = MaybeCreateExprWithCleanups(Temp);
   VD->setInit(Temp);
 
@@ -9068,7 +9082,7 @@ void Sema::FinalizeVarWithDestructor(VarDecl *VD, const RecordType *Record) {
   if (ClassDecl->isDependentContext()) return;
 
   CXXDestructorDecl *Destructor = LookupDestructor(ClassDecl);
-  MarkDeclarationReferenced(VD->getLocation(), Destructor);
+  MarkFunctionReferenced(VD->getLocation(), Destructor);
   CheckDestructorAccess(VD->getLocation(), Destructor,
                         PDiag(diag::err_access_dtor_var)
                         << VD->getDeclName()
@@ -9903,10 +9917,16 @@ Decl *Sema::ActOnStaticAssertDeclaration(SourceLocation StaticAssertLoc,
   StringLiteral *AssertMessage = cast<StringLiteral>(AssertMessageExpr_);
 
   if (!AssertExpr->isTypeDependent() && !AssertExpr->isValueDependent()) {
+    // In a static_assert-declaration, the constant-expression shall be a
+    // constant expression that can be contextually converted to bool.
+    ExprResult Converted = PerformContextuallyConvertToBool(AssertExpr);
+    if (Converted.isInvalid())
+      return 0;
+
     llvm::APSInt Cond;
-    if (VerifyIntegerConstantExpression(AssertExpr, &Cond,
-                             diag::err_static_assert_expression_is_not_constant,
-                                        /*AllowFold=*/false))
+    if (VerifyIntegerConstantExpression(Converted.get(), &Cond,
+          PDiag(diag::err_static_assert_expression_is_not_constant),
+          /*AllowFold=*/false).isInvalid())
       return 0;
 
     if (!Cond)
@@ -10905,7 +10925,7 @@ void Sema::MarkVirtualMembersReferenced(SourceLocation Loc,
     // C++ [basic.def.odr]p2:
     //   [...] A virtual member function is used if it is not pure. [...]
     if (MD->isVirtual() && !MD->isPure())
-      MarkDeclarationReferenced(Loc, MD);
+      MarkFunctionReferenced(Loc, MD);
   }
 
   // Only classes that have virtual bases need a VTT.
@@ -10965,7 +10985,7 @@ void Sema::SetIvarInitializers(ObjCImplementationDecl *ObjCImplementation) {
                                                         ->getAs<RecordType>()) {
                     CXXRecordDecl *RD = cast<CXXRecordDecl>(RecordTy->getDecl());
         if (CXXDestructorDecl *Destructor = LookupDestructor(RD)) {
-          MarkDeclarationReferenced(Field->getLocation(), Destructor);
+          MarkFunctionReferenced(Field->getLocation(), Destructor);
           CheckDestructorAccess(Field->getLocation(), Destructor,
                             PDiag(diag::err_access_dtor_ivar)
                               << Context.getBaseElementType(Field->getType()));

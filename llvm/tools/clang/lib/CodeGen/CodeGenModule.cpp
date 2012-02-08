@@ -317,7 +317,7 @@ StringRef CodeGenModule::getMangledName(GlobalDecl GD) {
     return Str;
   }
   
-  llvm::SmallString<256> Buffer;
+  SmallString<256> Buffer;
   llvm::raw_svector_ostream Out(Buffer);
   if (const CXXConstructorDecl *D = dyn_cast<CXXConstructorDecl>(ND))
     getCXXABI().getMangleContext().mangleCXXCtor(D, GD.getCtorType(), Out);
@@ -520,6 +520,13 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
   else if (Features.getStackProtector() == LangOptions::SSPReq)
     F->addFnAttr(llvm::Attribute::StackProtectReq);
   
+  if (Features.AddressSanitizer) {
+    // When AddressSanitizer is enabled, set AddressSafety attribute
+    // unless __attribute__((no_address_safety_analysis)) is used.
+    if (!D->hasAttr<NoAddressSafetyAnalysisAttr>())
+      F->addFnAttr(llvm::Attribute::AddressSafety);
+  }
+
   unsigned alignment = D->getMaxAlignment() / Context.getCharWidth();
   if (alignment)
     F->setAlignment(alignment);
@@ -689,7 +696,7 @@ llvm::Constant *CodeGenModule::EmitAnnotationString(llvm::StringRef Str) {
     return i->second;
 
   // Not found yet, create a new global.
-  llvm::Constant *s = llvm::ConstantArray::get(getLLVMContext(), Str, true);
+  llvm::Constant *s = llvm::ConstantDataArray::getString(getLLVMContext(), Str);
   llvm::GlobalValue *gv = new llvm::GlobalVariable(getModule(), s->getType(),
     true, llvm::GlobalValue::PrivateLinkage, s, ".str");
   gv->setSection(AnnotationSection);
@@ -1018,14 +1025,6 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
     SetFunctionAttributes(D, F, IsIncompleteFunction);
   if (ExtraAttrs != llvm::Attribute::None)
     F->addFnAttr(ExtraAttrs);
-
-  if (Features.AddressSanitizer) {
-    // When AddressSanitizer is enabled, set AddressSafety attribute
-    // unless __attribute__((no_address_safety_analysis)) is used.
-    const FunctionDecl *FD = cast_or_null<FunctionDecl>(D.getDecl());
-    if (!FD || !FD->hasAttr<NoAddressSafetyAnalysisAttr>())
-      F->addFnAttr(llvm::Attribute::AddressSafety);
-  }
 
   // This is the first use or definition of a mangled name.  If there is a
   // deferred decl with this name, remember that we need to emit it at the end
@@ -1780,7 +1779,7 @@ GetConstantCFStringEntry(llvm::StringMap<llvm::Constant*> &Map,
   // order.
   //
   // FIXME: This isn't something we should need to do here.
-  llvm::SmallString<128> AsBytes;
+  SmallString<128> AsBytes;
   AsBytes.reserve(StringLength * 2);
   for (unsigned i = 0; i != StringLength; ++i) {
     unsigned short Val = ToBuf[i];
@@ -1853,7 +1852,8 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
     llvm::ConstantInt::get(Ty, 0x07C8);
 
   // String pointer.
-  llvm::Constant *C = llvm::ConstantArray::get(VMContext, Entry.getKey().str());
+  llvm::Constant *C = llvm::ConstantDataArray::getString(VMContext,
+                                                         Entry.getKey());
 
   llvm::GlobalValue::LinkageTypes Linkage;
   if (isUTF16)
@@ -1985,7 +1985,8 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   Fields[0] = ConstantStringClassRef;
   
   // String pointer.
-  llvm::Constant *C = llvm::ConstantArray::get(VMContext, Entry.getKey().str());
+  llvm::Constant *C =
+    llvm::ConstantDataArray::getString(VMContext, Entry.getKey());
   
   llvm::GlobalValue::LinkageTypes Linkage;
   bool isConstant;
@@ -2081,29 +2082,28 @@ CodeGenModule::GetConstantArrayFromStringLiteral(const StringLiteral *E) {
   // Don't emit it as the address of the string, emit the string data itself
   // as an inline array.
   if (E->getCharByteWidth()==1) {
-    return llvm::ConstantArray::get(VMContext,
+    return llvm::ConstantDataArray::getString(VMContext,
                                     GetStringForStringLiteral(E), false);
-  } else {
-    llvm::ArrayType *AType =
-      cast<llvm::ArrayType>(getTypes().ConvertType(E->getType()));
-    llvm::Type *ElemTy = AType->getElementType();
-    unsigned NumElements = AType->getNumElements();
-    std::vector<llvm::Constant*> Elts;
-    Elts.reserve(NumElements);
-    
-    for(unsigned i=0;i<E->getLength();++i) {
-      unsigned value = E->getCodeUnit(i);
-      llvm::Constant *C = llvm::ConstantInt::get(ElemTy,value,false);
-      Elts.push_back(C);
-    }
-    for(unsigned i=E->getLength();i<NumElements;++i) {
-      llvm::Constant *C = llvm::ConstantInt::get(ElemTy,0,false);
-      Elts.push_back(C);
-    }
-    
-    return llvm::ConstantArray::get(AType, Elts);
   }
-
+  
+  llvm::ArrayType *AType =
+    cast<llvm::ArrayType>(getTypes().ConvertType(E->getType()));
+  llvm::Type *ElemTy = AType->getElementType();
+  unsigned NumElements = AType->getNumElements();
+  std::vector<llvm::Constant*> Elts;
+  Elts.reserve(NumElements);
+  
+  for(unsigned i=0;i<E->getLength();++i) {
+    unsigned value = E->getCodeUnit(i);
+    llvm::Constant *C = llvm::ConstantInt::get(ElemTy,value,false);
+    Elts.push_back(C);
+  }
+  for(unsigned i=E->getLength();i<NumElements;++i) {
+    llvm::Constant *C = llvm::ConstantInt::get(ElemTy,0,false);
+    Elts.push_back(C);
+  }
+  
+  return llvm::ConstantArray::get(AType, Elts);
 }
 
 /// GetAddrOfConstantStringFromLiteral - Return a pointer to a
@@ -2152,7 +2152,7 @@ static llvm::GlobalVariable *GenerateStringLiteral(StringRef str,
                                              unsigned Alignment) {
   // Create Constant for this string literal. Don't add a '\0'.
   llvm::Constant *C =
-      llvm::ConstantArray::get(CGM.getLLVMContext(), str, false);
+      llvm::ConstantDataArray::getString(CGM.getLLVMContext(), str, false);
 
   // Create a global variable for this string
   llvm::GlobalVariable *GV =
@@ -2420,7 +2420,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
   }
   case Decl::ObjCCompatibleAlias:
-    // compatibility-alias is a directive and has no code gen.
+    ObjCRuntime->RegisterAlias(cast<ObjCCompatibleAliasDecl>(D));
     break;
 
   case Decl::LinkageSpec:

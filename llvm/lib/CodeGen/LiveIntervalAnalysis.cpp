@@ -17,29 +17,21 @@
 
 #define DEBUG_TYPE "regalloc"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
-#include "VirtRegMap.h"
 #include "llvm/Value.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/CodeGen/CalcSpillWeights.h"
 #include "llvm/CodeGen/LiveVariables.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/ProcessImplicitDefs.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/DepthFirstIterator.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
 #include <algorithm>
@@ -99,11 +91,6 @@ void LiveIntervals::releaseMemory() {
 
   // Release VNInfo memory regions, VNInfo objects don't need to be dtor'd.
   VNInfoAllocator.Reset();
-  while (!CloneMIs.empty()) {
-    MachineInstr *MI = CloneMIs.back();
-    CloneMIs.pop_back();
-    mf_->DeleteMachineInstr(MI);
-  }
 }
 
 /// runOnMachineFunction - Register allocate the whole function
@@ -215,12 +202,7 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
       }
     }
 
-    MachineInstr *CopyMI = NULL;
-    if (mi->isCopyLike()) {
-      CopyMI = mi;
-    }
-
-    VNInfo *ValNo = interval.getNextValue(defIndex, CopyMI, VNInfoAllocator);
+    VNInfo *ValNo = interval.getNextValue(defIndex, VNInfoAllocator);
     assert(ValNo->id == 0 && "First value in interval is not 0?");
 
     // Loop over all of the blocks that the vreg is defined in.  There are
@@ -288,7 +270,7 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
       if (PHIJoin) {
         assert(getInstructionFromIndex(Start) == 0 &&
                "PHI def index points at actual instruction.");
-        ValNo = interval.getNextValue(Start, 0, VNInfoAllocator);
+        ValNo = interval.getNextValue(Start, VNInfoAllocator);
         ValNo->setIsPHIDef(true);
       }
       LiveRange LR(Start, killIdx, ValNo);
@@ -335,12 +317,7 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
       VNInfo *ValNo = interval.createValueCopy(OldValNo, VNInfoAllocator);
 
       // Value#0 is now defined by the 2-addr instruction.
-      OldValNo->def  = RedefIndex;
-      OldValNo->setCopy(0);
-
-      // A re-def may be a copy. e.g. %reg1030:6<def> = VMOVD %reg1026, ...
-      if (PartReDef && mi->isCopyLike())
-        OldValNo->setCopy(&*mi);
+      OldValNo->def = RedefIndex;
 
       // Add the new live interval which replaces the range for the input copy.
       LiveRange LR(DefIndex, RedefIndex, ValNo);
@@ -366,11 +343,7 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
       if (MO.isEarlyClobber())
         defIndex = MIIdx.getRegSlot(true);
 
-      VNInfo *ValNo;
-      MachineInstr *CopyMI = NULL;
-      if (mi->isCopyLike())
-        CopyMI = mi;
-      ValNo = interval.getNextValue(defIndex, CopyMI, VNInfoAllocator);
+      VNInfo *ValNo = interval.getNextValue(defIndex, VNInfoAllocator);
 
       SlotIndex killIndex = getMBBEndIdx(mbb);
       LiveRange LR(defIndex, killIndex, ValNo);
@@ -389,8 +362,7 @@ void LiveIntervals::handlePhysicalRegisterDef(MachineBasicBlock *MBB,
                                               MachineBasicBlock::iterator mi,
                                               SlotIndex MIIdx,
                                               MachineOperand& MO,
-                                              LiveInterval &interval,
-                                              MachineInstr *CopyMI) {
+                                              LiveInterval &interval) {
   // A physical register cannot be live across basic block, so its
   // lifetime must end somewhere in its defining basic block.
   DEBUG(dbgs() << "\t\tregister: " << PrintReg(interval.reg, tri_));
@@ -430,7 +402,7 @@ void LiveIntervals::handlePhysicalRegisterDef(MachineBasicBlock *MBB,
       if (DefIdx != -1) {
         if (mi->isRegTiedToUseOperand(DefIdx)) {
           // Two-address instruction.
-          end = baseIndex.getRegSlot();
+          end = baseIndex.getRegSlot(mi->getOperand(DefIdx).isEarlyClobber());
         } else {
           // Another instruction redefines the register before it is ever read.
           // Then the register is essentially dead at the instruction that
@@ -459,9 +431,7 @@ exit:
   VNInfo *ValNo = interval.getVNInfoAt(start);
   bool Extend = ValNo != 0;
   if (!Extend)
-    ValNo = interval.getNextValue(start, CopyMI, VNInfoAllocator);
-  if (Extend && MO.isEarlyClobber())
-    ValNo->setHasRedefByEC(true);
+    ValNo = interval.getNextValue(start, VNInfoAllocator);
   LiveRange LR(start, end, ValNo);
   interval.addRange(LR);
   DEBUG(dbgs() << " +" << LR << '\n');
@@ -475,13 +445,9 @@ void LiveIntervals::handleRegisterDef(MachineBasicBlock *MBB,
   if (TargetRegisterInfo::isVirtualRegister(MO.getReg()))
     handleVirtualRegisterDef(MBB, MI, MIIdx, MO, MOIdx,
                              getOrCreateInterval(MO.getReg()));
-  else {
-    MachineInstr *CopyMI = NULL;
-    if (MI->isCopyLike())
-      CopyMI = MI;
+  else
     handlePhysicalRegisterDef(MBB, MI, MIIdx, MO,
-                              getOrCreateInterval(MO.getReg()), CopyMI);
-  }
+                              getOrCreateInterval(MO.getReg()));
 }
 
 void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
@@ -548,8 +514,7 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
   SlotIndex defIdx = getMBBStartIdx(MBB);
   assert(getInstructionFromIndex(defIdx) == 0 &&
          "PHI def index points at actual instruction.");
-  VNInfo *vni =
-    interval.getNextValue(defIdx, 0, VNInfoAllocator);
+  VNInfo *vni = interval.getNextValue(defIdx, VNInfoAllocator);
   vni->setIsPHIDef(true);
   LiveRange LR(start, end, vni);
 
@@ -797,7 +762,7 @@ void LiveIntervals::addKillFlags() {
   }
 }
 
-
+#ifndef NDEBUG
 static bool intervalRangesSane(const LiveInterval& li) {
   if (li.empty()) {
     return true;
@@ -814,6 +779,7 @@ static bool intervalRangesSane(const LiveInterval& li) {
 
   return true;
 }
+#endif
 
 template <typename DefSetT>
 static void handleMoveDefs(LiveIntervals& lis, SlotIndex origIdx,
@@ -1136,7 +1102,7 @@ LiveRange LiveIntervals::addLiveRangeToEndOfBlock(unsigned reg,
   LiveInterval& Interval = getOrCreateInterval(reg);
   VNInfo* VN = Interval.getNextValue(
     SlotIndex(getInstructionIndex(startInst).getRegSlot()),
-    startInst, getVNInfoAllocator());
+    getVNInfoAllocator());
   VN->setHasPHIKill(true);
   LiveRange LR(
      SlotIndex(getInstructionIndex(startInst).getRegSlot()),
@@ -1145,4 +1111,3 @@ LiveRange LiveIntervals::addLiveRangeToEndOfBlock(unsigned reg,
 
   return LR;
 }
-

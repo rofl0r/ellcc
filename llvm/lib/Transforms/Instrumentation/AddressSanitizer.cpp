@@ -155,6 +155,7 @@ struct AddressSanitizer : public ModulePass {
                                    Instruction *InsertBefore, bool IsWrite);
   Value *memToShadow(Value *Shadow, IRBuilder<> &IRB);
   bool handleFunction(Module &M, Function &F);
+  bool maybeInsertAsanInitAtFunctionEntry(Function &F);
   bool poisonStackInFunction(Module &M, Function &F);
   virtual bool runOnModule(Module &M);
   bool insertGlobalRedzones(Module &M);
@@ -212,7 +213,7 @@ const char *AddressSanitizer::getPassName() const {
 
 // Create a constant for Str so that we can pass it to the run-time lib.
 static GlobalVariable *createPrivateGlobalForString(Module &M, StringRef Str) {
-  Constant *StrConst = ConstantArray::get(M.getContext(), Str);
+  Constant *StrConst = ConstantDataArray::getString(M.getContext(), Str);
   return new GlobalVariable(M, StrConst->getType(), true,
                             GlobalValue::PrivateLinkage, StrConst, "");
 }
@@ -422,14 +423,26 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
       continue;
     }
 
-    // Ignore the globals from the __OBJC section. The ObjC runtime assumes
-    // those conform to /usr/lib/objc/runtime.h, so we can't add redzones to
-    // them.
     if (G->hasSection()) {
       StringRef Section(G->getSection());
+      // Ignore the globals from the __OBJC section. The ObjC runtime assumes
+      // those conform to /usr/lib/objc/runtime.h, so we can't add redzones to
+      // them.
       if ((Section.find("__OBJC,") == 0) ||
           (Section.find("__DATA, __objc_") == 0)) {
         DEBUG(dbgs() << "Ignoring ObjC runtime global: " << *G);
+        continue;
+      }
+      // See http://code.google.com/p/address-sanitizer/issues/detail?id=32
+      // Constant CFString instances are compiled in the following way:
+      //  -- the string buffer is emitted into
+      //     __TEXT,__cstring,cstring_literals
+      //  -- the constant NSConstantString structure referencing that buffer
+      //     is placed into __DATA,__cfstring
+      // Therefore there's no point in placing redzones into __DATA,__cfstring.
+      // Moreover, it causes the linker to crash on OS X 10.7
+      if (Section.find("__DATA,__cfstring") == 0) {
+        DEBUG(dbgs() << "Ignoring CFString: " << *G);
         continue;
       }
     }
@@ -605,9 +618,29 @@ bool AddressSanitizer::runOnModule(Module &M) {
   return Res;
 }
 
+bool AddressSanitizer::maybeInsertAsanInitAtFunctionEntry(Function &F) {
+  // For each NSObject descendant having a +load method, this method is invoked
+  // by the ObjC runtime before any of the static constructors is called.
+  // Therefore we need to instrument such methods with a call to __asan_init
+  // at the beginning in order to initialize our runtime before any access to
+  // the shadow memory.
+  // We cannot just ignore these methods, because they may call other
+  // instrumented functions.
+  if (F.getName().find(" load]") != std::string::npos) {
+    IRBuilder<> IRB(F.begin()->begin());
+    IRB.CreateCall(AsanInitFunction);
+    return true;
+  }
+  return false;
+}
+
 bool AddressSanitizer::handleFunction(Module &M, Function &F) {
   if (BL->isIn(F)) return false;
   if (&F == AsanCtorFunction) return false;
+
+  // If needed, insert __asan_init before checking for AddressSafety attr.
+  maybeInsertAsanInitAtFunctionEntry(F);
+
   if (!F.hasFnAttr(Attribute::AddressSafety)) return false;
 
   if (!ClDebugFunc.empty() && ClDebugFunc != F.getName())
@@ -661,19 +694,6 @@ bool AddressSanitizer::handleFunction(Module &M, Function &F) {
   DEBUG(dbgs() << F);
 
   bool ChangedStack = poisonStackInFunction(M, F);
-
-  // For each NSObject descendant having a +load method, this method is invoked
-  // by the ObjC runtime before any of the static constructors is called.
-  // Therefore we need to instrument such methods with a call to __asan_init
-  // at the beginning in order to initialize our runtime before any access to
-  // the shadow memory.
-  // We cannot just ignore these methods, because they may call other
-  // instrumented functions.
-  if (F.getName().find(" load]") != std::string::npos) {
-    IRBuilder<> IRB(F.begin()->begin());
-    IRB.CreateCall(AsanInitFunction);
-  }
-
   return NumInstrumented > 0 || ChangedStack;
 }
 

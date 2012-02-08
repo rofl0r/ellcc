@@ -616,6 +616,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("objc_arc", LangOpts.ObjCAutoRefCount)
            .Case("objc_arc_weak", LangOpts.ObjCAutoRefCount && 
                  LangOpts.ObjCRuntimeHasWeak)
+           .Case("objc_default_synthesize_properties", LangOpts.ObjC2)
            .Case("objc_fixed_enum", LangOpts.ObjC2)
            .Case("objc_instancetype", LangOpts.ObjC2)
            .Case("objc_modules", LangOpts.ObjC2 && LangOpts.Modules)
@@ -775,7 +776,7 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
   PP.getCurrentLexer()->LexIncludeFilename(Tok);
 
   // Reserve a buffer to get the spelling.
-  llvm::SmallString<128> FilenameBuffer;
+  SmallString<128> FilenameBuffer;
   StringRef Filename;
   SourceLocation EndLoc;
   
@@ -877,7 +878,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
 
   ++NumBuiltinMacroExpanded;
 
-  llvm::SmallString<128> TmpBuffer;
+  SmallString<128> TmpBuffer;
   llvm::raw_svector_ostream OS(TmpBuffer);
 
   // Set up the return result.
@@ -924,7 +925,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     // Escape this filename.  Turn '\' -> '\\' '"' -> '\"'
-    llvm::SmallString<128> FN;
+    SmallString<128> FN;
     if (PLoc.isValid()) {
       FN += PLoc.getFilename();
       Lexer::Stringify(FN);
@@ -1032,7 +1033,8 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     }
 
     OS << (int)Value;
-    Tok.setKind(tok::numeric_constant);
+    if (IsValid)
+      Tok.setKind(tok::numeric_constant);
   } else if (II == Ident__has_include ||
              II == Ident__has_include_next) {
     // The argument to these two builtins should be a parenthesized

@@ -645,7 +645,7 @@ ExprResult Sema::CheckCXXThrowOperand(SourceLocation ThrowLoc, Expr *E,
   if (!Destructor)
     return Owned(E);
 
-  MarkDeclarationReferenced(E->getExprLoc(), Destructor);
+  MarkFunctionReferenced(E->getExprLoc(), Destructor);
   CheckDestructorAccess(E->getExprLoc(), Destructor,
                         PDiag(diag::err_access_dtor_exception) << Ty);
   return Owned(E);
@@ -670,9 +670,9 @@ QualType Sema::getCurrentThisType() {
   return ThisTy;
 }
 
-void Sema::CheckCXXThisCapture(SourceLocation Loc) {
+void Sema::CheckCXXThisCapture(SourceLocation Loc, bool Explicit) {
   // We don't need to capture this in an unevaluated context.
-  if (ExprEvalContexts.back().Context == Unevaluated)
+  if (ExprEvalContexts.back().Context == Unevaluated && !Explicit)
     return;
 
   // Otherwise, check that we can capture 'this'.
@@ -684,16 +684,19 @@ void Sema::CheckCXXThisCapture(SourceLocation Loc) {
         // 'this' is already being captured; there isn't anything more to do.
         break;
       }
+      
       if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByref ||
-          CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_Block) {
-        // This closure can implicitly capture 'this'; continue looking upwards.
+          CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_Block ||
+          Explicit) {
+        // This closure can capture 'this'; continue looking upwards.
         // FIXME: Is this check correct?  The rules in the standard are a bit
         // unclear.
         NumClosures++;
+        Explicit = false;
         continue;
       }
       // This context can't implicitly capture 'this'; fail out.
-      Diag(Loc, diag::err_implicit_this_capture);
+      Diag(Loc, diag::err_this_capture) << Explicit;
       return;
     }
     break;
@@ -706,7 +709,7 @@ void Sema::CheckCXXThisCapture(SourceLocation Loc) {
        NumClosures; --idx, --NumClosures) {
     CapturingScopeInfo *CSI = cast<CapturingScopeInfo>(FunctionScopes[idx]);
     bool isNested = NumClosures > 1;
-    CSI->AddThisCapture(isNested);
+    CSI->AddThisCapture(isNested, Loc);
   }
 }
 
@@ -897,11 +900,11 @@ Sema::ActOnCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
       DeclaratorChunk::ArrayTypeInfo &Array = D.getTypeObject(I).Arr;
       if (Expr *NumElts = (Expr *)Array.NumElts) {
-        if (!NumElts->isTypeDependent() && !NumElts->isValueDependent() &&
-            !NumElts->isIntegerConstantExpr(Context)) {
-          Diag(D.getTypeObject(I).Loc, diag::err_new_array_nonconst)
-            << NumElts->getSourceRange();
-          return ExprError();
+        if (!NumElts->isTypeDependent() && !NumElts->isValueDependent()) {
+          Array.NumElts = VerifyIntegerConstantExpression(NumElts, 0,
+            PDiag(diag::err_new_array_nonconst)).take();
+          if (!Array.NumElts)
+            return ExprError();
         }
       }
     }
@@ -992,12 +995,15 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   QualType ResultType = Context.getPointerType(AllocType);
     
-  // C++ 5.3.4p6: "The expression in a direct-new-declarator shall have integral
-  //   or enumeration type with a non-negative value."
+  // C++98 5.3.4p6: "The expression in a direct-new-declarator shall have
+  //   integral or enumeration type with a non-negative value."
+  // C++11 [expr.new]p6: The expression [...] shall be of integral or unscoped
+  //   enumeration type, or a class type for which a single non-explicit
+  //   conversion function to integral or unscoped enumeration type exists.
   if (ArraySize && !ArraySize->isTypeDependent()) {
     ExprResult ConvertedSize = ConvertToIntegralOrEnumerationType(
       StartLoc, ArraySize,
-      PDiag(diag::err_array_size_not_integral),
+      PDiag(diag::err_array_size_not_integral) << getLangOptions().CPlusPlus0x,
       PDiag(diag::err_array_size_incomplete_type)
         << ArraySize->getSourceRange(),
       PDiag(diag::err_array_size_explicit_conversion),
@@ -1006,7 +1012,8 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
       PDiag(diag::note_array_size_conversion),
       PDiag(getLangOptions().CPlusPlus0x ?
               diag::warn_cxx98_compat_array_size_conversion :
-              diag::ext_array_size_conversion));
+              diag::ext_array_size_conversion),
+      /*AllowScopedEnumerations*/ false);
     if (ConvertedSize.isInvalid())
       return ExprError();
 
@@ -1015,28 +1022,46 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     if (!SizeType->isIntegralOrUnscopedEnumerationType())
       return ExprError();
 
-    // Let's see if this is a constant < 0. If so, we reject it out of hand.
-    // We don't care about special rules, so we tell the machinery it's not
-    // evaluated - it gives us a result in more cases.
+    // C++98 [expr.new]p7:
+    //   The expression in a direct-new-declarator shall have integral type
+    //   with a non-negative value.
+    //
+    // Let's see if this is a constant < 0. If so, we reject it out of
+    // hand. Otherwise, if it's not a constant, we must have an unparenthesized
+    // array type.
+    //
+    // Note: such a construct has well-defined semantics in C++11: it throws
+    // std::bad_array_new_length.
     if (!ArraySize->isValueDependent()) {
       llvm::APSInt Value;
-      if (ArraySize->isIntegerConstantExpr(Value, Context, 0, false)) {
+      // We've already performed any required implicit conversion to integer or
+      // unscoped enumeration type.
+      if (ArraySize->isIntegerConstantExpr(Value, Context)) {
         if (Value < llvm::APSInt(
                         llvm::APInt::getNullValue(Value.getBitWidth()),
-                                 Value.isUnsigned()))
-          return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
-                                diag::err_typecheck_negative_array_size)
-            << ArraySize->getSourceRange());
-
-        if (!AllocType->isDependentType()) {
-          unsigned ActiveSizeBits
-            = ConstantArrayType::getNumAddressingBits(Context, AllocType, Value);
-          if (ActiveSizeBits > ConstantArrayType::getMaxSizeBits(Context)) {
+                                 Value.isUnsigned())) {
+          if (getLangOptions().CPlusPlus0x)
             Diag(ArraySize->getSourceRange().getBegin(),
-                 diag::err_array_too_large)
-              << Value.toString(10)
+                 diag::warn_typecheck_negative_array_new_size)
               << ArraySize->getSourceRange();
-            return ExprError();
+          else
+            return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
+                                  diag::err_typecheck_negative_array_size)
+                             << ArraySize->getSourceRange());
+        } else if (!AllocType->isDependentType()) {
+          unsigned ActiveSizeBits =
+            ConstantArrayType::getNumAddressingBits(Context, AllocType, Value);
+          if (ActiveSizeBits > ConstantArrayType::getMaxSizeBits(Context)) {
+            if (getLangOptions().CPlusPlus0x)
+              Diag(ArraySize->getSourceRange().getBegin(),
+                   diag::warn_array_new_too_large)
+                << Value.toString(10)
+                << ArraySize->getSourceRange();
+            else
+              return ExprError(Diag(ArraySize->getSourceRange().getBegin(),
+                                    diag::err_array_too_large)
+                               << Value.toString(10)
+                               << ArraySize->getSourceRange());
           }
         }
       } else if (TypeIdParens.isValid()) {
@@ -1102,7 +1127,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   // Warn if the type is over-aligned and is being allocated by global operator
   // new.
-  if (OperatorNew &&
+  if (NumPlaceArgs == 0 && OperatorNew && 
       (OperatorNew->isImplicit() ||
        getSourceManager().isInSystemHeader(OperatorNew->getLocStart()))) {
     if (unsigned Align = Context.getPreferredTypeAlign(AllocType.getTypePtr())){
@@ -1185,16 +1210,16 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
 
   // Mark the new and delete operators as referenced.
   if (OperatorNew)
-    MarkDeclarationReferenced(StartLoc, OperatorNew);
+    MarkFunctionReferenced(StartLoc, OperatorNew);
   if (OperatorDelete)
-    MarkDeclarationReferenced(StartLoc, OperatorDelete);
+    MarkFunctionReferenced(StartLoc, OperatorDelete);
 
   // C++0x [expr.new]p17:
   //   If the new expression creates an array of objects of class type,
   //   access and ambiguity control are done for the destructor.
   if (ArraySize && Constructor) {
     if (CXXDestructorDecl *dtor = LookupDestructor(Constructor->getParent())) {
-      MarkDeclarationReferenced(StartLoc, dtor);
+      MarkFunctionReferenced(StartLoc, dtor);
       CheckDestructorAccess(StartLoc, dtor, 
                             PDiag(diag::err_access_dtor)
                               << Context.getBaseElementType(AllocType));
@@ -1514,7 +1539,7 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
   case OR_Success: {
     // Got one!
     FunctionDecl *FnDecl = Best->Function;
-    MarkDeclarationReferenced(StartLoc, FnDecl);
+    MarkFunctionReferenced(StartLoc, FnDecl);
     // The first argument is size_t, and the first parameter must be size_t,
     // too. This is checked on declaration and can be assumed. (It can't be
     // asserted on, though, since invalid decls are left in there.)
@@ -1953,7 +1978,7 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
 
       if (!PointeeRD->hasTrivialDestructor())
         if (CXXDestructorDecl *Dtor = LookupDestructor(PointeeRD)) {
-          MarkDeclarationReferenced(StartLoc,
+          MarkFunctionReferenced(StartLoc,
                                     const_cast<CXXDestructorDecl*>(Dtor));
           DiagnoseUseOfDecl(Dtor, StartLoc);
         }
@@ -2002,7 +2027,7 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
         return ExprError();
     }
 
-    MarkDeclarationReferenced(StartLoc, OperatorDelete);
+    MarkFunctionReferenced(StartLoc, OperatorDelete);
     
     // Check access and ambiguity of operator delete and destructor.
     if (PointeeRD) {
@@ -2046,7 +2071,7 @@ ExprResult Sema::CheckConditionVariable(VarDecl *ConditionVar,
                               ConditionVar->getType().getNonReferenceType(),
                               VK_LValue));
 
-  MarkDeclarationReferenced(ConditionVar->getLocation(), ConditionVar);
+  MarkDeclRefReferenced(cast<DeclRefExpr>(Condition.get()));
 
   if (ConvertToBoolean) {
     Condition = CheckBooleanCondition(Condition.take(), StmtLoc);
@@ -3246,18 +3271,16 @@ static uint64_t EvaluateArrayTypeTrait(Sema &Self, ArrayTypeTrait ATT,
   case ATT_ArrayExtent: {
     llvm::APSInt Value;
     uint64_t Dim;
-    if (DimExpr->isIntegerConstantExpr(Value, Self.Context, 0, false)) {
-      if (Value < llvm::APSInt(Value.getBitWidth(), Value.isUnsigned())) {
-        Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer) <<
-          DimExpr->getSourceRange();
-        return false;
-      }
-      Dim = Value.getLimitedValue();
-    } else {
-      Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer) <<
+    if (Self.VerifyIntegerConstantExpression(DimExpr, &Value,
+          Self.PDiag(diag::err_dimension_expr_not_constant_integer),
+          false).isInvalid())
+      return 0;
+    if (Value.isSigned() && Value.isNegative()) {
+      Self.Diag(KeyLoc, diag::err_dimension_expr_not_constant_integer),
         DimExpr->getSourceRange();
-      return false;
+      return 0;
     }
+    Dim = Value.getLimitedValue();
 
     if (T->isArrayType()) {
       unsigned D = 0;
@@ -3606,7 +3629,7 @@ static bool FindConditionalOverload(Sema &Self, ExprResult &LHS, ExprResult &RHS
         break;
       RHS = move(RHSRes);
       if (Best->Function)
-        Self.MarkDeclarationReferenced(QuestionLoc, Best->Function);
+        Self.MarkFunctionReferenced(QuestionLoc, Best->Function);
       return false;
     }
     
@@ -4207,7 +4230,7 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
 
   CXXTemporary *Temp = CXXTemporary::Create(Context, Destructor);
   if (Destructor) {
-    MarkDeclarationReferenced(E->getExprLoc(), Destructor);
+    MarkFunctionReferenced(E->getExprLoc(), Destructor);
     CheckDestructorAccess(E->getExprLoc(), Destructor,
                           PDiag(diag::err_access_dtor_temp)
                             << E->getType());
@@ -4229,6 +4252,8 @@ Sema::MaybeCreateExprWithCleanups(ExprResult SubExpr) {
 Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
   assert(SubExpr && "sub expression can't be null!");
 
+  CleanupVarDeclMarking();
+
   unsigned FirstCleanup = ExprEvalContexts.back().NumCleanupObjects;
   assert(ExprCleanupObjects.size() >= FirstCleanup);
   assert(ExprNeedsCleanups || ExprCleanupObjects.size() == FirstCleanup);
@@ -4247,6 +4272,8 @@ Expr *Sema::MaybeCreateExprWithCleanups(Expr *SubExpr) {
 
 Stmt *Sema::MaybeCreateStmtWithCleanups(Stmt *SubStmt) {
   assert(SubStmt && "sub statement can't be null!");
+
+  CleanupVarDeclMarking();
 
   if (!ExprNeedsCleanups)
     return SubStmt;
@@ -4684,7 +4711,7 @@ ExprResult Sema::BuildCXXMemberCallExpr(Expr *E, NamedDecl *FoundDecl,
   ExprValueKind VK = Expr::getValueKindForType(ResultType);
   ResultType = ResultType.getNonLValueExprType(Context);
 
-  MarkDeclarationReferenced(Exp.get()->getLocStart(), Method);
+  MarkFunctionReferenced(Exp.get()->getLocStart(), Method);
   CXXMemberCallExpr *CE =
     new (Context) CXXMemberCallExpr(Context, ME, 0, 0, ResultType, VK,
                                     Exp.get()->getLocEnd());
@@ -4760,7 +4787,7 @@ ExprResult Sema::ActOnFinishFullExpr(Expr *FE) {
     return ExprError();
 
   // Top-level message sends default to 'id' when we're in a debugger.
-  if (getLangOptions().DebuggerSupport &&
+  if (getLangOptions().DebuggerCastResultToId &&
       FullExpr.get()->getType() == Context.UnknownAnyTy &&
       isa<ObjCMessageExpr>(FullExpr.get())) {
     FullExpr = forceUnknownAnyToType(FullExpr.take(), Context.getObjCIdType());
@@ -4862,90 +4889,14 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
   Class->setLambda(true);
   CurContext->addDecl(Class);
 
-  QualType ThisCaptureType;
-  llvm::DenseMap<VarDecl*, unsigned> CaptureMap;
-  unsigned CXXThisCaptureIndex = 0;
-  llvm::SmallVector<LambdaScopeInfo::Capture, 4> Captures;
-  for (llvm::SmallVector<LambdaCapture, 4>::const_iterator
-       C = Intro.Captures.begin(), E = Intro.Captures.end(); C != E; ++C) {
-    if (C->Kind == LCK_This) {
-      if (!ThisCaptureType.isNull()) {
-        Diag(C->Loc, diag::err_capture_more_than_once) << "'this'";
-        continue;
-      }
-
-      if (Intro.Default == LCD_ByCopy) {
-        Diag(C->Loc, diag::err_this_capture_with_copy_default);
-        continue;
-      }
-
-      ThisCaptureType = getCurrentThisType();
-      if (ThisCaptureType.isNull()) {
-        Diag(C->Loc, diag::err_invalid_this_use);
-        continue;
-      }
-      CheckCXXThisCapture(C->Loc);
-
-      // FIXME: Need getCurCapture().
-      bool isNested = getCurBlock() || getCurLambda();
-      CapturingScopeInfo::Capture Cap(CapturingScopeInfo::Capture::ThisCapture,
-                                      isNested);
-      Captures.push_back(Cap);
-      CXXThisCaptureIndex = Captures.size();
-      continue;
-    }
-
-    assert(C->Id && "missing identifier for capture");
-
-    if (C->Kind == LCK_ByRef && Intro.Default == LCD_ByRef) {
-      Diag(C->Loc, diag::err_reference_capture_with_reference_default);
-      continue;
-    } else if (C->Kind == LCK_ByCopy && Intro.Default == LCD_ByCopy) {
-      Diag(C->Loc, diag::err_copy_capture_with_copy_default);
-      continue;
-    }
-
-    DeclarationNameInfo Name(C->Id, C->Loc);
-    LookupResult R(*this, Name, LookupOrdinaryName);
-    CXXScopeSpec ScopeSpec;
-    LookupParsedName(R, CurScope, &ScopeSpec);
-    if (R.isAmbiguous())
-      continue;
-    if (R.empty()) {
-      DeclFilterCCC<VarDecl> Validator;
-      if (DiagnoseEmptyLookup(CurScope, ScopeSpec, R, Validator))
-        continue;
-    }
-
-    VarDecl *Var = R.getAsSingle<VarDecl>();
-    if (!Var) {
-      Diag(C->Loc, diag::err_capture_does_not_name_variable) << C->Id;
-      continue;
-    }
-
-    if (CaptureMap.count(Var)) {
-      Diag(C->Loc, diag::err_capture_more_than_once) << C->Id;
-      continue;
-    }
-
-    if (!Var->hasLocalStorage()) {
-      Diag(C->Loc, diag::err_capture_non_automatic_variable) << C->Id;
-      continue;
-    }
-
-    // FIXME: This is completely wrong for nested captures and variables
-    // with a non-trivial constructor.
-    // FIXME: We should refuse to capture __block variables.
-    Captures.push_back(LambdaScopeInfo::Capture(Var, C->Kind == LCK_ByRef,
-                                                /*isNested*/false, 0));
-    CaptureMap[Var] = Captures.size();
-  }
-
   // Build the call operator; we don't really have all the relevant information
   // at this point, but we need something to attach child declarations to.
   QualType MethodTy;
   TypeSourceInfo *MethodTyInfo;
   if (ParamInfo.getNumTypeObjects() == 0) {
+    // C++11 [expr.prim.lambda]p4:
+    //   If a lambda-expression does not include a lambda-declarator, it is as 
+    //   if the lambda-declarator were ().
     FunctionProtoType::ExtProtoInfo EPI;
     EPI.TypeQuals |= DeclSpec::TQ_const;
     MethodTy = Context.getFunctionType(Context.DependentTy,
@@ -4955,15 +4906,31 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
     assert(ParamInfo.isFunctionDeclarator() &&
            "lambda-declarator is a function");
     DeclaratorChunk::FunctionTypeInfo &FTI = ParamInfo.getFunctionTypeInfo();
+    
+    // C++11 [expr.prim.lambda]p5:
+    //   This function call operator is declared const (9.3.1) if and only if 
+    //   the lambda-expression’s parameter-declaration-clause is not followed 
+    //   by mutable. It is neither virtual nor declared volatile. [...]
     if (!FTI.hasMutableQualifier())
       FTI.TypeQuals |= DeclSpec::TQ_const;
+    
+    // C++11 [expr.prim.lambda]p5:
+    //   [...] Default arguments (8.3.6) shall not be specified in the 
+    //   parameter-declaration-clause of a lambda-declarator.
+    CheckExtraCXXDefaultArguments(ParamInfo);
+    
     MethodTyInfo = GetTypeForDeclarator(ParamInfo, CurScope);
     // FIXME: Can these asserts actually fail?
     assert(MethodTyInfo && "no type from lambda-declarator");
     MethodTy = MethodTyInfo->getType();
     assert(!MethodTy.isNull() && "no type from lambda declarator");
   }
-
+  
+  // C++11 [expr.prim.lambda]p5:
+  //   The closure type for a lambda-expression has a public inline function 
+  //   call operator (13.5.4) whose parameters and return type are described by
+  //   the lambda-expression’s parameter-declaration-clause and 
+  //   trailing-return-type respectively.
   DeclarationName MethodName
     = Context.DeclarationNames.getCXXOperatorName(OO_Call);
   CXXMethodDecl *Method
@@ -4981,51 +4948,147 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
                             ParamInfo.getSourceRange().getEnd());
   Method->setAccess(AS_public);
   Class->addDecl(Method);
-  Method->setLexicalDeclContext(DC); // FIXME: Is this really correct?
-
+  Method->setLexicalDeclContext(DC); // FIXME: Minor hack.
+  
   ProcessDeclAttributes(CurScope, Method, ParamInfo);
-
+  
   // Enter a new evaluation context to insulate the block from any
   // cleanups from the enclosing full-expression.
   PushExpressionEvaluationContext(PotentiallyEvaluated);
-
+  
   PushDeclContext(CurScope, Method);
-
-  // Set the parameters on the decl, if specified.
-  if (isa<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc())) {
-    FunctionProtoTypeLoc Proto =
-        cast<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc());
-    Method->setParams(Proto.getParams());
-    CheckParmsForFunctionDef(Method->param_begin(),
-                             Method->param_end(),
-                             /*CheckParameterNames=*/false);
-
-    // Introduce our parameters into the function scope
-    for (unsigned p = 0, NumParams = Method->getNumParams(); p < NumParams; ++p) {
-      ParmVarDecl *Param = Method->getParamDecl(p);
-      Param->setOwningFunction(Method);
-
-      // If this has an identifier, add it to the scope stack.
-      if (Param->getIdentifier()) {
-        CheckShadow(CurScope, Param);
-
-        PushOnScopeChains(Param, CurScope);
-      }
-    }
-  }
-
+    
   // Introduce the lambda scope.
   PushLambdaScope(Class);
-
   LambdaScopeInfo *LSI = getCurLambda();
-  LSI->CXXThisCaptureIndex = CXXThisCaptureIndex;
-  std::swap(LSI->CaptureMap, CaptureMap);
-  std::swap(LSI->Captures, Captures);
-  LSI->NumExplicitCaptures = Captures.size();
   if (Intro.Default == LCD_ByCopy)
     LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByval;
   else if (Intro.Default == LCD_ByRef)
     LSI->ImpCaptureStyle = LambdaScopeInfo::ImpCap_LambdaByref;
+
+  LSI->Mutable = (Method->getTypeQualifiers() & Qualifiers::Const) == 0;
+
+  // Handle explicit captures.
+  for (llvm::SmallVector<LambdaCapture, 4>::const_iterator
+         C = Intro.Captures.begin(), 
+         E = Intro.Captures.end(); 
+       C != E; ++C) {
+    if (C->Kind == LCK_This) {
+      // C++11 [expr.prim.lambda]p8:
+      //   An identifier or this shall not appear more than once in a 
+      //   lambda-capture.
+      if (LSI->isCXXThisCaptured()) {
+        Diag(C->Loc, diag::err_capture_more_than_once) 
+          << "'this'"
+          << SourceRange(LSI->getCXXThisCapture().getLocation());
+        continue;
+      }
+
+      // C++11 [expr.prim.lambda]p8:
+      //   If a lambda-capture includes a capture-default that is =, the 
+      //   lambda-capture shall not contain this [...].
+      if (Intro.Default == LCD_ByCopy) {
+        Diag(C->Loc, diag::err_this_capture_with_copy_default);
+        continue;
+      }
+
+      // C++11 [expr.prim.lambda]p12:
+      //   If this is captured by a local lambda expression, its nearest
+      //   enclosing function shall be a non-static member function.
+      QualType ThisCaptureType = getCurrentThisType();
+      if (ThisCaptureType.isNull()) {
+        Diag(C->Loc, diag::err_this_capture) << true;
+        continue;
+      }
+      
+      CheckCXXThisCapture(C->Loc, /*Explicit=*/true);
+      continue;
+    }
+
+    assert(C->Id && "missing identifier for capture");
+
+    // C++11 [expr.prim.lambda]p8:
+    //   If a lambda-capture includes a capture-default that is &, the 
+    //   identifiers in the lambda-capture shall not be preceded by &.
+    //   If a lambda-capture includes a capture-default that is =, [...]
+    //   each identifier it contains shall be preceded by &.
+    if (C->Kind == LCK_ByRef && Intro.Default == LCD_ByRef) {
+      Diag(C->Loc, diag::err_reference_capture_with_reference_default);
+      continue;
+    } else if (C->Kind == LCK_ByCopy && Intro.Default == LCD_ByCopy) {
+      Diag(C->Loc, diag::err_copy_capture_with_copy_default);
+      continue;
+    }
+
+    DeclarationNameInfo Name(C->Id, C->Loc);
+    LookupResult R(*this, Name, LookupOrdinaryName);
+    LookupName(R, CurScope);
+    if (R.isAmbiguous())
+      continue;
+    if (R.empty()) {
+      // FIXME: Disable corrections that would add qualification?
+      CXXScopeSpec ScopeSpec;
+      DeclFilterCCC<VarDecl> Validator;
+      if (DiagnoseEmptyLookup(CurScope, ScopeSpec, R, Validator))
+        continue;
+    }
+
+    // C++11 [expr.prim.lambda]p10:
+    //   The identifiers in a capture-list are looked up using the usual rules
+    //   for unqualified name lookup (3.4.1); each such lookup shall find a 
+    //   variable with automatic storage duration declared in the reaching 
+    //   scope of the local lambda expression.
+    // FIXME: Check reaching scope. 
+    VarDecl *Var = R.getAsSingle<VarDecl>();
+    if (!Var) {
+      Diag(C->Loc, diag::err_capture_does_not_name_variable) << C->Id;
+      continue;
+    }
+
+    if (!Var->hasLocalStorage()) {
+      Diag(C->Loc, diag::err_capture_non_automatic_variable) << C->Id;
+      Diag(Var->getLocation(), diag::note_previous_decl) << C->Id;
+      continue;
+    }
+
+    // C++11 [expr.prim.lambda]p8:
+    //   An identifier or this shall not appear more than once in a 
+    //   lambda-capture.
+    if (LSI->isCaptured(Var)) {
+      Diag(C->Loc, diag::err_capture_more_than_once) 
+        << C->Id
+        << SourceRange(LSI->getCapture(Var).getLocation());
+      continue;
+    }
+
+    TryCaptureKind Kind = C->Kind == LCK_ByRef ? TryCapture_ExplicitByRef :
+                                                 TryCapture_ExplicitByVal;
+    TryCaptureVar(Var, C->Loc, Kind);
+  }
+  LSI->finishedExplicitCaptures();
+
+  // Set the parameters on the decl, if specified.
+  if (isa<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc())) {
+    FunctionProtoTypeLoc Proto =
+    cast<FunctionProtoTypeLoc>(MethodTyInfo->getTypeLoc());
+    Method->setParams(Proto.getParams());
+    CheckParmsForFunctionDef(Method->param_begin(),
+                             Method->param_end(),
+                             /*CheckParameterNames=*/false);
+    
+    // Introduce our parameters into the function scope
+    for (unsigned p = 0, NumParams = Method->getNumParams(); p < NumParams; ++p) {
+      ParmVarDecl *Param = Method->getParamDecl(p);
+      Param->setOwningFunction(Method);
+      
+      // If this has an identifier, add it to the scope stack.
+      if (Param->getIdentifier()) {
+        CheckShadow(CurScope, Param);
+        
+        PushOnScopeChains(Param, CurScope);
+      }
+    }
+  }
 
   const FunctionType *Fn = MethodTy->getAs<FunctionType>();
   QualType RetTy = Fn->getResultType();

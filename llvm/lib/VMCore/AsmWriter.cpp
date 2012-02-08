@@ -827,32 +827,21 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
   }
 
   if (const ConstantArray *CA = dyn_cast<ConstantArray>(CV)) {
-    // As a special case, print the array as a string if it is an array of
-    // i8 with ConstantInt values.
-    //
     Type *ETy = CA->getType()->getElementType();
-    if (CA->isString()) {
-      Out << "c\"";
-      PrintEscapedString(CA->getAsString(), Out);
-      Out << '"';
-    } else {                // Cannot output in string format...
-      Out << '[';
-      if (CA->getNumOperands()) {
-        TypePrinter.print(ETy, Out);
-        Out << ' ';
-        WriteAsOperandInternal(Out, CA->getOperand(0),
-                               &TypePrinter, Machine,
-                               Context);
-        for (unsigned i = 1, e = CA->getNumOperands(); i != e; ++i) {
-          Out << ", ";
-          TypePrinter.print(ETy, Out);
-          Out << ' ';
-          WriteAsOperandInternal(Out, CA->getOperand(i), &TypePrinter, Machine,
-                                 Context);
-        }
-      }
-      Out << ']';
+    Out << '[';
+    TypePrinter.print(ETy, Out);
+    Out << ' ';
+    WriteAsOperandInternal(Out, CA->getOperand(0),
+                           &TypePrinter, Machine,
+                           Context);
+    for (unsigned i = 1, e = CA->getNumOperands(); i != e; ++i) {
+      Out << ", ";
+      TypePrinter.print(ETy, Out);
+      Out << ' ';
+      WriteAsOperandInternal(Out, CA->getOperand(i), &TypePrinter, Machine,
+                             Context);
     }
+    Out << ']';
     return;
   }
   
@@ -868,21 +857,19 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
 
     Type *ETy = CA->getType()->getElementType();
     Out << '[';
-    if (CA->getNumOperands()) {
+    TypePrinter.print(ETy, Out);
+    Out << ' ';
+    WriteAsOperandInternal(Out, CA->getElementAsConstant(0),
+                           &TypePrinter, Machine,
+                           Context);
+    for (unsigned i = 1, e = CA->getNumElements(); i != e; ++i) {
+      Out << ", ";
       TypePrinter.print(ETy, Out);
       Out << ' ';
-      WriteAsOperandInternal(Out, CA->getElementAsConstant(0),
-                             &TypePrinter, Machine,
-                             Context);
-      for (unsigned i = 1, e = CA->getNumOperands(); i != e; ++i) {
-        Out << ", ";
-        TypePrinter.print(ETy, Out);
-        Out << ' ';
-        WriteAsOperandInternal(Out, CA->getElementAsConstant(i), &TypePrinter,
-                               Machine, Context);
-      }
-      Out << ']';
+      WriteAsOperandInternal(Out, CA->getElementAsConstant(i), &TypePrinter,
+                             Machine, Context);
     }
+    Out << ']';
     return;
   }
 
@@ -1742,13 +1729,12 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     Out << ", ";
     writeOperand(SI.getDefaultDest(), true);
     Out << " [";
-    // Skip the first item since that's the default case.
     unsigned NumCases = SI.getNumCases();
-    for (unsigned i = 1; i < NumCases; ++i) {
+    for (unsigned i = 0; i < NumCases; ++i) {
       Out << "\n    ";
       writeOperand(SI.getCaseValue(i), true);
       Out << ", ";
-      writeOperand(SI.getSuccessor(i), true);
+      writeOperand(SI.getCaseSuccessor(i), true);
     }
     Out << "\n  ]";
   } else if (isa<IndirectBrInst>(I)) {
@@ -2020,7 +2006,7 @@ static void WriteMDNodeComment(const MDNode *Node,
   if (!CI) return;
   APInt Val = CI->getValue();
   APInt Tag = Val & ~APInt(Val.getBitWidth(), LLVMDebugVersionMask);
-  if (Val.ult(LLVMDebugVersion))
+  if (Val.ult(LLVMDebugVersion11))
     return;
 
   Out.PadToColumn(50);

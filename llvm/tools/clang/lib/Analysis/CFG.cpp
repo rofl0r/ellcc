@@ -250,7 +250,7 @@ class CFGBuilder {
   typedef BlockScopePosPair JumpSource;
 
   ASTContext *Context;
-  llvm::OwningPtr<CFG> cfg;
+  OwningPtr<CFG> cfg;
 
   CFGBlock *Block;
   CFGBlock *Succ;
@@ -695,8 +695,6 @@ void CFGBuilder::addAutomaticObjDtors(LocalScope::const_iterator B,
 
   if (B == E)
     return;
-
-  CFGBlock::iterator InsertPos;
 
   // We need to append the destructors in reverse order, but any one of them
   // may be a no-return destructor which changes the CFG. As a result, buffer

@@ -219,6 +219,9 @@ namespace llvm {
       // VZEXT_MOVL - Vector move low and zero extend.
       VZEXT_MOVL,
 
+      // VSEXT_MOVL - Vector move low and sign extend.
+      VSEXT_MOVL,
+
       // VSHL, VSRL - 128-bit vector logical left / right shift
       VSHLDQ, VSRLDQ,
 
@@ -233,6 +236,9 @@ namespace llvm {
 
       // PCMP* - Vector integer comparisons.
       PCMPEQ, PCMPGT,
+
+      // VPCOM, VPCOMU - XOP Vector integer comparisons.
+      VPCOM, VPCOMU,
 
       // ADD, SUB, SMUL, etc. - Arithmetic operations with FLAGS results.
       ADD, SUB, ADC, SBB, SMUL,
@@ -276,6 +282,9 @@ namespace llvm {
       VPERMILP,
       VPERM2X128,
       VBROADCAST,
+
+      // PMULUDQ - Vector multiply packed unsigned doubleword integers
+      PMULUDQ,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
       // according to %al. An operator is needed so that this can be expanded
@@ -836,6 +845,7 @@ namespace llvm {
     SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
+    SDValue PerformTruncateCombine(SDNode* N, SelectionDAG &DAG, DAGCombinerInfo &DCI) const;
 
     // Utility functions to help LowerVECTOR_SHUFFLE
     SDValue LowerVECTOR_SHUFFLEv8i16(SDValue Op, SelectionDAG &DAG) const;

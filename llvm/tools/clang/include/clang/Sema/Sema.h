@@ -30,6 +30,7 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Lex/ModuleLoader.h"
+#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TemplateKinds.h"
 #include "clang/Basic/TypeTraits.h"
@@ -45,6 +46,7 @@ namespace llvm {
   class APSInt;
   template <typename ValueT> struct DenseMapInfo;
   template <typename ValueT, typename ValueInfoT> class DenseSet;
+  class SmallBitVector;
 }
 
 namespace clang {
@@ -232,6 +234,8 @@ public:
   /// element type here is ExprWithCleanups::Object.
   SmallVector<BlockDecl*, 8> ExprCleanupObjects;
 
+  llvm::SmallPtrSet<Expr*, 8> MaybeODRUseExprs;
+
   /// \brief Stack containing information about each of the nested
   /// function, block, and method scopes that are currently active.
   ///
@@ -256,14 +260,14 @@ public:
   llvm::SmallPtrSet<NamedDecl *, 4> HiddenDefinitions;
   
   /// FieldCollector - Collects CXXFieldDecls during parsing of C++ classes.
-  llvm::OwningPtr<CXXFieldCollector> FieldCollector;
+  OwningPtr<CXXFieldCollector> FieldCollector;
 
   typedef llvm::SmallPtrSet<const CXXRecordDecl*, 8> RecordDeclSetTy;
 
   /// PureVirtualClassDiagSet - a set of class declarations which we have
   /// emitted a list of pure virtual functions. Used to prevent emitting the
   /// same list more than once.
-  llvm::OwningPtr<RecordDeclSetTy> PureVirtualClassDiagSet;
+  OwningPtr<RecordDeclSetTy> PureVirtualClassDiagSet;
 
   /// ParsingInitForAutoVars - a set of declarations with auto types for which
   /// we are currently parsing the initializer.
@@ -554,6 +558,8 @@ public:
     /// \brief The number of active cleanup objects when we entered
     /// this expression evaluation context.
     unsigned NumCleanupObjects;
+
+    llvm::SmallPtrSet<Expr*, 8> SavedMaybeODRUseExprs;
 
     ExpressionEvaluationContextRecord(ExpressionEvaluationContext Context,
                                       unsigned NumCleanupObjects,
@@ -1010,7 +1016,8 @@ public:
   };
   bool CheckConstexprFunctionDecl(const FunctionDecl *FD,
                                   CheckConstexprKind CCK);
-  bool CheckConstexprFunctionBody(const FunctionDecl *FD, Stmt *Body);
+  bool CheckConstexprFunctionBody(const FunctionDecl *FD, Stmt *Body,
+                                  bool IsInstantiation);
 
   void DiagnoseHiddenVirtualMethods(CXXRecordDecl *DC, CXXMethodDecl *MD);
   // Returns true if the function declaration is a redeclaration
@@ -1376,7 +1383,6 @@ public:
                                  QualType &ConvertedType);
   bool IsBlockPointerConversion(QualType FromType, QualType ToType,
                                 QualType& ConvertedType);
-  bool isSentinelNullExpr(const Expr *E) const;
   bool FunctionArgTypesAreEqual(const FunctionProtoType *OldType,
                                 const FunctionProtoType *NewType,
                                 unsigned *ArgPos = 0);
@@ -1439,7 +1445,8 @@ public:
                                      const PartialDiagnostic &ExplicitConvNote,
                                      const PartialDiagnostic &AmbigDiag,
                                      const PartialDiagnostic &AmbigNote,
-                                     const PartialDiagnostic &ConvDiag);
+                                     const PartialDiagnostic &ConvDiag,
+                                     bool AllowScopedEnumerations);
 
   ExprResult PerformObjectMemberConversion(Expr *From,
                                            NestedNameSpecifier *Qualifier,
@@ -1450,11 +1457,6 @@ public:
   // TODO: make this is a typesafe union.
   typedef llvm::SmallPtrSet<DeclContext   *, 16> AssociatedNamespaceSet;
   typedef llvm::SmallPtrSet<CXXRecordDecl *, 16> AssociatedClassSet;
-
-  void AddOverloadCandidate(NamedDecl *Function,
-                            DeclAccessPair FoundDecl,
-                            Expr **Args, unsigned NumArgs,
-                            OverloadCandidateSet &CandidateSet);
 
   void AddOverloadCandidate(FunctionDecl *Function,
                             DeclAccessPair FoundDecl,
@@ -1785,7 +1787,7 @@ public:
   TypoCorrection CorrectTypo(const DeclarationNameInfo &Typo,
                              Sema::LookupNameKind LookupKind,
                              Scope *S, CXXScopeSpec *SS,
-                             CorrectionCandidateCallback *CCC,
+                             CorrectionCandidateCallback &CCC,
                              DeclContext *MemberContext = 0,
                              bool EnteringContext = false,
                              const ObjCObjectPointerType *OPT = 0);
@@ -2264,7 +2266,28 @@ public:
   ExprResult TranformToPotentiallyEvaluated(Expr *E);
   ExprResult HandleExprEvaluationContextForTypeof(Expr *E);
 
-  void MarkDeclarationReferenced(SourceLocation Loc, Decl *D);
+  // Functions for marking a declaration referenced.  These functions also
+  // contain the relevant logic for marking if a reference to a function or
+  // variable is an odr-use (in the C++11 sense).  There are separate variants
+  // for expressions referring to a decl; these exist because odr-use marking
+  // needs to be delayed for some constant variables when we build one of the
+  // named expressions.
+  void MarkAnyDeclReferenced(SourceLocation Loc, Decl *D);
+  void MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func);
+  void MarkVariableReferenced(SourceLocation Loc, VarDecl *Var);
+  void MarkBlockDeclRefReferenced(BlockDeclRefExpr *E);
+  void MarkDeclRefReferenced(DeclRefExpr *E);
+  void MarkMemberReferenced(MemberExpr *E);
+
+  void UpdateMarkingForLValueToRValue(Expr *E);
+  void CleanupVarDeclMarking();
+
+  enum TryCaptureKind {
+    TryCapture_Implicit, TryCapture_ExplicitByVal, TryCapture_ExplicitByRef
+  };
+  void TryCaptureVar(VarDecl *var, SourceLocation loc,
+                     TryCaptureKind Kind = TryCapture_Implicit);
+
   void MarkDeclarationsReferencedInType(SourceLocation Loc, QualType T);
   void MarkDeclarationsReferencedInExpr(Expr *E);
 
@@ -3084,7 +3107,12 @@ public:
 
   /// \brief Make sure the value of 'this' is actually available in the current
   /// context, if it is a potentially evaluated context.
-  void CheckCXXThisCapture(SourceLocation Loc);
+  ///
+  /// \param Loc The location at which the capture of 'this' occurs.
+  ///
+  /// \param Explicit Whether 'this' is explicitly captured in a lambda
+  /// capture list.
+  void CheckCXXThisCapture(SourceLocation Loc, bool Explicit = false);
 
   /// ActOnCXXBoolLiteral - Parse {true,false} literals.
   ExprResult ActOnCXXBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind);
@@ -4108,12 +4136,18 @@ public:
   /// \param Converted Will receive the converted, canonicalized template
   /// arguments.
   ///
+  ///
+  /// \param ExpansionIntoFixedList If non-NULL, will be set true to indicate
+  /// when the template arguments contain a pack expansion that is being
+  /// expanded into a fixed parameter list.
+  ///
   /// \returns True if an error occurred, false otherwise.
   bool CheckTemplateArgumentList(TemplateDecl *Template,
                                  SourceLocation TemplateLoc,
                                  TemplateArgumentListInfo &TemplateArgs,
                                  bool PartialTemplateArgs,
-                           SmallVectorImpl<TemplateArgument> &Converted);
+                           SmallVectorImpl<TemplateArgument> &Converted,
+                                 bool *ExpansionIntoFixedList = 0);
 
   bool CheckTemplateTypeArgument(TemplateTypeParmDecl *Param,
                                  const TemplateArgumentLoc &Arg,
@@ -4702,14 +4736,14 @@ public:
   void MarkUsedTemplateParameters(const TemplateArgumentList &TemplateArgs,
                                   bool OnlyDeduced,
                                   unsigned Depth,
-                                  SmallVectorImpl<bool> &Used);
+                                  llvm::SmallBitVector &Used);
   void MarkDeducedTemplateParameters(FunctionTemplateDecl *FunctionTemplate,
-                                     SmallVectorImpl<bool> &Deduced) {
+                                     llvm::SmallBitVector &Deduced) {
     return MarkDeducedTemplateParameters(Context, FunctionTemplate, Deduced);
   }
   static void MarkDeducedTemplateParameters(ASTContext &Ctx,
                                          FunctionTemplateDecl *FunctionTemplate,
-                                         SmallVectorImpl<bool> &Deduced);
+                                         llvm::SmallBitVector &Deduced);
 
   //===--------------------------------------------------------------------===//
   // C++ Template Instantiation
@@ -5435,7 +5469,7 @@ public:
                             SourceLocation receiverNameLoc,
                             SourceLocation propertyNameLoc);
 
-  ObjCMethodDecl *tryCaptureObjCSelf();
+  ObjCMethodDecl *tryCaptureObjCSelf(SourceLocation Loc);
 
   /// \brief Describes the kind of message expression indicated by a message
   /// send that starts with an identifier.
@@ -5619,7 +5653,8 @@ public:
 
   /// PushNamespaceVisibilityAttr - Note that we've entered a
   /// namespace with a visibility attribute.
-  void PushNamespaceVisibilityAttr(const VisibilityAttr *Attr);
+  void PushNamespaceVisibilityAttr(const VisibilityAttr *Attr,
+                                   SourceLocation Loc);
 
   /// AddPushedVisibilityAttribute - If '#pragma GCC visibility' was used,
   /// add an appropriate visibility attribute.
@@ -5627,7 +5662,7 @@ public:
 
   /// PopPragmaVisibility - Pop the top element of the visibility stack; used
   /// for '#pragma GCC visibility' and visibility attributes on namespaces.
-  void PopPragmaVisibility();
+  void PopPragmaVisibility(bool IsNamespaceEnd, SourceLocation EndLoc);
 
   /// FreeVisContext - Deallocate and null out VisContext.
   void FreeVisContext();
@@ -6082,17 +6117,25 @@ public:
   /// VerifyIntegerConstantExpression - Verifies that an expression is an ICE,
   /// and reports the appropriate diagnostics. Returns false on success.
   /// Can optionally return the value of the expression.
-  bool VerifyIntegerConstantExpression(const Expr *E, llvm::APSInt *Result = 0,
-                                       unsigned DiagId = 0,
-                                       bool AllowFold = true);
+  ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
+                                             PartialDiagnostic Diag,
+                                             bool AllowFold,
+                                             PartialDiagnostic FoldDiag);
+  ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
+                                             PartialDiagnostic Diag,
+                                             bool AllowFold = true) {
+    return VerifyIntegerConstantExpression(E, Result, Diag, AllowFold,
+                                           PDiag(0));
+  }
+  ExprResult VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result = 0);
 
   /// VerifyBitField - verifies that a bit field expression is an ICE and has
   /// the correct width, and that the field type is valid.
   /// Returns false on success.
   /// Can optionally return whether the bit-field is of width 0
-  bool VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
-                      QualType FieldTy, const Expr *BitWidth,
-                      bool *ZeroWidth = 0);
+  ExprResult VerifyBitField(SourceLocation FieldLoc, IdentifierInfo *FieldName,
+                            QualType FieldTy, Expr *BitWidth,
+                            bool *ZeroWidth = 0);
 
   enum CUDAFunctionTarget {
     CFT_Device,
@@ -6159,6 +6202,7 @@ public:
     PCC_LocalDeclarationSpecifiers
   };
 
+  void CodeCompleteModuleImport(SourceLocation ImportLoc, ModuleIdPath Path);
   void CodeCompleteOrdinaryName(Scope *S,
                                 ParserCompletionContext CompletionContext);
   void CodeCompleteDeclSpec(Scope *S, DeclSpec &DS,
@@ -6277,8 +6321,6 @@ private:
                            Expr **Args, unsigned NumArgs);
   bool CheckBlockCall(NamedDecl *NDecl, CallExpr *TheCall);
 
-  bool CheckablePrintfAttr(const FormatAttr *Format, Expr **Args, 
-                           unsigned NumArgs, bool IsCXXMemberCall);
   bool CheckObjCString(Expr *Arg);
 
   ExprResult CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
@@ -6302,28 +6344,38 @@ private:
   bool SemaBuiltinConstantArg(CallExpr *TheCall, int ArgNum,
                               llvm::APSInt &Result);
 
+  enum FormatStringType {
+    FST_Scanf,
+    FST_Printf,
+    FST_NSString,
+    FST_Strftime,
+    FST_Strfmon,
+    FST_Kprintf,
+    FST_Unknown
+  };
+  static FormatStringType GetFormatStringType(const FormatAttr *Format);
   bool SemaCheckStringLiteral(const Expr *E, Expr **Args, unsigned NumArgs,
                               bool HasVAListArg, unsigned format_idx,
-                              unsigned firstDataArg, bool isPrintf,
+                              unsigned firstDataArg, FormatStringType Type,
                               bool inFunctionCall = true);
 
   void CheckFormatString(const StringLiteral *FExpr, const Expr *OrigFormatExpr,
                          Expr **Args, unsigned NumArgs, bool HasVAListArg,
                          unsigned format_idx, unsigned firstDataArg,
-                         bool isPrintf, bool inFunctionCall);
-
-  void CheckNonNullArguments(const NonNullAttr *NonNull,
-                             const Expr * const *ExprArgs,
-                             SourceLocation CallSiteLoc);
+                         FormatStringType Type, bool inFunctionCall);
 
   void CheckFormatArguments(const FormatAttr *Format, CallExpr *TheCall);
   void CheckFormatArguments(const FormatAttr *Format, Expr **Args,
                             unsigned NumArgs, bool IsCXXMember,
                             SourceLocation Loc, SourceRange Range);
-  void CheckPrintfScanfArguments(Expr **Args, unsigned NumArgs,
-                                 bool HasVAListArg, unsigned format_idx,
-                                 unsigned firstDataArg, bool isPrintf,
-                                 SourceLocation Loc, SourceRange range);
+  void CheckFormatArguments(Expr **Args, unsigned NumArgs,
+                            bool HasVAListArg, unsigned format_idx,
+                            unsigned firstDataArg, FormatStringType Type,
+                            SourceLocation Loc, SourceRange range);
+
+  void CheckNonNullArguments(const NonNullAttr *NonNull,
+                             const Expr * const *ExprArgs,
+                             SourceLocation CallSiteLoc);
 
   void CheckMemaccessArguments(const CallExpr *Call,
                                unsigned BId,
@@ -6331,6 +6383,9 @@ private:
 
   void CheckStrlcpycatArguments(const CallExpr *Call,
                                 IdentifierInfo *FnName);
+
+  void CheckStrncatArguments(const CallExpr *Call,
+                             IdentifierInfo *FnName);
 
   void CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
                             SourceLocation ReturnLoc);

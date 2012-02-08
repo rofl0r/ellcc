@@ -15,6 +15,7 @@
 #ifndef LLVM_CODEGEN_PASSES_H
 #define LLVM_CODEGEN_PASSES_H
 
+#include "llvm/Pass.h"
 #include "llvm/Target/TargetMachine.h"
 #include <string>
 
@@ -26,7 +27,130 @@ namespace llvm {
   class TargetLowering;
   class TargetRegisterClass;
   class raw_ostream;
+}
 
+namespace llvm {
+
+/// Target-Independent Code Generator Pass Configuration Options.
+///
+/// This is an ImmutablePass solely for the purpose of exposing CodeGen options
+/// to the internals of other CodeGen passes.
+class TargetPassConfig : public ImmutablePass {
+protected:
+  TargetMachine *TM;
+  PassManagerBase &PM;
+
+  // Target Pass Options
+  //
+  bool DisableVerify;
+
+public:
+  TargetPassConfig(TargetMachine *tm, PassManagerBase &pm);
+  // Dummy constructor.
+  TargetPassConfig();
+
+  virtual ~TargetPassConfig();
+
+  static char ID;
+
+  /// Get the right type of TargetMachine for this target.
+  template<typename TMC> TMC &getTM() const {
+    return *static_cast<TMC*>(TM);
+  }
+
+  const TargetLowering *getTargetLowering() const {
+    return TM->getTargetLowering();
+  }
+
+  CodeGenOpt::Level getOptLevel() const { return TM->getOptLevel(); }
+
+  void setDisableVerify(bool disable) { DisableVerify = disable; }
+
+  /// Add common target configurable passes that perform LLVM IR to IR
+  /// transforms following machine independent optimization.
+  virtual void addIRPasses();
+
+  /// Add common passes that perform LLVM IR to IR transforms in preparation for
+  /// instruction selection.
+  virtual void addISelPrepare();
+
+  /// addInstSelector - This method should install an instruction selector pass,
+  /// which converts from LLVM code to machine instructions.
+  virtual bool addInstSelector() {
+    return true;
+  }
+
+  /// Add the complete, standard set of LLVM CodeGen passes.
+  /// Fully developed targets will not generally override this.
+  virtual void addMachinePasses();
+protected:
+  /// Methods with trivial inline returns are convenient points in the common
+  /// codegen pass pipeline where targets may insert passes. Methods with
+  /// out-of-line standard implementations are major CodeGen stages called by
+  /// addMachinePasses. Some targets may override major stages when inserting
+  /// passes is insufficient, but maintaining overriden stages is more work.
+  ///
+
+  /// addPreISelPasses - This method should add any "last minute" LLVM->LLVM
+  /// passes (which are run just before instruction selector).
+  virtual bool addPreISel() {
+    return true;
+  }
+
+  /// addPreRegAlloc - This method may be implemented by targets that want to
+  /// run passes immediately before register allocation. This should return
+  /// true if -print-machineinstrs should print after these passes.
+  virtual bool addPreRegAlloc() {
+    return false;
+  }
+
+  /// addPostRegAlloc - This method may be implemented by targets that want
+  /// to run passes after register allocation but before prolog-epilog
+  /// insertion.  This should return true if -print-machineinstrs should print
+  /// after these passes.
+  virtual bool addPostRegAlloc() {
+    return false;
+  }
+
+  /// getEnableTailMergeDefault - the default setting for -enable-tail-merge
+  /// on this target.  User flag overrides.
+  virtual bool getEnableTailMergeDefault() const { return true; }
+
+  /// addPreSched2 - This method may be implemented by targets that want to
+  /// run passes after prolog-epilog insertion and before the second instruction
+  /// scheduling pass.  This should return true if -print-machineinstrs should
+  /// print after these passes.
+  virtual bool addPreSched2() {
+    return false;
+  }
+
+  /// addPreEmitPass - This pass may be implemented by targets that want to run
+  /// passes immediately before machine code is emitted.  This should return
+  /// true if -print-machineinstrs should print out the code after the passes.
+  virtual bool addPreEmitPass() {
+    return false;
+  }
+
+  /// Utilities for targets to add passes to the pass manager.
+  ///
+
+  /// Add a target-independent CodeGen pass at this point in the pipeline.
+  void addCommonPass(char &ID);
+
+  /// printNoVerify - Add a pass to dump the machine function, if debugging is
+  /// enabled.
+  ///
+  void printNoVerify(const char *Banner) const;
+
+  /// printAndVerify - Add a pass to dump then verify the machine function, if
+  /// those steps are enabled.
+  ///
+  void printAndVerify(const char *Banner) const;
+};
+} // namespace llvm
+
+/// List of target independent CodeGen pass IDs.
+namespace llvm {
   /// createUnreachableBlockEliminationPass - The LLVM code generator does not
   /// work well with unreachable basic blocks (what live ranges make sense for a
   /// block that cannot be reached?).  As such, a code generator should either

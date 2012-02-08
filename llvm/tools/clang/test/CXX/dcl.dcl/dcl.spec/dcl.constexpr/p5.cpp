@@ -72,4 +72,35 @@ constexpr S InitList3(int a) { return a ? (S){ a, a } : (S){ a, ng }; }; // ok
 // expression with an unknown value, and diagnose if neither is constant.
 constexpr S InitList4(int a) { return a ? (S){ a, ng } : (S){ a, ng }; };
 
+// __builtin_constant_p ? : is magical, and is always a potential constant.
+constexpr bool BcpCall(int n) {
+  return __builtin_constant_p((int*)n != &n) ? (int*)n != &n : (int*)n != &n;
+}
+static_assert(BcpCall(0), "");
+
+// DR1311: A function template which can produce a constant expression, but
+// for which a particular specialization cannot, is ok.
+template<typename T> constexpr T cmin(T a, T b) {
+  return a < b ? a : b;
+}
+int n = cmin(3, 5); // ok
+
+struct X {
+  constexpr X() {}
+  bool operator<(X); // not constexpr
+};
+
+X x = cmin(X(), X()); // ok, not constexpr
+
+// Same with other temploids.
+template<typename T>
+struct Y {
+  constexpr Y() {}
+  constexpr int get() { return T(); }
+};
+struct Z { operator int(); };
+
+int y1 = Y<int>().get(); // ok
+int y2 = Y<Z>().get(); // ok
+
 }

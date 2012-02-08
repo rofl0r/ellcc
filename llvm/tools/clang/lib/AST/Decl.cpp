@@ -25,6 +25,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/Module.h"
+#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -2333,12 +2334,17 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
     return Builtin::BIstrncasecmp;
 
   case Builtin::BI__builtin_strncat:
+  case Builtin::BI__builtin___strncat_chk:
   case Builtin::BIstrncat:
     return Builtin::BIstrncat;
 
   case Builtin::BI__builtin_strndup:
   case Builtin::BIstrndup:
     return Builtin::BIstrndup;
+
+  case Builtin::BI__builtin_strlen:
+  case Builtin::BIstrlen:
+    return Builtin::BIstrlen;
 
   default:
     if (isExternC()) {
@@ -2360,6 +2366,8 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
         return Builtin::BIstrncat;
       else if (FnInfo->isStr("strndup"))
         return Builtin::BIstrndup;
+      else if (FnInfo->isStr("strlen"))
+        return Builtin::BIstrlen;
     }
     break;
   }
@@ -2951,4 +2959,18 @@ SourceRange ImportDecl::getSourceRange() const {
                        *reinterpret_cast<const SourceLocation *>(this + 1));
   
   return SourceRange(getLocation(), getIdentifierLocs().back());
+}
+
+const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
+                                           const NamedDecl* ND) {
+  DB.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
+                  DiagnosticsEngine::ak_nameddecl);
+  return DB;
+}
+
+const PartialDiagnostic &clang::operator<<(const PartialDiagnostic &PD,
+                                           const NamedDecl* ND) {
+  PD.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
+                  DiagnosticsEngine::ak_nameddecl);
+  return PD;
 }

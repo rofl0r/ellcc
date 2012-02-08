@@ -218,7 +218,9 @@ TEST_GROUP(Wchar)
     fl = wcstof(L"1.0", &p);
     TEST(fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
     ld = wcstold(L"1.0", &p);
-    TEST(ld == 1.0L && *p == L'\0', "wcstold(1.0) == 1.0L");
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+        TEST(ld == 1.0L && *p == L'\0', "wcstold(1.0) == 1.0L");
     TEST_TRACE(C99 7.24.4.1.2)
     l = wcstol(L"12345678", &p, 0);
     TEST(l == 12345678L && *p == '\0', "wcstol(12345678L) == 12345678L");

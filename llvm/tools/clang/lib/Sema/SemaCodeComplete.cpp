@@ -20,10 +20,13 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
+#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
@@ -2471,7 +2474,7 @@ CodeCompletionResult::CreateCodeCompletionString(ASTContext &Ctx,
         Result.AddChunk(Chunk(CodeCompletionString::CK_Comma));
 
       if (MI->isVariadic() && (A+1) == AEnd) {
-        llvm::SmallString<32> Arg = (*A)->getName();
+        SmallString<32> Arg = (*A)->getName();
         if (MI->isC99Varargs())
           Arg += ", ...";
         else
@@ -2525,7 +2528,7 @@ CodeCompletionResult::CreateCodeCompletionString(ASTContext &Ctx,
 
     // Figure out which template parameters are deduced (or have default
     // arguments).
-    SmallVector<bool, 16> Deduced;
+    llvm::SmallBitVector Deduced;
     Sema::MarkDeducedTemplateParameters(Ctx, FunTmpl, Deduced);
     unsigned LastDeducibleArgument;
     for (LastDeducibleArgument = Deduced.size(); LastDeducibleArgument > 0;
@@ -3008,6 +3011,57 @@ static void MaybeAddOverrideCalls(Sema &S, DeclContext *InContext,
                                            CXCursor_CXXMethod));
     Results.Ignore(Overridden);
   }
+}
+
+void Sema::CodeCompleteModuleImport(SourceLocation ImportLoc, 
+                                    ModuleIdPath Path) {
+  typedef CodeCompletionResult Result;
+  ResultBuilder Results(*this, CodeCompleter->getAllocator(),
+                        CodeCompletionContext::CCC_Other);
+  Results.EnterNewScope();
+  
+  CodeCompletionAllocator &Allocator = Results.getAllocator();
+  CodeCompletionBuilder Builder(Allocator);
+  typedef CodeCompletionResult Result;
+  if (Path.empty()) {
+    // Enumerate all top-level modules.
+    llvm::SmallVector<Module *, 8> Modules;
+    PP.getHeaderSearchInfo().collectAllModules(Modules);
+    for (unsigned I = 0, N = Modules.size(); I != N; ++I) {
+      Builder.AddTypedTextChunk(
+        Builder.getAllocator().CopyString(Modules[I]->Name));
+      Results.AddResult(Result(Builder.TakeString(),
+                               CCP_Declaration, 
+                               CXCursor_NotImplemented,
+                               Modules[I]->isAvailable()
+                                 ? CXAvailability_Available
+                                  : CXAvailability_NotAvailable));
+    }
+  } else {
+    // Load the named module.
+    Module *Mod = PP.getModuleLoader().loadModule(ImportLoc, Path,
+                                                  Module::AllVisible,
+                                                /*IsInclusionDirective=*/false);
+    // Enumerate submodules.
+    if (Mod) {
+      for (Module::submodule_iterator Sub = Mod->submodule_begin(), 
+                                   SubEnd = Mod->submodule_end();
+           Sub != SubEnd; ++Sub) {
+        
+        Builder.AddTypedTextChunk(
+          Builder.getAllocator().CopyString((*Sub)->Name));
+        Results.AddResult(Result(Builder.TakeString(),
+                                 CCP_Declaration, 
+                                 CXCursor_NotImplemented,
+                                 (*Sub)->isAvailable()
+                                   ? CXAvailability_Available
+                                   : CXAvailability_NotAvailable));
+      }
+    }
+  }
+  Results.ExitScope();    
+  HandleCodeCompleteResults(this, CodeCompleter, Results.getCompletionContext(),
+                            Results.data(),Results.size());
 }
 
 void Sema::CodeCompleteOrdinaryName(Scope *S, 
@@ -3584,10 +3638,7 @@ void Sema::CodeCompleteCase(Scope *S) {
     // If there are no prior enumerators in C++, check whether we have to 
     // qualify the names of the enumerators that we suggest, because they
     // may not be visible in this scope.
-    Qualifier = getRequiredQualification(Context, CurContext,
-                                         Enum->getDeclContext());
-    
-    // FIXME: Scoped enums need to start with "EnumDecl" as the context!
+    Qualifier = getRequiredQualification(Context, CurContext, Enum);
   }
   
   // Add any enumerators that have not yet been mentioned.

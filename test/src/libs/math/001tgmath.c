@@ -201,7 +201,9 @@ TEST_GROUP(Tgmath)
     TEST_UNSUPPORTED(ld = nearbyint(ld);)
     f = nextafter(f, f);
     d = nextafter(d, d);
-    ld = nextafter(ld, ld);
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+        ld = nextafter(ld, ld);
     TEST_UNSUPPORTED(f = nexttoward(f, f);)
     TEST_UNSUPPORTED(d = nexttoward(d, d);)
     TEST_UNSUPPORTED(ld = nexttoward(ld, ld);)

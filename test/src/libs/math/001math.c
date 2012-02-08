@@ -276,11 +276,13 @@ TEST_GROUP(Math)
     TEST_TRACE(C99 7.12.11.2)
     d = nan("");
     f = nanf("");
-    // ld = nanl("");
+    TEST_UNSUPPORTED(ld = nanl("");)
     TEST_TRACE(C99 7.12.11.3)
     d = nextafter(2.0, 0.0);
     f = nextafterf(2.0, 0.0);
-    ld = nextafterl(2.0, 0.0);
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+        ld = nextafterl(2.0, 0.0);
     TEST_TRACE(C99 7.12.11.4)
     TEST_UNSUPPORTED(d = nexttoward(2.0, 0.0);)
     TEST_UNSUPPORTED(f = nexttowardf(2.0, 0.0);)
@@ -292,11 +294,15 @@ TEST_GROUP(Math)
     TEST_TRACE(C99 7.12.12.2)
     d = fmax(2.0, 0.0);
     f = fmaxf(2.0, 0.0);
-    ld = fmaxl(2.0, 0.0);
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+        ld = fmaxl(2.0, 0.0);
     TEST_TRACE(C99 7.12.12.3)
     d = fmin(2.0, 0.0);
     f = fminf(2.0, 0.0);
-    ld = fminl(2.0, 0.0);
+    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+        ld = fminl(2.0, 0.0);
     TEST_TRACE(C99 7.12.13.1)
     TEST_UNSUPPORTED(d = fma(2.0, 1.0, 6.0);)
     TEST_UNSUPPORTED(f = fmaf(2.0, 1.0, 6.0);)

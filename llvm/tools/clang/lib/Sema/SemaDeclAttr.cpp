@@ -1694,9 +1694,16 @@ static void handleVisibilityAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     type = VisibilityAttr::Hidden;
   else if (TypeStr == "internal")
     type = VisibilityAttr::Hidden; // FIXME
-  else if (TypeStr == "protected")
-    type = VisibilityAttr::Protected;
-  else {
+  else if (TypeStr == "protected") {
+    // Complain about attempts to use protected visibility on targets
+    // (like Darwin) that don't support it.
+    if (!S.Context.getTargetInfo().hasProtectedVisibility()) {
+      S.Diag(Attr.getLoc(), diag::warn_attribute_protected_visibility);
+      type = VisibilityAttr::Default;
+    } else {
+      type = VisibilityAttr::Protected;
+    }
+  } else {
     S.Diag(Attr.getLoc(), diag::warn_attribute_unknown_visibility) << TypeStr;
     return;
   }
@@ -2153,7 +2160,7 @@ static void handleCleanupAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
 
   D->addAttr(::new (S.Context) CleanupAttr(Attr.getRange(), S.Context, FD));
-  S.MarkDeclarationReferenced(Attr.getParameterLoc(), FD);
+  S.MarkFunctionReferenced(Attr.getParameterLoc(), FD);
 }
 
 /// Handle __attribute__((format_arg((idx)))) attribute based on
@@ -2597,18 +2604,19 @@ void Sema::AddAlignedAttr(SourceRange AttrRange, Decl *D, Expr *E) {
   SourceLocation AttrLoc = AttrRange.getBegin();
   // FIXME: Cache the number on the Attr object?
   llvm::APSInt Alignment(32);
-  if (!E->isIntegerConstantExpr(Alignment, Context)) {
-    Diag(AttrLoc, diag::err_attribute_argument_not_int)
-      << "aligned" << E->getSourceRange();
+  ExprResult ICE =
+    VerifyIntegerConstantExpression(E, &Alignment,
+      PDiag(diag::err_attribute_argument_not_int) << "aligned",
+      /*AllowFold*/ false);
+  if (ICE.isInvalid())
     return;
-  }
   if (!llvm::isPowerOf2_64(Alignment.getZExtValue())) {
     Diag(AttrLoc, diag::err_attribute_aligned_not_power_of_two)
       << E->getSourceRange();
     return;
   }
 
-  D->addAttr(::new (Context) AlignedAttr(AttrRange, Context, true, E));
+  D->addAttr(::new (Context) AlignedAttr(AttrRange, Context, true, ICE.take()));
 }
 
 void Sema::AddAlignedAttr(SourceRange AttrRange, Decl *D, TypeSourceInfo *TS) {

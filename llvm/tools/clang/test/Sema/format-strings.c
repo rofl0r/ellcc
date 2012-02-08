@@ -468,6 +468,9 @@ void pr9751() {
   // Make sure that the "format string is defined here" note is not emitted
   // when the original string is within the argument expression.
   printf(1 ? "yes %d" : "no %d"); // expected-warning 2{{more '%' conversions than data arguments}}
+
+  const char kFormat17[] = "%hu"; // expected-note{{format string is defined here}}}
+  printf(kFormat17, (int[]){0}); // expected-warning{{format specifies type 'unsigned short' but the argument}}
 }
 
 // PR 9466: clang: doesn't know about %Lu, %Ld, and %Lx 
@@ -479,4 +482,15 @@ void printf_longlong(long long x, unsigned long long y) {
   printf("%Lu", x); // no-warning
   printf("%Lx", x); // no-warning
   printf("%Ls", "hello"); // expected-warning {{length modifier 'L' results in undefined behavior or no effect with 's' conversion specifier}}
+}
+
+void __attribute__((format(strfmon,1,2))) monformat(const char *fmt, ...);
+void __attribute__((format(strftime,1,0))) dateformat(const char *fmt);
+
+// Other formats
+void test_other_formats() {
+  char *str = "";
+  monformat("", 1); // expected-warning{{format string is empty}}
+  dateformat(""); // expected-warning{{format string is empty}}
+  dateformat(str); // expected-warning{{format string is not a string literal (potentially insecure)}}
 }

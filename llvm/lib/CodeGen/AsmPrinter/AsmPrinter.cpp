@@ -1162,6 +1162,15 @@ void AsmPrinter::EmitJumpTableEntry(const MachineJumpTableInfo *MJTI,
     return;
   }
 
+  case MachineJumpTableInfo::EK_GPRel64BlockAddress: {
+    // EK_GPRel64BlockAddress - Each entry is an address of block, encoded
+    // with a relocation as gp-relative, e.g.:
+    //     .gpdword LBB123
+    MCSymbol *MBBSym = MBB->getSymbol();
+    OutStreamer.EmitGPRel64Value(MCSymbolRefExpr::Create(MBBSym, OutContext));
+    return;
+  }
+
   case MachineJumpTableInfo::EK_LabelDifference32: {
     // EK_LabelDifference32 - Each entry is the address of the block minus
     // the address of the jump table.  This is used for PIC jump tables where
@@ -1565,7 +1574,7 @@ static int isRepeatedByteSequence(const ConstantDataSequential *V) {
   char C = Data[0];
   for (unsigned i = 1, e = Data.size(); i != e; ++i)
     if (Data[i] != C) return -1;
-  return C;
+  return static_cast<uint8_t>(C); // Ensure 255 is not returned as -1.
 }
 
 
@@ -1622,7 +1631,9 @@ static void EmitGlobalConstantDataSequential(const ConstantDataSequential *CDS,
   int Value = isRepeatedByteSequence(CDS, AP.TM);
   if (Value != -1) {
     uint64_t Bytes = AP.TM.getTargetData()->getTypeAllocSize(CDS->getType());
-    return AP.OutStreamer.EmitFill(Bytes, Value, AddrSpace);
+    // Don't emit a 1-byte object as a .fill.
+    if (Bytes > 1)
+      return AP.OutStreamer.EmitFill(Bytes, Value, AddrSpace);
   }
   
   // If this can be emitted with .ascii/.asciz, emit it as such.
@@ -1633,18 +1644,16 @@ static void EmitGlobalConstantDataSequential(const ConstantDataSequential *CDS,
   unsigned ElementByteSize = CDS->getElementByteSize();
   if (isa<IntegerType>(CDS->getElementType())) {
     for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i) {
+      if (AP.isVerbose())
+        AP.OutStreamer.GetCommentOS() << format("0x%" PRIx64 "\n",
+                                                CDS->getElementAsInteger(i));
       AP.OutStreamer.EmitIntValue(CDS->getElementAsInteger(i),
                                   ElementByteSize, AddrSpace);
     }
-    return;
-  }
-
-  // FP Constants are printed as integer constants to avoid losing
-  // precision.
-  assert(CDS->getElementType()->isFloatTy() ||
-         CDS->getElementType()->isDoubleTy());
-
-  if (ElementByteSize == 4) {
+  } else if (ElementByteSize == 4) {
+    // FP Constants are printed as integer constants to avoid losing
+    // precision.
+    assert(CDS->getElementType()->isFloatTy());
     for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i) {
       union {
         float F;
@@ -1656,49 +1665,44 @@ static void EmitGlobalConstantDataSequential(const ConstantDataSequential *CDS,
         AP.OutStreamer.GetCommentOS() << "float " << F << '\n';
       AP.OutStreamer.EmitIntValue(I, 4, AddrSpace);
     }
-    return;
+  } else {
+    assert(CDS->getElementType()->isDoubleTy());
+    for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i) {
+      union {
+        double F;
+        uint64_t I;
+      };
+      
+      F = CDS->getElementAsDouble(i);
+      if (AP.isVerbose())
+        AP.OutStreamer.GetCommentOS() << "double " << F << '\n';
+      AP.OutStreamer.EmitIntValue(I, 8, AddrSpace);
+    }
   }
 
-  for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i) {
-    union {
-      double F;
-      uint64_t I;
-    };
-    
-    F = CDS->getElementAsDouble(i);
-    if (AP.isVerbose())
-      AP.OutStreamer.GetCommentOS() << "double " << F << '\n';
-    AP.OutStreamer.EmitIntValue(I, 8, AddrSpace);
-  }
+  const TargetData &TD = *AP.TM.getTargetData();
+  unsigned Size = TD.getTypeAllocSize(CDS->getType());
+  unsigned EmittedSize = TD.getTypeAllocSize(CDS->getType()->getElementType()) *
+                        CDS->getNumElements();
+  if (unsigned Padding = Size - EmittedSize)
+    AP.OutStreamer.EmitZeros(Padding, AddrSpace);
+
 }
 
 static void EmitGlobalConstantArray(const ConstantArray *CA, unsigned AddrSpace,
                                     AsmPrinter &AP) {
-  if (AddrSpace != 0 || !CA->isString()) {
-    // Not a string.  Print the values in successive locations.
+  // See if we can aggregate some values.  Make sure it can be
+  // represented as a series of bytes of the constant value.
+  int Value = isRepeatedByteSequence(CA, AP.TM);
 
-    // See if we can aggregate some values.  Make sure it can be
-    // represented as a series of bytes of the constant value.
-    int Value = isRepeatedByteSequence(CA, AP.TM);
-
-    if (Value != -1) {
-      uint64_t Bytes = AP.TM.getTargetData()->getTypeAllocSize(CA->getType());
-      AP.OutStreamer.EmitFill(Bytes, Value, AddrSpace);
-    }
-    else {
-      for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
-        EmitGlobalConstantImpl(CA->getOperand(i), AddrSpace, AP);
-    }
-    return;
+  if (Value != -1) {
+    uint64_t Bytes = AP.TM.getTargetData()->getTypeAllocSize(CA->getType());
+    AP.OutStreamer.EmitFill(Bytes, Value, AddrSpace);
   }
-
-  // Otherwise, it can be emitted as .ascii.
-  SmallVector<char, 128> TmpVec;
-  TmpVec.reserve(CA->getNumOperands());
-  for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
-    TmpVec.push_back(cast<ConstantInt>(CA->getOperand(i))->getZExtValue());
-
-  AP.OutStreamer.EmitBytes(StringRef(TmpVec.data(), TmpVec.size()), AddrSpace);
+  else {
+    for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
+      EmitGlobalConstantImpl(CA->getOperand(i), AddrSpace, AP);
+  }
 }
 
 static void EmitGlobalConstantVector(const ConstantVector *CV,

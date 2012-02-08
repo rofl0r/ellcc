@@ -20,9 +20,7 @@
 
 #include <stdlib.h>  // for size_t, uintptr_t, etc.
 
-#if !defined(_WIN32)
-#include <stdint.h>  // for __WORDSIZE
-#else
+#if defined(_WIN32)
 // There's no <stdint.h> in Visual Studio 9, so we have to define [u]int*_t.
 typedef unsigned __int8  uint8_t;
 typedef unsigned __int16 uint16_t;
@@ -33,21 +31,25 @@ typedef __int16          int16_t;
 typedef __int32          int32_t;
 typedef __int64          int64_t;
 
-// Visual Studio does not define ssize_t.
-#ifdef _WIN64
-typedef int64_t ssize_t;
-#define __WORDSIZE 64
-#else
-typedef int32_t ssize_t;
-#define __WORDSIZE 32
-#endif
+# define ALIAS(x)   // TODO(timurrrr): do we need this on Windows?
+# define ALIGNED(x) __declspec(align(x))
+# define NOINLINE __declspec(noinline)
 
-#endif  // _WIN32
+# define ASAN_INTERFACE_ATTRIBUTE  // TODO(timurrrr): do we need this on Win?
+#else  // defined(_WIN32)
+# include <stdint.h>  // for __WORDSIZE
+
+# define ALIAS(x) __attribute__((alias(x)))
+# define ALIGNED(x) __attribute__((aligned(x)))
+# define NOINLINE __attribute__((noinline))
+
+# define ASAN_INTERFACE_ATTRIBUTE __attribute__((visibility("default")))
+#endif  // defined(_WIN32)
 
 // If __WORDSIZE was undefined by the platform, define it in terms of the
-// compiler built-in __LP64__.
+// compiler built-ins __LP64__ and _WIN64.
 #ifndef __WORDSIZE
-#if __LP64__
+#if __LP64__ || defined(_WIN64)
 #define __WORDSIZE 64
 #else
 #define __WORDSIZE 32
@@ -176,6 +178,7 @@ extern bool   FLAG_use_fake_stack;
 extern size_t FLAG_max_malloc_fill_size;
 extern int    FLAG_exitcode;
 extern bool   FLAG_allow_user_poisoning;
+extern int    FLAG_sleep_before_dying;
 extern bool   FLAG_handle_segv;
 
 extern int asan_inited;

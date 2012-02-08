@@ -60,7 +60,8 @@ namespace llvm {
   // The PowerPC format consists of two doubles.  It does not map cleanly
   // onto the usual format above.  For now only storage of constants of
   // this type is supported, no arithmetic.
-  const fltSemantics APFloat::PPCDoubleDouble = { 1023, -1022, 106, false };
+  // RICH: http://ellcc.org/bugzilla/show_bug.cgi?id=45
+  const fltSemantics APFloat::PPCDoubleDouble = { 1023, -1022, 106, true }; // RICH false };
 
   /* A tight upper bound on number of parts required to hold the value
      pow(5, power) is

@@ -18,6 +18,7 @@
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -48,8 +49,17 @@ class WalkAST : public StmtVisitor<WalkAST> {
     // The type could be either a pointer or array.
     const Type *TP = T.getTypePtr();
     QualType PointeeT = TP->getPointeeType();
-    if (!PointeeT.isNull())
+    if (!PointeeT.isNull()) {
+      // If the type is a pointer to an array, check the size of the array
+      // elements. To avoid false positives coming from assumption that the
+      // values x and &x are equal when x is an array.
+      if (const Type *TElem = PointeeT->getArrayElementTypeNoTypeQual())
+        if (isPointerSize(TElem))
+          return true;
+
+      // Else, check the pointee size.
       return isPointerSize(PointeeT.getTypePtr());
+    }
 
     if (const Type *TElem = TP->getArrayElementTypeNoTypeQual())
       return isPointerSize(TElem);
@@ -118,12 +128,12 @@ void WalkAST::VisitCallExpr(CallExpr *CE) {
   if (ArgNum != InvalidArgIndex) {
     assert(ArgNum == 1 || ArgNum == 2);
 
-    llvm::SmallString<256> BufName;
+    SmallString<256> BufName;
     llvm::raw_svector_ostream OsName(BufName);
     assert(ArgNum == 1 || ArgNum == 2);
     OsName << " Invalid use of '" << Name << "'" ;
 
-    llvm::SmallString<256> Buf;
+    SmallString<256> Buf;
     llvm::raw_svector_ostream Os(Buf);
     Os << " The "<< ((ArgNum == 1) ? "first" : "second") << " argument to '"
         << Name << "' must be a C array of pointer-sized values, not '"
@@ -132,7 +142,7 @@ void WalkAST::VisitCallExpr(CallExpr *CE) {
     SourceRange R = Arg->getSourceRange();
     PathDiagnosticLocation CELoc =
         PathDiagnosticLocation::createBegin(CE, BR.getSourceManager(), AC);
-    BR.EmitBasicReport(OsName.str(), "Core Foundation/Objective-C API",
+    BR.EmitBasicReport(OsName.str(), "Core Foundation/Objective-C",
                        Os.str(), CELoc, &R, 1);
   }
 

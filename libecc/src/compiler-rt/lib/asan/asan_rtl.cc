@@ -47,6 +47,7 @@ size_t FLAG_max_malloc_fill_size = 0;
 bool   FLAG_use_fake_stack;
 int    FLAG_exitcode = EXIT_FAILURE;
 bool   FLAG_allow_user_poisoning;
+int    FLAG_sleep_before_dying;
 
 // -------------------------- Globals --------------------- {{{1
 int asan_inited;
@@ -186,8 +187,7 @@ static bool DescribeStackAddress(uintptr_t addr, uintptr_t access_size) {
   return true;
 }
 
-__attribute__((noinline))
-static void DescribeAddress(uintptr_t addr, uintptr_t access_size) {
+static NOINLINE void DescribeAddress(uintptr_t addr, uintptr_t access_size) {
   // Check if this is a global.
   if (DescribeAddrIfGlobal(addr))
     return;
@@ -202,8 +202,8 @@ static void DescribeAddress(uintptr_t addr, uintptr_t access_size) {
 // -------------------------- Run-time entry ------------------- {{{1
 // exported functions
 #define ASAN_REPORT_ERROR(type, is_write, size)                     \
-extern "C" void __asan_report_ ## type ## size(uintptr_t addr)      \
-  __attribute__((visibility("default"))) __attribute__((noinline)); \
+NOINLINE ASAN_INTERFACE_ATTRIBUTE                                   \
+extern "C" void __asan_report_ ## type ## size(uintptr_t addr);     \
 extern "C" void __asan_report_ ## type ## size(uintptr_t addr) {    \
   GET_BP_PC_SP;                                                     \
   __asan_report_error(pc, bp, sp, addr, is_write, size);            \
@@ -411,6 +411,7 @@ void __asan_init() {
   FLAG_exitcode = IntFlagValue(options, "exitcode=", EXIT_FAILURE);
   FLAG_allow_user_poisoning = IntFlagValue(options,
                                            "allow_user_poisoning=", 1);
+  FLAG_sleep_before_dying = IntFlagValue(options, "sleep_before_dying=", 0);
 
   if (FLAG_atexit) {
     atexit(asan_atexit);

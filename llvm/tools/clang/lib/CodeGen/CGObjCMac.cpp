@@ -1084,6 +1084,8 @@ public:
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
 
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
 
@@ -1336,6 +1338,9 @@ public:
   virtual void GenerateCategory(const ObjCCategoryImplDecl *CMD);
 
   virtual void GenerateClass(const ObjCImplementationDecl *ClassDecl);
+
+  virtual void RegisterAlias(const ObjCCompatibleAliasDecl *OAD) {};
+
   virtual llvm::Value *GenerateProtocolRef(CGBuilderTy &Builder,
                                            const ObjCProtocolDecl *PD);
 
@@ -1392,6 +1397,96 @@ public:
                                       const ObjCInterfaceDecl *Interface,
                                       const ObjCIvarDecl *Ivar);
 };
+
+/// A helper class for performing the null-initialization of a return
+/// value.
+struct NullReturnState {
+  llvm::BasicBlock *NullBB;
+  llvm::BasicBlock *callBB;
+  NullReturnState() : NullBB(0), callBB(0) {}
+
+  void init(CodeGenFunction &CGF, llvm::Value *receiver) {
+    // Make blocks for the null-init and call edges.
+    NullBB = CGF.createBasicBlock("msgSend.nullinit");
+    callBB = CGF.createBasicBlock("msgSend.call");
+
+    // Check for a null receiver and, if there is one, jump to the
+    // null-init test.
+    llvm::Value *isNull = CGF.Builder.CreateIsNull(receiver);
+    CGF.Builder.CreateCondBr(isNull, NullBB, callBB);
+
+    // Otherwise, start performing the call.
+    CGF.EmitBlock(callBB);
+  }
+
+  RValue complete(CodeGenFunction &CGF, RValue result, QualType resultType,
+                  const CallArgList &CallArgs,
+                  const ObjCMethodDecl *Method) {
+    if (!NullBB) return result;
+    
+    llvm::Value *NullInitPtr = 0;
+    if (result.isScalar() && !resultType->isVoidType()) {
+      NullInitPtr = CGF.CreateTempAlloca(result.getScalarVal()->getType());
+      CGF.Builder.CreateStore(result.getScalarVal(), NullInitPtr);
+    }
+
+    // Finish the call path.
+    llvm::BasicBlock *contBB = CGF.createBasicBlock("msgSend.cont");
+    if (CGF.HaveInsertPoint()) CGF.Builder.CreateBr(contBB);
+
+    // Emit the null-init block and perform the null-initialization there.
+    CGF.EmitBlock(NullBB);
+    
+    // Release consumed arguments along the null-receiver path.
+    if (Method) {
+      CallArgList::const_iterator I = CallArgs.begin();
+      for (ObjCMethodDecl::param_const_iterator i = Method->param_begin(),
+           e = Method->param_end(); i != e; ++i, ++I) {
+        const ParmVarDecl *ParamDecl = (*i);
+        if (ParamDecl->hasAttr<NSConsumedAttr>()) {
+          RValue RV = I->RV;
+          assert(RV.isScalar() && 
+                 "NullReturnState::complete - arg not on object");
+          CGF.EmitARCRelease(RV.getScalarVal(), true);
+        }
+      }
+    }
+    
+    if (result.isScalar()) {
+      if (NullInitPtr)
+        CGF.EmitNullInitialization(NullInitPtr, resultType);
+      // Jump to the continuation block.
+      CGF.EmitBlock(contBB);
+      return NullInitPtr ? RValue::get(CGF.Builder.CreateLoad(NullInitPtr)) 
+      : result;
+    }
+    
+    if (!resultType->isAnyComplexType()) {
+      assert(result.isAggregate() && "null init of non-aggregate result?");
+      CGF.EmitNullInitialization(result.getAggregateAddr(), resultType);
+      // Jump to the continuation block.
+      CGF.EmitBlock(contBB);
+      return result;
+    }
+
+    // _Complex type
+    // FIXME. Now easy to handle any other scalar type whose result is returned
+    // in memory due to ABI limitations.
+    CGF.EmitBlock(contBB);
+    CodeGenFunction::ComplexPairTy CallCV = result.getComplexVal();
+    llvm::Type *MemberType = CallCV.first->getType();
+    llvm::Constant *ZeroCV = llvm::Constant::getNullValue(MemberType);
+    // Create phi instruction for scalar complex value.
+    llvm::PHINode *PHIReal = CGF.Builder.CreatePHI(MemberType, 2);
+    PHIReal->addIncoming(ZeroCV, NullBB);
+    PHIReal->addIncoming(CallCV.first, callBB);
+    llvm::PHINode *PHIImag = CGF.Builder.CreatePHI(MemberType, 2);
+    PHIImag->addIncoming(ZeroCV, NullBB);
+    PHIImag->addIncoming(CallCV.second, callBB);
+    return RValue::getComplex(PHIReal, PHIImag);
+  }
+};
+
 } // end anonymous namespace
 
 /* *** Helper Functions *** */
@@ -1598,23 +1693,7 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
 
   llvm::Constant *Fn = NULL;
   if (CGM.ReturnTypeUsesSRet(FnInfo)) {
-    if (!IsSuper) {
-      bool nullCheckAlreadyDone = false;
-      // We have already done this computation once and flag could have been
-      // passed down. But such cases are extremely rare and we do this lazily,
-      // instead of absorbing cost of passing down a flag for all cases.
-      if (CGM.getLangOptions().ObjCAutoRefCount && Method)
-        for (ObjCMethodDecl::param_const_iterator i = Method->param_begin(), 
-             e = Method->param_end(); i != e; ++i) {
-          if ((*i)->hasAttr<NSConsumedAttr>()) {
-            nullCheckAlreadyDone = true;
-            break;
-          } 
-        }
-      if (!nullCheckAlreadyDone)
-        nullReturn.init(CGF, Arg0);
-    }
-    
+    if (!IsSuper) nullReturn.init(CGF, Arg0);
     Fn = (ObjCABI == 2) ?  ObjCTypes.getSendStretFn2(IsSuper)
       : ObjCTypes.getSendStretFn(IsSuper);
   } else if (CGM.ReturnTypeUsesFPRet(ResultType)) {
@@ -1627,9 +1706,24 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
     Fn = (ObjCABI == 2) ? ObjCTypes.getSendFn2(IsSuper)
       : ObjCTypes.getSendFn(IsSuper);
   }
+  
+  bool requiresnullCheck = false;
+  if (CGM.getLangOptions().ObjCAutoRefCount && Method)
+    for (ObjCMethodDecl::param_const_iterator i = Method->param_begin(),
+         e = Method->param_end(); i != e; ++i) {
+      const ParmVarDecl *ParamDecl = (*i);
+      if (ParamDecl->hasAttr<NSConsumedAttr>()) {
+        if (!nullReturn.NullBB)
+          nullReturn.init(CGF, Arg0);
+        requiresnullCheck = true;
+        break;
+      }
+    }
+  
   Fn = llvm::ConstantExpr::getBitCast(Fn, llvm::PointerType::getUnqual(FTy));
   RValue rvalue = CGF.EmitCall(FnInfo, Fn, Return, ActualArgs);
-  return nullReturn.complete(CGF, rvalue, ResultType);
+  return nullReturn.complete(CGF, rvalue, ResultType, CallArgs,
+                             requiresnullCheck ? Method : 0);
 }
 
 static Qualifiers::GC GetGCAttrTypeForType(ASTContext &Ctx, QualType FQT) {
@@ -2139,7 +2233,7 @@ void CGObjCMac::GenerateCategory(const ObjCCategoryImplDecl *OCD) {
   const ObjCCategoryDecl *Category =
     Interface->FindCategoryDeclaration(OCD->getIdentifier());
 
-  llvm::SmallString<256> ExtName;
+  SmallString<256> ExtName;
   llvm::raw_svector_ostream(ExtName) << Interface->getName() << '_'
                                      << OCD->getName();
 
@@ -2582,7 +2676,7 @@ llvm::Constant *CGObjCMac::EmitMethodList(Twine Name,
 
 llvm::Function *CGObjCCommonMac::GenerateMethod(const ObjCMethodDecl *OMD,
                                                 const ObjCContainerDecl *CD) {
-  llvm::SmallString<256> Name;
+  SmallString<256> Name;
   GetNameForMethod(OMD, CD, Name);
 
   CodeGenTypes &Types = CGM.getTypes();
@@ -3625,8 +3719,8 @@ llvm::Constant *CGObjCCommonMac::GetClassName(IdentifierInfo *Ident) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_CLASS_NAME_",
-                          llvm::ConstantArray::get(VMContext,
-                                                   Ident->getNameStart()),
+                              llvm::ConstantDataArray::getString(VMContext,
+                                                         Ident->getNameStart()),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_classname,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -3834,7 +3928,7 @@ void CGObjCCommonMac::BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
 /// the given argument BitMap string container. Routine reads
 /// two containers, IvarsInfo and SkipIvars which are assumed to be
 /// filled already by the caller.
-llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string& BitMap) {
+llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string &BitMap) {
   unsigned int WordsToScan, WordsToSkip;
   llvm::Type *PtrTy = llvm::Type::getInt8PtrTy(VMContext);
   
@@ -3951,7 +4045,7 @@ llvm::Constant *CGObjCCommonMac::BuildIvarLayoutBitmap(std::string& BitMap) {
   
   llvm::GlobalVariable * Entry =
   CreateMetadataVar("\01L_OBJC_CLASS_NAME_",
-                    llvm::ConstantArray::get(VMContext, BitMap.c_str()),
+                    llvm::ConstantDataArray::getString(VMContext, BitMap,false),
                     ((ObjCABI == 2) ?
                      "__TEXT,__objc_classname,cstring_literals" :
                      "__TEXT,__cstring,cstring_literals"),
@@ -4040,7 +4134,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarName(Selector Sel) {
   // FIXME: Avoid std::string copying.
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_NAME_",
-                        llvm::ConstantArray::get(VMContext, Sel.getAsString()),
+               llvm::ConstantDataArray::getString(VMContext, Sel.getAsString()),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methname,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4062,7 +4156,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarType(const FieldDecl *Field) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_TYPE_",
-                              llvm::ConstantArray::get(VMContext, TypeStr),
+                         llvm::ConstantDataArray::getString(VMContext, TypeStr),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methtype,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4083,7 +4177,7 @@ llvm::Constant *CGObjCCommonMac::GetMethodVarType(const ObjCMethodDecl *D,
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_METH_VAR_TYPE_",
-                              llvm::ConstantArray::get(VMContext, TypeStr),
+                         llvm::ConstantDataArray::getString(VMContext, TypeStr),
                               ((ObjCABI == 2) ?
                                "__TEXT,__objc_methtype,cstring_literals" :
                                "__TEXT,__cstring,cstring_literals"),
@@ -4098,8 +4192,8 @@ llvm::Constant *CGObjCCommonMac::GetPropertyName(IdentifierInfo *Ident) {
 
   if (!Entry)
     Entry = CreateMetadataVar("\01L_OBJC_PROP_NAME_ATTR_",
-                          llvm::ConstantArray::get(VMContext,
-                                                   Ident->getNameStart()),
+                        llvm::ConstantDataArray::getString(VMContext,
+                                                       Ident->getNameStart()),
                               "__TEXT,__cstring,cstring_literals",
                               1, true);
 
@@ -4157,7 +4251,7 @@ void CGObjCMac::FinishModule() {
   //
   // FIXME: It would be nice if we had an LLVM construct for this.
   if (!LazySymbols.empty() || !DefinedSymbols.empty()) {
-    llvm::SmallString<256> Asm;
+    SmallString<256> Asm;
     Asm += CGM.getModule().getModuleInlineAsm();
     if (!Asm.empty() && Asm.back() != '\n')
       Asm += '\n';
@@ -5158,7 +5252,7 @@ void CGObjCNonFragileABIMac::GenerateCategory(const ObjCCategoryImplDecl *OCD) {
   const ObjCCategoryDecl *Category =
     Interface->FindCategoryDeclaration(OCD->getIdentifier());
   if (Category) {
-    llvm::SmallString<256> ExtName;
+    SmallString<256> ExtName;
     llvm::raw_svector_ostream(ExtName) << Interface->getName() << "_$_"
                                        << OCD->getName();
     Values[4] = EmitProtocolList("\01l_OBJC_CATEGORY_PROTOCOLS_$_"
@@ -5540,7 +5634,7 @@ CGObjCNonFragileABIMac::EmitProtocolList(Twine Name,
     return llvm::Constant::getNullValue(ObjCTypes.ProtocolListnfABIPtrTy);
 
   // FIXME: We shouldn't need to do this lookup here, should we?
-  llvm::SmallString<256> TmpName;
+  SmallString<256> TmpName;
   Name.toVector(TmpName);
   llvm::GlobalVariable *GV =
     CGM.getModule().getGlobalVariable(TmpName.str(), true);
@@ -5727,6 +5821,20 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
     messageRef->setAlignment(16);
     messageRef->setSection("__DATA, __objc_msgrefs, coalesced");
   }
+  
+  bool requiresnullCheck = false;
+  if (CGM.getLangOptions().ObjCAutoRefCount && method)
+    for (ObjCMethodDecl::param_const_iterator i = method->param_begin(),
+         e = method->param_end(); i != e; ++i) {
+      const ParmVarDecl *ParamDecl = (*i);
+      if (ParamDecl->hasAttr<NSConsumedAttr>()) {
+        if (!nullReturn.NullBB)
+          nullReturn.init(CGF, arg0);
+        requiresnullCheck = true;
+        break;
+      }
+    }
+  
   llvm::Value *mref =
     CGF.Builder.CreateBitCast(messageRef, ObjCTypes.MessageRefPtrTy);
 
@@ -5744,7 +5852,8 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
                                      llvm::PointerType::getUnqual(fnType));
 
   RValue result = CGF.EmitCall(fnInfo, callee, returnSlot, args);
-  return nullReturn.complete(CGF, result, resultType);
+  return nullReturn.complete(CGF, result, resultType, formalArgs, 
+                             requiresnullCheck ? method : 0);
 }
 
 /// Generate code for a message send expression in the nonfragile abi.
