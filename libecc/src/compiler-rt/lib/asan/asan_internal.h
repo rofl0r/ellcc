@@ -31,6 +31,9 @@ typedef __int16          int16_t;
 typedef __int32          int32_t;
 typedef __int64          int64_t;
 
+extern "C" void* _ReturnAddress(void);
+# pragma intrinsic(_ReturnAddress)
+
 # define ALIAS(x)   // TODO(timurrrr): do we need this on Windows?
 # define ALIGNED(x) __declspec(align(x))
 # define NOINLINE __declspec(noinline)
@@ -54,6 +57,24 @@ typedef __int64          int64_t;
 #else
 #define __WORDSIZE 32
 #endif
+#endif
+
+#if defined(__linux__)
+# define ASAN_LINUX   1
+#else
+# define ASAN_LINUX   0
+#endif
+
+#if defined(__APPLE__)
+# define ASAN_MAC     1
+#else
+# define ASAN_MAC     0
+#endif
+
+#if defined(_WIN32)
+# define ASAN_WINDOWS 1
+#else
+# define ASAN_WINDOWS 0
 #endif
 
 #if !defined(__has_feature)
@@ -129,7 +150,7 @@ uintptr_t GetThreadSelf();
 int AtomicInc(int *a);
 
 // Wrapper for TLS/TSD.
-void AsanTSDInit();
+void AsanTSDInit(void (*destructor)(void *tsd));
 void *AsanTSDGet();
 void AsanTSDSet(void *tsd);
 
@@ -142,7 +163,7 @@ size_t ReadFileToBuffer(const char *file_name, char **buff,
 
 // asan_printf.cc
 void RawWrite(const char *buffer);
-int SNPrint(char *buffer, size_t length, const char *format, ...);
+int SNPrintf(char *buffer, size_t length, const char *format, ...);
 void Printf(const char *format, ...);
 int SScanf(const char *str, const char *format, ...);
 void Report(const char *format, ...);
@@ -212,12 +233,21 @@ const size_t kPageSizeBits = 12;
 const size_t kPageSize = 1UL << kPageSizeBits;
 
 #ifndef _WIN32
-#define GET_CALLER_PC() (uintptr_t)__builtin_return_address(0)
-#define GET_CURRENT_FRAME() (uintptr_t)__builtin_frame_address(0)
+const size_t kMmapGranularity = kPageSize;
+# define GET_CALLER_PC() (uintptr_t)__builtin_return_address(0)
+# define GET_CURRENT_FRAME() (uintptr_t)__builtin_frame_address(0)
 #else
-// TODO(timurrrr): implement.
-#define GET_CALLER_PC() (uintptr_t)0
-#define GET_CURRENT_FRAME() (uintptr_t)0
+const size_t kMmapGranularity = 1UL << 16;
+# define GET_CALLER_PC() (uintptr_t)_ReturnAddress()
+// CaptureStackBackTrace doesn't need to know BP on Windows.
+// FIXME: This macro is still used when printing error reports though it's not
+// clear if the BP value is needed in the ASan reports on Windows.
+# define GET_CURRENT_FRAME() (uintptr_t)0xDEADBEEF
+
+# ifndef ASAN_USE_EXTERNAL_SYMBOLIZER
+#  define ASAN_USE_EXTERNAL_SYMBOLIZER __asan::WinSymbolize
+bool WinSymbolize(const void *addr, char *out_buffer, int buffer_size);
+# endif
 #endif
 
 #define GET_BP_PC_SP \

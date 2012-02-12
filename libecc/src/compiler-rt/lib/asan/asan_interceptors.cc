@@ -21,74 +21,26 @@
 #include "asan_stack.h"
 #include "asan_stats.h"
 #include "asan_thread_registry.h"
+#include "interception/interception.h"
 
 #include <new>
 #include <ctype.h>
 
 #ifndef _WIN32
-#include <dlfcn.h>
-#include <pthread.h>
+# include <pthread.h>
+#else
+// FIXME: remove when we start intercepting on Windows. Currently it's needed to
+// define memset/memcpy intrinsics.
+# include <intrin.h>
 #endif
 
-// To replace weak system functions on Linux we just need to declare functions
-// with same names in our library and then obtain the real function pointers
-// using dlsym(). This is not so on Mac OS, where the two-level namespace makes
-// our replacement functions invisible to other libraries. This may be overcomed
-// using the DYLD_FORCE_FLAT_NAMESPACE, but some errors loading the shared
-// libraries in Chromium were noticed when doing so.
-// Instead we use mach_override, a handy framework for patching functions at
-// runtime. To avoid possible name clashes, our replacement functions have
-// the "wrap_" prefix on Mac.
-//
-// After interception, the calls to system functions will be substituted by
-// calls to our interceptors. We store pointers to system function f()
-// in __asan::real_f().
 #if defined(__APPLE__)
-// Include the declarations of the original functions.
+// FIXME(samsonov): Gradually replace system headers with declarations of
+// intercepted functions.
 #include <signal.h>
 #include <string.h>
 #include <strings.h>
-
-#include "mach_override/mach_override.h"
-
-#define OVERRIDE_FUNCTION(oldfunc, newfunc)                                   \
-  do {CHECK(0 == __asan_mach_override_ptr_custom((void*)(oldfunc),            \
-                                                 (void*)(newfunc),            \
-                                                 (void**)&real_##oldfunc,     \
-                                                 __asan_allocate_island,      \
-                                                 __asan_deallocate_island));  \
-  CHECK(real_##oldfunc != NULL);   } while (0)
-
-#define OVERRIDE_FUNCTION_IF_EXISTS(oldfunc, newfunc)               \
-  do { __asan_mach_override_ptr_custom((void*)(oldfunc),            \
-                                       (void*)(newfunc),            \
-                                       (void**)&real_##oldfunc,     \
-                                       __asan_allocate_island,      \
-                                       __asan_deallocate_island);   \
-  } while (0)
-
-#define INTERCEPT_FUNCTION(func)                                        \
-  OVERRIDE_FUNCTION(func, WRAP(func))
-
-#define INTERCEPT_FUNCTION_IF_EXISTS(func)                              \
-  OVERRIDE_FUNCTION_IF_EXISTS(func, WRAP(func))
-
-#elif defined(_WIN32)
-// TODO(timurrrr): change these macros once we decide how to intercept
-// functions on Windows.
-#define INTERCEPT_FUNCTION(func)                                        \
-  do { } while (0)
-
-#define INTERCEPT_FUNCTION_IF_EXISTS(func)                              \
-  do { } while (0)
-
-#else  // __linux__
-#define INTERCEPT_FUNCTION(func)                                        \
-  CHECK((real_##func = (func##_f)dlsym(RTLD_NEXT, #func)));
-
-#define INTERCEPT_FUNCTION_IF_EXISTS(func)                              \
-  do { real_##func = (func##_f)dlsym(RTLD_NEXT, #func); } while (0)
-#endif
+#endif  // __APPLE__
 
 namespace __asan {
 
@@ -159,8 +111,8 @@ size_t internal_strlen(const char *s) {
 
 size_t internal_strnlen(const char *s, size_t maxlen) {
 #ifndef __APPLE__
-  if (real_strnlen != NULL) {
-    return real_strnlen(s, maxlen);
+  if (REAL(strnlen) != NULL) {
+    return REAL(strnlen)(s, maxlen);
   }
 #endif
   size_t i = 0;
@@ -264,12 +216,12 @@ INTERCEPTOR(int, pthread_create, pthread_t *thread,
   int current_tid = asanThreadRegistry().GetCurrentTidOrMinusOne();
   AsanThread *t = AsanThread::Create(current_tid, start_routine, arg, &stack);
   asanThreadRegistry().RegisterThread(t);
-  return real_pthread_create(thread, attr, asan_thread_start, t);
+  return REAL(pthread_create)(thread, attr, asan_thread_start, t);
 }
 
 INTERCEPTOR(void*, signal, int signum, void *handler) {
   if (!AsanInterceptsSignal(signum)) {
-    return real_signal(signum, handler);
+    return REAL(signal)(signum, handler);
   }
   return NULL;
 }
@@ -277,35 +229,25 @@ INTERCEPTOR(void*, signal, int signum, void *handler) {
 INTERCEPTOR(int, sigaction, int signum, const struct sigaction *act,
                             struct sigaction *oldact) {
   if (!AsanInterceptsSignal(signum)) {
-    return real_sigaction(signum, act, oldact);
+    return REAL(sigaction)(signum, act, oldact);
   }
   return 0;
 }
 #endif  // _WIN32
 
-
-static void UnpoisonStackFromHereToTop() {
-  int local_stack;
-  AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
-  CHECK(curr_thread);
-  uintptr_t top = curr_thread->stack_top();
-  uintptr_t bottom = ((uintptr_t)&local_stack - kPageSize) & ~(kPageSize-1);
-  PoisonShadow(bottom, top - bottom, 0);
-}
-
 INTERCEPTOR(void, longjmp, void *env, int val) {
-  UnpoisonStackFromHereToTop();
-  real_longjmp(env, val);
+  __asan_handle_no_return();
+  REAL(longjmp)(env, val);
 }
 
 INTERCEPTOR(void, _longjmp, void *env, int val) {
-  UnpoisonStackFromHereToTop();
-  real__longjmp(env, val);
+  __asan_handle_no_return();
+  REAL(_longjmp)(env, val);
 }
 
 INTERCEPTOR(void, siglongjmp, void *env, int val) {
-  UnpoisonStackFromHereToTop();
-  real_siglongjmp(env, val);
+  __asan_handle_no_return();
+  REAL(siglongjmp)(env, val);
 }
 
 #if ASAN_HAS_EXCEPTIONS == 1
@@ -314,9 +256,9 @@ extern "C" void __cxa_throw(void *a, void *b, void *c);
 #endif  // __APPLE__
 
 INTERCEPTOR(void, __cxa_throw, void *a, void *b, void *c) {
-  CHECK(&real___cxa_throw);
-  UnpoisonStackFromHereToTop();
-  real___cxa_throw(a, b, c);
+  CHECK(REAL(__cxa_throw));
+  __asan_handle_no_return();
+  REAL(__cxa_throw)(a, b, c);
 }
 #endif
 
@@ -386,7 +328,7 @@ INTERCEPTOR(void*, memcpy, void *to, const void *from, size_t size) {
   // memcpy is called during __asan_init() from the internals
   // of printf(...).
   if (asan_init_is_running) {
-    return real_memcpy(to, from, size);
+    return REAL(memcpy)(to, from, size);
   }
   ENSURE_ASAN_INITED();
   if (FLAG_replace_intrin) {
@@ -398,7 +340,7 @@ INTERCEPTOR(void*, memcpy, void *to, const void *from, size_t size) {
     ASAN_WRITE_RANGE(from, size);
     ASAN_READ_RANGE(to, size);
   }
-  return real_memcpy(to, from, size);
+  return REAL(memcpy)(to, from, size);
 }
 
 INTERCEPTOR(void*, memmove, void *to, const void *from, size_t size) {
@@ -407,26 +349,26 @@ INTERCEPTOR(void*, memmove, void *to, const void *from, size_t size) {
     ASAN_WRITE_RANGE(from, size);
     ASAN_READ_RANGE(to, size);
   }
-  return real_memmove(to, from, size);
+  return REAL(memmove)(to, from, size);
 }
 
 INTERCEPTOR(void*, memset, void *block, int c, size_t size) {
   // memset is called inside INTERCEPT_FUNCTION on Mac.
   if (asan_init_is_running) {
-    return real_memset(block, c, size);
+    return REAL(memset)(block, c, size);
   }
   ENSURE_ASAN_INITED();
   if (FLAG_replace_intrin) {
     ASAN_WRITE_RANGE(block, size);
   }
-  return real_memset(block, c, size);
+  return REAL(memset)(block, c, size);
 }
 
 INTERCEPTOR(char*, strchr, const char *str, int c) {
   ENSURE_ASAN_INITED();
-  char *result = real_strchr(str, c);
+  char *result = REAL(strchr)(str, c);
   if (FLAG_replace_str) {
-    size_t bytes_read = (result ? result - str : real_strlen(str)) + 1;
+    size_t bytes_read = (result ? result - str : REAL(strlen)(str)) + 1;
     ASAN_READ_RANGE(str, bytes_read);
   }
   return result;
@@ -456,16 +398,16 @@ INTERCEPTOR(int, strcasecmp, const char *s1, const char *s2) {
 INTERCEPTOR(char*, strcat, char *to, const char *from) {  // NOLINT
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t from_length = real_strlen(from);
+    size_t from_length = REAL(strlen)(from);
     ASAN_READ_RANGE(from, from_length + 1);
     if (from_length > 0) {
-      size_t to_length = real_strlen(to);
+      size_t to_length = REAL(strlen)(to);
       ASAN_READ_RANGE(to, to_length);
       ASAN_WRITE_RANGE(to + to_length, from_length + 1);
       CHECK_RANGES_OVERLAP("strcat", to, to_length + 1, from, from_length + 1);
     }
   }
-  return real_strcat(to, from);
+  return REAL(strcat)(to, from);  // NOLINT
 }
 
 INTERCEPTOR(int, strcmp, const char *s1, const char *s2) {
@@ -488,35 +430,35 @@ INTERCEPTOR(char*, strcpy, char *to, const char *from) {  // NOLINT
   // strcpy is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
   if (asan_init_is_running) {
-    return real_strcpy(to, from);
+    return REAL(strcpy)(to, from);  // NOLINT
   }
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t from_size = real_strlen(from) + 1;
+    size_t from_size = REAL(strlen)(from) + 1;
     CHECK_RANGES_OVERLAP("strcpy", to, from_size, from, from_size);
     ASAN_READ_RANGE(from, from_size);
     ASAN_WRITE_RANGE(to, from_size);
   }
-  return real_strcpy(to, from);
+  return REAL(strcpy)(to, from);  // NOLINT
 }
 
 INTERCEPTOR(char*, strdup, const char *s) {
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t length = real_strlen(s);
+    size_t length = REAL(strlen)(s);
     ASAN_READ_RANGE(s, length + 1);
   }
-  return real_strdup(s);
+  return REAL(strdup)(s);
 }
 
 INTERCEPTOR(size_t, strlen, const char *s) {
   // strlen is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
   if (asan_init_is_running) {
-    return real_strlen(s);
+    return REAL(strlen)(s);
   }
   ENSURE_ASAN_INITED();
-  size_t length = real_strlen(s);
+  size_t length = REAL(strlen)(s);
   if (FLAG_replace_str) {
     ASAN_READ_RANGE(s, length + 1);
   }
@@ -541,7 +483,7 @@ INTERCEPTOR(int, strncmp, const char *s1, const char *s2, size_t size) {
   // strncmp is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
   if (asan_init_is_running) {
-    return real_strncmp(s1, s2, size);
+    return REAL(strncmp)(s1, s2, size);
   }
   unsigned char c1 = 0, c2 = 0;
   size_t i;
@@ -563,13 +505,13 @@ INTERCEPTOR(char*, strncpy, char *to, const char *from, size_t size) {
     ASAN_READ_RANGE(from, from_size);
     ASAN_WRITE_RANGE(to, size);
   }
-  return real_strncpy(to, from, size);
+  return REAL(strncpy)(to, from, size);
 }
 
 #ifndef __APPLE__
 INTERCEPTOR(size_t, strnlen, const char *s, size_t maxlen) {
   ENSURE_ASAN_INITED();
-  size_t length = real_strnlen(s, maxlen);
+  size_t length = REAL(strnlen)(s, maxlen);
   if (FLAG_replace_str) {
     ASAN_READ_RANGE(s, Min(length + 1, maxlen));
   }
@@ -581,12 +523,12 @@ INTERCEPTOR(size_t, strnlen, const char *s, size_t maxlen) {
 namespace __asan {
 void InitializeAsanInterceptors() {
 #ifndef __APPLE__
-  INTERCEPT_FUNCTION(index);
+  CHECK(INTERCEPT_FUNCTION(index));
 #else
-  OVERRIDE_FUNCTION(index, WRAP(strchr));
+  CHECK(OVERRIDE_FUNCTION(index, WRAP(strchr)));
 #endif
-  INTERCEPT_FUNCTION(memcmp);
-  INTERCEPT_FUNCTION(memmove);
+  CHECK(INTERCEPT_FUNCTION(memcmp));
+  CHECK(INTERCEPT_FUNCTION(memmove));
 #ifdef __APPLE__
   // Wrap memcpy() on OS X 10.6 only, because on 10.7 memcpy() and memmove()
   // are resolved into memmove$VARIANT$sse42.
@@ -594,44 +536,51 @@ void InitializeAsanInterceptors() {
   // TODO(glider): need to check dynamically that memcpy() and memmove() are
   // actually the same function.
   if (GetMacosVersion() == MACOS_VERSION_SNOW_LEOPARD) {
-    INTERCEPT_FUNCTION(memcpy);
+    CHECK(INTERCEPT_FUNCTION(memcpy));
   } else {
-    real_memcpy = real_memmove;
+    REAL(memcpy) = REAL(memmove);
   }
 #else
   // Always wrap memcpy() on non-Darwin platforms.
-  INTERCEPT_FUNCTION(memcpy);
+  CHECK(INTERCEPT_FUNCTION(memcpy));
 #endif
-  INTERCEPT_FUNCTION(memset);
-  INTERCEPT_FUNCTION(strcasecmp);
-  INTERCEPT_FUNCTION(strcat);  // NOLINT
-  INTERCEPT_FUNCTION(strchr);
-  INTERCEPT_FUNCTION(strcmp);
-  INTERCEPT_FUNCTION(strcpy);  // NOLINT
-  INTERCEPT_FUNCTION(strdup);
-  INTERCEPT_FUNCTION(strlen);
-  INTERCEPT_FUNCTION(strncasecmp);
-  INTERCEPT_FUNCTION(strncmp);
-  INTERCEPT_FUNCTION(strncpy);
+  CHECK(INTERCEPT_FUNCTION(memset));
+  CHECK(INTERCEPT_FUNCTION(strcasecmp));
+  CHECK(INTERCEPT_FUNCTION(strcat));  // NOLINT
+  CHECK(INTERCEPT_FUNCTION(strchr));
+  CHECK(INTERCEPT_FUNCTION(strcmp));
+  CHECK(INTERCEPT_FUNCTION(strcpy));  // NOLINT
+  CHECK(INTERCEPT_FUNCTION(strdup));
+  CHECK(INTERCEPT_FUNCTION(strlen));
+  CHECK(INTERCEPT_FUNCTION(strncasecmp));
+  CHECK(INTERCEPT_FUNCTION(strncmp));
+  CHECK(INTERCEPT_FUNCTION(strncpy));
 
-  INTERCEPT_FUNCTION(sigaction);
-  INTERCEPT_FUNCTION(signal);
-  INTERCEPT_FUNCTION(longjmp);
-  INTERCEPT_FUNCTION(_longjmp);
-  INTERCEPT_FUNCTION_IF_EXISTS(__cxa_throw);
-  INTERCEPT_FUNCTION(pthread_create);
+  CHECK(INTERCEPT_FUNCTION(sigaction));
+  CHECK(INTERCEPT_FUNCTION(signal));
+  CHECK(INTERCEPT_FUNCTION(longjmp));
+  CHECK(INTERCEPT_FUNCTION(_longjmp));
+  INTERCEPT_FUNCTION(__cxa_throw);
+  CHECK(INTERCEPT_FUNCTION(pthread_create));
+
+#ifdef _WIN32
+  // FIXME: We don't intercept properly on Windows yet, so use the original
+  // functions for now.
+  REAL(memcpy) = memcpy;
+  REAL(memset) = memset;
+#endif
 
 #ifdef __APPLE__
-  INTERCEPT_FUNCTION(dispatch_async_f);
-  INTERCEPT_FUNCTION(dispatch_sync_f);
-  INTERCEPT_FUNCTION(dispatch_after_f);
-  INTERCEPT_FUNCTION(dispatch_barrier_async_f);
-  INTERCEPT_FUNCTION(dispatch_group_async_f);
+  CHECK(INTERCEPT_FUNCTION(dispatch_async_f));
+  CHECK(INTERCEPT_FUNCTION(dispatch_sync_f));
+  CHECK(INTERCEPT_FUNCTION(dispatch_after_f));
+  CHECK(INTERCEPT_FUNCTION(dispatch_barrier_async_f));
+  CHECK(INTERCEPT_FUNCTION(dispatch_group_async_f));
   // We don't need to intercept pthread_workqueue_additem_np() to support the
   // libdispatch API, but it helps us to debug the unsupported functions. Let's
   // intercept it only during verbose runs.
   if (FLAG_v >= 2) {
-    INTERCEPT_FUNCTION(pthread_workqueue_additem_np);
+    CHECK(INTERCEPT_FUNCTION(pthread_workqueue_additem_np));
   }
   // Normally CFStringCreateCopy should not copy constant CF strings.
   // Replacing the default CFAllocator causes constant strings to be copied
@@ -640,15 +589,15 @@ void InitializeAsanInterceptors() {
   // http://code.google.com/p/address-sanitizer/issues/detail?id=10
   // Until this problem is fixed we need to check that the string is
   // non-constant before calling CFStringCreateCopy.
-  INTERCEPT_FUNCTION(CFStringCreateCopy);
+  CHECK(INTERCEPT_FUNCTION(CFStringCreateCopy));
 #else
   // On Darwin siglongjmp tailcalls longjmp, so we don't want to intercept it
   // there.
-  INTERCEPT_FUNCTION(siglongjmp);
+  CHECK(INTERCEPT_FUNCTION(siglongjmp));
 #endif
 
 #ifndef __APPLE__
-  INTERCEPT_FUNCTION(strnlen);
+  CHECK(INTERCEPT_FUNCTION(strnlen));
 #endif
   if (FLAG_v > 0) {
     Printf("AddressSanitizer: libc interceptors initialized\n");

@@ -148,7 +148,7 @@ static bool DescribeStackAddress(uintptr_t addr, uintptr_t access_size) {
   // where alloc_i looks like "offset size len ObjectName ".
   CHECK(frame_descr);
   // Report the function name and the offset.
-  const char *name_end = real_strchr(frame_descr, ' ');
+  const char *name_end = REAL(strchr)(frame_descr, ' ');
   CHECK(name_end);
   buf[0] = 0;
   internal_strncat(buf, frame_descr,
@@ -281,6 +281,15 @@ int __asan_set_error_exit_code(int exit_code) {
   int old = FLAG_exitcode;
   FLAG_exitcode = exit_code;
   return old;
+}
+
+void __asan_handle_no_return() {
+  int local_stack;
+  AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
+  CHECK(curr_thread);
+  uintptr_t top = curr_thread->stack_top();
+  uintptr_t bottom = ((uintptr_t)&local_stack - kPageSize) & ~(kPageSize-1);
+  PoisonShadow(bottom, top - bottom, 0);
 }
 
 void __asan_report_error(uintptr_t pc, uintptr_t bp, uintptr_t sp,
@@ -456,8 +465,8 @@ void __asan_init() {
 
   {
     if (kLowShadowBeg != kLowShadowEnd) {
-      // mmap the low shadow plus one page.
-      ReserveShadowMemoryRange(kLowShadowBeg - kPageSize, kLowShadowEnd);
+      // mmap the low shadow plus at least one page.
+      ReserveShadowMemoryRange(kLowShadowBeg - kMmapGranularity, kLowShadowEnd);
     }
     // mmap the high shadow.
     ReserveShadowMemoryRange(kHighShadowBeg, kHighShadowEnd);

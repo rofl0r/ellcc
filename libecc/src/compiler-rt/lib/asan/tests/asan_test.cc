@@ -564,7 +564,11 @@ void DoubleFree() {
 }
 
 TEST(AddressSanitizer, DoubleFreeTest) {
-  EXPECT_DEATH(DoubleFree(), "ERROR: AddressSanitizer attempting double-free");
+  EXPECT_DEATH(DoubleFree(), ASAN_PCRE_DOTALL
+               "ERROR: AddressSanitizer attempting double-free"
+               ".*is located 0 bytes inside of 400-byte region"
+               ".*freed by thread T0 here"
+               ".*previously allocated by thread T0 here");
 }
 
 template<int kSize>
@@ -1634,6 +1638,18 @@ TEST(AddressSanitizer, ThreadedStressStackReuseTest) {
   }
   for (int i = 0; i < kNumThreads; i++) {
     pthread_join(t[i], 0);
+  }
+}
+
+static void *PthreadExit(void *a) {
+  pthread_exit(0);
+}
+
+TEST(AddressSanitizer, PthreadExitTest) {
+  pthread_t t;
+  for (int i = 0; i < 1000; i++) {
+    pthread_create(&t, 0, PthreadExit, 0);
+    pthread_join(t, 0);
   }
 }
 

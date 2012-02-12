@@ -118,7 +118,7 @@ size_t AsanWrite(int fd, const void *buf, size_t count) {
 }
 
 int AsanOpenReadonly(const char* filename) {
-  return open(filename, O_RDONLY);
+  return syscall(__NR_open, filename, O_RDONLY);
 }
 
 // Like getenv, but reads env directly from /proc and does not use libc.
@@ -131,7 +131,7 @@ const char* AsanGetEnv(const char* name) {
     inited = true;
     size_t environ_size;
     len = ReadFileToBuffer("/proc/self/environ",
-                           &environ, &environ_size, 1 << 20);
+                           &environ, &environ_size, 1 << 26);
   }
   if (!environ || len == 0) return NULL;
   size_t namelen = internal_strlen(name);
@@ -154,13 +154,13 @@ size_t AsanRead(int fd, void *buf, size_t count) {
 }
 
 int AsanClose(int fd) {
-  return close(fd);
+  return syscall(__NR_close, fd);
 }
 
 AsanProcMaps::AsanProcMaps() {
   proc_self_maps_buff_len_ =
       ReadFileToBuffer("/proc/self/maps", &proc_self_maps_buff_,
-                       &proc_self_maps_buff_mmaped_size_, 1 << 20);
+                       &proc_self_maps_buff_mmaped_size_, 1 << 26);
   CHECK(proc_self_maps_buff_len_ > 0);
   // AsanWrite(2, proc_self_maps_buff_, proc_self_maps_buff_len_);
   Reset();
@@ -241,7 +241,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info *info,
     data->filename[path_len] = 0;
   } else {
     CHECK(info->dlpi_name);
-    real_strncpy(data->filename, info->dlpi_name, data->filename_size);
+    REAL(strncpy)(data->filename, info->dlpi_name, data->filename_size);
   }
   data->offset = data->addr - info->dlpi_addr;
   return 1;

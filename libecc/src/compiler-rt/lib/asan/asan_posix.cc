@@ -35,10 +35,10 @@ static void MaybeInstallSigaction(int signum,
   if (!AsanInterceptsSignal(signum))
     return;
   struct sigaction sigact;
-  real_memset(&sigact, 0, sizeof(sigact));
+  REAL(memset)(&sigact, 0, sizeof(sigact));
   sigact.sa_sigaction = handler;
   sigact.sa_flags = SA_SIGINFO;
-  CHECK(0 == real_sigaction(signum, &sigact, 0));
+  CHECK(0 == REAL(sigaction)(signum, &sigact, 0));
 }
 
 static void     ASAN_OnSIGSEGV(int, siginfo_t *siginfo, void *context) {
@@ -97,10 +97,10 @@ int AtomicInc(int *a) {
 
 static pthread_key_t tsd_key;
 static bool tsd_key_inited = false;
-void AsanTSDInit() {
+void AsanTSDInit(void (*destructor)(void *tsd)) {
   CHECK(!tsd_key_inited);
   tsd_key_inited = true;
-  CHECK(0 == pthread_key_create(&tsd_key, 0));
+  CHECK(0 == pthread_key_create(&tsd_key, destructor));
 }
 
 void *AsanTSDGet() {
