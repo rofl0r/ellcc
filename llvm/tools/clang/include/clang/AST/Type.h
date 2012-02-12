@@ -14,9 +14,11 @@
 #ifndef LLVM_CLANG_AST_TYPE_H
 #define LLVM_CLANG_AST_TYPE_H
 
+#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/ExceptionSpecificationType.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/Linkage.h"
+#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Visibility.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/TemplateName.h"
@@ -92,7 +94,6 @@ namespace clang {
   class ExtQuals;
   class ExtQualsTypeCommonBase;
   struct PrintingPolicy;
-  class PartialDiagnostic;
 
   template <typename> class CanQual;
   typedef CanQual<Type> CanQualType;
@@ -235,7 +236,7 @@ public:
     qs.removeObjCGCAttr();
     return qs;
   }
-  Qualifiers withoutObjCGLifetime() const {
+  Qualifiers withoutObjCLifetime() const {
     Qualifiers qs = *this;
     qs.removeObjCLifetime();
     return qs;
@@ -251,7 +252,8 @@ public:
   void removeObjCLifetime() { setObjCLifetime(OCL_None); }
   void addObjCLifetime(ObjCLifetime type) {
     assert(type);
-    setObjCLifetime(type);
+    assert(!hasObjCLifetime());
+    Mask |= (type << LifetimeShift);
   }
 
   /// True if the lifetime is neither None or ExplicitNone.
@@ -446,7 +448,32 @@ enum CallingConv {
   CC_AAPCS_VFP    // __attribute__((pcs("aapcs-vfp")))
 };
 
-typedef std::pair<const Type*, Qualifiers> SplitQualType;
+/// A std::pair-like structure for storing a qualified type split
+/// into its local qualifiers and its locally-unqualified type.
+struct SplitQualType {
+  /// The locally-unqualified type.
+  const Type *Ty;
+
+  /// The local qualifiers.
+  Qualifiers Quals;
+
+  SplitQualType() : Ty(0), Quals() {}
+  SplitQualType(const Type *ty, Qualifiers qs) : Ty(ty), Quals(qs) {}
+
+  SplitQualType getSingleStepDesugaredType() const; // end of this file
+
+  // Make llvm::tie work.
+  operator std::pair<const Type *,Qualifiers>() const {
+    return std::pair<const Type *,Qualifiers>(Ty, Quals);
+  }
+
+  friend bool operator==(SplitQualType a, SplitQualType b) {
+    return a.Ty == b.Ty && a.Quals == b.Quals;
+  }
+  friend bool operator!=(SplitQualType a, SplitQualType b) {
+    return a.Ty != b.Ty || a.Quals != b.Quals;
+  }
+};
 
 /// QualType - For efficiency, we don't store CV-qualified types as nodes on
 /// their own: instead each reference to a type stores the qualifiers.  This
@@ -768,7 +795,9 @@ public:
   ///
   /// This routine takes off the first typedef, typeof, etc. If the outer level
   /// of the type is already concrete, it returns it unmodified.
-  QualType getSingleStepDesugaredType(const ASTContext &Context) const;
+  QualType getSingleStepDesugaredType(const ASTContext &Context) const {
+    return getSingleStepDesugaredTypeImpl(*this, Context);
+  }
 
   /// IgnoreParens - Returns the specified type after dropping any
   /// outer-level parentheses.
@@ -790,7 +819,7 @@ public:
     return getAsString(split());
   }
   static std::string getAsString(SplitQualType split) {
-    return getAsString(split.first, split.second);
+    return getAsString(split.Ty, split.Quals);
   }
   static std::string getAsString(const Type *ty, Qualifiers qs);
 
@@ -805,7 +834,7 @@ public:
   }
   static void getAsStringInternal(SplitQualType split, std::string &out,
                                   const PrintingPolicy &policy) {
-    return getAsStringInternal(split.first, split.second, out, policy);
+    return getAsStringInternal(split.Ty, split.Quals, out, policy);
   }
   static void getAsStringInternal(const Type *ty, Qualifiers qs,
                                   std::string &out,
@@ -886,6 +915,8 @@ private:
   static QualType getDesugaredType(QualType T, const ASTContext &Context);
   static SplitQualType getSplitDesugaredType(QualType T);
   static SplitQualType getSplitUnqualifiedTypeImpl(QualType type);
+  static QualType getSingleStepDesugaredTypeImpl(QualType type,
+                                                 const ASTContext &C);
   static QualType IgnoreParens(QualType T);
   static DestructionKind isDestructedTypeImpl(QualType type);
 };
@@ -1166,9 +1197,6 @@ protected:
     /// regparm and the calling convention.
     unsigned ExtInfo : 8;
 
-    /// Whether the function is variadic.  Only used by FunctionProtoType.
-    unsigned Variadic : 1;
-
     /// TypeQuals - Used only by FunctionProtoType, put here to pack with the
     /// other bitfields.
     /// The qualifiers are part of FunctionProtoType because...
@@ -1331,6 +1359,11 @@ public:
   bool isCanonicalUnqualified() const {
     return CanonicalType == QualType(this, 0);
   }
+
+  /// Pull a single level of sugar off of this locally-unqualified type.
+  /// Users should generally prefer SplitQualType::getSingleStepDesugaredType()
+  /// or QualType::getSingleStepDesugaredType(const ASTContext&).
+  QualType getLocallyUnqualifiedSingleStepDesugaredType() const;
 
   /// Types are partitioned into 3 broad categories (C99 6.2.5p1):
   /// object types, function types, and incomplete types.
@@ -2579,7 +2612,7 @@ class FunctionType : public Type {
   };
 
 protected:
-  FunctionType(TypeClass tc, QualType res, bool variadic,
+  FunctionType(TypeClass tc, QualType res,
                unsigned typeQuals, RefQualifierKind RefQualifier,
                QualType Canonical, bool Dependent,
                bool InstantiationDependent,
@@ -2589,11 +2622,9 @@ protected:
            ContainsUnexpandedParameterPack),
       ResultType(res) {
     FunctionTypeBits.ExtInfo = Info.Bits;
-    FunctionTypeBits.Variadic = variadic;
     FunctionTypeBits.TypeQuals = typeQuals;
     FunctionTypeBits.RefQualifier = static_cast<unsigned>(RefQualifier);
   }
-  bool isVariadic() const { return FunctionTypeBits.Variadic; }
   unsigned getTypeQuals() const { return FunctionTypeBits.TypeQuals; }
 
   RefQualifierKind getRefQualifier() const {
@@ -2629,7 +2660,7 @@ public:
 /// no information available about its arguments.
 class FunctionNoProtoType : public FunctionType, public llvm::FoldingSetNode {
   FunctionNoProtoType(QualType Result, QualType Canonical, ExtInfo Info)
-    : FunctionType(FunctionNoProto, Result, false, 0, RQ_None, Canonical,
+    : FunctionType(FunctionNoProto, Result, 0, RQ_None, Canonical,
                    /*Dependent=*/false, /*InstantiationDependent=*/false,
                    Result->isVariablyModifiedType(),
                    /*ContainsUnexpandedParameterPack=*/false, Info) {}
@@ -2667,12 +2698,13 @@ public:
   /// ExtProtoInfo - Extra information about a function prototype.
   struct ExtProtoInfo {
     ExtProtoInfo() :
-      Variadic(false), ExceptionSpecType(EST_None), TypeQuals(0),
-      RefQualifier(RQ_None), NumExceptions(0), Exceptions(0), NoexceptExpr(0),
-      ConsumedArguments(0) {}
+      Variadic(false), HasTrailingReturn(false), ExceptionSpecType(EST_None),
+      TypeQuals(0), RefQualifier(RQ_None), NumExceptions(0), Exceptions(0),
+      NoexceptExpr(0), ConsumedArguments(0) {}
 
     FunctionType::ExtInfo ExtInfo;
     bool Variadic;
+    bool HasTrailingReturn;
     ExceptionSpecificationType ExceptionSpecType;
     unsigned char TypeQuals;
     RefQualifierKind RefQualifier;
@@ -2698,7 +2730,7 @@ private:
                     QualType canonical, const ExtProtoInfo &epi);
 
   /// NumArgs - The number of arguments this function has, not counting '...'.
-  unsigned NumArgs : 19;
+  unsigned NumArgs : 17;
 
   /// NumExceptions - The number of types in the exception spec, if any.
   unsigned NumExceptions : 9;
@@ -2708,6 +2740,12 @@ private:
 
   /// HasAnyConsumedArgs - Whether this function has any consumed arguments.
   unsigned HasAnyConsumedArgs : 1;
+
+  /// Variadic - Whether the function is variadic.
+  unsigned Variadic : 1;
+
+  /// HasTrailingReturn - Whether this function has a trailing return type.
+  unsigned HasTrailingReturn : 1;
 
   // ArgInfo - There is an variable size array after the class in memory that
   // holds the argument types.
@@ -2748,6 +2786,7 @@ public:
     ExtProtoInfo EPI;
     EPI.ExtInfo = getExtInfo();
     EPI.Variadic = isVariadic();
+    EPI.HasTrailingReturn = hasTrailingReturn();
     EPI.ExceptionSpecType = getExceptionSpecType();
     EPI.TypeQuals = static_cast<unsigned char>(getTypeQuals());
     EPI.RefQualifier = getRefQualifier();
@@ -2809,15 +2848,17 @@ public:
     return getNoexceptSpec(Ctx) == NR_Nothrow;
   }
 
-  using FunctionType::isVariadic;
+  bool isVariadic() const { return Variadic; }
 
   /// \brief Determines whether this function prototype contains a
   /// parameter pack at the end.
   ///
   /// A function template whose last parameter is a parameter pack can be
   /// called with an arbitrary number of arguments, much like a variadic
-  /// function. However,
+  /// function.
   bool isTemplateVariadic() const;
+
+  bool hasTrailingReturn() const { return HasTrailingReturn; }
 
   unsigned getTypeQuals() const { return FunctionType::getTypeQuals(); }
 
@@ -2856,6 +2897,9 @@ public:
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
+
+  void printExceptionSpecification(std::string &S, 
+                                   PrintingPolicy Policy) const;
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == FunctionProto;
@@ -4402,6 +4446,13 @@ public:
 
 // Inline function definitions.
 
+inline SplitQualType SplitQualType::getSingleStepDesugaredType() const {
+  SplitQualType desugar =
+    Ty->getLocallyUnqualifiedSingleStepDesugaredType().split();
+  desugar.Quals.addConsistentQualifiers(Quals);
+  return desugar;
+}
+
 inline const Type *QualType::getTypePtr() const {
   return getCommonPtr()->BaseType;
 }
@@ -4486,7 +4537,7 @@ inline QualType QualType::getUnqualifiedType() const {
   if (!getTypePtr()->getCanonicalTypeInternal().hasLocalQualifiers())
     return QualType(getTypePtr(), 0);
 
-  return QualType(getSplitUnqualifiedTypeImpl(*this).first, 0);
+  return QualType(getSplitUnqualifiedTypeImpl(*this).Ty, 0);
 }
 
 inline SplitQualType QualType::getSplitUnqualifiedType() const {
@@ -4798,11 +4849,21 @@ inline const Type *Type::getBaseElementTypeUnsafe() const {
 
 /// Insertion operator for diagnostics.  This allows sending QualType's into a
 /// diagnostic with <<.
-const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB, QualType T);
+inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
+                                           QualType T) {
+  DB.AddTaggedVal(reinterpret_cast<intptr_t>(T.getAsOpaquePtr()),
+                  DiagnosticsEngine::ak_qualtype);
+  return DB;
+}
 
 /// Insertion operator for partial diagnostics.  This allows sending QualType's
 /// into a diagnostic with <<.
-const PartialDiagnostic &operator<<(const PartialDiagnostic &PD, QualType T);
+inline const PartialDiagnostic &operator<<(const PartialDiagnostic &PD,
+                                           QualType T) {
+  PD.AddTaggedVal(reinterpret_cast<intptr_t>(T.getAsOpaquePtr()),
+                  DiagnosticsEngine::ak_qualtype);
+  return PD;
+}
 
 // Helper class template that is used by Type::getAs to ensure that one does
 // not try to look through a qualified type to get to an array type.

@@ -599,6 +599,9 @@ public:
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
+  llvm::DenseMap<const VarDecl *, FieldDecl *> LambdaCaptureFields;
+  FieldDecl *LambdaThisCaptureField;
+
   /// \brief A mapping from NRVO variables to the flags used to indicate
   /// when the NRVO has been applied to this variable.
   llvm::DenseMap<const VarDecl *, llvm::Value *> NRVOFlags;
@@ -1164,7 +1167,8 @@ private:
 
   /// CXXThisDecl - When generating code for a C++ member function,
   /// this will hold the implicit 'this' declaration.
-  ImplicitParamDecl *CXXThisDecl;
+  ImplicitParamDecl *CXXABIThisDecl;
+  llvm::Value *CXXABIThisValue;
   llvm::Value *CXXThisValue;
 
   /// CXXVTTDecl - When generating code for a base object constructor or
@@ -2117,6 +2121,7 @@ public:
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
+  LValue EmitLambdaLValue(const LambdaExpr *E);
   LValue EmitCXXTypeidLValue(const CXXTypeidExpr *E);
 
   LValue EmitObjCMessageExprLValue(const ObjCMessageExpr *E);
@@ -2398,6 +2403,8 @@ public:
   void enterNonTrivialFullExpression(const ExprWithCleanups *E);
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
+
+  void EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Dest);
 
   RValue EmitAtomicExpr(AtomicExpr *E, llvm::Value *Dest = 0);
 

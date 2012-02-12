@@ -1630,7 +1630,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
   llvm::Type *ResultType;
   if (ResultRegTypes.empty())
-    ResultType = llvm::Type::getVoidTy(getLLVMContext());
+    ResultType = VoidTy;
   else if (ResultRegTypes.size() == 1)
     ResultType = ResultRegTypes[0];
   else

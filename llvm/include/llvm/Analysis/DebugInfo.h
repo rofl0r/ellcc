@@ -43,6 +43,7 @@ namespace llvm {
   class DILexicalBlockFile;
   class DIVariable;
   class DIType;
+  class DIObjCProperty;
 
   /// DIDescriptor - A thin wraper around MDNode to access encoded debug info.
   /// This should not be stored in a container, because underly MDNode may
@@ -356,9 +357,13 @@ namespace llvm {
     /// return base type size.
     uint64_t getOriginalTypeSize() const;
 
+    /// getObjCProperty - Return property node, if this ivar is 
+    /// associated with one.
+    MDNode *getObjCProperty() const;
+
     StringRef getObjCPropertyName() const { 
       if (getVersion() > LLVMDebugVersion11)
-	return StringRef();
+        return StringRef();
       return getStringField(10); 
     }
     StringRef getObjCPropertyGetterName() const {

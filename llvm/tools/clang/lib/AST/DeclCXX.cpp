@@ -20,7 +20,6 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/IdentifierTable.h"
-#include "clang/Basic/PartialDiagnostic.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 using namespace clang;
@@ -801,11 +800,7 @@ NotASpecialMember:;
     }
 
     // Record if this field is the first non-literal field or base.
-    // As a slight variation on the standard, we regard mutable members as being
-    // non-literal, since mutating a constexpr variable would break C++11
-    // constant expression semantics.
-    if ((!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType()) ||
-        Field->isMutable())
+    if (!hasNonLiteralTypeFieldsOrBases() && !T->isLiteralType())
       data().HasNonLiteralTypeFieldsOrBases = true;
 
     if (Field->hasInClassInitializer()) {
@@ -973,6 +968,35 @@ bool CXXRecordDecl::isCLike() const {
 
   return isPOD() && data().HasOnlyCMembers;
 }
+
+void CXXRecordDecl::setLambda(LambdaExpr *Lambda) {
+  if (!Lambda)
+    return;
+
+  data().IsLambda = true;
+  getASTContext().Lambdas[this] = Lambda;
+}
+
+void CXXRecordDecl::getCaptureFields(
+       llvm::DenseMap<const VarDecl *, FieldDecl *> &Captures,
+       FieldDecl *&ThisCapture) const {
+  Captures.clear();
+  ThisCapture = 0;
+
+  LambdaExpr *Lambda = getASTContext().Lambdas[this];
+  RecordDecl::field_iterator Field = field_begin();
+  for (LambdaExpr::capture_iterator C = Lambda->capture_begin(), 
+                                 CEnd = Lambda->capture_end();
+       C != CEnd; ++C, ++Field) {
+    if (C->capturesThis()) {
+      ThisCapture = *Field;
+      continue;
+    }
+
+    Captures[C->getCapturedVar()] = *Field;
+  }
+}
+
 
 static CanQualType GetConversionType(ASTContext &Context, NamedDecl *Conv) {
   QualType T;

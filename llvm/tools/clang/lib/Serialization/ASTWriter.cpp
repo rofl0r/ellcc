@@ -29,7 +29,6 @@
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/HeaderSearch.h"
-#include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemStatCache.h"
 #include "clang/Basic/OnDiskHashTable.h"
@@ -186,6 +185,7 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
   for (unsigned I = 0, N = T->getNumArgs(); I != N; ++I)
     Writer.AddTypeRef(T->getArgType(I), Record);
   Record.push_back(T->isVariadic());
+  Record.push_back(T->hasTrailingReturn());
   Record.push_back(T->getTypeQuals());
   Record.push_back(static_cast<unsigned>(T->getRefQualifier()));
   Record.push_back(T->getExceptionSpecType());
@@ -553,6 +553,7 @@ void TypeLocWriter::VisitSubstTemplateTypeParmPackTypeLoc(
 }
 void TypeLocWriter::VisitTemplateSpecializationTypeLoc(
                                            TemplateSpecializationTypeLoc TL) {
+  Writer.AddSourceLocation(TL.getTemplateKeywordLoc(), Record);
   Writer.AddSourceLocation(TL.getTemplateNameLoc(), Record);
   Writer.AddSourceLocation(TL.getLAngleLoc(), Record);
   Writer.AddSourceLocation(TL.getRAngleLoc(), Record);
@@ -565,22 +566,23 @@ void TypeLocWriter::VisitParenTypeLoc(ParenTypeLoc TL) {
   Writer.AddSourceLocation(TL.getRParenLoc(), Record);
 }
 void TypeLocWriter::VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
-  Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
+  Writer.AddSourceLocation(TL.getElaboratedKeywordLoc(), Record);
   Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
 }
 void TypeLocWriter::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
-  Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
+  Writer.AddSourceLocation(TL.getElaboratedKeywordLoc(), Record);
   Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
   Writer.AddSourceLocation(TL.getNameLoc(), Record);
 }
 void TypeLocWriter::VisitDependentTemplateSpecializationTypeLoc(
        DependentTemplateSpecializationTypeLoc TL) {
-  Writer.AddSourceLocation(TL.getKeywordLoc(), Record);
+  Writer.AddSourceLocation(TL.getElaboratedKeywordLoc(), Record);
   Writer.AddNestedNameSpecifierLoc(TL.getQualifierLoc(), Record);
-  Writer.AddSourceLocation(TL.getNameLoc(), Record);
+  Writer.AddSourceLocation(TL.getTemplateKeywordLoc(), Record);
+  Writer.AddSourceLocation(TL.getTemplateNameLoc(), Record);
   Writer.AddSourceLocation(TL.getLAngleLoc(), Record);
   Writer.AddSourceLocation(TL.getRAngleLoc(), Record);
   for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I)
@@ -4499,4 +4501,3 @@ void ASTWriter::AddedObjCPropertyInClassExtension(const ObjCPropertyDecl *Prop,
 
   RewriteDecl(D);
 }
-

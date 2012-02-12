@@ -190,11 +190,11 @@ public:
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   /// In this case, the first MI starts a bundle but is not inside a bundle, the
   /// next 2 MIs are considered "inside" the bundle.
@@ -209,11 +209,11 @@ public:
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   /// The first instruction has the special opcode "BUNDLE". It's not "inside"
   /// a bundle, but the next three MIs are.
@@ -229,6 +229,10 @@ public:
     else
       clearFlag(InsideBundle);
   }
+
+  /// isBundled - Return true if this instruction part of a bundle. This is true
+  /// if either itself or its following instruction is marked "InsideBundle".
+  bool isBundled() const;
 
   /// getDebugLoc - Returns the debug location id of this MachineInstr.
   ///

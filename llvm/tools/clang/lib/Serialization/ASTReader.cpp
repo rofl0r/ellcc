@@ -27,6 +27,7 @@
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/TypeLocVisitor.h"
+#include "clang/Analysis/Support/SaveAndRestore.h"
 #include "clang/Lex/MacroInfo.h"
 #include "clang/Lex/PreprocessingRecord.h"
 #include "clang/Lex/Preprocessor.h"
@@ -3877,6 +3878,7 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
       ParamTypes.push_back(readType(*Loc.F, Record, Idx));
 
     EPI.Variadic = Record[Idx++];
+    EPI.HasTrailingReturn = Record[Idx++];
     EPI.TypeQuals = Record[Idx++];
     EPI.RefQualifier = static_cast<RefQualifierKind>(Record[Idx++]);
     ExceptionSpecificationType EST =
@@ -4315,6 +4317,7 @@ void TypeLocReader::VisitSubstTemplateTypeParmPackTypeLoc(
 }
 void TypeLocReader::VisitTemplateSpecializationTypeLoc(
                                            TemplateSpecializationTypeLoc TL) {
+  TL.setTemplateKeywordLoc(ReadSourceLocation(Record, Idx));
   TL.setTemplateNameLoc(ReadSourceLocation(Record, Idx));
   TL.setLAngleLoc(ReadSourceLocation(Record, Idx));
   TL.setRAngleLoc(ReadSourceLocation(Record, Idx));
@@ -4329,22 +4332,23 @@ void TypeLocReader::VisitParenTypeLoc(ParenTypeLoc TL) {
   TL.setRParenLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitElaboratedTypeLoc(ElaboratedTypeLoc TL) {
-  TL.setKeywordLoc(ReadSourceLocation(Record, Idx));
+  TL.setElaboratedKeywordLoc(ReadSourceLocation(Record, Idx));
   TL.setQualifierLoc(Reader.ReadNestedNameSpecifierLoc(F, Record, Idx));
 }
 void TypeLocReader::VisitInjectedClassNameTypeLoc(InjectedClassNameTypeLoc TL) {
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitDependentNameTypeLoc(DependentNameTypeLoc TL) {
-  TL.setKeywordLoc(ReadSourceLocation(Record, Idx));
+  TL.setElaboratedKeywordLoc(ReadSourceLocation(Record, Idx));
   TL.setQualifierLoc(Reader.ReadNestedNameSpecifierLoc(F, Record, Idx));
   TL.setNameLoc(ReadSourceLocation(Record, Idx));
 }
 void TypeLocReader::VisitDependentTemplateSpecializationTypeLoc(
        DependentTemplateSpecializationTypeLoc TL) {
-  TL.setKeywordLoc(ReadSourceLocation(Record, Idx));
+  TL.setElaboratedKeywordLoc(ReadSourceLocation(Record, Idx));
   TL.setQualifierLoc(Reader.ReadNestedNameSpecifierLoc(F, Record, Idx));
-  TL.setNameLoc(ReadSourceLocation(Record, Idx));
+  TL.setTemplateKeywordLoc(ReadSourceLocation(Record, Idx));
+  TL.setTemplateNameLoc(ReadSourceLocation(Record, Idx));
   TL.setLAngleLoc(ReadSourceLocation(Record, Idx));
   TL.setRAngleLoc(ReadSourceLocation(Record, Idx));
   for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I)
@@ -6244,33 +6248,27 @@ void ASTReader::FinishedDeserializing() {
   assert(NumCurrentElementsDeserializing &&
          "FinishedDeserializing not paired with StartedDeserializing");
   if (NumCurrentElementsDeserializing == 1) {
+    // We decrease NumCurrentElementsDeserializing only after pending actions
+    // are finished, to avoid recursively re-calling finishPendingActions().
+    finishPendingActions();
+  }
+  --NumCurrentElementsDeserializing;
 
-    while (Consumer && !InterestingDecls.empty()) {
-      finishPendingActions();
+  if (NumCurrentElementsDeserializing == 0 &&
+      Consumer && !PassingDeclsToConsumer) {
+    // Guard variable to avoid recursively redoing the process of passing
+    // decls to consumer.
+    SaveAndRestore<bool> GuardPassingDeclsToConsumer(PassingDeclsToConsumer,
+                                                     true);
 
+    while (!InterestingDecls.empty()) {
       // We are not in recursive loading, so it's safe to pass the "interesting"
       // decls to the consumer.
       Decl *D = InterestingDecls.front();
       InterestingDecls.pop_front();
-
-      // Fully load the interesting decls, including deserializing their
-      // bodies, so that any other declarations that get referenced in the
-      // body will be fully deserialized by the time we pass them to the
-      // consumer.
-      if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
-        if (FD->doesThisDeclarationHaveABody()) {
-          FD->getBody();
-          finishPendingActions();
-        }
-      }
-
       PassInterestingDeclToConsumer(D);
     }
-
-    finishPendingActions();
-    PendingDeclChainsKnown.clear();
   }
-  --NumCurrentElementsDeserializing;
 }
 
 ASTReader::ASTReader(Preprocessor &PP, ASTContext &Context,
@@ -6291,6 +6289,7 @@ ASTReader::ASTReader(Preprocessor &PP, ASTContext &Context,
     NumLexicalDeclContextsRead(0), TotalLexicalDeclContexts(0), 
     NumVisibleDeclContextsRead(0), TotalVisibleDeclContexts(0),
     TotalModulesSizeInBits(0), NumCurrentElementsDeserializing(0),
+    PassingDeclsToConsumer(false),
     NumCXXBaseSpecifiersLoaded(0)
 {
   SourceMgr.setExternalSLocEntrySource(this);

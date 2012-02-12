@@ -90,7 +90,7 @@ namespace {
     virtual void writeAccessorDefinitions(raw_ostream &OS) const {}
     virtual void writeCloneArgs(raw_ostream &OS) const = 0;
     virtual void writeTemplateInstantiationArgs(raw_ostream &OS) const = 0;
-    virtual void writeTemplateInstantiation(raw_ostream &OS) const {};
+    virtual void writeTemplateInstantiation(raw_ostream &OS) const {}
     virtual void writeCtorBody(raw_ostream &OS) const {}
     virtual void writeCtorInitializers(raw_ostream &OS) const = 0;
     virtual void writeCtorParameters(raw_ostream &OS) const = 0;
@@ -942,7 +942,9 @@ void ClangAttrTemplateInstantiateEmitter::run(raw_ostream &OS) {
 
   std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
 
-  OS << "Attr* instantiateTemplateAttribute(const Attr *At, ASTContext &C, "
+  OS << "namespace clang {\n"
+     << "namespace sema {\n\n"
+     << "Attr *instantiateTemplateAttribute(const Attr *At, ASTContext &C, "
      << "Sema &S,\n"
      << "        const MultiLevelTemplateArgumentList &TemplateArgs) {\n"
      << "  switch (At->getKind()) {\n"
@@ -992,6 +994,8 @@ void ClangAttrTemplateInstantiateEmitter::run(raw_ostream &OS) {
   OS << "  } // end switch\n"
      << "  llvm_unreachable(\"Unknown attribute!\");\n"
      << "  return 0;\n"
-     << "}\n\n";
+     << "}\n\n"
+     << "} // end namespace sema\n"
+     << "} // end namespace clang\n";
 }
 

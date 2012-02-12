@@ -51,6 +51,14 @@ static cl::opt<bool> DisableMachineLICM("disable-machine-licm", cl::Hidden,
     cl::desc("Disable Machine LICM"));
 static cl::opt<bool> DisableMachineCSE("disable-machine-cse", cl::Hidden,
     cl::desc("Disable Machine Common Subexpression Elimination"));
+static cl::opt<cl::boolOrDefault>
+OptimizeRegAlloc("optimize-regalloc", cl::Hidden,
+    cl::desc("Enable optimized register allocation compilation path."));
+static cl::opt<cl::boolOrDefault>
+EnableMachineSched("enable-misched", cl::Hidden,
+    cl::desc("Enable the machine instruction scheduling pass."));
+static cl::opt<bool> EnableStrongPHIElim("strong-phi-elim", cl::Hidden,
+    cl::desc("Use strong PHI elimination."));
 static cl::opt<bool> DisablePostRAMachineLICM("disable-postra-machine-licm",
     cl::Hidden,
     cl::desc("Disable Machine LICM"));
@@ -72,6 +80,30 @@ static cl::opt<bool> VerifyMachineCode("verify-machineinstrs", cl::Hidden,
     cl::desc("Verify generated machine code"),
     cl::init(getenv("LLVM_VERIFY_MACHINEINSTRS")!=NULL));
 
+// Allow Pass selection to be overriden by command line options.
+//
+// DefaultID is the default pass to run which may be NoPassID, or may be
+// overriden by the target.
+//
+// OptionalID is a pass that may be forcibly enabled by the user when the
+// default is NoPassID.
+char &enablePass(char &DefaultID, cl::boolOrDefault Override,
+                 char *OptionalIDPtr = &NoPassID) {
+  switch (Override) {
+  case cl::BOU_UNSET:
+    return DefaultID;
+  case cl::BOU_TRUE:
+    if (&DefaultID != &NoPassID)
+      return DefaultID;
+    if (OptionalIDPtr == &NoPassID)
+      report_fatal_error("Target cannot enable pass");
+    return *OptionalIDPtr;
+  case cl::BOU_FALSE:
+    return NoPassID;
+  }
+  llvm_unreachable("Invalid command line option state");
+}
+
 //===---------------------------------------------------------------------===//
 /// TargetPassConfig
 //===---------------------------------------------------------------------===//
@@ -80,11 +112,19 @@ INITIALIZE_PASS(TargetPassConfig, "targetpassconfig",
                 "Target Pass Configuration", false, false)
 char TargetPassConfig::ID = 0;
 
+static char NoPassIDAnchor = 0;
+char &llvm::NoPassID = NoPassIDAnchor;
+
 // Out of line virtual method.
 TargetPassConfig::~TargetPassConfig() {}
 
+// Out of line constructor provides default values for pass options and
+// registers all common codegen passes.
 TargetPassConfig::TargetPassConfig(TargetMachine *tm, PassManagerBase &pm)
-  : ImmutablePass(ID), TM(tm), PM(pm), DisableVerify(false) {
+  : ImmutablePass(ID), TM(tm), PM(pm), Initialized(false),
+    DisableVerify(false),
+    EnableTailMerge(true) {
+
   // Register all target independent codegen passes to activate their PassIDs,
   // including this pass itself.
   initializeCodeGen(*PassRegistry::getPassRegistry());
@@ -103,8 +143,21 @@ TargetPassConfig::TargetPassConfig()
   llvm_unreachable("TargetPassConfig should not be constructed on-the-fly");
 }
 
-void TargetPassConfig::addCommonPass(char &ID) {
-  // FIXME: about to be implemented.
+// Helper to verify the analysis is really immutable.
+void TargetPassConfig::setOpt(bool &Opt, bool Val) {
+  assert(!Initialized && "PassConfig is immutable");
+  Opt = Val;
+}
+
+void TargetPassConfig::addPass(char &ID) {
+  if (&ID == &NoPassID)
+    return;
+
+  // FIXME: check user overrides
+  Pass *P = Pass::createPass(ID);
+  if (!P)
+    llvm_unreachable("Pass ID not registered");
+  PM.add(P);
 }
 
 void TargetPassConfig::printNoVerify(const char *Banner) const {
@@ -169,99 +222,66 @@ void TargetPassConfig::addISelPrepare() {
     PM.add(createVerifierPass());
 }
 
+/// Add the complete set of target-independent postISel code generator passes.
+///
+/// This can be read as the standard order of major LLVM CodeGen stages. Stages
+/// with nontrivial configuration or multiple passes are broken out below in
+/// add%Stage routines.
+///
+/// Any TargetPassConfig::addXX routine may be overriden by the Target. The
+/// addPre/Post methods with empty header implementations allow injecting
+/// target-specific fixups just before or after major stages. Additionally,
+/// targets have the flexibility to change pass order within a stage by
+/// overriding default implementation of add%Stage routines below. Each
+/// technique has maintainability tradeoffs because alternate pass orders are
+/// not well supported. addPre/Post works better if the target pass is easily
+/// tied to a common pass. But if it has subtle dependencies on multiple passes,
+/// the target should override the stage instead.
+///
+/// TODO: We could use a single addPre/Post(ID) hook to allow pass injection
+/// before/after any target-independent pass. But it's currently overkill.
 void TargetPassConfig::addMachinePasses() {
   // Print the instruction selected machine code...
   printAndVerify("After Instruction Selection");
 
   // Expand pseudo-instructions emitted by ISel.
-  PM.add(createExpandISelPseudosPass());
+  addPass(ExpandISelPseudosID);
 
-  // Pre-ra tail duplication.
-  if (getOptLevel() != CodeGenOpt::None && !DisableEarlyTailDup) {
-    PM.add(createTailDuplicatePass(true));
-    printAndVerify("After Pre-RegAlloc TailDuplicate");
-  }
-
-  // Optimize PHIs before DCE: removing dead PHI cycles may make more
-  // instructions dead.
-  if (getOptLevel() != CodeGenOpt::None)
-    PM.add(createOptimizePHIsPass());
-
-  // If the target requests it, assign local variables to stack slots relative
-  // to one another and simplify frame index references where possible.
-  PM.add(createLocalStackSlotAllocationPass());
-
+  // Add passes that optimize machine instructions in SSA form.
   if (getOptLevel() != CodeGenOpt::None) {
-    // With optimization, dead code should already be eliminated. However
-    // there is one known exception: lowered code for arguments that are only
-    // used by tail calls, where the tail calls reuse the incoming stack
-    // arguments directly (see t11 in test/CodeGen/X86/sibcall.ll).
-    if (!DisableMachineDCE)
-      PM.add(createDeadMachineInstructionElimPass());
-    printAndVerify("After codegen DCE pass");
-
-    if (!DisableMachineLICM)
-      PM.add(createMachineLICMPass());
-    if (!DisableMachineCSE)
-      PM.add(createMachineCSEPass());
-    if (!DisableMachineSink)
-      PM.add(createMachineSinkingPass());
-    printAndVerify("After Machine LICM, CSE and Sinking passes");
-
-    PM.add(createPeepholeOptimizerPass());
-    printAndVerify("After codegen peephole optimization pass");
+    addMachineSSAOptimization();
+  }
+  else {
+    // If the target requests it, assign local variables to stack slots relative
+    // to one another and simplify frame index references where possible.
+    addPass(LocalStackSlotAllocationID);
   }
 
   // Run pre-ra passes.
   if (addPreRegAlloc())
     printAndVerify("After PreRegAlloc passes");
 
-  // Perform register allocation.
-  PM.add(createRegisterAllocator(getOptLevel()));
-  printAndVerify("After Register Allocation");
-
-  // Perform stack slot coloring and post-ra machine LICM.
-  if (getOptLevel() != CodeGenOpt::None) {
-    // FIXME: Re-enable coloring with register when it's capable of adding
-    // kill markers.
-    if (!DisableSSC)
-      PM.add(createStackSlotColoringPass(false));
-
-    // Run post-ra machine LICM to hoist reloads / remats.
-    if (!DisablePostRAMachineLICM)
-      PM.add(createMachineLICMPass(false));
-
-    printAndVerify("After StackSlotColoring and postra Machine LICM");
-  }
+  // Run register allocation and passes that are tightly coupled with it,
+  // including phi elimination and scheduling.
+  if (getOptimizeRegAlloc())
+    addOptimizedRegAlloc(createRegAllocPass(true));
+  else
+    addFastRegAlloc(createRegAllocPass(false));
 
   // Run post-ra passes.
   if (addPostRegAlloc())
     printAndVerify("After PostRegAlloc passes");
 
   // Insert prolog/epilog code.  Eliminate abstract frame index references...
-  PM.add(createPrologEpilogCodeInserter());
+  addPass(PrologEpilogCodeInserterID);
   printAndVerify("After PrologEpilogCodeInserter");
 
-  // Branch folding must be run after regalloc and prolog/epilog insertion.
-  if (getOptLevel() != CodeGenOpt::None && !DisableBranchFold) {
-    PM.add(createBranchFoldingPass(getEnableTailMergeDefault()));
-    printNoVerify("After BranchFolding");
-  }
-
-  // Tail duplication.
-  if (getOptLevel() != CodeGenOpt::None && !DisableTailDuplicate) {
-    PM.add(createTailDuplicatePass(false));
-    printNoVerify("After TailDuplicate");
-  }
-
-  // Copy propagation.
-  if (getOptLevel() != CodeGenOpt::None && !DisableCopyProp) {
-    PM.add(createMachineCopyPropagationPass());
-    printNoVerify("After copy propagation pass");
-  }
+  /// Add passes that optimize machine instructions after register allocation.
+  if (getOptLevel() != CodeGenOpt::None)
+    addMachineLateOptimization();
 
   // Expand pseudo instructions before second scheduling pass.
-  PM.add(createExpandPostRAPseudosPass());
+  addPass(ExpandPostRAPseudosID);
   printNoVerify("After ExpandPostRAPseudos");
 
   // Run pre-sched2 passes.
@@ -270,84 +290,245 @@ void TargetPassConfig::addMachinePasses() {
 
   // Second pass scheduler.
   if (getOptLevel() != CodeGenOpt::None && !DisablePostRA) {
-    PM.add(createPostRAScheduler(getOptLevel()));
+    addPass(PostRASchedulerID);
     printNoVerify("After PostRAScheduler");
   }
 
-  PM.add(createGCMachineCodeAnalysisPass());
-
+  // GC
+  addPass(GCMachineCodeAnalysisID);
   if (PrintGCInfo)
     PM.add(createGCInfoPrinter(dbgs()));
 
-  if (getOptLevel() != CodeGenOpt::None && !DisableCodePlace) {
-    if (EnableBlockPlacement) {
-      // MachineBlockPlacement is an experimental pass which is disabled by
-      // default currently. Eventually it should subsume CodePlacementOpt, so
-      // when enabled, the other is disabled.
-      PM.add(createMachineBlockPlacementPass());
-      printNoVerify("After MachineBlockPlacement");
-    } else {
-      PM.add(createCodePlacementOptPass());
-      printNoVerify("After CodePlacementOpt");
-    }
-
-    // Run a separate pass to collect block placement statistics.
-    if (EnableBlockPlacementStats) {
-      PM.add(createMachineBlockPlacementStatsPass());
-      printNoVerify("After MachineBlockPlacementStats");
-    }
-  }
+  // Basic block placement.
+  if (getOptLevel() != CodeGenOpt::None && !DisableCodePlace)
+    addBlockPlacement();
 
   if (addPreEmitPass())
     printNoVerify("After PreEmit passes");
 }
 
+/// Add passes that optimize machine instructions in SSA form.
+void TargetPassConfig::addMachineSSAOptimization() {
+  // Pre-ra tail duplication.
+  if (!DisableEarlyTailDup) {
+    addPass(TailDuplicateID);
+    printAndVerify("After Pre-RegAlloc TailDuplicate");
+  }
+
+  // Optimize PHIs before DCE: removing dead PHI cycles may make more
+  // instructions dead.
+  addPass(OptimizePHIsID);
+
+  // If the target requests it, assign local variables to stack slots relative
+  // to one another and simplify frame index references where possible.
+  addPass(LocalStackSlotAllocationID);
+
+  // With optimization, dead code should already be eliminated. However
+  // there is one known exception: lowered code for arguments that are only
+  // used by tail calls, where the tail calls reuse the incoming stack
+  // arguments directly (see t11 in test/CodeGen/X86/sibcall.ll).
+  if (!DisableMachineDCE)
+    addPass(DeadMachineInstructionElimID);
+  printAndVerify("After codegen DCE pass");
+
+  if (!DisableMachineLICM)
+    addPass(MachineLICMID);
+  if (!DisableMachineCSE)
+    addPass(MachineCSEID);
+  if (!DisableMachineSink)
+    addPass(MachineSinkingID);
+  printAndVerify("After Machine LICM, CSE and Sinking passes");
+
+  addPass(PeepholeOptimizerID);
+  printAndVerify("After codegen peephole optimization pass");
+}
+
 //===---------------------------------------------------------------------===//
-///
-/// RegisterRegAlloc class - Track the registration of register allocators.
-///
+/// Register Allocation Pass Configuration
 //===---------------------------------------------------------------------===//
+
+bool TargetPassConfig::getOptimizeRegAlloc() const {
+  switch (OptimizeRegAlloc) {
+  case cl::BOU_UNSET: return getOptLevel() != CodeGenOpt::None;
+  case cl::BOU_TRUE:  return true;
+  case cl::BOU_FALSE: return false;
+  }
+  llvm_unreachable("Invalid optimize-regalloc state");
+}
+
+/// RegisterRegAlloc's global Registry tracks allocator registration.
 MachinePassRegistry RegisterRegAlloc::Registry;
 
-static FunctionPass *createDefaultRegisterAllocator() { return 0; }
+/// A dummy default pass factory indicates whether the register allocator is
+/// overridden on the command line.
+static FunctionPass *useDefaultRegisterAllocator() { return 0; }
 static RegisterRegAlloc
 defaultRegAlloc("default",
                 "pick register allocator based on -O option",
-                createDefaultRegisterAllocator);
+                useDefaultRegisterAllocator);
 
-//===---------------------------------------------------------------------===//
-///
-/// RegAlloc command line options.
-///
-//===---------------------------------------------------------------------===//
+/// -regalloc=... command line option.
 static cl::opt<RegisterRegAlloc::FunctionPassCtor, false,
                RegisterPassParser<RegisterRegAlloc> >
 RegAlloc("regalloc",
-         cl::init(&createDefaultRegisterAllocator),
+         cl::init(&useDefaultRegisterAllocator),
          cl::desc("Register allocator to use"));
 
 
-//===---------------------------------------------------------------------===//
+/// Instantiate the default register allocator pass for this target for either
+/// the optimized or unoptimized allocation path. This will be added to the pass
+/// manager by addFastRegAlloc in the unoptimized case or addOptimizedRegAlloc
+/// in the optimized case.
 ///
-/// createRegisterAllocator - choose the appropriate register allocator.
+/// A target that uses the standard regalloc pass order for fast or optimized
+/// allocation may still override this for per-target regalloc
+/// selection. But -regalloc=... always takes precedence.
+FunctionPass *TargetPassConfig::createTargetRegisterAllocator(bool Optimized) {
+  if (Optimized)
+    return createGreedyRegisterAllocator();
+  else
+    return createFastRegisterAllocator();
+}
+
+/// Find and instantiate the register allocation pass requested by this target
+/// at the current optimization level.  Different register allocators are
+/// defined as separate passes because they may require different analysis.
 ///
-//===---------------------------------------------------------------------===//
-FunctionPass *llvm::createRegisterAllocator(CodeGenOpt::Level OptLevel) {
+/// This helper ensures that the regalloc= option is always available,
+/// even for targets that override the default allocator.
+///
+/// FIXME: When MachinePassRegistry register pass IDs instead of function ptrs,
+/// this can be folded into addPass.
+FunctionPass *TargetPassConfig::createRegAllocPass(bool Optimized) {
   RegisterRegAlloc::FunctionPassCtor Ctor = RegisterRegAlloc::getDefault();
 
+  // Initialize the global default.
   if (!Ctor) {
     Ctor = RegAlloc;
     RegisterRegAlloc::setDefault(RegAlloc);
   }
-
-  if (Ctor != createDefaultRegisterAllocator)
+  if (Ctor != useDefaultRegisterAllocator)
     return Ctor();
 
-  // When the 'default' allocator is requested, pick one based on OptLevel.
-  switch (OptLevel) {
-  case CodeGenOpt::None:
-    return createFastRegisterAllocator();
-  default:
-    return createGreedyRegisterAllocator();
+  // With no -regalloc= override, ask the target for a regalloc pass.
+  return createTargetRegisterAllocator(Optimized);
+}
+
+/// Add the minimum set of target-independent passes that are required for
+/// register allocation. No coalescing or scheduling.
+void TargetPassConfig::addFastRegAlloc(FunctionPass *RegAllocPass) {
+  addPass(PHIEliminationID);
+  addPass(TwoAddressInstructionPassID);
+
+  PM.add(RegAllocPass);
+  printAndVerify("After Register Allocation");
+}
+
+/// Add standard target-independent passes that are tightly coupled with
+/// optimized register allocation, including coalescing, machine instruction
+/// scheduling, and register allocation itself.
+void TargetPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
+  // LiveVariables currently requires pure SSA form.
+  //
+  // FIXME: Once TwoAddressInstruction pass no longer uses kill flags,
+  // LiveVariables can be removed completely, and LiveIntervals can be directly
+  // computed. (We still either need to regenerate kill flags after regalloc, or
+  // preferably fix the scavenger to not depend on them).
+  addPass(LiveVariablesID);
+
+  // Add passes that move from transformed SSA into conventional SSA. This is a
+  // "copy coalescing" problem.
+  //
+  if (!EnableStrongPHIElim) {
+    // Edge splitting is smarter with machine loop info.
+    addPass(MachineLoopInfoID);
+    addPass(PHIEliminationID);
+  }
+  addPass(TwoAddressInstructionPassID);
+
+  // FIXME: Either remove this pass completely, or fix it so that it works on
+  // SSA form. We could modify LiveIntervals to be independent of this pass, But
+  // it would be even better to simply eliminate *all* IMPLICIT_DEFs before
+  // leaving SSA.
+  addPass(ProcessImplicitDefsID);
+
+  if (EnableStrongPHIElim)
+    addPass(StrongPHIEliminationID);
+
+  addPass(RegisterCoalescerID);
+
+  // PreRA instruction scheduling.
+  addPass(enablePass(getSchedPass(), EnableMachineSched, &MachineSchedulerID));
+
+  // Add the selected register allocation pass.
+  PM.add(RegAllocPass);
+  printAndVerify("After Register Allocation");
+
+  // FinalizeRegAlloc is convenient until MachineInstrBundles is more mature,
+  // but eventually, all users of it should probably be moved to addPostRA and
+  // it can go away.  Currently, it's the intended place for targets to run
+  // FinalizeMachineBundles, because passes other than MachineScheduling an
+  // RegAlloc itself may not be aware of bundles.
+  if (addFinalizeRegAlloc())
+    printAndVerify("After RegAlloc finalization");
+
+  // Perform stack slot coloring and post-ra machine LICM.
+  //
+  // FIXME: Re-enable coloring with register when it's capable of adding
+  // kill markers.
+  if (!DisableSSC)
+    addPass(StackSlotColoringID);
+
+  // Run post-ra machine LICM to hoist reloads / remats.
+  //
+  // FIXME: can this move into MachineLateOptimization?
+  if (!DisablePostRAMachineLICM)
+    addPass(MachineLICMID);
+
+  printAndVerify("After StackSlotColoring and postra Machine LICM");
+}
+
+//===---------------------------------------------------------------------===//
+/// Post RegAlloc Pass Configuration
+//===---------------------------------------------------------------------===//
+
+/// Add passes that optimize machine instructions after register allocation.
+void TargetPassConfig::addMachineLateOptimization() {
+  // Branch folding must be run after regalloc and prolog/epilog insertion.
+  if (!DisableBranchFold) {
+    addPass(BranchFolderPassID);
+    printNoVerify("After BranchFolding");
+  }
+
+  // Tail duplication.
+  if (!DisableTailDuplicate) {
+    addPass(TailDuplicateID);
+    printNoVerify("After TailDuplicate");
+  }
+
+  // Copy propagation.
+  if (!DisableCopyProp) {
+    addPass(MachineCopyPropagationID);
+    printNoVerify("After copy propagation pass");
+  }
+}
+
+/// Add standard basic block placement passes.
+void TargetPassConfig::addBlockPlacement() {
+  if (EnableBlockPlacement) {
+    // MachineBlockPlacement is an experimental pass which is disabled by
+    // default currently. Eventually it should subsume CodePlacementOpt, so
+    // when enabled, the other is disabled.
+    addPass(MachineBlockPlacementID);
+    printNoVerify("After MachineBlockPlacement");
+  } else {
+    addPass(CodePlacementOptID);
+    printNoVerify("After CodePlacementOpt");
+  }
+
+  // Run a separate pass to collect block placement statistics.
+  if (EnableBlockPlacementStats) {
+    addPass(MachineBlockPlacementStatsID);
+    printNoVerify("After MachineBlockPlacementStats");
   }
 }

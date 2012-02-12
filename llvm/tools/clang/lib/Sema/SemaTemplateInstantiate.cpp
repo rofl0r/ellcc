@@ -1665,8 +1665,12 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
 }
 
 // Defined via #include from SemaTemplateInstantiateDecl.cpp
-Attr* instantiateTemplateAttribute(const Attr *At, ASTContext &C, Sema &S,
-        const MultiLevelTemplateArgumentList &TemplateArgs);
+namespace clang {
+  namespace sema {
+    Attr *instantiateTemplateAttribute(const Attr *At, ASTContext &C, Sema &S,
+                            const MultiLevelTemplateArgumentList &TemplateArgs);
+  }
+}
 
 /// \brief Instantiate the definition of a class from a given pattern.
 ///
@@ -1859,6 +1863,7 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     ActOnFinishDelayedMemberInitializers(Instantiation);
 
   if (TSK == TSK_ImplicitInstantiation) {
+    Instantiation->setLocation(Pattern->getLocation());
     Instantiation->setLocStart(Pattern->getInnerLocStart());
     Instantiation->setRBraceLoc(Pattern->getRBraceLoc());
   }

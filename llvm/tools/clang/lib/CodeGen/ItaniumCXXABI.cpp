@@ -734,7 +734,7 @@ void ARMCXXABI::EmitInstanceFunctionProlog(CodeGenFunction &CGF) {
   /// Initialize the return slot to 'this' at the start of the
   /// function.
   if (HasThisReturn(CGF.CurGD))
-    CGF.Builder.CreateStore(CGF.LoadCXXThis(), CGF.ReturnValue);
+    CGF.Builder.CreateStore(getThisValue(CGF), CGF.ReturnValue);
 }
 
 void ARMCXXABI::EmitReturnFromThunk(CodeGenFunction &CGF,
@@ -986,8 +986,7 @@ static llvm::Constant *getGuardReleaseFn(CodeGenModule &CGM,
                                          llvm::PointerType *GuardPtrTy) {
   // void __cxa_guard_release(__guard *guard_object);
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(CGM.getLLVMContext()),
-                            GuardPtrTy, /*isVarArg=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, GuardPtrTy, /*isVarArg=*/false);
   
   return CGM.CreateRuntimeFunction(FTy, "__cxa_guard_release");
 }
@@ -996,8 +995,7 @@ static llvm::Constant *getGuardAbortFn(CodeGenModule &CGM,
                                        llvm::PointerType *GuardPtrTy) {
   // void __cxa_guard_abort(__guard *guard_object);
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(CGM.getLLVMContext()),
-                            GuardPtrTy, /*isVarArg=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, GuardPtrTy, /*isVarArg=*/false);
   
   return CGM.CreateRuntimeFunction(FTy, "__cxa_guard_abort");
 }

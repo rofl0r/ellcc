@@ -2673,6 +2673,56 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.ClaimAllArgs(options::OPT_emit_llvm);
 }
 
+void ClangAs::AddARMTargetArgs(const ArgList &Args,
+                               ArgStringList &CmdArgs) const {
+  const Driver &D = getToolChain().getDriver();
+  llvm::Triple Triple = getToolChain().getTriple();
+
+  // Set the CPU based on -march= and -mcpu=.
+  CmdArgs.push_back("-target-cpu");
+  CmdArgs.push_back(getARMTargetCPU(Args, Triple));
+
+  // Honor -mfpu=.
+  //
+  // FIXME: Centralize feature selection, defaulting shouldn't be also in the
+  // frontend target.
+  if (const Arg *A = Args.getLastArg(options::OPT_mfpu_EQ)) {
+    StringRef FPU = A->getValue(Args);
+
+    // Set the target features based on the FPU.
+    if (FPU == "fpa" || FPU == "fpe2" || FPU == "fpe3" || FPU == "maverick") {
+      // Disable any default FPU support.
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-vfp2");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-vfp3");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-neon");
+    } else if (FPU == "vfp3-d16" || FPU == "vfpv3-d16") {
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("+vfp3");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("+d16");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-neon");
+    } else if (FPU == "vfp") {
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("+vfp2");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-neon");
+    } else if (FPU == "vfp3" || FPU == "vfpv3") {
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("+vfp3");
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("-neon");
+    } else if (FPU == "neon") {
+      CmdArgs.push_back("-target-feature");
+      CmdArgs.push_back("+neon");
+    } else
+      D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
+  }
+}
+
 void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
                            const InputInfo &Output,
                            const InputInfoList &Inputs,
@@ -2708,6 +2758,17 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (UseRelaxAll(C, Args))
     CmdArgs.push_back("-relax-all");
+
+  // Add target specific cpu and features flags.
+  switch(getToolChain().getTriple().getArch()) {
+  default:
+    break;
+
+  case llvm::Triple::arm:
+  case llvm::Triple::thumb:
+    AddARMTargetArgs(Args, CmdArgs);
+    break;
+  }
 
   // Ignore explicit -force_cpusubtype_ALL option.
   (void) Args.hasArg(options::OPT_force__cpusubtype__ALL);
@@ -3131,11 +3192,25 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
     StringRef Option = *it;
     bool RemoveOption = false;
 
-    // Remove -faltivec
-    if (Option.equals("-faltivec")) {
-      it = CmdArgs.erase(it);
+    // Erase both -fmodule-cache-path and its argument.
+    if (Option.equals("-fmodule-cache-path") && it+2 != ie) {
+      it = CmdArgs.erase(it, it+2);
       ie = CmdArgs.end();
       continue;
+    }
+
+    // Remove unsupported -f options.
+    if (Option.startswith("-f")) {
+      // Remove -f/-fno- to reduce the number of cases.
+      if (Option.startswith("-fno-"))
+        Option = Option.substr(5);
+      else
+        Option = Option.substr(2);
+      RemoveOption = llvm::StringSwitch<bool>(Option)
+        .Case("altivec", true)
+        .Case("modules", true)
+        .Case("diagnostics-show-note-include-stack", true)
+        .Default(false);
     }
 
     // Handle machine specific options.
@@ -4207,6 +4282,9 @@ void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
 				       const char *LinkingOutput) const {
   ArgStringList CmdArgs;
   CmdArgs.push_back("--verify");
+  CmdArgs.push_back("--debug-info");
+  CmdArgs.push_back("--eh-frame");
+  CmdArgs.push_back("--quiet");
 
   assert(Inputs.size() == 1 && "Unable to handle multiple inputs.");
   const InputInfo &Input = Inputs[0];

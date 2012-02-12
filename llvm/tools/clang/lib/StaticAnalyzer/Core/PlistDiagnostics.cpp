@@ -246,7 +246,7 @@ static void ReportMacro(raw_ostream &o,
                         const LangOptions &LangOpts,
                         unsigned indent) {
 
-  for (PathDiagnosticMacroPiece::const_iterator I=P.begin(), E=P.end();
+  for (PathPieces::const_iterator I = P.subPieces.begin(), E=P.subPieces.end();
        I!=E; ++I) {
 
     switch ((*I)->getKind()) {
@@ -275,8 +275,10 @@ static void ReportDiag(raw_ostream &o, const PathDiagnosticPiece& P,
     ReportControlFlow(o, cast<PathDiagnosticControlFlowPiece>(P), FM, SM,
                       LangOpts, indent);
     break;
+  case PathDiagnosticPiece::CallEnter:
+  case PathDiagnosticPiece::CallExit:
   case PathDiagnosticPiece::Event:
-    ReportEvent(o, cast<PathDiagnosticEventPiece>(P), FM, SM, LangOpts,
+    ReportEvent(o, cast<PathDiagnosticSpotPiece>(P), FM, SM, LangOpts,
                 indent);
     break;
   case PathDiagnosticPiece::Macro:
@@ -296,18 +298,19 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
   const SourceManager* SM = 0;
 
   if (!Diags.empty())
-    SM = &(*Diags.begin())->begin()->getLocation().getManager();
+    SM = &(*(*Diags.begin())->path.begin())->getLocation().getManager();
 
   for (std::vector<const PathDiagnostic*>::iterator DI = Diags.begin(),
        DE = Diags.end(); DI != DE; ++DI) {
 
     const PathDiagnostic *D = *DI;
 
-    for (PathDiagnostic::const_iterator I=D->begin(), E=D->end(); I!=E; ++I) {
-      AddFID(FM, Fids, SM, I->getLocation().asLocation());
+    for (PathPieces::const_iterator I = D->path.begin(), E = D->path.end();
+         I!=E; ++I) {
+      AddFID(FM, Fids, SM, (*I)->getLocation().asLocation());
 
-      for (PathDiagnosticPiece::range_iterator RI=I->ranges_begin(),
-           RE=I->ranges_end(); RI!=RE; ++RI) {
+      for (PathDiagnosticPiece::range_iterator RI = (*I)->ranges_begin(),
+           RE= (*I)->ranges_end(); RI != RE; ++RI) {
         AddFID(FM, Fids, SM, RI->getBegin());
         AddFID(FM, Fids, SM, RI->getEnd());
       }
@@ -355,8 +358,9 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
 
     o << "   <array>\n";
 
-    for (PathDiagnostic::const_iterator I=D->begin(), E=D->end(); I != E; ++I)
-      ReportDiag(o, *I, FM, *SM, LangOpts);
+    for (PathPieces::const_iterator I = D->path.begin(), E = D->path.end(); 
+         I != E; ++I)
+      ReportDiag(o, **I, FM, *SM, LangOpts);
 
     o << "   </array>\n";
 

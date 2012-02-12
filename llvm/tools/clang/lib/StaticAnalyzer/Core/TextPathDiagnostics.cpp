@@ -13,7 +13,6 @@
 
 #include "clang/StaticAnalyzer/Core/PathDiagnosticConsumers.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
-#include "clang/Basic/Diagnostic.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
@@ -59,11 +58,12 @@ void TextPathDiagnostics::FlushDiagnosticsImpl(
   for (std::vector<const PathDiagnostic *>::iterator it = Diags.begin(),
        et = Diags.end(); it != et; ++it) {
     const PathDiagnostic *D = *it;
-    for (PathDiagnostic::const_iterator I=D->begin(), E=D->end(); I != E; ++I) {
+    for (PathPieces::const_iterator I = D->path.begin(), E = D->path.end(); 
+         I != E; ++I) {
       unsigned diagID =
         Diag.getDiagnosticIDs()->getCustomDiagID(DiagnosticIDs::Note,
-                                                 I->getString());
-      Diag.Report(I->getLocation().asLocation(), diagID);
+                                                 (*I)->getString());
+      Diag.Report((*I)->getLocation().asLocation(), diagID);
     }
   }
 }

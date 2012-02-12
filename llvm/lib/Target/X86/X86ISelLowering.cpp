@@ -39,7 +39,6 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
@@ -3714,7 +3713,7 @@ static unsigned getShuffleVPERM2X128Immediate(ShuffleVectorSDNode *SVOp) {
 /// type is 32 or 64. In the VPERMILPS the high half of the mask should point
 /// to the same elements of the low, but to the higher half of the source.
 /// In VPERMILPD the two lanes could be shuffled independently of each other
-/// with the same restriction that lanes can't be crossed.
+/// with the same restriction that lanes can't be crossed. Also handles PSHUFDY.
 static bool isVPERMILPMask(ArrayRef<int> Mask, EVT VT, bool HasAVX) {
   if (!HasAVX)
     return false;
@@ -4246,23 +4245,12 @@ static SDValue getOnesVector(EVT VT, bool HasAVX2, SelectionDAG &DAG,
 
 /// NormalizeMask - V2 is a splat, modify the mask (if needed) so all elements
 /// that point to V2 points to its first element.
-static SDValue NormalizeMask(ShuffleVectorSDNode *SVOp, SelectionDAG &DAG) {
-  EVT VT = SVOp->getValueType(0);
-  unsigned NumElems = VT.getVectorNumElements();
-
-  bool Changed = false;
-  SmallVector<int, 8> MaskVec(SVOp->getMask().begin(), SVOp->getMask().end());
-
+static void NormalizeMask(SmallVectorImpl<int> &Mask, unsigned NumElems) {
   for (unsigned i = 0; i != NumElems; ++i) {
-    if (MaskVec[i] > (int)NumElems) {
-      MaskVec[i] = NumElems;
-      Changed = true;
+    if (Mask[i] > (int)NumElems) {
+      Mask[i] = NumElems;
     }
   }
-  if (Changed)
-    return DAG.getVectorShuffle(VT, SVOp->getDebugLoc(), SVOp->getOperand(0),
-                                SVOp->getOperand(1), &MaskVec[0]);
-  return SDValue(SVOp, 0);
 }
 
 /// getMOVLMask - Returns a vector_shuffle mask for an movs{s|d}, movd
@@ -4430,14 +4418,15 @@ static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
     if (Index < 0)
       return DAG.getUNDEF(VT.getVectorElementType());
 
-    int NumElems = VT.getVectorNumElements();
-    SDValue NewV = (Index < NumElems) ? SV->getOperand(0) : SV->getOperand(1);
+    unsigned NumElems = VT.getVectorNumElements();
+    SDValue NewV = (Index < (int)NumElems) ? SV->getOperand(0)
+                                           : SV->getOperand(1);
     return getShuffleScalarElt(NewV.getNode(), Index % NumElems, DAG, Depth+1);
   }
 
   // Recurse into target specific vector shuffles to find scalars.
   if (isTargetShuffle(Opcode)) {
-    int NumElems = VT.getVectorNumElements();
+    unsigned NumElems = VT.getVectorNumElements();
     SmallVector<unsigned, 16> ShuffleMask;
     SDValue ImmN;
 
@@ -4460,9 +4449,9 @@ static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
       DecodeMOVLHPSMask(NumElems, ShuffleMask);
       break;
     case X86ISD::PSHUFD:
+    case X86ISD::VPERMILP:
       ImmN = N->getOperand(N->getNumOperands()-1);
-      DecodePSHUFMask(NumElems,
-                      cast<ConstantSDNode>(ImmN)->getZExtValue(),
+      DecodePSHUFMask(VT, cast<ConstantSDNode>(ImmN)->getZExtValue(),
                       ShuffleMask);
       break;
     case X86ISD::PSHUFHW:
@@ -4484,14 +4473,9 @@ static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
       return getShuffleScalarElt(V.getOperand(OpNum).getNode(), Index, DAG,
                                  Depth+1);
     }
-    case X86ISD::VPERMILP:
-      ImmN = N->getOperand(N->getNumOperands()-1);
-      DecodeVPERMILPMask(VT, cast<ConstantSDNode>(ImmN)->getZExtValue(),
-                        ShuffleMask);
-      break;
     case X86ISD::VPERM2X128:
       ImmN = N->getOperand(N->getNumOperands()-1);
-      DecodeVPERM2F128Mask(VT, cast<ConstantSDNode>(ImmN)->getZExtValue(),
+      DecodeVPERM2X128Mask(VT, cast<ConstantSDNode>(ImmN)->getZExtValue(),
                            ShuffleMask);
       break;
     case X86ISD::MOVDDUP:
@@ -4509,7 +4493,8 @@ static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
     if (Index < 0)
       return DAG.getUNDEF(VT.getVectorElementType());
 
-    SDValue NewV = (Index < NumElems) ? N->getOperand(0) : N->getOperand(1);
+    SDValue NewV = (Index < (int)NumElems) ? N->getOperand(0)
+                                           : N->getOperand(1);
     return getShuffleScalarElt(NewV.getNode(), Index % NumElems, DAG,
                                Depth+1);
   }
@@ -5415,7 +5400,7 @@ X86TargetLowering::LowerVECTOR_SHUFFLEv8i16(SDValue Op,
   // mask values count as coming from any quadword, for better codegen.
   unsigned LoQuad[] = { 0, 0, 0, 0 };
   unsigned HiQuad[] = { 0, 0, 0, 0 };
-  BitVector InputQuads(4);
+  std::bitset<4> InputQuads;
   for (unsigned i = 0; i < 8; ++i) {
     unsigned *Quad = i < 4 ? LoQuad : HiQuad;
     int EltIdx = SVOp->getMaskElt(i);
@@ -5457,8 +5442,8 @@ X86TargetLowering::LowerVECTOR_SHUFFLEv8i16(SDValue Op,
   bool V2Used = InputQuads[2] || InputQuads[3];
   if (Subtarget->hasSSSE3()) {
     if (InputQuads.count() == 2 && V1Used && V2Used) {
-      BestLoQuad = InputQuads.find_first();
-      BestHiQuad = InputQuads.find_next(BestLoQuad);
+      BestLoQuad = InputQuads[0] ? 0 : 1;
+      BestHiQuad = InputQuads[2] ? 2 : 3;
     }
     if (InputQuads.count() > 2) {
       BestLoQuad = -1;
@@ -6471,6 +6456,9 @@ X86TargetLowering::LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const {
 
     unsigned TargetMask = X86::getShuffleSHUFImmediate(SVOp);
 
+    if (HasAVX && (VT == MVT::v4f32 || VT == MVT::v2f64))
+      return getTargetShuffleNode(X86ISD::VPERMILP, dl, VT, V1, TargetMask, DAG);
+
     if (HasSSE2 && (VT == MVT::v4f32 || VT == MVT::v4i32))
       return getTargetShuffleNode(X86ISD::PSHUFD, dl, VT, V1, TargetMask, DAG);
 
@@ -6536,17 +6524,15 @@ X86TargetLowering::LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const {
   V1IsSplat = isSplatVector(V1.getNode());
   V2IsSplat = isSplatVector(V2.getNode());
 
+  SmallVector<int, 8> M(SVOp->getMask().begin(), SVOp->getMask().end());
+
   // Canonicalize the splat or undef, if present, to be on the RHS.
-  if (V1IsSplat && !V2IsSplat) {
-    Op = CommuteVectorShuffle(SVOp, DAG);
-    SVOp = cast<ShuffleVectorSDNode>(Op);
-    V1 = SVOp->getOperand(0);
-    V2 = SVOp->getOperand(1);
+  if (!V2IsUndef && V1IsSplat && !V2IsSplat) {
+    CommuteVectorShuffleMask(M, NumElems);
+    std::swap(V1, V2);
     std::swap(V1IsSplat, V2IsSplat);
     Commuted = true;
   }
-
-  ArrayRef<int> M = SVOp->getMask();
 
   if (isCommutedMOVLMask(M, VT, V2IsSplat, V2IsUndef)) {
     // Shuffling low element of v1 into undef, just return v1.
@@ -6567,29 +6553,29 @@ X86TargetLowering::LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const {
   if (V2IsSplat) {
     // Normalize mask so all entries that point to V2 points to its first
     // element then try to match unpck{h|l} again. If match, return a
-    // new vector_shuffle with the corrected mask.
-    SDValue NewMask = NormalizeMask(SVOp, DAG);
-    ShuffleVectorSDNode *NSVOp = cast<ShuffleVectorSDNode>(NewMask);
-    if (NSVOp != SVOp) {
-      if (X86::isUNPCKLMask(NSVOp, HasAVX2, true)) {
-        return NewMask;
-      } else if (X86::isUNPCKHMask(NSVOp, HasAVX2, true)) {
-        return NewMask;
-      }
+    // new vector_shuffle with the corrected mask.p
+    SmallVector<int, 8> NewMask(M.begin(), M.end());
+    NormalizeMask(NewMask, NumElems);
+    if (isUNPCKLMask(NewMask, VT, HasAVX2, true)) {
+      return getTargetShuffleNode(X86ISD::UNPCKL, dl, VT, V1, V2, DAG);
+    } else if (isUNPCKHMask(NewMask, VT, HasAVX2, true)) {
+      return getTargetShuffleNode(X86ISD::UNPCKH, dl, VT, V1, V2, DAG);
     }
   }
 
   if (Commuted) {
     // Commute is back and try unpck* again.
     // FIXME: this seems wrong.
-    SDValue NewOp = CommuteVectorShuffle(SVOp, DAG);
-    ShuffleVectorSDNode *NewSVOp = cast<ShuffleVectorSDNode>(NewOp);
+    CommuteVectorShuffleMask(M, NumElems);
+    std::swap(V1, V2);
+    std::swap(V1IsSplat, V2IsSplat);
+    Commuted = false;
 
-    if (X86::isUNPCKLMask(NewSVOp, HasAVX2))
-      return getTargetShuffleNode(X86ISD::UNPCKL, dl, VT, V2, V1, DAG);
+    if (isUNPCKLMask(M, VT, HasAVX2))
+      return getTargetShuffleNode(X86ISD::UNPCKL, dl, VT, V1, V2, DAG);
 
-    if (X86::isUNPCKHMask(NewSVOp, HasAVX2))
-      return getTargetShuffleNode(X86ISD::UNPCKH, dl, VT, V2, V1, DAG);
+    if (isUNPCKHMask(M, VT, HasAVX2))
+      return getTargetShuffleNode(X86ISD::UNPCKH, dl, VT, V1, V2, DAG);
   }
 
   // Normalize the node to match x86 shuffle ops if needed
@@ -6640,9 +6626,13 @@ X86TargetLowering::LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const {
     return getTargetShuffleNode(X86ISD::MOVDDUP, dl, VT, V1, DAG);
 
   // Handle VPERMILPS/D* permutations
-  if (isVPERMILPMask(M, VT, HasAVX))
+  if (isVPERMILPMask(M, VT, HasAVX)) {
+    if (HasAVX2 && VT == MVT::v8i32)
+      return getTargetShuffleNode(X86ISD::PSHUFD, dl, VT, V1,
+                                  X86::getShuffleSHUFImmediate(SVOp), DAG);
     return getTargetShuffleNode(X86ISD::VPERMILP, dl, VT, V1,
                                 X86::getShuffleSHUFImmediate(SVOp), DAG);
+  }
 
   // Handle VPERM2F128/VPERM2I128 permutations
   if (isVPERM2X128Mask(M, VT, HasAVX))
@@ -7365,6 +7355,68 @@ X86TargetLowering::LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const {
     unsigned Reg = Subtarget->is64Bit() ? X86::RAX : X86::EAX;
     return DAG.getCopyFromReg(Chain, DL, Reg, getPointerTy(),
                               Chain.getValue(1));
+  } else if (Subtarget->isTargetWindows()) {
+    // Just use the implicit TLS architecture
+    // Need to generate someting similar to:
+    //   mov     rdx, qword [gs:abs 58H]; Load pointer to ThreadLocalStorage
+    //                                  ; from TEB
+    //   mov     ecx, dword [rel _tls_index]: Load index (from C runtime)
+    //   mov     rcx, qword [rdx+rcx*8]
+    //   mov     eax, .tls$:tlsvar
+    //   [rax+rcx] contains the address
+    // Windows 64bit: gs:0x58
+    // Windows 32bit: fs:__tls_array
+
+    // If GV is an alias then use the aliasee for determining
+    // thread-localness.
+    if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
+      GV = GA->resolveAliasedGlobal(false);
+    DebugLoc dl = GA->getDebugLoc();
+    SDValue Chain = DAG.getEntryNode();
+
+    // Get the Thread Pointer, which is %fs:__tls_array (32-bit) or
+    // %gs:0x58 (64-bit).
+    Value *Ptr = Constant::getNullValue(Subtarget->is64Bit()
+                                        ? Type::getInt8PtrTy(*DAG.getContext(),
+                                                             256)
+                                        : Type::getInt32PtrTy(*DAG.getContext(),
+                                                              257));
+
+    SDValue ThreadPointer = DAG.getLoad(getPointerTy(), dl, Chain,
+                                        Subtarget->is64Bit()
+                                        ? DAG.getIntPtrConstant(0x58)
+                                        : DAG.getExternalSymbol("_tls_array",
+                                                                getPointerTy()),
+                                        MachinePointerInfo(Ptr),
+                                        false, false, false, 0);
+
+    // Load the _tls_index variable
+    SDValue IDX = DAG.getExternalSymbol("_tls_index", getPointerTy());
+    if (Subtarget->is64Bit())
+      IDX = DAG.getExtLoad(ISD::ZEXTLOAD, dl, getPointerTy(), Chain,
+                           IDX, MachinePointerInfo(), MVT::i32,
+                           false, false, 0);
+    else
+      IDX = DAG.getLoad(getPointerTy(), dl, Chain, IDX, MachinePointerInfo(),
+                        false, false, false, 0);
+
+    SDValue Scale = DAG.getConstant(Log2_64_Ceil(TD->getPointerSize()),
+		                            getPointerTy());
+    IDX = DAG.getNode(ISD::SHL, dl, getPointerTy(), IDX, Scale);
+
+    SDValue res = DAG.getNode(ISD::ADD, dl, getPointerTy(), ThreadPointer, IDX);
+    res = DAG.getLoad(getPointerTy(), dl, Chain, res, MachinePointerInfo(),
+                      false, false, false, 0);
+
+    // Get the offset of start of .tls section
+    SDValue TGA = DAG.getTargetGlobalAddress(GA->getGlobal(), dl,
+                                             GA->getValueType(0),
+                                             GA->getOffset(), X86II::MO_SECREL);
+    SDValue Offset = DAG.getNode(X86ISD::Wrapper, dl, getPointerTy(), TGA);
+
+    // The address of the thread local variable is the add of the thread
+    // pointer with the offset of the variable.
+    return DAG.getNode(ISD::ADD, dl, getPointerTy(), res, Offset);
   }
 
   llvm_unreachable("TLS not implemented for this target.");
@@ -7531,12 +7583,8 @@ SDValue X86TargetLowering::LowerUINT_TO_FP_i64(SDValue Op,
   LLVMContext *Context = DAG.getContext();
 
   // Build some magic constants.
-  SmallVector<Constant*,4> CV0;
-  CV0.push_back(ConstantInt::get(*Context, APInt(32, 0x43300000)));
-  CV0.push_back(ConstantInt::get(*Context, APInt(32, 0x45300000)));
-  CV0.push_back(ConstantInt::get(*Context, APInt(32, 0)));
-  CV0.push_back(ConstantInt::get(*Context, APInt(32, 0)));
-  Constant *C0 = ConstantVector::get(CV0);
+  const uint32_t CV0[] = { 0x43300000, 0x45300000, 0, 0 };
+  Constant *C0 = ConstantDataVector::get(*Context, CV0);
   SDValue CPIdx0 = DAG.getConstantPool(C0, getPointerTy(), 16);
 
   SmallVector<Constant*,2> CV1;
@@ -8288,7 +8336,7 @@ SDValue X86TargetLowering::LowerVSETCC(SDValue Op, SelectionDAG &DAG) const {
   if (isFP) {
     unsigned SSECC = 8;
     EVT EltVT = Op0.getValueType().getVectorElementType();
-    assert(EltVT == MVT::f32 || EltVT == MVT::f64);
+    assert(EltVT == MVT::f32 || EltVT == MVT::f64); (void)EltVT;
 
     bool Swap = false;
 
@@ -9489,6 +9537,12 @@ X86TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const 
   case Intrinsic::x86_avx2_vperm2i128:
     return DAG.getNode(X86ISD::VPERM2X128, dl, Op.getValueType(),
                        Op.getOperand(1), Op.getOperand(2), Op.getOperand(3));
+  case Intrinsic::x86_avx_vpermil_ps:
+  case Intrinsic::x86_avx_vpermil_pd:
+  case Intrinsic::x86_avx_vpermil_ps_256:
+  case Intrinsic::x86_avx_vpermil_pd_256:
+    return DAG.getNode(X86ISD::VPERMILP, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
 
   // ptest and testp intrinsics. The intrinsic these come from are designed to
   // return an integer value, not just an instruction so lower it to the ptest
@@ -10253,8 +10307,8 @@ SDValue X86TargetLowering::LowerShift(SDValue Op, SelectionDAG &DAG) const {
     Op = DAG.getNode(X86ISD::VSHLI, dl, VT, Op.getOperand(1),
                      DAG.getConstant(23, MVT::i32));
 
-    ConstantInt *CI = ConstantInt::get(*Context, APInt(32, 0x3f800000U));
-    Constant *C = ConstantVector::getSplat(4, CI);
+    const uint32_t CV[] = { 0x3f800000U, 0x3f800000U, 0x3f800000U, 0x3f800000U};
+    Constant *C = ConstantDataVector::get(*Context, CV);
     SDValue CPIdx = DAG.getConstantPool(C, getPointerTy(), 16);
     SDValue Addend = DAG.getLoad(VT, dl, DAG.getEntryNode(), CPIdx,
                                  MachinePointerInfo::getConstantPool(),
@@ -14592,41 +14646,42 @@ static SDValue PerformSExtCombine(SDNode *N, SelectionDAG &DAG,
   if (!DCI.isBeforeLegalizeOps())
     return SDValue();
 
-  if (!Subtarget->hasAVX()) return SDValue();
+  if (!Subtarget->hasAVX()) 
+    return SDValue();
 
-   // Optimize vectors in AVX mode
-   // Sign extend  v8i16 to v8i32 and
-   //              v4i32 to v4i64
-   //
-   // Divide input vector into two parts
-   // for v4i32 the shuffle mask will be { 0, 1, -1, -1} {2, 3, -1, -1}
-   // use vpmovsx instruction to extend v4i32 -> v2i64; v8i16 -> v4i32
-   // concat the vectors to original VT
+  // Optimize vectors in AVX mode
+  // Sign extend  v8i16 to v8i32 and
+  //              v4i32 to v4i64
+  //
+  // Divide input vector into two parts
+  // for v4i32 the shuffle mask will be { 0, 1, -1, -1} {2, 3, -1, -1}
+  // use vpmovsx instruction to extend v4i32 -> v2i64; v8i16 -> v4i32
+  // concat the vectors to original VT
 
   EVT VT = N->getValueType(0);
   SDValue Op = N->getOperand(0);
   EVT OpVT = Op.getValueType();
   DebugLoc dl = N->getDebugLoc();
 
-  if (((VT == MVT::v4i64) && (OpVT == MVT::v4i32)) ||
-    ((VT == MVT::v8i32) && (OpVT == MVT::v8i16))) {
+  if ((VT == MVT::v4i64 && OpVT == MVT::v4i32) ||
+      (VT == MVT::v8i32 && OpVT == MVT::v8i16)) {
 
     unsigned NumElems = OpVT.getVectorNumElements();
     SmallVector<int,8> ShufMask1(NumElems, -1);
-    for (unsigned i=0; i< NumElems/2; i++) ShufMask1[i] = i;
+    for (unsigned i = 0; i < NumElems/2; i++) ShufMask1[i] = i;
 
     SDValue OpLo = DAG.getVectorShuffle(OpVT, dl, Op, DAG.getUNDEF(OpVT),
-                                ShufMask1.data());
+                                        ShufMask1.data());
 
     SmallVector<int,8> ShufMask2(NumElems, -1);
-    for (unsigned i=0; i< NumElems/2; i++) ShufMask2[i] = i+NumElems/2;
+    for (unsigned i = 0; i < NumElems/2; i++) ShufMask2[i] = i + NumElems/2;
 
     SDValue OpHi = DAG.getVectorShuffle(OpVT, dl, Op, DAG.getUNDEF(OpVT),
-                                ShufMask2.data());
+                                        ShufMask2.data());
 
     EVT HalfVT = EVT::getVectorVT(*DAG.getContext(), VT.getScalarType(), 
-      VT.getVectorNumElements()/2);
-    
+                                  VT.getVectorNumElements()/2);
+
     OpLo = DAG.getNode(X86ISD::VSEXT_MOVL, dl, HalfVT, OpLo); 
     OpHi = DAG.getNode(X86ISD::VSEXT_MOVL, dl, HalfVT, OpHi);
 

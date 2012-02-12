@@ -686,6 +686,8 @@ LValue CodeGenFunction::EmitLValue(const Expr *E) {
     return EmitCXXConstructLValue(cast<CXXConstructExpr>(E));
   case Expr::CXXBindTemporaryExprClass:
     return EmitCXXBindTemporaryLValue(cast<CXXBindTemporaryExpr>(E));
+  case Expr::LambdaExprClass:
+    return EmitLambdaLValue(cast<LambdaExpr>(E));
 
   case Expr::ExprWithCleanupsClass: {
     const ExprWithCleanups *cleanups = cast<ExprWithCleanups>(E);
@@ -881,8 +883,7 @@ RValue CodeGenFunction::EmitLoadOfBitfieldLValue(LValue LV) {
     }
 
     // Cast to the access type.
-    llvm::Type *PTy = llvm::Type::getIntNPtrTy(getLLVMContext(),
-                                                     AI.AccessWidth,
+    llvm::Type *PTy = llvm::Type::getIntNPtrTy(getLLVMContext(), AI.AccessWidth,
                        CGM.getContext().getTargetAddressSpace(LV.getType()));
     Ptr = Builder.CreateBitCast(Ptr, PTy);
 
@@ -1395,6 +1396,12 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
     llvm::Value *V = LocalDeclMap[VD];
     if (!V && VD->isStaticLocal()) 
       V = CGM.getStaticLocalDeclAddress(VD);
+
+    // Use special handling for lambdas.
+    if (!V)
+      if (FieldDecl *FD = LambdaCaptureFields.lookup(VD))
+        return EmitLValueForField(CXXABIThisValue, FD, 0);
+
     assert(V && "DeclRefExpr not entered in LocalDeclMap?");
 
     if (VD->hasAttr<BlocksAttr>())
@@ -2357,6 +2364,13 @@ CodeGenFunction::EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E) {
   Slot.setExternallyDestructed();
   EmitAggExpr(E->getSubExpr(), Slot);
   EmitCXXTemporary(E->getTemporary(), E->getType(), Slot.getAddr());
+  return MakeAddrLValue(Slot.getAddr(), E->getType());
+}
+
+LValue
+CodeGenFunction::EmitLambdaLValue(const LambdaExpr *E) {
+  AggValueSlot Slot = CreateAggTemp(E->getType(), "temp.lvalue");
+  EmitLambdaExpr(E, Slot);
   return MakeAddrLValue(Slot.getAddr(), E->getType());
 }
 

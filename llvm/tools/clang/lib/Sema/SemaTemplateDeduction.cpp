@@ -2019,7 +2019,8 @@ FinishTemplateArgumentDeduction(Sema &S,
                                 const TemplateArgumentList &TemplateArgs,
                       SmallVectorImpl<DeducedTemplateArgument> &Deduced,
                                 TemplateDeductionInfo &Info) {
-  // Trap errors.
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(S, Sema::Unevaluated);
   Sema::SFINAETrap Trap(S);
 
   Sema::ContextRAII SavedContext(S, Partial);
@@ -2145,7 +2146,11 @@ Sema::DeduceTemplateArguments(ClassTemplatePartialSpecializationDecl *Partial,
   //   argument list if the template arguments of the partial
   //   specialization can be deduced from the actual template argument
   //   list (14.8.2).
+
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
   SFINAETrap Trap(*this);
+
   SmallVector<DeducedTemplateArgument, 4> Deduced;
   Deduced.resize(Partial->getTemplateParameters()->size());
   if (TemplateDeductionResult Result
@@ -2226,8 +2231,8 @@ Sema::SubstituteExplicitTemplateArguments(
     return TDK_Success;
   }
 
-  // Substitution of the explicit template arguments into a function template
-  /// is a SFINAE context. Trap any errors that might occur.
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
   SFINAETrap Trap(*this);
 
   // C++ [temp.arg.explicit]p3:
@@ -2286,33 +2291,45 @@ Sema::SubstituteExplicitTemplateArguments(
     }
   }
 
+  const FunctionProtoType *Proto
+    = Function->getType()->getAs<FunctionProtoType>();
+  assert(Proto && "Function template does not have a prototype?");
+
   // Instantiate the types of each of the function parameters given the
-  // explicitly-specified template arguments.
-  if (SubstParmTypes(Function->getLocation(),
+  // explicitly-specified template arguments. If the function has a trailing
+  // return type, substitute it after the arguments to ensure we substitute
+  // in lexical order.
+  if (Proto->hasTrailingReturn() &&
+      SubstParmTypes(Function->getLocation(),
                      Function->param_begin(), Function->getNumParams(),
                      MultiLevelTemplateArgumentList(*ExplicitArgumentList),
                      ParamTypes))
     return TDK_SubstitutionFailure;
 
-  // If the caller wants a full function type back, instantiate the return
-  // type and form that function type.
+  // Instantiate the return type.
+  // FIXME: exception-specifications?
+  QualType ResultType
+    = SubstType(Proto->getResultType(),
+                MultiLevelTemplateArgumentList(*ExplicitArgumentList),
+                Function->getTypeSpecStartLoc(),
+                Function->getDeclName());
+  if (ResultType.isNull() || Trap.hasErrorOccurred())
+    return TDK_SubstitutionFailure;
+
+  // Instantiate the types of each of the function parameters given the
+  // explicitly-specified template arguments if we didn't do so earlier.
+  if (!Proto->hasTrailingReturn() &&
+      SubstParmTypes(Function->getLocation(),
+                     Function->param_begin(), Function->getNumParams(),
+                     MultiLevelTemplateArgumentList(*ExplicitArgumentList),
+                     ParamTypes))
+    return TDK_SubstitutionFailure;
+
   if (FunctionType) {
-    // FIXME: exception-specifications?
-    const FunctionProtoType *Proto
-      = Function->getType()->getAs<FunctionProtoType>();
-    assert(Proto && "Function template does not have a prototype?");
-
-    QualType ResultType
-      = SubstType(Proto->getResultType(),
-                  MultiLevelTemplateArgumentList(*ExplicitArgumentList),
-                  Function->getTypeSpecStartLoc(),
-                  Function->getDeclName());
-    if (ResultType.isNull() || Trap.hasErrorOccurred())
-      return TDK_SubstitutionFailure;
-
     *FunctionType = BuildFunctionType(ResultType,
                                       ParamTypes.data(), ParamTypes.size(),
                                       Proto->isVariadic(),
+                                      Proto->hasTrailingReturn(),
                                       Proto->getTypeQuals(),
                                       Proto->getRefQualifier(),
                                       Function->getLocation(),
@@ -2449,8 +2466,8 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
   TemplateParameterList *TemplateParams
     = FunctionTemplate->getTemplateParameters();
 
-  // Template argument deduction for function templates in a SFINAE context.
-  // Trap any errors that might occur.
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
   SFINAETrap Trap(*this);
 
   // Enter a new template instantiation context while we instantiate the
@@ -3172,8 +3189,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     NumExplicitlySpecified = Deduced.size();
   }
 
-  // Template argument deduction for function templates in a SFINAE context.
-  // Trap any errors that might occur.
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
   SFINAETrap Trap(*this);
 
   Deduced.resize(TemplateParams->size());
@@ -3257,8 +3274,8 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
     A = A.getUnqualifiedType();
   }
 
-  // Template argument deduction for function templates in a SFINAE context.
-  // Trap any errors that might occur.
+  // Unevaluated SFINAE context.
+  EnterExpressionEvaluationContext Unevaluated(*this, Sema::Unevaluated);
   SFINAETrap Trap(*this);
 
   // C++ [temp.deduct.conv]p1:

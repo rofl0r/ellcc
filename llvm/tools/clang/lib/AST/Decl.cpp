@@ -25,7 +25,6 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/Module.h"
-#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -1413,7 +1412,7 @@ APValue *VarDecl::evaluateValue(
   // expression as a side-effect.
   if (getASTContext().getLangOptions().CPlusPlus0x && !Eval->CheckedICE) {
     Eval->CheckedICE = true;
-    Eval->IsICE = Notes.empty();
+    Eval->IsICE = Result && Notes.empty();
   }
 
   return Result ? &Eval->Evaluated : 0;
@@ -1883,31 +1882,79 @@ bool FunctionDecl::isInlined() const {
   return false;
 }
 
+static bool RedeclForcesDefC99(const FunctionDecl *Redecl) {
+  // Only consider file-scope declarations in this test.
+  if (!Redecl->getLexicalDeclContext()->isTranslationUnit())
+    return false;
+
+  // Only consider explicit declarations; the presence of a builtin for a
+  // libcall shouldn't affect whether a definition is externally visible.
+  if (Redecl->isImplicit())
+    return false;
+
+  if (!Redecl->isInlineSpecified() || Redecl->getStorageClass() == SC_Extern) 
+    return true; // Not an inline definition
+
+  return false;
+}
+
 /// \brief For a function declaration in C or C++, determine whether this
 /// declaration causes the definition to be externally visible.
 ///
-/// Determines whether this is the first non-inline redeclaration of an inline
-/// function in a language where "inline" does not normally require an
-/// externally visible definition.
+/// Specifically, this determines if adding the current declaration to the set
+/// of redeclarations of the given functions causes
+/// isInlineDefinitionExternallyVisible to change from false to true.
 bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
   assert(!doesThisDeclarationHaveABody() &&
          "Must have a declaration without a body.");
 
   ASTContext &Context = getASTContext();
 
-  // In C99 mode, a function may have an inline definition (causing it to
-  // be deferred) then redeclared later.  As a special case, "extern inline"
-  // is not required to produce an external symbol.
-  if (Context.getLangOptions().GNUInline || !Context.getLangOptions().C99 ||
-      Context.getLangOptions().CPlusPlus)
+  if (Context.getLangOptions().GNUInline || hasAttr<GNUInlineAttr>()) {
+    // With GNU inlining, a declaration with 'inline' but not 'extern', forces
+    // an externally visible definition.
+    //
+    // FIXME: What happens if gnu_inline gets added on after the first
+    // declaration?
+    if (!isInlineSpecified() || getStorageClassAsWritten() == SC_Extern)
+      return false;
+
+    const FunctionDecl *Prev = this;
+    bool FoundBody = false;
+    while ((Prev = Prev->getPreviousDecl())) {
+      FoundBody |= Prev->Body;
+
+      if (Prev->Body) {
+        // If it's not the case that both 'inline' and 'extern' are
+        // specified on the definition, then it is always externally visible.
+        if (!Prev->isInlineSpecified() ||
+            Prev->getStorageClassAsWritten() != SC_Extern)
+          return false;
+      } else if (Prev->isInlineSpecified() && 
+                 Prev->getStorageClassAsWritten() != SC_Extern) {
+        return false;
+      }
+    }
+    return FoundBody;
+  }
+
+  if (Context.getLangOptions().CPlusPlus)
     return false;
-  if (getLinkage() != ExternalLinkage || isInlineSpecified())
+
+  // C99 6.7.4p6:
+  //   [...] If all of the file scope declarations for a function in a 
+  //   translation unit include the inline function specifier without extern, 
+  //   then the definition in that translation unit is an inline definition.
+  if (isInlineSpecified() && getStorageClass() != SC_Extern)
     return false;
-  const FunctionDecl *Definition = 0;
-  if (hasBody(Definition))
-    return Definition->isInlined() &&
-           Definition->isInlineDefinitionExternallyVisible();
-  return false;
+  const FunctionDecl *Prev = this;
+  bool FoundBody = false;
+  while ((Prev = Prev->getPreviousDecl())) {
+    FoundBody |= Prev->Body;
+    if (RedeclForcesDefC99(Prev))
+      return false;
+  }
+  return FoundBody;
 }
 
 /// \brief For an inline function definition in C or C++, determine whether the 
@@ -1933,6 +1980,9 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
   ASTContext &Context = getASTContext();
   
   if (Context.getLangOptions().GNUInline || hasAttr<GNUInlineAttr>()) {
+    // Note: If you change the logic here, please change
+    // doesDeclarationForceExternallyVisibleDefinition as well.
+    //
     // If it's not the case that both 'inline' and 'extern' are
     // specified on the definition, then this inline definition is
     // externally visible.
@@ -1951,7 +2001,7 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
     
     return false;
   }
-  
+
   // C99 6.7.4p6:
   //   [...] If all of the file scope declarations for a function in a 
   //   translation unit include the inline function specifier without extern, 
@@ -1959,17 +2009,8 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
   for (redecl_iterator Redecl = redecls_begin(), RedeclEnd = redecls_end();
        Redecl != RedeclEnd;
        ++Redecl) {
-    // Only consider file-scope declarations in this test.
-    if (!Redecl->getLexicalDeclContext()->isTranslationUnit())
-      continue;
-
-    // Only consider explicit declarations; the presence of a builtin for a
-    // libcall shouldn't affect whether a definition is externally visible.
-    if (Redecl->isImplicit())
-      continue;
-
-    if (!Redecl->isInlineSpecified() || Redecl->getStorageClass() == SC_Extern) 
-      return true; // Not an inline definition
+    if (RedeclForcesDefC99(*Redecl))
+      return true;
   }
   
   // C99 6.7.4p6:
@@ -2959,18 +3000,4 @@ SourceRange ImportDecl::getSourceRange() const {
                        *reinterpret_cast<const SourceLocation *>(this + 1));
   
   return SourceRange(getLocation(), getIdentifierLocs().back());
-}
-
-const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
-                                           const NamedDecl* ND) {
-  DB.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
-                  DiagnosticsEngine::ak_nameddecl);
-  return DB;
-}
-
-const PartialDiagnostic &clang::operator<<(const PartialDiagnostic &PD,
-                                           const NamedDecl* ND) {
-  PD.AddTaggedVal(reinterpret_cast<intptr_t>(ND),
-                  DiagnosticsEngine::ak_nameddecl);
-  return PD;
 }

@@ -1369,6 +1369,13 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
 
   E = E->IgnoreParenCasts();
 
+  if (E->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNotNull))
+    // Technically -Wformat-nonliteral does not warn about this case.
+    // The behavior of printf and friends in this case is implementation
+    // dependent.  Ideally if the format string cannot be null then
+    // it should have a 'nonnull' attribute in the function prototype.
+    return true;
+
   switch (E->getStmtClass()) {
   case Stmt::BinaryConditionalOperatorClass:
   case Stmt::ConditionalOperatorClass: {
@@ -1380,13 +1387,6 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
                                  format_idx, firstDataArg, Type,
                                  inFunctionCall);
   }
-
-  case Stmt::IntegerLiteralClass:
-    // Technically -Wformat-nonliteral does not warn about this case.
-    // The behavior of printf and friends in this case is implementation
-    // dependent.  Ideally if the format string cannot be null then
-    // it should have a 'nonnull' attribute in the function prototype.
-    return true;
 
   case Stmt::ImplicitCastExprClass: {
     E = cast<ImplicitCastExpr>(E)->getSubExpr();
@@ -1459,21 +1459,20 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
     return false;
   }
 
-  case Stmt::CallExprClass: {
+  case Stmt::CallExprClass:
+  case Stmt::CXXMemberCallExprClass: {
     const CallExpr *CE = cast<CallExpr>(E);
-    if (const ImplicitCastExpr *ICE
-          = dyn_cast<ImplicitCastExpr>(CE->getCallee())) {
-      if (const DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(ICE->getSubExpr())) {
-        if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(DRE->getDecl())) {
-          if (const FormatArgAttr *FA = FD->getAttr<FormatArgAttr>()) {
-            unsigned ArgIndex = FA->getFormatIdx();
-            const Expr *Arg = CE->getArg(ArgIndex - 1);
+    if (const NamedDecl *ND = dyn_cast_or_null<NamedDecl>(CE->getCalleeDecl())) {
+      if (const FormatArgAttr *FA = ND->getAttr<FormatArgAttr>()) {
+        unsigned ArgIndex = FA->getFormatIdx();
+        if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(ND))
+          if (MD->isInstance())
+            --ArgIndex;
+        const Expr *Arg = CE->getArg(ArgIndex - 1);
 
-            return SemaCheckStringLiteral(Arg, Args, NumArgs, HasVAListArg,
-                                          format_idx, firstDataArg, Type,
-                                          inFunctionCall);
-          }
-        }
+        return SemaCheckStringLiteral(Arg, Args, NumArgs, HasVAListArg,
+                                      format_idx, firstDataArg, Type,
+                                      inFunctionCall);
       }
     }
 
@@ -1534,11 +1533,7 @@ void Sema::CheckFormatArguments(const FormatAttr *Format, CallExpr *TheCall) {
   // The way the format attribute works in GCC, the implicit this argument
   // of member functions is counted. However, it doesn't appear in our own
   // lists, so decrement format_idx in that case.
-  if (isa<CXXMemberCallExpr>(TheCall)) {
-    const CXXMethodDecl *method_decl = 
-    dyn_cast<CXXMethodDecl>(TheCall->getCalleeDecl());
-    IsCXXMember = method_decl && method_decl->isInstance();
-  }
+  IsCXXMember = isa<CXXMemberCallExpr>(TheCall);
   CheckFormatArguments(Format, TheCall->getArgs(), TheCall->getNumArgs(),
                        IsCXXMember, TheCall->getRParenLoc(), 
                        TheCall->getCallee()->getSourceRange());
@@ -1588,6 +1583,11 @@ void Sema::CheckFormatArguments(Expr **Args, unsigned NumArgs,
   if (SemaCheckStringLiteral(OrigFormatExpr, Args, NumArgs, HasVAListArg,
                              format_idx, firstDataArg, Type))
     return;  // Literal format string found, check done!
+
+  // Strftime is particular as it always uses a single 'time' argument,
+  // so it is safe to pass a non-literal string.
+  if (Type == FST_Strftime)
+    return;
 
   // Do not emit diag when the string param is a macro expansion and the
   // format is either NSString or CFString. This is a hack to prevent
@@ -4185,7 +4185,10 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
   BinaryOperator *BO = dyn_cast<BinaryOperator>(E);
   bool IsLogicalOperator = BO && BO->isLogicalOp();
   for (Stmt::child_range I = E->children(); I; ++I) {
-    Expr *ChildExpr = cast<Expr>(*I);
+    Expr *ChildExpr = dyn_cast_or_null<Expr>(*I);
+    if (!ChildExpr)
+      continue;
+
     if (IsLogicalOperator &&
         isa<StringLiteral>(ChildExpr->IgnoreParenImpCasts()))
       // Ignore checking string literals that are in logical operators.

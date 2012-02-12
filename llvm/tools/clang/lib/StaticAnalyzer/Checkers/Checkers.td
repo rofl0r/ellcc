@@ -87,6 +87,10 @@ def StackAddrEscapeChecker : Checker<"StackAddressEscape">,
 
 let ParentPackage = CoreExperimental in {
 
+def BoolAssignmentChecker : Checker<"BoolAssignment">,
+  HelpText<"Warn about assigning non-{0,1} values to Boolean variables">,
+  DescFile<"BoolAssignmentChecker.cpp">;
+
 def CastSizeChecker : Checker<"CastSize">,
   HelpText<"Check when casting a malloc'ed type T, whether the size is a multiple of the size of T">,
   DescFile<"CastSizeChecker.cpp">;
@@ -282,8 +286,12 @@ def ChrootChecker : Checker<"Chroot">,
   HelpText<"Check improper use of chroot">,
   DescFile<"ChrootChecker.cpp">;
 
-def MallocChecker : Checker<"Malloc">,
-  HelpText<"Check for potential memory leaks, double free, and use-after-free problems">,
+def MallocOptimistic : Checker<"MallocWithAnnotations">,
+  HelpText<"Check for memory leaks, double free, and use-after-free problems. Assumes that all user-defined functions which might free a pointer are annotated.">,
+  DescFile<"MallocChecker.cpp">;
+
+def MallocPessimistic : Checker<"Malloc">,
+  HelpText<"Check for memory leaks, double free, and use-after-free problems.">,
   DescFile<"MallocChecker.cpp">;
 
 def MallocSizeofChecker : Checker<"MallocSizeof">,
@@ -302,8 +310,20 @@ def StreamChecker : Checker<"Stream">,
 
 let ParentPackage = CString in {
 
-def CStringChecker : Checker<"Generic">,
-  HelpText<"Check calls to functions in <string.h>">,
+def CStringNullArg : Checker<"NullArg">,
+  HelpText<"Check for null pointers being passed as arguments to C string functions">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringOutOfBounds : Checker<"OutOfBounds">,
+  HelpText<"Check for out-of-bounds access in string functions">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringBufferOverlap : Checker<"BufferOverlap">,
+  HelpText<"Checks for overlap in two buffer arguments">,
+  DescFile<"CStringChecker.cpp">;
+
+def CStringNotNullTerm : Checker<"NotNullTerminated">,
+  HelpText<"Check for arguments which are not null-terminating strings">,
   DescFile<"CStringChecker.cpp">;
 
 def CStringSyntaxChecker : Checker<"BadSizeArg">,
@@ -408,7 +428,7 @@ def ObjCContainersASTChecker : Checker<"PointerSizedValues">,
   DescFile<"ObjCContainersASTChecker.cpp">;
 
 def ObjCContainersChecker : Checker<"OutOfBounds">,
-  HelpText<"Checks for index out of bounds when using 'CFArray' API">,
+  HelpText<"Checks for index out-of-bounds when using 'CFArray' API">,
   DescFile<"ObjCContainersChecker.cpp">;
     
 }

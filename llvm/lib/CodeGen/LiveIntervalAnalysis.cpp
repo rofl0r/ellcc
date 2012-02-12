@@ -24,7 +24,6 @@
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/CodeGen/ProcessImplicitDefs.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -48,13 +47,11 @@ STATISTIC(numIntervals , "Number of original intervals");
 char LiveIntervals::ID = 0;
 INITIALIZE_PASS_BEGIN(LiveIntervals, "liveintervals",
                 "Live Interval Analysis", false, false)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_DEPENDENCY(LiveVariables)
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
-INITIALIZE_PASS_DEPENDENCY(PHIElimination)
-INITIALIZE_PASS_DEPENDENCY(TwoAddressInstructionPass)
-INITIALIZE_PASS_DEPENDENCY(ProcessImplicitDefs)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
-INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_END(LiveIntervals, "liveintervals",
                 "Live Interval Analysis", false, false)
 
@@ -67,15 +64,6 @@ void LiveIntervals::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<MachineLoopInfo>();
   AU.addPreserved<MachineLoopInfo>();
   AU.addPreservedID(MachineDominatorsID);
-
-  if (!StrongPHIElim) {
-    AU.addPreservedID(PHIEliminationID);
-    AU.addRequiredID(PHIEliminationID);
-  }
-
-  AU.addRequiredID(TwoAddressInstructionPassID);
-  AU.addPreserved<ProcessImplicitDefs>();
-  AU.addRequired<ProcessImplicitDefs>();
   AU.addPreserved<SlotIndexes>();
   AU.addRequiredTransitive<SlotIndexes>();
   MachineFunctionPass::getAnalysisUsage(AU);
@@ -88,6 +76,9 @@ void LiveIntervals::releaseMemory() {
     delete I->second;
 
   r2iMap_.clear();
+  RegMaskSlots.clear();
+  RegMaskBits.clear();
+  RegMaskBlocks.clear();
 
   // Release VNInfo memory regions, VNInfo objects don't need to be dtor'd.
   VNInfoAllocator.Reset();
@@ -452,7 +443,7 @@ void LiveIntervals::handleRegisterDef(MachineBasicBlock *MBB,
 
 void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
                                          SlotIndex MIIdx,
-                                         LiveInterval &interval, bool isAlias) {
+                                         LiveInterval &interval) {
   DEBUG(dbgs() << "\t\tlivein register: " << PrintReg(interval.reg, tri_));
 
   // Look for kills, if it reaches a def before it's killed, then it shouldn't
@@ -502,13 +493,8 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
 
   // Live-in register might not be used at all.
   if (!SeenDefUse) {
-    if (isAlias) {
-      DEBUG(dbgs() << " dead");
-      end = MIIdx.getDeadSlot();
-    } else {
-      DEBUG(dbgs() << " live through");
-      end = getMBBEndIdx(MBB);
-    }
+    DEBUG(dbgs() << " live through");
+    end = getMBBEndIdx(MBB);
   }
 
   SlotIndex defIdx = getMBBStartIdx(MBB);
@@ -531,10 +517,14 @@ void LiveIntervals::computeIntervals() {
                << "********** Function: "
                << ((Value*)mf_->getFunction())->getName() << '\n');
 
+  RegMaskBlocks.resize(mf_->getNumBlockIDs());
+
   SmallVector<unsigned, 8> UndefUses;
   for (MachineFunction::iterator MBBI = mf_->begin(), E = mf_->end();
        MBBI != E; ++MBBI) {
     MachineBasicBlock *MBB = MBBI;
+    RegMaskBlocks[MBB->getNumber()].first = RegMaskSlots.size();
+
     if (MBB->empty())
       continue;
 
@@ -558,10 +548,20 @@ void LiveIntervals::computeIntervals() {
       DEBUG(dbgs() << MIIndex << "\t" << *MI);
       if (MI->isDebugValue())
         continue;
+      assert(indexes_->getInstructionFromIndex(MIIndex) == MI &&
+             "Lost SlotIndex synchronization");
 
       // Handle defs.
       for (int i = MI->getNumOperands() - 1; i >= 0; --i) {
         MachineOperand &MO = MI->getOperand(i);
+
+        // Collect register masks.
+        if (MO.isRegMask()) {
+          RegMaskSlots.push_back(MIIndex.getRegSlot());
+          RegMaskBits.push_back(MO.getRegMask());
+          continue;
+        }
+
         if (!MO.isReg() || !MO.getReg())
           continue;
 
@@ -575,6 +575,10 @@ void LiveIntervals::computeIntervals() {
       // Move to the next instr slot.
       MIIndex = indexes_->getNextNonNullIndex(MIIndex);
     }
+
+    // Compute the number of register mask instructions in this block.
+    std::pair<unsigned, unsigned> &RMB = RegMaskBlocks[MBB->getNumber()];
+    RMB.second = RegMaskSlots.size() - RMB.first;;
   }
 
   // Create empty intervals for registers defined by implicit_def's (except
@@ -842,9 +846,21 @@ static void handleMoveECs(LiveIntervals& lis, SlotIndex origIdx,
   }
 }
 
+static void moveKillFlags(unsigned reg, SlotIndex oldIdx, SlotIndex newIdx,
+                          LiveIntervals& lis,
+                          const TargetRegisterInfo& tri) {
+  MachineInstr* oldKillMI = lis.getInstructionFromIndex(oldIdx);
+  MachineInstr* newKillMI = lis.getInstructionFromIndex(newIdx);
+  assert(oldKillMI->killsRegister(reg) && "Old 'kill' instr isn't a kill.");
+  assert(!newKillMI->killsRegister(reg) && "New kill instr is already a kill.");
+  oldKillMI->clearRegisterKills(reg, &tri);
+  newKillMI->addRegisterKilled(reg, &tri);
+}
+
 template <typename UseSetT>
 static void handleMoveUses(const MachineBasicBlock *mbb,
                            const MachineRegisterInfo& mri,
+                           const TargetRegisterInfo& tri,
                            const BitVector& reservedRegs, LiveIntervals &lis,
                            SlotIndex origIdx, SlotIndex miIdx,
                            const UseSetT &uses) {
@@ -875,10 +891,15 @@ static void handleMoveUses(const MachineBasicBlock *mbb,
           const MachineOperand& mop = useI.getOperand();
           SlotIndex instSlot = lis.getSlotIndexes()->getInstructionIndex(mopI);
           SlotIndex opSlot = instSlot.getRegSlot(mop.isEarlyClobber());
-          if (opSlot >= lastUseInRange && opSlot < origIdx) {
+          if (opSlot > lastUseInRange && opSlot < origIdx)
             lastUseInRange = opSlot;
-          }
         }
+
+        // If we found a new instr endpoint update the kill flags.
+        if (lastUseInRange != miIdx.getRegSlot())
+          moveKillFlags(use, miIdx, lastUseInRange, lis, tri);
+
+        // Fix up the range end.
         lr->end = lastUseInRange;
       }
     } else {
@@ -890,6 +911,7 @@ static void handleMoveUses(const MachineBasicBlock *mbb,
       } else {
         bool liveOut = lr->end >= lis.getSlotIndexes()->getMBBEndIdx(mbb);
         if (!liveOut && miIdx.getRegSlot() > lr->end) {
+          moveKillFlags(use, lr->end, miIdx, lis, tri);
           lr->end = miIdx.getRegSlot();
         }
       }
@@ -904,15 +926,14 @@ void LiveIntervals::moveInstr(MachineBasicBlock::iterator insertPt,
   assert((insertPt == mbb->end() || insertPt->getParent() == mbb) &&
          "Cannot handle moves across basic block boundaries.");
   assert(&*insertPt != mi && "No-op move requested?");
-  assert(!mi->isInsideBundle() && "Can't handle bundled instructions yet.");
+  assert(!mi->isBundled() && "Can't handle bundled instructions yet.");
 
   // Grab the original instruction index.
   SlotIndex origIdx = indexes_->getInstructionIndex(mi);
 
   // Move the machine instr and obtain its new index.
   indexes_->removeMachineInstrFromMaps(mi);
-  mbb->remove(mi);
-  mbb->insert(insertPt, mi);
+  mbb->splice(insertPt, mbb, mi);
   SlotIndex miIdx = indexes_->insertMachineInstrInMaps(mi);
 
   // Pick the direction.
@@ -928,9 +949,6 @@ void LiveIntervals::moveInstr(MachineBasicBlock::iterator insertPt,
     if (!mop.isReg() || mop.getReg() == 0)
       continue;
     unsigned reg = mop.getReg();
-    if (mop.isUse()) {
-      assert(mop.readsReg());
-    }
 
     if (mop.readsReg() && !ecs.count(reg)) {
       uses.insert(reg);
@@ -952,7 +970,7 @@ void LiveIntervals::moveInstr(MachineBasicBlock::iterator insertPt,
   BitVector reservedRegs(tri_->getReservedRegs(*mbb->getParent()));
 
   if (movingUp) {
-    handleMoveUses(mbb, *mri_, reservedRegs, *this, origIdx, miIdx, uses);
+    handleMoveUses(mbb, *mri_, *tri_, reservedRegs, *this, origIdx, miIdx, uses);
     handleMoveECs(*this, origIdx, miIdx, ecs);
     handleMoveDeadDefs(*this, origIdx, miIdx, deadDefs);
     handleMoveDefs(*this, origIdx, miIdx, defs);
@@ -960,7 +978,7 @@ void LiveIntervals::moveInstr(MachineBasicBlock::iterator insertPt,
     handleMoveDefs(*this, origIdx, miIdx, defs);
     handleMoveDeadDefs(*this, origIdx, miIdx, deadDefs);
     handleMoveECs(*this, origIdx, miIdx, ecs);
-    handleMoveUses(mbb, *mri_, reservedRegs, *this, origIdx, miIdx, uses);
+    handleMoveUses(mbb, *mri_, *tri_, reservedRegs, *this, origIdx, miIdx, uses);
   }
 }
 
@@ -1060,23 +1078,28 @@ LiveIntervals::isReMaterializable(const LiveInterval &li,
   return true;
 }
 
-bool LiveIntervals::intervalIsInOneMBB(const LiveInterval &li) const {
-  LiveInterval::Ranges::const_iterator itr = li.ranges.begin();
+MachineBasicBlock*
+LiveIntervals::intervalIsInOneMBB(const LiveInterval &LI) const {
+  // A local live range must be fully contained inside the block, meaning it is
+  // defined and killed at instructions, not at block boundaries. It is not
+  // live in or or out of any block.
+  //
+  // It is technically possible to have a PHI-defined live range identical to a
+  // single block, but we are going to return false in that case.
 
-  MachineBasicBlock *mbb =  indexes_->getMBBCoveringRange(itr->start, itr->end);
+  SlotIndex Start = LI.beginIndex();
+  if (Start.isBlock())
+    return NULL;
 
-  if (mbb == 0)
-    return false;
+  SlotIndex Stop = LI.endIndex();
+  if (Stop.isBlock())
+    return NULL;
 
-  for (++itr; itr != li.ranges.end(); ++itr) {
-    MachineBasicBlock *mbb2 =
-      indexes_->getMBBCoveringRange(itr->start, itr->end);
-
-    if (mbb2 != mbb)
-      return false;
-  }
-
-  return true;
+  // getMBBFromIndex doesn't need to search the MBB table when both indexes
+  // belong to proper instructions.
+  MachineBasicBlock *MBB1 = indexes_->getMBBFromIndex(Start);
+  MachineBasicBlock *MBB2 = indexes_->getMBBFromIndex(Stop);
+  return MBB1 == MBB2 ? MBB1 : NULL;
 }
 
 float
@@ -1110,4 +1133,64 @@ LiveRange LiveIntervals::addLiveRangeToEndOfBlock(unsigned reg,
   Interval.addRange(LR);
 
   return LR;
+}
+
+
+//===----------------------------------------------------------------------===//
+//                          Register mask functions
+//===----------------------------------------------------------------------===//
+
+bool LiveIntervals::checkRegMaskInterference(LiveInterval &LI,
+                                             BitVector &UsableRegs) {
+  if (LI.empty())
+    return false;
+  LiveInterval::iterator LiveI = LI.begin(), LiveE = LI.end();
+
+  // Use a smaller arrays for local live ranges.
+  ArrayRef<SlotIndex> Slots;
+  ArrayRef<const uint32_t*> Bits;
+  if (MachineBasicBlock *MBB = intervalIsInOneMBB(LI)) {
+    Slots = getRegMaskSlotsInBlock(MBB->getNumber());
+    Bits = getRegMaskBitsInBlock(MBB->getNumber());
+  } else {
+    Slots = getRegMaskSlots();
+    Bits = getRegMaskBits();
+  }
+
+  // We are going to enumerate all the register mask slots contained in LI.
+  // Start with a binary search of RegMaskSlots to find a starting point.
+  ArrayRef<SlotIndex>::iterator SlotI =
+    std::lower_bound(Slots.begin(), Slots.end(), LiveI->start);
+  ArrayRef<SlotIndex>::iterator SlotE = Slots.end();
+
+  // No slots in range, LI begins after the last call.
+  if (SlotI == SlotE)
+    return false;
+
+  bool Found = false;
+  for (;;) {
+    assert(*SlotI >= LiveI->start);
+    // Loop over all slots overlapping this segment.
+    while (*SlotI < LiveI->end) {
+      // *SlotI overlaps LI. Collect mask bits.
+      if (!Found) {
+        // This is the first overlap. Initialize UsableRegs to all ones.
+        UsableRegs.clear();
+        UsableRegs.resize(tri_->getNumRegs(), true);
+        Found = true;
+      }
+      // Remove usable registers clobbered by this mask.
+      UsableRegs.clearBitsNotInMask(Bits[SlotI-Slots.begin()]);
+      if (++SlotI == SlotE)
+        return Found;
+    }
+    // *SlotI is beyond the current LI segment.
+    LiveI = LI.advanceTo(LiveI, *SlotI);
+    if (LiveI == LiveE)
+      return Found;
+    // Advance SlotI until it overlaps.
+    while (*SlotI < LiveI->start)
+      if (++SlotI == SlotE)
+        return Found;
+  }
 }

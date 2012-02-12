@@ -492,7 +492,7 @@ static unsigned getOPCODE(uint32_t insn) {
   }
 }
 
-EDInstInfo *MBlazeDisassembler::getEDInfo() const {
+const EDInstInfo *MBlazeDisassembler::getEDInfo() const {
   return instInfoMBlaze;
 }
 
@@ -502,7 +502,7 @@ EDInstInfo *MBlazeDisassembler::getEDInfo() const {
 
 MCDisassembler::DecodeStatus MBlazeDisassembler::getInstruction(MCInst &instr,
                                         uint64_t &size,
-                                        const MemoryObject &region,
+                                        MemoryObject &region,
                                         uint64_t address,
                                         raw_ostream &vStream,
                                         raw_ostream &cStream) const {

@@ -69,8 +69,6 @@ INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 INITIALIZE_PASS_DEPENDENCY(LiveDebugVariables)
-INITIALIZE_PASS_DEPENDENCY(StrongPHIElimination)
-INITIALIZE_PASS_DEPENDENCY(RegisterCoalescer)
 INITIALIZE_PASS_END(MachineScheduler, "misched",
                     "Machine Instruction Scheduler", false, false)
 
@@ -91,12 +89,6 @@ void MachineScheduler::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<LiveIntervals>();
   AU.addRequired<LiveDebugVariables>();
   AU.addPreserved<LiveDebugVariables>();
-  if (StrongPHIElim) {
-    AU.addRequiredID(StrongPHIEliminationID);
-    AU.addPreservedID(StrongPHIEliminationID);
-  }
-  AU.addRequiredID(RegisterCoalescerPassID);
-  AU.addPreservedID(RegisterCoalescerPassID);
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -154,7 +146,7 @@ MachineSchedOpt("misched",
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// MachineScheduler is an implementation of ScheduleDAGInstrs that schedules
+/// ScheduleTopDownLive is an implementation of ScheduleDAGInstrs that schedules
 /// machine instructions while updating LiveIntervals.
 class ScheduleTopDownLive : public ScheduleDAGInstrs {
 protected:
@@ -242,8 +234,6 @@ void ScheduleTopDownLive::Schedule() {
         Begin = MI;
     }
 
-    // TODO: Update live intervals.
-
     // Release dependent instructions for scheduling.
     releaseSuccessors(SU);
   }
@@ -295,8 +285,10 @@ bool MachineScheduler::runOnMachineFunction(MachineFunction &mf) {
         continue;
       }
       DEBUG(dbgs() << "MachineScheduling " << MF->getFunction()->getName()
-            << ":BB#" << MBB->getNumber() << "\n  From: " << *I << "    To: "
-            << *RegionEnd << " Remaining: " << RemainingCount << "\n");
+            << ":BB#" << MBB->getNumber() << "\n  From: " << *I << "    To: ";
+            if (RegionEnd != MBB->end()) dbgs() << *RegionEnd;
+            else dbgs() << "End";
+            dbgs() << " Remaining: " << RemainingCount << "\n");
 
       // Inform ScheduleDAGInstrs of the region being scheduled. It calls back
       // to our Schedule() method.

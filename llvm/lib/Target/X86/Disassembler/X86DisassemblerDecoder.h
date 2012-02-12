@@ -20,11 +20,10 @@
 extern "C" {
 #endif
   
-#define INSTRUCTION_SPECIFIER_FIELDS  \
-  const char*             name;
+#define INSTRUCTION_SPECIFIER_FIELDS
 
 #define INSTRUCTION_IDS     \
-  const InstrUID *instructionIDs;
+  unsigned instructionIDs;
 
 #include "X86DisassemblerDecoderCommon.h"
   
@@ -554,6 +553,7 @@ int decodeInstruction(struct InternalInstruction* insn,
                       void* readerArg,
                       dlog_t logger,
                       void* loggerArg,
+                      void* miiArg,
                       uint64_t startLoc,
                       DisassemblerMode mode);
 
@@ -567,6 +567,8 @@ int decodeInstruction(struct InternalInstruction* insn,
 void x86DisassemblerDebug(const char *file,
                           unsigned line,
                           const char *s);
+
+const char *x86DisassemblerGetInstrName(unsigned Opcode, void *mii);
 
 #ifdef __cplusplus 
 }

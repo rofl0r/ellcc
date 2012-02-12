@@ -33,7 +33,7 @@ namespace {
   class MachineCopyPropagation : public MachineFunctionPass {
     const TargetRegisterInfo *TRI;
     BitVector ReservedRegs;
-    
+
   public:
     static char ID; // Pass identification, replacement for typeid
     MachineCopyPropagation() : MachineFunctionPass(ID) {
@@ -50,13 +50,10 @@ namespace {
   };
 }
 char MachineCopyPropagation::ID = 0;
+char &llvm::MachineCopyPropagationID = MachineCopyPropagation::ID;
 
 INITIALIZE_PASS(MachineCopyPropagation, "machine-cp",
                 "Machine Copy Propagation Pass", false, false)
-
-FunctionPass *llvm::createMachineCopyPropagationPass() {
-  return new MachineCopyPropagation();
-}
 
 void
 MachineCopyPropagation::SourceNoLongerAvailable(unsigned Reg,
@@ -194,8 +191,11 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
 
     // Not a copy.
     SmallVector<unsigned, 2> Defs;
+    int RegMaskOpNum = -1;
     for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
       MachineOperand &MO = MI->getOperand(i);
+      if (MO.isRegMask())
+        RegMaskOpNum = i;
       if (!MO.isReg())
         continue;
       unsigned Reg = MO.getReg();
@@ -221,6 +221,32 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
         if (CI != CopyMap.end())
           MaybeDeadCopies.remove(CI->second);
       }
+    }
+
+    // The instruction has a register mask operand which means that it clobbers
+    // a large set of registers.  It is possible to use the register mask to
+    // prune the available copies, but treat it like a basic block boundary for
+    // now.
+    if (RegMaskOpNum >= 0) {
+      // Erase any MaybeDeadCopies whose destination register is clobbered.
+      const MachineOperand &MaskMO = MI->getOperand(RegMaskOpNum);
+      for (SmallSetVector<MachineInstr*, 8>::iterator
+           DI = MaybeDeadCopies.begin(), DE = MaybeDeadCopies.end();
+           DI != DE; ++DI) {
+        unsigned Reg = (*DI)->getOperand(0).getReg();
+        if (ReservedRegs.test(Reg) || !MaskMO.clobbersPhysReg(Reg))
+          continue;
+        (*DI)->eraseFromParent();
+        Changed = true;
+        ++NumDeletes;
+      }
+
+      // Clear all data structures as if we were beginning a new basic block.
+      MaybeDeadCopies.clear();
+      AvailCopyMap.clear();
+      CopyMap.clear();
+      SrcMap.clear();
+      continue;
     }
 
     for (unsigned i = 0, e = Defs.size(); i != e; ++i) {

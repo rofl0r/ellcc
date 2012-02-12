@@ -676,11 +676,6 @@ void CppWriter::printConstant(const Constant *CV) {
   std::string constName(getCppName(CV));
   std::string typeName(getCppName(CV->getType()));
 
-  if (isa<GlobalValue>(CV)) {
-    // Skip variables and functions, we emit them elsewhere
-    return;
-  }
-
   if (const ConstantInt *CI = dyn_cast<ConstantInt>(CV)) {
     std::string constValue = CI->getValue().toString(10, true);
     Out << "ConstantInt* " << constName
@@ -721,14 +716,14 @@ void CppWriter::printConstant(const Constant *CV) {
     }
     Out << "Constant* " << constName << " = ConstantStruct::get("
         << typeName << ", " << constName << "_fields);";
-  } else if (const ConstantVector *CV = dyn_cast<ConstantVector>(CV)) {
+  } else if (const ConstantVector *CVec = dyn_cast<ConstantVector>(CV)) {
     Out << "std::vector<Constant*> " << constName << "_elems;";
     nl(Out);
-    unsigned N = CV->getNumOperands();
+    unsigned N = CVec->getNumOperands();
     for (unsigned i = 0; i < N; ++i) {
-      printConstant(CV->getOperand(i));
+      printConstant(CVec->getOperand(i));
       Out << constName << "_elems.push_back("
-          << getCppName(CV->getOperand(i)) << ");";
+          << getCppName(CVec->getOperand(i)) << ");";
       nl(Out);
     }
     Out << "Constant* " << constName << " = ConstantVector::get("
@@ -1147,11 +1142,6 @@ void CppWriter::printInstruction(const Instruction *I,
     nl(Out);
     break;
   }
-  case Instruction::Unwind: {
-    Out << "new UnwindInst("
-        << bbname << ");";
-    break;
-  }
   case Instruction::Unreachable: {
     Out << "new UnreachableInst("
         << "mod->getContext(), "
@@ -1366,7 +1356,7 @@ void CppWriter::printInstruction(const Instruction *I,
     case Instruction::PtrToInt: Out << "PtrToIntInst"; break;
     case Instruction::IntToPtr: Out << "IntToPtrInst"; break;
     case Instruction::BitCast:  Out << "BitCastInst"; break;
-    default: assert(0 && "Unreachable"); break;
+    default: llvm_unreachable("Unreachable");
     }
     Out << "(" << opNames[0] << ", "
         << getCppName(cst->getType()) << ", \"";

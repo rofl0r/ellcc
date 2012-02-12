@@ -79,7 +79,7 @@ public:
   ///                   MCDisassembler::Fail if the instruction was invalid.
   virtual DecodeStatus  getInstruction(MCInst& instr,
                                        uint64_t& size,
-                                       const MemoryObject &region,
+                                       MemoryObject &region,
                                        uint64_t address,
                                        raw_ostream &vStream,
                                        raw_ostream &cStream) const = 0;
@@ -90,7 +90,7 @@ public:
   /// @return         - An array of instruction information, with one entry for
   ///                   each MCInst opcode this disassembler returns.
   ///                   NULL if there is no info for this target.
-  virtual EDInstInfo   *getEDInfo() const { return (EDInstInfo*)0; }
+  virtual const EDInstInfo   *getEDInfo() const { return (EDInstInfo*)0; }
 
 private:
   //

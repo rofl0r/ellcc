@@ -78,7 +78,7 @@
   const char*             name;
 
 #define INSTRUCTION_IDS               \
-  const InstrUID *instructionIDs;
+  unsigned instructionIDs;
 
 #include "X86DisassemblerDecoderCommon.h"
 
@@ -90,6 +90,7 @@
 namespace llvm {
   
 class MCInst;
+class MCInstrInfo;
 class MCSubtargetInfo;
 class MemoryObject;
 class raw_ostream;
@@ -102,11 +103,13 @@ namespace X86Disassembler {
 ///   All each platform class should have to do is subclass the constructor, and
 ///   provide a different disassemblerMode value.
 class X86GenericDisassembler : public MCDisassembler {
+  const MCInstrInfo *MII;
 public:
   /// Constructor     - Initializes the disassembler.
   ///
   /// @param mode     - The X86 architecture mode to decode for.
-  X86GenericDisassembler(const MCSubtargetInfo &STI, DisassemblerMode mode);
+  X86GenericDisassembler(const MCSubtargetInfo &STI, DisassemblerMode mode,
+                         const MCInstrInfo *MII);
 private:
   ~X86GenericDisassembler();
 public:
@@ -114,13 +117,13 @@ public:
   /// getInstruction - See MCDisassembler.
   DecodeStatus getInstruction(MCInst &instr,
                               uint64_t &size,
-                              const MemoryObject &region,
+                              MemoryObject &region,
                               uint64_t address,
                               raw_ostream &vStream,
                               raw_ostream &cStream) const;
 
   /// getEDInfo - See MCDisassembler.
-  EDInstInfo *getEDInfo() const;
+  const EDInstInfo *getEDInfo() const;
 private:
   DisassemblerMode              fMode;
 };

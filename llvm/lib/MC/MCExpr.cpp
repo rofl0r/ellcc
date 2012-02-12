@@ -132,7 +132,7 @@ void MCExpr::print(raw_ostream &OS) const {
   }
   }
 
-  assert(0 && "Invalid expression kind!");
+  llvm_unreachable("Invalid expression kind!");
 }
 
 void MCExpr::dump() const {
@@ -188,6 +188,7 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_TPOFF: return "TPOFF";
   case VK_DTPOFF: return "DTPOFF";
   case VK_TLVP: return "TLVP";
+  case VK_SECREL: return "SECREL";
   case VK_ARM_PLT: return "(PLT)";
   case VK_ARM_GOT: return "(GOT)";
   case VK_ARM_GOTOFF: return "(GOTOFF)";
@@ -576,8 +577,7 @@ bool MCExpr::EvaluateAsRelocatableImpl(MCValue &Res,
   }
   }
 
-  assert(0 && "Invalid assembly expression kind!");
-  return false;
+  llvm_unreachable("Invalid assembly expression kind!");
 }
 
 const MCSection *MCExpr::FindAssociatedSection() const {
@@ -618,6 +618,5 @@ const MCSection *MCExpr::FindAssociatedSection() const {
   }
   }
 
-  assert(0 && "Invalid assembly expression kind!");
-  return 0;
+  llvm_unreachable("Invalid assembly expression kind!");
 }

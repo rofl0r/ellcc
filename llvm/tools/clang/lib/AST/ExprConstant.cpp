@@ -42,7 +42,6 @@
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Expr.h"
 #include "clang/Basic/Builtins.h"
-#include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include <cstring>
@@ -1454,6 +1453,13 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
         O = &O->getArrayFiller();
       ObjType = CAT->getElementType();
     } else if (const FieldDecl *Field = getAsField(Sub.Entries[I])) {
+      if (Field->isMutable()) {
+        Info.Diag(E->getExprLoc(), diag::note_constexpr_ltor_mutable, 1)
+          << Field;
+        Info.Note(Field->getLocation(), diag::note_declared_at);
+        return false;
+      }
+
       // Next subobject is a class, struct or union field.
       RecordDecl *RD = ObjType->castAs<RecordType>()->getDecl();
       if (RD->isUnion()) {
@@ -4705,12 +4711,11 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
         << RHS << E->getType() << LHS.getBitWidth();
     } else if (LHS.isSigned()) {
       // C++11 [expr.shift]p2: A signed left shift must have a non-negative
-      // operand, and must not overflow.
+      // operand, and must not overflow the corresponding unsigned type.
       if (LHS.isNegative())
         CCEDiag(E, diag::note_constexpr_lshift_of_negative) << LHS;
-      else if (LHS.countLeadingZeros() <= SA)
-        HandleOverflow(Info, E, LHS.extend(LHS.getBitWidth() + SA) << SA,
-                       E->getType());
+      else if (LHS.countLeadingZeros() < SA)
+        CCEDiag(E, diag::note_constexpr_lshift_discards);
     }
 
     return Success(LHS << SA, E);
@@ -6086,6 +6091,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::PseudoObjectExprClass:
   case Expr::AtomicExprClass:
   case Expr::InitListExprClass:
+  case Expr::LambdaExprClass:
     return ICEDiag(2, E->getLocStart());
 
   case Expr::SizeOfPackExprClass:

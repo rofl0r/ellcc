@@ -13,15 +13,14 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclGroup.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 namespace clang {
   class FileEntry;
   class ObjCPropertyDecl;
   class ClassTemplateDecl;
   class FunctionTemplateDecl;
-  class Preprocessor;
   class TypeAliasTemplateDecl;
+  class ClassTemplateSpecializationDecl;
 
 namespace cxindex {
   class IndexingContext;
@@ -428,6 +427,8 @@ public:
   CXIdxClientEntity getClientEntity(const Decl *D) const;
   void setClientEntity(const Decl *D, CXIdxClientEntity client);
 
+  static bool isTemplateImplicitInstantiation(const Decl *D);
+
 private:
   bool handleDecl(const NamedDecl *D,
                   SourceLocation Loc, CXCursor Cursor,
@@ -461,7 +462,7 @@ private:
 
   CXCursor getRefCursor(const NamedDecl *D, SourceLocation Loc);
 
-  static bool shouldIgnoreIfImplicit(const NamedDecl *D);
+  static bool shouldIgnoreIfImplicit(const Decl *D);
 };
 
 class ScratchAlloc {

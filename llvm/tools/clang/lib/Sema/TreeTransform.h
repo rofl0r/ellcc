@@ -666,7 +666,8 @@ public:
   QualType RebuildFunctionProtoType(QualType T,
                                     QualType *ParamTypes,
                                     unsigned NumParamTypes,
-                                    bool Variadic, unsigned Quals,
+                                    bool Variadic, bool HasTrailingReturn,
+                                    unsigned Quals,
                                     RefQualifierKind RefQualifier,
                                     const FunctionType::ExtInfo &Info);
 
@@ -2032,12 +2033,11 @@ public:
     CXXScopeSpec SS;
     SS.Adopt(QualifierLoc);
 
-    if (TemplateArgs)
+    if (TemplateArgs || TemplateKWLoc.isValid())
       return getSema().BuildQualifiedTemplateIdExpr(SS, TemplateKWLoc,
-                                                    NameInfo, *TemplateArgs);
+                                                    NameInfo, TemplateArgs);
 
-    return getSema().BuildQualifiedDeclarationNameExpr(SS, TemplateKWLoc,
-                                                       NameInfo);
+    return getSema().BuildQualifiedDeclarationNameExpr(SS, NameInfo);
   }
 
   /// \brief Build a new template-id expression.
@@ -2048,7 +2048,7 @@ public:
                                    SourceLocation TemplateKWLoc,
                                    LookupResult &R,
                                    bool RequiresADL,
-                              const TemplateArgumentListInfo &TemplateArgs) {
+                              const TemplateArgumentListInfo *TemplateArgs) {
     return getSema().BuildTemplateIdExpr(SS, TemplateKWLoc, R, RequiresADL,
                                          TemplateArgs);
   }
@@ -3326,7 +3326,7 @@ TreeTransform<Derived>::TransformTypeInObjectScope(TypeLoc TL,
     TemplateName Template
       = getDerived().RebuildTemplateName(SS, 
                                          *SpecTL.getTypePtr()->getIdentifier(), 
-                                         SpecTL.getNameLoc(),
+                                         SpecTL.getTemplateNameLoc(),
                                          ObjectType, UnqualLookup);
     if (Template.isNull())
       return TypeLoc();
@@ -3383,7 +3383,7 @@ TreeTransform<Derived>::TransformTypeInObjectScope(TypeSourceInfo *TSInfo,
     TemplateName Template
       = getDerived().RebuildTemplateName(SS, 
                                          *SpecTL.getTypePtr()->getIdentifier(), 
-                                         SpecTL.getNameLoc(),
+                                         SpecTL.getTemplateNameLoc(),
                                          ObjectType, UnqualLookup);
     if (Template.isNull())
       return 0;
@@ -4138,6 +4138,7 @@ TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
                                                    ParamTypes.data(),
                                                    ParamTypes.size(),
                                                    T->isVariadic(),
+                                                   T->hasTrailingReturn(),
                                                    T->getTypeQuals(),
                                                    T->getRefQualifier(),
                                                    T->getExtInfo());
@@ -4591,9 +4592,10 @@ QualType TreeTransform<Derived>::TransformTemplateSpecializationType(
     if (isa<DependentTemplateSpecializationType>(Result)) {
       DependentTemplateSpecializationTypeLoc NewTL
         = TLB.push<DependentTemplateSpecializationTypeLoc>(Result);
-      NewTL.setKeywordLoc(TL.getTemplateNameLoc());
+      NewTL.setElaboratedKeywordLoc(SourceLocation());
       NewTL.setQualifierLoc(NestedNameSpecifierLoc());
-      NewTL.setNameLoc(TL.getTemplateNameLoc());
+      NewTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+      NewTL.setTemplateNameLoc(TL.getTemplateNameLoc());
       NewTL.setLAngleLoc(TL.getLAngleLoc());
       NewTL.setRAngleLoc(TL.getRAngleLoc());
       for (unsigned i = 0, e = NewTemplateArgs.size(); i != e; ++i)
@@ -4603,6 +4605,7 @@ QualType TreeTransform<Derived>::TransformTemplateSpecializationType(
 
     TemplateSpecializationTypeLoc NewTL
       = TLB.push<TemplateSpecializationTypeLoc>(Result);
+    NewTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
     NewTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     NewTL.setLAngleLoc(TL.getLAngleLoc());
     NewTL.setRAngleLoc(TL.getRAngleLoc());
@@ -4641,10 +4644,10 @@ QualType TreeTransform<Derived>::TransformDependentTemplateSpecializationType(
    
     DependentTemplateSpecializationTypeLoc NewTL
       = TLB.push<DependentTemplateSpecializationTypeLoc>(Result);
-    NewTL.setKeywordLoc(TL.getKeywordLoc());
-    
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
     NewTL.setQualifierLoc(SS.getWithLocInContext(SemaRef.Context));
-    NewTL.setNameLoc(TL.getNameLoc());
+    NewTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+    NewTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     NewTL.setLAngleLoc(TL.getLAngleLoc());
     NewTL.setRAngleLoc(TL.getRAngleLoc());
     for (unsigned i = 0, e = NewTemplateArgs.size(); i != e; ++i)
@@ -4654,14 +4657,15 @@ QualType TreeTransform<Derived>::TransformDependentTemplateSpecializationType(
       
   QualType Result 
     = getDerived().RebuildTemplateSpecializationType(Template,
-                                                     TL.getNameLoc(),
+                                                     TL.getTemplateNameLoc(),
                                                      NewTemplateArgs);
   
   if (!Result.isNull()) {
     /// FIXME: Wrap this in an elaborated-type-specifier?
     TemplateSpecializationTypeLoc NewTL
       = TLB.push<TemplateSpecializationTypeLoc>(Result);
-    NewTL.setTemplateNameLoc(TL.getNameLoc());
+    NewTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+    NewTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     NewTL.setLAngleLoc(TL.getLAngleLoc());
     NewTL.setRAngleLoc(TL.getRAngleLoc());
     for (unsigned i = 0, e = NewTemplateArgs.size(); i != e; ++i)
@@ -4711,7 +4715,7 @@ TreeTransform<Derived>::TransformElaboratedType(TypeLocBuilder &TLB,
   if (getDerived().AlwaysRebuild() ||
       QualifierLoc != TL.getQualifierLoc() ||
       NamedT != T->getNamedType()) {
-    Result = getDerived().RebuildElaboratedType(TL.getKeywordLoc(),
+    Result = getDerived().RebuildElaboratedType(TL.getElaboratedKeywordLoc(),
                                                 T->getKeyword(), 
                                                 QualifierLoc, NamedT);
     if (Result.isNull())
@@ -4719,7 +4723,7 @@ TreeTransform<Derived>::TransformElaboratedType(TypeLocBuilder &TLB,
   }
 
   ElaboratedTypeLoc NewTL = TLB.push<ElaboratedTypeLoc>(Result);
-  NewTL.setKeywordLoc(TL.getKeywordLoc());
+  NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
   NewTL.setQualifierLoc(QualifierLoc);
   return Result;
 }
@@ -4795,7 +4799,7 @@ QualType TreeTransform<Derived>::TransformDependentNameType(TypeLocBuilder &TLB,
 
   QualType Result
     = getDerived().RebuildDependentNameType(T->getKeyword(),
-                                            TL.getKeywordLoc(),
+                                            TL.getElaboratedKeywordLoc(),
                                             QualifierLoc,
                                             T->getIdentifier(),
                                             TL.getNameLoc());
@@ -4807,11 +4811,11 @@ QualType TreeTransform<Derived>::TransformDependentNameType(TypeLocBuilder &TLB,
     TLB.pushTypeSpec(NamedT).setNameLoc(TL.getNameLoc());
 
     ElaboratedTypeLoc NewTL = TLB.push<ElaboratedTypeLoc>(Result);
-    NewTL.setKeywordLoc(TL.getKeywordLoc());
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
     NewTL.setQualifierLoc(QualifierLoc);
   } else {
     DependentNameTypeLoc NewTL = TLB.push<DependentNameTypeLoc>(Result);
-    NewTL.setKeywordLoc(TL.getKeywordLoc());
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
     NewTL.setQualifierLoc(QualifierLoc);
     NewTL.setNameLoc(TL.getNameLoc());
   }
@@ -4856,7 +4860,7 @@ TransformDependentTemplateSpecializationType(TypeLocBuilder &TLB,
     = getDerived().RebuildDependentTemplateSpecializationType(T->getKeyword(),
                                                               QualifierLoc,
                                                             T->getIdentifier(),
-                                                            TL.getNameLoc(),
+                                                       TL.getTemplateNameLoc(),
                                                             NewTemplateArgs);
   if (Result.isNull())
     return QualType();
@@ -4867,7 +4871,8 @@ TransformDependentTemplateSpecializationType(TypeLocBuilder &TLB,
     // Copy information relevant to the template specialization.
     TemplateSpecializationTypeLoc NamedTL
       = TLB.push<TemplateSpecializationTypeLoc>(NamedT);
-    NamedTL.setTemplateNameLoc(TL.getNameLoc());
+    NamedTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+    NamedTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     NamedTL.setLAngleLoc(TL.getLAngleLoc());
     NamedTL.setRAngleLoc(TL.getRAngleLoc());
     for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
@@ -4875,14 +4880,15 @@ TransformDependentTemplateSpecializationType(TypeLocBuilder &TLB,
     
     // Copy information relevant to the elaborated type.
     ElaboratedTypeLoc NewTL = TLB.push<ElaboratedTypeLoc>(Result);
-    NewTL.setKeywordLoc(TL.getKeywordLoc());
+    NewTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
     NewTL.setQualifierLoc(QualifierLoc);
   } else if (isa<DependentTemplateSpecializationType>(Result)) {
     DependentTemplateSpecializationTypeLoc SpecTL
       = TLB.push<DependentTemplateSpecializationTypeLoc>(Result);
-    SpecTL.setKeywordLoc(TL.getKeywordLoc());
+    SpecTL.setElaboratedKeywordLoc(TL.getElaboratedKeywordLoc());
     SpecTL.setQualifierLoc(QualifierLoc);
-    SpecTL.setNameLoc(TL.getNameLoc());
+    SpecTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+    SpecTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     SpecTL.setLAngleLoc(TL.getLAngleLoc());
     SpecTL.setRAngleLoc(TL.getRAngleLoc());
     for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
@@ -4890,7 +4896,8 @@ TransformDependentTemplateSpecializationType(TypeLocBuilder &TLB,
   } else {
     TemplateSpecializationTypeLoc SpecTL
       = TLB.push<TemplateSpecializationTypeLoc>(Result);
-    SpecTL.setTemplateNameLoc(TL.getNameLoc());
+    SpecTL.setTemplateKeywordLoc(TL.getTemplateKeywordLoc());
+    SpecTL.setTemplateNameLoc(TL.getTemplateNameLoc());
     SpecTL.setLAngleLoc(TL.getLAngleLoc());
     SpecTL.setRAngleLoc(TL.getRAngleLoc());
     for (unsigned I = 0, E = NewTemplateArgs.size(); I != E; ++I)
@@ -7361,8 +7368,9 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
 
   SourceLocation TemplateKWLoc = Old->getTemplateKeywordLoc();
 
-  // If we have no template arguments, it's a normal declaration name.
-  if (!Old->hasExplicitTemplateArgs())
+  // If we have neither explicit template arguments, nor the template keyword,
+  // it's a normal declaration name.
+  if (!Old->hasExplicitTemplateArgs() && !TemplateKWLoc.isValid())
     return getDerived().RebuildDeclarationNameExpr(SS, R, Old->requiresADL());
 
   // If we have template arguments, rebuild them, then rebuild the
@@ -7374,7 +7382,7 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
     return ExprError();
 
   return getDerived().RebuildTemplateIdExpr(SS, TemplateKWLoc, R,
-                                            Old->requiresADL(), TransArgs);
+                                            Old->requiresADL(), &TransArgs);
 }
 
 template<typename Derived>
@@ -7610,6 +7618,13 @@ TreeTransform<Derived>::TransformCXXTemporaryObjectExpr(
                                           /*FIXME:*/T->getTypeLoc().getEndLoc(),
                                                     move_arg(Args),
                                                     E->getLocEnd());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
+  assert(false && "Lambda expressions cannot be instantiated (yet)");
+  return ExprError();
 }
 
 template<typename Derived>
@@ -8196,7 +8211,7 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
                                                         paramTypes.data(),
                                                         paramTypes.size(),
                                                         oldBlock->isVariadic(),
-                                                        0, RQ_None,
+                                                        false, 0, RQ_None,
                                                exprFunctionType->getExtInfo());
   blockScope->FunctionType = functionType;
 
@@ -8439,11 +8454,12 @@ QualType TreeTransform<Derived>::RebuildFunctionProtoType(QualType T,
                                                           QualType *ParamTypes,
                                                         unsigned NumParamTypes,
                                                           bool Variadic,
+                                                         bool HasTrailingReturn,
                                                           unsigned Quals,
                                                   RefQualifierKind RefQualifier,
                                             const FunctionType::ExtInfo &Info) {
   return SemaRef.BuildFunctionType(T, ParamTypes, NumParamTypes, Variadic,
-                                   Quals, RefQualifier,
+                                   HasTrailingReturn, Quals, RefQualifier,
                                    getDerived().getBaseLocation(),
                                    getDerived().getBaseEntity(),
                                    Info);

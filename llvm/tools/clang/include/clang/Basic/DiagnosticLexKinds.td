@@ -113,6 +113,8 @@ def err_exponent_has_no_digits : Error<"exponent has no digits">;
 def ext_imaginary_constant : Extension<"imaginary constants are an extension">;
 def err_hexconstant_requires_exponent : Error<
   "hexadecimal floating constants require an exponent">;
+def err_hexconstant_requires_digits : Error<
+  "hexadecimal floating constants require a significand">;
 def ext_hexconstant_invalid : Extension<
   "hexadecimal floating constants are a C99 feature">;
 def ext_binary_literal : Extension<
@@ -134,9 +136,16 @@ def err_unsupported_string_concat : Error<
   "unsupported non-standard concatenation of string literals">;
 def err_bad_string_encoding : Error<
   "illegal character encoding in string literal">;
+def warn_bad_string_encoding : ExtWarn<
+  "illegal character encoding in string literal">,
+  InGroup<DiagGroup<"invalid-source-encoding">>;
 def err_bad_character_encoding : Error<
   "illegal character encoding in character literal">;
-  
+def warn_bad_character_encoding : ExtWarn<
+  "illegal character encoding in character literal">,
+  InGroup<DiagGroup<"invalid-source-encoding">>;
+
+
 //===----------------------------------------------------------------------===//
 // PTH Diagnostics
 //===----------------------------------------------------------------------===//

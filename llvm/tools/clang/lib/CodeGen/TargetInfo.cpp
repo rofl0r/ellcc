@@ -741,8 +741,7 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty) const {
 
 llvm::Value *X86_32ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                       CodeGenFunction &CGF) const {
-  llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
-  llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
 
   CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
@@ -798,10 +797,8 @@ bool X86_32TargetCodeGenInfo::initDwarfEHRegSizeTable(
                                                CodeGen::CodeGenFunction &CGF,
                                                llvm::Value *Address) const {
   CodeGen::CGBuilderTy &Builder = CGF.Builder;
-  llvm::LLVMContext &Context = CGF.getLLVMContext();
 
-  llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
-  llvm::Value *Four8 = llvm::ConstantInt::get(i8, 4);
+  llvm::Value *Four8 = llvm::ConstantInt::get(CGF.Int8Ty, 4);
 
   // 0-7 are the eight integer registers;  the order is different
   //   on Darwin (for EH), but the range is the same.
@@ -812,7 +809,7 @@ bool X86_32TargetCodeGenInfo::initDwarfEHRegSizeTable(
     // 12-16 are st(0..4).  Not sure why we stop at 4.
     // These have size 16, which is sizeof(long double) on
     // platforms with 8-byte alignment for that type.
-    llvm::Value *Sixteen8 = llvm::ConstantInt::get(i8, 16);
+    llvm::Value *Sixteen8 = llvm::ConstantInt::get(CGF.Int8Ty, 16);
     AssignToArrayRange(Builder, Address, Sixteen8, 12, 16);
 
   } else {
@@ -823,7 +820,7 @@ bool X86_32TargetCodeGenInfo::initDwarfEHRegSizeTable(
     // 11-16 are st(0..5).  Not sure why we stop at 5.
     // These have size 12, which is sizeof(long double) on
     // platforms with 4-byte alignment for that type.
-    llvm::Value *Twelve8 = llvm::ConstantInt::get(i8, 12);
+    llvm::Value *Twelve8 = llvm::ConstantInt::get(CGF.Int8Ty, 12);
     AssignToArrayRange(Builder, Address, Twelve8, 11, 16);
   }
 
@@ -969,16 +966,11 @@ public:
 
   bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                llvm::Value *Address) const {
-    CodeGen::CGBuilderTy &Builder = CGF.Builder;
-    llvm::LLVMContext &Context = CGF.getLLVMContext();
-
-    llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
-    llvm::Value *Eight8 = llvm::ConstantInt::get(i8, 8);
+    llvm::Value *Eight8 = llvm::ConstantInt::get(CGF.Int8Ty, 8);
 
     // 0-15 are the 16 integer registers.
     // 16 is %rip.
-    AssignToArrayRange(Builder, Address, Eight8, 0, 16);
-
+    AssignToArrayRange(CGF.Builder, Address, Eight8, 0, 16);
     return false;
   }
 
@@ -1030,16 +1022,11 @@ public:
 
   bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                llvm::Value *Address) const {
-    CodeGen::CGBuilderTy &Builder = CGF.Builder;
-    llvm::LLVMContext &Context = CGF.getLLVMContext();
-
-    llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
-    llvm::Value *Eight8 = llvm::ConstantInt::get(i8, 8);
+    llvm::Value *Eight8 = llvm::ConstantInt::get(CGF.Int8Ty, 8);
 
     // 0-15 are the 16 integer registers.
     // 16 is %rip.
-    AssignToArrayRange(Builder, Address, Eight8, 0, 16);
-
+    AssignToArrayRange(CGF.Builder, Address, Eight8, 0, 16);
     return false;
   }
 };
@@ -2069,8 +2056,6 @@ static llvm::Value *EmitVAArgFromMemory(llvm::Value *VAListAddr,
 
 llvm::Value *X86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                       CodeGenFunction &CGF) const {
-  llvm::LLVMContext &VMContext = CGF.getLLVMContext();
-
   // Assume that va_list type is correct; should be pointer to LLVM type:
   // struct {
   //   i32 gp_offset;
@@ -2179,7 +2164,7 @@ llvm::Value *X86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
     // area, we need to collect the two eightbytes together.
     llvm::Value *RegAddrLo = CGF.Builder.CreateGEP(RegAddr, fp_offset);
     llvm::Value *RegAddrHi = CGF.Builder.CreateConstGEP1_32(RegAddrLo, 16);
-    llvm::Type *DoubleTy = llvm::Type::getDoubleTy(VMContext);
+    llvm::Type *DoubleTy = CGF.DoubleTy;
     llvm::Type *DblPtrTy =
       llvm::PointerType::getUnqual(DoubleTy);
     llvm::StructType *ST = llvm::StructType::get(DoubleTy,
@@ -2275,8 +2260,7 @@ void WinX86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
 llvm::Value *WinX86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                       CodeGenFunction &CGF) const {
-  llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
-  llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
 
   CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
@@ -2321,9 +2305,8 @@ PPC32TargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   // against gcc output.  AFAIK all ABIs use the same encoding.
 
   CodeGen::CGBuilderTy &Builder = CGF.Builder;
-  llvm::LLVMContext &Context = CGF.getLLVMContext();
 
-  llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
+  llvm::IntegerType *i8 = CGF.Int8Ty;
   llvm::Value *Four8 = llvm::ConstantInt::get(i8, 4);
   llvm::Value *Eight8 = llvm::ConstantInt::get(i8, 8);
   llvm::Value *Sixteen8 = llvm::ConstantInt::get(i8, 16);
@@ -2544,15 +2527,10 @@ public:
 
   bool initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
                                llvm::Value *Address) const {
-    CodeGen::CGBuilderTy &Builder = CGF.Builder;
-    llvm::LLVMContext &Context = CGF.getLLVMContext();
-
-    llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
-    llvm::Value *Four8 = llvm::ConstantInt::get(i8, 4);
+    llvm::Value *Four8 = llvm::ConstantInt::get(CGF.Int8Ty, 4);
 
     // 0-15 are the 16 integer registers.
-    AssignToArrayRange(Builder, Address, Four8, 0, 15);
-
+    AssignToArrayRange(CGF.Builder, Address, Four8, 0, 15);
     return false;
   }
 
@@ -2878,12 +2856,11 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy) const {
 
 llvm::Value *ARMABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                    CodeGenFunction &CGF) const {
-  llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
-  llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+  llvm::Type *BP = CGF.Int8PtrTy;
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
 
   CGBuilderTy &Builder = CGF.Builder;
-  llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
-                                                       "ap");
+  llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP, "ap");
   llvm::Value *Addr = Builder.CreateLoad(VAListAddrAsBPP, "ap.cur");
   // Handle address alignment for type alignment > 32 bits
   uint64_t TyAlign = CGF.getContext().getTypeAlign(Ty) / 8;
@@ -3237,9 +3214,10 @@ llvm::Type* MipsABIInfo::HandleAggregates(QualType Ty) const {
   if (Ty->isComplexType())
     return CGT.ConvertType(Ty);
 
-  const RecordType *RT = Ty->getAsStructureType();
+  const RecordType *RT = Ty->getAs<RecordType>();
 
-  if (!RT)
+  // Unions are passed in integer registers.
+  if (!RT || !RT->isStructureOrClassType())
     return 0;
 
   const RecordDecl *RD = RT->getDecl();
@@ -3252,6 +3230,8 @@ llvm::Type* MipsABIInfo::HandleAggregates(QualType Ty) const {
   llvm::IntegerType *I64 = llvm::IntegerType::get(getVMContext(), 64);
   SmallVector<llvm::Type*, 8> ArgList;
 
+  // Iterate over fields in the struct/class and check if there are any aligned
+  // double fields.
   for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
        i != e; ++i, ++idx) {
     const QualType Ty = (*i)->getType();
@@ -3273,7 +3253,7 @@ llvm::Type* MipsABIInfo::HandleAggregates(QualType Ty) const {
     LastOffset = Offset + 64;
   }
 
-  // This structure doesn't have an aligned double field.
+  // This struct/class doesn't have an aligned double field.
   if (!LastOffset)
     return 0;
 
@@ -3345,27 +3325,40 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
 
 llvm::Type*
 MipsABIInfo::returnAggregateInRegs(QualType RetTy, uint64_t Size) const {
-  const RecordType *RT = RetTy->getAsStructureType();
+  const RecordType *RT = RetTy->getAs<RecordType>();
   SmallVector<llvm::Type*, 2> RTList;
 
-  if (RT) {
+  if (RT && RT->isStructureOrClassType()) {
     const RecordDecl *RD = RT->getDecl();
-    RecordDecl::field_iterator b = RD->field_begin(), e = RD->field_end(), i;
+    const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
+    unsigned FieldCnt = Layout.getFieldCount();
 
-    for (i = b; (i != e) && (std::distance(b, i) < 2); ++i) {
-      const BuiltinType *BT = (*i)->getType()->getAs<BuiltinType>();
+    // N32/64 returns struct/classes in floating point registers if the
+    // following conditions are met:
+    // 1. The size of the struct/class is no larger than 128-bit.
+    // 2. The struct/class has one or two fields all of which are floating
+    //    point types.
+    // 3. The offset of the first field is zero (this follows what gcc does). 
+    //
+    // Any other composite results are returned in integer registers.
+    //
+    if (FieldCnt && (FieldCnt <= 2) && !Layout.getFieldOffset(0)) {
+      RecordDecl::field_iterator b = RD->field_begin(), e = RD->field_end();
+      for (; b != e; ++b) {
+        const BuiltinType *BT = (*b)->getType()->getAs<BuiltinType>();
 
-      if (!BT || !BT->isFloatingPoint())
-        break;
+        if (!BT || !BT->isFloatingPoint())
+          break;
 
-      RTList.push_back(CGT.ConvertType((*i)->getType()));
+        RTList.push_back(CGT.ConvertType((*b)->getType()));
+      }
+
+      if (b == e)
+        return llvm::StructType::get(getVMContext(), RTList,
+                                     RD->hasAttr<PackedAttr>());
+
+      RTList.clear();
     }
-
-    if (i == e)
-      return llvm::StructType::get(getVMContext(), RTList,
-                                   RD->hasAttr<PackedAttr>());
-
-    RTList.clear();
   }
 
   RTList.push_back(llvm::IntegerType::get(getVMContext(),
@@ -3387,7 +3380,7 @@ ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
       if (RetTy->isAnyComplexType())
         return ABIArgInfo::getDirect();
 
-      if (!IsO32)
+      if (!IsO32 && !isRecordWithNonTrivialDestructorOrCopyConstructor(RetTy))
         return ABIArgInfo::getDirect(returnAggregateInRegs(RetTy, Size));
     }
 
@@ -3416,8 +3409,8 @@ void MipsABIInfo::computeInfo(CGFunctionInfo &FI) const {
 
 llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                     CodeGenFunction &CGF) const {
-  llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
-  llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+  llvm::Type *BP = CGF.Int8PtrTy;
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
  
   CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP, "ap");
@@ -3483,19 +3476,15 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   // This information comes from gcc's implementation, which seems to
   // as canonical as it gets.
 
-  CodeGen::CGBuilderTy &Builder = CGF.Builder;
-  llvm::LLVMContext &Context = CGF.getLLVMContext();
-
   // Everything on MIPS is 4 bytes.  Double-precision FP registers
   // are aliased to pairs of single-precision FP registers.
-  llvm::IntegerType *i8 = llvm::Type::getInt8Ty(Context);
-  llvm::Value *Four8 = llvm::ConstantInt::get(i8, 4);
+  llvm::Value *Four8 = llvm::ConstantInt::get(CGF.Int8Ty, 4);
 
   // 0-31 are the general purpose registers, $0 - $31.
   // 32-63 are the floating-point registers, $f0 - $f31.
   // 64 and 65 are the multiply/divide registers, $hi and $lo.
   // 66 is the (notional, I think) register for signal-handler return.
-  AssignToArrayRange(Builder, Address, Four8, 0, 65);
+  AssignToArrayRange(CGF.Builder, Address, Four8, 0, 65);
 
   // 67-74 are the floating-point status registers, $fcc0 - $fcc7.
   // They are one bit wide and ignored here.
@@ -3505,8 +3494,7 @@ MIPSTargetCodeGenInfo::initDwarfEHRegSizeTable(CodeGen::CodeGenFunction &CGF,
   // 112-143 are the coprocessor 2 registers, $c2r0 - $c2r31.
   // 144-175 are the coprocessor 3 registers, $c3r0 - $c3r31.
   // 176-181 are the DSP accumulator registers.
-  AssignToArrayRange(Builder, Address, Four8, 80, 181);
-
+  AssignToArrayRange(CGF.Builder, Address, Four8, 80, 181);
   return false;
 }
 
@@ -3568,27 +3556,20 @@ void TCETargetCodeGenInfo::SetTargetAttributes(const Decl *D,
         SmallVector<llvm::Value*, 5> Operands;
         Operands.push_back(F);
 
-        Operands.push_back(llvm::Constant::getIntegerValue(
-                             llvm::Type::getInt32Ty(Context), 
-                             llvm::APInt(
-                               32, 
-                               FD->getAttr<ReqdWorkGroupSizeAttr>()->getXDim())));
-        Operands.push_back(llvm::Constant::getIntegerValue(
-                             llvm::Type::getInt32Ty(Context), 
-                             llvm::APInt(
-                               32,
+        Operands.push_back(llvm::Constant::getIntegerValue(M.Int32Ty, 
+                             llvm::APInt(32, 
+                             FD->getAttr<ReqdWorkGroupSizeAttr>()->getXDim())));
+        Operands.push_back(llvm::Constant::getIntegerValue(M.Int32Ty,
+                             llvm::APInt(32,
                                FD->getAttr<ReqdWorkGroupSizeAttr>()->getYDim())));
-        Operands.push_back(llvm::Constant::getIntegerValue(
-                             llvm::Type::getInt32Ty(Context), 
-                             llvm::APInt(
-                               32, 
+        Operands.push_back(llvm::Constant::getIntegerValue(M.Int32Ty, 
+                             llvm::APInt(32, 
                                FD->getAttr<ReqdWorkGroupSizeAttr>()->getZDim())));
 
         // Add a boolean constant operand for "required" (true) or "hint" (false)
         // for implementing the work_group_size_hint attr later. Currently 
         // always true as the hint is not yet implemented.
-        Operands.push_back(llvm::ConstantInt::getTrue(llvm::Type::getInt1Ty(Context)));
-
+        Operands.push_back(llvm::ConstantInt::getTrue(Context));
         OpenCLMetadata->addOperand(llvm::MDNode::get(Context, Operands));
       }
     }
@@ -3715,10 +3696,9 @@ ABIArgInfo HexagonABIInfo::classifyReturnType(QualType RetTy) const {
 }
 
 llvm::Value *HexagonABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
-                                   CodeGenFunction &CGF) const {
+                                       CodeGenFunction &CGF) const {
   // FIXME: Need to handle alignment
-  llvm::Type *BP = llvm::Type::getInt8PtrTy(CGF.getLLVMContext());
-  llvm::Type *BPP = llvm::PointerType::getUnqual(BP);
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
 
   CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,

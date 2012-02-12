@@ -476,6 +476,11 @@ static Value *ThreadCmpOverSelect(CmpInst::Predicate Pred, Value *LHS,
   // the original comparison.
   if (TCmp == FCmp)
     return TCmp;
+
+  // The remaining cases only make sense if the select condition has the same
+  // type as the result of the comparison, so bail out if this is not so.
+  if (Cond->getType()->isVectorTy() != RHS->getType()->isVectorTy())
+    return 0;
   // If the false value simplified to false, then the result of the compare
   // is equal to "Cond && TCmp".  This also catches the case when the false
   // value simplified to false and the true value to true, returning "Cond".
@@ -1595,8 +1600,7 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
   if (match(RHS, m_Zero())) {
     bool LHSKnownNonNegative, LHSKnownNegative;
     switch (Pred) {
-    default:
-      assert(false && "Unknown ICmp predicate!");
+    default: llvm_unreachable("Unknown ICmp predicate!");
     case ICmpInst::ICMP_ULT:
       return getFalse(ITy);
     case ICmpInst::ICMP_UGE:
@@ -1766,8 +1770,7 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
         // there.  Use this to work out the result of the comparison.
         if (RExt != CI) {
           switch (Pred) {
-          default:
-            assert(false && "Unknown ICmp predicate!");
+          default: llvm_unreachable("Unknown ICmp predicate!");
           // LHS <u RHS.
           case ICmpInst::ICMP_EQ:
           case ICmpInst::ICMP_UGT:
@@ -1826,8 +1829,7 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
         // bits there.  Use this to work out the result of the comparison.
         if (RExt != CI) {
           switch (Pred) {
-          default:
-            assert(false && "Unknown ICmp predicate!");
+          default: llvm_unreachable("Unknown ICmp predicate!");
           case ICmpInst::ICMP_EQ:
             return ConstantInt::getFalse(CI->getContext());
           case ICmpInst::ICMP_NE:

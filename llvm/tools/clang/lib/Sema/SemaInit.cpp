@@ -1511,7 +1511,8 @@ static IndirectFieldDecl *FindIndirectFieldDesignator(FieldDecl *AnonField,
                                                  IdentifierInfo *FieldName) {
   assert(AnonField->isAnonymousStructOrUnion());
   Decl *NextDecl = AnonField->getNextDeclInContext();
-  while (IndirectFieldDecl *IF = dyn_cast<IndirectFieldDecl>(NextDecl)) {
+  while (IndirectFieldDecl *IF = 
+          dyn_cast_or_null<IndirectFieldDecl>(NextDecl)) {
     if (FieldName && FieldName == IF->getAnonField()->getIdentifier())
       return IF;
     NextDecl = NextDecl->getNextDeclInContext();
@@ -3742,8 +3743,10 @@ static void TryUserDefinedConversion(Sema &S,
 
   if (isa<CXXConstructorDecl>(Function)) {
     // Add the user-defined conversion step. Any cv-qualification conversion is
-    // subsumed by the initialization.
-    Sequence.AddUserConversionStep(Function, Best->FoundDecl, DestType,
+    // subsumed by the initialization. Per DR5, the created temporary is of the
+    // cv-unqualified type of the destination.
+    Sequence.AddUserConversionStep(Function, Best->FoundDecl,
+                                   DestType.getUnqualifiedType(),
                                    HadMultipleCandidates);
     return;
   }
@@ -3751,7 +3754,7 @@ static void TryUserDefinedConversion(Sema &S,
   // Add the user-defined conversion step that calls the conversion function.
   QualType ConvType = Function->getCallResultType();
   if (ConvType->getAs<RecordType>()) {
-    // If we're converting to a class type, there may be an copy if
+    // If we're converting to a class type, there may be an copy of
     // the resulting temporary object (possible to create an object of
     // a base class type). That copy is not a separate conversion, so
     // we just make a note of the actual destination type (possibly a
@@ -4898,7 +4901,7 @@ InitializationSequence::Perform(Sema &S,
                                       Loc, ConstructorArgs))
           return ExprError();
 
-        // Build the an expression that constructs a temporary.
+        // Build an expression that constructs a temporary.
         CurInit = S.BuildCXXConstructExpr(Loc, Step->Type, Constructor,
                                           move_arg(ConstructorArgs),
                                           HadMultipleCandidates,

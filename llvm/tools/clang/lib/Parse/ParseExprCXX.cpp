@@ -630,11 +630,11 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) 
   if (Tok.is(tok::amp) &&
       (NextToken().is(tok::comma) || NextToken().is(tok::r_square))) {
     Intro.Default = LCD_ByRef;
-    ConsumeToken();
+    Intro.DefaultLoc = ConsumeToken();
     first = false;
   } else if (Tok.is(tok::equal)) {
     Intro.Default = LCD_ByCopy;
-    ConsumeToken();
+    Intro.DefaultLoc = ConsumeToken();
     first = false;
   }
 
@@ -1654,7 +1654,8 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
 
   // Constructor and destructor names.
   TypeResult Type
-    = Actions.ActOnTemplateIdType(SS, Template, NameLoc,
+    = Actions.ActOnTemplateIdType(SS, TemplateKWLoc,
+                                  Template, NameLoc,
                                   LAngleLoc, TemplateArgsPtr, RAngleLoc,
                                   /*IsCtorOrDtorName=*/true);
   if (Type.isInvalid())

@@ -513,8 +513,7 @@ std::string Triple::normalize(StringRef Str) {
       bool Valid = false;
       StringRef Comp = Components[Idx];
       switch (Pos) {
-      default:
-        assert(false && "unexpected component type!");
+      default: llvm_unreachable("unexpected component type!");
       case 0:
         Arch = ParseArch(Comp);
         Valid = Arch != UnknownArch;
@@ -672,7 +671,7 @@ bool Triple::getMacOSXVersion(unsigned &Major, unsigned &Minor,
   getOSVersion(Major, Minor, Micro);
 
   switch (getOS()) {
-  default: assert(0 && "unexpected OS for Darwin triple");
+  default: llvm_unreachable("unexpected OS for Darwin triple");
   case Darwin:
     // Default to darwin8, i.e., MacOSX 10.4.
     if (Major == 0)
@@ -807,4 +806,78 @@ bool Triple::isArch32Bit() const {
 
 bool Triple::isArch16Bit() const {
   return getArchPointerBitWidth(getArch()) == 16;
+}
+
+Triple Triple::get32BitArchVariant() const {
+  Triple T(*this);
+  switch (getArch()) {
+  case Triple::UnknownArch:
+  case Triple::InvalidArch:
+  case Triple::msp430:
+    T.setArch(UnknownArch);
+    break;
+
+  case Triple::amdil:
+  case Triple::arm:
+  case Triple::cellspu:
+  case Triple::hexagon:
+  case Triple::le32:
+  case Triple::mblaze:
+  case Triple::mips:
+  case Triple::mipsel:
+  case Triple::ppc:
+  case Triple::ptx32:
+  case Triple::sparc:
+  case Triple::tce:
+  case Triple::thumb:
+  case Triple::x86:
+  case Triple::xcore:
+    // Already 32-bit.
+    break;
+
+  case Triple::mips64:    T.setArch(Triple::mips);    break;
+  case Triple::mips64el:  T.setArch(Triple::mipsel);  break;
+  case Triple::ppc64:     T.setArch(Triple::ppc);   break;
+  case Triple::ptx64:     T.setArch(Triple::ptx32);   break;
+  case Triple::sparcv9:   T.setArch(Triple::sparc);   break;
+  case Triple::x86_64:    T.setArch(Triple::x86);     break;
+  }
+  return T;
+}
+
+Triple Triple::get64BitArchVariant() const {
+  Triple T(*this);
+  switch (getArch()) {
+  case Triple::InvalidArch:
+  case Triple::UnknownArch:
+  case Triple::amdil:
+  case Triple::arm:
+  case Triple::cellspu:
+  case Triple::hexagon:
+  case Triple::le32:
+  case Triple::mblaze:
+  case Triple::msp430:
+  case Triple::tce:
+  case Triple::thumb:
+  case Triple::xcore:
+    T.setArch(UnknownArch);
+    break;
+
+  case Triple::mips64:
+  case Triple::mips64el:
+  case Triple::ppc64:
+  case Triple::ptx64:
+  case Triple::sparcv9:
+  case Triple::x86_64:
+    // Already 64-bit.
+    break;
+
+  case Triple::mips:    T.setArch(Triple::mips64);    break;
+  case Triple::mipsel:  T.setArch(Triple::mips64el);  break;
+  case Triple::ppc:     T.setArch(Triple::ppc64);     break;
+  case Triple::ptx32:   T.setArch(Triple::ptx64);     break;
+  case Triple::sparc:   T.setArch(Triple::sparcv9);   break;
+  case Triple::x86:     T.setArch(Triple::x86_64);    break;
+  }
+  return T;
 }

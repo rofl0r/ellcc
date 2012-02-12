@@ -2205,7 +2205,7 @@ CFRefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
     else {
       const FunctionDecl *FD = cast<FunctionDecl>(D);
       os << " is returned from a function whose name ('"
-         << FD->getNameAsString()
+         << *FD
          << "') does not contain 'Copy' or 'Create'.  This violates the naming"
             " convention rules given in the Memory Management Guide for Core"
             " Foundation";
@@ -3454,6 +3454,13 @@ void RetainCountChecker::checkEndPath(CheckerContext &Ctx) const {
       return;
   }
 
+  // If the current LocationContext has a parent, don't check for leaks.
+  // We will do that later.
+  // FIXME: we should instead check for imblances of the retain/releases,
+  // and suggest annotations.
+  if (Ctx.getLocationContext()->getParent())
+    return;
+  
   B = state->get<RefBindings>();
   SmallVector<SymbolRef, 10> Leaked;
 

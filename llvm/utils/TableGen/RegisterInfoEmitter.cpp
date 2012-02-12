@@ -187,6 +187,9 @@ RegisterInfoEmitter::EmitRegMapping(raw_ostream &OS,
       for (DwarfRegNumsMapTy::iterator
              I = DwarfRegNums.begin(), E = DwarfRegNums.end(); I != E; ++I) {
         int RegNo = I->second[i];
+        if (RegNo == -1) // -1 is the default value, don't emit a mapping.
+          continue;
+
         OS << "    ";
         if (!isCtor)
           OS << "RI->";
@@ -367,7 +370,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
 
   for (unsigned rc = 0, e = RegisterClasses.size(); rc != e; ++rc) {
     const CodeGenRegisterClass &RC = *RegisterClasses[rc];
-    OS << "  MCRegisterClass(" << RC.getQualifiedName() + "RegClassID" << ", "
+    OS << "  { " << RC.getQualifiedName() + "RegClassID" << ", "
        << '\"' << RC.getName() << "\", "
        << RC.SpillSize/8 << ", "
        << RC.SpillAlignment/8 << ", "
@@ -376,7 +379,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
        << RC.getName() << ", " << RC.getName() << " + "
        << RC.getOrder().size() << ", "
        << RC.getName() << "Bits, sizeof(" << RC.getName() << "Bits)"
-       << "),\n";
+       << " },\n";
   }
 
   OS << "};\n\n";
@@ -518,7 +521,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
     // Emit the register list now.
     OS << "  // " << Name
        << " Register Class Value Types...\n"
-       << "  static const EVT " << Name
+       << "  static const MVT::SimpleValueType " << Name
        << "[] = {\n    ";
     for (unsigned i = 0, e = RC.VTs.size(); i != e; ++i)
       OS << getEnumName(RC.VTs[i]) << ", ";

@@ -141,8 +141,8 @@ void ilist_traits<MachineInstr>::deleteNode(MachineInstr* MI) {
 }
 
 MachineBasicBlock::iterator MachineBasicBlock::getFirstNonPHI() {
-  instr_iterator I = instr_begin();
-  while (I != end() && I->isPHI())
+  instr_iterator I = instr_begin(), E = instr_end();
+  while (I != E && I->isPHI())
     ++I;
   assert(!I->isInsideBundle() && "First non-phi MI cannot be inside a bundle!");
   return I;
@@ -150,7 +150,8 @@ MachineBasicBlock::iterator MachineBasicBlock::getFirstNonPHI() {
 
 MachineBasicBlock::iterator
 MachineBasicBlock::SkipPHIsAndLabels(MachineBasicBlock::iterator I) {
-  while (I != end() && (I->isPHI() || I->isLabel() || I->isDebugValue()))
+  iterator E = end();
+  while (I != E && (I->isPHI() || I->isLabel() || I->isDebugValue()))
     ++I;
   // FIXME: This needs to change if we wish to bundle labels / dbg_values
   // inside the bundle.
@@ -160,29 +161,29 @@ MachineBasicBlock::SkipPHIsAndLabels(MachineBasicBlock::iterator I) {
 }
 
 MachineBasicBlock::iterator MachineBasicBlock::getFirstTerminator() {
-  iterator I = end();
-  while (I != begin() && ((--I)->isTerminator() || I->isDebugValue()))
+  iterator B = begin(), E = end(), I = E;
+  while (I != B && ((--I)->isTerminator() || I->isDebugValue()))
     ; /*noop */
-  while (I != end() && !I->isTerminator())
+  while (I != E && !I->isTerminator())
     ++I;
   return I;
 }
 
 MachineBasicBlock::const_iterator
 MachineBasicBlock::getFirstTerminator() const {
-  const_iterator I = end();
-  while (I != begin() && ((--I)->isTerminator() || I->isDebugValue()))
+  const_iterator B = begin(), E = end(), I = E;
+  while (I != B && ((--I)->isTerminator() || I->isDebugValue()))
     ; /*noop */
-  while (I != end() && !I->isTerminator())
+  while (I != E && !I->isTerminator())
     ++I;
   return I;
 }
 
 MachineBasicBlock::instr_iterator MachineBasicBlock::getFirstInstrTerminator() {
-  instr_iterator I = instr_end();
-  while (I != instr_begin() && ((--I)->isTerminator() || I->isDebugValue()))
+  instr_iterator B = instr_begin(), E = instr_end(), I = E;
+  while (I != B && ((--I)->isTerminator() || I->isDebugValue()))
     ; /*noop */
-  while (I != instr_end() && !I->isTerminator())
+  while (I != E && !I->isTerminator())
     ++I;
   return I;
 }
@@ -602,10 +603,11 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
       MachineInstr *MI = I;
       for (MachineInstr::mop_iterator OI = MI->operands_begin(),
            OE = MI->operands_end(); OI != OE; ++OI) {
-        if (!OI->isReg() || !OI->isUse() || !OI->isKill() || OI->isUndef())
+        if (!OI->isReg() || OI->getReg() == 0 ||
+            !OI->isUse() || !OI->isKill() || OI->isUndef())
           continue;
         unsigned Reg = OI->getReg();
-        if (TargetRegisterInfo::isVirtualRegister(Reg) &&
+        if (TargetRegisterInfo::isPhysicalRegister(Reg) ||
             LV->getVarInfo(Reg).removeKill(MI)) {
           KilledRegs.push_back(Reg);
           DEBUG(dbgs() << "Removing terminator kill: " << *MI);
@@ -638,14 +640,16 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
     NMBB->addLiveIn(*I);
 
   // Update LiveVariables.
+  const TargetRegisterInfo *TRI = MF->getTarget().getRegisterInfo();
   if (LV) {
     // Restore kills of virtual registers that were killed by the terminators.
     while (!KilledRegs.empty()) {
       unsigned Reg = KilledRegs.pop_back_val();
       for (instr_iterator I = instr_end(), E = instr_begin(); I != E;) {
-        if (!(--I)->addRegisterKilled(Reg, NULL, /* addIfNotFound= */ false))
+        if (!(--I)->addRegisterKilled(Reg, TRI, /* addIfNotFound= */ false))
           continue;
-        LV->getVarInfo(Reg).Kills.push_back(I);
+        if (TargetRegisterInfo::isVirtualRegister(Reg))
+          LV->getVarInfo(Reg).Kills.push_back(I);
         DEBUG(dbgs() << "Restored terminator kill: " << *I);
         break;
       }
@@ -723,8 +727,9 @@ MachineBasicBlock::erase(MachineBasicBlock::iterator I) {
 
 MachineInstr *MachineBasicBlock::remove(MachineInstr *I) {
   if (I->isBundle()) {
-    MachineBasicBlock::instr_iterator MII = I; ++MII;
-    while (MII != end() && MII->isInsideBundle()) {
+    instr_iterator MII = llvm::next(I);
+    iterator E = end();
+    while (MII != E && MII->isInsideBundle()) {
       MachineInstr *MI = &*MII++;
       Insts.remove(MI);
     }

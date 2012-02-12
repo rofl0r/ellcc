@@ -16,6 +16,7 @@
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/ScopeInfo.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTMutationListener.h"
@@ -61,6 +62,7 @@ namespace {
     bool VisitExpr(Expr *Node);
     bool VisitDeclRefExpr(DeclRefExpr *DRE);
     bool VisitCXXThisExpr(CXXThisExpr *ThisE);
+    bool VisitLambdaExpr(LambdaExpr *Lambda);
   };
 
   /// VisitExpr - Visit all of the children of this expression.
@@ -109,6 +111,17 @@ namespace {
     return S->Diag(ThisE->getSourceRange().getBegin(),
                    diag::err_param_default_argument_references_this)
                << ThisE->getSourceRange();
+  }
+
+  bool CheckDefaultArgumentVisitor::VisitLambdaExpr(LambdaExpr *Lambda) {
+    // C++11 [expr.lambda.prim]p13:
+    //   A lambda-expression appearing in a default argument shall not
+    //   implicitly or explicitly capture any entity.
+    if (Lambda->capture_begin() == Lambda->capture_end())
+      return false;
+
+    return S->Diag(Lambda->getLocStart(), 
+                   diag::err_lambda_capture_default_arg);
   }
 }
 
@@ -815,7 +828,11 @@ static void CheckConstexprCtorInitializer(Sema &SemaRef,
                                           bool &Diagnosed) {
   if (Field->isUnnamedBitfield())
     return;
-  
+
+  if (Field->isAnonymousStructOrUnion() &&
+      Field->getType()->getAsCXXRecordDecl()->isEmpty())
+    return;
+
   if (!Inits.count(Field)) {
     if (!Diagnosed) {
       SemaRef.Diag(Dcl->getLocation(), diag::err_constexpr_ctor_missing_init);
@@ -901,11 +918,14 @@ bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body,
   if (const CXXConstructorDecl *Constructor
         = dyn_cast<CXXConstructorDecl>(Dcl)) {
     const CXXRecordDecl *RD = Constructor->getParent();
-    // - every non-static data member and base class sub-object shall be
-    //   initialized;
+    // DR1359:
+    // - every non-variant non-static data member and base class sub-object
+    //   shall be initialized;
+    // - if the class is a non-empty union, or for each non-empty anonymous
+    //   union member of a non-union class, exactly one non-static data member
+    //   shall be initialized;
     if (RD->isUnion()) {
-      // DR1359: Exactly one member of a union shall be initialized.
-      if (Constructor->getNumCtorInitializers() == 0) {
+      if (Constructor->getNumCtorInitializers() == 0 && !RD->isEmpty()) {
         Diag(Dcl->getLocation(), diag::err_constexpr_union_ctor_no_init);
         return false;
       }
@@ -984,13 +1004,8 @@ bool Sema::CheckConstexprFunctionBody(const FunctionDecl *Dcl, Stmt *Body,
   // C++11 [dcl.constexpr]p4:
   //   - every constructor involved in initializing non-static data members and
   //     base class sub-objects shall be a constexpr constructor.
-  //
-  // FIXME: We currently disable this check inside system headers, to work
-  // around early STL implementations which contain constexpr functions which
-  // can't produce constant expressions.
   llvm::SmallVector<PartialDiagnosticAt, 8> Diags;
-  if (!Context.getSourceManager().isInSystemHeader(Dcl->getLocation()) &&
-      !IsInstantiation && !Expr::isPotentialConstantExpr(Dcl, Diags)) {
+  if (!IsInstantiation && !Expr::isPotentialConstantExpr(Dcl, Diags)) {
     Diag(Dcl->getLocation(), diag::err_constexpr_function_never_constant_expr)
       << isa<CXXConstructorDecl>(Dcl);
     for (size_t I = 0, N = Diags.size(); I != N; ++I)
@@ -3637,7 +3652,8 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
   // complain about any non-static data members of reference or const scalar
   // type, since they will never get initializers.
   if (!Record->isInvalidDecl() && !Record->isDependentType() &&
-      !Record->isAggregate() && !Record->hasUserDeclaredConstructor()) {
+      !Record->isAggregate() && !Record->hasUserDeclaredConstructor() &&
+      !Record->isLambda()) {
     bool Complained = false;
     for (RecordDecl::field_iterator F = Record->field_begin(), 
                                  FEnd = Record->field_end();
@@ -7601,9 +7617,10 @@ BuildSingleCopyAssign(Sema &S, SourceLocation Loc, QualType T,
     // reference to operator=; this is required to suppress the virtual
     // call mechanism.
     CXXScopeSpec SS;
+    const Type *CanonicalT = S.Context.getCanonicalType(T.getTypePtr());
     SS.MakeTrivial(S.Context, 
                    NestedNameSpecifier::Create(S.Context, 0, false, 
-                                               T.getTypePtr()),
+                                               CanonicalT),
                    Loc);
     
     // Create the reference to operator=.
@@ -9219,6 +9236,9 @@ void Sema::AddCXXDirectInitializerToDecl(Decl *RealDecl,
     return;
   } 
 
+  if (VDecl->hasLocalStorage())
+    getCurFunction()->setHasBranchProtectedScope();
+
   bool IsDependent = false;
   for (unsigned I = 0, N = Exprs.size(); I != N; ++I) {
     if (DiagnoseUnexpandedParameterPack(Exprs.get()[I], UPPC_Expression)) {
@@ -10086,12 +10106,12 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
     TypeSourceInfo *TSI = Context.CreateTypeSourceInfo(T);
     if (isa<DependentNameType>(T)) {
       DependentNameTypeLoc TL = cast<DependentNameTypeLoc>(TSI->getTypeLoc());
-      TL.setKeywordLoc(TagLoc);
+      TL.setElaboratedKeywordLoc(TagLoc);
       TL.setQualifierLoc(QualifierLoc);
       TL.setNameLoc(NameLoc);
     } else {
       ElaboratedTypeLoc TL = cast<ElaboratedTypeLoc>(TSI->getTypeLoc());
-      TL.setKeywordLoc(TagLoc);
+      TL.setElaboratedKeywordLoc(TagLoc);
       TL.setQualifierLoc(QualifierLoc);
       cast<TypeSpecTypeLoc>(TL.getNamedTypeLoc()).setNameLoc(NameLoc);
     }
@@ -10114,7 +10134,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
   QualType T = Context.getDependentNameType(ETK, SS.getScopeRep(), Name);
   TypeSourceInfo *TSI = Context.CreateTypeSourceInfo(T);
   DependentNameTypeLoc TL = cast<DependentNameTypeLoc>(TSI->getTypeLoc());
-  TL.setKeywordLoc(TagLoc);
+  TL.setElaboratedKeywordLoc(TagLoc);
   TL.setQualifierLoc(SS.getWithLocInContext(Context));
   TL.setNameLoc(NameLoc);
 

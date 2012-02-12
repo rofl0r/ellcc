@@ -200,15 +200,17 @@ UnresolvedLookupExpr::Create(ASTContext &C,
                              SourceLocation TemplateKWLoc,
                              const DeclarationNameInfo &NameInfo,
                              bool ADL,
-                             const TemplateArgumentListInfo &Args,
-                             UnresolvedSetIterator Begin, 
-                             UnresolvedSetIterator End) 
+                             const TemplateArgumentListInfo *Args,
+                             UnresolvedSetIterator Begin,
+                             UnresolvedSetIterator End)
 {
+  assert(Args || TemplateKWLoc.isValid());
+  unsigned num_args = Args ? Args->size() : 0;
   void *Mem = C.Allocate(sizeof(UnresolvedLookupExpr) +
-                         ASTTemplateKWAndArgsInfo::sizeFor(Args.size()));
+                         ASTTemplateKWAndArgsInfo::sizeFor(num_args));
   return new (Mem) UnresolvedLookupExpr(C, NamingClass, QualifierLoc,
                                         TemplateKWLoc, NameInfo,
-                                        ADL, /*Overload*/ true, &Args,
+                                        ADL, /*Overload*/ true, Args,
                                         Begin, End, /*StdIsAssociated=*/false);
 }
 
@@ -708,6 +710,113 @@ CXXConstructExpr::CXXConstructExpr(ASTContext &C, StmtClass SC, QualType T,
       Args[i] = args[i];
     }
   }
+}
+
+LambdaExpr::Capture::Capture(SourceLocation Loc, bool Implicit,
+                             LambdaCaptureKind Kind, VarDecl *Var,
+                             SourceLocation EllipsisLoc)
+  : VarAndBits(Var, 0), Loc(Loc), EllipsisLoc(EllipsisLoc)
+{
+  unsigned Bits = 0;
+  if (Implicit)
+    Bits |= Capture_Implicit;
+  
+  switch (Kind) {
+  case LCK_This: 
+    assert(Var == 0 && "'this' capture cannot have a variable!");
+    break;
+
+  case LCK_ByCopy:
+    Bits |= Capture_ByCopy;
+    // Fall through 
+  case LCK_ByRef:
+    assert(Var && "capture must have a variable!");
+    break;
+  }
+  VarAndBits.setInt(Bits);
+}
+
+LambdaCaptureKind LambdaExpr::Capture::getCaptureKind() const {
+  if (capturesThis())
+    return LCK_This;
+
+  return (VarAndBits.getInt() & Capture_ByCopy)? LCK_ByCopy : LCK_ByRef;
+}
+
+LambdaExpr::LambdaExpr(QualType T, 
+                       SourceRange IntroducerRange,
+                       LambdaCaptureDefault CaptureDefault,
+                       ArrayRef<Capture> Captures, 
+                       bool ExplicitParams,
+                       ArrayRef<Expr *> CaptureInits,
+                       SourceLocation ClosingBrace)
+  : Expr(LambdaExprClass, T, VK_RValue, OK_Ordinary,
+         T->isDependentType(), T->isDependentType(), T->isDependentType(),
+         /*ContainsUnexpandedParameterPack=*/false),
+    IntroducerRange(IntroducerRange),
+    NumCaptures(Captures.size()),
+    NumExplicitCaptures(0),
+    CaptureDefault(CaptureDefault),
+    ExplicitParams(ExplicitParams),
+    ClosingBrace(ClosingBrace)
+{
+  assert(CaptureInits.size() == Captures.size() && "Wrong number of arguments");
+
+  // Copy captures.
+  // FIXME: Do we need to update "contains unexpanded parameter pack" here?
+  Capture *ToCapture = reinterpret_cast<Capture *>(this + 1);
+  for (unsigned I = 0, N = Captures.size(); I != N; ++I) {
+    if (Captures[I].isExplicit())
+      ++NumExplicitCaptures;
+    *ToCapture++ = Captures[I];
+  }
+
+  // Copy initialization expressions for the non-static data members.
+  Stmt **Stored = getStoredStmts();
+  for (unsigned I = 0, N = CaptureInits.size(); I != N; ++I)
+    *Stored++ = CaptureInits[I];
+
+  // Copy the body of the lambda.
+  *Stored++ = getCallOperator()->getBody();
+}
+
+LambdaExpr *LambdaExpr::Create(ASTContext &Context, 
+                               CXXRecordDecl *Class,
+                               SourceRange IntroducerRange,
+                               LambdaCaptureDefault CaptureDefault,
+                               ArrayRef<Capture> Captures, 
+                               bool ExplicitParams,
+                               ArrayRef<Expr *> CaptureInits,
+                               SourceLocation ClosingBrace) {
+  // Determine the type of the expression (i.e., the type of the
+  // function object we're creating).
+  QualType T = Context.getTypeDeclType(Class);
+  size_t Size = sizeof(LambdaExpr) + sizeof(Capture) * Captures.size()
+              + sizeof(Stmt *) * (Captures.size() + 1);
+
+  void *Mem = Context.Allocate(Size, llvm::alignOf<LambdaExpr>());
+  return new (Mem) LambdaExpr(T, IntroducerRange, CaptureDefault, 
+                              Captures, ExplicitParams, CaptureInits,
+                              ClosingBrace);
+}
+
+CXXRecordDecl *LambdaExpr::getLambdaClass() const {
+  return getType()->getAsCXXRecordDecl();
+}
+
+CXXMethodDecl *LambdaExpr::getCallOperator() const {
+  CXXRecordDecl *Record = getLambdaClass();
+  DeclarationName Name
+    = Record->getASTContext().DeclarationNames.getCXXOperatorName(OO_Call);
+  DeclContext::lookup_result Calls = Record->lookup(Name);
+  assert(Calls.first != Calls.second && "Missing lambda call operator!");
+  CXXMethodDecl *Result = cast<CXXMethodDecl>(*Calls.first++);
+  assert(Calls.first == Calls.second && "More than lambda one call operator?");
+  return Result;
+}
+
+bool LambdaExpr::isMutable() const {
+  return (getCallOperator()->getTypeQualifiers() & Qualifiers::Const) == 0;
 }
 
 ExprWithCleanups::ExprWithCleanups(Expr *subexpr,

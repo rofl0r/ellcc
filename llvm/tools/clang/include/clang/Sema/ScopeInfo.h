@@ -156,8 +156,8 @@ public:
         CopyExprAndNested(Cpy, isNested) {}
 
     enum IsThisCapture { ThisCapture };
-    Capture(IsThisCapture, bool isNested, SourceLocation Loc)
-      : VarAndKind(0, Cap_This), CopyExprAndNested(0, isNested), Loc(Loc) {
+    Capture(IsThisCapture, bool isNested, SourceLocation Loc, Expr *Cpy)
+      : VarAndKind(0, Cap_This), CopyExprAndNested(Cpy, isNested), Loc(Loc) {
     }
 
     bool isThisCapture() const { return VarAndKind.getInt() == Cap_This; }
@@ -208,8 +208,8 @@ public:
     CaptureMap[Var] = Captures.size();
   }
 
-  void AddThisCapture(bool isNested, SourceLocation Loc) {
-    Captures.push_back(Capture(Capture::ThisCapture, isNested, Loc));
+  void AddThisCapture(bool isNested, SourceLocation Loc, Expr *Cpy) {
+    Captures.push_back(Capture(Capture::ThisCapture, isNested, Loc, Cpy));
     CXXThisCaptureIndex = Captures.size();
   }
 
@@ -279,16 +279,31 @@ class LambdaScopeInfo : public CapturingScopeInfo {
 public:
   /// \brief The class that describes the lambda.
   CXXRecordDecl *Lambda;
-  
+
+  /// \brief The class that describes the lambda.
+  CXXMethodDecl *CallOperator;
+
+  /// \brief Source range covering the lambda introducer [...].
+  SourceRange IntroducerRange;
+
   /// \brief The number of captures in the \c Captures list that are 
   /// explicit captures.
   unsigned NumExplicitCaptures;
 
+  /// \brief Whether this is a mutable lambda.
   bool Mutable;
+  
+  /// \brief Whether the (empty) parameter list is explicit.
+  bool ExplicitParams;
 
-  LambdaScopeInfo(DiagnosticsEngine &Diag, CXXRecordDecl *Lambda)
+  /// \brief Whether any of the capture expressions requires cleanups.
+  bool ExprNeedsCleanups;
+
+  LambdaScopeInfo(DiagnosticsEngine &Diag, CXXRecordDecl *Lambda,
+                  CXXMethodDecl *CallOperator)
     : CapturingScopeInfo(Diag, ImpCap_None), Lambda(Lambda),
-      NumExplicitCaptures(0), Mutable(false)
+      CallOperator(CallOperator), NumExplicitCaptures(0), Mutable(false),
+      ExprNeedsCleanups(false)
   {
     Kind = SK_Lambda;
   }

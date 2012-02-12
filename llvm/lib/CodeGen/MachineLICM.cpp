@@ -60,8 +60,6 @@ STATISTIC(NumPostRAHoisted,
 
 namespace {
   class MachineLICM : public MachineFunctionPass {
-    bool PreRegAlloc;
-
     const TargetMachine   *TM;
     const TargetInstrInfo *TII;
     const TargetLowering *TLI;
@@ -69,6 +67,8 @@ namespace {
     const MachineFrameInfo *MFI;
     MachineRegisterInfo *MRI;
     const InstrItineraryData *InstrItins;
+    bool PreRegAlloc;
+    BitVector ReservedRegs;
 
     // Various analyses that we use...
     AliasAnalysis        *AA;      // Alias analysis info.
@@ -119,8 +119,6 @@ namespace {
       }
 
     virtual bool runOnMachineFunction(MachineFunction &MF);
-
-    const char *getPassName() const { return "Machine Instruction LICM"; }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<MachineLoopInfo>();
@@ -182,7 +180,7 @@ namespace {
     /// invariant. I.e., all virtual register operands are defined outside of
     /// the loop, physical registers aren't accessed (explicitly or implicitly),
     /// and the instruction is hoistable.
-    /// 
+    ///
     bool IsLoopInvariantInst(MachineInstr &I);
 
     /// HasAnyPHIUse - Return true if the specified register is used by any
@@ -290,6 +288,7 @@ namespace {
 } // end anonymous namespace
 
 char MachineLICM::ID = 0;
+char &llvm::MachineLICMID = MachineLICM::ID;
 INITIALIZE_PASS_BEGIN(MachineLICM, "machinelicm",
                 "Machine Loop Invariant Code Motion", false, false)
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
@@ -297,10 +296,6 @@ INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_END(MachineLICM, "machinelicm",
                 "Machine Loop Invariant Code Motion", false, false)
-
-FunctionPass *llvm::createMachineLICMPass(bool PreRegAlloc) {
-  return new MachineLICM(PreRegAlloc);
-}
 
 /// LoopIsOuterMostWithPredecessor - Test if the given loop is the outer-most
 /// loop that has a unique predecessor.
@@ -317,12 +312,6 @@ static bool LoopIsOuterMostWithPredecessor(MachineLoop *CurLoop) {
 }
 
 bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
-  if (PreRegAlloc)
-    DEBUG(dbgs() << "******** Pre-regalloc Machine LICM: ");
-  else
-    DEBUG(dbgs() << "******** Post-regalloc Machine LICM: ");
-  DEBUG(dbgs() << MF.getFunction()->getName() << " ********\n");
-
   Changed = FirstInLoop = false;
   TM = &MF.getTarget();
   TII = TM->getInstrInfo();
@@ -331,6 +320,14 @@ bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
   MFI = MF.getFrameInfo();
   MRI = &MF.getRegInfo();
   InstrItins = TM->getInstrItineraryData();
+
+  PreRegAlloc = MRI->isSSA();
+
+  if (PreRegAlloc)
+    DEBUG(dbgs() << "******** Pre-regalloc Machine LICM: ");
+  else
+    DEBUG(dbgs() << "******** Post-regalloc Machine LICM: ");
+  DEBUG(dbgs() << MF.getFunction()->getName() << " ********\n");
 
   if (PreRegAlloc) {
     // Estimate register pressure during pre-regalloc pass.
@@ -341,6 +338,8 @@ bool MachineLICM::runOnMachineFunction(MachineFunction &MF) {
     for (TargetRegisterInfo::regclass_iterator I = TRI->regclass_begin(),
            E = TRI->regclass_end(); I != E; ++I)
       RegLimit[(*I)->getID()] = TRI->getRegPressureLimit(*I, MF);
+  } else {
+    ReservedRegs = TRI->getReservedRegs(MF);
   }
 
   // Get our Loop information...
@@ -430,6 +429,9 @@ void MachineLICM::ProcessMI(MachineInstr *MI,
            "Not expecting virtual register!");
 
     if (!MO.isDef()) {
+      // Allow reserved register reads to be hoisted.
+      if (ReservedRegs.test(Reg))
+        continue;
       if (Reg && (PhysRegDefs.test(Reg) || PhysRegClobbers.test(Reg)))
         // If it's using a non-loop-invariant register, then it's obviously not
         // safe to hoist.
@@ -535,6 +537,11 @@ void MachineLICM::HoistRegionPostRA() {
         const MachineOperand &MO = MI->getOperand(j);
         if (!MO.isReg() || MO.isDef() || !MO.getReg())
           continue;
+        // Allow hoisting of reserved register reads that aren't call preserved.
+        // For example %rip.
+        // IsLoopInvariantInst() already checks MRI->isConstantPhysReg().
+        if (ReservedRegs.test(MO.getReg()))
+          continue;
         if (PhysRegDefs.test(MO.getReg()) ||
             PhysRegClobbers.test(MO.getReg())) {
           // If it's using a non-loop-invariant register, then it's obviously
@@ -586,7 +593,7 @@ void MachineLICM::HoistPostRA(MachineInstr *MI, unsigned Def) {
   MachineBasicBlock *MBB = MI->getParent();
   Preheader->splice(Preheader->getFirstTerminator(), MBB, MI);
 
-  // Add register to livein list to all the BBs in the current loop since a 
+  // Add register to livein list to all the BBs in the current loop since a
   // loop invariant must be kept live throughout the whole loop. This is
   // important to ensure later passes do not scavenge the def register.
   AddToLiveIns(Def);
@@ -600,7 +607,7 @@ void MachineLICM::HoistPostRA(MachineInstr *MI, unsigned Def) {
 bool MachineLICM::IsGuaranteedToExecute(MachineBasicBlock *BB) {
   if (SpeculationState != SpeculateUnknown)
     return SpeculationState == SpeculateFalse;
-    
+
   if (BB != CurLoop->getHeader()) {
     // Check loop exiting blocks.
     SmallVector<MachineBasicBlock*, 8> CurrentLoopExitingBlocks;
@@ -758,7 +765,7 @@ MachineLICM::getRegisterClassIDAndCost(const MachineInstr *MI,
     RCCost = TLI->getRepRegClassCostFor(VT);
   }
 }
-                                      
+
 /// InitRegPressure - Find all virtual register references that are liveout of
 /// the preheader to initialize the starting "register pressure". Note this
 /// does not count live through (livein but not used) registers.
@@ -842,16 +849,16 @@ void MachineLICM::UpdateRegPressure(const MachineInstr *MI) {
   }
 }
 
-/// isLoadFromGOTOrConstantPool - Return true if this machine instruction 
+/// isLoadFromGOTOrConstantPool - Return true if this machine instruction
 /// loads from global offset table or constant pool.
 static bool isLoadFromGOTOrConstantPool(MachineInstr &MI) {
   assert (MI.mayLoad() && "Expected MI that loads!");
   for (MachineInstr::mmo_iterator I = MI.memoperands_begin(),
-	 E = MI.memoperands_end(); I != E; ++I) {
+         E = MI.memoperands_end(); I != E; ++I) {
     if (const Value *V = (*I)->getValue()) {
       if (const PseudoSourceValue *PSV = dyn_cast<PseudoSourceValue>(V))
         if (PSV == PSV->getGOT() || PSV == PSV->getConstantPool())
-	  return true;
+          return true;
     }
   }
   return false;
@@ -872,7 +879,7 @@ bool MachineLICM::IsLICMCandidate(MachineInstr &I) {
   // from constant memory are not safe to speculate all the time, for example
   // indexed load from a jump table.
   // Stores and side effects are already checked by isSafeToMove.
-  if (I.mayLoad() && !isLoadFromGOTOrConstantPool(I) && 
+  if (I.mayLoad() && !isLoadFromGOTOrConstantPool(I) &&
       !IsGuaranteedToExecute(I.getParent()))
     return false;
 
@@ -883,7 +890,7 @@ bool MachineLICM::IsLICMCandidate(MachineInstr &I) {
 /// invariant. I.e., all virtual register operands are defined outside of the
 /// loop, physical registers aren't accessed explicitly, and there are no side
 /// effects that aren't captured by the operands or other flags.
-/// 
+///
 bool MachineLICM::IsLoopInvariantInst(MachineInstr &I) {
   if (!IsLICMCandidate(I))
     return false;
@@ -1021,7 +1028,7 @@ bool MachineLICM::IsCheapInstruction(MachineInstr &MI) const {
 bool MachineLICM::CanCauseHighRegPressure(DenseMap<unsigned, int> &Cost) {
   for (DenseMap<unsigned, int>::iterator CI = Cost.begin(), CE = Cost.end();
        CI != CE; ++CI) {
-    if (CI->second <= 0) 
+    if (CI->second <= 0)
       continue;
 
     unsigned RCId = CI->first;
@@ -1102,7 +1109,7 @@ bool MachineLICM::IsProfitableToHoist(MachineInstr &MI) {
       return false;
   } else {
     // Estimate register pressure to determine whether to LICM the instruction.
-    // In low register pressure situation, we can be more aggressive about 
+    // In low register pressure situation, we can be more aggressive about
     // hoisting. Also, favors hoisting long latency instructions even in
     // moderately high pressure situation.
     // FIXME: If there are long latency loop-invariant instructions inside the

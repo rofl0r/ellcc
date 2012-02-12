@@ -898,12 +898,15 @@ public:
 
   // Lookup a method. First, we search locally. If a method isn't
   // found, we search referenced protocols and class categories.
-  ObjCMethodDecl *lookupMethod(Selector Sel, bool isInstance) const;
-  ObjCMethodDecl *lookupInstanceMethod(Selector Sel) const {
-    return lookupMethod(Sel, true/*isInstance*/);
+  ObjCMethodDecl *lookupMethod(Selector Sel, bool isInstance,
+                               bool noCategoryLookup= false) const;
+  ObjCMethodDecl *lookupInstanceMethod(Selector Sel,
+                                       bool noCategoryLookup = false) const {
+    return lookupMethod(Sel, true/*isInstance*/, noCategoryLookup);
   }
-  ObjCMethodDecl *lookupClassMethod(Selector Sel) const {
-    return lookupMethod(Sel, false/*isInstance*/);
+  ObjCMethodDecl *lookupClassMethod(Selector Sel,
+                                    bool noCategoryLookup = false) const {
+    return lookupMethod(Sel, false/*isInstance*/, noCategoryLookup);
   }
   ObjCInterfaceDecl *lookupInheritedClass(const IdentifierInfo *ICName);
 
@@ -1498,8 +1501,7 @@ public:
   friend class ASTDeclWriter;
 };
 
-raw_ostream &operator<<(raw_ostream &OS,
-                              const ObjCCategoryImplDecl *CID);
+raw_ostream &operator<<(raw_ostream &OS, const ObjCCategoryImplDecl &CID);
 
 /// ObjCImplementationDecl - Represents a class definition - this is where
 /// method definitions are specified. For example:
@@ -1643,8 +1645,7 @@ public:
   friend class ASTDeclWriter;
 };
 
-raw_ostream &operator<<(raw_ostream &OS,
-                              const ObjCImplementationDecl *ID);
+raw_ostream &operator<<(raw_ostream &OS, const ObjCImplementationDecl &ID);
 
 /// ObjCCompatibleAliasDecl - Represents alias of a class. This alias is
 /// declared as @compatibility_alias alias class.

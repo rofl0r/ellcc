@@ -890,6 +890,16 @@ unsigned MachineInstr::getNumExplicitOperands() const {
   return NumOperands;
 }
 
+/// isBundled - Return true if this instruction part of a bundle. This is true
+/// if either itself or its following instruction is marked "InsideBundle".
+bool MachineInstr::isBundled() const {
+  if (isInsideBundle())
+    return true;
+  MachineBasicBlock::const_instr_iterator nextMI = this;
+  ++nextMI;
+  return nextMI != Parent->instr_end() && nextMI->isInsideBundle();
+}
+
 bool MachineInstr::isStackAligningInlineAsm() const {
   if (isInlineAsm()) {
     unsigned ExtraInfo = getOperand(InlineAsm::MIOp_ExtraInfo).getImm();
@@ -1474,7 +1484,10 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
     OS << " = ";
 
   // Print the opcode name.
-  OS << getDesc().getName();
+  if (TM && TM->getInstrInfo())
+    OS << TM->getInstrInfo()->getName(getOpcode());
+  else
+    OS << "UNKNOWN";
 
   // Print the rest of the operands.
   bool OmittedAnyCallClobbers = false;

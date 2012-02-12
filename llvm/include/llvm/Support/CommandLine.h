@@ -40,7 +40,7 @@ namespace cl {
 //===----------------------------------------------------------------------===//
 // ParseCommandLineOptions - Command line option processing entry point.
 //
-void ParseCommandLineOptions(int argc, char **argv,
+void ParseCommandLineOptions(int argc, const char * const *argv,
                              const char *Overview = 0,
                              bool ReadResponseFiles = false);
 
@@ -337,7 +337,7 @@ struct OptionValueBase : public GenericOptionValue {
 
   bool hasValue() const { return false; }
 
-  const DataType &getValue() const { assert(false && "no default value"); }
+  const DataType &getValue() const { llvm_unreachable("no default value"); }
 
   // Some options may take their value from a different data type.
   template<class DT>

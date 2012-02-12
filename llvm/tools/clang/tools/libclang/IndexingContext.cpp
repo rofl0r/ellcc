@@ -183,7 +183,7 @@ SourceLocation IndexingContext::CXXBasesListInfo::getBaseLoc(
     return DL->getNameLoc();
   if (const DependentTemplateSpecializationTypeLoc *
         DTL = dyn_cast<DependentTemplateSpecializationTypeLoc>(&TL))
-    return DTL->getNameLoc();
+    return DTL->getTemplateNameLoc();
 
   return Loc;
 }
@@ -282,9 +282,23 @@ bool IndexingContext::handleDecl(const NamedDecl *D,
   DInfo.numAttributes = AttrList.getNumAttrs();
 
   getContainerInfo(D->getDeclContext(), DInfo.SemanticContainer);
-  getContainerInfo(D->getLexicalDeclContext(), DInfo.LexicalContainer);
   DInfo.semanticContainer = &DInfo.SemanticContainer;
-  DInfo.lexicalContainer = &DInfo.LexicalContainer;
+
+  if (D->getLexicalDeclContext() == D->getDeclContext()) {
+    DInfo.lexicalContainer = &DInfo.SemanticContainer;
+  } else if (isTemplateImplicitInstantiation(D)) {
+    // Implicit instantiations have the lexical context of where they were
+    // instantiated first. We choose instead the semantic context because:
+    // 1) at the time that we see the instantiation we have not seen the
+    //   function where it occurred yet.
+    // 2) the lexical context of the first instantiation is not useful
+    //   information anyway.
+    DInfo.lexicalContainer = &DInfo.SemanticContainer;
+  } else {
+    getContainerInfo(D->getLexicalDeclContext(), DInfo.LexicalContainer);
+    DInfo.lexicalContainer = &DInfo.LexicalContainer;
+  }
+
   if (DInfo.isContainer) {
     getContainerInfo(getEntityContainer(D), DInfo.DeclAsContainer);
     DInfo.declAsContainer = &DInfo.DeclAsContainer;
@@ -645,6 +659,19 @@ bool IndexingContext::handleCXXRecordDecl(const CXXRecordDecl *RD,
     CXXDInfo.CXXClassInfo.declInfo = &CXXDInfo;
     CXXDInfo.CXXClassInfo.bases = BaseList.getBases();
     CXXDInfo.CXXClassInfo.numBases = BaseList.getNumBases();
+
+    if (suppressRefs()) {
+      // Go through bases and mark them as referenced.
+      for (unsigned i = 0, e = BaseList.getNumBases(); i != e; ++i) {
+        const CXIdxBaseClassInfo *baseInfo = BaseList.getBases()[i];
+        if (baseInfo->base) {
+          const NamedDecl *BaseD = BaseList.BaseEntities[i].Dcl;
+          SourceLocation
+            Loc = SourceLocation::getFromRawEncoding(baseInfo->loc.int_data);
+          markEntityOccurrenceInFile(BaseD, Loc);
+        }
+      }
+    }
 
     return handleDecl(OrigD, OrigD->getLocation(), getCursor(OrigD), CXXDInfo);
   }
@@ -1012,7 +1039,7 @@ CXCursor IndexingContext::getRefCursor(const NamedDecl *D, SourceLocation Loc) {
   return clang_getNullCursor();
 }
 
-bool IndexingContext::shouldIgnoreIfImplicit(const NamedDecl *D) {
+bool IndexingContext::shouldIgnoreIfImplicit(const Decl *D) {
   if (isa<ObjCInterfaceDecl>(D))
     return false;
   if (isa<ObjCCategoryDecl>(D))
@@ -1022,4 +1049,15 @@ bool IndexingContext::shouldIgnoreIfImplicit(const NamedDecl *D) {
   if (isa<ObjCMethodDecl>(D))
     return false;
   return true;
+}
+
+bool IndexingContext::isTemplateImplicitInstantiation(const Decl *D) {
+  if (const ClassTemplateSpecializationDecl *
+        SD = dyn_cast<ClassTemplateSpecializationDecl>(D)) {
+    return SD->getSpecializationKind() == TSK_ImplicitInstantiation;
+  }
+  if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
+    return FD->getTemplateSpecializationKind() == TSK_ImplicitInstantiation;
+  }
+  return false;
 }

@@ -1023,6 +1023,11 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                             NumOuterTemplateParamLists,
                                             OuterTemplateParamLists);
 
+  // Add alignment attributes if necessary; these attributes are checked when
+  // the ASTContext lays out the structure.
+  AddAlignmentAttributesForRecord(NewClass);
+  AddMsStructLayoutForRecord(NewClass);
+
   ClassTemplateDecl *NewTemplate
     = ClassTemplateDecl::Create(Context, SemanticContext, NameLoc,
                                 DeclarationName(Name), TemplateParams,
@@ -2045,7 +2050,7 @@ QualType Sema::CheckTemplateIdType(TemplateName Name,
 }
 
 TypeResult
-Sema::ActOnTemplateIdType(CXXScopeSpec &SS,
+Sema::ActOnTemplateIdType(CXXScopeSpec &SS, SourceLocation TemplateKWLoc,
                           TemplateTy TemplateD, SourceLocation TemplateLoc,
                           SourceLocation LAngleLoc,
                           ASTTemplateArgsPtr TemplateArgsIn,
@@ -2070,11 +2075,12 @@ Sema::ActOnTemplateIdType(CXXScopeSpec &SS,
     TypeLocBuilder TLB;
     DependentTemplateSpecializationTypeLoc SpecTL
       = TLB.push<DependentTemplateSpecializationTypeLoc>(T);
-    SpecTL.setKeywordLoc(SourceLocation());
-    SpecTL.setNameLoc(TemplateLoc);
+    SpecTL.setElaboratedKeywordLoc(SourceLocation());
+    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
+    SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+    SpecTL.setTemplateNameLoc(TemplateLoc);
     SpecTL.setLAngleLoc(LAngleLoc);
     SpecTL.setRAngleLoc(RAngleLoc);
-    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
     for (unsigned I = 0, N = SpecTL.getNumArgs(); I != N; ++I)
       SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
     return CreateParsedType(T, TLB.getTypeSourceInfo(Context, T));
@@ -2087,9 +2093,10 @@ Sema::ActOnTemplateIdType(CXXScopeSpec &SS,
     return true;
 
   // Build type-source information.
-  TypeLocBuilder TLB;  
+  TypeLocBuilder TLB;
   TemplateSpecializationTypeLoc SpecTL
     = TLB.push<TemplateSpecializationTypeLoc>(Result);
+  SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
   SpecTL.setTemplateNameLoc(TemplateLoc);
   SpecTL.setLAngleLoc(LAngleLoc);
   SpecTL.setRAngleLoc(RAngleLoc);
@@ -2103,7 +2110,7 @@ Sema::ActOnTemplateIdType(CXXScopeSpec &SS,
     // Create an elaborated-type-specifier containing the nested-name-specifier.
     Result = Context.getElaboratedType(ETK_None, SS.getScopeRep(), Result);
     ElaboratedTypeLoc ElabTL = TLB.push<ElaboratedTypeLoc>(Result);
-    ElabTL.setKeywordLoc(SourceLocation());
+    ElabTL.setElaboratedKeywordLoc(SourceLocation());
     ElabTL.setQualifierLoc(SS.getWithLocInContext(Context));
   }
   
@@ -2114,7 +2121,8 @@ TypeResult Sema::ActOnTagTemplateIdType(TagUseKind TUK,
                                         TypeSpecifierType TagSpec,
                                         SourceLocation TagLoc,
                                         CXXScopeSpec &SS,
-                                        TemplateTy TemplateD, 
+                                        SourceLocation TemplateKWLoc,
+                                        TemplateTy TemplateD,
                                         SourceLocation TemplateLoc,
                                         SourceLocation LAngleLoc,
                                         ASTTemplateArgsPtr TemplateArgsIn,
@@ -2139,12 +2147,13 @@ TypeResult Sema::ActOnTagTemplateIdType(TagUseKind TUK,
     // Build type-source information.    
     TypeLocBuilder TLB;
     DependentTemplateSpecializationTypeLoc SpecTL
-    = TLB.push<DependentTemplateSpecializationTypeLoc>(T);
-    SpecTL.setKeywordLoc(TagLoc);
-    SpecTL.setNameLoc(TemplateLoc);
+      = TLB.push<DependentTemplateSpecializationTypeLoc>(T);
+    SpecTL.setElaboratedKeywordLoc(TagLoc);
+    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
+    SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+    SpecTL.setTemplateNameLoc(TemplateLoc);
     SpecTL.setLAngleLoc(LAngleLoc);
     SpecTL.setRAngleLoc(RAngleLoc);
-    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
     for (unsigned I = 0, N = SpecTL.getNumArgs(); I != N; ++I)
       SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
     return CreateParsedType(T, TLB.getTypeSourceInfo(Context, T));
@@ -2179,11 +2188,12 @@ TypeResult Sema::ActOnTagTemplateIdType(TagUseKind TUK,
       Diag(D->getLocation(), diag::note_previous_use);
     }
   }
-  
+
   // Provide source-location information for the template specialization.
   TypeLocBuilder TLB;
   TemplateSpecializationTypeLoc SpecTL
     = TLB.push<TemplateSpecializationTypeLoc>(Result);
+  SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
   SpecTL.setTemplateNameLoc(TemplateLoc);
   SpecTL.setLAngleLoc(LAngleLoc);
   SpecTL.setRAngleLoc(RAngleLoc);
@@ -2191,10 +2201,10 @@ TypeResult Sema::ActOnTagTemplateIdType(TagUseKind TUK,
     SpecTL.setArgLocInfo(i, TemplateArgs[i].getLocInfo());
 
   // Construct an elaborated type containing the nested-name-specifier (if any)
-  // and keyword.
+  // and tag keyword.
   Result = Context.getElaboratedType(Keyword, SS.getScopeRep(), Result);
   ElaboratedTypeLoc ElabTL = TLB.push<ElaboratedTypeLoc>(Result);
-  ElabTL.setKeywordLoc(TagLoc);
+  ElabTL.setElaboratedKeywordLoc(TagLoc);
   ElabTL.setQualifierLoc(SS.getWithLocInContext(Context));
   return CreateParsedType(Result, TLB.getTypeSourceInfo(Context, Result));
 }
@@ -2203,7 +2213,7 @@ ExprResult Sema::BuildTemplateIdExpr(const CXXScopeSpec &SS,
                                      SourceLocation TemplateKWLoc,
                                      LookupResult &R,
                                      bool RequiresADL,
-                                 const TemplateArgumentListInfo &TemplateArgs) {
+                                 const TemplateArgumentListInfo *TemplateArgs) {
   // FIXME: Can we do any checking at this point? I guess we could check the
   // template arguments that we have against the template name, if the template
   // name refers to a single template. That's not a terribly common case,
@@ -2237,13 +2247,13 @@ ExprResult
 Sema::BuildQualifiedTemplateIdExpr(CXXScopeSpec &SS,
                                    SourceLocation TemplateKWLoc,
                                    const DeclarationNameInfo &NameInfo,
-                             const TemplateArgumentListInfo &TemplateArgs) {
+                             const TemplateArgumentListInfo *TemplateArgs) {
+  assert(TemplateArgs || TemplateKWLoc.isValid());
   DeclContext *DC;
   if (!(DC = computeDeclContext(SS, false)) ||
       DC->isDependentContext() ||
       RequireCompleteDeclContext(SS, DC))
-    return BuildDependentDeclRefExpr(SS, TemplateKWLoc, NameInfo,
-                                     &TemplateArgs);
+    return BuildDependentDeclRefExpr(SS, TemplateKWLoc, NameInfo, TemplateArgs);
 
   bool MemberOfUnknownSpecialization;
   LookupResult R(*this, NameInfo, LookupOrdinaryName);
@@ -6584,7 +6594,7 @@ Sema::ActOnDependentTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
   // Create type-source location information for this type.
   TypeLocBuilder TLB;
   DependentNameTypeLoc TL = TLB.push<DependentNameTypeLoc>(Result);
-  TL.setKeywordLoc(TagLoc);
+  TL.setElaboratedKeywordLoc(TagLoc);
   TL.setQualifierLoc(SS.getWithLocInContext(Context));
   TL.setNameLoc(NameLoc);
   return CreateParsedType(Result, TLB.getTypeSourceInfo(Context, Result));
@@ -6613,12 +6623,12 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
   TypeSourceInfo *TSI = Context.CreateTypeSourceInfo(T);
   if (isa<DependentNameType>(T)) {
     DependentNameTypeLoc TL = cast<DependentNameTypeLoc>(TSI->getTypeLoc());
-    TL.setKeywordLoc(TypenameLoc);
+    TL.setElaboratedKeywordLoc(TypenameLoc);
     TL.setQualifierLoc(QualifierLoc);
     TL.setNameLoc(IdLoc);
   } else {
     ElaboratedTypeLoc TL = cast<ElaboratedTypeLoc>(TSI->getTypeLoc());
-    TL.setKeywordLoc(TypenameLoc);
+    TL.setElaboratedKeywordLoc(TypenameLoc);
     TL.setQualifierLoc(QualifierLoc);
     cast<TypeSpecTypeLoc>(TL.getNamedTypeLoc()).setNameLoc(IdLoc);
   }
@@ -6627,9 +6637,10 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
 }
 
 TypeResult
-Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc, 
-                        const CXXScopeSpec &SS, 
-                        SourceLocation TemplateLoc, 
+Sema::ActOnTypenameType(Scope *S,
+                        SourceLocation TypenameLoc,
+                        const CXXScopeSpec &SS,
+                        SourceLocation TemplateKWLoc,
                         TemplateTy TemplateIn,
                         SourceLocation TemplateNameLoc,
                         SourceLocation LAngleLoc,
@@ -6661,11 +6672,12 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
     TypeLocBuilder Builder;
     DependentTemplateSpecializationTypeLoc SpecTL 
     = Builder.push<DependentTemplateSpecializationTypeLoc>(T);
+    SpecTL.setElaboratedKeywordLoc(TypenameLoc);
+    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
+    SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+    SpecTL.setTemplateNameLoc(TemplateNameLoc);
     SpecTL.setLAngleLoc(LAngleLoc);
     SpecTL.setRAngleLoc(RAngleLoc);
-    SpecTL.setKeywordLoc(TypenameLoc);
-    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
-    SpecTL.setNameLoc(TemplateNameLoc);
     for (unsigned I = 0, N = TemplateArgs.size(); I != N; ++I)
       SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
     return CreateParsedType(T, Builder.getTypeSourceInfo(Context, T));
@@ -6675,22 +6687,20 @@ Sema::ActOnTypenameType(Scope *S, SourceLocation TypenameLoc,
   if (T.isNull())
     return true;
   
-  // Provide source-location information for the template specialization 
-  // type.
+  // Provide source-location information for the template specialization type.
   TypeLocBuilder Builder;
-  TemplateSpecializationTypeLoc SpecTL 
+  TemplateSpecializationTypeLoc SpecTL
     = Builder.push<TemplateSpecializationTypeLoc>(T);
-  
-  // FIXME: No place to set the location of the 'template' keyword!
+  SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+  SpecTL.setTemplateNameLoc(TemplateNameLoc);
   SpecTL.setLAngleLoc(LAngleLoc);
   SpecTL.setRAngleLoc(RAngleLoc);
-  SpecTL.setTemplateNameLoc(TemplateNameLoc);
   for (unsigned I = 0, N = TemplateArgs.size(); I != N; ++I)
     SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
   
   T = Context.getElaboratedType(ETK_Typename, SS.getScopeRep(), T);
   ElaboratedTypeLoc TL = Builder.push<ElaboratedTypeLoc>(T);
-  TL.setKeywordLoc(TypenameLoc);
+  TL.setElaboratedKeywordLoc(TypenameLoc);
   TL.setQualifierLoc(SS.getWithLocInContext(Context));
   
   TypeSourceInfo *TSI = Builder.getTypeSourceInfo(Context, T);

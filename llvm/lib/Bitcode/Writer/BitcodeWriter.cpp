@@ -1184,9 +1184,6 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     Code = bitc::FUNC_CODE_INST_RESUME;
     PushValueAndType(I.getOperand(0), InstID, Vals, VE);
     break;
-  case Instruction::Unwind:
-    Code = bitc::FUNC_CODE_INST_UNWIND;
-    break;
   case Instruction::Unreachable:
     Code = bitc::FUNC_CODE_INST_UNREACHABLE;
     AbbrevToUse = FUNCTION_INST_UNREACHABLE_ABBREV;
@@ -1741,11 +1738,6 @@ static void WriteModule(const Module *M, BitstreamWriter &Stream) {
   // Emit metadata.
   WriteModuleMetadata(M, VE, Stream);
 
-  // Emit function bodies.
-  for (Module::const_iterator F = M->begin(), E = M->end(); F != E; ++F)
-    if (!F->isDeclaration())
-      WriteFunction(*F, VE, Stream);
-
   // Emit metadata.
   WriteModuleMetadataStore(M, Stream);
 
@@ -1755,6 +1747,11 @@ static void WriteModule(const Module *M, BitstreamWriter &Stream) {
   // Emit use-lists.
   if (EnablePreserveUseListOrdering)
     WriteModuleUseLists(M, VE, Stream);
+
+  // Emit function bodies.
+  for (Module::const_iterator F = M->begin(), E = M->end(); F != E; ++F)
+    if (!F->isDeclaration())
+      WriteFunction(*F, VE, Stream);
 
   Stream.ExitBlock();
 }

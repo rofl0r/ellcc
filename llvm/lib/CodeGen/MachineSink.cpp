@@ -32,7 +32,7 @@
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
-static cl::opt<bool> 
+static cl::opt<bool>
 SplitEdges("machine-sink-split",
            cl::desc("Split critical edges during machine sinking"),
            cl::init(true), cl::Hidden);
@@ -92,7 +92,7 @@ namespace {
                                  bool &BreakPHIEdge, bool &LocalUse) const;
     MachineBasicBlock *FindSuccToSinkTo(MachineInstr *MI, MachineBasicBlock *MBB,
                bool &BreakPHIEdge);
-    bool isProfitableToSinkTo(unsigned Reg, MachineInstr *MI, 
+    bool isProfitableToSinkTo(unsigned Reg, MachineInstr *MI,
                               MachineBasicBlock *MBB,
                               MachineBasicBlock *SuccToSinkTo);
 
@@ -102,6 +102,7 @@ namespace {
 } // end anonymous namespace
 
 char MachineSinking::ID = 0;
+char &llvm::MachineSinkingID = MachineSinking::ID;
 INITIALIZE_PASS_BEGIN(MachineSinking, "machine-sink",
                 "Machine code sinking", false, false)
 INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
@@ -109,8 +110,6 @@ INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
 INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_END(MachineSinking, "machine-sink",
                 "Machine code sinking", false, false)
-
-FunctionPass *llvm::createMachineSinkingPass() { return new MachineSinking(); }
 
 bool MachineSinking::PerformTrivialForwardCoalescing(MachineInstr *MI,
                                                      MachineBasicBlock *MBB) {
@@ -384,9 +383,9 @@ static bool AvoidsSinking(MachineInstr *MI, MachineRegisterInfo *MRI) {
   return MI->isInsertSubreg() || MI->isSubregToReg() || MI->isRegSequence();
 }
 
-/// collectDebgValues - Scan instructions following MI and collect any 
+/// collectDebgValues - Scan instructions following MI and collect any
 /// matching DBG_VALUEs.
-static void collectDebugValues(MachineInstr *MI, 
+static void collectDebugValues(MachineInstr *MI,
                                SmallVector<MachineInstr *, 2> & DbgValues) {
   DbgValues.clear();
   if (!MI->getOperand(0).isReg())
@@ -421,7 +420,7 @@ static bool isPostDominatedBy(MachineBasicBlock *A, MachineBasicBlock *B) {
 }
 
 /// isProfitableToSinkTo - Return true if it is profitable to sink MI.
-bool MachineSinking::isProfitableToSinkTo(unsigned Reg, MachineInstr *MI, 
+bool MachineSinking::isProfitableToSinkTo(unsigned Reg, MachineInstr *MI,
                                           MachineBasicBlock *MBB,
                                           MachineBasicBlock *SuccToSinkTo) {
   assert (MI && "Invalid MachineInstr!");

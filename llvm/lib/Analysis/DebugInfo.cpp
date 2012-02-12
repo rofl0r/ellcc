@@ -510,6 +510,13 @@ uint64_t DIDerivedType::getOriginalTypeSize() const {
   return getSizeInBits();
 }
 
+/// getObjCProperty - Return property node, if this ivar is associated with one.
+MDNode *DIDerivedType::getObjCProperty() const {
+  if (getVersion() <= LLVMDebugVersion11 || DbgNode->getNumOperands() <= 10)
+    return NULL;
+  return dyn_cast_or_null<MDNode>(DbgNode->getOperand(10));
+}
+
 /// isInlinedFnArgument - Return true if this variable provides debugging
 /// information for an inlined function arguments.
 bool DIVariable::isInlinedFnArgument(const Function *CurFn) {
@@ -576,8 +583,7 @@ StringRef DIScope::getFilename() const {
     return DIType(DbgNode).getFilename();
   if (isFile())
     return DIFile(DbgNode).getFilename();
-  assert(0 && "Invalid DIScope!");
-  return StringRef();
+  llvm_unreachable("Invalid DIScope!");
 }
 
 StringRef DIScope::getDirectory() const {
@@ -597,8 +603,7 @@ StringRef DIScope::getDirectory() const {
     return DIType(DbgNode).getDirectory();
   if (isFile())
     return DIFile(DbgNode).getDirectory();
-  assert(0 && "Invalid DIScope!");
-  return StringRef();
+  llvm_unreachable("Invalid DIScope!");
 }
 
 DIArray DICompileUnit::getEnumTypes() const {
@@ -969,22 +974,22 @@ void DebugInfoFinder::processModule(Module &M) {
       DICompileUnit CU(CU_Nodes->getOperand(i));
       addCompileUnit(CU);
       if (CU.getVersion() > LLVMDebugVersion10) {
-	DIArray GVs = CU.getGlobalVariables();
-	for (unsigned i = 0, e = GVs.getNumElements(); i != e; ++i) {
-	  DIGlobalVariable DIG(GVs.getElement(i));
-	  if (addGlobalVariable(DIG))
-	    processType(DIG.getType());
-	}
-	DIArray SPs = CU.getSubprograms();
-	for (unsigned i = 0, e = SPs.getNumElements(); i != e; ++i)
-	  processSubprogram(DISubprogram(SPs.getElement(i)));
-	DIArray EnumTypes = CU.getEnumTypes();
-	for (unsigned i = 0, e = EnumTypes.getNumElements(); i != e; ++i)
-	  processType(DIType(EnumTypes.getElement(i)));
-	DIArray RetainedTypes = CU.getRetainedTypes();
-	for (unsigned i = 0, e = RetainedTypes.getNumElements(); i != e; ++i)
-	  processType(DIType(RetainedTypes.getElement(i)));
-	return;
+        DIArray GVs = CU.getGlobalVariables();
+        for (unsigned i = 0, e = GVs.getNumElements(); i != e; ++i) {
+          DIGlobalVariable DIG(GVs.getElement(i));
+          if (addGlobalVariable(DIG))
+            processType(DIG.getType());
+        }
+        DIArray SPs = CU.getSubprograms();
+        for (unsigned i = 0, e = SPs.getNumElements(); i != e; ++i)
+          processSubprogram(DISubprogram(SPs.getElement(i)));
+        DIArray EnumTypes = CU.getEnumTypes();
+        for (unsigned i = 0, e = EnumTypes.getNumElements(); i != e; ++i)
+          processType(DIType(EnumTypes.getElement(i)));
+        DIArray RetainedTypes = CU.getRetainedTypes();
+        for (unsigned i = 0, e = RetainedTypes.getNumElements(); i != e; ++i)
+          processType(DIType(RetainedTypes.getElement(i)));
+        return;
       }
     }
   }

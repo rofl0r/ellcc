@@ -63,6 +63,32 @@ namespace llvm {
     /// allocatableRegs_ - A bit vector of allocatable registers.
     BitVector allocatableRegs_;
 
+    /// RegMaskSlots - Sorted list of instructions with register mask operands.
+    /// Always use the 'r' slot, RegMasks are normal clobbers, not early
+    /// clobbers.
+    SmallVector<SlotIndex, 8> RegMaskSlots;
+
+    /// RegMaskBits - This vector is parallel to RegMaskSlots, it holds a
+    /// pointer to the corresponding register mask.  This pointer can be
+    /// recomputed as:
+    ///
+    ///   MI = Indexes->getInstructionFromIndex(RegMaskSlot[N]);
+    ///   unsigned OpNum = findRegMaskOperand(MI);
+    ///   RegMaskBits[N] = MI->getOperand(OpNum).getRegMask();
+    ///
+    /// This is kept in a separate vector partly because some standard
+    /// libraries don't support lower_bound() with mixed objects, partly to
+    /// improve locality when searching in RegMaskSlots.
+    /// Also see the comment in LiveInterval::find().
+    SmallVector<const uint32_t*, 8> RegMaskBits;
+
+    /// For each basic block number, keep (begin, size) pairs indexing into the
+    /// RegMaskSlots and RegMaskBits arrays.
+    /// Note that basic block numbers may not be layout contiguous, that's why
+    /// we can't just keep track of the first register mask in each basic
+    /// block.
+    SmallVector<std::pair<unsigned, unsigned>, 8> RegMaskBlocks;
+
   public:
     static char ID; // Pass identification, replacement for typeid
     LiveIntervals() : MachineFunctionPass(ID) {
@@ -192,19 +218,9 @@ namespace llvm {
       return li.liveAt(getMBBStartIdx(mbb));
     }
 
-    LiveRange* findEnteringRange(LiveInterval &li,
-                                 const MachineBasicBlock *mbb) {
-      return li.getLiveRangeContaining(getMBBStartIdx(mbb));
-    }
-
     bool isLiveOutOfMBB(const LiveInterval &li,
                         const MachineBasicBlock *mbb) const {
       return li.liveAt(getMBBEndIdx(mbb).getPrevSlot());
-    }
-
-    LiveRange* findExitingRange(LiveInterval &li,
-                                const MachineBasicBlock *mbb) {
-      return li.getLiveRangeContaining(getMBBEndIdx(mbb).getPrevSlot());
     }
 
     MachineBasicBlock* getMBBFromIndex(SlotIndex index) const {
@@ -223,17 +239,9 @@ namespace llvm {
       indexes_->replaceMachineInstrInMaps(MI, NewMI);
     }
 
-    void InsertMBBInMaps(MachineBasicBlock *MBB) {
-      indexes_->insertMBBInMaps(MBB);
-    }
-
     bool findLiveInMBBs(SlotIndex Start, SlotIndex End,
                         SmallVectorImpl<MachineBasicBlock*> &MBBs) const {
       return indexes_->findLiveInMBBs(Start, End, MBBs);
-    }
-
-    void renumber() {
-      indexes_->renumberIndexes();
     }
 
     VNInfo::Allocator& getVNInfoAllocator() { return VNInfoAllocator; }
@@ -254,9 +262,10 @@ namespace llvm {
                             const SmallVectorImpl<LiveInterval*> *SpillIs,
                             bool &isLoad);
 
-    /// intervalIsInOneMBB - Returns true if the specified interval is entirely
-    /// within a single basic block.
-    bool intervalIsInOneMBB(const LiveInterval &li) const;
+    /// intervalIsInOneMBB - If LI is confined to a single basic block, return
+    /// a pointer to that block.  If LI is live in to or out of any block,
+    /// return NULL.
+    MachineBasicBlock *intervalIsInOneMBB(const LiveInterval &LI) const;
 
     /// addKillFlags - Add kill flags to any instruction that kills a virtual
     /// register.
@@ -266,6 +275,49 @@ namespace llvm {
     /// intervals of mi's operands to reflect the new position. The insertion
     /// point can be above or below mi, but must be in the same basic block.
     void moveInstr(MachineBasicBlock::iterator insertPt, MachineInstr* mi);
+
+    // Register mask functions.
+    //
+    // Machine instructions may use a register mask operand to indicate that a
+    // large number of registers are clobbered by the instruction.  This is
+    // typically used for calls.
+    //
+    // For compile time performance reasons, these clobbers are not recorded in
+    // the live intervals for individual physical registers.  Instead,
+    // LiveIntervalAnalysis maintains a sorted list of instructions with
+    // register mask operands.
+
+    /// getRegMaskSlots - Returns a sorted array of slot indices of all
+    /// instructions with register mask operands.
+    ArrayRef<SlotIndex> getRegMaskSlots() const { return RegMaskSlots; }
+
+    /// getRegMaskSlotsInBlock - Returns a sorted array of slot indices of all
+    /// instructions with register mask operands in the basic block numbered
+    /// MBBNum.
+    ArrayRef<SlotIndex> getRegMaskSlotsInBlock(unsigned MBBNum) const {
+      std::pair<unsigned, unsigned> P = RegMaskBlocks[MBBNum];
+      return getRegMaskSlots().slice(P.first, P.second);
+    }
+
+    /// getRegMaskBits() - Returns an array of register mask pointers
+    /// corresponding to getRegMaskSlots().
+    ArrayRef<const uint32_t*> getRegMaskBits() const { return RegMaskBits; }
+
+    /// getRegMaskBitsInBlock - Returns an array of mask pointers corresponding
+    /// to getRegMaskSlotsInBlock(MBBNum).
+    ArrayRef<const uint32_t*> getRegMaskBitsInBlock(unsigned MBBNum) const {
+      std::pair<unsigned, unsigned> P = RegMaskBlocks[MBBNum];
+      return getRegMaskBits().slice(P.first, P.second);
+    }
+
+    /// checkRegMaskInterference - Test if LI is live across any register mask
+    /// instructions, and compute a bit mask of physical registers that are not
+    /// clobbered by any of them.
+    ///
+    /// Returns false if LI doesn't cross any register mask instructions. In
+    /// that case, the bit vector is not filled in.
+    bool checkRegMaskInterference(LiveInterval &LI,
+                                  BitVector &UsableRegs);
 
   private:
     /// computeIntervals - Compute live intervals.
@@ -303,7 +355,7 @@ namespace llvm {
     /// handleLiveInRegister - Create interval for a livein register.
     void handleLiveInRegister(MachineBasicBlock* mbb,
                               SlotIndex MIIdx,
-                              LiveInterval &interval, bool isAlias = false);
+                              LiveInterval &interval);
 
     /// getReMatImplicitUse - If the remat definition MI has one (for now, we
     /// only allow one) virtual register operand, then its uses are implicitly

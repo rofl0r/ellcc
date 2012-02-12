@@ -46,13 +46,13 @@ public:
   /// getInstruction - See MCDisassembler.
   DecodeStatus getInstruction(MCInst &instr,
                               uint64_t &size,
-                              const MemoryObject &region,
+                              MemoryObject &region,
                               uint64_t address,
                               raw_ostream &vStream,
                               raw_ostream &cStream) const;
 
   /// getEDInfo - See MCDisassembler.
-  EDInstInfo *getEDInfo() const;
+  const EDInstInfo *getEDInfo() const;
 private:
 };
 
@@ -71,13 +71,13 @@ public:
   /// getInstruction - See MCDisassembler.
   DecodeStatus getInstruction(MCInst &instr,
                               uint64_t &size,
-                              const MemoryObject &region,
+                              MemoryObject &region,
                               uint64_t address,
                               raw_ostream &vStream,
                               raw_ostream &cStream) const;
 
   /// getEDInfo - See MCDisassembler.
-  EDInstInfo *getEDInfo() const;
+  const EDInstInfo *getEDInfo() const;
 private:
   mutable std::vector<unsigned> ITBlock;
   DecodeStatus AddThumbPredicate(MCInst&) const;
@@ -332,16 +332,16 @@ static MCDisassembler *createThumbDisassembler(const Target &T, const MCSubtarge
   return new ThumbDisassembler(STI);
 }
 
-EDInstInfo *ARMDisassembler::getEDInfo() const {
+const EDInstInfo *ARMDisassembler::getEDInfo() const {
   return instInfoARM;
 }
 
-EDInstInfo *ThumbDisassembler::getEDInfo() const {
+const EDInstInfo *ThumbDisassembler::getEDInfo() const {
   return instInfoARM;
 }
 
 DecodeStatus ARMDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
-                                             const MemoryObject &Region,
+                                             MemoryObject &Region,
                                              uint64_t Address,
                                              raw_ostream &os,
                                              raw_ostream &cs) const {
@@ -533,7 +533,7 @@ static bool tryAddingSymbolicOperand(uint64_t Address, int32_t Value,
   else if (SymbolicOp.VariantKind == LLVMDisassembler_VariantKind_None)
     MI.addOperand(MCOperand::CreateExpr(Expr));
   else
-    assert(0 && "bad SymbolicOp.VariantKind");
+    llvm_unreachable("bad SymbolicOp.VariantKind");
 
   return true;
 }
@@ -691,7 +691,7 @@ void ThumbDisassembler::UpdateThumbVFPPredicate(MCInst &MI) const {
 }
 
 DecodeStatus ThumbDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
-                                               const MemoryObject &Region,
+                                               MemoryObject &Region,
                                                uint64_t Address,
                                                raw_ostream &os,
                                                raw_ostream &cs) const {

@@ -156,9 +156,7 @@ ARMBaseInstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
   unsigned OffImm = MI->getOperand(NumOps-2).getImm();
   ARMCC::CondCodes Pred = (ARMCC::CondCodes)MI->getOperand(NumOps-1).getImm();
   switch (AddrMode) {
-  default:
-    assert(false && "Unknown indexed op!");
-    return NULL;
+  default: llvm_unreachable("Unknown indexed op!");
   case ARMII::AddrMode2: {
     bool isSub = ARM_AM::getAM2Op(OffImm) == ARM_AM::sub;
     unsigned Amt = ARM_AM::getAM2Offset(OffImm);
@@ -513,7 +511,7 @@ bool ARMBaseInstrInfo::DefinesPredicate(MachineInstr *MI,
   bool Found = false;
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
-    if (MO.isReg() && MO.getReg() == ARM::CPSR) {
+    if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR) {
       Pred.push_back(MO);
       Found = true;
     }
