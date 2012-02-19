@@ -177,7 +177,15 @@ public:
   ///                   is an error for two (or more) llvm.module.flags with the
   ///                   same ID to have the Override behavior but different
   ///                   values.
-  enum ModAttrBehavior { Error = 1, Warning  = 2, Require = 3, Override = 4 };
+  enum ModFlagBehavior { Error = 1, Warning  = 2, Require = 3, Override = 4 };
+
+  struct ModuleFlagEntry {
+    ModFlagBehavior Behavior;
+    MDString *Key;
+    Value *Val;
+    ModuleFlagEntry(ModFlagBehavior B, MDString *K, Value *V)
+      : Behavior(B), Key(K), Val(V) {}
+  };
 
 /// @}
 /// @name Member Variables
@@ -401,6 +409,9 @@ public:
 /// @name Module Flags Accessors
 /// @{
 
+  /// getModuleFlagsMetadata - Returns the module flags in the provided vector.
+  void getModuleFlagsMetadata(SmallVectorImpl<ModuleFlagEntry> &Flags) const;
+
   /// getModuleFlagsMetadata - Returns the NamedMDNode in the module that
   /// represents module-level flags. This method returns null if there are no
   /// module-level flags.
@@ -414,8 +425,8 @@ public:
   /// addModuleFlag - Add a module-level flag to the module-level flags
   /// metadata. It will create the module-level flags named metadata if it
   /// doesn't already exist.
-  void addModuleFlag(ModAttrBehavior Behavior, StringRef Key, Value *Val);
-  void addModuleFlag(ModAttrBehavior Behavior, StringRef Key, uint32_t Val);
+  void addModuleFlag(ModFlagBehavior Behavior, StringRef Key, Value *Val);
+  void addModuleFlag(ModFlagBehavior Behavior, StringRef Key, uint32_t Val);
   void addModuleFlag(MDNode *Node);
 
 /// @}

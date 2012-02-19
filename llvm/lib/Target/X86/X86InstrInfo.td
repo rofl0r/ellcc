@@ -1,4 +1,4 @@
-//===- X86InstrInfo.td - Main X86 Instruction Definition ---*- tablegen -*-===//
+//===-- X86InstrInfo.td - Main X86 Instruction Definition --*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -523,7 +523,6 @@ def In32BitMode  : Predicate<"!Subtarget->is64Bit()">,
 def In64BitMode  : Predicate<"Subtarget->is64Bit()">,
                              AssemblerPredicate<"Mode64Bit">;
 def IsWin64      : Predicate<"Subtarget->isTargetWin64()">;
-def NotWin64     : Predicate<"!Subtarget->isTargetWin64()">;
 def IsNaCl       : Predicate<"Subtarget->isTargetNaCl()">;
 def NotNaCl      : Predicate<"!Subtarget->isTargetNaCl()">;
 def SmallCode    : Predicate<"TM.getCodeModel() == CodeModel::Small">;
@@ -1539,6 +1538,7 @@ include "X86InstrMMX.td"
 include "X86Instr3DNow.td"
 
 include "X86InstrVMX.td"
+include "X86InstrSVM.td"
 
 // System instructions.
 include "X86InstrSystem.td"

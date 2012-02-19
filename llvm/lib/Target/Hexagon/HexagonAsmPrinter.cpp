@@ -1,4 +1,4 @@
-//===-- HexagonAsmPrinter.cpp - Print machine instrs to Hexagon assembly ----=//
+//===-- HexagonAsmPrinter.cpp - Print machine instrs to Hexagon assembly --===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -123,6 +123,11 @@ namespace {
                                    raw_ostream &O) {
       int value = MI->getOperand(OpNo).getImm();
       O << -value;
+    }
+
+    void printHexagonNOneImmOperand(const MachineInstr *MI, unsigned OpNo,
+                                    raw_ostream &O) const {
+      O << -1;
     }
 
     void printHexagonMEMriOperand(const MachineInstr *MI, unsigned OpNo,

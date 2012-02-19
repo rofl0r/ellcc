@@ -719,7 +719,9 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
       bool ignored;
       bool isHalf = &CFP->getValueAPF().getSemantics()==&APFloat::IEEEhalf;
       bool isDouble = &CFP->getValueAPF().getSemantics()==&APFloat::IEEEdouble;
-      if (!isHalf) {
+      bool isInf = CFP->getValueAPF().isInfinity();
+      bool isNaN = CFP->getValueAPF().isNaN();
+      if (!isHalf && !isInf && !isNaN) {
         double Val = isDouble ? CFP->getValueAPF().convertToDouble() :
                                 CFP->getValueAPF().convertToFloat();
         SmallString<128> StrVal;
@@ -733,7 +735,7 @@ static void WriteConstantInternal(raw_ostream &Out, const Constant *CV,
             ((StrVal[0] == '-' || StrVal[0] == '+') &&
              (StrVal[1] >= '0' && StrVal[1] <= '9'))) {
           // Reparse stringized version!
-          if (atof(StrVal.c_str()) == Val) {
+          if (APFloat(APFloat::IEEEdouble, StrVal).convertToDouble() == Val) {
             Out << StrVal.str();
             return;
           }

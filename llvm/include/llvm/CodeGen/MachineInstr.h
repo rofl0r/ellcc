@@ -234,6 +234,11 @@ public:
   /// if either itself or its following instruction is marked "InsideBundle".
   bool isBundled() const;
 
+  /// getBundleStart - If this instruction is inside a bundle return the
+  /// instruction at the start of the bundle. Otherwise just returns the
+  /// instruction itself.
+  MachineInstr* getBundleStart();
+
   /// getDebugLoc - Returns the debug location id of this MachineInstr.
   ///
   DebugLoc getDebugLoc() const { return debugLoc; }
@@ -702,6 +707,7 @@ public:
   /// that are not dead are skipped. If Overlap is true, then it also looks for
   /// defs that merely overlap the specified register. If TargetRegisterInfo is
   /// non-null, then it also checks if there is a def of a super-register.
+  /// This may also return a register mask operand when Overlap is true.
   int findRegisterDefOperandIdx(unsigned Reg,
                                 bool isDead = false, bool Overlap = false,
                                 const TargetRegisterInfo *TRI = NULL) const;

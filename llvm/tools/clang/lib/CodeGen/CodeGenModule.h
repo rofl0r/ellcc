@@ -233,6 +233,7 @@ class CodeGenModule : public CodeGenTypeCache {
   CGCUDARuntime* CUDARuntime;
   CGDebugInfo* DebugInfo;
   ARCEntrypoints *ARCData;
+  llvm::MDNode *NoObjCARCExceptionsMetadata;
   RREntrypoints *RRData;
 
   // WeakRefReferences - A set of references that have only been seen via
@@ -421,6 +422,14 @@ public:
 
   CGDebugInfo *getModuleDebugInfo() { return DebugInfo; }
 
+  llvm::MDNode *getNoObjCARCExceptionsMetadata() {
+    if (!NoObjCARCExceptionsMetadata)
+      NoObjCARCExceptionsMetadata =
+        llvm::MDNode::get(getLLVMContext(),
+                          SmallVector<llvm::Value*,1>());
+    return NoObjCARCExceptionsMetadata;
+  }
+
   ASTContext &getContext() const { return Context; }
   const CodeGenOptions &getCodeGenOpts() const { return CodeGenOpts; }
   const LangOptions &getLangOptions() const { return Features; }
@@ -438,6 +447,8 @@ public:
   bool shouldUseTBAA() const { return TBAA != 0; }
 
   llvm::MDNode *getTBAAInfo(QualType QTy);
+
+  bool isTypeConstant(QualType QTy, bool ExcludeCtorDtor);
 
   static void DecorateInstruction(llvm::Instruction *Inst,
                                   llvm::MDNode *TBAAInfo);
@@ -900,8 +911,11 @@ private:
   /// EmitCXXGlobalDtorFunc - Emit the function that destroys C++ globals.
   void EmitCXXGlobalDtorFunc();
 
+  /// EmitCXXGlobalVarDeclInitFunc - Emit the function that initializes the
+  /// specified global (if PerformInit is true) and registers its destructor.
   void EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
-                                    llvm::GlobalVariable *Addr);
+                                    llvm::GlobalVariable *Addr,
+                                    bool PerformInit);
 
   // FIXME: Hardcoding priority here is gross.
   void AddGlobalCtor(llvm::Function *Ctor, int Priority=65535);

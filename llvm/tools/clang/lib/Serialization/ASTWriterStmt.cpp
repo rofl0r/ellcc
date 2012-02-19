@@ -1024,7 +1024,34 @@ void ASTStmtWriter::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
 
 void ASTStmtWriter::VisitLambdaExpr(LambdaExpr *E) {
   VisitExpr(E);
-  assert(false && "Cannot serialize lambda expressions yet");
+  Record.push_back(E->NumCaptures);
+  unsigned NumArrayIndexVars = 0;
+  if (E->HasArrayIndexVars)
+    NumArrayIndexVars = E->getArrayIndexStarts()[E->NumCaptures];
+  Record.push_back(NumArrayIndexVars);
+  Writer.AddSourceRange(E->IntroducerRange, Record);
+  Record.push_back(E->CaptureDefault); // FIXME: stable encoding
+  Record.push_back(E->ExplicitParams);
+  Record.push_back(E->ExplicitResultType);
+  Writer.AddSourceLocation(E->ClosingBrace, Record);
+  
+  // Add capture initializers.
+  for (LambdaExpr::capture_init_iterator C = E->capture_init_begin(),
+                                      CEnd = E->capture_init_end();
+       C != CEnd; ++C) {
+    Writer.AddStmt(*C);
+  }
+  
+  // Add array index variables, if any.
+  if (NumArrayIndexVars) {
+    Record.append(E->getArrayIndexStarts(), 
+                  E->getArrayIndexStarts() + E->NumCaptures + 1);
+    VarDecl **ArrayIndexVars = E->getArrayIndexVars();
+    for (unsigned I = 0; I != NumArrayIndexVars; ++I)
+      Writer.AddDeclRef(ArrayIndexVars[I], Record);
+  }
+  
+  Code = serialization::EXPR_LAMBDA;
 }
 
 void ASTStmtWriter::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
@@ -1131,25 +1158,20 @@ void ASTStmtWriter::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
 void ASTStmtWriter::VisitCXXNewExpr(CXXNewExpr *E) {
   VisitExpr(E);
   Record.push_back(E->isGlobalNew());
-  Record.push_back(E->hasInitializer());
-  Record.push_back(E->doesUsualArrayDeleteWantSize());
   Record.push_back(E->isArray());
-  Record.push_back(E->hadMultipleCandidates());
+  Record.push_back(E->doesUsualArrayDeleteWantSize());
   Record.push_back(E->getNumPlacementArgs());
-  Record.push_back(E->getNumConstructorArgs());
+  Record.push_back(E->StoredInitializationStyle);
   Writer.AddDeclRef(E->getOperatorNew(), Record);
   Writer.AddDeclRef(E->getOperatorDelete(), Record);
-  Writer.AddDeclRef(E->getConstructor(), Record);
   Writer.AddTypeSourceInfo(E->getAllocatedTypeSourceInfo(), Record);
   Writer.AddSourceRange(E->getTypeIdParens(), Record);
   Writer.AddSourceLocation(E->getStartLoc(), Record);
-  Writer.AddSourceLocation(E->getEndLoc(), Record);
-  Writer.AddSourceLocation(E->getConstructorLParen(), Record);
-  Writer.AddSourceLocation(E->getConstructorRParen(), Record);
+  Writer.AddSourceRange(E->getDirectInitRange(), Record);
   for (CXXNewExpr::arg_iterator I = E->raw_arg_begin(), e = E->raw_arg_end();
        I != e; ++I)
     Writer.AddStmt(*I);
-  
+
   Code = serialization::EXPR_CXX_NEW;
 }
 

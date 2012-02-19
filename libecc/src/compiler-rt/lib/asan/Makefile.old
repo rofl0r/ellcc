@@ -61,6 +61,7 @@ CLANG_FLAGS=
 CLANG_BUILD=$(ROOT)/../../../../build/Release+Asserts
 CLANG_CC=$(CLANG_BUILD)/bin/clang $(CLANG_FLAGS)
 CLANG_CXX=$(CLANG_BUILD)/bin/clang++ $(CLANG_FLAGS)
+FILE_CHECK=$(CLANG_BUILD)/bin/FileCheck
 
 CC=$(CLANG_CC)
 CXX=$(CLANG_CXX)
@@ -213,7 +214,7 @@ test: t64 t32 output_tests lint
 	@echo "ALL TESTS PASSED"
 
 output_tests: b32 b64
-	cd tests && ./test_output.sh $(CLANG_CXX) $(CLANG_CC)
+	cd output_tests && ./test_output.sh $(CLANG_CXX) $(CLANG_CC) $(FILE_CHECK)
 
 t64: b64
 	$(BIN)/asan_test64
@@ -337,7 +338,7 @@ lint:
 	third_party/cpplint/cpplint.py --filter=$(LLVM_LINT_FILTER) $(ADDRESS_SANITIZER_CPP)
 	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) asan_*.cc asan_*.h
 	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) interception/interception*.h interception/interception*.cc
-	third_party/cpplint/cpplint.py --filter=$(TEST_LINT_FITLER) tests/*.cc
+	third_party/cpplint/cpplint.py --filter=$(TEST_LINT_FITLER) tests/*.cc output_tests/*.cc
 
 get_third_party:
 	rm -rf third_party

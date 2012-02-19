@@ -540,7 +540,7 @@ void X86DAGToDAGISel::EmitSpecialCodeForMain(MachineBasicBlock *BB,
   const TargetInstrInfo *TII = TM.getInstrInfo();
   if (Subtarget->isTargetCygMing()) {
     unsigned CallOp =
-      Subtarget->is64Bit() ? X86::WINCALL64pcrel32 : X86::CALLpcrel32;
+      Subtarget->is64Bit() ? X86::CALL64pcrel32 : X86::CALLpcrel32;
     BuildMI(BB, DebugLoc(),
             TII->get(CallOp)).addExternalSymbol("__main");
   }
@@ -2378,6 +2378,8 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
         Chain->getOpcode() != ISD::LOAD ||
         StoredVal->getOpcode() != X86ISD::DEC ||
         StoredVal.getResNo() != 0 ||
+        !StoredVal.getNode()->hasNUsesOfValue(1, 0) ||
+        !Chain.getNode()->hasNUsesOfValue(1, 0) ||
         StoredVal->getOperand(0).getNode() != Chain.getNode())
       break;
 

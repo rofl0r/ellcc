@@ -241,9 +241,9 @@ public:
     Params.push_back(Ctx.getPointerDiffType()->getCanonicalTypeUnqualified());
     Params.push_back(Ctx.BoolTy);
     llvm::FunctionType *FTy =
-      Types.GetFunctionType(Types.getFunctionInfo(IdType, Params,
-                                                  FunctionType::ExtInfo()),
-                            false);
+      Types.GetFunctionType(Types.arrangeFunctionType(IdType, Params,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All));
     return CGM.CreateRuntimeFunction(FTy, "objc_getProperty");
   }
 
@@ -261,9 +261,9 @@ public:
     Params.push_back(Ctx.BoolTy);
     Params.push_back(Ctx.BoolTy);
     llvm::FunctionType *FTy =
-      Types.GetFunctionType(Types.getFunctionInfo(Ctx.VoidTy, Params,
-                                                  FunctionType::ExtInfo()),
-                            false);
+      Types.GetFunctionType(Types.arrangeFunctionType(Ctx.VoidTy, Params,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All));
     return CGM.CreateRuntimeFunction(FTy, "objc_setProperty");
   }
 
@@ -279,9 +279,9 @@ public:
     Params.push_back(Ctx.BoolTy);
     Params.push_back(Ctx.BoolTy);
     llvm::FunctionType *FTy =
-      Types.GetFunctionType(Types.getFunctionInfo(Ctx.VoidTy, Params,
-                                                  FunctionType::ExtInfo()),
-                            false);
+      Types.GetFunctionType(Types.arrangeFunctionType(Ctx.VoidTy, Params,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All));
     return CGM.CreateRuntimeFunction(FTy, "objc_copyStruct");
   }
   
@@ -298,9 +298,9 @@ public:
     Params.push_back(Ctx.VoidPtrTy);
     Params.push_back(Ctx.VoidPtrTy);
     llvm::FunctionType *FTy =
-    Types.GetFunctionType(Types.getFunctionInfo(Ctx.VoidTy, Params,
-                                                FunctionType::ExtInfo()),
-                          false);
+      Types.GetFunctionType(Types.arrangeFunctionType(Ctx.VoidTy, Params,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All));
     return CGM.CreateRuntimeFunction(FTy, "objc_copyCppObjectAtomic");
   }
   
@@ -311,9 +311,9 @@ public:
     SmallVector<CanQualType,1> Params;
     Params.push_back(Ctx.getCanonicalParamType(Ctx.getObjCIdType()));
     llvm::FunctionType *FTy =
-      Types.GetFunctionType(Types.getFunctionInfo(Ctx.VoidTy, Params,
-                                                  FunctionType::ExtInfo()),
-                            false);
+      Types.GetFunctionType(Types.arrangeFunctionType(Ctx.VoidTy, Params,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All));
     return CGM.CreateRuntimeFunction(FTy, "objc_enumerationMutation");
   }
 
@@ -719,7 +719,6 @@ public:
   };
 
 protected:
-  CodeGen::CodeGenModule &CGM;
   llvm::LLVMContext &VMContext;
   // FIXME! May not be needing this after all.
   unsigned ObjCABI;
@@ -904,7 +903,7 @@ protected:
 
 public:
   CGObjCCommonMac(CodeGen::CodeGenModule &cgm) :
-    CGM(cgm), VMContext(cgm.getLLVMContext()) { }
+    CGObjCRuntime(cgm), VMContext(cgm.getLLVMContext()) { }
 
   virtual llvm::Constant *GenerateConstantString(const StringLiteral *SL);
 
@@ -1675,11 +1674,8 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
   ActualArgs.add(RValue::get(Sel), CGF.getContext().getObjCSelType());
   ActualArgs.addFrom(CallArgs);
 
-  CodeGenTypes &Types = CGM.getTypes();
-  const CGFunctionInfo &FnInfo = Types.getFunctionInfo(ResultType, ActualArgs,
-                                                       FunctionType::ExtInfo());
-  llvm::FunctionType *FTy =
-    Types.GetFunctionType(FnInfo, Method ? Method->isVariadic() : false);
+  // If we're calling a method, use the formal signature.
+  MessageSendInfo MSI = getMessageSendInfo(Method, ResultType, ActualArgs);
 
   if (Method)
     assert(CGM.getContext().getCanonicalType(Method->getResultType()) ==
@@ -1689,7 +1685,7 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
   NullReturnState nullReturn;
 
   llvm::Constant *Fn = NULL;
-  if (CGM.ReturnTypeUsesSRet(FnInfo)) {
+  if (CGM.ReturnTypeUsesSRet(MSI.CallInfo)) {
     if (!IsSuper) nullReturn.init(CGF, Arg0);
     Fn = (ObjCABI == 2) ?  ObjCTypes.getSendStretFn2(IsSuper)
       : ObjCTypes.getSendStretFn(IsSuper);
@@ -1717,8 +1713,8 @@ CGObjCCommonMac::EmitMessageSend(CodeGen::CodeGenFunction &CGF,
       }
     }
   
-  Fn = llvm::ConstantExpr::getBitCast(Fn, llvm::PointerType::getUnqual(FTy));
-  RValue rvalue = CGF.EmitCall(FnInfo, Fn, Return, ActualArgs);
+  Fn = llvm::ConstantExpr::getBitCast(Fn, MSI.MessengerType);
+  RValue rvalue = CGF.EmitCall(MSI.CallInfo, Fn, Return, ActualArgs);
   return nullReturn.complete(CGF, rvalue, ResultType, CallArgs,
                              requiresnullCheck ? Method : 0);
 }
@@ -1729,6 +1725,10 @@ static Qualifiers::GC GetGCAttrTypeForType(ASTContext &Ctx, QualType FQT) {
   
   if (FQT.isObjCGCWeak() || FQT.getObjCLifetime() == Qualifiers::OCL_Weak)
     return Qualifiers::Weak;
+  
+  // check for __unsafe_unretained
+  if (FQT.getObjCLifetime() == Qualifiers::OCL_ExplicitNone)
+    return Qualifiers::GCNone;
   
   if (FQT->isObjCObjectPointerType() || FQT->isBlockPointerType())
     return Qualifiers::Strong;
@@ -2679,7 +2679,7 @@ llvm::Function *CGObjCCommonMac::GenerateMethod(const ObjCMethodDecl *OMD,
 
   CodeGenTypes &Types = CGM.getTypes();
   llvm::FunctionType *MethodTy =
-    Types.GetFunctionType(Types.getFunctionInfo(OMD), OMD->isVariadic());
+    Types.GetFunctionType(Types.arrangeObjCMethodDeclaration(OMD));
   llvm::Function *Method =
     llvm::Function::Create(MethodTy,
                            llvm::GlobalValue::InternalLinkage,
@@ -3564,32 +3564,47 @@ enum ImageInfoFlags {
 
 void CGObjCCommonMac::EmitImageInfo() {
   unsigned version = 0; // Version is unused?
-  unsigned flags = 0;
+  const char *Section = (ObjCABI == 1) ?
+    "__OBJC, __image_info,regular" :
+    "__DATA, __objc_imageinfo, regular, no_dead_strip";
 
-  // FIXME: Fix and continue?
-  if (CGM.getLangOptions().getGC() != LangOptions::NonGC)
-    flags |= eImageInfo_GarbageCollected;
-  if (CGM.getLangOptions().getGC() == LangOptions::GCOnly)
-    flags |= eImageInfo_GCOnly;
+  // Generate module-level named metadata to convey this information to the
+  // linker and code-gen.
+  llvm::Module &Mod = CGM.getModule();
 
-  // We never allow @synthesize of a superclass property.
-  flags |= eImageInfo_CorrectedSynthesize;
+  // Add the ObjC ABI version to the module flags.
+  Mod.addModuleFlag(llvm::Module::Error, "Objective-C Version", ObjCABI);
+  Mod.addModuleFlag(llvm::Module::Error, "Objective-C Image Info Version",
+                    version);
+  Mod.addModuleFlag(llvm::Module::Error, "Objective-C Image Info Section",
+                    llvm::MDString::get(VMContext,Section));
 
-  // Emitted as int[2];
-  uint32_t Values[2] = { version, flags };
+  if (CGM.getLangOptions().getGC() == LangOptions::NonGC) {
+    // Non-GC overrides those files which specify GC.
+    Mod.addModuleFlag(llvm::Module::Override,
+                      "Objective-C Garbage Collection", (uint32_t)0);
+  } else {
+    // Add the ObjC garbage collection value.
+    Mod.addModuleFlag(llvm::Module::Error,
+                      "Objective-C Garbage Collection",
+                      eImageInfo_GarbageCollected);
 
-  const char *Section;
-  if (ObjCABI == 1)
-    Section = "__OBJC, __image_info,regular";
-  else
-    Section = "__DATA, __objc_imageinfo, regular, no_dead_strip";
-  llvm::GlobalVariable *GV =
-    CreateMetadataVar("\01L_OBJC_IMAGE_INFO",
-                      llvm::ConstantDataArray::get(VMContext, Values),
-                      Section, 0, true);
-  GV->setConstant(true);
+    if (CGM.getLangOptions().getGC() == LangOptions::GCOnly) {
+      // Add the ObjC GC Only value.
+      Mod.addModuleFlag(llvm::Module::Error, "Objective-C GC Only",
+                        eImageInfo_GCOnly);
+
+      // Require that GC be specified and set to eImageInfo_GarbageCollected.
+      llvm::Value *Ops[2] = {
+        llvm::MDString::get(VMContext, "Objective-C Garbage Collection"),
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(VMContext),
+                               eImageInfo_GarbageCollected)
+      };
+      Mod.addModuleFlag(llvm::Module::Require, "Objective-C GC Only",
+                        llvm::MDNode::get(VMContext, Ops));
+    }
+  }
 }
-
 
 // struct objc_module {
 //   unsigned long version;
@@ -5747,9 +5762,7 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
 
   args.insert(args.end(), formalArgs.begin(), formalArgs.end());
 
-  const CGFunctionInfo &fnInfo =
-    CGM.getTypes().getFunctionInfo(resultType, args,
-                                   FunctionType::ExtInfo());
+  MessageSendInfo MSI = getMessageSendInfo(method, resultType, args);
 
   NullReturnState nullReturn;
 
@@ -5762,7 +5775,7 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
   // FIXME: don't use this for that.
   llvm::Constant *fn = 0;
   std::string messageRefName("\01l_");
-  if (CGM.ReturnTypeUsesSRet(fnInfo)) {
+  if (CGM.ReturnTypeUsesSRet(MSI.CallInfo)) {
     if (isSuper) {
       fn = ObjCTypes.getMessageSendSuper2StretFixupFn();
       messageRefName += "objc_msgSendSuper2_stret_fixup";
@@ -5830,13 +5843,9 @@ CGObjCNonFragileABIMac::EmitVTableMessageSend(CodeGenFunction &CGF,
   llvm::Value *callee = CGF.Builder.CreateStructGEP(mref, 0);
   callee = CGF.Builder.CreateLoad(callee, "msgSend_fn");
 
-  bool variadic = method ? method->isVariadic() : false;
-  llvm::FunctionType *fnType = 
-    CGF.getTypes().GetFunctionType(fnInfo, variadic);
-  callee = CGF.Builder.CreateBitCast(callee,
-                                     llvm::PointerType::getUnqual(fnType));
+  callee = CGF.Builder.CreateBitCast(callee, MSI.MessengerType);
 
-  RValue result = CGF.EmitCall(fnInfo, callee, returnSlot, args);
+  RValue result = CGF.EmitCall(MSI.CallInfo, callee, returnSlot, args);
   return nullReturn.complete(CGF, result, resultType, formalArgs, 
                              requiresnullCheck ? method : 0);
 }

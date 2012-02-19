@@ -620,6 +620,11 @@ public:
 
     case CK_Dependent: llvm_unreachable("saw dependent cast!");
 
+    case CK_ReinterpretMemberPointer:
+    case CK_DerivedToBaseMemberPointer:
+    case CK_BaseToDerivedMemberPointer:
+      return CGM.getCXXABI().EmitMemberPointerConversion(E, C);
+
     // These will never be supported.
     case CK_ObjCObjectLValueCast:
     case CK_ARCProduceObject:
@@ -630,18 +635,16 @@ public:
 
     // These don't need to be handled here because Evaluate knows how to
     // evaluate them in the cases where they can be folded.
+    case CK_BitCast:
     case CK_ToVoid:
     case CK_Dynamic:
     case CK_LValueBitCast:
     case CK_NullToMemberPointer:
-    case CK_DerivedToBaseMemberPointer:
-    case CK_BaseToDerivedMemberPointer:
     case CK_UserDefinedConversion:
     case CK_ConstructorConversion:
     case CK_CPointerToObjCPointerCast:
     case CK_BlockPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
-    case CK_BitCast:
     case CK_ArrayToPointerDecay:
     case CK_FunctionToPointerDecay:
     case CK_BaseToDerived:
@@ -701,9 +704,9 @@ public:
     // Copy initializer elements.
     std::vector<llvm::Constant*> Elts;
     Elts.reserve(NumInitableElts + NumElements);
-    unsigned i = 0;
+
     bool RewriteType = false;
-    for (; i < NumInitableElts; ++i) {
+    for (unsigned i = 0; i < NumInitableElts; ++i) {
       Expr *Init = ILE->getInit(i);
       llvm::Constant *C = CGM.EmitConstantExpr(Init, Init->getType(), CGF);
       if (!C)
@@ -722,8 +725,7 @@ public:
     if (!fillC)
       return 0;
     RewriteType |= (fillC->getType() != ElemTy);
-    for (; i < NumElements; ++i)
-      Elts.push_back(fillC);
+    Elts.resize(NumElements, fillC);
 
     if (RewriteType) {
       // FIXME: Try to avoid packing the array
@@ -938,6 +940,15 @@ llvm::Constant *CodeGenModule::EmitConstantInit(const VarDecl &D,
                                                 CodeGenFunction *CGF) {
   if (const APValue *Value = D.evaluateValue())
     return EmitConstantValue(*Value, D.getType(), CGF);
+
+  // FIXME: Implement C++11 [basic.start.init]p2: if the initializer of a
+  // reference is a constant expression, and the reference binds to a temporary,
+  // then constant initialization is performed. ConstExprEmitter will
+  // incorrectly emit a prvalue constant in this case, and the calling code
+  // interprets that as the (pointer) value of the reference, rather than the
+  // desired value of the referee.
+  if (D.getType()->isReferenceType())
+    return 0;
 
   const Expr *E = D.getInit();
   assert(E && "No initializer to emit");

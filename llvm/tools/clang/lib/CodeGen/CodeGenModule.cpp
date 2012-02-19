@@ -66,10 +66,11 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
   : Context(C), Features(C.getLangOptions()), CodeGenOpts(CGO), TheModule(M),
     TheTargetData(TD), TheTargetCodeGenInfo(0), Diags(diags),
     ABI(createCXXABI(*this)), 
-    Types(C, M, TD, getTargetCodeGenInfo().getABIInfo(), ABI, CGO),
+    Types(*this),
     TBAA(0),
     VTables(*this), ObjCRuntime(0), OpenCLRuntime(0), CUDARuntime(0),
-    DebugInfo(0), ARCData(0), RRData(0), CFConstantStringClassRef(0),
+    DebugInfo(0), ARCData(0), NoObjCARCExceptionsMetadata(0),
+    RRData(0), CFConstantStringClassRef(0),
     ConstantStringClassRef(0), NSConstantStringType(0),
     VMContext(M.getContext()),
     NSConcreteGlobalBlock(0), NSConcreteStackBlock(0),
@@ -172,8 +173,6 @@ void CodeGenModule::Release() {
 void CodeGenModule::UpdateCompletedType(const TagDecl *TD) {
   // Make sure that this type is translated.
   Types.UpdateCompletedType(TD);
-  if (DebugInfo)
-    DebugInfo->UpdateCompletedType(TD);
 }
 
 llvm::MDNode *CodeGenModule::getTBAAInfo(QualType QTy) {
@@ -579,7 +578,7 @@ void CodeGenModule::SetFunctionAttributes(GlobalDecl GD,
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
 
   if (!IsIncompleteFunction)
-    SetLLVMFunctionAttributes(FD, getTypes().getFunctionInfo(GD), F);
+    SetLLVMFunctionAttributes(FD, getTypes().arrangeGlobalDeclaration(GD), F);
 
   // Only a few attributes are set on declarations; these may later be
   // overridden by a definition.
@@ -1100,19 +1099,23 @@ CodeGenModule::CreateRuntimeFunction(llvm::FunctionType *FTy,
                                  ExtraAttrs);
 }
 
-static bool DeclIsConstantGlobal(ASTContext &Context, const VarDecl *D,
-                                 bool ConstantInit) {
-  if (!D->getType().isConstant(Context) && !D->getType()->isReferenceType())
+/// isTypeConstant - Determine whether an object of this type can be emitted
+/// as a constant.
+///
+/// If ExcludeCtor is true, the duration when the object's constructor runs
+/// will not be considered. The caller will need to verify that the object is
+/// not written to during its construction.
+bool CodeGenModule::isTypeConstant(QualType Ty, bool ExcludeCtor) {
+  if (!Ty.isConstant(Context) && !Ty->isReferenceType())
     return false;
-  
+
   if (Context.getLangOptions().CPlusPlus) {
-    if (const RecordType *Record 
-          = Context.getBaseElementType(D->getType())->getAs<RecordType>())
-      return ConstantInit && 
-             cast<CXXRecordDecl>(Record->getDecl())->isPOD() &&
-             !cast<CXXRecordDecl>(Record->getDecl())->hasMutableFields();
+    if (const CXXRecordDecl *Record
+          = Context.getBaseElementType(Ty)->getAsCXXRecordDecl())
+      return ExcludeCtor && !Record->hasMutableFields() &&
+             Record->hasTrivialDestructor();
   }
-  
+
   return true;
 }
 
@@ -1169,7 +1172,7 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
   if (D) {
     // FIXME: This code is overly simple and should be merged with other global
     // handling.
-    GV->setConstant(DeclIsConstantGlobal(Context, D, false));
+    GV->setConstant(isTypeConstant(D->getType(), false));
 
     // Set linkage and visibility in case we never see a definition.
     NamedDecl::LinkageInfo LV = D->getLinkageAndVisibility();
@@ -1359,7 +1362,9 @@ CharUnits CodeGenModule::GetTargetTypeStoreSize(llvm::Type *Ty) const {
 void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   llvm::Constant *Init = 0;
   QualType ASTTy = D->getType();
-  bool NonConstInit = false;
+  CXXRecordDecl *RD = ASTTy->getBaseElementTypeUnsafe()->getAsCXXRecordDecl();
+  bool NeedsGlobalCtor = false;
+  bool NeedsGlobalDtor = RD && !RD->hasTrivialDestructor();
 
   const VarDecl *InitDecl;
   const Expr *InitExpr = D->getAnyInitializer(InitDecl);
@@ -1385,15 +1390,16 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
 
       if (getLangOptions().CPlusPlus) {
         Init = EmitNullConstant(T);
-        NonConstInit = true;
+        NeedsGlobalCtor = true;
       } else {
         ErrorUnsupported(D, "static initializer");
         Init = llvm::UndefValue::get(getTypes().ConvertType(T));
       }
     } else {
       // We don't need an initializer, so remove the entry for the delayed
-      // initializer position (just in case this entry was delayed).
-      if (getLangOptions().CPlusPlus)
+      // initializer position (just in case this entry was delayed) if we
+      // also don't need to register a destructor.
+      if (getLangOptions().CPlusPlus && !NeedsGlobalDtor)
         DelayedCXXInitPosition.erase(D);
     }
   }
@@ -1447,12 +1453,11 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   GV->setInitializer(Init);
 
   // If it is safe to mark the global 'constant', do so now.
-  GV->setConstant(false);
-  if (!NonConstInit && DeclIsConstantGlobal(Context, D, true))
-    GV->setConstant(true);
+  GV->setConstant(!NeedsGlobalCtor && !NeedsGlobalDtor &&
+                  isTypeConstant(D->getType(), true));
 
   GV->setAlignment(getContext().getDeclAlign(D).getQuantity());
-  
+
   // Set the llvm linkage type as appropriate.
   llvm::GlobalValue::LinkageTypes Linkage = 
     GetLLVMLinkageVarDefinition(D, GV);
@@ -1464,8 +1469,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   SetCommonAttributes(D, GV);
 
   // Emit the initializer function if necessary.
-  if (NonConstInit)
-    EmitCXXGlobalVarDeclInitFunc(D, GV);
+  if (NeedsGlobalCtor || NeedsGlobalDtor)
+    EmitCXXGlobalVarDeclInitFunc(D, GV, NeedsGlobalCtor);
 
   // Emit global variable debug information.
   if (CGDebugInfo *DI = getModuleDebugInfo())
@@ -1595,11 +1600,8 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
   const FunctionDecl *D = cast<FunctionDecl>(GD.getDecl());
 
   // Compute the function info and LLVM type.
-  const CGFunctionInfo &FI = getTypes().getFunctionInfo(GD);
-  bool variadic = false;
-  if (const FunctionProtoType *fpt = D->getType()->getAs<FunctionProtoType>())
-    variadic = fpt->isVariadic();
-  llvm::FunctionType *Ty = getTypes().GetFunctionType(FI, variadic);
+  const CGFunctionInfo &FI = getTypes().arrangeGlobalDeclaration(GD);
+  llvm::FunctionType *Ty = getTypes().GetFunctionType(FI);
 
   // Get or create the prototype for the function.
   llvm::Constant *Entry = GetAddrOfFunction(GD, Ty);

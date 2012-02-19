@@ -2094,42 +2094,6 @@ static bool shouldBuildBlockDeclRef(ValueDecl *D, Sema &S) {
   return S.getCurBlock() != 0;
 }
 
-/// \brief Determine whether the given lambda would capture the given
-/// variable by copy.
-static bool willCaptureByCopy(LambdaScopeInfo *LSI, VarDecl *Var) {
-  if (LSI->isCaptured(Var))
-    return LSI->getCapture(Var).isCopyCapture();
-
-  return LSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByval;
-}
-
-static bool shouldAddConstQualToVarRef(ValueDecl *D, Sema &S) {
-  VarDecl *var = dyn_cast<VarDecl>(D);
-  if (!var)
-    return false;
-  if (var->getDeclContext() == S.CurContext)
-    return false;
-  if (!var->hasLocalStorage())
-    return false;
-
-  LambdaScopeInfo *LSI = S.getCurLambda();
-  if (!LSI)
-    return false;
-
-  // We don't actually allow capturing a __block variable in a lambda, but
-  // this way gives better diagnostics.
-  if (var->hasAttr<BlocksAttr>())
-    return false;
-
-  // FIXME: Does the addition of const really only apply in
-  // potentially-evaluated contexts?  The text in the lambda spec
-  // about decltype hints that it might apply in unevaluated contexts
-  // as well... and there's precent in our blocks implementation.
-  return !LSI->Mutable &&
-         S.ExprEvalContexts.back().Context != Sema::Unevaluated &&
-         willCaptureByCopy(LSI, var);
-}
-
 static ExprResult BuildBlockDeclRefExpr(Sema &S, ValueDecl *VD,
                                         const DeclarationNameInfo &NameInfo) {
   VarDecl *var = cast<VarDecl>(VD);
@@ -2269,7 +2233,7 @@ Sema::BuildDeclarationNameExpr(const CXXScopeSpec &SS,
       // fallthrough
 
     case Decl::ImplicitParam:
-    case Decl::ParmVar:
+    case Decl::ParmVar: {
       // These are always l-values.
       valueKind = VK_LValue;
       type = type.getNonReferenceType();
@@ -2277,11 +2241,18 @@ Sema::BuildDeclarationNameExpr(const CXXScopeSpec &SS,
       if (shouldBuildBlockDeclRef(VD, *this))
         return BuildBlockDeclRefExpr(*this, VD, NameInfo);
 
-      if (shouldAddConstQualToVarRef(VD, *this))
-        type.addConst();
-
+      // FIXME: Does the addition of const really only apply in
+      // potentially-evaluated contexts? Since the variable isn't actually
+      // captured in an unevaluated context, it seems that the answer is no.
+      if (ExprEvalContexts.back().Context != Sema::Unevaluated) {
+        QualType CapturedType = getCapturedDeclRefType(cast<VarDecl>(VD), Loc);
+        if (!CapturedType.isNull())
+          type = CapturedType;
+      }
+      
       break;
-
+    }
+        
     case Decl::Function: {
       const FunctionType *fty = type->castAs<FunctionType>();
 
@@ -2920,6 +2891,11 @@ Sema::ActOnPostfixUnaryOp(Scope *S, SourceLocation OpLoc,
   case tok::minusminus: Opc = UO_PostDec; break;
   }
 
+  // Since this might is a postfix expression, get rid of ParenListExprs.
+  ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Input);
+  if (Result.isInvalid()) return ExprError();
+  Input = Result.take();
+
   return BuildUnaryOp(S, OpLoc, Opc, Input);
 }
 
@@ -3123,6 +3099,7 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
       //   the semantic constraints are checked, at the point where the
       //   default argument expression appears.
       ContextRAII SavedContext(*this, FD);
+      LocalInstantiationScope Local(*this);
       Result = SubstExpr(UninstExpr, ArgList);
     }
     if (Result.isInvalid())
@@ -3804,7 +3781,8 @@ Sema::BuildCompoundLiteralExpr(SourceLocation LParenLoc, TypeSourceInfo *TInfo,
     = InitializedEntity::InitializeTemporary(literalType);
   InitializationKind Kind
     = InitializationKind::CreateCStyleCast(LParenLoc, 
-                                           SourceRange(LParenLoc, RParenLoc));
+                                           SourceRange(LParenLoc, RParenLoc),
+                                           /*InitList=*/true);
   InitializationSequence InitSeq(*this, Entity, Kind, &LiteralExpr, 1);
   ExprResult Result = InitSeq.Perform(*this, Entity, Kind,
                                        MultiExprArg(*this, &LiteralExpr, 1),
@@ -4221,8 +4199,7 @@ ExprResult Sema::BuildVectorLiteral(SourceLocation LParenLoc,
       return ExprError();
     }
     else
-      for (unsigned i = 0, e = numExprs; i != e; ++i)
-        initExprs.push_back(exprs[i]);
+      initExprs.append(exprs, exprs + numExprs);
   }
   else {
     // For OpenCL, when the number of initializers is a single value,
@@ -4239,8 +4216,7 @@ ExprResult Sema::BuildVectorLiteral(SourceLocation LParenLoc,
         return BuildCStyleCastExpr(LParenLoc, TInfo, RParenLoc, Literal.take());
     }
     
-    for (unsigned i = 0, e = numExprs; i != e; ++i)
-      initExprs.push_back(exprs[i]);
+    initExprs.append(exprs, exprs + numExprs);
   }
   // FIXME: This means that pretty-printing the final AST will produce curly
   // braces instead of the original commas.
@@ -4251,8 +4227,8 @@ ExprResult Sema::BuildVectorLiteral(SourceLocation LParenLoc,
   return BuildCompoundLiteralExpr(LParenLoc, TInfo, RParenLoc, initE);
 }
 
-/// This is not an AltiVec-style cast, so turn the ParenListExpr into a sequence
-/// of comma binary operators.
+/// This is not an AltiVec-style cast or or C++ direct-initialization, so turn
+/// the ParenListExpr into a sequence of comma binary operators.
 ExprResult
 Sema::MaybeConvertParenListExprToParenExpr(Scope *S, Expr *OrigExpr) {
   ParenListExpr *E = dyn_cast<ParenListExpr>(OrigExpr);
@@ -4270,18 +4246,13 @@ Sema::MaybeConvertParenListExprToParenExpr(Scope *S, Expr *OrigExpr) {
   return ActOnParenExpr(E->getLParenLoc(), E->getRParenLoc(), Result.get());
 }
 
-ExprResult Sema::ActOnParenOrParenListExpr(SourceLocation L,
-                                           SourceLocation R,
-                                           MultiExprArg Val) {
+ExprResult Sema::ActOnParenListExpr(SourceLocation L,
+                                    SourceLocation R,
+                                    MultiExprArg Val) {
   unsigned nexprs = Val.size();
   Expr **exprs = reinterpret_cast<Expr**>(Val.release());
   assert((exprs != 0) && "ActOnParenOrParenListExpr() missing expr list");
-  Expr *expr;
-  if (nexprs == 1)
-    expr = new (Context) ParenExpr(L, R, exprs[0]);
-  else
-    expr = new (Context) ParenListExpr(Context, L, exprs, nexprs, R,
-                                       exprs[nexprs-1]->getType());
+  Expr *expr = new (Context) ParenListExpr(Context, L, exprs, nexprs, R);
   return Owned(expr);
 }
 
@@ -9282,8 +9253,6 @@ namespace {
       return BaseTransform::TransformUnaryOperator(E);
     }
 
-    /// \brief Transform the capture expressions in the lambda
-    /// expression.
     ExprResult TransformLambdaExpr(LambdaExpr *E) {
       // Lambdas never need to be transformed.
       return E;
@@ -9407,7 +9376,11 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
 
   Func->setReferenced();
 
-  if (Func->isUsed(false))
+  // Don't mark this function as used multiple times, unless it's a constexpr
+  // function which we need to instantiate.
+  if (Func->isUsed(false) &&
+      !(Func->isConstexpr() && !Func->getBody() &&
+        Func->isImplicitlyInstantiable()))
     return;
 
   if (!IsPotentiallyEvaluatedContext(*this))
@@ -9446,6 +9419,13 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
         else
           DefineImplicitMoveAssignment(Loc, MethodDecl);
       }
+    } else if (isa<CXXConversionDecl>(MethodDecl) &&
+               MethodDecl->getParent()->isLambda()) {
+      CXXConversionDecl *Conversion = cast<CXXConversionDecl>(MethodDecl);
+      if (Conversion->isLambdaToBlockPointerConversion())
+        DefineImplicitLambdaToBlockPointerConversion(Loc, Conversion);
+      else
+        DefineImplicitLambdaToFunctionPointerConversion(Loc, Conversion);
     } else if (MethodDecl->isVirtual())
       MarkVTableUsed(Loc, MethodDecl->getParent());
   }
@@ -9458,34 +9438,40 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
   // class templates.
   if (Func->isImplicitlyInstantiable()) {
     bool AlreadyInstantiated = false;
+    SourceLocation PointOfInstantiation = Loc;
     if (FunctionTemplateSpecializationInfo *SpecInfo
                               = Func->getTemplateSpecializationInfo()) {
       if (SpecInfo->getPointOfInstantiation().isInvalid())
         SpecInfo->setPointOfInstantiation(Loc);
       else if (SpecInfo->getTemplateSpecializationKind()
-                 == TSK_ImplicitInstantiation)
+                 == TSK_ImplicitInstantiation) {
         AlreadyInstantiated = true;
+        PointOfInstantiation = SpecInfo->getPointOfInstantiation();
+      }
     } else if (MemberSpecializationInfo *MSInfo
                                 = Func->getMemberSpecializationInfo()) {
       if (MSInfo->getPointOfInstantiation().isInvalid())
         MSInfo->setPointOfInstantiation(Loc);
       else if (MSInfo->getTemplateSpecializationKind()
-                 == TSK_ImplicitInstantiation)
+                 == TSK_ImplicitInstantiation) {
         AlreadyInstantiated = true;
+        PointOfInstantiation = MSInfo->getPointOfInstantiation();
+      }
     }
 
-    if (!AlreadyInstantiated) {
+    if (!AlreadyInstantiated || Func->isConstexpr()) {
       if (isa<CXXRecordDecl>(Func->getDeclContext()) &&
           cast<CXXRecordDecl>(Func->getDeclContext())->isLocalClass())
-        PendingLocalImplicitInstantiations.push_back(std::make_pair(Func,
-                                                                    Loc));
-      else if (Func->getTemplateInstantiationPattern()->isConstexpr())
+        PendingLocalImplicitInstantiations.push_back(
+            std::make_pair(Func, PointOfInstantiation));
+      else if (Func->isConstexpr())
         // Do not defer instantiations of constexpr functions, to avoid the
         // expression evaluator needing to call back into Sema if it sees a
         // call to such a function.
-        InstantiateFunctionDefinition(Loc, Func);
+        InstantiateFunctionDefinition(PointOfInstantiation, Func);
       else {
-        PendingInstantiations.push_back(std::make_pair(Func, Loc));
+        PendingInstantiations.push_back(std::make_pair(Func,
+                                                       PointOfInstantiation));
         // Notify the consumer that a function was implicitly instantiated.
         Consumer.HandleCXXImplicitFunctionInstantiation(Func);
       }
@@ -9555,50 +9541,12 @@ diagnoseUncapturableValueReference(Sema &S, SourceLocation loc,
   // capture.
 }
 
-static bool shouldAddConstForScope(CapturingScopeInfo *CSI, VarDecl *VD) {
-  if (VD->hasAttr<BlocksAttr>())
-    return false;
-  if (isa<BlockScopeInfo>(CSI))
-    return true;
-  if (LambdaScopeInfo *LSI = dyn_cast<LambdaScopeInfo>(CSI))
-    return !LSI->Mutable;
-  return false;
-}
-
 /// \brief Capture the given variable in the given lambda expression.
 static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
-                                  VarDecl *Var, QualType Type, 
-                                  SourceLocation Loc, bool ByRef) {
+                                  VarDecl *Var, QualType FieldType, 
+                                  QualType DeclRefType,
+                                  SourceLocation Loc) {
   CXXRecordDecl *Lambda = LSI->Lambda;
-  QualType FieldType;
-  if (ByRef) {
-    // C++11 [expr.prim.lambda]p15:
-    //   An entity is captured by reference if it is implicitly or
-    //   explicitly captured but not captured by copy. It is
-    //   unspecified whether additional unnamed non-static data
-    //   members are declared in the closure type for entities
-    //   captured by reference.
-    FieldType = S.Context.getLValueReferenceType(Type.getNonReferenceType());
-  } else {
-    // C++11 [expr.prim.lambda]p14:
-    //   For each entity captured by copy, an unnamed non-static
-    //   data member is declared in the closure type. The
-    //   declaration order of these members is unspecified. The type
-    //   of such a data member is the type of the corresponding
-    //   captured entity if the entity is not a reference to an
-    //   object, or the referenced type otherwise. [Note: If the
-    //   captured entity is a reference to a function, the
-    //   corresponding data member is also a reference to a
-    //   function. - end note ]
-    if (const ReferenceType *RefType = Type->getAs<ReferenceType>()) {
-      if (!RefType->getPointeeType()->isFunctionType())
-        FieldType = RefType->getPointeeType();
-      else
-        FieldType = Type;
-    } else {
-      FieldType = Type;
-    }
-  }
 
   // Build the non-static data member.
   FieldDecl *Field
@@ -9617,8 +9565,6 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   //   direct-initialized in increasing subscript order.) These
   //   initializations are performed in the (unspecified) order in
   //   which the non-static data members are declared.
-  //
-  // FIXME: Introduce an initialization entity for lambda captures.
       
   // Introduce a new evaluation context for the initialization, so
   // that temporaries introduced as part of the capture are retained
@@ -9628,8 +9574,7 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   // C++ [expr.prim.labda]p12:
   //   An entity captured by a lambda-expression is odr-used (3.2) in
   //   the scope containing the lambda-expression.
-  Expr *Ref = new (S.Context) DeclRefExpr(Var, Type.getNonReferenceType(),
-                                          VK_LValue, Loc);
+  Expr *Ref = new (S.Context) DeclRefExpr(Var, DeclRefType, VK_LValue, Loc);
   Var->setUsed(true);
 
   // When the field has array type, create index variables for each
@@ -9637,13 +9582,11 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   // the source array, and other clients (e.g., CodeGen) will perform
   // the necessary iteration with these index variables.
   SmallVector<VarDecl *, 4> IndexVariables;
-  bool InitializingArray = false;
   QualType BaseType = FieldType;
   QualType SizeType = S.Context.getSizeType();
+  LSI->ArrayIndexStarts.push_back(LSI->ArrayIndexVars.size());
   while (const ConstantArrayType *Array
                         = S.Context.getAsConstantArrayType(BaseType)) {
-    InitializingArray = true;
-    
     // Create the iteration variable for this array index.
     IdentifierInfo *IterationVarName = 0;
     {
@@ -9658,7 +9601,8 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
                         S.Context.getTrivialTypeSourceInfo(SizeType, Loc),
                         SC_None, SC_None);
     IndexVariables.push_back(IterationVar);
-
+    LSI->ArrayIndexVars.push_back(IterationVar);
+    
     // Create a reference to the iteration variable.
     ExprResult IterationVarRef
       = S.BuildDeclRefExpr(IterationVar, SizeType, VK_LValue, Loc);
@@ -9687,7 +9631,8 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   // of array-subscript entities. 
   SmallVector<InitializedEntity, 4> Entities;
   Entities.reserve(1 + IndexVariables.size());
-  Entities.push_back(InitializedEntity::InitializeMember(Field));
+  Entities.push_back(
+    InitializedEntity::InitializeLambdaCapture(Var, Field, Loc));
   for (unsigned I = 0, N = IndexVariables.size(); I != N; ++I)
     Entities.push_back(InitializedEntity::InitializeElement(S.Context,
                                                             0,
@@ -9714,20 +9659,27 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   return Result;
 }
 
-// Check if the variable needs to be captured; if so, try to perform
-// the capture.
-// FIXME: Add support for explicit captures.
-void Sema::TryCaptureVar(VarDecl *var, SourceLocation loc,
-                         TryCaptureKind Kind) {
-  DeclContext *DC = CurContext;
-  if (var->getDeclContext() == DC) return;
-  if (!var->hasLocalStorage()) return;
-
-  // Actually try to capture it.
-  QualType type = var->getType();
+bool Sema::tryCaptureVariable(VarDecl *Var, SourceLocation Loc, 
+                              TryCaptureKind Kind, SourceLocation EllipsisLoc,
+                              bool BuildAndDiagnose, 
+                              QualType &CaptureType,
+                              QualType &DeclRefType) {
   bool Nested = false;
+  
+  DeclContext *DC = CurContext;
+  if (Var->getDeclContext() == DC) return true;
+  if (!Var->hasLocalStorage()) return true;
 
-  unsigned functionScopesIndex = FunctionScopes.size() - 1;
+  bool HasBlocksAttr = Var->hasAttr<BlocksAttr>();
+
+  // Walk up the stack to determine whether we can capture the variable,
+  // performing the "simple" checks that don't depend on type. We stop when
+  // we've either hit the declared scope of the variable or find an existing
+  // capture of that variable.
+  CaptureType = Var->getType();
+  DeclRefType = CaptureType.getNonReferenceType();
+  bool Explicit = (Kind != TryCapture_Implicit);
+  unsigned FunctionScopesIndex = FunctionScopes.size() - 1;
   do {
     // Only block literals and lambda expressions can capture; other
     // scopes don't work.
@@ -9735,145 +9687,262 @@ void Sema::TryCaptureVar(VarDecl *var, SourceLocation loc,
     if (isa<BlockDecl>(DC))
       ParentDC = DC->getParent();
     else if (isa<CXXMethodDecl>(DC) &&
+             cast<CXXMethodDecl>(DC)->getOverloadedOperator() == OO_Call &&
              cast<CXXRecordDecl>(DC->getParent())->isLambda())
       ParentDC = DC->getParent()->getParent();
-    else
-      return diagnoseUncapturableValueReference(*this, loc, var, DC);
+    else {
+      if (BuildAndDiagnose)
+        diagnoseUncapturableValueReference(*this, Loc, Var, DC);
+      return true;
+    }
 
     CapturingScopeInfo *CSI =
-      cast<CapturingScopeInfo>(FunctionScopes[functionScopesIndex]);
+      cast<CapturingScopeInfo>(FunctionScopes[FunctionScopesIndex]);
 
     // Check whether we've already captured it.
-    if (CSI->CaptureMap.count(var)) {
-      // If we found a capture, any subcaptures are nested
+    if (CSI->CaptureMap.count(Var)) {
+      // If we found a capture, any subcaptures are nested.
       Nested = true;
-
-      if (shouldAddConstForScope(CSI, var))
-        type.addConst();
+      
+      // Retrieve the capture type for this variable.
+      CaptureType = CSI->getCapture(Var).getCaptureType();
+      
+      // Compute the type of an expression that refers to this variable.
+      DeclRefType = CaptureType.getNonReferenceType();
+      
+      const CapturingScopeInfo::Capture &Cap = CSI->getCapture(Var);
+      if (Cap.isCopyCapture() &&
+          !(isa<LambdaScopeInfo>(CSI) && cast<LambdaScopeInfo>(CSI)->Mutable))
+        DeclRefType.addConst();
       break;
     }
 
-    functionScopesIndex--;
-    DC = ParentDC;
-  } while (var->getDeclContext() != DC);
-
-  bool hasBlocksAttr = var->hasAttr<BlocksAttr>();
-
-  for (unsigned i = functionScopesIndex + 1,
-                e = FunctionScopes.size(); i != e; ++i) {
-    CapturingScopeInfo *CSI = cast<CapturingScopeInfo>(FunctionScopes[i]);
-    bool isBlock = isa<BlockScopeInfo>(CSI);
-    bool isLambda = isa<LambdaScopeInfo>(CSI);
+    bool IsBlock = isa<BlockScopeInfo>(CSI);
+    bool IsLambda = !IsBlock;
 
     // Lambdas are not allowed to capture unnamed variables
     // (e.g. anonymous unions).
     // FIXME: The C++11 rule don't actually state this explicitly, but I'm
     // assuming that's the intent.
-    if (isLambda && !var->getDeclName()) {
-      Diag(loc, diag::err_lambda_capture_anonymous_var);
-      Diag(var->getLocation(), diag::note_declared_at);
-      return;
+    if (IsLambda && !Var->getDeclName()) {
+      if (BuildAndDiagnose) {
+        Diag(Loc, diag::err_lambda_capture_anonymous_var);
+        Diag(Var->getLocation(), diag::note_declared_at);
+      }
+      return true;
     }
 
     // Prohibit variably-modified types; they're difficult to deal with.
-    if (type->isVariablyModifiedType()) {
-      if (isBlock)
-        Diag(loc, diag::err_ref_vm_type);
-      else
-        Diag(loc, diag::err_lambda_capture_vm_type) << var->getDeclName();
-      Diag(var->getLocation(), diag::note_previous_decl) << var->getDeclName();
-      return;
-    }
-
-    // Blocks are not allowed to capture arrays.
-    if (isBlock && type->isArrayType()) {
-      Diag(loc, diag::err_ref_array_type);
-      Diag(var->getLocation(), diag::note_previous_decl) << var->getDeclName();
-      return;
+    if (Var->getType()->isVariablyModifiedType()) {
+      if (BuildAndDiagnose) {
+        if (IsBlock)
+          Diag(Loc, diag::err_ref_vm_type);
+        else
+          Diag(Loc, diag::err_lambda_capture_vm_type) << Var->getDeclName();
+        Diag(Var->getLocation(), diag::note_previous_decl) 
+          << Var->getDeclName();
+      }
+      return true;
     }
 
     // Lambdas are not allowed to capture __block variables; they don't
     // support the expected semantics.
-    if (isLambda && hasBlocksAttr) {
-      Diag(loc, diag::err_lambda_capture_block) << var->getDeclName();
-      Diag(var->getLocation(), diag::note_previous_decl) << var->getDeclName();
-      return;
+    if (IsLambda && HasBlocksAttr) {
+      if (BuildAndDiagnose) {
+        Diag(Loc, diag::err_lambda_capture_block) 
+          << Var->getDeclName();
+        Diag(Var->getLocation(), diag::note_previous_decl) 
+          << Var->getDeclName();
+      }
+      return true;
     }
 
-    bool byRef;
-    bool isInnermostCapture = (i == e - 1);
-    if (isInnermostCapture && Kind == TryCapture_ExplicitByVal) {
-      byRef = false;
-    } else if (isInnermostCapture && Kind == TryCapture_ExplicitByRef) {
-      byRef = true;
-    } else if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_None) {
+    if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_None && !Explicit) {
       // No capture-default
-      Diag(loc, diag::err_lambda_impcap) << var->getDeclName();
-      Diag(var->getLocation(), diag::note_previous_decl) << var->getDeclName();
-      Diag(cast<LambdaScopeInfo>(CSI)->Lambda->getLocStart(),
-           diag::note_lambda_decl);
-      return;
-    } else if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByval) {
-      // capture-default '='
-      byRef = false;
-    } else if (CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_LambdaByref) {
-      // capture-default '&'
-      byRef = true;
-    } else {
-      // A block captures __block variables in a special __block fashion, 
-      // variables of reference type by reference (in the sense of
-      // [expr.prim.lambda]), and other non-__block variables by copy.
-      assert(CSI->ImpCaptureStyle == CapturingScopeInfo::ImpCap_Block);
-      byRef = hasBlocksAttr || type->isReferenceType();
+      if (BuildAndDiagnose) {
+        Diag(Loc, diag::err_lambda_impcap) << Var->getDeclName();
+        Diag(Var->getLocation(), diag::note_previous_decl) 
+          << Var->getDeclName();
+        Diag(cast<LambdaScopeInfo>(CSI)->Lambda->getLocStart(),
+             diag::note_lambda_decl);
+      }
+      return true;
     }
 
-    // Build a copy expression if we are capturing by copy into a
-    // block and the copy might be non-trivial.
-    Expr *copyExpr = 0;
-    const RecordType *rtype;
-    if (isLambda) {
-      ExprResult Result = captureInLambda(*this, cast<LambdaScopeInfo>(CSI), 
-                                          var, type, loc, byRef);
-      if (!Result.isInvalid())
-        copyExpr = Result.take();
-    } else if (!byRef && getLangOptions().CPlusPlus &&
-        (rtype = type.getNonReferenceType()->getAs<RecordType>())) {
-      // The capture logic needs the destructor, so make sure we mark it.
-      // Usually this is unnecessary because most local variables have
-      // their destructors marked at declaration time, but parameters are
-      // an exception because it's technically only the call site that
-      // actually requires the destructor.
-      if (isa<ParmVarDecl>(var))
-        FinalizeVarWithDestructor(var, rtype);
+    FunctionScopesIndex--;
+    DC = ParentDC;
+    Explicit = false;
+  } while (!Var->getDeclContext()->Equals(DC));
 
-      // According to the blocks spec, the capture of a variable from
-      // the stack requires a const copy constructor.  This is not true
-      // of the copy/move done to move a __block variable to the heap.
-      type.addConst();
+  // Walk back down the scope stack, computing the type of the capture at
+  // each step, checking type-specific requirements, and adding captures if
+  // requested.
+  for (unsigned I = ++FunctionScopesIndex, N = FunctionScopes.size(); I != N; 
+       ++I) {
+    CapturingScopeInfo *CSI = cast<CapturingScopeInfo>(FunctionScopes[I]);
+    
+    // Compute the type of the capture and of a reference to the capture within
+    // this scope.
+    if (isa<BlockScopeInfo>(CSI)) {
+      Expr *CopyExpr = 0;
+      bool ByRef = false;
+      
+      // Blocks are not allowed to capture arrays.
+      if (CaptureType->isArrayType()) {
+        if (BuildAndDiagnose) {
+          Diag(Loc, diag::err_ref_array_type);
+          Diag(Var->getLocation(), diag::note_previous_decl) 
+          << Var->getDeclName();
+        }
+        return true;
+      }
 
-      Expr *declRef = new (Context) DeclRefExpr(var, type, VK_LValue, loc);
-      ExprResult result =
-        PerformCopyInitialization(
-                        InitializedEntity::InitializeBlock(var->getLocation(),
-                                                           type, false),
-                                    loc, Owned(declRef));
+      if (HasBlocksAttr || CaptureType->isReferenceType()) {
+        // Block capture by reference does not change the capture or
+        // declaration reference types.
+        ByRef = true;
+      } else {
+        // Block capture by copy introduces 'const'.
+        CaptureType = CaptureType.getNonReferenceType().withConst();
+        DeclRefType = CaptureType;
+                
+        if (getLangOptions().CPlusPlus && BuildAndDiagnose) {
+          if (const RecordType *Record = DeclRefType->getAs<RecordType>()) {
+            // The capture logic needs the destructor, so make sure we mark it.
+            // Usually this is unnecessary because most local variables have
+            // their destructors marked at declaration time, but parameters are
+            // an exception because it's technically only the call site that
+            // actually requires the destructor.
+            if (isa<ParmVarDecl>(Var))
+              FinalizeVarWithDestructor(Var, Record);
+            
+            // According to the blocks spec, the capture of a variable from
+            // the stack requires a const copy constructor.  This is not true
+            // of the copy/move done to move a __block variable to the heap.
+            Expr *DeclRef = new (Context) DeclRefExpr(Var, 
+                                                      DeclRefType.withConst(), 
+                                                      VK_LValue, Loc);
+            ExprResult Result
+              = PerformCopyInitialization(
+                  InitializedEntity::InitializeBlock(Var->getLocation(),
+                                                     CaptureType, false),
+                  Loc, Owned(DeclRef));
+            
+            // Build a full-expression copy expression if initialization
+            // succeeded and used a non-trivial constructor.  Recover from
+            // errors by pretending that the copy isn't necessary.
+            if (!Result.isInvalid() &&
+                !cast<CXXConstructExpr>(Result.get())->getConstructor()
+                   ->isTrivial()) {
+              Result = MaybeCreateExprWithCleanups(Result);
+              CopyExpr = Result.take();
+            }
+          }
+        }
+      }
 
-      // Build a full-expression copy expression if initialization
-      // succeeded and used a non-trivial constructor.  Recover from
-      // errors by pretending that the copy isn't necessary.
-      if (!result.isInvalid() &&
-          !cast<CXXConstructExpr>(result.get())->getConstructor()->isTrivial()) {
-        result = MaybeCreateExprWithCleanups(result);
-        copyExpr = result.take();
+      // Actually capture the variable.
+      if (BuildAndDiagnose)
+        CSI->addCapture(Var, HasBlocksAttr, ByRef, Nested, Loc, 
+                        SourceLocation(), CaptureType, CopyExpr);
+      Nested = true;
+      continue;
+    } 
+    
+    LambdaScopeInfo *LSI = cast<LambdaScopeInfo>(CSI);
+    
+    // Determine whether we are capturing by reference or by value.
+    bool ByRef = false;
+    if (I == N - 1 && Kind != TryCapture_Implicit) {
+      ByRef = (Kind == TryCapture_ExplicitByRef);
+    } else {
+      ByRef = (LSI->ImpCaptureStyle == LambdaScopeInfo::ImpCap_LambdaByref);
+    }
+    
+    // Compute the type of the field that will capture this variable.
+    if (ByRef) {
+      // C++11 [expr.prim.lambda]p15:
+      //   An entity is captured by reference if it is implicitly or
+      //   explicitly captured but not captured by copy. It is
+      //   unspecified whether additional unnamed non-static data
+      //   members are declared in the closure type for entities
+      //   captured by reference.
+      //
+      // FIXME: It is not clear whether we want to build an lvalue reference
+      // to the DeclRefType or to CaptureType.getNonReferenceType(). GCC appears
+      // to do the former, while EDG does the latter. Core issue 1249 will 
+      // clarify, but for now we follow GCC because it's a more permissive and
+      // easily defensible position.
+      CaptureType = Context.getLValueReferenceType(DeclRefType);
+    } else {
+      // C++11 [expr.prim.lambda]p14:
+      //   For each entity captured by copy, an unnamed non-static
+      //   data member is declared in the closure type. The
+      //   declaration order of these members is unspecified. The type
+      //   of such a data member is the type of the corresponding
+      //   captured entity if the entity is not a reference to an
+      //   object, or the referenced type otherwise. [Note: If the
+      //   captured entity is a reference to a function, the
+      //   corresponding data member is also a reference to a
+      //   function. - end note ]
+      if (const ReferenceType *RefType = CaptureType->getAs<ReferenceType>()){
+        if (!RefType->getPointeeType()->isFunctionType())
+          CaptureType = RefType->getPointeeType();
       }
     }
 
-    CSI->AddCapture(var, hasBlocksAttr, byRef, Nested, loc, copyExpr);
-
+    // Capture this variable in the lambda.
+    Expr *CopyExpr = 0;
+    if (BuildAndDiagnose) {
+      ExprResult Result = captureInLambda(*this, LSI, Var, CaptureType,
+                                          DeclRefType, Loc);
+      if (!Result.isInvalid())
+        CopyExpr = Result.take();
+    }
+    
+    // Compute the type of a reference to this captured variable.
+    if (ByRef)
+      DeclRefType = CaptureType.getNonReferenceType();
+    else {
+      // C++ [expr.prim.lambda]p5:
+      //   The closure type for a lambda-expression has a public inline 
+      //   function call operator [...]. This function call operator is 
+      //   declared const (9.3.1) if and only if the lambda-expression’s 
+      //   parameter-declaration-clause is not followed by mutable.
+      DeclRefType = CaptureType.getNonReferenceType();
+      if (!LSI->Mutable && !CaptureType->isReferenceType())
+        DeclRefType.addConst();      
+    }
+    
+    // Add the capture.
+    if (BuildAndDiagnose)
+      CSI->addCapture(Var, /*IsBlock=*/false, ByRef, Nested, Loc,
+                      EllipsisLoc, CaptureType, CopyExpr);
     Nested = true;
-    if (shouldAddConstForScope(CSI, var))
-      type.addConst();
   }
+
+  return false;
+}
+
+bool Sema::tryCaptureVariable(VarDecl *Var, SourceLocation Loc,
+                              TryCaptureKind Kind, SourceLocation EllipsisLoc) {  
+  QualType CaptureType;
+  QualType DeclRefType;
+  return tryCaptureVariable(Var, Loc, Kind, EllipsisLoc,
+                            /*BuildAndDiagnose=*/true, CaptureType,
+                            DeclRefType);
+}
+
+QualType Sema::getCapturedDeclRefType(VarDecl *Var, SourceLocation Loc) {
+  QualType CaptureType;
+  QualType DeclRefType;
+  
+  // Determine whether we can capture this variable.
+  if (tryCaptureVariable(Var, Loc, TryCapture_Implicit, SourceLocation(),
+                         /*BuildAndDiagnose=*/false, CaptureType, DeclRefType))
+    return QualType();
+
+  return DeclRefType;
 }
 
 static void MarkVarDeclODRUsed(Sema &SemaRef, VarDecl *Var,
@@ -9887,7 +9956,7 @@ static void MarkVarDeclODRUsed(Sema &SemaRef, VarDecl *Var,
     if (old.isInvalid()) old = Loc;
   }
 
-  SemaRef.TryCaptureVar(Var, Loc);
+  SemaRef.tryCaptureVariable(Var, Loc);
 
   Var->setUsed(true);
 }
@@ -9936,22 +10005,26 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
     return;
 
   // Implicit instantiation of static data members of class templates.
-  if (Var->isStaticDataMember() &&
-      Var->getInstantiatedFromStaticDataMember()) {
+  if (Var->isStaticDataMember() && Var->getInstantiatedFromStaticDataMember()) {
     MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
     assert(MSInfo && "Missing member specialization information?");
-    if (MSInfo->getPointOfInstantiation().isInvalid() &&
-        MSInfo->getTemplateSpecializationKind()== TSK_ImplicitInstantiation) {
-      MSInfo->setPointOfInstantiation(Loc);
-      // This is a modification of an existing AST node. Notify listeners.
-      if (ASTMutationListener *L = SemaRef.getASTMutationListener())
-        L->StaticDataMemberInstantiated(Var);
+    bool AlreadyInstantiated = !MSInfo->getPointOfInstantiation().isInvalid();
+    if (MSInfo->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+        (!AlreadyInstantiated || Var->isUsableInConstantExpressions())) {
+      if (!AlreadyInstantiated) {
+        // This is a modification of an existing AST node. Notify listeners.
+        if (ASTMutationListener *L = SemaRef.getASTMutationListener())
+          L->StaticDataMemberInstantiated(Var);
+        MSInfo->setPointOfInstantiation(Loc);
+      }
+      SourceLocation PointOfInstantiation = MSInfo->getPointOfInstantiation();
       if (Var->isUsableInConstantExpressions())
         // Do not defer instantiations of variables which could be used in a
         // constant expression.
-        SemaRef.InstantiateStaticDataMemberDefinition(Loc, Var);
+        SemaRef.InstantiateStaticDataMemberDefinition(PointOfInstantiation,Var);
       else
-        SemaRef.PendingInstantiations.push_back(std::make_pair(Var, Loc));
+        SemaRef.PendingInstantiations.push_back(
+            std::make_pair(Var, PointOfInstantiation));
     }
   }
 
@@ -9986,7 +10059,7 @@ static void MarkExprReferenced(Sema &SemaRef, SourceLocation Loc,
   }
 
   SemaRef.MarkAnyDeclReferenced(Loc, D);
-}
+} 
 
 /// \brief Perform reference-marking and odr-use handling for a
 /// BlockDeclRefExpr.
@@ -10086,15 +10159,13 @@ namespace {
     }
     
     void VisitCXXNewExpr(CXXNewExpr *E) {
-      if (E->getConstructor())
-        S.MarkFunctionReferenced(E->getLocStart(), E->getConstructor());
       if (E->getOperatorNew())
         S.MarkFunctionReferenced(E->getLocStart(), E->getOperatorNew());
       if (E->getOperatorDelete())
         S.MarkFunctionReferenced(E->getLocStart(), E->getOperatorDelete());
       Inherited::VisitCXXNewExpr(E);
     }
-    
+
     void VisitCXXDeleteExpr(CXXDeleteExpr *E) {
       if (E->getOperatorDelete())
         S.MarkFunctionReferenced(E->getLocStart(), E->getOperatorDelete());

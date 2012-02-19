@@ -63,6 +63,9 @@ namespace llvm {
     /// allocatableRegs_ - A bit vector of allocatable registers.
     BitVector allocatableRegs_;
 
+    /// reservedRegs_ - A bit vector of reserved registers.
+    BitVector reservedRegs_;
+
     /// RegMaskSlots - Sorted list of instructions with register mask operands.
     /// Always use the 'r' slot, RegMasks are normal clobbers, not early
     /// clobbers.
@@ -126,6 +129,12 @@ namespace llvm {
     /// function?
     bool isAllocatable(unsigned reg) const {
       return allocatableRegs_.test(reg);
+    }
+
+    /// isReserved - is the physical register reg reserved in the current
+    /// function
+    bool isReserved(unsigned reg) const {
+      return reservedRegs_.test(reg);
     }
 
     /// getScaledIntervalSize - get the size of an interval in "units,"
@@ -271,10 +280,11 @@ namespace llvm {
     /// register.
     void addKillFlags();
 
-    /// moveInstr - Move MachineInstr mi to insertPt, updating the live
-    /// intervals of mi's operands to reflect the new position. The insertion
-    /// point can be above or below mi, but must be in the same basic block.
-    void moveInstr(MachineBasicBlock::iterator insertPt, MachineInstr* mi);
+    /// handleMove - call this method to notify LiveIntervals that
+    /// instruction 'mi' has been moved within a basic block. This will update
+    /// the live intervals for all operands of mi. Moves between basic blocks
+    /// are not supported.
+    void handleMove(MachineInstr* mi);
 
     // Register mask functions.
     //
@@ -381,6 +391,8 @@ namespace llvm {
 
     void printInstrs(raw_ostream &O) const;
     void dumpInstrs() const;
+
+    class HMEditor;
   };
 } // End llvm namespace
 

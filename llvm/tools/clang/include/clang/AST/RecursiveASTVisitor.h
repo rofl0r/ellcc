@@ -228,6 +228,11 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseConstructorInitializer(CXXCtorInitializer *Init);
 
+  /// \brief Recursively visit a lambda capture.
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseLambdaCapture(LambdaExpr::Capture C);
+  
   // ---- Methods on Stmts ----
 
   // Declare Traverse*() for all concrete Stmt classes.
@@ -675,6 +680,10 @@ bool RecursiveASTVisitor<Derived>::TraverseConstructorInitializer(
   return true;
 }
 
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseLambdaCapture(LambdaExpr::Capture C){
+  return true;
+}
 
 // ----------------- Type traversal -----------------
 
@@ -1654,7 +1663,9 @@ DEF_TRAVERSE_DECL(CXXDestructorDecl, {
 template<typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseVarHelper(VarDecl *D) {
   TRY_TO(TraverseDeclaratorHelper(D));
-  TRY_TO(TraverseStmt(D->getInit()));
+  // Default params are taken care of when we traverse the ParmVarDecl.
+  if (!isa<ParmVarDecl>(D))
+    TRY_TO(TraverseStmt(D->getInit()));
   return true;
 }
 
@@ -1953,9 +1964,36 @@ DEF_TRAVERSE_STMT(CXXTemporaryObjectExpr, {
     TRY_TO(TraverseTypeLoc(S->getTypeSourceInfo()->getTypeLoc()));
   })
 
-DEF_TRAVERSE_STMT(LambdaExpr, {
-    TRY_TO(TraverseStmt(S->getBody()));
-  })
+// Walk only the visible parts of lambda expressions.  
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseLambdaExpr(LambdaExpr *S) {
+  for (LambdaExpr::capture_iterator C = S->explicit_capture_begin(),
+                                 CEnd = S->explicit_capture_end();
+       C != CEnd; ++C) {
+    TRY_TO(TraverseLambdaCapture(*C));
+  }
+
+  if (S->hasExplicitParameters() || S->hasExplicitResultType()) {
+    TypeLoc TL = S->getCallOperator()->getTypeSourceInfo()->getTypeLoc();
+    if (S->hasExplicitParameters() && S->hasExplicitResultType()) {
+      // Visit the whole type.
+      TRY_TO(TraverseTypeLoc(TL));
+    } else if (isa<FunctionProtoTypeLoc>(TL)) {
+      FunctionProtoTypeLoc Proto = cast<FunctionProtoTypeLoc>(TL);
+      if (S->hasExplicitParameters()) {
+        // Visit parameters.
+        for (unsigned I = 0, N = Proto.getNumArgs(); I != N; ++I) {
+          TRY_TO(TraverseDecl(Proto.getArg(I)));
+        }
+      } else {
+        TRY_TO(TraverseTypeLoc(Proto.getResultLoc()));
+      }        
+    }
+  }
+
+  TRY_TO(TraverseStmt(S->getBody()));
+  return true;
+}
 
 DEF_TRAVERSE_STMT(CXXUnresolvedConstructExpr, {
     // This is called for code like 'T()', where T is a template argument.

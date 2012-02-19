@@ -1,4 +1,4 @@
-//===- Thumb2InstrInfo.cpp - Thumb-2 Instruction Information ----*- C++ -*-===//
+//===-- Thumb2InstrInfo.cpp - Thumb-2 Instruction Information -------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -586,7 +586,7 @@ Thumb2InstrInfo::scheduleTwoAddrSource(MachineInstr *SrcMI,
     ARMCC::CondCodes NCC = llvm::getInstrPredicate(NMI, PredReg);
     if (!(NCC == CC || NCC == OCC) ||
         NMI->modifiesRegister(SrcReg, &TRI) ||
-        NMI->definesRegister(ARM::CPSR))
+        NMI->modifiesRegister(ARM::CPSR, &TRI))
       break;
     if (++NumInsts == 4)
       // Too many in a row!

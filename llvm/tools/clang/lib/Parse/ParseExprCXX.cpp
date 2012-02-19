@@ -615,7 +615,7 @@ ExprResult Parser::TryParseLambdaExpression() {
 /// ParseLambdaExpression - Parse a lambda introducer.
 ///
 /// Returns a DiagnosticID if it hit something unexpected.
-llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) {
+llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro){
   typedef llvm::Optional<unsigned> DiagResult;
 
   assert(Tok.is(tok::l_square) && "Lambda expressions begin with '['.");
@@ -640,18 +640,39 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) 
 
   while (Tok.isNot(tok::r_square)) {
     if (!first) {
-      if (Tok.isNot(tok::comma))
+      if (Tok.isNot(tok::comma)) {
+        if (Tok.is(tok::code_completion)) {
+          Actions.CodeCompleteLambdaIntroducer(getCurScope(), Intro, 
+                                               /*AfterAmpersand=*/false);
+          ConsumeCodeCompletionToken();
+          break;
+        }
+
         return DiagResult(diag::err_expected_comma_or_rsquare);
+      }
       ConsumeToken();
     }
 
-    first = false;
+    if (Tok.is(tok::code_completion)) {
+      // If we're in Objective-C++ and we have a bare '[', then this is more
+      // likely to be a message receiver.
+      if (getLang().ObjC1 && first)
+        Actions.CodeCompleteObjCMessageReceiver(getCurScope());
+      else
+        Actions.CodeCompleteLambdaIntroducer(getCurScope(), Intro, 
+                                             /*AfterAmpersand=*/false);
+      ConsumeCodeCompletionToken();
+      break;
+    }
 
+    first = false;
+    
     // Parse capture.
     LambdaCaptureKind Kind = LCK_ByCopy;
     SourceLocation Loc;
     IdentifierInfo* Id = 0;
-
+    SourceLocation EllipsisLoc;
+    
     if (Tok.is(tok::kw_this)) {
       Kind = LCK_This;
       Loc = ConsumeToken();
@@ -659,11 +680,21 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) 
       if (Tok.is(tok::amp)) {
         Kind = LCK_ByRef;
         ConsumeToken();
+
+        if (Tok.is(tok::code_completion)) {
+          Actions.CodeCompleteLambdaIntroducer(getCurScope(), Intro, 
+                                               /*AfterAmpersand=*/true);
+          ConsumeCodeCompletionToken();
+          break;
+        }
       }
 
       if (Tok.is(tok::identifier)) {
         Id = Tok.getIdentifierInfo();
         Loc = ConsumeToken();
+        
+        if (Tok.is(tok::ellipsis))
+          EllipsisLoc = ConsumeToken();
       } else if (Tok.is(tok::kw_this)) {
         // FIXME: If we want to suggest a fixit here, will need to return more
         // than just DiagnosticID. Perhaps full DiagnosticBuilder that can be
@@ -674,7 +705,7 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) 
       }
     }
 
-    Intro.addCapture(Kind, Loc, Id);
+    Intro.addCapture(Kind, Loc, Id, EllipsisLoc);
   }
 
   T.consumeClose();
@@ -683,7 +714,7 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro) 
   return DiagResult();
 }
 
-/// TryParseLambdaExpression - Tentatively parse a lambda introducer.
+/// TryParseLambdaIntroducer - Tentatively parse a lambda introducer.
 ///
 /// Returns true if it hit something unexpected.
 bool Parser::TryParseLambdaIntroducer(LambdaIntroducer &Intro) {
@@ -789,12 +820,57 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
                                            DeclLoc, DeclEndLoc, D,
                                            TrailingReturnType),
                   Attr, DeclEndLoc);
+  } else if (Tok.is(tok::kw_mutable) || Tok.is(tok::arrow)) {
+    // It's common to forget that one needs '()' before 'mutable' or the 
+    // result type. Deal with this.
+    Diag(Tok, diag::err_lambda_missing_parens)
+      << Tok.is(tok::arrow)
+      << FixItHint::CreateInsertion(Tok.getLocation(), "() ");
+    SourceLocation DeclLoc = Tok.getLocation();
+    SourceLocation DeclEndLoc = DeclLoc;
+    
+    // Parse 'mutable', if it's there.
+    SourceLocation MutableLoc;
+    if (Tok.is(tok::kw_mutable)) {
+      MutableLoc = ConsumeToken();
+      DeclEndLoc = MutableLoc;
+    }
+    
+    // Parse the return type, if there is one.
+    ParsedType TrailingReturnType;
+    if (Tok.is(tok::arrow)) {
+      SourceRange Range;
+      TrailingReturnType = ParseTrailingReturnType(Range).get();
+      if (Range.getEnd().isValid())
+        DeclEndLoc = Range.getEnd();      
+    }
+
+    ParsedAttributes Attr(AttrFactory);
+    D.AddTypeInfo(DeclaratorChunk::getFunction(/*hasProto=*/true,
+                     /*isVariadic=*/false,
+                     /*EllipsisLoc=*/SourceLocation(),
+                     /*Params=*/0, /*NumParams=*/0,
+                     /*TypeQuals=*/0,
+                     /*RefQualifierIsLValueRef=*/true,
+                     /*RefQualifierLoc=*/SourceLocation(),
+                     /*ConstQualifierLoc=*/SourceLocation(),
+                     /*VolatileQualifierLoc=*/SourceLocation(),
+                     MutableLoc,
+                     EST_None, 
+                     /*ESpecLoc=*/SourceLocation(),
+                     /*Exceptions=*/0,
+                     /*ExceptionRanges=*/0,
+                     /*NumExceptions=*/0,
+                     /*NoexceptExpr=*/0,
+                     DeclLoc, DeclEndLoc, D,
+                     TrailingReturnType),
+                  Attr, DeclEndLoc);
   }
+  
 
   // FIXME: Rename BlockScope -> ClosureScope if we decide to continue using
   // it.
   ParseScope BodyScope(this, Scope::BlockScope | Scope::FnScope |
-                             Scope::BreakScope | Scope::ContinueScope |
                              Scope::DeclScope);
 
   Actions.ActOnStartOfLambdaDefinition(Intro, D, getCurScope());
@@ -1151,10 +1227,13 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
          && "Expected '(' or '{'!");
 
   if (Tok.is(tok::l_brace)) {
-
-    // FIXME: Convert to a proper type construct expression.
-    return ParseBraceInitializer();
-
+    ExprResult Init = ParseBraceInitializer();
+    if (Init.isInvalid())
+      return Init;
+    Expr *InitList = Init.take();
+    return Actions.ActOnCXXTypeConstructExpr(TypeRep, SourceLocation(),
+                                             MultiExprArg(&InitList, 1),
+                                             SourceLocation());
   } else {
     GreaterThanIsOperatorScope G(GreaterThanIsOperator, true);
 
@@ -2159,10 +2238,11 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
     return ExprError();
   }
 
-  ExprVector ConstructorArgs(Actions);
-  SourceLocation ConstructorLParen, ConstructorRParen;
+  ExprResult Initializer;
 
   if (Tok.is(tok::l_paren)) {
+    SourceLocation ConstructorLParen, ConstructorRParen;
+    ExprVector ConstructorArgs(Actions);
     BalancedDelimiterTracker T(*this, tok::l_paren);
     T.consumeOpen();
     ConstructorLParen = T.getOpenLocation();
@@ -2179,17 +2259,20 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
       SkipUntil(tok::semi, /*StopAtSemi=*/true, /*DontConsume=*/true);
       return ExprError();
     }
+    Initializer = Actions.ActOnParenListExpr(ConstructorLParen,
+                                             ConstructorRParen,
+                                             move_arg(ConstructorArgs));
   } else if (Tok.is(tok::l_brace) && getLang().CPlusPlus0x) {
     Diag(Tok.getLocation(),
          diag::warn_cxx98_compat_generalized_initializer_lists);
-    // FIXME: Have to communicate the init-list to ActOnCXXNew.
-    ParseBraceInitializer();
+    Initializer = ParseBraceInitializer();
   }
+  if (Initializer.isInvalid())
+    return Initializer;
 
   return Actions.ActOnCXXNew(Start, UseGlobal, PlacementLParen,
                              move_arg(PlacementArgs), PlacementRParen,
-                             TypeIdParens, DeclaratorInfo, ConstructorLParen,
-                             move_arg(ConstructorArgs), ConstructorRParen);
+                             TypeIdParens, DeclaratorInfo, Initializer.take());
 }
 
 /// ParseDirectNewDeclarator - Parses a direct-new-declarator. Intended to be

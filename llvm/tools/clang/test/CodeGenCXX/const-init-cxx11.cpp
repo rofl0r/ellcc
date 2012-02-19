@@ -16,10 +16,10 @@ namespace StructUnion {
     constexpr A(int n, double d, const char *y) : n(n), d(d), u(y) {}
   };
 
-  // CHECK: @_ZN11StructUnion1aE = global {{.*}} { i32 1, double 2.000000e+00, {{.*}} { i32 3, [4 x i8] undef } }
+  // CHECK: @_ZN11StructUnion1aE = constant {{.*}} { i32 1, double 2.000000e+00, {{.*}} { i32 3, [4 x i8] undef } }
   extern constexpr A a(1, 2.0, 3);
 
-  // CHECK: @_ZN11StructUnion1bE = global {{.*}} { i32 4, double 5.000000e+00, {{.*}} { i8* getelementptr inbounds ([6 x i8]* @{{.*}}, i32 0, i32 0) } }
+  // CHECK: @_ZN11StructUnion1bE = constant {{.*}} { i32 4, double 5.000000e+00, {{.*}} { i8* getelementptr inbounds ([6 x i8]* @{{.*}}, i32 0, i32 0) } }
   extern constexpr A b(4, 5, "hello");
 
   struct B {
@@ -62,21 +62,21 @@ namespace BaseClass {
   struct Test : Ts... { constexpr Test() : Ts()..., n(5) {} int n; };
 
   using Test1 = Test<N, C, Cs<1,2>, D, X<C,1>>;
-  // CHECK: @_ZN9BaseClass2t1E = global {{.*}} { i32 3, i8 1, i8 1, i8 1, double 4.000000e+00, i8 1, i32 5 }, align 8
+  // CHECK: @_ZN9BaseClass2t1E = constant {{.*}} { i32 3, i8 1, i8 1, i8 1, double 4.000000e+00, i8 1, i32 5 }, align 8
   extern constexpr Test1 t1 = Test1();
 
   struct DN : D, N {};
   struct DND : DN, X<D,0> {};
   struct DNN : DN, X<N,0> {};
-  // CHECK: @_ZN9BaseClass3dndE = global {{.*}} { double 4.000000e+00, i32 3, double 4.000000e+00 }
+  // CHECK: @_ZN9BaseClass3dndE = constant {{.*}} { double 4.000000e+00, i32 3, double 4.000000e+00 }
   extern constexpr DND dnd = DND();
   // Note, N subobject is laid out in DN subobject's tail padding.
-  // CHECK: @_ZN9BaseClass3dnnE = global {{.*}} { double 4.000000e+00, i32 3, i32 3 }
+  // CHECK: @_ZN9BaseClass3dnnE = constant {{.*}} { double 4.000000e+00, i32 3, i32 3 }
   extern constexpr DNN dnn = DNN();
 
   struct E {};
   struct Test2 : X<E,0>, X<E,1>, X<E,2>, X<E,3> {};
-  // CHECK: @_ZN9BaseClass2t2E = global {{.*}} undef
+  // CHECK: @_ZN9BaseClass2t2E = constant {{.*}} undef
   extern constexpr Test2 t2 = Test2();
 }
 
@@ -88,12 +88,20 @@ namespace Array {
   extern constexpr char c[6][4] = { "foo", "a", { "bar" }, { 'x', 'y', 'z' }, { "b" }, '1', '2', '3' };
 
   struct C { constexpr C() : n(5) {} int n, m = 3 * n + 1; };
-  // CHECK: @_ZN5Array5ctorsE = global [3 x {{.*}}] [{{.*}} { i32 5, i32 16 }, {{.*}} { i32 5, i32 16 }, {{.*}} { i32 5, i32 16 }]
+  // CHECK: @_ZN5Array5ctorsE = constant [3 x {{.*}}] [{{.*}} { i32 5, i32 16 }, {{.*}} { i32 5, i32 16 }, {{.*}} { i32 5, i32 16 }]
   extern const C ctors[3];
   constexpr C ctors[3];
 
   // CHECK: @_ZN5Array1dE = constant {{.*}} { [2 x i32] [i32 1, i32 2], [3 x i32] [i32 3, i32 4, i32 5] }
   struct D { int n[2]; int m[3]; } extern constexpr d = { 1, 2, 3, 4, 5 };
+
+  struct E {
+    char c[4];
+    char d[4];
+    constexpr E() : c("foo"), d("x") {}
+  };
+  // CHECK: @_ZN5Array1eE = constant {{.*}} { [4 x i8] c"foo\00", [4 x i8] c"x\00\00\00" }
+  extern constexpr E e = E();
 }
 
 namespace MemberPtr {
@@ -185,8 +193,92 @@ namespace MemberPtr {
   extern constexpr void (B2::*b2m)() = (void(B2::*)())&D::m;
 }
 
+namespace LiteralReference {
+  struct Lit {
+    constexpr Lit() : n(5) {}
+    int n;
+  };
+  // FIXME: This should have static initialization, but we do not implement
+  // that yet. For now, just check that we don't set the (pointer) value of
+  // the reference to 5!
+  //
+  // CHECK: @_ZN16LiteralReference3litE = global {{.*}} null
+  const Lit &lit = Lit();
+}
+
+namespace NonLiteralConstexpr {
+  constexpr int factorial(int n) {
+    return n ? factorial(n-1) * n : 1;
+  }
+  extern void f(int *p);
+
+  struct NonTrivialDtor {
+    constexpr NonTrivialDtor() : n(factorial(5)), p(&n) {}
+    ~NonTrivialDtor() {
+      f(p);
+    }
+
+    int n;
+    int *p;
+  };
+  static_assert(!__is_literal(NonTrivialDtor), "");
+  // CHECK: @_ZN19NonLiteralConstexpr3ntdE = global {{.*}} { i32 120, i32* getelementptr
+  NonTrivialDtor ntd;
+
+  struct VolatileMember {
+    constexpr VolatileMember() : n(5) {}
+    volatile int n;
+  };
+  static_assert(!__is_literal(VolatileMember), "");
+  // CHECK: @_ZN19NonLiteralConstexpr2vmE = global {{.*}} { i32 5 }
+  VolatileMember vm;
+
+  struct Both {
+    constexpr Both() : n(10) {}
+    ~Both();
+    volatile int n;
+  };
+  // CHECK: @_ZN19NonLiteralConstexpr1bE = global {{.*}} { i32 10 }
+  Both b;
+
+  void StaticVars() {
+    // CHECK: @_ZZN19NonLiteralConstexpr10StaticVarsEvE3ntd = {{.*}} { i32 120, i32* getelementptr {{.*}}
+    // CHECK: @_ZGVZN19NonLiteralConstexpr10StaticVarsEvE3ntd =
+    static NonTrivialDtor ntd;
+    // CHECK: @_ZZN19NonLiteralConstexpr10StaticVarsEvE2vm = {{.*}} { i32 5 }
+    // CHECK-NOT: @_ZGVZN19NonLiteralConstexpr10StaticVarsEvE2vm =
+    static VolatileMember vm;
+    // CHECK: @_ZZN19NonLiteralConstexpr10StaticVarsEvE1b = {{.*}} { i32 10 }
+    // CHECK: @_ZGVZN19NonLiteralConstexpr10StaticVarsEvE1b =
+    static Both b;
+  }
+}
+
 // Constant initialization tests go before this point,
 // dynamic initialization tests go after.
+
+// We must emit a constant initializer for NonLiteralConstexpr::ntd, but also
+// emit an initializer to register its destructor.
+// CHECK: define {{.*}}cxx_global_var_init{{.*}}
+// CHECK-NOT: NonLiteralConstexpr
+// CHECK: call {{.*}}cxa_atexit{{.*}} @_ZN19NonLiteralConstexpr14NonTrivialDtorD1Ev {{.*}} @_ZN19NonLiteralConstexpr3ntdE
+// CHECK-NEXT: ret void
+
+// We don't need to emit any dynamic initialization for NonLiteralConstexpr::vm.
+// CHECK-NOT: NonLiteralConstexpr2vm
+
+// We must emit a constant initializer for NonLiteralConstexpr::b, but also
+// emit an initializer to register its destructor.
+// CHECK: define {{.*}}cxx_global_var_init{{.*}}
+// CHECK-NOT: NonLiteralConstexpr
+// CHECK: call {{.*}}cxa_atexit{{.*}} @_ZN19NonLiteralConstexpr4BothD1Ev {{.*}} @_ZN19NonLiteralConstexpr1bE
+// CHECK-NEXT: ret void
+
+// CHECK: define {{.*}}NonLiteralConstexpr10StaticVars
+// CHECK-NOT: }
+// CHECK: call {{.*}}cxa_atexit{{.*}}@_ZN19NonLiteralConstexpr14NonTrivialDtorD1Ev
+// CHECK-NOT: }
+// CHECK: call {{.*}}cxa_atexit{{.*}}@_ZN19NonLiteralConstexpr4BothD1Ev
 
 namespace CrossFuncLabelDiff {
   // Make sure we refuse to constant-fold the variable b.
@@ -194,4 +286,18 @@ namespace CrossFuncLabelDiff {
   void test() { static long b = (long)&&lbl - a(false); lbl: return; }
   // CHECK: sub nsw i64 ptrtoint (i8* blockaddress(@_ZN18CrossFuncLabelDiff4testEv, {{.*}}) to i64),
   // CHECK: store i64 {{.*}}, i64* @_ZZN18CrossFuncLabelDiff4testEvE1b, align 8
+}
+
+// PR12012
+namespace VirtualBase {
+  struct B {};
+  struct D : virtual B {};
+  D d;
+  // CHECK: call {{.*}}@_ZN11VirtualBase1DC1Ev
+
+  template<typename T> struct X : T {
+    constexpr X() : T() {}
+  };
+  X<D> x;
+  // CHECK: call {{.*}}@_ZN11VirtualBase1XINS_1DEEC1Ev
 }

@@ -864,6 +864,12 @@ bool AsmPrinter::doFinalization(Module &M) {
     EmitVisibility(Name, V, false);
   }
 
+  // Emit module flags.
+  SmallVector<Module::ModuleFlagEntry, 8> ModuleFlags;
+  M.getModuleFlagsMetadata(ModuleFlags);
+  if (!ModuleFlags.empty())
+    getObjFileLowering().emitModuleFlags(OutStreamer, ModuleFlags, Mang, TM);
+
   // Finalize debug and EH information.
   if (DE) {
     {

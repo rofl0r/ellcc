@@ -1,4 +1,4 @@
-//===- ARMBaseInstrInfo.cpp - ARM Instruction Information -------*- C++ -*-===//
+//===-- ARMBaseInstrInfo.cpp - ARM Instruction Information ----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -503,15 +503,11 @@ SubsumesPredicate(const SmallVectorImpl<MachineOperand> &Pred1,
 
 bool ARMBaseInstrInfo::DefinesPredicate(MachineInstr *MI,
                                     std::vector<MachineOperand> &Pred) const {
-  // FIXME: This confuses implicit_def with optional CPSR def.
-  const MCInstrDesc &MCID = MI->getDesc();
-  if (!MCID.getImplicitDefs() && !MI->hasOptionalDef())
-    return false;
-
   bool Found = false;
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
-    if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR) {
+    if ((MO.isRegMask() && MO.clobbersPhysReg(ARM::CPSR)) ||
+        (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR)) {
       Pred.push_back(MO);
       Found = true;
     }
@@ -1797,6 +1793,8 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
 
     for (unsigned IO = 0, EO = Instr.getNumOperands(); IO != EO; ++IO) {
       const MachineOperand &MO = Instr.getOperand(IO);
+      if (MO.isRegMask() && MO.clobbersPhysReg(ARM::CPSR))
+        return false;
       if (!MO.isReg()) continue;
 
       // This instruction modifies or uses CPSR after the one we want to
@@ -1858,6 +1856,10 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
       for (unsigned IO = 0, EO = Instr.getNumOperands();
            !isSafe && IO != EO; ++IO) {
         const MachineOperand &MO = Instr.getOperand(IO);
+        if (MO.isRegMask() && MO.clobbersPhysReg(ARM::CPSR)) {
+          isSafe = true;
+          break;
+        }
         if (!MO.isReg() || MO.getReg() != ARM::CPSR)
           continue;
         if (MO.isDef()) {
@@ -2849,7 +2851,7 @@ int ARMBaseInstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
   const MCInstrDesc &MCID = MI->getDesc();
   unsigned Class = MCID.getSchedClass();
   unsigned UOps = ItinData->Itineraries[Class].NumMicroOps;
-  if (PredCost && MCID.hasImplicitDefOfPhysReg(ARM::CPSR))
+  if (PredCost && (MCID.isCall() || MCID.hasImplicitDefOfPhysReg(ARM::CPSR)))
     // When predicated, CPSR is an additional source operand for CPSR updating
     // instructions, this apparently increases their latencies.
     *PredCost = 1;

@@ -812,6 +812,7 @@ private:
   unsigned NumArgs : 16;
   bool Elidable : 1;
   bool HadMultipleCandidates : 1;
+  bool ListInitialization : 1;
   bool ZeroInitialization : 1;
   unsigned ConstructKind : 2;
   Stmt **Args;
@@ -822,32 +823,36 @@ protected:
                    CXXConstructorDecl *d, bool elidable,
                    Expr **args, unsigned numargs,
                    bool HadMultipleCandidates,
-                   bool ZeroInitialization = false,
-                   ConstructionKind ConstructKind = CK_Complete,
-                   SourceRange ParenRange = SourceRange());
+                   bool ListInitialization,
+                   bool ZeroInitialization,
+                   ConstructionKind ConstructKind,
+                   SourceRange ParenRange);
 
   /// \brief Construct an empty C++ construction expression.
   CXXConstructExpr(StmtClass SC, EmptyShell Empty)
-    : Expr(SC, Empty), Constructor(0), NumArgs(0), Elidable(0),
-      HadMultipleCandidates(false), ZeroInitialization(0),
-      ConstructKind(0), Args(0) { }
+    : Expr(SC, Empty), Constructor(0), NumArgs(0), Elidable(false),
+      HadMultipleCandidates(false), ListInitialization(false),
+      ZeroInitialization(false), ConstructKind(0), Args(0)
+  { }
 
 public:
   /// \brief Construct an empty C++ construction expression.
   explicit CXXConstructExpr(EmptyShell Empty)
     : Expr(CXXConstructExprClass, Empty), Constructor(0),
-      NumArgs(0), Elidable(0), HadMultipleCandidates(false),
-      ZeroInitialization(0), ConstructKind(0), Args(0) { }
+      NumArgs(0), Elidable(false), HadMultipleCandidates(false),
+      ListInitialization(false), ZeroInitialization(false),
+      ConstructKind(0), Args(0)
+  { }
 
   static CXXConstructExpr *Create(ASTContext &C, QualType T,
                                   SourceLocation Loc,
                                   CXXConstructorDecl *D, bool Elidable,
                                   Expr **Args, unsigned NumArgs,
                                   bool HadMultipleCandidates,
-                                  bool ZeroInitialization = false,
-                                  ConstructionKind ConstructKind = CK_Complete,
-                                  SourceRange ParenRange = SourceRange());
-
+                                  bool ListInitialization,
+                                  bool ZeroInitialization,
+                                  ConstructionKind ConstructKind,
+                                  SourceRange ParenRange);
 
   CXXConstructorDecl* getConstructor() const { return Constructor; }
   void setConstructor(CXXConstructorDecl *C) { Constructor = C; }
@@ -863,6 +868,10 @@ public:
   /// an overloaded set having size greater than 1.
   bool hadMultipleCandidates() const { return HadMultipleCandidates; }
   void setHadMultipleCandidates(bool V) { HadMultipleCandidates = V; }
+
+  /// \brief Whether this constructor call was written as list-initialization.
+  bool isListInitialization() const { return ListInitialization; }
+  void setListInitialization(bool V) { ListInitialization = V; }
 
   /// \brief Whether this construction first requires
   /// zero-initialization before the initializer is called.
@@ -1039,12 +1048,9 @@ class LambdaExpr : public Expr {
   /// \brief The source range that covers the lambda introducer ([...]).
   SourceRange IntroducerRange;
 
-  /// \brief The number of captures in this lambda.
+  /// \brief The number of captures.
   unsigned NumCaptures : 16;
-
-  /// \brief The number of explicit captures in this lambda.
-  unsigned NumExplicitCaptures : 13;
-
+  
   /// \brief The default capture kind, which is a value of type
   /// LambdaCaptureDefault.
   unsigned CaptureDefault : 2;
@@ -1053,6 +1059,13 @@ class LambdaExpr : public Expr {
   /// implicit (and empty) parameter list.
   unsigned ExplicitParams : 1;
 
+  /// \brief Whether this lambda had the result type explicitly specified.
+  unsigned ExplicitResultType : 1;
+  
+  /// \brief Whether there are any array index variables stored at the end of
+  /// this lambda expression.
+  unsigned HasArrayIndexVars : 1;
+  
   /// \brief The location of the closing brace ('}') that completes
   /// the lambda.
   /// 
@@ -1063,11 +1076,9 @@ class LambdaExpr : public Expr {
   /// module file just to determine the source range.
   SourceLocation ClosingBrace;
 
-  // Note: The Create method allocates storage after the LambdaExpr
-  // object, which contains the captures, followed by the capture
-  // initializers, and finally the body of the lambda. The capture
-  // initializers and lambda body are placed next to each other so
-  // that the children() function can visit all of them easily.
+  // Note: The capture initializers are stored directly after the lambda
+  // expression, along with the index variables used to initialize by-copy
+  // array captures.
 
 public:
   /// \brief Describes the capture of either a variable or 'this'.
@@ -1075,10 +1086,10 @@ public:
     llvm::PointerIntPair<VarDecl *, 2> VarAndBits;
     SourceLocation Loc;
     SourceLocation EllipsisLoc;
-
+    
     friend class ASTStmtReader;
     friend class ASTStmtWriter;
-
+    
   public:
     /// \brief Create a new capture.
     ///
@@ -1151,13 +1162,34 @@ private:
              LambdaCaptureDefault CaptureDefault,
              ArrayRef<Capture> Captures,
              bool ExplicitParams,
+             bool ExplicitResultType,
              ArrayRef<Expr *> CaptureInits,
+             ArrayRef<VarDecl *> ArrayIndexVars,
+             ArrayRef<unsigned> ArrayIndexStarts,
              SourceLocation ClosingBrace);
 
+  /// \brief Construct an empty lambda expression.
+  LambdaExpr(EmptyShell Empty, unsigned NumCaptures, bool HasArrayIndexVars)
+    : Expr(LambdaExprClass, Empty),
+      NumCaptures(NumCaptures), CaptureDefault(LCD_None), ExplicitParams(false),
+      ExplicitResultType(false), HasArrayIndexVars(true) { 
+    getStoredStmts()[NumCaptures] = 0;
+  }
+  
   Stmt **getStoredStmts() const {
-    LambdaExpr *This = const_cast<LambdaExpr *>(this);
-    return reinterpret_cast<Stmt **>(reinterpret_cast<Capture *>(This + 1)
-                                     + NumCaptures);
+    return reinterpret_cast<Stmt **>(const_cast<LambdaExpr *>(this) + 1);
+  }
+  
+  /// \brief Retrieve the mapping from captures to the first array index
+  /// variable.
+  unsigned *getArrayIndexStarts() const {
+    return reinterpret_cast<unsigned *>(getStoredStmts() + NumCaptures + 1);
+  }
+  
+  /// \brief Retrieve the complete set of array-index variables.
+  VarDecl **getArrayIndexVars() const {
+    return reinterpret_cast<VarDecl **>(
+             getArrayIndexStarts() + NumCaptures + 1);
   }
 
 public:
@@ -1168,9 +1200,17 @@ public:
                             LambdaCaptureDefault CaptureDefault,
                             ArrayRef<Capture> Captures,
                             bool ExplicitParams,
+                            bool ExplicitResultType,
                             ArrayRef<Expr *> CaptureInits,
+                            ArrayRef<VarDecl *> ArrayIndexVars,
+                            ArrayRef<unsigned> ArrayIndexStarts,
                             SourceLocation ClosingBrace);
 
+  /// \brief Construct a new lambda expression that will be deserialized from
+  /// an external source.
+  static LambdaExpr *CreateDeserialized(ASTContext &C, unsigned NumCaptures,
+                                        unsigned NumArrayIndexVars);
+  
   /// \brief Determine the default capture kind for this lambda.
   LambdaCaptureDefault getCaptureDefault() const {
     return static_cast<LambdaCaptureDefault>(CaptureDefault);
@@ -1181,39 +1221,30 @@ public:
   typedef const Capture *capture_iterator;
 
   /// \brief Retrieve an iterator pointing to the first lambda capture.
-  capture_iterator capture_begin() const {
-    return reinterpret_cast<const Capture *>(this + 1);
-  }
+  capture_iterator capture_begin() const;
 
   /// \brief Retrieve an iterator pointing past the end of the
   /// sequence of lambda captures.
-  capture_iterator capture_end() const {
-    return capture_begin() + NumCaptures;
-  }
+  capture_iterator capture_end() const;
 
+  /// \brief Determine the number of captures in this lambda.
+  unsigned capture_size() const { return NumCaptures; }
+  
   /// \brief Retrieve an iterator pointing to the first explicit
   /// lambda capture.
-  capture_iterator explicit_capture_begin() const {
-    return capture_begin();
-  }
+  capture_iterator explicit_capture_begin() const;
 
   /// \brief Retrieve an iterator pointing past the end of the sequence of
   /// explicit lambda captures.
-  capture_iterator explicit_capture_end() const {
-    return capture_begin() + NumExplicitCaptures;
-  }
+  capture_iterator explicit_capture_end() const;
 
   /// \brief Retrieve an iterator pointing to the first implicit
   /// lambda capture.
-  capture_iterator implicit_capture_begin() const {
-    return explicit_capture_end();
-  }
+  capture_iterator implicit_capture_begin() const;
 
   /// \brief Retrieve an iterator pointing past the end of the sequence of
   /// implicit lambda captures.
-  capture_iterator implicit_capture_end() const {
-    return capture_end();
-  }
+  capture_iterator implicit_capture_end() const;
 
   /// \brief Iterator that walks over the capture initialization
   /// arguments.
@@ -1228,9 +1259,16 @@ public:
   /// \brief Retrieve the iterator pointing one past the last
   /// initialization argument for this lambda expression.
   capture_init_iterator capture_init_end() const {
-    return capture_init_begin() + NumCaptures;
+    return capture_init_begin() + NumCaptures;    
   }
 
+  /// \brief Retrieve the set of index variables used in the capture 
+  /// initializer of an array captured by copy.
+  ///
+  /// \param Iter The iterator that points at the capture initializer for 
+  /// which we are extracting the corresponding index variables.
+  ArrayRef<VarDecl *> getCaptureInitIndexVars(capture_init_iterator Iter) const;
+  
   /// \brief Retrieve the source range covering the lambda introducer,
   /// which contains the explicit capture list surrounded by square
   /// brackets ([...]).
@@ -1246,9 +1284,7 @@ public:
   CXXMethodDecl *getCallOperator() const;
 
   /// \brief Retrieve the body of the lambda.
-  CompoundStmt *getBody() const {
-    return reinterpret_cast<CompoundStmt *>(getStoredStmts()[NumCaptures]);
-  }
+  CompoundStmt *getBody() const;
 
   /// \brief Determine whether the lambda is mutable, meaning that any
   /// captures values can be modified.
@@ -1258,6 +1294,9 @@ public:
   /// list vs. an implicit (empty) parameter list.
   bool hasExplicitParameters() const { return ExplicitParams; }
 
+  /// \brief Whether this lambda had its result type explicitly specified.
+  bool hasExplicitResultType() const { return ExplicitResultType; }
+  
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == LambdaExprClass;
   }
@@ -1267,7 +1306,7 @@ public:
     return SourceRange(IntroducerRange.getBegin(), ClosingBrace);
   }
 
-  child_range children() { 
+  child_range children() {
     return child_range(getStoredStmts(), getStoredStmts() + NumCaptures + 1);
   }
 
@@ -1320,34 +1359,24 @@ public:
 class CXXNewExpr : public Expr {
   // Was the usage ::new, i.e. is the global new to be used?
   bool GlobalNew : 1;
-  // Is there an initializer? If not, built-ins are uninitialized, else they're
-  // value-initialized.
-  bool Initializer : 1;
   // Do we allocate an array? If so, the first SubExpr is the size expression.
   bool Array : 1;
   // If this is an array allocation, does the usual deallocation
   // function for the allocated type want to know the allocated size?
   bool UsualArrayDeleteWantsSize : 1;
-  // Whether the referred constructor (if any) was resolved from an
-  // overload set having size greater than 1.
-  bool HadMultipleCandidates : 1;
   // The number of placement new arguments.
   unsigned NumPlacementArgs : 13;
-  // The number of constructor arguments. This may be 1 even for non-class
-  // types; use the pseudo copy constructor.
-  unsigned NumConstructorArgs : 14;
-  // Contains an optional array size expression, any number of optional
-  // placement arguments, and any number of optional constructor arguments,
-  // in that order.
+  // What kind of initializer do we have? Could be none, parens, or braces.
+  // In storage, we distinguish between "none, and no initializer expr", and
+  // "none, but an implicit initializer expr".
+  unsigned StoredInitializationStyle : 2;
+  // Contains an optional array size expression, an optional initialization
+  // expression, and any number of optional placement arguments, in that order.
   Stmt **SubExprs;
   // Points to the allocation function used.
   FunctionDecl *OperatorNew;
   // Points to the deallocation function used in case of error. May be null.
   FunctionDecl *OperatorDelete;
-  // Points to the constructor used. Cannot be null if AllocType is a record;
-  // it would still point at the default constructor (even an implicit one).
-  // Must be null for all other types.
-  CXXConstructorDecl *Constructor;
 
   /// \brief The allocated type-source information, as written in the source.
   TypeSourceInfo *AllocatedTypeInfo;
@@ -1356,29 +1385,33 @@ class CXXNewExpr : public Expr {
   /// the source range covering the parenthesized type-id.
   SourceRange TypeIdParens;
 
+  /// \brief Location of the first token.
   SourceLocation StartLoc;
-  SourceLocation EndLoc;
-  SourceLocation ConstructorLParen;
-  SourceLocation ConstructorRParen;
+
+  /// \brief Source-range of a paren-delimited initializer.
+  SourceRange DirectInitRange;
 
   friend class ASTStmtReader;
+  friend class ASTStmtWriter;
 public:
+  enum InitializationStyle {
+    NoInit,   ///< New-expression has no initializer as written.
+    CallInit, ///< New-expression has a C++98 paren-delimited initializer.
+    ListInit  ///< New-expression has a C++11 list-initializer.
+  };
+
   CXXNewExpr(ASTContext &C, bool globalNew, FunctionDecl *operatorNew,
-             Expr **placementArgs, unsigned numPlaceArgs,
-             SourceRange TypeIdParens,
-             Expr *arraySize, CXXConstructorDecl *constructor, bool initializer,
-             Expr **constructorArgs, unsigned numConsArgs,
-             bool HadMultipleCandidates,
              FunctionDecl *operatorDelete, bool usualArrayDeleteWantsSize,
+             Expr **placementArgs, unsigned numPlaceArgs,
+             SourceRange typeIdParens, Expr *arraySize,
+             InitializationStyle initializationStyle, Expr *initializer,
              QualType ty, TypeSourceInfo *AllocatedTypeInfo,
-             SourceLocation startLoc, SourceLocation endLoc,
-             SourceLocation constructorLParen,
-             SourceLocation constructorRParen);
+             SourceLocation startLoc, SourceRange directInitRange);
   explicit CXXNewExpr(EmptyShell Shell)
     : Expr(CXXNewExprClass, Shell), SubExprs(0) { }
 
   void AllocateArgsArray(ASTContext &C, bool isArray, unsigned numPlaceArgs,
-                         unsigned numConsArgs);
+                         bool hasInitializer);
 
   QualType getAllocatedType() const {
     assert(getType()->isPointerType());
@@ -1404,8 +1437,6 @@ public:
   void setOperatorNew(FunctionDecl *D) { OperatorNew = D; }
   FunctionDecl *getOperatorDelete() const { return OperatorDelete; }
   void setOperatorDelete(FunctionDecl *D) { OperatorDelete = D; }
-  CXXConstructorDecl *getConstructor() const { return Constructor; }
-  void setConstructor(CXXConstructorDecl *D) { Constructor = D; }
 
   bool isArray() const { return Array; }
   Expr *getArraySize() {
@@ -1417,23 +1448,40 @@ public:
 
   unsigned getNumPlacementArgs() const { return NumPlacementArgs; }
   Expr **getPlacementArgs() {
-    return reinterpret_cast<Expr **>(SubExprs + Array);
+    return reinterpret_cast<Expr **>(SubExprs + Array + hasInitializer());
   }
 
   Expr *getPlacementArg(unsigned i) {
     assert(i < NumPlacementArgs && "Index out of range");
-    return cast<Expr>(SubExprs[Array + i]);
+    return getPlacementArgs()[i];
   }
   const Expr *getPlacementArg(unsigned i) const {
     assert(i < NumPlacementArgs && "Index out of range");
-    return cast<Expr>(SubExprs[Array + i]);
+    return const_cast<CXXNewExpr*>(this)->getPlacementArg(i);
   }
 
   bool isParenTypeId() const { return TypeIdParens.isValid(); }
   SourceRange getTypeIdParens() const { return TypeIdParens; }
 
   bool isGlobalNew() const { return GlobalNew; }
-  bool hasInitializer() const { return Initializer; }
+
+  /// \brief Whether this new-expression has any initializer at all.
+  bool hasInitializer() const { return StoredInitializationStyle > 0; }
+
+  /// \brief The kind of initializer this new-expression has.
+  InitializationStyle getInitializationStyle() const {
+    if (StoredInitializationStyle == 0)
+      return NoInit;
+    return static_cast<InitializationStyle>(StoredInitializationStyle-1);
+  }
+
+  /// \brief The initializer of this new-expression.
+  Expr *getInitializer() {
+    return hasInitializer() ? cast<Expr>(SubExprs[Array]) : 0;
+  }
+  const Expr *getInitializer() const {
+    return hasInitializer() ? cast<Expr>(SubExprs[Array]) : 0;
+  }
 
   /// Answers whether the usual array deallocation function for the
   /// allocated type expects the size of the allocation as a
@@ -1442,71 +1490,39 @@ public:
     return UsualArrayDeleteWantsSize;
   }
 
-  unsigned getNumConstructorArgs() const { return NumConstructorArgs; }
-
-  Expr **getConstructorArgs() {
-    return reinterpret_cast<Expr **>(SubExprs + Array + NumPlacementArgs);
-  }
-
-  Expr *getConstructorArg(unsigned i) {
-    assert(i < NumConstructorArgs && "Index out of range");
-    return cast<Expr>(SubExprs[Array + NumPlacementArgs + i]);
-  }
-  const Expr *getConstructorArg(unsigned i) const {
-    assert(i < NumConstructorArgs && "Index out of range");
-    return cast<Expr>(SubExprs[Array + NumPlacementArgs + i]);
-  }
-
-  /// \brief Whether the new expression refers a constructor that was
-  /// resolved from an overloaded set having size greater than 1.
-  bool hadMultipleCandidates() const { return HadMultipleCandidates; }
-  void setHadMultipleCandidates(bool V) { HadMultipleCandidates = V; }
-
   typedef ExprIterator arg_iterator;
   typedef ConstExprIterator const_arg_iterator;
 
   arg_iterator placement_arg_begin() {
-    return SubExprs + Array;
+    return SubExprs + Array + hasInitializer();
   }
   arg_iterator placement_arg_end() {
-    return SubExprs + Array + getNumPlacementArgs();
+    return SubExprs + Array + hasInitializer() + getNumPlacementArgs();
   }
   const_arg_iterator placement_arg_begin() const {
-    return SubExprs + Array;
+    return SubExprs + Array + hasInitializer();
   }
   const_arg_iterator placement_arg_end() const {
-    return SubExprs + Array + getNumPlacementArgs();
-  }
-
-  arg_iterator constructor_arg_begin() {
-    return SubExprs + Array + getNumPlacementArgs();
-  }
-  arg_iterator constructor_arg_end() {
-    return SubExprs + Array + getNumPlacementArgs() + getNumConstructorArgs();
-  }
-  const_arg_iterator constructor_arg_begin() const {
-    return SubExprs + Array + getNumPlacementArgs();
-  }
-  const_arg_iterator constructor_arg_end() const {
-    return SubExprs + Array + getNumPlacementArgs() + getNumConstructorArgs();
+    return SubExprs + Array + hasInitializer() + getNumPlacementArgs();
   }
 
   typedef Stmt **raw_arg_iterator;
   raw_arg_iterator raw_arg_begin() { return SubExprs; }
   raw_arg_iterator raw_arg_end() {
-    return SubExprs + Array + getNumPlacementArgs() + getNumConstructorArgs();
+    return SubExprs + Array + hasInitializer() + getNumPlacementArgs();
   }
   const_arg_iterator raw_arg_begin() const { return SubExprs; }
-  const_arg_iterator raw_arg_end() const { return constructor_arg_end(); }
+  const_arg_iterator raw_arg_end() const {
+    return SubExprs + Array + hasInitializer() + getNumPlacementArgs();
+  }
 
   SourceLocation getStartLoc() const { return StartLoc; }
-  SourceLocation getEndLoc() const { return EndLoc; }
+  SourceLocation getEndLoc() const;
 
-  SourceLocation getConstructorLParen() const { return ConstructorLParen; }
-  SourceLocation getConstructorRParen() const { return ConstructorRParen; }
+  SourceRange getDirectInitRange() const { return DirectInitRange; }
 
   SourceRange getSourceRange() const {
-    return SourceRange(StartLoc, EndLoc);
+    return SourceRange(getStartLoc(), getEndLoc());
   }
 
   static bool classof(const Stmt *T) {
@@ -1516,9 +1532,7 @@ public:
 
   // Iterators
   child_range children() {
-    return child_range(&SubExprs[0],
-                       &SubExprs[0] + Array + getNumPlacementArgs()
-                         + getNumConstructorArgs());
+    return child_range(raw_arg_begin(), raw_arg_end());
   }
 };
 

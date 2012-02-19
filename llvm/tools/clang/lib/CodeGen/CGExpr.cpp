@@ -1181,11 +1181,9 @@ void CodeGenFunction::EmitStoreThroughExtVectorComponentLValue(RValue Src,
       // FIXME: since we're shuffling with undef, can we just use the indices
       //        into that?  This could be simpler.
       SmallVector<llvm::Constant*, 4> ExtMask;
-      unsigned i;
-      for (i = 0; i != NumSrcElts; ++i)
+      for (unsigned i = 0; i != NumSrcElts; ++i)
         ExtMask.push_back(Builder.getInt32(i));
-      for (; i != NumDstElts; ++i)
-        ExtMask.push_back(llvm::UndefValue::get(Int32Ty));
+      ExtMask.resize(NumDstElts, llvm::UndefValue::get(Int32Ty));
       llvm::Value *ExtMaskV = llvm::ConstantVector::get(ExtMask);
       llvm::Value *ExtSrcVal =
         Builder.CreateShuffleVector(SrcVal,
@@ -2092,6 +2090,7 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
   case CK_DerivedToBaseMemberPointer:
   case CK_BaseToDerivedMemberPointer:
   case CK_MemberPointerToBoolean:
+  case CK_ReinterpretMemberPointer:
   case CK_AnyPointerToBlockPointerCast:
   case CK_ARCProduceObject:
   case CK_ARCConsumeObject:
@@ -2455,7 +2454,8 @@ RValue CodeGenFunction::EmitCall(QualType CalleeType, llvm::Value *Callee,
   CallArgList Args;
   EmitCallArgs(Args, dyn_cast<FunctionProtoType>(FnType), ArgBeg, ArgEnd);
 
-  const CGFunctionInfo &FnInfo = CGM.getTypes().getFunctionInfo(Args, FnType);
+  const CGFunctionInfo &FnInfo =
+    CGM.getTypes().arrangeFunctionCall(Args, FnType);
 
   // C99 6.5.2.2p6:
   //   If the expression that denotes the called function has a type
@@ -2474,11 +2474,8 @@ RValue CodeGenFunction::EmitCall(QualType CalleeType, llvm::Value *Callee,
   // through an unprototyped function type works like a *non-variadic*
   // call.  The way we make this work is to cast to the exact type
   // of the promoted arguments.
-  if (isa<FunctionNoProtoType>(FnType) &&
-      !getTargetHooks().isNoProtoCallVariadic(FnInfo)) {
-    assert(cast<llvm::FunctionType>(Callee->getType()->getContainedType(0))
-             ->isVarArg());
-    llvm::Type *CalleeTy = getTypes().GetFunctionType(FnInfo, false);
+  if (isa<FunctionNoProtoType>(FnType) && !FnInfo.isVariadic()) {
+    llvm::Type *CalleeTy = getTypes().GetFunctionType(FnInfo);
     CalleeTy = CalleeTy->getPointerTo();
     Callee = Builder.CreateBitCast(Callee, CalleeTy, "callee.knr.cast");
   }
@@ -2679,7 +2676,8 @@ RValue CodeGenFunction::EmitAtomicExpr(AtomicExpr *E, llvm::Value *Dest) {
     Args.add(RValue::get(llvm::ConstantInt::get(SizeTy, Size)),
              getContext().getSizeType());
     const CGFunctionInfo &FuncInfo =
-        CGM.getTypes().getFunctionInfo(RetTy, Args, FunctionType::ExtInfo());
+        CGM.getTypes().arrangeFunctionCall(RetTy, Args, FunctionType::ExtInfo(),
+                                           /*variadic*/ false);
     llvm::FunctionType *FTy = CGM.getTypes().GetFunctionType(FuncInfo, false);
     llvm::Constant *Func = CGM.CreateRuntimeFunction(FTy, LibCallName);
     RValue Res = EmitCall(FuncInfo, Func, ReturnValueSlot(), Args);

@@ -73,10 +73,21 @@ public:
 
   bool VisitTemplateSpecializationTypeLoc(TemplateSpecializationTypeLoc TL) {
     if (const TemplateSpecializationType *T = TL.getTypePtr()) {
-      if (CXXRecordDecl *RD = T->getAsCXXRecordDecl())
-        IndexCtx.handleReference(RD, TL.getTemplateNameLoc(),
-                                 Parent, ParentDC);
+      if (IndexCtx.shouldIndexImplicitTemplateInsts()) {
+        if (CXXRecordDecl *RD = T->getAsCXXRecordDecl())
+          IndexCtx.handleReference(RD, TL.getTemplateNameLoc(),
+                                   Parent, ParentDC);
+      } else {
+        if (const TemplateDecl *D = T->getTemplateName().getAsTemplateDecl())
+          IndexCtx.handleReference(D, TL.getTemplateNameLoc(),
+                                   Parent, ParentDC);
+      }
     }
+    return true;
+  }
+
+  bool TraverseStmt(Stmt *S) {
+    IndexCtx.indexBody(S, Parent, ParentDC);
     return true;
   }
 };

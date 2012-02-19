@@ -63,7 +63,24 @@ namespace {
     bool LegalTypes;
 
     // Worklist of all of the nodes that need to be simplified.
-    std::vector<SDNode*> WorkList;
+    //
+    // This has the semantics that when adding to the worklist,
+    // the item added must be next to be processed. It should
+    // also only appear once. The naive approach to this takes
+    // linear time.
+    //
+    // To reduce the insert/remove time to logarithmic, we use
+    // a set and a vector to maintain our worklist.
+    //
+    // The set contains the items on the worklist, but does not
+    // maintain the order they should be visited.
+    //
+    // The vector maintains the order nodes should be visited, but may
+    // contain duplicate or removed nodes. When choosing a node to
+    // visit, we pop off the order stack until we find an item that is
+    // also in the contents set. All operations are O(log N).
+    SmallPtrSet<SDNode*, 64> WorkListContents;
+    std::vector<SDNode*> WorkListOrder;
 
     // AA - Used for DAG load/store alias analysis.
     AliasAnalysis &AA;
@@ -83,18 +100,17 @@ namespace {
     SDValue visit(SDNode *N);
 
   public:
-    /// AddToWorkList - Add to the work list making sure it's instance is at the
-    /// the back (next to be processed.)
+    /// AddToWorkList - Add to the work list making sure its instance is at the
+    /// back (next to be processed.)
     void AddToWorkList(SDNode *N) {
-      removeFromWorkList(N);
-      WorkList.push_back(N);
+      WorkListContents.insert(N);
+      WorkListOrder.push_back(N);
     }
 
     /// removeFromWorkList - remove all instances of N from the worklist.
     ///
     void removeFromWorkList(SDNode *N) {
-      WorkList.erase(std::remove(WorkList.begin(), WorkList.end(), N),
-                     WorkList.end());
+      WorkListContents.erase(N);
     }
 
     SDValue CombineTo(SDNode *N, const SDValue *To, unsigned NumTo,
@@ -959,10 +975,9 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
   LegalTypes = Level >= AfterLegalizeTypes;
 
   // Add all the dag nodes to the worklist.
-  WorkList.reserve(DAG.allnodes_size());
   for (SelectionDAG::allnodes_iterator I = DAG.allnodes_begin(),
        E = DAG.allnodes_end(); I != E; ++I)
-    WorkList.push_back(I);
+    AddToWorkList(I);
 
   // Create a dummy node (which is not added to allnodes), that adds a reference
   // to the root node, preventing it from being deleted, and tracking any
@@ -973,11 +988,18 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
   // done.  Set it to null to avoid confusion.
   DAG.setRoot(SDValue());
 
-  // while the worklist isn't empty, inspect the node on the end of it and
+  // while the worklist isn't empty, find a node and
   // try and combine it.
-  while (!WorkList.empty()) {
-    SDNode *N = WorkList.back();
-    WorkList.pop_back();
+  while (!WorkListContents.empty()) {
+    SDNode *N;
+    // The WorkListOrder holds the SDNodes in order, but it may contain duplicates.
+    // In order to avoid a linear scan, we use a set (O(log N)) to hold what the
+    // worklist *should* contain, and check the node we want to visit is should
+    // actually be visited.
+    do {
+      N = WorkListOrder.back();
+      WorkListOrder.pop_back();
+    } while (!WorkListContents.erase(N));
 
     // If N has no uses, it is dead.  Make sure to revisit all N's operands once
     // N is deleted from the DAG, since they too may now be dead or may have a
@@ -7253,7 +7275,7 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   // same source type and all of the inputs must be any or zero extend.
   // Scalar sizes must be a power of two.
   EVT OutScalarTy = N->getValueType(0).getScalarType();
-  bool validTypes = SourceType != MVT::Other &&
+  bool ValidTypes = SourceType != MVT::Other &&
                  isPowerOf2_32(OutScalarTy.getSizeInBits()) &&
                  isPowerOf2_32(SourceType.getSizeInBits());
 
@@ -7263,7 +7285,8 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   // will be type-legalized to complex code sequences.
   // We perform this optimization only before the operation legalizer because we
   // may introduce illegal operations.
-  if (LegalTypes && !LegalOperations && validTypes) {
+  if ((Level == AfterLegalizeVectorOps || Level == AfterLegalizeTypes) &&
+      ValidTypes) {
     bool isLE = TLI.isLittleEndian();
     unsigned ElemRatio = OutScalarTy.getSizeInBits()/SourceType.getSizeInBits();
     assert(ElemRatio > 1 && "Invalid element size ratio");
@@ -7322,15 +7345,8 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
       break;
     }
 
-    // If the input vector type disagrees with the result of the build_vector,
-    // we can't make a shuffle.
+    // We allow up to two distinct input vectors.
     SDValue ExtractedFromVec = N->getOperand(i).getOperand(0);
-    if (ExtractedFromVec.getValueType() != VT) {
-      VecIn1 = VecIn2 = SDValue(0, 0);
-      break;
-    }
-
-    // Otherwise, remember this.  We allow up to two distinct input vectors.
     if (ExtractedFromVec == VecIn1 || ExtractedFromVec == VecIn2)
       continue;
 
@@ -7345,7 +7361,7 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
     }
   }
 
-  // If everything is good, we can make a shuffle operation.
+    // If everything is good, we can make a shuffle operation.
   if (VecIn1.getNode()) {
     SmallVector<int, 8> Mask;
     for (unsigned i = 0; i != NumInScalars; ++i) {
@@ -7371,14 +7387,39 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
       Mask.push_back(Idx+NumInScalars);
     }
 
-    // Add count and size info.
+    // We can't generate a shuffle node with mismatched input and output types.
+    // Attempt to transform a single input vector to the correct type.
+    if ((VT != VecIn1.getValueType())) {
+      // We don't support shuffeling between TWO values of different types.
+      if (VecIn2.getNode() != 0)
+        return SDValue();
+
+      // We only support widening of vectors which are half the size of the
+      // output registers. For example XMM->YMM widening on X86 with AVX.
+      if (VecIn1.getValueType().getSizeInBits()*2 != VT.getSizeInBits())
+        return SDValue();
+
+      // Widen the input vector by adding undef values.
+      VecIn1 = DAG.getNode(ISD::CONCAT_VECTORS, N->getDebugLoc(), VT,
+                           VecIn1, DAG.getUNDEF(VecIn1.getValueType()));
+    }
+
+    // If VecIn2 is unused then change it to undef.
+    VecIn2 = VecIn2.getNode() ? VecIn2 : DAG.getUNDEF(VT);
+
+    // Check that we were able to transform all incoming values to the same type.
+    if (VecIn2.getValueType() != VecIn1.getValueType() ||
+        VecIn1.getValueType() != VT)
+          return SDValue();
+
+    // Only type-legal BUILD_VECTOR nodes are converted to shuffle nodes.
     if (!isTypeLegal(VT))
       return SDValue();
 
     // Return the new VECTOR_SHUFFLE node.
     SDValue Ops[2];
     Ops[0] = VecIn1;
-    Ops[1] = VecIn2.getNode() ? VecIn2 : DAG.getUNDEF(VT);
+    Ops[1] = VecIn2;
     return DAG.getVectorShuffle(VT, N->getDebugLoc(), Ops[0], Ops[1], &Mask[0]);
   }
 

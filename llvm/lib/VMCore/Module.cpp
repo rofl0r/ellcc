@@ -328,6 +328,22 @@ void Module::eraseNamedMetadata(NamedMDNode *NMD) {
   NamedMDList.erase(NMD);
 }
 
+/// getModuleFlagsMetadata - Returns the module flags in the provided vector.
+void Module::
+getModuleFlagsMetadata(SmallVectorImpl<ModuleFlagEntry> &Flags) const {
+  const NamedMDNode *ModFlags = getModuleFlagsMetadata();
+  if (!ModFlags) return;
+
+  for (unsigned i = 0, e = ModFlags->getNumOperands(); i != e; ++i) {
+    MDNode *Flag = ModFlags->getOperand(i);
+    ConstantInt *Behavior = cast<ConstantInt>(Flag->getOperand(0));
+    MDString *Key = cast<MDString>(Flag->getOperand(1));
+    Value *Val = Flag->getOperand(2);
+    Flags.push_back(ModuleFlagEntry(ModFlagBehavior(Behavior->getZExtValue()),
+                                    Key, Val));
+  }
+}
+
 /// getModuleFlagsMetadata - Returns the NamedMDNode in the module that
 /// represents module-level flags. This method returns null if there are no
 /// module-level flags.
@@ -345,7 +361,7 @@ NamedMDNode *Module::getOrInsertModuleFlagsMetadata() {
 /// addModuleFlag - Add a module-level flag to the module-level flags
 /// metadata. It will create the module-level flags named metadata if it doesn't
 /// already exist.
-void Module::addModuleFlag(ModAttrBehavior Behavior, StringRef Key,
+void Module::addModuleFlag(ModFlagBehavior Behavior, StringRef Key,
                            Value *Val) {
   Type *Int32Ty = Type::getInt32Ty(Context);
   Value *Ops[3] = {
@@ -353,7 +369,7 @@ void Module::addModuleFlag(ModAttrBehavior Behavior, StringRef Key,
   };
   getOrInsertModuleFlagsMetadata()->addOperand(MDNode::get(Context, Ops));
 }
-void Module::addModuleFlag(ModAttrBehavior Behavior, StringRef Key,
+void Module::addModuleFlag(ModFlagBehavior Behavior, StringRef Key,
                            uint32_t Val) {
   Type *Int32Ty = Type::getInt32Ty(Context);
   addModuleFlag(Behavior, Key, ConstantInt::get(Int32Ty, Val));

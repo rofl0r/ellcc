@@ -52,6 +52,7 @@ int    FLAG_sleep_before_dying;
 // -------------------------- Globals --------------------- {{{1
 int asan_inited;
 bool asan_init_is_running;
+static void (*death_callback)(void);
 
 // -------------------------- Misc ---------------- {{{1
 void ShowStatsAndAbort() {
@@ -98,6 +99,18 @@ size_t ReadFileToBuffer(const char *file_name, char **buff,
       break;
   }
   return read_len;
+}
+
+void AsanDie() {
+  static int num_calls = 0;
+  if (AtomicInc(&num_calls) > 1) return;  // Don't die twice.
+  if (FLAG_sleep_before_dying) {
+    Report("Sleeping for %d second(s)\n", FLAG_sleep_before_dying);
+    SleepForSeconds(FLAG_sleep_before_dying);
+  }
+  if (death_callback)
+    death_callback();
+  Exit(FLAG_exitcode);
 }
 
 // ---------------------- mmap -------------------- {{{1
@@ -148,7 +161,7 @@ static bool DescribeStackAddress(uintptr_t addr, uintptr_t access_size) {
   // where alloc_i looks like "offset size len ObjectName ".
   CHECK(frame_descr);
   // Report the function name and the offset.
-  const char *name_end = REAL(strchr)(frame_descr, ' ');
+  const char *name_end = internal_strchr(frame_descr, ' ');
   CHECK(name_end);
   buf[0] = 0;
   internal_strncat(buf, frame_descr,
@@ -159,16 +172,16 @@ static bool DescribeStackAddress(uintptr_t addr, uintptr_t access_size) {
          addr, offset, buf, t->tid());
   // Report the number of stack objects.
   char *p;
-  size_t n_objects = strtol(name_end, &p, 10);
+  size_t n_objects = internal_simple_strtoll(name_end, &p, 10);
   CHECK(n_objects > 0);
   Printf("  This frame has %ld object(s):\n", n_objects);
   // Report all objects in this frame.
   for (size_t i = 0; i < n_objects; i++) {
     size_t beg, size;
     intptr_t len;
-    beg  = strtol(p, &p, 10);
-    size = strtol(p, &p, 10);
-    len  = strtol(p, &p, 10);
+    beg  = internal_simple_strtoll(p, &p, 10);
+    size = internal_simple_strtoll(p, &p, 10);
+    len  = internal_simple_strtoll(p, &p, 10);
     if (beg <= 0 || size <= 0 || len < 0 || *p != ' ') {
       Printf("AddressSanitizer can't parse the stack frame descriptor: |%s|\n",
              frame_descr);
@@ -245,20 +258,12 @@ static void force_interface_symbols() {
 }
 
 // -------------------------- Init ------------------- {{{1
-#if defined(_WIN32)
-// atoll is not defined on Windows.
-int64_t atoll(const char *str) {
-  UNIMPLEMENTED();
-  return -1;
-}
-#endif
-
 static int64_t IntFlagValue(const char *flags, const char *flag,
                             int64_t default_val) {
   if (!flags) return default_val;
   const char *str = internal_strstr(flags, flag);
   if (!str) return default_val;
-  return atoll(str + internal_strlen(flag));
+  return internal_atoll(str + internal_strlen(flag));
 }
 
 static void asan_atexit() {
@@ -290,6 +295,10 @@ void __asan_handle_no_return() {
   uintptr_t top = curr_thread->stack_top();
   uintptr_t bottom = ((uintptr_t)&local_stack - kPageSize) & ~(kPageSize-1);
   PoisonShadow(bottom, top - bottom, 0);
+}
+
+void __asan_set_death_callback(void (*callback)(void)) {
+  death_callback = callback;
 }
 
 void __asan_report_error(uintptr_t pc, uintptr_t bp, uintptr_t sp,
@@ -402,7 +411,15 @@ void __asan_init() {
 
   FLAG_v = IntFlagValue(options, "verbosity=", 0);
 
+#if ASAN_LOW_MEMORY == 1
+  FLAG_quarantine_size =
+    IntFlagValue(options, "quarantine_size=", 1UL << 24);  // 16M
+  FLAG_redzone = IntFlagValue(options, "redzone=", 64);
+#else
+  FLAG_quarantine_size =
+    IntFlagValue(options, "quarantine_size=", 1UL << 28);  // 256M
   FLAG_redzone = IntFlagValue(options, "redzone=", 128);
+#endif
   CHECK(FLAG_redzone >= 32);
   CHECK((FLAG_redzone & (FLAG_redzone - 1)) == 0);
 
@@ -425,9 +442,6 @@ void __asan_init() {
   if (FLAG_atexit) {
     atexit(asan_atexit);
   }
-
-  FLAG_quarantine_size =
-      IntFlagValue(options, "quarantine_size=", 1UL << 28);
 
   // interceptors
   InitializeAsanInterceptors();
@@ -463,7 +477,7 @@ void __asan_init() {
     AsanDisableCoreDumper();
   }
 
-  {
+  if (AsanShadowRangeIsAvailable()) {
     if (kLowShadowBeg != kLowShadowEnd) {
       // mmap the low shadow plus at least one page.
       ReserveShadowMemoryRange(kLowShadowBeg - kMmapGranularity, kLowShadowEnd);
@@ -473,6 +487,10 @@ void __asan_init() {
     // protect the gap
     void *prot = AsanMprotect(kShadowGapBeg, kShadowGapEnd - kShadowGapBeg + 1);
     CHECK(prot == (void*)kShadowGapBeg);
+  } else {
+    Report("Shadow memory range interleaves with an existing memory mapping. "
+           "ASan cannot proceed correctly. ABORTING.\n");
+    AsanDie();
   }
 
   // On Linux AsanThread::ThreadStart() calls malloc() that's why asan_inited

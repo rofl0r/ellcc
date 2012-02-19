@@ -26,11 +26,8 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Path.h"
 
-#ifdef HAVE_CLANG_CONFIG_H
-# include "clang/Config/config.h"
-#endif
+#include "clang/Config/config.h" // C_INCLUDE_DIRS
 
-#include "llvm/Config/config.h"
 using namespace clang;
 using namespace clang::frontend;
 
@@ -467,6 +464,15 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
                                 "", "", "", triple);
     break;
   case llvm::Triple::Solaris:
+    AddGnuCPlusPlusIncludePaths("/usr/gcc/4.5/include/c++/4.5.2/",
+                                "i386-pc-solaris2.11", "", "", triple);
+    AddGnuCPlusPlusIncludePaths(
+        "/usr/gcc/4.5/lib/gcc/i386-pc-solaris2.11/4.5.2/include",
+        "", "", "", triple);
+    AddGnuCPlusPlusIncludePaths(
+        "/usr/gcc/4.5/lib/gcc/i386-pc-solaris2.11/4.5.2/include-fixed",
+        "", "", "", triple);
+
     // Solaris - Fall though..
   case llvm::Triple::AuroraUX:
     // AuroraUX

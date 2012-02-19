@@ -1576,10 +1576,11 @@ bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
   SmallVector<unsigned, 8> Args;
   SmallVector<MVT, 8> ArgVTs;
   SmallVector<ISD::ArgFlagsTy, 8> ArgFlags;
-  Args.reserve(CS.arg_size());
-  ArgVals.reserve(CS.arg_size());
-  ArgVTs.reserve(CS.arg_size());
-  ArgFlags.reserve(CS.arg_size());
+  unsigned arg_size = CS.arg_size();
+  Args.reserve(arg_size);
+  ArgVals.reserve(arg_size);
+  ArgVTs.reserve(arg_size);
+  ArgFlags.reserve(arg_size);
   for (ImmutableCallSite::arg_iterator i = CS.arg_begin(), e = CS.arg_end();
        i != e; ++i) {
     // If we're lowering a mem intrinsic instead of a regular call, skip the
@@ -1792,9 +1793,7 @@ bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
   if (CalleeOp) {
     // Register-indirect call.
     unsigned CallOpc;
-    if (Subtarget->isTargetWin64())
-      CallOpc = X86::WINCALL64r;
-    else if (Subtarget->is64Bit())
+    if (Subtarget->is64Bit())
       CallOpc = X86::CALL64r;
     else
       CallOpc = X86::CALL32r;
@@ -1805,9 +1804,7 @@ bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
     // Direct call.
     assert(GV && "Not a direct call");
     unsigned CallOpc;
-    if (Subtarget->isTargetWin64())
-      CallOpc = X86::WINCALL64pcrel32;
-    else if (Subtarget->is64Bit())
+    if (Subtarget->is64Bit())
       CallOpc = X86::CALL64pcrel32;
     else
       CallOpc = X86::CALLpcrel32;
@@ -1851,6 +1848,10 @@ bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
   // Add implicit physical register uses to the call.
   for (unsigned i = 0, e = RegArgs.size(); i != e; ++i)
     MIB.addReg(RegArgs[i]);
+
+  // Add a register mask with the call-preserved registers.
+  // Proper defs for return values will be added by setPhysRegsDeadExcept().
+  MIB.addRegMask(TRI.getCallPreservedMask(CS.getCallingConv()));
 
   // Issue CALLSEQ_END
   unsigned AdjStackUp = TII.getCallFrameDestroyOpcode();

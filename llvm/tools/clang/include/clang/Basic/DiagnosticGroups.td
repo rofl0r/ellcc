@@ -104,6 +104,7 @@ def LocalTypeTemplateArgs : DiagGroup<"local-type-template-args",
                                       [CXX98CompatLocalTypeTemplateArgs]>;
 def MalformedWarningCheck : DiagGroup<"malformed-warning-check">;
 def Main : DiagGroup<"main">;
+def MainReturnType : DiagGroup<"main-return-type">;
 def MissingBraces : DiagGroup<"missing-braces">;
 def MissingDeclarations: DiagGroup<"missing-declarations">;
 def : DiagGroup<"missing-format-attribute">;
@@ -142,7 +143,8 @@ def PoundPragmaMessage : DiagGroup<"#pragma-messages">,
                          DiagCategory<"#pragma message Directive">;
 def : DiagGroup<"pointer-to-int-cast">;
 def : DiagGroup<"redundant-decls">;
-def ReturnType : DiagGroup<"return-type">;
+def ReturnTypeCLinkage : DiagGroup<"return-type-c-linkage">;
+def ReturnType : DiagGroup<"return-type", [ReturnTypeCLinkage]>;
 def BindToTemporaryCopy : DiagGroup<"bind-to-temporary-copy",
                                     [CXX98CompatBindToTemporaryCopy]>;
 def SelfAssignment : DiagGroup<"self-assign">;
@@ -181,6 +183,7 @@ def : DiagGroup<"strict-overflow=5">;
 def : DiagGroup<"strict-overflow">;
 
 def InvalidOffsetof : DiagGroup<"invalid-offsetof">;
+def LambdaExtensions : DiagGroup<"lambda-extensions">;
 def : DiagGroup<"strict-prototypes">;
 def StrictSelector : DiagGroup<"strict-selector-match">;
 def MethodDuplicate : DiagGroup<"duplicate-method-match">;
@@ -259,7 +262,8 @@ def ParenthesesOnEquality : DiagGroup<"parentheses-equality">;
 def Parentheses : DiagGroup<"parentheses",
                             [LogicalOpParentheses,
                              BitwiseOpParentheses,
-                             ParenthesesOnEquality]>;
+                             ParenthesesOnEquality,
+                             DanglingElse]>;
 
 // -Wconversion has its own warnings, but we split a few out for
 // legacy reasons:
@@ -330,8 +334,10 @@ def Most : DiagGroup<"most", [
 // Thread Safety warnings 
 def ThreadSafety : DiagGroup<"thread-safety">;
 
-// -Wall is -Wmost -Wparentheses -Wdangling-else -Wswitch
-def : DiagGroup<"all", [DanglingElse, Most, Parentheses, Switch]>;
+// Note that putting warnings in -Wall will not disable them by default. If a
+// warning should be active _only_ when -Wall is passed in, mark it as
+// DefaultIgnore in addition to putting it here.
+def : DiagGroup<"all", [Most, Parentheses, Switch]>;
 
 // Aliases.
 def : DiagGroup<"", [Extra]>;                   // -W = -Wextra
@@ -358,6 +364,8 @@ def C99 : DiagGroup<"c99-extensions">;
 
 // A warning group for warnings about GCC extensions.
 def GNU : DiagGroup<"gnu", [GNUDesignator, VLA]>;
+// A warning group for warnings about code that clang accepts but gcc doesn't.
+def GccCompat : DiagGroup<"gcc-compat">;
 
 // A warning group for warnings about Microsoft extensions.
 def Microsoft : DiagGroup<"microsoft">;

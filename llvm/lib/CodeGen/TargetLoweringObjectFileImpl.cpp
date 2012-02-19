@@ -17,6 +17,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
+#include "llvm/Module.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -76,14 +77,14 @@ void TargetLoweringObjectFileELF::emitPersonalityValue(MCStreamer &Streamer,
                                                     Flags,
                                                     SectionKind::getDataRel(),
                                                     0, Label->getName());
+  unsigned Size = TM.getTargetData()->getPointerSize();
   Streamer.SwitchSection(Sec);
-  Streamer.EmitValueToAlignment(8);
+  Streamer.EmitValueToAlignment(TM.getTargetData()->getPointerABIAlignment());
   Streamer.EmitSymbolAttribute(Label, MCSA_ELF_TypeObject);
-  const MCExpr *E = MCConstantExpr::Create(8, getContext());
+  const MCExpr *E = MCConstantExpr::Create(Size, getContext());
   Streamer.EmitELFSize(Label, E);
   Streamer.EmitLabel(Label);
 
-  unsigned Size = TM.getTargetData()->getPointerSize();
   Streamer.EmitSymbolValue(Sym, Size);
 }
 
@@ -369,6 +370,62 @@ TargetLoweringObjectFileELF::getStaticDtorSection(unsigned Priority) const {
 //===----------------------------------------------------------------------===//
 //                                 MachO
 //===----------------------------------------------------------------------===//
+
+/// emitModuleFlags - Emit the module flags that specify the garbage collection
+/// information.
+void TargetLoweringObjectFileMachO::
+emitModuleFlags(MCStreamer &Streamer,
+                ArrayRef<Module::ModuleFlagEntry> ModuleFlags,
+                Mangler *Mang, const TargetMachine &TM) const {
+  unsigned VersionVal = 0;
+  unsigned GCFlags = 0;
+  StringRef SectionVal;
+
+  for (ArrayRef<Module::ModuleFlagEntry>::iterator
+         i = ModuleFlags.begin(), e = ModuleFlags.end(); i != e; ++i) {
+    const Module::ModuleFlagEntry &MFE = *i;
+
+    // Ignore flags with 'Require' behavior.
+    if (MFE.Behavior == Module::Require)
+      continue;
+
+    StringRef Key = MFE.Key->getString();
+    Value *Val = MFE.Val;
+
+    if (Key == "Objective-C Image Info Version")
+      VersionVal = cast<ConstantInt>(Val)->getZExtValue();
+    else if (Key == "Objective-C Garbage Collection" ||
+             Key == "Objective-C GC Only")
+      GCFlags |= cast<ConstantInt>(Val)->getZExtValue();
+    else if (Key == "Objective-C Image Info Section")
+      SectionVal = cast<MDString>(Val)->getString();
+  }
+
+  // The section is mandatory. If we don't have it, then we don't have GC info.
+  if (SectionVal.empty()) return;
+
+  StringRef Segment, Section;
+  unsigned TAA = 0, StubSize = 0;
+  bool TAAParsed;
+  std::string ErrorCode =
+    MCSectionMachO::ParseSectionSpecifier(SectionVal, Segment, Section,
+                                          TAA, TAAParsed, StubSize);
+  if (!ErrorCode.empty())
+    // If invalid, report the error with report_fatal_error.
+    report_fatal_error("Invalid section specifier '" + Section + "': " +
+                       ErrorCode + ".");
+
+  // Get the section.
+  const MCSectionMachO *S =
+    getContext().getMachOSection(Segment, Section, TAA, StubSize,
+                                 SectionKind::getDataNoRel());
+  Streamer.SwitchSection(S);
+  Streamer.EmitLabel(getContext().
+                     GetOrCreateSymbol(StringRef("L_OBJC_IMAGE_INFO")));
+  Streamer.EmitIntValue(VersionVal, 4);
+  Streamer.EmitIntValue(GCFlags, 4);
+  Streamer.AddBlankLine();
+}
 
 const MCSection *TargetLoweringObjectFileMachO::
 getExplicitSectionGlobal(const GlobalValue *GV, SectionKind Kind,

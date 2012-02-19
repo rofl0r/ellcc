@@ -24,19 +24,18 @@
 #include "interception/interception.h"
 
 #include <new>
-#include <ctype.h>
+#include <limits.h>
 
-#ifndef _WIN32
-# include <pthread.h>
-#else
+#if defined(_WIN32)
 // FIXME: remove when we start intercepting on Windows. Currently it's needed to
 // define memset/memcpy intrinsics.
 # include <intrin.h>
-#endif
+#endif  // _WIN32
 
 #if defined(__APPLE__)
 // FIXME(samsonov): Gradually replace system headers with declarations of
 // intercepted functions.
+#include <pthread.h>
 #include <signal.h>
 #include <string.h>
 #include <strings.h>
@@ -103,6 +102,56 @@ static inline bool RangesOverlap(const char *offset1, size_t length1,
   } \
 } while (0)
 
+static inline bool IsSpace(int c) {
+  return (c == ' ') || (c == '\n') || (c == '\t') ||
+         (c == '\f') || (c == '\r') || (c == '\v');
+}
+
+static inline bool IsDigit(int c) {
+  return (c >= '0') && (c <= '9');
+}
+
+static inline int ToLower(int c) {
+  return (c >= 'A' && c <= 'Z') ? (c + 'a' - 'A') : c;
+}
+
+// ---------------------- Internal string functions ---------------- {{{1
+
+int64_t internal_simple_strtoll(const char *nptr, char **endptr, int base) {
+  CHECK(base == 10);
+  while (IsSpace(*nptr)) nptr++;
+  int sgn = 1;
+  uint64_t res = 0;
+  bool have_digits = false;
+  char *old_nptr = (char*)nptr;
+  if (*nptr == '+') {
+    sgn = 1;
+    nptr++;
+  } else if (*nptr == '-') {
+    sgn = -1;
+    nptr++;
+  }
+  while (IsDigit(*nptr)) {
+    res = (res <= ULLONG_MAX / 10) ? res * 10 : ULLONG_MAX;
+    int digit = ((*nptr) - '0');
+    res = (res <= ULLONG_MAX - digit) ? res + digit : ULLONG_MAX;
+    have_digits = true;
+    nptr++;
+  }
+  if (endptr != NULL) {
+    *endptr = (have_digits) ? (char*)nptr : old_nptr;
+  }
+  if (sgn > 0) {
+    return (int64_t)(Min((uint64_t)LLONG_MAX, res));
+  } else {
+    return (res > LLONG_MAX) ? LLONG_MIN : ((int64_t)res * -1);
+  }
+}
+
+int64_t internal_atoll(const char *nptr) {
+  return internal_simple_strtoll(nptr, (char**)NULL, 10);
+}
+
 size_t internal_strlen(const char *s) {
   size_t i = 0;
   while (s[i]) i++;
@@ -118,6 +167,16 @@ size_t internal_strnlen(const char *s, size_t maxlen) {
   size_t i = 0;
   while (i < maxlen && s[i]) i++;
   return i;
+}
+
+char* internal_strchr(const char *s, int c) {
+  while (true) {
+    if (*s == (char)c)
+      return (char*)s;
+    if (*s == 0)
+      return NULL;
+    s++;
+  }
 }
 
 void* internal_memchr(const void* s, int c, size_t n) {
@@ -218,7 +277,9 @@ INTERCEPTOR(int, pthread_create, pthread_t *thread,
   asanThreadRegistry().RegisterThread(t);
   return REAL(pthread_create)(thread, attr, asan_thread_start, t);
 }
+#endif  // !_WIN32
 
+#if !defined(ANDROID) && !defined(_WIN32)
 INTERCEPTOR(void*, signal, int signum, void *handler) {
   if (!AsanInterceptsSignal(signum)) {
     return REAL(signal)(signum, handler);
@@ -233,7 +294,7 @@ INTERCEPTOR(int, sigaction, int signum, const struct sigaction *act,
   }
   return 0;
 }
-#endif  // _WIN32
+#endif  // !ANDROID && !_WIN32
 
 INTERCEPTOR(void, longjmp, void *env, int val) {
   __asan_handle_no_return();
@@ -303,8 +364,8 @@ static inline int CharCmp(unsigned char c1, unsigned char c2) {
 }
 
 static inline int CharCaseCmp(unsigned char c1, unsigned char c2) {
-  int c1_low = tolower(c1);
-  int c2_low = tolower(c2);
+  int c1_low = ToLower(c1);
+  int c2_low = ToLower(c2);
   return c1_low - c2_low;
 }
 
@@ -375,10 +436,15 @@ INTERCEPTOR(char*, strchr, const char *str, int c) {
 }
 
 #ifdef __linux__
-INTERCEPTOR(void*, index, const char *string, int c)
+INTERCEPTOR(char*, index, const char *string, int c)
   ALIAS(WRAPPER_NAME(strchr));
 #else
-DEFINE_REAL(void*, index, const char *string, int c);
+DEFINE_REAL(char*, index, const char *string, int c);
+#endif
+
+#ifdef ANDROID
+DEFINE_REAL(int, sigaction, int signum, const struct sigaction *act,
+    struct sigaction *oldact);
 #endif
 
 INTERCEPTOR(int, strcasecmp, const char *s1, const char *s2) {
@@ -556,8 +622,11 @@ void InitializeAsanInterceptors() {
   CHECK(INTERCEPT_FUNCTION(strncmp));
   CHECK(INTERCEPT_FUNCTION(strncpy));
 
+#ifndef ANDROID
   CHECK(INTERCEPT_FUNCTION(sigaction));
   CHECK(INTERCEPT_FUNCTION(signal));
+#endif
+
   CHECK(INTERCEPT_FUNCTION(longjmp));
   CHECK(INTERCEPT_FUNCTION(_longjmp));
   INTERCEPT_FUNCTION(__cxa_throw);

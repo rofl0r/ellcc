@@ -66,7 +66,8 @@ public:
     AsChar,       // 'hh'
     AsShort,      // 'h'
     AsLong,       // 'l'
-    AsLongLong,   // 'll', 'q' (BSD, deprecated)
+    AsLongLong,   // 'll'
+    AsQuad,       // 'q' (BSD, deprecated, for 64-bit integer types)
     AsIntMax,     // 'j'
     AsSizeT,      // 'z'
     AsPtrDiff,    // 't'
@@ -368,7 +369,7 @@ public:
   bool isObjCArg() const { return kind >= ObjCBeg && kind <= ObjCEnd; }
   bool isIntArg() const { return kind >= IntArgBeg && kind <= IntArgEnd; }
   bool isDoubleArg() const { return kind >= DoubleArgBeg &&
-                                    kind <= DoubleArgBeg; }
+                                    kind <= DoubleArgEnd; }
   unsigned getLength() const {
       // Conversion specifiers currently only are represented by
       // single characters, but we be flexible.
@@ -467,10 +468,11 @@ public:
   const OptionalFlag &hasSpacePrefix() const { return HasSpacePrefix; }
   bool usesPositionalArg() const { return UsesPositionalArg; }
 
-    /// Changes the specifier and length according to a QualType, retaining any
-    /// flags or options. Returns true on success, or false when a conversion
-    /// was not successful.
-  bool fixType(QualType QT, const LangOptions &LangOpt);
+  /// Changes the specifier and length according to a QualType, retaining any
+  /// flags or options. Returns true on success, or false when a conversion
+  /// was not successful.
+  bool fixType(QualType QT, const LangOptions &LangOpt, ASTContext &Ctx,
+               bool IsObjCLiteral);
 
   void toString(raw_ostream &os) const;
 
@@ -567,7 +569,7 @@ public:
 
   ScanfArgTypeResult getArgType(ASTContext &Ctx) const;
 
-  bool fixType(QualType QT, const LangOptions &LangOpt);
+  bool fixType(QualType QT, const LangOptions &LangOpt, ASTContext &Ctx);
 
   void toString(raw_ostream &os) const;
 

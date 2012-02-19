@@ -72,12 +72,13 @@ namespace ImplicitCapture {
 
     int f[10]; // expected-note {{declared}}
     [&]() { return f[2]; };  
-    (void) ^{ return []() { return f[2]; }; }; // expected-error {{cannot refer to declaration with an array type inside block}} 
+    (void) ^{ return []() { return f[2]; }; }; // expected-error {{variable 'f' cannot be implicitly captured in a lambda with no capture-default specified}} \
+    // expected-note{{lambda expression begins here}}
 
     struct G { G(); G(G&); int a; }; // expected-note 6 {{not viable}}
     G g;
     [=]() { const G* gg = &g; return gg->a; }; // expected-warning{{omitted result type}}
-    [=]() { return [=]{ const G* gg = &g; return gg->a; }(); }; // expected-error {{no matching constructor for initialization of 'const ImplicitCapture::G'}}  \
+    [=]() { return [=]{ const G* gg = &g; return gg->a; }(); }; // expected-error {{no matching constructor for initialization of 'ImplicitCapture::G'}}  \
     // expected-warning{{omitted result type}}
     (void)^{ return [=]{ const G* gg = &g; return gg->a; }(); }; // expected-error 2 {{no matching constructor for initialization of 'const ImplicitCapture::G'}}  \
     // expected-warning{{omitted result type}}

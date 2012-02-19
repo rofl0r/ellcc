@@ -635,6 +635,7 @@ DeclContext *Sema::getFunctionLevelDeclContext() {
     if (isa<BlockDecl>(DC) || isa<EnumDecl>(DC)) {
       DC = DC->getParent();
     } else if (isa<CXXMethodDecl>(DC) &&
+               cast<CXXMethodDecl>(DC)->getOverloadedOperator() == OO_Call &&
                cast<CXXRecordDecl>(DC->getParent())->isLambda()) {
       DC = DC->getParent()->getParent();
     }
@@ -858,6 +859,17 @@ void Sema::PopFunctionScopeInfo(const AnalysisBasedWarnings::Policy *WP,
   if (FunctionScopes.back() != Scope) {
     delete Scope;
   }
+}
+
+void Sema::PushCompoundScope() {
+  getCurFunction()->CompoundScopes.push_back(CompoundScopeInfo());
+}
+
+void Sema::PopCompoundScope() {
+  FunctionScopeInfo *CurFunction = getCurFunction();
+  assert(!CurFunction->CompoundScopes.empty() && "mismatched push/pop");
+
+  CurFunction->CompoundScopes.pop_back();
 }
 
 /// \brief Determine whether any errors occurred within this function/method/

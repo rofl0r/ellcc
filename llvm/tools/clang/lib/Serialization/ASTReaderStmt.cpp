@@ -1050,7 +1050,31 @@ void ASTStmtReader::VisitCXXTemporaryObjectExpr(CXXTemporaryObjectExpr *E) {
 
 void ASTStmtReader::VisitLambdaExpr(LambdaExpr *E) {
   VisitExpr(E);
-  assert(false && "Cannot deserialize lambda expressions yet");
+  unsigned NumCaptures = Record[Idx++];
+  assert(NumCaptures == E->NumCaptures);(void)NumCaptures;
+  unsigned NumArrayIndexVars = Record[Idx++];
+  E->IntroducerRange = ReadSourceRange(Record, Idx);
+  E->CaptureDefault = static_cast<LambdaCaptureDefault>(Record[Idx++]);
+  E->ExplicitParams = Record[Idx++];
+  E->ExplicitResultType = Record[Idx++];
+  E->ClosingBrace = ReadSourceLocation(Record, Idx);
+  
+  // Read capture initializers.
+  for (LambdaExpr::capture_init_iterator C = E->capture_init_begin(),
+                                      CEnd = E->capture_init_end();
+       C != CEnd; ++C)
+    *C = Reader.ReadSubExpr();
+  
+  // Read array capture index variables.
+  if (NumArrayIndexVars > 0) {
+    unsigned *ArrayIndexStarts = E->getArrayIndexStarts();
+    for (unsigned I = 0; I != NumCaptures + 1; ++I)
+      ArrayIndexStarts[I] = Record[Idx++];
+    
+    VarDecl **ArrayIndexVars = E->getArrayIndexVars();
+    for (unsigned I = 0; I != NumArrayIndexVars; ++I)
+      ArrayIndexVars[I] = ReadDeclAs<VarDecl>(Record, Idx);
+  }
 }
 
 void ASTStmtReader::VisitCXXNamedCastExpr(CXXNamedCastExpr *E) {
@@ -1143,27 +1167,24 @@ void ASTStmtReader::VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
 void ASTStmtReader::VisitCXXNewExpr(CXXNewExpr *E) {
   VisitExpr(E);
   E->GlobalNew = Record[Idx++];
-  E->Initializer = Record[Idx++];
-  E->UsualArrayDeleteWantsSize = Record[Idx++];
   bool isArray = Record[Idx++];
-  E->setHadMultipleCandidates(Record[Idx++]);
+  E->UsualArrayDeleteWantsSize = Record[Idx++];
   unsigned NumPlacementArgs = Record[Idx++];
-  unsigned NumCtorArgs = Record[Idx++];
+  E->StoredInitializationStyle = Record[Idx++];
   E->setOperatorNew(ReadDeclAs<FunctionDecl>(Record, Idx));
   E->setOperatorDelete(ReadDeclAs<FunctionDecl>(Record, Idx));
-  E->setConstructor(ReadDeclAs<CXXConstructorDecl>(Record, Idx));
   E->AllocatedTypeInfo = GetTypeSourceInfo(Record, Idx);
   SourceRange TypeIdParens;
   TypeIdParens.setBegin(ReadSourceLocation(Record, Idx));
   TypeIdParens.setEnd(ReadSourceLocation(Record, Idx));
   E->TypeIdParens = TypeIdParens;
   E->StartLoc = ReadSourceLocation(Record, Idx);
-  E->EndLoc = ReadSourceLocation(Record, Idx);
-  E->ConstructorLParen = ReadSourceLocation(Record, Idx);
-  E->ConstructorRParen = ReadSourceLocation(Record, Idx);
+  SourceRange DirectInitRange;
+  DirectInitRange.setBegin(ReadSourceLocation(Record, Idx));
+  DirectInitRange.setEnd(ReadSourceLocation(Record, Idx));
 
   E->AllocateArgsArray(Reader.getContext(), isArray, NumPlacementArgs,
-                       NumCtorArgs);
+                       E->StoredInitializationStyle != 0);
 
   // Install all the subexpressions.
   for (CXXNewExpr::raw_arg_iterator I = E->raw_arg_begin(),e = E->raw_arg_end();
@@ -2083,6 +2104,14 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
     case EXPR_ATOMIC:
       S = new (Context) AtomicExpr(Empty);
       break;
+        
+    case EXPR_LAMBDA: {
+      unsigned NumCaptures = Record[ASTStmtReader::NumExprFields];
+      unsigned NumArrayIndexVars = Record[ASTStmtReader::NumExprFields + 1];
+      S = LambdaExpr::CreateDeserialized(Context, NumCaptures, 
+                                         NumArrayIndexVars);
+      break;
+    }
     }
     
     // We hit a STMT_STOP, so we're done with this expression.

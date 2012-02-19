@@ -596,7 +596,8 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
     // Nicely diagnose the common error "switch (X) { case 4: }", which is
     // not valid.
     SourceLocation AfterColonLoc = PP.getLocForEndOfToken(ColonLoc);
-    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement);
+    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement)
+      << FixItHint::CreateInsertion(AfterColonLoc, " ;");
     SubStmt = true;
   }
 
@@ -638,16 +639,22 @@ StmtResult Parser::ParseDefaultStatement(ParsedAttributes &attrs) {
     ColonLoc = ExpectedLoc;
   }
 
-  // Diagnose the common error "switch (X) {... default: }", which is not valid.
-  if (Tok.is(tok::r_brace)) {
+  StmtResult SubStmt;
+
+  if (Tok.isNot(tok::r_brace)) {
+    SubStmt = ParseStatement();
+  } else {
+    // Diagnose the common error "switch (X) {... default: }", which is
+    // not valid.
     SourceLocation AfterColonLoc = PP.getLocForEndOfToken(ColonLoc);
-    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement);
-    return StmtError();
+    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement)
+      << FixItHint::CreateInsertion(AfterColonLoc, " ;");
+    SubStmt = true;
   }
 
-  StmtResult SubStmt(ParseStatement());
+  // Broken sub-stmt shouldn't prevent forming the case statement properly.
   if (SubStmt.isInvalid())
-    return StmtError();
+    SubStmt = Actions.ActOnNullStmt(ColonLoc);
 
   return Actions.ActOnDefaultStmt(DefaultLoc, ColonLoc,
                                   SubStmt.get(), getCurScope());
@@ -700,7 +707,6 @@ StmtResult Parser::ParseCompoundStatement(ParsedAttributes &attrs,
   return ParseCompoundStatementBody(isStmtExpr);
 }
 
-
 /// ParseCompoundStatementBody - Parse a sequence of statements and invoke the
 /// ActOnCompoundStmt action.  This expects the '{' to be the current token, and
 /// consume the '}' at the end of the block.  It does not manipulate the scope
@@ -713,6 +719,8 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
   BalancedDelimiterTracker T(*this, tok::l_brace);
   if (T.consumeOpen())
     return StmtError();
+
+  Sema::CompoundScopeRAII CompoundScope(Actions);
 
   StmtVector Stmts(Actions);
 
@@ -1084,9 +1092,14 @@ StmtResult Parser::ParseSwitchStatement(ParsedAttributes &attrs,
   InnerScope.Exit();
   SwitchScope.Exit();
 
-  if (Body.isInvalid())
+  if (Body.isInvalid()) {
     // FIXME: Remove the case statement list from the Switch statement.
-    Body = Actions.ActOnNullStmt(Tok.getLocation());
+
+    // Put the synthesized null statement on the same line as the end of switch
+    // condition.
+    SourceLocation SynthesizedNullStmtLocation = Cond.get()->getLocEnd();
+    Body = Actions.ActOnNullStmt(SynthesizedNullStmtLocation);
+  }
 
   return Actions.ActOnFinishSwitchStmt(SwitchLoc, Switch.get(), Body.get());
 }
@@ -1956,9 +1969,11 @@ Decl *Parser::ParseFunctionStatementBody(Decl *Decl, ParseScope &BodyScope) {
   StmtResult FnBody(ParseCompoundStatementBody());
 
   // If the function body could not be parsed, make a bogus compoundstmt.
-  if (FnBody.isInvalid())
+  if (FnBody.isInvalid()) {
+    Sema::CompoundScopeRAII CompoundScope(Actions);
     FnBody = Actions.ActOnCompoundStmt(LBraceLoc, LBraceLoc,
                                        MultiStmtArg(Actions), false);
+  }
 
   BodyScope.Exit();
   return Actions.ActOnFinishFunctionBody(Decl, FnBody.take());
@@ -1993,9 +2008,11 @@ Decl *Parser::ParseFunctionTryBlock(Decl *Decl, ParseScope &BodyScope) {
   StmtResult FnBody(ParseCXXTryBlockCommon(TryLoc));
   // If we failed to parse the try-catch, we just give the function an empty
   // compound statement as the body.
-  if (FnBody.isInvalid())
+  if (FnBody.isInvalid()) {
+    Sema::CompoundScopeRAII CompoundScope(Actions);
     FnBody = Actions.ActOnCompoundStmt(LBraceLoc, LBraceLoc,
                                        MultiStmtArg(Actions), false);
+  }
 
   BodyScope.Exit();
   return Actions.ActOnFinishFunctionBody(Decl, FnBody.take());

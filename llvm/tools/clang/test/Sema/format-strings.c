@@ -167,7 +167,9 @@ void test10(int x, float f, int i, long long lli) {
   printf("%.d", x); // no-warning
   printf("%.", x);  // expected-warning{{incomplete format specifier}}
   printf("%f", 4); // expected-warning{{format specifies type 'double' but the argument has type 'int'}}
-  printf("%qd", lli);
+  printf("%qd", lli); // no-warning
+  printf("%qd", x); // expected-warning{{format specifies type 'long long' but the argument has type 'int'}}
+  printf("%qp", (void *)0); // expected-warning{{length modifier 'q' results in undefined behavior or no effect with 'p' conversion specifier}}
   printf("hhX %hhX", (unsigned char)10); // no-warning
   printf("llX %llX", (long long) 10); // no-warning
   // This is fine, because there is an implicit conversion to an int.
@@ -471,6 +473,8 @@ void pr9751() {
 
   const char kFormat17[] = "%hu"; // expected-note{{format string is defined here}}}
   printf(kFormat17, (int[]){0}); // expected-warning{{format specifies type 'unsigned short' but the argument}}
+
+  printf("%a", (long double)0); // expected-warning{{format specifies type 'double' but the argument has type 'long double'}}
 }
 
 // PR 9466: clang: doesn't know about %Lu, %Ld, and %Lx 

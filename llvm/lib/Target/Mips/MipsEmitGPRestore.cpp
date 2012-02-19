@@ -1,4 +1,4 @@
-//===-- MipsEmitGPRestore.cpp - Emit GP restore instruction----------------===//
+//===-- MipsEmitGPRestore.cpp - Emit GP Restore Instruction ---------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

@@ -112,6 +112,11 @@ class TreeTransform {
 protected:
   Sema &SemaRef;
   
+  /// \brief The set of local declarations that have been transformed, for
+  /// cases where we are forced to build new declarations within the transformer
+  /// rather than in the subclass (e.g., lambda closure types).
+  llvm::DenseMap<Decl *, Decl *> TransformedLocalDecls;
+  
 public:
   /// \brief Initializes a new tree transformer.
   TreeTransform(Sema &SemaRef) : SemaRef(SemaRef) { }
@@ -351,10 +356,36 @@ public:
   /// \brief Transform the given declaration, which is referenced from a type
   /// or expression.
   ///
-  /// By default, acts as the identity function on declarations. Subclasses
+  /// By default, acts as the identity function on declarations, unless the
+  /// transformer has had to transform the declaration itself. Subclasses
   /// may override this function to provide alternate behavior.
-  Decl *TransformDecl(SourceLocation Loc, Decl *D) { return D; }
+  Decl *TransformDecl(SourceLocation Loc, Decl *D) { 
+    llvm::DenseMap<Decl *, Decl *>::iterator Known
+      = TransformedLocalDecls.find(D);
+    if (Known != TransformedLocalDecls.end())
+      return Known->second;
+    
+    return D; 
+  }
 
+  /// \brief Transform the attributes associated with the given declaration and 
+  /// place them on the new declaration.
+  ///
+  /// By default, this operation does nothing. Subclasses may override this
+  /// behavior to transform attributes.
+  void transformAttrs(Decl *Old, Decl *New) { }
+  
+  /// \brief Note that a local declaration has been transformed by this
+  /// transformer.
+  ///
+  /// Local declarations are typically transformed via a call to 
+  /// TransformDefinition. However, in some cases (e.g., lambda expressions),
+  /// the transformer itself has to transform the declarations. This routine
+  /// can be overridden by a subclass that keeps track of such mappings.
+  void transformedLocalDecl(Decl *Old, Decl *New) {
+    TransformedLocalDecls[Old] = New;
+  }
+  
   /// \brief Transform the definition of the given declaration.
   ///
   /// By default, invokes TransformDecl() to transform the declaration.
@@ -1646,10 +1677,9 @@ public:
   /// By default, performs semantic analysis to build the new expression.
   /// Subclasses may override this routine to provide different behavior.
   ExprResult RebuildParenListExpr(SourceLocation LParenLoc,
-                                        MultiExprArg SubExprs,
-                                        SourceLocation RParenLoc) {
-    return getSema().ActOnParenOrParenListExpr(LParenLoc, RParenLoc, 
-                                               move(SubExprs));
+                                  MultiExprArg SubExprs,
+                                  SourceLocation RParenLoc) {
+    return getSema().ActOnParenListExpr(LParenLoc, RParenLoc, move(SubExprs));
   }
 
   /// \brief Build a new address-of-label expression.
@@ -1946,9 +1976,8 @@ public:
                                QualType AllocatedType,
                                TypeSourceInfo *AllocatedTypeInfo,
                                Expr *ArraySize,
-                               SourceLocation ConstructorLParen,
-                               MultiExprArg ConstructorArgs,
-                               SourceLocation ConstructorRParen) {
+                               SourceRange DirectInitRange,
+                               Expr *Initializer) {
     return getSema().BuildCXXNew(StartLoc, UseGlobal,
                                  PlacementLParen,
                                  move(PlacementArgs),
@@ -1957,9 +1986,8 @@ public:
                                  AllocatedType,
                                  AllocatedTypeInfo,
                                  ArraySize,
-                                 ConstructorLParen,
-                                 move(ConstructorArgs),
-                                 ConstructorRParen);
+                                 DirectInitRange,
+                                 Initializer);
   }
 
   /// \brief Build a new C++ "delete" expression.
@@ -4976,6 +5004,8 @@ template<typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformCompoundStmt(CompoundStmt *S,
                                               bool IsStmtExpr) {
+  Sema::CompoundScopeRAII CompoundScope(getSema());
+
   bool SubStmtInvalid = false;
   bool SubStmtChanged = false;
   ASTOwningVector<Stmt*> Statements(getSema());
@@ -7074,29 +7104,17 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
   if (getDerived().TransformExprs(E->getPlacementArgs(), 
                                   E->getNumPlacementArgs(), true,
                                   PlacementArgs, &ArgumentChanged))
-    return ExprError();  
+    return ExprError();
 
-  // Transform the constructor arguments (if any).
-  // As an annoying corner case, we may have introduced an implicit value-
-  // initialization expression when allocating a new array, which we implicitly
-  // drop. It will be re-created during type checking.
-  ASTOwningVector<Expr*> ConstructorArgs(SemaRef);
-  if (!(E->isArray() && E->getNumConstructorArgs() == 1 &&
-        isa<ImplicitValueInitExpr>(E->getConstructorArgs()[0])) &&
-      TransformExprs(E->getConstructorArgs(), E->getNumConstructorArgs(), true,
-                     ConstructorArgs, &ArgumentChanged))
-    return ExprError();  
+  // Transform the initializer (if any).
+  Expr *OldInit = E->getInitializer();
+  ExprResult NewInit;
+  if (OldInit)
+    NewInit = getDerived().TransformExpr(OldInit);
+  if (NewInit.isInvalid())
+    return ExprError();
 
-  // Transform constructor, new operator, and delete operator.
-  CXXConstructorDecl *Constructor = 0;
-  if (E->getConstructor()) {
-    Constructor = cast_or_null<CXXConstructorDecl>(
-                                   getDerived().TransformDecl(E->getLocStart(),
-                                                         E->getConstructor()));
-    if (!Constructor)
-      return ExprError();
-  }
-
+  // Transform new operator and delete operator.
   FunctionDecl *OperatorNew = 0;
   if (E->getOperatorNew()) {
     OperatorNew = cast_or_null<FunctionDecl>(
@@ -7118,21 +7136,18 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
   if (!getDerived().AlwaysRebuild() &&
       AllocTypeInfo == E->getAllocatedTypeSourceInfo() &&
       ArraySize.get() == E->getArraySize() &&
-      Constructor == E->getConstructor() &&
+      NewInit.get() == OldInit &&
       OperatorNew == E->getOperatorNew() &&
       OperatorDelete == E->getOperatorDelete() &&
       !ArgumentChanged) {
     // Mark any declarations we need as referenced.
     // FIXME: instantiation-specific.
-    if (Constructor)
-      SemaRef.MarkFunctionReferenced(E->getLocStart(), Constructor);
     if (OperatorNew)
       SemaRef.MarkFunctionReferenced(E->getLocStart(), OperatorNew);
     if (OperatorDelete)
       SemaRef.MarkFunctionReferenced(E->getLocStart(), OperatorDelete);
     
-    if (E->isArray() && Constructor && 
-        !E->getAllocatedType()->isDependentType()) {
+    if (E->isArray() && !E->getAllocatedType()->isDependentType()) {
       QualType ElementType
         = SemaRef.Context.getBaseElementType(E->getAllocatedType());
       if (const RecordType *RecordT = ElementType->getAs<RecordType>()) {
@@ -7142,7 +7157,7 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
         }
       }
     }
-    
+
     return SemaRef.Owned(E);
   }
 
@@ -7172,7 +7187,7 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
       }
     }
   }
-  
+
   return getDerived().RebuildCXXNewExpr(E->getLocStart(),
                                         E->isGlobalNew(),
                                         /*FIXME:*/E->getLocStart(),
@@ -7182,9 +7197,8 @@ TreeTransform<Derived>::TransformCXXNewExpr(CXXNewExpr *E) {
                                         AllocType,
                                         AllocTypeInfo,
                                         ArraySize.get(),
-                                        E->getConstructorLParen(),
-                                        move_arg(ConstructorArgs),
-                                        E->getConstructorRParen());
+                                        E->getDirectInitRange(),
+                                        NewInit.take());
 }
 
 template<typename Derived>
@@ -7623,8 +7637,149 @@ TreeTransform<Derived>::TransformCXXTemporaryObjectExpr(
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
-  assert(false && "Lambda expressions cannot be instantiated (yet)");
-  return ExprError();
+  // Create the local class that will describe the lambda.
+  CXXRecordDecl *Class
+    = getSema().createLambdaClosureType(E->getIntroducerRange());
+  getDerived().transformedLocalDecl(E->getLambdaClass(), Class);
+  
+  // Transform the type of the lambda parameters and start the definition of
+  // the lambda itself.
+  TypeSourceInfo *MethodTy
+    = TransformType(E->getCallOperator()->getTypeSourceInfo());  
+  if (!MethodTy)
+    return ExprError();
+
+  // Transform lambda parameters.
+  bool Invalid = false;
+  llvm::SmallVector<QualType, 4> ParamTypes;
+  llvm::SmallVector<ParmVarDecl *, 4> Params;
+  if (getDerived().TransformFunctionTypeParams(E->getLocStart(),
+        E->getCallOperator()->param_begin(),
+        E->getCallOperator()->param_size(),
+        0, ParamTypes, &Params))
+    Invalid = true;  
+
+  // Build the call operator.
+  CXXMethodDecl *CallOperator
+    = getSema().startLambdaDefinition(Class, E->getIntroducerRange(),
+                                      MethodTy, 
+                                      E->getCallOperator()->getLocEnd(),
+                                      Params);
+  getDerived().transformAttrs(E->getCallOperator(), CallOperator);
+  
+  // FIXME: Instantiation-specific.
+  CallOperator->setInstantiationOfMemberFunction(E->getCallOperator(), 
+                                                 TSK_ImplicitInstantiation);
+
+  // Introduce the context of the call operator.
+  Sema::ContextRAII SavedContext(getSema(), CallOperator);
+
+  // Enter the scope of the lambda.
+  sema::LambdaScopeInfo *LSI
+    = getSema().enterLambdaScope(CallOperator, E->getIntroducerRange(),
+                                 E->getCaptureDefault(),
+                                 E->hasExplicitParameters(),
+                                 E->hasExplicitResultType(),
+                                 E->isMutable());
+  
+  // Transform captures.
+  bool FinishedExplicitCaptures = false;
+  for (LambdaExpr::capture_iterator C = E->capture_begin(), 
+                                 CEnd = E->capture_end();
+       C != CEnd; ++C) {
+    // When we hit the first implicit capture, tell Sema that we've finished
+    // the list of explicit captures.
+    if (!FinishedExplicitCaptures && C->isImplicit()) {
+      getSema().finishLambdaExplicitCaptures(LSI);
+      FinishedExplicitCaptures = true;
+    }
+    
+    // Capturing 'this' is trivial.
+    if (C->capturesThis()) {
+      getSema().CheckCXXThisCapture(C->getLocation(), C->isExplicit());
+      continue;
+    }
+    
+    // Determine the capture kind for Sema.
+    Sema::TryCaptureKind Kind
+      = C->isImplicit()? Sema::TryCapture_Implicit
+                       : C->getCaptureKind() == LCK_ByCopy
+                           ? Sema::TryCapture_ExplicitByVal
+                           : Sema::TryCapture_ExplicitByRef;
+    SourceLocation EllipsisLoc;
+    if (C->isPackExpansion()) {
+      UnexpandedParameterPack Unexpanded(C->getCapturedVar(), C->getLocation());
+      bool ShouldExpand = false;
+      bool RetainExpansion = false;
+      llvm::Optional<unsigned> NumExpansions;
+      if (getDerived().TryExpandParameterPacks(C->getEllipsisLoc(), 
+                                               C->getLocation(), 
+                                               Unexpanded,
+                                               ShouldExpand, RetainExpansion,
+                                               NumExpansions))
+        return ExprError();
+      
+      if (ShouldExpand) {
+        // The transform has determined that we should perform an expansion;
+        // transform and capture each of the arguments.
+        // expansion of the pattern. Do so.
+        VarDecl *Pack = C->getCapturedVar();
+        for (unsigned I = 0; I != *NumExpansions; ++I) {
+          Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), I);
+          VarDecl *CapturedVar
+            = cast_or_null<VarDecl>(getDerived().TransformDecl(C->getLocation(), 
+                                                               Pack));
+          if (!CapturedVar) {
+            Invalid = true;
+            continue;
+          }
+          
+          // Capture the transformed variable.
+          getSema().tryCaptureVariable(CapturedVar, C->getLocation(), Kind);          
+        }          
+        continue;
+      }
+      
+      EllipsisLoc = C->getEllipsisLoc();
+    }
+    
+    // Transform the captured variable.
+    VarDecl *CapturedVar
+      = cast_or_null<VarDecl>(getDerived().TransformDecl(C->getLocation(), 
+                                                         C->getCapturedVar()));
+    if (!CapturedVar) {
+      Invalid = true;
+      continue;
+    }
+  
+    // Capture the transformed variable.
+    getSema().tryCaptureVariable(CapturedVar, C->getLocation(), Kind);
+  }
+  if (!FinishedExplicitCaptures)
+    getSema().finishLambdaExplicitCaptures(LSI);
+
+
+  // Enter a new evaluation context to insulate the lambda from any
+  // cleanups from the enclosing full-expression.
+  getSema().PushExpressionEvaluationContext(Sema::PotentiallyEvaluated);  
+
+  if (Invalid) {
+    getSema().ActOnLambdaError(E->getLocStart(), /*CurScope=*/0, 
+                               /*IsInstantiation=*/true);
+    return ExprError();
+  }
+
+  // Instantiate the body of the lambda expression.
+  StmtResult Body = getDerived().TransformStmt(E->getBody());
+  if (Body.isInvalid()) {
+    getSema().ActOnLambdaError(E->getLocStart(), /*CurScope=*/0, 
+                               /*IsInstantiation=*/true);
+    return ExprError();    
+  }
+  
+  return getSema().ActOnLambdaExpr(E->getLocStart(), Body.take(), 
+                                   /*CurScope=*/0, 
+                                   /*IsInstantiation=*/true);
 }
 
 template<typename Derived>

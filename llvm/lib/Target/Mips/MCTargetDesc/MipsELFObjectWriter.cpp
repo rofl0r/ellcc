@@ -1,4 +1,4 @@
-//===-- MipsELFObjectWriter.cpp - Mips ELF Writer ---------------------------===//
+//===-- MipsELFObjectWriter.cpp - Mips ELF Writer -------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //

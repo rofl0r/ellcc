@@ -33,11 +33,7 @@
 
 #include <cstdlib> // ::getenv
 
-#ifdef HAVE_CLANG_CONFIG_H
-# include "clang/Config/config.h"
-#endif
-
-#include "llvm/Config/config.h" // for GCC_INSTALL_PREFIX
+#include "clang/Config/config.h" // for GCC_INSTALL_PREFIX
 
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
@@ -1091,18 +1087,6 @@ bool Generic_GCC::GCCVersion::operator<(const GCCVersion &RHS) const {
   return false;
 }
 
-// FIXME: Factor this helper into llvm::Triple itself.
-static llvm::Triple getMultiarchAlternateTriple(llvm::Triple Triple) {
-  switch (Triple.getArch()) {
-  default: break;
-  case llvm::Triple::x86:    Triple.setArchName("x86_64");    break;
-  case llvm::Triple::x86_64: Triple.setArchName("i386");      break;
-  case llvm::Triple::ppc:    Triple.setArchName("powerpc64"); break;
-  case llvm::Triple::ppc64:  Triple.setArchName("powerpc");   break;
-  }
-  return Triple;
-}
-
 /// \brief Construct a GCCInstallationDetector from the driver.
 ///
 /// This performs all of the autodetection and sets up the various paths.
@@ -1116,7 +1100,9 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     const Driver &D,
     const llvm::Triple &TargetTriple)
     : IsValid(false) {
-  llvm::Triple MultiarchTriple = getMultiarchAlternateTriple(TargetTriple);
+  llvm::Triple MultiarchTriple
+    = TargetTriple.isArch32Bit() ? TargetTriple.get64BitArchVariant()
+                                 : TargetTriple.get32BitArchVariant();
   llvm::Triple::ArchType TargetArch = TargetTriple.getArch();
   // The library directories which may contain GCC installations.
   SmallVector<StringRef, 4> CandidateLibDirs, CandidateMultiarchLibDirs;
@@ -1769,6 +1755,41 @@ Tool &AuroraUX::SelectTool(const Compilation &C, const JobAction &JA,
   return *T;
 }
 
+/// Solaris - Solaris tool chain which can call as(1) and ld(1) directly.
+
+Solaris::Solaris(const Driver &D, const llvm::Triple& Triple)
+  : Generic_GCC(D, Triple) {
+
+  getProgramPaths().push_back(getDriver().getInstalledDir());
+  if (getDriver().getInstalledDir() != getDriver().Dir)
+    getProgramPaths().push_back(getDriver().Dir);
+
+  getFilePaths().push_back(getDriver().Dir + "/../lib");
+  getFilePaths().push_back("/usr/lib");
+}
+
+Tool &Solaris::SelectTool(const Compilation &C, const JobAction &JA,
+                           const ActionList &Inputs) const {
+  Action::ActionClass Key;
+  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
+    Key = Action::AnalyzeJobClass;
+  else
+    Key = JA.getKind();
+
+  Tool *&T = Tools[Key];
+  if (!T) {
+    switch (Key) {
+    case Action::AssembleJobClass:
+      T = new tools::solaris::Assemble(*this); break;
+    case Action::LinkJobClass:
+      T = new tools::solaris::Link(*this); break;
+    default:
+      T = &Generic_GCC::SelectTool(C, JA, Inputs);
+    }
+  }
+
+  return *T;
+}
 
 /// Linux toolchain (very bare-bones at the moment).
 

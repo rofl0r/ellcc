@@ -1053,6 +1053,11 @@ void CastExpr::CheckCastConsistency() const {
     assert(getSubExpr()->getType()->isBlockPointerType());
     goto CheckNoBasePath;
 
+  case CK_ReinterpretMemberPointer:
+    assert(getType()->isMemberPointerType());
+    assert(getSubExpr()->getType()->isMemberPointerType());
+    goto CheckNoBasePath;
+
   case CK_BitCast:
     // Arbitrary casts to C pointer types count as bitcasts.
     // Otherwise, we should only have block and ObjC pointer casts
@@ -1156,6 +1161,8 @@ const char *CastExpr::getCastKindName() const {
     return "BaseToDerivedMemberPointer";
   case CK_DerivedToBaseMemberPointer:
     return "DerivedToBaseMemberPointer";
+  case CK_ReinterpretMemberPointer:
+    return "ReinterpretMemberPointer";
   case CK_UserDefinedConversion:
     return "UserDefinedConversion";
   case CK_ConstructorConversion:
@@ -1426,9 +1433,10 @@ InitListExpr::InitListExpr(ASTContext &C, SourceLocation lbraceloc,
   : Expr(InitListExprClass, QualType(), VK_RValue, OK_Ordinary, false, false,
          false, false),
     InitExprs(C, numInits),
-    LBraceLoc(lbraceloc), RBraceLoc(rbraceloc), SyntacticForm(0),
-    HadArrayRangeDesignator(false) 
-{      
+    LBraceLoc(lbraceloc), RBraceLoc(rbraceloc), SyntacticForm(0)
+{
+  sawArrayRangeDesignator(false);
+  setInitializesStdInitializerList(false);
   for (unsigned I = 0; I != numInits; ++I) {
     if (initExprs[I]->isTypeDependent())
       ExprBits.TypeDependent = true;
@@ -1505,9 +1513,10 @@ SourceRange InitListExpr::getSourceRange() const {
 
 /// getFunctionType - Return the underlying function type for this block.
 ///
-const FunctionType *BlockExpr::getFunctionType() const {
-  return getType()->getAs<BlockPointerType>()->
-                    getPointeeType()->getAs<FunctionType>();
+const FunctionProtoType *BlockExpr::getFunctionType() const {
+  // The block pointer is never sugared, but the function type might be.
+  return cast<BlockPointerType>(getType())
+           ->getPointeeType()->castAs<FunctionProtoType>();
 }
 
 SourceLocation BlockExpr::getCaretLocation() const {
@@ -2034,10 +2043,7 @@ Expr::CanThrowResult Expr::CanThrow(ASTContext &C) const {
     if (isTypeDependent())
       CT = CT_Dependent;
     else
-      CT = MergeCanThrow(
-        CanCalleeThrow(C, this, cast<CXXNewExpr>(this)->getOperatorNew()),
-        CanCalleeThrow(C, this, cast<CXXNewExpr>(this)->getConstructor(),
-                       /*NullThrows*/false));
+      CT = CanCalleeThrow(C, this, cast<CXXNewExpr>(this)->getOperatorNew());
     if (CT == CT_Can)
       return CT;
     return MergeCanThrow(CT, CanSubExprsThrow(C, this));
@@ -2728,11 +2734,18 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
     return NPCK_NotNull;
 
   // If we have an integer constant expression, we need to *evaluate* it and
-  // test for the value 0.
-  llvm::APSInt Result;
-  bool IsNull = isIntegerConstantExpr(Result, Ctx) && Result == 0;
+  // test for the value 0. Don't use the C++11 constant expression semantics
+  // for this, for now; once the dust settles on core issue 903, we might only
+  // allow a literal 0 here in C++11 mode.
+  if (Ctx.getLangOptions().CPlusPlus0x) {
+    if (!isCXX98IntegralConstantExpr(Ctx))
+      return NPCK_NotNull;
+  } else {
+    if (!isIntegerConstantExpr(Ctx))
+      return NPCK_NotNull;
+  }
 
-  return (IsNull ? NPCK_ZeroInteger : NPCK_NotNull);
+  return (EvaluateKnownConstInt(Ctx) == 0) ? NPCK_ZeroInteger : NPCK_NotNull;
 }
 
 /// \brief If this expression is an l-value for an Objective C
@@ -3414,11 +3427,10 @@ void DesignatedInitExpr::ExpandDesignator(ASTContext &C, unsigned Idx,
 
 ParenListExpr::ParenListExpr(ASTContext& C, SourceLocation lparenloc,
                              Expr **exprs, unsigned nexprs,
-                             SourceLocation rparenloc, QualType T)
-  : Expr(ParenListExprClass, T, VK_RValue, OK_Ordinary,
+                             SourceLocation rparenloc)
+  : Expr(ParenListExprClass, QualType(), VK_RValue, OK_Ordinary,
          false, false, false, false),
     NumExprs(nexprs), LParenLoc(lparenloc), RParenLoc(rparenloc) {
-  assert(!T.isNull() && "ParenListExpr must have a valid type");
   Exprs = new (C) Stmt*[nexprs];
   for (unsigned i = 0; i != nexprs; ++i) {
     if (exprs[i]->isTypeDependent())

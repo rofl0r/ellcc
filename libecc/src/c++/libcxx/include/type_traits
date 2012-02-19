@@ -772,6 +772,14 @@ template <class _Tp> struct _LIBCPP_VISIBLE is_empty : public __libcpp_empty<_Tp
 
 // is_polymorphic
 
+#if __has_feature(is_polymorphic)
+
+template <class _Tp>
+struct _LIBCPP_VISIBLE is_polymorphic
+    : public integral_constant<bool, __is_polymorphic(_Tp)> {};
+
+#else
+
 template <class _Tp> struct __is_polymorphic1 : public _Tp {};
 template <class _Tp> struct __is_polymorphic2 : public _Tp {virtual ~__is_polymorphic2() throw();};
 
@@ -783,6 +791,8 @@ template <class _Tp> struct __libcpp_polymorphic<_Tp, false> : public false_type
 
 template <class _Tp> struct _LIBCPP_VISIBLE is_polymorphic
     : public __libcpp_polymorphic<_Tp> {};
+
+#endif // __has_feature(is_polymorphic)
 
 // has_virtual_destructor
 
@@ -1144,7 +1154,7 @@ private:
     static _Up __u();
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
 public:
-    typedef decltype(true ? __t() : __u()) type;
+    typedef typename remove_reference<decltype(true ? __t() : __u())>::type type;
 };
 
 #else  // _LIBCPP_HAS_NO_VARIADICS
@@ -1165,7 +1175,7 @@ private:
     static _Up&& __u();
     static bool __f();
 public:
-    typedef decltype(__f() ? __t() : __u()) type;
+    typedef typename remove_reference<decltype(__f() ? __t() : __u())>::type type;
 };
 
 template <class _Tp, class _Up, class ..._Vp>
@@ -1314,6 +1324,18 @@ typename enable_if
     _Tp&
 >::type
 move(_Tp& __t)
+{
+    return __t;
+}
+
+template <class _Tp>
+inline _LIBCPP_INLINE_VISIBILITY
+typename enable_if
+<
+    !is_convertible<_Tp, __rv<_Tp> >::value,
+    const _Tp&
+>::type
+move(const _Tp& __t)
 {
     return __t;
 }

@@ -1,4 +1,4 @@
-//===- HexagonTargetMachine.cpp - Define TargetMachine for Hexagon --------===//
+//===-- HexagonTargetMachine.cpp - Define TargetMachine for Hexagon -------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// Implements the info about Hexagon target spec.
 //
 //===----------------------------------------------------------------------===//
 
@@ -101,6 +102,7 @@ TargetPassConfig *HexagonTargetMachine::createPassConfig(PassManagerBase &PM) {
 bool HexagonPassConfig::addInstSelector() {
   PM.add(createHexagonRemoveExtendOps(getHexagonTargetMachine()));
   PM.add(createHexagonISelDag(getHexagonTargetMachine()));
+  PM.add(createHexagonPeephole());
   return false;
 }
 

@@ -1615,6 +1615,7 @@ DEF_JOB(OverloadExprParts, OverloadExpr, OverloadExprPartsKind)
 DEF_JOB(ExplicitTemplateArgsVisit, ASTTemplateArgumentListInfo, 
         ExplicitTemplateArgsVisitKind)
 DEF_JOB(SizeOfPackExprParts, SizeOfPackExpr, SizeOfPackExprPartsKind)
+DEF_JOB(LambdaExprParts, LambdaExpr, LambdaExprPartsKind)
 #undef DEF_JOB
 
 class DeclVisit : public VisitorJob {
@@ -1761,6 +1762,7 @@ public:
   void VisitSizeOfPackExpr(SizeOfPackExpr *E);
   void VisitPseudoObjectExpr(PseudoObjectExpr *E);
   void VisitOpaqueValueExpr(OpaqueValueExpr *E);
+  void VisitLambdaExpr(LambdaExpr *E);
   
 private:
   void AddDeclarationNameInfo(Stmt *S);
@@ -1854,9 +1856,8 @@ VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E) {
     AddStmt(E->getBase());
 }
 void EnqueueVisitor::VisitCXXNewExpr(CXXNewExpr *E) {
-  // Enqueue the initializer or constructor arguments.
-  for (unsigned I = E->getNumConstructorArgs(); I > 0; --I)
-    AddStmt(E->getConstructorArg(I-1));
+  // Enqueue the initializer , if any.
+  AddStmt(E->getInitializer());
   // Enqueue the array size, if any.
   AddStmt(E->getArraySize());
   // Enqueue the allocated type.
@@ -2081,6 +2082,10 @@ void EnqueueVisitor::VisitOpaqueValueExpr(OpaqueValueExpr *E) {
   if (Expr *SourceExpr = E->getSourceExpr())
     return Visit(SourceExpr);
 }
+void EnqueueVisitor::VisitLambdaExpr(LambdaExpr *E) {
+  AddStmt(E->getBody());
+  WL.push_back(LambdaExprParts(E, Parent));
+}
 void EnqueueVisitor::VisitPseudoObjectExpr(PseudoObjectExpr *E) {
   // Treat the expression like its syntactic form.
   Visit(E->getSyntacticForm());
@@ -2257,6 +2262,45 @@ bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
         // Non-type template parameter packs and function parameter packs are
         // treated like DeclRefExpr cursors.
         continue;
+      }
+        
+      case VisitorJob::LambdaExprPartsKind: {
+        // Visit captures.
+        LambdaExpr *E = cast<LambdaExprParts>(&LI)->get();
+        for (LambdaExpr::capture_iterator C = E->explicit_capture_begin(),
+                                       CEnd = E->explicit_capture_end();
+             C != CEnd; ++C) {
+          if (C->capturesThis())
+            continue;
+          
+          if (Visit(MakeCursorVariableRef(C->getCapturedVar(),
+                                          C->getLocation(),
+                                          TU)))
+            return true;
+        }
+        
+        // Visit parameters and return type, if present.
+        if (E->hasExplicitParameters() || E->hasExplicitResultType()) {
+          TypeLoc TL = E->getCallOperator()->getTypeSourceInfo()->getTypeLoc();
+          if (E->hasExplicitParameters() && E->hasExplicitResultType()) {
+            // Visit the whole type.
+            if (Visit(TL))
+              return true;
+          } else if (isa<FunctionProtoTypeLoc>(TL)) {
+            FunctionProtoTypeLoc Proto = cast<FunctionProtoTypeLoc>(TL);
+            if (E->hasExplicitParameters()) {
+              // Visit parameters.
+              for (unsigned I = 0, N = Proto.getNumArgs(); I != N; ++I)
+                if (Visit(MakeCXCursor(Proto.getArg(I), TU)))
+                  return true;
+            } else {
+              // Visit result type.
+              if (Visit(Proto.getResultLoc()))
+                return true;
+            }
+          }
+        }
+        break;
       }
     }
   }
@@ -2457,7 +2501,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
     llvm::CrashRecoveryContextReleaseRefCleanup<DiagnosticsEngine> >
     DiagCleanup(Diags.getPtr());
 
-  llvm::OwningPtr<std::vector<ASTUnit::RemappedFile> >
+  OwningPtr<std::vector<ASTUnit::RemappedFile> >
     RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
 
   // Recover resources if we crash before exiting this function.
@@ -2472,7 +2516,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
                                             Buffer));
   }
 
-  llvm::OwningPtr<std::vector<const char *> > 
+  OwningPtr<std::vector<const char *> >
     Args(new std::vector<const char*>());
 
   // Recover resources if we crash before exiting this method.
@@ -2516,7 +2560,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   }
   
   unsigned NumErrors = Diags->getClient()->getNumErrors();
-  llvm::OwningPtr<ASTUnit> Unit(
+  OwningPtr<ASTUnit> Unit(
     ASTUnit::LoadFromCommandLine(Args->size() ? &(*Args)[0] : 0 
                                  /* vector::data() not portable */,
                                  Args->size() ? (&(*Args)[0] + Args->size()) :0,
@@ -2658,7 +2702,7 @@ static void clang_reparseTranslationUnit_Impl(void *UserData) {
   ASTUnit *CXXUnit = static_cast<ASTUnit *>(TU->TUData);
   ASTUnit::ConcurrencyCheck Check(*CXXUnit);
   
-  llvm::OwningPtr<std::vector<ASTUnit::RemappedFile> >
+  OwningPtr<std::vector<ASTUnit::RemappedFile> >
     RemappedFiles(new std::vector<ASTUnit::RemappedFile>());
   
   // Recover resources if we crash before exiting this function.
@@ -2898,7 +2942,7 @@ static CXString getDeclSpelling(Decl *D) {
   if (isa<UsingDirectiveDecl>(D))
     return createCXString("");
   
-  llvm::SmallString<1024> S;
+  SmallString<1024> S;
   llvm::raw_svector_ostream os(S);
   ND->printName(os);
   
@@ -2980,6 +3024,13 @@ CXString clang_getCursorSpelling(CXCursor C) {
       return createCXString((*Ovl->begin())->getNameAsString());
     }
         
+    case CXCursor_VariableRef: {
+      VarDecl *Var = getCursorVariableRef(C).first;
+      assert(Var && "Missing variable decl");
+      
+      return createCXString(Var->getNameAsString());
+    }
+        
     default:
       return createCXString("<not implemented>");
     }
@@ -3040,7 +3091,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
     D = FunTmpl->getTemplatedDecl();
   
   if (FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
-    llvm::SmallString<64> Str;
+    SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *Function;
     if (Function->getPrimaryTemplate())
@@ -3062,7 +3113,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
   }
   
   if (ClassTemplateDecl *ClassTemplate = dyn_cast<ClassTemplateDecl>(D)) {
-    llvm::SmallString<64> Str;
+    SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *ClassTemplate;
     OS << "<";
@@ -3098,7 +3149,7 @@ CXString clang_getCursorDisplayName(CXCursor C) {
     if (TypeSourceInfo *TSInfo = ClassSpec->getTypeAsWritten())
       return createCXString(TSInfo->getType().getAsString(Policy));
     
-    llvm::SmallString<64> Str;
+    SmallString<64> Str;
     llvm::raw_svector_ostream OS(Str);
     OS << *ClassSpec;
     OS << TemplateSpecializationType::PrintTemplateArgumentList(
@@ -3173,6 +3224,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return createCXString("LabelRef");
   case CXCursor_OverloadedDeclRef:
     return createCXString("OverloadedDeclRef");
+  case CXCursor_VariableRef:
+    return createCXString("VariableRef");
   case CXCursor_IntegerLiteral:
       return createCXString("IntegerLiteral");
   case CXCursor_FloatingLiteral:
@@ -3251,6 +3304,8 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
       return createCXString("PackExpansionExpr");
   case CXCursor_SizeOfPackExpr:
       return createCXString("SizeOfPackExpr");
+  case CXCursor_LambdaExpr:
+    return createCXString("LambdaExpr");
   case CXCursor_UnexposedExpr:
       return createCXString("UnexposedExpr");
   case CXCursor_DeclRefExpr:
@@ -3626,6 +3681,11 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
       return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
     }
 
+    case CXCursor_VariableRef: {
+      std::pair<VarDecl *, SourceLocation> P = getCursorVariableRef(C);
+      return cxloc::translateSourceLocation(P.first->getASTContext(), P.second);
+    }
+
     case CXCursor_CXXBaseSpecifier: {
       CXXBaseSpecifier *BaseSpec = getCursorCXXBaseSpecifier(C);
       if (!BaseSpec)
@@ -3768,6 +3828,9 @@ static SourceRange getRawCursorExtent(CXCursor C) {
     case CXCursor_OverloadedDeclRef:
       return getCursorOverloadedDeclRef(C).second;
 
+    case CXCursor_VariableRef:
+      return getCursorVariableRef(C).second;
+        
     default:
       // FIXME: Need a way to enumerate all non-reference cases.
       llvm_unreachable("Missed a reference kind");
@@ -3975,6 +4038,9 @@ CXCursor clang_getCursorReferenced(CXCursor C) {
 
     case CXCursor_OverloadedDeclRef:
       return C;
+      
+    case CXCursor_VariableRef:
+      return MakeCXCursor(getCursorVariableRef(C).first, tu);
 
     default:
       // We would prefer to enumerate all non-reference cursor kinds here.
@@ -5448,7 +5514,7 @@ CXTUResourceUsage clang_getCXTUResourceUsage(CXTranslationUnit TU) {
   }
   
   ASTUnit *astUnit = static_cast<ASTUnit*>(TU->TUData);
-  llvm::OwningPtr<MemUsageEntries> entries(new MemUsageEntries());
+  OwningPtr<MemUsageEntries> entries(new MemUsageEntries());
   ASTContext &astContext = astUnit->getASTContext();
   
   // How much memory is used by AST nodes and types?

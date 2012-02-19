@@ -55,11 +55,11 @@ namespace clang {
   class CXXABI;
   // Decls
   class DeclContext;
+  class CXXConversionDecl;
   class CXXMethodDecl;
   class CXXRecordDecl;
   class Decl;
   class FieldDecl;
-  class LambdaExpr;
   class MangleContext;
   class ObjCIvarDecl;
   class ObjCIvarRefExpr;
@@ -163,10 +163,6 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   ///  template patterns.
   llvm::DenseMap<const FunctionDecl*, FunctionDecl*>
     ClassScopeSpecializationPattern;
-
-  /// \brief Mapping from closure types to the lambda expressions that
-  /// create instances of them.
-  llvm::DenseMap<const CXXRecordDecl *, LambdaExpr *> Lambdas;
 
   /// \brief Representation of a "canonical" template template parameter that
   /// is used in canonical template names.
@@ -326,6 +322,12 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   typedef UsuallyTinyPtrVector<const CXXMethodDecl> CXXMethodVector;
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector> OverriddenMethods;
 
+  /// \brief Mapping from lambda-to-block-pointer conversion functions to the
+  /// expression used to copy the lambda object.
+  llvm::DenseMap<const CXXConversionDecl *, Expr *> LambdaBlockPointerInits;
+  
+  friend class CXXConversionDecl;
+  
   /// \brief Mapping that stores parameterIndex values for ParmVarDecls
   /// when that value exceeds the bitfield size of
   /// ParmVarDeclBits.ParameterIndex.
@@ -876,7 +878,7 @@ public:
   QualType getTypeOfType(QualType t) const;
 
   /// getDecltypeType - C++0x decltype.
-  QualType getDecltypeType(Expr *e) const;
+  QualType getDecltypeType(Expr *e, QualType UnderlyingType) const;
 
   /// getUnaryTransformType - unary type transforms
   QualType getUnaryTransformType(QualType BaseType, QualType UnderlyingType,
