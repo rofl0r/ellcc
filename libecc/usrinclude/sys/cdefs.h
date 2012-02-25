@@ -238,11 +238,11 @@
 #if defined(__cplusplus)
 #define	__BEGIN_DECLS		__BEGIN_PUBLIC extern "C" {
 #define	__END_DECLS		} __END_PUBLIC
-#define	__static_cast(x,y)	static_cast<x>(y)
+#define	__static_cast__(x,y)	static_cast<x>(y)
 #else
 #define	__BEGIN_DECLS		__BEGIN_PUBLIC
 #define	__END_DECLS		__END_PUBLIC
-#define	__static_cast(x,y)	(x)y
+#define	__static_cast__(x,y)	(x)y
 #endif
 
 /*

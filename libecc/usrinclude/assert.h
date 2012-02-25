@@ -49,18 +49,18 @@
 
 #ifdef NDEBUG
 # ifndef __lint__
-#  define assert(e)	(__static_cast(void,0))
+#  define assert(e)	(__static_cast__(void,0))
 # else /* !__lint__ */
 #  define assert(e)
 # endif /* __lint__ */
 #else /* !NDEBUG */
 # if __STDC__
 #  define assert(e)							\
-	((e) ? __static_cast(void,0) : __assert13(__FILE__, __LINE__,	\
+	((e) ? __static_cast__(void,0) : __assert13(__FILE__, __LINE__,	\
 	                                          __assert_function__, #e))
 # else	/* PCC */
 #  define assert(e)							\
-	((e) ? __static_cast(void,0) : __assert13(__FILE__, __LINE__,	\
+	((e) ? __static_cast__(void,0) : __assert13(__FILE__, __LINE__,	\
 	                                          __assert_function__, "e"))
 # endif /* !__STDC__ */
 #endif /* NDEBUG */
@@ -68,31 +68,31 @@
 #undef _DIAGASSERT
 #if !defined(_DIAGNOSTIC)
 # if !defined(__lint__)
-#  define _DIAGASSERT(e) (__static_cast(void,0))
+#  define _DIAGASSERT(e) (__static_cast__(void,0))
 # else /* !__lint__ */
 #  define _DIAGASSERT(e)
 # endif /* __lint__ */
 #else /* _DIAGNOSTIC */
 # if __STDC__
 #  define _DIAGASSERT(e)						\
-	((e) ? __static_cast(void,0) : __diagassert13(__FILE__, __LINE__, \
+	((e) ? __static_cast__(void,0) : __diagassert13(__FILE__, __LINE__, \
 	                                              __assert_function__, #e))
 # else	/* !__STDC__ */
 #  define _DIAGASSERT(e)	 					\
-	((e) ? __static_cast(void,0) : __diagassert13(__FILE__, __LINE__, \
+	((e) ? __static_cast__(void,0) : __diagassert13(__FILE__, __LINE__, \
 	                                              __assert_function__, "e"))
 # endif
 #endif /* _DIAGNOSTIC */
 
 
 #if defined(__lint__)
-#define	__assert_function__	(__static_cast(const void *,0))
+#define	__assert_function__	(__static_cast__(const void *,0))
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
 #define	__assert_function__	__func__
 #elif __GNUC_PREREQ__(2, 6)
 #define	__assert_function__	__PRETTY_FUNCTION__
 #else
-#define	__assert_function__	(__static_cast(const void *,0))
+#define	__assert_function__	(__static_cast__(const void *,0))
 #endif
 
 #ifndef __ASSERT_DECLARED
