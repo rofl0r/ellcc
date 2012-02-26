@@ -82,11 +82,9 @@ static int modRMRequired(OpcodeType type,
     decision = &THREEBYTEA7_SYM;
     break;
   }
-  
+
   return decision->opcodeDecisions[insnContext].modRMDecisions[opcode].
     modrm_type != MODRM_ONEENTRY;
-  
-  return 0;
 }
 
 /*
@@ -1016,6 +1014,7 @@ static int readDisplacement(struct InternalInstruction* insn) {
     return 0;
   
   insn->consumedDisplacement = TRUE;
+  insn->displacementOffset = insn->readerCursor - insn->startLocation;
   
   switch (insn->eaDisplacement) {
   case EA_DISP_NONE:
@@ -1412,6 +1411,7 @@ static int readImmediate(struct InternalInstruction* insn, uint8_t size) {
     size = insn->immediateSize;
   else
     insn->immediateSize = size;
+  insn->immediateOffset = insn->readerCursor - insn->startLocation;
   
   switch (size) {
   case 1:

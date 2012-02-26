@@ -831,7 +831,7 @@ protected:
   void BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
                            const llvm::StructLayout *Layout,
                            const RecordDecl *RD,
-                           const SmallVectorImpl<const FieldDecl*> &RecFields,
+                           ArrayRef<const FieldDecl*> RecFields,
                            unsigned int BytePos, bool ForStrongLayout,
                            bool &HasUnion);
 
@@ -2561,14 +2561,14 @@ CGObjCMac::EmitClassExtension(const ObjCImplementationDecl *ID) {
 
 /*
   struct objc_ivar {
-  char *ivar_name;
-  char *ivar_type;
-  int ivar_offset;
+    char *ivar_name;
+    char *ivar_type;
+    int ivar_offset;
   };
 
   struct objc_ivar_list {
-  int ivar_count;
-  struct objc_ivar list[count];
+    int ivar_count;
+    struct objc_ivar list[count];
   };
 */
 llvm::Constant *CGObjCMac::EmitIvarList(const ObjCImplementationDecl *ID,
@@ -3768,7 +3768,7 @@ void CGObjCCommonMac::BuildAggrIvarRecordLayout(const RecordType *RT,
 void CGObjCCommonMac::BuildAggrIvarLayout(const ObjCImplementationDecl *OI,
                              const llvm::StructLayout *Layout,
                              const RecordDecl *RD,
-                             const SmallVectorImpl<const FieldDecl*> &RecFields,
+                             ArrayRef<const FieldDecl*> RecFields,
                              unsigned int BytePos, bool ForStrongLayout,
                              bool &HasUnion) {
   bool IsUnion = (RD && RD->isUnion());
@@ -5704,8 +5704,13 @@ LValue CGObjCNonFragileABIMac::EmitObjCValueForIvar(
                                                const ObjCIvarDecl *Ivar,
                                                unsigned CVRQualifiers) {
   ObjCInterfaceDecl *ID = ObjectTy->getAs<ObjCObjectType>()->getInterface();
+  llvm::Value *Offset = EmitIvarOffset(CGF, ID, Ivar);
+  if (llvm::LoadInst *LI = dyn_cast<llvm::LoadInst>(Offset))
+    LI->setMetadata(CGM.getModule().getMDKindID("invariant.load"), 
+                   llvm::MDNode::get(VMContext,
+                   ArrayRef<llvm::Value*>()));
   return EmitValueForIvarAtOffset(CGF, ID, BaseValue, Ivar, CVRQualifiers,
-                                  EmitIvarOffset(CGF, ID, Ivar));
+                                  Offset);
 }
 
 llvm::Value *CGObjCNonFragileABIMac::EmitIvarOffset(

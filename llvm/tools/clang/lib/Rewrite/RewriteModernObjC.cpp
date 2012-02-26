@@ -133,7 +133,9 @@ namespace {
     llvm::SmallPtrSet<VarDecl *, 8> ImportedLocalExternalDecls;
     
     llvm::DenseMap<BlockExpr *, std::string> RewrittenBlockExprs;
-
+    llvm::DenseMap<ObjCInterfaceDecl *, 
+                    llvm::SmallPtrSet<ObjCIvarDecl *, 8> > ReferencedIvars;
+    
     // This maps an original source AST to it's rewritten form. This allows
     // us to avoid rewriting the same node twice (which is very uncommon).
     // This is needed to support some of the exotic property rewriting.
@@ -171,7 +173,7 @@ namespace {
             break;
           } else {
             // Keep track of all interface declarations seen.
-            ObjCInterfacesSeen.push_back(Class->getCanonicalDecl());
+            ObjCInterfacesSeen.push_back(Class);
             break;
           }
         }
@@ -330,6 +332,9 @@ namespace {
     
     void RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
                                       std::string &Result);
+    
+    void RewriteIvarOffsetSymbols(ObjCInterfaceDecl *CDecl,
+                                  std::string &Result);
     
     virtual void Initialize(ASTContext &context);
     
@@ -934,7 +939,17 @@ void RewriteModernObjC::RewriteCategoryDecl(ObjCCategoryDecl *CatDecl) {
 
   // FIXME: handle category headers that are declared across multiple lines.
   ReplaceText(LocStart, 0, "// ");
-
+  if (CatDecl->getIvarLBraceLoc().isValid())
+    InsertText(CatDecl->getIvarLBraceLoc(), "// ");
+  for (ObjCCategoryDecl::ivar_iterator
+       I = CatDecl->ivar_begin(), E = CatDecl->ivar_end(); I != E; ++I) {
+    ObjCIvarDecl *Ivar = (*I);
+    SourceLocation LocStart = Ivar->getLocStart();
+    ReplaceText(LocStart, 0, "// ");
+  } 
+  if (CatDecl->getIvarRBraceLoc().isValid())
+    InsertText(CatDecl->getIvarRBraceLoc(), "// ");
+  
   for (ObjCCategoryDecl::prop_iterator I = CatDecl->prop_begin(),
        E = CatDecl->prop_end(); I != E; ++I)
     RewriteProperty(*I);
@@ -1144,7 +1159,21 @@ void RewriteModernObjC::RewriteImplementationDecl(Decl *OID) {
   ObjCImplementationDecl *IMD = dyn_cast<ObjCImplementationDecl>(OID);
   ObjCCategoryImplDecl *CID = dyn_cast<ObjCCategoryImplDecl>(OID);
 
-  InsertText(IMD ? IMD->getLocStart() : CID->getLocStart(), "// ");
+  if (IMD) {
+    InsertText(IMD->getLocStart(), "// ");
+    if (IMD->getIvarLBraceLoc().isValid())
+      InsertText(IMD->getIvarLBraceLoc(), "// ");
+    for (ObjCImplementationDecl::ivar_iterator
+         I = IMD->ivar_begin(), E = IMD->ivar_end(); I != E; ++I) {
+      ObjCIvarDecl *Ivar = (*I);
+      SourceLocation LocStart = Ivar->getLocStart();
+      ReplaceText(LocStart, 0, "// ");
+    }
+    if (IMD->getIvarRBraceLoc().isValid())
+      InsertText(IMD->getIvarRBraceLoc(), "// ");
+  }
+  else
+    InsertText(CID->getLocStart(), "// ");
 
   for (ObjCCategoryImplDecl::instmeth_iterator
        I = IMD ? IMD->instmeth_begin() : CID->instmeth_begin(),
@@ -1207,6 +1236,9 @@ void RewriteModernObjC::RewriteInterfaceDecl(ObjCInterfaceDecl *ClassDecl) {
     ResultStr += "typedef struct objc_object ";
     ResultStr += ClassDecl->getNameAsString();
     ResultStr += ";\n#endif\n";
+    
+    RewriteIvarOffsetSymbols(ClassDecl, ResultStr);
+    
     RewriteObjCInternalStruct(ClassDecl, ResultStr);
     // Mark this typedef as having been written into its c++ equivalent.
     ObjCWrittenInterfaces.insert(ClassDecl->getCanonicalDecl());
@@ -3197,6 +3229,24 @@ void RewriteModernObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
     llvm_unreachable("struct already synthesize- RewriteObjCInternalStruct");
 }
 
+/// RewriteIvarOffsetSymbols - Rewrite ivar offset symbols of those ivars which
+/// have been referenced in an ivar access expression.
+void RewriteModernObjC::RewriteIvarOffsetSymbols(ObjCInterfaceDecl *CDecl,
+                                                  std::string &Result) {
+  // write out ivar offset symbols which have been referenced in an ivar
+  // access expression.
+  llvm::SmallPtrSet<ObjCIvarDecl *, 8> Ivars = ReferencedIvars[CDecl];
+  if (Ivars.empty())
+    return;
+  for (llvm::SmallPtrSet<ObjCIvarDecl *, 8>::iterator i = Ivars.begin(),
+       e = Ivars.end(); i != e; i++) {
+    ObjCIvarDecl *IvarDecl = (*i);
+    Result += "\nextern unsigned long OBJC_IVAR_$_";
+    Result += CDecl->getName(); Result += "_";
+    Result += IvarDecl->getName(); Result += ";";
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // Meta Data Emission
 //===----------------------------------------------------------------------===//
@@ -3206,16 +3256,6 @@ void RewriteModernObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
 /// and emits meta-data.
 
 void RewriteModernObjC::RewriteImplementations() {
-  
-  for (unsigned i = 0, e = ObjCInterfacesSeen.size(); i < e; i++) {
-    ObjCInterfaceDecl *CDecl = ObjCInterfacesSeen[i];
-    // Write struct declaration for the class matching its ivar declarations.
-    // Note that for modern abi, this is postponed until the end of TU
-    // because class extensions and the implementation might declare their own
-    // private ivars.
-    RewriteInterfaceDecl(CDecl);
-  }
-  
   int ClsDefCount = ClassImplementation.size();
   int CatDefCount = CategoryImplementation.size();
 
@@ -4998,6 +5038,15 @@ void RewriteModernObjC::HandleTranslationUnit(ASTContext &C) {
     RewriteObjCProtocolMetaData(*I, Preamble);
 
   InsertText(SM->getLocForStartOfFile(MainFileID), Preamble, false);
+  for (unsigned i = 0, e = ObjCInterfacesSeen.size(); i < e; i++) {
+    ObjCInterfaceDecl *CDecl = ObjCInterfacesSeen[i];
+    // Write struct declaration for the class matching its ivar declarations.
+    // Note that for modern abi, this is postponed until the end of TU
+    // because class extensions and the implementation might declare their own
+    // private ivars.
+    RewriteInterfaceDecl(CDecl);
+  }
+  
   if (ClassImplementation.size() || CategoryImplementation.size())
     RewriteImplementations();
 
@@ -6384,7 +6433,7 @@ Stmt *RewriteModernObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
   ObjCIvarDecl *D = IV->getDecl();
   
   Expr *Replacement = IV;
-  if (CurMethodDef) {
+  
     if (BaseExpr->getType()->isObjCObjectPointerType()) {
       const ObjCInterfaceType *iFaceDecl =
       dyn_cast<ObjCInterfaceType>(BaseExpr->getType()->getPointeeType());
@@ -6395,70 +6444,50 @@ Stmt *RewriteModernObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
                                                    clsDeclared);
       assert(clsDeclared && "RewriteObjCIvarRefExpr(): Can't find class");
       
-      // Synthesize an explicit cast to gain access to the ivar.
-      std::string RecName = clsDeclared->getIdentifier()->getName();
-      RecName += "_IMPL";
-      IdentifierInfo *II = &Context->Idents.get(RecName);
-      RecordDecl *RD = RecordDecl::Create(*Context, TTK_Struct, TUDecl,
-                                          SourceLocation(), SourceLocation(),
-                                          II);
-      assert(RD && "RewriteObjCIvarRefExpr(): Can't find RecordDecl");
-      QualType castT = Context->getPointerType(Context->getTagDeclType(RD));
-      CastExpr *castExpr = NoTypeInfoCStyleCastExpr(Context, castT,
-                                                    CK_BitCast,
-                                                    IV->getBase());
-      // Don't forget the parens to enforce the proper binding.
-      ParenExpr *PE = new (Context) ParenExpr(OldRange.getBegin(),
-                                              OldRange.getEnd(),
-                                              castExpr);
-      if (IV->isFreeIvar() &&
-          declaresSameEntity(CurMethodDef->getClassInterface(), iFaceDecl->getDecl())) {
-        MemberExpr *ME = new (Context) MemberExpr(PE, true, D,
-                                                  IV->getLocation(),
-                                                  D->getType(),
-                                                  VK_LValue, OK_Ordinary);
-        Replacement = ME;
-      } else {
-        IV->setBase(PE);
-      }
-    }
-  } else { // we are outside a method.
-    assert(!IV->isFreeIvar() && "Cannot have a free standing ivar outside a method");
-    
-    // Explicit ivar refs need to have a cast inserted.
-    // FIXME: consider sharing some of this code with the code above.
-    if (BaseExpr->getType()->isObjCObjectPointerType()) {
-      const ObjCInterfaceType *iFaceDecl =
-      dyn_cast<ObjCInterfaceType>(BaseExpr->getType()->getPointeeType());
-      // lookup which class implements the instance variable.
-      ObjCInterfaceDecl *clsDeclared = 0;
-      iFaceDecl->getDecl()->lookupInstanceVariable(D->getIdentifier(),
-                                                   clsDeclared);
-      assert(clsDeclared && "RewriteObjCIvarRefExpr(): Can't find class");
+      // Build name of symbol holding ivar offset.
+      std::string IvarOffsetName = "OBJC_IVAR_$_";
+      IvarOffsetName += clsDeclared->getIdentifier()->getName();
+      IvarOffsetName += "_";
+      IvarOffsetName += D->getName();
+      ReferencedIvars[clsDeclared].insert(D);
       
-      // Synthesize an explicit cast to gain access to the ivar.
-      std::string RecName = clsDeclared->getIdentifier()->getName();
-      RecName += "_IMPL";
-      IdentifierInfo *II = &Context->Idents.get(RecName);
-      RecordDecl *RD = RecordDecl::Create(*Context, TTK_Struct, TUDecl,
-                                          SourceLocation(), SourceLocation(),
-                                          II);
-      assert(RD && "RewriteObjCIvarRefExpr(): Can't find RecordDecl");
-      QualType castT = Context->getPointerType(Context->getTagDeclType(RD));
-      CastExpr *castExpr = NoTypeInfoCStyleCastExpr(Context, castT,
+      // cast offset to "char *".
+      CastExpr *castExpr = NoTypeInfoCStyleCastExpr(Context, 
+                                                    Context->getPointerType(Context->CharTy),
                                                     CK_BitCast,
-                                                    IV->getBase());
+                                                    BaseExpr);
+      VarDecl *NewVD = VarDecl::Create(*Context, TUDecl, SourceLocation(),
+                                       SourceLocation(), &Context->Idents.get(IvarOffsetName),
+                                       Context->UnsignedLongTy, 0, SC_Extern, SC_None);
+      DeclRefExpr *DRE = new (Context) DeclRefExpr(NewVD, Context->UnsignedLongTy, VK_LValue,
+                                                   SourceLocation());
+      BinaryOperator *addExpr = 
+        new (Context) BinaryOperator(castExpr, DRE, BO_Add, 
+                                     Context->getPointerType(Context->CharTy),
+                                     VK_RValue, OK_Ordinary, SourceLocation());
       // Don't forget the parens to enforce the proper binding.
-      ParenExpr *PE = new (Context) ParenExpr(IV->getBase()->getLocStart(),
-                                              IV->getBase()->getLocEnd(), castExpr);
-      // Cannot delete IV->getBase(), since PE points to it.
-      // Replace the old base with the cast. This is important when doing
-      // embedded rewrites. For example, [newInv->_container addObject:0].
-      IV->setBase(PE);
+      ParenExpr *PE = new (Context) ParenExpr(SourceLocation(),
+                                              SourceLocation(),
+                                              addExpr);
+      QualType IvarT = D->getType();
+      convertBlockPointerToFunctionPointer(IvarT);
+      QualType castT = Context->getPointerType(IvarT);
+      
+      castExpr = NoTypeInfoCStyleCastExpr(Context, 
+                                          castT,
+                                          CK_BitCast,
+                                          PE);
+      Expr *Exp = new (Context) UnaryOperator(castExpr, UO_Deref, castT,
+                                              VK_LValue, OK_Ordinary,
+                                              SourceLocation());
+      PE = new (Context) ParenExpr(OldRange.getBegin(),
+                                   OldRange.getEnd(),
+                                   Exp);
+
+      Replacement = PE;
     }
-  }
   
-  ReplaceStmtWithRange(IV, Replacement, OldRange);
-  return Replacement;  
+    ReplaceStmtWithRange(IV, Replacement, OldRange);
+    return Replacement;  
 }
 

@@ -1,4 +1,4 @@
-//===-- X86InstrSSE.td - Describe the X86 Instruction Set --*- tablegen -*-===//
+//===-- X86InstrSSE.td - SSE Instruction Set ---------------*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6604,15 +6604,6 @@ def VINSERTF128rm : AVXAIi8<0x18, MRMSrcMem, (outs VR256:$dst),
           (ins VR256:$src1, f128mem:$src2, i8imm:$src3),
           "vinsertf128\t{$src3, $src2, $src1, $dst|$dst, $src1, $src2, $src3}",
           []>, VEX_4V;
-}
-
-let Predicates = [HasAVX] in {
-def : Pat<(int_x86_avx_vinsertf128_pd_256 VR256:$src1, VR128:$src2, imm:$src3),
-          (VINSERTF128rr VR256:$src1, VR128:$src2, imm:$src3)>;
-def : Pat<(int_x86_avx_vinsertf128_ps_256 VR256:$src1, VR128:$src2, imm:$src3),
-          (VINSERTF128rr VR256:$src1, VR128:$src2, imm:$src3)>;
-def : Pat<(int_x86_avx_vinsertf128_si_256 VR256:$src1, VR128:$src2, imm:$src3),
-          (VINSERTF128rr VR256:$src1, VR128:$src2, imm:$src3)>;
 }
 
 //===----------------------------------------------------------------------===//

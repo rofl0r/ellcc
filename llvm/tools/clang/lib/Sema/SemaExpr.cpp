@@ -1257,7 +1257,7 @@ Sema::DecomposeUnqualifiedId(const UnqualifiedId &Id,
 bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                                CorrectionCandidateCallback &CCC,
                                TemplateArgumentListInfo *ExplicitTemplateArgs,
-                               Expr **Args, unsigned NumArgs) {
+                               llvm::ArrayRef<Expr *> Args) {
   DeclarationName Name = R.getLookupName();
 
   unsigned diagnostic = diag::err_undeclared_var_use;
@@ -1387,11 +1387,11 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                    dyn_cast<FunctionTemplateDecl>(*CD))
             AddTemplateOverloadCandidate(
                 FTD, DeclAccessPair::make(FTD, AS_none), ExplicitTemplateArgs,
-                Args, NumArgs, OCS);
+                Args, OCS);
           else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(*CD))
             if (!ExplicitTemplateArgs || ExplicitTemplateArgs->size() == 0)
               AddOverloadCandidate(FD, DeclAccessPair::make(FD, AS_none),
-                                   Args, NumArgs, OCS);
+                                   Args, OCS);
         }
         switch (OCS.BestViableFunction(*this, R.getNameLoc(), Best)) {
           case OR_Success:
@@ -3146,7 +3146,8 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
   // We already type-checked the argument, so we know it works. 
   // Just mark all of the declarations in this potentially-evaluated expression
   // as being "referenced".
-  MarkDeclarationsReferencedInExpr(Param->getDefaultArg());
+  MarkDeclarationsReferencedInExpr(Param->getDefaultArg(),
+                                   /*SkipLocalVariables=*/true);
   return Owned(CXXDefaultArgExpr::Create(Context, CallLoc, Param));
 }
 
@@ -3247,7 +3248,8 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
                                   unsigned FirstProtoArg,
                                   Expr **Args, unsigned NumArgs,
                                   SmallVector<Expr *, 8> &AllArgs,
-                                  VariadicCallType CallType) {
+                                  VariadicCallType CallType,
+                                  bool AllowExplicit) {
   unsigned NumArgsInProto = Proto->getNumArgs();
   unsigned NumArgsToCheck = NumArgs;
   bool Invalid = false;
@@ -3287,7 +3289,9 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
                                                       Proto->isArgConsumed(i));
       ExprResult ArgE = PerformCopyInitialization(Entity,
                                                   SourceLocation(),
-                                                  Owned(Arg));
+                                                  Owned(Arg),
+                                                  /*TopLevelOfInitList=*/false,
+                                                  AllowExplicit);
       if (ArgE.isInvalid())
         return true;
 
@@ -3446,7 +3450,8 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
     bool Dependent = false;
     if (Fn->isTypeDependent())
       Dependent = true;
-    else if (Expr::hasAnyTypeDependentArguments(Args, NumArgs))
+    else if (Expr::hasAnyTypeDependentArguments(
+        llvm::makeArrayRef(Args, NumArgs)))
       Dependent = true;
 
     if (Dependent) {
@@ -4724,6 +4729,14 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
   }
   // Check Objective-C object pointer types and 'void *'
   if (LHSTy->isVoidPointerType() && RHSTy->isObjCObjectPointerType()) {
+    if (getLangOptions().ObjCAutoRefCount) {
+      // ARC forbids the implicit conversion of object pointers to 'void *',
+      // so these types are not compatible.
+      Diag(QuestionLoc, diag::err_cond_voidptr_arc) << LHSTy << RHSTy
+          << LHS.get()->getSourceRange() << RHS.get()->getSourceRange();
+      LHS = RHS = true;
+      return QualType();
+    }
     QualType lhptee = LHSTy->getAs<PointerType>()->getPointeeType();
     QualType rhptee = RHSTy->getAs<ObjCObjectPointerType>()->getPointeeType();
     QualType destPointee
@@ -4736,6 +4749,14 @@ QualType Sema::FindCompositeObjCPointerType(ExprResult &LHS, ExprResult &RHS,
     return destType;
   }
   if (LHSTy->isObjCObjectPointerType() && RHSTy->isVoidPointerType()) {
+    if (getLangOptions().ObjCAutoRefCount) {
+      // ARC forbids the implicit conversion of object pointers to 'void *',
+      // so these types are not compatible.
+      Diag(QuestionLoc, diag::err_cond_voidptr_arc) << LHSTy << RHSTy
+          << LHS.get()->getSourceRange() << RHS.get()->getSourceRange();
+      LHS = RHS = true;
+      return QualType();
+    }
     QualType lhptee = LHSTy->getAs<ObjCObjectPointerType>()->getPointeeType();
     QualType rhptee = RHSTy->getAs<PointerType>()->getPointeeType();
     QualType destPointee
@@ -4898,7 +4919,8 @@ ExprResult Sema::ActOnConditionalOp(SourceLocation QuestionLoc,
     opaqueValue = new (Context) OpaqueValueExpr(commonExpr->getExprLoc(),
                                                 commonExpr->getType(),
                                                 commonExpr->getValueKind(),
-                                                commonExpr->getObjectKind());
+                                                commonExpr->getObjectKind(),
+                                                commonExpr);
     LHSExpr = CondExpr = opaqueValue;
   }
 
@@ -8095,11 +8117,17 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
   case UO_Real:
   case UO_Imag:
     resultType = CheckRealImagOperand(*this, Input, OpLoc, Opc == UO_Real);
-    // _Real and _Imag map ordinary l-values into ordinary l-values.
+    // _Real maps ordinary l-values into ordinary l-values. _Imag maps ordinary
+    // complex l-values to ordinary l-values and all other values to r-values.
     if (Input.isInvalid()) return ExprError();
-    if (Input.get()->getValueKind() != VK_RValue &&
-        Input.get()->getObjectKind() == OK_Ordinary)
-      VK = Input.get()->getValueKind();
+    if (Opc == UO_Real || Input.get()->getType()->isAnyComplexType()) {
+      if (Input.get()->getValueKind() != VK_RValue &&
+          Input.get()->getObjectKind() == OK_Ordinary)
+        VK = Input.get()->getValueKind();
+    } else if (!getLangOptions().CPlusPlus) {
+      // In C, a volatile scalar is read by __imag. In C++, it is not.
+      Input = DefaultLvalueConversion(Input.take());
+    }
     break;
   case UO_Extension:
     resultType = Input.get()->getType();
@@ -9269,11 +9297,15 @@ ExprResult Sema::TranformToPotentiallyEvaluated(Expr *E) {
 }
 
 void
-Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext) {
+Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext,
+                                      Decl *LambdaContextDecl,
+                                      bool IsDecltype) {
   ExprEvalContexts.push_back(
              ExpressionEvaluationContextRecord(NewContext,
                                                ExprCleanupObjects.size(),
-                                               ExprNeedsCleanups));
+                                               ExprNeedsCleanups,
+                                               LambdaContextDecl,
+                                               IsDecltype));
   ExprNeedsCleanups = false;
   if (!MaybeODRUseExprs.empty())
     std::swap(MaybeODRUseExprs, ExprEvalContexts.back().SavedMaybeODRUseExprs);
@@ -10137,13 +10169,22 @@ namespace {
   /// potentially-evaluated subexpressions as "referenced".
   class EvaluatedExprMarker : public EvaluatedExprVisitor<EvaluatedExprMarker> {
     Sema &S;
+    bool SkipLocalVariables;
     
   public:
     typedef EvaluatedExprVisitor<EvaluatedExprMarker> Inherited;
     
-    explicit EvaluatedExprMarker(Sema &S) : Inherited(S.Context), S(S) { }
+    EvaluatedExprMarker(Sema &S, bool SkipLocalVariables) 
+      : Inherited(S.Context), S(S), SkipLocalVariables(SkipLocalVariables) { }
     
     void VisitDeclRefExpr(DeclRefExpr *E) {
+      // If we were asked not to visit local variables, don't.
+      if (SkipLocalVariables) {
+        if (VarDecl *VD = dyn_cast<VarDecl>(E->getDecl()))
+          if (VD->hasLocalStorage())
+            return;
+      }
+      
       S.MarkDeclRefReferenced(E);
     }
     
@@ -10185,6 +10226,10 @@ namespace {
     }
     
     void VisitBlockDeclRefExpr(BlockDeclRefExpr *E) {
+      // If we were asked not to visit local variables, don't.
+      if (SkipLocalVariables && E->getDecl()->hasLocalStorage())
+          return;
+
       S.MarkBlockDeclRefReferenced(E);
     }
     
@@ -10203,8 +10248,12 @@ namespace {
 
 /// \brief Mark any declarations that appear within this expression or any
 /// potentially-evaluated subexpressions as "referenced".
-void Sema::MarkDeclarationsReferencedInExpr(Expr *E) {
-  EvaluatedExprMarker(*this).Visit(E);
+///
+/// \param SkipLocalVariables If true, don't mark local variables as 
+/// 'referenced'.
+void Sema::MarkDeclarationsReferencedInExpr(Expr *E, 
+                                            bool SkipLocalVariables) {
+  EvaluatedExprMarker(*this, SkipLocalVariables).Visit(E);
 }
 
 /// \brief Emit a diagnostic that describes an effect on the run-time behavior
@@ -10253,6 +10302,13 @@ bool Sema::CheckCallReturnType(QualType ReturnType, SourceLocation Loc,
                                CallExpr *CE, FunctionDecl *FD) {
   if (ReturnType->isVoidType() || !ReturnType->isIncompleteType())
     return false;
+
+  // If we're inside a decltype's expression, don't check for a valid return
+  // type or construct temporaries until we know whether this is the last call.
+  if (ExprEvalContexts.back().IsDecltype) {
+    ExprEvalContexts.back().DelayedDecltypeCalls.push_back(CE);
+    return false;
+  }
 
   PartialDiagnostic Note =
     FD ? PDiag(diag::note_function_with_incomplete_return_type_declared_here)

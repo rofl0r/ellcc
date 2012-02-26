@@ -2019,7 +2019,7 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
 }
 
 llvm::Value *CodeGenFunction::
-BuildVector(const SmallVectorImpl<llvm::Value*> &Ops) {
+BuildVector(ArrayRef<llvm::Value*> Ops) {
   assert((Ops.size() & (Ops.size() - 1)) == 0 &&
          "Not a power-of-two sized vector!");
   bool AllConstants = true;
@@ -2240,6 +2240,8 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
       ID = Intrinsic::x86_3dnowa_pswapd;
       break;
     }
+    llvm::Type *MMXTy = llvm::Type::getX86_MMXTy(getLLVMContext());
+    Ops[0] = Builder.CreateBitCast(Ops[0], MMXTy, "cast");
     llvm::Function *F = CGM.getIntrinsic(ID);
     return Builder.CreateCall(F, Ops, name);
   }

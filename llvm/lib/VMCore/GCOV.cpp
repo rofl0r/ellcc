@@ -108,7 +108,7 @@ bool GCOVFunction::read(GCOVBuffer &Buff, GCOVFormat Format) {
       if (i < Blocks.size())    // RICH
         Blocks[i]->addCount(Buff.readInt64());
     }
-    return true;;
+    return true;
   }
 
   LineNumber = Buff.readInt();

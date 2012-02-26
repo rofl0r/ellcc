@@ -21,6 +21,7 @@
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Basic/VersionTuple.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/LambdaMangleContext.h"
 #include "clang/AST/NestedNameSpecifier.h"
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/TemplateName.h"
@@ -81,7 +82,7 @@ namespace clang {
 
 /// ASTContext - This class holds long-lived AST nodes (such as types and
 /// decls) that can be referred to throughout the semantic analysis of a file.
-class ASTContext : public llvm::RefCountedBase<ASTContext> {
+class ASTContext : public RefCountedBase<ASTContext> {
   ASTContext &this_() { return *this; }
 
   mutable std::vector<Type*> Types;
@@ -217,6 +218,8 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
 
   QualType ObjCConstantStringType;
   mutable RecordDecl *CFConstantStringTypeDecl;
+  
+  QualType ObjCNSStringType;
 
   /// \brief The typedef declaration for the Objective-C "instancetype" type.
   TypedefDecl *ObjCInstanceTypeDecl;
@@ -322,11 +325,9 @@ class ASTContext : public llvm::RefCountedBase<ASTContext> {
   typedef UsuallyTinyPtrVector<const CXXMethodDecl> CXXMethodVector;
   llvm::DenseMap<const CXXMethodDecl *, CXXMethodVector> OverriddenMethods;
 
-  /// \brief Mapping from lambda-to-block-pointer conversion functions to the
-  /// expression used to copy the lambda object.
-  llvm::DenseMap<const CXXConversionDecl *, Expr *> LambdaBlockPointerInits;
-  
-  friend class CXXConversionDecl;
+  /// \brief Mapping from each declaration context to its corresponding lambda 
+  /// mangling context.
+  llvm::DenseMap<const DeclContext *, LambdaMangleContext> LambdaMangleContexts;
   
   /// \brief Mapping that stores parameterIndex values for ParmVarDecls
   /// when that value exceeds the bitfield size of
@@ -945,6 +946,14 @@ public:
     return ObjCConstantStringType;
   }
 
+  QualType getObjCNSStringType() const {
+    return ObjCNSStringType;
+  }
+  
+  void setObjCNSStringType(QualType T) {
+    ObjCNSStringType = T;
+  }
+  
   /// \brief Retrieve the type that 'id' has been defined to, which may be
   /// different from the built-in 'id' if 'id' has been typedef'd.
   QualType getObjCIdRedefinitionType() const {
@@ -1765,6 +1774,8 @@ public:
   /// it is not used.
   bool DeclMustBeEmitted(const Decl *D);
 
+  /// \brief Retrieve the lambda mangling number for a lambda expression.
+  unsigned getLambdaManglingNumber(CXXMethodDecl *CallOperator);
   
   /// \brief Used by ParmVarDecl to store on the side the
   /// index of the parameter when it exceeds the size of the normal bitfield.

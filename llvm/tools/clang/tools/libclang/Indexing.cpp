@@ -279,7 +279,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
 
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+  IntrusiveRefCntPtr<DiagnosticsEngine>
     Diags(CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
                                                 command_line_args,
                                                 CaptureDiag,
@@ -309,7 +309,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   if (source_filename)
     Args->push_back(source_filename);
   
-  llvm::IntrusiveRefCntPtr<CompilerInvocation>
+  IntrusiveRefCntPtr<CompilerInvocation>
     CInvok(createInvocationFromCommandLine(*Args, Diags));
 
   if (!CInvok)
@@ -369,7 +369,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   bool CacheCodeCompletionResults = false;
   PreprocessorOptions &PPOpts = CInvok->getPreprocessorOpts(); 
   PPOpts.DetailedRecord = false;
-  PPOpts.DetailedRecordIncludesNestedMacroExpansions = false;
 
   if (requestedToGetTU) {
     OnlyLocalDecls = CXXIdx->getOnlyLocalDecls();
@@ -379,8 +378,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
       = TU_options & CXTranslationUnit_CacheCompletionResults;
     if (TU_options & CXTranslationUnit_DetailedPreprocessingRecord) {
       PPOpts.DetailedRecord = true;
-      PPOpts.DetailedRecordIncludesNestedMacroExpansions
-          = (TU_options & CXTranslationUnit_NestedMacroExpansions);
     }
   }
 

@@ -1,6 +1,8 @@
 // RUN: %clang_cc1 -fsyntax-only -std=c++11 -Wc++98-compat -verify %s
 // RUN: %clang_cc1 -fsyntax-only -std=c++11 %s
 
+namespace std { struct type_info; }
+
 template<typename ...T>  // expected-warning {{variadic templates are incompatible with C++98}}
 class Variadic1 {};
 
@@ -99,6 +101,7 @@ char16_t c16 = 0; // expected-warning {{'char16_t' type specifier is incompatibl
 char32_t c32 = 0; // expected-warning {{'char32_t' type specifier is incompatible with C++98}}
 constexpr int const_expr = 0; // expected-warning {{'constexpr' specifier is incompatible with C++98}}
 decltype(const_expr) decl_type = 0; // expected-warning {{'decltype' type specifier is incompatible with C++98}}
+__decltype(const_expr) decl_type2 = 0; // ok
 void no_except() noexcept; // expected-warning {{noexcept specifications are incompatible with C++98}}
 bool no_except_expr = noexcept(1 + 1); // expected-warning {{noexcept expressions are incompatible with C++98}}
 void *null = nullptr; // expected-warning {{'nullptr' is incompatible with C++98}}
@@ -266,4 +269,13 @@ Later: // expected-note {{possible target of indirect goto}}
   default: // expected-warning {{switch case would be in a protected scope in C++98}}
     return;
   }
+}
+
+namespace UnevaluatedMemberAccess {
+  struct S {
+    int n;
+    int f() { return sizeof(S::n); } // ok
+  };
+  int k = sizeof(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
+  const std::type_info &ti = typeid(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
 }

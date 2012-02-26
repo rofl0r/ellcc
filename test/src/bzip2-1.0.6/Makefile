@@ -15,7 +15,7 @@
 SHELL=/bin/sh
 
 # http://ellcc.org/bugzilla/show_bug.cgi?id=46 Remove ppc64
-all: ecc arm armv8 i386 ppc x86_64 \
+all: ecc arm armv8 i386 ppc ppc64 x86_64 \
      mips mipsel mips32r2 mips32r2sf mips32r2elsf microblaze
 
 arm i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64:

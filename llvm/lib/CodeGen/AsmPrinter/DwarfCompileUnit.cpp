@@ -32,8 +32,9 @@
 using namespace llvm;
 
 /// CompileUnit - Compile unit constructor.
-CompileUnit::CompileUnit(unsigned I, DIE *D, AsmPrinter *A, DwarfDebug *DW)
-  : ID(I), CUDie(D), Asm(A), DD(DW), IndexTyDie(0) {
+CompileUnit::CompileUnit(unsigned I, unsigned L, DIE *D, AsmPrinter *A,
+			 DwarfDebug *DW)
+  : ID(I), Language(L), CUDie(D), Asm(A), DD(DW), IndexTyDie(0) {
   DIEIntegerOne = new (DIEValueAllocator) DIEInteger(1);
 }
 
@@ -616,7 +617,7 @@ DIE *CompileUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
       // A runtime language of 0 actually means C/C++ and that any
       // non-negative value is some version of Objective-C/C++.
       IsImplementation = (CT.getRunTimeLang() == 0) ||
-        CT.isObjcClassComplete();;
+        CT.isObjcClassComplete();
     }
     unsigned Flags = IsImplementation ?
                      DwarfAccelTable::eTypeFlagClassIsImplementation : 0;
@@ -723,7 +724,7 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DIDerivedType DTy) {
     addString(&Buffer, dwarf::DW_AT_name, Name);
 
   // Add size if non-zero (derived types might be zero-sized.)
-  if (Size)
+  if (Size && Tag != dwarf::DW_TAG_pointer_type)
     addUInt(&Buffer, dwarf::DW_AT_byte_size, 0, Size);
 
   // Add source line info if available and TyDesc is not a forward declaration.
@@ -779,8 +780,12 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
         Buffer.addChild(Arg);
       }
     }
-    // Add prototype flag.
-    if (isPrototyped)
+    // Add prototype flag if we're dealing with a C language and the
+    // function has been prototyped.
+    if (isPrototyped &&
+	(Language == dwarf::DW_LANG_C89 ||
+	 Language == dwarf::DW_LANG_C99 ||
+	 Language == dwarf::DW_LANG_ObjC))
       addUInt(&Buffer, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
   }
     break;
@@ -1022,7 +1027,12 @@ DIE *CompileUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
 
   addSourceLine(SPDie, SP);
 
-  if (SP.isPrototyped()) 
+  // Add the prototype if we have a prototype and we have a C like
+  // language.
+  if (SP.isPrototyped() &&
+      (Language == dwarf::DW_LANG_C89 ||
+       Language == dwarf::DW_LANG_C99 ||
+       Language == dwarf::DW_LANG_ObjC))
     addUInt(SPDie, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
 
   // Add Return Type.

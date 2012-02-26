@@ -16,7 +16,7 @@ int has_lambdas();
 int no_lambdas();
 #endif
 
-// CHECK-0X: no_lambdas
+// CHECK-0X: has_lambdas
 // CHECK-NO-0X: no_lambdas
 
 
@@ -226,3 +226,12 @@ int no_constexpr();
 
 // CHECK-0X: has_constexpr
 // CHECK-NO-0X: no_constexpr
+
+#if __has_feature(cxx_generalized_initializers)
+int has_generalized_initializers();
+#else
+int no_generalized_initializers();
+#endif
+
+// CHECK-0X: has_generalized_initializers
+// CHECK-NO-0X: no_generalized_initializers

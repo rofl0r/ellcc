@@ -49,6 +49,11 @@ static bool IsShiftedMask(uint64_t I, uint64_t &Pos, uint64_t &Size) {
   return true;
 }
 
+static SDValue GetGlobalReg(SelectionDAG &DAG, EVT Ty) {
+  MipsFunctionInfo *FI = DAG.getMachineFunction().getInfo<MipsFunctionInfo>();
+  return DAG.getRegister(FI->getGlobalBaseReg(), Ty);
+}
+
 const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   switch (Opcode) {
   case MipsISD::JmpLink:           return "MipsISD::JmpLink";
@@ -720,7 +725,7 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
 // MachineFunction as a live in value.  It also creates a corresponding
 // virtual register for it.
 static unsigned
-AddLiveIn(MachineFunction &MF, unsigned PReg, TargetRegisterClass *RC)
+AddLiveIn(MachineFunction &MF, unsigned PReg, const TargetRegisterClass *RC)
 {
   assert(RC->contains(PReg) && "Not the correct regclass!");
   unsigned VReg = MF.getRegInfo().createVirtualRegister(RC);
@@ -1506,7 +1511,7 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
                      (HasGotOfst ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT_DISP) :
                      (HasGotOfst ? MipsII::MO_GOT : MipsII::MO_GOT16);
   SDValue GA = DAG.getTargetGlobalAddress(GV, dl, ValTy, 0, GotFlag);
-  GA = DAG.getNode(MipsISD::Wrapper, dl, ValTy, GA);
+  GA = DAG.getNode(MipsISD::Wrapper, dl, ValTy, GetGlobalReg(DAG, ValTy), GA);
   SDValue ResNode = DAG.getLoad(ValTy, dl, DAG.getEntryNode(), GA,
                                 MachinePointerInfo(), false, false, false, 0);
   // On functions and global targets not internal linked only
@@ -1539,7 +1544,8 @@ SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
   unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
   unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
   SDValue BAGOTOffset = DAG.getBlockAddress(BA, ValTy, true, GOTFlag);
-  BAGOTOffset = DAG.getNode(MipsISD::Wrapper, dl, ValTy, BAGOTOffset);
+  BAGOTOffset = DAG.getNode(MipsISD::Wrapper, dl, ValTy,
+                            GetGlobalReg(DAG, ValTy), BAGOTOffset);
   SDValue BALOOffset = DAG.getBlockAddress(BA, ValTy, true, OFSTFlag);
   SDValue Load = DAG.getLoad(ValTy, dl, DAG.getEntryNode(), BAGOTOffset,
                              MachinePointerInfo(), false, false, false, 0);
@@ -1564,7 +1570,8 @@ LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const
     bool LocalDynamic = GV->hasInternalLinkage();
     unsigned Flag = LocalDynamic ? MipsII::MO_TLSLDM :MipsII::MO_TLSGD;
     SDValue TGA = DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, Flag);
-    SDValue Argument = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, TGA);
+    SDValue Argument = DAG.getNode(MipsISD::Wrapper, dl, PtrVT,
+                                   GetGlobalReg(DAG, PtrVT), TGA);
     unsigned PtrSize = PtrVT.getSizeInBits();
     IntegerType *PtrTy = Type::getIntNTy(*DAG.getContext(), PtrSize);
 
@@ -1601,7 +1608,8 @@ LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const
     // Initial Exec TLS Model
     SDValue TGA = DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0,
                                              MipsII::MO_GOTTPREL);
-    TGA = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, TGA);
+    TGA = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, GetGlobalReg(DAG, PtrVT),
+                      TGA);
     Offset = DAG.getLoad(PtrVT, dl,
                          DAG.getEntryNode(), TGA, MachinePointerInfo(),
                          false, false, false, 0);
@@ -1638,7 +1646,8 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
     unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
     unsigned OfstFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
     JTI = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, GOTFlag);
-    JTI = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, JTI);
+    JTI = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, GetGlobalReg(DAG, PtrVT),
+                      JTI);
     HiPart = DAG.getLoad(PtrVT, dl, DAG.getEntryNode(), JTI,
                          MachinePointerInfo(), false, false, false, 0);
     JTILo = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, OfstFlag);
@@ -1681,7 +1690,7 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
     unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
     SDValue CP = DAG.getTargetConstantPool(C, ValTy, N->getAlignment(),
                                            N->getOffset(), GOTFlag);
-    CP = DAG.getNode(MipsISD::Wrapper, dl, ValTy, CP);
+    CP = DAG.getNode(MipsISD::Wrapper, dl, ValTy, GetGlobalReg(DAG, ValTy), CP);
     SDValue Load = DAG.getLoad(ValTy, dl, DAG.getEntryNode(), CP,
                                MachinePointerInfo::getConstantPool(), false,
                                false, false, 0);
@@ -2220,7 +2229,7 @@ MipsTargetLowering::LowerCall(SDValue InChain, SDValue Callee,
 
   // If this is the first call, create a stack frame object that points to
   // a location to which .cprestore saves $gp.
-  if (IsO32 && IsPIC && !MipsFI->getGPFI())
+  if (IsO32 && IsPIC && MipsFI->globalBaseRegFixed() && !MipsFI->getGPFI())
     MipsFI->setGPFI(MFI->CreateFixedObject(4, 0, true));
 
   // Get the frame index of the stack frame object that points to the location
@@ -2394,7 +2403,8 @@ MipsTargetLowering::LowerCall(SDValue InChain, SDValue Callee,
   if (IsPICCall) {
     if (GlobalOrExternal) {
       // Load callee address
-      Callee = DAG.getNode(MipsISD::Wrapper, dl, getPointerTy(), Callee);
+      Callee = DAG.getNode(MipsISD::Wrapper, dl, getPointerTy(),
+                           GetGlobalReg(DAG, getPointerTy()), Callee);
       SDValue LoadValue = DAG.getLoad(getPointerTy(), dl, DAG.getEntryNode(),
                                       Callee, MachinePointerInfo::getGOT(),
                                       false, false, false, 0);
@@ -2611,7 +2621,7 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
     if (IsRegLoc) {
       EVT RegVT = VA.getLocVT();
       unsigned ArgReg = VA.getLocReg();
-      TargetRegisterClass *RC = 0;
+      const TargetRegisterClass *RC;
 
       if (RegVT == MVT::i32)
         RC = Mips::CPURegsRegisterClass;
@@ -2694,7 +2704,7 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
     const unsigned *ArgRegs = IsO32 ? O32IntRegs : Mips64IntRegs;
     unsigned Idx = CCInfo.getFirstUnallocated(ArgRegs, NumOfRegs);
     int FirstRegSlotOffset = IsO32 ? 0 : -64 ; // offset of $a0's slot.
-    TargetRegisterClass *RC
+    const TargetRegisterClass *RC
       = IsO32 ? Mips::CPURegsRegisterClass : Mips::CPU64RegsRegisterClass;
     unsigned RegSize = RC->getSize();
     int RegSlotOffset = FirstRegSlotOffset + Idx * RegSize;

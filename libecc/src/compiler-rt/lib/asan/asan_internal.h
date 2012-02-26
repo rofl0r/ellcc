@@ -18,7 +18,7 @@
 # error "This operating system is not supported by AddressSanitizer"
 #endif
 
-#include <stdlib.h>  // for size_t, uintptr_t, etc.
+#include <stddef.h>  // for size_t, uintptr_t, etc.
 
 #if defined(_WIN32)
 // There's no <stdint.h> in Visual Studio 9, so we have to define [u]int*_t.
@@ -30,6 +30,7 @@ typedef __int8           int8_t;
 typedef __int16          int16_t;
 typedef __int32          int32_t;
 typedef __int64          int64_t;
+typedef unsigned long    DWORD;  // NOLINT
 
 extern "C" void* _ReturnAddress(void);
 # pragma intrinsic(_ReturnAddress)
@@ -58,6 +59,30 @@ extern "C" void* _ReturnAddress(void);
 #define __WORDSIZE 32
 #endif
 #endif
+
+// Limits for integral types. We have to redefine it in case we don't
+// have stdint.h (like in Visual Studio 9).
+#if __WORDSIZE == 64
+# define __INT64_C(c)  c ## L
+# define __UINT64_C(c) c ## UL
+#else
+# define __INT64_C(c)  c ## LL
+# define __UINT64_C(c) c ## ULL
+#endif  // __WORDSIZE == 64
+#undef INT32_MIN
+#define INT32_MIN              (-2147483647-1)
+#undef INT32_MAX
+#define INT32_MAX              (2147483647)
+#undef UINT32_MAX
+#define UINT32_MAX             (4294967295U)
+#undef INT64_MIN
+#define INT64_MIN              (-__INT64_C(9223372036854775807)-1)
+#undef INT64_MAX
+#define INT64_MAX              (__INT64_C(9223372036854775807))
+#undef UINT64_MAX
+#define UINT64_MAX             (__UINT64_C(18446744073709551615))
+
+#define ASAN_DEFAULT_FAILURE_EXITCODE 1
 
 #if defined(__linux__)
 # define ASAN_LINUX   1
@@ -130,6 +155,7 @@ void *AsanDoesNotSupportStaticLinkage();
 bool AsanShadowRangeIsAvailable();
 int AsanOpenReadonly(const char* filename);
 const char *AsanGetEnv(const char *name);
+void AsanDumpProcessMap();
 
 void *AsanMmapFixedNoReserve(uintptr_t fixed_addr, size_t size);
 void *AsanMmapFixedReserve(uintptr_t fixed_addr, size_t size);
@@ -212,6 +238,7 @@ enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 void AsanDie();
 void SleepForSeconds(int seconds);
 void Exit(int exitcode);
+int Atexit(void (*function)(void));
 
 #define CHECK(cond) do { if (!(cond)) { \
   CheckFailed(#cond, __FILE__, __LINE__); \
@@ -239,6 +266,8 @@ const size_t kPageSize = 1UL << kPageSizeBits;
 const size_t kMmapGranularity = kPageSize;
 # define GET_CALLER_PC() (uintptr_t)__builtin_return_address(0)
 # define GET_CURRENT_FRAME() (uintptr_t)__builtin_frame_address(0)
+# define THREAD_CALLING_CONV
+typedef void* thread_return_t;
 #else
 const size_t kMmapGranularity = 1UL << 16;
 # define GET_CALLER_PC() (uintptr_t)_ReturnAddress()
@@ -246,12 +275,16 @@ const size_t kMmapGranularity = 1UL << 16;
 // FIXME: This macro is still used when printing error reports though it's not
 // clear if the BP value is needed in the ASan reports on Windows.
 # define GET_CURRENT_FRAME() (uintptr_t)0xDEADBEEF
+# define THREAD_CALLING_CONV __stdcall
+typedef DWORD thread_return_t;
 
 # ifndef ASAN_USE_EXTERNAL_SYMBOLIZER
 #  define ASAN_USE_EXTERNAL_SYMBOLIZER __asan::WinSymbolize
 bool WinSymbolize(const void *addr, char *out_buffer, int buffer_size);
 # endif
 #endif
+
+typedef thread_return_t (THREAD_CALLING_CONV *thread_callback_t)(void* arg);
 
 #define GET_BP_PC_SP \
   uintptr_t bp = GET_CURRENT_FRAME();              \

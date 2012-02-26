@@ -87,3 +87,42 @@ namespace ImplicitCapture {
     []() { return h; }; // expected-error {{variable 'h' cannot be implicitly captured in a lambda with no capture-default specified}} expected-note {{lambda expression begins here}} 
   }
 }
+
+namespace PR12031 {
+  struct X {
+    template<typename T>
+    X(const T&);
+    ~X();
+  };
+
+  void f(int i, X x);
+  void g() {
+    const int v = 10;
+    f(v, [](){});
+  }
+}
+
+namespace NullPtr {
+  int &f(int *p);
+  char &f(...);
+  void g() {
+    int n = 0;
+    [=] {
+      char &k = f(n); // not a null pointer constant
+    } ();
+
+    const int m = 0;
+    [=] {
+      int &k = f(m); // a null pointer constant
+    } ();
+
+    [=] () -> bool {
+      int &k = f(m); // a null pointer constant
+      return &m == 0;
+    } ();
+
+    [m] {
+      int &k = f(m); // a null pointer constant
+    } ();
+  }
+}

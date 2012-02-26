@@ -31,6 +31,21 @@ using namespace llvm;
 Value *SCEVExpander::ReuseOrCreateCast(Value *V, Type *Ty,
                                        Instruction::CastOps Op,
                                        BasicBlock::iterator IP) {
+  // This function must be called with the builder having a valid insertion
+  // point. It doesn't need to be the actual IP where the uses of the returned
+  // cast will be added, but it must dominate such IP.
+  // We use this precondition to assert that we can produce a cast that will
+  // dominate all its uses. In particular, this is crucial for the case
+  // where the builder's insertion point *is* the point where we were asked
+  // to put the cast.
+  // Since we don't know the the builder's insertion point is actually
+  // where the uses will be added (only that it dominates it), we are
+  // not allowed to move it.
+  BasicBlock::iterator BIP = Builder.GetInsertPoint();
+
+  // FIXME: enable once our implementation of dominates is fixed.
+  //  assert(BIP == IP || SE.DT->dominates(IP, BIP));
+
   // Check to see if there is already a cast!
   for (Value::use_iterator UI = V->use_begin(), E = V->use_end();
        UI != E; ++UI) {
@@ -38,11 +53,10 @@ Value *SCEVExpander::ReuseOrCreateCast(Value *V, Type *Ty,
     if (U->getType() == Ty)
       if (CastInst *CI = dyn_cast<CastInst>(U))
         if (CI->getOpcode() == Op) {
-          // If the cast isn't where we want it, fix it. All new or reused
-          // instructions must strictly dominate the Builder's InsertPt to
-          // ensure that the expression's expansion dominates its uses.
-          if (BasicBlock::iterator(CI) != IP
-              || IP == Builder.GetInsertPoint()) {
+          // If the cast isn't where we want it, create a new cast at IP.
+          // Likewise, do not reuse a cast at BIP because it must dominate
+          // instructions that might be inserted before BIP.
+          if (BasicBlock::iterator(CI) != IP || BIP == IP) {
             // Create a new cast, and leave the old cast in place in case
             // it is being used as an insert point. Clear its operand
             // so that it doesn't hold anything live.
@@ -124,8 +138,7 @@ Value *SCEVExpander::InsertNoopCastOfTo(Value *V, Type *Ty) {
   BasicBlock::iterator IP = I; ++IP;
   if (InvokeInst *II = dyn_cast<InvokeInst>(I))
     IP = II->getNormalDest()->begin();
-  while (isa<PHINode>(IP) || isa<DbgInfoIntrinsic>(IP) ||
-         isa<LandingPadInst>(IP))
+  while (isa<PHINode>(IP) || isa<LandingPadInst>(IP))
     ++IP;
   return ReuseOrCreateCast(I, Ty, Op, IP);
 }
@@ -500,6 +513,10 @@ Value *SCEVExpander::expandAddToGEP(const SCEV *const *op_begin,
     // Cast the base to i8*.
     V = InsertNoopCastOfTo(V,
        Type::getInt8PtrTy(Ty->getContext(), PTy->getAddressSpace()));
+
+    assert(!isa<Instruction>(V) ||
+           SE.DT->properlyDominates(cast<Instruction>(V),
+                                    Builder.GetInsertPoint()));
 
     // Expand the operands for a plain byte offset.
     Value *Idx = expandCodeFor(SE.getAddExpr(Ops), Ty);

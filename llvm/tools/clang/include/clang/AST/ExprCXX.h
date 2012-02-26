@@ -736,6 +736,9 @@ public:
                               const CXXDestructorDecl *Destructor);
 
   const CXXDestructorDecl *getDestructor() const { return Destructor; }
+  void setDestructor(const CXXDestructorDecl *Dtor) {
+    Destructor = Dtor;
+  }
 };
 
 /// \brief Represents binding an expression to a temporary.
@@ -1166,7 +1169,9 @@ private:
              ArrayRef<Expr *> CaptureInits,
              ArrayRef<VarDecl *> ArrayIndexVars,
              ArrayRef<unsigned> ArrayIndexStarts,
-             SourceLocation ClosingBrace);
+             SourceLocation ClosingBrace,
+             unsigned ManglingNumber,
+             Decl *ContextDecl);
 
   /// \brief Construct an empty lambda expression.
   LambdaExpr(EmptyShell Empty, unsigned NumCaptures, bool HasArrayIndexVars)
@@ -1204,7 +1209,9 @@ public:
                             ArrayRef<Expr *> CaptureInits,
                             ArrayRef<VarDecl *> ArrayIndexVars,
                             ArrayRef<unsigned> ArrayIndexStarts,
-                            SourceLocation ClosingBrace);
+                            SourceLocation ClosingBrace,
+                            unsigned ManglingNumber,
+                            Decl *ContextDecl);
 
   /// \brief Construct a new lambda expression that will be deserialized from
   /// an external source.
@@ -1296,7 +1303,7 @@ public:
 
   /// \brief Whether this lambda had its result type explicitly specified.
   bool hasExplicitResultType() const { return ExplicitResultType; }
-  
+    
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == LambdaExprClass;
   }
@@ -1919,6 +1926,102 @@ public:
   friend class ASTStmtReader;
 };
 
+/// \brief A type trait used in the implementation of various C++11 and
+/// Library TR1 trait templates.
+///
+/// \code
+///   __is_trivially_constructible(vector<int>, int*, int*)
+/// \endcode
+class TypeTraitExpr : public Expr {
+  /// \brief The location of the type trait keyword.
+  SourceLocation Loc;
+  
+  /// \brief  The location of the closing parenthesis.
+  SourceLocation RParenLoc;
+  
+  // Note: The TypeSourceInfos for the arguments are allocated after the
+  // TypeTraitExpr.
+  
+  TypeTraitExpr(QualType T, SourceLocation Loc, TypeTrait Kind,
+                ArrayRef<TypeSourceInfo *> Args,
+                SourceLocation RParenLoc,
+                bool Value);
+
+  TypeTraitExpr(EmptyShell Empty) : Expr(TypeTraitExprClass, Empty) { }
+
+  /// \brief Retrieve the argument types.
+  TypeSourceInfo **getTypeSourceInfos() {
+    return reinterpret_cast<TypeSourceInfo **>(this+1);
+  }
+  
+  /// \brief Retrieve the argument types.
+  TypeSourceInfo * const *getTypeSourceInfos() const {
+    return reinterpret_cast<TypeSourceInfo * const*>(this+1);
+  }
+  
+public:
+  /// \brief Create a new type trait expression.
+  static TypeTraitExpr *Create(ASTContext &C, QualType T, SourceLocation Loc, 
+                               TypeTrait Kind,
+                               ArrayRef<TypeSourceInfo *> Args,
+                               SourceLocation RParenLoc,
+                               bool Value);
+
+  static TypeTraitExpr *CreateDeserialized(ASTContext &C, unsigned NumArgs);
+  
+  /// \brief Determine which type trait this expression uses.
+  TypeTrait getTrait() const {
+    return static_cast<TypeTrait>(TypeTraitExprBits.Kind);
+  }
+
+  bool getValue() const { 
+    assert(!isValueDependent()); 
+    return TypeTraitExprBits.Value; 
+  }
+  
+  /// \brief Determine the number of arguments to this type trait.
+  unsigned getNumArgs() const { return TypeTraitExprBits.NumArgs; }
+  
+  /// \brief Retrieve the Ith argument.
+  TypeSourceInfo *getArg(unsigned I) const {
+    assert(I < getNumArgs() && "Argument out-of-range");
+    return getArgs()[I];
+  }
+  
+  /// \brief Retrieve the argument types.
+  ArrayRef<TypeSourceInfo *> getArgs() const { 
+    return ArrayRef<TypeSourceInfo *>(getTypeSourceInfos(), getNumArgs());
+  }
+  
+  typedef TypeSourceInfo **arg_iterator;
+  arg_iterator arg_begin() { 
+    return getTypeSourceInfos(); 
+  }
+  arg_iterator arg_end() { 
+    return getTypeSourceInfos() + getNumArgs(); 
+  }
+
+  typedef TypeSourceInfo const * const *arg_const_iterator;
+  arg_const_iterator arg_begin() const { return getTypeSourceInfos(); }
+  arg_const_iterator arg_end() const { 
+    return getTypeSourceInfos() + getNumArgs(); 
+  }
+
+  SourceRange getSourceRange() const { return SourceRange(Loc, RParenLoc); }
+  
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == TypeTraitExprClass;
+  }
+  static bool classof(const TypeTraitExpr *) { return true; }
+  
+  // Iterators
+  child_range children() { return child_range(); }
+  
+  friend class ASTStmtReader;
+  friend class ASTStmtWriter;
+
+};
+  
 /// ArrayTypeTraitExpr - An Embarcadero array type trait, as used in the
 /// implementation of __array_rank and __array_extent.
 /// Example:

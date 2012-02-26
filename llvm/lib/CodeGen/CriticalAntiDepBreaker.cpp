@@ -253,6 +253,17 @@ void CriticalAntiDepBreaker::ScanInstruction(MachineInstr *MI,
     // address updates.
     for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
       MachineOperand &MO = MI->getOperand(i);
+
+      if (MO.isRegMask())
+        for (unsigned i = 0, e = TRI->getNumRegs(); i != e; ++i)
+          if (MO.clobbersPhysReg(i)) {
+            DefIndices[i] = Count;
+            KillIndices[i] = ~0u;
+            KeepRegs.erase(i);
+            Classes[i] = 0;
+            RegRefs.erase(i);
+          }
+
       if (!MO.isReg()) continue;
       unsigned Reg = MO.getReg();
       if (Reg == 0) continue;
@@ -355,6 +366,9 @@ CriticalAntiDepBreaker::isNewRegClobberedByRefs(RegRefIter RegRefBegin,
     for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
       const MachineOperand &CheckOper = MI->getOperand(i);
 
+      if (CheckOper.isRegMask() && CheckOper.clobbersPhysReg(NewReg))
+        return true;
+
       if (!CheckOper.isReg() || !CheckOper.isDef() ||
           CheckOper.getReg() != NewReg)
         continue;
@@ -427,6 +441,8 @@ BreakAntiDependencies(const std::vector<SUnit>& SUnits,
 
   // Keep a map of the MachineInstr*'s back to the SUnit representing them.
   // This is used for updating debug information.
+  //
+  // FIXME: Replace this with the existing map in ScheduleDAGInstrs::MISUnitMap
   DenseMap<MachineInstr*,const SUnit*> MISUnitMap;
 
   // Find the node at the bottom of the critical path.

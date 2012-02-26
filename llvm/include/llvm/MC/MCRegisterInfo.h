@@ -28,13 +28,14 @@ public:
   typedef const unsigned* iterator;
   typedef const unsigned* const_iterator;
 
-  unsigned ID;
+  const unsigned ID;
   const char *Name;
   const unsigned RegSize, Alignment; // Size & Alignment of register in bytes
   const int CopyCost;
   const bool Allocatable;
-  const iterator RegsBegin, RegsEnd;
+  const iterator RegsBegin;
   const unsigned char *const RegSet;
+  const unsigned RegsSize;
   const unsigned RegSetSize;
 
   /// getID() - Return the register class ID number.
@@ -48,11 +49,11 @@ public:
   /// begin/end - Return all of the registers in this class.
   ///
   iterator       begin() const { return RegsBegin; }
-  iterator         end() const { return RegsEnd; }
+  iterator         end() const { return RegsBegin + RegsSize; }
 
   /// getNumRegs - Return the number of registers in this class.
   ///
-  unsigned getNumRegs() const { return (unsigned)(RegsEnd-RegsBegin); }
+  unsigned getNumRegs() const { return RegsSize; }
 
   /// getRegister - Return the specified register in the class.
   ///
@@ -105,10 +106,10 @@ public:
 /// of AX.
 ///
 struct MCRegisterDesc {
-  const char     *Name;         // Printable name for the reg (for debugging)
-  const unsigned *Overlaps;     // Overlapping registers, described above
-  const unsigned *SubRegs;      // Sub-register set, described above
-  const unsigned *SuperRegs;    // Super-register set, described above
+  const char *Name;         // Printable name for the reg (for debugging)
+  unsigned   Overlaps;      // Overlapping registers, described above
+  unsigned   SubRegs;       // Sub-register set, described above
+  unsigned   SuperRegs;     // Super-register set, described above
 };
 
 /// MCRegisterInfo base class - We assume that the target defines a static
@@ -132,6 +133,9 @@ private:
   unsigned RAReg;                             // Return address register
   const MCRegisterClass *Classes;             // Pointer to the regclass array
   unsigned NumClasses;                        // Number of entries in the array
+  const unsigned *Overlaps;                   // Pointer to the overlaps array
+  const unsigned *SubRegs;                    // Pointer to the subregs array
+  const unsigned *SuperRegs;                  // Pointer to the superregs array
   DenseMap<unsigned, int> L2DwarfRegs;        // LLVM to Dwarf regs mapping
   DenseMap<unsigned, int> EHL2DwarfRegs;      // LLVM to Dwarf regs mapping EH
   DenseMap<unsigned, unsigned> Dwarf2LRegs;   // Dwarf to LLVM regs mapping
@@ -142,11 +146,16 @@ public:
   /// InitMCRegisterInfo - Initialize MCRegisterInfo, called by TableGen
   /// auto-generated routines. *DO NOT USE*.
   void InitMCRegisterInfo(const MCRegisterDesc *D, unsigned NR, unsigned RA,
-                          const MCRegisterClass *C, unsigned NC) {
+                          const MCRegisterClass *C, unsigned NC,
+                          const unsigned *O, const unsigned *Sub,
+                          const unsigned *Super) {
     Desc = D;
     NumRegs = NR;
     RAReg = RA;
     Classes = C;
+    Overlaps = O;
+    SubRegs = Sub;
+    SuperRegs = Super;
     NumClasses = NC;
   }
 
@@ -204,7 +213,7 @@ public:
   ///
   const unsigned *getAliasSet(unsigned RegNo) const {
     // The Overlaps set always begins with Reg itself.
-    return get(RegNo).Overlaps + 1;
+    return Overlaps + get(RegNo).Overlaps + 1;
   }
 
   /// getOverlaps - Return a list of registers that overlap Reg, including
@@ -213,7 +222,7 @@ public:
   /// These are exactly the registers in { x | regsOverlap(x, Reg) }.
   ///
   const unsigned *getOverlaps(unsigned RegNo) const {
-    return get(RegNo).Overlaps;
+    return Overlaps + get(RegNo).Overlaps;
   }
 
   /// getSubRegisters - Return the list of registers that are sub-registers of
@@ -222,7 +231,7 @@ public:
   /// relations. e.g. X86::RAX's sub-register list is EAX, AX, AL, AH.
   ///
   const unsigned *getSubRegisters(unsigned RegNo) const {
-    return get(RegNo).SubRegs;
+    return SubRegs + get(RegNo).SubRegs;
   }
 
   /// getSuperRegisters - Return the list of registers that are super-registers
@@ -231,7 +240,7 @@ public:
   /// relations. e.g. X86::AL's super-register list is AX, EAX, RAX.
   ///
   const unsigned *getSuperRegisters(unsigned RegNo) const {
-    return get(RegNo).SuperRegs;
+    return SuperRegs + get(RegNo).SuperRegs;
   }
 
   /// getName - Return the human-readable symbolic target-specific name for the

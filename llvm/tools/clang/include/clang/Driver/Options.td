@@ -292,6 +292,7 @@ def fconstant_string_class_EQ : Joined<"-fconstant-string-class=">, Group<f_Grou
 def fconstexpr_depth_EQ : Joined<"-fconstexpr-depth=">, Group<f_Group>;
 def fconstexpr_backtrace_limit_EQ : Joined<"-fconstexpr-backtrace-limit=">,
                                     Group<f_Group>;
+def fno_crash_diagnostics : Flag<"-fno-crash-diagnostics">, Group<f_clang_Group>, Flags<[NoArgumentUnused]>;
 def fcreate_profile : Flag<"-fcreate-profile">, Group<f_Group>;
 def fcxx_exceptions: Flag<"-fcxx-exceptions">, Group<f_Group>;
 def fcxx_modules : Flag <"-fcxx-modules">, Group<f_Group>, Flags<[NoForward]>;
@@ -756,6 +757,8 @@ def sub__umbrella : JoinedOrSeparate<"-sub_umbrella">;
 def s : Flag<"-s">;
 def target : Separate<"-target">, Flags<[DriverOption]>,
   HelpText<"Generate code for the given target">;
+def gcc_toolchain : Separate<"-gcc-toolchain">, Flags<[DriverOption]>,
+  HelpText<"Use the gcc toolchain at the given directory">;
 // We should deprecate the use of -ccc-host-triple, and then remove.
 def ccc_host_triple : Separate<"-ccc-host-triple">, Alias<target>;
 def time : Flag<"-time">,

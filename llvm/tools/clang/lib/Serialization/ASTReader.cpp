@@ -1111,6 +1111,10 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(int ID) {
       return Failure;
     }
 
+    // We will detect whether a file changed and return 'Failure' for it, but
+    // we will also try to fail gracefully by setting up the SLocEntry.
+    ASTReader::ASTReadResult Result = Success;
+
     bool OverriddenBuffer = Record[6];
     
     std::string OrigFilename(BlobStart, BlobStart + BlobLen);
@@ -1149,7 +1153,7 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(int ID) {
 #endif
         )) {
       Error(diag::err_fe_pch_file_modified, Filename);
-      return Failure;
+      Result = Failure;
     }
 
     SourceLocation IncludeLoc = ReadSourceLocation(*F, Record[1]);
@@ -1193,6 +1197,9 @@ ASTReader::ASTReadResult ASTReader::ReadSLocEntryRecord(int ID) {
                                            Filename);
       SourceMgr.overrideFileContents(File, Buffer);
     }
+
+    if (Result == Failure)
+      return Failure;
     break;
   }
 
@@ -1737,7 +1744,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
           = F.PreprocessorDetailCursor.GetCurrentBitNo();
           
         if (!PP.getPreprocessingRecord())
-          PP.createPreprocessingRecord(true);
+          PP.createPreprocessingRecord();
         if (!PP.getPreprocessingRecord()->getExternalSource())
           PP.getPreprocessingRecord()->SetExternalSource(*this);
         break;
@@ -2281,7 +2288,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
       
       unsigned StartingID;
       if (!PP.getPreprocessingRecord())
-        PP.createPreprocessingRecord(true);
+        PP.createPreprocessingRecord();
       if (!PP.getPreprocessingRecord()->getExternalSource())
         PP.getPreprocessingRecord()->SetExternalSource(*this);
       StartingID 

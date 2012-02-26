@@ -512,6 +512,10 @@ public:
   /// variable read.
   bool HasSideEffects(const ASTContext &Ctx) const;
 
+  /// \brief Determine whether this expression involves a call to any function
+  /// that is not trivial.
+  bool hasNonTrivialCall(ASTContext &Ctx);
+  
   /// EvaluateKnownConstInt - Call EvaluateAsRValue and return the folded
   /// integer. This must be called on an expression that constant folds to an
   /// integer.
@@ -665,8 +669,7 @@ public:
     return const_cast<Expr*>(this)->IgnoreParenNoopCasts(Ctx);
   }
 
-  static bool hasAnyTypeDependentArguments(Expr** Exprs, unsigned NumExprs);
-  static bool hasAnyValueDependentArguments(Expr** Exprs, unsigned NumExprs);
+  static bool hasAnyTypeDependentArguments(llvm::ArrayRef<Expr *> Exprs);
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() >= firstExprConstant &&
@@ -692,12 +695,15 @@ class OpaqueValueExpr : public Expr {
 
 public:
   OpaqueValueExpr(SourceLocation Loc, QualType T, ExprValueKind VK,
-                  ExprObjectKind OK = OK_Ordinary)
+                  ExprObjectKind OK = OK_Ordinary,
+                  Expr *SourceExpr = 0)
     : Expr(OpaqueValueExprClass, T, VK, OK,
-           T->isDependentType(), T->isDependentType(),
+           T->isDependentType(), 
+           T->isDependentType() || 
+           (SourceExpr && SourceExpr->isValueDependent()),
            T->isInstantiationDependentType(),
            false),
-      SourceExpr(0), Loc(Loc) {
+      SourceExpr(SourceExpr), Loc(Loc) {
   }
 
   /// Given an expression which invokes a copy constructor --- i.e.  a
@@ -731,7 +737,6 @@ public:
   /// expression which binds the opaque value expression in the first
   /// place.
   Expr *getSourceExpr() const { return SourceExpr; }
-  void setSourceExpr(Expr *e) { SourceExpr = e; }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == OpaqueValueExprClass;
@@ -3059,8 +3064,7 @@ public:
     SubExprs[COND] = cond;
     SubExprs[LHS] = lhs;
     SubExprs[RHS] = rhs;
-
-    OpaqueValue->setSourceExpr(common);
+    assert(OpaqueValue->getSourceExpr() == common && "Wrong opaque value");
   }
 
   /// \brief Build an empty conditional operator.
@@ -4215,9 +4219,8 @@ protected:
 public:
   BlockExpr(BlockDecl *BD, QualType ty)
     : Expr(BlockExprClass, ty, VK_RValue, OK_Ordinary,
-           ty->isDependentType(), false,
-           // FIXME: Check for instantiate-dependence in the statement?
-           ty->isInstantiationDependentType(),
+           ty->isDependentType(), ty->isDependentType(),
+           ty->isInstantiationDependentType() || BD->isDependentContext(),
            false),
       TheBlock(BD) {}
 

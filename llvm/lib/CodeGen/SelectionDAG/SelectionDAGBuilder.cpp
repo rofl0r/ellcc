@@ -352,10 +352,13 @@ static void getCopyToParts(SelectionDAG &DAG, DebugLoc DL,
       assert(NumParts == 1 && "Do not know what to promote to!");
       Val = DAG.getNode(ISD::FP_EXTEND, DL, PartVT, Val);
     } else {
-      assert(PartVT.isInteger() && ValueVT.isInteger() &&
+      assert((PartVT.isInteger() || PartVT == MVT::x86mmx) &&
+             ValueVT.isInteger() &&
              "Unknown mismatch!");
       ValueVT = EVT::getIntegerVT(*DAG.getContext(), NumParts * PartBits);
       Val = DAG.getNode(ExtendKind, DL, ValueVT, Val);
+      if (PartVT == MVT::x86mmx)
+        Val = DAG.getNode(ISD::BITCAST, DL, PartVT, Val);
     }
   } else if (PartBits == ValueVT.getSizeInBits()) {
     // Different types of the same size.
@@ -363,10 +366,13 @@ static void getCopyToParts(SelectionDAG &DAG, DebugLoc DL,
     Val = DAG.getNode(ISD::BITCAST, DL, PartVT, Val);
   } else if (NumParts * PartBits < ValueVT.getSizeInBits()) {
     // If the parts cover less bits than value has, truncate the value.
-    assert(PartVT.isInteger() && ValueVT.isInteger() &&
+    assert((PartVT.isInteger() || PartVT == MVT::x86mmx) &&
+           ValueVT.isInteger() &&
            "Unknown mismatch!");
     ValueVT = EVT::getIntegerVT(*DAG.getContext(), NumParts * PartBits);
     Val = DAG.getNode(ISD::TRUNCATE, DL, ValueVT, Val);
+    if (PartVT == MVT::x86mmx)
+      Val = DAG.getNode(ISD::BITCAST, DL, PartVT, Val);
   }
 
   // The value may have changed - recompute ValueVT.
@@ -965,7 +971,7 @@ void SelectionDAGBuilder::resolveDanglingDebugInfo(const Value *V,
         DAG.AddDbgValue(SDV, Val.getNode(), false);
       }
     } else
-      DEBUG(dbgs() << "Dropping debug info for " << DI);
+      DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
     DanglingDebugInfoMap[V] = DanglingDebugInfo();
   }
 }
@@ -4565,7 +4571,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     // Check if address has undef value.
     if (isa<UndefValue>(Address) ||
         (Address->use_empty() && !isa<Argument>(Address))) {
-      DEBUG(dbgs() << "Dropping debug info for " << DI);
+      DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
       return 0;
     }
 
@@ -4575,11 +4581,13 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
       N = UnusedArgNodeMap[Address];
     SDDbgValue *SDV;
     if (N.getNode()) {
-      // Parameters are handled specially.
-      bool isParameter =
-        DIVariable(Variable).getTag() == dwarf::DW_TAG_arg_variable;
       if (const BitCastInst *BCI = dyn_cast<BitCastInst>(Address))
         Address = BCI->getOperand(0);
+      // Parameters are handled specially.
+      bool isParameter =
+        (DIVariable(Variable).getTag() == dwarf::DW_TAG_arg_variable ||
+         isa<Argument>(Address));
+
       const AllocaInst *AI = dyn_cast<AllocaInst>(Address);
 
       if (isParameter && !AI) {
@@ -4599,7 +4607,9 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                               0, dl, SDNodeOrder);
       else {
         // Can't do anything with other non-AI cases yet.
-        DEBUG(dbgs() << "Dropping debug info for " << DI);
+        DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
+        DEBUG(dbgs() << "non-AllocaInst issue for Address: \n\t");
+        DEBUG(Address->dump());
         return 0;
       }
       DAG.AddDbgValue(SDV, N.getNode(), isParameter);
@@ -4621,7 +4631,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
             }
           }
         }
-        DEBUG(dbgs() << "Dropping debug info for " << DI);
+        DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
       }
     }
     return 0;
@@ -4667,7 +4677,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
       } else {
         // We may expand this to cover more cases.  One case where we have no
         // data available is an unreferenced parameter.
-        DEBUG(dbgs() << "Dropping debug info for " << DI);
+        DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
       }
     }
 
@@ -4818,6 +4828,21 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     Res = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, DestVT,
                        DAG.getConstant(NewIntrinsic, MVT::i32),
                        getValue(I.getArgOperand(0)), ShAmt);
+    setValue(&I, Res);
+    return 0;
+  }
+  case Intrinsic::x86_avx_vinsertf128_pd_256:
+  case Intrinsic::x86_avx_vinsertf128_ps_256:
+  case Intrinsic::x86_avx_vinsertf128_si_256: {
+    DebugLoc dl = getCurDebugLoc();
+    EVT DestVT = TLI.getValueType(I.getType());
+    EVT ElVT = TLI.getValueType(I.getArgOperand(1)->getType());
+    uint64_t Idx = (cast<ConstantInt>(I.getArgOperand(2))->getZExtValue() & 1) *
+                   ElVT.getVectorNumElements();
+    Res = DAG.getNode(ISD::INSERT_SUBVECTOR, dl, DestVT,
+                      getValue(I.getArgOperand(0)),
+                      getValue(I.getArgOperand(1)),
+                      DAG.getConstant(Idx, MVT::i32));
     setValue(&I, Res);
     return 0;
   }
@@ -5454,23 +5479,8 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
     return;
   }
 
-  // See if any floating point values are being passed to this function. This is
-  // used to emit an undefined reference to fltused on Windows.
-  FunctionType *FT =
-    cast<FunctionType>(I.getCalledValue()->getType()->getContainedType(0));
   MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
-  if (FT->isVarArg() &&
-      !MMI.callsExternalVAFunctionWithFloatingPointArguments()) {
-    for (unsigned i = 0, e = I.getNumArgOperands(); i != e; ++i) {
-      Type* T = I.getArgOperand(i)->getType();
-      for (po_iterator<Type*> i = po_begin(T), e = po_end(T);
-           i != e; ++i) {
-        if (!i->isFloatingPointTy()) continue;
-        MMI.setCallsExternalVAFunctionWithFloatingPointArguments(true);
-        break;
-      }
-    }
-  }
+  ComputeUsesVAFloatArgument(I, &MMI);
 
   const char *RenameFn = 0;
   if (Function *F = I.getCalledFunction()) {
@@ -5667,22 +5677,6 @@ public:
     : TargetLowering::AsmOperandInfo(info), CallOperand(0,0) {
   }
 
-  /// MarkAllocatedRegs - Once AssignedRegs is set, mark the assigned registers
-  /// busy in OutputRegs/InputRegs.
-  void MarkAllocatedRegs(bool isOutReg, bool isInReg,
-                         std::set<unsigned> &OutputRegs,
-                         std::set<unsigned> &InputRegs,
-                         const TargetRegisterInfo &TRI) const {
-    if (isOutReg) {
-      for (unsigned i = 0, e = AssignedRegs.Regs.size(); i != e; ++i)
-        MarkRegAndAliases(AssignedRegs.Regs[i], OutputRegs, TRI);
-    }
-    if (isInReg) {
-      for (unsigned i = 0, e = AssignedRegs.Regs.size(); i != e; ++i)
-        MarkRegAndAliases(AssignedRegs.Regs[i], InputRegs, TRI);
-    }
-  }
-
   /// getCallOperandValEVT - Return the EVT of the Value* that this operand
   /// corresponds to.  If there is no Value* for this operand, it returns
   /// MVT::Other.
@@ -5730,18 +5724,6 @@ public:
 
     return TLI.getValueType(OpTy, true);
   }
-
-private:
-  /// MarkRegAndAliases - Mark the specified register and all aliases in the
-  /// specified set.
-  static void MarkRegAndAliases(unsigned Reg, std::set<unsigned> &Regs,
-                                const TargetRegisterInfo &TRI) {
-    assert(TargetRegisterInfo::isPhysicalRegister(Reg) && "Isn't a physreg");
-    Regs.insert(Reg);
-    if (const unsigned *Aliases = TRI.getAliasSet(Reg))
-      for (; *Aliases; ++Aliases)
-        Regs.insert(*Aliases);
-  }
 };
 
 typedef SmallVector<SDISelAsmOperandInfo,16> SDISelAsmOperandInfoVector;
@@ -5755,38 +5737,12 @@ typedef SmallVector<SDISelAsmOperandInfo,16> SDISelAsmOperandInfoVector;
 /// allocation.  This produces generally horrible, but correct, code.
 ///
 ///   OpInfo describes the operand.
-///   Input and OutputRegs are the set of already allocated physical registers.
 ///
 static void GetRegistersForValue(SelectionDAG &DAG,
                                  const TargetLowering &TLI,
                                  DebugLoc DL,
-                                 SDISelAsmOperandInfo &OpInfo,
-                                 std::set<unsigned> &OutputRegs,
-                                 std::set<unsigned> &InputRegs) {
+                                 SDISelAsmOperandInfo &OpInfo) {
   LLVMContext &Context = *DAG.getContext();
-
-  // Compute whether this value requires an input register, an output register,
-  // or both.
-  bool isOutReg = false;
-  bool isInReg = false;
-  switch (OpInfo.Type) {
-  case InlineAsm::isOutput:
-    isOutReg = true;
-
-    // If there is an input constraint that matches this, we need to reserve
-    // the input register so no other inputs allocate to it.
-    isInReg = OpInfo.hasMatchingInput();
-    break;
-  case InlineAsm::isInput:
-    isInReg = true;
-    isOutReg = false;
-    break;
-  case InlineAsm::isClobber:
-    isOutReg = true;
-    isInReg = true;
-    break;
-  }
-
 
   MachineFunction &MF = DAG.getMachineFunction();
   SmallVector<unsigned, 4> Regs;
@@ -5861,8 +5817,6 @@ static void GetRegistersForValue(SelectionDAG &DAG,
     }
 
     OpInfo.AssignedRegs = RegsForValue(Regs, RegVT, ValueVT);
-    const TargetRegisterInfo *TRI = DAG.getTarget().getRegisterInfo();
-    OpInfo.MarkAllocatedRegs(isOutReg, isInReg, OutputRegs, InputRegs, *TRI);
     return;
   }
 
@@ -5892,8 +5846,6 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
 
   /// ConstraintOperands - Information about all of the constraints.
   SDISelAsmOperandInfoVector ConstraintOperands;
-
-  std::set<unsigned> OutputRegs, InputRegs;
 
   TargetLowering::AsmOperandInfoVector
     TargetConstraints = TLI.ParseConstraints(CS);
@@ -6056,8 +6008,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     // If this constraint is for a specific register, allocate it before
     // anything else.
     if (OpInfo.ConstraintType == TargetLowering::C_Register)
-      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo, OutputRegs,
-                           InputRegs);
+      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo);
   }
 
   // Second pass - Loop over all of the operands, assigning virtual or physregs
@@ -6068,8 +6019,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     // C_Register operands have already been allocated, Other/Memory don't need
     // to be.
     if (OpInfo.ConstraintType == TargetLowering::C_RegisterClass)
-      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo, OutputRegs,
-                           InputRegs);
+      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo);
   }
 
   // AsmNodeOperands - The operands for the ISD::INLINEASM node.

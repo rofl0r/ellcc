@@ -220,7 +220,6 @@ ASTUnit::ASTUnit(bool _MainFileIsAST)
     PreambleRebuildCounter(0), SavedMainFileBuffer(0), PreambleBuffer(0),
     NumWarningsInPreamble(0),
     ShouldCacheCodeCompletionResults(false),
-    NestedMacroExpansions(true),
     CompletionCacheTopLevelHashValue(0),
     PreambleTopLevelHashValue(0),
     CurrentTopLevelHashValue(0),
@@ -493,7 +492,7 @@ class ASTInfoCollector : public ASTReaderListener {
   ASTContext &Context;
   LangOptions &LangOpt;
   HeaderSearch &HSI;
-  llvm::IntrusiveRefCntPtr<TargetInfo> &Target;
+  IntrusiveRefCntPtr<TargetInfo> &Target;
   std::string &Predefines;
   unsigned &Counter;
 
@@ -503,7 +502,7 @@ class ASTInfoCollector : public ASTReaderListener {
 public:
   ASTInfoCollector(Preprocessor &PP, ASTContext &Context, LangOptions &LangOpt, 
                    HeaderSearch &HSI,
-                   llvm::IntrusiveRefCntPtr<TargetInfo> &Target,
+                   IntrusiveRefCntPtr<TargetInfo> &Target,
                    std::string &Predefines,
                    unsigned &Counter)
     : PP(PP), Context(Context), LangOpt(LangOpt), HSI(HSI), Target(Target),
@@ -630,7 +629,7 @@ llvm::MemoryBuffer *ASTUnit::getBufferForFile(StringRef Filename,
 }
 
 /// \brief Configure the diagnostics object for use with ASTUnit.
-void ASTUnit::ConfigureDiags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
+void ASTUnit::ConfigureDiags(IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
                              const char **ArgBegin, const char **ArgEnd,
                              ASTUnit &AST, bool CaptureDiagnostics) {
   if (!Diags.getPtr()) {
@@ -648,7 +647,7 @@ void ASTUnit::ConfigureDiags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
 }
 
 ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                   const FileSystemOptions &FileSystemOpts,
                                   bool OnlyLocalDecls,
                                   RemappedFile *RemappedFiles,
@@ -1031,7 +1030,7 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   llvm::CrashRecoveryContextCleanupRegistrar<CompilerInstance>
     CICleanup(Clang.get());
 
-  llvm::IntrusiveRefCntPtr<CompilerInvocation>
+  IntrusiveRefCntPtr<CompilerInvocation>
     CCInvocation(new CompilerInvocation(*Invocation));
 
   Clang->setInvocation(CCInvocation.getPtr());
@@ -1093,8 +1092,6 @@ bool ASTUnit::Parse(llvm::MemoryBuffer *OverrideMainBuffer) {
   // If the main file has been overridden due to the use of a preamble,
   // make that override happen and introduce the preamble.
   PreprocessorOptions &PreprocessorOpts = Clang->getPreprocessorOpts();
-  PreprocessorOpts.DetailedRecordIncludesNestedMacroExpansions
-    = NestedMacroExpansions;
   if (OverrideMainBuffer) {
     PreprocessorOpts.addRemappedFile(OriginalSourceFile, OverrideMainBuffer);
     PreprocessorOpts.PrecompiledPreambleBytes.first = Preamble.size();
@@ -1308,7 +1305,7 @@ llvm::MemoryBuffer *ASTUnit::getMainBufferWithPrecompiledPreamble(
                                                            bool AllowRebuild,
                                                            unsigned MaxLines) {
   
-  llvm::IntrusiveRefCntPtr<CompilerInvocation>
+  IntrusiveRefCntPtr<CompilerInvocation>
     PreambleInvocation(new CompilerInvocation(PreambleInvocationIn));
   FrontendOptions &FrontendOpts = PreambleInvocation->getFrontendOpts();
   PreprocessorOptions &PreprocessorOpts
@@ -1646,7 +1643,7 @@ StringRef ASTUnit::getMainFileName() const {
 }
 
 ASTUnit *ASTUnit::create(CompilerInvocation *CI,
-                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                         IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                          bool CaptureDiagnostics) {
   OwningPtr<ASTUnit> AST;
   AST.reset(new ASTUnit(false));
@@ -1661,7 +1658,7 @@ ASTUnit *ASTUnit::create(CompilerInvocation *CI,
 }
 
 ASTUnit *ASTUnit::LoadFromCompilerInvocationAction(CompilerInvocation *CI,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              ASTFrontendAction *Action,
                                              ASTUnit *Unit,
                                              bool Persistent,
@@ -1827,13 +1824,12 @@ bool ASTUnit::LoadFromCompilerInvocation(bool PrecompilePreamble) {
 }
 
 ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              bool OnlyLocalDecls,
                                              bool CaptureDiagnostics,
                                              bool PrecompilePreamble,
                                              TranslationUnitKind TUKind,
-                                             bool CacheCodeCompletionResults,
-                                             bool NestedMacroExpansions) {  
+                                             bool CacheCodeCompletionResults) {  
   // Create the AST unit.
   OwningPtr<ASTUnit> AST;
   AST.reset(new ASTUnit(false));
@@ -1844,7 +1840,6 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
   AST->TUKind = TUKind;
   AST->ShouldCacheCodeCompletionResults = CacheCodeCompletionResults;
   AST->Invocation = CI;
-  AST->NestedMacroExpansions = NestedMacroExpansions;
   
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<ASTUnit>
@@ -1858,7 +1853,7 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
 
 ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
                                       const char **ArgEnd,
-                                    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                                    IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                       StringRef ResourceFilesPath,
                                       bool OnlyLocalDecls,
                                       bool CaptureDiagnostics,
@@ -1867,8 +1862,7 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
                                       bool RemappedFilesKeepOriginalName,
                                       bool PrecompilePreamble,
                                       TranslationUnitKind TUKind,
-                                      bool CacheCodeCompletionResults,
-                                      bool NestedMacroExpansions) {
+                                      bool CacheCodeCompletionResults) {
   if (!Diags.getPtr()) {
     // No diagnostics engine was provided, so create our own diagnostics object
     // with the default options.
@@ -1879,7 +1873,7 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
 
   SmallVector<StoredDiagnostic, 4> StoredDiagnostics;
   
-  llvm::IntrusiveRefCntPtr<CompilerInvocation> CI;
+  IntrusiveRefCntPtr<CompilerInvocation> CI;
 
   {
 
@@ -1926,7 +1920,6 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   AST->StoredDiagnostics.swap(StoredDiagnostics);
   AST->Invocation = CI;
   CI = 0; // Zero out now to ease cleanup during crash recovery.
-  AST->NestedMacroExpansions = NestedMacroExpansions;
   
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<ASTUnit>
@@ -2252,7 +2245,7 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
   CompletionTimer.setOutput("Code completion @ " + File + ":" +
                             Twine(Line) + ":" + Twine(Column));
 
-  llvm::IntrusiveRefCntPtr<CompilerInvocation>
+  IntrusiveRefCntPtr<CompilerInvocation>
     CCInvocation(new CompilerInvocation(*Invocation));
 
   FrontendOptions &FrontendOpts = CCInvocation->getFrontendOpts();

@@ -1898,18 +1898,13 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
   }
 }
 
-// All calls clobber the non-callee saved registers. SP is marked as
-// a use to prevent stack-pointer assignments that appear immediately
-// before calls from potentially appearing dead.
+// SP is marked as a use to prevent stack-pointer assignments that appear
+// immediately before calls from potentially appearing dead.
 let isCall = 1,
-  // On non-IOS platforms R9 is callee-saved.
   // FIXME:  Do we really need a non-predicated version? If so, it should
   // at least be a pseudo instruction expanding to the predicated version
   // at MC lowering time.
-  Defs = [R0,  R1,  R2,  R3,  R12, LR,
-          Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15,
-          CPSR, FPSCR],
-  Uses = [SP] in {
+  Defs = [LR], Uses = [SP] in {
   def BL  : ABXI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                 IIC_Br, "bl\t$func",
                 [(ARMcall tglobaladdr:$func)]>,
@@ -1964,10 +1959,7 @@ let isCall = 1,
   // On IOS R9 is call-clobbered.
   // R7 is marked as a use to prevent frame-pointer assignments from being
   // moved above / below calls.
-  Defs = [R0,  R1,  R2,  R3,  R9,  R12, LR,
-          Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15,
-          CPSR, FPSCR],
-  Uses = [R7, SP] in {
+  Defs = [LR], Uses = [R7, SP] in {
   def BLr9  : ARMPseudoExpand<(outs), (ins bl_target:$func, variable_ops),
                 4, IIC_Br,
                 [(ARMcall tglobaladdr:$func)], (BL bl_target:$func)>,
@@ -2071,9 +2063,7 @@ def BXJ : ABI<0b0001, (outs), (ins GPR:$func), NoItinerary, "bxj", "\t$func",
 
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // IOS versions.
-  let Defs = [R0, R1, R2, R3, R9, R12,
-              Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15, PC],
-      Uses = [SP] in {
+  let Uses = [SP] in {
     def TCRETURNdi : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsIOS]>;
 
@@ -2093,9 +2083,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   }
 
   // Non-IOS versions (the difference is R9).
-  let Defs = [R0, R1, R2, R3, R12,
-              Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15, PC],
-      Uses = [SP] in {
+  let Uses = [SP] in {
     def TCRETURNdiND : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsNotIOS]>;
 
@@ -4084,6 +4072,73 @@ def MVNCCi : ARMPseudoInst<(outs GPR:$Rd),
                            4, IIC_iCMOVi,
  [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_imm_not:$imm, imm:$cc, CCR:$ccr))*/]>,
                 RegConstraint<"$false = $Rd">;
+
+let isCodeGenOnly = 1 in {
+// Conditional instructions
+multiclass AsI1_bincc_irs<bits<4> opcod, string opc,
+                   InstrItinClass iii, InstrItinClass iir, InstrItinClass iis> {
+  def ri : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm), DPFrm,
+               iii, opc, "\t$Rd, $Rn, $imm", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> imm;
+    let Inst{25} = 1;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-0} = imm;
+  }
+  def rr : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm,
+               iir, opc, "\t$Rd, $Rn, $Rm", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<4> Rm;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-4} = 0b00000000;
+    let Inst{3-0} = Rm;
+  }
+
+  def rsi : AsI1<opcod, (outs GPR:$Rd),
+               (ins GPR:$Rn, so_reg_imm:$shift), DPSoRegImmFrm,
+               iis, opc, "\t$Rd, $Rn, $shift", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> shift;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-5} = shift{11-5};
+    let Inst{4} = 0;
+    let Inst{3-0} = shift{3-0};
+  }
+
+  def rsr : AsI1<opcod, (outs GPR:$Rd),
+               (ins GPR:$Rn, so_reg_reg:$shift), DPSoRegRegFrm,
+               iis, opc, "\t$Rd, $Rn, $shift", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> shift;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-8} = shift{11-8};
+    let Inst{7} = 0;
+    let Inst{6-5} = shift{6-5};
+    let Inst{4} = 1;
+    let Inst{3-0} = shift{3-0};
+  }
+} // AsI1_bincc_irs
+
+defm ANDCC : AsI1_bincc_irs<0b0000, "and", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm ORRCC : AsI1_bincc_irs<0b1100, "orr", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm EORCC : AsI1_bincc_irs<0b0001, "eor", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+
+} // isCodeGenOnly
 } // neverHasSideEffects
 
 //===----------------------------------------------------------------------===//

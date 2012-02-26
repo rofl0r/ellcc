@@ -3860,6 +3860,10 @@ void ASTWriter::associateDeclWithFile(const Decl *D, DeclID ID) {
   // We only keep track of the file-level declarations of each file.
   if (!D->getLexicalDeclContext()->isFileContext())
     return;
+  // FIXME: ParmVarDecls that are part of a function type of a parameter of
+  // a function/objc method, should not have TU as lexical context.
+  if (isa<ParmVarDecl>(D))
+    return;
 
   SourceManager &SM = Context->getSourceManager();
   SourceLocation FileLoc = SM.getFileLoc(Loc);
@@ -4292,13 +4296,21 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   Record.push_back(Data.HasProtectedFields);
   Record.push_back(Data.HasPublicFields);
   Record.push_back(Data.HasMutableFields);
+  Record.push_back(Data.HasOnlyCMembers);
   Record.push_back(Data.HasTrivialDefaultConstructor);
   Record.push_back(Data.HasConstexprNonCopyMoveConstructor);
+  Record.push_back(Data.DefaultedDefaultConstructorIsConstexpr);
+  Record.push_back(Data.DefaultedCopyConstructorIsConstexpr);
+  Record.push_back(Data.DefaultedMoveConstructorIsConstexpr);
+  Record.push_back(Data.HasConstexprDefaultConstructor);
+  Record.push_back(Data.HasConstexprCopyConstructor);
+  Record.push_back(Data.HasConstexprMoveConstructor);
   Record.push_back(Data.HasTrivialCopyConstructor);
   Record.push_back(Data.HasTrivialMoveConstructor);
   Record.push_back(Data.HasTrivialCopyAssignment);
   Record.push_back(Data.HasTrivialMoveAssignment);
   Record.push_back(Data.HasTrivialDestructor);
+  Record.push_back(Data.HasIrrelevantDestructor);
   Record.push_back(Data.HasNonLiteralTypeFieldsOrBases);
   Record.push_back(Data.ComputedVisibleConversions);
   Record.push_back(Data.UserProvidedDefaultConstructor);
@@ -4310,6 +4322,7 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   Record.push_back(Data.DeclaredDestructor);
   Record.push_back(Data.FailedImplicitMoveConstructor);
   Record.push_back(Data.FailedImplicitMoveAssignment);
+  // IsLambda bit is already saved.
 
   Record.push_back(Data.NumBases);
   if (Data.NumBases > 0)
@@ -4330,8 +4343,11 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   // Add lambda-specific data.
   if (Data.IsLambda) {
     CXXRecordDecl::LambdaDefinitionData &Lambda = D->getLambdaData();
+    Record.push_back(Lambda.Dependent);
     Record.push_back(Lambda.NumCaptures);
     Record.push_back(Lambda.NumExplicitCaptures);
+    Record.push_back(Lambda.ManglingNumber);
+    AddDeclRef(Lambda.ContextDecl, Record);
     for (unsigned I = 0, N = Lambda.NumCaptures; I != N; ++I) {
       LambdaExpr::Capture &Capture = Lambda.Captures[I];
       AddSourceLocation(Capture.getLocation(), Record);

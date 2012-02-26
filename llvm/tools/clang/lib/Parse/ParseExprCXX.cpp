@@ -870,8 +870,10 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
 
   // FIXME: Rename BlockScope -> ClosureScope if we decide to continue using
   // it.
-  ParseScope BodyScope(this, Scope::BlockScope | Scope::FnScope |
-                             Scope::DeclScope);
+  unsigned ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
+  if (getCurScope()->getFlags() & Scope::ThisScope)
+    ScopeFlags |= Scope::ThisScope;
+  ParseScope BodyScope(this, ScopeFlags);
 
   Actions.ActOnStartOfLambdaDefinition(Intro, D, getCurScope());
 
@@ -886,8 +888,7 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
   BodyScope.Exit();
 
   if (!Stmt.isInvalid())
-    return Actions.ActOnLambdaExpr(LambdaBeginLoc, Stmt.take(),
-                                   getCurScope());
+    return Actions.ActOnLambdaExpr(LambdaBeginLoc, Stmt.take(), getCurScope());
  
   Actions.ActOnLambdaError(LambdaBeginLoc, getCurScope());
   return ExprError();
@@ -1270,6 +1271,8 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
 ///       condition:
 ///         expression
 ///         type-specifier-seq declarator '=' assignment-expression
+/// [C++11] type-specifier-seq declarator '=' initializer-clause
+/// [C++11] type-specifier-seq declarator braced-init-list
 /// [GNU]   type-specifier-seq declarator simple-asm-expr[opt] attributes[opt]
 ///             '=' assignment-expression
 ///
@@ -1341,17 +1344,34 @@ bool Parser::ParseCXXCondition(ExprResult &ExprOut,
 
   // '=' assignment-expression
   // If a '==' or '+=' is found, suggest a fixit to '='.
-  if (isTokenEqualOrEqualTypo()) {
+  bool CopyInitialization = isTokenEqualOrEqualTypo();
+  if (CopyInitialization)
     ConsumeToken();
-    ExprResult AssignExpr(ParseAssignmentExpression());
-    if (!AssignExpr.isInvalid()) 
-      Actions.AddInitializerToDecl(DeclOut, AssignExpr.take(), false,
-                                   DS.getTypeSpecType() == DeclSpec::TST_auto);
+
+  ExprResult InitExpr = ExprError();
+  if (getLang().CPlusPlus0x && Tok.is(tok::l_brace)) {
+    Diag(Tok.getLocation(),
+         diag::warn_cxx98_compat_generalized_initializer_lists);
+    InitExpr = ParseBraceInitializer();
+  } else if (CopyInitialization) {
+    InitExpr = ParseAssignmentExpression();
+  } else if (Tok.is(tok::l_paren)) {
+    // This was probably an attempt to initialize the variable.
+    SourceLocation LParen = ConsumeParen(), RParen = LParen;
+    if (SkipUntil(tok::r_paren, true, /*DontConsume=*/true))
+      RParen = ConsumeParen();
+    Diag(DeclOut ? DeclOut->getLocation() : LParen,
+         diag::err_expected_init_in_condition_lparen)
+      << SourceRange(LParen, RParen);
   } else {
-    // FIXME: C++0x allows a braced-init-list
-    Diag(Tok, diag::err_expected_equal_after_declarator);
+    Diag(DeclOut ? DeclOut->getLocation() : Tok.getLocation(),
+         diag::err_expected_init_in_condition);
   }
-  
+
+  if (!InitExpr.isInvalid())
+    Actions.AddInitializerToDecl(DeclOut, InitExpr.take(), !CopyInitialization,
+                                 DS.getTypeSpecType() == DeclSpec::TST_auto);
+
   // FIXME: Build a reference to this declaration? Convert it to bool?
   // (This is currently handled by Sema).
 
@@ -1714,6 +1734,7 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
     }
 
     TemplateId->SS = SS;
+    TemplateId->TemplateKWLoc = TemplateKWLoc;
     TemplateId->Template = Template;
     TemplateId->Kind = TNK;
     TemplateId->LAngleLoc = LAngleLoc;
@@ -2433,6 +2454,15 @@ static BinaryTypeTrait BinaryTypeTraitFromTokKind(tok::TokenKind kind) {
   case tok::kw___is_same:                    return BTT_IsSame;
   case tok::kw___builtin_types_compatible_p: return BTT_TypeCompatible;
   case tok::kw___is_convertible_to:          return BTT_IsConvertibleTo;
+  case tok::kw___is_trivially_assignable:    return BTT_IsTriviallyAssignable;
+  }
+}
+
+static TypeTrait TypeTraitFromTokKind(tok::TokenKind kind) {
+  switch (kind) {
+  default: llvm_unreachable("Not a known type trait");
+  case tok::kw___is_trivially_constructible: 
+    return TT_IsTriviallyConstructible;
   }
 }
 
@@ -2516,6 +2546,58 @@ ExprResult Parser::ParseBinaryTypeTrait() {
 
   return Actions.ActOnBinaryTypeTrait(BTT, Loc, LhsTy.get(), RhsTy.get(),
                                       T.getCloseLocation());
+}
+
+/// \brief Parse the built-in type-trait pseudo-functions that allow 
+/// implementation of the TR1/C++11 type traits templates.
+///
+///       primary-expression:
+///          type-trait '(' type-id-seq ')'
+///
+///       type-id-seq:
+///          type-id ...[opt] type-id-seq[opt]
+///
+ExprResult Parser::ParseTypeTrait() {
+  TypeTrait Kind = TypeTraitFromTokKind(Tok.getKind());
+  SourceLocation Loc = ConsumeToken();
+  
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume(diag::err_expected_lparen))
+    return ExprError();
+
+  llvm::SmallVector<ParsedType, 2> Args;
+  do {
+    // Parse the next type.
+    TypeResult Ty = ParseTypeName();
+    if (Ty.isInvalid()) {
+      Parens.skipToEnd();
+      return ExprError();
+    }
+
+    // Parse the ellipsis, if present.
+    if (Tok.is(tok::ellipsis)) {
+      Ty = Actions.ActOnPackExpansion(Ty.get(), ConsumeToken());
+      if (Ty.isInvalid()) {
+        Parens.skipToEnd();
+        return ExprError();
+      }
+    }
+    
+    // Add this type to the list of arguments.
+    Args.push_back(Ty.get());
+    
+    if (Tok.is(tok::comma)) {
+      ConsumeToken();
+      continue;
+    }
+    
+    break;
+  } while (true);
+  
+  if (Parens.consumeClose())
+    return ExprError();
+  
+  return Actions.ActOnTypeTrait(Kind, Loc, Args, Parens.getCloseLocation());
 }
 
 /// ParseArrayTypeTrait - Parse the built-in array type-trait

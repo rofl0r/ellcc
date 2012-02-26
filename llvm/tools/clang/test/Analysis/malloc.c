@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,experimental.deadcode.UnreachableCode,experimental.core.CastSize,experimental.unix.Malloc -analyzer-store=region -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,experimental.deadcode.UnreachableCode,experimental.core.CastSize,unix.Malloc -analyzer-store=region -verify %s
 #include "system-header-simulator.h"
 
 typedef __typeof(sizeof(int)) size_t;
@@ -379,7 +379,7 @@ void mallocEscapeMalloc() {
 
 void mallocMalloc() {
   int *p = malloc(12);
-  p = malloc(12); // expected-warning{{Memory is never released; potential memory leak}}
+  p = malloc(12); // expected-warning 2 {{Memory is never released; potential memory leak}}
 }
 
 void mallocFreeMalloc() {
@@ -631,6 +631,62 @@ void symbolLostWithStrcpy_InlineStrcpyVersion(char *s) {
   p = ((__builtin_object_size (p, 0) != (size_t) -1) ? __builtin___strcpy_chk (p, s, __builtin_object_size (p, 2 > 1)) : __inline_strcpy_chk (p, s));
   free(p);
 }
+
+// Here we are returning a pointer one past the allocated value. An idiom which
+// can be used for implementing special malloc. The correct uses of this might
+// be rare enough so that we could keep this as a warning.
+static void *specialMalloc(int n){
+  int *p;
+  p = malloc( n+8 );
+  if( p ){
+    p[0] = n;
+    p++;
+  }
+  return p;
+}
+
+// Potentially, the user could free the struct by performing pointer arithmetic on the return value.
+// This is a variation of the specialMalloc issue, though probably would be more rare in correct code.
+int *specialMallocWithStruct() {
+  struct StructWithInt *px= malloc(sizeof(struct StructWithInt));
+  return &(px->g);
+}
+
+// Test various allocation/deallocation functions.
+
+char *strdup(const char *s);
+char *strndup(const char *s, size_t n);
+
+void testStrdup(const char *s, unsigned validIndex) {
+  char *s2 = strdup(s);
+  s2[validIndex + 1] = 'b';// expected-warning {{Memory is never released; potential memory leak}}
+}
+
+int testStrndup(const char *s, unsigned validIndex, unsigned size) {
+  char *s2 = strndup(s, size);
+  s2 [validIndex + 1] = 'b';
+  if (s2[validIndex] != 'a')
+    return 0;
+  else
+    return 1;// expected-warning {{Memory is never released; potential memory leak}}
+}
+
+void testStrdupContentIsDefined(const char *s, unsigned validIndex) {
+  char *s2 = strdup(s);
+  char result = s2[1];// no warning
+  free(s2);
+}
+
+// Test the system library functions to which the pointer can escape.
+
+// For now, we assume memory passed to pthread_specific escapes.
+// TODO: We could check that if a new pthread binding is set, the existing
+// binding must be freed; otherwise, a memory leak can occur.
+void testPthereadSpecificEscape(pthread_key_t key) {
+  void *buf = malloc(12);
+  pthread_setspecific(key, buf); // no warning
+}
+
 // Below are the known false positives.
 
 // TODO: There should be no warning here. This one might be difficult to get rid of.
@@ -650,20 +706,6 @@ void dependsOnValueOfPtr(int *g, unsigned f) {
   return;
 }
 
-// TODO: Should this be a warning?
-// Here we are returning a pointer one past the allocated value. An idiom which
-// can be used for implementing special malloc. The correct uses of this might
-// be rare enough so that we could keep this as a warning.
-static void *specialMalloc(int n){
-  int *p;
-  p = malloc( n+8 );
-  if( p ){
-    p[0] = n;
-    p++;
-  }
-  return p;// expected-warning {{Memory is never released; potential memory leak}}
-}
-
 // False negatives.
 
 // TODO: This requires tracking symbols stored inside the structs/arrays.
@@ -671,6 +713,16 @@ void testMalloc5() {
   StructWithPtr St;
   StructWithPtr *pSt = &St;
   pSt->memP = malloc(12);
+}
+
+// TODO: This is another false negative.
+void testMallocWithParam(int **p) {
+  *p = (int*) malloc(sizeof(int));
+  *p = 0;
+}
+
+void testMallocWithParam_2(int **p) {
+  *p = (int*) malloc(sizeof(int));
 }
 
 // TODO: This should produce a warning, similar to the previous issue.

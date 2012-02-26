@@ -741,10 +741,14 @@ bool DeclContext::isDependentContext() const {
   if (isa<ClassTemplatePartialSpecializationDecl>(this))
     return true;
 
-  if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(this))
+  if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(this)) {
     if (Record->getDescribedClassTemplate())
       return true;
-
+    
+    if (Record->isDependentLambda())
+      return true;
+  }
+  
   if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(this)) {
     if (Function->getDescribedFunctionTemplate())
       return true;
@@ -868,7 +872,7 @@ DeclContext::collectAllContexts(llvm::SmallVectorImpl<DeclContext *> &Contexts){
 }
 
 std::pair<Decl *, Decl *>
-DeclContext::BuildDeclChain(const SmallVectorImpl<Decl*> &Decls,
+DeclContext::BuildDeclChain(ArrayRef<Decl*> Decls,
                             bool FieldsAlreadyLoaded) {
   // Build up a chain of declarations via the Decl::NextInContextAndBits field.
   Decl *FirstNewDecl = 0;

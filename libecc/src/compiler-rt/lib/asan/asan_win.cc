@@ -16,6 +16,7 @@
 
 #include <dbghelp.h>
 #include <stdio.h>  // FIXME: get rid of this.
+#include <stdlib.h>
 
 #include <new>  // FIXME: temporarily needed for placement new in AsanLock.
 
@@ -46,7 +47,7 @@ void *AsanMprotect(uintptr_t fixed_addr, size_t size) {
 }
 
 void AsanUnmapOrDie(void *addr, size_t size) {
-  UNIMPLEMENTED();
+  CHECK(VirtualFree(addr, size, MEM_DECOMMIT));
 }
 
 // ---------------------- IO ---------------- {{{1
@@ -214,7 +215,9 @@ void AsanTSDSet(void *tsd) {
 
 // ---------------------- Various stuff ---------------- {{{1
 void *AsanDoesNotSupportStaticLinkage() {
-  // FIXME: shall we do anything here on Windows?
+#if !defined(_DLL) || defined(_DEBUG)
+#error Please build the runtime with /MD
+#endif
   return NULL;
 }
 
@@ -230,6 +233,10 @@ int AtomicInc(int *a) {
 const char* AsanGetEnv(const char* name) {
   // FIXME: implement.
   return NULL;
+}
+
+void AsanDumpProcessMap() {
+  UNIMPLEMENTED();
 }
 
 int GetPid() {
@@ -254,6 +261,10 @@ void SleepForSeconds(int seconds) {
 
 void Exit(int exitcode) {
   _exit(exitcode);
+}
+
+int Atexit(void (*function)(void)) {
+  return atexit(function);
 }
 
 }  // namespace __asan

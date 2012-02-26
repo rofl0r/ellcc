@@ -40,6 +40,60 @@ define i1 @gep2() {
 ; CHECK-NEXT: ret i1 true
 }
 
+; PR11238
+%gept = type { i32, i32 }
+@gepy = global %gept zeroinitializer, align 8
+@gepz = extern_weak global %gept
+
+define i1 @gep3() {
+; CHECK: @gep3
+  %x = alloca %gept, align 8
+  %a = getelementptr %gept* %x, i64 0, i32 0
+  %b = getelementptr %gept* %x, i64 0, i32 1
+  %equal = icmp eq i32* %a, %b
+  ret i1 %equal
+; CHECK-NEXT: ret i1 false
+}
+
+define i1 @gep4() {
+; CHECK: @gep4
+  %x = alloca %gept, align 8
+  %a = getelementptr %gept* @gepy, i64 0, i32 0
+  %b = getelementptr %gept* @gepy, i64 0, i32 1
+  %equal = icmp eq i32* %a, %b
+  ret i1 %equal
+; CHECK-NEXT: ret i1 false
+}
+
+define i1 @gep5() {
+; CHECK: @gep5
+  %x = alloca %gept, align 8
+  %a = getelementptr inbounds %gept* %x, i64 0, i32 1
+  %b = getelementptr %gept* @gepy, i64 0, i32 0
+  %equal = icmp eq i32* %a, %b
+  ret i1 %equal
+; CHECK-NEXT: ret i1 false
+}
+
+define i1 @gep6(%gept* %x) {
+; Same as @gep3 but potentially null.
+; CHECK: @gep6
+  %a = getelementptr %gept* %x, i64 0, i32 0
+  %b = getelementptr %gept* %x, i64 0, i32 1
+  %equal = icmp eq i32* %a, %b
+  ret i1 %equal
+; CHECK-NEXT: ret i1 false
+}
+
+define i1 @gep7(%gept* %x) {
+; CHECK: @gep7
+  %a = getelementptr %gept* %x, i64 0, i32 0
+  %b = getelementptr %gept* @gepz, i64 0, i32 0
+  %equal = icmp eq i32* %a, %b
+  ret i1 %equal
+; CHECK: ret i1 %equal
+}
+
 define i1 @zext(i32 %x) {
 ; CHECK: @zext
   %e1 = zext i32 %x to i64
@@ -446,9 +500,30 @@ define <2 x i1> @vectorselect1(<2 x i1> %cond) {
 ; CHECK: ret <2 x i1> %cond
 }
 
-define <2 x i1> @vectorselectcrash(i32 %arg1) { ; PR11948
+; PR11948
+define <2 x i1> @vectorselectcrash(i32 %arg1) {
   %tobool40 = icmp ne i32 %arg1, 0
   %cond43 = select i1 %tobool40, <2 x i16> <i16 -5, i16 66>, <2 x i16> <i16 46, i16 1>
   %cmp45 = icmp ugt <2 x i16> %cond43, <i16 73, i16 21>
   ret <2 x i1> %cmp45
+}
+
+; PR12013
+define i1 @alloca_compare(i64 %idx) {
+  %sv = alloca { i32, i32, [124 x i32] }
+  %1 = getelementptr inbounds { i32, i32, [124 x i32] }* %sv, i32 0, i32 2, i64 %idx
+  %2 = icmp eq i32* %1, null
+  ret i1 %2
+  ; CHECK: alloca_compare
+  ; CHECK: ret i1 false
+}
+
+; PR12075
+define i1 @infinite_gep() {
+  ret i1 1
+
+unreachableblock:
+  %X = getelementptr i32 *%X, i32 1
+  %Y = icmp eq i32* %X, null
+  ret i1 %Y
 }

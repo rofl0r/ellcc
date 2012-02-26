@@ -5350,6 +5350,7 @@ Decl *Sema::ActOnStartOfFunctionTemplateDef(Scope *FnBodyScope,
 /// \brief Strips various properties off an implicit instantiation
 /// that has just been explicitly specialized.
 static void StripImplicitInstantiation(NamedDecl *D) {
+  // FIXME: "make check" is clean if the call to dropAttrs() is commented out.
   D->dropAttrs();
 
   if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D)) {
@@ -5677,8 +5678,13 @@ Sema::CheckFunctionTemplateSpecialization(FunctionDecl *FD,
   // Note: do not overwrite location info if previous template
   // specialization kind was explicit.
   TemplateSpecializationKind TSK = SpecInfo->getTemplateSpecializationKind();
-  if (TSK == TSK_Undeclared || TSK == TSK_ImplicitInstantiation)
+  if (TSK == TSK_Undeclared || TSK == TSK_ImplicitInstantiation) {
     Specialization->setLocation(FD->getLocation());
+    // C++11 [dcl.constexpr]p1: An explicit specialization of a constexpr
+    // function can differ from the template declaration with respect to
+    // the constexpr specifier.
+    Specialization->setConstexpr(FD->isConstexpr());
+  }
 
   // FIXME: Check if the prior specialization has a point of instantiation.
   // If so, we have run afoul of .

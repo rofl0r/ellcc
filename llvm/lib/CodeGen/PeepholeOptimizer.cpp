@@ -68,7 +68,7 @@ DisablePeephole("disable-peephole", cl::Hidden, cl::init(false),
 STATISTIC(NumReuse,      "Number of extension results reused");
 STATISTIC(NumBitcasts,   "Number of bitcasts eliminated");
 STATISTIC(NumCmps,       "Number of compares eliminated");
-STATISTIC(NumImmFold,    "Number of move immediate foled");
+STATISTIC(NumImmFold,    "Number of move immediate folded");
 
 namespace {
   class PeepholeOptimizer : public MachineFunctionPass {
@@ -236,6 +236,10 @@ OptimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
       MachineBasicBlock *UseMBB = UseMI->getParent();
       if (PHIBBs.count(UseMBB))
         continue;
+
+      // About to add uses of DstReg, clear DstReg's kill flags.
+      if (!Changed)
+        MRI->clearKillFlags(DstReg);
 
       unsigned NewVR = MRI->createVirtualRegister(RC);
       BuildMI(*UseMBB, UseMI, UseMI->getDebugLoc(),

@@ -7,7 +7,7 @@
 #SUBDIRS = gcc.cov x86_64 mips
 # Define directories to ignore.
 # RICH: http://ellcc.org/bugzilla/show_bug.cgi?id=46
-IGNORE = ppc64
+#IGNORE = ppc64
 # Define subdirectories to ignore.
 #SUBIGNORE =
 

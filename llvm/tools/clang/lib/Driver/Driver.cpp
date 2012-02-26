@@ -105,6 +105,12 @@ InputArgList *Driver::ParseArgStrings(ArrayRef<const char *> ArgList) {
       Diag(clang::diag::err_drv_unsupported_opt) << A->getAsString(*Args);
       continue;
     }
+
+    // Warn about -mcpu= without an argument.
+    if (A->getOption().matches(options::OPT_mcpu_EQ) && 
+        A->containsValue("")) {
+      Diag(clang::diag::warn_drv_empty_joined_argument) << A->getAsString(*Args);
+    }
   }
 
   return Args;
@@ -296,6 +302,10 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
       Cur = Split.second;
     }
   }
+  // FIXME: DefaultTargetTriple is used by the target-prefixed calls to as/ld
+  // and getToolChain is const.
+  if (const Arg *A = Args->getLastArg(options::OPT_target))
+    DefaultTargetTriple = A->getValue(*Args);
   if (const Arg *A = Args->getLastArg(options::OPT_ccc_install_dir))
     Dir = InstalledDir = A->getValue(*Args);
   for (arg_iterator it = Args->filtered_begin(options::OPT_B),
@@ -355,6 +365,9 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
 // diagnostic information to a bug report.
 void Driver::generateCompilationDiagnostics(Compilation &C,
                                             const Command *FailingCommand) {
+  if (C.getArgs().hasArg(options::OPT_fno_crash_diagnostics))
+    return;
+
   Diag(clang::diag::note_drv_command_failed_diag_msg)
     << "Please submit a bug report to " BUG_REPORT_URL " and include command"
     " line arguments and all diagnostic information.";
@@ -952,14 +965,16 @@ void Driver::BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
       // Check that the file exists, if enabled.
       if (CheckInputsExist && memcmp(Value, "-", 2) != 0) {
         SmallString<64> Path(Value);
-        if (Arg *WorkDir = Args.getLastArg(options::OPT_working_directory))
-          if (llvm::sys::path::is_absolute(Path.str())) {
-            Path = WorkDir->getValue(Args);
-            llvm::sys::path::append(Path, Value);
+        if (Arg *WorkDir = Args.getLastArg(options::OPT_working_directory)) {
+          SmallString<64> Directory(WorkDir->getValue(Args));
+          if (llvm::sys::path::is_absolute(Directory.str())) {
+            llvm::sys::path::append(Directory, Value);
+            Path.assign(Directory);
           }
+        }
 
         bool exists = false;
-        if (/*error_code ec =*/llvm::sys::fs::exists(Value, exists) || !exists)
+        if (llvm::sys::fs::exists(Path.c_str(), exists) || !exists)
           Diag(clang::diag::err_drv_no_such_file) << Path.str();
         else
           Inputs.push_back(std::make_pair(Ty, A));
@@ -1494,6 +1509,7 @@ static bool isPathExecutable(llvm::sys::Path &P, bool WantFile) {
 
 std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
                                    bool WantFile) const {
+  // FIXME: Needs a better variable than DefaultTargetTriple
   std::string TargetSpecificExecutable(DefaultTargetTriple + "-" + Name);
   // Respect a limited subset of the '-Bprefix' functionality in GCC by
   // attempting to use this prefix when lokup up program paths.
@@ -1564,6 +1580,7 @@ std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix)
 static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
                                         const ArgList &Args,
                                         StringRef DarwinArchName) {
+  // FIXME: Already done in Compilation *Driver::BuildCompilation
   if (const Arg *A = Args.getLastArg(options::OPT_target))
     DefaultTargetTriple = A->getValue(Args);
 
@@ -1621,13 +1638,13 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
   if (!TC) {
     // ELLCC is a cross development environment.
     if (Target.getVendor() == llvm::Triple::ELLCC) {
-      TC = new toolchains::ELLCC(*this, Target);
+      TC = new toolchains::ELLCC(*this, Target, Args);
       return *TC;
     }
 
     switch (Target.getOS()) {
     case llvm::Triple::AuroraUX:
-      TC = new toolchains::AuroraUX(*this, Target);
+      TC = new toolchains::AuroraUX(*this, Target, Args);
       break;
     case llvm::Triple::Darwin:
     case llvm::Triple::MacOSX:
@@ -1638,31 +1655,31 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
           Target.getArch() == llvm::Triple::thumb)
         TC = new toolchains::DarwinClang(*this, Target);
       else
-        TC = new toolchains::Darwin_Generic_GCC(*this, Target);
+        TC = new toolchains::Darwin_Generic_GCC(*this, Target, Args);
       break;
     case llvm::Triple::DragonFly:
-      TC = new toolchains::DragonFly(*this, Target);
+      TC = new toolchains::DragonFly(*this, Target, Args);
       break;
     case llvm::Triple::OpenBSD:
-      TC = new toolchains::OpenBSD(*this, Target);
+      TC = new toolchains::OpenBSD(*this, Target, Args);
       break;
     case llvm::Triple::NetBSD:
-      TC = new toolchains::NetBSD(*this, Target);
+      TC = new toolchains::NetBSD(*this, Target, Args);
       break;
     case llvm::Triple::FreeBSD:
-      TC = new toolchains::FreeBSD(*this, Target);
+      TC = new toolchains::FreeBSD(*this, Target, Args);
       break;
     case llvm::Triple::Minix:
-      TC = new toolchains::Minix(*this, Target);
+      TC = new toolchains::Minix(*this, Target, Args);
       break;
     case llvm::Triple::Linux:
       if (Target.getArch() == llvm::Triple::hexagon)
         TC = new toolchains::Hexagon_TC(*this, Target);
       else
-        TC = new toolchains::Linux(*this, Target);
+        TC = new toolchains::Linux(*this, Target, Args);
       break;
     case llvm::Triple::Solaris:
-      TC = new toolchains::Solaris(*this, Target);
+      TC = new toolchains::Solaris(*this, Target, Args);
       break;
     case llvm::Triple::Win32:
       TC = new toolchains::Windows(*this, Target);
@@ -1676,7 +1693,7 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
         break;
       }
 
-      TC = new toolchains::Generic_GCC(*this, Target);
+      TC = new toolchains::Generic_GCC(*this, Target, Args);
       break;
     }
   }

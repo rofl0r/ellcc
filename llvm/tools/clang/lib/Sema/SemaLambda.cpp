@@ -13,6 +13,7 @@
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/Scope.h"
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaInternal.h"
 #include "clang/Lex/Preprocessor.h"
@@ -20,15 +21,17 @@
 using namespace clang;
 using namespace sema;
 
-CXXRecordDecl *Sema::createLambdaClosureType(SourceRange IntroducerRange) {
+CXXRecordDecl *Sema::createLambdaClosureType(SourceRange IntroducerRange,
+                                             bool KnownDependent) {
   DeclContext *DC = CurContext;
   while (!(DC->isFunctionOrMethod() || DC->isRecord() || DC->isFileContext()))
     DC = DC->getParent();
   
   // Start constructing the lambda class.
   CXXRecordDecl *Class = CXXRecordDecl::CreateLambda(Context, DC, 
-                                                     IntroducerRange.getBegin());
-  CurContext->addDecl(Class);
+                                                     IntroducerRange.getBegin(),
+                                                     KnownDependent);
+  DC->addDecl(Class);
   
   return Class;
 }
@@ -65,7 +68,7 @@ CXXMethodDecl *Sema::startLambdaDefinition(CXXRecordDecl *Class,
   
   // Temporarily set the lexical declaration context to the current
   // context, so that the Scope stack matches the lexical nesting.
-  Method->setLexicalDeclContext(Class->getDeclContext());  
+  Method->setLexicalDeclContext(CurContext);  
   
   // Add parameters.
   if (!Params.empty()) {
@@ -141,7 +144,14 @@ void Sema::addLambdaParameters(CXXMethodDecl *CallOperator, Scope *CurScope) {
 void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
                                         Declarator &ParamInfo,
                                         Scope *CurScope) {
-  CXXRecordDecl *Class = createLambdaClosureType(Intro.Range);
+  // Determine if we're within a context where we know that the lambda will
+  // be dependent, because there are template parameters in scope.
+  bool KnownDependent = false;
+  if (Scope *TmplScope = CurScope->getTemplateParamParent())
+    if (!TmplScope->decl_empty())
+      KnownDependent = true;
+  
+  CXXRecordDecl *Class = createLambdaClosureType(Intro.Range, KnownDependent);
   
   // Determine the signature of the call operator.
   TypeSourceInfo *MethodTyInfo;
@@ -482,12 +492,25 @@ static void addBlockPointerConversion(Sema &S,
   Class->addDecl(Conversion);
 }
 
+/// \brief Determine whether the given context is or is enclosed in an inline
+/// function.
+static bool isInInlineFunction(const DeclContext *DC) {
+  while (!DC->isFileContext()) {
+    if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(DC))
+      if (FD->isInlined())
+        return true;
+    
+    DC = DC->getLexicalParent();
+  }
+  
+  return false;
+}
+         
 ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc, Stmt *Body, 
-                                 Scope *CurScope, bool IsInstantiation) {
-  // Leave the expression-evaluation context.
-  DiscardCleanupsInEvaluationContext();
-  PopExpressionEvaluationContext();
-
+                                 Scope *CurScope, 
+                                 llvm::Optional<unsigned> ManglingNumber,
+                                 Decl *ContextDecl,
+                                 bool IsInstantiation) {
   // Collect information from the lambda scope.
   llvm::SmallVector<LambdaExpr::Capture, 4> Captures;
   llvm::SmallVector<Expr *, 4> CaptureInits;
@@ -604,6 +627,7 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc, Stmt *Body,
     ActOnFinishFunctionBody(CallOperator, Body, IsInstantiation);
     CallOperator->setLexicalDeclContext(Class);
     Class->addDecl(CallOperator);
+    PopExpressionEvaluationContext();
 
     // C++11 [expr.prim.lambda]p6:
     //   The closure type for a lambda-expression with no lambda-capture
@@ -619,7 +643,7 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc, Stmt *Body,
     //   non-explicit const conversion function to a block pointer having the
     //   same parameter and return types as the closure type's function call
     //   operator.
-    if (getLangOptions().Blocks)
+    if (getLangOptions().Blocks && getLangOptions().ObjC1)
       addBlockPointerConversion(*this, IntroducerRange, Class, CallOperator);
     
     // Finalize the lambda class.
@@ -627,17 +651,73 @@ ExprResult Sema::ActOnLambdaExpr(SourceLocation StartLoc, Stmt *Body,
     ActOnFields(0, Class->getLocation(), Class, Fields, 
                 SourceLocation(), SourceLocation(), 0);
     CheckCompletedCXXClass(Class);
-
   }
 
   if (LambdaExprNeedsCleanups)
     ExprNeedsCleanups = true;
 
+  // If we don't already have a mangling number for this lambda expression,
+  // allocate one now.
+  if (!ManglingNumber) {
+    ContextDecl = ExprEvalContexts.back().LambdaContextDecl;
+    
+    enum ContextKind {
+      Normal,
+      DefaultArgument,
+      DataMember,
+      StaticDataMember
+    } Kind = Normal;
+
+    // Default arguments of member function parameters that appear in a class
+    // definition, as well as the initializers of data members, receive special
+    // treatment. Identify them.
+    if (ContextDecl) {
+      if (ParmVarDecl *Param = dyn_cast<ParmVarDecl>(ContextDecl)) {
+        if (const DeclContext *LexicalDC
+              = Param->getDeclContext()->getLexicalParent())
+          if (LexicalDC->isRecord())
+            Kind = DefaultArgument;
+      } else if (VarDecl *Var = dyn_cast<VarDecl>(ContextDecl)) {
+        if (Var->getDeclContext()->isRecord())
+          Kind = StaticDataMember;
+      } else if (isa<FieldDecl>(ContextDecl)) {
+        Kind = DataMember;
+      }
+    }        
+    
+    switch (Kind) {
+    case Normal:
+      if (CurContext->isDependentContext() || isInInlineFunction(CurContext))
+        ManglingNumber = Context.getLambdaManglingNumber(CallOperator);
+      else
+        ManglingNumber = 0;
+        
+      // There is no special context for this lambda.
+      ContextDecl = 0;        
+      break;
+      
+    case StaticDataMember:
+      if (!CurContext->isDependentContext()) {
+        ManglingNumber = 0;
+        ContextDecl = 0;
+        break;
+      }
+      // Fall through to assign a mangling number.
+        
+    case DataMember:
+    case DefaultArgument:
+      ManglingNumber = ExprEvalContexts.back().getLambdaMangleContext()
+                         .getManglingNumber(CallOperator);
+      break;
+    }
+  }
+  
   LambdaExpr *Lambda = LambdaExpr::Create(Context, Class, IntroducerRange, 
                                           CaptureDefault, Captures, 
                                           ExplicitParams, ExplicitResultType,
                                           CaptureInits, ArrayIndexVars, 
-                                          ArrayIndexStarts, Body->getLocEnd());
+                                          ArrayIndexStarts, Body->getLocEnd(),
+                                          *ManglingNumber, ContextDecl);
 
   // C++11 [expr.prim.lambda]p2:
   //   A lambda-expression shall not appear in an unevaluated operand

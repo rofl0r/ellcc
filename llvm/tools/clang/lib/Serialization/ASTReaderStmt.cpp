@@ -1174,14 +1174,9 @@ void ASTStmtReader::VisitCXXNewExpr(CXXNewExpr *E) {
   E->setOperatorNew(ReadDeclAs<FunctionDecl>(Record, Idx));
   E->setOperatorDelete(ReadDeclAs<FunctionDecl>(Record, Idx));
   E->AllocatedTypeInfo = GetTypeSourceInfo(Record, Idx);
-  SourceRange TypeIdParens;
-  TypeIdParens.setBegin(ReadSourceLocation(Record, Idx));
-  TypeIdParens.setEnd(ReadSourceLocation(Record, Idx));
-  E->TypeIdParens = TypeIdParens;
+  E->TypeIdParens = ReadSourceRange(Record, Idx);
   E->StartLoc = ReadSourceLocation(Record, Idx);
-  SourceRange DirectInitRange;
-  DirectInitRange.setBegin(ReadSourceLocation(Record, Idx));
-  DirectInitRange.setEnd(ReadSourceLocation(Record, Idx));
+  E->DirectInitRange = ReadSourceRange(Record, Idx);
 
   E->AllocateArgsArray(Reader.getContext(), isArray, NumPlacementArgs,
                        E->StoredInitializationStyle != 0);
@@ -1330,6 +1325,17 @@ void ASTStmtReader::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   E->RParen = Range.getEnd();
   E->LhsType = GetTypeSourceInfo(Record, Idx);
   E->RhsType = GetTypeSourceInfo(Record, Idx);
+}
+
+void ASTStmtReader::VisitTypeTraitExpr(TypeTraitExpr *E) {
+  VisitExpr(E);
+  E->TypeTraitExprBits.NumArgs = Record[Idx++];
+  E->TypeTraitExprBits.Kind = Record[Idx++];
+  E->TypeTraitExprBits.Value = Record[Idx++];
+  
+  TypeSourceInfo **Args = E->getTypeSourceInfos();
+  for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
+    Args[I] = GetTypeSourceInfo(Record, Idx);
 }
 
 void ASTStmtReader::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
@@ -2051,6 +2057,11 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) BinaryTypeTraitExpr(Empty);
       break;
 
+    case EXPR_TYPE_TRAIT:
+      S = TypeTraitExpr::CreateDeserialized(Context, 
+            Record[ASTStmtReader::NumExprFields]);
+      break;
+        
     case EXPR_ARRAY_TYPE_TRAIT:
       S = new (Context) ArrayTypeTraitExpr(Empty);
       break;

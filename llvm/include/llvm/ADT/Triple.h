@@ -47,7 +47,7 @@ public:
     cellspu, // CellSPU: spu, cellspu
     hexagon, // Hexagon: hexagon
     mips,    // MIPS: mips, mipsallegrex
-    mipsel,  // MIPSEL: mipsel, mipsallegrexel, psp
+    mipsel,  // MIPSEL: mipsel, mipsallegrexel
     mips64,  // MIPS64: mips64
     mips64el,// MIPS64EL: mips64el
     msp430,  // MSP430: msp430
@@ -65,8 +65,7 @@ public:
     ptx32,   // PTX: ptx (32-bit)
     ptx64,   // PTX: ptx (64-bit)
     le32,    // le32: generic little-endian 32-bit CPU (PNaCl / Emscripten)
-    amdil,   // amdil: amd IL
-    InvalidArch
+    amdil   // amdil: amd IL
   };
   enum VendorType {
     UnknownVendor,
@@ -92,7 +91,6 @@ public:
     MinGW32,    // i*86-pc-mingw32, *-w64-mingw32
     NetBSD,
     OpenBSD,
-    Psp,
     Solaris,
     Win32,
     Haiku,
@@ -117,41 +115,30 @@ public:
 private:
   std::string Data;
 
-  /// The parsed arch type (or InvalidArch if uninitialized).
-  mutable ArchType Arch;
+  /// The parsed arch type.
+  ArchType Arch;
 
   /// The parsed vendor type.
-  mutable VendorType Vendor;
+  VendorType Vendor;
 
   /// The parsed OS type.
-  mutable OSType OS;
+  OSType OS;
 
   /// The parsed Environment type.
-  mutable EnvironmentType Environment;
-
-  bool isInitialized() const { return Arch != InvalidArch; }
-  static ArchType ParseArch(StringRef ArchName);
-  static VendorType ParseVendor(StringRef VendorName);
-  static OSType ParseOS(StringRef OSName);
-  static EnvironmentType ParseEnvironment(StringRef EnvironmentName);
-  void Parse() const;
+  EnvironmentType Environment;
 
 public:
   /// @name Constructors
   /// @{
 
-  Triple() : Data(), Arch(InvalidArch) {}
-  explicit Triple(const Twine &Str) : Data(Str.str()), Arch(InvalidArch) {}
-  Triple(const Twine &ArchStr, const Twine &VendorStr, const Twine &OSStr)
-    : Data((ArchStr + Twine('-') + VendorStr + Twine('-') + OSStr).str()),
-      Arch(InvalidArch) {
-  }
+  /// \brief Default constructor is the same as an empty string and leaves all
+  /// triple fields unknown.
+  Triple() : Data(), Arch(), Vendor(), OS(), Environment() {}
 
+  explicit Triple(const Twine &Str);
+  Triple(const Twine &ArchStr, const Twine &VendorStr, const Twine &OSStr);
   Triple(const Twine &ArchStr, const Twine &VendorStr, const Twine &OSStr,
-         const Twine &EnvironmentStr)
-    : Data((ArchStr + Twine('-') + VendorStr + Twine('-') + OSStr + Twine('-') +
-            EnvironmentStr).str()), Arch(InvalidArch) {
-  }
+         const Twine &EnvironmentStr);
 
   /// @}
   /// @name Normalization
@@ -168,22 +155,13 @@ public:
   /// @{
 
   /// getArch - Get the parsed architecture type of this triple.
-  ArchType getArch() const {
-    if (!isInitialized()) Parse();
-    return Arch;
-  }
+  ArchType getArch() const { return Arch; }
 
   /// getVendor - Get the parsed vendor type of this triple.
-  VendorType getVendor() const {
-    if (!isInitialized()) Parse();
-    return Vendor;
-  }
+  VendorType getVendor() const { return Vendor; }
 
   /// getOS - Get the parsed operating system type of this triple.
-  OSType getOS() const {
-    if (!isInitialized()) Parse();
-    return OS;
-  }
+  OSType getOS() const { return OS; }
 
   /// hasEnvironment - Does this triple have the optional environment
   /// (fourth) component?
@@ -192,10 +170,7 @@ public:
   }
 
   /// getEnvironment - Get the parsed environment type of this triple.
-  EnvironmentType getEnvironment() const {
-    if (!isInitialized()) Parse();
-    return Environment;
-  }
+  EnvironmentType getEnvironment() const { return Environment; }
 
   /// getOSVersion - Parse the version number from the OS name component of the
   /// triple, if present.

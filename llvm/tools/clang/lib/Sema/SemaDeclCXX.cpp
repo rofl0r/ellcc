@@ -32,7 +32,6 @@
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Basic/PartialDiagnostic.h"
 #include "clang/Lex/Preprocessor.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include <map>
@@ -516,13 +515,9 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old) {
     }
   }
 
-  // C++0x [dcl.constexpr]p1: If any declaration of a function or function
+  // C++11 [dcl.constexpr]p1: If any declaration of a function or function
   // template has a constexpr specifier then all its declarations shall
-  // contain the constexpr specifier. [Note: An explicit specialization can
-  // differ from the template declaration with respect to the constexpr
-  // specifier. -- end note]
-  //
-  // FIXME: Don't reject changes in constexpr in explicit specializations.
+  // contain the constexpr specifier.
   if (New->isConstexpr() != Old->isConstexpr()) {
     Diag(New->getLocation(), diag::err_constexpr_redecl_mismatch)
       << New << New->isConstexpr();
@@ -1643,9 +1638,18 @@ Sema::ActOnCXXInClassMemberInitializer(Decl *D, SourceLocation EqualLoc,
 
   ExprResult Init = InitExpr;
   if (!FD->getType()->isDependentType() && !InitExpr->isTypeDependent()) {
-    // FIXME: if there is no EqualLoc, this is list-initialization.
-    Init = PerformCopyInitialization(
-      InitializedEntity::InitializeMember(FD), EqualLoc, InitExpr);
+    if (isa<InitListExpr>(InitExpr) && isStdInitializerList(FD->getType(), 0)) {
+      Diag(FD->getLocation(), diag::warn_dangling_std_initializer_list)
+        << /*at end of ctor*/1 << InitExpr->getSourceRange();
+    }
+    Expr **Inits = &InitExpr;
+    unsigned NumInits = 1;
+    InitializedEntity Entity = InitializedEntity::InitializeMember(FD);
+    InitializationKind Kind = EqualLoc.isInvalid()
+        ? InitializationKind::CreateDirectList(InitExpr->getLocStart())
+        : InitializationKind::CreateCopy(InitExpr->getLocStart(), EqualLoc);
+    InitializationSequence Seq(*this, Entity, Kind, Inits, NumInits);
+    Init = Seq.Perform(*this, Entity, Kind, MultiExprArg(Inits, NumInits));
     if (Init.isInvalid()) {
       FD->setInvalidDecl();
       return;
@@ -2112,6 +2116,11 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
       InitList = true;
       Args = &Init;
       NumArgs = 1;
+
+      if (isStdInitializerList(Member->getType(), 0)) {
+        Diag(IdLoc, diag::warn_dangling_std_initializer_list)
+            << /*at end of ctor*/1 << InitRange;
+      }
     }
 
     // Initialize the member.
@@ -4522,7 +4531,8 @@ bool SpecialMemberDeletionInfo::shouldDeleteForField(FieldDecl *FD) {
       }
 
       // At least one member in each anonymous union must be non-const
-      if (CSM == Sema::CXXDefaultConstructor && AllVariantFieldsAreConst)
+      if (CSM == Sema::CXXDefaultConstructor && AllVariantFieldsAreConst &&
+          FieldRecord->field_begin() != FieldRecord->field_end())
         return true;
 
       // Don't try to initialize the anonymous union
@@ -4602,7 +4612,10 @@ bool SpecialMemberDeletionInfo::shouldDeleteForField(FieldDecl *FD) {
 ///   A defaulted default constructor for a class X is defined as deleted if
 /// X is a union and all of its variant members are of const-qualified type.
 bool SpecialMemberDeletionInfo::shouldDeleteForAllConstMembers() {
-  return CSM == Sema::CXXDefaultConstructor && inUnion() && AllFieldsAreConst;
+  // This is a silly definition, because it gives an empty union a deleted
+  // default constructor. Don't do that.
+  return CSM == Sema::CXXDefaultConstructor && inUnion() && AllFieldsAreConst &&
+    (MD->getParent()->field_begin() != MD->getParent()->field_end());
 }
 
 /// Determine whether a defaulted special member function should be defined as
@@ -6459,7 +6472,7 @@ bool Sema::CheckUsingDeclQualifier(SourceLocation UsingLoc,
   // need to be repeated.
 
   struct UserData {
-    llvm::DenseSet<const CXXRecordDecl*> Bases;
+    llvm::SmallPtrSet<const CXXRecordDecl*, 4> Bases;
 
     static bool collect(const CXXRecordDecl *Base, void *OpaqueData) {
       UserData *Data = reinterpret_cast<UserData*>(OpaqueData);
@@ -8750,9 +8763,9 @@ bool Sema::isImplicitlyDeleted(FunctionDecl *FD) {
 /// \brief Mark the call operator of the given lambda closure type as "used".
 static void markLambdaCallOperatorUsed(Sema &S, CXXRecordDecl *Lambda) {
   CXXMethodDecl *CallOperator 
-  = cast<CXXMethodDecl>(
-      *Lambda->lookup(
-        S.Context.DeclarationNames.getCXXOperatorName(OO_Call)).first);
+    = cast<CXXMethodDecl>(
+        *Lambda->lookup(
+          S.Context.DeclarationNames.getCXXOperatorName(OO_Call)).first);
   CallOperator->setReferenced();
   CallOperator->setUsed();
 }
@@ -8800,14 +8813,21 @@ void Sema::DefineImplicitLambdaToBlockPointerConversion(
        SourceLocation CurrentLocation,
        CXXConversionDecl *Conv) 
 {
+  CXXRecordDecl *Lambda = Conv->getParent();
+  
   // Make sure that the lambda call operator is marked used.
-  markLambdaCallOperatorUsed(*this, Conv->getParent());
+  CXXMethodDecl *CallOperator 
+    = cast<CXXMethodDecl>(
+        *Lambda->lookup(
+          Context.DeclarationNames.getCXXOperatorName(OO_Call)).first);
+  CallOperator->setReferenced();
+  CallOperator->setUsed();
   Conv->setUsed();
   
   ImplicitlyDefinedFunctionScope Scope(*this, Conv);
   DiagnosticErrorTrap Trap(Diags);
   
-  // Copy-initialize the lambda object as needed to capture
+  // Copy-initialize the lambda object as needed to capture it.
   Expr *This = ActOnCXXThis(CurrentLocation).take();
   Expr *DerefThis =CreateBuiltinUnaryOp(CurrentLocation, UO_Deref, This).take();
   ExprResult Init = PerformCopyInitialization(
@@ -8818,16 +8838,84 @@ void Sema::DefineImplicitLambdaToBlockPointerConversion(
   if (!Init.isInvalid())
     Init = ActOnFinishFullExpr(Init.take());
   
-  if (!Init.isInvalid())
-    Conv->setLambdaToBlockPointerCopyInit(Init.take());
-  else {
+  if (Init.isInvalid()) {
     Diag(CurrentLocation, diag::note_lambda_to_block_conv);
+    Conv->setInvalidDecl();
+    return;
   }
   
-  // Introduce a bogus body, which IR generation will override anyway.
-  Conv->setBody(new (Context) CompoundStmt(Context, 0, 0, Conv->getLocation(),
+  // Create the new block to be returned.
+  BlockDecl *Block = BlockDecl::Create(Context, Conv, Conv->getLocation());
+  
+  // Set the type information.
+  Block->setSignatureAsWritten(CallOperator->getTypeSourceInfo());
+  Block->setIsVariadic(CallOperator->isVariadic());
+  Block->setBlockMissingReturnType(false);
+  
+  // Add parameters.
+  SmallVector<ParmVarDecl *, 4> BlockParams;
+  for (unsigned I = 0, N = CallOperator->getNumParams(); I != N; ++I) {
+    ParmVarDecl *From = CallOperator->getParamDecl(I);
+    BlockParams.push_back(ParmVarDecl::Create(Context, Block,
+                                              From->getLocStart(),
+                                              From->getLocation(),
+                                              From->getIdentifier(),
+                                              From->getType(),
+                                              From->getTypeSourceInfo(),
+                                              From->getStorageClass(),
+                                            From->getStorageClassAsWritten(),
+                                              /*DefaultArg=*/0));
+  }
+  Block->setParams(BlockParams);
+  
+  // Add capture. The capture uses a fake variable, which doesn't correspond
+  // to any actual memory location. However, the initializer copy-initializes
+  // the lambda object.
+  TypeSourceInfo *CapVarTSI =
+      Context.getTrivialTypeSourceInfo(DerefThis->getType());
+  VarDecl *CapVar = VarDecl::Create(Context, Block, Conv->getLocation(),
+                                    Conv->getLocation(), 0,
+                                    DerefThis->getType(), CapVarTSI,
+                                    SC_None, SC_None);
+  BlockDecl::Capture Capture(/*Variable=*/CapVar, /*ByRef=*/false,
+                             /*Nested=*/false, /*Copy=*/Init.take());
+  Block->setCaptures(Context, &Capture, &Capture + 1, 
+                     /*CapturesCXXThis=*/false);
+  
+  // Add a fake function body to the block. IR generation is responsible
+  // for filling in the actual body, which cannot be expressed as an AST.
+  Block->setBody(new (Context) CompoundStmt(Context, 0, 0, 
+                                            Conv->getLocation(),
+                                            Conv->getLocation()));
+
+  // Create the block literal expression.
+  Expr *BuildBlock = new (Context) BlockExpr(Block, Conv->getConversionType());
+  ExprCleanupObjects.push_back(Block);
+  ExprNeedsCleanups = true;
+
+  // If we're not under ARC, make sure we still get the _Block_copy/autorelease
+  // behavior.
+  if (!getLangOptions().ObjCAutoRefCount)
+    BuildBlock = ImplicitCastExpr::Create(Context, BuildBlock->getType(),
+                                          CK_CopyAndAutoreleaseBlockObject,
+                                          BuildBlock, 0, VK_RValue);
+  
+  // Create the return statement that returns the block from the conversion
+  // function.
+  StmtResult Return = ActOnReturnStmt(Conv->getLocation(), BuildBlock);
+  if (Return.isInvalid()) {
+    Diag(CurrentLocation, diag::note_lambda_to_block_conv);
+    Conv->setInvalidDecl();
+    return;
+  }
+
+  // Set the body of the conversion function.
+  Stmt *ReturnS = Return.take();
+  Conv->setBody(new (Context) CompoundStmt(Context, &ReturnS, 1, 
+                                           Conv->getLocation(), 
                                            Conv->getLocation()));
   
+  // We're done; notify the mutation listener, if any.
   if (ASTMutationListener *L = getASTMutationListener()) {
     L->CompletedImplicitDefinition(Conv);
   }
@@ -8950,7 +9038,8 @@ bool
 Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
                               MultiExprArg ArgsPtr,
                               SourceLocation Loc,                                    
-                              ASTOwningVector<Expr*> &ConvertedArgs) {
+                              ASTOwningVector<Expr*> &ConvertedArgs,
+                              bool AllowExplicit) {
   // FIXME: This duplicates a lot of code from Sema::ConvertArgumentsForCall.
   unsigned NumArgs = ArgsPtr.size();
   Expr **Args = (Expr **)ArgsPtr.get();
@@ -8971,7 +9060,7 @@ Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
   SmallVector<Expr *, 8> AllArgs;
   bool Invalid = GatherArgumentsForCall(Loc, Constructor,
                                         Proto, 0, Args, NumArgs, AllArgs, 
-                                        CallType);
+                                        CallType, AllowExplicit);
   ConvertedArgs.append(AllArgs.begin(), AllArgs.end());
 
   DiagnoseSentinelCalls(Constructor, Loc, AllArgs.data(), AllArgs.size());
@@ -10389,6 +10478,14 @@ bool Sema::CheckPureMethod(CXXMethodDecl *Method, SourceRange InitRange) {
   return true;
 }
 
+/// \brief Determine whether the given declaration is a static data member.
+static bool isStaticDataMember(Decl *D) {
+  VarDecl *Var = dyn_cast_or_null<VarDecl>(D);
+  if (!Var)
+    return false;
+  
+  return Var->isStaticDataMember();
+}
 /// ActOnCXXEnterDeclInitializer - Invoked when we are about to parse
 /// an initializer for the out-of-line declaration 'Dcl'.  The scope
 /// is a fresh scope pushed for just this purpose.
@@ -10404,6 +10501,12 @@ void Sema::ActOnCXXEnterDeclInitializer(Scope *S, Decl *D) {
   //   int foo::bar;
   assert(D->isOutOfLine());
   EnterDeclaratorContext(S, D->getDeclContext());
+  
+  // If we are parsing the initializer for a static data member, push a
+  // new expression evaluation context that is associated with this static
+  // data member.
+  if (isStaticDataMember(D))
+    PushExpressionEvaluationContext(PotentiallyEvaluated, D);
 }
 
 /// ActOnCXXExitDeclInitializer - Invoked after we are finished parsing an
@@ -10411,6 +10514,9 @@ void Sema::ActOnCXXEnterDeclInitializer(Scope *S, Decl *D) {
 void Sema::ActOnCXXExitDeclInitializer(Scope *S, Decl *D) {
   // If there is no declaration, there was an error parsing it.
   if (D == 0 || D->isInvalidDecl()) return;
+
+  if (isStaticDataMember(D))
+    PopExpressionEvaluationContext();  
 
   assert(D->isOutOfLine());
   ExitDeclaratorContext(S);

@@ -59,6 +59,7 @@ namespace clang {
   class BlockDecl;
   class CXXBasePath;
   class CXXBasePaths;
+  class CXXBindTemporaryExpr;
   typedef SmallVector<CXXBaseSpecifier*, 4> CXXCastPath;
   class CXXConstructorDecl;
   class CXXConversionDecl;
@@ -469,6 +470,13 @@ public:
   /// identifier, declared or undeclared
   llvm::DenseMap<IdentifierInfo*,WeakInfo> WeakUndeclaredIdentifiers;
 
+  /// ExtnameUndeclaredIdentifiers - Identifiers contained in
+  /// #pragma redefine_extname before declared.  Used in Solaris system headers
+  /// to define functions that occur in multiple standards to call the version
+  /// in the currently selected standard.
+  llvm::DenseMap<IdentifierInfo*,AsmLabelAttr*> ExtnameUndeclaredIdentifiers;
+
+
   /// \brief Load weak undeclared identifiers from the external source.
   void LoadExternalWeakUndeclaredIdentifiers();
 
@@ -555,6 +563,9 @@ public:
     /// \brief Whether the enclosing context needed a cleanup.
     bool ParentNeedsCleanups;
 
+    /// \brief Whether we are in a decltype expression.
+    bool IsDecltype;
+
     /// \brief The number of active cleanup objects when we entered
     /// this expression evaluation context.
     unsigned NumCleanupObjects;
@@ -565,11 +576,46 @@ public:
     /// is indeed an unevaluated context.
     llvm::SmallVector<LambdaExpr *, 2> Lambdas;
 
+    /// \brief The declaration that provides context for the lambda expression
+    /// if the normal declaration context does not suffice, e.g., in a 
+    /// default function argument.
+    Decl *LambdaContextDecl;
+    
+    /// \brief The context information used to mangle lambda expressions
+    /// within this context.
+    ///
+    /// This mangling information is allocated lazily, since most contexts
+    /// do not have lambda expressions.
+    LambdaMangleContext *LambdaMangle;
+
+    /// \brief If we are processing a decltype type, a set of call expressions
+    /// for which we have deferred checking the completeness of the return type.
+    llvm::SmallVector<CallExpr*, 8> DelayedDecltypeCalls;
+
+    /// \brief If we are processing a decltype type, a set of temporary binding
+    /// expressions for which we have deferred checking the destructor.
+    llvm::SmallVector<CXXBindTemporaryExpr*, 8> DelayedDecltypeBinds;
+    
     ExpressionEvaluationContextRecord(ExpressionEvaluationContext Context,
                                       unsigned NumCleanupObjects,
-                                      bool ParentNeedsCleanups)
+                                      bool ParentNeedsCleanups,
+                                      Decl *LambdaContextDecl,
+                                      bool IsDecltype)
       : Context(Context), ParentNeedsCleanups(ParentNeedsCleanups),
-        NumCleanupObjects(NumCleanupObjects) { }
+        IsDecltype(IsDecltype), NumCleanupObjects(NumCleanupObjects),
+        LambdaContextDecl(LambdaContextDecl), LambdaMangle() { }
+    
+    ~ExpressionEvaluationContextRecord() {
+      delete LambdaMangle;
+    }
+    
+    /// \brief Retrieve the mangling context for lambdas.
+    LambdaMangleContext &getLambdaMangleContext() {
+      assert(LambdaContextDecl && "Need to have a lambda context declaration");
+      if (!LambdaMangle)
+        LambdaMangle = new LambdaMangleContext;
+      return *LambdaMangle;
+    }
   };
 
   /// A stack of expression evaluation contexts.
@@ -1412,7 +1458,8 @@ public:
   ExprResult PerformCopyInitialization(const InitializedEntity &Entity,
                                        SourceLocation EqualLoc,
                                        ExprResult Init,
-                                       bool TopLevelOfInitList = false);
+                                       bool TopLevelOfInitList = false,
+                                       bool AllowExplicit = false);
   ExprResult PerformObjectArgumentInitialization(Expr *From,
                                                  NestedNameSpecifier *Qualifier,
                                                  NamedDecl *FoundDecl,
@@ -1453,12 +1500,13 @@ public:
 
   void AddOverloadCandidate(FunctionDecl *Function,
                             DeclAccessPair FoundDecl,
-                            Expr **Args, unsigned NumArgs,
+                            llvm::ArrayRef<Expr *> Args,
                             OverloadCandidateSet& CandidateSet,
                             bool SuppressUserConversions = false,
-                            bool PartialOverloading = false);
+                            bool PartialOverloading = false,
+                            bool AllowExplicit = false);
   void AddFunctionCandidates(const UnresolvedSetImpl &Functions,
-                             Expr **Args, unsigned NumArgs,
+                             llvm::ArrayRef<Expr *> Args,
                              OverloadCandidateSet& CandidateSet,
                              bool SuppressUserConversions = false);
   void AddMethodCandidate(DeclAccessPair FoundDecl,
@@ -1471,7 +1519,7 @@ public:
                           DeclAccessPair FoundDecl,
                           CXXRecordDecl *ActingContext, QualType ObjectType,
                           Expr::Classification ObjectClassification,
-                          Expr **Args, unsigned NumArgs,
+                          llvm::ArrayRef<Expr *> Args,
                           OverloadCandidateSet& CandidateSet,
                           bool SuppressUserConversions = false);
   void AddMethodTemplateCandidate(FunctionTemplateDecl *MethodTmpl,
@@ -1480,13 +1528,13 @@ public:
                                  TemplateArgumentListInfo *ExplicitTemplateArgs,
                                   QualType ObjectType,
                                   Expr::Classification ObjectClassification,
-                                  Expr **Args, unsigned NumArgs,
+                                  llvm::ArrayRef<Expr *> Args,
                                   OverloadCandidateSet& CandidateSet,
                                   bool SuppressUserConversions = false);
   void AddTemplateOverloadCandidate(FunctionTemplateDecl *FunctionTemplate,
                                     DeclAccessPair FoundDecl,
                                  TemplateArgumentListInfo *ExplicitTemplateArgs,
-                                    Expr **Args, unsigned NumArgs,
+                                    llvm::ArrayRef<Expr *> Args,
                                     OverloadCandidateSet& CandidateSet,
                                     bool SuppressUserConversions = false);
   void AddConversionCandidate(CXXConversionDecl *Conversion,
@@ -1503,7 +1551,7 @@ public:
                              DeclAccessPair FoundDecl,
                              CXXRecordDecl *ActingContext,
                              const FunctionProtoType *Proto,
-                             Expr *Object, Expr **Args, unsigned NumArgs,
+                             Expr *Object, llvm::ArrayRef<Expr*> Args,
                              OverloadCandidateSet& CandidateSet);
   void AddMemberOperatorCandidates(OverloadedOperatorKind Op,
                                    SourceLocation OpLoc,
@@ -1520,8 +1568,8 @@ public:
                                     Expr **Args, unsigned NumArgs,
                                     OverloadCandidateSet& CandidateSet);
   void AddArgumentDependentLookupCandidates(DeclarationName Name,
-                                            bool Operator,
-                                            Expr **Args, unsigned NumArgs,
+                                            bool Operator, SourceLocation Loc,
+                                            llvm::ArrayRef<Expr *> Args,
                                 TemplateArgumentListInfo *ExplicitTemplateArgs,
                                             OverloadCandidateSet& CandidateSet,
                                             bool PartialOverloading = false,
@@ -1570,7 +1618,7 @@ public:
                                             FunctionDecl *Fn);
 
   void AddOverloadedCallCandidates(UnresolvedLookupExpr *ULE,
-                                   Expr **Args, unsigned NumArgs,
+                                   llvm::ArrayRef<Expr *> Args,
                                    OverloadCandidateSet &CandidateSet,
                                    bool PartialOverloading = false);
 
@@ -1766,7 +1814,8 @@ public:
   CXXDestructorDecl *LookupDestructor(CXXRecordDecl *Class);
 
   void ArgumentDependentLookup(DeclarationName Name, bool Operator,
-                               Expr **Args, unsigned NumArgs,
+                               SourceLocation Loc,
+                               llvm::ArrayRef<Expr *> Args,
                                ADLResult &Functions,
                                bool StdNamespaceIsAssociated = false);
 
@@ -1785,7 +1834,7 @@ public:
                              bool EnteringContext = false,
                              const ObjCObjectPointerType *OPT = 0);
 
-  void FindAssociatedClassesAndNamespaces(Expr **Args, unsigned NumArgs,
+  void FindAssociatedClassesAndNamespaces(llvm::ArrayRef<Expr *> Args,
                                    AssociatedNamespaceSet &AssociatedNamespaces,
                                    AssociatedClassSet &AssociatedClasses);
 
@@ -2281,7 +2330,9 @@ public:
   void DiagnoseSentinelCalls(NamedDecl *D, SourceLocation Loc,
                              Expr **Args, unsigned NumArgs);
 
-  void PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext);
+  void PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext,
+                                       Decl *LambdaContextDecl = 0,
+                                       bool IsDecltype = false);
 
   void PopExpressionEvaluationContext();
 
@@ -2352,7 +2403,8 @@ public:
   QualType getCapturedDeclRefType(VarDecl *Var, SourceLocation Loc);
   
   void MarkDeclarationsReferencedInType(SourceLocation Loc, QualType T);
-  void MarkDeclarationsReferencedInExpr(Expr *E);
+  void MarkDeclarationsReferencedInExpr(Expr *E, 
+                                        bool SkipLocalVariables = false);
 
   /// \brief Try to recover by turning the given expression into a
   /// call.  Returns true if recovery was attempted or an error was
@@ -2392,7 +2444,7 @@ public:
   bool DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
                            CorrectionCandidateCallback &CCC,
                            TemplateArgumentListInfo *ExplicitTemplateArgs = 0,
-                           Expr **Args = 0, unsigned NumArgs = 0);
+                       llvm::ArrayRef<Expr *> Args = llvm::ArrayRef<Expr *>());
 
   ExprResult LookupInObjCMethod(LookupResult &LookUp, Scope *S,
                                 IdentifierInfo *II,
@@ -3079,7 +3131,8 @@ public:
   bool CompleteConstructorCall(CXXConstructorDecl *Constructor,
                                MultiExprArg ArgsPtr,
                                SourceLocation Loc,
-                               ASTOwningVector<Expr*> &ConvertedArgs);
+                               ASTOwningVector<Expr*> &ConvertedArgs,
+                               bool AllowExplicit = false);
 
   ParsedType getDestructorName(SourceLocation TildeLoc,
                                IdentifierInfo &II, SourceLocation NameLoc,
@@ -3268,6 +3321,14 @@ public:
                                   TypeSourceInfo *RhsT,
                                   SourceLocation RParen);
 
+  /// \brief Parsed one of the type trait support pseudo-functions.
+  ExprResult ActOnTypeTrait(TypeTrait Kind, SourceLocation KWLoc,
+                            ArrayRef<ParsedType> Args,
+                            SourceLocation RParenLoc);
+  ExprResult BuildTypeTrait(TypeTrait Kind, SourceLocation KWLoc,
+                            ArrayRef<TypeSourceInfo *> Args,
+                            SourceLocation RParenLoc);
+  
   /// ActOnArrayTypeTrait - Parsed one of the bianry type trait support
   /// pseudo-functions.
   ExprResult ActOnArrayTypeTrait(ArrayTypeTrait ATT,
@@ -3411,6 +3472,8 @@ public:
                                    bool EnteringContext,
                                    CXXScopeSpec &SS);
 
+  ExprResult ActOnDecltypeExpression(Expr *E);
+
   bool ActOnCXXNestedNameSpecifierDecltype(CXXScopeSpec &SS,
                                            const DeclSpec &DS, 
                                            SourceLocation ColonColonLoc);
@@ -3509,7 +3572,8 @@ public:
   void ActOnCXXExitDeclInitializer(Scope *S, Decl *Dcl);
 
   /// \brief Create a new lambda closure type.
-  CXXRecordDecl *createLambdaClosureType(SourceRange IntroducerRange);
+  CXXRecordDecl *createLambdaClosureType(SourceRange IntroducerRange,
+                                         bool KnownDependent = false);
   
   /// \brief Start the definition of a lambda expression.
   CXXMethodDecl *startLambdaDefinition(CXXRecordDecl *Class,
@@ -3548,7 +3612,11 @@ public:
   /// ActOnLambdaExpr - This is called when the body of a lambda expression
   /// was successfully completed.
   ExprResult ActOnLambdaExpr(SourceLocation StartLoc, Stmt *Body,
-                             Scope *CurScope, bool IsInstantiation = false);
+                             Scope *CurScope, 
+                             llvm::Optional<unsigned> ManglingNumber 
+                               = llvm::Optional<unsigned>(),
+                             Decl *ContextDecl = 0,
+                             bool IsInstantiation = false);
 
   /// \brief Define the "body" of the conversion from a lambda object to a 
   /// function pointer.
@@ -4440,7 +4508,7 @@ public:
   /// \param Unexpanded the set of unexpanded parameter packs.
   void DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
                                         UnexpandedParameterPackContext UPPC,
-                    const SmallVectorImpl<UnexpandedParameterPack> &Unexpanded);
+                                  ArrayRef<UnexpandedParameterPack> Unexpanded);
 
   /// \brief If the given type contains an unexpanded parameter pack,
   /// diagnose the error.
@@ -4767,7 +4835,7 @@ public:
   TemplateDeductionResult
   DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
                           TemplateArgumentListInfo *ExplicitTemplateArgs,
-                          Expr **Args, unsigned NumArgs,
+                          llvm::ArrayRef<Expr *> Args,
                           FunctionDecl *&Specialization,
                           sema::TemplateDeductionInfo &Info);
 
@@ -5421,6 +5489,9 @@ public:
                                          IdentifierInfo *CatName,
                                          SourceLocation CatLoc);
 
+  DeclGroupPtrTy ActOnFinishObjCImplementation(Decl *ObjCImpDecl,
+                                               ArrayRef<Decl *> Decls);
+
   DeclGroupPtrTy ActOnForwardClassDeclaration(SourceLocation Loc,
                                      IdentifierInfo **IdentList,
                                      SourceLocation *IdentLocs,
@@ -5719,6 +5790,14 @@ public:
                          SourceLocation PragmaLoc,
                          SourceLocation WeakNameLoc);
 
+  /// ActOnPragmaRedefineExtname - Called on well formed 
+  /// #pragma redefine_extname oldname newname.
+  void ActOnPragmaRedefineExtname(IdentifierInfo* WeakName,
+                                  IdentifierInfo* AliasName,
+                                  SourceLocation PragmaLoc,
+                                  SourceLocation WeakNameLoc,
+                                  SourceLocation AliasNameLoc);
+
   /// ActOnPragmaWeakAlias - Called on well formed #pragma weak ident = ident.
   void ActOnPragmaWeakAlias(IdentifierInfo* WeakName,
                             IdentifierInfo* AliasName,
@@ -5836,7 +5915,8 @@ public:
                               unsigned FirstProtoArg,
                               Expr **Args, unsigned NumArgs,
                               SmallVector<Expr *, 8> &AllArgs,
-                              VariadicCallType CallType = VariadicDoesNotApply);
+                              VariadicCallType CallType = VariadicDoesNotApply,
+                              bool AllowExplicit = false);
 
   // DefaultVariadicArgumentPromotion - Like DefaultArgumentPromotion, but
   // will warn if the resulting type is not a POD type.
@@ -6308,7 +6388,7 @@ public:
   void CodeCompleteTag(Scope *S, unsigned TagSpec);
   void CodeCompleteTypeQualifiers(DeclSpec &DS);
   void CodeCompleteCase(Scope *S);
-  void CodeCompleteCall(Scope *S, Expr *Fn, Expr **Args, unsigned NumArgs);
+  void CodeCompleteCall(Scope *S, Expr *Fn, llvm::ArrayRef<Expr *> Args);
   void CodeCompleteInitializer(Scope *S, Decl *D);
   void CodeCompleteReturn(Scope *S);
   void CodeCompleteAfterIf(Scope *S);
@@ -6523,9 +6603,12 @@ class EnterExpressionEvaluationContext {
 
 public:
   EnterExpressionEvaluationContext(Sema &Actions,
-                                   Sema::ExpressionEvaluationContext NewContext)
+                                   Sema::ExpressionEvaluationContext NewContext,
+                                   Decl *LambdaContextDecl = 0,
+                                   bool IsDecltype = false)
     : Actions(Actions) {
-    Actions.PushExpressionEvaluationContext(NewContext);
+    Actions.PushExpressionEvaluationContext(NewContext, LambdaContextDecl,
+                                            IsDecltype);
   }
 
   ~EnterExpressionEvaluationContext() {

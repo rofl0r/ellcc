@@ -56,7 +56,11 @@ namespace llvm {
       CMPFP,        // ARM VFP compare instruction, sets FPSCR.
       CMPFPw0,      // ARM VFP compare against zero instruction, sets FPSCR.
       FMSTAT,       // ARM fmstat instruction.
+
       CMOV,         // ARM conditional move instructions.
+      CAND,         // ARM conditional and instructions.
+      COR,          // ARM conditional or instructions.
+      CXOR,         // ARM conditional xor instructions.
 
       BCC_i64,
 
@@ -345,7 +349,7 @@ namespace llvm {
 
     /// getRegClassFor - Return the register class that should be used for the
     /// specified value type.
-    virtual TargetRegisterClass *getRegClassFor(EVT VT) const;
+    virtual const TargetRegisterClass *getRegClassFor(EVT VT) const;
 
     /// getMaximalGlobalOffset - Returns the maximal possible offset which can
     /// be used for loads / stores from the global.

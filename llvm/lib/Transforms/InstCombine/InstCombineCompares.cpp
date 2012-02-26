@@ -571,6 +571,14 @@ static Value *EvaluateGEPOffsetExpression(User *GEP, InstCombiner &IC) {
 Instruction *InstCombiner::FoldGEPICmp(GEPOperator *GEPLHS, Value *RHS,
                                        ICmpInst::Predicate Cond,
                                        Instruction &I) {
+  // Don't transform signed compares of GEPs into index compares. Even if the
+  // GEP is inbounds, the final add of the base pointer can have signed overflow
+  // and would change the result of the icmp.
+  // e.g. "&foo[0] <s &foo[1]" can't be folded to "true" because "foo" could be
+  // the maximum signed value for the pointer type.
+  if (ICmpInst::isSigned(Cond))
+    return 0;
+
   // Look through bitcasts.
   if (BitCastInst *BCI = dyn_cast<BitCastInst>(RHS))
     RHS = BCI->getOperand(0);
@@ -606,6 +614,20 @@ Instruction *InstCombiner::FoldGEPICmp(GEPOperator *GEPLHS, Value *RHS,
       if (IndicesTheSame)
         return new ICmpInst(ICmpInst::getSignedPredicate(Cond),
                             GEPLHS->getOperand(0), GEPRHS->getOperand(0));
+
+      // If we're comparing GEPs with two base pointers that only differ in type
+      // and both GEPs have only constant indices or just one use, then fold
+      // the compare with the adjusted indices.
+      if (TD && GEPLHS->isInBounds() && GEPRHS->isInBounds() &&
+          (GEPLHS->hasAllConstantIndices() || GEPLHS->hasOneUse()) &&
+          (GEPRHS->hasAllConstantIndices() || GEPRHS->hasOneUse()) &&
+          PtrBase->stripPointerCasts() ==
+            GEPRHS->getOperand(0)->stripPointerCasts()) {
+        Value *Cmp = Builder->CreateICmp(ICmpInst::getSignedPredicate(Cond),
+                                         EmitGEPOffset(GEPLHS),
+                                         EmitGEPOffset(GEPRHS));
+        return ReplaceInstUsesWith(I, Cmp);
+      }
 
       // Otherwise, the base pointers are different and the indices are
       // different, bail out.

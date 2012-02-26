@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CGBlocks.h"
 #include "CGDebugInfo.h"
 #include "CodeGenFunction.h"
 #include "clang/AST/CXXInheritance.h"
@@ -418,40 +419,46 @@ static void EmitAggMemberInitializer(CodeGenFunction &CGF,
                                      ArrayRef<VarDecl *> ArrayIndexes,
                                      unsigned Index) {
   if (Index == ArrayIndexes.size()) {
-    CodeGenFunction::RunCleanupsScope Cleanups(CGF);
-
     LValue LV = LHS;
-    if (ArrayIndexVar) {
-      // If we have an array index variable, load it and use it as an offset.
-      // Then, increment the value.
-      llvm::Value *Dest = LHS.getAddress();
-      llvm::Value *ArrayIndex = CGF.Builder.CreateLoad(ArrayIndexVar);
-      Dest = CGF.Builder.CreateInBoundsGEP(Dest, ArrayIndex, "destaddress");
-      llvm::Value *Next = llvm::ConstantInt::get(ArrayIndex->getType(), 1);
-      Next = CGF.Builder.CreateAdd(ArrayIndex, Next, "inc");
-      CGF.Builder.CreateStore(Next, ArrayIndexVar);    
+    { // Scope for Cleanups.
+      CodeGenFunction::RunCleanupsScope Cleanups(CGF);
 
-      // Update the LValue.
-      LV.setAddress(Dest);
-      CharUnits Align = CGF.getContext().getTypeAlignInChars(T);
-      LV.setAlignment(std::min(Align, LV.getAlignment()));
+      if (ArrayIndexVar) {
+        // If we have an array index variable, load it and use it as an offset.
+        // Then, increment the value.
+        llvm::Value *Dest = LHS.getAddress();
+        llvm::Value *ArrayIndex = CGF.Builder.CreateLoad(ArrayIndexVar);
+        Dest = CGF.Builder.CreateInBoundsGEP(Dest, ArrayIndex, "destaddress");
+        llvm::Value *Next = llvm::ConstantInt::get(ArrayIndex->getType(), 1);
+        Next = CGF.Builder.CreateAdd(ArrayIndex, Next, "inc");
+        CGF.Builder.CreateStore(Next, ArrayIndexVar);    
+
+        // Update the LValue.
+        LV.setAddress(Dest);
+        CharUnits Align = CGF.getContext().getTypeAlignInChars(T);
+        LV.setAlignment(std::min(Align, LV.getAlignment()));
+      }
+
+      if (!CGF.hasAggregateLLVMType(T)) {
+        CGF.EmitScalarInit(Init, /*decl*/ 0, LV, false);
+      } else if (T->isAnyComplexType()) {
+        CGF.EmitComplexExprIntoAddr(Init, LV.getAddress(),
+                                    LV.isVolatileQualified());
+      } else {
+        AggValueSlot Slot =
+          AggValueSlot::forLValue(LV,
+                                  AggValueSlot::IsDestructed,
+                                  AggValueSlot::DoesNotNeedGCBarriers,
+                                  AggValueSlot::IsNotAliased);
+
+        CGF.EmitAggExpr(Init, Slot);
+      }
     }
 
-    if (!CGF.hasAggregateLLVMType(T)) {
-      CGF.EmitScalarInit(Init, /*decl*/ 0, LV, false);
-    } else if (T->isAnyComplexType()) {
-      CGF.EmitComplexExprIntoAddr(Init, LV.getAddress(),
-                                  LV.isVolatileQualified());
-    } else {
-      AggValueSlot Slot =
-        AggValueSlot::forLValue(LV,
-                                AggValueSlot::IsDestructed,
-                                AggValueSlot::DoesNotNeedGCBarriers,
-                                AggValueSlot::IsNotAliased);
-      
-      CGF.EmitAggExpr(Init, Slot);
-    }
-    
+    // Now, outside of the initializer cleanup scope, destroy the backing array
+    // for a std::initializer_list member.
+    CGF.MaybeEmitStdInitializerListCleanup(LV.getAddress(), Init);
+
     return;
   }
   
@@ -1720,32 +1727,16 @@ CodeGenFunction::EmitCXXOperatorMemberCallee(const CXXOperatorCallExpr *E,
   return CGM.GetAddrOfFunction(MD, fnType);
 }
 
-void CodeGenFunction::EmitLambdaToBlockPointerBody(FunctionArgList &Args) {
-  CGM.ErrorUnsupported(CurFuncDecl, "lambda conversion to block");
-}
-
-void CodeGenFunction::EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD) {
-  const CXXRecordDecl *Lambda = MD->getParent();
+void CodeGenFunction::EmitForwardingCallToLambda(const CXXRecordDecl *Lambda,
+                                                 CallArgList &CallArgs) {
+  // Lookup the call operator
   DeclarationName Name
     = getContext().DeclarationNames.getCXXOperatorName(OO_Call);
   DeclContext::lookup_const_result Calls = Lambda->lookup(Name);
   CXXMethodDecl *CallOperator = cast<CXXMethodDecl>(*Calls.first++);
-  const FunctionProtoType *FPT = MD->getType()->getAs<FunctionProtoType>();
+  const FunctionProtoType *FPT =
+      CallOperator->getType()->getAs<FunctionProtoType>();
   QualType ResultType = FPT->getResultType();
-
-  // Start building arguments for forwarding call
-  CallArgList CallArgs;
-
-  QualType ThisType = getContext().getPointerType(getContext().getRecordType(Lambda));
-  llvm::Value *ThisPtr = llvm::UndefValue::get(getTypes().ConvertType(ThisType));
-  CallArgs.add(RValue::get(ThisPtr), ThisType);
-
-  // Add the rest of the parameters.
-  for (FunctionDecl::param_const_iterator I = MD->param_begin(),
-       E = MD->param_end(); I != E; ++I) {
-    ParmVarDecl *param = *I;
-    EmitDelegateCallArg(CallArgs, param);
-  }
 
   // Get the address of the call operator.
   GlobalDecl GD(CallOperator);
@@ -1770,11 +1761,67 @@ void CodeGenFunction::EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD) {
     EmitReturnOfRValue(RV, ResultType);
 }
 
+void CodeGenFunction::EmitLambdaBlockInvokeBody() {
+  const BlockDecl *BD = BlockInfo->getBlockDecl();
+  const VarDecl *variable = BD->capture_begin()->getVariable();
+  const CXXRecordDecl *Lambda = variable->getType()->getAsCXXRecordDecl();
+
+  // Start building arguments for forwarding call
+  CallArgList CallArgs;
+
+  QualType ThisType = getContext().getPointerType(getContext().getRecordType(Lambda));
+  llvm::Value *ThisPtr = GetAddrOfBlockDecl(variable, false);
+  CallArgs.add(RValue::get(ThisPtr), ThisType);
+
+  // Add the rest of the parameters.
+  for (BlockDecl::param_const_iterator I = BD->param_begin(),
+       E = BD->param_end(); I != E; ++I) {
+    ParmVarDecl *param = *I;
+    EmitDelegateCallArg(CallArgs, param);
+  }
+
+  EmitForwardingCallToLambda(Lambda, CallArgs);
+}
+
+void CodeGenFunction::EmitLambdaToBlockPointerBody(FunctionArgList &Args) {
+  if (cast<CXXMethodDecl>(CurFuncDecl)->isVariadic()) {
+    // FIXME: Making this work correctly is nasty because it requires either
+    // cloning the body of the call operator or making the call operator forward.
+    CGM.ErrorUnsupported(CurFuncDecl, "lambda conversion to variadic function");
+    return;
+  }
+
+  InLambdaConversionToBlock = true;
+  EmitFunctionBody(Args);
+  InLambdaConversionToBlock = false;
+}
+
+void CodeGenFunction::EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD) {
+  const CXXRecordDecl *Lambda = MD->getParent();
+
+  // Start building arguments for forwarding call
+  CallArgList CallArgs;
+
+  QualType ThisType = getContext().getPointerType(getContext().getRecordType(Lambda));
+  llvm::Value *ThisPtr = llvm::UndefValue::get(getTypes().ConvertType(ThisType));
+  CallArgs.add(RValue::get(ThisPtr), ThisType);
+
+  // Add the rest of the parameters.
+  for (FunctionDecl::param_const_iterator I = MD->param_begin(),
+       E = MD->param_end(); I != E; ++I) {
+    ParmVarDecl *param = *I;
+    EmitDelegateCallArg(CallArgs, param);
+  }
+
+  EmitForwardingCallToLambda(Lambda, CallArgs);
+}
+
 void CodeGenFunction::EmitLambdaStaticInvokeFunction(const CXXMethodDecl *MD) {
   if (MD->isVariadic()) {
     // FIXME: Making this work correctly is nasty because it requires either
     // cloning the body of the call operator or making the call operator forward.
     CGM.ErrorUnsupported(MD, "lambda conversion to variadic function");
+    return;
   }
 
   EmitLambdaDelegatingInvokeBody(MD);

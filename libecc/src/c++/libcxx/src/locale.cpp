@@ -4547,11 +4547,13 @@ __time_get::~__time_get()
     freelocale(__loc_);
 }
 
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+
 template <>
 string
 __time_get_storage<char>::__analyze(char fmt, const ctype<char>& ct)
 {
-    tm t;
+    tm t = {0};
     t.tm_sec = 59;
     t.tm_min = 55;
     t.tm_hour = 23;
@@ -4692,13 +4694,12 @@ __time_get_storage<char>::__analyze(char fmt, const ctype<char>& ct)
 }
 
 #pragma clang diagnostic ignored "-Wmissing-braces"
-#pragma clang diagnostic ignored "-Wmissing-field-initializers"
 
 template <>
 wstring
 __time_get_storage<wchar_t>::__analyze(char fmt, const ctype<wchar_t>& ct)
 {
-    tm t;
+    tm t = {0};
     t.tm_sec = 59;
     t.tm_min = 55;
     t.tm_hour = 23;

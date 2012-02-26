@@ -154,19 +154,13 @@ TEST(TripleTest, Normalization) {
   // Check that normalizing a permutated set of valid components returns a
   // triple with the unpermuted components.
   StringRef C[4];
-  for (int Arch = 1+Triple::UnknownArch; Arch < Triple::InvalidArch; ++Arch) {
+  for (int Arch = 1+Triple::UnknownArch; Arch <= Triple::amdil; ++Arch) {
     C[0] = Triple::getArchTypeName(Triple::ArchType(Arch));
     for (int Vendor = 1+Triple::UnknownVendor; Vendor <= Triple::PC;
          ++Vendor) {
       C[1] = Triple::getVendorTypeName(Triple::VendorType(Vendor));
       for (int OS = 1+Triple::UnknownOS; OS <= Triple::Minix; ++OS) {
         C[2] = Triple::getOSTypeName(Triple::OSType(OS));
-
-        // If a value has multiple interpretations, then the permutation
-        // test will inevitably fail.  Currently this is only the case for
-        // "psp" which parses as both an architecture and an O/S.
-        if (OS == Triple::Psp)
-          continue;
 
         std::string E = Join(C[0], C[1], C[2]);
         EXPECT_EQ(E, Triple::normalize(Join(C[0], C[1], C[2])));
@@ -211,9 +205,6 @@ TEST(TripleTest, Normalization) {
       }
     }
   }
-
-  EXPECT_EQ("a-b-psp", Triple::normalize("a-b-psp"));
-  EXPECT_EQ("psp-b-c", Triple::normalize("psp-b-c"));
 
   // Various real-world funky triples.  The value returned by GCC's config.sub
   // is given in the comment.
@@ -269,11 +260,6 @@ TEST(TripleTest, MutateName) {
 
 TEST(TripleTest, BitWidthPredicates) {
   Triple T;
-  EXPECT_FALSE(T.isArch16Bit());
-  EXPECT_FALSE(T.isArch32Bit());
-  EXPECT_FALSE(T.isArch64Bit());
-
-  T.setArch(Triple::InvalidArch);
   EXPECT_FALSE(T.isArch16Bit());
   EXPECT_FALSE(T.isArch32Bit());
   EXPECT_FALSE(T.isArch64Bit());

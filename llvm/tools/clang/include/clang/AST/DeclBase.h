@@ -848,8 +848,8 @@ public:
   static void printGroup(Decl** Begin, unsigned NumDecls,
                          raw_ostream &Out, const PrintingPolicy &Policy,
                          unsigned Indentation = 0);
-  void dump() const;
-  void dumpXML() const;
+  LLVM_ATTRIBUTE_USED void dump() const;
+  LLVM_ATTRIBUTE_USED void dumpXML() const;
   void dumpXML(raw_ostream &OS) const;
 
 private:
@@ -961,7 +961,7 @@ protected:
   ///
   /// \returns the first/last pair of declarations.
   static std::pair<Decl *, Decl *>
-  BuildDeclChain(const SmallVectorImpl<Decl*> &Decls, bool FieldsAlreadyLoaded);
+  BuildDeclChain(ArrayRef<Decl*> Decls, bool FieldsAlreadyLoaded);
 
    DeclContext(Decl::Kind K)
      : DeclKind(K), ExternalLexicalStorage(false),
@@ -1490,7 +1490,7 @@ public:
   static bool classof(const NAME##Decl *D) { return true; }
 #include "clang/AST/DeclNodes.inc"
 
-  void dumpDeclContext() const;
+  LLVM_ATTRIBUTE_USED void dumpDeclContext() const;
 
 private:
   void LoadLexicalDeclsFromExternalStorage() const;

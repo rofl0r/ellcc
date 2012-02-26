@@ -59,9 +59,6 @@ void RegScavenger::initRegState() {
   // All registers started out unused.
   RegsAvailable.set();
 
-  // Reserved registers are always used.
-  RegsAvailable ^= ReservedRegs;
-
   if (!MBB)
     return;
 
@@ -148,6 +145,8 @@ void RegScavenger::forward() {
   DefRegs.reset();
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
+    if (MO.isRegMask())
+      (isPred ? DefRegs : KillRegs).setBitsNotInMask(MO.getRegMask());
     if (!MO.isReg())
       continue;
     unsigned Reg = MO.getReg();
@@ -223,9 +222,11 @@ void RegScavenger::forward() {
 
 void RegScavenger::getRegsUsed(BitVector &used, bool includeReserved) {
   used = RegsAvailable;
-  if (!includeReserved)
-    used |= ReservedRegs;
   used.flip();
+  if (includeReserved)
+    used |= ReservedRegs;
+  else
+    used.reset(ReservedRegs);
 }
 
 unsigned RegScavenger::FindUnusedReg(const TargetRegisterClass *RC) const {
@@ -279,6 +280,8 @@ unsigned RegScavenger::findSurvivorReg(MachineBasicBlock::iterator StartMI,
     // Remove any candidates touched by instruction.
     for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
       const MachineOperand &MO = MI->getOperand(i);
+      if (MO.isRegMask())
+        Candidates.clearBitsNotInMask(MO.getRegMask());
       if (!MO.isReg() || MO.isUndef() || !MO.getReg())
         continue;
       if (TargetRegisterInfo::isVirtualRegister(MO.getReg())) {

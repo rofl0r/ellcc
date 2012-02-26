@@ -589,8 +589,13 @@ static void ComputeDATE_TIME(SourceLocation &DATELoc, SourceLocation &TIMELoc,
 /// specified by the identifier as a standard language feature.
 static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
   const LangOptions &LangOpts = PP.getLangOptions();
+  StringRef Feature = II->getName();
 
-  return llvm::StringSwitch<bool>(II->getName())
+  // Normalize the feature name, __foo__ becomes foo.
+  if (Feature.startswith("__") && Feature.endswith("__") && Feature.size() >= 4)
+    Feature = Feature.substr(2, Feature.size() - 4);
+
+  return llvm::StringSwitch<bool>(Feature)
            .Case("address_sanitizer", LangOpts.AddressSanitizer)
            .Case("attribute_analyzer_noreturn", true)
            .Case("attribute_availability", true)
@@ -645,11 +650,11 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_delegating_constructors", LangOpts.CPlusPlus0x)
            .Case("cxx_deleted_functions", LangOpts.CPlusPlus0x)
            .Case("cxx_explicit_conversions", LangOpts.CPlusPlus0x)
-         //.Case("cxx_generalized_initializers", LangOpts.CPlusPlus0x)
+           .Case("cxx_generalized_initializers", LangOpts.CPlusPlus0x)
            .Case("cxx_implicit_moves", LangOpts.CPlusPlus0x)
          //.Case("cxx_inheriting_constructors", false)
            .Case("cxx_inline_namespaces", LangOpts.CPlusPlus0x)
-         //.Case("cxx_lambdas", false)
+           .Case("cxx_lambdas", LangOpts.CPlusPlus0x)
            .Case("cxx_nonstatic_member_init", LangOpts.CPlusPlus0x)
            .Case("cxx_noexcept", LangOpts.CPlusPlus0x)
            .Case("cxx_nullptr", LangOpts.CPlusPlus0x)
@@ -700,6 +705,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
                                                             != tok::identifier)
            .Case("is_polymorphic", LangOpts.CPlusPlus)
            .Case("is_trivial", LangOpts.CPlusPlus)
+           .Case("is_trivially_assignable", LangOpts.CPlusPlus)
+           .Case("is_trivially_constructible", LangOpts.CPlusPlus)
            .Case("is_trivially_copyable", LangOpts.CPlusPlus)
            .Case("is_union", LangOpts.CPlusPlus)
            .Case("modules", LangOpts.Modules)
@@ -722,10 +729,16 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
     return false;
 
   const LangOptions &LangOpts = PP.getLangOptions();
+  StringRef Extension = II->getName();
+
+  // Normalize the extension name, __foo__ becomes foo.
+  if (Extension.startswith("__") && Extension.endswith("__") &&
+      Extension.size() >= 4)
+    Extension = Extension.substr(2, Extension.size() - 4);
 
   // Because we inherit the feature list from HasFeature, this string switch
   // must be less restrictive than HasFeature's.
-  return llvm::StringSwitch<bool>(II->getName())
+  return llvm::StringSwitch<bool>(Extension)
            // C11 features supported by other languages as extensions.
            .Case("c_alignas", true)
            .Case("c_atomic", true)

@@ -4059,6 +4059,13 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 
     NewVD->addAttr(::new (Context) AsmLabelAttr(SE->getStrTokenLoc(0),
                                                 Context, Label));
+  } else if (!ExtnameUndeclaredIdentifiers.empty()) {
+    llvm::DenseMap<IdentifierInfo*,AsmLabelAttr*>::iterator I =
+      ExtnameUndeclaredIdentifiers.find(NewVD->getIdentifier());
+    if (I != ExtnameUndeclaredIdentifiers.end()) {
+      NewVD->addAttr(I->second);
+      ExtnameUndeclaredIdentifiers.erase(I);
+    }
   }
 
   // Diagnose shadowed variables before filtering for scope.
@@ -5157,6 +5164,13 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     StringLiteral *SE = cast<StringLiteral>(E);
     NewFD->addAttr(::new (Context) AsmLabelAttr(SE->getStrTokenLoc(0), Context,
                                                 SE->getString()));
+  } else if (!ExtnameUndeclaredIdentifiers.empty()) {
+    llvm::DenseMap<IdentifierInfo*,AsmLabelAttr*>::iterator I =
+      ExtnameUndeclaredIdentifiers.find(NewFD->getIdentifier());
+    if (I != ExtnameUndeclaredIdentifiers.end()) {
+      NewFD->addAttr(I->second);
+      ExtnameUndeclaredIdentifiers.erase(I);
+    }
   }
 
   // Copy the parameter declarations from the declarator D to the function
@@ -6087,7 +6101,8 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     }
     VDecl->setTypeSourceInfo(DeducedType);
     VDecl->setType(DeducedType->getType());
-
+    VDecl->ClearLinkageCache();
+    
     // In ARC, infer lifetime.
     if (getLangOptions().ObjCAutoRefCount && inferObjCARCLifetime(VDecl))
       VDecl->setInvalidDecl();
@@ -6211,10 +6226,8 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
   // completed by the initializer. For example:
   //   int ary[] = { 1, 3, 5 };
   // "ary" transitions from an IncompleteArrayType to a ConstantArrayType.
-  if (!VDecl->isInvalidDecl() && (DclT != SavT)) {
+  if (!VDecl->isInvalidDecl() && (DclT != SavT))
     VDecl->setType(DclT);
-    Init->setType(DclT.getNonReferenceType());
-  }
 
   // Check any implicit conversions within the expression.
   CheckImplicitConversions(Init, VDecl->getLocation());
@@ -9570,6 +9583,8 @@ void Sema::ActOnFields(Scope* S,
         // Only it is in implementation's lexical context.
         ClsFields[I]->setLexicalDeclContext(IMPDecl);
       CheckImplementationIvars(IMPDecl, ClsFields, RecFields.size(), RBrac);
+      IMPDecl->setIvarLBraceLoc(LBrac);
+      IMPDecl->setIvarRBraceLoc(RBrac);
     } else if (ObjCCategoryDecl *CDecl = 
                 dyn_cast<ObjCCategoryDecl>(EnclosingDecl)) {
       // case of ivars in class extension; all other cases have been
@@ -9603,6 +9618,8 @@ void Sema::ActOnFields(Scope* S,
         ClsFields[i]->setLexicalDeclContext(CDecl);
         CDecl->addDecl(ClsFields[i]);
       }
+      CDecl->setIvarLBraceLoc(LBrac);
+      CDecl->setIvarRBraceLoc(RBrac);
     }
   }
 
@@ -10150,6 +10167,23 @@ DeclResult Sema::ActOnModuleImport(SourceLocation AtLoc,
                                           Mod, IdentifierLocs);
   Context.getTranslationUnitDecl()->addDecl(Import);
   return Import;
+}
+
+void Sema::ActOnPragmaRedefineExtname(IdentifierInfo* Name,
+                                      IdentifierInfo* AliasName,
+                                      SourceLocation PragmaLoc,
+                                      SourceLocation NameLoc,
+                                      SourceLocation AliasNameLoc) {
+  Decl *PrevDecl = LookupSingleName(TUScope, Name, NameLoc,
+                                    LookupOrdinaryName);
+  AsmLabelAttr *Attr =
+     ::new (Context) AsmLabelAttr(AliasNameLoc, Context, AliasName->getName());
+
+  if (PrevDecl) 
+    PrevDecl->addAttr(Attr);
+  else 
+    (void)ExtnameUndeclaredIdentifiers.insert(
+      std::pair<IdentifierInfo*,AsmLabelAttr*>(Name, Attr));
 }
 
 void Sema::ActOnPragmaWeakID(IdentifierInfo* Name,

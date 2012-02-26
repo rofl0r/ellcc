@@ -1277,7 +1277,8 @@ static void CollectClassPropertyImplementations(ObjCContainerDecl *CDecl,
     for (ObjCProtocolDecl::prop_iterator P = PDecl->prop_begin(),
          E = PDecl->prop_end(); P != E; ++P) {
       ObjCPropertyDecl *Prop = (*P);
-      PropMap[Prop->getIdentifier()] = Prop;
+      if (!PropMap.count(Prop->getIdentifier()))
+        PropMap[Prop->getIdentifier()] = Prop;
     }
     // scan through protocol's protocols.
     for (ObjCProtocolDecl::protocol_iterator PI = PDecl->protocol_begin(),
@@ -1777,6 +1778,7 @@ void Sema::CheckObjCPropertyAttributes(Decl *PDecl,
           Attributes & ObjCDeclSpec::DQ_PR_copy ? "copy" : "retain (or strong)");
     Attributes &= ~(ObjCDeclSpec::DQ_PR_weak   | ObjCDeclSpec::DQ_PR_copy |
                     ObjCDeclSpec::DQ_PR_retain | ObjCDeclSpec::DQ_PR_strong);
+    PropertyDecl->setInvalidDecl();
   }
 
   // Check for more than one of { assign, copy, retain }.

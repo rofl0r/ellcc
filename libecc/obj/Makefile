@@ -6,8 +6,7 @@
             mips32r2sf mipsel nios2 pic32 ppc ppc64 sparc x86_64
 #SUBDIRS = gcc.cov x86_64 mips
 # Define directories to ignore.
-# RICH: http://ellcc.org/bugzilla/show_bug.cgi?id=46
-IGNORE = nios2 pic32 sparc ppc64
+IGNORE = nios2 pic32 sparc
 # Define subdirectories to ignore.
 SUBIGNORE = netbsd sa
 

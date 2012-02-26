@@ -771,7 +771,8 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
   SourceLocation TyBeginLoc = TInfo->getTypeLoc().getBeginLoc();
 
   if (Ty->isDependentType() ||
-      CallExpr::hasAnyTypeDependentArguments(Exprs, NumExprs)) {
+      CallExpr::hasAnyTypeDependentArguments(
+        llvm::makeArrayRef(Exprs, NumExprs))) {
     exprs.release();
 
     return Owned(CXXUnresolvedConstructExpr::Create(Context, TInfo,
@@ -1018,6 +1019,13 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
   } else if (Initializer && isa<InitListExpr>(Initializer))
     initStyle = CXXNewExpr::ListInit;
   else {
+    // In template instantiation, the initializer could be a CXXDefaultArgExpr
+    // unwrapped from a CXXConstructExpr that was implicitly built. There is no
+    // particularly sane way we can handle this (especially since it can even
+    // occur for array new), so we throw the initializer away and have it be
+    // rebuilt.
+    if (Initializer && isa<CXXDefaultArgExpr>(Initializer))
+      Initializer = 0;
     assert((!Initializer || isa<ImplicitValueInitExpr>(Initializer) ||
             isa<CXXConstructExpr>(Initializer)) &&
            "Initializer expression that cannot have been implicitly created.");
@@ -1087,7 +1095,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
   if (initStyle == CXXNewExpr::ListInit && isStdInitializerList(AllocType, 0)) {
     Diag(AllocTypeInfo->getTypeLoc().getBeginLoc(),
          diag::warn_dangling_std_initializer_list)
-      << /*at end of FE*/0 << Inits[0]->getSourceRange();
+        << /*at end of FE*/0 << Inits[0]->getSourceRange();
   }
 
   // In ARC, infer 'retaining' for the allocated 
@@ -1198,7 +1206,8 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
   unsigned NumPlaceArgs = PlacementArgs.size();
 
   if (!AllocType->isDependentType() &&
-      !Expr::hasAnyTypeDependentArguments(PlaceArgs, NumPlaceArgs) &&
+      !Expr::hasAnyTypeDependentArguments(
+        llvm::makeArrayRef(PlaceArgs, NumPlaceArgs)) &&
       FindAllocationFunctions(StartLoc,
                               SourceRange(PlacementLParen, PlacementRParen),
                               UseGlobal, AllocType, ArraySize, PlaceArgs,
@@ -1273,7 +1282,8 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
   }
 
   if (!AllocType->isDependentType() &&
-      !Expr::hasAnyTypeDependentArguments(Inits, NumInits)) {
+      !Expr::hasAnyTypeDependentArguments(
+        llvm::makeArrayRef(Inits, NumInits))) {
     // C++11 [expr.new]p15:
     //   A new-expression that creates an object of type T initializes that
     //   object as follows:
@@ -1617,14 +1627,16 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
 
     if (FunctionTemplateDecl *FnTemplate = dyn_cast<FunctionTemplateDecl>(D)) {
       AddTemplateOverloadCandidate(FnTemplate, Alloc.getPair(),
-                                   /*ExplicitTemplateArgs=*/0, Args, NumArgs,
+                                   /*ExplicitTemplateArgs=*/0,
+                                   llvm::makeArrayRef(Args, NumArgs),
                                    Candidates,
                                    /*SuppressUserConversions=*/false);
       continue;
     }
 
     FunctionDecl *Fn = cast<FunctionDecl>(D);
-    AddOverloadCandidate(Fn, Alloc.getPair(), Args, NumArgs, Candidates,
+    AddOverloadCandidate(Fn, Alloc.getPair(),
+                         llvm::makeArrayRef(Args, NumArgs), Candidates,
                          /*SuppressUserConversions=*/false);
   }
 
@@ -1664,7 +1676,8 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
     if (Diagnose) {
       Diag(StartLoc, diag::err_ovl_no_viable_function_in_call)
         << Name << Range;
-      Candidates.NoteCandidates(*this, OCD_AllCandidates, Args, NumArgs);
+      Candidates.NoteCandidates(*this, OCD_AllCandidates,
+                                llvm::makeArrayRef(Args, NumArgs));
     }
     return true;
 
@@ -1672,7 +1685,8 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
     if (Diagnose) {
       Diag(StartLoc, diag::err_ovl_ambiguous_call)
         << Name << Range;
-      Candidates.NoteCandidates(*this, OCD_ViableCandidates, Args, NumArgs);
+      Candidates.NoteCandidates(*this, OCD_ViableCandidates,
+                                llvm::makeArrayRef(Args, NumArgs));
     }
     return true;
 
@@ -1683,7 +1697,8 @@ bool Sema::FindAllocationOverload(SourceLocation StartLoc, SourceRange Range,
         << Name 
         << getDeletedOrUnavailableSuffix(Best->Function)
         << Range;
-      Candidates.NoteCandidates(*this, OCD_AllCandidates, Args, NumArgs);
+      Candidates.NoteCandidates(*this, OCD_AllCandidates,
+                                llvm::makeArrayRef(Args, NumArgs));
     }
     return true;
   }
@@ -1874,7 +1889,8 @@ bool Sema::FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
     if (Operator->isDeleted()) {
       if (Diagnose) {
         Diag(StartLoc, diag::err_deleted_function_use);
-        Diag(Operator->getLocation(), diag::note_unavailable_here) << true;
+        Diag(Operator->getLocation(), diag::note_unavailable_here)
+          << /*function*/ 1 << /*deleted*/ 1;
       }
       return true;
     }
@@ -3205,6 +3221,126 @@ ExprResult Sema::ActOnBinaryTypeTrait(BinaryTypeTrait BTT,
   return BuildBinaryTypeTrait(BTT, KWLoc, LhsTSInfo, RhsTSInfo, RParen);
 }
 
+static bool evaluateTypeTrait(Sema &S, TypeTrait Kind, SourceLocation KWLoc,
+                              ArrayRef<TypeSourceInfo *> Args,
+                              SourceLocation RParenLoc) {
+  switch (Kind) {
+  case clang::TT_IsTriviallyConstructible: {
+    // C++11 [meta.unary.prop]:
+    //   is_trivially_constructible is defined as:
+    //
+    //     is_constructible<T, Args...>::value is true and the variable
+    //     definition for is_constructible, as defined below, is known to call no
+    //     operation that is not trivial.
+    //
+    //   The predicate condition for a template specialization 
+    //   is_constructible<T, Args...> shall be satisfied if and only if the 
+    //   following variable definition would be well-formed for some invented 
+    //   variable t:
+    //
+    //     T t(create<Args>()...);
+    if (Args.empty()) {
+      S.Diag(KWLoc, diag::err_type_trait_arity)
+        << 1 << 1 << 1 << (int)Args.size();
+      return false;
+    }
+    
+    bool SawVoid = false;
+    for (unsigned I = 0, N = Args.size(); I != N; ++I) {
+      if (Args[I]->getType()->isVoidType()) {
+        SawVoid = true;
+        continue;
+      }
+      
+      if (!Args[I]->getType()->isIncompleteType() &&
+        S.RequireCompleteType(KWLoc, Args[I]->getType(), 
+          diag::err_incomplete_type_used_in_type_trait_expr))
+        return false;
+    }
+    
+    // If any argument was 'void', of course it won't type-check.
+    if (SawVoid)
+      return false;
+    
+    llvm::SmallVector<OpaqueValueExpr, 2> OpaqueArgExprs;
+    llvm::SmallVector<Expr *, 2> ArgExprs;
+    ArgExprs.reserve(Args.size() - 1);
+    for (unsigned I = 1, N = Args.size(); I != N; ++I) {
+      QualType T = Args[I]->getType();
+      if (T->isObjectType() || T->isFunctionType())
+        T = S.Context.getRValueReferenceType(T);
+      OpaqueArgExprs.push_back(
+        OpaqueValueExpr(Args[I]->getTypeLoc().getSourceRange().getBegin(), 
+                        T.getNonLValueExprType(S.Context),
+                        Expr::getValueKindForType(T)));
+      ArgExprs.push_back(&OpaqueArgExprs.back());
+    }
+    
+    // Perform the initialization in an unevaluated context within a SFINAE 
+    // trap at translation unit scope.
+    EnterExpressionEvaluationContext Unevaluated(S, Sema::Unevaluated);
+    Sema::SFINAETrap SFINAE(S, /*AccessCheckingSFINAE=*/true);
+    Sema::ContextRAII TUContext(S, S.Context.getTranslationUnitDecl());
+    InitializedEntity To(InitializedEntity::InitializeTemporary(Args[0]));
+    InitializationKind InitKind(InitializationKind::CreateDirect(KWLoc, KWLoc,
+                                                                 RParenLoc));
+    InitializationSequence Init(S, To, InitKind, 
+                                ArgExprs.begin(), ArgExprs.size());
+    if (Init.Failed())
+      return false;
+    
+    ExprResult Result = Init.Perform(S, To, InitKind, 
+                                     MultiExprArg(ArgExprs.data(), 
+                                                  ArgExprs.size()));
+    if (Result.isInvalid() || SFINAE.hasErrorOccurred())
+      return false;
+    
+    // The initialization succeeded; not make sure there are no non-trivial 
+    // calls.
+    return !Result.get()->hasNonTrivialCall(S.Context);
+  }
+  }
+  
+  return false;
+}
+
+ExprResult Sema::BuildTypeTrait(TypeTrait Kind, SourceLocation KWLoc, 
+                                ArrayRef<TypeSourceInfo *> Args, 
+                                SourceLocation RParenLoc) {
+  bool Dependent = false;
+  for (unsigned I = 0, N = Args.size(); I != N; ++I) {
+    if (Args[I]->getType()->isDependentType()) {
+      Dependent = true;
+      break;
+    }
+  }
+  
+  bool Value = false;
+  if (!Dependent)
+    Value = evaluateTypeTrait(*this, Kind, KWLoc, Args, RParenLoc);
+  
+  return TypeTraitExpr::Create(Context, Context.BoolTy, KWLoc, Kind,
+                               Args, RParenLoc, Value);
+}
+
+ExprResult Sema::ActOnTypeTrait(TypeTrait Kind, SourceLocation KWLoc, 
+                                ArrayRef<ParsedType> Args, 
+                                SourceLocation RParenLoc) {
+  llvm::SmallVector<TypeSourceInfo *, 4> ConvertedArgs;
+  ConvertedArgs.reserve(Args.size());
+  
+  for (unsigned I = 0, N = Args.size(); I != N; ++I) {
+    TypeSourceInfo *TInfo;
+    QualType T = GetTypeFromParser(Args[I], &TInfo);
+    if (!TInfo)
+      TInfo = Context.getTrivialTypeSourceInfo(T, KWLoc);
+    
+    ConvertedArgs.push_back(TInfo);    
+  }
+  
+  return BuildTypeTrait(Kind, KWLoc, ConvertedArgs, RParenLoc);
+}
+
 static bool EvaluateBinaryTypeTrait(Sema &Self, BinaryTypeTrait BTT,
                                     QualType LhsT, QualType RhsT,
                                     SourceLocation KeyLoc) {
@@ -3294,6 +3430,54 @@ static bool EvaluateBinaryTypeTrait(Sema &Self, BinaryTypeTrait BTT,
     ExprResult Result = Init.Perform(Self, To, Kind, MultiExprArg(&FromPtr, 1));
     return !Result.isInvalid() && !SFINAE.hasErrorOccurred();
   }
+      
+  case BTT_IsTriviallyAssignable: {
+    // C++11 [meta.unary.prop]p3:
+    //   is_trivially_assignable is defined as:
+    //     is_assignable<T, U>::value is true and the assignment, as defined by
+    //     is_assignable, is known to call no operation that is not trivial
+    //
+    //   is_assignable is defined as:
+    //     The expression declval<T>() = declval<U>() is well-formed when 
+    //     treated as an unevaluated operand (Clause 5).
+    //
+    //   For both, T and U shall be complete types, (possibly cv-qualified) 
+    //   void, or arrays of unknown bound.
+    if (!LhsT->isVoidType() && !LhsT->isIncompleteArrayType() &&
+        Self.RequireCompleteType(KeyLoc, LhsT, 
+          diag::err_incomplete_type_used_in_type_trait_expr))
+      return false;
+    if (!RhsT->isVoidType() && !RhsT->isIncompleteArrayType() &&
+        Self.RequireCompleteType(KeyLoc, RhsT, 
+          diag::err_incomplete_type_used_in_type_trait_expr))
+      return false;
+
+    // cv void is never assignable.
+    if (LhsT->isVoidType() || RhsT->isVoidType())
+      return false;
+
+    // Build expressions that emulate the effect of declval<T>() and 
+    // declval<U>().
+    if (LhsT->isObjectType() || LhsT->isFunctionType())
+      LhsT = Self.Context.getRValueReferenceType(LhsT);
+    if (RhsT->isObjectType() || RhsT->isFunctionType())
+      RhsT = Self.Context.getRValueReferenceType(RhsT);
+    OpaqueValueExpr Lhs(KeyLoc, LhsT.getNonLValueExprType(Self.Context),
+                        Expr::getValueKindForType(LhsT));
+    OpaqueValueExpr Rhs(KeyLoc, RhsT.getNonLValueExprType(Self.Context),
+                        Expr::getValueKindForType(RhsT));
+    
+    // Attempt the assignment in an unevaluated context within a SFINAE 
+    // trap at translation unit scope.
+    EnterExpressionEvaluationContext Unevaluated(Self, Sema::Unevaluated);
+    Sema::SFINAETrap SFINAE(Self, /*AccessCheckingSFINAE=*/true);
+    Sema::ContextRAII TUContext(Self, Self.Context.getTranslationUnitDecl());
+    ExprResult Result = Self.BuildBinOp(/*S=*/0, KeyLoc, BO_Assign, &Lhs, &Rhs);
+    if (Result.isInvalid() || SFINAE.hasErrorOccurred())
+      return false;
+
+    return !Result.get()->hasNonTrivialCall(Self.Context);
+  }
   }
   llvm_unreachable("Unknown type trait or not implemented");
 }
@@ -3326,6 +3510,7 @@ ExprResult Sema::BuildBinaryTypeTrait(BinaryTypeTrait BTT,
   case BTT_IsSame:         ResultType = Context.BoolTy; break;
   case BTT_TypeCompatible: ResultType = Context.IntTy; break;
   case BTT_IsConvertibleTo: ResultType = Context.BoolTy; break;
+  case BTT_IsTriviallyAssignable: ResultType = Context.BoolTy;
   }
 
   return Owned(new (Context) BinaryTypeTraitExpr(KWLoc, BTT, LhsTSInfo,
@@ -4315,11 +4500,14 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
     }
   }
 
-  // That should be enough to guarantee that this type is complete.
+  // That should be enough to guarantee that this type is complete, if we're
+  // not processing a decltype expression.
   CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
   if (RD->isInvalidDecl() || RD->isDependentContext())
     return Owned(E);
-  CXXDestructorDecl *Destructor = LookupDestructor(RD);
+
+  bool IsDecltype = ExprEvalContexts.back().IsDecltype;
+  CXXDestructorDecl *Destructor = IsDecltype ? 0 : LookupDestructor(RD);
 
   if (Destructor) {
     MarkFunctionReferenced(E->getExprLoc(), Destructor);
@@ -4327,18 +4515,22 @@ ExprResult Sema::MaybeBindToTemporary(Expr *E) {
                           PDiag(diag::err_access_dtor_temp)
                             << E->getType());
     DiagnoseUseOfDecl(Destructor, E->getExprLoc());
-  }
 
-  // If destructor is trivial, we can avoid the extra copy.
-  if (Destructor->isTrivial())
-    return Owned(E);
+    // If destructor is trivial, we can avoid the extra copy.
+    if (Destructor->isTrivial())
+      return Owned(E);
 
-  if (Destructor)
     // We need a cleanup, but we don't need to remember the temporary.
     ExprNeedsCleanups = true;
+  }
 
   CXXTemporary *Temp = CXXTemporary::Create(Context, Destructor);
-  return Owned(CXXBindTemporaryExpr::Create(Context, Temp, E));
+  CXXBindTemporaryExpr *Bind = CXXBindTemporaryExpr::Create(Context, Temp, E);
+
+  if (IsDecltype)
+    ExprEvalContexts.back().DelayedDecltypeBinds.push_back(Bind);
+
+  return Owned(Bind);
 }
 
 ExprResult
@@ -4388,6 +4580,95 @@ Stmt *Sema::MaybeCreateStmtWithCleanups(Stmt *SubStmt) {
   Expr *E = new (Context) StmtExpr(CompStmt, Context.VoidTy, SourceLocation(),
                                    SourceLocation());
   return MaybeCreateExprWithCleanups(E);
+}
+
+/// Process the expression contained within a decltype. For such expressions,
+/// certain semantic checks on temporaries are delayed until this point, and
+/// are omitted for the 'topmost' call in the decltype expression. If the
+/// topmost call bound a temporary, strip that temporary off the expression.
+ExprResult Sema::ActOnDecltypeExpression(Expr *E) {
+  ExpressionEvaluationContextRecord &Rec = ExprEvalContexts.back();
+  assert(Rec.IsDecltype && "not in a decltype expression");
+
+  // C++11 [expr.call]p11:
+  //   If a function call is a prvalue of object type,
+  // -- if the function call is either
+  //   -- the operand of a decltype-specifier, or
+  //   -- the right operand of a comma operator that is the operand of a
+  //      decltype-specifier,
+  //   a temporary object is not introduced for the prvalue.
+
+  // Recursively rebuild ParenExprs and comma expressions to strip out the
+  // outermost CXXBindTemporaryExpr, if any.
+  if (ParenExpr *PE = dyn_cast<ParenExpr>(E)) {
+    ExprResult SubExpr = ActOnDecltypeExpression(PE->getSubExpr());
+    if (SubExpr.isInvalid())
+      return ExprError();
+    if (SubExpr.get() == PE->getSubExpr())
+      return Owned(E);
+    return ActOnParenExpr(PE->getLParen(), PE->getRParen(), SubExpr.take());
+  }
+  if (BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
+    if (BO->getOpcode() == BO_Comma) {
+      ExprResult RHS = ActOnDecltypeExpression(BO->getRHS());
+      if (RHS.isInvalid())
+        return ExprError();
+      if (RHS.get() == BO->getRHS())
+        return Owned(E);
+      return Owned(new (Context) BinaryOperator(BO->getLHS(), RHS.take(),
+                                                BO_Comma, BO->getType(),
+                                                BO->getValueKind(),
+                                                BO->getObjectKind(),
+                                                BO->getOperatorLoc()));
+    }
+  }
+
+  CXXBindTemporaryExpr *TopBind = dyn_cast<CXXBindTemporaryExpr>(E);
+  if (TopBind)
+    E = TopBind->getSubExpr();
+
+  // Disable the special decltype handling now.
+  Rec.IsDecltype = false;
+
+  // Perform the semantic checks we delayed until this point.
+  CallExpr *TopCall = dyn_cast<CallExpr>(E);
+  for (unsigned I = 0, N = Rec.DelayedDecltypeCalls.size(); I != N; ++I) {
+    CallExpr *Call = Rec.DelayedDecltypeCalls[I];
+    if (Call == TopCall)
+      continue;
+
+    if (CheckCallReturnType(Call->getCallReturnType(),
+                            Call->getSourceRange().getBegin(),
+                            Call, Call->getDirectCallee()))
+      return ExprError();
+  }
+
+  // Now all relevant types are complete, check the destructors are accessible
+  // and non-deleted, and annotate them on the temporaries.
+  for (unsigned I = 0, N = Rec.DelayedDecltypeBinds.size(); I != N; ++I) {
+    CXXBindTemporaryExpr *Bind = Rec.DelayedDecltypeBinds[I];
+    if (Bind == TopBind)
+      continue;
+
+    CXXTemporary *Temp = Bind->getTemporary();
+
+    CXXRecordDecl *RD =
+      Bind->getType()->getBaseElementTypeUnsafe()->getAsCXXRecordDecl();
+    CXXDestructorDecl *Destructor = LookupDestructor(RD);
+    Temp->setDestructor(Destructor);
+
+    MarkFunctionReferenced(E->getExprLoc(), Destructor);
+    CheckDestructorAccess(E->getExprLoc(), Destructor,
+                          PDiag(diag::err_access_dtor_temp)
+                            << E->getType());
+    DiagnoseUseOfDecl(Destructor, E->getExprLoc());
+
+    // We need a cleanup, but we don't need to remember the temporary.
+    ExprNeedsCleanups = true;
+  }
+
+  // Possibly strip off the top CXXBindTemporaryExpr.
+  return Owned(E);
 }
 
 ExprResult

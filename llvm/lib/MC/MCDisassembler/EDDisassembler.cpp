@@ -47,8 +47,7 @@ static struct TripleMap triplemap[] = {
   { Triple::x86,          "i386-unknown-unknown"    },
   { Triple::x86_64,       "x86_64-unknown-unknown"  },
   { Triple::arm,          "arm-unknown-unknown"     },
-  { Triple::thumb,        "thumb-unknown-unknown"   },
-  { Triple::InvalidArch,  NULL,                     }
+  { Triple::thumb,        "thumb-unknown-unknown"   }
 };
 
 /// infoFromArch - Returns the TripleMap corresponding to a given architecture,
@@ -104,27 +103,22 @@ EDDisassembler *EDDisassembler::getDisassembler(StringRef str,
   CPUKey key;
   key.Triple = str.str();
   key.Syntax = syntax;
-  
+
   EDDisassembler::DisassemblerMap_t::iterator i = sDisassemblers.find(key);
-    
+
   if (i != sDisassemblers.end()) {
     return i->second;  
   }
-  else {
-    EDDisassembler *sdd = new EDDisassembler(key);
-    if (!sdd->valid()) {
-      delete sdd;
-      return NULL;
-    }
-    
-    sDisassemblers[key] = sdd;
-    
-    return sdd;
+
+  EDDisassembler *sdd = new EDDisassembler(key);
+  if (!sdd->valid()) {
+    delete sdd;
+    return NULL;
   }
-  
-  return NULL;
-    
-  return getDisassembler(Triple(str).getArch(), syntax);
+
+  sDisassemblers[key] = sdd;
+
+  return sdd;
 }
 
 EDDisassembler::EDDisassembler(CPUKey &key) : 
@@ -133,8 +127,6 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   ErrorStream(nulls()), 
   Key(key),
   TgtTriple(key.Triple.c_str()) {        
-  if (TgtTriple.getArch() == Triple::InvalidArch)
-    return;
   
   LLVMSyntaxVariant = getLLVMSyntaxVariant(TgtTriple.getArch(), key.Syntax);
   

@@ -249,7 +249,7 @@ Parser::ParseAssignmentExprWithObjCMessageExprStart(SourceLocation LBracLoc,
 }
 
 
-ExprResult Parser::ParseConstantExpression() {
+ExprResult Parser::ParseConstantExpression(TypeCastState isTypeCast) {
   // C++03 [basic.def.odr]p2:
   //   An expression is potentially evaluated unless it appears where an
   //   integral constant expression is required (see 5.19) [...].
@@ -257,7 +257,7 @@ ExprResult Parser::ParseConstantExpression() {
   EnterExpressionEvaluationContext Unevaluated(Actions,
                                                Sema::ConstantEvaluated);
 
-  ExprResult LHS(ParseCastExpression(false));
+  ExprResult LHS(ParseCastExpression(false, false, isTypeCast));
   return ParseRHSOfBinaryExpression(LHS, prec::Conditional);
 }
 
@@ -1140,8 +1140,12 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw___is_same:
   case tok::kw___is_convertible:
   case tok::kw___is_convertible_to:
+  case tok::kw___is_trivially_assignable:
     return ParseBinaryTypeTrait();
 
+  case tok::kw___is_trivially_constructible:
+    return ParseTypeTrait();
+      
   case tok::kw___array_rank:
   case tok::kw___array_extent:
     return ParseArrayTypeTrait();
@@ -1328,7 +1332,8 @@ Parser::ParsePostfixExpressionSuffix(ExprResult LHS) {
       CommaLocsTy CommaLocs;
       
       if (Tok.is(tok::code_completion)) {
-        Actions.CodeCompleteCall(getCurScope(), LHS.get(), 0, 0);
+        Actions.CodeCompleteCall(getCurScope(), LHS.get(),
+                                 llvm::ArrayRef<Expr *>());
         cutOffParsing();
         return ExprError();
       }
@@ -2207,13 +2212,12 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr*> &Exprs,
                             SmallVectorImpl<SourceLocation> &CommaLocs,
                                  void (Sema::*Completer)(Scope *S, 
                                                            Expr *Data,
-                                                           Expr **Args,
-                                                           unsigned NumArgs),
+                                                   llvm::ArrayRef<Expr *> Args),
                                  Expr *Data) {
   while (1) {
     if (Tok.is(tok::code_completion)) {
       if (Completer)
-        (Actions.*Completer)(getCurScope(), Data, Exprs.data(), Exprs.size());
+        (Actions.*Completer)(getCurScope(), Data, Exprs);
       else
         Actions.CodeCompleteOrdinaryName(getCurScope(), Sema::PCC_Expression);
       cutOffParsing();

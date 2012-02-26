@@ -1400,7 +1400,10 @@ bool ARMBaseInstrInfo::isSchedulingBoundary(const MachineInstr *MI,
   // saves compile time, because it doesn't require every single
   // stack slot reference to depend on the instruction that does the
   // modification.
-  if (MI->definesRegister(ARM::SP))
+  // Calls don't actually change the stack pointer, even if they have imp-defs.
+  // No ARM calling conventions change the stack pointer. (X86 calling
+  // conventions sometimes do).
+  if (!MI->isCall() && MI->definesRegister(ARM::SP))
     return true;
 
   return false;

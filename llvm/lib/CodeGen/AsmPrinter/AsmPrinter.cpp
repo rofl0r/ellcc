@@ -100,6 +100,7 @@ AsmPrinter::AsmPrinter(TargetMachine &tm, MCStreamer &Streamer)
     OutStreamer(Streamer),
     LastMI(0), LastFn(0), Counter(~0U), SetCounter(0) {
   DD = 0; DE = 0; MMI = 0; LI = 0;
+  CurrentFnSym = CurrentFnSymForSize = 0;
   GCMetadataPrinters = 0;
   VerboseAsm = Streamer.isVerboseAsm();
 }
@@ -754,7 +755,17 @@ void AsmPrinter::EmitFunctionBody() {
   // If the target wants a .size directive for the size of the function, emit
   // it.
   if (MAI->hasDotTypeDotSizeDirective()) {
-    EmitFunctionSizeDirective();
+    // Create a symbol for the end of function, so we can get the size as
+    // difference between the function label and the temp label.
+    MCSymbol *FnEndLabel = OutContext.CreateTempSymbol();
+    OutStreamer.EmitLabel(FnEndLabel);
+
+    const MCExpr *SizeExp =
+      MCBinaryExpr::CreateSub(MCSymbolRefExpr::Create(FnEndLabel, OutContext),
+                              MCSymbolRefExpr::Create(CurrentFnSymForSize,
+                                                      OutContext),
+                              OutContext);
+    OutStreamer.EmitELFSize(CurrentFnSym, SizeExp);
   }
 
   // Emit post-function debug information.
@@ -772,22 +783,6 @@ void AsmPrinter::EmitFunctionBody() {
   EmitJumpTableInfo();
 
   OutStreamer.AddBlankLine();
-}
-
-/// EmitFunctionSizeDirective - Emit a .size directive for a function
-/// This can be overridden by targets as required to do custom stuff.
-void AsmPrinter::EmitFunctionSizeDirective() {
-    // Create a symbol for the end of function, so we can get the size as
-    // difference between the function label and the temp label.
-
-    MCSymbol *FnEndLabel = OutContext.CreateTempSymbol();
-    OutStreamer.EmitLabel(FnEndLabel);
-
-    const MCExpr *SizeExp =
-      MCBinaryExpr::CreateSub(MCSymbolRefExpr::Create(FnEndLabel, OutContext),
-                              MCSymbolRefExpr::Create(CurrentFnSym, OutContext),
-                              OutContext);
-    OutStreamer.EmitELFSize(CurrentFnSym, SizeExp);
 }
 
 /// getDebugValueLocation - Get location information encoded by DBG_VALUE
@@ -958,6 +953,7 @@ void AsmPrinter::SetupMachineFunction(MachineFunction &MF) {
   this->MF = &MF;
   // Get the function symbol.
   CurrentFnSym = Mang->getSymbol(MF.getFunction());
+  CurrentFnSymForSize = CurrentFnSym;
 
   if (isVerbose())
     LI = &getAnalysis<MachineLoopInfo>();

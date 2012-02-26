@@ -228,6 +228,11 @@ not related to the language standard, such as e.g.
 
 <p>The feature tag is described along with the language feature below.</p>
 
+<p>The feature name or extension name can also be specified with a preceding and
+following <code>__</code> (double underscore) to avoid interference from a macro
+with the same name. For instance, <code>__always_inline__</code> can be used
+instead of <code>always_inline</code>.</p>
+
 <!-- ======================================================================= -->
 <h3><a name="__has_attribute">__has_attribute</a></h3>
 <!-- ======================================================================= -->
@@ -728,7 +733,7 @@ inline namespaces is enabled.</p>
 
 <p>Use <tt>__has_feature(cxx_lambdas)</tt> or
 <tt>__has_extension(cxx_lambdas)</tt> to determine if support for lambdas
-is enabled. Clang does not currently implement this feature.</p>
+is enabled. </p>
 
 <h4 id="cxx_noexcept">C++11 noexcept</h4>
 
@@ -889,6 +894,8 @@ struct is_convertible_to {
   <li><code>__is_literal(type)</code>: Determines whether the given type is a literal type</li>
   <li><code>__is_final</code>: Determines whether the given type is declared with a <code>final</code> class-virt-specifier.</li>
   <li><code>__underlying_type(type)</code>: Retrieves the underlying type for a given <code>enum</code> type. This trait is required to implement the C++11 standard library.</li>
+  <li><code>__is_trivially_assignable(totype, fromtype)</code>: Determines whether a value of type <tt>totype</tt> can be assigned to from a value of type <tt>fromtype</tt> such that no non-trivial functions are called as part of that assignment. This trait is required to implement the C++11 standard library.</li>
+  <li><code>__is_trivially_constructible(type, argtypes...)</code>: Determines whether a value of type <tt>type</tt> can be direct-initialized with arguments of types <tt>argtypes...</tt> such that no non-trivial functions are called as part of that initialization. This trait is required to implement the C++11 standard library.</li>
 </ul>
 
 <!-- ======================================================================= -->

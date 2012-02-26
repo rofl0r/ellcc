@@ -17,7 +17,6 @@
 #include "asan_internal.h"
 #include "asan_lock.h"
 #include "asan_mapping.h"
-#include "asan_procmaps.h"
 #include "asan_stack.h"
 #include "asan_stats.h"
 #include "asan_thread.h"
@@ -45,7 +44,7 @@ bool   FLAG_replace_intrin;
 bool   FLAG_replace_cfallocator;  // Used on Mac only.
 size_t FLAG_max_malloc_fill_size = 0;
 bool   FLAG_use_fake_stack;
-int    FLAG_exitcode = EXIT_FAILURE;
+int    FLAG_exitcode = ASAN_DEFAULT_FAILURE_EXITCODE;
 bool   FLAG_allow_user_poisoning;
 int    FLAG_sleep_before_dying;
 
@@ -434,13 +433,14 @@ void __asan_init() {
   FLAG_replace_str = IntFlagValue(options, "replace_str=", 1);
   FLAG_replace_intrin = IntFlagValue(options, "replace_intrin=", 1);
   FLAG_use_fake_stack = IntFlagValue(options, "use_fake_stack=", 1);
-  FLAG_exitcode = IntFlagValue(options, "exitcode=", EXIT_FAILURE);
+  FLAG_exitcode = IntFlagValue(options, "exitcode=",
+                               ASAN_DEFAULT_FAILURE_EXITCODE);
   FLAG_allow_user_poisoning = IntFlagValue(options,
                                            "allow_user_poisoning=", 1);
   FLAG_sleep_before_dying = IntFlagValue(options, "sleep_before_dying=", 0);
 
   if (FLAG_atexit) {
-    atexit(asan_atexit);
+    Atexit(asan_atexit);
   }
 
   // interceptors
@@ -490,6 +490,7 @@ void __asan_init() {
   } else {
     Report("Shadow memory range interleaves with an existing memory mapping. "
            "ASan cannot proceed correctly. ABORTING.\n");
+    AsanDumpProcessMap();
     AsanDie();
   }
 
@@ -508,9 +509,15 @@ void __asan_init() {
 }
 
 #if defined(ASAN_USE_PREINIT_ARRAY)
-// On Linux, we force __asan_init to be called before anyone else
-// by placing it into .preinit_array section.
-// FIXME: do we have anything like this on Mac?
-__attribute__((section(".preinit_array")))
-  typeof(__asan_init) *__asan_preinit =__asan_init;
+  // On Linux, we force __asan_init to be called before anyone else
+  // by placing it into .preinit_array section.
+  // FIXME: do we have anything like this on Mac?
+  __attribute__((section(".preinit_array")))
+    typeof(__asan_init) *__asan_preinit =__asan_init;
+#elif defined(_WIN32) && defined(_DLL)
+  // On Windows, when using dynamic CRT (/MD), we can put a pointer
+  // to __asan_init into the global list of C initializers.
+  // See crt0dat.c in the CRT sources for the details.
+  #pragma section(".CRT$XIB", long, read)  // NOLINT
+  __declspec(allocate(".CRT$XIB")) void (*__asan_preinit)() = __asan_init;
 #endif

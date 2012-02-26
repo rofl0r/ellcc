@@ -1755,6 +1755,7 @@ public:
   void VisitWhileStmt(WhileStmt *W);
   void VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E);
   void VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E);
+  void VisitTypeTraitExpr(TypeTraitExpr *E);
   void VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E);
   void VisitExpressionTraitExpr(ExpressionTraitExpr *E);
   void VisitUnresolvedMemberExpr(UnresolvedMemberExpr *U);
@@ -2054,6 +2055,11 @@ void EnqueueVisitor::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
 void EnqueueVisitor::VisitBinaryTypeTraitExpr(BinaryTypeTraitExpr *E) {
   AddTypeLoc(E->getRhsTypeSourceInfo());
   AddTypeLoc(E->getLhsTypeSourceInfo());
+}
+
+void EnqueueVisitor::VisitTypeTraitExpr(TypeTraitExpr *E) {
+  for (unsigned I = E->getNumArgs(); I > 0; --I)
+    AddTypeLoc(E->getArg(I-1));
 }
 
 void EnqueueVisitor::VisitArrayTypeTraitExpr(ArrayTypeTraitExpr *E) {
@@ -2429,7 +2435,7 @@ CXTranslationUnit clang_createTranslationUnit(CXIndex CIdx,
   FileSystemOptions FileSystemOpts;
   FileSystemOpts.WorkingDir = CXXIdx->getWorkingDirectory();
 
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
+  IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
   ASTUnit *TU = ASTUnit::LoadFromASTFile(ast_filename, Diags, FileSystemOpts,
                                   CXXIdx->getOnlyLocalDecls(),
                                   0, 0, true);
@@ -2448,8 +2454,7 @@ clang_createTranslationUnitFromSourceFile(CXIndex CIdx,
                                           const char * const *command_line_args,
                                           unsigned num_unsaved_files,
                                           struct CXUnsavedFile *unsaved_files) {
-  unsigned Options = CXTranslationUnit_DetailedPreprocessingRecord |
-                     CXTranslationUnit_NestedMacroExpansions;
+  unsigned Options = CXTranslationUnit_DetailedPreprocessingRecord;
   return clang_parseTranslationUnit(CIdx, source_filename,
                                     command_line_args, num_command_line_args,
                                     unsaved_files, num_unsaved_files,
@@ -2492,7 +2497,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+  IntrusiveRefCntPtr<DiagnosticsEngine>
     Diags(CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
                                                 command_line_args));
 
@@ -2551,12 +2556,9 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
     Args->push_back(source_filename);
 
   // Do we need the detailed preprocessing record?
-  bool NestedMacroExpansions = false;
   if (options & CXTranslationUnit_DetailedPreprocessingRecord) {
     Args->push_back("-Xclang");
     Args->push_back("-detailed-preprocessing-record");
-    NestedMacroExpansions
-      = (options & CXTranslationUnit_NestedMacroExpansions);
   }
   
   unsigned NumErrors = Diags->getClient()->getNumErrors();
@@ -2573,8 +2575,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
                                  /*RemappedFilesKeepOriginalName=*/true,
                                  PrecompilePreamble,
                                  TUKind,
-                                 CacheCodeCompetionResults,
-                                 NestedMacroExpansions));
+                                 CacheCodeCompetionResults));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
     // Make sure to check that 'Unit' is non-NULL.

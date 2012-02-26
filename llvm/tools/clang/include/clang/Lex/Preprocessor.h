@@ -60,7 +60,7 @@ class ModuleLoader;
 /// single source file, and don't know anything about preprocessor-level issues
 /// like the #include stack, token expansion, etc.
 ///
-class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
+class Preprocessor : public RefCountedBase<Preprocessor> {
   DiagnosticsEngine        *Diags;
   LangOptions       &Features;
   const TargetInfo  *Target;
@@ -512,7 +512,7 @@ public:
 
   /// \brief Create a new preprocessing record, which will keep track of
   /// all macro expansions, macro definitions, etc.
-  void createPreprocessingRecord(bool IncludeNestedMacroExpansions);
+  void createPreprocessingRecord();
 
   /// EnterMainSourceFile - Enter the specified FileID as the main source file,
   /// which implicitly adds the builtin defines etc.

@@ -31,7 +31,6 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/LangOptions.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -1263,7 +1262,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
   if (I == E) return false;
 
   // We have at least added all these contexts to the queue.
-  llvm::DenseSet<DeclContext*> Visited;
+  llvm::SmallPtrSet<DeclContext*, 8> Visited;
   Visited.insert(StartDC);
 
   // We have not yet looked into these namespaces, much less added
@@ -1274,7 +1273,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
   // with its using-children.
   for (; I != E; ++I) {
     NamespaceDecl *ND = (*I)->getNominatedNamespace()->getOriginalNamespace();
-    if (Visited.insert(ND).second)
+    if (Visited.insert(ND))
       Queue.push_back(ND);
   }
 
@@ -1323,7 +1322,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
 
     for (llvm::tie(I,E) = ND->getUsingDirectives(); I != E; ++I) {
       NamespaceDecl *Nom = (*I)->getNominatedNamespace();
-      if (Visited.insert(Nom).second)
+      if (Visited.insert(Nom))
         Queue.push_back(Nom);
     }
   }
@@ -2082,7 +2081,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
 /// namespaces searched by argument-dependent lookup
 /// (C++ [basic.lookup.argdep]) for a given set of arguments.
 void
-Sema::FindAssociatedClassesAndNamespaces(Expr **Args, unsigned NumArgs,
+Sema::FindAssociatedClassesAndNamespaces(llvm::ArrayRef<Expr *> Args,
                                  AssociatedNamespaceSet &AssociatedNamespaces,
                                  AssociatedClassSet &AssociatedClasses) {
   AssociatedNamespaces.clear();
@@ -2097,7 +2096,7 @@ Sema::FindAssociatedClassesAndNamespaces(Expr **Args, unsigned NumArgs,
   //   classes is determined entirely by the types of the function
   //   arguments (and the namespace of any template template
   //   argument).
-  for (unsigned ArgIdx = 0; ArgIdx != NumArgs; ++ArgIdx) {
+  for (unsigned ArgIdx = 0; ArgIdx != Args.size(); ++ArgIdx) {
     Expr *Arg = Args[ArgIdx];
 
     if (Arg->getType() != Context.OverloadTy) {
@@ -2372,10 +2371,11 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
     if (CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(Cand)) {
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodCandidate(M, DeclAccessPair::make(M, AS_public), RD, ThisTy,
-                           Classification, &Arg, NumArgs, OCS, true);
+                           Classification, llvm::makeArrayRef(&Arg, NumArgs),
+                           OCS, true);
       else
-        AddOverloadCandidate(M, DeclAccessPair::make(M, AS_public), &Arg,
-                             NumArgs, OCS, true);
+        AddOverloadCandidate(M, DeclAccessPair::make(M, AS_public),
+                             llvm::makeArrayRef(&Arg, NumArgs), OCS, true);
 
       // Here we're looking for a const parameter to speed up creation of
       // implicit copy methods.
@@ -2391,11 +2391,13 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
                  dyn_cast<FunctionTemplateDecl>(Cand)) {
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodTemplateCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
-                                   RD, 0, ThisTy, Classification, &Arg, NumArgs,
+                                   RD, 0, ThisTy, Classification,
+                                   llvm::makeArrayRef(&Arg, NumArgs),
                                    OCS, true);
       else
         AddTemplateOverloadCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
-                                     0, &Arg, NumArgs, OCS, true);
+                                     0, llvm::makeArrayRef(&Arg, NumArgs),
+                                     OCS, true);
     } else {
       assert(isa<UsingDecl>(Cand) && "illegal Kind of operator = Decl");
     }
@@ -2559,14 +2561,15 @@ void ADLResult::insert(NamedDecl *New) {
 }
 
 void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
-                                   Expr **Args, unsigned NumArgs,
+                                   SourceLocation Loc,
+                                   llvm::ArrayRef<Expr *> Args,
                                    ADLResult &Result,
                                    bool StdNamespaceIsAssociated) {
   // Find all of the associated namespaces and classes based on the
   // arguments we have.
   AssociatedNamespaceSet AssociatedNamespaces;
   AssociatedClassSet AssociatedClasses;
-  FindAssociatedClassesAndNamespaces(Args, NumArgs,
+  FindAssociatedClassesAndNamespaces(Args,
                                      AssociatedNamespaces,
                                      AssociatedClasses);
   if (StdNamespaceIsAssociated && StdNamespace)
@@ -2575,9 +2578,16 @@ void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
   QualType T1, T2;
   if (Operator) {
     T1 = Args[0]->getType();
-    if (NumArgs >= 2)
+    if (Args.size() >= 2)
       T2 = Args[1]->getType();
   }
+
+  // Try to complete all associated classes, in case they contain a
+  // declaration of a friend function.
+  for (AssociatedClassSet::iterator C = AssociatedClasses.begin(),
+                                    CEnd = AssociatedClasses.end();
+       C != CEnd; ++C)
+    RequireCompleteType(Loc, Context.getRecordType(*C), 0);
 
   // C++ [basic.lookup.argdep]p3:
   //   Let X be the lookup set produced by unqualified lookup (3.4.1)

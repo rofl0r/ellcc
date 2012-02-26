@@ -561,6 +561,9 @@ bool FastISel::SelectCall(const User *I) {
     return true;
   }
 
+  MachineModuleInfo &MMI = FuncInfo.MF->getMMI();
+  ComputeUsesVAFloatArgument(*Call, &MMI);
+
   const Function *F = Call->getCalledFunction();
   if (!F) return false;
 
@@ -725,8 +728,8 @@ bool FastISel::SelectBitCast(const User *I) {
   // First, try to perform the bitcast by inserting a reg-reg copy.
   unsigned ResultReg = 0;
   if (SrcVT.getSimpleVT() == DstVT.getSimpleVT()) {
-    TargetRegisterClass* SrcClass = TLI.getRegClassFor(SrcVT);
-    TargetRegisterClass* DstClass = TLI.getRegClassFor(DstVT);
+    const TargetRegisterClass* SrcClass = TLI.getRegClassFor(SrcVT);
+    const TargetRegisterClass* DstClass = TLI.getRegClassFor(DstVT);
     // Don't attempt a cross-class copy. It will likely fail.
     if (SrcClass == DstClass) {
       ResultReg = createResultReg(DstClass);

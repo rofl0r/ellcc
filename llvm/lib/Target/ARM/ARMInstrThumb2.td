@@ -558,6 +558,11 @@ multiclass T2I_bin_w_irs<bits<4> opcod, string opc,
                      InstrItinClass iii, InstrItinClass iir, InstrItinClass iis,
                          PatFrag opnode, string baseOpc, bit Commutable = 0> :
     T2I_bin_irs<opcod, opc, iii, iir, iis, opnode, baseOpc, Commutable, ".w"> {
+  // Assembler aliases w/ the ".w" suffix.
+  def : t2InstAlias<!strconcat(opc, "${s}${p}.w", " $Rd, $Rn, $imm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "ri")) rGPR:$Rd, rGPR:$Rn,
+                                                    t2_so_imm:$imm, pred:$p,
+                                                    cc_out:$s)>;
   // Assembler aliases w/o the ".w" suffix.
   def : t2InstAlias<!strconcat(opc, "${s}${p}", " $Rd, $Rn, $Rm"),
      (!cast<Instruction>(!strconcat(baseOpc, "rr")) rGPR:$Rd, rGPR:$Rn,
@@ -569,6 +574,10 @@ multiclass T2I_bin_w_irs<bits<4> opcod, string opc,
                                                     cc_out:$s)>;
 
   // and with the optional destination operand, too.
+  def : t2InstAlias<!strconcat(opc, "${s}${p}.ri", " $Rdn, $imm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "ri")) rGPR:$Rdn, rGPR:$Rdn,
+                                                    t2_so_imm:$imm, pred:$p,
+                                                    cc_out:$s)>;
   def : t2InstAlias<!strconcat(opc, "${s}${p}", " $Rdn, $Rm"),
      (!cast<Instruction>(!strconcat(baseOpc, "rr")) rGPR:$Rdn, rGPR:$Rdn,
                                                     rGPR:$Rm, pred:$p,
@@ -2943,6 +2952,44 @@ def t2MOVCCror : T2I_movcc_sh<0b11, (outs rGPR:$Rd),
                              (ins rGPR:$false, rGPR:$Rm, i32imm:$imm),
                              IIC_iCMOVsi, "ror", ".w\t$Rd, $Rm, $imm", []>,
                  RegConstraint<"$false = $Rd">;
+
+multiclass T2I_bincc_irs<bits<4> opcod, string opc,
+                   InstrItinClass iii, InstrItinClass iir, InstrItinClass iis> {
+   // shifted imm
+   def ri : T2sTwoRegImm<(outs rGPR:$Rd), (ins rGPR:$Rn, t2_so_imm:$imm),
+                         iii, opc, ".w\t$Rd, $Rn, $imm", []>,
+                         RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11110;
+     let Inst{25} = 0;
+     let Inst{24-21} = opcod;
+     let Inst{15} = 0;
+   }
+   // register
+   def rr : T2sThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm),
+                        iir, opc, ".w\t$Rd, $Rn, $Rm", []>,
+                        RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11101;
+     let Inst{26-25} = 0b01;
+     let Inst{24-21} = opcod;
+     let Inst{14-12} = 0b000; // imm3
+     let Inst{7-6} = 0b00; // imm2
+     let Inst{5-4} = 0b00; // type
+   }
+   // shifted register
+   def rs : T2sTwoRegShiftedReg<(outs rGPR:$Rd),
+                                (ins rGPR:$Rn, t2_so_reg:$ShiftedRm),
+                                iis, opc, ".w\t$Rd, $Rn, $ShiftedRm", []>,
+                                RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11101;
+     let Inst{26-25} = 0b01;
+     let Inst{24-21} = opcod;
+   }
+} // T2I_bincc_irs
+
+defm t2ANDCC : T2I_bincc_irs<0b0000, "and", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2ORRCC : T2I_bincc_irs<0b0010, "orr", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2EORCC : T2I_bincc_irs<0b0100, "eor", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+
 } // isCodeGenOnly = 1
 } // neverHasSideEffects
 
@@ -3222,9 +3269,7 @@ def t2Bcc : T2I<(outs), (ins brtarget:$target), IIC_Br,
 // it goes here.
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // IOS version.
-  let Defs = [R0, R1, R2, R3, R9, R12, PC,
-              Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15],
-      Uses = [SP] in
+  let Uses = [SP] in
   def tTAILJMPd: tPseudoExpand<(outs),
                    (ins uncondbrtarget:$dst, pred:$p, variable_ops),
                    4, IIC_Br, [],

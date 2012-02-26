@@ -1148,6 +1148,10 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
   case CK_ARCExtendBlockObject:
     return CGF.EmitARCExtendBlockObject(E);
 
+  case CK_CopyAndAutoreleaseBlockObject:
+    CGF.ErrorUnsupported(E, "copy/autorelease block object");
+    return 0;
+      
   case CK_FloatingRealToComplex:
   case CK_FloatingComplexCast:
   case CK_IntegralRealToComplex:
@@ -1642,7 +1646,10 @@ Value *ScalarExprEmitter::VisitUnaryImag(const UnaryOperator *E) {
 
   // __imag on a scalar returns zero.  Emit the subexpr to ensure side
   // effects are evaluated, but not the actual value.
-  CGF.EmitScalarExpr(Op, true);
+  if (Op->isGLValue())
+    CGF.EmitLValue(Op);
+  else
+    CGF.EmitScalarExpr(Op, true);
   return llvm::Constant::getNullValue(ConvertType(E->getType()));
 }
 

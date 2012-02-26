@@ -15,11 +15,13 @@
 
 #include "asan_internal.h"
 #include "asan_interceptors.h"
+#include "asan_procmaps.h"
 #include "asan_stack.h"
 #include "asan_thread_registry.h"
 
 #include <pthread.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -69,6 +71,19 @@ void AsanDisableCoreDumper() {
   setrlimit(RLIMIT_CORE, &nocore);
 }
 
+void AsanDumpProcessMap() {
+  AsanProcMaps proc_maps;
+  uintptr_t start, end;
+  const intptr_t kBufSize = 4095;
+  char filename[kBufSize];
+  Report("Process memory map follows:\n");
+  while (proc_maps.Next(&start, &end, /* file_offset */NULL,
+                        filename, kBufSize)) {
+    Printf("\t%p-%p\t%s\n", (void*)start, (void*)end, filename);
+  }
+  Report("End of process memory map.\n");
+}
+
 int GetPid() {
   return getpid();
 }
@@ -83,6 +98,10 @@ void SleepForSeconds(int seconds) {
 
 void Exit(int exitcode) {
   return _exit(exitcode);
+}
+
+int Atexit(void (*function)(void)) {
+  return atexit(function);
 }
 
 int AtomicInc(int *a) {

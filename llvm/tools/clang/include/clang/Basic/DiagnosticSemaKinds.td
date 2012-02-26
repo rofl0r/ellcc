@@ -1176,9 +1176,6 @@ def warn_cxx98_compat_temp_copy : Warning<
   InGroup<CXX98CompatBindToTemporaryCopy>, DefaultIgnore;
 
 // C++11 decltype
-def warn_cxx98_compat_decltype : Warning<
-  "'decltype' type specifier is incompatible with C++98">,
-  InGroup<CXX98Compat>, DefaultIgnore;
 def err_decltype_in_declarator : Error<
     "'decltype' cannot be used to name a declaration">;
     
@@ -3625,6 +3622,8 @@ def ext_typecheck_comparison_of_distinct_pointers : ExtWarn<
   "comparison of distinct pointer types (%0 and %1)">;
 def ext_typecheck_cond_incompatible_operands : ExtWarn<
   "incompatible operand types (%0 and %1)">;
+def err_cond_voidptr_arc : Error <
+  "operands to conditional of types %0 and %1 are incompatible in ARC mode">;
 def err_typecheck_comparison_of_distinct_pointers : Error<
   "comparison of distinct pointer types (%0 and %1)">;
 def ext_typecheck_comparison_of_distinct_pointers_nonstandard : ExtWarn<
@@ -3671,6 +3670,9 @@ def err_ref_qualifier_overload : Error<
 
 def err_invalid_non_static_member_use : Error<
   "invalid use of nonstatic data member %0">;
+def warn_cxx98_compat_non_static_member_use : Warning<
+  "use of non-static data member %0 in an unevaluated context is "
+  "incompatible with C++98">, InGroup<CXX98Compat>, DefaultIgnore;
 def err_invalid_incomplete_type_use : Error<
   "invalid use of incomplete type %0">;
 def err_builtin_func_cast_more_than_one_arg : Error<
@@ -4438,6 +4440,10 @@ def note_inequality_comparison_to_or_assign : Note<
 
 def err_incomplete_type_used_in_type_trait_expr : Error<
   "incomplete type %0 used in type trait expression">;
+def err_type_trait_arity : Error<
+  "type trait requires %0%select{| or more}1 argument%select{|s}2; have "
+  "%3 argument%s3">;
+  
 def err_dimension_expr_not_constant_integer : Error<
   "dimension expression does not evaluate to a constant unsigned int">;
 def err_expected_ident_or_lparen : Error<"expected identifier or '('">;
@@ -4847,6 +4853,11 @@ def warn_printf_nonsensical_flag: Warning<
 def warn_format_nonsensical_length: Warning<
   "length modifier '%0' results in undefined behavior or no effect with '%1' conversion specifier">,
   InGroup<Format>;
+def warn_format_non_standard: ExtWarn<
+  "'%0' is a non-standard %1">, InGroup<FormatNonStandard>, DefaultIgnore;
+def warn_format_non_standard_conversion_spec: ExtWarn<
+  "using the length modifier '%0' with the conversion specifier '%1' is non-standard">,
+  InGroup<FormatNonStandard>, DefaultIgnore;
 def warn_printf_ignored_flag: Warning<
   "flag '%0' is ignored when flag '%1' is present">,
   InGroup<Format>;
@@ -5052,6 +5063,9 @@ def ext_return_has_expr : ExtWarn<
   DefaultError, InGroup<ReturnType>;
 def ext_return_has_void_expr : Extension<
   "void %select{function|method}1 %0 should not return void expression">;
+def err_return_init_list : Error<
+  "%select{void function|void method|constructor|destructor}1 %0 "
+  "must not return a value">;
 def warn_noreturn_function_has_return_expr : Warning<
   "function %0 declared 'noreturn' should not return">,
   InGroup<DiagGroup<"invalid-noreturn">>;
