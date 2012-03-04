@@ -346,7 +346,7 @@ const StringRef root_directory(StringRef path) {
 
 const StringRef relative_path(StringRef path) {
   StringRef root = root_path(path);
-  return root.substr(root.size());
+  return path.substr(root.size());
 }
 
 void append(SmallVectorImpl<char> &path, const Twine &a,
@@ -600,8 +600,12 @@ namespace fs {
 error_code make_absolute(SmallVectorImpl<char> &path) {
   StringRef p(path.data(), path.size());
 
-  bool rootName      = path::has_root_name(p),
-       rootDirectory = path::has_root_directory(p);
+  bool rootDirectory = path::has_root_directory(p),
+#ifdef LLVM_ON_WIN32
+       rootName = path::has_root_name(p);
+#else
+       rootName = true;
+#endif
 
   // Already absolute.
   if (rootName && rootDirectory)

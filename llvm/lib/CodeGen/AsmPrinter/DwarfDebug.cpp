@@ -530,7 +530,7 @@ unsigned DwarfDebug::GetOrCreateSourceID(StringRef FileName,
 
   std::map<std::pair<std::string, std::string>, unsigned>::iterator I;
   bool NewlyInserted;
-  tie(I, NewlyInserted) = SourceIdMap.insert(Entry);
+  llvm::tie(I, NewlyInserted) = SourceIdMap.insert(Entry);
   if (!NewlyInserted)
     return I->second;
 
@@ -1607,7 +1607,7 @@ void DwarfDebug::emitDIE(DIE *Die) {
       // DW_AT_range Value encodes offset in debug_range section.
       DIEInteger *V = cast<DIEInteger>(Values[i]);
 
-      if (Asm->MAI->doesDwarfUsesLabelOffsetForRanges()) {
+      if (Asm->MAI->doesDwarfUseLabelOffsetForRanges()) {
         Asm->EmitLabelPlusOffset(DwarfDebugRangeSectionSym,
                                  V->getValue(),
                                  4);
@@ -2100,7 +2100,7 @@ void DwarfDebug::emitDebugMacInfo() {
 /// __debug_info section, and the low_pc is the starting address for the
 /// inlining instance.
 void DwarfDebug::emitDebugInlineInfo() {
-  if (!Asm->MAI->doesDwarfUsesInlineInfoSection())
+  if (!Asm->MAI->doesDwarfUseInlineInfoSection())
     return;
 
   if (!FirstCU)
@@ -2132,10 +2132,9 @@ void DwarfDebug::emitDebugInlineInfo() {
     StringRef Name = SP.getName();
 
     Asm->OutStreamer.AddComment("MIPS linkage name");
-    if (LName.empty()) {
-      Asm->OutStreamer.EmitBytes(Name, 0);
-      Asm->OutStreamer.EmitIntValue(0, 1, 0); // nul terminator.
-    } else
+    if (LName.empty())
+      Asm->EmitSectionOffset(getStringPoolEntry(Name), DwarfStrSectionSym);
+    else
       Asm->EmitSectionOffset(getStringPoolEntry(getRealLinkageName(LName)),
                              DwarfStrSectionSym);
 

@@ -96,12 +96,17 @@ namespace {
     uint32_t nextValueNumber;
 
     Expression create_expression(Instruction* I);
+    Expression create_cmp_expression(unsigned Opcode,
+                                     CmpInst::Predicate Predicate,
+                                     Value *LHS, Value *RHS);
     Expression create_extractvalue_expression(ExtractValueInst* EI);
     uint32_t lookup_or_add_call(CallInst* C);
   public:
     ValueTable() : nextValueNumber(1) { }
     uint32_t lookup_or_add(Value *V);
     uint32_t lookup(Value *V) const;
+    uint32_t lookup_or_add_cmp(unsigned Opcode, CmpInst::Predicate Pred,
+                               Value *LHS, Value *RHS);
     void add(Value *V, uint32_t num);
     void clear();
     void erase(Value *v);
@@ -178,6 +183,25 @@ Expression ValueTable::create_expression(Instruction *I) {
       e.varargs.push_back(*II);
   }
   
+  return e;
+}
+
+Expression ValueTable::create_cmp_expression(unsigned Opcode,
+                                             CmpInst::Predicate Predicate,
+                                             Value *LHS, Value *RHS) {
+  assert((Opcode == Instruction::ICmp || Opcode == Instruction::FCmp) &&
+         "Not a comparison!");
+  Expression e;
+  e.type = CmpInst::makeCmpResultType(LHS->getType());
+  e.varargs.push_back(lookup_or_add(LHS));
+  e.varargs.push_back(lookup_or_add(RHS));
+
+  // Sort the operand value numbers so x<y and y>x get the same value number.
+  if (e.varargs[0] > e.varargs[1]) {
+    std::swap(e.varargs[0], e.varargs[1]);
+    Predicate = CmpInst::getSwappedPredicate(Predicate);
+  }
+  e.opcode = (Opcode << 8) | Predicate;
   return e;
 }
 
@@ -428,6 +452,19 @@ uint32_t ValueTable::lookup(Value *V) const {
   DenseMap<Value*, uint32_t>::const_iterator VI = valueNumbering.find(V);
   assert(VI != valueNumbering.end() && "Value not numbered?");
   return VI->second;
+}
+
+/// lookup_or_add_cmp - Returns the value number of the given comparison,
+/// assigning it a new number if it did not have one before.  Useful when
+/// we deduced the result of a comparison, but don't immediately have an
+/// instruction realizing that comparison to hand.
+uint32_t ValueTable::lookup_or_add_cmp(unsigned Opcode,
+                                       CmpInst::Predicate Predicate,
+                                       Value *LHS, Value *RHS) {
+  Expression exp = create_cmp_expression(Opcode, Predicate, LHS, RHS);
+  uint32_t& e = expressionNumbering[exp];
+  if (!e) e = nextValueNumber++;
+  return e;
 }
 
 /// clear - Remove all entries from the ValueTable.
@@ -1935,21 +1972,30 @@ bool GVN::propagateEquality(Value *LHS, Value *RHS, BasicBlock *Root) {
   if (isa<Constant>(LHS) && isa<Constant>(RHS))
     return false;
 
-  // Make sure that any constants are on the right-hand side.  In general the
-  // best results are obtained by placing the longest lived value on the RHS.
-  if (isa<Constant>(LHS))
+  // Prefer a constant on the right-hand side, or an Argument if no constants.
+  if (isa<Constant>(LHS) || (isa<Argument>(LHS) && !isa<Constant>(RHS)))
     std::swap(LHS, RHS);
+  assert((isa<Argument>(LHS) || isa<Instruction>(LHS)) && "Unexpected value!");
 
-  // If neither term is constant then bail out.  This is not for correctness,
-  // it's just that the non-constant case is much less useful: it occurs just
-  // as often as the constant case but handling it hardly ever results in an
-  // improvement.
-  if (!isa<Constant>(RHS))
-    return false;
+  // If there is no obvious reason to prefer the left-hand side over the right-
+  // hand side, ensure the longest lived term is on the right-hand side, so the
+  // shortest lived term will be replaced by the longest lived.  This tends to
+  // expose more simplifications.
+  uint32_t LVN = VN.lookup_or_add(LHS);
+  if ((isa<Argument>(LHS) && isa<Argument>(RHS)) ||
+      (isa<Instruction>(LHS) && isa<Instruction>(RHS))) {
+    // Move the 'oldest' value to the right-hand side, using the value number as
+    // a proxy for age.
+    uint32_t RVN = VN.lookup_or_add(RHS);
+    if (LVN < RVN) {
+      std::swap(LHS, RHS);
+      LVN = RVN;
+    }
+  }
 
   // If value numbering later deduces that an instruction in the scope is equal
   // to 'LHS' then ensure it will be turned into 'RHS'.
-  addToLeaderTable(VN.lookup_or_add(LHS), RHS, Root);
+  addToLeaderTable(LVN, RHS, Root);
 
   // Replace all occurrences of 'LHS' with 'RHS' everywhere in the scope.  As
   // LHS always has at least one use that is not dominated by Root, this will
@@ -1987,14 +2033,40 @@ bool GVN::propagateEquality(Value *LHS, Value *RHS, BasicBlock *Root) {
   }
 
   // If we are propagating an equality like "(A == B)" == "true" then also
-  // propagate the equality A == B.
+  // propagate the equality A == B.  When propagating a comparison such as
+  // "(A >= B)" == "true", replace all instances of "A < B" with "false".
   if (ICmpInst *Cmp = dyn_cast<ICmpInst>(LHS)) {
-    // Only equality comparisons are supported.
+    Value *Op0 = Cmp->getOperand(0), *Op1 = Cmp->getOperand(1);
+
+    // If "A == B" is known true, or "A != B" is known false, then replace
+    // A with B everywhere in the scope.
     if ((isKnownTrue && Cmp->getPredicate() == CmpInst::ICMP_EQ) ||
-        (isKnownFalse && Cmp->getPredicate() == CmpInst::ICMP_NE)) {
-      Value *Op0 = Cmp->getOperand(0), *Op1 = Cmp->getOperand(1);
+        (isKnownFalse && Cmp->getPredicate() == CmpInst::ICMP_NE))
       Changed |= propagateEquality(Op0, Op1, Root);
+
+    // If "A >= B" is known true, replace "A < B" with false everywhere.
+    CmpInst::Predicate NotPred = Cmp->getInversePredicate();
+    Constant *NotVal = ConstantInt::get(Cmp->getType(), isKnownFalse);
+    // Since we don't have the instruction "A < B" immediately to hand, work out
+    // the value number that it would have and use that to find an appropriate
+    // instruction (if any).
+    uint32_t NextNum = VN.getNextUnusedValueNumber();
+    uint32_t Num = VN.lookup_or_add_cmp(Cmp->getOpcode(), NotPred, Op0, Op1);
+    // If the number we were assigned was brand new then there is no point in
+    // looking for an instruction realizing it: there cannot be one!
+    if (Num < NextNum) {
+      Value *NotCmp = findLeader(Root, Num);
+      if (NotCmp && isa<Instruction>(NotCmp)) {
+        unsigned NumReplacements =
+          replaceAllDominatedUsesWith(NotCmp, NotVal, Root);
+        Changed |= NumReplacements > 0;
+        NumGVNEqProp += NumReplacements;
+      }
     }
+    // Ensure that any instruction in scope that gets the "A < B" value number
+    // is replaced with false.
+    addToLeaderTable(Num, NotVal, Root);
+
     return Changed;
   }
 
@@ -2086,7 +2158,7 @@ bool GVN::processInstruction(Instruction *I) {
   }
 
   // Instructions with void type don't return a value, so there's
-  // no point in trying to find redudancies in them.
+  // no point in trying to find redundancies in them.
   if (I->getType()->isVoidTy()) return false;
   
   uint32_t NextNum = VN.getNextUnusedValueNumber();
@@ -2102,7 +2174,7 @@ bool GVN::processInstruction(Instruction *I) {
   // If the number we were assigned was a brand new VN, then we don't
   // need to do a lookup to see if the number already exists
   // somewhere in the domtree: it can't!
-  if (Num == NextNum) {
+  if (Num >= NextNum) {
     addToLeaderTable(Num, I, I->getParent());
     return false;
   }

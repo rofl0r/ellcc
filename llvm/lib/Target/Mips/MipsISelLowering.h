@@ -109,7 +109,7 @@ namespace llvm {
   private:
     // Subtarget Info
     const MipsSubtarget *Subtarget;
-    
+
     bool HasMips64, IsN64, IsO32;
 
     // Lower Operand helpers
@@ -144,7 +144,7 @@ namespace llvm {
     virtual SDValue
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg,
-                bool &isTailCall,
+                bool doesNotRet, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
                 const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,

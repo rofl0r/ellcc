@@ -136,6 +136,10 @@ endif()
 if( MSVC )
   include(ChooseMSVCCRT)
 
+  if( MSVC11 )
+    add_llvm_definitions(-D_VARIADIC_MAX=10)
+  endif()
+
   # Add definitions that make MSVC much less annoying.
   add_llvm_definitions(
     # For some reason MS wants to deprecate a bunch of standard functions...
@@ -182,6 +186,10 @@ elseif( LLVM_COMPILER_IS_GCC_COMPATIBLE )
     if (LLVM_ENABLE_PEDANTIC)
       add_llvm_definitions( -pedantic -Wno-long-long )
     endif (LLVM_ENABLE_PEDANTIC)
+    check_cxx_compiler_flag("-Werror -Wcovered-switch-default" SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
+    if( SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG )
+      add_llvm_definitions( -Wcovered-switch-default )
+    endif()
   endif (LLVM_ENABLE_WARNINGS)
   if (LLVM_ENABLE_WERROR)
     add_llvm_definitions( -Werror )

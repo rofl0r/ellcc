@@ -1,4 +1,4 @@
-//===- MipsInstrFPU.td - Mips FPU Instruction Information --*- tablegen -*-===//
+//===-- MipsInstrFPU.td - Mips FPU Instruction Information -*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -83,18 +83,34 @@ def fpimm0neg : PatLeaf<(fpimm), [{
 //===----------------------------------------------------------------------===//
 
 // FP load.
-class FPLoad<bits<6> op, string opstr, PatFrag FOp, RegisterClass RC,
-             Operand MemOpnd>:
+class FPLoad<bits<6> op, string opstr, RegisterClass RC, Operand MemOpnd>:
   FMem<op, (outs RC:$ft), (ins MemOpnd:$addr),
-      !strconcat(opstr, "\t$ft, $addr"), [(set RC:$ft, (FOp addr:$addr))],
+      !strconcat(opstr, "\t$ft, $addr"), [(set RC:$ft, (load_a addr:$addr))],
       IILoad>;
 
 // FP store.
-class FPStore<bits<6> op, string opstr, PatFrag FOp, RegisterClass RC,
-              Operand MemOpnd>:
+class FPStore<bits<6> op, string opstr, RegisterClass RC, Operand MemOpnd>:
   FMem<op, (outs), (ins RC:$ft, MemOpnd:$addr),
-      !strconcat(opstr, "\t$ft, $addr"), [(store RC:$ft, addr:$addr)],
+      !strconcat(opstr, "\t$ft, $addr"), [(store_a RC:$ft, addr:$addr)],
       IIStore>;
+
+// FP indexed load.
+class FPIdxLoad<bits<6> funct, string opstr, RegisterClass DRC,
+                RegisterClass PRC, PatFrag FOp>:
+  FFMemIdx<funct, (outs DRC:$fd), (ins PRC:$base, PRC:$index),
+           !strconcat(opstr, "\t$fd, $index($base)"),
+           [(set DRC:$fd, (FOp (add PRC:$base, PRC:$index)))]> {
+  let fs = 0;
+}
+
+// FP indexed store.
+class FPIdxStore<bits<6> funct, string opstr, RegisterClass DRC,
+                 RegisterClass PRC, PatFrag FOp>:
+  FFMemIdx<funct, (outs), (ins DRC:$fs, PRC:$base, PRC:$index),
+           !strconcat(opstr, "\t$fs, $index($base)"),
+           [(FOp DRC:$fs, (add PRC:$base, PRC:$index))]> {
+  let fd = 0;
+}
 
 // Instructions that convert an FP value to 32-bit fixed point.
 multiclass FFR1_W_M<bits<6> funct, string opstr> {
@@ -221,23 +237,53 @@ def FMOV_D64 : FFR1<0x6, 17, "mov", "d", FGR64, FGR64>,
 
 /// Floating Point Memory Instructions
 let Predicates = [IsN64] in {
-  def LWC1_P8   : FPLoad<0x31, "lwc1", load, FGR32, mem64>;
-  def SWC1_P8   : FPStore<0x39, "swc1", store, FGR32, mem64>;
-  def LDC164_P8 : FPLoad<0x35, "ldc1", load, FGR64, mem64>;
-  def SDC164_P8 : FPStore<0x3d, "sdc1", store, FGR64, mem64>;
+  def LWC1_P8   : FPLoad<0x31, "lwc1", FGR32, mem64>;
+  def SWC1_P8   : FPStore<0x39, "swc1", FGR32, mem64>;
+  def LDC164_P8 : FPLoad<0x35, "ldc1", FGR64, mem64>;
+  def SDC164_P8 : FPStore<0x3d, "sdc1", FGR64, mem64>;
 }
 
 let Predicates = [NotN64] in {
-  def LWC1   : FPLoad<0x31, "lwc1", load, FGR32, mem>;
-  def SWC1   : FPStore<0x39, "swc1", store, FGR32, mem>;
-  let Predicates = [HasMips64] in {
-    def LDC164 : FPLoad<0x35, "ldc1", load, FGR64, mem>;
-    def SDC164 : FPStore<0x3d, "sdc1", store, FGR64, mem>;
-  }
-  let Predicates = [NotMips64] in {
-    def LDC1   : FPLoad<0x35, "ldc1", load, AFGR64, mem>;
-    def SDC1   : FPStore<0x3d, "sdc1", store, AFGR64, mem>;
-  }
+  def LWC1   : FPLoad<0x31, "lwc1", FGR32, mem>;
+  def SWC1   : FPStore<0x39, "swc1", FGR32, mem>;
+}
+
+let Predicates = [NotN64, HasMips64] in {
+  def LDC164 : FPLoad<0x35, "ldc1", FGR64, mem>;
+  def SDC164 : FPStore<0x3d, "sdc1", FGR64, mem>;
+}
+
+let Predicates = [NotN64, NotMips64] in {
+  def LDC1   : FPLoad<0x35, "ldc1", AFGR64, mem>;
+  def SDC1   : FPStore<0x3d, "sdc1", AFGR64, mem>;
+}
+
+// Indexed loads and stores.
+let Predicates = [HasMips32r2Or64] in {
+  def LWXC1 : FPIdxLoad<0x0, "lwxc1", FGR32, CPURegs, load_a>;
+  def LUXC1 : FPIdxLoad<0x5, "luxc1", FGR32, CPURegs, load_u>;
+  def SWXC1 : FPIdxStore<0x8, "swxc1", FGR32, CPURegs, store_a>;
+  def SUXC1 : FPIdxStore<0xd, "suxc1", FGR32, CPURegs, store_u>;
+}
+
+let Predicates = [HasMips32r2, NotMips64] in {
+  def LDXC1 : FPIdxLoad<0x1, "ldxc1", AFGR64, CPURegs, load_a>;
+  def SDXC1 : FPIdxStore<0x9, "sdxc1", AFGR64, CPURegs, store_a>;
+}
+
+let Predicates = [HasMips64, NotN64] in {
+  def LDXC164 : FPIdxLoad<0x1, "ldxc1", FGR64, CPURegs, load_a>;
+  def SDXC164 : FPIdxStore<0x9, "sdxc1", FGR64, CPURegs, store_a>;
+}
+
+// n64
+let Predicates = [IsN64] in {
+  def LWXC1_P8   : FPIdxLoad<0x0, "lwxc1", FGR32, CPU64Regs, load_a>;
+  def LUXC1_P8   : FPIdxLoad<0x5, "luxc1", FGR32, CPU64Regs, load_u>;
+  def LDXC164_P8 : FPIdxLoad<0x1, "ldxc1", FGR64, CPU64Regs, load_a>;
+  def SWXC1_P8   : FPIdxStore<0x8, "swxc1", FGR32, CPU64Regs, store_a>;
+  def SUXC1_P8   : FPIdxStore<0xd, "suxc1", FGR32, CPU64Regs, store_u>;
+  def SDXC164_P8 : FPIdxStore<0x9, "sdxc1", FGR64, CPU64Regs, store_a>;
 }
 
 /// Floating-point Aritmetic
@@ -386,4 +432,17 @@ let Predicates = [IsFP64bit] in {
 
   def : Pat<(f32 (fround FGR64:$src)), (CVT_S_D64 FGR64:$src)>;
   def : Pat<(f64 (fextend FGR32:$src)), (CVT_D64_S FGR32:$src)>;
+}
+
+// Patterns for unaligned floating point loads and stores.
+let Predicates = [HasMips32r2Or64, NotN64] in {
+  def : Pat<(f32 (load_u CPURegs:$addr)), (LUXC1 CPURegs:$addr, ZERO)>; 
+  def : Pat<(store_u FGR32:$src, CPURegs:$addr),
+            (SUXC1 FGR32:$src, CPURegs:$addr, ZERO)>;
+}
+
+let Predicates = [IsN64] in {
+  def : Pat<(f32 (load_u CPU64Regs:$addr)), (LUXC1_P8 CPU64Regs:$addr, ZERO_64)>; 
+  def : Pat<(store_u FGR32:$src, CPU64Regs:$addr),
+            (SUXC1_P8 FGR32:$src, CPU64Regs:$addr, ZERO_64)>;
 }

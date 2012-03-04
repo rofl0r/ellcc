@@ -93,7 +93,8 @@ static bool ValueDominatesPHI(Value *V, PHINode *P, const DominatorTree *DT) {
 
   // If we have a DominatorTree then do a precise test.
   if (DT)
-    return DT->dominates(I, P);
+    return !DT->isReachableFromEntry(P->getParent()) ||
+      !DT->isReachableFromEntry(I->getParent()) || DT->dominates(I, P);
 
   // Otherwise, if the instruction is in the entry block, and is not an invoke,
   // then it obviously dominates all phi nodes.
@@ -1610,11 +1611,12 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
   }
 
   // icmp <object*>, <object*/null> - Different identified objects have
-  // different addresses, and what's more the address of a stack variable is
-  // never equal to another argument.  Note that generalizing to the case where
-  // LHS is a global variable address or null is pointless, since if both LHS
-  // and RHS are constants then we already constant folded the compare, and if
-  // only one of them is then we moved it to RHS already.
+  // different addresses (unless null), and what's more the address of an
+  // identified local is never equal to another argument (again, barring null).
+  // Note that generalizing to the case where LHS is a global variable address
+  // or null is pointless, since if both LHS and RHS are constants then we
+  // already constant folded the compare, and if only one of them is then we
+  // moved it to RHS already.
   Value *LHSPtr = LHS->stripPointerCasts();
   Value *RHSPtr = RHS->stripPointerCasts();
   if (LHSPtr == RHSPtr)
@@ -1634,13 +1636,17 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
 
       // A local identified object (alloca or noalias call) can't equal any
       // incoming argument, unless they're both null.
-      if ((isa<Instruction>(LHSPtr) && isa<Argument>(RHSPtr)) ||
-          (isa<Instruction>(RHSPtr) && isa<Argument>(LHSPtr)))
+      if (isa<Instruction>(LHSPtr) && isa<Argument>(RHSPtr))
         return ConstantInt::get(ITy, CmpInst::isFalseWhenEqual(Pred));
     }
 
     // Assume that the constant null is on the right.
     if (llvm::isKnownNonNull(LHSPtr) && isa<ConstantPointerNull>(RHSPtr))
+      return ConstantInt::get(ITy, CmpInst::isFalseWhenEqual(Pred));
+  } else if (isa<Argument>(LHSPtr)) {
+    RHSPtr = stripPointerAdjustments(RHSPtr);
+    // An alloca can't be equal to an argument.
+    if (isa<AllocaInst>(RHSPtr))
       return ConstantInt::get(ITy, CmpInst::isFalseWhenEqual(Pred));
   }
 
@@ -2256,7 +2262,10 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
   if (GetElementPtrInst *GLHS = dyn_cast<GetElementPtrInst>(LHS)) {
     if (GEPOperator *GRHS = dyn_cast<GEPOperator>(RHS)) {
       if (GLHS->getPointerOperand() == GRHS->getPointerOperand() &&
-          GLHS->hasAllConstantIndices() && GRHS->hasAllConstantIndices()) {
+          GLHS->hasAllConstantIndices() && GRHS->hasAllConstantIndices() &&
+          (ICmpInst::isEquality(Pred) ||
+           (GLHS->isInBounds() && GRHS->isInBounds() &&
+            Pred == ICmpInst::getSignedPredicate(Pred)))) {
         // The bases are equal and the indices are constant.  Build a constant
         // expression GEP with the same indices and a null base pointer to see
         // what constant folding can make out of it.

@@ -56,56 +56,40 @@ unsigned MipsRegisterInfo::getPICCallReg() { return Mips::T9; }
 const unsigned* MipsRegisterInfo::
 getCalleeSavedRegs(const MachineFunction *MF) const
 {
-  // Mips callee-save register range is $16-$23, $f20-$f30
-  static const unsigned SingleFloatOnlyCalleeSavedRegs[] = {
-    Mips::F31, Mips::F30, Mips::F29, Mips::F28, Mips::F27, Mips::F26,
-    Mips::F25, Mips::F24, Mips::F23, Mips::F22, Mips::F21, Mips::F20,
-    Mips::RA, Mips::FP, Mips::S7, Mips::S6, Mips::S5, Mips::S4,
-    Mips::S3, Mips::S2, Mips::S1, Mips::S0, 0
-  };
-
-  static const unsigned Mips32CalleeSavedRegs[] = {
-    Mips::D15, Mips::D14, Mips::D13, Mips::D12, Mips::D11, Mips::D10,
-    Mips::RA, Mips::FP, Mips::S7, Mips::S6, Mips::S5, Mips::S4,
-    Mips::S3, Mips::S2, Mips::S1, Mips::S0, 0
-  };
-
-  static const unsigned N32CalleeSavedRegs[] = {
-    Mips::D31_64, Mips::D29_64, Mips::D27_64, Mips::D25_64, Mips::D23_64,
-    Mips::D21_64,
-    Mips::RA_64, Mips::FP_64, Mips::GP_64, Mips::S7_64, Mips::S6_64,
-    Mips::S5_64, Mips::S4_64, Mips::S3_64, Mips::S2_64, Mips::S1_64,
-    Mips::S0_64, 0
-  };
-
-  static const unsigned N64CalleeSavedRegs[] = {
-    Mips::D31_64, Mips::D30_64, Mips::D29_64, Mips::D28_64, Mips::D27_64,
-    Mips::D26_64, Mips::D25_64, Mips::D24_64,
-    Mips::RA_64, Mips::FP_64, Mips::GP_64, Mips::S7_64, Mips::S6_64,
-    Mips::S5_64, Mips::S4_64, Mips::S3_64, Mips::S2_64, Mips::S1_64,
-    Mips::S0_64, 0
-  };
-
   if (Subtarget.isSingleFloat())
-    return SingleFloatOnlyCalleeSavedRegs;
+    return CSR_SingleFloatOnly_SaveList;
   else if (!Subtarget.hasMips64())
-    return Mips32CalleeSavedRegs;
+    return CSR_O32_SaveList;
   else if (Subtarget.isABI_N32())
-    return N32CalleeSavedRegs;
+    return CSR_N32_SaveList;
   
   assert(Subtarget.isABI_N64());
-  return N64CalleeSavedRegs;  
+  return CSR_N64_SaveList;  
+}
+
+const uint32_t*
+MipsRegisterInfo::getCallPreservedMask(CallingConv::ID) const
+{  
+  if (Subtarget.isSingleFloat())
+    return CSR_SingleFloatOnly_RegMask;
+  else if (!Subtarget.hasMips64())
+    return CSR_O32_RegMask;
+  else if (Subtarget.isABI_N32())
+    return CSR_N32_RegMask;
+
+  assert(Subtarget.isABI_N64());
+  return CSR_N64_RegMask;  
 }
 
 BitVector MipsRegisterInfo::
 getReservedRegs(const MachineFunction &MF) const {
   static const unsigned ReservedCPURegs[] = {
-    Mips::ZERO, Mips::AT, Mips::K0, Mips::K1, 
+    Mips::ZERO, Mips::AT, Mips::K0, Mips::K1,
     Mips::SP, Mips::FP, Mips::RA
   };
 
   static const unsigned ReservedCPU64Regs[] = {
-    Mips::ZERO_64, Mips::AT_64, Mips::K0_64, Mips::K1_64, 
+    Mips::ZERO_64, Mips::AT_64, Mips::K0_64, Mips::K1_64,
     Mips::SP_64, Mips::FP_64, Mips::RA_64
   };
 
@@ -134,8 +118,8 @@ getReservedRegs(const MachineFunction &MF) const {
          Reg != Mips::FGR64RegisterClass->end(); ++Reg)
       Reserved.set(*Reg);
   }
-  
-  // If GP is dedicated as a global base register, reserve it. 
+
+  // If GP is dedicated as a global base register, reserve it.
   if (MF.getInfo<MipsFunctionInfo>()->globalBaseRegFixed()) {
     Reserved.set(Mips::GP);
     Reserved.set(Mips::GP_64);
@@ -195,7 +179,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   //  1. Outgoing arguments.
   //  2. Pointer to dynamically allocated stack space.
   //  3. Locations for callee-saved registers.
-  // Everything else is referenced relative to whatever register 
+  // Everything else is referenced relative to whatever register
   // getFrameRegister() returns.
   unsigned FrameReg;
 
@@ -203,15 +187,15 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
       (FrameIndex >= MinCSFI && FrameIndex <= MaxCSFI))
     FrameReg = Subtarget.isABI_N64() ? Mips::SP_64 : Mips::SP;
   else
-    FrameReg = getFrameRegister(MF); 
-  
+    FrameReg = getFrameRegister(MF);
+
   // Calculate final offset.
   // - There is no need to change the offset if the frame object is one of the
   //   following: an outgoing argument, pointer to a dynamically allocated
   //   stack space or a $gp restore location,
   // - If the frame object is any of the following, its offset must be adjusted
   //   by adding the size of the stack:
-  //   incoming argument, callee-saved register location or local variable.  
+  //   incoming argument, callee-saved register location or local variable.
   int64_t Offset;
 
   if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isGPFI(FrameIndex) ||
@@ -225,7 +209,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
   // If MI is not a debug value, make sure Offset fits in the 16-bit immediate
-  // field. 
+  // field.
   if (!MI.isDebugValue() && !isInt<16>(Offset)) {
     MachineBasicBlock &MBB = *MI.getParent();
     DebugLoc DL = II->getDebugLoc();
@@ -233,7 +217,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
     unsigned Size = Subtarget.isABI_N64() ? 64 : 32;
     unsigned LUi = Subtarget.isABI_N64() ? Mips::LUi64 : Mips::LUi;
     unsigned ADDu = Subtarget.isABI_N64() ? Mips::DADDu : Mips::ADDu;
-    unsigned ZEROReg = Subtarget.isABI_N64() ? Mips::ZERO_64 : Mips::ZERO;    
+    unsigned ZEROReg = Subtarget.isABI_N64() ? Mips::ZERO_64 : Mips::ZERO;
     unsigned ATReg = Subtarget.isABI_N64() ? Mips::AT_64 : Mips::AT;
     const MipsAnalyzeImmediate::InstSeq &Seq =
       AnalyzeImm.Analyze(Offset, Size, true /* LastInstrIsADDiu */);

@@ -24,6 +24,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include <cctype>
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -580,7 +581,7 @@ void ModuleLinker::computeTypeMapping() {
     if (GlobalValue *DGV = getLinkedToGlobal(I))
       TypeMap.addTypeMapping(DGV->getType(), I->getType());
   }
-  
+
   // Incorporate types by name, scanning all the types in the source module.
   // At this point, the destination module may have a type "%foo = { i32 }" for
   // example.  When the source module got loaded into the same LLVMContext, if
@@ -610,8 +611,7 @@ void ModuleLinker::computeTypeMapping() {
       if (!SrcStructTypesSet.count(DST))
         TypeMap.addTypeMapping(DST, ST);
   }
-  
-  
+
   // Don't bother incorporating aliases, they aren't generally typed well.
   
   // Now that we have discovered all of the type equivalences, get a body for

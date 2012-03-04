@@ -1286,7 +1286,7 @@ void ARMTargetLowering::PassF64ArgInRegs(DebugLoc dl, SelectionDAG &DAG,
 SDValue
 ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                              CallingConv::ID CallConv, bool isVarArg,
-                             bool &isTailCall,
+                             bool doesNotRet, bool &isTailCall,
                              const SmallVectorImpl<ISD::OutputArg> &Outs,
                              const SmallVectorImpl<SDValue> &OutVals,
                              const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -1582,12 +1582,20 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   if (Subtarget->isThumb()) {
     if ((!isDirect || isARMFunc) && !Subtarget->hasV5TOps())
       CallOpc = ARMISD::CALL_NOLINK;
+    else if (doesNotRet && isDirect && !isARMFunc &&
+             Subtarget->hasRAS() && !Subtarget->isThumb1Only())
+      // "mov lr, pc; b _foo" to avoid confusing the RSP
+      CallOpc = ARMISD::CALL_NOLINK;
     else
       CallOpc = isARMFunc ? ARMISD::CALL : ARMISD::tCALL;
   } else {
-    CallOpc = (isDirect || Subtarget->hasV5TOps())
-      ? (isLocalARMFunc ? ARMISD::CALL_PRED : ARMISD::CALL)
-      : ARMISD::CALL_NOLINK;
+    if (!isDirect && !Subtarget->hasV5TOps()) {
+      CallOpc = ARMISD::CALL_NOLINK;
+    } else if (doesNotRet && isDirect && Subtarget->hasRAS())
+      // "mov lr, pc; b _foo" to avoid confusing the RSP
+      CallOpc = ARMISD::CALL_NOLINK;
+    else
+      CallOpc = isLocalARMFunc ? ARMISD::CALL_PRED : ARMISD::CALL;
   }
 
   std::vector<SDValue> Ops;
@@ -2080,7 +2088,8 @@ ARMTargetLowering::LowerToTLSGeneralDynamicModel(GlobalAddressSDNode *GA,
   std::pair<SDValue, SDValue> CallResult =
     LowerCallTo(Chain, (Type *) Type::getInt32Ty(*DAG.getContext()),
                 false, false, false, false,
-                0, CallingConv::C, false, /*isReturnValueUsed=*/true,
+                0, CallingConv::C, /*isTailCall=*/false,
+                /*doesNotRet=*/false, /*isReturnValueUsed=*/true,
                 DAG.getExternalSymbol("__tls_get_addr", PtrVT), Args, DAG, dl);
   return CallResult.first;
 }
@@ -2969,12 +2978,11 @@ ARMTargetLowering::OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const {
   SDValue Dest = Op.getOperand(4);
   DebugLoc dl = Op.getDebugLoc();
 
-  bool SeenZero = false;
-  if (canChangeToInt(LHS, SeenZero, Subtarget) &&
-      canChangeToInt(RHS, SeenZero, Subtarget) &&
-      // If one of the operand is zero, it's safe to ignore the NaN case since
-      // we only care about equality comparisons.
-      (SeenZero || (DAG.isKnownNeverNaN(LHS) && DAG.isKnownNeverNaN(RHS)))) {
+  bool LHSSeenZero = false;
+  bool LHSOk = canChangeToInt(LHS, LHSSeenZero, Subtarget);
+  bool RHSSeenZero = false;
+  bool RHSOk = canChangeToInt(RHS, RHSSeenZero, Subtarget);
+  if (LHSOk && RHSOk && (LHSSeenZero || RHSSeenZero)) {
     // If unsafe fp math optimization is enabled and there are no other uses of
     // the CMP operands, and the condition code is EQ or NE, we can optimize it
     // to an integer comparison.
@@ -2983,10 +2991,13 @@ ARMTargetLowering::OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const {
     else if (CC == ISD::SETUNE)
       CC = ISD::SETNE;
 
+    SDValue Mask = DAG.getConstant(0x7fffffff, MVT::i32);
     SDValue ARMcc;
     if (LHS.getValueType() == MVT::f32) {
-      LHS = bitcastf32Toi32(LHS, DAG);
-      RHS = bitcastf32Toi32(RHS, DAG);
+      LHS = DAG.getNode(ISD::AND, dl, MVT::i32,
+                        bitcastf32Toi32(LHS, DAG), Mask);
+      RHS = DAG.getNode(ISD::AND, dl, MVT::i32,
+                        bitcastf32Toi32(RHS, DAG), Mask);
       SDValue Cmp = getARMCmp(LHS, RHS, CC, ARMcc, DAG, dl);
       SDValue CCR = DAG.getRegister(ARM::CPSR, MVT::i32);
       return DAG.getNode(ARMISD::BRCOND, dl, MVT::Other,
@@ -2997,6 +3008,8 @@ ARMTargetLowering::OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const {
     SDValue RHS1, RHS2;
     expandf64Toi32(LHS, DAG, LHS1, LHS2);
     expandf64Toi32(RHS, DAG, RHS1, RHS2);
+    LHS2 = DAG.getNode(ISD::AND, dl, MVT::i32, LHS2, Mask);
+    RHS2 = DAG.getNode(ISD::AND, dl, MVT::i32, RHS2, Mask);
     ARMCC::CondCodes CondCode = IntCCToARMCC(CC);
     ARMcc = DAG.getConstant(CondCode, MVT::i32);
     SDVTList VTList = DAG.getVTList(MVT::Other, MVT::Glue);

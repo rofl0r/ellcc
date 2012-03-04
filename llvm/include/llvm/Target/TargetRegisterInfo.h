@@ -38,23 +38,14 @@ public:
   typedef const unsigned* const_iterator;
   typedef const MVT::SimpleValueType* vt_iterator;
   typedef const TargetRegisterClass* const * sc_iterator;
-private:
-  virtual void anchor();
+
+  // Instance variables filled by tablegen, do not use!
   const MCRegisterClass *MC;
   const vt_iterator VTs;
   const unsigned *SubClassMask;
   const sc_iterator SuperClasses;
   const sc_iterator SuperRegClasses;
-public:
-  TargetRegisterClass(const MCRegisterClass *MC,
-                      const MVT::SimpleValueType *vts,
-                      const unsigned *subcm,
-                      const TargetRegisterClass * const *supcs,
-                      const TargetRegisterClass * const *superregcs)
-    : MC(MC), VTs(vts), SubClassMask(subcm), SuperClasses(supcs),
-      SuperRegClasses(superregcs) {}
-
-  virtual ~TargetRegisterClass() {}     // Allow subclasses
+  ArrayRef<unsigned> (*OrderFunc)(const MachineFunction&);
 
   /// getID() - Return the register class ID number.
   ///
@@ -199,9 +190,8 @@ public:
   ///
   /// By default, this method returns all registers in the class.
   ///
-  virtual
   ArrayRef<unsigned> getRawAllocationOrder(const MachineFunction &MF) const {
-    return makeArrayRef(begin(), getNumRegs());
+    return OrderFunc ? OrderFunc(MF) : makeArrayRef(begin(), getNumRegs());
   }
 };
 
@@ -392,16 +382,6 @@ public:
   /// and should be considered unavailable at all times, e.g. SP, RA. This is
   /// used by register scavenger to determine what registers are free.
   virtual BitVector getReservedRegs(const MachineFunction &MF) const = 0;
-
-  /// getSubReg - Returns the physical register number of sub-register "Index"
-  /// for physical register RegNo. Return zero if the sub-register does not
-  /// exist.
-  virtual unsigned getSubReg(unsigned RegNo, unsigned Index) const = 0;
-
-  /// getSubRegIndex - For a given register pair, return the sub-register index
-  /// if the second register is a sub-register of the first. Return zero
-  /// otherwise.
-  virtual unsigned getSubRegIndex(unsigned RegNo, unsigned SubRegNo) const = 0;
 
   /// getMatchingSuperReg - Return a super-register of the specified register
   /// Reg so its sub-register of index SubIdx is Reg.

@@ -52,6 +52,10 @@ int    FLAG_sleep_before_dying;
 int asan_inited;
 bool asan_init_is_running;
 static void (*death_callback)(void);
+static void (*error_report_callback)(const char*);
+char *error_message_buffer = NULL;
+size_t error_message_buffer_pos = 0;
+size_t error_message_buffer_size = 0;
 
 // -------------------------- Misc ---------------- {{{1
 void ShowStatsAndAbort() {
@@ -237,7 +241,7 @@ ASAN_REPORT_ERROR(store, true, 16)
 // dynamic libraries access the symbol even if it is not used by the executable
 // itself. This should help if the build system is removing dead code at link
 // time.
-static void force_interface_symbols() {
+static NOINLINE void force_interface_symbols() {
   volatile int fake_condition = 0;  // prevent dead condition elimination.
   if (fake_condition) {
     __asan_report_load1(NULL);
@@ -253,6 +257,8 @@ static void force_interface_symbols() {
     __asan_register_global(0, 0, NULL);
     __asan_register_globals(NULL, 0);
     __asan_unregister_globals(NULL, 0);
+    __asan_set_death_callback(NULL);
+    __asan_set_error_report_callback(NULL);
   }
 }
 
@@ -296,8 +302,18 @@ void __asan_handle_no_return() {
   PoisonShadow(bottom, top - bottom, 0);
 }
 
-void __asan_set_death_callback(void (*callback)(void)) {
+void NOINLINE __asan_set_death_callback(void (*callback)(void)) {
   death_callback = callback;
+}
+
+void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
+  error_report_callback = callback;
+  if (callback) {
+    error_message_buffer_size = 1 << 14;
+    error_message_buffer =
+        (char*)AsanMmapSomewhereOrDie(error_message_buffer_size, __FUNCTION__);
+    error_message_buffer_pos = 0;
+  }
 }
 
 void __asan_report_error(uintptr_t pc, uintptr_t bp, uintptr_t sp,
@@ -389,6 +405,9 @@ void __asan_report_error(uintptr_t pc, uintptr_t bp, uintptr_t sp,
   PrintBytes("  ", (uintptr_t*)(aligned_shadow+2*kWordSize));
   PrintBytes("  ", (uintptr_t*)(aligned_shadow+3*kWordSize));
   PrintBytes("  ", (uintptr_t*)(aligned_shadow+4*kWordSize));
+  if (error_report_callback) {
+    error_report_callback(error_message_buffer);
+  }
   AsanDie();
 }
 
@@ -410,15 +429,8 @@ void __asan_init() {
 
   FLAG_v = IntFlagValue(options, "verbosity=", 0);
 
-#if ASAN_LOW_MEMORY == 1
-  FLAG_quarantine_size =
-    IntFlagValue(options, "quarantine_size=", 1UL << 24);  // 16M
-  FLAG_redzone = IntFlagValue(options, "redzone=", 64);
-#else
-  FLAG_quarantine_size =
-    IntFlagValue(options, "quarantine_size=", 1UL << 28);  // 256M
-  FLAG_redzone = IntFlagValue(options, "redzone=", 128);
-#endif
+  FLAG_redzone = IntFlagValue(options, "redzone=",
+      (ASAN_LOW_MEMORY) ? 64 : 128);
   CHECK(FLAG_redzone >= 32);
   CHECK((FLAG_redzone & (FLAG_redzone - 1)) == 0);
 
@@ -442,6 +454,9 @@ void __asan_init() {
   if (FLAG_atexit) {
     Atexit(asan_atexit);
   }
+
+  FLAG_quarantine_size = IntFlagValue(options, "quarantine_size=",
+      (ASAN_LOW_MEMORY) ? 1UL << 24 : 1UL << 28);
 
   // interceptors
   InitializeAsanInterceptors();

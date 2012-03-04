@@ -103,7 +103,7 @@ def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsDivRem,
 // target constant nodes that would otherwise remain unchanged with ADDiu
 // nodes. Without these wrapper node patterns, the following conditional move
 // instrucion is emitted when function cmov2 in test/CodeGen/Mips/cmov.ll is
-// compiled: 
+// compiled:
 //  movn  %got(d)($gp), %got(c)($gp), $4
 // This instruction is illegal since movn can take only register operands.
 
@@ -129,6 +129,7 @@ def HasCondMov  : Predicate<"Subtarget.hasCondMov()">;
 def HasMips32   : Predicate<"Subtarget.hasMips32()">;
 def HasMips32r2 : Predicate<"Subtarget.hasMips32r2()">;
 def HasMips64    : Predicate<"Subtarget.hasMips64()">;
+def HasMips32r2Or64 : Predicate<"Subtarget.hasMips32r2Or64()">;
 def NotMips64    : Predicate<"!Subtarget.hasMips64()">;
 def HasMips64r2  : Predicate<"Subtarget.hasMips64r2()">;
 def IsN64       : Predicate<"Subtarget.isABI_N64()">;
@@ -232,7 +233,7 @@ def immZExt5 : ImmLeaf<i32, [{return Imm == (Imm & 0x1f);}]>;
 
 // Mips Address Mode! SDNode frameindex could possibily be a match
 // since load and store instructions from stack used it.
-def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], []>;
+def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>;
 
 //===----------------------------------------------------------------------===//
 // Pattern fragment for load/store
@@ -407,7 +408,7 @@ multiclass LoadM32<bits<6> op, string instr_asm, PatFrag OpNode,
                Requires<[NotN64]>;
   def _P8    : LoadM<op, instr_asm, OpNode, CPURegs, mem64, Pseudo>,
                Requires<[IsN64]>;
-} 
+}
 
 // 64-bit load.
 multiclass LoadM64<bits<6> op, string instr_asm, PatFrag OpNode,
@@ -416,7 +417,7 @@ multiclass LoadM64<bits<6> op, string instr_asm, PatFrag OpNode,
                Requires<[NotN64]>;
   def _P8    : LoadM<op, instr_asm, OpNode, CPU64Regs, mem64, Pseudo>,
                Requires<[IsN64]>;
-} 
+}
 
 // 32-bit load.
 multiclass LoadUnAlign32<bits<6> op> {
@@ -497,7 +498,7 @@ class JumpFJ<bits<6> op, string instr_asm>:
   let isTerminator=1;
   let isBarrier=1;
   let hasDelaySlot = 1;
-  let Predicates = [RelocStatic];  
+  let Predicates = [RelocStatic];
 }
 
 // Unconditional branch
@@ -510,7 +511,7 @@ class UncondBranch<bits<6> op, string instr_asm>:
   let isTerminator = 1;
   let isBarrier = 1;
   let hasDelaySlot = 1;
-  let Predicates = [RelocPIC];  
+  let Predicates = [RelocPIC];
 }
 
 let isBranch=1, isTerminator=1, isBarrier=1, rd=0, hasDelaySlot = 1,
@@ -647,7 +648,7 @@ class ReadHardware<RegisterClass CPURegClass, RegisterClass HWRegClass>
 
 // Ext and Ins
 class ExtBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
-  FR<0x1f, _funct, (outs RC:$rt), (ins RC:$rs, uimm16:$pos, size_ext:$sz), 
+  FR<0x1f, _funct, (outs RC:$rt), (ins RC:$rs, uimm16:$pos, size_ext:$sz),
      !strconcat(instr_asm, " $rt, $rs, $pos, $sz"),
      [(set RC:$rt, (MipsExt RC:$rs, imm:$pos, imm:$sz))], NoItinerary> {
   bits<5> pos;
@@ -752,6 +753,10 @@ def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc), ".cprestore\t$loc", []>;
 // instructions 0 and 1 in the sequence above during MC lowering.
 // SETGP2 is emitted just before register allocation and converted to
 // instruction 2 just prior to post-RA scheduling.
+//
+// These pseudo instructions are needed to ensure no instructions are inserted
+// before or between instructions 0 and 1, which is a limitation imposed by
+// GNU linker.
 
 def SETGP01 : MipsPseudo<(outs CPURegs:$dst), (ins), "", []>;
 def SETGP2 : MipsPseudo<(outs CPURegs:$globalreg), (ins CPURegs:$picreg), "",
@@ -882,14 +887,10 @@ def BGTZ    : CBranchZero<0x07, 0, "bgtz", setgt, CPURegs>;
 def BLEZ    : CBranchZero<0x06, 0, "blez", setle, CPURegs>;
 def BLTZ    : CBranchZero<0x01, 0, "bltz", setlt, CPURegs>;
 
-// All calls clobber the non-callee saved registers...
-let Defs = [AT, V0, V1, A0, A1, A2, A3, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9,
-            K0, K1, GP, D0, D1, D2, D3, D4, D5, D6, D7, D8, D9] in {
-  def JAL  : JumpLink<0x03, "jal">;
-  def JALR : JumpLinkReg<0x00, 0x09, "jalr", CPURegs>;
-  def BGEZAL  : BranchLink<"bgezal", 0x11, CPURegs>;
-  def BLTZAL  : BranchLink<"bltzal", 0x10, CPURegs>;
-}
+def JAL  : JumpLink<0x03, "jal">;
+def JALR : JumpLinkReg<0x00, 0x09, "jalr", CPURegs>;
+def BGEZAL  : BranchLink<"bgezal", 0x11, CPURegs>;
+def BLTZAL  : BranchLink<"bltzal", 0x10, CPURegs>;
 
 let isReturn=1, isTerminator=1, hasDelaySlot=1,
     isBarrier=1, hasCtrlDep=1, rd=0, rt=0, shamt=0 in
@@ -1129,7 +1130,7 @@ defm : SetgeImmPats<CPURegs, SLTi, SLTiu>;
 def : Pat<(MipsDynAlloc addr:$f), (DynAlloc addr:$f)>;
 
 // bswap pattern
-def : Pat<(bswap CPURegs:$rt), (ROTR (WSBH CPURegs:$rt), 16)>; 
+def : Pat<(bswap CPURegs:$rt), (ROTR (WSBH CPURegs:$rt), 16)>;
 
 //===----------------------------------------------------------------------===//
 // Floating Point Support

@@ -1115,7 +1115,8 @@ dnl Check optional compiler flags.
 AC_MSG_CHECKING([optional compiler flags])
 CXX_FLAG_CHECK(NO_VARIADIC_MACROS, [-Wno-variadic-macros])
 CXX_FLAG_CHECK(NO_MISSING_FIELD_INITIALIZERS, [-Wno-missing-field-initializers])
-AC_MSG_RESULT([$NO_VARIADIC_MACROS $NO_MISSING_FIELD_INITIALIZERS])
+CXX_FLAG_CHECK(COVERED_SWITCH_DEFAULT, [-Wcovered-switch-default])
+AC_MSG_RESULT([$NO_VARIADIC_MACROS $NO_MISSING_FIELD_INITIALIZERS $COVERED_SWITCH_DEFAULT])
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -1445,6 +1446,11 @@ AC_SUBST(LLVM_INCLUDEDIR)
 AC_SUBST(LLVM_INFODIR)
 AC_SUBST(LLVM_MANDIR)
 AC_SUBST(LLVM_CONFIGTIME)
+
+dnl Disable embedding timestamps in the build directory, with ENABLE_TIMESTAMPS.
+if test "${ENABLE_TIMESTAMPS}" = "0"; then
+  LLVM_CONFIGTIME="(timestamp not enabled)"
+fi
 
 dnl Place the various directories into the config.h file as #defines so that we
 dnl can know about the installation paths within LLVM.

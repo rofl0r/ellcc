@@ -94,6 +94,15 @@ define i1 @gep7(%gept* %x) {
 ; CHECK: ret i1 %equal
 }
 
+define i1 @gep8(%gept* %x) {
+; CHECK: @gep8
+  %a = getelementptr %gept* %x, i32 1
+  %b = getelementptr %gept* %x, i32 -1
+  %equal = icmp ugt %gept* %a, %b
+  ret i1 %equal
+; CHECK: ret i1 %equal
+}
+
 define i1 @zext(i32 %x) {
 ; CHECK: @zext
   %e1 = zext i32 %x to i64

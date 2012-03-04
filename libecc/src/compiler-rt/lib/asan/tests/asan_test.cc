@@ -453,11 +453,7 @@ static void MallocStress(size_t n) {
 }
 
 TEST(AddressSanitizer, MallocStressTest) {
-#if ASAN_LOW_MEMORY == 1
-  MallocStress(20000);
-#else
-  MallocStress(200000);
-#endif
+  MallocStress((ASAN_LOW_MEMORY) ? 20000 : 200000);
 }
 
 static void TestLargeMalloc(size_t size) {
@@ -489,13 +485,11 @@ TEST(AddressSanitizer, HugeMallocTest) {
 
 TEST(AddressSanitizer, ThreadedMallocStressTest) {
   const int kNumThreads = 4;
+  const int kNumIterations = (ASAN_LOW_MEMORY) ? 10000 : 100000;
   pthread_t t[kNumThreads];
   for (int i = 0; i < kNumThreads; i++) {
-#if ASAN_LOW_MEMORY == 1
-    pthread_create(&t[i], 0, (void* (*)(void *x))MallocStress, (void*)10000);
-#else
-    pthread_create(&t[i], 0, (void* (*)(void *x))MallocStress, (void*)100000);
-#endif
+    pthread_create(&t[i], 0, (void* (*)(void *x))MallocStress,
+        (void*)kNumIterations);
   }
   for (int i = 0; i < kNumThreads; i++) {
     pthread_join(t[i], 0);
@@ -1949,6 +1943,14 @@ TEST(AddressSanitizerMac, CFStringCreateCopy) {
 }
 
 #endif  // __APPLE__
+
+// Test that instrumentation of stack allocations takes into account
+// AllocSize of a type, and not its StoreSize (16 vs 10 bytes for long double).
+// See http://llvm.org/bugs/show_bug.cgi?id=12047 for more details.
+TEST(AddressSanitizer, LongDoubleNegativeTest) {
+  long double a, b;
+  memcpy(Ident(&a), Ident(&b), sizeof(long double));
+};
 
 int main(int argc, char **argv) {
   progname = argv[0];

@@ -19,7 +19,7 @@
 #ifndef LLVM_CODEGEN_SLOTINDEXES_H
 #define LLVM_CODEGEN_SLOTINDEXES_H
 
-#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -493,8 +493,9 @@ namespace llvm {
     }
 
     /// Returns the base index for the given instruction.
-    SlotIndex getInstructionIndex(const MachineInstr *instr) const {
-      Mi2IndexMap::const_iterator itr = mi2iMap.find(instr);
+    SlotIndex getInstructionIndex(const MachineInstr *MI) const {
+      // Instructions inside a bundle have the same number as the bundle itself.
+      Mi2IndexMap::const_iterator itr = mi2iMap.find(getBundleStart(MI));
       assert(itr != mi2iMap.end() && "Instruction not found in maps.");
       return itr->second;
     }

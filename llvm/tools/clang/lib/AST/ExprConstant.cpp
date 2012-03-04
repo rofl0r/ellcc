@@ -44,6 +44,7 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include <cstring>
 #include <functional>
 
@@ -445,13 +446,18 @@ namespace {
     /// are suppressed.
     bool CheckingPotentialConstantExpression;
 
+    /// \brief Stack depth of IntExprEvaluator.
+    /// We check this against a maximum value to avoid stack overflow, see
+    /// test case in test/Sema/many-logical-ops.c.
+    // FIXME: This is a hack; handle properly unlimited logical ops.
+    unsigned IntExprEvaluatorDepth;
 
     EvalInfo(const ASTContext &C, Expr::EvalStatus &S)
       : Ctx(const_cast<ASTContext&>(C)), EvalStatus(S), CurrentCall(0),
         CallStackDepth(0), NextCallIndex(1),
         BottomFrame(*this, SourceLocation(), 0, 0, 0),
         EvaluatingDecl(0), EvaluatingDeclValue(0), HasActiveDiagnostic(false),
-        CheckingPotentialConstantExpression(false) {}
+        CheckingPotentialConstantExpression(false), IntExprEvaluatorDepth(0) {}
 
     const CCValue *getOpaqueValue(const OpaqueValueExpr *e) const {
       MapTy::const_iterator i = OpaqueValues.find(e);
@@ -4067,6 +4073,20 @@ public:
 
   bool ZeroInitialization(const Expr *E) { return Success(0, E); }
 
+  // FIXME: See EvalInfo::IntExprEvaluatorDepth.
+  bool Visit(const Expr *E) {
+    SaveAndRestore<unsigned> Depth(Info.IntExprEvaluatorDepth,
+                                   Info.IntExprEvaluatorDepth+1);
+    const unsigned MaxDepth = 512;
+    if (Depth.get() > MaxDepth) {
+      Info.Ctx.getDiagnostics().Report(E->getExprLoc(),
+                                       diag::err_intexpr_depth_limit_exceeded);
+      return false;
+    }
+
+    return ExprEvaluatorBaseTy::Visit(E);
+  }
+
   //===--------------------------------------------------------------------===//
   //                            Visitor Methods
   //===--------------------------------------------------------------------===//
@@ -4095,9 +4115,6 @@ public:
   }
 
   bool VisitCallExpr(const CallExpr *E);
-  bool VisitBinLAnd(const BinaryOperator *E);
-  bool VisitBinLOr(const BinaryOperator *E);
-  bool VisitBinLogicalOp(const BinaryOperator *E);
   bool VisitBinaryOperator(const BinaryOperator *E);
   bool VisitOffsetOfExpr(const OffsetOfExpr *E);
   bool VisitUnaryOperator(const UnaryOperator *E);
@@ -4498,50 +4515,6 @@ static APSInt CheckedIntArithmetic(EvalInfo &Info, const Expr *E,
   return Result;
 }
 
-// Handle logical operators outside VisitBinaryOperator() to reduce
-// stack pressure for source with huge number of logical operators.
-bool IntExprEvaluator::VisitBinLAnd(const BinaryOperator *E) {
-  return VisitBinLogicalOp(E);
-}
-bool IntExprEvaluator::VisitBinLOr(const BinaryOperator *E) {
-  return VisitBinLogicalOp(E);
-}
-
-bool IntExprEvaluator::VisitBinLogicalOp(const BinaryOperator *E) {
-  // These need to be handled specially because the operands aren't
-  // necessarily integral nor evaluated.
-  bool lhsResult, rhsResult;
-
-  if (EvaluateAsBooleanCondition(E->getLHS(), lhsResult, Info)) {
-    // We were able to evaluate the LHS, see if we can get away with not
-    // evaluating the RHS: 0 && X -> 0, 1 || X -> 1
-    if (lhsResult == (E->getOpcode() == BO_LOr))
-      return Success(lhsResult, E);
-
-    if (EvaluateAsBooleanCondition(E->getRHS(), rhsResult, Info)) {
-      if (E->getOpcode() == BO_LOr)
-        return Success(lhsResult || rhsResult, E);
-      else
-        return Success(lhsResult && rhsResult, E);
-    }
-  } else {
-    // Since we weren't able to evaluate the left hand side, it
-    // must have had side effects.
-    Info.EvalStatus.HasSideEffects = true;
-
-    // Suppress diagnostics from this arm.
-    SpeculativeEvaluationRAII Speculative(Info);
-    if (EvaluateAsBooleanCondition(E->getRHS(), rhsResult, Info)) {
-      // We can't evaluate the LHS; however, sometimes the result
-      // is determined by the RHS: X && 0 -> 0, X || 1 -> 1.
-      if (rhsResult == (E->getOpcode() == BO_LOr))
-        return Success(rhsResult, E);
-    }
-  }
-
-  return false;
-}
-
 bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
   if (E->isAssignmentOp())
     return Error(E);
@@ -4551,7 +4524,40 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
     return Visit(E->getRHS());
   }
 
-  assert(!E->isLogicalOp() && "Logical ops not handled separately?");
+  if (E->isLogicalOp()) {
+    // These need to be handled specially because the operands aren't
+    // necessarily integral nor evaluated.
+    bool lhsResult, rhsResult;
+
+    if (EvaluateAsBooleanCondition(E->getLHS(), lhsResult, Info)) {
+      // We were able to evaluate the LHS, see if we can get away with not
+      // evaluating the RHS: 0 && X -> 0, 1 || X -> 1
+      if (lhsResult == (E->getOpcode() == BO_LOr))
+        return Success(lhsResult, E);
+
+      if (EvaluateAsBooleanCondition(E->getRHS(), rhsResult, Info)) {
+        if (E->getOpcode() == BO_LOr)
+          return Success(lhsResult || rhsResult, E);
+        else
+          return Success(lhsResult && rhsResult, E);
+      }
+    } else {
+      // Since we weren't able to evaluate the left hand side, it
+      // must have had side effects.
+      Info.EvalStatus.HasSideEffects = true;
+
+      // Suppress diagnostics from this arm.
+      SpeculativeEvaluationRAII Speculative(Info);
+      if (EvaluateAsBooleanCondition(E->getRHS(), rhsResult, Info)) {
+        // We can't evaluate the LHS; however, sometimes the result
+        // is determined by the RHS: X && 0 -> 0, X || 1 -> 1.
+        if (rhsResult == (E->getOpcode() == BO_LOr))
+          return Success(rhsResult, E);
+      }
+    }
+
+    return false;
+  }
 
   QualType LHSTy = E->getLHS()->getType();
   QualType RHSTy = E->getRHS()->getType();
