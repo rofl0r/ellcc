@@ -239,7 +239,7 @@ $llvmTargets{'armv8'} = { label => '32-bit ARMv8'  };
 $llvmTargets{'ppc'} = { label => '32-bit PowerPC'  };
 $llvmTargets{'ppc64'} = { label => '64-bit PowerPC'  };
 $llvmTargets{'x86'} = { label => '32-bit X86: Pentium-Pro and above'  };
-$llvmTargets{'x86-64'}  = { label => '64-bit X86: EM64T and AMD64' };
+$llvmTargets{'x86_64'}  = { label => '64-bit X86: EM64T and AMD64' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
 $llvmTargets{'cpp'}  = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
