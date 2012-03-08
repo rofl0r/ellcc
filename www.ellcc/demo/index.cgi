@@ -161,6 +161,9 @@ print <<EOF;
  http-equiv="Content-Type">
   <title>Try out ELLCC in your browser!</title>
   <meta content="Richard Pennington" name="author">
+  <style>
+    \@import url("syntax.css");
+  </style>
 </head>
 <body>
 <table style="text-align: left; width: 100%; height: 100%;" border="0"
