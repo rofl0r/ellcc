@@ -244,7 +244,6 @@ $llvmTargets{'ppc64'} = { label => '64-bit PowerPC'  };
 $llvmTargets{'i386'} = { label => '32-bit X86: Pentium-Pro and above'  };
 $llvmTargets{'x86_64'}  = { label => '64-bit X86: EM64T and AMD64' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
-$llvmTargets{'cpp'}  = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
 sub llvmTargetsSortedByLabel {
   $llvmTargets{$a}->{'label'} cmp $llvmTargets{$b}->{'label'};
