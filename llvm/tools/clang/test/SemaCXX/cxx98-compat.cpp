@@ -50,7 +50,7 @@ int InitList() {
   return { 0 }; // expected-warning {{generalized initializer lists are incompatible with C++98}}
 }
 
-int operator""_hello(const char *); // expected-warning {{literal operators are incompatible with C++98}}
+int operator"" _hello(const char *); // expected-warning {{literal operators are incompatible with C++98}}
 
 enum EnumFixed : int { // expected-warning {{enumeration types with a fixed underlying type are incompatible with C++98}}
 };
@@ -280,4 +280,11 @@ namespace UnevaluatedMemberAccess {
   };
   int k = sizeof(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
   const std::type_info &ti = typeid(S::n); // expected-warning {{use of non-static data member 'n' in an unevaluated context is incompatible with C++98}}
+}
+
+namespace LiteralUCNs {
+  char c1 = '\u001e'; // expected-warning {{universal character name referring to a control character is incompatible with C++98}}
+  wchar_t c2 = L'\u0041'; // expected-warning {{specifying character 'A' with a universal character name is incompatible with C++98}}
+  const char *s1 = "foo\u0031"; // expected-warning {{specifying character '1' with a universal character name is incompatible with C++98}}
+  const wchar_t *s2 = L"bar\u0085"; // expected-warning {{universal character name referring to a control character is incompatible with C++98}}
 }

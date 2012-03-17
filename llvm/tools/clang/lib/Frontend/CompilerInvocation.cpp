@@ -78,8 +78,29 @@ static const char *getAnalysisDiagClientName(AnalysisDiagClients Kind) {
 static const char *getAnalysisPurgeModeName(AnalysisPurgeMode Kind) {
   switch (Kind) {
   default:
-    llvm_unreachable("Unknown analysis client!");
+    llvm_unreachable("Unknown analysis purge mode!");
 #define ANALYSIS_PURGE(NAME, CMDFLAG, DESC) \
+  case NAME: return CMDFLAG;
+#include "clang/Frontend/Analyses.def"
+  }
+}
+
+static const char *getAnalysisIPAModeName(AnalysisIPAMode Kind) {
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown analysis ipa mode!");
+#define ANALYSIS_IPA(NAME, CMDFLAG, DESC) \
+  case NAME: return CMDFLAG;
+#include "clang/Frontend/Analyses.def"
+  }
+}
+
+static const char *
+  getAnalysisInliningModeName(AnalysisInliningMode Kind) {
+  switch (Kind) {
+  default:
+    llvm_unreachable("Unknown analysis inlining mode!");
+#define ANALYSIS_INLINE_SELECTION(NAME, CMDFLAG, DESC) \
   case NAME: return CMDFLAG;
 #include "clang/Frontend/Analyses.def"
   }
@@ -113,6 +134,15 @@ static void AnalyzerOptsToArgs(const AnalyzerOptions &Opts,
     Res.push_back("-analyze-function");
     Res.push_back(Opts.AnalyzeSpecificFunction);
   }
+  if (Opts.IPAMode != Inlining) {
+    Res.push_back("-analyzer-ipa");
+    Res.push_back(getAnalysisIPAModeName(Opts.IPAMode));
+  }
+  if (Opts.InliningMode != NoRedundancy) {
+    Res.push_back("-analyzer-inlining-mode");
+    Res.push_back(getAnalysisInliningModeName(Opts.InliningMode));
+  }
+
   if (Opts.AnalyzeAll)
     Res.push_back("-analyzer-opt-analyze-headers");
   if (Opts.AnalyzerDisplayProgress)
@@ -428,6 +458,7 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::RewriteObjC:            return "-rewrite-objc";
   case frontend::RewriteTest:            return "-rewrite-test";
   case frontend::RunAnalysis:            return "-analyze";
+  case frontend::MigrateSource:          return "-migrate";
   case frontend::RunPreprocessorOnly:    return "-Eonly";
   }
 
@@ -483,9 +514,9 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
     Res.push_back("-arcmt-migrate");
     break;
   }
-  if (!Opts.ARCMTMigrateDir.empty()) {
-    Res.push_back("-arcmt-migrate-directory");
-    Res.push_back(Opts.ARCMTMigrateDir);
+  if (!Opts.MTMigrateDir.empty()) {
+    Res.push_back("-mt-migrate-directory");
+    Res.push_back(Opts.MTMigrateDir);
   }
   if (!Opts.ARCMTMigrateReportOut.empty()) {
     Res.push_back("-arcmt-migrate-report-output");
@@ -493,6 +524,11 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts,
   }
   if (Opts.ARCMTMigrateEmitARCErrors)
     Res.push_back("-arcmt-migrate-emit-errors");
+
+  if (Opts.ObjCMTAction & ~FrontendOptions::ObjCMT_Literals)
+    Res.push_back("-objcmt-migrate-literals");
+  if (Opts.ObjCMTAction & ~FrontendOptions::ObjCMT_Subscripting)
+    Res.push_back("-objcmt-migrate-subscripting");
 
   bool NeedLang = false;
   for (unsigned i = 0, e = Opts.Inputs.size(); i != e; ++i)
@@ -828,6 +864,8 @@ static void LangOptsToArgs(const LangOptions &Opts,
     Res.push_back("-fdebugger-support");
   if (Opts.DebuggerCastResultToId)
     Res.push_back("-fdebugger-cast-result-to-id");
+  if (Opts.DebuggerObjCLiteral)
+    Res.push_back("-fdebugger-objc-literal");
   if (Opts.DelayedTemplateParsing)
     Res.push_back("-fdelayed-template-parsing");
   if (Opts.Deprecated)
@@ -1028,6 +1066,38 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
     }
   }
 
+  if (Arg *A = Args.getLastArg(OPT_analyzer_ipa)) {
+    StringRef Name = A->getValue(Args);
+    AnalysisIPAMode Value = llvm::StringSwitch<AnalysisIPAMode>(Name)
+#define ANALYSIS_IPA(NAME, CMDFLAG, DESC) \
+      .Case(CMDFLAG, NAME)
+#include "clang/Frontend/Analyses.def"
+      .Default(NumIPAModes);
+    if (Value == NumIPAModes) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << Name;
+      Success = false;
+    } else {
+      Opts.IPAMode = Value;
+    }
+  }
+
+  if (Arg *A = Args.getLastArg(OPT_analyzer_inlining_mode)) {
+    StringRef Name = A->getValue(Args);
+    AnalysisInliningMode Value = llvm::StringSwitch<AnalysisInliningMode>(Name)
+#define ANALYSIS_INLINING_MODE(NAME, CMDFLAG, DESC) \
+      .Case(CMDFLAG, NAME)
+#include "clang/Frontend/Analyses.def"
+      .Default(NumInliningModes);
+    if (Value == NumInliningModes) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << A->getAsString(Args) << Name;
+      Success = false;
+    } else {
+      Opts.InliningMode = Value;
+    }
+  }
+
   Opts.ShowCheckerHelp = Args.hasArg(OPT_analyzer_checker_help);
   Opts.VisualizeEGDot = Args.hasArg(OPT_analyzer_viz_egraph_graphviz);
   Opts.VisualizeEGUbi = Args.hasArg(OPT_analyzer_viz_egraph_ubigraph);
@@ -1044,8 +1114,6 @@ static bool ParseAnalyzerArgs(AnalyzerOptions &Opts, ArgList &Args,
   Opts.MaxNodes = Args.getLastArgIntValue(OPT_analyzer_max_nodes, 150000,Diags);
   Opts.MaxLoop = Args.getLastArgIntValue(OPT_analyzer_max_loop, 4, Diags);
   Opts.EagerlyTrimEGraph = !Args.hasArg(OPT_analyzer_no_eagerly_trim_egraph);
-  if (Args.hasArg(OPT_analyzer_inline_call))
-    Opts.InlineCall = 1;
   Opts.PrintStats = Args.hasArg(OPT_analyzer_stats);
   Opts.InlineMaxStackDepth =
     Args.getLastArgIntValue(OPT_analyzer_inline_max_stack_depth,
@@ -1096,6 +1164,10 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   // We must always run at least the always inlining pass.
   Opts.Inlining = (Opts.OptimizationLevel > 1) ? CodeGenOptions::NormalInlining
     : CodeGenOptions::OnlyAlwaysInlining;
+  // -fno-inline-functions overrides OptimizationLevel > 1.
+  Opts.NoInline = Args.hasArg(OPT_fno_inline);
+  Opts.Inlining = Args.hasArg(OPT_fno_inline_functions) ? 
+    CodeGenOptions::OnlyAlwaysInlining : Opts.Inlining;
 
   Opts.DebugInfo = Args.hasArg(OPT_g);
   Opts.LimitDebugInfo = !Args.hasArg(OPT_fno_limit_debug_info)
@@ -1206,8 +1278,8 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   Opts.DOTOutputFile = Args.getLastArgValue(OPT_dependency_dot);
 }
 
-static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
-                                DiagnosticsEngine &Diags) {
+bool clang::ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
+                                DiagnosticsEngine *Diags) {
   using namespace cc1options;
   bool Success = true;
 
@@ -1241,10 +1313,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (ShowOverloads == "all")
     Opts.ShowOverloads = DiagnosticsEngine::Ovl_All;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fshow_overloads_EQ)->getAsString(Args)
       << ShowOverloads;
-    Success = false;
   }
 
   StringRef ShowCategory =
@@ -1256,10 +1329,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (ShowCategory == "name")
     Opts.ShowCategories = 2;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fdiagnostics_show_category)->getAsString(Args)
       << ShowCategory;
-    Success = false;
   }
 
   StringRef Format =
@@ -1271,10 +1345,11 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   else if (Format == "vi")
     Opts.Format = DiagnosticOptions::Vi;
   else {
-    Diags.Report(diag::err_drv_invalid_value)
+    Success = false;
+    if (Diags)
+      Diags->Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fdiagnostics_format)->getAsString(Args)
       << Format;
-    Success = false;
   }
   
   Opts.ShowSourceRanges = Args.hasArg(OPT_fdiagnostics_print_source_range_info);
@@ -1295,13 +1370,23 @@ static bool ParseDiagnosticArgs(DiagnosticOptions &Opts, ArgList &Args,
   Opts.TabStop = Args.getLastArgIntValue(OPT_ftabstop,
                                     DiagnosticOptions::DefaultTabStop, Diags);
   if (Opts.TabStop == 0 || Opts.TabStop > DiagnosticOptions::MaxTabStop) {
-    Diags.Report(diag::warn_ignoring_ftabstop_value)
-      << Opts.TabStop << DiagnosticOptions::DefaultTabStop;
     Opts.TabStop = DiagnosticOptions::DefaultTabStop;
+    if (Diags)
+      Diags->Report(diag::warn_ignoring_ftabstop_value)
+      << Opts.TabStop << DiagnosticOptions::DefaultTabStop;
   }
   Opts.MessageLength = Args.getLastArgIntValue(OPT_fmessage_length, 0, Diags);
   Opts.DumpBuildInformation = Args.getLastArgValue(OPT_dump_build_information);
-  Opts.Warnings = Args.getAllArgValues(OPT_W);
+
+  for (arg_iterator it = Args.filtered_begin(OPT_W),
+         ie = Args.filtered_end(); it != ie; ++it) {
+    StringRef V = (*it)->getValue(Args);
+    // "-Wl," and such are not warnings options.
+    if (V.startswith("l,") || V.startswith("a,") || V.startswith("p,"))
+      continue;
+
+    Opts.Warnings.push_back(V);
+  }
 
   return Success;
 }
@@ -1373,6 +1458,8 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::RewriteTest; break;
     case OPT_analyze:
       Opts.ProgramAction = frontend::RunAnalysis; break;
+    case OPT_migrate:
+      Opts.ProgramAction = frontend::MigrateSource; break;
     case OPT_Eonly:
       Opts.ProgramAction = frontend::RunPreprocessorOnly; break;
     }
@@ -1429,7 +1516,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   Opts.FixToTemporaries = Args.hasArg(OPT_fixit_to_temp);
   Opts.OverrideRecordLayoutsFile
     = Args.getLastArgValue(OPT_foverride_record_layout_EQ);
-  Opts.ARCMTAction = FrontendOptions::ARCMT_None;
   if (const Arg *A = Args.getLastArg(OPT_arcmt_check,
                                      OPT_arcmt_modify,
                                      OPT_arcmt_migrate)) {
@@ -1447,11 +1533,22 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       break;
     }
   }
-  Opts.ARCMTMigrateDir = Args.getLastArgValue(OPT_arcmt_migrate_directory);
+  Opts.MTMigrateDir = Args.getLastArgValue(OPT_mt_migrate_directory);
   Opts.ARCMTMigrateReportOut
     = Args.getLastArgValue(OPT_arcmt_migrate_report_output);
   Opts.ARCMTMigrateEmitARCErrors
     = Args.hasArg(OPT_arcmt_migrate_emit_arc_errors);
+
+  if (Args.hasArg(OPT_objcmt_migrate_literals))
+    Opts.ObjCMTAction |= FrontendOptions::ObjCMT_Literals;
+  if (Args.hasArg(OPT_objcmt_migrate_subscripting))
+    Opts.ObjCMTAction |= FrontendOptions::ObjCMT_Subscripting;
+
+  if (Opts.ARCMTAction != FrontendOptions::ARCMT_None &&
+      Opts.ObjCMTAction != FrontendOptions::ObjCMT_None) {
+    Diags.Report(diag::err_drv_argument_not_allowed_with)
+      << "ARC migration" << "ObjC migration";
+  }
 
   InputKind DashX = IK_None;
   if (const Arg *A = Args.getLastArg(OPT_x)) {
@@ -1896,6 +1993,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ParseUnknownAnytype = Args.hasArg(OPT_funknown_anytype);
   Opts.DebuggerSupport = Args.hasArg(OPT_fdebugger_support);
   Opts.DebuggerCastResultToId = Args.hasArg(OPT_fdebugger_cast_result_to_id);
+  Opts.DebuggerObjCLiteral = Args.hasArg(OPT_fdebugger_objc_literal);
   Opts.AddressSanitizer = Args.hasArg(OPT_faddress_sanitizer);
   Opts.ThreadSanitizer = Args.hasArg(OPT_fthread_sanitizer);
   Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
@@ -1914,9 +2012,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // This is the __NO_INLINE__ define, which just depends on things like the
   // optimization level and -fno-inline, not actually whether the backend has
   // inlining enabled.
-  //
-  // FIXME: This is affected by other options (-fno-inline).
-  Opts.NoInline = !Opt;
+  Opts.NoInlineDefine = !Opt || Args.hasArg(OPT_fno_inline);
 
   Opts.FastMath = Args.hasArg(OPT_ffast_math);
 
@@ -2090,7 +2186,7 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
   Success = ParseAnalyzerArgs(Res.getAnalyzerOpts(), *Args, Diags) && Success;
   Success = ParseMigratorArgs(Res.getMigratorOpts(), *Args) && Success;
   ParseDependencyOutputArgs(Res.getDependencyOutputOpts(), *Args);
-  Success = ParseDiagnosticArgs(Res.getDiagnosticOpts(), *Args, Diags)
+  Success = ParseDiagnosticArgs(Res.getDiagnosticOpts(), *Args, &Diags)
             && Success;
   ParseFileSystemArgs(Res.getFileSystemOpts(), *Args);
   // FIXME: We shouldn't have to pass the DashX option around here
@@ -2172,7 +2268,10 @@ std::string CompilerInvocation::getModuleHash() const {
   ModuleSignature Signature;
   
   // Start the signature with the compiler version.
-  Signature.add(getClangFullRepositoryVersion());
+  // FIXME: The full version string can be quite long.  Omit it from the
+  // module hash for now to avoid failures where the path name becomes too
+  // long.  An MD5 or similar checksum would work well here.
+  // Signature.add(getClangFullRepositoryVersion());
   
   // Extend the signature with the language options
 #define LANGOPT(Name, Bits, Default, Description) \

@@ -215,7 +215,7 @@ class CodeGenModule : public CodeGenTypeCache {
   typedef std::vector<std::pair<llvm::Constant*, int> > CtorList;
 
   ASTContext &Context;
-  const LangOptions &Features;
+  const LangOptions &LangOpts;
   const CodeGenOptions &CodeGenOpts;
   llvm::Module &TheModule;
   const llvm::TargetData &TheTargetData;
@@ -279,7 +279,7 @@ class CodeGenModule : public CodeGenTypeCache {
 
   llvm::StringMap<llvm::Constant*> CFConstantStringMap;
   llvm::StringMap<llvm::GlobalVariable*> ConstantStringMap;
-  llvm::DenseMap<const Decl*, llvm::Value*> StaticLocalDeclMap;
+  llvm::DenseMap<const Decl*, llvm::Constant *> StaticLocalDeclMap;
   
   llvm::DenseMap<QualType, llvm::Constant *> AtomicSetterHelperFnMap;
   llvm::DenseMap<QualType, llvm::Constant *> AtomicGetterHelperFnMap;
@@ -388,7 +388,7 @@ public:
   CGCXXABI &getCXXABI() { return ABI; }
 
   ARCEntrypoints &getARCEntrypoints() const {
-    assert(getLangOptions().ObjCAutoRefCount && ARCData != 0);
+    assert(getLangOpts().ObjCAutoRefCount && ARCData != 0);
     return *ARCData;
   }
 
@@ -397,12 +397,12 @@ public:
     return *RRData;
   }
 
-  llvm::Value *getStaticLocalDeclAddress(const VarDecl *VD) {
-    return StaticLocalDeclMap[VD];
+  llvm::Constant *getStaticLocalDeclAddress(const VarDecl *D) {
+    return StaticLocalDeclMap[D];
   }
   void setStaticLocalDeclAddress(const VarDecl *D, 
-                             llvm::GlobalVariable *GV) {
-    StaticLocalDeclMap[D] = GV;
+                                 llvm::Constant *C) {
+    StaticLocalDeclMap[D] = C;
   }
 
   llvm::Constant *getAtomicSetterHelperFnMap(QualType Ty) {
@@ -433,7 +433,7 @@ public:
 
   ASTContext &getContext() const { return Context; }
   const CodeGenOptions &getCodeGenOpts() const { return CodeGenOpts; }
-  const LangOptions &getLangOptions() const { return Features; }
+  const LangOptions &getLangOpts() const { return LangOpts; }
   llvm::Module &getModule() const { return TheModule; }
   CodeGenTypes &getTypes() { return Types; }
   CodeGenVTables &getVTables() { return VTables; }
@@ -657,6 +657,10 @@ public:
 
   /// EmitTopLevelDecl - Emit code for a single top level declaration.
   void EmitTopLevelDecl(Decl *D);
+
+  /// HandleCXXStaticMemberVarInstantiation - Tell the consumer that this
+  // variable has been instantiated.
+  void HandleCXXStaticMemberVarInstantiation(VarDecl *VD);
 
   /// AddUsedGlobal - Add a global which should be forced to be
   /// present in the object file; these are emitted to the llvm.used

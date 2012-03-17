@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core -analyzer-inline-call -analyzer-store region -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core -analyzer-ipa=inlining -analyzer-store region -verify %s
 
 int test1_f1() {
   int y = 1;
@@ -76,4 +76,17 @@ char *test_return_stack_memory_bad() {
   char *x = stack_buf;
   return x; // expected-warning {{stack memory associated}}
 }
+
+// Test that passing a struct value with an uninitialized field does
+// not trigger a warning if we are inlining and the body is available.
+struct rdar10977037 { int x, y; };
+int test_rdar10977037_aux(struct rdar10977037 v) { return v.y; }
+int test_rdar10977037_aux_2(struct rdar10977037 v);
+int test_rdar10977037() {
+  struct rdar10977037 v;
+  v.y = 1;
+  v. y += test_rdar10977037_aux(v); // no-warning
+  return test_rdar10977037_aux_2(v); // expected-warning {{Passed-by-value struct argument contains uninitialized data}}
+}
+
 

@@ -44,6 +44,7 @@ enum VectorLaneTy { NoLanes, AllLanes, IndexedLane };
 class ARMAsmParser : public MCTargetAsmParser {
   MCSubtargetInfo &STI;
   MCAsmParser &Parser;
+  const MCRegisterInfo *MRI;
 
   // Map of register aliases registers via the .req directive.
   StringMap<unsigned> RegisterReqs;
@@ -235,6 +236,9 @@ public:
   ARMAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser)
     : MCTargetAsmParser(), STI(_STI), Parser(_Parser) {
     MCAsmParserExtension::Initialize(_Parser);
+
+    // Cache the MCRegisterInfo.
+    MRI = &getContext().getRegisterInfo();
 
     // Initialize the set of available features.
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
@@ -1081,9 +1085,10 @@ public:
     return VectorList.Count == 1;
   }
 
-  bool isVecListTwoD() const {
+  bool isVecListDPair() const {
     if (!isSingleSpacedVectorList()) return false;
-    return VectorList.Count == 2;
+    return (ARMMCRegisterClasses[ARM::DPairRegClassID]
+              .contains(VectorList.RegNum));
   }
 
   bool isVecListThreeD() const {
@@ -1096,9 +1101,10 @@ public:
     return VectorList.Count == 4;
   }
 
-  bool isVecListTwoQ() const {
-    if (!isDoubleSpacedVectorList()) return false;
-    return VectorList.Count == 2;
+  bool isVecListDPairSpaced() const {
+    if (!isSingleSpacedVectorList()) return false;
+    return (ARMMCRegisterClasses[ARM::DPairSpcRegClassID]
+              .contains(VectorList.RegNum));
   }
 
   bool isVecListThreeQ() const {
@@ -1122,12 +1128,13 @@ public:
     return VectorList.Count == 1;
   }
 
-  bool isVecListTwoDAllLanes() const {
+  bool isVecListDPairAllLanes() const {
     if (!isSingleSpacedVectorAllLanes()) return false;
-    return VectorList.Count == 2;
+    return (ARMMCRegisterClasses[ARM::DPairRegClassID]
+              .contains(VectorList.RegNum));
   }
 
-  bool isVecListTwoQAllLanes() const {
+  bool isVecListDPairSpacedAllLanes() const {
     if (!isDoubleSpacedVectorAllLanes()) return false;
     return VectorList.Count == 2;
   }
@@ -2969,10 +2976,14 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       switch (LaneKind) {
       case NoLanes:
         E = Parser.getTok().getLoc();
+        Reg = MRI->getMatchingSuperReg(Reg, ARM::dsub_0,
+                                   &ARMMCRegisterClasses[ARM::DPairRegClassID]);
         Operands.push_back(ARMOperand::CreateVectorList(Reg, 2, false, S, E));
         break;
       case AllLanes:
         E = Parser.getTok().getLoc();
+        Reg = MRI->getMatchingSuperReg(Reg, ARM::dsub_0,
+                                   &ARMMCRegisterClasses[ARM::DPairRegClassID]);
         Operands.push_back(ARMOperand::CreateVectorListAllLanes(Reg, 2, false,
                                                                 S, E));
         break;
@@ -3138,10 +3149,27 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
   switch (LaneKind) {
   case NoLanes:
+    // Two-register operands have been converted to the
+    // composite register classes.
+    if (Count == 2) {
+      const MCRegisterClass *RC = (Spacing == 1) ?
+        &ARMMCRegisterClasses[ARM::DPairRegClassID] :
+        &ARMMCRegisterClasses[ARM::DPairSpcRegClassID];
+      FirstReg = MRI->getMatchingSuperReg(FirstReg, ARM::dsub_0, RC);
+    }
+
     Operands.push_back(ARMOperand::CreateVectorList(FirstReg, Count,
                                                     (Spacing == 2), S, E));
     break;
   case AllLanes:
+    // Two-register operands have been converted to the
+    // composite register classes.
+    if (Count == 2) {
+      const MCRegisterClass *RC = (Spacing == 1) ?
+        &ARMMCRegisterClasses[ARM::DPairRegClassID] :
+        &ARMMCRegisterClasses[ARM::DPairSpcRegClassID];
+      FirstReg = MRI->getMatchingSuperReg(FirstReg, ARM::dsub_0, RC);
+    }
     Operands.push_back(ARMOperand::CreateVectorListAllLanes(FirstReg, Count,
                                                             (Spacing == 2),
                                                             S, E));
@@ -3230,7 +3258,8 @@ parseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
   if (isMClass()) {
     // See ARMv6-M 10.1.1
-    unsigned FlagsVal = StringSwitch<unsigned>(Mask)
+    std::string Name = Mask.lower();
+    unsigned FlagsVal = StringSwitch<unsigned>(Name)
       .Case("apsr", 0)
       .Case("iapsr", 1)
       .Case("eapsr", 2)
@@ -4404,10 +4433,11 @@ bool ARMAsmParser::parseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands,
     else if (Res == -1) // irrecoverable error
       return true;
     // If this is VMRS, check for the apsr_nzcv operand.
-    if (Mnemonic == "vmrs" && Parser.getTok().getString() == "apsr_nzcv") {
+    if (Mnemonic == "vmrs" &&
+        Parser.getTok().getString().equals_lower("apsr_nzcv")) {
       S = Parser.getTok().getLoc();
       Parser.Lex();
-      Operands.push_back(ARMOperand::CreateToken("apsr_nzcv", S));
+      Operands.push_back(ARMOperand::CreateToken("APSR_nzcv", S));
       return false;
     }
 
@@ -4575,7 +4605,7 @@ StringRef ARMAsmParser::splitMnemonic(StringRef Mnemonic,
         Mnemonic == "vrsqrts" || Mnemonic == "srs" || Mnemonic == "flds" ||
         Mnemonic == "fmrs" || Mnemonic == "fsqrts" || Mnemonic == "fsubs" ||
         Mnemonic == "fsts" || Mnemonic == "fcpys" || Mnemonic == "fdivs" ||
-        Mnemonic == "fmuls" || Mnemonic == "fcmps" ||
+        Mnemonic == "fmuls" || Mnemonic == "fcmps" || Mnemonic == "fcmpzs" ||
         (Mnemonic == "movs" && isThumb()))) {
     Mnemonic = Mnemonic.slice(0, Mnemonic.size() - 1);
     CarrySetting = true;

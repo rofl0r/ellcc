@@ -461,7 +461,7 @@ bool RegisterCoalescer::AdjustCopiesBackFrom(const CoalescerPair &CP,
   // of its aliases is overlapping the live interval of the virtual register.
   // If so, do not coalesce.
   if (TargetRegisterInfo::isPhysicalRegister(IntB.reg)) {
-    for (const unsigned *AS = TRI->getAliasSet(IntB.reg); *AS; ++AS)
+    for (const uint16_t *AS = TRI->getAliasSet(IntB.reg); *AS; ++AS)
       if (LIS->hasInterval(*AS) && IntA.overlaps(LIS->getInterval(*AS))) {
         DEBUG({
             dbgs() << "\t\tInterfere with alias ";
@@ -490,7 +490,7 @@ bool RegisterCoalescer::AdjustCopiesBackFrom(const CoalescerPair &CP,
   // If the IntB live range is assigned to a physical register, and if that
   // physreg has sub-registers, update their live intervals as well.
   if (TargetRegisterInfo::isPhysicalRegister(IntB.reg)) {
-    for (const unsigned *SR = TRI->getSubRegisters(IntB.reg); *SR; ++SR) {
+    for (const uint16_t *SR = TRI->getSubRegisters(IntB.reg); *SR; ++SR) {
       if (!LIS->hasInterval(*SR))
         continue;
       LiveInterval &SRLI = LIS->getInterval(*SR);
@@ -653,7 +653,7 @@ bool RegisterCoalescer::RemoveCopyByCommutingDef(const CoalescerPair &CP,
   // Abort if the aliases of IntB.reg have values that are not simply the
   // clobbers from the superreg.
   if (TargetRegisterInfo::isPhysicalRegister(IntB.reg))
-    for (const unsigned *AS = TRI->getAliasSet(IntB.reg); *AS; ++AS)
+    for (const uint16_t *AS = TRI->getAliasSet(IntB.reg); *AS; ++AS)
       if (LIS->hasInterval(*AS) &&
           HasOtherReachingDefs(IntA, LIS->getInterval(*AS), AValNo, 0))
         return false;
@@ -935,13 +935,10 @@ RegisterCoalescer::UpdateRegDefsUses(const CoalescerPair &CP) {
     SmallVector<unsigned,8> Ops;
     bool Reads, Writes;
     tie(Reads, Writes) = UseMI->readsWritesVirtualRegister(SrcReg, &Ops);
-    bool Kills = false, Deads = false;
 
     // Replace SrcReg with DstReg in all UseMI operands.
     for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
       MachineOperand &MO = UseMI->getOperand(Ops[i]);
-      Kills |= MO.isKill();
-      Deads |= MO.isDead();
 
       // Make sure we don't create read-modify-write defs accidentally.  We
       // assume here that a SrcReg def cannot be joined into a live DstReg.  If
@@ -961,19 +958,6 @@ RegisterCoalescer::UpdateRegDefsUses(const CoalescerPair &CP) {
     if (JoinedCopies.count(UseMI))
       continue;
 
-    if (SubIdx) {
-      // If UseMI was a simple SrcReg def, make sure we didn't turn it into a
-      // read-modify-write of DstReg.
-      if (Deads)
-        UseMI->addRegisterDead(DstReg, TRI);
-      else if (!Reads && Writes)
-        UseMI->addRegisterDefined(DstReg, TRI);
-
-      // Kill flags apply to the whole physical register.
-      if (DstIsPhys && Kills)
-        UseMI->addRegisterKilled(DstReg, TRI);
-    }
-
     DEBUG({
         dbgs() << "\t\tupdated: ";
         if (!UseMI->isDebugValue())
@@ -990,7 +974,7 @@ static bool removeIntervalIfEmpty(LiveInterval &li, LiveIntervals *LIS,
                                   const TargetRegisterInfo *TRI) {
   if (li.empty()) {
     if (TargetRegisterInfo::isPhysicalRegister(li.reg))
-      for (const unsigned* SR = TRI->getSubRegisters(li.reg); *SR; ++SR) {
+      for (const uint16_t* SR = TRI->getSubRegisters(li.reg); *SR; ++SR) {
         if (!LIS->hasInterval(*SR))
           continue;
         LiveInterval &sli = LIS->getInterval(*SR);
@@ -1412,7 +1396,7 @@ bool RegisterCoalescer::JoinIntervals(CoalescerPair &CP) {
              "Invalid join with reserved register");
       // Deny any overlapping intervals.  This depends on all the reserved
       // register live ranges to look like dead defs.
-      for (const unsigned *AS = TRI->getOverlaps(CP.getDstReg()); *AS; ++AS) {
+      for (const uint16_t *AS = TRI->getOverlaps(CP.getDstReg()); *AS; ++AS) {
         if (!LIS->hasInterval(*AS)) {
           // Make sure at least DstReg itself exists before attempting a join.
           if (*AS == CP.getDstReg())
@@ -1439,7 +1423,7 @@ bool RegisterCoalescer::JoinIntervals(CoalescerPair &CP) {
       return false;
     }
 
-    for (const unsigned *AS = TRI->getAliasSet(CP.getDstReg()); *AS; ++AS){
+    for (const uint16_t *AS = TRI->getAliasSet(CP.getDstReg()); *AS; ++AS){
       if (!LIS->hasInterval(*AS))
         continue;
       const LiveInterval &LHS = LIS->getInterval(*AS);
@@ -1952,7 +1936,7 @@ bool RegisterCoalescer::runOnMachineFunction(MachineFunction &fn) {
         // remain alive.
         if (!TargetRegisterInfo::isPhysicalRegister(reg))
           continue;
-        for (const unsigned *SR = TRI->getSubRegisters(reg);
+        for (const uint16_t *SR = TRI->getSubRegisters(reg);
              unsigned S = *SR; ++SR)
           if (LIS->hasInterval(S) && LIS->getInterval(S).liveAt(DefIdx))
             MI->addRegisterDefined(S, TRI);

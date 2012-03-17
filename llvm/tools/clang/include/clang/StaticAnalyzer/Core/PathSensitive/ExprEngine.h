@@ -27,6 +27,7 @@
 namespace clang {
 
 class AnalysisDeclContextManager;
+class CXXCatchStmt;
 class CXXConstructExpr;
 class CXXDeleteExpr;
 class CXXNewExpr;
@@ -89,7 +90,7 @@ class ExprEngine : public SubEngine {
   GRBugReporter BR;
 
 public:
-  ExprEngine(AnalysisManager &mgr, bool gcEnabled);
+  ExprEngine(AnalysisManager &mgr, bool gcEnabled, SetOfDecls *VisitedCallees);
 
   ~ExprEngine();
 
@@ -258,16 +259,6 @@ public:
 
   /// VisitAsmStmt - Transfer function logic for inline asm.
   void VisitAsmStmt(const AsmStmt *A, ExplodedNode *Pred, ExplodedNodeSet &Dst);
-
-  void VisitAsmStmtHelperOutputs(const AsmStmt *A,
-                                 AsmStmt::const_outputs_iterator I,
-                                 AsmStmt::const_outputs_iterator E,
-                                 ExplodedNode *Pred, ExplodedNodeSet &Dst);
-
-  void VisitAsmStmtHelperInputs(const AsmStmt *A,
-                                AsmStmt::const_inputs_iterator I,
-                                AsmStmt::const_inputs_iterator E,
-                                ExplodedNode *Pred, ExplodedNodeSet &Dst);
   
   /// VisitBlockExpr - Transfer function logic for BlockExprs.
   void VisitBlockExpr(const BlockExpr *BE, ExplodedNode *Pred, 
@@ -349,6 +340,9 @@ public:
   void VisitIncrementDecrementOperator(const UnaryOperator* U,
                                        ExplodedNode *Pred,
                                        ExplodedNodeSet &Dst);
+  
+  void VisitCXXCatchStmt(const CXXCatchStmt *CS, ExplodedNode *Pred,
+                         ExplodedNodeSet &Dst);
 
   void VisitCXXThisExpr(const CXXThisExpr *TE, ExplodedNode *Pred, 
                         ExplodedNodeSet & Dst);
@@ -369,9 +363,6 @@ public:
   void VisitCXXDeleteExpr(const CXXDeleteExpr *CDE, ExplodedNode *Pred,
                           ExplodedNodeSet &Dst);
 
-  void VisitAggExpr(const Expr *E, const MemRegion *Dest, ExplodedNode *Pred,
-                    ExplodedNodeSet &Dst);
-
   /// Create a C++ temporary object for an rvalue.
   void CreateCXXTemporaryObject(const MaterializeTemporaryExpr *ME,
                                 ExplodedNode *Pred, 
@@ -383,17 +374,7 @@ public:
 
   const CXXThisRegion *getCXXThisRegion(const CXXMethodDecl *decl,
                                         const StackFrameContext *frameCtx);
-
-  /// Evaluate arguments with a work list algorithm.
-  void evalArguments(ConstExprIterator AI, ConstExprIterator AE,
-                     const FunctionProtoType *FnType, 
-                     ExplodedNode *Pred, ExplodedNodeSet &Dst,
-                     bool FstArgAsLValue = false);
   
-  /// Evaluate callee expression (for a function call).
-  void evalCallee(const CallExpr *callExpr, const ExplodedNodeSet &src,
-                  ExplodedNodeSet &dest);
-
   /// evalEagerlyAssume - Given the nodes in 'Src', eagerly assume symbolic
   ///  expressions of the form 'x != 0' and generate new nodes (stored in Dst)
   ///  with those assumptions.

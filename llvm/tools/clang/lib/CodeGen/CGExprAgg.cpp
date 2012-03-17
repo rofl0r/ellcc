@@ -85,7 +85,7 @@ public:
                      QualType elementType, InitListExpr *E);
 
   AggValueSlot::NeedsGCBarriers_t needsGC(QualType T) {
-    if (CGF.getLangOptions().getGC() && TypeRequiresGCollection(T))
+    if (CGF.getLangOpts().getGC() && TypeRequiresGCollection(T))
       return AggValueSlot::NeedsGCBarriers;
     return AggValueSlot::DoesNotNeedGCBarriers;
   }
@@ -109,15 +109,29 @@ public:
   }
 
   // l-values.
-  void VisitDeclRefExpr(DeclRefExpr *DRE) { EmitAggLoadOfLValue(DRE); }
+  void VisitDeclRefExpr(DeclRefExpr *E) {
+    // For aggregates, we should always be able to emit the variable
+    // as an l-value unless it's a reference.  This is due to the fact
+    // that we can't actually ever see a normal l2r conversion on an
+    // aggregate in C++, and in C there's no language standard
+    // actively preventing us from listing variables in the captures
+    // list of a block.
+    if (E->getDecl()->getType()->isReferenceType()) {
+      if (CodeGenFunction::ConstantEmission result
+            = CGF.tryEmitAsConstant(E)) {
+        EmitFinalDestCopy(E, result.getReferenceLValue(CGF, E));
+        return;
+      }
+    }
+
+    EmitAggLoadOfLValue(E);
+  }
+
   void VisitMemberExpr(MemberExpr *ME) { EmitAggLoadOfLValue(ME); }
   void VisitUnaryDeref(UnaryOperator *E) { EmitAggLoadOfLValue(E); }
   void VisitStringLiteral(StringLiteral *E) { EmitAggLoadOfLValue(E); }
   void VisitCompoundLiteralExpr(CompoundLiteralExpr *E);
   void VisitArraySubscriptExpr(ArraySubscriptExpr *E) {
-    EmitAggLoadOfLValue(E);
-  }
-  void VisitBlockDeclRefExpr(const BlockDeclRefExpr *E) {
     EmitAggLoadOfLValue(E);
   }
   void VisitPredefinedExpr(const PredefinedExpr *E) {
@@ -240,7 +254,7 @@ void AggExprEmitter::EmitFinalDestCopy(const Expr *E, RValue Src, bool Ignore,
   // volatile.
   if (Dest.isIgnored()) {
     if (!Src.isVolatileQualified() ||
-        CGF.CGM.getLangOptions().CPlusPlus ||
+        CGF.CGM.getLangOpts().CPlusPlus ||
         (IgnoreResult && Ignore))
       return;
 
@@ -1109,7 +1123,7 @@ static void CheckAggExprForMemSetUse(AggValueSlot &Slot, const Expr *E,
   if (Slot.isZeroed() || Slot.isVolatile() || Slot.getAddr() == 0) return;
 
   // C++ objects with a user-declared constructor don't need zero'ing.
-  if (CGF.getContext().getLangOptions().CPlusPlus)
+  if (CGF.getContext().getLangOpts().CPlusPlus)
     if (const RecordType *RT = CGF.getContext()
                        .getBaseElementType(E->getType())->getAs<RecordType>()) {
       const CXXRecordDecl *RD = cast<CXXRecordDecl>(RT->getDecl());
@@ -1181,7 +1195,7 @@ void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
                                         bool isVolatile, unsigned Alignment) {
   assert(!Ty->isAnyComplexType() && "Shouldn't happen for complex");
 
-  if (getContext().getLangOptions().CPlusPlus) {
+  if (getContext().getLangOpts().CPlusPlus) {
     if (const RecordType *RT = Ty->getAs<RecordType>()) {
       CXXRecordDecl *Record = cast<CXXRecordDecl>(RT->getDecl());
       assert((Record->hasTrivialCopyConstructor() || 
@@ -1240,7 +1254,7 @@ void CodeGenFunction::EmitAggregateCopy(llvm::Value *DestPtr,
   SrcPtr = Builder.CreateBitCast(SrcPtr, SBP);
 
   // Don't do any of the memmove_collectable tests if GC isn't set.
-  if (CGM.getLangOptions().getGC() == LangOptions::NonGC) {
+  if (CGM.getLangOpts().getGC() == LangOptions::NonGC) {
     // fall through
   } else if (const RecordType *RecordTy = Ty->getAs<RecordType>()) {
     RecordDecl *Record = RecordTy->getDecl();

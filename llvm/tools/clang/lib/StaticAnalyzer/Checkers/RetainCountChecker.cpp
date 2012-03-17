@@ -1192,6 +1192,36 @@ RetainSummaryManager::updateSummaryFromAnnotations(const RetainSummary *&Summ,
     return;
 
   RetainSummaryTemplate Template(Summ, DefaultSummary, *this);
+  
+  // Check the method family, and apply any default annotations.
+  switch (MD->getMethodFamily()) {
+    case OMF_None:
+      break;
+    case OMF_init:
+      Template->setRetEffect(ObjCInitRetE);
+      Template->setReceiverEffect(DecRefMsg);
+      break;
+    case OMF_alloc:
+    case OMF_new:
+    case OMF_copy:
+    case OMF_mutableCopy:
+      Template->setRetEffect(ObjCAllocRetE);
+      break;
+    case OMF_autorelease:
+      Template->setReceiverEffect(Autorelease);
+    case OMF_retain:
+      Template->setReceiverEffect(IncRefMsg);
+      break;
+    case OMF_release:
+      Template->setReceiverEffect(DecRefMsg);
+      break;
+    case OMF_self:
+    case OMF_performSelector:
+    case OMF_retainCount:
+    case OMF_dealloc:
+    case OMF_finalize:
+      break;
+  }
 
   bool isTrackedLoc = false;
 
@@ -1861,41 +1891,49 @@ PathDiagnosticPiece *CFRefReportVisitor::VisitNode(const ExplodedNode *N,
   if (!PrevT) {
     const Stmt *S = cast<StmtPoint>(N->getLocation()).getStmt();
 
-    if (const CallExpr *CE = dyn_cast<CallExpr>(S)) {
-      // Get the name of the callee (if it is available).
-      SVal X = CurrSt->getSValAsScalarOrLoc(CE->getCallee(), LCtx);
-      if (const FunctionDecl *FD = X.getAsFunctionDecl())
-        os << "Call to function '" << *FD << '\'';
-      else
-        os << "function call";
+    if (isa<ObjCArrayLiteral>(S)) {
+      os << "NSArray literal is an object with a +0 retain count";
     }
-    else {
-      assert(isa<ObjCMessageExpr>(S));      
-      // The message expression may have between written directly or as
-      // a property access.  Lazily determine which case we are looking at.
-      os << (isPropertyAccess(S, N->getParentMap()) ? "Property" : "Method");
+    else if (isa<ObjCDictionaryLiteral>(S)) {
+      os << "NSDictionary literal is an object with a +0 retain count";
     }
-
-    if (CurrV.getObjKind() == RetEffect::CF) {
-      os << " returns a Core Foundation object with a ";
-    }
-    else {
-      assert (CurrV.getObjKind() == RetEffect::ObjC);
-      os << " returns an Objective-C object with a ";
-    }
-
-    if (CurrV.isOwned()) {
-      os << "+1 retain count";
-
-      if (GCEnabled) {
-        assert(CurrV.getObjKind() == RetEffect::CF);
-        os << ".  "
-        "Core Foundation objects are not automatically garbage collected.";
+    else {      
+      if (const CallExpr *CE = dyn_cast<CallExpr>(S)) {
+        // Get the name of the callee (if it is available).
+        SVal X = CurrSt->getSValAsScalarOrLoc(CE->getCallee(), LCtx);
+        if (const FunctionDecl *FD = X.getAsFunctionDecl())
+          os << "Call to function '" << *FD << '\'';
+        else
+          os << "function call";
       }
-    }
-    else {
-      assert (CurrV.isNotOwned());
-      os << "+0 retain count";
+      else {
+        assert(isa<ObjCMessageExpr>(S));      
+        // The message expression may have between written directly or as
+        // a property access.  Lazily determine which case we are looking at.
+        os << (isPropertyAccess(S, N->getParentMap()) ? "Property" : "Method");
+      }
+
+      if (CurrV.getObjKind() == RetEffect::CF) {
+        os << " returns a Core Foundation object with a ";
+      }
+      else {
+        assert (CurrV.getObjKind() == RetEffect::ObjC);
+        os << " returns an Objective-C object with a ";
+      }
+
+      if (CurrV.isOwned()) {
+        os << "+1 retain count";
+
+        if (GCEnabled) {
+          assert(CurrV.getObjKind() == RetEffect::CF);
+          os << ".  "
+          "Core Foundation objects are not automatically garbage collected.";
+        }
+      }
+      else {
+        assert (CurrV.isNotOwned());
+        os << "+0 retain count";
+      }
     }
 
     PathDiagnosticLocation Pos(S, BRC.getSourceManager(),
@@ -2157,9 +2195,7 @@ PathDiagnosticPiece*
 CFRefReportVisitor::getEndPath(BugReporterContext &BRC,
                                const ExplodedNode *EndN,
                                BugReport &BR) {
-  // Tell the BugReporterContext to report cases when the tracked symbol is
-  // assigned to different variables, etc.
-  BRC.addNotableSymbol(Sym);
+  BR.markInteresting(Sym);
   return BugReporterVisitor::getDefaultEndPath(BRC, EndN, BR);
 }
 
@@ -2170,7 +2206,7 @@ CFRefLeakReportVisitor::getEndPath(BugReporterContext &BRC,
 
   // Tell the BugReporterContext to report cases when the tracked symbol is
   // assigned to different variables, etc.
-  BRC.addNotableSymbol(Sym);
+  BR.markInteresting(Sym);
 
   // We are reporting a leak.  Walk up the graph to get to the first node where
   // the symbol appeared, and also get the first VarDecl that tracked object
@@ -2295,6 +2331,8 @@ class RetainCountChecker
                     check::PostStmt<CastExpr>,
                     check::PostStmt<CallExpr>,
                     check::PostStmt<CXXConstructExpr>,
+                    check::PostStmt<ObjCArrayLiteral>,
+                    check::PostStmt<ObjCDictionaryLiteral>,
                     check::PostObjCMessage,
                     check::PreStmt<ReturnStmt>,
                     check::RegionChanges,
@@ -2410,7 +2448,7 @@ public:
                                           bool GCEnabled) const {
     // FIXME: We don't support ARC being turned on and off during one analysis.
     // (nor, for that matter, do we support changing ASTContexts)
-    bool ARCEnabled = (bool)Ctx.getLangOptions().ObjCAutoRefCount;
+    bool ARCEnabled = (bool)Ctx.getLangOpts().ObjCAutoRefCount;
     if (GCEnabled) {
       if (!SummariesGC)
         SummariesGC.reset(new RetainSummaryManager(Ctx, true, ARCEnabled));
@@ -2439,7 +2477,10 @@ public:
 
   void checkPostStmt(const CallExpr *CE, CheckerContext &C) const;
   void checkPostStmt(const CXXConstructExpr *CE, CheckerContext &C) const;
+  void checkPostStmt(const ObjCArrayLiteral *AL, CheckerContext &C) const;
+  void checkPostStmt(const ObjCDictionaryLiteral *DL, CheckerContext &C) const;
   void checkPostObjCMessage(const ObjCMessage &Msg, CheckerContext &C) const;
+                      
   void checkSummary(const RetainSummary &Summ, const CallOrObjCMessage &Call,
                     CheckerContext &C) const;
 
@@ -2474,6 +2515,8 @@ public:
   void processNonLeakError(ProgramStateRef St, SourceRange ErrorRange,
                            RefVal::Kind ErrorKind, SymbolRef Sym,
                            CheckerContext &C) const;
+                      
+  void processObjCLiterals(CheckerContext &C, const Expr *Ex) const;
 
   const ProgramPointTag *getDeadSymbolTag(SymbolRef sym) const;
 
@@ -2635,6 +2678,49 @@ void RetainCountChecker::checkPostStmt(const CXXConstructExpr *CE,
 
   ProgramStateRef state = C.getState();
   checkSummary(*Summ, CallOrObjCMessage(CE, state, C.getLocationContext()), C);
+}
+
+void RetainCountChecker::processObjCLiterals(CheckerContext &C,
+                                             const Expr *Ex) const {
+  ProgramStateRef state = C.getState();
+  const ExplodedNode *pred = C.getPredecessor();  
+  for (Stmt::const_child_iterator it = Ex->child_begin(), et = Ex->child_end() ;
+       it != et ; ++it) {
+    const Stmt *child = *it;
+    SVal V = state->getSVal(child, pred->getLocationContext());
+    if (SymbolRef sym = V.getAsSymbol())
+      if (const RefVal* T = state->get<RefBindings>(sym)) {
+        RefVal::Kind hasErr = (RefVal::Kind) 0;
+        state = updateSymbol(state, sym, *T, MayEscape, hasErr, C);
+        if (hasErr) {
+          processNonLeakError(state, child->getSourceRange(), hasErr, sym, C);
+          return;
+        }
+      }
+  }
+  
+  // Return the object as autoreleased.
+  //  RetEffect RE = RetEffect::MakeNotOwned(RetEffect::ObjC);
+  if (SymbolRef sym = 
+        state->getSVal(Ex, pred->getLocationContext()).getAsSymbol()) {
+    QualType ResultTy = Ex->getType();
+    state = state->set<RefBindings>(sym, RefVal::makeNotOwned(RetEffect::ObjC,
+                                                              ResultTy));
+  }
+  
+  C.addTransition(state);  
+}
+
+void RetainCountChecker::checkPostStmt(const ObjCArrayLiteral *AL,
+                                       CheckerContext &C) const {
+  // Apply the 'MayEscape' to all values.
+  processObjCLiterals(C, AL);
+}
+
+void RetainCountChecker::checkPostStmt(const ObjCDictionaryLiteral *DL,
+                                       CheckerContext &C) const {
+  // Apply the 'MayEscape' to all keys and values.
+  processObjCLiterals(C, DL);
 }
 
 void RetainCountChecker::checkPostObjCMessage(const ObjCMessage &Msg, 
@@ -2825,7 +2911,7 @@ RetainCountChecker::updateSymbol(ProgramStateRef state, SymbolRef sym,
   // In ARC mode they shouldn't exist at all, but we just ignore them.
   bool IgnoreRetainMsg = C.isObjCGCEnabled();
   if (!IgnoreRetainMsg)
-    IgnoreRetainMsg = (bool)C.getASTContext().getLangOptions().ObjCAutoRefCount;
+    IgnoreRetainMsg = (bool)C.getASTContext().getLangOpts().ObjCAutoRefCount;
 
   switch (E) {
     default: break;
@@ -2990,7 +3076,7 @@ void RetainCountChecker::processNonLeakError(ProgramStateRef St,
   }
 
   assert(BT);
-  CFRefReport *report = new CFRefReport(*BT, C.getASTContext().getLangOptions(),
+  CFRefReport *report = new CFRefReport(*BT, C.getASTContext().getLangOpts(),
                                         C.isObjCGCEnabled(), SummaryLog,
                                         N, Sym);
   report->addRange(ErrorRange);
@@ -3222,7 +3308,7 @@ void RetainCountChecker::checkReturnWithRetEffect(const ReturnStmt *S,
                ReturnOwnLeakTag("RetainCountChecker : ReturnsOwnLeak");
         ExplodedNode *N = C.addTransition(state, Pred, &ReturnOwnLeakTag);
         if (N) {
-          const LangOptions &LOpts = C.getASTContext().getLangOptions();
+          const LangOptions &LOpts = C.getASTContext().getLangOpts();
           bool GCEnabled = C.isObjCGCEnabled();
           CFRefReport *report =
             new CFRefLeakReport(*getLeakAtReturnBug(LOpts, GCEnabled),
@@ -3247,7 +3333,7 @@ void RetainCountChecker::checkReturnWithRetEffect(const ReturnStmt *S,
 
         CFRefReport *report =
             new CFRefReport(*returnNotOwnedForOwned,
-                            C.getASTContext().getLangOptions(), 
+                            C.getASTContext().getLangOpts(), 
                             C.isObjCGCEnabled(), SummaryLog, N, Sym);
         C.EmitReport(report);
       }
@@ -3413,7 +3499,7 @@ RetainCountChecker::handleAutoreleaseCounts(ProgramStateRef state,
     if (!overAutorelease)
       overAutorelease.reset(new OverAutorelease());
 
-    const LangOptions &LOpts = Ctx.getASTContext().getLangOptions();
+    const LangOptions &LOpts = Ctx.getASTContext().getLangOpts();
     CFRefReport *report =
       new CFRefReport(*overAutorelease, LOpts, /* GCEnabled = */ false,
                       SummaryLog, N, Sym, os.str());
@@ -3456,7 +3542,7 @@ RetainCountChecker::processLeaks(ProgramStateRef state,
     for (SmallVectorImpl<SymbolRef>::iterator
          I = Leaked.begin(), E = Leaked.end(); I != E; ++I) {
 
-      const LangOptions &LOpts = Ctx.getASTContext().getLangOptions();
+      const LangOptions &LOpts = Ctx.getASTContext().getLangOpts();
       bool GCEnabled = Ctx.isObjCGCEnabled();
       CFRefBug *BT = Pred ? getLeakWithinFunctionBug(LOpts, GCEnabled)
                           : getLeakAtReturnBug(LOpts, GCEnabled);

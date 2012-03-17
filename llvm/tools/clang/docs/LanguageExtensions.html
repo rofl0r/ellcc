@@ -30,6 +30,7 @@
 <li><a href="#vectors">Vectors and Extended Vectors</a></li>
 <li><a href="#deprecated">Messages on <tt>deprecated</tt> and <tt>unavailable</tt> attributes</a></li>
 <li><a href="#attributes-on-enumerators">Attributes on enumerators</a></li>
+<li><a href="#availability">Availability attribute</a></li>
 <li><a href="#checking_language_features">Checks for Standard Language Features</a>
   <ul>
   <li><a href="#cxx_exceptions">C++ exceptions</a></li>
@@ -87,6 +88,7 @@
     <li><a href="#objc_instancetype">Related result types</a></li>
     <li><a href="#objc_arc">Automatic reference counting</a></li>
     <li><a href="#objc_fixed_enum">Enumerations with a fixed underlying type</a></li>
+    <li><a href="#objc_lambdas">Interoperability with C++11 lambdas</a></li>
   </ul>
 </li>
 <li><a href="#overloading-in-c">Function Overloading in C</a></li>
@@ -621,6 +623,55 @@ individual enumerators.</p>
 <p>Query for this feature with <tt>__has_extension(enumerator_attributes)</tt>.</p>
 
 <!-- ======================================================================= -->
+<h2 id="availability">Availability attribute</h2
+<!-- ======================================================================= -->
+
+<p>Clang introduces the <code>availability</code> attribute, which can
+be placed on declarations to describe the lifecycle of that
+declaration relative to operating system versions. Consider the function declaration for a hypothetical function <code>f</code>:</p>
+
+<pre>
+void f(void) __attribute__((availability(macosx,introduced=10.4,deprecated=10.6,obsoleted=10.7)));
+</pre>
+
+<p>The availability attribute states that <code>f</code> was introduced in Mac OS X 10.4, deprecated in Mac OS X 10.6, and obsoleted in Mac OS X 10.7. This information is used by Clang to determine when it is safe to use <code>f</code>: for example, if Clang is instructed to compile code for Mac OS X 10.5, a call to <code>f()</code> succeeds. If Clang is instructed to compile code for Mac OS X 10.6, the call succeeds but Clang emits a warning specifying that the function is deprecated. Finally, if Clang is instructed to compile code for Mac OS X 10.7, the call fails because <code>f()</code> is no longer available.</p>
+
+<p>The availablility attribute is a comma-separated list starting with the platform name and then including clauses specifying important milestones in the declaration's lifetime (in any order) along with additional information. Those clauses can be:</p>
+
+<dl>
+  <dt>introduced=<i>version</i></dt>
+  <dd>The first version in which this declaration was introduced.</dd>
+
+  <dt>deprecated=<i>version</i></dt>
+  <dd>The first version in which this declaration was deprecated, meaning that users should migrate away from this API.</dd>
+
+  <dt>obsoleted=<i>version</i></dt>
+  <dd>The first version in which this declaration was obsoleted, meaning that it was removed completely and can no longer be used.</dd>
+
+  <dt>unavailable</dt>
+  <dd>This declaration is never available on this platform.</dd>
+
+  <dt>message=<i>string-literal</i></dt>
+  <dd>Additional message text that Clang will provide when emitting a warning or error about use of a deprecated or obsoleted declaration. Useful to direct users to replacement APIs.</dd>
+</dl>
+
+<p>Multiple availability attributes can be placed on a declaration, which may correspond to different platforms. Only the availability attribute with the platform corresponding to the target platform will be used; any others will be ignored. If no availability attribute specifies availability for the current target platform, the availability attributes are ignored. Supported platforms are:</p>
+
+<dl>
+  <dt>ios</dt>
+  <dd>Apple's iOS operating system. The minimum deployment target is specified by the <code>-mios-version-min=<i>version</i></code> or <code>-miphoneos-version-min=<i>version</i></code> command-line arguments.</dd>
+
+  <dt>macosx</dt>
+  <dd>Apple's Mac OS X operating system. The minimum deployment target is specified by the <code>-mmacosx-version-min=<i>version</i></code> command-line argument.</dd>
+</dl>
+
+<p>A declaration can be used even when deploying back to a platform
+version prior to when the declaration was introduced. When this
+happens, the declaration is <a
+ href="https://developer.apple.com/library/mac/#documentation/MacOSX/Conceptual/BPFrameworks/Concepts/WeakLinking.html">weakly
+linked</a>, as if the <code>weak_import</code> attribute were added to the declaration. A weakly-linked declaration may or may not be present a run-time, and a program can determine whether the declaration is present by checking whether the address of that declaration is non-NULL.</p>
+
+<!-- ======================================================================= -->
 <h2 id="checking_language_features">Checks for Standard Language Features</h2>
 <!-- ======================================================================= -->
 
@@ -775,7 +826,8 @@ is enabled.</p>
 range-based for loop is enabled. </p>
 
 <h4 id="cxx_raw_string_literals">C++11 raw string literals</h4>
-<p>Use <tt>__has_feature(cxx_raw_string_literals)</tt> to determine if support for raw string literals (e.g., <tt>R"foo\bar"</tt>) is enabled.</p>
+<p>Use <tt>__has_feature(cxx_raw_string_literals)</tt> to determine if support
+for raw string literals (e.g., <tt>R"x(foo\bar)x"</tt>) is enabled.</p>
 
 <h4 id="cxx_rvalue_references">C++11 rvalue references</h4>
 
@@ -814,11 +866,11 @@ support for Unicode string literals is enabled.</p>
 
 <h4 id="cxx_unrestricted_unions">C++11 unrestricted unions</h4>
 
-<p>Use <tt>__has_feature(cxx_unrestricted_unions)</tt> to determine if support for unrestricted unions is enabled. Clang does not currently support this feature.</p>
+<p>Use <tt>__has_feature(cxx_unrestricted_unions)</tt> to determine if support for unrestricted unions is enabled.</p>
 
 <h4 id="cxx_user_literals">C++11 user-defined literals</h4>
 
-<p>Use <tt>__has_feature(cxx_user_literals)</tt> to determine if support for user-defined literals is enabled. Clang does not currently support this feature.</p>
+<p>Use <tt>__has_feature(cxx_user_literals)</tt> to determine if support for user-defined literals is enabled.</p>
 
 <h4 id="cxx_variadic_templates">C++11 variadic templates</h4>
 
@@ -1019,6 +1071,66 @@ enumeration value, is <tt>unsigned char</tt>.</p>
 
 <p>Use <tt>__has_feature(objc_fixed_enum)</tt> to determine whether
 support for fixed underlying types is available in Objective-C.</p>
+
+<!-- ======================================================================= -->
+<h2 id="objc_lambdas">Interoperability with C++11 lambdas</h2>
+<!-- ======================================================================= -->
+
+<p>Clang provides interoperability between C++11 lambdas and
+blocks-based APIs, by permitting a lambda to be implicitly converted
+to a block pointer with the corresponding signature. For example,
+consider an API such as <code>NSArray</code>'s array-sorting
+method:</p>
+
+<pre> - (NSArray *)sortedArrayUsingComparator:(NSComparator)cmptr; </pre>
+
+<p><code>NSComparator</code> is simply a typedef for the block pointer
+<code>NSComparisonResult (^)(id, id)</code>, and parameters of this
+type are generally provided with block literals as arguments. However,
+one can also use a C++11 lambda so long as it provides the same
+signature (in this case, accepting two parameters of type
+<code>id</code> and returning an <code>NSComparisonResult</code>):</p>
+
+<pre>
+  NSArray *array = @[@"string 1", @"string 21", @"string 12", @"String 11",
+                     @"String 02"];
+  const NSStringCompareOptions comparisonOptions
+    = NSCaseInsensitiveSearch | NSNumericSearch |
+      NSWidthInsensitiveSearch | NSForcedOrderingSearch;
+  NSLocale *currentLocale = [NSLocale currentLocale];
+  NSArray *sorted 
+    = [array sortedArrayUsingComparator:<b>[=](id s1, id s2) -&gt; NSComparisonResult {
+               NSRange string1Range = NSMakeRange(0, [s1 length]);
+               return [s1 compare:s2 options:comparisonOptions 
+                          range:string1Range locale:currentLocale];
+       }</b>];
+  NSLog(@"sorted: %@", sorted);
+</pre>
+
+<p>This code relies on an implicit conversion from the type of the
+lambda expression (an unnamed, local class type called the <i>closure
+type</i>) to the corresponding block pointer type. The conversion
+itself is expressed by a conversion operator in that closure type
+that produces a block pointer with the same signature as the lambda
+itself, e.g.,</p>
+
+<pre>
+  operator NSComparisonResult (^)(id, id)() const;
+</pre>
+
+<p>This conversion function returns a new block that simply forwards
+the two parameters to the lambda object (which it captures by copy),
+then returns the result. The returned block is first copied (with
+<tt>Block_copy</tt>) and then autoreleased. As an optimization, if a
+lambda expression is immediately converted to a block pointer (as in
+the first example, above), then the block is not copied and
+autoreleased: rather, it is given the same lifetime as a block literal
+written at that point in the program, which avoids the overhead of
+copying a block to the heap in the common case.</p>
+
+<p>The conversion from a lambda to a block pointer is only available
+in Objective-C++, and not in C++ with blocks, due to its use of
+Objective-C memory management (autorelease).</p>
 
 <!-- ======================================================================= -->
 <h2 id="overloading-in-c">Function Overloading in C</h2>

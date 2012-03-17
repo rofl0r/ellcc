@@ -115,7 +115,7 @@ public:
   /// Whether the driver should follow g++ like behavior.
   unsigned CCCIsCXX : 1;
 
-  /// Whether the driver is just the preprocessor
+  /// Whether the driver is just the preprocessor.
   unsigned CCCIsCPP : 1;
 
   /// Whether the driver is ELLCC

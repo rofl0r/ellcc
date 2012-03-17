@@ -117,11 +117,24 @@ llvm::DIDescriptor CGDebugInfo::getContextDescriptor(const Decl *Context) {
 StringRef CGDebugInfo::getFunctionName(const FunctionDecl *FD) {
   assert (FD && "Invalid FunctionDecl!");
   IdentifierInfo *FII = FD->getIdentifier();
-  if (FII)
+  FunctionTemplateSpecializationInfo *Info
+    = FD->getTemplateSpecializationInfo();
+  if (!Info && FII)
     return FII->getName();
 
   // Otherwise construct human readable name for debug info.
   std::string NS = FD->getNameAsString();
+
+  // Add any template specialization args.
+  if (Info) {
+    const TemplateArgumentList *TArgs = Info->TemplateArguments;
+    const TemplateArgument *Args = TArgs->data();
+    unsigned NumArgs = TArgs->size();
+    PrintingPolicy Policy(CGM.getLangOpts());
+    NS += TemplateSpecializationType::PrintTemplateArgumentList(Args,
+                                                                NumArgs,
+                                                                Policy);
+  }
 
   // Copy this name on the side and use its reference.
   char *StrPtr = DebugInfoNames.Allocate<char>(NS.length());
@@ -183,7 +196,7 @@ CGDebugInfo::getClassName(const RecordDecl *RD) {
     NumArgs = TemplateArgs.size();
   }
   Buffer = RD->getIdentifier()->getNameStart();
-  PrintingPolicy Policy(CGM.getLangOptions());
+  PrintingPolicy Policy(CGM.getLangOpts());
   Buffer += TemplateSpecializationType::PrintTemplateArgumentList(Args,
                                                                   NumArgs,
                                                                   Policy);
@@ -288,7 +301,7 @@ void CGDebugInfo::CreateCompileUnit() {
   StringRef Filename(FilenamePtr, MainFileName.length());
   
   unsigned LangTag;
-  const LangOptions &LO = CGM.getLangOptions();
+  const LangOptions &LO = CGM.getLangOpts();
   if (LO.CPlusPlus) {
     if (LO.ObjC1)
       LangTag = llvm::dwarf::DW_LANG_ObjC_plus_plus;
@@ -332,7 +345,7 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
     llvm_unreachable("Unexpected builtin type");
   case BuiltinType::NullPtr:
     return DBuilder.
-      createNullPtrType(BT->getName(CGM.getContext().getLangOptions()));
+      createNullPtrType(BT->getName(CGM.getContext().getLangOpts()));
   case BuiltinType::Void:
     return llvm::DIType();
   case BuiltinType::ObjCClass:
@@ -403,7 +416,7 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
   case BuiltinType::ULong:     BTName = "long unsigned int"; break;
   case BuiltinType::ULongLong: BTName = "long long unsigned int"; break;
   default:
-    BTName = BT->getName(CGM.getContext().getLangOptions());
+    BTName = BT->getName(CGM.getContext().getLangOpts());
     break;
   }
   // Bit size, align and offset of the type.
@@ -831,7 +844,7 @@ CGDebugInfo::getOrCreateMethodType(const CXXMethodDecl *Method,
     = getOrCreateType(QualType(Method->getType()->getAs<FunctionProtoType>(),
                                0),
                       Unit);
-  
+
   // Add "this" pointer.
   llvm::DIArray Args = llvm::DICompositeType(FnTy).getTypeArray();
   assert (Args.getNumElements() && "Invalid number of arguments!");
@@ -946,14 +959,16 @@ CGDebugInfo::CreateCXXMemberFunction(const CXXMethodDecl *Method,
   }
   if (Method->hasPrototype())
     Flags |= llvm::DIDescriptor::FlagPrototyped;
-    
+
+  llvm::DIArray TParamsArray = CollectFunctionTemplateParams(Method, Unit);
   llvm::DISubprogram SP =
     DBuilder.createMethod(RecordTy, MethodName, MethodLinkageName, 
                           MethodDefUnit, MethodLine,
                           MethodTy, /*isLocalToUnit=*/false, 
                           /* isDefinition=*/ false,
                           Virtuality, VIndex, ContainingType,
-                          Flags, CGM.getLangOptions().Optimize);
+                          Flags, CGM.getLangOpts().Optimize, NULL,
+                          TParamsArray);
   
   SPCache[Method->getCanonicalDecl()] = llvm::WeakVH(SP);
 
@@ -967,14 +982,25 @@ void CGDebugInfo::
 CollectCXXMemberFunctions(const CXXRecordDecl *RD, llvm::DIFile Unit,
                           SmallVectorImpl<llvm::Value *> &EltTys,
                           llvm::DIType RecordTy) {
-  for(CXXRecordDecl::method_iterator I = RD->method_begin(),
-        E = RD->method_end(); I != E; ++I) {
-    const CXXMethodDecl *Method = *I;
-    
-    if (Method->isImplicit() && !Method->isUsed())
+
+  // Since we want more than just the individual member decls if we
+  // have templated functions iterate over every declaration to gather
+  // the functions.
+  for(DeclContext::decl_iterator I = RD->decls_begin(),
+        E = RD->decls_end(); I != E; ++I) {
+    Decl *D = *I;
+    if (D->isImplicit() && !D->isUsed())
       continue;
 
-    EltTys.push_back(CreateCXXMemberFunction(Method, Unit, RecordTy));
+    if (const CXXMethodDecl *Method = dyn_cast<CXXMethodDecl>(D))
+      EltTys.push_back(CreateCXXMemberFunction(Method, Unit, RecordTy));
+    else if (FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(D))
+      for (FunctionTemplateDecl::spec_iterator SI = FTD->spec_begin(),
+            SE = FTD->spec_end(); SI != SE; ++SI) {
+        FunctionDecl *FD = *SI;
+        if (CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(FD))
+          EltTys.push_back(CreateCXXMemberFunction(M, Unit, RecordTy));
+      }
   }
 }                                 
 
@@ -1345,7 +1371,7 @@ llvm::DIType CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
     // the non-fragile abi and the debugger should ignore the value anyways.
     // Call it the FieldNo+1 due to how debuggers use the information,
     // e.g. negating the value when it needs a lookup in the dynamic table.
-    uint64_t FieldOffset = CGM.getLangOptions().ObjCNonFragileABI ? FieldNo+1
+    uint64_t FieldOffset = CGM.getLangOpts().ObjCNonFragileABI ? FieldNo+1
       : RL.getFieldOffset(FieldNo);
 
     unsigned Flags = 0;
@@ -1996,7 +2022,7 @@ void CGDebugInfo::EmitFunctionStart(GlobalDecl GD, QualType FnType,
     DBuilder.createFunction(FDContext, Name, LinkageName, Unit,
                             LineNo, getOrCreateFunctionType(D, FnType, Unit),
                             Fn->hasInternalLinkage(), true/*definition*/,
-                            Flags, CGM.getLangOptions().Optimize, Fn,
+                            Flags, CGM.getLangOpts().Optimize, Fn,
                             TParamsArray, SPDecl);
 
   // Push function on region stack.
@@ -2227,7 +2253,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
     llvm::DIVariable D =
       DBuilder.createLocalVariable(Tag, llvm::DIDescriptor(Scope), 
                                    Name, Unit, Line, Ty, 
-                                   CGM.getLangOptions().Optimize, Flags, ArgNo);
+                                   CGM.getLangOpts().Optimize, Flags, ArgNo);
     
     // Insert an llvm.dbg.declare into the current block.
     llvm::Instruction *Call =
@@ -2256,7 +2282,7 @@ void CGDebugInfo::EmitDeclare(const VarDecl *VD, unsigned Tag,
         llvm::DIVariable D =
           DBuilder.createLocalVariable(Tag, llvm::DIDescriptor(Scope),
                                        FieldName, Unit, Line, FieldTy, 
-                                       CGM.getLangOptions().Optimize, Flags,
+                                       CGM.getLangOpts().Optimize, Flags,
                                        ArgNo);
           
         // Insert an llvm.dbg.declare into the current block.
@@ -2484,7 +2510,7 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
     DBuilder.createLocalVariable(llvm::dwarf::DW_TAG_arg_variable,
                                  llvm::DIDescriptor(scope), 
                                  name, tunit, line, type, 
-                                 CGM.getLangOptions().Optimize, flags,
+                                 CGM.getLangOpts().Optimize, flags,
                                  cast<llvm::Argument>(addr)->getArgNo() + 1);
     
   // Insert an llvm.dbg.value into the current block.

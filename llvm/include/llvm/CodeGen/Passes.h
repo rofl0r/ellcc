@@ -101,7 +101,10 @@ public:
   /// point where StadardID is expected, add TargetID in its place.
   void substitutePass(char &StandardID, char &TargetID);
 
-  /// Allow the target to disable a specific standard pass.
+  /// Allow the target to enable a specific standard pass by default.
+  void enablePass(char &ID) { substitutePass(ID, ID); }
+
+  /// Allow the target to disable a specific standard pass by default.
   void disablePass(char &ID) { substitutePass(ID, NoPassID); }
 
   /// Return the pass ssubtituted for StandardID by the target.
@@ -420,10 +423,10 @@ namespace llvm {
   /// adapted to code generation.  Required if using dwarf exception handling.
   FunctionPass *createDwarfEHPass(const TargetMachine *tm);
 
-  /// createSjLjEHPass - This pass adapts exception handling code to use
+  /// createSjLjEHPreparePass - This pass adapts exception handling code to use
   /// the GCC-style builtin setjmp/longjmp (sjlj) to handling EH control flow.
   ///
-  FunctionPass *createSjLjEHPass(const TargetLowering *tli);
+  FunctionPass *createSjLjEHPreparePass(const TargetLowering *tli);
 
   /// LocalStackSlotAllocation - This pass assigns local frame indices to stack
   /// slots relative to one another and allocates base registers to access them

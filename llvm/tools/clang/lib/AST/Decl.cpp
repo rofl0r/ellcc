@@ -222,7 +222,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     //   and neither explicitly declared extern nor previously
     //   declared to have external linkage; or
     // (there is no equivalent in C99)
-    if (Context.getLangOptions().CPlusPlus &&
+    if (Context.getLangOpts().CPlusPlus &&
         Var->getType().isConstant(Context) && 
         Var->getStorageClass() != SC_Extern &&
         Var->getStorageClass() != SC_PrivateExtern) {
@@ -279,7 +279,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
   //   scope and no storage-class specifier, its linkage is
   //   external.
   LinkageInfo LV;
-  LV.mergeVisibility(Context.getLangOptions().getVisibilityMode());
+  LV.mergeVisibility(Context.getLangOpts().getVisibilityMode());
 
   if (F.ConsiderVisibilityAttributes) {
     if (llvm::Optional<Visibility> Vis = D->getExplicitVisibility()) {
@@ -330,19 +330,19 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     //
     // Note that we don't want to make the variable non-external
     // because of this, but unique-external linkage suits us.
-    if (Context.getLangOptions().CPlusPlus &&
+    if (Context.getLangOpts().CPlusPlus &&
         !Var->getDeclContext()->isExternCContext()) {
       LinkageInfo TypeLV = getLVForType(Var->getType());
       if (TypeLV.linkage() != ExternalLinkage)
         return LinkageInfo::uniqueExternal();
-      if (!LV.visibilityExplicit())
-        LV.mergeVisibility(TypeLV.visibility(), TypeLV.visibilityExplicit());
+      LV.mergeVisibilityWithMin(TypeLV.visibility(),
+                                TypeLV.visibilityExplicit());
     }
 
     if (Var->getStorageClass() == SC_PrivateExtern)
       LV.setVisibility(HiddenVisibility, true);
 
-    if (!Context.getLangOptions().CPlusPlus &&
+    if (!Context.getLangOpts().CPlusPlus &&
         (Var->getStorageClass() == SC_Extern ||
          Var->getStorageClass() == SC_PrivateExtern)) {
 
@@ -377,7 +377,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     //   storage-class specifier, its linkage is determined exactly
     //   as if it were declared with the storage-class specifier
     //   extern.
-    if (!Context.getLangOptions().CPlusPlus &&
+    if (!Context.getLangOpts().CPlusPlus &&
         (Function->getStorageClass() == SC_Extern ||
          Function->getStorageClass() == SC_PrivateExtern ||
          Function->getStorageClass() == SC_None)) {
@@ -401,7 +401,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     // unique-external linkage, it's not legally usable from outside
     // this translation unit.  However, we should use the C linkage
     // rules instead for extern "C" declarations.
-    if (Context.getLangOptions().CPlusPlus &&
+    if (Context.getLangOpts().CPlusPlus &&
         !Function->getDeclContext()->isExternCContext() &&
         Function->getType()->getLinkage() == UniqueExternalLinkage)
       return LinkageInfo::uniqueExternal();
@@ -447,7 +447,7 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D, LVFlags F) {
     // Consider -fvisibility unless the type has C linkage.
     if (F.ConsiderGlobalVisibility)
       F.ConsiderGlobalVisibility =
-        (Context.getLangOptions().CPlusPlus &&
+        (Context.getLangOpts().CPlusPlus &&
          !Tag->getDeclContext()->isExternCContext());
 
   //     - an enumerator belonging to an enumeration with external linkage;
@@ -499,7 +499,7 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     return LinkageInfo::none();
 
   LinkageInfo LV;
-  LV.mergeVisibility(D->getASTContext().getLangOptions().getVisibilityMode());
+  LV.mergeVisibility(D->getASTContext().getLangOpts().getVisibilityMode());
 
   // The flags we're going to use to compute the class's visibility.
   LVFlags ClassF = F;
@@ -563,7 +563,7 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D, LVFlags F) {
     if (TSK != TSK_ExplicitInstantiationDeclaration &&
         TSK != TSK_ExplicitInstantiationDefinition &&
         F.ConsiderGlobalVisibility &&
-        MD->getASTContext().getLangOptions().InlineVisibilityHidden) {
+        MD->getASTContext().getLangOpts().InlineVisibilityHidden) {
       // InlineVisibilityHidden only applies to definitions, and
       // isInlined() only gives meaningful answers on definitions
       // anyway.
@@ -845,7 +845,7 @@ static LinkageInfo getLVForDecl(const NamedDecl *D, LVFlags Flags) {
 }
 
 std::string NamedDecl::getQualifiedNameAsString() const {
-  return getQualifiedNameAsString(getASTContext().getLangOptions());
+  return getQualifiedNameAsString(getASTContext().getLangOpts());
 }
 
 std::string NamedDecl::getQualifiedNameAsString(const PrintingPolicy &P) const {
@@ -983,23 +983,21 @@ bool NamedDecl::hasLinkage() const {
   return getLinkage() != NoLinkage;
 }
 
-NamedDecl *NamedDecl::getUnderlyingDecl() {
+NamedDecl *NamedDecl::getUnderlyingDeclImpl() {
   NamedDecl *ND = this;
-  while (true) {
-    if (UsingShadowDecl *UD = dyn_cast<UsingShadowDecl>(ND))
-      ND = UD->getTargetDecl();
-    else if (ObjCCompatibleAliasDecl *AD
-              = dyn_cast<ObjCCompatibleAliasDecl>(ND))
-      return AD->getClassInterface();
-    else
-      return ND;
-  }
+  while (UsingShadowDecl *UD = dyn_cast<UsingShadowDecl>(ND))
+    ND = UD->getTargetDecl();
+
+  if (ObjCCompatibleAliasDecl *AD = dyn_cast<ObjCCompatibleAliasDecl>(ND))
+    return AD->getClassInterface();
+
+  return ND;
 }
 
 bool NamedDecl::isCXXInstanceMember() const {
-  assert(isCXXClassMember() &&
-         "checking whether non-member is instance member");
-
+  if (!isCXXClassMember())
+    return false;
+  
   const NamedDecl *D = this;
   if (isa<UsingShadowDecl>(D))
     D = cast<UsingShadowDecl>(D)->getTargetDecl();
@@ -1209,7 +1207,7 @@ bool VarDecl::isExternC() const {
     return false;
 
   ASTContext &Context = getASTContext();
-  if (!Context.getLangOptions().CPlusPlus)
+  if (!Context.getLangOpts().CPlusPlus)
     return true;
   return DC->isExternCContext();
 }
@@ -1218,7 +1216,9 @@ VarDecl *VarDecl::getCanonicalDecl() {
   return getFirstDeclaration();
 }
 
-VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition() const {
+VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition(
+  ASTContext &C) const
+{
   // C++ [basic.def]p2:
   //   A declaration is a definition unless [...] it contains the 'extern'
   //   specifier or a linkage-specification and neither an initializer [...],
@@ -1260,7 +1260,7 @@ VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition() const {
   //   and without a storage class specifier or the scs 'static', constitutes
   //   a tentative definition.
   // No such thing in C++.
-  if (!getASTContext().getLangOptions().CPlusPlus && isFileVarDecl())
+  if (!C.getLangOpts().CPlusPlus && isFileVarDecl())
     return TentativeDefinition;
 
   // What's left is (in C, block-scope) declarations without initializers or
@@ -1298,23 +1298,26 @@ bool VarDecl::isTentativeDefinitionNow() const {
   return true;
 }
 
-VarDecl *VarDecl::getDefinition() {
+VarDecl *VarDecl::getDefinition(ASTContext &C) {
   VarDecl *First = getFirstDeclaration();
   for (redecl_iterator I = First->redecls_begin(), E = First->redecls_end();
        I != E; ++I) {
-    if ((*I)->isThisDeclarationADefinition() == Definition)
+    if ((*I)->isThisDeclarationADefinition(C) == Definition)
       return *I;
   }
   return 0;
 }
 
-VarDecl::DefinitionKind VarDecl::hasDefinition() const {
+VarDecl::DefinitionKind VarDecl::hasDefinition(ASTContext &C) const {
   DefinitionKind Kind = DeclarationOnly;
   
   const VarDecl *First = getFirstDeclaration();
   for (redecl_iterator I = First->redecls_begin(), E = First->redecls_end();
-       I != E; ++I)
-    Kind = std::max(Kind, (*I)->isThisDeclarationADefinition());
+       I != E; ++I) {
+    Kind = std::max(Kind, (*I)->isThisDeclarationADefinition(C));
+    if (Kind == Definition)
+      break;
+  }
 
   return Kind;
 }
@@ -1369,8 +1372,8 @@ void VarDecl::setInit(Expr *I) {
   Init = I;
 }
 
-bool VarDecl::isUsableInConstantExpressions() const {
-  const LangOptions &Lang = getASTContext().getLangOptions();
+bool VarDecl::isUsableInConstantExpressions(ASTContext &C) const {
+  const LangOptions &Lang = C.getLangOpts();
 
   if (!Lang.CPlusPlus)
     return false;
@@ -1449,7 +1452,7 @@ APValue *VarDecl::evaluateValue(
 
   // In C++11, we have determined whether the initializer was a constant
   // expression as a side-effect.
-  if (getASTContext().getLangOptions().CPlusPlus0x && !Eval->CheckedICE) {
+  if (getASTContext().getLangOpts().CPlusPlus0x && !Eval->CheckedICE) {
     Eval->CheckedICE = true;
     Eval->IsICE = Result && Notes.empty();
   }
@@ -1473,7 +1476,7 @@ bool VarDecl::checkInitIsICE() const {
 
   // In C++11, evaluate the initializer to check whether it's a constant
   // expression.
-  if (getASTContext().getLangOptions().CPlusPlus0x) {
+  if (getASTContext().getLangOpts().CPlusPlus0x) {
     llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
     evaluateValue(Notes);
     return Eval->IsICE;
@@ -1690,7 +1693,7 @@ bool FunctionDecl::isMain() const {
   const TranslationUnitDecl *tunit =
     dyn_cast<TranslationUnitDecl>(getDeclContext()->getRedeclContext());
   return tunit &&
-         !tunit->getASTContext().getLangOptions().Freestanding &&
+         !tunit->getASTContext().getLangOpts().Freestanding &&
          getIdentifier() &&
          getIdentifier()->isStr("main");
 }
@@ -1729,7 +1732,7 @@ bool FunctionDecl::isExternC() const {
     return false;
 
   ASTContext &Context = getASTContext();
-  if (!Context.getLangOptions().CPlusPlus)
+  if (!Context.getLangOpts().CPlusPlus)
     return true;
 
   return isMain() || DC->isExternCContext();
@@ -1796,11 +1799,14 @@ void FunctionDecl::setStorageClass(StorageClass SC) {
 /// value of type \c Builtin::ID if in the target-independent range
 /// \c [1,Builtin::First), or a target-specific builtin value.
 unsigned FunctionDecl::getBuiltinID() const {
-  ASTContext &Context = getASTContext();
-  if (!getIdentifier() || !getIdentifier()->getBuiltinID())
+  if (!getIdentifier())
     return 0;
 
   unsigned BuiltinID = getIdentifier()->getBuiltinID();
+  if (!BuiltinID)
+    return 0;
+
+  ASTContext &Context = getASTContext();
   if (!Context.BuiltinInfo.isPredefinedLibFunction(BuiltinID))
     return BuiltinID;
 
@@ -1814,7 +1820,7 @@ unsigned FunctionDecl::getBuiltinID() const {
 
   // If this function is at translation-unit scope and we're not in
   // C++, it refers to the C library function.
-  if (!Context.getLangOptions().CPlusPlus &&
+  if (!Context.getLangOpts().CPlusPlus &&
       getDeclContext()->isTranslationUnit())
     return BuiltinID;
 
@@ -1869,7 +1875,7 @@ void FunctionDecl::setDeclsInPrototypeScope(llvm::ArrayRef<NamedDecl *> NewDecls
 /// function parameters, if some of the parameters have default
 /// arguments (in C++) or the last parameter is a parameter pack.
 unsigned FunctionDecl::getMinRequiredArguments() const {
-  if (!getASTContext().getLangOptions().CPlusPlus)
+  if (!getASTContext().getLangOpts().CPlusPlus)
     return getNumParams();
   
   unsigned NumRequiredArgs = getNumParams();  
@@ -1959,7 +1965,7 @@ bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
 
   ASTContext &Context = getASTContext();
 
-  if (Context.getLangOptions().GNUInline || hasAttr<GNUInlineAttr>()) {
+  if (Context.getLangOpts().GNUInline || hasAttr<GNUInlineAttr>()) {
     // With GNU inlining, a declaration with 'inline' but not 'extern', forces
     // an externally visible definition.
     //
@@ -1987,7 +1993,7 @@ bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
     return FoundBody;
   }
 
-  if (Context.getLangOptions().CPlusPlus)
+  if (Context.getLangOpts().CPlusPlus)
     return false;
 
   // C99 6.7.4p6:
@@ -2028,7 +2034,7 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
   assert(isInlined() && "Function must be inline");
   ASTContext &Context = getASTContext();
   
-  if (Context.getLangOptions().GNUInline || hasAttr<GNUInlineAttr>()) {
+  if (Context.getLangOpts().GNUInline || hasAttr<GNUInlineAttr>()) {
     // Note: If you change the logic here, please change
     // doesDeclarationForceExternallyVisibleDefinition as well.
     //
@@ -2666,6 +2672,19 @@ void EnumDecl::completeDefinition(QualType NewType,
   setNumPositiveBits(NumPositiveBits);
   setNumNegativeBits(NumNegativeBits);
   TagDecl::completeDefinition();
+}
+
+EnumDecl *EnumDecl::getInstantiatedFromMemberEnum() const {
+  if (SpecializationInfo)
+    return cast<EnumDecl>(SpecializationInfo->getInstantiatedFrom());
+
+  return 0;
+}
+
+void EnumDecl::setInstantiationOfMemberEnum(ASTContext &C, EnumDecl *ED,
+                                            TemplateSpecializationKind TSK) {
+  assert(!SpecializationInfo && "Member enum is already a specialization");
+  SpecializationInfo = new (C) MemberSpecializationInfo(ED, TSK);
 }
 
 //===----------------------------------------------------------------------===//

@@ -43,14 +43,14 @@ void RegisterClassInfo::runOnMachineFunction(const MachineFunction &mf) {
   }
 
   // Does this MF have different CSRs?
-  const unsigned *CSR = TRI->getCalleeSavedRegs(MF);
+  const uint16_t *CSR = TRI->getCalleeSavedRegs(MF);
   if (Update || CSR != CalleeSaved) {
     // Build a CSRNum map. Every CSR alias gets an entry pointing to the last
     // overlapping CSR.
     CSRNum.clear();
     CSRNum.resize(TRI->getNumRegs(), 0);
     for (unsigned N = 0; unsigned Reg = CSR[N]; ++N)
-      for (const unsigned *AS = TRI->getOverlaps(Reg);
+      for (const uint16_t *AS = TRI->getOverlaps(Reg);
            unsigned Alias = *AS; ++AS)
         CSRNum[Alias] = N + 1; // 0 means no CSR, 1 means CalleeSaved[0], ...
     Update = true;
@@ -85,7 +85,7 @@ void RegisterClassInfo::compute(const TargetRegisterClass *RC) const {
 
   // FIXME: Once targets reserve registers instead of removing them from the
   // allocation order, we can simply use begin/end here.
-  ArrayRef<unsigned> RawOrder = RC->getRawAllocationOrder(*MF);
+  ArrayRef<uint16_t> RawOrder = RC->getRawAllocationOrder(*MF);
   for (unsigned i = 0; i != RawOrder.size(); ++i) {
     unsigned PhysReg = RawOrder[i];
     // Remove reserved registers from the allocation order.

@@ -760,7 +760,7 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
       if (ARM::QPRRegClass.hasSubClassEq(RC)) {
         // Use aligned spills if the stack can be realigned.
         if (Align >= 16 && getRegisterInfo().canRealignStack(MF)) {
-          AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VST1q64Pseudo))
+          AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VST1q64))
                      .addFrameIndex(FI).addImm(16)
                      .addReg(SrcReg, getKillRegState(isKill))
                      .addMemOperand(MMO));
@@ -845,7 +845,7 @@ ARMBaseInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
       return MI->getOperand(0).getReg();
     }
     break;
-  case ARM::VST1q64Pseudo:
+  case ARM::VST1q64:
     if (MI->getOperand(0).isFI() &&
         MI->getOperand(2).getSubReg() == 0) {
       FrameIndex = MI->getOperand(0).getIndex();
@@ -909,7 +909,7 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
   case 16:
     if (ARM::QPRRegClass.hasSubClassEq(RC)) {
       if (Align >= 16 && getRegisterInfo().canRealignStack(MF)) {
-        AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VLD1q64Pseudo), DestReg)
+        AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VLD1q64), DestReg)
                      .addFrameIndex(FI).addImm(16)
                      .addMemOperand(MMO));
       } else {
@@ -931,11 +931,12 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
         AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VLDMDIA))
                        .addFrameIndex(FI))
                        .addMemOperand(MMO);
-        MIB = AddDReg(MIB, DestReg, ARM::dsub_0, RegState::Define, TRI);
-        MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::Define, TRI);
-        MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::Define, TRI);
-        MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::Define, TRI);
-        MIB.addReg(DestReg, RegState::Define | RegState::Implicit);
+        MIB = AddDReg(MIB, DestReg, ARM::dsub_0, RegState::DefineNoRead, TRI);
+        MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::DefineNoRead, TRI);
+        MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::DefineNoRead, TRI);
+        MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::DefineNoRead, TRI);
+        if (TargetRegisterInfo::isPhysicalRegister(DestReg))
+          MIB.addReg(DestReg, RegState::ImplicitDefine);
       }
     } else
       llvm_unreachable("Unknown reg class!");
@@ -946,15 +947,16 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
       AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VLDMDIA))
                      .addFrameIndex(FI))
                      .addMemOperand(MMO);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_0, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_4, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_5, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_6, RegState::Define, TRI);
-      MIB = AddDReg(MIB, DestReg, ARM::dsub_7, RegState::Define, TRI);
-      MIB.addReg(DestReg, RegState::Define | RegState::Implicit);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_0, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_4, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_5, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_6, RegState::DefineNoRead, TRI);
+      MIB = AddDReg(MIB, DestReg, ARM::dsub_7, RegState::DefineNoRead, TRI);
+      if (TargetRegisterInfo::isPhysicalRegister(DestReg))
+        MIB.addReg(DestReg, RegState::ImplicitDefine);
     } else
       llvm_unreachable("Unknown reg class!");
     break;
@@ -991,7 +993,7 @@ ARMBaseInstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
       return MI->getOperand(0).getReg();
     }
     break;
-  case ARM::VLD1q64Pseudo:
+  case ARM::VLD1q64:
     if (MI->getOperand(1).isFI() &&
         MI->getOperand(0).getSubReg() == 0) {
       FrameIndex = MI->getOperand(1).getIndex();
@@ -2696,33 +2698,33 @@ ARMBaseInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
   if (DefAlign < 8 && Subtarget.isCortexA9())
     switch (DefMCID.getOpcode()) {
     default: break;
-    case ARM::VLD1q8Pseudo:
-    case ARM::VLD1q16Pseudo:
-    case ARM::VLD1q32Pseudo:
-    case ARM::VLD1q64Pseudo:
-    case ARM::VLD1q8PseudoWB_register:
-    case ARM::VLD1q16PseudoWB_register:
-    case ARM::VLD1q32PseudoWB_register:
-    case ARM::VLD1q64PseudoWB_register:
-    case ARM::VLD1q8PseudoWB_fixed:
-    case ARM::VLD1q16PseudoWB_fixed:
-    case ARM::VLD1q32PseudoWB_fixed:
-    case ARM::VLD1q64PseudoWB_fixed:
-    case ARM::VLD2d8Pseudo:
-    case ARM::VLD2d16Pseudo:
-    case ARM::VLD2d32Pseudo:
+    case ARM::VLD1q8:
+    case ARM::VLD1q16:
+    case ARM::VLD1q32:
+    case ARM::VLD1q64:
+    case ARM::VLD1q8wb_register:
+    case ARM::VLD1q16wb_register:
+    case ARM::VLD1q32wb_register:
+    case ARM::VLD1q64wb_register:
+    case ARM::VLD1q8wb_fixed:
+    case ARM::VLD1q16wb_fixed:
+    case ARM::VLD1q32wb_fixed:
+    case ARM::VLD1q64wb_fixed:
+    case ARM::VLD2d8:
+    case ARM::VLD2d16:
+    case ARM::VLD2d32:
     case ARM::VLD2q8Pseudo:
     case ARM::VLD2q16Pseudo:
     case ARM::VLD2q32Pseudo:
-    case ARM::VLD2d8PseudoWB_fixed:
-    case ARM::VLD2d16PseudoWB_fixed:
-    case ARM::VLD2d32PseudoWB_fixed:
+    case ARM::VLD2d8wb_fixed:
+    case ARM::VLD2d16wb_fixed:
+    case ARM::VLD2d32wb_fixed:
     case ARM::VLD2q8PseudoWB_fixed:
     case ARM::VLD2q16PseudoWB_fixed:
     case ARM::VLD2q32PseudoWB_fixed:
-    case ARM::VLD2d8PseudoWB_register:
-    case ARM::VLD2d16PseudoWB_register:
-    case ARM::VLD2d32PseudoWB_register:
+    case ARM::VLD2d8wb_register:
+    case ARM::VLD2d16wb_register:
+    case ARM::VLD2d32wb_register:
     case ARM::VLD2q8PseudoWB_register:
     case ARM::VLD2q16PseudoWB_register:
     case ARM::VLD2q32PseudoWB_register:
@@ -2758,24 +2760,24 @@ ARMBaseInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
     case ARM::VLD4q8oddPseudo_UPD:
     case ARM::VLD4q16oddPseudo_UPD:
     case ARM::VLD4q32oddPseudo_UPD:
-    case ARM::VLD1DUPq8Pseudo:
-    case ARM::VLD1DUPq16Pseudo:
-    case ARM::VLD1DUPq32Pseudo:
-    case ARM::VLD1DUPq8PseudoWB_fixed:
-    case ARM::VLD1DUPq16PseudoWB_fixed:
-    case ARM::VLD1DUPq32PseudoWB_fixed:
-    case ARM::VLD1DUPq8PseudoWB_register:
-    case ARM::VLD1DUPq16PseudoWB_register:
-    case ARM::VLD1DUPq32PseudoWB_register:
-    case ARM::VLD2DUPd8Pseudo:
-    case ARM::VLD2DUPd16Pseudo:
-    case ARM::VLD2DUPd32Pseudo:
-    case ARM::VLD2DUPd8PseudoWB_fixed:
-    case ARM::VLD2DUPd16PseudoWB_fixed:
-    case ARM::VLD2DUPd32PseudoWB_fixed:
-    case ARM::VLD2DUPd8PseudoWB_register:
-    case ARM::VLD2DUPd16PseudoWB_register:
-    case ARM::VLD2DUPd32PseudoWB_register:
+    case ARM::VLD1DUPq8:
+    case ARM::VLD1DUPq16:
+    case ARM::VLD1DUPq32:
+    case ARM::VLD1DUPq8wb_fixed:
+    case ARM::VLD1DUPq16wb_fixed:
+    case ARM::VLD1DUPq32wb_fixed:
+    case ARM::VLD1DUPq8wb_register:
+    case ARM::VLD1DUPq16wb_register:
+    case ARM::VLD1DUPq32wb_register:
+    case ARM::VLD2DUPd8:
+    case ARM::VLD2DUPd16:
+    case ARM::VLD2DUPd32:
+    case ARM::VLD2DUPd8wb_fixed:
+    case ARM::VLD2DUPd16wb_fixed:
+    case ARM::VLD2DUPd32wb_fixed:
+    case ARM::VLD2DUPd8wb_register:
+    case ARM::VLD2DUPd16wb_register:
+    case ARM::VLD2DUPd32wb_register:
     case ARM::VLD4DUPd8Pseudo:
     case ARM::VLD4DUPd16Pseudo:
     case ARM::VLD4DUPd32Pseudo:

@@ -2210,7 +2210,35 @@ public:
                                                 OperatorLoc, Pack, PackLoc, 
                                                 RParenLoc);
   }
-                                   
+
+  /// \brief Build a new Objective-C array literal.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildObjCArrayLiteral(SourceRange Range,
+                                     Expr **Elements, unsigned NumElements) {
+    return getSema().BuildObjCArrayLiteral(Range, 
+                                           MultiExprArg(Elements, NumElements));
+  }
+ 
+  ExprResult RebuildObjCSubscriptRefExpr(SourceLocation RB, 
+                                         Expr *Base, Expr *Key,
+                                         ObjCMethodDecl *getterMethod,
+                                         ObjCMethodDecl *setterMethod) {
+    return  getSema().BuildObjCSubscriptExpression(RB, Base, Key,
+                                                   getterMethod, setterMethod);
+  }
+
+  /// \brief Build a new Objective-C dictionary literal.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildObjCDictionaryLiteral(SourceRange Range,
+                                          ObjCDictionaryElement *Elements,
+                                          unsigned NumElements) {
+    return getSema().BuildObjCDictionaryLiteral(Range, Elements, NumElements);
+  }
+  
   /// \brief Build a new Objective-C @encode expression.
   ///
   /// By default, performs semantic analysis to build the new expression.
@@ -2371,7 +2399,8 @@ public:
     // Build a reference to the __builtin_shufflevector builtin
     FunctionDecl *Builtin = cast<FunctionDecl>(*Lookup.first);
     ExprResult Callee
-      = SemaRef.Owned(new (SemaRef.Context) DeclRefExpr(Builtin, Builtin->getType(),
+      = SemaRef.Owned(new (SemaRef.Context) DeclRefExpr(Builtin, false,
+                                                        Builtin->getType(),
                                                         VK_LValue, BuiltinLoc));
     Callee = SemaRef.UsualUnaryConversions(Callee.take());
     if (Callee.isInvalid())
@@ -2687,7 +2716,7 @@ TreeTransform<Derived>::TransformNestedNameSpecifierLoc(
         return NestedNameSpecifierLoc();
       
       if (TL.getType()->isDependentType() || TL.getType()->isRecordType() ||
-          (SemaRef.getLangOptions().CPlusPlus0x && 
+          (SemaRef.getLangOpts().CPlusPlus0x && 
            TL.getType()->isEnumeralType())) {
         assert(!TL.getType().hasLocalQualifiers() && 
                "Can't get cv-qualifiers here");
@@ -6060,6 +6089,12 @@ TreeTransform<Derived>::TransformCharacterLiteral(CharacterLiteral *E) {
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformUserDefinedLiteral(UserDefinedLiteral *E) {
+  return SemaRef.MaybeBindToTemporary(E);
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformGenericSelectionExpr(GenericSelectionExpr *E) {
   ExprResult ControllingExpr =
     getDerived().TransformExpr(E->getControllingExpr());
@@ -8253,7 +8288,159 @@ TreeTransform<Derived>::TransformMaterializeTemporaryExpr(
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformObjCStringLiteral(ObjCStringLiteral *E) {
+  return SemaRef.MaybeBindToTemporary(E);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformObjCBoolLiteralExpr(ObjCBoolLiteralExpr *E) {
   return SemaRef.Owned(E);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformObjCNumericLiteral(ObjCNumericLiteral *E) {
+  return SemaRef.MaybeBindToTemporary(E);
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformObjCArrayLiteral(ObjCArrayLiteral *E) {
+  // Transform each of the elements.
+  llvm::SmallVector<Expr *, 8> Elements;
+  bool ArgChanged = false;
+  if (getDerived().TransformExprs(E->getElements(), E->getNumElements(), 
+                                  /*IsCall=*/false, Elements, &ArgChanged))
+    return ExprError();
+  
+  if (!getDerived().AlwaysRebuild() && !ArgChanged)
+    return SemaRef.MaybeBindToTemporary(E);
+  
+  return getDerived().RebuildObjCArrayLiteral(E->getSourceRange(),
+                                              Elements.data(),
+                                              Elements.size());
+}
+
+template<typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformObjCDictionaryLiteral(
+                                                    ObjCDictionaryLiteral *E) {  
+  // Transform each of the elements.
+  llvm::SmallVector<ObjCDictionaryElement, 8> Elements;
+  bool ArgChanged = false;
+  for (unsigned I = 0, N = E->getNumElements(); I != N; ++I) {
+    ObjCDictionaryElement OrigElement = E->getKeyValueElement(I);
+    
+    if (OrigElement.isPackExpansion()) {
+      // This key/value element is a pack expansion.
+      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      getSema().collectUnexpandedParameterPacks(OrigElement.Key, Unexpanded);
+      getSema().collectUnexpandedParameterPacks(OrigElement.Value, Unexpanded);
+      assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
+
+      // Determine whether the set of unexpanded parameter packs can
+      // and should be expanded.
+      bool Expand = true;
+      bool RetainExpansion = false;
+      llvm::Optional<unsigned> OrigNumExpansions = OrigElement.NumExpansions;
+      llvm::Optional<unsigned> NumExpansions = OrigNumExpansions;
+      SourceRange PatternRange(OrigElement.Key->getLocStart(),
+                               OrigElement.Value->getLocEnd());
+     if (getDerived().TryExpandParameterPacks(OrigElement.EllipsisLoc,
+                                               PatternRange,
+                                               Unexpanded,
+                                               Expand, RetainExpansion,
+                                               NumExpansions))
+        return ExprError();
+
+      if (!Expand) {
+        // The transform has determined that we should perform a simple
+        // transformation on the pack expansion, producing another pack 
+        // expansion.
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
+        ExprResult Key = getDerived().TransformExpr(OrigElement.Key);
+        if (Key.isInvalid())
+          return ExprError();
+
+        if (Key.get() != OrigElement.Key)
+          ArgChanged = true;
+
+        ExprResult Value = getDerived().TransformExpr(OrigElement.Value);
+        if (Value.isInvalid())
+          return ExprError();
+        
+        if (Value.get() != OrigElement.Value)
+          ArgChanged = true;
+
+        ObjCDictionaryElement Expansion = { 
+          Key.get(), Value.get(), OrigElement.EllipsisLoc, NumExpansions
+        };
+        Elements.push_back(Expansion);
+        continue;
+      }
+
+      // Record right away that the argument was changed.  This needs
+      // to happen even if the array expands to nothing.
+      ArgChanged = true;
+      
+      // The transform has determined that we should perform an elementwise
+      // expansion of the pattern. Do so.
+      for (unsigned I = 0; I != *NumExpansions; ++I) {
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), I);
+        ExprResult Key = getDerived().TransformExpr(OrigElement.Key);
+        if (Key.isInvalid())
+          return ExprError();
+
+        ExprResult Value = getDerived().TransformExpr(OrigElement.Value);
+        if (Value.isInvalid())
+          return ExprError();
+
+        ObjCDictionaryElement Element = { 
+          Key.get(), Value.get(), SourceLocation(), NumExpansions
+        };
+
+        // If any unexpanded parameter packs remain, we still have a
+        // pack expansion.
+        if (Key.get()->containsUnexpandedParameterPack() ||
+            Value.get()->containsUnexpandedParameterPack())
+          Element.EllipsisLoc = OrigElement.EllipsisLoc;
+          
+        Elements.push_back(Element);
+      }
+
+      // We've finished with this pack expansion.
+      continue;
+    }
+
+    // Transform and check key.
+    ExprResult Key = getDerived().TransformExpr(OrigElement.Key);
+    if (Key.isInvalid())
+      return ExprError();
+    
+    if (Key.get() != OrigElement.Key)
+      ArgChanged = true;
+    
+    // Transform and check value.
+    ExprResult Value
+      = getDerived().TransformExpr(OrigElement.Value);
+    if (Value.isInvalid())
+      return ExprError();
+    
+    if (Value.get() != OrigElement.Value)
+      ArgChanged = true;
+    
+    ObjCDictionaryElement Element = { 
+      Key.get(), Value.get(), SourceLocation(), llvm::Optional<unsigned>()
+    };
+    Elements.push_back(Element);
+  }
+  
+  if (!getDerived().AlwaysRebuild() && !ArgChanged)
+    return SemaRef.MaybeBindToTemporary(E);
+
+  return getDerived().RebuildObjCDictionaryLiteral(E->getSourceRange(),
+                                                   Elements.data(),
+                                                   Elements.size());
 }
 
 template<typename Derived>
@@ -8436,6 +8623,30 @@ TreeTransform<Derived>::TransformObjCPropertyRefExpr(ObjCPropertyRefExpr *E) {
 
 template<typename Derived>
 ExprResult
+TreeTransform<Derived>::TransformObjCSubscriptRefExpr(ObjCSubscriptRefExpr *E) {
+  // Transform the base expression.
+  ExprResult Base = getDerived().TransformExpr(E->getBaseExpr());
+  if (Base.isInvalid())
+    return ExprError();
+
+  // Transform the key expression.
+  ExprResult Key = getDerived().TransformExpr(E->getKeyExpr());
+  if (Key.isInvalid())
+    return ExprError();
+
+  // If nothing changed, just retain the existing expression.
+  if (!getDerived().AlwaysRebuild() &&
+      Key.get() == E->getKeyExpr() && Base.get() == E->getBaseExpr())
+    return SemaRef.Owned(E);
+
+  return getDerived().RebuildObjCSubscriptRefExpr(E->getRBracket(), 
+                                                  Base.get(), Key.get(),
+                                                  E->getAtIndexMethodDecl(),
+                                                  E->setAtIndexMethodDecl());
+}
+
+template<typename Derived>
+ExprResult
 TreeTransform<Derived>::TransformObjCIsaExpr(ObjCIsaExpr *E) {
   // Transform the base expression.
   ExprResult Base = getDerived().TransformExpr(E->getBase());
@@ -8556,29 +8767,6 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
 
   return SemaRef.ActOnBlockStmtExpr(E->getCaretLocation(), body.get(),
                                     /*Scope=*/0);
-}
-
-template<typename Derived>
-ExprResult
-TreeTransform<Derived>::TransformBlockDeclRefExpr(BlockDeclRefExpr *E) {
-  ValueDecl *ND
-  = cast_or_null<ValueDecl>(getDerived().TransformDecl(E->getLocation(),
-                                                       E->getDecl()));
-  if (!ND)
-    return ExprError();
-
-  if (!getDerived().AlwaysRebuild() &&
-      ND == E->getDecl()) {
-    // Mark it referenced in the new context regardless.
-    // FIXME: this is a bit instantiation-specific.
-    SemaRef.MarkBlockDeclRefReferenced(E);
-    
-    return SemaRef.Owned(E);
-  }
-  
-  DeclarationNameInfo NameInfo(E->getDecl()->getDeclName(), E->getLocation());
-  return getDerived().RebuildDeclRefExpr(NestedNameSpecifierLoc(), 
-                                         ND, NameInfo, 0);
 }
 
 template<typename Derived>

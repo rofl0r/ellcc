@@ -47,7 +47,7 @@ OUTPUT := | $(STDOUT)
 endif
 
 ifeq ($(NOCHECK),)
-check: $(PROG)
+check: clean $(PROG)
 	$(INPUT) $(EXE)$(PROG) $(ARGS) $(OUTPUT) || exit 1
 else
 check:

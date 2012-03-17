@@ -490,43 +490,43 @@
 
 <div>
 
-<p>LLVM programs are composed of "Module"s, each of which is a translation unit
-   of the input programs.  Each module consists of functions, global variables,
-   and symbol table entries.  Modules may be combined together with the LLVM
-   linker, which merges function (and global variable) definitions, resolves
-   forward declarations, and merges symbol table entries. Here is an example of
-   the "hello world" module:</p>
+<p>LLVM programs are composed of <tt>Module</tt>s, each of which is a
+   translation unit of the input programs.  Each module consists of functions,
+   global variables, and symbol table entries.  Modules may be combined together
+   with the LLVM linker, which merges function (and global variable)
+   definitions, resolves forward declarations, and merges symbol table
+   entries. Here is an example of the "hello world" module:</p>
 
 <pre class="doc_code">
 <i>; Declare the string constant as a global constant.</i>&nbsp;
-<a href="#identifiers">@.LC0</a> = <a href="#linkage_internal">internal</a>&nbsp;<a href="#globalvars">constant</a>&nbsp;<a href="#t_array">[13 x i8]</a> c"hello world\0A\00"      <i>; [13 x i8]*</i>&nbsp;
+<a href="#identifiers">@.str</a> = <a href="#linkage_private">private</a>&nbsp;<a href="#globalvars">unnamed_addr</a>&nbsp;<a href="#globalvars">constant</a>&nbsp;<a href="#t_array">[13 x i8]</a> c"hello world\0A\00"&nbsp;
 
 <i>; External declaration of the puts function</i>&nbsp;
-<a href="#functionstructure">declare</a> i32 @puts(i8*)                                      <i>; i32 (i8*)* </i>&nbsp;
+<a href="#functionstructure">declare</a> i32 @puts(i8* <a href="#nocapture">nocapture</a>) <a href="#fnattrs">nounwind</a>&nbsp;
 
 <i>; Definition of main function</i>
 define i32 @main() {   <i>; i32()* </i>&nbsp;
   <i>; Convert [13 x i8]* to i8  *...</i>&nbsp;
-  %cast210 = <a href="#i_getelementptr">getelementptr</a> [13 x i8]* @.LC0, i64 0, i64 0   <i>; i8*</i>&nbsp;
+  %cast210 = <a href="#i_getelementptr">getelementptr</a> [13 x i8]* @.str, i64 0, i64 0
 
   <i>; Call puts function to write out the string to stdout.</i>&nbsp;
-  <a href="#i_call">call</a> i32 @puts(i8* %cast210)           <i>; i32</i>&nbsp;
+  <a href="#i_call">call</a> i32 @puts(i8* %cast210)
   <a href="#i_ret">ret</a> i32 0&nbsp;
 }
 
 <i>; Named metadata</i>
-!1 = metadata !{i32 41}
+!1 = metadata !{i32 42}
 !foo = !{!1, null}
 </pre>
 
 <p>This example is made up of a <a href="#globalvars">global variable</a> named
-   "<tt>.LC0</tt>", an external declaration of the "<tt>puts</tt>" function,
+   "<tt>.str</tt>", an external declaration of the "<tt>puts</tt>" function,
    a <a href="#functionstructure">function definition</a> for
    "<tt>main</tt>" and <a href="#namedmetadatastructure">named metadata</a> 
-   "<tt>foo"</tt>.</p>
+   "<tt>foo</tt>".</p>
 
-<p>In general, a module is made up of a list of global values, where both
-   functions and global variables are global values.  Global values are
+<p>In general, a module is made up of a list of global values (where both
+   functions and global variables are global values). Global values are
    represented by a pointer to a memory location (in this case, a pointer to an
    array of char, and a pointer to a function), and have one of the
    following <a href="#linkage">linkage types</a>.</p>
@@ -3081,36 +3081,44 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
     <tr>
       <td>1</td>
       <td align="left">
-        <dt><b>Error</b></dt>
-        <dd>Emits an error if two values disagree. It is an error to have an ID
-            with both an Error and a Warning behavior.</dd>
+        <dl>
+          <dt><b>Error</b></dt>
+          <dd>Emits an error if two values disagree. It is an error to have an ID
+              with both an Error and a Warning behavior.</dd>
+        </dl>
       </td>
     </tr>
     <tr>
       <td>2</td>
       <td align="left">
-        <dt><b>Warning</b></dt>
-        <dd>Emits a warning if two values disagree.</dd>
+        <dl>
+          <dt><b>Warning</b></dt>
+          <dd>Emits a warning if two values disagree.</dd>
+        </dl>
       </td>
     </tr>
     <tr>
       <td>3</td>
       <td align="left">
-        <dt><b>Require</b></dt>
-        <dd>Emits an error when the specified value is not present or doesn't
-            have the specified value. It is an error for two (or more)
-            <tt>llvm.module.flags</tt> with the same ID to have the Require
-            behavior but different values. There may be multiple Require flags
-            per ID.</dd>
+        <dl>
+          <dt><b>Require</b></dt>
+          <dd>Emits an error when the specified value is not present or doesn't
+              have the specified value. It is an error for two (or more)
+              <tt>llvm.module.flags</tt> with the same ID to have the Require
+              behavior but different values. There may be multiple Require flags
+              per ID.</dd>
+        </dl>
       </td>
     </tr>
     <tr>
       <td>4</td>
       <td align="left">
-        <dt><b>Override</b></dt>
-        <dd>Uses the specified value if the two values disagree. It is an error
-            for two (or more) <tt>llvm.module.flags</tt> with the same ID to
-            have the Override behavior but different values.</dd>
+        <dl>
+          <dt><b>Override</b></dt>
+          <dd>Uses the specified value if the two values disagree. It is an
+              error for two (or more) <tt>llvm.module.flags</tt> with the same
+              ID to have the Override behavior but different values.</dd>
+        </dl>
       </td>
     </tr>
   </tbody>
@@ -3174,9 +3182,10 @@ metadata !{ metadata !"foo", i32 1 }
    following key-value pairs:</p>
 
 <table border="1" cellspacing="0" cellpadding="4">
+  <col width="30%">
   <tbody>
     <tr>
-      <th width="30%">Key</th>
+      <th>Key</th>
       <th>Value</th>
     </tr>
     <tr>
@@ -8462,7 +8471,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-02-29 02:26:44 -0600 (Wed, 29 Feb 2012) $
+  Last modified: $Date: 2012-03-14 03:07:43 -0500 (Wed, 14 Mar 2012) $
 </address>
 
 </body>

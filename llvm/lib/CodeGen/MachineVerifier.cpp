@@ -89,7 +89,7 @@ namespace {
     void addRegWithSubRegs(RegVector &RV, unsigned Reg) {
       RV.push_back(Reg);
       if (TargetRegisterInfo::isPhysicalRegister(Reg))
-        for (const unsigned *R = TRI->getSubRegisters(Reg); *R; R++)
+        for (const uint16_t *R = TRI->getSubRegisters(Reg); *R; R++)
           RV.push_back(*R);
     }
 
@@ -383,7 +383,7 @@ void MachineVerifier::visitMachineFunctionBefore() {
   // A sub-register of a reserved register is also reserved
   for (int Reg = regsReserved.find_first(); Reg>=0;
        Reg = regsReserved.find_next(Reg)) {
-    for (const unsigned *Sub = TRI->getSubRegisters(Reg); *Sub; ++Sub) {
+    for (const uint16_t *Sub = TRI->getSubRegisters(Reg); *Sub; ++Sub) {
       // FIXME: This should probably be:
       // assert(regsReserved.test(*Sub) && "Non-reserved sub-register");
       regsReserved.set(*Sub);
@@ -553,7 +553,7 @@ MachineVerifier::visitMachineBasicBlockBefore(const MachineBasicBlock *MBB) {
       continue;
     }
     regsLive.insert(*I);
-    for (const unsigned *R = TRI->getSubRegisters(*I); *R; R++)
+    for (const uint16_t *R = TRI->getSubRegisters(*I); *R; R++)
       regsLive.insert(*R);
   }
   regsLiveInButUnused = regsLive;
@@ -563,7 +563,7 @@ MachineVerifier::visitMachineBasicBlockBefore(const MachineBasicBlock *MBB) {
   BitVector PR = MFI->getPristineRegs(MBB);
   for (int I = PR.find_first(); I>0; I = PR.find_next(I)) {
     regsLive.insert(I);
-    for (const unsigned *R = TRI->getSubRegisters(I); *R; R++)
+    for (const uint16_t *R = TRI->getSubRegisters(I); *R; R++)
       regsLive.insert(*R);
   }
 
@@ -900,7 +900,7 @@ MachineVerifier::visitMachineBasicBlockAfter(const MachineBasicBlock *MBB) {
 void MachineVerifier::calcRegsPassed() {
   // First push live-out regs to successors' vregsPassed. Remember the MBBs that
   // have any vregsPassed.
-  DenseSet<const MachineBasicBlock*> todo;
+  SmallPtrSet<const MachineBasicBlock*, 8> todo;
   for (MachineFunction::const_iterator MFI = MF->begin(), MFE = MF->end();
        MFI != MFE; ++MFI) {
     const MachineBasicBlock &MBB(*MFI);
@@ -937,7 +937,7 @@ void MachineVerifier::calcRegsPassed() {
 // similar to calcRegsPassed, only backwards.
 void MachineVerifier::calcRegsRequired() {
   // First push live-in regs to predecessors' vregsRequired.
-  DenseSet<const MachineBasicBlock*> todo;
+  SmallPtrSet<const MachineBasicBlock*, 8> todo;
   for (MachineFunction::const_iterator MFI = MF->begin(), MFE = MF->end();
        MFI != MFE; ++MFI) {
     const MachineBasicBlock &MBB(*MFI);
@@ -970,9 +970,10 @@ void MachineVerifier::calcRegsRequired() {
 // Check PHI instructions at the beginning of MBB. It is assumed that
 // calcRegsPassed has been run so BBInfo::isLiveOut is valid.
 void MachineVerifier::checkPHIOps(const MachineBasicBlock *MBB) {
+  SmallPtrSet<const MachineBasicBlock*, 8> seen;
   for (MachineBasicBlock::const_iterator BBI = MBB->begin(), BBE = MBB->end();
        BBI != BBE && BBI->isPHI(); ++BBI) {
-    DenseSet<const MachineBasicBlock*> seen;
+    seen.clear();
 
     for (unsigned i = 1, e = BBI->getNumOperands(); i != e; i += 2) {
       unsigned Reg = BBI->getOperand(i).getReg();
@@ -1013,8 +1014,17 @@ void MachineVerifier::visitMachineFunctionAfter() {
   }
 
   // Now check liveness info if available
-  if (LiveVars || LiveInts)
-    calcRegsRequired();
+  calcRegsRequired();
+
+  if (MRI->isSSA() && !MF->empty()) {
+    BBInfo &MInfo = MBBInfoMap[&MF->front()];
+    for (RegSet::iterator
+         I = MInfo.vregsRequired.begin(), E = MInfo.vregsRequired.end(); I != E;
+         ++I)
+      report("Virtual register def doesn't dominate all uses.",
+             MRI->getVRegDef(*I));
+  }
+
   if (LiveVars)
     verifyLiveVariables();
   if (LiveInts)

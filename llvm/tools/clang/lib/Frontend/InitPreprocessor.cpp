@@ -319,11 +319,14 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
                       + getClangFullRepositoryVersion() + ")\"");
 #undef TOSTR
 #undef TOSTR2
-  // Currently claim to be compatible with GCC 4.2.1-5621.
-  Builder.defineMacro("__GNUC_MINOR__", "2");
-  Builder.defineMacro("__GNUC_PATCHLEVEL__", "1");
-  Builder.defineMacro("__GNUC__", "4");
-  Builder.defineMacro("__GXX_ABI_VERSION", "1002");
+  if (!LangOpts.MicrosoftMode) {
+    // Currently claim to be compatible with GCC 4.2.1-5621, but only if we're
+    // not compiling for MSVC compatibility
+    Builder.defineMacro("__GNUC_MINOR__", "2");
+    Builder.defineMacro("__GNUC_PATCHLEVEL__", "1");
+    Builder.defineMacro("__GNUC__", "4");
+    Builder.defineMacro("__GXX_ABI_VERSION", "1002");
+  }
 
   // Define macros for the C11 / C++11 memory orderings
   Builder.defineMacro("__ATOMIC_RELAXED", "0");
@@ -522,7 +525,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   else
     Builder.defineMacro("__GNUC_STDC_INLINE__");
 
-  if (LangOpts.NoInline)
+  if (LangOpts.NoInlineDefine)
     Builder.defineMacro("__NO_INLINE__");
 
   if (unsigned PICLevel = LangOpts.PICLevel) {
@@ -637,7 +640,7 @@ void clang::InitializePreprocessor(Preprocessor &PP,
                                    const PreprocessorOptions &InitOpts,
                                    const HeaderSearchOptions &HSOpts,
                                    const FrontendOptions &FEOpts) {
-  const LangOptions &LangOpts = PP.getLangOptions();
+  const LangOptions &LangOpts = PP.getLangOpts();
   std::string PredefineBuffer;
   PredefineBuffer.reserve(4080);
   llvm::raw_string_ostream Predefines(PredefineBuffer);
@@ -649,7 +652,7 @@ void clang::InitializePreprocessor(Preprocessor &PP,
   // Emit line markers for various builtin sections of the file.  We don't do
   // this in asm preprocessor mode, because "# 4" is not a line marker directive
   // in this mode.
-  if (!PP.getLangOptions().AsmPreprocessor)
+  if (!PP.getLangOpts().AsmPreprocessor)
     Builder.append("# 1 \"<built-in>\" 3");
 
   // Install things like __POWERPC__, __GNUC__, etc into the macro table.
@@ -674,12 +677,12 @@ void clang::InitializePreprocessor(Preprocessor &PP,
   // Even with predefines off, some macros are still predefined.
   // These should all be defined in the preprocessor according to the
   // current language configuration.
-  InitializeStandardPredefinedMacros(PP.getTargetInfo(), PP.getLangOptions(),
+  InitializeStandardPredefinedMacros(PP.getTargetInfo(), PP.getLangOpts(),
                                      FEOpts, Builder);
 
   // Add on the predefines from the driver.  Wrap in a #line directive to report
   // that they come from the command line.
-  if (!PP.getLangOptions().AsmPreprocessor)
+  if (!PP.getLangOpts().AsmPreprocessor)
     Builder.append("# 1 \"<command line>\" 1");
 
   // Process #define's and #undef's in the order they are given.
@@ -707,7 +710,7 @@ void clang::InitializePreprocessor(Preprocessor &PP,
   }
 
   // Exit the command line and go back to <built-in> (2 is LC_LEAVE).
-  if (!PP.getLangOptions().AsmPreprocessor)
+  if (!PP.getLangOpts().AsmPreprocessor)
     Builder.append("# 1 \"<built-in>\" 2");
 
   // Instruct the preprocessor to skip the preamble.
@@ -719,6 +722,6 @@ void clang::InitializePreprocessor(Preprocessor &PP,
   
   // Initialize the header search object.
   ApplyHeaderSearchOptions(PP.getHeaderSearchInfo(), HSOpts,
-                           PP.getLangOptions(),
+                           PP.getLangOpts(),
                            PP.getTargetInfo().getTriple());
 }

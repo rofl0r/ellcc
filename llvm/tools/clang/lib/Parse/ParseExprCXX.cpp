@@ -15,6 +15,7 @@
 #include "clang/Parse/Parser.h"
 #include "RAIIObjectsForParser.h"
 #include "clang/Basic/PrettyStackTrace.h"
+#include "clang/Lex/LiteralSupport.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
@@ -137,7 +138,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
                                             bool EnteringContext,
                                             bool *MayBePseudoDestructor,
                                             bool IsTypename) {
-  assert(getLang().CPlusPlus &&
+  assert(getLangOpts().CPlusPlus &&
          "Call sites of this function should be guarded by checking for C++");
 
   if (Tok.is(tok::annot_cxxscope)) {
@@ -415,7 +416,7 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
         // parse correctly as a template, so suggest the keyword 'template'
         // before 'getAs' and treat this as a dependent template name.
         unsigned DiagID = diag::err_missing_dependent_template_keyword;
-        if (getLang().MicrosoftExt)
+        if (getLangOpts().MicrosoftExt)
           DiagID = diag::warn_missing_dependent_template_keyword;
         
         Diag(Tok.getLocation(), DiagID)
@@ -577,7 +578,7 @@ ExprResult Parser::ParseLambdaExpression() {
 ///
 /// If we are not looking at a lambda expression, returns ExprError().
 ExprResult Parser::TryParseLambdaExpression() {
-  assert(getLang().CPlusPlus0x
+  assert(getLangOpts().CPlusPlus0x
          && Tok.is(tok::l_square)
          && "Not at the start of a possible lambda expression.");
 
@@ -656,7 +657,7 @@ llvm::Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro){
     if (Tok.is(tok::code_completion)) {
       // If we're in Objective-C++ and we have a bare '[', then this is more
       // likely to be a message receiver.
-      if (getLang().ObjC1 && first)
+      if (getLangOpts().ObjC1 && first)
         Actions.CodeCompleteObjCMessageReceiver(getCurScope());
       else
         Actions.CodeCompleteLambdaIntroducer(getCurScope(), Intro, 
@@ -1224,7 +1225,7 @@ Parser::ParseCXXTypeConstructExpression(const DeclSpec &DS) {
   ParsedType TypeRep = Actions.ActOnTypeName(getCurScope(), DeclaratorInfo).get();
 
   assert((Tok.is(tok::l_paren) ||
-          (getLang().CPlusPlus0x && Tok.is(tok::l_brace)))
+          (getLangOpts().CPlusPlus0x && Tok.is(tok::l_brace)))
          && "Expected '(' or '{'!");
 
   if (Tok.is(tok::l_brace)) {
@@ -1349,7 +1350,7 @@ bool Parser::ParseCXXCondition(ExprResult &ExprOut,
     ConsumeToken();
 
   ExprResult InitExpr = ExprError();
-  if (getLang().CPlusPlus0x && Tok.is(tok::l_brace)) {
+  if (getLangOpts().CPlusPlus0x && Tok.is(tok::l_brace)) {
     Diag(Tok.getLocation(),
          diag::warn_cxx98_compat_generalized_initializer_lists);
     InitExpr = ParseBraceInitializer();
@@ -1466,7 +1467,7 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
     // is a specific typedef and 'itf<proto1,proto2>' where 'itf' is an
     // Objective-C interface.  If we don't have Objective-C or a '<', this is
     // just a normal reference to a typedef name.
-    if (Tok.is(tok::less) && getLang().ObjC1)
+    if (Tok.is(tok::less) && getLangOpts().ObjC1)
       ParseObjCProtocolQualifiers(DS);
     
     DS.Finish(Diags, PP);
@@ -1550,22 +1551,7 @@ void Parser::ParseCXXSimpleTypeSpecifier(DeclSpec &DS) {
 ///     type-specifier type-specifier-seq[opt]
 ///
 bool Parser::ParseCXXTypeSpecifierSeq(DeclSpec &DS) {
-  DS.SetRangeStart(Tok.getLocation());
-  const char *PrevSpec = 0;
-  unsigned DiagID;
-  bool isInvalid = 0;
-
-  // Parse one or more of the type specifiers.
-  if (!ParseOptionalTypeSpecifier(DS, isInvalid, PrevSpec, DiagID,
-      ParsedTemplateInfo(), /*SuppressDeclarations*/true)) {
-    Diag(Tok, diag::err_expected_type);
-    return true;
-  }
-
-  while (ParseOptionalTypeSpecifier(DS, isInvalid, PrevSpec, DiagID,
-         ParsedTemplateInfo(), /*SuppressDeclarations*/true))
-  {}
-
+  ParseSpecifierQualifierList(DS, AS_none, DSC_type_specifier);
   DS.Finish(Diags, PP);
   return false;
 }
@@ -1903,19 +1889,68 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
   //   literal-operator-id: [C++0x 13.5.8]
   //     operator "" identifier
 
-  if (getLang().CPlusPlus0x && Tok.is(tok::string_literal)) {
+  if (getLangOpts().CPlusPlus0x && isTokenStringLiteral()) {
     Diag(Tok.getLocation(), diag::warn_cxx98_compat_literal_operator);
-    if (Tok.getLength() != 2)
-      Diag(Tok.getLocation(), diag::err_operator_string_not_empty);
-    ConsumeStringToken();
 
-    if (Tok.isNot(tok::identifier)) {
+    SourceLocation DiagLoc;
+    unsigned DiagId = 0;
+
+    // We're past translation phase 6, so perform string literal concatenation
+    // before checking for "".
+    llvm::SmallVector<Token, 4> Toks;
+    llvm::SmallVector<SourceLocation, 4> TokLocs;
+    while (isTokenStringLiteral()) {
+      if (!Tok.is(tok::string_literal) && !DiagId) {
+        DiagLoc = Tok.getLocation();
+        DiagId = diag::err_literal_operator_string_prefix;
+      }
+      Toks.push_back(Tok);
+      TokLocs.push_back(ConsumeStringToken());
+    }
+
+    StringLiteralParser Literal(Toks.data(), Toks.size(), PP);
+    if (Literal.hadError)
+      return true;
+
+    // Grab the literal operator's suffix, which will be either the next token
+    // or a ud-suffix from the string literal.
+    IdentifierInfo *II = 0;
+    SourceLocation SuffixLoc;
+    if (!Literal.getUDSuffix().empty()) {
+      II = &PP.getIdentifierTable().get(Literal.getUDSuffix());
+      SuffixLoc =
+        Lexer::AdvanceToTokenCharacter(TokLocs[Literal.getUDSuffixToken()],
+                                       Literal.getUDSuffixOffset(),
+                                       PP.getSourceManager(), getLangOpts());
+      // This form is not permitted by the standard (yet).
+      DiagLoc = SuffixLoc;
+      DiagId = diag::err_literal_operator_missing_space;
+    } else if (Tok.is(tok::identifier)) {
+      II = Tok.getIdentifierInfo();
+      SuffixLoc = ConsumeToken();
+      TokLocs.push_back(SuffixLoc);
+    } else {
       Diag(Tok.getLocation(), diag::err_expected_ident);
       return true;
     }
 
-    IdentifierInfo *II = Tok.getIdentifierInfo();
-    Result.setLiteralOperatorId(II, KeywordLoc, ConsumeToken());
+    // The string literal must be empty.
+    if (!Literal.GetString().empty() || Literal.Pascal) {
+      DiagLoc = TokLocs.front();
+      DiagId = diag::err_literal_operator_string_not_empty;
+    }
+
+    if (DiagId) {
+      // This isn't a valid literal-operator-id, but we think we know
+      // what the user meant. Tell them what they should have written.
+      llvm::SmallString<32> Str;
+      Str += "\"\" ";
+      Str += II->getName();
+      Diag(DiagLoc, DiagId) << FixItHint::CreateReplacement(
+          SourceRange(TokLocs.front(), TokLocs.back()), Str);
+    }
+
+    Result.setLiteralOperatorId(II, KeywordLoc, SuffixLoc);
     return false;
   }
   
@@ -1991,7 +2026,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   // Handle 'A::template B'. This is for template-ids which have not
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
-  if (getLang().CPlusPlus && Tok.is(tok::kw_template) &&
+  if (getLangOpts().CPlusPlus && Tok.is(tok::kw_template) &&
       (ObjectType || SS.isSet())) {
     TemplateSpecified = true;
     TemplateKWLoc = ConsumeToken();
@@ -2005,7 +2040,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     IdentifierInfo *Id = Tok.getIdentifierInfo();
     SourceLocation IdLoc = ConsumeToken();
 
-    if (!getLang().CPlusPlus) {
+    if (!getLangOpts().CPlusPlus) {
       // If we're not in C++, only identifiers matter. Record the
       // identifier and return.
       Result.setIdentifier(Id, IdLoc);
@@ -2102,7 +2137,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     return false;
   }
   
-  if (getLang().CPlusPlus && 
+  if (getLangOpts().CPlusPlus && 
       (AllowDestructorName || SS.isSet()) && Tok.is(tok::tilde)) {
     // C++ [expr.unary.op]p10:
     //   There is an ambiguity in the unary-expression ~X(), where X is a 
@@ -2153,7 +2188,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
   }
   
   Diag(Tok, diag::err_expected_unqualified_id)
-    << getLang().CPlusPlus;
+    << getLangOpts().CPlusPlus;
   return true;
 }
 
@@ -2283,7 +2318,7 @@ Parser::ParseCXXNewExpression(bool UseGlobal, SourceLocation Start) {
     Initializer = Actions.ActOnParenListExpr(ConstructorLParen,
                                              ConstructorRParen,
                                              move_arg(ConstructorArgs));
-  } else if (Tok.is(tok::l_brace) && getLang().CPlusPlus0x) {
+  } else if (Tok.is(tok::l_brace) && getLangOpts().CPlusPlus0x) {
     Diag(Tok.getLocation(),
          diag::warn_cxx98_compat_generalized_initializer_lists);
     Initializer = ParseBraceInitializer();
@@ -2674,7 +2709,7 @@ ExprResult
 Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
                                          ParsedType &CastTy,
                                          BalancedDelimiterTracker &Tracker) {
-  assert(getLang().CPlusPlus && "Should only be called for C++!");
+  assert(getLangOpts().CPlusPlus && "Should only be called for C++!");
   assert(ExprType == CastExpr && "Compound literals are not ambiguous!");
   assert(isTypeIdInParens() && "Not a type-id!");
 

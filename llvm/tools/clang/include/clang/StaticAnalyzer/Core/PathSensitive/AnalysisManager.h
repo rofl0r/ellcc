@@ -30,13 +30,15 @@ namespace idx {
 namespace ento {
   class CheckerManager;
 
+typedef llvm::SmallPtrSet<const Decl*,24> SetOfDecls;
+
 class AnalysisManager : public BugReporterData {
   virtual void anchor();
   AnalysisDeclContextManager AnaCtxMgr;
 
   ASTContext &Ctx;
   DiagnosticsEngine &Diags;
-  const LangOptions &LangInfo;
+  const LangOptions &LangOpts;
 
   OwningPtr<PathDiagnosticConsumer> PD;
 
@@ -75,16 +77,19 @@ class AnalysisManager : public BugReporterData {
   ///   bifurcates paths.
   bool EagerlyAssume;
   bool TrimGraph;
-  bool InlineCall;
   bool EagerlyTrimEGraph;
 
 public:
-  // Settings for inlining tuning.
+  // \brief inter-procedural analysis mode.
+  AnalysisIPAMode IPAMode;
 
+  // Settings for inlining tuning.
   /// \brief The inlining stack depth limit.
   unsigned InlineMaxStackDepth;
   /// \brief The max number of basic blocks in a function being inlined.
   unsigned InlineMaxFunctionSize;
+  /// \brief The mode of function selection used during inlining.
+  AnalysisInliningMode InliningMode;
 
 public:
   AnalysisManager(ASTContext &ctx, DiagnosticsEngine &diags, 
@@ -96,11 +101,13 @@ public:
                   unsigned maxnodes, unsigned maxvisit,
                   bool vizdot, bool vizubi, AnalysisPurgeMode purge,
                   bool eager, bool trim,
-                  bool inlinecall, bool useUnoptimizedCFG,
+                  bool useUnoptimizedCFG,
                   bool addImplicitDtors, bool addInitializers,
                   bool eagerlyTrimEGraph,
+                  AnalysisIPAMode ipa,
                   unsigned inlineMaxStack,
-                  unsigned inlineMaxFunctionSize);
+                  unsigned inlineMaxFunctionSize,
+                  AnalysisInliningMode inliningMode);
 
   /// Construct a clone of the given AnalysisManager with the given ASTContext
   /// and DiagnosticsEngine.
@@ -141,8 +148,8 @@ public:
     return Diags;
   }
 
-  const LangOptions &getLangOptions() const {
-    return LangInfo;
+  const LangOptions &getLangOpts() const {
+    return LangOpts;
   }
 
   virtual PathDiagnosticConsumer *getPathDiagnosticConsumer() {
@@ -174,7 +181,7 @@ public:
 
   bool shouldEagerlyAssume() const { return EagerlyAssume; }
 
-  bool shouldInlineCall() const { return InlineCall; }
+  bool shouldInlineCall() const { return (IPAMode == Inlining); }
 
   bool hasIndexer() const { return Idxer != 0; }
 

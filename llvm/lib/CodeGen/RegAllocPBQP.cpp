@@ -216,7 +216,7 @@ std::auto_ptr<PBQPRAProblem> PBQPBuilder::build(MachineFunction *mf,
     // Compute an initial allowed set for the current vreg.
     typedef std::vector<unsigned> VRAllowed;
     VRAllowed vrAllowed;
-    ArrayRef<unsigned> rawOrder = trc->getRawAllocationOrder(*mf);
+    ArrayRef<uint16_t> rawOrder = trc->getRawAllocationOrder(*mf);
     for (unsigned i = 0; i != rawOrder.size(); ++i) {
       unsigned preg = rawOrder[i];
       if (!reservedRegs.test(preg)) {
@@ -248,7 +248,7 @@ std::auto_ptr<PBQPRAProblem> PBQPBuilder::build(MachineFunction *mf,
       }
 
       // Also remove any aliases.
-      const unsigned *aliasItr = tri->getAliasSet(preg);
+      const uint16_t *aliasItr = tri->getAliasSet(preg);
       if (aliasItr != 0) {
         for (; *aliasItr != 0; ++aliasItr) {
           VRAllowed::iterator eraseItr =

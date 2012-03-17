@@ -209,6 +209,11 @@ bool MultiplexConsumer::HandleTopLevelDecl(DeclGroupRef D) {
   return Continue;
 }
 
+void  MultiplexConsumer::HandleCXXStaticMemberVarInstantiation(VarDecl *VD) {
+  for (size_t i = 0, e = Consumers.size(); i != e; ++i)
+    Consumers[i]->HandleCXXStaticMemberVarInstantiation(VD);
+}
+
 void MultiplexConsumer::HandleInterestingDecl(DeclGroupRef D) {
   for (size_t i = 0, e = Consumers.size(); i != e; ++i)
     Consumers[i]->HandleInterestingDecl(D);

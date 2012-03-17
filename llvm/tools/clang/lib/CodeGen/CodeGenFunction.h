@@ -1210,7 +1210,7 @@ public:
     return CGM.getCodeGenOpts().OptimizationLevel == 0;
   }
 
-  const LangOptions &getLangOptions() const { return CGM.getLangOptions(); }
+  const LangOptions &getLangOpts() const { return CGM.getLangOpts(); }
 
   /// Returns a pointer to the function's exception object and selector slot,
   /// which is assigned in every landing pad.
@@ -1278,9 +1278,9 @@ public:
       return false;
     case QualType::DK_cxx_destructor:
     case QualType::DK_objc_weak_lifetime:
-      return getLangOptions().Exceptions;
+      return getLangOpts().Exceptions;
     case QualType::DK_objc_strong_lifetime:
-      return getLangOptions().Exceptions &&
+      return getLangOpts().Exceptions &&
              CGM.getCodeGenOpts().ObjCAutoRefCountExceptions;
     }
     llvm_unreachable("bad destruction kind");
@@ -1359,10 +1359,7 @@ public:
   }
 
   void AllocateBlockCXXThisPointer(const CXXThisExpr *E);
-  void AllocateBlockDecl(const BlockDeclRefExpr *E);
-  llvm::Value *GetAddrOfBlockDecl(const BlockDeclRefExpr *E) {
-    return GetAddrOfBlockDecl(E->getDecl(), E->isByRef());
-  }
+  void AllocateBlockDecl(const DeclRefExpr *E);
   llvm::Value *GetAddrOfBlockDecl(const VarDecl *var, bool ByRef);
   llvm::Type *BuildByRefType(const VarDecl *var);
 
@@ -2107,6 +2104,36 @@ public:
   LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
+  class ConstantEmission {
+    llvm::PointerIntPair<llvm::Constant*, 1, bool> ValueAndIsReference;
+    ConstantEmission(llvm::Constant *C, bool isReference)
+      : ValueAndIsReference(C, isReference) {}
+  public:
+    ConstantEmission() {}
+    static ConstantEmission forReference(llvm::Constant *C) {
+      return ConstantEmission(C, true);
+    }
+    static ConstantEmission forValue(llvm::Constant *C) {
+      return ConstantEmission(C, false);
+    }
+
+    operator bool() const { return ValueAndIsReference.getOpaqueValue() != 0; }
+
+    bool isReference() const { return ValueAndIsReference.getInt(); }
+    LValue getReferenceLValue(CodeGenFunction &CGF, Expr *refExpr) const {
+      assert(isReference());
+      return CGF.MakeNaturalAlignAddrLValue(ValueAndIsReference.getPointer(),
+                                            refExpr->getType());
+    }
+
+    llvm::Constant *getValue() const {
+      assert(!isReference());
+      return ValueAndIsReference.getPointer();
+    }
+  };
+
+  ConstantEmission tryEmitAsConstant(DeclRefExpr *refExpr);
+
   RValue EmitPseudoObjectRValue(const PseudoObjectExpr *e,
                                 AggValueSlot slot = AggValueSlot::ignored());
   LValue EmitPseudoObjectLValue(const PseudoObjectExpr *e);
@@ -2132,8 +2159,6 @@ public:
 
   LValue EmitLValueForBitfield(llvm::Value* Base, const FieldDecl* Field,
                                 unsigned CVRQualifiers);
-
-  LValue EmitBlockDeclRefLValue(const BlockDeclRefExpr *E);
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
@@ -2238,6 +2263,11 @@ public:
 
   llvm::Value *EmitObjCProtocolExpr(const ObjCProtocolExpr *E);
   llvm::Value *EmitObjCStringLiteral(const ObjCStringLiteral *E);
+  llvm::Value *EmitObjCNumericLiteral(const ObjCNumericLiteral *E);
+  llvm::Value *EmitObjCArrayLiteral(const ObjCArrayLiteral *E);
+  llvm::Value *EmitObjCDictionaryLiteral(const ObjCDictionaryLiteral *E);
+  llvm::Value *EmitObjCCollectionLiteral(const Expr *E,
+                                const ObjCMethodDecl *MethodWithObjects);
   llvm::Value *EmitObjCSelectorExpr(const ObjCSelectorExpr *E);
   RValue EmitObjCMessageExpr(const ObjCMessageExpr *E,
                              ReturnValueSlot Return = ReturnValueSlot());

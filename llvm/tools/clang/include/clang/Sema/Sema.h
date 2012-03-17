@@ -25,9 +25,11 @@
 #include "clang/Sema/TypoCorrection.h"
 #include "clang/Sema/Weak.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprObjC.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
 #include "clang/AST/TypeLoc.h"
+#include "clang/AST/NSAPI.h"
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TemplateKinds.h"
@@ -511,10 +513,33 @@ public:
   /// \brief The MSVC "_GUID" struct, which is defined in MSVC header files.
   RecordDecl *MSVCGuidDecl;
 
+  /// \brief Caches identifiers/selectors for NSFoundation APIs.
+  llvm::OwningPtr<NSAPI> NSAPIObj;
+
+  /// \brief The declaration of the Objective-C NSNumber class.
+  ObjCInterfaceDecl *NSNumberDecl;
+  
+  /// \brief The Objective-C NSNumber methods used to create NSNumber literals.
+  ObjCMethodDecl *NSNumberLiteralMethods[NSAPI::NumNSNumberLiteralMethods];
+  
+  /// \brief The declaration of the Objective-C NSArray class.
+  ObjCInterfaceDecl *NSArrayDecl;
+
+  /// \brief The declaration of the arrayWithObjects:count: method.
+  ObjCMethodDecl *ArrayWithObjectsMethod;
+  
+  /// \brief The declaration of the Objective-C NSDictionary class.
+  ObjCInterfaceDecl *NSDictionaryDecl;
+
+  /// \brief The declaration of the dictionaryWithObjects:forKeys:count: method.
+  ObjCMethodDecl *DictionaryWithObjectsMethod;
+
+  /// \brief id<NSCopying> type.
+  QualType QIDNSCopying;
+
   /// A flag to remember whether the implicit forms of operator new and delete
   /// have been declared.
   bool GlobalNewDeleteDeclared;
-
 
   /// A flag that is set when parsing a -dealloc method and no [super dealloc]
   /// call was found yet.
@@ -710,6 +735,12 @@ public:
 
   /// Private Helper predicate to check for 'self'.
   bool isSelfExpr(Expr *RExpr);
+
+  /// \brief Cause the active diagnostic on the DiagosticsEngine to be
+  /// emitted. This is closely coupled to the SemaDiagnosticBuilder class and
+  /// should not be used elsewhere.
+  void EmitCurrentDiagnostic(unsigned DiagID);
+
 public:
   Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
        TranslationUnitKind TUKind = TU_Complete,
@@ -720,7 +751,7 @@ public:
   /// initialized but before it parses anything.
   void Initialize();
 
-  const LangOptions &getLangOptions() const { return LangOpts; }
+  const LangOptions &getLangOpts() const { return LangOpts; }
   OpenCLOptions &getOpenCLOptions() { return OpenCLFeatures; }
   FPOptions     &getFPOptions() { return FPFeatures; }
 
@@ -751,14 +782,32 @@ public:
     SemaDiagnosticBuilder(DiagnosticBuilder &DB, Sema &SemaRef, unsigned DiagID)
       : DiagnosticBuilder(DB), SemaRef(SemaRef), DiagID(DiagID) { }
 
-    explicit SemaDiagnosticBuilder(Sema &SemaRef)
-      : DiagnosticBuilder(DiagnosticBuilder::Suppress), SemaRef(SemaRef) { }
+    ~SemaDiagnosticBuilder() {
+      // If we aren't active, there is nothing to do.
+      if (!isActive()) return;
 
-    ~SemaDiagnosticBuilder();
+      // Otherwise, we need to emit the diagnostic. First flush the underlying
+      // DiagnosticBuilder data, and clear the diagnostic builder itself so it
+      // won't emit the diagnostic in its own destructor.
+      //
+      // This seems wasteful, in that as written the DiagnosticBuilder dtor will
+      // do its own needless checks to see if the diagnostic needs to be
+      // emitted. However, because we take care to ensure that the builder
+      // objects never escape, a sufficiently smart compiler will be able to
+      // eliminate that code.
+      FlushCounts();
+      Clear();
+
+      // Dispatch to Sema to emit the diagnostic.
+      SemaRef.EmitCurrentDiagnostic(DiagID);
+    }
   };
 
   /// \brief Emit a diagnostic.
-  SemaDiagnosticBuilder Diag(SourceLocation Loc, unsigned DiagID);
+  SemaDiagnosticBuilder Diag(SourceLocation Loc, unsigned DiagID) {
+    DiagnosticBuilder DB = Diags.Report(Loc, DiagID);
+    return SemaDiagnosticBuilder(DB, *this, DiagID);
+  }
 
   /// \brief Emit a partial diagnostic.
   SemaDiagnosticBuilder Diag(SourceLocation Loc, const PartialDiagnostic& PD);
@@ -1294,6 +1343,9 @@ public:
                                       SourceLocation IdLoc,
                                       IdentifierInfo *Id,
                                       Expr *val);
+  bool CheckEnumUnderlyingType(TypeSourceInfo *TI);
+  bool CheckEnumRedeclaration(SourceLocation EnumLoc, bool IsScoped,
+                              QualType EnumUnderlyingTy, const EnumDecl *Prev);
 
   Decl *ActOnEnumConstant(Scope *S, Decl *EnumDecl, Decl *LastEnumConstant,
                           SourceLocation IdLoc, IdentifierInfo *Id,
@@ -1367,13 +1419,14 @@ public:
   bool isIncompatibleTypedef(TypeDecl *Old, TypedefNameDecl *New);
   void mergeDeclAttributes(Decl *New, Decl *Old, bool MergeDeprecation = true);
   void MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls);
-  bool MergeFunctionDecl(FunctionDecl *New, Decl *Old);
-  bool MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old);
+  bool MergeFunctionDecl(FunctionDecl *New, Decl *Old, Scope *S);
+  bool MergeCompatibleFunctionDecls(FunctionDecl *New, FunctionDecl *Old,
+                                    Scope *S);
   void mergeObjCMethodDecls(ObjCMethodDecl *New, ObjCMethodDecl *Old);
   void MergeVarDecl(VarDecl *New, LookupResult &OldDecls);
   void MergeVarDeclTypes(VarDecl *New, VarDecl *Old);
   void MergeVarDeclExceptionSpecs(VarDecl *New, VarDecl *Old);
-  bool MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old);
+  bool MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old, Scope *S);
 
   // AssignmentAction - This is used by all the assignment diagnostic functions
   // to represent what is actually causing the operation
@@ -1500,6 +1553,12 @@ public:
                                      const PartialDiagnostic &AmbigNote,
                                      const PartialDiagnostic &ConvDiag,
                                      bool AllowScopedEnumerations);
+  enum ObjCSubscriptKind {
+    OS_Array,
+    OS_Dictionary,
+    OS_Error
+  };
+  ObjCSubscriptKind CheckSubscriptingKind(Expr *FromE);
 
   ExprResult PerformObjectMemberConversion(Expr *From,
                                            NestedNameSpecifier *Qualifier,
@@ -1521,7 +1580,8 @@ public:
   void AddFunctionCandidates(const UnresolvedSetImpl &Functions,
                              llvm::ArrayRef<Expr *> Args,
                              OverloadCandidateSet& CandidateSet,
-                             bool SuppressUserConversions = false);
+                             bool SuppressUserConversions = false,
+                            TemplateArgumentListInfo *ExplicitTemplateArgs = 0);
   void AddMethodCandidate(DeclAccessPair FoundDecl,
                           QualType ObjectType,
                           Expr::Classification ObjectClassification,
@@ -1763,6 +1823,22 @@ public:
     ForRedeclaration
   };
 
+  /// \brief The possible outcomes of name lookup for a literal operator.
+  enum LiteralOperatorLookupResult {
+    /// \brief The lookup resulted in an error.
+    LOLR_Error,
+    /// \brief The lookup found a single 'cooked' literal operator, which
+    /// expects a normal literal to be built and passed to it.
+    LOLR_Cooked,
+    /// \brief The lookup found a single 'raw' literal operator, which expects
+    /// a string literal containing the spelling of the literal token.
+    LOLR_Raw,
+    /// \brief The lookup found an overload set of literal operator templates,
+    /// which expect the characters of the spelling of the literal token to be
+    /// passed as a non-type template argument pack.
+    LOLR_Template
+  };
+
   SpecialMemberOverloadResult *LookupSpecialMember(CXXRecordDecl *D,
                                                    CXXSpecialMember SM,
                                                    bool ConstArg,
@@ -1825,6 +1901,10 @@ public:
   CXXMethodDecl *LookupMovingAssignment(CXXRecordDecl *Class, bool RValueThis,
                                         unsigned ThisQuals);
   CXXDestructorDecl *LookupDestructor(CXXRecordDecl *Class);
+
+  LiteralOperatorLookupResult LookupLiteralOperator(Scope *S, LookupResult &R,
+                                                    ArrayRef<QualType> ArgTys,
+                                                    bool AllowRawAndTemplate);
 
   void ArgumentDependentLookup(DeclarationName Name, bool Operator,
                                SourceLocation Loc,
@@ -2367,7 +2447,6 @@ public:
   void MarkAnyDeclReferenced(SourceLocation Loc, Decl *D);
   void MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func);
   void MarkVariableReferenced(SourceLocation Loc, VarDecl *Var);
-  void MarkBlockDeclRefReferenced(BlockDeclRefExpr *E);
   void MarkDeclRefReferenced(DeclRefExpr *E);
   void MarkMemberReferenced(MemberExpr *E);
 
@@ -2514,9 +2593,16 @@ public:
                                       const DeclarationNameInfo &NameInfo,
                                       NamedDecl *D);
 
+  ExprResult BuildLiteralOperatorCall(LookupResult &R,
+                                      DeclarationNameInfo &SuffixInfo,
+                                      ArrayRef<Expr*> Args,
+                                      SourceLocation LitEndLoc,
+                            TemplateArgumentListInfo *ExplicitTemplateArgs = 0);
+
   ExprResult ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind);
-  ExprResult ActOnNumericConstant(const Token &Tok);
-  ExprResult ActOnCharacterConstant(const Token &Tok);
+  ExprResult ActOnIntegerConstant(SourceLocation Loc, uint64_t Val);
+  ExprResult ActOnNumericConstant(const Token &Tok, Scope *UDLScope = 0);
+  ExprResult ActOnCharacterConstant(const Token &Tok, Scope *UDLScope = 0);
   ExprResult ActOnParenExpr(SourceLocation L, SourceLocation R, Expr *E);
   ExprResult ActOnParenListExpr(SourceLocation L,
                                 SourceLocation R,
@@ -2524,8 +2610,8 @@ public:
 
   /// ActOnStringLiteral - The specified tokens were lexed as pasted string
   /// fragments (e.g. "foo" "bar" L"baz").
-  ExprResult ActOnStringLiteral(const Token *StringToks,
-                                unsigned NumStringToks);
+  ExprResult ActOnStringLiteral(const Token *StringToks, unsigned NumStringToks,
+                                Scope *UDLScope = 0);
 
   ExprResult ActOnGenericSelectionExpr(SourceLocation KeyLoc,
                                        SourceLocation DefaultLoc,
@@ -2966,7 +3052,7 @@ public:
   public:
     explicit ImplicitExceptionSpecification(ASTContext &Context)
       : Context(&Context), ComputedEST(EST_BasicNoexcept) {
-      if (!Context.getLangOptions().CPlusPlus0x)
+      if (!Context.getLangOpts().CPlusPlus0x)
         ComputedEST = EST_DynamicNone;
     }
 
@@ -3232,6 +3318,10 @@ public:
 
   /// ActOnCXXBoolLiteral - Parse {true,false} literals.
   ExprResult ActOnCXXBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind);
+  
+  
+  /// ActOnObjCBoolLiteral - Parse {__objc_yes,__objc_no} literals.
+  ExprResult ActOnObjCBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind);
 
   /// ActOnCXXNullPtrLiteral - Parse 'nullptr'.
   ExprResult ActOnCXXNullPtrLiteral(SourceLocation Loc);
@@ -3664,7 +3754,26 @@ public:
   ExprResult ParseObjCStringLiteral(SourceLocation *AtLocs,
                                     Expr **Strings,
                                     unsigned NumStrings);
-
+    
+  ExprResult BuildObjCStringLiteral(SourceLocation AtLoc, StringLiteral *S);
+  
+  /// BuildObjCNumericLiteral - builds an ObjCNumericLiteral AST node for the
+  /// numeric literal expression. Type of the expression will be "NSNumber *"
+  /// or "id" if NSNumber is unavailable.
+  ExprResult BuildObjCNumericLiteral(SourceLocation AtLoc, Expr *Number);
+  ExprResult ActOnObjCBoolLiteral(SourceLocation AtLoc, SourceLocation ValueLoc,
+                                  bool Value);
+  ExprResult BuildObjCArrayLiteral(SourceRange SR, MultiExprArg Elements);
+  
+  ExprResult BuildObjCSubscriptExpression(SourceLocation RB, Expr *BaseExpr,
+                                          Expr *IndexExpr,
+                                          ObjCMethodDecl *getterMethod,
+                                          ObjCMethodDecl *setterMethod);
+    
+  ExprResult BuildObjCDictionaryLiteral(SourceRange SR,                                         
+                                        ObjCDictionaryElement *Elements,
+                                        unsigned NumElements);
+ 
   ExprResult BuildObjCEncodeExpression(SourceLocation AtLoc,
                                   TypeSourceInfo *EncodedTypeInfo,
                                   SourceLocation RParenLoc);
@@ -4050,8 +4159,10 @@ public:
   //===--------------------------------------------------------------------===//
   // C++ Templates [C++ 14]
   //
-  void FilterAcceptableTemplateNames(LookupResult &R);
-  bool hasAnyAcceptableTemplateNames(LookupResult &R);
+  void FilterAcceptableTemplateNames(LookupResult &R, 
+                                     bool AllowFunctionTemplates = true);
+  bool hasAnyAcceptableTemplateNames(LookupResult &R, 
+                                     bool AllowFunctionTemplates = true);
 
   void LookupTemplateName(LookupResult &R, Scope *S, CXXScopeSpec &SS,
                           QualType ObjectType, bool EnteringContext,
@@ -5380,6 +5491,11 @@ public:
                    const MultiLevelTemplateArgumentList &TemplateArgs,
                    TemplateSpecializationKind TSK,
                    bool Complain = true);
+
+  bool InstantiateEnum(SourceLocation PointOfInstantiation,
+                       EnumDecl *Instantiation, EnumDecl *Pattern,
+                       const MultiLevelTemplateArgumentList &TemplateArgs,
+                       TemplateSpecializationKind TSK);
 
   struct LateInstantiatedAttribute {
     const Attr *TmplAttr;

@@ -153,14 +153,21 @@ def Q15 : ARMReg<15, "q15", [D30, D31]>;
 }
 
 // Current Program Status Register.
-def CPSR    : ARMReg<0, "cpsr">;
-def APSR    : ARMReg<1, "apsr">;
-def SPSR    : ARMReg<2, "spsr">;
-def FPSCR   : ARMReg<3, "fpscr">;
-def ITSTATE : ARMReg<4, "itstate">;
+// We model fpscr with two registers: FPSCR models the control bits and will be
+// reserved. FPSCR_NZCV models the flag bits and will be unreserved. 
+def CPSR       : ARMReg<0, "cpsr">;
+def APSR       : ARMReg<1, "apsr">;
+def SPSR       : ARMReg<2, "spsr">;
+def FPSCR      : ARMReg<3, "fpscr">;
+def FPSCR_NZCV : ARMReg<3, "fpscr_nzcv"> {
+  let Aliases = [FPSCR];
+}
+def ITSTATE    : ARMReg<4, "itstate">;
 
 // Special Registers - only available in privileged mode.
 def FPSID   : ARMReg<0, "fpsid">;
+def MVFR1   : ARMReg<6, "mvfr1">;
+def MVFR0   : ARMReg<7, "mvfr0">;
 def FPEXC   : ARMReg<8, "fpexc">;
 
 // Register classes.
@@ -304,7 +311,12 @@ def TuplesOE2D : RegisterTuples<[dsub_0, dsub_1],
 
 // Register class representing a pair of consecutive D registers.
 // Use the Q registers for the even-odd pairs.
-def DPair : RegisterClass<"ARM", [v2i64], 128, (interleave QPR, TuplesOE2D)>;
+def DPair : RegisterClass<"ARM", [v16i8, v8i16, v4i32, v2i64, v4f32, v2f64],
+                          128, (interleave QPR, TuplesOE2D)> {
+  // Allocate starting at non-VFP2 registers D16-D31 first.
+  let AltOrders = [(rotl DPair, 16)];
+  let AltOrderSelect = [{ return 1; }];
+}
 
 // Pseudo-registers representing 3 consecutive D registers.
 def Tuples3D : RegisterTuples<[dsub_0, dsub_1, dsub_2],

@@ -56,6 +56,8 @@ def ext_c99_variable_decl_in_for_loop : Extension<
   "variable declaration in for loop is a C99-specific feature">, InGroup<C99>;
 def ext_c99_compound_literal : Extension<
   "compound literals are a C99-specific feature">, InGroup<C99>;
+def ext_c99_flexible_array_member : Extension<
+  "Flexible array members are a C99-specific feature">, InGroup<C99>;
 def ext_enumerator_list_comma : Extension<
   "commas at the end of enumerator lists are a %select{C99|C++11}0-specific "
   "feature">;
@@ -200,7 +202,7 @@ def err_address_of_label_outside_fn : Error<
   "use of address-of-label extension outside of a function body">;
 def err_expected_string_literal : Error<"expected string literal">;
 def err_asm_operand_wide_string_literal : Error<
-  "cannot use wide string literal in 'asm'">;
+  "cannot use %select{unicode|wide}0 string literal in 'asm'">;
 def err_expected_selector_for_method : Error<
   "expected selector for Objective-C method">;
 def err_expected_property_name : Error<"expected property name">;
@@ -280,9 +282,11 @@ def err_typename_invalid_storageclass : Error<
   "type name does not allow storage class to be specified">;
 def err_typename_invalid_functionspec : Error<
   "type name does not allow function specifier to be specified">;
+def err_typename_invalid_constexpr : Error<
+  "type name does not allow constexpr specifier to be specified">;
 def err_typename_identifiers_only : Error<
   "typename is allowed for identifiers only">;
-  
+
 def err_invalid_decl_spec_combination : Error<
   "cannot combine with previous '%0' declaration specifier">;
 def err_invalid_vector_decl_spec_combination : Error<
@@ -331,6 +335,8 @@ def warn_objc_protocol_qualifier_missing_id : Warning<
 def err_objc_unknown_at : Error<"expected an Objective-C directive after '@'">;
 def err_illegal_super_cast : Error<
   "cannot cast 'super' (it isn't an expression)">;
+def err_nsnumber_nonliteral_unary : Error<
+  "@%0 must be followed by a number to form an NSNumber object">;
 
 let CategoryName = "ARC Parse Issue" in {
 def err_arc_bridge_retain : Error<
@@ -410,6 +416,8 @@ def warn_cxx98_compat_noexcept_decl : Warning<
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_expected_catch : Error<"expected catch">;
 def err_expected_lbrace_or_comma : Error<"expected '{' or ','">;
+def err_expected_rbrace_or_comma : Error<"expected '}' or ','">;
+def err_expected_rsquare_or_comma : Error<"expected ']' or ','">;
 def err_using_namespace_in_class : Error<
   "'using namespace' is not allowed in classes">;
 def err_destructor_tilde_identifier : Error<
@@ -425,8 +433,13 @@ def err_parser_impl_limit_overflow : Error<
 def err_dup_virtual : Error<"duplicate 'virtual' in base specifier">;
 
 // C++ operator overloading
-def err_operator_string_not_empty : Error<
+def err_literal_operator_string_prefix : Error<
+  "string literal after 'operator' cannot have an encoding prefix">;
+def err_literal_operator_string_not_empty : Error<
   "string literal after 'operator' must be '\"\"'">;
+def err_literal_operator_missing_space : Error<
+  "C++11 requires a space between the \"\" and the user-defined suffix in a "
+  "literal operator">;
 def warn_cxx98_compat_literal_operator : Warning<
   "literal operators are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;

@@ -10,6 +10,7 @@
     .none { background-color: #FFCCCC }
     .svn  { background-color: #FFFF99 }
     .full { background-color: #CCFF99 }
+    .na { background-color: #DDDDDD }
     th { background-color: #FFDDAA }
   </style>
 </head>
@@ -22,7 +23,7 @@
 <!--*************************************************************************-->
 <h1>C++98 and C++11 Support in Clang</h1>
 <!--*************************************************************************-->
-<p>Last updated: $Date: 2012-02-25 14:51:27 -0600 (Sat, 25 Feb 2012) $</p>
+<p>Last updated: $Date: 2012-03-14 18:13:10 -0500 (Wed, 14 Mar 2012) $</p>
 
 <h2 id="cxx98">C++98 implementation status</h2>
 
@@ -155,7 +156,8 @@ with clang; other versions have not been tested.</p>
     </tr>
     <tr>
       <td>Forward declarations for enums</td>
-      <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2764.pdf">N2764</a></td>
+      <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2764.pdf">N2764</a>
+      <br><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_defects.html#1206">DR1206</a></td>
       <td class="none" align="center">No</td>
     </tr>
     <tr>
@@ -206,14 +208,14 @@ with clang; other versions have not been tested.</p>
       <td class="full" align="center">Clang 3.0</td>
     </tr>
     <tr>
-      <td>Universal character name literals</td>
+      <td>Universal character names in literals</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2170.html">N2170</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr>
       <td>User-defined literals</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2765.pdf">N2765</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr>
       <td>Standard Layout Types</td>
@@ -249,7 +251,7 @@ with clang; other versions have not been tested.</p>
     <tr>
       <td>Unrestricted unions</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2544.pdf">N2544</a></td>
-      <td class="none" align="center">No</td>
+      <td class="svn" align="center">SVN</td>
     </tr>
     <tr>
       <td>Local and unnamed types as template arguments</td>
@@ -271,7 +273,7 @@ with clang; other versions have not been tested.</p>
     <tr>
       <td>Minimal support for garbage collection and reachability-based leak detection</td>
       <td><a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2008/n2670.htm">N2670</a></td>
-      <td class="none" align="center">No</td>
+      <td class="na" align="center">N/A</td>
     </tr>
     <tr>
       <td>Allowing move constructors to throw [noexcept]</td>

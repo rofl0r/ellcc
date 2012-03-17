@@ -18,6 +18,7 @@
 #include "clang/AST/Redeclarable.h"
 #include "clang/AST/TemplateBase.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/Support/Compiler.h"
 #include <limits>
 
 namespace clang {
@@ -105,7 +106,7 @@ public:
   SourceLocation getLAngleLoc() const { return LAngleLoc; }
   SourceLocation getRAngleLoc() const { return RAngleLoc; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(TemplateLoc, RAngleLoc);
   }
 };
@@ -239,7 +240,7 @@ public:
     return K >= firstTemplate && K <= lastTemplate;
   }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(TemplateParams->getTemplateLoc(),
                        TemplatedDecl->getSourceRange().getEnd());
   }
@@ -354,8 +355,8 @@ public:
 };
 
 /// \brief Provides information a specialization of a member of a class
-/// template, which may be a member function, static data member, or
-/// member class.
+/// template, which may be a member function, static data member,
+/// member class or member enumeration.
 class MemberSpecializationInfo {
   // The member declaration from which this member was instantiated, and the
   // manner in which the instantiation occurred (in the lower two bits).
@@ -617,8 +618,42 @@ public:
     getCommonPtr()->InstantiatedFromMember.setInt(true);
   }
 
-  /// \brief Retrieve the previous declaration of this template, or
-  /// NULL if no such declaration exists.
+  /// \brief Retrieve the member template from which this template was
+  /// instantiated, or NULL if this template was not instantiated from a 
+  /// member template.
+  ///
+  /// A template is instantiated from a member template when the member 
+  /// template itself is part of a class template (or member thereof). For
+  /// example, given
+  ///
+  /// \code
+  /// template<typename T>
+  /// struct X {
+  ///   template<typename U> void f(T, U);
+  /// };
+  ///
+  /// void test(X<int> x) {
+  ///   x.f(1, 'a');
+  /// };
+  /// \endcode
+  ///
+  /// \c X<int>::f is a FunctionTemplateDecl that describes the function
+  /// template
+  ///
+  /// \code
+  /// template<typename U> void X<int>::f(int, U);
+  /// \endcode
+  ///
+  /// which was itself created during the instantiation of \c X<int>. Calling
+  /// getInstantiatedFromMemberTemplate() on this FunctionTemplateDecl will
+  /// retrieve the FunctionTemplateDecl for the original template "f" within
+  /// the class template \c X<T>, i.e.,
+  ///
+  /// \code
+  /// template<typename T>
+  /// template<typename U>
+  /// void X<T>::f(T, U);
+  /// \endcode
   RedeclarableTemplateDecl *getInstantiatedFromMemberTemplate() {
     return getCommonPtr()->InstantiatedFromMember.getPointer();
   }
@@ -917,7 +952,7 @@ public:
   /// \brief Returns whether this is a parameter pack.
   bool isParameterPack() const;
 
-  SourceRange getSourceRange() const;
+  SourceRange getSourceRange() const LLVM_READONLY;
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -995,7 +1030,7 @@ public:
   using TemplateParmPosition::setPosition;
   using TemplateParmPosition::getIndex;
 
-  SourceRange getSourceRange() const;
+  SourceRange getSourceRange() const LLVM_READONLY;
 
   /// \brief Determine whether this template parameter has a default
   /// argument.
@@ -1181,7 +1216,7 @@ public:
     DefaultArgumentWasInherited = false;
   }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     SourceLocation End = getLocation();
     if (hasDefaultArgument() && !defaultArgumentWasInherited())
       End = getDefaultArgument().getSourceRange().getEnd();
@@ -1437,7 +1472,7 @@ public:
     return ExplicitInfo ? ExplicitInfo->TemplateKeywordLoc : SourceLocation();
   }
 
-  SourceRange getSourceRange() const;
+  SourceRange getSourceRange() const LLVM_READONLY;
 
   void Profile(llvm::FoldingSetNodeID &ID) const {
     Profile(ID, TemplateArgs->data(), TemplateArgs->size(), getASTContext());

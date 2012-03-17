@@ -80,12 +80,25 @@ def analyzer_viz_egraph_graphviz : Flag<"-analyzer-viz-egraph-graphviz">,
   HelpText<"Display exploded graph using GraphViz">;
 def analyzer_viz_egraph_ubigraph : Flag<"-analyzer-viz-egraph-ubigraph">,
   HelpText<"Display exploded graph using Ubigraph">;
-def analyzer_inline_call : Flag<"-analyzer-inline-call">,
-  HelpText<"Experimental: Inline callees when their definitions are available">;
+
 def analyzer_inline_max_stack_depth : Separate<"-analyzer-inline-max-stack-depth">,
   HelpText<"Bound on stack depth while inlining (4 by default)">;
+def analyzer_inline_max_stack_depth_EQ : Joined<"-analyzer-inline-max-stack-depth=">, 
+  Alias<analyzer_inline_max_stack_depth>;
+  
 def analyzer_inline_max_function_size : Separate<"-analyzer-inline-max-function-size">,
-  HelpText<"Bound on the number of basic blocks in an inlined function (10 by default)">;
+  HelpText<"Bound on the number of basic blocks in an inlined function (200 by default)">;
+def analyzer_inline_max_function_size_EQ : Joined<"-analyzer-inline-max-function-size=">, 
+  Alias<analyzer_inline_max_function_size>;
+
+def analyzer_ipa : Separate<"-analyzer-ipa">,
+  HelpText<"Specify the inter-procedural analysis mode">;
+def analyzer_ipa_EQ : Joined<"-analyzer-ipa=">, Alias<analyzer_ipa>;
+  
+def analyzer_inlining_mode : Separate<"-analyzer-inlining-mode">,
+  HelpText<"Specify the function selection heuristic used during inlining">;
+def analyzer_inlining_mode_EQ : Joined<"-analyzer-inlining-mode=">, Alias<analyzer_inlining_mode>;
+  
 def analyzer_max_nodes : Separate<"-analyzer-max-nodes">,
   HelpText<"The maximum number of nodes the analyzer can generate (150000 default, 0 = no limit)">;
 def analyzer_max_loop : Separate<"-analyzer-max-loop">,
@@ -433,20 +446,27 @@ def rewrite_objc : Flag<"-rewrite-objc">,
   HelpText<"Rewrite ObjC into C (code rewriter example)">;
 def rewrite_macros : Flag<"-rewrite-macros">,
   HelpText<"Expand macros without full preprocessing">;
+def migrate : Flag<"-migrate">,
+  HelpText<"Migrate source code">;
 }
 
+def mt_migrate_directory : Separate<"-mt-migrate-directory">,
+  HelpText<"Directory for temporary files produced during ARC or ObjC migration">;
 def arcmt_check : Flag<"-arcmt-check">,
   HelpText<"Check for ARC migration issues that need manual handling">;
 def arcmt_modify : Flag<"-arcmt-modify">,
   HelpText<"Apply modifications to files to conform to ARC">;
 def arcmt_migrate : Flag<"-arcmt-migrate">,
   HelpText<"Apply modifications and produces temporary files that conform to ARC">;
-def arcmt_migrate_directory : Separate<"-arcmt-migrate-directory">,
-  HelpText<"Directory for temporary files produced during ARC migration">;
 def arcmt_migrate_report_output : Separate<"-arcmt-migrate-report-output">,
   HelpText<"Output path for the plist report">;
 def arcmt_migrate_emit_arc_errors : Flag<"-arcmt-migrate-emit-errors">,
   HelpText<"Emit ARC errors even if the migrator can fix them">;
+
+def objcmt_migrate_literals : Flag<"-objcmt-migrate-literals">,
+  HelpText<"Enable migration to modern ObjC literals">;
+def objcmt_migrate_subscripting : Flag<"-objcmt-migrate-subscripting">,
+  HelpText<"Enable migration to modern ObjC subscripting">;
 
 def working_directory : JoinedOrSeparate<"-working-directory">,
   HelpText<"Resolve file paths relative to the specified directory">;
@@ -496,6 +516,10 @@ def fgnu_keywords : Flag<"-fgnu-keywords">,
   HelpText<"Allow GNU-extension keywords regardless of language standard">;
 def fgnu89_inline : Flag<"-fgnu89-inline">,
   HelpText<"Use the gnu89 inline semantics">;
+def fno_inline : Flag<"-fno-inline">,
+  HelpText<"Disable use of the inline keyword">;
+def fno_inline_functions : Flag<"-fno-inline-functions">,
+  HelpText<"Disable automatic function inlining">;
 def fno_gnu_keywords : Flag<"-fno-gnu-keywords">,
   HelpText<"Disallow GNU-extension keywords regardless of language standard">;
 def fdollars_in_identifiers : Flag<"-fdollars-in-identifiers">,
@@ -659,6 +683,8 @@ def fdebugger_support : Flag<"-fdebugger-support">,
   HelpText<"Enable special debugger support behavior">;
 def fdebugger_cast_result_to_id : Flag<"-fdebugger-cast-result-to-id">,
   HelpText<"Enable casting unknown expression results to id">;
+def fdebugger_objc_literal : Flag<"-fdebugger-objc-literal">,
+  HelpText<"Enable special debugger support for objective-C subscripting and literals">;
 def fdeprecated_macro : Flag<"-fdeprecated-macro">,
   HelpText<"Defines the __DEPRECATED macro">;
 def fno_deprecated_macro : Flag<"-fno-deprecated-macro">,

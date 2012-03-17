@@ -110,6 +110,34 @@ namespace llvm {
       /// entry here.
       std::vector<ArgInfo> ArgumentWeights;
 
+      /// PointerArgPairWeights - Weights to use when giving an inline bonus to
+      /// a call site due to correlated pairs of pointers.
+      DenseMap<std::pair<unsigned, unsigned>, unsigned> PointerArgPairWeights;
+
+      /// countCodeReductionForConstant - Figure out an approximation for how
+      /// many instructions will be constant folded if the specified value is
+      /// constant.
+      unsigned countCodeReductionForConstant(const CodeMetrics &Metrics,
+                                             Value *V);
+
+      /// countCodeReductionForAlloca - Figure out an approximation of how much
+      /// smaller the function will be if it is inlined into a context where an
+      /// argument becomes an alloca.
+      unsigned countCodeReductionForAlloca(const CodeMetrics &Metrics,
+                                           Value *V);
+
+      /// countCodeReductionForPointerPair - Count the bonus to apply to an
+      /// inline call site where a pair of arguments are pointers and one
+      /// argument is a constant offset from the other. The idea is to
+      /// recognize a common C++ idiom where a begin and end iterator are
+      /// actually pointers, and many operations on the pair of them will be
+      /// constants if the function is called with arguments that have
+      /// a constant offset.
+      void countCodeReductionForPointerPair(
+          const CodeMetrics &Metrics,
+          DenseMap<Value *, unsigned> &PointerArgs,
+          Value *V, unsigned ArgIdx);
+
       /// analyzeFunction - Add information about the specified function
       /// to the current structure.
       void analyzeFunction(Function *F, const TargetData *TD);
@@ -138,28 +166,13 @@ namespace llvm {
     /// getInlineCost - The heuristic used to determine if we should inline the
     /// function call or not.
     ///
-    InlineCost getInlineCost(CallSite CS,
-                             SmallPtrSet<const Function *, 16> &NeverInline);
+    InlineCost getInlineCost(CallSite CS);
     /// getCalledFunction - The heuristic used to determine if we should inline
     /// the function call or not.  The callee is explicitly specified, to allow
     /// you to calculate the cost of inlining a function via a pointer.  The
     /// result assumes that the inlined version will always be used.  You should
     /// weight it yourself in cases where this callee will not always be called.
-    InlineCost getInlineCost(CallSite CS,
-                             Function *Callee,
-                             SmallPtrSet<const Function *, 16> &NeverInline);
-
-    /// getSpecializationBonus - The heuristic used to determine the per-call
-    /// performance boost for using a specialization of Callee with argument
-    /// SpecializedArgNos replaced by a constant.
-    int getSpecializationBonus(Function *Callee,
-             SmallVectorImpl<unsigned> &SpecializedArgNo);
-
-    /// getSpecializationCost - The heuristic used to determine the code-size
-    /// impact of creating a specialized version of Callee with argument
-    /// SpecializedArgNo replaced by a constant.
-    InlineCost getSpecializationCost(Function *Callee,
-               SmallVectorImpl<unsigned> &SpecializedArgNo);
+    InlineCost getInlineCost(CallSite CS, Function *Callee);
 
     /// getInlineFudgeFactor - Return a > 1.0 factor if the inliner should use a
     /// higher threshold to determine if the function call should be inlined.

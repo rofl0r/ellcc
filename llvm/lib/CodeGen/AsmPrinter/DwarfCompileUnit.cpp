@@ -156,13 +156,12 @@ void CompileUnit::addSourceLine(DIE *Die, DISubprogram SP) {
   // Verify subprogram.
   if (!SP.Verify())
     return;
+
   // If the line number is 0, don't add it.
-  if (SP.getLineNumber() == 0)
+  unsigned Line = SP.getLineNumber();
+  if (Line == 0)
     return;
 
-  unsigned Line = SP.getLineNumber();
-  if (!SP.getContext().Verify())
-    return;
   unsigned FileID = DD->GetOrCreateSourceID(SP.getFilename(),
                                             SP.getDirectory());
   assert(FileID && "Invalid file id");
@@ -178,7 +177,7 @@ void CompileUnit::addSourceLine(DIE *Die, DIType Ty) {
     return;
 
   unsigned Line = Ty.getLineNumber();
-  if (Line == 0 || !Ty.getContext().Verify())
+  if (Line == 0)
     return;
   unsigned FileID = DD->GetOrCreateSourceID(Ty.getFilename(),
                                             Ty.getDirectory());
@@ -870,11 +869,6 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     if (CTy.isAppleBlockExtension())
       addUInt(&Buffer, dwarf::DW_AT_APPLE_block, dwarf::DW_FORM_flag, 1);
 
-    unsigned RLang = CTy.getRunTimeLang();
-    if (RLang)
-      addUInt(&Buffer, dwarf::DW_AT_APPLE_runtime_class,
-              dwarf::DW_FORM_data1, RLang);
-
     DICompositeType ContainingType = CTy.getContainingType();
     if (DIDescriptor(ContainingType).isCompositeType())
       addDIEEntry(&Buffer, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4,
@@ -922,6 +916,12 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     // Add source line info if available.
     if (!CTy.isForwardDecl())
       addSourceLine(&Buffer, CTy);
+
+    // No harm in adding the runtime language to the declaration.
+    unsigned RLang = CTy.getRunTimeLang();
+    if (RLang)
+      addUInt(&Buffer, dwarf::DW_AT_APPLE_runtime_class,
+              dwarf::DW_FORM_data1, RLang);
   }
 }
 
@@ -1006,6 +1006,9 @@ DIE *CompileUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
   // Add function template parameters.
   addTemplateParams(*SPDie, SP.getTemplateParams());
 
+  // Unfortunately this code needs to stay here to work around
+  // a bug in older gdbs that requires the linkage name to resolve
+  // multiple template functions.
   StringRef LinkageName = SP.getLinkageName();
   if (!LinkageName.empty())
     addString(SPDie, dwarf::DW_AT_MIPS_linkage_name,

@@ -101,7 +101,7 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_warning      = RegisterBuiltinMacro(*this, "__has_warning");
 
   // Microsoft Extensions.
-  if (Features.MicrosoftExt) 
+  if (LangOpts.MicrosoftExt) 
     Ident__pragma = RegisterBuiltinMacro(*this, "__pragma");
   else
     Ident__pragma = 0;
@@ -433,8 +433,8 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
 
     // Empty arguments are standard in C99 and C++0x, and are supported as an extension in
     // other modes.
-    if (ArgTokens.size() == ArgTokenStart && !Features.C99)
-      Diag(Tok, Features.CPlusPlus0x ?
+    if (ArgTokens.size() == ArgTokenStart && !LangOpts.C99)
+      Diag(Tok, LangOpts.CPlusPlus0x ?
            diag::warn_cxx98_compat_empty_fnmacro_arg :
            diag::ext_empty_fnmacro_arg);
 
@@ -588,7 +588,7 @@ static void ComputeDATE_TIME(SourceLocation &DATELoc, SourceLocation &TIMELoc,
 /// HasFeature - Return true if we recognize and implement the feature
 /// specified by the identifier as a standard language feature.
 static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
-  const LangOptions &LangOpts = PP.getLangOptions();
+  const LangOptions &LangOpts = PP.getLangOpts();
   StringRef Feature = II->getName();
 
   // Normalize the feature name, __foo__ becomes foo.
@@ -630,13 +630,17 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("ownership_holds", true)
            .Case("ownership_returns", true)
            .Case("ownership_takes", true)
+           .Case("objc_bool", true)
+           .Case("objc_subscripting", LangOpts.ObjCNonFragileABI)
+           .Case("objc_array_literals", LangOpts.ObjC2)
+           .Case("objc_dictionary_literals", LangOpts.ObjC2)
            .Case("arc_cf_code_audited", true)
            // C11 features
            .Case("c_alignas", LangOpts.C11)
            .Case("c_atomic", LangOpts.C11)
            .Case("c_generic_selections", LangOpts.C11)
            .Case("c_static_assert", LangOpts.C11)
-           // C++0x features
+           // C++11 features
            .Case("cxx_access_control_sfinae", LangOpts.CPlusPlus0x)
            .Case("cxx_alias_templates", LangOpts.CPlusPlus0x)
            .Case("cxx_alignas", LangOpts.CPlusPlus0x)
@@ -667,8 +671,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_static_assert", LangOpts.CPlusPlus0x)
            .Case("cxx_trailing_return", LangOpts.CPlusPlus0x)
            .Case("cxx_unicode_literals", LangOpts.CPlusPlus0x)
-         //.Case("cxx_unrestricted_unions", false)
-         //.Case("cxx_user_literals", false)
+           .Case("cxx_unrestricted_unions", LangOpts.CPlusPlus0x)
+           .Case("cxx_user_literals", LangOpts.CPlusPlus0x)
            .Case("cxx_variadic_templates", LangOpts.CPlusPlus0x)
            // Type traits
            .Case("has_nothrow_assign", LangOpts.CPlusPlus)
@@ -728,7 +732,7 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
       DiagnosticsEngine::Ext_Error)
     return false;
 
-  const LangOptions &LangOpts = PP.getLangOptions();
+  const LangOptions &LangOpts = PP.getLangOpts();
   StringRef Extension = II->getName();
 
   // Normalize the extension name, __foo__ becomes foo.
@@ -825,6 +829,16 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
     return false;
   }
 
+  // Get ')'.
+  PP.LexNonComment(Tok);
+
+  // Ensure we have a trailing ).
+  if (Tok.isNot(tok::r_paren)) {
+    PP.Diag(Tok.getLocation(), diag::err_pp_missing_rparen) << II->getName();
+    PP.Diag(LParenLoc, diag::note_matching) << "(";
+    return false;
+  }
+
   bool isAngled = PP.GetIncludeFilenameSpelling(Tok.getLocation(), Filename);
   // If GetIncludeFilenameSpelling set the start ptr to null, there was an
   // error.
@@ -836,20 +850,8 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
   const FileEntry *File =
       PP.LookupFile(Filename, isAngled, LookupFrom, CurDir, NULL, NULL, NULL);
 
-  // Get the result value.  Result = true means the file exists.
-  bool Result = File != 0;
-
-  // Get ')'.
-  PP.LexNonComment(Tok);
-
-  // Ensure we have a trailing ).
-  if (Tok.isNot(tok::r_paren)) {
-    PP.Diag(Tok.getLocation(), diag::err_pp_missing_rparen) << II->getName();
-    PP.Diag(LParenLoc, diag::note_matching) << "(";
-    return false;
-  }
-
-  return Result;
+  // Get the result value.  A result of true means the file exists.
+  return File != 0;
 }
 
 /// EvaluateHasInclude - Process a '__has_include("path")' expression.
@@ -1091,6 +1093,9 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
         // from macro expansion.
         SmallVector<Token, 4> StrToks;
         while (Tok.is(tok::string_literal)) {
+          // Complain about, and drop, any ud-suffix.
+          if (Tok.hasUDSuffix())
+            Diag(Tok, diag::err_invalid_string_udl);
           StrToks.push_back(Tok);
           LexUnexpandedToken(Tok);
         }

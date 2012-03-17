@@ -2306,7 +2306,7 @@ let Defs = [EFLAGS] in {
                                   "comisd", SSEPackedDouble>, TB, OpSize;
 } // Defs = [EFLAGS]
 
-// sse12_cmp_packed - sse 1 & 2 compared packed instructions
+// sse12_cmp_packed - sse 1 & 2 compare packed instructions
 multiclass sse12_cmp_packed<RegisterClass RC, X86MemOperand x86memop,
                             Intrinsic Int, string asm, string asm_alt,
                             Domain d> {
@@ -4820,8 +4820,10 @@ let Predicates = [HasSSE2], AddedComplexity = 20 in {
 }
 
 let Predicates = [HasAVX] in {
-def : Pat<(v4i64 (X86vzload addr:$src)),
+def : Pat<(v4i64 (alignedX86vzload addr:$src)),
           (SUBREG_TO_REG (i32 0), (VMOVAPSrm addr:$src), sub_xmm)>;
+def : Pat<(v4i64 (X86vzload addr:$src)),
+          (SUBREG_TO_REG (i32 0), (VMOVUPSrm addr:$src), sub_xmm)>;
 }
 
 //===---------------------------------------------------------------------===//
@@ -7755,6 +7757,19 @@ def : Pat<(vinsertf128_insert:$ins (v32i8 VR256:$src1), (v16i8 VR128:$src2),
 def : Pat<(vinsertf128_insert:$ins (v16i16 VR256:$src1), (v8i16 VR128:$src2),
                                    (i32 imm)),
           (VINSERTF128rr VR256:$src1, VR128:$src2,
+                         (INSERT_get_vinsertf128_imm VR256:$ins))>;
+
+def : Pat<(vinsertf128_insert:$ins (v8f32 VR256:$src1), (alignedloadv4f32 addr:$src2),
+                                   (i32 imm)),
+          (VINSERTF128rm VR256:$src1, addr:$src2,
+                         (INSERT_get_vinsertf128_imm VR256:$ins))>;
+def : Pat<(vinsertf128_insert:$ins (v4f64 VR256:$src1), (alignedloadv2f64 addr:$src2),
+                                   (i32 imm)),
+          (VINSERTF128rm VR256:$src1, addr:$src2,
+                         (INSERT_get_vinsertf128_imm VR256:$ins))>;
+def : Pat<(vinsertf128_insert:$ins (v4i64 VR256:$src1), (alignedloadv2i64 addr:$src2),
+                                   (i32 imm)),
+          (VINSERTF128rm VR256:$src1, addr:$src2,
                          (INSERT_get_vinsertf128_imm VR256:$ins))>;
 }
 

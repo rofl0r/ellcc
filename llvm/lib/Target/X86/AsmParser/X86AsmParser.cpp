@@ -67,11 +67,11 @@ private:
                                MCStreamer &Out);
 
   /// isSrcOp - Returns true if operand is either (%rsi) or %ds:%(rsi)
-  /// in 64bit mode or (%edi) or %es:(%edi) in 32bit mode.
+  /// in 64bit mode or (%esi) or %es:(%esi) in 32bit mode.
   bool isSrcOp(X86Operand &Op);
 
-  /// isDstOp - Returns true if operand is either %es:(%rdi) in 64bit mode
-  /// or %es:(%edi) in 32bit mode.
+  /// isDstOp - Returns true if operand is either (%rdi) or %es:(%rdi)
+  /// in 64bit mode or (%edi) or %es:(%edi) in 32bit mode.
   bool isDstOp(X86Operand &Op);
 
   bool is64BitMode() const {
@@ -468,7 +468,8 @@ bool X86AsmParser::isSrcOp(X86Operand &Op) {
 bool X86AsmParser::isDstOp(X86Operand &Op) {
   unsigned basereg = is64BitMode() ? X86::RDI : X86::EDI;
 
-  return Op.isMem() && Op.Mem.SegReg == X86::ES &&
+  return Op.isMem() && 
+    (Op.Mem.SegReg == 0 || Op.Mem.SegReg == X86::ES) &&
     isa<MCConstantExpr>(Op.Mem.Disp) &&
     cast<MCConstantExpr>(Op.Mem.Disp)->getValue() == 0 &&
     Op.Mem.BaseReg == basereg && Op.Mem.IndexReg == 0;
@@ -838,6 +839,7 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
   // If we reached here, then we just ate the ( of the memory operand.  Process
   // the rest of the memory operand.
   unsigned BaseReg = 0, IndexReg = 0, Scale = 1;
+  SMLoc IndexLoc;
 
   if (getLexer().is(AsmToken::Percent)) {
     SMLoc StartLoc, EndLoc;
@@ -851,6 +853,7 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
 
   if (getLexer().is(AsmToken::Comma)) {
     Parser.Lex(); // Eat the comma.
+    IndexLoc = Parser.getTok().getLoc();
 
     // Following the comma we should have either an index register, or a scale
     // value. We don't support the later form, but we want to parse it
@@ -876,8 +879,10 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
           SMLoc Loc = Parser.getTok().getLoc();
 
           int64_t ScaleVal;
-          if (getParser().ParseAbsoluteExpression(ScaleVal))
+          if (getParser().ParseAbsoluteExpression(ScaleVal)){
+            Error(Loc, "expected scale expression");
             return 0;
+	  }
 
           // Validate the scale amount.
           if (ScaleVal != 1 && ScaleVal != 2 && ScaleVal != 4 && ScaleVal != 8){
@@ -909,6 +914,23 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
   }
   SMLoc MemEnd = Parser.getTok().getLoc();
   Parser.Lex(); // Eat the ')'.
+
+  // If we have both a base register and an index register make sure they are
+  // both 64-bit or 32-bit registers.
+  if (BaseReg != 0 && IndexReg != 0) {
+    if (X86MCRegisterClasses[X86::GR64RegClassID].contains(BaseReg) &&
+        !X86MCRegisterClasses[X86::GR64RegClassID].contains(IndexReg) &&
+        IndexReg != X86::RIZ) {
+      Error(IndexLoc, "index register is 32-bit, but base register is 64-bit");
+      return 0;
+    }
+    if (X86MCRegisterClasses[X86::GR32RegClassID].contains(BaseReg) &&
+        !X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg) &&
+        IndexReg != X86::EIZ){
+      Error(IndexLoc, "index register is 64-bit, but base register is 32-bit");
+      return 0;
+    }
+  }
 
   return X86Operand::CreateMem(SegReg, Disp, BaseReg, IndexReg, Scale,
                                MemStart, MemEnd);

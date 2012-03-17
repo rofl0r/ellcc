@@ -221,7 +221,7 @@ static NOINLINE void DescribeAddress(uintptr_t addr, uintptr_t access_size) {
 NOINLINE ASAN_INTERFACE_ATTRIBUTE                                   \
 extern "C" void __asan_report_ ## type ## size(uintptr_t addr);     \
 extern "C" void __asan_report_ ## type ## size(uintptr_t addr) {    \
-  GET_BP_PC_SP;                                                     \
+  GET_CALLER_PC_BP_SP;                                              \
   __asan_report_error(pc, bp, sp, addr, is_write, size);            \
 }
 
@@ -244,21 +244,22 @@ ASAN_REPORT_ERROR(store, true, 16)
 static NOINLINE void force_interface_symbols() {
   volatile int fake_condition = 0;  // prevent dead condition elimination.
   if (fake_condition) {
-    __asan_report_load1(NULL);
-    __asan_report_load2(NULL);
-    __asan_report_load4(NULL);
-    __asan_report_load8(NULL);
-    __asan_report_load16(NULL);
-    __asan_report_store1(NULL);
-    __asan_report_store2(NULL);
-    __asan_report_store4(NULL);
-    __asan_report_store8(NULL);
-    __asan_report_store16(NULL);
+    __asan_report_load1(0);
+    __asan_report_load2(0);
+    __asan_report_load4(0);
+    __asan_report_load8(0);
+    __asan_report_load16(0);
+    __asan_report_store1(0);
+    __asan_report_store2(0);
+    __asan_report_store4(0);
+    __asan_report_store8(0);
+    __asan_report_store16(0);
     __asan_register_global(0, 0, NULL);
     __asan_register_globals(NULL, 0);
     __asan_unregister_globals(NULL, 0);
     __asan_set_death_callback(NULL);
     __asan_set_error_report_callback(NULL);
+    __asan_handle_no_return();
   }
 }
 
@@ -293,7 +294,7 @@ int __asan_set_error_exit_code(int exit_code) {
   return old;
 }
 
-void __asan_handle_no_return() {
+void NOINLINE __asan_handle_no_return() {
   int local_stack;
   AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
   CHECK(curr_thread);
@@ -451,12 +452,16 @@ void __asan_init() {
                                            "allow_user_poisoning=", 1);
   FLAG_sleep_before_dying = IntFlagValue(options, "sleep_before_dying=", 0);
 
+  FLAG_quarantine_size = IntFlagValue(options, "quarantine_size=",
+      (ASAN_LOW_MEMORY) ? 1UL << 24 : 1UL << 28);
+
+  if (FLAG_v) {
+    Report("Parsed ASAN_OPTIONS: %s\n", options);
+  }
+
   if (FLAG_atexit) {
     Atexit(asan_atexit);
   }
-
-  FLAG_quarantine_size = IntFlagValue(options, "quarantine_size=",
-      (ASAN_LOW_MEMORY) ? 1UL << 24 : 1UL << 28);
 
   // interceptors
   InitializeAsanInterceptors();

@@ -211,7 +211,7 @@ static void emitPremigrationErrors(const CapturedDiagList &arcDiags,
       new DiagnosticsEngine(DiagID, &printer, /*ShouldOwnClient=*/false));
   Diags->setSourceManager(&PP.getSourceManager());
   
-  printer.BeginSourceFile(PP.getLangOptions(), &PP);
+  printer.BeginSourceFile(PP.getLangOpts(), &PP);
   arcDiags.reportDiagnostics(*Diags);
   printer.EndSourceFile();
 }
@@ -264,7 +264,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
   if (Diags->hasFatalErrorOccurred()) {
     Diags->Reset();
-    DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
+    DiagClient->BeginSourceFile(Ctx.getLangOpts(), &Unit->getPreprocessor());
     capturedDiags.reportDiagnostics(*Diags);
     DiagClient->EndSourceFile();
     return true;
@@ -279,7 +279,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
            I = capturedDiags.begin(), E = capturedDiags.end(); I != E; ++I)
       arcDiags.push_back(*I);
     writeARCDiagsToPlist(plistOut, arcDiags,
-                         Ctx.getSourceManager(), Ctx.getLangOptions());
+                         Ctx.getSourceManager(), Ctx.getLangOpts());
   }
 
   // After parsing of source files ended, we want to reuse the
@@ -287,7 +287,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
   // We call BeginSourceFile because DiagnosticConsumer requires that 
   // diagnostics with source range information are emitted only in between
   // BeginSourceFile() and EndSourceFile().
-  DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
+  DiagClient->BeginSourceFile(Ctx.getLangOpts(), &Unit->getPreprocessor());
 
   // No macros will be added since we are just checking and we won't modify
   // source code.
@@ -398,11 +398,49 @@ bool arcmt::getFileRemappings(std::vector<std::pair<std::string,std::string> > &
   if (err)
     return true;
 
-  CompilerInvocation CI;
-  remapper.applyMappings(CI);
-  remap = CI.getPreprocessorOpts().RemappedFiles;
+  PreprocessorOptions PPOpts;
+  remapper.applyMappings(PPOpts);
+  remap = PPOpts.RemappedFiles;
 
   return false;
+}
+
+bool arcmt::getFileRemappingsFromFileList(
+                        std::vector<std::pair<std::string,std::string> > &remap,
+                        ArrayRef<StringRef> remapFiles,
+                        DiagnosticConsumer *DiagClient) {
+  bool hasErrorOccurred = false;
+  llvm::StringMap<bool> Uniquer;
+
+  llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+
+  for (ArrayRef<StringRef>::iterator
+         I = remapFiles.begin(), E = remapFiles.end(); I != E; ++I) {
+    StringRef file = *I;
+
+    FileRemapper remapper;
+    bool err = remapper.initFromFile(file, *Diags,
+                                     /*ignoreIfFilesChanged=*/true);
+    hasErrorOccurred = hasErrorOccurred || err;
+    if (err)
+      continue;
+
+    PreprocessorOptions PPOpts;
+    remapper.applyMappings(PPOpts);
+    for (PreprocessorOptions::remapped_file_iterator
+           RI = PPOpts.remapped_file_begin(), RE = PPOpts.remapped_file_end();
+           RI != RE; ++RI) {
+      bool &inserted = Uniquer[RI->first];
+      if (inserted)
+        continue;
+      inserted = true;
+      remap.push_back(*RI);
+    }
+  }
+
+  return hasErrorOccurred;
 }
 
 //===----------------------------------------------------------------------===//
@@ -504,7 +542,7 @@ bool MigrationProcess::applyTransform(TransformFn trans,
   CInvok.reset(createInvocationForMigration(OrigCI));
   CInvok->getDiagnosticOpts().IgnoreWarnings = true;
 
-  Remapper.applyMappings(*CInvok);
+  Remapper.applyMappings(CInvok->getPreprocessorOpts());
 
   CapturedDiagList capturedDiags;
   std::vector<SourceLocation> ARCMTMacroLocs;
@@ -535,7 +573,7 @@ bool MigrationProcess::applyTransform(TransformFn trans,
 
   if (Diags->hasFatalErrorOccurred()) {
     Diags->Reset();
-    DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
+    DiagClient->BeginSourceFile(Ctx.getLangOpts(), &Unit->getPreprocessor());
     capturedDiags.reportDiagnostics(*Diags);
     DiagClient->EndSourceFile();
     return true;
@@ -546,9 +584,9 @@ bool MigrationProcess::applyTransform(TransformFn trans,
   // We call BeginSourceFile because DiagnosticConsumer requires that 
   // diagnostics with source range information are emitted only in between
   // BeginSourceFile() and EndSourceFile().
-  DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
+  DiagClient->BeginSourceFile(Ctx.getLangOpts(), &Unit->getPreprocessor());
 
-  Rewriter rewriter(Ctx.getSourceManager(), Ctx.getLangOptions());
+  Rewriter rewriter(Ctx.getSourceManager(), Ctx.getLangOpts());
   TransformActions TA(*Diags, capturedDiags, Ctx, Unit->getPreprocessor());
   MigrationPass pass(Ctx, OrigCI.getLangOpts()->getGC(),
                      Unit->getSema(), TA, ARCMTMacroLocs);

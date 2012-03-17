@@ -73,6 +73,10 @@ namespace clang {
     llvm::Module *takeModule() { return TheModule.take(); }
     llvm::Module *takeLinkModule() { return LinkModule.take(); }
 
+    virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *VD) {
+      Gen->HandleCXXStaticMemberVarInstantiation(VD);
+    }
+
     virtual void Initialize(ASTContext &Ctx) {
       Context = &Ctx;
 

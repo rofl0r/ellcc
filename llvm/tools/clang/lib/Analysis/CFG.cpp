@@ -339,6 +339,7 @@ private:
   CFGBlock *VisitLabelStmt(LabelStmt *L);
   CFGBlock *VisitMemberExpr(MemberExpr *M, AddStmtChoice asc);
   CFGBlock *VisitObjCAtCatchStmt(ObjCAtCatchStmt *S);
+  CFGBlock *VisitObjCAutoreleasePoolStmt(ObjCAutoreleasePoolStmt *S);
   CFGBlock *VisitObjCAtSynchronizedStmt(ObjCAtSynchronizedStmt *S);
   CFGBlock *VisitObjCAtThrowStmt(ObjCAtThrowStmt *S);
   CFGBlock *VisitObjCAtTryStmt(ObjCAtTryStmt *S);
@@ -934,6 +935,7 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc) {
     case Stmt::CallExprClass:
     case Stmt::CXXOperatorCallExprClass:
     case Stmt::CXXMemberCallExprClass:
+    case Stmt::UserDefinedLiteralClass:
       return VisitCallExpr(cast<CallExpr>(S), asc);
 
     case Stmt::CaseStmtClass:
@@ -1013,6 +1015,9 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc) {
 
     case Stmt::ObjCAtCatchStmtClass:
       return VisitObjCAtCatchStmt(cast<ObjCAtCatchStmt>(S));
+
+    case Stmt::ObjCAutoreleasePoolStmtClass:
+    return VisitObjCAutoreleasePoolStmt(cast<ObjCAutoreleasePoolStmt>(S));
 
     case Stmt::ObjCAtSynchronizedStmtClass:
       return VisitObjCAtSynchronizedStmt(cast<ObjCAtSynchronizedStmt>(S));
@@ -1234,7 +1239,7 @@ CFGBlock *CFGBuilder::VisitCallExpr(CallExpr *C, AddStmtChoice asc) {
   bool AddEHEdge = false;
 
   // Languages without exceptions are assumed to not throw.
-  if (Context->getLangOptions().Exceptions) {
+  if (Context->getLangOpts().Exceptions) {
     if (BuildOpts.AddEHEdges)
       AddEHEdge = true;
   }
@@ -1929,6 +1934,12 @@ CFGBlock *CFGBuilder::VisitObjCForCollectionStmt(ObjCForCollectionStmt *S) {
   return addStmt(S->getCollection());
 }
 
+CFGBlock *CFGBuilder::VisitObjCAutoreleasePoolStmt(ObjCAutoreleasePoolStmt *S) {
+  // Inline the body.
+  return addStmt(S->getSubStmt());
+  // TODO: consider adding cleanups for the end of @autoreleasepool scope.
+}
+
 CFGBlock *CFGBuilder::VisitObjCAtSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   // FIXME: Add locking 'primitives' to CFG for @synchronized.
 
@@ -2609,9 +2620,18 @@ CFGBlock *CFGBuilder::VisitCXXCatchStmt(CXXCatchStmt *CS) {
   CFGBlock *CatchBlock = Block;
   if (!CatchBlock)
     CatchBlock = createBlock();
+  
+  // CXXCatchStmt is more than just a label.  They have semantic meaning
+  // as well, as they implicitly "initialize" the catch variable.  Add
+  // it to the CFG as a CFGElement so that the control-flow of these
+  // semantics gets captured.
+  appendStmt(CatchBlock, CS);
 
+  // Also add the CXXCatchStmt as a label, to mirror handling of regular
+  // labels.
   CatchBlock->setLabel(CS);
 
+  // Bail out if the CFG is bad.
   if (badCFG)
     return 0;
 

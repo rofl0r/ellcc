@@ -542,6 +542,7 @@ def warn_strict_multiple_method_decl : Warning<
   "multiple methods named %0 found">, InGroup<StrictSelector>, DefaultIgnore;
 def warn_accessor_property_type_mismatch : Warning<
   "type of property %0 does not match type of accessor %1">;
+def not_conv_function_declared_at : Note<"type conversion function declared here">;
 def note_method_declared_at : Note<"method %0 declared here">;
 def err_setter_type_void : Error<"type of setter must be void">;
 def err_duplicate_method_decl : Error<"duplicate declaration of method %0">;
@@ -688,7 +689,7 @@ def warn_unimplemented_protocol_method : Warning<
 // C++ declarations
 def err_static_assert_expression_is_not_constant : Error<
   "static_assert expression is not an integral constant expression">;
-def err_static_assert_failed : Error<"static_assert failed \"%0\"">;
+def err_static_assert_failed : Error<"static_assert failed %0">;
 
 def warn_inline_namespace_reopened_noninline : Warning<
   "inline namespace cannot be re-opened as a non-inline namespace">;
@@ -1142,6 +1143,11 @@ def warn_uninit_var_captured_by_block : Warning<
 def warn_maybe_uninit_var_captured_by_block : Warning<
   "variable %0 may be uninitialized when captured by block">,
   InGroup<UninitializedMaybe>, DefaultIgnore;
+def warn_uninit_byref_blockvar_captured_by_block : Warning<
+  "block pointer variable %0 is uninitialized when captured by block">,
+  InGroup<Uninitialized>, DefaultIgnore;
+def note_block_var_fixit_add_initialization : Note<
+  "maybe you meant to use __block %0">;
 def note_var_fixit_add_initialization : Note<
   "initialize the variable %0 to silence this warning">;
 def err_init_incomplete_type : Error<"initialization of incomplete type %0">;
@@ -1484,6 +1490,39 @@ def err_attr_objc_ownership_redundant : Error<
   "the type %0 is already explicitly ownership-qualified">;
 def err_attribute_not_string : Error<
   "argument to %0 attribute was not a string literal">;
+def err_undeclared_nsnumber : Error<
+  "NSNumber must be available to use Objective-C literals">;
+def err_invalid_nsnumber_type : Error<
+  "%0 is not a valid literal type for NSNumber">;
+def err_undeclared_nsarray : Error<
+  "NSArray must be available to use Objective-C array literals">;
+def err_undeclared_nsdictionary : Error<
+  "NSDictionary must be available to use Objective-C dictionary "
+  "literals">;
+def err_undeclared_arraywithobjects : Error<
+  "declaration of %0 is missing in NSArray class">;
+def err_undeclared_dictwithobjects : Error<
+  "declaration of %0 is missing in NSDictionary class">;
+def err_undeclared_nsnumber_method : Error<
+  "declaration of %0 is missing in NSNumber class">;
+def err_objc_literal_method_sig : Error<
+  "literal construction method %0 has incompatible signature">;
+def note_objc_literal_method_param : Note<
+  "%select{first|second|third}0 parameter has unexpected type %1 "
+  "(should be %2)">;
+def note_objc_literal_method_return : Note<
+  "method returns unexpected type %0 (should be an object type)">;
+def err_invalid_collection_element : Error<
+  "collection element of type %0 is not an Objective-C object">;
+def err_box_literal_collection : Error<
+  "%select{string|character|boolean|numeric}0 literal must be prefixed by '@' "
+  "in a collection">;
+
+let CategoryName = "Cocoa API Issue" in {
+def warn_objc_redundant_literal_use : Warning<
+  "using %0 with a literal is redundant">, InGroup<ObjCRedundantLiteralUse>;
+}
+
 def err_only_annotate_after_access_spec : Error<
   "access specifier can only have annotation attributes">;
 def err_attribute_section_invalid_for_target : Error<
@@ -1530,16 +1569,15 @@ def err_alias_not_supported_on_darwin : Error <
 def warn_attribute_wrong_decl_type : Warning<
   "%0 attribute only applies to %select{functions|unions|"
   "variables and functions|functions and methods|parameters|"
-  "parameters and methods|functions, methods and blocks|"
-  "classes and virtual methods|functions, methods, and parameters|"
-  "classes|virtual methods|class members|variables|methods|"
-  "variables, functions and labels|fields and global variables}1">;
+  "functions, methods and blocks|functions, methods, and parameters|"
+  "classes|variables|methods|variables, functions and labels|"
+  "fields and global variables|structs}1">;
 def err_attribute_wrong_decl_type : Error<
   "%0 attribute only applies to %select{functions|unions|"
   "variables and functions|functions and methods|parameters|"
-  "parameters and methods|functions, methods and blocks|"
-  "classes and virtual methods|functions, methods, and parameters|"
-  "classes|virtual methods|class members|variables|methods|structs}1">;
+  "functions, methods and blocks|functions, methods, and parameters|"
+  "classes|variables|methods|variables, functions and labels|"
+  "fields and global variables|structs}1">;
 def warn_function_attribute_wrong_type : Warning<
   "'%0' only applies to function types; type here is %1">;
 def warn_pointer_attribute_wrong_type : Warning<
@@ -1663,10 +1701,10 @@ def warn_impcast_float_integer : Warning<
   InGroup<DiagGroup<"conversion">>, DefaultIgnore;
 def warn_impcast_integer_sign : Warning<
   "implicit conversion changes signedness: %0 to %1">,
-  InGroup<DiagGroup<"sign-conversion">>, DefaultIgnore;
+  InGroup<SignConversion>, DefaultIgnore;
 def warn_impcast_integer_sign_conditional : Warning<
   "operand of ? changes signedness: %0 to %1">,
-  InGroup<DiagGroup<"sign-conversion">>, DefaultIgnore;
+  InGroup<SignConversion>, DefaultIgnore;
 def warn_impcast_integer_precision : Warning<
   "implicit conversion loses integer precision: %0 to %1">,
   InGroup<DiagGroup<"conversion">>, DefaultIgnore;
@@ -1675,29 +1713,29 @@ def warn_impcast_integer_64_32 : Warning<
   InGroup<DiagGroup<"shorten-64-to-32">>, DefaultIgnore;
 def warn_impcast_integer_precision_constant : Warning<
   "implicit conversion from %2 to %3 changes value from %0 to %1">,
-  InGroup<DiagGroup<"constant-conversion">>;
+  InGroup<ConstantConversion>;
 def warn_impcast_bitfield_precision_constant : Warning<
   "implicit truncation from %2 to bitfield changes value from %0 to %1">,
-  InGroup<DiagGroup<"constant-conversion">>;
+  InGroup<ConstantConversion>;
 def warn_impcast_literal_float_to_integer : Warning<
   "implicit conversion turns literal floating-point number into integer: "
   "%0 to %1">,
-  InGroup<DiagGroup<"literal-conversion">>, DefaultIgnore;
+  InGroup<LiteralConversion>, DefaultIgnore;
 def warn_impcast_string_literal_to_bool : Warning<
   "implicit conversion turns string literal into bool: %0 to %1">,
-  InGroup<DiagGroup<"string-conversion">>, DefaultIgnore;
+  InGroup<StringConversion>, DefaultIgnore;
 def warn_impcast_different_enum_types : Warning<
   "implicit conversion from enumeration type %0 to different enumeration type "
   "%1">, InGroup<DiagGroup<"conversion">>;
 def warn_impcast_bool_to_null_pointer : Warning<
     "initialization of pointer of type %0 to null from a constant boolean "
-    "expression">, InGroup<BoolConversions>;
+    "expression">, InGroup<BoolConversion>;
 def warn_impcast_null_pointer_to_integer : Warning<
-    "implicit conversion of NULL constant to integer">,
-    InGroup<DiagGroup<"conversion">>, DefaultIgnore;
+    "implicit conversion of NULL constant to %0">,
+    InGroup<NullConversion>;
 def warn_impcast_function_to_bool : Warning<
     "address of function %q0 will always evaluate to 'true'">,
-    InGroup<BoolConversions>;
+    InGroup<BoolConversion>;
 def note_function_to_bool_silence : Note<
     "prefix with the address-of operator to silence this warning">;
 def note_function_to_bool_call : Note<
@@ -2156,7 +2194,13 @@ def err_addr_ovl_not_func_ptrref : Error<
   "address of overloaded function %0 cannot be converted to type %1">;
 def err_addr_ovl_no_qualifier : Error<
   "can't form member pointer of type %0 without '&' and class name">;
-  
+
+// C++11 Literal Operators
+def err_ovl_no_viable_literal_operator : Error<
+  "no matching literal operator for call to %0"
+  "%select{| with argument of type %2| with arguments of types %2 and %3}1"
+  "%select{| or 'const char *', and no matching literal operator template}4">;
+
 // C++ Template Declarations
 def err_template_param_shadow : Error<
   "declaration of %0 shadows template parameter">;
@@ -2485,6 +2529,8 @@ def note_function_template_spec_here : Note<
   "in instantiation of function template specialization %q0 requested here">;
 def note_template_static_data_member_def_here : Note<
   "in instantiation of static data member %q0 requested here">;
+def note_template_enum_def_here : Note<
+  "in instantiation of enumeration %q0 requested here">;
 def note_template_type_alias_instantiation_here : Note<
   "in instantiation of template type alias %0 requested here">;
   
@@ -2642,6 +2688,8 @@ def err_template_id_not_a_type : Error<
 def note_template_declared_here : Note<
   "%select{function template|class template|type alias template|template template parameter}0 "
   "%1 declared here">;
+def note_parameter_type : Note<
+  "parameter of type %0 is declared here">;
 
 // C++11 Variadic Templates
 def err_template_param_pack_default_arg : Error<
@@ -2985,7 +3033,7 @@ def err_anon_bitfield_width_exceeds_type_size : Error<
   "size of anonymous bit-field (%0 bits) exceeds size of its type (%1 bits)">;
 def err_incorrect_number_of_vector_initializers : Error<
   "number of elements must be either one or match the size of the vector">;
-  
+
 // Used by C++ which allows bit-fields that are wider than the type.
 def warn_bitfield_width_exceeds_type_size: Warning<
   "size of bit-field %0 (%1 bits) exceeds the size of its type; value will be "
@@ -3709,6 +3757,33 @@ def err_invalid_property_name : Error<
   "%0 is not a valid property name (accessing an object of type %1)">;
 def err_getter_not_found : Error<
   "expected getter method not found on object of type %0">;
+def err_objc_subscript_method_not_found : Error<
+  "expected method to %select{read|write}1 %select{dictionary|array}2 element not "
+  "found on object of type %0">;
+def err_objc_subscript_index_type : Error<
+  "method index parameter type %0 is not integral type">;
+def err_objc_subscript_key_type : Error<
+  "method key parameter type %0 is not object type">;
+def err_objc_subscript_dic_object_type : Error<
+  "method object parameter type %0 is not object type">;
+def err_objc_subscript_object_type : Error<
+  "cannot assign to this %select{dictionary|array}1 because assigning method's 2nd parameter"
+  " of type %0 is not an objective-C pointer type">;
+def err_objc_subscript_base_type : Error<
+  "%select{dictionary|array}1 subscript base type %0 is not an Objective-C object">;
+def err_objc_multiple_subscript_type_conversion : Error<
+  "indexing expression is invalid because subscript type %0 has "
+  "multiple type conversion functions">;
+def err_objc_subscript_type_conversion : Error<
+  "indexing expression is invalid because subscript type %0 is not an intergal"
+  "or objective-C pointer type">;
+def err_objc_indexing_method_result_type : Error<
+  "method for accessing %select{dictionary|array}1 element must have Objective-C"
+  " object return type instead of %0">;
+def err_objc_index_incomplete_class_type : Error<
+  "objective-C index expression has incomplete class type %0">;
+def err_illegal_container_subscripting_op : Error<
+  "illegal operation on objective-c container subscripting">;
 def err_property_not_found_forward_class : Error<
   "property %0 cannot be found in forward class object %1">;
 def err_property_not_as_forward_class : Error<
@@ -4208,7 +4283,7 @@ def ext_typecheck_convert_pointer_int : ExtWarn<
   "take the address with &|"
   "remove *|"
   "remove &}3">,
-  InGroup<IntConversions>;
+  InGroup<IntConversion>;
 def ext_typecheck_convert_int_pointer : ExtWarn<
   "incompatible integer to pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4219,7 +4294,7 @@ def ext_typecheck_convert_int_pointer : ExtWarn<
   "take the address with &|"
   "remove *|"
   "remove &}3">,
-  InGroup<IntConversions>;
+  InGroup<IntConversion>;
 def ext_typecheck_convert_pointer_void_func : Extension<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
@@ -4264,7 +4339,7 @@ def warn_incompatible_vectors : Warning<
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
   "with an expression of type|to parameter of type|to type}2 %1">,
-  InGroup<VectorConversions>, DefaultIgnore;
+  InGroup<VectorConversion>, DefaultIgnore;
 def err_int_to_block_pointer : Error<
   "invalid block pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4313,6 +4388,8 @@ def err_typecheck_duplicate_vector_components_not_mlvalue : Error<
   "vector is not assignable (contains duplicate components)">;
 def err_block_decl_ref_not_modifiable_lvalue : Error<
   "variable is not assignable (missing __block type specifier)">;
+def err_lambda_decl_ref_not_modifiable_lvalue : Error<
+  "cannot assign to a variable captured by copy in a non-mutable lambda">;
 def err_typecheck_call_not_function : Error<
   "called object type %0 is not a function or function pointer">;
 def err_call_incomplete_return : Error<
@@ -4437,6 +4514,9 @@ def warn_unused_voidptr : Warning<
   InGroup<UnusedValue>;
 def warn_unused_property_expr : Warning<
  "property access result unused - getters should not be used for side effects">,
+  InGroup<UnusedValue>;
+def warn_unused_container_subscript_expr : Warning<
+ "container access result unused - container access should not be used for side effects">,
   InGroup<UnusedValue>;
 def warn_unused_call : Warning<
   "ignoring return value of function declared with %0 attribute">,
@@ -4681,16 +4761,18 @@ def err_operator_delete_param_type : Error<
 // C++ literal operators
 def err_literal_operator_outside_namespace : Error<
   "literal operator %0 must be in a namespace or global scope">;
+def err_literal_operator_default_argument : Error<
+  "literal operator cannot have a default argument">;
 // FIXME: This diagnostic sucks
 def err_literal_operator_params : Error<
   "parameter declaration for literal operator %0 is not valid">;
-def warn_user_literal_hexfloat : Warning<
-  "user-defined literal with suffix '%0' is preempted by C99 hexfloat "
-  "extension">, InGroup<UserDefinedLiterals>;
+def err_literal_operator_extern_c : Error<
+  "literal operator must have C++ linkage">;
 def warn_user_literal_reserved : Warning<
-  "user-defined literals not starting with '_' are reserved by the "
-  "implementation">, InGroup<UserDefinedLiterals>;
-  
+  "user-defined literal suffixes not starting with '_' are reserved; "
+  "no literal will invoke this operator">,
+  InGroup<UserDefinedLiterals>;
+
 // C++ conversion functions
 def err_conv_function_not_member : Error<
   "conversion function must be a non-static member function">;
@@ -4865,10 +4947,13 @@ def warn_printf_nonsensical_flag: Warning<
 def warn_format_nonsensical_length: Warning<
   "length modifier '%0' results in undefined behavior or no effect with '%1' conversion specifier">,
   InGroup<Format>;
+def warn_format_non_standard_positional_arg: ExtWarn<
+  "positional arguments are not supported by ISO C">, InGroup<FormatNonStandard>, DefaultIgnore;
 def warn_format_non_standard: ExtWarn<
-  "'%0' is a non-standard %1">, InGroup<FormatNonStandard>, DefaultIgnore;
+  "'%0' %select{length modifier|conversion specifier}1 is not supported by ISO C">,
+  InGroup<FormatNonStandard>, DefaultIgnore;
 def warn_format_non_standard_conversion_spec: ExtWarn<
-  "using the length modifier '%0' with the conversion specifier '%1' is non-standard">,
+  "using length modifier '%0' with conversion specifier '%1' is not supported by ISO C">,
   InGroup<FormatNonStandard>, DefaultIgnore;
 def warn_printf_ignored_flag: Warning<
   "flag '%0' is ignored when flag '%1' is present">,
@@ -5012,7 +5097,7 @@ def warn_unreachable_default : Warning<
   "default label in switch which covers all enumeration values">,
   InGroup<CoveredSwitchDefault>, DefaultIgnore;
 def warn_not_in_enum : Warning<"case value not in enumerated type %0">,
-  InGroup<Switch>; 
+  InGroup<Switch>;
 def err_typecheck_statement_requires_scalar : Error<
   "statement requires expression of scalar type (%0 invalid)">;
 def err_typecheck_statement_requires_integer : Error<

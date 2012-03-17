@@ -92,7 +92,7 @@ static llvm::Constant *buildBlockDescriptor(CodeGenModule &CGM,
                           CGM.GetAddrOfConstantCString(typeAtEncoding), i8p));
   
   // GC layout.
-  if (C.getLangOptions().ObjC1)
+  if (C.getLangOpts().ObjC1)
     elements.push_back(CGM.getObjCRuntime().BuildGCBlockLayout(CGM, blockInfo));
   else
     elements.push_back(llvm::Constant::getNullValue(i8p));
@@ -227,7 +227,7 @@ static llvm::Constant *tryCaptureAsConstant(CodeGenModule &CGM,
   //   Except that any class member declared mutable can be
   //   modified, any attempt to modify a const object during its
   //   lifetime results in undefined behavior.
-  if (CGM.getLangOptions().CPlusPlus && !isSafeForCXXConstantCapture(type))
+  if (CGM.getLangOpts().CPlusPlus && !isSafeForCXXConstantCapture(type))
     return 0;
 
   // If the variable doesn't have any initializer (shouldn't this be
@@ -374,7 +374,7 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
       info.HasCXXObject = true;
 
     // And so do types with destructors.
-    } else if (CGM.getLangOptions().CPlusPlus) {
+    } else if (CGM.getLangOpts().CPlusPlus) {
       if (const CXXRecordDecl *record =
             variable->getType()->getAsCXXRecordDecl()) {
         if (!record->hasTrivialDestructor()) {
@@ -753,16 +753,12 @@ llvm::Value *CodeGenFunction::EmitBlockLiteral(const CGBlockInfo &blockInfo) {
 
       // We use one of these or the other depending on whether the
       // reference is nested.
-      DeclRefExpr notNested(const_cast<VarDecl*>(variable), type, VK_LValue,
-                            SourceLocation());
-      BlockDeclRefExpr nested(const_cast<VarDecl*>(variable), type,
-                              VK_LValue, SourceLocation(), /*byref*/ false);
-
-      Expr *declRef = 
-        (ci->isNested() ? static_cast<Expr*>(&nested) : &notNested);
+      DeclRefExpr declRef(const_cast<VarDecl*>(variable),
+                          /*refersToEnclosing*/ ci->isNested(), type,
+                          VK_LValue, SourceLocation());
 
       ImplicitCastExpr l2r(ImplicitCastExpr::OnStack, type, CK_LValueToRValue,
-                           declRef, VK_RValue);
+                           &declRef, VK_RValue);
       EmitExprAsInit(&l2r, &blockFieldPseudoVar,
                      MakeAddrLValue(blockField, type,
                                     getContext().getDeclAlign(variable)),
@@ -1107,7 +1103,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
     LocalDeclMap[variable] = alloca;
   }
 
-  // Save a spot to insert the debug information for all the BlockDeclRefDecls.
+  // Save a spot to insert the debug information for all the DeclRefExprs.
   llvm::BasicBlock *entry = Builder.GetInsertBlock();
   llvm::BasicBlock::iterator entry_ptr = Builder.GetInsertPoint();
   --entry_ptr;
@@ -1124,7 +1120,7 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
   ++entry_ptr;
   Builder.SetInsertPoint(entry, entry_ptr);
 
-  // Emit debug information for all the BlockDeclRefDecls.
+  // Emit debug information for all the DeclRefExprs.
   // FIXME: also for 'this'
   if (CGDebugInfo *DI = getDebugInfo()) {
     for (BlockDecl::capture_const_iterator ci = blockDecl->capture_begin(),
@@ -1255,7 +1251,7 @@ CodeGenFunction::GenerateCopyHelperFunction(const CGBlockInfo &blockInfo) {
         flags = BLOCK_FIELD_IS_BLOCK;
 
       // Special rules for ARC captures:
-      if (getLangOptions().ObjCAutoRefCount) {
+      if (getLangOpts().ObjCAutoRefCount) {
         Qualifiers qs = type.getQualifiers();
 
         // Don't generate special copy logic for a captured object
@@ -1367,7 +1363,7 @@ CodeGenFunction::GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo) {
         flags = BLOCK_FIELD_IS_BLOCK;
 
       // Special rules for ARC captures.
-      if (getLangOptions().ObjCAutoRefCount) {
+      if (getLangOpts().ObjCAutoRefCount) {
         Qualifiers qs = type.getQualifiers();
 
         // Don't generate special dispose logic for a captured object
@@ -1748,7 +1744,7 @@ CodeGenFunction::buildByrefHelpers(llvm::StructType &byrefType,
 
   // If we have lifetime, that dominates.
   if (Qualifiers::ObjCLifetime lifetime = qs.getObjCLifetime()) {
-    assert(getLangOptions().ObjCAutoRefCount);
+    assert(getLangOpts().ObjCAutoRefCount);
 
     switch (lifetime) {
     case Qualifiers::OCL_None: llvm_unreachable("impossible");
@@ -1983,7 +1979,7 @@ namespace {
 /// to be done externally.
 void CodeGenFunction::enterByrefCleanup(const AutoVarEmission &emission) {
   // We don't enter this cleanup if we're in pure-GC mode.
-  if (CGM.getLangOptions().getGC() == LangOptions::GCOnly)
+  if (CGM.getLangOpts().getGC() == LangOptions::GCOnly)
     return;
 
   EHStack.pushCleanup<CallBlockRelease>(NormalAndEHCleanup, emission.Address);
@@ -1992,7 +1988,7 @@ void CodeGenFunction::enterByrefCleanup(const AutoVarEmission &emission) {
 /// Adjust the declaration of something from the blocks API.
 static void configureBlocksRuntimeObject(CodeGenModule &CGM,
                                          llvm::Constant *C) {
-  if (!CGM.getLangOptions().BlocksRuntimeOptional) return;
+  if (!CGM.getLangOpts().BlocksRuntimeOptional) return;
 
   llvm::GlobalValue *GV = cast<llvm::GlobalValue>(C->stripPointerCasts());
   if (GV->isDeclaration() &&

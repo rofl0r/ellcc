@@ -2,7 +2,8 @@
 
 // rdar://6124613
 void test1() {
-  void *p = @1; // expected-error {{unexpected '@' in program}}
+  void *xyzzy = 0;
+  void *p = @xyzzy; // expected-error {{unexpected '@' in program}}
 }
 
 // <rdar://problem/7495713>
@@ -41,3 +42,9 @@ void foo() {
 @end
 
 @end // expected-error {{'@end' must appear in an Objective-C context}}
+
+@class ForwardBase;
+@implementation SomeI : ForwardBase // expected-error {{cannot find interface declaration for 'ForwardBase', superclass of 'SomeI'}} \
+                                    // expected-warning {{cannot find interface declaration for 'SomeI'}}
+-(void)meth {}
+@end

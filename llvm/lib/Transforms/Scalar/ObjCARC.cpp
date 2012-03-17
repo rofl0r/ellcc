@@ -2929,11 +2929,17 @@ ComputePostOrders(Function &F,
   Visited.clear();
 
   // Compute the exits, which are the starting points for reverse-CFG DFS.
+  // This includes blocks where all the successors are backedges that
+  // we're skipping.
   SmallVector<BasicBlock *, 4> Exits;
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
-    if (cast<TerminatorInst>(&BB->back())->getNumSuccessors() == 0)
-      Exits.push_back(BB);
+    TerminatorInst *TI = cast<TerminatorInst>(&BB->back());
+    for (succ_iterator SI(TI), SE(TI, true); SI != SE; ++SI)
+      if (!Backedges.count(std::make_pair(BB, *SI)))
+        goto HasNonBackedgeSucc;
+    Exits.push_back(BB);
+  HasNonBackedgeSucc:;
   }
 
   // Do reverse-CFG DFS, computing the reverse-CFG PostOrder.
@@ -3035,7 +3041,8 @@ void ObjCARCOpt::MoveCalls(Value *Arg,
       // but our releases will never depend on it, because they must be
       // paired with retains from before the invoke.
       InsertPts[0] = II->getNormalDest()->getFirstInsertionPt();
-      InsertPts[1] = II->getUnwindDest()->getFirstInsertionPt();
+      if (!II->getMetadata(NoObjCARCExceptionsMDKind))
+        InsertPts[1] = II->getUnwindDest()->getFirstInsertionPt();
     } else {
       // Insert code immediately after the last use.
       InsertPts[0] = llvm::next(BasicBlock::iterator(LastUse));
@@ -4017,36 +4024,40 @@ bool ObjCARCContract::runOnFunction(Function &F) {
         Use &U = UI.getUse();
         unsigned OperandNo = UI.getOperandNo();
         ++UI; // Increment UI now, because we may unlink its element.
-        if (Instruction *UserInst = dyn_cast<Instruction>(U.getUser()))
-          if (Inst != UserInst && DT->dominates(Inst, UserInst)) {
-            Changed = true;
-            Instruction *Replacement = Inst;
-            Type *UseTy = U.get()->getType();
-            if (PHINode *PHI = dyn_cast<PHINode>(UserInst)) {
-              // For PHI nodes, insert the bitcast in the predecessor block.
-              unsigned ValNo =
-                PHINode::getIncomingValueNumForOperand(OperandNo);
-              BasicBlock *BB =
-                PHI->getIncomingBlock(ValNo);
-              if (Replacement->getType() != UseTy)
-                Replacement = new BitCastInst(Replacement, UseTy, "",
-                                              &BB->back());
-              for (unsigned i = 0, e = PHI->getNumIncomingValues();
-                   i != e; ++i)
-                if (PHI->getIncomingBlock(i) == BB) {
-                  // Keep the UI iterator valid.
-                  if (&PHI->getOperandUse(
-                        PHINode::getOperandNumForIncomingValue(i)) ==
-                        &UI.getUse())
-                    ++UI;
-                  PHI->setIncomingValue(i, Replacement);
-                }
-            } else {
-              if (Replacement->getType() != UseTy)
-                Replacement = new BitCastInst(Replacement, UseTy, "", UserInst);
-              U.set(Replacement);
-            }
+        Instruction *UserInst = dyn_cast<Instruction>(U.getUser());
+        if (!UserInst)
+          continue;
+        // FIXME: dominates should return true for unreachable UserInst.
+        if (!DT->isReachableFromEntry(UserInst->getParent()) ||
+            DT->dominates(Inst, UserInst)) {
+          Changed = true;
+          Instruction *Replacement = Inst;
+          Type *UseTy = U.get()->getType();
+          if (PHINode *PHI = dyn_cast<PHINode>(UserInst)) {
+            // For PHI nodes, insert the bitcast in the predecessor block.
+            unsigned ValNo =
+              PHINode::getIncomingValueNumForOperand(OperandNo);
+            BasicBlock *BB =
+              PHI->getIncomingBlock(ValNo);
+            if (Replacement->getType() != UseTy)
+              Replacement = new BitCastInst(Replacement, UseTy, "",
+                                            &BB->back());
+            for (unsigned i = 0, e = PHI->getNumIncomingValues();
+                 i != e; ++i)
+              if (PHI->getIncomingBlock(i) == BB) {
+                // Keep the UI iterator valid.
+                if (&PHI->getOperandUse(
+                      PHINode::getOperandNumForIncomingValue(i)) ==
+                    &UI.getUse())
+                  ++UI;
+                PHI->setIncomingValue(i, Replacement);
+              }
+          } else {
+            if (Replacement->getType() != UseTy)
+              Replacement = new BitCastInst(Replacement, UseTy, "", UserInst);
+            U.set(Replacement);
           }
+        }
       }
 
       // If Arg is a no-op casted pointer, strip one level of casts and

@@ -54,18 +54,19 @@ Preprocessor::Preprocessor(DiagnosticsEngine &diags, LangOptions &opts,
                            HeaderSearch &Headers, ModuleLoader &TheModuleLoader,
                            IdentifierInfoLookup* IILookup,
                            bool OwnsHeaders,
-                           bool DelayInitialization)
-  : Diags(&diags), Features(opts), Target(target),FileMgr(Headers.getFileMgr()),
+                           bool DelayInitialization,
+                           bool IncrProcessing)
+  : Diags(&diags), LangOpts(opts), Target(target),FileMgr(Headers.getFileMgr()),
     SourceMgr(SM), HeaderInfo(Headers), TheModuleLoader(TheModuleLoader),
-    ExternalSource(0), 
-    Identifiers(opts, IILookup), CodeComplete(0),
+    ExternalSource(0), Identifiers(opts, IILookup), 
+    IncrementalProcessing(IncrProcessing), CodeComplete(0), 
     CodeCompletionFile(0), CodeCompletionOffset(0), CodeCompletionReached(0),
     SkipMainFilePreamble(0, true), CurPPLexer(0), 
     CurDirLookup(0), CurLexerKind(CLK_Lexer), Callbacks(0), MacroArgCache(0), 
     Record(0), MIChainHead(0), MICache(0) 
 {
   OwnsHeaderSearch = OwnsHeaders;
-  
+
   if (!DelayInitialization) {
     assert(Target && "Must provide target information for PP initialization");
     Initialize(*Target);
@@ -153,7 +154,7 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
   // Initialize builtin macros like __LINE__ and friends.
   RegisterBuiltinMacros();
   
-  if(Features.Borland) {
+  if(LangOpts.Borland) {
     Ident__exception_info        = getIdentifierInfo("_exception_info");
     Ident___exception_info       = getIdentifierInfo("__exception_info");
     Ident_GetExceptionInfo       = getIdentifierInfo("GetExceptionInformation");
@@ -382,10 +383,10 @@ void Preprocessor::CreateString(const char *Buf, unsigned Len, Token &Tok,
 }
 
 Module *Preprocessor::getCurrentModule() {
-  if (getLangOptions().CurrentModule.empty())
+  if (getLangOpts().CurrentModule.empty())
     return 0;
   
-  return getHeaderSearchInfo().lookupModule(getLangOptions().CurrentModule);
+  return getHeaderSearchInfo().lookupModule(getLangOpts().CurrentModule);
 }
 
 //===----------------------------------------------------------------------===//
@@ -572,7 +573,7 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
   // keyword when we're in a caching lexer, because caching lexers only get
   // used in contexts where import declarations are disallowed.
   if (II.isModulesImport() && !InMacroArgs && !DisableMacroExpansion &&
-      getLangOptions().Modules && CurLexerKind != CLK_CachingLexer) {
+      getLangOpts().Modules && CurLexerKind != CLK_CachingLexer) {
     ModuleImportLoc = Identifier.getLocation();
     ModuleImportPath.clear();
     ModuleImportExpectsIdentifier = true;
@@ -654,10 +655,11 @@ CommentHandler::~CommentHandler() { }
 
 CodeCompletionHandler::~CodeCompletionHandler() { }
 
-void Preprocessor::createPreprocessingRecord() {
+void Preprocessor::createPreprocessingRecord(bool RecordConditionalDirectives) {
   if (Record)
     return;
   
-  Record = new PreprocessingRecord(getSourceManager());
+  Record = new PreprocessingRecord(getSourceManager(),
+                                   RecordConditionalDirectives);
   addPPCallbacks(Record);
 }

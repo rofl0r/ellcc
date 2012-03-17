@@ -13,6 +13,7 @@
 #include "clang/Driver/Action.h"
 #include "clang/Driver/ToolChain.h"
 
+#include "clang/Basic/VersionTuple.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Compiler.h"
 
@@ -198,13 +199,14 @@ private:
   mutable bool TargetIsIPhoneOSSimulator;
 
   /// The OS version we are targeting.
-  mutable unsigned TargetVersion[3];
+  mutable VersionTuple TargetVersion;
 
   /// The default macosx-version-min of this tool chain; empty until
   /// initialized.
   std::string MacosxVersionMin;
 
   bool hasARCRuntime() const;
+  bool hasSubscriptingRuntime() const;
 
 private:
   void AddDeploymentTarget(DerivedArgList &Args) const;
@@ -229,17 +231,14 @@ public:
     // change. This will go away when we move away from argument translation.
     if (TargetInitialized && TargetIsIPhoneOS == IsIPhoneOS &&
         TargetIsIPhoneOSSimulator == IsIOSSim &&
-        TargetVersion[0] == Major && TargetVersion[1] == Minor &&
-        TargetVersion[2] == Micro)
+        TargetVersion == VersionTuple(Major, Minor, Micro))
       return;
 
     assert(!TargetInitialized && "Target already initialized!");
     TargetInitialized = true;
     TargetIsIPhoneOS = IsIPhoneOS;
     TargetIsIPhoneOSSimulator = IsIOSSim;
-    TargetVersion[0] = Major;
-    TargetVersion[1] = Minor;
-    TargetVersion[2] = Micro;
+    TargetVersion = VersionTuple(Major, Minor, Micro);
   }
 
   bool isTargetIPhoneOS() const {
@@ -252,13 +251,17 @@ public:
     return TargetIsIPhoneOSSimulator;
   }
 
+  bool isTargetMacOS() const {
+    return !isTargetIOSSimulator() &&
+           !isTargetIPhoneOS() &&
+           ARCRuntimeForSimulator == ARCSimulator_None;
+  }
+
   bool isTargetInitialized() const { return TargetInitialized; }
 
-  void getTargetVersion(unsigned (&Res)[3]) const {
+  VersionTuple getTargetVersion() const {
     assert(TargetInitialized && "Target not initialized!");
-    Res[0] = TargetVersion[0];
-    Res[1] = TargetVersion[1];
-    Res[2] = TargetVersion[2];
+    return TargetVersion;
   }
 
   /// getDarwinArchName - Get the "Darwin" arch name for a particular compiler
@@ -266,24 +269,14 @@ public:
   /// distinct architectures.
   StringRef getDarwinArchName(const ArgList &Args) const;
 
-  static bool isVersionLT(unsigned (&A)[3], unsigned (&B)[3]) {
-    for (unsigned i=0; i < 3; ++i) {
-      if (A[i] > B[i]) return false;
-      if (A[i] < B[i]) return true;
-    }
-    return false;
-  }
-
   bool isIPhoneOSVersionLT(unsigned V0, unsigned V1=0, unsigned V2=0) const {
     assert(isTargetIPhoneOS() && "Unexpected call for OS X target!");
-    unsigned B[3] = { V0, V1, V2 };
-    return isVersionLT(TargetVersion, B);
+    return TargetVersion < VersionTuple(V0, V1, V2);
   }
 
   bool isMacosxVersionLT(unsigned V0, unsigned V1=0, unsigned V2=0) const {
     assert(!isTargetIPhoneOS() && "Unexpected call for iPhoneOS target!");
-    unsigned B[3] = { V0, V1, V2 };
-    return isVersionLT(TargetVersion, B);
+    return TargetVersion < VersionTuple(V0, V1, V2);
   }
 
   /// AddLinkSearchPathArgs - Add the linker search paths to \arg CmdArgs.
@@ -342,7 +335,7 @@ public:
   }
   
   virtual bool IsObjCDefaultSynthPropertiesDefault() const {
-    return false;
+    return true;
   }
 
   virtual bool IsObjCNonFragileABIDefault() const {

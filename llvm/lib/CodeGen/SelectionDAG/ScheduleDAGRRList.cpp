@@ -232,7 +232,7 @@ private:
   /// Updates the topological ordering if required.
   SUnit *CreateNewSUnit(SDNode *N) {
     unsigned NumSUnits = SUnits.size();
-    SUnit *NewNode = NewSUnit(N);
+    SUnit *NewNode = newSUnit(N);
     // Update the topological ordering.
     if (NewNode->NodeNum >= NumSUnits)
       Topo.InitDAGTopologicalSorting();
@@ -250,9 +250,9 @@ private:
     return NewNode;
   }
 
-  /// ForceUnitLatencies - Register-pressure-reducing scheduling doesn't
+  /// forceUnitLatencies - Register-pressure-reducing scheduling doesn't
   /// need actual latency information but the hybrid scheduler does.
-  bool ForceUnitLatencies() const {
+  bool forceUnitLatencies() const {
     return !NeedLatency;
   }
 };
@@ -327,6 +327,12 @@ void ScheduleDAGRRList::Schedule() {
   ListScheduleBottomUp();
 
   AvailableQueue->releaseState();
+
+  DEBUG({
+      dbgs() << "*** Final schedule ***\n";
+      dumpSchedule();
+      dbgs() << '\n';
+    });
 }
 
 //===----------------------------------------------------------------------===//
@@ -348,7 +354,7 @@ void ScheduleDAGRRList::ReleasePred(SUnit *SU, const SDep *PredEdge) {
 #endif
   --PredSU->NumSuccsLeft;
 
-  if (!ForceUnitLatencies()) {
+  if (!forceUnitLatencies()) {
     // Updating predecessor's height. This is now the cycle when the
     // predecessor can be scheduled without causing a pipeline stall.
     PredSU->setHeightToAtLeast(SU->getHeight() + PredEdge->getLatency());
@@ -695,7 +701,7 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
 
   Sequence.push_back(SU);
 
-  AvailableQueue->ScheduledNode(SU);
+  AvailableQueue->scheduledNode(SU);
 
   // If HazardRec is disabled, and each inst counts as one cycle, then
   // advance CurCycle before ReleasePredecessors to avoid useless pushes to
@@ -842,7 +848,7 @@ void ScheduleDAGRRList::UnscheduleNodeBottomUp(SUnit *SU) {
   else {
     AvailableQueue->push(SU);
   }
-  AvailableQueue->UnscheduledNode(SU);
+  AvailableQueue->unscheduledNode(SU);
 }
 
 /// After backtracking, the hazard checker needs to be restored to a state
@@ -963,7 +969,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       LoadNode->setNodeId(LoadSU->NodeNum);
 
       InitNumRegDefsLeft(LoadSU);
-      ComputeLatency(LoadSU);
+      computeLatency(LoadSU);
     }
 
     SUnit *NewSU = CreateNewSUnit(N);
@@ -981,7 +987,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       NewSU->isCommutable = true;
 
     InitNumRegDefsLeft(NewSU);
-    ComputeLatency(NewSU);
+    computeLatency(NewSU);
 
     // Record all the edges to and from the old SU, by category.
     SmallVector<SDep, 4> ChainPreds;
@@ -1160,7 +1166,7 @@ static EVT getPhysicalRegisterVT(SDNode *N, unsigned Reg,
   const MCInstrDesc &MCID = TII->get(N->getMachineOpcode());
   assert(MCID.ImplicitDefs && "Physical reg def must be in implicit def list!");
   unsigned NumRes = MCID.getNumDefs();
-  for (const unsigned *ImpDef = MCID.getImplicitDefs(); *ImpDef; ++ImpDef) {
+  for (const uint16_t *ImpDef = MCID.getImplicitDefs(); *ImpDef; ++ImpDef) {
     if (Reg == *ImpDef)
       break;
     ++NumRes;
@@ -1175,7 +1181,7 @@ static void CheckForLiveRegDef(SUnit *SU, unsigned Reg,
                                SmallSet<unsigned, 4> &RegAdded,
                                SmallVector<unsigned, 4> &LRegs,
                                const TargetRegisterInfo *TRI) {
-  for (const unsigned *AliasI = TRI->getOverlaps(Reg); *AliasI; ++AliasI) {
+  for (const uint16_t *AliasI = TRI->getOverlaps(Reg); *AliasI; ++AliasI) {
 
     // Check if Ref is live.
     if (!LiveRegDefs[*AliasI]) continue;
@@ -1286,7 +1292,7 @@ DelayForLiveRegsBottomUp(SUnit *SU, SmallVector<unsigned, 4> &LRegs) {
     const MCInstrDesc &MCID = TII->get(Node->getMachineOpcode());
     if (!MCID.ImplicitDefs)
       continue;
-    for (const unsigned *Reg = MCID.ImplicitDefs; *Reg; ++Reg)
+    for (const uint16_t *Reg = MCID.getImplicitDefs(); *Reg; ++Reg)
       CheckForLiveRegDef(SU, *Reg, LiveRegDefs, RegAdded, LRegs, TRI);
   }
 
@@ -1475,7 +1481,7 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
   std::reverse(Sequence.begin(), Sequence.end());
 
 #ifndef NDEBUG
-  VerifySchedule(/*isBottomUp=*/true);
+  VerifyScheduledSequence(/*isBottomUp=*/true);
 #endif
 }
 
@@ -1681,9 +1687,9 @@ public:
 
   int RegPressureDiff(SUnit *SU, unsigned &LiveUses) const;
 
-  void ScheduledNode(SUnit *SU);
+  void scheduledNode(SUnit *SU);
 
-  void UnscheduledNode(SUnit *SU);
+  void unscheduledNode(SUnit *SU);
 
 protected:
   bool canClobber(const SUnit *SU, const SUnit *Op);
@@ -1984,7 +1990,7 @@ int RegReductionPQBase::RegPressureDiff(SUnit *SU, unsigned &LiveUses) const {
   return PDiff;
 }
 
-void RegReductionPQBase::ScheduledNode(SUnit *SU) {
+void RegReductionPQBase::scheduledNode(SUnit *SU) {
   if (!TracksRegPressure)
     return;
 
@@ -2053,7 +2059,7 @@ void RegReductionPQBase::ScheduledNode(SUnit *SU) {
   dumpRegPressure();
 }
 
-void RegReductionPQBase::UnscheduledNode(SUnit *SU) {
+void RegReductionPQBase::unscheduledNode(SUnit *SU) {
   if (!TracksRegPressure)
     return;
 
@@ -2661,7 +2667,7 @@ static bool canClobberReachingPhysRegUse(const SUnit *DepSU, const SUnit *SU,
                                          ScheduleDAGRRList *scheduleDAG,
                                          const TargetInstrInfo *TII,
                                          const TargetRegisterInfo *TRI) {
-  const unsigned *ImpDefs
+  const uint16_t *ImpDefs
     = TII->get(SU->getNode()->getMachineOpcode()).getImplicitDefs();
   const uint32_t *RegMask = getNodeRegMask(SU->getNode());
   if(!ImpDefs && !RegMask)
@@ -2680,7 +2686,7 @@ static bool canClobberReachingPhysRegUse(const SUnit *DepSU, const SUnit *SU,
         return true;
 
       if (ImpDefs)
-        for (const unsigned *ImpDef = ImpDefs; *ImpDef; ++ImpDef)
+        for (const uint16_t *ImpDef = ImpDefs; *ImpDef; ++ImpDef)
           // Return true if SU clobbers this physical register use and the
           // definition of the register reaches from DepSU. IsReachable queries
           // a topological forward sort of the DAG (following the successors).
@@ -2699,13 +2705,13 @@ static bool canClobberPhysRegDefs(const SUnit *SuccSU, const SUnit *SU,
                                   const TargetRegisterInfo *TRI) {
   SDNode *N = SuccSU->getNode();
   unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
-  const unsigned *ImpDefs = TII->get(N->getMachineOpcode()).getImplicitDefs();
+  const uint16_t *ImpDefs = TII->get(N->getMachineOpcode()).getImplicitDefs();
   assert(ImpDefs && "Caller should check hasPhysRegDefs");
   for (const SDNode *SUNode = SU->getNode(); SUNode;
        SUNode = SUNode->getGluedNode()) {
     if (!SUNode->isMachineOpcode())
       continue;
-    const unsigned *SUImpDefs =
+    const uint16_t *SUImpDefs =
       TII->get(SUNode->getMachineOpcode()).getImplicitDefs();
     const uint32_t *SURegMask = getNodeRegMask(SUNode);
     if (!SUImpDefs && !SURegMask)

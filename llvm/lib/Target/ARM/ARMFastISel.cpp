@@ -1384,7 +1384,10 @@ bool ARMFastISel::ARMEmitCmp(const Value *Src1Value, const Value *Src2Value,
         SrcVT == MVT::i1) {
       const APInt &CIVal = ConstInt->getValue();
       Imm = (isZExt) ? (int)CIVal.getZExtValue() : (int)CIVal.getSExtValue();
-      if (Imm < 0) {
+      // For INT_MIN/LONG_MIN (i.e., 0x80000000) we need to use a cmp, rather
+      // then a cmn, because there is no way to represent 2147483648 as a 
+      // signed 32-bit int.
+      if (Imm < 0 && Imm != (int)0x80000000) {
         isNegativeImm = true;
         Imm = -Imm;
       }
@@ -1475,7 +1478,6 @@ bool ARMFastISel::ARMEmitCmp(const Value *Src1Value, const Value *Src2Value,
 
 bool ARMFastISel::SelectCmp(const Instruction *I) {
   const CmpInst *CI = cast<CmpInst>(I);
-  Type *Ty = CI->getOperand(0)->getType();
 
   // Get the compare predicate.
   ARMCC::CondCodes ARMPred = getComparePred(CI->getPredicate());
@@ -1495,11 +1497,10 @@ bool ARMFastISel::SelectCmp(const Instruction *I) {
   unsigned DestReg = createResultReg(RC);
   Constant *Zero = ConstantInt::get(Type::getInt32Ty(*Context), 0);
   unsigned ZeroReg = TargetMaterializeConstant(Zero);
-  bool isFloat = (Ty->isFloatTy() || Ty->isDoubleTy());
-  unsigned CondReg = isFloat ? ARM::FPSCR : ARM::CPSR;
+  // ARMEmitCmp emits a FMSTAT when necessary, so it's always safe to use CPSR.
   BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(MovCCOpc), DestReg)
           .addReg(ZeroReg).addImm(1)
-          .addImm(ARMPred).addReg(CondReg);
+          .addImm(ARMPred).addReg(ARM::CPSR);
 
   UpdateValueMap(I, DestReg);
   return true;

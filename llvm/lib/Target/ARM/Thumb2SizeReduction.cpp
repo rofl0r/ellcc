@@ -39,9 +39,9 @@ namespace {
   /// ReduceTable - A static table with information on mapping from wide
   /// opcodes to narrow
   struct ReduceEntry {
-    unsigned WideOpc;      // Wide opcode
-    unsigned NarrowOpc1;   // Narrow opcode to transform to
-    unsigned NarrowOpc2;   // Narrow opcode when it's two-address
+    uint16_t WideOpc;      // Wide opcode
+    uint16_t NarrowOpc1;   // Narrow opcode to transform to
+    uint16_t NarrowOpc2;   // Narrow opcode when it's two-address
     uint8_t  Imm1Limit;    // Limit of immediate field (bits)
     uint8_t  Imm2Limit;    // Limit of immediate field when it's two-address
     unsigned LowRegs1 : 1; // Only possible if low-registers are used
@@ -189,7 +189,7 @@ Thumb2SizeReduce::Thumb2SizeReduce() : MachineFunctionPass(ID) {
 }
 
 static bool HasImplicitCPSRDef(const MCInstrDesc &MCID) {
-  for (const unsigned *Regs = MCID.ImplicitDefs; *Regs; ++Regs)
+  for (const uint16_t *Regs = MCID.getImplicitDefs(); *Regs; ++Regs)
     if (*Regs == ARM::CPSR)
       return true;
   return false;

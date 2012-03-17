@@ -135,9 +135,8 @@ static bool checkForMigration(StringRef resourcesPath,
 }
 
 static void printResult(FileRemapper &remapper, raw_ostream &OS) {
-  CompilerInvocation CI;
-  remapper.applyMappings(CI);
-  PreprocessorOptions &PPOpts = CI.getPreprocessorOpts();
+  PreprocessorOptions PPOpts;
+  remapper.applyMappings(PPOpts);
   // The changed files will be in memory buffers, print them.
   for (unsigned i = 0, e = PPOpts.RemappedFileBuffers.size(); i != e; ++i) {
     const llvm::MemoryBuffer *mem = PPOpts.RemappedFileBuffers[i].second;
@@ -319,7 +318,7 @@ static void printSourceLocation(SourceLocation loc, ASTContext &Ctx,
 static void printSourceRange(CharSourceRange range, ASTContext &Ctx,
                              raw_ostream &OS) {
   SourceManager &SM = Ctx.getSourceManager();
-  const LangOptions &langOpts = Ctx.getLangOptions();
+  const LangOptions &langOpts = Ctx.getLangOpts();
 
   PresumedLoc PL = SM.getPresumedLoc(range.getBegin());
 

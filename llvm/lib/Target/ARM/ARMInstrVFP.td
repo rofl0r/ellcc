@@ -206,6 +206,14 @@ def : InstAlias<"vpop${p} $r",  (VLDMDIA_UPD SP, pred:$p, dpr_reglist:$r)>,
                 Requires<[HasVFP2]>;
 def : InstAlias<"vpop${p} $r",  (VLDMSIA_UPD SP, pred:$p, spr_reglist:$r)>,
                 Requires<[HasVFP2]>;
+defm : VFPDTAnyInstAlias<"vpush${p}", "$r",
+                         (VSTMSDB_UPD SP, pred:$p, spr_reglist:$r)>;
+defm : VFPDTAnyInstAlias<"vpush${p}", "$r",
+                         (VSTMDDB_UPD SP, pred:$p, dpr_reglist:$r)>;
+defm : VFPDTAnyInstAlias<"vpop${p}", "$r",
+                         (VLDMSIA_UPD SP, pred:$p, spr_reglist:$r)>;
+defm : VFPDTAnyInstAlias<"vpop${p}", "$r",
+                         (VLDMDIA_UPD SP, pred:$p, dpr_reglist:$r)>;
 
 // FLDMX, FSTMX - mixing S/D registers for pre-armv6 cores
 
@@ -286,7 +294,7 @@ def : Pat<(fmul (fneg SPR:$a), SPR:$b),
           (VNMULS SPR:$a, SPR:$b)>, Requires<[NoHonorSignDependentRounding]>;
 
 // These are encoded as unary instructions.
-let Defs = [FPSCR] in {
+let Defs = [FPSCR_NZCV] in {
 def VCMPED : ADuI<0b11101, 0b11, 0b0100, 0b11, 0,
                   (outs), (ins DPR:$Dd, DPR:$Dm),
                   IIC_fpCMP64, "vcmpe", ".f64\t$Dd, $Dm",
@@ -315,7 +323,7 @@ def VCMPS  : ASuI<0b11101, 0b11, 0b0100, 0b01, 0,
   // VFP pipelines on A8.
   let D = VFPNeonA8Domain;
 }
-} // Defs = [FPSCR]
+} // Defs = [FPSCR_NZCV]
 
 //===----------------------------------------------------------------------===//
 // FP Unary Operations.
@@ -335,7 +343,7 @@ def VABSS  : ASuIn<0b11101, 0b11, 0b0000, 0b11, 0,
   let D = VFPNeonA8Domain;
 }
 
-let Defs = [FPSCR] in {
+let Defs = [FPSCR_NZCV] in {
 def VCMPEZD : ADuI<0b11101, 0b11, 0b0101, 0b11, 0,
                    (outs), (ins DPR:$Dd),
                    IIC_fpCMP64, "vcmpe", ".f64\t$Dd, #0",
@@ -376,7 +384,7 @@ def VCMPZS  : ASuI<0b11101, 0b11, 0b0101, 0b01, 0,
   // VFP pipelines on A8.
   let D = VFPNeonA8Domain;
 }
-} // Defs = [FPSCR]
+} // Defs = [FPSCR_NZCV]
 
 def VCVTDS  : ASuI<0b11101, 0b11, 0b0111, 0b11, 0,
                    (outs DPR:$Dd), (ins SPR:$Sm),
@@ -810,7 +818,29 @@ let Constraints = "$a = $dst" in {
 
 // FP to Fixed-Point:
 
-def VTOSHS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 0,
+// Single Precision register
+class AVConv1XInsS_Encode<bits<5> op1, bits<2> op2, bits<4> op3, bits<4> op4, bit op5, 
+                dag oops, dag iops, InstrItinClass itin, string opc, string asm,
+                list<dag> pattern>
+  : AVConv1XI<op1, op2, op3, op4, op5, oops, iops, itin, opc, asm, pattern> {
+  bits<5> dst;
+  // if dp_operation then UInt(D:Vd) else UInt(Vd:D);
+  let Inst{22} = dst{0};
+  let Inst{15-12} = dst{4-1};
+}
+
+// Double Precision register
+class AVConv1XInsD_Encode<bits<5> op1, bits<2> op2, bits<4> op3, bits<4> op4, bit op5, 
+                dag oops, dag iops, InstrItinClass itin, string opc, string asm,
+                list<dag> pattern>
+  : AVConv1XI<op1, op2, op3, op4, op5, oops, iops, itin, opc, asm, pattern> {
+  bits<5> dst;
+  // if dp_operation then UInt(D:Vd) else UInt(Vd:D);
+  let Inst{22} = dst{4};
+  let Inst{15-12} = dst{3-0};
+}
+
+def VTOSHS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1110, 0b1010, 0,
                        (outs SPR:$dst), (ins SPR:$a, fbits16:$fbits),
                  IIC_fpCVTSI, "vcvt", ".s16.f32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -818,7 +848,7 @@ def VTOSHS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 0,
   let D = VFPNeonA8Domain;
 }
 
-def VTOUHS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 0,
+def VTOUHS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1111, 0b1010, 0,
                        (outs SPR:$dst), (ins SPR:$a, fbits16:$fbits),
                  IIC_fpCVTSI, "vcvt", ".u16.f32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -826,7 +856,7 @@ def VTOUHS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 0,
   let D = VFPNeonA8Domain;
 }
 
-def VTOSLS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 1,
+def VTOSLS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1110, 0b1010, 1,
                        (outs SPR:$dst), (ins SPR:$a, fbits32:$fbits),
                  IIC_fpCVTSI, "vcvt", ".s32.f32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -834,7 +864,7 @@ def VTOSLS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 1,
   let D = VFPNeonA8Domain;
 }
 
-def VTOULS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 1,
+def VTOULS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1111, 0b1010, 1,
                        (outs SPR:$dst), (ins SPR:$a, fbits32:$fbits),
                  IIC_fpCVTSI, "vcvt", ".u32.f32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -842,25 +872,25 @@ def VTOULS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 1,
   let D = VFPNeonA8Domain;
 }
 
-def VTOSHD : AVConv1XI<0b11101, 0b11, 0b1110, 0b1011, 0,
+def VTOSHD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1110, 0b1011, 0,
                        (outs DPR:$dst), (ins DPR:$a, fbits16:$fbits),
                  IIC_fpCVTDI, "vcvt", ".s16.f64\t$dst, $a, $fbits", []>;
 
-def VTOUHD : AVConv1XI<0b11101, 0b11, 0b1111, 0b1011, 0,
+def VTOUHD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1111, 0b1011, 0,
                        (outs DPR:$dst), (ins DPR:$a, fbits16:$fbits),
                  IIC_fpCVTDI, "vcvt", ".u16.f64\t$dst, $a, $fbits", []>;
 
-def VTOSLD : AVConv1XI<0b11101, 0b11, 0b1110, 0b1011, 1,
+def VTOSLD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1110, 0b1011, 1,
                        (outs DPR:$dst), (ins DPR:$a, fbits32:$fbits),
                  IIC_fpCVTDI, "vcvt", ".s32.f64\t$dst, $a, $fbits", []>;
 
-def VTOULD : AVConv1XI<0b11101, 0b11, 0b1111, 0b1011, 1,
+def VTOULD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1111, 0b1011, 1,
                        (outs DPR:$dst), (ins DPR:$a, fbits32:$fbits),
                  IIC_fpCVTDI, "vcvt", ".u32.f64\t$dst, $a, $fbits", []>;
 
 // Fixed-Point to FP:
 
-def VSHTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 0,
+def VSHTOS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1010, 0b1010, 0,
                        (outs SPR:$dst), (ins SPR:$a, fbits16:$fbits),
                  IIC_fpCVTIS, "vcvt", ".f32.s16\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -868,7 +898,7 @@ def VSHTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 0,
   let D = VFPNeonA8Domain;
 }
 
-def VUHTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 0,
+def VUHTOS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1011, 0b1010, 0,
                        (outs SPR:$dst), (ins SPR:$a, fbits16:$fbits),
                  IIC_fpCVTIS, "vcvt", ".f32.u16\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -876,7 +906,7 @@ def VUHTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 0,
   let D = VFPNeonA8Domain;
 }
 
-def VSLTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 1,
+def VSLTOS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1010, 0b1010, 1,
                        (outs SPR:$dst), (ins SPR:$a, fbits32:$fbits),
                  IIC_fpCVTIS, "vcvt", ".f32.s32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -884,7 +914,7 @@ def VSLTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 1,
   let D = VFPNeonA8Domain;
 }
 
-def VULTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 1,
+def VULTOS : AVConv1XInsS_Encode<0b11101, 0b11, 0b1011, 0b1010, 1,
                        (outs SPR:$dst), (ins SPR:$a, fbits32:$fbits),
                  IIC_fpCVTIS, "vcvt", ".f32.u32\t$dst, $a, $fbits", []> {
   // Some single precision VFP instructions may be executed on both NEON and
@@ -892,19 +922,19 @@ def VULTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 1,
   let D = VFPNeonA8Domain;
 }
 
-def VSHTOD : AVConv1XI<0b11101, 0b11, 0b1010, 0b1011, 0,
+def VSHTOD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1010, 0b1011, 0,
                        (outs DPR:$dst), (ins DPR:$a, fbits16:$fbits),
                  IIC_fpCVTID, "vcvt", ".f64.s16\t$dst, $a, $fbits", []>;
 
-def VUHTOD : AVConv1XI<0b11101, 0b11, 0b1011, 0b1011, 0,
+def VUHTOD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1011, 0b1011, 0,
                        (outs DPR:$dst), (ins DPR:$a, fbits16:$fbits),
                  IIC_fpCVTID, "vcvt", ".f64.u16\t$dst, $a, $fbits", []>;
 
-def VSLTOD : AVConv1XI<0b11101, 0b11, 0b1010, 0b1011, 1,
+def VSLTOD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1010, 0b1011, 1,
                        (outs DPR:$dst), (ins DPR:$a, fbits32:$fbits),
                  IIC_fpCVTID, "vcvt", ".f64.s32\t$dst, $a, $fbits", []>;
 
-def VULTOD : AVConv1XI<0b11101, 0b11, 0b1011, 0b1011, 1,
+def VULTOD : AVConv1XInsD_Encode<0b11101, 0b11, 0b1011, 0b1011, 1,
                        (outs DPR:$dst), (ins DPR:$a, fbits32:$fbits),
                  IIC_fpCVTID, "vcvt", ".f64.u32\t$dst, $a, $fbits", []>;
 
@@ -1030,7 +1060,7 @@ def VFMAD : ADbI<0b11101, 0b10, 0, 0,
                  [(set DPR:$Dd, (fadd_mlx (fmul_su DPR:$Dn, DPR:$Dm),
                                           (f64 DPR:$Ddin)))]>,
               RegConstraint<"$Ddin = $Dd">,
-              Requires<[HasVFP4]>;
+              Requires<[HasVFP4,FPContractions]>;
 
 def VFMAS : ASbIn<0b11101, 0b10, 0, 0,
                   (outs SPR:$Sd), (ins SPR:$Sdin, SPR:$Sn, SPR:$Sm),
@@ -1038,17 +1068,17 @@ def VFMAS : ASbIn<0b11101, 0b10, 0, 0,
                   [(set SPR:$Sd, (fadd_mlx (fmul_su SPR:$Sn, SPR:$Sm),
                                            SPR:$Sdin))]>,
               RegConstraint<"$Sdin = $Sd">,
-              Requires<[HasVFP4,DontUseNEONForFP]> {
+              Requires<[HasVFP4,DontUseNEONForFP,FPContractions]> {
   // Some single precision VFP instructions may be executed on both NEON and
   // VFP pipelines.
 }
 
 def : Pat<(fadd_mlx DPR:$dstin, (fmul_su DPR:$a, (f64 DPR:$b))),
           (VFMAD DPR:$dstin, DPR:$a, DPR:$b)>,
-          Requires<[HasVFP4]>;
+          Requires<[HasVFP4,FPContractions]>;
 def : Pat<(fadd_mlx SPR:$dstin, (fmul_su SPR:$a, SPR:$b)),
           (VFMAS SPR:$dstin, SPR:$a, SPR:$b)>,
-          Requires<[HasVFP4,DontUseNEONForFP]>;
+          Requires<[HasVFP4,DontUseNEONForFP,FPContractions]>;
 
 def VFMSD : ADbI<0b11101, 0b10, 1, 0,
                  (outs DPR:$Dd), (ins DPR:$Ddin, DPR:$Dn, DPR:$Dm),
@@ -1056,7 +1086,7 @@ def VFMSD : ADbI<0b11101, 0b10, 1, 0,
                  [(set DPR:$Dd, (fadd_mlx (fneg (fmul_su DPR:$Dn,DPR:$Dm)),
                                           (f64 DPR:$Ddin)))]>,
               RegConstraint<"$Ddin = $Dd">,
-              Requires<[HasVFP4]>;
+              Requires<[HasVFP4,FPContractions]>;
 
 def VFMSS : ASbIn<0b11101, 0b10, 1, 0,
                   (outs SPR:$Sd), (ins SPR:$Sdin, SPR:$Sn, SPR:$Sm),
@@ -1064,17 +1094,17 @@ def VFMSS : ASbIn<0b11101, 0b10, 1, 0,
                   [(set SPR:$Sd, (fadd_mlx (fneg (fmul_su SPR:$Sn, SPR:$Sm)),
                                            SPR:$Sdin))]>,
               RegConstraint<"$Sdin = $Sd">,
-              Requires<[HasVFP4,DontUseNEONForFP]> {
+              Requires<[HasVFP4,DontUseNEONForFP,FPContractions]> {
   // Some single precision VFP instructions may be executed on both NEON and
   // VFP pipelines.
 }
 
 def : Pat<(fsub_mlx DPR:$dstin, (fmul_su DPR:$a, (f64 DPR:$b))),
           (VFMSD DPR:$dstin, DPR:$a, DPR:$b)>,
-          Requires<[HasVFP4]>;
+          Requires<[HasVFP4,FPContractions]>;
 def : Pat<(fsub_mlx SPR:$dstin, (fmul_su SPR:$a, SPR:$b)),
           (VFMSS SPR:$dstin, SPR:$a, SPR:$b)>,
-          Requires<[HasVFP4,DontUseNEONForFP]>;
+          Requires<[HasVFP4,DontUseNEONForFP,FPContractions]>;
 
 def VFNMAD : ADbI<0b11101, 0b01, 1, 0,
                   (outs DPR:$Dd), (ins DPR:$Ddin, DPR:$Dn, DPR:$Dm),
@@ -1082,7 +1112,7 @@ def VFNMAD : ADbI<0b11101, 0b01, 1, 0,
                   [(set DPR:$Dd,(fsub_mlx (fneg (fmul_su DPR:$Dn,DPR:$Dm)),
                                           (f64 DPR:$Ddin)))]>,
                 RegConstraint<"$Ddin = $Dd">,
-                Requires<[HasVFP4]>;
+                Requires<[HasVFP4,FPContractions]>;
 
 def VFNMAS : ASbI<0b11101, 0b01, 1, 0,
                   (outs SPR:$Sd), (ins SPR:$Sdin, SPR:$Sn, SPR:$Sm),
@@ -1090,17 +1120,17 @@ def VFNMAS : ASbI<0b11101, 0b01, 1, 0,
                   [(set SPR:$Sd, (fsub_mlx (fneg (fmul_su SPR:$Sn, SPR:$Sm)),
                                            SPR:$Sdin))]>,
                 RegConstraint<"$Sdin = $Sd">,
-                Requires<[HasVFP4,DontUseNEONForFP]> {
+                Requires<[HasVFP4,DontUseNEONForFP,FPContractions]> {
   // Some single precision VFP instructions may be executed on both NEON and
   // VFP pipelines.
 }
 
 def : Pat<(fsub_mlx (fneg (fmul_su DPR:$a, (f64 DPR:$b))), DPR:$dstin),
           (VFNMAD DPR:$dstin, DPR:$a, DPR:$b)>,
-          Requires<[HasVFP4]>;
+          Requires<[HasVFP4,FPContractions]>;
 def : Pat<(fsub_mlx (fneg (fmul_su SPR:$a, SPR:$b)), SPR:$dstin),
           (VFNMAS SPR:$dstin, SPR:$a, SPR:$b)>,
-          Requires<[HasVFP4,DontUseNEONForFP]>;
+          Requires<[HasVFP4,DontUseNEONForFP,FPContractions]>;
 
 def VFNMSD : ADbI<0b11101, 0b01, 0, 0,
                   (outs DPR:$Dd), (ins DPR:$Ddin, DPR:$Dn, DPR:$Dm),
@@ -1108,24 +1138,24 @@ def VFNMSD : ADbI<0b11101, 0b01, 0, 0,
                   [(set DPR:$Dd, (fsub_mlx (fmul_su DPR:$Dn, DPR:$Dm),
                                            (f64 DPR:$Ddin)))]>,
                RegConstraint<"$Ddin = $Dd">,
-               Requires<[HasVFP4]>;
+               Requires<[HasVFP4,FPContractions]>;
 
 def VFNMSS : ASbI<0b11101, 0b01, 0, 0,
                   (outs SPR:$Sd), (ins SPR:$Sdin, SPR:$Sn, SPR:$Sm),
                   IIC_fpFMAC32, "vfnms", ".f32\t$Sd, $Sn, $Sm",
              [(set SPR:$Sd, (fsub_mlx (fmul_su SPR:$Sn, SPR:$Sm), SPR:$Sdin))]>,
                          RegConstraint<"$Sdin = $Sd">,
-                  Requires<[HasVFP4,DontUseNEONForFP]> {
+                  Requires<[HasVFP4,DontUseNEONForFP,FPContractions]> {
   // Some single precision VFP instructions may be executed on both NEON and
   // VFP pipelines.
 }
 
 def : Pat<(fsub_mlx (fmul_su DPR:$a, (f64 DPR:$b)), DPR:$dstin),
           (VFNMSD DPR:$dstin, DPR:$a, DPR:$b)>,
-          Requires<[HasVFP4]>;
+          Requires<[HasVFP4,FPContractions]>;
 def : Pat<(fsub_mlx (fmul_su SPR:$a, SPR:$b), SPR:$dstin),
           (VFNMSS SPR:$dstin, SPR:$a, SPR:$b)>,
-          Requires<[HasVFP4,DontUseNEONForFP]>;
+          Requires<[HasVFP4,DontUseNEONForFP,FPContractions]>;
 
 //===----------------------------------------------------------------------===//
 // FP Conditional moves.
@@ -1166,9 +1196,9 @@ class MovFromVFP<bits<4> opc19_16, dag oops, dag iops, string opc, string asm,
 
 // APSR is the application level alias of CPSR. This FPSCR N, Z, C, V flags
 // to APSR.
-let Defs = [CPSR], Uses = [FPSCR], Rt = 0b1111 /* apsr_nzcv */ in
+let Defs = [CPSR], Uses = [FPSCR_NZCV], Rt = 0b1111 /* apsr_nzcv */ in
 def FMSTAT : MovFromVFP<0b0001 /* fpscr */, (outs), (ins),
-                        "vmrs", "\tapsr_nzcv, fpscr", [(arm_fmstat)]>;
+                        "vmrs", "\tAPSR_nzcv, fpscr", [(arm_fmstat)]>;
 
 // Application level FPSCR -> GPR
 let hasSideEffects = 1, Uses = [FPSCR] in
@@ -1182,6 +1212,10 @@ let Uses = [FPSCR] in {
                               "vmrs", "\t$Rt, fpexc", []>;
   def VMRS_FPSID : MovFromVFP<0b0000 /* fpsid */, (outs GPR:$Rt), (ins),
                               "vmrs", "\t$Rt, fpsid", []>;
+  def VMRS_MVFR0 : MovFromVFP<0b0111 /* mvfr0 */, (outs GPR:$Rt), (ins),
+                              "vmrs", "\t$Rt, mvfr0", []>;
+  def VMRS_MVFR1 : MovFromVFP<0b0110 /* mvfr1 */, (outs GPR:$Rt), (ins),
+                              "vmrs", "\t$Rt, mvfr1", []>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1304,6 +1338,11 @@ def : VFP2MnemonicAlias<"fcmps", "vcmp.f32">;
 def : VFP2MnemonicAlias<"fcmpd", "vcmp.f64">;
 def : VFP2MnemonicAlias<"fdivs", "vdiv.f32">;
 def : VFP2MnemonicAlias<"fdivd", "vdiv.f64">;
+
+// Be friendly and accept the old form of zero-compare
+def : VFP2InstAlias<"fcmpzd${p} $val", (VCMPZD DPR:$val, pred:$p)>;
+def : VFP2InstAlias<"fcmpzs${p} $val", (VCMPZS SPR:$val, pred:$p)>;
+
 
 def : VFP2InstAlias<"fmstat${p}", (FMSTAT pred:$p)>;
 def : VFP2InstAlias<"fadds${p} $Sd, $Sn, $Sm",

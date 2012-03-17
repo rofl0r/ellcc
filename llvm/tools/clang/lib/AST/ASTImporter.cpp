@@ -965,10 +965,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
                                       Base1->getType(), Base2->getType())) {
           Context.Diag2(D2->getLocation(), diag::warn_odr_tag_type_inconsistent)
             << Context.C2.getTypeDeclType(D2);
-          Context.Diag2(Base2->getSourceRange().getBegin(), diag::note_odr_base)
+          Context.Diag2(Base2->getLocStart(), diag::note_odr_base)
             << Base2->getType()
             << Base2->getSourceRange();
-          Context.Diag1(Base1->getSourceRange().getBegin(), diag::note_odr_base)
+          Context.Diag1(Base1->getLocStart(), diag::note_odr_base)
             << Base1->getType()
             << Base1->getSourceRange();
           return false;
@@ -978,10 +978,10 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
         if (Base1->isVirtual() != Base2->isVirtual()) {
           Context.Diag2(D2->getLocation(), diag::warn_odr_tag_type_inconsistent)
             << Context.C2.getTypeDeclType(D2);
-          Context.Diag2(Base2->getSourceRange().getBegin(),
+          Context.Diag2(Base2->getLocStart(),
                         diag::note_odr_virtual_base)
             << Base2->isVirtual() << Base2->getSourceRange();
-          Context.Diag1(Base1->getSourceRange().getBegin(), diag::note_odr_base)
+          Context.Diag1(Base1->getLocStart(), diag::note_odr_base)
             << Base1->isVirtual()
             << Base1->getSourceRange();
           return false;
@@ -991,7 +991,7 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       Context.Diag2(D2->getLocation(), diag::warn_odr_tag_type_inconsistent)
         << Context.C2.getTypeDeclType(D2);
       const CXXBaseSpecifier *Base1 = D1CXX->bases_begin();
-      Context.Diag1(Base1->getSourceRange().getBegin(), diag::note_odr_base)
+      Context.Diag1(Base1->getLocStart(), diag::note_odr_base)
         << Base1->getType()
         << Base1->getSourceRange();
       Context.Diag2(D2->getLocation(), diag::note_odr_missing_base);
@@ -1359,7 +1359,7 @@ QualType ASTNodeImporter::VisitBuiltinType(const BuiltinType *T) {
     // The context we're importing from has an unsigned 'char'. If we're 
     // importing into a context with a signed 'char', translate to 
     // 'unsigned char' instead.
-    if (Importer.getToContext().getLangOptions().CharIsSigned)
+    if (Importer.getToContext().getLangOpts().CharIsSigned)
       return Importer.getToContext().UnsignedCharTy;
     
     return Importer.getToContext().CharTy;
@@ -1368,7 +1368,7 @@ QualType ASTNodeImporter::VisitBuiltinType(const BuiltinType *T) {
     // The context we're importing from has an unsigned 'char'. If we're 
     // importing into a context with a signed 'char', translate to 
     // 'unsigned char' instead.
-    if (!Importer.getToContext().getLangOptions().CharIsSigned)
+    if (!Importer.getToContext().getLangOpts().CharIsSigned)
       return Importer.getToContext().SignedCharTy;
     
     return Importer.getToContext().CharTy;
@@ -2243,7 +2243,7 @@ Decl *ASTNodeImporter::VisitEnumDecl(EnumDecl *D) {
   if (!SearchName && D->getTypedefNameForAnonDecl()) {
     SearchName = Importer.Import(D->getTypedefNameForAnonDecl()->getDeclName());
     IDNS = Decl::IDNS_Ordinary;
-  } else if (Importer.getToContext().getLangOptions().CPlusPlus)
+  } else if (Importer.getToContext().getLangOpts().CPlusPlus)
     IDNS |= Decl::IDNS_Ordinary;
   
   // We may already have an enum of the same name; try to find and match it.
@@ -2328,7 +2328,7 @@ Decl *ASTNodeImporter::VisitRecordDecl(RecordDecl *D) {
   if (!SearchName && D->getTypedefNameForAnonDecl()) {
     SearchName = Importer.Import(D->getTypedefNameForAnonDecl()->getDeclName());
     IDNS = Decl::IDNS_Ordinary;
-  } else if (Importer.getToContext().getLangOptions().CPlusPlus)
+  } else if (Importer.getToContext().getLangOpts().CPlusPlus)
     IDNS |= Decl::IDNS_Ordinary;
 
   // We may already have a record of the same name; try to find and match it.
@@ -2485,7 +2485,7 @@ Decl *ASTNodeImporter::VisitFunctionDecl(FunctionDecl *D) {
           // Sema::IsOverload out to the AST library.
           
           // Function overloading is okay in C++.
-          if (Importer.getToContext().getLangOptions().CPlusPlus)
+          if (Importer.getToContext().getLangOpts().CPlusPlus)
             continue;
           
           // Complain about inconsistent function types.
@@ -3947,6 +3947,7 @@ Expr *ASTNodeImporter::VisitDeclRefExpr(DeclRefExpr *E) {
                                          Importer.Import(E->getQualifierLoc()),
                                    Importer.Import(E->getTemplateKeywordLoc()),
                                          ToD,
+                                         E->refersToEnclosingLocal(),
                                          Importer.Import(E->getLocation()),
                                          T, E->getValueKind(),
                                          FoundD,
@@ -4171,7 +4172,7 @@ TypeSourceInfo *ASTImporter::Import(TypeSourceInfo *FromTSI) {
     return 0;
 
   return ToContext.getTrivialTypeSourceInfo(T, 
-                        FromTSI->getTypeLoc().getSourceRange().getBegin());
+                        FromTSI->getTypeLoc().getLocStart());
 }
 
 Decl *ASTImporter::Import(Decl *FromD) {

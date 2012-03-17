@@ -34,16 +34,41 @@
 #include <strings.h>
 #endif  // __APPLE__
 
+#if defined(_WIN32) && !defined(_DLL)
+// FIXME: We might want to use these on Mac too.
+extern "C" {
+int memcmp(const void *b1, const void *b2, size_t sz);
+void* memmove(void *d, const void *s, size_t sz);
+void* memcpy(void *d, const void *s, size_t sz);
+void* memset(void *b, int c, size_t sz);
+
+char* strchr(const char *s, char c);
+char* strcat(char *d, const char* s);  // NOLINT
+char* strncat(char *d, const char* s, size_t sz);
+char* strcpy(char *d, const char* s);  // NOLINT
+char* strncpy(char *d, const char* s, size_t sz);
+int strcmp(const char *s1, const char* s2);
+int strncmp(const char *s1, const char* s2, size_t sz);
+size_t strnlen(const char *s1, size_t sz);
+
+void longjmp(void* env, int value);
+
+__declspec(dllimport)
+void* __stdcall CreateThread(void *sec, size_t st, void* start,
+                             void *arg, DWORD fl, DWORD *id);
+}  // extern "C"
+#endif
+
 namespace __asan {
 
 // Instruments read/write access to a single byte in memory.
 // On error calls __asan_report_error, which aborts the program.
-static NOINLINE void AccessAddress(uintptr_t address, bool isWrite) {
-  if (__asan_address_is_poisoned((void*)address)) {
-    GET_BP_PC_SP;
-    __asan_report_error(pc, bp, sp, address, isWrite, /* access_size */ 1);
-  }
-}
+#define ACCESS_ADDRESS(address, isWrite)   do {         \
+  if (AddressIsPoisoned(address)) {                     \
+    GET_CURRENT_PC_BP_SP;                               \
+    __asan_report_error(pc, bp, sp, address, isWrite, /* access_size */ 1); \
+  } \
+} while (0)
 
 // We implement ACCESS_MEMORY_RANGE, ASAN_READ_RANGE,
 // and ASAN_WRITE_RANGE as macro instead of function so
@@ -56,8 +81,8 @@ static NOINLINE void AccessAddress(uintptr_t address, bool isWrite) {
 #define ACCESS_MEMORY_RANGE(offset, size, isWrite) do { \
   if (size > 0) { \
     uintptr_t ptr = (uintptr_t)(offset); \
-    AccessAddress(ptr, isWrite); \
-    AccessAddress(ptr + (size) - 1, isWrite); \
+    ACCESS_ADDRESS(ptr, isWrite); \
+    ACCESS_ADDRESS(ptr + (size) - 1, isWrite); \
   } \
 } while (0)
 

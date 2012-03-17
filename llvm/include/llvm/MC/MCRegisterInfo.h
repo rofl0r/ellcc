@@ -25,18 +25,18 @@ namespace llvm {
 /// MCRegisterClass - Base class of TargetRegisterClass.
 class MCRegisterClass {
 public:
-  typedef const unsigned* iterator;
-  typedef const unsigned* const_iterator;
+  typedef const uint16_t* iterator;
+  typedef const uint16_t* const_iterator;
 
-  const unsigned ID;
   const char *Name;
-  const unsigned RegSize, Alignment; // Size & Alignment of register in bytes
-  const int CopyCost;
-  const bool Allocatable;
   const iterator RegsBegin;
-  const unsigned char *const RegSet;
-  const unsigned RegsSize;
-  const unsigned RegSetSize;
+  const uint8_t *const RegSet;
+  const uint16_t RegsSize;
+  const uint16_t RegSetSize;
+  const uint16_t ID;
+  const uint16_t RegSize, Alignment; // Size & Alignment of register in bytes
+  const int8_t CopyCost;
+  const bool Allocatable;
 
   /// getID() - Return the register class ID number.
   ///
@@ -107,9 +107,9 @@ public:
 ///
 struct MCRegisterDesc {
   const char *Name;         // Printable name for the reg (for debugging)
-  unsigned   Overlaps;      // Overlapping registers, described above
-  unsigned   SubRegs;       // Sub-register set, described above
-  unsigned   SuperRegs;     // Super-register set, described above
+  uint32_t   Overlaps;      // Overlapping registers, described above
+  uint32_t   SubRegs;       // Sub-register set, described above
+  uint32_t   SuperRegs;     // Super-register set, described above
 };
 
 /// MCRegisterInfo base class - We assume that the target defines a static
@@ -133,10 +133,10 @@ private:
   unsigned RAReg;                             // Return address register
   const MCRegisterClass *Classes;             // Pointer to the regclass array
   unsigned NumClasses;                        // Number of entries in the array
-  const unsigned *Overlaps;                   // Pointer to the overlaps array
-  const unsigned *SubRegs;                    // Pointer to the subregs array
-  const unsigned *SuperRegs;                  // Pointer to the superregs array
-  const unsigned short *SubRegIndices;        // Pointer to the subreg lookup
+  const uint16_t *Overlaps;                   // Pointer to the overlaps array
+  const uint16_t *SubRegs;                    // Pointer to the subregs array
+  const uint16_t *SuperRegs;                  // Pointer to the superregs array
+  const uint16_t *SubRegIndices;              // Pointer to the subreg lookup
                                               // array.
   unsigned NumSubRegIndices;                  // Number of subreg indices.
   DenseMap<unsigned, int> L2DwarfRegs;        // LLVM to Dwarf regs mapping
@@ -150,9 +150,9 @@ public:
   /// auto-generated routines. *DO NOT USE*.
   void InitMCRegisterInfo(const MCRegisterDesc *D, unsigned NR, unsigned RA,
                           const MCRegisterClass *C, unsigned NC,
-                          const unsigned *O, const unsigned *Sub,
-                          const unsigned *Super,
-                          const unsigned short *SubIndices,
+                          const uint16_t *O, const uint16_t *Sub,
+                          const uint16_t *Super,
+                          const uint16_t *SubIndices,
                           unsigned NumIndices) {
     Desc = D;
     NumRegs = NR;
@@ -218,7 +218,7 @@ public:
   /// register, or a null list of there are none.  The list returned is zero
   /// terminated.
   ///
-  const unsigned *getAliasSet(unsigned RegNo) const {
+  const uint16_t *getAliasSet(unsigned RegNo) const {
     // The Overlaps set always begins with Reg itself.
     return Overlaps + get(RegNo).Overlaps + 1;
   }
@@ -228,7 +228,7 @@ public:
   /// list.
   /// These are exactly the registers in { x | regsOverlap(x, Reg) }.
   ///
-  const unsigned *getOverlaps(unsigned RegNo) const {
+  const uint16_t *getOverlaps(unsigned RegNo) const {
     return Overlaps + get(RegNo).Overlaps;
   }
 
@@ -237,7 +237,7 @@ public:
   /// returned is zero terminated and sorted according to super-sub register
   /// relations. e.g. X86::RAX's sub-register list is EAX, AX, AL, AH.
   ///
-  const unsigned *getSubRegisters(unsigned RegNo) const {
+  const uint16_t *getSubRegisters(unsigned RegNo) const {
     return SubRegs + get(RegNo).SubRegs;
   }
 
@@ -246,6 +246,16 @@ public:
   /// exist.
   unsigned getSubReg(unsigned Reg, unsigned Idx) const {
     return *(SubRegIndices + (Reg - 1) * NumSubRegIndices + Idx - 1);
+  }
+
+  /// getMatchingSuperReg - Return a super-register of the specified register
+  /// Reg so its sub-register of index SubIdx is Reg.
+  unsigned getMatchingSuperReg(unsigned Reg, unsigned SubIdx,
+                               const MCRegisterClass *RC) const {
+    for (const uint16_t *SRs = getSuperRegisters(Reg); unsigned SR = *SRs;++SRs)
+      if (Reg == getSubReg(SR, SubIdx) && RC->contains(SR))
+        return SR;
+    return 0;
   }
 
   /// getSubRegIndex - For a given register pair, return the sub-register index
@@ -263,7 +273,7 @@ public:
   /// returned is zero terminated and sorted according to super-sub register
   /// relations. e.g. X86::AL's super-register list is AX, EAX, RAX.
   ///
-  const unsigned *getSuperRegisters(unsigned RegNo) const {
+  const uint16_t *getSuperRegisters(unsigned RegNo) const {
     return SuperRegs + get(RegNo).SuperRegs;
   }
 

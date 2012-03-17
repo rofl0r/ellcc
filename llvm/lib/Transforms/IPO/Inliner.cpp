@@ -19,6 +19,7 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/IPO/InlinerPass.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -243,13 +244,20 @@ bool Inliner::shouldInline(CallSite CS) {
     return false;
   }
   
-  // Try to detect the case where the current inlining candidate caller
-  // (call it B) is a static function and is an inlining candidate elsewhere,
-  // and the current candidate callee (call it C) is large enough that
-  // inlining it into B would make B too big to inline later.  In these
-  // circumstances it may be best not to inline C into B, but to inline B
-  // into its callers.
-  if (Caller->hasLocalLinkage()) {
+  // Try to detect the case where the current inlining candidate caller (call
+  // it B) is a static or linkonce-ODR function and is an inlining candidate
+  // elsewhere, and the current candidate callee (call it C) is large enough
+  // that inlining it into B would make B too big to inline later. In these
+  // circumstances it may be best not to inline C into B, but to inline B into
+  // its callers.
+  //
+  // This only applies to static and linkonce-ODR functions because those are
+  // expected to be available for inlining in the translation units where they
+  // are used. Thus we will always have the opportunity to make local inlining
+  // decisions. Importantly the linkonce-ODR linkage covers inline functions
+  // and templates in C++.
+  if (Caller->hasLocalLinkage() ||
+      Caller->getLinkage() == GlobalValue::LinkOnceODRLinkage) {
     int TotalSecondaryCost = 0;
     bool outerCallsFound = false;
     // This bool tracks what happens if we do NOT inline C into B.
@@ -327,6 +335,37 @@ static bool InlineHistoryIncludes(Function *F, int InlineHistoryID,
   return false;
 }
 
+/// \brief Simplify arguments going into a particular callsite.
+///
+/// This is important to do each time we add a callsite due to inlining so that
+/// constants and other entities which feed into inline cost estimation are
+/// properly recognized when analyzing the new callsite. Consider:
+///   void outer(int x) {
+///     if (x < 42)
+///       return inner(42 - x);
+///     ...
+///   }
+///   void inner(int x) {
+///     ...
+///   }
+///
+/// The inliner gives calls to 'outer' with a constant argument a bonus because
+/// it will delete one side of a branch. But the resulting call to 'inner'
+/// will, after inlining, also have a constant operand. We need to do just
+/// enough constant folding to expose this for callsite arguments. The rest
+/// will be taken care of after the inliner finishes running.
+static void simplifyCallSiteArguments(const TargetData *TD, CallSite CS) {
+  // FIXME: It would be nice to avoid this smallvector if RAUW doesn't
+  // invalidate operand iterators in any cases.
+  SmallVector<std::pair<Value *, Value*>, 4> SimplifiedArgs;
+  for (CallSite::arg_iterator I = CS.arg_begin(), E = CS.arg_end();
+       I != E; ++I)
+    if (Instruction *Inst = dyn_cast<Instruction>(*I))
+      if (Value *SimpleArg = SimplifyInstruction(Inst, TD))
+        SimplifiedArgs.push_back(std::make_pair(Inst, SimpleArg));
+  for (unsigned Idx = 0, Size = SimplifiedArgs.size(); Idx != Size; ++Idx)
+    SimplifiedArgs[Idx].first->replaceAllUsesWith(SimplifiedArgs[Idx].second);
+}
 
 bool Inliner::runOnSCC(CallGraphSCC &SCC) {
   CallGraph &CG = getAnalysis<CallGraph>();
@@ -455,7 +494,9 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
           for (unsigned i = 0, e = InlineInfo.InlinedCalls.size();
                i != e; ++i) {
             Value *Ptr = InlineInfo.InlinedCalls[i];
-            CallSites.push_back(std::make_pair(CallSite(Ptr), NewHistoryID));
+            CallSite NewCS = Ptr;
+            simplifyCallSiteArguments(TD, NewCS);
+            CallSites.push_back(std::make_pair(NewCS, NewHistoryID));
           }
         }
         
@@ -515,25 +556,27 @@ bool Inliner::doFinalization(CallGraph &CG) {
 
 /// removeDeadFunctions - Remove dead functions that are not included in
 /// DNR (Do Not Remove) list.
-bool Inliner::removeDeadFunctions(CallGraph &CG, 
-                                  SmallPtrSet<const Function *, 16> *DNR) {
-  SmallPtrSet<CallGraphNode*, 16> FunctionsToRemove;
+bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
+  SmallVector<CallGraphNode*, 16> FunctionsToRemove;
 
   // Scan for all of the functions, looking for ones that should now be removed
   // from the program.  Insert the dead ones in the FunctionsToRemove set.
   for (CallGraph::iterator I = CG.begin(), E = CG.end(); I != E; ++I) {
     CallGraphNode *CGN = I->second;
-    if (CGN->getFunction() == 0)
-      continue;
-    
     Function *F = CGN->getFunction();
-    
+    if (!F || F->isDeclaration())
+      continue;
+
+    // Handle the case when this function is called and we only want to care
+    // about always-inline functions. This is a bit of a hack to share code
+    // between here and the InlineAlways pass.
+    if (AlwaysInlineOnly && !F->hasFnAttr(Attribute::AlwaysInline))
+      continue;
+
     // If the only remaining users of the function are dead constants, remove
     // them.
     F->removeDeadConstantUsers();
 
-    if (DNR && DNR->count(F))
-      continue;
     if (!F->isDefTriviallyDead())
       continue;
     
@@ -546,24 +589,28 @@ bool Inliner::removeDeadFunctions(CallGraph &CG,
     CG.getExternalCallingNode()->removeAnyCallEdgeTo(CGN);
 
     // Removing the node for callee from the call graph and delete it.
-    FunctionsToRemove.insert(CGN);
+    FunctionsToRemove.push_back(CGN);
   }
+  if (FunctionsToRemove.empty())
+    return false;
 
   // Now that we know which functions to delete, do so.  We didn't want to do
   // this inline, because that would invalidate our CallGraph::iterator
   // objects. :(
   //
-  // Note that it doesn't matter that we are iterating over a non-stable set
+  // Note that it doesn't matter that we are iterating over a non-stable order
   // here to do this, it doesn't matter which order the functions are deleted
   // in.
-  bool Changed = false;
-  for (SmallPtrSet<CallGraphNode*, 16>::iterator I = FunctionsToRemove.begin(),
-       E = FunctionsToRemove.end(); I != E; ++I) {
+  std::sort(FunctionsToRemove.begin(), FunctionsToRemove.end());
+  FunctionsToRemove.erase(std::unique(FunctionsToRemove.begin(),
+                                      FunctionsToRemove.end()),
+                          FunctionsToRemove.end());
+  for (SmallVectorImpl<CallGraphNode *>::iterator I = FunctionsToRemove.begin(),
+                                                  E = FunctionsToRemove.end();
+       I != E; ++I) {
     resetCachedCostInfo((*I)->getFunction());
     delete CG.removeFunctionFromModule(*I);
     ++NumDeleted;
-    Changed = true;
   }
-
-  return Changed;
+  return true;
 }

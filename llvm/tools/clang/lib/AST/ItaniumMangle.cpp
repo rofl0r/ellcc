@@ -375,7 +375,7 @@ static bool isInCLinkageSpecification(const Decl *D) {
 
 bool ItaniumMangleContext::shouldMangleDeclName(const NamedDecl *D) {
   // In C, functions with no attributes never need to be mangled. Fastpath them.
-  if (!getASTContext().getLangOptions().CPlusPlus && !D->hasAttrs())
+  if (!getASTContext().getLangOpts().CPlusPlus && !D->hasAttrs())
     return false;
 
   // Any decl can be declared with __asm("foo") on it, and this takes precedence
@@ -392,7 +392,7 @@ bool ItaniumMangleContext::shouldMangleDeclName(const NamedDecl *D) {
     return true;
 
   // Otherwise, no mangling is done outside C++ mode.
-  if (!getASTContext().getLangOptions().CPlusPlus)
+  if (!getASTContext().getLangOpts().CPlusPlus)
     return false;
 
   // Variables at global scope with non-internal linkage are not mangled
@@ -553,8 +553,7 @@ void CXXNameMangler::mangleName(const NamedDecl *ND) {
     return;
   }
 
-  while (isa<LinkageSpecDecl>(DC))
-    DC = getEffectiveParentContext(DC);
+  DC = IgnoreLinkageSpecDecls(DC);
 
   if (DC->isTranslationUnit() || isStdNamespace(DC)) {
     // Check if we have a template.
@@ -594,7 +593,8 @@ void CXXNameMangler::mangleName(const TemplateDecl *TD,
 void CXXNameMangler::mangleUnscopedName(const NamedDecl *ND) {
   //  <unscoped-name> ::= <unqualified-name>
   //                  ::= St <unqualified-name>   # ::std::
-  if (isStdNamespace(getEffectiveDeclContext(ND)))
+
+  if (isStdNamespace(IgnoreLinkageSpecDecls(getEffectiveDeclContext(ND))))
     Out << "St";
 
   mangleUnqualifiedName(ND);
@@ -1393,8 +1393,7 @@ void CXXNameMangler::manglePrefix(const DeclContext *DC, bool NoFunction) {
   //           ::= # empty
   //           ::= <substitution>
 
-  while (isa<LinkageSpecDecl>(DC))
-    DC = getEffectiveParentContext(DC);
+  DC = IgnoreLinkageSpecDecls(DC);
 
   if (DC->isTranslationUnit())
     return;
@@ -2352,7 +2351,6 @@ recurse:
   // These all can only appear in local or variable-initialization
   // contexts and so should never appear in a mangling.
   case Expr::AddrLabelExprClass:
-  case Expr::BlockDeclRefExprClass:
   case Expr::CXXThisExprClass:
   case Expr::DesignatedInitExprClass:
   case Expr::ImplicitValueInitExprClass:
@@ -2375,6 +2373,10 @@ recurse:
   case Expr::ObjCProtocolExprClass:
   case Expr::ObjCSelectorExprClass:
   case Expr::ObjCStringLiteralClass:
+  case Expr::ObjCNumericLiteralClass:
+  case Expr::ObjCArrayLiteralClass:
+  case Expr::ObjCDictionaryLiteralClass:
+  case Expr::ObjCSubscriptRefExprClass:
   case Expr::ObjCIndirectCopyRestoreExprClass:
   case Expr::OffsetOfExprClass:
   case Expr::PredefinedExprClass:
@@ -2436,6 +2438,9 @@ recurse:
                      Arity);
     break;
 
+  case Expr::UserDefinedLiteralClass:
+    // We follow g++'s approach of mangling a UDL as a call to the literal
+    // operator.
   case Expr::CXXMemberCallExprClass: // fallthrough
   case Expr::CallExprClass: {
     const CallExpr *CE = cast<CallExpr>(E);
@@ -2815,6 +2820,13 @@ recurse:
     Out << 'E';
     break;
 
+  // FIXME. __objc_yes/__objc_no are mangled same as true/false
+  case Expr::ObjCBoolLiteralExprClass:
+    Out << "Lb";
+    Out << (cast<ObjCBoolLiteralExpr>(E)->getValue() ? '1' : '0');
+    Out << 'E';
+    break;
+  
   case Expr::CXXBoolLiteralExprClass:
     Out << "Lb";
     Out << (cast<CXXBoolLiteralExpr>(E)->getValue() ? '1' : '0');

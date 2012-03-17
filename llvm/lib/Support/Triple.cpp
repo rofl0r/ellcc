@@ -29,6 +29,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case msp430:  return "msp430";
   case ppc64:   return "ppc64";
   case ppc:     return "ppc";
+  case r600:    return "r600";
   case sparc:   return "sparc";
   case sparcv9: return "sparcv9";
   case tce:     return "tce";
@@ -68,6 +69,8 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
   case nios2:   return "nios2";
 
   case hexagon:   return "hexagon";
+
+  case r600:    return "r600";
 
   case sparcv9:
   case sparc:   return "sparc";
@@ -156,6 +159,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("ppc", ppc)
     .Case("mblaze", mblaze)
     .Case("nios2", nios2)
+    .Case("r600", r600)
     .Case("hexagon", hexagon)
     .Case("sparc", sparc)
     .Case("sparcv9", sparcv9)
@@ -195,6 +199,7 @@ Triple::ArchType Triple::getArchTypeForDarwinArchName(StringRef Str) {
     // This is derived from the driver driver.
     .Cases("arm", "armv4t", "armv5", "armv6", Triple::arm)
     .Cases("armv7", "armv7f", "armv7k", "armv7s", "xscale", Triple::arm)
+    .Case("r600", Triple::r600)
     .Case("ptx32", Triple::ptx32)
     .Case("ptx64", Triple::ptx64)
     .Case("amdil", Triple::amdil)
@@ -218,6 +223,7 @@ const char *Triple::getArchNameForAssembler() {
     .Cases("armv5", "armv5e", "thumbv5", "thumbv5e", "armv5")
     .Cases("armv6", "thumbv6", "armv6")
     .Cases("armv7", "thumbv7", "armv7")
+    .Case("r600", "r600")
     .Case("ptx32", "ptx32")
     .Case("ptx64", "ptx64")
     .Case("le32", "le32")
@@ -248,6 +254,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .StartsWith("mips", ArchName.endswith("elsf") || ArchName.endswith("el") ?
                             Triple::mipsel : Triple::mips)
     .Case("nios2", Triple::nios2)
+    .Case("r600", Triple::r600)
     .Case("hexagon", Triple::hexagon)
     .Case("sparc", Triple::sparc)
     .Case("sparcv9", Triple::sparcv9)
@@ -659,6 +666,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::nios2:
   case llvm::Triple::ppc:
   case llvm::Triple::ptx32:
+  case llvm::Triple::r600:
   case llvm::Triple::sparc:
   case llvm::Triple::tce:
   case llvm::Triple::thumb:
@@ -708,6 +716,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::nios2:
   case Triple::ppc:
   case Triple::ptx32:
+  case Triple::r600:
   case Triple::sparc:
   case Triple::tce:
   case Triple::thumb:
@@ -738,6 +747,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::mblaze:
   case Triple::msp430:
   case Triple::nios2:
+  case Triple::r600:
   case Triple::tce:
   case Triple::thumb:
   case Triple::xcore:

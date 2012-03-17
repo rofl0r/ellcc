@@ -2411,14 +2411,14 @@ size_t SelectionDAGBuilder::Clusterify(CaseVector& Cases,
 
   BranchProbabilityInfo *BPI = FuncInfo.BPI;
   // Start with "simple" cases
-  for (size_t i = 0; i < SI.getNumCases(); ++i) {
-    BasicBlock *SuccBB = SI.getCaseSuccessor(i);
+  for (SwitchInst::ConstCaseIt i = SI.case_begin(), e = SI.case_end();
+       i != e; ++i) {
+    const BasicBlock *SuccBB = i.getCaseSuccessor();
     MachineBasicBlock *SMBB = FuncInfo.MBBMap[SuccBB];
 
     uint32_t ExtraWeight = BPI ? BPI->getEdgeWeight(SI.getParent(), SuccBB) : 0;
 
-    Cases.push_back(Case(SI.getCaseValue(i),
-                         SI.getCaseValue(i),
+    Cases.push_back(Case(i.getCaseValue(), i.getCaseValue(),
                          SMBB, ExtraWeight));
   }
   std::sort(Cases.begin(), Cases.end(), CaseCmp());
@@ -4503,9 +4503,9 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                              getValue(I.getArgOperand(0))));
     return 0;
   case Intrinsic::setjmp:
-    return "_setjmp"+!TLI.usesUnderscoreSetJmp();
+    return &"_setjmp"[!TLI.usesUnderscoreSetJmp()];
   case Intrinsic::longjmp:
-    return "_longjmp"+!TLI.usesUnderscoreLongJmp();
+    return &"_longjmp"[!TLI.usesUnderscoreLongJmp()];
   case Intrinsic::memcpy: {
     // Assert for address < 256 since we support only user defined address
     // spaces.
@@ -4561,8 +4561,10 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     const DbgDeclareInst &DI = cast<DbgDeclareInst>(I);
     MDNode *Variable = DI.getVariable();
     const Value *Address = DI.getAddress();
-    if (!Address || !DIVariable(Variable).Verify())
+    if (!Address || !DIVariable(Variable).Verify()) {
+      DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
       return 0;
+    }
 
     // Build an entry in DbgOrdering.  Debug info input nodes get an SDNodeOrder
     // but do not always have a corresponding SDNode built.  The SDNodeOrder

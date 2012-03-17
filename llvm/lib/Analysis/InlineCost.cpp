@@ -20,165 +20,27 @@
 
 using namespace llvm;
 
-/// callIsSmall - If a call is likely to lower to a single target instruction,
-/// or is otherwise deemed small return true.
-/// TODO: Perhaps calls like memcpy, strcpy, etc?
-bool llvm::callIsSmall(const Function *F) {
-  if (!F) return false;
-
-  if (F->hasLocalLinkage()) return false;
-
-  if (!F->hasName()) return false;
-
-  StringRef Name = F->getName();
-
-  // These will all likely lower to a single selection DAG node.
-  if (Name == "copysign" || Name == "copysignf" || Name == "copysignl" ||
-      Name == "fabs" || Name == "fabsf" || Name == "fabsl" ||
-      Name == "sin" || Name == "sinf" || Name == "sinl" ||
-      Name == "cos" || Name == "cosf" || Name == "cosl" ||
-      Name == "sqrt" || Name == "sqrtf" || Name == "sqrtl" )
-    return true;
-
-  // These are all likely to be optimized into something smaller.
-  if (Name == "pow" || Name == "powf" || Name == "powl" ||
-      Name == "exp2" || Name == "exp2l" || Name == "exp2f" ||
-      Name == "floor" || Name == "floorf" || Name == "ceil" ||
-      Name == "round" || Name == "ffs" || Name == "ffsl" ||
-      Name == "abs" || Name == "labs" || Name == "llabs")
-    return true;
-
-  return false;
-}
-
-/// analyzeBasicBlock - Fill in the current structure with information gleaned
-/// from the specified block.
-void CodeMetrics::analyzeBasicBlock(const BasicBlock *BB,
-                                    const TargetData *TD) {
-  ++NumBlocks;
-  unsigned NumInstsBeforeThisBB = NumInsts;
-  for (BasicBlock::const_iterator II = BB->begin(), E = BB->end();
-       II != E; ++II) {
-    if (isa<PHINode>(II)) continue;           // PHI nodes don't count.
-
-    // Special handling for calls.
-    if (isa<CallInst>(II) || isa<InvokeInst>(II)) {
-      if (const IntrinsicInst *IntrinsicI = dyn_cast<IntrinsicInst>(II)) {
-        switch (IntrinsicI->getIntrinsicID()) {
-        default: break;
-        case Intrinsic::dbg_declare:
-        case Intrinsic::dbg_value:
-        case Intrinsic::invariant_start:
-        case Intrinsic::invariant_end:
-        case Intrinsic::lifetime_start:
-        case Intrinsic::lifetime_end:
-        case Intrinsic::objectsize:
-        case Intrinsic::ptr_annotation:
-        case Intrinsic::var_annotation:
-          // These intrinsics don't count as size.
-          continue;
-        }
-      }
-
-      ImmutableCallSite CS(cast<Instruction>(II));
-
-      if (const Function *F = CS.getCalledFunction()) {
-        // If a function is both internal and has a single use, then it is
-        // extremely likely to get inlined in the future (it was probably
-        // exposed by an interleaved devirtualization pass).
-        if (!CS.isNoInline() && F->hasInternalLinkage() && F->hasOneUse())
-          ++NumInlineCandidates;
-
-        // If this call is to function itself, then the function is recursive.
-        // Inlining it into other functions is a bad idea, because this is
-        // basically just a form of loop peeling, and our metrics aren't useful
-        // for that case.
-        if (F == BB->getParent())
-          isRecursive = true;
-      }
-
-      if (!isa<IntrinsicInst>(II) && !callIsSmall(CS.getCalledFunction())) {
-        // Each argument to a call takes on average one instruction to set up.
-        NumInsts += CS.arg_size();
-
-        // We don't want inline asm to count as a call - that would prevent loop
-        // unrolling. The argument setup cost is still real, though.
-        if (!isa<InlineAsm>(CS.getCalledValue()))
-          ++NumCalls;
-      }
-    }
-
-    if (const AllocaInst *AI = dyn_cast<AllocaInst>(II)) {
-      if (!AI->isStaticAlloca())
-        this->usesDynamicAlloca = true;
-    }
-
-    if (isa<ExtractElementInst>(II) || II->getType()->isVectorTy())
-      ++NumVectorInsts;
-
-    if (const CastInst *CI = dyn_cast<CastInst>(II)) {
-      // Noop casts, including ptr <-> int,  don't count.
-      if (CI->isLosslessCast() || isa<IntToPtrInst>(CI) ||
-          isa<PtrToIntInst>(CI))
-        continue;
-      // trunc to a native type is free (assuming the target has compare and
-      // shift-right of the same width).
-      if (isa<TruncInst>(CI) && TD &&
-          TD->isLegalInteger(TD->getTypeSizeInBits(CI->getType())))
-        continue;
-      // Result of a cmp instruction is often extended (to be used by other
-      // cmp instructions, logical or return instructions). These are usually
-      // nop on most sane targets.
-      if (isa<CmpInst>(CI->getOperand(0)))
-        continue;
-    } else if (const GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(II)){
-      // If a GEP has all constant indices, it will probably be folded with
-      // a load/store.
-      if (GEPI->hasAllConstantIndices())
-        continue;
-    }
-
-    ++NumInsts;
-  }
-
-  if (isa<ReturnInst>(BB->getTerminator()))
-    ++NumRets;
-
-  // We never want to inline functions that contain an indirectbr.  This is
-  // incorrect because all the blockaddress's (in static global initializers
-  // for example) would be referring to the original function, and this indirect
-  // jump would jump from the inlined copy of the function into the original
-  // function which is extremely undefined behavior.
-  // FIXME: This logic isn't really right; we can safely inline functions
-  // with indirectbr's as long as no other function or global references the
-  // blockaddress of a block within the current function.  And as a QOI issue,
-  // if someone is using a blockaddress without an indirectbr, and that
-  // reference somehow ends up in another function or global, we probably
-  // don't want to inline this function.
-  if (isa<IndirectBrInst>(BB->getTerminator()))
-    containsIndirectBr = true;
-
-  // Remember NumInsts for this BB.
-  NumBBInsts[BB] = NumInsts - NumInstsBeforeThisBB;
-}
-
-// CountCodeReductionForConstant - Figure out an approximation for how many
-// instructions will be constant folded if the specified value is constant.
-//
-unsigned CodeMetrics::CountCodeReductionForConstant(Value *V) {
+unsigned InlineCostAnalyzer::FunctionInfo::countCodeReductionForConstant(
+    const CodeMetrics &Metrics, Value *V) {
   unsigned Reduction = 0;
-  for (Value::use_iterator UI = V->use_begin(), E = V->use_end(); UI != E;++UI){
-    User *U = *UI;
-    if (isa<BranchInst>(U) || isa<SwitchInst>(U)) {
-      // We will be able to eliminate all but one of the successors.
-      const TerminatorInst &TI = cast<TerminatorInst>(*U);
-      const unsigned NumSucc = TI.getNumSuccessors();
-      unsigned Instrs = 0;
-      for (unsigned I = 0; I != NumSucc; ++I)
-        Instrs += NumBBInsts[TI.getSuccessor(I)];
-      // We don't know which blocks will be eliminated, so use the average size.
-      Reduction += InlineConstants::InstrCost*Instrs*(NumSucc-1)/NumSucc;
-    } else {
+  SmallVector<Value *, 4> Worklist;
+  Worklist.push_back(V);
+  do {
+    Value *V = Worklist.pop_back_val();
+    for (Value::use_iterator UI = V->use_begin(), E = V->use_end(); UI != E;++UI){
+      User *U = *UI;
+      if (isa<BranchInst>(U) || isa<SwitchInst>(U)) {
+        // We will be able to eliminate all but one of the successors.
+        const TerminatorInst &TI = cast<TerminatorInst>(*U);
+        const unsigned NumSucc = TI.getNumSuccessors();
+        unsigned Instrs = 0;
+        for (unsigned I = 0; I != NumSucc; ++I)
+          Instrs += Metrics.NumBBInsts.lookup(TI.getSuccessor(I));
+        // We don't know which blocks will be eliminated, so use the average size.
+        Reduction += InlineConstants::InstrCost*Instrs*(NumSucc-1)/NumSucc;
+        continue;
+      }
+
       // Figure out if this instruction will be removed due to simple constant
       // propagation.
       Instruction &Inst = cast<Instruction>(*U);
@@ -200,32 +62,162 @@ unsigned CodeMetrics::CountCodeReductionForConstant(Value *V) {
           AllOperandsConstant = false;
           break;
         }
+      if (!AllOperandsConstant)
+        continue;
 
-      if (AllOperandsConstant) {
-        // We will get to remove this instruction...
-        Reduction += InlineConstants::InstrCost;
+      // We will get to remove this instruction...
+      Reduction += InlineConstants::InstrCost;
 
-        // And any other instructions that use it which become constants
-        // themselves.
-        Reduction += CountCodeReductionForConstant(&Inst);
-      }
+      // And any other instructions that use it which become constants
+      // themselves.
+      Worklist.push_back(&Inst);
     }
-  }
+  } while (!Worklist.empty());
   return Reduction;
 }
 
-// CountCodeReductionForAlloca - Figure out an approximation of how much smaller
-// the function will be if it is inlined into a context where an argument
-// becomes an alloca.
-//
-unsigned CodeMetrics::CountCodeReductionForAlloca(Value *V) {
-  if (!V->getType()->isPointerTy()) return 0;  // Not a pointer
+static unsigned countCodeReductionForAllocaICmp(const CodeMetrics &Metrics,
+                                                ICmpInst *ICI) {
   unsigned Reduction = 0;
 
-  // Looking at ICmpInsts will never abort the analysis and return zero, and
-  // analyzing them is expensive, so save them for last so that we don't do
-  // extra work that we end up throwing out.
-  SmallVector<ICmpInst *, 4> ICmpInsts;
+  // Bail if this is comparing against a non-constant; there is nothing we can
+  // do there.
+  if (!isa<Constant>(ICI->getOperand(1)))
+    return Reduction;
+
+  // An icmp pred (alloca, C) becomes true if the predicate is true when
+  // equal and false otherwise.
+  bool Result = ICI->isTrueWhenEqual();
+
+  SmallVector<Instruction *, 4> Worklist;
+  Worklist.push_back(ICI);
+  do {
+    Instruction *U = Worklist.pop_back_val();
+    Reduction += InlineConstants::InstrCost;
+    for (Value::use_iterator UI = U->use_begin(), UE = U->use_end();
+         UI != UE; ++UI) {
+      Instruction *I = dyn_cast<Instruction>(*UI);
+      if (!I || I->mayHaveSideEffects()) continue;
+      if (I->getNumOperands() == 1)
+        Worklist.push_back(I);
+      if (BinaryOperator *BO = dyn_cast<BinaryOperator>(I)) {
+        // If BO produces the same value as U, then the other operand is
+        // irrelevant and we can put it into the Worklist to continue
+        // deleting dead instructions. If BO produces the same value as the
+        // other operand, we can delete BO but that's it.
+        if (Result == true) {
+          if (BO->getOpcode() == Instruction::Or)
+            Worklist.push_back(I);
+          if (BO->getOpcode() == Instruction::And)
+            Reduction += InlineConstants::InstrCost;
+        } else {
+          if (BO->getOpcode() == Instruction::Or ||
+              BO->getOpcode() == Instruction::Xor)
+            Reduction += InlineConstants::InstrCost;
+          if (BO->getOpcode() == Instruction::And)
+            Worklist.push_back(I);
+        }
+      }
+      if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
+        BasicBlock *BB = BI->getSuccessor(Result ? 0 : 1);
+        if (BB->getSinglePredecessor())
+          Reduction
+            += InlineConstants::InstrCost * Metrics.NumBBInsts.lookup(BB);
+      }
+    }
+  } while (!Worklist.empty());
+
+  return Reduction;
+}
+
+/// \brief Compute the reduction possible for a given instruction if we are able
+/// to SROA an alloca.
+///
+/// The reduction for this instruction is added to the SROAReduction output
+/// parameter. Returns false if this instruction is expected to defeat SROA in
+/// general.
+static bool countCodeReductionForSROAInst(Instruction *I,
+                                          SmallVectorImpl<Value *> &Worklist,
+                                          unsigned &SROAReduction) {
+  if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
+    if (!LI->isSimple())
+      return false;
+    SROAReduction += InlineConstants::InstrCost;
+    return true;
+  }
+
+  if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
+    if (!SI->isSimple())
+      return false;
+    SROAReduction += InlineConstants::InstrCost;
+    return true;
+  }
+
+  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I)) {
+    // If the GEP has variable indices, we won't be able to do much with it.
+    if (!GEP->hasAllConstantIndices())
+      return false;
+    // A non-zero GEP will likely become a mask operation after SROA.
+    if (GEP->hasAllZeroIndices())
+      SROAReduction += InlineConstants::InstrCost;
+    Worklist.push_back(GEP);
+    return true;
+  }
+
+  if (BitCastInst *BCI = dyn_cast<BitCastInst>(I)) {
+    // Track pointer through bitcasts.
+    Worklist.push_back(BCI);
+    SROAReduction += InlineConstants::InstrCost;
+    return true;
+  }
+
+  // We just look for non-constant operands to ICmp instructions as those will
+  // defeat SROA. The actual reduction for these happens even without SROA.
+  if (ICmpInst *ICI = dyn_cast<ICmpInst>(I))
+    return isa<Constant>(ICI->getOperand(1));
+
+  if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
+    // SROA can handle a select of alloca iff all uses of the alloca are
+    // loads, and dereferenceable. We assume it's dereferenceable since
+    // we're told the input is an alloca.
+    for (Value::use_iterator UI = SI->use_begin(), UE = SI->use_end();
+         UI != UE; ++UI) {
+      LoadInst *LI = dyn_cast<LoadInst>(*UI);
+      if (LI == 0 || !LI->isSimple())
+        return false;
+    }
+    // We don't know whether we'll be deleting the rest of the chain of
+    // instructions from the SelectInst on, because we don't know whether
+    // the other side of the select is also an alloca or not.
+    return true;
+  }
+
+  if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
+    switch (II->getIntrinsicID()) {
+    default:
+      return false;
+    case Intrinsic::memset:
+    case Intrinsic::memcpy:
+    case Intrinsic::memmove:
+    case Intrinsic::lifetime_start:
+    case Intrinsic::lifetime_end:
+      // SROA can usually chew through these intrinsics.
+      SROAReduction += InlineConstants::InstrCost;
+      return true;
+    }
+  }
+
+  // If there is some other strange instruction, we're not going to be
+  // able to do much if we inline this.
+  return false;
+}
+
+unsigned InlineCostAnalyzer::FunctionInfo::countCodeReductionForAlloca(
+    const CodeMetrics &Metrics, Value *V) {
+  if (!V->getType()->isPointerTy()) return 0;  // Not a pointer
+  unsigned Reduction = 0;
+  unsigned SROAReduction = 0;
+  bool CanSROAAlloca = true;
 
   SmallVector<Value *, 4> Worklist;
   Worklist.push_back(V);
@@ -234,126 +226,80 @@ unsigned CodeMetrics::CountCodeReductionForAlloca(Value *V) {
     for (Value::use_iterator UI = V->use_begin(), E = V->use_end();
          UI != E; ++UI){
       Instruction *I = cast<Instruction>(*UI);
-      if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
-        if (!LI->isSimple())
-          return 0;
-        Reduction += InlineConstants::InstrCost;
-      } else if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
-        if (!SI->isSimple())
-          return 0;
-        Reduction += InlineConstants::InstrCost;
-      } else if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I)) {
-        // If the GEP has variable indices, we won't be able to do much with it.
-        if (!GEP->hasAllConstantIndices())
-          return 0;
-        // A non-zero GEP will likely become a mask operation after SROA.
-        if (GEP->hasAllZeroIndices())
-          Reduction += InlineConstants::InstrCost;
-        Worklist.push_back(GEP);
-      } else if (BitCastInst *BCI = dyn_cast<BitCastInst>(I)) {
-        // Track pointer through bitcasts.
-        Worklist.push_back(BCI);
-        Reduction += InlineConstants::InstrCost;
-      } else if (SelectInst *SI = dyn_cast<SelectInst>(I)) {
-        // SROA can handle a select of alloca iff all uses of the alloca are
-        // loads, and dereferenceable. We assume it's dereferenceable since
-        // we're told the input is an alloca.
-        for (Value::use_iterator UI = SI->use_begin(), UE = SI->use_end();
-             UI != UE; ++UI) {
-          LoadInst *LI = dyn_cast<LoadInst>(*UI);
-          if (LI == 0 || !LI->isSimple()) return 0;
-        }
-        // We don't know whether we'll be deleting the rest of the chain of
-        // instructions from the SelectInst on, because we don't know whether
-        // the other side of the select is also an alloca or not.
-        continue;
-      } else if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
-        switch (II->getIntrinsicID()) {
-        default:
-          return 0;
-        case Intrinsic::memset:
-        case Intrinsic::memcpy:
-        case Intrinsic::memmove:
-        case Intrinsic::lifetime_start:
-        case Intrinsic::lifetime_end:
-          // SROA can usually chew through these intrinsics.
-          Reduction += InlineConstants::InstrCost;
-          break;
-        }
-      } else if (ICmpInst *ICI = dyn_cast<ICmpInst>(I)) {
-        if (!isa<Constant>(ICI->getOperand(1)))
-          return 0;
-        ICmpInsts.push_back(ICI);
-      } else {
-        // If there is some other strange instruction, we're not going to be
-        // able to do much if we inline this.
-        return 0;
-      }
+
+      if (ICmpInst *ICI = dyn_cast<ICmpInst>(I))
+        Reduction += countCodeReductionForAllocaICmp(Metrics, ICI);
+
+      if (CanSROAAlloca)
+        CanSROAAlloca = countCodeReductionForSROAInst(I, Worklist,
+                                                      SROAReduction);
     }
   } while (!Worklist.empty());
 
-  while (!ICmpInsts.empty()) {
-    ICmpInst *ICI = ICmpInsts.pop_back_val();
-
-    // An icmp pred (alloca, C) becomes true if the predicate is true when
-    // equal and false otherwise.
-    bool Result = ICI->isTrueWhenEqual();
-
-    SmallVector<Instruction *, 4> Worklist;
-    Worklist.push_back(ICI);
-    do {
-      Instruction *U = Worklist.pop_back_val();
-      Reduction += InlineConstants::InstrCost;
-      for (Value::use_iterator UI = U->use_begin(), UE = U->use_end();
-           UI != UE; ++UI) {
-        Instruction *I = dyn_cast<Instruction>(*UI);
-        if (!I || I->mayHaveSideEffects()) continue;
-        if (I->getNumOperands() == 1)
-          Worklist.push_back(I);
-        if (BinaryOperator *BO = dyn_cast<BinaryOperator>(I)) {
-          // If BO produces the same value as U, then the other operand is
-          // irrelevant and we can put it into the Worklist to continue
-          // deleting dead instructions. If BO produces the same value as the
-          // other operand, we can delete BO but that's it.
-          if (Result == true) {
-            if (BO->getOpcode() == Instruction::Or)
-              Worklist.push_back(I);
-            if (BO->getOpcode() == Instruction::And)
-              Reduction += InlineConstants::InstrCost;
-          } else {
-            if (BO->getOpcode() == Instruction::Or ||
-                BO->getOpcode() == Instruction::Xor)
-              Reduction += InlineConstants::InstrCost;
-            if (BO->getOpcode() == Instruction::And)
-              Worklist.push_back(I);
-          }
-        }
-        if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
-          BasicBlock *BB = BI->getSuccessor(Result ? 0 : 1);
-          if (BB->getSinglePredecessor())
-            Reduction += InlineConstants::InstrCost * NumBBInsts[BB];
-        }
-      }
-    } while (!Worklist.empty());
-  }
-
-  return Reduction;
+  return Reduction + (CanSROAAlloca ? SROAReduction : 0);
 }
 
-/// analyzeFunction - Fill in the current structure with information gleaned
-/// from the specified function.
-void CodeMetrics::analyzeFunction(Function *F, const TargetData *TD) {
-  // If this function contains a call that "returns twice" (e.g., setjmp or
-  // _setjmp) and it isn't marked with "returns twice" itself, never inline it.
-  // This is a hack because we depend on the user marking their local variables
-  // as volatile if they are live across a setjmp call, and they probably
-  // won't do this in callers.
-  exposesReturnsTwice = F->callsFunctionThatReturnsTwice() &&
-    !F->hasFnAttr(Attribute::ReturnsTwice);
+void InlineCostAnalyzer::FunctionInfo::countCodeReductionForPointerPair(
+    const CodeMetrics &Metrics, DenseMap<Value *, unsigned> &PointerArgs,
+    Value *V, unsigned ArgIdx) {
+  SmallVector<Value *, 4> Worklist;
+  Worklist.push_back(V);
+  do {
+    Value *V = Worklist.pop_back_val();
+    for (Value::use_iterator UI = V->use_begin(), E = V->use_end();
+         UI != E; ++UI){
+      Instruction *I = cast<Instruction>(*UI);
 
-  // Look at the size of the callee.
-  for (Function::const_iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
-    analyzeBasicBlock(&*BB, TD);
+      if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(I)) {
+        // If the GEP has variable indices, we won't be able to do much with it.
+        if (!GEP->hasAllConstantIndices())
+          continue;
+        // Unless the GEP is in-bounds, some comparisons will be non-constant.
+        // Fortunately, the real-world cases where this occurs uses in-bounds
+        // GEPs, and so we restrict the optimization to them here.
+        if (!GEP->isInBounds())
+          continue;
+
+        // Constant indices just change the constant offset. Add the resulting
+        // value both to our worklist for this argument, and to the set of
+        // viable paired values with future arguments.
+        PointerArgs[GEP] = ArgIdx;
+        Worklist.push_back(GEP);
+        continue;
+      }
+
+      // Track pointer through casts. Even when the result is not a pointer, it
+      // remains a constant relative to constants derived from other constant
+      // pointers.
+      if (CastInst *CI = dyn_cast<CastInst>(I)) {
+        PointerArgs[CI] = ArgIdx;
+        Worklist.push_back(CI);
+        continue;
+      }
+
+      // There are two instructions which produce a strict constant value when
+      // applied to two related pointer values. Ignore everything else.
+      if (!isa<ICmpInst>(I) && I->getOpcode() != Instruction::Sub)
+        continue;
+      assert(I->getNumOperands() == 2);
+
+      // Ensure that the two operands are in our set of potentially paired
+      // pointers (or are derived from them).
+      Value *OtherArg = I->getOperand(0);
+      if (OtherArg == V)
+        OtherArg = I->getOperand(1);
+      DenseMap<Value *, unsigned>::const_iterator ArgIt
+        = PointerArgs.find(OtherArg);
+      if (ArgIt == PointerArgs.end())
+        continue;
+      std::pair<unsigned, unsigned> ArgPair(ArgIt->second, ArgIdx);
+      if (ArgPair.first > ArgPair.second)
+        std::swap(ArgPair.first, ArgPair.second);
+
+      PointerArgPairWeights[ArgPair]
+        += countCodeReductionForConstant(Metrics, I);
+    }
+  } while (!Worklist.empty());
 }
 
 /// analyzeFunction - Fill in the current structure with information gleaned
@@ -368,12 +314,25 @@ void InlineCostAnalyzer::FunctionInfo::analyzeFunction(Function *F,
   if (Metrics.NumRets==1)
     --Metrics.NumInsts;
 
-  // Check out all of the arguments to the function, figuring out how much
-  // code can be eliminated if one of the arguments is a constant.
   ArgumentWeights.reserve(F->arg_size());
-  for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end(); I != E; ++I)
-    ArgumentWeights.push_back(ArgInfo(Metrics.CountCodeReductionForConstant(I),
-                                      Metrics.CountCodeReductionForAlloca(I)));
+  DenseMap<Value *, unsigned> PointerArgs;
+  unsigned ArgIdx = 0;
+  for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end(); I != E;
+       ++I, ++ArgIdx) {
+    // Count how much code can be eliminated if one of the arguments is
+    // a constant or an alloca.
+    ArgumentWeights.push_back(ArgInfo(countCodeReductionForConstant(Metrics, I),
+                                      countCodeReductionForAlloca(Metrics, I)));
+
+    // If the argument is a pointer, also check for pairs of pointers where
+    // knowing a fixed offset between them allows simplification. This pattern
+    // arises mostly due to STL algorithm patterns where pointers are used as
+    // random access iterators.
+    if (!I->getType()->isPointerTy())
+      continue;
+    PointerArgs[I] = ArgIdx;
+    countCodeReductionForPointerPair(Metrics, PointerArgs, I, ArgIdx);
+  }
 }
 
 /// NeverInline - returns true if the function should never be inlined into
@@ -381,43 +340,6 @@ void InlineCostAnalyzer::FunctionInfo::analyzeFunction(Function *F,
 bool InlineCostAnalyzer::FunctionInfo::NeverInline() {
   return (Metrics.exposesReturnsTwice || Metrics.isRecursive ||
           Metrics.containsIndirectBr);
-}
-// getSpecializationBonus - The heuristic used to determine the per-call
-// performance boost for using a specialization of Callee with argument
-// specializedArgNo replaced by a constant.
-int InlineCostAnalyzer::getSpecializationBonus(Function *Callee,
-         SmallVectorImpl<unsigned> &SpecializedArgNos)
-{
-  if (Callee->mayBeOverridden())
-    return 0;
-
-  int Bonus = 0;
-  // If this function uses the coldcc calling convention, prefer not to
-  // specialize it.
-  if (Callee->getCallingConv() == CallingConv::Cold)
-    Bonus -= InlineConstants::ColdccPenalty;
-
-  // Get information about the callee.
-  FunctionInfo *CalleeFI = &CachedFunctionInfo[Callee];
-
-  // If we haven't calculated this information yet, do so now.
-  if (CalleeFI->Metrics.NumBlocks == 0)
-    CalleeFI->analyzeFunction(Callee, TD);
-
-  unsigned ArgNo = 0;
-  unsigned i = 0;
-  for (Function::arg_iterator I = Callee->arg_begin(), E = Callee->arg_end();
-       I != E; ++I, ++ArgNo)
-    if (ArgNo == SpecializedArgNos[i]) {
-      ++i;
-      Bonus += CountBonusForConstant(I);
-    }
-
-  // Calls usually take a long time, so they make the specialization gain
-  // smaller.
-  Bonus -= CalleeFI->Metrics.NumCalls * InlineConstants::CallPenalty;
-
-  return Bonus;
 }
 
 // ConstantFunctionBonus - Figure out how much of a bonus we can get for
@@ -522,6 +444,15 @@ int InlineCostAnalyzer::getInlineSize(CallSite CS, Function *Callee) {
       InlineCost -= CalleeFI->ArgumentWeights[ArgNo].ConstantWeight;
   }
 
+  const DenseMap<std::pair<unsigned, unsigned>, unsigned> &ArgPairWeights
+    = CalleeFI->PointerArgPairWeights;
+  for (DenseMap<std::pair<unsigned, unsigned>, unsigned>::const_iterator I
+         = ArgPairWeights.begin(), E = ArgPairWeights.end();
+       I != E; ++I)
+    if (CS.getArgument(I->first.first)->stripInBoundsConstantOffsets() ==
+        CS.getArgument(I->first.second)->stripInBoundsConstantOffsets())
+      InlineCost -= I->second;
+
   // Each argument passed in has a cost at both the caller and the callee
   // sides.  Measurements show that each argument costs about the same as an
   // instruction.
@@ -589,22 +520,18 @@ int InlineCostAnalyzer::getInlineBonuses(CallSite CS, Function *Callee) {
 // getInlineCost - The heuristic used to determine if we should inline the
 // function call or not.
 //
-InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
-                               SmallPtrSet<const Function*, 16> &NeverInline) {
-  return getInlineCost(CS, CS.getCalledFunction(), NeverInline);
+InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS) {
+  return getInlineCost(CS, CS.getCalledFunction());
 }
 
-InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
-                               Function *Callee,
-                               SmallPtrSet<const Function*, 16> &NeverInline) {
+InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS, Function *Callee) {
   Instruction *TheCall = CS.getInstruction();
   Function *Caller = TheCall->getParent()->getParent();
 
   // Don't inline functions which can be redefined at link-time to mean
   // something else.  Don't inline functions marked noinline or call sites
   // marked noinline.
-  if (Callee->mayBeOverridden() ||
-      Callee->hasFnAttr(Attribute::NoInline) || NeverInline.count(Callee) ||
+  if (Callee->mayBeOverridden() || Callee->hasFnAttr(Attribute::NoInline) ||
       CS.isNoInline())
     return llvm::InlineCost::getNever();
 
@@ -653,38 +580,6 @@ InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS,
   //
   int InlineCost = getInlineSize(CS, Callee) + getInlineBonuses(CS, Callee);
   return llvm::InlineCost::get(InlineCost);
-}
-
-// getSpecializationCost - The heuristic used to determine the code-size
-// impact of creating a specialized version of Callee with argument
-// SpecializedArgNo replaced by a constant.
-InlineCost InlineCostAnalyzer::getSpecializationCost(Function *Callee,
-                               SmallVectorImpl<unsigned> &SpecializedArgNos)
-{
-  // Don't specialize functions which can be redefined at link-time to mean
-  // something else.
-  if (Callee->mayBeOverridden())
-    return llvm::InlineCost::getNever();
-
-  // Get information about the callee.
-  FunctionInfo *CalleeFI = &CachedFunctionInfo[Callee];
-
-  // If we haven't calculated this information yet, do so now.
-  if (CalleeFI->Metrics.NumBlocks == 0)
-    CalleeFI->analyzeFunction(Callee, TD);
-
-  int Cost = 0;
-
-  // Look at the original size of the callee.  Each instruction counts as 5.
-  Cost += CalleeFI->Metrics.NumInsts * InlineConstants::InstrCost;
-
-  // Offset that with the amount of code that can be constant-folded
-  // away with the given arguments replaced by constants.
-  for (SmallVectorImpl<unsigned>::iterator an = SpecializedArgNos.begin(),
-       ae = SpecializedArgNos.end(); an != ae; ++an)
-    Cost -= CalleeFI->ArgumentWeights[*an].ConstantWeight;
-
-  return llvm::InlineCost::get(Cost);
 }
 
 // getInlineFudgeFactor - Return a > 1.0 factor if the inliner should use a

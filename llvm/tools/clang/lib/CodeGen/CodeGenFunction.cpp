@@ -40,7 +40,7 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
     CXXVTTValue(0), OutermostConditional(0), TerminateLandingPad(0),
     TerminateHandler(0), TrapBB(0) {
 
-  CatchUndefined = getContext().getLangOptions().CatchUndefined;
+  CatchUndefined = getContext().getLangOpts().CatchUndefined;
   CGM.getCXXABI().getMangleContext().startNewFunction();
 }
 
@@ -266,15 +266,16 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
 
   // Pass inline keyword to optimizer if it appears explicitly on any
   // declaration.
-  if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
-    for (FunctionDecl::redecl_iterator RI = FD->redecls_begin(),
-           RE = FD->redecls_end(); RI != RE; ++RI)
-      if (RI->isInlineSpecified()) {
-        Fn->addFnAttr(llvm::Attribute::InlineHint);
-        break;
-      }
+  if (!CGM.getCodeGenOpts().NoInline) 
+    if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
+      for (FunctionDecl::redecl_iterator RI = FD->redecls_begin(),
+             RE = FD->redecls_end(); RI != RE; ++RI)
+        if (RI->isInlineSpecified()) {
+          Fn->addFnAttr(llvm::Attribute::InlineHint);
+          break;
+        }
 
-  if (getContext().getLangOptions().OpenCL) {
+  if (getContext().getLangOpts().OpenCL) {
     // Add metadata for a kernel function.
     if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
       if (FD->hasAttr<OpenCLKernelAttr>()) {
@@ -340,7 +341,7 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
     // Tell the epilog emitter to autorelease the result.  We do this
     // now so that various specialized functions can suppress it
     // during their IR-generation.
-    if (getLangOptions().ObjCAutoRefCount &&
+    if (getLangOpts().ObjCAutoRefCount &&
         !CurFnInfo->isReturnsRetained() &&
         RetTy->isObjCRetainableType())
       AutoreleaseResult = true;
@@ -442,7 +443,7 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
     EmitDestructorBody(Args);
   else if (isa<CXXConstructorDecl>(FD))
     EmitConstructorBody(Args);
-  else if (getContext().getLangOptions().CUDA &&
+  else if (getContext().getLangOpts().CUDA &&
            !CGM.getCodeGenOpts().CUDAIsDevice &&
            FD->hasAttr<CUDAGlobalAttr>())
     CGM.getCUDARuntime().EmitDeviceStubBody(*this, Args);
@@ -731,7 +732,7 @@ static void emitNonZeroVLAInit(CodeGenFunction &CGF, QualType baseType,
 void
 CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
   // Ignore empty classes in C++.
-  if (getContext().getLangOptions().CPlusPlus) {
+  if (getContext().getLangOpts().CPlusPlus) {
     if (const RecordType *RT = Ty->getAs<RecordType>()) {
       if (cast<CXXRecordDecl>(RT->getDecl())->isEmpty())
         return;

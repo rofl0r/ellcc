@@ -157,7 +157,7 @@ void Sema::CheckObjCMethodOverride(ObjCMethodDecl *NewMethod,
       Diag(Overridden->getLocation(), 
            diag::note_related_result_type_overridden);
   }
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     if ((NewMethod->hasAttr<NSReturnsRetainedAttr>() !=
          Overridden->hasAttr<NSReturnsRetainedAttr>())) {
         Diag(NewMethod->getLocation(),
@@ -299,7 +299,7 @@ void Sema::ActOnStartOfObjCMethodDef(Scope *FnBodyScope, Decl *D) {
   }
 
   // In ARC, disallow definition of retain/release/autorelease/retainCount
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     switch (MDecl->getMethodFamily()) {
     case OMF_retain:
     case OMF_retainCount:
@@ -338,11 +338,11 @@ void Sema::ActOnStartOfObjCMethodDef(Scope *FnBodyScope, Decl *D) {
     // Only do this if the current class actually has a superclass.
     if (IC->getSuperClass()) {
       ObjCShouldCallSuperDealloc = 
-        !(Context.getLangOptions().ObjCAutoRefCount ||
-          Context.getLangOptions().getGC() == LangOptions::GCOnly) &&
+        !(Context.getLangOpts().ObjCAutoRefCount ||
+          Context.getLangOpts().getGC() == LangOptions::GCOnly) &&
         MDecl->getMethodFamily() == OMF_dealloc;
       ObjCShouldCallSuperFinalize =
-        Context.getLangOptions().getGC() != LangOptions::NonGC &&
+        Context.getLangOpts().getGC() != LangOptions::NonGC &&
         MDecl->getMethodFamily() == OMF_finalize;
     }
   }
@@ -766,6 +766,7 @@ ActOnStartCategoryInterface(SourceLocation AtInterfaceLoc,
     CDecl = ObjCCategoryDecl::Create(Context, CurContext, AtInterfaceLoc,
                                      ClassLoc, CategoryLoc, CategoryName,IDecl);
     CDecl->setInvalidDecl();
+    CurContext->addDecl(CDecl);
         
     if (!IDecl)
       Diag(ClassLoc, diag::err_undef_interface) << ClassName;
@@ -924,6 +925,8 @@ Decl *Sema::ActOnStartClassImplementation(
       Diag(PrevDecl->getLocation(), diag::note_previous_definition);
     } else {
       SDecl = dyn_cast_or_null<ObjCInterfaceDecl>(PrevDecl);
+      if (SDecl && !SDecl->hasDefinition())
+        SDecl = 0;
       if (!SDecl)
         Diag(SuperClassLoc, diag::err_undef_superclass)
           << SuperClassname << ClassName;
@@ -1023,7 +1026,7 @@ void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
     // Add ivar's to class's DeclContext.
     for (unsigned i = 0, e = numIvars; i != e; ++i) {
       ivars[i]->setLexicalDeclContext(ImpDecl);
-      IDecl->makeDeclVisibleInContext(ivars[i], false);
+      IDecl->makeDeclVisibleInContext(ivars[i]);
       ImpDecl->addDecl(ivars[i]);
     }
     
@@ -1047,7 +1050,7 @@ void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
       }
       // Instance ivar to Implementation's DeclContext.
       ImplIvar->setLexicalDeclContext(ImpDecl);
-      IDecl->makeDeclVisibleInContext(ImplIvar, false);
+      IDecl->makeDeclVisibleInContext(ImplIvar);
       ImpDecl->addDecl(ImplIvar);
     }
     return;
@@ -1386,7 +1389,7 @@ static bool checkMethodFamilyMismatch(Sema &S, ObjCMethodDecl *impl,
 void Sema::WarnConflictingTypedMethods(ObjCMethodDecl *ImpMethodDecl,
                                        ObjCMethodDecl *MethodDecl,
                                        bool IsProtocolMethodDecl) {
-  if (getLangOptions().ObjCAutoRefCount &&
+  if (getLangOpts().ObjCAutoRefCount &&
       checkMethodFamilyMismatch(*this, ImpMethodDecl, MethodDecl))
     return;
 
@@ -1493,7 +1496,7 @@ void Sema::CheckProtocolMethodDefs(SourceLocation ImpLoc,
   
   ObjCInterfaceDecl *Super = IDecl->getSuperClass();
   ObjCInterfaceDecl *NSIDecl = 0;
-  if (getLangOptions().NeXTRuntime) {
+  if (getLangOpts().NeXTRuntime) {
     // check to see if class implements forwardInvocation method and objects
     // of this class are derived from 'NSProxy' so that to forward requests
     // from one object to another.
@@ -1942,7 +1945,7 @@ bool Sema::MatchTwoMethodDeclarations(const ObjCMethodDecl *left,
                   left->getResultType(), right->getResultType()))
     return false;
 
-  if (getLangOptions().ObjCAutoRefCount &&
+  if (getLangOpts().ObjCAutoRefCount &&
       (left->hasAttr<NSReturnsRetainedAttr>()
          != right->hasAttr<NSReturnsRetainedAttr>() ||
        left->hasAttr<NSConsumesSelfAttr>()
@@ -1959,7 +1962,7 @@ bool Sema::MatchTwoMethodDeclarations(const ObjCMethodDecl *left,
     if (!matchTypes(Context, strategy, lparm->getType(), rparm->getType()))
       return false;
 
-    if (getLangOptions().ObjCAutoRefCount &&
+    if (getLangOpts().ObjCAutoRefCount &&
         lparm->hasAttr<NSConsumedAttr>() != rparm->hasAttr<NSConsumedAttr>())
       return false;
   }
@@ -2018,6 +2021,10 @@ void Sema::ReadMethodPool(Selector Sel) {
 
 void Sema::AddMethodToGlobalPool(ObjCMethodDecl *Method, bool impl,
                                  bool instance) {
+  // Ignore methods of invalid containers.
+  if (cast<Decl>(Method->getDeclContext())->isInvalidDecl())
+    return;
+
   if (ExternalSource)
     ReadMethodPool(Method->getSelector());
   
@@ -2086,14 +2093,14 @@ ObjCMethodDecl *Sema::LookupMethodInGlobalPool(Selector Sel, SourceRange R,
     // differences.  In ARC, however, we also need to check for loose
     // mismatches, because most of them are errors.
     if (!strictSelectorMatch ||
-        (issueDiagnostic && getLangOptions().ObjCAutoRefCount))
+        (issueDiagnostic && getLangOpts().ObjCAutoRefCount))
       for (ObjCMethodList *Next = MethList.Next; Next; Next = Next->Next) {
         // This checks if the methods differ in type mismatch.
         if (!MatchTwoMethodDeclarations(MethList.Method, Next->Method,
                                         MMS_loose) &&
             !isAcceptableMethodMismatch(MethList.Method, Next->Method)) {
           issueDiagnostic = true;
-          if (getLangOptions().ObjCAutoRefCount)
+          if (getLangOpts().ObjCAutoRefCount)
             issueError = true;
           break;
         }
@@ -2856,7 +2863,7 @@ Decl *Sema::ActOnMethodDeclaration(
   }
   
   bool ARCError = false;
-  if (getLangOptions().ObjCAutoRefCount)
+  if (getLangOpts().ObjCAutoRefCount)
     ARCError = CheckARCMethodDecl(*this, ObjCMethod);
 
   // Infer the related result type when possible.
@@ -2945,7 +2952,7 @@ void Sema::ActOnDefs(Scope *S, Decl *TagD, SourceLocation DeclStart,
   for (SmallVectorImpl<Decl*>::iterator D = Decls.begin();
        D != Decls.end(); ++D) {
     FieldDecl *FD = cast<FieldDecl>(*D);
-    if (getLangOptions().CPlusPlus)
+    if (getLangOpts().CPlusPlus)
       PushOnScopeChains(cast<FieldDecl>(FD), S);
     else if (RecordDecl *Record = dyn_cast<RecordDecl>(TagD))
       Record->addDecl(FD);
@@ -2986,7 +2993,7 @@ VarDecl *Sema::BuildObjCExceptionDecl(TypeSourceInfo *TInfo, QualType T,
   New->setExceptionVariable(true);
   
   // In ARC, infer 'retaining' for variables of retainable type.
-  if (getLangOptions().ObjCAutoRefCount && inferObjCARCLifetime(New))
+  if (getLangOpts().ObjCAutoRefCount && inferObjCARCLifetime(New))
     Invalid = true;
 
   if (Invalid)
@@ -3014,7 +3021,7 @@ Decl *Sema::ActOnObjCExceptionDecl(Scope *S, Declarator &D) {
   
   // Check that there are no default arguments inside the type of this
   // exception object (C++ only).
-  if (getLangOptions().CPlusPlus)
+  if (getLangOpts().CPlusPlus)
     CheckExtraCXXDefaultArguments(D);
   
   TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);

@@ -962,14 +962,6 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     }
   }
 
-  // If the parameter type is not dependent, there is nothing to deduce.
-  if (!Param->isDependentType()) {
-    if (!(TDF & TDF_SkipNonDependent) && Param != Arg)
-      return Sema::TDK_NonDeducedMismatch;
-
-    return Sema::TDK_Success;
-  }
-
   // C++ [temp.deduct.type]p9:
   //   A template type argument T, a template template argument TT or a
   //   template non-type argument i can be deduced if P and A have one of
@@ -1037,7 +1029,7 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     // Objective-C ARC:
     //   If template deduction would produce an argument type with lifetime type
     //   but no lifetime qualifier, the __strong lifetime qualifier is inferred.
-    if (S.getLangOptions().ObjCAutoRefCount &&
+    if (S.getLangOpts().ObjCAutoRefCount &&
         DeducedType->isObjCLifetimeType() &&
         !DeducedQs.hasObjCLifetime())
       DeducedQs.setObjCLifetime(Qualifiers::OCL_Strong);
@@ -1083,6 +1075,17 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       if (Param.getCVRQualifiers() != Arg.getCVRQualifiers())
         return Sema::TDK_NonDeducedMismatch;
     }
+    
+    // If the parameter type is not dependent, there is nothing to deduce.
+    if (!Param->isDependentType()) {
+      if (!(TDF & TDF_SkipNonDependent) && Param != Arg)
+        return Sema::TDK_NonDeducedMismatch;
+      
+      return Sema::TDK_Success;
+    }
+  } else if (!Param->isDependentType() &&
+             Param.getUnqualifiedType() == Arg.getUnqualifiedType()) {
+    return Sema::TDK_Success;
   }
 
   switch (Param->getTypeClass()) {
@@ -1095,9 +1098,9 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::TemplateTypeParm:
     case Type::SubstTemplateTypeParmPack:
       llvm_unreachable("Type nodes handled above");
-      
-    // These types cannot be used in templates or cannot be dependent, so
-    // deduction always fails.
+
+    // These types cannot be dependent, so simply check whether the types are
+    // the same.
     case Type::Builtin:
     case Type::VariableArray:
     case Type::Vector:
@@ -1106,9 +1109,18 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
     case Type::Enum:
     case Type::ObjCObject:
     case Type::ObjCInterface:
-    case Type::ObjCObjectPointer:
-      return Sema::TDK_NonDeducedMismatch;
-
+    case Type::ObjCObjectPointer: {
+      if (TDF & TDF_SkipNonDependent)
+        return Sema::TDK_Success;
+      
+      if (TDF & TDF_IgnoreQualifiers) {
+        Param = Param.getUnqualifiedType();
+        Arg = Arg.getUnqualifiedType();
+      }
+            
+      return Param == Arg? Sema::TDK_Success : Sema::TDK_NonDeducedMismatch;
+    }
+      
     //     _Complex T   [placeholder extension]  
     case Type::Complex:
       if (const ComplexType *ComplexArg = Arg->getAs<ComplexType>())
@@ -1411,7 +1423,8 @@ DeduceTemplateArgumentsByTypeMatch(Sema &S,
       return DeduceTemplateArgumentsByTypeMatch(S, TemplateParams,
                                            QualType(MemPtrParam->getClass(), 0),
                                            QualType(MemPtrArg->getClass(), 0),
-                                           Info, Deduced, 0);
+                                           Info, Deduced, 
+                                           TDF & TDF_IgnoreQualifiers);
     }
 
     //     (clang extension)
@@ -2696,36 +2709,48 @@ ResolveOverloadForDeduction(Sema &S, TemplateParameterList *TemplateParams,
   if (R.IsAddressOfOperand)
     TDF |= TDF_IgnoreQualifiers;
 
-  // If there were explicit template arguments, we can only find
-  // something via C++ [temp.arg.explicit]p3, i.e. if the arguments
-  // unambiguously name a full specialization.
-  if (Ovl->hasExplicitTemplateArgs()) {
-    // But we can still look for an explicit specialization.
-    if (FunctionDecl *ExplicitSpec
-          = S.ResolveSingleFunctionTemplateSpecialization(Ovl))
-      return GetTypeOfFunction(S.Context, R, ExplicitSpec);
-    return QualType();
-  }
-
   // C++0x [temp.deduct.call]p6:
   //   When P is a function type, pointer to function type, or pointer
   //   to member function type:
 
   if (!ParamType->isFunctionType() &&
       !ParamType->isFunctionPointerType() &&
-      !ParamType->isMemberFunctionPointerType())
-    return QualType();
+      !ParamType->isMemberFunctionPointerType()) {
+    if (Ovl->hasExplicitTemplateArgs()) {
+      // But we can still look for an explicit specialization.
+      if (FunctionDecl *ExplicitSpec
+            = S.ResolveSingleFunctionTemplateSpecialization(Ovl))
+        return GetTypeOfFunction(S.Context, R, ExplicitSpec);
+    }
 
+    return QualType();
+  }
+  
+  // Gather the explicit template arguments, if any.
+  TemplateArgumentListInfo ExplicitTemplateArgs;
+  if (Ovl->hasExplicitTemplateArgs())
+    Ovl->getExplicitTemplateArgs().copyInto(ExplicitTemplateArgs);
   QualType Match;
   for (UnresolvedSetIterator I = Ovl->decls_begin(),
          E = Ovl->decls_end(); I != E; ++I) {
     NamedDecl *D = (*I)->getUnderlyingDecl();
 
-    //   - If the argument is an overload set containing one or more
-    //     function templates, the parameter is treated as a
-    //     non-deduced context.
-    if (isa<FunctionTemplateDecl>(D))
-      return QualType();
+    if (FunctionTemplateDecl *FunTmpl = dyn_cast<FunctionTemplateDecl>(D)) {
+      //   - If the argument is an overload set containing one or more
+      //     function templates, the parameter is treated as a
+      //     non-deduced context.
+      if (!Ovl->hasExplicitTemplateArgs())
+        return QualType();
+      
+      // Otherwise, see if we can resolve a function type 
+      FunctionDecl *Specialization = 0;
+      TemplateDeductionInfo Info(S.Context, Ovl->getNameLoc());
+      if (S.DeduceTemplateArguments(FunTmpl, &ExplicitTemplateArgs,
+                                    Specialization, Info))
+        continue;
+      
+      D = Specialization;
+    }
 
     FunctionDecl *Fn = cast<FunctionDecl>(D);
     QualType ArgType = GetTypeOfFunction(S.Context, R, Fn);
@@ -2880,6 +2905,40 @@ static bool hasDeducibleTemplateParameters(Sema &S,
                                            FunctionTemplateDecl *FunctionTemplate,
                                            QualType T);
 
+/// \brief Perform template argument deduction by matching a parameter type
+///        against a single expression, where the expression is an element of
+///        an initializer list that was originally matched against the argument
+///        type.
+static Sema::TemplateDeductionResult
+DeduceTemplateArgumentByListElement(Sema &S,
+                                    TemplateParameterList *TemplateParams,
+                                    QualType ParamType, Expr *Arg,
+                                    TemplateDeductionInfo &Info,
+                              SmallVectorImpl<DeducedTemplateArgument> &Deduced,
+                                    unsigned TDF) {
+  // Handle the case where an init list contains another init list as the
+  // element.
+  if (InitListExpr *ILE = dyn_cast<InitListExpr>(Arg)) {
+    QualType X;
+    if (!S.isStdInitializerList(ParamType.getNonReferenceType(), &X))
+      return Sema::TDK_Success; // Just ignore this expression.
+
+    // Recurse down into the init list.
+    for (unsigned i = 0, e = ILE->getNumInits(); i < e; ++i) {
+      if (Sema::TemplateDeductionResult Result =
+            DeduceTemplateArgumentByListElement(S, TemplateParams, X,
+                                                 ILE->getInit(i),
+                                                 Info, Deduced, TDF))
+        return Result;
+    }
+    return Sema::TDK_Success;
+  }
+
+  // For all other cases, just match by type.
+  return DeduceTemplateArgumentsByTypeMatch(S, TemplateParams, ParamType,
+                                            Arg->getType(), Info, Deduced, TDF);
+}
+
 /// \brief Perform template argument deduction from a function call
 /// (C++ [temp.deduct.call]).
 ///
@@ -3000,9 +3059,9 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 
         for (unsigned i = 0, e = ILE->getNumInits(); i < e; ++i) {
           if (TemplateDeductionResult Result =
-                DeduceTemplateArgumentsByTypeMatch(*this, TemplateParams, X,
-                                                   ILE->getInit(i)->getType(),
-                                                   Info, Deduced, TDF))
+                DeduceTemplateArgumentByListElement(*this, TemplateParams, X,
+                                                     ILE->getInit(i),
+                                                     Info, Deduced, TDF))
             return Result;
         }
         // Don't track the argument type, since an initializer list has none.
@@ -3571,17 +3630,17 @@ static bool isAtLeastAsSpecializedAs(Sema &S,
     // first argument of the free function or static member, which
     // seems to match existing practice.
     SmallVector<QualType, 4> Args1;
-    unsigned Skip1 = !S.getLangOptions().CPlusPlus0x &&
+    unsigned Skip1 = !S.getLangOpts().CPlusPlus0x &&
       IsNonStatic2 && !IsNonStatic1;
-    if (S.getLangOptions().CPlusPlus0x && IsNonStatic1 && !IsNonStatic2)
+    if (S.getLangOpts().CPlusPlus0x && IsNonStatic1 && !IsNonStatic2)
       MaybeAddImplicitObjectParameterType(S.Context, Method1, Args1);
     Args1.insert(Args1.end(),
                  Proto1->arg_type_begin() + Skip1, Proto1->arg_type_end());
 
     SmallVector<QualType, 4> Args2;
-    Skip2 = !S.getLangOptions().CPlusPlus0x &&
+    Skip2 = !S.getLangOpts().CPlusPlus0x &&
       IsNonStatic1 && !IsNonStatic2;
-    if (S.getLangOptions().CPlusPlus0x && IsNonStatic2 && !IsNonStatic1)
+    if (S.getLangOpts().CPlusPlus0x && IsNonStatic2 && !IsNonStatic1)
       MaybeAddImplicitObjectParameterType(S.Context, Method2, Args2);
     Args2.insert(Args2.end(),
                  Proto2->arg_type_begin() + Skip2, Proto2->arg_type_end());
@@ -3650,7 +3709,7 @@ static bool isAtLeastAsSpecializedAs(Sema &S,
     unsigned NumParams = std::min(NumCallArguments,
                                   std::min(Proto1->getNumArgs(),
                                            Proto2->getNumArgs()));
-    if (S.getLangOptions().CPlusPlus0x && IsNonStatic2 && !IsNonStatic1)
+    if (S.getLangOpts().CPlusPlus0x && IsNonStatic2 && !IsNonStatic1)
       ::MarkUsedTemplateParameters(S.Context, Method2->getThisType(S.Context),
                                    false,
                                    TemplateParams->getDepth(), UsedParameters);

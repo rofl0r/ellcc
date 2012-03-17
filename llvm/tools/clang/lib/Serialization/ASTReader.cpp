@@ -64,7 +64,7 @@ ASTReaderListener::~ASTReaderListener() {}
 
 bool
 PCHValidator::ReadLanguageOptions(const LangOptions &LangOpts) {
-  const LangOptions &PPLangOpts = PP.getLangOptions();
+  const LangOptions &PPLangOpts = PP.getLangOpts();
   
 #define LANGOPT(Name, Bits, Default, Description)         \
   if (PPLangOpts.Name != LangOpts.Name) {                 \
@@ -1615,7 +1615,7 @@ namespace {
 
 void ASTReader::updateOutOfDateIdentifier(IdentifierInfo &II) {
   unsigned PriorGeneration = 0;
-  if (getContext().getLangOptions().Modules)
+  if (getContext().getLangOpts().Modules)
     PriorGeneration = IdentifierGeneration[&II];
   
   IdentifierLookupVisitor Visitor(II.getName(), PriorGeneration);
@@ -1630,7 +1630,7 @@ void ASTReader::markIdentifierUpToDate(IdentifierInfo *II) {
   II->setOutOfDate(false);
 
   // Update the generation for this identifier.
-  if (getContext().getLangOptions().Modules)
+  if (getContext().getLangOpts().Modules)
     IdentifierGeneration[II] = CurrentGeneration;
 }
 
@@ -1744,7 +1744,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
           = F.PreprocessorDetailCursor.GetCurrentBitNo();
           
         if (!PP.getPreprocessingRecord())
-          PP.createPreprocessingRecord();
+          PP.createPreprocessingRecord(/*RecordConditionalDirectives=*/false);
         if (!PP.getPreprocessingRecord()->getExternalSource())
           PP.getPreprocessingRecord()->SetExternalSource(*this);
         break;
@@ -1804,6 +1804,12 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
       if (Record[0] != VERSION_MAJOR && !DisableValidation) {
         Diag(Record[0] < VERSION_MAJOR? diag::warn_pch_version_too_old
                                            : diag::warn_pch_version_too_new);
+        return IgnorePCH;
+      }
+
+      bool hasErrors = Record[5];
+      if (hasErrors && !DisableValidation && !AllowASTWithCompilerErrors) {
+        Diag(diag::err_pch_with_compiler_errors);
         return IgnorePCH;
       }
 
@@ -2288,7 +2294,7 @@ ASTReader::ReadASTBlock(ModuleFile &F) {
       
       unsigned StartingID;
       if (!PP.getPreprocessingRecord())
-        PP.createPreprocessingRecord();
+        PP.createPreprocessingRecord(/*RecordConditionalDirectives=*/false);
       if (!PP.getPreprocessingRecord()->getExternalSource())
         PP.getPreprocessingRecord()->SetExternalSource(*this);
       StartingID 
@@ -3315,7 +3321,7 @@ ASTReader::ASTReadResult ASTReader::ReadSubmoduleBlock(ModuleFile &F) {
         break;
 
       CurrentModule->addRequirement(StringRef(BlobStart, BlobLen), 
-                                    Context.getLangOptions(),
+                                    Context.getLangOpts(),
                                     Context.getTargetInfo());
       break;
     }
@@ -3441,9 +3447,10 @@ PreprocessedEntity *ASTReader::ReadPreprocessedEntity(unsigned Index) {
       
   case PPD_INCLUSION_DIRECTIVE: {
     const char *FullFileNameStart = BlobStart + Record[0];
-    const FileEntry *File
-      = PP.getFileManager().getFile(StringRef(FullFileNameStart,
-                                               BlobLen - Record[0]));
+    StringRef FullFileName(FullFileNameStart, BlobLen - Record[0]);
+    const FileEntry *File = 0;
+    if (!FullFileName.empty())
+      File = PP.getFileManager().getFile(FullFileName);
     
     // FIXME: Stable encoding
     InclusionDirective::InclusionKind Kind
@@ -6282,14 +6289,15 @@ void ASTReader::FinishedDeserializing() {
 
 ASTReader::ASTReader(Preprocessor &PP, ASTContext &Context,
                      StringRef isysroot, bool DisableValidation,
-                     bool DisableStatCache)
+                     bool DisableStatCache, bool AllowASTWithCompilerErrors)
   : Listener(new PCHValidator(PP, *this)), DeserializationListener(0),
     SourceMgr(PP.getSourceManager()), FileMgr(PP.getFileManager()),
     Diags(PP.getDiagnostics()), SemaObj(0), PP(PP), Context(Context),
     Consumer(0), ModuleMgr(FileMgr.getFileSystemOptions()),
     RelocatablePCH(false), isysroot(isysroot),
     DisableValidation(DisableValidation),
-    DisableStatCache(DisableStatCache), 
+    DisableStatCache(DisableStatCache),
+    AllowASTWithCompilerErrors(AllowASTWithCompilerErrors), 
     CurrentGeneration(0), NumStatHits(0), NumStatMisses(0), 
     NumSLocEntriesRead(0), TotalNumSLocEntries(0), 
     NumStatementsRead(0), TotalNumStatements(0), NumMacrosRead(0), 

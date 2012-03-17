@@ -148,6 +148,12 @@ public:
   /// TypeLocs.
   bool shouldWalkTypesOfTypeLocs() const { return true; }
 
+  /// \brief Return whether \param S should be traversed using data recursion
+  /// to avoid a stack overflow with extreme cases.
+  bool shouldUseDataRecursionFor(Stmt *S) const {
+    return isa<BinaryOperator>(S) || isa<UnaryOperator>(S) || isa<CaseStmt>(S);
+  }
+
   /// \brief Recursively visit a statement or expression, by
   /// dispatching to Traverse*() based on the argument's dynamic type.
   ///
@@ -397,7 +403,101 @@ private:
   bool TraverseDeclContextHelper(DeclContext *DC);
   bool TraverseFunctionHelper(FunctionDecl *D);
   bool TraverseVarHelper(VarDecl *D);
+
+  bool Walk(Stmt *S);
+
+  struct EnqueueJob {
+    Stmt *S;
+    Stmt::child_iterator StmtIt;
+
+    EnqueueJob(Stmt *S) : S(S), StmtIt() {
+      if (Expr *E = dyn_cast_or_null<Expr>(S))
+        S = E->IgnoreParens();
+    }
+  };
+  bool dataTraverse(Stmt *S);
 };
+
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::dataTraverse(Stmt *S) {
+
+  SmallVector<EnqueueJob, 16> Queue;
+  Queue.push_back(S);
+
+  while (!Queue.empty()) {
+    EnqueueJob &job = Queue.back();
+    Stmt *CurrS = job.S;
+    if (!CurrS) {
+      Queue.pop_back();
+      continue;
+    }
+
+    if (getDerived().shouldUseDataRecursionFor(CurrS)) {
+      if (job.StmtIt == Stmt::child_iterator()) {
+        if (!Walk(CurrS)) return false;
+        job.StmtIt = CurrS->child_begin();
+      } else {
+        ++job.StmtIt;
+      }
+
+      if (job.StmtIt != CurrS->child_end())
+        Queue.push_back(*job.StmtIt);
+      else
+        Queue.pop_back();
+      continue;
+    }
+
+    Queue.pop_back();
+    TRY_TO(TraverseStmt(CurrS));
+  }
+
+  return true;
+}
+
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::Walk(Stmt *S) {
+
+#define DISPATCH_WALK(NAME, CLASS, VAR) \
+  return getDerived().WalkUpFrom##NAME(static_cast<CLASS*>(VAR));
+
+  if (BinaryOperator *BinOp = dyn_cast<BinaryOperator>(S)) {
+    switch (BinOp->getOpcode()) {
+#define OPERATOR(NAME) \
+    case BO_##NAME: DISPATCH_WALK(Bin##NAME, BinaryOperator, S);
+
+    BINOP_LIST()
+#undef OPERATOR
+
+#define OPERATOR(NAME)                                          \
+    case BO_##NAME##Assign:                          \
+    DISPATCH_WALK(Bin##NAME##Assign, CompoundAssignOperator, S);
+
+    CAO_LIST()
+#undef OPERATOR
+    }
+  } else if (UnaryOperator *UnOp = dyn_cast<UnaryOperator>(S)) {
+    switch (UnOp->getOpcode()) {
+#define OPERATOR(NAME)                                                  \
+    case UO_##NAME: DISPATCH_WALK(Unary##NAME, UnaryOperator, S);
+
+    UNARYOP_LIST()
+#undef OPERATOR
+    }
+  }
+
+  // Top switch stmt: dispatch to TraverseFooStmt for each concrete FooStmt.
+  switch (S->getStmtClass()) {
+  case Stmt::NoStmtClass: break;
+#define ABSTRACT_STMT(STMT)
+#define STMT(CLASS, PARENT) \
+  case Stmt::CLASS##Class: DISPATCH_WALK(CLASS, CLASS, S);
+#include "clang/AST/StmtNodes.inc"
+  }
+
+#undef DISPATCH_WALK
+
+  return true;
+}
 
 #define DISPATCH(NAME, CLASS, VAR) \
   return getDerived().Traverse##NAME(static_cast<CLASS*>(VAR))
@@ -406,6 +506,9 @@ template<typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S) {
   if (!S)
     return true;
+
+  if (getDerived().shouldUseDataRecursionFor(S))
+    return dataTraverse(S);
 
   // If we have a binary expr, dispatch to the subcode of the binop.  A smart
   // optimizer (e.g. LLVM) will fold this comparison into the switch stmt
@@ -2015,7 +2118,6 @@ DEF_TRAVERSE_STMT(CXXMemberCallExpr, { })
 // over the children.
 DEF_TRAVERSE_STMT(AddrLabelExpr, { })
 DEF_TRAVERSE_STMT(ArraySubscriptExpr, { })
-DEF_TRAVERSE_STMT(BlockDeclRefExpr, { })
 DEF_TRAVERSE_STMT(BlockExpr, {
   TRY_TO(TraverseDecl(S->getBlockDecl()));
   return true; // no child statements to loop through.
@@ -2037,15 +2139,18 @@ DEF_TRAVERSE_STMT(CXXPseudoDestructorExpr, {
 })
 DEF_TRAVERSE_STMT(CXXThisExpr, { })
 DEF_TRAVERSE_STMT(CXXThrowExpr, { })
+DEF_TRAVERSE_STMT(UserDefinedLiteral, { })
 DEF_TRAVERSE_STMT(DesignatedInitExpr, { })
 DEF_TRAVERSE_STMT(ExtVectorElementExpr, { })
 DEF_TRAVERSE_STMT(GNUNullExpr, { })
 DEF_TRAVERSE_STMT(ImplicitValueInitExpr, { })
+DEF_TRAVERSE_STMT(ObjCBoolLiteralExpr, { })
 DEF_TRAVERSE_STMT(ObjCEncodeExpr, { })
 DEF_TRAVERSE_STMT(ObjCIsaExpr, { })
 DEF_TRAVERSE_STMT(ObjCIvarRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCMessageExpr, { })
 DEF_TRAVERSE_STMT(ObjCPropertyRefExpr, { })
+DEF_TRAVERSE_STMT(ObjCSubscriptRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCProtocolExpr, { })
 DEF_TRAVERSE_STMT(ObjCSelectorExpr, { })
 DEF_TRAVERSE_STMT(ObjCIndirectCopyRestoreExpr, { })
@@ -2103,7 +2208,10 @@ DEF_TRAVERSE_STMT(FloatingLiteral, { })
 DEF_TRAVERSE_STMT(ImaginaryLiteral, { })
 DEF_TRAVERSE_STMT(StringLiteral, { })
 DEF_TRAVERSE_STMT(ObjCStringLiteral, { })
-
+DEF_TRAVERSE_STMT(ObjCNumericLiteral, { })
+DEF_TRAVERSE_STMT(ObjCArrayLiteral, { })
+DEF_TRAVERSE_STMT(ObjCDictionaryLiteral, { })
+  
 // Traverse OpenCL: AsType, Convert.
 DEF_TRAVERSE_STMT(AsTypeExpr, { })
 

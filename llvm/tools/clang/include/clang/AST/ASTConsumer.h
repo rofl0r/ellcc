@@ -90,6 +90,10 @@ public:
   /// modified by the introduction of an implicit zero initializer.
   virtual void CompleteTentativeDefinition(VarDecl *D) {}
 
+  /// HandleCXXStaticMemberVarInstantiation - Tell the consumer that this
+  // variable has been instantiated.
+  virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *D) {}
+
   /// \brief Callback involved at the end of a translation unit to
   /// notify the consumer that a vtable for the given C++ class is
   /// required.

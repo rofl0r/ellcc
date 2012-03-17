@@ -41,6 +41,12 @@ def err_expected_colon : Error<"expected ':'">;
 def err_expected_colon_after_setter_name : Error<
   "method name referenced in property setter attribute "
   "must end with ':'">;
+def err_invalid_string_udl : Error<
+  "string literal with user-defined suffix cannot be used here">;
+def err_invalid_character_udl : Error<
+  "character literal with user-defined suffix cannot be used here">;
+def err_invalid_numeric_udl : Error<
+  "numeric literal with user-defined suffix cannot be used here">;
 
 // Parse && Sema
 def ext_no_declarators : ExtWarn<"declaration does not declare anything">,

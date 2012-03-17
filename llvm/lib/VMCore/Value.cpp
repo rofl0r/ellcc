@@ -317,20 +317,40 @@ void Value::replaceAllUsesWith(Value *New) {
     BB->replaceSuccessorsPhiUsesWith(cast<BasicBlock>(New));
 }
 
-Value *Value::stripPointerCasts() {
-  if (!getType()->isPointerTy())
-    return this;
+namespace {
+// Various metrics for how much to strip off of pointers.
+enum PointerStripKind {
+  PSK_ZeroIndices,
+  PSK_InBoundsConstantIndices,
+  PSK_InBounds
+};
+
+template <PointerStripKind StripKind>
+static Value *stripPointerCastsAndOffsets(Value *V) {
+  if (!V->getType()->isPointerTy())
+    return V;
 
   // Even though we don't look through PHI nodes, we could be called on an
   // instruction in an unreachable block, which may be on a cycle.
   SmallPtrSet<Value *, 4> Visited;
 
-  Value *V = this;
   Visited.insert(V);
   do {
     if (GEPOperator *GEP = dyn_cast<GEPOperator>(V)) {
-      if (!GEP->hasAllZeroIndices())
-        return V;
+      switch (StripKind) {
+      case PSK_ZeroIndices:
+        if (!GEP->hasAllZeroIndices())
+          return V;
+        break;
+      case PSK_InBoundsConstantIndices:
+        if (!GEP->hasAllConstantIndices())
+          return V;
+        // fallthrough
+      case PSK_InBounds:
+        if (!GEP->isInBounds())
+          return V;
+        break;
+      }
       V = GEP->getPointerOperand();
     } else if (Operator::getOpcode(V) == Instruction::BitCast) {
       V = cast<Operator>(V)->getOperand(0);
@@ -345,6 +365,19 @@ Value *Value::stripPointerCasts() {
   } while (Visited.insert(V));
 
   return V;
+}
+} // namespace
+
+Value *Value::stripPointerCasts() {
+  return stripPointerCastsAndOffsets<PSK_ZeroIndices>(this);
+}
+
+Value *Value::stripInBoundsConstantOffsets() {
+  return stripPointerCastsAndOffsets<PSK_InBoundsConstantIndices>(this);
+}
+
+Value *Value::stripInBoundsOffsets() {
+  return stripPointerCastsAndOffsets<PSK_InBounds>(this);
 }
 
 /// isDereferenceablePointer - Test if this value is always a pointer to

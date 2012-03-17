@@ -38,6 +38,7 @@ extern "C" void* _ReturnAddress(void);
 # define ALIAS(x)   // TODO(timurrrr): do we need this on Windows?
 # define ALIGNED(x) __declspec(align(x))
 # define NOINLINE __declspec(noinline)
+# define NORETURN __declspec(noreturn)
 
 # define ASAN_INTERFACE_ATTRIBUTE  // TODO(timurrrr): do we need this on Win?
 #else  // defined(_WIN32)
@@ -46,6 +47,7 @@ extern "C" void* _ReturnAddress(void);
 # define ALIAS(x) __attribute__((alias(x)))
 # define ALIGNED(x) __attribute__((aligned(x)))
 # define NOINLINE __attribute__((noinline))
+# define NORETURN  // FIXME: should be __attribute__((noreturn)), revisit later.
 
 # define ASAN_INTERFACE_ATTRIBUTE __attribute__((visibility("default")))
 #endif  // defined(_WIN32)
@@ -145,8 +147,8 @@ class AsanThread;
 struct AsanStackTrace;
 
 // asan_rtl.cc
-void CheckFailed(const char *cond, const char *file, int line);
-void ShowStatsAndAbort();
+void NORETURN CheckFailed(const char *cond, const char *file, int line);
+void NORETURN ShowStatsAndAbort();
 
 // asan_globals.cc
 bool DescribeAddrIfGlobal(uintptr_t addr);
@@ -205,6 +207,8 @@ void Report(const char *format, ...);
 template<class T> T Min(T a, T b) { return a < b ? a : b; }
 template<class T> T Max(T a, T b) { return a > b ? a : b; }
 
+void SortArray(uintptr_t *array, size_t size);
+
 // asan_poisoning.cc
 // Poisons the shadow memory for "size" bytes starting from "addr".
 void PoisonShadow(uintptr_t addr, size_t size, uint8_t value);
@@ -241,9 +245,9 @@ extern bool asan_init_is_running;
 
 enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 
-void AsanDie();
+void NORETURN AsanDie();
 void SleepForSeconds(int seconds);
-void Exit(int exitcode);
+void NORETURN Exit(int exitcode);
 int Atexit(void (*function)(void));
 
 #define CHECK(cond) do { if (!(cond)) { \
@@ -291,12 +295,6 @@ bool WinSymbolize(const void *addr, char *out_buffer, int buffer_size);
 #endif
 
 typedef thread_return_t (THREAD_CALLING_CONV *thread_callback_t)(void* arg);
-
-#define GET_BP_PC_SP \
-  uintptr_t bp = GET_CURRENT_FRAME();              \
-  uintptr_t pc = GET_CALLER_PC();                  \
-  uintptr_t local_stack;                           \
-  uintptr_t sp = (uintptr_t)&local_stack;
 
 // These magic values are written to shadow for better error reporting.
 const int kAsanHeapLeftRedzoneMagic = 0xfa;

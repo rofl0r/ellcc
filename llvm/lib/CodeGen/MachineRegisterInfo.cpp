@@ -161,9 +161,8 @@ void MachineRegisterInfo::replaceRegWith(unsigned FromReg, unsigned ToReg) {
 /// form, so there should only be one definition.
 MachineInstr *MachineRegisterInfo::getVRegDef(unsigned Reg) const {
   // Since we are in SSA form, we can use the first definition.
-  if (!def_empty(Reg))
-    return &*def_begin(Reg);
-  return 0;
+  def_iterator I = def_begin(Reg);
+  return !I.atEnd() ? &*I : 0;
 }
 
 bool MachineRegisterInfo::hasOneUse(unsigned RegNo) const {
@@ -269,14 +268,14 @@ bool MachineRegisterInfo::isConstantPhysReg(unsigned PhysReg,
   assert(TargetRegisterInfo::isPhysicalRegister(PhysReg));
 
   // Check if any overlapping register is modified.
-  for (const unsigned *R = TRI->getOverlaps(PhysReg); *R; ++R)
+  for (const uint16_t *R = TRI->getOverlaps(PhysReg); *R; ++R)
     if (!def_empty(*R))
       return false;
 
   // Check if any overlapping register is allocatable so it may be used later.
   if (AllocatableRegs.empty())
     AllocatableRegs = TRI->getAllocatableSet(MF);
-  for (const unsigned *R = TRI->getOverlaps(PhysReg); *R; ++R)
+  for (const uint16_t *R = TRI->getOverlaps(PhysReg); *R; ++R)
     if (AllocatableRegs.test(*R))
       return false;
   return true;

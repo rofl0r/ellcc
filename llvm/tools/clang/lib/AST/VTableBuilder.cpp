@@ -996,7 +996,7 @@ public:
 
     LayoutVTable();
 
-    if (Context.getLangOptions().DumpVTableLayouts)
+    if (Context.getLangOpts().DumpVTableLayouts)
       dumpLayout(llvm::errs());
   }
 
@@ -1580,7 +1580,7 @@ void VTableBuilder::LayoutVTable() {
   LayoutVTablesForVirtualBases(MostDerivedClass, VBases);
 
   // -fapple-kext adds an extra entry at end of vtbl.
-  bool IsAppleKext = Context.getLangOptions().AppleKext;
+  bool IsAppleKext = Context.getLangOpts().AppleKext;
   if (IsAppleKext)
     Components.push_back(VTableComponent::MakeVCallOffset(CharUnits::Zero()));
 }
@@ -2136,7 +2136,8 @@ void VTableBuilder::dumpLayout(raw_ostream& Out) {
       uint64_t VTableIndex = I->first;
       const std::string &MethodName = I->second;
 
-      Out << llvm::format(" %4"PRIu64" | ", VTableIndex) << MethodName << '\n';
+      Out << llvm::format(" %4" PRIu64 " | ", VTableIndex) << MethodName
+          << '\n';
     }
   }
 

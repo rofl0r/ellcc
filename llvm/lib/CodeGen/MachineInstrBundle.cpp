@@ -169,7 +169,7 @@ void llvm::finalizeBundle(MachineBasicBlock &MBB,
       }
 
       if (!MO.isDead()) {
-        for (const unsigned *SubRegs = TRI->getSubRegisters(Reg);
+        for (const uint16_t *SubRegs = TRI->getSubRegisters(Reg);
              unsigned SubReg = *SubRegs; ++SubRegs) {
           if (LocalDefSet.insert(SubReg))
             LocalDefs.push_back(SubReg);
@@ -229,6 +229,8 @@ bool llvm::finalizeBundles(MachineFunction &MF) {
            "First instr cannot be inside bundle before finalization!");
 
     MachineBasicBlock::instr_iterator MIE = MBB.instr_end();
+    if (MII == MIE)
+      continue;
     for (++MII; MII != MIE; ) {
       if (!MII->isInsideBundle())
         ++MII;

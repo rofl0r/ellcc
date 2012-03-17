@@ -34,8 +34,8 @@ class raw_ostream;
 
 class TargetRegisterClass {
 public:
-  typedef const unsigned* iterator;
-  typedef const unsigned* const_iterator;
+  typedef const uint16_t* iterator;
+  typedef const uint16_t* const_iterator;
   typedef const MVT::SimpleValueType* vt_iterator;
   typedef const TargetRegisterClass* const * sc_iterator;
 
@@ -45,7 +45,7 @@ public:
   const unsigned *SubClassMask;
   const sc_iterator SuperClasses;
   const sc_iterator SuperRegClasses;
-  ArrayRef<unsigned> (*OrderFunc)(const MachineFunction&);
+  ArrayRef<uint16_t> (*OrderFunc)(const MachineFunction&);
 
   /// getID() - Return the register class ID number.
   ///
@@ -159,7 +159,7 @@ public:
   /// getSubClassMask - Returns a bit vector of subclasses, including this one.
   /// The vector is indexed by class IDs, see hasSubClassEq() above for how to
   /// use it.
-  const unsigned *getSubClassMask() const {
+  const uint32_t *getSubClassMask() const {
     return SubClassMask;
   }
 
@@ -190,7 +190,7 @@ public:
   ///
   /// By default, this method returns all registers in the class.
   ///
-  ArrayRef<unsigned> getRawAllocationOrder(const MachineFunction &MF) const {
+  ArrayRef<uint16_t> getRawAllocationOrder(const MachineFunction &MF) const {
     return OrderFunc ? OrderFunc(MF) : makeArrayRef(begin(), getNumRegs());
   }
 };
@@ -325,7 +325,7 @@ public:
     if (regA == regB) return true;
     if (isVirtualRegister(regA) || isVirtualRegister(regB))
       return false;
-    for (const unsigned *regList = getOverlaps(regA)+1; *regList; ++regList) {
+    for (const uint16_t *regList = getOverlaps(regA)+1; *regList; ++regList) {
       if (*regList == regB) return true;
     }
     return false;
@@ -340,7 +340,7 @@ public:
   /// isSuperRegister - Returns true if regB is a super-register of regA.
   ///
   bool isSuperRegister(unsigned regA, unsigned regB) const {
-    for (const unsigned *regList = getSuperRegisters(regA); *regList;++regList){
+    for (const uint16_t *regList = getSuperRegisters(regA); *regList;++regList){
       if (*regList == regB) return true;
     }
     return false;
@@ -351,7 +351,7 @@ public:
   /// order of desired callee-save stack frame offset. The first register is
   /// closest to the incoming stack pointer if stack grows down, and vice versa.
   ///
-  virtual const unsigned* getCalleeSavedRegs(const MachineFunction *MF = 0)
+  virtual const uint16_t* getCalleeSavedRegs(const MachineFunction *MF = 0)
                                                                       const = 0;
 
   /// getCallPreservedMask - Return a mask of call-preserved registers for the
@@ -387,10 +387,7 @@ public:
   /// Reg so its sub-register of index SubIdx is Reg.
   unsigned getMatchingSuperReg(unsigned Reg, unsigned SubIdx,
                                const TargetRegisterClass *RC) const {
-    for (const unsigned *SRs = getSuperRegisters(Reg); unsigned SR = *SRs;++SRs)
-      if (Reg == getSubReg(SR, SubIdx) && RC->contains(SR))
-        return SR;
-    return 0;
+    return MCRegisterInfo::getMatchingSuperReg(Reg, SubIdx, RC->MC);
   }
 
   /// canCombineSubRegIndices - Given a register class and a list of
@@ -514,7 +511,7 @@ public:
   ///
   /// Register allocators need only call this function to resolve
   /// target-dependent hints, but it should work without hinting as well.
-  virtual ArrayRef<unsigned>
+  virtual ArrayRef<uint16_t>
   getRawAllocationOrder(const TargetRegisterClass *RC,
                         unsigned HintType, unsigned HintReg,
                         const MachineFunction &MF) const {

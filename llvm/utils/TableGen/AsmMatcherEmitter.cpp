@@ -99,6 +99,7 @@
 #include "AsmMatcherEmitter.h"
 #include "CodeGenTarget.h"
 #include "StringMatcher.h"
+#include "StringToOffsetTable.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -2022,40 +2023,48 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
   // Emit the static custom operand parsing table;
   OS << "namespace {\n";
   OS << "  struct OperandMatchEntry {\n";
-  OS << "    const char *Mnemonic;\n";
+  OS << "    static const char *const MnemonicTable;\n";
   OS << "    unsigned OperandMask;\n";
-  OS << "    MatchClassKind Class;\n";
-  OS << "    unsigned RequiredFeatures;\n";
+  OS << "    unsigned Mnemonic;\n";
+  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
+               << " Class;\n";
+  OS << "    " << getMinimalTypeForRange(1ULL << Info.SubtargetFeatures.size())
+               << " RequiredFeatures;\n\n";
+  OS << "    StringRef getMnemonic() const {\n";
+  OS << "      return StringRef(MnemonicTable + Mnemonic + 1,\n";
+  OS << "                       MnemonicTable[Mnemonic]);\n";
+  OS << "    }\n";
   OS << "  };\n\n";
 
   OS << "  // Predicate for searching for an opcode.\n";
   OS << "  struct LessOpcodeOperand {\n";
   OS << "    bool operator()(const OperandMatchEntry &LHS, StringRef RHS) {\n";
-  OS << "      return StringRef(LHS.Mnemonic) < RHS;\n";
+  OS << "      return LHS.getMnemonic()  < RHS;\n";
   OS << "    }\n";
   OS << "    bool operator()(StringRef LHS, const OperandMatchEntry &RHS) {\n";
-  OS << "      return LHS < StringRef(RHS.Mnemonic);\n";
+  OS << "      return LHS < RHS.getMnemonic();\n";
   OS << "    }\n";
   OS << "    bool operator()(const OperandMatchEntry &LHS,";
   OS << " const OperandMatchEntry &RHS) {\n";
-  OS << "      return StringRef(LHS.Mnemonic) < StringRef(RHS.Mnemonic);\n";
+  OS << "      return LHS.getMnemonic() < RHS.getMnemonic();\n";
   OS << "    }\n";
   OS << "  };\n";
 
   OS << "} // end anonymous namespace.\n\n";
 
+  StringToOffsetTable StringTable;
+
   OS << "static const OperandMatchEntry OperandMatchTable["
      << Info.OperandMatchInfo.size() << "] = {\n";
 
-  OS << "  /* Mnemonic, Operand List Mask, Operand Class, Features */\n";
+  OS << "  /* Operand List Mask, Mnemonic, Operand Class, Features */\n";
   for (std::vector<OperandMatchEntry>::const_iterator it =
        Info.OperandMatchInfo.begin(), ie = Info.OperandMatchInfo.end();
        it != ie; ++it) {
     const OperandMatchEntry &OMI = *it;
     const MatchableInfo &II = *OMI.MI;
 
-    OS << "  { \"" << II.Mnemonic << "\""
-       << ", " << OMI.OperandMask;
+    OS << "  { " << OMI.OperandMask;
 
     OS << " /* ";
     bool printComma = false;
@@ -2067,6 +2076,11 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
         printComma = true;
       }
     OS << " */";
+
+    // Store a pascal-style length byte in the mnemonic.
+    std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
+    OS << ", " << StringTable.GetOrAddStringOffset(LenMnemonic, false)
+       << " /* " << II.Mnemonic << " */";
 
     OS << ", " << OMI.CI->Name
        << ", ";
@@ -2082,6 +2096,10 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
     OS << " },\n";
   }
   OS << "};\n\n";
+
+  OS << "const char *const OperandMatchEntry::MnemonicTable =\n";
+  StringTable.EmitString(OS);
+  OS << ";\n\n";
 
   // Emit the operand class switch to call the correct custom parser for
   // the found operand class.
@@ -2136,7 +2154,7 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
      << "       *ie = MnemonicRange.second; it != ie; ++it) {\n";
 
   OS << "    // equal_range guarantees that instruction mnemonic matches.\n";
-  OS << "    assert(Mnemonic == it->Mnemonic);\n\n";
+  OS << "    assert(Mnemonic == it->getMnemonic());\n\n";
 
   // Emit check that the required features are available.
   OS << "    // check if the available features match\n";
@@ -2302,31 +2320,38 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   // following the mnemonic.
   OS << "namespace {\n";
   OS << "  struct MatchEntry {\n";
-  OS << "    unsigned Opcode;\n";
-  OS << "    const char *Mnemonic;\n";
+  OS << "    static const char *const MnemonicTable;\n";
+  OS << "    uint16_t Opcode;\n";
+  OS << "    unsigned Mnemonic;\n";
   OS << "    " << getMinimalTypeForRange(Info.Matchables.size())
                << " ConvertFn;\n";
   OS << "    " << getMinimalTypeForRange(Info.Classes.size())
                << " Classes[" << MaxNumOperands << "];\n";
   OS << "    " << getMinimalTypeForRange(1ULL << Info.SubtargetFeatures.size())
                << " RequiredFeatures;\n";
-  OS << "    unsigned AsmVariantID;\n";
+  OS << "    uint8_t AsmVariantID;\n\n";
+  OS << "    StringRef getMnemonic() const {\n";
+  OS << "      return StringRef(MnemonicTable + Mnemonic + 1,\n";
+  OS << "                       MnemonicTable[Mnemonic]);\n";
+  OS << "    }\n";
   OS << "  };\n\n";
 
   OS << "  // Predicate for searching for an opcode.\n";
   OS << "  struct LessOpcode {\n";
   OS << "    bool operator()(const MatchEntry &LHS, StringRef RHS) {\n";
-  OS << "      return StringRef(LHS.Mnemonic) < RHS;\n";
+  OS << "      return LHS.getMnemonic() < RHS;\n";
   OS << "    }\n";
   OS << "    bool operator()(StringRef LHS, const MatchEntry &RHS) {\n";
-  OS << "      return LHS < StringRef(RHS.Mnemonic);\n";
+  OS << "      return LHS < RHS.getMnemonic();\n";
   OS << "    }\n";
   OS << "    bool operator()(const MatchEntry &LHS, const MatchEntry &RHS) {\n";
-  OS << "      return StringRef(LHS.Mnemonic) < StringRef(RHS.Mnemonic);\n";
+  OS << "      return LHS.getMnemonic() < RHS.getMnemonic();\n";
   OS << "    }\n";
   OS << "  };\n";
 
   OS << "} // end anonymous namespace.\n\n";
+
+  StringToOffsetTable StringTable;
 
   OS << "static const MatchEntry MatchTable["
      << Info.Matchables.size() << "] = {\n";
@@ -2336,8 +2361,12 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
        it != ie; ++it) {
     MatchableInfo &II = **it;
 
+    // Store a pascal-style length byte in the mnemonic.
+    std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
     OS << "  { " << Target.getName() << "::"
-       << II.getResultInst()->TheDef->getName() << ", \"" << II.Mnemonic << "\""
+       << II.getResultInst()->TheDef->getName() << ", "
+       << StringTable.GetOrAddStringOffset(LenMnemonic, false)
+       << " /* " << II.Mnemonic << " */"
        << ", " << II.ConversionFnKind << ", { ";
     for (unsigned i = 0, e = II.AsmOperands.size(); i != e; ++i) {
       MatchableInfo::AsmOperand &Op = II.AsmOperands[i];
@@ -2360,6 +2389,10 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   }
 
   OS << "};\n\n";
+
+  OS << "const char *const MatchEntry::MnemonicTable =\n";
+  StringTable.EmitString(OS);
+  OS << ";\n\n";
 
   // A method to determine if a mnemonic is in the list.
   OS << "bool " << Target.getName() << ClassName << "::\n"
@@ -2424,7 +2457,7 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "       it != ie; ++it) {\n";
 
   OS << "    // equal_range guarantees that instruction mnemonic matches.\n";
-  OS << "    assert(Mnemonic == it->Mnemonic);\n";
+  OS << "    assert(Mnemonic == it->getMnemonic());\n";
 
   // Emit check that the subclasses match.
   OS << "    if (VariantID != it->AsmVariantID) continue;\n";

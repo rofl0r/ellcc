@@ -15,7 +15,6 @@
 #include <windows.h>
 
 #include <dbghelp.h>
-#include <stdio.h>  // FIXME: get rid of this.
 #include <stdlib.h>
 
 #include <new>  // FIXME: temporarily needed for placement new in AsanLock.
@@ -25,6 +24,10 @@
 #include "asan_lock.h"
 #include "asan_procmaps.h"
 #include "asan_thread.h"
+
+// Should not add dependency on libstdc++,
+// since most of the stuff here is inlinable.
+#include <algorithm>
 
 namespace __asan {
 
@@ -55,25 +58,27 @@ size_t AsanWrite(int fd, const void *buf, size_t count) {
   if (fd != 2)
     UNIMPLEMENTED();
 
-  // FIXME: use WriteFile instead?
-  return fwrite(buf, 1, count, stderr);
+  HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+  if (err == NULL)
+    return 0;  // FIXME: this might not work on some apps.
+  DWORD ret;
+  if (!WriteFile(err, buf, count, &ret, NULL))
+    return 0;
+  return ret;
 }
 
 // FIXME: Looks like these functions are not needed and are linked in by the
 // code unreachable on Windows. We should clean this up.
 int AsanOpenReadonly(const char* filename) {
   UNIMPLEMENTED();
-  return -1;
 }
 
 size_t AsanRead(int fd, void *buf, size_t count) {
   UNIMPLEMENTED();
-  return -1;
 }
 
 int AsanClose(int fd) {
   UNIMPLEMENTED();
-  return -1;
 }
 
 // ---------------------- Stacktraces, symbols, etc. ---------------- {{{1
@@ -195,7 +200,6 @@ void AsanLock::Unlock() {
 // ---------------------- TSD ---------------- {{{1
 static bool tsd_key_inited = false;
 
-// FIXME: is __declspec enough?
 static __declspec(thread) void *fake_tsd = NULL;
 
 void AsanTSDInit(void (*destructor)(void *tsd)) {
@@ -215,8 +219,8 @@ void AsanTSDSet(void *tsd) {
 
 // ---------------------- Various stuff ---------------- {{{1
 void *AsanDoesNotSupportStaticLinkage() {
-#if !defined(_DLL) || defined(_DEBUG)
-#error Please build the runtime with /MD
+#if defined(_DEBUG)
+#error Please build the runtime with a non-debug CRT: /MD or /MT
 #endif
   return NULL;
 }
@@ -231,7 +235,18 @@ int AtomicInc(int *a) {
 }
 
 const char* AsanGetEnv(const char* name) {
-  // FIXME: implement.
+  static char env_buffer[32767] = {};
+
+  // Note: this implementation stores the result in a static buffer so we only
+  // allow it to be called just once.
+  static bool called_once = false;
+  if (called_once)
+    UNIMPLEMENTED();
+  called_once = true;
+
+  DWORD rv = GetEnvironmentVariableA(name, env_buffer, sizeof(env_buffer));
+  if (rv > 0 && rv < sizeof(env_buffer))
+    return env_buffer;
   return NULL;
 }
 
@@ -265,6 +280,10 @@ void Exit(int exitcode) {
 
 int Atexit(void (*function)(void)) {
   return atexit(function);
+}
+
+void SortArray(uintptr_t *array, size_t size) {
+  std::sort(array, array + size);
 }
 
 }  // namespace __asan

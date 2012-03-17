@@ -20,8 +20,9 @@
 #include "clang/AST/StmtIterator.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/AST/ASTContext.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/raw_ostream.h"
 #include <string>
 
 namespace llvm {
@@ -141,6 +142,8 @@ protected:
     friend class CallExpr; // ctor
     friend class OffsetOfExpr; // ctor
     friend class ObjCMessageExpr; // ctor
+    friend class ObjCArrayLiteral; // ctor
+    friend class ObjCDictionaryLiteral; // ctor
     friend class ShuffleVectorExpr; // ctor
     friend class ParenListExpr; // ctor
     friend class CXXUnresolvedConstructExpr; // ctor
@@ -191,6 +194,7 @@ protected:
     unsigned HasTemplateKWAndArgsInfo : 1;
     unsigned HasFoundDecl : 1;
     unsigned HadMultipleCandidates : 1;
+    unsigned RefersToEnclosingLocal : 1;
   };
 
   class CastExprBitfields {
@@ -319,17 +323,21 @@ public:
   /// de-serialization).
   struct EmptyShell { };
 
+private:
+  /// \brief Whether statistic collection is enabled.
+  static bool StatisticsEnabled;
+
 protected:
   /// \brief Construct an empty statement.
   explicit Stmt(StmtClass SC, EmptyShell) {
     StmtBits.sClass = SC;
-    if (Stmt::CollectingStats()) Stmt::addStmtClass(SC);
+    if (StatisticsEnabled) Stmt::addStmtClass(SC);
   }
 
 public:
   Stmt(StmtClass SC) {
     StmtBits.sClass = SC;
-    if (Stmt::CollectingStats()) Stmt::addStmtClass(SC);
+    if (StatisticsEnabled) Stmt::addStmtClass(SC);
   }
 
   StmtClass getStmtClass() const {
@@ -340,14 +348,13 @@ public:
   /// SourceLocation tokens are not useful in isolation - they are low level
   /// value objects created/interpreted by SourceManager. We assume AST
   /// clients will have a pointer to the respective SourceManager.
-  SourceRange getSourceRange() const;
-
-  SourceLocation getLocStart() const { return getSourceRange().getBegin(); }
-  SourceLocation getLocEnd() const { return getSourceRange().getEnd(); }
+  SourceRange getSourceRange() const LLVM_READONLY;
+  SourceLocation getLocStart() const LLVM_READONLY;
+  SourceLocation getLocEnd() const LLVM_READONLY;
 
   // global temp stats (until we have a per-module visitor)
   static void addStmtClass(const StmtClass s);
-  static bool CollectingStats(bool Enable = false);
+  static void EnableStatistics();
   static void PrintStats();
 
   /// dump - This does a local dump of the specified AST fragment.  It dumps the
@@ -469,7 +476,7 @@ public:
   SourceLocation getEndLoc() const { return EndLoc; }
   void setEndLoc(SourceLocation L) { EndLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(StartLoc, EndLoc);
   }
 
@@ -518,7 +525,7 @@ public:
 
   bool hasLeadingEmptyMacro() const { return HasLeadingEmptyMacro; }
 
-  SourceRange getSourceRange() const { return SourceRange(SemiLoc); }
+  SourceRange getSourceRange() const LLVM_READONLY { return SourceRange(SemiLoc); }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == NullStmtClass;
@@ -598,7 +605,7 @@ public:
     return const_reverse_body_iterator(body_begin());
   }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(LBracLoc, RBracLoc);
   }
 
@@ -643,7 +650,7 @@ public:
     return const_cast<SwitchCase*>(this)->getSubStmt();
   }
 
-  SourceRange getSourceRange() const { return SourceRange(); }
+  SourceRange getSourceRange() const LLVM_READONLY { return SourceRange(); }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == CaseStmtClass ||
@@ -698,7 +705,7 @@ public:
   void setRHS(Expr *Val) { SubExprs[RHS] = reinterpret_cast<Stmt*>(Val); }
 
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     // Handle deeply nested case statements with iteration instead of recursion.
     const CaseStmt *CS = this;
     while (const CaseStmt *CS2 = dyn_cast<CaseStmt>(CS->getSubStmt()))
@@ -738,7 +745,7 @@ public:
   SourceLocation getColonLoc() const { return ColonLoc; }
   void setColonLoc(SourceLocation L) { ColonLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(DefaultLoc, SubStmt->getLocEnd());
   }
   static bool classof(const Stmt *T) {
@@ -775,7 +782,7 @@ public:
   void setIdentLoc(SourceLocation L) { IdentLoc = L; }
   void setSubStmt(Stmt *SS) { SubStmt = SS; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(IdentLoc, SubStmt->getLocEnd());
   }
   child_range children() { return child_range(&SubStmt, &SubStmt+1); }
@@ -836,7 +843,7 @@ public:
   SourceLocation getElseLoc() const { return ElseLoc; }
   void setElseLoc(SourceLocation L) { ElseLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     if (SubExprs[ELSE])
       return SourceRange(IfLoc, SubExprs[ELSE]->getLocEnd());
     else
@@ -935,7 +942,7 @@ public:
     return (bool) AllEnumCasesCovered;
   }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(SwitchLoc, SubExprs[BODY]->getLocEnd());
   }
   // Iterators
@@ -990,7 +997,7 @@ public:
   SourceLocation getWhileLoc() const { return WhileLoc; }
   void setWhileLoc(SourceLocation L) { WhileLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(WhileLoc, SubExprs[BODY]->getLocEnd());
   }
   static bool classof(const Stmt *T) {
@@ -1039,7 +1046,7 @@ public:
   SourceLocation getRParenLoc() const { return RParenLoc; }
   void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(DoLoc, RParenLoc);
   }
   static bool classof(const Stmt *T) {
@@ -1111,7 +1118,7 @@ public:
   SourceLocation getRParenLoc() const { return RParenLoc; }
   void setRParenLoc(SourceLocation L) { RParenLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(ForLoc, SubExprs[BODY]->getLocEnd());
   }
   static bool classof(const Stmt *T) {
@@ -1146,7 +1153,7 @@ public:
   SourceLocation getLabelLoc() const { return LabelLoc; }
   void setLabelLoc(SourceLocation L) { LabelLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(GotoLoc, LabelLoc);
   }
   static bool classof(const Stmt *T) {
@@ -1190,7 +1197,7 @@ public:
     return const_cast<IndirectGotoStmt*>(this)->getConstantTarget();
   }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(GotoLoc, Target->getLocEnd());
   }
 
@@ -1217,7 +1224,7 @@ public:
   SourceLocation getContinueLoc() const { return ContinueLoc; }
   void setContinueLoc(SourceLocation L) { ContinueLoc = L; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(ContinueLoc);
   }
 
@@ -1243,7 +1250,7 @@ public:
   SourceLocation getBreakLoc() const { return BreakLoc; }
   void setBreakLoc(SourceLocation L) { BreakLoc = L; }
 
-  SourceRange getSourceRange() const { return SourceRange(BreakLoc); }
+  SourceRange getSourceRange() const LLVM_READONLY { return SourceRange(BreakLoc); }
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == BreakStmtClass;
@@ -1295,7 +1302,7 @@ public:
   const VarDecl *getNRVOCandidate() const { return NRVOCandidate; }
   void setNRVOCandidate(const VarDecl *Var) { NRVOCandidate = Var; }
 
-  SourceRange getSourceRange() const;
+  SourceRange getSourceRange() const LLVM_READONLY;
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == ReturnStmtClass;
@@ -1505,7 +1512,7 @@ public:
   StringLiteral *getClobber(unsigned i) { return Clobbers[i]; }
   const StringLiteral *getClobber(unsigned i) const { return Clobbers[i]; }
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(AsmLoc, RParenLoc);
   }
 
@@ -1576,7 +1583,7 @@ public:
                                SourceLocation ExceptLoc,
                                Expr *FilterExpr,
                                Stmt *Block);
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(getExceptLoc(), getEndLoc());
   }
 
@@ -1619,7 +1626,7 @@ public:
                                 SourceLocation FinallyLoc,
                                 Stmt *Block);
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(getFinallyLoc(), getEndLoc());
   }
 
@@ -1663,7 +1670,7 @@ public:
                             Stmt *TryBlock,
                             Stmt *Handler);
 
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(getTryLoc(), getEndLoc());
   }
 

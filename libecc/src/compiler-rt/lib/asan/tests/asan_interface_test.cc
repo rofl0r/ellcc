@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <vector>
+
 #include "asan_test_config.h"
 #include "asan_test_utils.h"
 #include "asan_interface.h"
@@ -359,4 +361,25 @@ TEST(AddressSanitizerInterface, SetErrorReportCallbackTest) {
   char *array = Ident((char*)malloc(120));
   EXPECT_DEATH(ACCESS(array, 120), "size Z");
   __asan_set_error_report_callback(NULL);
+}
+
+TEST(AddressSanitizerInterface, GetOwnershipStressTest) {
+  std::vector<char *> pointers;
+  std::vector<size_t> sizes;
+  const size_t kNumMallocs =
+      (__WORDSIZE <= 32 || ASAN_LOW_MEMORY) ? 1 << 10 : 1 << 14;
+  for (size_t i = 0; i < kNumMallocs; i++) {
+    size_t size = i * 100 + 1;
+    pointers.push_back((char*)malloc(size));
+    sizes.push_back(size);
+  }
+  for (size_t i = 0; i < 4000000; i++) {
+    EXPECT_FALSE(__asan_get_ownership(&pointers));
+    EXPECT_FALSE(__asan_get_ownership((void*)0x1234));
+    size_t idx = i % kNumMallocs;
+    EXPECT_TRUE(__asan_get_ownership(pointers[idx]));
+    EXPECT_EQ(sizes[idx], __asan_get_allocated_size(pointers[idx]));
+  }
+  for (size_t i = 0, n = pointers.size(); i < n; i++)
+    free(pointers[i]);
 }

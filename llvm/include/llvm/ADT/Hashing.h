@@ -113,7 +113,7 @@ public:
 /// differing argument types even if they would implicit promote to a common
 /// type without changing the value.
 template <typename T>
-typename enable_if<is_integral<T>, hash_code>::type hash_value(T value);
+typename enable_if<is_integral_or_enum<T>, hash_code>::type hash_value(T value);
 
 /// \brief Compute a hash_code for a pointer's address.
 ///
@@ -123,6 +123,10 @@ template <typename T> hash_code hash_value(const T *ptr);
 /// \brief Compute a hash_code for a pair of objects.
 template <typename T, typename U>
 hash_code hash_value(const std::pair<T, U> &arg);
+
+/// \brief Compute a hash_code for a standard string.
+template <typename T>
+hash_code hash_value(const std::basic_string<T> &arg);
 
 
 /// \brief Override the execution seed with a fixed value.
@@ -334,7 +338,7 @@ inline size_t get_execution_seed() {
   // called, return that instead of the per-execution seed.
   const uint64_t seed_prime = 0xff51afd7ed558ccdULL;
   static size_t seed = fixed_seed_override ? fixed_seed_override
-                                           : static_cast<size_t>(seed_prime);
+                                           : (size_t)seed_prime;
   return seed;
 }
 
@@ -345,14 +349,15 @@ inline size_t get_execution_seed() {
 /// reading the underlying data. It is false if values of this type must
 /// first be passed to hash_value, and the resulting hash_codes combined.
 //
-// FIXME: We want to replace is_integral and is_pointer here with a predicate
-// which asserts that comparing the underlying storage of two values of the
-// type for equality is equivalent to comparing the two values for equality.
-// For all the platforms we care about, this holds for integers and pointers,
-// but there are platforms where it doesn't and we would like to support
-// user-defined types which happen to satisfy this property.
+// FIXME: We want to replace is_integral_or_enum and is_pointer here with
+// a predicate which asserts that comparing the underlying storage of two
+// values of the type for equality is equivalent to comparing the two values
+// for equality. For all the platforms we care about, this holds for integers
+// and pointers, but there are platforms where it doesn't and we would like to
+// support user-defined types which happen to satisfy this property.
 template <typename T> struct is_hashable_data
-  : integral_constant<bool, ((is_integral<T>::value || is_pointer<T>::value) &&
+  : integral_constant<bool, ((is_integral_or_enum<T>::value ||
+                              is_pointer<T>::value) &&
                              64 % sizeof(T) == 0)> {};
 
 // Special case std::pair to detect when both types are viable and when there
@@ -415,8 +420,6 @@ hash_code hash_combine_range_impl(InputIteratorT first, InputIteratorT last) {
   while (first != last && store_and_advance(buffer_ptr, buffer_end,
                                             get_hashable_data(*first)))
     ++first;
-/// \brief Metafunction that determines whether the given type is an integral
-/// type.
   if (first == last)
     return hash_short(buffer, buffer_ptr - buffer, seed);
   assert(buffer_ptr == buffer_end);
@@ -454,7 +457,7 @@ hash_code hash_combine_range_impl(InputIteratorT first, InputIteratorT last) {
 /// and directly reads from the underlying memory.
 template <typename ValueT>
 typename enable_if<is_hashable_data<ValueT>, hash_code>::type
-hash_combine_range_impl(const ValueT *first, const ValueT *last) {
+hash_combine_range_impl(ValueT *first, ValueT *last) {
   const size_t seed = get_execution_seed();
   const char *s_begin = reinterpret_cast<const char *>(first);
   const char *s_end = reinterpret_cast<const char *>(last);
@@ -730,7 +733,8 @@ inline hash_code hash_integer_value(uint64_t value) {
 // Declared and documented above, but defined here so that any of the hashing
 // infrastructure is available.
 template <typename T>
-typename enable_if<is_integral<T>, hash_code>::type hash_value(T value) {
+typename enable_if<is_integral_or_enum<T>, hash_code>::type
+hash_value(T value) {
   return ::llvm::hashing::detail::hash_integer_value(value);
 }
 
@@ -746,6 +750,13 @@ template <typename T> hash_code hash_value(const T *ptr) {
 template <typename T, typename U>
 hash_code hash_value(const std::pair<T, U> &arg) {
   return hash_combine(arg.first, arg.second);
+}
+
+// Declared and documented above, but defined here so that any of the hashing
+// infrastructure is available.
+template <typename T>
+hash_code hash_value(const std::basic_string<T> &arg) {
+  return hash_combine_range(arg.begin(), arg.end());
 }
 
 } // namespace llvm

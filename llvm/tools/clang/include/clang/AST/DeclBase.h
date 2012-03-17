@@ -17,8 +17,9 @@
 #include "clang/AST/Attr.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/Specifiers.h"
-#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/PrettyStackTrace.h"
 
 namespace clang {
 class DeclContext;
@@ -260,6 +261,9 @@ private:
   /// are regarded as "referenced" but not "used".
   unsigned Referenced : 1;
 
+  /// \brief Whether statistic collection is enabled.
+  static bool StatisticsEnabled;
+
 protected:
   /// Access - Used by C++ decls for the access specifier.
   // NOTE: VC++ treats enums as signed, avoid using the AccessSpecifier enum
@@ -304,7 +308,7 @@ protected:
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       HasCachedLinkage(0)
   {
-    if (Decl::CollectingStats()) add(DK);
+    if (StatisticsEnabled) add(DK);
   }
 
   Decl(Kind DK, EmptyShell Empty)
@@ -314,7 +318,7 @@ protected:
       IdentifierNamespace(getIdentifierNamespaceForKind(DK)),
       HasCachedLinkage(0)
   {
-    if (Decl::CollectingStats()) add(DK);
+    if (StatisticsEnabled) add(DK);
   }
 
   virtual ~Decl();
@@ -334,11 +338,15 @@ protected:
 public:
 
   /// \brief Source range that this declaration covers.
-  virtual SourceRange getSourceRange() const {
+  virtual SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(getLocation(), getLocation());
   }
-  SourceLocation getLocStart() const { return getSourceRange().getBegin(); }
-  SourceLocation getLocEnd() const { return getSourceRange().getEnd(); }
+  SourceLocation getLocStart() const LLVM_READONLY {
+    return getSourceRange().getBegin();
+  }
+  SourceLocation getLocEnd() const LLVM_READONLY {
+    return getSourceRange().getEnd();
+  }
 
   SourceLocation getLocation() const { return Loc; }
   void setLocation(SourceLocation L) { Loc = L; }
@@ -372,7 +380,7 @@ public:
 
   bool isInAnonymousNamespace() const;
 
-  ASTContext &getASTContext() const;
+  ASTContext &getASTContext() const LLVM_READONLY;
 
   void setAccess(AccessSpecifier AS) {
     Access = AS;
@@ -761,7 +769,7 @@ public:
 
   // global temp stats (until we have a per-module visitor)
   static void add(Kind k);
-  static bool CollectingStats(bool Enable = false);
+  static void EnableStatistics();
   static void PrintStats();
 
   /// isTemplateParameter - Determines whether this declaration is a
@@ -941,8 +949,11 @@ class DeclContext {
 
   /// \brief Pointer to the data structure used to lookup declarations
   /// within this context (or a DependentStoredDeclsMap if this is a
-  /// dependent context).
-  mutable StoredDeclsMap *LookupPtr;
+  /// dependent context), and a bool indicating whether we have lazily
+  /// omitted any declarations from the map. We maintain the invariant
+  /// that, if the map contains an entry for a DeclarationName, then it
+  /// contains all relevant entries for that name.
+  mutable llvm::PointerIntPair<StoredDeclsMap*, 1, bool> LookupPtr;
 
 protected:
   /// FirstDecl - The first declaration stored within this declaration
@@ -965,7 +976,7 @@ protected:
 
    DeclContext(Decl::Kind K)
      : DeclKind(K), ExternalLexicalStorage(false),
-       ExternalVisibleStorage(false), LookupPtr(0), FirstDecl(0),
+       ExternalVisibleStorage(false), LookupPtr(0, false), FirstDecl(0),
        LastDecl(0) { }
 
 public:
@@ -1424,11 +1435,7 @@ public:
   /// visible from this context, as determined by
   /// NamedDecl::declarationReplaces, the previous declaration will be
   /// replaced with D.
-  ///
-  /// @param Recoverable true if it's okay to not add this decl to
-  /// the lookup tables because it can be easily recovered by walking
-  /// the declaration chains.
-  void makeDeclVisibleInContext(NamedDecl *D, bool Recoverable = true);
+  void makeDeclVisibleInContext(NamedDecl *D);
 
   /// udir_iterator - Iterates through the using-directives stored
   /// within this context.
@@ -1454,7 +1461,11 @@ public:
   // Low-level accessors
 
   /// \brief Retrieve the internal representation of the lookup structure.
-  StoredDeclsMap* getLookupPtr() const { return LookupPtr; }
+  /// This may omit some names if we are lazily building the structure.
+  StoredDeclsMap *getLookupPtr() const { return LookupPtr.getPointer(); }
+
+  /// \brief Ensure the lookup structure is fully-built and return it.
+  StoredDeclsMap *buildLookup();
 
   /// \brief Whether this DeclContext has external storage containing
   /// additional declarations that are lexically in this context.
@@ -1501,15 +1512,14 @@ private:
   ///
   /// Analogous to makeDeclVisibleInContext, but for the exclusive
   /// use of addDeclInternal().
-  void makeDeclVisibleInContextInternal(NamedDecl *D,
-                                        bool Recoverable = true);
+  void makeDeclVisibleInContextInternal(NamedDecl *D);
 
   friend class DependentDiagnostic;
   StoredDeclsMap *CreateStoredDeclsMap(ASTContext &C) const;
 
-  void buildLookup(DeclContext *DCtx);
+  void buildLookupImpl(DeclContext *DCtx);
   void makeDeclVisibleInContextWithFlags(NamedDecl *D, bool Internal,
-                                         bool Recoverable);
+                                         bool Rediscoverable);
   void makeDeclVisibleInContextImpl(NamedDecl *D, bool Internal);
 };
 

@@ -88,6 +88,39 @@ static void QuoteTarget(StringRef Target,
   }
 }
 
+static void addDirectoryList(const ArgList &Args,
+                             ArgStringList &CmdArgs,
+                             const char *ArgName,
+                             const char *EnvVar) {
+  const char *DirList = ::getenv(EnvVar);
+  if (!DirList)
+    return; // Nothing to do.
+
+  StringRef Dirs(DirList);
+  if (Dirs.empty()) // Empty string should not add '.'.
+    return;
+
+  StringRef::size_type Delim;
+  while ((Delim = Dirs.find(llvm::sys::PathSeparator)) != StringRef::npos) {
+    if (Delim == 0) { // Leading colon.
+      CmdArgs.push_back(ArgName);
+      CmdArgs.push_back(".");
+    } else {
+      CmdArgs.push_back(ArgName);
+      CmdArgs.push_back(Args.MakeArgString(Dirs.split(Delim).first));
+    }
+    Dirs = Dirs.split(Delim).second;
+  }
+
+  if (Dirs.empty()) { // Trailing colon.
+    CmdArgs.push_back(ArgName);
+    CmdArgs.push_back(".");
+  } else { // Add the last path.
+    CmdArgs.push_back(ArgName);
+    CmdArgs.push_back(Args.MakeArgString(Dirs));
+  }
+}
+
 static void AddLinkerInputs(const ToolChain &TC,
                             const InputInfoList &Inputs, const ArgList &Args,
                             ArgStringList &CmdArgs) {
@@ -128,12 +161,22 @@ static void AddLinkerInputs(const ToolChain &TC,
     } else
       A.renderAsInput(Args, CmdArgs);
   }
+
+  // LIBRARY_PATH - included following the user specified library paths.
+  addDirectoryList(Args, CmdArgs, "-L", "LIBRARY_PATH");
 }
 
 /// \brief Determine whether Objective-C automated reference counting is
 /// enabled.
 static bool isObjCAutoRefCount(const ArgList &Args) {
   return Args.hasFlag(options::OPT_fobjc_arc, options::OPT_fno_objc_arc, false);
+}
+
+/// \brief Determine whether we are linking the ObjC runtime.
+static bool isObjCRuntimeLinked(const ArgList &Args) {
+  if (isObjCAutoRefCount(Args))
+    return true;
+  return Args.hasArg(options::OPT_fobjc_link_runtime);
 }
 
 static void addProfileRT(const ToolChain &TC, const ArgList &Args,
@@ -153,38 +196,6 @@ static void addProfileRT(const ToolChain &TC, const ArgList &Args,
     std::string(TC.getDriver().Dir) + "/../lib/libprofile_rt.a";
 
   CmdArgs.push_back(Args.MakeArgString(ProfileRT));
-}
-
-static void AddIncludeDirectoryList(const ArgList &Args,
-                                    ArgStringList &CmdArgs,
-                                    const char *ArgName,
-                                    const char *DirList) {
-  if (!DirList)
-    return; // Nothing to do.
-
-  StringRef Dirs(DirList);
-  if (Dirs.empty()) // Empty string should not add '.'.
-    return;
-
-  StringRef::size_type Delim;
-  while ((Delim = Dirs.find(llvm::sys::PathSeparator)) != StringRef::npos) {
-    if (Delim == 0) { // Leading colon.
-      CmdArgs.push_back(ArgName);
-      CmdArgs.push_back(".");
-    } else {
-      CmdArgs.push_back(ArgName);
-      CmdArgs.push_back(Args.MakeArgString(Dirs.substr(0, Delim)));
-    }
-    Dirs = Dirs.substr(Delim + 1);
-  }
-
-  if (Dirs.empty()) { // Trailing colon.
-    CmdArgs.push_back(ArgName);
-    CmdArgs.push_back(".");
-  } else { // Add the last path.
-    CmdArgs.push_back(ArgName);
-    CmdArgs.push_back(Args.MakeArgString(Dirs));
-  }
 }
 
 void Clang::AddPreprocessingOptions(Compilation &C,
@@ -392,19 +403,15 @@ void Clang::AddPreprocessingOptions(Compilation &C,
   // frontend into the driver. It will allow deleting 4 otherwise unused flags.
   // CPATH - included following the user specified includes (but prior to
   // builtin and standard includes).
-  AddIncludeDirectoryList(Args, CmdArgs, "-I", ::getenv("CPATH"));
+  addDirectoryList(Args, CmdArgs, "-I", "CPATH");
   // C_INCLUDE_PATH - system includes enabled when compiling C.
-  AddIncludeDirectoryList(Args, CmdArgs, "-c-isystem",
-                          ::getenv("C_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-c-isystem", "C_INCLUDE_PATH");
   // CPLUS_INCLUDE_PATH - system includes enabled when compiling C++.
-  AddIncludeDirectoryList(Args, CmdArgs, "-cxx-isystem",
-                          ::getenv("CPLUS_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-cxx-isystem", "CPLUS_INCLUDE_PATH");
   // OBJC_INCLUDE_PATH - system includes enabled when compiling ObjC.
-  AddIncludeDirectoryList(Args, CmdArgs, "-objc-isystem",
-                          ::getenv("OBJC_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-objc-isystem", "OBJC_INCLUDE_PATH");
   // OBJCPLUS_INCLUDE_PATH - system includes enabled when compiling ObjC++.
-  AddIncludeDirectoryList(Args, CmdArgs, "-objcxx-isystem",
-                          ::getenv("OBJCPLUS_INCLUDE_PATH"));
+  addDirectoryList(Args, CmdArgs, "-objcxx-isystem", "OBJCPLUS_INCLUDE_PATH");
 
   // Add C++ include arguments, if needed.
   if (types::isCXX(Inputs[0].getType()))
@@ -725,7 +732,7 @@ void Clang::AddMBlazeTargetArgs(const ArgList &Args,
   if (FloatABI.empty()) {
     // Assume "soft", but warn the user we are guessing.
     FloatABI = "soft";
-    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+    // RICH: D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
   }
 
   if (FloatABI == "soft") {
@@ -875,7 +882,7 @@ void Clang::AddNios2TargetArgs(const ArgList &Args,
   if (FloatABI.empty()) {
     // Assume "soft", but warn the user we are guessing.
     FloatABI = "soft";
-    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+    // RICH: D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
   }
 
   if (FloatABI == "soft") {
@@ -907,7 +914,7 @@ void Clang::AddPPCTargetArgs(const ArgList &Args,
   if (FloatABI.empty()) {
     // Assume "soft", but warn the user we are guessing.
     FloatABI = "soft";
-    D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+    // RICH: D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
   }
 
   if (FloatABI == "soft") {
@@ -1225,20 +1232,17 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
 
 static bool ShouldDisableCFI(const ArgList &Args,
                              const ToolChain &TC) {
+  bool Default = true;
   if (TC.getTriple().isOSDarwin()) {
     // The native darwin assembler doesn't support cfi directives, so
     // we disable them if we think the .s file will be passed to it.
-    bool UseIntegratedAs = Args.hasFlag(options::OPT_integrated_as,
-                                        options::OPT_no_integrated_as,
-                                        TC.IsIntegratedAssemblerDefault());
-    bool UseCFI = Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
-                               options::OPT_fno_dwarf2_cfi_asm,
-                               UseIntegratedAs);
-    return !UseCFI;
+    Default = Args.hasFlag(options::OPT_integrated_as,
+			   options::OPT_no_integrated_as,
+			   TC.IsIntegratedAssemblerDefault());
   }
-
-  // For now we assume that every other assembler support CFI.
-  return false;
+  return !Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
+		       options::OPT_fno_dwarf2_cfi_asm,
+		       Default);
 }
 
 static bool ShouldDisableDwarfDirectory(const ArgList &Args,
@@ -1355,6 +1359,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (isa<AnalyzeJobAction>(JA)) {
     assert(JA.getType() == types::TY_Plist && "Invalid output type.");
     CmdArgs.push_back("-analyze");
+  } else if (isa<MigrateJobAction>(JA)) {
+    CmdArgs.push_back("-migrate");
   } else if (isa<PreprocessJobAction>(JA)) {
     if (Output.getType() == types::TY_Dependencies)
       CmdArgs.push_back("-Eonly");
@@ -1454,7 +1460,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
     CmdArgs.push_back("-analyzer-eagerly-assume");
 
-    CmdArgs.push_back("-analyzer-inline-call");
+    CmdArgs.push_back("-analyzer-ipa=inlining");
 
     // Add default argument set.
     if (!Args.hasArg(options::OPT__analyzer_no_default_checks)) {
@@ -1837,10 +1843,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_working_directory);
 
+  bool ARCMTEnabled = false;
   if (!Args.hasArg(options::OPT_fno_objc_arc)) {
     if (const Arg *A = Args.getLastArg(options::OPT_ccc_arcmt_check,
                                        options::OPT_ccc_arcmt_modify,
                                        options::OPT_ccc_arcmt_migrate)) {
+      ARCMTEnabled = true;
       switch (A->getOption().getID()) {
       default:
         llvm_unreachable("missed a case");
@@ -1852,13 +1860,32 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
         break;
       case options::OPT_ccc_arcmt_migrate:
         CmdArgs.push_back("-arcmt-migrate");
-        CmdArgs.push_back("-arcmt-migrate-directory");
+        CmdArgs.push_back("-mt-migrate-directory");
         CmdArgs.push_back(A->getValue(Args));
 
         Args.AddLastArg(CmdArgs, options::OPT_arcmt_migrate_report_output);
         Args.AddLastArg(CmdArgs, options::OPT_arcmt_migrate_emit_arc_errors);
         break;
       }
+    }
+  }
+
+  if (const Arg *A = Args.getLastArg(options::OPT_ccc_objcmt_migrate)) {
+    if (ARCMTEnabled) {
+      D.Diag(diag::err_drv_argument_not_allowed_with)
+        << A->getAsString(Args) << "-ccc-arcmt-migrate";
+    }
+    CmdArgs.push_back("-mt-migrate-directory");
+    CmdArgs.push_back(A->getValue(Args));
+
+    if (!Args.hasArg(options::OPT_objcmt_migrate_literals,
+                     options::OPT_objcmt_migrate_subscripting)) {
+      // None specified, means enable them all.
+      CmdArgs.push_back("-objcmt-migrate-literals");
+      CmdArgs.push_back("-objcmt-migrate-subscripting");
+    } else {
+      Args.AddLastArg(CmdArgs, options::OPT_objcmt_migrate_literals);
+      Args.AddLastArg(CmdArgs, options::OPT_objcmt_migrate_subscripting);
     }
   }
 
@@ -2051,6 +2078,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_fno_limit_debug_info);
   Args.AddLastArg(CmdArgs, options::OPT_fno_operator_names);
   Args.AddLastArg(CmdArgs, options::OPT_faltivec);
+
+  // Report and error for -faltivec on anything other then PowerPC.
+  if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
+    if (!(getToolChain().getTriple().getArch() == llvm::Triple::ppc ||
+          getToolChain().getTriple().getArch() == llvm::Triple::ppc64))
+      D.Diag(diag::err_drv_argument_only_allowed_with)
+        << A->getAsString(Args) << "ppc/ppc64";
+
   if (getToolChain().SupportsProfiling())
     Args.AddLastArg(CmdArgs, options::OPT_pg);
 
@@ -2266,6 +2301,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    false))
     CmdArgs.push_back("-fgnu89-inline");
 
+  if (Args.hasArg(options::OPT_fno_inline))
+    CmdArgs.push_back("-fno-inline");
+
+  if (Args.hasArg(options::OPT_fno_inline_functions))
+    CmdArgs.push_back("-fno-inline-functions");
+
   // -fobjc-nonfragile-abi=0 is default.
   ObjCRuntime objCRuntime;
   unsigned objcABIVersion = 0;
@@ -2348,7 +2389,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  // -fobjc-default-synthesize-properties=0 is default.
+  // -fobjc-default-synthesize-properties=1 is default. This only has an effect
+  // if the nonfragile objc abi is used.
   if (Args.hasFlag(options::OPT_fobjc_default_synthesize_properties,
                    options::OPT_fno_objc_default_synthesize_properties,
                    getToolChain().IsObjCDefaultSynthPropertiesDefault())) {
@@ -3257,6 +3299,7 @@ void darwin::CC1::RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const {
         .Case("c++11-narrowing", true)
         .Case("conditional-uninitialized", true)
         .Case("constant-conversion", true)
+        .Case("conversion-null", true)
         .Case("CFString-literal", true)
         .Case("constant-logical-operand", true)
         .Case("custom-atomic-properties", true)
@@ -3949,8 +3992,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
   Args.AddAllArgs(CmdArgs, options::OPT_init);
 
   // Add the deployment target.
-  unsigned TargetVersion[3];
-  DarwinTC.getTargetVersion(TargetVersion);
+  VersionTuple TargetVersion = DarwinTC.getTargetVersion();
 
   // If we had an explicit -mios-simulator-version-min argument, honor that,
   // otherwise use the traditional deployment targets. We can't just check the
@@ -3965,9 +4007,7 @@ void darwin::Link::AddLinkArgs(Compilation &C,
     CmdArgs.push_back("-iphoneos_version_min");
   else
     CmdArgs.push_back("-macosx_version_min");
-  CmdArgs.push_back(Args.MakeArgString(Twine(TargetVersion[0]) + "." +
-                                       Twine(TargetVersion[1]) + "." +
-                                       Twine(TargetVersion[2])));
+  CmdArgs.push_back(Args.MakeArgString(TargetVersion.getAsString()));
 
   Args.AddLastArg(CmdArgs, options::OPT_nomultidefs);
   Args.AddLastArg(CmdArgs, options::OPT_multi__module);
@@ -4150,7 +4190,7 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
                 CmdArgs.push_back("-lcrt1.o");
               else if (getDarwinToolChain().isMacosxVersionLT(10, 6))
                 CmdArgs.push_back("-lcrt1.10.5.o");
-              else
+              else if (getDarwinToolChain().isMacosxVersionLT(10, 8))
                 CmdArgs.push_back("-lcrt1.10.6.o");
 
               // darwin_crt2 spec is empty.
@@ -4189,14 +4229,24 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   getDarwinToolChain().AddLinkSearchPathArgs(Args, CmdArgs);
 
-  // In ARC, if we don't have runtime support, link in the runtime
-  // stubs.  We have to do this *before* adding any of the normal
-  // linker inputs so that its initializer gets run first.
-  if (isObjCAutoRefCount(Args)) {
-    ObjCRuntime runtime;
-    getDarwinToolChain().configureObjCRuntime(runtime);
-    if (!runtime.HasARC)
-      getDarwinToolChain().AddLinkARCArgs(Args, CmdArgs);
+  if (isObjCRuntimeLinked(Args)) {
+    // Avoid linking compatibility stubs on i386 mac.
+    if (!getDarwinToolChain().isTargetMacOS() ||
+        getDarwinToolChain().getArchName() != "i386") {
+      // If we don't have ARC or subscripting runtime support, link in the
+      // runtime stubs.  We have to do this *before* adding any of the normal
+      // linker inputs so that its initializer gets run first.
+      ObjCRuntime runtime;
+      getDarwinToolChain().configureObjCRuntime(runtime);
+      // We use arclite library for both ARC and subscripting support.
+      if ((!runtime.HasARC && isObjCAutoRefCount(Args)) ||
+          !runtime.HasSubscripting)
+        getDarwinToolChain().AddLinkARCArgs(Args, CmdArgs);
+      CmdArgs.push_back("-framework");
+      CmdArgs.push_back("Foundation");
+    }
+    // Link libobj.
+    CmdArgs.push_back("-lobjc");
   }
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
@@ -4391,11 +4441,12 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
       CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
     } else {
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "cxa_finalize.o"));
       CmdArgs.push_back(Args.MakeArgString(LibPath + "crti.o"));
       CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
       CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
     }
+    if (getToolChain().getDriver().CCCIsCXX)
+      CmdArgs.push_back(Args.MakeArgString(LibPath + "cxa_finalize.o"));
   }
 
   CmdArgs.push_back(Args.MakeArgString("-L" + GCCLibPath));

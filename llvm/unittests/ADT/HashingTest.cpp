@@ -51,6 +51,10 @@ using namespace llvm;
 
 namespace {
 
+enum TestEnumeration {
+  TE_Foo = 42,
+  TE_Bar = 43
+};
 
 TEST(HashingTest, HashValueBasicTest) {
   int x = 42, y = 43, c = 'x';
@@ -61,7 +65,9 @@ TEST(HashingTest, HashValueBasicTest) {
   const volatile int cvi = 71;
   uintptr_t addr = reinterpret_cast<uintptr_t>(&y);
   EXPECT_EQ(hash_value(42), hash_value(x));
+  EXPECT_EQ(hash_value(42), hash_value(TE_Foo));
   EXPECT_NE(hash_value(42), hash_value(y));
+  EXPECT_NE(hash_value(42), hash_value(TE_Bar));
   EXPECT_NE(hash_value(42), hash_value(p));
   EXPECT_EQ(hash_value(71), hash_value(i));
   EXPECT_EQ(hash_value(71), hash_value(ci));
@@ -70,7 +76,9 @@ TEST(HashingTest, HashValueBasicTest) {
   EXPECT_EQ(hash_value(c), hash_value('x'));
   EXPECT_EQ(hash_value('4'), hash_value('0' + 4));
   EXPECT_EQ(hash_value(addr), hash_value(&y));
+}
 
+TEST(HashingTest, HashValueStdPair) {
   EXPECT_EQ(hash_combine(42, 43), hash_value(std::make_pair(42, 43)));
   EXPECT_NE(hash_combine(43, 42), hash_value(std::make_pair(42, 43)));
   EXPECT_NE(hash_combine(42, 43), hash_value(std::make_pair(42ull, 43ull)));
@@ -93,6 +101,23 @@ TEST(HashingTest, HashValueBasicTest) {
   NonPOD obj1(1, 2), obj2(3, 4), obj3(5, 6);
   EXPECT_EQ(hash_combine(obj1, hash_combine(obj2, obj3)),
             hash_value(std::make_pair(obj1, std::make_pair(obj2, obj3))));
+}
+
+TEST(HashingTest, HashValueStdString) {
+  std::string s = "Hello World!";
+  EXPECT_EQ(hash_combine_range(s.c_str(), s.c_str() + s.size()), hash_value(s));
+  EXPECT_EQ(hash_combine_range(s.c_str(), s.c_str() + s.size() - 1),
+            hash_value(s.substr(0, s.size() - 1)));
+  EXPECT_EQ(hash_combine_range(s.c_str() + 1, s.c_str() + s.size() - 1),
+            hash_value(s.substr(1, s.size() - 2)));
+
+  std::wstring ws = L"Hello Wide World!";
+  EXPECT_EQ(hash_combine_range(ws.c_str(), ws.c_str() + ws.size()),
+            hash_value(ws));
+  EXPECT_EQ(hash_combine_range(ws.c_str(), ws.c_str() + ws.size() - 1),
+            hash_value(ws.substr(0, ws.size() - 1)));
+  EXPECT_EQ(hash_combine_range(ws.c_str() + 1, ws.c_str() + ws.size() - 1),
+            hash_value(ws.substr(1, ws.size() - 2)));
 }
 
 template <typename T, size_t N> T *begin(T (&arr)[N]) { return arr; }

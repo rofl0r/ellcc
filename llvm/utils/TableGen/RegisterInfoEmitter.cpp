@@ -31,6 +31,9 @@ RegisterInfoEmitter::runEnums(raw_ostream &OS,
                               CodeGenTarget &Target, CodeGenRegBank &Bank) {
   const std::vector<CodeGenRegister*> &Registers = Bank.getRegisters();
 
+  // Register enums are stored as uint16_t in the tables. Make sure we'll fit
+  assert(Registers.size() <= 0xffff && "Too many regs to fit in tables");
+
   std::string Namespace = Registers[0]->TheDef->getValueAsString("Namespace");
 
   EmitSourceFileHeader("Target Register Enum Values", OS);
@@ -60,6 +63,11 @@ RegisterInfoEmitter::runEnums(raw_ostream &OS,
 
   ArrayRef<CodeGenRegisterClass*> RegisterClasses = Bank.getRegClasses();
   if (!RegisterClasses.empty()) {
+
+    // RegisterClass enums are stored as uint16_t in the tables.
+    assert(RegisterClasses.size() <= 0xffff &&
+           "Too many register classes to fit in tables");
+
     OS << "\n// Register classes\n";
     if (!Namespace.empty())
       OS << "namespace " << Namespace << " {\n";
@@ -271,7 +279,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
 
   const std::vector<CodeGenRegister*> &Regs = RegBank.getRegisters();
 
-  OS << "extern const unsigned " << TargetName << "RegOverlaps[] = {\n";
+  OS << "extern const uint16_t " << TargetName << "RegOverlaps[] = {\n";
 
   // Emit an overlap list for all registers.
   for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
@@ -288,7 +296,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
   }
   OS << "};\n\n";
 
-  OS << "extern const unsigned " << TargetName << "SubRegsSet[] = {\n";
+  OS << "extern const uint16_t " << TargetName << "SubRegsSet[] = {\n";
   // Emit the empty sub-registers list
   OS << "  /* Empty_SubRegsSet */ 0,\n";
   // Loop over all of the registers which have sub-registers, emitting the
@@ -307,7 +315,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
   }
   OS << "};\n\n";
 
-  OS << "extern const unsigned " << TargetName << "SuperRegsSet[] = {\n";
+  OS << "extern const uint16_t " << TargetName << "SuperRegsSet[] = {\n";
   // Emit the empty super-registers list
   OS << "  /* Empty_SuperRegsSet */ 0,\n";
   // Loop over all of the registers which have super-registers, emitting the
@@ -372,7 +380,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
 
     // Emit the register list now.
     OS << "  // " << Name << " Register Class...\n"
-       << "  const unsigned " << Name
+       << "  const uint16_t " << Name
        << "[] = {\n    ";
     for (unsigned i = 0, e = Order.size(); i != e; ++i) {
       Record *Reg = Order[i];
@@ -381,7 +389,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
     OS << "\n  };\n\n";
 
     OS << "  // " << Name << " Bit set.\n"
-       << "  const unsigned char " << Name
+       << "  const uint8_t " << Name
        << "Bits[] = {\n    ";
     BitVectorEmitter BVE;
     for (unsigned i = 0, e = Order.size(); i != e; ++i) {
@@ -399,14 +407,21 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
 
   for (unsigned rc = 0, e = RegisterClasses.size(); rc != e; ++rc) {
     const CodeGenRegisterClass &RC = *RegisterClasses[rc];
-    OS << "  { " << RC.getQualifiedName() + "RegClassID" << ", "
-       << '\"' << RC.getName() << "\", "
+
+    // Asserts to make sure values will fit in table assuming types from
+    // MCRegisterInfo.h
+    assert((RC.SpillSize/8) <= 0xffff && "SpillSize too large.");
+    assert((RC.SpillAlignment/8) <= 0xffff && "SpillAlignment too large.");
+    assert(RC.CopyCost >= -128 && RC.CopyCost <= 127 && "Copy cost too large.");
+
+    OS << "  { " << '\"' << RC.getName() << "\", "
+       << RC.getName() << ", " << RC.getName() << "Bits, "
+       << RC.getOrder().size() << ", sizeof(" << RC.getName() << "Bits), "
+       << RC.getQualifiedName() + "RegClassID" << ", "
        << RC.SpillSize/8 << ", "
        << RC.SpillAlignment/8 << ", "
        << RC.CopyCost << ", "
-       << RC.Allocatable << ", "
-       << RC.getName() << ", " << RC.getName() << "Bits, "
-       << RC.getOrder().size() << ", sizeof(" << RC.getName() << "Bits) },\n";
+       << RC.Allocatable << " },\n";
   }
 
   OS << "};\n\n";
@@ -414,8 +429,8 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
   // Emit the data table for getSubReg().
   ArrayRef<CodeGenSubRegIndex*> SubRegIndices = RegBank.getSubRegIndices();
   if (SubRegIndices.size()) {
-    OS << "const unsigned short " << TargetName << "SubRegTable[]["
-      << SubRegIndices.size() << "] = {\n";
+    OS << "const uint16_t " << TargetName << "SubRegTable[]["
+       << SubRegIndices.size() << "] = {\n";
     for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
       const CodeGenRegister::SubRegMap &SRM = Regs[i]->getSubRegs();
       OS << "  /* " << Regs[i]->TheDef->getName() << " */\n";
@@ -438,8 +453,8 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
       OS << "}" << (i != e ? "," : "") << "\n";
     }
     OS << "};\n\n";
-    OS << "const unsigned short *get" << TargetName
-       << "SubRegTable() {\n  return (const unsigned short *)" << TargetName
+    OS << "const uint16_t *get" << TargetName
+       << "SubRegTable() {\n  return (const uint16_t *)" << TargetName
        << "SubRegTable;\n}\n\n";
   }
 
@@ -452,7 +467,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
      << RegisterClasses.size() << ", " << TargetName << "RegOverlaps, "
      << TargetName << "SubRegsSet, " << TargetName << "SuperRegsSet, ";
   if (SubRegIndices.size() != 0)
-    OS << "(unsigned short*)" << TargetName << "SubRegTable, "
+    OS << "(uint16_t*)" << TargetName << "SubRegTable, "
        << SubRegIndices.size() << ");\n\n";
   else
     OS << "NULL, 0);\n\n";
@@ -629,7 +644,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
       // Give the register class a legal C name if it's anonymous.
       std::string Name = RC.getName();
 
-      OS << "static const unsigned " << Name << "SubclassMask[] = {\n  ";
+      OS << "static const uint32_t " << Name << "SubclassMask[] = {\n  ";
       printBitVectorAsHex(OS, RC.getSubClasses(), 32);
       OS << "\n};\n\n";
     }
@@ -657,12 +672,12 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
         OS << "\nstatic inline unsigned " << RC.getName()
            << "AltOrderSelect(const MachineFunction &MF) {"
            << RC.AltOrderSelect << "}\n\n"
-           << "static ArrayRef<unsigned> " << RC.getName()
+           << "static ArrayRef<uint16_t> " << RC.getName()
            << "GetRawAllocationOrder(const MachineFunction &MF) {\n";
         for (unsigned oi = 1 , oe = RC.getNumOrders(); oi != oe; ++oi) {
           ArrayRef<Record*> Elems = RC.getOrder(oi);
           if (!Elems.empty()) {
-            OS << "  static const unsigned AltOrder" << oi << "[] = {";
+            OS << "  static const uint16_t AltOrder" << oi << "[] = {";
             for (unsigned elem = 0; elem != Elems.size(); ++elem)
               OS << (elem ? ", " : " ") << getQualifiedName(Elems[elem]);
             OS << " };\n";
@@ -670,11 +685,11 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
         }
         OS << "  const MCRegisterClass &MCR = " << Target.getName()
            << "MCRegisterClasses[" << RC.getQualifiedName() + "RegClassID];\n"
-           << "  const ArrayRef<unsigned> Order[] = {\n"
+           << "  const ArrayRef<uint16_t> Order[] = {\n"
            << "    makeArrayRef(MCR.begin(), MCR.getNumRegs()";
         for (unsigned oi = 1, oe = RC.getNumOrders(); oi != oe; ++oi)
           if (RC.getOrder(oi).empty())
-            OS << "),\n    ArrayRef<unsigned>(";
+            OS << "),\n    ArrayRef<uint16_t>(";
           else
             OS << "),\n    makeArrayRef(AltOrder" << oi;
         OS << ")\n  };\n  const unsigned Select = " << RC.getName()
@@ -845,7 +860,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
     const unsigned BVWords = (RegisterClasses.size()+31)/32;
     BitVector BV(RegisterClasses.size());
 
-    OS << "  static const unsigned Table[" << RegisterClasses.size()
+    OS << "  static const uint32_t Table[" << RegisterClasses.size()
        << "][" << SubRegIndices.size() << "][" << BVWords << "] = {\n";
     for (unsigned rci = 0, rce = RegisterClasses.size(); rci != rce; ++rci) {
       const CodeGenRegisterClass &RC = *RegisterClasses[rci];
@@ -863,8 +878,8 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
     OS << "  };\n  assert(A && B && \"Missing regclass\");\n"
        << "  --Idx;\n"
        << "  assert(Idx < " << SubRegIndices.size() << " && \"Bad subreg\");\n"
-       << "  const unsigned *TV = Table[B->getID()][Idx];\n"
-       << "  const unsigned *SC = A->getSubClassMask();\n"
+       << "  const uint32_t *TV = Table[B->getID()][Idx];\n"
+       << "  const uint32_t *SC = A->getSubClassMask();\n"
        << "  for (unsigned i = 0; i != " << BVWords << "; ++i)\n"
        << "    if (unsigned Common = TV[i] & SC[i])\n"
        << "      return getRegClass(32*i + CountTrailingZeros_32(Common));\n"
@@ -874,11 +889,11 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
 
   // Emit the constructor of the class...
   OS << "extern const MCRegisterDesc " << TargetName << "RegDesc[];\n";
-  OS << "extern const unsigned " << TargetName << "RegOverlaps[];\n";
-  OS << "extern const unsigned " << TargetName << "SubRegsSet[];\n";
-  OS << "extern const unsigned " << TargetName << "SuperRegsSet[];\n";
+  OS << "extern const uint16_t " << TargetName << "RegOverlaps[];\n";
+  OS << "extern const uint16_t " << TargetName << "SubRegsSet[];\n";
+  OS << "extern const uint16_t " << TargetName << "SuperRegsSet[];\n";
   if (SubRegIndices.size() != 0)
-    OS << "extern const unsigned short *get" << TargetName
+    OS << "extern const uint16_t *get" << TargetName
        << "SubRegTable();\n";
 
   OS << ClassName << "::\n" << ClassName
@@ -912,7 +927,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
     assert(Regs && "Cannot expand CalleeSavedRegs instance");
 
     // Emit the *_SaveList list of callee-saved registers.
-    OS << "static const unsigned " << CSRSet->getName()
+    OS << "static const uint16_t " << CSRSet->getName()
        << "_SaveList[] = { ";
     for (unsigned r = 0, re = Regs->size(); r != re; ++r)
       OS << getQualifiedName((*Regs)[r]) << ", ";

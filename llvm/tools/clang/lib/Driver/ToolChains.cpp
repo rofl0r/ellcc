@@ -93,12 +93,17 @@ bool Darwin::hasARCRuntime() const {
     return !isMacosxVersionLT(10, 7);
 }
 
+bool Darwin::hasSubscriptingRuntime() const {
+    return !isTargetIPhoneOS() && !isMacosxVersionLT(10, 8);
+}
+
 /// Darwin provides an ARC runtime starting in MacOS X 10.7 and iOS 5.0.
 void Darwin::configureObjCRuntime(ObjCRuntime &runtime) const {
   if (runtime.getKind() != ObjCRuntime::NeXT)
     return ToolChain::configureObjCRuntime(runtime);
 
   runtime.HasARC = runtime.HasWeak = hasARCRuntime();
+  runtime.HasSubscripting = hasSubscriptingRuntime();
 
   // So far, objc_terminate is only available in iOS 5.
   // FIXME: do the simulator logic properly.
@@ -177,14 +182,10 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
   if (!isTargetInitialized())
     return Triple.getTriple();
 
-  unsigned Version[3];
-  getTargetVersion(Version);
-
   SmallString<16> Str;
-  llvm::raw_svector_ostream(Str)
-    << (isTargetIPhoneOS() ? "ios" : "macosx")
-    << Version[0] << "." << Version[1] << "." << Version[2];
-  Triple.setOSName(Str.str());
+  Str += isTargetIPhoneOS() ? "ios" : "macosx";
+  Str += getTargetVersion().getAsString();
+  Triple.setOSName(Str);
 
   return Triple.getTriple();
 }
@@ -222,6 +223,7 @@ Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
     case Action::PreprocessJobClass:
       T = new tools::darwin::Preprocess(*this); break;
     case Action::AnalyzeJobClass:
+    case Action::MigrateJobClass:
       T = new tools::Clang(*this); break;
     case Action::PrecompileJobClass:
     case Action::CompileJobClass:
@@ -1404,6 +1406,7 @@ Tool &Generic_GCC::SelectTool(const Compilation &C,
     case Action::PrecompileJobClass:
       T = new tools::gcc::Precompile(*this); break;
     case Action::AnalyzeJobClass:
+    case Action::MigrateJobClass:
       T = new tools::Clang(*this); break;
     case Action::CompileJobClass:
       T = new tools::gcc::Compile(*this); break;

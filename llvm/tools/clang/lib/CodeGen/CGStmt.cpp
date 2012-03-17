@@ -1295,6 +1295,8 @@ AddVariableConstraints(const std::string &Constraint, const Expr &AsmExpr,
   const VarDecl *Variable = dyn_cast<VarDecl>(&Value);
   if (!Variable)
     return Constraint;
+  if (Variable->getStorageClass() != SC_Register)
+    return Constraint;
   AsmLabelAttr *Attr = Variable->getAttr<AsmLabelAttr>();
   if (!Attr)
     return Constraint;
@@ -1370,7 +1372,7 @@ static llvm::MDNode *getAsmSrcLocInfo(const StringLiteral *Str,
   StringRef StrVal = Str->getString();
   if (!StrVal.empty()) {
     const SourceManager &SM = CGF.CGM.getContext().getSourceManager();
-    const LangOptions &LangOpts = CGF.CGM.getLangOptions();
+    const LangOptions &LangOpts = CGF.CGM.getLangOpts();
     
     // Add the location of the start of each subsequent line of the asm to the
     // MDNode.

@@ -23,7 +23,8 @@ class MCOperand;
 
 class ARMInstPrinter : public MCInstPrinter {
 public:
-    ARMInstPrinter(const MCAsmInfo &MAI, const MCSubtargetInfo &STI);
+  ARMInstPrinter(const MCAsmInfo &MAI, const MCRegisterInfo &MRI,
+                 const MCSubtargetInfo &STI);
 
   virtual void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot);
   virtual StringRef getOpcodeName(unsigned Opcode) const;
@@ -133,6 +134,8 @@ public:
   void printVectorIndex(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListOne(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListTwo(const MCInst *MI, unsigned OpNum, raw_ostream &O);
+  void printVectorListTwoSpaced(const MCInst *MI, unsigned OpNum,
+                               raw_ostream &O);
   void printVectorListThree(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListFour(const MCInst *MI, unsigned OpNum, raw_ostream &O);
   void printVectorListOneAllLanes(const MCInst *MI, unsigned OpNum,
@@ -143,8 +146,6 @@ public:
                                     raw_ostream &O);
   void printVectorListFourAllLanes(const MCInst *MI, unsigned OpNum,
                                    raw_ostream &O);
-  void printVectorListTwoSpaced(const MCInst *MI, unsigned OpNum,
-                                raw_ostream &O);
   void printVectorListTwoSpacedAllLanes(const MCInst *MI, unsigned OpNum,
                                         raw_ostream &O);
   void printVectorListThreeSpacedAllLanes(const MCInst *MI, unsigned OpNum,

@@ -80,7 +80,7 @@ namespace {
     // visit, we pop off the order stack until we find an item that is
     // also in the contents set. All operations are O(log N).
     SmallPtrSet<SDNode*, 64> WorkListContents;
-    std::vector<SDNode*> WorkListOrder;
+    SmallVector<SDNode*, 64> WorkListOrder;
 
     // AA - Used for DAG load/store alias analysis.
     AliasAnalysis &AA;
@@ -381,6 +381,7 @@ CommitTargetLoweringOpt(const TargetLowering::TargetLoweringOpt &TLO) {
 /// specified expression for the same cost as the expression itself, or 2 if we
 /// can compute the negated form more cheaply than the expression itself.
 static char isNegatibleForFree(SDValue Op, bool LegalOperations,
+                               const TargetLowering &TLI,
                                const TargetOptions *Options,
                                unsigned Depth = 0) {
   // No compile time optimizations on this type.
@@ -406,12 +407,17 @@ static char isNegatibleForFree(SDValue Op, bool LegalOperations,
     // FIXME: determine better conditions for this xform.
     if (!Options->UnsafeFPMath) return 0;
 
+    // After operation legalization, it might not be legal to create new FSUBs.
+    if (LegalOperations &&
+        !TLI.isOperationLegalOrCustom(ISD::FSUB,  Op.getValueType()))
+      return 0;
+
     // fold (fsub (fadd A, B)) -> (fsub (fneg A), B)
-    if (char V = isNegatibleForFree(Op.getOperand(0), LegalOperations, Options,
-                                    Depth + 1))
+    if (char V = isNegatibleForFree(Op.getOperand(0), LegalOperations, TLI,
+                                    Options, Depth + 1))
       return V;
     // fold (fneg (fadd A, B)) -> (fsub (fneg B), A)
-    return isNegatibleForFree(Op.getOperand(1), LegalOperations, Options,
+    return isNegatibleForFree(Op.getOperand(1), LegalOperations, TLI, Options,
                               Depth + 1);
   case ISD::FSUB:
     // We can't turn -(A-B) into B-A when we honor signed zeros.
@@ -425,17 +431,17 @@ static char isNegatibleForFree(SDValue Op, bool LegalOperations,
     if (Options->HonorSignDependentRoundingFPMath()) return 0;
 
     // fold (fneg (fmul X, Y)) -> (fmul (fneg X), Y) or (fmul X, (fneg Y))
-    if (char V = isNegatibleForFree(Op.getOperand(0), LegalOperations, Options,
-                                    Depth + 1))
+    if (char V = isNegatibleForFree(Op.getOperand(0), LegalOperations, TLI,
+                                    Options, Depth + 1))
       return V;
 
-    return isNegatibleForFree(Op.getOperand(1), LegalOperations, Options,
+    return isNegatibleForFree(Op.getOperand(1), LegalOperations, TLI, Options,
                               Depth + 1);
 
   case ISD::FP_EXTEND:
   case ISD::FP_ROUND:
   case ISD::FSIN:
-    return isNegatibleForFree(Op.getOperand(0), LegalOperations, Options,
+    return isNegatibleForFree(Op.getOperand(0), LegalOperations, TLI, Options,
                               Depth + 1);
   }
 }
@@ -464,6 +470,7 @@ static SDValue GetNegatedExpression(SDValue Op, SelectionDAG &DAG,
 
     // fold (fneg (fadd A, B)) -> (fsub (fneg A), B)
     if (isNegatibleForFree(Op.getOperand(0), LegalOperations,
+                           DAG.getTargetLoweringInfo(),
                            &DAG.getTarget().Options, Depth+1))
       return DAG.getNode(ISD::FSUB, Op.getDebugLoc(), Op.getValueType(),
                          GetNegatedExpression(Op.getOperand(0), DAG,
@@ -493,6 +500,7 @@ static SDValue GetNegatedExpression(SDValue Op, SelectionDAG &DAG,
 
     // fold (fneg (fmul X, Y)) -> (fmul (fneg X), Y)
     if (isNegatibleForFree(Op.getOperand(0), LegalOperations,
+                           DAG.getTargetLoweringInfo(),
                            &DAG.getTarget().Options, Depth+1))
       return DAG.getNode(Op.getOpcode(), Op.getDebugLoc(), Op.getValueType(),
                          GetNegatedExpression(Op.getOperand(0), DAG,
@@ -997,8 +1005,7 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
     // worklist *should* contain, and check the node we want to visit is should
     // actually be visited.
     do {
-      N = WorkListOrder.back();
-      WorkListOrder.pop_back();
+      N = WorkListOrder.pop_back_val();
     } while (!WorkListContents.erase(N));
 
     // If N has no uses, it is dead.  Make sure to revisit all N's operands once
@@ -5507,11 +5514,13 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
       N1CFP->getValueAPF().isZero())
     return N0;
   // fold (fadd A, (fneg B)) -> (fsub A, B)
-  if (isNegatibleForFree(N1, LegalOperations, &DAG.getTarget().Options) == 2)
+  if ((!LegalOperations || TLI.isOperationLegalOrCustom(ISD::FSUB, VT)) &&
+      isNegatibleForFree(N1, LegalOperations, TLI, &DAG.getTarget().Options) == 2)
     return DAG.getNode(ISD::FSUB, N->getDebugLoc(), VT, N0,
                        GetNegatedExpression(N1, DAG, LegalOperations));
   // fold (fadd (fneg A), B) -> (fsub B, A)
-  if (isNegatibleForFree(N0, LegalOperations, &DAG.getTarget().Options) == 2)
+  if ((!LegalOperations || TLI.isOperationLegalOrCustom(ISD::FSUB, VT)) &&
+      isNegatibleForFree(N0, LegalOperations, TLI, &DAG.getTarget().Options) == 2)
     return DAG.getNode(ISD::FSUB, N->getDebugLoc(), VT, N1,
                        GetNegatedExpression(N0, DAG, LegalOperations));
 
@@ -5549,15 +5558,32 @@ SDValue DAGCombiner::visitFSUB(SDNode *N) {
   // fold (fsub 0, B) -> -B
   if (DAG.getTarget().Options.UnsafeFPMath &&
       N0CFP && N0CFP->getValueAPF().isZero()) {
-    if (isNegatibleForFree(N1, LegalOperations, &DAG.getTarget().Options))
+    if (isNegatibleForFree(N1, LegalOperations, TLI, &DAG.getTarget().Options))
       return GetNegatedExpression(N1, DAG, LegalOperations);
     if (!LegalOperations || TLI.isOperationLegal(ISD::FNEG, VT))
       return DAG.getNode(ISD::FNEG, N->getDebugLoc(), VT, N1);
   }
   // fold (fsub A, (fneg B)) -> (fadd A, B)
-  if (isNegatibleForFree(N1, LegalOperations, &DAG.getTarget().Options))
+  if (isNegatibleForFree(N1, LegalOperations, TLI, &DAG.getTarget().Options))
     return DAG.getNode(ISD::FADD, N->getDebugLoc(), VT, N0,
                        GetNegatedExpression(N1, DAG, LegalOperations));
+
+  // If 'unsafe math' is enabled, fold
+  //    (fsub x, (fadd x, y)) -> (fneg y) &
+  //    (fsub x, (fadd y, x)) -> (fneg y)
+  if (DAG.getTarget().Options.UnsafeFPMath) {
+    if (N1.getOpcode() == ISD::FADD) {
+      SDValue N10 = N1->getOperand(0);
+      SDValue N11 = N1->getOperand(1);
+
+      if (N10 == N0 && isNegatibleForFree(N11, LegalOperations, TLI,
+                                          &DAG.getTarget().Options))
+        return GetNegatedExpression(N11, DAG, LegalOperations);
+      else if (N11 == N0 && isNegatibleForFree(N10, LegalOperations, TLI,
+                                               &DAG.getTarget().Options))
+        return GetNegatedExpression(N10, DAG, LegalOperations);
+    }
+  }
 
   return SDValue();
 }
@@ -5568,6 +5594,7 @@ SDValue DAGCombiner::visitFMUL(SDNode *N) {
   ConstantFPSDNode *N0CFP = dyn_cast<ConstantFPSDNode>(N0);
   ConstantFPSDNode *N1CFP = dyn_cast<ConstantFPSDNode>(N1);
   EVT VT = N->getValueType(0);
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
 
   // fold vector ops
   if (VT.isVector()) {
@@ -5598,9 +5625,9 @@ SDValue DAGCombiner::visitFMUL(SDNode *N) {
       return DAG.getNode(ISD::FNEG, N->getDebugLoc(), VT, N0);
 
   // fold (fmul (fneg X), (fneg Y)) -> (fmul X, Y)
-  if (char LHSNeg = isNegatibleForFree(N0, LegalOperations,
+  if (char LHSNeg = isNegatibleForFree(N0, LegalOperations, TLI,
                                        &DAG.getTarget().Options)) {
-    if (char RHSNeg = isNegatibleForFree(N1, LegalOperations,
+    if (char RHSNeg = isNegatibleForFree(N1, LegalOperations, TLI, 
                                          &DAG.getTarget().Options)) {
       // Both can be negated for free, check to see if at least one is cheaper
       // negated.
@@ -5628,6 +5655,7 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
   ConstantFPSDNode *N0CFP = dyn_cast<ConstantFPSDNode>(N0);
   ConstantFPSDNode *N1CFP = dyn_cast<ConstantFPSDNode>(N1);
   EVT VT = N->getValueType(0);
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
 
   // fold vector ops
   if (VT.isVector()) {
@@ -5641,9 +5669,9 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
 
 
   // (fdiv (fneg X), (fneg Y)) -> (fdiv X, Y)
-  if (char LHSNeg = isNegatibleForFree(N0, LegalOperations,
+  if (char LHSNeg = isNegatibleForFree(N0, LegalOperations, TLI,
                                        &DAG.getTarget().Options)) {
-    if (char RHSNeg = isNegatibleForFree(N1, LegalOperations,
+    if (char RHSNeg = isNegatibleForFree(N1, LegalOperations, TLI,
                                          &DAG.getTarget().Options)) {
       // Both can be negated for free, check to see if at least one is cheaper
       // negated.
@@ -5897,7 +5925,8 @@ SDValue DAGCombiner::visitFNEG(SDNode *N) {
   SDValue N0 = N->getOperand(0);
   EVT VT = N->getValueType(0);
 
-  if (isNegatibleForFree(N0, LegalOperations, &DAG.getTarget().Options))
+  if (isNegatibleForFree(N0, LegalOperations, DAG.getTargetLoweringInfo(),
+                         &DAG.getTarget().Options))
     return GetNegatedExpression(N0, DAG, LegalOperations);
 
   // Transform fneg(bitconvert(x)) -> bitconvert(x^sign) to avoid loading
@@ -6129,8 +6158,7 @@ SDValue DAGCombiner::visitBR_CC(SDNode *N) {
 
 /// canFoldInAddressingMode - Return true if 'Use' is a load or a store that
 /// uses N as its base pointer and that N may be folded in the load / store
-/// addressing mode. FIXME: This currently only looks for folding of
-/// [reg +/- imm] addressing modes.
+/// addressing mode.
 static bool canFoldInAddressingMode(SDNode *N, SDNode *Use,
                                     SelectionDAG &DAG,
                                     const TargetLowering &TLI) {
@@ -6150,15 +6178,19 @@ static bool canFoldInAddressingMode(SDNode *N, SDNode *Use,
   if (N->getOpcode() == ISD::ADD) {
     ConstantSDNode *Offset = dyn_cast<ConstantSDNode>(N->getOperand(1));
     if (Offset)
+      // [reg +/- imm]
       AM.BaseOffs = Offset->getSExtValue();
     else
-      return false;
+      // [reg +/- reg]
+      AM.Scale = 1;
   } else if (N->getOpcode() == ISD::SUB) {
     ConstantSDNode *Offset = dyn_cast<ConstantSDNode>(N->getOperand(1));
     if (Offset)
+      // [reg +/- imm]
       AM.BaseOffs = -Offset->getSExtValue();
     else
-      return false;
+      // [reg +/- reg]
+      AM.Scale = 1;
   } else
     return false;
 
@@ -7187,6 +7219,11 @@ SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
     EVT ExtVT = VT.getVectorElementType();
     EVT LVT = ExtVT;
 
+    // If the result of load has to be truncated, then it's not necessarily
+    // profitable.
+    if (NVT.bitsLT(LVT) && !TLI.isTruncateFree(LVT, NVT))
+      return SDValue();
+
     if (InVec.getOpcode() == ISD::BITCAST) {
       // Don't duplicate a load with other uses.
       if (!InVec.hasOneUse())
@@ -7287,13 +7324,31 @@ SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
     // Note that this replacement assumes that the extractvalue is the only
     // use of the load; that's okay because we don't want to perform this
     // transformation in other cases anyway.
-    SDValue Load = DAG.getLoad(LVT, N->getDebugLoc(), LN0->getChain(), NewPtr,
-                               LN0->getPointerInfo().getWithOffset(PtrOff),
-                               LN0->isVolatile(), LN0->isNonTemporal(), 
-                               LN0->isInvariant(), Align);
+    SDValue Load;
+    SDValue Chain;
+    if (NVT.bitsGT(LVT)) {
+      // If the result type of vextract is wider than the load, then issue an
+      // extending load instead.
+      ISD::LoadExtType ExtType = TLI.isLoadExtLegal(ISD::ZEXTLOAD, LVT)
+        ? ISD::ZEXTLOAD : ISD::EXTLOAD;
+      Load = DAG.getExtLoad(ExtType, N->getDebugLoc(), NVT, LN0->getChain(),
+                            NewPtr, LN0->getPointerInfo().getWithOffset(PtrOff),
+                            LVT, LN0->isVolatile(), LN0->isNonTemporal(),Align);
+      Chain = Load.getValue(1);
+    } else {
+      Load = DAG.getLoad(LVT, N->getDebugLoc(), LN0->getChain(), NewPtr,
+                         LN0->getPointerInfo().getWithOffset(PtrOff),
+                         LN0->isVolatile(), LN0->isNonTemporal(), 
+                         LN0->isInvariant(), Align);
+      Chain = Load.getValue(1);
+      if (NVT.bitsLT(LVT))
+        Load = DAG.getNode(ISD::TRUNCATE, N->getDebugLoc(), NVT, Load);
+      else
+        Load = DAG.getNode(ISD::BITCAST, N->getDebugLoc(), NVT, Load);
+    }
     WorkListRemover DeadNodes(*this);
     SDValue From[] = { SDValue(N, 0), SDValue(LN0,1) };
-    SDValue To[] = { Load.getValue(0), Load.getValue(1) };
+    SDValue To[] = { Load, Chain };
     DAG.ReplaceAllUsesOfValuesWith(From, To, 2, &DeadNodes);
     // Since we're explcitly calling ReplaceAllUses, add the new node to the
     // worklist explicitly as well.
@@ -7367,6 +7422,8 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   // will be type-legalized to complex code sequences.
   // We perform this optimization only before the operation legalizer because we
   // may introduce illegal operations.
+  // Create a new simpler BUILD_VECTOR sequence which other optimizations can
+  // turn into a single shuffle instruction.
   if ((Level == AfterLegalizeVectorOps || Level == AfterLegalizeTypes) &&
       ValidTypes) {
     bool isLE = TLI.isLittleEndian();
@@ -7407,6 +7464,8 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
     SDValue BV = DAG.getNode(ISD::BUILD_VECTOR, N->getDebugLoc(),
                                  VecVT, &Ops[0], Ops.size());
 
+    // The new BUILD_VECTOR node has the potential to be further optimized.
+    AddToWorkList(BV.getNode());
     // Bitcast to the desired type.
     return DAG.getNode(ISD::BITCAST, dl, N->getValueType(0), BV);
   }

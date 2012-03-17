@@ -453,7 +453,13 @@ void ASTDeclReader::VisitEnumDecl(EnumDecl *ED) {
   ED->IsScoped = Record[Idx++];
   ED->IsScopedUsingClassTag = Record[Idx++];
   ED->IsFixed = Record[Idx++];
-  ED->setInstantiationOfMemberEnum(ReadDeclAs<EnumDecl>(Record, Idx));
+
+  if (EnumDecl *InstED = ReadDeclAs<EnumDecl>(Record, Idx)) {
+    TemplateSpecializationKind TSK = (TemplateSpecializationKind)Record[Idx++];
+    SourceLocation POI = ReadSourceLocation(Record, Idx);
+    ED->setInstantiationOfMemberEnum(Reader.getContext(), InstED, TSK);
+    ED->getMemberSpecializationInfo()->setPointOfInstantiation(POI);
+  }
 }
 
 void ASTDeclReader::VisitRecordDecl(RecordDecl *RD) {
@@ -1534,7 +1540,7 @@ template<typename T>
 void ASTDeclReader::mergeRedeclarable(Redeclarable<T> *D, 
                                       RedeclarableResult &Redecl) {
   // If modules are not available, there is no reason to perform this merge.
-  if (!Reader.getContext().getLangOptions().Modules)
+  if (!Reader.getContext().getLangOpts().Modules)
     return;
   
   if (FindExistingResult ExistingRes = findExisting(static_cast<T*>(D))) {

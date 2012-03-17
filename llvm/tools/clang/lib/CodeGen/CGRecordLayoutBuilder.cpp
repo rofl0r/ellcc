@@ -576,6 +576,7 @@ void CGRecordLayoutBuilder::LayoutUnion(const RecordDecl *D) {
     }
   }
   if (unionAlign.isZero()) {
+    (void)hasOnlyZeroSizedBitFields;
     assert(hasOnlyZeroSizedBitFields &&
            "0-align record did not have all zero-sized bit-fields!");
     unionAlign = CharUnits::One();
@@ -971,7 +972,7 @@ void CGRecordLayoutBuilder::CheckZeroInitializable(QualType T) {
     return;
 
   // Can only have member pointers if we're compiling C++.
-  if (!Types.getContext().getLangOptions().CPlusPlus)
+  if (!Types.getContext().getLangOpts().CPlusPlus)
     return;
 
   const Type *elementType = T->getBaseElementTypeUnsafe();
@@ -1016,7 +1017,7 @@ CGRecordLayout *CodeGenTypes::ComputeRecordLayout(const RecordDecl *D,
   RL->BitFields.swap(Builder.BitFields);
 
   // Dump the layout, if requested.
-  if (getContext().getLangOptions().DumpRecordLayouts) {
+  if (getContext().getLangOpts().DumpRecordLayouts) {
     llvm::errs() << "\n*** Dumping IRgen Record Layout\n";
     llvm::errs() << "Record: ";
     D->dump();

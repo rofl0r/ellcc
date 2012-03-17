@@ -112,6 +112,7 @@ namespace  {
       case OK_Ordinary: break;
       case OK_BitField: OS << " bitfield"; break;
       case OK_ObjCProperty: OS << " objcproperty"; break;
+      case OK_ObjCSubscript: OS << " objcsubscript"; break;
       case OK_VectorComponent: OS << " vectorcomponent"; break;
       }
     }
@@ -168,7 +169,9 @@ namespace  {
     void VisitObjCSelectorExpr(ObjCSelectorExpr *Node);
     void VisitObjCProtocolExpr(ObjCProtocolExpr *Node);
     void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node);
+    void VisitObjCSubscriptRefExpr(ObjCSubscriptRefExpr *Node);
     void VisitObjCIvarRefExpr(ObjCIvarRefExpr *Node);
+    void VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *Node);
   };
 }
 
@@ -251,7 +254,7 @@ void StmtDumper::DumpDeclarator(Decl *D) {
 
     std::string Name = VD->getNameAsString();
     VD->getType().getAsStringInternal(Name,
-                          PrintingPolicy(VD->getASTContext().getLangOptions()));
+                          PrintingPolicy(VD->getASTContext().getLangOpts()));
     OS << Name;
 
     // If this is a vardecl with an initializer, emit it.
@@ -284,7 +287,7 @@ void StmtDumper::DumpDeclarator(Decl *D) {
     const char *tn = UD->isTypeName() ? "typename " : "";
     OS << '"' << UD->getDeclKindName() << tn;
     UD->getQualifier()->print(OS,
-                        PrintingPolicy(UD->getASTContext().getLangOptions()));
+                        PrintingPolicy(UD->getASTContext().getLangOpts()));
     OS << ";\"";
   } else if (LabelDecl *LD = dyn_cast<LabelDecl>(D)) {
     OS << "label " << *LD;
@@ -504,8 +507,10 @@ void StmtDumper::VisitCompoundAssignOperator(CompoundAssignOperator *Node) {
 void StmtDumper::VisitBlockExpr(BlockExpr *Node) {
   DumpExpr(Node);
 
-  IndentLevel++;
   BlockDecl *block = Node->getBlockDecl();
+  OS << " decl=" << block;
+
+  IndentLevel++;
   if (block->capturesCXXThis()) {
     OS << '\n'; Indent(); OS << "(capture this)";
   }
@@ -523,6 +528,7 @@ void StmtDumper::VisitBlockExpr(BlockExpr *Node) {
   }
   IndentLevel--;
 
+  OS << '\n';
   DumpSubTree(block->getBody());
 }
 
@@ -680,6 +686,32 @@ void StmtDumper::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
 
   if (Node->isSuperReceiver())
     OS << " super";
+}
+
+void StmtDumper::VisitObjCSubscriptRefExpr(ObjCSubscriptRefExpr *Node) {
+  DumpExpr(Node);
+  if (Node->isArraySubscriptRefExpr())
+    OS << " Kind=ArraySubscript GetterForArray=\"";
+  else
+    OS << " Kind=DictionarySubscript GetterForDictionary=\"";
+  if (Node->getAtIndexMethodDecl())
+    OS << Node->getAtIndexMethodDecl()->getSelector().getAsString();
+  else
+    OS << "(null)";
+  
+  if (Node->isArraySubscriptRefExpr())
+    OS << "\" SetterForArray=\"";
+  else
+    OS << "\" SetterForDictionary=\"";
+  if (Node->setAtIndexMethodDecl())
+    OS << Node->setAtIndexMethodDecl()->getSelector().getAsString();
+  else
+    OS << "(null)";
+}
+
+void StmtDumper::VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *Node) {
+  DumpExpr(Node);
+  OS << " " << (Node->getValue() ? "__objc_yes" : "__objc_no");
 }
 
 //===----------------------------------------------------------------------===//

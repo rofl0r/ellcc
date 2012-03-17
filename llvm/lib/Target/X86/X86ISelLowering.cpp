@@ -1585,13 +1585,12 @@ bool X86TargetLowering::isUsedByReturnOnly(SDNode *N) const {
     return false;
 
   SDNode *Copy = *N->use_begin();
-  if (Copy->getOpcode() != ISD::CopyToReg &&
-      Copy->getOpcode() != ISD::FP_EXTEND)
-    return false;
-
-  // If anything is glued to the copy, then we can't safely perform a tail call.
-  if (Copy->getOpcode() == ISD::CopyToReg &&
-      Copy->getNumOperands() == 4)
+  if (Copy->getOpcode() == ISD::CopyToReg) {
+    // If the copy has a glue operand, we conservatively assume it isn't safe to
+    // perform a tail call.
+    if (Copy->getOperand(Copy->getNumOperands()-1).getValueType() == MVT::Glue)
+      return false;
+  } else if (Copy->getOpcode() != ISD::FP_EXTEND)
     return false;
 
   bool HasRet = false;
@@ -1928,17 +1927,17 @@ X86TargetLowering::LowerFormalArguments(SDValue Chain,
       unsigned TotalNumIntRegs = 0, TotalNumXMMRegs = 0;
 
       // FIXME: We should really autogenerate these arrays
-      static const unsigned GPR64ArgRegsWin64[] = {
+      static const uint16_t GPR64ArgRegsWin64[] = {
         X86::RCX, X86::RDX, X86::R8,  X86::R9
       };
-      static const unsigned GPR64ArgRegs64Bit[] = {
+      static const uint16_t GPR64ArgRegs64Bit[] = {
         X86::RDI, X86::RSI, X86::RDX, X86::RCX, X86::R8, X86::R9
       };
-      static const unsigned XMMArgRegs64Bit[] = {
+      static const uint16_t XMMArgRegs64Bit[] = {
         X86::XMM0, X86::XMM1, X86::XMM2, X86::XMM3,
         X86::XMM4, X86::XMM5, X86::XMM6, X86::XMM7
       };
-      const unsigned *GPR64ArgRegs;
+      const uint16_t *GPR64ArgRegs;
       unsigned NumXMMRegs = 0;
 
       if (IsWin64) {
@@ -2327,7 +2326,7 @@ X86TargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     // registers used and is in the range 0 - 8 inclusive.
 
     // Count the number of XMM registers allocated.
-    static const unsigned XMMArgRegs[] = {
+    static const uint16_t XMMArgRegs[] = {
       X86::XMM0, X86::XMM1, X86::XMM2, X86::XMM3,
       X86::XMM4, X86::XMM5, X86::XMM6, X86::XMM7
     };

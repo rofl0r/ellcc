@@ -184,9 +184,9 @@ def HasVFP4          : Predicate<"Subtarget->hasVFP4()">,
 def NoVFP4            : Predicate<"!Subtarget->hasVFP4()">;
 def HasNEON          : Predicate<"Subtarget->hasNEON()">,
                                  AssemblerPredicate<"FeatureNEON">;
-def HasNEONVFP4      : Predicate<"Subtarget->hasNEONVFP4()">,
-                                 AssemblerPredicate<"FeatureNEONVFP4">;
-def NoNEONVFP4       : Predicate<"!Subtarget->hasNEONVFP4()">;
+def HasNEON2         : Predicate<"Subtarget->hasNEON2()">,
+                                 AssemblerPredicate<"FeatureNEON2">;
+def NoNEON2          : Predicate<"!Subtarget->hasNEON2()">;
 def HasFP16          : Predicate<"Subtarget->hasFP16()">,
                                  AssemblerPredicate<"FeatureFP16">;
 def HasDivide        : Predicate<"Subtarget->hasDivide()">,
@@ -4605,10 +4605,16 @@ def MCR : MovRCopro<"mcr", 0 /* from ARM core register to coprocessor */,
                          c_imm:$CRm, imm0_7:$opc2),
                     [(int_arm_mcr imm:$cop, imm:$opc1, GPR:$Rt, imm:$CRn,
                                   imm:$CRm, imm:$opc2)]>;
+def : ARMInstAlias<"mcr${p} $cop, $opc1, $Rt, $CRn, $CRm",
+                   (MCR p_imm:$cop, imm0_7:$opc1, GPR:$Rt, c_imm:$CRn,
+                        c_imm:$CRm, 0, pred:$p)>;
 def MRC : MovRCopro<"mrc", 1 /* from coprocessor to ARM core register */,
                     (outs GPR:$Rt),
                     (ins p_imm:$cop, imm0_7:$opc1, c_imm:$CRn, c_imm:$CRm,
                          imm0_7:$opc2), []>;
+def : ARMInstAlias<"mrc${p} $cop, $opc1, $Rt, $CRn, $CRm",
+                   (MRC GPR:$Rt, p_imm:$cop, imm0_7:$opc1, c_imm:$CRn,
+                        c_imm:$CRm, 0, pred:$p)>;
 
 def : ARMPat<(int_arm_mrc imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2),
              (MRC imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2)>;
@@ -4642,10 +4648,16 @@ def MCR2 : MovRCopro2<"mcr2", 0 /* from ARM core register to coprocessor */,
                            c_imm:$CRm, imm0_7:$opc2),
                       [(int_arm_mcr2 imm:$cop, imm:$opc1, GPR:$Rt, imm:$CRn,
                                      imm:$CRm, imm:$opc2)]>;
+def : ARMInstAlias<"mcr2$ $cop, $opc1, $Rt, $CRn, $CRm",
+                   (MCR2 p_imm:$cop, imm0_7:$opc1, GPR:$Rt, c_imm:$CRn,
+                         c_imm:$CRm, 0)>;
 def MRC2 : MovRCopro2<"mrc2", 1 /* from coprocessor to ARM core register */,
                       (outs GPR:$Rt),
                       (ins p_imm:$cop, imm0_7:$opc1, c_imm:$CRn, c_imm:$CRm,
                            imm0_7:$opc2), []>;
+def : ARMInstAlias<"mrc2$ $cop, $opc1, $Rt, $CRn, $CRm",
+                   (MRC2 GPR:$Rt, p_imm:$cop, imm0_7:$opc1, c_imm:$CRn,
+                         c_imm:$CRm, 0)>;
 
 def : ARMV5TPat<(int_arm_mrc2 imm:$cop, imm:$opc1, imm:$CRn,
                               imm:$CRm, imm:$opc2),
@@ -5251,6 +5263,20 @@ def : ARMInstAlias<"mul${s}${p} $Rn, $Rm",
 // "neg" is and alias for "rsb rd, rn, #0"
 def : ARMInstAlias<"neg${s}${p} $Rd, $Rm",
                    (RSBri GPR:$Rd, GPR:$Rm, 0, pred:$p, cc_out:$s)>;
+
+// Pre-v6, 'mov r0, r0' was used as a NOP encoding.
+def : InstAlias<"nop${p}", (MOVr R0, R0, pred:$p, zero_reg)>,
+         Requires<[IsARM, NoV6]>;
+
+// UMULL/SMULL are available on all arches, but the instruction definitions
+// need difference constraints pre-v6. Use these aliases for the assembly
+// parsing on pre-v6.
+def : InstAlias<"smull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
+            (SMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+         Requires<[IsARM, NoV6]>;
+def : InstAlias<"umull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
+            (UMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+         Requires<[IsARM, NoV6]>;
 
 // 'it' blocks in ARM mode just validate the predicates. The IT itself
 // is discarded.

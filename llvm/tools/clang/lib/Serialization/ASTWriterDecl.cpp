@@ -230,7 +230,13 @@ void ASTDeclWriter::VisitEnumDecl(EnumDecl *D) {
   Record.push_back(D->isScoped());
   Record.push_back(D->isScopedUsingClassTag());
   Record.push_back(D->isFixed());
-  Writer.AddDeclRef(D->getInstantiatedFromMemberEnum(), Record);
+  if (MemberSpecializationInfo *MemberInfo = D->getMemberSpecializationInfo()) {
+    Writer.AddDeclRef(MemberInfo->getInstantiatedFrom(), Record);
+    Record.push_back(MemberInfo->getTemplateSpecializationKind());
+    Writer.AddSourceLocation(MemberInfo->getPointOfInstantiation(), Record);
+  } else {
+    Writer.AddDeclRef(0, Record);
+  }
 
   if (!D->hasAttrs() &&
       !D->isImplicit() &&
@@ -729,6 +735,7 @@ void ASTDeclWriter::VisitParmVarDecl(ParmVarDecl *D) {
       !D->hasExtInfo() &&
       !D->isImplicit() &&
       !D->isUsed(false) &&
+      !D->isInvalidDecl() &&
       !D->isReferenced() &&
       D->getAccess() == AS_none &&
       !D->isModulePrivate() &&
@@ -744,7 +751,6 @@ void ASTDeclWriter::VisitParmVarDecl(ParmVarDecl *D) {
 
   // Check things we know are true of *every* PARM_VAR_DECL, which is more than
   // just us assuming it.
-  assert(!D->isInvalidDecl() && "Shouldn't emit invalid decls");
   assert(!D->isThreadSpecified() && "PARM_VAR_DECL can't be __thread");
   assert(D->getAccess() == AS_none && "PARM_VAR_DECL can't be public/private");
   assert(!D->isExceptionVariable() && "PARM_VAR_DECL can't be exception var");
@@ -819,9 +825,7 @@ void ASTDeclWriter::VisitNamespaceDecl(NamespaceDecl *D) {
     Writer.AddUpdatedDeclContext(NS);
 
     // Make sure all visible decls are written. They will be recorded later.
-    NS->lookup(DeclarationName());
-    StoredDeclsMap *Map = static_cast<StoredDeclsMap*>(NS->getLookupPtr());
-    if (Map) {
+    if (StoredDeclsMap *Map = NS->buildLookup()) {
       for (StoredDeclsMap::iterator D = Map->begin(), DEnd = Map->end();
            D != DEnd; ++D) {
         DeclContext::lookup_result Result = D->second.getLookupResult();
@@ -1267,7 +1271,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1299,7 +1303,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1336,7 +1340,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1383,7 +1387,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1424,7 +1428,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1474,7 +1478,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1502,7 +1506,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   // Decl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclContext
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // LexicalDeclContext
-  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl (!?)
+  Abv->Add(BitCodeAbbrevOp(0));                       // isInvalidDecl
   Abv->Add(BitCodeAbbrevOp(0));                       // HasAttrs
   Abv->Add(BitCodeAbbrevOp(0));                       // isImplicit
   Abv->Add(BitCodeAbbrevOp(0));                       // isUsed
@@ -1553,6 +1557,7 @@ void ASTWriter::WriteDeclsBlockAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //GetDeclFound
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //ExplicitTemplateArgs
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //HadMultipleCandidates
+  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //RefersToEnclosingLocal
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclRef
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Location
   DeclRefExprAbbrev = Stream.EmitAbbrev(Abv);

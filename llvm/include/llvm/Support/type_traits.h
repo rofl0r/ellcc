@@ -121,12 +121,44 @@ template <> struct is_integral_impl<unsigned long long> : true_type {};
 template <typename T>
 struct is_integral : is_integral_impl<T> {};
 
+/// \brief Metafunction to remove reference from a type.
+template <typename T> struct remove_reference { typedef T type; };
+template <typename T> struct remove_reference<T&> { typedef T type; };
+
 /// \brief Metafunction that determines whether the given type is a pointer
 /// type.
 template <typename T> struct is_pointer : false_type {};
 template <typename T> struct is_pointer<T*> : true_type {};
+template <typename T> struct is_pointer<T* const> : true_type {};
+template <typename T> struct is_pointer<T* volatile> : true_type {};
+template <typename T> struct is_pointer<T* const volatile> : true_type {};
 
-  
+/// \brief Metafunction that determines whether the given type is either an
+/// integral type or an enumeration type.
+///
+/// Note that this accepts potentially more integral types than we whitelist
+/// above for is_integral because it is based on merely being convertible
+/// implicitly to an integral type.
+template <typename T> class is_integral_or_enum {
+  // Provide an overload which can be called with anything implicitly
+  // convertible to an unsigned long long. This should catch integer types and
+  // enumeration types at least. We blacklist classes with conversion operators
+  // below.
+  static double check_int_convertible(unsigned long long);
+  static char check_int_convertible(...);
+
+  typedef typename remove_reference<T>::type UnderlyingT;
+  static UnderlyingT &nonce_instance;
+
+public:
+  enum {
+    value = (!is_class<UnderlyingT>::value && !is_pointer<UnderlyingT>::value &&
+             !is_same<UnderlyingT, float>::value &&
+             !is_same<UnderlyingT, double>::value &&
+             sizeof(char) != sizeof(check_int_convertible(nonce_instance)))
+  };
+};
+
 // enable_if_c - Enable/disable a template based on a metafunction
 template<bool Cond, typename T = void>
 struct enable_if_c {

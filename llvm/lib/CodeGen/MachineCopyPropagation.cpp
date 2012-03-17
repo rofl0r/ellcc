@@ -64,16 +64,16 @@ MachineCopyPropagation::SourceNoLongerAvailable(unsigned Reg,
     unsigned MappedDef = SI->second;
     // Source of copy is no longer available for propagation.
     if (AvailCopyMap.erase(MappedDef)) {
-      for (const unsigned *SR = TRI->getSubRegisters(MappedDef); *SR; ++SR)
+      for (const uint16_t *SR = TRI->getSubRegisters(MappedDef); *SR; ++SR)
         AvailCopyMap.erase(*SR);
     }
   }
-  for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
+  for (const uint16_t *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
     SI = SrcMap.find(*AS);
     if (SI != SrcMap.end()) {
       unsigned MappedDef = SI->second;
       if (AvailCopyMap.erase(MappedDef)) {
-        for (const unsigned *SR = TRI->getSubRegisters(MappedDef); *SR; ++SR)
+        for (const uint16_t *SR = TRI->getSubRegisters(MappedDef); *SR; ++SR)
           AvailCopyMap.erase(*SR);
       }
     }
@@ -180,7 +180,7 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
       CI = CopyMap.find(Src);
       if (CI != CopyMap.end())
         MaybeDeadCopies.remove(CI->second);
-      for (const unsigned *AS = TRI->getAliasSet(Src); *AS; ++AS) {
+      for (const uint16_t *AS = TRI->getAliasSet(Src); *AS; ++AS) {
         CI = CopyMap.find(*AS);
         if (CI != CopyMap.end())
           MaybeDeadCopies.remove(CI->second);
@@ -200,13 +200,13 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
 
       // Remember Def is defined by the copy.
       // ... Make sure to clear the def maps of aliases first.
-      for (const unsigned *AS = TRI->getAliasSet(Def); *AS; ++AS) {
+      for (const uint16_t *AS = TRI->getAliasSet(Def); *AS; ++AS) {
         CopyMap.erase(*AS);
         AvailCopyMap.erase(*AS);
       }
       CopyMap[Def] = MI;
       AvailCopyMap[Def] = MI;
-      for (const unsigned *SR = TRI->getSubRegisters(Def); *SR; ++SR) {
+      for (const uint16_t *SR = TRI->getSubRegisters(Def); *SR; ++SR) {
         CopyMap[*SR] = MI;
         AvailCopyMap[*SR] = MI;
       }
@@ -245,7 +245,7 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
       DenseMap<unsigned, MachineInstr*>::iterator CI = CopyMap.find(Reg);
       if (CI != CopyMap.end())
         MaybeDeadCopies.remove(CI->second);
-      for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
+      for (const uint16_t *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
         CI = CopyMap.find(*AS);
         if (CI != CopyMap.end())
           MaybeDeadCopies.remove(CI->second);
@@ -284,7 +284,7 @@ bool MachineCopyPropagation::CopyPropagateBlock(MachineBasicBlock &MBB) {
       // No longer defined by a copy.
       CopyMap.erase(Reg);
       AvailCopyMap.erase(Reg);
-      for (const unsigned *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
+      for (const uint16_t *AS = TRI->getAliasSet(Reg); *AS; ++AS) {
         CopyMap.erase(*AS);
         AvailCopyMap.erase(*AS);
       }

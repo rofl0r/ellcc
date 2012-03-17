@@ -673,7 +673,7 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
   {
     NamedRegionTimer T("Instruction Scheduling", GroupName,
                        TimePassesIsEnabled);
-    Scheduler->Run(CurDAG, FuncInfo->MBB, FuncInfo->InsertPt);
+    Scheduler->Run(CurDAG, FuncInfo->MBB);
   }
 
   if (ViewSUnitDAGs) Scheduler->viewGraph();
@@ -684,8 +684,9 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
   {
     NamedRegionTimer T("Instruction Creation", GroupName, TimePassesIsEnabled);
 
-    LastMBB = FuncInfo->MBB = Scheduler->EmitSchedule();
-    FuncInfo->InsertPt = Scheduler->InsertPos;
+    // FuncInfo->InsertPt is passed by reference and set to the end of the
+    // scheduled instructions.
+    LastMBB = FuncInfo->MBB = Scheduler->EmitSchedule(FuncInfo->InsertPt);
   }
 
   // If the block was split, make sure we update any references that are used to
@@ -774,7 +775,7 @@ void SelectionDAGISel::PrepareEHLandingPad() {
 
   // Assign the call site to the landing pad's begin label.
   MF->getMMI().setCallSiteLandingPad(Label, SDB->LPadToCallSiteMap[MBB]);
-    
+
   const MCInstrDesc &II = TM.getInstrInfo()->get(TargetOpcode::EH_LABEL);
   BuildMI(*MBB, FuncInfo->InsertPt, SDB->getCurDebugLoc(), II)
     .addSym(Label);
@@ -934,9 +935,9 @@ static void collectFailStats(const Instruction *I) {
   case Instruction::FPToSI:   NumFastIselFailFPToSI++; return;
   case Instruction::UIToFP:   NumFastIselFailUIToFP++; return;
   case Instruction::SIToFP:   NumFastIselFailSIToFP++; return;
-  case Instruction::IntToPtr: NumFastIselFailIntToPtr++; return; 
+  case Instruction::IntToPtr: NumFastIselFailIntToPtr++; return;
   case Instruction::PtrToInt: NumFastIselFailPtrToInt++; return;
-  case Instruction::BitCast:  NumFastIselFailBitCast++; return; 
+  case Instruction::BitCast:  NumFastIselFailBitCast++; return;
 
   // Other instructions...
   case Instruction::ICmp:           NumFastIselFailICmp++; return;

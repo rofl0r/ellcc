@@ -20,9 +20,10 @@
 #include "clang/Lex/CodeCompletionHandler.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/DeclSpec.h"
-#include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/PrettyStackTrace.h"
 #include <stack>
 
 namespace clang {
@@ -201,7 +202,7 @@ public:
   Parser(Preprocessor &PP, Sema &Actions);
   ~Parser();
 
-  const LangOptions &getLang() const { return PP.getLangOptions(); }
+  const LangOptions &getLangOpts() const { return PP.getLangOpts(); }
   const TargetInfo &getTargetInfo() const { return PP.getTargetInfo(); }
   Preprocessor &getPreprocessor() const { return PP; }
   Sema &getActions() const { return Actions; }
@@ -432,87 +433,77 @@ private:
     return PP.LookAhead(0);
   }
 
-  class BalancedDelimiterTracker;
-
-  /// \brief Tracks information about the current nesting depth of
-  /// opening delimiters of each kind.
-  class DelimiterTracker {
-  private:
-    friend class Parser;
-    friend class BalancedDelimiterTracker;
-
-    unsigned Paren, Brace, Square, Less, LLLess;
-    unsigned& get(tok::TokenKind t) {
-      switch (t) {
-      default: llvm_unreachable("Unexpected balanced token");
-      case tok::l_brace:  return Brace;
-      case tok::l_paren:  return Paren;
-      case tok::l_square: return Square;
-      case tok::less:  return Less;
-      case tok::lesslessless:  return LLLess;
-      }
-    }
-
-    void push(tok::TokenKind t) {
-      get(t)++;
-    }
-
-    void pop(tok::TokenKind t) {
-      get(t)--;
-    }
-
-    unsigned getDepth(tok::TokenKind t) {
-      return get(t);
-    }
-
-  public:
-    DelimiterTracker() : Paren(0), Brace(0), Square(0), Less(0), LLLess(0) { }
-  };
-
   /// \brief RAII class that helps handle the parsing of an open/close delimiter
   /// pair, such as braces { ... } or parentheses ( ... ).
   class BalancedDelimiterTracker {
-    tok::TokenKind Kind, Close;
     Parser& P;
-    bool Cleanup;
-    const unsigned MaxDepth;
+    tok::TokenKind Kind, Close;
+    SourceLocation (Parser::*Consumer)();
     SourceLocation LOpen, LClose;
 
-    void assignClosingDelimiter() {
+    unsigned short &getDepth() {
       switch (Kind) {
-      default: llvm_unreachable("Unexpected balanced token");
-      case tok::l_brace:  Close = tok::r_brace; break;
-      case tok::l_paren:  Close = tok::r_paren; break;
-      case tok::l_square: Close = tok::r_square; break;
-      case tok::less:  Close = tok::greater; break;
-      case tok::lesslessless:  Close = tok::greatergreatergreater; break;
+      case tok::l_brace: return P.BraceCount;
+      case tok::l_square: return P.BracketCount;
+      case tok::l_paren: return P.ParenCount;
+      default: llvm_unreachable("Wrong token kind");
       }
     }
-
+    
+    enum { MaxDepth = 256 };
+    
+    bool diagnoseOverflow();
+    bool diagnoseMissingClose();
+    
   public:
-    BalancedDelimiterTracker(Parser& p, tok::TokenKind k)
-      : Kind(k), P(p), Cleanup(false), MaxDepth(256) {
-      assignClosingDelimiter();
-    }
-
-    ~BalancedDelimiterTracker() {
-      if (Cleanup)
-        P.QuantityTracker.pop(Kind);
+    BalancedDelimiterTracker(Parser& p, tok::TokenKind k) : P(p), Kind(k) {
+      switch (Kind) {
+      default: llvm_unreachable("Unexpected balanced token");
+      case tok::l_brace:
+        Close = tok::r_brace; 
+        Consumer = &Parser::ConsumeBrace;
+        break;
+      case tok::l_paren:
+        Close = tok::r_paren; 
+        Consumer = &Parser::ConsumeParen;
+        break;
+        
+      case tok::l_square:
+        Close = tok::r_square; 
+        Consumer = &Parser::ConsumeBracket;
+        break;
+      }      
     }
 
     SourceLocation getOpenLocation() const { return LOpen; }
     SourceLocation getCloseLocation() const { return LClose; }
     SourceRange getRange() const { return SourceRange(LOpen, LClose); }
 
-    bool consumeOpen();
+    bool consumeOpen() {
+      if (!P.Tok.is(Kind))
+        return true;
+      
+      if (getDepth() < MaxDepth) {
+        LOpen = (P.*Consumer)();
+        return false;
+      }
+      
+      return diagnoseOverflow();
+    }
+    
     bool expectAndConsume(unsigned DiagID,
                           const char *Msg = "",
                           tok::TokenKind SkipToTok = tok::unknown);
-    bool consumeClose();
+    bool consumeClose() {
+      if (P.Tok.is(Close)) {
+        LClose = (P.*Consumer)();
+        return false;
+      } 
+
+      return diagnoseMissingClose();
+    }
     void skipToEnd();
   };
-
-  DelimiterTracker QuantityTracker;
 
   /// getTypeAnnotation - Read a parsed type out of an annotation token.
   static ParsedType getTypeAnnotation(Token &Tok) {
@@ -553,7 +544,7 @@ private:
   bool TryAltiVecToken(DeclSpec &DS, SourceLocation Loc,
                        const char *&PrevSpec, unsigned &DiagID,
                        bool &isInvalid) {
-    if (!getLang().AltiVec ||
+    if (!getLangOpts().AltiVec ||
         (Tok.getIdentifierInfo() != Ident_vector &&
          Tok.getIdentifierInfo() != Ident_pixel))
       return false;
@@ -565,7 +556,7 @@ private:
   /// identifier token, replacing it with the non-context-sensitive __vector.
   /// This returns true if the token was replaced.
   bool TryAltiVecVectorToken() {
-    if (!getLang().AltiVec ||
+    if (!getLangOpts().AltiVec ||
         Tok.getIdentifierInfo() != Ident_vector) return false;
     return TryAltiVecVectorTokenOutOfLine();
   }
@@ -1125,7 +1116,7 @@ private:
     /// \brief Whether the last template parameter list was empty.
     bool LastParameterListWasEmpty;
 
-    SourceRange getSourceRange() const;
+    SourceRange getSourceRange() const LLVM_READONLY;
   };
 
   /// \brief Contains a late templated function.
@@ -1359,9 +1350,11 @@ private:
                                                   SourceLocation LParenLoc,
                                                   SourceLocation RParenLoc);
 
-  ExprResult ParseStringLiteralExpression();
+  ExprResult ParseStringLiteralExpression(bool AllowUserDefinedLiteral = false);
 
   ExprResult ParseGenericSelectionExpression();
+  
+  ExprResult ParseObjCBoolLiteral();
 
   //===--------------------------------------------------------------------===//
   // C++ Expressions
@@ -1490,6 +1483,11 @@ private:
   // Objective-C Expressions
   ExprResult ParseObjCAtExpression(SourceLocation AtLocation);
   ExprResult ParseObjCStringLiteral(SourceLocation AtLoc);
+  ExprResult ParseObjCCharacterLiteral(SourceLocation AtLoc);
+  ExprResult ParseObjCNumericLiteral(SourceLocation AtLoc);
+  ExprResult ParseObjCBooleanLiteral(SourceLocation AtLoc, bool ArgValue);
+  ExprResult ParseObjCArrayLiteral(SourceLocation AtLoc);
+  ExprResult ParseObjCDictionaryLiteral(SourceLocation AtLoc);
   ExprResult ParseObjCEncodeExpression(SourceLocation AtLoc);
   ExprResult ParseObjCSelectorExpression(SourceLocation AtLoc);
   ExprResult ParseObjCProtocolExpression(SourceLocation AtLoc);
@@ -1503,7 +1501,7 @@ private:
       SourceLocation LBracloc, SourceLocation SuperLoc,
       ParsedType ReceiverType, ExprArg ReceiverExpr);
   bool ParseObjCXXMessageReceiver(bool &IsExpr, void *&TypeOrExpr);
-
+    
   //===--------------------------------------------------------------------===//
   // C99 6.8: Statements and Blocks.
 
@@ -1623,6 +1621,8 @@ private:
   enum DeclSpecContext {
     DSC_normal, // normal context
     DSC_class,  // class context, enables 'friend'
+    DSC_type_specifier, // C++ type-specifier-seq
+    DSC_trailing, // C++11 trailing-type-specifier in a trailing return type
     DSC_top_level // top-level/namespace declaration context
   };
 
@@ -1665,27 +1665,23 @@ private:
 
   bool ParseImplicitInt(DeclSpec &DS, CXXScopeSpec *SS,
                         const ParsedTemplateInfo &TemplateInfo,
-                        AccessSpecifier AS);
+                        AccessSpecifier AS, DeclSpecContext DSC);
   DeclSpecContext getDeclSpecContextFromDeclaratorContext(unsigned Context);
   void ParseDeclarationSpecifiers(DeclSpec &DS,
                 const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
                                   AccessSpecifier AS = AS_none,
                                   DeclSpecContext DSC = DSC_normal,
                                   LateParsedAttrList *LateAttrs = 0);
-  bool ParseOptionalTypeSpecifier(DeclSpec &DS, bool &isInvalid,
-                                  const char *&PrevSpec,
-                                  unsigned &DiagID,
-               const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
-                                  bool SuppressDeclarations = false);
 
-  void ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS = AS_none);
+  void ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS = AS_none,
+                                   DeclSpecContext DSC = DSC_normal);
 
   void ParseObjCTypeQualifierList(ObjCDeclSpec &DS,
                                   Declarator::TheContext Context);
 
   void ParseEnumSpecifier(SourceLocation TagLoc, DeclSpec &DS,
-                const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
-                AccessSpecifier AS = AS_none);
+                          const ParsedTemplateInfo &TemplateInfo,
+                          AccessSpecifier AS, DeclSpecContext DSC);
   void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
   void ParseStructUnionBody(SourceLocation StartLoc, unsigned TagType,
                             Decl *TagDecl);
@@ -1714,7 +1710,7 @@ private:
   /// expression statement, when parsing function bodies.
   /// Returns true for declaration, false for expression.
   bool isDeclarationStatement() {
-    if (getLang().CPlusPlus)
+    if (getLangOpts().CPlusPlus)
       return isCXXDeclarationStatement();
     return isDeclarationSpecifier(true);
   }
@@ -1724,7 +1720,7 @@ private:
   // 'for-init-statement' part of a 'for' statement.
   /// Returns true for declaration, false for expression.
   bool isForInitDeclaration() {
-    if (getLang().CPlusPlus)
+    if (getLangOpts().CPlusPlus)
       return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/true);
     return isDeclarationSpecifier(true);
   }
@@ -1750,7 +1746,7 @@ private:
   /// whether the parens contain an expression or a type-id.
   /// Returns true for a type-id and false for an expression.
   bool isTypeIdInParens(bool &isAmbiguous) {
-    if (getLang().CPlusPlus)
+    if (getLangOpts().CPlusPlus)
       return isCXXTypeId(TypeIdInParens, isAmbiguous);
     isAmbiguous = false;
     return isTypeSpecifierQualifier();
@@ -1892,7 +1888,7 @@ private:
                              SourceLocation *EndLoc);
 
   void MaybeParseCXX0XAttributes(Declarator &D) {
-    if (getLang().CPlusPlus0x && isCXX0XAttributeSpecifier()) {
+    if (getLangOpts().CPlusPlus0x && isCXX0XAttributeSpecifier()) {
       ParsedAttributesWithRange attrs(AttrFactory);
       SourceLocation endLoc;
       ParseCXX0XAttributes(attrs, &endLoc);
@@ -1901,7 +1897,7 @@ private:
   }
   void MaybeParseCXX0XAttributes(ParsedAttributes &attrs,
                                  SourceLocation *endLoc = 0) {
-    if (getLang().CPlusPlus0x && isCXX0XAttributeSpecifier()) {
+    if (getLangOpts().CPlusPlus0x && isCXX0XAttributeSpecifier()) {
       ParsedAttributesWithRange attrsWithRange(AttrFactory);
       ParseCXX0XAttributes(attrsWithRange, endLoc);
       attrs.takeAllFrom(attrsWithRange);
@@ -1909,7 +1905,7 @@ private:
   }
   void MaybeParseCXX0XAttributes(ParsedAttributesWithRange &attrs,
                                  SourceLocation *endLoc = 0) {
-    if (getLang().CPlusPlus0x && isCXX0XAttributeSpecifier())
+    if (getLangOpts().CPlusPlus0x && isCXX0XAttributeSpecifier())
       ParseCXX0XAttributes(attrs, endLoc);
   }
 
@@ -1920,7 +1916,7 @@ private:
 
   void MaybeParseMicrosoftAttributes(ParsedAttributes &attrs,
                                      SourceLocation *endLoc = 0) {
-    if (getLang().MicrosoftExt && Tok.is(tok::l_square))
+    if (getLangOpts().MicrosoftExt && Tok.is(tok::l_square))
       ParseMicrosoftAttributes(attrs, endLoc);
   }
   void ParseMicrosoftAttributes(ParsedAttributes &attrs,
@@ -2062,11 +2058,9 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ 9: classes [class] and C structs/unions.
   void ParseClassSpecifier(tok::TokenKind TagTokKind, SourceLocation TagLoc,
-                           DeclSpec &DS,
-                const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
-                           AccessSpecifier AS = AS_none,
-                           bool EnteringContext = false,
-                           bool SuppressDeclarations = false);
+                           DeclSpec &DS, const ParsedTemplateInfo &TemplateInfo,
+                           AccessSpecifier AS, bool EnteringContext,
+                           DeclSpecContext DSC);
   void ParseCXXMemberSpecification(SourceLocation StartLoc, unsigned TagType,
                                    Decl *TagDecl);
   ExprResult ParseCXXMemberInitializer(Decl *D, bool IsFunction,

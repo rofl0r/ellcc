@@ -1070,7 +1070,7 @@ ifeq ($(HAVE_LINK_VERSION_SCRIPT),1)
 NativeExportsFile := $(ObjDir)/$(notdir $(EXPORTED_SYMBOL_FILE)).map
 $(NativeExportsFile): $(EXPORTED_SYMBOL_FILE) $(ObjDir)/.dir
 	$(Verb) echo "{" > $@
-	$(Verb) grep -q "\<" $< && echo "  global:" >> $@ || :
+	$(Verb) grep -q '[[:alnum:]_]' $< && echo "  global:" >> $@ || :
 	$(Verb) sed -e 's/$$/;/' -e 's/^/    /' < $< >> $@
 ifneq ($(HOST_OS),OpenBSD)
 	$(Verb) echo "  local: *;" >> $@
@@ -1492,12 +1492,23 @@ else
 $(ToolBuildPath): $(ToolDir)/.dir
 endif
 
+ifdef CODESIGN_TOOLS
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
 	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
+	$(Echo) ======= Code-Signing $(BuildMode) Executable $(TOOLNAME)
+	$(Verb) codesign -s - $@
+else
+$(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
+	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
+	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
+          $(StripWarnMsg)
+endif
 
 ifneq ($(strip $(ToolAliasBuildPath)),)
 $(ToolAliasBuildPath): $(ToolBuildPath)

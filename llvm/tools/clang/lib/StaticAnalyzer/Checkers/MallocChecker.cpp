@@ -99,8 +99,6 @@ class MallocChecker : public Checker<check::DeadSymbols,
   mutable IdentifierInfo *II_malloc, *II_free, *II_realloc, *II_calloc,
                          *II_valloc, *II_reallocf, *II_strndup, *II_strdup;
 
-  static const unsigned InvalidArgIndex = UINT_MAX;
-
 public:
   MallocChecker() : II_malloc(0), II_free(0), II_realloc(0), II_calloc(0),
                     II_valloc(0), II_reallocf(0), II_strndup(0), II_strdup(0) {}
@@ -537,6 +535,7 @@ ProgramStateRef MallocChecker::FreeMemAux(CheckerContext &C,
       BugReport *R = new BugReport(*BT_DoubleFree, 
                         "Attempt to free released memory", N);
       R->addRange(ArgExpr->getSourceRange());
+      R->markInteresting(Sym);
       R->addVisitor(new MallocBugVisitor(Sym));
       C.EmitReport(R);
     }
@@ -669,6 +668,7 @@ void MallocChecker::ReportBadFree(CheckerContext &C, SVal ArgVal,
     }
     
     BugReport *R = new BugReport(*BT_BadFree, os.str(), N);
+    R->markInteresting(MR);
     R->addRange(range);
     C.EmitReport(R);
   }
@@ -822,6 +822,7 @@ void MallocChecker::reportLeak(SymbolRef Sym, ExplodedNode *N,
 
   BugReport *R = new BugReport(*BT_Leak,
     "Memory is never released; potential memory leak", N, LocUsedForUniqueing);
+  R->markInteresting(Sym);
   R->addVisitor(new MallocBugVisitor(Sym));
   C.EmitReport(R);
 }
@@ -966,6 +967,7 @@ bool MallocChecker::checkUseAfterFree(SymbolRef Sym, CheckerContext &C,
                                    "Use of memory after it is freed",N);
       if (S)
         R->addRange(S->getSourceRange());
+      R->markInteresting(Sym);
       R->addVisitor(new MallocBugVisitor(Sym));
       C.EmitReport(R);
       return true;
@@ -1086,7 +1088,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
   ASTContext &ASTC = State->getStateManager().getContext();
 
   // If it's one of the allocation functions we can reason about, we model
-  // it's behavior explicitly.
+  // its behavior explicitly.
   if (isa<FunctionDecl>(D) && isMemFunction(cast<FunctionDecl>(D), ASTC)) {
     return true;
   }
@@ -1097,7 +1099,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     return false;
 
   // Process C/ObjC functions.
-  if (const FunctionDecl *FD  = dyn_cast_or_null<FunctionDecl>(D)) {
+  if (const FunctionDecl *FD  = dyn_cast<FunctionDecl>(D)) {
     // White list the system functions whose arguments escape.
     const IdentifierInfo *II = FD->getIdentifier();
     if (!II)
@@ -1108,7 +1110,7 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     if (FName.equals("pthread_setspecific"))
       return false;
 
-    // White list the 'XXXNoCopy' ObjC Methods.
+    // White list the 'XXXNoCopy' ObjC functions.
     if (FName.endswith("NoCopy")) {
       // Look for the deallocator argument. We know that the memory ownership
       // is not transfered only if the deallocator argument is
@@ -1176,7 +1178,16 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
       if (S.getNameForSlot(i).equals("freeWhenDone")) {
         if (Call->getArgSVal(i).isConstant(1))
           return false;
+        else
+          return true;
       }
+    }
+
+    // If the first selector ends with NoCopy, assume that the ownership is
+    // transfered as well.
+    // Ex:  [NSData dataWithBytesNoCopy:bytes length:10];
+    if (S.getNameForSlot(0).endswith("NoCopy")) {
+      return false;
     }
 
     // Otherwise, assume that the function does not free memory.
@@ -1238,6 +1249,7 @@ MallocChecker::MallocBugVisitor::VisitNode(const ExplodedNode *N,
 
   const Stmt *S = 0;
   const char *Msg = 0;
+  const char *StackMsg = 0;
 
   // Retrieve the associated statement.
   ProgramPoint ProgLoc = N->getLocation();
@@ -1253,14 +1265,18 @@ MallocChecker::MallocBugVisitor::VisitNode(const ExplodedNode *N,
     return 0;
 
   // Find out if this is an interesting point and what is the kind.
+  // TODO: Replace 'callee' by the function name.
   if (Mode == Normal) {
-    if (isAllocated(RS, RSPrev, S))
+    if (isAllocated(RS, RSPrev, S)) {
       Msg = "Memory is allocated";
-    else if (isReleased(RS, RSPrev, S))
+      StackMsg = ", which allocated memory";
+    } else if (isReleased(RS, RSPrev, S)) {
       Msg = "Memory is released";
-    else if (isReallocFailedCheck(RS, RSPrev, S)) {
+      StackMsg = ", which released memory";
+    } else if (isReallocFailedCheck(RS, RSPrev, S)) {
       Mode = ReallocationFailed;
       Msg = "Reallocation failed";
+      StackMsg = ", where reallocation failed";
     }
 
   // We are in a special mode if a reallocation failed later in the path.
@@ -1280,16 +1296,18 @@ MallocChecker::MallocBugVisitor::VisitNode(const ExplodedNode *N,
     if (!(FunName.equals("realloc") || FunName.equals("reallocf")))
       return 0;
     Msg = "Attempt to reallocate memory";
+    StackMsg = ", which attempted to reallocate memory";
     Mode = Normal;
   }
 
   if (!Msg)
     return 0;
+  assert(StackMsg);
 
   // Generate the extra diagnostic.
   PathDiagnosticLocation Pos(S, BRC.getSourceManager(),
                              N->getLocationContext());
-  return new PathDiagnosticEventPiece(Pos, Msg);
+  return new PathDiagnosticEventPiece(Pos, Msg, true, StackMsg);
 }
 
 

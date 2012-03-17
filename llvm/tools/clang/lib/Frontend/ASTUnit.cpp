@@ -364,7 +364,7 @@ void ASTUnit::CacheCodeCompletionResults() {
       CachedResult.Completion = Results[I].CreateCodeCompletionString(*TheSema,
                                                     *CachedCompletionAllocator);
       CachedResult.ShowInContexts = getDeclShowContexts(Results[I].Declaration,
-                                                        Ctx->getLangOptions(),
+                                                        Ctx->getLangOpts(),
                                                         IsNestedNameSpecifier);
       CachedResult.Priority = Results[I].Priority;
       CachedResult.Kind = Results[I].CursorKind;
@@ -397,7 +397,7 @@ void ASTUnit::CacheCodeCompletionResults() {
       CachedCompletionResults.push_back(CachedResult);
       
       /// Handle nested-name-specifiers in C++.
-      if (TheSema->Context.getLangOptions().CPlusPlus && 
+      if (TheSema->Context.getLangOpts().CPlusPlus && 
           IsNestedNameSpecifier && !Results[I].StartsNestedNameSpecifier) {
         // The contexts in which a nested-name-specifier can appear in C++.
         unsigned NNSContexts
@@ -652,7 +652,8 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
                                   bool OnlyLocalDecls,
                                   RemappedFile *RemappedFiles,
                                   unsigned NumRemappedFiles,
-                                  bool CaptureDiagnostics) {
+                                  bool CaptureDiagnostics,
+                                  bool AllowPCHWithCompilerErrors) {
   OwningPtr<ASTUnit> AST(new ASTUnit(true));
 
   // Recover resources if we crash before exiting this method.
@@ -748,7 +749,11 @@ ASTUnit *ASTUnit::LoadFromASTFile(const std::string &Filename,
                             /*DelayInitialization=*/true);
   ASTContext &Context = *AST->Ctx;
 
-  Reader.reset(new ASTReader(PP, Context));
+  Reader.reset(new ASTReader(PP, Context,
+                             /*isysroot=*/"",
+                             /*DisableValidation=*/false,
+                             /*DisableStatCache=*/false,
+                             AllowPCHWithCompilerErrors));
   
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<ASTReader>
@@ -1862,7 +1867,8 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
                                       bool RemappedFilesKeepOriginalName,
                                       bool PrecompilePreamble,
                                       TranslationUnitKind TUKind,
-                                      bool CacheCodeCompletionResults) {
+                                      bool CacheCodeCompletionResults,
+                                      bool AllowPCHWithCompilerErrors) {
   if (!Diags.getPtr()) {
     // No diagnostics engine was provided, so create our own diagnostics object
     // with the default options.
@@ -1898,8 +1904,9 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
       CI->getPreprocessorOpts().addRemappedFile(RemappedFiles[I].first, fname);
     }
   }
-  CI->getPreprocessorOpts().RemappedFilesKeepOriginalName =
-                                                  RemappedFilesKeepOriginalName;
+  PreprocessorOptions &PPOpts = CI->getPreprocessorOpts();
+  PPOpts.RemappedFilesKeepOriginalName = RemappedFilesKeepOriginalName;
+  PPOpts.AllowPCHWithCompilerErrors = AllowPCHWithCompilerErrors;
   
   // Override the resources path.
   CI->getHeaderSearchOpts().ResourceDir = ResourceFilesPath;
@@ -2026,7 +2033,7 @@ namespace {
         | (1LL << (CodeCompletionContext::CCC_ParenthesizedExpression - 1))
         | (1LL << (CodeCompletionContext::CCC_Recovery - 1));
 
-      if (AST.getASTContext().getLangOptions().CPlusPlus)
+      if (AST.getASTContext().getLangOpts().CPlusPlus)
         NormalContexts |= (1LL << (CodeCompletionContext::CCC_EnumTag - 1))
                    | (1LL << (CodeCompletionContext::CCC_UnionTag - 1))
                    | (1LL << (CodeCompletionContext::CCC_ClassOrStructTag - 1));
@@ -2117,7 +2124,7 @@ static void CalculateHiddenNames(const CodeCompletionContext &Context,
       unsigned HiddenIDNS = (Decl::IDNS_Type | Decl::IDNS_Member | 
                              Decl::IDNS_Namespace | Decl::IDNS_Ordinary |
                              Decl::IDNS_NonMemberOperator);
-      if (Ctx.getLangOptions().CPlusPlus)
+      if (Ctx.getLangOpts().CPlusPlus)
         HiddenIDNS |= Decl::IDNS_Tag;
       Hiding = (IDNS & HiddenIDNS);
     }
@@ -2177,7 +2184,7 @@ void AugmentedCodeCompleteConsumer::ProcessCodeCompleteResults(Sema &S,
     if (!Context.getPreferredType().isNull()) {
       if (C->Kind == CXCursor_MacroDefinition) {
         Priority = getMacroUsagePriority(C->Completion->getTypedText(),
-                                         S.getLangOptions(),
+                                         S.getLangOpts(),
                                Context.getPreferredType()->isAnyPointerType());        
       } else if (C->Type) {
         CanQualType Expected
@@ -2388,9 +2395,6 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
 }
 
 CXSaveError ASTUnit::Save(StringRef File) {
-  if (getDiagnostics().hasUnrecoverableErrorOccurred())
-    return CXSaveError_TranslationErrors;
-
   // Write to a temporary file and later rename it to the actual file, to avoid
   // possible race conditions.
   SmallString<128> TempPath;
@@ -2407,8 +2411,10 @@ CXSaveError ASTUnit::Save(StringRef File) {
 
   serialize(Out);
   Out.close();
-  if (Out.has_error())
+  if (Out.has_error()) {
+    Out.clear_error();
     return CXSaveError_Unknown;
+  }
 
   if (llvm::sys::fs::rename(TempPath.str(), File)) {
     bool exists;
@@ -2420,14 +2426,13 @@ CXSaveError ASTUnit::Save(StringRef File) {
 }
 
 bool ASTUnit::serialize(raw_ostream &OS) {
-  if (getDiagnostics().hasErrorOccurred())
-    return true;
+  bool hasErrors = getDiagnostics().hasErrorOccurred();
 
   SmallString<128> Buffer;
   llvm::BitstreamWriter Stream(Buffer);
   ASTWriter Writer(Stream);
   // FIXME: Handle modules
-  Writer.WriteAST(getSema(), 0, std::string(), 0, "");
+  Writer.WriteAST(getSema(), 0, std::string(), 0, "", hasErrors);
   
   // Write the generated bitstream to "Out".
   if (!Buffer.empty())

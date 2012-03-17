@@ -36,6 +36,7 @@
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Allocator.h"
@@ -84,6 +85,12 @@ namespace {
         return false;
       return true;
     }
+
+    friend hash_code hash_value(const Expression &Value) {
+      return hash_combine(Value.opcode, Value.type,
+                          hash_combine_range(Value.varargs.begin(),
+                                             Value.varargs.end()));
+    }
   };
 
   class ValueTable {
@@ -130,16 +137,8 @@ template <> struct DenseMapInfo<Expression> {
   }
 
   static unsigned getHashValue(const Expression e) {
-    unsigned hash = e.opcode;
-
-    hash = ((unsigned)((uintptr_t)e.type >> 4) ^
-            (unsigned)((uintptr_t)e.type >> 9));
-
-    for (SmallVector<uint32_t, 4>::const_iterator I = e.varargs.begin(),
-         E = e.varargs.end(); I != E; ++I)
-      hash = *I + hash * 37;
-    
-    return hash;
+    using llvm::hash_value;
+    return static_cast<unsigned>(hash_value(e));
   }
   static bool isEqual(const Expression &LHS, const Expression &RHS) {
     return LHS == RHS;
@@ -1953,7 +1952,17 @@ unsigned GVN::replaceAllDominatedUsesWith(Value *From, Value *To,
   for (Value::use_iterator UI = From->use_begin(), UE = From->use_end();
        UI != UE; ) {
     Use &U = (UI++).getUse();
-    if (DT->dominates(Root, cast<Instruction>(U.getUser())->getParent())) {
+
+    // If From occurs as a phi node operand then the use implicitly lives in the
+    // corresponding incoming block.  Otherwise it is the block containing the
+    // user that must be dominated by Root.
+    BasicBlock *UsingBlock;
+    if (PHINode *PN = dyn_cast<PHINode>(U.getUser()))
+      UsingBlock = PN->getIncomingBlock(U);
+    else
+      UsingBlock = cast<Instruction>(U.getUser())->getParent();
+
+    if (DT->dominates(Root, UsingBlock)) {
       U.set(To);
       ++Count;
     }
@@ -2149,10 +2158,11 @@ bool GVN::processInstruction(Instruction *I) {
     Value *SwitchCond = SI->getCondition();
     BasicBlock *Parent = SI->getParent();
     bool Changed = false;
-    for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i) {
-      BasicBlock *Dst = SI->getCaseSuccessor(i);
+    for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end();
+         i != e; ++i) {
+      BasicBlock *Dst = i.getCaseSuccessor();
       if (isOnlyReachableViaThisEdge(Parent, Dst, DT))
-        Changed |= propagateEquality(SwitchCond, SI->getCaseValue(i), Dst);
+        Changed |= propagateEquality(SwitchCond, i.getCaseValue(), Dst);
     }
     return Changed;
   }

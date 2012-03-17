@@ -884,6 +884,11 @@ public:
     default:
       break;
     }
+
+    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+      LongDoubleWidth = LongDoubleAlign = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
   }
 
   virtual const char *getVAListDeclaration() const {
@@ -910,6 +915,11 @@ public:
     DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
                         "v128:128:128-n32:64";
+
+    if (getTriple().getOS() == llvm::Triple::FreeBSD) {
+      LongDoubleWidth = LongDoubleAlign = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
   }
   virtual const char *getVAListDeclaration() const {
     return "typedef char* __builtin_va_list;";
@@ -1021,7 +1031,7 @@ namespace {
     }
 
     virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                   const std::string &Name,
+                                   StringRef Name,
                                    bool Enabled) const;
   };
 
@@ -1043,7 +1053,7 @@ namespace {
   }
 
   bool PTXTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                        const std::string &Name,
+                                        StringRef Name,
                                         bool Enabled) const {
     if(std::binary_search(AvailableFeatures.begin(), AvailableFeatures.end(),
                           Name)) {
@@ -1448,7 +1458,7 @@ public:
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const;
   virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                 const std::string &Name,
+                                 StringRef Name,
                                  bool Enabled) const;
   virtual void getDefaultFeatures(llvm::StringMap<bool> &Features) const;
   virtual bool hasFeature(StringRef Feature) const;
@@ -1727,7 +1737,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
 }
 
 bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                      const std::string &Name,
+                                      StringRef Name,
                                       bool Enabled) const {
   // FIXME: This *really* should not be here.  We need some way of translating
   // options into llvm subtarget features.
@@ -1841,38 +1851,40 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
     if (Features[i][0] == '-')
       continue;
 
-    if (Features[i].substr(1) == "aes") {
+    StringRef Feature = StringRef(Features[i]).substr(1);
+
+    if (Feature == "aes") {
       HasAES = true;
       continue;
     }
 
-    if (Features[i].substr(1) == "lzcnt") {
+    if (Feature == "lzcnt") {
       HasLZCNT = true;
       continue;
     }
 
-    if (Features[i].substr(1) == "bmi") {
+    if (Feature == "bmi") {
       HasBMI = true;
       continue;
     }
 
-    if (Features[i].substr(1) == "bmi2") {
+    if (Feature == "bmi2") {
       HasBMI2 = true;
       continue;
     }
 
-    if (Features[i].substr(1) == "popcnt") {
+    if (Feature == "popcnt") {
       HasPOPCNT = true;
       continue;
     }
 
-    if (Features[i].substr(1) == "fma4") {
+    if (Feature == "fma4") {
       HasFMA4 = true;
       continue;
     }
 
     assert(Features[i][0] == '+' && "Invalid target feature!");
-    X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Features[i].substr(1))
+    X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Feature)
       .Case("avx2", AVX2)
       .Case("avx", AVX)
       .Case("sse42", SSE42)
@@ -1885,7 +1897,7 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
     SSELevel = std::max(SSELevel, Level);
 
     MMX3DNowEnum ThreeDNowLevel =
-      llvm::StringSwitch<MMX3DNowEnum>(Features[i].substr(1))
+      llvm::StringSwitch<MMX3DNowEnum>(Feature)
         .Case("3dnowa", AMD3DNowAthlon)
         .Case("3dnow", AMD3DNow)
         .Case("mmx", MMX)
@@ -1908,8 +1920,10 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
                                      MacroBuilder &Builder) const {
   // Target identification.
   if (PointerWidth == 64) {
-    Builder.defineMacro("_LP64");
-    Builder.defineMacro("__LP64__");
+    if (getLongWidth() == 64) {
+      Builder.defineMacro("_LP64");
+      Builder.defineMacro("__LP64__");
+    }
     Builder.defineMacro("__amd64__");
     Builder.defineMacro("__amd64");
     Builder.defineMacro("__x86_64");
@@ -2687,6 +2701,12 @@ public:
     // ARM has atomics up to 8 bytes
     // FIXME: Set MaxAtomicInlineWidth if we have the feature v6e
     MaxAtomicPromoteWidth = 64;
+
+    // Do force alignment of members that follow zero length bitfields.  If
+    // the alignment of the zero-length bitfield is greater than the member 
+    // that follows it, `bar', `bar' will be aligned as the  type of the 
+    // zero length bitfield.
+    UseZeroLengthBitfieldAlignment = true;
   }
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) {
@@ -2706,12 +2726,6 @@ public:
       // Do not respect the alignment of bit-field types when laying out
       // structures. This corresponds to PCC_BITFIELD_TYPE_MATTERS in gcc.
       UseBitFieldTypeAlignment = false;
-
-      /// Do force alignment of members that follow zero length bitfields.  If
-      /// the alignment of the zero-length bitfield is greater than the member 
-      /// that follows it, `bar', `bar' will be aligned as the  type of the 
-      /// zero length bitfield.
-      UseZeroLengthBitfieldAlignment = true;
 
       /// gcc forces the alignment to 4 bytes, regardless of the type of the
       /// zero length bitfield.  This corresponds to EMPTY_FIELD_BOUNDARY in
@@ -2749,7 +2763,7 @@ public:
   }
 
   virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                 const std::string &Name,
+                                 StringRef Name,
                                  bool Enabled) const {
     if (Name == "soft-float" || Name == "soft-float-abi" ||
         Name == "vfp2" || Name == "vfp3" || Name == "neon" || Name == "d16") {
@@ -3194,7 +3208,7 @@ public:
                         "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
   }
   virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                 const std::string &Name,
+                                 StringRef Name,
                                  bool Enabled) const {
     if (Name == "soft-float")
       Features[Name] = Enabled;
@@ -4284,8 +4298,7 @@ TargetInfo *TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
   Opts.Features.clear();
   for (llvm::StringMap<bool>::const_iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it)
-    Opts.Features.push_back(std::string(it->second ? "+" : "-") +
-                            it->first().str());
+    Opts.Features.push_back((it->second ? "+" : "-") + it->first().str());
   Target->HandleTargetFeatures(Opts.Features);
 
   return Target.take();

@@ -942,12 +942,13 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   case Builtin::BI__sync_lock_release_8:
   case Builtin::BI__sync_lock_release_16: {
     Value *Ptr = EmitScalarExpr(E->getArg(0));
-    llvm::Type *ElLLVMTy =
-      cast<llvm::PointerType>(Ptr->getType())->getElementType();
-    llvm::StoreInst *Store = 
-      Builder.CreateStore(llvm::Constant::getNullValue(ElLLVMTy), Ptr);
     QualType ElTy = E->getArg(0)->getType()->getPointeeType();
     CharUnits StoreSize = getContext().getTypeSizeInChars(ElTy);
+    llvm::Type *ITy = llvm::IntegerType::get(getLLVMContext(),
+                                             StoreSize.getQuantity() * 8);
+    Ptr = Builder.CreateBitCast(Ptr, ITy->getPointerTo());
+    llvm::StoreInst *Store = 
+      Builder.CreateStore(llvm::Constant::getNullValue(ITy), Ptr);
     Store->setAlignment(StoreSize.getQuantity());
     Store->setAtomic(llvm::Release);
     return RValue::get(0);
@@ -1264,9 +1265,13 @@ unsigned CodeGenFunction::GetPointeeAlignment(const Expr *Addr) {
   // Check if the type is a pointer.  The implicit cast operand might not be.
   while (Addr->getType()->isPointerType()) {
     QualType PtTy = Addr->getType()->getPointeeType();
-    unsigned NewA = getContext().getTypeAlignInChars(PtTy).getQuantity();
-    if (NewA > Align)
-      Align = NewA;
+    
+    // Can't get alignment of incomplete types.
+    if (!PtTy->isIncompleteType()) {
+      unsigned NewA = getContext().getTypeAlignInChars(PtTy).getQuantity();
+      if (NewA > Align)
+        Align = NewA;
+    }
 
     // If the address is an implicit cast, repeat with the cast operand.
     if (const ImplicitCastExpr *CastAddr = dyn_cast<ImplicitCastExpr>(Addr)) {
@@ -1626,10 +1631,10 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
         Int = Intrinsic::arm_neon_vld2; 
         break;
       case ARM::BI__builtin_neon_vld3_dup_v:
-        Int = Intrinsic::arm_neon_vld2; 
+        Int = Intrinsic::arm_neon_vld3; 
         break;
       case ARM::BI__builtin_neon_vld4_dup_v:
-        Int = Intrinsic::arm_neon_vld2; 
+        Int = Intrinsic::arm_neon_vld4; 
         break;
       default: llvm_unreachable("unknown vld_dup intrinsic?");
       }
@@ -1645,10 +1650,10 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
       Int = Intrinsic::arm_neon_vld2lane; 
       break;
     case ARM::BI__builtin_neon_vld3_dup_v:
-      Int = Intrinsic::arm_neon_vld2lane; 
+      Int = Intrinsic::arm_neon_vld3lane; 
       break;
     case ARM::BI__builtin_neon_vld4_dup_v:
-      Int = Intrinsic::arm_neon_vld2lane; 
+      Int = Intrinsic::arm_neon_vld4lane; 
       break;
     default: llvm_unreachable("unknown vld_dup intrinsic?");
     }

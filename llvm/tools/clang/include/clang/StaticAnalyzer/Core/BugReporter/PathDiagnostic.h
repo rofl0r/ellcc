@@ -19,6 +19,7 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/Optional.h"
 #include <deque>
 #include <iterator>
 #include <string>
@@ -357,18 +358,46 @@ public:
 };
 
 class PathDiagnosticEventPiece : public PathDiagnosticSpotPiece {
-  bool IsPrunable;
+  llvm::Optional<bool> IsPrunable;
+
+  /// If the event occurs in a different frame than the final diagnostic,
+  /// supply a message that will be used to construct an extra hint on the
+  /// returns from all the calls on the stack from this event to the final
+  /// diagnostic.
+  /// TODO: This should be a callback that constructs a string given the
+  /// ExplodedNode, which would allow the checkers to refer to the expression.
+  std::string CallStackMessage;
+
 public:
   PathDiagnosticEventPiece(const PathDiagnosticLocation &pos,
-                           StringRef s, bool addPosRange = true)
+                           StringRef s, bool addPosRange = true,
+                           StringRef callStackMsg = "")
     : PathDiagnosticSpotPiece(pos, s, Event, addPosRange),
-      IsPrunable(false) {}
+      CallStackMessage(callStackMsg) {}
 
   ~PathDiagnosticEventPiece();
 
-  void setPrunable(bool isPrunable) { IsPrunable = isPrunable; }
-  bool isPrunable() const { return IsPrunable; }
+  /// Mark the diagnostic piece as being potentially prunable.  This
+  /// flag may have been previously set, at which point it will not
+  /// be reset unless one specifies to do so.
+  void setPrunable(bool isPrunable, bool override = false) {
+    if (IsPrunable.hasValue() && !override)
+     return;
+    IsPrunable = isPrunable;
+  }
+
+  /// Return true if the diagnostic piece is prunable.
+  bool isPrunable() const {
+    return IsPrunable.hasValue() ? IsPrunable.getValue() : false;
+  }
   
+  StringRef getCallStackMessage() {
+    if (!CallStackMessage.empty())
+      return CallStackMessage;
+    else
+      return StringRef();
+  }
+
   static inline bool classof(const PathDiagnosticPiece *P) {
     return P->getKind() == Event;
   }
@@ -377,16 +406,27 @@ public:
 class PathDiagnosticCallPiece : public PathDiagnosticPiece {
   PathDiagnosticCallPiece(const Decl *callerD,
                           const PathDiagnosticLocation &callReturnPos)
-    : PathDiagnosticPiece(Call), Caller(callerD),
-      Callee(0), callReturn(callReturnPos) {}
+    : PathDiagnosticPiece(Call), Caller(callerD), Callee(0),
+      NoExit(false), callReturn(callReturnPos) {}
 
-  PathDiagnosticCallPiece(PathPieces &oldPath)
-    : PathDiagnosticPiece(Call), Caller(0), Callee(0), path(oldPath) {}
+  PathDiagnosticCallPiece(PathPieces &oldPath, const Decl *caller)
+    : PathDiagnosticPiece(Call), Caller(caller), Callee(0),
+      NoExit(true), path(oldPath) {}
   
   const Decl *Caller;
   const Decl *Callee;
+
+  // Flag signifying that this diagnostic has only call enter and no matching
+  // call exit.
+  bool NoExit;
+
+  // The custom string, which should appear after the call Return Diagnostic.
+  // TODO: Should we allow multiple diagnostics?
+  std::string CallStackMessage;
+
 public:
   PathDiagnosticLocation callEnter;
+  PathDiagnosticLocation callEnterWithin;
   PathDiagnosticLocation callReturn;  
   PathPieces path;
   
@@ -397,11 +437,18 @@ public:
   const Decl *getCallee() const { return Callee; }
   void setCallee(const CallEnter &CE, const SourceManager &SM);
   
+  bool hasCallStackMessage() { return !CallStackMessage.empty(); }
+  void setCallStackMessage(StringRef st) {
+    CallStackMessage = st;
+  }
+
   virtual PathDiagnosticLocation getLocation() const {
     return callEnter;
   }
   
   IntrusiveRefCntPtr<PathDiagnosticEventPiece> getCallEnterEvent() const;
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece>
+    getCallEnterWithinCallerEvent() const;
   IntrusiveRefCntPtr<PathDiagnosticEventPiece> getCallExitEvent() const;
 
   virtual void flattenLocations() {
@@ -415,7 +462,8 @@ public:
                                             const CallExit &CE,
                                             const SourceManager &SM);
   
-  static PathDiagnosticCallPiece *construct(PathPieces &pieces);
+  static PathDiagnosticCallPiece *construct(PathPieces &pieces,
+                                            const Decl *caller);
   
   virtual void Profile(llvm::FoldingSetNodeID &ID) const;
 

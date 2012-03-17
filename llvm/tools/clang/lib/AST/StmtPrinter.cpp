@@ -603,6 +603,14 @@ void StmtPrinter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
     OS << Node->getExplicitProperty()->getName();
 }
 
+void StmtPrinter::VisitObjCSubscriptRefExpr(ObjCSubscriptRefExpr *Node) {
+  
+  PrintExpr(Node->getBaseExpr());
+  OS << "[";
+  PrintExpr(Node->getKeyExpr());
+  OS << "]";
+}
+
 void StmtPrinter::VisitPredefinedExpr(PredefinedExpr *Node) {
   switch (Node->getIdentType()) {
     default:
@@ -1214,6 +1222,39 @@ void StmtPrinter::VisitCXXUuidofExpr(CXXUuidofExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitUserDefinedLiteral(UserDefinedLiteral *Node) {
+  switch (Node->getLiteralOperatorKind()) {
+  case UserDefinedLiteral::LOK_Raw:
+    OS << cast<StringLiteral>(Node->getArg(0)->IgnoreImpCasts())->getString();
+    break;
+  case UserDefinedLiteral::LOK_Template: {
+    DeclRefExpr *DRE = cast<DeclRefExpr>(Node->getCallee()->IgnoreImpCasts());
+    const TemplateArgumentList *Args =
+      cast<FunctionDecl>(DRE->getDecl())->getTemplateSpecializationArgs();
+    assert(Args);
+    const TemplateArgument &Pack = Args->get(0);
+    for (TemplateArgument::pack_iterator I = Pack.pack_begin(),
+                                         E = Pack.pack_end(); I != E; ++I) {
+      char C = (char)I->getAsIntegral()->getZExtValue();
+      OS << C;
+    }
+    break;
+  }
+  case UserDefinedLiteral::LOK_Integer: {
+    // Print integer literal without suffix.
+    IntegerLiteral *Int = cast<IntegerLiteral>(Node->getCookedLiteral());
+    OS << Int->getValue().toString(10, /*isSigned*/false);
+    break;
+  }
+  case UserDefinedLiteral::LOK_Floating:
+  case UserDefinedLiteral::LOK_String:
+  case UserDefinedLiteral::LOK_Character:
+    PrintExpr(Node->getCookedLiteral());
+    break;
+  }
+  OS << Node->getUDSuffix()->getName();
+}
+
 void StmtPrinter::VisitCXXBoolLiteralExpr(CXXBoolLiteralExpr *Node) {
   OS << (Node->getValue() ? "true" : "false");
 }
@@ -1646,6 +1687,41 @@ void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {
   VisitStringLiteral(Node->getString());
 }
 
+void StmtPrinter::VisitObjCNumericLiteral(ObjCNumericLiteral *E) {
+  OS << "@";
+  Visit(E->getNumber());
+}
+
+void StmtPrinter::VisitObjCArrayLiteral(ObjCArrayLiteral *E) {
+  OS << "@[ ";
+  StmtRange ch = E->children();
+  if (ch.first != ch.second) {
+    while (1) {
+      Visit(*ch.first);
+      ++ch.first;
+      if (ch.first == ch.second) break;
+      OS << ", ";
+    }
+  }
+  OS << " ]";
+}
+
+void StmtPrinter::VisitObjCDictionaryLiteral(ObjCDictionaryLiteral *E) {
+  OS << "@{ ";
+  for (unsigned I = 0, N = E->getNumElements(); I != N; ++I) {
+    if (I > 0)
+      OS << ", ";
+    
+    ObjCDictionaryElement Element = E->getKeyValueElement(I);
+    Visit(Element.Key);
+    OS << " : ";
+    Visit(Element.Value);
+    if (Element.isPackExpansion())
+      OS << "...";
+  }
+  OS << " }";
+}
+
 void StmtPrinter::VisitObjCEncodeExpr(ObjCEncodeExpr *Node) {
   OS << "@encode(" << Node->getEncodedType().getAsString(Policy) << ')';
 }
@@ -1696,6 +1772,10 @@ void StmtPrinter::VisitObjCMessageExpr(ObjCMessageExpr *Mess) {
   OS << "]";
 }
 
+void StmtPrinter::VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *Node) {
+  OS << (Node->getValue() ? "__objc_yes" : "__objc_no");
+}
+
 void
 StmtPrinter::VisitObjCIndirectCopyRestoreExpr(ObjCIndirectCopyRestoreExpr *E) {
   PrintExpr(E->getSubExpr());
@@ -1736,10 +1816,6 @@ void StmtPrinter::VisitBlockExpr(BlockExpr *Node) {
   }
 }
 
-void StmtPrinter::VisitBlockDeclRefExpr(BlockDeclRefExpr *Node) {
-  OS << *Node->getDecl();
-}
-
 void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) { 
   PrintExpr(Node->getSourceExpr());
 }
@@ -1757,7 +1833,7 @@ void StmtPrinter::VisitAsTypeExpr(AsTypeExpr *Node) {
 
 void Stmt::dumpPretty(ASTContext& Context) const {
   printPretty(llvm::errs(), Context, 0,
-              PrintingPolicy(Context.getLangOptions()));
+              PrintingPolicy(Context.getLangOpts()));
 }
 
 void Stmt::printPretty(raw_ostream &OS, ASTContext& Context,
