@@ -953,7 +953,7 @@ void Clang::AddSparcTargetArgs(const ArgList &Args,
     default:
       // Assume "soft", but warn the user we are guessing.
       FloatABI = "soft";
-      D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+      // RICH: D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
       break;
     }
   }
