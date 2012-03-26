@@ -47,7 +47,7 @@ extern "C" void* _ReturnAddress(void);
 # define ALIAS(x) __attribute__((alias(x)))
 # define ALIGNED(x) __attribute__((aligned(x)))
 # define NOINLINE __attribute__((noinline))
-# define NORETURN  // FIXME: should be __attribute__((noreturn)), revisit later.
+# define NORETURN  __attribute__((noreturn))
 
 # define ASAN_INTERFACE_ATTRIBUTE __attribute__((visibility("default")))
 #endif  // defined(_WIN32)
@@ -218,6 +218,15 @@ void PoisonShadowPartialRightRedzone(uintptr_t addr,
                                      uintptr_t size,
                                      uintptr_t redzone_size,
                                      uint8_t value);
+
+// Platfrom-specific options.
+#ifdef __APPLE__
+bool PlatformHasDifferentMemcpyAndMemmove();
+# define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE \
+    (PlatformHasDifferentMemcpyAndMemmove())
+#else
+# define PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE true
+#endif  // __APPLE__
 
 extern size_t FLAG_quarantine_size;
 extern int    FLAG_demangle;

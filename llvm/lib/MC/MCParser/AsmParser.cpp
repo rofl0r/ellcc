@@ -1528,6 +1528,11 @@ bool AsmParser::HandleMacroEntry(StringRef Name, SMLoc NameLoc,
     }
     Lex();
   }
+  // If there weren't any arguments, erase the token vector so everything
+  // else knows that. Leaving around the vestigal empty token list confuses
+  // things.
+  if (MacroArguments.size() == 1 && MacroArguments.back().empty())
+    MacroArguments.clear();
 
   // Macro instantiation is lexical, unfortunately. We construct a new buffer
   // to hold the macro body with substitutions.
@@ -1624,6 +1629,8 @@ bool AsmParser::ParseAssignment(StringRef Name, bool allow_redef) {
       return Error(EqualLoc, "Recursive use of '" + Name + "'");
     else if (Sym->isUndefined() && !Sym->isUsed() && !Sym->isVariable())
       ; // Allow redefinitions of undefined symbols only used in directives.
+    else if (Sym->isVariable() && !Sym->isUsed() && allow_redef)
+      ; // Allow redefinitions of variables that haven't yet been used.
     else if (!Sym->isUndefined() && (!Sym->isVariable() || !allow_redef))
       return Error(EqualLoc, "redefinition of '" + Name + "'");
     else if (!Sym->isVariable())

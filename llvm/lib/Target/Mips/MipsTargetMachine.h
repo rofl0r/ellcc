@@ -14,16 +14,16 @@
 #ifndef MIPSTARGETMACHINE_H
 #define MIPSTARGETMACHINE_H
 
-#include "MipsSubtarget.h"
+#include "MipsFrameLowering.h"
 #include "MipsInstrInfo.h"
 #include "MipsISelLowering.h"
-#include "MipsFrameLowering.h"
+#include "MipsJITInfo.h"
 #include "MipsSelectionDAGInfo.h"
 #include "MipsIntrinsicInfo.h"
+#include "MipsSubtarget.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetFrameLowering.h"
-#include "MipsJITInfo.h"
 
 namespace llvm {
   class formatted_raw_ostream;

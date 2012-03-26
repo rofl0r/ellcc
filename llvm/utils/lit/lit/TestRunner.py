@@ -23,6 +23,9 @@ kUseCloseFDs = not kIsWindows
 # Use temporary files to replace /dev/null on Windows.
 kAvoidDevNull = kIsWindows
 
+# Negate if win32file is not found.
+kHaveWin32File = kIsWindows
+
 def RemoveForce(f):
     try:
         os.remove(f)
@@ -30,28 +33,45 @@ def RemoveForce(f):
         pass
 
 def WinWaitReleased(f):
-    import time, win32file
-    retry_cnt = 256
-    while True:
-        try:
-            h = win32file.CreateFile(
-                f,
-                0, # Querying, neither GENERIC_READ nor GENERIC_WRITE
-                0, # Exclusive
-                None,
-                win32file.OPEN_EXISTING,
-                win32file.FILE_ATTRIBUTE_NORMAL,
-                None)
-            h.close()
-            break
-        except WindowsError, (winerror, strerror):
-            retry_cnt = retry_cnt - 1
-            if retry_cnt <= 0:
-                raise
-            elif winerror == 32: # ERROR_SHARING_VIOLATION
-                time.sleep(0.01)
-            else:
-                raise
+    global kHaveWin32File
+    if not kHaveWin32File:
+        return
+    try:
+        import time
+        import win32file, pywintypes
+        retry_cnt = 256
+        while True:
+            try:
+                h = win32file.CreateFile(
+                    f,
+                    win32file.GENERIC_READ,
+                    0, # Exclusive
+                    None,
+                    win32file.OPEN_EXISTING,
+                    win32file.FILE_ATTRIBUTE_NORMAL,
+                    None)
+                h.close()
+                return
+            except WindowsError, (winerror, strerror):
+                retry_cnt = retry_cnt - 1
+                if retry_cnt <= 0:
+                    raise
+                elif winerror == 32: # ERROR_SHARING_VIOLATION
+                    pass
+                else:
+                    raise
+            except pywintypes.error, e:
+                retry_cnt = retry_cnt - 1
+                if retry_cnt <= 0:
+                    raise
+                elif e[0]== 32: # ERROR_SHARING_VIOLATION
+                    pass
+                else:
+                    raise
+            time.sleep(0.01)
+    except ImportError, e:
+        kHaveWin32File = False
+        return
 
 def executeCommand(command, cwd=None, env=None):
     p = subprocess.Popen(command, cwd=cwd,
@@ -451,6 +471,7 @@ def parseIntegratedTestScript(test, normalize_slashes=False,
     substitutions.extend([('%s', sourcepath),
                           ('%S', sourcedir),
                           ('%p', sourcedir),
+                          ('%{pathsep}', os.pathsep),
                           ('%t', tmpBase + '.tmp'),
                           ('%T', tmpDir),
                           # FIXME: Remove this once we kill DejaGNU.

@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define DEBUG_TYPE "CoreEngine"
+
 #include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CoreEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
@@ -20,8 +22,15 @@
 #include "clang/AST/StmtCXX.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/Statistic.h"
+
 using namespace clang;
 using namespace ento;
+
+STATISTIC(NumReachedMaxSteps,
+            "The # of times we reached the max number of steps.");
+STATISTIC(NumPathsExplored,
+            "The # of paths explored by the analyzer.");
 
 //===----------------------------------------------------------------------===//
 // Worklist classes for exploration of reachable states.
@@ -187,8 +196,10 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
 
   while (WList->hasWork()) {
     if (!UnlimitedSteps) {
-      if (Steps == 0)
+      if (Steps == 0) {
+        NumReachedMaxSteps++;
         break;
+      }
       --Steps;
     }
 
@@ -538,8 +549,10 @@ void CoreEngine::enqueueEndOfFunction(ExplodedNodeSet &Set) {
       N = generateCallExitNode(N);
       if (N)
         WList->enqueue(N);
-    } else
+    } else {
       G->addEndOfPath(N);
+      NumPathsExplored++;
+    }
   }
 }
 

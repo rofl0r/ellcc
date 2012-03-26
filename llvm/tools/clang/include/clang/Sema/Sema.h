@@ -1091,6 +1091,9 @@ public:
                                         const LookupResult &Previous,
                                         Scope *S);
   bool DiagnoseClassNameShadow(DeclContext *DC, DeclarationNameInfo Info);
+  bool diagnoseQualifiedDeclInClass(CXXScopeSpec &SS, DeclContext *DC,
+                                    DeclarationName Name,
+                                    SourceLocation Loc);
   void DiagnoseFunctionSpecifiers(Declarator& D);
   void CheckShadow(Scope *S, VarDecl *D, const LookupResult& R);
   void CheckShadow(Scope *S, VarDecl *D);
@@ -4128,6 +4131,26 @@ public:
   /// \brief When true, access checking violations are treated as SFINAE
   /// failures rather than hard errors.
   bool AccessCheckingSFINAE;
+
+  /// \brief RAII object used to temporarily suppress access checking.
+  class SuppressAccessChecksRAII {
+    Sema &S;
+    bool SuppressingAccess;
+
+  public:
+    SuppressAccessChecksRAII(Sema &S, bool Suppress)
+      : S(S), SuppressingAccess(Suppress) {
+      if (Suppress) S.ActOnStartSuppressingAccessChecks();
+    }
+    ~SuppressAccessChecksRAII() {
+      done();
+    }
+    void done() {
+      if (!SuppressingAccess) return;
+      S.ActOnStopSuppressingAccessChecks();
+      SuppressingAccess = false;
+    }
+  };
 
   void ActOnStartSuppressingAccessChecks();
   void ActOnStopSuppressingAccessChecks();

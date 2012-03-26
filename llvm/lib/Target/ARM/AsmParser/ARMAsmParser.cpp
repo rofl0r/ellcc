@@ -1102,7 +1102,7 @@ public:
   }
 
   bool isVecListDPairSpaced() const {
-    if (!isSingleSpacedVectorList()) return false;
+    if (isSingleSpacedVectorList()) return false;
     return (ARMMCRegisterClasses[ARM::DPairSpcRegClassID]
               .contains(VectorList.RegNum));
   }
@@ -2854,8 +2854,12 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     if (!RC->contains(Reg))
       return Error(RegLoc, "invalid register in register list");
     // List must be monotonically increasing.
-    if (getARMRegisterNumbering(Reg) < getARMRegisterNumbering(OldReg))
-      return Error(RegLoc, "register list not in ascending order");
+    if (getARMRegisterNumbering(Reg) < getARMRegisterNumbering(OldReg)) {
+      if (ARMMCRegisterClasses[ARM::GPRRegClassID].contains(Reg))
+        Warning(RegLoc, "register list not in ascending order");
+      else
+        return Error(RegLoc, "register list not in ascending order");
+    }
     if (getARMRegisterNumbering(Reg) == getARMRegisterNumbering(OldReg)) {
       Warning(RegLoc, "duplicated register (" + RegTok.getString() +
               ") in register list");
@@ -2901,6 +2905,12 @@ parseVectorLane(VectorLaneTy &LaneKind, unsigned &Index) {
       Parser.Lex(); // Eat the ']'.
       return MatchOperand_Success;
     }
+
+    // There's an optional '#' token here. Normally there wouldn't be, but
+    // inline assemble puts one in, and it's friendly to accept that.
+    if (Parser.getTok().is(AsmToken::Hash))
+      Parser.Lex(); // Eat the '#'
+
     const MCExpr *LaneIndex;
     SMLoc Loc = Parser.getTok().getLoc();
     if (getParser().ParseExpression(LaneIndex)) {

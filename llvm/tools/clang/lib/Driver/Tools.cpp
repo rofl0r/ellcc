@@ -107,9 +107,9 @@ static void addDirectoryList(const ArgList &Args,
       CmdArgs.push_back(".");
     } else {
       CmdArgs.push_back(ArgName);
-      CmdArgs.push_back(Args.MakeArgString(Dirs.split(Delim).first));
+      CmdArgs.push_back(Args.MakeArgString(Dirs.substr(0, Delim)));
     }
-    Dirs = Dirs.split(Delim).second;
+    Dirs = Dirs.substr(Delim + 1);
   }
 
   if (Dirs.empty()) { // Trailing colon.
@@ -485,6 +485,8 @@ static const char *getLLVMArchSuffixForARM(StringRef CPU) {
     .Cases("arm1176jzf-s",  "mpcorenovfp",  "mpcore", "v6")
     .Cases("arm1156t2-s",  "arm1156t2f-s", "v6t2")
     .Cases("cortex-a8", "cortex-a9", "v7")
+    .Case("cortex-m3", "v7m")
+    .Case("cortex-m0", "v6m")
     .Default("");
 }
 
@@ -837,30 +839,57 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   CmdArgs.push_back("-target-abi");
   CmdArgs.push_back(ABIName);
 
-  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  // Select the float ABI as determined by -msoft-float, -mhard-float,
+  // and -mfloat-abi=.
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
-                               options::OPT_mhard_float)) {
+                               options::OPT_mhard_float,
+                               options::OPT_mfloat_abi_EQ)) {
     if (A->getOption().matches(options::OPT_msoft_float))
       FloatABI = "soft";
     else if (A->getOption().matches(options::OPT_mhard_float))
       FloatABI = "hard";
+    else {
+      FloatABI = A->getValue(Args);
+      if (FloatABI != "soft" && FloatABI != "single" && FloatABI != "hard") {
+        D.Diag(diag::err_drv_invalid_mfloat_abi)
+          << A->getAsString(Args);
+        FloatABI = "hard";
+      }
+    }
   }
 
   // If unspecified, choose the default based on the platform.
   if (FloatABI.empty()) {
-    // Assume "soft", but warn the user we are guessing.
-    FloatABI = "soft";
-    D.Diag(diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+    // Assume "hard", because it's a default value used by gcc.
+    // When we start to recognize specific target MIPS processors,
+    // we will be able to select the default more correctly.
+    FloatABI = "hard";
   }
 
   if (FloatABI == "soft") {
     // Floating point operations and argument passing are soft.
-    //
-    // FIXME: This changes CPP defines, we need -target-soft-float.
     CmdArgs.push_back("-msoft-float");
-  } else {
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("soft");
+
+    // FIXME: Note, this is a hack. We need to pass the selected float
+    // mode to the MipsTargetInfoBase to define appropriate macros there.
+    // Now it is the only method.
+    CmdArgs.push_back("-target-feature");
+    CmdArgs.push_back("+soft-float");
+  }
+  else if (FloatABI == "single") {
+    // Restrict the use of hardware floating-point
+    // instructions to 32-bit operations.
+    CmdArgs.push_back("-target-feature");
+    CmdArgs.push_back("+single-float");
+  }
+  else {
+    // Floating point operations and argument passing are hard.
     assert(FloatABI == "hard" && "Invalid float abi!");
     // RICH: CmdArgs.push_back("-mhard-float");
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("hard");
   }
 }
 

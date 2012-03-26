@@ -3764,6 +3764,10 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
       Loc = VD->getLocation();
   }
 
+  // For ObjC methods, give the start location of the method name.
+  if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D))
+    Loc = MD->getSelectorStartLoc();
+
   return cxloc::translateSourceLocation(getCursorContext(C), Loc);
 }
 
@@ -3867,6 +3871,14 @@ static SourceRange getRawCursorExtent(CXCursor C) {
     ASTUnit *TU = getCursorASTUnit(C);
     SourceRange Range = cxcursor::getCursorInclusionDirective(C)->getSourceRange();
     return TU->mapRangeFromPreamble(Range);
+  }
+
+  if (C.kind == CXCursor_TranslationUnit) {
+    ASTUnit *TU = getCursorASTUnit(C);
+    FileID MainID = TU->getSourceManager().getMainFileID();
+    SourceLocation Start = TU->getSourceManager().getLocForStartOfFile(MainID);
+    SourceLocation End = TU->getSourceManager().getLocForEndOfFile(MainID);
+    return SourceRange(Start, End);
   }
 
   if (C.kind >= CXCursor_FirstDecl && C.kind <= CXCursor_LastDecl) {

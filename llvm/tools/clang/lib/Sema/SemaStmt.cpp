@@ -881,7 +881,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
           EI++;
         if (EI == EIend || EI->first > CI->first)
           Diag(CI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
-            << ED->getDeclName();
+            << CondTypeBeforePromotion;
       }
       // See which of case ranges aren't in enum
       EI = EnumVals.begin();
@@ -892,7 +892,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
         if (EI == EIend || EI->first != RI->first) {
           Diag(RI->second->getLHS()->getExprLoc(), diag::warn_not_in_enum)
-            << ED->getDeclName();
+            << CondTypeBeforePromotion;
         }
 
         llvm::APSInt Hi = 
@@ -902,7 +902,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
           EI++;
         if (EI == EIend || EI->first != Hi)
           Diag(RI->second->getRHS()->getExprLoc(), diag::warn_not_in_enum)
-            << ED->getDeclName();
+            << CondTypeBeforePromotion;
       }
 
       // Check which enum vals aren't in switch
@@ -1886,8 +1886,13 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         !(getLangOpts().CPlusPlus &&
           (RetValExp->isTypeDependent() ||
            RetValExp->getType()->isVoidType()))) {
-      Diag(ReturnLoc, diag::err_return_block_has_expr);
-      RetValExp = 0;
+      if (!getLangOpts().CPlusPlus &&
+          RetValExp->getType()->isVoidType())
+        Diag(ReturnLoc, diag::ext_return_has_void_expr) << "literal" << 2;
+      else {
+        Diag(ReturnLoc, diag::err_return_block_has_expr);
+        RetValExp = 0;
+      }
     }
   } else if (!RetValExp) {
     return StmtError(Diag(ReturnLoc, diag::err_block_return_missing_expr));

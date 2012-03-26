@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Object/COFF.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
@@ -300,25 +301,7 @@ error_code COFFObjectFile::getSectionNext(DataRefImpl Sec,
 error_code COFFObjectFile::getSectionName(DataRefImpl Sec,
                                           StringRef &Result) const {
   const coff_section *sec = toSec(Sec);
-  StringRef name;
-  if (sec->Name[7] == 0)
-    // Null terminated, let ::strlen figure out the length.
-    name = sec->Name;
-  else
-    // Not null terminated, use all 8 bytes.
-    name = StringRef(sec->Name, 8);
-
-  // Check for string table entry. First byte is '/'.
-  if (name[0] == '/') {
-    uint32_t Offset;
-    if (name.substr(1).getAsInteger(10, Offset))
-      return object_error::parse_failed;
-    if (error_code ec = getString(Offset, name))
-      return ec;
-  }
-
-  Result = name;
-  return object_error::success;
+  return getSectionName(sec, Result);
 }
 
 error_code COFFObjectFile::getSectionAddress(DataRefImpl Sec,
@@ -338,16 +321,10 @@ error_code COFFObjectFile::getSectionSize(DataRefImpl Sec,
 error_code COFFObjectFile::getSectionContents(DataRefImpl Sec,
                                               StringRef &Result) const {
   const coff_section *sec = toSec(Sec);
-  // The only thing that we need to verify is that the contents is contained
-  // within the file bounds. We don't need to make sure it doesn't cover other
-  // data, as there's nothing that says that is not allowed.
-  uintptr_t con_start = uintptr_t(base()) + sec->PointerToRawData;
-  uintptr_t con_end = con_start + sec->SizeOfRawData;
-  if (con_end > uintptr_t(Data->getBufferEnd()))
-    return object_error::parse_failed;
-  Result = StringRef(reinterpret_cast<const char*>(con_start),
-                     sec->SizeOfRawData);
-  return object_error::success;
+  ArrayRef<uint8_t> Res;
+  error_code EC = getSectionContents(sec, Res);
+  Result = StringRef(reinterpret_cast<const char*>(Res.data()), Res.size());
+  return EC;
 }
 
 error_code COFFObjectFile::getSectionAlignment(DataRefImpl Sec,
@@ -628,6 +605,43 @@ error_code COFFObjectFile::getSymbolName(const coff_symbol *symbol,
   else
     // Not null terminated, use all 8 bytes.
     Res = StringRef(symbol->Name.ShortName, 8);
+  return object_error::success;
+}
+
+error_code COFFObjectFile::getSectionName(const coff_section *Sec,
+                                          StringRef &Res) const {
+  StringRef Name;
+  if (Sec->Name[7] == 0)
+    // Null terminated, let ::strlen figure out the length.
+    Name = Sec->Name;
+  else
+    // Not null terminated, use all 8 bytes.
+    Name = StringRef(Sec->Name, 8);
+
+  // Check for string table entry. First byte is '/'.
+  if (Name[0] == '/') {
+    uint32_t Offset;
+    if (Name.substr(1).getAsInteger(10, Offset))
+      return object_error::parse_failed;
+    if (error_code ec = getString(Offset, Name))
+      return ec;
+  }
+
+  Res = Name;
+  return object_error::success;
+}
+
+error_code COFFObjectFile::getSectionContents(const coff_section *Sec,
+                                              ArrayRef<uint8_t> &Res) const {
+  // The only thing that we need to verify is that the contents is contained
+  // within the file bounds. We don't need to make sure it doesn't cover other
+  // data, as there's nothing that says that is not allowed.
+  uintptr_t ConStart = uintptr_t(base()) + Sec->PointerToRawData;
+  uintptr_t ConEnd = ConStart + Sec->SizeOfRawData;
+  if (ConEnd > uintptr_t(Data->getBufferEnd()))
+    return object_error::parse_failed;
+  Res = ArrayRef<uint8_t>(reinterpret_cast<const unsigned char*>(ConStart),
+                          Sec->SizeOfRawData);
   return object_error::success;
 }
 

@@ -46,6 +46,10 @@ int64_t internal_simple_strtoll(const char *nptr, char **endptr, int base);
 
 void InitializeAsanInterceptors();
 
+#if defined(__APPLE__)
+void InitializeMacInterceptors();
+#endif  // __APPLE__
+
 }  // namespace __asan
 
 #endif  // ASAN_INTERCEPTORS_H

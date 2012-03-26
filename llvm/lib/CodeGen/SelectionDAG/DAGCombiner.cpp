@@ -7353,6 +7353,7 @@ SDValue DAGCombiner::visitEXTRACT_VECTOR_ELT(SDNode *N) {
     // Since we're explcitly calling ReplaceAllUses, add the new node to the
     // worklist explicitly as well.
     AddToWorkList(Load.getNode());
+    AddUsersToWorkList(Load.getNode()); // Add users too
     // Make sure to revisit this node to clean it up; it will usually be dead.
     AddToWorkList(N);
     return SDValue(N, 0);
@@ -7473,6 +7474,12 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   // Check to see if this is a BUILD_VECTOR of a bunch of EXTRACT_VECTOR_ELT
   // operations.  If so, and if the EXTRACT_VECTOR_ELT vector inputs come from
   // at most two distinct vectors, turn this into a shuffle node.
+
+  // May only combine to shuffle after legalize if shuffle is legal.
+  if (LegalOperations &&
+      !TLI.isOperationLegalOrCustom(ISD::VECTOR_SHUFFLE, VT))
+    return SDValue();
+
   SDValue VecIn1, VecIn2;
   for (unsigned i = 0; i != NumInScalars; ++i) {
     // Ignore undef inputs.

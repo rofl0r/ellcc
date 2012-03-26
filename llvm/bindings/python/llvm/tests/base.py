@@ -7,9 +7,11 @@ POSSIBLE_TEST_BINARIES = [
 ]
 
 POSSIBLE_TEST_BINARY_PATHS = [
+    '/usr/lib/debug',
     '/lib',
     '/usr/lib',
     '/usr/local/lib',
+    '/lib/i386-linux-gnu',
 ]
 
 class TestBase(unittest.TestCase):
@@ -27,3 +29,4 @@ class TestBase(unittest.TestCase):
                     return path
 
         raise Exception('No suitable test binaries available!')
+    get_test_binary.__test__ = False

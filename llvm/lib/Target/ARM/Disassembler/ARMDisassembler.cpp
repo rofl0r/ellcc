@@ -323,8 +323,8 @@ static DecodeStatus DecodeT2LdStPre(llvm::MCInst &Inst, unsigned Val,
 static DecodeStatus DecodeT2ShifterImmOperand(llvm::MCInst &Inst, unsigned Val,
                                 uint64_t Address, const void *Decoder);
 
-
-
+static DecodeStatus DecodeLDR(llvm::MCInst &Inst, unsigned Val,
+                                uint64_t Address, const void *Decoder);
 #include "ARMGenDisassemblerTables.inc"
 #include "ARMGenInstrInfo.inc"
 #include "ARMGenEDInfo.inc"
@@ -869,8 +869,14 @@ static DecodeStatus DecodeGPRRegisterClass(llvm::MCInst &Inst, unsigned RegNo,
 static DecodeStatus
 DecodeGPRnopcRegisterClass(llvm::MCInst &Inst, unsigned RegNo,
                            uint64_t Address, const void *Decoder) {
-  if (RegNo == 15) return MCDisassembler::Fail;
-  return DecodeGPRRegisterClass(Inst, RegNo, Address, Decoder);
+  DecodeStatus S = MCDisassembler::Success;
+  
+  if (RegNo == 15) 
+    S = MCDisassembler::SoftFail;
+
+  Check(S, DecodeGPRRegisterClass(Inst, RegNo, Address, Decoder));
+
+  return S;
 }
 
 static DecodeStatus DecodetGPRRegisterClass(llvm::MCInst &Inst, unsigned RegNo,
@@ -1530,6 +1536,7 @@ DecodeAddrMode3Instruction(llvm::MCInst &Inst, unsigned Insn,
   unsigned pred = fieldFromInstruction32(Insn, 28, 4);
   unsigned W = fieldFromInstruction32(Insn, 21, 1);
   unsigned P = fieldFromInstruction32(Insn, 24, 1);
+  unsigned Rt2 = Rt + 1;
 
   bool writeback = (W == 1) | (P == 0);
 
@@ -1541,7 +1548,86 @@ DecodeAddrMode3Instruction(llvm::MCInst &Inst, unsigned Insn,
     case ARM::LDRD:
     case ARM::LDRD_PRE:
     case ARM::LDRD_POST:
-      if (Rt & 0x1) return MCDisassembler::Fail;
+      if (Rt & 0x1) S = MCDisassembler::SoftFail;
+      break;
+    default:
+      break;
+  }
+  switch (Inst.getOpcode()) {
+    case ARM::STRD:
+    case ARM::STRD_PRE:
+    case ARM::STRD_POST:
+      if (P == 0 && W == 1)
+        S = MCDisassembler::SoftFail;
+      
+      if (writeback && (Rn == 15 || Rn == Rt || Rn == Rt2))
+        S = MCDisassembler::SoftFail;
+      if (type && Rm == 15)
+        S = MCDisassembler::SoftFail;
+      if (Rt2 == 15)
+        S = MCDisassembler::SoftFail;
+      if (!type && fieldFromInstruction32(Insn, 8, 4))
+        S = MCDisassembler::SoftFail;
+      break;
+    case ARM::STRH:
+    case ARM::STRH_PRE:
+    case ARM::STRH_POST:
+      if (Rt == 15)
+        S = MCDisassembler::SoftFail;
+      if (writeback && (Rn == 15 || Rn == Rt))
+        S = MCDisassembler::SoftFail;
+      if (!type && Rm == 15)
+        S = MCDisassembler::SoftFail;
+      break;
+    case ARM::LDRD:
+    case ARM::LDRD_PRE:
+    case ARM::LDRD_POST:
+      if (type && Rn == 15){
+        if (Rt2 == 15)
+          S = MCDisassembler::SoftFail;
+        break;
+      }
+      if (P == 0 && W == 1)
+        S = MCDisassembler::SoftFail;
+      if (!type && (Rt2 == 15 || Rm == 15 || Rm == Rt || Rm == Rt2))
+        S = MCDisassembler::SoftFail;
+      if (!type && writeback && Rn == 15)
+        S = MCDisassembler::SoftFail;
+      if (writeback && (Rn == Rt || Rn == Rt2))
+        S = MCDisassembler::SoftFail;
+      break;
+    case ARM::LDRH:
+    case ARM::LDRH_PRE:
+    case ARM::LDRH_POST:
+      if (type && Rn == 15){
+        if (Rt == 15)
+          S = MCDisassembler::SoftFail;
+        break;
+      }
+      if (Rt == 15)
+        S = MCDisassembler::SoftFail;
+      if (!type && Rm == 15)
+        S = MCDisassembler::SoftFail;
+      if (!type && writeback && (Rn == 15 || Rn == Rt))
+        S = MCDisassembler::SoftFail;
+      break;
+    case ARM::LDRSH:
+    case ARM::LDRSH_PRE:
+    case ARM::LDRSH_POST:
+    case ARM::LDRSB:
+    case ARM::LDRSB_PRE:
+    case ARM::LDRSB_POST:
+      if (type && Rn == 15){
+        if (Rt == 15)
+          S = MCDisassembler::SoftFail;
+        break;
+      }
+      if (type && (Rt == 15 || (writeback && Rn == Rt)))
+        S = MCDisassembler::SoftFail;
+      if (!type && (Rt == 15 || Rm == 15))
+        S = MCDisassembler::SoftFail;
+      if (!type && writeback && (Rn == 15 || Rn == Rt))
+        S = MCDisassembler::SoftFail;
       break;
     default:
       break;
@@ -2313,6 +2399,8 @@ static DecodeStatus DecodeVSTInstruction(llvm::MCInst &Inst, unsigned Insn,
     case ARM::VST2b8wb_register:
     case ARM::VST2b16wb_register:
     case ARM::VST2b32wb_register:
+      Inst.addOperand(MCOperand::CreateImm(0));
+      break;
     case ARM::VST3d8_UPD:
     case ARM::VST3d16_UPD:
     case ARM::VST3d32_UPD:
@@ -2354,6 +2442,23 @@ static DecodeStatus DecodeVSTInstruction(llvm::MCInst &Inst, unsigned Insn,
     case ARM::VST1q16wb_fixed:
     case ARM::VST1q32wb_fixed:
     case ARM::VST1q64wb_fixed:
+    case ARM::VST1d8Twb_fixed:
+    case ARM::VST1d16Twb_fixed:
+    case ARM::VST1d32Twb_fixed:
+    case ARM::VST1d64Twb_fixed:
+    case ARM::VST1d8Qwb_fixed:
+    case ARM::VST1d16Qwb_fixed:
+    case ARM::VST1d32Qwb_fixed:
+    case ARM::VST1d64Qwb_fixed:
+    case ARM::VST2d8wb_fixed:
+    case ARM::VST2d16wb_fixed:
+    case ARM::VST2d32wb_fixed:
+    case ARM::VST2q8wb_fixed:
+    case ARM::VST2q16wb_fixed:
+    case ARM::VST2q32wb_fixed:
+    case ARM::VST2b8wb_fixed:
+    case ARM::VST2b16wb_fixed:
+    case ARM::VST2b32wb_fixed:
       break;
   }
 
@@ -3153,7 +3258,7 @@ static DecodeStatus DecodePostIdxReg(llvm::MCInst &Inst, unsigned Insn,
   unsigned Rm = fieldFromInstruction32(Insn, 0, 4);
   unsigned add = fieldFromInstruction32(Insn, 4, 1);
 
-  if (!Check(S, DecodeGPRRegisterClass(Inst, Rm, Address, Decoder)))
+  if (!Check(S, DecodeGPRnopcRegisterClass(Inst, Rm, Address, Decoder)))
     return MCDisassembler::Fail;
   Inst.addOperand(MCOperand::CreateImm(add));
 
@@ -4238,3 +4343,31 @@ static DecodeStatus DecodeVCVTQ(llvm::MCInst &Inst, unsigned Insn,
 
   return S;
 }
+
+static DecodeStatus DecodeLDR(llvm::MCInst &Inst, unsigned Val,
+                                uint64_t Address, const void *Decoder) {
+  DecodeStatus S = MCDisassembler::Success;
+
+  unsigned Rn = fieldFromInstruction32(Val, 16, 4);
+  unsigned Rt = fieldFromInstruction32(Val, 12, 4);
+  unsigned Rm = fieldFromInstruction32(Val, 0, 4);
+  Rm |= (fieldFromInstruction32(Val, 23, 1) << 4);
+  unsigned Cond = fieldFromInstruction32(Val, 28, 4);
+ 
+  if (fieldFromInstruction32(Val, 8, 4) != 0 || Rn == Rt)
+    S = MCDisassembler::SoftFail;
+
+  if (!Check(S, DecodeGPRnopcRegisterClass(Inst, Rt, Address, Decoder)))
+    return MCDisassembler::Fail;
+  if (!Check(S, DecodeGPRnopcRegisterClass(Inst, Rn, Address, Decoder)))
+    return MCDisassembler::Fail;
+  if (!Check(S, DecodeAddrMode7Operand(Inst, Rn, Address, Decoder))) 
+    return MCDisassembler::Fail;
+  if (!Check(S, DecodePostIdxReg(Inst, Rm, Address, Decoder)))
+    return MCDisassembler::Fail;
+  if (!Check(S, DecodePredicateOperand(Inst, Cond, Address, Decoder)))
+    return MCDisassembler::Fail;
+
+  return S;
+}
+

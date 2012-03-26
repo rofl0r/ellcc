@@ -16,6 +16,11 @@
 #include "PPCPerfectShuffle.h"
 #include "PPCTargetMachine.h"
 #include "MCTargetDesc/PPCPredicates.h"
+#include "llvm/CallingConv.h"
+#include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -24,16 +29,11 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
-#include "llvm/CallingConv.h"
-#include "llvm/Constants.h"
-#include "llvm/Function.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/DerivedTypes.h"
+#include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
 static bool CC_PPC_SVR4_Custom_Dummy(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
@@ -226,11 +226,23 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   // VASTART needs to be custom lowered to use the VarArgsFrameIndex
   setOperationAction(ISD::VASTART           , MVT::Other, Custom);
 
-  // VAARG is custom lowered with the 32-bit SVR4 ABI.
-  if (TM.getSubtarget<PPCSubtarget>().isSVR4ABI()
-      && !TM.getSubtarget<PPCSubtarget>().isPPC64()) {
-    setOperationAction(ISD::VAARG, MVT::Other, Custom);
-    setOperationAction(ISD::VAARG, MVT::i64, Custom);
+  if (TM.getSubtarget<PPCSubtarget>().isSVR4ABI()) {
+    if (TM.getSubtarget<PPCSubtarget>().isPPC64()) {
+      // VAARG always uses double-word chunks, so promote anything smaller.
+      setOperationAction(ISD::VAARG, MVT::i1, Promote);
+      AddPromotedToType (ISD::VAARG, MVT::i1, MVT::i64);
+      setOperationAction(ISD::VAARG, MVT::i8, Promote);
+      AddPromotedToType (ISD::VAARG, MVT::i8, MVT::i64);
+      setOperationAction(ISD::VAARG, MVT::i16, Promote);
+      AddPromotedToType (ISD::VAARG, MVT::i16, MVT::i64);
+      setOperationAction(ISD::VAARG, MVT::i32, Promote);
+      AddPromotedToType (ISD::VAARG, MVT::i32, MVT::i64);
+      setOperationAction(ISD::VAARG, MVT::Other, Expand);
+    } else {
+      // VAARG is custom lowered with the 32-bit SVR4 ABI.
+      setOperationAction(ISD::VAARG, MVT::Other, Custom);
+      setOperationAction(ISD::VAARG, MVT::i64, Custom);
+    }
   } else
     setOperationAction(ISD::VAARG, MVT::Other, Expand);
 

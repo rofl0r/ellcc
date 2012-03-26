@@ -1678,9 +1678,16 @@ namespace {
     void CheckForCFGHazards(const BasicBlock *BB,
                             DenseMap<const BasicBlock *, BBState> &BBStates,
                             BBState &MyStates) const;
+    bool VisitInstructionBottomUp(Instruction *Inst,
+                                  BasicBlock *BB,
+                                  MapVector<Value *, RRInfo> &Retains,
+                                  BBState &MyStates);
     bool VisitBottomUp(BasicBlock *BB,
                        DenseMap<const BasicBlock *, BBState> &BBStates,
                        MapVector<Value *, RRInfo> &Retains);
+    bool VisitInstructionTopDown(Instruction *Inst,
+                                 DenseMap<Value *, RRInfo> &Releases,
+                                 BBState &MyStates);
     bool VisitTopDown(BasicBlock *BB,
                       DenseMap<const BasicBlock *, BBState> &BBStates,
                       DenseMap<Value *, RRInfo> &Releases);
@@ -2136,17 +2143,26 @@ ObjCARCOpt::OptimizeRetainCall(Function &F, Instruction *Retain) {
 /// return true.
 bool
 ObjCARCOpt::OptimizeRetainRVCall(Function &F, Instruction *RetainRV) {
-  // Check for the argument being from an immediately preceding call.
+  // Check for the argument being from an immediately preceding call or invoke.
   Value *Arg = GetObjCArg(RetainRV);
   CallSite CS(Arg);
-  if (Instruction *Call = CS.getInstruction())
+  if (Instruction *Call = CS.getInstruction()) {
     if (Call->getParent() == RetainRV->getParent()) {
       BasicBlock::iterator I = Call;
       ++I;
       while (isNoopInstruction(I)) ++I;
       if (&*I == RetainRV)
         return false;
+    } else if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
+      BasicBlock *RetainRVParent = RetainRV->getParent();
+      if (II->getNormalDest() == RetainRVParent) {
+        BasicBlock::iterator I = RetainRVParent->begin();
+        while (isNoopInstruction(I)) ++I;
+        if (&*I == RetainRV)
+          return false;
+      }
     }
+  }
 
   // Check for being preceded by an objc_autoreleaseReturnValue on the same
   // pointer. In this case, we can delete the pair.
@@ -2516,6 +2532,164 @@ ObjCARCOpt::CheckForCFGHazards(const BasicBlock *BB,
 }
 
 bool
+ObjCARCOpt::VisitInstructionBottomUp(Instruction *Inst,
+                                     BasicBlock *BB,
+                                     MapVector<Value *, RRInfo> &Retains,
+                                     BBState &MyStates) {
+  bool NestingDetected = false;
+  InstructionClass Class = GetInstructionClass(Inst);
+  const Value *Arg = 0;
+
+  switch (Class) {
+  case IC_Release: {
+    Arg = GetObjCArg(Inst);
+
+    PtrState &S = MyStates.getPtrBottomUpState(Arg);
+
+    // If we see two releases in a row on the same pointer. If so, make
+    // a note, and we'll cicle back to revisit it after we've
+    // hopefully eliminated the second release, which may allow us to
+    // eliminate the first release too.
+    // Theoretically we could implement removal of nested retain+release
+    // pairs by making PtrState hold a stack of states, but this is
+    // simple and avoids adding overhead for the non-nested case.
+    if (S.GetSeq() == S_Release || S.GetSeq() == S_MovableRelease)
+      NestingDetected = true;
+
+    S.RRI.clear();
+
+    MDNode *ReleaseMetadata = Inst->getMetadata(ImpreciseReleaseMDKind);
+    S.SetSeq(ReleaseMetadata ? S_MovableRelease : S_Release);
+    S.RRI.ReleaseMetadata = ReleaseMetadata;
+    S.RRI.KnownSafe = S.IsKnownNested() || S.IsKnownIncremented();
+    S.RRI.IsTailCallRelease = cast<CallInst>(Inst)->isTailCall();
+    S.RRI.Calls.insert(Inst);
+
+    S.IncrementRefCount();
+    S.IncrementNestCount();
+    break;
+  }
+  case IC_RetainBlock:
+    // An objc_retainBlock call with just a use may need to be kept,
+    // because it may be copying a block from the stack to the heap.
+    if (!IsRetainBlockOptimizable(Inst))
+      break;
+    // FALLTHROUGH
+  case IC_Retain:
+  case IC_RetainRV: {
+    Arg = GetObjCArg(Inst);
+
+    PtrState &S = MyStates.getPtrBottomUpState(Arg);
+    S.DecrementRefCount();
+    S.SetAtLeastOneRefCount();
+    S.DecrementNestCount();
+
+    switch (S.GetSeq()) {
+    case S_Stop:
+    case S_Release:
+    case S_MovableRelease:
+    case S_Use:
+      S.RRI.ReverseInsertPts.clear();
+      // FALL THROUGH
+    case S_CanRelease:
+      // Don't do retain+release tracking for IC_RetainRV, because it's
+      // better to let it remain as the first instruction after a call.
+      if (Class != IC_RetainRV) {
+        S.RRI.IsRetainBlock = Class == IC_RetainBlock;
+        Retains[Inst] = S.RRI;
+      }
+      S.ClearSequenceProgress();
+      break;
+    case S_None:
+      break;
+    case S_Retain:
+      llvm_unreachable("bottom-up pointer in retain state!");
+    }
+    return NestingDetected;
+  }
+  case IC_AutoreleasepoolPop:
+    // Conservatively, clear MyStates for all known pointers.
+    MyStates.clearBottomUpPointers();
+    return NestingDetected;
+  case IC_AutoreleasepoolPush:
+  case IC_None:
+    // These are irrelevant.
+    return NestingDetected;
+  default:
+    break;
+  }
+
+  // Consider any other possible effects of this instruction on each
+  // pointer being tracked.
+  for (BBState::ptr_iterator MI = MyStates.bottom_up_ptr_begin(),
+       ME = MyStates.bottom_up_ptr_end(); MI != ME; ++MI) {
+    const Value *Ptr = MI->first;
+    if (Ptr == Arg)
+      continue; // Handled above.
+    PtrState &S = MI->second;
+    Sequence Seq = S.GetSeq();
+
+    // Check for possible releases.
+    if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
+      S.DecrementRefCount();
+      switch (Seq) {
+      case S_Use:
+        S.SetSeq(S_CanRelease);
+        continue;
+      case S_CanRelease:
+      case S_Release:
+      case S_MovableRelease:
+      case S_Stop:
+      case S_None:
+        break;
+      case S_Retain:
+        llvm_unreachable("bottom-up pointer in retain state!");
+      }
+    }
+
+    // Check for possible direct uses.
+    switch (Seq) {
+    case S_Release:
+    case S_MovableRelease:
+      if (CanUse(Inst, Ptr, PA, Class)) {
+        assert(S.RRI.ReverseInsertPts.empty());
+        // If this is an invoke instruction, we're scanning it as part of
+        // one of its successor blocks, since we can't insert code after it
+        // in its own block, and we don't want to split critical edges.
+        if (isa<InvokeInst>(Inst))
+          S.RRI.ReverseInsertPts.insert(BB->getFirstInsertionPt());
+        else
+          S.RRI.ReverseInsertPts.insert(llvm::next(BasicBlock::iterator(Inst)));
+        S.SetSeq(S_Use);
+      } else if (Seq == S_Release &&
+                 (Class == IC_User || Class == IC_CallOrUser)) {
+        // Non-movable releases depend on any possible objc pointer use.
+        S.SetSeq(S_Stop);
+        assert(S.RRI.ReverseInsertPts.empty());
+        // As above; handle invoke specially.
+        if (isa<InvokeInst>(Inst))
+          S.RRI.ReverseInsertPts.insert(BB->getFirstInsertionPt());
+        else
+          S.RRI.ReverseInsertPts.insert(llvm::next(BasicBlock::iterator(Inst)));
+      }
+      break;
+    case S_Stop:
+      if (CanUse(Inst, Ptr, PA, Class))
+        S.SetSeq(S_Use);
+      break;
+    case S_CanRelease:
+    case S_Use:
+    case S_None:
+      break;
+    case S_Retain:
+      llvm_unreachable("bottom-up pointer in retain state!");
+    }
+  }
+
+  return NestingDetected;
+}
+
+bool
 ObjCARCOpt::VisitBottomUp(BasicBlock *BB,
                           DenseMap<const BasicBlock *, BBState> &BBStates,
                           MapVector<Value *, RRInfo> &Retains) {
@@ -2560,143 +2734,163 @@ ObjCARCOpt::VisitBottomUp(BasicBlock *BB,
   // Visit all the instructions, bottom-up.
   for (BasicBlock::iterator I = BB->end(), E = BB->begin(); I != E; --I) {
     Instruction *Inst = llvm::prior(I);
-    InstructionClass Class = GetInstructionClass(Inst);
-    const Value *Arg = 0;
 
-    switch (Class) {
-    case IC_Release: {
-      Arg = GetObjCArg(Inst);
+    // Invoke instructions are visited as part of their successors (below).
+    if (isa<InvokeInst>(Inst))
+      continue;
 
-      PtrState &S = MyStates.getPtrBottomUpState(Arg);
+    NestingDetected |= VisitInstructionBottomUp(Inst, BB, Retains, MyStates);
+  }
 
-      // If we see two releases in a row on the same pointer. If so, make
+  // If there's a predecessor with an invoke, visit the invoke as
+  // if it were part of this block, since we can't insert code after
+  // an invoke in its own block, and we don't want to split critical
+  // edges.
+  for (pred_iterator PI(BB), PE(BB, false); PI != PE; ++PI) {
+    BasicBlock *Pred = *PI;
+    TerminatorInst *PredTI = cast<TerminatorInst>(&Pred->back());
+    if (isa<InvokeInst>(PredTI))
+      NestingDetected |= VisitInstructionBottomUp(PredTI, BB, Retains, MyStates);
+  }
+
+  return NestingDetected;
+}
+
+bool
+ObjCARCOpt::VisitInstructionTopDown(Instruction *Inst,
+                                    DenseMap<Value *, RRInfo> &Releases,
+                                    BBState &MyStates) {
+  bool NestingDetected = false;
+  InstructionClass Class = GetInstructionClass(Inst);
+  const Value *Arg = 0;
+
+  switch (Class) {
+  case IC_RetainBlock:
+    // An objc_retainBlock call with just a use may need to be kept,
+    // because it may be copying a block from the stack to the heap.
+    if (!IsRetainBlockOptimizable(Inst))
+      break;
+    // FALLTHROUGH
+  case IC_Retain:
+  case IC_RetainRV: {
+    Arg = GetObjCArg(Inst);
+
+    PtrState &S = MyStates.getPtrTopDownState(Arg);
+
+    // Don't do retain+release tracking for IC_RetainRV, because it's
+    // better to let it remain as the first instruction after a call.
+    if (Class != IC_RetainRV) {
+      // If we see two retains in a row on the same pointer. If so, make
       // a note, and we'll cicle back to revisit it after we've
-      // hopefully eliminated the second release, which may allow us to
-      // eliminate the first release too.
+      // hopefully eliminated the second retain, which may allow us to
+      // eliminate the first retain too.
       // Theoretically we could implement removal of nested retain+release
       // pairs by making PtrState hold a stack of states, but this is
       // simple and avoids adding overhead for the non-nested case.
-      if (S.GetSeq() == S_Release || S.GetSeq() == S_MovableRelease)
+      if (S.GetSeq() == S_Retain)
         NestingDetected = true;
 
+      S.SetSeq(S_Retain);
       S.RRI.clear();
-
-      MDNode *ReleaseMetadata = Inst->getMetadata(ImpreciseReleaseMDKind);
-      S.SetSeq(ReleaseMetadata ? S_MovableRelease : S_Release);
-      S.RRI.ReleaseMetadata = ReleaseMetadata;
-      S.RRI.KnownSafe = S.IsKnownNested() || S.IsKnownIncremented();
-      S.RRI.IsTailCallRelease = cast<CallInst>(Inst)->isTailCall();
+      S.RRI.IsRetainBlock = Class == IC_RetainBlock;
+      // Don't check S.IsKnownIncremented() here because it's not
+      // sufficient.
+      S.RRI.KnownSafe = S.IsKnownNested();
       S.RRI.Calls.insert(Inst);
-
-      S.IncrementRefCount();
-      S.IncrementNestCount();
-      break;
     }
-    case IC_RetainBlock:
-      // An objc_retainBlock call with just a use may need to be kept,
-      // because it may be copying a block from the stack to the heap.
-      if (!IsRetainBlockOptimizable(Inst))
-        break;
-      // FALLTHROUGH
-    case IC_Retain:
-    case IC_RetainRV: {
-      Arg = GetObjCArg(Inst);
 
-      PtrState &S = MyStates.getPtrBottomUpState(Arg);
+    S.SetAtLeastOneRefCount();
+    S.IncrementRefCount();
+    S.IncrementNestCount();
+    return NestingDetected;
+  }
+  case IC_Release: {
+    Arg = GetObjCArg(Inst);
+
+    PtrState &S = MyStates.getPtrTopDownState(Arg);
+    S.DecrementRefCount();
+    S.DecrementNestCount();
+
+    switch (S.GetSeq()) {
+    case S_Retain:
+    case S_CanRelease:
+      S.RRI.ReverseInsertPts.clear();
+      // FALL THROUGH
+    case S_Use:
+      S.RRI.ReleaseMetadata = Inst->getMetadata(ImpreciseReleaseMDKind);
+      S.RRI.IsTailCallRelease = cast<CallInst>(Inst)->isTailCall();
+      Releases[Inst] = S.RRI;
+      S.ClearSequenceProgress();
+      break;
+    case S_None:
+      break;
+    case S_Stop:
+    case S_Release:
+    case S_MovableRelease:
+      llvm_unreachable("top-down pointer in release state!");
+    }
+    break;
+  }
+  case IC_AutoreleasepoolPop:
+    // Conservatively, clear MyStates for all known pointers.
+    MyStates.clearTopDownPointers();
+    return NestingDetected;
+  case IC_AutoreleasepoolPush:
+  case IC_None:
+    // These are irrelevant.
+    return NestingDetected;
+  default:
+    break;
+  }
+
+  // Consider any other possible effects of this instruction on each
+  // pointer being tracked.
+  for (BBState::ptr_iterator MI = MyStates.top_down_ptr_begin(),
+       ME = MyStates.top_down_ptr_end(); MI != ME; ++MI) {
+    const Value *Ptr = MI->first;
+    if (Ptr == Arg)
+      continue; // Handled above.
+    PtrState &S = MI->second;
+    Sequence Seq = S.GetSeq();
+
+    // Check for possible releases.
+    if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
       S.DecrementRefCount();
-      S.SetAtLeastOneRefCount();
-      S.DecrementNestCount();
-
-      switch (S.GetSeq()) {
-      case S_Stop:
-      case S_Release:
-      case S_MovableRelease:
-      case S_Use:
-        S.RRI.ReverseInsertPts.clear();
-        // FALL THROUGH
-      case S_CanRelease:
-        // Don't do retain+release tracking for IC_RetainRV, because it's
-        // better to let it remain as the first instruction after a call.
-        if (Class != IC_RetainRV) {
-          S.RRI.IsRetainBlock = Class == IC_RetainBlock;
-          Retains[Inst] = S.RRI;
-        }
-        S.ClearSequenceProgress();
-        break;
-      case S_None:
-        break;
-      case S_Retain:
-        llvm_unreachable("bottom-up pointer in retain state!");
-      }
-      continue;
-    }
-    case IC_AutoreleasepoolPop:
-      // Conservatively, clear MyStates for all known pointers.
-      MyStates.clearBottomUpPointers();
-      continue;
-    case IC_AutoreleasepoolPush:
-    case IC_None:
-      // These are irrelevant.
-      continue;
-    default:
-      break;
-    }
-
-    // Consider any other possible effects of this instruction on each
-    // pointer being tracked.
-    for (BBState::ptr_iterator MI = MyStates.bottom_up_ptr_begin(),
-         ME = MyStates.bottom_up_ptr_end(); MI != ME; ++MI) {
-      const Value *Ptr = MI->first;
-      if (Ptr == Arg)
-        continue; // Handled above.
-      PtrState &S = MI->second;
-      Sequence Seq = S.GetSeq();
-
-      // Check for possible releases.
-      if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
-        S.DecrementRefCount();
-        switch (Seq) {
-        case S_Use:
-          S.SetSeq(S_CanRelease);
-          continue;
-        case S_CanRelease:
-        case S_Release:
-        case S_MovableRelease:
-        case S_Stop:
-        case S_None:
-          break;
-        case S_Retain:
-          llvm_unreachable("bottom-up pointer in retain state!");
-        }
-      }
-
-      // Check for possible direct uses.
       switch (Seq) {
-      case S_Release:
-      case S_MovableRelease:
-        if (CanUse(Inst, Ptr, PA, Class)) {
-          assert(S.RRI.ReverseInsertPts.empty());
-          S.RRI.ReverseInsertPts.insert(Inst);
-          S.SetSeq(S_Use);
-        } else if (Seq == S_Release &&
-                   (Class == IC_User || Class == IC_CallOrUser)) {
-          // Non-movable releases depend on any possible objc pointer use.
-          S.SetSeq(S_Stop);
-          assert(S.RRI.ReverseInsertPts.empty());
-          S.RRI.ReverseInsertPts.insert(Inst);
-        }
-        break;
-      case S_Stop:
-        if (CanUse(Inst, Ptr, PA, Class))
-          S.SetSeq(S_Use);
-        break;
-      case S_CanRelease:
+      case S_Retain:
+        S.SetSeq(S_CanRelease);
+        assert(S.RRI.ReverseInsertPts.empty());
+        S.RRI.ReverseInsertPts.insert(Inst);
+
+        // One call can't cause a transition from S_Retain to S_CanRelease
+        // and S_CanRelease to S_Use. If we've made the first transition,
+        // we're done.
+        continue;
       case S_Use:
+      case S_CanRelease:
       case S_None:
         break;
-      case S_Retain:
-        llvm_unreachable("bottom-up pointer in retain state!");
+      case S_Stop:
+      case S_Release:
+      case S_MovableRelease:
+        llvm_unreachable("top-down pointer in release state!");
       }
+    }
+
+    // Check for possible direct uses.
+    switch (Seq) {
+    case S_CanRelease:
+      if (CanUse(Inst, Ptr, PA, Class))
+        S.SetSeq(S_Use);
+      break;
+    case S_Retain:
+    case S_Use:
+    case S_None:
+      break;
+    case S_Stop:
+    case S_Release:
+    case S_MovableRelease:
+      llvm_unreachable("top-down pointer in release state!");
     }
   }
 
@@ -2751,138 +2945,7 @@ ObjCARCOpt::VisitTopDown(BasicBlock *BB,
   // Visit all the instructions, top-down.
   for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     Instruction *Inst = I;
-    InstructionClass Class = GetInstructionClass(Inst);
-    const Value *Arg = 0;
-
-    switch (Class) {
-    case IC_RetainBlock:
-      // An objc_retainBlock call with just a use may need to be kept,
-      // because it may be copying a block from the stack to the heap.
-      if (!IsRetainBlockOptimizable(Inst))
-        break;
-      // FALLTHROUGH
-    case IC_Retain:
-    case IC_RetainRV: {
-      Arg = GetObjCArg(Inst);
-
-      PtrState &S = MyStates.getPtrTopDownState(Arg);
-
-      // Don't do retain+release tracking for IC_RetainRV, because it's
-      // better to let it remain as the first instruction after a call.
-      if (Class != IC_RetainRV) {
-        // If we see two retains in a row on the same pointer. If so, make
-        // a note, and we'll cicle back to revisit it after we've
-        // hopefully eliminated the second retain, which may allow us to
-        // eliminate the first retain too.
-        // Theoretically we could implement removal of nested retain+release
-        // pairs by making PtrState hold a stack of states, but this is
-        // simple and avoids adding overhead for the non-nested case.
-        if (S.GetSeq() == S_Retain)
-          NestingDetected = true;
-
-        S.SetSeq(S_Retain);
-        S.RRI.clear();
-        S.RRI.IsRetainBlock = Class == IC_RetainBlock;
-        // Don't check S.IsKnownIncremented() here because it's not
-        // sufficient.
-        S.RRI.KnownSafe = S.IsKnownNested();
-        S.RRI.Calls.insert(Inst);
-      }
-
-      S.SetAtLeastOneRefCount();
-      S.IncrementRefCount();
-      S.IncrementNestCount();
-      continue;
-    }
-    case IC_Release: {
-      Arg = GetObjCArg(Inst);
-
-      PtrState &S = MyStates.getPtrTopDownState(Arg);
-      S.DecrementRefCount();
-      S.DecrementNestCount();
-
-      switch (S.GetSeq()) {
-      case S_Retain:
-      case S_CanRelease:
-        S.RRI.ReverseInsertPts.clear();
-        // FALL THROUGH
-      case S_Use:
-        S.RRI.ReleaseMetadata = Inst->getMetadata(ImpreciseReleaseMDKind);
-        S.RRI.IsTailCallRelease = cast<CallInst>(Inst)->isTailCall();
-        Releases[Inst] = S.RRI;
-        S.ClearSequenceProgress();
-        break;
-      case S_None:
-        break;
-      case S_Stop:
-      case S_Release:
-      case S_MovableRelease:
-        llvm_unreachable("top-down pointer in release state!");
-      }
-      break;
-    }
-    case IC_AutoreleasepoolPop:
-      // Conservatively, clear MyStates for all known pointers.
-      MyStates.clearTopDownPointers();
-      continue;
-    case IC_AutoreleasepoolPush:
-    case IC_None:
-      // These are irrelevant.
-      continue;
-    default:
-      break;
-    }
-
-    // Consider any other possible effects of this instruction on each
-    // pointer being tracked.
-    for (BBState::ptr_iterator MI = MyStates.top_down_ptr_begin(),
-         ME = MyStates.top_down_ptr_end(); MI != ME; ++MI) {
-      const Value *Ptr = MI->first;
-      if (Ptr == Arg)
-        continue; // Handled above.
-      PtrState &S = MI->second;
-      Sequence Seq = S.GetSeq();
-
-      // Check for possible releases.
-      if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
-        S.DecrementRefCount();
-        switch (Seq) {
-        case S_Retain:
-          S.SetSeq(S_CanRelease);
-          assert(S.RRI.ReverseInsertPts.empty());
-          S.RRI.ReverseInsertPts.insert(Inst);
-
-          // One call can't cause a transition from S_Retain to S_CanRelease
-          // and S_CanRelease to S_Use. If we've made the first transition,
-          // we're done.
-          continue;
-        case S_Use:
-        case S_CanRelease:
-        case S_None:
-          break;
-        case S_Stop:
-        case S_Release:
-        case S_MovableRelease:
-          llvm_unreachable("top-down pointer in release state!");
-        }
-      }
-
-      // Check for possible direct uses.
-      switch (Seq) {
-      case S_CanRelease:
-        if (CanUse(Inst, Ptr, PA, Class))
-          S.SetSeq(S_Use);
-        break;
-      case S_Retain:
-      case S_Use:
-      case S_None:
-        break;
-      case S_Stop:
-      case S_Release:
-      case S_MovableRelease:
-        llvm_unreachable("top-down pointer in release state!");
-      }
-    }
+    NestingDetected |= VisitInstructionTopDown(Inst, Releases, MyStates);
   }
 
   CheckForCFGHazards(BB, BBStates, MyStates);
@@ -3032,35 +3095,17 @@ void ObjCARCOpt::MoveCalls(Value *Arg,
   for (SmallPtrSet<Instruction *, 2>::const_iterator
        PI = RetainsToMove.ReverseInsertPts.begin(),
        PE = RetainsToMove.ReverseInsertPts.end(); PI != PE; ++PI) {
-    Instruction *LastUse = *PI;
-    Instruction *InsertPts[] = { 0, 0, 0 };
-    if (InvokeInst *II = dyn_cast<InvokeInst>(LastUse)) {
-      // We can't insert code immediately after an invoke instruction, so
-      // insert code at the beginning of both successor blocks instead.
-      // The invoke's return value isn't available in the unwind block,
-      // but our releases will never depend on it, because they must be
-      // paired with retains from before the invoke.
-      InsertPts[0] = II->getNormalDest()->getFirstInsertionPt();
-      if (!II->getMetadata(NoObjCARCExceptionsMDKind))
-        InsertPts[1] = II->getUnwindDest()->getFirstInsertionPt();
-    } else {
-      // Insert code immediately after the last use.
-      InsertPts[0] = llvm::next(BasicBlock::iterator(LastUse));
-    }
-
-    for (Instruction **I = InsertPts; *I; ++I) {
-      Instruction *InsertPt = *I;
-      Value *MyArg = ArgTy == ParamTy ? Arg :
-                     new BitCastInst(Arg, ParamTy, "", InsertPt);
-      CallInst *Call = CallInst::Create(getReleaseCallee(M), MyArg,
-                                        "", InsertPt);
-      // Attach a clang.imprecise_release metadata tag, if appropriate.
-      if (MDNode *M = ReleasesToMove.ReleaseMetadata)
-        Call->setMetadata(ImpreciseReleaseMDKind, M);
-      Call->setDoesNotThrow();
-      if (ReleasesToMove.IsTailCallRelease)
-        Call->setTailCall();
-    }
+    Instruction *InsertPt = *PI;
+    Value *MyArg = ArgTy == ParamTy ? Arg :
+                   new BitCastInst(Arg, ParamTy, "", InsertPt);
+    CallInst *Call = CallInst::Create(getReleaseCallee(M), MyArg,
+                                      "", InsertPt);
+    // Attach a clang.imprecise_release metadata tag, if appropriate.
+    if (MDNode *M = ReleasesToMove.ReleaseMetadata)
+      Call->setMetadata(ImpreciseReleaseMDKind, M);
+    Call->setDoesNotThrow();
+    if (ReleasesToMove.IsTailCallRelease)
+      Call->setTailCall();
   }
 
   // Delete the original retain and release calls.

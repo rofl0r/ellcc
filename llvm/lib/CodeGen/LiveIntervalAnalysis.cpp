@@ -1049,9 +1049,19 @@ public:
     bool hasRegMaskOp = false;
     collectRanges(MI, Entering, Internal, Exiting, hasRegMaskOp, OldIdx);
 
-    moveAllEnteringFrom(OldIdx, Entering);
-    moveAllInternalFrom(OldIdx, Internal);
-    moveAllExitingFrom(OldIdx, Exiting);
+    // To keep the LiveRanges valid within an interval, move the ranges closest
+    // to the destination first. This prevents ranges from overlapping, to that
+    // APIs like removeRange still work.
+    if (NewIdx < OldIdx) {
+      moveAllEnteringFrom(OldIdx, Entering);
+      moveAllInternalFrom(OldIdx, Internal);
+      moveAllExitingFrom(OldIdx, Exiting);
+    }
+    else {
+      moveAllExitingFrom(OldIdx, Exiting);
+      moveAllInternalFrom(OldIdx, Internal);
+      moveAllEnteringFrom(OldIdx, Entering);
+    }
 
     if (hasRegMaskOp)
       updateRegMaskSlots(OldIdx);
@@ -1319,8 +1329,14 @@ private:
   void moveEnteringDownFrom(SlotIndex OldIdx, IntRangePair& P) {
     LiveInterval* LI = P.first;
     LiveRange* LR = P.second;
+    // Extend the LiveRange if NewIdx is past the end.
     if (NewIdx > LR->end) {
-      moveKillFlags(LI->reg, LR->end, NewIdx);
+      // Move kill flags if OldIdx was not originally the end
+      // (otherwise LR->end points to an invalid slot).
+      if (LR->end.getRegSlot() != OldIdx.getRegSlot()) {
+        assert(LR->end > OldIdx && "LiveRange does not cover original slot");
+        moveKillFlags(LI->reg, LR->end, NewIdx);
+      }
       LR->end = NewIdx.getRegSlot();
     }
   }

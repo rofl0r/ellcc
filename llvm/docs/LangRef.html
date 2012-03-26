@@ -104,6 +104,7 @@
         <ol>
           <li><a href="#tbaa">'<tt>tbaa</tt>' Metadata</a></li>
           <li><a href="#fpaccuracy">'<tt>fpaccuracy</tt>' Metadata</a></li>
+          <li><a href="#range">'<tt>range</tt>' Metadata</a></li>
         </ol>
       </li>
     </ol>
@@ -3028,6 +3029,39 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 </pre>
 </div>
 
+<!-- _______________________________________________________________________ -->
+<h4>
+  <a name="range">'<tt>range</tt>' Metadata</a>
+</h4>
+
+<div>
+<p><tt>range</tt> metadata may be attached only to loads of integer types. It
+   expresses the possible ranges the loaded value is in. The ranges are
+   represented with a flattened list of integers. The loaded value is known to
+   be in the union of the ranges defined by each consecutive pair. Each pair
+   has the following properties:</p>
+<ul>
+   <li>The type must match the type loaded by the instruction.</li>
+   <li>The pair <tt>a,b</tt> represents the range <tt>[a,b)</tt>.</li>
+   <li>Both <tt>a</tt> and <tt>b</tt> are constants.</li>
+   <li>The range is allowed to wrap.</li>
+   <li>The range should not represent the full or empty set. That is,
+       <tt>a!=b</tt>. </li>
+</ul>
+
+<p>Examples:</p>
+<div class="doc_code">
+<pre>
+  %a = load i8* %x, align 1, !range !0 ; Can only be 0 or 1
+  %b = load i8* %y, align 1, !range !1 ; Can only be 255 (-1), 0 or 1
+  %c = load i8* %z, align 1, !range !2 ; Can only be 0, 1, 3, 4 or 5
+...
+!0 = metadata !{ i8 0, i8 2 }
+!1 = metadata !{ i8 255, i8 2 }
+!2 = metadata !{ i8 0, i8 2, i8 3, i8 6 }
+</pre>
+</div>
+</div>
 </div>
 
 </div>
@@ -4870,8 +4904,7 @@ IfUnequal:
    or <tt><a href="#i_resume">resume</a></tt> instructions), the memory is
    reclaimed.  Allocating zero bytes is legal, but the result is undefined.
    The order in which memory is allocated (ie., which way the stack grows) is
-   not specified, and relational comparisons involving '<tt>alloca</tt>'s are
-   undefined.</p>
+   not specified.</p>
 
 <p>
 
@@ -8471,7 +8504,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-03-14 03:07:43 -0500 (Wed, 14 Mar 2012) $
+  Last modified: $Date: 2012-03-23 19:14:51 -0500 (Fri, 23 Mar 2012) $
 </address>
 
 </body>

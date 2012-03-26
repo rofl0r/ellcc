@@ -1764,7 +1764,9 @@ static void EmitGlobalConstantFP(const ConstantFP *CFP, unsigned AddrSpace,
   if (CFP->getType()->isFloatTy()) {
     if (AP.isVerbose()) {
       float Val = CFP->getValueAPF().convertToFloat();
-      AP.OutStreamer.GetCommentOS() << "float " << Val << '\n';
+      uint64_t IntVal = CFP->getValueAPF().bitcastToAPInt().getZExtValue();
+      AP.OutStreamer.GetCommentOS() << "float " << Val << '\n'
+                                    << " (" << format("0x%x", IntVal) << ")\n";
     }
     uint64_t Val = CFP->getValueAPF().bitcastToAPInt().getZExtValue();
     AP.OutStreamer.EmitIntValue(Val, 4, AddrSpace);
@@ -1776,7 +1778,9 @@ static void EmitGlobalConstantFP(const ConstantFP *CFP, unsigned AddrSpace,
   if (CFP->getType()->isDoubleTy()) {
     if (AP.isVerbose()) {
       double Val = CFP->getValueAPF().convertToDouble();
-      AP.OutStreamer.GetCommentOS() << "double " << Val << '\n';
+      uint64_t IntVal = CFP->getValueAPF().bitcastToAPInt().getZExtValue();
+      AP.OutStreamer.GetCommentOS() << "double " << Val << '\n'
+                                    << " (" << format("0x%lx", IntVal) << ")\n";
     }
 
     uint64_t Val = CFP->getValueAPF().bitcastToAPInt().getZExtValue();
@@ -1847,13 +1851,12 @@ static void EmitGlobalConstantLargeInt(const ConstantInt *CI,
 
 static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
                                    AsmPrinter &AP) {
-  if (isa<ConstantAggregateZero>(CV) || isa<UndefValue>(CV)) {
-    uint64_t Size = AP.TM.getTargetData()->getTypeAllocSize(CV->getType());
+  const TargetData *TD = AP.TM.getTargetData();
+  uint64_t Size = TD->getTypeAllocSize(CV->getType());
+  if (isa<ConstantAggregateZero>(CV) || isa<UndefValue>(CV))
     return AP.OutStreamer.EmitZeros(Size, AddrSpace);
-  }
 
   if (const ConstantInt *CI = dyn_cast<ConstantInt>(CV)) {
-    unsigned Size = AP.TM.getTargetData()->getTypeAllocSize(CV->getType());
     switch (Size) {
     case 1:
     case 2:
@@ -1874,7 +1877,6 @@ static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
     return EmitGlobalConstantFP(CFP, AddrSpace, AP);
 
   if (isa<ConstantPointerNull>(CV)) {
-    unsigned Size = AP.TM.getTargetData()->getTypeAllocSize(CV->getType());
     AP.OutStreamer.EmitIntValue(0, Size, AddrSpace);
     return;
   }
@@ -1888,20 +1890,28 @@ static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
   if (const ConstantStruct *CVS = dyn_cast<ConstantStruct>(CV))
     return EmitGlobalConstantStruct(CVS, AddrSpace, AP);
 
-  // Look through bitcasts, which might not be able to be MCExpr'ized (e.g. of
-  // vectors).
-  if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(CV))
+  if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(CV)) {
+    // Look through bitcasts, which might not be able to be MCExpr'ized (e.g. of
+    // vectors).
     if (CE->getOpcode() == Instruction::BitCast)
       return EmitGlobalConstantImpl(CE->getOperand(0), AddrSpace, AP);
+
+    if (Size > 8) {
+      // If the constant expression's size is greater than 64-bits, then we have
+      // to emit the value in chunks. Try to constant fold the value and emit it
+      // that way.
+      Constant *New = ConstantFoldConstantExpression(CE, TD);
+      if (New && New != CE)
+        return EmitGlobalConstantImpl(New, AddrSpace, AP);
+    }
+  }
   
   if (const ConstantVector *V = dyn_cast<ConstantVector>(CV))
     return EmitGlobalConstantVector(V, AddrSpace, AP);
     
   // Otherwise, it must be a ConstantExpr.  Lower it to an MCExpr, then emit it
   // thread the streamer with EmitValue.
-  AP.OutStreamer.EmitValue(LowerConstant(CV, AP),
-                         AP.TM.getTargetData()->getTypeAllocSize(CV->getType()),
-                           AddrSpace);
+  AP.OutStreamer.EmitValue(LowerConstant(CV, AP), Size, AddrSpace);
 }
 
 /// EmitGlobalConstant - Print a general LLVM constant to the .s file.

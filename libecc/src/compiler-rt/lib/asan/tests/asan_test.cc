@@ -20,7 +20,7 @@
 #include <setjmp.h>
 #include <assert.h>
 
-#if defined(__i386__) or defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__)
 #include <emmintrin.h>
 #endif
 
@@ -67,13 +67,11 @@ static uint32_t global_seed = 0;
 const size_t kLargeMalloc = 1 << 24;
 
 template<class T>
-__attribute__((noinline))
-void asan_write(T *a) {
+NOINLINE void asan_write(T *a) {
   *a = 0;
 }
 
-__attribute__((noinline))
-void asan_write_sized_aligned(uint8_t *p, size_t size) {
+NOINLINE void asan_write_sized_aligned(uint8_t *p, size_t size) {
   EXPECT_EQ(0, ((uintptr_t)p % size));
   if      (size == 1) asan_write((uint8_t*)p);
   else if (size == 2) asan_write((uint16_t*)p);
@@ -81,45 +79,41 @@ void asan_write_sized_aligned(uint8_t *p, size_t size) {
   else if (size == 8) asan_write((uint64_t*)p);
 }
 
-__attribute__((noinline)) void *malloc_fff(size_t size) {
+NOINLINE void *malloc_fff(size_t size) {
   void *res = malloc/**/(size); break_optimization(0); return res;}
-__attribute__((noinline)) void *malloc_eee(size_t size) {
+NOINLINE void *malloc_eee(size_t size) {
   void *res = malloc_fff(size); break_optimization(0); return res;}
-__attribute__((noinline)) void *malloc_ddd(size_t size) {
+NOINLINE void *malloc_ddd(size_t size) {
   void *res = malloc_eee(size); break_optimization(0); return res;}
-__attribute__((noinline)) void *malloc_ccc(size_t size) {
+NOINLINE void *malloc_ccc(size_t size) {
   void *res = malloc_ddd(size); break_optimization(0); return res;}
-__attribute__((noinline)) void *malloc_bbb(size_t size) {
+NOINLINE void *malloc_bbb(size_t size) {
   void *res = malloc_ccc(size); break_optimization(0); return res;}
-__attribute__((noinline)) void *malloc_aaa(size_t size) {
+NOINLINE void *malloc_aaa(size_t size) {
   void *res = malloc_bbb(size); break_optimization(0); return res;}
 
 #ifndef __APPLE__
-__attribute__((noinline)) void *memalign_fff(size_t alignment, size_t size) {
+NOINLINE void *memalign_fff(size_t alignment, size_t size) {
   void *res = memalign/**/(alignment, size); break_optimization(0); return res;}
-__attribute__((noinline)) void *memalign_eee(size_t alignment, size_t size) {
+NOINLINE void *memalign_eee(size_t alignment, size_t size) {
   void *res = memalign_fff(alignment, size); break_optimization(0); return res;}
-__attribute__((noinline)) void *memalign_ddd(size_t alignment, size_t size) {
+NOINLINE void *memalign_ddd(size_t alignment, size_t size) {
   void *res = memalign_eee(alignment, size); break_optimization(0); return res;}
-__attribute__((noinline)) void *memalign_ccc(size_t alignment, size_t size) {
+NOINLINE void *memalign_ccc(size_t alignment, size_t size) {
   void *res = memalign_ddd(alignment, size); break_optimization(0); return res;}
-__attribute__((noinline)) void *memalign_bbb(size_t alignment, size_t size) {
+NOINLINE void *memalign_bbb(size_t alignment, size_t size) {
   void *res = memalign_ccc(alignment, size); break_optimization(0); return res;}
-__attribute__((noinline)) void *memalign_aaa(size_t alignment, size_t size) {
+NOINLINE void *memalign_aaa(size_t alignment, size_t size) {
   void *res = memalign_bbb(alignment, size); break_optimization(0); return res;}
 #endif  // __APPLE__
 
 
-__attribute__((noinline))
-  void free_ccc(void *p) { free(p); break_optimization(0);}
-__attribute__((noinline))
-  void free_bbb(void *p) { free_ccc(p); break_optimization(0);}
-__attribute__((noinline))
-  void free_aaa(void *p) { free_bbb(p); break_optimization(0);}
+NOINLINE void free_ccc(void *p) { free(p); break_optimization(0);}
+NOINLINE void free_bbb(void *p) { free_ccc(p); break_optimization(0);}
+NOINLINE void free_aaa(void *p) { free_bbb(p); break_optimization(0);}
 
 template<class T>
-__attribute__((noinline))
-void oob_test(int size, int off) {
+NOINLINE void oob_test(int size, int off) {
   char *p = (char*)malloc_aaa(size);
   // fprintf(stderr, "writing %d byte(s) into [%p,%p) with offset %d\n",
   //        sizeof(T), p, p + size, off);
@@ -129,8 +123,7 @@ void oob_test(int size, int off) {
 
 
 template<class T>
-__attribute__((noinline))
-void uaf_test(int size, int off) {
+NOINLINE void uaf_test(int size, int off) {
   char *p = (char *)malloc_aaa(size);
   free_aaa(p);
   for (int i = 1; i < 100; i++)
@@ -576,8 +569,7 @@ TEST(AddressSanitizer, DoubleFreeTest) {
 }
 
 template<int kSize>
-__attribute__((noinline))
-void SizedStackTest() {
+NOINLINE void SizedStackTest() {
   char a[kSize];
   char  *A = Ident((char*)&a);
   for (size_t i = 0; i < kSize; i++)
@@ -618,8 +610,7 @@ TEST(AddressSanitizer, ManyStackObjectsTest) {
   EXPECT_DEATH(Ident(ZZZ)[-1] = 0, ASAN_PCRE_DOTALL "XXX.*YYY.*ZZZ");
 }
 
-__attribute__((noinline))
-static void Frame0(int frame, char *a, char *b, char *c) {
+NOINLINE static void Frame0(int frame, char *a, char *b, char *c) {
   char d[4] = {0};
   char *D = Ident(d);
   switch (frame) {
@@ -629,15 +620,15 @@ static void Frame0(int frame, char *a, char *b, char *c) {
     case 0: D[5]++; break;
   }
 }
-__attribute__((noinline)) static void Frame1(int frame, char *a, char *b) {
+NOINLINE static void Frame1(int frame, char *a, char *b) {
   char c[4] = {0}; Frame0(frame, a, b, c);
   break_optimization(0);
 }
-__attribute__((noinline)) static void Frame2(int frame, char *a) {
+NOINLINE static void Frame2(int frame, char *a) {
   char b[4] = {0}; Frame1(frame, a, b);
   break_optimization(0);
 }
-__attribute__((noinline)) static void Frame3(int frame) {
+NOINLINE static void Frame3(int frame) {
   char a[4] = {0}; Frame2(frame, a);
   break_optimization(0);
 }
@@ -655,8 +646,7 @@ TEST(AddressSanitizer, GuiltyStackFrame3Test) {
   EXPECT_DEATH(Frame3(3), "located .*in frame <.*Frame3");
 }
 
-__attribute__((noinline))
-void LongJmpFunc1(jmp_buf buf) {
+NOINLINE void LongJmpFunc1(jmp_buf buf) {
   // create three red zones for these two stack objects.
   int a;
   int b;
@@ -667,8 +657,7 @@ void LongJmpFunc1(jmp_buf buf) {
   longjmp(buf, 1);
 }
 
-__attribute__((noinline))
-void UnderscopeLongJmpFunc1(jmp_buf buf) {
+NOINLINE void UnderscopeLongJmpFunc1(jmp_buf buf) {
   // create three red zones for these two stack objects.
   int a;
   int b;
@@ -679,8 +668,7 @@ void UnderscopeLongJmpFunc1(jmp_buf buf) {
   _longjmp(buf, 1);
 }
 
-__attribute__((noinline))
-void SigLongJmpFunc1(sigjmp_buf buf) {
+NOINLINE void SigLongJmpFunc1(sigjmp_buf buf) {
   // create three red zones for these two stack objects.
   int a;
   int b;
@@ -692,8 +680,7 @@ void SigLongJmpFunc1(sigjmp_buf buf) {
 }
 
 
-__attribute__((noinline))
-void TouchStackFunc() {
+NOINLINE void TouchStackFunc() {
   int a[100];  // long array will intersect with redzones from LongJmpFunc1.
   int *A = Ident(a);
   for (int i = 0; i < 100; i++)
@@ -729,8 +716,7 @@ TEST(AddressSanitizer, SigLongJmpTest) {
 }
 
 #ifdef __EXCEPTIONS
-__attribute__((noinline))
-void ThrowFunc() {
+NOINLINE void ThrowFunc() {
   // create three red zones for these two stack objects.
   int a;
   int b;
@@ -777,7 +763,7 @@ TEST(AddressSanitizer, ThreadStackReuseTest) {
   pthread_join(t, 0);
 }
 
-#if defined(__i386__) or defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__)
 TEST(AddressSanitizer, Store128Test) {
   char *a = Ident((char*)malloc(Ident(12)));
   char *p = a;
@@ -1363,6 +1349,46 @@ TEST(AddressSanitizer, StrArgsOverlapTest) {
   free(str);
 }
 
+TEST(AddressSanitizer, StrtollOOBTest) {
+  char *array = MallocAndMemsetString(3);
+  char *endptr = NULL;
+  array[0] = '1';
+  array[1] = '2';
+  array[2] = '3';
+  // Invalid pointer to the string.
+  EXPECT_DEATH(strtoll(array + 3, NULL, 0), RightOOBErrorMessage(0));
+  EXPECT_DEATH(strtoll(array - 1, NULL, 0), LeftOOBErrorMessage(1));
+  // Buffer overflow if there is no terminating null (depends on base).
+  Ident(strtoll(array, &endptr, 3));
+  EXPECT_EQ(array + 2, endptr);
+  EXPECT_DEATH(strtoll(array, NULL, 0), RightOOBErrorMessage(0));
+  array[2] = 'z';
+  Ident(strtoll(array, &endptr, 35));
+  EXPECT_EQ(array + 2, endptr);
+  EXPECT_DEATH(strtoll(array, NULL, 36), RightOOBErrorMessage(0));
+  // Add terminating zero to get rid of overflow.
+  array[2] = '\0';
+  Ident(strtoll(array, NULL, 36));
+  // Don't check for overflow if base is invalid.
+  Ident(strtoll(array - 1, NULL, -1));
+  Ident(strtoll(array + 3, NULL, 1));
+  // Sometimes we need to detect overflow if no digits are found.
+  array[0] = array[1] = array[2] = ' ';
+  EXPECT_DEATH(strtoll(array, NULL, 0), RightOOBErrorMessage(0));
+  array[2] = '+';
+  EXPECT_DEATH(strtoll(array, NULL, 0), RightOOBErrorMessage(0));
+  array[2] = '-';
+  EXPECT_DEATH(strtoll(array, NULL, 0), RightOOBErrorMessage(0));
+  array[1] = '+';
+  Ident(strtoll(array, NULL, 0));
+  array[1] = array[2] = 'z';
+  Ident(strtoll(array, &endptr, 0));
+  EXPECT_EQ(array, endptr);
+  Ident(strtoll(array + 2, NULL, 0));
+  EXPECT_EQ(array, endptr);
+  delete array;
+}
+
 // At the moment we instrument memcpy/memove/memset calls at compile time so we
 // can't handle OOB error if these functions are called by pointer, see disabled
 // MemIntrinsicCallByPointerTest below
@@ -1403,8 +1429,7 @@ TEST(AddressSanitizer, DISABLED_MemIntrinsicUnalignedAccessTest) {
 // TODO(samsonov): Add a test with malloc(0)
 // TODO(samsonov): Add tests for str* and mem* functions.
 
-__attribute__((noinline))
-static int LargeFunction(bool do_bad_access) {
+NOINLINE static int LargeFunction(bool do_bad_access) {
   int *x = new int[100];
   x[0]++;
   x[1]++;
@@ -1501,8 +1526,7 @@ TEST(AddressSanitizer, ShadowGapTest) {
 #endif  // ASAN_NEEDS_SEGV
 
 extern "C" {
-__attribute__((noinline))
-static void UseThenFreeThenUse() {
+NOINLINE static void UseThenFreeThenUse() {
   char *x = Ident((char*)malloc(8));
   *x = 1;
   free_aaa(x);
@@ -1605,8 +1629,7 @@ TEST(AddressSanitizer, LocalReferenceReturnTest) {
 #endif
 
 template <int kSize>
-__attribute__((noinline))
-static void FuncWithStack() {
+NOINLINE static void FuncWithStack() {
   char x[kSize];
   Ident(x)[0] = 0;
   Ident(x)[kSize-1] = 0;
@@ -1659,8 +1682,7 @@ TEST(AddressSanitizer, PthreadExitTest) {
 }
 
 #ifdef __EXCEPTIONS
-__attribute__((noinline))
-static void StackReuseAndException() {
+NOINLINE static void StackReuseAndException() {
   int large_stack[1000];
   Ident(large_stack);
   ASAN_THROW(1);
@@ -1949,7 +1971,9 @@ TEST(AddressSanitizerMac, CFStringCreateCopy) {
 // See http://llvm.org/bugs/show_bug.cgi?id=12047 for more details.
 TEST(AddressSanitizer, LongDoubleNegativeTest) {
   long double a, b;
+  static long double c;
   memcpy(Ident(&a), Ident(&b), sizeof(long double));
+  memcpy(Ident(&c), Ident(&b), sizeof(long double));
 };
 
 int main(int argc, char **argv) {

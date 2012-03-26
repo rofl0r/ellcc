@@ -1516,6 +1516,11 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       llvm::Value *Arg = EmitAsmInputLValue(S, Info, Dest, InputExpr->getType(),
                                             InOutConstraints);
 
+      if (llvm::Type* AdjTy =
+            getTargetHooks().adjustInlineAsmType(*this, OutputConstraint,
+                                                 Arg->getType()))
+        Arg = Builder.CreateBitCast(Arg, AdjTy);
+
       if (Info.allowsRegister())
         InOutConstraints += llvm::utostr(i);
       else
@@ -1583,7 +1588,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
         }
       }
     }
-    if (llvm::Type* AdjTy = 
+    if (llvm::Type* AdjTy =
               getTargetHooks().adjustInlineAsmType(*this, InputConstraint,
                                                    Arg->getType()))
       Arg = Builder.CreateBitCast(Arg, AdjTy);
