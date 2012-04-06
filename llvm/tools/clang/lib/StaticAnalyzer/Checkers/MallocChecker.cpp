@@ -1257,9 +1257,15 @@ bool MallocChecker::doesNotFreeMemory(const CallOrObjCMessage *Call,
     // this would be to implement a pointer escapes callback.
     if (FName == "CVPixelBufferCreateWithBytes" ||
         FName == "CGBitmapContextCreateWithData" ||
-        FName == "CVPixelBufferCreateWithPlanarBytes") {
+        FName == "CVPixelBufferCreateWithPlanarBytes" ||
+        FName == "OSAtomicEnqueue") {
       return false;
     }
+
+    // Whitelist NSXXInsertXX, for example NSMapInsertIfAbsent, since they can
+    // be deallocated by NSMapRemove.
+    if (FName.startswith("NS") && (FName.find("Insert") != StringRef::npos))
+      return false;
 
     // Otherwise, assume that the function does not free memory.
     // Most system calls, do not free the memory.

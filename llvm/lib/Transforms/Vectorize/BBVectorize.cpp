@@ -140,8 +140,19 @@ STATISTIC(NumFusedOps, "Number of operations fused by bb-vectorize");
 namespace {
   struct BBVectorize : public BasicBlockPass {
     static char ID; // Pass identification, replacement for typeid
-    BBVectorize() : BasicBlockPass(ID) {
+
+    const VectorizeConfig Config;
+
+    BBVectorize(const VectorizeConfig &C = VectorizeConfig())
+      : BasicBlockPass(ID), Config(C) {
       initializeBBVectorizePass(*PassRegistry::getPassRegistry());
+    }
+
+    BBVectorize(Pass *P, const VectorizeConfig &C)
+      : BasicBlockPass(ID), Config(C) {
+      AA = &P->getAnalysis<AliasAnalysis>();
+      SE = &P->getAnalysis<ScalarEvolution>();
+      TD = P->getAnalysisIfAvailable<TargetData>();
     }
 
     typedef std::pair<Value *, Value *> ValuePair;
@@ -280,18 +291,15 @@ namespace {
                      Instruction *&InsertionPt,
                      Instruction *I, Instruction *J);
 
-    virtual bool runOnBasicBlock(BasicBlock &BB) {
-      AA = &getAnalysis<AliasAnalysis>();
-      SE = &getAnalysis<ScalarEvolution>();
-      TD = getAnalysisIfAvailable<TargetData>();
-
+    bool vectorizeBB(BasicBlock &BB) {
       bool changed = false;
       // Iterate a sufficient number of times to merge types of size 1 bit,
       // then 2 bits, then 4, etc. up to half of the target vector width of the
       // target vector register.
-      for (unsigned v = 2, n = 1; v <= VectorBits && (!MaxIter || n <= MaxIter);
+      for (unsigned v = 2, n = 1;
+           v <= Config.VectorBits && (!Config.MaxIter || n <= Config.MaxIter);
            v *= 2, ++n) {
-        DEBUG(dbgs() << "BBV: fusing loop #" << n << 
+        DEBUG(dbgs() << "BBV: fusing loop #" << n <<
               " for " << BB.getName() << " in " <<
               BB.getParent()->getName() << "...\n");
         if (vectorizePairs(BB))
@@ -302,6 +310,14 @@ namespace {
 
       DEBUG(dbgs() << "BBV: done!\n");
       return changed;
+    }
+
+    virtual bool runOnBasicBlock(BasicBlock &BB) {
+      AA = &getAnalysis<AliasAnalysis>();
+      SE = &getAnalysis<ScalarEvolution>();
+      TD = getAnalysisIfAvailable<TargetData>();
+
+      return vectorizeBB(BB);
     }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -333,7 +349,7 @@ namespace {
     // candidate chains where longer chains are considered to be better.
     // Note: when this function returns 0, the resulting instructions are
     // not actually fused.
-    static inline size_t getDepthFactor(Value *V) {
+    inline size_t getDepthFactor(Value *V) {
       // InsertElement and ExtractElement have a depth factor of zero. This is
       // for two reasons: First, they cannot be usefully fused. Second, because
       // the pass generates a lot of these, they can confuse the simple metric
@@ -347,8 +363,8 @@ namespace {
 
       // Give a load or store half of the required depth so that load/store
       // pairs will vectorize.
-      if (!NoMemOpBoost && (isa<LoadInst>(V) || isa<StoreInst>(V)))
-        return ReqChainDepth/2;
+      if (!Config.NoMemOpBoost && (isa<LoadInst>(V) || isa<StoreInst>(V)))
+        return Config.ReqChainDepth/2;
 
       return 1;
     }
@@ -421,9 +437,9 @@ namespace {
       case Intrinsic::exp:
       case Intrinsic::exp2:
       case Intrinsic::pow:
-        return !NoMath;
+        return !Config.NoMath;
       case Intrinsic::fma:
-        return !NoFMA;
+        return !Config.NoFMA;
       }
     }
 
@@ -517,16 +533,16 @@ namespace {
     } else if (LoadInst *L = dyn_cast<LoadInst>(I)) {
       // Vectorize simple loads if possbile:
       IsSimpleLoadStore = L->isSimple();
-      if (!IsSimpleLoadStore || NoMemOps)
+      if (!IsSimpleLoadStore || Config.NoMemOps)
         return false;
     } else if (StoreInst *S = dyn_cast<StoreInst>(I)) {
       // Vectorize simple stores if possbile:
       IsSimpleLoadStore = S->isSimple();
-      if (!IsSimpleLoadStore || NoMemOps)
+      if (!IsSimpleLoadStore || Config.NoMemOps)
         return false;
     } else if (CastInst *C = dyn_cast<CastInst>(I)) {
       // We can vectorize casts, but not casts of pointer types, etc.
-      if (NoCasts)
+      if (Config.NoCasts)
         return false;
 
       Type *SrcTy = C->getSrcTy();
@@ -566,14 +582,14 @@ namespace {
         !(VectorType::isValidElementType(T2) || T2->isVectorTy()))
       return false;
 
-    if (NoInts && (T1->isIntOrIntVectorTy() || T2->isIntOrIntVectorTy()))
+    if (Config.NoInts && (T1->isIntOrIntVectorTy() || T2->isIntOrIntVectorTy()))
       return false;
 
-    if (NoFloats && (T1->isFPOrFPVectorTy() || T2->isFPOrFPVectorTy()))
+    if (Config.NoFloats && (T1->isFPOrFPVectorTy() || T2->isFPOrFPVectorTy()))
       return false;
 
-    if (T1->getPrimitiveSizeInBits() > VectorBits/2 ||
-        T2->getPrimitiveSizeInBits() > VectorBits/2)
+    if (T1->getPrimitiveSizeInBits() > Config.VectorBits/2 ||
+        T2->getPrimitiveSizeInBits() > Config.VectorBits/2)
       return false;
 
     return true;
@@ -601,7 +617,7 @@ namespace {
           LI->isVolatile() != LJ->isVolatile() ||
           LI->getOrdering() != LJ->getOrdering() ||
           LI->getSynchScope() != LJ->getSynchScope())
-        return false; 
+        return false;
     } else if ((SI = dyn_cast<StoreInst>(I)) && (SJ = dyn_cast<StoreInst>(J))) {
       if (SI->getValueOperand()->getType() !=
             SJ->getValueOperand()->getType() ||
@@ -622,7 +638,7 @@ namespace {
       int64_t OffsetInElmts = 0;
       if (getPairPtrInfo(I, J, IPtr, JPtr, IAlignment, JAlignment,
             OffsetInElmts) && abs64(OffsetInElmts) == 1) {
-        if (AlignedOnly) {
+        if (Config.AlignedOnly) {
           Type *aType = isa<StoreInst>(I) ?
             cast<StoreInst>(I)->getValueOperand()->getType() : I->getType();
           // An aligned load or store is possible only if the instruction
@@ -645,6 +661,20 @@ namespace {
       return isa<Constant>(I->getOperand(2)) &&
              isa<Constant>(J->getOperand(2));
       // FIXME: We may want to vectorize non-constant shuffles also.
+    }
+
+    // The powi intrinsic is special because only the first argument is
+    // vectorized, the second arguments must be equal.
+    CallInst *CI = dyn_cast<CallInst>(I);
+    Function *FI;
+    if (CI && (FI = CI->getCalledFunction()) &&
+        FI->getIntrinsicID() == Intrinsic::powi) {
+
+      Value *A1I = CI->getArgOperand(1),
+            *A1J = cast<CallInst>(J)->getArgOperand(1);
+      const SCEV *A1ISCEV = SE->getSCEV(A1I),
+                 *A1JSCEV = SE->getSCEV(A1J);
+      return (A1ISCEV == A1JSCEV);
     }
 
     return true;
@@ -729,12 +759,12 @@ namespace {
       AliasSetTracker WriteSet(*AA);
       bool JAfterStart = IAfterStart;
       BasicBlock::iterator J = llvm::next(I);
-      for (unsigned ss = 0; J != E && ss <= SearchLimit; ++J, ++ss) {
+      for (unsigned ss = 0; J != E && ss <= Config.SearchLimit; ++J, ++ss) {
         if (J == Start) JAfterStart = true;
 
         // Determine if J uses I, if so, exit the loop.
-        bool UsesI = trackUsesOfI(Users, WriteSet, I, J, !FastDep);
-        if (FastDep) {
+        bool UsesI = trackUsesOfI(Users, WriteSet, I, J, !Config.FastDep);
+        if (Config.FastDep) {
           // Note: For this heuristic to be effective, independent operations
           // must tend to be intermixed. This is likely to be true from some
           // kinds of grouped loop unrolling (but not the generic LLVM pass),
@@ -772,7 +802,7 @@ namespace {
         // If we have already found too many pairs, break here and this function
         // will be called again starting after the last instruction selected
         // during this invocation.
-        if (PairableInsts.size() >= MaxInsts) {
+        if (PairableInsts.size() >= Config.MaxInsts) {
           ShouldContinue = true;
           break;
         }
@@ -817,7 +847,7 @@ namespace {
           ConnectedPairs.insert(VPPair(P, ValuePair(*J, *I)));
       }
 
-      if (SplatBreaksChain) continue;
+      if (Config.SplatBreaksChain) continue;
       // Look for cases where just the first value in the pair is used by
       // both members of another pair (splatting).
       for (Value::use_iterator J = P.first->use_begin(); J != E; ++J) {
@@ -826,7 +856,7 @@ namespace {
       }
     }
 
-    if (SplatBreaksChain) return;
+    if (Config.SplatBreaksChain) return;
     // Look for cases where just the second value in the pair is used by
     // both members of another pair (splatting).
     for (Value::use_iterator I = P.second->use_begin(),
@@ -1256,7 +1286,7 @@ namespace {
              << *J->first << " <-> " << *J->second << "} of depth " <<
              MaxDepth << " and size " << PrunedTree.size() <<
             " (effective size: " << EffSize << ")\n");
-      if (MaxDepth >= ReqChainDepth && EffSize > BestEffSize) {
+      if (MaxDepth >= Config.ReqChainDepth && EffSize > BestEffSize) {
         BestMaxDepth = MaxDepth;
         BestEffSize = EffSize;
         BestTree = PrunedTree;
@@ -1272,7 +1302,8 @@ namespace {
                       std::multimap<ValuePair, ValuePair> &ConnectedPairs,
                       DenseSet<ValuePair> &PairableInstUsers,
                       DenseMap<Value *, Value *>& ChosenPairs) {
-    bool UseCycleCheck = CandidatePairs.size() <= MaxCandPairsForCycleCheck;
+    bool UseCycleCheck =
+     CandidatePairs.size() <= Config.MaxCandPairsForCycleCheck;
     std::multimap<ValuePair, ValuePair> PairableInstUserMap;
     for (std::vector<Value *>::iterator I = PairableInsts.begin(),
          E = PairableInsts.end(); I != E; ++I) {
@@ -1518,19 +1549,27 @@ namespace {
         ReplacedOperands[o] = getReplacementPointerInput(Context, I, J, o,
                                 FlipMemInputs);
         continue;
-      } else if (isa<CallInst>(I) && o == NumOperands-1) {
+      } else if (isa<CallInst>(I)) {
         Function *F = cast<CallInst>(I)->getCalledFunction();
         unsigned IID = F->getIntrinsicID();
-        BasicBlock &BB = *I->getParent();
+        if (o == NumOperands-1) {
+          BasicBlock &BB = *I->getParent();
 
-        Module *M = BB.getParent()->getParent();
-        Type *ArgType = I->getType();
-        Type *VArgType = getVecTypeForPair(ArgType);
+          Module *M = BB.getParent()->getParent();
+          Type *ArgType = I->getType();
+          Type *VArgType = getVecTypeForPair(ArgType);
 
-        // FIXME: is it safe to do this here?
-        ReplacedOperands[o] = Intrinsic::getDeclaration(M,
-          (Intrinsic::ID) IID, VArgType);
-        continue;
+          // FIXME: is it safe to do this here?
+          ReplacedOperands[o] = Intrinsic::getDeclaration(M,
+            (Intrinsic::ID) IID, VArgType);
+          continue;
+        } else if (IID == Intrinsic::powi && o == 1) {
+          // The second argument of powi is a single integer and we've already
+          // checked that both arguments are equal. As a result, we just keep
+          // I's second argument.
+          ReplacedOperands[o] = I->getOperand(o);
+          continue;
+        }
       } else if (isa<ShuffleVectorInst>(I) && o == NumOperands-1) {
         ReplacedOperands[o] = getReplacementShuffleMask(Context, I, J);
         continue;
@@ -1835,7 +1874,32 @@ INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 INITIALIZE_PASS_END(BBVectorize, BBV_NAME, bb_vectorize_name, false, false)
 
-BasicBlockPass *llvm::createBBVectorizePass() {
-  return new BBVectorize();
+BasicBlockPass *llvm::createBBVectorizePass(const VectorizeConfig &C) {
+  return new BBVectorize(C);
 }
 
+bool
+llvm::vectorizeBasicBlock(Pass *P, BasicBlock &BB, const VectorizeConfig &C) {
+  BBVectorize BBVectorizer(P, C);
+  return BBVectorizer.vectorizeBB(BB);
+}
+
+//===----------------------------------------------------------------------===//
+VectorizeConfig::VectorizeConfig() {
+  VectorBits = ::VectorBits;
+  NoInts = ::NoInts;
+  NoFloats = ::NoFloats;
+  NoCasts = ::NoCasts;
+  NoMath = ::NoMath;
+  NoFMA = ::NoFMA;
+  NoMemOps = ::NoMemOps;
+  AlignedOnly = ::AlignedOnly;
+  ReqChainDepth= ::ReqChainDepth;
+  SearchLimit = ::SearchLimit;
+  MaxCandPairsForCycleCheck = ::MaxCandPairsForCycleCheck;
+  SplatBreaksChain = ::SplatBreaksChain;
+  MaxInsts = ::MaxInsts;
+  MaxIter = ::MaxIter;
+  NoMemOpBoost = ::NoMemOpBoost;
+  FastDep = ::FastDep;
+}

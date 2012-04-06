@@ -704,8 +704,9 @@ static bool isHighCostExpansion(const SCEV *S,
         Value *UVal = U->getValue();
         for (Value::use_iterator UI = UVal->use_begin(), UE = UVal->use_end();
              UI != UE; ++UI) {
-          Instruction *User = cast<Instruction>(*UI);
-          if (User->getOpcode() == Instruction::Mul
+          // If U is a constant, it may be used by a ConstantExpr.
+          Instruction *User = dyn_cast<Instruction>(*UI);
+          if (User && User->getOpcode() == Instruction::Mul
               && SE.isSCEVable(User->getType())) {
             return SE.getSCEV(User) == Mul;
           }
@@ -1281,10 +1282,19 @@ static bool isLegalUse(const TargetLowering::AddrMode &AM,
     // If we have low-level target information, ask the target if it can fold an
     // integer immediate on an icmp.
     if (AM.BaseOffs != 0) {
-      if (TLI) return TLI->isLegalICmpImmediate(-(uint64_t)AM.BaseOffs);
-      return false;
+      if (!TLI)
+        return false;
+      // We have one of:
+      // ICmpZero     BaseReg + Offset => ICmp BaseReg, -Offset
+      // ICmpZero -1*ScaleReg + Offset => ICmp ScaleReg, Offset
+      // Offs is the ICmp immediate.
+      int64_t Offs = AM.BaseOffs;
+      if (AM.Scale == 0)
+        Offs = -(uint64_t)Offs; // The cast does the right thing with INT64_MIN.
+      return TLI->isLegalICmpImmediate(Offs);
     }
 
+    // ICmpZero BaseReg + -1*ScaleReg => ICmp BaseReg, ScaleReg
     return true;
 
   case LSRUse::Basic:
@@ -2441,7 +2451,7 @@ void LSRInstance::ChainInstruction(Instruction *UserInst, Instruction *IVOper,
     if (!isCompatibleIVType(PrevIV, NextIV))
       continue;
 
-    // A phi nodes terminates a chain.
+    // A phi node terminates a chain.
     if (isa<PHINode>(UserInst)
         && isa<PHINode>(IVChainVec[ChainIdx].back().UserInst))
       continue;
@@ -2497,13 +2507,14 @@ void LSRInstance::ChainInstruction(Instruction *UserInst, Instruction *IVOper,
   for (Value::use_iterator UseIter = IVOper->use_begin(),
          UseEnd = IVOper->use_end(); UseIter != UseEnd; ++UseIter) {
     Instruction *OtherUse = dyn_cast<Instruction>(*UseIter);
+    if (!OtherUse || OtherUse == UserInst)
+      continue;
     if (SE.isSCEVable(OtherUse->getType())
         && !isa<SCEVUnknown>(SE.getSCEV(OtherUse))
         && IU.isIVUserOrOperand(OtherUse)) {
       continue;
     }
-    if (OtherUse && OtherUse != UserInst)
-      NearUsers.insert(OtherUse);
+    NearUsers.insert(OtherUse);
   }
 
   // Since this user is part of the chain, it's no longer considered a use

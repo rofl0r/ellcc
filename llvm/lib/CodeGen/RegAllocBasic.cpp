@@ -15,7 +15,6 @@
 #define DEBUG_TYPE "regalloc"
 #include "RegAllocBase.h"
 #include "LiveDebugVariables.h"
-#include "LiveRangeEdit.h"
 #include "RenderMachineFunction.h"
 #include "Spiller.h"
 #include "VirtRegMap.h"
@@ -24,6 +23,7 @@
 #include "llvm/PassAnalysisSupport.h"
 #include "llvm/CodeGen/CalcSpillWeights.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
+#include "llvm/CodeGen/LiveRangeEdit.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -187,7 +187,7 @@ void RABasic::spillReg(LiveInterval& VirtReg, unsigned PhysReg,
     unassign(SpilledVReg, PhysReg);
 
     // Spill the extracted interval.
-    LiveRangeEdit LRE(SpilledVReg, SplitVRegs);
+    LiveRangeEdit LRE(SpilledVReg, SplitVRegs, *MF, *LIS, VRM);
     spiller().spill(LRE);
   }
   // After extracting segments, the query's results are invalid. But keep the
@@ -287,7 +287,7 @@ unsigned RABasic::selectOrSplit(LiveInterval &VirtReg,
   DEBUG(dbgs() << "spilling: " << VirtReg << '\n');
   if (!VirtReg.isSpillable())
     return ~0u;
-  LiveRangeEdit LRE(VirtReg, SplitVRegs);
+  LiveRangeEdit LRE(VirtReg, SplitVRegs, *MF, *LIS, VRM);
   spiller().spill(LRE);
 
   // The live virtual register requesting allocation was spilled, so tell

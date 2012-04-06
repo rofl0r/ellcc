@@ -17,6 +17,7 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Module.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Dwarf.h"
 
 using namespace llvm;
@@ -385,16 +386,21 @@ DIType DIBuilder::createObjCIVar(StringRef Name,
 
 /// createObjCProperty - Create debugging information entry for Objective-C
 /// property.
-DIObjCProperty DIBuilder::createObjCProperty(StringRef Name, 
+DIObjCProperty DIBuilder::createObjCProperty(StringRef Name,
+					     DIFile File, unsigned LineNumber,
                                              StringRef GetterName,
                                              StringRef SetterName, 
-                                             unsigned PropertyAttributes) {
+                                             unsigned PropertyAttributes,
+					     DIType Ty) {
   Value *Elts[] = {
-    GetTagConstant(VMContext, dwarf::DW_TAG_APPLE_Property),
+    GetTagConstant(VMContext, dwarf::DW_TAG_APPLE_property),
     MDString::get(VMContext, Name),
+    File,
+    ConstantInt::get(Type::getInt32Ty(VMContext), LineNumber),
     MDString::get(VMContext, GetterName),
     MDString::get(VMContext, SetterName),
-    ConstantInt::get(Type::getInt32Ty(VMContext), PropertyAttributes)
+    ConstantInt::get(Type::getInt32Ty(VMContext), PropertyAttributes),
+    Ty
   };
   return DIObjCProperty(MDNode::get(VMContext, Elts));
 }
@@ -820,6 +826,7 @@ DISubprogram DIBuilder::createFunction(DIDescriptor Context,
                                        DIFile File, unsigned LineNo,
                                        DIType Ty,
                                        bool isLocalToUnit, bool isDefinition,
+                                       unsigned ScopeLine,
                                        unsigned Flags, bool isOptimized,
                                        Function *Fn,
                                        MDNode *TParams,
@@ -849,7 +856,8 @@ DISubprogram DIBuilder::createFunction(DIDescriptor Context,
     Fn,
     TParams,
     Decl,
-    THolder
+    THolder,
+    ConstantInt::get(Type::getInt32Ty(VMContext), ScopeLine)
   };
   MDNode *Node = MDNode::get(VMContext, Elts);
 
@@ -897,7 +905,9 @@ DISubprogram DIBuilder::createMethod(DIDescriptor Context,
     Fn,
     TParam,
     llvm::Constant::getNullValue(Type::getInt32Ty(VMContext)),
-    THolder
+    THolder,
+    // FIXME: Do we want to use a different scope lines?
+    ConstantInt::get(Type::getInt32Ty(VMContext), LineNo)
   };
   MDNode *Node = MDNode::get(VMContext, Elts);
   return DISubprogram(Node);

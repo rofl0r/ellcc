@@ -75,6 +75,8 @@ _func:
         adds r1, r2, #0x1f0
 	add r2, #1
         add r0, r0, #32
+        adds r2, r2, #56
+        adds r2, #56
 
 @ CHECK: itet	eq                      @ encoding: [0x0a,0xbf]
 @ CHECK: addeq	r1, r2, #4              @ encoding: [0x11,0x1d]
@@ -89,6 +91,8 @@ _func:
 @ CHECK: adds.w	r1, r2, #496            @ encoding: [0x12,0xf5,0xf8,0x71]
 @ CHECK: add.w	r2, r2, #1              @ encoding: [0x02,0xf1,0x01,0x02]
 @ CHECK: add.w	r0, r0, #32             @ encoding: [0x00,0xf1,0x20,0x00]
+@ CHECK: adds	r2, #56                 @ encoding: [0x38,0x32]
+@ CHECK: adds	r2, #56                 @ encoding: [0x38,0x32]
 
 
 @------------------------------------------------------------------------------
@@ -368,7 +372,8 @@ _func:
         cmp sp, r6, lsr #1
         cmp r2, r5, asr #24
         cmp r1, r4, ror #15
-        cmp r0, #-2
+        cmp r2, #-2
+        cmp r9, #1
 
 @ CHECK: cmp.w	r5, #65280              @ encoding: [0xb5,0xf5,0x7f,0x4f]
 @ CHECK: cmp.w	r4, r12                 @ encoding: [0xb4,0xeb,0x0c,0x0f]
@@ -377,7 +382,9 @@ _func:
 @ CHECK: cmp.w	sp, r6, lsr #1          @ encoding: [0xbd,0xeb,0x56,0x0f]
 @ CHECK: cmp.w	r2, r5, asr #24         @ encoding: [0xb2,0xeb,0x25,0x6f]
 @ CHECK: cmp.w	r1, r4, ror #15         @ encoding: [0xb1,0xeb,0xf4,0x3f]
-@ CHECK: cmn.w	r0, #2                  @ encoding: [0x10,0xf1,0x02,0x0f]
+@ CHECK: cmn.w	r2, #2                  @ encoding: [0x12,0xf1,0x02,0x0f]
+@ CHECK: cmp.w	r9, #1                  @ encoding: [0xb9,0xf1,0x01,0x0f]
+
 
 @------------------------------------------------------------------------------
 @ DBG
@@ -1130,6 +1137,8 @@ _func:
         moveq r1, #12
         movne.w r1, #12
         mov.w r6, #450
+        it lo
+        movlo r1, #-1
 
         @ alias for mvn
 	mov r3, #-3
@@ -1149,7 +1158,8 @@ _func:
 @ CHECK: moveq	r1, #12                 @ encoding: [0x0c,0x21]
 @ CHECK: movne.w r1, #12                @ encoding: [0x4f,0xf0,0x0c,0x01]
 @ CHECK: mov.w	r6, #450                @ encoding: [0x4f,0xf4,0xe1,0x76]
-
+@ CHECK: it	lo                      @ encoding: [0x38,0xbf]
+@ CHECK: movlo.w	r1, #-1         @ encoding: [0x4f,0xf0,0xff,0x31]
 @ CHECK: mvn	r3, #2                  @ encoding: [0x6f,0xf0,0x02,0x03]
 
 @------------------------------------------------------------------------------
@@ -1258,6 +1268,7 @@ _func:
         msr  spsr_fc, r0
         msr  SPSR_fsxc, r5
         msr  cpsr_fsxc, r8
+        msr  cpsr, r3
 
 @ CHECK: msr	APSR_nzcvq, r1          @ encoding: [0x81,0xf3,0x00,0x88]
 @ CHECK: msr	APSR_g, r2              @ encoding: [0x82,0xf3,0x00,0x84]
@@ -1273,6 +1284,7 @@ _func:
 @ CHECK: msr	SPSR_fc, r0             @ encoding: [0x90,0xf3,0x00,0x89]
 @ CHECK: msr	SPSR_fsxc, r5           @ encoding: [0x95,0xf3,0x00,0x8f]
 @ CHECK: msr	CPSR_fsxc, r8           @ encoding: [0x88,0xf3,0x00,0x8f]
+@ CHECK: msr	CPSR_fc, r3             @ encoding: [0x83,0xf3,0x00,0x89]
 
 
 @------------------------------------------------------------------------------
@@ -2644,6 +2656,8 @@ _func:
         subs r1, r2, #0x1f0
 	sub r2, #1
         sub r0, r0, #32
+        subs r2, r2, #56
+        subs r2, #56
 
 @ CHECK: itet	eq                      @ encoding: [0x0a,0xbf]
 @ CHECK: subeq	r1, r2, #4              @ encoding: [0x11,0x1f]
@@ -2658,6 +2672,8 @@ _func:
 @ CHECK: subs.w	r1, r2, #496            @ encoding: [0xb2,0xf5,0xf8,0x71]
 @ CHECK: sub.w	r2, r2, #1              @ encoding: [0xa2,0xf1,0x01,0x02]
 @ CHECK: sub.w	r0, r0, #32             @ encoding: [0xa0,0xf1,0x20,0x00]
+@ CHECK: subs	r2, #56                 @ encoding: [0x38,0x3a]
+@ CHECK: subs	r2, #56                 @ encoding: [0x38,0x3a]
 
 
 @------------------------------------------------------------------------------

@@ -188,6 +188,24 @@ void CompileUnit::addSourceLine(DIE *Die, DIType Ty) {
 
 /// addSourceLine - Add location information to specified debug information
 /// entry.
+void CompileUnit::addSourceLine(DIE *Die, DIObjCProperty Ty) {
+  // Verify type.
+  if (!Ty.Verify())
+    return;
+
+  unsigned Line = Ty.getLineNumber();
+  if (Line == 0)
+    return;
+  DIFile File = Ty.getFile();
+  unsigned FileID = DD->GetOrCreateSourceID(File.getFilename(),
+					    File.getDirectory());
+  assert(FileID && "Invalid file id");
+  addUInt(Die, dwarf::DW_AT_decl_file, 0, FileID);
+  addUInt(Die, dwarf::DW_AT_decl_line, 0, Line);
+}
+
+/// addSourceLine - Add location information to specified debug information
+/// entry.
 void CompileUnit::addSourceLine(DIE *Die, DINameSpace NS) {
   // Verify namespace.
   if (!NS.Verify())
@@ -628,7 +646,8 @@ DIE *CompileUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
 }
 
 /// addType - Add a new type attribute to the specified entity.
-void CompileUnit::addType(DIE *Entity, DIType Ty) {
+void CompileUnit::addType(DIE *Entity, DIType Ty,
+			  unsigned Attribute) {
   if (!Ty.Verify())
     return;
 
@@ -636,7 +655,7 @@ void CompileUnit::addType(DIE *Entity, DIType Ty) {
   DIEEntry *Entry = getDIEEntry(Ty);
   // If it exists then use the existing value.
   if (Entry) {
-    Entity->addValue(dwarf::DW_AT_type, dwarf::DW_FORM_ref4, Entry);
+    Entity->addValue(Attribute, dwarf::DW_FORM_ref4, Entry);
     return;
   }
 
@@ -646,7 +665,7 @@ void CompileUnit::addType(DIE *Entity, DIType Ty) {
   // Set up proxy.
   Entry = createDIEEntry(Buffer);
   insertDIEEntry(Ty, Entry);
-  Entity->addValue(dwarf::DW_AT_type, dwarf::DW_FORM_ref4, Entry);
+  Entity->addValue(Attribute, dwarf::DW_FORM_ref4, Entry);
 
   // If this is a complete composite type then include it in the
   // list of global types.
@@ -826,13 +845,20 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
         addUInt(ElemDie, dwarf::DW_AT_declaration, dwarf::DW_FORM_flag, 1);
         addUInt(ElemDie, dwarf::DW_AT_external, dwarf::DW_FORM_flag, 1);
         addSourceLine(ElemDie, DV);
-      } else if (Element.isDerivedType())
-        ElemDie = createMemberDIE(DIDerivedType(Element));
-      else if (Element.isObjCProperty()) {
+      } else if (Element.isDerivedType()) {
+	DIDerivedType DDTy(Element);
+	if (DDTy.getTag() == dwarf::DW_TAG_friend) {
+	  ElemDie = new DIE(dwarf::DW_TAG_friend);
+	  addType(ElemDie, DDTy.getTypeDerivedFrom(), dwarf::DW_AT_friend);
+	} else
+	  ElemDie = createMemberDIE(DIDerivedType(Element));
+      } else if (Element.isObjCProperty()) {
         DIObjCProperty Property(Element);
         ElemDie = new DIE(Property.getTag());
         StringRef PropertyName = Property.getObjCPropertyName();
         addString(ElemDie, dwarf::DW_AT_APPLE_property_name, PropertyName);
+	addType(ElemDie, Property.getType());
+	addSourceLine(ElemDie, Property);
         StringRef GetterName = Property.getObjCPropertyGetterName();
         if (!GetterName.empty())
           addString(ElemDie, dwarf::DW_AT_APPLE_property_getter, GetterName);

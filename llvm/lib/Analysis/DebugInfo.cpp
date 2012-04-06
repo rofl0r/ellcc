@@ -291,7 +291,7 @@ bool DIDescriptor::isEnumerator() const {
 
 /// isObjCProperty - Return true if the specified tag is DW_TAG
 bool DIDescriptor::isObjCProperty() const {
-  return DbgNode && getTag() == dwarf::DW_TAG_APPLE_Property;
+  return DbgNode && getTag() == dwarf::DW_TAG_APPLE_property;
 }
 //===----------------------------------------------------------------------===//
 // Simple Descriptor Constructors and other Methods
@@ -374,6 +374,19 @@ bool DICompileUnit::Verify() const {
   if (N.empty())
     return false;
   // It is possible that directory and produce string is empty.
+  return true;
+}
+
+/// Verify - Verify that an ObjC property is well formed.
+bool DIObjCProperty::Verify() const {
+  if (!DbgNode)
+    return false;
+  unsigned Tag = getTag();
+  if (Tag != dwarf::DW_TAG_APPLE_property) return false;
+  DIType Ty = getType();
+  if (!Ty.Verify()) return false;
+
+  // Don't worry about the rest of the strings for now.
   return true;
 }
 
@@ -773,6 +786,9 @@ void DISubprogram::print(raw_ostream &OS) const {
 
   if (isDefinition())
     OS << " [def] ";
+
+  if (getScopeLineNumber() != getLineNumber())
+    OS << " [Scope: " << getScopeLineNumber() << "] ";
 
   OS << "\n";
 }

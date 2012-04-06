@@ -312,11 +312,15 @@ bool Parser::ParseTemplateParameters(unsigned Depth,
   if (Tok.is(tok::greater))
     RAngleLoc = ConsumeToken();
   else if (ParseTemplateParameterList(Depth, TemplateParams)) {
-    if (!Tok.is(tok::greater)) {
+    if (Tok.is(tok::greatergreater)) {
+      Tok.setKind(tok::greater);
+      Tok.setLocation(Tok.getLocation().getLocWithOffset(1));
+    } else if (Tok.is(tok::greater))
+      RAngleLoc = ConsumeToken();
+    else {
       Diag(Tok.getLocation(), diag::err_expected_greater);
       return true;
     }
-    RAngleLoc = ConsumeToken();
   }
   return false;
 }
@@ -339,13 +343,13 @@ Parser::ParseTemplateParameterList(unsigned Depth,
     } else {
       // If we failed to parse a template parameter, skip until we find
       // a comma or closing brace.
-      SkipUntil(tok::comma, tok::greater, true, true);
+      SkipUntil(tok::comma, tok::greater, tok::greatergreater, true, true);
     }
 
     // Did we find a comma or the end of the template parmeter list?
     if (Tok.is(tok::comma)) {
       ConsumeToken();
-    } else if (Tok.is(tok::greater)) {
+    } else if (Tok.is(tok::greater) || Tok.is(tok::greatergreater)) {
       // Don't consume this... that's done by template parser.
       break;
     } else {
@@ -490,7 +494,7 @@ Decl *Parser::ParseTypeParameter(unsigned Depth, unsigned Position) {
     ParamName = Tok.getIdentifierInfo();
     NameLoc = ConsumeToken();
   } else if (Tok.is(tok::equal) || Tok.is(tok::comma) ||
-            Tok.is(tok::greater)) {
+             Tok.is(tok::greater) || Tok.is(tok::greatergreater)) {
     // Unnamed template parameter. Don't have to do anything here, just
     // don't consume this token.
   } else {
@@ -539,13 +543,25 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
   }
 
   // Generate a meaningful error if the user forgot to put class before the
-  // identifier, comma, or greater.
+  // identifier, comma, or greater. Provide a fixit if the identifier, comma,
+  // or greater appear immediately or after 'typename' or 'struct'. In the
+  // latter case, replace the keyword with 'class'.
   if (!Tok.is(tok::kw_class)) {
-    Diag(Tok.getLocation(), diag::err_expected_class_before)
-      << PP.getSpelling(Tok);
-    return 0;
-  }
-  ConsumeToken();
+    bool Replace = Tok.is(tok::kw_typename) || Tok.is(tok::kw_struct);
+    const Token& Next = Replace ? NextToken() : Tok;
+    if (Next.is(tok::identifier) || Next.is(tok::comma) ||
+        Next.is(tok::greater) || Next.is(tok::greatergreater) ||
+        Next.is(tok::ellipsis))
+      Diag(Tok.getLocation(), diag::err_class_on_template_template_param)
+        << (Replace ? FixItHint::CreateReplacement(Tok.getLocation(), "class")
+                    : FixItHint::CreateInsertion(Tok.getLocation(), "class "));
+    else
+      Diag(Tok.getLocation(), diag::err_class_on_template_template_param);
+
+    if (Replace)
+      ConsumeToken();
+  } else
+    ConsumeToken();
 
   // Parse the ellipsis, if given.
   SourceLocation EllipsisLoc;
@@ -564,7 +580,8 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
   if (Tok.is(tok::identifier)) {
     ParamName = Tok.getIdentifierInfo();
     NameLoc = ConsumeToken();
-  } else if (Tok.is(tok::equal) || Tok.is(tok::comma) || Tok.is(tok::greater)) {
+  } else if (Tok.is(tok::equal) || Tok.is(tok::comma) ||
+             Tok.is(tok::greater) || Tok.is(tok::greatergreater)) {
     // Unnamed template parameter. Don't have to do anything here, just
     // don't consume this token.
   } else {
@@ -1169,7 +1186,7 @@ void Parser::ParseLateTemplatedFuncDef(LateParsedTemplatedFunction &LMT) {
     FD = FunTmpl->getTemplatedDecl();
   else
     FD = cast<FunctionDecl>(LMT.D);
-  
+
   // To restore the context after late parsing.
   Sema::ContextRAII GlobalSavedContext(Actions, Actions.CurContext);
 
@@ -1237,7 +1254,7 @@ void Parser::ParseLateTemplatedFuncDef(LateParsedTemplatedFunction &LMT) {
                                    FunctionTemplate->getTemplatedDecl());
   if (FunctionDecl *Function = dyn_cast_or_null<FunctionDecl>(LMT.D))
     Actions.ActOnStartOfFunctionDef(getCurScope(), Function);
-  
+
 
   if (Tok.is(tok::kw_try)) {
     ParseFunctionTryBlock(LMT.D, FnScope);

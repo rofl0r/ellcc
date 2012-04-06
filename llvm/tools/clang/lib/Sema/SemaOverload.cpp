@@ -2758,6 +2758,19 @@ Sema::IsQualificationConversion(QualType FromType, QualType ToType,
   return UnwrappedAnyPointer && Context.hasSameUnqualifiedType(FromType,ToType);
 }
 
+static bool isFirstArgumentCompatibleWithType(ASTContext &Context,
+                                              CXXConstructorDecl *Constructor,
+                                              QualType Type) {
+  const FunctionProtoType *CtorType =
+      Constructor->getType()->getAs<FunctionProtoType>();
+  if (CtorType->getNumArgs() > 0) {
+    QualType FirstArg = CtorType->getArgType(0);
+    if (Context.hasSameUnqualifiedType(Type, FirstArg.getNonReferenceType()))
+      return true;
+  }
+  return false;
+}
+
 static OverloadingResult
 IsInitializerListConstructorConversion(Sema &S, Expr *From, QualType ToType,
                                        CXXRecordDecl *To,
@@ -2784,15 +2797,19 @@ IsInitializerListConstructorConversion(Sema &S, Expr *From, QualType ToType,
                   S.isInitListConstructor(Constructor) &&
                   (AllowExplicit || !Constructor->isExplicit());
     if (Usable) {
+      // If the first argument is (a reference to) the target type,
+      // suppress conversions.
+      bool SuppressUserConversions =
+          isFirstArgumentCompatibleWithType(S.Context, Constructor, ToType);
       if (ConstructorTmpl)
         S.AddTemplateOverloadCandidate(ConstructorTmpl, FoundDecl,
                                        /*ExplicitArgs*/ 0,
                                        From, CandidateSet,
-                                       /*SuppressUserConversions=*/true);
+                                       SuppressUserConversions);
       else
         S.AddOverloadCandidate(Constructor, FoundDecl,
                                From, CandidateSet,
-                               /*SuppressUserConversions=*/true);
+                               SuppressUserConversions);
     }
   }
 
@@ -2918,15 +2935,8 @@ IsUserDefinedConversion(Sema &S, Expr *From, QualType ToType,
             if (NumArgs == 1) {
               // If the first argument is (a reference to) the target type,
               // suppress conversions.
-              const FunctionProtoType *CtorType =
-                  Constructor->getType()->getAs<FunctionProtoType>();
-              if (CtorType->getNumArgs() > 0) {
-                QualType FirstArg = CtorType->getArgType(0);
-                if (S.Context.hasSameUnqualifiedType(ToType,
-                                              FirstArg.getNonReferenceType())) {
-                  SuppressUserConversions = true;
-                }
-              }
+              SuppressUserConversions = isFirstArgumentCompatibleWithType(
+                                                S.Context, Constructor, ToType);
             }
           }
           if (ConstructorTmpl)
@@ -4291,6 +4301,16 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
               ImplicitConversionSequence::Worse)
         Result = ICS;
     }
+
+    // For an empty list, we won't have computed any conversion sequence.
+    // Introduce the identity conversion sequence.
+    if (From->getNumInits() == 0) {
+      Result.setStandard();
+      Result.Standard.setAsIdentityConversion();
+      Result.Standard.setFromType(ToType);
+      Result.Standard.setAllToTypes(ToType);
+    }
+
     Result.setListInitializationSequence();
     Result.setStdInitializerListElement(toStdInitializerList);
     return Result;
@@ -4423,6 +4443,8 @@ TryListConversion(Sema &S, InitListExpr *From, QualType ToType,
     else if (NumInits == 0) {
       Result.setStandard();
       Result.Standard.setAsIdentityConversion();
+      Result.Standard.setFromType(ToType);
+      Result.Standard.setAllToTypes(ToType);
     }
     Result.setListInitializationSequence();
     return Result;
@@ -4798,7 +4820,6 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
   // Check for a narrowing implicit conversion.
   APValue PreNarrowingValue;
   QualType PreNarrowingType;
-  bool Diagnosed = false;
   switch (SCS->getNarrowingKind(Context, Result.get(), PreNarrowingValue,
                                 PreNarrowingType)) {
   case NK_Variable_Narrowing:
@@ -4808,16 +4829,18 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
     break;
 
   case NK_Constant_Narrowing:
-    Diag(From->getLocStart(), diag::err_cce_narrowing)
+    Diag(From->getLocStart(),
+         isSFINAEContext() ? diag::err_cce_narrowing_sfinae :
+                             diag::err_cce_narrowing)
       << CCE << /*Constant*/1
       << PreNarrowingValue.getAsString(Context, PreNarrowingType) << T;
-    Diagnosed = true;
     break;
 
   case NK_Type_Narrowing:
-    Diag(From->getLocStart(), diag::err_cce_narrowing)
+    Diag(From->getLocStart(),
+         isSFINAEContext() ? diag::err_cce_narrowing_sfinae :
+                             diag::err_cce_narrowing)
       << CCE << /*Constant*/0 << From->getType() << T;
-    Diagnosed = true;
     break;
   }
 
@@ -4838,10 +4861,6 @@ ExprResult Sema::CheckConvertedConstantExpression(Expr *From, QualType T,
       return Result;
     }
   }
-
-  // Only issue one narrowing diagnostic.
-  if (Diagnosed)
-    return Result;
 
   // It's not a constant expression. Produce an appropriate diagnostic.
   if (Notes.size() == 1 &&
@@ -8230,7 +8249,8 @@ void NoteFunctionCandidate(Sema &S, OverloadCandidate *Cand,
     OverloadCandidateKind FnKind = ClassifyOverloadCandidate(S, Fn, FnDesc);
 
     S.Diag(Fn->getLocation(), diag::note_ovl_candidate_deleted)
-      << FnKind << FnDesc << Fn->isDeleted();
+      << FnKind << FnDesc
+      << (Fn->isDeleted() ? (Fn->isDeletedAsWritten() ? 1 : 2) : 0);
     MaybeEmitInheritedConstructorNote(S, Fn);
     return;
   }
@@ -10079,9 +10099,11 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
           << getSpecialMember(Method)
           << BinaryOperator::getOpcodeStr(Opc)
           << getDeletedOrUnavailableSuffix(Best->Function);
-        
-        if (Method->getParent()->isLambda()) {
-          Diag(Method->getParent()->getLocation(), diag::note_lambda_decl);
+
+        if (getSpecialMember(Method) != CXXInvalid) {
+          // The user probably meant to call this special member. Just
+          // explain why it's deleted.
+          NoteDeletedFunction(Method);
           return ExprError();
         }
       } else {

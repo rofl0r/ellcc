@@ -19,6 +19,7 @@
 #include "llvm/Constants.h"
 #include "llvm/Module.h"
 #include "llvm/Instructions.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -133,6 +134,11 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   DwarfStrSectionSym = TextSectionSym = 0;
   DwarfDebugRangeSectionSym = DwarfDebugLocSectionSym = 0;
   FunctionBeginSym = FunctionEndSym = 0;
+
+  // Turn on accelerator tables for Darwin.
+  if (Triple(M->getTargetTriple()).isOSDarwin())
+    DwarfAccelTables = true;
+  
   {
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     beginModule(M);
@@ -438,7 +444,8 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
     I->second.push_back(std::make_pair(StartLabel, ScopeDIE));
 
   DILocation DL(Scope->getInlinedAt());
-  TheCU->addUInt(ScopeDIE, dwarf::DW_AT_call_file, 0, TheCU->getID());
+  TheCU->addUInt(ScopeDIE, dwarf::DW_AT_call_file, 0,
+                 GetOrCreateSourceID(DL.getFilename(), DL.getDirectory()));
   TheCU->addUInt(ScopeDIE, dwarf::DW_AT_call_line, 0, DL.getLineNumber());
 
   // Add name to the name table, we do this here because we're guaranteed
@@ -554,9 +561,9 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   NewCU->addUInt(Die, dwarf::DW_AT_language, dwarf::DW_FORM_data2,
                  DIUnit.getLanguage());
   NewCU->addString(Die, dwarf::DW_AT_name, FN);
-  // Use DW_AT_entry_pc instead of DW_AT_low_pc/DW_AT_high_pc pair. This
-  // simplifies debug range entries.
-  NewCU->addUInt(Die, dwarf::DW_AT_entry_pc, dwarf::DW_FORM_addr, 0);
+  // 2.17.1 requires that we use DW_AT_low_pc for a single entry point
+  // into an entity.
+  NewCU->addUInt(Die, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr, 0);
   // DW_AT_stmt_list is a offset of line number information for this
   // compile unit in debug_line section.
   if (Asm->MAI->doesDwarfRequireRelocationForSectionOffset())
@@ -1086,12 +1093,15 @@ void DwarfDebug::beginInstruction(const MachineInstr *MI) {
   if (!MI->isDebugValue()) {
     DebugLoc DL = MI->getDebugLoc();
     if (DL != PrevInstLoc && (!DL.isUnknown() || UnknownLocations)) {
-      unsigned Flags = DWARF2_FLAG_IS_STMT;
+      unsigned Flags = 0;
       PrevInstLoc = DL;
       if (DL == PrologEndLoc) {
         Flags |= DWARF2_FLAG_PROLOGUE_END;
         PrologEndLoc = DebugLoc();
       }
+      if (PrologEndLoc.isUnknown())
+        Flags |= DWARF2_FLAG_IS_STMT;
+
       if (!DL.isUnknown()) {
         const MDNode *Scope = DL.getScope(Asm->MF->getFunction()->getContext());
         recordSourceLine(DL.getLine(), DL.getCol(), Scope, Flags);
@@ -1186,12 +1196,19 @@ static MDNode *getScopeNode(DebugLoc DL, const LLVMContext &Ctx) {
 }
 
 /// getFnDebugLoc - Walk up the scope chain of given debug loc and find
-/// line number  info for the function.
+/// line number info for the function.
 static DebugLoc getFnDebugLoc(DebugLoc DL, const LLVMContext &Ctx) {
   const MDNode *Scope = getScopeNode(DL, Ctx);
   DISubprogram SP = getDISubprogram(Scope);
-  if (SP.Verify()) 
-    return DebugLoc::get(SP.getLineNumber(), 0, SP);
+  if (SP.Verify()) {
+    // Check for number of operands since the compatibility is
+    // cheap here.
+    if (SP->getNumOperands() > 19)
+      return DebugLoc::get(SP.getScopeLineNumber(), 0, SP);
+    else
+      return DebugLoc::get(SP.getLineNumber(), 0, SP);
+  }
+
   return DebugLoc();
 }
 
@@ -1364,7 +1381,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
                                        MF->getFunction()->getContext());
     recordSourceLine(FnStartDL.getLine(), FnStartDL.getCol(),
                      FnStartDL.getScope(MF->getFunction()->getContext()),
-                     DWARF2_FLAG_IS_STMT);
+                     0);
   }
 }
 

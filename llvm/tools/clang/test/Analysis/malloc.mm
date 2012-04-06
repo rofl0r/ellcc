@@ -106,3 +106,51 @@ void testBlocks() {
   myBlock(3);
 }
 
+// Test NSMapInsert. 
+@interface NSMapTable : NSObject <NSCopying, NSCoding, NSFastEnumeration>
+@end
+extern void *NSMapGet(NSMapTable *table, const void *key);
+extern void NSMapInsert(NSMapTable *table, const void *key, const void *value);
+extern void NSMapInsertKnownAbsent(NSMapTable *table, const void *key, const void *value);
+char *strdup(const char *s);
+
+NSString * radar11152419(NSString *string1, NSMapTable *map) {
+    const char *strkey = "key";
+    NSString *string = ( NSString *)NSMapGet(map, strkey);
+    if (!string) {
+        string = [string1 copy];
+        NSMapInsert(map, strdup(strkey), (void*)string); // no warning
+        NSMapInsertKnownAbsent(map, strdup(strkey), (void*)string); // no warning
+    }
+    return string;
+}
+
+// Test that we handle pointer escaping through OSAtomicEnqueue.
+typedef volatile struct {
+ void *opaque1;
+ long opaque2;
+} OSQueueHead;
+void OSAtomicEnqueue( OSQueueHead *__list, void *__new, size_t __offset) __attribute__((weak_import));
+static inline void radar11111210(OSQueueHead *pool) {
+    void *newItem = malloc(4);
+    OSAtomicEnqueue(pool, newItem, 4);
+}
+
+// Pointer might escape through CGDataProviderCreateWithData (radar://11187558).
+typedef struct CGDataProvider *CGDataProviderRef;
+typedef void (*CGDataProviderReleaseDataCallback)(void *info, const void *data,
+    size_t size);
+extern CGDataProviderRef CGDataProviderCreateWithData(void *info,
+    const void *data, size_t size,
+    CGDataProviderReleaseDataCallback releaseData)
+    __attribute__((visibility("default")));
+void *calloc(size_t, size_t);
+
+static void releaseDataCallback (void *info, const void *data, size_t size) {
+#pragma unused (info, size)
+  free((void*)data);
+}
+void testCGDataProviderCreateWithData() { 
+  void* b = calloc(8, 8);
+  CGDataProviderRef p = CGDataProviderCreateWithData(0, b, 8*8, releaseDataCallback);
+}

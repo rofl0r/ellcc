@@ -110,11 +110,11 @@ namespace llvm {
     }
 
     // Add sub-registers to OSet following a pre-order defined by the .td file.
-    void addSubRegsPreOrder(SetVector<CodeGenRegister*> &OSet,
+    void addSubRegsPreOrder(SetVector<const CodeGenRegister*> &OSet,
                             CodeGenRegBank&) const;
 
     // List of super-registers in topological order, small to large.
-    typedef std::vector<CodeGenRegister*> SuperRegList;
+    typedef std::vector<const CodeGenRegister*> SuperRegList;
 
     // Get the list of super-registers.
     // This is only valid after computeDerivedInfo has visited all registers.
@@ -122,6 +122,13 @@ namespace llvm {
       assert(SubRegsComplete && "Must precompute sub-registers");
       return SuperRegs;
     }
+
+    // List of register units in ascending order.
+    typedef SmallVector<unsigned, 16> RegUnitList;
+
+    // Get the list of register units.
+    // This is only valid after getSubRegs() completes.
+    const RegUnitList &getRegUnits() const { return RegUnits; }
 
     // Order CodeGenRegister pointers by EnumValue.
     struct Less {
@@ -139,6 +146,7 @@ namespace llvm {
     bool SubRegsComplete;
     SubRegMap SubRegs;
     SuperRegList SuperRegs;
+    RegUnitList RegUnits;
   };
 
 
@@ -307,6 +315,7 @@ namespace llvm {
     // Registers.
     std::vector<CodeGenRegister*> Registers;
     DenseMap<Record*, CodeGenRegister*> Def2Reg;
+    unsigned NumRegUnits;
 
     // Register classes.
     std::vector<CodeGenRegisterClass*> RegClasses;
@@ -354,6 +363,8 @@ namespace llvm {
 
     // Find a register from its Record def.
     CodeGenRegister *getReg(Record*);
+
+    unsigned newRegUnit() { return NumRegUnits++; }
 
     ArrayRef<CodeGenRegisterClass*> getRegClasses() const {
       return RegClasses;

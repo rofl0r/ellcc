@@ -88,6 +88,16 @@ const std::string &CodeGenRegister::getName() const {
   return TheDef->getName();
 }
 
+// Merge two RegUnitLists maintaining the order and removing duplicates.
+// Overwrites MergedRU in the process.
+static void mergeRegUnits(CodeGenRegister::RegUnitList &MergedRU,
+                          const CodeGenRegister::RegUnitList &RRU) {
+  CodeGenRegister::RegUnitList LRU = MergedRU;
+  MergedRU.clear();
+  std::set_union(LRU.begin(), LRU.end(), RRU.begin(), RRU.end(),
+                 std::back_inserter(MergedRU));
+}
+
 const CodeGenRegister::SubRegMap &
 CodeGenRegister::getSubRegs(CodeGenRegBank &RegBank) {
   // Only compute this map once.
@@ -227,11 +237,39 @@ CodeGenRegister::getSubRegs(CodeGenRegBank &RegBank) {
       if (Orphans.erase(SI->second))
         SubRegs[RegBank.getCompositeSubRegIndex(Idx, SI->first)] = SI->second;
   }
+
+  // Initialize RegUnitList. A register with no subregisters creates its own
+  // unit. Otherwise, it inherits all its subregister's units. Because
+  // getSubRegs is called recursively, this processes the register hierarchy in
+  // postorder.
+  //
+  // TODO: We currently assume all register units correspond to a named "leaf"
+  // register. We should also unify register units for ad-hoc register
+  // aliases. This can be done by iteratively merging units for aliasing
+  // registers using a worklist.
+  assert(RegUnits.empty() && "Should only initialize RegUnits once");
+  if (SubRegs.empty()) {
+    RegUnits.push_back(RegBank.newRegUnit());
+  }
+  else {
+    for (SubRegMap::const_iterator I = SubRegs.begin(), E = SubRegs.end();
+         I != E; ++I) {
+      // Strangely a register may have itself as a subreg (self-cycle) e.g. XMM.
+      CodeGenRegister *SR = I->second;
+      if (SR == this) {
+        if (RegUnits.empty())
+          RegUnits.push_back(RegBank.newRegUnit());
+        continue;
+      }
+      // Merge the subregister's units into this register's RegUnits.
+      mergeRegUnits(RegUnits, SR->RegUnits);
+    }
+  }
   return SubRegs;
 }
 
 void
-CodeGenRegister::addSubRegsPreOrder(SetVector<CodeGenRegister*> &OSet,
+CodeGenRegister::addSubRegsPreOrder(SetVector<const CodeGenRegister*> &OSet,
                                     CodeGenRegBank &RegBank) const {
   assert(SubRegsComplete && "Must precompute sub-registers");
   std::vector<Record*> Indices = TheDef->getValueAsListOfDefs("SubRegIndices");
@@ -659,6 +697,7 @@ CodeGenRegBank::CodeGenRegBank(RecordKeeper &Records) : Records(Records) {
 
   // Precompute all sub-register maps now all the registers are known.
   // This will create Composite entries for all inferred sub-register indices.
+  NumRegUnits = 0;
   for (unsigned i = 0, e = Registers.size(); i != e; ++i)
     Registers[i]->getSubRegs(*this);
 
@@ -1095,7 +1134,7 @@ CodeGenRegBank::getRegClassForRegister(Record *R) {
 }
 
 BitVector CodeGenRegBank::computeCoveredRegisters(ArrayRef<Record*> Regs) {
-  SetVector<CodeGenRegister*> Set;
+  SetVector<const CodeGenRegister*> Set;
 
   // First add Regs with all sub-registers.
   for (unsigned i = 0, e = Regs.size(); i != e; ++i) {
@@ -1110,7 +1149,7 @@ BitVector CodeGenRegBank::computeCoveredRegisters(ArrayRef<Record*> Regs) {
   for (unsigned i = 0; i != Set.size(); ++i) {
     const CodeGenRegister::SuperRegList &SR = Set[i]->getSuperRegs();
     for (unsigned j = 0, e = SR.size(); j != e; ++j) {
-      CodeGenRegister *Super = SR[j];
+      const CodeGenRegister *Super = SR[j];
       if (!Super->CoveredBySubRegs || Set.count(Super))
         continue;
       // This new super-register is covered by its sub-registers.

@@ -287,6 +287,7 @@ static int X86TypeFromOpName(LiteralConstantEmitter *type,
   IMM("i64i8imm");
   IMM("i64i32imm");
   IMM("SSECC");
+  IMM("AVXCC");
 
   // all R, I, R, I, R
   MEM("i8mem");
@@ -569,6 +570,7 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   REG("DPR");
   REG("DPR_VFP2");
   REG("DPR_8");
+  REG("DPair");
   REG("SPR");
   REG("QPR");
   REG("QQPR");

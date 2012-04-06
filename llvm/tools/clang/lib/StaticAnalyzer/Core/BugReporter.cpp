@@ -925,7 +925,7 @@ bool EdgeBuilder::containsLocation(const PathDiagnosticLocation &Container,
            SM.getExpansionColumnNumber(ContaineeRBeg)) &&
           (ContainerEndLine != ContaineeEndLine ||
            SM.getExpansionColumnNumber(ContainerREnd) >=
-           SM.getExpansionColumnNumber(ContainerREnd)));
+           SM.getExpansionColumnNumber(ContaineeREnd)));
 }
 
 void EdgeBuilder::rawAddEdge(PathDiagnosticLocation NewLoc) {
@@ -1241,6 +1241,18 @@ BugReport::~BugReport() {
   }
 }
 
+const Decl *BugReport::getDeclWithIssue() const {
+  if (DeclWithIssue)
+    return DeclWithIssue;
+  
+  const ExplodedNode *N = getErrorNode();
+  if (!N)
+    return 0;
+  
+  const LocationContext *LC = N->getLocationContext();
+  return LC->getCurrentStackFrame()->getDecl();
+}
+
 void BugReport::Profile(llvm::FoldingSetNodeID& hash) const {
   hash.AddPointer(&BT);
   hash.AddString(Description);
@@ -1383,10 +1395,7 @@ PathDiagnosticLocation BugReport::getLocation(const SourceManager &SM) const {
 // Methods for BugReporter and subclasses.
 //===----------------------------------------------------------------------===//
 
-BugReportEquivClass::~BugReportEquivClass() {
-  for (iterator I=begin(), E=end(); I!=E; ++I) delete *I;
-}
-
+BugReportEquivClass::~BugReportEquivClass() { }
 GRBugReporter::~GRBugReporter() { }
 BugReporterData::~BugReporterData() {}
 
@@ -1809,17 +1818,17 @@ FindReportInEquivalenceClass(BugReportEquivClass& EQ,
 
   BugReportEquivClass::iterator I = EQ.begin(), E = EQ.end();
   assert(I != E);
-  BugReport *R = *I;
-  BugType& BT = R->getBugType();
+  BugType& BT = I->getBugType();
 
   // If we don't need to suppress any of the nodes because they are
   // post-dominated by a sink, simply add all the nodes in the equivalence class
   // to 'Nodes'.  Any of the reports will serve as a "representative" report.
   if (!BT.isSuppressOnSink()) {
+    BugReport *R = I;
     for (BugReportEquivClass::iterator I=EQ.begin(), E=EQ.end(); I!=E; ++I) {
       const ExplodedNode *N = I->getErrorNode();
       if (N) {
-        R = *I;
+        R = I;
         bugReports.push_back(R);
       }
     }
@@ -1835,8 +1844,7 @@ FindReportInEquivalenceClass(BugReportEquivClass& EQ,
   BugReport *exampleReport = 0;
 
   for (; I != E; ++I) {
-    R = *I;
-    const ExplodedNode *errorNode = R->getErrorNode();
+    const ExplodedNode *errorNode = I->getErrorNode();
 
     if (!errorNode)
       continue;
@@ -1846,9 +1854,9 @@ FindReportInEquivalenceClass(BugReportEquivClass& EQ,
     }
     // No successors?  By definition this nodes isn't post-dominated by a sink.
     if (errorNode->succ_empty()) {
-      bugReports.push_back(R);
+      bugReports.push_back(I);
       if (!exampleReport)
-        exampleReport = R;
+        exampleReport = I;
       continue;
     }
 
@@ -1872,9 +1880,9 @@ FindReportInEquivalenceClass(BugReportEquivClass& EQ,
         if (Succ->succ_empty()) {
           // If we found an end-of-path node that is not a sink.
           if (!Succ->isSink()) {
-            bugReports.push_back(R);
+            bugReports.push_back(I);
             if (!exampleReport)
-              exampleReport = R;
+              exampleReport = I;
             WL.clear();
             break;
           }
@@ -1956,7 +1964,8 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   BugType& BT = exampleReport->getBugType();
 
   OwningPtr<PathDiagnostic>
-    D(new PathDiagnostic(exampleReport->getBugType().getName(),
+    D(new PathDiagnostic(exampleReport->getDeclWithIssue(),
+                         exampleReport->getBugType().getName(),
                          !PD || PD->useVerboseDescription()
                          ? exampleReport->getDescription() 
                          : exampleReport->getShortDescription(),
@@ -1964,9 +1973,6 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
 
   if (!bugReports.empty())
     GeneratePathDiagnostic(*D.get(), bugReports);
-
-  if (IsCachedDiagnostic(exampleReport, D.get()))
-    return;
   
   // Get the meta data.
   const BugReport::ExtraTextList &Meta =
@@ -1981,24 +1987,23 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
   llvm::tie(Beg, End) = exampleReport->getRanges();
   DiagnosticsEngine &Diag = getDiagnostic();
   
-  // Search the description for '%', as that will be interpretted as a
-  // format character by FormatDiagnostics.
-  StringRef desc = exampleReport->getShortDescription();
-  unsigned ErrorDiag;
-  {
+  if (!IsCachedDiagnostic(exampleReport, D.get())) {
+    // Search the description for '%', as that will be interpretted as a
+    // format character by FormatDiagnostics.
+    StringRef desc = exampleReport->getShortDescription();
+
     SmallString<512> TmpStr;
     llvm::raw_svector_ostream Out(TmpStr);
-    for (StringRef::iterator I=desc.begin(), E=desc.end(); I!=E; ++I)
+    for (StringRef::iterator I=desc.begin(), E=desc.end(); I!=E; ++I) {
       if (*I == '%')
         Out << "%%";
       else
         Out << *I;
+    }
     
     Out.flush();
-    ErrorDiag = Diag.getCustomDiagID(DiagnosticsEngine::Warning, TmpStr);
-  }        
+    unsigned ErrorDiag = Diag.getCustomDiagID(DiagnosticsEngine::Warning, TmpStr);
 
-  {
     DiagnosticBuilder diagBuilder = Diag.Report(
       exampleReport->getLocation(getSourceManager()).asLocation(), ErrorDiag);
     for (BugReport::ranges_iterator I = Beg; I != End; ++I)
@@ -2013,21 +2018,17 @@ void BugReporter::FlushReport(BugReportEquivClass& EQ) {
     PathDiagnosticPiece *piece = new PathDiagnosticEventPiece(
                                  exampleReport->getLocation(getSourceManager()),
                                  exampleReport->getDescription());
+    for ( ; Beg != End; ++Beg)
+      piece->addRange(*Beg);
 
-    for ( ; Beg != End; ++Beg) piece->addRange(*Beg);
     D->getActivePath().push_back(piece);
   }
 
   PD->HandlePathDiagnostic(D.take());
 }
 
-void BugReporter::EmitBasicReport(StringRef name, StringRef str,
-                                  PathDiagnosticLocation Loc,
-                                  SourceRange* RBeg, unsigned NumRanges) {
-  EmitBasicReport(name, "", str, Loc, RBeg, NumRanges);
-}
-
-void BugReporter::EmitBasicReport(StringRef name,
+void BugReporter::EmitBasicReport(const Decl *DeclWithIssue,
+                                  StringRef name,
                                   StringRef category,
                                   StringRef str, PathDiagnosticLocation Loc,
                                   SourceRange* RBeg, unsigned NumRanges) {
@@ -2035,6 +2036,7 @@ void BugReporter::EmitBasicReport(StringRef name,
   // 'BT' is owned by BugReporter.
   BugType *BT = getBugTypeForName(name, category);
   BugReport *R = new BugReport(*BT, str, Loc);
+  R->setDeclWithIssue(DeclWithIssue);
   for ( ; NumRanges > 0 ; --NumRanges, ++RBeg) R->addRange(*RBeg);
   EmitReport(R);
 }

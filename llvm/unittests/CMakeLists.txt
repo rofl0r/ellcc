@@ -139,6 +139,7 @@ set(VMCoreSources
   VMCore/PassManagerTest.cpp
   VMCore/ValueMapTest.cpp
   VMCore/VerifierTest.cpp
+  VMCore/DominatorTreeTest.cpp
   )
 
 # MSVC9 and 8 cannot compile ValueMapTest.cpp due to their bug.
@@ -174,4 +175,5 @@ add_llvm_unittest(Support
   Support/TimeValue.cpp
   Support/TypeBuilderTest.cpp
   Support/ValueHandleTest.cpp
+  Support/YAMLParserTest.cpp
   )

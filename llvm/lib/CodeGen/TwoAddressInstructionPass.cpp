@@ -1248,7 +1248,7 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
   // re-schedule this MI below it.
   if (RescheduleMIBelowKill(mbbi, mi, nmi, regB)) {
     ++NumReSchedDowns;
-    return true;
+    return false;
   }
 
   if (TargetRegisterInfo::isVirtualRegister(regA))
@@ -1270,7 +1270,7 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
   // re-schedule it before this MI if it's legal.
   if (RescheduleKillAboveMI(mbbi, mi, nmi, regB)) {
     ++NumReSchedUps;
-    return true;
+    return false;
   }
 
   // If this is an instruction with a load folded into it, try unfolding
@@ -1380,7 +1380,6 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
 /// runOnMachineFunction - Reduce two-address instructions to two operands.
 ///
 bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
-  DEBUG(dbgs() << "Machine Function\n");
   const TargetMachine &TM = MF.getTarget();
   MRI = &MF.getRegInfo();
   TII = TM.getInstrInfo();
@@ -1833,6 +1832,7 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
     SmallSet<unsigned, 4> Seen;
     for (unsigned i = 1, e = MI->getNumOperands(); i < e; i += 2) {
       unsigned SrcReg = MI->getOperand(i).getReg();
+      unsigned SrcSubIdx = MI->getOperand(i).getSubReg();
       unsigned SubIdx = MI->getOperand(i+1).getImm();
       // DefMI of NULL means the value does not have a vreg in this block
       // i.e., its a physical register or a subreg.
@@ -1888,7 +1888,7 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
         MachineInstr *CopyMI = BuildMI(*MI->getParent(), InsertLoc,
                                 MI->getDebugLoc(), TII->get(TargetOpcode::COPY))
             .addReg(DstReg, RegState::Define, SubIdx)
-            .addReg(SrcReg, getKillRegState(isKill));
+            .addReg(SrcReg, getKillRegState(isKill), SrcSubIdx);
         MI->getOperand(i).setReg(0);
         if (LV && isKill && !TargetRegisterInfo::isPhysicalRegister(SrcReg))
           LV->replaceKillInstruction(SrcReg, MI, CopyMI);

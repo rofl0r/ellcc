@@ -127,22 +127,34 @@ struct MCRegisterDesc {
 class MCRegisterInfo {
 public:
   typedef const MCRegisterClass *regclass_iterator;
+
+  /// DwarfLLVMRegPair - Emitted by tablegen so Dwarf<->LLVM reg mappings can be
+  /// performed with a binary search.
+  struct DwarfLLVMRegPair {
+    unsigned FromReg;
+    unsigned ToReg;
+
+    bool operator<(DwarfLLVMRegPair RHS) const { return FromReg < RHS.FromReg; }
+  };
 private:
   const MCRegisterDesc *Desc;                 // Pointer to the descriptor array
   unsigned NumRegs;                           // Number of entries in the array
   unsigned RAReg;                             // Return address register
   const MCRegisterClass *Classes;             // Pointer to the regclass array
   unsigned NumClasses;                        // Number of entries in the array
-  const uint16_t *Overlaps;                   // Pointer to the overlaps array
-  const uint16_t *SubRegs;                    // Pointer to the subregs array
-  const uint16_t *SuperRegs;                  // Pointer to the superregs array
+  const uint16_t *RegLists;                   // Pointer to the reglists array
   const uint16_t *SubRegIndices;              // Pointer to the subreg lookup
                                               // array.
   unsigned NumSubRegIndices;                  // Number of subreg indices.
-  DenseMap<unsigned, int> L2DwarfRegs;        // LLVM to Dwarf regs mapping
-  DenseMap<unsigned, int> EHL2DwarfRegs;      // LLVM to Dwarf regs mapping EH
-  DenseMap<unsigned, unsigned> Dwarf2LRegs;   // Dwarf to LLVM regs mapping
-  DenseMap<unsigned, unsigned> EHDwarf2LRegs; // Dwarf to LLVM regs mapping EH
+
+  unsigned L2DwarfRegsSize;
+  unsigned EHL2DwarfRegsSize;
+  unsigned Dwarf2LRegsSize;
+  unsigned EHDwarf2LRegsSize;
+  const DwarfLLVMRegPair *L2DwarfRegs;        // LLVM to Dwarf regs mapping
+  const DwarfLLVMRegPair *EHL2DwarfRegs;      // LLVM to Dwarf regs mapping EH
+  const DwarfLLVMRegPair *Dwarf2LRegs;        // Dwarf to LLVM regs mapping
+  const DwarfLLVMRegPair *EHDwarf2LRegs;      // Dwarf to LLVM regs mapping EH
   DenseMap<unsigned, int> L2SEHRegs;          // LLVM to SEH regs mapping
 
 public:
@@ -150,40 +162,45 @@ public:
   /// auto-generated routines. *DO NOT USE*.
   void InitMCRegisterInfo(const MCRegisterDesc *D, unsigned NR, unsigned RA,
                           const MCRegisterClass *C, unsigned NC,
-                          const uint16_t *O, const uint16_t *Sub,
-                          const uint16_t *Super,
+                          const uint16_t *RL,
                           const uint16_t *SubIndices,
                           unsigned NumIndices) {
     Desc = D;
     NumRegs = NR;
     RAReg = RA;
     Classes = C;
-    Overlaps = O;
-    SubRegs = Sub;
-    SuperRegs = Super;
+    RegLists = RL;
     NumClasses = NC;
     SubRegIndices = SubIndices;
     NumSubRegIndices = NumIndices;
   }
 
-  /// mapLLVMRegToDwarfReg - Used to initialize LLVM register to Dwarf
+  /// mapLLVMRegsToDwarfRegs - Used to initialize LLVM register to Dwarf
   /// register number mapping. Called by TableGen auto-generated routines.
   /// *DO NOT USE*.
-  void mapLLVMRegToDwarfReg(unsigned LLVMReg, int DwarfReg, bool isEH) {
-    if (isEH)
-      EHL2DwarfRegs[LLVMReg] = DwarfReg;
-    else
-      L2DwarfRegs[LLVMReg] = DwarfReg;
+  void mapLLVMRegsToDwarfRegs(const DwarfLLVMRegPair *Map, unsigned Size,
+                              bool isEH) {
+    if (isEH) {
+      EHL2DwarfRegs = Map;
+      EHL2DwarfRegsSize = Size;
+    } else {
+      L2DwarfRegs = Map;
+      L2DwarfRegsSize = Size;
+    }
   }
 
-  /// mapDwarfRegToLLVMReg - Used to initialize Dwarf register to LLVM
+  /// mapDwarfRegsToLLVMRegs - Used to initialize Dwarf register to LLVM
   /// register number mapping. Called by TableGen auto-generated routines.
   /// *DO NOT USE*.
-  void mapDwarfRegToLLVMReg(unsigned DwarfReg, unsigned LLVMReg, bool isEH) {
-    if (isEH)
-      EHDwarf2LRegs[DwarfReg] = LLVMReg;
-    else
-      Dwarf2LRegs[DwarfReg] = LLVMReg;
+  void mapDwarfRegsToLLVMRegs(const DwarfLLVMRegPair *Map, unsigned Size,
+                              bool isEH) {
+    if (isEH) {
+      EHDwarf2LRegs = Map;
+      EHDwarf2LRegsSize = Size;
+    } else {
+      Dwarf2LRegs = Map;
+      Dwarf2LRegsSize = Size;
+    }
   }
 
   /// mapLLVMRegToSEHReg - Used to initialize LLVM register to SEH register
@@ -220,7 +237,7 @@ public:
   ///
   const uint16_t *getAliasSet(unsigned RegNo) const {
     // The Overlaps set always begins with Reg itself.
-    return Overlaps + get(RegNo).Overlaps + 1;
+    return RegLists + get(RegNo).Overlaps + 1;
   }
 
   /// getOverlaps - Return a list of registers that overlap Reg, including
@@ -229,7 +246,7 @@ public:
   /// These are exactly the registers in { x | regsOverlap(x, Reg) }.
   ///
   const uint16_t *getOverlaps(unsigned RegNo) const {
-    return Overlaps + get(RegNo).Overlaps;
+    return RegLists + get(RegNo).Overlaps;
   }
 
   /// getSubRegisters - Return the list of registers that are sub-registers of
@@ -238,7 +255,7 @@ public:
   /// relations. e.g. X86::RAX's sub-register list is EAX, AX, AL, AH.
   ///
   const uint16_t *getSubRegisters(unsigned RegNo) const {
-    return SubRegs + get(RegNo).SubRegs;
+    return RegLists + get(RegNo).SubRegs;
   }
 
   /// getSubReg - Returns the physical register number of sub-register "Index"
@@ -274,7 +291,7 @@ public:
   /// relations. e.g. X86::AL's super-register list is AX, EAX, RAX.
   ///
   const uint16_t *getSuperRegisters(unsigned RegNo) const {
-    return SuperRegs + get(RegNo).SuperRegs;
+    return RegLists + get(RegNo).SuperRegs;
   }
 
   /// getName - Return the human-readable symbolic target-specific name for the
@@ -294,21 +311,26 @@ public:
   /// parameter allows targets to use different numberings for EH info and
   /// debugging info.
   int getDwarfRegNum(unsigned RegNum, bool isEH) const {
-    const DenseMap<unsigned, int> &M = isEH ? EHL2DwarfRegs : L2DwarfRegs;
-    const DenseMap<unsigned, int>::const_iterator I = M.find(RegNum);
-    if (I == M.end()) return -1;
-    return I->second;
+    const DwarfLLVMRegPair *M = isEH ? EHL2DwarfRegs : L2DwarfRegs;
+    unsigned Size = isEH ? EHL2DwarfRegsSize : L2DwarfRegsSize;
+
+    DwarfLLVMRegPair Key = { RegNum, 0 };
+    const DwarfLLVMRegPair *I = std::lower_bound(M, M+Size, Key);
+    if (I == M+Size || I->FromReg != RegNum)
+      return -1;
+    return I->ToReg;
   }
 
   /// getLLVMRegNum - Map a dwarf register back to a target register.
   ///
   int getLLVMRegNum(unsigned RegNum, bool isEH) const {
-    const DenseMap<unsigned, unsigned> &M = isEH ? EHDwarf2LRegs : Dwarf2LRegs;
-    const DenseMap<unsigned, unsigned>::const_iterator I = M.find(RegNum);
-    if (I == M.end()) {
-      llvm_unreachable("Invalid RegNum");
-    }
-    return I->second;
+    const DwarfLLVMRegPair *M = isEH ? EHDwarf2LRegs : Dwarf2LRegs;
+    unsigned Size = isEH ? EHDwarf2LRegsSize : Dwarf2LRegsSize;
+
+    DwarfLLVMRegPair Key = { RegNum, 0 };
+    const DwarfLLVMRegPair *I = std::lower_bound(M, M+Size, Key);
+    assert(I != M+Size && I->FromReg == RegNum && "Invalid RegNum");
+    return I->ToReg;
   }
 
   /// getSEHRegNum - Map a target register to an equivalent SEH register

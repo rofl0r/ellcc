@@ -382,13 +382,16 @@ Lforward:
 @------------------------------------------------------------------------------
 
         bl _bar
+        bleq _bar
         blx _bar
         blls #28634268
         blx	#32424576
         blx	#16212288
 
 @ CHECK: bl  _bar @ encoding: [A,A,A,0xeb]
-@ CHECK:   @   fixup A - offset: 0, value: _bar, kind: fixup_arm_bl
+@ CHECK:   @   fixup A - offset: 0, value: _bar, kind: fixup_arm_uncondbl
+@ CHECK: bleq  _bar @ encoding: [A,A,A,0x0b]
+@ CHECK:   @   fixup A - offset: 0, value: _bar, kind: fixup_arm_condbl
 @ CHECK: blx	_bar @ encoding: [A,A,A,0xfa]
            @   fixup A - offset: 0, value: _bar, kind: fixup_arm_blx
 @ CHECK: blls	#28634268               @ encoding: [0x27,0x3b,0x6d,0x9b]
@@ -494,6 +497,7 @@ Lforward:
         cmp r7, r8, ror r2
         cmp r1, r6, rrx
         cmp r0, #-2
+        cmp lr, #0
 
 @ CHECK: cmp	r1, #15                 @ encoding: [0x0f,0x00,0x51,0xe3]
 @ CHECK: cmp	r1, r6                  @ encoding: [0x06,0x00,0x51,0xe1]
@@ -508,6 +512,7 @@ Lforward:
 @ CHECK: cmp	r7, r8, ror r2          @ encoding: [0x78,0x02,0x57,0xe1]
 @ CHECK: cmp	r1, r6, rrx             @ encoding: [0x66,0x00,0x51,0xe1]
 @ CHECK: cmn	r0, #2                  @ encoding: [0x02,0x00,0x70,0xe3]
+@ CHECK: cmp  lr, #0                    @ encoding: [0x00,0x00,0x5e,0xe3]
 
 
 @------------------------------------------------------------------------------

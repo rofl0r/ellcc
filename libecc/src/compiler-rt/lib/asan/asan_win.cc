@@ -234,6 +234,19 @@ int AtomicInc(int *a) {
   return InterlockedExchangeAdd((LONG*)a, 1) + 1;
 }
 
+uint16_t AtomicExchange(uint16_t *a, uint16_t new_val) {
+  // InterlockedExchange16 seems unavailable on some MSVS installations.
+  // Everybody stand back, I pretend to know inline assembly!
+  // FIXME: I assume VC is smart enough to save/restore eax/ecx?
+  __asm {
+    mov eax, a
+    mov cx, new_val
+    xchg [eax], cx  ; NOLINT
+    mov new_val, cx
+  }
+  return new_val;
+}
+
 const char* AsanGetEnv(const char* name) {
   static char env_buffer[32767] = {};
 
@@ -262,6 +275,14 @@ uintptr_t GetThreadSelf() {
   return GetCurrentThreadId();
 }
 
+void SetAlternateSignalStack() {
+  // FIXME: Decide what to do on Windows.
+}
+
+void UnsetAlternateSignalStack() {
+  // FIXME: Decide what to do on Windows.
+}
+
 void InstallSignalHandlers() {
   // FIXME: Decide what to do on Windows.
 }
@@ -276,6 +297,10 @@ void SleepForSeconds(int seconds) {
 
 void Exit(int exitcode) {
   _exit(exitcode);
+}
+
+void Abort() {
+  abort();
 }
 
 int Atexit(void (*function)(void)) {

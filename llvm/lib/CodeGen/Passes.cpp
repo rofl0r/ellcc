@@ -272,11 +272,6 @@ AnalysisID TargetPassConfig::addPass(char &ID) {
   return FinalID;
 }
 
-void TargetPassConfig::printNoVerify(const char *Banner) const {
-  if (TM->shouldPrintMachineCode())
-    PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
-}
-
 void TargetPassConfig::printAndVerify(const char *Banner) const {
   if (TM->shouldPrintMachineCode())
     PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
@@ -394,16 +389,16 @@ void TargetPassConfig::addMachinePasses() {
 
   // Expand pseudo instructions before second scheduling pass.
   addPass(ExpandPostRAPseudosID);
-  printNoVerify("After ExpandPostRAPseudos");
+  printAndVerify("After ExpandPostRAPseudos");
 
   // Run pre-sched2 passes.
   if (addPreSched2())
-    printNoVerify("After PreSched2 passes");
+    printAndVerify("After PreSched2 passes");
 
   // Second pass scheduler.
   if (getOptLevel() != CodeGenOpt::None) {
     addPass(PostRASchedulerID);
-    printNoVerify("After PostRAScheduler");
+    printAndVerify("After PostRAScheduler");
   }
 
   // GC
@@ -416,7 +411,7 @@ void TargetPassConfig::addMachinePasses() {
     addBlockPlacement();
 
   if (addPreEmitPass())
-    printNoVerify("After PreEmit passes");
+    printAndVerify("After PreEmit passes");
 }
 
 /// Add passes that optimize machine instructions in SSA form.
@@ -601,15 +596,15 @@ void TargetPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
 void TargetPassConfig::addMachineLateOptimization() {
   // Branch folding must be run after regalloc and prolog/epilog insertion.
   if (addPass(BranchFolderPassID) != &NoPassID)
-    printNoVerify("After BranchFolding");
+    printAndVerify("After BranchFolding");
 
   // Tail duplication.
   if (addPass(TailDuplicateID) != &NoPassID)
-    printNoVerify("After TailDuplicate");
+    printAndVerify("After TailDuplicate");
 
   // Copy propagation.
   if (addPass(MachineCopyPropagationID) != &NoPassID)
-    printNoVerify("After copy propagation pass");
+    printAndVerify("After copy propagation pass");
 }
 
 /// Add standard basic block placement passes.
@@ -628,6 +623,6 @@ void TargetPassConfig::addBlockPlacement() {
     if (EnableBlockPlacementStats)
       addPass(MachineBlockPlacementStatsID);
 
-    printNoVerify("After machine block placement.");
+    printAndVerify("After machine block placement.");
   }
 }

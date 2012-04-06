@@ -42,7 +42,6 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
                                             BugReporter &B,
                                             ExprEngine &Eng) const {
   const CFG *C  = 0;
-  const Decl *D = 0;
   const SourceManager &SM = B.getSourceManager();
   llvm::SmallPtrSet<const CFGBlock*, 256> reachable;
 
@@ -50,13 +49,15 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
   const ExplodedNode *GraphRoot = *G.roots_begin();
   const LocationContext *LC = GraphRoot->getLocation().getLocationContext();
 
+  const Decl *D = LC->getDecl();
+
   // Iterate over the exploded graph.
   for (ExplodedGraph::node_iterator I = G.nodes_begin();
       I != G.nodes_end(); ++I) {
     const ProgramPoint &P = I->getLocation();
 
-    // Only check the coverage in the top level function.
-    if (LC != P.getLocationContext())
+    // Only check the coverage in the top level function (optimization).
+    if (D != P.getLocationContext()->getDecl())
       continue;
 
     if (const BlockEntrance *BE = dyn_cast<BlockEntrance>(&P)) {
@@ -65,9 +66,8 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
     }
   }
 
-  // Get the CFG and the Decl of this block
+  // Get the CFG and the Decl of this block.
   C = LC->getCFG();
-  D = LC->getAnalysisDeclContext()->getDecl();
 
   unsigned total = 0, unreachable = 0;
 
@@ -91,20 +91,20 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
   SmallString<128> buf;
   llvm::raw_svector_ostream output(buf);
   PresumedLoc Loc = SM.getPresumedLoc(D->getLocation());
-  if (Loc.isValid()) {
-    output << Loc.getFilename() << " : ";
+  if (!Loc.isValid())
+    return;
 
-    if (isa<FunctionDecl>(D) || isa<ObjCMethodDecl>(D)) {
-      const NamedDecl *ND = cast<NamedDecl>(D);
-      output << *ND;
-    }
-    else if (isa<BlockDecl>(D)) {
-      output << "block(line:" << Loc.getLine() << ":col:" << Loc.getColumn();
-    }
+  if (isa<FunctionDecl>(D) || isa<ObjCMethodDecl>(D)) {
+    const NamedDecl *ND = cast<NamedDecl>(D);
+    output << *ND;
+  }
+  else if (isa<BlockDecl>(D)) {
+    output << "block(line:" << Loc.getLine() << ":col:" << Loc.getColumn();
   }
   
   NumBlocksUnreachable += unreachable;
   NumBlocks += total;
+  std::string NameOfRootFunction = output.str();
 
   output << " -> Total CFGBlocks: " << total << " | Unreachable CFGBlocks: "
       << unreachable << " | Exhausted Block: "
@@ -112,10 +112,10 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
       << " | Empty WorkList: "
       << (Eng.hasEmptyWorkList() ? "yes" : "no");
 
-  B.EmitBasicReport("Analyzer Statistics", "Internal Statistics", output.str(),
-      PathDiagnosticLocation(D, SM));
+  B.EmitBasicReport(D, "Analyzer Statistics", "Internal Statistics",
+                    output.str(), PathDiagnosticLocation(D, SM));
 
-  // Emit warning for each block we bailed out on
+  // Emit warning for each block we bailed out on.
   typedef CoreEngine::BlocksExhausted::const_iterator ExhaustedIterator;
   const CoreEngine &CE = Eng.getCoreEngine();
   for (ExhaustedIterator I = CE.blocks_exhausted_begin(),
@@ -123,10 +123,15 @@ void AnalyzerStatsChecker::checkEndAnalysis(ExplodedGraph &G,
     const BlockEdge &BE =  I->first;
     const CFGBlock *Exit = BE.getDst();
     const CFGElement &CE = Exit->front();
-    if (const CFGStmt *CS = dyn_cast<CFGStmt>(&CE))
-      B.EmitBasicReport("Bailout Point", "Internal Statistics", "The analyzer "
-          "stopped analyzing at this point",
-          PathDiagnosticLocation::createBegin(CS->getStmt(), SM, LC));
+    if (const CFGStmt *CS = dyn_cast<CFGStmt>(&CE)) {
+      SmallString<128> bufI;
+      llvm::raw_svector_ostream outputI(bufI);
+      outputI << "(" << NameOfRootFunction << ")" <<
+                 ": The analyzer generated a sink at this point";
+      B.EmitBasicReport(D, "Sink Point", "Internal Statistics", outputI.str(),
+                        PathDiagnosticLocation::createBegin(CS->getStmt(),
+                                                            SM, LC));
+    }
   }
 }
 

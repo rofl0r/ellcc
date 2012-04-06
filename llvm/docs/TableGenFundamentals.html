@@ -420,7 +420,7 @@ which case the user must specify it explicitly.</dd>
 <dt><tt>str1#str2</tt></dt>
   <dd>"#" (paste) is a shorthand for !strconcat.  It may concatenate
   things that are not quoted strings, in which case an implicit
-  !cast<string> is done on the operand of the paste.</dd>
+  !cast&lt;string&gt; is done on the operand of the paste.</dd>
 <dt><tt>!cast&lt;type&gt;(a)</tt></dt>
   <dd>A symbol of type <em>type</em> obtained by looking up the string 'a' in
 the symbol table.  If the type of 'a' does not match <em>type</em>, TableGen
@@ -966,7 +966,7 @@ This should highlight the APIs in <tt>TableGen/Record.h</tt>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-02-22 10:09:41 -0600 (Wed, 22 Feb 2012) $
+  Last modified: $Date: 2012-03-27 06:25:16 -0500 (Tue, 27 Mar 2012) $
 </address>
 
 </body>

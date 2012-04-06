@@ -205,11 +205,11 @@ MDNode *MDNode::getMDNode(LLVMContext &Context, ArrayRef<Value*> Vals,
     ID.AddPointer(Vals[i]);
 
   void *InsertPoint;
-  MDNode *N = NULL;
-  
-  if ((N = pImpl->MDNodeSet.FindNodeOrInsertPos(ID, InsertPoint)))
+  MDNode *N = pImpl->MDNodeSet.FindNodeOrInsertPos(ID, InsertPoint);
+
+  if (N || !Insert)
     return N;
-    
+
   bool isFunctionLocal = false;
   switch (FL) {
   case FL_Unknown:
@@ -551,16 +551,14 @@ getAllMetadataOtherThanDebugLocImpl(SmallVectorImpl<std::pair<unsigned,
          getContext().pImpl->MetadataStore.count(this) &&
          "Shouldn't have called this");
   const LLVMContextImpl::MDMapTy &Info =
-  getContext().pImpl->MetadataStore.find(this)->second;
+    getContext().pImpl->MetadataStore.find(this)->second;
   assert(!Info.empty() && "Shouldn't have called this");
-  
   Result.append(Info.begin(), Info.end());
-  
+
   // Sort the resulting array so it is stable.
   if (Result.size() > 1)
     array_pod_sort(Result.begin(), Result.end());
 }
-
 
 /// clearMetadataHashEntries - Clear all hashtable-based metadata from
 /// this instruction.

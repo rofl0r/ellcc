@@ -130,19 +130,46 @@ define void @outer2(i32 %z, i1 %b) {
 ; make it through inlining.
 ; CHECK: define void @outer2
 ; CHECK-NOT: call
-;
-; FIXME: Currently, we aren't smart enough to delete the last dead basic block.
-; However, we do make the condition a constant. Check that at least until we can
-; start removing the block itself.
-; CHECK: br i1 false, label %[[LABEL:[a-z0-9_.]+]],
-; CHECK-NOT: call
-; CHECK: [[LABEL]]:
-; CHECK-NEXT: call void @f(i32 10)
-; CHECK-NOT: call
-;
 ; CHECK: ret void
 
 entry:
   call void @inner2(i32 0, i32 -1, i32 %z, i1 %b)
+  ret void
+}
+
+define void @PR12470_inner(i16 signext %p1) nounwind uwtable {
+entry:
+  br i1 undef, label %cond.true, label %cond.false
+
+cond.true:
+  br label %cond.end
+
+cond.false:
+  %conv = sext i16 %p1 to i32
+  br label %cond.end
+
+cond.end:
+  %cond = phi i32 [ undef, %cond.true ], [ 0, %cond.false ]
+  %tobool = icmp eq i32 %cond, 0
+  br i1 %tobool, label %if.end5, label %if.then
+
+if.then:
+  ret void
+
+if.end5:
+  ret void
+}
+
+define void @PR12470_outer() {
+; This previously crashed during inliner cleanup and folding inner return
+; instructions. Check that we don't crash and we produce a function with a single
+; return instruction due to merging the returns of the inlined function.
+; CHECK: define void @PR12470_outer
+; CHECK: ret void
+; CHECK-NOT: ret void
+; CHECK: }
+
+entry:
+  call void @PR12470_inner(i16 signext 1)
   ret void
 }

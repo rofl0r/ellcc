@@ -65,20 +65,6 @@ struct Inliner : public CallGraphSCCPass {
   ///
   virtual InlineCost getInlineCost(CallSite CS) = 0;
 
-  // getInlineFudgeFactor - Return a > 1.0 factor if the inliner should use a
-  // higher threshold to determine if the function call should be inlined.
-  ///
-  virtual float getInlineFudgeFactor(CallSite CS) = 0;
-
-  /// resetCachedCostInfo - erase any cached cost data from the derived class.
-  /// If the derived class has no such data this can be empty.
-  /// 
-  virtual void resetCachedCostInfo(Function* Caller) = 0;
-
-  /// growCachedCostInfo - update the cached cost info for Caller after Callee
-  /// has been inlined.
-  virtual void growCachedCostInfo(Function *Caller, Function *Callee) = 0;
-
   /// removeDeadFunctions - Remove dead functions.
   ///
   /// This also includes a hack in the form of the 'AlwaysInlineOnly' flag

@@ -95,6 +95,8 @@ const char *Triple::getVendorTypeName(VendorType Kind) {
   case PC: return "pc";
   case ELLCC: return "ellcc";
   case SCEI: return "scei";
+  case BGP: return "bgp";
+  case BGQ: return "bgq";
   }
 
   llvm_unreachable("Invalid VendorType!");
@@ -126,6 +128,7 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case SA: return "sa";
   case RTEMS: return "rtems";
   case NativeClient: return "nacl";
+  case CNK: return "cnk";
   }
 
   llvm_unreachable("Invalid OSType");
@@ -273,6 +276,8 @@ static Triple::VendorType parseVendor(StringRef VendorName) {
     .Case("pc", Triple::PC)
     .Case("ellcc", Triple::ELLCC)
     .Case("scei", Triple::SCEI)
+    .Case("bgp", Triple::BGP)
+    .Case("bgq", Triple::BGQ)
     .Default(Triple::UnknownVendor);
 }
 
@@ -299,6 +304,7 @@ static Triple::OSType parseOS(StringRef OSName) {
     .StartsWith("sa", Triple::SA)
     .StartsWith("rtems", Triple::RTEMS)
     .StartsWith("nacl", Triple::NativeClient)
+    .StartsWith("cnk", Triple::CNK)
     .Default(Triple::UnknownOS);
 }
 

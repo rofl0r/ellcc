@@ -39,7 +39,7 @@ test()
         assert(std::atomic_compare_exchange_strong_explicit(&a, &t, T(3),
                std::memory_order_seq_cst, std::memory_order_seq_cst) == false);
         assert(a == T(2));
-        assert(t == T(3));
+        assert(t == T(2));
     }
     {
         typedef std::atomic<T> A;
@@ -53,7 +53,7 @@ test()
         assert(std::atomic_compare_exchange_strong_explicit(&a, &t, T(3),
                std::memory_order_seq_cst, std::memory_order_seq_cst) == false);
         assert(a == T(2));
-        assert(t == T(3));
+        assert(t == T(2));
     }
 }
 
@@ -62,10 +62,6 @@ struct A
     int i;
 
     explicit A(int d = 0) : i(d) {}
-    A(const A& a) : i(a.i) {}
-    A(const volatile A& a) : i(a.i) {}
-
-    void operator=(const volatile A& a) volatile {i = a.i;}
 
     friend bool operator==(const A& x, const A& y)
         {return x.i == y.i;}

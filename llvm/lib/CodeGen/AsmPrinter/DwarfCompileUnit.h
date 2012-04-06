@@ -213,6 +213,7 @@ public:
   void addSourceLine(DIE *Die, DISubprogram SP);
   void addSourceLine(DIE *Die, DIType Ty);
   void addSourceLine(DIE *Die, DINameSpace NS);
+  void addSourceLine(DIE *Die, DIObjCProperty Ty);
 
   /// addAddress - Add an address attribute to a die based on the location
   /// provided.
@@ -260,8 +261,10 @@ public:
   /// addToContextOwner - Add Die into the list of its context owner's children.
   void addToContextOwner(DIE *Die, DIDescriptor Context);
 
-  /// addType - Add a new type attribute to the specified entity.
-  void addType(DIE *Entity, DIType Ty);
+  /// addType - Add a new type attribute to the specified entity. This takes
+  /// and attribute parameter because DW_AT_friend attributes are also
+  /// type references.
+  void addType(DIE *Entity, DIType Ty, unsigned Attribute = dwarf::DW_AT_type);
 
   /// getOrCreateNameSpace - Create a DIE for DINameSpace.
   DIE *getOrCreateNameSpace(DINameSpace NS);

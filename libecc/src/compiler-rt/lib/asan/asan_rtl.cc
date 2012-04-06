@@ -39,14 +39,18 @@ int    FLAG_report_globals;
 size_t FLAG_malloc_context_size = kMallocContextSize;
 uintptr_t FLAG_large_malloc;
 bool   FLAG_handle_segv;
+bool   FLAG_use_sigaltstack;
 bool   FLAG_replace_str;
 bool   FLAG_replace_intrin;
 bool   FLAG_replace_cfallocator;  // Used on Mac only.
 size_t FLAG_max_malloc_fill_size = 0;
 bool   FLAG_use_fake_stack;
+bool   FLAG_abort_on_error;
 int    FLAG_exitcode = ASAN_DEFAULT_FAILURE_EXITCODE;
 bool   FLAG_allow_user_poisoning;
 int    FLAG_sleep_before_dying;
+bool   FLAG_unmap_shadow_on_exit;
+bool   FLAG_disable_core;
 
 // -------------------------- Globals --------------------- {{{1
 int asan_inited;
@@ -114,8 +118,12 @@ void AsanDie() {
     Report("Sleeping for %d second(s)\n", FLAG_sleep_before_dying);
     SleepForSeconds(FLAG_sleep_before_dying);
   }
+  if (FLAG_unmap_shadow_on_exit)
+    AsanUnmapOrDie((void*)kLowShadowBeg, kHighShadowEnd - kLowShadowBeg);
   if (death_callback)
     death_callback();
+  if (FLAG_abort_on_error)
+    Abort();
   Exit(FLAG_exitcode);
 }
 
@@ -442,6 +450,7 @@ void __asan_init() {
   FLAG_poison_shadow = IntFlagValue(options, "poison_shadow=", 1);
   FLAG_report_globals = IntFlagValue(options, "report_globals=", 1);
   FLAG_handle_segv = IntFlagValue(options, "handle_segv=", ASAN_NEEDS_SEGV);
+  FLAG_use_sigaltstack = IntFlagValue(options, "use_sigaltstack=", 0);
   FLAG_symbolize = IntFlagValue(options, "symbolize=", 1);
   FLAG_demangle = IntFlagValue(options, "demangle=", 1);
   FLAG_debug = IntFlagValue(options, "debug=", 0);
@@ -454,6 +463,11 @@ void __asan_init() {
   FLAG_allow_user_poisoning = IntFlagValue(options,
                                            "allow_user_poisoning=", 1);
   FLAG_sleep_before_dying = IntFlagValue(options, "sleep_before_dying=", 0);
+  FLAG_abort_on_error = IntFlagValue(options, "abort_on_error=", 0);
+  FLAG_unmap_shadow_on_exit = IntFlagValue(options, "unmap_shadow_on_exit=", 0);
+  // By default, disable core dumper on 64-bit --
+  // it makes little sense to dump 16T+ core.
+  FLAG_disable_core = IntFlagValue(options, "disable_core=", __WORDSIZE == 64);
 
   FLAG_quarantine_size = IntFlagValue(options, "quarantine_size=",
       (ASAN_LOW_MEMORY) ? 1UL << 24 : 1UL << 28);
@@ -470,7 +484,7 @@ void __asan_init() {
   InitializeAsanInterceptors();
 
   ReplaceSystemMalloc();
-  InstallSignalHandlers();
+  ReplaceOperatorsNewAndDelete();
 
   if (FLAG_v) {
     Printf("|| `[%p, %p]` || HighMem    ||\n", kHighMemBeg, kHighMemEnd);
@@ -495,8 +509,7 @@ void __asan_init() {
     CHECK(SHADOW_SCALE >= 3 && SHADOW_SCALE <= 7);
   }
 
-  if (__WORDSIZE == 64) {
-    // Disable core dumper -- it makes little sense to dump 16T+ core.
+  if (FLAG_disable_core) {
     AsanDisableCoreDumper();
   }
 
@@ -516,6 +529,8 @@ void __asan_init() {
     AsanDumpProcessMap();
     AsanDie();
   }
+
+  InstallSignalHandlers();
 
   // On Linux AsanThread::ThreadStart() calls malloc() that's why asan_inited
   // should be set to 1 prior to initializing the threads.

@@ -3802,7 +3802,7 @@ else
     llvm_cv_target_os_type="Darwin" ;;
   *-*-minix*)
     llvm_cv_target_os_type="Minix" ;;
-  *-*-freebsd*)
+  *-*-freebsd*| *-*-kfreebsd-gnu)
     llvm_cv_target_os_type="FreeBSD" ;;
   *-*-openbsd*)
     llvm_cv_target_os_type="OpenBSD" ;;
@@ -3816,6 +3816,8 @@ else
     llvm_cv_target_os_type="Interix" ;;
   *-*-linux*)
     llvm_cv_target_os_type="Linux" ;;
+  *-*-gnu*)
+    llvm_cv_target_os_type="GNU" ;;
   *-*-solaris*)
     llvm_cv_target_os_type="SunOS" ;;
   *-*-auroraux*)
@@ -5365,6 +5367,9 @@ _ACEOF
     if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/AsmParser/Makefile ; then
       LLVM_NATIVE_ASMPARSER="LLVMInitialize${LLVM_NATIVE_ARCH}AsmParser"
     fi
+    if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/Disassembler/Makefile ; then
+      LLVM_NATIVE_DISASSEMBLER="LLVMInitialize${LLVM_NATIVE_ARCH}Disassembler"
+    fi
 
 cat >>confdefs.h <<_ACEOF
 #define LLVM_NATIVE_TARGET $LLVM_NATIVE_TARGET
@@ -5389,6 +5394,13 @@ _ACEOF
 
 cat >>confdefs.h <<_ACEOF
 #define LLVM_NATIVE_ASMPARSER $LLVM_NATIVE_ASMPARSER
+_ACEOF
+
+    fi
+    if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/Disassembler/Makefile ; then
+
+cat >>confdefs.h <<_ACEOF
+#define LLVM_NATIVE_DISASSEMBLER $LLVM_NATIVE_DISASSEMBLER
 _ACEOF
 
     fi
@@ -10374,7 +10386,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 10377 "configure"
+#line 10387 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -16361,7 +16373,7 @@ ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ex
 ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
 
     ac_save_CXXFLAGS=$CXXFLAGS
-    CXXFLAGS=-pedantic
+    CXXFLAGS="$CXXFLAGS -pedantic"
     if test "$cross_compiling" = yes; then
   ac_cv_huge_val_sanity=yes
 else
@@ -19987,7 +19999,7 @@ cat >>conftest.$ac_ext <<_ACEOF
 int
 main ()
 {
-float f; std::isinf(f)}
+float f; std::isinf(f);
   ;
   return 0;
 }

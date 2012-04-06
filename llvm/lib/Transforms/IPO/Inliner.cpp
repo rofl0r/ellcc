@@ -231,14 +231,10 @@ bool Inliner::shouldInline(CallSite CS) {
     return false;
   }
   
-  int Cost = IC.getValue();
   Function *Caller = CS.getCaller();
-  int CurrentThreshold = getInlineThreshold(CS);
-  float FudgeFactor = getInlineFudgeFactor(CS);
-  int AdjThreshold = (int)(CurrentThreshold * FudgeFactor);
-  if (Cost >= AdjThreshold) {
-    DEBUG(dbgs() << "    NOT Inlining: cost=" << Cost
-          << ", thres=" << AdjThreshold
+  if (!IC) {
+    DEBUG(dbgs() << "    NOT Inlining: cost=" << IC.getCost()
+          << ", thres=" << (IC.getCostDelta() + IC.getCost())
           << ", Call: " << *CS.getInstruction() << "\n");
     return false;
   }
@@ -255,12 +251,17 @@ bool Inliner::shouldInline(CallSite CS) {
   // are used. Thus we will always have the opportunity to make local inlining
   // decisions. Importantly the linkonce-ODR linkage covers inline functions
   // and templates in C++.
+  //
+  // FIXME: All of this logic should be sunk into getInlineCost. It relies on
+  // the internal implementation of the inline cost metrics rather than
+  // treating them as truly abstract units etc.
   if (Caller->hasLocalLinkage() ||
       Caller->getLinkage() == GlobalValue::LinkOnceODRLinkage) {
     int TotalSecondaryCost = 0;
-    bool outerCallsFound = false;
+    // The candidate cost to be imposed upon the current function.
+    int CandidateCost = IC.getCost() - (InlineConstants::CallPenalty + 1);
     // This bool tracks what happens if we do NOT inline C into B.
-    bool callerWillBeRemoved = true;
+    bool callerWillBeRemoved = Caller->hasLocalLinkage();
     // This bool tracks what happens if we DO inline C into B.
     bool inliningPreventsSomeOuterInline = false;
     for (Value::use_iterator I = Caller->use_begin(), E =Caller->use_end(); 
@@ -276,26 +277,19 @@ bool Inliner::shouldInline(CallSite CS) {
       }
 
       InlineCost IC2 = getInlineCost(CS2);
-      if (IC2.isNever())
+      if (!IC2) {
         callerWillBeRemoved = false;
-      if (IC2.isAlways() || IC2.isNever())
+        continue;
+      }
+      if (IC2.isAlways())
         continue;
 
-      outerCallsFound = true;
-      int Cost2 = IC2.getValue();
-      int CurrentThreshold2 = getInlineThreshold(CS2);
-      float FudgeFactor2 = getInlineFudgeFactor(CS2);
-
-      if (Cost2 >= (int)(CurrentThreshold2 * FudgeFactor2))
-        callerWillBeRemoved = false;
-
-      // See if we have this case.  We subtract off the penalty
-      // for the call instruction, which we would be deleting.
-      if (Cost2 < (int)(CurrentThreshold2 * FudgeFactor2) &&
-          Cost2 + Cost - (InlineConstants::CallPenalty + 1) >= 
-                (int)(CurrentThreshold2 * FudgeFactor2)) {
+      // See if inlining or original callsite would erase the cost delta of
+      // this callsite. We subtract off the penalty for the call instruction,
+      // which we would be deleting.
+      if (IC2.getCostDelta() <= CandidateCost) {
         inliningPreventsSomeOuterInline = true;
-        TotalSecondaryCost += Cost2;
+        TotalSecondaryCost += IC2.getCost();
       }
     }
     // If all outer calls to Caller would get inlined, the cost for the last
@@ -305,17 +299,16 @@ bool Inliner::shouldInline(CallSite CS) {
     if (callerWillBeRemoved && Caller->use_begin() != Caller->use_end())
       TotalSecondaryCost += InlineConstants::LastCallToStaticBonus;
 
-    if (outerCallsFound && inliningPreventsSomeOuterInline &&
-        TotalSecondaryCost < Cost) {
-      DEBUG(dbgs() << "    NOT Inlining: " << *CS.getInstruction() << 
-           " Cost = " << Cost << 
+    if (inliningPreventsSomeOuterInline && TotalSecondaryCost < IC.getCost()) {
+      DEBUG(dbgs() << "    NOT Inlining: " << *CS.getInstruction() <<
+           " Cost = " << IC.getCost() <<
            ", outer Cost = " << TotalSecondaryCost << '\n');
       return false;
     }
   }
 
-  DEBUG(dbgs() << "    Inlining: cost=" << Cost
-        << ", thres=" << AdjThreshold
+  DEBUG(dbgs() << "    Inlining: cost=" << IC.getCost()
+        << ", thres=" << (IC.getCostDelta() + IC.getCost())
         << ", Call: " << *CS.getInstruction() << '\n');
   return true;
 }
@@ -422,8 +415,6 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
         CG[Caller]->removeCallEdgeFor(CS);
         CS.getInstruction()->eraseFromParent();
         ++NumCallsDeleted;
-        // Update the cached cost info with the missing call
-        growCachedCostInfo(Caller, NULL);
       } else {
         // We can only inline direct calls to non-declarations.
         if (Callee == 0 || Callee->isDeclaration()) continue;
@@ -464,9 +455,6 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
             CallSites.push_back(std::make_pair(CallSite(Ptr), NewHistoryID));
           }
         }
-        
-        // Update the cached cost info with the inlined call.
-        growCachedCostInfo(Caller, Callee);
       }
       
       // If we inlined or deleted the last possible call site to the function,
@@ -485,8 +473,6 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
         
         // Remove any call graph edges from the callee to its callees.
         CalleeNode->removeAllCalledFunctions();
-        
-        resetCachedCostInfo(Callee);
         
         // Removing the node for callee from the call graph and delete it.
         delete CG.removeFunctionFromModule(CalleeNode);
@@ -566,14 +552,13 @@ bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
   // Note that it doesn't matter that we are iterating over a non-stable order
   // here to do this, it doesn't matter which order the functions are deleted
   // in.
-  std::sort(FunctionsToRemove.begin(), FunctionsToRemove.end());
+  array_pod_sort(FunctionsToRemove.begin(), FunctionsToRemove.end());
   FunctionsToRemove.erase(std::unique(FunctionsToRemove.begin(),
                                       FunctionsToRemove.end()),
                           FunctionsToRemove.end());
   for (SmallVectorImpl<CallGraphNode *>::iterator I = FunctionsToRemove.begin(),
                                                   E = FunctionsToRemove.end();
        I != E; ++I) {
-    resetCachedCostInfo((*I)->getFunction());
     delete CG.removeFunctionFromModule(*I);
     ++NumDeleted;
   }

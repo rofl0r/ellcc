@@ -74,7 +74,9 @@ public:
     Apple,
     PC,
     ELLCC,
-    SCEI
+    SCEI,
+    BGP,
+    BGQ
   };
   enum OSType {
     UnknownOS,
@@ -100,7 +102,8 @@ public:
     SA,         // ELLCC: Stand Alone
     Minix,
     RTEMS,
-    NativeClient
+    NativeClient,
+    CNK         // BG/P Compute-Node Kernel
   };
   enum EnvironmentType {
     UnknownEnvironment,
