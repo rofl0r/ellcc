@@ -62,7 +62,7 @@ getCalleeSavedRegs(const MachineFunction *MF) const
     return CSR_O32_SaveList;
   else if (Subtarget.isABI_N32())
     return CSR_N32_SaveList;
-  
+
   assert(Subtarget.isABI_N64());
   return CSR_N64_SaveList;  
 }
@@ -125,7 +125,16 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::GP_64);
   }
 
+  // Reserve hardware registers.
+  Reserved.set(Mips::HWR29);
+  Reserved.set(Mips::HWR29_64);
+
   return Reserved;
+}
+
+bool
+MipsRegisterInfo::requiresRegisterScavenging(const MachineFunction &MF) const {
+  return true;
 }
 
 // This function eliminate ADJCALLSTACKDOWN,
@@ -223,8 +232,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
       AnalyzeImm.Analyze(Offset, Size, true /* LastInstrIsADDiu */);
     MipsAnalyzeImmediate::InstSeq::const_iterator Inst = Seq.begin();
 
-    // FIXME: change this when mips goes MC".
-    BuildMI(MBB, II, DL, TII.get(Mips::NOAT));
+    MipsFI->setEmitNOAT();
 
     // The first instruction can be a LUi, which is different from other
     // instructions (ADDiu, ORI and SLL) in that it does not have a register
@@ -245,7 +253,6 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
     FrameReg = ATReg;
     Offset = SignExtend64<16>(Inst->ImmOpnd);
-    BuildMI(MBB, ++II, MI.getDebugLoc(), TII.get(Mips::ATMACRO));
   }
 
   MI.getOperand(i).ChangeToRegister(FrameReg, false);

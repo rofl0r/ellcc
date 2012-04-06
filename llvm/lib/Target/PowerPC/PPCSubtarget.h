@@ -40,6 +40,7 @@ namespace PPC {
     DIR_7400,
     DIR_750, 
     DIR_970, 
+    DIR_A2,
     DIR_64  
   };
 }
@@ -144,6 +145,8 @@ public:
 
   /// isDarwin - True if this is any darwin platform.
   bool isDarwin() const { return TargetTriple.isMacOSX(); }
+  /// isBGP - True if this is a BG/P platform.
+  bool isBGP() const { return TargetTriple.getVendor() == Triple::BGP; }
 
   bool isDarwinABI() const { return isDarwin(); }
   bool isSVR4ABI() const { return !isDarwin(); }

@@ -28,7 +28,6 @@
 #include "X86InstrInfo.h"
 #include "llvm/InlineAsm.h"
 #include "llvm/ADT/DepthFirstIterator.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
@@ -219,7 +218,7 @@ namespace {
     /// getSTReg - Return the X86::ST(i) register which contains the specified
     /// FP<RegNo> register.
     unsigned getSTReg(unsigned RegNo) const {
-      return StackTop - 1 - getSlot(RegNo) + llvm::X86::ST0;
+      return StackTop - 1 - getSlot(RegNo) + X86::ST0;
     }
 
     // pushReg - Push the specified FP<n> register onto the stack.

@@ -16,7 +16,6 @@
 #include "ARMAsmPrinter.h"
 #include "ARM.h"
 #include "ARMBuildAttrs.h"
-#include "ARMBaseRegisterInfo.h"
 #include "ARMConstantPoolValue.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMTargetMachine.h"
@@ -35,7 +34,6 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCObjectStreamer.h"
@@ -44,8 +42,6 @@
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -1270,7 +1266,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   }
   // Darwin call instructions are just normal call instructions with different
   // clobber semantics (they clobber R9).
-  case ARM::BXr9_CALL:
   case ARM::BX_CALL: {
     {
       MCInst TmpInst;
@@ -1292,7 +1287,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
-  case ARM::tBXr9_CALL:
   case ARM::tBX_CALL: {
     {
       MCInst TmpInst;
@@ -1315,7 +1309,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
-  case ARM::BMOVPCRXr9_CALL:
   case ARM::BMOVPCRX_CALL: {
     {
       MCInst TmpInst;
@@ -1343,7 +1336,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
-  case ARM::BMOVPCBr9_CALL:
   case ARM::BMOVPCB_CALL: {
     {
       MCInst TmpInst;
@@ -1371,7 +1363,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
-  case ARM::t2BMOVPCBr9_CALL:
   case ARM::t2BMOVPCB_CALL: {
     {
       MCInst TmpInst;

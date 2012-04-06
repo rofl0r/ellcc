@@ -95,7 +95,9 @@ namespace llvm {
       EXTSW_32,
 
       /// CALL - A direct function call.
-      CALL_Darwin, CALL_SVR4,
+      /// CALL_NOP_SVR4 is a call with the special  NOP which follows 64-bit
+      /// SVR4 calls.
+      CALL_Darwin, CALL_SVR4, CALL_NOP_SVR4,
 
       /// NOP - Special NOP which follows 64-bit SVR4 calls.
       NOP,
@@ -279,6 +281,7 @@ namespace llvm {
     bool SelectAddressRegImmShift(SDValue N, SDValue &Disp, SDValue &Base,
                                   SelectionDAG &DAG) const;
 
+    Sched::Preference getSchedulingPreference(SDNode *N) const;
 
     /// LowerOperation - Provide custom lowering hooks for some operations.
     ///
@@ -293,7 +296,6 @@ namespace llvm {
     virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
     virtual void computeMaskedBitsForTargetNode(const SDValue Op,
-                                                const APInt &Mask,
                                                 APInt &KnownZero,
                                                 APInt &KnownOne,
                                                 const SelectionDAG &DAG,

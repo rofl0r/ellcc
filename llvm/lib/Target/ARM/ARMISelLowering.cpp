@@ -19,7 +19,6 @@
 #include "ARMConstantPoolValue.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMPerfectShuffle.h"
-#include "ARMRegisterInfo.h"
 #include "ARMSubtarget.h"
 #include "ARMTargetMachine.h"
 #include "ARMTargetObjectFile.h"
@@ -508,7 +507,7 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setOperationAction(ISD::FRINT, MVT::v2f64, Expand);
     setOperationAction(ISD::FNEARBYINT, MVT::v2f64, Expand);
     setOperationAction(ISD::FFLOOR, MVT::v2f64, Expand);
-    
+
     setOperationAction(ISD::FSQRT, MVT::v4f32, Expand);
     setOperationAction(ISD::FSIN, MVT::v4f32, Expand);
     setOperationAction(ISD::FCOS, MVT::v4f32, Expand);
@@ -1642,7 +1641,7 @@ ARMTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 /// and then confiscate the rest of the parameter registers to insure
 /// this.
 void
-llvm::ARMTargetLowering::HandleByVal(CCState *State, unsigned &size) const {
+ARMTargetLowering::HandleByVal(CCState *State, unsigned &size) const {
   unsigned reg = State->AllocateReg(GPRArgRegs, 4);
   assert((State->getCallOrPrologue() == Prologue ||
           State->getCallOrPrologue() == Call) &&
@@ -1672,7 +1671,7 @@ llvm::ARMTargetLowering::HandleByVal(CCState *State, unsigned &size) const {
 static
 bool MatchingStackOffset(SDValue Arg, unsigned Offset, ISD::ArgFlagsTy Flags,
                          MachineFrameInfo *MFI, const MachineRegisterInfo *MRI,
-                         const ARMInstrInfo *TII) {
+                         const TargetInstrInfo *TII) {
   unsigned Bytes = Arg.getValueType().getSizeInBits() / 8;
   int FI = INT_MAX;
   if (Arg.getOpcode() == ISD::CopyFromReg) {
@@ -1807,8 +1806,7 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
       // the caller's fixed stack objects.
       MachineFrameInfo *MFI = MF.getFrameInfo();
       const MachineRegisterInfo *MRI = &MF.getRegInfo();
-      const ARMInstrInfo *TII =
-        ((ARMTargetMachine&)getTargetMachine()).getInstrInfo();
+      const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
       for (unsigned i = 0, realArgIdx = 0, e = ArgLocs.size();
            i != e;
            ++i, ++realArgIdx) {
@@ -1992,7 +1990,7 @@ bool ARMTargetLowering::isUsedByReturnOnly(SDNode *N) const {
 }
 
 bool ARMTargetLowering::mayBeEmittedAsTailCall(CallInst *CI) const {
-  if (!EnableARMTailCalls)
+  if (!EnableARMTailCalls && !Subtarget->supportsTailCall())
     return false;
 
   if (!CI->isTailCall())
@@ -3674,27 +3672,6 @@ static SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
   return Result;
 }
 
-SDValue ARMTargetLowering::LowerConstantFP(SDValue Op, SelectionDAG &DAG,
-                                           const ARMSubtarget *ST) const {
-  if (!ST->useNEONForSinglePrecisionFP() || !ST->hasVFP3() || ST->hasD16())
-    return SDValue();
-
-  ConstantFPSDNode *CFP = cast<ConstantFPSDNode>(Op);
-  assert(Op.getValueType() == MVT::f32 &&
-         "ConstantFP custom lowering should only occur for f32.");
-
-  APFloat FPVal = CFP->getValueAPF();
-  int ImmVal = ARM_AM::getFP32Imm(FPVal);
-  if (ImmVal == -1)
-    return SDValue();
-
-  DebugLoc DL = Op.getDebugLoc();
-  SDValue NewVal = DAG.getTargetConstant(ImmVal, MVT::i32);
-  SDValue VecConstant = DAG.getNode(ARMISD::VMOVFPIMM, DL, MVT::v2f32, NewVal);
-  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, VecConstant,
-                     DAG.getConstant(0, MVT::i32));
-}
-
 /// isNEONModifiedImm - Check if the specified splat value corresponds to a
 /// valid vector constant for a NEON instruction with a "modified immediate"
 /// operand (e.g., VMOV).  If so, return the encoded value.
@@ -3830,6 +3807,58 @@ static SDValue isNEONModifiedImm(uint64_t SplatBits, uint64_t SplatUndef,
   unsigned EncodedVal = ARM_AM::createNEONModImm(OpCmode, Imm);
   return DAG.getTargetConstant(EncodedVal, MVT::i32);
 }
+
+SDValue ARMTargetLowering::LowerConstantFP(SDValue Op, SelectionDAG &DAG,
+                                           const ARMSubtarget *ST) const {
+  if (!ST->useNEONForSinglePrecisionFP() || !ST->hasVFP3() || ST->hasD16())
+    return SDValue();
+
+  ConstantFPSDNode *CFP = cast<ConstantFPSDNode>(Op);
+  assert(Op.getValueType() == MVT::f32 &&
+         "ConstantFP custom lowering should only occur for f32.");
+
+  // Try splatting with a VMOV.f32...
+  APFloat FPVal = CFP->getValueAPF();
+  int ImmVal = ARM_AM::getFP32Imm(FPVal);
+  if (ImmVal != -1) {
+    DebugLoc DL = Op.getDebugLoc();
+    SDValue NewVal = DAG.getTargetConstant(ImmVal, MVT::i32);
+    SDValue VecConstant = DAG.getNode(ARMISD::VMOVFPIMM, DL, MVT::v2f32,
+                                      NewVal);
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, VecConstant,
+                       DAG.getConstant(0, MVT::i32));
+  }
+
+  // If that fails, try a VMOV.i32
+  EVT VMovVT;
+  unsigned iVal = FPVal.bitcastToAPInt().getZExtValue();
+  SDValue NewVal = isNEONModifiedImm(iVal, 0, 32, DAG, VMovVT, false,
+                                     VMOVModImm);
+  if (NewVal != SDValue()) {
+    DebugLoc DL = Op.getDebugLoc();
+    SDValue VecConstant = DAG.getNode(ARMISD::VMOVIMM, DL, VMovVT,
+                                      NewVal);
+    SDValue VecFConstant = DAG.getNode(ISD::BITCAST, DL, MVT::v2f32,
+                                       VecConstant);
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, VecFConstant,
+                       DAG.getConstant(0, MVT::i32));
+  }
+
+  // Finally, try a VMVN.i32
+  NewVal = isNEONModifiedImm(~iVal & 0xffffffff, 0, 32, DAG, VMovVT, false,
+                             VMVNModImm);
+  if (NewVal != SDValue()) {
+    DebugLoc DL = Op.getDebugLoc();
+    SDValue VecConstant = DAG.getNode(ARMISD::VMVNIMM, DL, VMovVT, NewVal);
+    SDValue VecFConstant = DAG.getNode(ISD::BITCAST, DL, MVT::v2f32,
+                                       VecConstant);
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, VecFConstant,
+                       DAG.getConstant(0, MVT::i32));
+  }
+
+  return SDValue();
+}
+
 
 static bool isVEXTMask(ArrayRef<int> M, EVT VT,
                        bool &ReverseVEXT, unsigned &Imm) {
@@ -5871,7 +5900,7 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
     BuildMI(DispatchBB, dl, TII->get(ARM::tInt_eh_sjlj_dispatchsetup));
   else if (!Subtarget->hasVFP2())
     BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup_nofp));
-  else 
+  else
     BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup));
 
   unsigned NumLPads = LPadList.size();
@@ -8259,8 +8288,7 @@ ARMTargetLowering::PerformCMOVCombine(SDNode *N, SelectionDAG &DAG) const {
 
   if (Res.getNode()) {
     APInt KnownZero, KnownOne;
-    APInt Mask = APInt::getAllOnesValue(VT.getScalarType().getSizeInBits());
-    DAG.ComputeMaskedBits(SDValue(N,0), Mask, KnownZero, KnownOne);
+    DAG.ComputeMaskedBits(SDValue(N,0), KnownZero, KnownOne);
     // Capture demanded bits information that would be otherwise lost.
     if (KnownZero == 0xfffffffe)
       Res = DAG.getNode(ISD::AssertZext, dl, MVT::i32, Res,
@@ -8776,22 +8804,20 @@ bool ARMTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
 }
 
 void ARMTargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
-                                                       const APInt &Mask,
                                                        APInt &KnownZero,
                                                        APInt &KnownOne,
                                                        const SelectionDAG &DAG,
                                                        unsigned Depth) const {
-  KnownZero = KnownOne = APInt(Mask.getBitWidth(), 0);
+  KnownZero = KnownOne = APInt(KnownOne.getBitWidth(), 0);
   switch (Op.getOpcode()) {
   default: break;
   case ARMISD::CMOV: {
     // Bits are known zero/one if known on the LHS and RHS.
-    DAG.ComputeMaskedBits(Op.getOperand(0), Mask, KnownZero, KnownOne, Depth+1);
+    DAG.ComputeMaskedBits(Op.getOperand(0), KnownZero, KnownOne, Depth+1);
     if (KnownZero == 0 && KnownOne == 0) return;
 
     APInt KnownZeroRHS, KnownOneRHS;
-    DAG.ComputeMaskedBits(Op.getOperand(1), Mask,
-                          KnownZeroRHS, KnownOneRHS, Depth+1);
+    DAG.ComputeMaskedBits(Op.getOperand(1), KnownZeroRHS, KnownOneRHS, Depth+1);
     KnownZero &= KnownZeroRHS;
     KnownOne  &= KnownOneRHS;
     return;

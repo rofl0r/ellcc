@@ -19,6 +19,8 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
@@ -26,7 +28,6 @@
 using namespace llvm;
 
 // Include the auto-generated portion of the assembly writer.
-#define GET_INSTRUCTION_NAME
 #define PRINT_ALIAS_INSTR
 #include "X86GenAsmWriter.inc"
 
@@ -47,10 +48,6 @@ void X86ATTInstPrinter::printInst(const MCInst *MI, raw_ostream &OS,
   // If verbose assembly is enabled, we can print some informative comments.
   if (CommentStream)
     EmitAnyX86InstComments(MI, *CommentStream, getRegisterName);
-}
-
-StringRef X86ATTInstPrinter::getOpcodeName(unsigned Opcode) const {
-  return getInstructionName(Opcode);
 }
 
 void X86ATTInstPrinter::printSSECC(const MCInst *MI, unsigned Op,

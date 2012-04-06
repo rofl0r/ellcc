@@ -13,10 +13,10 @@
 
 #include "ARMBaseInstrInfo.h"
 #include "ARM.h"
+#include "ARMBaseRegisterInfo.h"
 #include "ARMConstantPoolValue.h"
 #include "ARMHazardRecognizer.h"
 #include "ARMMachineFunctionInfo.h"
-#include "ARMRegisterInfo.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/Constants.h"
 #include "llvm/Function.h"
@@ -680,29 +680,51 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     return;
   }
 
-  // Generate instructions for VMOVQQ and VMOVQQQQ pseudos in place.
-  if (ARM::QQPRRegClass.contains(DestReg, SrcReg) ||
-      ARM::QQQQPRRegClass.contains(DestReg, SrcReg)) {
+  // Handle register classes that require multiple instructions.
+  unsigned BeginIdx = 0;
+  unsigned SubRegs = 0;
+  unsigned Spacing = 1;
+
+  // Use VORRq when possible.
+  if (ARM::QQPRRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VORRq, BeginIdx = ARM::qsub_0, SubRegs = 2;
+  else if (ARM::QQQQPRRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VORRq, BeginIdx = ARM::qsub_0, SubRegs = 4;
+  // Fall back to VMOVD.
+  else if (ARM::DPairRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 2;
+  else if (ARM::DTripleRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 3;
+  else if (ARM::DQuadRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 4;
+
+  else if (ARM::DPairSpcRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 2, Spacing = 2;
+  else if (ARM::DTripleSpcRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 3, Spacing = 2;
+  else if (ARM::DQuadSpcRegClass.contains(DestReg, SrcReg))
+    Opc = ARM::VMOVD, BeginIdx = ARM::dsub_0, SubRegs = 4, Spacing = 2;
+
+  if (Opc) {
     const TargetRegisterInfo *TRI = &getRegisterInfo();
-    assert(ARM::qsub_0 + 3 == ARM::qsub_3 && "Expected contiguous enum.");
-    unsigned EndSubReg = ARM::QQPRRegClass.contains(DestReg, SrcReg) ?
-      ARM::qsub_1 : ARM::qsub_3;
-    for (unsigned i = ARM::qsub_0, e = EndSubReg + 1; i != e; ++i) {
-      unsigned Dst = TRI->getSubReg(DestReg, i);
-      unsigned Src = TRI->getSubReg(SrcReg, i);
-      MachineInstrBuilder Mov =
-        AddDefaultPred(BuildMI(MBB, I, I->getDebugLoc(), get(ARM::VORRq))
-                       .addReg(Dst, RegState::Define)
-                       .addReg(Src, getKillRegState(KillSrc))
-                       .addReg(Src, getKillRegState(KillSrc)));
-      if (i == EndSubReg) {
-        Mov->addRegisterDefined(DestReg, TRI);
-        if (KillSrc)
-          Mov->addRegisterKilled(SrcReg, TRI);
-      }
+    MachineInstrBuilder Mov;
+    for (unsigned i = 0; i != SubRegs; ++i) {
+      unsigned Dst = TRI->getSubReg(DestReg, BeginIdx + i*Spacing);
+      unsigned Src = TRI->getSubReg(SrcReg,  BeginIdx + i*Spacing);
+      assert(Dst && Src && "Bad sub-register");
+      Mov = AddDefaultPred(BuildMI(MBB, I, I->getDebugLoc(), get(Opc), Dst)
+                             .addReg(Src));
+      // VORR takes two source operands.
+      if (Opc == ARM::VORRq)
+        Mov.addReg(Src);
     }
+    // Add implicit super-register defs and kills to the last instruction.
+    Mov->addRegisterDefined(DestReg, TRI);
+    if (KillSrc)
+      Mov->addRegisterKilled(SrcReg, TRI);
     return;
   }
+
   llvm_unreachable("Impossible reg-to-reg copy");
 }
 
@@ -757,7 +779,7 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
         llvm_unreachable("Unknown reg class!");
       break;
     case 16:
-      if (ARM::QPRRegClass.hasSubClassEq(RC)) {
+      if (ARM::DPairRegClass.hasSubClassEq(RC)) {
         // Use aligned spills if the stack can be realigned.
         if (Align >= 16 && getRegisterInfo().canRealignStack(MF)) {
           AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VST1q64))
@@ -907,7 +929,7 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
       llvm_unreachable("Unknown reg class!");
     break;
   case 16:
-    if (ARM::QPRRegClass.hasSubClassEq(RC)) {
+    if (ARM::DPairRegClass.hasSubClassEq(RC)) {
       if (Align >= 16 && getRegisterInfo().canRealignStack(MF)) {
         AddDefaultPred(BuildMI(MBB, I, DL, get(ARM::VLD1q64), DestReg)
                      .addFrameIndex(FI).addImm(16)
@@ -1478,6 +1500,29 @@ int llvm::getMatchingCondBranchOpcode(int Opc) {
   llvm_unreachable("Unknown unconditional branch opcode!");
 }
 
+/// commuteInstruction - Handle commutable instructions.
+MachineInstr *
+ARMBaseInstrInfo::commuteInstruction(MachineInstr *MI, bool NewMI) const {
+  switch (MI->getOpcode()) {
+  case ARM::MOVCCr:
+  case ARM::t2MOVCCr: {
+    // MOVCC can be commuted by inverting the condition.
+    unsigned PredReg = 0;
+    ARMCC::CondCodes CC = getInstrPredicate(MI, PredReg);
+    // MOVCC AL can't be inverted. Shouldn't happen.
+    if (CC == ARMCC::AL || PredReg != ARM::CPSR)
+      return NULL;
+    MI = TargetInstrInfoImpl::commuteInstruction(MI, NewMI);
+    if (!MI)
+      return NULL;
+    // After swapping the MOVCC operands, also invert the condition.
+    MI->getOperand(MI->findFirstPredOperandIdx())
+      .setImm(ARMCC::getOppositeCondition(CC));
+    return MI;
+  }
+  }
+  return TargetInstrInfoImpl::commuteInstruction(MI, NewMI);
+}
 
 /// Map pseudo instructions that imply an 'S' bit onto real opcodes. Whether the
 /// instruction is encoded with an 'S' bit is determined by the optional CPSR
@@ -1915,6 +1960,25 @@ bool ARMBaseInstrInfo::FoldImmediate(MachineInstr *UseMI,
 
   if (!MRI->hasOneNonDBGUse(Reg))
     return false;
+
+  const MCInstrDesc &DefMCID = DefMI->getDesc();
+  if (DefMCID.hasOptionalDef()) {
+    unsigned NumOps = DefMCID.getNumOperands();
+    const MachineOperand &MO = DefMI->getOperand(NumOps-1);
+    if (MO.getReg() == ARM::CPSR && !MO.isDead())
+      // If DefMI defines CPSR and it is not dead, it's obviously not safe
+      // to delete DefMI.
+      return false;
+  }
+
+  const MCInstrDesc &UseMCID = UseMI->getDesc();
+  if (UseMCID.hasOptionalDef()) {
+    unsigned NumOps = UseMCID.getNumOperands();
+    if (UseMI->getOperand(NumOps-1).getReg() == ARM::CPSR)
+      // If the instruction sets the flag, do not attempt this optimization
+      // since it may change the semantics of the code.
+      return false;
+  }
 
   unsigned UseOpc = UseMI->getOpcode();
   unsigned NewUseOpc = 0;

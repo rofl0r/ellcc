@@ -89,20 +89,26 @@ def t2_so_imm_not : Operand<i32>, PatLeaf<(imm), [{
 // t2_so_imm_neg - Match an immediate that is a negation of a t2_so_imm.
 def t2_so_imm_neg_asmoperand : AsmOperandClass { let Name = "T2SOImmNeg"; }
 def t2_so_imm_neg : Operand<i32>, PatLeaf<(imm), [{
-  return ARM_AM::getT2SOImmVal(-((uint32_t)N->getZExtValue())) != -1;
+  int64_t Value = -(int)N->getZExtValue();
+  return Value && ARM_AM::getT2SOImmVal(Value) != -1;
 }], t2_so_imm_neg_XFORM> {
   let ParserMatchClass = t2_so_imm_neg_asmoperand;
 }
 
 /// imm0_4095 predicate - True if the 32-bit immediate is in the range [0.4095].
-def imm0_4095 : Operand<i32>,
-                ImmLeaf<i32, [{
+def imm0_4095_asmoperand: ImmAsmOperand { let Name = "Imm0_4095"; }
+def imm0_4095 : Operand<i32>, ImmLeaf<i32, [{
   return Imm >= 0 && Imm < 4096;
-}]>;
+}]> {
+  let ParserMatchClass = imm0_4095_asmoperand;
+}
 
-def imm0_4095_neg : PatLeaf<(i32 imm), [{
+def imm0_4095_neg_asmoperand: AsmOperandClass { let Name = "Imm0_4095Neg"; }
+def imm0_4095_neg : Operand<i32>, PatLeaf<(i32 imm), [{
  return (uint32_t)(-N->getZExtValue()) < 4096;
-}], imm_neg_XFORM>;
+}], imm_neg_XFORM> {
+  let ParserMatchClass = imm0_4095_neg_asmoperand;
+}
 
 def imm0_255_neg : PatLeaf<(i32 imm), [{
   return (uint32_t)(-N->getZExtValue()) < 255;
@@ -2871,6 +2877,8 @@ defm t2TEQ  : T2I_cmp_irs<0b0100, "teq",
 // FIXME: should be able to write a pattern for ARMcmov, but can't use
 // a two-value operand where a dag node expects two operands. :(
 let neverHasSideEffects = 1 in {
+
+let isCommutable = 1 in
 def t2MOVCCr : t2PseudoInst<(outs rGPR:$Rd),
                             (ins rGPR:$false, rGPR:$Rm, pred:$p),
                             4, IIC_iCMOVr,
@@ -3268,37 +3276,19 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
                  Requires<[IsThumb2, IsIOS]>;
 }
 
-let isCall = 1,
-  // On non-IOS platforms R9 is callee-saved.
-  Defs = [LR], Uses = [SP] in {
+let isCall = 1, Defs = [LR], Uses = [SP] in {
   // mov lr, pc; b if callee is marked noreturn to avoid confusing the
   // return stack predictor.
   def t2BMOVPCB_CALL : tPseudoInst<(outs),
                                    (ins t_bltarget:$func, variable_ops),
                                6, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
-                        Requires<[IsThumb, IsNotIOS]>;
-}
-
-let isCall = 1,
-  // On IOS R9 is call-clobbered.
-  // R7 is marked as a use to prevent frame-pointer assignments from being
-  // moved above / below calls.
-  Defs = [LR], Uses = [R7, SP] in {
-  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
-  // return stack predictor.
-  def t2BMOVPCBr9_CALL : tPseudoInst<(outs),
-                                     (ins t_bltarget:$func, variable_ops),
-                               6, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
-                        Requires<[IsThumb, IsIOS]>;
+                        Requires<[IsThumb]>;
 }
 
 // Direct calls
 def : T2Pat<(ARMcall_nolink texternalsym:$func),
             (t2BMOVPCB_CALL texternalsym:$func)>,
-      Requires<[IsThumb, IsNotIOS]>;
-def : T2Pat<(ARMcall_nolink texternalsym:$func),
-            (t2BMOVPCBr9_CALL texternalsym:$func)>,
-      Requires<[IsThumb, IsIOS]>;
+      Requires<[IsThumb]>;
 
 // IT block
 let Defs = [ITSTATE] in
@@ -3965,6 +3955,19 @@ def : t2InstAlias<"add${s}${p} $Rdn, $Rm",
 def : t2InstAlias<"add${s}${p} $Rdn, $ShiftedRm",
                   (t2ADDrs GPRnopc:$Rdn, GPRnopc:$Rdn, t2_so_reg:$ShiftedRm,
                            pred:$p, cc_out:$s)>;
+
+// add w/ negative immediates is just a sub.
+def : t2InstAlias<"add${s}${p} $Rd, $Rn, $imm",
+        (t2SUBri GPRnopc:$Rd, GPRnopc:$Rn, t2_so_imm_neg:$imm, pred:$p,
+                 cc_out:$s)>;
+def : t2InstAlias<"add${p} $Rd, $Rn, $imm",
+           (t2SUBri12 GPRnopc:$Rd, GPR:$Rn, imm0_4095_neg:$imm, pred:$p)>;
+def : t2InstAlias<"add${s}${p} $Rdn, $imm",
+      (t2SUBri GPRnopc:$Rdn, GPRnopc:$Rdn, t2_so_imm_neg:$imm, pred:$p,
+               cc_out:$s)>;
+def : t2InstAlias<"add${p} $Rdn, $imm",
+           (t2SUBri12 GPRnopc:$Rdn, GPRnopc:$Rdn, imm0_4095_neg:$imm, pred:$p)>;
+
 
 // Aliases for SUB without the ".w" optional width specifier.
 def : t2InstAlias<"sub${s}${p} $Rd, $Rn, $imm",

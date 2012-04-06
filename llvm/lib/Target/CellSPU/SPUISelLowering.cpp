@@ -3158,7 +3158,6 @@ SPUTargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
 //! Compute used/known bits for a SPU operand
 void
 SPUTargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
-                                                  const APInt &Mask,
                                                   APInt &KnownZero,
                                                   APInt &KnownOne,
                                                   const SelectionDAG &DAG,
@@ -3224,7 +3223,7 @@ bool SPUTargetLowering::isLegalAddressImmediate(int64_t V,
   return (V > -(1 << 18) && V < (1 << 18) - 1);
 }
 
-bool SPUTargetLowering::isLegalAddressImmediate(llvm::GlobalValue* GV) const {
+bool SPUTargetLowering::isLegalAddressImmediate(GlobalValue* GV) const {
   return false;
 }
 

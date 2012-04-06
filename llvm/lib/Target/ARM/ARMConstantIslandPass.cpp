@@ -16,12 +16,12 @@
 #define DEBUG_TYPE "arm-cp-islands"
 #include "ARM.h"
 #include "ARMMachineFunctionInfo.h"
-#include "ARMInstrInfo.h"
 #include "Thumb2InstrInfo.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/Debug.h"
@@ -209,8 +209,9 @@ namespace {
       }
       /// getMaxDisp - Returns the maximum displacement supported by MI.
       /// Correct for unknown alignment.
+      /// Conservatively subtract 2 bytes to handle weird alignment effects.
       unsigned getMaxDisp() const {
-        return KnownAlignment ? MaxDisp : MaxDisp - 2;
+        return (KnownAlignment ? MaxDisp : MaxDisp - 2) - 2;
       }
     };
 
@@ -266,7 +267,7 @@ namespace {
 
     MachineFunction *MF;
     MachineConstantPool *MCP;
-    const ARMInstrInfo *TII;
+    const ARMBaseInstrInfo *TII;
     const ARMSubtarget *STI;
     ARMFunctionInfo *AFI;
     bool isThumb;
@@ -346,11 +347,21 @@ void ARMConstantIslands::verify() {
     assert(BBInfo[MBBId].Offset % (1u << Align) == 0);
     assert(!MBBId || BBInfo[MBBId - 1].postOffset() <= BBInfo[MBBId].Offset);
   }
+  DEBUG(dbgs() << "Verifying " << CPUsers.size() << " CP users.\n");
   for (unsigned i = 0, e = CPUsers.size(); i != e; ++i) {
     CPUser &U = CPUsers[i];
     unsigned UserOffset = getUserOffset(U);
-    assert(isCPEntryInRange(U.MI, UserOffset, U.CPEMI, U.getMaxDisp(),
-                            U.NegOk) && "Constant pool entry out of range!");
+    // Verify offset using the real max displacement without the safety
+    // adjustment.
+    if (isCPEntryInRange(U.MI, UserOffset, U.CPEMI, U.getMaxDisp()+2, U.NegOk,
+                         /* DoDump = */ true)) {
+      DEBUG(dbgs() << "OK\n");
+      continue;
+    }
+    DEBUG(dbgs() << "Out of range.\n");
+    dumpBBs();
+    DEBUG(MF->dump());
+    llvm_unreachable("Constant pool entry out of range!");
   }
 #endif
 }
@@ -383,7 +394,7 @@ bool ARMConstantIslands::runOnMachineFunction(MachineFunction &mf) {
                << MCP->getConstants().size() << " CP entries, aligned to "
                << MCP->getConstantPoolAlignment() << " bytes *****\n");
 
-  TII = (const ARMInstrInfo*)MF->getTarget().getInstrInfo();
+  TII = (const ARMBaseInstrInfo*)MF->getTarget().getInstrInfo();
   AFI = MF->getInfo<ARMFunctionInfo>();
   STI = &MF->getTarget().getSubtarget<ARMSubtarget>();
 
@@ -392,6 +403,9 @@ bool ARMConstantIslands::runOnMachineFunction(MachineFunction &mf) {
   isThumb2 = AFI->isThumb2Function();
 
   HasFarJump = false;
+
+  // This pass invalidates liveness information when it splits basic blocks.
+  MF->getRegInfo().invalidateLiveness();
 
   // Renumber all of the machine basic blocks in the function, guaranteeing that
   // the numbers agree with the position of the block in the function.
@@ -1355,7 +1369,7 @@ void ARMConstantIslands::createNewWater(unsigned CPUserIndex,
   // Avoid splitting an IT block.
   if (LastIT) {
     unsigned PredReg = 0;
-    ARMCC::CondCodes CC = llvm::getITInstrPredicate(MI, PredReg);
+    ARMCC::CondCodes CC = getITInstrPredicate(MI, PredReg);
     if (CC != ARMCC::AL)
       MI = LastIT;
   }
@@ -1739,6 +1753,7 @@ bool ARMConstantIslands::optimizeThumb2Instructions() {
 
     // FIXME: Check if offset is multiple of scale if scale is not 4.
     if (isCPEntryInRange(U.MI, UserOffset, U.CPEMI, MaxOffs, false, true)) {
+      DEBUG(dbgs() << "Shrink: " << *U.MI);
       U.MI->setDesc(TII->get(NewOpc));
       MachineBasicBlock *MBB = U.MI->getParent();
       BBInfo[MBB->getNumber()].Size -= 2;
@@ -1780,6 +1795,7 @@ bool ARMConstantIslands::optimizeThumb2Branches() {
       unsigned MaxOffs = ((1 << (Bits-1))-1) * Scale;
       MachineBasicBlock *DestBB = Br.MI->getOperand(0).getMBB();
       if (isBBInRange(Br.MI, DestBB, MaxOffs)) {
+        DEBUG(dbgs() << "Shrink branch: " << *Br.MI);
         Br.MI->setDesc(TII->get(NewOpc));
         MachineBasicBlock *MBB = Br.MI->getParent();
         BBInfo[MBB->getNumber()].Size -= 2;
@@ -1800,7 +1816,7 @@ bool ARMConstantIslands::optimizeThumb2Branches() {
 
     NewOpc = 0;
     unsigned PredReg = 0;
-    ARMCC::CondCodes Pred = llvm::getInstrPredicate(Br.MI, PredReg);
+    ARMCC::CondCodes Pred = getInstrPredicate(Br.MI, PredReg);
     if (Pred == ARMCC::EQ)
       NewOpc = ARM::tCBZ;
     else if (Pred == ARMCC::NE)
@@ -1818,11 +1834,12 @@ bool ARMConstantIslands::optimizeThumb2Branches() {
         --CmpMI;
         if (CmpMI->getOpcode() == ARM::tCMPi8) {
           unsigned Reg = CmpMI->getOperand(0).getReg();
-          Pred = llvm::getInstrPredicate(CmpMI, PredReg);
+          Pred = getInstrPredicate(CmpMI, PredReg);
           if (Pred == ARMCC::AL &&
               CmpMI->getOperand(1).getImm() == 0 &&
               isARMLowRegister(Reg)) {
             MachineBasicBlock *MBB = Br.MI->getParent();
+            DEBUG(dbgs() << "Fold: " << *CmpMI << " and: " << *Br.MI);
             MachineInstr *NewBR =
               BuildMI(*MBB, CmpMI, Br.MI->getDebugLoc(), TII->get(NewOpc))
               .addReg(Reg).addMBB(DestBB,Br.MI->getOperand(0).getTargetFlags());
@@ -1939,11 +1956,14 @@ bool ARMConstantIslands::optimizeThumb2JumpTables() {
       if (!OptOk)
         continue;
 
+      DEBUG(dbgs() << "Shrink JT: " << *MI << "     addr: " << *AddrMI
+                   << "      lea: " << *LeaMI);
       unsigned Opc = ByteOk ? ARM::t2TBB_JT : ARM::t2TBH_JT;
       MachineInstr *NewJTMI = BuildMI(MBB, MI->getDebugLoc(), TII->get(Opc))
         .addReg(IdxReg, getKillRegState(IdxRegKill))
         .addJumpTableIndex(JTI, JTOP.getTargetFlags())
         .addImm(MI->getOperand(JTOpIdx+1).getImm());
+      DEBUG(dbgs() << "BB#" << MBB->getNumber() << ": " << *NewJTMI);
       // FIXME: Insert an "ALIGN" instruction to ensure the next instruction
       // is 2-byte aligned. For now, asm printer will fix it up.
       unsigned NewSize = TII->GetInstSizeInBytes(NewJTMI);

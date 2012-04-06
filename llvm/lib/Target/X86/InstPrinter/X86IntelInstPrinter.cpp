@@ -17,15 +17,13 @@
 #include "X86InstComments.h"
 #include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 #include <cctype>
 using namespace llvm;
 
-// Include the auto-generated portion of the assembly writer.
-#define GET_INSTRUCTION_NAME
 #include "X86GenAsmWriter1.inc"
 
 void X86IntelInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
@@ -42,9 +40,6 @@ void X86IntelInstPrinter::printInst(const MCInst *MI, raw_ostream &OS,
   // If verbose assembly is enabled, we can print some informative comments.
   if (CommentStream)
     EmitAnyX86InstComments(MI, *CommentStream, getRegisterName);
-}
-StringRef X86IntelInstPrinter::getOpcodeName(unsigned Opcode) const {
-  return getInstructionName(Opcode);
 }
 
 void X86IntelInstPrinter::printSSECC(const MCInst *MI, unsigned Op,

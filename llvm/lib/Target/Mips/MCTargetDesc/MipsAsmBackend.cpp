@@ -12,21 +12,16 @@
 //===----------------------------------------------------------------------===//
 //
 
+#include "MipsBaseInfo.h"
 #include "MipsFixupKinds.h"
 #include "MCTargetDesc/MipsMCTargetDesc.h"
-#include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCELFObjectWriter.h"
-#include "llvm/MC/MCExpr.h"
-#include "llvm/MC/MCMachObjectWriter.h"
+#include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
-#include "llvm/MC/MCSectionELF.h"
-#include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/Object/MachOFormat.h"
-#include "llvm/Support/ELF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -61,7 +56,7 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
   case Mips::fixup_Mips_HI16:
   case Mips::fixup_Mips_GOT_Local:
     // Get the higher 16-bits. Also add 1 if bit 15 is 1.
-    Value = (Value >> 16) + ((Value & 0x8000) != 0);
+    Value = ((Value + 0x8000) >> 16) & 0xffff;
     break;
   }
 
@@ -72,13 +67,15 @@ namespace {
 class MipsAsmBackend : public MCAsmBackend {
   Triple::OSType OSType;
   bool IsLittle; // Big or little endian
+  bool Is64Bit;  // 32 or 64 bit words
 
 public:
-  MipsAsmBackend(const Target &T,  Triple::OSType _OSType, bool _isLittle) :
-    MCAsmBackend(), OSType(_OSType), IsLittle(_isLittle) {}
+  MipsAsmBackend(const Target &T,  Triple::OSType _OSType,
+                 bool _isLittle, bool _is64Bit)
+    :MCAsmBackend(), OSType(_OSType), IsLittle(_isLittle), Is64Bit(_is64Bit) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return createMipsELFObjectWriter(OS, OSType, IsLittle);
+    return createMipsELFObjectWriter(OS, OSType, IsLittle, Is64Bit);
   }
 
   /// ApplyFixup - Apply the \arg Value for given \arg Fixup into the provided
@@ -88,8 +85,9 @@ public:
                   uint64_t Value) const {
     MCFixupKind Kind = Fixup.getKind();
     Value = adjustFixupValue((unsigned)Kind, Value);
+    int64_t SymOffset = MipsGetSymAndOffset(Fixup).second;
 
-    if (!Value)
+    if (!Value && !SymOffset)
       return; // Doesn't change encoding.
 
     // Where do we start in the object
@@ -120,7 +118,7 @@ public:
     }
 
     uint64_t Mask = ((uint64_t)(-1) >> (64 - getFixupKindInfo(Kind).TargetSize));
-    CurVal = (CurVal & ~Mask) | ((CurVal + Value) & Mask);
+    CurVal |= (Value + SymOffset) & Mask;
 
     // Write out the fixed up bytes back to the code/data bits.
     for (unsigned i = 0; i != NumBytes; ++i) {
@@ -212,17 +210,28 @@ public:
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
     return true;
   }
-};
+}; // class MipsAsmBackend
 
 } // namespace
 
 // MCAsmBackend
-MCAsmBackend *llvm::createMipsAsmBackendEL(const Target &T, StringRef TT) {
+MCAsmBackend *llvm::createMipsAsmBackendEL32(const Target &T, StringRef TT) {
   return new MipsAsmBackend(T, Triple(TT).getOS(),
-                            /*IsLittle*/true);
+                            /*IsLittle*/true, /*Is64Bit*/false);
 }
 
-MCAsmBackend *llvm::createMipsAsmBackendEB(const Target &T, StringRef TT) {
+MCAsmBackend *llvm::createMipsAsmBackendEB32(const Target &T, StringRef TT) {
   return new MipsAsmBackend(T, Triple(TT).getOS(),
-                            /*IsLittle*/false);
+                            /*IsLittle*/false, /*Is64Bit*/false);
 }
+
+MCAsmBackend *llvm::createMipsAsmBackendEL64(const Target &T, StringRef TT) {
+  return new MipsAsmBackend(T, Triple(TT).getOS(),
+                            /*IsLittle*/true, /*Is64Bit*/true);
+}
+
+MCAsmBackend *llvm::createMipsAsmBackendEB64(const Target &T, StringRef TT) {
+  return new MipsAsmBackend(T, Triple(TT).getOS(),
+                            /*IsLittle*/false, /*Is64Bit*/true);
+}
+

@@ -389,6 +389,9 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
   }
 
+  if (TM.getSubtarget<PPCSubtarget>().has64BitSupport())
+    setOperationAction(ISD::PREFETCH, MVT::Other, Legal);
+
   setOperationAction(ISD::ATOMIC_LOAD,  MVT::i32, Expand);
   setOperationAction(ISD::ATOMIC_STORE, MVT::i32, Expand);
 
@@ -443,7 +446,16 @@ unsigned PPCTargetLowering::getByValTypeAlignment(Type *Ty) const {
   // Darwin passes everything on 4 byte boundary.
   if (TM.getSubtarget<PPCSubtarget>().isDarwin())
     return 4;
-  // FIXME SVR4 TBD
+
+  // 16byte and wider vectors are passed on 16byte boundary.
+  if (VectorType *VTy = dyn_cast<VectorType>(Ty))
+    if (VTy->getBitWidth() >= 128)
+      return 16;
+
+  // The rest is 8 on PPC64 and 4 on PPC32 boundary.
+   if (PPCSubTarget.isPPC64())
+     return 8;
+
   return 4;
 }
 
@@ -472,6 +484,7 @@ const char *PPCTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case PPCISD::EXTSW_32:        return "PPCISD::EXTSW_32";
   case PPCISD::STD_32:          return "PPCISD::STD_32";
   case PPCISD::CALL_SVR4:       return "PPCISD::CALL_SVR4";
+  case PPCISD::CALL_NOP_SVR4:   return "PPCISD::CALL_NOP_SVR4";
   case PPCISD::CALL_Darwin:     return "PPCISD::CALL_Darwin";
   case PPCISD::NOP:             return "PPCISD::NOP";
   case PPCISD::MTCTR:           return "PPCISD::MTCTR";
@@ -847,14 +860,10 @@ bool PPCTargetLowering::SelectAddressRegReg(SDValue N, SDValue &Base,
     APInt LHSKnownZero, LHSKnownOne;
     APInt RHSKnownZero, RHSKnownOne;
     DAG.ComputeMaskedBits(N.getOperand(0),
-                          APInt::getAllOnesValue(N.getOperand(0)
-                            .getValueSizeInBits()),
                           LHSKnownZero, LHSKnownOne);
 
     if (LHSKnownZero.getBoolValue()) {
       DAG.ComputeMaskedBits(N.getOperand(1),
-                            APInt::getAllOnesValue(N.getOperand(1)
-                              .getValueSizeInBits()),
                             RHSKnownZero, RHSKnownOne);
       // If all of the bits are known zero on the LHS or RHS, the add won't
       // carry.
@@ -909,10 +918,7 @@ bool PPCTargetLowering::SelectAddressRegImm(SDValue N, SDValue &Disp,
       // (for better address arithmetic) if the LHS and RHS of the OR are
       // provably disjoint.
       APInt LHSKnownZero, LHSKnownOne;
-      DAG.ComputeMaskedBits(N.getOperand(0),
-                            APInt::getAllOnesValue(N.getOperand(0)
-                                                   .getValueSizeInBits()),
-                            LHSKnownZero, LHSKnownOne);
+      DAG.ComputeMaskedBits(N.getOperand(0), LHSKnownZero, LHSKnownOne);
 
       if ((LHSKnownZero.getZExtValue()|~(uint64_t)imm) == ~0ULL) {
         // If all of the bits are known zero on the LHS or RHS, the add won't
@@ -1025,10 +1031,7 @@ bool PPCTargetLowering::SelectAddressRegImmShift(SDValue N, SDValue &Disp,
       // (for better address arithmetic) if the LHS and RHS of the OR are
       // provably disjoint.
       APInt LHSKnownZero, LHSKnownOne;
-      DAG.ComputeMaskedBits(N.getOperand(0),
-                            APInt::getAllOnesValue(N.getOperand(0)
-                                                   .getValueSizeInBits()),
-                            LHSKnownZero, LHSKnownOne);
+      DAG.ComputeMaskedBits(N.getOperand(0), LHSKnownZero, LHSKnownOne);
       if ((LHSKnownZero.getZExtValue()|~(uint64_t)imm) == ~0ULL) {
         // If all of the bits are known zero on the LHS or RHS, the add won't
         // carry.
@@ -2813,9 +2816,6 @@ PPCTargetLowering::FinishCall(CallingConv::ID CallConv, DebugLoc dl,
     return DAG.getNode(PPCISD::TC_RETURN, dl, MVT::Other, &Ops[0], Ops.size());
   }
 
-  Chain = DAG.getNode(CallOpc, dl, NodeTys, &Ops[0], Ops.size());
-  InFlag = Chain.getValue(1);
-
   // Add a NOP immediately after the branch instruction when using the 64-bit
   // SVR4 ABI. At link time, if caller and callee are in a different module and
   // thus have a different TOC, the call will be replaced with a call to a stub
@@ -2824,8 +2824,9 @@ PPCTargetLowering::FinishCall(CallingConv::ID CallConv, DebugLoc dl,
   // which restores the TOC of the caller from the TOC save slot of the current
   // stack frame. If caller and callee belong to the same module (and have the
   // same TOC), the NOP will remain unchanged.
-  if (!isTailCall && PPCSubTarget.isSVR4ABI() && PPCSubTarget.isPPC64()) {
-    SDVTList VTs = DAG.getVTList(MVT::Other, MVT::Glue);
+
+  bool needsTOCRestore = false;
+  if (!isTailCall && PPCSubTarget.isSVR4ABI()&& PPCSubTarget.isPPC64()) {
     if (CallOpc == PPCISD::BCTRL_SVR4) {
       // This is a call through a function pointer.
       // Restore the caller TOC from the save area into R2.
@@ -2836,12 +2837,20 @@ PPCTargetLowering::FinishCall(CallingConv::ID CallConv, DebugLoc dl,
       // since r2 is a reserved register (which prevents the register allocator
       // from allocating it), resulting in an additional register being
       // allocated and an unnecessary move instruction being generated.
-      Chain = DAG.getNode(PPCISD::TOC_RESTORE, dl, VTs, Chain, InFlag);
-      InFlag = Chain.getValue(1);
-    } else {
+      needsTOCRestore = true;
+    } else if (CallOpc == PPCISD::CALL_SVR4) {
       // Otherwise insert NOP.
-      InFlag = DAG.getNode(PPCISD::NOP, dl, MVT::Glue, InFlag);
+      CallOpc = PPCISD::CALL_NOP_SVR4;
     }
+  }
+
+  Chain = DAG.getNode(CallOpc, dl, NodeTys, &Ops[0], Ops.size());
+  InFlag = Chain.getValue(1);
+
+  if (needsTOCRestore) {
+    SDVTList VTs = DAG.getVTList(MVT::Other, MVT::Glue);
+    Chain = DAG.getNode(PPCISD::TOC_RESTORE, dl, VTs, Chain, InFlag);
+    InFlag = Chain.getValue(1);
   }
 
   Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
@@ -5498,12 +5507,11 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
 //===----------------------------------------------------------------------===//
 
 void PPCTargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
-                                                       const APInt &Mask,
                                                        APInt &KnownZero,
                                                        APInt &KnownOne,
                                                        const SelectionDAG &DAG,
                                                        unsigned Depth) const {
-  KnownZero = KnownOne = APInt(Mask.getBitWidth(), 0);
+  KnownZero = KnownOne = APInt(KnownZero.getBitWidth(), 0);
   switch (Op.getOpcode()) {
   default: break;
   case PPCISD::LBRX: {
@@ -5737,7 +5745,7 @@ bool PPCTargetLowering::isLegalAddressImmediate(int64_t V,Type *Ty) const{
   return (V > -(1 << 16) && V < (1 << 16)-1);
 }
 
-bool PPCTargetLowering::isLegalAddressImmediate(llvm::GlobalValue* GV) const {
+bool PPCTargetLowering::isLegalAddressImmediate(GlobalValue* GV) const {
   return false;
 }
 
@@ -5830,3 +5838,12 @@ EVT PPCTargetLowering::getOptimalMemOpType(uint64_t Size,
     return MVT::i32;
   }
 }
+
+Sched::Preference PPCTargetLowering::getSchedulingPreference(SDNode *N) const {
+  unsigned Directive = PPCSubTarget.getDarwinDirective();
+  if (Directive == PPC::DIR_440 || Directive == PPC::DIR_A2)
+    return Sched::ILP;
+
+  return TargetLowering::getSchedulingPreference(N);
+}
+

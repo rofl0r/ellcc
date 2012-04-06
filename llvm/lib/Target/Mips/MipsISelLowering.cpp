@@ -221,6 +221,8 @@ MipsTargetLowering(MipsTargetMachine &TM)
   }
   setOperationAction(ISD::FMA,               MVT::f32,   Expand);
   setOperationAction(ISD::FMA,               MVT::f64,   Expand);
+  setOperationAction(ISD::FREM,              MVT::f32,   Expand);
+  setOperationAction(ISD::FREM,              MVT::f64,   Expand);
 
   setOperationAction(ISD::EXCEPTIONADDR,     MVT::i32, Expand);
   setOperationAction(ISD::EXCEPTIONADDR,     MVT::i64, Expand);
@@ -1555,7 +1557,7 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
   EVT ValTy = Op.getValueType();
   bool HasGotOfst = (GV->hasInternalLinkage() ||
                      (GV->hasLocalLinkage() && !isa<Function>(GV)));
-  unsigned GotFlag = IsN64 ?
+  unsigned GotFlag = HasMips64 ?
                      (HasGotOfst ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT_DISP) :
                      (HasGotOfst ? MipsII::MO_GOT : MipsII::MO_GOT16);
   SDValue GA = DAG.getTargetGlobalAddress(GV, dl, ValTy, 0, GotFlag);
@@ -1567,8 +1569,8 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
   if (!HasGotOfst)
     return ResNode;
   SDValue GALo = DAG.getTargetGlobalAddress(GV, dl, ValTy, 0,
-                                            IsN64 ? MipsII::MO_GOT_OFST :
-                                                    MipsII::MO_ABS_LO);
+                                            HasMips64 ? MipsII::MO_GOT_OFST :
+                                                        MipsII::MO_ABS_LO);
   SDValue Lo = DAG.getNode(MipsISD::Lo, dl, ValTy, GALo);
   return DAG.getNode(ISD::ADD, dl, ValTy, ResNode, Lo);
 }
@@ -1589,8 +1591,8 @@ SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
   }
 
   EVT ValTy = Op.getValueType();
-  unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
-  unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
+  unsigned GOTFlag = HasMips64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
+  unsigned OFSTFlag = HasMips64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
   SDValue BAGOTOffset = DAG.getBlockAddress(BA, ValTy, true, GOTFlag);
   BAGOTOffset = DAG.getNode(MipsISD::Wrapper, dl, ValTy,
                             GetGlobalReg(DAG, ValTy), BAGOTOffset);
@@ -1693,8 +1695,8 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
     HiPart = DAG.getNode(MipsISD::Hi, dl, PtrVT, JTI);
     JTILo = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, MipsII::MO_ABS_LO);
   } else {// Emit Load from Global Pointer
-    unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
-    unsigned OfstFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
+    unsigned GOTFlag = HasMips64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
+    unsigned OfstFlag = HasMips64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
     JTI = DAG.getTargetJumpTable(JT->getIndex(), PtrVT, GOTFlag);
     JTI = DAG.getNode(MipsISD::Wrapper, dl, PtrVT, GetGlobalReg(DAG, PtrVT),
                       JTI);
@@ -1726,7 +1728,7 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
   //  SDValue GOT = DAG.getGLOBAL_OFFSET_TABLE(MVT::i32);
   //  ResNode = DAG.getNode(ISD::ADD, MVT::i32, GOT, GPRelNode);
 
-  if (getTargetMachine().getRelocationModel() != Reloc::PIC_) {
+  if (getTargetMachine().getRelocationModel() != Reloc::PIC_ && !IsN64) {
     SDValue CPHi = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
                                              N->getOffset(), MipsII::MO_ABS_HI);
     SDValue CPLo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
@@ -1736,8 +1738,8 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
     ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, HiPart, Lo);
   } else {
     EVT ValTy = Op.getValueType();
-    unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
-    unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
+    unsigned GOTFlag = HasMips64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
+    unsigned OFSTFlag = HasMips64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
     SDValue CP = DAG.getTargetConstantPool(C, ValTy, N->getAlignment(),
                                            N->getOffset(), GOTFlag);
     CP = DAG.getNode(MipsISD::Wrapper, dl, ValTy, GetGlobalReg(DAG, ValTy), CP);
@@ -2559,7 +2561,8 @@ MipsTargetLowering::LowerCallResult(SDValue Chain, SDValue InFlag,
 static void ReadByValArg(MachineFunction &MF, SDValue Chain, DebugLoc dl,
                          std::vector<SDValue>& OutChains,
                          SelectionDAG &DAG, unsigned NumWords, SDValue FIN,
-                         const CCValAssign &VA, const ISD::ArgFlagsTy& Flags) {
+                         const CCValAssign &VA, const ISD::ArgFlagsTy& Flags,
+                         const Argument *FuncArg) {
   unsigned LocMem = VA.getLocMemOffset();
   unsigned FirstWord = LocMem / 4;
 
@@ -2574,8 +2577,8 @@ static void ReadByValArg(MachineFunction &MF, SDValue Chain, DebugLoc dl,
     SDValue StorePtr = DAG.getNode(ISD::ADD, dl, MVT::i32, FIN,
                                    DAG.getConstant(i * 4, MVT::i32));
     SDValue Store = DAG.getStore(Chain, dl, DAG.getRegister(Reg, MVT::i32),
-                                 StorePtr, MachinePointerInfo(), false,
-                                 false, 0);
+                                 StorePtr, MachinePointerInfo(FuncArg, i * 4),
+                                 false, false, 0);
     OutChains.push_back(Store);
   }
 }
@@ -2587,7 +2590,7 @@ CopyMips64ByValRegs(MachineFunction &MF, SDValue Chain, DebugLoc dl,
                     const CCValAssign &VA, const ISD::ArgFlagsTy& Flags,
                     MachineFrameInfo *MFI, bool IsRegLoc,
                     SmallVectorImpl<SDValue> &InVals, MipsFunctionInfo *MipsFI,
-                    EVT PtrTy) {
+                    EVT PtrTy, const Argument *FuncArg) {
   const uint16_t *Reg = Mips64IntRegs + 8;
   int FOOffset; // Frame object offset from virtual frame pointer.
 
@@ -2611,8 +2614,8 @@ CopyMips64ByValRegs(MachineFunction &MF, SDValue Chain, DebugLoc dl,
     SDValue StorePtr = DAG.getNode(ISD::ADD, dl, PtrTy, FIN,
                                    DAG.getConstant(I * 8, PtrTy));
     SDValue Store = DAG.getStore(Chain, dl, DAG.getRegister(VReg, MVT::i64),
-                                 StorePtr, MachinePointerInfo(), false,
-                                 false, 0);
+                                 StorePtr, MachinePointerInfo(FuncArg, I * 8),
+                                 false, false, 0);
     OutChains.push_back(Store);
   }
 
@@ -2648,9 +2651,11 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
   else
     CCInfo.AnalyzeFormalArguments(Ins, CC_Mips);
 
+  Function::const_arg_iterator FuncArg =
+    DAG.getMachineFunction().getFunction()->arg_begin();
   int LastFI = 0;// MipsFI->LastInArgFI is 0 at the entry of this function.
 
-  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i, ++FuncArg) {
     CCValAssign &VA = ArgLocs[i];
     EVT ValVT = VA.getValVT();
     ISD::ArgFlagsTy Flags = Ins[i].Flags;
@@ -2665,11 +2670,12 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
                                         true);
         SDValue FIN = DAG.getFrameIndex(LastFI, getPointerTy());
         InVals.push_back(FIN);
-        ReadByValArg(MF, Chain, dl, OutChains, DAG, NumWords, FIN, VA, Flags);
+        ReadByValArg(MF, Chain, dl, OutChains, DAG, NumWords, FIN, VA, Flags,
+                     &*FuncArg);
       } else // N32/64
         LastFI = CopyMips64ByValRegs(MF, Chain, dl, OutChains, DAG, VA, Flags,
                                      MFI, IsRegLoc, InVals, MipsFI,
-                                     getPointerTy());
+                                     getPointerTy(), &*FuncArg);
       continue;
     }
 

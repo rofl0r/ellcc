@@ -67,7 +67,9 @@ static MCCodeGenInfo *createMipsMCCodeGenInfo(StringRef TT, Reloc::Model RM,
                                               CodeModel::Model CM,
                                               CodeGenOpt::Level OL) {
   MCCodeGenInfo *X = new MCCodeGenInfo();
-  if (RM == Reloc::Default)
+  if (CM == CodeModel::JITDefault)
+    RM = Reloc::Static;
+  else if (RM == Reloc::Default)
     RM = Reloc::PIC_;
   X->InitMCCodeGenInfo(RM, CM, OL);
   return X;
@@ -76,9 +78,10 @@ static MCCodeGenInfo *createMipsMCCodeGenInfo(StringRef TT, Reloc::Model RM,
 static MCInstPrinter *createMipsMCInstPrinter(const Target &T,
                                               unsigned SyntaxVariant,
                                               const MCAsmInfo &MAI,
+                                              const MCInstrInfo &MII,
                                               const MCRegisterInfo &MRI,
                                               const MCSubtargetInfo &STI) {
-  return new MipsInstPrinter(MAI, MRI);
+  return new MipsInstPrinter(MAI, MII, MRI);
 }
 
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
@@ -142,13 +145,13 @@ extern "C" void LLVMInitializeMipsTargetMC() {
 
   // Register the asm backend.
   TargetRegistry::RegisterMCAsmBackend(TheMipsTarget,
-                                       createMipsAsmBackendEB);
+                                       createMipsAsmBackendEB32);
   TargetRegistry::RegisterMCAsmBackend(TheMipselTarget,
-                                       createMipsAsmBackendEL);
+                                       createMipsAsmBackendEL32);
   TargetRegistry::RegisterMCAsmBackend(TheMips64Target,
-                                       createMipsAsmBackendEB);
+                                       createMipsAsmBackendEB64);
   TargetRegistry::RegisterMCAsmBackend(TheMips64elTarget,
-                                       createMipsAsmBackendEL);
+                                       createMipsAsmBackendEL64);
 
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheMipsTarget,

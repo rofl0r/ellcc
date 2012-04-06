@@ -16,12 +16,12 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
-#define GET_INSTRUCTION_NAME
 #include "MipsGenAsmWriter.inc"
 
 const char* Mips::MipsFCCToString(Mips::CondCode CC) {
@@ -60,10 +60,6 @@ const char* Mips::MipsFCCToString(Mips::CondCode CC) {
   case FCOND_GT:  return "ngt";
   }
   llvm_unreachable("Impossible condition code!");
-}
-
-StringRef MipsInstPrinter::getOpcodeName(unsigned Opcode) const {
-  return getInstructionName(Opcode);
 }
 
 void MipsInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {

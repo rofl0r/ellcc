@@ -579,12 +579,34 @@ public:
     int64_t Value = CE->getValue();
     return ((Value & 3) == 0) && Value >= 0 && Value <= 508;
   }
+  bool isImm0_508s4Neg() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = -CE->getValue();
+    // explicitly exclude zero. we want that to use the normal 0_508 version.
+    return ((Value & 3) == 0) && Value > 0 && Value <= 508;
+  }
   bool isImm0_255() const {
     if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 256;
+  }
+  bool isImm0_4095() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return Value >= 0 && Value < 4096;
+  }
+  bool isImm0_4095Neg() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = -CE->getValue();
+    return Value > 0 && Value < 4096;
   }
   bool isImm0_1() const {
     if (!isImm()) return false;
@@ -782,7 +804,9 @@ public:
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
-    return ARM_AM::getSOImmVal(-Value) != -1;
+    // Only use this when not representable as a plain so_imm.
+    return ARM_AM::getSOImmVal(Value) == -1 &&
+      ARM_AM::getSOImmVal(-Value) != -1;
   }
   bool isT2SOImm() const {
     if (!isImm()) return false;
@@ -803,7 +827,9 @@ public:
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
-    return ARM_AM::getT2SOImmVal(-Value) != -1;
+    // Only use this when not representable as a plain so_imm.
+    return ARM_AM::getT2SOImmVal(Value) == -1 &&
+      ARM_AM::getT2SOImmVal(-Value) != -1;
   }
   bool isSetEndImm() const {
     if (!isImm()) return false;
@@ -1495,6 +1521,14 @@ public:
     Inst.addOperand(MCOperand::CreateImm(CE->getValue() / 4));
   }
 
+  void addImm0_508s4NegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    // The immediate is scaled by four in the encoding and is stored
+    // in the MCInst as such. Lop off the low two bits here.
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    Inst.addOperand(MCOperand::CreateImm(-(CE->getValue() / 4)));
+  }
+
   void addImm0_508s4Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // The immediate is scaled by four in the encoding and is stored
@@ -1548,6 +1582,14 @@ public:
   void addT2SOImmNegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // The operand is actually a t2_so_imm, but we have its
+    // negation in the assembly source, so twiddle it here.
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    Inst.addOperand(MCOperand::CreateImm(-CE->getValue()));
+  }
+
+  void addImm0_4095NegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    // The operand is actually an imm0_4095, but we have its
     // negation in the assembly source, so twiddle it here.
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     Inst.addOperand(MCOperand::CreateImm(-CE->getValue()));
@@ -3324,7 +3366,8 @@ parseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
         FlagsVal = 8; // No flag
     }
   } else if (SpecReg == "cpsr" || SpecReg == "spsr") {
-    if (Flags == "all") // cpsr_all is an alias for cpsr_fc
+    // cpsr_all is an alias for cpsr_fc, as is plain cpsr.
+    if (Flags == "all" || Flags == "")
       Flags = "fc";
     for (int i = 0, e = Flags.size(); i != e; ++i) {
       unsigned Flag = StringSwitch<unsigned>(Flags.substr(i, 1))
@@ -6833,7 +6876,7 @@ processInstruction(MCInst &Inst,
     // explicitly specified. From the ARM ARM: "Encoding T1 is preferred
     // to encoding T2 if <Rd> is specified and encoding T2 is preferred
     // to encoding T1 if <Rd> is omitted."
-    if (Inst.getOperand(3).getImm() < 8 && Operands.size() == 6) {
+    if ((unsigned)Inst.getOperand(3).getImm() < 8 && Operands.size() == 6) {
       Inst.setOpcode(ARM::tADDi3);
       return true;
     }
@@ -6843,11 +6886,37 @@ processInstruction(MCInst &Inst,
     // explicitly specified. From the ARM ARM: "Encoding T1 is preferred
     // to encoding T2 if <Rd> is specified and encoding T2 is preferred
     // to encoding T1 if <Rd> is omitted."
-    if (Inst.getOperand(3).getImm() < 8 && Operands.size() == 6) {
+    if ((unsigned)Inst.getOperand(3).getImm() < 8 && Operands.size() == 6) {
       Inst.setOpcode(ARM::tSUBi3);
       return true;
     }
     break;
+  case ARM::t2ADDri:
+  case ARM::t2SUBri: {
+    // If the destination and first source operand are the same, and
+    // the flags are compatible with the current IT status, use encoding T2
+    // instead of T3. For compatibility with the system 'as'. Make sure the
+    // wide encoding wasn't explicit.
+    if (Inst.getOperand(0).getReg() != Inst.getOperand(1).getReg() ||
+        !isARMLowRegister(Inst.getOperand(0).getReg()) ||
+        (unsigned)Inst.getOperand(2).getImm() > 255 ||
+        ((!inITBlock() && Inst.getOperand(5).getReg() != ARM::CPSR) ||
+        (inITBlock() && Inst.getOperand(5).getReg() != 0)) ||
+        (static_cast<ARMOperand*>(Operands[3])->isToken() &&
+         static_cast<ARMOperand*>(Operands[3])->getToken() == ".w"))
+      break;
+    MCInst TmpInst;
+    TmpInst.setOpcode(Inst.getOpcode() == ARM::t2ADDri ?
+                      ARM::tADDi8 : ARM::tSUBi8);
+    TmpInst.addOperand(Inst.getOperand(0));
+    TmpInst.addOperand(Inst.getOperand(5));
+    TmpInst.addOperand(Inst.getOperand(0));
+    TmpInst.addOperand(Inst.getOperand(2));
+    TmpInst.addOperand(Inst.getOperand(3));
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
   case ARM::t2ADDrr: {
     // If the destination and first source operand are the same, and
     // there's no setting of the flags, use encoding T2 instead of T3.
@@ -6964,7 +7033,7 @@ processInstruction(MCInst &Inst,
     // If we can use the 16-bit encoding and the user didn't explicitly
     // request the 32-bit variant, transform it here.
     if (isARMLowRegister(Inst.getOperand(0).getReg()) &&
-        Inst.getOperand(1).getImm() <= 255 &&
+        (unsigned)Inst.getOperand(1).getImm() <= 255 &&
         ((!inITBlock() && Inst.getOperand(2).getImm() == ARMCC::AL &&
          Inst.getOperand(4).getReg() == ARM::CPSR) ||
         (inITBlock() && Inst.getOperand(4).getReg() == 0)) &&

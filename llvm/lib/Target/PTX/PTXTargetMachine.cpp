@@ -17,7 +17,6 @@
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Assembly/PrintModulePass.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
@@ -153,10 +152,10 @@ bool PTXPassConfig::addPostRegAlloc() {
 /// Add passes that optimize machine instructions after register allocation.
 void PTXPassConfig::addMachineLateOptimization() {
   if (addPass(BranchFolderPassID) != &NoPassID)
-    printNoVerify("After BranchFolding");
+    printAndVerify("After BranchFolding");
 
   if (addPass(TailDuplicateID) != &NoPassID)
-    printNoVerify("After TailDuplicate");
+    printAndVerify("After TailDuplicate");
 }
 
 bool PTXPassConfig::addPreEmitPass() {

@@ -366,6 +366,7 @@ class LoadUpper<bits<6> op, string instr_asm, RegisterClass RC, Operand Imm>:
   FI<op, (outs RC:$rt), (ins Imm:$imm16),
      !strconcat(instr_asm, "\t$rt, $imm16"), [], IIAlu> {
   let rs = 0;
+  let neverHasSideEffects = 1;
 }
 
 class FMem<bits<6> op, dag outs, dag ins, string asmstr, list<dag> pattern,
@@ -556,6 +557,7 @@ class Mult<bits<6> func, string instr_asm, InstrItinClass itin,
   let shamt = 0;
   let isCommutable = 1;
   let Defs = DefRegs;
+  let neverHasSideEffects = 1;
 }
 
 class Mult32<bits<6> func, string instr_asm, InstrItinClass itin>:
@@ -583,6 +585,7 @@ class MoveFromLOHI<bits<6> func, string instr_asm, RegisterClass RC,
   let rt = 0;
   let shamt = 0;
   let Uses = UseRegs;
+  let neverHasSideEffects = 1;
 }
 
 class MoveToLOHI<bits<6> func, string instr_asm, RegisterClass RC,
@@ -593,6 +596,7 @@ class MoveToLOHI<bits<6> func, string instr_asm, RegisterClass RC,
   let rd = 0;
   let shamt = 0;
   let Defs = DefRegs;
+  let neverHasSideEffects = 1;
 }
 
 class EffectiveAddress<string instr_asm, RegisterClass RC, Operand Mem> :
@@ -636,6 +640,7 @@ class SubwordSwap<bits<6> func, bits<5> sa, string instr_asm, RegisterClass RC>:
   let rs = 0;
   let shamt = sa;
   let Predicates = [HasSwap];
+  let neverHasSideEffects = 1;
 }
 
 // Read Hardware
@@ -723,24 +728,13 @@ def ADJCALLSTACKUP   : MipsPseudo<(outs), (ins uimm16:$amt1, uimm16:$amt2),
                                   [(callseq_end timm:$amt1, timm:$amt2)]>;
 }
 
-// Some assembly macros need to avoid pseudoinstructions and assembler
-// automatic reodering, we should reorder ourselves.
-def MACRO     : MipsPseudo<(outs), (ins), ".set\tmacro",     []>;
-def REORDER   : MipsPseudo<(outs), (ins), ".set\treorder",   []>;
-def NOMACRO   : MipsPseudo<(outs), (ins), ".set\tnomacro",   []>;
-def NOREORDER : MipsPseudo<(outs), (ins), ".set\tnoreorder", []>;
-
-// These macros are inserted to prevent GAS from complaining
-// when using the AT register.
-def NOAT      : MipsPseudo<(outs), (ins), ".set\tnoat", []>;
-def ATMACRO   : MipsPseudo<(outs), (ins), ".set\tat", []>;
-
 // When handling PIC code the assembler needs .cpload and .cprestore
 // directives. If the real instructions corresponding these directives
 // are used, we have the same behavior, but get also a bunch of warnings
 // from the assembler.
-def CPLOAD : MipsPseudo<(outs), (ins CPURegs:$picreg), ".cpload\t$picreg", []>;
-def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc), ".cprestore\t$loc", []>;
+let neverHasSideEffects = 1 in
+def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc, CPURegs:$gp),
+                           ".cprestore\t$loc", []>;
 
 // For O32 ABI & PIC & non-fixed global base register, the following instruction
 // seqeunce is emitted to set the global base register:
@@ -758,7 +752,10 @@ def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc), ".cprestore\t$loc", []>;
 // before or between instructions 0 and 1, which is a limitation imposed by
 // GNU linker.
 
+let isTerminator = 1, isBarrier = 1 in
 def SETGP01 : MipsPseudo<(outs CPURegs:$dst), (ins), "", []>;
+
+let neverHasSideEffects = 1 in
 def SETGP2 : MipsPseudo<(outs CPURegs:$globalreg), (ins CPURegs:$picreg), "",
                         []>;
 

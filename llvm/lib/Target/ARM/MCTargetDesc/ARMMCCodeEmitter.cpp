@@ -597,8 +597,12 @@ uint32_t ARMMCCodeEmitter::
 getARMBLTargetOpValue(const MCInst &MI, unsigned OpIdx,
                           SmallVectorImpl<MCFixup> &Fixups) const {
   const MCOperand MO = MI.getOperand(OpIdx);
-  if (MO.isExpr())
-    return ::getBranchTargetOpValue(MI, OpIdx, ARM::fixup_arm_bl, Fixups);
+  if (MO.isExpr()) {
+    if (HasConditionalBranch(MI))
+      return ::getBranchTargetOpValue(MI, OpIdx, 
+                                      ARM::fixup_arm_condbl, Fixups);
+    return ::getBranchTargetOpValue(MI, OpIdx, ARM::fixup_arm_uncondbl, Fixups);
+  }
 
   return MO.getImm() >> 2;
 }
@@ -1330,8 +1334,8 @@ getRegisterListOpValue(const MCInst &MI, unsigned Op,
   // LDM/STM:
   //   {15-0}  = Bitfield of GPRs.
   unsigned Reg = MI.getOperand(Op).getReg();
-  bool SPRRegs = llvm::ARMMCRegisterClasses[ARM::SPRRegClassID].contains(Reg);
-  bool DPRRegs = llvm::ARMMCRegisterClasses[ARM::DPRRegClassID].contains(Reg);
+  bool SPRRegs = ARMMCRegisterClasses[ARM::SPRRegClassID].contains(Reg);
+  bool DPRRegs = ARMMCRegisterClasses[ARM::DPRRegClassID].contains(Reg);
 
   unsigned Binary = 0;
 

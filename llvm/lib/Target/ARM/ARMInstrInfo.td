@@ -251,7 +251,8 @@ def imm16_31 : ImmLeaf<i32, [{
 
 def so_imm_neg_asmoperand : AsmOperandClass { let Name = "ARMSOImmNeg"; }
 def so_imm_neg : Operand<i32>, PatLeaf<(imm), [{
-    return ARM_AM::getSOImmVal(-(uint32_t)N->getZExtValue()) != -1;
+    int64_t Value = -(int)N->getZExtValue();
+    return Value && ARM_AM::getSOImmVal(Value) != -1;
   }], so_imm_neg_XFORM> {
   let ParserMatchClass = so_imm_neg_asmoperand;
 }
@@ -1330,10 +1331,10 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
     let Inst{4} = 0;
     let Inst{3-0} = shift{3-0};
   }
-  def rsr : AsI1<opcod, (outs GPR:$Rd),
-                (ins GPR:$Rn, so_reg_reg:$shift),
+  def rsr : AsI1<opcod, (outs GPRnopc:$Rd),
+                (ins GPRnopc:$Rn, so_reg_reg:$shift),
                 DPSoRegRegFrm, IIC_iALUsr, opc, "\t$Rd, $Rn, $shift",
-              [(set GPR:$Rd, CPSR, (opnode GPR:$Rn, so_reg_reg:$shift, CPSR))]>,
+              [(set GPRnopc:$Rd, CPSR, (opnode GPRnopc:$Rn, so_reg_reg:$shift, CPSR))]>,
                Requires<[IsARM]> {
     bits<4> Rd;
     bits<4> Rn;
@@ -1367,7 +1368,7 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
                                                     cc_out:$s)>,
      Requires<[IsARM]>;
   def : InstAlias<!strconcat(opc, "${s}${p} $Rdn, $shift"),
-     (!cast<Instruction>(!strconcat(baseOpc, "rsr")) GPR:$Rdn, GPR:$Rdn,
+     (!cast<Instruction>(!strconcat(baseOpc, "rsr")) GPRnopc:$Rdn, GPRnopc:$Rdn,
                                                     so_reg_reg:$shift, pred:$p,
                                                     cc_out:$s)>,
      Requires<[IsARM]>;
@@ -1907,7 +1908,7 @@ let isCall = 1,
   def BL  : ABXI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                 IIC_Br, "bl\t$func",
                 [(ARMcall tglobaladdr:$func)]>,
-            Requires<[IsARM, IsNotIOS]> {
+            Requires<[IsARM]> {
     let Inst{31-28} = 0b1110;
     bits<24> func;
     let Inst{23-0} = func;
@@ -1917,7 +1918,7 @@ let isCall = 1,
   def BL_pred : ABI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                    IIC_Br, "bl", "\t$func",
                    [(ARMcall_pred tglobaladdr:$func)]>,
-                Requires<[IsARM, IsNotIOS]> {
+                Requires<[IsARM]> {
     bits<24> func;
     let Inst{23-0} = func;
     let DecoderMethod = "DecodeBranchImmInstruction";
@@ -1927,7 +1928,7 @@ let isCall = 1,
   def BLX : AXI<(outs), (ins GPR:$func, variable_ops), BrMiscFrm,
                 IIC_Br, "blx\t$func",
                 [(ARMcall GPR:$func)]>,
-            Requires<[IsARM, HasV5T, IsNotIOS]> {
+            Requires<[IsARM, HasV5T]> {
     bits<4> func;
     let Inst{31-4} = 0b1110000100101111111111110011;
     let Inst{3-0}  = func;
@@ -1936,7 +1937,7 @@ let isCall = 1,
   def BLX_pred : AI<(outs), (ins GPR:$func, variable_ops), BrMiscFrm,
                     IIC_Br, "blx", "\t$func",
                     [(ARMcall_pred GPR:$func)]>,
-                 Requires<[IsARM, HasV5T, IsNotIOS]> {
+                 Requires<[IsARM, HasV5T]> {
     bits<4> func;
     let Inst{27-4} = 0b000100101111111111110011;
     let Inst{3-0}  = func;
@@ -1946,67 +1947,19 @@ let isCall = 1,
   // Note: Restrict $func to the tGPR regclass to prevent it being in LR.
   def BX_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                    8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                   Requires<[IsARM, HasV4T, IsNotIOS]>;
+                   Requires<[IsARM, HasV4T]>;
 
   // ARMv4
   def BMOVPCRX_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                    8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                   Requires<[IsARM, NoV4T, IsNotIOS]>;
+                   Requires<[IsARM, NoV4T]>;
 
   // mov lr, pc; b if callee is marked noreturn to avoid confusing the
   // return stack predictor.
   def BMOVPCB_CALL : ARMPseudoInst<(outs),
                                    (ins bl_target:$func, variable_ops),
                                8, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
-                      Requires<[IsARM, IsNotIOS]>;
-}
-
-let isCall = 1,
-  // On IOS R9 is call-clobbered.
-  // R7 is marked as a use to prevent frame-pointer assignments from being
-  // moved above / below calls.
-  Defs = [LR], Uses = [R7, SP] in {
-  def BLr9  : ARMPseudoExpand<(outs), (ins bl_target:$func, variable_ops),
-                4, IIC_Br,
-                [(ARMcall tglobaladdr:$func)], (BL bl_target:$func)>,
-              Requires<[IsARM, IsIOS]>;
-
-  def BLr9_pred : ARMPseudoExpand<(outs),
-                   (ins bl_target:$func, pred:$p, variable_ops),
-                   4, IIC_Br,
-                   [(ARMcall_pred tglobaladdr:$func)],
-                   (BL_pred bl_target:$func, pred:$p)>,
-                  Requires<[IsARM, IsIOS]>;
-
-  // ARMv5T and above
-  def BLXr9 : ARMPseudoExpand<(outs), (ins GPR:$func, variable_ops),
-                4, IIC_Br,
-                [(ARMcall GPR:$func)],
-                (BLX GPR:$func)>,
-               Requires<[IsARM, HasV5T, IsIOS]>;
-
-  def BLXr9_pred: ARMPseudoExpand<(outs), (ins GPR:$func, pred:$p,variable_ops),
-                4, IIC_Br,
-                [(ARMcall_pred GPR:$func)],
-                (BLX_pred GPR:$func, pred:$p)>,
-                   Requires<[IsARM, HasV5T, IsIOS]>;
-
-  // ARMv4T
-  // Note: Restrict $func to the tGPR regclass to prevent it being in LR.
-  def BXr9_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
-                  8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                  Requires<[IsARM, HasV4T, IsIOS]>;
-
-  // ARMv4
-  def BMOVPCRXr9_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
-                  8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                  Requires<[IsARM, NoV4T, IsIOS]>;
-
-  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
-  // return stack predictor.
-  def BMOVPCBr9_CALL : ARMPseudoInst<(outs),(ins bl_target:$func, variable_ops),
-                               8, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
-                        Requires<[IsARM, IsIOS]>;
+                      Requires<[IsARM]>;
 }
 
 let isBranch = 1, isTerminator = 1 in {
@@ -3243,6 +3196,8 @@ class AAI<bits<8> op27_20, bits<8> op11_4, string opc,
   let Inst{19-16} = Rn;
   let Inst{15-12} = Rd;
   let Inst{3-0}   = Rm;
+  
+  let Unpredictable{11-8} = 0b1111;
 }
 
 // Saturating add/subtract
@@ -4043,10 +3998,13 @@ def BCCZi64 : PseudoInst<(outs),
 // FIXME: should be able to write a pattern for ARMcmov, but can't use
 // a two-value operand where a dag node expects two operands. :(
 let neverHasSideEffects = 1 in {
+
+let isCommutable = 1 in
 def MOVCCr : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$false, GPR:$Rm, pred:$p),
                            4, IIC_iCMOVr,
   [/*(set GPR:$Rd, (ARMcmov GPR:$false, GPR:$Rm, imm:$cc, CCR:$ccr))*/]>,
       RegConstraint<"$false = $Rd">;
+
 def MOVCCsi : ARMPseudoInst<(outs GPR:$Rd),
                            (ins GPR:$false, so_reg_imm:$shift, pred:$p),
                            4, IIC_iCMOVsr,
@@ -4892,15 +4850,9 @@ def : ARMPat<(ARMtcret (i32 texternalsym:$dst)),
 
 // Direct calls
 def : ARMPat<(ARMcall texternalsym:$func), (BL texternalsym:$func)>,
-      Requires<[IsARM, IsNotIOS]>;
-def : ARMPat<(ARMcall texternalsym:$func), (BLr9 texternalsym:$func)>,
-      Requires<[IsARM, IsIOS]>;
+      Requires<[IsARM]>;
 def : ARMPat<(ARMcall_nolink texternalsym:$func),
-             (BMOVPCB_CALL texternalsym:$func)>,
-      Requires<[IsARM, IsNotIOS]>;
-def : ARMPat<(ARMcall_nolink texternalsym:$func),
-             (BMOVPCBr9_CALL texternalsym:$func)>,
-      Requires<[IsARM, IsIOS]>;
+             (BMOVPCB_CALL texternalsym:$func)>, Requires<[IsARM]>;
 
 // zextload i1 -> zextload i8
 def : ARMPat<(zextloadi1 addrmode_imm12:$addr), (LDRBi12 addrmode_imm12:$addr)>;
