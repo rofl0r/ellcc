@@ -243,12 +243,13 @@ static bool isIntOrBool(Expr *Exp) {
 /// Note that this function may produce an error message.
 /// \return true if the Decl is a pointer type; false otherwise
 ///
-static bool checkIsPointer(Sema &S, const Decl *D, const AttributeList &Attr) {
+static bool threadSafetyCheckIsPointer(Sema &S, const Decl *D,
+                                       const AttributeList &Attr) {
   if (const ValueDecl *vd = dyn_cast<ValueDecl>(D)) {
     QualType QT = vd->getType();
     if (QT->isAnyPointerType())
       return true;
-    S.Diag(Attr.getLoc(), diag::warn_pointer_attribute_wrong_type)
+    S.Diag(Attr.getLoc(), diag::warn_thread_attribute_decl_not_pointer)
       << Attr.getName()->getName() << QT;
   } else {
     S.Diag(Attr.getLoc(), diag::err_attribute_can_be_applied_only_to_value_decl)
@@ -271,33 +272,34 @@ static const RecordType *getRecordType(QualType QT) {
 }
 
 /// \brief Thread Safety Analysis: Checks that the passed in RecordType
-/// resolves to a lockable object. May flag an error.
-static bool checkForLockableRecord(Sema &S, Decl *D, const AttributeList &Attr,
-                                   const RecordType *RT) {
-  // Flag error if could not get record type for this argument.
+/// resolves to a lockable object.
+static void checkForLockableRecord(Sema &S, Decl *D, const AttributeList &Attr,
+                                   QualType Ty) {
+  const RecordType *RT = getRecordType(Ty);
+                                   
+  // Warn if could not get record type for this argument.
   if (!RT) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_argument_not_class)
-      << Attr.getName();
-    return false;
+    S.Diag(Attr.getLoc(), diag::warn_thread_attribute_argument_not_class)
+      << Attr.getName() << Ty.getAsString();
+    return;
   }
   // Don't check for lockable if the class hasn't been defined yet. 
   if (RT->isIncompleteType())
-    return true;
-  // Flag error if the type is not lockable.
+    return;
+  // Warn if the type is not lockable.
   if (!RT->getDecl()->getAttr<LockableAttr>()) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_argument_not_lockable)
-      << Attr.getName();
-    return false;
+    S.Diag(Attr.getLoc(), diag::warn_thread_attribute_argument_not_lockable)
+      << Attr.getName() << Ty.getAsString();
+    return;
   }
-  return true;
 }
 
 /// \brief Thread Safety Analysis: Checks that all attribute arguments, starting
-/// from Sidx, resolve to a lockable object. May flag an error.
+/// from Sidx, resolve to a lockable object.
 /// \param Sidx The attribute argument index to start checking with.
 /// \param ParamIdxOk Whether an argument can be indexing into a function
 /// parameter list.
-static bool checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
+static void checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
                                          const AttributeList &Attr,
                                          SmallVectorImpl<Expr*> &Args,
                                          int Sidx = 0,
@@ -306,8 +308,16 @@ static bool checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
     Expr *ArgExp = Attr.getArg(Idx);
 
     if (ArgExp->isTypeDependent()) {
-      // FIXME -- need to processs this again on template instantiation
+      // FIXME -- need to check this again on template instantiation
       Args.push_back(ArgExp);
+      continue;
+    }
+
+    if (isa<StringLiteral>(ArgExp)) {
+      // We allow constant strings to be used as a placeholder for expressions
+      // that are not valid C++ syntax, but warn that they are ignored.
+      S.Diag(Attr.getLoc(), diag::warn_thread_attribute_ignored) <<
+        Attr.getName();
       continue;
     }
 
@@ -328,19 +338,16 @@ static bool checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
         if(!ArgValue.isStrictlyPositive() || ParamIdxFromOne > NumParams) {
           S.Diag(Attr.getLoc(), diag::err_attribute_argument_out_of_range)
             << Attr.getName() << Idx + 1 << NumParams;
-          return false;
+          continue;
         }
         ArgTy = FD->getParamDecl(ParamIdxFromZero)->getType();
-        RT = getRecordType(ArgTy);
       }
     }
 
-    if (!checkForLockableRecord(S, D, Attr, RT))
-      return false;
+    checkForLockableRecord(S, D, Attr, ArgTy);
 
     Args.push_back(ArgExp);
   }
-  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -365,7 +372,7 @@ static void handleGuardedVarAttr(Sema &S, Decl *D, const AttributeList &Attr,
     return;
   }
 
-  if (pointer && !checkIsPointer(S, D, Attr))
+  if (pointer && !threadSafetyCheckIsPointer(S, D, Attr))
     return;
 
   if (pointer)
@@ -381,8 +388,6 @@ static void handleGuardedByAttr(Sema &S, Decl *D, const AttributeList &Attr,
   if (!checkAttributeNumArgs(S, Attr, 1))
     return;
 
-  Expr *Arg = Attr.getArg(0);
-
   // D must be either a member field or global (potentially shared) variable.
   if (!mayBeSharedVariable(D)) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
@@ -390,14 +395,16 @@ static void handleGuardedByAttr(Sema &S, Decl *D, const AttributeList &Attr,
     return;
   }
 
-  if (pointer && !checkIsPointer(S, D, Attr))
+  if (pointer && !threadSafetyCheckIsPointer(S, D, Attr))
     return;
 
-  if (!Arg->isTypeDependent()) {
-    if (!checkForLockableRecord(S, D, Attr, getRecordType(Arg->getType())))
-      return;
-    // FIXME -- semantic checks for dependent attributes
-  }
+  SmallVector<Expr*, 1> Args;
+  // check that all arguments are lockable objects
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args);
+  unsigned Size = Args.size();
+  if (Size != 1)
+    return;
+  Expr *Arg = Args[0];
 
   if (pointer)
     D->addAttr(::new (S.Context) PtGuardedByAttr(Attr.getRange(),
@@ -445,7 +452,7 @@ static void handleNoThreadSafetyAttr(Sema &S, Decl *D,
 }
 
 static void handleNoAddressSafetyAttr(Sema &S, Decl *D,
-                                     const AttributeList &Attr) {
+                                      const AttributeList &Attr) {
   assert(!Attr.isInvalid());
 
   if (!checkAttributeNumArgs(S, Attr, 0))
@@ -476,25 +483,24 @@ static void handleAcquireOrderAttr(Sema &S, Decl *D, const AttributeList &Attr,
     return;
   }
 
-  // Check that this attribute only applies to lockable types
+  // Check that this attribute only applies to lockable types.
   QualType QT = VD->getType();
   if (!QT->isDependentType()) {
     const RecordType *RT = getRecordType(QT);
     if (!RT || !RT->getDecl()->getAttr<LockableAttr>()) {
-      S.Diag(Attr.getLoc(), diag::err_attribute_decl_not_lockable)
+      S.Diag(Attr.getLoc(), diag::warn_thread_attribute_decl_not_lockable)
               << Attr.getName();
       return;
     }
   }
 
   SmallVector<Expr*, 1> Args;
-  // check that all arguments are lockable objects
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args))
-    return;
-
+  // Check that all arguments are lockable objects.
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args);
   unsigned Size = Args.size();
-  assert(Size == Attr.getNumArgs());
-  Expr **StartArg = Size == 0 ? 0 : &Args[0];
+  if (Size == 0)
+    return;
+  Expr **StartArg = &Args[0];
 
   if (before)
     D->addAttr(::new (S.Context) AcquiredBeforeAttr(Attr.getRange(), S.Context,
@@ -519,11 +525,8 @@ static void handleLockFunAttr(Sema &S, Decl *D, const AttributeList &Attr,
 
   // check that all arguments are lockable objects
   SmallVector<Expr*, 1> Args;
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args, 0, /*ParamIdxOk=*/true))
-    return;
-
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args, 0, /*ParamIdxOk=*/true);
   unsigned Size = Args.size();
-  assert(Size == Attr.getNumArgs());
   Expr **StartArg = Size == 0 ? 0 : &Args[0];
 
   if (exclusive)
@@ -543,7 +546,6 @@ static void handleTrylockFunAttr(Sema &S, Decl *D, const AttributeList &Attr,
   if (!checkAttributeAtLeastNumArgs(S, Attr, 1))
     return;
 
-
   if (!isa<FunctionDecl>(D) && !isa<FunctionTemplateDecl>(D)) {
     S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
       << Attr.getName() << ExpectedFunctionOrMethod;
@@ -558,9 +560,7 @@ static void handleTrylockFunAttr(Sema &S, Decl *D, const AttributeList &Attr,
 
   SmallVector<Expr*, 2> Args;
   // check that all arguments are lockable objects
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args, 1))
-    return;
-
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args, 1);
   unsigned Size = Args.size();
   Expr **StartArg = Size == 0 ? 0 : &Args[0];
 
@@ -591,12 +591,11 @@ static void handleLocksRequiredAttr(Sema &S, Decl *D, const AttributeList &Attr,
 
   // check that all arguments are lockable objects
   SmallVector<Expr*, 1> Args;
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args))
-    return;
-
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args);
   unsigned Size = Args.size();
-  assert(Size == Attr.getNumArgs());
-  Expr **StartArg = Size == 0 ? 0 : &Args[0];
+  if (Size == 0)
+    return;
+  Expr **StartArg = &Args[0];
 
   if (exclusive)
     D->addAttr(::new (S.Context) ExclusiveLocksRequiredAttr(Attr.getRange(),
@@ -622,11 +621,8 @@ static void handleUnlockFunAttr(Sema &S, Decl *D,
 
   // check that all arguments are lockable objects
   SmallVector<Expr*, 1> Args;
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args, 0, /*ParamIdxOk=*/true))
-    return;
-
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args, 0, /*ParamIdxOk=*/true);
   unsigned Size = Args.size();
-  assert(Size == Attr.getNumArgs());
   Expr **StartArg = Size == 0 ? 0 : &Args[0];
 
   D->addAttr(::new (S.Context) UnlockFunctionAttr(Attr.getRange(), S.Context,
@@ -651,8 +647,7 @@ static void handleLockReturnedAttr(Sema &S, Decl *D,
     return;
 
   // check that the argument is lockable object
-  if (!checkForLockableRecord(S, D, Attr, getRecordType(Arg->getType())))
-    return;
+  checkForLockableRecord(S, D, Attr, Arg->getType());
 
   D->addAttr(::new (S.Context) LockReturnedAttr(Attr.getRange(), S.Context, Arg));
 }
@@ -672,12 +667,11 @@ static void handleLocksExcludedAttr(Sema &S, Decl *D,
 
   // check that all arguments are lockable objects
   SmallVector<Expr*, 1> Args;
-  if (!checkAttrArgsAreLockableObjs(S, D, Attr, Args))
-    return;
-
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args);
   unsigned Size = Args.size();
-  assert(Size == Attr.getNumArgs());
-  Expr **StartArg = Size == 0 ? 0 : &Args[0];
+  if (Size == 0)
+    return;
+  Expr **StartArg = &Args[0];
 
   D->addAttr(::new (S.Context) LocksExcludedAttr(Attr.getRange(), S.Context,
                                                  StartArg, Size));
@@ -1591,6 +1585,22 @@ static void handleArcWeakrefUnavailableAttr(Sema &S, Decl *D,
   
   D->addAttr(::new (S.Context) ArcWeakrefUnavailableAttr(
                                           Attr.getRange(), S.Context));
+}
+
+static void handleObjCRootClassAttr(Sema &S, Decl *D, 
+                                    const AttributeList &Attr) {
+  if (!isa<ObjCInterfaceDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_requires_objc_interface);
+    return;
+  }
+  
+  unsigned NumArgs = Attr.getNumArgs();
+  if (NumArgs > 0) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_too_many_arguments) << 0;
+    return;
+  }
+  
+  D->addAttr(::new (S.Context) ObjCRootClassAttr(Attr.getRange(), S.Context));
 }
 
 static void handleObjCRequiresPropertyDefsAttr(Sema &S, Decl *D, 
@@ -3324,8 +3334,8 @@ static void handleObjCReturnsInnerPointerAttr(Sema &S, Decl *D,
 
   ObjCMethodDecl *method = dyn_cast<ObjCMethodDecl>(D);
 
-  if (!isa<ObjCMethodDecl>(method)) {
-    S.Diag(method->getLocStart(), diag::err_attribute_wrong_decl_type)
+  if (!method || !isa<ObjCMethodDecl>(method)) {
+    S.Diag(D->getLocStart(), diag::err_attribute_wrong_decl_type)
       << SourceRange(loc, loc) << attr.getName() << ExpectedMethod;
     return;
   }
@@ -3657,6 +3667,9 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_unavailable: handleUnavailableAttr (S, D, Attr); break;
   case AttributeList::AT_objc_arc_weak_reference_unavailable: 
     handleArcWeakrefUnavailableAttr (S, D, Attr); 
+    break;
+  case AttributeList::AT_objc_root_class:
+    handleObjCRootClassAttr(S, D, Attr);
     break;
   case AttributeList::AT_objc_requires_property_definitions: 
     handleObjCRequiresPropertyDefsAttr (S, D, Attr); 

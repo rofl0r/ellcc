@@ -1,483 +1,515 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
-<head>
-  <meta content="text/html; charset=ISO-8859-1"
- http-equiv="Content-Type">
-  <title>ELLCC News</title>
-  <meta content="Richard Pennington" name="author">
-</head>
-<body>
-<table style="text-align: left; width: 100%; height: 100%;" border="0"
- cellpadding="0" cellspacing="0">
-  <tbody>
-    <tr align="center">
-      <th
- style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;"
- colspan="2" rowspan="1">
-      <table style="text-align: left; width: 100%;" border="0"
- cellpadding="0" cellspacing="0">
-        <tbody>
-          <tr>
-            <td style="height: 135px; width: 135px;"><img
- style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
-            <td style="text-align: center;">
-            <h1>ELLCC News</h1>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </th>
-    </tr>
-    <tr>
-      <td
- style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a
- href="index.html">Home</a><br>
-      <a href="blog/">Blog</a><br>
-      <a href="news.html">News</a><br>
-      <a href="demo/">Demo</a><br>
-      <a href="ellcc/libecc/share/doc">Documentation</a><br>
-      <a href="installation.html">Installation</a><br>
-      <a href="targetsupport.html">Target Support</a><br>
-      <a href="bugzilla">Bug Database</a><br>
-      <a href="http://ellcc.org/viewvc/svn/ellcc/">Source Repository</a><br>
-      <a href="mailto:rich@pennware.com">Contact</a><br>
-      </td>
-      <td style="vertical-align: top;">
-      <table style="text-align: left; width: 100%;" border="1"
- cellpadding="2" cellspacing="0">
-        <tbody>
-          <tr>
-            <td style="vertical-align: top;">April 6, 2012<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt/libcxx to rev154175 from the LLVM repository.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">March 26, 2012<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt/libcxx to rev153412 from the LLVM repository.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">March 16, 2012<br>
-            </td>
-            <td style="vertical-align: top;"> Updated
-LLVM/clang/compiler-rt/libcxx to rev152935 from the LLVM repository.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">March 4, 2012<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt/libcxx to rev151981 from the LLVM repository.
-Added an online <a href="demo/">demo</a>.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">February 25, 2012<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt/libcxx to rev151461 from the LLVM repository.
-ppc64 is back online.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">February 19, 2012<br>
-            </td>
-            <td style="vertical-align: top;"> Updated
-LLVM/clang/compiler-rt/libcxx to rev150878 from the LLVM repository.
-ppc64 is still disabled.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">February 11, 2012<br>
-            </td>
-            <td style="vertical-align: top;"> Updated
-LLVM/clang/compiler-rt/libcxx to rev150313 from the LLVM repository.
-ppc64 had been temorarily disabled.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 29, 2012<br>
-            </td>
-            <td style="vertical-align: top;"> Updated
-LLVM/clang/compiler-rt/libcxx to rev149184 from the LLVM repository.
-Updated to gdb 7.4.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 20, 2012<br>
-            </td>
-            <td style="vertical-align: top;">First pass at the C
-standard library unit and userland executable test suite. It is
-described <a href="targetsupport.html#A_More_Complete_Sanity_Check">here</a>.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 5, 2012<br>
-            </td>
-            <td style="vertical-align: top;">Added a preliminary unit
-test infrastructure. "make check" in test/obj.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">December 26, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Imported the LLVM project
-libcxx files and did a preliminary partial build for all targets.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">December 24, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev147219 from the LLVM repository.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">December 12, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Added preliminary support
-for profiling and code coverage (libprofile-rt.a).<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">December 9, 2011<br>
-            </td>
-            <td style="vertical-align: top;">libecc (The C standard
-library for ELLCC) can now be built using gcc.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">December 7, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Added support for little
-endian Mips.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">November 26, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Added support for building
-libraries and programs for the armv7 and mips32r2 architectures for
-both hard FPUs and software floating point support.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">November 20, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev144995. Microblaze
-compilation with debug information (-g) causes a failure when building
-the standard library, works without debug information.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">October 29, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev143292, qemu to 0.15.1. Microblaze
-compilation with debug information (-g) causes a failure when building
-the standard library, works without debug information.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">October 2, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev140945, binutils to 2.21.1, gdb to 7.3.1,
-qemu to 0.15.0.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">July 2, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev134322 from the LLVM repository.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">June 18, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev133347 from the LLVM repository.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">June 4, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev132638 from the LLVM repository. All
-processors now pass the bzip2 test.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">May 19, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev 127949 from the LLVM repository.
-Unfortunately, the mips processor continues to fail the bzip2 test.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">May 15, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Set up the Bugzilla server
-for ELLCC. Added a blog and ViewVC repository access.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">March 5, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev 127082 from the LLVM repository.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">February 27, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Updated
-LLVM/clang/compiler-rt to rev 126579 from the LLVM repository.
-Unfortunately, this causes the mips processor to fail the bzip2 test.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">February 5, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Completed initial printf
-regression tests on ppc64, vaargs seems to be functional now. tcsh now
-builds for arm, i386, microblaze,
-ppc, ppc64, and x86_64. In QEMU user mode tcsh for arm, i386, ppc, and
-x86_64 runs and the "set" and "exit" commands work as expected. The ppc
-can run a few "ls" commands before core dump. The arm, i386, ppc64, and
-x86_64 can run one "ls" command and then hang. I suspect a SIGCHLD
-problem. The Start up under QEMU fails for microblaze. The ppc64 tcsh
-starts, but displays no prompt. The "set" command works, but the "exit"
-command core dumps.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 15, 2011</td>
-            <td style="vertical-align: top;">Build and ran bzip2 on
-mips in QEMU Linux user space
-emulation.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 15, 2011<br>
-            </td>
-            <td style="vertical-align: top;">The standard C library can
-be compiled for mips. Simple programs work.<br>
-            </td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 12, 2011<br>
-            </td>
-            <td style="vertical-align: top;">Completed initial printf
-regression tests on arm, i386, microblaze, ppc, and x86_64.</td>
-          </tr>
-          <tr>
-            <td style="vertical-align: top;">January 8, 2010<br>
-            </td>
-            <td style="vertical-align: top;">Build and ran bzip2 on
-arm, i386, microblaze, ppc, and x86_64 in QEMU Linux user space
-emulation.<br>
-            </td>
-          </tr>
-          <tr>
-            <td>December 21, 2009</td>
-            <td>Project reset: Use <a href="http://clang.llvm.org">clang</a>
-instead of Elsa as the compiler front end.</td>
-          </tr>
-          <tr>
-            <td>Old news:</td>
-            <td><br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">October
-25,
-2009</td>
-            <td
- style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Hosted
-and
-cross
-compilations
-supported.
-New
-directory
-layout.</td>
-          </tr>
-          <tr>
-            <td
- style="vertical-align: top; width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">September
-20,
-2009<br>
-            </td>
-            <td
- style="vertical-align: top; width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Whole
-program
-compilation
-and
-successful
-execution
-of
-bzip2
-for
-the
-ARM<br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="vertical-align: top; width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">September
-15,
-2009<br>
-            </td>
-            <td
- style="vertical-align: top; width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Whole
-program
-compilation
-and
-successful
-execution
-of
-bzip2
-for
-the
-X86<br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="vertical-align: top; width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">August
-13,
-2009<br>
-            </td>
-            <td
- style="vertical-align: top; width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Source
-level
-debugging
-support
-added<br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="vertical-align: top; width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">July
-25,
-2009<br>
-            </td>
-            <td
- style="vertical-align: top; width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Whole
-program
-optimization
-support
-functional<br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="vertical-align: top; width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">July
-9,
-2009<br>
-            </td>
-            <td
- style="vertical-align: top; width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Switch
-over
-to
-self
-compiled
-standard
-library<br>
-            </td>
-          </tr>
-          <tr>
-            <td
- style="width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">June
-29,
-2008</td>
-            <td
- style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Start
-of
-links
-to
-online
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            <a href="wiki/index.php/Documentation">documentation</a>.</td>
-          </tr>
-          <tr>
-            <td
- style="width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">June
-24,
-2008</td>
-            <td
- style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">Beginning
-of
-the
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            <a href="wiki">Wiki</a>.</td>
-          </tr>
-          <tr>
-            <td
- style="width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">June
-23,
-2008</td>
-            <td
- style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">The
-ELLCC
-web
-site
-goes
-online.</td>
-          </tr>
-          <tr>
-            <td
- style="width: 150px; background-color: rgb(192, 192, 192); text-decoration: line-through;">December
-1,
-2007<br>
-            </td>
-            <td
- style="width: 777px; background-color: rgb(192, 192, 192); text-decoration: line-through;">The
-ELLCC
-project
-started<br>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <br>
-      </td>
-    </tr>
-  </tbody>
-</table>
-<br>
-</body>
+  <head>
+    <meta content="text/html; charset=ISO-8859-1"
+      http-equiv="Content-Type">
+    <title>ELLCC News</title>
+    <meta content="Richard Pennington" name="author">
+  </head>
+  <body>
+    <table style="text-align: left; width: 100%; height: 100%;"
+      border="0" cellpadding="0" cellspacing="0">
+      <tbody>
+        <tr align="center">
+          <th style="text-align: center; vertical-align: middle;
+            background-color: rgb(192, 192, 192); height: 135px;"
+            colspan="2" rowspan="1">
+            <table style="text-align: left; width: 100%;" border="0"
+              cellpadding="0" cellspacing="0">
+              <tbody>
+                <tr>
+                  <td style="height: 135px; width: 135px;"><img
+                      style="width: 135px; height: 135px;" alt="ELLCC"
+                      src="images/ellcc.png"></td>
+                  <td style="text-align: center;">
+                    <h1>ELLCC News</h1>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </th>
+        </tr>
+        <tr>
+          <td style="vertical-align: top; background-color: rgb(153,
+            255, 153); width: 135px;"><a href="index.html">Home</a><br>
+            <a href="blog/">Blog</a><br>
+            <a href="news.html">News</a><br>
+            <a href="demo/">Demo</a><br>
+            <a href="ellcc/libecc/share/doc">Documentation</a><br>
+            <a href="installation.html">Installation</a><br>
+            <a href="targetsupport.html">Target Support</a><br>
+            <a href="bugzilla">Bug Database</a><br>
+            <a href="http://ellcc.org/viewvc/svn/ellcc/">Source
+              Repository</a><br>
+            <a href="mailto:rich@pennware.com">Contact</a><br>
+          </td>
+          <td style="vertical-align: top;">
+            <table style="text-align: left; width: 100%;" border="1"
+              cellpadding="2" cellspacing="0">
+              <tbody>
+                <tr>
+                  <td style="vertical-align: top;">May 4, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt/libcxx to rev155280 from the
+                    LLVM repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">April 6, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt/libcxx to rev154175 from the
+                    LLVM repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">March 26, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt/libcxx to rev153412 from the
+                    LLVM repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">March 16, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;"> Updated
+                    LLVM/clang/compiler-rt/libcxx to rev152935 from the
+                    LLVM repository.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">March 4, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt/libcxx to rev151981 from the
+                    LLVM repository.
+                    Added an online <a href="demo/">demo</a>.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">February 25, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt/libcxx to rev151461 from the
+                    LLVM repository.
+                    ppc64 is back online.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">February 19, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;"> Updated
+                    LLVM/clang/compiler-rt/libcxx to rev150878 from the
+                    LLVM repository.
+                    ppc64 is still disabled.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">February 11, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;"> Updated
+                    LLVM/clang/compiler-rt/libcxx to rev150313 from the
+                    LLVM repository.
+                    ppc64 had been temorarily disabled.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 29, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;"> Updated
+                    LLVM/clang/compiler-rt/libcxx to rev149184 from the
+                    LLVM repository.
+                    Updated to gdb 7.4.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 20, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">First pass at the C
+                    standard library unit and userland executable test
+                    suite. It is
+                    described <a
+                      href="targetsupport.html#A_More_Complete_Sanity_Check">here</a>.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 5, 2012<br>
+                  </td>
+                  <td style="vertical-align: top;">Added a preliminary
+                    unit
+                    test infrastructure. "make check" in test/obj.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">December 26, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Imported the LLVM
+                    project
+                    libcxx files and did a preliminary partial build for
+                    all targets.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">December 24, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev147219 from the LLVM
+                    repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">December 12, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Added preliminary
+                    support
+                    for profiling and code coverage (libprofile-rt.a).<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">December 9, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">libecc (The C
+                    standard
+                    library for ELLCC) can now be built using gcc.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">December 7, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Added support for
+                    little
+                    endian Mips.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">November 26, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Added support for
+                    building
+                    libraries and programs for the armv7 and mips32r2
+                    architectures for
+                    both hard FPUs and software floating point support.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">November 20, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev144995. Microblaze
+                    compilation with debug information (-g) causes a
+                    failure when building
+                    the standard library, works without debug
+                    information.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">October 29, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev143292, qemu to 0.15.1.
+                    Microblaze
+                    compilation with debug information (-g) causes a
+                    failure when building
+                    the standard library, works without debug
+                    information.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">October 2, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev140945, binutils to
+                    2.21.1, gdb to 7.3.1,
+                    qemu to 0.15.0.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">July 2, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev134322 from the LLVM
+                    repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">June 18, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev133347 from the LLVM
+                    repository.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">June 4, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev132638 from the LLVM
+                    repository. All
+                    processors now pass the bzip2 test.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">May 19, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev 127949 from the LLVM
+                    repository.
+                    Unfortunately, the mips processor continues to fail
+                    the bzip2 test.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">May 15, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Set up the Bugzilla
+                    server
+                    for ELLCC. Added a blog and ViewVC repository
+                    access.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">March 5, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev 127082 from the LLVM
+                    repository.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">February 27, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Updated
+                    LLVM/clang/compiler-rt to rev 126579 from the LLVM
+                    repository.
+                    Unfortunately, this causes the mips processor to
+                    fail the bzip2 test.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">February 5, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Completed initial
+                    printf
+                    regression tests on ppc64, vaargs seems to be
+                    functional now. tcsh now
+                    builds for arm, i386, microblaze,
+                    ppc, ppc64, and x86_64. In QEMU user mode tcsh for
+                    arm, i386, ppc, and
+                    x86_64 runs and the "set" and "exit" commands work
+                    as expected. The ppc
+                    can run a few "ls" commands before core dump. The
+                    arm, i386, ppc64, and
+                    x86_64 can run one "ls" command and then hang. I
+                    suspect a SIGCHLD
+                    problem. The Start up under QEMU fails for
+                    microblaze. The ppc64 tcsh
+                    starts, but displays no prompt. The "set" command
+                    works, but the "exit"
+                    command core dumps.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 15, 2011</td>
+                  <td style="vertical-align: top;">Build and ran bzip2
+                    on
+                    mips in QEMU Linux user space
+                    emulation.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 15, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">The standard C
+                    library can
+                    be compiled for mips. Simple programs work.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 12, 2011<br>
+                  </td>
+                  <td style="vertical-align: top;">Completed initial
+                    printf
+                    regression tests on arm, i386, microblaze, ppc, and
+                    x86_64.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top;">January 8, 2010<br>
+                  </td>
+                  <td style="vertical-align: top;">Build and ran bzip2
+                    on
+                    arm, i386, microblaze, ppc, and x86_64 in QEMU Linux
+                    user space
+                    emulation.<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td>December 21, 2009</td>
+                  <td>Project reset: Use <a
+                      href="http://clang.llvm.org">clang</a>
+                    instead of Elsa as the compiler front end.</td>
+                </tr>
+                <tr>
+                  <td>Old news:</td>
+                  <td><br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="width: 150px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">October
+                    25,
+                    2009</td>
+                  <td style="width: 777px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">Hosted
+                    and
+                    cross
+                    compilations
+                    supported.
+                    New
+                    directory
+                    layout.</td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top; width: 150px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">September
+                    20,
+                    2009<br>
+                  </td>
+                  <td style="vertical-align: top; width: 777px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">Whole
+                    program
+                    compilation
+                    and
+                    successful
+                    execution
+                    of
+                    bzip2
+                    for
+                    the
+                    ARM<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top; width: 150px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">September
+                    15,
+                    2009<br>
+                  </td>
+                  <td style="vertical-align: top; width: 777px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">Whole
+                    program
+                    compilation
+                    and
+                    successful
+                    execution
+                    of
+                    bzip2
+                    for
+                    the
+                    X86<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top; width: 150px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">August
+                    13,
+                    2009<br>
+                  </td>
+                  <td style="vertical-align: top; width: 777px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">Source
+                    level
+                    debugging
+                    support
+                    added<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top; width: 150px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">July
+                    25,
+                    2009<br>
+                  </td>
+                  <td style="vertical-align: top; width: 777px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">Whole
+                    program
+                    optimization
+                    support
+                    functional<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="vertical-align: top; width: 150px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">July
+                    9,
+                    2009<br>
+                  </td>
+                  <td style="vertical-align: top; width: 777px;
+                    background-color: rgb(192, 192, 192);
+                    text-decoration: line-through;">Switch
+                    over
+                    to
+                    self
+                    compiled
+                    standard
+                    library<br>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="width: 150px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">June
+                    29,
+                    2008</td>
+                  <td style="width: 777px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">Start
+                    of
+                    links
+                    to
+                    online <a href="wiki/index.php/Documentation">documentation</a>.</td>
+                </tr>
+                <tr>
+                  <td style="width: 150px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">June
+                    24,
+                    2008</td>
+                  <td style="width: 777px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">Beginning
+                    of
+                    the <a href="wiki">Wiki</a>.</td>
+                </tr>
+                <tr>
+                  <td style="width: 150px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">June
+                    23,
+                    2008</td>
+                  <td style="width: 777px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">The
+                    ELLCC
+                    web
+                    site
+                    goes
+                    online.</td>
+                </tr>
+                <tr>
+                  <td style="width: 150px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">December
+                    1,
+                    2007<br>
+                  </td>
+                  <td style="width: 777px; background-color: rgb(192,
+                    192, 192); text-decoration: line-through;">The
+                    ELLCC
+                    project
+                    started<br>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <br>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <br>
+  </body>
 </html>

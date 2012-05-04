@@ -3197,6 +3197,7 @@ def t2B   : T2I<(outs), (ins uncondbrtarget:$target), IIC_Br,
   let Inst{13} = target{17};
   let Inst{21-16} = target{16-11};
   let Inst{10-0} = target{10-0};
+  let DecoderMethod = "DecodeT2BInstruction";
 }
 
 let isNotDuplicable = 1, isIndirectBranch = 1 in {
@@ -3984,12 +3985,13 @@ def : t2InstAlias<"sub${s}${p} $Rdn, $imm",
       (t2SUBri GPRnopc:$Rdn, GPRnopc:$Rdn, t2_so_imm:$imm, pred:$p, cc_out:$s)>;
 def : t2InstAlias<"sub${p} $Rdn, $imm",
            (t2SUBri12 GPRnopc:$Rdn, GPRnopc:$Rdn, imm0_4095:$imm, pred:$p)>;
+def : t2InstAlias<"sub${s}${p}.w $Rdn, $Rm",
+            (t2SUBrr GPRnopc:$Rdn, GPRnopc:$Rdn, rGPR:$Rm, pred:$p, cc_out:$s)>;
 def : t2InstAlias<"sub${s}${p} $Rdn, $Rm",
             (t2SUBrr GPRnopc:$Rdn, GPRnopc:$Rdn, rGPR:$Rm, pred:$p, cc_out:$s)>;
 def : t2InstAlias<"sub${s}${p} $Rdn, $ShiftedRm",
                   (t2SUBrs GPRnopc:$Rdn, GPRnopc:$Rdn, t2_so_reg:$ShiftedRm,
                            pred:$p, cc_out:$s)>;
-
 
 // Alias for compares without the ".w" optional width specifier.
 def : t2InstAlias<"cmn${p} $Rn, $Rm",

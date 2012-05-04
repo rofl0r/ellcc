@@ -1948,6 +1948,7 @@ public:
   void EmitLabel(const LabelDecl *D); // helper for EmitLabelStmt.
 
   void EmitLabelStmt(const LabelStmt &S);
+  void EmitAttributedStmt(const AttributedStmt &S);
   void EmitGotoStmt(const GotoStmt &S);
   void EmitIndirectGotoStmt(const IndirectGotoStmt &S);
   void EmitIfStmt(const IfStmt &S);
@@ -2104,6 +2105,8 @@ public:
   LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
 
+  RValue EmitRValueForField(LValue LV, const FieldDecl *FD);
+
   class ConstantEmission {
     llvm::PointerIntPair<llvm::Constant*, 1, bool> ValueAndIsReference;
     ConstantEmission(llvm::Constant *C, bool isReference)
@@ -2143,15 +2146,13 @@ public:
   LValue EmitLValueForAnonRecordField(llvm::Value* Base,
                                       const IndirectFieldDecl* Field,
                                       unsigned CVRQualifiers);
-  LValue EmitLValueForField(llvm::Value* Base, const FieldDecl* Field,
-                            unsigned CVRQualifiers);
+  LValue EmitLValueForField(LValue Base, const FieldDecl* Field);
 
   /// EmitLValueForFieldInitialization - Like EmitLValueForField, except that
   /// if the Field is a reference, this will return the address of the reference
   /// and not the address of the value stored in the reference.
-  LValue EmitLValueForFieldInitialization(llvm::Value* Base,
-                                          const FieldDecl* Field,
-                                          unsigned CVRQualifiers);
+  LValue EmitLValueForFieldInitialization(LValue Base,
+                                          const FieldDecl* Field);
 
   LValue EmitLValueForIvar(QualType ObjectTy,
                            llvm::Value* Base, const ObjCIvarDecl *Ivar,
@@ -2263,7 +2264,7 @@ public:
 
   llvm::Value *EmitObjCProtocolExpr(const ObjCProtocolExpr *E);
   llvm::Value *EmitObjCStringLiteral(const ObjCStringLiteral *E);
-  llvm::Value *EmitObjCNumericLiteral(const ObjCNumericLiteral *E);
+  llvm::Value *EmitObjCBoxedExpr(const ObjCBoxedExpr *E);
   llvm::Value *EmitObjCArrayLiteral(const ObjCArrayLiteral *E);
   llvm::Value *EmitObjCDictionaryLiteral(const ObjCDictionaryLiteral *E);
   llvm::Value *EmitObjCCollectionLiteral(const Expr *E,
@@ -2429,11 +2430,11 @@ public:
                                  llvm::Constant **Decls,
                                  unsigned NumDecls);
 
-  /// GenerateCXXGlobalDtorFunc - Generates code for destroying global
+  /// GenerateCXXGlobalDtorsFunc - Generates code for destroying global
   /// variables.
-  void GenerateCXXGlobalDtorFunc(llvm::Function *Fn,
-                                 const std::vector<std::pair<llvm::WeakVH,
-                                   llvm::Constant*> > &DtorsAndObjects);
+  void GenerateCXXGlobalDtorsFunc(llvm::Function *Fn,
+                                  const std::vector<std::pair<llvm::WeakVH,
+                                  llvm::Constant*> > &DtorsAndObjects);
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,
@@ -2518,8 +2519,7 @@ public:
 
   /// SetFPAccuracy - Set the minimum required accuracy of the given floating
   /// point operation, expressed as the maximum relative error in ulp.
-  void SetFPAccuracy(llvm::Value *Val, unsigned AccuracyN,
-                     unsigned AccuracyD = 1);
+  void SetFPAccuracy(llvm::Value *Val, float Accuracy);
 
 private:
   llvm::MDNode *getRangeForLoadFromType(QualType Ty);

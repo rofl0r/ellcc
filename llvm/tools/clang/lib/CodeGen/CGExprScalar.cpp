@@ -498,8 +498,8 @@ public:
   Value *VisitObjCStringLiteral(const ObjCStringLiteral *E) {
     return CGF.EmitObjCStringLiteral(E);
   }
-  Value *VisitObjCNumericLiteral(ObjCNumericLiteral *E) {
-    return CGF.EmitObjCNumericLiteral(E);
+  Value *VisitObjCBoxedExpr(ObjCBoxedExpr *E) {
+    return CGF.EmitObjCBoxedExpr(E);
   }
   Value *VisitObjCArrayLiteral(ObjCArrayLiteral *E) {
     return CGF.EmitObjCArrayLiteral(E);
@@ -1807,7 +1807,7 @@ Value *ScalarExprEmitter::EmitDiv(const BinOpInfo &Ops) {
       if (ValTy->isFloatTy() ||
           (isa<llvm::VectorType>(ValTy) &&
            cast<llvm::VectorType>(ValTy)->getElementType()->isFloatTy()))
-        CGF.SetFPAccuracy(Val, 5, 2);
+        CGF.SetFPAccuracy(Val, 2.5);
     }
     return Val;
   }

@@ -51,6 +51,7 @@ using namespace clang;
 using namespace clang::cxcursor;
 using namespace clang::cxstring;
 using namespace clang::cxtu;
+using namespace clang::cxindex;
 
 CXTranslationUnit cxtu::MakeCXTranslationUnit(CIndexer *CIdx, ASTUnit *TU) {
   if (!TU)
@@ -111,10 +112,11 @@ CXSourceRange cxloc::translateSourceRange(const SourceManager &SM,
   // We want the last character in this location, so we will adjust the
   // location accordingly.
   SourceLocation EndLoc = R.getEnd();
-  if (EndLoc.isValid() && EndLoc.isMacroID())
+  if (EndLoc.isValid() && EndLoc.isMacroID() && !SM.isMacroArgExpansion(EndLoc))
     EndLoc = SM.getExpansionRange(EndLoc).second;
-  if (R.isTokenRange() && !EndLoc.isInvalid() && EndLoc.isFileID()) {
-    unsigned Length = Lexer::MeasureTokenLength(EndLoc, SM, LangOpts);
+  if (R.isTokenRange() && !EndLoc.isInvalid()) {
+    unsigned Length = Lexer::MeasureTokenLength(SM.getSpellingLoc(EndLoc),
+                                                SM, LangOpts);
     EndLoc = EndLoc.getLocWithOffset(Length);
   }
 
@@ -2482,7 +2484,7 @@ clang_createTranslationUnitFromSourceFile(CXIndex CIdx,
                                     unsaved_files, num_unsaved_files,
                                     Options);
 }
-  
+
 struct ParseTranslationUnitInfo {
   CXIndex CIdx;
   const char *source_filename;
@@ -2519,7 +2521,8 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
     = (options & CXTranslationUnit_Incomplete)? TU_Prefix : TU_Complete;
   bool CacheCodeCompetionResults
     = options & CXTranslationUnit_CacheCompletionResults;
-  
+  bool SkipFunctionBodies = options & CXTranslationUnit_SkipFunctionBodies;
+
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
   IntrusiveRefCntPtr<DiagnosticsEngine>
@@ -2587,6 +2590,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
   }
   
   unsigned NumErrors = Diags->getClient()->getNumErrors();
+  OwningPtr<ASTUnit> ErrUnit;
   OwningPtr<ASTUnit> Unit(
     ASTUnit::LoadFromCommandLine(Args->size() ? &(*Args)[0] : 0 
                                  /* vector::data() not portable */,
@@ -2601,27 +2605,14 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
                                  PrecompilePreamble,
                                  TUKind,
                                  CacheCodeCompetionResults,
-                                 /*AllowPCHWithCompilerErrors=*/true));
+                                 /*AllowPCHWithCompilerErrors=*/true,
+                                 SkipFunctionBodies,
+                                 &ErrUnit));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
     // Make sure to check that 'Unit' is non-NULL.
-    if (CXXIdx->getDisplayDiagnostics() && Unit.get()) {
-      for (ASTUnit::stored_diag_iterator D = Unit->stored_diag_begin(), 
-                                      DEnd = Unit->stored_diag_end();
-           D != DEnd; ++D) {
-        CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOpts());
-        CXString Msg = clang_formatDiagnostic(&Diag,
-                                    clang_defaultDiagnosticDisplayOptions());
-        fprintf(stderr, "%s\n", clang_getCString(Msg));
-        clang_disposeString(Msg);
-      }
-#ifdef LLVM_ON_WIN32
-      // On Windows, force a flush, since there may be multiple copies of
-      // stderr and stdout in the file system, all with different buffers
-      // but writing to the same device.
-      fflush(stderr);
-#endif
-    }
+    if (CXXIdx->getDisplayDiagnostics())
+      printDiagsToStderr(Unit ? Unit.get() : ErrUnit.get());
   }
 
   PTUI->result = MakeCXTranslationUnit(CXXIdx, Unit.take());
@@ -3205,6 +3196,18 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
     }
   }
 
+  if (C.kind == CXCursor_ObjCCategoryDecl ||
+      C.kind == CXCursor_ObjCCategoryImplDecl) {
+    if (pieceIndex > 0)
+      return clang_getNullRange();
+    if (ObjCCategoryDecl *
+          CD = dyn_cast_or_null<ObjCCategoryDecl>(getCursorDecl(C)))
+      return cxloc::translateSourceRange(Ctx, CD->getCategoryNameLoc());
+    if (ObjCCategoryImplDecl *
+          CID = dyn_cast_or_null<ObjCCategoryImplDecl>(getCursorDecl(C)))
+      return cxloc::translateSourceRange(Ctx, CID->getCategoryNameLoc());
+  }
+
   // FIXME: A CXCursor_InclusionDirective should give the location of the
   // filename, but we don't keep track of this.
 
@@ -3629,9 +3632,29 @@ static enum CXChildVisitResult GetCursorVisitor(CXCursor cursor,
   
   if (clang_isDeclaration(cursor.kind)) {
     // Avoid having the implicit methods override the property decls.
-    if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(cursor)))
+    if (ObjCMethodDecl *MD
+          = dyn_cast_or_null<ObjCMethodDecl>(getCursorDecl(cursor))) {
       if (MD->isImplicit())
         return CXChildVisit_Break;
+
+    } else if (ObjCInterfaceDecl *ID
+                 = dyn_cast_or_null<ObjCInterfaceDecl>(getCursorDecl(cursor))) {
+      // Check that when we have multiple @class references in the same line,
+      // that later ones do not override the previous ones.
+      // If we have:
+      // @class Foo, Bar;
+      // source ranges for both start at '@', so 'Bar' will end up overriding
+      // 'Foo' even though the cursor location was at 'Foo'.
+      if (BestCursor->kind == CXCursor_ObjCInterfaceDecl ||
+          BestCursor->kind == CXCursor_ObjCClassRef)
+        if (ObjCInterfaceDecl *PrevID
+             = dyn_cast_or_null<ObjCInterfaceDecl>(getCursorDecl(*BestCursor))){
+         if (PrevID != ID &&
+             !PrevID->isThisDeclarationADefinition() &&
+             !ID->isThisDeclarationADefinition())
+           return CXChildVisit_Break;
+        }
+    }
   }
 
   if (clang_isExpression(cursor.kind) &&
@@ -5535,6 +5558,8 @@ void clang_getOverriddenCursors(CXCursor cursor,
     *num_overridden = 0;
   if (!overridden || !num_overridden)
     return;
+  if (!clang_isDeclaration(cursor.kind))
+    return;
 
   SmallVector<CXCursor, 8> Overridden;
   cxcursor::getOverriddenCursors(cursor, Overridden);
@@ -5817,6 +5842,27 @@ void clang::setThreadBackgroundPriority() {
   // FIXME: Move to llvm/Support and make it cross-platform.
 #ifdef __APPLE__
   setpriority(PRIO_DARWIN_THREAD, 0, PRIO_DARWIN_BG);
+#endif
+}
+
+void cxindex::printDiagsToStderr(ASTUnit *Unit) {
+  if (!Unit)
+    return;
+
+  for (ASTUnit::stored_diag_iterator D = Unit->stored_diag_begin(), 
+                                  DEnd = Unit->stored_diag_end();
+       D != DEnd; ++D) {
+    CXStoredDiagnostic Diag(*D, Unit->getASTContext().getLangOpts());
+    CXString Msg = clang_formatDiagnostic(&Diag,
+                                clang_defaultDiagnosticDisplayOptions());
+    fprintf(stderr, "%s\n", clang_getCString(Msg));
+    clang_disposeString(Msg);
+  }
+#ifdef LLVM_ON_WIN32
+  // On Windows, force a flush, since there may be multiple copies of
+  // stderr and stdout in the file system, all with different buffers
+  // but writing to the same device.
+  fflush(stderr);
 #endif
 }
 

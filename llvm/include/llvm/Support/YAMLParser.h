@@ -130,7 +130,7 @@ public:
   void setError(const Twine &Message, Token &Location) const;
   bool failed() const;
 
-  virtual void skip() {};
+  virtual void skip() {}
 
   unsigned int getType() const { return TypeID; }
   static inline bool classof(const Node *) { return true; }
@@ -516,8 +516,11 @@ public:
   document_iterator() : Doc(NullDoc) {}
   document_iterator(OwningPtr<Document> &D) : Doc(D) {}
 
+  bool operator ==(const document_iterator &Other) {
+    return Doc == Other.Doc;
+  }
   bool operator !=(const document_iterator &Other) {
-    return Doc != Other.Doc;
+    return !(*this == Other);
   }
 
   document_iterator operator ++() {

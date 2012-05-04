@@ -504,24 +504,20 @@ let isBranch = 1, isTerminator = 1 in
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // IOS versions.
   let Uses = [SP] in {
-    // tTAILJMPd: IOS version uses a Thumb2 branch (no Thumb1 tail calls
-    // on IOS), so it's in ARMInstrThumb2.td.
     def tTAILJMPr : tPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
                      4, IIC_Br, [],
                      (tBX GPR:$dst, (ops 14, zero_reg))>,
-                     Requires<[IsThumb, IsIOS]>;
+                     Requires<[IsThumb]>;
   }
-  // Non-IOS versions (the difference is R9).
+  // tTAILJMPd: IOS version uses a Thumb2 branch (no Thumb1 tail calls
+  // on IOS), so it's in ARMInstrThumb2.td.
+  // Non-IOS version:
   let Uses = [SP] in {
     def tTAILJMPdND : tPseudoExpand<(outs),
                    (ins t_brtarget:$dst, pred:$p, variable_ops),
                    4, IIC_Br, [],
                    (tB t_brtarget:$dst, pred:$p)>,
                  Requires<[IsThumb, IsNotIOS]>;
-    def tTAILJMPrND : tPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
-                     4, IIC_Br, [],
-                     (tBX GPR:$dst, (ops 14, zero_reg))>,
-                     Requires<[IsThumb, IsNotIOS]>;
   }
 }
 
@@ -1411,3 +1407,11 @@ def : tInstAlias<"cps$imod", (tCPS imod_op:$imod, 0)>;
 def : tInstAlias<"neg${s}${p} $Rd, $Rm",
                  (tRSB tGPR:$Rd, s_cc_out:$s, tGPR:$Rm, pred:$p)>;
 
+
+// Implied destination operand forms for shifts.
+def : tInstAlias<"lsl${s}${p} $Rdm, $imm",
+             (tLSLri tGPR:$Rdm, cc_out:$s, tGPR:$Rdm, imm0_31:$imm, pred:$p)>;
+def : tInstAlias<"lsr${s}${p} $Rdm, $imm",
+             (tLSRri tGPR:$Rdm, cc_out:$s, tGPR:$Rdm, imm_sr:$imm, pred:$p)>;
+def : tInstAlias<"asr${s}${p} $Rdm, $imm",
+             (tASRri tGPR:$Rdm, cc_out:$s, tGPR:$Rdm, imm_sr:$imm, pred:$p)>;

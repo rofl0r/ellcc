@@ -428,9 +428,6 @@ def ast_view : Flag<"-ast-view">,
   HelpText<"Build ASTs and view them with GraphViz">;
 def print_decl_contexts : Flag<"-print-decl-contexts">,
   HelpText<"Print DeclContexts and their Decls">;
-def pubnames_dump : Flag<"-pubnames-dump">, 
-  HelpText<"Print all of the public (global) names in the source, e.g., the "
-           "names of all global declarations and macros">;
 def emit_module : Flag<"-emit-module">,
   HelpText<"Generate pre-compiled module file from a module map">;
 def emit_pth : Flag<"-emit-pth">,
@@ -632,6 +629,8 @@ def fwrapv : Flag<"-fwrapv">,
   HelpText<"Treat signed integer overflow as two's complement">;
 def pic_level : Separate<"-pic-level">,
   HelpText<"Value for __PIC__">;
+def pie_level : Separate<"-pie-level">,
+  HelpText<"Value for __PIE__">;
 def pthread : Flag<"-pthread">,
   HelpText<"Support POSIX threads in generated code">;
 def fpack_struct : Separate<"-fpack-struct">,

@@ -1294,6 +1294,11 @@ static bool IsVectorConversion(ASTContext &Context, QualType FromType,
   return false;
 }
 
+static bool tryAtomicConversion(Sema &S, Expr *From, QualType ToType,
+                                bool InOverloadResolution,
+                                StandardConversionSequence &SCS,
+                                bool CStyle);
+  
 /// IsStandardConversion - Determines whether there is a standard
 /// conversion sequence (C++ [conv], C++ [over.ics.scs]) from the
 /// expression From to the type ToType. Standard conversion sequences
@@ -1388,6 +1393,12 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
       !FromType->isFunctionType() && !FromType->isArrayType() &&
       S.Context.getCanonicalType(FromType) != S.Context.OverloadTy) {
     SCS.First = ICK_Lvalue_To_Rvalue;
+
+    // C11 6.3.2.1p2:
+    //   ... if the lvalue has atomic type, the value has the non-atomic version 
+    //   of the type of the lvalue ...
+    if (const AtomicType *Atomic = FromType->getAs<AtomicType>())
+      FromType = Atomic->getValueType();
 
     // If T is a non-class type, the type of the rvalue is the
     // cv-unqualified version of T. Otherwise, the type of the rvalue
@@ -1520,6 +1531,11 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
                                              SCS, CStyle)) {
     SCS.Second = ICK_TransparentUnionConversion;
     FromType = ToType;
+  } else if (tryAtomicConversion(S, From, ToType, InOverloadResolution, SCS,
+                                 CStyle)) {
+    // tryAtomicConversion has updated the standard conversion sequence
+    // appropriately.
+    return true;
   } else {
     // No second conversion required.
     SCS.Second = ICK_Identity;
@@ -2756,6 +2772,34 @@ Sema::IsQualificationConversion(QualType FromType, QualType ToType,
   // ToType have the same unqualified type (since we checked
   // qualifiers above), then this is a qualification conversion.
   return UnwrappedAnyPointer && Context.hasSameUnqualifiedType(FromType,ToType);
+}
+
+/// \brief - Determine whether this is a conversion from a scalar type to an
+/// atomic type.
+///
+/// If successful, updates \c SCS's second and third steps in the conversion
+/// sequence to finish the conversion.
+static bool tryAtomicConversion(Sema &S, Expr *From, QualType ToType,
+                                bool InOverloadResolution,
+                                StandardConversionSequence &SCS,
+                                bool CStyle) {
+  const AtomicType *ToAtomic = ToType->getAs<AtomicType>();
+  if (!ToAtomic)
+    return false;
+  
+  StandardConversionSequence InnerSCS;
+  if (!IsStandardConversion(S, From, ToAtomic->getValueType(), 
+                            InOverloadResolution, InnerSCS,
+                            CStyle, /*AllowObjCWritebackConversion=*/false))
+    return false;
+  
+  SCS.Second = InnerSCS.Second;
+  SCS.setToType(1, InnerSCS.getToType(1));
+  SCS.Third = InnerSCS.Third;
+  SCS.QualificationIncludesObjCLifetime
+    = InnerSCS.QualificationIncludesObjCLifetime;
+  SCS.setToType(2, InnerSCS.getToType(2));
+  return true;
 }
 
 static bool isFirstArgumentCompatibleWithType(ASTContext &Context,
@@ -11106,6 +11150,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
                                            VK_LValue,
                                            Found.getDecl(),
                                            TemplateArgs);
+    MarkDeclRefReferenced(DRE);
     DRE->setHadMultipleCandidates(ULE->getNumDecls() > 1);
     return DRE;
   }
@@ -11134,6 +11179,7 @@ Expr *Sema::FixOverloadedFunctionReference(Expr *E, DeclAccessPair Found,
                                                VK_LValue,
                                                Found.getDecl(),
                                                TemplateArgs);
+        MarkDeclRefReferenced(DRE);
         DRE->setHadMultipleCandidates(MemExpr->getNumDecls() > 1);
         return DRE;
       } else {

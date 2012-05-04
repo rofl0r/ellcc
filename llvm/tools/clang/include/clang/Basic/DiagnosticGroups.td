@@ -148,6 +148,7 @@ def ObjCPropertyImpl : DiagGroup<"objc-property-implementation">;
 def ObjCMissingSuperCalls : DiagGroup<"objc-missing-super-calls">;
 def ObjCRetainBlockProperty : DiagGroup<"objc-noncopy-retain-block-property">;
 def ObjCReadonlyPropertyHasSetter : DiagGroup<"objc-readonly-with-setter-property">;
+def ObjCRootClass : DiagGroup<"objc-root-class">;
 def Packed : DiagGroup<"packed">;
 def Padded : DiagGroup<"padded">;
 def PointerArith : DiagGroup<"pointer-arith">;
@@ -353,7 +354,10 @@ def Most : DiagGroup<"most", [
  ]>;
 
 // Thread Safety warnings 
-def ThreadSafety : DiagGroup<"thread-safety">;
+def ThreadSafetyAttributes : DiagGroup<"thread-safety-attributes">;
+def ThreadSafetyAnalysis : DiagGroup<"thread-safety-analysis">;
+def ThreadSafety : DiagGroup<"thread-safety", 
+                             [ThreadSafetyAttributes, ThreadSafetyAnalysis]>;
 
 // Note that putting warnings in -Wall will not disable them by default. If a
 // warning should be active _only_ when -Wall is passed in, mark it as

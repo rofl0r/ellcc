@@ -39,28 +39,6 @@ static cl::opt<bool>
 AllowPromoteIntElem("promote-elements", cl::Hidden, cl::init(true),
   cl::desc("Allow promotion of integer vector element types"));
 
-namespace llvm {
-TLSModel::Model getTLSModel(const GlobalValue *GV, Reloc::Model reloc) {
-  bool isLocal = GV->hasLocalLinkage();
-  bool isDeclaration = GV->isDeclaration();
-  // FIXME: what should we do for protected and internal visibility?
-  // For variables, is internal different from hidden?
-  bool isHidden = GV->hasHiddenVisibility();
-
-  if (reloc == Reloc::PIC_) {
-    if (isLocal || isHidden)
-      return TLSModel::LocalDynamic;
-    else
-      return TLSModel::GeneralDynamic;
-  } else {
-    if (!isDeclaration || isHidden)
-      return TLSModel::LocalExec;
-    else
-      return TLSModel::InitialExec;
-  }
-}
-}
-
 /// InitLibcallNames - Set default libcall names.
 ///
 static void InitLibcallNames(const char **Names) {
@@ -1101,8 +1079,12 @@ unsigned TargetLowering::getJumpTableEncoding() const {
 SDValue TargetLowering::getPICJumpTableRelocBase(SDValue Table,
                                                  SelectionDAG &DAG) const {
   // If our PIC model is GP relative, use the global offset table as the base.
-  if (getJumpTableEncoding() == MachineJumpTableInfo::EK_GPRel32BlockAddress)
+  unsigned JTEncoding = getJumpTableEncoding();
+
+  if ((JTEncoding == MachineJumpTableInfo::EK_GPRel64BlockAddress) ||
+      (JTEncoding == MachineJumpTableInfo::EK_GPRel32BlockAddress))
     return DAG.getGLOBAL_OFFSET_TABLE(getPointerTy());
+
   return Table;
 }
 
@@ -1385,8 +1367,9 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     // bits on that side are also known to be set on the other side, turn this
     // into an AND, as we know the bits will be cleared.
     //    e.g. (X | C1) ^ C2 --> (X | C1) & ~C2 iff (C1&C2) == C2
-    if ((NewMask & (KnownZero|KnownOne)) == NewMask) { // all known
-      if ((KnownOne & KnownOne2) == KnownOne) {
+    // NB: it is okay if more bits are known than are requested
+    if ((NewMask & (KnownZero|KnownOne)) == NewMask) { // all known on one side 
+      if (KnownOne == KnownOne2) { // set bits are the same on both sides
         EVT VT = Op.getValueType();
         SDValue ANDC = TLO.DAG.getConstant(~KnownOne & NewMask, VT);
         return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::AND, dl, VT,

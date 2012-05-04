@@ -29,8 +29,11 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/Statistic.h"
 
 using namespace llvm;
+
+STATISTIC(NumCallsAnalyzed, "Number of call sites analyzed");
 
 namespace {
 
@@ -802,6 +805,8 @@ ConstantInt *CallAnalyzer::stripAndComputeInBoundsConstantOffsets(Value *&V) {
 /// is below the computed threshold, then inlining was forcibly disabled by
 /// some artifact of the rountine.
 bool CallAnalyzer::analyzeCall(CallSite CS) {
+  ++NumCallsAnalyzed;
+
   // Track whether the post-inlining function would have more than one basic
   // block. A single basic block is often intended for inlining. Balloon the
   // threshold by 50% until we pass the single-BB phase.
@@ -988,8 +993,11 @@ void CallAnalyzer::dump() {
 }
 
 InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS, int Threshold) {
-  Function *Callee = CS.getCalledFunction();
+  return getInlineCost(CS, CS.getCalledFunction(), Threshold);
+}
 
+InlineCost InlineCostAnalyzer::getInlineCost(CallSite CS, Function *Callee,
+                                             int Threshold) {
   // Don't inline functions which can be redefined at link-time to mean
   // something else.  Don't inline functions marked noinline or call sites
   // marked noinline.

@@ -150,3 +150,38 @@ entry:
   %vecinit2.i = insertelement <2 x double> %vecinit.i, double %q, i32 1
   ret <2 x double> %vecinit2.i
 }
+
+; CHECK: V111
+; CHECK: vpbroadcastd
+; CHECK: ret
+define <8 x i32> @V111(<8 x i32> %in) nounwind uwtable readnone ssp {
+entry:
+  %g = add <8 x i32> %in, <i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1>
+  ret <8 x i32> %g
+}
+
+; CHECK: _e2
+; CHECK: vbroadcastss
+; CHECK: ret
+define <4 x float> @_e2(float* %ptr) nounwind uwtable readnone ssp {
+  %vecinit.i = insertelement <4 x float> undef, float        0xbf80000000000000, i32 0
+  %vecinit2.i = insertelement <4 x float> %vecinit.i, float  0xbf80000000000000, i32 1
+  %vecinit4.i = insertelement <4 x float> %vecinit2.i, float 0xbf80000000000000, i32 2
+  %vecinit6.i = insertelement <4 x float> %vecinit4.i, float 0xbf80000000000000, i32 3
+  ret <4 x float> %vecinit6.i
+}
+
+; CHECK: _e4
+; CHECK-NOT: broadcast
+; CHECK: ret
+define <8 x i8> @_e4(i8* %ptr) nounwind uwtable readnone ssp {
+  %vecinit0.i = insertelement <8 x i8> undef, i8       52, i32 0
+  %vecinit1.i = insertelement <8 x i8> %vecinit0.i, i8 52, i32 1
+  %vecinit2.i = insertelement <8 x i8> %vecinit1.i, i8 52, i32 2
+  %vecinit3.i = insertelement <8 x i8> %vecinit2.i, i8 52, i32 3
+  %vecinit4.i = insertelement <8 x i8> %vecinit3.i, i8 52, i32 3
+  %vecinit5.i = insertelement <8 x i8> %vecinit4.i, i8 52, i32 3
+  %vecinit6.i = insertelement <8 x i8> %vecinit5.i, i8 52, i32 3
+  %vecinit7.i = insertelement <8 x i8> %vecinit6.i, i8 52, i32 3
+  ret <8 x i8> %vecinit7.i
+}

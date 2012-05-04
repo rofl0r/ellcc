@@ -7,7 +7,7 @@
   <meta name="author" content="Chris Lattner">
   <meta name="description"
   content="LLVM Assembly Language Reference Manual.">
-  <link rel="stylesheet" href="llvm.css" type="text/css">
+  <link rel="stylesheet" href="_static/llvm.css" type="text/css">
 </head>
 
 <body>
@@ -103,7 +103,7 @@
       <li><a href="#metadata">Metadata Nodes and Metadata Strings</a>
         <ol>
           <li><a href="#tbaa">'<tt>tbaa</tt>' Metadata</a></li>
-          <li><a href="#fpaccuracy">'<tt>fpaccuracy</tt>' Metadata</a></li>
+          <li><a href="#fpmath">'<tt>fpmath</tt>' Metadata</a></li>
           <li><a href="#range">'<tt>range</tt>' Metadata</a></li>
         </ol>
       </li>
@@ -3000,14 +3000,16 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 
 <!-- _______________________________________________________________________ -->
 <h4>
-  <a name="fpaccuracy">'<tt>fpaccuracy</tt>' Metadata</a>
+  <a name="fpmath">'<tt>fpmath</tt>' Metadata</a>
 </h4>
  
 <div>
 
-<p><tt>fpaccuracy</tt> metadata may be attached to any instruction of floating
-   point type.  It expresses the maximum relative error of the result of
-   that instruction, in ULPs. ULP is defined as follows:</p>
+<p><tt>fpmath</tt> metadata may be attached to any instruction of floating point
+  type.  It can be used to express the maximum acceptable error in the result of
+  that instruction, in ULPs, thus potentially allowing the compiler to use a
+  more efficient but less accurate method of computing it.  ULP is defined as
+  follows:</p>
 
 <blockquote>
 
@@ -3019,13 +3021,12 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 
 </blockquote>
 
-<p>The maximum relative error may be any rational number.  The metadata node
-   shall consist of a pair of unsigned integers respectively representing
-   the numerator and denominator.  For example, 2.5 ULP:</p>
+<p>The metadata node shall consist of a single positive floating point number
+   representing the maximum relative error, for example:</p>
 
 <div class="doc_code">
 <pre>
-!0 = metadata !{ i32 5, i32 2 }
+!0 = metadata !{ float 2.5 } ; maximum acceptable inaccuracy is 2.5 ULPs
 </pre>
 </div>
 
@@ -8504,7 +8505,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-03-27 06:25:16 -0500 (Tue, 27 Mar 2012) $
+  Last modified: $Date: 2012-04-19 15:20:34 -0500 (Thu, 19 Apr 2012) $
 </address>
 
 </body>

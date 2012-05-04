@@ -4,7 +4,7 @@
 <head>
   <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
   <title>LLVM Programmer's Manual</title>
-  <link rel="stylesheet" href="llvm.css" type="text/css">
+  <link rel="stylesheet" href="_static/llvm.css" type="text/css">
 </head>
 <body>
 
@@ -1734,6 +1734,9 @@ already in the table, and each pair in the map is store in a single allocation
 
 <p>StringMap also provides query methods that take byte ranges, so it only ever
 copies a string if a value is inserted into the table.</p>
+
+<p>StringMap iteratation order, however, is not guaranteed to be deterministic,
+so any uses which require that should instead use a std::map.</p>
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -4125,7 +4128,7 @@ arguments. An argument has a pointer to the parent Function.</p>
   <a href="mailto:dhurjati@cs.uiuc.edu">Dinakar Dhurjati</a> and
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-03-27 06:25:16 -0500 (Tue, 27 Mar 2012) $
+  Last modified: $Date: 2012-04-19 15:20:34 -0500 (Thu, 19 Apr 2012) $
 </address>
 
 </body>

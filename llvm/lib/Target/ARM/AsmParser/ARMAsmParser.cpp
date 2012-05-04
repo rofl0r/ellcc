@@ -82,8 +82,14 @@ class ARMAsmParser : public MCTargetAsmParser {
   MCAsmParser &getParser() const { return Parser; }
   MCAsmLexer &getLexer() const { return Parser.getLexer(); }
 
-  void Warning(SMLoc L, const Twine &Msg) { Parser.Warning(L, Msg); }
-  bool Error(SMLoc L, const Twine &Msg) { return Parser.Error(L, Msg); }
+  bool Warning(SMLoc L, const Twine &Msg,
+               ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) {
+    return Parser.Warning(L, Msg, Ranges);
+  }
+  bool Error(SMLoc L, const Twine &Msg,
+             ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) {
+    return Parser.Error(L, Msg, Ranges);
+  }
 
   int tryParseRegister();
   bool tryParseRegisterWithWriteBack(SmallVectorImpl<MCParsedAsmOperand*> &);
@@ -477,6 +483,8 @@ public:
   SMLoc getStartLoc() const { return StartLoc; }
   /// getEndLoc - Get the location of the last token of this operand.
   SMLoc getEndLoc() const { return EndLoc; }
+
+  SMRange getLocRange() const { return SMRange(StartLoc, EndLoc); }
 
   ARMCC::CondCodes getCondCode() const {
     assert(Kind == k_CondCode && "Invalid access!");
@@ -4518,22 +4526,26 @@ bool ARMAsmParser::parseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands,
   case AsmToken::Dollar:
   case AsmToken::Hash: {
     // #42 -> immediate.
-    // TODO: ":lower16:" and ":upper16:" modifiers after # before immediate
     S = Parser.getTok().getLoc();
     Parser.Lex();
-    bool isNegative = Parser.getTok().is(AsmToken::Minus);
-    const MCExpr *ImmVal;
-    if (getParser().ParseExpression(ImmVal))
-      return true;
-    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(ImmVal);
-    if (CE) {
-      int32_t Val = CE->getValue();
-      if (isNegative && Val == 0)
-        ImmVal = MCConstantExpr::Create(INT32_MIN, getContext());
+
+    if (Parser.getTok().isNot(AsmToken::Colon)) {
+      bool isNegative = Parser.getTok().is(AsmToken::Minus);
+      const MCExpr *ImmVal;
+      if (getParser().ParseExpression(ImmVal))
+        return true;
+      const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(ImmVal);
+      if (CE) {
+        int32_t Val = CE->getValue();
+        if (isNegative && Val == 0)
+          ImmVal = MCConstantExpr::Create(INT32_MIN, getContext());
+      }
+      E = SMLoc::getFromPointer(Parser.getTok().getLoc().getPointer() - 1);
+      Operands.push_back(ARMOperand::CreateImm(ImmVal, S, E));
+      return false;
     }
-    E = SMLoc::getFromPointer(Parser.getTok().getLoc().getPointer() - 1);
-    Operands.push_back(ARMOperand::CreateImm(ImmVal, S, E));
-    return false;
+    // w/ a ':' after the '#', it's just like a plain ':'.
+    // FALLTHROUGH
   }
   case AsmToken::Colon: {
     // ":lower16:" and ":upper16:" expression prefixes
@@ -4659,6 +4671,7 @@ StringRef ARMAsmParser::splitMnemonic(StringRef Mnemonic,
         Mnemonic == "fmrs" || Mnemonic == "fsqrts" || Mnemonic == "fsubs" ||
         Mnemonic == "fsts" || Mnemonic == "fcpys" || Mnemonic == "fdivs" ||
         Mnemonic == "fmuls" || Mnemonic == "fcmps" || Mnemonic == "fcmpzs" ||
+        Mnemonic == "vfms" || Mnemonic == "vfnms" ||
         (Mnemonic == "movs" && isThumb()))) {
     Mnemonic = Mnemonic.slice(0, Mnemonic.size() - 1);
     CarrySetting = true;
@@ -4702,6 +4715,7 @@ getMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
       Mnemonic == "orr" || Mnemonic == "mvn" ||
       Mnemonic == "rsb" || Mnemonic == "rsc" || Mnemonic == "orn" ||
       Mnemonic == "sbc" || Mnemonic == "eor" || Mnemonic == "neg" ||
+      Mnemonic == "vfm" || Mnemonic == "vfnm" ||
       (!isThumb() && (Mnemonic == "smull" || Mnemonic == "mov" ||
                       Mnemonic == "mla" || Mnemonic == "smlal" ||
                       Mnemonic == "umlal" || Mnemonic == "umull"))) {
@@ -4770,7 +4784,7 @@ bool ARMAsmParser::shouldOmitCCOutOperand(StringRef Mnemonic,
       static_cast<ARMOperand*>(Operands[4])->isReg() &&
       static_cast<ARMOperand*>(Operands[4])->getReg() == ARM::SP &&
       static_cast<ARMOperand*>(Operands[1])->getReg() == 0 &&
-      (static_cast<ARMOperand*>(Operands[5])->isReg() ||
+      ((Mnemonic == "add" &&static_cast<ARMOperand*>(Operands[5])->isReg()) ||
        static_cast<ARMOperand*>(Operands[5])->isImm0_1020s4()))
     return true;
   // For Thumb2, add/sub immediate does not have a cc_out operand for the
@@ -4854,7 +4868,10 @@ bool ARMAsmParser::shouldOmitCCOutOperand(StringRef Mnemonic,
       (Operands.size() == 5 || Operands.size() == 6) &&
       static_cast<ARMOperand*>(Operands[3])->isReg() &&
       static_cast<ARMOperand*>(Operands[3])->getReg() == ARM::SP &&
-      static_cast<ARMOperand*>(Operands[1])->getReg() == 0)
+      static_cast<ARMOperand*>(Operands[1])->getReg() == 0 &&
+      (static_cast<ARMOperand*>(Operands[4])->isImm() ||
+       (Operands.size() == 6 &&
+        static_cast<ARMOperand*>(Operands[5])->isImm())))
     return true;
 
   return false;
@@ -6645,6 +6662,37 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
+  // Handle encoding choice for the shift-immediate instructions.
+  case ARM::t2LSLri:
+  case ARM::t2LSRri:
+  case ARM::t2ASRri: {
+    if (isARMLowRegister(Inst.getOperand(0).getReg()) &&
+        Inst.getOperand(0).getReg() == Inst.getOperand(1).getReg() &&
+        Inst.getOperand(5).getReg() == (inITBlock() ? 0 : ARM::CPSR) &&
+        !(static_cast<ARMOperand*>(Operands[3])->isToken() &&
+         static_cast<ARMOperand*>(Operands[3])->getToken() == ".w")) {
+      unsigned NewOpc;
+      switch (Inst.getOpcode()) {
+      default: llvm_unreachable("unexpected opcode");
+      case ARM::t2LSLri: NewOpc = ARM::tLSLri; break;
+      case ARM::t2LSRri: NewOpc = ARM::tLSRri; break;
+      case ARM::t2ASRri: NewOpc = ARM::tASRri; break;
+      }
+      // The Thumb1 operands aren't in the same order. Awesome, eh?
+      MCInst TmpInst;
+      TmpInst.setOpcode(NewOpc);
+      TmpInst.addOperand(Inst.getOperand(0));
+      TmpInst.addOperand(Inst.getOperand(5));
+      TmpInst.addOperand(Inst.getOperand(1));
+      TmpInst.addOperand(Inst.getOperand(2));
+      TmpInst.addOperand(Inst.getOperand(3));
+      TmpInst.addOperand(Inst.getOperand(4));
+      Inst = TmpInst;
+      return true;
+    }
+    return false;
+  }
+
   // Handle the Thumb2 mode MOV complex aliases.
   case ARM::t2MOVsr:
   case ARM::t2MOVSsr: {
@@ -7285,7 +7333,8 @@ MatchAndEmitInstruction(SMLoc IDLoc,
     return Error(ErrorLoc, "invalid operand for instruction");
   }
   case Match_MnemonicFail:
-    return Error(IDLoc, "invalid instruction");
+    return Error(IDLoc, "invalid instruction",
+                 ((ARMOperand*)Operands[0])->getLocRange());
   case Match_ConversionFail:
     // The converter function will have already emited a diagnostic.
     return true;

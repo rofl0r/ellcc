@@ -481,7 +481,8 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
   InitBuiltinType(ObjCBuiltinSelTy, BuiltinType::ObjCSel);
   
   // Builtin type for __objc_yes and __objc_no
-  ObjCBuiltinBoolTy = SignedCharTy;
+  ObjCBuiltinBoolTy = (Target.useSignedCharForObjCBool() ?
+                       SignedCharTy : BoolTy);
   
   ObjCConstantStringType = QualType();
 
@@ -2193,6 +2194,8 @@ ASTContext::getFunctionType(QualType ResultTy,
     Size += EPI.NumExceptions * sizeof(QualType);
   else if (EPI.ExceptionSpecType == EST_ComputedNoexcept) {
     Size += sizeof(Expr*);
+  } else if (EPI.ExceptionSpecType == EST_Uninstantiated) {
+    Size += 2 * sizeof(FunctionDecl*);
   }
   if (EPI.ConsumedArguments)
     Size += NumArgs * sizeof(bool);
@@ -3313,8 +3316,11 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
     case TemplateArgument::Expression:
       return Arg;
 
-    case TemplateArgument::Declaration:
-      return TemplateArgument(Arg.getAsDecl()->getCanonicalDecl());
+    case TemplateArgument::Declaration: {
+      if (Decl *D = Arg.getAsDecl())
+          return TemplateArgument(D->getCanonicalDecl());
+      return TemplateArgument((Decl*)0);
+    }
 
     case TemplateArgument::Template:
       return TemplateArgument(getCanonicalTemplateName(Arg.getAsTemplate()));

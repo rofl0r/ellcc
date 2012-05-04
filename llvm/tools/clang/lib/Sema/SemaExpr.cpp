@@ -374,10 +374,6 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   QualType T = E->getType();
   assert(!T.isNull() && "r-value conversion on typeless expression?");
 
-  // We can't do lvalue-to-rvalue on atomics yet.
-  if (T->isAtomicType())
-    return Owned(E);
-
   // We don't want to throw lvalue-to-rvalue casts on top of
   // expressions of certain types in C++.
   if (getLangOpts().CPlusPlus &&
@@ -413,6 +409,15 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
   ExprResult Res = Owned(ImplicitCastExpr::Create(Context, T, CK_LValueToRValue,
                                                   E, 0, VK_RValue));
 
+  // C11 6.3.2.1p2:
+  //   ... if the lvalue has atomic type, the value has the non-atomic version 
+  //   of the type of the lvalue ...
+  if (const AtomicType *Atomic = T->getAs<AtomicType>()) {
+    T = Atomic->getValueType().getUnqualifiedType();
+    Res = Owned(ImplicitCastExpr::Create(Context, T, CK_AtomicToNonAtomic,
+                                         Res.get(), 0, VK_RValue));
+  }
+  
   return Res;
 }
 
@@ -7143,16 +7148,6 @@ static bool IsReadonlyProperty(Expr *E, Sema &S) {
   return false;
 }
 
-static bool IsConstProperty(Expr *E, Sema &S) {
-  const ObjCPropertyRefExpr *PropExpr = dyn_cast<ObjCPropertyRefExpr>(E);
-  if (!PropExpr) return false;
-  if (PropExpr->isImplicitProperty()) return false;
-    
-  ObjCPropertyDecl *PDecl = PropExpr->getExplicitProperty();
-  QualType T = PDecl->getType().getNonReferenceType();
-  return T.isConstQualified();
-}
-
 static bool IsReadonlyMessage(Expr *E, Sema &S) {
   const MemberExpr *ME = dyn_cast<MemberExpr>(E);
   if (!ME) return false;
@@ -7192,13 +7187,12 @@ static NonConstCaptureKind isReferenceToNonConstCapture(Sema &S, Expr *E) {
 /// CheckForModifiableLvalue - Verify that E is a modifiable lvalue.  If not,
 /// emit an error and return true.  If so, return false.
 static bool CheckForModifiableLvalue(Expr *E, SourceLocation Loc, Sema &S) {
+  assert(!E->hasPlaceholderType(BuiltinType::PseudoObject));
   SourceLocation OrigLoc = Loc;
   Expr::isModifiableLvalueResult IsLV = E->isModifiableLvalue(S.Context,
                                                               &Loc);
   if (IsLV == Expr::MLV_Valid && IsReadonlyProperty(E, S))
     IsLV = Expr::MLV_ReadonlyProperty;
-  else if (Expr::MLV_ConstQualified && IsConstProperty(E, S))
-    IsLV = Expr::MLV_Valid;
   else if (IsLV == Expr::MLV_ClassTemporary && IsReadonlyMessage(E, S))
     IsLV = Expr::MLV_InvalidMessageExpression;
   if (IsLV == Expr::MLV_Valid)
@@ -8567,6 +8561,9 @@ void Sema::ActOnStartStmtExpr() {
 }
 
 void Sema::ActOnStmtExprError() {
+  // Note that function is also called by TreeTransform when leaving a
+  // StmtExpr scope without rebuilding anything.
+
   DiscardCleanupsInEvaluationContext();
   PopExpressionEvaluationContext();
 }
@@ -9114,15 +9111,6 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
 
   BSI->TheDecl->setBody(cast<CompoundStmt>(Body));
 
-  for (BlockDecl::capture_const_iterator ci = BSI->TheDecl->capture_begin(),
-       ce = BSI->TheDecl->capture_end(); ci != ce; ++ci) {
-    const VarDecl *variable = ci->getVariable();
-    QualType T = variable->getType();
-    QualType::DestructionKind destructKind = T.isDestructedType();
-    if (destructKind != QualType::DK_none)
-      getCurFunction()->setHasBranchProtectedScope();
-  }
-
   computeNRVO(Body, getCurBlock());
   
   BlockExpr *Result = new (Context) BlockExpr(BSI->TheDecl, BlockTy);
@@ -9130,10 +9118,23 @@ ExprResult Sema::ActOnBlockStmtExpr(SourceLocation CaretLoc,
   PopFunctionScopeInfo(&WP, Result->getBlockDecl(), Result);
 
   // If the block isn't obviously global, i.e. it captures anything at
-  // all, mark this full-expression as needing a cleanup.
+  // all, then we need to do a few things in the surrounding context:
   if (Result->getBlockDecl()->hasCaptures()) {
+    // First, this expression has a new cleanup object.
     ExprCleanupObjects.push_back(Result->getBlockDecl());
     ExprNeedsCleanups = true;
+
+    // It also gets a branch-protected scope if any of the captured
+    // variables needs destruction.
+    for (BlockDecl::capture_const_iterator
+           ci = Result->getBlockDecl()->capture_begin(),
+           ce = Result->getBlockDecl()->capture_end(); ci != ce; ++ci) {
+      const VarDecl *var = ci->getVariable();
+      if (var->getType().isDestructedType() != QualType::DK_none) {
+        getCurFunction()->setHasBranchProtectedScope();
+        break;
+      }
+    }
   }
 
   return Owned(Result);
@@ -9437,10 +9438,11 @@ ExprResult Sema::VerifyIntegerConstantExpression(Expr *E,
       PDiag(diag::err_expr_not_ice) << LangOpts.CPlusPlus);
 }
 
-ExprResult Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
-                                                 PartialDiagnostic NotIceDiag,
-                                                 bool AllowFold,
-                                                 PartialDiagnostic FoldDiag) {
+ExprResult
+Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
+                                      const PartialDiagnostic &NotIceDiag,
+                                      bool AllowFold,
+                                      const PartialDiagnostic &FoldDiag) {
   SourceLocation DiagLoc = E->getLocStart();
 
   if (getLangOpts().CPlusPlus0x) {
@@ -9771,6 +9773,12 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
   // Recursive functions should be marked when used from another function.
   // FIXME: Is this really right?
   if (CurContext == Func) return;
+
+  // Instantiate the exception specification for any function which is
+  // used: CodeGen will need it.
+  const FunctionProtoType *FPT = Func->getType()->getAs<FunctionProtoType>();
+  if (FPT && FPT->getExceptionSpecType() == EST_Uninstantiated)
+    InstantiateExceptionSpec(Loc, Func);
 
   // Implicit instantiation of function templates and member functions of
   // class templates.
@@ -10477,7 +10485,8 @@ namespace {
 bool MarkReferencedDecls::TraverseTemplateArgument(
   const TemplateArgument &Arg) {
   if (Arg.getKind() == TemplateArgument::Declaration) {
-    S.MarkAnyDeclReferenced(Loc, Arg.getAsDecl());
+    if (Decl *D = Arg.getAsDecl())
+      S.MarkAnyDeclReferenced(Loc, D);
   }
 
   return Inherited::TraverseTemplateArgument(Arg);

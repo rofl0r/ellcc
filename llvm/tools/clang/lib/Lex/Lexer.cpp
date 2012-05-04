@@ -1597,7 +1597,9 @@ const char *Lexer::LexUDSuffix(Token &Result, const char *CurPtr) {
     // them.
     if (C != '_') {
       if (!isLexingRawMode())
-        Diag(CurPtr, diag::ext_reserved_user_defined_literal)
+        Diag(CurPtr, getLangOpts().MicrosoftMode ? 
+            diag::ext_ms_reserved_user_defined_literal :
+            diag::ext_reserved_user_defined_literal)
           << FixItHint::CreateInsertion(getSourceLocation(CurPtr), " ");
       return CurPtr;
     }
@@ -2374,8 +2376,9 @@ bool Lexer::LexEndOfFile(Token &Result, const char *CurPtr) {
   // C99 5.1.1.2p2: If the file is non-empty and didn't end in a newline, issue
   // a pedwarn.
   if (CurPtr != BufferStart && (CurPtr[-1] != '\n' && CurPtr[-1] != '\r'))
-    Diag(BufferEnd, diag::ext_no_newline_eof)
-      << FixItHint::CreateInsertion(getSourceLocation(BufferEnd), "\n");
+    Diag(BufferEnd, LangOpts.CPlusPlus0x ? // C++11 [lex.phases] 2.2 p2
+         diag::warn_cxx98_compat_no_newline_eof : diag::ext_no_newline_eof)
+    << FixItHint::CreateInsertion(getSourceLocation(BufferEnd), "\n");
 
   BufferPtr = CurPtr;
 

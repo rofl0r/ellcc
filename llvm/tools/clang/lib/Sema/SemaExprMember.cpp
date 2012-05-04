@@ -101,16 +101,8 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
 
   DeclContext *DC = SemaRef.getFunctionLevelDeclContext();
 
-  bool isStaticContext =
-    (!isa<CXXMethodDecl>(DC) ||
-     cast<CXXMethodDecl>(DC)->isStatic());
-
-  // C++0x [expr.prim]p4:
-  //   Otherwise, if a member-declarator declares a non-static data member
-  // of a class X, the expression this is a prvalue of type "pointer to X"
-  // within the optional brace-or-equal-initializer.
-  if (CurScope->getFlags() & Scope::ThisScope)
-    isStaticContext = false;
+  bool isStaticContext = SemaRef.CXXThisTypeOverride.isNull() &&
+    (!isa<CXXMethodDecl>(DC) || cast<CXXMethodDecl>(DC)->isStatic());
 
   if (R.isUnresolvableResult())
     return isStaticContext ? IMA_Unresolved_StaticContext : IMA_Unresolved;
@@ -444,8 +436,8 @@ Sema::ActOnDependentMemberExpr(Expr *BaseExpr, QualType BaseType,
     if (PT && (!getLangOpts().ObjC1 ||
                PT->getPointeeType()->isRecordType())) {
       assert(BaseExpr && "cannot happen with implicit member accesses");
-      Diag(NameInfo.getLoc(), diag::err_typecheck_member_reference_struct_union)
-        << BaseType << BaseExpr->getSourceRange();
+      Diag(OpLoc, diag::err_typecheck_member_reference_struct_union)
+        << BaseType << BaseExpr->getSourceRange() << NameInfo.getSourceRange();
       return ExprError();
     }
   }
@@ -549,12 +541,13 @@ class RecordMemberExprValidatorCCC : public CorrectionCandidateCallback {
 }
 
 static bool
-LookupMemberExprInRecord(Sema &SemaRef, LookupResult &R,
+LookupMemberExprInRecord(Sema &SemaRef, LookupResult &R, 
                          SourceRange BaseRange, const RecordType *RTy,
                          SourceLocation OpLoc, CXXScopeSpec &SS,
                          bool HasTemplateArgs) {
   RecordDecl *RDecl = RTy->getDecl();
-  if (SemaRef.RequireCompleteType(OpLoc, QualType(RTy, 0),
+  if (!SemaRef.isThisOutsideMemberFunctionBody(QualType(RTy, 0)) &&
+      SemaRef.RequireCompleteType(OpLoc, QualType(RTy, 0),
                               SemaRef.PDiag(diag::err_typecheck_incomplete_tag)
                                     << BaseRange))
     return true;
@@ -1425,8 +1418,8 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
                             ObjCImpDecl, HasTemplateArgs);
   }
 
-  Diag(MemberLoc, diag::err_typecheck_member_reference_struct_union)
-    << BaseType << BaseExpr.get()->getSourceRange();
+  Diag(OpLoc, diag::err_typecheck_member_reference_struct_union)
+    << BaseType << BaseExpr.get()->getSourceRange() << MemberLoc;
 
   return ExprError();
 }

@@ -162,6 +162,7 @@ namespace {
     IC_MoveWeak,            ///< objc_moveWeak (derived)
     IC_CopyWeak,            ///< objc_copyWeak (derived)
     IC_DestroyWeak,         ///< objc_destroyWeak (derived)
+    IC_StoreStrong,         ///< objc_storeStrong (derived)
     IC_CallOrUser,          ///< could call objc_release and/or "use" pointers
     IC_Call,                ///< could call objc_release
     IC_User,                ///< could "use" a pointer
@@ -262,6 +263,7 @@ static InstructionClass GetFunctionClass(const Function *F) {
               return StringSwitch<InstructionClass>(F->getName())
                      .Case("objc_storeWeak",             IC_StoreWeak)
                      .Case("objc_initWeak",              IC_InitWeak)
+                     .Case("objc_storeStrong",           IC_StoreStrong)
                      .Default(IC_CallOrUser);
             // Second argument is i8**.
             if (PointerType *Pte1 = dyn_cast<PointerType>(ETy1))
@@ -618,22 +620,35 @@ static bool DoesObjCBlockEscape(const Value *BlockPtr) {
       const User *UUser = *UI;
       // Special - Use by a call (callee or argument) is not considered
       // to be an escape.
-      if (isa<CallInst>(UUser) || isa<InvokeInst>(UUser))
-        continue;
-      // Use by an instruction which copies the value is an escape if the
-      // result is an escape.
-      if (isa<BitCastInst>(UUser) || isa<GetElementPtrInst>(UUser) ||
-          isa<PHINode>(UUser) || isa<SelectInst>(UUser)) {
-        Worklist.push_back(UUser);
+      switch (GetBasicInstructionClass(UUser)) {
+      case IC_StoreWeak:
+      case IC_InitWeak:
+      case IC_StoreStrong:
+      case IC_Autorelease:
+      case IC_AutoreleaseRV:
+        // These special functions make copies of their pointer arguments.
+        return true;
+      case IC_User:
+      case IC_None:
+        // Use by an instruction which copies the value is an escape if the
+        // result is an escape.
+        if (isa<BitCastInst>(UUser) || isa<GetElementPtrInst>(UUser) ||
+            isa<PHINode>(UUser) || isa<SelectInst>(UUser)) {
+          Worklist.push_back(UUser);
+          continue;
+        }
+        // Use by a load is not an escape.
+        if (isa<LoadInst>(UUser))
+          continue;
+        // Use by a store is not an escape if the use is the address.
+        if (const StoreInst *SI = dyn_cast<StoreInst>(UUser))
+          if (V != SI->getValueOperand())
+            continue;
+        break;
+      default:
+        // Regular calls and other stuff are not considered escapes.
         continue;
       }
-      // Use by a load is not an escape.
-      if (isa<LoadInst>(UUser))
-        continue;
-      // Use by a store is not an escape if the use is the address.
-      if (const StoreInst *SI = dyn_cast<StoreInst>(UUser))
-        if (V != SI->getValueOperand())
-          continue;
       // Otherwise, conservatively assume an escape.
       return true;
     }
@@ -883,7 +898,7 @@ bool ObjCARCExpand::runOnFunction(Function &F) {
       // These calls return their argument verbatim, as a low-level
       // optimization. However, this makes high-level optimizations
       // harder. Undo any uses of this optimization that the front-end
-      // emitted here. We'll redo them in a later pass.
+      // emitted here. We'll redo them in the contract pass.
       Changed = true;
       Inst->replaceAllUsesWith(cast<CallInst>(Inst)->getArgOperand(0));
       break;
@@ -997,7 +1012,11 @@ bool ObjCARCAPElim::runOnModule(Module &M) {
     return false;
 
   // Find the llvm.global_ctors variable, as the first step in
-  // identifying the global constructors.
+  // identifying the global constructors. In theory, unnecessary autorelease
+  // pools could occur anywhere, but in practice it's pretty rare. Global
+  // ctors are a place where autorelease pools get inserted automatically,
+  // so it's pretty common for them to be unnecessary, and it's pretty
+  // profitable to eliminate them.
   GlobalVariable *GV = M.getGlobalVariable("llvm.global_ctors");
   if (!GV)
     return false;
@@ -1014,7 +1033,11 @@ bool ObjCARCAPElim::runOnModule(Module &M) {
     Value *Op = *OI;
     // llvm.global_ctors is an array of pairs where the second members
     // are constructor functions.
-    Function *F = cast<Function>(cast<ConstantStruct>(Op)->getOperand(1));
+    Function *F = dyn_cast<Function>(cast<ConstantStruct>(Op)->getOperand(1));
+    // If the user used a constructor function with the wrong signature and
+    // it got bitcasted or whatever, look the other way.
+    if (!F)
+      continue;
     // Only look at function definitions.
     if (F->isDeclaration())
       continue;
@@ -1963,6 +1986,7 @@ namespace {
   /// use here.
   enum DependenceKind {
     NeedsPositiveRetainCount,
+    AutoreleasePoolBoundary,
     CanChangeRetainCount,
     RetainAutoreleaseDep,       ///< Blocks objc_retainAutorelease.
     RetainAutoreleaseRVDep,     ///< Blocks objc_retainAutoreleaseReturnValue.
@@ -1992,6 +2016,19 @@ Depends(DependenceKind Flavor, Instruction *Inst, const Value *Arg,
     }
   }
 
+  case AutoreleasePoolBoundary: {
+    InstructionClass Class = GetInstructionClass(Inst);
+    switch (Class) {
+    case IC_AutoreleasepoolPop:
+    case IC_AutoreleasepoolPush:
+      // These mark the end and begin of an autorelease pool scope.
+      return true;
+    default:
+      // Nothing else does this.
+      return false;
+    }
+  }
+
   case CanChangeRetainCount: {
     InstructionClass Class = GetInstructionClass(Inst);
     switch (Class) {
@@ -2009,6 +2046,7 @@ Depends(DependenceKind Flavor, Instruction *Inst, const Value *Arg,
   case RetainAutoreleaseDep:
     switch (GetBasicInstructionClass(Inst)) {
     case IC_AutoreleasepoolPop:
+    case IC_AutoreleasepoolPush:
       // Don't merge an objc_autorelease with an objc_retain inside a different
       // autoreleasepool scope.
       return true;
@@ -2248,6 +2286,7 @@ void ObjCARCOpt::OptimizeIndividualCalls(Function &F) {
     case IC_DestroyWeak: {
       CallInst *CI = cast<CallInst>(Inst);
       if (isNullOrUndef(CI->getArgOperand(0))) {
+        Changed = true;
         Type *Ty = CI->getArgOperand(0)->getType();
         new StoreInst(UndefValue::get(cast<PointerType>(Ty)->getElementType()),
                       Constant::getNullValue(Ty),
@@ -2263,6 +2302,7 @@ void ObjCARCOpt::OptimizeIndividualCalls(Function &F) {
       CallInst *CI = cast<CallInst>(Inst);
       if (isNullOrUndef(CI->getArgOperand(0)) ||
           isNullOrUndef(CI->getArgOperand(1))) {
+        Changed = true;
         Type *Ty = CI->getArgOperand(0)->getType();
         new StoreInst(UndefValue::get(cast<PointerType>(Ty)->getElementType()),
                       Constant::getNullValue(Ty),
@@ -2376,9 +2416,34 @@ void ObjCARCOpt::OptimizeIndividualCalls(Function &F) {
 
         // Check that there is nothing that cares about the reference
         // count between the call and the phi.
-        FindDependencies(NeedsPositiveRetainCount, Arg,
-                         Inst->getParent(), Inst,
-                         DependingInstructions, Visited, PA);
+        switch (Class) {
+        case IC_Retain:
+        case IC_RetainBlock:
+          // These can always be moved up.
+          break;
+        case IC_Release:
+          // These can't be moved across things that care about the retain count.
+          FindDependencies(NeedsPositiveRetainCount, Arg,
+                           Inst->getParent(), Inst,
+                           DependingInstructions, Visited, PA);
+          break;
+        case IC_Autorelease:
+          // These can't be moved across autorelease pool scope boundaries.
+          FindDependencies(AutoreleasePoolBoundary, Arg,
+                           Inst->getParent(), Inst,
+                           DependingInstructions, Visited, PA);
+          break;
+        case IC_RetainRV:
+        case IC_AutoreleaseRV:
+          // Don't move these; the RV optimization depends on the autoreleaseRV
+          // being tail called, and the retainRV being immediately after a call
+          // (which might still happen if we get lucky with codegen layout, but
+          // it's not worth taking the chance).
+          continue;
+        default:
+          llvm_unreachable("Invalid dependence flavor");
+        }
+
         if (DependingInstructions.size() == 1 &&
             *DependingInstructions.begin() == PN) {
           Changed = true;
@@ -3125,6 +3190,8 @@ void ObjCARCOpt::MoveCalls(Value *Arg,
   }
 }
 
+/// PerformCodePlacement - Identify pairings between the retains and releases,
+/// and delete and/or move them.
 bool
 ObjCARCOpt::PerformCodePlacement(DenseMap<const BasicBlock *, BBState>
                                    &BBStates,
@@ -3138,6 +3205,7 @@ ObjCARCOpt::PerformCodePlacement(DenseMap<const BasicBlock *, BBState>
   SmallVector<Instruction *, 4> NewReleases;
   SmallVector<Instruction *, 8> DeadInsts;
 
+  // Visit each retain.
   for (MapVector<Value *, RRInfo>::const_iterator I = Retains.begin(),
        E = Retains.end(); I != E; ++I) {
     Value *V = I->first;
@@ -3311,7 +3379,7 @@ ObjCARCOpt::PerformCodePlacement(DenseMap<const BasicBlock *, BBState>
 
     // Ok, everything checks out and we're all set. Let's move some code!
     Changed = true;
-    AnyPairsCompletelyEliminated = NewCount == 0;
+    AnyPairsCompletelyEliminated = OldCount != 0 && NewCount == 0;
     NumRRs += OldCount - NewCount;
     MoveCalls(Arg, RetainsToMove, ReleasesToMove,
               Retains, Releases, DeadInsts, M);
@@ -3611,6 +3679,7 @@ bool ObjCARCOpt::doInitialization(Module &M) {
   if (!EnableARCOpts)
     return false;
 
+  // If nothing in the Module uses ARC, don't do anything.
   Run = ModuleHasARC(M);
   if (!Run)
     return false;
@@ -3945,6 +4014,7 @@ void ObjCARCContract::ContractRelease(Instruction *Release,
 }
 
 bool ObjCARCContract::doInitialization(Module &M) {
+  // If nothing in the Module uses ARC, don't do anything.
   Run = ModuleHasARC(M);
   if (!Run)
     return false;
@@ -4020,6 +4090,7 @@ bool ObjCARCContract::runOnFunction(Function &F) {
       --BBI;
       while (isNoopInstruction(BBI)) --BBI;
       if (&*BBI == GetObjCArg(Inst)) {
+        Changed = true;
         InlineAsm *IA =
           InlineAsm::get(FunctionType::get(Type::getVoidTy(Inst->getContext()),
                                            /*isVarArg=*/false),
@@ -4069,16 +4140,19 @@ bool ObjCARCContract::runOnFunction(Function &F) {
         Use &U = UI.getUse();
         unsigned OperandNo = UI.getOperandNo();
         ++UI; // Increment UI now, because we may unlink its element.
-        Instruction *UserInst = dyn_cast<Instruction>(U.getUser());
-        if (!UserInst)
-          continue;
-        // FIXME: dominates should return true for unreachable UserInst.
-        if (DT->isReachableFromEntry(UserInst->getParent()) &&
-            DT->dominates(Inst, UserInst)) {
+
+        // If the call's return value dominates a use of the call's argument
+        // value, rewrite the use to use the return value. We check for
+        // reachability here because an unreachable call is considered to
+        // trivially dominate itself, which would lead us to rewriting its
+        // argument in terms of its return value, which would lead to
+        // infinite loops in GetObjCArg.
+        if (DT->isReachableFromEntry(U) &&
+            DT->dominates(Inst, U)) {
           Changed = true;
           Instruction *Replacement = Inst;
           Type *UseTy = U.get()->getType();
-          if (PHINode *PHI = dyn_cast<PHINode>(UserInst)) {
+          if (PHINode *PHI = dyn_cast<PHINode>(U.getUser())) {
             // For PHI nodes, insert the bitcast in the predecessor block.
             unsigned ValNo =
               PHINode::getIncomingValueNumForOperand(OperandNo);
@@ -4087,6 +4161,9 @@ bool ObjCARCContract::runOnFunction(Function &F) {
             if (Replacement->getType() != UseTy)
               Replacement = new BitCastInst(Replacement, UseTy, "",
                                             &BB->back());
+            // While we're here, rewrite all edges for this PHI, rather
+            // than just one use at a time, to minimize the number of
+            // bitcasts we emit.
             for (unsigned i = 0, e = PHI->getNumIncomingValues();
                  i != e; ++i)
               if (PHI->getIncomingBlock(i) == BB) {
@@ -4099,7 +4176,8 @@ bool ObjCARCContract::runOnFunction(Function &F) {
               }
           } else {
             if (Replacement->getType() != UseTy)
-              Replacement = new BitCastInst(Replacement, UseTy, "", UserInst);
+              Replacement = new BitCastInst(Replacement, UseTy, "",
+                                            cast<Instruction>(U.getUser()));
             U.set(Replacement);
           }
         }

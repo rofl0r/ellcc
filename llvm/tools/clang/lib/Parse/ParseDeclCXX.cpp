@@ -1534,13 +1534,35 @@ AccessSpecifier Parser::getAccessSpecifierIfPresent() const {
   }
 }
 
-void Parser::HandleMemberFunctionDefaultArgs(Declarator& DeclaratorInfo,
-                                             Decl *ThisDecl) {
+/// \brief If the given declarator has any parts for which parsing has to be
+/// delayed, e.g., default arguments or an exception-specification, create a
+/// late-parsed method declaration record to handle the parsing at the end of
+/// the class definition.
+void Parser::HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
+                                            Decl *ThisDecl) {
   // We just declared a member function. If this member function
-  // has any default arguments, we'll need to parse them later.
+  // has any default arguments or an exception-specification, we'll need to
+  // parse them later.
   LateParsedMethodDeclaration *LateMethod = 0;
   DeclaratorChunk::FunctionTypeInfo &FTI
     = DeclaratorInfo.getFunctionTypeInfo();
+  
+  // If there was a delayed exception-specification, hold onto its tokens.
+  if (FTI.getExceptionSpecType() == EST_Delayed) {
+    // Push this method onto the stack of late-parsed method
+    // declarations.
+    LateMethod = new LateParsedMethodDeclaration(this, ThisDecl);
+    getCurrentClass().LateParsedDeclarations.push_back(LateMethod);
+    LateMethod->TemplateScope = getCurScope()->isTemplateParamScope();
+
+    // Stash the exception-specification tokens in the late-pased mthod.
+    LateMethod->ExceptionSpecTokens = FTI.ExceptionSpecTokens;
+    FTI.ExceptionSpecTokens = 0;
+
+    // Reserve space for the parameters.
+    LateMethod->DefaultArgs.reserve(FTI.NumArgs);
+  }
+  
   for (unsigned ParamIdx = 0; ParamIdx < FTI.NumArgs; ++ParamIdx) {
     if (LateMethod || FTI.ArgInfo[ParamIdx].DefaultArgTokens) {
       if (!LateMethod) {
@@ -1558,7 +1580,7 @@ void Parser::HandleMemberFunctionDefaultArgs(Declarator& DeclaratorInfo,
                              LateParsedDefaultArgument(FTI.ArgInfo[I].Param));
       }
 
-      // Add this parameter to the list of parameters (it or may
+      // Add this parameter to the list of parameters (it may or may
       // not have a default argument).
       LateMethod->DefaultArgs.push_back(
         LateParsedDefaultArgument(FTI.ArgInfo[ParamIdx].Param,
@@ -1824,7 +1846,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
     // Parse the first declarator.
     ParseDeclarator(DeclaratorInfo);
-    // Error parsing the declarator?
+    // Error parsin g the declarator?
     if (!DeclaratorInfo.hasName()) {
       // If so, skip until the semi-colon or a }.
       SkipUntil(tok::r_brace, true, true);
@@ -2046,7 +2068,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     if (DeclaratorInfo.isFunctionDeclarator() &&
         DeclaratorInfo.getDeclSpec().getStorageClassSpec()
           != DeclSpec::SCS_typedef) {
-      HandleMemberFunctionDefaultArgs(DeclaratorInfo, ThisDecl);
+      HandleMemberFunctionDeclDelays(DeclaratorInfo, ThisDecl);
     }
 
     DeclaratorInfo.complete(ThisDecl);
@@ -2334,13 +2356,11 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
                                               T.getCloseLocation(),
                                               attrs.getList());
 
-  // C++0x [class.mem]p2: Within the class member-specification, the class is
-  // regarded as complete within function bodies, default arguments, exception-
-  // specifications, and brace-or-equal-initializers for non-static data
-  // members (including such things in nested classes).
-  //
-  // FIXME: Only function bodies and brace-or-equal-initializers are currently
-  // handled. Fix the others!
+  // C++11 [class.mem]p2:
+  //   Within the class member-specification, the class is regarded as complete
+  //   within function bodies, default arguments, exception-specifications, and
+  //   brace-or-equal-initializers for non-static data members (including such
+  //   things in nested classes).
   if (TagDecl && NonNestedClass) {
     // We are not inside a nested class. This class and its nested classes
     // are complete and we can parse the delayed portions of method
@@ -2535,12 +2555,63 @@ Parser::MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
 ///         'noexcept'
 ///         'noexcept' '(' constant-expression ')'
 ExceptionSpecificationType
-Parser::MaybeParseExceptionSpecification(SourceRange &SpecificationRange,
+Parser::tryParseExceptionSpecification(bool Delayed,
+                    SourceRange &SpecificationRange,
                     SmallVectorImpl<ParsedType> &DynamicExceptions,
                     SmallVectorImpl<SourceRange> &DynamicExceptionRanges,
-                    ExprResult &NoexceptExpr) {
+                    ExprResult &NoexceptExpr,
+                    CachedTokens *&ExceptionSpecTokens) {
   ExceptionSpecificationType Result = EST_None;
+  ExceptionSpecTokens = 0;
+  
+  // Handle delayed parsing of exception-specifications.
+  if (Delayed) {
+    if (Tok.isNot(tok::kw_throw) && Tok.isNot(tok::kw_noexcept))
+      return EST_None;
 
+    // Consume and cache the starting token.
+    bool IsNoexcept = Tok.is(tok::kw_noexcept);
+    Token StartTok = Tok;
+    SpecificationRange = SourceRange(ConsumeToken());
+
+    // Check for a '('.
+    if (!Tok.is(tok::l_paren)) {
+      // If this is a bare 'noexcept', we're done.
+      if (IsNoexcept) {
+        Diag(Tok, diag::warn_cxx98_compat_noexcept_decl);
+        NoexceptExpr = 0;
+        return EST_BasicNoexcept;
+      }
+      
+      Diag(Tok, diag::err_expected_lparen_after) << "throw";
+      return EST_DynamicNone;
+    }
+    
+    // Cache the tokens for the exception-specification.
+    ExceptionSpecTokens = new CachedTokens;
+    ExceptionSpecTokens->push_back(StartTok); // 'throw' or 'noexcept'
+    ExceptionSpecTokens->push_back(Tok); // '('
+    SpecificationRange.setEnd(ConsumeParen()); // '('
+    
+    if (!ConsumeAndStoreUntil(tok::r_paren, *ExceptionSpecTokens,
+                              /*StopAtSemi=*/true,
+                              /*ConsumeFinalToken=*/true)) {
+      NoexceptExpr = 0;
+      delete ExceptionSpecTokens;
+      ExceptionSpecTokens = 0;
+      return IsNoexcept? EST_BasicNoexcept : EST_DynamicNone;
+    }
+    SpecificationRange.setEnd(Tok.getLocation());
+    
+    // Add the 'stop' token.
+    Token End;
+    End.startToken();
+    End.setKind(tok::cxx_exceptspec_end);
+    End.setLocation(Tok.getLocation());
+    ExceptionSpecTokens->push_back(End);
+    return EST_Delayed;
+  }
+  
   // See if there's a dynamic specification.
   if (Tok.is(tok::kw_throw)) {
     Result = ParseDynamicExceptionSpecification(SpecificationRange,
@@ -2736,43 +2807,87 @@ void Parser::PopParsingClass(Sema::ParsingClassState state) {
   Victim->TemplateScope = getCurScope()->getParent()->isTemplateParamScope();
 }
 
-/// ParseCXX0XAttributeSpecifier - Parse a C++0x attribute-specifier. Currently
+/// \brief Try to parse an 'identifier' which appears within an attribute-token.
+///
+/// \return the parsed identifier on success, and 0 if the next token is not an
+/// attribute-token.
+///
+/// C++11 [dcl.attr.grammar]p3:
+///   If a keyword or an alternative token that satisfies the syntactic
+///   requirements of an identifier is contained in an attribute-token,
+///   it is considered an identifier.
+IdentifierInfo *Parser::TryParseCXX11AttributeIdentifier(SourceLocation &Loc) {
+  switch (Tok.getKind()) {
+  default:
+    // Identifiers and keywords have identifier info attached.
+    if (IdentifierInfo *II = Tok.getIdentifierInfo()) {
+      Loc = ConsumeToken();
+      return II;
+    }
+    return 0;
+
+  case tok::ampamp:       // 'and'
+  case tok::pipe:         // 'bitor'
+  case tok::pipepipe:     // 'or'
+  case tok::caret:        // 'xor'
+  case tok::tilde:        // 'compl'
+  case tok::amp:          // 'bitand'
+  case tok::ampequal:     // 'and_eq'
+  case tok::pipeequal:    // 'or_eq'
+  case tok::caretequal:   // 'xor_eq'
+  case tok::exclaim:      // 'not'
+  case tok::exclaimequal: // 'not_eq'
+    // Alternative tokens do not have identifier info, but their spelling
+    // starts with an alphabetical character.
+    llvm::SmallString<8> SpellingBuf;
+    StringRef Spelling = PP.getSpelling(Tok.getLocation(), SpellingBuf);
+    if (std::isalpha(Spelling[0])) {
+      Loc = ConsumeToken();
+      return &PP.getIdentifierTable().get(Spelling.data());
+    }
+    return 0;
+  }
+}
+
+/// ParseCXX11AttributeSpecifier - Parse a C++11 attribute-specifier. Currently
 /// only parses standard attributes.
 ///
-/// [C++0x] attribute-specifier:
+/// [C++11] attribute-specifier:
 ///         '[' '[' attribute-list ']' ']'
 ///         alignment-specifier
 ///
-/// [C++0x] attribute-list:
+/// [C++11] attribute-list:
 ///         attribute[opt]
 ///         attribute-list ',' attribute[opt]
+///         attribute '...'
+///         attribute-list ',' attribute '...'
 ///
-/// [C++0x] attribute:
+/// [C++11] attribute:
 ///         attribute-token attribute-argument-clause[opt]
 ///
-/// [C++0x] attribute-token:
+/// [C++11] attribute-token:
 ///         identifier
 ///         attribute-scoped-token
 ///
-/// [C++0x] attribute-scoped-token:
+/// [C++11] attribute-scoped-token:
 ///         attribute-namespace '::' identifier
 ///
-/// [C++0x] attribute-namespace:
+/// [C++11] attribute-namespace:
 ///         identifier
 ///
-/// [C++0x] attribute-argument-clause:
+/// [C++11] attribute-argument-clause:
 ///         '(' balanced-token-seq ')'
 ///
-/// [C++0x] balanced-token-seq:
+/// [C++11] balanced-token-seq:
 ///         balanced-token
 ///         balanced-token-seq balanced-token
 ///
-/// [C++0x] balanced-token:
+/// [C++11] balanced-token:
 ///         '(' balanced-token-seq ')'
 ///         '[' balanced-token-seq ']'
 ///         '{' balanced-token-seq '}'
 ///         any token but '(', ')', '[', ']', '{', or '}'
-void Parser::ParseCXX0XAttributeSpecifier(ParsedAttributes &attrs,
+void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
                                           SourceLocation *endLoc) {
   if (Tok.is(tok::kw_alignas)) {
     Diag(Tok.getLocation(), diag::warn_cxx98_compat_alignas);
@@ -2781,56 +2896,53 @@ void Parser::ParseCXX0XAttributeSpecifier(ParsedAttributes &attrs,
   }
 
   assert(Tok.is(tok::l_square) && NextToken().is(tok::l_square)
-      && "Not a C++0x attribute list");
+      && "Not a C++11 attribute list");
 
   Diag(Tok.getLocation(), diag::warn_cxx98_compat_attribute);
 
   ConsumeBracket();
   ConsumeBracket();
 
-  if (Tok.is(tok::comma)) {
-    Diag(Tok.getLocation(), diag::err_expected_ident);
-    ConsumeToken();
-  }
-
-  while (Tok.is(tok::identifier) || Tok.is(tok::comma)) {
+  while (Tok.isNot(tok::r_square)) {
     // attribute not present
     if (Tok.is(tok::comma)) {
       ConsumeToken();
       continue;
     }
 
-    IdentifierInfo *ScopeName = 0, *AttrName = Tok.getIdentifierInfo();
-    SourceLocation ScopeLoc, AttrLoc = ConsumeToken();
+    SourceLocation ScopeLoc, AttrLoc;
+    IdentifierInfo *ScopeName = 0, *AttrName = 0;
+
+    AttrName = TryParseCXX11AttributeIdentifier(AttrLoc);
+    if (!AttrName)
+      // Break out to the "expected ']'" diagnostic.
+      break;
 
     // scoped attribute
     if (Tok.is(tok::coloncolon)) {
       ConsumeToken();
 
-      if (!Tok.is(tok::identifier)) {
+      ScopeName = AttrName;
+      ScopeLoc = AttrLoc;
+
+      AttrName = TryParseCXX11AttributeIdentifier(AttrLoc);
+      if (!AttrName) {
         Diag(Tok.getLocation(), diag::err_expected_ident);
         SkipUntil(tok::r_square, tok::comma, true, true);
         continue;
       }
-
-      ScopeName = AttrName;
-      ScopeLoc = AttrLoc;
-
-      AttrName = Tok.getIdentifierInfo();
-      AttrLoc = ConsumeToken();
     }
 
     bool AttrParsed = false;
     // No scoped names are supported; ideally we could put all non-standard
     // attributes into namespaces.
     if (!ScopeName) {
-      switch(AttributeList::getKind(AttrName))
-      {
+      switch (AttributeList::getKind(AttrName)) {
       // No arguments
       case AttributeList::AT_carries_dependency:
       case AttributeList::AT_noreturn: {
         if (Tok.is(tok::l_paren)) {
-          Diag(Tok.getLocation(), diag::err_cxx0x_attribute_forbids_arguments)
+          Diag(Tok.getLocation(), diag::err_cxx11_attribute_forbids_arguments)
             << AttrName->getName();
           break;
         }
@@ -2852,6 +2964,13 @@ void Parser::ParseCXX0XAttributeSpecifier(ParsedAttributes &attrs,
       // SkipUntil maintains the balancedness of tokens.
       SkipUntil(tok::r_paren, false);
     }
+
+    if (Tok.is(tok::ellipsis)) {
+      if (AttrParsed)
+        Diag(Tok, diag::err_cxx11_attribute_forbids_ellipsis)
+          << AttrName->getName();
+      ConsumeToken();
+    }
   }
 
   if (ExpectAndConsume(tok::r_square, diag::err_expected_rsquare))
@@ -2862,19 +2981,19 @@ void Parser::ParseCXX0XAttributeSpecifier(ParsedAttributes &attrs,
     SkipUntil(tok::r_square, false);
 }
 
-/// ParseCXX0XAttributes - Parse a C++0x attribute-specifier-seq.
+/// ParseCXX11Attributes - Parse a C++0x attribute-specifier-seq.
 ///
 /// attribute-specifier-seq:
 ///       attribute-specifier-seq[opt] attribute-specifier
-void Parser::ParseCXX0XAttributes(ParsedAttributesWithRange &attrs,
+void Parser::ParseCXX11Attributes(ParsedAttributesWithRange &attrs,
                                   SourceLocation *endLoc) {
   SourceLocation StartLoc = Tok.getLocation(), Loc;
   if (!endLoc)
     endLoc = &Loc;
 
   do {
-    ParseCXX0XAttributeSpecifier(attrs, endLoc);
-  } while (isCXX0XAttributeSpecifier());
+    ParseCXX11AttributeSpecifier(attrs, endLoc);
+  } while (isCXX11AttributeSpecifier());
 
   attrs.Range = SourceRange(StartLoc, *endLoc);
 }
@@ -2892,6 +3011,7 @@ void Parser::ParseMicrosoftAttributes(ParsedAttributes &attrs,
   assert(Tok.is(tok::l_square) && "Not a Microsoft attribute list");
 
   while (Tok.is(tok::l_square)) {
+    // FIXME: If this is actually a C++11 attribute, parse it as one.
     ConsumeBracket();
     SkipUntil(tok::r_square, true, true);
     if (endLoc) *endLoc = Tok.getLocation();

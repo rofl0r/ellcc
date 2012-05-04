@@ -39,8 +39,8 @@ ScheduleDAGInstrs::ScheduleDAGInstrs(MachineFunction &mf,
                                      LiveIntervals *lis)
   : ScheduleDAG(mf), MLI(mli), MDT(mdt), MFI(mf.getFrameInfo()),
     InstrItins(mf.getTarget().getInstrItineraryData()), LIS(lis),
-    IsPostRA(IsPostRAFlag), UnitLatencies(false), LoopRegs(MLI, MDT),
-    FirstDbgValue(0) {
+    IsPostRA(IsPostRAFlag), UnitLatencies(false), CanHandleTerminators(false),
+    LoopRegs(MLI, MDT), FirstDbgValue(0) {
   assert((IsPostRA || LIS) && "PreRA scheduling requires LiveIntervals");
   DbgValues.clear();
   assert(!(IsPostRA && MRI.getNumVirtRegs()) &&
@@ -126,7 +126,8 @@ static const Value *getUnderlyingObjectForInstr(const MachineInstr *MI,
   return 0;
 }
 
-void ScheduleDAGInstrs::startBlock(MachineBasicBlock *BB) {
+void ScheduleDAGInstrs::startBlock(MachineBasicBlock *bb) {
+  BB = bb;
   LoopRegs.Deps.clear();
   if (MachineLoop *ML = MLI.getLoopFor(BB))
     if (BB == ML->getLoopLatch())
@@ -134,7 +135,8 @@ void ScheduleDAGInstrs::startBlock(MachineBasicBlock *BB) {
 }
 
 void ScheduleDAGInstrs::finishBlock() {
-  // Nothing to do.
+  // Subclasses should no longer refer to the old block.
+  BB = 0;
 }
 
 /// Initialize the map with the number of registers.
@@ -159,7 +161,7 @@ void ScheduleDAGInstrs::enterRegion(MachineBasicBlock *bb,
                                     MachineBasicBlock::iterator begin,
                                     MachineBasicBlock::iterator end,
                                     unsigned endcount) {
-  BB = bb;
+  assert(bb == BB && "startBlock should set BB");
   RegionBegin = begin;
   RegionEnd = end;
   EndIndex = endcount;
@@ -410,7 +412,7 @@ void ScheduleDAGInstrs::addVRegDefDeps(SUnit *SU, unsigned OperIdx) {
   // uses. We're conservative for now until we have a way to guarantee the uses
   // are not eliminated sometime during scheduling. The output dependence edge
   // is also useful if output latency exceeds def-use latency.
-  VReg2SUnitMap::iterator DefI = findVRegDef(Reg);
+  VReg2SUnitMap::iterator DefI = VRegDefs.find(Reg);
   if (DefI == VRegDefs.end())
     VRegDefs.insert(VReg2SUnit(Reg, SU));
   else {
@@ -462,7 +464,7 @@ void ScheduleDAGInstrs::addVRegUseDeps(SUnit *SU, unsigned OperIdx) {
   }
 
   // Add antidependence to the following def of the vreg it uses.
-  VReg2SUnitMap::iterator DefI = findVRegDef(Reg);
+  VReg2SUnitMap::iterator DefI = VRegDefs.find(Reg);
   if (DefI != VRegDefs.end() && DefI->SU != SU)
     DefI->SU->addPred(SDep(SU, SDep::Anti, 0, Reg));
 }
@@ -554,7 +556,7 @@ void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA) {
       continue;
     }
 
-    assert(!MI->isTerminator() && !MI->isLabel() &&
+    assert((!MI->isTerminator() || CanHandleTerminators) && !MI->isLabel() &&
            "Cannot schedule terminators or labels!");
 
     SUnit *SU = MISUnitMap[MI];

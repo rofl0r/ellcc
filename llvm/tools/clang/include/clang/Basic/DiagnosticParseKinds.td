@@ -117,7 +117,6 @@ def ext_gnu_case_range : Extension<"use of GNU case range extension">,
   InGroup<GNU>;
 
 // Generic errors.
-def err_parse_error : Error<"parse error">;
 def err_expected_expression : Error<"expected expression">;
 def err_expected_type : Error<"expected a type">;
 def err_expected_external_declaration : Error<"expected external declaration">;
@@ -411,6 +410,8 @@ def ext_ellipsis_exception_spec : Extension<
   "exception specification of '...' is a Microsoft extension">;
 def err_dynamic_and_noexcept_specification : Error<
   "cannot have both throw() and noexcept() clause on the same function">;
+def err_except_spec_unparsed : Error<
+  "unexpected end of exception specification">;
 def warn_cxx98_compat_noexcept_decl : Warning<
   "noexcept specifications are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
@@ -465,11 +466,14 @@ def warn_cxx98_compat_alignas : Warning<"'alignas' is incompatible with C++98">,
 def warn_cxx98_compat_attribute : Warning<
   "attributes are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
-def err_cxx0x_attribute_forbids_arguments : Error<
-  "C++11 attribute '%0' cannot have an argument list">;
-def err_cxx0x_attribute_requires_arguments : Error<
-  "C++11 attribute '%0' must have an argument list">;
+def err_cxx11_attribute_forbids_arguments : Error<
+  "attribute '%0' cannot have an argument list">;
+def err_cxx11_attribute_forbids_ellipsis : Error<
+  "attribute '%0' cannot be used as an attribute pack">;
 def err_attributes_not_allowed : Error<"an attribute list cannot appear here">;
+def err_l_square_l_square_not_attribute : Error<
+  "C++11 only allows consecutive left square brackets when "
+  "introducing an attribute">;
 def err_alignas_pack_exp_unsupported : Error<
   "pack expansions in alignment specifiers are not supported yet">;
 
@@ -506,6 +510,7 @@ def err_explicit_instantiation_with_definition : Error<
 def err_enum_template : Error<"enumeration cannot be a template">;
 def err_explicit_instantiation_enum : Error<
     "enumerations cannot be explicitly instantiated">;
+def err_expected_template_parameter : Error<"expected template parameter">;
 
 def err_missing_dependent_template_keyword : Error<
   "use 'template' keyword to treat '%0' as a dependent template name">;

@@ -35,6 +35,16 @@ extern "C" {
   #define CINDEX_LINKAGE
 #endif
 
+#ifdef __GNUC__
+  #define CINDEX_DEPRECATED __attribute__((deprecated))
+#else
+  #ifdef _MSC_VER
+    #define CINDEX_DEPRECATED __declspec(deprecated)
+  #else
+    #define CINDEX_DEPRECATED
+  #endif
+#endif
+
 /** \defgroup CINDEX libclang: C Interface to Clang
  *
  * The C Interface to Clang provides a relatively small API that exposes
@@ -830,14 +840,25 @@ CINDEX_LINKAGE CXString clang_getDiagnosticOption(CXDiagnostic Diag,
 CINDEX_LINKAGE unsigned clang_getDiagnosticCategory(CXDiagnostic);
 
 /**
- * \brief Retrieve the name of a particular diagnostic category.
+ * \brief Retrieve the name of a particular diagnostic category.  This
+ *  is now deprecated.  Use clang_getDiagnosticCategoryText()
+ *  instead.
  *
  * \param Category A diagnostic category number, as returned by 
  * \c clang_getDiagnosticCategory().
  *
  * \returns The name of the given diagnostic category.
  */
-CINDEX_LINKAGE CXString clang_getDiagnosticCategoryName(unsigned Category);
+CINDEX_DEPRECATED CINDEX_LINKAGE
+CXString clang_getDiagnosticCategoryName(unsigned Category);
+
+/**
+ * \brief Retrieve the diagnostic category text for a given diagnostic.
+ *
+ *
+ * \returns The text of the given diagnostic category.
+ */
+CINDEX_LINKAGE CXString clang_getDiagnosticCategoryText(CXDiagnostic);
   
 /**
  * \brief Determine the number of source ranges associated with the given
@@ -1048,7 +1069,16 @@ enum CXTranslationUnit_Flags {
    * Note: this is a *temporary* option that is available only while
    * we are testing C++ precompiled preamble support. It is deprecated.
    */
-  CXTranslationUnit_CXXChainedPCH = 0x20
+  CXTranslationUnit_CXXChainedPCH = 0x20,
+
+  /**
+   * \brief Used to indicate that function/method bodies should be skipped while
+   * parsing.
+   *
+   * This option can be used to search for declarations/definitions while
+   * ignoring the usages.
+   */
+  CXTranslationUnit_SkipFunctionBodies = 0x40
 };
 
 /**
@@ -2525,6 +2555,22 @@ CINDEX_LINKAGE long long clang_getEnumConstantDeclValue(CXCursor C);
 CINDEX_LINKAGE unsigned long long clang_getEnumConstantDeclUnsignedValue(CXCursor C);
 
 /**
+ * \brief Retrieve the number of non-variadic arguments associated with a given
+ * cursor.
+ *
+ * If a cursor that is not a function or method is passed in, -1 is returned.
+ */
+CINDEX_LINKAGE int clang_Cursor_getNumArguments(CXCursor C);
+
+/**
+ * \brief Retrieve the argument cursor of a function or method.
+ *
+ * If a cursor that is not a function or method is passed in or the index
+ * exceeds the number of arguments, an invalid cursor is returned.
+ */
+CINDEX_LINKAGE CXCursor clang_Cursor_getArgument(CXCursor C, unsigned i);
+
+/**
  * \determine Determine whether two CXTypes represent the same type.
  *
  * \returns non-zero if the CXTypes represent the same type and 
@@ -2598,9 +2644,9 @@ CINDEX_LINKAGE CXType clang_getResultType(CXType T);
 /**
  * \brief Retrieve the number of non-variadic arguments associated with a function type.
  *
- * If a non-function type is passed in, UINT_MAX is returned.
+ * If a non-function type is passed in, -1 is returned.
  */
-CINDEX_LINKAGE unsigned clang_getNumArgTypes(CXType T);
+CINDEX_LINKAGE int clang_getNumArgTypes(CXType T);
 
 /**
  * \brief Retrieve the type of an argument of a function type.

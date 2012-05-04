@@ -42,13 +42,13 @@ __RCSID("$NetBSD: vfscanf.c,v 1.41 2010/12/16 17:42:27 wiz Exp $");
 #endif
 #endif /* LIBC_SCCS and not lint */
 
+#include <stddef.h>
 #include "namespace.h"
 #include <assert.h>
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
 #include <wchar.h>

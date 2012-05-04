@@ -634,6 +634,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("objc_subscripting", LangOpts.ObjCNonFragileABI)
            .Case("objc_array_literals", LangOpts.ObjC2)
            .Case("objc_dictionary_literals", LangOpts.ObjC2)
+           .Case("objc_boxed_expressions", LangOpts.ObjC2)
            .Case("arc_cf_code_audited", true)
            // C11 features
            .Case("c_alignas", LangOpts.C11)
@@ -649,6 +650,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_auto_type", LangOpts.CPlusPlus0x)
            .Case("cxx_constexpr", LangOpts.CPlusPlus0x)
            .Case("cxx_decltype", LangOpts.CPlusPlus0x)
+           .Case("cxx_decltype_incomplete_return_types", LangOpts.CPlusPlus0x)
            .Case("cxx_default_function_template_args", LangOpts.CPlusPlus0x)
            .Case("cxx_defaulted_functions", LangOpts.CPlusPlus0x)
            .Case("cxx_delegating_constructors", LangOpts.CPlusPlus0x)

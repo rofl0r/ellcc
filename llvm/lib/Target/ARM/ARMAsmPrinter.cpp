@@ -728,8 +728,9 @@ void ARMAsmPrinter::emitAttributes() {
   if (Subtarget->hasNEON() && emitFPU) {
     /* NEON is not exactly a VFP architecture, but GAS emit one of
      * neon/neon-vfpv4/vfpv3/vfpv2 for .fpu parameters */
-    if (Subtarget->hasNEON2())
-      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon-vfpv4");
+    if (Subtarget->hasVFP4())
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch,
+                                     "neon-vfpv4");
     else
       AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon");
     /* If emitted for NEON, omit from VFP below, since you can have both
@@ -1975,10 +1976,10 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     {
       MCInst TmpInst;
-      TmpInst.setOpcode(ARM::tLDRr);
+      TmpInst.setOpcode(ARM::tLDRi);
       TmpInst.addOperand(MCOperand::CreateReg(ARM::R7));
       TmpInst.addOperand(MCOperand::CreateReg(SrcReg));
-      TmpInst.addOperand(MCOperand::CreateReg(0));
+      TmpInst.addOperand(MCOperand::CreateImm(0));
       // Predicate.
       TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
       TmpInst.addOperand(MCOperand::CreateReg(0));

@@ -429,7 +429,6 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::PrintDeclContext:       return "-print-decl-contexts";
   case frontend::PrintPreamble:          return "-print-preamble";
   case frontend::PrintPreprocessedInput: return "-E";
-  case frontend::PubnamesDump:           return "-pubnames-dump";
   case frontend::RewriteMacros:          return "-rewrite-macros";
   case frontend::RewriteObjC:            return "-rewrite-objc";
   case frontend::RewriteTest:            return "-rewrite-test";
@@ -740,6 +739,8 @@ static void LangOptsToArgs(const LangOptions &Opts, ToArgsList &Res) {
     Res.push_back("-fno-bitfield-type-alignment");
   if (Opts.PICLevel)
     Res.push_back("-pic-level", llvm::utostr(Opts.PICLevel));
+  if (Opts.PIELevel)
+    Res.push_back("-pie-level", llvm::utostr(Opts.PIELevel));
   if (Opts.ObjCGCBitmapPrint)
     Res.push_back("-print-ivar-layout");
   if (Opts.NoConstantCFStrings)
@@ -1367,8 +1368,6 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::PrintPreamble; break;
     case OPT_E:
       Opts.ProgramAction = frontend::PrintPreprocessedInput; break;
-    case OPT_pubnames_dump:
-      Opts.ProgramAction = frontend::PubnamesDump; break;
     case OPT_rewrite_macros:
       Opts.ProgramAction = frontend::RewriteMacros; break;
     case OPT_rewrite_objc:
@@ -1897,6 +1896,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.EmitAllDecls = Args.hasArg(OPT_femit_all_decls);
   Opts.PackStruct = Args.getLastArgIntValue(OPT_fpack_struct, 0, Diags);
   Opts.PICLevel = Args.getLastArgIntValue(OPT_pic_level, 0, Diags);
+  Opts.PIELevel = Args.getLastArgIntValue(OPT_pie_level, 0, Diags);
   Opts.Static = Args.hasArg(OPT_static_define);
   Opts.DumpRecordLayoutsSimple = Args.hasArg(OPT_fdump_record_layouts_simple);
   Opts.DumpRecordLayouts = Opts.DumpRecordLayoutsSimple 

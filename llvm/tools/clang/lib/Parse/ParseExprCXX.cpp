@@ -780,10 +780,13 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
     llvm::SmallVector<ParsedType, 2> DynamicExceptions;
     llvm::SmallVector<SourceRange, 2> DynamicExceptionRanges;
     ExprResult NoexceptExpr;
-    ESpecType = MaybeParseExceptionSpecification(ESpecRange,
-                                                 DynamicExceptions,
-                                                 DynamicExceptionRanges,
-                                                 NoexceptExpr);
+    CachedTokens *ExceptionSpecTokens;
+    ESpecType = tryParseExceptionSpecification(/*Delayed=*/false,
+                                               ESpecRange,
+                                               DynamicExceptions,
+                                               DynamicExceptionRanges,
+                                               NoexceptExpr,
+                                               ExceptionSpecTokens);
 
     if (ESpecType != EST_None)
       DeclEndLoc = ESpecRange.getEnd();
@@ -818,6 +821,7 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
                                            DynamicExceptions.size(),
                                            NoexceptExpr.isUsable() ?
                                              NoexceptExpr.get() : 0,
+                                           0,
                                            DeclLoc, DeclEndLoc, D,
                                            TrailingReturnType),
                   Attr, DeclEndLoc);
@@ -863,6 +867,7 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
                      /*ExceptionRanges=*/0,
                      /*NumExceptions=*/0,
                      /*NoexceptExpr=*/0,
+                     /*ExceptionSpecTokens=*/0,
                      DeclLoc, DeclEndLoc, D,
                      TrailingReturnType),
                   Attr, DeclEndLoc);
@@ -872,8 +877,6 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
   // FIXME: Rename BlockScope -> ClosureScope if we decide to continue using
   // it.
   unsigned ScopeFlags = Scope::BlockScope | Scope::FnScope | Scope::DeclScope;
-  if (getCurScope()->getFlags() & Scope::ThisScope)
-    ScopeFlags |= Scope::ThisScope;
   ParseScope BodyScope(this, ScopeFlags);
 
   Actions.ActOnStartOfLambdaDefinition(Intro, D, getCurScope());
@@ -1711,7 +1714,7 @@ bool Parser::ParseUnqualifiedIdTemplateId(CXXScopeSpec &SS,
     // Form a parsed representation of the template-id to be stored in the
     // UnqualifiedId.
     TemplateIdAnnotation *TemplateId
-      = TemplateIdAnnotation::Allocate(TemplateArgs.size());
+      = TemplateIdAnnotation::Allocate(TemplateArgs.size(), TemplateIds);
 
     if (Id.getKind() == UnqualifiedId::IK_Identifier) {
       TemplateId->Name = Id.Identifier;
@@ -1817,7 +1820,9 @@ bool Parser::ParseUnqualifiedIdOperator(CXXScopeSpec &SS, bool EnteringContext,
       bool isNew = Tok.getKind() == tok::kw_new;
       // Consume the 'new' or 'delete'.
       SymbolLocations[SymbolIdx++] = ConsumeToken();
-      if (Tok.is(tok::l_square)) {
+      // Check for array new/delete.
+      if (Tok.is(tok::l_square) &&
+          (!getLangOpts().CPlusPlus0x || NextToken().isNot(tok::l_square))) {
         // Consume the '[' and ']'.
         BalancedDelimiterTracker T(*this, tok::l_square);
         T.consumeOpen();
@@ -2346,6 +2351,10 @@ void Parser::ParseDirectNewDeclarator(Declarator &D) {
   // Parse the array dimensions.
   bool first = true;
   while (Tok.is(tok::l_square)) {
+    // An array-size expression can't start with a lambda.
+    if (CheckProhibitedCXX11Attribute())
+      continue;
+
     BalancedDelimiterTracker T(*this, tok::l_square);
     T.consumeOpen();
 
@@ -2360,13 +2369,16 @@ void Parser::ParseDirectNewDeclarator(Declarator &D) {
 
     T.consumeClose();
 
-    ParsedAttributes attrs(AttrFactory);
+    // Attributes here appertain to the array type. C++11 [expr.new]p5.
+    ParsedAttributes Attrs(AttrFactory);
+    MaybeParseCXX0XAttributes(Attrs);
+
     D.AddTypeInfo(DeclaratorChunk::getArray(0,
                                             /*static=*/false, /*star=*/false,
                                             Size.release(),
                                             T.getOpenLocation(),
                                             T.getCloseLocation()),
-                  attrs, T.getCloseLocation());
+                  Attrs, T.getCloseLocation());
 
     if (T.getCloseLocation().isInvalid())
       return;
@@ -2418,7 +2430,11 @@ Parser::ParseCXXDeleteExpression(bool UseGlobal, SourceLocation Start) {
 
   // Array delete?
   bool ArrayDelete = false;
-  if (Tok.is(tok::l_square)) {
+  if (Tok.is(tok::l_square) && NextToken().is(tok::r_square)) {
+    // FIXME: This could be the start of a lambda-expression. We should
+    // disambiguate this, but that will require arbitrary lookahead if
+    // the next token is '(':
+    //   delete [](int*){ /* ... */
     ArrayDelete = true;
     BalancedDelimiterTracker T(*this, tok::l_square);
 

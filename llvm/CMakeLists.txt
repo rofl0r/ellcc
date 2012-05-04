@@ -11,7 +11,7 @@ set(CMAKE_MODULE_PATH
   )
 
 set(LLVM_VERSION_MAJOR 3)
-set(LLVM_VERSION_MINOR 1)
+set(LLVM_VERSION_MINOR 2)
 
 set(PACKAGE_VERSION "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}svn")
 
@@ -396,7 +396,6 @@ add_subdirectory(utils/FileUpdate)
 add_subdirectory(utils/count)
 add_subdirectory(utils/not)
 add_subdirectory(utils/llvm-lit)
-add_subdirectory(utils/json-bench)
 add_subdirectory(utils/yaml-bench)
 
 add_subdirectory(projects)

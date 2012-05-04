@@ -31,10 +31,11 @@ IdentifierInfo *Parser::getSEHExceptKeyword() {
   return Ident__except;
 }
 
-Parser::Parser(Preprocessor &pp, Sema &actions)
+Parser::Parser(Preprocessor &pp, Sema &actions, bool SkipFunctionBodies)
   : PP(pp), Actions(actions), Diags(PP.getDiagnostics()),
     GreaterThanIsOperator(true), ColonIsSacred(false), 
-    InMessageExpression(false), TemplateParameterDepth(0) {
+    InMessageExpression(false), TemplateParameterDepth(0),
+    SkipFunctionBodies(SkipFunctionBodies) {
   Tok.setKind(tok::eof);
   Actions.CurScope = 0;
   NumCachedScopes = 0;
@@ -213,15 +214,14 @@ bool Parser::ExpectAndConsumeSemi(unsigned DiagID) {
 ///
 /// If SkipUntil finds the specified token, it returns true, otherwise it
 /// returns false.
-bool Parser::SkipUntil(const tok::TokenKind *Toks, unsigned NumToks,
-                       bool StopAtSemi, bool DontConsume,
-                       bool StopAtCodeCompletion) {
+bool Parser::SkipUntil(ArrayRef<tok::TokenKind> Toks, bool StopAtSemi,
+                       bool DontConsume, bool StopAtCodeCompletion) {
   // We always want this function to skip at least one token if the first token
   // isn't T and if not at EOF.
   bool isFirstTokenSkipped = true;
   while (1) {
     // If we found one of the tokens, stop and return true.
-    for (unsigned i = 0; i != NumToks; ++i) {
+    for (unsigned i = 0, NumToks = Toks.size(); i != NumToks; ++i) {
       if (Tok.is(Toks[i])) {
         if (DontConsume) {
           // Noop, don't consume the token.
@@ -397,6 +397,8 @@ Parser::~Parser() {
   PP.RemovePragmaHandler("STDC", FPContractHandler.get());
   FPContractHandler.reset();
   PP.clearCodeCompletionHandler();
+
+  assert(TemplateIds.empty() && "Still alive TemplateIdAnnotations around?");
 }
 
 /// Initialize - Warm up the parser.
@@ -470,10 +472,30 @@ void Parser::Initialize() {
   }
 }
 
+namespace {
+  /// \brief RAIIObject to destroy the contents of a SmallVector of
+  /// TemplateIdAnnotation pointers and clear the vector.
+  class DestroyTemplateIdAnnotationsRAIIObj {
+    SmallVectorImpl<TemplateIdAnnotation *> &Container;
+  public:
+    DestroyTemplateIdAnnotationsRAIIObj(SmallVectorImpl<TemplateIdAnnotation *>
+                                       &Container)
+      : Container(Container) {}
+
+    ~DestroyTemplateIdAnnotationsRAIIObj() {
+      for (SmallVectorImpl<TemplateIdAnnotation *>::iterator I =
+           Container.begin(), E = Container.end();
+           I != E; ++I)
+        (*I)->Destroy();
+      Container.clear();
+    }
+  };
+}
+
 /// ParseTopLevelDecl - Parse one top-level declaration, return whatever the
 /// action tells us to.  This returns true if the EOF was encountered.
 bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
-  DelayedCleanupPoint CleanupRAII(TopLevelDeclCleanupPool);
+  DestroyTemplateIdAnnotationsRAIIObj CleanupRAII(TemplateIds);
 
   // Skip over the EOF token, flagging end of previous input for incremental 
   // processing
@@ -543,7 +565,7 @@ void Parser::ParseTranslationUnit() {
 Parser::DeclGroupPtrTy
 Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
                                  ParsingDeclSpec *DS) {
-  DelayedCleanupPoint CleanupRAII(TopLevelDeclCleanupPool);
+  DestroyTemplateIdAnnotationsRAIIObj CleanupRAII(TemplateIds);
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
 
   if (PP.isCodeCompletionReached()) {
@@ -1111,7 +1133,7 @@ void Parser::ParseKNRParamDeclarations(Declarator &D) {
     if (Tok.is(tok::semi)) {
       ConsumeToken();
     } else {
-      Diag(Tok, diag::err_parse_error);
+      Diag(Tok, diag::err_expected_semi_declaration);
       // Skip to end of block or statement
       SkipUntil(tok::semi, true);
       if (Tok.is(tok::semi))
@@ -1201,8 +1223,6 @@ TemplateIdAnnotation *Parser::takeTemplateIdAnnotation(const Token &tok) {
   assert(tok.is(tok::annot_template_id) && "Expected template-id token");
   TemplateIdAnnotation *
       Id = static_cast<TemplateIdAnnotation *>(tok.getAnnotationValue());
-  TopLevelDeclCleanupPool.delayMemberFunc< TemplateIdAnnotation,
-                                          &TemplateIdAnnotation::Destroy>(Id);
   return Id;
 }
 
@@ -1681,9 +1701,9 @@ bool Parser::BalancedDelimiterTracker::diagnoseMissingClose() {
   assert(!P.Tok.is(Close) && "Should have consumed closing delimiter");
   
   const char *LHSName = "unknown";
-  diag::kind DID = diag::err_parse_error;
+  diag::kind DID;
   switch (Close) {
-  default: break;
+  default: llvm_unreachable("Unexpected balanced token");
   case tok::r_paren : LHSName = "("; DID = diag::err_expected_rparen; break;
   case tok::r_brace : LHSName = "{"; DID = diag::err_expected_rbrace; break;
   case tok::r_square: LHSName = "["; DID = diag::err_expected_rsquare; break;

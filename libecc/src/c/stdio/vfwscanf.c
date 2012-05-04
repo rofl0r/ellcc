@@ -47,11 +47,11 @@ __RCSID("$NetBSD: vfwscanf.c,v 1.6 2009/02/21 17:20:01 christos Exp $");
 #endif /* LIBC_SCCS and not lint */
 
 #include "namespace.h"
+#include <stddef.h>
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
 #include <limits.h>

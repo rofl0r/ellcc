@@ -444,6 +444,13 @@ def note_receiver_is_id : Note<
   "receiver is treated with 'id' type for purpose of method lookup">;
 def note_suppressed_class_declare : Note<
   "class with specified objc_requires_property_definitions attribute is declared here">;
+def err_objc_root_class_subclass : Error<
+  "objc_root_class attribute may only be specified on a root class declaration">;
+def warn_objc_root_class_missing : Warning<
+	"class %0 defined without specifying a base class">,
+  InGroup<ObjCRootClass>, DefaultIgnore;
+def note_objc_needs_superclass : Note<
+  "add a super class to fix this problem">;
 def warn_dup_category_def : Warning<
   "duplicate definition of category %1 on interface %0">;
 def err_conflicting_super_class : Error<"conflicting super class name %0">;
@@ -653,7 +660,8 @@ def warn_arc_perform_selector_leaks : Warning<
 def err_gc_weak_property_strong_type : Error<
   "weak attribute declared on a __strong type property in GC mode">;
 def warn_receiver_is_weak : Warning <
-  "weak receiver may be unpredictably null in ARC mode">,
+  "weak %select{receiver|property|implicit property}0 may be "
+  "unpredictably null in ARC mode">,
   InGroup<DiagGroup<"receiver-is-weak">>, DefaultIgnore;
 
 def error_synthesized_ivar_yet_not_supported : Error<
@@ -877,8 +885,13 @@ def note_access_natural : Note<
 def note_access_constrained_by_path : Note<
   "constrained by %select{|implicitly }1%select{private|protected}0"
   " inheritance here">;
-def note_access_protected_restricted : Note<
-  "object type %select{|%1 }0must derive from context type %2">;
+def note_access_protected_restricted_noobject : Note<
+  "must name member using the type of the current context %0">;
+def note_access_protected_restricted_ctordtor : Note<
+  "protected %select{constructor|destructor}0 can only be used to "
+  "%select{construct|destroy}0 a base class subobject">;
+def note_access_protected_restricted_object : Note<
+  "can only access this member on an object of type %0">;
 def warn_cxx98_compat_sfinae_access_control : Warning<
   "substitution failure due to access control is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore, NoSFINAE;
@@ -1506,6 +1519,10 @@ def err_undeclared_nsnumber : Error<
   "NSNumber must be available to use Objective-C literals">;
 def err_invalid_nsnumber_type : Error<
   "%0 is not a valid literal type for NSNumber">;
+def err_undeclared_nsstring : Error<
+  "cannot box a string value because NSString has not been declared">;
+def err_objc_illegal_boxed_expression_type : Error<
+  "Illegal type %0 used in a boxed expression">;
 def err_undeclared_nsarray : Error<
   "NSArray must be available to use Objective-C array literals">;
 def err_undeclared_nsdictionary : Error<
@@ -1548,6 +1565,9 @@ def warn_redeclaration_without_attribute_prev_attribute_ignored : Warning<
 def warn_attribute_ignored : Warning<"%0 attribute ignored">;
 def warn_unknown_attribute_ignored : Warning<
   "unknown attribute %0 ignored">, InGroup<UnknownAttributes>;
+def warn_attribute_invalid_on_stmt : Warning<
+  "attribute %0 cannot be specified on a statement">,
+  InGroup<IgnoredAttributes>;
 def warn_declspec_attribute_ignored : Warning<
   "attribute %0 is ignored, place it after \"%select{class|struct|union|enum}1\" to apply attribute to type declaration">, InGroup<IgnoredAttributes>;
 def warn_attribute_precede_definition : Warning<
@@ -1637,66 +1657,79 @@ def warn_availability_version_ordering : Warning<
   "attribute ignored">;
   
 // Thread Safety Attributes
-// Errors when parsing the attributes
+def warn_thread_attribute_ignored : Warning<
+  "ignoring %0 attribute because its argument is invalid">,
+  InGroup<ThreadSafetyAttributes>, DefaultIgnore;
+def warn_thread_attribute_argument_not_lockable : Warning<
+  "%0 attribute requires arguments whose type is annotated "
+  "with 'lockable' attribute; type here is '%1'">,
+  InGroup<ThreadSafetyAttributes>, DefaultIgnore;
+def warn_thread_attribute_argument_not_class : Warning<
+  "%0 attribute requires arguments that are class type or point to"
+  " class type; type here is '%1'">,
+  InGroup<ThreadSafetyAttributes>, DefaultIgnore;  
+def warn_thread_attribute_decl_not_lockable : Warning<
+  "%0 attribute can only be applied in a context annotated "
+  "with 'lockable' attribute">,
+  InGroup<ThreadSafetyAttributes>, DefaultIgnore;
+def warn_thread_attribute_decl_not_pointer : Warning<
+  "'%0' only applies to pointer types; type here is %1">,
+  InGroup<ThreadSafetyAttributes>, DefaultIgnore;
 def err_attribute_argument_out_of_range : Error<
   "%0 attribute parameter %1 is out of bounds: "
   "%plural{0:no parameters to index into|"
   "1:can only be 1, since there is one parameter|"
   ":must be between 1 and %2}2">;
-def err_attribute_argument_not_lockable : Error<
-  "%0 attribute requires arguments whose type is annotated "
-  "with 'lockable' attribute">;
-def err_attribute_decl_not_lockable : Error<
-  "%0 attribute can only be applied in a context annotated "
-  "with 'lockable' attribute">;
+
+// Thread Safety Analysis   
 def warn_unlock_but_no_lock : Warning<
   "unlocking '%0' that was not locked">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_double_lock : Warning<
   "locking '%0' that is already locked">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_no_unlock : Warning<
   "mutex '%0' is still locked at the end of function">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 // FIXME: improve the error message about locks not in scope
 def warn_lock_some_predecessors : Warning<
   "mutex '%0' is not locked on every path through here">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_expecting_lock_held_on_loop : Warning<
   "expecting mutex '%0' to be locked at start of each loop">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def note_locked_here : Note<"mutex acquired here">;
 def warn_lock_exclusive_and_shared : Warning<
   "mutex '%0' is locked exclusively and shared in the same scope">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def note_lock_exclusive_and_shared : Note<
   "the other lock of mutex '%0' is here">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_variable_requires_lock : Warning<
   "%select{reading|writing}2 variable '%0' requires locking "
   "%select{'%1'|'%1' exclusively}2">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_var_deref_requires_lock : Warning<
   "%select{reading|writing}2 the value pointed to by '%0' requires locking "
   "%select{'%1'|'%1' exclusively}2">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_variable_requires_any_lock : Warning<
   "%select{reading|writing}1 variable '%0' requires locking "
   "%select{any mutex|any mutex exclusively}1">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_var_deref_requires_any_lock : Warning<
   "%select{reading|writing}1 the value pointed to by '%0' requires locking "
   "%select{any mutex|any mutex exclusively}1">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_fun_requires_lock : Warning<
   "calling function '%0' requires %select{shared|exclusive}2 lock on '%1'">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_fun_excludes_mutex : Warning<
   "cannot call function '%0' while mutex '%1' is locked">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 def warn_cannot_resolve_lock : Warning<
   "cannot resolve lock expression">,
-  InGroup<ThreadSafety>, DefaultIgnore;
+  InGroup<ThreadSafetyAnalysis>, DefaultIgnore;
 
 
 def warn_impcast_vector_scalar : Warning<
@@ -2326,6 +2359,13 @@ def err_template_arg_not_integral_or_enumeral : Error<
 def err_template_arg_not_ice : Error<
   "non-type template argument of type %0 is not an integral constant "
   "expression">;
+def err_template_arg_not_address_constant : Error<
+  "non-type template argument of type %0 is not a constant expression">;
+def err_template_arg_untyped_null_constant : Error<
+  "null non-type template argument must be cast to template parameter type %0">;
+def err_template_arg_wrongtype_null_constant : Error<
+ "null non-type template argument of type %0 does not match template parameter "
+ "of type %1">;
 def err_deduced_non_type_template_arg_type_mismatch : Error<
   "deduced non-type template argument does not have the same type as the "
   "its corresponding template parameter (%0 vs %1)">;
@@ -2555,6 +2595,8 @@ def note_template_enum_def_here : Note<
   "in instantiation of enumeration %q0 requested here">;
 def note_template_type_alias_instantiation_here : Note<
   "in instantiation of template type alias %0 requested here">;
+def note_template_exception_spec_instantiation_here : Note<
+  "in instantiation of exception specification for %0 requested here">;
   
 def note_default_arg_instantiation_here : Note<
   "in instantiation of default argument for '%0' required here">;
@@ -3035,6 +3077,15 @@ def ext_complex_component_init : Extension<
 def err_empty_scalar_initializer : Error<"scalar initializer cannot be empty">;
 def warn_cxx98_compat_empty_scalar_initializer : Warning<
   "scalar initialized from empty initializer list is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_reference_list_init : Warning<
+  "reference initialized from initializer list is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_initializer_list_init : Warning<
+  "initialization of initializer_list object is incompatible with C++98">,
+  InGroup<CXX98Compat>, DefaultIgnore;
+def warn_cxx98_compat_ctor_list_init : Warning<
+  "constructor call from initializer list is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_illegal_initializer : Error<
   "illegal initializer (only variables can be initialized)">;
@@ -3770,6 +3821,9 @@ def warn_null_in_comparison_operation : Warning<
 
 def err_invalid_this_use : Error<
   "invalid use of 'this' outside of a non-static member function">;
+def err_this_static_member_func : Error<
+  "'this' cannot be%select{| implicitly}0 used in a static member function "
+  "declaration">;
 def err_invalid_member_use_in_static_method : Error<
   "invalid use of member %0 in static member function">;
 def err_invalid_qualified_function_type : Error<
@@ -3879,7 +3933,7 @@ def err_nosetter_property_incdec : Error<
 def err_nogetter_property_compound_assignment : Error<
   "a getter method is needed to perform a compound assignment on a property">;
 def err_nogetter_property_incdec : Error<
-  "no getter method %1 for %select{increment|decrement} of property">;
+  "no getter method %1 for %select{increment|decrement}0 of property">;
 def error_no_subobject_property_setting : Error<
   "expression is not assignable">;
 def err_qualified_objc_access : Error<
@@ -4268,8 +4322,8 @@ def err_typecheck_deleted_function : Error<
 def err_expected_class_or_namespace : Error<"expected a class or namespace">;
 def err_expected_class : Error<"%0 is not a class%select{ or namespace|, "
   "namespace, or scoped enumeration}1">;
-def err_invalid_declarator_scope : Error<
-  "definition or redeclaration of %0 not in a namespace enclosing %1">;
+def err_invalid_declarator_scope : Error<"cannot define or redeclare %0 here "
+  "because namespace %1 does not enclose namespace %2">;
 def err_invalid_declarator_global_scope : Error<
   "definition or redeclaration of %0 cannot name the global scope">;
 def err_invalid_declarator_in_function : Error<
@@ -4342,22 +4396,22 @@ def ext_typecheck_convert_pointer_int : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1; "
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "with an expression of type|to parameter of type|to type}2 %1"
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IntConversion>;
 def ext_typecheck_convert_int_pointer : ExtWarn<
   "incompatible integer to pointer conversion "
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
-  "with an expression of type|to parameter of type|to type}2 %1; "
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "with an expression of type|to parameter of type|to type}2 %1"
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IntConversion>;
 def ext_typecheck_convert_pointer_void_func : Extension<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4378,10 +4432,10 @@ def ext_typecheck_convert_incompatible_pointer : ExtWarn<
   " %0 "
   "%select{from|to parameter of type|from a function with result type|to type|"
   "with an expression of type|to parameter of type|to type}2 %1"
-  "%select{|dereference with *|"
-  "take the address with &|"
-  "remove *|"
-  "remove &}3">,
+  "%select{|; dereference with *|"
+  "; take the address with &|"
+  "; remove *|"
+  "; remove &}3">,
   InGroup<IncompatiblePointerTypes>;
 def ext_typecheck_convert_discards_qualifiers : ExtWarn<
   "%select{assigning to|passing|returning|converting|initializing|sending|casting}2"
@@ -4497,12 +4551,15 @@ def err_atomic_builtin_pointer_size : Error<
 def err_atomic_op_needs_atomic : Error<
   "first argument to atomic operation must be a pointer to _Atomic "
   "type (%0 invalid)">;
+def err_atomic_op_needs_trivial_copy : Error<
+  "first argument to atomic operation must be a pointer to a trivially-copyable"
+  " type (%0 invalid)">;
 def err_atomic_op_needs_atomic_int_or_ptr : Error<
-  "first argument to atomic operation must be a pointer to atomic "
-  "integer or pointer (%0 invalid)">;
-def err_atomic_op_logical_needs_atomic_int : Error<
-  "first argument to logical atomic operation must be a pointer to atomic "
-  "integer (%0 invalid)">;
+  "first argument to atomic operation must be a pointer to %select{|atomic }0"
+  "integer or pointer (%1 invalid)">;
+def err_atomic_op_bitwise_needs_atomic_int : Error<
+  "first argument to bitwise atomic operation must be a pointer to "
+  "%select{|atomic }0integer (%1 invalid)">;
 
 def err_deleted_function_use : Error<"attempt to use a deleted function">;
 

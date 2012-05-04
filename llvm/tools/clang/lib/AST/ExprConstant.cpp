@@ -934,6 +934,7 @@ static bool IsGlobalLValue(APValue::LValueBase B) {
   case Expr::ObjCStringLiteralClass:
   case Expr::ObjCEncodeExprClass:
   case Expr::CXXTypeidExprClass:
+  case Expr::CXXUuidofExprClass:
     return true;
   case Expr::CallExprClass:
     return IsStringLiteralCall(cast<CallExpr>(E));
@@ -1491,15 +1492,19 @@ static unsigned getBaseIndex(const CXXRecordDecl *Derived,
   llvm_unreachable("base class missing from derived class's bases list");
 }
 
-/// Extract the value of a character from a string literal.
+/// Extract the value of a character from a string literal. CharType is used to
+/// determine the expected signedness of the result -- a string literal used to
+/// initialize an array of 'signed char' or 'unsigned char' might contain chars
+/// of the wrong signedness.
 static APSInt ExtractStringLiteralCharacter(EvalInfo &Info, const Expr *Lit,
-                                            uint64_t Index) {
+                                            uint64_t Index, QualType CharType) {
   // FIXME: Support PredefinedExpr, ObjCEncodeExpr, MakeStringConstant
   const StringLiteral *S = dyn_cast<StringLiteral>(Lit);
   assert(S && "unexpected string literal expression kind");
+  assert(CharType->isIntegerType() && "unexpected character type");
 
   APSInt Value(S->getCharByteWidth() * Info.Ctx.getCharWidth(),
-    Lit->getType()->getArrayElementTypeNoTypeQual()->isUnsignedIntegerType());
+               CharType->isUnsignedIntegerType());
   if (Index < S->getLength())
     Value = S->getCodeUnit(Index);
   return Value;
@@ -1546,7 +1551,7 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
         assert(I == N - 1 && "extracting subobject of character?");
         assert(!O->hasLValuePath() || O->getLValuePath().empty());
         Obj = APValue(ExtractStringLiteralCharacter(
-          Info, O->getLValueBase().get<const Expr*>(), Index));
+          Info, O->getLValueBase().get<const Expr*>(), Index, SubType));
         return true;
       } else if (O->getArrayInitializedElts() > Index)
         O = &O->getArrayInitializedElt(Index);
@@ -1743,8 +1748,10 @@ static bool HandleLValueToRValueConversion(EvalInfo &Info, const Expr *Conv,
     // parameters are constant expressions even if they're non-const.
     // In C, such things can also be folded, although they are not ICEs.
     const VarDecl *VD = dyn_cast<VarDecl>(D);
-    if (const VarDecl *VDef = VD->getDefinition(Info.Ctx))
-      VD = VDef;
+    if (VD) {
+      if (const VarDecl *VDef = VD->getDefinition(Info.Ctx))
+        VD = VDef;
+    }
     if (!VD || VD->isInvalidDecl()) {
       Info.Diag(Conv);
       return false;
@@ -2866,6 +2873,7 @@ public:
   bool VisitStringLiteral(const StringLiteral *E) { return Success(E); }
   bool VisitObjCEncodeExpr(const ObjCEncodeExpr *E) { return Success(E); }
   bool VisitCXXTypeidExpr(const CXXTypeidExpr *E);
+  bool VisitCXXUuidofExpr(const CXXUuidofExpr *E);
   bool VisitArraySubscriptExpr(const ArraySubscriptExpr *E);
   bool VisitUnaryDeref(const UnaryOperator *E);
   bool VisitUnaryReal(const UnaryOperator *E);
@@ -2971,6 +2979,10 @@ bool LValueExprEvaluator::VisitCXXTypeidExpr(const CXXTypeidExpr *E) {
   return Success(E);
 }
 
+bool LValueExprEvaluator::VisitCXXUuidofExpr(const CXXUuidofExpr *E) {
+  return Success(E);
+} 
+
 bool LValueExprEvaluator::VisitMemberExpr(const MemberExpr *E) {
   // Handle static data members.
   if (const VarDecl *VD = dyn_cast<VarDecl>(E->getMemberDecl())) {
@@ -3061,7 +3073,7 @@ public:
   bool VisitUnaryAddrOf(const UnaryOperator *E);
   bool VisitObjCStringLiteral(const ObjCStringLiteral *E)
       { return Success(E); }
-  bool VisitObjCNumericLiteral(const ObjCNumericLiteral *E)
+  bool VisitObjCBoxedExpr(const ObjCBoxedExpr *E)
       { return Success(E); }    
   bool VisitAddrLabelExpr(const AddrLabelExpr *E)
       { return Success(E); }
@@ -3176,6 +3188,7 @@ bool PointerExprEvaluator::VisitCastExpr(const CastExpr* E) {
     return HandleBaseToDerivedCast(Info, E, Result);
 
   case CK_NullToPointer:
+    VisitIgnoredValue(E->getSubExpr());
     return ZeroInitialization(E);
 
   case CK_IntegralToPointer: {
@@ -3274,6 +3287,7 @@ bool MemberPointerExprEvaluator::VisitCastExpr(const CastExpr *E) {
     return ExprEvaluatorBaseTy::VisitCastExpr(E);
 
   case CK_NullToMemberPointer:
+    VisitIgnoredValue(E->getSubExpr());
     return ZeroInitialization(E);
 
   case CK_BaseToDerivedMemberPointer: {
@@ -3845,8 +3859,7 @@ bool ArrayExprEvaluator::VisitInitListExpr(const InitListExpr *E) {
 
   // C++11 [dcl.init.string]p1: A char array [...] can be initialized by [...]
   // an appropriately-typed string literal enclosed in braces.
-  if (E->getNumInits() == 1 && E->getInit(0)->isGLValue() &&
-      Info.Ctx.hasSameUnqualifiedType(E->getType(), E->getInit(0)->getType())) {
+  if (E->isStringLiteralInit()) {
     LValue LV;
     if (!EvaluateLValue(E->getInit(0), LV, Info))
       return false;
@@ -4302,7 +4315,7 @@ bool IntExprEvaluator::TryEvaluateBuiltinObjectSize(const CallExpr *E) {
 }
 
 bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
-  switch (E->isBuiltinCall()) {
+  switch (unsigned BuiltinOp = E->isBuiltinCall()) {
   default:
     return ExprEvaluatorBaseTy::VisitCallExpr(E);
 
@@ -4361,7 +4374,9 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
       
     return Error(E);
 
-  case Builtin::BI__atomic_is_lock_free: {
+  case Builtin::BI__atomic_always_lock_free:
+  case Builtin::BI__atomic_is_lock_free:
+  case Builtin::BI__c11_atomic_is_lock_free: {
     APSInt SizeVal;
     if (!EvaluateInteger(E->getArg(0), SizeVal, Info))
       return false;
@@ -4377,32 +4392,31 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
 
     // Check power-of-two.
     CharUnits Size = CharUnits::fromQuantity(SizeVal.getZExtValue());
-    if (!Size.isPowerOfTwo())
-#if 0
-      // FIXME: Suppress this folding until the ABI for the promotion width
-      // settles.
-      return Success(0, E);
-#else
-      return Error(E);
-#endif
+    if (Size.isPowerOfTwo()) {
+      // Check against inlining width.
+      unsigned InlineWidthBits =
+          Info.Ctx.getTargetInfo().getMaxAtomicInlineWidth();
+      if (Size <= Info.Ctx.toCharUnitsFromBits(InlineWidthBits)) {
+        if (BuiltinOp == Builtin::BI__c11_atomic_is_lock_free ||
+            Size == CharUnits::One() ||
+            E->getArg(1)->isNullPointerConstant(Info.Ctx,
+                                                Expr::NPC_NeverValueDependent))
+          // OK, we will inline appropriately-aligned operations of this size,
+          // and _Atomic(T) is appropriately-aligned.
+          return Success(1, E);
 
-#if 0
-    // Check against promotion width.
-    // FIXME: Suppress this folding until the ABI for the promotion width
-    // settles.
-    unsigned PromoteWidthBits =
-        Info.Ctx.getTargetInfo().getMaxAtomicPromoteWidth();
-    if (Size > Info.Ctx.toCharUnitsFromBits(PromoteWidthBits))
-      return Success(0, E);
-#endif
+        QualType PointeeType = E->getArg(1)->IgnoreImpCasts()->getType()->
+          castAs<PointerType>()->getPointeeType();
+        if (!PointeeType->isIncompleteType() &&
+            Info.Ctx.getTypeAlignInChars(PointeeType) >= Size) {
+          // OK, we will inline operations on this object.
+          return Success(1, E);
+        }
+      }
+    }
 
-    // Check against inlining width.
-    unsigned InlineWidthBits =
-        Info.Ctx.getTargetInfo().getMaxAtomicInlineWidth();
-    if (Size <= Info.Ctx.toCharUnitsFromBits(InlineWidthBits))
-      return Success(1, E);
-
-    return Error(E);
+    return BuiltinOp == Builtin::BI__atomic_always_lock_free ?
+        Success(0, E) : Error(E);
   }
   }
 }
@@ -5074,14 +5088,37 @@ bool IntExprEvaluator::VisitBinaryOperator(const BinaryOperator *E) {
         }
       }
 
+      // The comparison here must be unsigned, and performed with the same
+      // width as the pointer.
+      unsigned PtrSize = Info.Ctx.getTypeSize(LHSTy);
+      uint64_t CompareLHS = LHSOffset.getQuantity();
+      uint64_t CompareRHS = RHSOffset.getQuantity();
+      assert(PtrSize <= 64 && "Unexpected pointer width");
+      uint64_t Mask = ~0ULL >> (64 - PtrSize);
+      CompareLHS &= Mask;
+      CompareRHS &= Mask;
+
+      // If there is a base and this is a relational operator, we can only
+      // compare pointers within the object in question; otherwise, the result
+      // depends on where the object is located in memory.
+      if (!LHSValue.Base.isNull() && E->isRelationalOp()) {
+        QualType BaseTy = getType(LHSValue.Base);
+        if (BaseTy->isIncompleteType())
+          return Error(E);
+        CharUnits Size = Info.Ctx.getTypeSizeInChars(BaseTy);
+        uint64_t OffsetLimit = Size.getQuantity();
+        if (CompareLHS > OffsetLimit || CompareRHS > OffsetLimit)
+          return Error(E);
+      }
+
       switch (E->getOpcode()) {
       default: llvm_unreachable("missing comparison operator");
-      case BO_LT: return Success(LHSOffset < RHSOffset, E);
-      case BO_GT: return Success(LHSOffset > RHSOffset, E);
-      case BO_LE: return Success(LHSOffset <= RHSOffset, E);
-      case BO_GE: return Success(LHSOffset >= RHSOffset, E);
-      case BO_EQ: return Success(LHSOffset == RHSOffset, E);
-      case BO_NE: return Success(LHSOffset != RHSOffset, E);
+      case BO_LT: return Success(CompareLHS < CompareRHS, E);
+      case BO_GT: return Success(CompareLHS > CompareRHS, E);
+      case BO_LE: return Success(CompareLHS <= CompareRHS, E);
+      case BO_GE: return Success(CompareLHS >= CompareRHS, E);
+      case BO_EQ: return Success(CompareLHS == CompareRHS, E);
+      case BO_NE: return Success(CompareLHS != CompareRHS, E);
       }
     }
   }
@@ -6464,7 +6501,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::CXXDependentScopeMemberExprClass:
   case Expr::UnresolvedMemberExprClass:
   case Expr::ObjCStringLiteralClass:
-  case Expr::ObjCNumericLiteralClass:
+  case Expr::ObjCBoxedExprClass:
   case Expr::ObjCArrayLiteralClass:
   case Expr::ObjCDictionaryLiteralClass:
   case Expr::ObjCEncodeExprClass:

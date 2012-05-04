@@ -2877,7 +2877,7 @@ static void TryConstructorInitialization(Sema &S,
 
   // The type we're constructing needs to be complete.
   if (S.RequireCompleteType(Kind.getLocation(), DestType, 0)) {
-    Sequence.SetFailed(InitializationSequence::FK_Incomplete);
+    Sequence.setIncompleteTypeFailure(DestType);
     return;
   }
 
@@ -3109,7 +3109,7 @@ static void TryListInitialization(Sema &S,
   }
   if (DestType->isRecordType()) {
     if (S.RequireCompleteType(InitList->getLocStart(), DestType, S.PDiag())) {
-      Sequence.SetFailed(InitializationSequence::FK_Incomplete);
+      Sequence.setIncompleteTypeFailure(DestType);
       return;
     }
 
@@ -4584,7 +4584,7 @@ static void CheckCXX98CompatAccessibleCopy(Sema &S,
   switch (OR) {
   case OR_Success:
     S.CheckConstructorAccess(Loc, cast<CXXConstructorDecl>(Best->Function),
-                             Best->FoundDecl.getAccess(), Diag);
+                             Entity, Best->FoundDecl.getAccess(), Diag);
     // FIXME: Check default arguments as far as that's possible.
     break;
 
@@ -4815,6 +4815,17 @@ InitializationSequence::Perform(Sema &S,
   // No steps means no initialization.
   if (Steps.empty())
     return S.Owned((Expr *)0);
+
+  if (S.getLangOpts().CPlusPlus0x && Entity.getType()->isReferenceType() &&
+      Args.size() == 1 && isa<InitListExpr>(Args.get()[0]) &&
+      Entity.getKind() != InitializedEntity::EK_Parameter) {
+    // Produce a C++98 compatibility warning if we are initializing a reference
+    // from an initializer list. For parameters, we produce a better warning
+    // elsewhere.
+    Expr *Init = Args.get()[0];
+    S.Diag(Init->getLocStart(), diag::warn_cxx98_compat_reference_list_init)
+      << Init->getSourceRange();
+  }
 
   QualType DestType = Entity.getType().getNonReferenceType();
   // FIXME: Ugly hack around the fact that Entity.getType() is not
@@ -5153,6 +5164,8 @@ InitializationSequence::Perform(Sema &S,
                                         Entity.getType().getNonReferenceType());
       bool UseTemporary = Entity.getType()->isReferenceType();
       InitListExpr *InitList = cast<InitListExpr>(CurInit.get());
+      S.Diag(InitList->getExprLoc(), diag::warn_cxx98_compat_ctor_list_init)
+        << InitList->getSourceRange();
       MultiExprArg Arg(InitList->getInits(), InitList->getNumInits());
       CurInit = PerformConstructorInitialization(S, UseTemporary ? TempEntity :
                                                                    Entity,
@@ -5330,6 +5343,8 @@ InitializationSequence::Perform(Sema &S,
       }
 
       InitListExpr *ILE = cast<InitListExpr>(CurInit.take());
+      S.Diag(ILE->getExprLoc(), diag::warn_cxx98_compat_initializer_list_init)
+        << ILE->getSourceRange();
       unsigned NumInits = ILE->getNumInits();
       SmallVector<Expr*, 16> Converted(NumInits);
       InitializedEntity HiddenArray = InitializedEntity::InitializeTemporary(
@@ -5687,7 +5702,7 @@ bool InitializationSequence::Diagnose(Sema &S,
     break;
 
   case FK_Incomplete:
-    S.RequireCompleteType(Kind.getLocation(), DestType,
+    S.RequireCompleteType(Kind.getLocation(), FailedIncompleteType,
                           diag::err_init_incomplete_type);
     break;
 

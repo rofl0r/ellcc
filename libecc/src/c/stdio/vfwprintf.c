@@ -49,6 +49,7 @@ __RCSID("$NetBSD: vfwprintf.c,v 1.23 2010/12/16 17:42:27 wiz Exp $");
  */
 
 #include "namespace.h"
+#include <stddef.h>
 #include <sys/types.h>
 
 #include <assert.h>
@@ -56,7 +57,6 @@ __RCSID("$NetBSD: vfwprintf.c,v 1.23 2010/12/16 17:42:27 wiz Exp $");
 #include <limits.h>
 #include <locale.h>
 #include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

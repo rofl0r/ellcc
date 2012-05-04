@@ -2,6 +2,7 @@
 
 // CHECK: @_ZZ1hvE1i = internal global i32 0, align 4
 // CHECK: @base_req = global [4 x i8] c"foo\00", align 1
+// CHECK: @base_req_uchar = global [4 x i8] c"bar\00", align 1
 
 // CHECK: @_ZZN5test31BC1EvE1u = internal global { i8, [3 x i8] } { i8 97, [3 x i8] undef }, align 4
 // CHECK: @_ZZN5test1L6getvarEiE3var = internal constant [4 x i32] [i32 1, i32 0, i32 2, i32 4], align 16
@@ -17,7 +18,7 @@ void f() {
   // CHECK: load atomic i8* bitcast (i64* @_ZGVZ1fvE1a to i8*) acquire, align 1
   // CHECK: call i32 @__cxa_guard_acquire
   // CHECK: call void @_ZN1AC1Ev
-  // CHECK: call i32 @__cxa_atexit(void (i8*)* bitcast (void (%struct.A*)* @_ZN1AD1Ev to void (i8*)*), i8* getelementptr inbounds (%struct.A* @_ZZ1fvE1a, i32 0, i32 0), i8* bitcast (i8** @__dso_handle to i8*))
+  // CHECK: call i32 @__cxa_atexit(void (i8*)* bitcast (void (%struct.A*)* @_ZN1AD1Ev to void (i8*)*), i8* getelementptr inbounds (%struct.A* @_ZZ1fvE1a, i32 0, i32 0), i8* @__dso_handle)
   // CHECK: call void @__cxa_guard_release
   static A a;
 }
@@ -64,6 +65,7 @@ namespace test1 {
 
 // Make sure we emit the initializer correctly for the following:
 char base_req[] = { "foo" };
+unsigned char base_req_uchar[] = { "bar" };
 
 namespace union_static_local {
   // CHECK: define internal void @_ZZN18union_static_local4testEvEN1c4mainEv

@@ -53,7 +53,7 @@ MipsSubtarget::MipsSubtarget(const std::string &TT, const std::string &CPU,
 
   // Is the target system Linux ?
   if (TT.find("linux") == std::string::npos)
-    ; // RICH: This breaks sa: IsLinux = false;
+    {} // RICH: This breaks sa: IsLinux = false;
 }
 
 bool

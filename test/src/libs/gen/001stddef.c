@@ -1,5 +1,5 @@
-#include <ecc_test.h>
 #include <stddef.h>
+#include <ecc_test.h>
 
 TEST_GROUP(Stddef)
     TEST_TRACE(C99 7.17/2)

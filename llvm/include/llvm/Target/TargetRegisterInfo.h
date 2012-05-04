@@ -202,6 +202,13 @@ struct TargetRegisterInfoDesc {
   bool inAllocatableClass;      // Register belongs to an allocatable regclass.
 };
 
+/// Each TargetRegisterClass has a per register weight, and weight
+/// limit which must be less than the limits of its pressure sets.
+struct RegClassWeight {
+  unsigned RegWeight;
+  unsigned WeightLimit;
+};
+
 /// TargetRegisterInfo base class - We assume that the target defines a static
 /// array of TargetRegisterDesc objects that represent all of the machine
 /// registers that the target has.  As such, we simply have to track a pointer
@@ -500,10 +507,32 @@ public:
   /// getRegPressureLimit - Return the register pressure "high water mark" for
   /// the specific register class. The scheduler is in high register pressure
   /// mode (for the specific register class) if it goes over the limit.
+  ///
+  /// Note: this is the old register pressure model that relies on a manually
+  /// specified representative register class per value type.
   virtual unsigned getRegPressureLimit(const TargetRegisterClass *RC,
                                        MachineFunction &MF) const {
     return 0;
   }
+
+// Get the weight in units of pressure for this register class.
+  virtual const RegClassWeight &getRegClassWeight(
+    const TargetRegisterClass *RC) const = 0;
+
+  /// Get the number of dimensions of register pressure.
+  virtual unsigned getNumRegPressureSets() const = 0;
+
+  /// Get the name of this register unit pressure set.
+  virtual const char *getRegPressureSetName(unsigned Idx) const = 0;
+
+  /// Get the register unit pressure limit for this dimension.
+  /// This limit must be adjusted dynamically for reserved registers.
+  virtual unsigned getRegPressureSetLimit(unsigned Idx) const = 0;
+
+  /// Get the dimensions of register pressure impacted by this register class.
+  /// Returns a -1 terminated array of pressure set IDs.
+  virtual const int *getRegClassPressureSets(
+    const TargetRegisterClass *RC) const = 0;
 
   /// getRawAllocationOrder - Returns the register allocation order for a
   /// specified register class with a target-dependent hint. The returned list

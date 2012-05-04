@@ -47,8 +47,8 @@ Driver::Driver(StringRef ClangExecutable,
                bool IsProduction,
                DiagnosticsEngine &Diags)
   : Opts(createDriverOptTable()), Diags(Diags),
-    ClangExecutable(ClangExecutable), UseStdLib(true),
-    DefaultTargetTriple(DefaultTargetTriple), 
+    ClangExecutable(ClangExecutable), SysRoot(DEFAULT_SYSROOT),
+    UseStdLib(true), DefaultTargetTriple(DefaultTargetTriple),
     DefaultImageName(DefaultImageName),
     DriverTitle("clang \"gcc-compatible\" driver"),
     CCPrintOptionsFilename(0), CCPrintHeadersFilename(0),
@@ -371,7 +371,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
     return;  
 
   // Don't try to generate diagnostics for link jobs.
-  if (FailingCommand->getCreator().isLinkJob())
+  if (FailingCommand && FailingCommand->getCreator().isLinkJob())
     return;
 
   Diag(clang::diag::note_drv_command_failed_diag_msg)
@@ -481,6 +481,21 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         Diag(clang::diag::note_drv_command_failed_diag_msg)
           << "Error generating run script: " + Script + " " + Err;
       } else {
+        // Strip -D, -F, and -I.
+        // FIXME: This doesn't work with quotes (e.g., -D "foo bar").
+        std::string Flag[4] = {"-D ", "-F", "-I ", "-o "};
+        for (unsigned i = 0; i < 4; ++i) {
+          size_t I = 0, E = 0;
+          do {
+            I = Cmd.find(Flag[i], I);
+            if (I == std::string::npos) break;
+            
+            E = Cmd.find(" ", I + Flag[i].length());
+            if (E == std::string::npos) break;
+            Cmd.erase(I, E - I + 1);
+          } while(1);
+        }
+        // FIXME: Append the new filename with correct preprocessed suffix.
         ScriptOS << Cmd;
         Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
       }
@@ -652,9 +667,7 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
     llvm::outs() << "\n";
     llvm::outs() << "libraries: =" << ResourceDir;
 
-    std::string sysroot;
-    if (Arg *A = C.getArgs().getLastArg(options::OPT__sysroot_EQ))
-      sysroot = A->getValue(C.getArgs());
+    StringRef sysroot = C.getSysRoot();
 
     for (ToolChain::path_list::const_iterator it = TC.getFilePaths().begin(),
            ie = TC.getFilePaths().end(); it != ie; ++it) {
@@ -864,30 +877,30 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
 
     // Handle debug info queries.
     Arg *A = Args.getLastArg(options::OPT_g_Group);
-      if (A && !A->getOption().matches(options::OPT_g0) &&
-          !A->getOption().matches(options::OPT_gstabs) &&
-          ContainsCompileOrAssembleAction(Actions.back())) {
-   
-        // Add a 'dsymutil' step if necessary, when debug info is enabled and we
-        // have a compile input. We need to run 'dsymutil' ourselves in such cases
-        // because the debug info will refer to a temporary object file which is
-        // will be removed at the end of the compilation process.
-        if (Act->getType() == types::TY_Image) {
-          ActionList Inputs;
-          Inputs.push_back(Actions.back());
-          Actions.pop_back();
-          Actions.push_back(new DsymutilJobAction(Inputs, types::TY_dSYM));
-        }
-
-        // Verify the output (debug information only) if we passed '-verify'.
-        if (Args.hasArg(options::OPT_verify)) {
-          ActionList VerifyInputs;
-	  VerifyInputs.push_back(Actions.back());
-	  Actions.pop_back();
-	  Actions.push_back(new VerifyJobAction(VerifyInputs,
-						types::TY_Nothing));
-	}
+    if (A && !A->getOption().matches(options::OPT_g0) &&
+        !A->getOption().matches(options::OPT_gstabs) &&
+        ContainsCompileOrAssembleAction(Actions.back())) {
+ 
+      // Add a 'dsymutil' step if necessary, when debug info is enabled and we
+      // have a compile input. We need to run 'dsymutil' ourselves in such cases
+      // because the debug info will refer to a temporary object file which is
+      // will be removed at the end of the compilation process.
+      if (Act->getType() == types::TY_Image) {
+        ActionList Inputs;
+        Inputs.push_back(Actions.back());
+        Actions.pop_back();
+        Actions.push_back(new DsymutilJobAction(Inputs, types::TY_dSYM));
       }
+
+      // Verify the output (debug information only) if we passed '-verify'.
+      if (Args.hasArg(options::OPT_verify)) {
+        ActionList VerifyInputs;
+        VerifyInputs.push_back(Actions.back());
+        Actions.pop_back();
+        Actions.push_back(new VerifyJobAction(VerifyInputs,
+                                              types::TY_Nothing));
+      }
+    }
   }
 }
 
@@ -995,6 +1008,7 @@ void Driver::BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
     } else if (A->getOption().matches(options::OPT_x)) {
       InputTypeArg = A;
       InputType = types::lookupTypeForTypeSpecifier(A->getValue(Args));
+      A->claim();
 
       // Follow gcc behavior and treat as linker input for invalid -x
       // options. Its not clear why we shouldn't just revert to unknown; but
@@ -1446,15 +1460,24 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     NamedOutput = C.getArgs().MakeArgString(Suffixed.c_str());
   }
 
-  // If we're saving temps and the temp filename conflicts with the input
-  // filename, then avoid overwriting input file.
+  // If we're saving temps and the temp file conflicts with the input file, 
+  // then avoid overwriting input file.
   if (!AtTopLevel && C.getArgs().hasArg(options::OPT_save_temps) &&
       NamedOutput == BaseName) {
-    StringRef Name = llvm::sys::path::filename(BaseInput);
-    std::pair<StringRef, StringRef> Split = Name.split('.');
-    std::string TmpName =
-      GetTemporaryPath(Split.first, types::getTypeTempSuffix(JA.getType()));
-    return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
+
+    bool SameFile = false;
+    SmallString<256> Result;
+    llvm::sys::fs::current_path(Result);
+    llvm::sys::path::append(Result, BaseName);
+    llvm::sys::fs::equivalent(BaseInput, Result.c_str(), SameFile);
+    // Must share the same path to conflict.
+    if (SameFile) {
+      StringRef Name = llvm::sys::path::filename(BaseInput);
+      std::pair<StringRef, StringRef> Split = Name.split('.');
+      std::string TmpName =
+        GetTemporaryPath(Split.first, types::getTypeTempSuffix(JA.getType()));
+      return C.addTempFile(C.getArgs().MakeArgString(TmpName.c_str()));
+    }
   }
 
   // As an annoying special case, PCH generation doesn't strip the pathname.
