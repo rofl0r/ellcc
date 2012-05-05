@@ -99,8 +99,6 @@ public:
     Solaris,
     Win32,
     Haiku,
-    RTOS,       // ELLCC: Free-, Open-, Safe-RTOS
-    Partikle,   // ELLCC: Partikle
     SA,         // ELLCC: Stand Alone
     Minix,
     RTEMS,
