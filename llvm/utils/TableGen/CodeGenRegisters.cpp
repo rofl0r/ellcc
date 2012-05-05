@@ -505,29 +505,6 @@ CodeGenRegisterClass::CodeGenRegisterClass(CodeGenRegBank &RegBank, Record *R)
     }
   }
 
-  // SubRegClasses is a list<dag> containing (RC, subregindex, ...) dags.
-  ListInit *SRC = R->getValueAsListInit("SubRegClasses");
-  for (ListInit::const_iterator i = SRC->begin(), e = SRC->end(); i != e; ++i) {
-    DagInit *DAG = dynamic_cast<DagInit*>(*i);
-    if (!DAG) throw "SubRegClasses must contain DAGs";
-    DefInit *DAGOp = dynamic_cast<DefInit*>(DAG->getOperator());
-    Record *RCRec;
-    if (!DAGOp || !(RCRec = DAGOp->getDef())->isSubClassOf("RegisterClass"))
-      throw "Operator '" + DAG->getOperator()->getAsString() +
-        "' in SubRegClasses is not a RegisterClass";
-    // Iterate over args, all SubRegIndex instances.
-    for (DagInit::const_arg_iterator ai = DAG->arg_begin(), ae = DAG->arg_end();
-         ai != ae; ++ai) {
-      DefInit *Idx = dynamic_cast<DefInit*>(*ai);
-      Record *IdxRec;
-      if (!Idx || !(IdxRec = Idx->getDef())->isSubClassOf("SubRegIndex"))
-        throw "Argument '" + (*ai)->getAsString() +
-          "' in SubRegClasses is not a SubRegIndex";
-      if (!SubRegClasses.insert(std::make_pair(IdxRec, RCRec)).second)
-        throw "SubRegIndex '" + IdxRec->getName() + "' mentioned twice";
-    }
-  }
-
   // Allow targets to override the size in bits of the RegisterClass.
   unsigned Size = R->getValueAsInt("Size");
 
@@ -634,13 +611,6 @@ static int TopoOrderRC(const void *PA, const void *PB) {
   if (A == B)
     return 0;
 
-  // Order by descending set size.  Note that the classes' allocation order may
-  // not have been computed yet.  The Members set is always vaild.
-  if (A->getMembers().size() > B->getMembers().size())
-    return -1;
-  if (A->getMembers().size() < B->getMembers().size())
-    return 1;
-
   // Order by ascending spill size.
   if (A->SpillSize < B->SpillSize)
     return -1;
@@ -651,6 +621,13 @@ static int TopoOrderRC(const void *PA, const void *PB) {
   if (A->SpillAlignment < B->SpillAlignment)
     return -1;
   if (A->SpillAlignment > B->SpillAlignment)
+    return 1;
+
+  // Order by descending set size.  Note that the classes' allocation order may
+  // not have been computed yet.  The Members set is always vaild.
+  if (A->getMembers().size() > B->getMembers().size())
+    return -1;
+  if (A->getMembers().size() < B->getMembers().size())
     return 1;
 
   // Finally order by name as a tie breaker.

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "sched-instrs"
+#include "RegisterPressure.h"
 #include "llvm/Operator.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -441,6 +442,15 @@ void ScheduleDAGInstrs::addVRegUseDeps(SUnit *SU, unsigned OperIdx) {
   SlotIndex UseIdx = LIS->getInstructionIndex(MI).getRegSlot();
   LiveInterval *LI = &LIS->getInterval(Reg);
   VNInfo *VNI = LI->getVNInfoBefore(UseIdx);
+
+  // Special case: An early-clobber tied operand reads and writes the
+  // register one slot early. e.g. InlineAsm.
+  //
+  // FIXME: Same special case is in shrinkToUses. Hide under an API.
+  if (SlotIndex::isSameInstr(VNI->def, UseIdx)) {
+    UseIdx = VNI->def;
+    VNI = LI->getVNInfoBefore(UseIdx);
+  }
   // VNI will be valid because MachineOperand::readsReg() is checked by caller.
   MachineInstr *Def = LIS->getInstructionFromIndex(VNI->def);
   // Phis and other noninstructions (after coalescing) have a NULL Def.
@@ -504,7 +514,11 @@ void ScheduleDAGInstrs::initSUnits() {
   }
 }
 
-void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA) {
+/// If RegPressure is non null, compute register pressure as a side effect. The
+/// DAG builder is an efficient place to do it because it already visits
+/// operands.
+void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA,
+                                        RegPressureTracker *RPTracker) {
   // Create an SUnit for each real instruction.
   initSUnits();
 
@@ -554,6 +568,10 @@ void ScheduleDAGInstrs::buildSchedGraph(AliasAnalysis *AA) {
     if (MI->isDebugValue()) {
       PrevMI = MI;
       continue;
+    }
+    if (RPTracker) {
+      RPTracker->recede();
+      assert(RPTracker->getPos() == prior(MII) && "RPTracker can't find MI");
     }
 
     assert((!MI->isTerminator() || CanHandleTerminators) && !MI->isLabel() &&

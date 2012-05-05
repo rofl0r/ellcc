@@ -798,14 +798,15 @@ Value *ScalarExprEmitter::VisitMemberExpr(MemberExpr *E) {
     return Builder.getInt(Value);
   }
 
-  // Emit debug info for aggregate now, if it was delayed to reduce 
+  // Emit debug info for aggregate now, if it was delayed to reduce
   // debug info size.
   CGDebugInfo *DI = CGF.getDebugInfo();
-  if (DI && CGF.CGM.getCodeGenOpts().LimitDebugInfo) {
+  if (DI &&
+      CGF.CGM.getCodeGenOpts().DebugInfo == CodeGenOptions::LimitedDebugInfo) {
     QualType PQTy = E->getBase()->IgnoreParenImpCasts()->getType();
     if (const PointerType * PTy = dyn_cast<PointerType>(PQTy))
       if (FieldDecl *M = dyn_cast<FieldDecl>(E->getMemberDecl()))
-        DI->getOrCreateRecordType(PTy->getPointeeType(), 
+        DI->getOrCreateRecordType(PTy->getPointeeType(),
                                   M->getParent()->getLocation());
   }
   return EmitLoadOfLValue(E);
@@ -1520,8 +1521,8 @@ Value *ScalarExprEmitter::VisitOffsetOfExpr(OffsetOfExpr *E) {
       // FIXME: It would be nice if we didn't have to loop here!
       for (RecordDecl::field_iterator Field = RD->field_begin(),
                                       FieldEnd = RD->field_end();
-           Field != FieldEnd; (void)++Field, ++i) {
-        if (*Field == MemberDecl)
+           Field != FieldEnd; ++Field, ++i) {
+        if (&*Field == MemberDecl)
           break;
       }
       assert(i < RL.getFieldCount() && "offsetof field in wrong type");

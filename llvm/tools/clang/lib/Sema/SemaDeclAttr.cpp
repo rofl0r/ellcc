@@ -14,6 +14,7 @@
 #include "clang/Sema/SemaInternal.h"
 #include "TargetAttributesSema.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/DeclObjC.h"
@@ -238,17 +239,44 @@ static bool isIntOrBool(Expr *Exp) {
   return QT->isBooleanType() || QT->isIntegerType();
 }
 
-///
+
+// Check to see if the type is a smart pointer of some kind.  We assume
+// it's a smart pointer if it defines both operator-> and operator*.
+static bool threadSafetyCheckIsSmartPointer(Sema &S, const RecordType* RT) {
+  DeclContextLookupConstResult Res1 = RT->getDecl()->lookup(
+    S.Context.DeclarationNames.getCXXOperatorName(OO_Star));
+  if (Res1.first == Res1.second)
+    return false;
+
+  DeclContextLookupConstResult Res2 = RT->getDecl()->lookup(
+    S.Context.DeclarationNames.getCXXOperatorName(OO_Arrow));
+  if (Res2.first == Res2.second)
+    return false;
+
+  return true;
+}
+
 /// \brief Check if passed in Decl is a pointer type.
 /// Note that this function may produce an error message.
 /// \return true if the Decl is a pointer type; false otherwise
-///
 static bool threadSafetyCheckIsPointer(Sema &S, const Decl *D,
                                        const AttributeList &Attr) {
   if (const ValueDecl *vd = dyn_cast<ValueDecl>(D)) {
     QualType QT = vd->getType();
     if (QT->isAnyPointerType())
       return true;
+
+    if (const RecordType *RT = QT->getAs<RecordType>()) {
+      // If it's an incomplete type, it could be a smart pointer; skip it.
+      // (We don't want to force template instantiation if we can avoid it,
+      // since that would alter the order in which templates are instantiated.)
+      if (RT->isIncompleteType())
+        return true;
+
+      if (threadSafetyCheckIsSmartPointer(S, RT))
+        return true;
+    }
+
     S.Diag(Attr.getLoc(), diag::warn_thread_attribute_decl_not_pointer)
       << Attr.getName()->getName() << QT;
   } else {
@@ -271,6 +299,16 @@ static const RecordType *getRecordType(QualType QT) {
   return 0;
 }
 
+
+bool checkBaseClassIsLockableCallback(const CXXBaseSpecifier *Specifier,
+                                      CXXBasePath &Path, void *UserData) {
+  const RecordType *RT = Specifier->getType()->getAs<RecordType>();
+  if (RT->getDecl()->getAttr<LockableAttr>())
+    return true;
+  return false;
+}
+
+
 /// \brief Thread Safety Analysis: Checks that the passed in RecordType
 /// resolves to a lockable object.
 static void checkForLockableRecord(Sema &S, Decl *D, const AttributeList &Attr,
@@ -283,15 +321,30 @@ static void checkForLockableRecord(Sema &S, Decl *D, const AttributeList &Attr,
       << Attr.getName() << Ty.getAsString();
     return;
   }
+
   // Don't check for lockable if the class hasn't been defined yet. 
   if (RT->isIncompleteType())
     return;
-  // Warn if the type is not lockable.
-  if (!RT->getDecl()->getAttr<LockableAttr>()) {
-    S.Diag(Attr.getLoc(), diag::warn_thread_attribute_argument_not_lockable)
-      << Attr.getName() << Ty.getAsString();
+
+  // Allow smart pointers to be used as lockable objects.
+  // FIXME -- Check the type that the smart pointer points to.
+  if (threadSafetyCheckIsSmartPointer(S, RT))
     return;
+
+  // Check if the type is lockable.
+  RecordDecl *RD = RT->getDecl();
+  if (RD->getAttr<LockableAttr>())
+    return;
+
+  // Else check if any base classes are lockable.
+  if (CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
+    CXXBasePaths BPaths(false, false);
+    if (CRD->lookupInBases(checkBaseClassIsLockableCallback, 0, BPaths))
+      return;
   }
+
+  S.Diag(Attr.getLoc(), diag::warn_thread_attribute_argument_not_lockable)
+    << Attr.getName() << Ty.getAsString();
 }
 
 /// \brief Thread Safety Analysis: Checks that all attribute arguments, starting
@@ -313,7 +366,11 @@ static void checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
       continue;
     }
 
-    if (isa<StringLiteral>(ArgExp)) {
+    if (StringLiteral *StrLit = dyn_cast<StringLiteral>(ArgExp)) {
+      // Ignore empty strings without warnings
+      if (StrLit->getLength() == 0)
+        continue;
+
       // We allow constant strings to be used as a placeholder for expressions
       // that are not valid C++ syntax, but warn that they are ignored.
       S.Diag(Attr.getLoc(), diag::warn_thread_attribute_ignored) <<
@@ -322,6 +379,14 @@ static void checkAttrArgsAreLockableObjs(Sema &S, Decl *D,
     }
 
     QualType ArgTy = ArgExp->getType();
+
+    // A pointer to member expression of the form  &MyClass::mu is treated
+    // specially -- we need to look at the type of the member.
+    if (UnaryOperator *UOp = dyn_cast<UnaryOperator>(ArgExp))
+      if (UOp->getOpcode() == UO_AddrOf)
+        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(UOp->getSubExpr()))
+          if (DRE->getDecl()->isCXXInstanceMember())
+            ArgTy = DRE->getDecl()->getType();
 
     // First see if we can just cast to record type, or point to record type.
     const RecordType *RT = getRecordType(ArgTy);
@@ -647,9 +712,14 @@ static void handleLockReturnedAttr(Sema &S, Decl *D,
     return;
 
   // check that the argument is lockable object
-  checkForLockableRecord(S, D, Attr, Arg->getType());
+  SmallVector<Expr*, 1> Args;
+  checkAttrArgsAreLockableObjs(S, D, Attr, Args);
+  unsigned Size = Args.size();
+  if (Size == 0)
+    return;
 
-  D->addAttr(::new (S.Context) LockReturnedAttr(Attr.getRange(), S.Context, Arg));
+  D->addAttr(::new (S.Context) LockReturnedAttr(Attr.getRange(), S.Context,
+                                                Args[0]));
 }
 
 static void handleLocksExcludedAttr(Sema &S, Decl *D,
@@ -1718,6 +1788,24 @@ static void handleVisibilityAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     return;
   }
 
+  // Find the last Decl that has an attribute.
+  VisibilityAttr *PrevAttr;
+  assert(D->redecls_begin() == D);
+  for (Decl::redecl_iterator I = D->redecls_begin(), E = D->redecls_end();
+       I != E; ++I) {
+    PrevAttr = I->getAttr<VisibilityAttr>() ;
+    if (PrevAttr)
+      break;
+  }
+
+  if (PrevAttr) {
+    VisibilityAttr::VisibilityType PrevVisibility = PrevAttr->getVisibility();
+    if (PrevVisibility != type) {
+      S.Diag(Attr.getLoc(), diag::err_mismatched_visibilit);
+      S.Diag(PrevAttr->getLocation(), diag::note_previous_attribute);
+      return;
+    }
+  }
   D->addAttr(::new (S.Context) VisibilityAttr(Attr.getRange(), S.Context, type));
 }
 
@@ -2529,7 +2617,7 @@ static void handleTransparentUnionAttr(Sema &S, Decl *D,
     return;
   }
 
-  FieldDecl *FirstField = *Field;
+  FieldDecl *FirstField = &*Field;
   QualType FirstType = FirstField->getType();
   if (FirstType->hasFloatingRepresentation() || FirstType->isVectorType()) {
     S.Diag(FirstField->getLocation(),
@@ -2621,10 +2709,10 @@ void Sema::AddAlignedAttr(SourceRange AttrRange, Decl *D, Expr *E) {
   SourceLocation AttrLoc = AttrRange.getBegin();
   // FIXME: Cache the number on the Attr object?
   llvm::APSInt Alignment(32);
-  ExprResult ICE =
-    VerifyIntegerConstantExpression(E, &Alignment,
-      PDiag(diag::err_attribute_argument_not_int) << "aligned",
-      /*AllowFold*/ false);
+  ExprResult ICE
+    = VerifyIntegerConstantExpression(E, &Alignment,
+        diag::err_aligned_attribute_argument_not_int,
+        /*AllowFold*/ false);
   if (ICE.isInvalid())
     return;
   if (!llvm::isPowerOf2_64(Alignment.getZExtValue())) {
@@ -3334,7 +3422,7 @@ static void handleObjCReturnsInnerPointerAttr(Sema &S, Decl *D,
 
   ObjCMethodDecl *method = dyn_cast<ObjCMethodDecl>(D);
 
-  if (!method || !isa<ObjCMethodDecl>(method)) {
+  if (!method) {
     S.Diag(D->getLocStart(), diag::err_attribute_wrong_decl_type)
       << SourceRange(loc, loc) << attr.getName() << ExpectedMethod;
     return;
@@ -4155,9 +4243,13 @@ void Sema::EmitDeprecationWarning(NamedDecl *D, StringRef Message,
   // Otherwise, don't warn if our current context is deprecated.
   if (isDeclDeprecated(cast<Decl>(getCurLexicalContext())))
     return;
-  if (!Message.empty())
+  if (!Message.empty()) {
     Diag(Loc, diag::warn_deprecated_message) << D->getDeclName() 
                                              << Message;
+    Diag(D->getLocation(), 
+         isa<ObjCMethodDecl>(D) ? diag::note_method_declared_at 
+                                : diag::note_previous_decl) << D->getDeclName();
+  }
   else {
     if (!UnknownObjCClass)
       Diag(Loc, diag::warn_deprecated) << D->getDeclName();

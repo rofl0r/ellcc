@@ -40,7 +40,7 @@ static const enum raw_ostream::Colors savedColor =
 /// \brief Number of spaces to indent when word-wrapping.
 const unsigned WordWrapIndentation = 6;
 
-int bytesSincePreviousTabOrLineBegin(StringRef SourceLine, size_t i) {
+static int bytesSincePreviousTabOrLineBegin(StringRef SourceLine, size_t i) {
   int bytes = 0;
   while (0<i) {
     if (SourceLine[--i]=='\t')
@@ -69,7 +69,7 @@ int bytesSincePreviousTabOrLineBegin(StringRef SourceLine, size_t i) {
 /// \param TabStop used to expand tabs
 /// \return pair(printable text, 'true' iff original text was printable)
 ///
-std::pair<SmallString<16>,bool>
+static std::pair<SmallString<16>, bool>
 printableTextForNextCharacter(StringRef SourceLine, size_t *i,
                               unsigned TabStop) {
   assert(i && "i must not be null");
@@ -146,7 +146,7 @@ printableTextForNextCharacter(StringRef SourceLine, size_t *i,
   return std::make_pair(expandedByte, false);
 }
 
-void expandTabs(std::string &SourceLine, unsigned TabStop) {
+static void expandTabs(std::string &SourceLine, unsigned TabStop) {
   size_t i = SourceLine.size();
   while (i>0) {
     i--;
@@ -181,7 +181,7 @@ void expandTabs(std::string &SourceLine, unsigned TabStop) {
 ///
 ///  (\u3042 is represented in UTF-8 by three bytes and takes two columns to
 ///   display)
-void byteToColumn(StringRef SourceLine, unsigned TabStop,
+static void byteToColumn(StringRef SourceLine, unsigned TabStop,
                          SmallVectorImpl<int> &out) {
   out.clear();
 
@@ -215,7 +215,7 @@ void byteToColumn(StringRef SourceLine, unsigned TabStop,
 ///
 ///  (\u3042 is represented in UTF-8 by three bytes and takes two columns to
 ///   display)
-void columnToByte(StringRef SourceLine, unsigned TabStop,
+static void columnToByte(StringRef SourceLine, unsigned TabStop,
                          SmallVectorImpl<int> &out) {
   out.clear();
 
@@ -840,12 +840,9 @@ void TextDiagnostic::emitSnippetAndCaret(
 
   // Get information about the buffer it points into.
   bool Invalid = false;
-  StringRef BufData = SM.getBufferData(FID, &Invalid);
+  const char *BufStart = SM.getBufferData(FID, &Invalid).data();
   if (Invalid)
     return;
-
-  const char *BufStart = BufData.data();
-  const char *BufEnd = BufStart + BufData.size();
 
   unsigned LineNo = SM.getLineNumber(FID, FileOffset);
   unsigned ColNo = SM.getColumnNumber(FID, FileOffset);
@@ -860,7 +857,7 @@ void TextDiagnostic::emitSnippetAndCaret(
   // Compute the line end.  Scan forward from the error position to the end of
   // the line.
   const char *LineEnd = TokPtr;
-  while (*LineEnd != '\n' && *LineEnd != '\r' && LineEnd!=BufEnd)
+  while (*LineEnd != '\n' && *LineEnd != '\r' && *LineEnd != '\0')
     ++LineEnd;
 
   // FIXME: This shouldn't be necessary, but the CaretEndColNo can extend past
@@ -937,8 +934,7 @@ void TextDiagnostic::emitSnippetAndCaret(
   emitParseableFixits(Hints);
 }
 
-void TextDiagnostic::emitSnippet(StringRef line)
-{
+void TextDiagnostic::emitSnippet(StringRef line) {
   if (line.empty())
     return;
 
@@ -952,8 +948,7 @@ void TextDiagnostic::emitSnippet(StringRef line)
         = printableTextForNextCharacter(line, &i, DiagOpts.TabStop);
     bool was_printable = res.second;
     
-    if (DiagOpts.ShowColors
-        && was_printable==print_reversed) {
+    if (DiagOpts.ShowColors && was_printable == print_reversed) {
       if (print_reversed)
         OS.reverseColor();
       OS << to_print;

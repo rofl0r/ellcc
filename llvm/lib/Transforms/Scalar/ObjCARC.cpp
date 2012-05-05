@@ -444,7 +444,7 @@ static bool IsNoThrow(InstructionClass Class) {
          Class == IC_AutoreleasepoolPop;
 }
 
-/// EraseInstruction - Erase the given instruction. ObjC calls return their
+/// EraseInstruction - Erase the given instruction. Many ObjC calls return their
 /// argument verbatim, so if it's such a call and the return value has users,
 /// replace them with the argument value.
 static void EraseInstruction(Instruction *CI) {
@@ -692,7 +692,7 @@ namespace {
     /// specified pass info.
     virtual void *getAdjustedAnalysisPointer(const void *PI) {
       if (PI == &AliasAnalysis::ID)
-        return (AliasAnalysis*)this;
+        return static_cast<AliasAnalysis *>(this);
       return this;
     }
 
@@ -922,8 +922,8 @@ namespace {
     virtual void getAnalysisUsage(AnalysisUsage &AU) const;
     virtual bool runOnModule(Module &M);
 
-    bool MayAutorelease(CallSite CS, unsigned Depth = 0);
-    bool OptimizeBB(BasicBlock *BB);
+    static bool MayAutorelease(ImmutableCallSite CS, unsigned Depth = 0);
+    static bool OptimizeBB(BasicBlock *BB);
 
   public:
     static char ID;
@@ -949,15 +949,16 @@ void ObjCARCAPElim::getAnalysisUsage(AnalysisUsage &AU) const {
 
 /// MayAutorelease - Interprocedurally determine if calls made by the
 /// given call site can possibly produce autoreleases.
-bool ObjCARCAPElim::MayAutorelease(CallSite CS, unsigned Depth) {
-  if (Function *Callee = CS.getCalledFunction()) {
+bool ObjCARCAPElim::MayAutorelease(ImmutableCallSite CS, unsigned Depth) {
+  if (const Function *Callee = CS.getCalledFunction()) {
     if (Callee->isDeclaration() || Callee->mayBeOverridden())
       return true;
-    for (Function::iterator I = Callee->begin(), E = Callee->end();
+    for (Function::const_iterator I = Callee->begin(), E = Callee->end();
          I != E; ++I) {
-      BasicBlock *BB = I;
-      for (BasicBlock::iterator J = BB->begin(), F = BB->end(); J != F; ++J)
-        if (CallSite JCS = CallSite(J))
+      const BasicBlock *BB = I;
+      for (BasicBlock::const_iterator J = BB->begin(), F = BB->end();
+           J != F; ++J)
+        if (ImmutableCallSite JCS = ImmutableCallSite(J))
           // This recursion depth limit is arbitrary. It's just great
           // enough to cover known interesting testcases.
           if (Depth < 3 &&
@@ -992,7 +993,7 @@ bool ObjCARCAPElim::OptimizeBB(BasicBlock *BB) {
       Push = 0;
       break;
     case IC_CallOrUser:
-      if (MayAutorelease(CallSite(Inst)))
+      if (MayAutorelease(ImmutableCallSite(Inst)))
         Push = 0;
       break;
     default:
@@ -1094,7 +1095,6 @@ bool ObjCARCAPElim::runOnModule(Module &M) {
 // TODO: Delete release+retain pairs (rare).
 
 #include "llvm/GlobalAlias.h"
-#include "llvm/Constants.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/CFG.h"
@@ -1148,22 +1148,13 @@ bool ProvenanceAnalysis::relatedSelect(const SelectInst *A, const Value *B) {
   // If the values are Selects with the same condition, we can do a more precise
   // check: just check for relations between the values on corresponding arms.
   if (const SelectInst *SB = dyn_cast<SelectInst>(B))
-    if (A->getCondition() == SB->getCondition()) {
-      if (related(A->getTrueValue(), SB->getTrueValue()))
-        return true;
-      if (related(A->getFalseValue(), SB->getFalseValue()))
-        return true;
-      return false;
-    }
+    if (A->getCondition() == SB->getCondition())
+      return related(A->getTrueValue(), SB->getTrueValue()) ||
+             related(A->getFalseValue(), SB->getFalseValue());
 
   // Check both arms of the Select node individually.
-  if (related(A->getTrueValue(), B))
-    return true;
-  if (related(A->getFalseValue(), B))
-    return true;
-
-  // The arms both checked out.
-  return false;
+  return related(A->getTrueValue(), B) ||
+         related(A->getFalseValue(), B);
 }
 
 bool ProvenanceAnalysis::relatedPHI(const PHINode *A, const Value *B) {
@@ -1361,12 +1352,6 @@ namespace {
     /// with the "tail" keyword.
     bool IsTailCallRelease;
 
-    /// Partial - True of we've seen an opportunity for partial RR elimination,
-    /// such as pushing calls into a CFG triangle or into one side of a
-    /// CFG diamond.
-    /// TODO: Consider moving this to PtrState.
-    bool Partial;
-
     /// ReleaseMetadata - If the Calls are objc_release calls and they all have
     /// a clang.imprecise_release tag, this is the metadata tag.
     MDNode *ReleaseMetadata;
@@ -1381,7 +1366,7 @@ namespace {
 
     RRInfo() :
       KnownSafe(false), IsRetainBlock(false),
-      IsTailCallRelease(false), Partial(false),
+      IsTailCallRelease(false),
       ReleaseMetadata(0) {}
 
     void clear();
@@ -1392,7 +1377,6 @@ void RRInfo::clear() {
   KnownSafe = false;
   IsRetainBlock = false;
   IsTailCallRelease = false;
-  Partial = false;
   ReleaseMetadata = 0;
   Calls.clear();
   ReverseInsertPts.clear();
@@ -1402,8 +1386,14 @@ namespace {
   /// PtrState - This class summarizes several per-pointer runtime properties
   /// which are propogated through the flow graph.
   class PtrState {
-    /// RefCount - The known minimum number of reference count increments.
-    unsigned RefCount;
+    /// KnownPositiveRefCount - True if the reference count is known to
+    /// be incremented.
+    bool KnownPositiveRefCount;
+
+    /// Partial - True of we've seen an opportunity for partial RR elimination,
+    /// such as pushing calls into a CFG triangle or into one side of a
+    /// CFG diamond.
+    bool Partial;
 
     /// NestCount - The known minimum level of retain+release nesting.
     unsigned NestCount;
@@ -1416,22 +1406,19 @@ namespace {
     /// TODO: Encapsulate this better.
     RRInfo RRI;
 
-    PtrState() : RefCount(0), NestCount(0), Seq(S_None) {}
+    PtrState() : KnownPositiveRefCount(false), Partial(false),
+                 NestCount(0), Seq(S_None) {}
 
-    void SetAtLeastOneRefCount()  {
-      if (RefCount == 0) RefCount = 1;
+    void SetKnownPositiveRefCount() {
+      KnownPositiveRefCount = true;
     }
 
-    void IncrementRefCount() {
-      if (RefCount != UINT_MAX) ++RefCount;
-    }
-
-    void DecrementRefCount() {
-      if (RefCount != 0) --RefCount;
+    void ClearRefCount() {
+      KnownPositiveRefCount = false;
     }
 
     bool IsKnownIncremented() const {
-      return RefCount > 0;
+      return KnownPositiveRefCount;
     }
 
     void IncrementNestCount() {
@@ -1455,7 +1442,12 @@ namespace {
     }
 
     void ClearSequenceProgress() {
-      Seq = S_None;
+      ResetSequenceProgress(S_None);
+    }
+
+    void ResetSequenceProgress(Sequence NewSeq) {
+      Seq = NewSeq;
+      Partial = false;
       RRI.clear();
     }
 
@@ -1466,7 +1458,7 @@ namespace {
 void
 PtrState::Merge(const PtrState &Other, bool TopDown) {
   Seq = MergeSeqs(Seq, Other.Seq, TopDown);
-  RefCount = std::min(RefCount, Other.RefCount);
+  KnownPositiveRefCount = KnownPositiveRefCount && Other.KnownPositiveRefCount;
   NestCount = std::min(NestCount, Other.NestCount);
 
   // We can't merge a plain objc_retain with an objc_retainBlock.
@@ -1475,14 +1467,14 @@ PtrState::Merge(const PtrState &Other, bool TopDown) {
 
   // If we're not in a sequence (anymore), drop all associated state.
   if (Seq == S_None) {
+    Partial = false;
     RRI.clear();
-  } else if (RRI.Partial || Other.RRI.Partial) {
+  } else if (Partial || Other.Partial) {
     // If we're doing a merge on a path that's previously seen a partial
     // merge, conservatively drop the sequence, to avoid doing partial
     // RR elimination. If the branch predicates for the two merge differ,
     // mixing them is unsafe.
-    Seq = S_None;
-    RRI.clear();
+    ClearSequenceProgress();
   } else {
     // Conservatively merge the ReleaseMetadata information.
     if (RRI.ReleaseMetadata != Other.RRI.ReleaseMetadata)
@@ -1494,12 +1486,12 @@ PtrState::Merge(const PtrState &Other, bool TopDown) {
 
     // Merge the insert point sets. If there are any differences,
     // that makes this a partial merge.
-    RRI.Partial = RRI.ReverseInsertPts.size() !=
-                  Other.RRI.ReverseInsertPts.size();
+    Partial = RRI.ReverseInsertPts.size() !=
+              Other.RRI.ReverseInsertPts.size();
     for (SmallPtrSet<Instruction *, 2>::const_iterator
          I = Other.RRI.ReverseInsertPts.begin(),
          E = Other.RRI.ReverseInsertPts.end(); I != E; ++I)
-      RRI.Partial |= RRI.ReverseInsertPts.insert(*I);
+      Partial |= RRI.ReverseInsertPts.insert(*I);
   }
 }
 
@@ -1524,6 +1516,11 @@ namespace {
     /// PerPtrBottomUp - The bottom-up traversal uses this to record information
     /// known about a pointer at the top of each block.
     MapTy PerPtrBottomUp;
+
+    /// Preds, Succs - Effective successors and predecessors of the current
+    /// block (this ignores ignorable edges and ignored backedges).
+    SmallVector<BasicBlock *, 2> Preds;
+    SmallVector<BasicBlock *, 2> Succs;
 
   public:
     BBState() : TopDownPathCount(0), BottomUpPathCount(0) {}
@@ -1582,14 +1579,22 @@ namespace {
     /// entry to an exit which pass through this block. This is only valid
     /// after both the top-down and bottom-up traversals are complete.
     unsigned GetAllPathCount() const {
+      assert(TopDownPathCount != 0);
+      assert(BottomUpPathCount != 0);
       return TopDownPathCount * BottomUpPathCount;
     }
 
-    /// IsVisitedTopDown - Test whether the block for this BBState has been
-    /// visited by the top-down portion of the algorithm.
-    bool isVisitedTopDown() const {
-      return TopDownPathCount != 0;
-    }
+    // Specialized CFG utilities.
+    typedef SmallVectorImpl<BasicBlock *>::const_iterator edge_iterator;
+    edge_iterator pred_begin() { return Preds.begin(); }
+    edge_iterator pred_end() { return Preds.end(); }
+    edge_iterator succ_begin() { return Succs.begin(); }
+    edge_iterator succ_end() { return Succs.end(); }
+
+    void addSucc(BasicBlock *Succ) { Succs.push_back(Succ); }
+    void addPred(BasicBlock *Pred) { Preds.push_back(Pred); }
+
+    bool isExit() const { return Succs.empty(); }
   };
 }
 
@@ -2157,13 +2162,13 @@ static bool isNoopInstruction(const Instruction *I) {
 /// objc_retainAutoreleasedReturnValue if the operand is a return value.
 void
 ObjCARCOpt::OptimizeRetainCall(Function &F, Instruction *Retain) {
-  CallSite CS(GetObjCArg(Retain));
-  Instruction *Call = CS.getInstruction();
+  ImmutableCallSite CS(GetObjCArg(Retain));
+  const Instruction *Call = CS.getInstruction();
   if (!Call) return;
   if (Call->getParent() != Retain->getParent()) return;
 
   // Check that the call is next to the retain.
-  BasicBlock::iterator I = Call;
+  BasicBlock::const_iterator I = Call;
   ++I;
   while (isNoopInstruction(I)) ++I;
   if (&*I != Retain)
@@ -2176,25 +2181,24 @@ ObjCARCOpt::OptimizeRetainCall(Function &F, Instruction *Retain) {
 }
 
 /// OptimizeRetainRVCall - Turn objc_retainAutoreleasedReturnValue into
-/// objc_retain if the operand is not a return value.  Or, if it can be
-/// paired with an objc_autoreleaseReturnValue, delete the pair and
-/// return true.
+/// objc_retain if the operand is not a return value.  Or, if it can be paired
+/// with an objc_autoreleaseReturnValue, delete the pair and return true.
 bool
 ObjCARCOpt::OptimizeRetainRVCall(Function &F, Instruction *RetainRV) {
   // Check for the argument being from an immediately preceding call or invoke.
-  Value *Arg = GetObjCArg(RetainRV);
-  CallSite CS(Arg);
-  if (Instruction *Call = CS.getInstruction()) {
+  const Value *Arg = GetObjCArg(RetainRV);
+  ImmutableCallSite CS(Arg);
+  if (const Instruction *Call = CS.getInstruction()) {
     if (Call->getParent() == RetainRV->getParent()) {
-      BasicBlock::iterator I = Call;
+      BasicBlock::const_iterator I = Call;
       ++I;
       while (isNoopInstruction(I)) ++I;
       if (&*I == RetainRV)
         return false;
-    } else if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
+    } else if (const InvokeInst *II = dyn_cast<InvokeInst>(Call)) {
       BasicBlock *RetainRVParent = RetainRV->getParent();
       if (II->getNormalDest() == RetainRVParent) {
-        BasicBlock::iterator I = RetainRVParent->begin();
+        BasicBlock::const_iterator I = RetainRVParent->begin();
         while (isNoopInstruction(I)) ++I;
         if (&*I == RetainRV)
           return false;
@@ -2504,13 +2508,14 @@ ObjCARCOpt::CheckForCFGHazards(const BasicBlock *BB,
       for (; SI != SE; ++SI) {
         Sequence SuccSSeq = S_None;
         bool SuccSRRIKnownSafe = false;
-        // If VisitBottomUp has visited this successor, take what we know about it.
-        DenseMap<const BasicBlock *, BBState>::iterator BBI = BBStates.find(*SI);
-        if (BBI != BBStates.end()) {
-          const PtrState &SuccS = BBI->second.getPtrBottomUpState(Arg);
-          SuccSSeq = SuccS.GetSeq();
-          SuccSRRIKnownSafe = SuccS.RRI.KnownSafe;
-        }
+        // If VisitBottomUp has pointer information for this successor, take what we
+        // know about it.
+        DenseMap<const BasicBlock *, BBState>::iterator BBI =
+          BBStates.find(*SI);
+        assert(BBI != BBStates.end());
+        const PtrState &SuccS = BBI->second.getPtrBottomUpState(Arg);
+        SuccSSeq = SuccS.GetSeq();
+        SuccSRRIKnownSafe = SuccS.RRI.KnownSafe;
         switch (SuccSSeq) {
         case S_None:
         case S_CanRelease: {
@@ -2557,13 +2562,14 @@ ObjCARCOpt::CheckForCFGHazards(const BasicBlock *BB,
       for (; SI != SE; ++SI) {
         Sequence SuccSSeq = S_None;
         bool SuccSRRIKnownSafe = false;
-        // If VisitBottomUp has visited this successor, take what we know about it.
-        DenseMap<const BasicBlock *, BBState>::iterator BBI = BBStates.find(*SI);
-        if (BBI != BBStates.end()) {
-          const PtrState &SuccS = BBI->second.getPtrBottomUpState(Arg);
-          SuccSSeq = SuccS.GetSeq();
-          SuccSRRIKnownSafe = SuccS.RRI.KnownSafe;
-        }
+        // If VisitBottomUp has pointer information for this successor, take what we
+        // know about it.
+        DenseMap<const BasicBlock *, BBState>::iterator BBI =
+          BBStates.find(*SI);
+        assert(BBI != BBStates.end());
+        const PtrState &SuccS = BBI->second.getPtrBottomUpState(Arg);
+        SuccSSeq = SuccS.GetSeq();
+        SuccSRRIKnownSafe = SuccS.RRI.KnownSafe;
         switch (SuccSSeq) {
         case S_None: {
           if (!S.RRI.KnownSafe && !SuccSRRIKnownSafe) {
@@ -2621,16 +2627,13 @@ ObjCARCOpt::VisitInstructionBottomUp(Instruction *Inst,
     if (S.GetSeq() == S_Release || S.GetSeq() == S_MovableRelease)
       NestingDetected = true;
 
-    S.RRI.clear();
-
     MDNode *ReleaseMetadata = Inst->getMetadata(ImpreciseReleaseMDKind);
-    S.SetSeq(ReleaseMetadata ? S_MovableRelease : S_Release);
+    S.ResetSequenceProgress(ReleaseMetadata ? S_MovableRelease : S_Release);
     S.RRI.ReleaseMetadata = ReleaseMetadata;
     S.RRI.KnownSafe = S.IsKnownNested() || S.IsKnownIncremented();
     S.RRI.IsTailCallRelease = cast<CallInst>(Inst)->isTailCall();
     S.RRI.Calls.insert(Inst);
 
-    S.IncrementRefCount();
     S.IncrementNestCount();
     break;
   }
@@ -2645,8 +2648,7 @@ ObjCARCOpt::VisitInstructionBottomUp(Instruction *Inst,
     Arg = GetObjCArg(Inst);
 
     PtrState &S = MyStates.getPtrBottomUpState(Arg);
-    S.DecrementRefCount();
-    S.SetAtLeastOneRefCount();
+    S.SetKnownPositiveRefCount();
     S.DecrementNestCount();
 
     switch (S.GetSeq()) {
@@ -2696,7 +2698,7 @@ ObjCARCOpt::VisitInstructionBottomUp(Instruction *Inst,
 
     // Check for possible releases.
     if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
-      S.DecrementRefCount();
+      S.ClearRefCount();
       switch (Seq) {
       case S_Use:
         S.SetSeq(S_CanRelease);
@@ -2763,37 +2765,20 @@ ObjCARCOpt::VisitBottomUp(BasicBlock *BB,
 
   // Merge the states from each successor to compute the initial state
   // for the current block.
-  const TerminatorInst *TI = cast<TerminatorInst>(&BB->back());
-  succ_const_iterator SI(TI), SE(TI, false);
-  if (SI == SE)
-    MyStates.SetAsExit();
-  else {
-    // If the terminator is an invoke marked with the
-    // clang.arc.no_objc_arc_exceptions metadata, the unwind edge can be
-    // ignored, for ARC purposes.
-    if (isa<InvokeInst>(TI) && TI->getMetadata(NoObjCARCExceptionsMDKind))
-      --SE;
-
-    do {
-      const BasicBlock *Succ = *SI++;
-      if (Succ == BB)
-        continue;
-      DenseMap<const BasicBlock *, BBState>::iterator I = BBStates.find(Succ);
-      // If we haven't seen this node yet, then we've found a CFG cycle.
-      // Be optimistic here; it's CheckForCFGHazards' job detect trouble.
-      if (I == BBStates.end())
-        continue;
-      MyStates.InitFromSucc(I->second);
-      while (SI != SE) {
-        Succ = *SI++;
-        if (Succ != BB) {
-          I = BBStates.find(Succ);
-          if (I != BBStates.end())
-            MyStates.MergeSucc(I->second);
-        }
-      }
-      break;
-    } while (SI != SE);
+  for (BBState::edge_iterator SI(MyStates.succ_begin()),
+       SE(MyStates.succ_end()); SI != SE; ++SI) {
+    const BasicBlock *Succ = *SI;
+    DenseMap<const BasicBlock *, BBState>::iterator I = BBStates.find(Succ);
+    assert(I != BBStates.end());
+    MyStates.InitFromSucc(I->second);
+    ++SI;
+    for (; SI != SE; ++SI) {
+      Succ = *SI;
+      I = BBStates.find(Succ);
+      assert(I != BBStates.end());
+      MyStates.MergeSucc(I->second);
+    }
+    break;
   }
 
   // Visit all the instructions, bottom-up.
@@ -2807,15 +2792,14 @@ ObjCARCOpt::VisitBottomUp(BasicBlock *BB,
     NestingDetected |= VisitInstructionBottomUp(Inst, BB, Retains, MyStates);
   }
 
-  // If there's a predecessor with an invoke, visit the invoke as
-  // if it were part of this block, since we can't insert code after
-  // an invoke in its own block, and we don't want to split critical
-  // edges.
-  for (pred_iterator PI(BB), PE(BB, false); PI != PE; ++PI) {
+  // If there's a predecessor with an invoke, visit the invoke as if it were
+  // part of this block, since we can't insert code after an invoke in its own
+  // block, and we don't want to split critical edges.
+  for (BBState::edge_iterator PI(MyStates.pred_begin()),
+       PE(MyStates.pred_end()); PI != PE; ++PI) {
     BasicBlock *Pred = *PI;
-    TerminatorInst *PredTI = cast<TerminatorInst>(&Pred->back());
-    if (isa<InvokeInst>(PredTI))
-      NestingDetected |= VisitInstructionBottomUp(PredTI, BB, Retains, MyStates);
+    if (InvokeInst *II = dyn_cast<InvokeInst>(&Pred->back()))
+      NestingDetected |= VisitInstructionBottomUp(II, BB, Retains, MyStates);
   }
 
   return NestingDetected;
@@ -2855,17 +2839,13 @@ ObjCARCOpt::VisitInstructionTopDown(Instruction *Inst,
       if (S.GetSeq() == S_Retain)
         NestingDetected = true;
 
-      S.SetSeq(S_Retain);
-      S.RRI.clear();
+      S.ResetSequenceProgress(S_Retain);
       S.RRI.IsRetainBlock = Class == IC_RetainBlock;
-      // Don't check S.IsKnownIncremented() here because it's not
-      // sufficient.
+      // Don't check S.IsKnownIncremented() here because it's not sufficient.
       S.RRI.KnownSafe = S.IsKnownNested();
       S.RRI.Calls.insert(Inst);
     }
 
-    S.SetAtLeastOneRefCount();
-    S.IncrementRefCount();
     S.IncrementNestCount();
     return NestingDetected;
   }
@@ -2873,7 +2853,6 @@ ObjCARCOpt::VisitInstructionTopDown(Instruction *Inst,
     Arg = GetObjCArg(Inst);
 
     PtrState &S = MyStates.getPtrTopDownState(Arg);
-    S.DecrementRefCount();
     S.DecrementNestCount();
 
     switch (S.GetSeq()) {
@@ -2920,7 +2899,7 @@ ObjCARCOpt::VisitInstructionTopDown(Instruction *Inst,
 
     // Check for possible releases.
     if (CanAlterRefCount(Inst, Ptr, PA, Class)) {
-      S.DecrementRefCount();
+      S.ClearRefCount();
       switch (Seq) {
       case S_Retain:
         S.SetSeq(S_CanRelease);
@@ -2971,41 +2950,21 @@ ObjCARCOpt::VisitTopDown(BasicBlock *BB,
 
   // Merge the states from each predecessor to compute the initial state
   // for the current block.
-  const_pred_iterator PI(BB), PE(BB, false);
-  if (PI == PE)
-    MyStates.SetAsEntry();
-  else
-    do {
-      unsigned OperandNo = PI.getOperandNo();
-      const Use &Us = PI.getUse();
-      ++PI;
-
-      // Skip invoke unwind edges on invoke instructions marked with
-      // clang.arc.no_objc_arc_exceptions.
-      if (const InvokeInst *II = dyn_cast<InvokeInst>(Us.getUser()))
-        if (OperandNo == II->getNumArgOperands() + 2 &&
-            II->getMetadata(NoObjCARCExceptionsMDKind))
-          continue;
-
-      const BasicBlock *Pred = cast<TerminatorInst>(Us.getUser())->getParent();
-      if (Pred == BB)
-        continue;
-      DenseMap<const BasicBlock *, BBState>::iterator I = BBStates.find(Pred);
-      // If we haven't seen this node yet, then we've found a CFG cycle.
-      // Be optimistic here; it's CheckForCFGHazards' job detect trouble.
-      if (I == BBStates.end() || !I->second.isVisitedTopDown())
-        continue;
-      MyStates.InitFromPred(I->second);
-      while (PI != PE) {
-        Pred = *PI++;
-        if (Pred != BB) {
-          I = BBStates.find(Pred);
-          if (I != BBStates.end() && I->second.isVisitedTopDown())
-            MyStates.MergePred(I->second);
-        }
-      }
-      break;
-    } while (PI != PE);
+  for (BBState::edge_iterator PI(MyStates.pred_begin()),
+       PE(MyStates.pred_end()); PI != PE; ++PI) {
+    const BasicBlock *Pred = *PI;
+    DenseMap<const BasicBlock *, BBState>::iterator I = BBStates.find(Pred);
+    assert(I != BBStates.end());
+    MyStates.InitFromPred(I->second);
+    ++PI;
+    for (; PI != PE; ++PI) {
+      Pred = *PI;
+      I = BBStates.find(Pred);
+      assert(I != BBStates.end());
+      MyStates.MergePred(I->second);
+    }
+    break;
+  }
 
   // Visit all the instructions, top-down.
   for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
@@ -3020,73 +2979,79 @@ ObjCARCOpt::VisitTopDown(BasicBlock *BB,
 static void
 ComputePostOrders(Function &F,
                   SmallVectorImpl<BasicBlock *> &PostOrder,
-                  SmallVectorImpl<BasicBlock *> &ReverseCFGPostOrder) {
-  /// Backedges - Backedges detected in the DFS. These edges will be
-  /// ignored in the reverse-CFG DFS, so that loops with multiple exits will be
-  /// traversed in the desired order.
-  DenseSet<std::pair<BasicBlock *, BasicBlock *> > Backedges;
-
+                  SmallVectorImpl<BasicBlock *> &ReverseCFGPostOrder,
+                  unsigned NoObjCARCExceptionsMDKind,
+                  DenseMap<const BasicBlock *, BBState> &BBStates) {
   /// Visited - The visited set, for doing DFS walks.
   SmallPtrSet<BasicBlock *, 16> Visited;
 
   // Do DFS, computing the PostOrder.
   SmallPtrSet<BasicBlock *, 16> OnStack;
   SmallVector<std::pair<BasicBlock *, succ_iterator>, 16> SuccStack;
+
+  // Functions always have exactly one entry block, and we don't have
+  // any other block that we treat like an entry block.
   BasicBlock *EntryBB = &F.getEntryBlock();
+  BBStates[EntryBB].SetAsEntry();
+
   SuccStack.push_back(std::make_pair(EntryBB, succ_begin(EntryBB)));
   Visited.insert(EntryBB);
   OnStack.insert(EntryBB);
   do {
   dfs_next_succ:
-    TerminatorInst *TI = cast<TerminatorInst>(&SuccStack.back().first->back());
-    succ_iterator End = succ_iterator(TI, true);
-    while (SuccStack.back().second != End) {
-      BasicBlock *BB = *SuccStack.back().second++;
-      if (Visited.insert(BB)) {
-        SuccStack.push_back(std::make_pair(BB, succ_begin(BB)));
-        OnStack.insert(BB);
+    BasicBlock *CurrBB = SuccStack.back().first;
+    TerminatorInst *TI = cast<TerminatorInst>(&CurrBB->back());
+    succ_iterator SE(TI, false);
+    
+    // If the terminator is an invoke marked with the
+    // clang.arc.no_objc_arc_exceptions metadata, the unwind edge can be
+    // ignored, for ARC purposes.
+    if (isa<InvokeInst>(TI) && TI->getMetadata(NoObjCARCExceptionsMDKind))
+      --SE;
+
+    while (SuccStack.back().second != SE) {
+      BasicBlock *SuccBB = *SuccStack.back().second++;
+      if (Visited.insert(SuccBB)) {
+        SuccStack.push_back(std::make_pair(SuccBB, succ_begin(SuccBB)));
+        BBStates[CurrBB].addSucc(SuccBB);
+        BBStates[SuccBB].addPred(CurrBB);
+        OnStack.insert(SuccBB);
         goto dfs_next_succ;
       }
-      if (OnStack.count(BB))
-        Backedges.insert(std::make_pair(SuccStack.back().first, BB));
+
+      if (!OnStack.count(SuccBB)) {
+        BBStates[CurrBB].addSucc(SuccBB);
+        BBStates[SuccBB].addPred(CurrBB);
+      }
     }
-    OnStack.erase(SuccStack.back().first);
-    PostOrder.push_back(SuccStack.pop_back_val().first);
+    OnStack.erase(CurrBB);
+    PostOrder.push_back(CurrBB);
+    SuccStack.pop_back();
   } while (!SuccStack.empty());
 
   Visited.clear();
 
-  // Compute the exits, which are the starting points for reverse-CFG DFS.
-  // This includes blocks where all the successors are backedges that
-  // we're skipping.
-  SmallVector<BasicBlock *, 4> Exits;
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
-    TerminatorInst *TI = cast<TerminatorInst>(&BB->back());
-    for (succ_iterator SI(TI), SE(TI, true); SI != SE; ++SI)
-      if (!Backedges.count(std::make_pair(BB, *SI)))
-        goto HasNonBackedgeSucc;
-    Exits.push_back(BB);
-  HasNonBackedgeSucc:;
-  }
-
   // Do reverse-CFG DFS, computing the reverse-CFG PostOrder.
-  SmallVector<std::pair<BasicBlock *, pred_iterator>, 16> PredStack;
-  for (SmallVectorImpl<BasicBlock *>::iterator I = Exits.begin(), E = Exits.end();
-       I != E; ++I) {
-    BasicBlock *ExitBB = *I;
-    PredStack.push_back(std::make_pair(ExitBB, pred_begin(ExitBB)));
+  // Functions may have many exits, and there also blocks which we treat
+  // as exits due to ignored edges.
+  SmallVector<std::pair<BasicBlock *, BBState::edge_iterator>, 16> PredStack;
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *ExitBB = I;
+    BBState &MyStates = BBStates[ExitBB];
+    if (!MyStates.isExit())
+      continue;
+
+    MyStates.SetAsExit();
+
+    PredStack.push_back(std::make_pair(ExitBB, MyStates.pred_begin()));
     Visited.insert(ExitBB);
     while (!PredStack.empty()) {
     reverse_dfs_next_succ:
-      pred_iterator End = pred_end(PredStack.back().first);
-      while (PredStack.back().second != End) {
+      BBState::edge_iterator PE = BBStates[PredStack.back().first].pred_end();
+      while (PredStack.back().second != PE) {
         BasicBlock *BB = *PredStack.back().second++;
-        // Skip backedges detected in the forward-CFG DFS.
-        if (Backedges.count(std::make_pair(BB, PredStack.back().first)))
-          continue;
         if (Visited.insert(BB)) {
-          PredStack.push_back(std::make_pair(BB, pred_begin(BB)));
+          PredStack.push_back(std::make_pair(BB, BBStates[BB].pred_begin()));
           goto reverse_dfs_next_succ;
         }
       }
@@ -3109,7 +3074,9 @@ ObjCARCOpt::Visit(Function &F,
   // function exit point, and we want to ignore selected cycle edges.
   SmallVector<BasicBlock *, 16> PostOrder;
   SmallVector<BasicBlock *, 16> ReverseCFGPostOrder;
-  ComputePostOrders(F, PostOrder, ReverseCFGPostOrder);
+  ComputePostOrders(F, PostOrder, ReverseCFGPostOrder,
+                    NoObjCARCExceptionsMDKind,
+                    BBStates);
 
   // Use reverse-postorder on the reverse CFG for bottom-up.
   bool BottomUpNestingDetected = false;
@@ -3379,7 +3346,8 @@ ObjCARCOpt::PerformCodePlacement(DenseMap<const BasicBlock *, BBState>
 
     // Ok, everything checks out and we're all set. Let's move some code!
     Changed = true;
-    AnyPairsCompletelyEliminated = OldCount != 0 && NewCount == 0;
+    assert(OldCount != 0 && "Unreachable code?");
+    AnyPairsCompletelyEliminated = NewCount == 0;
     NumRRs += OldCount - NewCount;
     MoveCalls(Arg, RetainsToMove, ReleasesToMove,
               Retains, Releases, DeadInsts, M);
@@ -3519,7 +3487,7 @@ void ObjCARCOpt::OptimizeWeakCalls(Function &F) {
     if (AllocaInst *Alloca = dyn_cast<AllocaInst>(Arg)) {
       for (Value::use_iterator UI = Alloca->use_begin(),
            UE = Alloca->use_end(); UI != UE; ++UI) {
-        Instruction *UserInst = cast<Instruction>(*UI);
+        const Instruction *UserInst = cast<Instruction>(*UI);
         switch (GetBasicInstructionClass(UserInst)) {
         case IC_InitWeak:
         case IC_StoreWeak:
@@ -3694,7 +3662,7 @@ bool ObjCARCOpt::doInitialization(Module &M) {
 
   // Intuitively, objc_retain and others are nocapture, however in practice
   // they are not, because they return their argument value. And objc_release
-  // calls finalizers.
+  // calls finalizers which can have arbitrary side effects.
 
   // These are initialized lazily.
   RetainRVCallee = 0;
@@ -3896,8 +3864,7 @@ Constant *ObjCARCContract::getRetainAutoreleaseRVCallee(Module *M) {
   return RetainAutoreleaseRVCallee;
 }
 
-/// ContractAutorelease - Merge an autorelease with a retain into a fused
-/// call.
+/// ContractAutorelease - Merge an autorelease with a retain into a fused call.
 bool
 ObjCARCContract::ContractAutorelease(Function &F, Instruction *Autorelease,
                                      InstructionClass Class,
@@ -4164,8 +4131,7 @@ bool ObjCARCContract::runOnFunction(Function &F) {
             // While we're here, rewrite all edges for this PHI, rather
             // than just one use at a time, to minimize the number of
             // bitcasts we emit.
-            for (unsigned i = 0, e = PHI->getNumIncomingValues();
-                 i != e; ++i)
+            for (unsigned i = 0, e = PHI->getNumIncomingValues(); i != e; ++i)
               if (PHI->getIncomingBlock(i) == BB) {
                 // Keep the UI iterator valid.
                 if (&PHI->getOperandUse(
@@ -4183,8 +4149,7 @@ bool ObjCARCContract::runOnFunction(Function &F) {
         }
       }
 
-      // If Arg is a no-op casted pointer, strip one level of casts and
-      // iterate.
+      // If Arg is a no-op casted pointer, strip one level of casts and iterate.
       if (const BitCastInst *BI = dyn_cast<BitCastInst>(Arg))
         Arg = BI->getOperand(0);
       else if (isa<GEPOperator>(Arg) &&

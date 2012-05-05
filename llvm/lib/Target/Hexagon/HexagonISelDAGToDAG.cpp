@@ -318,7 +318,7 @@ SDNode *HexagonDAGToDAGISel::SelectBaseOffsetLoad(LoadSDNode *LD, DebugLoc dl) {
       else if (LoadedVT == MVT::i32) Opcode = Hexagon::LDriw_indexed;
       else if (LoadedVT == MVT::i16) Opcode = Hexagon::LDrih_indexed;
       else if (LoadedVT == MVT::i8) Opcode = Hexagon::LDrib_indexed;
-      else assert (0 && "unknown memory type");
+      else llvm_unreachable("unknown memory type");
 
       // Build indexed load.
       SDValue TargetConstOff = CurDAG->getTargetConstant(Offset, PointerTy);
@@ -375,7 +375,7 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoadSignExtend64(LoadSDNode *LD,
       };
       ReplaceUses(Froms, Tos, 3);
       return Result_2;
-    } 
+    }
     SDValue TargetConst0 = CurDAG->getTargetConstant(0, MVT::i32);
     SDValue TargetConstVal = CurDAG->getTargetConstant(Val, MVT::i32);
     SDNode *Result_1 = CurDAG->getMachineNode(Opcode, dl, MVT::i32,
@@ -516,7 +516,7 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, DebugLoc dl) {
     else
       Opcode = zextval ? Hexagon::LDriub : Hexagon::LDrib;
   } else
-    assert (0 && "unknown memory type");
+    llvm_unreachable("unknown memory type");
 
   // For zero ext i64 loads, we need to add combine instructions.
   if (LD->getValueType(0) == MVT::i64 &&
@@ -613,7 +613,7 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedStore(StoreSDNode *ST, DebugLoc dl) {
     else if (StoredVT == MVT::i32) Opcode = Hexagon::POST_STwri;
     else if (StoredVT == MVT::i16) Opcode = Hexagon::POST_SThri;
     else if (StoredVT == MVT::i8) Opcode = Hexagon::POST_STbri;
-    else assert (0 && "unknown memory type");
+    else llvm_unreachable("unknown memory type");
 
     // Build post increment store.
     SDNode* Result = CurDAG->getMachineNode(Opcode, dl, MVT::i32,
@@ -636,10 +636,10 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedStore(StoreSDNode *ST, DebugLoc dl) {
 
   // Figure out the opcode.
   if (StoredVT == MVT::i64) Opcode = Hexagon::STrid;
-  else if (StoredVT == MVT::i32) Opcode = Hexagon::STriw;
+  else if (StoredVT == MVT::i32) Opcode = Hexagon::STriw_indexed;
   else if (StoredVT == MVT::i16) Opcode = Hexagon::STrih;
   else if (StoredVT == MVT::i8) Opcode = Hexagon::STrib;
-  else assert (0 && "unknown memory type");
+  else llvm_unreachable("unknown memory type");
 
   // Build regular store.
   SDValue TargetConstVal = CurDAG->getTargetConstant(Val, MVT::i32);
@@ -693,7 +693,7 @@ SDNode *HexagonDAGToDAGISel::SelectBaseOffsetStore(StoreSDNode *ST,
         else if (StoredVT == MVT::i32) Opcode = Hexagon::STriw_indexed;
         else if (StoredVT == MVT::i16) Opcode = Hexagon::STrih_indexed;
         else if (StoredVT == MVT::i8) Opcode = Hexagon::STrib_indexed;
-        else assert (0 && "unknown memory type");
+        else llvm_unreachable("unknown memory type");
 
         SDValue Ops[] = {SDValue(NewBase,0),
                          CurDAG->getTargetConstant(Offset,PointerTy),
@@ -723,7 +723,7 @@ SDNode *HexagonDAGToDAGISel::SelectStore(SDNode *N) {
   if (AM != ISD::UNINDEXED) {
     return SelectIndexedStore(ST, dl);
   }
-   
+
   return SelectBaseOffsetStore(ST, dl);
 }
 
@@ -752,7 +752,7 @@ SDNode *HexagonDAGToDAGISel::SelectMul(SDNode *N) {
     if (MulOp0.getOpcode() == ISD::SIGN_EXTEND) {
       SDValue Sext0 = MulOp0.getOperand(0);
       if (Sext0.getNode()->getValueType(0) != MVT::i32) {
-        SelectCode(N);
+        return SelectCode(N);
       }
 
       OP0 = Sext0;
@@ -761,7 +761,7 @@ SDNode *HexagonDAGToDAGISel::SelectMul(SDNode *N) {
       if (LD->getMemoryVT() != MVT::i32 ||
           LD->getExtensionType() != ISD::SEXTLOAD ||
           LD->getAddressingMode() != ISD::UNINDEXED) {
-        SelectCode(N);
+        return SelectCode(N);
       }
 
       SDValue Chain = LD->getChain();
@@ -1215,7 +1215,7 @@ SDNode *HexagonDAGToDAGISel::SelectAdd(SDNode *N) {
 
   // Build Rd = Rd' + asr(Rs, Rt). The machine constraints will ensure that
   // Rd and Rd' are assigned to the same register
-  SDNode* Result = CurDAG->getMachineNode(Hexagon::ASR_rr_acc, dl, MVT::i32,
+  SDNode* Result = CurDAG->getMachineNode(Hexagon::ASR_ADD_rr, dl, MVT::i32,
                                           N->getOperand(1),
                                           Src1->getOperand(0),
                                           Src1->getOperand(1));

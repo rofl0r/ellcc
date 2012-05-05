@@ -66,16 +66,31 @@ static bool checkArgCount(Sema &S, CallExpr *call, unsigned desiredArgCount) {
     << call->getArg(1)->getSourceRange();
 }
 
-/// CheckBuiltinAnnotationString - Checks that string argument to the builtin
-/// annotation is a non wide string literal.
-static bool CheckBuiltinAnnotationString(Sema &S, Expr *Arg) {
-  Arg = Arg->IgnoreParenCasts();
-  StringLiteral *Literal = dyn_cast<StringLiteral>(Arg);
-  if (!Literal || !Literal->isAscii()) {
-    S.Diag(Arg->getLocStart(), diag::err_builtin_annotation_not_string_constant)
-      << Arg->getSourceRange();
+/// Check that the first argument to __builtin_annotation is an integer
+/// and the second argument is a non-wide string literal.
+static bool SemaBuiltinAnnotation(Sema &S, CallExpr *TheCall) {
+  if (checkArgCount(S, TheCall, 2))
+    return true;
+
+  // First argument should be an integer.
+  Expr *ValArg = TheCall->getArg(0);
+  QualType Ty = ValArg->getType();
+  if (!Ty->isIntegerType()) {
+    S.Diag(ValArg->getLocStart(), diag::err_builtin_annotation_first_arg)
+      << ValArg->getSourceRange();
     return true;
   }
+
+  // Second argument should be a constant string.
+  Expr *StrArg = TheCall->getArg(1)->IgnoreParenCasts();
+  StringLiteral *Literal = dyn_cast<StringLiteral>(StrArg);
+  if (!Literal || !Literal->isAscii()) {
+    S.Diag(StrArg->getLocStart(), diag::err_builtin_annotation_second_arg)
+      << StrArg->getSourceRange();
+    return true;
+  }
+
+  TheCall->setType(Ty);
   return false;
 }
 
@@ -256,7 +271,7 @@ Sema::CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
     return SemaAtomicOpsOverloaded(move(TheCallResult), AtomicExpr::AO##ID);
 #include "clang/Basic/Builtins.def"
   case Builtin::BI__builtin_annotation:
-    if (CheckBuiltinAnnotationString(*this, TheCall->getArg(1)))
+    if (SemaBuiltinAnnotation(*this, TheCall))
       return ExprError();
     break;
   }
@@ -1734,7 +1749,8 @@ void Sema::CheckFormatArguments(Expr **Args, unsigned NumArgs,
   // format is either NSString or CFString. This is a hack to prevent
   // diag when using the NSLocalizedString and CFCopyLocalizedString macros
   // which are usually used in place of NS and CF string literals.
-  if (Type == FST_NSString && Args[format_idx]->getLocStart().isMacroID())
+  if (Type == FST_NSString &&
+      SourceMgr.isInSystemMacro(Args[format_idx]->getLocStart()))
     return;
 
   // If there are no arguments specified, warn with -Wformat-security, otherwise
@@ -1960,9 +1976,12 @@ void CheckFormatHandler::DoneProcessing() {
     signed notCoveredArg = CoveredArgs.find_first();
     if (notCoveredArg >= 0) {
       assert((unsigned)notCoveredArg < NumDataArgs);
-      EmitFormatDiagnostic(S.PDiag(diag::warn_printf_data_arg_not_used),
-                           getDataArg((unsigned) notCoveredArg)->getLocStart(),
-                           /*IsStringLocation*/false, getFormatStringRange());
+      SourceLocation Loc = getDataArg((unsigned) notCoveredArg)->getLocStart();
+      if (!S.getSourceManager().isInSystemMacro(Loc)) {
+        EmitFormatDiagnostic(S.PDiag(diag::warn_printf_data_arg_not_used),
+                             Loc,
+                             /*IsStringLocation*/false, getFormatStringRange());
+      }
     }
   }
 }
@@ -2374,7 +2393,8 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
     // or 'short' to an 'int'.  This is done because printf is a varargs
     // function.
     if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Ex))
-      if (ICE->getType() == S.Context.IntTy) {
+      if (ICE->getType() == S.Context.IntTy ||
+          ICE->getType() == S.Context.UnsignedIntTy) {
         // All further checking is done on the subexpression.
         Ex = ICE->getSubExpr();
         if (ATR.matchesType(S.Context, Ex->getType()))
@@ -3002,8 +3022,10 @@ void Sema::CheckStrncatArguments(const CallExpr *CE,
 
 //===--- CHECK: Return Address of Stack Variable --------------------------===//
 
-static Expr *EvalVal(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars);
-static Expr *EvalAddr(Expr* E, SmallVectorImpl<DeclRefExpr *> &refVars);
+static Expr *EvalVal(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars,
+                     Decl *ParentDecl);
+static Expr *EvalAddr(Expr* E, SmallVectorImpl<DeclRefExpr *> &refVars,
+                      Decl *ParentDecl);
 
 /// CheckReturnStackAddr - Check if a return statement returns the address
 ///   of a stack variable.
@@ -3018,9 +3040,9 @@ Sema::CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
   // label addresses or references to temporaries.
   if (lhsType->isPointerType() ||
       (!getLangOpts().ObjCAutoRefCount && lhsType->isBlockPointerType())) {
-    stackE = EvalAddr(RetValExp, refVars);
+    stackE = EvalAddr(RetValExp, refVars, /*ParentDecl=*/0);
   } else if (lhsType->isReferenceType()) {
-    stackE = EvalVal(RetValExp, refVars);
+    stackE = EvalVal(RetValExp, refVars, /*ParentDecl=*/0);
   }
 
   if (stackE == 0)
@@ -3094,7 +3116,8 @@ Sema::CheckReturnStackAddr(Expr *RetValExp, QualType lhsType,
 ///   * arbitrary interplay between "&" and "*" operators
 ///   * pointer arithmetic from an address of a stack variable
 ///   * taking the address of an array element where the array is on the stack
-static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
+static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars,
+                      Decl *ParentDecl) {
   if (E->isTypeDependent())
       return NULL;
 
@@ -3120,7 +3143,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
           V->getType()->isReferenceType() && V->hasInit()) {
         // Add the reference variable to the "trail".
         refVars.push_back(DR);
-        return EvalAddr(V->getInit(), refVars);
+        return EvalAddr(V->getInit(), refVars, ParentDecl);
       }
 
     return NULL;
@@ -3132,7 +3155,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     UnaryOperator *U = cast<UnaryOperator>(E);
 
     if (U->getOpcode() == UO_AddrOf)
-      return EvalVal(U->getSubExpr(), refVars);
+      return EvalVal(U->getSubExpr(), refVars, ParentDecl);
     else
       return NULL;
   }
@@ -3153,7 +3176,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     if (!Base->getType()->isPointerType()) Base = B->getRHS();
 
     assert (Base->getType()->isPointerType());
-    return EvalAddr(Base, refVars);
+    return EvalAddr(Base, refVars, ParentDecl);
   }
 
   // For conditional operators we need to see if either the LHS or RHS are
@@ -3165,7 +3188,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     if (Expr *lhsExpr = C->getLHS()) {
     // In C++, we can have a throw-expression, which has 'void' type.
       if (!lhsExpr->getType()->isVoidType())
-        if (Expr* LHS = EvalAddr(lhsExpr, refVars))
+        if (Expr* LHS = EvalAddr(lhsExpr, refVars, ParentDecl))
           return LHS;
     }
 
@@ -3173,7 +3196,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     if (C->getRHS()->getType()->isVoidType())
       return NULL;
 
-    return EvalAddr(C->getRHS(), refVars);
+    return EvalAddr(C->getRHS(), refVars, ParentDecl);
   }
   
   case Stmt::BlockExprClass:
@@ -3185,7 +3208,8 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     return E; // address of label.
 
   case Stmt::ExprWithCleanupsClass:
-    return EvalAddr(cast<ExprWithCleanups>(E)->getSubExpr(), refVars);
+    return EvalAddr(cast<ExprWithCleanups>(E)->getSubExpr(), refVars,
+                    ParentDecl);
 
   // For casts, we need to handle conversions from arrays to
   // pointer values, and pointer-to-pointer conversions.
@@ -3209,10 +3233,10 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
     case CK_CPointerToObjCPointerCast:
     case CK_BlockPointerToObjCPointerCast:
     case CK_AnyPointerToBlockPointerCast:
-      return EvalAddr(SubExpr, refVars);
+      return EvalAddr(SubExpr, refVars, ParentDecl);
 
     case CK_ArrayToPointerDecay:
-      return EvalVal(SubExpr, refVars);
+      return EvalVal(SubExpr, refVars, ParentDecl);
 
     default:
       return 0;
@@ -3222,7 +3246,7 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
   case Stmt::MaterializeTemporaryExprClass:
     if (Expr *Result = EvalAddr(
                          cast<MaterializeTemporaryExpr>(E)->GetTemporaryExpr(),
-                                refVars))
+                                refVars, ParentDecl))
       return Result;
       
     return E;
@@ -3236,7 +3260,8 @@ static Expr *EvalAddr(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
 
 ///  EvalVal - This function is complements EvalAddr in the mutual recursion.
 ///   See the comments for EvalAddr for more details.
-static Expr *EvalVal(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars) {
+static Expr *EvalVal(Expr *E, SmallVectorImpl<DeclRefExpr *> &refVars,
+                     Decl *ParentDecl) {
 do {
   // We should only be called for evaluating non-pointer expressions, or
   // expressions with a pointer type that are not used as references but instead
@@ -3258,7 +3283,7 @@ do {
   }
 
   case Stmt::ExprWithCleanupsClass:
-    return EvalVal(cast<ExprWithCleanups>(E)->getSubExpr(), refVars);
+    return EvalVal(cast<ExprWithCleanups>(E)->getSubExpr(), refVars,ParentDecl);
 
   case Stmt::DeclRefExprClass: {
     // When we hit a DeclRefExpr we are looking at code that refers to a
@@ -3266,7 +3291,11 @@ do {
     // local storage within the function, and if so, return the expression.
     DeclRefExpr *DR = cast<DeclRefExpr>(E);
 
-    if (VarDecl *V = dyn_cast<VarDecl>(DR->getDecl()))
+    if (VarDecl *V = dyn_cast<VarDecl>(DR->getDecl())) {
+      // Check if it refers to itself, e.g. "int& i = i;".
+      if (V == ParentDecl)
+        return DR;
+
       if (V->hasLocalStorage()) {
         if (!V->getType()->isReferenceType())
           return DR;
@@ -3276,9 +3305,10 @@ do {
         if (V->hasInit()) {
           // Add the reference variable to the "trail".
           refVars.push_back(DR);
-          return EvalVal(V->getInit(), refVars);
+          return EvalVal(V->getInit(), refVars, V);
         }
       }
+    }
 
     return NULL;
   }
@@ -3290,7 +3320,7 @@ do {
     UnaryOperator *U = cast<UnaryOperator>(E);
 
     if (U->getOpcode() == UO_Deref)
-      return EvalAddr(U->getSubExpr(), refVars);
+      return EvalAddr(U->getSubExpr(), refVars, ParentDecl);
 
     return NULL;
   }
@@ -3299,7 +3329,7 @@ do {
     // Array subscripts are potential references to data on the stack.  We
     // retrieve the DeclRefExpr* for the array variable if it indeed
     // has local storage.
-    return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase(), refVars);
+    return EvalAddr(cast<ArraySubscriptExpr>(E)->getBase(), refVars,ParentDecl);
   }
 
   case Stmt::ConditionalOperatorClass: {
@@ -3309,10 +3339,10 @@ do {
 
     // Handle the GNU extension for missing LHS.
     if (Expr *lhsExpr = C->getLHS())
-      if (Expr *LHS = EvalVal(lhsExpr, refVars))
+      if (Expr *LHS = EvalVal(lhsExpr, refVars, ParentDecl))
         return LHS;
 
-    return EvalVal(C->getRHS(), refVars);
+    return EvalVal(C->getRHS(), refVars, ParentDecl);
   }
 
   // Accesses to members are potential references to data on the stack.
@@ -3328,13 +3358,13 @@ do {
     if (M->getMemberDecl()->getType()->isReferenceType())
       return NULL;
 
-    return EvalVal(M->getBase(), refVars);
+    return EvalVal(M->getBase(), refVars, ParentDecl);
   }
 
   case Stmt::MaterializeTemporaryExprClass:
     if (Expr *Result = EvalVal(
                           cast<MaterializeTemporaryExpr>(E)->GetTemporaryExpr(),
-                               refVars))
+                               refVars, ParentDecl))
       return Result;
       
     return E;
@@ -3927,9 +3957,10 @@ static void AnalyzeComparison(Sema &S, BinaryOperator *E) {
       return;
   }
 
-  S.Diag(E->getOperatorLoc(), diag::warn_mixed_sign_comparison)
-    << LHS->getType() << RHS->getType()
-    << LHS->getSourceRange() << RHS->getSourceRange();
+  S.DiagRuntimeBehavior(E->getOperatorLoc(), E,
+    S.PDiag(diag::warn_mixed_sign_comparison)
+      << LHS->getType() << RHS->getType()
+      << LHS->getSourceRange() << RHS->getSourceRange());
 }
 
 /// Analyzes an attempt to assign the given value to a bitfield.
@@ -4205,7 +4236,8 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     if (Loc.isMacroID())
       Loc = S.SourceMgr.getImmediateExpansionRange(Loc).first;
     S.Diag(Loc, diag::warn_impcast_null_pointer_to_integer)
-        << T << Loc << clang::SourceRange(CC);
+        << T << clang::SourceRange(CC)
+        << FixItHint::CreateReplacement(Loc, S.getFixItZeroLiteralForType(T));
     return;
   }
 
@@ -4457,7 +4489,7 @@ bool Sema::CheckParmsForFunctionDef(ParmVarDecl **P, ParmVarDecl **PEnd,
     // This is also C++ [dcl.fct]p6.
     if (!Param->isInvalidDecl() &&
         RequireCompleteType(Param->getLocation(), Param->getType(),
-                               diag::err_typecheck_decl_incomplete_type)) {
+                            diag::err_typecheck_decl_incomplete_type)) {
       Param->setInvalidDecl();
       HasInvalidParm = true;
     }
@@ -4556,11 +4588,15 @@ static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
 
   // Don't consider sizes resulting from macro expansions or template argument
   // substitution to form C89 tail-padded arrays.
-  ConstantArrayTypeLoc TL =
-    cast<ConstantArrayTypeLoc>(FD->getTypeSourceInfo()->getTypeLoc());
-  const Expr *SizeExpr = dyn_cast<IntegerLiteral>(TL.getSizeExpr());
-  if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
-    return false;
+
+  TypeSourceInfo *TInfo = FD->getTypeSourceInfo();
+  if (TInfo) {
+    ConstantArrayTypeLoc TL =
+      cast<ConstantArrayTypeLoc>(TInfo->getTypeLoc());
+    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(TL.getSizeExpr());
+    if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
+      return false;
+  }
 
   const RecordDecl *RD = dyn_cast<RecordDecl>(FD->getDeclContext());
   if (!RD) return false;

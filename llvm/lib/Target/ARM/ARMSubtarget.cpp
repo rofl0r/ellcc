@@ -67,6 +67,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
   , HasDataBarrier(false)
   , Pref32BitThumb(false)
   , AvoidCPSRPartialUpdate(false)
+  , HasRAS(false)
   , HasMPExtension(false)
   , FPOnlySP(false)
   , AllowsUnalignedMem(false)
@@ -82,7 +83,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
   // Insert the architecture feature derived from the target triple into the
   // feature string. This is important for setting features that are implied
   // based on the architecture version.
-  std::string ArchFS = ARM_MC::ParseARMTriple(TT);
+  std::string ArchFS = ARM_MC::ParseARMTriple(TT, CPUString);
   if (!FS.empty()) {
     if (!ArchFS.empty())
       ArchFS = ArchFS + "," + FS;
@@ -102,7 +103,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
   // After parsing Itineraries, set ItinData.IssueWidth.
   computeIssueWidth();
 
-  if (TT.find("eabi") != std::string::npos)
+  if ((TT.find("eabi") != std::string::npos) || (isTargetIOS() && isMClass()))
     // FIXME: We might want to separate AAPCS and EABI. Some systems, e.g.
     // Darwin-EABI conforms to AACPS but not the rest of EABI.
     TargetABI = ARM_ABI_AAPCS;

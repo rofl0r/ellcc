@@ -1,10 +1,8 @@
-// RUN: %clang_cc1 -fms-extensions -rewrite-objc -x objective-c++ -fblocks -o %t-rw.cpp %s
-// RUN: %clang_cc1 -fsyntax-only -Werror -Wno-address-of-temporary -Wno-attributes -D"Class=void*" -D"id=void*" -D"SEL=void*" -D"__declspec(X)=" %t-rw.cpp
+// RUN: %clang_cc1 -fms-extensions -U__declspec -rewrite-objc -x objective-c++ -fblocks -o %t-rw.cpp %s
+// RUN: %clang_cc1 -fsyntax-only -Werror -Wno-address-of-temporary -Wno-attributes -D"Class=void*" -D"id=void*" -D"SEL=void*" -U__declspec -D"__declspec(X)=" %t-rw.cpp
 // rdar://11131490
 
-// XFAIL: mingw
-// FIXME: __declspec(X) is predefined on mingw.
-
+typedef unsigned long size_t;
 extern "C" __declspec(dllexport) void BreakTheRewriter(void) {
         __block int aBlockVariable = 0;
         void (^aBlock)(void) = ^ {
@@ -67,4 +65,30 @@ static void initStatics2() {
         stringtype = CFStringGetTypeID();
     });
 }
+
+// rdar://11314329
+static inline const void *auto_zone_base_pointer(void *zone, const void *ptr) { return 0; }
+
+@interface I
+{
+   id list;
+}
+- (void) Meth;
+// radar 7589385 use before definition
+- (void) allObjects;
+@end
+
+@implementation I
+// radar 7589385 use before definition
+- (void) allObjects {
+    __attribute__((__blocks__(byref))) id *listp;
+
+    void (^B)(void) = ^(void) {
+      *listp++ = 0;
+    };
+
+    B();
+}
+- (void) Meth { __attribute__((__blocks__(byref))) void ** listp = (void **)list; }
+@end
 

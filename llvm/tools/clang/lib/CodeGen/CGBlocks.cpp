@@ -458,18 +458,22 @@ static void computeBlockInfo(CodeGenModule &CGM, CodeGenFunction *CGF,
     }
   }
 
+  assert(endAlign == getLowBit(blockSize));
+
   // At this point, we just have to add padding if the end align still
   // isn't aligned right.
   if (endAlign < maxFieldAlign) {
-    CharUnits padding = maxFieldAlign - endAlign;
+    CharUnits newBlockSize = blockSize.RoundUpToAlignment(maxFieldAlign);
+    CharUnits padding = newBlockSize - blockSize;
 
     elementTypes.push_back(llvm::ArrayType::get(CGM.Int8Ty,
                                                 padding.getQuantity()));
-    blockSize += padding;
-
-    endAlign = getLowBit(blockSize);
-    assert(endAlign >= maxFieldAlign);
+    blockSize = newBlockSize;
+    endAlign = getLowBit(blockSize); // might be > maxFieldAlign
   }
+
+  assert(endAlign >= maxFieldAlign);
+  assert(endAlign == getLowBit(blockSize));
 
   // Slam everything else on now.  This works because they have
   // strictly decreasing alignment and we expect that size is always a
@@ -1130,15 +1134,17 @@ CodeGenFunction::GenerateBlockFunction(GlobalDecl GD,
       const VarDecl *variable = ci->getVariable();
       DI->EmitLocation(Builder, variable->getLocation());
 
-      const CGBlockInfo::Capture &capture = blockInfo.getCapture(variable);
-      if (capture.isConstant()) {
-        DI->EmitDeclareOfAutoVariable(variable, LocalDeclMap[variable],
-                                      Builder);
-        continue;
-      }
+      if (CGM.getCodeGenOpts().DebugInfo >= CodeGenOptions::LimitedDebugInfo) {
+        const CGBlockInfo::Capture &capture = blockInfo.getCapture(variable);
+        if (capture.isConstant()) {
+          DI->EmitDeclareOfAutoVariable(variable, LocalDeclMap[variable],
+                                        Builder);
+          continue;
+        }
 
-      DI->EmitDeclareOfBlockDeclRefVariable(variable, BlockPointer,
-                                            Builder, blockInfo);
+        DI->EmitDeclareOfBlockDeclRefVariable(variable, BlockPointer,
+                                              Builder, blockInfo);
+      }
     }
   }
 

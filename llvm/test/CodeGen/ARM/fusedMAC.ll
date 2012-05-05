@@ -138,8 +138,7 @@ entry:
 ; CHECK: vfms.f64
   %tmp1 = fsub double -0.0, %b
   %tmp2 = tail call double @llvm.fma.f64(double %a, double %tmp1, double %c) nounwind readnone
-  %tmp3 = fsub double -0.0, %tmp2
-  ret double %tmp3
+  ret double %tmp2
 }
 
 define double @test_fnms_f64(double %a, double %b, double %c) nounwind readnone ssp {
@@ -158,7 +157,8 @@ entry:
 ; CHECK: vfnms.f64
   %tmp1 = fsub double -0.0, %b
   %tmp2 = tail call double @llvm.fma.f64(double %a, double %tmp1, double %c) nounwind readnone
-  ret double %tmp2
+  %tmp3 = fsub double -0.0, %tmp2
+  ret double %tmp3
 }
 
 define double @test_fnma_f64(double %a, double %b, double %c) nounwind readnone ssp {
@@ -178,6 +178,15 @@ entry:
   %tmp2 = fsub double -0.0, %c
   %tmp3 = tail call double @llvm.fma.f64(double %tmp1, double %b, double %tmp2) nounwind readnone
   ret double %tmp3
+}
+
+define float @test_fma_const_fold(float %a, float %b) nounwind {
+; CHECK: test_fma_const_fold
+; CHECK-NOT: vfma
+; CHECK-NOT: vmul
+; CHECK: vadd
+  %ret = call float @llvm.fma.f32(float %a, float 1.0, float %b)
+  ret float %ret
 }
 
 declare float @llvm.fma.f32(float, float, float) nounwind readnone

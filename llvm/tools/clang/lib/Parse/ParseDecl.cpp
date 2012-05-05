@@ -14,6 +14,7 @@
 #include "clang/Parse/Parser.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Basic/OpenCL.h"
+#include "clang/Sema/Lookup.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
@@ -1311,10 +1312,9 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
     *DeclEnd = Tok.getLocation();
 
   if (ExpectSemi &&
-      ExpectAndConsume(tok::semi,
-                       Context == Declarator::FileContext
-                         ? diag::err_invalid_token_after_toplevel_declarator
-                         : diag::err_expected_semi_declaration)) {
+      ExpectAndConsumeSemi(Context == Declarator::FileContext
+                           ? diag::err_invalid_token_after_toplevel_declarator
+                           : diag::err_expected_semi_declaration)) {
     // Okay, there was no semicolon and one was expected.  If we see a
     // declaration specifier, just assume it was missing and continue parsing.
     // Otherwise things are very confused and we skip to recover.
@@ -1671,9 +1671,20 @@ bool Parser::ParseImplicitInt(DeclSpec &DS, CXXScopeSpec *SS,
     }
 
     if (TagName) {
+      IdentifierInfo *TokenName = Tok.getIdentifierInfo();
+      LookupResult R(Actions, TokenName, SourceLocation(),
+                     Sema::LookupOrdinaryName);
+
       Diag(Loc, diag::err_use_of_tag_name_without_tag)
-        << Tok.getIdentifierInfo() << TagName << getLangOpts().CPlusPlus
-        << FixItHint::CreateInsertion(Tok.getLocation(),FixitTagName);
+        << TokenName << TagName << getLangOpts().CPlusPlus
+        << FixItHint::CreateInsertion(Tok.getLocation(), FixitTagName);
+
+      if (Actions.LookupParsedName(R, getCurScope(), SS)) {
+        for (LookupResult::iterator I = R.begin(), IEnd = R.end();
+             I != IEnd; ++I)
+          Diag((*I)->getLocation(), diag::note_decl_hiding_tag_type)
+            << TokenName << TagName;
+      }
 
       // Parse this as a tag as if the missing tag were present.
       if (TagKind == tok::kw_enum)
@@ -4197,7 +4208,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
   SmallVector<ParsedType, 2> DynamicExceptions;
   SmallVector<SourceRange, 2> DynamicExceptionRanges;
   ExprResult NoexceptExpr;
-  CachedTokens *ExceptionSpecTokens = 0;
   ParsedAttributes FnAttrs(AttrFactory);
   ParsedType TrailingReturnType;
 
@@ -4264,18 +4274,12 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
                                dyn_cast<CXXRecordDecl>(Actions.CurContext),
                                DS.getTypeQualifiers(),
                                IsCXX11MemberFunction);
-      
+
       // Parse exception-specification[opt].
-      bool Delayed = (D.getContext() == Declarator::MemberContext &&
-                      D.getDeclSpec().getStorageClassSpec()
-                        != DeclSpec::SCS_typedef &&
-                      !D.getDeclSpec().isFriendSpecified());
-      ESpecType = tryParseExceptionSpecification(Delayed,
-                                                 ESpecRange,
+      ESpecType = tryParseExceptionSpecification(ESpecRange,
                                                  DynamicExceptions,
                                                  DynamicExceptionRanges,
-                                                 NoexceptExpr,
-                                                 ExceptionSpecTokens);
+                                                 NoexceptExpr);
       if (ESpecType != EST_None)
         EndLoc = ESpecRange.getEnd();
 
@@ -4310,7 +4314,6 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
                                              DynamicExceptions.size(),
                                              NoexceptExpr.isUsable() ?
                                                NoexceptExpr.get() : 0,
-                                             ExceptionSpecTokens,
                                              Tracker.getOpenLocation(), 
                                              EndLoc, D,
                                              TrailingReturnType),

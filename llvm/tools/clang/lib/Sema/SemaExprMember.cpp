@@ -548,8 +548,8 @@ LookupMemberExprInRecord(Sema &SemaRef, LookupResult &R,
   RecordDecl *RDecl = RTy->getDecl();
   if (!SemaRef.isThisOutsideMemberFunctionBody(QualType(RTy, 0)) &&
       SemaRef.RequireCompleteType(OpLoc, QualType(RTy, 0),
-                              SemaRef.PDiag(diag::err_typecheck_incomplete_tag)
-                                    << BaseRange))
+                                  diag::err_typecheck_incomplete_tag,
+                                  BaseRange))
     return true;
 
   if (HasTemplateArgs) {
@@ -813,8 +813,9 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
                                SourceLocation TemplateKWLoc,
                                NamedDecl *FirstQualifierInScope,
                                LookupResult &R,
-                         const TemplateArgumentListInfo *TemplateArgs,
-                               bool SuppressQualifierCheck) {
+                               const TemplateArgumentListInfo *TemplateArgs,
+                               bool SuppressQualifierCheck,
+                               ActOnMemberAccessExtraArgs *ExtraArgs) {
   QualType BaseType = BaseExprType;
   if (IsArrow) {
     assert(BaseType->isPointerType());
@@ -834,6 +835,32 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
     DeclContext *DC = (SS.isSet()
                        ? computeDeclContext(SS, false)
                        : BaseType->getAs<RecordType>()->getDecl());
+
+    if (ExtraArgs) {
+      ExprResult RetryExpr;
+      if (!IsArrow && BaseExpr) {
+        SFINAETrap Trap(*this, true);
+        ParsedType ObjectType;
+        bool MayBePseudoDestructor = false;
+        RetryExpr = ActOnStartCXXMemberReference(getCurScope(), BaseExpr,
+                                                 OpLoc, tok::arrow, ObjectType,
+                                                 MayBePseudoDestructor);
+        if (RetryExpr.isUsable() && !Trap.hasErrorOccurred()) {
+          CXXScopeSpec TempSS(SS);
+          RetryExpr = ActOnMemberAccessExpr(
+              ExtraArgs->S, RetryExpr.get(), OpLoc, tok::arrow, TempSS,
+              TemplateKWLoc, ExtraArgs->Id, ExtraArgs->ObjCImpDecl,
+              ExtraArgs->HasTrailingLParen);
+        }
+        if (Trap.hasErrorOccurred())
+          RetryExpr = ExprError();
+      }
+      if (RetryExpr.isUsable()) {
+        Diag(OpLoc, diag::err_no_member_overloaded_arrow)
+          << MemberName << DC << FixItHint::CreateReplacement(OpLoc, "->");
+        return RetryExpr;
+      }
+    }
 
     Diag(R.getNameLoc(), diag::err_no_member)
       << MemberName << DC
@@ -1123,9 +1150,8 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
       goto fail;
     }
 
-    if (RequireCompleteType(OpLoc, BaseType, 
-                            PDiag(diag::err_typecheck_incomplete_tag)
-                              << BaseExpr.get()->getSourceRange()))
+    if (RequireCompleteType(OpLoc, BaseType, diag::err_typecheck_incomplete_tag,
+                            BaseExpr.get()))
       return ExprError();
     
     ObjCInterfaceDecl *ClassDeclared = 0;
@@ -1506,9 +1532,11 @@ ExprResult Sema::ActOnMemberAccessExpr(Scope *S, Expr *Base,
       return move(Result);
     }
 
+    ActOnMemberAccessExtraArgs ExtraArgs = {S, Id, ObjCImpDecl, HasTrailingLParen};
     Result = BuildMemberReferenceExpr(Base, Base->getType(),
                                       OpLoc, IsArrow, SS, TemplateKWLoc,
-                                      FirstQualifierInScope, R, TemplateArgs);
+                                      FirstQualifierInScope, R, TemplateArgs,
+                                      false, &ExtraArgs);
   }
 
   return move(Result);

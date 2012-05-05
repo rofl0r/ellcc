@@ -78,6 +78,7 @@ set(LLVM_ALL_TARGETS
   Mips
   MBlaze
   MSP430
+  NVPTX
   PowerPC
   PTX
   Sparc
@@ -211,15 +212,6 @@ set(LLVM_LIT_ARGS "${LIT_ARGS_DEFAULT}" CACHE STRING "Default options for lit")
 # On Win32 hosts, provide an option to specify the path to the GnuWin32 tools.
 if( WIN32 AND NOT CYGWIN )
   set(LLVM_LIT_TOOLS_DIR "" CACHE PATH "Path to GnuWin32 tools")
-endif()
-
-# On Win32 using MS tools, provide an option to set the number of parallel jobs
-# to use.
-if( MSVC_IDE AND ( MSVC90 OR MSVC10 ) )
-  # Only Visual Studio 2008 and 2010 officially supports /MP.  Visual Studio
-  # 2005 supports it but it is experimental.
-  set(LLVM_COMPILER_JOBS "0" CACHE STRING
-    "Number of parallel compiler jobs. 0 means use all processors. Default is 0.")
 endif()
 
 # Define options to control the inclusion and default build behavior for

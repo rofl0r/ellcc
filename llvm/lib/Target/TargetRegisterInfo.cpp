@@ -46,6 +46,29 @@ void PrintReg::print(raw_ostream &OS) const {
   }
 }
 
+/// getAllocatableClass - Return the maximal subclass of the given register
+/// class that is alloctable, or NULL.
+const TargetRegisterClass *
+TargetRegisterInfo::getAllocatableClass(const TargetRegisterClass *RC) const {
+  if (!RC || RC->isAllocatable())
+    return RC;
+
+  const unsigned *SubClass = RC->getSubClassMask();
+  for (unsigned Base = 0, BaseE = getNumRegClasses();
+       Base < BaseE; Base += 32) {
+    unsigned Idx = Base;
+    for (unsigned Mask = *SubClass++; Mask; Mask >>= 1) {
+      unsigned Offset = CountTrailingZeros_32(Mask);
+      const TargetRegisterClass *SubRC = getRegClass(Idx + Offset);
+      if (SubRC->isAllocatable())
+        return SubRC;
+      Mask >>= Offset;
+      Idx += Offset + 1;
+    }
+  }
+  return NULL;
+}
+
 /// getMinimalPhysRegClass - Returns the Register Class of a physical
 /// register of the given type, picking the most sub register class of
 /// the right type that contains this physreg.
@@ -71,6 +94,7 @@ TargetRegisterInfo::getMinimalPhysRegClass(unsigned reg, EVT VT) const {
 /// registers for the specific register class.
 static void getAllocatableSetForRC(const MachineFunction &MF,
                                    const TargetRegisterClass *RC, BitVector &R){
+  assert(RC->isAllocatable() && "invalid for nonallocatable sets");
   ArrayRef<uint16_t> Order = RC->getRawAllocationOrder(MF);
   for (unsigned i = 0; i != Order.size(); ++i)
     R.set(Order[i]);
@@ -80,7 +104,10 @@ BitVector TargetRegisterInfo::getAllocatableSet(const MachineFunction &MF,
                                           const TargetRegisterClass *RC) const {
   BitVector Allocatable(getNumRegs());
   if (RC) {
-    getAllocatableSetForRC(MF, RC, Allocatable);
+    // A register class with no allocatable subclass returns an empty set.
+    const TargetRegisterClass *SubClass = getAllocatableClass(RC);
+    if (SubClass)
+      getAllocatableSetForRC(MF, SubClass, Allocatable);
   } else {
     for (TargetRegisterInfo::regclass_iterator I = regclass_begin(),
          E = regclass_end(); I != E; ++I)
@@ -117,4 +144,32 @@ TargetRegisterInfo::getCommonSubClass(const TargetRegisterClass *A,
 
   // No common sub-class exists.
   return NULL;
+}
+
+const TargetRegisterClass *
+TargetRegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
+                                             const TargetRegisterClass *B,
+                                             unsigned Idx) const {
+  assert(A && B && "Missing register class");
+  assert(Idx && "Bad sub-register index");
+
+  // Find Idx in the list of super-register indices.
+  const uint32_t *Mask = 0;
+  for (SuperRegClassIterator RCI(B, this); RCI.isValid(); ++RCI)
+    if (RCI.getSubReg() == Idx) {
+      Mask = RCI.getMask();
+      break;
+    }
+  if (!Mask)
+    return 0;
+
+  // The bit mask contains all register classes that are projected into B by
+  // Idx. Find a class that is also a sub-class of A.
+  const uint32_t *SC = A->getSubClassMask();
+
+  // Find the first common register class in TV and SC.
+  for (unsigned Base = 0, BaseE = getNumRegClasses(); Base < BaseE; Base += 32)
+    if (unsigned Common = *Mask++ & *SC++)
+      return getRegClass(Base + CountTrailingZeros_32(Common));
+  return 0;
 }

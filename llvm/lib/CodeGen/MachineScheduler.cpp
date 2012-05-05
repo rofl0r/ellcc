@@ -14,6 +14,8 @@
 
 #define DEBUG_TYPE "misched"
 
+#include "RegisterClassInfo.h"
+#include "RegisterPressure.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
@@ -49,6 +51,15 @@ static bool ViewMISchedDAGs = false;
 //===----------------------------------------------------------------------===//
 // Machine Instruction Scheduling Pass and Registry
 //===----------------------------------------------------------------------===//
+
+MachineSchedContext::MachineSchedContext():
+    MF(0), MLI(0), MDT(0), PassConfig(0), AA(0), LIS(0) {
+  RegClassInfo = new RegisterClassInfo();
+}
+
+MachineSchedContext::~MachineSchedContext() {
+  delete RegClassInfo;
+}
 
 namespace {
 /// MachineScheduler runs after coalescing and before register allocation.
@@ -122,6 +133,29 @@ DefaultSchedRegistry("default", "Use the target's default scheduler choice.",
 /// default scheduler if the target does not set a default.
 static ScheduleDAGInstrs *createConvergingSched(MachineSchedContext *C);
 
+
+/// Decrement this iterator until reaching the top or a non-debug instr.
+static MachineBasicBlock::iterator
+priorNonDebug(MachineBasicBlock::iterator I, MachineBasicBlock::iterator Beg) {
+  assert(I != Beg && "reached the top of the region, cannot decrement");
+  while (--I != Beg) {
+    if (!I->isDebugValue())
+      break;
+  }
+  return I;
+}
+
+/// If this iterator is a debug value, increment until reaching the End or a
+/// non-debug instruction.
+static MachineBasicBlock::iterator
+nextIfDebug(MachineBasicBlock::iterator I, MachineBasicBlock::iterator End) {
+  while(I != End) {
+    if (!I->isDebugValue())
+      break;
+  }
+  return I;
+}
+
 /// Top-level MachineScheduler pass driver.
 ///
 /// Visit blocks in function order. Divide each block into scheduling regions
@@ -149,6 +183,8 @@ bool MachineScheduler::runOnMachineFunction(MachineFunction &mf) {
   LIS = &getAnalysis<LiveIntervals>();
   const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
 
+  RegClassInfo->runOnMachineFunction(*MF);
+
   // Select the scheduler, or set the default.
   MachineSchedRegistry::ScheduleDAGCtor Ctor = MachineSchedOpt;
   if (Ctor == useDefaultMachineSched) {
@@ -163,6 +199,9 @@ bool MachineScheduler::runOnMachineFunction(MachineFunction &mf) {
   OwningPtr<ScheduleDAGInstrs> Scheduler(Ctor(this));
 
   // Visit all machine basic blocks.
+  //
+  // TODO: Visit blocks in global postorder or postorder within the bottom-up
+  // loop tree. Then we can optionally compute global RegPressure.
   for (MachineFunction::iterator MBB = MF->begin(), MBBEnd = MF->end();
        MBB != MBBEnd; ++MBB) {
 
@@ -181,6 +220,7 @@ bool MachineScheduler::runOnMachineFunction(MachineFunction &mf) {
     unsigned RemainingCount = MBB->size();
     for(MachineBasicBlock::iterator RegionEnd = MBB->end();
         RegionEnd != MBB->begin(); RegionEnd = Scheduler->begin()) {
+
       // Avoid decrementing RegionEnd for blocks with no terminator.
       if (RegionEnd != MBB->end()
           || TII->isSchedulingBoundary(llvm::prior(RegionEnd), MBB, *MF)) {
@@ -279,7 +319,12 @@ namespace {
 /// machine instructions while updating LiveIntervals.
 class ScheduleDAGMI : public ScheduleDAGInstrs {
   AliasAnalysis *AA;
+  RegisterClassInfo *RegClassInfo;
   MachineSchedStrategy *SchedImpl;
+
+  // Register pressure in this region computed by buildSchedGraph.
+  IntervalPressure RegPressure;
+  RegPressureTracker RPTracker;
 
   /// The top of the unscheduled zone.
   MachineBasicBlock::iterator CurrentTop;
@@ -293,7 +338,8 @@ class ScheduleDAGMI : public ScheduleDAGInstrs {
 public:
   ScheduleDAGMI(MachineSchedContext *C, MachineSchedStrategy *S):
     ScheduleDAGInstrs(*C->MF, *C->MLI, *C->MDT, /*IsPostRA=*/false, C->LIS),
-    AA(C->AA), SchedImpl(S), CurrentTop(), CurrentBottom(),
+    AA(C->AA), RegClassInfo(C->RegClassInfo), SchedImpl(S),
+    RPTracker(RegPressure), CurrentTop(), CurrentBottom(),
     NumInstrsScheduled(0) {}
 
   ~ScheduleDAGMI() {
@@ -303,7 +349,16 @@ public:
   MachineBasicBlock::iterator top() const { return CurrentTop; }
   MachineBasicBlock::iterator bottom() const { return CurrentBottom; }
 
-  /// Implement ScheduleDAGInstrs interface.
+  /// Implement the ScheduleDAGInstrs interface for handling the next scheduling
+  /// region. This covers all instructions in a block, while schedule() may only
+  /// cover a subset.
+  void enterRegion(MachineBasicBlock *bb,
+                   MachineBasicBlock::iterator begin,
+                   MachineBasicBlock::iterator end,
+                   unsigned endcount);
+
+  /// Implement ScheduleDAGInstrs interface for scheduling a sequence of
+  /// reorderable instructions.
   void schedule();
 
 protected:
@@ -314,6 +369,8 @@ protected:
   void releaseSuccessors(SUnit *SU);
   void releasePred(SUnit *SU, SDep *PredEdge);
   void releasePredecessors(SUnit *SU);
+
+  void placeDebugValues();
 };
 } // namespace
 
@@ -392,10 +449,32 @@ bool ScheduleDAGMI::checkSchedLimit() {
   return true;
 }
 
+/// enterRegion - Called back from MachineScheduler::runOnMachineFunction after
+/// crossing a scheduling boundary. [begin, end) includes all instructions in
+/// the region, including the boundary itself and single-instruction regions
+/// that don't get scheduled.
+void ScheduleDAGMI::enterRegion(MachineBasicBlock *bb,
+                                MachineBasicBlock::iterator begin,
+                                MachineBasicBlock::iterator end,
+                                unsigned endcount)
+{
+  ScheduleDAGInstrs::enterRegion(bb, begin, end, endcount);
+  // Setup the register pressure tracker to begin tracking at the end of this
+  // region.
+  RPTracker.init(&MF, RegClassInfo, LIS, BB, end);
+}
+
 /// schedule - Called back from MachineScheduler::runOnMachineFunction
-/// after setting up the current scheduling region.
+/// after setting up the current scheduling region. [RegionBegin, RegionEnd)
+/// only includes instructions that have DAG nodes, not scheduling boundaries.
 void ScheduleDAGMI::schedule() {
-  buildSchedGraph(AA);
+  while(RPTracker.getPos() != RegionEnd) {
+    bool Moved = RPTracker.recede();
+    assert(Moved && "Regpressure tracker cannot find RegionEnd"); (void)Moved;
+  }
+
+  // Build the DAG.
+  buildSchedGraph(AA, &RPTracker);
 
   DEBUG(dbgs() << "********** MI Scheduling **********\n");
   DEBUG(for (unsigned su = 0, e = SUnits.size(); su != e; ++su)
@@ -420,7 +499,7 @@ void ScheduleDAGMI::schedule() {
       SchedImpl->releaseBottomNode(&(*I));
   }
 
-  CurrentTop = RegionBegin;
+  CurrentTop = nextIfDebug(RegionBegin, RegionEnd);
   CurrentBottom = RegionEnd;
   bool IsTopNode = false;
   while (SUnit *SU = SchedImpl->pickNode(IsTopNode)) {
@@ -435,7 +514,7 @@ void ScheduleDAGMI::schedule() {
     if (IsTopNode) {
       assert(SU->isTopReady() && "node still has unscheduled dependencies");
       if (&*CurrentTop == MI)
-        ++CurrentTop;
+        CurrentTop = nextIfDebug(++CurrentTop, CurrentBottom);
       else
         moveInstruction(MI, CurrentTop);
       // Release dependent instructions for scheduling.
@@ -443,11 +522,13 @@ void ScheduleDAGMI::schedule() {
     }
     else {
       assert(SU->isBottomReady() && "node still has unscheduled dependencies");
-      if (&*llvm::prior(CurrentBottom) == MI)
-        --CurrentBottom;
+      MachineBasicBlock::iterator priorII =
+        priorNonDebug(CurrentBottom, CurrentTop);
+      if (&*priorII == MI)
+        CurrentBottom = priorII;
       else {
         if (&*CurrentTop == MI)
-          CurrentTop = llvm::next(CurrentTop);
+          CurrentTop = nextIfDebug(++CurrentTop, CurrentBottom);
         moveInstruction(MI, CurrentBottom);
         CurrentBottom = MI;
       }
@@ -457,6 +538,29 @@ void ScheduleDAGMI::schedule() {
     SU->isScheduled = true;
   }
   assert(CurrentTop == CurrentBottom && "Nonempty unscheduled zone.");
+
+  placeDebugValues();
+}
+
+/// Reinsert any remaining debug_values, just like the PostRA scheduler.
+void ScheduleDAGMI::placeDebugValues() {
+  // If first instruction was a DBG_VALUE then put it back.
+  if (FirstDbgValue) {
+    BB->splice(RegionBegin, BB, FirstDbgValue);
+    RegionBegin = FirstDbgValue;
+  }
+
+  for (std::vector<std::pair<MachineInstr *, MachineInstr *> >::iterator
+         DI = DbgValues.end(), DE = DbgValues.begin(); DI != DE; --DI) {
+    std::pair<MachineInstr *, MachineInstr *> P = *prior(DI);
+    MachineInstr *DbgValue = P.first;
+    MachineBasicBlock::iterator OrigPrevMI = P.second;
+    BB->splice(++OrigPrevMI, BB, DbgValue);
+    if (OrigPrevMI == llvm::prior(RegionEnd))
+      RegionEnd = DbgValue;
+  }
+  DbgValues.clear();
+  FirstDbgValue = NULL;
 }
 
 //===----------------------------------------------------------------------===//
@@ -492,7 +596,7 @@ public:
       IsTopNode = true;
     }
     else {
-      SU = DAG->getSUnit(llvm::prior(DAG->bottom()));
+      SU = DAG->getSUnit(priorNonDebug(DAG->bottom(), DAG->top()));
       IsTopNode = false;
     }
     if (SU->isTopReady()) {

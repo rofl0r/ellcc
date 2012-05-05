@@ -98,7 +98,6 @@
 
 #include "AsmMatcherEmitter.h"
 #include "CodeGenTarget.h"
-#include "StringMatcher.h"
 #include "StringToOffsetTable.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -111,6 +110,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
+#include "llvm/TableGen/StringMatcher.h"
 #include <map>
 #include <set>
 using namespace llvm;
@@ -1951,6 +1951,25 @@ static void emitSubtargetFeatureFlagEnumeration(AsmMatcherInfo &Info,
   OS << "};\n\n";
 }
 
+/// emitGetSubtargetFeatureName - Emit the helper function to get the
+/// user-level name for a subtarget feature.
+static void emitGetSubtargetFeatureName(AsmMatcherInfo &Info, raw_ostream &OS) {
+  OS << "// User-level names for subtarget features that participate in\n"
+     << "// instruction matching.\n"
+     << "static const char *getSubtargetFeatureName(unsigned Val) {\n"
+     << "  switch(Val) {\n";
+  for (std::map<Record*, SubtargetFeatureInfo*>::const_iterator
+         it = Info.SubtargetFeatures.begin(),
+         ie = Info.SubtargetFeatures.end(); it != ie; ++it) {
+    SubtargetFeatureInfo &SFI = *it->second;
+    // FIXME: Totally just a placeholder name to get the algorithm working.
+    OS << "  case " << SFI.getEnumName() << ": return \""
+       << SFI.TheDef->getValueAsString("PredicateName") << "\";\n";
+  }
+  OS << "  default: return \"(unknown)\";\n";
+  OS << "  }\n}\n\n";
+}
+
 /// emitComputeAvailableFeatures - Emit the function to compute the list of
 /// available features given a subtarget.
 static void emitComputeAvailableFeatures(AsmMatcherInfo &Info,
@@ -2376,6 +2395,13 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
 
   OS << "#endif // GET_REGISTER_MATCHER\n\n";
 
+  OS << "\n#ifdef GET_SUBTARGET_FEATURE_NAME\n";
+  OS << "#undef GET_SUBTARGET_FEATURE_NAME\n\n";
+
+  // Generate the helper function to get the names for subtarget features.
+  emitGetSubtargetFeatureName(Info, OS);
+
+  OS << "#endif // GET_SUBTARGET_FEATURE_NAME\n\n";
 
   OS << "\n#ifdef GET_MATCHER_IMPLEMENTATION\n";
   OS << "#undef GET_MATCHER_IMPLEMENTATION\n\n";
@@ -2510,8 +2536,8 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
      << Target.getName() << ClassName << "::\n"
      << "MatchInstructionImpl(const SmallVectorImpl<MCParsedAsmOperand*>"
      << " &Operands,\n";
-  OS << "                     MCInst &Inst, unsigned &ErrorInfo,\n";
-  OS << "                     unsigned VariantID) {\n";
+  OS << "                     MCInst &Inst, unsigned &ErrorInfo, ";
+  OS << "unsigned VariantID) {\n";
 
   // Emit code to get the available features.
   OS << "  // Get the current feature set.\n";
@@ -2586,6 +2612,7 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "    if ((AvailableFeatures & it->RequiredFeatures) "
      << "!= it->RequiredFeatures) {\n";
   OS << "      HadMatchOtherThanFeatures = true;\n";
+  OS << "      ErrorInfo = it->RequiredFeatures & ~AvailableFeatures;\n";
   OS << "      continue;\n";
   OS << "    }\n";
   OS << "\n";
@@ -2620,6 +2647,7 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "  // Okay, we had no match.  Try to return a useful error code.\n";
   OS << "  if (HadMatchOtherThanPredicate || !HadMatchOtherThanFeatures)";
   OS << " return RetCode;\n";
+  OS << "  assert(ErrorInfo && \"missing feature(s) but what?!\");";
   OS << "  return Match_MissingFeature;\n";
   OS << "}\n\n";
 

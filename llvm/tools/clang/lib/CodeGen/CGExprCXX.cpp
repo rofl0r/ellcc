@@ -179,7 +179,7 @@ RValue CodeGenFunction::EmitCXXMemberCallExpr(const CXXMemberCallExpr *CE,
   const CXXMethodDecl *MD = cast<CXXMethodDecl>(ME->getMemberDecl());
 
   CGDebugInfo *DI = getDebugInfo();
-  if (DI && CGM.getCodeGenOpts().LimitDebugInfo
+  if (DI && CGM.getCodeGenOpts().DebugInfo == CodeGenOptions::LimitedDebugInfo
       && !isa<CallExpr>(ME->getBase())) {
     QualType PQTy = ME->getBase()->IgnoreParenImpCasts()->getType();
     if (const PointerType * PTy = dyn_cast<PointerType>(PQTy)) {
@@ -1824,10 +1824,10 @@ void CodeGenFunction::EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Slot) {
        i != e; ++i, ++CurField) {
     // Emit initialization
     
-    LValue LV = EmitLValueForFieldInitialization(SlotLV, *CurField);
+    LValue LV = EmitLValueForFieldInitialization(SlotLV, &*CurField);
     ArrayRef<VarDecl *> ArrayIndexes;
     if (CurField->getType()->isArrayType())
       ArrayIndexes = E->getCaptureInitIndexVars(i);
-    EmitInitializerForField(*CurField, LV, *i, ArrayIndexes);
+    EmitInitializerForField(&*CurField, LV, *i, ArrayIndexes);
   }
 }

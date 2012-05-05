@@ -1055,9 +1055,13 @@ typedef struct _opaque_pthread_t *__darwin_pthread_t;
 typedef struct _opaque_pthread_attr_t __darwin_pthread_attr_t;
 typedef __darwin_pthread_t pthread_t;
 typedef __darwin_pthread_attr_t pthread_attr_t;
+typedef unsigned long __darwin_pthread_key_t;
+typedef __darwin_pthread_key_t pthread_key_t;
 
 int pthread_create(pthread_t *, const pthread_attr_t *,
                    void *(*)(void *), void *);
+
+int pthread_setspecific(pthread_key_t key, const void *value);
 
 void *rdar_7299394_start_routine(void *p) {
   [((id) p) release];
@@ -1069,6 +1073,16 @@ void rdar_7299394(pthread_attr_t *attr, pthread_t *thread, void *args) {
 }
 void rdar_7299394_positive(pthread_attr_t *attr, pthread_t *thread) {
   NSNumber *number = [[NSNumber alloc] initWithInt:5]; // expected-warning{{leak}}
+}
+
+//===----------------------------------------------------------------------===//
+// <rdar://problem/11282706> false positive with not understanding thread
+// local storage
+//===----------------------------------------------------------------------===//
+
+void rdar11282706(pthread_key_t key) {
+  NSNumber *number = [[NSNumber alloc] initWithInt:5]; // no-warning
+  pthread_setspecific(key, (void*) number);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1289,6 +1303,11 @@ void testattr2_a() {
 
 void testattr2_b() {
   TestOwnershipAttr *x = [[TestOwnershipAttr alloc] pseudoInit];  // expected-warning{{leak}}
+}
+
+void testattr2_b_11358224_self_assign_looses_the_leak() {
+  TestOwnershipAttr *x = [[TestOwnershipAttr alloc] pseudoInit];// expected-warning{{leak}}
+  x = x;
 }
 
 void testattr2_c() {
@@ -1666,6 +1685,32 @@ void rdar_10824732() {
     [foo release];
   }
 }
+
+// Stop tracking objects passed to functions, which take callbacks as parameters.
+// radar://10973977
+typedef int (*CloseCallback) (void *);
+void ReaderForIO(CloseCallback ioclose, void *ioctx);
+int IOClose(void *context);
+
+@protocol SInS <NSObject>
+@end
+
+@interface radar10973977 : NSObject
+- (id<SInS>)inputS;
+- (void)reader;
+@end
+
+@implementation radar10973977
+- (void)reader
+{
+    id<SInS> inputS = [[self inputS] retain];
+    ReaderForIO(IOClose, inputS);
+}
+- (id<SInS>)inputS
+{
+    return 0;
+}
+@end
 
 //===----------------------------------------------------------------------===//
 // Test returning allocated memory in a struct.

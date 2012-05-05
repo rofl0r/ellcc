@@ -73,19 +73,6 @@ namespace llvm {
     void createNode(const IndexListEntry &);
   };
 
-  // Specialize PointerLikeTypeTraits for IndexListEntry.
-  template <>
-  class PointerLikeTypeTraits<IndexListEntry*> {
-  public:
-    static inline void* getAsVoidPointer(IndexListEntry *p) {
-      return p;
-    }
-    static inline IndexListEntry* getFromVoidPointer(void *p) {
-      return static_cast<IndexListEntry*>(p);
-    }
-    enum { NumLowBitsAvailable = 3 };
-  };
-
   /// SlotIndex - An opaque wrapper around machine indexes.
   class SlotIndex {
     friend class SlotIndexes;
@@ -357,7 +344,6 @@ namespace llvm {
     IndexList indexList;
 
     MachineFunction *mf;
-    unsigned functionSize;
 
     typedef DenseMap<const MachineInstr*, SlotIndex> Mi2IndexMap;
     Mi2IndexMap mi2iMap;
@@ -413,19 +399,6 @@ namespace llvm {
     /// Returns the base index of the last slot in this analysis.
     SlotIndex getLastIndex() {
       return SlotIndex(&indexList.back(), 0);
-    }
-
-    /// Returns the distance between the highest and lowest indexes allocated
-    /// so far.
-    unsigned getIndexesLength() const {
-      assert(indexList.front().getIndex() == 0 &&
-             "Initial index isn't zero?");
-      return indexList.back().getIndex();
-    }
-
-    /// Returns the number of instructions in the function.
-    unsigned getFunctionSize() const {
-      return functionSize;
     }
 
     /// Returns true if the given machine instr is mapped to an index,

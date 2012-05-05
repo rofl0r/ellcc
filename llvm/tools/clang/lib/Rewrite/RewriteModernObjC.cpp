@@ -109,7 +109,7 @@ namespace {
     llvm::SmallPtrSet<ObjCInterfaceDecl*, 8> ObjCSynthesizedStructs;
     llvm::SmallPtrSet<ObjCProtocolDecl*, 8> ObjCSynthesizedProtocols;
     llvm::SmallPtrSet<ObjCInterfaceDecl*, 8> ObjCWrittenInterfaces;
-    llvm::SmallPtrSet<TagDecl*, 8> TagsDefinedInIvarDecls;
+    llvm::SmallPtrSet<TagDecl*, 32> GlobalDefinedTags;
     SmallVector<ObjCInterfaceDecl*, 32> ObjCInterfacesSeen;
     /// DefinedNonLazyClasses - List of defined "non-lazy" classes.
     SmallVector<ObjCInterfaceDecl*, 8> DefinedNonLazyClasses;
@@ -337,7 +337,7 @@ namespace {
     
     // Block specific rewrite rules.
     void RewriteBlockPointerDecl(NamedDecl *VD);
-    void RewriteByRefVar(VarDecl *VD);
+    void RewriteByRefVar(VarDecl *VD, bool firstDecl, bool lastDecl);
     Stmt *RewriteBlockDeclRefExpr(DeclRefExpr *VD);
     Stmt *RewriteLocalVariableExternalStorage(DeclRefExpr *DRE);
     void RewriteBlockPointerFunctionArgs(FunctionDecl *FD);
@@ -346,6 +346,10 @@ namespace {
                                       std::string &Result);
     
     void RewriteObjCFieldDecl(FieldDecl *fieldDecl, std::string &Result);
+    bool IsTagDefinedInsideClass(ObjCContainerDecl *IDecl, TagDecl *Tag,
+                                 bool &IsNamedDefinition);
+    void RewriteLocallyDefinedNamedAggregates(FieldDecl *fieldDecl, 
+                                              std::string &Result);
     
     bool RewriteObjCFieldDeclType(QualType &Type, std::string &Result);
     
@@ -387,23 +391,23 @@ namespace {
                                     std::string &Result);
     void RewriteObjCProtocolMetaData(ObjCProtocolDecl *Protocol,
                                      std::string &Result);
-    virtual void RewriteObjCProtocolListMetaData(
+    void RewriteObjCProtocolListMetaData(
                    const ObjCList<ObjCProtocolDecl> &Prots,
                    StringRef prefix, StringRef ClassName, std::string &Result);
-    virtual void RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
+    void RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
                                           std::string &Result);
-    virtual void RewriteClassSetupInitHook(std::string &Result);
+    void RewriteClassSetupInitHook(std::string &Result);
     
-    virtual void RewriteMetaDataIntoBuffer(std::string &Result);
-    virtual void WriteImageInfo(std::string &Result);
-    virtual void RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *CDecl,
+    void RewriteMetaDataIntoBuffer(std::string &Result);
+    void WriteImageInfo(std::string &Result);
+    void RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *CDecl,
                                              std::string &Result);
-    virtual void RewriteCategorySetupInitHook(std::string &Result);
+    void RewriteCategorySetupInitHook(std::string &Result);
     
     // Rewriting ivar
-    virtual void RewriteIvarOffsetComputation(ObjCIvarDecl *ivar,
+    void RewriteIvarOffsetComputation(ObjCIvarDecl *ivar,
                                               std::string &Result);
-    virtual Stmt *RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV);
+    Stmt *RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV);
 
     
     std::string SynthesizeByrefCopyDestroyHelper(VarDecl *VD, int flag);
@@ -777,19 +781,34 @@ static std::string getIvarAccessString(ObjCIvarDecl *OID) {
   return S;
 }
 
+/// mustSynthesizeSetterGetterMethod - returns true if setter or getter has not
+/// been found in the class implementation. In this case, it must be synthesized.
+static bool mustSynthesizeSetterGetterMethod(ObjCImplementationDecl *IMP,
+                                             ObjCPropertyDecl *PD,
+                                             bool getter) {
+  return getter ? !IMP->getInstanceMethod(PD->getGetterName())
+                : !IMP->getInstanceMethod(PD->getSetterName());
+  
+}
+
 void RewriteModernObjC::RewritePropertyImplDecl(ObjCPropertyImplDecl *PID,
                                           ObjCImplementationDecl *IMD,
                                           ObjCCategoryImplDecl *CID) {
   static bool objcGetPropertyDefined = false;
   static bool objcSetPropertyDefined = false;
-  SourceLocation startLoc = PID->getLocStart();
-  InsertText(startLoc, "// ");
-  const char *startBuf = SM->getCharacterData(startLoc);
-  assert((*startBuf == '@') && "bogus @synthesize location");
-  const char *semiBuf = strchr(startBuf, ';');
-  assert((*semiBuf == ';') && "@synthesize: can't find ';'");
-  SourceLocation onePastSemiLoc =
-    startLoc.getLocWithOffset(semiBuf-startBuf+1);
+  SourceLocation startGetterSetterLoc;
+  
+  if (PID->getLocStart().isValid()) {
+    SourceLocation startLoc = PID->getLocStart();
+    InsertText(startLoc, "// ");
+    const char *startBuf = SM->getCharacterData(startLoc);
+    assert((*startBuf == '@') && "bogus @synthesize location");
+    const char *semiBuf = strchr(startBuf, ';');
+    assert((*semiBuf == ';') && "@synthesize: can't find ';'");
+    startGetterSetterLoc = startLoc.getLocWithOffset(semiBuf-startBuf+1);
+  }
+  else
+    startGetterSetterLoc = IMD ? IMD->getLocEnd() : CID->getLocEnd();
 
   if (PID->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
     return; // FIXME: is this correct?
@@ -801,7 +820,7 @@ void RewriteModernObjC::RewritePropertyImplDecl(ObjCPropertyImplDecl *PID,
   if (!OID)
     return;
   unsigned Attributes = PD->getPropertyAttributes();
-  if (!PD->getGetterMethodDecl()->isDefined()) {
+  if (mustSynthesizeSetterGetterMethod(IMD, PD, true /*getter*/)) {
     bool GenGetProperty = !(Attributes & ObjCPropertyDecl::OBJC_PR_nonatomic) &&
                           (Attributes & (ObjCPropertyDecl::OBJC_PR_retain | 
                                          ObjCPropertyDecl::OBJC_PR_copy));
@@ -853,10 +872,11 @@ void RewriteModernObjC::RewritePropertyImplDecl(ObjCPropertyImplDecl *PID,
     else
       Getr += "return " + getIvarAccessString(OID);
     Getr += "; }";
-    InsertText(onePastSemiLoc, Getr);
+    InsertText(startGetterSetterLoc, Getr);
   }
   
-  if (PD->isReadOnly() || PD->getSetterMethodDecl()->isDefined())
+  if (PD->isReadOnly() || 
+      !mustSynthesizeSetterGetterMethod(IMD, PD, false /*setter*/))
     return;
 
   // Generate the 'setter' function.
@@ -894,8 +914,8 @@ void RewriteModernObjC::RewritePropertyImplDecl(ObjCPropertyImplDecl *PID,
     Setr += getIvarAccessString(OID) + " = ";
     Setr += PD->getName();
   }
-  Setr += "; }";
-  InsertText(onePastSemiLoc, Setr);
+  Setr += "; }\n";
+  InsertText(startGetterSetterLoc, Setr);
 }
 
 static void RewriteOneForwardClassDecl(ObjCInterfaceDecl *ForwardDecl,
@@ -984,21 +1004,17 @@ void RewriteModernObjC::RewriteCategoryDecl(ObjCCategoryDecl *CatDecl) {
   SourceLocation LocStart = CatDecl->getLocStart();
 
   // FIXME: handle category headers that are declared across multiple lines.
-  ReplaceText(LocStart, 0, "// ");
-  if (CatDecl->getIvarLBraceLoc().isValid())
-    InsertText(CatDecl->getIvarLBraceLoc(), "// ");
-  for (ObjCCategoryDecl::ivar_iterator
-       I = CatDecl->ivar_begin(), E = CatDecl->ivar_end(); I != E; ++I) {
-    ObjCIvarDecl *Ivar = (*I);
-    SourceLocation LocStart = Ivar->getLocStart();
+  if (CatDecl->getIvarRBraceLoc().isValid()) {
+    ReplaceText(LocStart, 1, "/** ");
+    ReplaceText(CatDecl->getIvarRBraceLoc(), 1, "**/ ");
+  }
+  else {
     ReplaceText(LocStart, 0, "// ");
-  } 
-  if (CatDecl->getIvarRBraceLoc().isValid())
-    InsertText(CatDecl->getIvarRBraceLoc(), "// ");
+  }
   
   for (ObjCCategoryDecl::prop_iterator I = CatDecl->prop_begin(),
        E = CatDecl->prop_end(); I != E; ++I)
-    RewriteProperty(*I);
+    RewriteProperty(&*I);
   
   for (ObjCCategoryDecl::instmeth_iterator
          I = CatDecl->instmeth_begin(), E = CatDecl->instmeth_end();
@@ -1032,7 +1048,7 @@ void RewriteModernObjC::RewriteProtocolDecl(ObjCProtocolDecl *PDecl) {
 
   for (ObjCInterfaceDecl::prop_iterator I = PDecl->prop_begin(),
        E = PDecl->prop_end(); I != E; ++I)
-    RewriteProperty(*I);
+    RewriteProperty(&*I);
   
   // Lastly, comment out the @end.
   SourceLocation LocEnd = PDecl->getAtEndRange().getBegin();
@@ -1220,17 +1236,13 @@ void RewriteModernObjC::RewriteImplementationDecl(Decl *OID) {
   ObjCCategoryImplDecl *CID = dyn_cast<ObjCCategoryImplDecl>(OID);
 
   if (IMD) {
-    InsertText(IMD->getLocStart(), "// ");
-    if (IMD->getIvarLBraceLoc().isValid())
-      InsertText(IMD->getIvarLBraceLoc(), "// ");
-    for (ObjCImplementationDecl::ivar_iterator
-         I = IMD->ivar_begin(), E = IMD->ivar_end(); I != E; ++I) {
-      ObjCIvarDecl *Ivar = (*I);
-      SourceLocation LocStart = Ivar->getLocStart();
-      ReplaceText(LocStart, 0, "// ");
+    if (IMD->getIvarRBraceLoc().isValid()) {
+      ReplaceText(IMD->getLocStart(), 1, "/** ");
+      ReplaceText(IMD->getIvarRBraceLoc(), 1, "**/ ");
     }
-    if (IMD->getIvarRBraceLoc().isValid())
-      InsertText(IMD->getIvarRBraceLoc(), "// ");
+    else {
+      InsertText(IMD->getLocStart(), "// ");
+    }
   }
   else
     InsertText(CID->getLocStart(), "// ");
@@ -1268,7 +1280,7 @@ void RewriteModernObjC::RewriteImplementationDecl(Decl *OID) {
        I = IMD ? IMD->propimpl_begin() : CID->propimpl_begin(),
        E = IMD ? IMD->propimpl_end() : CID->propimpl_end();
        I != E; ++I) {
-    RewritePropertyImplDecl(*I, IMD, CID);
+    RewritePropertyImplDecl(&*I, IMD, CID);
   }
 
   InsertText(IMD ? IMD->getLocEnd() : CID->getLocEnd(), "// ");
@@ -1296,7 +1308,7 @@ void RewriteModernObjC::RewriteInterfaceDecl(ObjCInterfaceDecl *ClassDecl) {
   
     for (ObjCInterfaceDecl::prop_iterator I = ClassDecl->prop_begin(),
          E = ClassDecl->prop_end(); I != E; ++I)
-      RewriteProperty(*I);
+      RewriteProperty(&*I);
     for (ObjCInterfaceDecl::instmeth_iterator
          I = ClassDecl->instmeth_begin(), E = ClassDecl->instmeth_end();
          I != E; ++I)
@@ -3494,10 +3506,44 @@ bool RewriteModernObjC::BufferContainsPPDirectives(const char *startBuf,
   return false;
 }
 
+/// IsTagDefinedInsideClass - This routine checks that a named tagged type 
+/// is defined inside an objective-c class. If so, it returns true. 
+bool RewriteModernObjC::IsTagDefinedInsideClass(ObjCContainerDecl *IDecl, 
+                                                TagDecl *Tag,
+                                                bool &IsNamedDefinition) {
+  if (!IDecl)
+    return false;
+  SourceLocation TagLocation;
+  if (RecordDecl *RD = dyn_cast<RecordDecl>(Tag)) {
+    RD = RD->getDefinition();
+    if (!RD || !RD->getDeclName().getAsIdentifierInfo())
+      return false;
+    IsNamedDefinition = true;
+    TagLocation = RD->getLocation();
+    return Context->getSourceManager().isBeforeInTranslationUnit(
+                                          IDecl->getLocation(), TagLocation);
+  }
+  if (EnumDecl *ED = dyn_cast<EnumDecl>(Tag)) {
+    if (!ED || !ED->getDeclName().getAsIdentifierInfo())
+      return false;
+    IsNamedDefinition = true;
+    TagLocation = ED->getLocation();
+    return Context->getSourceManager().isBeforeInTranslationUnit(
+                                          IDecl->getLocation(), TagLocation);
+
+  }
+  return false;
+}
+
 /// RewriteObjCFieldDeclType - This routine rewrites a type into the buffer.
 /// It handles elaborated types, as well as enum types in the process.
 bool RewriteModernObjC::RewriteObjCFieldDeclType(QualType &Type, 
                                                  std::string &Result) {
+  if (isa<TypedefType>(Type)) {
+    Result += "\t";
+    return false;
+  }
+    
   if (Type->isArrayType()) {
     QualType ElemTy = Context->getBaseElementType(Type);
     return RewriteObjCFieldDeclType(ElemTy, Result);
@@ -3513,16 +3559,15 @@ bool RewriteModernObjC::RewriteObjCFieldDeclType(QualType &Type,
         assert(false && "class not allowed as an ivar type");
       
       Result += RD->getName();
-      if (TagsDefinedInIvarDecls.count(RD)) {
-        // This struct is already defined. Do not write its definition again.
+      if (GlobalDefinedTags.count(RD)) {
+        // struct/union is defined globally, use it.
         Result += " ";
         return true;
       }
-      TagsDefinedInIvarDecls.insert(RD);
       Result += " {\n";
       for (RecordDecl::field_iterator i = RD->field_begin(), 
            e = RD->field_end(); i != e; ++i) {
-        FieldDecl *FD = *i;
+        FieldDecl *FD = &*i;
         RewriteObjCFieldDecl(FD, Result);
       }
       Result += "\t} "; 
@@ -3534,12 +3579,11 @@ bool RewriteModernObjC::RewriteObjCFieldDeclType(QualType &Type,
     if (ED->isCompleteDefinition()) {
       Result += "\n\tenum ";
       Result += ED->getName();
-      if (TagsDefinedInIvarDecls.count(ED)) {
-        // This enum is already defined. Do not write its definition again.
+      if (GlobalDefinedTags.count(ED)) {
+        // Enum is globall defined, use it.
         Result += " ";
         return true;
       }
-      TagsDefinedInIvarDecls.insert(ED);
       
       Result += " {\n";
       for (EnumDecl::enumerator_iterator EC = ED->enumerator_begin(),
@@ -3590,6 +3634,41 @@ void RewriteModernObjC::RewriteObjCFieldDecl(FieldDecl *fieldDecl,
   Result += ";\n";
 }
 
+/// RewriteLocallyDefinedNamedAggregates - This routine rewrites locally defined
+/// named aggregate types into the input buffer.
+void RewriteModernObjC::RewriteLocallyDefinedNamedAggregates(FieldDecl *fieldDecl, 
+                                             std::string &Result) {
+  QualType Type = fieldDecl->getType();
+  if (isa<TypedefType>(Type))
+    return;
+  if (Type->isArrayType())
+    Type = Context->getBaseElementType(Type);
+  ObjCContainerDecl *IDecl = 
+    dyn_cast<ObjCContainerDecl>(fieldDecl->getDeclContext());
+  
+  TagDecl *TD = 0;
+  if (Type->isRecordType()) {
+    TD = Type->getAs<RecordType>()->getDecl();
+  }
+  else if (Type->isEnumeralType()) {
+    TD = Type->getAs<EnumType>()->getDecl();
+  }
+  
+  if (TD) {
+    if (GlobalDefinedTags.count(TD))
+      return;
+    
+    bool IsNamedDefinition = false;
+    if (IsTagDefinedInsideClass(IDecl, TD, IsNamedDefinition)) {
+      RewriteObjCFieldDeclType(Type, Result);
+      Result += ";";
+    }
+    if (IsNamedDefinition)
+      GlobalDefinedTags.insert(TD);
+  }
+    
+}
+
 /// RewriteObjCInternalStruct - Rewrite one internal struct corresponding to
 /// an objective-c class with ivars.
 void RewriteModernObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
@@ -3618,6 +3697,12 @@ void RewriteModernObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
     return;
   }
   
+  // Insert named struct/union definitions inside class to
+  // outer scope. This follows semantics of locally defined
+  // struct/unions in objective-c classes.
+  for (unsigned i = 0, e = IVars.size(); i < e; i++)
+    RewriteLocallyDefinedNamedAggregates(IVars[i], Result);
+
   Result += "\nstruct ";
   Result += CDecl->getNameAsString();
   Result += "_IMPL {\n";
@@ -3627,7 +3712,7 @@ void RewriteModernObjC::RewriteObjCInternalStruct(ObjCInterfaceDecl *CDecl,
     Result += "_IMPL "; Result += RCDecl->getNameAsString();
     Result += "_IVARS;\n";
   }
-  TagsDefinedInIvarDecls.clear();
+  
   for (unsigned i = 0, e = IVars.size(); i < e; i++)
     RewriteObjCFieldDecl(IVars[i], Result);
 
@@ -3984,8 +4069,8 @@ std::string RewriteModernObjC::SynthesizeBlockDescriptor(std::string DescTag,
                                                    unsigned hasCopy) {
   std::string S = "\nstatic struct " + DescTag;
   
-  S += " {\n  unsigned long reserved;\n";
-  S += "  unsigned long Block_size;\n";
+  S += " {\n  size_t reserved;\n";
+  S += "  size_t Block_size;\n";
   if (hasCopy) {
     S += "  void (*copy)(struct ";
     S += ImplTag; S += "*, struct ";
@@ -4133,7 +4218,9 @@ void RewriteModernObjC::SynthesizeBlockLiterals(SourceLocation FunLocStart,
 }
 
 void RewriteModernObjC::InsertBlockLiteralsWithinFunction(FunctionDecl *FD) {
-  SourceLocation FunLocStart = getFunctionSourceLocation(*this, FD);
+  SourceLocation FunLocStart = 
+    (!Blocks.empty()) ? getFunctionSourceLocation(*this, FD)
+                      : FD->getTypeSpecStartLoc();
   StringRef FuncName = FD->getName();
 
   SynthesizeBlockLiterals(FunLocStart, FuncName);
@@ -4742,7 +4829,8 @@ std::string RewriteModernObjC::SynthesizeByrefCopyDestroyHelper(VarDecl *VD,
 ///                               ND=initializer-if-any};
 ///
 ///
-void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
+void RewriteModernObjC::RewriteByRefVar(VarDecl *ND, bool firstDecl,
+                                        bool lastDecl) {
   int flag = 0;
   int isa = 0;
   SourceLocation DeclLoc = ND->getTypeSpecStartLoc();
@@ -4787,11 +4875,11 @@ void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
     FunLocStart = CurMethodDef->getLocStart();
   }
   InsertText(FunLocStart, ByrefType);
+  
   if (Ty.isObjCGCWeak()) {
     flag |= BLOCK_FIELD_IS_WEAK;
     isa = 1;
   }
-  
   if (HasCopyAndDispose) {
     flag = BLOCK_BYREF_CALLER;
     QualType Ty = ND->getType();
@@ -4811,8 +4899,13 @@ void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
   bool hasInit = (ND->getInit() != 0);
   // FIXME. rewriter does not support __block c++ objects which
   // require construction.
-  if (hasInit && dyn_cast<CXXConstructExpr>(ND->getInit()))
-    hasInit = false;
+  if (hasInit)
+    if (CXXConstructExpr *CExp = dyn_cast<CXXConstructExpr>(ND->getInit())) {
+      CXXConstructorDecl *CXXDecl = CExp->getConstructor();
+      if (CXXDecl && CXXDecl->isDefaultConstructor())
+        hasInit = false;
+    }
+  
   unsigned flags = 0;
   if (HasCopyAndDispose)
     flags |= BLOCK_HAS_COPY_DISPOSE;
@@ -4821,21 +4914,36 @@ void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
   RewriteByRefString(ByrefType, Name, ND);
   std::string ForwardingCastType("(");
   ForwardingCastType += ByrefType + " *)";
+  ByrefType += " " + Name + " = {(void*)";
+  ByrefType += utostr(isa);
+  ByrefType += "," +  ForwardingCastType + "&" + Name + ", ";
+  ByrefType += utostr(flags);
+  ByrefType += ", ";
+  ByrefType += "sizeof(";
+  RewriteByRefString(ByrefType, Name, ND);
+  ByrefType += ")";
+  if (HasCopyAndDispose) {
+    ByrefType += ", __Block_byref_id_object_copy_";
+    ByrefType += utostr(flag);
+    ByrefType += ", __Block_byref_id_object_dispose_";
+    ByrefType += utostr(flag);
+  }
+  
+  if (!firstDecl) {
+    // In multiple __block declarations, and for all but 1st declaration,
+    // find location of the separating comma. This would be start location
+    // where new text is to be inserted.
+    DeclLoc = ND->getLocation();
+    const char *startDeclBuf = SM->getCharacterData(DeclLoc);
+    const char *commaBuf = startDeclBuf;
+    while (*commaBuf != ',')
+      commaBuf--;
+    assert((*commaBuf == ',') && "RewriteByRefVar: can't find ','");
+    DeclLoc = DeclLoc.getLocWithOffset(commaBuf - startDeclBuf);
+    startBuf = commaBuf;
+  }
+  
   if (!hasInit) {
-    ByrefType += " " + Name + " = {(void*)";
-    ByrefType += utostr(isa);
-    ByrefType += "," +  ForwardingCastType + "&" + Name + ", ";
-    ByrefType += utostr(flags);
-    ByrefType += ", ";
-    ByrefType += "sizeof(";
-    RewriteByRefString(ByrefType, Name, ND);
-    ByrefType += ")";
-    if (HasCopyAndDispose) {
-      ByrefType += ", __Block_byref_id_object_copy_";
-      ByrefType += utostr(flag);
-      ByrefType += ", __Block_byref_id_object_dispose_";
-      ByrefType += utostr(flag);
-    }
     ByrefType += "};\n";
     unsigned nameSize = Name.size();
     // for block or function pointer declaration. Name is aleady
@@ -4845,6 +4953,7 @@ void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
     ReplaceText(DeclLoc, endBuf-startBuf+nameSize, ByrefType);
   }
   else {
+    ByrefType += ", ";
     SourceLocation startLoc;
     Expr *E = ND->getInit();
     if (const CStyleCastExpr *ECE = dyn_cast<CStyleCastExpr>(E))
@@ -4853,39 +4962,17 @@ void RewriteModernObjC::RewriteByRefVar(VarDecl *ND) {
       startLoc = E->getLocStart();
     startLoc = SM->getExpansionLoc(startLoc);
     endBuf = SM->getCharacterData(startLoc);
-    ByrefType += " " + Name;
-    ByrefType += " = {(void*)";
-    ByrefType += utostr(isa);
-    ByrefType += "," +  ForwardingCastType + "&" + Name + ", ";
-    ByrefType += utostr(flags);
-    ByrefType += ", ";
-    ByrefType += "sizeof(";
-    RewriteByRefString(ByrefType, Name, ND);
-    ByrefType += "), ";
-    if (HasCopyAndDispose) {
-      ByrefType += "__Block_byref_id_object_copy_";
-      ByrefType += utostr(flag);
-      ByrefType += ", __Block_byref_id_object_dispose_";
-      ByrefType += utostr(flag);
-      ByrefType += ", ";
-    }
     ReplaceText(DeclLoc, endBuf-startBuf, ByrefType);
-    
-    // Complete the newly synthesized compound expression by inserting a right
-    // curly brace before the end of the declaration.
-    // FIXME: This approach avoids rewriting the initializer expression. It
-    // also assumes there is only one declarator. For example, the following
-    // isn't currently supported by this routine (in general):
-    // 
-    // double __block BYREFVAR = 1.34, BYREFVAR2 = 1.37;
-    //
-    const char *startInitializerBuf = SM->getCharacterData(startLoc);
-    const char *semiBuf = strchr(startInitializerBuf, ';');
-    assert((*semiBuf == ';') && "RewriteByRefVar: can't find ';'");
-    SourceLocation semiLoc =
-      startLoc.getLocWithOffset(semiBuf-startInitializerBuf);
 
-    InsertText(semiLoc, "}");
+    const char separator = lastDecl ? ';' : ',';
+    const char *startInitializerBuf = SM->getCharacterData(startLoc);
+    const char *separatorBuf = strchr(startInitializerBuf, separator);
+    assert((*separatorBuf == separator) && 
+           "RewriteByRefVar: can't find ';' or ','");
+    SourceLocation separatorLoc =
+      startLoc.getLocWithOffset(separatorBuf-startInitializerBuf);
+    
+    InsertText(separatorLoc, lastDecl ? "}" : "};\n");
   }
   return;
 }
@@ -5323,7 +5410,7 @@ Stmt *RewriteModernObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
             assert(!BlockByRefDeclNo.count(ND) &&
               "RewriteFunctionBodyOrGlobalInitializer: Duplicate byref decl");
             BlockByRefDeclNo[ND] = uniqueByrefDeclCount++;
-            RewriteByRefVar(VD);
+            RewriteByRefVar(VD, (DI == DS->decl_begin()), ((DI+1) == DE));
           }
           else           
             RewriteTypeOfDecl(VD);
@@ -5396,7 +5483,7 @@ Stmt *RewriteModernObjC::RewriteFunctionBodyOrGlobalInitializer(Stmt *S) {
 void RewriteModernObjC::RewriteRecordBody(RecordDecl *RD) {
   for (RecordDecl::field_iterator i = RD->field_begin(), 
                                   e = RD->field_end(); i != e; ++i) {
-    FieldDecl *FD = *i;
+    FieldDecl *FD = &*i;
     if (isTopLevelBlockPointerType(FD->getType()))
       RewriteBlockPointerDecl(FD);
     if (FD->getType()->isObjCQualifiedIdType() ||
@@ -5536,7 +5623,7 @@ static void Write_ProtocolExprReferencedMetadata(ASTContext *Context,
                                                  std::string &Result) {
   // Also output .objc_protorefs$B section and its meta-data.
   if (Context->getLangOpts().MicrosoftExt)
-    Result += "__declspec(allocate(\".objc_protorefs$B\")) ";
+    Result += "static ";
   Result += "struct _protocol_t *";
   Result += "_OBJC_PROTOCOL_REFERENCE_$_";
   Result += PDecl->getNameAsString();
@@ -5626,7 +5713,6 @@ void RewriteModernObjC::Initialize(ASTContext &context) {
     Preamble += "#pragma section(\".objc_imageinfo$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_nlclslist$B\", long, read, write)\n";
     Preamble += "#pragma section(\".objc_nlcatlist$B\", long, read, write)\n";
-    Preamble += "#pragma section(\".objc_protorefs$B\", long, read, write)\n";
     // These are generated but not necessary for functionality.
     Preamble += "#pragma section(\".cat_cls_meth$B\", long, read, write)\n";
     Preamble += "#pragma section(\".inst_meth$B\", long, read, write)\n";
@@ -5657,11 +5743,11 @@ void RewriteModernObjC::Initialize(ASTContext &context) {
   Preamble += "__OBJC_RW_DLLIMPORT void objc_msgSendSuper_stret(void);\n";
   Preamble += "__OBJC_RW_DLLIMPORT void objc_msgSend_fpret(void);\n";
 
-  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object *objc_getClass";
+  Preamble += "__OBJC_RW_DLLIMPORT struct objc_class *objc_getClass";
   Preamble += "(const char *);\n";
   Preamble += "__OBJC_RW_DLLIMPORT struct objc_class *class_getSuperclass";
   Preamble += "(struct objc_class *);\n";
-  Preamble += "__OBJC_RW_DLLIMPORT struct objc_object *objc_getMetaClass";
+  Preamble += "__OBJC_RW_DLLIMPORT struct objc_class *objc_getMetaClass";
   Preamble += "(const char *);\n";
   Preamble += "__OBJC_RW_DLLIMPORT void objc_exception_throw( struct objc_object *);\n";
   // @synchronized hooks.
@@ -5744,7 +5830,7 @@ void RewriteModernObjC::Initialize(ASTContext &context) {
   Preamble += "\t  arr[i] = va_arg(marker, void *);\n";
   Preamble += "\tva_end( marker );\n";
   Preamble += "  };\n";
-  Preamble += "  __NSContainer_literal() {\n";
+  Preamble += "  ~__NSContainer_literal() {\n";
   Preamble += "\tdelete[] arr;\n";
   Preamble += "  }\n";
   Preamble += "};\n";
@@ -6588,7 +6674,7 @@ void RewriteModernObjC::RewriteObjCProtocolMetaData(ObjCProtocolDecl *PDecl,
   std::vector<ObjCPropertyDecl *> ProtocolProperties;
   for (ObjCContainerDecl::prop_iterator I = PDecl->prop_begin(),
        E = PDecl->prop_end(); I != E; ++I)
-    ProtocolProperties.push_back(*I);
+    ProtocolProperties.push_back(&*I);
   
   Write_prop_list_t_initializer(*this, Context, Result, ProtocolProperties,
                                  /* Container */0,
@@ -6759,20 +6845,20 @@ void RewriteModernObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
   for (ObjCImplDecl::propimpl_iterator Prop = IDecl->propimpl_begin(),
        PropEnd = IDecl->propimpl_end();
        Prop != PropEnd; ++Prop) {
-    if ((*Prop)->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
+    if (Prop->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
       continue;
-    if (!(*Prop)->getPropertyIvarDecl())
+    if (!Prop->getPropertyIvarDecl())
       continue;
-    ObjCPropertyDecl *PD = (*Prop)->getPropertyDecl();
+    ObjCPropertyDecl *PD = Prop->getPropertyDecl();
     if (!PD)
       continue;
     if (ObjCMethodDecl *Getter = PD->getGetterMethodDecl())
-      if (!Getter->isDefined())
+      if (mustSynthesizeSetterGetterMethod(IDecl, PD, true /*getter*/))
         InstanceMethods.push_back(Getter);
     if (PD->isReadOnly())
       continue;
     if (ObjCMethodDecl *Setter = PD->getSetterMethodDecl())
-      if (!Setter->isDefined())
+      if (mustSynthesizeSetterGetterMethod(IDecl, PD, false /*setter*/))
         InstanceMethods.push_back(Setter);
   }
   
@@ -6809,7 +6895,7 @@ void RewriteModernObjC::RewriteObjCClassMetaData(ObjCImplementationDecl *IDecl,
   std::vector<ObjCPropertyDecl *> ClassProperties;
   for (ObjCContainerDecl::prop_iterator I = CDecl->prop_begin(),
        E = CDecl->prop_end(); I != E; ++I)
-    ClassProperties.push_back(*I);
+    ClassProperties.push_back(&*I);
   
   Write_prop_list_t_initializer(*this, Context, Result, ClassProperties,
                                  /* Container */IDecl,
@@ -7023,11 +7109,11 @@ void RewriteModernObjC::RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *IDecl,
   for (ObjCImplDecl::propimpl_iterator Prop = IDecl->propimpl_begin(),
        PropEnd = IDecl->propimpl_end();
        Prop != PropEnd; ++Prop) {
-    if ((*Prop)->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
+    if (Prop->getPropertyImplementation() == ObjCPropertyImplDecl::Dynamic)
       continue;
-    if (!(*Prop)->getPropertyIvarDecl())
+    if (!Prop->getPropertyIvarDecl())
       continue;
-    ObjCPropertyDecl *PD = (*Prop)->getPropertyDecl();
+    ObjCPropertyDecl *PD = Prop->getPropertyDecl();
     if (!PD)
       continue;
     if (ObjCMethodDecl *Getter = PD->getGetterMethodDecl())
@@ -7071,10 +7157,10 @@ void RewriteModernObjC::RewriteObjCCategoryImplDecl(ObjCCategoryImplDecl *IDecl,
   std::vector<ObjCPropertyDecl *> ClassProperties;
   for (ObjCContainerDecl::prop_iterator I = CDecl->prop_begin(),
        E = CDecl->prop_end(); I != E; ++I)
-    ClassProperties.push_back(*I);
+    ClassProperties.push_back(&*I);
   
   Write_prop_list_t_initializer(*this, Context, Result, ClassProperties,
-                                /* Container */0,
+                                /* Container */IDecl,
                                 "_OBJC_$_PROP_LIST_",
                                 FullCategoryName);
   
@@ -7244,13 +7330,52 @@ Stmt *RewriteModernObjC::RewriteObjCIvarRefExpr(ObjCIvarRefExpr *IV) {
                                               SourceLocation(),
                                               addExpr);
       QualType IvarT = D->getType();
+
+      if (!isa<TypedefType>(IvarT) && IvarT->isRecordType()) {
+        RecordDecl *RD = IvarT->getAs<RecordType>()->getDecl();
+        RD = RD->getDefinition();
+        if (RD && !RD->getDeclName().getAsIdentifierInfo()) {
+          // decltype(((Foo_IMPL*)0)->bar) *
+          ObjCContainerDecl *CDecl = 
+            dyn_cast<ObjCContainerDecl>(D->getDeclContext());
+          // ivar in class extensions requires special treatment.
+          if (ObjCCategoryDecl *CatDecl = dyn_cast<ObjCCategoryDecl>(CDecl))
+            CDecl = CatDecl->getClassInterface();
+          std::string RecName = CDecl->getName();
+          RecName += "_IMPL";
+          RecordDecl *RD = RecordDecl::Create(*Context, TTK_Struct, TUDecl,
+                                              SourceLocation(), SourceLocation(),
+                                              &Context->Idents.get(RecName.c_str()));
+          QualType PtrStructIMPL = Context->getPointerType(Context->getTagDeclType(RD));
+          unsigned UnsignedIntSize = 
+            static_cast<unsigned>(Context->getTypeSize(Context->UnsignedIntTy));
+          Expr *Zero = IntegerLiteral::Create(*Context,
+                                              llvm::APInt(UnsignedIntSize, 0),
+                                              Context->UnsignedIntTy, SourceLocation());
+          Zero = NoTypeInfoCStyleCastExpr(Context, PtrStructIMPL, CK_BitCast, Zero);
+          ParenExpr *PE = new (Context) ParenExpr(SourceLocation(), SourceLocation(),
+                                                  Zero);
+          FieldDecl *FD = FieldDecl::Create(*Context, 0, SourceLocation(),
+                                            SourceLocation(),
+                                            &Context->Idents.get(D->getNameAsString()),
+                                            IvarT, 0,
+                                            /*BitWidth=*/0, /*Mutable=*/true,
+                                            /*HasInit=*/false);
+          MemberExpr *ME = new (Context) MemberExpr(PE, true, FD, SourceLocation(),
+                                                    FD->getType(), VK_LValue,
+                                                    OK_Ordinary);
+          IvarT = Context->getDecltypeType(ME, ME->getType());
+        }
+      }
       convertObjCTypeToCStyleType(IvarT);
       QualType castT = Context->getPointerType(IvarT);
-      
+          
       castExpr = NoTypeInfoCStyleCastExpr(Context, 
                                           castT,
                                           CK_BitCast,
                                           PE);
+      
+      
       Expr *Exp = new (Context) UnaryOperator(castExpr, UO_Deref, IvarT,
                                               VK_LValue, OK_Ordinary,
                                               SourceLocation());

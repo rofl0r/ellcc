@@ -354,12 +354,14 @@ void Sema::LookupTemplateName(LookupResult &Found,
     return;
   }
 
-  if (S && !ObjectType.isNull() && !ObjectTypeSearchedInScope) {
-    // C++ [basic.lookup.classref]p1:
+  if (S && !ObjectType.isNull() && !ObjectTypeSearchedInScope &&
+      !(getLangOpts().CPlusPlus0x && !Found.empty())) {
+    // C++03 [basic.lookup.classref]p1:
     //   [...] If the lookup in the class of the object expression finds a
     //   template, the name is also looked up in the context of the entire
     //   postfix-expression and [...]
     //
+    // Note: C++11 does not perform this second lookup.
     LookupResult FoundOuter(*this, Found.getLookupName(), Found.getNameLoc(),
                             LookupOrdinaryName);
     LookupName(FoundOuter, S);
@@ -969,20 +971,15 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
           PrevDecl = (*Previous.begin())->getUnderlyingDecl();
       }
     }
-
-    if (CurContext->isDependentContext() && PrevClassTemplate) {
-      // If this is a dependent context, we don't want to link the friend
-      // class template to the template in scope, because that would perform
-      // checking of the template parameter lists that can't be performed
-      // until the outer context is instantiated.
-      PrevDecl = PrevClassTemplate = 0;
-    }
   } else if (PrevDecl && !isDeclInScope(PrevDecl, SemanticContext, S))
     PrevDecl = PrevClassTemplate = 0;
 
   if (PrevClassTemplate) {
-    // Ensure that the template parameter lists are compatible.
-    if (!TemplateParameterListsAreEqual(TemplateParams,
+    // Ensure that the template parameter lists are compatible. Skip this check
+    // for a friend in a dependent context: the template parameter list itself
+    // could be dependent.
+    if (!(TUK == TUK_Friend && CurContext->isDependentContext()) &&
+        !TemplateParameterListsAreEqual(TemplateParams,
                                    PrevClassTemplate->getTemplateParameters(),
                                         /*Complain=*/true,
                                         TPL_TemplateMatch))
@@ -1031,8 +1028,10 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
 
   // Check the template parameter list of this declaration, possibly
   // merging in the template parameter list from the previous class
-  // template declaration.
-  if (CheckTemplateParameterList(TemplateParams,
+  // template declaration. Skip this check for a friend in a dependent
+  // context, because the template parameter list might be dependent.
+  if (!(TUK == TUK_Friend && CurContext->isDependentContext()) &&
+      CheckTemplateParameterList(TemplateParams,
             PrevClassTemplate? PrevClassTemplate->getTemplateParameters() : 0,
                                  (SS.isSet() && SemanticContext &&
                                   SemanticContext->isRecord() &&
@@ -1044,9 +1043,9 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
   if (SS.isSet()) {
     // If the name of the template was qualified, we must be defining the
     // template out-of-line.
-    if (!SS.isInvalid() && !Invalid && !PrevClassTemplate &&
-        !(TUK == TUK_Friend && CurContext->isDependentContext())) {
-      Diag(NameLoc, diag::err_member_def_does_not_match)
+    if (!SS.isInvalid() && !Invalid && !PrevClassTemplate) {
+      Diag(NameLoc, TUK == TUK_Friend ? diag::err_friend_decl_does_not_match
+                                      : diag::err_member_def_does_not_match)
         << Name << SemanticContext << SS.getRange();
       Invalid = true;
     }
@@ -2515,6 +2514,7 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
                                      Converted.size(),
                                      SourceRange(TemplateLoc, RAngleLoc));
 
+    Sema::ContextRAII SavedContext(SemaRef, Template->getDeclContext());
     ArgType = SemaRef.SubstType(ArgType, AllTemplateArgs,
                                 Param->getDefaultArgumentLoc(),
                                 Param->getDeclName());
@@ -2563,6 +2563,8 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
                                    Converted.size(),
                                    SourceRange(TemplateLoc, RAngleLoc));
 
+  Sema::ContextRAII SavedContext(SemaRef, Template->getDeclContext());
+  EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated);
   return SemaRef.SubstExpr(Param->getDefaultArgument(), AllTemplateArgs);
 }
 
@@ -2610,6 +2612,7 @@ SubstDefaultTemplateArgument(Sema &SemaRef,
                                    Converted.size(),
                                    SourceRange(TemplateLoc, RAngleLoc));
 
+  Sema::ContextRAII SavedContext(SemaRef, Template->getDeclContext());
   // Substitute into the nested-name-specifier first, 
   QualifierLoc = Param->getDefaultArgument().getTemplateQualifierLoc();
   if (QualifierLoc) {
@@ -3589,6 +3592,7 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   if (ParamType->isPointerType() || ParamType->isNullPtrType()) {
     switch (isNullPointerValueTemplateArgument(S, Param, ParamType, Arg)) {
     case NPV_NullPointer:
+      S.Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
       Converted = TemplateArgument((Decl *)0);
       return false;
 
@@ -3885,6 +3889,7 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
   case NPV_Error:
     return true;
   case NPV_NullPointer:
+    S.Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
     Converted = TemplateArgument((Decl *)0);
     return false;
   case NPV_NotNullPointer:
@@ -4108,8 +4113,20 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       Diag(Param->getLocation(), diag::note_template_param_here);
       return ExprError();
     } else if (!Arg->isValueDependent()) {
-      Arg = VerifyIntegerConstantExpression(Arg, &Value,
-        PDiag(diag::err_template_arg_not_ice) << ArgType, false).take();
+      class TmplArgICEDiagnoser : public VerifyICEDiagnoser {
+        QualType T;
+        
+      public:
+        TmplArgICEDiagnoser(QualType T) : T(T) { }
+        
+        virtual void diagnoseNotICE(Sema &S, SourceLocation Loc,
+                                    SourceRange SR) {
+          S.Diag(Loc, diag::err_template_arg_not_ice) << T << SR;
+        }
+      } Diagnoser(ArgType);
+
+      Arg = VerifyIntegerConstantExpression(Arg, &Value, Diagnoser,
+                                            false).take();
       if (!Arg)
         return ExprError();
     }
@@ -4320,6 +4337,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       return ExprError();
       
     case NPV_NullPointer:
+      Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
       Converted = TemplateArgument((Decl *)0);
       return Owned(Arg);;
     }

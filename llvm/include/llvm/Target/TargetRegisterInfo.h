@@ -42,9 +42,9 @@ public:
   // Instance variables filled by tablegen, do not use!
   const MCRegisterClass *MC;
   const vt_iterator VTs;
-  const unsigned *SubClassMask;
+  const uint32_t *SubClassMask;
+  const uint16_t *SuperRegIndices;
   const sc_iterator SuperClasses;
-  const sc_iterator SuperRegClasses;
   ArrayRef<uint16_t> (*OrderFunc)(const MachineFunction&);
 
   /// getID() - Return the register class ID number.
@@ -119,18 +119,6 @@ public:
     return I;
   }
 
-  /// superregclasses_begin / superregclasses_end - Loop over all of
-  /// the superreg register classes of this register class.
-  sc_iterator superregclasses_begin() const {
-    return SuperRegClasses;
-  }
-
-  sc_iterator superregclasses_end() const {
-    sc_iterator I = SuperRegClasses;
-    while (*I != NULL) ++I;
-    return I;
-  }
-
   /// hasSubClass - return true if the specified TargetRegisterClass
   /// is a proper sub-class of this TargetRegisterClass.
   bool hasSubClass(const TargetRegisterClass *RC) const {
@@ -161,6 +149,18 @@ public:
   /// use it.
   const uint32_t *getSubClassMask() const {
     return SubClassMask;
+  }
+
+  /// getSuperRegIndices - Returns a 0-terminated list of sub-register indices
+  /// that projec some super-register class into this register class. The list
+  /// has an entry for each Idx such that:
+  ///
+  ///   There exists SuperRC where:
+  ///     For all Reg in SuperRC:
+  ///       this->contains(Reg:Idx)
+  ///
+  const uint16_t *getSuperRegIndices() const {
+    return SuperRegIndices;
   }
 
   /// getSuperClasses - Returns a NULL terminated list of super-classes.  The
@@ -301,6 +301,11 @@ public:
   const TargetRegisterClass *
     getMinimalPhysRegClass(unsigned Reg, EVT VT = MVT::Other) const;
 
+  /// getAllocatableClass - Return the maximal subclass of the given register
+  /// class that is alloctable, or NULL.
+  const TargetRegisterClass *
+    getAllocatableClass(const TargetRegisterClass *RC) const;
+
   /// getAllocatableSet - Returns a bitset indexed by register number
   /// indicating if a register is allocatable or not. If a register class is
   /// specified, returns the subset for the class.
@@ -416,7 +421,7 @@ public:
   /// TableGen will synthesize missing A sub-classes.
   virtual const TargetRegisterClass *
   getMatchingSuperRegClass(const TargetRegisterClass *A,
-                           const TargetRegisterClass *B, unsigned Idx) const =0;
+                           const TargetRegisterClass *B, unsigned Idx) const;
 
   /// getSubClassWithSubReg - Returns the largest legal sub-class of RC that
   /// supports the sub-register index Idx.
@@ -431,7 +436,10 @@ public:
   ///
   /// TableGen will synthesize missing RC sub-classes.
   virtual const TargetRegisterClass *
-  getSubClassWithSubReg(const TargetRegisterClass *RC, unsigned Idx) const =0;
+  getSubClassWithSubReg(const TargetRegisterClass *RC, unsigned Idx) const {
+    assert(Idx == 0 && "Target has no sub-registers");
+    return RC;
+  }
 
   /// composeSubRegIndices - Return the subregister index you get from composing
   /// two subregister indices.
@@ -612,6 +620,12 @@ public:
     return false;
   }
 
+  /// trackLivenessAfterRegAlloc - returns true if the live-ins should be tracked
+  /// after register allocation.
+  virtual bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
+    return false;
+  }
+
   /// needsStackRealignment - true if storage within the function requires the
   /// stack pointer to be aligned more than the normal calling convention calls
   /// for.
@@ -710,6 +724,62 @@ public:
   }
 };
 
+
+//===----------------------------------------------------------------------===//
+//                           SuperRegClassIterator
+//===----------------------------------------------------------------------===//
+//
+// Iterate over the possible super-registers for a given register class. The
+// iterator will visit a list of pairs (Idx, Mask) corresponding to the
+// possible classes of super-registers.
+//
+// Each bit mask will have at least one set bit, and each set bit in Mask
+// corresponds to a SuperRC such that:
+//
+//   For all Reg in SuperRC: Reg:Idx is in RC.
+//
+// The iterator can include (O, RC->getSubClassMask()) as the first entry which
+// also satisfies the above requirement, assuming Reg:0 == Reg.
+//
+class SuperRegClassIterator {
+  const unsigned RCMaskWords;
+  unsigned SubReg;
+  const uint16_t *Idx;
+  const uint32_t *Mask;
+
+public:
+  /// Create a SuperRegClassIterator that visits all the super-register classes
+  /// of RC. When IncludeSelf is set, also include the (0, sub-classes) entry.
+  SuperRegClassIterator(const TargetRegisterClass *RC,
+                        const TargetRegisterInfo *TRI,
+                        bool IncludeSelf = false)
+    : RCMaskWords((TRI->getNumRegClasses() + 31) / 32),
+      SubReg(0),
+      Idx(RC->getSuperRegIndices()),
+      Mask(RC->getSubClassMask()) {
+    if (!IncludeSelf)
+      ++*this;
+  }
+
+  /// Returns true if this iterator is still pointing at a valid entry.
+  bool isValid() const { return Idx; }
+
+  /// Returns the current sub-register index.
+  unsigned getSubReg() const { return SubReg; }
+
+  /// Returns the bit mask if register classes that getSubReg() projects into
+  /// RC.
+  const uint32_t *getMask() const { return Mask; }
+
+  /// Advance iterator to the next entry.
+  void operator++() {
+    assert(isValid() && "Cannot move iterator past end.");
+    Mask += RCMaskWords;
+    SubReg = *Idx++;
+    if (!SubReg)
+      Idx = 0;
+  }
+};
 
 // This is useful when building IndexedMaps keyed on virtual registers
 struct VirtReg2IndexFunctor : public std::unary_function<unsigned, unsigned> {

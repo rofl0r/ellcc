@@ -334,28 +334,31 @@ void RuntimeDyldELF::resolveRelocation(uint8_t *LocalAddress,
 void RuntimeDyldELF::processRelocationRef(const ObjRelocationInfo &Rel,
                                           ObjectImage &Obj,
                                           ObjSectionToIDMap &ObjSectionToID,
-                                          LocalSymbolMap &Symbols,
+                                          const SymbolTableMap &Symbols,
                                           StubMap &Stubs) {
 
   uint32_t RelType = (uint32_t)(Rel.Type & 0xffffffffL);
   intptr_t Addend = (intptr_t)Rel.AdditionalInfo;
-  RelocationValueRef Value;
-  StringRef TargetName;
   const SymbolRef &Symbol = Rel.Symbol;
+
+  // Obtain the symbol name which is referenced in the relocation
+  StringRef TargetName;
   Symbol.getName(TargetName);
   DEBUG(dbgs() << "\t\tRelType: " << RelType
                << " Addend: " << Addend
                << " TargetName: " << TargetName
                << "\n");
-  // First look the symbol in object file symbols.
-  LocalSymbolMap::iterator lsi = Symbols.find(TargetName.data());
+  RelocationValueRef Value;
+  // First search for the symbol in the local symbol table
+  SymbolTableMap::const_iterator lsi = Symbols.find(TargetName.data());
   if (lsi != Symbols.end()) {
     Value.SectionID = lsi->second.first;
     Value.Addend = lsi->second.second;
   } else {
-    // Second look the symbol in global symbol table.
-    StringMap<SymbolLoc>::iterator gsi = SymbolTable.find(TargetName.data());
-    if (gsi != SymbolTable.end()) {
+    // Search for the symbol in the global symbol table
+    SymbolTableMap::const_iterator gsi =
+        GlobalSymbolTable.find(TargetName.data());
+    if (gsi != GlobalSymbolTable.end()) {
       Value.SectionID = gsi->second.first;
       Value.Addend = gsi->second.second;
     } else {
@@ -366,7 +369,7 @@ void RuntimeDyldELF::processRelocationRef(const ObjRelocationInfo &Rel,
           // TODO: Now ELF SymbolRef::ST_Debug = STT_SECTION, it's not obviously
           // and can be changed by another developers. Maybe best way is add
           // a new symbol type ST_Section to SymbolRef and use it.
-          section_iterator si = Obj.end_sections();
+          section_iterator si(Obj.end_sections());
           Symbol.getSection(si);
           if (si == Obj.end_sections())
             llvm_unreachable("Symbol section not found, bad object file format!");
@@ -410,14 +413,24 @@ void RuntimeDyldELF::processRelocationRef(const ObjRelocationInfo &Rel,
       Stubs[Value] = Section.StubOffset;
       uint8_t *StubTargetAddr = createStubFunction(Section.Address +
                                                    Section.StubOffset);
-      AddRelocation(Value, Rel.SectionID,
-                    StubTargetAddr - Section.Address, ELF::R_ARM_ABS32);
+      RelocationEntry RE(Rel.SectionID, StubTargetAddr - Section.Address,
+                         ELF::R_ARM_ABS32, Value.Addend);
+      if (Value.SymbolName)
+        addRelocationForSymbol(RE, Value.SymbolName);
+      else
+        addRelocationForSection(RE, Value.SectionID);
+
       resolveRelocation(Target, (uint64_t)Target, (uint64_t)Section.Address +
                         Section.StubOffset, RelType, 0);
       Section.StubOffset += getMaxStubSize();
     }
-  } else
-    AddRelocation(Value, Rel.SectionID, Rel.Offset, RelType);
+  } else {
+    RelocationEntry RE(Rel.SectionID, Rel.Offset, RelType, Value.Addend);
+    if (Value.SymbolName)
+      addRelocationForSymbol(RE, Value.SymbolName);
+    else
+      addRelocationForSection(RE, Value.SectionID);
+  }
 }
 
 bool RuntimeDyldELF::isCompatibleFormat(const MemoryBuffer *InputBuffer) const {

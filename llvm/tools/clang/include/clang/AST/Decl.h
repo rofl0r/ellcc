@@ -64,9 +64,6 @@ public:
 
   /// \brief Return the TypeLoc wrapper for the type source info.
   TypeLoc getTypeLoc() const; // implemented in TypeLoc.h
-  
-  /// \brief Override the type stored in this TypeSourceInfo. Use with caution!
-  void overrideType(QualType T) { Ty = T; }
 };
 
 /// TranslationUnitDecl - The top declaration context.
@@ -277,9 +274,15 @@ public:
       if (visibility() < V)
         return;
 
-      // Don't lose the explicit bit for nothing
-      if (visibility() == V && visibilityExplicit())
+      // FIXME: this
+      // If this visibility is explicit, keep it.
+      if (visibilityExplicit() && !E)
         return;
+
+      // should be replaced with this
+      // Don't lose the explicit bit for nothing
+      //      if (visibility() == V && visibilityExplicit())
+      //        return;
 
       setVisibility(V, E);
     }
@@ -297,11 +300,6 @@ public:
     void mergeWithMin(LinkageInfo Other) {
       mergeLinkage(Other);
       mergeVisibilityWithMin(Other);
-    }
-
-    friend LinkageInfo merge(LinkageInfo L, LinkageInfo R) {
-      L.merge(R);
-      return L;
     }
   };
 
@@ -2605,6 +2603,7 @@ public:
 
   void setCompleteDefinition(bool V) { IsCompleteDefinition = V; }
 
+  // FIXME: Return StringRef;
   const char *getKindName() const {
     return TypeWithKeyword::getTagTypeKindName(getTagKind());
   }

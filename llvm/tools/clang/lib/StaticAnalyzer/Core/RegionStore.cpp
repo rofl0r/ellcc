@@ -681,8 +681,22 @@ void invalidateRegionsWorker::VisitBaseRegion(const MemRegion *baseR) {
          BI != BE; ++BI) {
       const VarRegion *VR = *BI;
       const VarDecl *VD = VR->getDecl();
-      if (VD->getAttr<BlocksAttr>() || !VD->hasLocalStorage())
+      if (VD->getAttr<BlocksAttr>() || !VD->hasLocalStorage()) {
         AddToWorkList(VR);
+      }
+      else if (Loc::isLocType(VR->getValueType())) {
+        // Map the current bindings to a Store to retrieve the value
+        // of the binding.  If that binding itself is a region, we should
+        // invalidate that region.  This is because a block may capture
+        // a pointer value, but the thing pointed by that pointer may
+        // get invalidated.
+        Store store = B.getRootWithoutRetain();
+        SVal V = RM.getBinding(store, loc::MemRegionVal(VR));
+        if (const Loc *L = dyn_cast<Loc>(&V)) {
+          if (const MemRegion *LR = L->getAsRegion())
+            AddToWorkList(LR);
+        }
+      }
     }
     return;
   }
@@ -1274,7 +1288,15 @@ SVal RegionStoreManager::getBindingForFieldOrElementCommon(Store store,
   // At this point we have already checked in either getBindingForElement or
   // getBindingForField if 'R' has a direct binding.
   RegionBindings B = GetRegionBindings(store);
+
+  // Lazy binding?
+  Store lazyBindingStore = NULL;
+  const MemRegion *lazyBindingRegion = NULL;
+  llvm::tie(lazyBindingStore, lazyBindingRegion) = GetLazyBinding(B, R, R);
   
+  if (lazyBindingRegion)
+    return getLazyBinding(lazyBindingRegion, lazyBindingStore);
+
   // Record whether or not we see a symbolic index.  That can completely
   // be out of scope of our lookup.
   bool hasSymbolicIndex = false;
@@ -1298,14 +1320,6 @@ SVal RegionStoreManager::getBindingForFieldOrElementCommon(Store store,
     }
     break;
   }
-
-  // Lazy binding?
-  Store lazyBindingStore = NULL;
-  const MemRegion *lazyBindingRegion = NULL;
-  llvm::tie(lazyBindingStore, lazyBindingRegion) = GetLazyBinding(B, R, R);
-
-  if (lazyBindingRegion)
-    return getLazyBinding(lazyBindingRegion, lazyBindingStore);
 
   if (R->hasStackNonParametersStorage()) {
     if (isa<ElementRegion>(R)) {
@@ -1646,11 +1660,11 @@ StoreRef RegionStoreManager::BindStruct(Store store, const TypedValueRegion* R,
       break;
 
     // Skip any unnamed bitfields to stay in sync with the initializers.
-    if ((*FI)->isUnnamedBitfield())
+    if (FI->isUnnamedBitfield())
       continue;
 
-    QualType FTy = (*FI)->getType();
-    const FieldRegion* FR = MRMgr.getFieldRegion(*FI, R);
+    QualType FTy = FI->getType();
+    const FieldRegion* FR = MRMgr.getFieldRegion(&*FI, R);
 
     if (FTy->isArrayType())
       newStore = BindArray(newStore.getStore(), FR, *VI);

@@ -470,6 +470,55 @@ static bool isResultTypeOrTemplate(LookupResult &R, const Token &NextToken) {
   return false;
 }
 
+static bool isTagTypeWithMissingTag(Sema &SemaRef, LookupResult &Result,
+                                    Scope *S, CXXScopeSpec &SS,
+                                    IdentifierInfo *&Name,
+                                    SourceLocation NameLoc) {
+  Result.clear(Sema::LookupTagName);
+  SemaRef.LookupParsedName(Result, S, &SS);
+  if (TagDecl *Tag = Result.getAsSingle<TagDecl>()) {
+    const char *TagName = 0;
+    const char *FixItTagName = 0;
+    switch (Tag->getTagKind()) {
+      case TTK_Class:
+        TagName = "class";
+        FixItTagName = "class ";
+        break;
+
+      case TTK_Enum:
+        TagName = "enum";
+        FixItTagName = "enum ";
+        break;
+
+      case TTK_Struct:
+        TagName = "struct";
+        FixItTagName = "struct ";
+        break;
+
+      case TTK_Union:
+        TagName = "union";
+        FixItTagName = "union ";
+        break;
+    }
+
+    SemaRef.Diag(NameLoc, diag::err_use_of_tag_name_without_tag)
+      << Name << TagName << SemaRef.getLangOpts().CPlusPlus
+      << FixItHint::CreateInsertion(NameLoc, FixItTagName);
+
+    LookupResult R(SemaRef, Name, NameLoc, Sema::LookupOrdinaryName);
+    if (SemaRef.LookupParsedName(R, S, &SS)) {
+      for (LookupResult::iterator I = R.begin(), IEnd = R.end();
+           I != IEnd; ++I)
+        SemaRef.Diag((*I)->getLocation(), diag::note_decl_hiding_tag_type)
+          << Name << TagName;
+    }
+    return true;
+  }
+
+  Result.clear(Sema::LookupOrdinaryName);
+  return false;
+}
+
 Sema::NameClassification Sema::ClassifyName(Scope *S,
                                             CXXScopeSpec &SS,
                                             IdentifierInfo *&Name,
@@ -533,41 +582,9 @@ Corrected:
     // In C, we first see whether there is a tag type by the same name, in 
     // which case it's likely that the user just forget to write "enum", 
     // "struct", or "union".
-    if (!getLangOpts().CPlusPlus && !SecondTry) {
-      Result.clear(LookupTagName);
-      LookupParsedName(Result, S, &SS);
-      if (TagDecl *Tag = Result.getAsSingle<TagDecl>()) {
-        const char *TagName = 0;
-        const char *FixItTagName = 0;
-        switch (Tag->getTagKind()) {
-          case TTK_Class:
-            TagName = "class";
-            FixItTagName = "class ";
-            break;
-
-          case TTK_Enum:
-            TagName = "enum";
-            FixItTagName = "enum ";
-            break;
-            
-          case TTK_Struct:
-            TagName = "struct";
-            FixItTagName = "struct ";
-            break;
-            
-          case TTK_Union:
-            TagName = "union";
-            FixItTagName = "union ";
-            break;
-        }
-
-        Diag(NameLoc, diag::err_use_of_tag_name_without_tag)
-          << Name << TagName << getLangOpts().CPlusPlus
-          << FixItHint::CreateInsertion(NameLoc, FixItTagName);
-        break;
-      }
-      
-      Result.clear(LookupOrdinaryName);
+    if (!getLangOpts().CPlusPlus && !SecondTry &&
+        isTagTypeWithMissingTag(*this, Result, S, SS, Name, NameLoc)) {
+      break;
     }
 
     // Perform typo correction to determine if there is another name that is
@@ -740,7 +757,7 @@ Corrected:
   if (TypeDecl *Type = dyn_cast<TypeDecl>(FirstDecl)) {
     DiagnoseUseOfDecl(Type, NameLoc);
     QualType T = Context.getTypeDeclType(Type);
-    return ParsedType::make(T);    
+    return ParsedType::make(T);
   }
   
   ObjCInterfaceDecl *Class = dyn_cast<ObjCInterfaceDecl>(FirstDecl);
@@ -763,6 +780,23 @@ Corrected:
     
     QualType T = Context.getObjCInterfaceType(Class);
     return ParsedType::make(T);
+  }
+
+  // Check for a tag type hidden by a non-type decl in a few cases where it
+  // seems likely a type is wanted instead of the non-type that was found.
+  if (!getLangOpts().ObjC1 && FirstDecl && !isa<ClassTemplateDecl>(FirstDecl) &&
+      !isa<TypeAliasTemplateDecl>(FirstDecl)) {
+    bool NextIsOp = NextToken.is(tok::amp) || NextToken.is(tok::star);
+    if ((NextToken.is(tok::identifier) ||
+         (NextIsOp && FirstDecl->isFunctionOrFunctionTemplate())) &&
+        isTagTypeWithMissingTag(*this, Result, S, SS, Name, NameLoc)) {
+      FirstDecl = (*Result.begin())->getUnderlyingDecl();
+      if (TypeDecl *Type = dyn_cast<TypeDecl>(FirstDecl)) {
+        DiagnoseUseOfDecl(Type, NameLoc);
+        QualType T = Context.getTypeDeclType(Type);
+        return ParsedType::make(T);
+      }
+    }
   }
   
   if (!Result.empty() && (*Result.begin())->isCXXClassMember())
@@ -3225,7 +3259,7 @@ Decl *Sema::ActOnDeclarator(Scope *S, Declarator &D) {
   Decl *Dcl = HandleDeclarator(S, D, MultiTemplateParamsArg(*this));
 
   if (OriginalLexicalContext && OriginalLexicalContext->isObjCContainer() &&
-      Dcl->getDeclContext()->isFileContext())
+      Dcl && Dcl->getDeclContext()->isFileContext())
     Dcl->setTopLevelDeclInObjCContainer();
 
   return Dcl;
@@ -4418,7 +4452,7 @@ bool Sema::CheckVariableDeclaration(VarDecl *NewVD,
 
   if (NewVD->isConstexpr() && !T->isDependentType() &&
       RequireLiteralType(NewVD->getLocation(), T,
-                         PDiag(diag::err_constexpr_var_non_literal))) {
+                         diag::err_constexpr_var_non_literal)) {
     NewVD->setInvalidDecl();
     return false;
   }
@@ -5082,12 +5116,14 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
             (RD->isEmpty() || RD->hasUserProvidedDefaultConstructor()))
           Diag(C.Loc, diag::note_empty_parens_default_ctor)
             << FixItHint::CreateRemoval(ParenRange);
-        else if (const char *Init = getFixItZeroInitializerForType(T))
-          Diag(C.Loc, diag::note_empty_parens_zero_initialize)
-            << FixItHint::CreateReplacement(ParenRange, Init);
-        else if (LangOpts.CPlusPlus0x)
-          Diag(C.Loc, diag::note_empty_parens_zero_initialize)
-            << FixItHint::CreateReplacement(ParenRange, "{}");
+        else {
+          std::string Init = getFixItZeroInitializerForType(T);
+          if (Init.empty() && LangOpts.CPlusPlus0x)
+            Init = "{}";
+          if (!Init.empty())
+            Diag(C.Loc, diag::note_empty_parens_zero_initialize)
+              << FixItHint::CreateReplacement(ParenRange, Init);
+        }
       }
     }
 
@@ -7353,7 +7389,7 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D) {
       if (EnumDecl *ED = dyn_cast<EnumDecl>(D)) {
         for (EnumDecl::enumerator_iterator EI = ED->enumerator_begin(),
                EE = ED->enumerator_end(); EI != EE; ++EI)
-          PushOnScopeChains(*EI, FnBodyScope, /*AddToContext=*/false);
+          PushOnScopeChains(&*EI, FnBodyScope, /*AddToContext=*/false);
       }
     }
   }
@@ -7635,7 +7671,7 @@ NamedDecl *Sema::ImplicitlyDefineFunction(SourceLocation Loc,
                                              SourceLocation(), SourceLocation(),
                                              SourceLocation(),
                                              EST_None, SourceLocation(),
-                                             0, 0, 0, 0, 0, Loc, Loc, D),
+                                             0, 0, 0, 0, Loc, Loc, D),
                 DS.getAttributes(),
                 SourceLocation());
   D.SetIdentifier(&II, Loc);
@@ -9178,7 +9214,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
     if (RD->hasUserDeclaredConstructor()) {
       typedef CXXRecordDecl::ctor_iterator ctor_iter;
       for (ctor_iter CI = RD->ctor_begin(), CE = RD->ctor_end(); CI != CE; ++CI)
-        if (DiagnoseNontrivialUserProvidedCtor(*this, QT, *CI, member))
+        if (DiagnoseNontrivialUserProvidedCtor(*this, QT, &*CI, member))
           return;
 
       // No user-provided constructors; look for constructor templates.
@@ -9295,12 +9331,12 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
   typedef RecordDecl::field_iterator field_iter;
   for (field_iter fi = RD->field_begin(), fe = RD->field_end(); fi != fe;
        ++fi) {
-    QualType EltTy = Context.getBaseElementType((*fi)->getType());
+    QualType EltTy = Context.getBaseElementType(fi->getType());
     if (const RecordType *EltRT = EltTy->getAs<RecordType>()) {
       CXXRecordDecl* EltRD = cast<CXXRecordDecl>(EltRT->getDecl());
 
       if (!(EltRD->*hasTrivial)()) {
-        SourceLocation FLoc = (*fi)->getLocation();
+        SourceLocation FLoc = fi->getLocation();
         Diag(FLoc, diag::note_nontrivial_has_nontrivial) << QT << 0 << member;
         DiagnoseNontrivial(EltRT, member);
         return;
@@ -9316,7 +9352,7 @@ void Sema::DiagnoseNontrivial(const RecordType* T, CXXSpecialMember member) {
       case Qualifiers::OCL_Autoreleasing:
       case Qualifiers::OCL_Weak:
       case Qualifiers::OCL_Strong:
-        Diag((*fi)->getLocation(), diag::note_nontrivial_objc_ownership)
+        Diag(fi->getLocation(), diag::note_nontrivial_objc_ownership)
           << QT << EltTy.getObjCLifetime();
         return;
       }
@@ -9783,21 +9819,6 @@ void Sema::ActOnFields(Scope* S,
     
     if (!Completed)
       Record->completeDefinition();
-
-    // Now that the record is complete, do any delayed exception spec checks
-    // we were missing.
-    while (!DelayedDestructorExceptionSpecChecks.empty()) {
-      const CXXDestructorDecl *Dtor =
-              DelayedDestructorExceptionSpecChecks.back().first;
-      if (Dtor->getParent() != Record)
-        break;
-
-      assert(!Dtor->getParent()->isDependentType() &&
-          "Should not ever add destructors of templates into the list.");
-      CheckOverridingFunctionExceptionSpec(Dtor,
-          DelayedDestructorExceptionSpecChecks.back().second);
-      DelayedDestructorExceptionSpecChecks.pop_back();
-    }
 
   } else {
     ObjCIvarDecl **ClsFields =
