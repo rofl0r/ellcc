@@ -22,13 +22,13 @@ musl:
 	  mkdir -p musl-build/$$target ; \
 	  cd musl ; \
 	  make clean ; \
-	  export CC="$(PWD)/bin/ecc" ; \
+	  export CC="$(PWD)/bin/$$target-linux-ecc" ; \
 	  ./configure --prefix=$(PWD)/musl-build/$$target \
 	    --build=$$target \
 	    --syslibdir=$(PWD)/musl-build/$$target \
 	    --exec-prefix=$(PWD)/musl-build/$$target \
 	    --enable-warnings \
-	    CFLAGS="-ccc-host-triple $$target-linux-ellcc -Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
+	    CFLAGS="-Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
 	    || exit 1 ; \
 	  make || exit 1 ; \
 	  make install || exit 1 ; \

@@ -5837,7 +5837,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("_start");
   }
 
-#if RICH
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
   } else {
@@ -5852,7 +5851,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("/usr/libexec/ld.so");
     }
   }
-#endif
 
   if (Output.isFilename()) {
     CmdArgs.push_back("-o");
@@ -5884,12 +5882,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("-nostdlib");
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/ldscripts/"
     + Triple.getOSTypeName(Triple.getOS())));
-  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-    + ArchName + "/"
-    + Triple.getOSTypeName(Triple.getOS())));
-  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-    + ArchName));
-
+  if (!Args.hasArg(options::OPT_nostdlib)) {
+    CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
+      + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS())));
+    CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
+      + ArchName));
+  }
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);
   Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
