@@ -8,6 +8,7 @@ XCFLAGS = -std=gnu99 -nostdinc
 # Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 XCFLAGS += -I$(ECC)/test/include
 DOFF := $(ECC)/libecc
+XCFLAGS += -I$(DOFF)/include
 XCFLAGS += -I$(ECC)/musl-build/x86_64/include
 OSLIBDIR := $(ECC)/musl-build/x86_64/lib
 XLDFLAGS += -static -nostdlib $(OSLIBDIR)/crt1.o $(OSLIBDIR)/crti.o
