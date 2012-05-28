@@ -69,9 +69,10 @@ safe_print(const char *src)
 		flags |= VIS_CSTYLE;
 
 	len = strlen(src);
-	if (len != 0 && SIZE_T_MAX/len <= 4) {
+	if (len != 0 && ~(size_t)0/len <= 4) {
 		errx(EXIT_FAILURE, "%s: name too long", src);
 		/* NOTREACHED */
+                return 0;
 	}
 
 	name = (char *)malloc(4*len+1);
@@ -83,6 +84,7 @@ safe_print(const char *src)
 	} else
 		errx(EXIT_FAILURE, "out of memory!");
 		/* NOTREACHED */
+                return 0;
 }
 
 /*

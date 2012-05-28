@@ -1,1 +1,2 @@
 STDOUT = grep ls.o
+ARGS = -l

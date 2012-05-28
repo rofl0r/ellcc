@@ -72,6 +72,7 @@ TEST_GROUP(String)
     TEST_TRACE(C99 7.21.5.5)
     TEST(strrchr(dst, 'd') == &dst[6 + 3], "strrchr() finds 'd'");
     TEST(strrchr(dst, 'z') == NULL, "strrchr() does not find 'z'");
+    TEST(strrchr(dst, '\0') == &dst[6 + 6], "strrchr() does not find the trailing '\\0'");
     TEST_TRACE(C99 7.21.5.6)
     TEST(strspn(dst, "zcxayb") == 3, "strspn() finds 'd'");
     TEST_TRACE(C99 7.21.5.7)

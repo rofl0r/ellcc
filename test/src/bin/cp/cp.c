@@ -33,6 +33,7 @@
  */
 
 #include <sys/cdefs.h>
+#include <string.h>
 #ifndef lint
 __COPYRIGHT(
 "@(#) Copyright (c) 1988, 1993, 1994\

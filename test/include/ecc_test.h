@@ -108,9 +108,6 @@ int __test_verbose;                                                     \
 const char *__test_cases = "";                                          \
 const char *__test_category = "";                                       \
 const char *__test_group = "";                                          \
-static void done(void) { TEST_DONE(); }                                 \
-static void finish(void) __attribute__((__constructor__, __used__));    \
-static void finish(void) { if (!HOST) atexit(done); }                   \
 int main(int argc, char **argv)                                         \
 {                                                                       \
     __test_verbose = verbose;                                           \
@@ -169,7 +166,6 @@ static void test ## which(void) {                                       \
             fprintf(stderr, __VA_ARGS__);                               \
             fprintf(stderr, "\n");                                      \
             ++__test_failures;                                          \
-            if (HOST) TEST_DONE();                                      \
         } else if (__test_verbose) {                                    \
             fprintf(stdout, "PASS: %s:%d: %s(%s): ", file, __LINE__,    \
                     __test_category, __test_group);                     \
@@ -195,7 +191,6 @@ static void test ## which(void) {                                       \
             fprintf(stderr, __VA_ARGS__);                               \
             fprintf(stderr, "\n");                                      \
             ++__test_expected_failures;                                 \
-            if (HOST) TEST_DONE();                                      \
         } else if (__test_verbose) {                                    \
             fprintf(stdout, "XPASS: %s:%d: %s(%s): ", file, __LINE__,   \
                     __test_category, __test_group);                     \
@@ -208,6 +203,9 @@ static void test ## which(void) {                                       \
 /** Complete testing.
  */
 #define TEST_DONE()                                                     \
+static void done(void)                                                  \
+    __attribute__((__destructor__, __used__));                          \
+static void done(void) {                                                \
     do {                                                                \
         fprintf(stdout, "%s unit tests completed\n", __test_category);  \
         fprintf(stdout, "    %d tests run\n", __test_count);            \
@@ -223,6 +221,7 @@ static void test ## which(void) {                                       \
                     __test_unexpected_passes,                           \
                     __test_unexpected_passes == 1 ? "" : "s");          \
         }                                                               \
+        fflush(stdout);                                                 \
         if (__test_failures > 0 || __test_unexpected_passes > 0) {      \
             fprintf(stderr, "%s unit tests completed\n", __test_category); \
             fprintf(stderr, "    %d tests run\n", __test_count);        \
@@ -231,10 +230,11 @@ static void test ## which(void) {                                       \
             fprintf(stderr, "    %d test%s did not fail as expected\n", \
                 __test_unexpected_passes,                               \
                 __test_unexpected_passes == 1 ? "" : "s");              \
-            exit(EXIT_FAILURE);                                         \
+            _Exit(EXIT_FAILURE);                                        \
         } else {                                                        \
-            exit(EXIT_SUCCESS);                                         \
+            _Exit(EXIT_SUCCESS);                                        \
         }                                                               \
-    } while (0)
+    } while (0);                                                        \
+}
 
 #endif // _ecc_test_h_

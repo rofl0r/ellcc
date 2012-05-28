@@ -2674,6 +2674,7 @@ public:
     BigEndian = false;
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
+
     // AAPCS 7.1.1, ARM-Linux ABI 2.4: type of wchar_t is unsigned int.
     WCharType = UnsignedInt;
 
@@ -2717,7 +2718,8 @@ public:
     // FIXME: We need support for -meabi... we could just mangle it into the
     // name.
     if (Name == "apcs-gnu") {
-      DoubleAlign = LongLongAlign = LongDoubleAlign = SuitableAlign = 32;
+      DoubleAlign = SuitableAlign = 32;
+      LongLongAlign = LongDoubleAlign = 64;
       SizeType = UnsignedLong;
 
       // Revert to using SignedInt on apcs-gnu to comply with existing behaviour.

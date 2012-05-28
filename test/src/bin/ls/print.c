@@ -65,7 +65,7 @@ static int	printaname(FTSENT *, int, int);
 static void	printlink(FTSENT *);
 static void	printtime(time_t);
 static void	printtotal(DISPLAY *dp);
-static int	printtype(u_int);
+static int	printtype(mode_t);
 
 static time_t	now;
 
@@ -401,7 +401,7 @@ printtotal(DISPLAY *dp)
 }
 
 static int
-printtype(u_int mode)
+printtype(mode_t mode)
 {
 	switch (mode & S_IFMT) {
 	case S_IFDIR:
