@@ -78,9 +78,7 @@ TEST_GROUP(Stdlib)
             flag = 0;
         }
     }
-#ifdef RICH
     TEST(flag, "calloc() returned zeroed memory");
-#endif
     TEST_TRACE(C99 7.20.3.2)
     free(p);
     free(NULL);

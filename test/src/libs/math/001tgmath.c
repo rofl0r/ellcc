@@ -2,7 +2,6 @@
 #include <tgmath.h>
 
 TEST_GROUP(Tgmath)
-#if RICH
     int i = 0;
     long l = 0;
     long long ll = 0;
@@ -248,5 +247,4 @@ TEST_GROUP(Tgmath)
     f = creal(fc);
     d = creal(dc);
     TEST_UNSUPPORTED(ld = creal(ldc);)
-#endif
 END_GROUP

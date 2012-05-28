@@ -120,7 +120,6 @@ TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.5.4)
     f = tmpfile();
     TEST(freopen("unlikely filename", "r", f) == NULL, "freopen(unlikely filename) fails as expected");
-    // RICH: fclose(f);
     TEST_TRACE(C99 7.19.5.5)
     setbuf(stderr, NULL);
     TEST_TRACE(C99 7.19.5.6)
