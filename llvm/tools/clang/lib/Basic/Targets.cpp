@@ -2659,7 +2659,9 @@ class ARMTargetInfo : public TargetInfo {
 
   unsigned FPU : 3;
 
+protected:
   unsigned IsThumb : 1;
+private:
 
   // Initialized via features.
   unsigned SoftFloat : 1;
@@ -2684,17 +2686,6 @@ public:
 
     // FIXME: Should we just treat this as a feature?
     IsThumb = getTriple().getArchName().startswith("thumb");
-    if (IsThumb) {
-      // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
-      // so set preferred for small types to 32.
-      DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
-                           "i64:64:64-f32:32:32-f64:64:64-"
-                           "v64:64:64-v128:64:128-a0:0:32-n32-S64");
-    } else {
-      DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                           "i64:64:64-f32:32:32-f64:64:64-"
-                           "v64:64:64-v128:64:128-a0:0:64-n32-S64");
-    }
 
     // ARM targets default to using the ARM C++ ABI.
     CXXABI = CXXABI_ARM;
@@ -2848,8 +2839,13 @@ public:
     Builder.defineMacro("__arm__");
 
     // Target properties.
-    Builder.defineMacro("__ARMEL__");
-    Builder.defineMacro("__LITTLE_ENDIAN__");
+    if (BigEndian) {
+        Builder.defineMacro("__ARMEB__");
+        Builder.defineMacro("__BIG_ENDIAN__");
+    } else {
+        Builder.defineMacro("__ARMEL__");
+        Builder.defineMacro("__LITTLE_ENDIAN__");
+    }
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
     StringRef CPUArch = getCPUDefineSuffix(CPU);
@@ -3029,11 +3025,48 @@ const Builtin::Info ARMTargetInfo::BuiltinInfo[] = {
                                               ALL_LANGUAGES },
 #include "clang/Basic/BuiltinsARM.def"
 };
+
+class ARMEBTargetInfo : public ARMTargetInfo {
+public:
+  ARMEBTargetInfo(const std::string& triple) : ARMTargetInfo(triple) {
+    BigEndian = true;
+    if (IsThumb) {
+      // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+      // so set preferred for small types to 32.
+      DescriptionString = ("E-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                           "v64:64:64-v128:64:128-a0:0:32-n32-S64");
+    } else {
+      DescriptionString = ("E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                               "v64:64:64-v128:64:128-a0:0:64-n32-S64");
+    }
+  }
+};
+
+class ARMELTargetInfo : public ARMTargetInfo {
+public:
+  ARMELTargetInfo(const std::string& triple) : ARMTargetInfo(triple) {
+    BigEndian = false;
+    if (IsThumb) {
+      // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
+      // so set preferred for small types to 32.
+      DescriptionString = ("e-p:32:32:32-i1:8:32-i8:8:32-i16:16:32-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                           "v64:64:64-v128:64:128-a0:0:32-n32-S64");
+    } else {
+      DescriptionString = ("e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                           "i64:64:64-f32:32:32-f64:64:64-"
+                           "v64:64:64-v128:64:128-a0:0:64-n32-S64");
+    }
+  }
+};
+
 } // end anonymous namespace.
 
 namespace {
 class DarwinARMTargetInfo :
-  public DarwinTargetInfo<ARMTargetInfo> {
+  public DarwinTargetInfo<ARMELTargetInfo> {
 protected:
   virtual void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
                             MacroBuilder &Builder) const {
@@ -3042,7 +3075,7 @@ protected:
 
 public:
   DarwinARMTargetInfo(const std::string& triple)
-    : DarwinTargetInfo<ARMTargetInfo>(triple) {
+    : DarwinTargetInfo<ARMELTargetInfo>(triple) {
     HasAlignMac68kSupport = true;
     // iOS always has 64-bit atomic instructions.
     // FIXME: This should be based off of the target features in ARMTargetInfo.
@@ -4079,15 +4112,29 @@ static TargetInfo *AllocateTarget(const std::string &T) {
 
     switch (os) {
     case llvm::Triple::Linux:
-      return new LinuxTargetInfo<ARMTargetInfo>(T);
+      return new LinuxTargetInfo<ARMELTargetInfo>(T);
     case llvm::Triple::FreeBSD:
-      return new FreeBSDTargetInfo<ARMTargetInfo>(T);
+      return new FreeBSDTargetInfo<ARMELTargetInfo>(T);
     case llvm::Triple::NetBSD:
-      return new NetBSDTargetInfo<ARMTargetInfo>(T);
+      return new NetBSDTargetInfo<ARMELTargetInfo>(T);
     case llvm::Triple::RTEMS:
-      return new RTEMSTargetInfo<ARMTargetInfo>(T);
+      return new RTEMSTargetInfo<ARMELTargetInfo>(T);
     default:
-      return new ARMTargetInfo(T);
+      return new ARMELTargetInfo(T);
+    }
+
+  case llvm::Triple::armeb:
+    switch (os) {
+    case llvm::Triple::Linux:
+      return new LinuxTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<ARMEBTargetInfo>(T);
+    case llvm::Triple::RTEMS:
+      return new RTEMSTargetInfo<ARMEBTargetInfo>(T);
+    default:
+      return new ARMEBTargetInfo(T);
     }
 
   case llvm::Triple::msp430:

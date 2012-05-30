@@ -20,6 +20,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case UnknownArch: return "unknown";
 
   case arm:     return "arm";
+  case armeb:   return "armeb";
   case cellspu: return "cellspu";
   case hexagon: return "hexagon";
   case mips:    return "mips";
@@ -56,6 +57,7 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
     return 0;
 
   case arm:
+  case armeb:
   case thumb:   return "arm";
 
   case cellspu: return "spu";
@@ -153,6 +155,7 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
 Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
   return StringSwitch<Triple::ArchType>(Name)
     .Case("arm", arm)
+    .Case("armeb", armeb)
     .Case("cellspu", cellspu)
     .Case("mips", mips)
     .Case("mipsel", mipsel)
@@ -251,7 +254,9 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Cases("powerpc", "ppc", Triple::ppc)
     .Cases("powerpc64", "ppc64", "ppu", Triple::ppc64)
     .Cases("mblaze", "microblaze", Triple::mblaze)
-    .Cases("arm", "xscale", Triple::arm)
+    .Case("xscale", Triple::arm)
+    .StartsWith("arm", ArchName.endswith("ebsf") || ArchName.endswith("eb") ?
+                            Triple::armeb : Triple::arm)
     // FIXME: It would be good to replace these with explicit names for all the
     // various suffixes supported.
     .StartsWith("armv", Triple::arm)
@@ -672,6 +677,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
 
   case llvm::Triple::amdil:
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::cellspu:
   case llvm::Triple::hexagon:
   case llvm::Triple::le32:
@@ -724,6 +730,7 @@ Triple Triple::get32BitArchVariant() const {
 
   case Triple::amdil:
   case Triple::arm:
+  case Triple::armeb:
   case Triple::cellspu:
   case Triple::hexagon:
   case Triple::le32:
@@ -760,6 +767,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::UnknownArch:
   case Triple::amdil:
   case Triple::arm:
+  case Triple::armeb:
   case Triple::cellspu:
   case Triple::hexagon:
   case Triple::le32:

@@ -950,8 +950,6 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
 
 void Clang::AddNios2TargetArgs(const ArgList &Args,
                                 ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
   llvm::StringRef FloatABI;
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
@@ -982,8 +980,6 @@ void Clang::AddNios2TargetArgs(const ArgList &Args,
 
 void Clang::AddPPCTargetArgs(const ArgList &Args,
                                 ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
   llvm::StringRef FloatABI;
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
@@ -1014,8 +1010,6 @@ void Clang::AddPPCTargetArgs(const ArgList &Args,
 
 void Clang::AddSparcTargetArgs(const ArgList &Args,
                              ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-
   if (const Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
     CmdArgs.push_back("-target-cpu");
     CmdArgs.push_back(A->getValue(Args));
@@ -1859,6 +1853,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     break;
 
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::thumb:
     AddARMTargetArgs(Args, CmdArgs, KernelOrKext);
     break;
@@ -5762,6 +5757,8 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   std::string As = Triple.getArchTypeName(Triple.getArch());
   if (As == "mipsel") {
     As = "mips";
+  } else if (As == "armeb") {
+    As = "arm";
   }
   As += "-elf-as";
   const char *Exec =
