@@ -231,6 +231,7 @@ const char *Triple::getArchNameForAssembler() {
     .Cases("mblaze", "microblaze", "mblaze")
     .Case("nios2", "nios2")
     .Case("arm", "arm")
+    .Case("armeb", "arm")
     .Cases("armv4t", "thumbv4t", "armv4t")
     .Cases("armv5", "armv5e", "thumbv5", "thumbv5e", "armv5")
     .Cases("armv6", "thumbv6", "armv6")
