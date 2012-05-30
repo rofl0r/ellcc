@@ -341,6 +341,8 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       StringRef arch = triple.getArchTypeName(triple.getArch());
       if (arch.startswith("mips")) {
         arch = "mips";
+      } else if (arch.startswith("arm")) {
+        arch = "arm";
       }
       llvm::sys::Path P0(HSOpts.ResourceDir);
       P0.appendComponent("usrinclude");

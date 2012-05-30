@@ -2725,6 +2725,7 @@ public:
       /// gcc.
       ZeroLengthBitfieldBoundary = 32;
 
+#if RICH
       if (IsThumb) {
         // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
         // so set preferred for small types to 32.
@@ -2736,6 +2737,7 @@ public:
                              "i64:32:64-f32:32:32-f64:32:64-"
                              "v64:32:64-v128:32:128-a0:0:32-n32-S32");
       }
+#endif
 
       // FIXME: Override "preferred align" for double and long long.
     } else if (Name == "aapcs") {
