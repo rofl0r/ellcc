@@ -149,6 +149,7 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args,
     return getTripleString();
 
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::thumb: {
     // FIXME: Factor into subclasses.
     llvm::Triple Triple = getTriple();

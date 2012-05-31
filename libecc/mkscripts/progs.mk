@@ -43,6 +43,12 @@ ifneq ($(filter mipsel%, $(TARGET)),)
 else ifneq ($(filter mips32r2el%, $(TARGET)),)
   EARCH := mipsel
 endif
+ifneq ($(filter armeb%, $(TARGET)),)
+  EARCH := armeb
+else ifneq ($(filter mips32r2el%, $(TARGET)),)
+  EARCH := armeb
+endif
+
 
 EXE ?= "$(ELLCC)/bin/qemu-$(EARCH) "
 

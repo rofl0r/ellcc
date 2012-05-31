@@ -5794,6 +5794,9 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
         emulation = "armelf";
       }
       break;
+    case llvm::Triple::armeb:
+      emulation = "armelfb";
+      break;
     case llvm::Triple::mips:
       hash = false;
       if (needEL) {
