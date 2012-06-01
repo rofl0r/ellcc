@@ -44,7 +44,7 @@ public:
     UnknownArch,
 
     arm,     // ARM; arm, armv.*, xscale
-    armeb,   // ARMEB; armeb
+    armeb,   // ARMEB: armeb
     cellspu, // CellSPU: spu, cellspu
     hexagon, // Hexagon: hexagon
     mips,    // MIPS: mips, mipsallegrex
