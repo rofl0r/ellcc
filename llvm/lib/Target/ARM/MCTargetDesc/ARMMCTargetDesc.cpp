@@ -50,6 +50,12 @@ std::string ARM_MC::ParseARMTriple(StringRef TT, StringRef CPU) {
     if (Len >= 7 && TT[5] == 'v')
       Idx = 6;
   }
+  if (Len >= Idx + 3 && TT.substr(Idx, Idx + 2) == "eb") {
+    Idx += 2;
+  }
+  if (Len >= Idx + 3 && TT.substr(Idx, Idx + 2) == "sf") {
+    Idx += 2;
+  }
 
   bool NoCPU = CPU == "generic" || CPU.empty();
   std::string ARMArchFeature;
@@ -234,22 +240,28 @@ static MCInstrAnalysis *createARMMCInstrAnalysis(const MCInstrInfo *Info) {
 extern "C" void LLVMInitializeARMTargetMC() {
   // Register the MC asm info.
   RegisterMCAsmInfoFn A(TheARMTarget, createARMMCAsmInfo);
-  RegisterMCAsmInfoFn B(TheThumbTarget, createARMMCAsmInfo);
+  RegisterMCAsmInfoFn B(TheARMEBTarget, createARMMCAsmInfo);
+  RegisterMCAsmInfoFn C(TheThumbTarget, createARMMCAsmInfo);
 
   // Register the MC codegen info.
   TargetRegistry::RegisterMCCodeGenInfo(TheARMTarget, createARMMCCodeGenInfo);
+  TargetRegistry::RegisterMCCodeGenInfo(TheARMEBTarget, createARMMCCodeGenInfo);
   TargetRegistry::RegisterMCCodeGenInfo(TheThumbTarget, createARMMCCodeGenInfo);
 
   // Register the MC instruction info.
   TargetRegistry::RegisterMCInstrInfo(TheARMTarget, createARMMCInstrInfo);
+  TargetRegistry::RegisterMCInstrInfo(TheARMEBTarget, createARMMCInstrInfo);
   TargetRegistry::RegisterMCInstrInfo(TheThumbTarget, createARMMCInstrInfo);
 
   // Register the MC register info.
   TargetRegistry::RegisterMCRegInfo(TheARMTarget, createARMMCRegisterInfo);
+  TargetRegistry::RegisterMCRegInfo(TheARMEBTarget, createARMMCRegisterInfo);
   TargetRegistry::RegisterMCRegInfo(TheThumbTarget, createARMMCRegisterInfo);
 
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheARMTarget,
+                                          ARM_MC::createARMMCSubtargetInfo);
+  TargetRegistry::RegisterMCSubtargetInfo(TheARMEBTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
   TargetRegistry::RegisterMCSubtargetInfo(TheThumbTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
@@ -257,22 +269,28 @@ extern "C" void LLVMInitializeARMTargetMC() {
   // Register the MC instruction analyzer.
   TargetRegistry::RegisterMCInstrAnalysis(TheARMTarget,
                                           createARMMCInstrAnalysis);
+  TargetRegistry::RegisterMCInstrAnalysis(TheARMEBTarget,
+                                          createARMMCInstrAnalysis);
   TargetRegistry::RegisterMCInstrAnalysis(TheThumbTarget,
                                           createARMMCInstrAnalysis);
 
   // Register the MC Code Emitter
   TargetRegistry::RegisterMCCodeEmitter(TheARMTarget, createARMMCCodeEmitter);
+  TargetRegistry::RegisterMCCodeEmitter(TheARMEBTarget, createARMMCCodeEmitter);
   TargetRegistry::RegisterMCCodeEmitter(TheThumbTarget, createARMMCCodeEmitter);
 
   // Register the asm backend.
   TargetRegistry::RegisterMCAsmBackend(TheARMTarget, createARMAsmBackend);
+  TargetRegistry::RegisterMCAsmBackend(TheARMEBTarget, createARMAsmBackend);
   TargetRegistry::RegisterMCAsmBackend(TheThumbTarget, createARMAsmBackend);
 
   // Register the object streamer.
   TargetRegistry::RegisterMCObjectStreamer(TheARMTarget, createMCStreamer);
+  TargetRegistry::RegisterMCObjectStreamer(TheARMEBTarget, createMCStreamer);
   TargetRegistry::RegisterMCObjectStreamer(TheThumbTarget, createMCStreamer);
 
   // Register the MCInstPrinter.
   TargetRegistry::RegisterMCInstPrinter(TheARMTarget, createARMMCInstPrinter);
+  TargetRegistry::RegisterMCInstPrinter(TheARMEBTarget, createARMMCInstPrinter);
   TargetRegistry::RegisterMCInstPrinter(TheThumbTarget, createARMMCInstPrinter);
 }
