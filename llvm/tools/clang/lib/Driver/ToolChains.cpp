@@ -929,6 +929,7 @@ bool Darwin::UseDwarfDebugFlags() const {
 bool Darwin::UseSjLjExceptions() const {
   // Darwin uses SjLj exceptions on ARM.
   return (getTriple().getArch() == llvm::Triple::arm ||
+          getTriple().getArch() == llvm::Triple::armeb ||
           getTriple().getArch() == llvm::Triple::thumb);
 }
 
@@ -1170,6 +1171,7 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
 
   switch (TargetTriple.getArch()) {
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::thumb:
     LibDirs.append(ARMLibDirs, ARMLibDirs + llvm::array_lengthof(ARMLibDirs));
     TripleAliases.append(
@@ -1974,7 +1976,9 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     ExtraOpts.push_back("relro");
   }
 
-  if (Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb)
+  if (Arch == llvm::Triple::arm ||
+      Arch == llvm::Triple::armeb ||
+      Arch == llvm::Triple::thumb)
     ExtraOpts.push_back("-X");
 
   const bool IsMips = Arch == llvm::Triple::mips ||
@@ -2180,7 +2184,8 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     MultiarchIncludeDirs = X86_64MultiarchIncludeDirs;
   } else if (getTriple().getArch() == llvm::Triple::x86) {
     MultiarchIncludeDirs = X86MultiarchIncludeDirs;
-  } else if (getTriple().getArch() == llvm::Triple::arm) {
+  } else if (getTriple().getArch() == llvm::Triple::arm ||
+             getTriple().getArch() == llvm::Triple::arm) {
     MultiarchIncludeDirs = ARMMultiarchIncludeDirs;
   } else if (getTriple().getArch() == llvm::Triple::mips) {
     MultiarchIncludeDirs = MIPSMultiarchIncludeDirs;
