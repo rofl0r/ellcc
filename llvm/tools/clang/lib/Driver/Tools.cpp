@@ -2921,6 +2921,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     break;
 
   case llvm::Triple::arm:
+  case llvm::Triple::armeb:
   case llvm::Triple::thumb:
     AddARMTargetArgs(Args, CmdArgs);
     break;
