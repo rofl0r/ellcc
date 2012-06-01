@@ -552,7 +552,8 @@ void MCObjectFileInfo::InitMCObjectFileInfo(StringRef TT, Reloc::Model relocm,
   // FIXME: Checking for Arch here to filter out bogus triples such as
   // cellspu-apple-darwin. Perhaps we should fix in Triple?
   if ((Arch == Triple::x86 || Arch == Triple::x86_64 ||
-       Arch == Triple::arm || Arch == Triple::thumb ||
+       Arch == Triple::arm || Arch == Triple::armeb ||
+       Arch == Triple::thumb ||
        Arch == Triple::ppc || Arch == Triple::ppc64 ||
        Arch == Triple::UnknownArch) &&
       (T.isOSDarwin() || T.getEnvironment() == Triple::MachO)) {
