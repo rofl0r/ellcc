@@ -41,6 +41,13 @@ std::string ARM_MC::ParseARMTriple(StringRef TT, StringRef CPU) {
   unsigned Len = TT.size();
   unsigned Idx = 0;
 
+  if (Len >= 2 && TT.substr(Len - 2, Len + 1) == "sf") {
+    Len -= 2;
+  }
+  if (Len >= 2 && TT.substr(Len - 2, Len + 1) == "eb") {
+    Len -= 2;
+  }
+
   // FIXME: Enhance Triple helper class to extract ARM version.
   bool isThumb = false;
   if (Len >= 5 && TT.substr(0, 4) == "armv")
@@ -49,12 +56,6 @@ std::string ARM_MC::ParseARMTriple(StringRef TT, StringRef CPU) {
     isThumb = true;
     if (Len >= 7 && TT[5] == 'v')
       Idx = 6;
-  }
-  if (Len >= Idx + 3 && TT.substr(Idx, Idx + 2) == "eb") {
-    Idx += 2;
-  }
-  if (Len >= Idx + 3 && TT.substr(Idx, Idx + 2) == "sf") {
-    Idx += 2;
   }
 
   bool NoCPU = CPU == "generic" || CPU.empty();
