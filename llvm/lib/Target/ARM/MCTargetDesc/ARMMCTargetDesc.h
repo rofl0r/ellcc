@@ -28,7 +28,7 @@ class StringRef;
 class Target;
 class raw_ostream;
 
-extern Target TheARMTarget, TheThumbTarget;
+extern Target TheARMTarget, TheARMEBTarget, TheThumbTarget;
 
 namespace ARM_MC {
   std::string ParseARMTriple(StringRef TT, StringRef CPU);
