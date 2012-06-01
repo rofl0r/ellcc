@@ -48,6 +48,7 @@ static struct TripleMap triplemap[] = {
   { Triple::x86,          "i386-unknown-unknown"    },
   { Triple::x86_64,       "x86_64-unknown-unknown"  },
   { Triple::arm,          "arm-unknown-unknown"     },
+  { Triple::armeb,        "armeb-unknown-unknown"     },
   { Triple::thumb,        "thumb-unknown-unknown"   }
 };
 
@@ -85,7 +86,7 @@ static int getLLVMSyntaxVariant(Triple::ArchType arch,
       return 1;
     break;
   case EDDisassembler::kEDAssemblySyntaxARMUAL:
-    if (arch == Triple::arm || arch == Triple::thumb)
+    if (arch == Triple::arm || Triple::armeb || arch == Triple::thumb)
       return 0;
     break;
   }
@@ -276,6 +277,7 @@ void EDDisassembler::initMaps(const MCRegisterInfo &registerInfo) {
     programCounters.insert(registerIDWithName("RIP"));
     break;
   case Triple::arm:
+  case Triple::armeb:
   case Triple::thumb:
     stackPointers.insert(registerIDWithName("SP"));
     
@@ -336,6 +338,7 @@ int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
   case Triple::x86:
   case Triple::x86_64:
   case Triple::arm:
+  case Triple::armeb:
   case Triple::thumb:
     break;
   }
