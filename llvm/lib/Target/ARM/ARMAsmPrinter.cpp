@@ -2011,5 +2011,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 // Force static initialization.
 extern "C" void LLVMInitializeARMAsmPrinter() {
   RegisterAsmPrinter<ARMAsmPrinter> X(TheARMTarget);
-  RegisterAsmPrinter<ARMAsmPrinter> Y(TheThumbTarget);
+  RegisterAsmPrinter<ARMAsmPrinter> Y(TheARMEBTarget);
+  RegisterAsmPrinter<ARMAsmPrinter> Z(TheThumbTarget);
 }

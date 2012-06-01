@@ -7614,7 +7614,8 @@ extern "C" void LLVMInitializeARMAsmLexer();
 /// Force static initialization.
 extern "C" void LLVMInitializeARMAsmParser() {
   RegisterMCAsmParser<ARMAsmParser> X(TheARMTarget);
-  RegisterMCAsmParser<ARMAsmParser> Y(TheThumbTarget);
+  RegisterMCAsmParser<ARMAsmParser> Y(TheARMEBTarget);
+  RegisterMCAsmParser<ARMAsmParser> Z(TheThumbTarget);
   LLVMInitializeARMAsmLexer();
 }
 

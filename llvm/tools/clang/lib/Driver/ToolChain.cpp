@@ -148,8 +148,8 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args,
   default:
     return getTripleString();
 
-  case llvm::Triple::arm:
   case llvm::Triple::armeb:
+  case llvm::Triple::arm:
   case llvm::Triple::thumb: {
     // FIXME: Factor into subclasses.
     llvm::Triple Triple = getTriple();
@@ -160,7 +160,8 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args,
     StringRef Suffix =
       getLLVMArchSuffixForARM(getARMTargetCPU(Args, Triple));
     bool ThumbDefault = (Suffix == "v7" && getTriple().isOSDarwin());
-    std::string ArchName = "arm";
+    std::string ArchName = getTriple().getArch() == llvm::Triple::armeb ?
+        "armeb" : "arm";
 
     // Assembly files should start in ARM mode.
     if (InputType != types::TY_PP_Asm &&

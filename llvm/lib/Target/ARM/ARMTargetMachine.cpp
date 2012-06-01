@@ -31,7 +31,8 @@ EnableGlobalMerge("global-merge", cl::Hidden,
 extern "C" void LLVMInitializeARMTarget() {
   // Register the target.
   RegisterTargetMachine<ARMTargetMachine> X(TheARMTarget);
-  RegisterTargetMachine<ThumbTargetMachine> Y(TheThumbTarget);
+  RegisterTargetMachine<ARMTargetMachine> Y(TheARMEBTarget);
+  RegisterTargetMachine<ThumbTargetMachine> Z(TheThumbTarget);
 }
 
 

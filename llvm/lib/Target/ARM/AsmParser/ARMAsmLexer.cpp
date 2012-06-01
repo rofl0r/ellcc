@@ -134,5 +134,6 @@ AsmToken ARMBaseAsmLexer::LexTokenUAL() {
 
 extern "C" void LLVMInitializeARMAsmLexer() {
   RegisterMCAsmLexer<ARMAsmLexer> X(TheARMTarget);
-  RegisterMCAsmLexer<ThumbAsmLexer> Y(TheThumbTarget);
+  RegisterMCAsmLexer<ARMAsmLexer> Y(TheARMEBTarget);
+  RegisterMCAsmLexer<ThumbAsmLexer> Z(TheThumbTarget);
 }
