@@ -45,8 +45,6 @@ else ifneq ($(filter mips32r2el%, $(TARGET)),)
 endif
 ifneq ($(filter armeb%, $(TARGET)),)
   EARCH := armeb
-else ifneq ($(filter mips32r2el%, $(TARGET)),)
-  EARCH := armeb
 endif
 
 

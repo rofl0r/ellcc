@@ -32,9 +32,10 @@ TEST_GROUP(Time)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=30")
     TEST_RESOLVED(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=31")
     TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
+    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
     {
         t = mktime(&tm);
-        TEST(t != -1, "mktime() returns a time: %lld", t);
+        TEST(t != -1, "mktime() returns a time: %lld", (long long)t);
         TEST_TRACE(C99 7.23.3.4)
         rtm = localtime(&t);    // NOTE: mktime() assumes tm is in local time.
         TEST(rtm != NULL, "localtime() returns a broken-down time");
@@ -55,11 +56,13 @@ TEST_GROUP(Time)
     TEST_TRACE(C99 7.23.2.3)
     TEST(time(&t) == t, "time() directly and indirectly returns the time");
     TEST_TRACE(C99 7.23.2.2)
-    TEST(difftime(t, t) == 0.0, "difftime() with identical times is 0.0");
+    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
+        TEST(difftime(t, t) == 0.0, "difftime() with identical times is 0.0");
     TEST_TRACE(C99 7.23.3.1)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=33")
     TEST_RESOLVED(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=34")
     TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=35")
+    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=53")
     {
         p = asctime(&ctm);
         TEST(strcmp(p, "Sat Jan 14 13:09:59 2012\n") == 0, "asctime() succeeds");

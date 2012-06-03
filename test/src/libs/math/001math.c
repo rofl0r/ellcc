@@ -144,14 +144,12 @@ TEST_GROUP(Math)
     TEST(ilogb(0.0) == FP_ILOGB0, "ilogb(0.0) == FP_ILOGB0");
     TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
-        // RICH: TEST_FAIL(ARM, ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
     TEST_TRACE(C99 7.12.6.6)
     d = ldexp(1.0, 1);
     f = ldexpf(1.0, 1);
     TEST_UNSUPPORTED(ld = ldexpl(1.0, 1);)
     TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
-        // RICH: TEST_FAIL(ARM, ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
     TEST_TRACE(C99 7.12.6.7)
     d = log(0.0);
     f = logf(0.0);

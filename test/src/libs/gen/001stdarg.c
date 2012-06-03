@@ -45,7 +45,8 @@ static void vfunc2(int count, ...)
         ++j;
     }
     ll = va_arg(ap, long long);
-    TEST(ll == 1234567890123456789LL, "long long vaarg: %lld", ll);
+    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
+        TEST(ll == 1234567890123456789LL, "long long vaarg: %lld", ll);
     va_end(ap);
 }
 
