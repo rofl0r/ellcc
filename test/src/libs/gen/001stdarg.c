@@ -40,14 +40,11 @@ static void vfunc2(int count, ...)
     // Consume all int arguments.
     j = 1;
     while (--count) {
-        printf("ap = %p\n", ap);
         i = va_arg(ap, int);
         TEST(i == j, "int argument is correct: %d == %d", i, j);
         ++j;
     }
-    printf("ll ap = %p\n", ap);
     ll = va_arg(ap, long long);
-    printf("ll ap = %p\n", ap);
     TEST(ll == 1234567890123456789LL, "long long vaarg: %lld", ll);
     va_end(ap);
 }
