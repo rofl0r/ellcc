@@ -34,17 +34,18 @@ TEST_GROUP(Time)
     TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=32")
     {
         t = mktime(&tm);
+        TEST(t != -1, "mktime() returns a time: %lld", t);
         TEST_TRACE(C99 7.23.3.4)
         rtm = localtime(&t);    // NOTE: mktime() assumes tm is in local time.
         TEST(rtm != NULL, "localtime() returns a broken-down time");
-        TEST(rtm->tm_sec == ctm.tm_sec, "seconds match");
-        TEST(rtm->tm_min == ctm.tm_min, "minutes match");
-        TEST(rtm->tm_hour == ctm.tm_hour, "hours match");
-        TEST(rtm->tm_mday == ctm.tm_mday, "day of month matches");
-        TEST(rtm->tm_mon == ctm.tm_mon, "months match");
-        TEST(rtm->tm_year == ctm.tm_year, "years match");
-        TEST(rtm->tm_wday == ctm.tm_wday, "week days match");
-        TEST(rtm->tm_yday == ctm.tm_yday, "day of year matches");
+        TEST(rtm->tm_sec == ctm.tm_sec, "seconds match: %d", rtm->tm_sec);
+        TEST(rtm->tm_min == ctm.tm_min, "minutes match: %d", rtm->tm_min);
+        TEST(rtm->tm_hour == ctm.tm_hour, "hours match: %d", rtm->tm_hour);
+        TEST(rtm->tm_mday == ctm.tm_mday, "day of month matches: %d", rtm->tm_mday);
+        TEST(rtm->tm_mon == ctm.tm_mon, "months match: %d", rtm->tm_mon);
+        TEST(rtm->tm_year == ctm.tm_year, "years match: %d", rtm->tm_year);
+        TEST(rtm->tm_wday == ctm.tm_wday, "week days match: %d", rtm->tm_wday);
+        TEST(rtm->tm_yday == ctm.tm_yday, "day of year matches: %d", rtm->tm_yday);
         TEST(rtm->tm_isdst == ctm.tm_isdst, "daylight savings time matches");
         TEST_TRACE(C99 7.23.3.2)
         p = ctime(&t);

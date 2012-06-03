@@ -28,6 +28,19 @@ TEST_GROUP(Stdint)
     uint64_t uint64 = ~0;
     TEST(int64 == -9223372036854775808ULL, "int64_t is 64 bits");
     TEST(uint64 == 0xFFFFFFFFFFFFFFFFLL, "uint64_t is 64 bits");
+    int64 = 1234567890123456789LL;
+    TEST(int64 % 10 == 9, "int64_t modulus");
+    TEST(int64 / 10 == 123456789012345678LL, "int64_t divide");
+    // From NetBSD localtime.c.
+    int i;
+    int64_t lo, hi;
+    lo = 1;
+    for (i = 0; i < (int) (__CHAR_BIT__ * sizeof(lo) - 1); ++i)
+            lo *= 2;
+    hi = -(lo + 1);
+    TEST(lo == -9223372036854775808ULL, "lo is correct: %lld", (long long)lo);
+    TEST(hi == 9223372036854775807LL, "hi is correct: %lld", (long long)hi);
+
 #endif
     TEST_TRACE(C99 7.18.1.2)
     int_least8_t int_least8 = 0;

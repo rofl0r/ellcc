@@ -31,7 +31,7 @@ EnableGlobalMerge("global-merge", cl::Hidden,
 extern "C" void LLVMInitializeARMTarget() {
   // Register the target.
   RegisterTargetMachine<ARMTargetMachine> X(TheARMTarget);
-  RegisterTargetMachine<ARMTargetMachine> Y(TheARMEBTarget);
+  RegisterTargetMachine<ARMEBTargetMachine> Y(TheARMEBTarget);
   RegisterTargetMachine<ThumbTargetMachine> Z(TheThumbTarget);
 }
 
@@ -68,6 +68,32 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
                            "v128:64:128-v64:64:64-n32-S64") :
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
+                           "v128:64:128-v64:64:64-n32-S32")),
+    ELFWriterInfo(*this),
+    TLInfo(*this),
+    TSInfo(*this),
+    FrameLowering(Subtarget) {
+  if (!Subtarget.hasARMOps())
+    report_fatal_error("CPU: '" + Subtarget.getCPUString() + "' does not "
+                       "support ARM mode execution!");
+}
+
+void ARMEBTargetMachine::anchor() { }
+
+ARMEBTargetMachine::ARMEBTargetMachine(const Target &T, StringRef TT,
+                                       StringRef CPU, StringRef FS,
+                                       const TargetOptions &Options,
+                                       Reloc::Model RM, CodeModel::Model CM,
+                                       CodeGenOpt::Level OL)
+  : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    InstrInfo(Subtarget),
+    DataLayout(Subtarget.isAPCS_ABI() ?
+               std::string("E-p:32:32-f64:32:64-i64:32:64-"
+                           "v128:32:128-v64:32:64-n32-S32") :
+               Subtarget.isAAPCS_ABI() ?
+               std::string("E-p:32:32-f64:64:64-i64:64:64-"
+                           "v128:64:128-v64:64:64-n32-S64") :
+               std::string("E-p:32:32-f64:64:64-i64:64:64-"
                            "v128:64:128-v64:64:64-n32-S32")),
     ELFWriterInfo(*this),
     TLInfo(*this),

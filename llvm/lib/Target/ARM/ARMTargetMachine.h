@@ -96,6 +96,45 @@ class ARMTargetMachine : public ARMBaseTargetMachine {
   }
 };
 
+/// ARMEBTargetMachine - ARM big endian target machine.
+///
+class ARMEBTargetMachine : public ARMBaseTargetMachine {
+  virtual void anchor();
+  ARMInstrInfo        InstrInfo;
+  const TargetData    DataLayout;       // Calculates type size & alignment
+  ARMELFWriterInfo    ELFWriterInfo;
+  ARMTargetLowering   TLInfo;
+  ARMSelectionDAGInfo TSInfo;
+  ARMFrameLowering    FrameLowering;
+ public:
+  ARMEBTargetMachine(const Target &T, StringRef TT,
+                     StringRef CPU, StringRef FS,
+                     const TargetOptions &Options,
+                     Reloc::Model RM, CodeModel::Model CM,
+                     CodeGenOpt::Level OL);
+
+  virtual const ARMRegisterInfo  *getRegisterInfo() const {
+    return &InstrInfo.getRegisterInfo();
+  }
+
+  virtual const ARMTargetLowering *getTargetLowering() const {
+    return &TLInfo;
+  }
+
+  virtual const ARMSelectionDAGInfo* getSelectionDAGInfo() const {
+    return &TSInfo;
+  }
+  virtual const ARMFrameLowering *getFrameLowering() const {
+    return &FrameLowering;
+  }
+
+  virtual const ARMInstrInfo     *getInstrInfo() const { return &InstrInfo; }
+  virtual const TargetData       *getTargetData() const { return &DataLayout; }
+  virtual const ARMELFWriterInfo *getELFWriterInfo() const {
+    return Subtarget.isTargetELF() ? &ELFWriterInfo : 0;
+  }
+};
+
 /// ThumbTargetMachine - Thumb target machine.
 /// Due to the way architectures are handled, this represents both
 ///   Thumb-1 and Thumb-2.
