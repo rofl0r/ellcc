@@ -234,7 +234,7 @@ END
 
 my %llvmTargets = ();
 $llvmTargets{'microblaze'} = { label => '32-bit Microblaze soft core'  };
-$llvmTargets{'mips32'} = { label => '32-bit Mips'  };
+$llvmTargets{'mips'} = { label => '32-bit Mips'  };
 $llvmTargets{'mips32r2'} = { label => '32-bit Mips r2'  };
 $llvmTargets{'mips32r2sf'} = { label => '32-bit Mips r2 Soft Float'  };
 $llvmTargets{'arm'} = { label => '32-bit ARM'  };
