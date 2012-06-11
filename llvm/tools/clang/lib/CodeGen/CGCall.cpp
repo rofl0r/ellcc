@@ -431,7 +431,7 @@ void CodeGenTypes::GetExpandedTypes(QualType type,
 
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        const FieldDecl *FD = &*i;
+        const FieldDecl *FD = *i;
         assert(!FD->isBitField() &&
                "Cannot expand structure with bit-field members.");
         CharUnits FieldSize = getContext().getTypeSizeInChars(FD->getType());
@@ -445,10 +445,9 @@ void CodeGenTypes::GetExpandedTypes(QualType type,
     } else {
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        const FieldDecl &FD = *i;
-        assert(!FD.isBitField() &&
+        assert(!i->isBitField() &&
                "Cannot expand structure with bit-field members.");
-        GetExpandedTypes(FD.getType(), expandedTypes);
+        GetExpandedTypes(i->getType(), expandedTypes);
       }
     }
   } else if (const ComplexType *CT = type->getAs<ComplexType>()) {
@@ -483,7 +482,7 @@ CodeGenFunction::ExpandTypeFromArgs(QualType Ty, LValue LV,
 
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        const FieldDecl *FD = &*i;
+        const FieldDecl *FD = *i;
         assert(!FD->isBitField() &&
                "Cannot expand structure with bit-field members.");
         CharUnits FieldSize = getContext().getTypeSizeInChars(FD->getType());
@@ -500,7 +499,7 @@ CodeGenFunction::ExpandTypeFromArgs(QualType Ty, LValue LV,
     } else {
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        FieldDecl *FD = &*i;
+        FieldDecl *FD = *i;
         QualType FT = FD->getType();
 
         // FIXME: What are the right qualifiers here?
@@ -1815,7 +1814,7 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
 
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        const FieldDecl *FD = &*i;
+        const FieldDecl *FD = *i;
         assert(!FD->isBitField() &&
                "Cannot expand structure with bit-field members.");
         CharUnits FieldSize = getContext().getTypeSizeInChars(FD->getType());
@@ -1831,7 +1830,7 @@ void CodeGenFunction::ExpandTypeToArgs(QualType Ty, RValue RV,
     } else {
       for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
            i != e; ++i) {
-        FieldDecl *FD = &*i;
+        FieldDecl *FD = *i;
 
         RValue FldRV = EmitRValueForField(LV, FD);
         ExpandTypeToArgs(FD->getType(), FldRV, Args, IRFuncTy);
@@ -2066,8 +2065,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   unsigned CallingConv;
   CodeGen::AttributeListType AttributeList;
   CGM.ConstructAttributeList(CallInfo, TargetDecl, AttributeList, CallingConv);
-  llvm::AttrListPtr Attrs = llvm::AttrListPtr::get(AttributeList.begin(),
-                                                   AttributeList.end());
+  llvm::AttrListPtr Attrs = llvm::AttrListPtr::get(AttributeList);
 
   llvm::BasicBlock *InvokeDest = 0;
   if (!(Attrs.getFnAttributes() & llvm::Attribute::NoUnwind))
@@ -2086,6 +2084,25 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
   CS.setAttributes(Attrs);
   CS.setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));
+
+  // add metadata for __attribute__((alloc_size(foo)))
+  if (TargetDecl) {
+    if (const AllocSizeAttr* Attr = TargetDecl->getAttr<AllocSizeAttr>()) {
+      SmallVector<llvm::Value*, 4> Args;
+      llvm::IntegerType *Ty = llvm::IntegerType::getInt32Ty(getLLVMContext());
+      bool isMethod = false;
+      if (const CXXMethodDecl *MDecl = dyn_cast<CXXMethodDecl>(TargetDecl))
+        isMethod = MDecl->isInstance();
+
+      for (AllocSizeAttr::args_iterator I = Attr->args_begin(),
+           E = Attr->args_end(); I != E; ++I) {
+        Args.push_back(llvm::ConstantInt::get(Ty, *I + isMethod));
+      }
+
+      llvm::MDNode *MD = llvm::MDNode::get(getLLVMContext(), Args);
+      CS.getInstruction()->setMetadata("alloc_size", MD);
+    }
+  }
 
   // In ObjC ARC mode with no ObjC ARC exception safety, tell the ARC
   // optimizer it can aggressively ignore unwind edges.

@@ -28,7 +28,7 @@ musl:
 	    --exec-prefix=$(PWD)/musl-build/$$target \
 	    --enable-warnings \
             --disable-shared \
-	    CFLAGS="-g -Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
+	    CFLAGS="-MP -MD -g -Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
 	    || exit 1 ; \
 	  make || exit 1 ; \
 	  make install || exit 1 ; \

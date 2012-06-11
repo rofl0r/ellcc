@@ -47,11 +47,6 @@
 #include "llvm/Target/TargetOptions.h"
 using namespace llvm;
 
-static cl::opt<bool>
-DisableARMFastISel("disable-arm-fast-isel",
-                    cl::desc("Turn off experimental ARM fast-isel support"),
-                    cl::init(false), cl::Hidden);
-
 extern cl::opt<bool> EnableARMLongCalls;
 
 namespace {
@@ -719,7 +714,7 @@ unsigned ARMFastISel::TargetMaterializeAlloca(const AllocaInst *AI) {
   if (!FuncInfo.StaticAllocaMap.count(AI)) return 0;
 
   MVT VT;
-  if (!isLoadTypeLegal(AI->getType(), VT)) return false;
+  if (!isLoadTypeLegal(AI->getType(), VT)) return 0;
 
   DenseMap<const AllocaInst*, int>::iterator SI =
     FuncInfo.StaticAllocaMap.find(AI);
@@ -2114,11 +2109,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
 }
 
 unsigned ARMFastISel::ARMSelectCallOp(const GlobalValue *GV) {
-  if (isThumb2) {
-    return ARM::tBL;
-  } else  {
-    return ARM::BL;
-  }
+  return isThumb2 ? ARM::tBL : ARM::BL;
 }
 
 // A quick function that will emit a call for a named libcall in F with the
@@ -2141,6 +2132,15 @@ bool ARMFastISel::ARMEmitLibcall(const Instruction *I, RTLIB::Libcall Call) {
 
   // TODO: For now if we have long calls specified we don't handle the call.
   if (EnableARMLongCalls) return false;
+
+  // Can't handle non-double multi-reg retvals.
+  if (RetVT != MVT::isVoid && RetVT != MVT::i32) {  
+    SmallVector<CCValAssign, 16> RVLocs;
+    CCState CCInfo(CC, false, *FuncInfo.MF, TM, RVLocs, *Context);
+    CCInfo.AnalyzeCallResult(RetVT, CCAssignFnForCall(CC, true));
+    if (RVLocs.size() >= 2 && RetVT != MVT::f64)
+      return false;
+  }
 
   // Set up the argument vectors.
   SmallVector<Value*, 8> Args;
@@ -2216,11 +2216,6 @@ bool ARMFastISel::SelectCall(const Instruction *I,
   // Can't handle inline asm.
   if (isa<InlineAsm>(Callee)) return false;
 
-  // Only handle global variable Callees.
-  const GlobalValue *GV = dyn_cast<GlobalValue>(Callee);
-  if (!GV)
-    return false;
-
   // Check the calling convention.
   ImmutableCallSite CS(CI);
   CallingConv::ID CC = CS.getCallingConv();
@@ -2244,6 +2239,16 @@ bool ARMFastISel::SelectCall(const Instruction *I,
 
   // TODO: For now if we have long calls specified we don't handle the call.
   if (EnableARMLongCalls) return false;
+
+  // Can't handle non-double multi-reg retvals.
+  if (RetVT != MVT::isVoid && RetVT != MVT::i1 && RetVT != MVT::i8 &&
+      RetVT != MVT::i16 && RetVT != MVT::i32) {
+    SmallVector<CCValAssign, 16> RVLocs;
+    CCState CCInfo(CC, false, *FuncInfo.MF, TM, RVLocs, *Context);
+    CCInfo.AnalyzeCallResult(RetVT, CCAssignFnForCall(CC, true));
+    if (RVLocs.size() >= 2 && RetVT != MVT::f64)
+      return false;
+  }
 
   // Set up the argument vectors.
   SmallVector<Value*, 8> Args;
@@ -2303,18 +2308,33 @@ bool ARMFastISel::SelectCall(const Instruction *I,
 
   // Issue the call.
   MachineInstrBuilder MIB;
+  const GlobalValue *GV = dyn_cast<GlobalValue>(Callee);
   unsigned CallOpc = ARMSelectCallOp(GV);
+  unsigned CalleeReg = 0;
+
+  if (!GV){
+    CallOpc = isThumb2 ? ARM::tBLXr : ARM::BLX;
+    CalleeReg = getRegForValue(Callee);
+    if (CalleeReg == 0) return false;
+  }
+
   // Explicitly adding the predicate here.
   if(isThumb2) {
     // Explicitly adding the predicate here.
     MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                                  TII.get(CallOpc)));
-    if (!IntrMemName)
+    if (!GV)
+      MIB.addReg(CalleeReg);
+    else if (!IntrMemName)
       MIB.addGlobalAddress(GV, 0, 0);
     else 
       MIB.addExternalSymbol(IntrMemName, 0);
   } else {
-    if (!IntrMemName)
+    if (!GV)
+      MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
+                                   TII.get(CallOpc))
+            .addReg(CalleeReg));
+    else if (!IntrMemName)
       // Explicitly adding the predicate here.
       MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                                    TII.get(CallOpc))
@@ -2386,6 +2406,42 @@ bool ARMFastISel::SelectIntrinsicCall(const IntrinsicInst &I) {
   // FIXME: Handle more intrinsics.
   switch (I.getIntrinsicID()) {
   default: return false;
+  case Intrinsic::frameaddress: {
+    MachineFrameInfo *MFI = FuncInfo.MF->getFrameInfo();
+    MFI->setFrameAddressIsTaken(true);
+
+    unsigned LdrOpc;
+    const TargetRegisterClass *RC;
+    if (isThumb2) {
+      LdrOpc =  ARM::t2LDRi12;
+      RC = (const TargetRegisterClass*)&ARM::tGPRRegClass;
+    } else {
+      LdrOpc =  ARM::LDRi12;
+      RC = (const TargetRegisterClass*)&ARM::GPRRegClass;
+    }
+
+    const ARMBaseRegisterInfo *RegInfo =
+          static_cast<const ARMBaseRegisterInfo*>(TM.getRegisterInfo());
+    unsigned FramePtr = RegInfo->getFrameRegister(*(FuncInfo.MF));
+    unsigned SrcReg = FramePtr;
+
+    // Recursively load frame address
+    // ldr r0 [fp]
+    // ldr r0 [r0]
+    // ldr r0 [r0]
+    // ...
+    unsigned DestReg;
+    unsigned Depth = cast<ConstantInt>(I.getOperand(0))->getZExtValue();
+    while (Depth--) {
+      DestReg = createResultReg(RC);
+      AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
+                              TII.get(LdrOpc), DestReg)
+                      .addReg(SrcReg).addImm(0));
+      SrcReg = DestReg;
+    }
+    UpdateValueMap(&I, SrcReg);
+    return true;
+  }
   case Intrinsic::memcpy:
   case Intrinsic::memmove: {
     const MemTransferInst &MTI = cast<MemTransferInst>(I);
@@ -2432,6 +2488,10 @@ bool ARMFastISel::SelectIntrinsicCall(const IntrinsicInst &I) {
       return false;
     
     return SelectCall(&I, "memset");
+  }
+  case Intrinsic::trap: {
+    BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(ARM::TRAP));
+    return true;
   }
   }
 }
@@ -2643,8 +2703,7 @@ namespace llvm {
 
     // Darwin and thumb1 only for now.
     const ARMSubtarget *Subtarget = &TM.getSubtarget<ARMSubtarget>();
-    if (Subtarget->isTargetIOS() && !Subtarget->isThumb1Only() &&
-        !DisableARMFastISel)
+    if (Subtarget->isTargetIOS() && !Subtarget->isThumb1Only())
       return new ARMFastISel(funcInfo);
     return 0;
   }

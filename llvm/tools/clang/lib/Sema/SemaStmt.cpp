@@ -30,6 +30,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 using namespace clang;
 using namespace sema;
@@ -152,10 +153,11 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
   if (!E)
     return;
 
+  const Expr *WarnExpr;
   SourceLocation Loc;
   SourceRange R1, R2;
   if (SourceMgr.isInSystemMacro(E->getExprLoc()) ||
-      !E->isUnusedResultAWarning(Loc, R1, R2, Context))
+      !E->isUnusedResultAWarning(WarnExpr, Loc, R1, R2, Context))
     return;
 
   // Okay, we have an unused result.  Depending on what the base expression is,
@@ -170,7 +172,7 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
   if (DiagnoseUnusedComparison(*this, E))
     return;
 
-  E = E->IgnoreParenImpCasts();
+  E = WarnExpr;
   if (const CallExpr *CE = dyn_cast<CallExpr>(E)) {
     if (E->getType()->isVoidType())
       return;
@@ -226,6 +228,11 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
         << FixItHint::CreateRemoval(TL.getStarLoc());
       return;
     }
+  }
+
+  if (E->isGLValue() && E->getType().isVolatileQualified()) {
+    Diag(Loc, diag::warn_unused_volatile) << R1 << R2;
+    return;
   }
 
   DiagRuntimeBehavior(Loc, 0, PDiag(DiagID) << R1 << R2);
@@ -768,8 +775,30 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
 
         if (i != 0 && CaseVals[i].first == CaseVals[i-1].first) {
           // If we have a duplicate, report it.
-          Diag(CaseVals[i].second->getLHS()->getLocStart(),
-               diag::err_duplicate_case) << CaseVals[i].first.toString(10);
+          // First, determine if either case value has a name
+          StringRef PrevString, CurrString;
+          Expr *PrevCase = CaseVals[i-1].second->getLHS()->IgnoreParenCasts();
+          Expr *CurrCase = CaseVals[i].second->getLHS()->IgnoreParenCasts();
+          if (DeclRefExpr *DeclRef = dyn_cast<DeclRefExpr>(PrevCase)) {
+            PrevString = DeclRef->getDecl()->getName();
+          }
+          if (DeclRefExpr *DeclRef = dyn_cast<DeclRefExpr>(CurrCase)) {
+            CurrString = DeclRef->getDecl()->getName();
+          }
+          llvm::SmallString<16> CaseValStr;
+          CaseVals[i-1].first.toString(CaseValStr);
+
+          if (PrevString == CurrString)
+            Diag(CaseVals[i].second->getLHS()->getLocStart(),
+                 diag::err_duplicate_case) <<
+                 (PrevString.empty() ? CaseValStr.str() : PrevString);
+          else
+            Diag(CaseVals[i].second->getLHS()->getLocStart(),
+                 diag::err_duplicate_case_differing_expr) <<
+                 (PrevString.empty() ? CaseValStr.str() : PrevString) <<
+                 (CurrString.empty() ? CaseValStr.str() : CurrString) <<
+                 CaseValStr;
+
           Diag(CaseVals[i-1].second->getLHS()->getLocStart(),
                diag::note_duplicate_case_prev);
           // FIXME: We really want to remove the bogus case stmt from the
@@ -918,7 +947,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
            EDI != ED->enumerator_end(); ++EDI) {
         llvm::APSInt Val = EDI->getInitVal();
         AdjustAPSInt(Val, CondWidth, CondIsSigned);
-        EnumVals.push_back(std::make_pair(Val, &*EDI));
+        EnumVals.push_back(std::make_pair(Val, *EDI));
       }
       std::stable_sort(EnumVals.begin(), EnumVals.end(), CmpEnumVals);
       EnumValsTy::iterator EIend =
@@ -1087,18 +1116,15 @@ namespace {
     llvm::SmallPtrSet<VarDecl*, 8> &Decls;
     llvm::SmallVector<SourceRange, 10> &Ranges;
     bool Simple;
-    PartialDiagnostic &PDiag;
 public:
   typedef EvaluatedExprVisitor<DeclExtractor> Inherited;
 
   DeclExtractor(Sema &S, llvm::SmallPtrSet<VarDecl*, 8> &Decls,
-                llvm::SmallVector<SourceRange, 10> &Ranges,
-                PartialDiagnostic &PDiag) :
+                llvm::SmallVector<SourceRange, 10> &Ranges) :
       Inherited(S.Context),
       Decls(Decls),
       Ranges(Ranges),
-      Simple(true),
-      PDiag(PDiag) {}
+      Simple(true) {}
 
   bool isSimple() { return Simple; }
 
@@ -1167,7 +1193,6 @@ public:
   class DeclMatcher : public EvaluatedExprVisitor<DeclMatcher> {
     llvm::SmallPtrSet<VarDecl*, 8> &Decls;
     bool FoundDecl;
-    //bool EvalDecl;
 
 public:
   typedef EvaluatedExprVisitor<DeclMatcher> Inherited;
@@ -1245,7 +1270,7 @@ public:
     PartialDiagnostic PDiag = S.PDiag(diag::warn_variables_not_in_loop_body);
     llvm::SmallPtrSet<VarDecl*, 8> Decls;
     llvm::SmallVector<SourceRange, 10> Ranges;
-    DeclExtractor DE(S, Decls, Ranges, PDiag);
+    DeclExtractor DE(S, Decls, Ranges);
     DE.Visit(Second);
 
     // Don't analyze complex conditionals.
@@ -2033,8 +2058,7 @@ Sema::PerformMoveOrCopyInitialization(const InitializedEntity &Entity,
   if (AllowNRVO &&
       (NRVOCandidate || getCopyElisionCandidate(ResultType, Value, true))) {
     ImplicitCastExpr AsRvalue(ImplicitCastExpr::OnStack,
-                              Value->getType(), CK_LValueToRValue,
-                              Value, VK_XValue);
+                              Value->getType(), CK_NoOp, Value, VK_XValue);
 
     Expr *InitExpr = &AsRvalue;
     InitializationKind Kind
@@ -2069,8 +2093,7 @@ Sema::PerformMoveOrCopyInitialization(const InitializedEntity &Entity,
         // Promote "AsRvalue" to the heap, since we now need this
         // expression node to persist.
         Value = ImplicitCastExpr::Create(Context, Value->getType(),
-                                         CK_LValueToRValue, Value, 0,
-                                         VK_XValue);
+                                         CK_NoOp, Value, 0, VK_XValue);
 
         // Complete type-checking the initialization of the return type
         // using the constructor we found.
@@ -2677,15 +2700,13 @@ Sema::ActOnObjCAtTryStmt(SourceLocation AtLoc, Stmt *Try,
                                      Finally));
 }
 
-StmtResult Sema::BuildObjCAtThrowStmt(SourceLocation AtLoc,
-                                                  Expr *Throw) {
+StmtResult Sema::BuildObjCAtThrowStmt(SourceLocation AtLoc, Expr *Throw) {
   if (Throw) {
-    Throw = MaybeCreateExprWithCleanups(Throw);
     ExprResult Result = DefaultLvalueConversion(Throw);
     if (Result.isInvalid())
       return StmtError();
 
-    Throw = Result.take();
+    Throw = MaybeCreateExprWithCleanups(Result.take());
     QualType ThrowType = Throw->getType();
     // Make sure the expression type is an ObjC pointer or "void *".
     if (!ThrowType->isDependentType() &&

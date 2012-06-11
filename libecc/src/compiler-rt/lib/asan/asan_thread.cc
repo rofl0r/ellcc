@@ -1,4 +1,4 @@
-//===-- asan_thread.cc ------------------------------------------*- C++ -*-===//
+//===-- asan_thread.cc ----------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -18,6 +18,7 @@
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
 #include "asan_mapping.h"
+#include "sanitizer_common/sanitizer_common.h"
 
 namespace __asan {
 
@@ -26,10 +27,10 @@ AsanThread::AsanThread(LinkerInitialized x)
       malloc_storage_(x),
       stats_(x) { }
 
-AsanThread *AsanThread::Create(int parent_tid, thread_callback_t start_routine,
+AsanThread *AsanThread::Create(u32 parent_tid, thread_callback_t start_routine,
                                void *arg, AsanStackTrace *stack) {
-  size_t size = RoundUpTo(sizeof(AsanThread), kPageSize);
-  AsanThread *thread = (AsanThread*)AsanMmapSomewhereOrDie(size, __FUNCTION__);
+  uptr size = RoundUpTo(sizeof(AsanThread), kPageSize);
+  AsanThread *thread = (AsanThread*)MmapOrDie(size, __FUNCTION__);
   thread->start_routine_ = start_routine;
   thread->arg_ = arg;
 
@@ -56,14 +57,14 @@ void AsanThread::Destroy() {
   }
 
   asanThreadRegistry().UnregisterThread(this);
-  CHECK(summary()->thread() == NULL);
+  CHECK(summary()->thread() == 0);
   // We also clear the shadow on thread destruction because
   // some code may still be executing in later TSD destructors
   // and we don't want it to have any poisoned stack.
   ClearShadowForThreadStack();
   fake_stack().Cleanup();
-  size_t size = RoundUpTo(sizeof(AsanThread), kPageSize);
-  AsanUnmapOrDie(this, size);
+  uptr size = RoundUpTo(sizeof(AsanThread), kPageSize);
+  UnmapOrDie(this, size);
 }
 
 void AsanThread::Init() {
@@ -74,7 +75,7 @@ void AsanThread::Init() {
   if (FLAG_v >= 1) {
     int local = 0;
     Report("T%d: stack [%p,%p) size 0x%zx; local=%p\n",
-           tid(), stack_bottom_, stack_top_,
+           tid(), (void*)stack_bottom_, (void*)stack_top_,
            stack_top_ - stack_bottom_, &local);
   }
   fake_stack_.Init(stack_size());
@@ -85,7 +86,7 @@ thread_return_t AsanThread::ThreadStart() {
   if (FLAG_use_sigaltstack) SetAlternateSignalStack();
 
   if (!start_routine_) {
-    // start_routine_ == NULL if we're on the main thread or on one of the
+    // start_routine_ == 0 if we're on the main thread or on one of the
     // OS X libdispatch worker threads. But nobody is supposed to call
     // ThreadStart() for the worker threads.
     CHECK(tid() == 0);
@@ -101,12 +102,18 @@ thread_return_t AsanThread::ThreadStart() {
   return res;
 }
 
+void AsanThread::SetThreadStackTopAndBottom() {
+  GetThreadStackTopAndBottom(tid() == 0, &stack_top_, &stack_bottom_);
+  int local;
+  CHECK(AddrIsInStack((uptr)&local));
+}
+
 void AsanThread::ClearShadowForThreadStack() {
   PoisonShadow(stack_bottom_, stack_top_ - stack_bottom_, 0);
 }
 
-const char *AsanThread::GetFrameNameByAddr(uintptr_t addr, uintptr_t *offset) {
-  uintptr_t bottom = 0;
+const char *AsanThread::GetFrameNameByAddr(uptr addr, uptr *offset) {
+  uptr bottom = 0;
   bool is_fake_stack = false;
   if (AddrIsInStack(addr)) {
     bottom = stack_bottom();
@@ -115,18 +122,30 @@ const char *AsanThread::GetFrameNameByAddr(uintptr_t addr, uintptr_t *offset) {
     CHECK(bottom);
     is_fake_stack = true;
   }
-  uintptr_t aligned_addr = addr & ~(__WORDSIZE/8 - 1);  // align addr.
-  uintptr_t *ptr = (uintptr_t*)aligned_addr;
-  while (ptr >= (uintptr_t*)bottom) {
-    if (ptr[0] == kCurrentStackFrameMagic ||
-        (is_fake_stack && ptr[0] == kRetiredStackFrameMagic)) {
-      *offset = addr - (uintptr_t)ptr;
-      return (const char*)ptr[1];
-    }
-    ptr--;
+  uptr aligned_addr = addr & ~(__WORDSIZE/8 - 1);  // align addr.
+  u8 *shadow_ptr = (u8*)MemToShadow(aligned_addr);
+  u8 *shadow_bottom = (u8*)MemToShadow(bottom);
+
+  while (shadow_ptr >= shadow_bottom &&
+      *shadow_ptr != kAsanStackLeftRedzoneMagic) {
+    shadow_ptr--;
   }
-  *offset = 0;
-  return "UNKNOWN";
+
+  while (shadow_ptr >= shadow_bottom &&
+      *shadow_ptr == kAsanStackLeftRedzoneMagic) {
+    shadow_ptr--;
+  }
+
+  if (shadow_ptr < shadow_bottom) {
+    *offset = 0;
+    return "UNKNOWN";
+  }
+
+  uptr* ptr = (uptr*)SHADOW_TO_MEM((uptr)(shadow_ptr + 1));
+  CHECK((ptr[0] == kCurrentStackFrameMagic) ||
+      (is_fake_stack && ptr[0] == kRetiredStackFrameMagic));
+  *offset = addr - (uptr)ptr;
+  return (const char*)ptr[1];
 }
 
 }  // namespace __asan

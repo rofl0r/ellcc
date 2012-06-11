@@ -3169,6 +3169,16 @@ SwitchInst::~SwitchInst() {
 /// addCase - Add an entry to the switch instruction...
 ///
 void SwitchInst::addCase(ConstantInt *OnVal, BasicBlock *Dest) {
+  IntegersSubsetToBB Mapping;
+  
+  // FIXME: Currently we work with ConstantInt based cases.
+  // So inititalize IntItem container directly from ConstantInt.
+  Mapping.add(IntItem::fromConstantInt(OnVal));
+  IntegersSubset CaseRanges = Mapping.getCase();
+  addCase(CaseRanges, Dest);
+}
+
+void SwitchInst::addCase(IntegersSubset& OnVal, BasicBlock *Dest) {
   unsigned NewCaseIdx = getNumCases(); 
   unsigned OpNo = NumOperands;
   if (OpNo+2 > ReservedSpace)
@@ -3177,7 +3187,7 @@ void SwitchInst::addCase(ConstantInt *OnVal, BasicBlock *Dest) {
   assert(OpNo+1 < ReservedSpace && "Growing didn't work!");
   NumOperands = OpNo+2;
   CaseIt Case(this, NewCaseIdx);
-  Case.setValue(OnVal);
+  Case.setValueEx(OnVal);
   Case.setSuccessor(Dest);
 }
 

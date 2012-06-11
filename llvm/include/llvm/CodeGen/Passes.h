@@ -101,6 +101,9 @@ public:
   /// point where StadardID is expected, add TargetID in its place.
   void substitutePass(char &StandardID, char &TargetID);
 
+  /// Insert InsertedPassID pass after TargetPassID pass.
+  void insertPass(const char &TargetPassID, const char &InsertedPassID);
+
   /// Allow the target to enable a specific standard pass by default.
   void enablePass(char &ID) { substitutePass(ID, ID); }
 
@@ -297,6 +300,10 @@ namespace llvm {
   /// basic blocks.
   extern char &SpillPlacementID;
 
+  /// VirtRegRewriter pass. Rewrite virtual registers to physical registers as
+  /// assigned in VirtRegMap.
+  extern char &VirtRegRewriterID;
+
   /// UnreachableMachineBlockElimination - This pass removes unreachable
   /// machine basic blocks.
   extern char &UnreachableMachineBlockElimID;
@@ -341,6 +348,9 @@ namespace llvm {
   /// successor blocks (creating fall throughs), and eliminating branches over
   /// branches.
   extern char &BranchFolderPassID;
+
+  /// MachineFunctionPrinterPass - This pass prints out MachineInstr's.
+  extern char &MachineFunctionPrinterPassID;
 
   /// TailDuplicate - Duplicate blocks with unconditional branches
   /// into tails of their predecessors.

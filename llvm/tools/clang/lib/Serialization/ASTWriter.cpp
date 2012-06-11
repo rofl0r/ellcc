@@ -1242,15 +1242,14 @@ namespace {
   // Trait used for the on-disk hash table of header search information.
   class HeaderFileInfoTrait {
     ASTWriter &Writer;
-    const HeaderSearch &HS;
     
     // Keep track of the framework names we've used during serialization.
     SmallVector<char, 128> FrameworkStringData;
     llvm::StringMap<unsigned> FrameworkNameOffset;
     
   public:
-    HeaderFileInfoTrait(ASTWriter &Writer, const HeaderSearch &HS) 
-      : Writer(Writer), HS(HS) { }
+    HeaderFileInfoTrait(ASTWriter &Writer)
+      : Writer(Writer) { }
     
     typedef const char *key_type;
     typedef key_type key_type_ref;
@@ -1335,7 +1334,7 @@ void ASTWriter::WriteHeaderSearch(const HeaderSearch &HS, StringRef isysroot) {
   if (FilesByUID.size() > HS.header_file_size())
     FilesByUID.resize(HS.header_file_size());
   
-  HeaderFileInfoTrait GeneratorTrait(*this, HS);
+  HeaderFileInfoTrait GeneratorTrait(*this);
   OnDiskChainedHashTableGenerator<HeaderFileInfoTrait> Generator;  
   SmallVector<const char *, 4> SavedStrings;
   unsigned NumHeaderSearchEntries = 0;
@@ -1605,11 +1604,11 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
     for (LineTableInfo::iterator L = LineTable.begin(), LEnd = LineTable.end();
          L != LEnd; ++L) {
       // Only emit entries for local files.
-      if (L->first < 0)
+      if (L->first.ID < 0)
         continue;
 
       // Emit the file ID
-      Record.push_back(L->first);
+      Record.push_back(L->first.ID);
 
       // Emit the line entries
       Record.push_back(L->second.size());
@@ -4148,7 +4147,7 @@ void ASTWriter::AddTemplateArgument(const TemplateArgument &Arg,
     AddDeclRef(Arg.getAsDecl(), Record);
     break;
   case TemplateArgument::Integral:
-    AddAPSInt(*Arg.getAsIntegral(), Record);
+    AddAPSInt(Arg.getAsIntegral(), Record);
     AddTypeRef(Arg.getIntegralType(), Record);
     break;
   case TemplateArgument::Template:
@@ -4310,14 +4309,11 @@ void ASTWriter::AddCXXDefinitionData(const CXXRecordDecl *D, RecordDataImpl &Rec
   Record.push_back(Data.HasPublicFields);
   Record.push_back(Data.HasMutableFields);
   Record.push_back(Data.HasOnlyCMembers);
+  Record.push_back(Data.HasInClassInitializer);
   Record.push_back(Data.HasTrivialDefaultConstructor);
   Record.push_back(Data.HasConstexprNonCopyMoveConstructor);
   Record.push_back(Data.DefaultedDefaultConstructorIsConstexpr);
-  Record.push_back(Data.DefaultedCopyConstructorIsConstexpr);
-  Record.push_back(Data.DefaultedMoveConstructorIsConstexpr);
   Record.push_back(Data.HasConstexprDefaultConstructor);
-  Record.push_back(Data.HasConstexprCopyConstructor);
-  Record.push_back(Data.HasConstexprMoveConstructor);
   Record.push_back(Data.HasTrivialCopyConstructor);
   Record.push_back(Data.HasTrivialMoveConstructor);
   Record.push_back(Data.HasTrivialCopyAssignment);

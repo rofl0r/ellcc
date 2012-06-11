@@ -30,7 +30,7 @@ QualType CallOrObjCMessage::getResultType(ASTContext &ctx) const {
   } else {
     const CallExpr *FunctionCall = CallE.get<const CallExpr *>();
 
-    isLVal = FunctionCall->isLValue();
+    isLVal = FunctionCall->isGLValue();
     const Expr *Callee = FunctionCall->getCallee();
     if (const FunctionDecl *FD = State->getSVal(Callee, LCtx).getAsFunctionDecl())
       resultTy = FD->getResultType();
@@ -94,7 +94,9 @@ bool CallOrObjCMessage::isCallbackArg(unsigned Idx, const Type *T) const {
     return false;
     
   // If a parameter is a block or a callback, assume it can modify pointer.
-  if (T->isBlockPointerType() || T->isFunctionPointerType())
+  if (T->isBlockPointerType() ||
+      T->isFunctionPointerType() ||
+      T->isObjCSelType())
     return true;
 
   // Check if a callback is passed inside a struct (for both, struct passed by
@@ -159,16 +161,15 @@ bool CallOrObjCMessage::hasNonZeroCallbackArg() const {
 }
 
 bool CallOrObjCMessage::isCFCGAllowingEscape(StringRef FName) {
-  if (FName[0] == 'C' && (FName[1] == 'F' || FName[1] == 'G'))
-         if (StrInStrNoCase(FName, "InsertValue") != StringRef::npos||
-             StrInStrNoCase(FName, "AddValue") != StringRef::npos ||
-             StrInStrNoCase(FName, "SetValue") != StringRef::npos ||
-             StrInStrNoCase(FName, "WithData") != StringRef::npos ||
-             StrInStrNoCase(FName, "AppendValue") != StringRef::npos||
-             StrInStrNoCase(FName, "SetAttribute") != StringRef::npos) {
-       return true;
-     }
-  return false;
+  if (!FName.startswith("CF") && !FName.startswith("CG"))
+    return false;
+
+  return StrInStrNoCase(FName, "InsertValue")  != StringRef::npos ||
+         StrInStrNoCase(FName, "AddValue")     != StringRef::npos ||
+         StrInStrNoCase(FName, "SetValue")     != StringRef::npos ||
+         StrInStrNoCase(FName, "WithData")     != StringRef::npos ||
+         StrInStrNoCase(FName, "AppendValue")  != StringRef::npos ||
+         StrInStrNoCase(FName, "SetAttribute") != StringRef::npos;
 }
 
 

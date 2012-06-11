@@ -553,6 +553,21 @@ const FileEntry *Preprocessor::LookupFile(
 // Preprocessor Directive Handling.
 //===----------------------------------------------------------------------===//
 
+class Preprocessor::ResetMacroExpansionHelper {
+public:
+  ResetMacroExpansionHelper(Preprocessor *pp)
+    : PP(pp), save(pp->DisableMacroExpansion) {
+    if (pp->MacroExpansionInDirectivesOverride)
+      pp->DisableMacroExpansion = false;
+  }
+  ~ResetMacroExpansionHelper() {
+    PP->DisableMacroExpansion = save;
+  }
+private:
+  Preprocessor *PP;
+  bool save;
+};
+
 /// HandleDirective - This callback is invoked when the lexer sees a # token
 /// at the start of a line.  This consumes the directive, modifies the
 /// lexer/preprocessor state, and advances the lexer(s) so that the next token
@@ -603,6 +618,10 @@ void Preprocessor::HandleDirective(Token &Result) {
     }
     Diag(Result, diag::ext_embedded_directive);
   }
+
+  // Temporarily enable macro expansion if set so
+  // and reset to previous state when returning from this function.
+  ResetMacroExpansionHelper helper(this);
 
 TryAgain:
   switch (Result.getKind()) {
@@ -1018,15 +1037,13 @@ void Preprocessor::HandleUserDiagnosticDirective(Token &Tok,
   // tokens.  For example, this is allowed: "#warning `   'foo".  GCC does
   // collapse multiple consequtive white space between tokens, but this isn't
   // specified by the standard.
-  std::string Message = CurLexer->ReadToEndOfLine();
+  SmallString<128> Message;
+  CurLexer->ReadToEndOfLine(&Message);
 
   // Find the first non-whitespace character, so that we can make the
   // diagnostic more succinct.
-  StringRef Msg(Message);
-  size_t i = Msg.find_first_not_of(' ');
-  if (i < Msg.size())
-    Msg = Msg.substr(i);
-  
+  StringRef Msg = Message.str().ltrim(" ");
+
   if (isWarning)
     Diag(Tok, diag::pp_hash_warning) << Msg;
   else

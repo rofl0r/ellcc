@@ -1215,10 +1215,10 @@ public:
                                         const TemplateArgument &ArgPack) const;
   
   enum GetBuiltinTypeError {
-    GE_None,              //< No error
-    GE_Missing_stdio,     //< Missing a type from <stdio.h>
-    GE_Missing_setjmp,    //< Missing a type from <setjmp.h>
-    GE_Missing_ucontext   //< Missing a type from <ucontext.h>
+    GE_None,              ///< No error
+    GE_Missing_stdio,     ///< Missing a type from <stdio.h>
+    GE_Missing_setjmp,    ///< Missing a type from <setjmp.h>
+    GE_Missing_ucontext   ///< Missing a type from <ucontext.h>
   };
 
   /// GetBuiltinType - Return the type for the specified builtin.  If 
@@ -1528,12 +1528,12 @@ public:
   /// This routine adjusts the given parameter type @p T to the actual
   /// parameter type used by semantic analysis (C99 6.7.5.3p[7,8],
   /// C++ [dcl.fct]p3). The adjusted parameter type is returned.
-  QualType getAdjustedParameterType(QualType T);
+  QualType getAdjustedParameterType(QualType T) const;
   
   /// \brief Retrieve the parameter type as adjusted for use in the signature
   /// of a function, decaying array and function types and removing top-level
   /// cv-qualifiers.
-  QualType getSignatureParameterType(QualType T);
+  QualType getSignatureParameterType(QualType T) const;
   
   /// getArrayDecayedType - Return the properly qualified result of decaying the
   /// specified array type to a pointer.  This operation is non-trivial when
@@ -1721,15 +1721,12 @@ public:
   /// interface, or null if non exists.
   const ObjCMethodDecl *getObjCMethodRedeclaration(
                                                const ObjCMethodDecl *MD) const {
-    llvm::DenseMap<const ObjCMethodDecl*, const ObjCMethodDecl*>::const_iterator
-      I = ObjCMethodRedecls.find(MD);
-    if (I == ObjCMethodRedecls.end())
-      return 0;
-    return I->second;
+    return ObjCMethodRedecls.lookup(MD);
   }
 
   void setObjCMethodRedeclaration(const ObjCMethodDecl *MD,
                                   const ObjCMethodDecl *Redecl) {
+    assert(!getObjCMethodRedeclaration(MD) && "MD already has a redeclaration");
     ObjCMethodRedecls[MD] = Redecl;
   }
 

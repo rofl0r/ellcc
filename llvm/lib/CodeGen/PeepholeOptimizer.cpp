@@ -31,6 +31,15 @@
 //     same flag that the "cmp" instruction sets and that "bz" uses, then we can
 //     eliminate the "cmp" instruction.
 //
+//     Another instance, in this code:
+//
+//       sub r1, r3 | sub r1, imm
+//       cmp r3, r1 or cmp r1, r3 | cmp r1, imm
+//       bge L1
+//
+//     If the branch instruction can use flag from "sub", then we can replace
+//     "sub" with "subs" and eliminate the "cmp" instruction.
+//
 // - Optimize Bitcast pairs:
 //
 //     v1 = bitcast v0
@@ -141,6 +150,13 @@ optimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
     // No other uses.
     return false;
 
+  // Ensure DstReg can get a register class that actually supports
+  // sub-registers. Don't change the class until we commit.
+  const TargetRegisterClass *DstRC = MRI->getRegClass(DstReg);
+  DstRC = TM->getRegisterInfo()->getSubClassWithSubReg(DstRC, SubIdx);
+  if (!DstRC)
+    return false;
+
   // The source has other uses. See if we can replace the other uses with use of
   // the result of the extension.
   SmallPtrSet<MachineBasicBlock*, 4> ReachedBBs;
@@ -238,8 +254,10 @@ optimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
         continue;
 
       // About to add uses of DstReg, clear DstReg's kill flags.
-      if (!Changed)
+      if (!Changed) {
         MRI->clearKillFlags(DstReg);
+        MRI->constrainRegClass(DstReg, DstRC);
+      }
 
       unsigned NewVR = MRI->createVirtualRegister(RC);
       BuildMI(*UseMBB, UseMI, UseMI->getDebugLoc(),

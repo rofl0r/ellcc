@@ -45,10 +45,10 @@ bool X86FrameLowering::hasReservedCallFrame(const MachineFunction &MF) const {
 bool X86FrameLowering::hasFP(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const MachineModuleInfo &MMI = MF.getMMI();
-  const TargetRegisterInfo *RI = TM.getRegisterInfo();
+  const TargetRegisterInfo *RegInfo = TM.getRegisterInfo();
 
   return (MF.getTarget().Options.DisableFramePointerElim(MF) ||
-          RI->needsStackRealignment(MF) ||
+          RegInfo->needsStackRealignment(MF) ||
           MFI->hasVarSizedObjects() ||
           MFI->isFrameAddressTaken() ||
           MF.getInfo<X86MachineFunctionInfo>()->getForceFramePointer() ||
@@ -125,8 +125,8 @@ static unsigned findDeadCallerSavedReg(MachineBasicBlock &MBB,
       unsigned Reg = MO.getReg();
       if (!Reg)
         continue;
-      for (const uint16_t *AsI = TRI.getOverlaps(Reg); *AsI; ++AsI)
-        Uses.insert(*AsI);
+      for (MCRegAliasIterator AI(Reg, &TRI, true); AI.isValid(); ++AI)
+        Uses.insert(*AI);
     }
 
     const uint16_t *CS = Is64Bit ? CallerSavedRegs64Bit : CallerSavedRegs32Bit;
@@ -369,7 +369,7 @@ void X86FrameLowering::emitCalleeSavedFrameMoves(MachineFunction &MF,
 /// getCompactUnwindRegNum - Get the compact unwind number for a given
 /// register. The number corresponds to the enum lists in
 /// compact_unwind_encoding.h.
-static int getCompactUnwindRegNum(const unsigned *CURegs, unsigned Reg) {
+static int getCompactUnwindRegNum(const uint16_t *CURegs, unsigned Reg) {
   for (int Idx = 1; *CURegs; ++CURegs, ++Idx)
     if (*CURegs == Reg)
       return Idx;
@@ -398,13 +398,13 @@ encodeCompactUnwindRegistersWithoutFrame(unsigned SavedRegs[CU_NUM_SAVED_REGS],
   //     4       3
   //     5       3
   //
-  static const unsigned CU32BitRegs[] = {
+  static const uint16_t CU32BitRegs[] = {
     X86::EBX, X86::ECX, X86::EDX, X86::EDI, X86::ESI, X86::EBP, 0
   };
-  static const unsigned CU64BitRegs[] = {
+  static const uint16_t CU64BitRegs[] = {
     X86::RBX, X86::R12, X86::R13, X86::R14, X86::R15, X86::RBP, 0
   };
-  const unsigned *CURegs = (Is64Bit ? CU64BitRegs : CU32BitRegs);
+  const uint16_t *CURegs = (Is64Bit ? CU64BitRegs : CU32BitRegs);
 
   for (unsigned i = 0; i != CU_NUM_SAVED_REGS; ++i) {
     int CUReg = getCompactUnwindRegNum(CURegs, SavedRegs[i]);
@@ -466,13 +466,13 @@ encodeCompactUnwindRegistersWithoutFrame(unsigned SavedRegs[CU_NUM_SAVED_REGS],
 static uint32_t
 encodeCompactUnwindRegistersWithFrame(unsigned SavedRegs[CU_NUM_SAVED_REGS],
                                       bool Is64Bit) {
-  static const unsigned CU32BitRegs[] = {
+  static const uint16_t CU32BitRegs[] = {
     X86::EBX, X86::ECX, X86::EDX, X86::EDI, X86::ESI, X86::EBP, 0
   };
-  static const unsigned CU64BitRegs[] = {
+  static const uint16_t CU64BitRegs[] = {
     X86::RBX, X86::R12, X86::R13, X86::R14, X86::R15, X86::RBP, 0
   };
-  const unsigned *CURegs = (Is64Bit ? CU64BitRegs : CU32BitRegs);
+  const uint16_t *CURegs = (Is64Bit ? CU64BitRegs : CU32BitRegs);
 
   // Encode the registers in the order they were saved, 3-bits per register. The
   // registers are numbered from 1 to CU_NUM_SAVED_REGS.
@@ -650,6 +650,7 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
   unsigned SlotSize = RegInfo->getSlotSize();
   unsigned FramePtr = RegInfo->getFrameRegister(MF);
   unsigned StackPtr = RegInfo->getStackRegister();
+  unsigned BasePtr = RegInfo->getBaseRegister();
   DebugLoc DL;
 
   // If we're forcing a stack realignment we can't rely on just the frame
@@ -913,6 +914,18 @@ void X86FrameLowering::emitPrologue(MachineFunction &MF) const {
     emitSPUpdate(MBB, MBBI, StackPtr, -(int64_t)NumBytes, Is64Bit,
                  UseLEA, TII, *RegInfo);
 
+  // If we need a base pointer, set it up here. It's whatever the value
+  // of the stack pointer is at this point. Any variable size objects
+  // will be allocated after this, so we can still use the base pointer
+  // to reference locals.
+  if (RegInfo->hasBasePointer(MF)) {
+    // Update the frame pointer with the current stack pointer.
+    unsigned Opc = Is64Bit ? X86::MOV64rr : X86::MOV32rr;
+    BuildMI(MBB, MBBI, DL, TII.get(Opc), BasePtr)
+      .addReg(StackPtr)
+      .setMIFlag(MachineInstr::FrameSetup);
+  }
+
   if (( (!HasFP && NumBytes) || PushedRegs) && needsFrameMoves) {
     // Mark end of stack pointer adjustment.
     MCSymbol *Label = MMI.getContext().CreateTempSymbol();
@@ -1142,16 +1155,25 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
 }
 
 int X86FrameLowering::getFrameIndexOffset(const MachineFunction &MF, int FI) const {
-  const X86RegisterInfo *RI =
+  const X86RegisterInfo *RegInfo =
     static_cast<const X86RegisterInfo*>(MF.getTarget().getRegisterInfo());
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   int Offset = MFI->getObjectOffset(FI) - getOffsetOfLocalArea();
   uint64_t StackSize = MFI->getStackSize();
 
-  if (RI->needsStackRealignment(MF)) {
+  if (RegInfo->hasBasePointer(MF)) {
+    assert (hasFP(MF) && "VLAs and dynamic stack realign, but no FP?!");
     if (FI < 0) {
       // Skip the saved EBP.
-      Offset += RI->getSlotSize();
+      return Offset + RegInfo->getSlotSize();
+    } else {
+      assert((-(Offset + StackSize)) % MFI->getObjectAlignment(FI) == 0);
+      return Offset + StackSize;
+    }
+  } else if (RegInfo->needsStackRealignment(MF)) {
+    if (FI < 0) {
+      // Skip the saved EBP.
+      return Offset + RegInfo->getSlotSize();
     } else {
       assert((-(Offset + StackSize)) % MFI->getObjectAlignment(FI) == 0);
       return Offset + StackSize;
@@ -1162,7 +1184,7 @@ int X86FrameLowering::getFrameIndexOffset(const MachineFunction &MF, int FI) con
       return Offset + StackSize;
 
     // Skip the saved EBP.
-    Offset += RI->getSlotSize();
+    Offset += RegInfo->getSlotSize();
 
     // Skip the RETADDR move area
     const X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
@@ -1176,15 +1198,19 @@ int X86FrameLowering::getFrameIndexOffset(const MachineFunction &MF, int FI) con
 
 int X86FrameLowering::getFrameIndexReference(const MachineFunction &MF, int FI,
                                              unsigned &FrameReg) const {
-  const X86RegisterInfo *RI =
+  const X86RegisterInfo *RegInfo =
       static_cast<const X86RegisterInfo*>(MF.getTarget().getRegisterInfo());
   // We can't calculate offset from frame pointer if the stack is realigned,
-  // so enforce usage of stack pointer.
-  FrameReg = (RI->needsStackRealignment(MF)) ? RI->getStackRegister()
-                                             : RI->getFrameRegister(MF);
+  // so enforce usage of stack/base pointer.  The base pointer is used when we
+  // have dynamic allocas in addition to dynamic realignment.
+  if (RegInfo->hasBasePointer(MF))
+    FrameReg = RegInfo->getBaseRegister();
+  else if (RegInfo->needsStackRealignment(MF))
+    FrameReg = RegInfo->getStackRegister();
+  else
+    FrameReg = RegInfo->getFrameRegister(MF);
   return getFrameIndexOffset(MF, FI);
 }
-
 
 bool X86FrameLowering::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                              MachineBasicBlock::iterator MI,
@@ -1319,6 +1345,10 @@ X86FrameLowering::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
            "Slot for EBP register must be last in order to be found!");
     (void)FrameIdx;
   }
+
+  // Spill the BasePtr if it's used.
+  if (RegInfo->hasBasePointer(MF))
+    MF.getRegInfo().setPhysRegUsed(RegInfo->getBaseRegister());
 }
 
 static bool

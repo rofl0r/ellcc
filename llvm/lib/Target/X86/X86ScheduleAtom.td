@@ -22,7 +22,12 @@ def Port0 : FuncUnit; // ALU: ALU0, shift/rotate, load/store
 def Port1 : FuncUnit; // ALU: ALU1, bit processing, jump, and LEA
                       // SIMD/FP: SIMD ALU, FP Adder
 
-def AtomItineraries : ProcessorItineraries<
+def AtomItineraries : MultiIssueItineraries<
+  2, // IssueWidth=2 allows 2 instructions per scheduling group.
+  1, // MinLatency=1. InstrStage cycles overrides MinLatency.
+     //               OperandCycles may be used for expected latency.
+  3, // LoadLatency (expected, may be overriden by OperandCycles)
+  30,// HighLatency (expected, may be overriden by OperandCycles)
   [ Port0, Port1 ],
   [], [
   // P0 only
@@ -106,7 +111,7 @@ def AtomItineraries : ProcessorItineraries<
   InstrItinData<IIC_CMOV64_RM, [InstrStage<1, [Port0]>] >,
   InstrItinData<IIC_CMOV64_RR, [InstrStage<1, [Port0, Port1]>] >,
   // set
-  InstrItinData<IIC_SET_M, [InstrStage<2, [Port0, Port1]>] >, 
+  InstrItinData<IIC_SET_M, [InstrStage<2, [Port0, Port1]>] >,
   InstrItinData<IIC_SET_R, [InstrStage<1, [Port0, Port1]>] >,
   // jcc
   InstrItinData<IIC_Jcc, [InstrStage<1, [Port1]>] >,
@@ -294,6 +299,45 @@ def AtomItineraries : ProcessorItineraries<
   InstrItinData<IIC_SSE_CVT_SD2SI_RR, [InstrStage<8, [Port0, Port1]>] >,
   InstrItinData<IIC_SSE_CVT_SD2SI_RM, [InstrStage<9, [Port0, Port1]>] >,
 
+  // MMX MOVs
+  InstrItinData<IIC_MMX_MOV_MM_RM,  [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_MOV_REG_MM, [InstrStage<3, [Port0]>] >,
+  InstrItinData<IIC_MMX_MOVQ_RM, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_MOVQ_RR, [InstrStage<1, [Port0, Port1]>] >,
+  // other MMX
+  InstrItinData<IIC_MMX_ALU_RM,  [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_ALU_RR,  [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_ALUQ_RM, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_ALUQ_RR, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PHADDSUBW_RM, [InstrStage<6, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PHADDSUBW_RR, [InstrStage<5, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PHADDSUBD_RM, [InstrStage<4, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PHADDSUBD_RR, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PMUL, [InstrStage<4, [Port0]>] >,
+  InstrItinData<IIC_MMX_MISC_FUNC_MEM, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_MISC_FUNC_REG, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PSADBW,   [InstrStage<4, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_SHIFT_RI, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_SHIFT_RM, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_SHIFT_RR, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_UNPCK_H_RM, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_UNPCK_H_RR, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_UNPCK_L, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_PCK_RM,  [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_PCK_RR,  [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PSHUF,   [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_PEXTR,   [InstrStage<4, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_PINSRW,  [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_MMX_MASKMOV, [InstrStage<1, [Port0]>] >,
+  // conversions
+  // from/to PD
+  InstrItinData<IIC_MMX_CVT_PD_RR, [InstrStage<7, [Port0, Port1]>] >,
+  InstrItinData<IIC_MMX_CVT_PD_RM, [InstrStage<8, [Port0, Port1]>] >,
+  // from/to PI
+  InstrItinData<IIC_MMX_CVT_PS_RR, [InstrStage<5, [Port1]>] >,
+  InstrItinData<IIC_MMX_CVT_PS_RM, [InstrStage<5, [Port0], 0>,
+                                    InstrStage<5, [Port1]>]>,
+
   InstrItinData<IIC_CMPX_LOCK, [InstrStage<14, [Port0, Port1]>] >,
   InstrItinData<IIC_CMPX_LOCK_8, [InstrStage<6, [Port0, Port1]>] >,
   InstrItinData<IIC_CMPX_LOCK_8B, [InstrStage<18, [Port0, Port1]>] >,
@@ -405,7 +449,77 @@ def AtomItineraries : ProcessorItineraries<
   // SMSW, LMSW
   InstrItinData<IIC_SMSW, [InstrStage<9, [Port0, Port1]>] >,
   InstrItinData<IIC_LMSW_REG, [InstrStage<69, [Port0, Port1]>] >,
-  InstrItinData<IIC_LMSW_MEM, [InstrStage<67, [Port0, Port1]>] >
+  InstrItinData<IIC_LMSW_MEM, [InstrStage<67, [Port0, Port1]>] >,
 
+  InstrItinData<IIC_ENTER, [InstrStage<32, [Port0, Port1]>] >,
+  InstrItinData<IIC_LEAVE, [InstrStage<2, [Port0, Port1]>] >,
+
+  InstrItinData<IIC_POP_MEM, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_POP_REG16, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_POP_REG, [InstrStage<1, [Port0], 0>,
+                            InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_POP_F, [InstrStage<32, [Port0, Port1]>] >,
+  InstrItinData<IIC_POP_FD, [InstrStage<26, [Port0, Port1]>] >,
+  InstrItinData<IIC_POP_A, [InstrStage<9, [Port0, Port1]>] >,
+
+  InstrItinData<IIC_PUSH_IMM, [InstrStage<1, [Port0], 0>,
+                               InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_PUSH_MEM, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_PUSH_REG, [InstrStage<1, [Port0], 0>,
+                               InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_PUSH_F, [InstrStage<9, [Port0, Port1]>] >,
+  InstrItinData<IIC_PUSH_A, [InstrStage<8, [Port0, Port1]>] >,
+
+  InstrItinData<IIC_BSWAP, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_BSF, [InstrStage<16, [Port0, Port1]>] >,
+  InstrItinData<IIC_BSR, [InstrStage<16, [Port0, Port1]>] >,
+  InstrItinData<IIC_MOVS, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_STOS, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_SCAS, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPS, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_MOV, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_MOV_MEM, [InstrStage<1, [Port0]>] >,
+  InstrItinData<IIC_AHF, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_BT_MI, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_BT_MR, [InstrStage<9, [Port0, Port1]>] >,
+  InstrItinData<IIC_BT_RI, [InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_BT_RR, [InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_BTX_MI, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_BTX_MR, [InstrStage<11, [Port0, Port1]>] >,
+  InstrItinData<IIC_BTX_RI, [InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_BTX_RR, [InstrStage<1, [Port1]>] >,
+  InstrItinData<IIC_XCHG_REG, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_XCHG_MEM, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_XADD_REG, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_XADD_MEM, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_MEM, [InstrStage<14, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_REG, [InstrStage<15, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_MEM8, [InstrStage<6, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_REG8, [InstrStage<9, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_8B, [InstrStage<18, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMPXCHG_16B, [InstrStage<22, [Port0, Port1]>] >,
+  InstrItinData<IIC_LODS, [InstrStage<2, [Port0, Port1]>] >,
+  InstrItinData<IIC_OUTS, [InstrStage<74, [Port0, Port1]>] >,
+  InstrItinData<IIC_CLC, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_CLD, [InstrStage<3, [Port0, Port1]>] >,
+  InstrItinData<IIC_CLI, [InstrStage<14, [Port0, Port1]>] >,
+  InstrItinData<IIC_CMC, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_CLTS, [InstrStage<33, [Port0, Port1]>] >,
+  InstrItinData<IIC_STC, [InstrStage<1, [Port0, Port1]>] >,
+  InstrItinData<IIC_STI, [InstrStage<17, [Port0, Port1]>] >,
+  InstrItinData<IIC_STD, [InstrStage<21, [Port0, Port1]>] >,
+  InstrItinData<IIC_XLAT, [InstrStage<6, [Port0, Port1]>] >,
+  InstrItinData<IIC_AAA, [InstrStage<13, [Port0, Port1]>] >,
+  InstrItinData<IIC_AAD, [InstrStage<7, [Port0, Port1]>] >,
+  InstrItinData<IIC_AAM, [InstrStage<21, [Port0, Port1]>] >,
+  InstrItinData<IIC_AAS, [InstrStage<13, [Port0, Port1]>] >,
+  InstrItinData<IIC_DAA, [InstrStage<18, [Port0, Port1]>] >,
+  InstrItinData<IIC_DAS, [InstrStage<20, [Port0, Port1]>] >,
+  InstrItinData<IIC_BOUND, [InstrStage<11, [Port0, Port1]>] >,
+  InstrItinData<IIC_ARPL_REG, [InstrStage<24, [Port0, Port1]>] >,
+  InstrItinData<IIC_ARPL_MEM, [InstrStage<23, [Port0, Port1]>] >,
+  InstrItinData<IIC_MOVBE, [InstrStage<1, [Port0]>] >,
+
+  InstrItinData<IIC_NOP, [InstrStage<1, [Port0, Port1]>] >
   ]>;
 

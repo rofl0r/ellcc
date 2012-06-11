@@ -35,6 +35,8 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/LLVM.h"
 #include "clang/Driver/Util.h"
+#include "clang/Tooling/ArgumentsAdjusters.h"
+#include "clang/Tooling/CompilationDatabase.h"
 #include <string>
 #include <vector>
 
@@ -49,8 +51,6 @@ class SourceManager;
 class FrontendAction;
 
 namespace tooling {
-
-class CompilationDatabase;
 
 /// \brief Interface to generate clang::FrontendActions.
 class FrontendActionFactory {
@@ -102,7 +102,10 @@ class ToolInvocation {
  public:
   /// \brief Create a tool invocation.
   ///
-  /// \param CommandLine The command line arguments to clang.
+  /// \param CommandLine The command line arguments to clang. Note that clang
+  /// uses its binary name (CommandLine[0]) to locate its builtin headers.
+  /// Callers have to ensure that they are installed in a compatible location
+  /// (see clang driver implementation) or mapped in via mapVirtualFile.
   /// \param ToolAction The action to be executed. Class takes ownership.
   /// \param Files The FileManager used for the execution. Class does not take
   /// ownership.
@@ -126,8 +129,7 @@ class ToolInvocation {
   bool runInvocation(const char *BinaryName,
                      clang::driver::Compilation *Compilation,
                      clang::CompilerInvocation *Invocation,
-                     const clang::driver::ArgStringList &CC1Args,
-                     clang::FrontendAction *ToolAction);
+                     const clang::driver::ArgStringList &CC1Args);
 
   std::vector<std::string> CommandLine;
   llvm::OwningPtr<FrontendAction> ToolAction;
@@ -139,6 +141,10 @@ class ToolInvocation {
 /// \brief Utility to run a FrontendAction over a set of files.
 ///
 /// This class is written to be usable for command line utilities.
+/// By default the class uses ClangSyntaxOnlyAdjuster to modify
+/// command line arguments before the arguments are used to run
+/// a frontend action. One could install another command line
+/// arguments adjuster by call setArgumentsAdjuster() method.
 class ClangTool {
  public:
   /// \brief Constructs a clang tool to run over a list of files.
@@ -156,6 +162,11 @@ class ClangTool {
   /// \param Content A null terminated buffer of the file's content.
   void mapVirtualFile(StringRef FilePath, StringRef Content);
 
+  /// \brief Install command line arguments adjuster.
+  ///
+  /// \param Adjuster Command line arguments adjuster.
+  void setArgumentsAdjuster(ArgumentsAdjuster *Adjuster);
+
   /// Runs a frontend action over all files specified in the command line.
   ///
   /// \param ActionFactory Factory generating the frontend actions. The function
@@ -169,13 +180,14 @@ class ClangTool {
   FileManager &getFiles() { return Files; }
 
  private:
-  // We store command lines as pair (file name, command line).
-  typedef std::pair< std::string, std::vector<std::string> > CommandLine;
-  std::vector<CommandLine> CommandLines;
+  // We store compile commands as pair (file name, compile command).
+  std::vector< std::pair<std::string, CompileCommand> > CompileCommands;
 
   FileManager Files;
   // Contains a list of pairs (<file name>, <file content>).
   std::vector< std::pair<StringRef, StringRef> > MappedFileContents;
+
+  llvm::OwningPtr<ArgumentsAdjuster> ArgsAdjuster;
 };
 
 template <typename T>
@@ -210,4 +222,3 @@ FrontendActionFactory *newFrontendActionFactory(FactoryT *ActionFactory) {
 } // end namespace clang
 
 #endif // LLVM_CLANG_TOOLING_TOOLING_H
-

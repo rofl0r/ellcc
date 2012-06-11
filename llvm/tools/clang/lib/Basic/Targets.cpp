@@ -960,54 +960,39 @@ public:
 } // end anonymous namespace.
 
 namespace {
-  static const unsigned PTXAddrSpaceMap[] = {
-    0,    // opencl_global
-    4,    // opencl_local
-    1     // opencl_constant
+  static const unsigned NVPTXAddrSpaceMap[] = {
+    1,    // opencl_global
+    3,    // opencl_local
+    4,    // opencl_constant
+    1,    // cuda_device
+    4,    // cuda_constant
+    3,    // cuda_shared
   };
-  class PTXTargetInfo : public TargetInfo {
+  class NVPTXTargetInfo : public TargetInfo {
     static const char * const GCCRegNames[];
     static const Builtin::Info BuiltinInfo[];
     std::vector<llvm::StringRef> AvailableFeatures;
   public:
-    PTXTargetInfo(const std::string& triple) : TargetInfo(triple) {
+    NVPTXTargetInfo(const std::string& triple) : TargetInfo(triple) {
       BigEndian = false;
       TLSSupported = false;
       LongWidth = LongAlign = 64;
-      AddrSpaceMap = &PTXAddrSpaceMap;
+      AddrSpaceMap = &NVPTXAddrSpaceMap;
       // Define available target features
-      // These must be defined in sorted order!      
-      AvailableFeatures.push_back("compute10");
-      AvailableFeatures.push_back("compute11");
-      AvailableFeatures.push_back("compute12");
-      AvailableFeatures.push_back("compute13");
-      AvailableFeatures.push_back("compute20");
-      AvailableFeatures.push_back("double");
-      AvailableFeatures.push_back("no-fma");
-      AvailableFeatures.push_back("ptx20");
-      AvailableFeatures.push_back("ptx21");
-      AvailableFeatures.push_back("ptx22");
-      AvailableFeatures.push_back("ptx23");
-      AvailableFeatures.push_back("sm10");
-      AvailableFeatures.push_back("sm11");
-      AvailableFeatures.push_back("sm12");
-      AvailableFeatures.push_back("sm13");
-      AvailableFeatures.push_back("sm20");
-      AvailableFeatures.push_back("sm21");
-      AvailableFeatures.push_back("sm22");
-      AvailableFeatures.push_back("sm23");
+      // These must be defined in sorted order!
     }
     virtual void getTargetDefines(const LangOptions &Opts,
                                   MacroBuilder &Builder) const {
       Builder.defineMacro("__PTX__");
+      Builder.defineMacro("__NVPTX__");
     }
     virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                    unsigned &NumRecords) const {
       Records = BuiltinInfo;
-      NumRecords = clang::PTX::LastTSBuiltin-Builtin::FirstTSBuiltin;
+      NumRecords = clang::NVPTX::LastTSBuiltin-Builtin::FirstTSBuiltin;
     }
     virtual bool hasFeature(StringRef Feature) const {
-      return Feature == "ptx";
+      return Feature == "ptx" || Feature == "nvptx";
     }
     
     virtual void getGCCRegNames(const char * const *&Names,
@@ -1031,32 +1016,34 @@ namespace {
       // FIXME: implement
       return "typedef char* __builtin_va_list;";
     }
-
+    virtual bool setCPU(const std::string &Name) {
+      return Name == "sm_10" || Name == "sm_13" || Name == "sm_20";
+    }
     virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
                                    StringRef Name,
                                    bool Enabled) const;
   };
 
-  const Builtin::Info PTXTargetInfo::BuiltinInfo[] = {
+  const Builtin::Info NVPTXTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
 #define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
                                               ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsPTX.def"
+#include "clang/Basic/BuiltinsNVPTX.def"
   };
 
-  const char * const PTXTargetInfo::GCCRegNames[] = {
+  const char * const NVPTXTargetInfo::GCCRegNames[] = {
     "r0"
   };
 
-  void PTXTargetInfo::getGCCRegNames(const char * const *&Names,
+  void NVPTXTargetInfo::getGCCRegNames(const char * const *&Names,
                                      unsigned &NumNames) const {
     Names = GCCRegNames;
     NumNames = llvm::array_lengthof(GCCRegNames);
   }
 
-  bool PTXTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
-                                        StringRef Name,
-                                        bool Enabled) const {
+  bool NVPTXTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                          StringRef Name,
+                                          bool Enabled) const {
     if(std::binary_search(AvailableFeatures.begin(), AvailableFeatures.end(),
                           Name)) {
       Features[Name] = Enabled;
@@ -1066,24 +1053,28 @@ namespace {
     }
   }
 
-  class PTX32TargetInfo : public PTXTargetInfo {
+  class NVPTX32TargetInfo : public NVPTXTargetInfo {
   public:
-  PTX32TargetInfo(const std::string& triple) : PTXTargetInfo(triple) {
+    NVPTX32TargetInfo(const std::string& triple) : NVPTXTargetInfo(triple) {
       PointerWidth = PointerAlign = 32;
-      SizeType = PtrDiffType = IntPtrType = TargetInfo::UnsignedInt;
+      SizeType     = PtrDiffType = IntPtrType = TargetInfo::UnsignedInt;
       DescriptionString
-        = "e-p:32:32-i64:64:64-f64:64:64-n1:8:16:32:64";
-    }
+        = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+          "f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-"
+          "n16:32:64";
+  }
   };
 
-  class PTX64TargetInfo : public PTXTargetInfo {
+  class NVPTX64TargetInfo : public NVPTXTargetInfo {
   public:
-  PTX64TargetInfo(const std::string& triple) : PTXTargetInfo(triple) {
+    NVPTX64TargetInfo(const std::string& triple) : NVPTXTargetInfo(triple) {
       PointerWidth = PointerAlign = 64;
-      SizeType = PtrDiffType = IntPtrType = TargetInfo::UnsignedLongLong;
+      SizeType     = PtrDiffType = IntPtrType = TargetInfo::UnsignedLongLong;
       DescriptionString
-        = "e-p:64:64-i64:64:64-f64:64:64-n1:8:16:32:64";
-    }
+        = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
+          "f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-"
+          "n16:32:64";
+  }
   };
 }
 
@@ -1273,11 +1264,15 @@ class X86TargetInfo : public TargetInfo {
   } MMX3DNowLevel;
 
   bool HasAES;
+  bool HasPCLMUL;
   bool HasLZCNT;
   bool HasBMI;
   bool HasBMI2;
   bool HasPOPCNT;
+  bool HasSSE4a;
   bool HasFMA4;
+  bool HasFMA;
+  bool HasXOP;
 
   /// \brief Enumeration of all of the X86 CPUs supported by Clang.
   ///
@@ -1422,8 +1417,9 @@ class X86TargetInfo : public TargetInfo {
 public:
   X86TargetInfo(const std::string& triple)
     : TargetInfo(triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
-      HasAES(false), HasLZCNT(false), HasBMI(false), HasBMI2(false),
-      HasPOPCNT(false), HasFMA4(false), CPU(CK_Generic) {
+      HasAES(false), HasPCLMUL(false), HasLZCNT(false), HasBMI(false),
+      HasBMI2(false), HasPOPCNT(false), HasSSE4a(false), HasFMA4(false),
+      HasFMA(false), HasXOP(false), CPU(CK_Generic) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
   }
@@ -1605,6 +1601,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   Features["sse42"] = false;
   Features["sse4a"] = false;
   Features["aes"] = false;
+  Features["pclmul"] = false;
   Features["avx"] = false;
   Features["avx2"] = false;
   Features["lzcnt"] = false;
@@ -1612,6 +1609,8 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   Features["bmi2"] = false;
   Features["popcnt"] = false;
   Features["fma4"] = false;
+  Features["fma"] = false;
+  Features["xop"] = false;
 
   // FIXME: This *really* should not be here.
 
@@ -1665,21 +1664,23 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   case CK_Corei7:
     setFeatureEnabled(Features, "mmx", true);
     setFeatureEnabled(Features, "sse4", true);
-    setFeatureEnabled(Features, "aes", true);
     break;
   case CK_Corei7AVX:
   case CK_CoreAVXi:
     setFeatureEnabled(Features, "mmx", true);
     setFeatureEnabled(Features, "avx", true);
     setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
     break;
   case CK_CoreAVX2:
     setFeatureEnabled(Features, "mmx", true);
     setFeatureEnabled(Features, "avx2", true);
     setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
     setFeatureEnabled(Features, "lzcnt", true);
     setFeatureEnabled(Features, "bmi", true);
     setFeatureEnabled(Features, "bmi2", true);
+    setFeatureEnabled(Features, "fma", true);
     break;
   case CK_K6:
   case CK_WinChipC6:
@@ -1723,11 +1724,13 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   case CK_BTVER1:
     setFeatureEnabled(Features, "ssse3", true);
     setFeatureEnabled(Features, "sse4a", true);
+    break;
   case CK_BDVER1:
   case CK_BDVER2:
     setFeatureEnabled(Features, "avx", true);
-    setFeatureEnabled(Features, "sse4a", true);
+    setFeatureEnabled(Features, "xop", true);
     setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
     break;
   case CK_C3_2:
     setFeatureEnabled(Features, "mmx", true);
@@ -1772,7 +1775,9 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "3dnowa")
       Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = true;
     else if (Name == "aes")
-      Features["aes"] = true;
+      Features["sse"] = Features["sse2"] = Features["aes"] = true;
+    else if (Name == "pclmul")
+      Features["sse"] = Features["sse2"] = Features["pclmul"] = true;
     else if (Name == "avx")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
@@ -1781,13 +1786,23 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
         Features["popcnt"] = Features["avx"] = Features["avx2"] = true;
+    else if (Name == "fma")
+      Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["fma"] = true;
     else if (Name == "fma4")
         Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
-        Features["popcnt"] = Features["avx"] = Features["fma4"] = true;
+        Features["popcnt"] = Features["avx"] = Features["sse4a"] =
+        Features["fma4"] = true;
+    else if (Name == "xop")
+        Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
+        Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["popcnt"] = Features["avx"] = Features["sse4a"] =
+        Features["fma4"] = Features["xop"] = true;
     else if (Name == "sse4a")
       Features["mmx"] = Features["sse"] = Features["sse2"] = Features["sse3"] =
-        Features["lzcnt"] = Features["popcnt"] = Features["sse4a"] = true;
+        Features["sse4a"] = true;
     else if (Name == "lzcnt")
       Features["lzcnt"] = true;
     else if (Name == "bmi")
@@ -1802,31 +1817,46 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "sse")
       Features["sse"] = Features["sse2"] = Features["sse3"] =
         Features["ssse3"] = Features["sse41"] = Features["sse42"] =
-        Features["sse4a"] = false;
+        Features["sse4a"] = Features["avx"] = Features["avx2"] =
+        Features["fma"] = Features["fma4"] = Features["aes"] =
+        Features["pclmul"] = Features["xop"] = false;
     else if (Name == "sse2")
       Features["sse2"] = Features["sse3"] = Features["ssse3"] =
-        Features["sse41"] = Features["sse42"] = Features["sse4a"] = false;
+        Features["sse41"] = Features["sse42"] = Features["sse4a"] =
+        Features["avx"] = Features["avx2"] = Features["fma"] =
+        Features["fma4"] = Features["aes"] = Features["pclmul"] =
+        Features["xop"] = false;
     else if (Name == "sse3")
       Features["sse3"] = Features["ssse3"] = Features["sse41"] =
-        Features["sse42"] = Features["sse4a"] = false;
+        Features["sse42"] = Features["sse4a"] = Features["avx"] =
+        Features["avx2"] = Features["fma"] = Features["fma4"] =
+        Features["xop"] = false;
     else if (Name == "ssse3")
-      Features["ssse3"] = Features["sse41"] = Features["sse42"] = false;
+      Features["ssse3"] = Features["sse41"] = Features["sse42"] =
+        Features["avx"] = Features["avx2"] = Features["fma"] = false;
     else if (Name == "sse4" || Name == "sse4.1")
-      Features["sse41"] = Features["sse42"] = false;
+      Features["sse41"] = Features["sse42"] = Features["avx"] =
+        Features["avx2"] = Features["fma"] = false;
     else if (Name == "sse4.2")
-      Features["sse42"] = false;
+      Features["sse42"] = Features["avx"] = Features["avx2"] =
+        Features["fma"] = false;
     else if (Name == "3dnow")
       Features["3dnow"] = Features["3dnowa"] = false;
     else if (Name == "3dnowa")
       Features["3dnowa"] = false;
     else if (Name == "aes")
       Features["aes"] = false;
+    else if (Name == "pclmul")
+      Features["pclmul"] = false;
     else if (Name == "avx")
-      Features["avx"] = Features["avx2"] = Features["fma4"] = false;
+      Features["avx"] = Features["avx2"] = Features["fma"] =
+        Features["fma4"] = Features["xop"] = false;
     else if (Name == "avx2")
       Features["avx2"] = false;
+    else if (Name == "fma")
+      Features["fma"] = false;
     else if (Name == "sse4a")
-      Features["sse4a"] = false;
+      Features["sse4a"] = Features["fma4"] = Features["xop"] = false;
     else if (Name == "lzcnt")
       Features["lzcnt"] = false;
     else if (Name == "bmi")
@@ -1836,7 +1866,9 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     else if (Name == "popcnt")
       Features["popcnt"] = false;
     else if (Name == "fma4")
-      Features["fma4"] = false;
+      Features["fma4"] = Features["xop"] = false;
+    else if (Name == "xop")
+      Features["xop"] = false;
   }
 
   return true;
@@ -1855,6 +1887,11 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
 
     if (Feature == "aes") {
       HasAES = true;
+      continue;
+    }
+
+    if (Feature == "pclmul") {
+      HasPCLMUL = true;
       continue;
     }
 
@@ -1878,8 +1915,23 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
       continue;
     }
 
+    if (Feature == "sse4a") {
+      HasSSE4a = true;
+      continue;
+    }
+
     if (Feature == "fma4") {
       HasFMA4 = true;
+      continue;
+    }
+
+    if (Feature == "fma") {
+      HasFMA = true;
+      continue;
+    }
+
+    if (Feature == "xop") {
+      HasXOP = true;
       continue;
     }
 
@@ -2065,6 +2117,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasAES)
     Builder.defineMacro("__AES__");
 
+  if (HasPCLMUL)
+    Builder.defineMacro("__PCLMUL__");
+
   if (HasLZCNT)
     Builder.defineMacro("__LZCNT__");
 
@@ -2077,8 +2132,17 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasPOPCNT)
     Builder.defineMacro("__POPCNT__");
 
+  if (HasSSE4a)
+    Builder.defineMacro("__SSE4A__");
+
   if (HasFMA4)
     Builder.defineMacro("__FMA4__");
+
+  if (HasFMA)
+    Builder.defineMacro("__FMA__");
+
+  if (HasXOP)
+    Builder.defineMacro("__XOP__");
 
   // Each case falls through to the previous one here.
   switch (SSELevel) {
@@ -2143,11 +2207,13 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("avx2", SSELevel >= AVX2)
       .Case("bmi", HasBMI)
       .Case("bmi2", HasBMI2)
+      .Case("fma", HasFMA)
       .Case("fma4", HasFMA4)
       .Case("lzcnt", HasLZCNT)
       .Case("mm3dnow", MMX3DNowLevel >= AMD3DNow)
       .Case("mm3dnowa", MMX3DNowLevel >= AMD3DNowAthlon)
       .Case("mmx", MMX3DNowLevel >= MMX)
+      .Case("pclmul", HasPCLMUL)
       .Case("popcnt", HasPOPCNT)
       .Case("sse", SSELevel >= SSE1)
       .Case("sse2", SSELevel >= SSE2)
@@ -2155,9 +2221,11 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("ssse3", SSELevel >= SSSE3)
       .Case("sse41", SSELevel >= SSE41)
       .Case("sse42", SSELevel >= SSE42)
+      .Case("sse4a", HasSSE4a)
       .Case("x86", true)
       .Case("x86_32", PointerWidth == 32)
       .Case("x86_64", PointerWidth == 64)
+      .Case("xop", HasXOP)
       .Default(false);
 }
 
@@ -3098,8 +3166,8 @@ public:
   HexagonTargetInfo(const std::string& triple) : TargetInfo(triple)  {
     BigEndian = false;
     DescriptionString = ("e-p:32:32:32-"
-                         "i64:64:64-i32:32:32-"
-                         "i16:16:16-i1:32:32-a:0:0");
+                         "i64:64:64-i32:32:32-i16:16:16-i1:32:32"
+                         "f64:64:64-f32:32:32-a0:0-n32");
 
     // {} in inline assembly are packet specifiers, not assembly variant
     // specifiers.
@@ -3140,6 +3208,7 @@ public:
       .Case("hexagonv2", "2")
       .Case("hexagonv3", "3")
       .Case("hexagonv4", "4")
+      .Case("hexagonv5", "5")
       .Default(0);
   }
 
@@ -3194,6 +3263,14 @@ void HexagonTargetInfo::getTargetDefines(const LangOptions &Opts,
       Builder.defineMacro("__QDSP6_ARCH__", "4");
     }
   }
+  else if(CPU == "hexagonv5") {
+    Builder.defineMacro("__HEXAGON_V5__");
+    Builder.defineMacro("__HEXAGON_ARCH__", "5");
+    if(Opts.HexagonQdsp6Compat) {
+      Builder.defineMacro("__QDSP6_V5__");
+      Builder.defineMacro("__QDSP6_ARCH__", "5");
+    }
+  }
 }
 
 const char * const HexagonTargetInfo::GCCRegNames[] = {
@@ -3242,7 +3319,6 @@ class SparcV8TargetInfo : public TargetInfo {
 public:
   SparcV8TargetInfo(const std::string& triple) : TargetInfo(triple) {
     // FIXME: Support Sparc quad-precision long double?
-    BigEndian = false;
     DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
   }
@@ -3472,7 +3548,10 @@ namespace {
   static const unsigned TCEOpenCLAddrSpaceMap[] = {
       3, // opencl_global
       4, // opencl_local
-      5  // opencl_constant
+      5, // opencl_constant
+      0, // cuda_device
+      0, // cuda_constant
+      0  // cuda_shared
   };
 
   class TCETargetInfo : public TargetInfo{
@@ -3568,14 +3647,15 @@ public:
 
   virtual void getArchDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
-    if (SoftFloat)
-      Builder.defineMacro("__mips_soft_float", Twine(1));
-    else if (SingleFloat)
-      Builder.defineMacro("__mips_single_float", Twine(1));
-    else if (!SoftFloat && !SingleFloat)
-      Builder.defineMacro("__mips_hard_float", Twine(1));
-    else
+    if (SoftFloat && SingleFloat)
       llvm_unreachable("Invalid float ABI for Mips.");
+    else if (SoftFloat)
+      Builder.defineMacro("__mips_soft_float", Twine(1));
+    else {
+      Builder.defineMacro("__mips_hard_float", Twine(1));
+      if (SingleFloat)
+        Builder.defineMacro("__mips_single_float", Twine(1));
+    }
 
     Builder.defineMacro("_MIPS_SZPTR", Twine(getPointerWidth(0)));
     Builder.defineMacro("_MIPS_SZINT", Twine(getIntWidth()));
@@ -4238,10 +4318,10 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new PPC64TargetInfo(T);
     }
 
-  case llvm::Triple::ptx32:
-    return new PTX32TargetInfo(T);
-  case llvm::Triple::ptx64:
-    return new PTX64TargetInfo(T);
+  case llvm::Triple::nvptx:
+    return new NVPTX32TargetInfo(T);
+  case llvm::Triple::nvptx64:
+    return new NVPTX64TargetInfo(T);
 
   case llvm::Triple::mblaze:
     switch (os) {

@@ -179,11 +179,12 @@ public:
   SourceLocation getExprLoc() const LLVM_READONLY;
 
   /// isUnusedResultAWarning - Return true if this immediate expression should
-  /// be warned about if the result is unused.  If so, fill in Loc and Ranges
-  /// with location to warn on and the source range[s] to report with the
-  /// warning.
-  bool isUnusedResultAWarning(SourceLocation &Loc, SourceRange &R1,
-                              SourceRange &R2, ASTContext &Ctx) const;
+  /// be warned about if the result is unused.  If so, fill in expr, location,
+  /// and ranges with expr to warn on and source locations/ranges appropriate
+  /// for a warning.
+  bool isUnusedResultAWarning(const Expr *&WarnExpr, SourceLocation &Loc,
+                              SourceRange &R1, SourceRange &R2,
+                              ASTContext &Ctx) const;
 
   /// isLValue - True if this expression is an "l-value" according to
   /// the rules of the current language.  C and C++ give somewhat
@@ -212,7 +213,8 @@ public:
     LV_InvalidMessageExpression,
     LV_MemberFunction,
     LV_SubObjCPropertySetting,
-    LV_ClassTemporary
+    LV_ClassTemporary,
+    LV_ArrayTemporary
   };
   /// Reasons why an expression might not be an l-value.
   LValueClassification ClassifyLValue(ASTContext &Ctx) const;
@@ -241,7 +243,8 @@ public:
     MLV_MemberFunction,
     MLV_SubObjCPropertySetting,
     MLV_InvalidMessageExpression,
-    MLV_ClassTemporary
+    MLV_ClassTemporary,
+    MLV_ArrayTemporary
   };
   isModifiableLvalueResult isModifiableLvalue(ASTContext &Ctx,
                                               SourceLocation *Loc = 0) const;
@@ -260,7 +263,8 @@ public:
       CL_DuplicateVectorComponents, // A vector shuffle with dupes.
       CL_MemberFunction, // An expression referring to a member function
       CL_SubObjCPropertySetting,
-      CL_ClassTemporary, // A prvalue of class type
+      CL_ClassTemporary, // A temporary of class type, or subobject thereof.
+      CL_ArrayTemporary, // A temporary of array type.
       CL_ObjCMessageRValue, // ObjC message is an rvalue
       CL_PRValue // A prvalue for any other reason, of any other type
     };

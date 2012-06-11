@@ -1,4 +1,4 @@
-//===-- asan_interceptors.cc ------------------------------------*- C++ -*-===//
+//===-- asan_interceptors.cc ----------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -21,6 +21,7 @@
 #include "asan_stats.h"
 #include "asan_thread_registry.h"
 #include "interception/interception.h"
+#include "sanitizer_common/sanitizer_libc.h"
 
 // Use macro to describe if specific function should be
 // intercepted on a given platform.
@@ -61,27 +62,28 @@ void _longjmp(void *env, int value);
 # endif
 
 // string.h / strings.h
-int memcmp(const void *a1, const void *a2, size_t size);
-void* memmove(void *to, const void *from, size_t size);
-void* memcpy(void *to, const void *from, size_t size);
-void* memset(void *block, int c, size_t size);
+int memcmp(const void *a1, const void *a2, uptr size);
+void* memmove(void *to, const void *from, uptr size);
+void* memcpy(void *to, const void *from, uptr size);
+void* memset(void *block, int c, uptr size);
 char* strchr(const char *str, int c);
 # if defined(__APPLE__)
 char* index(const char *string, int c);
 # endif
 char* strcat(char *to, const char* from);  // NOLINT
+char *strncat(char *to, const char* from, uptr size);
 char* strcpy(char *to, const char* from);  // NOLINT
-char* strncpy(char *to, const char* from, size_t size);
+char* strncpy(char *to, const char* from, uptr size);
 int strcmp(const char *s1, const char* s2);
-int strncmp(const char *s1, const char* s2, size_t size);
+int strncmp(const char *s1, const char* s2, uptr size);
 # if !defined(_WIN32)
 int strcasecmp(const char *s1, const char *s2);
-int strncasecmp(const char *s1, const char *s2, size_t n);
+int strncasecmp(const char *s1, const char *s2, uptr n);
 char* strdup(const char *s);
 # endif
-size_t strlen(const char *s);
+uptr strlen(const char *s);
 # if ASAN_INTERCEPT_STRNLEN
-size_t strnlen(const char *s, size_t maxlen);
+uptr strnlen(const char *s, uptr maxlen);
 # endif
 
 // stdlib.h
@@ -96,7 +98,7 @@ long long strtoll(const char *nptr, char **endptr, int base);  // NOLINT
 // Windows threads.
 # if defined(_WIN32)
 __declspec(dllimport)
-void* __stdcall CreateThread(void *sec, size_t st, void* start,
+void* __stdcall CreateThread(void *sec, uptr st, void* start,
                              void *arg, DWORD fl, DWORD *id);
 # endif
 
@@ -129,7 +131,7 @@ namespace __asan {
 // checking the first and the last byte of a range.
 #define ACCESS_MEMORY_RANGE(offset, size, isWrite) do { \
   if (size > 0) { \
-    uintptr_t ptr = (uintptr_t)(offset); \
+    uptr ptr = (uptr)(offset); \
     ACCESS_ADDRESS(ptr, isWrite); \
     ACCESS_ADDRESS(ptr + (size) - 1, isWrite); \
   } \
@@ -146,17 +148,17 @@ namespace __asan {
 // Behavior of functions like "memcpy" or "strcpy" is undefined
 // if memory intervals overlap. We report error in this case.
 // Macro is used to avoid creation of new frames.
-static inline bool RangesOverlap(const char *offset1, size_t length1,
-                                 const char *offset2, size_t length2) {
+static inline bool RangesOverlap(const char *offset1, uptr length1,
+                                 const char *offset2, uptr length2) {
   return !((offset1 + length1 <= offset2) || (offset2 + length2 <= offset1));
 }
 #define CHECK_RANGES_OVERLAP(name, _offset1, length1, _offset2, length2) do { \
   const char *offset1 = (const char*)_offset1; \
   const char *offset2 = (const char*)_offset2; \
   if (RangesOverlap(offset1, length1, offset2, length2)) { \
-    Report("ERROR: AddressSanitizer %s-param-overlap: " \
-           "memory ranges [%p,%p) and [%p, %p) overlap\n", \
-           name, offset1, offset1 + length1, offset2, offset2 + length2); \
+    AsanReport("ERROR: AddressSanitizer %s-param-overlap: " \
+               "memory ranges [%p,%p) and [%p, %p) overlap\n", \
+               name, offset1, offset1 + length1, offset2, offset2 + length2); \
     PRINT_CURRENT_STACK(); \
     ShowStatsAndAbort(); \
   } \
@@ -184,11 +186,11 @@ static inline int ToLower(int c) {
 
 // ---------------------- Internal string functions ---------------- {{{1
 
-int64_t internal_simple_strtoll(const char *nptr, char **endptr, int base) {
+s64 internal_simple_strtoll(const char *nptr, char **endptr, int base) {
   CHECK(base == 10);
   while (IsSpace(*nptr)) nptr++;
   int sgn = 1;
-  uint64_t res = 0;
+  u64 res = 0;
   bool have_digits = false;
   char *old_nptr = (char*)nptr;
   if (*nptr == '+') {
@@ -205,33 +207,27 @@ int64_t internal_simple_strtoll(const char *nptr, char **endptr, int base) {
     have_digits = true;
     nptr++;
   }
-  if (endptr != NULL) {
+  if (endptr != 0) {
     *endptr = (have_digits) ? (char*)nptr : old_nptr;
   }
   if (sgn > 0) {
-    return (int64_t)(Min((uint64_t)INT64_MAX, res));
+    return (s64)(Min((u64)INT64_MAX, res));
   } else {
-    return (res > INT64_MAX) ? INT64_MIN : ((int64_t)res * -1);
+    return (res > INT64_MAX) ? INT64_MIN : ((s64)res * -1);
   }
 }
 
-int64_t internal_atoll(const char *nptr) {
-  return internal_simple_strtoll(nptr, (char**)NULL, 10);
+s64 internal_atoll(const char *nptr) {
+  return internal_simple_strtoll(nptr, (char**)0, 10);
 }
 
-size_t internal_strlen(const char *s) {
-  size_t i = 0;
-  while (s[i]) i++;
-  return i;
-}
-
-size_t internal_strnlen(const char *s, size_t maxlen) {
+uptr internal_strnlen(const char *s, uptr maxlen) {
 #if ASAN_INTERCEPT_STRNLEN
-  if (REAL(strnlen) != NULL) {
+  if (REAL(strnlen) != 0) {
     return REAL(strnlen)(s, maxlen);
   }
 #endif
-  size_t i = 0;
+  uptr i = 0;
   while (i < maxlen && s[i]) i++;
   return i;
 }
@@ -241,78 +237,38 @@ char* internal_strchr(const char *s, int c) {
     if (*s == (char)c)
       return (char*)s;
     if (*s == 0)
-      return NULL;
+      return 0;
     s++;
   }
 }
 
-void* internal_memchr(const void* s, int c, size_t n) {
-  const char* t = (char*)s;
-  for (size_t i = 0; i < n; ++i, ++t)
-    if (*t == c)
-      return (void*)t;
-  return NULL;
-}
-
-int internal_memcmp(const void* s1, const void* s2, size_t n) {
+int internal_memcmp(const void* s1, const void* s2, uptr n) {
   const char* t1 = (char*)s1;
   const char* t2 = (char*)s2;
-  for (size_t i = 0; i < n; ++i, ++t1, ++t2)
+  for (uptr i = 0; i < n; ++i, ++t1, ++t2)
     if (*t1 != *t2)
       return *t1 < *t2 ? -1 : 1;
   return 0;
 }
 
-// Should not be used in performance-critical places.
-void* internal_memset(void* s, int c, size_t n) {
-  // The next line prevents Clang from making a call to memset() instead of the
-  // loop below.
-  // FIXME: building the runtime with -ffreestanding is a better idea. However
-  // there currently are linktime problems due to PR12396.
-  char volatile *t = (char*)s;
-  for (size_t i = 0; i < n; ++i, ++t) {
-    *t = c;
-  }
-  return s;
-}
-
 char *internal_strstr(const char *haystack, const char *needle) {
   // This is O(N^2), but we are not using it in hot places.
-  size_t len1 = internal_strlen(haystack);
-  size_t len2 = internal_strlen(needle);
+  uptr len1 = internal_strlen(haystack);
+  uptr len2 = internal_strlen(needle);
   if (len1 < len2) return 0;
-  for (size_t pos = 0; pos <= len1 - len2; pos++) {
+  for (uptr pos = 0; pos <= len1 - len2; pos++) {
     if (internal_memcmp(haystack + pos, needle, len2) == 0)
       return (char*)haystack + pos;
   }
   return 0;
 }
 
-char *internal_strncat(char *dst, const char *src, size_t n) {
-  size_t len = internal_strlen(dst);
-  size_t i;
+char *internal_strncat(char *dst, const char *src, uptr n) {
+  uptr len = internal_strlen(dst);
+  uptr i;
   for (i = 0; i < n && src[i]; i++)
     dst[len + i] = src[i];
   dst[len + i] = 0;
-  return dst;
-}
-
-int internal_strcmp(const char *s1, const char *s2) {
-  while (true) {
-    unsigned c1 = *s1;
-    unsigned c2 = *s2;
-    if (c1 != c2) return (c1 < c2) ? -1 : 1;
-    if (c1 == 0) break;
-    s1++;
-    s2++;
-  }
-  return 0;
-}
-
-char *internal_strncpy(char *dst, const char *src, size_t n) {
-  size_t i;
-  for (i = 0; i < n && src[i]; i++)
-    dst[i] = src[i];
   return dst;
 }
 
@@ -331,7 +287,7 @@ static thread_return_t THREAD_CALLING_CONV asan_thread_start(void *arg) {
 INTERCEPTOR(int, pthread_create, void *thread,
     void *attr, void *(*start_routine)(void*), void *arg) {
   GET_STACK_TRACE_HERE(kStackTraceMax);
-  int current_tid = asanThreadRegistry().GetCurrentTidOrMinusOne();
+  u32 current_tid = asanThreadRegistry().GetCurrentTidOrInvalid();
   AsanThread *t = AsanThread::Create(current_tid, start_routine, arg, &stack);
   asanThreadRegistry().RegisterThread(t);
   return REAL(pthread_create)(thread, attr, asan_thread_start, t);
@@ -343,7 +299,7 @@ INTERCEPTOR(void*, signal, int signum, void *handler) {
   if (!AsanInterceptsSignal(signum)) {
     return REAL(signal)(signum, handler);
   }
-  return NULL;
+  return 0;
 }
 
 INTERCEPTOR(int, sigaction, int signum, const struct sigaction *act,
@@ -400,13 +356,13 @@ static void MlockIsUnsupported() {
 
 extern "C" {
 INTERCEPTOR_ATTRIBUTE
-int mlock(const void *addr, size_t len) {
+int mlock(const void *addr, uptr len) {
   MlockIsUnsupported();
   return 0;
 }
 
 INTERCEPTOR_ATTRIBUTE
-int munlock(const void *addr, size_t len) {
+int munlock(const void *addr, uptr len) {
   MlockIsUnsupported();
   return 0;
 }
@@ -434,12 +390,12 @@ static inline int CharCaseCmp(unsigned char c1, unsigned char c2) {
   return c1_low - c2_low;
 }
 
-INTERCEPTOR(int, memcmp, const void *a1, const void *a2, size_t size) {
+INTERCEPTOR(int, memcmp, const void *a1, const void *a2, uptr size) {
   ENSURE_ASAN_INITED();
   unsigned char c1 = 0, c2 = 0;
   const unsigned char *s1 = (const unsigned char*)a1;
   const unsigned char *s2 = (const unsigned char*)a2;
-  size_t i;
+  uptr i;
   for (i = 0; i < size; i++) {
     c1 = s1[i];
     c2 = s2[i];
@@ -450,7 +406,7 @@ INTERCEPTOR(int, memcmp, const void *a1, const void *a2, size_t size) {
   return CharCmp(c1, c2);
 }
 
-INTERCEPTOR(void*, memcpy, void *to, const void *from, size_t size) {
+INTERCEPTOR(void*, memcpy, void *to, const void *from, uptr size) {
   // memcpy is called during __asan_init() from the internals
   // of printf(...).
   if (asan_init_is_running) {
@@ -469,7 +425,10 @@ INTERCEPTOR(void*, memcpy, void *to, const void *from, size_t size) {
   return REAL(memcpy)(to, from, size);
 }
 
-INTERCEPTOR(void*, memmove, void *to, const void *from, size_t size) {
+INTERCEPTOR(void*, memmove, void *to, const void *from, uptr size) {
+  if (asan_init_is_running) {
+    return REAL(memmove)(to, from, size);
+  }
   ENSURE_ASAN_INITED();
   if (FLAG_replace_intrin) {
     ASAN_WRITE_RANGE(from, size);
@@ -478,7 +437,7 @@ INTERCEPTOR(void*, memmove, void *to, const void *from, size_t size) {
   return REAL(memmove)(to, from, size);
 }
 
-INTERCEPTOR(void*, memset, void *block, int c, size_t size) {
+INTERCEPTOR(void*, memset, void *block, int c, uptr size) {
   // memset is called inside Printf.
   if (asan_init_is_running) {
     return REAL(memset)(block, c, size);
@@ -494,7 +453,7 @@ INTERCEPTOR(char*, strchr, const char *str, int c) {
   ENSURE_ASAN_INITED();
   char *result = REAL(strchr)(str, c);
   if (FLAG_replace_str) {
-    size_t bytes_read = (result ? result - str : REAL(strlen)(str)) + 1;
+    uptr bytes_read = (result ? result - str : REAL(strlen)(str)) + 1;
     ASAN_READ_RANGE(str, bytes_read);
   }
   return result;
@@ -510,7 +469,7 @@ DEFINE_REAL(char*, index, const char *string, int c);
 INTERCEPTOR(int, strcasecmp, const char *s1, const char *s2) {
   ENSURE_ASAN_INITED();
   unsigned char c1, c2;
-  size_t i;
+  uptr i;
   for (i = 0; ; i++) {
     c1 = (unsigned char)s1[i];
     c2 = (unsigned char)s2[i];
@@ -524,10 +483,10 @@ INTERCEPTOR(int, strcasecmp, const char *s1, const char *s2) {
 INTERCEPTOR(char*, strcat, char *to, const char *from) {  // NOLINT
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t from_length = REAL(strlen)(from);
+    uptr from_length = REAL(strlen)(from);
     ASAN_READ_RANGE(from, from_length + 1);
     if (from_length > 0) {
-      size_t to_length = REAL(strlen)(to);
+      uptr to_length = REAL(strlen)(to);
       ASAN_READ_RANGE(to, to_length);
       ASAN_WRITE_RANGE(to + to_length, from_length + 1);
       CHECK_RANGES_OVERLAP("strcat", to, to_length + 1, from, from_length + 1);
@@ -536,12 +495,28 @@ INTERCEPTOR(char*, strcat, char *to, const char *from) {  // NOLINT
   return REAL(strcat)(to, from);  // NOLINT
 }
 
+INTERCEPTOR(char*, strncat, char *to, const char *from, uptr size) {
+  ENSURE_ASAN_INITED();
+  if (FLAG_replace_str && size > 0) {
+    uptr from_length = internal_strnlen(from, size);
+    ASAN_READ_RANGE(from, Min(size, from_length + 1));
+    uptr to_length = REAL(strlen)(to);
+    ASAN_READ_RANGE(to, to_length);
+    ASAN_WRITE_RANGE(to + to_length, from_length + 1);
+    if (from_length > 0) {
+      CHECK_RANGES_OVERLAP("strncat", to, to_length + 1,
+                           from, Min(size, from_length + 1));
+    }
+  }
+  return REAL(strncat)(to, from, size);
+}
+
 INTERCEPTOR(int, strcmp, const char *s1, const char *s2) {
   if (!asan_inited) {
     return internal_strcmp(s1, s2);
   }
   unsigned char c1, c2;
-  size_t i;
+  uptr i;
   for (i = 0; ; i++) {
     c1 = (unsigned char)s1[i];
     c2 = (unsigned char)s2[i];
@@ -560,7 +535,7 @@ INTERCEPTOR(char*, strcpy, char *to, const char *from) {  // NOLINT
   }
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t from_size = REAL(strlen)(from) + 1;
+    uptr from_size = REAL(strlen)(from) + 1;
     CHECK_RANGES_OVERLAP("strcpy", to, from_size, from, from_size);
     ASAN_READ_RANGE(from, from_size);
     ASAN_WRITE_RANGE(to, from_size);
@@ -571,30 +546,30 @@ INTERCEPTOR(char*, strcpy, char *to, const char *from) {  // NOLINT
 INTERCEPTOR(char*, strdup, const char *s) {
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t length = REAL(strlen)(s);
+    uptr length = REAL(strlen)(s);
     ASAN_READ_RANGE(s, length + 1);
   }
   return REAL(strdup)(s);
 }
 
-INTERCEPTOR(size_t, strlen, const char *s) {
+INTERCEPTOR(uptr, strlen, const char *s) {
   // strlen is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
   if (asan_init_is_running) {
     return REAL(strlen)(s);
   }
   ENSURE_ASAN_INITED();
-  size_t length = REAL(strlen)(s);
+  uptr length = REAL(strlen)(s);
   if (FLAG_replace_str) {
     ASAN_READ_RANGE(s, length + 1);
   }
   return length;
 }
 
-INTERCEPTOR(int, strncasecmp, const char *s1, const char *s2, size_t n) {
+INTERCEPTOR(int, strncasecmp, const char *s1, const char *s2, uptr n) {
   ENSURE_ASAN_INITED();
   unsigned char c1 = 0, c2 = 0;
-  size_t i;
+  uptr i;
   for (i = 0; i < n; i++) {
     c1 = (unsigned char)s1[i];
     c2 = (unsigned char)s2[i];
@@ -605,14 +580,14 @@ INTERCEPTOR(int, strncasecmp, const char *s1, const char *s2, size_t n) {
   return CharCaseCmp(c1, c2);
 }
 
-INTERCEPTOR(int, strncmp, const char *s1, const char *s2, size_t size) {
+INTERCEPTOR(int, strncmp, const char *s1, const char *s2, uptr size) {
   // strncmp is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
   if (asan_init_is_running) {
     return REAL(strncmp)(s1, s2, size);
   }
   unsigned char c1 = 0, c2 = 0;
-  size_t i;
+  uptr i;
   for (i = 0; i < size; i++) {
     c1 = (unsigned char)s1[i];
     c2 = (unsigned char)s2[i];
@@ -623,10 +598,10 @@ INTERCEPTOR(int, strncmp, const char *s1, const char *s2, size_t size) {
   return CharCmp(c1, c2);
 }
 
-INTERCEPTOR(char*, strncpy, char *to, const char *from, size_t size) {
+INTERCEPTOR(char*, strncpy, char *to, const char *from, uptr size) {
   ENSURE_ASAN_INITED();
   if (FLAG_replace_str) {
-    size_t from_size = Min(size, internal_strnlen(from, size) + 1);
+    uptr from_size = Min(size, internal_strnlen(from, size) + 1);
     CHECK_RANGES_OVERLAP("strncpy", to, from_size, from, from_size);
     ASAN_READ_RANGE(from, from_size);
     ASAN_WRITE_RANGE(to, size);
@@ -635,9 +610,9 @@ INTERCEPTOR(char*, strncpy, char *to, const char *from, size_t size) {
 }
 
 #if ASAN_INTERCEPT_STRNLEN
-INTERCEPTOR(size_t, strnlen, const char *s, size_t maxlen) {
+INTERCEPTOR(uptr, strnlen, const char *s, uptr maxlen) {
   ENSURE_ASAN_INITED();
-  size_t length = REAL(strnlen)(s, maxlen);
+  uptr length = REAL(strnlen)(s, maxlen);
   if (FLAG_replace_str) {
     ASAN_READ_RANGE(s, Min(length + 1, maxlen));
   }
@@ -650,7 +625,7 @@ static inline bool IsValidStrtolBase(int base) {
 }
 
 static inline void FixRealStrtolEndptr(const char *nptr, char **endptr) {
-  CHECK(endptr != NULL);
+  CHECK(endptr != 0);
   if (nptr == *endptr) {
     // No digits were found at strtol call, we need to find out the last
     // symbol accessed by strtoll on our own.
@@ -670,7 +645,7 @@ INTERCEPTOR(long, strtol, const char *nptr,  // NOLINT
   }
   char *real_endptr;
   long result = REAL(strtol)(nptr, &real_endptr, base);  // NOLINT
-  if (endptr != NULL) {
+  if (endptr != 0) {
     *endptr = real_endptr;
   }
   if (IsValidStrtolBase(base)) {
@@ -687,7 +662,7 @@ INTERCEPTOR(int, atoi, const char *nptr) {
   }
   char *real_endptr;
   // "man atoi" tells that behavior of atoi(nptr) is the same as
-  // strtol(nptr, NULL, 10), i.e. it sets errno to ERANGE if the
+  // strtol(nptr, 0, 10), i.e. it sets errno to ERANGE if the
   // parsed integer can't be stored in *long* type (even if it's
   // different from int). So, we just imitate this behavior.
   int result = REAL(strtol)(nptr, &real_endptr, 10);
@@ -717,7 +692,7 @@ INTERCEPTOR(long long, strtoll, const char *nptr,  // NOLINT
   }
   char *real_endptr;
   long long result = REAL(strtoll)(nptr, &real_endptr, base);  // NOLINT
-  if (endptr != NULL) {
+  if (endptr != 0) {
     *endptr = real_endptr;
   }
   // If base has unsupported value, strtoll can exit with EINVAL
@@ -743,13 +718,18 @@ INTERCEPTOR(long long, atoll, const char *nptr) {  // NOLINT
 }
 #endif  // ASAN_INTERCEPT_ATOLL_AND_STRTOLL
 
+#define ASAN_INTERCEPT_FUNC(name) do { \
+      if (!INTERCEPT_FUNCTION(name) && FLAG_v > 0) \
+        Report("AddressSanitizer: failed to intercept '" #name "'\n"); \
+    } while (0)
+
 #if defined(_WIN32)
 INTERCEPTOR_WINAPI(DWORD, CreateThread,
-                   void* security, size_t stack_size,
+                   void* security, uptr stack_size,
                    DWORD (__stdcall *start_routine)(void*), void* arg,
                    DWORD flags, void* tid) {
   GET_STACK_TRACE_HERE(kStackTraceMax);
-  int current_tid = asanThreadRegistry().GetCurrentTidOrMinusOne();
+  u32 current_tid = asanThreadRegistry().GetCurrentTidOrInvalid();
   AsanThread *t = AsanThread::Create(current_tid, start_routine, arg, &stack);
   asanThreadRegistry().RegisterThread(t);
   return REAL(CreateThread)(security, stack_size,
@@ -758,7 +738,7 @@ INTERCEPTOR_WINAPI(DWORD, CreateThread,
 
 namespace __asan {
 void InitializeWindowsInterceptors() {
-  CHECK(INTERCEPT_FUNCTION(CreateThread));
+  ASAN_INTERCEPT_FUNC(CreateThread);
 }
 
 }  // namespace __asan
@@ -771,65 +751,66 @@ void InitializeAsanInterceptors() {
   CHECK(was_called_once == false);
   was_called_once = true;
   // Intercept mem* functions.
-  CHECK(INTERCEPT_FUNCTION(memcmp));
-  CHECK(INTERCEPT_FUNCTION(memmove));
-  CHECK(INTERCEPT_FUNCTION(memset));
+  ASAN_INTERCEPT_FUNC(memcmp);
+  ASAN_INTERCEPT_FUNC(memmove);
+  ASAN_INTERCEPT_FUNC(memset);
   if (PLATFORM_HAS_DIFFERENT_MEMCPY_AND_MEMMOVE) {
-    CHECK(INTERCEPT_FUNCTION(memcpy));
+    ASAN_INTERCEPT_FUNC(memcpy);
   } else {
     REAL(memcpy) = REAL(memmove);
   }
 
   // Intercept str* functions.
-  CHECK(INTERCEPT_FUNCTION(strcat));  // NOLINT
-  CHECK(INTERCEPT_FUNCTION(strchr));
-  CHECK(INTERCEPT_FUNCTION(strcmp));
-  CHECK(INTERCEPT_FUNCTION(strcpy));  // NOLINT
-  CHECK(INTERCEPT_FUNCTION(strlen));
-  CHECK(INTERCEPT_FUNCTION(strncmp));
-  CHECK(INTERCEPT_FUNCTION(strncpy));
+  ASAN_INTERCEPT_FUNC(strcat);  // NOLINT
+  ASAN_INTERCEPT_FUNC(strchr);
+  ASAN_INTERCEPT_FUNC(strcmp);
+  ASAN_INTERCEPT_FUNC(strcpy);  // NOLINT
+  ASAN_INTERCEPT_FUNC(strlen);
+  ASAN_INTERCEPT_FUNC(strncat);
+  ASAN_INTERCEPT_FUNC(strncmp);
+  ASAN_INTERCEPT_FUNC(strncpy);
 #if !defined(_WIN32)
-  CHECK(INTERCEPT_FUNCTION(strcasecmp));
-  CHECK(INTERCEPT_FUNCTION(strdup));
-  CHECK(INTERCEPT_FUNCTION(strncasecmp));
+  ASAN_INTERCEPT_FUNC(strcasecmp);
+  ASAN_INTERCEPT_FUNC(strdup);
+  ASAN_INTERCEPT_FUNC(strncasecmp);
 # ifndef __APPLE__
-  CHECK(INTERCEPT_FUNCTION(index));
+  ASAN_INTERCEPT_FUNC(index);
 # else
   CHECK(OVERRIDE_FUNCTION(index, WRAP(strchr)));
 # endif
 #endif
 #if ASAN_INTERCEPT_STRNLEN
-  CHECK(INTERCEPT_FUNCTION(strnlen));
+  ASAN_INTERCEPT_FUNC(strnlen);
 #endif
 
-  CHECK(INTERCEPT_FUNCTION(atoi));
-  CHECK(INTERCEPT_FUNCTION(atol));
-  CHECK(INTERCEPT_FUNCTION(strtol));
+  ASAN_INTERCEPT_FUNC(atoi);
+  ASAN_INTERCEPT_FUNC(atol);
+  ASAN_INTERCEPT_FUNC(strtol);
 #if ASAN_INTERCEPT_ATOLL_AND_STRTOLL
-  CHECK(INTERCEPT_FUNCTION(atoll));
-  CHECK(INTERCEPT_FUNCTION(strtoll));
+  ASAN_INTERCEPT_FUNC(atoll);
+  ASAN_INTERCEPT_FUNC(strtoll);
 #endif
 
   // Intecept signal- and jump-related functions.
-  CHECK(INTERCEPT_FUNCTION(longjmp));
+  ASAN_INTERCEPT_FUNC(longjmp);
 #if ASAN_INTERCEPT_SIGNAL_AND_SIGACTION
-  CHECK(INTERCEPT_FUNCTION(sigaction));
-  CHECK(INTERCEPT_FUNCTION(signal));
+  ASAN_INTERCEPT_FUNC(sigaction);
+  ASAN_INTERCEPT_FUNC(signal);
 #endif
 
 #if !defined(_WIN32)
-  CHECK(INTERCEPT_FUNCTION(_longjmp));
+  ASAN_INTERCEPT_FUNC(_longjmp);
   INTERCEPT_FUNCTION(__cxa_throw);
 # if !defined(__APPLE__)
   // On Darwin siglongjmp tailcalls longjmp, so we don't want to intercept it
   // there.
-  CHECK(INTERCEPT_FUNCTION(siglongjmp));
+  ASAN_INTERCEPT_FUNC(siglongjmp);
 # endif
 #endif
 
   // Intercept threading-related functions
 #if !defined(_WIN32)
-  CHECK(INTERCEPT_FUNCTION(pthread_create));
+  ASAN_INTERCEPT_FUNC(pthread_create);
 #endif
 
   // Some Windows-specific interceptors.

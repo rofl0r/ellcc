@@ -17,7 +17,7 @@ This test serves two purposes:
 
 The list of warnings below should NEVER grow.  It should gradually shrink to 0.
 
-CHECK: Warnings without flags (248):
+CHECK: Warnings without flags (241):
 CHECK-NEXT:   ext_anonymous_struct_union_qualified
 CHECK-NEXT:   ext_binary_literal
 CHECK-NEXT:   ext_cast_fn_obj
@@ -26,15 +26,12 @@ CHECK-NEXT:   ext_designated_init
 CHECK-NEXT:   ext_duplicate_declspec
 CHECK-NEXT:   ext_ellipsis_exception_spec
 CHECK-NEXT:   ext_empty_fnmacro_arg
-CHECK-NEXT:   ext_empty_source_file
 CHECK-NEXT:   ext_enum_friend
 CHECK-NEXT:   ext_enum_value_not_int
 CHECK-NEXT:   ext_enumerator_list_comma
 CHECK-NEXT:   ext_expected_semi_decl_list
 CHECK-NEXT:   ext_explicit_instantiation_without_qualified_id
 CHECK-NEXT:   ext_explicit_specialization_storage_class
-CHECK-NEXT:   ext_extra_ivar_semi
-CHECK-NEXT:   ext_extra_struct_semi
 CHECK-NEXT:   ext_forward_ref_enum
 CHECK-NEXT:   ext_freestanding_complex
 CHECK-NEXT:   ext_hexconstant_invalid
@@ -65,7 +62,6 @@ CHECK-NEXT:   ext_return_has_void_expr
 CHECK-NEXT:   ext_subscript_non_lvalue
 CHECK-NEXT:   ext_template_arg_extra_parens
 CHECK-NEXT:   ext_thread_before
-CHECK-NEXT:   ext_top_level_semi
 CHECK-NEXT:   ext_typecheck_addrof_void
 CHECK-NEXT:   ext_typecheck_cast_nonscalar
 CHECK-NEXT:   ext_typecheck_cast_to_union
@@ -112,9 +108,6 @@ CHECK-NEXT:   warn_attribute_weak_import_invalid_on_definition
 CHECK-NEXT:   warn_attribute_weak_on_field
 CHECK-NEXT:   warn_attribute_weak_on_local
 CHECK-NEXT:   warn_attribute_wrong_decl_type
-CHECK-NEXT:   warn_availability_and_unavailable
-CHECK-NEXT:   warn_availability_unknown_platform
-CHECK-NEXT:   warn_availability_version_ordering
 CHECK-NEXT:   warn_bad_receiver_type
 CHECK-NEXT:   warn_bitfield_width_exceeds_type_size
 CHECK-NEXT:   warn_bool_switch_condition

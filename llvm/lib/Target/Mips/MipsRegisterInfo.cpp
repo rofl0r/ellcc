@@ -85,12 +85,12 @@ BitVector MipsRegisterInfo::
 getReservedRegs(const MachineFunction &MF) const {
   static const uint16_t ReservedCPURegs[] = {
     Mips::ZERO, Mips::AT, Mips::K0, Mips::K1,
-    Mips::SP, Mips::FP, Mips::RA
+    Mips::SP, Mips::RA
   };
 
   static const uint16_t ReservedCPU64Regs[] = {
     Mips::ZERO_64, Mips::AT_64, Mips::K0_64, Mips::K1_64,
-    Mips::SP_64, Mips::FP_64, Mips::RA_64
+    Mips::SP_64, Mips::RA_64
   };
 
   BitVector Reserved(getNumRegs());
@@ -118,10 +118,10 @@ getReservedRegs(const MachineFunction &MF) const {
       Reserved.set(*Reg);
   }
 
-  // If GP is dedicated as a global base register, reserve it.
-  if (MF.getInfo<MipsFunctionInfo>()->globalBaseRegFixed()) {
-    Reserved.set(Mips::GP);
-    Reserved.set(Mips::GP_64);
+  // Reserve FP if this function should have a dedicated frame pointer register.
+  if (MF.getTarget().getFrameLowering()->hasFP(MF)) {
+    Reserved.set(Mips::FP);
+    Reserved.set(Mips::FP_64);
   }
 
   // Reserve hardware registers.
@@ -211,8 +211,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   //   incoming argument, callee-saved register location or local variable.
   int64_t Offset;
 
-  if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isGPFI(FrameIndex) ||
-      MipsFI->isDynAllocFI(FrameIndex))
+  if (MipsFI->isOutArgFI(FrameIndex) || MipsFI->isDynAllocFI(FrameIndex))
     Offset = spOffset;
   else
     Offset = spOffset + (int64_t)stackSize;

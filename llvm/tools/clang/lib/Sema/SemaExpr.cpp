@@ -1371,7 +1371,8 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
   // unqualified lookup.  This is useful when (for example) the
   // original lookup would not have found something because it was a
   // dependent name.
-  DeclContext *DC = SS.isEmpty() ? CurContext : 0;
+  DeclContext *DC = (SS.isEmpty() && !CallsUndergoingInstantiation.empty())
+    ? CurContext : 0;
   while (DC) {
     if (isa<CXXRecordDecl>(DC)) {
       LookupQualifiedName(R, DC);
@@ -2604,7 +2605,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
       llvm::APSInt Value(CharBits, CharIsUnsigned);
       for (unsigned I = 0, N = Literal.getUDSuffixOffset(); I != N; ++I) {
         Value = ThisTokBegin[I];
-        TemplateArgument Arg(Value, Context.CharTy);
+        TemplateArgument Arg(Context, Value, Context.CharTy);
         TemplateArgumentLocInfo ArgInfo;
         ExplicitArgs.addArgument(TemplateArgumentLoc(Arg, ArgInfo));
       }
@@ -3314,7 +3315,7 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
       return ExprError();
 
     Expr *Arg = Result.takeAs<Expr>();
-    CheckImplicitConversions(Arg, Arg->getExprLoc());
+    CheckImplicitConversions(Arg, Param->getOuterLocStart());
     // Build the default argument expression.
     return Owned(CXXDefaultArgExpr::Create(Context, CallLoc, Param, Arg));
   }
@@ -3380,11 +3381,18 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // arguments for the remaining parameters), don't make the call.
   if (NumArgs < NumArgsInProto) {
     if (NumArgs < MinArgs) {
-      Diag(RParenLoc, MinArgs == NumArgsInProto
-                        ? diag::err_typecheck_call_too_few_args
-                        : diag::err_typecheck_call_too_few_args_at_least)
-        << FnKind
-        << MinArgs << NumArgs << Fn->getSourceRange();
+      if (MinArgs == 1 && FDecl && FDecl->getParamDecl(0)->getDeclName())
+        Diag(RParenLoc, MinArgs == NumArgsInProto && !Proto->isVariadic()
+                          ? diag::err_typecheck_call_too_few_args_one
+                          : diag::err_typecheck_call_too_few_args_at_least_one)
+          << FnKind
+          << FDecl->getParamDecl(0) << Fn->getSourceRange();
+      else
+        Diag(RParenLoc, MinArgs == NumArgsInProto && !Proto->isVariadic()
+                          ? diag::err_typecheck_call_too_few_args
+                          : diag::err_typecheck_call_too_few_args_at_least)
+          << FnKind
+          << MinArgs << NumArgs << Fn->getSourceRange();
 
       // Emit the location of the prototype.
       if (FDecl && !FDecl->getBuiltinID() && !IsExecConfig)
@@ -3400,14 +3408,24 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // them.
   if (NumArgs > NumArgsInProto) {
     if (!Proto->isVariadic()) {
-      Diag(Args[NumArgsInProto]->getLocStart(),
-           MinArgs == NumArgsInProto
-             ? diag::err_typecheck_call_too_many_args
-             : diag::err_typecheck_call_too_many_args_at_most)
-        << FnKind
-        << NumArgsInProto << NumArgs << Fn->getSourceRange()
-        << SourceRange(Args[NumArgsInProto]->getLocStart(),
-                       Args[NumArgs-1]->getLocEnd());
+      if (NumArgsInProto == 1 && FDecl && FDecl->getParamDecl(0)->getDeclName())
+        Diag(Args[NumArgsInProto]->getLocStart(),
+             MinArgs == NumArgsInProto
+               ? diag::err_typecheck_call_too_many_args_one
+               : diag::err_typecheck_call_too_many_args_at_most_one)
+          << FnKind
+          << FDecl->getParamDecl(0) << NumArgs << Fn->getSourceRange()
+          << SourceRange(Args[NumArgsInProto]->getLocStart(),
+                         Args[NumArgs-1]->getLocEnd());
+      else
+        Diag(Args[NumArgsInProto]->getLocStart(),
+             MinArgs == NumArgsInProto
+               ? diag::err_typecheck_call_too_many_args
+               : diag::err_typecheck_call_too_many_args_at_most)
+          << FnKind
+          << NumArgsInProto << NumArgs << Fn->getSourceRange()
+          << SourceRange(Args[NumArgsInProto]->getLocStart(),
+                         Args[NumArgs-1]->getLocEnd());
 
       // Emit the location of the prototype.
       if (FDecl && !FDecl->getBuiltinID() && !IsExecConfig)
@@ -3777,20 +3795,19 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   // Make the call expr early, before semantic checks.  This guarantees cleanup
   // of arguments and function on error.
   CallExpr *TheCall;
-  if (Config) {
+  if (Config)
     TheCall = new (Context) CUDAKernelCallExpr(Context, Fn,
                                                cast<CallExpr>(Config),
                                                Args, NumArgs,
                                                Context.BoolTy,
                                                VK_RValue,
                                                RParenLoc);
-  } else {
+  else
     TheCall = new (Context) CallExpr(Context, Fn,
                                      Args, NumArgs,
                                      Context.BoolTy,
                                      VK_RValue,
                                      RParenLoc);
-  }
 
   unsigned BuiltinID = (FDecl ? FDecl->getBuiltinID() : 0);
 
@@ -5689,7 +5706,7 @@ Sema::CheckTransparentUnionArgumentConstraints(QualType ArgType,
       if (RHSType->isPointerType())
         if (RHSType->castAs<PointerType>()->getPointeeType()->isVoidType()) {
           RHS = ImpCastExprToType(RHS.take(), it->getType(), CK_BitCast);
-          InitField = &*it;
+          InitField = *it;
           break;
         }
 
@@ -5697,7 +5714,7 @@ Sema::CheckTransparentUnionArgumentConstraints(QualType ArgType,
                                            Expr::NPC_ValueDependentIsNull)) {
         RHS = ImpCastExprToType(RHS.take(), it->getType(),
                                 CK_NullToPointer);
-        InitField = &*it;
+        InitField = *it;
         break;
       }
     }
@@ -5706,7 +5723,7 @@ Sema::CheckTransparentUnionArgumentConstraints(QualType ArgType,
     if (CheckAssignmentConstraints(it->getType(), RHS, Kind)
           == Compatible) {
       RHS = ImpCastExprToType(RHS.take(), it->getType(), Kind);
-      InitField = &*it;
+      InitField = *it;
       break;
     }
   }
@@ -6572,6 +6589,153 @@ static void diagnoseFunctionPointerToVoidComparison(Sema &S, SourceLocation Loc,
     << LHS.get()->getSourceRange() << RHS.get()->getSourceRange();
 }
 
+static bool isObjCObjectLiteral(ExprResult &E) {
+  switch (E.get()->getStmtClass()) {
+  case Stmt::ObjCArrayLiteralClass:
+  case Stmt::ObjCDictionaryLiteralClass:
+  case Stmt::ObjCStringLiteralClass:
+  case Stmt::ObjCBoxedExprClass:
+    return true;
+  default:
+    // Note that ObjCBoolLiteral is NOT an object literal!
+    return false;
+  }
+}
+
+static DiagnosticBuilder diagnoseObjCLiteralComparison(Sema &S,
+                                                       SourceLocation Loc,
+                                                       ExprResult &LHS,
+                                                       ExprResult &RHS,
+                                                       bool CanFix = false) {
+  Expr *Literal = (isObjCObjectLiteral(LHS) ? LHS : RHS).get();
+
+  unsigned LiteralKind;
+  switch (Literal->getStmtClass()) {
+  case Stmt::ObjCStringLiteralClass:
+    // "string literal"
+    LiteralKind = 0;
+    break;
+  case Stmt::ObjCArrayLiteralClass:
+    // "array literal"
+    LiteralKind = 1;
+    break;
+  case Stmt::ObjCDictionaryLiteralClass:
+    // "dictionary literal"
+    LiteralKind = 2;
+    break;
+  case Stmt::ObjCBoxedExprClass: {
+    Expr *Inner = cast<ObjCBoxedExpr>(Literal)->getSubExpr();
+    switch (Inner->getStmtClass()) {
+    case Stmt::IntegerLiteralClass:
+    case Stmt::FloatingLiteralClass:
+    case Stmt::CharacterLiteralClass:
+    case Stmt::ObjCBoolLiteralExprClass:
+    case Stmt::CXXBoolLiteralExprClass:
+      // "numeric literal"
+      LiteralKind = 3;
+      break;
+    case Stmt::ImplicitCastExprClass: {
+      CastKind CK = cast<CastExpr>(Inner)->getCastKind();
+      // Boolean literals can be represented by implicit casts.
+      if (CK == CK_IntegralToBoolean || CK == CK_IntegralCast) {
+        LiteralKind = 3;
+        break;
+      }
+      // FALLTHROUGH
+    }
+    default:
+      // "boxed expression"
+      LiteralKind = 4;
+      break;
+    }
+    break;
+  }
+  default:
+    llvm_unreachable("Unknown Objective-C object literal kind");
+  }
+
+  return S.Diag(Loc, diag::err_objc_literal_comparison)
+           << LiteralKind << CanFix << Literal->getSourceRange();
+}
+
+static ExprResult fixObjCLiteralComparison(Sema &S, SourceLocation OpLoc,
+                                           ExprResult &LHS,
+                                           ExprResult &RHS,
+                                           BinaryOperatorKind Op) {
+  assert((Op == BO_EQ || Op == BO_NE) && "Cannot fix other operations.");
+
+  // Get the LHS object's interface type.
+  QualType Type = LHS.get()->getType();
+  QualType InterfaceType;
+  if (const ObjCObjectPointerType *PTy = Type->getAs<ObjCObjectPointerType>()) {
+    InterfaceType = PTy->getPointeeType();
+    if (const ObjCObjectType *iQFaceTy =
+        InterfaceType->getAsObjCQualifiedInterfaceType())
+      InterfaceType = iQFaceTy->getBaseType();
+  } else {
+    // If this is not actually an Objective-C object, bail out.
+    return ExprEmpty();
+  }
+
+  // If the RHS isn't an Objective-C object, bail out.
+  if (!RHS.get()->getType()->isObjCObjectPointerType())
+    return ExprEmpty();
+
+  // Try to find the -isEqual: method.
+  Selector IsEqualSel = S.NSAPIObj->getIsEqualSelector();
+  ObjCMethodDecl *Method = S.LookupMethodInObjectType(IsEqualSel,
+                                                      InterfaceType,
+                                                      /*instance=*/true);
+  bool ReceiverIsId = (Type->isObjCIdType() || Type->isObjCQualifiedIdType());
+
+  if (!Method && ReceiverIsId) {
+    Method = S.LookupInstanceMethodInGlobalPool(IsEqualSel, SourceRange(),
+                                                /*receiverId=*/true,
+                                                /*warn=*/false);
+  }
+
+  if (!Method)
+    return ExprEmpty();
+
+  QualType T = Method->param_begin()[0]->getType();
+  if (!T->isObjCObjectPointerType())
+    return ExprEmpty();
+
+  QualType R = Method->getResultType();
+  if (!R->isScalarType())
+    return ExprEmpty();
+
+  // At this point we know we have a good -isEqual: method.
+  // Emit the diagnostic and fixit.
+  DiagnosticBuilder Diag = diagnoseObjCLiteralComparison(S, OpLoc,
+                                                         LHS, RHS, true);
+
+  Expr *LHSExpr = LHS.take();
+  Expr *RHSExpr = RHS.take();
+
+  SourceLocation Start = LHSExpr->getLocStart();
+  SourceLocation End = S.PP.getLocForEndOfToken(RHSExpr->getLocEnd());
+  SourceRange OpRange(OpLoc, S.PP.getLocForEndOfToken(OpLoc));
+
+  Diag << FixItHint::CreateInsertion(Start, Op == BO_EQ ? "[" : "![")
+       << FixItHint::CreateReplacement(OpRange, "isEqual:")
+       << FixItHint::CreateInsertion(End, "]");
+
+  // Finally, build the call to -isEqual: (and possible logical not).
+  ExprResult Call = S.BuildInstanceMessage(LHSExpr, LHSExpr->getType(),
+                                           /*SuperLoc=*/SourceLocation(),
+                                           IsEqualSel, Method,
+                                           OpLoc, OpLoc, OpLoc,
+                                           MultiExprArg(S, &RHSExpr, 1),
+                                           /*isImplicit=*/false);
+
+  ExprResult CallCond = S.CheckBooleanCondition(Call.get(), OpLoc);
+
+  if (Op == BO_NE)
+    return S.CreateBuiltinUnaryOp(OpLoc, UO_LNot, CallCond.get());
+  return CallCond;
+}
+
 // C99 6.5.8, C++ [expr.rel]
 QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
                                     SourceLocation Loc, unsigned OpaqueOpc,
@@ -6896,6 +7060,9 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
       if (!Context.areComparableObjCPointerTypes(LHSType, RHSType))
         diagnoseDistinctPointerComparison(*this, Loc, LHS, RHS,
                                           /*isError*/false);
+      if (isObjCObjectLiteral(LHS) || isObjCObjectLiteral(RHS))
+        diagnoseObjCLiteralComparison(*this, Loc, LHS, RHS);
+
       if (LHSIsNull && !RHSIsNull)
         LHS = ImpCastExprToType(LHS.take(), RHSType, CK_BitCast);
       else
@@ -7263,6 +7430,7 @@ static bool CheckForModifiableLvalue(Expr *E, SourceLocation Loc, Sema &S) {
 
     break;
   case Expr::MLV_ArrayType:
+  case Expr::MLV_ArrayTemporary:
     Diag = diag::err_typecheck_array_not_modifiable_lvalue;
     NeedType = true;
     break;
@@ -7395,8 +7563,6 @@ QualType Sema::CheckAssignmentOperands(Expr *LHSExpr, ExprResult &RHS,
 // C99 6.5.17
 static QualType CheckCommaOperands(Sema &S, ExprResult &LHS, ExprResult &RHS,
                                    SourceLocation Loc) {
-  S.DiagnoseUnusedExprResult(LHS.get());
-
   LHS = S.CheckPlaceholderExpr(LHS.take());
   RHS = S.CheckPlaceholderExpr(RHS.take());
   if (LHS.isInvalid() || RHS.isInvalid())
@@ -7411,6 +7577,8 @@ static QualType CheckCommaOperands(Sema &S, ExprResult &LHS, ExprResult &RHS,
   LHS = S.IgnoredValueConversions(LHS.take());
   if (LHS.isInvalid())
     return QualType();
+
+  S.DiagnoseUnusedExprResult(LHS.get());
 
   if (!S.getLangOpts().CPlusPlus) {
     RHS = S.DefaultFunctionArrayLvalueConversion(RHS.take());
@@ -7953,6 +8121,13 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
     break;
   case BO_EQ:
   case BO_NE:
+    if (isObjCObjectLiteral(LHS) || isObjCObjectLiteral(RHS)) {
+      ExprResult IsEqualCall = fixObjCLiteralComparison(*this, OpLoc,
+                                                        LHS, RHS, Opc);
+      if (IsEqualCall.isUsable())
+        return IsEqualCall;
+      // Otherwise, fall back to the normal diagnostic in CheckCompareOperands.
+    }
     ResultTy = CheckCompareOperands(LHS, RHS, OpLoc, Opc, false);
     break;
   case BO_And:
@@ -8075,7 +8250,7 @@ static void DiagnoseBitwisePrecedence(Sema &Self, BinaryOperatorKind Opc,
     << DiagRange << BinOp::getOpcodeStr(Opc) << OpStr;
   SuggestParentheses(Self, OpLoc,
     Self.PDiag(diag::note_precedence_bitwise_silence) << OpStr,
-    RHSExpr->getSourceRange());
+    (isLeftComp ? LHSExpr : RHSExpr)->getSourceRange());
   SuggestParentheses(Self, OpLoc,
     Self.PDiag(diag::note_precedence_bitwise_first) << BinOp::getOpcodeStr(Opc),
     ParensRange);
@@ -10023,14 +10198,15 @@ diagnoseUncapturableValueReference(Sema &S, SourceLocation loc,
 static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
                                   VarDecl *Var, QualType FieldType, 
                                   QualType DeclRefType,
-                                  SourceLocation Loc) {
+                                  SourceLocation Loc,
+                                  bool RefersToEnclosingLocal) {
   CXXRecordDecl *Lambda = LSI->Lambda;
 
   // Build the non-static data member.
   FieldDecl *Field
     = FieldDecl::Create(S.Context, Lambda, Loc, Loc, 0, FieldType,
                         S.Context.getTrivialTypeSourceInfo(FieldType, Loc),
-                        0, false, false);
+                        0, false, ICIS_NoInit);
   Field->setImplicit(true);
   Field->setAccess(AS_private);
   Lambda->addDecl(Field);
@@ -10052,8 +10228,8 @@ static ExprResult captureInLambda(Sema &S, LambdaScopeInfo *LSI,
   // C++ [expr.prim.labda]p12:
   //   An entity captured by a lambda-expression is odr-used (3.2) in
   //   the scope containing the lambda-expression.
-  Expr *Ref = new (S.Context) DeclRefExpr(Var, false, DeclRefType,
-                                          VK_LValue, Loc);
+  Expr *Ref = new (S.Context) DeclRefExpr(Var, RefersToEnclosingLocal, 
+                                          DeclRefType, VK_LValue, Loc);
   Var->setReferenced(true);
   Var->setUsed(true);
 
@@ -10396,7 +10572,8 @@ bool Sema::tryCaptureVariable(VarDecl *Var, SourceLocation Loc,
     Expr *CopyExpr = 0;
     if (BuildAndDiagnose) {
       ExprResult Result = captureInLambda(*this, LSI, Var, CaptureType,
-                                          DeclRefType, Loc);
+                                          DeclRefType, Loc,
+                                          I == N-1);
       if (!Result.isInvalid())
         CopyExpr = Result.take();
     }

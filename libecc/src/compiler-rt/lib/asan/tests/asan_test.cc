@@ -1,4 +1,4 @@
-//===-- asan_test.cc ------------*- C++ -*-===//
+//===-- asan_test.cc ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -423,10 +423,11 @@ TEST(AddressSanitizer, LargeMallocTest) {
 TEST(AddressSanitizer, HugeMallocTest) {
 #ifdef __APPLE__
   // It was empirically found out that 1215 megabytes is the maximum amount of
-  // memory available to the process under AddressSanitizer on Darwin.
+  // memory available to the process under AddressSanitizer on 32-bit Mac 10.6.
+  // 32-bit Mac 10.7 gives even less (< 1G).
   // (the libSystem malloc() allows allocating up to 2300 megabytes without
   // ASan).
-  size_t n_megs = __WORDSIZE == 32 ? 1200 : 4100;
+  size_t n_megs = __WORDSIZE == 32 ? 500 : 4100;
 #else
   size_t n_megs = __WORDSIZE == 32 ? 2600 : 4100;
 #endif
@@ -1251,6 +1252,47 @@ TEST(AddressSanitizer, StrCatOOBTest) {
   EXPECT_DEATH(strcat(to, from), RightOOBErrorMessage(0));
   // length of "to" is just enough.
   strcat(to, from + 1);
+
+  free(to);
+  free(from);
+}
+
+TEST(AddressSanitizer, StrNCatOOBTest) {
+  size_t to_size = Ident(100);
+  char *to = MallocAndMemsetString(to_size);
+  to[0] = '\0';
+  size_t from_size = Ident(20);
+  char *from = MallocAndMemsetString(from_size);
+  // Normal strncat calls.
+  strncat(to, from, 0);
+  strncat(to, from, from_size);
+  from[from_size - 1] = '\0';
+  strncat(to, from, 2 * from_size);
+  // Catenating empty string is not an error.
+  strncat(to - 1, from, 0);
+  strncat(to, from + from_size - 1, 10);
+  // One of arguments points to not allocated memory.
+  EXPECT_DEATH(strncat(to - 1, from, 2), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(strncat(to, from - 1, 2), LeftOOBErrorMessage(1));
+  EXPECT_DEATH(strncat(to + to_size, from, 2), RightOOBErrorMessage(0));
+  EXPECT_DEATH(strncat(to, from + from_size, 2), RightOOBErrorMessage(0));
+
+  memset(from, 'z', from_size);
+  memset(to, 'z', to_size);
+  to[0] = '\0';
+  // "from" is too short.
+  EXPECT_DEATH(strncat(to, from, from_size + 1), RightOOBErrorMessage(0));
+  // "to" is not zero-terminated.
+  EXPECT_DEATH(strncat(to + 1, from, 1), RightOOBErrorMessage(0));
+  // "to" is too short to fit "from".
+  to[0] = 'z';
+  to[to_size - from_size + 1] = '\0';
+  EXPECT_DEATH(strncat(to, from, from_size - 1), RightOOBErrorMessage(0));
+  // "to" is just enough.
+  strncat(to, from, from_size - 2);
+
+  free(to);
+  free(from);
 }
 
 static string OverlapErrorMessage(const string &func) {
@@ -1306,6 +1348,18 @@ TEST(AddressSanitizer, StrArgsOverlapTest) {
   EXPECT_DEATH(strcat(str, str + 9), OverlapErrorMessage("strcat"));
   EXPECT_DEATH(strcat(str + 9, str), OverlapErrorMessage("strcat"));
   EXPECT_DEATH(strcat(str + 10, str), OverlapErrorMessage("strcat"));
+
+  // Check "strncat".
+  memset(str, 'z', size);
+  str[10] = '\0';
+  strncat(str, str + 10, 10);  // from is empty
+  strncat(str, str + 11, 10);
+  str[10] = '\0';
+  str[20] = '\0';
+  strncat(str + 5, str, 5);
+  str[10] = '\0';
+  EXPECT_DEATH(strncat(str + 5, str, 6), OverlapErrorMessage("strncat"));
+  EXPECT_DEATH(strncat(str, str + 9, 10), OverlapErrorMessage("strncat"));
 
   free(str);
 }
@@ -1835,12 +1889,12 @@ TEST(AddressSanitizer, DISABLED_DemoTooMuchMemoryTest) {
 }
 
 // http://code.google.com/p/address-sanitizer/issues/detail?id=66
-TEST(AddressSanitizer, DISABLED_BufferOverflowAfterManyFrees) {
+TEST(AddressSanitizer, BufferOverflowAfterManyFrees) {
   for (int i = 0; i < 1000000; i++) {
     delete [] (Ident(new char [8644]));
   }
   char *x = new char[8192];
-  x[Ident(8192)] = 0;
+  EXPECT_DEATH(x[Ident(8192)] = 0, "AddressSanitizer heap-buffer-overflow");
   delete [] Ident(x);
 }
 

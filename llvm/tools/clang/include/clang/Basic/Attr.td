@@ -93,6 +93,9 @@ class Attr {
   list<string> Namespaces = [];
   // Set to true for attributes with arguments which require delayed parsing. 
   bit LateParsed = 0;  
+  // Set to false to prevent an attribute from being propagated from a template
+  // to the instantiation.
+  bit Clone = 1;
   // Set to true for attributes which must be instantiated within templates
   bit TemplateDependent = 0;
   // Set to true for attributes that have a corresponding AST node.
@@ -101,6 +104,8 @@ class Attr {
   bit SemaHandler = 1;
   // Set to true for attributes that are completely ignored.
   bit Ignored = 0;
+  // Set to true if each of the spellings is a distinct attribute.
+  bit DistinctSpellings = 0;
   // Any additional text that should be included verbatim in the class.  
   code AdditionalMembers = [{}];
 }
@@ -137,6 +142,11 @@ def Aligned : InheritableAttr {
 def AlignMac68k : InheritableAttr {
   let Spellings = [];
   let SemaHandler = 0;
+}
+
+def AllocSize : Attr {
+  let Spellings = ["alloc_size"];
+  let Args = [VariadicUnsignedArgument<"Args">];
 }
 
 def AlwaysInline : InheritableAttr {
@@ -241,6 +251,10 @@ def Cleanup : InheritableAttr {
   let Args = [FunctionArgument<"FunctionDecl">];
 }
 
+def Cold : InheritableAttr {
+  let Spellings = ["cold"];
+}
+
 def Common : InheritableAttr {
   let Spellings = ["common"];
 }
@@ -258,7 +272,7 @@ def CUDAConstant : InheritableAttr {
   let Spellings = ["constant"];
 }
 
-def CUDADevice : Attr {
+def CUDADevice : InheritableAttr {
   let Spellings = ["device"];
 }
 
@@ -266,7 +280,7 @@ def CUDAGlobal : InheritableAttr {
   let Spellings = ["global"];
 }
 
-def CUDAHost : Attr {
+def CUDAHost : InheritableAttr {
   let Spellings = ["host"];
 }
 
@@ -299,14 +313,6 @@ def Destructor : InheritableAttr {
   let Args = [IntArgument<"Priority">];
 }
 
-def DLLExport : InheritableAttr {
-  let Spellings = ["dllexport"];
-}
-
-def DLLImport : InheritableAttr {
-  let Spellings = ["dllimport"];
-}
-
 def ExtVectorType : Attr {
   let Spellings = ["ext_vector_type"];
   let Args = [ExprArgument<"NumElements">];
@@ -327,10 +333,6 @@ def Final : InheritableAttr {
   let SemaHandler = 0;
 }
 
-def MsStruct : InheritableAttr {
-  let Spellings = ["__ms_struct__"];
-}
-
 def Format : InheritableAttr {
   let Spellings = ["format"];
   let Args = [StringArgument<"Type">, IntArgument<"FormatIdx">,
@@ -344,6 +346,10 @@ def FormatArg : InheritableAttr {
 
 def GNUInline : InheritableAttr {
   let Spellings = ["gnu_inline"];
+}
+
+def Hot : InheritableAttr {
+  let Spellings = ["hot"];
 }
 
 def IBAction : InheritableAttr {
@@ -530,6 +536,7 @@ def Override : InheritableAttr {
 
 def Ownership : InheritableAttr {
   let Spellings = ["ownership_holds", "ownership_returns", "ownership_takes"];
+  let DistinctSpellings = 1;
   let Args = [EnumArgument<"OwnKind", "OwnershipKind",
                     ["ownership_holds", "ownership_returns", "ownership_takes"],
                     ["Holds", "Returns", "Takes"]>,
@@ -649,6 +656,7 @@ def VecTypeHint : Attr {
 }
 
 def Visibility : InheritableAttr {
+  let Clone = 0;
   let Spellings = ["visibility"];
   let Args = [EnumArgument<"Visibility", "VisibilityType",
                            ["default", "hidden", "internal", "protected"],
@@ -800,4 +808,42 @@ def SharedLocksRequired : InheritableAttr {
   let Args = [VariadicExprArgument<"Args">];
   let LateParsed = 1;
   let TemplateDependent = 1;
+}
+
+// Microsoft-related attributes
+
+def MsStruct : InheritableAttr {
+  let Spellings = ["__ms_struct__"];
+}
+
+def DLLExport : InheritableAttr {
+  let Spellings = ["dllexport"];
+}
+
+def DLLImport : InheritableAttr {
+  let Spellings = ["dllimport"];
+}
+
+def Win64 : InheritableAttr {
+  let Spellings = ["__w64"];
+}
+
+def Ptr32 : InheritableAttr {
+  let Spellings = ["__ptr32"];
+}
+
+def Ptr64 : InheritableAttr {
+  let Spellings = ["__ptr64"];
+}
+
+def SingleInheritance : InheritableAttr {
+  let Spellings = ["__single_inheritance"];
+}
+
+def MultipleInheritance : InheritableAttr {
+  let Spellings = ["__multiple_inheritance"];
+}
+
+def VirtualInheritance : InheritableAttr {
+  let Spellings = ["__virtual_inheritance"];
 }

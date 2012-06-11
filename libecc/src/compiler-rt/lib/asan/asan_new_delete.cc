@@ -1,4 +1,4 @@
-//===-- asan_interceptors.cc ------------------------------------*- C++ -*-===//
+//===-- asan_interceptors.cc ----------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -16,6 +16,7 @@
 #include "asan_internal.h"
 #include "asan_stack.h"
 
+#include <stddef.h>
 #include <new>
 
 namespace __asan {

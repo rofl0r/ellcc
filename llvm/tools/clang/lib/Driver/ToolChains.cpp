@@ -59,6 +59,11 @@ Darwin::Darwin(const Driver &D, const llvm::Triple& Triple)
   DarwinVersion[0] = Minor + 4;
   DarwinVersion[1] = Micro;
   DarwinVersion[2] = 0;
+
+  // Compute the initial iOS version from the triple
+  Triple.getiOSVersion(Major, Minor, Micro);
+  llvm::raw_string_ostream(iOSVersionMin)
+    << Major << '.' << Minor << '.' << Micro;
 }
 
 types::ID Darwin::LookupTypeForExtension(const char *Ext) const {
@@ -194,21 +199,25 @@ void Generic_ELF::anchor() {}
 
 Tool &Darwin::SelectTool(const Compilation &C, const JobAction &JA,
                          const ActionList &Inputs) const {
-  Action::ActionClass Key;
+  Action::ActionClass Key = JA.getKind();
+  bool useClang = false;
 
   if (getDriver().ShouldUseClangCompiler(C, JA, getTriple())) {
+    useClang = true;
     // Fallback to llvm-gcc for i386 kext compiles, we don't support that ABI.
-    if (Inputs.size() == 1 &&
+    if (!getDriver().shouldForceClangUse() &&
+        Inputs.size() == 1 &&
         types::isCXX(Inputs[0]->getType()) &&
         getTriple().isOSDarwin() &&
         getTriple().getArch() == llvm::Triple::x86 &&
         (C.getArgs().getLastArg(options::OPT_fapple_kext) ||
          C.getArgs().getLastArg(options::OPT_mkernel)))
-      Key = JA.getKind();
-    else
-      Key = Action::AnalyzeJobClass;
-  } else
-    Key = JA.getKind();
+      useClang = false;
+  }
+
+  // FIXME: This seems like a hacky way to choose clang frontend.
+  if (useClang)
+    Key = Action::AnalyzeJobClass;
 
   bool UseIntegratedAs = C.getArgs().hasFlag(options::OPT_integrated_as,
                                              options::OPT_no_integrated_as,
@@ -523,9 +532,9 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
 
     // If no OSX or iOS target has been specified and we're compiling for armv7,
     // go ahead as assume we're targeting iOS.
-    if (OSXTarget.empty() && iOSTarget.empty())
-      if (getDarwinArchName(Args) == "armv7")
-        iOSTarget = "0.0";
+    if (OSXTarget.empty() && iOSTarget.empty() &&
+        getDarwinArchName(Args) == "armv7")
+        iOSTarget = iOSVersionMin;
 
     // Handle conflicting deployment targets
     //
@@ -1142,7 +1151,8 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     "i586-redhat-linux",
     "i386-redhat-linux",
     "i586-suse-linux",
-    "i486-slackware-linux"
+    "i486-slackware-linux",
+    "i686-montavista-linux"
   };
 
   static const char *const MIPSLibDirs[] = { "/lib" };
@@ -1159,7 +1169,8 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
   static const char *const PPCTriples[] = {
     "powerpc-linux-gnu",
     "powerpc-unknown-linux-gnu",
-    "powerpc-suse-linux"
+    "powerpc-suse-linux",
+    "powerpc-montavista-linuxspe"
   };
   static const char *const PPC64LibDirs[] = { "/lib64", "/lib" };
   static const char *const PPC64Triples[] = {

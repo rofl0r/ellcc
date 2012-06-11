@@ -357,6 +357,9 @@ class CXXRecordDecl : public RecordDecl {
     /// \brief True if there no non-field members declared by the user.
     bool HasOnlyCMembers : 1;
 
+    /// \brief True if any field has an in-class initializer.
+    bool HasInClassInitializer : 1;
+
     /// HasTrivialDefaultConstructor - True when, if this class has a default
     /// constructor, this default constructor is trivial.
     ///
@@ -382,25 +385,9 @@ class CXXRecordDecl : public RecordDecl {
     /// constructor for this class would be constexpr.
     bool DefaultedDefaultConstructorIsConstexpr : 1;
 
-    /// DefaultedCopyConstructorIsConstexpr - True if a defaulted copy
-    /// constructor for this class would be constexpr.
-    bool DefaultedCopyConstructorIsConstexpr : 1;
-
-    /// DefaultedMoveConstructorIsConstexpr - True if a defaulted move
-    /// constructor for this class would be constexpr.
-    bool DefaultedMoveConstructorIsConstexpr : 1;
-
     /// HasConstexprDefaultConstructor - True if this class has a constexpr
     /// default constructor (either user-declared or implicitly declared).
     bool HasConstexprDefaultConstructor : 1;
-
-    /// HasConstexprCopyConstructor - True if this class has a constexpr copy
-    /// constructor (either user-declared or implicitly declared).
-    bool HasConstexprCopyConstructor : 1;
-
-    /// HasConstexprMoveConstructor - True if this class has a constexpr move
-    /// constructor (either user-declared or implicitly declared).
-    bool HasConstexprMoveConstructor : 1;
 
     /// HasTrivialCopyConstructor - True when this class has a trivial copy
     /// constructor.
@@ -646,6 +633,9 @@ class CXXRecordDecl : public RecordDecl {
 
   void markedVirtualFunctionPure();
   friend void FunctionDecl::setPure(bool);
+
+  void markedConstructorConstexpr(CXXConstructorDecl *CD);
+  friend void FunctionDecl::setConstexpr(bool);
 
   friend class ASTNodeImporter;
 
@@ -1040,6 +1030,10 @@ public:
   /// no base classes, and no virtual functions (C++ [dcl.init.aggr]p1).
   bool isAggregate() const { return data().Aggregate; }
 
+  /// hasInClassInitializer - Whether this class has any in-class initializers
+  /// for non-static data members.
+  bool hasInClassInitializer() const { return data().HasInClassInitializer; }
+
   /// isPOD - Whether this class is a POD-type (C++ [class]p4), which is a class
   /// that is an aggregate that has no non-static non-POD data members, no
   /// reference data members, no user-defined copy assignment operator and no
@@ -1091,19 +1085,8 @@ public:
   /// defaultedDefaultConstructorIsConstexpr - Whether a defaulted default
   /// constructor for this class would be constexpr.
   bool defaultedDefaultConstructorIsConstexpr() const {
-    return data().DefaultedDefaultConstructorIsConstexpr;
-  }
-
-  /// defaultedCopyConstructorIsConstexpr - Whether a defaulted copy
-  /// constructor for this class would be constexpr.
-  bool defaultedCopyConstructorIsConstexpr() const {
-    return data().DefaultedCopyConstructorIsConstexpr;
-  }
-
-  /// defaultedMoveConstructorIsConstexpr - Whether a defaulted move
-  /// constructor for this class would be constexpr.
-  bool defaultedMoveConstructorIsConstexpr() const {
-    return data().DefaultedMoveConstructorIsConstexpr;
+    return data().DefaultedDefaultConstructorIsConstexpr &&
+           (!isUnion() || hasInClassInitializer());
   }
 
   /// hasConstexprDefaultConstructor - Whether this class has a constexpr
@@ -1111,23 +1094,7 @@ public:
   bool hasConstexprDefaultConstructor() const {
     return data().HasConstexprDefaultConstructor ||
            (!data().UserDeclaredConstructor &&
-            data().DefaultedDefaultConstructorIsConstexpr && isLiteral());
-  }
-
-  /// hasConstexprCopyConstructor - Whether this class has a constexpr copy
-  /// constructor.
-  bool hasConstexprCopyConstructor() const {
-    return data().HasConstexprCopyConstructor ||
-           (!data().DeclaredCopyConstructor &&
-            data().DefaultedCopyConstructorIsConstexpr && isLiteral());
-  }
-
-  /// hasConstexprMoveConstructor - Whether this class has a constexpr move
-  /// constructor.
-  bool hasConstexprMoveConstructor() const {
-    return data().HasConstexprMoveConstructor ||
-           (needsImplicitMoveConstructor() &&
-            data().DefaultedMoveConstructorIsConstexpr && isLiteral());
+            defaultedDefaultConstructorIsConstexpr());
   }
 
   // hasTrivialCopyConstructor - Whether this class has a trivial copy
@@ -1602,8 +1569,8 @@ public:
     return cast<CXXMethodDecl>(FunctionDecl::getCanonicalDecl());
   }
 
-  /// isUserProvided - True if it is either an implicit constructor or
-  /// if it was defaulted or deleted on first declaration.
+  /// isUserProvided - True if this method is user-declared and was not
+  /// deleted or defaulted on its first declaration.
   bool isUserProvided() const {
     return !(isDeleted() || getCanonicalDecl()->isDefaulted());
   }

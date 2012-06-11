@@ -277,6 +277,11 @@
           <li><a href="#int_umul_overflow">'<tt>llvm.umul.with.overflow.*</tt> Intrinsics</a></li>
         </ol>
       </li>
+      <li><a href="#spec_arithmetic">Specialised Arithmetic Intrinsics</a>
+        <ol>
+          <li><a href="#fmuladd">'<tt>llvm.fmuladd</tt> Intrinsic</a></li>
+        </ol>
+      </li>
       <li><a href="#int_fp16">Half Precision Floating Point Intrinsics</a>
         <ol>
           <li><a href="#int_convert_to_fp16">'<tt>llvm.convert.to.fp16</tt>' Intrinsic</a></li>
@@ -307,6 +312,8 @@
             '<tt>llvm.annotation.*</tt>' Intrinsic</a></li>
           <li><a href="#int_trap">
             '<tt>llvm.trap</tt>' Intrinsic</a></li>
+          <li><a href="#int_debugtrap">
+            '<tt>llvm.debugtrap</tt>' Intrinsic</a></li>
           <li><a href="#int_stackprotector">
             '<tt>llvm.stackprotector</tt>' Intrinsic</a></li>
 	  <li><a href="#int_objectsize">
@@ -1048,7 +1055,7 @@ declare signext i8 @returns_signed_char()
       value to the function.  The attribute implies that a hidden copy of the
       pointee
       is made between the caller and the callee, so the callee is unable to
-      modify the value in the callee.  This attribute is only valid on LLVM
+      modify the value in the caller.  This attribute is only valid on LLVM
       pointer arguments.  It is generally used to pass structs and arrays by
       value, but is also valid on pointers to scalars.  The copy is considered
       to belong to the caller not the callee (for example,
@@ -2287,8 +2294,9 @@ in signal handlers).</p>
    by <tt>0xM</tt> followed by 32 hexadecimal digits.  The IEEE 128-bit format
    is represented by <tt>0xL</tt> followed by 32 hexadecimal digits; no
    currently supported target uses this format.  Long doubles will only work if
-   they match the long double format on your target.  All hexadecimal formats
-   are big-endian (sign bit at the left).</p>
+   they match the long double format on your target. The IEEE 16-bit format
+   (half precision) is represented by <tt>0xH</tt> followed by 4 hexadecimal
+   digits. All hexadecimal formats are big-endian (sign bit at the left).</p>
 
 <p>There are no constants of type x86mmx.</p>
 </div>
@@ -3051,6 +3059,8 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
    <li>The range should not represent the full or empty set. That is,
        <tt>a!=b</tt>. </li>
 </ul>
+<p> In addition, the pairs must be in signed order of the lower bound and
+  they must be non-contiguous.</p>
 
 <p>Examples:</p>
 <div class="doc_code">
@@ -3058,10 +3068,12 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
   %a = load i8* %x, align 1, !range !0 ; Can only be 0 or 1
   %b = load i8* %y, align 1, !range !1 ; Can only be 255 (-1), 0 or 1
   %c = load i8* %z, align 1, !range !2 ; Can only be 0, 1, 3, 4 or 5
+  %d = load i8* %z, align 1, !range !3 ; Can only be -2, -1, 3, 4 or 5
 ...
 !0 = metadata !{ i8 0, i8 2 }
 !1 = metadata !{ i8 255, i8 2 }
 !2 = metadata !{ i8 0, i8 2, i8 3, i8 6 }
+!3 = metadata !{ i8 -2, i8 0, i8 3, i8 6 }
 </pre>
 </div>
 </div>
@@ -7940,12 +7952,59 @@ LLVM</a>.</p>
 
 <!-- ======================================================================= -->
 <h3>
+  <a name="spec_arithmetic">Specialised Arithmetic Intrinsics</a>
+</h3>
+
+<!-- _______________________________________________________________________ -->
+
+<h4>
+  <a name="fmuladd">'<tt>llvm.fmuladd.*</tt>' Intrinsic</a>
+</h4>
+
+<div>
+
+<h5>Syntax:</h5>
+<pre>
+  declare float @llvm.fmuladd.f32(float %a, float %b, float %c)
+  declare double @llvm.fmuladd.f64(double %a, double %b, double %c)
+</pre>
+
+<h5>Overview:</h5>
+<p>The '<tt>llvm.fmuladd.*</tt>' intrinsic functions represent multiply-add
+expressions that can be fused if the code generator determines that the fused
+expression would be legal and efficient.</p>
+
+<h5>Arguments:</h5>
+<p>The '<tt>llvm.fmuladd.*</tt>' intrinsics each take three arguments: two
+multiplicands, a and b, and an addend c.</p>
+
+<h5>Semantics:</h5>
+<p>The expression:</p>
+<pre>
+  %0 = call float @llvm.fmuladd.f32(%a, %b, %c)
+</pre>
+<p>is equivalent to the expression a * b + c, except that rounding will not be
+performed between the multiplication and addition steps if the code generator
+fuses the operations. Fusion is not guaranteed, even if the target platform
+supports it. If a fused multiply-add is required the corresponding llvm.fma.*
+intrinsic function should be used instead.</p>
+
+<h5>Examples:</h5>
+<pre>
+  %r2 = call float @llvm.fmuladd.f32(float %a, float %b, float %c) ; yields {float}:r2 = (a * b) + c
+</pre>
+
+</div>
+
+<!-- ======================================================================= -->
+<h3>
   <a name="int_fp16">Half Precision Floating Point Intrinsics</a>
 </h3>
 
 <div>
 
-<p>Half precision floating point is a storage-only format. This means that it is
+<p>For most target platforms, half precision floating point is a storage-only
+   format. This means that it is
    a dense encoding (in memory) but does not support computation in the
    format.</p>
    
@@ -8382,7 +8441,7 @@ LLVM</a>.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  declare void @llvm.trap()
+  declare void @llvm.trap() noreturn nounwind
 </pre>
 
 <h5>Overview:</h5>
@@ -8392,9 +8451,33 @@ LLVM</a>.</p>
 <p>None.</p>
 
 <h5>Semantics:</h5>
-<p>This intrinsics is lowered to the target dependent trap instruction. If the
+<p>This intrinsic is lowered to the target dependent trap instruction. If the
    target does not have a trap instruction, this intrinsic will be lowered to
-   the call of the <tt>abort()</tt> function.</p>
+   a call of the <tt>abort()</tt> function.</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<h4>
+  <a name="int_debugtrap">'<tt>llvm.debugtrap</tt>' Intrinsic</a>
+</h4>
+
+<div>
+
+<h5>Syntax:</h5>
+<pre>
+  declare void @llvm.debugtrap() nounwind
+</pre>
+
+<h5>Overview:</h5>
+<p>The '<tt>llvm.debugtrap</tt>' intrinsic.</p>
+
+<h5>Arguments:</h5>
+<p>None.</p>
+
+<h5>Semantics:</h5>
+<p>This intrinsic is lowered to code which is intended to cause an execution
+   trap with the intention of requesting the attention of a debugger.</p>
 
 </div>
 
@@ -8441,8 +8524,8 @@ LLVM</a>.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  declare i32 @llvm.objectsize.i32(i8* &lt;object&gt;, i1 &lt;type&gt;)
-  declare i64 @llvm.objectsize.i64(i8* &lt;object&gt;, i1 &lt;type&gt;)
+  declare i32 @llvm.objectsize.i32(i8* &lt;object&gt;, i1 &lt;min&gt;)
+  declare i64 @llvm.objectsize.i64(i8* &lt;object&gt;, i1 &lt;min&gt;)
 </pre>
 
 <h5>Overview:</h5>
@@ -8455,15 +8538,15 @@ LLVM</a>.</p>
 <h5>Arguments:</h5>
 <p>The <tt>llvm.objectsize</tt> intrinsic takes two arguments. The first
    argument is a pointer to or into the <tt>object</tt>. The second argument
-   is a boolean 0 or 1. This argument determines whether you want the 
-   maximum (0) or minimum (1) bytes remaining. This needs to be a literal 0 or
-   1, variables are not allowed.</p>
+   is a boolean and determines whether <tt>llvm.objectsize</tt> returns 0 (if
+   true) or -1 (if false) when the object size is unknown.
+   The second argument only accepts constants.</p>
    
 <h5>Semantics:</h5>
-<p>The <tt>llvm.objectsize</tt> intrinsic is lowered to either a constant
-   representing the size of the object concerned, or <tt>i32/i64 -1 or 0</tt>,
-   depending on the <tt>type</tt> argument, if the size cannot be determined at
-   compile time.</p>
+<p>The <tt>llvm.objectsize</tt> intrinsic is lowered to a constant representing
+   the size of the object concerned. If the size cannot be determined at compile
+   time, <tt>llvm.objectsize</tt> returns <tt>i32/i64 -1 or 0</tt>
+   (depending on the <tt>min</tt> argument).</p>
 
 </div>
 <!-- _______________________________________________________________________ -->
@@ -8505,7 +8588,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-04-19 15:20:34 -0500 (Thu, 19 Apr 2012) $
+  Last modified: $Date: 2012-06-05 14:07:46 -0500 (Tue, 05 Jun 2012) $
 </address>
 
 </body>

@@ -101,8 +101,8 @@ unsigned HexagonInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
   case Hexagon::STrib:
     if (MI->getOperand(2).isFI() &&
         MI->getOperand(1).isImm() && (MI->getOperand(1).getImm() == 0)) {
-      FrameIndex = MI->getOperand(2).getIndex();
-      return MI->getOperand(0).getReg();
+      FrameIndex = MI->getOperand(0).getIndex();
+      return MI->getOperand(2).getReg();
     }
     break;
   }
@@ -169,6 +169,7 @@ bool HexagonInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
                                  MachineBasicBlock *&FBB,
                                  SmallVectorImpl<MachineOperand> &Cond,
                                  bool AllowModify) const {
+  TBB = NULL;
   FBB = NULL;
 
   // If the block has no terminators, it just falls into the block after it.
@@ -321,7 +322,8 @@ void HexagonInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
             DestReg).addReg(SrcReg).addReg(SrcReg);
     return;
   }
-  if (Hexagon::DoubleRegsRegClass.contains(DestReg, SrcReg)) {
+  if (Hexagon::DoubleRegsRegClass.contains(DestReg) &&
+      Hexagon::IntRegsRegClass.contains(SrcReg)) {
     // We can have an overlap between single and double reg: r1:0 = r0.
     if(SrcReg == RI.getSubReg(DestReg, Hexagon::subreg_loreg)) {
         // r1:0 = r0
@@ -336,7 +338,8 @@ void HexagonInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     }
     return;
   }
-  if (Hexagon::CRRegsRegClass.contains(DestReg, SrcReg)) {
+  if (Hexagon::CRRegsRegClass.contains(DestReg) &&
+      Hexagon::IntRegsRegClass.contains(SrcReg)) {
     BuildMI(MBB, I, DL, get(Hexagon::TFCR), DestReg).addReg(SrcReg);
     return;
   }
@@ -444,14 +447,15 @@ unsigned HexagonInstrInfo::createVR(MachineFunction* MF, MVT VT) const {
 
   MachineRegisterInfo &RegInfo = MF->getRegInfo();
   const TargetRegisterClass *TRC;
-  if (VT == MVT::i1)
+  if (VT == MVT::i1) {
     TRC = &Hexagon::PredRegsRegClass;
-  else if (VT == MVT::i32)
+  } else if (VT == MVT::i32 || VT == MVT::f32) {
     TRC = &Hexagon::IntRegsRegClass;
-  else if (VT == MVT::i64)
+  } else if (VT == MVT::i64 || VT == MVT::f64) {
     TRC = &Hexagon::DoubleRegsRegClass;
-  else
+  } else {
     llvm_unreachable("Cannot handle this register class");
+  }
 
   unsigned NewReg = RegInfo.createVirtualRegister(TRC);
   return NewReg;
@@ -714,8 +718,13 @@ bool HexagonInstrInfo::isExtended(const MachineInstr *MI) const {
 
     // TFR_FI
     case Hexagon::TFR_FI_immext_V4:
-      return true;
 
+    // TFRI_F
+    case Hexagon::TFRI_f:
+    case Hexagon::TFRI_cPt_f:
+    case Hexagon::TFRI_cNotPt_f:
+    case Hexagon::CONST64_Float_Real:
+      return true;
   }
 }
 
@@ -1379,7 +1388,7 @@ bool HexagonInstrInfo::isPredicable(MachineInstr *MI) const {
   case Hexagon::SXTH:
   case Hexagon::ZXTB:
   case Hexagon::ZXTH:
-    return Subtarget.getHexagonArchVersion() == HexagonSubtarget::V4;
+    return Subtarget.hasV4TOps();
 
   case Hexagon::JMPR:
     return false;
@@ -1388,6 +1397,24 @@ bool HexagonInstrInfo::isPredicable(MachineInstr *MI) const {
   return true;
 }
 
+// This function performs the following inversiones:
+//
+//  cPt    ---> cNotPt
+//  cNotPt ---> cPt
+//
+// however, these inversiones are NOT included:
+//
+//  cdnPt      -X-> cdnNotPt
+//  cdnNotPt   -X-> cdnPt
+//  cPt_nv     -X-> cNotPt_nv (new value stores)
+//  cNotPt_nv  -X-> cPt_nv    (new value stores)
+//
+// because only the following transformations are allowed:
+//
+//  cNotPt  ---> cdnNotPt
+//  cPt     ---> cdnPt
+//  cNotPt  ---> cNotPt_nv
+//  cPt     ---> cPt_nv
 unsigned HexagonInstrInfo::getInvertedPredicatedOpcode(const int Opc) const {
   switch(Opc) {
     default: llvm_unreachable("Unexpected predicated instruction");
@@ -1892,12 +1919,21 @@ getMatchingCondBranchOpcode(int Opc, bool invertPredicate) const {
   case Hexagon::TFR:
     return !invertPredicate ? Hexagon::TFR_cPt :
                               Hexagon::TFR_cNotPt;
+  case Hexagon::TFRI_f:
+    return !invertPredicate ? Hexagon::TFRI_cPt_f :
+                              Hexagon::TFRI_cNotPt_f;
   case Hexagon::TFRI:
     return !invertPredicate ? Hexagon::TFRI_cPt :
                               Hexagon::TFRI_cNotPt;
   case Hexagon::JMP:
     return !invertPredicate ? Hexagon::JMP_c :
                               Hexagon::JMP_cNot;
+  case Hexagon::JMP_EQrrPt_nv_V4:
+    return !invertPredicate ? Hexagon::JMP_EQrrPt_nv_V4 :
+                              Hexagon::JMP_EQrrNotPt_nv_V4;
+  case Hexagon::JMP_EQriPt_nv_V4:
+    return !invertPredicate ? Hexagon::JMP_EQriPt_nv_V4 :
+                              Hexagon::JMP_EQriNotPt_nv_V4;
   case Hexagon::ADD_ri:
     return !invertPredicate ? Hexagon::ADD_ri_cPt :
                               Hexagon::ADD_ri_cNotPt;
@@ -2330,13 +2366,17 @@ isValidOffset(const int Opcode, const int Offset) const {
   switch(Opcode) {
 
   case Hexagon::LDriw:
+  case Hexagon::LDriw_f:
   case Hexagon::STriw:
+  case Hexagon::STriw_f:
     assert((Offset % 4 == 0) && "Offset has incorrect alignment");
     return (Offset >= Hexagon_MEMW_OFFSET_MIN) &&
       (Offset <= Hexagon_MEMW_OFFSET_MAX);
 
   case Hexagon::LDrid:
+  case Hexagon::LDrid_f:
   case Hexagon::STrid:
+  case Hexagon::STrid_f:
     assert((Offset % 8 == 0) && "Offset has incorrect alignment");
     return (Offset >= Hexagon_MEMD_OFFSET_MIN) &&
       (Offset <= Hexagon_MEMD_OFFSET_MAX);
@@ -2514,7 +2554,23 @@ isSpillPredRegOp(const MachineInstr *MI) const {
     case Hexagon::LDriw_pred :
       return true;
   }
-  return false;
+}
+
+bool HexagonInstrInfo::isNewValueJumpCandidate(const MachineInstr *MI) const {
+  switch (MI->getOpcode()) {
+    default: return false;
+    case Hexagon::CMPEQrr:
+    case Hexagon::CMPEQri:
+    case Hexagon::CMPLTrr:
+    case Hexagon::CMPGTrr:
+    case Hexagon::CMPGTri:
+    case Hexagon::CMPLTUrr:
+    case Hexagon::CMPGTUrr:
+    case Hexagon::CMPGTUri:
+    case Hexagon::CMPGEri:
+    case Hexagon::CMPGEUri:
+      return true;
+  }
 }
 
 bool HexagonInstrInfo::

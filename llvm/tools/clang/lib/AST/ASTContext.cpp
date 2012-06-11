@@ -206,7 +206,10 @@ static const LangAS::Map *getAddressSpaceMap(const TargetInfo &T,
     static const unsigned FakeAddrSpaceMap[] = {
       1, // opencl_global
       2, // opencl_local
-      3  // opencl_constant
+      3, // opencl_constant
+      4, // cuda_device
+      5, // cuda_constant
+      6  // cuda_shared
     };
     return &FakeAddrSpaceMap;
   } else {
@@ -1189,7 +1192,7 @@ void ASTContext::DeepCollectObjCIvars(const ObjCInterfaceDecl *OI,
   if (!leafClass) {
     for (ObjCInterfaceDecl::ivar_iterator I = OI->ivar_begin(),
          E = OI->ivar_end(); I != E; ++I)
-      Ivars.push_back(&*I);
+      Ivars.push_back(*I);
   } else {
     ObjCInterfaceDecl *IDecl = const_cast<ObjCInterfaceDecl *>(OI);
     for (const ObjCIvarDecl *Iv = IDecl->all_declared_ivar_begin(); Iv; 
@@ -3333,8 +3336,7 @@ ASTContext::getCanonicalTemplateArgument(const TemplateArgument &Arg) const {
                               Arg.getNumTemplateExpansions());
 
     case TemplateArgument::Integral:
-      return TemplateArgument(*Arg.getAsIntegral(),
-                              getCanonicalType(Arg.getIntegralType()));
+      return TemplateArgument(Arg, getCanonicalType(Arg.getIntegralType()));
 
     case TemplateArgument::Type:
       return TemplateArgument(getCanonicalType(Arg.getAsType()));
@@ -3473,7 +3475,7 @@ const ArrayType *ASTContext::getAsArrayType(QualType T) const {
                                               VAT->getBracketsRange()));
 }
 
-QualType ASTContext::getAdjustedParameterType(QualType T) {
+QualType ASTContext::getAdjustedParameterType(QualType T) const {
   // C99 6.7.5.3p7:
   //   A declaration of a parameter as "array of type" shall be
   //   adjusted to "qualified pointer to type", where the type
@@ -3492,7 +3494,7 @@ QualType ASTContext::getAdjustedParameterType(QualType T) {
   return T;  
 }
 
-QualType ASTContext::getSignatureParameterType(QualType T) {
+QualType ASTContext::getSignatureParameterType(QualType T) const {
   T = getVariableArrayDecayedType(T);
   T = getAdjustedParameterType(T);
   return T.getUnqualifiedType();
@@ -3811,7 +3813,7 @@ QualType ASTContext::getCFConstantStringType() const {
                                            FieldTypes[i], /*TInfo=*/0,
                                            /*BitWidth=*/0,
                                            /*Mutable=*/false,
-                                           /*HasInit=*/false);
+                                           ICIS_NoInit);
       Field->setAccess(AS_public);
       CFConstantStringTypeDecl->addDecl(Field);
     }
@@ -3855,7 +3857,7 @@ QualType ASTContext::getBlockDescriptorType() const {
                                          FieldTypes[i], /*TInfo=*/0,
                                          /*BitWidth=*/0,
                                          /*Mutable=*/false,
-                                         /*HasInit=*/false);
+                                         ICIS_NoInit);
     Field->setAccess(AS_public);
     T->addDecl(Field);
   }
@@ -3898,7 +3900,7 @@ QualType ASTContext::getBlockDescriptorExtendedType() const {
                                          FieldTypes[i], /*TInfo=*/0,
                                          /*BitWidth=*/0,
                                          /*Mutable=*/false,
-                                         /*HasInit=*/false);
+                                         ICIS_NoInit);
     Field->setAccess(AS_public);
     T->addDecl(Field);
   }
@@ -3974,7 +3976,7 @@ ASTContext::BuildByRefType(StringRef DeclName, QualType Ty) const {
                                          &Idents.get(FieldNames[i]),
                                          FieldTypes[i], /*TInfo=*/0,
                                          /*BitWidth=*/0, /*Mutable=*/false,
-                                         /*HasInit=*/false);
+                                         ICIS_NoInit);
     Field->setAccess(AS_public);
     T->addDecl(Field);
   }
@@ -4229,7 +4231,7 @@ void ASTContext::getObjCEncodingForPropertyDecl(const ObjCPropertyDecl *PD,
       for (ObjCCategoryImplDecl::propimpl_iterator
              i = CID->propimpl_begin(), e = CID->propimpl_end();
            i != e; ++i) {
-        ObjCPropertyImplDecl *PID = &*i;
+        ObjCPropertyImplDecl *PID = *i;
         if (PID->getPropertyDecl() == PD) {
           if (PID->getPropertyImplementation()==ObjCPropertyImplDecl::Dynamic) {
             Dynamic = true;
@@ -4243,7 +4245,7 @@ void ASTContext::getObjCEncodingForPropertyDecl(const ObjCPropertyDecl *PD,
       for (ObjCCategoryImplDecl::propimpl_iterator
              i = OID->propimpl_begin(), e = OID->propimpl_end();
            i != e; ++i) {
-        ObjCPropertyImplDecl *PID = &*i;
+        ObjCPropertyImplDecl *PID = *i;
         if (PID->getPropertyDecl() == PD) {
           if (PID->getPropertyImplementation()==ObjCPropertyImplDecl::Dynamic) {
             Dynamic = true;
@@ -4565,7 +4567,7 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
           // Special case bit-fields.
           if (Field->isBitField()) {
             getObjCEncodingForTypeImpl(Field->getType(), S, false, true,
-                                       &*Field);
+                                       *Field);
           } else {
             QualType qt = Field->getType();
             getLegacyIntegralTypeEncoding(qt);
@@ -4761,7 +4763,7 @@ void ASTContext::getObjCEncodingForStructureImpl(RecordDecl *RDecl,
        Field != FieldEnd; ++Field, ++i) {
     uint64_t offs = layout.getFieldOffset(i);
     FieldOrBaseOffsets.insert(FieldOrBaseOffsets.upper_bound(offs),
-                              std::make_pair(offs, &*Field));
+                              std::make_pair(offs, *Field));
   }
 
   if (CXXRec && includeVBases) {
@@ -6410,6 +6412,19 @@ static QualType DecodeTypeFromStr(const char *&Str, const ASTContext &Context,
     Type = Context.getVectorType(ElementType, NumElements,
                                  VectorType::GenericVector);
     break;
+  }
+  case 'E': {
+    char *End;
+    
+    unsigned NumElements = strtoul(Str, &End, 10);
+    assert(End != Str && "Missing vector size");
+    
+    Str = End;
+    
+    QualType ElementType = DecodeTypeFromStr(Str, Context, Error, RequiresICE,
+                                             false);
+    Type = Context.getExtVectorType(ElementType, NumElements);
+    break;    
   }
   case 'X': {
     QualType ElementType = DecodeTypeFromStr(Str, Context, Error, RequiresICE,

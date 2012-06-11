@@ -1,4 +1,4 @@
-//===-- asan_thread_registry.cc ---------------------------------*- C++ -*-===//
+//===-- asan_thread_registry.cc -------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -43,12 +43,12 @@ void AsanThreadRegistry::Init() {
 
 void AsanThreadRegistry::RegisterThread(AsanThread *thread) {
   ScopedLock lock(&mu_);
-  int tid = n_threads_;
+  u32 tid = n_threads_;
   n_threads_++;
   CHECK(n_threads_ < kMaxNumberOfThreads);
 
   AsanThreadSummary *summary = thread->summary();
-  CHECK(summary != NULL);
+  CHECK(summary != 0);
   summary->set_tid(tid);
   thread_summaries_[tid] = summary;
 }
@@ -58,7 +58,7 @@ void AsanThreadRegistry::UnregisterThread(AsanThread *thread) {
   FlushToAccumulatedStatsUnlocked(&thread->stats());
   AsanThreadSummary *summary = thread->summary();
   CHECK(summary);
-  summary->set_thread(NULL);
+  summary->set_thread(0);
 }
 
 AsanThread *AsanThreadRegistry::GetMain() {
@@ -74,7 +74,7 @@ AsanThread *AsanThreadRegistry::GetCurrent() {
     // address. We are not entirely sure that we have correct main thread
     // limits, so only do this magic on Android, and only if the found thread is
     // the main thread.
-    AsanThread* thread = FindThreadByStackAddress((uintptr_t)&summary);
+    AsanThread* thread = FindThreadByStackAddress((uptr)&summary);
     if (thread && thread->tid() == 0) {
       SetCurrent(thread);
       return thread;
@@ -88,7 +88,8 @@ AsanThread *AsanThreadRegistry::GetCurrent() {
 void AsanThreadRegistry::SetCurrent(AsanThread *t) {
   CHECK(t->summary());
   if (FLAG_v >= 2) {
-    Report("SetCurrent: %p for thread %p\n", t->summary(), GetThreadSelf());
+    Report("SetCurrent: %p for thread %p\n",
+           t->summary(), (void*)GetThreadSelf());
   }
   // Make sure we do not reset the current AsanThread.
   CHECK(AsanTSDGet() == 0);
@@ -107,19 +108,19 @@ AsanStats AsanThreadRegistry::GetAccumulatedStats() {
   return accumulated_stats_;
 }
 
-size_t AsanThreadRegistry::GetCurrentAllocatedBytes() {
+uptr AsanThreadRegistry::GetCurrentAllocatedBytes() {
   ScopedLock lock(&mu_);
   UpdateAccumulatedStatsUnlocked();
   return accumulated_stats_.malloced - accumulated_stats_.freed;
 }
 
-size_t AsanThreadRegistry::GetHeapSize() {
+uptr AsanThreadRegistry::GetHeapSize() {
   ScopedLock lock(&mu_);
   UpdateAccumulatedStatsUnlocked();
   return accumulated_stats_.mmaped;
 }
 
-size_t AsanThreadRegistry::GetFreeBytes() {
+uptr AsanThreadRegistry::GetFreeBytes() {
   ScopedLock lock(&mu_);
   UpdateAccumulatedStatsUnlocked();
   return accumulated_stats_.mmaped
@@ -129,19 +130,15 @@ size_t AsanThreadRegistry::GetFreeBytes() {
          + accumulated_stats_.really_freed_redzones;
 }
 
-AsanThreadSummary *AsanThreadRegistry::FindByTid(int tid) {
-  CHECK(tid >= 0);
+AsanThreadSummary *AsanThreadRegistry::FindByTid(u32 tid) {
   CHECK(tid < n_threads_);
   CHECK(thread_summaries_[tid]);
   return thread_summaries_[tid];
 }
 
-AsanThread *AsanThreadRegistry::FindThreadByStackAddress(uintptr_t addr) {
+AsanThread *AsanThreadRegistry::FindThreadByStackAddress(uptr addr) {
   ScopedLock lock(&mu_);
-  // Main thread (tid = 0) stack limits are pretty much guessed; for the other
-  // threads we ask libpthread, so their limits must be correct.
-  // Scanning the thread list backwards makes this function more reliable.
-  for (int tid = n_threads_ - 1; tid >= 0; tid--) {
+  for (u32 tid = 0; tid < n_threads_; tid++) {
     AsanThread *t = thread_summaries_[tid]->thread();
     if (!t || !(t->fake_stack().StackSize())) continue;
     if (t->fake_stack().AddrIsInFakeStack(addr) || t->AddrIsInStack(addr)) {
@@ -152,20 +149,20 @@ AsanThread *AsanThreadRegistry::FindThreadByStackAddress(uintptr_t addr) {
 }
 
 void AsanThreadRegistry::UpdateAccumulatedStatsUnlocked() {
-  for (int tid = 0; tid < n_threads_; tid++) {
+  for (u32 tid = 0; tid < n_threads_; tid++) {
     AsanThread *t = thread_summaries_[tid]->thread();
-    if (t != NULL) {
+    if (t != 0) {
       FlushToAccumulatedStatsUnlocked(&t->stats());
     }
   }
 }
 
 void AsanThreadRegistry::FlushToAccumulatedStatsUnlocked(AsanStats *stats) {
-  // AsanStats consists of variables of type size_t only.
-  size_t *dst = (size_t*)&accumulated_stats_;
-  size_t *src = (size_t*)stats;
-  size_t num_fields = sizeof(AsanStats) / sizeof(size_t);
-  for (size_t i = 0; i < num_fields; i++) {
+  // AsanStats consists of variables of type uptr only.
+  uptr *dst = (uptr*)&accumulated_stats_;
+  uptr *src = (uptr*)stats;
+  uptr num_fields = sizeof(AsanStats) / sizeof(uptr);
+  for (uptr i = 0; i < num_fields; i++) {
     dst[i] += src[i];
     src[i] = 0;
   }

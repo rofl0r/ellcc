@@ -417,6 +417,7 @@ void ASTDeclWriter::VisitObjCMethodDecl(ObjCMethodDecl *D) {
   Record.push_back(D->isVariadic());
   Record.push_back(D->isSynthesized());
   Record.push_back(D->isDefined());
+  Record.push_back(D->IsOverriding);
 
   Record.push_back(D->IsRedeclaration);
   Record.push_back(D->HasRedeclaration);
@@ -625,11 +626,13 @@ void ASTDeclWriter::VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *D) {
 void ASTDeclWriter::VisitFieldDecl(FieldDecl *D) {
   VisitDeclaratorDecl(D);
   Record.push_back(D->isMutable());
-  Record.push_back(D->getBitWidth()? 1 : D->hasInClassInitializer() ? 2 : 0);
-  if (D->getBitWidth())
-    Writer.AddStmt(D->getBitWidth());
-  else if (D->hasInClassInitializer())
-    Writer.AddStmt(D->getInClassInitializer());
+  if (D->InitializerOrBitWidth.getInt() != ICIS_NoInit ||
+      D->InitializerOrBitWidth.getPointer()) {
+    Record.push_back(D->InitializerOrBitWidth.getInt() + 1);
+    Writer.AddStmt(D->InitializerOrBitWidth.getPointer());
+  } else {
+    Record.push_back(0);
+  }
   if (!D->getDeclName())
     Writer.AddDeclRef(Context.getInstantiatedFromUnnamedFieldDecl(D), Record);
 

@@ -46,6 +46,27 @@ void PrintReg::print(raw_ostream &OS) const {
   }
 }
 
+void PrintRegUnit::print(raw_ostream &OS) const {
+  // Generic printout when TRI is missing.
+  if (!TRI) {
+    OS << "Unit~" << Unit;
+    return;
+  }
+
+  // Check for invalid register units.
+  if (Unit >= TRI->getNumRegUnits()) {
+    OS << "BadUnit~" << Unit;
+    return;
+  }
+
+  // Normal units have at least one root.
+  MCRegUnitRootIterator Roots(Unit, TRI);
+  assert(Roots.isValid() && "Unit has no roots.");
+  OS << TRI->getName(*Roots);
+  for (++Roots; Roots.isValid(); ++Roots)
+    OS << '~' << TRI->getName(*Roots);
+}
+
 /// getAllocatableClass - Return the maximal subclass of the given register
 /// class that is alloctable, or NULL.
 const TargetRegisterClass *
@@ -122,6 +143,16 @@ BitVector TargetRegisterInfo::getAllocatableSet(const MachineFunction &MF,
   return Allocatable;
 }
 
+static inline
+const TargetRegisterClass *firstCommonClass(const uint32_t *A,
+                                            const uint32_t *B,
+                                            const TargetRegisterInfo *TRI) {
+  for (unsigned I = 0, E = TRI->getNumRegClasses(); I < E; I += 32)
+    if (unsigned Common = *A++ & *B++)
+      return TRI->getRegClass(I + CountTrailingZeros_32(Common));
+  return 0;
+}
+
 const TargetRegisterClass *
 TargetRegisterInfo::getCommonSubClass(const TargetRegisterClass *A,
                                       const TargetRegisterClass *B) const {
@@ -133,17 +164,7 @@ TargetRegisterInfo::getCommonSubClass(const TargetRegisterClass *A,
 
   // Register classes are ordered topologically, so the largest common
   // sub-class it the common sub-class with the smallest ID.
-  const unsigned *SubA = A->getSubClassMask();
-  const unsigned *SubB = B->getSubClassMask();
-
-  // We could start the search from max(A.ID, B.ID), but we are only going to
-  // execute 2-3 iterations anyway.
-  for (unsigned Base = 0, BaseE = getNumRegClasses(); Base < BaseE; Base += 32)
-    if (unsigned Common = *SubA++ & *SubB++)
-      return getRegClass(Base + CountTrailingZeros_32(Common));
-
-  // No common sub-class exists.
-  return NULL;
+  return firstCommonClass(A->getSubClassMask(), B->getSubClassMask(), this);
 }
 
 const TargetRegisterClass *
@@ -154,22 +175,72 @@ TargetRegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
   assert(Idx && "Bad sub-register index");
 
   // Find Idx in the list of super-register indices.
-  const uint32_t *Mask = 0;
   for (SuperRegClassIterator RCI(B, this); RCI.isValid(); ++RCI)
-    if (RCI.getSubReg() == Idx) {
-      Mask = RCI.getMask();
-      break;
-    }
-  if (!Mask)
-    return 0;
-
-  // The bit mask contains all register classes that are projected into B by
-  // Idx. Find a class that is also a sub-class of A.
-  const uint32_t *SC = A->getSubClassMask();
-
-  // Find the first common register class in TV and SC.
-  for (unsigned Base = 0, BaseE = getNumRegClasses(); Base < BaseE; Base += 32)
-    if (unsigned Common = *Mask++ & *SC++)
-      return getRegClass(Base + CountTrailingZeros_32(Common));
+    if (RCI.getSubReg() == Idx)
+      // The bit mask contains all register classes that are projected into B
+      // by Idx. Find a class that is also a sub-class of A.
+      return firstCommonClass(RCI.getMask(), A->getSubClassMask(), this);
   return 0;
+}
+
+const TargetRegisterClass *TargetRegisterInfo::
+getCommonSuperRegClass(const TargetRegisterClass *RCA, unsigned SubA,
+                       const TargetRegisterClass *RCB, unsigned SubB,
+                       unsigned &PreA, unsigned &PreB) const {
+  assert(RCA && SubA && RCB && SubB && "Invalid arguments");
+
+  // Search all pairs of sub-register indices that project into RCA and RCB
+  // respectively. This is quadratic, but usually the sets are very small. On
+  // most targets like X86, there will only be a single sub-register index
+  // (e.g., sub_16bit projecting into GR16).
+  //
+  // The worst case is a register class like DPR on ARM.
+  // We have indices dsub_0..dsub_7 projecting into that class.
+  //
+  // It is very common that one register class is a sub-register of the other.
+  // Arrange for RCA to be the larger register so the answer will be found in
+  // the first iteration. This makes the search linear for the most common
+  // case.
+  const TargetRegisterClass *BestRC = 0;
+  unsigned *BestPreA = &PreA;
+  unsigned *BestPreB = &PreB;
+  if (RCA->getSize() < RCB->getSize()) {
+    std::swap(RCA, RCB);
+    std::swap(SubA, SubB);
+    std::swap(BestPreA, BestPreB);
+  }
+
+  // Also terminate the search one we have found a register class as small as
+  // RCA.
+  unsigned MinSize = RCA->getSize();
+
+  for (SuperRegClassIterator IA(RCA, this, true); IA.isValid(); ++IA) {
+    unsigned FinalA = composeSubRegIndices(IA.getSubReg(), SubA);
+    for (SuperRegClassIterator IB(RCB, this, true); IB.isValid(); ++IB) {
+      // Check if a common super-register class exists for this index pair.
+      const TargetRegisterClass *RC =
+        firstCommonClass(IA.getMask(), IB.getMask(), this);
+      if (!RC || RC->getSize() < MinSize)
+        continue;
+
+      // The indexes must compose identically: PreA+SubA == PreB+SubB.
+      unsigned FinalB = composeSubRegIndices(IB.getSubReg(), SubB);
+      if (FinalA != FinalB)
+        continue;
+
+      // Is RC a better candidate than BestRC?
+      if (BestRC && RC->getSize() >= BestRC->getSize())
+        continue;
+
+      // Yes, RC is the smallest super-register seen so far.
+      BestRC = RC;
+      *BestPreA = IA.getSubReg();
+      *BestPreB = IB.getSubReg();
+
+      // Bail early if we reached MinSize. We won't find a better candidate.
+      if (BestRC->getSize() == MinSize)
+        return BestRC;
+    }
+  }
+  return BestRC;
 }

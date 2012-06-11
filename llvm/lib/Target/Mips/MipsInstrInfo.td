@@ -11,11 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-//===----------------------------------------------------------------------===//
-// Instruction format superclass
-//===----------------------------------------------------------------------===//
-
-include "MipsInstrFormats.td"
 
 //===----------------------------------------------------------------------===//
 // Mips profiles and nodes
@@ -48,6 +43,10 @@ def SDT_Ext : SDTypeProfile<1, 3, [SDTCisInt<0>, SDTCisSameAs<0, 1>,
 def SDT_Ins : SDTypeProfile<1, 4, [SDTCisInt<0>, SDTCisSameAs<0, 1>,
                                    SDTCisVT<2, i32>, SDTCisSameAs<2, 3>,
                                    SDTCisSameAs<0, 4>]>;
+
+def SDTMipsLoadLR  : SDTypeProfile<1, 2,
+                                   [SDTCisInt<0>, SDTCisPtrTy<1>,
+                                    SDTCisSameAs<0, 2>]>;
 
 // Call
 def MipsJmpLink : SDNode<"MipsISD::JmpLink",SDT_MipsJmpLink,
@@ -118,6 +117,23 @@ def MipsSync : SDNode<"MipsISD::Sync", SDT_Sync, [SDNPHasChain]>;
 def MipsExt :  SDNode<"MipsISD::Ext", SDT_Ext>;
 def MipsIns :  SDNode<"MipsISD::Ins", SDT_Ins>;
 
+def MipsLWL : SDNode<"MipsISD::LWL", SDTMipsLoadLR,
+                     [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
+def MipsLWR : SDNode<"MipsISD::LWR", SDTMipsLoadLR,
+                     [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
+def MipsSWL : SDNode<"MipsISD::SWL", SDTStore,
+                     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+def MipsSWR : SDNode<"MipsISD::SWR", SDTStore,
+                     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+def MipsLDL : SDNode<"MipsISD::LDL", SDTMipsLoadLR,
+                     [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
+def MipsLDR : SDNode<"MipsISD::LDR", SDTMipsLoadLR,
+                     [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
+def MipsSDL : SDNode<"MipsISD::SDL", SDTStore,
+                     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+def MipsSDR : SDNode<"MipsISD::SDR", SDTStore,
+                     [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
+
 //===----------------------------------------------------------------------===//
 // Mips Instruction Predicate Definitions.
 //===----------------------------------------------------------------------===//
@@ -147,12 +163,22 @@ def IsN64       :     Predicate<"Subtarget.isABI_N64()">,
                       AssemblerPredicate<"FeatureN64">;
 def NotN64      :     Predicate<"!Subtarget.isABI_N64()">,
                       AssemblerPredicate<"!FeatureN64">;
+def InMips16Mode :    Predicate<"Subtarget.inMips16Mode()">,
+                      AssemblerPredicate<"FeatureMips16">;
 def RelocStatic :     Predicate<"TM.getRelocationModel() == Reloc::Static">,
                       AssemblerPredicate<"FeatureMips32">;
 def RelocPIC    :     Predicate<"TM.getRelocationModel() == Reloc::PIC_">,
                       AssemblerPredicate<"FeatureMips32">;
 def NoNaNsFPMath :    Predicate<"TM.Options.NoNaNsFPMath">,
                       AssemblerPredicate<"FeatureMips32">;
+def HasStandardEncoding : Predicate<"Subtarget.hasStandardEncoding()">,
+                          AssemblerPredicate<"!FeatureMips16">;
+
+//===----------------------------------------------------------------------===//
+// Instruction format superclass
+//===----------------------------------------------------------------------===//
+
+include "MipsInstrFormats.td"
 
 //===----------------------------------------------------------------------===//
 // Mips Operand, Complex Patterns and Transformations Definitions.
@@ -254,7 +280,8 @@ def immZExt5 : ImmLeaf<i32, [{return Imm == (Imm & 0x1f);}]>;
 
 // Mips Address Mode! SDNode frameindex could possibily be a match
 // since load and store instructions from stack used it.
-def addr : ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>;
+def addr :
+  ComplexPattern<iPTR, 2, "SelectAddr", [frameindex], [SDNPWantParent]>;
 
 //===----------------------------------------------------------------------===//
 // Pattern fragment for load/store
@@ -420,21 +447,13 @@ class StoreM<bits<6> op, string instr_asm, PatFrag OpNode, RegisterClass RC,
   let isPseudo = Pseudo;
 }
 
-// Unaligned Memory Load/Store
-let canFoldAsLoad = 1 in
-class LoadUnAlign<bits<6> op, RegisterClass RC, Operand MemOpnd>:
-  FMem<op, (outs RC:$rt), (ins MemOpnd:$addr), "", [], IILoad> {}
-
-class StoreUnAlign<bits<6> op, RegisterClass RC, Operand MemOpnd>:
-  FMem<op, (outs), (ins RC:$rt, MemOpnd:$addr), "", [], IIStore> {}
-
 // 32-bit load.
 multiclass LoadM32<bits<6> op, string instr_asm, PatFrag OpNode,
                    bit Pseudo = 0> {
   def #NAME# : LoadM<op, instr_asm, OpNode, CPURegs, mem, Pseudo>,
-               Requires<[NotN64]>;
+               Requires<[NotN64, HasStandardEncoding]>;
   def _P8    : LoadM<op, instr_asm, OpNode, CPURegs, mem64, Pseudo>,
-               Requires<[IsN64]> {
+               Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
     let isCodeGenOnly = 1;
   }
@@ -444,31 +463,21 @@ multiclass LoadM32<bits<6> op, string instr_asm, PatFrag OpNode,
 multiclass LoadM64<bits<6> op, string instr_asm, PatFrag OpNode,
                    bit Pseudo = 0> {
   def #NAME# : LoadM<op, instr_asm, OpNode, CPU64Regs, mem, Pseudo>,
-               Requires<[NotN64]>;
+               Requires<[NotN64, HasStandardEncoding]>;
   def _P8    : LoadM<op, instr_asm, OpNode, CPU64Regs, mem64, Pseudo>,
-               Requires<[IsN64]> {
+               Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
     let isCodeGenOnly = 1;
   }
 }
 
-// 32-bit load.
-multiclass LoadUnAlign32<bits<6> op> {
-  def #NAME# : LoadUnAlign<op, CPURegs, mem>,
-               Requires<[NotN64]>;
-  def _P8    : LoadUnAlign<op, CPURegs, mem64>,
-               Requires<[IsN64]> {
-    let DecoderNamespace = "Mips64";
-    let isCodeGenOnly = 1;
-  }
-}
 // 32-bit store.
 multiclass StoreM32<bits<6> op, string instr_asm, PatFrag OpNode,
                     bit Pseudo = 0> {
   def #NAME# : StoreM<op, instr_asm, OpNode, CPURegs, mem, Pseudo>,
-               Requires<[NotN64]>;
+               Requires<[NotN64, HasStandardEncoding]>;
   def _P8    : StoreM<op, instr_asm, OpNode, CPURegs, mem64, Pseudo>,
-               Requires<[IsN64]> {
+               Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
     let isCodeGenOnly = 1;
   }
@@ -478,20 +487,69 @@ multiclass StoreM32<bits<6> op, string instr_asm, PatFrag OpNode,
 multiclass StoreM64<bits<6> op, string instr_asm, PatFrag OpNode,
                     bit Pseudo = 0> {
   def #NAME# : StoreM<op, instr_asm, OpNode, CPU64Regs, mem, Pseudo>,
-               Requires<[NotN64]>;
+               Requires<[NotN64, HasStandardEncoding]>;
   def _P8    : StoreM<op, instr_asm, OpNode, CPU64Regs, mem64, Pseudo>,
-               Requires<[IsN64]> {
+               Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
     let isCodeGenOnly = 1;
   }
 }
 
-// 32-bit store.
-multiclass StoreUnAlign32<bits<6> op> {
-  def #NAME# : StoreUnAlign<op, CPURegs, mem>,
-               Requires<[NotN64]>;
-  def _P8    : StoreUnAlign<op, CPURegs, mem64>,
-               Requires<[IsN64]> {
+// Load/Store Left/Right
+let canFoldAsLoad = 1 in
+class LoadLeftRight<bits<6> op, string instr_asm, SDNode OpNode,
+                    RegisterClass RC, Operand MemOpnd> :
+  FMem<op, (outs RC:$rt), (ins MemOpnd:$addr, RC:$src),
+       !strconcat(instr_asm, "\t$rt, $addr"),
+       [(set RC:$rt, (OpNode addr:$addr, RC:$src))], IILoad> {
+  string Constraints = "$src = $rt";
+}
+
+class StoreLeftRight<bits<6> op, string instr_asm, SDNode OpNode,
+                     RegisterClass RC, Operand MemOpnd>:
+  FMem<op, (outs), (ins RC:$rt, MemOpnd:$addr),
+       !strconcat(instr_asm, "\t$rt, $addr"), [(OpNode RC:$rt, addr:$addr)],
+       IIStore>;
+
+// 32-bit load left/right.
+multiclass LoadLeftRightM32<bits<6> op, string instr_asm, SDNode OpNode> {
+  def #NAME# : LoadLeftRight<op, instr_asm, OpNode, CPURegs, mem>,
+               Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : LoadLeftRight<op, instr_asm, OpNode, CPURegs, mem64>,
+               Requires<[IsN64, HasStandardEncoding]> {
+    let DecoderNamespace = "Mips64";
+    let isCodeGenOnly = 1;
+  }
+}
+
+// 64-bit load left/right.
+multiclass LoadLeftRightM64<bits<6> op, string instr_asm, SDNode OpNode> {
+  def #NAME# : LoadLeftRight<op, instr_asm, OpNode, CPU64Regs, mem>,
+               Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : LoadLeftRight<op, instr_asm, OpNode, CPU64Regs, mem64>,
+               Requires<[IsN64, HasStandardEncoding]> {
+    let DecoderNamespace = "Mips64";
+    let isCodeGenOnly = 1;
+  }
+}
+
+// 32-bit store left/right.
+multiclass StoreLeftRightM32<bits<6> op, string instr_asm, SDNode OpNode> {
+  def #NAME# : StoreLeftRight<op, instr_asm, OpNode, CPURegs, mem>,
+               Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : StoreLeftRight<op, instr_asm, OpNode, CPURegs, mem64>,
+               Requires<[IsN64, HasStandardEncoding]> {
+    let DecoderNamespace = "Mips64";
+    let isCodeGenOnly = 1;
+  }
+}
+
+// 64-bit store left/right.
+multiclass StoreLeftRightM64<bits<6> op, string instr_asm, SDNode OpNode> {
+  def #NAME# : StoreLeftRight<op, instr_asm, OpNode, CPU64Regs, mem>,
+               Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : StoreLeftRight<op, instr_asm, OpNode, CPU64Regs, mem64>,
+               Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
     let isCodeGenOnly = 1;
   }
@@ -543,7 +601,7 @@ class JumpFJ<bits<6> op, string instr_asm>:
   let isTerminator=1;
   let isBarrier=1;
   let hasDelaySlot = 1;
-  let Predicates = [RelocStatic];
+  let Predicates = [RelocStatic, HasStandardEncoding];
   let DecoderMethod = "DecodeJumpTarget";
 }
 
@@ -557,7 +615,7 @@ class UncondBranch<bits<6> op, string instr_asm>:
   let isTerminator = 1;
   let isBarrier = 1;
   let hasDelaySlot = 1;
-  let Predicates = [RelocPIC];
+  let Predicates = [RelocPIC, HasStandardEncoding];
 }
 
 let isBranch=1, isTerminator=1, isBarrier=1, rd=0, hasDelaySlot = 1,
@@ -655,7 +713,7 @@ class CountLeading0<bits<6> func, string instr_asm, RegisterClass RC>:
   FR<0x1c, func, (outs RC:$rd), (ins RC:$rs),
      !strconcat(instr_asm, "\t$rd, $rs"),
      [(set RC:$rd, (ctlz RC:$rs))], IIAlu>,
-     Requires<[HasBitCount]> {
+     Requires<[HasBitCount, HasStandardEncoding]> {
   let shamt = 0;
   let rt = rd;
 }
@@ -664,7 +722,7 @@ class CountLeading1<bits<6> func, string instr_asm, RegisterClass RC>:
   FR<0x1c, func, (outs RC:$rd), (ins RC:$rs),
      !strconcat(instr_asm, "\t$rd, $rs"),
      [(set RC:$rd, (ctlz (not RC:$rs)))], IIAlu>,
-     Requires<[HasBitCount]> {
+     Requires<[HasBitCount, HasStandardEncoding]> {
   let shamt = 0;
   let rt = rd;
 }
@@ -677,7 +735,7 @@ class SignExtInReg<bits<5> sa, string instr_asm, ValueType vt,
      [(set RC:$rd, (sext_inreg RC:$rt, vt))], NoItinerary> {
   let rs = 0;
   let shamt = sa;
-  let Predicates = [HasSEInReg];
+  let Predicates = [HasSEInReg, HasStandardEncoding];
 }
 
 // Subword Swap
@@ -686,7 +744,7 @@ class SubwordSwap<bits<6> func, bits<5> sa, string instr_asm, RegisterClass RC>:
      !strconcat(instr_asm, "\t$rd, $rt"), [], NoItinerary> {
   let rs = 0;
   let shamt = sa;
-  let Predicates = [HasSwap];
+  let Predicates = [HasSwap, HasStandardEncoding];
   let neverHasSideEffects = 1;
 }
 
@@ -707,7 +765,7 @@ class ExtBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
   bits<5> sz;
   let rd = sz;
   let shamt = pos;
-  let Predicates = [HasMips32r2];
+  let Predicates = [HasMips32r2, HasStandardEncoding];
 }
 
 class InsBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
@@ -720,7 +778,7 @@ class InsBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
   bits<5> sz;
   let rd = sz;
   let shamt = pos;
-  let Predicates = [HasMips32r2];
+  let Predicates = [HasMips32r2, HasStandardEncoding];
   let Constraints = "$src = $rt";
 }
 
@@ -732,8 +790,10 @@ class Atomic2Ops<PatFrag Op, string Opstr, RegisterClass DRC,
              [(set DRC:$dst, (Op PRC:$ptr, DRC:$incr))]>;
 
 multiclass Atomic2Ops32<PatFrag Op, string Opstr> {
-  def #NAME# : Atomic2Ops<Op, Opstr, CPURegs, CPURegs>, Requires<[NotN64]>;
-  def _P8    : Atomic2Ops<Op, Opstr, CPURegs, CPU64Regs>, Requires<[IsN64]> {
+  def #NAME# : Atomic2Ops<Op, Opstr, CPURegs, CPURegs>,
+                          Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : Atomic2Ops<Op, Opstr, CPURegs, CPU64Regs>,
+                          Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
   }
 }
@@ -746,8 +806,10 @@ class AtomicCmpSwap<PatFrag Op, string Width, RegisterClass DRC,
              [(set DRC:$dst, (Op PRC:$ptr, DRC:$cmp, DRC:$swap))]>;
 
 multiclass AtomicCmpSwap32<PatFrag Op, string Width>  {
-  def #NAME# : AtomicCmpSwap<Op, Width, CPURegs, CPURegs>, Requires<[NotN64]>;
-  def _P8    : AtomicCmpSwap<Op, Width, CPURegs, CPU64Regs>, Requires<[IsN64]> {
+  def #NAME# : AtomicCmpSwap<Op, Width, CPURegs, CPURegs>,
+                             Requires<[NotN64, HasStandardEncoding]>;
+  def _P8    : AtomicCmpSwap<Op, Width, CPURegs, CPU64Regs>,
+                             Requires<[IsN64, HasStandardEncoding]> {
     let DecoderNamespace = "Mips64";
   }
 }
@@ -786,29 +848,6 @@ def ADJCALLSTACKUP   : MipsPseudo<(outs), (ins uimm16:$amt1, uimm16:$amt2),
 let neverHasSideEffects = 1 in
 def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc, CPURegs:$gp),
                            ".cprestore\t$loc", []>;
-
-// For O32 ABI & PIC & non-fixed global base register, the following instruction
-// seqeunce is emitted to set the global base register:
-//
-//  0. lui   $2, %hi(_gp_disp)
-//  1. addiu $2, $2, %lo(_gp_disp)
-//  2. addu  $globalbasereg, $2, $t9
-//
-// SETGP01 is emitted during Prologue/Epilogue insertion and then converted to
-// instructions 0 and 1 in the sequence above during MC lowering.
-// SETGP2 is emitted just before register allocation and converted to
-// instruction 2 just prior to post-RA scheduling.
-//
-// These pseudo instructions are needed to ensure no instructions are inserted
-// before or between instructions 0 and 1, which is a limitation imposed by
-// GNU linker.
-
-let isTerminator = 1, isBarrier = 1 in
-def SETGP01 : MipsPseudo<(outs CPURegs:$dst), (ins), "", []>;
-
-let neverHasSideEffects = 1 in
-def SETGP2 : MipsPseudo<(outs CPURegs:$globalreg), (ins CPURegs:$picreg), "",
-                        []>;
 
 let usesCustomInserter = 1 in {
   defm ATOMIC_LOAD_ADD_I8   : Atomic2Ops32<atomic_load_add_8, "load_add_8">;
@@ -878,7 +917,7 @@ def SRLV    : shift_rotate_reg<0x06, 0x00, "srlv", srl, CPURegs>;
 def SRAV    : shift_rotate_reg<0x07, 0x00, "srav", sra, CPURegs>;
 
 // Rotate Instructions
-let Predicates = [HasMips32r2] in {
+let Predicates = [HasMips32r2, HasStandardEncoding] in {
     def ROTR    : shift_rotate_imm32<0x02, 0x01, "rotr", rotr>;
     def ROTRV   : shift_rotate_reg<0x06, 0x01, "rotrv", rotr, CPURegs>;
 }
@@ -901,11 +940,11 @@ defm ULW     : LoadM32<0x23, "ulw",  load_u, 1>;
 defm USH     : StoreM32<0x29, "ush", truncstorei16_u, 1>;
 defm USW     : StoreM32<0x2b, "usw", store_u, 1>;
 
-/// Primitives for unaligned
-defm LWL     : LoadUnAlign32<0x22>;
-defm LWR     : LoadUnAlign32<0x26>;
-defm SWL     : StoreUnAlign32<0x2A>;
-defm SWR     : StoreUnAlign32<0x2E>;
+/// load/store left/right
+defm LWL : LoadLeftRightM32<0x22, "lwl", MipsLWL>;
+defm LWR : LoadLeftRightM32<0x26, "lwr", MipsLWR>;
+defm SWL : StoreLeftRightM32<0x2a, "swl", MipsSWL>;
+defm SWR : StoreLeftRightM32<0x2e, "swr", MipsSWR>;
 
 let hasSideEffects = 1 in
 def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
@@ -919,13 +958,17 @@ def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
 }
 
 /// Load-linked, Store-conditional
-def LL    : LLBase<0x30, "ll", CPURegs, mem>, Requires<[NotN64]>;
-def LL_P8 : LLBase<0x30, "ll", CPURegs, mem64>, Requires<[IsN64]> {
+def LL    : LLBase<0x30, "ll", CPURegs, mem>,
+            Requires<[NotN64, HasStandardEncoding]>;
+def LL_P8 : LLBase<0x30, "ll", CPURegs, mem64>,
+            Requires<[IsN64, HasStandardEncoding]> {
   let DecoderNamespace = "Mips64";
 }
 
-def SC    : SCBase<0x38, "sc", CPURegs, mem>, Requires<[NotN64]>;
-def SC_P8 : SCBase<0x38, "sc", CPURegs, mem64>, Requires<[IsN64]> {
+def SC    : SCBase<0x38, "sc", CPURegs, mem>,
+            Requires<[NotN64, HasStandardEncoding]>;
+def SC_P8 : SCBase<0x38, "sc", CPURegs, mem64>,
+            Requires<[IsN64, HasStandardEncoding]> {
   let DecoderNamespace = "Mips64";
 }
 
@@ -1001,7 +1044,7 @@ def MSUBU : MArithR<5, "msubu", MipsMSubu>;
 // MUL is a assembly macro in the current used ISAs. In recent ISA's
 // it is a real instruction.
 def MUL   : ArithLogicR<0x1c, 0x02, "mul", mul, IIImul, CPURegs, 1>,
-            Requires<[HasMips32]>;
+            Requires<[HasMips32, HasStandardEncoding]>;
 
 def RDHWR : ReadHardware<CPURegs, HWRegs>;
 
@@ -1087,13 +1130,13 @@ def : Pat<(not CPURegs:$in),
           (NOR CPURegs:$in, ZERO)>;
 
 // extended loads
-let Predicates = [NotN64] in {
+let Predicates = [NotN64, HasStandardEncoding] in {
   def : Pat<(i32 (extloadi1  addr:$src)), (LBu addr:$src)>;
   def : Pat<(i32 (extloadi8  addr:$src)), (LBu addr:$src)>;
   def : Pat<(i32 (extloadi16_a addr:$src)), (LHu addr:$src)>;
   def : Pat<(i32 (extloadi16_u addr:$src)), (ULHu addr:$src)>;
 }
-let Predicates = [IsN64] in {
+let Predicates = [IsN64, HasStandardEncoding] in {
   def : Pat<(i32 (extloadi1  addr:$src)), (LBu_P8 addr:$src)>;
   def : Pat<(i32 (extloadi8  addr:$src)), (LBu_P8 addr:$src)>;
   def : Pat<(i32 (extloadi16_a addr:$src)), (LHu_P8 addr:$src)>;
@@ -1101,11 +1144,11 @@ let Predicates = [IsN64] in {
 }
 
 // peepholes
-let Predicates = [NotN64] in {
+let Predicates = [NotN64, HasStandardEncoding] in {
   def : Pat<(store_a (i32 0), addr:$dst), (SW ZERO, addr:$dst)>;
   def : Pat<(store_u (i32 0), addr:$dst), (USW ZERO, addr:$dst)>;
 }
-let Predicates = [IsN64] in {
+let Predicates = [IsN64, HasStandardEncoding] in {
   def : Pat<(store_a (i32 0), addr:$dst), (SW_P8 ZERO, addr:$dst)>;
   def : Pat<(store_u (i32 0), addr:$dst), (USW_P8 ZERO, addr:$dst)>;
 }
@@ -1197,3 +1240,8 @@ include "MipsInstrFPU.td"
 include "Mips64InstrInfo.td"
 include "MipsCondMov.td"
 
+//
+// Mips16
+
+include "Mips16InstrFormats.td"
+include "Mips16InstrInfo.td"

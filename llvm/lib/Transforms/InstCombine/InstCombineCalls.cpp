@@ -309,14 +309,8 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       Value *Arg1 = MI->getArgOperand(0);
       Value *Arg2 = MI->getArgOperand(1);
       if (ConstantInt *CI1 = dyn_cast<ConstantInt>(Arg1))
-        if (ConstantInt *CI2 = dyn_cast<ConstantInt>(Arg2)) {
-          bool overflow;
-          APInt SizeAP = CI1->getValue().umul_ov(CI2->getValue(), overflow);
-          if (!overflow)
-            Size = SizeAP.getZExtValue();
-          else
-            return ReplaceInstUsesWith(CI, ConstantInt::get(ReturnTy, DontKnow));
-        }
+        if (ConstantInt *CI2 = dyn_cast<ConstantInt>(Arg2))
+          Size = (CI1->getValue() * CI2->getValue()).getZExtValue();
     }
 
     // Do not return "I don't know" here. Later optimization passes could
@@ -1257,8 +1251,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   if (NewRetTy->isVoidTy())
     Caller->setName("");   // Void type should not have a name.
 
-  const AttrListPtr &NewCallerPAL = AttrListPtr::get(attrVec.begin(),
-                                                     attrVec.end());
+  const AttrListPtr &NewCallerPAL = AttrListPtr::get(attrVec);
 
   Instruction *NC;
   if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
@@ -1430,8 +1423,7 @@ InstCombiner::transformCallThroughTrampoline(CallSite CS,
         NestF->getType() == PointerType::getUnqual(NewFTy) ?
         NestF : ConstantExpr::getBitCast(NestF,
                                          PointerType::getUnqual(NewFTy));
-      const AttrListPtr &NewPAL = AttrListPtr::get(NewAttrs.begin(),
-                                                   NewAttrs.end());
+      const AttrListPtr &NewPAL = AttrListPtr::get(NewAttrs);
 
       Instruction *NewCaller;
       if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {

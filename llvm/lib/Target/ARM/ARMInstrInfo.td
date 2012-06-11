@@ -18,6 +18,9 @@
 // Type profiles.
 def SDT_ARMCallSeqStart : SDCallSeqStart<[ SDTCisVT<0, i32> ]>;
 def SDT_ARMCallSeqEnd   : SDCallSeqEnd<[ SDTCisVT<0, i32>, SDTCisVT<1, i32> ]>;
+def SDT_ARMStructByVal : SDTypeProfile<0, 4,
+                                       [SDTCisVT<0, i32>, SDTCisVT<1, i32>,
+                                        SDTCisVT<2, i32>, SDTCisVT<3, i32>]>;
 
 def SDT_ARMSaveCallPC : SDTypeProfile<0, 1, []>;
 
@@ -90,6 +93,10 @@ def ARMcallseq_start : SDNode<"ISD::CALLSEQ_START", SDT_ARMCallSeqStart,
                               [SDNPHasChain, SDNPOutGlue]>;
 def ARMcallseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_ARMCallSeqEnd,
                               [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+def ARMcopystructbyval : SDNode<"ARMISD::COPY_STRUCT_BYVAL" ,
+                                SDT_ARMStructByVal,
+                                [SDNPHasChain, SDNPInGlue, SDNPOutGlue,
+                                 SDNPMayStore, SDNPMayLoad]>;
 
 def ARMcall          : SDNode<"ARMISD::CALL", SDT_ARMcall,
                               [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue,
@@ -1614,6 +1621,8 @@ def SEL : AI<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm, NoItinerary, "sel",
   let Inst{27-20} = 0b01101000;
   let Inst{7-4} = 0b1011;
   let Inst{11-8} = 0b1111;
+  
+  let Unpredictable{11-8} = 0b1111;
 }
 
 def SEV : AI<(outs), (ins), MiscFrm, NoItinerary, "sev", "",
@@ -2429,6 +2438,7 @@ multiclass AI2_stridx<bit isByte, string opc,
      let Inst{23} = offset{12};
      let Inst{19-16} = addr;
      let Inst{11-0} = offset{11-0};
+     let Inst{4} = 0;
 
     let DecoderMethod = "DecodeAddrMode2IdxInstruction";
    }
@@ -2688,7 +2698,7 @@ defm STRHT : AI3strT<0b1011, "strht">;
 multiclass arm_ldst_mult<string asm, string sfx, bit L_bit, bit P_bit, Format f,
                          InstrItinClass itin, InstrItinClass itin_upd> {
   // IA is the default, so no need for an explicit suffix on the
-  // mnemonic here. Without it is the cannonical spelling.
+  // mnemonic here. Without it is the canonical spelling.
   def IA :
     AXI4<(outs), (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops),
          IndexModeNone, f, itin,
@@ -3402,7 +3412,7 @@ class AsMul1I64<bits<7> opcod, dag oops, dag iops, InstrItinClass itin,
 
 // FIXME: The v5 pseudos are only necessary for the additional Constraint
 //        property. Remove them when it's possible to add those properties
-//        on an individual MachineInstr, not just an instuction description.
+//        on an individual MachineInstr, not just an instruction description.
 let isCommutable = 1, TwoOperandAliasConstraint = "$Rn = $Rd" in {
 def MUL : AsMul1I32<0b0000000, (outs GPRnopc:$Rd),
                     (ins GPRnopc:$Rn, GPRnopc:$Rm),
@@ -3551,8 +3561,7 @@ def SMMLAR : AMul2Ia <0b0111010, 0b0011, (outs GPR:$Rd),
 
 def SMMLS : AMul2Ia <0b0111010, 0b1101, (outs GPR:$Rd),
                (ins GPR:$Rn, GPR:$Rm, GPR:$Ra),
-               IIC_iMAC32, "smmls", "\t$Rd, $Rn, $Rm, $Ra",
-               [(set GPR:$Rd, (sub GPR:$Ra, (mulhs GPR:$Rn, GPR:$Rm)))]>,
+               IIC_iMAC32, "smmls", "\t$Rd, $Rn, $Rm, $Ra", []>,
             Requires<[IsARM, HasV6]>;
 
 def SMMLSR : AMul2Ia <0b0111010, 0b1111, (outs GPR:$Rd),
@@ -4161,6 +4170,13 @@ let usesCustomInserter = 1 in {
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$old, GPR:$new), NoItinerary,
       [(set GPR:$dst, (atomic_cmp_swap_32 GPR:$ptr, GPR:$old, GPR:$new))]>;
 }
+}
+
+let usesCustomInserter = 1 in {
+    def COPY_STRUCT_BYVAL_I32 : PseudoInst<
+      (outs), (ins GPR:$dst, GPR:$src, i32imm:$size, i32imm:$alignment),
+      NoItinerary,
+      [(ARMcopystructbyval GPR:$dst, GPR:$src, imm:$size, imm:$alignment)]>;
 }
 
 let mayLoad = 1 in {

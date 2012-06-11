@@ -102,7 +102,8 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
     } else {
       Attr *NewAttr = sema::instantiateTemplateAttribute(TmplAttr, Context,
                                                          *this, TemplateArgs);
-      New->addAttr(NewAttr);
+      if (NewAttr)
+        New->addAttr(NewAttr);
     }
   }
 }
@@ -429,8 +430,8 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
                                             D->getLocation(),
                                             D->isMutable(),
                                             BitWidth,
-                                            D->hasInClassInitializer(),
-                                            D->getTypeSpecStartLoc(),
+                                            D->getInClassInitStyle(),
+                                            D->getInnerLocStart(),
                                             D->getAccess(),
                                             0);
   if (!Field) {
@@ -671,7 +672,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
     }
 
     if (EnumConst) {
-      SemaRef.InstantiateAttrs(TemplateArgs, &*EC, EnumConst);
+      SemaRef.InstantiateAttrs(TemplateArgs, *EC, EnumConst);
 
       EnumConst->setAccess(Enum->getAccess());
       Enum->addDecl(EnumConst);
@@ -682,7 +683,7 @@ void TemplateDeclInstantiator::InstantiateEnumDefinition(
           !Enum->isScoped()) {
         // If the enumeration is within a function or method, record the enum
         // constant as a local.
-        SemaRef.CurrentInstantiationScope->InstantiatedLocal(&*EC, EnumConst);
+        SemaRef.CurrentInstantiationScope->InstantiatedLocal(*EC, EnumConst);
       }
     }
   }

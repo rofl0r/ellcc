@@ -2796,7 +2796,7 @@ bool HexagonPacketizerList::CanPromoteToNewValueStore( MachineInstr *MI,
   // first operand is always the result
 
   const HexagonInstrInfo *QII = (const HexagonInstrInfo *) TII;
-  const TargetRegisterClass* PacketRC = QII->getRegClass(MCID, 0, QRI);
+  const TargetRegisterClass* PacketRC = QII->getRegClass(MCID, 0, QRI, MF);
 
   // if there is already an store in the packet, no can do new value store
   // Arch Spec 3.4.4.2.
@@ -2845,9 +2845,9 @@ bool HexagonPacketizerList::CanPromoteToNewValueStore( MachineInstr *MI,
 
     // Check to make sure that they both will have their predicates
     // evaluate identically
-    unsigned predRegNumSrc;
-    unsigned predRegNumDst;
-    const TargetRegisterClass* predRegClass;
+    unsigned predRegNumSrc = 0;
+    unsigned predRegNumDst = 0;
+    const TargetRegisterClass* predRegClass = NULL;
 
     // Get predicate register used in the source instruction
     for(unsigned opNum = 0; opNum < PacketMI->getNumOperands(); opNum++) {

@@ -36,6 +36,13 @@ static cl::opt<bool> EnableDelaySlotFiller(
   cl::desc("Fill the Mips delay slots useful instructions."),
   cl::Hidden);
 
+// This option can be used to silence complaints by machine verifier passes.
+static cl::opt<bool> SkipDelaySlotFiller(
+  "skip-mips-delay-filler",
+  cl::init(false),
+  cl::desc("Skip MIPS' delay slot filling pass."),
+  cl::Hidden);
+
 namespace {
   struct Filler : public MachineFunctionPass {
 
@@ -53,6 +60,9 @@ namespace {
 
     bool runOnMachineBasicBlock(MachineBasicBlock &MBB);
     bool runOnMachineFunction(MachineFunction &F) {
+      if (SkipDelaySlotFiller)
+        return false;
+
       bool Changed = false;
       for (MachineFunction::iterator FI = F.begin(), FE = F.end();
            FI != FE; ++FI)
@@ -241,13 +251,10 @@ void Filler::insertDefsUses(MachineBasicBlock::iterator MI,
 
 //returns true if the Reg or its alias is in the RegSet.
 bool Filler::IsRegInSet(SmallSet<unsigned, 32>& RegSet, unsigned Reg) {
-  if (RegSet.count(Reg))
-    return true;
-  // check Aliased Registers
-  for (const uint16_t *Alias = TM.getRegisterInfo()->getAliasSet(Reg);
-       *Alias; ++Alias)
-    if (RegSet.count(*Alias))
+  // Check Reg and all aliased Registers.
+  for (MCRegAliasIterator AI(Reg, TM.getRegisterInfo(), true);
+       AI.isValid(); ++AI)
+    if (RegSet.count(*AI))
       return true;
-
   return false;
 }

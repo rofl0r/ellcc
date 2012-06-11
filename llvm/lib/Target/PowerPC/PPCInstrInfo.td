@@ -438,6 +438,13 @@ let isBranch = 1, isTerminator = 1, hasCtrlDep = 1, PPC970_Unit = 7 in {
   def BCC : BForm<16, 0, 0, (outs), (ins pred:$cond, condbrtarget:$dst),
                   "b${cond:cc} ${cond:reg}, $dst"
                   /*[(PPCcondbranch CRRC:$crS, imm:$opc, bb:$dst)]*/>;
+
+  let Defs = [CTR], Uses = [CTR] in {
+    def BDZ  : IForm_ext<16, 18, 0, 0, (outs), (ins condbrtarget:$dst),
+                         "bdz $dst",  BrB, []>;
+    def BDNZ : IForm_ext<16, 16, 0, 0, (outs), (ins condbrtarget:$dst),
+                         "bdnz $dst", BrB, []>;
+  }
 }
 
 // Darwin ABI Calls.
@@ -852,6 +859,9 @@ def SYNC : XForm_24_sync<31, 598, (outs), (ins),
 
 let PPC970_Unit = 1 in {  // FXU Operations.
 def ADDI   : DForm_2<14, (outs GPRC:$rD), (ins GPRC:$rA, s16imm:$imm),
+                     "addi $rD, $rA, $imm", IntGeneral,
+                     [(set GPRC:$rD, (add GPRC:$rA, immSExt16:$imm))]>;
+def ADDIL  : DForm_2<14, (outs GPRC:$rD), (ins GPRC:$rA, symbolLo:$imm),
                      "addi $rD, $rA, $imm", IntGeneral,
                      [(set GPRC:$rD, (add GPRC:$rA, immSExt16:$imm))]>;
 let Defs = [CARRY] in {
@@ -1418,6 +1428,10 @@ def : Pat<(PPChi tjumptable:$in, 0), (LIS tjumptable:$in)>;
 def : Pat<(PPClo tjumptable:$in, 0), (LI tjumptable:$in)>;
 def : Pat<(PPChi tblockaddress:$in, 0), (LIS tblockaddress:$in)>;
 def : Pat<(PPClo tblockaddress:$in, 0), (LI tblockaddress:$in)>;
+def : Pat<(PPChi tglobaltlsaddr:$g, GPRC:$in),
+          (ADDIS GPRC:$in, tglobaltlsaddr:$g)>;
+def : Pat<(PPClo tglobaltlsaddr:$g, GPRC:$in),
+          (ADDIL GPRC:$in, tglobaltlsaddr:$g)>;
 def : Pat<(add GPRC:$in, (PPChi tglobaladdr:$g, 0)),
           (ADDIS GPRC:$in, tglobaladdr:$g)>;
 def : Pat<(add GPRC:$in, (PPChi tconstpool:$g, 0)),

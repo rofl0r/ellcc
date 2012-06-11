@@ -283,6 +283,8 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts, ToArgsList &Res) {
     Res.push_back("-fobjc-dispatch-method=non-legacy");
     break;
   }
+  if (Opts.BoundsChecking > 0)
+    Res.push_back("-fbounds-checking=" + llvm::utostr(Opts.BoundsChecking));
   if (Opts.NumRegisterParameters)
     Res.push_back("-mregparm", llvm::utostr(Opts.NumRegisterParameters));
   if (Opts.NoGlobalMerge)
@@ -443,6 +445,7 @@ static const char *getActionName(frontend::ActionKind Kind) {
   case frontend::PrintPreamble:          return "-print-preamble";
   case frontend::PrintPreprocessedInput: return "-E";
   case frontend::RewriteMacros:          return "-rewrite-macros";
+  case frontend::RewriteIncludes:        return "-rewrite-includes";
   case frontend::RewriteObjC:            return "-rewrite-objc";
   case frontend::RewriteTest:            return "-rewrite-test";
   case frontend::RunAnalysis:            return "-analyze";
@@ -1215,6 +1218,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.UnwindTables = Args.hasArg(OPT_munwind_tables);
   Opts.RelocationModel = Args.getLastArgValue(OPT_mrelocation_model, "pic");
   Opts.TrapFuncName = Args.getLastArgValue(OPT_ftrap_function_EQ);
+  Opts.BoundsChecking = Args.getLastArgIntValue(OPT_fbounds_checking_EQ, 0,
+                                                Diags);
 
   Opts.FunctionSections = Args.hasArg(OPT_ffunction_sections);
   Opts.DataSections = Args.hasArg(OPT_fdata_sections);
@@ -1431,6 +1436,8 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
       Opts.ProgramAction = frontend::PrintPreprocessedInput; break;
     case OPT_rewrite_macros:
       Opts.ProgramAction = frontend::RewriteMacros; break;
+    case OPT_rewrite_includes:
+      Opts.ProgramAction = frontend::RewriteIncludes; break;
     case OPT_rewrite_objc:
       Opts.ProgramAction = frontend::RewriteObjC; break;
     case OPT_rewrite_test:

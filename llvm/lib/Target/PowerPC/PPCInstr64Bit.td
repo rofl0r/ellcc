@@ -229,6 +229,15 @@ def : Pat<(PPCtc_return (i64 texternalsym:$dst), imm:$imm),
 def : Pat<(PPCtc_return CTRRC8:$dst, imm:$imm),
           (TCRETURNri8 CTRRC8:$dst, imm:$imm)>;
 
+let isBranch = 1, isTerminator = 1, hasCtrlDep = 1, PPC970_Unit = 7 in {
+  let Defs = [CTR8], Uses = [CTR8] in {
+    def BDZ8  : IForm_ext<16, 18, 0, 0, (outs), (ins condbrtarget:$dst),
+                         "bdz $dst",  BrB, []>;
+    def BDNZ8 : IForm_ext<16, 16, 0, 0, (outs), (ins condbrtarget:$dst),
+                         "bdnz $dst", BrB, []>;
+  }
+}
+
 // 64-but CR instructions
 def MTCRF8 : XFXForm_5<31, 144, (outs crbitm:$FXM), (ins G8RC:$rS),
                       "mtcrf $FXM, $rS", BrMCRX>,
@@ -277,14 +286,6 @@ def MFLR8  : XFXForm_1_ext<31, 339, 8, (outs G8RC:$rT), (ins),
 //
 
 let PPC970_Unit = 1 in {  // FXU Operations.
-
-// Copies, extends, truncates.
-def OR4To8  : XForm_6<31, 444, (outs G8RC:$rA), (ins GPRC:$rS, GPRC:$rB),
-                   "or $rA, $rS, $rB", IntGeneral,
-                   []>;
-def OR8To4  : XForm_6<31, 444, (outs GPRC:$rA), (ins G8RC:$rS, G8RC:$rB),
-                   "or $rA, $rS, $rB", IntGeneral,
-                   []>;
 
 def LI8  : DForm_2_r0<14, (outs G8RC:$rD), (ins symbolLo64:$imm),
                       "li $rD, $imm", IntGeneral,
@@ -355,6 +356,9 @@ def ADDIC8 : DForm_2<12, (outs G8RC:$rD), (ins G8RC:$rA, s16imm64:$imm),
                      [(set G8RC:$rD, (addc G8RC:$rA, immSExt16:$imm))]>;
 }
 def ADDI8  : DForm_2<14, (outs G8RC:$rD), (ins G8RC:$rA, s16imm64:$imm),
+                     "addi $rD, $rA, $imm", IntGeneral,
+                     [(set G8RC:$rD, (add G8RC:$rA, immSExt16:$imm))]>;
+def ADDI8L  : DForm_2<14, (outs G8RC:$rD), (ins G8RC:$rA, symbolLo64:$imm),
                      "addi $rD, $rA, $imm", IntGeneral,
                      [(set G8RC:$rD, (add G8RC:$rA, immSExt16:$imm))]>;
 def ADDIS8 : DForm_2<15, (outs G8RC:$rD), (ins G8RC:$rA, symbolHi64:$imm),
@@ -660,6 +664,14 @@ def STHU8 : DForm_1a<45, (outs ptr_rc:$ea_res), (ins G8RC:$rS,
                                         iaddroff:$ptroff))]>,
                     RegConstraint<"$ptrreg = $ea_res">, NoEncode<"$ea_res">;
 
+def STWU8 : DForm_1a<37, (outs ptr_rc:$ea_res), (ins G8RC:$rS,
+                             symbolLo:$ptroff, ptr_rc:$ptrreg),
+                    "stwu $rS, $ptroff($ptrreg)", LdStStore,
+                    [(set ptr_rc:$ea_res,
+                          (pre_truncsti32 G8RC:$rS, ptr_rc:$ptrreg,
+                                          iaddroff:$ptroff))]>,
+                    RegConstraint<"$ptrreg = $ea_res">, NoEncode<"$ea_res">;
+
 def STDU : DSForm_1a<62, 1, (outs ptr_rc:$ea_res), (ins G8RC:$rS,
                                         s16immX4:$ptroff, ptr_rc:$ptrreg),
                     "stdu $rS, $ptroff($ptrreg)", LdStSTD,
@@ -706,11 +718,12 @@ def FCTIDZ : XForm_26<63, 815, (outs F8RC:$frD), (ins F8RC:$frB),
 
 // Extensions and truncates to/from 32-bit regs.
 def : Pat<(i64 (zext GPRC:$in)),
-          (RLDICL (OR4To8 GPRC:$in, GPRC:$in), 0, 32)>;
+          (RLDICL (INSERT_SUBREG (i64 (IMPLICIT_DEF)), GPRC:$in, sub_32),
+                  0, 32)>;
 def : Pat<(i64 (anyext GPRC:$in)),
-          (OR4To8 GPRC:$in, GPRC:$in)>;
+          (INSERT_SUBREG (i64 (IMPLICIT_DEF)), GPRC:$in, sub_32)>;
 def : Pat<(i32 (trunc G8RC:$in)),
-          (OR8To4 G8RC:$in, G8RC:$in)>;
+          (EXTRACT_SUBREG G8RC:$in, sub_32)>;
 
 // Extending loads with i64 targets.
 def : Pat<(zextloadi1 iaddr:$src),
@@ -765,6 +778,10 @@ def : Pat<(PPChi tjumptable:$in , 0), (LIS8 tjumptable:$in)>;
 def : Pat<(PPClo tjumptable:$in , 0), (LI8  tjumptable:$in)>;
 def : Pat<(PPChi tblockaddress:$in, 0), (LIS8 tblockaddress:$in)>;
 def : Pat<(PPClo tblockaddress:$in, 0), (LI8  tblockaddress:$in)>;
+def : Pat<(PPChi tglobaltlsaddr:$g, G8RC:$in),
+          (ADDIS8 G8RC:$in, tglobaltlsaddr:$g)>;
+def : Pat<(PPClo tglobaltlsaddr:$g, G8RC:$in),
+          (ADDI8L G8RC:$in, tglobaltlsaddr:$g)>;
 def : Pat<(add G8RC:$in, (PPChi tglobaladdr:$g, 0)),
           (ADDIS8 G8RC:$in, tglobaladdr:$g)>;
 def : Pat<(add G8RC:$in, (PPChi tconstpool:$g, 0)),

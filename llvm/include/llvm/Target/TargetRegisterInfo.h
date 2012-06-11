@@ -337,9 +337,15 @@ public:
     if (regA == regB) return true;
     if (isVirtualRegister(regA) || isVirtualRegister(regB))
       return false;
-    for (const uint16_t *regList = getOverlaps(regA)+1; *regList; ++regList) {
-      if (*regList == regB) return true;
-    }
+
+    // Regunits are numerically ordered. Find a common unit.
+    MCRegUnitIterator RUA(regA, this);
+    MCRegUnitIterator RUB(regB, this);
+    do {
+      if (*RUA == *RUB) return true;
+      if (*RUA < *RUB) ++RUA;
+      else             ++RUB;
+    } while (RUA.isValid() && RUB.isValid());
     return false;
   }
 
@@ -351,10 +357,10 @@ public:
 
   /// isSuperRegister - Returns true if regB is a super-register of regA.
   ///
-  bool isSuperRegister(unsigned regA, unsigned regB) const {
-    for (const uint16_t *regList = getSuperRegisters(regA); *regList;++regList){
-      if (*regList == regB) return true;
-    }
+  bool isSuperRegister(unsigned RegA, unsigned RegB) const {
+    for (MCSuperRegIterator I(RegA, this); I.isValid(); ++I)
+      if (*I == RegB)
+        return true;
     return false;
   }
 
@@ -458,6 +464,34 @@ public:
     return b;
   }
 
+  /// getCommonSuperRegClass - Find a common super-register class if it exists.
+  ///
+  /// Find a register class, SuperRC and two sub-register indices, PreA and
+  /// PreB, such that:
+  ///
+  ///   1. PreA + SubA == PreB + SubB  (using composeSubRegIndices()), and
+  ///
+  ///   2. For all Reg in SuperRC: Reg:PreA in RCA and Reg:PreB in RCB, and
+  ///
+  ///   3. SuperRC->getSize() >= max(RCA->getSize(), RCB->getSize()).
+  ///
+  /// SuperRC will be chosen such that no super-class of SuperRC satisfies the
+  /// requirements, and there is no register class with a smaller spill size
+  /// that satisfies the requirements.
+  ///
+  /// SubA and SubB must not be 0. Use getMatchingSuperRegClass() instead.
+  ///
+  /// Either of the PreA and PreB sub-register indices may be returned as 0. In
+  /// that case, the returned register class will be a sub-class of the
+  /// corresponding argument register class.
+  ///
+  /// The function returns NULL if no register class can be found.
+  ///
+  const TargetRegisterClass*
+  getCommonSuperRegClass(const TargetRegisterClass *RCA, unsigned SubA,
+                         const TargetRegisterClass *RCB, unsigned SubB,
+                         unsigned &PreA, unsigned &PreB) const;
+
   //===--------------------------------------------------------------------===//
   // Register Class Information
   //
@@ -487,7 +521,8 @@ public:
   /// getPointerRegClass - Returns a TargetRegisterClass used for pointer
   /// values.  If a target supports multiple different pointer register classes,
   /// kind specifies which one is indicated.
-  virtual const TargetRegisterClass *getPointerRegClass(unsigned Kind=0) const {
+  virtual const TargetRegisterClass *
+  getPointerRegClass(const MachineFunction &MF, unsigned Kind=0) const {
     llvm_unreachable("Target didn't implement getPointerRegClass!");
   }
 
@@ -811,6 +846,29 @@ public:
 };
 
 static inline raw_ostream &operator<<(raw_ostream &OS, const PrintReg &PR) {
+  PR.print(OS);
+  return OS;
+}
+
+/// PrintRegUnit - Helper class for printing register units on a raw_ostream.
+///
+/// Register units are named after their root registers:
+///
+///   AL      - Single root.
+///   FP0~ST7 - Dual roots.
+///
+/// Usage: OS << PrintRegUnit(Unit, TRI) << '\n';
+///
+class PrintRegUnit {
+  const TargetRegisterInfo *TRI;
+  unsigned Unit;
+public:
+  PrintRegUnit(unsigned unit, const TargetRegisterInfo *tri)
+    : TRI(tri), Unit(unit) {}
+  void print(raw_ostream&) const;
+};
+
+static inline raw_ostream &operator<<(raw_ostream &OS, const PrintRegUnit &PR) {
   PR.print(OS);
   return OS;
 }

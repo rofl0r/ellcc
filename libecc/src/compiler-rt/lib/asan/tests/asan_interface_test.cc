@@ -1,4 +1,4 @@
-//===-- asan_interface_test.cc ------------*- C++ -*-===//
+//===-- asan_interface_test.cc ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -151,12 +151,6 @@ TEST(AddressSanitizerInterface, GetFreeBytesTest) {
     new_free_bytes = __asan_get_free_bytes();
     EXPECT_LT(new_free_bytes, old_free_bytes);
     old_free_bytes = new_free_bytes;
-  }
-  // Deleting these chunks will move them to quarantine, number of free
-  // bytes won't increase.
-  for (i = 0; i < kNumOfChunks; i++) {
-    free(chunks[i]);
-    EXPECT_EQ(old_free_bytes, __asan_get_free_bytes());
   }
   EXPECT_DEATH(DoLargeMallocForGetFreeBytesTestAndDie(), "double-free");
 }
@@ -363,8 +357,6 @@ TEST(AddressSanitizerInterface, SetErrorReportCallbackTest) {
   __asan_set_error_report_callback(NULL);
 }
 
-#ifdef __linux__
-// http://code.google.com/p/address-sanitizer/issues/detail?id=51
 TEST(AddressSanitizerInterface, GetOwnershipStressTest) {
   std::vector<char *> pointers;
   std::vector<size_t> sizes;
@@ -385,4 +377,3 @@ TEST(AddressSanitizerInterface, GetOwnershipStressTest) {
   for (size_t i = 0, n = pointers.size(); i < n; i++)
     free(pointers[i]);
 }
-#endif  // __linux__

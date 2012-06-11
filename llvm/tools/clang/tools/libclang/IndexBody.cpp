@@ -9,14 +9,14 @@
 
 #include "IndexingContext.h"
 
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "RecursiveASTVisitor.h"
 
 using namespace clang;
 using namespace cxindex;
 
 namespace {
 
-class BodyIndexer : public RecursiveASTVisitor<BodyIndexer> {
+class BodyIndexer : public cxindex::RecursiveASTVisitor<BodyIndexer> {
   IndexingContext &IndexCtx;
   const NamedDecl *Parent;
   const DeclContext *ParentDC;
@@ -87,6 +87,12 @@ public:
 
     // No need to do a handleReference for the objc method, because there will
     // be a message expr as part of PseudoObjectExpr.
+    return true;
+  }
+
+  bool VisitObjCProtocolExpr(ObjCProtocolExpr *E) {
+    IndexCtx.handleReference(E->getProtocol(), E->getProtocolIdLoc(),
+                             Parent, ParentDC, E, CXIdxEntityRef_Direct);
     return true;
   }
 

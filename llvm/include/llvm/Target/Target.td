@@ -96,6 +96,9 @@ class Register<string n, list<string> altNames = []> {
   // x86 register AX is covered by its sub-registers AL and AH, but EAX is not
   // covered by its sub-register AX.
   bit CoveredBySubRegs = 0;
+
+  // HWEncoding - The target specific hardware encoding for this register.
+  bits<16> HWEncoding = 0;
 }
 
 // RegisterWithSubRegs - This can be used to define instances of Register which
@@ -188,7 +191,8 @@ class RegisterClass<string namespace, list<ValueType> regTypes, int alignment,
 // also in the second set.
 //
 // (sequence "R%u", 0, 15) -> [R0, R1, ..., R15]. Generate a sequence of
-// numbered registers.
+// numbered registers.  Takes an optional 4th operand which is a stride to use
+// when generating the sequence.
 //
 // (shl GPR, 4) - Remove the first N elements.
 //

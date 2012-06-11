@@ -148,6 +148,10 @@ public:
   /// TypeLocs.
   bool shouldWalkTypesOfTypeLocs() const { return true; }
 
+  /// \brief Return whether this visitor should recurse into implicit
+  /// declarations, e.g., implicit constructors and destructors.
+  bool shouldVisitImplicitDeclarations() const { return false; }
+
   /// \brief Return whether \param S should be traversed using data recursion
   /// to avoid a stack overflow with extreme cases.
   bool shouldUseDataRecursionFor(Stmt *S) const {
@@ -601,10 +605,9 @@ bool RecursiveASTVisitor<Derived>::TraverseDecl(Decl *D) {
   if (!D)
     return true;
 
-  // As a syntax visitor, we want to ignore declarations for
-  // implicitly-defined declarations (ones not typed explicitly by the
-  // user).
-  if (D->isImplicit())
+  // As a syntax visitor, by default we want to ignore declarations for
+  // implicit declarations (ones not typed explicitly by the user).
+  if (!getDerived().shouldVisitImplicitDeclarations() && D->isImplicit())
     return true;
 
   switch (D->getKind()) {
@@ -1241,7 +1244,8 @@ bool RecursiveASTVisitor<Derived>::Traverse##DECL (DECL *D) {   \
 DEF_TRAVERSE_DECL(AccessSpecDecl, { })
 
 DEF_TRAVERSE_DECL(BlockDecl, {
-    TRY_TO(TraverseTypeLoc(D->getSignatureAsWritten()->getTypeLoc()));
+    if (TypeSourceInfo *TInfo = D->getSignatureAsWritten())
+      TRY_TO(TraverseTypeLoc(TInfo->getTypeLoc()));
     TRY_TO(TraverseStmt(D->getBody()));
     // This return statement makes sure the traversal of nodes in
     // decls_begin()/decls_end() (done in the DEF_TRAVERSE_DECL macro)
@@ -1451,10 +1455,11 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionInstantiations(
       TRY_TO(TraverseDecl(FD));
       break;
 
-    // No need to visit explicit instantiations, we'll find the node
-    // eventually.
+    // FIXME: For now traverse explicit instantiations here. Change that
+    // once they are represented as dedicated nodes in the AST.
     case TSK_ExplicitInstantiationDeclaration:
     case TSK_ExplicitInstantiationDefinition:
+      TRY_TO(TraverseDecl(FD));
       break;
 
     case TSK_ExplicitSpecialization:
@@ -1484,7 +1489,7 @@ DEF_TRAVERSE_DECL(TemplateTemplateParmDecl, {
     // D is the "T" in something like
     //   template <template <typename> class T> class container { };
     TRY_TO(TraverseDecl(D->getTemplatedDecl()));
-    if (D->hasDefaultArgument()) {
+    if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited()) {
       TRY_TO(TraverseTemplateArgumentLoc(D->getDefaultArgument()));
     }
     TRY_TO(TraverseTemplateParameterListHelper(D->getTemplateParameters()));
@@ -1494,7 +1499,7 @@ DEF_TRAVERSE_DECL(TemplateTypeParmDecl, {
     // D is the "T" in something like "template<typename T> class vector;"
     if (D->getTypeForDecl())
       TRY_TO(TraverseType(QualType(D->getTypeForDecl(), 0)));
-    if (D->hasDefaultArgument())
+    if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited())
       TRY_TO(TraverseTypeLoc(D->getDefaultArgumentInfo()->getTypeLoc()));
   })
 
@@ -1695,7 +1700,9 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionHelper(FunctionDecl *D) {
   // FunctionNoProtoType or FunctionProtoType, or a typedef.  This
   // also covers the return type and the function parameters,
   // including exception specifications.
-  TRY_TO(TraverseTypeLoc(D->getTypeSourceInfo()->getTypeLoc()));
+  if (clang::TypeSourceInfo *TSI = D->getTypeSourceInfo()) {
+    TRY_TO(TraverseTypeLoc(TSI->getTypeLoc()));
+  }
 
   if (CXXConstructorDecl *Ctor = dyn_cast<CXXConstructorDecl>(D)) {
     // Constructor initializers.
@@ -1764,7 +1771,8 @@ DEF_TRAVERSE_DECL(ImplicitParamDecl, {
 DEF_TRAVERSE_DECL(NonTypeTemplateParmDecl, {
     // A non-type template parameter, e.g. "S" in template<int S> class Foo ...
     TRY_TO(TraverseDeclaratorHelper(D));
-    TRY_TO(TraverseStmt(D->getDefaultArgument()));
+    if (D->hasDefaultArgument() && !D->defaultArgumentWasInherited())
+      TRY_TO(TraverseStmt(D->getDefaultArgument()));
   })
 
 DEF_TRAVERSE_DECL(ParmVarDecl, {
@@ -2127,7 +2135,10 @@ DEF_TRAVERSE_STMT(ExtVectorElementExpr, { })
 DEF_TRAVERSE_STMT(GNUNullExpr, { })
 DEF_TRAVERSE_STMT(ImplicitValueInitExpr, { })
 DEF_TRAVERSE_STMT(ObjCBoolLiteralExpr, { })
-DEF_TRAVERSE_STMT(ObjCEncodeExpr, { })
+DEF_TRAVERSE_STMT(ObjCEncodeExpr, {
+  if (TypeSourceInfo *TInfo = S->getEncodedTypeSourceInfo())
+    TRY_TO(TraverseTypeLoc(TInfo->getTypeLoc()));
+})
 DEF_TRAVERSE_STMT(ObjCIsaExpr, { })
 DEF_TRAVERSE_STMT(ObjCIvarRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCMessageExpr, { })

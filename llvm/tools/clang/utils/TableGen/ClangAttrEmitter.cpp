@@ -1004,6 +1004,14 @@ void ClangAttrTemplateInstantiateEmitter::run(raw_ostream &OS) {
       continue;
 
     OS << "    case attr::" << R.getName() << ": {\n";
+    bool ShouldClone = R.getValueAsBit("Clone");
+
+    if (!ShouldClone) {
+      OS << "      return NULL;\n";
+      OS << "    }\n";
+      continue;
+    }
+
     OS << "      const " << R.getName() << "Attr *A = cast<"
        << R.getName() << "Attr>(At);\n";
     bool TDependent = R.getValueAsBit("TemplateDependent");
@@ -1062,7 +1070,8 @@ void ClangAttrParsedAttrListEmitter::run(raw_ostream &OS) {
     Record &Attr = **I;
     
     bool SemaHandler = Attr.getValueAsBit("SemaHandler");
-    
+    bool DistinctSpellings = Attr.getValueAsBit("DistinctSpellings");
+
     if (SemaHandler) {
       std::vector<StringRef> Spellings =
         getValueAsListOfStrings(Attr, "Spellings");
@@ -1079,6 +1088,9 @@ void ClangAttrParsedAttrListEmitter::run(raw_ostream &OS) {
           ProcessedAttrs.insert(AttrName);
 
         OS << "PARSED_ATTR(" << AttrName << ")\n";
+        
+        if (!DistinctSpellings)
+          break;
       }
     }
   }
@@ -1097,23 +1109,23 @@ void ClangAttrParsedAttrKindsEmitter::run(raw_ostream &OS) {
     
     bool SemaHandler = Attr.getValueAsBit("SemaHandler");
     bool Ignored = Attr.getValueAsBit("Ignored");
-    
+    bool DistinctSpellings = Attr.getValueAsBit("DistinctSpellings");
     if (SemaHandler || Ignored) {
       std::vector<StringRef> Spellings =
         getValueAsListOfStrings(Attr, "Spellings");
 
       for (std::vector<StringRef>::const_iterator I = Spellings.begin(),
            E = Spellings.end(); I != E; ++I) {
-        StringRef AttrName = *I, Spelling = *I;
-       
-        AttrName = NormalizeAttrName(AttrName);
-        Spelling = NormalizeAttrSpelling(Spelling);
+        StringRef AttrName = NormalizeAttrName(DistinctSpellings
+                                                 ? *I
+                                                 : Spellings.front());
+        StringRef Spelling = NormalizeAttrSpelling(*I);
 
         if (SemaHandler)
           Matches.push_back(
-            StringMatcher::StringPair(Spelling,
-                                      std::string("return AttributeList::AT_") +
-                                      AttrName.str() + ";"));
+            StringMatcher::StringPair(
+              Spelling,
+              std::string("return AttributeList::AT_")+AttrName.str() + ";"));
         else
           Matches.push_back(
             StringMatcher::StringPair(

@@ -2736,7 +2736,7 @@ static void transferARCOwnershipToDeclaratorChunk(TypeProcessingState &state,
   // TODO: mark whether we did this inference?
 }
 
-/// \brief Used for transfering ownership in casts resulting in l-values.
+/// \brief Used for transferring ownership in casts resulting in l-values.
 static void transferARCOwnership(TypeProcessingState &state,
                                  QualType &declSpecTy,
                                  Qualifiers::ObjCLifetime ownership) {
@@ -2882,6 +2882,10 @@ namespace {
     }
     void VisitObjCInterfaceTypeLoc(ObjCInterfaceTypeLoc TL) {
       TL.setNameLoc(DS.getTypeSpecTypeLoc());
+      // FIXME. We should have DS.getTypeSpecTypeEndLoc(). But, it requires
+      // addition field. What we have is good enough for dispay of location
+      // of 'fixit' on interface name.
+      TL.setNameEndLoc(DS.getLocEnd());
     }
     void VisitObjCObjectTypeLoc(ObjCObjectTypeLoc TL) {
       // Handle the base type, which might not have been written explicitly.
@@ -4024,6 +4028,13 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
       attr.setUsedAsTypeAttr();
       break;
 
+    case AttributeList::AT_w64:
+    case AttributeList::AT_ptr32:
+    case AttributeList::AT_ptr64:
+      // FIXME: don't ignore these
+      attr.setUsedAsTypeAttr();
+      break;
+
     case AttributeList::AT_ns_returns_retained:
       if (!state.getSema().getLangOpts().ObjCAutoRefCount)
 	break;
@@ -4351,7 +4362,7 @@ bool Sema::RequireLiteralType(SourceLocation Loc, QualType T,
       if (!I->getType()->isLiteralType() ||
           I->getType().isVolatileQualified()) {
         Diag(I->getLocation(), diag::note_non_literal_field)
-          << RD << &*I << I->getType()
+          << RD << *I << I->getType()
           << I->getType().isVolatileQualified();
         return true;
       }

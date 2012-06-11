@@ -25,6 +25,7 @@ def AmbigMemberTemplate : DiagGroup<"ambiguous-member-template">;
 def : DiagGroup<"attributes">;
 def : DiagGroup<"bad-function-cast">;
 def Availability : DiagGroup<"availability">;
+def Section : DiagGroup<"section">;
 def AutoImport : DiagGroup<"auto-import">;
 def ConstantConversion : DiagGroup<"constant-conversion">;
 def LiteralConversion : DiagGroup<"literal-conversion">;
@@ -208,13 +209,16 @@ def MethodDuplicate : DiagGroup<"duplicate-method-match">;
 def CoveredSwitchDefault : DiagGroup<"covered-switch-default">;
 def SwitchEnum     : DiagGroup<"switch-enum">;
 def Switch         : DiagGroup<"switch">;
-def ImplicitFallthrough  : DiagGroup<"implicit-fallthrough">;
+def ImplicitFallthroughPerMethod : DiagGroup<"implicit-fallthrough-per-method">;
+def ImplicitFallthrough  : DiagGroup<"implicit-fallthrough",
+                                     [ImplicitFallthroughPerMethod]>;
 def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
 def Unicode  : DiagGroup<"unicode">;
-def Uninitialized  : DiagGroup<"uninitialized">;
 def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
+def UninitializedSometimes : DiagGroup<"sometimes-uninitialized">;
+def Uninitialized  : DiagGroup<"uninitialized", [UninitializedSometimes]>;
 def UnknownPragmas : DiagGroup<"unknown-pragmas">;
 def NSobjectAttribute : DiagGroup<"NSObject-attribute">;
 def UnknownAttributes : DiagGroup<"attributes">;
@@ -226,6 +230,7 @@ def UnusedComparison : DiagGroup<"unused-comparison">;
 def UnusedExceptionParameter : DiagGroup<"unused-exception-parameter">;
 def UnneededInternalDecl : DiagGroup<"unneeded-internal-declaration">;
 def UnneededMemberFunction : DiagGroup<"unneeded-member-function">;
+def UnusedPrivateField : DiagGroup<"unused-private-field">;
 def UnusedFunction : DiagGroup<"unused-function", [UnneededInternalDecl]>;
 def UnusedMemberFunction : DiagGroup<"unused-member-function",
                                      [UnneededMemberFunction]>;
@@ -307,6 +312,7 @@ def Unused : DiagGroup<"unused",
                        [UnusedArgument, UnusedFunction, UnusedLabel,
                         // UnusedParameter, (matches GCC's behavior)
                         // UnusedMemberFunction, (clean-up llvm before enabling)
+                        // UnusedPrivateField, (clean-up llvm before enabling)
                         UnusedValue, UnusedVariable]>,
                         DiagCategory<"Unused Entity Issue">;
 

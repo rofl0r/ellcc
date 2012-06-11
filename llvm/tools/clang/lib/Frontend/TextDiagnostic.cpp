@@ -307,11 +307,11 @@ static void selectInterestingSourceRegion(std::string &SourceLine,
   // correctly.
   unsigned CaretStart = 0, CaretEnd = CaretLine.size();
   for (; CaretStart != CaretEnd; ++CaretStart)
-    if (!isspace(CaretLine[CaretStart]))
+    if (!isspace(static_cast<unsigned char>(CaretLine[CaretStart])))
       break;
 
   for (; CaretEnd != CaretStart; --CaretEnd)
-    if (!isspace(CaretLine[CaretEnd - 1]))
+    if (!isspace(static_cast<unsigned char>(CaretLine[CaretEnd - 1])))
       break;
 
   // caret has already been inserted into CaretLine so the above whitespace
@@ -322,16 +322,32 @@ static void selectInterestingSourceRegion(std::string &SourceLine,
   if (!FixItInsertionLine.empty()) {
     unsigned FixItStart = 0, FixItEnd = FixItInsertionLine.size();
     for (; FixItStart != FixItEnd; ++FixItStart)
-      if (!isspace(FixItInsertionLine[FixItStart]))
+      if (!isspace(static_cast<unsigned char>(FixItInsertionLine[FixItStart])))
         break;
 
     for (; FixItEnd != FixItStart; --FixItEnd)
-      if (!isspace(FixItInsertionLine[FixItEnd - 1]))
+      if (!isspace(static_cast<unsigned char>(FixItInsertionLine[FixItEnd - 1])))
         break;
 
     CaretStart = std::min(FixItStart, CaretStart);
     CaretEnd = std::max(FixItEnd, CaretEnd);
   }
+
+  // CaretEnd may have been set at the middle of a character
+  // If it's not at a character's first column then advance it past the current
+  //   character.
+  while (static_cast<int>(CaretEnd) < map.columns() &&
+         -1 == map.columnToByte(CaretEnd))
+    ++CaretEnd;
+
+  assert((static_cast<int>(CaretStart) > map.columns() ||
+          -1!=map.columnToByte(CaretStart)) &&
+         "CaretStart must not point to a column in the middle of a source"
+         " line character");
+  assert((static_cast<int>(CaretEnd) > map.columns() ||
+          -1!=map.columnToByte(CaretEnd)) &&
+         "CaretEnd must not point to a column in the middle of a source line"
+         " character");
 
   // CaretLine[CaretStart, CaretEnd) contains all of the interesting
   // parts of the caret line. While this slice is smaller than the
@@ -366,12 +382,14 @@ static void selectInterestingSourceRegion(std::string &SourceLine,
       // Skip over any whitespace we see here; we're looking for
       // another bit of interesting text.
       while (NewStart &&
-             (map.byteToColumn(NewStart)==-1 || isspace(SourceLine[NewStart])))
+             (map.byteToColumn(NewStart)==-1 ||
+             isspace(static_cast<unsigned char>(SourceLine[NewStart]))))
         --NewStart;
 
       // Skip over this bit of "interesting" text.
       while (NewStart &&
-             (map.byteToColumn(NewStart)!=-1 && !isspace(SourceLine[NewStart])))
+             (map.byteToColumn(NewStart)!=-1 &&
+             !isspace(static_cast<unsigned char>(SourceLine[NewStart]))))
         --NewStart;
 
       // Move up to the non-whitespace character we just saw.
@@ -392,12 +410,14 @@ static void selectInterestingSourceRegion(std::string &SourceLine,
       // Skip over any whitespace we see here; we're looking for
       // another bit of interesting text.
       while (NewEnd<SourceLine.size() &&
-             (map.byteToColumn(NewEnd)==-1 || isspace(SourceLine[NewEnd])))
+             (map.byteToColumn(NewEnd)==-1 ||
+             isspace(static_cast<unsigned char>(SourceLine[NewEnd]))))
         ++NewEnd;
 
       // Skip over this bit of "interesting" text.
       while (NewEnd<SourceLine.size() &&
-             (map.byteToColumn(NewEnd)!=-1 && !isspace(SourceLine[NewEnd])))
+             (map.byteToColumn(NewEnd)!=-1 &&
+             !isspace(static_cast<unsigned char>(SourceLine[NewEnd]))))
         ++NewEnd;
 
       unsigned NewColumns = map.byteToColumn(NewEnd) -
@@ -602,10 +622,9 @@ static bool printWordWrapped(raw_ostream &OS, StringRef Str,
 }
 
 TextDiagnostic::TextDiagnostic(raw_ostream &OS,
-                               const SourceManager &SM,
                                const LangOptions &LangOpts,
                                const DiagnosticOptions &DiagOpts)
-  : DiagnosticRenderer(SM, LangOpts, DiagOpts), OS(OS) {}
+  : DiagnosticRenderer(LangOpts, DiagOpts), OS(OS) {}
 
 TextDiagnostic::~TextDiagnostic() {}
 
@@ -615,11 +634,13 @@ TextDiagnostic::emitDiagnosticMessage(SourceLocation Loc,
                                       DiagnosticsEngine::Level Level,
                                       StringRef Message,
                                       ArrayRef<clang::CharSourceRange> Ranges,
+                                      const SourceManager *SM,
                                       DiagOrStoredDiag D) {
   uint64_t StartOfLocationInfo = OS.tell();
 
   // Emit the location of this particular diagnostic.
-  emitDiagnosticLoc(Loc, PLoc, Level, Ranges);
+  if (Loc.isValid())
+    emitDiagnosticLoc(Loc, PLoc, Level, Ranges, *SM);
   
   if (DiagOpts.ShowColors)
     OS.resetColor();
@@ -693,7 +714,8 @@ TextDiagnostic::printDiagnosticMessage(raw_ostream &OS,
 /// ranges necessary.
 void TextDiagnostic::emitDiagnosticLoc(SourceLocation Loc, PresumedLoc PLoc,
                                        DiagnosticsEngine::Level Level,
-                                       ArrayRef<CharSourceRange> Ranges) {
+                                       ArrayRef<CharSourceRange> Ranges,
+                                       const SourceManager &SM) {
   if (PLoc.isInvalid()) {
     // At least print the file name if available:
     FileID FID = SM.getFileID(Loc);
@@ -799,7 +821,8 @@ void TextDiagnostic::emitBasicNote(StringRef Message) {
 }
 
 void TextDiagnostic::emitIncludeLocation(SourceLocation Loc,
-                                         PresumedLoc PLoc) {
+                                         PresumedLoc PLoc,
+                                         const SourceManager &SM) {
   if (DiagOpts.ShowLocation)
     OS << "In file included from " << PLoc.getFilename() << ':'
        << PLoc.getLine() << ":\n";
@@ -817,7 +840,8 @@ void TextDiagnostic::emitIncludeLocation(SourceLocation Loc,
 void TextDiagnostic::emitSnippetAndCaret(
     SourceLocation Loc, DiagnosticsEngine::Level Level,
     SmallVectorImpl<CharSourceRange>& Ranges,
-    ArrayRef<FixItHint> Hints) {
+    ArrayRef<FixItHint> Hints,
+    const SourceManager &SM) {
   assert(!Loc.isInvalid() && "must have a valid source location here");
   assert(Loc.isFileID() && "must have a file location here");
 
@@ -878,7 +902,7 @@ void TextDiagnostic::emitSnippetAndCaret(
   for (SmallVectorImpl<CharSourceRange>::iterator I = Ranges.begin(),
                                                   E = Ranges.end();
        I != E; ++I)
-    highlightRange(*I, LineNo, FID, sourceColMap, CaretLine);
+    highlightRange(*I, LineNo, FID, sourceColMap, CaretLine, SM);
 
   // Next, insert the caret itself.
   ColNo = sourceColMap.byteToColumn(ColNo-1);
@@ -888,7 +912,7 @@ void TextDiagnostic::emitSnippetAndCaret(
 
   std::string FixItInsertionLine = buildFixItInsertionLine(LineNo,
                                                            sourceColMap,
-                                                           Hints);
+                                                           Hints, SM);
 
   // If the source line is too long for our terminal, select only the
   // "interesting" source region within that line.
@@ -931,7 +955,7 @@ void TextDiagnostic::emitSnippetAndCaret(
   }
 
   // Print out any parseable fixit information requested by the options.
-  emitParseableFixits(Hints);
+  emitParseableFixits(Hints, SM);
 }
 
 void TextDiagnostic::emitSnippet(StringRef line) {
@@ -974,7 +998,8 @@ void TextDiagnostic::emitSnippet(StringRef line) {
 void TextDiagnostic::highlightRange(const CharSourceRange &R,
                                     unsigned LineNo, FileID FID,
                                     const SourceColumnMap &map,
-                                    std::string &CaretLine) {
+                                    std::string &CaretLine,
+                                    const SourceManager &SM) {
   if (!R.isValid()) return;
 
   SourceLocation Begin = SM.getExpansionLoc(R.getBegin());
@@ -1059,11 +1084,13 @@ void TextDiagnostic::highlightRange(const CharSourceRange &R,
 std::string TextDiagnostic::buildFixItInsertionLine(
   unsigned LineNo,
   const SourceColumnMap &map,
-  ArrayRef<FixItHint> Hints) {
+  ArrayRef<FixItHint> Hints,
+  const SourceManager &SM) {
 
   std::string FixItInsertionLine;
   if (Hints.empty() || !DiagOpts.ShowFixits)
     return FixItInsertionLine;
+  unsigned PrevHintEnd = 0;
 
   for (ArrayRef<FixItHint>::iterator I = Hints.begin(), E = Hints.end();
        I != E; ++I) {
@@ -1081,6 +1108,16 @@ std::string TextDiagnostic::buildFixItInsertionLine(
         assert(HintColNo<static_cast<unsigned>(map.bytes())+1);
         HintColNo = map.byteToColumn(HintColNo);
 
+        // If we inserted a long previous hint, push this one forwards, and add
+        // an extra space to show that this is not part of the previous
+        // completion. This is sort of the best we can do when two hints appear
+        // to overlap.
+        //
+        // Note that if this hint is located immediately after the previous
+        // hint, no space will be added, since the location is more important.
+        if (HintColNo < PrevHintEnd)
+          HintColNo = PrevHintEnd + 1;
+
         // FIXME: if the fixit includes tabs or other characters that do not
         //  take up a single column per byte when displayed then
         //  I->CodeToInsert.size() is not a column number and we're mixing
@@ -1089,19 +1126,16 @@ std::string TextDiagnostic::buildFixItInsertionLine(
         unsigned LastColumnModified
           = HintColNo + I->CodeToInsert.size();
 
-        if (LastColumnModified > static_cast<unsigned>(map.bytes())) {
-          unsigned LastExistingColumn = map.byteToColumn(map.bytes());
-          unsigned AddedColumns = LastColumnModified-LastExistingColumn;
-          LastColumnModified = LastExistingColumn + AddedColumns;
-        } else {
+        if (LastColumnModified <= static_cast<unsigned>(map.bytes()))
           LastColumnModified = map.byteToColumn(LastColumnModified);
-        }
 
         if (LastColumnModified > FixItInsertionLine.size())
           FixItInsertionLine.resize(LastColumnModified, ' ');
         assert(HintColNo+I->CodeToInsert.size() <= FixItInsertionLine.size());
         std::copy(I->CodeToInsert.begin(), I->CodeToInsert.end(),
                   FixItInsertionLine.begin() + HintColNo);
+
+        PrevHintEnd = LastColumnModified;
       } else {
         FixItInsertionLine.clear();
         break;
@@ -1114,7 +1148,8 @@ std::string TextDiagnostic::buildFixItInsertionLine(
   return FixItInsertionLine;
 }
 
-void TextDiagnostic::emitParseableFixits(ArrayRef<FixItHint> Hints) {
+void TextDiagnostic::emitParseableFixits(ArrayRef<FixItHint> Hints,
+                                         const SourceManager &SM) {
   if (!DiagOpts.ShowParseableFixits)
     return;
 

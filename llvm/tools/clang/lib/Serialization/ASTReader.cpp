@@ -829,7 +829,7 @@ bool ASTReader::ParseLineTable(ModuleFile &F,
       Entries.push_back(LineEntry::get(FileOffset, LineNo, FilenameID,
                                        FileKind, IncludeOffset));
     }
-    LineTable.AddEntry(FID, Entries);
+    LineTable.AddEntry(FileID::get(FID), Entries);
   }
 
   return false;
@@ -4144,7 +4144,6 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
 class clang::TypeLocReader : public TypeLocVisitor<TypeLocReader> {
   ASTReader &Reader;
   ModuleFile &F;
-  llvm::BitstreamCursor &DeclsCursor;
   const ASTReader::RecordData &Record;
   unsigned &Idx;
 
@@ -4161,7 +4160,7 @@ class clang::TypeLocReader : public TypeLocVisitor<TypeLocReader> {
 public:
   TypeLocReader(ASTReader &Reader, ModuleFile &F,
                 const ASTReader::RecordData &Record, unsigned &Idx)
-    : Reader(Reader), F(F), DeclsCursor(F.DeclsCursor), Record(Record), Idx(Idx)
+    : Reader(Reader), F(F), Record(Record), Idx(Idx)
   { }
 
   // We want compile-time assurance that we've enumerated all of
@@ -4859,7 +4858,6 @@ namespace {
   class DeclContextNameLookupVisitor {
     ASTReader &Reader;
     llvm::SmallVectorImpl<const DeclContext *> &Contexts;
-    const DeclContext *DC;
     DeclarationName Name;
     SmallVectorImpl<NamedDecl *> &Decls;
 
@@ -4961,7 +4959,6 @@ namespace {
   class DeclContextAllNamesVisitor {
     ASTReader &Reader;
     llvm::SmallVectorImpl<const DeclContext *> &Contexts;
-    const DeclContext *DC;
     llvm::DenseMap<DeclarationName, SmallVector<NamedDecl *, 8> > &Decls;
 
   public:
@@ -5058,7 +5055,7 @@ static void PassObjCImplDeclToConsumer(ObjCImplDecl *ImplD,
 
   for (ObjCImplDecl::method_iterator
          I = ImplD->meth_begin(), E = ImplD->meth_end(); I != E; ++I)
-    Consumer->HandleInterestingDecl(DeclGroupRef(&*I));
+    Consumer->HandleInterestingDecl(DeclGroupRef(*I));
 
   Consumer->HandleInterestingDecl(DeclGroupRef(ImplD));
 }
@@ -5908,7 +5905,7 @@ ASTReader::ReadTemplateArgument(ModuleFile &F,
   case TemplateArgument::Integral: {
     llvm::APSInt Value = ReadAPSInt(Record, Idx);
     QualType T = readType(F, Record, Idx);
-    return TemplateArgument(Value, T);
+    return TemplateArgument(Context, Value, T);
   }
   case TemplateArgument::Template: 
     return TemplateArgument(ReadTemplateName(F, Record, Idx));

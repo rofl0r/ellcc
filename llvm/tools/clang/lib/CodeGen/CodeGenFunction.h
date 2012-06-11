@@ -591,6 +591,11 @@ public:
   /// we prefer to insert allocas.
   llvm::AssertingVH<llvm::Instruction> AllocaInsertPt;
 
+  /// BoundsChecking - Emit run-time bounds checks. Higher values mean
+  /// potentially higher performance penalties.
+  unsigned char BoundsChecking;
+
+  /// CatchUndefined - Emit run-time checks to catch undefined behaviors.
   bool CatchUndefined;
 
   /// In ARC, whether we should autorelease the return value.
@@ -1305,6 +1310,7 @@ public:
                           const ObjCPropertyImplDecl *PID);
   void generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
                               const ObjCPropertyImplDecl *propImpl,
+                              const ObjCMethodDecl *GetterMothodDecl,
                               llvm::Constant *AtomicHelperFn);
 
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
@@ -2099,6 +2105,7 @@ public:
   LValue EmitMemberExpr(const MemberExpr *E);
   LValue EmitObjCIsaExpr(const ObjCIsaExpr *E);
   LValue EmitCompoundLiteralLValue(const CompoundLiteralExpr *E);
+  LValue EmitInitListLValue(const InitListExpr *E);
   LValue EmitConditionalOperatorLValue(const AbstractConditionalOperator *E);
   LValue EmitCastLValue(const CastExpr *E);
   LValue EmitNullInitializationLValue(const CXXScalarValueInitExpr *E);

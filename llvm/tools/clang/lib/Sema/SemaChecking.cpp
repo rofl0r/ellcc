@@ -22,6 +22,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
@@ -1570,10 +1571,16 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
       }
 
       if (isConstant) {
-        if (const Expr *Init = VD->getAnyInitializer())
+        if (const Expr *Init = VD->getAnyInitializer()) {
+          // Look through initializers like const char c[] = { "foo" }
+          if (const InitListExpr *InitList = dyn_cast<InitListExpr>(Init)) {
+            if (InitList->isStringLiteralInit())
+              Init = InitList->getInit(0)->IgnoreParenImpCasts();
+          }
           return SemaCheckStringLiteral(Init, Args, NumArgs,
                                         HasVAListArg, format_idx, firstDataArg,
                                         Type, /*inFunctionCall*/false);
+        }
       }
 
       // For vprintf* functions (i.e., HasVAListArg==true), we add a
@@ -1630,6 +1637,15 @@ bool Sema::SemaCheckStringLiteral(const Expr *E, Expr **Args,
         return SemaCheckStringLiteral(Arg, Args, NumArgs, HasVAListArg,
                                       format_idx, firstDataArg, Type,
                                       inFunctionCall);
+      } else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(ND)) {
+        unsigned BuiltinID = FD->getBuiltinID();
+        if (BuiltinID == Builtin::BI__builtin___CFStringMakeConstantString ||
+            BuiltinID == Builtin::BI__builtin___NSStringMakeConstantString) {
+          const Expr *Arg = CE->getArg(0);
+          return SemaCheckStringLiteral(Arg, Args, NumArgs, HasVAListArg,
+                                        format_idx, firstDataArg, Type,
+                                        inFunctionCall);
+        }
       }
     }
 
@@ -1774,7 +1790,6 @@ protected:
   const Expr *OrigFormatExpr;
   const unsigned FirstDataArg;
   const unsigned NumDataArgs;
-  const bool IsObjCLiteral;
   const char *Beg; // Start of format string.
   const bool HasVAListArg;
   const Expr * const *Args;
@@ -1787,15 +1802,12 @@ protected:
 public:
   CheckFormatHandler(Sema &s, const StringLiteral *fexpr,
                      const Expr *origFormatExpr, unsigned firstDataArg,
-                     unsigned numDataArgs, bool isObjCLiteral,
-                     const char *beg, bool hasVAListArg,
+                     unsigned numDataArgs, const char *beg, bool hasVAListArg,
                      Expr **args, unsigned numArgs,
                      unsigned formatIdx, bool inFunctionCall)
     : S(s), FExpr(fexpr), OrigFormatExpr(origFormatExpr),
-      FirstDataArg(firstDataArg),
-      NumDataArgs(numDataArgs),
-      IsObjCLiteral(isObjCLiteral), Beg(beg),
-      HasVAListArg(hasVAListArg),
+      FirstDataArg(firstDataArg), NumDataArgs(numDataArgs),
+      Beg(beg), HasVAListArg(hasVAListArg),
       Args(args), NumArgs(numArgs), FormatIdx(formatIdx),
       usesPositionalArgs(false), atFirstArg(true),
       inFunctionCall(inFunctionCall) {
@@ -1955,7 +1967,7 @@ void CheckFormatHandler::HandleZeroPosition(const char *startPos,
 }
 
 void CheckFormatHandler::HandleNullChar(const char *nullCharacter) {
-  if (!IsObjCLiteral) {
+  if (!isa<ObjCStringLiteral>(OrigFormatExpr)) {
     // The presence of a null character is likely an error.
     EmitFormatDiagnostic(
       S.PDiag(diag::warn_printf_format_string_contains_null_char),
@@ -2106,16 +2118,17 @@ void CheckFormatHandler::EmitFormatDiagnostic(Sema &S, bool InFunctionCall,
 
 namespace {
 class CheckPrintfHandler : public CheckFormatHandler {
+  bool ObjCContext;
 public:
   CheckPrintfHandler(Sema &s, const StringLiteral *fexpr,
                      const Expr *origFormatExpr, unsigned firstDataArg,
-                     unsigned numDataArgs, bool isObjCLiteral,
+                     unsigned numDataArgs, bool isObjC,
                      const char *beg, bool hasVAListArg,
                      Expr **Args, unsigned NumArgs,
                      unsigned formatIdx, bool inFunctionCall)
   : CheckFormatHandler(s, fexpr, origFormatExpr, firstDataArg,
-                       numDataArgs, isObjCLiteral, beg, hasVAListArg,
-                       Args, NumArgs, formatIdx, inFunctionCall) {}
+                       numDataArgs, beg, hasVAListArg, Args, NumArgs,
+                       formatIdx, inFunctionCall), ObjCContext(isObjC) {}
   
   
   bool HandleInvalidPrintfConversionSpecifier(
@@ -2308,7 +2321,7 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
 
   // Check for using an Objective-C specific conversion specifier
   // in a non-ObjC literal.
-  if (!IsObjCLiteral && CS.isObjCArg()) {
+  if (!ObjCContext && CS.isObjCArg()) {
     return HandleInvalidPrintfConversionSpecifier(FS, startSpecifier,
                                                   specifierLen);
   }
@@ -2388,28 +2401,37 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
   // format specifier.
   const Expr *Ex = getDataArg(argIndex);
   const analyze_printf::ArgTypeResult &ATR = FS.getArgType(S.Context,
-                                                           IsObjCLiteral);
+                                                           ObjCContext);
   if (ATR.isValid() && !ATR.matchesType(S.Context, Ex->getType())) {
-    // Check if we didn't match because of an implicit cast from a 'char'
-    // or 'short' to an 'int'.  This is done because printf is a varargs
-    // function.
-    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Ex))
-      if (ICE->getType() == S.Context.IntTy ||
-          ICE->getType() == S.Context.UnsignedIntTy) {
-        // All further checking is done on the subexpression.
+    // Look through argument promotions for our error message's reported type.
+    // This includes the integral and floating promotions, but excludes array
+    // and function pointer decay; seeing that an argument intended to be a
+    // string has type 'char [6]' is probably more confusing than 'char *'.
+    if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(Ex)) {
+      if (ICE->getCastKind() == CK_IntegralCast ||
+          ICE->getCastKind() == CK_FloatingCast) {
         Ex = ICE->getSubExpr();
-        if (ATR.matchesType(S.Context, Ex->getType()))
-          return true;
+
+        // Check if we didn't match because of an implicit cast from a 'char'
+        // or 'short' to an 'int'.  This is done because printf is a varargs
+        // function.
+        if (ICE->getType() == S.Context.IntTy ||
+            ICE->getType() == S.Context.UnsignedIntTy) {
+          // All further checking is done on the subexpression.
+          if (ATR.matchesType(S.Context, Ex->getType()))
+            return true;
+        }
       }
+    }
 
     // We may be able to offer a FixItHint if it is a supported type.
     PrintfSpecifier fixedFS = FS;
     bool success = fixedFS.fixType(Ex->getType(), S.getLangOpts(),
-                                   S.Context, IsObjCLiteral);
+                                   S.Context, ObjCContext);
 
     if (success) {
       // Get the fix string from the fixed format specifier
-      SmallString<128> buf;
+      SmallString<16> buf;
       llvm::raw_svector_ostream os(buf);
       fixedFS.toString(os);
 
@@ -2417,8 +2439,8 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
         S.PDiag(diag::warn_printf_conversion_argument_type_mismatch)
           << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
           << Ex->getSourceRange(),
-        getLocationOfByte(CS.getStart()),
-        /*IsStringLocation*/true,
+        Ex->getLocStart(),
+        /*IsStringLocation*/false,
         getSpecifierRange(startSpecifier, specifierLen),
         FixItHint::CreateReplacement(
           getSpecifierRange(startSpecifier, specifierLen),
@@ -2430,8 +2452,8 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
           << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
           << getSpecifierRange(startSpecifier, specifierLen)
           << Ex->getSourceRange(),
-        getLocationOfByte(CS.getStart()),
-        true,
+        Ex->getLocStart(),
+        /*IsStringLocation*/false,
         getSpecifierRange(startSpecifier, specifierLen));
     }
   }
@@ -2446,12 +2468,11 @@ class CheckScanfHandler : public CheckFormatHandler {
 public:
   CheckScanfHandler(Sema &s, const StringLiteral *fexpr,
                     const Expr *origFormatExpr, unsigned firstDataArg,
-                    unsigned numDataArgs, bool isObjCLiteral,
-                    const char *beg, bool hasVAListArg,
+                    unsigned numDataArgs, const char *beg, bool hasVAListArg,
                     Expr **Args, unsigned NumArgs,
                     unsigned formatIdx, bool inFunctionCall)
   : CheckFormatHandler(s, fexpr, origFormatExpr, firstDataArg,
-                       numDataArgs, isObjCLiteral, beg, hasVAListArg,
+                       numDataArgs, beg, hasVAListArg,
                        Args, NumArgs, formatIdx, inFunctionCall) {}
   
   bool HandleScanfSpecifier(const analyze_scanf::ScanfSpecifier &FS,
@@ -2585,8 +2606,8 @@ bool CheckScanfHandler::HandleScanfSpecifier(
         S.PDiag(diag::warn_printf_conversion_argument_type_mismatch)
           << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
           << Ex->getSourceRange(),
-        getLocationOfByte(CS.getStart()),
-        /*IsStringLocation*/true,
+        Ex->getLocStart(),
+        /*IsStringLocation*/false,
         getSpecifierRange(startSpecifier, specifierLen),
         FixItHint::CreateReplacement(
           getSpecifierRange(startSpecifier, specifierLen),
@@ -2596,8 +2617,8 @@ bool CheckScanfHandler::HandleScanfSpecifier(
         S.PDiag(diag::warn_printf_conversion_argument_type_mismatch)
           << ATR.getRepresentativeTypeName(S.Context) << Ex->getType()
           << Ex->getSourceRange(),
-        getLocationOfByte(CS.getStart()),
-        /*IsStringLocation*/true,
+        Ex->getLocStart(),
+        /*IsStringLocation*/false,
         getSpecifierRange(startSpecifier, specifierLen));
     }
   }
@@ -2638,7 +2659,7 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
   
   if (Type == FST_Printf || Type == FST_NSString) {
     CheckPrintfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg,
-                         numDataArgs, isa<ObjCStringLiteral>(OrigFormatExpr),
+                         numDataArgs, (Type == FST_NSString),
                          Str, HasVAListArg, Args, NumArgs, format_idx,
                          inFunctionCall);
   
@@ -2646,8 +2667,7 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
                                                   getLangOpts()))
       H.DoneProcessing();
   } else if (Type == FST_Scanf) {
-    CheckScanfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg,
-                        numDataArgs, isa<ObjCStringLiteral>(OrigFormatExpr),
+    CheckScanfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg, numDataArgs,
                         Str, HasVAListArg, Args, NumArgs, format_idx,
                         inFunctionCall);
     
@@ -2749,19 +2769,43 @@ void Sema::CheckMemaccessArguments(const CallExpr *Call,
           // TODO: For strncpy() and friends, this could suggest sizeof(dst)
           //       over sizeof(src) as well.
           unsigned ActionIdx = 0; // Default is to suggest dereferencing.
+          StringRef ReadableName = FnName->getName();
+
           if (const UnaryOperator *UnaryOp = dyn_cast<UnaryOperator>(Dest))
             if (UnaryOp->getOpcode() == UO_AddrOf)
               ActionIdx = 1; // If its an address-of operator, just remove it.
           if (Context.getTypeSize(PointeeTy) == Context.getCharWidth())
             ActionIdx = 2; // If the pointee's size is sizeof(char),
                            // suggest an explicit length.
-          unsigned DestSrcSelect =
-            (BId == Builtin::BIstrndup ? 1 : ArgIdx);
-          DiagRuntimeBehavior(SizeOfArg->getExprLoc(), Dest,
+
+          // If the function is defined as a builtin macro, do not show macro
+          // expansion.
+          SourceLocation SL = SizeOfArg->getExprLoc();
+          SourceRange DSR = Dest->getSourceRange();
+          SourceRange SSR = SizeOfArg->getSourceRange();
+          SourceManager &SM  = PP.getSourceManager();
+
+          if (SM.isMacroArgExpansion(SL)) {
+            ReadableName = Lexer::getImmediateMacroName(SL, SM, LangOpts);
+            SL = SM.getSpellingLoc(SL);
+            DSR = SourceRange(SM.getSpellingLoc(DSR.getBegin()),
+                             SM.getSpellingLoc(DSR.getEnd()));
+            SSR = SourceRange(SM.getSpellingLoc(SSR.getBegin()),
+                             SM.getSpellingLoc(SSR.getEnd()));
+          }
+
+          DiagRuntimeBehavior(SL, SizeOfArg,
                               PDiag(diag::warn_sizeof_pointer_expr_memaccess)
-                                << FnName << DestSrcSelect << ActionIdx
-                                << Dest->getSourceRange()
-                                << SizeOfArg->getSourceRange());
+                                << ReadableName
+                                << PointeeTy
+                                << DestTy
+                                << DSR
+                                << SSR);
+          DiagRuntimeBehavior(SL, SizeOfArg,
+                         PDiag(diag::warn_sizeof_pointer_expr_memaccess_note)
+                                << ActionIdx
+                                << SSR);
+
           break;
         }
       }
@@ -4076,8 +4120,17 @@ void DiagnoseFloatingLiteralImpCast(Sema &S, FloatingLiteral *FL, QualType T,
       == llvm::APFloat::opOK && isExact)
     return;
 
+  SmallString<16> PrettySourceValue;
+  Value.toString(PrettySourceValue);
+  SmallString<16> PrettyTargetValue;
+  if (T->isSpecificBuiltinType(BuiltinType::Bool))
+    PrettyTargetValue = IntegerValue == 0 ? "false" : "true";
+  else
+    IntegerValue.toString(PrettyTargetValue);
+
   S.Diag(FL->getExprLoc(), diag::warn_impcast_literal_float_to_integer)
-    << FL->getType() << T << FL->getSourceRange() << SourceRange(CContext);
+    << FL->getType() << T.getUnqualifiedType() << PrettySourceValue
+    << PrettyTargetValue << FL->getSourceRange() << SourceRange(CContext);
 }
 
 std::string PrettyPrintInRange(const llvm::APSInt &Value, IntRange Range) {
@@ -4144,7 +4197,6 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
         }
       }
     }
-    return; // Other casts to bool are not checked.
   }
 
   // Strip vector types.
@@ -4208,7 +4260,7 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     }
 
     // If the target is integral, always warn.    
-    if ((TargetBT && TargetBT->isInteger())) {
+    if (TargetBT && TargetBT->isInteger()) {
       if (S.SourceMgr.isInSystemMacro(CC))
         return;
       
@@ -4236,11 +4288,17 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
     SourceLocation Loc = E->getSourceRange().getBegin();
     if (Loc.isMacroID())
       Loc = S.SourceMgr.getImmediateExpansionRange(Loc).first;
-    S.Diag(Loc, diag::warn_impcast_null_pointer_to_integer)
-        << T << clang::SourceRange(CC)
-        << FixItHint::CreateReplacement(Loc, S.getFixItZeroLiteralForType(T));
+    if (!Loc.isMacroID() || CC.isMacroID())
+      S.Diag(Loc, diag::warn_impcast_null_pointer_to_integer)
+          << T << clang::SourceRange(CC)
+          << FixItHint::CreateReplacement(Loc, S.getFixItZeroLiteralForType(T));
     return;
   }
+
+  // TODO: remove this early return once the false positives for constant->bool
+  // in templates, macros, etc, are reduced or removed.
+  if (Target->isSpecificBuiltinType(BuiltinType::Bool))
+    return;
 
   IntRange SourceRange = GetExprRange(S.Context, E);
   IntRange TargetRange = IntRange::forTargetOfCanonicalType(S.Context, Target);
@@ -4326,14 +4384,15 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
   return;
 }
 
-void CheckConditionalOperator(Sema &S, ConditionalOperator *E, QualType T);
+void CheckConditionalOperator(Sema &S, ConditionalOperator *E,
+                              SourceLocation CC, QualType T);
 
 void CheckConditionalOperand(Sema &S, Expr *E, QualType T,
                              SourceLocation CC, bool &ICContext) {
   E = E->IgnoreParenImpCasts();
 
   if (isa<ConditionalOperator>(E))
-    return CheckConditionalOperator(S, cast<ConditionalOperator>(E), T);
+    return CheckConditionalOperator(S, cast<ConditionalOperator>(E), CC, T);
 
   AnalyzeImplicitConversions(S, E, CC);
   if (E->getType() != T)
@@ -4341,9 +4400,8 @@ void CheckConditionalOperand(Sema &S, Expr *E, QualType T,
   return;
 }
 
-void CheckConditionalOperator(Sema &S, ConditionalOperator *E, QualType T) {
-  SourceLocation CC = E->getQuestionLoc();
-
+void CheckConditionalOperator(Sema &S, ConditionalOperator *E,
+                              SourceLocation CC, QualType T) {
   AnalyzeImplicitConversions(S, E->getCond(), CC);
 
   bool Suspicious = false;
@@ -4385,7 +4443,7 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
   // were being fed directly into the output.
   if (isa<ConditionalOperator>(E)) {
     ConditionalOperator *CO = cast<ConditionalOperator>(E);
-    CheckConditionalOperator(S, CO, T);
+    CheckConditionalOperator(S, CO, CC, T);
     return;
   }
 
@@ -4591,12 +4649,20 @@ static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
   // substitution to form C89 tail-padded arrays.
 
   TypeSourceInfo *TInfo = FD->getTypeSourceInfo();
-  if (TInfo) {
-    ConstantArrayTypeLoc TL =
-      cast<ConstantArrayTypeLoc>(TInfo->getTypeLoc());
-    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(TL.getSizeExpr());
+  while (TInfo) {
+    TypeLoc TL = TInfo->getTypeLoc();
+    // Look through typedefs.
+    const TypedefTypeLoc *TTL = dyn_cast<TypedefTypeLoc>(&TL);
+    if (TTL) {
+      const TypedefNameDecl *TDL = TTL->getTypedefNameDecl();
+      TInfo = TDL->getTypeSourceInfo();
+      continue;
+    }
+    ConstantArrayTypeLoc CTL = cast<ConstantArrayTypeLoc>(TL);
+    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(CTL.getSizeExpr());
     if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
       return false;
+    break;
   }
 
   const RecordDecl *RD = dyn_cast<RecordDecl>(FD->getDeclContext());

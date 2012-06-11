@@ -148,6 +148,18 @@ SValBuilder::getConjuredSymbolVal(const Stmt *stmt,
   return nonloc::SymbolVal(sym);
 }
 
+DefinedOrUnknownSVal
+SValBuilder::getConjuredHeapSymbolVal(const Expr *E,
+                                      const LocationContext *LCtx,
+                                      unsigned VisitCount) {
+  QualType T = E->getType();
+  assert(Loc::isLocType(T));
+  assert(SymbolManager::canSymbolicate(T));
+
+  SymbolRef sym = SymMgr.getConjuredSymbol(E, LCtx, T, VisitCount);
+  return loc::MemRegionVal(MemMgr.getSymbolicHeapRegion(sym));
+}
+
 DefinedSVal SValBuilder::getMetadataSymbolVal(const void *symbolTag,
                                               const MemRegion *region,
                                               const Expr *expr, QualType type,
@@ -325,7 +337,7 @@ SVal SValBuilder::evalCast(SVal val, QualType castTy, QualType originalTy) {
 
     // Are we casting from an array to a pointer?  If so just pass on
     // the decayed value.
-    if (castTy->isPointerType())
+    if (castTy->isPointerType() || castTy->isReferenceType())
       return val;
 
     // Are we casting from an array to an integer?  If so, cast the decayed

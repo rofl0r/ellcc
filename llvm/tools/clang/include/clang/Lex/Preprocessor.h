@@ -121,8 +121,18 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// DisableMacroExpansion - True if macro expansion is disabled.
   bool DisableMacroExpansion : 1;
 
+  /// MacroExpansionInDirectivesOverride - Temporarily disables
+  /// DisableMacroExpansion (i.e. enables expansion) when parsing preprocessor
+  /// directives.
+  bool MacroExpansionInDirectivesOverride : 1;
+
+  class ResetMacroExpansionHelper;
+
   /// \brief Whether we have already loaded macros from the external source.
   mutable bool ReadMacrosFromExternalSource : 1;
+
+  /// \brief True if pragmas are enabled.
+  bool PragmasEnabled : 1;
 
   /// \brief True if we are pre-expanding macro arguments.
   bool InMacroArgPreExpansion;
@@ -253,6 +263,15 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// Callbacks - These are actions invoked when some preprocessor activity is
   /// encountered (e.g. a file is #included, etc).
   PPCallbacks *Callbacks;
+
+  struct MacroExpandsInfo {
+    Token Tok;
+    MacroInfo *MI;
+    SourceRange Range;
+    MacroExpandsInfo(Token Tok, MacroInfo *MI, SourceRange Range)
+      : Tok(Tok), MI(MI), Range(Range) { }
+  };
+  SmallVector<MacroExpandsInfo, 2> DelayedMacroExpandsCallbacks;
 
   /// Macros - For each IdentifierInfo with 'HasMacro' set, we keep a mapping
   /// to the actual definition of the macro.
@@ -399,6 +418,9 @@ public:
   }
 
   bool getCommentRetentionState() const { return KeepComments; }
+
+  void setPragmasEnabled(bool Enabled) { PragmasEnabled = Enabled; }
+  bool getPragmasEnabled() const { return PragmasEnabled; }
 
   void SetSuppressIncludeNotFoundError(bool Suppress) {
     SuppressIncludeNotFoundError = Suppress;
@@ -632,6 +654,12 @@ public:
     do
       LexUnexpandedToken(Result);
     while (Result.getKind() == tok::comment);
+  }
+
+  /// Disables macro expansion everywhere except for preprocessor directives.
+  void SetMacroExpansionOnlyInDirectives() {
+    DisableMacroExpansion = true;
+    MacroExpansionInDirectivesOverride = true;
   }
 
   /// LookAhead - This peeks ahead N tokens and returns that token without

@@ -1046,7 +1046,7 @@ bool TwoAddressInstructionPass::isDefTooClose(unsigned Reg, unsigned Dist,
       return true;  // Below MI
     unsigned DefDist = DDI->second;
     assert(Dist > DefDist && "Visited def already?");
-    if (TII->getInstrLatency(InstrItins, DefMI) > (int)(Dist - DefDist))
+    if (TII->getInstrLatency(InstrItins, DefMI) > (Dist - DefDist))
       return true;
   }
   return false;
@@ -1300,7 +1300,7 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
         DEBUG(dbgs() << "2addr:   UNFOLDING: " << MI);
         const TargetRegisterClass *RC =
           TRI->getAllocatableClass(
-            TII->getRegClass(UnfoldMCID, LoadRegIndex, TRI));
+            TII->getRegClass(UnfoldMCID, LoadRegIndex, TRI, MF));
         unsigned Reg = MRI->createVirtualRegister(RC);
         SmallVector<MachineInstr *, 2> NewMIs;
         if (!TII->unfoldMemoryOperand(MF, &MI, Reg,
@@ -1521,6 +1521,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
 #endif
 
           // Emit a copy or rematerialize the definition.
+          bool isCopy = false;
           const TargetRegisterClass *rc = MRI->getRegClass(regB);
           MachineInstr *DefMI = MRI->getVRegDef(regB);
           // If it's safe and profitable, remat the definition instead of
@@ -1537,10 +1538,11 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           } else {
             BuildMI(*mbbi, mi, mi->getDebugLoc(), TII->get(TargetOpcode::COPY),
                     regA).addReg(regB);
+            isCopy = true;
           }
 
-          MachineBasicBlock::iterator prevMI = prior(mi);
           // Update DistanceMap.
+          MachineBasicBlock::iterator prevMI = prior(mi);
           DistanceMap.insert(std::make_pair(prevMI, Dist));
           DistanceMap[mi] = ++Dist;
 
@@ -1553,7 +1555,17 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
             MO.setIsKill(false);
             RemovedKillFlag = true;
           }
+
+          // Make sure regA is a legal regclass for the SrcIdx operand.
+          if (TargetRegisterInfo::isVirtualRegister(regA) &&
+              TargetRegisterInfo::isVirtualRegister(regB))
+            MRI->constrainRegClass(regA, MRI->getRegClass(regB));
+
           MO.setReg(regA);
+
+          if (isCopy)
+            // Propagate SrcRegMap.
+            SrcRegMap[regA] = regB;
         }
 
         if (AllUsesCopied) {

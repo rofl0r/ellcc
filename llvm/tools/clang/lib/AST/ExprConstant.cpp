@@ -3418,7 +3418,7 @@ static bool HandleClassZeroInitialization(EvalInfo &Info, const Expr *E,
       continue;
 
     LValue Subobject = This;
-    if (!HandleLValueMember(Info, E, Subobject, &*I, &Layout))
+    if (!HandleLValueMember(Info, E, Subobject, *I, &Layout))
       return false;
 
     ImplicitValueInitExpr VIE(I->getType());
@@ -3443,9 +3443,9 @@ bool RecordExprEvaluator::ZeroInitialization(const Expr *E) {
     }
 
     LValue Subobject = This;
-    if (!HandleLValueMember(Info, E, Subobject, &*I))
+    if (!HandleLValueMember(Info, E, Subobject, *I))
       return false;
-    Result = APValue(&*I);
+    Result = APValue(*I);
     ImplicitValueInitExpr VIE(I->getType());
     return EvaluateInPlace(Result.getUnionValue(), Info, Subobject, &VIE);
   }
@@ -3536,7 +3536,7 @@ bool RecordExprEvaluator::VisitInitListExpr(const InitListExpr *E) {
     // FIXME: Diagnostics here should point to the end of the initializer
     // list, not the start.
     if (!HandleLValueMember(Info, HaveInit ? E->getInit(ElementNo) : E,
-                            Subobject, &*Field, &Layout))
+                            Subobject, *Field, &Layout))
       return false;
 
     // Perform an implicit value-initialization for members beyond the end of
@@ -4319,10 +4319,16 @@ QualType IntExprEvaluator::GetObjectType(APValue::LValueBase B) {
 }
 
 bool IntExprEvaluator::TryEvaluateBuiltinObjectSize(const CallExpr *E) {
-  // TODO: Perhaps we should let LLVM lower this?
   LValue Base;
-  if (!EvaluatePointer(E->getArg(0), Base, Info))
-    return false;
+
+  {
+    // The operand of __builtin_object_size is never evaluated for side-effects.
+    // If there are any, but we can determine the pointed-to object anyway, then
+    // ignore the side-effects.
+    SpeculativeEvaluationRAII SpeculativeEval(Info);
+    if (!EvaluatePointer(E->getArg(0), Base, Info))
+      return false;
+  }
 
   // If we can prove the base is null, lower to zero now.
   if (!Base.getLValueBase()) return Success(0, E);
@@ -4355,13 +4361,16 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
       return true;
 
     // If evaluating the argument has side-effects we can't determine
-    // the size of the object and lower it to unknown now.
+    // the size of the object and lower it to unknown now. CodeGen relies on
+    // us to handle all cases where the expression has side-effects.
     if (E->getArg(0)->HasSideEffects(Info.Ctx)) {
       if (E->getArg(1)->EvaluateKnownConstInt(Info.Ctx).getZExtValue() <= 1)
         return Success(-1ULL, E);
       return Success(0, E);
     }
 
+    // Expression had no side effects, but we couldn't statically determine the
+    // size of the referenced object.
     return Error(E);
   }
 

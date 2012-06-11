@@ -1,4 +1,4 @@
-//===-- asan_rtl.cc ---------------------------------------------*- C++ -*-===//
+//===-- asan_rtl.cc -------------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -31,7 +31,7 @@
 using namespace __asan;  // NOLINT
 
 // The free() implementation provided by OS X calls malloc_zone_from_ptr()
-// to find the owner of |ptr|. If the result is NULL, an invalid free() is
+// to find the owner of |ptr|. If the result is 0, an invalid free() is
 // reported. Our implementation falls back to asan_free() in this case
 // in order to print an ASan-style report.
 extern "C"
@@ -55,8 +55,8 @@ void free(void *ptr) {
 }
 
 // TODO(glider): do we need both zones?
-static malloc_zone_t *system_malloc_zone = NULL;
-static malloc_zone_t *system_purgeable_zone = NULL;
+static malloc_zone_t *system_malloc_zone = 0;
+static malloc_zone_t *system_purgeable_zone = 0;
 
 // We need to provide wrappers around all the libc functions.
 namespace {
@@ -94,7 +94,7 @@ void *mz_calloc(malloc_zone_t *zone, size_t nmemb, size_t size) {
   if (!asan_inited) {
     // Hack: dlsym calls calloc before REAL(calloc) is retrieved from dlsym.
     const size_t kCallocPoolSize = 1024;
-    static uintptr_t calloc_memory_for_dlsym[kCallocPoolSize];
+    static uptr calloc_memory_for_dlsym[kCallocPoolSize];
     static size_t allocated;
     size_t size_in_words = ((nmemb * size) + kWordSize - 1) / kWordSize;
     void *mem = (void*)&calloc_memory_for_dlsym[allocated];
@@ -119,14 +119,14 @@ void print_zone_for_ptr(void *ptr) {
   malloc_zone_t *orig_zone = malloc_zone_from_ptr(ptr);
   if (orig_zone) {
     if (orig_zone->zone_name) {
-      Printf("malloc_zone_from_ptr(%p) = %p, which is %s\n",
-             ptr, orig_zone, orig_zone->zone_name);
+      AsanPrintf("malloc_zone_from_ptr(%p) = %p, which is %s\n",
+                 ptr, orig_zone, orig_zone->zone_name);
     } else {
-      Printf("malloc_zone_from_ptr(%p) = %p, which doesn't have a name\n",
-             ptr, orig_zone);
+      AsanPrintf("malloc_zone_from_ptr(%p) = %p, which doesn't have a name\n",
+                 ptr, orig_zone);
     }
   } else {
-    Printf("malloc_zone_from_ptr(%p) = NULL\n", ptr);
+    AsanPrintf("malloc_zone_from_ptr(%p) = 0\n", ptr);
   }
 }
 
@@ -146,8 +146,9 @@ void mz_free(malloc_zone_t *zone, void *ptr) {
     asan_free(ptr, &stack);
   } else {
     // Let us just leak this memory for now.
-    Printf("mz_free(%p) -- attempting to free unallocated memory.\n"
-           "AddressSanitizer is ignoring this error on Mac OS now.\n", ptr);
+    AsanPrintf("mz_free(%p) -- attempting to free unallocated memory.\n"
+               "AddressSanitizer is ignoring this error on Mac OS now.\n",
+               ptr);
     print_zone_for_ptr(ptr);
     GET_STACK_TRACE_HERE_FOR_FREE(ptr);
     stack.PrintStack();
@@ -170,8 +171,9 @@ void cf_free(void *ptr, void *info) {
     asan_free(ptr, &stack);
   } else {
     // Let us just leak this memory for now.
-    Printf("cf_free(%p) -- attempting to free unallocated memory.\n"
-           "AddressSanitizer is ignoring this error on Mac OS now.\n", ptr);
+    AsanPrintf("cf_free(%p) -- attempting to free unallocated memory.\n"
+               "AddressSanitizer is ignoring this error on Mac OS now.\n",
+               ptr);
     print_zone_for_ptr(ptr);
     GET_STACK_TRACE_HERE_FOR_FREE(ptr);
     stack.PrintStack();
@@ -191,13 +193,14 @@ void *mz_realloc(malloc_zone_t *zone, void *ptr, size_t size) {
       // We can't recover from reallocating an unknown address, because
       // this would require reading at most |size| bytes from
       // potentially unaccessible memory.
-      Printf("mz_realloc(%p) -- attempting to realloc unallocated memory.\n"
-             "This is an unrecoverable problem, exiting now.\n", ptr);
+      AsanPrintf("mz_realloc(%p) -- attempting to realloc unallocated memory.\n"
+                 "This is an unrecoverable problem, exiting now.\n",
+                 ptr);
       print_zone_for_ptr(ptr);
       GET_STACK_TRACE_HERE_FOR_FREE(ptr);
       stack.PrintStack();
       ShowStatsAndAbort();
-      return NULL;  // unreachable
+      return 0;  // unreachable
     }
   }
 }
@@ -214,20 +217,21 @@ void *cf_realloc(void *ptr, CFIndex size, CFOptionFlags hint, void *info) {
       // We can't recover from reallocating an unknown address, because
       // this would require reading at most |size| bytes from
       // potentially unaccessible memory.
-      Printf("cf_realloc(%p) -- attempting to realloc unallocated memory.\n"
-             "This is an unrecoverable problem, exiting now.\n", ptr);
+      AsanPrintf("cf_realloc(%p) -- attempting to realloc unallocated memory.\n"
+                 "This is an unrecoverable problem, exiting now.\n",
+                 ptr);
       print_zone_for_ptr(ptr);
       GET_STACK_TRACE_HERE_FOR_FREE(ptr);
       stack.PrintStack();
       ShowStatsAndAbort();
-      return NULL;  // unreachable
+      return 0;  // unreachable
     }
   }
 }
 
 void mz_destroy(malloc_zone_t* zone) {
   // A no-op -- we will not be destroyed!
-  Printf("mz_destroy() called -- ignoring\n");
+  AsanPrintf("mz_destroy() called -- ignoring\n");
 }
   // from AvailabilityMacros.h
 #if defined(MAC_OS_X_VERSION_10_6) && \
@@ -337,8 +341,8 @@ void ReplaceSystemMalloc() {
   asan_zone.free = &mz_free;
   asan_zone.realloc = &mz_realloc;
   asan_zone.destroy = &mz_destroy;
-  asan_zone.batch_malloc = NULL;
-  asan_zone.batch_free = NULL;
+  asan_zone.batch_malloc = 0;
+  asan_zone.batch_free = 0;
   asan_zone.introspect = &asan_introspection;
 
   // from AvailabilityMacros.h
@@ -378,12 +382,12 @@ void ReplaceSystemMalloc() {
   if (FLAG_replace_cfallocator) {
     static CFAllocatorContext asan_context =
         { /*version*/ 0, /*info*/ &asan_zone,
-          /*retain*/ NULL, /*release*/ NULL,
-          /*copyDescription*/NULL,
+          /*retain*/ 0, /*release*/ 0,
+          /*copyDescription*/0,
           /*allocate*/ &cf_malloc,
           /*reallocate*/ &cf_realloc,
           /*deallocate*/ &cf_free,
-          /*preferredSize*/ NULL };
+          /*preferredSize*/ 0 };
     CFAllocatorRef cf_asan =
         CFAllocatorCreate(kCFAllocatorUseContext, &asan_context);
     CFAllocatorSetDefault(cf_asan);

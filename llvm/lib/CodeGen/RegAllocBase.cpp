@@ -52,10 +52,11 @@ bool RegAllocBase::VerifyEnabled = false;
 void RegAllocBase::verify() {
   LiveVirtRegBitSet VisitedVRegs;
   OwningArrayPtr<LiveVirtRegBitSet>
-    unionVRegs(new LiveVirtRegBitSet[PhysReg2LiveUnion.numRegs()]);
+    unionVRegs(new LiveVirtRegBitSet[TRI->getNumRegs()]);
 
   // Verify disjoint unions.
-  for (unsigned PhysReg = 0; PhysReg < PhysReg2LiveUnion.numRegs(); ++PhysReg) {
+  for (unsigned PhysReg = 0, NumRegs = TRI->getNumRegs(); PhysReg != NumRegs;
+       ++PhysReg) {
     DEBUG(PhysReg2LiveUnion[PhysReg].print(dbgs(), TRI));
     LiveVirtRegBitSet &VRegs = unionVRegs[PhysReg];
     PhysReg2LiveUnion[PhysReg].verify(VRegs);
@@ -69,11 +70,14 @@ void RegAllocBase::verify() {
   for (LiveIntervals::iterator liItr = LIS->begin(), liEnd = LIS->end();
        liItr != liEnd; ++liItr) {
     unsigned reg = liItr->first;
+    LiveInterval* li = liItr->second;
     if (TargetRegisterInfo::isPhysicalRegister(reg)) continue;
     if (!VRM->hasPhys(reg)) continue; // spilled?
+    if (li->empty()) continue; // unionVRegs will only be filled if li is
+                               // non-empty
     unsigned PhysReg = VRM->getPhys(reg);
     if (!unionVRegs[PhysReg].test(reg)) {
-      dbgs() << "LiveVirtReg " << reg << " not in union " <<
+      dbgs() << "LiveVirtReg " << PrintReg(reg, TRI) << " not in union " <<
         TRI->getName(PhysReg) << "\n";
       llvm_unreachable("unallocated live vreg");
     }
@@ -86,16 +90,6 @@ void RegAllocBase::verify() {
 //                         RegAllocBase Implementation
 //===----------------------------------------------------------------------===//
 
-// Instantiate a LiveIntervalUnion for each physical register.
-void RegAllocBase::LiveUnionArray::init(LiveIntervalUnion::Allocator &allocator,
-                                        unsigned NRegs) {
-  NumRegs = NRegs;
-  Array =
-    static_cast<LiveIntervalUnion*>(malloc(sizeof(LiveIntervalUnion)*NRegs));
-  for (unsigned r = 0; r != NRegs; ++r)
-    new(Array + r) LiveIntervalUnion(r, allocator);
-}
-
 void RegAllocBase::init(VirtRegMap &vrm, LiveIntervals &lis) {
   NamedRegionTimer T("Initialize", TimerGroupName, TimePassesIsEnabled);
   TRI = &vrm.getTargetRegInfo();
@@ -106,25 +100,15 @@ void RegAllocBase::init(VirtRegMap &vrm, LiveIntervals &lis) {
   RegClassInfo.runOnMachineFunction(vrm.getMachineFunction());
 
   const unsigned NumRegs = TRI->getNumRegs();
-  if (NumRegs != PhysReg2LiveUnion.numRegs()) {
+  if (NumRegs != PhysReg2LiveUnion.size()) {
     PhysReg2LiveUnion.init(UnionAllocator, NumRegs);
     // Cache an interferece query for each physical reg
-    Queries.reset(new LiveIntervalUnion::Query[PhysReg2LiveUnion.numRegs()]);
+    Queries.reset(new LiveIntervalUnion::Query[NumRegs]);
   }
 }
 
-void RegAllocBase::LiveUnionArray::clear() {
-  if (!Array)
-    return;
-  for (unsigned r = 0; r != NumRegs; ++r)
-    Array[r].~LiveIntervalUnion();
-  free(Array);
-  NumRegs =  0;
-  Array = 0;
-}
-
 void RegAllocBase::releaseMemory() {
-  for (unsigned r = 0, e = PhysReg2LiveUnion.numRegs(); r != e; ++r)
+  for (unsigned r = 0, e = PhysReg2LiveUnion.size(); r != e; ++r)
     PhysReg2LiveUnion[r].clear();
 }
 
@@ -186,7 +170,7 @@ void RegAllocBase::allocatePhysRegs() {
     // result from splitting.
     DEBUG(dbgs() << "\nselectOrSplit "
                  << MRI->getRegClass(VirtReg->reg)->getName()
-                 << ':' << *VirtReg << '\n');
+                 << ':' << PrintReg(VirtReg->reg) << ' ' << *VirtReg << '\n');
     typedef SmallVector<LiveInterval*, 4> VirtRegVec;
     VirtRegVec SplitVRegs;
     unsigned AvailablePhysReg = selectOrSplit(*VirtReg, SplitVRegs);
@@ -236,45 +220,8 @@ void RegAllocBase::allocatePhysRegs() {
 // physical register. Return the interfering register.
 unsigned RegAllocBase::checkPhysRegInterference(LiveInterval &VirtReg,
                                                 unsigned PhysReg) {
-  for (const uint16_t *AliasI = TRI->getOverlaps(PhysReg); *AliasI; ++AliasI)
-    if (query(VirtReg, *AliasI).checkInterference())
-      return *AliasI;
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI)
+    if (query(VirtReg, *AI).checkInterference())
+      return *AI;
   return 0;
 }
-
-// Add newly allocated physical registers to the MBB live in sets.
-void RegAllocBase::addMBBLiveIns(MachineFunction *MF) {
-  NamedRegionTimer T("MBB Live Ins", TimerGroupName, TimePassesIsEnabled);
-  SlotIndexes *Indexes = LIS->getSlotIndexes();
-  if (MF->size() <= 1)
-    return;
-
-  LiveIntervalUnion::SegmentIter SI;
-  for (unsigned PhysReg = 0; PhysReg < PhysReg2LiveUnion.numRegs(); ++PhysReg) {
-    LiveIntervalUnion &LiveUnion = PhysReg2LiveUnion[PhysReg];
-    if (LiveUnion.empty())
-      continue;
-    DEBUG(dbgs() << PrintReg(PhysReg, TRI) << " live-in:");
-    MachineFunction::iterator MBB = llvm::next(MF->begin());
-    MachineFunction::iterator MFE = MF->end();
-    SlotIndex Start, Stop;
-    tie(Start, Stop) = Indexes->getMBBRange(MBB);
-    SI.setMap(LiveUnion.getMap());
-    SI.find(Start);
-    while (SI.valid()) {
-      if (SI.start() <= Start) {
-        if (!MBB->isLiveIn(PhysReg))
-          MBB->addLiveIn(PhysReg);
-        DEBUG(dbgs() << "\tBB#" << MBB->getNumber() << ':'
-                     << PrintReg(SI.value()->reg, TRI));
-      } else if (SI.start() > Stop)
-        MBB = Indexes->getMBBFromIndex(SI.start().getPrevIndex());
-      if (++MBB == MFE)
-        break;
-      tie(Start, Stop) = Indexes->getMBBRange(MBB);
-      SI.advanceTo(Start);
-    }
-    DEBUG(dbgs() << '\n');
-  }
-}
-

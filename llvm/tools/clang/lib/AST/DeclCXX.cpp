@@ -43,13 +43,11 @@ CXXRecordDecl::DefinitionData::DefinitionData(CXXRecordDecl *D)
     Abstract(false), IsStandardLayout(true), HasNoNonEmptyBases(true),
     HasPrivateFields(false), HasProtectedFields(false), HasPublicFields(false),
     HasMutableFields(false), HasOnlyCMembers(true),
+    HasInClassInitializer(false),
     HasTrivialDefaultConstructor(true),
     HasConstexprNonCopyMoveConstructor(false),
     DefaultedDefaultConstructorIsConstexpr(true),
-    DefaultedCopyConstructorIsConstexpr(true),
-    DefaultedMoveConstructorIsConstexpr(true),
-    HasConstexprDefaultConstructor(false), HasConstexprCopyConstructor(false),
-    HasConstexprMoveConstructor(false), HasTrivialCopyConstructor(true),
+    HasConstexprDefaultConstructor(false), HasTrivialCopyConstructor(true),
     HasTrivialMoveConstructor(true), HasTrivialCopyAssignment(true),
     HasTrivialMoveAssignment(true), HasTrivialDestructor(true),
     HasIrrelevantDestructor(true),
@@ -219,8 +217,6 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       //   In the definition of a constexpr constructor [...]
       //    -- the class shall not have any virtual base classes
       data().DefaultedDefaultConstructorIsConstexpr = false;
-      data().DefaultedCopyConstructorIsConstexpr = false;
-      data().DefaultedMoveConstructorIsConstexpr = false;
     } else {
       // C++ [class.ctor]p5:
       //   A default constructor is trivial [...] if:
@@ -259,25 +255,6 @@ CXXRecordDecl::setBases(CXXBaseSpecifier const * const *Bases,
       //   default constructor is constexpr.
       if (!BaseClassDecl->hasConstexprDefaultConstructor())
         data().DefaultedDefaultConstructorIsConstexpr = false;
-
-      // C++11 [class.copy]p13:
-      //   If the implicitly-defined constructor would satisfy the requirements
-      //   of a constexpr constructor, the implicitly-defined constructor is
-      //   constexpr.
-      // C++11 [dcl.constexpr]p4:
-      //    -- every constructor involved in initializing [...] base class
-      //       sub-objects shall be a constexpr constructor
-      if (!BaseClassDecl->hasConstexprCopyConstructor())
-        data().DefaultedCopyConstructorIsConstexpr = false;
-      if (BaseClassDecl->hasDeclaredMoveConstructor() ||
-          BaseClassDecl->needsImplicitMoveConstructor())
-        // FIXME: If the implicit move constructor generated for the base class
-        // would be ill-formed, the implicit move constructor generated for the
-        // derived class calls the base class' copy constructor.
-        data().DefaultedMoveConstructorIsConstexpr &=
-          BaseClassDecl->hasConstexprMoveConstructor();
-      else if (!BaseClassDecl->hasConstexprCopyConstructor())
-        data().DefaultedMoveConstructorIsConstexpr = false;
     }
     
     // C++ [class.ctor]p3:
@@ -400,7 +377,7 @@ CXXConstructorDecl *CXXRecordDecl::getCopyConstructor(unsigned TypeQuals) const{
 CXXConstructorDecl *CXXRecordDecl::getMoveConstructor() const {
   for (ctor_iterator I = ctor_begin(), E = ctor_end(); I != E; ++I)
     if (I->isMoveConstructor())
-      return &*I;
+      return *I;
 
   return 0;
 }
@@ -458,7 +435,7 @@ CXXMethodDecl *CXXRecordDecl::getCopyAssignmentOperator(bool ArgIsConst) const {
 CXXMethodDecl *CXXRecordDecl::getMoveAssignmentOperator() const {
   for (method_iterator I = method_begin(), E = method_end(); I != E; ++I)
     if (I->isMoveAssignmentOperator())
-      return &*I;
+      return *I;
 
   return 0;
 }
@@ -467,6 +444,14 @@ void CXXRecordDecl::markedVirtualFunctionPure() {
   // C++ [class.abstract]p2: 
   //   A class is abstract if it has at least one pure virtual function.
   data().Abstract = true;
+}
+
+void CXXRecordDecl::markedConstructorConstexpr(CXXConstructorDecl *CD) {
+  if (!CD->isCopyOrMoveConstructor())
+    data().HasConstexprNonCopyMoveConstructor = true;
+
+  if (CD->isDefaultConstructor())
+    data().HasConstexprDefaultConstructor = true;
 }
 
 void CXXRecordDecl::addedMember(Decl *D) {
@@ -545,12 +530,8 @@ void CXXRecordDecl::addedMember(Decl *D) {
         }
       } else if (Constructor->isCopyConstructor()) {
         data().DeclaredCopyConstructor = true;
-        if (Constructor->isConstexpr())
-          data().HasConstexprCopyConstructor = true;
       } else if (Constructor->isMoveConstructor()) {
         data().DeclaredMoveConstructor = true;
-        if (Constructor->isConstexpr())
-          data().HasConstexprMoveConstructor = true;
       } else
         goto NotASpecialMember;
       return;
@@ -607,9 +588,6 @@ NotASpecialMember:;
         //   user-provided [...]
         if (UserProvided)
           data().HasTrivialCopyConstructor = false;
-
-        if (Constructor->isConstexpr())
-          data().HasConstexprCopyConstructor = true;
       } else if (Constructor->isMoveConstructor()) {
         data().UserDeclaredMoveConstructor = true;
         data().DeclaredMoveConstructor = true;
@@ -619,9 +597,6 @@ NotASpecialMember:;
         //   user-provided [...]
         if (UserProvided)
           data().HasTrivialMoveConstructor = false;
-
-        if (Constructor->isConstexpr())
-          data().HasConstexprMoveConstructor = true;
       }
     }
     if (Constructor->isConstexpr() && !Constructor->isCopyOrMoveConstructor()) {
@@ -663,19 +638,9 @@ NotASpecialMember:;
     // C++11 [class.dtor]p5: 
     //   A destructor is trivial if it is not user-provided and if
     //    -- the destructor is not virtual.
-    if (DD->isUserProvided() || DD->isVirtual()) {
+    if (DD->isUserProvided() || DD->isVirtual())
       data().HasTrivialDestructor = false;
-      // C++11 [dcl.constexpr]p1:
-      //   The constexpr specifier shall be applied only to [...] the
-      //   declaration of a static data member of a literal type.
-      // C++11 [basic.types]p10:
-      //   A type is a literal type if it is [...] a class type that [...] has
-      //   a trivial destructor.
-      data().DefaultedDefaultConstructorIsConstexpr = false;
-      data().DefaultedCopyConstructorIsConstexpr = false;
-      data().DefaultedMoveConstructorIsConstexpr = false;
-    }
-    
+
     return;
   }
   
@@ -818,17 +783,19 @@ NotASpecialMember:;
       data().HasNonLiteralTypeFieldsOrBases = true;
 
     if (Field->hasInClassInitializer()) {
-      // C++0x [class]p5:
+      data().HasInClassInitializer = true;
+
+      // C++11 [class]p5:
       //   A default constructor is trivial if [...] no non-static data member
       //   of its class has a brace-or-equal-initializer.
       data().HasTrivialDefaultConstructor = false;
 
-      // C++0x [dcl.init.aggr]p1:
+      // C++11 [dcl.init.aggr]p1:
       //   An aggregate is a [...] class with [...] no
       //   brace-or-equal-initializers for non-static data members.
       data().Aggregate = false;
 
-      // C++0x [class]p10:
+      // C++11 [class]p10:
       //   A POD struct is [...] a trivial class.
       data().PlainOldData = false;
     }
@@ -920,31 +887,15 @@ NotASpecialMember:;
         //    -- every constructor involved in initializing non-static data
         //       members [...] shall be a constexpr constructor
         if (!Field->hasInClassInitializer() &&
-            !FieldRec->hasConstexprDefaultConstructor())
+            !FieldRec->hasConstexprDefaultConstructor() && !isUnion())
           // The standard requires any in-class initializer to be a constant
           // expression. We consider this to be a defect.
           data().DefaultedDefaultConstructorIsConstexpr = false;
-
-        if (!FieldRec->hasConstexprCopyConstructor())
-          data().DefaultedCopyConstructorIsConstexpr = false;
-
-        if (FieldRec->hasDeclaredMoveConstructor() ||
-            FieldRec->needsImplicitMoveConstructor())
-          // FIXME: If the implicit move constructor generated for the member's
-          // class would be ill-formed, the implicit move constructor generated
-          // for this class calls the member's copy constructor.
-          data().DefaultedMoveConstructorIsConstexpr &=
-            FieldRec->hasConstexprMoveConstructor();
-        else if (!FieldRec->hasConstexprCopyConstructor())
-          data().DefaultedMoveConstructorIsConstexpr = false;
       }
     } else {
       // Base element type of field is a non-class type.
-      if (!T->isLiteralType()) {
-        data().DefaultedDefaultConstructorIsConstexpr = false;
-        data().DefaultedCopyConstructorIsConstexpr = false;
-        data().DefaultedMoveConstructorIsConstexpr = false;
-      } else if (!Field->hasInClassInitializer())
+      if (!T->isLiteralType() ||
+          (!Field->hasInClassInitializer() && !isUnion()))
         data().DefaultedDefaultConstructorIsConstexpr = false;
     }
 
@@ -996,11 +947,11 @@ void CXXRecordDecl::getCaptureFields(
   for (LambdaExpr::Capture *C = Lambda.Captures, *CEnd = C + Lambda.NumCaptures;
        C != CEnd; ++C, ++Field) {
     if (C->capturesThis()) {
-      ThisCapture = &*Field;
+      ThisCapture = *Field;
       continue;
     }
 
-    Captures[C->getCapturedVar()] = &*Field;
+    Captures[C->getCapturedVar()] = *Field;
   }
 }
 
@@ -1050,8 +1001,10 @@ static void CollectVisibleConversions(ASTContext &Context,
     HiddenTypes = &HiddenTypesBuffer;
 
     for (UnresolvedSetIterator I = Cs.begin(), E = Cs.end(); I != E; ++I) {
-      bool Hidden =
-        !HiddenTypesBuffer.insert(GetConversionType(Context, I.getDecl()));
+      CanQualType ConvType(GetConversionType(Context, I.getDecl()));
+      bool Hidden = ParentHiddenTypes.count(ConvType);
+      if (!Hidden)
+        HiddenTypesBuffer.insert(ConvType);
 
       // If this conversion is hidden and we're in a virtual base,
       // remember that it's hidden along some inheritance path.
@@ -1690,7 +1643,9 @@ bool CXXConstructorDecl::isConvertingConstructor(bool AllowExplicit) const {
   return (getNumParams() == 0 &&
           getType()->getAs<FunctionProtoType>()->isVariadic()) ||
          (getNumParams() == 1) ||
-         (getNumParams() > 1 && getParamDecl(1)->hasDefaultArg());
+         (getNumParams() > 1 &&
+          (getParamDecl(1)->hasDefaultArg() ||
+           getParamDecl(1)->isParameterPack()));
 }
 
 bool CXXConstructorDecl::isSpecializationCopyingObject() const {

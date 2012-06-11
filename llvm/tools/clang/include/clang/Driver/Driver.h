@@ -161,6 +161,9 @@ private:
   /// used where an integrated CPP would).
   unsigned CCCUseClangCPP : 1;
 
+  /// \brief Force use of clang frontend.
+  unsigned ForcedClangUse : 1;
+
 public:
   /// Use lazy precompiled headers for PCH support.
   unsigned CCCUsePCH : 1;
@@ -179,7 +182,7 @@ private:
   /// \brief Cache of all the ToolChains in use by the driver.
   ///
   /// This maps from the string representation of a triple to a ToolChain
-  /// created targetting that triple. The driver owns all the ToolChain objects
+  /// created targeting that triple. The driver owns all the ToolChain objects
   /// stored in it, and will clean them up when torn down.
   mutable llvm::StringMap<ToolChain *> ToolChains;
 
@@ -247,6 +250,9 @@ public:
         llvm::sys::path::append(P, "..", "lib", "clang", CLANG_VERSION_STRING);
       ResourceDir = P.str();
   }
+
+  bool shouldForceClangUse() const { return ForcedClangUse; }
+  void setForcedClangUse(bool V = true) { ForcedClangUse = V; }
 
   /// @}
   /// @name Primary Functionality

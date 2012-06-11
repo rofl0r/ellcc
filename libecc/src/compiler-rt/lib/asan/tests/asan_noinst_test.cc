@@ -1,4 +1,4 @@
-//===-- asan_noinst_test.cc ------------*- C++ -*-===//
+//===-- asan_noinst_test.cc ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -27,11 +27,11 @@
 
 // Simple stand-alone pseudorandom number generator.
 // Current algorithm is ANSI C linear congruential PRNG.
-static inline uint32_t my_rand(uint32_t* state) {
+static inline u32 my_rand(u32* state) {
   return (*state = *state * 1103515245 + 12345) >> 16;
 }
 
-static uint32_t global_seed = 0;
+static u32 global_seed = 0;
 
 
 TEST(AddressSanitizer, InternalSimpleDeathTest) {
@@ -39,7 +39,7 @@ TEST(AddressSanitizer, InternalSimpleDeathTest) {
 }
 
 static void MallocStress(size_t n) {
-  uint32_t seed = my_rand(&global_seed);
+  u32 seed = my_rand(&global_seed);
   __asan::AsanStackTrace stack1;
   stack1.trace[0] = 0xa123;
   stack1.trace[1] = 0xa456;
@@ -92,16 +92,16 @@ TEST(AddressSanitizer, NoInstMallocTest) {
 #endif
 }
 
-static void PrintShadow(const char *tag, uintptr_t ptr, size_t size) {
+static void PrintShadow(const char *tag, uptr ptr, size_t size) {
   fprintf(stderr, "%s shadow: %lx size % 3ld: ", tag, (long)ptr, (long)size);
-  uintptr_t prev_shadow = 0;
-  for (intptr_t i = -32; i < (intptr_t)size + 32; i++) {
-    uintptr_t shadow = __asan::MemToShadow(ptr + i);
-    if (i == 0 || i == (intptr_t)size)
+  uptr prev_shadow = 0;
+  for (sptr i = -32; i < (sptr)size + 32; i++) {
+    uptr shadow = __asan::MemToShadow(ptr + i);
+    if (i == 0 || i == (sptr)size)
       fprintf(stderr, ".");
     if (shadow != prev_shadow) {
       prev_shadow = shadow;
-      fprintf(stderr, "%02x", (int)*(uint8_t*)shadow);
+      fprintf(stderr, "%02x", (int)*(u8*)shadow);
     }
   }
   fprintf(stderr, "\n");
@@ -110,13 +110,13 @@ static void PrintShadow(const char *tag, uintptr_t ptr, size_t size) {
 TEST(AddressSanitizer, DISABLED_InternalPrintShadow) {
   for (size_t size = 1; size <= 513; size++) {
     char *ptr = new char[size];
-    PrintShadow("m", (uintptr_t)ptr, size);
+    PrintShadow("m", (uptr)ptr, size);
     delete [] ptr;
-    PrintShadow("f", (uintptr_t)ptr, size);
+    PrintShadow("f", (uptr)ptr, size);
   }
 }
 
-static uintptr_t pc_array[] = {
+static uptr pc_array[] = {
 #if __WORDSIZE == 64
   0x7effbf756068ULL,
   0x7effbf75e5abULL,
@@ -207,15 +207,15 @@ static uintptr_t pc_array[] = {
 };
 
 void CompressStackTraceTest(size_t n_iter) {
-  uint32_t seed = my_rand(&global_seed);
+  u32 seed = my_rand(&global_seed);
   const size_t kNumPcs = ASAN_ARRAY_SIZE(pc_array);
-  uint32_t compressed[2 * kNumPcs];
+  u32 compressed[2 * kNumPcs];
 
   for (size_t iter = 0; iter < n_iter; iter++) {
     std::random_shuffle(pc_array, pc_array + kNumPcs);
     __asan::AsanStackTrace stack0, stack1;
     stack0.CopyFrom(pc_array, kNumPcs);
-    stack0.size = std::max((size_t)1, (size_t)my_rand(&seed) % stack0.size);
+    stack0.size = std::max((size_t)1, (size_t)(my_rand(&seed) % stack0.size));
     size_t compress_size =
       std::max((size_t)2, (size_t)my_rand(&seed) % (2 * kNumPcs));
     size_t n_frames =
@@ -235,7 +235,7 @@ TEST(AddressSanitizer, CompressStackTraceTest) {
 
 void CompressStackTraceBenchmark(size_t n_iter) {
   const size_t kNumPcs = ASAN_ARRAY_SIZE(pc_array);
-  uint32_t compressed[2 * kNumPcs];
+  u32 compressed[2 * kNumPcs];
   std::random_shuffle(pc_array, pc_array + kNumPcs);
 
   __asan::AsanStackTrace stack0;
@@ -274,7 +274,7 @@ TEST(AddressSanitizer, QuarantineTest) {
 }
 
 void *ThreadedQuarantineTestWorker(void *unused) {
-  uint32_t seed = my_rand(&global_seed);
+  u32 seed = my_rand(&global_seed);
   __asan::AsanStackTrace stack;
   stack.trace[0] = 0x890;
   stack.size = 1;

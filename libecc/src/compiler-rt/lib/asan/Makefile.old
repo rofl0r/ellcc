@@ -58,6 +58,7 @@ ifeq ($(ARCH), arm)
 endif
 
 CLANG_FLAGS=
+CLANG_VERSION=3.2
 CLANG_BUILD=$(ROOT)/../../../../build/Release+Asserts
 CLANG_CC=$(CLANG_BUILD)/bin/clang $(CLANG_FLAGS)
 CLANG_CXX=$(CLANG_BUILD)/bin/clang++ $(CLANG_FLAGS)
@@ -120,8 +121,8 @@ endif
 
 # This will build libasan on linux for both x86_64 and i386 in the
 # desired location. The Mac library is already build by the clang's make.
-# $(CLANG_BUILD)/lib/clang/3.1/lib/$(OS)/libclang_rt.asan-$(ARCH).a
-LIBASAN_INST_DIR=$(CLANG_BUILD)/lib/clang/3.1/lib/$(OS)
+# $(CLANG_BUILD)/lib/clang/$(CLANG_VERSION)/lib/$(OS)/libclang_rt.asan-$(ARCH).a
+LIBASAN_INST_DIR=$(CLANG_BUILD)/lib/clang/$(CLANG_VERSION)/lib/$(OS)
 LIBASAN_A=$(LIBASAN_INST_DIR)/libclang_rt.asan-$(ARCH).a
 
 BLACKLIST=
@@ -168,41 +169,25 @@ ifeq ($(ASAN_COMPILER), gcc)
   ASAN_LD_TAIL=$(LIBASAN_A)
 endif
 
-RTL_HDR=asan_allocator.h \
-	asan_internal.h \
-	asan_interceptors.h \
-	asan_interface.h \
-	asan_lock.h \
-	asan_mapping.h \
-	asan_procmaps.h \
-	asan_stack.h \
-	asan_stats.h \
-	asan_thread.h \
-	asan_thread_registry.h \
-	interception/interception.h \
-	interception/interception_linux.h \
-	interception/interception_mac.h \
-	interception/mach_override/mach_override.h
+INTERCEPTION=../interception
+MACH_OVERRIDE=$(INTERCEPTION)/mach_override
+COMMON=../sanitizer_common
 
-LIBASAN_OBJ=$(BIN)/asan_rtl$(SUFF).o \
-	    $(BIN)/asan_allocator$(SUFF).o  \
-	    $(BIN)/asan_globals$(SUFF).o  \
-	    $(BIN)/asan_interceptors$(SUFF).o  \
-	    $(BIN)/asan_linux$(SUFF).o \
-	    $(BIN)/asan_mac$(SUFF).o \
-	    $(BIN)/asan_malloc_linux$(SUFF).o \
-	    $(BIN)/asan_malloc_mac$(SUFF).o \
-	    $(BIN)/asan_new_delete$(SUFF).o \
-	    $(BIN)/asan_poisoning$(SUFF).o  \
-	    $(BIN)/asan_posix$(SUFF).o  \
-	    $(BIN)/asan_printf$(SUFF).o  \
-	    $(BIN)/asan_stack$(SUFF).o  \
-	    $(BIN)/asan_stats$(SUFF).o  \
-	    $(BIN)/asan_thread$(SUFF).o  \
-	    $(BIN)/asan_thread_registry$(SUFF).o  \
-	    $(BIN)/interception/interception_linux$(SUFF).o  \
-	    $(BIN)/interception/interception_mac$(SUFF).o  \
-	    $(BIN)/interception/mach_override/mach_override$(SUFF).o
+RTL_HDR=$(wildcard *.h) \
+	$(wildcard $(INTERCEPTION)/*.h) \
+	$(wildcard $(MACH_OVERRIDE)/*.h) \
+	$(wildcard $(COMMON)/*.h)
+
+LIBTSAN_SRC=$(wildcard *.cc)
+INTERCEPTION_SRC=$(wildcard $(INTERCEPTION)/*.cc)
+MACH_OVERRIDE_SRC=$(wildcard $(MACH_OVERRIDE)/*.c)
+COMMON_SRC=$(wildcard $(COMMON)/*.cc)
+
+
+LIBASAN_OBJ=$(patsubst %.cc,$(BIN)/%$(SUFF).o,$(LIBTSAN_SRC)) \
+	    $(patsubst $(INTERCEPTION)/%.cc,$(BIN)/%$(SUFF).o,$(INTERCEPTION_SRC)) \
+	    $(patsubst $(COMMON)/%.cc,$(BIN)/%$(SUFF).o,$(COMMON_SRC)) \
+	    $(patsubst $(MACH_OVERRIDE)/%.c,$(BIN)/%$(SUFF).o,$(MACH_OVERRIDE_SRC))
 
 GTEST_ROOT=third_party/googletest
 GTEST_INCLUDE=-I$(GTEST_ROOT)/include
@@ -234,8 +219,6 @@ lib32:
 
 mk_bin_dir:
 	mkdir -p $(BIN)
-	mkdir -p $(BIN)/interception
-	mkdir -p $(BIN)/interception/mach_override
 
 clang:
 	cd ../ && llvm/rebuild_clang_and_asan.sh > /dev/null
@@ -254,24 +237,34 @@ install_clang: | $(INSTALL_DIR)
 #	cp -v $(CLANG_BUILD)/lib/libasan*.a $(INSTALL_DIR)/lib
 
 $(BIN)/asan_noinst_test$(SUFF).o: tests/asan_noinst_test.cc $(RTL_HDR) $(MAKEFILE)
-	$(CLEANROOM_CXX) $(PIE) $(CFLAGS) $(GTEST_INCLUDE) -I. -g -c $< -O2 -o $@
+	$(CLEANROOM_CXX) $(PIE) $(CFLAGS) $(GTEST_INCLUDE) -I. -I.. -g -c $< -O2 -o $@
 
 $(BIN)/asan_break_optimization$(SUFF).o: tests/asan_break_optimization.cc $(MAKEFILE)
 	$(CLEANROOM_CXX) $(PIE) $(CFLAGS) -c $< -O0 -o $@
 
 $(BIN)/%_test$(SUFF).o: tests/%_test.cc $(RTL_HDR) $(MAKEFILE)
-	$(ASAN_CXX) $(GTEST_INCLUDE) -I. -g -c $< -O2 -o $@ $(PIE) $(CFLAGS)
+	$(ASAN_CXX) $(GTEST_INCLUDE) -I. -I.. -g -c $< -O2 -o $@ $(PIE) $(CFLAGS)
 
 $(BIN)/%_test$(SUFF).o: tests/%_test.mm $(RTL_HDR) $(MAKEFILE)
-	$(ASAN_CXX) $(GTEST_INCLUDE) -I. -g -c $< -O2 -o $@ -ObjC $(PIE) $(CFLAGS)
+	$(ASAN_CXX) $(GTEST_INCLUDE) -I. -I.. -g -c $< -O2 -o $@ -ObjC $(PIE) $(CFLAGS)
+
+RTL_COMMON_FLAGS=$(PIE) $(CFLAGS) -fPIC -c -O2 -fno-exceptions -funwind-tables \
+	   -Ithird_party -I.. $(ASAN_FLAGS)
+
+$(BIN)/%$(SUFF).o: $(INTERCEPTION)/%.cc $(RTL_HDR) $(MAKEFILE)
+	$(CXX) $(RTL_COMMON_FLAGS) -o $@ -g $<
+
+$(BIN)/%$(SUFF).o: $(COMMON)/%.cc $(RTL_HDR) $(MAKEFILE)
+	$(CXX) $(RTL_COMMON_FLAGS) -o $@ -g $<
+
+$(BIN)/%$(SUFF).o: $(MACH_OVERRIDE)/%.c $(RTL_HDR) $(MAKEFILE)
+	$(CC) $(RTL_COMMON_FLAGS) -o $@ -g $<
 
 $(BIN)/%$(SUFF).o: %.cc $(RTL_HDR) $(MAKEFILE)
-	$(CXX) $(PIE) $(CFLAGS) -fPIC -c -O2 -fno-exceptions -funwind-tables \
-		-o $@ -g $< -Ithird_party \
+	$(CXX) $(RTL_COMMON_FLAGS) -o $@ -g $<  \
 		-DASAN_NEEDS_SEGV=$(ASAN_NEEDS_SEGV) \
 		-DASAN_HAS_EXCEPTIONS=$(ASAN_HAS_EXCEPTIONS) \
-		-DASAN_FLEXIBLE_MAPPING_AND_OFFSET=$(ASAN_FLEXIBLE_MAPPING_AND_OFFSET) \
-		$(ASAN_FLAGS)
+		-DASAN_FLEXIBLE_MAPPING_AND_OFFSET=$(ASAN_FLEXIBLE_MAPPING_AND_OFFSET)
 
 $(BIN)/%$(SUFF).o: %.c $(RTL_HDR) $(MAKEFILE)
 	$(CC) $(PIE) $(CFLAGS) -fPIC -c -O2 -o $@ -g $< -Ithird_party \
@@ -291,11 +284,11 @@ $(LIBASAN_A): mk_bin_dir $(LIBASAN_OBJ) $(MAKEFILE)
 	$(CXX) -shared $(CFLAGS) $(LIBASAN_OBJ) $(LD_FLAGS) -o $(BIN)/libasan$(SUFF).so
 
 TEST_OBJECTS_COMMON=\
-	     $(BIN)/asan_test$(SUFF).o \
 	     $(BIN)/asan_globals_test$(SUFF).o \
 	     $(BIN)/asan_break_optimization$(SUFF).o \
 	     $(BIN)/asan_noinst_test$(SUFF).o \
-	     $(BIN)/asan_interface_test$(SUFF).o
+	     $(BIN)/asan_interface_test$(SUFF).o \
+	     $(BIN)/asan_test$(SUFF).o
 
 BENCHMARK_OBJECTS=\
 	     $(BIN)/asan_benchmarks_test$(SUFF).o \
@@ -327,9 +320,9 @@ $(GTEST_LIB):
 	$(MAKE) -f ../make/Makefile CXXFLAGS="$(PIE) $(CFLAGS) -g -w" \
 	  CXX="$(CLANG_CXX)"
 
-RTL_LINT_FITLER=-readability/casting,-readability/check,-build/include,-build/header_guard,-build/class,-legal/copyright
+RTL_LINT_FILTER=-readability/casting,-readability/check,-build/include,-build/header_guard,-build/class,-legal/copyright,-build/namespaces
 # TODO(kcc): remove these filters one by one
-TEST_LINT_FITLER=-readability/casting,-build/include,-legal/copyright,-whitespace/newline,-runtime/sizeof,-runtime/int,-runtime/printf
+TEST_LINT_FILTER=-readability/casting,-build/include,-legal/copyright,-whitespace/newline,-runtime/sizeof,-runtime/int,-runtime/printf
 
 LLVM_LINT_FILTER=-,+whitespace
 
@@ -337,9 +330,10 @@ ADDRESS_SANITIZER_CPP=../../../../lib/Transforms/Instrumentation/AddressSanitize
 
 lint:
 	third_party/cpplint/cpplint.py --filter=$(LLVM_LINT_FILTER) $(ADDRESS_SANITIZER_CPP)
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) asan_*.cc asan_*.h
-	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FITLER) interception/interception*.h interception/interception*.cc
-	third_party/cpplint/cpplint.py --filter=$(TEST_LINT_FITLER) tests/*.cc output_tests/*.cc
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FILTER) asan_*.cc asan_*.h
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FILTER) $(INTERCEPTION)/interception*.h $(INTERCEPTION)/interception*.cc
+	third_party/cpplint/cpplint.py --filter=$(RTL_LINT_FILTER) $(COMMON)/sanitizer_*.h $(COMMON)/sanitizer_*.cc
+	third_party/cpplint/cpplint.py --filter=$(TEST_LINT_FILTER) tests/*.cc output_tests/*.cc
 
 get_third_party:
 	rm -rf third_party
@@ -351,5 +345,6 @@ get_third_party:
 
 clean:
 	rm -f *.o *.ll *.S *.a *.log asan_test64* asan_test32*  a.out perf.data log
+	rm -f $(LIBASAN_INST_DIR)/libclang_rt.asan-*.a
 	rm -rf $(BIN)
 	rm -rf $(GTEST_ROOT)/make-*

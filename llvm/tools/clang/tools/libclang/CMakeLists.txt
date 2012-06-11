@@ -53,11 +53,19 @@ if( LLVM_ENABLE_PIC )
   set(SHARED_LIBRARY TRUE)
   add_clang_library(libclang ${SOURCES})
 
-  set_target_properties(libclang
-    PROPERTIES
-    OUTPUT_NAME "libclang"
-    VERSION ${LIBCLANG_LIBRARY_VERSION}
-    DEFINE_SYMBOL _CINDEX_LIB_)
+  if(WIN32)
+    set_target_properties(libclang
+      PROPERTIES
+      OUTPUT_NAME "libclang"
+      VERSION ${LIBCLANG_LIBRARY_VERSION}
+      DEFINE_SYMBOL _CINDEX_LIB_)
+  else()
+    set_target_properties(libclang
+      PROPERTIES
+      OUTPUT_NAME "clang"
+      VERSION ${LIBCLANG_LIBRARY_VERSION}
+      DEFINE_SYMBOL _CINDEX_LIB_)
+  endif()
 
   if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(LIBCLANG_LINK_FLAGS
@@ -68,13 +76,6 @@ if( LLVM_ENABLE_PIC )
       INSTALL_NAME_DIR "@executable_path/../lib")
   endif()
 
-  if(MSVC)
-    # windows.h doesn't compile with /Za
-    get_target_property(NON_ANSI_COMPILE_FLAGS libclang COMPILE_FLAGS)
-    string(REPLACE "/Za" "" NON_ANSI_COMPILE_FLAGS ${NON_ANSI_COMPILE_FLAGS})
-    set_target_properties(libclang PROPERTIES
-      COMPILE_FLAGS ${NON_ANSI_COMPILE_FLAGS})
-  endif()
 
   set(LIBCLANG_STATIC_TARGET_NAME libclang_static)
 else()
@@ -86,5 +87,5 @@ if( NOT BUILD_SHARED_LIBS AND NOT WIN32 )
 
   set_target_properties(${LIBCLANG_STATIC_TARGET_NAME}
     PROPERTIES
-    OUTPUT_NAME "libclang")
+    OUTPUT_NAME "clang")
 endif()

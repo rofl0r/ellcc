@@ -35,7 +35,9 @@
 namespace llvm {
 
   class AliasAnalysis;
+  class LiveRangeCalc;
   class LiveVariables;
+  class MachineDominatorTree;
   class MachineLoopInfo;
   class TargetRegisterInfo;
   class MachineRegisterInfo;
@@ -44,27 +46,29 @@ namespace llvm {
   class VirtRegMap;
 
   class LiveIntervals : public MachineFunctionPass {
-    MachineFunction* mf_;
-    MachineRegisterInfo* mri_;
-    const TargetMachine* tm_;
-    const TargetRegisterInfo* tri_;
-    const TargetInstrInfo* tii_;
-    AliasAnalysis *aa_;
-    LiveVariables* lv_;
-    SlotIndexes* indexes_;
+    MachineFunction* MF;
+    MachineRegisterInfo* MRI;
+    const TargetMachine* TM;
+    const TargetRegisterInfo* TRI;
+    const TargetInstrInfo* TII;
+    AliasAnalysis *AA;
+    LiveVariables* LV;
+    SlotIndexes* Indexes;
+    MachineDominatorTree *DomTree;
+    LiveRangeCalc *LRCalc;
 
     /// Special pool allocator for VNInfo's (LiveInterval val#).
     ///
     VNInfo::Allocator VNInfoAllocator;
 
     typedef DenseMap<unsigned, LiveInterval*> Reg2IntervalMap;
-    Reg2IntervalMap r2iMap_;
+    Reg2IntervalMap R2IMap;
 
-    /// allocatableRegs_ - A bit vector of allocatable registers.
-    BitVector allocatableRegs_;
+    /// AllocatableRegs - A bit vector of allocatable registers.
+    BitVector AllocatableRegs;
 
-    /// reservedRegs_ - A bit vector of reserved registers.
-    BitVector reservedRegs_;
+    /// ReservedRegs - A bit vector of reserved registers.
+    BitVector ReservedRegs;
 
     /// RegMaskSlots - Sorted list of instructions with register mask operands.
     /// Always use the 'r' slot, RegMasks are normal clobbers, not early
@@ -92,68 +96,61 @@ namespace llvm {
     /// block.
     SmallVector<std::pair<unsigned, unsigned>, 8> RegMaskBlocks;
 
+    /// RegUnitIntervals - Keep a live interval for each register unit as a way
+    /// of tracking fixed physreg interference.
+    SmallVector<LiveInterval*, 0> RegUnitIntervals;
+
   public:
     static char ID; // Pass identification, replacement for typeid
-    LiveIntervals() : MachineFunctionPass(ID) {
-      initializeLiveIntervalsPass(*PassRegistry::getPassRegistry());
-    }
+    LiveIntervals();
+    virtual ~LiveIntervals();
 
     // Calculate the spill weight to assign to a single instruction.
     static float getSpillWeight(bool isDef, bool isUse, unsigned loopDepth);
 
     typedef Reg2IntervalMap::iterator iterator;
     typedef Reg2IntervalMap::const_iterator const_iterator;
-    const_iterator begin() const { return r2iMap_.begin(); }
-    const_iterator end() const { return r2iMap_.end(); }
-    iterator begin() { return r2iMap_.begin(); }
-    iterator end() { return r2iMap_.end(); }
-    unsigned getNumIntervals() const { return (unsigned)r2iMap_.size(); }
+    const_iterator begin() const { return R2IMap.begin(); }
+    const_iterator end() const { return R2IMap.end(); }
+    iterator begin() { return R2IMap.begin(); }
+    iterator end() { return R2IMap.end(); }
+    unsigned getNumIntervals() const { return (unsigned)R2IMap.size(); }
 
     LiveInterval &getInterval(unsigned reg) {
-      Reg2IntervalMap::iterator I = r2iMap_.find(reg);
-      assert(I != r2iMap_.end() && "Interval does not exist for register");
+      Reg2IntervalMap::iterator I = R2IMap.find(reg);
+      assert(I != R2IMap.end() && "Interval does not exist for register");
       return *I->second;
     }
 
     const LiveInterval &getInterval(unsigned reg) const {
-      Reg2IntervalMap::const_iterator I = r2iMap_.find(reg);
-      assert(I != r2iMap_.end() && "Interval does not exist for register");
+      Reg2IntervalMap::const_iterator I = R2IMap.find(reg);
+      assert(I != R2IMap.end() && "Interval does not exist for register");
       return *I->second;
     }
 
     bool hasInterval(unsigned reg) const {
-      return r2iMap_.count(reg);
+      return R2IMap.count(reg);
     }
 
     /// isAllocatable - is the physical register reg allocatable in the current
     /// function?
     bool isAllocatable(unsigned reg) const {
-      return allocatableRegs_.test(reg);
+      return AllocatableRegs.test(reg);
     }
 
     /// isReserved - is the physical register reg reserved in the current
     /// function
     bool isReserved(unsigned reg) const {
-      return reservedRegs_.test(reg);
-    }
-
-    /// getApproximateInstructionCount - computes an estimate of the number
-    /// of instructions in a given LiveInterval.
-    unsigned getApproximateInstructionCount(LiveInterval& I) {
-      return I.getSize()/SlotIndex::InstrDist;
+      return ReservedRegs.test(reg);
     }
 
     // Interval creation
     LiveInterval &getOrCreateInterval(unsigned reg) {
-      Reg2IntervalMap::iterator I = r2iMap_.find(reg);
-      if (I == r2iMap_.end())
-        I = r2iMap_.insert(std::make_pair(reg, createInterval(reg))).first;
+      Reg2IntervalMap::iterator I = R2IMap.find(reg);
+      if (I == R2IMap.end())
+        I = R2IMap.insert(std::make_pair(reg, createInterval(reg))).first;
       return *I->second;
     }
-
-    /// dupInterval - Duplicate a live interval. The caller is responsible for
-    /// managing the allocated memory.
-    LiveInterval *dupInterval(LiveInterval *li);
 
     /// addLiveRangeToEndOfBlock - Given a register and an instruction,
     /// adds a live range from that instruction to the end of its MBB.
@@ -173,39 +170,43 @@ namespace llvm {
     // Interval removal
 
     void removeInterval(unsigned Reg) {
-      DenseMap<unsigned, LiveInterval*>::iterator I = r2iMap_.find(Reg);
+      DenseMap<unsigned, LiveInterval*>::iterator I = R2IMap.find(Reg);
       delete I->second;
-      r2iMap_.erase(I);
+      R2IMap.erase(I);
     }
 
     SlotIndexes *getSlotIndexes() const {
-      return indexes_;
+      return Indexes;
+    }
+
+    AliasAnalysis *getAliasAnalysis() const {
+      return AA;
     }
 
     /// isNotInMIMap - returns true if the specified machine instr has been
     /// removed or was never entered in the map.
     bool isNotInMIMap(const MachineInstr* Instr) const {
-      return !indexes_->hasIndex(Instr);
+      return !Indexes->hasIndex(Instr);
     }
 
     /// Returns the base index of the given instruction.
     SlotIndex getInstructionIndex(const MachineInstr *instr) const {
-      return indexes_->getInstructionIndex(instr);
+      return Indexes->getInstructionIndex(instr);
     }
 
     /// Returns the instruction associated with the given index.
     MachineInstr* getInstructionFromIndex(SlotIndex index) const {
-      return indexes_->getInstructionFromIndex(index);
+      return Indexes->getInstructionFromIndex(index);
     }
 
     /// Return the first index in the given basic block.
     SlotIndex getMBBStartIdx(const MachineBasicBlock *mbb) const {
-      return indexes_->getMBBStartIdx(mbb);
+      return Indexes->getMBBStartIdx(mbb);
     }
 
     /// Return the last index in the given basic block.
     SlotIndex getMBBEndIdx(const MachineBasicBlock *mbb) const {
-      return indexes_->getMBBEndIdx(mbb);
+      return Indexes->getMBBEndIdx(mbb);
     }
 
     bool isLiveInToMBB(const LiveInterval &li,
@@ -219,24 +220,24 @@ namespace llvm {
     }
 
     MachineBasicBlock* getMBBFromIndex(SlotIndex index) const {
-      return indexes_->getMBBFromIndex(index);
+      return Indexes->getMBBFromIndex(index);
     }
 
     SlotIndex InsertMachineInstrInMaps(MachineInstr *MI) {
-      return indexes_->insertMachineInstrInMaps(MI);
+      return Indexes->insertMachineInstrInMaps(MI);
     }
 
     void RemoveMachineInstrFromMaps(MachineInstr *MI) {
-      indexes_->removeMachineInstrFromMaps(MI);
+      Indexes->removeMachineInstrFromMaps(MI);
     }
 
     void ReplaceMachineInstrInMaps(MachineInstr *MI, MachineInstr *NewMI) {
-      indexes_->replaceMachineInstrInMaps(MI, NewMI);
+      Indexes->replaceMachineInstrInMaps(MI, NewMI);
     }
 
     bool findLiveInMBBs(SlotIndex Start, SlotIndex End,
                         SmallVectorImpl<MachineBasicBlock*> &MBBs) const {
-      return indexes_->findLiveInMBBs(Start, End, MBBs);
+      return Indexes->findLiveInMBBs(Start, End, MBBs);
     }
 
     VNInfo::Allocator& getVNInfoAllocator() { return VNInfoAllocator; }
@@ -323,6 +324,34 @@ namespace llvm {
     bool checkRegMaskInterference(LiveInterval &LI,
                                   BitVector &UsableRegs);
 
+    // Register unit functions.
+    //
+    // Fixed interference occurs when MachineInstrs use physregs directly
+    // instead of virtual registers. This typically happens when passing
+    // arguments to a function call, or when instructions require operands in
+    // fixed registers.
+    //
+    // Each physreg has one or more register units, see MCRegisterInfo. We
+    // track liveness per register unit to handle aliasing registers more
+    // efficiently.
+
+    /// getRegUnit - Return the live range for Unit.
+    /// It will be computed if it doesn't exist.
+    LiveInterval &getRegUnit(unsigned Unit) {
+      LiveInterval *LI = RegUnitIntervals[Unit];
+      if (!LI) {
+        // Compute missing ranges on demand.
+        RegUnitIntervals[Unit] = LI = new LiveInterval(Unit, HUGE_VALF);
+        computeRegUnitInterval(LI);
+      }
+      return *LI;
+    }
+
+    /// trackingRegUnits - Does LiveIntervals curently track register units?
+    /// This function will be removed when regunit tracking is permanently
+    /// enabled.
+    bool trackingRegUnits() const { return !RegUnitIntervals.empty(); }
+
   private:
     /// computeIntervals - Compute live intervals.
     void computeIntervals();
@@ -361,30 +390,13 @@ namespace llvm {
                               SlotIndex MIIdx,
                               LiveInterval &interval);
 
-    /// getReMatImplicitUse - If the remat definition MI has one (for now, we
-    /// only allow one) virtual register operand, then its uses are implicitly
-    /// using the register. Returns the virtual register.
-    unsigned getReMatImplicitUse(const LiveInterval &li,
-                                 MachineInstr *MI) const;
-
-    /// isValNoAvailableAt - Return true if the val# of the specified interval
-    /// which reaches the given instruction also reaches the specified use
-    /// index.
-    bool isValNoAvailableAt(const LiveInterval &li, MachineInstr *MI,
-                            SlotIndex UseIdx) const;
-
-    /// isReMaterializable - Returns true if the definition MI of the specified
-    /// val# of the specified interval is re-materializable. Also returns true
-    /// by reference if the def is a load.
-    bool isReMaterializable(const LiveInterval &li, const VNInfo *ValNo,
-                            MachineInstr *MI,
-                            const SmallVectorImpl<LiveInterval*> *SpillIs,
-                            bool &isLoad);
-
     static LiveInterval* createInterval(unsigned Reg);
 
     void printInstrs(raw_ostream &O) const;
     void dumpInstrs() const;
+
+    void computeLiveInRegUnits();
+    void computeRegUnitInterval(LiveInterval*);
 
     class HMEditor;
   };

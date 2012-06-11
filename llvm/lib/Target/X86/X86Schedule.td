@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Instruction Itinerary classes used for X86 
+// Instruction Itinerary classes used for X86
 def IIC_DEFAULT     : InstrItinClass;
 def IIC_ALU_MEM     : InstrItinClass;
 def IIC_ALU_NONMEM  : InstrItinClass;
@@ -253,6 +253,42 @@ def IIC_SSE_CVT_SS2SI64_RR : InstrItinClass;
 def IIC_SSE_CVT_SD2SI_RM : InstrItinClass;
 def IIC_SSE_CVT_SD2SI_RR : InstrItinClass;
 
+// MMX
+def IIC_MMX_MOV_MM_RM : InstrItinClass;
+def IIC_MMX_MOV_REG_MM : InstrItinClass;
+def IIC_MMX_MOVQ_RM : InstrItinClass;
+def IIC_MMX_MOVQ_RR : InstrItinClass;
+
+def IIC_MMX_ALU_RM : InstrItinClass;
+def IIC_MMX_ALU_RR : InstrItinClass;
+def IIC_MMX_ALUQ_RM : InstrItinClass;
+def IIC_MMX_ALUQ_RR : InstrItinClass;
+def IIC_MMX_PHADDSUBW_RM : InstrItinClass;
+def IIC_MMX_PHADDSUBW_RR : InstrItinClass;
+def IIC_MMX_PHADDSUBD_RM : InstrItinClass;
+def IIC_MMX_PHADDSUBD_RR : InstrItinClass;
+def IIC_MMX_PMUL : InstrItinClass;
+def IIC_MMX_MISC_FUNC_MEM : InstrItinClass;
+def IIC_MMX_MISC_FUNC_REG : InstrItinClass;
+def IIC_MMX_PSADBW : InstrItinClass;
+def IIC_MMX_SHIFT_RI : InstrItinClass;
+def IIC_MMX_SHIFT_RM : InstrItinClass;
+def IIC_MMX_SHIFT_RR : InstrItinClass;
+def IIC_MMX_UNPCK_H_RM : InstrItinClass;
+def IIC_MMX_UNPCK_H_RR : InstrItinClass;
+def IIC_MMX_UNPCK_L : InstrItinClass;
+def IIC_MMX_PCK_RM : InstrItinClass;
+def IIC_MMX_PCK_RR : InstrItinClass;
+def IIC_MMX_PSHUF : InstrItinClass;
+def IIC_MMX_PEXTR : InstrItinClass;
+def IIC_MMX_PINSRW : InstrItinClass;
+def IIC_MMX_MASKMOV : InstrItinClass;
+
+def IIC_MMX_CVT_PD_RR : InstrItinClass;
+def IIC_MMX_CVT_PD_RM : InstrItinClass;
+def IIC_MMX_CVT_PS_RR : InstrItinClass;
+def IIC_MMX_CVT_PS_RM : InstrItinClass;
+
 def IIC_CMPX_LOCK : InstrItinClass;
 def IIC_CMPX_LOCK_8 : InstrItinClass;
 def IIC_CMPX_LOCK_8B : InstrItinClass;
@@ -352,13 +388,96 @@ def IIC_RDPMC : InstrItinClass;
 def IIC_SMSW : InstrItinClass;
 def IIC_LMSW_REG : InstrItinClass;
 def IIC_LMSW_MEM : InstrItinClass;
+def IIC_ENTER : InstrItinClass;
+def IIC_LEAVE : InstrItinClass;
+def IIC_POP_MEM : InstrItinClass;
+def IIC_POP_REG16 : InstrItinClass;
+def IIC_POP_REG : InstrItinClass;
+def IIC_POP_F : InstrItinClass;
+def IIC_POP_FD : InstrItinClass;
+def IIC_POP_A : InstrItinClass;
+def IIC_PUSH_IMM : InstrItinClass;
+def IIC_PUSH_MEM : InstrItinClass;
+def IIC_PUSH_REG : InstrItinClass;
+def IIC_PUSH_F : InstrItinClass;
+def IIC_PUSH_A : InstrItinClass;
+def IIC_BSWAP : InstrItinClass;
+def IIC_BSF : InstrItinClass;
+def IIC_BSR : InstrItinClass;
+def IIC_MOVS : InstrItinClass;
+def IIC_STOS : InstrItinClass;
+def IIC_SCAS : InstrItinClass;
+def IIC_CMPS : InstrItinClass;
+def IIC_MOV : InstrItinClass;
+def IIC_MOV_MEM : InstrItinClass;
+def IIC_AHF : InstrItinClass;
+def IIC_BT_MI : InstrItinClass;
+def IIC_BT_MR : InstrItinClass;
+def IIC_BT_RI : InstrItinClass;
+def IIC_BT_RR : InstrItinClass;
+def IIC_BTX_MI : InstrItinClass;
+def IIC_BTX_MR : InstrItinClass;
+def IIC_BTX_RI : InstrItinClass;
+def IIC_BTX_RR : InstrItinClass;
+def IIC_XCHG_REG : InstrItinClass;
+def IIC_XCHG_MEM : InstrItinClass;
+def IIC_XADD_REG : InstrItinClass;
+def IIC_XADD_MEM : InstrItinClass;
+def IIC_CMPXCHG_MEM : InstrItinClass;
+def IIC_CMPXCHG_REG : InstrItinClass;
+def IIC_CMPXCHG_MEM8 : InstrItinClass;
+def IIC_CMPXCHG_REG8 : InstrItinClass;
+def IIC_CMPXCHG_8B : InstrItinClass;
+def IIC_CMPXCHG_16B : InstrItinClass;
+def IIC_LODS : InstrItinClass;
+def IIC_OUTS : InstrItinClass;
+def IIC_CLC : InstrItinClass;
+def IIC_CLD : InstrItinClass;
+def IIC_CLI : InstrItinClass;
+def IIC_CMC : InstrItinClass;
+def IIC_CLTS : InstrItinClass;
+def IIC_STC : InstrItinClass;
+def IIC_STI : InstrItinClass;
+def IIC_STD : InstrItinClass;
+def IIC_XLAT : InstrItinClass;
+def IIC_AAA : InstrItinClass;
+def IIC_AAD : InstrItinClass;
+def IIC_AAM : InstrItinClass;
+def IIC_AAS : InstrItinClass;
+def IIC_DAA : InstrItinClass;
+def IIC_DAS : InstrItinClass;
+def IIC_BOUND : InstrItinClass;
+def IIC_ARPL_REG : InstrItinClass;
+def IIC_ARPL_MEM : InstrItinClass;
+def IIC_MOVBE : InstrItinClass;
+
+def IIC_NOP : InstrItinClass;
 
 //===----------------------------------------------------------------------===//
 // Processor instruction itineraries.
 
-def GenericItineraries : ProcessorItineraries<[], [], []>;
+// IssueWidth is analagous to the number of decode units. Core and its
+// descendents, including Nehalem and SandyBridge have 4 decoders.
+// Resources beyond the decoder operate on micro-ops and are bufferred
+// so adjacent micro-ops don't directly compete.
+//
+// MinLatency=0 indicates that RAW dependencies can be decoded in the
+// same cycle.
+//
+// HighLatency=10 is optimistic. X86InstrInfo::isHighLatencyDef
+// indicates high latency opcodes. Alternatively, InstrItinData
+// entries may be included here to define specific operand
+// latencies. Since these latencies are not used for pipeline hazards,
+// they do not need to be exact.
+//
+// This set of instruction itineraries should contain no reference to
+// InstrStages. When an iterary has no stages, the scheduler can
+// bypass the logic needed for checking pipeline stage hazards.
+def GenericItineraries : MultiIssueItineraries<
+  4, // IssueWidth
+  0, // MinLatency
+  4, // LoadLatency (expected, may be overriden by OperandCycles)
+ 10, // HighLatency (expected, may be overriden by OperandCycles)
+ [], [], []>; // no FuncUnits, Bypasses, or InstrItinData.
 
 include "X86ScheduleAtom.td"
-
-
-

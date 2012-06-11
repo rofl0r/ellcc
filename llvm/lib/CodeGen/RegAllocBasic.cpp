@@ -65,7 +65,6 @@ class RABasic : public MachineFunctionPass, public RegAllocBase
   MachineFunction *MF;
 
   // analyses
-  LiveStacks *LS;
   RenderMachineFunction *RMF;
 
   // state
@@ -147,6 +146,7 @@ void RABasic::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<AliasAnalysis>();
   AU.addPreserved<AliasAnalysis>();
   AU.addRequired<LiveIntervals>();
+  AU.addPreserved<LiveIntervals>();
   AU.addPreserved<SlotIndexes>();
   AU.addRequired<LiveDebugVariables>();
   AU.addPreserved<LiveDebugVariables>();
@@ -187,7 +187,7 @@ void RABasic::spillReg(LiveInterval& VirtReg, unsigned PhysReg,
     unassign(SpilledVReg, PhysReg);
 
     // Spill the extracted interval.
-    LiveRangeEdit LRE(SpilledVReg, SplitVRegs, *MF, *LIS, VRM);
+    LiveRangeEdit LRE(&SpilledVReg, SplitVRegs, *MF, *LIS, VRM);
     spiller().spill(LRE);
   }
   // After extracting segments, the query's results are invalid. But keep the
@@ -204,8 +204,8 @@ bool RABasic::spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
   // either the union or live intervals.
   unsigned NumInterferences = 0;
   // Collect interferences assigned to any alias of the physical register.
-  for (const uint16_t *asI = TRI->getOverlaps(PhysReg); *asI; ++asI) {
-    LiveIntervalUnion::Query &QAlias = query(VirtReg, *asI);
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI) {
+    LiveIntervalUnion::Query &QAlias = query(VirtReg, *AI);
     NumInterferences += QAlias.collectInterferingVRegs();
     if (QAlias.seenUnspillableVReg()) {
       return false;
@@ -216,8 +216,8 @@ bool RABasic::spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
   assert(NumInterferences > 0 && "expect interference");
 
   // Spill each interfering vreg allocated to PhysReg or an alias.
-  for (const uint16_t *AliasI = TRI->getOverlaps(PhysReg); *AliasI; ++AliasI)
-    spillReg(VirtReg, *AliasI, SplitVRegs);
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI)
+    spillReg(VirtReg, *AI, SplitVRegs);
   return true;
 }
 
@@ -287,7 +287,7 @@ unsigned RABasic::selectOrSplit(LiveInterval &VirtReg,
   DEBUG(dbgs() << "spilling: " << VirtReg << '\n');
   if (!VirtReg.isSpillable())
     return ~0u;
-  LiveRangeEdit LRE(VirtReg, SplitVRegs, *MF, *LIS, VRM);
+  LiveRangeEdit LRE(&VirtReg, SplitVRegs, *MF, *LIS, VRM);
   spiller().spill(LRE);
 
   // The live virtual register requesting allocation was spilled, so tell
@@ -307,8 +307,6 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
   SpillerInstance.reset(createInlineSpiller(*this, *MF, *VRM));
 
   allocatePhysRegs();
-
-  addMBBLiveIns(MF);
 
   // Diagnostic output before rewriting
   DEBUG(dbgs() << "Post alloc VirtRegMap:\n" << *VRM << "\n");
@@ -336,18 +334,7 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
   }
 #endif // !NDEBUG
 
-  // Run rewriter
-  VRM->rewrite(LIS->getSlotIndexes());
-
-  // Write out new DBG_VALUE instructions.
-  getAnalysis<LiveDebugVariables>().emitDebugValues(VRM);
-
-  // All machine operands and other references to virtual registers have been
-  // replaced. Remove the virtual registers and release all the transient data.
-  VRM->clearAllVirt();
-  MRI->clearVirtRegs();
   releaseMemory();
-
   return true;
 }
 

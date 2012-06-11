@@ -309,6 +309,13 @@ bool equivalent(file_status A, file_status B);
 ///          platform specific error_code.
 error_code equivalent(const Twine &A, const Twine &B, bool &result);
 
+/// @brief Simpler version of equivalent for clients that don't need to
+///        differentiate between an error and false.
+inline bool equivalent(const Twine &A, const Twine &B) {
+  bool result;
+  return !equivalent(A, B, result) && result;
+}
+
 /// @brief Get file size.
 ///
 /// @param path Input path.
@@ -422,8 +429,8 @@ error_code status_known(const Twine &path, bool &result);
 /// @results errc::success if result_{fd,path} have been successfully set,
 ///          otherwise a platform specific error_code.
 error_code unique_file(const Twine &model, int &result_fd,
-                             SmallVectorImpl<char> &result_path,
-                             bool makeAbsolute = true);
+                       SmallVectorImpl<char> &result_path,
+                       bool makeAbsolute = true, unsigned mode = 0600);
 
 /// @brief Canonicalize path.
 ///
