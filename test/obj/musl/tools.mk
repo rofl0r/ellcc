@@ -1,7 +1,7 @@
 # This file can be configured to compile libecc with an external compiler.
 # The name of the external compiler.
 ECC  := $(shell cd ../../../../..; pwd)
-TGT := mips
+TGT := ppc
 XCC = $(ECC)/bin/$(TGT)-linux-ecc
 # ARCH should be one of arm, i386, microblaze, mips, nios2, ppc64, ppc, sparc, or x86_64.
 ARCH := $(shell uname -m)

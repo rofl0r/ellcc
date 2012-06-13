@@ -14,7 +14,7 @@ llvm-build gnu/gnu-build:
 
 # RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
-TARGETS := mips #armeb x86_64 arm i386 # microblaze mips ppc ppc64
+TARGETS := ppc #armeb x86_64 arm i386 # microblaze mips ppc ppc64
 .PHONY: musl
 musl:
 	@for target in $(TARGETS) ; do \

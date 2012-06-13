@@ -7,4 +7,4 @@ SRCS += umodsi3.c udivsi3.c comparedf2.c floatunsidf.c adddf3.c muldf3.c floatsi
         subsf3.c fixsfsi.c floatunsisf.c fixsfdi.c
        
 VPATH := $(VPATH):$(SRCPATH)/compiler-rt/lib/ppc
-SRCS += gcc_qmul.c
+SRCS += gcc_qmul.c gcc_qdiv.c gcc_qsub.c gcc_qadd.c
