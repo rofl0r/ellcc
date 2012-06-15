@@ -14,7 +14,7 @@ llvm-build gnu/gnu-build:
 
 # RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
-TARGETS := ppc #armeb x86_64 arm i386 # microblaze mips ppc ppc64
+TARGETS := ppc64 #armeb x86_64 arm i386 # microblaze mips ppc ppc64
 .PHONY: musl
 musl:
 	@for target in $(TARGETS) ; do \
@@ -27,6 +27,7 @@ musl:
 	    --syslibdir=$(PWD)/musl-build/$$target \
 	    --exec-prefix=$(PWD)/musl-build/$$target \
 	    --enable-warnings \
+	    --enable-debug \
             --disable-shared \
 	    CFLAGS="-MP -MD -g -Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
 	    || exit 1 ; \
