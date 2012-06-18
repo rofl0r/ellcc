@@ -448,7 +448,8 @@ static const char *getARMTargetCPU(const ArgList &Args,
     .Cases("armv2", "armv2a","arm2")
     .Case("armv3", "arm6")
     .Case("armv3m", "arm7m")
-    .Cases("armv4", "armv4t", "arm7tdmi")
+    .Case("armv4", "arm8")
+    .Case("armv4t", "arm7tdmi")
     .Cases("armv5", "armv5t", "arm10tdmi")
     .Cases("armv5e", "armv5te", "arm1022e")
     .Case("armv5tej", "arm926ej-s")
@@ -459,10 +460,13 @@ static const char *getARMTargetCPU(const ArgList &Args,
     .Cases("armv7", "armv7a", "armv7-a", "cortex-a8")
     .Cases("armv7r", "armv7-r", "cortex-r4")
     .Cases("armv7m", "armv7-m", "cortex-m3")
+    .Case("armv7em", "cortex-m4")
     .Case("ep9312", "ep9312")
     .Case("iwmmxt", "iwmmxt")
     .Case("xscale", "xscale")
     .Cases("armv6m", "armv6-m", "cortex-m0")
+    .Cases("arm8", "arm810", "strongarm", "arm8")
+    .Cases("strongarm110", "strongarm1100", "strongarm1110", "arm8")
     // If all else failed, return the most base CPU LLVM supports.
     .Default("arm7tdmi");
 }
@@ -1024,6 +1028,50 @@ void Clang::AddNios2TargetArgs(const ArgList &Args,
   }
 }
 
+/// getPPCTargetCPU - Get the (LLVM) name of the PPC cpu we are targeting.
+//
+// FIXME: tblgen this.
+static const char *getPPCTargetCPU(const ArgList &Args,
+                                   const llvm::Triple &Triple) {
+  // FIXME: Warn on inconsistent use of -mcpu and -march.
+
+  StringRef MArch;
+  //
+  // If we have -mcpu=, use that.
+  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
+    MArch = A->getValue(Args);
+  } else {
+    if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+      // Otherwise, if we have -march= choose the base CPU for that arch.
+      MArch = A->getValue(Args);
+    } else {
+      // Otherwise, use the Arch from the triple.
+      MArch = Triple.getArchName();
+    }
+  }
+
+  return llvm::StringSwitch<const char *>(MArch)
+    .Cases("440", "450", "cell", "440")
+    .Cases("e200", "e500", "e700", "440")
+    .Case("601", "601")
+    .Case("602", "602")
+    .Cases("603", "603e", "603ev", "603")
+    .Cases("g2", "e300", "603e")
+    .Cases("604", "604e", "604")
+    .Case("620", "620")
+    .Case("g3", "g3")
+    .Cases("7400", "g4", "e600", "7400")
+    .Case("7500", "7500")
+    .Case("g4+", "g4+")
+    .Cases("740", "750", "750")
+    .Cases("970", "g5", "970")
+    .Case("a2", "a2")
+    .Case("ppc", "ppc")
+    .Case("ppc64", "ppc64")
+    // If all else failed, return the most base CPU LLVM supports.
+    .Default("generic");
+}
+
 void Clang::AddPPCTargetArgs(const ArgList &Args,
                                 ArgStringList &CmdArgs) const {
   // Select the float ABI as determined by -msoft-float, -mhard-float, and
@@ -1052,6 +1100,11 @@ void Clang::AddPPCTargetArgs(const ArgList &Args,
     assert(FloatABI == "hard" && "Invalid float abi!");
     CmdArgs.push_back("-mhard-float");
   }
+ 
+  // Set the CPU based on -march= and -mcpu=.
+  llvm::Triple Triple = getToolChain().getTriple();
+  CmdArgs.push_back("-target-cpu");
+  CmdArgs.push_back(getPPCTargetCPU(Args, Triple));
 }
 
 void Clang::AddSparcTargetArgs(const ArgList &Args,
@@ -1110,7 +1163,9 @@ void Clang::AddX86TargetArgs(const ArgList &Args,
     CmdArgs.push_back("-no-implicit-float");
 
   const char *CPUName = 0;
-  if (const Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+  const Arg *A;
+  if ((A = Args.getLastArg(options::OPT_march_EQ)) ||
+      (A = Args.getLastArg(options::OPT_mcpu_EQ))) {
     if (StringRef(A->getValue(Args)) == "native") {
       // FIXME: Reject attempts to use -march=native unless the target matches
       // the host.

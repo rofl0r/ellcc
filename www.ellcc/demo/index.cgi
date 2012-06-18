@@ -291,7 +291,7 @@ print "Source language: ",
 print "Optimization level: ",
   $c->radio_group(
     -name    => 'optlevel',
-    -values  => [ 'LTO', 'Standard', 'None' ],
+    -values  => [ 'Standard', 'None' ],
     -default => 'Standard'
   ),' <a href="DemoInfo.html#optlevel">?</a><br>', "<p>";
 
@@ -342,9 +342,6 @@ sub sanitychecktools {
 
     $sanitycheckfail .= ' ecc'
       if `ecc --help 2>&1` !~ /clang "gcc-compatible" driver/;
-
-    $sanitycheckfail .= ' llvm-ld'
-      if `llvm-ld --help 2>&1` !~ /llvm linker/;
 
     $sanitycheckfail .= ' llc'
       if `llc --help 2>&1` !~ /llvm system compiler/;
@@ -481,28 +478,6 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
         print "$HtmlResult\n";
     }
 
-    if ( $c->param('optlevel') eq 'LTO' ) {
-        my $stats      = '';
-        my $outputFile = getname(".gccld.out");
-        my $timerFile  = getname(".gccld.time");
-        $stats = "--stats --time-passes --info-output-file=$timerFile"
-          if ( $c->param('showstats') );
-        my $tmpFile = getname(".bc");
-        try_run(
-            "optimizing linker (llvm-ld)",
-"llvm-ld $stats -o=$tmpFile $bytecodeFile > $outputFile 2>&1",
-            $outputFile
-        );
-        system("mv $tmpFile.bc $bytecodeFile");
-        system("rm $tmpFile");
-
-        if ( $c->param('showstats') && -s $timerFile ) {
-            my ( $UnhilightedResult, $HtmlResult ) =
-              dumpFile( "Statistics for optimizing linker", $timerFile );
-            print "$HtmlResult\n";
-        }
-    }
-
     print " Bytecode size is ", -s $bytecodeFile, " bytes.\n";
 
     #my $target = $c->param('target');
@@ -517,8 +492,8 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
     } else {
         $disassemblyFile = getname(".s");
         my $options = ( $c->param('optlevel') eq "None" ) ? "-O0" : "-O3";
-        try_run( "$target-linux-ecc",
-            "$target-linux-ecc -S $options -o $disassemblyFile $inputFile > $outputFile 2>&1",
+        try_run( "$target-ellcc-linux",
+            "ecc -target $target-ellcc-linux -S $options -o $disassemblyFile $inputFile > $outputFile 2>&1",
             $outputFile );
     }
 

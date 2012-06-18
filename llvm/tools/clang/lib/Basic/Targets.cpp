@@ -707,6 +707,10 @@ public:
   virtual const char *getClobbers() const {
     return "";
   }
+  virtual bool setCPU(const std::string &Name) {
+    // RICH FIXME: Check Name.
+    return true;
+  }
 };
 
 const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
