@@ -8,26 +8,26 @@ Arch := unknown
 Configs :=
 
 # Configurations which just include all the runtime functions.
-Configs += full-arm
-Arch.full-arm := arm
+Configs += arm
+Arch.arm := arm
 
-Configs += full-armeb
-Arch.full-armeb := armeb
+Configs += armeb
+Arch.armeb := armeb
 
-Configs += full-i386
-Arch.full-i386 := i386
+Configs += i386
+Arch.i386 := i386
 
-Configs += full-mips
-Arch.full-mips := mips
+Configs += mips
+Arch.mips := mips
 
-Configs += full-ppc
-Arch.full-ppc := ppc
+Configs += ppc
+Arch.ppc := ppc
 
-Configs += full-ppc64
-Arch.full-ppc64 := ppc64
+Configs += ppc64
+Arch.ppc64 := ppc64
 
-Configs += full-x86_64
-Arch.full-x86_64 := x86_64
+Configs += x86_64
+Arch.x86_64 := x86_64
 
 # Configuration for profile runtime.
 ifeq ($(call contains,i386 x86_64,$(CompilerTargetArch)),true)
@@ -56,13 +56,13 @@ endif
 
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 
-CFLAGS.full-arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.full-armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.full-i386 := $(CFLAGS) -target i386-ellcc-linux
-CFLAGS.full-mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
-CFLAGS.full-ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
-CFLAGS.full-ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
-CFLAGS.full-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
+CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
+CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
+CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
+CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
+CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
+CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
+CFLAGS.x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
 CFLAGS.profile-i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.profile-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
 CFLAGS.asan-i386 := $(CFLAGS) -target i386-ellcc-linux -fPIE -fno-builtin
@@ -72,18 +72,20 @@ CFLAGS.tsan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
 # Use our stub SDK as the sysroot to support more portable building. For now we
 # just do this for the non-ASAN modules, because the stub SDK doesn't have
 # enough support to build ASAN.
-CFLAGS.full-i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
-CFLAGS.full-x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
+CFLAGS.i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
+CFLAGS.x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 CFLAGS.profile-i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 CFLAGS.profile-x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 
-FUNCTIONS.full-arm := $(CommonFunctions) $(ArchFunctions.arm)
-FUNCTIONS.full-armeb := $(CommonFunctions) $(ArchFunctions.armeb)
-FUNCTIONS.full-i386 := $(CommonFunctions) $(ArchFunctions.i386)
-FUNCTIONS.full-mips := $(CommonFunctions) $(ArchFunctions.mips)
-FUNCTIONS.full-ppc := $(CommonFunctions) $(ArchFunctions.ppc)
-FUNCTIONS.full-ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
-FUNCTIONS.full-x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
+FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
+	 	 $(ArchFunctions.arm)
+FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
+		   $(ArchFunctions.armeb)
+FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
+FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
+FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
+FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
+FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
 FUNCTIONS.profile-i386 := GCDAProfiling
 FUNCTIONS.profile-x86_64 := GCDAProfiling
 FUNCTIONS.asan-i386 := $(AsanFunctions) $(InterceptionFunctions) \
