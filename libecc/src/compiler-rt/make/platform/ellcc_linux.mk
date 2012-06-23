@@ -56,12 +56,12 @@ endif
 
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 
-CFLAGS.full-arm := $(CFLAGS) -target arm-ellcc-linux
-CFLAGS.full-armeb := $(CFLAGS) -target armeb-ellcc-linux
+CFLAGS.full-arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
+CFLAGS.full-armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.full-i386 := $(CFLAGS) -target i386-ellcc-linux
-CFLAGS.full-mips := $(CFLAGS) -target mips-ellcc-linux
-CFLAGS.full-ppc := $(CFLAGS) -target ppc-ellcc-linux
-CFLAGS.full-ppc64 := $(CFLAGS) -target ppc64-ellcc-linux
+CFLAGS.full-mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
+CFLAGS.full-ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
+CFLAGS.full-ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
 CFLAGS.full-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
 CFLAGS.profile-i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.profile-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
@@ -78,7 +78,11 @@ CFLAGS.profile-i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 CFLAGS.profile-x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 
 FUNCTIONS.full-arm := $(CommonFunctions) $(ArchFunctions.arm)
+FUNCTIONS.full-armeb := $(CommonFunctions) $(ArchFunctions.armeb)
 FUNCTIONS.full-i386 := $(CommonFunctions) $(ArchFunctions.i386)
+FUNCTIONS.full-mips := $(CommonFunctions) $(ArchFunctions.mips)
+FUNCTIONS.full-ppc := $(CommonFunctions) $(ArchFunctions.ppc)
+FUNCTIONS.full-ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
 FUNCTIONS.full-x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
 FUNCTIONS.profile-i386 := GCDAProfiling
 FUNCTIONS.profile-x86_64 := GCDAProfiling
