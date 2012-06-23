@@ -333,10 +333,10 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       AddPath("/usr/include", System, false, false, false);
   } else {
       // Set up ELLCC specific include paths.
-      // usrinclude/<arch>/<os>
-      // usrinclude/<arch>
-      // usrinclude/<os>
-      // usrinclude
+      // include/<arch>/<os>
+      // include/<arch>
+      // include/<os>
+      // include
       // RICH: This seems like a hack. May need to revisit.
       StringRef arch = triple.getArchTypeName(triple.getArch());
       if (arch.startswith("mips")) {
@@ -345,23 +345,23 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
         arch = "arm";
       }
       llvm::sys::Path P0(HSOpts.ResourceDir);
-      P0.appendComponent("usrinclude");
+      P0.appendComponent("include");
       P0.appendComponent(arch);
       P0.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P0.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P1(HSOpts.ResourceDir);
-      P1.appendComponent("usrinclude");
+      P1.appendComponent("include");
       P1.appendComponent(arch);
       AddPath(P1.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P2(HSOpts.ResourceDir);
-      P2.appendComponent("usrinclude");
+      P2.appendComponent("include");
       P2.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P2.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P3(HSOpts.ResourceDir);
-      P3.appendComponent("usrinclude");
+      P3.appendComponent("include");
       AddPath(P3.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 }
@@ -407,7 +407,7 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
   if (triple.getVendor() == llvm::Triple::ELLCC) {
       // RICH: Add C++ specific paths.
       llvm::sys::Path P(HSOpts.ResourceDir);
-      P.appendComponent("usrinclude/c++");
+      P.appendComponent("include/c++");
       AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
       return;
   }

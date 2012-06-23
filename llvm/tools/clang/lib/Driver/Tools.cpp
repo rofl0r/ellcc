@@ -6015,7 +6015,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     if (!Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crt0.o"));
+        + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o"));
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
         + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
