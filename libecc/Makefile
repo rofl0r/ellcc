@@ -7,7 +7,7 @@ OBJ := $(PWD)/musl-build
 CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
-	  -Wno-pointer-sign -Wno-array-bounds
+	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else
 CFLAGS.arm := -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.i386 :=
@@ -49,7 +49,7 @@ arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 	make -C src/musl install || exit 1
 
 clean:
-	make -C src/musl clean
+	make -C src/musl distclean
 
 veryclean: clean
 	rm -fr src/musl/musl.last $(OBJ)
