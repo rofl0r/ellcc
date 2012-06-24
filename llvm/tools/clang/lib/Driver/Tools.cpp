@@ -6072,7 +6072,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-pthread");
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
-    CmdArgs.push_back("-lcompiler-rt");
+    CmdArgs.push_back("-lcompiler_rt");
   }
 
   if (!Args.hasArg(options::OPT_nostdlib) &&

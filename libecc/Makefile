@@ -47,9 +47,11 @@ arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 	  cd ../..
 	make -C src/musl || exit 1
 	make -C src/musl install || exit 1
+	make -C src/compiler-rt ellcc_linux-$@
 
 clean:
 	make -C src/musl distclean
+	make -C src/compiler-rt clean
 
 veryclean: clean
 	rm -fr src/musl/musl.last $(OBJ)
@@ -65,5 +67,11 @@ install:
 	  mv ../include/linux/bits ../include/$$target/linux/bits ; \
 	  mkdir -p ../lib/$$target/linux ; \
 	  cp $$target/lib/*.a $$target/lib/*.o ../lib/$$target/linux ; \
+	done ; \
+	cd .. ; \
+	cd src/compiler-rt/ellcc_linux ; \
+	for target in `echo *` ; do \
+	  echo Installing libcompiler-rt for $$target ; \
+	  mkdir -p ../../../lib/$$target/linux ; \
+	  cp $$target/*.a ../../../lib/$$target/linux ; \
 	done
-
