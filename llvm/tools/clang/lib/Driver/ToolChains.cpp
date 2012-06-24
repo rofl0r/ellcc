@@ -2132,7 +2132,8 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
 
   if (!DriverArgs.hasArg(options::OPT_nobuiltininc)) {
     llvm::sys::Path P(D.ResourceDir);
-    P.appendComponent("include");
+      // RICH: This handles ecc without a -target. Finds clang #includes.
+    P.appendComponent("clang");
     addSystemInclude(DriverArgs, CC1Args, P.str());
   }
 
