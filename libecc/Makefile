@@ -25,6 +25,7 @@ libecc: arm \
 	ppc \
 	ppc64 \
 	x86_64 \
+	compiler-rt.install
 	# microblaze
 
 arm armeb i386 mips ppc ppc64 x86_64 microblaze:
@@ -47,6 +48,7 @@ arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 	  cd ../..
 	make -C src/musl || exit 1
 	make -C src/musl install || exit 1
+	make $@.musl.install
 	make -C src/compiler-rt ellcc_linux-$@
 
 clean:
@@ -56,19 +58,26 @@ clean:
 veryclean: clean
 	rm -fr src/musl/musl.last $(OBJ)
 
-install:
+install: musl.install compiler-rt.install
+
+musl.install:
 	@cd musl-build ; \
 	for target in `echo *` ; do \
-	  echo Installing libecc for $$target ; \
-	  mkdir -p ../include/linux ; \
-	  cp -r $$target/include/* ../include/linux ; \
-	  mkdir -p ../include/$$target/linux ; \
-	  rm -fr ../include/$$target/linux/bits ; \
-	  mv ../include/linux/bits ../include/$$target/linux/bits ; \
-	  mkdir -p ../lib/$$target/linux ; \
-	  cp $$target/lib/*.a $$target/lib/*.o ../lib/$$target/linux ; \
-	done ; \
-	cd .. ; \
+	  make -C .. $$target.musl.install ; \
+	done
+
+%.musl.install:
+	@cd musl-build ; \
+	echo Installing libecc for $* ; \
+	mkdir -p ../include/linux ; \
+	cp -r $*/include/* ../include/linux ; \
+	mkdir -p ../include/$*/linux ; \
+	rm -fr ../include/$*/linux/bits ; \
+	mv ../include/linux/bits ../include/$*/linux/bits ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/lib/*.a $*/lib/*.o ../lib/$*/linux
+
+compiler-rt.install:
 	cd src/compiler-rt/ellcc_linux ; \
 	for target in `echo *` ; do \
 	  echo Installing libcompiler-rt for $$target ; \
