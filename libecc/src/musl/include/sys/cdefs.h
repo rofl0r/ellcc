@@ -43,6 +43,8 @@
 #define	_SYS_CDEFS_H_
 
 #define _BSD_SOURCE
+#define _POSIX_SOURCE
+#define _GNU_SOURCE
 #define __COPYRIGHT(arg)
 #define __RCSID(arg)
 #define setprogname(arg)        /* This might need to go someplace else. */

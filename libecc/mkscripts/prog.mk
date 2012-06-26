@@ -11,8 +11,8 @@ CXXFLAGS += -g -Werror -MD -MP
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc
-  CXX = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc++
+  CC = $(ELLCC)/bin/ecc -target $(TARGET)-ellcc-$(OS)
+  CXX = $(ELLCC)/bin/ecc++ -target $(TARGET)-ellcc-$(OS)
 else
   CC = $(XCC)
   CXX = $(XCXX)

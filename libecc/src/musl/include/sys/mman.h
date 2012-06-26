@@ -25,8 +25,11 @@ int munlock (const void *, size_t);
 int mlockall (int);
 int munlockall (void);
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE)
 void *mremap (void *, size_t, size_t, int, ...);
+#endif
+
+#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
 int madvise (void *, size_t, int);
 #endif
 

@@ -80,8 +80,6 @@ __RCSID("$NetBSD: pwcache.c,v 1.31 2010/03/23 20:28:59 drochner Exp $");
 #include <unistd.h>
 #include "pwcache.h"
 
-typedef unsigned int u_int;
-
 /*
  * routines that control user, group, uid and gid caches (for the archive
  * member print routine).

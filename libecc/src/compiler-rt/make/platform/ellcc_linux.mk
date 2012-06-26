@@ -1,4 +1,4 @@
-Description := Static runtime libraries for clang/Linux.
+Description := Static runtime libraries for ellcc/Linux.
 
 ###
 
@@ -56,8 +56,10 @@ endif
 
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 
-CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 -mfpu=neon
+CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 \
+              -mfpu=neon -mabi=aapcs-linux
+CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 \
+                -mfpu=neon -mabi=aapcs-linux
 CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
 CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
@@ -68,14 +70,6 @@ CFLAGS.profile-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
 CFLAGS.asan-i386 := $(CFLAGS) -target i386-ellcc-linux -fPIE -fno-builtin
 CFLAGS.asan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
 CFLAGS.tsan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
-
-# Use our stub SDK as the sysroot to support more portable building. For now we
-# just do this for the non-ASAN modules, because the stub SDK doesn't have
-# enough support to build ASAN.
-CFLAGS.i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
-CFLAGS.x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
-CFLAGS.profile-i386 += --sysroot=$(ProjSrcRoot)/SDKs/linux
-CFLAGS.profile-x86_64 += --sysroot=$(ProjSrcRoot)/SDKs/linux
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
 	 	 $(ArchFunctions.arm)
