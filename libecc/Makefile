@@ -3,6 +3,9 @@
 # RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
+# Get the clang version.
+VERSION := $(shell $(ELLCC)/bin/ecc -v |& grep version |& sed "s/.*version \([0-9]*\.[0-9]*\).*/\1/")
+
 OBJ := $(PWD)/musl-build
 CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
@@ -18,7 +21,8 @@ CFLAGS.ppc64 := -mcpu=e500
 CFLAGS.x86_64 :=
 
 .PHONY: libecc
-libecc: arm \
+libecc: header.install \
+	arm \
         armeb \
 	i386 \
 	mips \
@@ -54,11 +58,18 @@ arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean
+	rm -fr src/musl/musl.last
 
 veryclean: clean
-	rm -fr src/musl/musl.last $(OBJ)
+	rm -fr $(OBJ) clang
 
 install: musl.install compiler-rt.install
+
+header.install:
+	@echo Installing ecc header files for version $(VERSION) ; \
+	rm -fr clang ; \
+	mkdir -p clang ; \
+	cp ../lib/clang/$(VERSION)/include/* clang
 
 musl.install:
 	@cd musl-build ; \
