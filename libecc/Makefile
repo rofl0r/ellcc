@@ -11,7 +11,9 @@ CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else
+ABI.arm := eabi
 CFLAGS.arm := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
+ABI.armeb := eabi
 CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
 CFLAGS.i386 :=
 CFLAGS.microblaze :=
@@ -46,7 +48,7 @@ arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 	      --enable-warnings \
 	      --enable-debug \
               --disable-shared \
-	      CFLAGS="-target $@-ellcc-linux $(CFLAGS.$@) $(CFLAGS)" \
+	      CFLAGS="-target $@-ellcc-linux-$(ABI.$@) $(CFLAGS.$@) $(CFLAGS)" \
 	      || exit 1)) ; \
 	  mv musl.new musl.last ; \
 	  cd ../..

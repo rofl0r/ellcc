@@ -667,11 +667,6 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   const char *ABIName = 0;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ)) {
     ABIName = A->getValue(Args);
-    llvm::Triple::EnvironmentType Env =
-      llvm::StringSwitch<llvm::Triple::EnvironmentType>(ABIName)
-      .Cases("aapcs-linux", "aapcs", llvm::Triple::EABI)
-      .Default(llvm::Triple::GNU);
-    Triple.setEnvironment(Env);
   } else {
     // Select the default based on the platform.
     switch(Triple.getEnvironment()) {

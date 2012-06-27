@@ -72,12 +72,12 @@ $(PROGRAMS):
 	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    -C $@ $@ -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
@@ -89,13 +89,13 @@ $(PROGRAMS:%=%.install):
 	@if [ -e ../$(DIRPATH)/$(@:%.install=%)/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$(@:%.install=%) VPATH=../$(DIRPATH)/$(@:%.install=%) XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    -C $(@:%.install=%) \
 	    install -f ../$(DIRPATH)/$(@:%.install=%)/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$(@:%.install=%) VPATH=../$(DIRPATH)/$(@:%.install=%) -C $(@:%.install=%) \
 	    XCFLAGS="$(XCFLAGS)" ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    install -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
@@ -107,13 +107,13 @@ $(PROGRAMS:%=%.check):
 	@if [ -e ../$(DIRPATH)/$(@:%.check=%)/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$(@:%.check=%) VPATH=../$(DIRPATH)/$(@:%.check=%) XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    -C $(@:%.check=%) \
 	    check -f ../$(DIRPATH)/$(@:%.check=%)/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$(@:%.check=%) VPATH=../$(DIRPATH)/$(@:%.check=%) -C $(@:%.check=%) \
 	    XCFLAGS="$(XCFLAGS)" ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
+	    EXE=$(EXE) OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
 	    check -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 

@@ -56,10 +56,8 @@ endif
 
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 
-CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux -mcpu=cortex-a9 \
-              -mfpu=neon -mabi=aapcs-linux
-CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux -mcpu=cortex-a9 \
-                -mfpu=neon -mabi=aapcs-linux
+CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
+CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
 CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
