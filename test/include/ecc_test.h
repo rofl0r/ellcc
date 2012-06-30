@@ -12,15 +12,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-
-extern int __test_count;                      ///< The test counter.
-extern int __test_failures;                   ///< The failure counter.
-extern int __test_expected_failures;          ///< The expected failure counter.
-extern int __test_unexpected_passes;          ///< The unexpected pass counter.
-extern int __test_verbose;                    ///< The test verbosity control.
-extern const char *__test_cases;              ///< The current test cases.
-extern const char *__test_category;           ///< The current test category.
-extern const char *__test_group;              ///< The current test group.
+extern int __group_count;                       ///< Count of test groups.
+extern void __test_done(void);                  ///< Terminate the tests.
+extern int __test_count;                        ///< The test counter.
+extern int __test_failures;                     ///< The failure counter.
+extern int __test_expected_failures;            ///< The expected failure counter.
+extern int __test_unexpected_passes;            ///< The unexpected pass counter.
+extern int __test_verbose;                      ///< The test verbosity control.
+extern const char *__test_cases;                ///< The current test cases.
+extern const char *__test_category;             ///< The current test category.
+extern const char *__test_group;                ///< The current test group.
 
 /** Define an existance macro for each processor.
  */
@@ -100,6 +101,7 @@ extern const char *__test_group;              ///< The current test group.
 /** Initialize the test harness.
  */
 #define TEST_INIT(name, verbose)                                        \
+int __group_count;                                                      \
 int __test_count;                                                       \
 int __test_failures;                                                    \
 int __test_expected_failures;                                           \
@@ -112,19 +114,59 @@ int main(int argc, char **argv)                                         \
 {                                                                       \
     __test_verbose = verbose;                                           \
     __test_category = #name;                                            \
+}                                                                       \
+void __test_done(void) {                                                \
+    do {                                                                \
+        fprintf(stdout, "%s unit tests completed\n", __test_category);  \
+        fprintf(stdout, "    %d tests run\n", __test_count);            \
+        fprintf(stdout, "    %d test%s failed\n", __test_failures,      \
+                __test_failures == 1 ? "" : "s");                       \
+        if (__test_expected_failures) {                                 \
+            fprintf(stdout, "    %d test%s failed as expected\n",       \
+                    __test_expected_failures,                           \
+                    __test_expected_failures == 1 ? "" : "s");          \
+        }                                                               \
+        if (__test_unexpected_passes) {                                 \
+            fprintf(stdout, "    %d test%s did not fail as expected\n", \
+                    __test_unexpected_passes,                           \
+                    __test_unexpected_passes == 1 ? "" : "s");          \
+        }                                                               \
+        fflush(stdout);                                                 \
+        if (__test_failures > 0 || __test_unexpected_passes > 0) {      \
+            fprintf(stderr, "%s unit tests completed\n", __test_category); \
+            fprintf(stderr, "    %d tests run\n", __test_count);        \
+            fprintf(stderr, "    %d test%s failed\n", __test_failures,  \
+                __test_failures == 1 ? "" : "s");                       \
+            fprintf(stderr, "    %d test%s did not fail as expected\n", \
+                __test_unexpected_passes,                               \
+                __test_unexpected_passes == 1 ? "" : "s");              \
+            _Exit(EXIT_FAILURE);                                        \
+        } else {                                                        \
+            _Exit(EXIT_SUCCESS);                                        \
+        }                                                               \
+    } while (0);                                                        \
 }
+
 
 /** Define test cases.
  */
 #define TEST_GROUP(which)                                               \
+static void count ## which(void)                                        \
+    __attribute__((__constructor__, __used__));                         \
+static void count ## which(void) {                                      \
+    ++__group_count;                                                    \
+}                                                                       \
 static void test ## which(void)                                         \
     __attribute__((__destructor__, __used__));                          \
 static void test ## which(void) {                                       \
     errno = 0;                                                          \
     __test_group = #which;                                              \
     if (__test_verbose) {                                               \
-        fprintf(stdout, "%s Test Group " #which " in %s\n", __test_category, __FILE__); }
-#define END_GROUP }
+        fprintf(stdout, "%s Test Group " #which " in %s\n", __test_category, __FILE__); } \
+
+#define END_GROUP                                                       \
+    if (--__group_count == 0) __test_done();                            \
+}
 
 /** Set the test category.
  */
@@ -199,42 +241,5 @@ static void test ## which(void) {                                       \
             fprintf(stdout, "\n");                                      \
         }                                                               \
     } while (0)
-
-/** Complete testing.
- */
-#define TEST_DONE()                                                     \
-static void done(void)                                                  \
-    __attribute__((__destructor__, __used__));                          \
-static void done(void) {                                                \
-    do {                                                                \
-        fprintf(stdout, "%s unit tests completed\n", __test_category);  \
-        fprintf(stdout, "    %d tests run\n", __test_count);            \
-        fprintf(stdout, "    %d test%s failed\n", __test_failures,      \
-                __test_failures == 1 ? "" : "s");                       \
-        if (__test_expected_failures) {                                 \
-            fprintf(stdout, "    %d test%s failed as expected\n",       \
-                    __test_expected_failures,                           \
-                    __test_expected_failures == 1 ? "" : "s");          \
-        }                                                               \
-        if (__test_unexpected_passes) {                                 \
-            fprintf(stdout, "    %d test%s did not fail as expected\n", \
-                    __test_unexpected_passes,                           \
-                    __test_unexpected_passes == 1 ? "" : "s");          \
-        }                                                               \
-        fflush(stdout);                                                 \
-        if (__test_failures > 0 || __test_unexpected_passes > 0) {      \
-            fprintf(stderr, "%s unit tests completed\n", __test_category); \
-            fprintf(stderr, "    %d tests run\n", __test_count);        \
-            fprintf(stderr, "    %d test%s failed\n", __test_failures,  \
-                __test_failures == 1 ? "" : "s");                       \
-            fprintf(stderr, "    %d test%s did not fail as expected\n", \
-                __test_unexpected_passes,                               \
-                __test_unexpected_passes == 1 ? "" : "s");              \
-            _Exit(EXIT_FAILURE);                                        \
-        } else {                                                        \
-            _Exit(EXIT_SUCCESS);                                        \
-        }                                                               \
-    } while (0);                                                        \
-}
 
 #endif // _ecc_test_h_

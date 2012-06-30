@@ -30,15 +30,22 @@ typedef void (*dfptr)(void);
 
 static cfptr ctor_list[1] __attribute__((section(".ctors"))) = { (cfptr) -1 };
 static dfptr dtor_list[1] __attribute__((section(".dtors"))) = { (dfptr) -1 };
+static cfptr init_array[1] __attribute__((section(".init_array"))) = { (cfptr) -1 };
+static dfptr fini_array[1] __attribute__((section(".fini_array"))) = { (dfptr) -1 };
 
 static void
 do_ctors(int argc, char **argv, char **envp)
 {
     cfptr *fpp;
 
+    // Do ctors in reverse order.
     for(fpp = ctor_list + 1;  *fpp != 0;  ++fpp)
         ;
     while(--fpp > ctor_list)
+        (**fpp)(argc, argv, envp);
+
+    // Do init array in forward order.
+    for(fpp = init_array + 1;  *fpp != 0;  ++fpp)
         (**fpp)(argc, argv, envp);
 }
 
@@ -47,6 +54,13 @@ do_dtors(void)
 {
     dfptr *fpp;
 
+    // Do fini array in reverse order.
+    for(fpp = fini_array + 1;  *fpp != 0;  ++fpp)
+        ;
+    while(--fpp > fini_array)
+        (**fpp)();
+
+    // Do dtors in forward order.
     for(fpp = dtor_list + 1;  *fpp != 0;  ++fpp)
         (**fpp)();
 }

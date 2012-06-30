@@ -2,6 +2,7 @@
 #define _INTERNAL_ATOMIC_H
 
 #include <stdint.h>
+#include <endian.h>
 
 static inline int a_ctz_l(unsigned long x)
 {
@@ -99,14 +100,24 @@ static inline void a_or(volatile int *p, int v)
 
 static inline void a_and_64(volatile uint64_t *p, uint64_t v)
 {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
 	a_and((int *)p, v);
 	a_and((int *)p+1, v>>32);
+#else
+	a_and((int *)p+1, v);
+	a_and((int *)p, v>>32);
+#endif
 }
 
 static inline void a_or_64(volatile uint64_t *p, uint64_t v)
 {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
 	a_or((int *)p, v);
 	a_or((int *)p+1, v>>32);
+#else
+	a_or((int *)p+1, v);
+	a_or((int *)p, v>>32);
+#endif
 }
 
 #endif

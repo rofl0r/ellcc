@@ -47,7 +47,7 @@ TEST_GROUP(Stdlib)
     d = strtod("1.0", &p);
     TEST(d == 1.0 && *p == '\0', "strtod(1.0) == 1.0");
     f = strtof("1.0", &p);
-    TEST(f == 1.0F && *p == '\0', "strtof(1.0) == 1.0F");
+    TEST(f == 1.0F && *p == '\0', "strtof(1.0) == 1.0F (%g)", f);
     ld = strtold("1.0", &p);
     TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")

@@ -70,9 +70,13 @@ CFLAGS.asan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
 CFLAGS.tsan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
-	 	 $(ArchFunctions.arm)
+		 aeabi_ldivmod \
+		 aeabi_uldivmod \
+		 aeabi_memcpy
 FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
-		   $(ArchFunctions.arm)
+		 aeabi_ldivmod \
+		 aeabi_uldivmod \
+		 aeabi_memcpy
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
 FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
 FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
