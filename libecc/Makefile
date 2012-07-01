@@ -27,12 +27,12 @@ libecc: header.install \
 	arm \
         armeb \
 	i386 \
+	microblaze \
 	mips \
 	ppc \
 	ppc64 \
 	x86_64 \
 	compiler-rt.install \
-	# microblaze
 
 arm armeb i386 mips ppc ppc64 x86_64 microblaze:
 	@echo Making libecc for $@ in musl-build/$@

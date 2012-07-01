@@ -20,8 +20,9 @@ setjmp:
         sw      s6, 32(a0)
         sw      s7, 36(a0)
         sw      s8, 40(a0)
+        sw      sp, 44(a0)
 #if defined(__mips_n32)
-        sw      gp, 44(a0)
+        sw      gp, 48(a0)
 #endif
         li      v0, 0
 	jr      ra

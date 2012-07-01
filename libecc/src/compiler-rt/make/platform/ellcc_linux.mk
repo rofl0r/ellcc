@@ -17,6 +17,9 @@ Arch.armeb := armeb
 Configs += i386
 Arch.i386 := i386
 
+Configs += microblaze
+Arch.microblaze := microblaze
+
 Configs += mips
 Arch.mips := mips
 
@@ -59,6 +62,7 @@ CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
+CFLAGS.microblaze := $(CFLAGS) -target microblaze-ellcc-linux
 CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
 CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
 CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
@@ -78,6 +82,7 @@ FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
 		 aeabi_uldivmod \
 		 aeabi_memcpy
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
+FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)
 FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
 FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
 FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)

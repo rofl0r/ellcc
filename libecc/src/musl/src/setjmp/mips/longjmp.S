@@ -6,7 +6,7 @@
         .align  2
 _longjmp:
 longjmp:
-        move    v0, a0
+        move    v0, a1
         bne     v0, zero, 1f
         addi    v0, 1
 1:      lw      ra,  0(a0)
@@ -20,8 +20,9 @@ longjmp:
         lw      s6, 32(a0)
         lw      s7, 36(a0)
         lw      s8, 40(a0)
+        lw      sp, 44(a0)
 #if defined(__mips_n32)
-        lw      gp, 44(a0)
+        lw      gp, 48(a0)
 #endif
 	jr      ra
         nop
