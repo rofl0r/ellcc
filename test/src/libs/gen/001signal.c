@@ -42,9 +42,9 @@ TEST_GROUP(Signal)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=24")
         TEST(signal(SIGINT, handler) == handler, "The previous signal is correct");
     TEST_TRACE(C99 7.14.1.2)
-    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=10")
-    TEST_EXCLUDE(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=16")
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=11")
+    TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=10")
+    TEST_RESOLVED(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=16")
+    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=11")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=12")
     TEST_EXCLUDE(X86_64, "http://ellcc.org/bugzilla/show_bug.cgi?id=13")
     {
