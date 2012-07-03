@@ -314,7 +314,7 @@ TEST_GROUP(Inttypes)
     TEST_TRACE(C99 7.8.2.3)
     intmax_t m;
     m = strtoimax("100", 0, 0);
-    TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100");
+    TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100 (%" PRIdMAX ")", m);
     uintmax_t um;
     um = strtoumax("100", 0, 0);
     TEST(um == 100, "strtoumax(\"100\", 0, 0) == 100");

@@ -6,11 +6,11 @@
 _longjmp:
 longjmp:
         addi    r3, r6, 0
-        bne     r3, r0, 1f
+        bnei    r3, 1f
         addi    r3, r3, 1
 1:      lwi     r1,  r5, 0
         lwi     r15, r5, 4
-        lwi     r18,  r5, 8
+        lwi     r18, r5, 8
         lwi     r19, r5, 12
         lwi     r20, r5, 16
         lwi     r21, r5, 20
@@ -23,5 +23,6 @@ longjmp:
         lwi     r28, r5, 48
         lwi     r29, r5, 52
         lwi     r30, r5, 56
+        lwi     r31, r5, 60
 	rtsd    r15, 8
         nop
