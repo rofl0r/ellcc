@@ -30,7 +30,7 @@
 #if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
 long double exp2l(long double x)
 {
-	return exp2l(x);
+	return exp2(x);
 }
 #elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
 
