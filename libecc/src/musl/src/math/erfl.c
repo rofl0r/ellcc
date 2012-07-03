@@ -105,6 +105,10 @@ long double erfl(long double x)
 {
 	return erf(x);
 }
+long double erfcl(long double x)
+{
+	return erfc(x);
+}
 #elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
 static const long double
 tiny = 1e-4931L,
