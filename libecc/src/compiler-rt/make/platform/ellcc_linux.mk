@@ -23,6 +23,9 @@ Arch.microblaze := microblaze
 Configs += mips
 Arch.mips := mips
 
+Configs += mipsel
+Arch.mipsel := mipsel
+
 Configs += ppc
 Arch.ppc := ppc
 
@@ -64,6 +67,7 @@ CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=n
 CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.microblaze := $(CFLAGS) -target microblaze-ellcc-linux
 CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
+CFLAGS.mipsel := $(CFLAGS) -target mipsel-ellcc-linux -mcpu=mips32r2
 CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
 CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
 CFLAGS.x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
@@ -84,6 +88,7 @@ FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
 FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)
 FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
+FUNCTIONS.mipsel := $(CommonFunctions) $(ArchFunctions.mipsel)
 FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
 FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
 FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)

@@ -12,8 +12,8 @@ _start:
         ori     r8, r0, _init           // and _init() ...
         ori     r9, r0, _fini           // and _fini() ...
         add     r10, r0, r0             // ldso_fini == NULL
-        addik   r1, r1, -4*6            // LEave space for the args.
-        bri     main                    // Let's go!
+        addik   r1, r1, -4*6            // Leave space for the args.
+        bri     __libc_start_main       // Let's go!
                                         // Never gets here.
         .end    _start
         .size   _start, .-_start

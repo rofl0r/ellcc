@@ -34,7 +34,7 @@ libecc: header.install \
 	x86_64 \
 	compiler-rt.install \
 
-arm armeb i386 mips ppc ppc64 x86_64 microblaze:
+arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze:
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
 	cd src/musl ; \

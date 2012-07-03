@@ -25,13 +25,14 @@ static inline int a_ctz_64(uint64_t x)
 
 static inline int a_cas(volatile int *p, int t, int s)
 {
-	int old;
-	for (;;) {
-		if (!((int (*)(int, int, volatile int *))0xffff0fc0)(t, s, p))
-			return t;
-		if ((old=*p) != t)
-			return old;
-	}
+	__asm__( "1: lwx r11, %1, r0\n"
+                 "   swx %3, %1, r0\n"
+                 "   nop\n"
+                 "   src r12, r12\n"
+                 "   blti r12, 1b\n"
+                 "   add %0, r11, r0\n"
+		: "=r"(t) : "=r"(p), "r"(t), "r"(s) : "memory" );
+        return t;
 }
 
 static inline void *a_cas_p(volatile void *p, void *t, void *s)

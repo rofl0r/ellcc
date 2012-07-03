@@ -26,19 +26,20 @@ static inline int a_ctz_64(uint64_t x)
 static inline int a_cas(volatile int *p, int t, int s)
 {
 
-	__asm__( ".set noat\n"
+	__asm__( "#.set noat\n"
                  ".set noreorder\n"
-                 ".set nomacro\n"
-                 "1: ll $8, %1\n"
+                 "#.set nomacro\n"
+                 "1: ll $8, 0(%1)\n"
                  "   nop\n"
-                 "   sc %3, %1\n"
-                 "   beq %3, $0, 1b\n"
+                 "   add $9, %3, $0\n"
+                 "   sc $9, 0(%1)\n"
+                 "   beq $9, $0, 1b\n"
                  "   nop\n"
-                 "   move %0, $8\n"
+                 "   add %0, $8, $0\n"
                  ".set at\n"
                  ".set reorder\n"
                  ".set macro\n"
-		: "=r"(t), "=m"(*p) : "r"(t), "r"(s) : "memory" );
+		: "=r"(t) : "r"(p), "r"(t), "r"(s) : "memory" );
         return t;
 }
 
