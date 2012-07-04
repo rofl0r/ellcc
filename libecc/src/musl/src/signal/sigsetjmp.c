@@ -9,7 +9,7 @@
 
 int sigsetjmp(sigjmp_buf buf, int save)
 {
-	unsigned long *flag = buf + sizeof(jmp_buf)/sizeof(long) - 2;
+	unsigned long *flag = buf + sizeof(jmp_buf)/sizeof(long) - 1;
 	sigset_t *mask = (void *)(flag + 1);
 	if ((*flag = save))
 		sigprocmask (SIG_SETMASK, NULL, mask);
