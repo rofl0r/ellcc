@@ -79,14 +79,16 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
           ExprResult Result = SubstExpr(Aligned->getAlignmentExpr(),
                                         TemplateArgs);
           if (!Result.isInvalid())
-            AddAlignedAttr(Aligned->getLocation(), New, Result.takeAs<Expr>());
+            AddAlignedAttr(Aligned->getLocation(), New, Result.takeAs<Expr>(), 
+                           Aligned->getIsMSDeclSpec());
         } else {
           TypeSourceInfo *Result = SubstType(Aligned->getAlignmentType(),
                                              TemplateArgs,
                                              Aligned->getLocation(),
                                              DeclarationName());
           if (Result)
-            AddAlignedAttr(Aligned->getLocation(), New, Result);
+            AddAlignedAttr(Aligned->getLocation(), New, Result, 
+                           Aligned->getIsMSDeclSpec());
         }
         continue;
       }
@@ -1950,13 +1952,22 @@ Decl * TemplateDeclInstantiator
 Decl *TemplateDeclInstantiator::VisitClassScopeFunctionSpecializationDecl(
                                      ClassScopeFunctionSpecializationDecl *Decl) {
   CXXMethodDecl *OldFD = Decl->getSpecialization();
-  CXXMethodDecl *NewFD = cast<CXXMethodDecl>(VisitCXXMethodDecl(OldFD, 0, true));
+  CXXMethodDecl *NewFD = cast<CXXMethodDecl>(VisitCXXMethodDecl(OldFD,
+                                                                0, true));
 
   LookupResult Previous(SemaRef, NewFD->getNameInfo(), Sema::LookupOrdinaryName,
                         Sema::ForRedeclaration);
 
+  TemplateArgumentListInfo TemplateArgs;
+  TemplateArgumentListInfo* TemplateArgsPtr = 0;
+  if (Decl->hasExplicitTemplateArgs()) {
+    TemplateArgs = Decl->templateArgs();
+    TemplateArgsPtr = &TemplateArgs;
+  }
+
   SemaRef.LookupQualifiedName(Previous, SemaRef.CurContext);
-  if (SemaRef.CheckFunctionTemplateSpecialization(NewFD, 0, Previous)) {
+  if (SemaRef.CheckFunctionTemplateSpecialization(NewFD, TemplateArgsPtr,
+                                                  Previous)) {
     NewFD->setInvalidDecl();
     return NewFD;
   }
@@ -3240,8 +3251,8 @@ DeclContext *Sema::FindInstantiatedContext(SourceLocation Loc, DeclContext* DC,
 ///
 /// In the instantiation of X<int>::getKind(), we need to map the
 /// EnumConstantDecl for KnownValue (which refers to
-/// X<T>::<Kind>::KnownValue) to its instantiation
-/// (X<int>::<Kind>::KnownValue). InstantiateCurrentDeclRef() performs
+/// X<T>::\<Kind>\::KnownValue) to its instantiation
+/// (X<int>::\<Kind>\::KnownValue). InstantiateCurrentDeclRef() performs
 /// this mapping from within the instantiation of X<int>.
 NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
                           const MultiLevelTemplateArgumentList &TemplateArgs) {

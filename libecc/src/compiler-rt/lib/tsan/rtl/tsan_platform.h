@@ -64,18 +64,23 @@ static inline uptr ShadowToMem(uptr shadow) {
 #endif
 }
 
+// For COMPAT mapping returns an alternative address
+// that mapped to the same shadow address.
+static inline uptr AlternativeAddress(uptr addr) {
+#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
+  return addr | kLinuxAppMemMsk;
+#else
+  return 0;
+#endif
+}
+
 uptr GetShadowMemoryConsumption();
 void FlushShadowMemory();
 
 const char *InitializePlatform();
 void FinalizePlatform();
 
-void internal_yield();
-void internal_sleep_ms(u32 ms);
-
 void internal_start_thread(void(*func)(void*), void *arg);
-
-const char *internal_getpwd();
 
 uptr GetTlsSize();
 void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,

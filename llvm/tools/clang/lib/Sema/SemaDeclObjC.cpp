@@ -265,12 +265,36 @@ void Sema::AddAnyMethodToGlobalPool(Decl *D) {
     AddFactoryMethodToGlobalPool(MDecl, true);
 }
 
-/// ActOnStartOfObjCMethodDef - This routine sets up parameters; invisible
-/// and user declared, in the method definition's AST.
-void Sema::ActOnStartOfObjCMethodDef(Scope *FnBodyScope, Decl *D) {
-  assert(getCurMethodDecl() == 0 && "Method parsing confused");
+/// ActOnStartOfObjCMethodOrCFunctionDef - This routine sets up parameters; invisible
+/// and user declared, in the method definition's AST. This routine is also  called
+/// for C-functions defined in an Objective-c class implementation.
+void Sema::ActOnStartOfObjCMethodOrCFunctionDef(Scope *FnBodyScope, Decl *D,
+                                                bool parseMethod) {
+  assert((getCurMethodDecl() == 0 && getCurFunctionDecl() == 0) &&
+         "Method/c-function parsing confused");
+  if (!parseMethod) {
+    FunctionDecl *FDecl = dyn_cast_or_null<FunctionDecl>(D);
+    // If we don't have a valid c-function decl, simply return.
+    if (!FDecl)
+      return;
+    PushDeclContext(FnBodyScope, FDecl);
+    PushFunctionScope();
+    
+    for (FunctionDecl::param_const_iterator PI = FDecl->param_begin(),
+         E = FDecl->param_end(); PI != E; ++PI) {
+      ParmVarDecl *Param = (*PI);
+      if (!Param->isInvalidDecl() &&
+          RequireCompleteType(Param->getLocation(), Param->getType(),
+                              diag::err_typecheck_decl_incomplete_type))
+        Param->setInvalidDecl();
+      if ((*PI)->getIdentifier())
+        PushOnScopeChains(*PI, FnBodyScope);
+    }
+    return;
+  }
+  
   ObjCMethodDecl *MDecl = dyn_cast_or_null<ObjCMethodDecl>(D);
-
+  
   // If we don't have a valid method decl, simply return.
   if (!MDecl)
     return;
@@ -503,7 +527,7 @@ ActOnStartClassInterface(SourceLocation AtInterfaceLoc,
 }
 
 /// ActOnCompatiblityAlias - this action is called after complete parsing of
-/// @compatibility_alias declaration. It sets up the alias relationships.
+/// a \@compatibility_alias declaration. It sets up the alias relationships.
 Decl *Sema::ActOnCompatiblityAlias(SourceLocation AtLoc,
                                         IdentifierInfo *AliasName,
                                         SourceLocation AliasLocation,
@@ -713,7 +737,7 @@ void Sema::DiagnoseClassExtensionDupMethods(ObjCCategoryDecl *CAT,
   }
 }
 
-/// ActOnForwardProtocolDeclaration - Handle @protocol foo;
+/// ActOnForwardProtocolDeclaration - Handle \@protocol foo;
 Sema::DeclGroupPtrTy
 Sema::ActOnForwardProtocolDeclaration(SourceLocation AtProtocolLoc,
                                       const IdentifierLocPair *IdentList,
@@ -1020,8 +1044,8 @@ void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
   ObjCInterfaceDecl* IDecl = ImpDecl->getClassInterface();
   if (!IDecl)
     return;
-  /// Check case of non-existing @interface decl.
-  /// (legacy objective-c @implementation decl without an @interface decl).
+  /// Check case of non-existing \@interface decl.
+  /// (legacy objective-c \@implementation decl without an \@interface decl).
   /// Add implementations's ivar to the synthesize class's ivar list.
   if (IDecl->isImplicitInterfaceDecl()) {
     IDecl->setEndOfDefinitionLoc(RBrace);
@@ -1039,7 +1063,7 @@ void Sema::CheckImplementationIvars(ObjCImplementationDecl *ImpDecl,
     return;
 
   assert(ivars && "missing @implementation ivars");
-  if (LangOpts.ObjCNonFragileABI2) {
+  if (LangOpts.ObjCRuntime.isNonFragile()) {
     if (ImpDecl->getSuperClass())
       Diag(ImpDecl->getLocation(), diag::warn_on_superclass_use);
     for (unsigned i = 0; i < numIvars; i++) {
@@ -1501,7 +1525,7 @@ void Sema::CheckProtocolMethodDefs(SourceLocation ImpLoc,
   
   ObjCInterfaceDecl *Super = IDecl->getSuperClass();
   ObjCInterfaceDecl *NSIDecl = 0;
-  if (getLangOpts().NeXTRuntime) {
+  if (getLangOpts().ObjCRuntime.isNeXTFamily()) {
     // check to see if class implements forwardInvocation method and objects
     // of this class are derived from 'NSProxy' so that to forward requests
     // from one object to another.
@@ -1730,8 +1754,9 @@ void Sema::ImplMethodsVsClassMethods(Scope *S, ObjCImplDecl* IMPDecl,
   // an implementation or 2) there is a @synthesize/@dynamic implementation
   // of the property in the @implementation.
   if (const ObjCInterfaceDecl *IDecl = dyn_cast<ObjCInterfaceDecl>(CDecl))
-    if  (!(LangOpts.ObjCDefaultSynthProperties && LangOpts.ObjCNonFragileABI2) ||
-      IDecl->isObjCRequiresPropertyDefs())
+    if  (!(LangOpts.ObjCDefaultSynthProperties &&
+           LangOpts.ObjCRuntime.isNonFragile()) ||
+         IDecl->isObjCRequiresPropertyDefs())
       DiagnoseUnimplementedProperties(S, IMPDecl, CDecl, InsMap);
       
   SelectorSet ClsMap;
@@ -2147,9 +2172,9 @@ ObjCMethodDecl *Sema::LookupImplementedMethodInGlobalPool(Selector Sel) {
 
 /// DiagnoseDuplicateIvars - 
 /// Check for duplicate ivars in the entire class at the start of 
-/// @implementation. This becomes necesssary because class extension can
+/// \@implementation. This becomes necesssary because class extension can
 /// add ivars to a class in random order which will not be known until
-/// class's @implementation is seen.
+/// class's \@implementation is seen.
 void Sema::DiagnoseDuplicateIvars(ObjCInterfaceDecl *ID, 
                                   ObjCInterfaceDecl *SID) {
   for (ObjCInterfaceDecl::ivar_iterator IVI = ID->ivar_begin(),
@@ -2360,7 +2385,7 @@ Decl *Sema::ActOnAtEnd(Scope *S, SourceRange AtEnd,
         Diag(IDecl->getLocation(), diag::err_objc_root_class_subclass);
       }
 
-      if (LangOpts.ObjCNonFragileABI2) {
+      if (LangOpts.ObjCRuntime.isNonFragile()) {
         while (IDecl->getSuperClass()) {
           DiagnoseDuplicateIvars(IDecl, IDecl->getSuperClass());
           IDecl = IDecl->getSuperClass();
@@ -2947,7 +2972,7 @@ bool Sema::CheckObjCDeclScope(Decl *D) {
   return true;
 }
 
-/// Called whenever @defs(ClassName) is encountered in the source.  Inserts the
+/// Called whenever \@defs(ClassName) is encountered in the source.  Inserts the
 /// instance variables of ClassName into Decls.
 void Sema::ActOnDefs(Scope *S, Decl *TagD, SourceLocation DeclStart,
                      IdentifierInfo *ClassName,
@@ -2958,7 +2983,7 @@ void Sema::ActOnDefs(Scope *S, Decl *TagD, SourceLocation DeclStart,
     Diag(DeclStart, diag::err_undef_interface) << ClassName;
     return;
   }
-  if (LangOpts.ObjCNonFragileABI) {
+  if (LangOpts.ObjCRuntime.isNonFragile()) {
     Diag(DeclStart, diag::err_atdef_nonfragile_interface);
     return;
   }

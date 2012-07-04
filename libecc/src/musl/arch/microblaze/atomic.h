@@ -31,7 +31,7 @@ static inline int a_cas(volatile int *p, int t, int s)
                  "   src r12, r12\n"
                  "   blti r12, 1b\n"
                  "   add %0, r11, r0\n"
-		: "=r"(t) : "=r"(p), "r"(t), "r"(s) : "memory" );
+		: "=r"(t) : "r"(p), "r"(t), "r"(s) : "memory" );
         return t;
 }
 

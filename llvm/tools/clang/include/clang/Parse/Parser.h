@@ -170,6 +170,7 @@ class Parser : public CodeCompletionHandler {
   OwningPtr<PragmaHandler> RedefineExtnameHandler;
   OwningPtr<PragmaHandler> FPContractHandler;
   OwningPtr<PragmaHandler> OpenCLExtensionHandler;
+  OwningPtr<CommentHandler> CommentSemaHandler;
 
   /// Whether the '>' token acts as an operator or not. This will be
   /// true except when we are parsing an expression within a C++
@@ -1018,7 +1019,7 @@ private:
   void ParseLexedMethodDef(LexedMethod &LM);
   void ParseLexedMemberInitializers(ParsingClass &Class);
   void ParseLexedMemberInitializer(LateParsedMemberInitializer &MI);
-  Decl *ParseLexedObjCMethodDefs(LexedMethod &LM);
+  void ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod);
   bool ConsumeAndStoreFunctionPrologue(CachedTokens &Toks);
   bool ConsumeAndStoreUntil(tok::TokenKind T1,
                             CachedTokens &Toks,
@@ -1044,10 +1045,13 @@ private:
                                           ParsingDeclSpec *DS = 0);
   bool isDeclarationAfterDeclarator();
   bool isStartOfFunctionDefinition(const ParsingDeclarator &Declarator);
-  DeclGroupPtrTy ParseDeclarationOrFunctionDefinition(ParsedAttributes &attrs,
+  DeclGroupPtrTy ParseDeclarationOrFunctionDefinition(
+                                                  ParsedAttributesWithRange &attrs,
+                                                  ParsingDeclSpec *DS = 0,
                                                   AccessSpecifier AS = AS_none);
-  DeclGroupPtrTy ParseDeclarationOrFunctionDefinition(ParsingDeclSpec &DS,
-                                                  AccessSpecifier AS = AS_none);
+  DeclGroupPtrTy ParseDeclOrFunctionDefInternal(ParsedAttributesWithRange &attrs,
+                                                ParsingDeclSpec &DS,
+                                                AccessSpecifier AS);
 
   Decl *ParseFunctionDefinition(ParsingDeclarator &D,
                  const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
@@ -1080,11 +1084,12 @@ private:
   struct ObjCImplParsingDataRAII {
     Parser &P;
     Decl *Dcl;
+    bool HasCFunction;
     typedef SmallVector<LexedMethod*, 8> LateParsedObjCMethodContainer;
     LateParsedObjCMethodContainer LateParsedObjCMethods;
 
     ObjCImplParsingDataRAII(Parser &parser, Decl *D)
-      : P(parser), Dcl(D) {
+      : P(parser), Dcl(D), HasCFunction(false) {
       P.CurParsedObjCImpl = this;
       Finished = false;
     }
@@ -1097,6 +1102,7 @@ private:
     bool Finished;
   };
   ObjCImplParsingDataRAII *CurParsedObjCImpl;
+  void StashAwayMethodOrFunctionBodyTokens(Decl *MDecl);
 
   DeclGroupPtrTy ParseObjCAtImplementationDeclaration(SourceLocation AtLoc);
   DeclGroupPtrTy ParseObjCAtEndDeclaration(SourceRange atEnd);
@@ -1215,6 +1221,8 @@ private:
   // C++ Expressions
   ExprResult ParseCXXIdExpression(bool isAddressOfOperand = false);
 
+  bool areTokensAdjacent(const Token &A, const Token &B);
+
   void CheckForTemplateAndDigraph(Token &Next, ParsedType ObjectTypePtr,
                                   bool EnteringContext, IdentifierInfo &II,
                                   CXXScopeSpec &SS);
@@ -1286,8 +1294,6 @@ private:
   //===--------------------------------------------------------------------===//
   // C++ 5.2.3: Explicit type conversion (functional notation)
   ExprResult ParseCXXTypeConstructExpression(const DeclSpec &DS);
-
-  bool isCXXSimpleTypeSpecifier() const;
 
   /// ParseCXXSimpleTypeSpecifier - [C++ 7.1.5.2] Simple type specifiers.
   /// This should only be called when the current token is known to be part of
@@ -1495,7 +1501,7 @@ private:
   DeclGroupPtrTy ParseSimpleDeclaration(StmtVector &Stmts,
                                         unsigned Context,
                                         SourceLocation &DeclEnd,
-                                        ParsedAttributes &attrs,
+                                        ParsedAttributesWithRange &attrs,
                                         bool RequireSemi,
                                         ForRangeInit *FRI = 0);
   bool MightBeDeclarator(unsigned Context);
@@ -1711,7 +1717,7 @@ private:
                              = Declarator::TypeNameContext,
                            AccessSpecifier AS = AS_none,
                            Decl **OwnedType = 0);
-  void ParseBlockId();
+  void ParseBlockId(SourceLocation CaretLoc);
 
   // Check for the start of a C++11 attribute-specifier-seq in a context where
   // an attribute is not allowed.
@@ -1790,7 +1796,14 @@ private:
   }
   void ParseMicrosoftAttributes(ParsedAttributes &attrs,
                                 SourceLocation *endLoc = 0);
-  void ParseMicrosoftDeclSpec(ParsedAttributes &attrs);
+  void ParseMicrosoftDeclSpec(ParsedAttributes &Attrs);
+  bool IsSimpleMicrosoftDeclSpec(IdentifierInfo *Ident);
+  void ParseComplexMicrosoftDeclSpec(IdentifierInfo *Ident, 
+                                     SourceLocation Loc,
+                                     ParsedAttributes &Attrs);
+  void ParseMicrosoftDeclSpecWithSingleArg(IdentifierInfo *AttrName, 
+                                           SourceLocation AttrNameLoc, 
+                                           ParsedAttributes &Attrs);
   void ParseMicrosoftTypeAttributes(ParsedAttributes &attrs);
   void ParseMicrosoftInheritanceClassAttributes(ParsedAttributes &attrs);
   void ParseBorlandTypeAttributes(ParsedAttributes &attrs);
@@ -1938,6 +1951,7 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ 9: classes [class] and C structs/unions.
+  bool isValidAfterTypeSpecifier(bool CouldBeBitfield);
   void ParseClassSpecifier(tok::TokenKind TagTokKind, SourceLocation TagLoc,
                            DeclSpec &DS, const ParsedTemplateInfo &TemplateInfo,
                            AccessSpecifier AS, bool EnteringContext,

@@ -27,6 +27,7 @@
 #include "clang/AST/TemplateName.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/CanonicalType.h"
+#include "clang/AST/RawCommentList.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
@@ -51,7 +52,6 @@ namespace clang {
   class ASTMutationListener;
   class IdentifierTable;
   class SelectorTable;
-  class SourceManager;
   class TargetInfo;
   class CXXABI;
   // Decls
@@ -198,10 +198,9 @@ class ASTContext : public RefCountedBase<ASTContext> {
   /// \brief The typedef for the __uint128_t type.
   mutable TypedefDecl *UInt128Decl;
   
-  /// BuiltinVaListType - built-in va list type.
-  /// This is initially null and set by Sema::LazilyCreateBuiltin when
-  /// a builtin that takes a valist is encountered.
-  QualType BuiltinVaListType;
+  /// \brief The typedef for the target specific predefined
+  /// __builtin_va_list type.
+  mutable TypedefDecl *BuiltinVaListDecl;
 
   /// \brief The typedef for the predefined 'id' type.
   mutable TypedefDecl *ObjCIdDecl;
@@ -419,6 +418,30 @@ public:
     return FullSourceLoc(Loc,SourceMgr);
   }
 
+  /// \brief All comments in this translation unit.
+  RawCommentList Comments;
+
+  /// \brief True if comments are already loaded from ExternalASTSource.
+  mutable bool CommentsLoaded;
+
+  /// \brief Mapping from declarations to their comments (stored within
+  /// Comments list), once we have already looked up the comment associated
+  /// with a given declaration.
+  mutable llvm::DenseMap<const Decl *, const RawComment *> DeclComments;
+
+  /// \brief Return the documentation comment attached to a given declaration,
+  /// without looking into cache.
+  const RawComment *getRawCommentForDeclNoCache(const Decl *D) const;
+
+public:
+  void addComment(const RawComment &RC) {
+    Comments.addComment(RC);
+  }
+
+  /// \brief Return the documentation comment attached to a given declaration.
+  /// Returns NULL if no comment is attached.
+  const RawComment *getRawCommentForDecl(const Decl *D) const;
+
   /// \brief Retrieve the attributes for the given declaration.
   AttrVec& getDeclAttrs(const Decl *D);
 
@@ -575,6 +598,10 @@ public:
   // Types for deductions in C++0x [stmt.ranged]'s desugaring. Built on demand.
   mutable QualType AutoDeductTy;     // Deduction against 'auto'.
   mutable QualType AutoRRefDeductTy; // Deduction against 'auto &&'.
+
+  // Type used to help define __builtin_va_list for some targets.
+  // The type is built when constructing 'BuiltinVaListDecl'.
+  mutable QualType VaListTagTy;
 
   ASTContext(LangOptions& LOpts, SourceManager &SM, const TargetInfo *t,
              IdentifierTable &idents, SelectorTable &sels,
@@ -1153,8 +1180,19 @@ public:
     return getObjCInterfaceType(getObjCProtocolDecl());
   }
   
-  void setBuiltinVaListType(QualType T);
-  QualType getBuiltinVaListType() const { return BuiltinVaListType; }
+  /// \brief Retrieve the C type declaration corresponding to the predefined
+  /// __builtin_va_list type.
+  TypedefDecl *getBuiltinVaListDecl() const;
+
+  /// \brief Retrieve the type of the __builtin_va_list type.
+  QualType getBuiltinVaListType() const {
+    return getTypeDeclType(getBuiltinVaListDecl());
+  }
+
+  /// \brief Retrieve the C type declaration corresponding to the predefined
+  /// __va_list_tag type used to help define the __builtin_va_list type for
+  /// some targets.
+  QualType getVaListTagType() const;
 
   /// getCVRQualifiedType - Returns a type with additional const,
   /// volatile, or restrict qualifiers.
@@ -1468,7 +1506,7 @@ public:
   /// be used to refer to a given template. For most templates, this
   /// expression is just the template declaration itself. For example,
   /// the template std::vector can be referred to via a variety of
-  /// names---std::vector, ::std::vector, vector (if vector is in
+  /// names---std::vector, \::std::vector, vector (if vector is in
   /// scope), etc.---but all of these names map down to the same
   /// TemplateDecl, which is used to form the canonical template name.
   ///
@@ -1705,7 +1743,7 @@ public:
   /// \brief Get the implementation of ObjCCategoryDecl, or NULL if none exists.
   ObjCCategoryImplDecl   *getObjCImplementation(ObjCCategoryDecl *D);
 
-  /// \brief returns true if there is at lease one @implementation in TU.
+  /// \brief returns true if there is at least one \@implementation in TU.
   bool AnyObjCImplementation() {
     return !ObjCImpls.empty();
   }

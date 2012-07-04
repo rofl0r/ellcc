@@ -17,7 +17,6 @@
 #include "asan_interceptors.h"
 #include "asan_internal.h"
 #include "asan_mapping.h"
-#include "asan_procmaps.h"
 #include "asan_stack.h"
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
@@ -30,8 +29,9 @@
 #include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <sys/ucontext.h>
-#include <pthread.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <stdlib.h>  // for free()
 #include <unistd.h>
 #include <libkern/OSAtomic.h>
 #include <CoreFoundation/CFString.h>
@@ -55,7 +55,7 @@ enum {
   MACOS_VERSION_UNKNOWN = 0,
   MACOS_VERSION_LEOPARD,
   MACOS_VERSION_SNOW_LEOPARD,
-  MACOS_VERSION_LION,
+  MACOS_VERSION_LION
 };
 
 static int GetMacosVersion() {
@@ -96,40 +96,6 @@ void *AsanDoesNotSupportStaticLinkage() {
 
 bool AsanInterceptsSignal(int signum) {
   return (signum == SIGSEGV || signum == SIGBUS) && FLAG_handle_segv;
-}
-
-void *AsanMmapFixedNoReserve(uptr fixed_addr, uptr size) {
-  return internal_mmap((void*)fixed_addr, size,
-                      PROT_READ | PROT_WRITE,
-                      MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
-                      0, 0);
-}
-
-void *AsanMprotect(uptr fixed_addr, uptr size) {
-  return internal_mmap((void*)fixed_addr, size,
-                       PROT_NONE,
-                       MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE,
-                       0, 0);
-}
-
-const char *AsanGetEnv(const char *name) {
-  char ***env_ptr = _NSGetEnviron();
-  CHECK(env_ptr);
-  char **environ = *env_ptr;
-  CHECK(environ);
-  uptr name_len = internal_strlen(name);
-  while (*environ != 0) {
-    uptr len = internal_strlen(*environ);
-    if (len > name_len) {
-      const char *p = *environ;
-      if (!internal_memcmp(p, name, name_len) &&
-          p[name_len] == '=') {  // Match.
-        return *environ + name_len + 1;  // String starting after =.
-      }
-    }
-    environ++;
-  }
-  return 0;
 }
 
 AsanLock::AsanLock(LinkerInitialized) {
@@ -329,6 +295,8 @@ INTERCEPTOR(void, dispatch_async_f, dispatch_queue_t dq, void *ctxt,
                                 asan_dispatch_call_block_and_release);
 }
 
+DECLARE_REAL_AND_INTERCEPTOR(void, free, void *ptr)
+
 INTERCEPTOR(void, dispatch_sync_f, dispatch_queue_t dq, void *ctxt,
                                    dispatch_function_t func) {
   GET_STACK_TRACE_HERE(kStackTraceMax);
@@ -482,6 +450,9 @@ void InitializeMacInterceptors() {
   // Until this problem is fixed we need to check that the string is
   // non-constant before calling CFStringCreateCopy.
   CHECK(INTERCEPT_FUNCTION(CFStringCreateCopy));
+  // Some of the library functions call free() directly, so we have to
+  // intercept it.
+  CHECK(INTERCEPT_FUNCTION(free));
 }
 
 }  // namespace __asan
