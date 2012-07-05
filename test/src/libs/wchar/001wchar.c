@@ -145,11 +145,13 @@ TEST_GROUP(Wchar)
     TEST_TRACE(C99 7.24.2.9)
     TEST_EXCLUDE(HOST, "http://ellcc.org/bugzilla/show_bug.cgi?id=37")
         TEST(mywprintf(L"") == 0, "mywprintf() does nothing");
+        TEST_FAIL(HOST,mywprintf(L"") == 0, "mywprintf() does nothing");
     TEST_TRACE(C99 7.24.2.10)
     TEST(mywscanf(L"") == 0, "mywscanf() does nothing");
     TEST_TRACE(C99 7.24.2.11)
     TEST_EXCLUDE(HOST, "http://ellcc.org/bugzilla/show_bug.cgi?id=37")
         TEST(wprintf(L"") == 0, "wprintf() does nothing");
+        TEST_FAIL(HOST, wprintf(L"") == 0, "wprintf() does nothing");
     TEST_TRACE(C99 7.24.2.12)
     TEST(wscanf(L"") == 0, "wscanf() does nothing");
     TEST_TRACE(C99 7.24.3.1)
@@ -216,11 +218,15 @@ TEST_GROUP(Wchar)
     d = wcstod(L"1.0", &p);
     TEST(d == 1.0 && *p == L'\0', "wcstod(1.0) == 1.0");
     fl = wcstof(L"1.0", &p);
-    TEST(fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=56")
+        TEST(fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
+        TEST_FAIL(ARMEB, fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
     ld = wcstold(L"1.0", &p);
     TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
         TEST(ld == 1.0L && *p == L'\0', "wcstold(1.0) == 1.0L");
+        TEST_FAIL(PPC, ld == 1.0L && *p == L'\0', "wcstold(1.0) == 1.0L");
+        TEST_FAIL(PPC64, ld == 1.0L && *p == L'\0', "wcstold(1.0) == 1.0L");
     TEST_TRACE(C99 7.24.4.1.2)
     l = wcstol(L"12345678", &p, 0);
     TEST(l == 12345678L && *p == '\0', "wcstol(12345678L) == 12345678L");

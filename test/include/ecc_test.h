@@ -25,10 +25,15 @@ extern const char *__test_group;                ///< The current test group.
 
 /** Define an existance macro for each processor.
  */
-#if defined(__arm__)
+#if defined(__ARMEL__)
 #define ARM 1
 #else
 #define ARM 0
+#endif
+#if defined(__ARMEB__)
+#define ARMEB 1
+#else
+#define ARMEB 0
 #endif
 #if !defined(__clang__)
 #define GCC 1
@@ -85,7 +90,8 @@ extern const char *__test_group;                ///< The current test group.
 /** All known processors
  */
 #define ALL_PROCESSORS \
-    (ARM + GCC + I386 + MICROBLAZE + MIPS + NIOS2 + PPC + PPC64 + SPARC + X86_64)
+    (ARM + ARMEB + GCC + I386 + MICROBLAZE + MIPS + \
+     NIOS2 + PPC + PPC64 + SPARC + X86_64)
 
 /** Check for exactly one processor definition.
  */

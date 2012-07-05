@@ -34,6 +34,7 @@ TEST_GROUP(Format)
     chk("%u", "10", 10);
     chk("%lu", "10", 10l);
     chk("%llu", "10", 10ll);
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
     TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52") {
         chk("%e", "1.000000e+01", 10.0);
         chk("%E", "1.000000E+01", 10.0);

@@ -81,10 +81,12 @@ TEST_GROUP(Math)
     d = atan(0.0);
     f = atanf(0.0);
     ld = atanl(0.0);
-    TEST_TRACE(C99 7.12.4.4)
-    d = atan2(1.0, 2.0);
-    f = atan2f(1.0, 2.0);
-    ld = atan2l(1.0, 2.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.4.4)
+        d = atan2(1.0, 2.0);
+        f = atan2f(1.0, 2.0);
+        ld = atan2l(1.0, 2.0);
+    }
     TEST_TRACE(C99 7.12.4.5)
     d = cos(0.0);
     f = cosf(0.0);
@@ -143,33 +145,39 @@ TEST_GROUP(Math)
     ld = ilogbl(0.0);
     TEST(ilogb(0.0) == FP_ILOGB0, "ilogb(0.0) == FP_ILOGB0");
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
+        TEST_FAIL(ARMEB, ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
     TEST_TRACE(C99 7.12.6.6)
     d = ldexp(1.0, 1);
     f = ldexpf(1.0, 1);
     ld = ldexpl(1.0, 1);
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
+        TEST_FAIL(ARMEB, ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
     TEST_TRACE(C99 7.12.6.7)
-    d = log(0.0);
-    f = logf(0.0);
-    ld = logl(0.0);
+    d = log(1.0);
+    f = logf(1.0);
+    ld = logl(1.0);
     TEST_TRACE(C99 7.12.6.8)
-    d = log10(0.0);
-    f = log10f(0.0);
-    ld = log10l(0.0);
-    TEST_TRACE(C99 7.12.6.9)
-    d = log1p(0.0);
-    f = log1pf(0.0);
-    ld = log1pl(0.0);
+    d = log10(1.0);
+    f = log10f(1.0);
+    ld = log10l(1.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.6.9)
+        d = log1p(1.0);
+        f = log1pf(1.0);
+        ld = log1pl(1.0);
+    }
     TEST_TRACE(C99 7.12.6.10)
-    d = log2(0.0);
-    f = log2f(0.0);
-    ld = log2l(0.0);
+    d = log2(1.0);
+    f = log2f(1.0);
+    ld = log2l(1.0);
     TEST_TRACE(C99 7.12.6.11)
-    d = logb(0.0);
-    f = logbf(0.0);
-    ld = logbl(0.0);
+    d = logb(1.0);
+    f = logbf(1.0);
+    ld = logbl(1.0);
     TEST_TRACE(C99 7.12.6.12)
     d = modf(0.0, &d);
     f = modff(0.0, &f);
@@ -189,10 +197,12 @@ TEST_GROUP(Math)
     d = fabs(0.0);
     f = fabsf(0.0);
     ld = fabsl(0.0);
-    TEST_TRACE(C99 7.12.7.3)
-    d = hypot(2.0, 2.0);
-    f = hypotf(2.0, 2.0);
-    ld = hypotl(2.0, 2.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.7.3)
+        d = hypot(2.0, 2.0);
+        f = hypotf(2.0, 2.0);
+        ld = hypotl(2.0, 2.0);
+    }
     TEST_TRACE(C99 7.12.7.4)
     d = pow(2.0, 2.0);
     f = powf(2.0, 2.0);
@@ -201,10 +211,12 @@ TEST_GROUP(Math)
     d = sqrt(4.0);
     f = sqrtf(4.0);
     ld = sqrtl(4.0);
-    TEST_TRACE(C99 7.12.8.1)
-    d = erf(0.0);
-    f = erff(0.0);
-    ld = erfl(0.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.8.1)
+        d = erf(0.0);
+        f = erff(0.0);
+        ld = erfl(0.0);
+    }
     TEST_TRACE(C99 7.12.8.2)
     d = erfc(0.0);
     f = erfcf(0.0);
@@ -225,21 +237,23 @@ TEST_GROUP(Math)
     d = floor(1.0);
     f = floorf(1.0);
     ld = floorl(1.0);
-    TEST_TRACE(C99 7.12.9.3)
-    d = nearbyint(1.0);
-    f = nearbyintf(1.0);
-    ld = nearbyintl(1.0);
-    TEST_TRACE(C99 7.12.9.4)
-    d = rint(1.0);
-    f = rintf(1.0);
-    ld = rintl(1.0);
-    TEST_TRACE(C99 7.12.9.5)
-    l = lrint(1.0);
-    l = lrintf(1.0);
-    l = lrintl(1.0);
-    ll = llrint(1.0);
-    ll = llrintf(1.0);
-    ll = llrintl(1.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.9.3)
+        d = nearbyint(1.0);
+        f = nearbyintf(1.0);
+        ld = nearbyintl(1.0);
+        TEST_TRACE(C99 7.12.9.4)
+        d = rint(1.0);
+        f = rintf(1.0);
+        ld = rintl(1.0);
+        TEST_TRACE(C99 7.12.9.5)
+        l = lrint(1.0);
+        l = lrintf(1.0);
+        l = lrintl(1.0);
+        ll = llrint(1.0);
+        ll = llrintf(1.0);
+        ll = llrintl(1.0);
+    }
     TEST_TRACE(C99 7.12.9.6)
     d = round(1.0);
     f = roundf(1.0);
@@ -255,18 +269,22 @@ TEST_GROUP(Math)
     d = trunc(1.0);
     f = truncf(1.0);
     ld = truncl(1.0);
-    TEST_TRACE(C99 7.12.10.1)
-    d = fmod(2.0, 2.0);
-    f = fmodf(2.0, 2.0);
-    ld = fmodl(2.0, 2.0);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.10.1)
+        d = fmod(2.0, 2.0);
+        f = fmodf(2.0, 2.0);
+        ld = fmodl(2.0, 2.0);
+    }
     TEST_TRACE(C99 7.12.10.2)
     d = remainder(2.0, 2.0);
     f = remainderf(2.0, 2.0);
     ld = remainderl(2.0, 2.0);
-    TEST_TRACE(C99 7.12.10.3)
-    d = remquo(4.0, 2.0, &i);
-    f = remquof(4.0, 2.0, &i);
-    ld = remquol(4.0, 2.0, &i);
+    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+        TEST_TRACE(C99 7.12.10.3)
+        d = remquo(4.0, 2.0, &i);
+        f = remquof(4.0, 2.0, &i);
+        ld = remquol(4.0, 2.0, &i);
+    }
     TEST_TRACE(C99 7.12.11.1)
     d = copysign(4.0, -2.0);
     f = copysignf(4.0, -2.0);

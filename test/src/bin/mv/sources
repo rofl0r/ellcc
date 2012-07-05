@@ -1,3 +1,7 @@
+ifeq ($(ARCH),mips)
+    EXCLUDE = "http://ellcc.org/bugzilla/show_bug.cgi?id=58"
+endif
+
 INPUT = touch file ;
 ARGS = file file.new
 OUTPUT = && test -f file.new

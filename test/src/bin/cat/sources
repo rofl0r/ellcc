@@ -1,2 +1,6 @@
+ifeq ($(ARCH),mips)
+    EXCLUDE = "http://ellcc.org/bugzilla/show_bug.cgi?id=58"
+endif
+
 STDIN = cat $(VPATH)/testinput
 STDOUT = cmp $(VPATH)/testinput
