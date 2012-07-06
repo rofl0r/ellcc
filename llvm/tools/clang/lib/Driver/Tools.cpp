@@ -1067,7 +1067,7 @@ static std::string getPPCTargetCPU(const ArgList &Args) {
     return llvm::StringSwitch<const char *>(CPUName)
       .Case("common", "generic")
       .Cases("440", "cell", "440")
-      .Cases("e200", "e500", "e700", "440")
+      .Cases("e200", "e300", "e700", "440")
       .Case("440", "440")
       .Case("440fp", "440")
       .Case("450", "450")

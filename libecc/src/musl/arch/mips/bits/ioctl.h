@@ -1,80 +1,93 @@
-#define _IOC(a,b,c,d) ( ((a)<<30) | ((b)<<8) | (c) | ((d)<<16) )
-#define _IOC_NONE  0U
-#define _IOC_WRITE 1U
-#define _IOC_READ  2U
+#define _IOC(a,b,c,d) ( ((a)<<29) | ((b)<<8) | (c) | ((d)<<16) )
+#define _IOC_NONE  1U
+#define _IOC_WRITE 2U
+#define _IOC_READ  4U
 
 #define _IO(a,b) _IOC(_IOC_NONE,(a),(b),0)
 #define _IOW(a,b,c) _IOC(1,(a),(b),sizeof(c))
 #define _IOR(a,b,c) _IOC(2,(a),(b),sizeof(c))
-#define _IOWR(a,b,c) _IOC(3,(a),(b),sizeof(c))
+#define _IOWR(a,b,c) _IOC(4,(a),(b),sizeof(c))
 
-#define TCGETS		0x5401
-#define TCSETS		0x5402
-#define TCSETSW		0x5403
-#define TCSETSF		0x5404
-#define TCGETA		0x5405
-#define TCSETA		0x5406
-#define TCSETAW		0x5407
-#define TCSETAF		0x5408
-#define TCSBRK		0x5409
-#define TCXONC		0x540A
-#define TCFLSH		0x540B
-#define TIOCEXCL	0x540C
-#define TIOCNXCL	0x540D
-#define TIOCSCTTY	0x540E
-#define TIOCGPGRP	0x540F
-#define TIOCSPGRP	0x5410
-#define TIOCOUTQ	0x5411
-#define TIOCSTI		0x5412
-#define TIOCGWINSZ	0x5413
-#define TIOCSWINSZ	0x5414
-#define TIOCMGET	0x5415
-#define TIOCMBIS	0x5416
-#define TIOCMBIC	0x5417
-#define TIOCMSET	0x5418
-#define TIOCGSOFTCAR	0x5419
-#define TIOCSSOFTCAR	0x541A
-#define FIONREAD	0x541B
+#define TCGETA		0x5401
+#define TCSETA		0x5402
+#define TCSETAW		0x5403
+#define TCSETAF		0x5404
+#define TCSBRK		0x5405
+#define TCXONC		0x5406
+#define TCFLSH		0x5407
+#define TCGETS		0x540D
+#define TCSETS		0x540E
+#define TCSETSW		0x540F
+#define TCSETSF		0x5410
+
+#define TIOCEXCL	0x740D
+#define TIOCNXCL	0x740E
+#define TIOCOUTQ	0x7472
+#define TIOCSTI		0x5472
+#define TIOCMGET	0x741D
+#define TIOCMBIS	0x741B
+#define TIOCMBIC	0x741C
+#define TIOCMSET	0x741D
+
+#define TIOCPKT		0x5470
+#define TIOCSWINSZ	_IOW('t', 103, struct winsize)
+#define TIOCGWINSZ	_IOR('t', 104, struct winsize)
+#define TIOCNOTTY	0x5471
+#define TIOCSETD	0x7401
+#define TIOCGETD	0x7400
+
+#define FIOCLEX		0x6601
+#define FIONCLEX	0x6602
+#define FIOASYNC	0x667D
+#define FIONBIO		0x667E
+#define FIOQSIZE	0x667F
+
+#define TIOCGLTC        0x7474
+#define TIOCSLTC        0x7475
+#define TIOCSPGRP	_IOW('t', 118, int)
+#define TIOCGPGRP	_IOR('t', 119, int)
+#define TIOCCONS	_IOW('t', 120, int)
+
+#define FIONREAD	0x467F
 #define TIOCINQ		FIONREAD
-#define TIOCLINUX	0x541C
-#define TIOCCONS	0x541D
-#define TIOCGSERIAL	0x541E
-#define TIOCSSERIAL	0x541F
-#define TIOCPKT		0x5420
-#define FIONBIO		0x5421
-#define TIOCNOTTY	0x5422
-#define TIOCSETD	0x5423
-#define TIOCGETD	0x5424
-#define TCSBRKP		0x5425
-#define TIOCTTYGSTRUCT	0x5426
+
+#define TIOCGETP        0x7408
+#define TIOCSETP        0x7409
+#define TIOCSETN        0x740A
+
 #define TIOCSBRK	0x5427
 #define TIOCCBRK	0x5428
-#define TIOCGSID	0x5429
-#define TIOCGPTN	0x80045430
-#define TIOCSPTLCK	0x40045431
-#define TCGETX		0x5432
-#define TCSETX		0x5433
-#define TCSETXF		0x5434
-#define TCSETXW		0x5435
+#define TIOCGSID	0x7416
+#define TIOCGPTN	_IOR('T', 0x30, unsigned int)
+#define TIOCSPTLCK	_IOW('T', 0x31, int)
 
-#define FIONCLEX	0x5450
-#define FIOCLEX		0x5451
-#define FIOASYNC	0x5452
-#define TIOCSERCONFIG	0x5453
-#define TIOCSERGWILD	0x5454
-#define TIOCSERSWILD	0x5455
-#define TIOCGLCKTRMIOS	0x5456
-#define TIOCSLCKTRMIOS	0x5457
-#define TIOCSERGSTRUCT	0x5458
-#define TIOCSERGETLSR   0x5459
-#define TIOCSERGETMULTI 0x545A
-#define TIOCSERSETMULTI 0x545B
+#define TIOCSCTTY	0x5480
+#define TIOCGSOFTCAR	0x5481
+#define TIOCSSOFTCAR	0x5482
+#define TIOCLINUX	0x5483
+#define TIOCGSERIAL	0x5484
+#define TIOCSSERIAL	0x5485
+#define TCSBRKP		0x5486
 
-#define TIOCMIWAIT	0x545C
-#define TIOCGICOUNT	0x545D
-#define TIOCGHAYESESP   0x545E
-#define TIOCSHAYESESP   0x545F
-#define FIOQSIZE	0x5460
+#define TIOCSERCONFIG	0x5488
+#define TIOCSERGWILD	0x5489
+#define TIOCSERSWILD	0x548A
+#define TIOCGLCKTRMIOS	0x548B
+#define TIOCSLCKTRMIOS	0x548C
+#define TIOCSERGSTRUCT	0x548D
+#define TIOCSERGETLSR   0x548E
+#define TIOCSERGETMULTI 0x548F
+#define TIOCSERSETMULTI 0x5490
+#define TIOCMIWAIT	0x5491
+#define TIOCGICOUNT	0x5492
+#define TIOCGHAYESESP   0x5493
+#define TIOCSHAYESESP   0x5494
+
+#define TIOCTTYGSTRUCT	0x5426          // RICH: Not sure about these.
+#define TCGETX		0x5432          // RICH: Not sure about these.
+#define TCSETX		0x5433          // RICH: Not sure about these.
+#define TCSETXF		0x5434          // RICH: Not sure about these.
+#define TCSETXW		0x5435          // RICH: Not sure about these.
 
 #define TIOCPKT_DATA		 0
 #define TIOCPKT_FLUSHREAD	 1

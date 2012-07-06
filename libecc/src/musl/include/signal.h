@@ -27,9 +27,15 @@ extern "C" {
 
 #define SIG_HOLD ((void (*)(int)) 2)
 
+#if defined(__mips)
+#define SIG_BLOCK     1
+#define SIG_UNBLOCK   2
+#define SIG_SETMASK   3
+#else
 #define SIG_BLOCK     0
 #define SIG_UNBLOCK   1
 #define SIG_SETMASK   2
+#endif
 
 #define SI_ASYNCNL (-60)
 #define SI_TKILL (-6)
@@ -74,6 +80,14 @@ extern "C" {
 #define CLD_CONTINUED 6
 
 struct sigaction {
+#if defined(__mips)
+	int sa_flags;
+	union {
+		void (*sa_handler)(int);
+		void (*sa_sigaction)(int, siginfo_t *, void *);
+	} __sa_handler;
+	sigset_t sa_mask;
+#else
 	union {
 		void (*sa_handler)(int);
 		void (*sa_sigaction)(int, siginfo_t *, void *);
@@ -81,6 +95,7 @@ struct sigaction {
 	sigset_t sa_mask;
 	int sa_flags;
 	void (*sa_restorer)(void);	
+#endif
 };
 #define sa_handler   __sa_handler.sa_handler
 #define sa_sigaction __sa_handler.sa_sigaction

@@ -18,8 +18,8 @@ CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
 CFLAGS.i386 :=
 CFLAGS.microblaze :=
 CFLAGS.mips := -mcpu=mips32r2
-CFLAGS.ppc := -mcpu=e500
-CFLAGS.ppc64 := -mcpu=e500
+CFLAGS.ppc := # -mcpu=440
+CFLAGS.ppc64 := # -mcpu=440
 CFLAGS.x86_64 :=
 
 .PHONY: libecc

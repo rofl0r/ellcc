@@ -91,10 +91,10 @@ TYPEDEF long long off_t;
 TYPEDEF unsigned int mode_t;
 
 TYPEDEF unsigned int nlink_t;
-TYPEDEF unsigned long long ino_t;
-TYPEDEF unsigned long long dev_t;
+TYPEDEF unsigned long ino_t;
+TYPEDEF unsigned dev_t;
 TYPEDEF unsigned long blksize_t;
-TYPEDEF unsigned long long blkcnt_t;
+TYPEDEF unsigned long blkcnt_t;
 TYPEDEF unsigned long long fsblkcnt_t;
 TYPEDEF unsigned long long fsfilcnt_t;
 

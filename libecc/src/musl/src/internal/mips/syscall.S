@@ -17,19 +17,22 @@ __syscall:
         move    a5, a6                  // arg6
 #else /* __mips_o32 */
         // Get arg4, arg5, and arg6.
-        lw      t0, (4*4)+(4*0)(sp)
-        lw      t1, (4*4)+(4*1)(sp)
-        lw      t2, (4*4)+(4*2)(sp)
+        lw      a3, (4*4)+(4*0)(sp)
+        lw      t0, (4*4)+(4*1)(sp)
+        lw      t1, (4*4)+(4*2)(sp)
         addi    sp, sp, -(4*8)
         sw      t0, (4*4)+(4*0)(sp)
         sw      t1, (4*4)+(4*1)(sp)
-        sw      t2, (4*4)+(4*2)(sp)
 #endif
         syscall
 #if defined(__mips_o32)
         addi    sp, sp, (4*8)
-#endif
         .set    reorder
+#endif
+        beq     a3, zero, 1f
+        nop
+        subu    v0, zero, v0
+1:
 	jr      ra
         nop
         .end    __syscall

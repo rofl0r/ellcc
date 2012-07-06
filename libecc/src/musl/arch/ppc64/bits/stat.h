@@ -4,21 +4,27 @@
 struct stat
 {
 	dev_t st_dev;
-	int __st_dev_padding;
-	long __st_ino_truncated;
+	ino_t st_ino;
+#if defined(__ppc64__)
+	nlink_t st_nlink;
+	mode_t st_mode;
+#else
 	mode_t st_mode;
 	nlink_t st_nlink;
+#endif
 	uid_t st_uid;
 	gid_t st_gid;
 	dev_t st_rdev;
-	int __st_rdev_padding;
 	off_t st_size;
 	blksize_t st_blksize;
 	blkcnt_t st_blocks;
 	struct timespec st_atim;
 	struct timespec st_mtim;
 	struct timespec st_ctim;
-	ino_t st_ino;
+        unsigned long pad1[2];
+#if defined(__ppc64__)
+        unsigned long pad2;
+#endif
 };
 
 #ifdef _BSD_SOURCE

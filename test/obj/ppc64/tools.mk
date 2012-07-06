@@ -1,3 +1,3 @@
-CFLAGS += -mcpu=e500
-XCFLAGS += -mcpu=e500
+CFLAGS += # -mcpu=440
+XCFLAGS += # -mcpu=440
 XCFLAGS += -I../../../../../../test/include

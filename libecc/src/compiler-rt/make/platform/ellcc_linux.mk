@@ -68,8 +68,8 @@ CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.microblaze := $(CFLAGS) -target microblaze-ellcc-linux
 CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
 CFLAGS.mipsel := $(CFLAGS) -target mipsel-ellcc-linux -mcpu=mips32r2
-CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux -mcpu=e500
-CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux -mcpu=e500
+CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux # -mcpu=440
+CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux # -mcpu=440
 CFLAGS.x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
 CFLAGS.profile-i386 := $(CFLAGS) -target i386-ellcc-linux
 CFLAGS.profile-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux

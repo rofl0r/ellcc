@@ -15,8 +15,8 @@
 SHELL=/bin/sh
 
 # FIXED: http://ellcc.org/bugzilla/show_bug.cgi?id=46 Remove ppc64
-all: ecc arm armeb i386 ppc ppc64 x86_64 \
-     mips mipsel microblaze
+all: ecc arm armeb i386 ppc x86_64 \
+     mips mipsel microblaze # ppc64
 
 i386 microblaze mips mipsel nios2 sparc x86_64:
 	$(MAKE) clean
@@ -29,7 +29,8 @@ arm armeb:
 	        RUN=../../../bin/qemu-$@ bzip2all
 ppc ppc64:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux -mcpu=e500" \
+		# -mcpu=440
+	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux" \
 	        RUN=../../../bin/qemu-$@ bzip2all
 
 ecc:
@@ -43,7 +44,7 @@ LDFLAGS=
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
 #CFLAGS=-Wall -Winline -O2 $(BIGFILES)
-CFLAGS=-Wall -Winline -g $(BIGFILES)
+CFLAGS=-Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
 
 # Where you want it installed when you do 'make install'
 PREFIX=/usr/local
