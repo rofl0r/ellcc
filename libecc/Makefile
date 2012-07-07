@@ -18,6 +18,7 @@ CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
 CFLAGS.i386 :=
 CFLAGS.microblaze :=
 CFLAGS.mips := -mcpu=mips32r2
+CFLAGS.mipsel := -mcpu=mips32r2
 CFLAGS.ppc := # -mcpu=440
 CFLAGS.ppc64 := # -mcpu=440
 CFLAGS.x86_64 :=
@@ -29,6 +30,7 @@ libecc: header.install \
 	i386 \
 	microblaze \
 	mips \
+	mipsel \
 	ppc \
 	ppc64 \
 	x86_64 \
