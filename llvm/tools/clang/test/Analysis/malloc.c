@@ -717,18 +717,6 @@ FILE *useFunOpenNoReleaseFunction() {
     return f; // expected-warning{{leak}}
 }
 
-static int readNothing(void *_ctx, char *buf, int size) {
-  return 0;
-}
-FILE *useFunOpenReadNoRelease() {
-  void *ctx = malloc(sizeof(int));
-  FILE *f = funopen(ctx, readNothing, 0, 0, 0);
-  if (f == 0) {
-    free(ctx);
-  }
-  return f; // expected-warning{{leak}}
-}
-
 // Test setbuf, setvbuf.
 int my_main_no_warning() {
     char *p = malloc(100);
@@ -965,37 +953,5 @@ void test_double_assign_ints_positive()
 {
   void *ptr = malloc(16);
   (void*)(long)(unsigned long)ptr; // expected-warning {{unused}} expected-warning {{leak}}
-}
-
-
-void testCGContextNoLeak()
-{
-  void *ptr = malloc(16);
-  CGContextRef context = CGBitmapContextCreate(ptr);
-
-  // Because you can get the data back out like this, even much later,
-  // CGBitmapContextCreate is one of our "stop-tracking" exceptions.
-  free(CGBitmapContextGetData(context));
-}
-
-void testCGContextLeak()
-{
-  void *ptr = malloc(16);
-  CGContextRef context = CGBitmapContextCreate(ptr);
-  // However, this time we're just leaking the data, because the context
-  // object doesn't escape and it hasn't been freed in this function.
-}
-
-// Allow xpc context to escape. radar://11635258
-// TODO: Would be great if we checked that the finalize_connection_context actually releases it.
-static void finalize_connection_context(void *ctx) {
-  int *context = ctx;
-  free(context);
-}
-void foo (xpc_connection_t peer) {
-  int *ctx = calloc(1, sizeof(int));
-  xpc_connection_set_context(peer, ctx);
-  xpc_connection_set_finalizer_f(peer, finalize_connection_context);
-  xpc_connection_resume(peer);
 }
 

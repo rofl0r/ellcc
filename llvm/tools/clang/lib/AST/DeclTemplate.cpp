@@ -869,6 +869,5 @@ ClassScopeFunctionSpecializationDecl::CreateDeserialized(ASTContext &C,
                                                          unsigned ID) {
   void *Mem = AllocateDeserializedDecl(C, ID, 
                 sizeof(ClassScopeFunctionSpecializationDecl));
-  return new (Mem) ClassScopeFunctionSpecializationDecl(0, SourceLocation(), 0,
-                                             false, TemplateArgumentListInfo());
+  return new (Mem) ClassScopeFunctionSpecializationDecl(0, SourceLocation(), 0);
 }

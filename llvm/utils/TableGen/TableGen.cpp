@@ -11,9 +11,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TableGenBackends.h" // Declares all backends.
-
+#include "AsmMatcherEmitter.h"
+#include "AsmWriterEmitter.h"
+#include "CallingConvEmitter.h"
+#include "CodeEmitterGen.h"
+#include "DAGISelEmitter.h"
+#include "DFAPacketizerEmitter.h"
+#include "DisassemblerEmitter.h"
+#include "EDEmitter.h"
+#include "FastISelEmitter.h"
+#include "InstrInfoEmitter.h"
+#include "IntrinsicEmitter.h"
+#include "PseudoLoweringEmitter.h"
+#include "RegisterInfoEmitter.h"
+#include "SubtargetEmitter.h"
 #include "SetTheory.h"
+
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -89,7 +102,7 @@ namespace {
   cl::opt<std::string>
   Class("class", cl::desc("Print Enum list for this class"),
           cl::value_desc("class name"));
-
+  
   class LLVMTableGenAction : public TableGenAction {
   public:
     bool operator()(raw_ostream &OS, RecordKeeper &Records) {
@@ -98,49 +111,49 @@ namespace {
         OS << Records;           // No argument, dump all contents
         break;
       case GenEmitter:
-        EmitCodeEmitter(Records, OS);
+        CodeEmitterGen(Records).run(OS);
         break;
       case GenRegisterInfo:
-        EmitRegisterInfo(Records, OS);
+        RegisterInfoEmitter(Records).run(OS);
         break;
       case GenInstrInfo:
-        EmitInstrInfo(Records, OS);
+        InstrInfoEmitter(Records).run(OS);
         break;
       case GenCallingConv:
-        EmitCallingConv(Records, OS);
+        CallingConvEmitter(Records).run(OS);
         break;
       case GenAsmWriter:
-        EmitAsmWriter(Records, OS);
+        AsmWriterEmitter(Records).run(OS);
         break;
       case GenAsmMatcher:
-        EmitAsmMatcher(Records, OS);
+        AsmMatcherEmitter(Records).run(OS);
         break;
       case GenDisassembler:
-        EmitDisassembler(Records, OS);
+        DisassemblerEmitter(Records).run(OS);
         break;
       case GenPseudoLowering:
-        EmitPseudoLowering(Records, OS);
+        PseudoLoweringEmitter(Records).run(OS);
         break;
       case GenDAGISel:
-        EmitDAGISel(Records, OS);
+        DAGISelEmitter(Records).run(OS);
         break;
       case GenDFAPacketizer:
-        EmitDFAPacketizer(Records, OS);
+        DFAGen(Records).run(OS);
         break;
       case GenFastISel:
-        EmitFastISel(Records, OS);
+        FastISelEmitter(Records).run(OS);
         break;
       case GenSubtarget:
-        EmitSubtarget(Records, OS);
+        SubtargetEmitter(Records).run(OS);
         break;
       case GenIntrinsic:
-        EmitIntrinsics(Records, OS);
+        IntrinsicEmitter(Records).run(OS);
         break;
       case GenTgtIntrinsic:
-        EmitIntrinsics(Records, OS, true);
+        IntrinsicEmitter(Records, true).run(OS);
         break;
       case GenEDInfo:
-        EmitEnhancedDisassemblerInfo(Records, OS);
+        EDEmitter(Records).run(OS);
         break;
       case PrintEnums:
       {
@@ -166,7 +179,7 @@ namespace {
         break;
       }
       }
-
+  
       return false;
     }
   };

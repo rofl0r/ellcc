@@ -612,7 +612,6 @@ TargetLowering::TargetLowering(const TargetMachine &tm,
   MinStackArgumentAlignment = 1;
   ShouldFoldAtomicFences = false;
   InsertFencesForAtomic = false;
-  SupportJumpTables = true;
 
   InitLibcallNames(LibcallRoutineNames);
   InitCmpLibcallCCs(CmpLibcallCCs);

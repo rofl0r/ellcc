@@ -1,0 +1,37 @@
+# Target specific sources are used first.
+VPATH := $(VPATH):$(SRCPATH)/m/$(ARCH)
+# i386 and x86_64 only. Currently other targets use the noop implementation in m/src/fenv.c
+SRCS += fenv.c
+
+VPATH := $(VPATH):$(SRCPATH)/m/src
+SRCS += s_floor.c w_sqrt.c e_sqrt.c w_atan2.c e_atan2.c k_standard.c s_atan.c \
+        s_matherr.c s_lib_version.c w_log.c e_log.c w_hypot.c e_hypot.c s_rint.c \
+        s_finite.c w_sqrtf.c e_sqrtf.c w_logf.c e_logf.c s_isnanf.c w_atan2f.c e_atan2f.c \
+        w_hypotf.c e_hypotf.c s_atanf.c s_finitef.c w_cosh.c e_cosh.c w_sinh.c e_sinh.c \
+        w_exp.c e_exp.c s_expm1.c w_expf.c e_expf.c w_coshf.c e_coshf.c w_sinhf.c e_sinhf.c \
+        s_expm1f.c s_cos.c k_cos.c s_sin.c k_sin.c s_cosf.c k_cosf.c s_sinf.c k_sinf.c \
+        e_rem_pio2.c k_rem_pio2.c e_rem_pio2f.c k_rem_pio2f.c s_scalbn.c s_scalbnf.c \
+        s_floorf.c w_pow.c e_pow.c w_powf.c e_powf.c s_ilogb.c s_ilogbf.c w_acosf.c e_acosf.c \
+        w_asinf.c e_asinf.c s_tanf.c k_tanf.c w_acosh.c e_acosh.c w_acoshf.c e_acoshf.c \
+        s_log1p.c s_log1pf.c s_asinh.c s_asinhf.c w_atanh.c e_atanh.c w_atanhf.c e_atanhf.c \
+        s_tanhf.c s_frexp.c s_frexpf.c s_ldexp.c s_ldexpf.c w_log10.c e_log10.c w_log10f.c \
+        e_log10f.c s_logb.c s_logbf.c w_log2.c e_log2.c w_log2f.c e_log2f.c s_exp2f.c \
+        s_modf.c s_modff.c s_scalbln.c s_scalblnf.c s_cbrt.c s_cbrtf.c s_erf.c s_erff.c \
+        w_lgamma.c w_lgammaf.c e_lgamma_r.c e_lgammaf_r.c s_signgam.c w_tgamma.c w_tgammaf.c \
+        s_ceilf.c s_nearbyint.c s_nearbyintf.c s_rintf.c lrint.c lrintf.c llrint.c llrintf.c \
+        s_round.c s_roundf.c lround.c lroundf.c llround.c llroundf.c s_trunc.c s_truncf.c \
+        w_fmod.c e_fmod.c w_fmodf.c e_fmodf.c w_remainder.c e_remainder.c w_remainderf.c \
+        e_remainderf.c s_nextafter.c s_nextafterf.c s_nextafterl.c s_fdim.c s_fmax.c \
+        s_fmaxf.c s_fmaxl.c s_fmin.c s_fminf.c s_fminl.c s_fabs.c s_fabsf.c s_fabsl.c \
+        s_copysign.c s_copysignf.c s_copysignl.c w_acos.c e_acos.c w_asin.c e_asin.c s_tan.c \
+        s_exp2.c s_exp2f.c s_ceil.c k_tan.c s_tanh.c s_fmaxl.c
+
+VPATH := $(VPATH):$(SRCPATH)/m/complex
+SRCS += cacos.c casin.c creal.c cimag.c csqrt.c clog.c cabs.c cacosf.c casinf.c \
+        crealf.c cimagf.c csqrtf.c clogf.c cabsf.c catan.c catanf.c cephes_subr.c \
+        cephes_subrf.c ccos.c ccosf.c csin.c csinf.c ctan.c ctanf.c cacosh.c cacoshf.c \
+        casinh.c casinhf.c catanh.c catanhf.c ccosh.c ccoshf.c csinh.c csinhf.c ctanh.c ctanhf.c \
+        cexp.c cexpf.c cpow.c cpowf.c carg.c cargf.c conj.c conjf.c cproj.c cprojf.c
+
+VPATH := $(VPATH):$(SRCPATH)/m/gen
+SRCS += nan.c nanf.c

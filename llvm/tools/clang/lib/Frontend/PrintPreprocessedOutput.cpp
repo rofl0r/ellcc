@@ -87,7 +87,7 @@ private:
   unsigned CurLine;
 
   bool EmittedTokensOnThisLine;
-  bool EmittedDirectiveOnThisLine;
+  bool EmittedMacroOnThisLine;
   SrcMgr::CharacteristicKind FileType;
   SmallString<512> CurFilename;
   bool Initialized;
@@ -103,7 +103,7 @@ public:
     CurLine = 0;
     CurFilename += "<uninit>";
     EmittedTokensOnThisLine = false;
-    EmittedDirectiveOnThisLine = false;
+    EmittedMacroOnThisLine = false;
     FileType = SrcMgr::C_User;
     Initialized = false;
 
@@ -111,15 +111,10 @@ public:
     UseLineDirective = PP.getLangOpts().MicrosoftExt;
   }
 
-  void setEmittedTokensOnThisLine() { EmittedTokensOnThisLine = true; }
+  void SetEmittedTokensOnThisLine() { EmittedTokensOnThisLine = true; }
   bool hasEmittedTokensOnThisLine() const { return EmittedTokensOnThisLine; }
 
-  void setEmittedDirectiveOnThisLine() { EmittedDirectiveOnThisLine = true; }
-  bool hasEmittedDirectiveOnThisLine() const {
-    return EmittedDirectiveOnThisLine;
-  }
-
-  bool startNewLineIfNeeded(bool ShouldUpdateCurrentLine = true);
+  bool StartNewLineIfNeeded();
   
   virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
                            SrcMgr::CharacteristicKind FileType,
@@ -163,7 +158,11 @@ public:
 void PrintPPOutputPPCallbacks::WriteLineInfo(unsigned LineNo,
                                              const char *Extra,
                                              unsigned ExtraLen) {
-  startNewLineIfNeeded(/*ShouldUpdateCurrentLine=*/false);
+  if (EmittedTokensOnThisLine || EmittedMacroOnThisLine) {
+    OS << '\n';
+    EmittedTokensOnThisLine = false;
+    EmittedMacroOnThisLine = false;
+  }
 
   // Emit #line directives or GNU line markers depending on what mode we're in.
   if (UseLineDirective) {
@@ -208,21 +207,23 @@ bool PrintPPOutputPPCallbacks::MoveToLine(unsigned LineNo) {
   } else {
     // Okay, we're in -P mode, which turns off line markers.  However, we still
     // need to emit a newline between tokens on different lines.
-    startNewLineIfNeeded(/*ShouldUpdateCurrentLine=*/false);
+    if (EmittedTokensOnThisLine || EmittedMacroOnThisLine) {
+      OS << '\n';
+      EmittedTokensOnThisLine = false;
+      EmittedMacroOnThisLine = false;
+    }
   }
 
   CurLine = LineNo;
   return true;
 }
 
-bool
-PrintPPOutputPPCallbacks::startNewLineIfNeeded(bool ShouldUpdateCurrentLine) {
-  if (EmittedTokensOnThisLine || EmittedDirectiveOnThisLine) {
+bool PrintPPOutputPPCallbacks::StartNewLineIfNeeded() {
+  if (EmittedTokensOnThisLine || EmittedMacroOnThisLine) {
     OS << '\n';
     EmittedTokensOnThisLine = false;
-    EmittedDirectiveOnThisLine = false;
-    if (ShouldUpdateCurrentLine)
-      ++CurLine;
+    EmittedMacroOnThisLine = false;
+    ++CurLine;
     return true;
   }
   
@@ -306,7 +307,7 @@ void PrintPPOutputPPCallbacks::MacroDefined(const Token &MacroNameTok,
 
   MoveToLine(MI->getDefinitionLoc());
   PrintMacroDefinition(*MacroNameTok.getIdentifierInfo(), *MI, PP, OS);
-  setEmittedDirectiveOnThisLine();
+  EmittedMacroOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::MacroUndefined(const Token &MacroNameTok,
@@ -316,13 +317,12 @@ void PrintPPOutputPPCallbacks::MacroUndefined(const Token &MacroNameTok,
 
   MoveToLine(MacroNameTok.getLocation());
   OS << "#undef " << MacroNameTok.getIdentifierInfo()->getName();
-  setEmittedDirectiveOnThisLine();
+  EmittedMacroOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::PragmaComment(SourceLocation Loc,
                                              const IdentifierInfo *Kind,
                                              const std::string &Str) {
-  startNewLineIfNeeded();
   MoveToLine(Loc);
   OS << "#pragma comment(" << Kind->getName();
 
@@ -343,12 +343,11 @@ void PrintPPOutputPPCallbacks::PragmaComment(SourceLocation Loc,
   }
 
   OS << ')';
-  setEmittedDirectiveOnThisLine();
+  EmittedTokensOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::PragmaMessage(SourceLocation Loc,
                                              StringRef Str) {
-  startNewLineIfNeeded();
   MoveToLine(Loc);
   OS << "#pragma message(";
 
@@ -367,29 +366,26 @@ void PrintPPOutputPPCallbacks::PragmaMessage(SourceLocation Loc,
   OS << '"';
 
   OS << ')';
-  setEmittedDirectiveOnThisLine();
+  EmittedTokensOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::
 PragmaDiagnosticPush(SourceLocation Loc, StringRef Namespace) {
-  startNewLineIfNeeded();
   MoveToLine(Loc);
   OS << "#pragma " << Namespace << " diagnostic push";
-  setEmittedDirectiveOnThisLine();
+  EmittedTokensOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::
 PragmaDiagnosticPop(SourceLocation Loc, StringRef Namespace) {
-  startNewLineIfNeeded();
   MoveToLine(Loc);
   OS << "#pragma " << Namespace << " diagnostic pop";
-  setEmittedDirectiveOnThisLine();
+  EmittedTokensOnThisLine = true;
 }
 
 void PrintPPOutputPPCallbacks::
 PragmaDiagnostic(SourceLocation Loc, StringRef Namespace,
                  diag::Mapping Map, StringRef Str) {
-  startNewLineIfNeeded();
   MoveToLine(Loc);
   OS << "#pragma " << Namespace << " diagnostic ";
   switch (Map) {
@@ -407,7 +403,7 @@ PragmaDiagnostic(SourceLocation Loc, StringRef Namespace,
     break;
   }
   OS << " \"" << Str << '"';
-  setEmittedDirectiveOnThisLine();
+  EmittedTokensOnThisLine = true;
 }
 
 /// HandleFirstTokOnLine - When emitting a preprocessed file in -E mode, this
@@ -475,9 +471,10 @@ struct UnknownPragmaHandler : public PragmaHandler {
                             Token &PragmaTok) {
     // Figure out what line we went to and insert the appropriate number of
     // newline characters.
-    Callbacks->startNewLineIfNeeded();
+    Callbacks->StartNewLineIfNeeded();
     Callbacks->MoveToLine(PragmaTok.getLocation());
     Callbacks->OS.write(Prefix, strlen(Prefix));
+    Callbacks->SetEmittedTokensOnThisLine();
     // Read and print all of the pragma tokens.
     while (PragmaTok.isNot(tok::eod)) {
       if (PragmaTok.hasLeadingSpace())
@@ -486,7 +483,7 @@ struct UnknownPragmaHandler : public PragmaHandler {
       Callbacks->OS.write(&TokSpell[0], TokSpell.size());
       PP.LexUnexpandedToken(PragmaTok);
     }
-    Callbacks->setEmittedDirectiveOnThisLine();
+    Callbacks->StartNewLineIfNeeded();
   }
 };
 } // end anonymous namespace
@@ -500,10 +497,6 @@ static void PrintPreprocessedTokens(Preprocessor &PP, Token &Tok,
   PrevPrevTok.startToken();
   PrevTok.startToken();
   while (1) {
-    if (Callbacks->hasEmittedDirectiveOnThisLine()) {
-      Callbacks->startNewLineIfNeeded();
-      Callbacks->MoveToLine(Tok.getLocation());
-    }
 
     // If this token is at the start of a line, emit newlines if needed.
     if (Tok.isAtStartOfLine() && Callbacks->HandleFirstTokOnLine(Tok)) {
@@ -540,7 +533,7 @@ static void PrintPreprocessedTokens(Preprocessor &PP, Token &Tok,
       if (Tok.getKind() == tok::comment)
         Callbacks->HandleNewlinesInToken(&S[0], S.size());
     }
-    Callbacks->setEmittedTokensOnThisLine();
+    Callbacks->SetEmittedTokensOnThisLine();
 
     if (Tok.is(tok::eof)) break;
 

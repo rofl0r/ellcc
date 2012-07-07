@@ -22,7 +22,5 @@ add_llvm_target(XCoreCodeGen
   XCoreSelectionDAGInfo.cpp
   )
 
-add_dependencies(LLVMXCoreCodeGen intrinsics_gen)
-
 add_subdirectory(TargetInfo)
 add_subdirectory(MCTargetDesc)

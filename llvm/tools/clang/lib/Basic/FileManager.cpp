@@ -111,8 +111,6 @@ public:
   }
 
   size_t size() const { return UniqueFiles.size(); }
-
-  friend class FileManager;
 };
 
 //===----------------------------------------------------------------------===//
@@ -154,8 +152,6 @@ public:
   }
 
   size_t size() const { return UniqueFiles.size(); }
-
-  friend class FileManager;
 };
 
 #endif
@@ -263,14 +259,16 @@ void FileManager::addAncestorsAsVirtualDirs(StringRef Path) {
   addAncestorsAsVirtualDirs(DirName);
 }
 
+/// getDirectory - Lookup, cache, and verify the specified directory
+/// (real or virtual).  This returns NULL if the directory doesn't
+/// exist.
+///
 const DirectoryEntry *FileManager::getDirectory(StringRef DirName,
                                                 bool CacheFailure) {
-  // stat doesn't like trailing separators except for root directory.
+  // stat doesn't like trailing separators.
   // At least, on Win32 MSVCRT, stat() cannot strip trailing '/'.
   // (though it can strip '\\')
-  if (DirName.size() > 1 &&
-      DirName != llvm::sys::path::root_path(DirName) &&
-      llvm::sys::path::is_separator(DirName.back()))
+  if (DirName.size() > 1 && llvm::sys::path::is_separator(DirName.back()))
     DirName = DirName.substr(0, DirName.size()-1);
 
   ++NumDirLookups;
@@ -317,6 +315,9 @@ const DirectoryEntry *FileManager::getDirectory(StringRef DirName,
   return &UDE;
 }
 
+/// getFile - Lookup, cache, and verify the specified file (real or
+/// virtual).  This returns NULL if the file doesn't exist.
+///
 const FileEntry *FileManager::getFile(StringRef Filename, bool openFile,
                                       bool CacheFailure) {
   ++NumFileLookups;
@@ -562,19 +563,6 @@ bool FileManager::getNoncachedStatValue(StringRef Path,
 
   return ::stat(FilePath.c_str(), &StatBuf) != 0;
 }
-
-void FileManager::InvalidateCache(const FileEntry* Entry) {
-  if (!Entry)
-    return;
-
-  SeenFileEntries.erase(Entry->getName());
-#ifdef LLVM_ON_WIN32
-  UniqueRealFiles.UniqueFiles.erase(Entry->getName());
-#else
-  UniqueRealFiles.UniqueFiles.erase(*Entry);
-#endif
-}
-
 
 void FileManager::GetUniqueIDMapping(
                    SmallVectorImpl<const FileEntry *> &UIDToFiles) const {

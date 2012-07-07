@@ -39,9 +39,9 @@
 #include "ClangSACheckers.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/Calls.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/AST/ParentMap.h"
 
@@ -50,27 +50,31 @@ using namespace ento;
 
 static bool shouldRunOnFunctionOrMethod(const NamedDecl *ND);
 static bool isInitializationMethod(const ObjCMethodDecl *MD);
-static bool isInitMessage(const ObjCMethodCall &Msg);
+static bool isInitMessage(const ObjCMessage &msg);
 static bool isSelfVar(SVal location, CheckerContext &C);
 
 namespace {
-class ObjCSelfInitChecker : public Checker<  check::PostObjCMessage,
+class ObjCSelfInitChecker : public Checker<  check::PreObjCMessage,
+                                             check::PostObjCMessage,
                                              check::PostStmt<ObjCIvarRefExpr>,
                                              check::PreStmt<ReturnStmt>,
-                                             check::PreCall,
-                                             check::PostCall,
+                                             check::PreStmt<CallExpr>,
+                                             check::PostStmt<CallExpr>,
                                              check::Location,
                                              check::Bind > {
 public:
-  void checkPostObjCMessage(const ObjCMethodCall &Msg, CheckerContext &C) const;
+  void checkPreObjCMessage(ObjCMessage msg, CheckerContext &C) const;
+  void checkPostObjCMessage(ObjCMessage msg, CheckerContext &C) const;
   void checkPostStmt(const ObjCIvarRefExpr *E, CheckerContext &C) const;
   void checkPreStmt(const ReturnStmt *S, CheckerContext &C) const;
+  void checkPreStmt(const CallExpr *CE, CheckerContext &C) const;
+  void checkPostStmt(const CallExpr *CE, CheckerContext &C) const;
   void checkLocation(SVal location, bool isLoad, const Stmt *S,
                      CheckerContext &C) const;
   void checkBind(SVal loc, SVal val, const Stmt *S, CheckerContext &C) const;
 
-  void checkPreCall(const CallEvent &CE, CheckerContext &C) const;
-  void checkPostCall(const CallEvent &CE, CheckerContext &C) const;
+  void checkPreStmt(const CallOrObjCMessage &CE, CheckerContext &C) const;
+  void checkPostStmt(const CallOrObjCMessage &CE, CheckerContext &C) const;
 
 };
 } // end anonymous namespace
@@ -179,7 +183,7 @@ static void checkForInvalidSelf(const Expr *E, CheckerContext &C,
   C.EmitReport(report);
 }
 
-void ObjCSelfInitChecker::checkPostObjCMessage(const ObjCMethodCall &Msg,
+void ObjCSelfInitChecker::checkPostObjCMessage(ObjCMessage msg,
                                                CheckerContext &C) const {
   // When encountering a message that does initialization (init rule),
   // tag the return value so that we know later on that if self has this value
@@ -190,7 +194,7 @@ void ObjCSelfInitChecker::checkPostObjCMessage(const ObjCMethodCall &Msg,
                                 C.getCurrentAnalysisDeclContext()->getDecl())))
     return;
 
-  if (isInitMessage(Msg)) {
+  if (isInitMessage(msg)) {
     // Tag the return value as the result of an initializer.
     ProgramStateRef state = C.getState();
     
@@ -199,10 +203,13 @@ void ObjCSelfInitChecker::checkPostObjCMessage(const ObjCMethodCall &Msg,
     // value out when we return from this method.
     state = state->set<CalledInit>(true);
     
-    SVal V = state->getSVal(Msg.getOriginExpr(), C.getLocationContext());
+    SVal V = state->getSVal(msg.getMessageExpr(), C.getLocationContext());
     addSelfFlag(state, V, SelfFlag_InitRes, C);
     return;
   }
+
+  CallOrObjCMessage MsgWrapper(msg, C.getState(), C.getLocationContext());
+  checkPostStmt(MsgWrapper, C);
 
   // We don't check for an invalid 'self' in an obj-c message expression to cut
   // down false positives where logging functions get information from self
@@ -234,8 +241,8 @@ void ObjCSelfInitChecker::checkPreStmt(const ReturnStmt *S,
                                                  "'[(super or self) init...]'");
 }
 
-// When a call receives a reference to 'self', [Pre/Post]Call pass
-// the SelfFlags from the object 'self' points to before the call to the new
+// When a call receives a reference to 'self', [Pre/Post]VisitGenericCall pass
+// the SelfFlags from the object 'self' point to before the call, to the new
 // object after the call. This is to avoid invalidation of 'self' by logging
 // functions.
 // Another common pattern in classes with multiple initializers is to put the
@@ -250,13 +257,26 @@ void ObjCSelfInitChecker::checkPreStmt(const ReturnStmt *S,
 // Until we can use inter-procedural analysis, in such a call, transfer the
 // SelfFlags to the result of the call.
 
-void ObjCSelfInitChecker::checkPreCall(const CallEvent &CE,
+void ObjCSelfInitChecker::checkPreStmt(const CallExpr *CE,
                                        CheckerContext &C) const {
-  // FIXME: A callback should disable checkers at the start of functions.
-  if (!shouldRunOnFunctionOrMethod(dyn_cast<NamedDecl>(
-                                 C.getCurrentAnalysisDeclContext()->getDecl())))
-    return;
+  CallOrObjCMessage CEWrapper(CE, C.getState(), C.getLocationContext());
+  checkPreStmt(CEWrapper, C);
+}
 
+void ObjCSelfInitChecker::checkPostStmt(const CallExpr *CE,
+                                        CheckerContext &C) const {
+  CallOrObjCMessage CEWrapper(CE, C.getState(), C.getLocationContext());
+  checkPostStmt(CEWrapper, C);
+}
+
+void ObjCSelfInitChecker::checkPreObjCMessage(ObjCMessage Msg,
+                                              CheckerContext &C) const {
+  CallOrObjCMessage MsgWrapper(Msg, C.getState(), C.getLocationContext());
+  checkPreStmt(MsgWrapper, C);
+}
+
+void ObjCSelfInitChecker::checkPreStmt(const CallOrObjCMessage &CE,
+                                       CheckerContext &C) const {
   ProgramStateRef state = C.getState();
   unsigned NumArgs = CE.getNumArgs();
   // If we passed 'self' as and argument to the call, record it in the state
@@ -278,19 +298,9 @@ void ObjCSelfInitChecker::checkPreCall(const CallEvent &CE,
   }
 }
 
-void ObjCSelfInitChecker::checkPostCall(const CallEvent &CE,
+void ObjCSelfInitChecker::checkPostStmt(const CallOrObjCMessage &CE,
                                         CheckerContext &C) const {
-  // FIXME: A callback should disable checkers at the start of functions.
-  if (!shouldRunOnFunctionOrMethod(dyn_cast<NamedDecl>(
-                                 C.getCurrentAnalysisDeclContext()->getDecl())))
-    return;
-
   ProgramStateRef state = C.getState();
-  SelfFlagEnum prevFlags = (SelfFlagEnum)state->get<PreCallSelfFlags>();
-  if (!prevFlags)
-    return;
-  state = state->remove<PreCallSelfFlags>();
-
   unsigned NumArgs = CE.getNumArgs();
   for (unsigned i = 0; i < NumArgs; ++i) {
     SVal argV = CE.getArgSVal(i);
@@ -298,6 +308,8 @@ void ObjCSelfInitChecker::checkPostCall(const CallEvent &CE,
       // If the address of 'self' is being passed to the call, assume that the
       // 'self' after the call will have the same flags.
       // EX: log(&self)
+      SelfFlagEnum prevFlags = (SelfFlagEnum)state->get<PreCallSelfFlags>();
+      state = state->remove<PreCallSelfFlags>();
       addSelfFlag(state, state->getSVal(cast<Loc>(argV)), prevFlags, C);
       return;
     } else if (hasSelfFlag(argV, SelfFlag_Self, C)) {
@@ -305,6 +317,8 @@ void ObjCSelfInitChecker::checkPostCall(const CallEvent &CE,
       // returns 'self'. So assign the flags, which were set on 'self' to the
       // return value.
       // EX: self = performMoreInitialization(self)
+      SelfFlagEnum prevFlags = (SelfFlagEnum)state->get<PreCallSelfFlags>();
+      state = state->remove<PreCallSelfFlags>();
       const Expr *CallExpr = CE.getOriginExpr();
       if (CallExpr)
         addSelfFlag(state, state->getSVal(CallExpr, C.getLocationContext()),
@@ -393,8 +407,8 @@ static bool isInitializationMethod(const ObjCMethodDecl *MD) {
   return MD->getMethodFamily() == OMF_init;
 }
 
-static bool isInitMessage(const ObjCMethodCall &Call) {
-  return Call.getMethodFamily() == OMF_init;
+static bool isInitMessage(const ObjCMessage &msg) {
+  return msg.getMethodFamily() == OMF_init;
 }
 
 //===----------------------------------------------------------------------===//

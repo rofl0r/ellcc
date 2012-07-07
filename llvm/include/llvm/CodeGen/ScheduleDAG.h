@@ -117,9 +117,8 @@ namespace llvm {
       }
     }
 
-    /// Return true if the specified SDep is equivalent except for latency.
-    bool overlaps(const SDep &Other) const {
-      if (Dep != Other.Dep) return false;
+    bool operator==(const SDep &Other) const {
+      if (Dep != Other.Dep || Latency != Other.Latency) return false;
       switch (Dep.getInt()) {
       case Data:
       case Anti:
@@ -132,10 +131,6 @@ namespace llvm {
                Contents.Order.isArtificial == Other.Contents.Order.isArtificial;
       }
       llvm_unreachable("Invalid dependency kind!");
-    }
-
-    bool operator==(const SDep &Other) const {
-      return overlaps(Other) && Latency == Other.Latency;
     }
 
     bool operator!=(const SDep &Other) const {

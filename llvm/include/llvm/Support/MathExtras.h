@@ -414,14 +414,14 @@ int IsInf(double d);
 
 /// MinAlign - A and B are either alignments or offsets.  Return the minimum
 /// alignment that may be assumed after adding the two together.
-inline uint64_t MinAlign(uint64_t A, uint64_t B) {
+static inline uint64_t MinAlign(uint64_t A, uint64_t B) {
   // The largest power of 2 that divides both A and B.
   return (A | B) & -(A | B);
 }
 
 /// NextPowerOf2 - Returns the next power of two (in 64-bits)
 /// that is strictly greater than A.  Returns zero on overflow.
-inline uint64_t NextPowerOf2(uint64_t A) {
+static inline uint64_t NextPowerOf2(uint64_t A) {
   A |= (A >> 1);
   A |= (A >> 2);
   A |= (A >> 4);

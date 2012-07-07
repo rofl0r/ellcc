@@ -6,12 +6,11 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the PrettyStackTraceEntry class, which is used to make
-/// crashes give more contextual information about what the program was doing
-/// when it crashed.
-///
+//
+// This file defines the PrettyStackTraceEntry class, which is used to make
+// crashes give more contextual information about what the program was doing
+// when it crashed.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef CLANG_BASIC_PRETTYSTACKTRACE_H
@@ -22,8 +21,8 @@
 
 namespace clang {
 
-  /// If a crash happens while one of these objects are live, the message
-  /// is printed out along with the specified source location.
+  /// PrettyStackTraceLoc - If a crash happens while one of these objects are
+  /// live, the message is printed out along with the specified source location.
   class PrettyStackTraceLoc : public llvm::PrettyStackTraceEntry {
     SourceManager &SM;
     SourceLocation Loc;

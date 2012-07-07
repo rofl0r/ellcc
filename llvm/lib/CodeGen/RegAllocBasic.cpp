@@ -13,12 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "regalloc"
-#include "AllocationOrder.h"
 #include "RegAllocBase.h"
 #include "LiveDebugVariables.h"
+#include "RenderMachineFunction.h"
 #include "Spiller.h"
 #include "VirtRegMap.h"
-#include "LiveRegMatrix.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Function.h"
 #include "llvm/PassAnalysisSupport.h"
@@ -64,6 +63,9 @@ class RABasic : public MachineFunctionPass, public RegAllocBase
 {
   // context
   MachineFunction *MF;
+
+  // analyses
+  RenderMachineFunction *RMF;
 
   // state
   std::auto_ptr<Spiller> SpillerInstance;
@@ -115,6 +117,9 @@ public:
   bool spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
                           SmallVectorImpl<LiveInterval*> &SplitVRegs);
 
+  void spillReg(LiveInterval &VirtReg, unsigned PhysReg,
+                SmallVectorImpl<LiveInterval*> &SplitVRegs);
+
   static char ID;
 };
 
@@ -133,7 +138,7 @@ RABasic::RABasic(): MachineFunctionPass(ID) {
   initializeMachineDominatorTreePass(*PassRegistry::getPassRegistry());
   initializeMachineLoopInfoPass(*PassRegistry::getPassRegistry());
   initializeVirtRegMapPass(*PassRegistry::getPassRegistry());
-  initializeLiveRegMatrixPass(*PassRegistry::getPassRegistry());
+  initializeRenderMachineFunctionPass(*PassRegistry::getPassRegistry());
 }
 
 void RABasic::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -154,15 +159,41 @@ void RABasic::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<MachineLoopInfo>();
   AU.addRequired<VirtRegMap>();
   AU.addPreserved<VirtRegMap>();
-  AU.addRequired<LiveRegMatrix>();
-  AU.addPreserved<LiveRegMatrix>();
+  DEBUG(AU.addRequired<RenderMachineFunction>());
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
 void RABasic::releaseMemory() {
   SpillerInstance.reset(0);
+  RegAllocBase::releaseMemory();
 }
 
+// Helper for spillInterferences() that spills all interfering vregs currently
+// assigned to this physical register.
+void RABasic::spillReg(LiveInterval& VirtReg, unsigned PhysReg,
+                       SmallVectorImpl<LiveInterval*> &SplitVRegs) {
+  LiveIntervalUnion::Query &Q = query(VirtReg, PhysReg);
+  assert(Q.seenAllInterferences() && "need collectInterferences()");
+  const SmallVectorImpl<LiveInterval*> &PendingSpills = Q.interferingVRegs();
+
+  for (SmallVectorImpl<LiveInterval*>::const_iterator I = PendingSpills.begin(),
+         E = PendingSpills.end(); I != E; ++I) {
+    LiveInterval &SpilledVReg = **I;
+    DEBUG(dbgs() << "extracting from " <<
+          TRI->getName(PhysReg) << " " << SpilledVReg << '\n');
+
+    // Deallocate the interfering vreg by removing it from the union.
+    // A LiveInterval instance may not be in a union during modification!
+    unassign(SpilledVReg, PhysReg);
+
+    // Spill the extracted interval.
+    LiveRangeEdit LRE(&SpilledVReg, SplitVRegs, *MF, *LIS, VRM);
+    spiller().spill(LRE);
+  }
+  // After extracting segments, the query's results are invalid. But keep the
+  // contents valid until we're done accessing pendingSpills.
+  Q.clear();
+}
 
 // Spill or split all live virtual registers currently unified under PhysReg
 // that interfere with VirtReg. The newly spilled or split live intervals are
@@ -171,41 +202,22 @@ bool RABasic::spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
                                  SmallVectorImpl<LiveInterval*> &SplitVRegs) {
   // Record each interference and determine if all are spillable before mutating
   // either the union or live intervals.
-  SmallVector<LiveInterval*, 8> Intfs;
-
+  unsigned NumInterferences = 0;
   // Collect interferences assigned to any alias of the physical register.
-  for (MCRegUnitIterator Units(PhysReg, TRI); Units.isValid(); ++Units) {
-    LiveIntervalUnion::Query &Q = Matrix->query(VirtReg, *Units);
-    Q.collectInterferingVRegs();
-    if (Q.seenUnspillableVReg())
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI) {
+    LiveIntervalUnion::Query &QAlias = query(VirtReg, *AI);
+    NumInterferences += QAlias.collectInterferingVRegs();
+    if (QAlias.seenUnspillableVReg()) {
       return false;
-    for (unsigned i = Q.interferingVRegs().size(); i; --i) {
-      LiveInterval *Intf = Q.interferingVRegs()[i - 1];
-      if (!Intf->isSpillable() || Intf->weight > VirtReg.weight)
-        return false;
-      Intfs.push_back(Intf);
     }
   }
   DEBUG(dbgs() << "spilling " << TRI->getName(PhysReg) <<
         " interferences with " << VirtReg << "\n");
-  assert(!Intfs.empty() && "expected interference");
+  assert(NumInterferences > 0 && "expect interference");
 
   // Spill each interfering vreg allocated to PhysReg or an alias.
-  for (unsigned i = 0, e = Intfs.size(); i != e; ++i) {
-    LiveInterval &Spill = *Intfs[i];
-
-    // Skip duplicates.
-    if (!VRM->hasPhys(Spill.reg))
-      continue;
-
-    // Deallocate the interfering vreg by removing it from the union.
-    // A LiveInterval instance may not be in a union during modification!
-    Matrix->unassign(Spill);
-
-    // Spill the extracted interval.
-    LiveRangeEdit LRE(&Spill, SplitVRegs, *MF, *LIS, VRM);
-    spiller().spill(LRE);
-  }
+  for (MCRegAliasIterator AI(PhysReg, TRI, true); AI.isValid(); ++AI)
+    spillReg(VirtReg, *AI, SplitVRegs);
   return true;
 }
 
@@ -223,36 +235,49 @@ bool RABasic::spillInterferences(LiveInterval &VirtReg, unsigned PhysReg,
 // selectOrSplit().
 unsigned RABasic::selectOrSplit(LiveInterval &VirtReg,
                                 SmallVectorImpl<LiveInterval*> &SplitVRegs) {
+  // Check for register mask interference.  When live ranges cross calls, the
+  // set of usable registers is reduced to the callee-saved ones.
+  bool CrossRegMasks = LIS->checkRegMaskInterference(VirtReg, UsableRegs);
+
   // Populate a list of physical register spill candidates.
   SmallVector<unsigned, 8> PhysRegSpillCands;
 
   // Check for an available register in this class.
-  AllocationOrder Order(VirtReg.reg, *VRM, RegClassInfo);
-  while (unsigned PhysReg = Order.next()) {
-    // Check for interference in PhysReg
-    switch (Matrix->checkInterference(VirtReg, PhysReg)) {
-    case LiveRegMatrix::IK_Free:
-      // PhysReg is available, allocate it.
+  ArrayRef<unsigned> Order =
+    RegClassInfo.getOrder(MRI->getRegClass(VirtReg.reg));
+  for (ArrayRef<unsigned>::iterator I = Order.begin(), E = Order.end(); I != E;
+       ++I) {
+    unsigned PhysReg = *I;
+
+    // If PhysReg is clobbered by a register mask, it isn't useful for
+    // allocation or spilling.
+    if (CrossRegMasks && !UsableRegs.test(PhysReg))
+      continue;
+
+    // Check interference and as a side effect, intialize queries for this
+    // VirtReg and its aliases.
+    unsigned interfReg = checkPhysRegInterference(VirtReg, PhysReg);
+    if (interfReg == 0) {
+      // Found an available register.
       return PhysReg;
+    }
+    LiveIntervalUnion::Query &IntfQ = query(VirtReg, interfReg);
+    IntfQ.collectInterferingVRegs(1);
+    LiveInterval *interferingVirtReg = IntfQ.interferingVRegs().front();
 
-    case LiveRegMatrix::IK_VirtReg:
-      // Only virtual registers in the way, we may be able to spill them.
+    // The current VirtReg must either be spillable, or one of its interferences
+    // must have less spill weight.
+    if (interferingVirtReg->weight < VirtReg.weight ) {
       PhysRegSpillCands.push_back(PhysReg);
-      continue;
-
-    default:
-      // RegMask or RegUnit interference.
-      continue;
     }
   }
-
   // Try to spill another interfering reg with less spill weight.
   for (SmallVectorImpl<unsigned>::iterator PhysRegI = PhysRegSpillCands.begin(),
-       PhysRegE = PhysRegSpillCands.end(); PhysRegI != PhysRegE; ++PhysRegI) {
-    if (!spillInterferences(VirtReg, *PhysRegI, SplitVRegs))
-      continue;
+         PhysRegE = PhysRegSpillCands.end(); PhysRegI != PhysRegE; ++PhysRegI) {
 
-    assert(!Matrix->checkInterference(VirtReg, *PhysRegI) &&
+    if (!spillInterferences(VirtReg, *PhysRegI, SplitVRegs)) continue;
+
+    assert(checkPhysRegInterference(VirtReg, *PhysRegI) == 0 &&
            "Interference after spill.");
     // Tell the caller to allocate to this newly freed physical register.
     return *PhysRegI;
@@ -276,15 +301,38 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
                << ((Value*)mf.getFunction())->getName() << '\n');
 
   MF = &mf;
-  RegAllocBase::init(getAnalysis<VirtRegMap>(),
-                     getAnalysis<LiveIntervals>(),
-                     getAnalysis<LiveRegMatrix>());
+  DEBUG(RMF = &getAnalysis<RenderMachineFunction>());
+
+  RegAllocBase::init(getAnalysis<VirtRegMap>(), getAnalysis<LiveIntervals>());
   SpillerInstance.reset(createInlineSpiller(*this, *MF, *VRM));
 
   allocatePhysRegs();
 
   // Diagnostic output before rewriting
   DEBUG(dbgs() << "Post alloc VirtRegMap:\n" << *VRM << "\n");
+
+  // optional HTML output
+  DEBUG(RMF->renderMachineFunction("After basic register allocation.", VRM));
+
+  // FIXME: Verification currently must run before VirtRegRewriter. We should
+  // make the rewriter a separate pass and override verifyAnalysis instead. When
+  // that happens, verification naturally falls under VerifyMachineCode.
+#ifndef NDEBUG
+  if (VerifyEnabled) {
+    // Verify accuracy of LiveIntervals. The standard machine code verifier
+    // ensures that each LiveIntervals covers all uses of the virtual reg.
+
+    // FIXME: MachineVerifier is badly broken when using the standard
+    // spiller. Always use -spiller=inline with -verify-regalloc. Even with the
+    // inline spiller, some tests fail to verify because the coalescer does not
+    // always generate verifiable code.
+    MF->verify(this, "In RABasic::verify");
+
+    // Verify that LiveIntervals are partitioned into unions and disjoint within
+    // the unions.
+    verify();
+  }
+#endif // !NDEBUG
 
   releaseMemory();
   return true;

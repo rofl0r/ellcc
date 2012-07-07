@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Function.h"
+#include "llvm/Support/IRBuilder.h"
 #include "llvm/GlobalVariable.h"
-#include "llvm/IRBuilder.h"
+#include "llvm/Function.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/LLVMContext.h"
 using namespace llvm;
@@ -28,7 +28,7 @@ Value *IRBuilderBase::CreateGlobalString(StringRef Str, const Twine &Name) {
   Module &M = *BB->getParent()->getParent();
   GlobalVariable *GV = new GlobalVariable(M, StrConstant->getType(),
                                           true, GlobalValue::PrivateLinkage,
-                                          StrConstant);
+                                          StrConstant, "", 0, false);
   GV->setName(Name);
   GV->setUnnamedAddr(true);
   return GV;

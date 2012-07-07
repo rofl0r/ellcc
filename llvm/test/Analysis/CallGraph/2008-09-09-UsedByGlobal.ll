@@ -1,4 +1,4 @@
-; RUN: opt < %s -print-callgraph -disable-output 2>&1 | FileCheck %s
+; RUN: opt < %s -print-callgraph -disable-output |& FileCheck %s
 
 @a = global void ()* @f		; <void ()**> [#uses=0]
 

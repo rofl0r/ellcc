@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines various enumerations that describe declaration and
-/// type specifiers.
-///
+//
+// This file defines various enumerations that describe declaration and
+// type specifiers.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_BASIC_SPECIFIERS_H
@@ -64,8 +63,9 @@ namespace clang {
     TST_error         // erroneous type
   };
   
-  /// \brief Structure that packs information about the type specifiers that
-  /// were written in a particular type specifier sequence.
+  /// WrittenBuiltinSpecs - Structure that packs information about the 
+  /// type specifiers that were written in a particular type specifier
+  /// sequence.
   struct WrittenBuiltinSpecs {
     /*DeclSpec::TST*/ unsigned Type  : 5;
     /*DeclSpec::TSS*/ unsigned Sign  : 2;
@@ -73,8 +73,9 @@ namespace clang {
     bool ModeAttr : 1;
   };  
 
-  /// \brief A C++ access specifier (public, private, protected), plus the
-  /// special value "none" which means different things in different contexts.
+  /// AccessSpecifier - A C++ access specifier (public, private,
+  /// protected), plus the special value "none" which means
+  /// different things in different contexts.
   enum AccessSpecifier {
     AS_public,
     AS_protected,
@@ -82,24 +83,24 @@ namespace clang {
     AS_none
   };
 
-  /// \brief The categorization of expression values, currently following the
-  /// C++11 scheme.
+  /// ExprValueKind - The categorization of expression values,
+  /// currently following the C++0x scheme.
   enum ExprValueKind {
-    /// \brief An r-value expression (a pr-value in the C++11 taxonomy)
+    /// An r-value expression (a pr-value in the C++0x taxonomy)
     /// produces a temporary value.
     VK_RValue,
 
-    /// \brief An l-value expression is a reference to an object with
+    /// An l-value expression is a reference to an object with
     /// independent storage.
     VK_LValue,
 
-    /// \brief An x-value expression is a reference to an object with
+    /// An x-value expression is a reference to an object with
     /// independent storage but which can be "moved", i.e.
     /// efficiently cannibalized for its resources.
     VK_XValue
   };
 
-  /// \brief A further classification of the kind of object referenced by an
+  /// A further classification of the kind of object referenced by an
   /// l-value or x-value.
   enum ExprObjectKind {
     /// An ordinary object is located at an address in memory.
@@ -111,13 +112,13 @@ namespace clang {
     /// A vector component is an element or range of elements on a vector.
     OK_VectorComponent,
 
-    /// An Objective-C property is a logical field of an Objective-C
-    /// object which is read and written via Objective-C method calls.
+    /// An Objective C property is a logical field of an Objective-C
+    /// object which is read and written via Objective C method calls.
     OK_ObjCProperty,
     
-    /// An Objective-C array/dictionary subscripting which reads an
-    /// object or writes at the subscripted array/dictionary element via
-    /// Objective-C method calls.
+    /// An Objective C array/dictionary subscripting which reads an object
+    /// or writes at the subscripted array/dictionary element via
+    /// Objective C method calls.
     OK_ObjCSubscript
   };
 
@@ -158,12 +159,12 @@ namespace clang {
     SC_Register
   };
 
-  /// \brief Checks whether the given storage class is legal for functions.
+  /// Checks whether the given storage class is legal for functions.
   inline bool isLegalForFunction(StorageClass SC) {
     return SC <= SC_PrivateExtern;
   }
 
-  /// \brief Checks whether the given storage class is legal for variables.
+  /// Checks whether the given storage class is legal for variables.
   inline bool isLegalForVariable(StorageClass SC) {
     return true;
   }

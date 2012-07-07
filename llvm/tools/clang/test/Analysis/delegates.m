@@ -96,12 +96,13 @@ extern void *_NSConstantStringClassReference;
 
 @implementation test_6062730
 - (void) foo {
-  NSString *str = [[NSString alloc] init]; // no-warning
+  NSString *str = [[NSString alloc] init];
   [test_6062730 performSelectorOnMainThread:@selector(postNotification:) withObject:str waitUntilDone:1];
 }
 
 - (void) bar {
-  NSString *str = [[NSString alloc] init]; // no-warning
+  NSString *str = [[NSString alloc] init]; // expected-warning{{leak}}
+  // FIXME: We need to resolve [self class] to 'test_6062730'.
   [[self class] performSelectorOnMainThread:@selector(postNotification:) withObject:str waitUntilDone:1];
 }
 
@@ -110,21 +111,3 @@ extern void *_NSConstantStringClassReference;
 }
 @end
 
-
-@interface ObjectThatRequiresDelegate : NSObject
-- (id)initWithDelegate:(id)delegate;
-- (id)initWithNumber:(int)num delegate:(id)delegate;
-@end
-
-
-@interface DelegateRequirerTest
-@end
-@implementation DelegateRequirerTest
-
-- (void)test {
-  (void)[[ObjectThatRequiresDelegate alloc] initWithDelegate:self];
-  (void)[[ObjectThatRequiresDelegate alloc] initWithNumber:0 delegate:self];
-  // no leak warnings -- these objects could be released in callback methods
-}
-
-@end

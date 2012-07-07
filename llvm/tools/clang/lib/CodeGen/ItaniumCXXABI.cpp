@@ -20,7 +20,6 @@
 
 #include "CGCXXABI.h"
 #include "CGRecordLayout.h"
-#include "CGVTables.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
 #include <clang/AST/Mangle.h>
@@ -122,8 +121,6 @@ public:
                        llvm::GlobalVariable *DeclPtr, bool PerformInit);
   void registerGlobalDtor(CodeGenFunction &CGF, llvm::Constant *dtor,
                           llvm::Constant *addr);
-
-  void EmitVTables(const CXXRecordDecl *Class);
 };
 
 class ARMCXXABI : public ItaniumCXXABI {
@@ -1153,9 +1150,4 @@ void ItaniumCXXABI::registerGlobalDtor(CodeGenFunction &CGF,
   }
 
   CGF.registerGlobalDtorWithAtExit(dtor, addr);
-}
-
-/// Generate and emit virtual tables for the given class.
-void ItaniumCXXABI::EmitVTables(const CXXRecordDecl *Class) {
-  CGM.getVTables().GenerateClassData(CGM.getVTableLinkage(Class), Class);
 }

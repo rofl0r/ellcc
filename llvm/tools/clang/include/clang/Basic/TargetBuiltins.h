@@ -6,12 +6,6 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Enumerates target-specific builtins in their own namespaces within
-/// namespace ::clang.
-///
-//===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_BASIC_TARGET_BUILTINS_H
 #define LLVM_CLANG_BASIC_TARGET_BUILTINS_H
@@ -21,7 +15,7 @@
 
 namespace clang {
 
-  /// \brief ARM builtins
+  /// ARM builtins
   namespace ARM {
     enum {
         LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
@@ -31,7 +25,7 @@ namespace clang {
     };
   }
 
-  /// \brief PPC builtins
+  /// PPC builtins
   namespace PPC {
     enum {
         LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
@@ -41,7 +35,7 @@ namespace clang {
     };
   }
 
-  /// \brief NVPTX builtins
+  /// NVPTX builtins
   namespace NVPTX {
     enum {
         LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
@@ -52,7 +46,7 @@ namespace clang {
   }
 
 
-  /// \brief X86 builtins
+  /// X86 builtins
   namespace X86 {
     enum {
         LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
@@ -62,9 +56,9 @@ namespace clang {
     };
   }
 
-  /// \brief Flags to identify the types for overloaded Neon builtins.
-  ///
-  /// These must be kept in sync with the flags in utils/TableGen/NeonEmitter.h.
+  /// NeonTypeFlags - Flags to identify the types for overloaded Neon
+  /// builtins.  These must be kept in sync with the flags in
+  /// utils/TableGen/NeonEmitter.h.
   class NeonTypeFlags {
     enum {
       EltTypeMask = 0xf,
@@ -102,22 +96,12 @@ namespace clang {
     bool isQuad() const { return (Flags & QuadFlag) != 0; }
   };
 
-  /// \brief Hexagon builtins
+  /// Hexagon builtins
   namespace Hexagon {
     enum {
         LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
 #define BUILTIN(ID, TYPE, ATTRS) BI##ID,
 #include "clang/Basic/BuiltinsHexagon.def"
-        LastTSBuiltin
-    };
-  }
-
-  /// \brief MIPS builtins
-  namespace Mips {
-    enum {
-        LastTIBuiltin = clang::Builtin::FirstTSBuiltin-1,
-#define BUILTIN(ID, TYPE, ATTRS) BI##ID,
-#include "clang/Basic/BuiltinsMips.def"
         LastTSBuiltin
     };
   }

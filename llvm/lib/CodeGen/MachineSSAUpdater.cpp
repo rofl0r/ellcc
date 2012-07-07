@@ -241,6 +241,30 @@ void MachineSSAUpdater::ReplaceRegWith(unsigned OldReg, unsigned NewReg) {
       I->second = NewReg;
 }
 
+/// MachinePHIiter - Iterator for PHI operands.  This is used for the
+/// PHI_iterator in the SSAUpdaterImpl template.
+namespace {
+  class MachinePHIiter {
+  private:
+    MachineInstr *PHI;
+    unsigned idx;
+ 
+  public:
+    explicit MachinePHIiter(MachineInstr *P) // begin iterator
+      : PHI(P), idx(1) {}
+    MachinePHIiter(MachineInstr *P, bool) // end iterator
+      : PHI(P), idx(PHI->getNumOperands()) {}
+
+    MachinePHIiter &operator++() { idx += 2; return *this; } 
+    bool operator==(const MachinePHIiter& x) const { return idx == x.idx; }
+    bool operator!=(const MachinePHIiter& x) const { return !operator==(x); }
+    unsigned getIncomingValue() { return PHI->getOperand(idx).getReg(); }
+    MachineBasicBlock *getIncomingBlock() {
+      return PHI->getOperand(idx+1).getMBB();
+    }
+  };
+}
+
 /// SSAUpdaterTraits<MachineSSAUpdater> - Traits for the SSAUpdaterImpl
 /// template, specialized for MachineSSAUpdater.
 namespace llvm {
@@ -255,26 +279,7 @@ public:
   static BlkSucc_iterator BlkSucc_begin(BlkT *BB) { return BB->succ_begin(); }
   static BlkSucc_iterator BlkSucc_end(BlkT *BB) { return BB->succ_end(); }
 
-  /// Iterator for PHI operands.
-  class PHI_iterator {
-  private:
-    MachineInstr *PHI;
-    unsigned idx;
- 
-  public:
-    explicit PHI_iterator(MachineInstr *P) // begin iterator
-      : PHI(P), idx(1) {}
-    PHI_iterator(MachineInstr *P, bool) // end iterator
-      : PHI(P), idx(PHI->getNumOperands()) {}
-
-    PHI_iterator &operator++() { idx += 2; return *this; } 
-    bool operator==(const PHI_iterator& x) const { return idx == x.idx; }
-    bool operator!=(const PHI_iterator& x) const { return !operator==(x); }
-    unsigned getIncomingValue() { return PHI->getOperand(idx).getReg(); }
-    MachineBasicBlock *getIncomingBlock() {
-      return PHI->getOperand(idx+1).getMBB();
-    }
-  };
+  typedef MachinePHIiter PHI_iterator;
   static inline PHI_iterator PHI_begin(PhiT *PHI) { return PHI_iterator(PHI); }
   static inline PHI_iterator PHI_end(PhiT *PHI) {
     return PHI_iterator(PHI, true);

@@ -24,7 +24,5 @@ add_llvm_target(CellSPUCodeGen
   SPUNopFiller.cpp
   )
 
-add_dependencies(LLVMCellSPUCodeGen intrinsics_gen)
-
 add_subdirectory(TargetInfo)
 add_subdirectory(MCTargetDesc)

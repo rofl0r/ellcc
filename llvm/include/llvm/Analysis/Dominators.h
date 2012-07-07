@@ -152,7 +152,7 @@ EXTERN_TEMPLATE_INSTANTIATION(class DomTreeNodeBase<BasicBlock>);
 EXTERN_TEMPLATE_INSTANTIATION(class DomTreeNodeBase<MachineBasicBlock>);
 
 template<class NodeT>
-inline raw_ostream &operator<<(raw_ostream &o,
+static raw_ostream &operator<<(raw_ostream &o,
                                const DomTreeNodeBase<NodeT> *Node) {
   if (Node->getBlock())
     WriteAsOperand(o, Node->getBlock(), false);
@@ -165,7 +165,7 @@ inline raw_ostream &operator<<(raw_ostream &o,
 }
 
 template<class NodeT>
-inline void PrintDomTree(const DomTreeNodeBase<NodeT> *N, raw_ostream &o,
+static void PrintDomTree(const DomTreeNodeBase<NodeT> *N, raw_ostream &o,
                          unsigned Lev) {
   o.indent(2*Lev) << "[" << Lev << "] " << N;
   for (typename DomTreeNodeBase<NodeT>::const_iterator I = N->begin(),

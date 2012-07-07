@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the ExceptionSpecificationType enumeration and various
-/// utility functions.
-///
+//
+// This file defines the ExceptionSpecificationType enumeration and various
+// utility functions.
+//
 //===----------------------------------------------------------------------===//
 #ifndef LLVM_CLANG_BASIC_EXCEPTIONSPECIFICATIONTYPE_H
 #define LLVM_CLANG_BASIC_EXCEPTIONSPECIFICATIONTYPE_H

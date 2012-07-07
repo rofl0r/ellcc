@@ -9,7 +9,7 @@
 
 LEVEL = ../../..
 TESTNAME = JIT
-LINK_COMPONENTS := asmparser bitreader bitwriter jit native
+LINK_COMPONENTS := asmparser bitreader bitwriter core jit native support
 
 include $(LEVEL)/Makefile.config
 

@@ -33,8 +33,6 @@ namespace llvm {
 
 
 class TargetLoweringObjectFileELF : public TargetLoweringObjectFile {
-  bool UseInitArray;
-
 public:
   virtual ~TargetLoweringObjectFileELF() {}
 
@@ -68,7 +66,6 @@ public:
   getCFIPersonalitySymbol(const GlobalValue *GV, Mangler *Mang,
                           MachineModuleInfo *MMI) const;
 
-  void InitializeELF(bool UseInitArray_);
   virtual const MCSection *
   getStaticCtorSection(unsigned Priority = 65535) const;
   virtual const MCSection *

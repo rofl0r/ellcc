@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the PreprocessorLexer interface.
-///
+//
+//  This file defines the PreprocessorLexer interface.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_PreprocessorLexer_H
@@ -39,17 +38,16 @@ protected:
   // Context-specific lexing flags set by the preprocessor.
   //===--------------------------------------------------------------------===//
 
-  /// \brief True when parsing \#XXX; turns '\\n' into a tok::eod token.
+  /// ParsingPreprocessorDirective - This is true when parsing #XXX.  This turns
+  /// '\n' into a tok::eod token.
   bool ParsingPreprocessorDirective;
 
-  /// \brief True after \#include; turns \<xx> into a tok::angle_string_literal
-  /// token.
+  /// ParsingFilename - True after #include: this turns <xx> into a
+  /// tok::angle_string_literal token.
   bool ParsingFilename;
 
-  /// \brief True if in raw mode.
-  ///
-  /// Raw mode disables interpretation of tokens and is a far faster mode to
-  /// lex in than non-raw-mode.  This flag:
+  /// LexingRawMode - True if in raw mode:  This flag disables interpretation of
+  /// tokens and is a far faster mode to lex in than non-raw-mode.  This flag:
   ///  1. If EOF of the current lexer is found, the include stack isn't popped.
   ///  2. Identifier information is not looked up for identifier tokens.  As an
   ///     effect of this, implicit macro expansion is naturally disabled.
@@ -61,11 +59,11 @@ protected:
   /// Note that in raw mode that the PP pointer may be null.
   bool LexingRawMode;
 
-  /// \brief A state machine that detects the \#ifndef-wrapping a file
+  /// MIOpt - This is a state machine that detects the #ifndef-wrapping a file
   /// idiom for the multiple-include optimization.
   MultipleIncludeOpt MIOpt;
 
-  /// \brief Information about the set of \#if/\#ifdef/\#ifndef blocks
+  /// ConditionalStack - Information about the set of #if/#ifdef/#ifndef blocks
   /// we are currently in.
   SmallVector<PPConditionalInfo, 4> ConditionalStack;
 
@@ -85,15 +83,16 @@ protected:
 
   virtual void IndirectLex(Token& Result) = 0;
 
-  /// \brief Return the source location for the next observable location.
+  /// getSourceLocation - Return the source location for the next observable
+  ///  location.
   virtual SourceLocation getSourceLocation() = 0;
 
   //===--------------------------------------------------------------------===//
   // #if directive handling.
 
-  /// pushConditionalLevel - When we enter a \#if directive, this keeps track of
-  /// what we are currently in for diagnostic emission (e.g. \#if with missing
-  /// \#endif).
+  /// pushConditionalLevel - When we enter a #if directive, this keeps track of
+  /// what we are currently in for diagnostic emission (e.g. #if with missing
+  /// #endif).
   void pushConditionalLevel(SourceLocation DirectiveStart, bool WasSkipping,
                             bool FoundNonSkip, bool FoundElse) {
     PPConditionalInfo CI;
@@ -117,8 +116,8 @@ protected:
     return false;
   }
 
-  /// \brief Return the top of the conditional stack.
-  /// \pre This requires that there be a conditional active.
+  /// peekConditionalLevel - Return the top of the conditional stack.  This
+  /// requires that there be a conditional active.
   PPConditionalInfo &peekConditionalLevel() {
     assert(!ConditionalStack.empty() && "No conditionals active!");
     return ConditionalStack.back();
@@ -131,23 +130,21 @@ public:
   //===--------------------------------------------------------------------===//
   // Misc. lexing methods.
 
-  /// \brief After the preprocessor has parsed a \#include, lex and
-  /// (potentially) macro expand the filename.
-  ///
-  /// If the sequence parsed is not lexically legal, emit a diagnostic and
-  /// return a result EOD token.
+  /// LexIncludeFilename - After the preprocessor has parsed a #include, lex and
+  /// (potentially) macro expand the filename.  If the sequence parsed is not
+  /// lexically legal, emit a diagnostic and return a result EOD token.
   void LexIncludeFilename(Token &Result);
 
-  /// \brief Inform the lexer whether or not we are currently lexing a
-  /// preprocessor directive.
+  /// setParsingPreprocessorDirective - Inform the lexer whether or not
+  ///  we are currently lexing a preprocessor directive.
   void setParsingPreprocessorDirective(bool f) {
     ParsingPreprocessorDirective = f;
   }
 
-  /// \brief Return true if this lexer is in raw mode or not.
+  /// isLexingRawMode - Return true if this lexer is in raw mode or not.
   bool isLexingRawMode() const { return LexingRawMode; }
 
-  /// \brief Return the preprocessor object for this lexer.
+  /// getPP - Return the preprocessor object for this lexer.
   Preprocessor *getPP() const { return PP; }
 
   FileID getFileID() const {
@@ -166,7 +163,7 @@ public:
   const FileEntry *getFileEntry() const;
 
   /// \brief Iterator that traverses the current stack of preprocessor
-  /// conditional directives (\#if/\#ifdef/\#ifndef).
+  /// conditional directives (#if/#ifdef/#ifndef).
   typedef SmallVectorImpl<PPConditionalInfo>::const_iterator 
     conditional_iterator;
 

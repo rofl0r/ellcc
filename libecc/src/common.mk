@@ -45,7 +45,9 @@ LIBDIR  = $(LEVEL)/../../lib/$(TARGET)$(COV)$(OSDIR)
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = $(LEVEL)/../../../bin/ecc -target $(TARGET)-$(OS)-ellcc
+  CC = $(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc
+  # The base compiler.
+  ECC = $(LEVEL)/../../../bin/ecc
 
   # The archiver.
   AR = $(LEVEL)/../../../bin/ecc-ar
@@ -55,7 +57,9 @@ endif
 
 ifeq ($(XCXX),)
   # The build C++ compiler.
-  CXX = $(LEVEL)/../../../bin/ecc++ -target $(TARGET)-$(OS)-ellcc
+  CXX = $(LEVEL)/../../../bin/$(TARGET)-$(OS)-ecc++
+  # The base C++ compiler.
+  EXX = $(LEVEL)/../../../bin/ecc++
 else
   CXX = $(XCXX)
 endif
@@ -100,7 +104,21 @@ CRTOBJS := $(CRTBASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-all: $(LIBNAME) $(CRTOBJS)
+all: $(CC) $(CXX) $(LIBNAME) $(CRTOBJS)
+
+ifneq ($(ECC),)
+$(CC): $(ECC)
+	ln -sf ecc $(CC)
+else
+$(CC):
+endif
+
+ifneq ($(EXX),)
+$(CXX): $(EXX)
+	ln -sf ecc++ $(CXX)
+else
+$(CXX):
+endif
 
 $(LIBNAME): $(OBJS)
 	$(AR) cr $(LIBNAME) $(OBJS)

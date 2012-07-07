@@ -124,8 +124,7 @@ public:
 
   /// Check for regmask interference only.
   /// Return true if VirtReg crosses a regmask operand that clobbers PhysReg.
-  /// If PhysReg is null, check if VirtReg crosses any regmask operands.
-  bool checkRegMaskInterference(LiveInterval &VirtReg, unsigned PhysReg = 0);
+  bool checkRegMaskInterference(LiveInterval &VirtReg, unsigned PhysReg);
 
   /// Check for regunit interference only.
   /// Return true if VirtReg overlaps a fixed assignment of one of PhysRegs's
@@ -137,10 +136,6 @@ public:
   /// This returns a reference to an internal Query data structure that is only
   /// valid until the next query() call.
   LiveIntervalUnion::Query &query(LiveInterval &VirtReg, unsigned RegUnit);
-
-  /// Directly access the live interval unions per regunit.
-  /// This returns an array indexed by the regunit number.
-  LiveIntervalUnion *getLiveUnions() { return &Matrix[0]; }
 };
 
 } // end namespace llvm

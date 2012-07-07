@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines enumerations for the type traits support.
-///
+//
+//  This file defines enumerations for the type traits support.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_TYPETRAITS_H
@@ -17,7 +16,7 @@
 
 namespace clang {
 
-  /// \brief Names for the unary type traits.
+  /// UnaryTypeTrait - Names for the unary type traits.
   enum UnaryTypeTrait {
     UTT_HasNothrowAssign,
     UTT_HasNothrowCopy,
@@ -63,7 +62,7 @@ namespace clang {
     UTT_IsVolatile
   };
 
-  /// \brief Names for the binary type traits.
+  /// BinaryTypeTrait - Names for the binary type traits.
   enum BinaryTypeTrait {
     BTT_IsBaseOf,
     BTT_IsConvertible,
@@ -73,13 +72,13 @@ namespace clang {
     BTT_IsTriviallyAssignable
   };
 
-  /// \brief Names for the array type traits.
+  /// ArrayTypeTrait - Names for the array type traits.
   enum ArrayTypeTrait {
     ATT_ArrayRank,
     ATT_ArrayExtent
   };
 
-  /// \brief Names for the "expression or type" traits.
+  /// UnaryExprOrTypeTrait - Names for the "expression or type" traits.
   enum UnaryExprOrTypeTrait {
     UETT_SizeOf,
     UETT_AlignOf,

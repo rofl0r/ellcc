@@ -32,8 +32,6 @@ add_llvm_target(HexagonCodeGen
   HexagonNewValueJump.cpp
 )
 
-add_dependencies(LLVMHexagonCodeGen intrinsics_gen)
-
 add_subdirectory(TargetInfo)
 add_subdirectory(InstPrinter)
 add_subdirectory(MCTargetDesc)

@@ -92,9 +92,6 @@ public:
   CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
                                      const ScheduleDAG *DAG) const;
 
-  bool isCoalescableExtInstr(const MachineInstr &MI,
-                             unsigned &SrcReg, unsigned &DstReg,
-                             unsigned &SubIdx) const;
   unsigned isLoadFromStackSlot(const MachineInstr *MI,
                                int &FrameIndex) const;
   unsigned isStoreToStackSlot(const MachineInstr *MI,

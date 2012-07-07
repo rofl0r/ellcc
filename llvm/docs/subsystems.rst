@@ -3,88 +3,72 @@
 Subsystem Documentation
 =======================
 
-.. toctree::
-   :hidden:
-
-   AliasAnalysis
-   BitCodeFormat
-   BranchWeightMetadata
-   Bugpoint
-   ExceptionHandling
-   LinkTimeOptimization
-   SegmentedStacks
-   TableGenFundamentals
-
-* `Writing an LLVM Pass <WritingAnLLVMPass.html>`_
+ * `Writing an LLVM Pass <WritingAnLLVMPass.html>`_
     
-   Information on how to write LLVM transformations and analyses.
+    Information on how to write LLVM transformations and analyses.
     
-* `Writing an LLVM Backend <WritingAnLLVMBackend.html>`_
+ * `Writing an LLVM Backend <WritingAnLLVMBackend.html>`_
     
-   Information on how to write LLVM backends for machine targets.
+    Information on how to write LLVM backends for machine targets.
     
-* `The LLVM Target-Independent Code Generator <CodeGenerator.html>`_
+ * `The LLVM Target-Independent Code Generator <CodeGenerator.html>`_
     
-   The design and implementation of the LLVM code generator.  Useful if you are
-   working on retargetting LLVM to a new architecture, designing a new codegen
-   pass, or enhancing existing components.
+    The design and implementation of the LLVM code generator.  Useful if you are
+    working on retargetting LLVM to a new architecture, designing a new codegen
+    pass, or enhancing existing components.
     
-* :ref:`tablegen`
-
-   Describes the TableGen tool, which is used heavily by the LLVM code
-   generator.
+ * `TableGen Fundamentals <TableGenFundamentals.html>`_
     
-* :ref:`alias_analysis`
+    Describes the TableGen tool, which is used heavily by the LLVM code
+    generator.
     
-   Information on how to write a new alias analysis implementation or how to
-   use existing analyses.
+ * `Alias Analysis in LLVM <AliasAnalysis.html>`_
     
-* `Accurate Garbage Collection with LLVM <GarbageCollection.html>`_
+    Information on how to write a new alias analysis implementation or how to
+    use existing analyses.
     
-   The interfaces source-language compilers should use for compiling GC'd
-   programs.
-
-* `Source Level Debugging with LLVM <SourceLevelDebugging.html>`_
+ * `Accurate Garbage Collection with LLVM <GarbageCollection.html>`_
     
-   This document describes the design and philosophy behind the LLVM
-   source-level debugger.
+    The interfaces source-language compilers should use for compiling GC'd
+    programs.
     
-* :ref:`exception_handling`
+ * `Source Level Debugging with LLVM <SourceLevelDebugging.html>`_
     
-   This document describes the design and implementation of exception handling
-   in LLVM.
+    This document describes the design and philosophy behind the LLVM
+    source-level debugger.
     
-* :ref:`bugpoint`
+ * `Zero Cost Exception handling in LLVM <ExceptionHandling.html>`_
     
-   Automatic bug finder and test-case reducer description and usage
-   information.
+    This document describes the design and implementation of exception handling
+    in LLVM.
     
-* :ref:`bitcode_format`
+ * `Bugpoint <Bugpoint.html>`_
     
-   This describes the file format and encoding used for LLVM "bc" files.
+    Automatic bug finder and test-case reducer description and usage
+    information.
     
-* `System Library <SystemLibrary.html>`_
+ * `LLVM Bitcode File Format <BitCodeFormat.html>`_
     
-   This document describes the LLVM System Library (<tt>lib/System</tt>) and
-   how to keep LLVM source code portable
+    This describes the file format and encoding used for LLVM "bc" files.
     
-* :ref:`lto`
+ * `System Library <SystemLibrary.html>`_
     
-   This document describes the interface between LLVM intermodular optimizer
-   and the linker and its design
+    This document describes the LLVM System Library (<tt>lib/System</tt>) and
+    how to keep LLVM source code portable
     
-* `The LLVM gold plugin <GoldPlugin.html>`_
+ * `Link Time Optimization <LinkTimeOptimization.html>`_
     
-   How to build your programs with link-time optimization on Linux.
+    This document describes the interface between LLVM intermodular optimizer
+    and the linker and its design
     
-* `The GDB JIT interface <DebuggingJITedCode.html>`_
+ * `The LLVM gold plugin <GoldPlugin.html>`_
     
-   How to debug JITed code with GDB.
+    How to build your programs with link-time optimization on Linux.
     
-* :ref:`branch_weight`
+ * `The GDB JIT interface <DebuggingJITedCode.html>`_
     
-   Provides information about Branch Prediction Information.
-
-* :ref:`segmented_stacks`
-
-   This document describes segmented stacks and how they are used in LLVM.
+    How to debug JITed code with GDB.
+    
+ * `Branch Weight Metadata <BranchWeightMetadata.html>`_
+    
+    Provides information about Branch Prediction Information.

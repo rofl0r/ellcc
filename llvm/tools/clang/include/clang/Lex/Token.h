@@ -87,7 +87,7 @@ public:
   bool is(tok::TokenKind K) const { return Kind == (unsigned) K; }
   bool isNot(tok::TokenKind K) const { return Kind != (unsigned) K; }
 
-  /// \brief Return true if this is a raw identifier (when lexing
+  /// isAnyIdentifier - Return true if this is a raw identifier (when lexing
   /// in raw mode) or a non-keyword identifier (when lexing in non-raw mode).
   bool isAnyIdentifier() const {
     return is(tok::identifier) || is(tok::raw_identifier);
@@ -112,7 +112,7 @@ public:
     return false;
   }
 
-  /// \brief Return a source location identifier for the specified
+  /// getLocation - Return a source location identifier for the specified
   /// offset in the current file.
   SourceLocation getLocation() const { return Loc; }
   unsigned getLength() const {
@@ -139,8 +139,8 @@ public:
     return isAnnotation() ? getAnnotationEndLoc() : getLocation();
   }
 
-  /// \brief SourceRange of the group of tokens that this annotation token
-  /// represents.
+  /// getAnnotationRange - SourceRange of the group of tokens that this
+  /// annotation token represents.
   SourceRange getAnnotationRange() const {
     return SourceRange(getLocation(), getAnnotationEndLoc());
   }
@@ -153,7 +153,8 @@ public:
     return tok::getTokenName( (tok::TokenKind) Kind);
   }
 
-  /// \brief Reset all flags to cleared.
+  /// startToken - Reset all flags to cleared.
+  ///
   void startToken() {
     Kind = tok::unknown;
     Flags = 0;
@@ -207,25 +208,24 @@ public:
     PtrData = val;
   }
 
-  /// \brief Set the specified flag.
+  /// setFlag - Set the specified flag.
   void setFlag(TokenFlags Flag) {
     Flags |= Flag;
   }
 
-  /// \brief Unset the specified flag.
+  /// clearFlag - Unset the specified flag.
   void clearFlag(TokenFlags Flag) {
     Flags &= ~Flag;
   }
 
-  /// \brief Return the internal represtation of the flags.
-  ///
-  /// This is only intended for low-level operations such as writing tokens to
-  /// disk.
+  /// getFlags - Return the internal represtation of the flags.
+  ///  Only intended for low-level operations such as writing tokens to
+  //   disk.
   unsigned getFlags() const {
     return Flags;
   }
 
-  /// \brief Set a flag to either true or false.
+  /// setFlagValue - Set a flag to either true or false.
   void setFlagValue(TokenFlags Flag, bool Val) {
     if (Val)
       setFlag(Flag);
@@ -237,23 +237,25 @@ public:
   ///
   bool isAtStartOfLine() const { return (Flags & StartOfLine) ? true : false; }
 
-  /// \brief Return true if this token has whitespace before it.
+  /// hasLeadingSpace - Return true if this token has whitespace before it.
   ///
   bool hasLeadingSpace() const { return (Flags & LeadingSpace) ? true : false; }
 
-  /// \brief Return true if this identifier token should never
+  /// isExpandDisabled - Return true if this identifier token should never
   /// be expanded in the future, due to C99 6.10.3.4p2.
   bool isExpandDisabled() const {
     return (Flags & DisableExpand) ? true : false;
   }
 
-  /// \brief Return true if we have an ObjC keyword identifier.
+  /// isObjCAtKeyword - Return true if we have an ObjC keyword identifier.
   bool isObjCAtKeyword(tok::ObjCKeywordKind objcKey) const;
 
-  /// \brief Return the ObjC keyword kind.
+  /// getObjCKeywordID - Return the ObjC keyword kind.
   tok::ObjCKeywordKind getObjCKeywordID() const;
 
-  /// \brief Return true if this token has trigraphs or escaped newlines in it.
+  /// needsCleaning - Return true if this token has trigraphs or escaped
+  /// newlines in it.
+  ///
   bool needsCleaning() const { return (Flags & NeedsCleaning) ? true : false; }
 
   /// \brief Return true if this token has an empty macro before it.
@@ -267,22 +269,23 @@ public:
   bool hasUDSuffix() const { return (Flags & HasUDSuffix) ? true : false; }
 };
 
-/// \brief Information about the conditional stack (\#if directives)
+/// PPConditionalInfo - Information about the conditional stack (#if directives)
 /// currently active.
 struct PPConditionalInfo {
-  /// \brief Location where the conditional started.
+  /// IfLoc - Location where the conditional started.
+  ///
   SourceLocation IfLoc;
 
-  /// \brief True if this was contained in a skipping directive, e.g.,
-  /// in a "\#if 0" block.
+  /// WasSkipping - True if this was contained in a skipping directive, e.g.
+  /// in a "#if 0" block.
   bool WasSkipping;
 
-  /// \brief True if we have emitted tokens already, and now we're in
-  /// an \#else block or something.  Only useful in Skipping blocks.
+  /// FoundNonSkip - True if we have emitted tokens already, and now we're in
+  /// an #else block or something.  Only useful in Skipping blocks.
   bool FoundNonSkip;
 
-  /// \brief True if we've seen a \#else in this block.  If so,
-  /// \#elif/\#else directives are not allowed.
+  /// FoundElse - True if we've seen a #else in this block.  If so,
+  /// #elif/#else directives are not allowed.
   bool FoundElse;
 };
 

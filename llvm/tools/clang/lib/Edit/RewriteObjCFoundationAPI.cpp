@@ -128,7 +128,7 @@ static bool rewriteToArraySubscriptGet(const ObjCInterfaceDecl *IFace,
                                        const ObjCMessageExpr *Msg,
                                        const NSAPI &NS,
                                        Commit &commit) {
-  if (!IFace->lookupInstanceMethod(NS.getObjectAtIndexedSubscriptSelector()))
+  if (!IFace->getInstanceMethod(NS.getObjectAtIndexedSubscriptSelector()))
     return false;
   return rewriteToSubscriptGetCommon(Msg, commit);
 }
@@ -137,7 +137,7 @@ static bool rewriteToDictionarySubscriptGet(const ObjCInterfaceDecl *IFace,
                                             const ObjCMessageExpr *Msg,
                                             const NSAPI &NS,
                                             Commit &commit) {
-  if (!IFace->lookupInstanceMethod(NS.getObjectForKeyedSubscriptSelector()))
+  if (!IFace->getInstanceMethod(NS.getObjectForKeyedSubscriptSelector()))
     return false;
   return rewriteToSubscriptGetCommon(Msg, commit);
 }
@@ -151,7 +151,7 @@ static bool rewriteToArraySubscriptSet(const ObjCInterfaceDecl *IFace,
   const Expr *Rec = Msg->getInstanceReceiver();
   if (!Rec)
     return false;
-  if (!IFace->lookupInstanceMethod(NS.getSetObjectAtIndexedSubscriptSelector()))
+  if (!IFace->getInstanceMethod(NS.getSetObjectAtIndexedSubscriptSelector()))
     return false;
 
   SourceRange MsgRange = Msg->getSourceRange();
@@ -183,7 +183,7 @@ static bool rewriteToDictionarySubscriptSet(const ObjCInterfaceDecl *IFace,
   const Expr *Rec = Msg->getInstanceReceiver();
   if (!Rec)
     return false;
-  if (!IFace->lookupInstanceMethod(NS.getSetObjectForKeyedSubscriptSelector()))
+  if (!IFace->getInstanceMethod(NS.getSetObjectForKeyedSubscriptSelector()))
     return false;
 
   SourceRange MsgRange = Msg->getSourceRange();
@@ -852,9 +852,8 @@ static bool rewriteToNumericBoxedExpression(const ObjCMessageExpr *Msg,
     DiagnosticsEngine &Diags = Ctx.getDiagnostics(); 
     // FIXME: Use a custom category name to distinguish migration diagnostics.
     unsigned diagID = Diags.getCustomDiagID(DiagnosticsEngine::Warning,
-                       "converting to boxing syntax requires casting %0 to %1");
-    Diags.Report(Msg->getExprLoc(), diagID) << OrigTy << FinalTy
-        << Msg->getSourceRange();
+                      "converting to boxing syntax requires a cast");
+    Diags.Report(Msg->getExprLoc(), diagID) << Msg->getSourceRange();
     return false;
   }
 

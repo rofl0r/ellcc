@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fsyntax-only -Wunused-private-field -Wused-but-marked-unused -verify -std=c++11 %s
+// RUN: %clang_cc1 -fsyntax-only -Wunused-private-field -verify -std=c++11 %s
 
 class NotFullyDefined {
  public:
@@ -93,7 +93,6 @@ class A {
         trivial_(), user_constructor_(42),
         initialized_with_side_effect_(side_effect()) {
     used_ = 42;
-    attr_used_ = 42; // expected-warning{{'attr_used_' was marked unused but was used}}
   }
 
   A(int x, A* a) : pointer_(a) {}
@@ -116,9 +115,6 @@ class A {
   Trivial user_constructor_;
   NonTrivialConstructor non_trivial_constructor_;
   NonTrivialDestructor non_trivial_destructor_;
-
-  int attr_ __attribute__((unused));
-  int attr_used_ __attribute__((unused));
 };
 
 class EverythingUsed {
@@ -143,20 +139,6 @@ class EverythingUsed {
   int as_array_index_;
   int by_initializer_;
 };
-
-class HasFeatureTest {
-#if __has_feature(attribute_unused_on_fields)
-  int unused_; // expected-warning{{private field 'unused_' is not used}}
-  int unused2_ __attribute__((unused)); // no-warning
-#endif
-};
-
-namespace templates {
-class B {
-  template <typename T> void f(T t);
-  int a;
-};
-}  // namespace templates
 
 namespace mutual_friends {
 // Undefined methods make mutual friends undefined.

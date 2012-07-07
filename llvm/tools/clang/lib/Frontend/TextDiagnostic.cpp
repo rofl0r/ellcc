@@ -31,31 +31,11 @@ static const enum raw_ostream::Colors caretColor =
   raw_ostream::GREEN;
 static const enum raw_ostream::Colors warningColor =
   raw_ostream::MAGENTA;
-static const enum raw_ostream::Colors templateColor =
-  raw_ostream::CYAN;
 static const enum raw_ostream::Colors errorColor = raw_ostream::RED;
 static const enum raw_ostream::Colors fatalColor = raw_ostream::RED;
 // Used for changing only the bold attribute.
 static const enum raw_ostream::Colors savedColor =
   raw_ostream::SAVEDCOLOR;
-
-/// \brief Add highlights to differences in template strings.
-static void applyTemplateHighlighting(raw_ostream &OS, StringRef Str,
-                                      bool &Normal, bool Bold) {
-  for (unsigned i = 0, e = Str.size(); i < e; ++i)
-    if (Str[i] != ToggleHighlight) {
-      OS << Str[i];
-    } else {
-      if (Normal)
-        OS.changeColor(templateColor, true);
-      else {
-        OS.resetColor();
-        if (Bold)
-          OS.changeColor(savedColor, true);
-      }
-      Normal = !Normal;
-    }
-}
 
 /// \brief Number of spaces to indent when word-wrapping.
 const unsigned WordWrapIndentation = 6;
@@ -199,7 +179,7 @@ static void expandTabs(std::string &SourceLine, unsigned TabStop) {
 ///
 ///    "a \t \u3042" -> {0,1,2,8,9,-1,-1,11}
 ///
-///  (\\u3042 is represented in UTF-8 by three bytes and takes two columns to
+///  (\u3042 is represented in UTF-8 by three bytes and takes two columns to
 ///   display)
 static void byteToColumn(StringRef SourceLine, unsigned TabStop,
                          SmallVectorImpl<int> &out) {
@@ -233,7 +213,7 @@ static void byteToColumn(StringRef SourceLine, unsigned TabStop,
 ///
 ///    "a \t \u3042" -> {0,1,2,-1,-1,-1,-1,-1,3,4,-1,7}
 ///
-///  (\\u3042 is represented in UTF-8 by three bytes and takes two columns to
+///  (\u3042 is represented in UTF-8 by three bytes and takes two columns to
 ///   display)
 static void columnToByte(StringRef SourceLine, unsigned TabStop,
                          SmallVectorImpl<int> &out) {
@@ -589,7 +569,6 @@ static unsigned findEndOfWord(unsigned Start, StringRef Str,
 /// \param Column the column number at which the first character of \p
 /// Str will be printed. This will be non-zero when part of the first
 /// line has already been printed.
-/// \param Bold if the current text should be bold
 /// \param Indentation the number of spaces to indent any lines beyond
 /// the first line.
 /// \returns true if word-wrapping was required, or false if the
@@ -597,10 +576,8 @@ static unsigned findEndOfWord(unsigned Start, StringRef Str,
 static bool printWordWrapped(raw_ostream &OS, StringRef Str,
                              unsigned Columns,
                              unsigned Column = 0,
-                             bool Bold = false,
                              unsigned Indentation = WordWrapIndentation) {
   const unsigned Length = std::min(Str.find('\n'), Str.size());
-  bool TextNormal = true;
 
   // The string used to indent each line.
   SmallString<16> IndentStr;
@@ -624,8 +601,7 @@ static bool printWordWrapped(raw_ostream &OS, StringRef Str,
         OS << ' ';
         Column += 1;
       }
-      applyTemplateHighlighting(OS, Str.substr(WordStart, WordLength),
-                                TextNormal, Bold);
+      OS << Str.substr(WordStart, WordLength);
       Column += WordLength;
       continue;
     }
@@ -634,16 +610,13 @@ static bool printWordWrapped(raw_ostream &OS, StringRef Str,
     // line.
     OS << '\n';
     OS.write(&IndentStr[0], Indentation);
-    applyTemplateHighlighting(OS, Str.substr(WordStart, WordLength),
-                              TextNormal, Bold);
+    OS << Str.substr(WordStart, WordLength);
     Column = Indentation + WordLength;
     Wrapped = true;
   }
 
   // Append any remaning text from the message with its existing formatting.
-  applyTemplateHighlighting(OS, Str.substr(Length), TextNormal, Bold);
-
-  assert(TextNormal && "Text highlighted at end of diagnostic message.");
+  OS << Str.substr(Length);
 
   return Wrapped;
 }
@@ -713,27 +686,20 @@ TextDiagnostic::printDiagnosticMessage(raw_ostream &OS,
                                        StringRef Message,
                                        unsigned CurrentColumn, unsigned Columns,
                                        bool ShowColors) {
-  bool Bold = false;
   if (ShowColors) {
     // Print warnings, errors and fatal errors in bold, no color
     switch (Level) {
-    case DiagnosticsEngine::Warning:
-    case DiagnosticsEngine::Error:
-    case DiagnosticsEngine::Fatal:
-      OS.changeColor(savedColor, true);
-      Bold = true;
-      break;
+    case DiagnosticsEngine::Warning: OS.changeColor(savedColor, true); break;
+    case DiagnosticsEngine::Error:   OS.changeColor(savedColor, true); break;
+    case DiagnosticsEngine::Fatal:   OS.changeColor(savedColor, true); break;
     default: break; //don't bold notes
     }
   }
 
   if (Columns)
-    printWordWrapped(OS, Message, Columns, CurrentColumn, Bold);
-  else {
-    bool Normal = true;
-    applyTemplateHighlighting(OS, Message, Normal, Bold);
-    assert(Normal && "Formatting should have returned to normal");
-  }
+    printWordWrapped(OS, Message, Columns, CurrentColumn);
+  else
+    OS << Message;
 
   if (ShowColors)
     OS.resetColor();

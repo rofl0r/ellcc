@@ -40,7 +40,6 @@ class InitHeaderSearch {
   std::vector<std::pair<IncludeDirGroup, DirectoryLookup> > IncludePath;
   typedef std::vector<std::pair<IncludeDirGroup,
                       DirectoryLookup> >::const_iterator path_iterator;
-  std::vector<std::pair<std::string, bool> > SystemHeaderPrefixes;
   HeaderSearch &Headers;
   bool Verbose;
   std::string IncludeSysroot;
@@ -57,12 +56,6 @@ public:
   void AddPath(const Twine &Path, IncludeDirGroup Group,
                bool isCXXAware, bool isUserSupplied,
                bool isFramework, bool IgnoreSysRoot = false);
-
-  /// AddSystemHeaderPrefix - Add the specified prefix to the system header
-  /// prefix list.
-  void AddSystemHeaderPrefix(StringRef Prefix, bool IsSystemHeader) {
-    SystemHeaderPrefixes.push_back(std::make_pair(Prefix, IsSystemHeader));
-  }
 
   /// AddGnuCPlusPlusIncludePaths - Add the necessary paths to support a gnu
   ///  libstdc++.
@@ -340,10 +333,10 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
       AddPath("/usr/include", System, false, false, false);
   } else {
       // Set up ELLCC specific include paths.
-      // include/<arch>/<os>
-      // include/<arch>
-      // include/<os>
-      // include
+      // usrinclude/<arch>/<os>
+      // usrinclude/<arch>
+      // usrinclude/<os>
+      // usrinclude
       // RICH: This seems like a hack. May need to revisit.
       StringRef arch = triple.getArchTypeName(triple.getArch());
       if (arch.startswith("mips")) {
@@ -352,23 +345,23 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
         arch = "arm";
       }
       llvm::sys::Path P0(HSOpts.ResourceDir);
-      P0.appendComponent("include");
+      P0.appendComponent("usrinclude");
       P0.appendComponent(arch);
       P0.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P0.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P1(HSOpts.ResourceDir);
-      P1.appendComponent("include");
+      P1.appendComponent("usrinclude");
       P1.appendComponent(arch);
       AddPath(P1.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P2(HSOpts.ResourceDir);
-      P2.appendComponent("include");
+      P2.appendComponent("usrinclude");
       P2.appendComponent(triple.getOSTypeName(triple.getOS()));
       AddPath(P2.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
 
       llvm::sys::Path P3(HSOpts.ResourceDir);
-      P3.appendComponent("include");
+      P3.appendComponent("usrinclude");
       AddPath(P3.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
   }
 }
@@ -414,7 +407,7 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
   if (triple.getVendor() == llvm::Triple::ELLCC) {
       // RICH: Add C++ specific paths.
       llvm::sys::Path P(HSOpts.ResourceDir);
-      P.appendComponent("include/c++");
+      P.appendComponent("usrinclude/c++");
       AddPath(P.str(), System, false, false, false, /*IgnoreSysRoot=*/ true);
       return;
   }
@@ -683,8 +676,6 @@ void InitHeaderSearch::Realize(const LangOptions &Lang) {
   bool DontSearchCurDir = false;  // TODO: set to true if -I- is set?
   Headers.SetSearchPaths(SearchList, NumQuoted, NumAngled, DontSearchCurDir);
 
-  Headers.SetSystemHeaderPrefixes(SystemHeaderPrefixes);
-
   // If verbose, print the list of directories that will be searched.
   if (Verbose) {
     llvm::errs() << "#include \"...\" search starts here:\n";
@@ -721,10 +712,6 @@ void clang::ApplyHeaderSearchOptions(HeaderSearch &HS,
   }
 
   Init.AddDefaultIncludePaths(Lang, Triple, HSOpts);
-
-  for (unsigned i = 0, e = HSOpts.SystemHeaderPrefixes.size(); i != e; ++i)
-    Init.AddSystemHeaderPrefix(HSOpts.SystemHeaderPrefixes[i].Prefix,
-                               HSOpts.SystemHeaderPrefixes[i].IsSystemHeader);
 
   if (HSOpts.UseBuiltinIncludes) {
     // Set up the builtin include directory in the module map.

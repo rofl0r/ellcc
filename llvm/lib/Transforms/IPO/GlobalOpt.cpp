@@ -254,8 +254,6 @@ static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
             GS.StoredType = GlobalStatus::isStored;
           }
         }
-      } else if (isa<BitCastInst>(I)) {
-        if (AnalyzeGlobal(I, GS, PHIUsers)) return true;
       } else if (isa<GetElementPtrInst>(I)) {
         if (AnalyzeGlobal(I, GS, PHIUsers)) return true;
       } else if (isa<SelectInst>(I)) {
@@ -519,7 +517,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const TargetData &TD) {
       GlobalVariable *NGV = new GlobalVariable(STy->getElementType(i), false,
                                                GlobalVariable::InternalLinkage,
                                                In, GV->getName()+"."+Twine(i),
-                                               GV->getThreadLocalMode(),
+                                               GV->isThreadLocal(),
                                               GV->getType()->getAddressSpace());
       Globals.insert(GV, NGV);
       NewGlobals.push_back(NGV);
@@ -552,7 +550,7 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const TargetData &TD) {
       GlobalVariable *NGV = new GlobalVariable(STy->getElementType(), false,
                                                GlobalVariable::InternalLinkage,
                                                In, GV->getName()+"."+Twine(i),
-                                               GV->getThreadLocalMode(),
+                                               GV->isThreadLocal(),
                                               GV->getType()->getAddressSpace());
       Globals.insert(GV, NGV);
       NewGlobals.push_back(NGV);
@@ -868,7 +866,7 @@ static GlobalVariable *OptimizeGlobalAddressOfMalloc(GlobalVariable *GV,
                                              UndefValue::get(GlobalType),
                                              GV->getName()+".body",
                                              GV,
-                                             GV->getThreadLocalMode());
+                                             GV->isThreadLocal());
 
   // If there are bitcast users of the malloc (which is typical, usually we have
   // a malloc + bitcast) then replace them with uses of the new global.  Update
@@ -901,7 +899,7 @@ static GlobalVariable *OptimizeGlobalAddressOfMalloc(GlobalVariable *GV,
     new GlobalVariable(Type::getInt1Ty(GV->getContext()), false,
                        GlobalValue::InternalLinkage,
                        ConstantInt::getFalse(GV->getContext()),
-                       GV->getName()+".init", GV->getThreadLocalMode());
+                       GV->getName()+".init", GV->isThreadLocal());
   bool InitBoolUsed = false;
 
   // Loop over all uses of GV, processing them in turn.
@@ -1323,7 +1321,7 @@ static GlobalVariable *PerformHeapAllocSRoA(GlobalVariable *GV, CallInst *CI,
                          PFieldTy, false, GlobalValue::InternalLinkage,
                          Constant::getNullValue(PFieldTy),
                          GV->getName() + ".f" + Twine(FieldNo), GV,
-                         GV->getThreadLocalMode());
+                         GV->isThreadLocal());
     FieldGlobals.push_back(NGV);
 
     unsigned TypeSize = TD->getTypeAllocSize(FieldTy);
@@ -1569,10 +1567,8 @@ static bool TryToOptimizeStoreOfMallocToGlobal(GlobalVariable *GV,
       Instruction *Cast = new BitCastInst(Malloc, CI->getType(), "tmp", CI);
       CI->replaceAllUsesWith(Cast);
       CI->eraseFromParent();
-      if (BitCastInst *BCI = dyn_cast<BitCastInst>(Malloc))
-        CI = cast<CallInst>(BCI->getOperand(0));
-      else
-        CI = cast<CallInst>(Malloc);
+      CI = dyn_cast<BitCastInst>(Malloc) ?
+        extractMallocCallFromBitCast(Malloc) : cast<CallInst>(Malloc);
     }
 
     GVI = PerformHeapAllocSRoA(GV, CI, getMallocArraySize(CI, TD, true), TD);
@@ -1649,7 +1645,7 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
                                              GlobalValue::InternalLinkage,
                                         ConstantInt::getFalse(GV->getContext()),
                                              GV->getName()+".b",
-                                             GV->getThreadLocalMode());
+                                             GV->isThreadLocal());
   GV->getParent()->getGlobalList().insert(GV, NewGV);
 
   Constant *InitVal = GV->getInitializer();
@@ -1720,7 +1716,7 @@ static bool TryToShrinkGlobalToBoolean(GlobalVariable *GV, Constant *OtherVal) {
 /// possible.  If we make a change, return true.
 bool GlobalOpt::ProcessGlobal(GlobalVariable *GV,
                               Module::global_iterator &GVI) {
-  if (!GV->isDiscardableIfUnused())
+  if (!GV->hasLocalLinkage())
     return false;
 
   // Do more involved optimizations if the global is internal.
@@ -1732,9 +1728,6 @@ bool GlobalOpt::ProcessGlobal(GlobalVariable *GV,
     ++NumDeleted;
     return true;
   }
-
-  if (!GV->hasLocalLinkage())
-    return false;
 
   SmallPtrSet<const PHINode*, 16> PHIUsers;
   GlobalStatus GS;
@@ -2056,7 +2049,7 @@ static GlobalVariable *InstallGlobalCtors(GlobalVariable *GCL,
   // Create the new global and insert it next to the existing list.
   GlobalVariable *NGV = new GlobalVariable(CA->getType(), GCL->isConstant(),
                                            GCL->getLinkage(), CA, "",
-                                           GCL->getThreadLocalMode());
+                                           GCL->isThreadLocal());
   GCL->getParent()->getGlobalList().insert(GCL, NGV);
   NGV->takeName(GCL);
 
@@ -2712,7 +2705,7 @@ static bool EvaluateStaticConstructor(Function *F, const TargetData *TD,
           << " stores.\n");
     for (DenseMap<Constant*, Constant*>::const_iterator I =
            Eval.getMutatedMemory().begin(), E = Eval.getMutatedMemory().end();
-         I != E; ++I)
+	 I != E; ++I)
       CommitValueTo(I->second, I->first);
     for (SmallPtrSet<GlobalVariable*, 8>::const_iterator I =
            Eval.getInvariants().begin(), E = Eval.getInvariants().end();

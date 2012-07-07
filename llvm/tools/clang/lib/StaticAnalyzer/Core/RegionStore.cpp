@@ -20,7 +20,7 @@
 #include "clang/Analysis/Analyses/LiveVariables.h"
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/Calls.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
@@ -252,7 +252,7 @@ public:
                              const Expr *E, unsigned Count,
                              const LocationContext *LCtx,
                              InvalidatedSymbols &IS,
-                             const CallEvent *Call,
+                             const CallOrObjCMessage *Call,
                              InvalidatedRegions *Invalidated);
 
 public:   // Made public for helper classes.
@@ -790,7 +790,7 @@ StoreRef RegionStoreManager::invalidateRegions(Store store,
                                                const Expr *Ex, unsigned Count,
                                                const LocationContext *LCtx,
                                                InvalidatedSymbols &IS,
-                                               const CallEvent *Call,
+                                               const CallOrObjCMessage *Call,
                                               InvalidatedRegions *Invalidated) {
   invalidateRegionsWorker W(*this, StateMgr,
                             RegionStoreManager::GetRegionBindings(store),
@@ -1055,12 +1055,8 @@ SVal RegionStoreManager::getBinding(Store store, Loc L, QualType T) {
   if (RTy->isUnionType())
     return UnknownVal();
 
-  if (RTy->isArrayType()) {
-    if (RTy->isConstantArrayType())
-      return getBindingForArray(store, R);
-    else
-      return UnknownVal();
-  }
+  if (RTy->isArrayType())
+    return getBindingForArray(store, R);
 
   // FIXME: handle Vector types.
   if (RTy->isVectorType())
@@ -2097,19 +2093,8 @@ StoreRef RegionStoreManager::enterStackFrame(ProgramStateRef state,
                    svalBuilder.makeLoc(MRMgr.getVarRegion(*PI, calleeCtx)),
                    ArgVal);
     }
-
-    // For C++ method calls, also include the 'this' pointer.
-    if (const CXXMemberCallExpr *CME = dyn_cast<CXXMemberCallExpr>(CE)) {
-      loc::MemRegionVal This =
-        svalBuilder.getCXXThis(cast<CXXMethodDecl>(CME->getCalleeDecl()),
-                               calleeCtx);
-      SVal CalledObj = state->getSVal(CME->getImplicitObjectArgument(),
-                                      callerCtx);
-      store = Bind(store.getStore(), This, CalledObj);
-    }
-  }
-  else if (const CXXConstructExpr *CE =
-            dyn_cast<CXXConstructExpr>(calleeCtx->getCallSite())) {
+  } else if (const CXXConstructExpr *CE =
+               dyn_cast<CXXConstructExpr>(calleeCtx->getCallSite())) {
     CXXConstructExpr::const_arg_iterator AI = CE->arg_begin(),
       AE = CE->arg_end();
 
@@ -2120,10 +2105,8 @@ StoreRef RegionStoreManager::enterStackFrame(ProgramStateRef state,
                    svalBuilder.makeLoc(MRMgr.getVarRegion(*PI, calleeCtx)),
                    ArgVal);
     }
-  }
-  else {
+  } else
     assert(isa<CXXDestructorDecl>(calleeCtx->getDecl()));
-  }
 
   return store;
 }

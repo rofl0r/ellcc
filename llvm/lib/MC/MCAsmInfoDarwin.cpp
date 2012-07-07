@@ -59,5 +59,7 @@ MCAsmInfoDarwin::MCAsmInfoDarwin() {
   HasNoDeadStrip = true;
   HasSymbolResolver = true;
 
-  DwarfUsesRelocationsAcrossSections = false;
+  DwarfRequiresRelocationForSectionOffset = false;
+  DwarfUsesLabelOffsetForRanges = false;
+  DwarfUsesRelocationsForStringPool = false;
 }

@@ -194,11 +194,10 @@ CodeCompletionString::CodeCompletionString(const Chunk *Chunks,
                                            const char **Annotations,
                                            unsigned NumAnnotations,
                                            CXCursorKind ParentKind,
-                                           StringRef ParentName,
-                                           const char *BriefComment)
+                                           StringRef ParentName)
   : NumChunks(NumChunks), NumAnnotations(NumAnnotations),
     Priority(Priority), Availability(Availability), ParentKind(ParentKind),
-    ParentName(ParentName), BriefComment(BriefComment)
+    ParentName(ParentName)
 { 
   assert(NumChunks <= 0xffff);
   assert(NumAnnotations <= 0xffff);
@@ -339,7 +338,7 @@ CodeCompletionString *CodeCompletionBuilder::TakeString() {
     = new (Mem) CodeCompletionString(Chunks.data(), Chunks.size(),
                                      Priority, Availability,
                                      Annotations.data(), Annotations.size(),
-                                     ParentKind, ParentName, BriefComment);
+                                     ParentKind, ParentName);
   Chunks.clear();
   return Result;
 }
@@ -393,10 +392,6 @@ void CodeCompletionBuilder::addParentContext(DeclContext *DC) {
   
   ParentKind = getCursorKindForDecl(ND);
   ParentName = getCodeCompletionTUInfo().getParentName(DC);
-}
-
-void CodeCompletionBuilder::addBriefComment(StringRef Comment) {
-  BriefComment = Allocator.CopyString(Comment);
 }
 
 unsigned CodeCompletionResult::getPriorityFromDecl(NamedDecl *ND) {
@@ -479,11 +474,8 @@ PrintingCodeCompleteConsumer::ProcessCodeCompleteResults(Sema &SemaRef,
         OS << " (Hidden)";
       if (CodeCompletionString *CCS 
             = Results[I].CreateCodeCompletionString(SemaRef, getAllocator(),
-                                                    CCTUInfo,
-                                                    includeBriefComments())) {
+                                                    CCTUInfo)) {
         OS << " : " << CCS->getAsString();
-        if (const char *BriefComment = CCS->getBriefComment())
-          OS << " : " << BriefComment;
       }
         
       OS << '\n';
@@ -497,8 +489,7 @@ PrintingCodeCompleteConsumer::ProcessCodeCompleteResults(Sema &SemaRef,
       OS << Results[I].Macro->getName();
       if (CodeCompletionString *CCS 
             = Results[I].CreateCodeCompletionString(SemaRef, getAllocator(),
-                                                    CCTUInfo,
-                                                    includeBriefComments())) {
+                                                    CCTUInfo)) {
         OS << " : " << CCS->getAsString();
       }
       OS << '\n';

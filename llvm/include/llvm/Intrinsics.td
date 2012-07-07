@@ -412,9 +412,6 @@ def int_trap : Intrinsic<[], [], [IntrNoReturn]>,
 def int_debugtrap : Intrinsic<[]>,
                     GCCBuiltin<"__builtin_debugtrap">;
 
-// NOP: calls/invokes to this intrinsic are removed by codegen
-def int_donothing : Intrinsic<[], [], [IntrNoMem]>;
-
 // Intrisics to support half precision floating point format
 let Properties = [IntrNoMem] in {
 def int_convert_to_fp16   : Intrinsic<[llvm_i16_ty], [llvm_float_ty]>,
@@ -457,4 +454,3 @@ include "llvm/IntrinsicsCellSPU.td"
 include "llvm/IntrinsicsXCore.td"
 include "llvm/IntrinsicsHexagon.td"
 include "llvm/IntrinsicsNVVM.td"
-include "llvm/IntrinsicsMips.td"

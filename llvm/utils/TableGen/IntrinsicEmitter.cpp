@@ -11,62 +11,24 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CodeGenIntrinsics.h"
 #include "CodeGenTarget.h"
+#include "IntrinsicEmitter.h"
 #include "SequenceToOffsetTable.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/TableGen/Record.h"
 #include "llvm/TableGen/StringMatcher.h"
-#include "llvm/TableGen/TableGenBackend.h"
+#include "llvm/ADT/StringExtras.h"
 #include <algorithm>
 using namespace llvm;
-
-namespace {
-class IntrinsicEmitter {
-  RecordKeeper &Records;
-  bool TargetOnly;
-  std::string TargetPrefix;
-
-public:
-  IntrinsicEmitter(RecordKeeper &R, bool T)
-    : Records(R), TargetOnly(T) {}
-
-  void run(raw_ostream &OS);
-
-  void EmitPrefix(raw_ostream &OS);
-
-  void EmitEnumInfo(const std::vector<CodeGenIntrinsic> &Ints,
-                    raw_ostream &OS);
-
-  void EmitFnNameRecognizer(const std::vector<CodeGenIntrinsic> &Ints,
-                            raw_ostream &OS);
-  void EmitIntrinsicToNameTable(const std::vector<CodeGenIntrinsic> &Ints,
-                                raw_ostream &OS);
-  void EmitIntrinsicToOverloadTable(const std::vector<CodeGenIntrinsic> &Ints,
-                                    raw_ostream &OS);
-  void EmitVerifier(const std::vector<CodeGenIntrinsic> &Ints,
-                    raw_ostream &OS);
-  void EmitGenerator(const std::vector<CodeGenIntrinsic> &Ints,
-                     raw_ostream &OS);
-  void EmitAttributes(const std::vector<CodeGenIntrinsic> &Ints,
-                      raw_ostream &OS);
-  void EmitModRefBehavior(const std::vector<CodeGenIntrinsic> &Ints,
-                          raw_ostream &OS);
-  void EmitIntrinsicToGCCBuiltinMap(const std::vector<CodeGenIntrinsic> &Ints,
-                                    raw_ostream &OS);
-  void EmitSuffix(raw_ostream &OS);
-};
-} // End anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // IntrinsicEmitter Implementation
 //===----------------------------------------------------------------------===//
 
 void IntrinsicEmitter::run(raw_ostream &OS) {
-  emitSourceFileHeader("Intrinsic Function Source Fragment", OS);
-
+  EmitSourceFileHeader("Intrinsic Function Source Fragment", OS);
+  
   std::vector<CodeGenIntrinsic> Ints = LoadIntrinsics(Records, TargetOnly);
-
+  
   if (TargetOnly && !Ints.empty())
     TargetPrefix = Ints[0].TargetPrefix;
 
@@ -376,7 +338,7 @@ static void ComputeFixedEncoding(const CodeGenIntrinsic &Int,
     EncodeFixedType(Int.IS.ParamTypeDefs[i], ArgCodes, TypeSig);
 }
 
-static void printIITEntry(raw_ostream &OS, unsigned char X) {
+void printIITEntry(raw_ostream &OS, unsigned char X) {
   OS << (unsigned)X;
 }
 
@@ -462,47 +424,47 @@ void IntrinsicEmitter::EmitGenerator(const std::vector<CodeGenIntrinsic> &Ints,
   OS << "#endif\n\n";  // End of GET_INTRINSIC_GENERATOR_GLOBAL
 }
 
-enum ModRefKind {
-  MRK_none,
-  MRK_readonly,
-  MRK_readnone
-};
-
-static ModRefKind getModRefKind(const CodeGenIntrinsic &intrinsic) {
-  switch (intrinsic.ModRef) {
-  case CodeGenIntrinsic::NoMem:
-    return MRK_readnone;
-  case CodeGenIntrinsic::ReadArgMem:
-  case CodeGenIntrinsic::ReadMem:
-    return MRK_readonly;
-  case CodeGenIntrinsic::ReadWriteArgMem:
-  case CodeGenIntrinsic::ReadWriteMem:
-    return MRK_none;
-  }
-  llvm_unreachable("bad mod-ref kind");
-}
-
 namespace {
-struct AttributeComparator {
-  bool operator()(const CodeGenIntrinsic *L, const CodeGenIntrinsic *R) const {
-    // Sort throwing intrinsics after non-throwing intrinsics.
-    if (L->canThrow != R->canThrow)
-      return R->canThrow;
+  enum ModRefKind {
+    MRK_none,
+    MRK_readonly,
+    MRK_readnone
+  };
 
-    if (L->isNoReturn != R->isNoReturn)
-      return R->isNoReturn;
-
-    // Try to order by readonly/readnone attribute.
-    ModRefKind LK = getModRefKind(*L);
-    ModRefKind RK = getModRefKind(*R);
-    if (LK != RK) return (LK > RK);
-
-    // Order by argument attributes.
-    // This is reliable because each side is already sorted internally.
-    return (L->ArgumentAttributes < R->ArgumentAttributes);
+  ModRefKind getModRefKind(const CodeGenIntrinsic &intrinsic) {
+    switch (intrinsic.ModRef) {
+    case CodeGenIntrinsic::NoMem:
+      return MRK_readnone;
+    case CodeGenIntrinsic::ReadArgMem:
+    case CodeGenIntrinsic::ReadMem:
+      return MRK_readonly;
+    case CodeGenIntrinsic::ReadWriteArgMem:
+    case CodeGenIntrinsic::ReadWriteMem:
+      return MRK_none;
+    }
+    llvm_unreachable("bad mod-ref kind");
   }
-};
-} // End anonymous namespace
+
+  struct AttributeComparator {
+    bool operator()(const CodeGenIntrinsic *L, const CodeGenIntrinsic *R) const {
+      // Sort throwing intrinsics after non-throwing intrinsics.
+      if (L->canThrow != R->canThrow)
+        return R->canThrow;
+
+      if (L->isNoReturn != R->isNoReturn)
+        return R->isNoReturn;
+
+      // Try to order by readonly/readnone attribute.
+      ModRefKind LK = getModRefKind(*L);
+      ModRefKind RK = getModRefKind(*R);
+      if (LK != RK) return (LK > RK);
+
+      // Order by argument attributes.
+      // This is reliable because each side is already sorted internally.
+      return (L->ArgumentAttributes < R->ArgumentAttributes);
+    }
+  };
+}
 
 /// EmitAttributes - This emits the Intrinsic::getAttributes method.
 void IntrinsicEmitter::
@@ -743,11 +705,3 @@ EmitIntrinsicToGCCBuiltinMap(const std::vector<CodeGenIntrinsic> &Ints,
   OS << "}\n";
   OS << "#endif\n\n";
 }
-
-namespace llvm {
-
-void EmitIntrinsics(RecordKeeper &RK, raw_ostream &OS, bool TargetOnly = false) {
-  IntrinsicEmitter(RK, TargetOnly).run(OS);
-}
-
-} // End llvm namespace

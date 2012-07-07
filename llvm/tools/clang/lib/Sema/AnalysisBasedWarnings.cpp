@@ -189,12 +189,6 @@ static ControlFlowKind CheckFallThrough(AnalysisDeclContext &AC) {
         continue;
       }
     }
-    if (isa<MSAsmStmt>(S)) {
-      // TODO: Verify this is correct.
-      HasFakeEdge = true;
-      HasLiveReturn = true;
-      continue;
-    }
     if (isa<CXXTryStmt>(S)) {
       HasAbnormalEdge = true;
       continue;
@@ -821,14 +815,14 @@ namespace {
 }
 
 static void DiagnoseSwitchLabelsFallthrough(Sema &S, AnalysisDeclContext &AC,
-                                            bool PerFunction) {
+                                            bool PerMethod) {
   FallthroughMapper FM(S);
   FM.TraverseStmt(AC.getBody());
 
   if (!FM.foundSwitchStatements())
     return;
 
-  if (PerFunction && FM.getFallthroughStmts().empty())
+  if (PerMethod && FM.getFallthroughStmts().empty())
     return;
 
   CFG *Cfg = AC.getCFG();
@@ -849,8 +843,8 @@ static void DiagnoseSwitchLabelsFallthrough(Sema &S, AnalysisDeclContext &AC,
       continue;
 
     S.Diag(Label->getLocStart(),
-        PerFunction ? diag::warn_unannotated_fallthrough_per_function
-                    : diag::warn_unannotated_fallthrough);
+        PerMethod ? diag::warn_unannotated_fallthrough_per_method
+                  : diag::warn_unannotated_fallthrough);
 
     if (!AnnotatedCnt) {
       SourceLocation L = Label->getLocStart();
@@ -1060,9 +1054,6 @@ class ThreadSafetyReporter : public clang::thread_safety::ThreadSafetyHandler {
         break;
       case LEK_LockedAtEndOfFunction:
         DiagID = diag::warn_no_unlock;
-        break;
-      case LEK_NotLockedAtEndOfFunction:
-        DiagID = diag::warn_expecting_locked;
         break;
     }
     if (LocEndOfScope.isInvalid())
@@ -1342,10 +1333,10 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   bool FallThroughDiagFull =
       Diags.getDiagnosticLevel(diag::warn_unannotated_fallthrough,
                                D->getLocStart()) != DiagnosticsEngine::Ignored;
-  bool FallThroughDiagPerFunction =
-      Diags.getDiagnosticLevel(diag::warn_unannotated_fallthrough_per_function,
+  bool FallThroughDiagPerMethod =
+      Diags.getDiagnosticLevel(diag::warn_unannotated_fallthrough_per_method,
                                D->getLocStart()) != DiagnosticsEngine::Ignored;
-  if (FallThroughDiagFull || FallThroughDiagPerFunction) {
+  if (FallThroughDiagFull || FallThroughDiagPerMethod) {
     DiagnoseSwitchLabelsFallthrough(S, AC, !FallThroughDiagFull);
   }
 

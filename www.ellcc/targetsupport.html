@@ -1,301 +1,355 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
-  <head>
-    <meta content="text/html; charset=ISO-8859-1"
-      http-equiv="Content-Type">
-    <title>Setting Up Target Support</title>
-    <meta content="Richard Pennington" name="author">
-  </head>
-  <body>
-    <table style="text-align: left; width: 100%; height: 100%;"
-      border="0" cellpadding="0" cellspacing="0">
-      <tbody>
-        <tr align="center">
-          <th style="text-align: center; vertical-align: middle;
-            background-color: rgb(192, 192, 192); height: 135px;"
-            colspan="2" rowspan="1">
-            <table style="text-align: left; width: 100%;" border="0"
-              cellpadding="0" cellspacing="0">
-              <tbody>
-                <tr>
-                  <td style="height: 135px; width: 135px;"><img
-                      style="width: 135px; height: 135px;" alt="ELLCC"
-                      src="images/ellcc.png"></td>
-                  <td style="text-align: center;">
-                    <h1><a class="mozTocH1" name="mozTocId679816"></a>Setting
-Up
-                      Target Support</h1>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </th>
-        </tr>
-        <tr>
-          <td style="vertical-align: top; background-color: rgb(153,
-            255, 153); width: 135px;"><a href="index.html">Home</a><br>
-            <a href="blog/">Blog</a><br>
-            <a href="news.html">News</a><br>
-            <a href="demo/">Demo</a><br>
-            <a href="ellcc/libecc/share/doc">Documentation</a><br>
-            <a href="installation.html">Installation</a><br>
-            <a href="targetsupport.html">Target Support</a><br>
-            <a href="bugzilla">Bug Database</a><br>
-            <a href="http://ellcc.org/viewvc/svn/ellcc/">Source
-              Repository</a><br>
-            <a href="mailto:rich@pennware.com">Contact</a><br>
-          </td>
-          <td style="vertical-align: top;">
-            <ol id="mozToc">
-            </ol>
-            Setting up target support means building the appropriate
-            libraries to
-            support cross compilation
-            of programs using ELLCC. You should have completed the ELLCC
-            <a href="installation.html">Installation</a> steps before
-            you try to
-            setup target support as the <span style="font-family:
-              monospace;">ecc</span>
-            compiler is required at this point.<br>
-            <h2><a class="mozTocH2" name="mozTocId834743"></a>Building
-              the
-              Run Time Libraries</h2>
-            The ELLCC C run time library, <span style="font-family:
-              monospace;">libecc</span>,
-            is
-            based
-            on
-            source
-            code
-            from
-            several sources. The C standard library is
-            based on the NetBSD C library. Support for operations, such
-            as 64 bit
-            additions and floating point, that a target does not support
-            directly
-            are provided by <a href="http://compiler-rt.llvm.org/">the
-              LLVM
-              project's compiler-rt</a>.<br>
-            <br>
-            Now build the libraries:<br>
-            <br>
-            <div style="margin-left: 40px;"><code>[~/ellcc] main% cd
-                libecc</code><br>
-              <code>[~/ellcc/libecc/obj] main% make<br>
-              </code></div>
-            <br>
-            This will build and install libraries and include files for
-            all the supported processors
-            and operating systems. <br>
-            <h2>A Quick Sanity Check</h2>
-            I use the bzip2 program as an initial sanity check for all
-            the
-            processors. I've modified the Makefile to build bzip2 for
-            each
-            processor and run it under QEMU. If the make succeeds, you
-            are in
-            business.<br>
-            <br>
-            <div style="margin-left: 40px;"><span style="font-family:
-                monospace;">[~/ellcc/test] main% cd ..</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">[~/ellcc] main% cd
-                test/src/bzip2-1.0.6/</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">[~/ellcc/test/src/bzip2-1.0.6]
-                main%
-                make</span><br>
-              <span style="font-family: monospace;">...</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">[Several builds and
-                runs of
-                bzip2]</span><br>
-              <span style="font-family: monospace;">...</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">If you got this far
-                and the
-                'cmp's didn't complain, it looks</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">like you're in
-                business.&nbsp; </span><br style="font-family:
-                monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">To install in
-                /usr/local/bin, /usr/local/lib, /usr/local/man and </span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">/usr/local/include,
-                type</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">&nbsp;&nbsp; make
-                install</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">To install somewhere
-                else,
-                eg, /xxx/yyy/{bin,lib,man,include}, type </span><br
-                style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">&nbsp;&nbsp; make
-                install
-                PREFIX=/xxx/yyy</span><br style="font-family:
-                monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">If you are
-                (justifiably)
-                paranoid and want to see what 'make install'</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">is going to do, you
-                can
-                first do</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">&nbsp;&nbsp; make -n
+<head>
+  <meta content="text/html; charset=ISO-8859-1"
+ http-equiv="Content-Type">
+  <title>Setting Up Target Support</title>
+  <meta content="Richard Pennington" name="author">
+</head>
+<body>
+<table style="text-align: left; width: 100%; height: 100%;" border="0"
+ cellpadding="0" cellspacing="0">
+  <tbody>
+    <tr align="center">
+      <th
+ style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;"
+ colspan="2" rowspan="1">
+      <table style="text-align: left; width: 100%;" border="0"
+ cellpadding="0" cellspacing="0">
+        <tbody>
+          <tr>
+            <td style="height: 135px; width: 135px;"><img
+ style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
+            <td style="text-align: center;">
+            <h1><a class="mozTocH1" name="mozTocId679816"></a>Setting
+Up Target Support</h1>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      </th>
+    </tr>
+    <tr>
+      <td
+ style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a
+ href="index.html">Home</a><br>
+      <a href="blog/">Blog</a><br>
+      <a href="news.html">News</a><br>
+      <a href="demo/">Demo</a><br>
+      <a href="ellcc/libecc/share/doc">Documentation</a><br>
+      <a href="installation.html">Installation</a><br>
+      <a href="targetsupport.html">Target Support</a><br>
+      <a href="bugzilla">Bug Database</a><br>
+      <a href="http://ellcc.org/viewvc/svn/ellcc/">Source Repository</a><br>
+      <a href="mailto:rich@pennware.com">Contact</a><br>
+      </td>
+      <td style="vertical-align: top;">
+      <ol id="mozToc">
+      </ol>
+Setting up target support means building the appropriate libraries to
+support cross compilation
+of programs using ELLCC. You should have completed the ELLCC <a
+ href="installation.html">Installation</a> steps before you try to
+setup target support as the <span style="font-family: monospace;">ecc</span>
+compiler is required at this point.<br>
+      <h2><a class="mozTocH2" name="mozTocId834743"></a>Building the
+Run Time Libraries</h2>
+The ELLCC C run time library, <span style="font-family: monospace;">libecc</span>,
+is
+based
+on
+source
+code
+from
+several sources. The C standard library is
+based on the NetBSD C library. Support for operations, such as 64 bit
+additions and floating point, that a target does not support directly
+are provided by <a href="http://compiler-rt.llvm.org/">the LLVM
+project's compiler-rt</a>.<br>
+      <br>
+Now build the libraries:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ellcc] main% cd
+libecc/obj</code><br>
+      <code>[~/ellcc/libecc/obj] main% make install<br>
+      </code></div>
+      <br>
+This will build and install libraries for all the supported processors
+and operating systems. The bin directory should look something like
+this:<br>
+      <br>
+      <div style="margin-left: 40px;"><span
+ style="font-family: monospace;">[~/ellcc] main% ls bin<br>
+arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-ga*<br>
+arm-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-readelf*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-stub*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-i386*<br>
+arm-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-tblgen*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-img*<br>
+arm-netbsd-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+macho-dump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-io*<br>
+armv7-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+microblaze-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-microblaze*<br>
+armv7-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp;
+i386-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+microblaze-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp; qemu-mips*<br>
+armv7-netbsd-ecc@&nbsp;&nbsp;&nbsp;
+i386-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp; microblaze-linux-ecc@&nbsp;&nbsp;
+qemu-mipsel*<br>
+armv7sf-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp; i386-linux-ecc@&nbsp;&nbsp;
+microblaze-netbsd-ecc@&nbsp; qemu-nbd*<br>
+armv7sf-linux-ecc@&nbsp;&nbsp; i386-netbsd-ecc@&nbsp;
+mips32r2-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-ppc*<br>
+armv7sf-netbsd-ecc@&nbsp;
+llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp; qemu-ppc64*<br>
+bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2-netbsd-ecc@&nbsp;&nbsp;&nbsp; qemu-ppc64abi32*<br>
+c-index-test*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2sf-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp; qemu-sparc*<br>
+clang-tblgen*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2sf-linux-ecc@&nbsp;&nbsp; qemu-system-arm*<br>
+ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-bcanalyzer*&nbsp; mips32r2sf-netbsd-ecc@&nbsp;
+qemu-system-microblaze*<br>
+ecc++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvmc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-mips*<br>
+ecc-addr2line*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-mipsel*<br>
+ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-config-2*&nbsp;&nbsp;&nbsp;
+mips-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-ppc*<br>
+ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-cov*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips-netbsd-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-ppc64*<br>
+ecc-c++filt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-diff*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-sparc*<br>
+ecc-elfedit*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc64-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-x86_64*<br>
+ecc-embedspu*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-dwarfdump*&nbsp;&nbsp;
+ppc64-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-x86_64*<br>
+ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp;
+ppc64-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sparc-elf-as*<br>
+ecc-gdbserver*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc64-netbsd-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sparc-elf-ecc@<br>
+ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+sparc-linux-ecc@<br>
+ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-mc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc-elf-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+tblgen*<br>
+ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc-linux-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86_64-elf-as*<br>
+ecc-ld.bfd*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-objdump*&nbsp;&nbsp;&nbsp;&nbsp;
+ppc-netbsd-ecc@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86_64-elf-ecc@<br>
+ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86_64-linux-ecc@<br>
+ecc-objcopy*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-arm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+x86_64-netbsd-ecc@<br>
+ecc-objdump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-rtdyld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-armeb*<br>
+      </span><br>
+      </div>
+      <br>
+Symbolic links have been added to <span style="font-family: monospace;">ecc</span>
+for every processor/operating system for which libraries have been
+successfully built. You can use the appropriate symbolic link to run
+the compiler and the appropriate include files and libraries will be
+used to build your programs.<br>
+      <h2>A Quick Sanity Check</h2>
+I use the bzip2 program as an initial sanity check for all the
+processors. I've modified the Makefile to build bzip2 for each
+processor and run it under QEMU. If the make succeeds, you are in
+business.<br>
+      <br>
+      <div style="margin-left: 40px;"><span
+ style="font-family: monospace;">[~/ellcc/test] main% cd ..</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">[~/ellcc] main% cd
+test/src/bzip2-1.0.6/</span><br style="font-family: monospace;">
+      <span style="font-family: monospace;">[~/ellcc/test/src/bzip2-1.0.6]
+main%
+make</span><br>
+      <span style="font-family: monospace;">...</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">[Several builds and runs of
+bzip2]</span><br>
+      <span style="font-family: monospace;">...</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">If you got this far and the
+'cmp's didn't complain, it looks</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">like you're in
+business.&nbsp; </span><br style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">To install in
+/usr/local/bin, /usr/local/lib, /usr/local/man and </span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">/usr/local/include, type</span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">&nbsp;&nbsp; make install</span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">To install somewhere else,
+eg, /xxx/yyy/{bin,lib,man,include}, type </span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">&nbsp;&nbsp; make install
+PREFIX=/xxx/yyy</span><br style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">If you are (justifiably)
+paranoid and want to see what 'make install'</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">is going to do, you can
+first do</span><br style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">&nbsp;&nbsp; make -n
 install&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                or</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">&nbsp;&nbsp; make -n
-                install PREFIX=/xxx/yyy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                respectively.</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">The -n instructs
-                make to
-                show the commands it would execute, but</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">not actually execute
-                them.</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">Instructions for use
-                are in
-                the preformatted manual page, in the file</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">bzip2.txt.&nbsp; For
-                more
-                detailed documentation, read the full manual.&nbsp; </span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">It is available in
-                Postscript form (manual.ps), PDF form (manual.pdf),</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">and HTML form
-                (manual.html).</span><br style="font-family: monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">You can also do
-                "bzip2
-                --help" to see some helpful information. </span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">"bzip2 -L" displays
-                the
-                software license.</span><br style="font-family:
-                monospace;">
-              <br style="font-family: monospace;">
-              <span style="font-family: monospace;">make[1]: Leaving
-                directory
-                `/home/rich/ellcc/test/src/bzip2-1.0.6'</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">[~/ellcc/test/src/bzip2-1.0.6]
-                main%</span><br>
-            </div>
-            <h2><a name="A_More_Complete_Sanity_Check"></a>A More
-              Complete
-              Sanity Check</h2>
-            I've started to add unit and regression testing to ELLCC.
-            The tests
-            compile and run various programs for all the ELLCC targets
-            as well as
-            two sanity checks. For the first sanity check, libecc and
-            the test
-            programs are built by gcc rather than ecc and the entire
-            test suite is
-            run on the gcc compiled versions. The second sanity check
-            involves
-            running the test suite compiled by gcc but using the normal
-            host
-            libraries.<br>
-            <br>
-            You can run the regression tests by going into the tests/obj
-            directory:<br>
-            <br>
-            <div style="margin-left: 40px;"><code>[~/ellcc] main% cd
-                test/obj<br>
-                [~/ellcc/test/obj] main% ls<br>
-                arm/&nbsp;&nbsp;&nbsp; host/&nbsp;
-                Makefile&nbsp;&nbsp;&nbsp;&nbsp; mips/&nbsp;&nbsp;&nbsp;
-                nios2/&nbsp; ppc64/&nbsp; x86_64/<br>
-                armeb/&nbsp; i386/&nbsp; microblaze/&nbsp; mipsel/&nbsp;
-                ppc/&nbsp;&nbsp;&nbsp; sparc/&nbsp; x86_64.cov/<br>
-                <br>
-              </code></div>
-            The various directories target the specific targets. The
-            gcc/libecc
-            tests are built under the gcc direcory and the gcc/hostlib
-            tests are
-            built under the host directory. Executables in these
-            directories are
-            run natively on the build system. The rest of the
-            directories are used
-            to build the target specific binaries that are run using the
-            target
-            specific qemu emulator.<br>
-            <br>
-            To run the tests, simply type:<br>
-            <br>
-            <div style="margin-left: 40px;"><code>[~/ellcc/test/obj]
-                main%
-                make check</code><br>
-            </div>
-            <br>
-            You'll get a lot of output but if the compilation and
-            execution of each
-            test works, the entire test run should complete without
-            error.<br>
-            <br>
-            <div style="margin-left: 40px;"><code>...<br>
-                PASS: 001wctype.c:432: Wchar(Ctype): Group XDIGIT IS
-                xdigit<br>
-                PASS: 001wctype.c:436: Wchar(Ctype): wctype(nonsense
-                type) == 0<br>
-                PASS: 001wctype.c:439: Wchar(Ctype): Map from UC to LC
-                towlower<br>
-                PASS: 001wctype.c:440: Wchar(Ctype): Map from ALLUC to
-                ALLLC towlower<br>
-                PASS: 001wctype.c:442: Wchar(Ctype): Map from LC to UC
-                towupper<br>
-                PASS: 001wctype.c:443: Wchar(Ctype): Map from ALLLC to
-                ALLUC towupper<br>
-                PASS: 001wctype.c:448: Wchar(Ctype): Map from UC to LC
-                tolower<br>
-                PASS: 001wctype.c:449: Wchar(Ctype): Map from ALLUC to
-                ALLLC tolower<br>
-                PASS: 001wctype.c:450: Wchar(Ctype): Map from LC to UC
-                toupper<br>
-                PASS: 001wctype.c:451: Wchar(Ctype): Map from ALLLC to
-                ALLUC toupper<br>
-                PASS: 001wctype.c:454: Wchar(Ctype): wctrans(nonsense
-                trans) == 0<br>
-                PASS: 001wctype.c:455: Wchar(Ctype): wctrans(tolower) !=
-                0<br>
-                Wchar unit tests completed<br>
-                &nbsp;&nbsp;&nbsp; 457 tests run<br>
-                &nbsp;&nbsp;&nbsp; 0 tests failed<br>
-                make[4]: Leaving directory
-                `/home/rich/ellcc/test/obj/x86_64/linux/libs/wchar'<br>
-                make[3]: Leaving directory
-                `/home/rich/ellcc/test/obj/x86_64/linux/libs'<br>
-                make[2]: Leaving directory
-                `/home/rich/ellcc/test/obj/x86_64/linux'<br>
-                make[1]: Leaving directory
-                `/home/rich/ellcc/test/obj/x86_64'<br>
-                [~/ellcc/test/obj] main%<br>
-              </code></div>
-            <span style="font-family: monospace;"></span><br>
-            The sources for the various tests are under the test/src
-            directory.<br>
-            <br>
-            Good luck!<br>
-            <span style="font-family: monospace;"></span> <span
-              style="font-family: monospace;"><br>
-            </span> <code></code><code></code><span style="font-weight:
-              bold;"></span><span style="font-weight: bold;"></span><span
-              style="font-weight: bold;"></span></td>
-        </tr>
-      </tbody>
-    </table>
-    <br>
-  </body>
+or</span><br style="font-family: monospace;">
+      <span style="font-family: monospace;">&nbsp;&nbsp; make -n
+install PREFIX=/xxx/yyy&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; respectively.</span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">The -n instructs make to
+show the commands it would execute, but</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">not actually execute them.</span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">Instructions for use are in
+the preformatted manual page, in the file</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">bzip2.txt.&nbsp; For more
+detailed documentation, read the full manual.&nbsp; </span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">It is available in
+Postscript form (manual.ps), PDF form (manual.pdf),</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">and HTML form (manual.html).</span><br
+ style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">You can also do "bzip2
+--help" to see some helpful information. </span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">"bzip2 -L" displays the
+software license.</span><br style="font-family: monospace;">
+      <br style="font-family: monospace;">
+      <span style="font-family: monospace;">make[1]: Leaving directory
+`/home/rich/ellcc/test/src/bzip2-1.0.6'</span><br
+ style="font-family: monospace;">
+      <span style="font-family: monospace;">[~/ellcc/test/src/bzip2-1.0.6]
+main%</span><br>
+      </div>
+      <h2><a name="A_More_Complete_Sanity_Check"></a>A More Complete
+Sanity Check</h2>
+I've started to add unit and regression testing to ELLCC. The tests
+compile and run various programs for all the ELLCC targets as well as
+two sanity checks. For the first sanity check, libecc and the test
+programs are built by gcc rather than ecc and the entire test suite is
+run on the gcc compiled versions. The second sanity check involves
+running the test suite compiled by gcc but using the normal host
+libraries.<br>
+      <br>
+You can run the regression tests by going into the tests/obj directory:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ellcc] main% cd test/obj<br>
+[~/ellcc/test/obj] main% ls<br>
+arm/&nbsp;&nbsp;&nbsp; armv7sf/&nbsp; host/&nbsp;
+Makefile&nbsp;&nbsp;&nbsp;&nbsp; mips/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+mips32r2elsf/&nbsp; mipsel/&nbsp; pic32/&nbsp; ppc64/&nbsp; x86_64/<br>
+armv7/&nbsp; gcc/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; i386/&nbsp;
+microblaze/&nbsp; mips32r2/&nbsp; mips32r2sf/&nbsp;&nbsp;&nbsp;
+nios2/&nbsp;&nbsp; ppc/&nbsp;&nbsp;&nbsp; sparc/&nbsp; x86_64.cov/<br>
+      <br>
+      </code></div>
+The various directories target the specific targets. The gcc/libecc
+tests are built under the gcc direcory and the gcc/hostlib tests are
+built under the host directory. Executables in these directories are
+run natively on the build system. The rest of the directories are used
+to build the target specific binaries that are run using the target
+specific qemu emulator.<br>
+      <br>
+To run the tests, simply type:<br>
+      <br>
+      <div style="margin-left: 40px;"><code>[~/ellcc/test/obj] main%
+make check</code><br>
+      </div>
+      <br>
+You'll get a lot of output but if the compilation and execution of each
+test works, the entire test run should complete without error.<br>
+      <br>
+      <div style="margin-left: 40px;"><code>...<br>
+PASS: 001wctype.c:432: Wchar(Ctype): Group XDIGIT IS xdigit<br>
+PASS: 001wctype.c:436: Wchar(Ctype): wctype(nonsense type) == 0<br>
+PASS: 001wctype.c:439: Wchar(Ctype): Map from UC to LC towlower<br>
+PASS: 001wctype.c:440: Wchar(Ctype): Map from ALLUC to ALLLC towlower<br>
+PASS: 001wctype.c:442: Wchar(Ctype): Map from LC to UC towupper<br>
+PASS: 001wctype.c:443: Wchar(Ctype): Map from ALLLC to ALLUC towupper<br>
+PASS: 001wctype.c:448: Wchar(Ctype): Map from UC to LC tolower<br>
+PASS: 001wctype.c:449: Wchar(Ctype): Map from ALLUC to ALLLC tolower<br>
+PASS: 001wctype.c:450: Wchar(Ctype): Map from LC to UC toupper<br>
+PASS: 001wctype.c:451: Wchar(Ctype): Map from ALLLC to ALLUC toupper<br>
+PASS: 001wctype.c:454: Wchar(Ctype): wctrans(nonsense trans) == 0<br>
+PASS: 001wctype.c:455: Wchar(Ctype): wctrans(tolower) != 0<br>
+Wchar unit tests completed<br>
+&nbsp;&nbsp;&nbsp; 457 tests run<br>
+&nbsp;&nbsp;&nbsp; 0 tests failed<br>
+make[4]: Leaving directory
+`/home/rich/ellcc/test/obj/x86_64/linux/libs/wchar'<br>
+make[3]: Leaving directory `/home/rich/ellcc/test/obj/x86_64/linux/libs'<br>
+make[2]: Leaving directory `/home/rich/ellcc/test/obj/x86_64/linux'<br>
+make[1]: Leaving directory `/home/rich/ellcc/test/obj/x86_64'<br>
+[~/ellcc/test/obj] main%<br>
+      </code></div>
+      <span style="font-family: monospace;"></span><br>
+The sources for the various tests are under the test/src directory.<br>
+      <br>
+Good luck!<br>
+      <span style="font-family: monospace;"></span> <span
+ style="font-family: monospace;"><br>
+      </span> <code></code><code></code><span
+ style="font-weight: bold;"></span><span style="font-weight: bold;"></span><span
+ style="font-weight: bold;"></span></td>
+    </tr>
+  </tbody>
+</table>
+<br>
+</body>
 </html>

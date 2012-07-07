@@ -23,5 +23,4 @@ MBlazeMCAsmInfo::MBlazeMCAsmInfo() {
   AlignmentIsInBytes          = false;
   PrivateGlobalPrefix         = "$";
   GPRel32Directive            = "\t.gpword\t";
-  WeakRefDirective            = "\t.weak\t";
 }

@@ -42,7 +42,7 @@ public:
 
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printPredicateOperand(const MCInst *MI, unsigned OpNo,
-                             raw_ostream &O, const char *Modifier = 0);
+                             raw_ostream &O, const char *Modifier);
 
 
   void printS5ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);

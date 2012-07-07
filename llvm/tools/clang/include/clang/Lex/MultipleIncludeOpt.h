@@ -6,9 +6,8 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the MultipleIncludeOpt interface.
+//
+//  This file defines the MultipleIncludeOpt interface.
 //
 //===----------------------------------------------------------------------===//
 
@@ -18,18 +17,17 @@
 namespace clang {
 class IdentifierInfo;
 
-/// \brief Implements the simple state machine that the Lexer class uses to
-/// detect files subject to the 'multiple-include' optimization.
-///
-/// The public methods in this class are triggered by various
+/// MultipleIncludeOpt - This class implements the simple state machine that the
+/// Lexer class uses to detect files subject to the 'multiple-include'
+/// optimization.  The public methods in this class are triggered by various
 /// events that occur when a file is lexed, and after the entire file is lexed,
 /// information about which macro (if any) controls the header is returned.
 class MultipleIncludeOpt {
   /// ReadAnyTokens - This is set to false when a file is first opened and true
   /// any time a token is returned to the client or a (non-multiple-include)
-  /// directive is parsed.  When the final \#endif is parsed this is reset back
-  /// to false, that way any tokens before the first \#ifdef or after the last
-  /// \#endif can be easily detected.
+  /// directive is parsed.  When the final #endif is parsed this is reset back
+  /// to false, that way any tokens before the first #ifdef or after the last
+  /// #endif can be easily detected.
   bool ReadAnyTokens;
 
   /// ReadAnyTokens - This is set to false when a file is first opened and true
@@ -58,7 +56,7 @@ public:
     TheMacro = 0;
   }
 
-  /// getHasReadAnyTokensVal - This is used for the \#ifndef hande-shake at the
+  /// getHasReadAnyTokensVal - This is used for the #ifndef hande-shake at the
   /// top of the file when reading preprocessor directives.  Otherwise, reading
   /// the "ifndef x" would count as reading tokens.
   bool getHasReadAnyTokensVal() const { return ReadAnyTokens; }
@@ -70,13 +68,14 @@ public:
   /// buffer, this method is called to disable the MIOpt if needed.
   void ExpandedMacro() { DidMacroExpansion = true; }
 
-  /// \brief Called when entering a top-level \#ifndef directive (or the
-  /// "\#if !defined" equivalent) without any preceding tokens.
+  /// EnterTopLevelIFNDEF - When entering a top-level #ifndef directive (or the
+  /// "#if !defined" equivalent) without any preceding tokens, this method is
+  /// called.
   ///
   /// Note, we don't care about the input value of 'ReadAnyTokens'.  The caller
   /// ensures that this is only called if there are no tokens read before the
-  /// \#ifndef.  The caller is required to do this, because reading the \#if
-  /// line obviously reads in in tokens.
+  /// #ifndef.  The caller is required to do this, because reading the #if line
+  /// obviously reads in in tokens.
   void EnterTopLevelIFNDEF(const IdentifierInfo *M) {
     // If the macro is already set, this is after the top-level #endif.
     if (TheMacro)
@@ -94,14 +93,16 @@ public:
     TheMacro = M;
   }
 
-  /// \brief Invoked when a top level conditional (except \#ifndef) is found.
+  /// EnterTopLevelConditional - This is invoked when a top level conditional
+  /// (except #ifndef) is found.
   void EnterTopLevelConditional() {
-    // If a conditional directive (except #ifndef) is found at the top level,
-    // there is a chunk of the file not guarded by the controlling macro.
+    /// If a conditional directive (except #ifndef) is found at the top level,
+    /// there is a chunk of the file not guarded by the controlling macro.
     Invalidate();
   }
 
-  /// \brief Called when the lexer exits the top-level conditional.
+  /// ExitTopLevelConditional - This method is called when the lexer exits the
+  /// top-level conditional.
   void ExitTopLevelConditional() {
     // If we have a macro, that means the top of the file was ok.  Set our state
     // back to "not having read any tokens" so we can detect anything after the
@@ -113,8 +114,8 @@ public:
     ReadAnyTokens = false;
   }
 
-  /// \brief Once the entire file has been lexed, if there is a controlling
-  /// macro, return it.
+  /// GetControllingMacroAtEndOfFile - Once the entire file has been lexed, if
+  /// there is a controlling macro, return it.
   const IdentifierInfo *GetControllingMacroAtEndOfFile() const {
     // If we haven't read any tokens after the #endif, return the controlling
     // macro if it's valid (if it isn't, it will be null).

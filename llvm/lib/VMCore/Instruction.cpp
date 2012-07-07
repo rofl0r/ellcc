@@ -240,38 +240,27 @@ bool Instruction::isIdenticalToWhenDefined(const Instruction *I) const {
 // isSameOperationAs
 // This should be kept in sync with isEquivalentOperation in
 // lib/Transforms/IPO/MergeFunctions.cpp.
-bool Instruction::isSameOperationAs(const Instruction *I,
-                                    unsigned flags) const {
-  bool IgnoreAlignment = flags & CompareIgnoringAlignment;
-  bool UseScalarTypes  = flags & CompareUsingScalarTypes;
-
+bool Instruction::isSameOperationAs(const Instruction *I) const {
   if (getOpcode() != I->getOpcode() ||
       getNumOperands() != I->getNumOperands() ||
-      (UseScalarTypes ?
-       getType()->getScalarType() != I->getType()->getScalarType() :
-       getType() != I->getType()))
+      getType() != I->getType())
     return false;
 
   // We have two instructions of identical opcode and #operands.  Check to see
   // if all operands are the same type
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
-    if (UseScalarTypes ?
-        getOperand(i)->getType()->getScalarType() !=
-          I->getOperand(i)->getType()->getScalarType() :
-        getOperand(i)->getType() != I->getOperand(i)->getType())
+    if (getOperand(i)->getType() != I->getOperand(i)->getType())
       return false;
 
   // Check special state that is a part of some instructions.
   if (const LoadInst *LI = dyn_cast<LoadInst>(this))
     return LI->isVolatile() == cast<LoadInst>(I)->isVolatile() &&
-           (LI->getAlignment() == cast<LoadInst>(I)->getAlignment() ||
-            IgnoreAlignment) &&
+           LI->getAlignment() == cast<LoadInst>(I)->getAlignment() &&
            LI->getOrdering() == cast<LoadInst>(I)->getOrdering() &&
            LI->getSynchScope() == cast<LoadInst>(I)->getSynchScope();
   if (const StoreInst *SI = dyn_cast<StoreInst>(this))
     return SI->isVolatile() == cast<StoreInst>(I)->isVolatile() &&
-           (SI->getAlignment() == cast<StoreInst>(I)->getAlignment() ||
-            IgnoreAlignment) &&
+           SI->getAlignment() == cast<StoreInst>(I)->getAlignment() &&
            SI->getOrdering() == cast<StoreInst>(I)->getOrdering() &&
            SI->getSynchScope() == cast<StoreInst>(I)->getSynchScope();
   if (const CmpInst *CI = dyn_cast<CmpInst>(this))
@@ -404,29 +393,6 @@ bool Instruction::isCommutative(unsigned op) {
   default:
     return false;
   }
-}
-
-/// isIdempotent - Return true if the instruction is idempotent:
-///
-///   Idempotent operators satisfy:  x op x === x
-///
-/// In LLVM, the And and Or operators are idempotent.
-///
-bool Instruction::isIdempotent(unsigned Opcode) {
-  return Opcode == And || Opcode == Or;
-}
-
-/// isNilpotent - Return true if the instruction is nilpotent:
-///
-///   Nilpotent operators satisfy:  x op x === Id,
-///
-///   where Id is the identity for the operator, i.e. a constant such that
-///     x op Id === x and Id op x === x for all x.
-///
-/// In LLVM, the Xor operator is nilpotent.
-///
-bool Instruction::isNilpotent(unsigned Opcode) {
-  return Opcode == Xor;
 }
 
 Instruction *Instruction::clone() const {

@@ -22,8 +22,8 @@
 #include "PPCSubtarget.h"
 #include "InstPrinter/PPCInstPrinter.h"
 #include "MCTargetDesc/PPCPredicates.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Constants.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
 #include "llvm/Assembly/Writer.h"
@@ -248,9 +248,7 @@ bool PPCAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
 
     switch (ExtraCode[0]) {
-    default:
-      // See if this is a generic print operand
-      return AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, O);
+    default: return true;  // Unknown modifier.
     case 'c': // Don't print "$" before a global var name or constant.
       break; // PPC never has a prefix.
     case 'L': // Write second word of DImode reference.
@@ -453,13 +451,11 @@ void PPCDarwinAsmPrinter::EmitStartOfAsmFile(Module &M) {
     "ppc750",
     "ppc970",
     "ppcA2",
-    "power6",
-    "power7",
     "ppc64"
   };
 
   unsigned Directive = Subtarget.getDarwinDirective();
-  if (Subtarget.hasMFOCRF() && Directive < PPC::DIR_970)
+  if (Subtarget.isGigaProcessor() && Directive < PPC::DIR_970)
     Directive = PPC::DIR_970;
   if (Subtarget.hasAltivec() && Directive < PPC::DIR_7400)
     Directive = PPC::DIR_7400;

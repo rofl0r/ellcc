@@ -1,9 +1,8 @@
-CXXFLAGS += -std=c++11 -D_XOPEN_SOURCE=700
+CXXFLAGS += -std=c++11
 VPATH := $(VPATH):$(SRCPATH)/c++/libcxx/src
-SRCS += algorithm.cpp bind.cpp chrono.cpp condition_variable.cpp debug.cpp \
-        exception.cpp future.cpp hash.cpp ios.cpp iostream.cpp locale.cpp \
-        memory.cpp mutex.cpp new.cpp random.cpp regex.cpp stdexcept.cpp \
-        string.cpp strstream.cpp system_error.cpp thread.cpp typeinfo.cpp \
-        utility.cpp valarray.cpp
+SRCS += bind.cpp exception.cpp memory.cpp new.cpp stdexcept.cpp string.cpp \
+        typeinfo.cpp utility.cpp
 
-#       algorithm.cpp ios.cpp iostream.cpp locale.cpp random.cpp strstream.cpp
+#       algorithm.cpp condition_variable.cpp chrono.cpp debug.cpp future.cpp hash.cpp ios.cpp \
+        iostream.cpp locale.cpp mutex.cpp random.cpp regex.cpp strstream.cpp thread.cpp \
+        valarray.cpp system_error.cpp 

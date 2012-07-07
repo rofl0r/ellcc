@@ -1,3 +1,11 @@
+set(LLVM_USED_LIBS
+  clangAST
+  clangAnalysis
+  clangBasic
+  clangEdit
+  clangLex
+  )
+
 add_clang_library(clangSema
   AnalysisBasedWarnings.cpp
   AttributeList.cpp
@@ -42,22 +50,9 @@ add_clang_library(clangSema
   TargetAttributesSema.cpp
   )
 
-add_dependencies(clangSema
-  ClangARMNeon
-  ClangAttrClasses
-  ClangAttrList
-  ClangDiagnosticSema
-  ClangDeclNodes
-  ClangStmtNodes
-  ClangAttrTemplateInstantiate
-  ClangAttrParsedAttrList
-  ClangAttrParsedAttrKinds
-  )
+add_dependencies(clangSema ClangARMNeon ClangAttrClasses ClangAttrList 
+                 ClangDiagnosticSema ClangDeclNodes ClangStmtNodes 
+                 ClangAttrTemplateInstantiate ClangAttrParsedAttrList 
+				 ClangAttrParsedAttrKinds)
 
-target_link_libraries(clangSema
-  clangAST
-  clangAnalysis
-  clangBasic
-  clangEdit
-  clangLex
-  )
+

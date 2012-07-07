@@ -15,7 +15,6 @@
 
 #include "clang/AST/Type.h"
 #include "clang/AST/CanonicalType.h"
-#include "clang/Sema/CodeCompleteOptions.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
@@ -238,7 +237,7 @@ public:
     /// This context usually implies that no completions should be added,
     /// unless they come from an appropriate natural-language dictionary.
     CCC_NaturalLanguage,
-    /// \brief Code completion for a selector, as in an \@selector expression.
+    /// \brief Code completion for a selector, as in an @selector expression.
     CCC_SelectorName,
     /// \brief Code completion within a type-qualifier list.
     CCC_TypeQualifiers,
@@ -380,7 +379,7 @@ public:
     CK_Equal,
     /// \brief Horizontal whitespace (' ').
     CK_HorizontalSpace,
-    /// \brief Vertical whitespace ('\\n' or '\\r\\n', depending on the
+    /// \brief Verticle whitespace ('\n' or '\r\n', depending on the
     /// platform).
     CK_VerticalSpace
   };
@@ -445,10 +444,6 @@ private:
   
   /// \brief The name of the parent context.
   StringRef ParentName;
-
-  /// \brief A brief documentation comment attached to the declaration of
-  /// entity being completed by this result.
-  const char *BriefComment;
   
   CodeCompletionString(const CodeCompletionString &); // DO NOT IMPLEMENT
   CodeCompletionString &operator=(const CodeCompletionString &); // DITTO
@@ -456,8 +451,7 @@ private:
   CodeCompletionString(const Chunk *Chunks, unsigned NumChunks,
                        unsigned Priority, CXAvailabilityKind Availability,
                        const char **Annotations, unsigned NumAnnotations,
-                       CXCursorKind ParentKind, StringRef ParentName,
-                       const char *BriefComment);
+                       CXCursorKind ParentKind, StringRef ParentName);
   ~CodeCompletionString() { }
 
   friend class CodeCompletionBuilder;
@@ -498,10 +492,6 @@ public:
   /// \brief Retrieve the name of the parent context.
   StringRef getParentContextName() const {
     return ParentName;
-  }
-
-  const char *getBriefComment() const {
-    return BriefComment;
   }
   
   /// \brief Retrieve a string representation of the code completion string,
@@ -579,7 +569,6 @@ private:
   CXAvailabilityKind Availability;
   CXCursorKind ParentKind;
   StringRef ParentName;
-  const char *BriefComment;
   
   /// \brief The chunks stored in this string.
   SmallVector<Chunk, 4> Chunks;
@@ -591,14 +580,14 @@ public:
                         CodeCompletionTUInfo &CCTUInfo)
     : Allocator(Allocator), CCTUInfo(CCTUInfo),
       Priority(0), Availability(CXAvailability_Available),
-      ParentKind(CXCursor_NotImplemented), BriefComment(NULL) { }
+      ParentKind(CXCursor_NotImplemented) { }
 
   CodeCompletionBuilder(CodeCompletionAllocator &Allocator,
                         CodeCompletionTUInfo &CCTUInfo,
                         unsigned Priority, CXAvailabilityKind Availability)
     : Allocator(Allocator), CCTUInfo(CCTUInfo),
       Priority(Priority), Availability(Availability),
-      ParentKind(CXCursor_NotImplemented), BriefComment(NULL) { }
+      ParentKind(CXCursor_NotImplemented) { }
 
   /// \brief Retrieve the allocator into which the code completion
   /// strings should be allocated.
@@ -639,8 +628,6 @@ public:
 
   /// \brief Add the parent context information to this code completion.
   void addParentContext(DeclContext *DC);
-
-  void addBriefComment(StringRef Comment);
   
   CXCursorKind getParentKind() const { return ParentKind; }
   StringRef getParentName() const { return ParentName; }
@@ -793,13 +780,11 @@ public:
   /// string itself.
   CodeCompletionString *CreateCodeCompletionString(Sema &S,
                                            CodeCompletionAllocator &Allocator,
-                                           CodeCompletionTUInfo &CCTUInfo,
-                                           bool IncludeBriefComments);
+                                           CodeCompletionTUInfo &CCTUInfo);
   CodeCompletionString *CreateCodeCompletionString(ASTContext &Ctx,
                                                    Preprocessor &PP,
                                            CodeCompletionAllocator &Allocator,
-                                           CodeCompletionTUInfo &CCTUInfo,
-                                           bool IncludeBriefComments);
+                                           CodeCompletionTUInfo &CCTUInfo);
 
   /// \brief Determine a base priority for the given declaration.
   static unsigned getPriorityFromDecl(NamedDecl *ND);
@@ -833,7 +818,16 @@ raw_ostream &operator<<(raw_ostream &OS,
 /// information.
 class CodeCompleteConsumer {
 protected:
-  const CodeCompleteOptions CodeCompleteOpts;
+  /// \brief Whether to include macros in the code-completion results.
+  bool IncludeMacros;
+
+  /// \brief Whether to include code patterns (such as for loops) within
+  /// the completion results.
+  bool IncludeCodePatterns;
+
+  /// \brief Whether to include global (top-level) declarations and names in
+  /// the completion results.
+  bool IncludeGlobals;
 
   /// \brief Whether the output format for the code-completion consumer is
   /// binary.
@@ -906,31 +900,22 @@ public:
                                       CodeCompletionTUInfo &CCTUInfo) const;
   };
 
-  CodeCompleteConsumer(const CodeCompleteOptions &CodeCompleteOpts,
-                       bool OutputIsBinary)
-    : CodeCompleteOpts(CodeCompleteOpts), OutputIsBinary(OutputIsBinary)
-  { }
+  CodeCompleteConsumer() : IncludeMacros(false), IncludeCodePatterns(false),
+                           IncludeGlobals(true), OutputIsBinary(false) { }
+
+  CodeCompleteConsumer(bool IncludeMacros, bool IncludeCodePatterns,
+                       bool IncludeGlobals, bool OutputIsBinary)
+    : IncludeMacros(IncludeMacros), IncludeCodePatterns(IncludeCodePatterns),
+      IncludeGlobals(IncludeGlobals), OutputIsBinary(OutputIsBinary) { }
 
   /// \brief Whether the code-completion consumer wants to see macros.
-  bool includeMacros() const {
-    return CodeCompleteOpts.IncludeMacros;
-  }
+  bool includeMacros() const { return IncludeMacros; }
 
   /// \brief Whether the code-completion consumer wants to see code patterns.
-  bool includeCodePatterns() const {
-    return CodeCompleteOpts.IncludeCodePatterns;
-  }
+  bool includeCodePatterns() const { return IncludeCodePatterns; }
 
   /// \brief Whether to include global (top-level) declaration results.
-  bool includeGlobals() const {
-    return CodeCompleteOpts.IncludeGlobals;
-  }
-
-  /// \brief Whether to include brief documentation comments within the set of
-  /// code completions returned.
-  bool includeBriefComments() const {
-    return CodeCompleteOpts.IncludeBriefComments;
-  }
+  bool includeGlobals() const { return IncludeGlobals; }
 
   /// \brief Determine whether the output of this consumer is binary.
   bool isOutputBinary() const { return OutputIsBinary; }
@@ -977,9 +962,11 @@ class PrintingCodeCompleteConsumer : public CodeCompleteConsumer {
 public:
   /// \brief Create a new printing code-completion consumer that prints its
   /// results to the given raw output stream.
-  PrintingCodeCompleteConsumer(const CodeCompleteOptions &CodeCompleteOpts,
+  PrintingCodeCompleteConsumer(bool IncludeMacros, bool IncludeCodePatterns,
+                               bool IncludeGlobals,
                                raw_ostream &OS)
-    : CodeCompleteConsumer(CodeCompleteOpts, false), OS(OS),
+    : CodeCompleteConsumer(IncludeMacros, IncludeCodePatterns, IncludeGlobals,
+                           false), OS(OS),
       CCTUInfo(new GlobalCodeCompletionAllocator) {}
 
   /// \brief Prints the finalized code-completion results.

@@ -25,37 +25,21 @@ const uptr kWordSize = __WORDSIZE / 8;
 const uptr kWordSizeInBits = 8 * kWordSize;
 const uptr kPageSizeBits = 12;
 const uptr kPageSize = 1UL << kPageSizeBits;
-const uptr kCacheLineSize = 64;
-#ifndef _WIN32
-const uptr kMmapGranularity = kPageSize;
-#else
-const uptr kMmapGranularity = 1UL << 16;
-#endif
 
 // Threads
 int GetPid();
-uptr GetThreadSelf();
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom);
 
 // Memory management
 void *MmapOrDie(uptr size, const char *mem_type);
 void UnmapOrDie(void *addr, uptr size);
-void *MmapFixedNoReserve(uptr fixed_addr, uptr size);
-void *Mprotect(uptr fixed_addr, uptr size);
-// Used to check if we can map shadow memory to a fixed location.
-bool MemoryRangeIsAvailable(uptr range_start, uptr range_end);
-
-// Internal allocator
 void *InternalAlloc(uptr size);
-void InternalFree(void *p);
-// Given the pointer p into a valid allocated block,
-// returns a pointer to the beginning of the block.
-void *InternalAllocBlock(void *p);
+void InternalFree(void *addr);
 
-// IO
 void RawWrite(const char *buffer);
 void Printf(const char *format, ...);
+int SNPrintf(char *buffer, uptr length, const char *format, ...);
 void Report(const char *format, ...);
 
 // Opens the file 'file_name" and reads up to 'max_len' bytes.
@@ -64,46 +48,15 @@ void Report(const char *format, ...);
 // Returns the number of read bytes or 0 if file can not be opened.
 uptr ReadFileToBuffer(const char *file_name, char **buff,
                       uptr *buff_size, uptr max_len);
-// Maps given file to virtual memory, and returns pointer to it
-// (or NULL if the mapping failes). Stores the size of mmaped region
-// in '*buff_size'.
-void *MapFileToMemory(const char *file_name, uptr *buff_size);
 
-const char *GetEnv(const char *name);
-const char *GetPwd();
-
-// Other
-void DisableCoreDumper();
-void DumpProcessMap();
-void SleepForSeconds(int seconds);
-void SleepForMillis(int millis);
-void NORETURN Exit(int exitcode);
-void NORETURN Abort();
-int Atexit(void (*function)(void));
-void SortArray(uptr *array, uptr size);
-
-// Math
+// Bit twiddling.
 inline bool IsPowerOfTwo(uptr x) {
   return (x & (x - 1)) == 0;
 }
 inline uptr RoundUpTo(uptr size, uptr boundary) {
-  CHECK(IsPowerOfTwo(boundary));
+  // FIXME: Use CHECK here.
+  RAW_CHECK(IsPowerOfTwo(boundary));
   return (size + boundary - 1) & ~(boundary - 1);
-}
-// Don't use std::min and std::max, to minimize dependency on libstdc++.
-template<class T> T Min(T a, T b) { return a < b ? a : b; }
-template<class T> T Max(T a, T b) { return a > b ? a : b; }
-
-// Char handling
-inline bool IsSpace(int c) {
-  return (c == ' ') || (c == '\n') || (c == '\t') ||
-         (c == '\f') || (c == '\r') || (c == '\v');
-}
-inline bool IsDigit(int c) {
-  return (c >= '0') && (c <= '9');
-}
-inline int ToLower(int c) {
-  return (c >= 'A' && c <= 'Z') ? (c + 'a' - 'A') : c;
 }
 
 #if __WORDSIZE == 64

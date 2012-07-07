@@ -599,7 +599,7 @@ namespace {
         markGlobal(*Symbol);
     }
     virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol,
-                              uint64_t Size , unsigned ByteAlignment) {
+                              unsigned Size , unsigned ByteAlignment) {
       markDefined(*Symbol);
     }
     virtual void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,

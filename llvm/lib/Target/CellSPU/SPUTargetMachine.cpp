@@ -72,7 +72,7 @@ TargetPassConfig *SPUTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 bool SPUPassConfig::addInstSelector() {
   // Install an instruction selector.
-  addPass(createSPUISelDag(getSPUTargetMachine()));
+  PM->add(createSPUISelDag(getSPUTargetMachine()));
   return false;
 }
 
@@ -85,9 +85,9 @@ bool SPUPassConfig::addPreEmitPass() {
     (BuilderFunc)(intptr_t)sys::DynamicLibrary::SearchForAddressOfSymbol(
           "createTCESchedulerPass");
   if (schedulerCreator != NULL)
-      addPass(schedulerCreator("cellspu"));
+      PM->add(schedulerCreator("cellspu"));
 
   //align instructions with nops/lnops for dual issue
-  addPass(createSPUNopFillerPass(getSPUTargetMachine()));
+  PM->add(createSPUNopFillerPass(getSPUTargetMachine()));
   return true;
 }

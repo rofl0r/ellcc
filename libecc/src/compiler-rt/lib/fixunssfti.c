@@ -12,9 +12,9 @@
  * ===----------------------------------------------------------------------===
  */
 
-#include "int_lib.h"
-
 #if __x86_64
+
+#include "int_lib.h"
 
 /* Returns: convert a to a unsigned long long, rounding toward zero.
  *          Negative values all become zero.

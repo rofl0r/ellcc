@@ -15,10 +15,10 @@
 #ifndef LLVM_TRANSFORMS_UTILS_LOCAL_H
 #define LLVM_TRANSFORMS_UTILS_LOCAL_H
 
-#include "llvm/IRBuilder.h"
-#include "llvm/Operator.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Support/IRBuilder.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Operator.h"
 
 namespace llvm {
 

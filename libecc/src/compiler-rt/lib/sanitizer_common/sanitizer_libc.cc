@@ -15,8 +15,7 @@
 
 namespace __sanitizer {
 
-s64 internal_atoll(const char *nptr) {
-  return internal_simple_strtoll(nptr, (char**)0, 10);
+void MiniLibcStub() {
 }
 
 void *internal_memchr(const void *s, int c, uptr n) {
@@ -24,15 +23,6 @@ void *internal_memchr(const void *s, int c, uptr n) {
   for (uptr i = 0; i < n; ++i, ++t)
     if (*t == c)
       return (void*)t;
-  return 0;
-}
-
-int internal_memcmp(const void* s1, const void* s2, uptr n) {
-  const char* t1 = (char*)s1;
-  const char* t2 = (char*)s2;
-  for (uptr i = 0; i < n; ++i, ++t1, ++t2)
-    if (*t1 != *t2)
-      return *t1 < *t2 ? -1 : 1;
   return 0;
 }
 
@@ -76,28 +66,6 @@ int internal_strcmp(const char *s1, const char *s2) {
   return 0;
 }
 
-int internal_strncmp(const char *s1, const char *s2, uptr n) {
-  for (uptr i = 0; i < n; i++) {
-    unsigned c1 = *s1;
-    unsigned c2 = *s2;
-    if (c1 != c2) return (c1 < c2) ? -1 : 1;
-    if (c1 == 0) break;
-    s1++;
-    s2++;
-  }
-  return 0;
-}
-
-char* internal_strchr(const char *s, int c) {
-  while (true) {
-    if (*s == (char)c)
-      return (char*)s;
-    if (*s == 0)
-      return 0;
-    s++;
-  }
-}
-
 char *internal_strrchr(const char *s, int c) {
   const char *res = 0;
   for (uptr i = 0; s[i]; i++) {
@@ -112,15 +80,6 @@ uptr internal_strlen(const char *s) {
   return i;
 }
 
-char *internal_strncat(char *dst, const char *src, uptr n) {
-  uptr len = internal_strlen(dst);
-  uptr i;
-  for (i = 0; i < n && src[i]; i++)
-    dst[len + i] = src[i];
-  dst[len + i] = 0;
-  return dst;
-}
-
 char *internal_strncpy(char *dst, const char *src, uptr n) {
   uptr i;
   for (i = 0; i < n && src[i]; i++)
@@ -128,55 +87,6 @@ char *internal_strncpy(char *dst, const char *src, uptr n) {
   for (; i < n; i++)
     dst[i] = '\0';
   return dst;
-}
-
-uptr internal_strnlen(const char *s, uptr maxlen) {
-  uptr i = 0;
-  while (i < maxlen && s[i]) i++;
-  return i;
-}
-
-char *internal_strstr(const char *haystack, const char *needle) {
-  // This is O(N^2), but we are not using it in hot places.
-  uptr len1 = internal_strlen(haystack);
-  uptr len2 = internal_strlen(needle);
-  if (len1 < len2) return 0;
-  for (uptr pos = 0; pos <= len1 - len2; pos++) {
-    if (internal_memcmp(haystack + pos, needle, len2) == 0)
-      return (char*)haystack + pos;
-  }
-  return 0;
-}
-
-s64 internal_simple_strtoll(const char *nptr, char **endptr, int base) {
-  CHECK_EQ(base, 10);
-  while (IsSpace(*nptr)) nptr++;
-  int sgn = 1;
-  u64 res = 0;
-  bool have_digits = false;
-  char *old_nptr = (char*)nptr;
-  if (*nptr == '+') {
-    sgn = 1;
-    nptr++;
-  } else if (*nptr == '-') {
-    sgn = -1;
-    nptr++;
-  }
-  while (IsDigit(*nptr)) {
-    res = (res <= UINT64_MAX / 10) ? res * 10 : UINT64_MAX;
-    int digit = ((*nptr) - '0');
-    res = (res <= UINT64_MAX - digit) ? res + digit : UINT64_MAX;
-    have_digits = true;
-    nptr++;
-  }
-  if (endptr != 0) {
-    *endptr = (have_digits) ? (char*)nptr : old_nptr;
-  }
-  if (sgn > 0) {
-    return (s64)(Min((u64)INT64_MAX, res));
-  } else {
-    return (res > INT64_MAX) ? INT64_MIN : ((s64)res * -1);
-  }
 }
 
 }  // namespace __sanitizer

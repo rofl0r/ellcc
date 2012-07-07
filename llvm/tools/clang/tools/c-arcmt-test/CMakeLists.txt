@@ -1,3 +1,5 @@
+set(LLVM_USED_LIBS libclang)
+
 set( LLVM_LINK_COMPONENTS
   support
   mc
@@ -5,10 +7,6 @@ set( LLVM_LINK_COMPONENTS
 
 add_clang_executable(c-arcmt-test
   c-arcmt-test.c
-  )
-
-target_link_libraries(c-arcmt-test
-  libclang
   )
 
 set_target_properties(c-arcmt-test

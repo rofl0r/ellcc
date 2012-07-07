@@ -11,23 +11,14 @@
 #ifndef __ppc__
 
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SmallBitVector.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
 
 namespace {
 
-// Test fixture
-template <typename T>
-class BitVectorTest : public ::testing::Test { };
-
-// Test both BitVector and SmallBitVector with the same suite of tests.
-typedef ::testing::Types<BitVector, SmallBitVector> BitVectorTestTypes;
-TYPED_TEST_CASE(BitVectorTest, BitVectorTestTypes);
-
-TYPED_TEST(BitVectorTest, TrivialOperation) {
-  TypeParam Vec;
+TEST(BitVectorTest, TrivialOperation) {
+  BitVector Vec;
   EXPECT_EQ(0U, Vec.count());
   EXPECT_EQ(0U, Vec.size());
   EXPECT_FALSE(Vec.any());
@@ -51,7 +42,7 @@ TYPED_TEST(BitVectorTest, TrivialOperation) {
   EXPECT_FALSE(Vec.none());
   EXPECT_FALSE(Vec.empty());
 
-  TypeParam Inv = Vec;
+  BitVector Inv = Vec;
   Inv.flip();
   EXPECT_EQ(6U, Inv.count());
   EXPECT_EQ(11U, Inv.size());
@@ -86,8 +77,8 @@ TYPED_TEST(BitVectorTest, TrivialOperation) {
   EXPECT_FALSE(Vec[56]);
   Vec.resize(61, false);
 
-  TypeParam Copy = Vec;
-  TypeParam Alt(3, false);
+  BitVector Copy = Vec;
+  BitVector Alt(3, false);
   Alt.resize(6, true);
   std::swap(Alt, Vec);
   EXPECT_TRUE(Copy == Alt);
@@ -141,7 +132,7 @@ TYPED_TEST(BitVectorTest, TrivialOperation) {
   EXPECT_TRUE(Vec.none());
   EXPECT_FALSE(Vec.empty());
 
-  Inv = TypeParam().flip();
+  Inv = BitVector().flip();
   EXPECT_EQ(0U, Inv.count());
   EXPECT_EQ(0U, Inv.size());
   EXPECT_FALSE(Inv.any());
@@ -158,13 +149,13 @@ TYPED_TEST(BitVectorTest, TrivialOperation) {
   EXPECT_TRUE(Vec.empty());
 }
 
-TYPED_TEST(BitVectorTest, CompoundAssignment) {
-  TypeParam A;
+TEST(BitVectorTest, CompoundAssignment) {
+  BitVector A;
   A.resize(10);
   A.set(4);
   A.set(7);
 
-  TypeParam B;
+  BitVector B;
   B.resize(50);
   B.set(5);
   B.set(18);
@@ -197,8 +188,8 @@ TYPED_TEST(BitVectorTest, CompoundAssignment) {
   EXPECT_EQ(100U, A.size());
 }
 
-TYPED_TEST(BitVectorTest, ProxyIndex) {
-  TypeParam Vec(3);
+TEST(BitVectorTest, ProxyIndex) {
+  BitVector Vec(3);
   EXPECT_TRUE(Vec.none());
   Vec[0] = Vec[1] = Vec[2] = true;
   EXPECT_EQ(Vec.size(), Vec.count());
@@ -206,8 +197,8 @@ TYPED_TEST(BitVectorTest, ProxyIndex) {
   EXPECT_TRUE(Vec.none());
 }
 
-TYPED_TEST(BitVectorTest, PortableBitMask) {
-  TypeParam A;
+TEST(BitVectorTest, PortableBitMask) {
+  BitVector A;
   const uint32_t Mask1[] = { 0x80000000, 6, 5 };
 
   A.resize(10);
@@ -253,9 +244,9 @@ TYPED_TEST(BitVectorTest, PortableBitMask) {
   EXPECT_EQ(64-4u, A.count());
 }
 
-TYPED_TEST(BitVectorTest, BinOps) {
-  TypeParam A;
-  TypeParam B;
+TEST(BitVectorTest, BinOps) {
+  BitVector A;
+  BitVector B;
 
   A.resize(65);
   EXPECT_FALSE(A.anyCommon(B));

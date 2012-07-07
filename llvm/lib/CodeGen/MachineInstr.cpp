@@ -13,7 +13,6 @@
 
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/Constants.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/Function.h"
 #include "llvm/InlineAsm.h"
 #include "llvm/LLVMContext.h"
@@ -34,6 +33,7 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LeakDetector.h"

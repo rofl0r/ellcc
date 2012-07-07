@@ -120,8 +120,6 @@ LValue CGObjCRuntime::EmitValueForIvarAtOffset(CodeGen::CodeGenFunction &CGF,
   uint64_t ContainingTypeAlign = CGF.CGM.getContext().getTargetInfo().getCharAlign();
   uint64_t ContainingTypeSize = TypeSizeInBits - (FieldBitOffset - BitOffset);
   uint64_t BitFieldSize = Ivar->getBitWidthValue(CGF.getContext());
-  CharUnits ContainingTypeAlignCharUnits = 
-    CGF.CGM.getContext().toCharUnitsFromBits(ContainingTypeAlign);
 
   // Allocate a new CGBitFieldInfo object to describe this access.
   //
@@ -134,8 +132,7 @@ LValue CGObjCRuntime::EmitValueForIvarAtOffset(CodeGen::CodeGenFunction &CGF,
                              ContainingTypeSize, ContainingTypeAlign));
 
   return LValue::MakeBitfield(V, *Info,
-                              IvarTy.withCVRQualifiers(CVRQualifiers),
-                              ContainingTypeAlignCharUnits);
+                              IvarTy.withCVRQualifiers(CVRQualifiers));
 }
 
 namespace {
@@ -337,7 +334,7 @@ void CGObjCRuntime::EmitAtSynchronizedStmt(CodeGenFunction &CGF,
 ///
 /// \param method - may be null
 /// \param resultType - the result type to use if there's no method
-/// \param callArgs - the actual arguments, including implicit ones
+/// \param argInfo - the actual arguments, including implicit ones
 CGObjCRuntime::MessageSendInfo
 CGObjCRuntime::getMessageSendInfo(const ObjCMethodDecl *method,
                                   QualType resultType,

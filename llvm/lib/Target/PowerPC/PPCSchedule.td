@@ -25,7 +25,6 @@ def VFPU   : FuncUnit; // vector floating point unit
 //===----------------------------------------------------------------------===//
 // Instruction Itinerary classes used for PowerPC
 //
-def IntSimple    : InstrItinClass;
 def IntGeneral   : InstrItinClass;
 def IntCompare   : InstrItinClass;
 def IntDivD      : InstrItinClass;
@@ -118,17 +117,17 @@ include "PPCScheduleA2.td"
 //
 //    opcode     itinerary class
 //    ======     ===============
-//    add        IntSimple
+//    add        IntGeneral
 //    addc       IntGeneral
 //    adde       IntGeneral
-//    addi       IntSimple
+//    addi       IntGeneral
 //    addic      IntGeneral
 //    addic.     IntGeneral
-//    addis      IntSimple
+//    addis      IntGeneral
 //    addme      IntGeneral
 //    addze      IntGeneral
-//    and        IntSimple
-//    andc       IntSimple
+//    and        IntGeneral
+//    andc       IntGeneral
 //    andi.      IntGeneral
 //    andis.     IntGeneral
 //    b          BrB
@@ -166,10 +165,10 @@ include "PPCScheduleA2.td"
 //    eciwx      LdStLoad
 //    ecowx      LdStLoad
 //    eieio      LdStLoad
-//    eqv        IntSimple
-//    extsb      IntSimple
-//    extsh      IntSimple
-//    extsw      IntSimple
+//    eqv        IntGeneral
+//    extsb      IntGeneral
+//    extsh      IntGeneral
+//    extsw      IntRotateD
 //    fabs       FPGeneral
 //    fadd       FPGeneral
 //    fadds      FPGeneral
@@ -281,13 +280,13 @@ include "PPCScheduleA2.td"
 //    mulld      IntMulHD
 //    mulli      IntMulLI
 //    mullw      IntMulHW
-//    nand       IntSimple
-//    neg        IntSimple
-//    nor        IntSimple
-//    or         IntSimple
-//    orc        IntSimple
-//    ori        IntSimple
-//    oris       IntSimple
+//    nand       IntGeneral
+//    neg        IntGeneral
+//    nor        IntGeneral
+//    or         IntGeneral
+//    orc        IntGeneral
+//    ori        IntGeneral
+//    oris       IntGeneral
 //    rfi        SprRFI
 //    rfid       IntRFID
 //    rldcl      IntRotateD
@@ -503,7 +502,7 @@ include "PPCScheduleA2.td"
 //    vupklsb    VecPerm
 //    vupklsh    VecPerm
 //    vxor       VecGeneral
-//    xor        IntSimple
-//    xori       IntSimple
-//    xoris      IntSimple
+//    xor        IntGeneral
+//    xori       IntGeneral
+//    xoris      IntGeneral
 //

@@ -109,7 +109,8 @@ TEST_GROUP(Stdio)
     TEST_TRACE(C99 7.19.5.1)
     TEST(fclose(f) == 0, "fclose() is successful");
     TEST_TRACE(C99 7.19.5.2)
-    TEST(fflush(NULL) != EOF, "fflush(NULL) is successful");
+    TEST_EXCLUDE(HOST, "http://ellcc.org/bugzilla/show_bug.cgi?id=37")
+        TEST(fflush(f) == EOF, "fflush() is unsuccessful");
     TEST_TRACE(C99 7.19.5.3)
     f = fopen("tmp", "w");
     TEST(f != NULL, "fopen(tmp) is successful");

@@ -18,7 +18,6 @@
 #include "llvm/PassManager.h"
 #include "llvm/Pass.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -119,7 +118,7 @@ FileType("filetype", cl::init(TargetMachine::CGFT_AssemblyFile),
        clEnumValN(TargetMachine::CGFT_AssemblyFile, "asm",
                   "Emit an assembly ('.s') file"),
        clEnumValN(TargetMachine::CGFT_ObjectFile, "obj",
-                  "Emit a native object ('.o') file"),
+                  "Emit a native object ('.o') file [experimental]"),
        clEnumValN(TargetMachine::CGFT_Null, "null",
                   "Emit nothing, for performance testing"),
        clEnumValEnd));
@@ -154,6 +153,11 @@ DisableFPElim("disable-fp-elim",
 static cl::opt<bool>
 DisableFPElimNonLeaf("disable-non-leaf-fp-elim",
   cl::desc("Disable frame pointer elimination optimization for non-leaf funcs"),
+  cl::init(false));
+
+static cl::opt<bool>
+DisableExcessPrecision("disable-excess-fp-precision",
+  cl::desc("Disable optimizations that may increase FP precision"),
   cl::init(false));
 
 static cl::opt<bool>
@@ -195,19 +199,6 @@ FloatABIForCalls("float-abi",
                "Hard float ABI (uses FP registers)"),
     clEnumValEnd));
 
-static cl::opt<llvm::FPOpFusion::FPOpFusionMode>
-FuseFPOps("fp-contract",
-  cl::desc("Enable aggresive formation of fused FP ops"),
-  cl::init(FPOpFusion::Standard),
-  cl::values(
-    clEnumValN(FPOpFusion::Fast, "fast",
-               "Fuse FP ops whenever profitable"),
-    clEnumValN(FPOpFusion::Standard, "on",
-               "Only fuse 'blessed' FP ops."),
-    clEnumValN(FPOpFusion::Strict, "off",
-               "Only fuse FP ops when the result won't be effected."),
-    clEnumValEnd));
-
 static cl::opt<bool>
 DontPlaceZerosInBSS("nozero-initialized-in-bss",
   cl::desc("Don't place zero-initialized symbols into bss section"),
@@ -233,6 +224,11 @@ EnableRealignStack("realign-stack",
   cl::desc("Realign stack if needed"),
   cl::init(true));
 
+static cl::opt<bool>
+DisableSwitchTables(cl::Hidden, "disable-jump-tables",
+  cl::desc("Do not generate jump tables."),
+  cl::init(false));
+
 static cl::opt<std::string>
 TrapFuncName("trap-func", cl::Hidden,
   cl::desc("Emit a call to trap function rather than a trap instruction"),
@@ -248,19 +244,6 @@ SegmentedStacks("segmented-stacks",
   cl::desc("Use segmented stacks if possible."),
   cl::init(false));
 
-static cl::opt<bool>
-UseInitArray("use-init-array",
-  cl::desc("Use .init_array instead of .ctors."),
-  cl::init(false));
-
-static cl::opt<std::string> StopAfter("stop-after",
-  cl::desc("Stop compilation after a specific pass"),
-  cl::value_desc("pass-name"),
-  cl::init(""));
-static cl::opt<std::string> StartAfter("start-after",
-  cl::desc("Resume compilation after a specific pass"),
-  cl::value_desc("pass-name"),
-  cl::init(""));
 
 // GetFileNameRoot - Helper function to get the basename of a filename.
 static inline std::string
@@ -358,15 +341,6 @@ int main(int argc, char **argv) {
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
 
-  // Initialize codegen and IR passes used by llc so that the -print-after,
-  // -print-before, and -stop-after options work.
-  PassRegistry *Registry = PassRegistry::getPassRegistry();
-  initializeCore(*Registry);
-  initializeCodeGen(*Registry);
-  initializeLoopStrengthReducePass(*Registry);
-  initializeLowerIntrinsicsPass(*Registry);
-  initializeUnreachableBlockElimPass(*Registry);
-
   // Register the target printer for --version.
   cl::AddExtraVersionPrinter(TargetRegistry::printRegisteredTargetsForVersion);
 
@@ -375,29 +349,20 @@ int main(int argc, char **argv) {
   // Load the module to be compiled...
   SMDiagnostic Err;
   std::auto_ptr<Module> M;
-  Module *mod = 0;
-  Triple TheTriple;
 
-  bool SkipModule = MCPU == "help" ||
-                    (!MAttrs.empty() && MAttrs.front() == "help");
-
-  // If user just wants to list available options, skip module loading
-  if (!SkipModule) {
-    M.reset(ParseIRFile(InputFilename, Err, Context));
-    mod = M.get();
-    if (mod == 0) {
-      Err.print(argv[0], errs());
-      return 1;
-    }
-
-    // If we are supposed to override the target triple, do so now.
-    if (!TargetTriple.empty())
-      mod->setTargetTriple(Triple::normalize(TargetTriple));
-    TheTriple = Triple(mod->getTargetTriple());
-  } else {
-    TheTriple = Triple(Triple::normalize(TargetTriple));
+  M.reset(ParseIRFile(InputFilename, Err, Context));
+  if (M.get() == 0) {
+    Err.print(argv[0], errs());
+    return 1;
   }
+  Module &mod = *M.get();
 
+  // If we are supposed to override the target triple, do so now.
+  if (!TargetTriple.empty())
+    mod.setTargetTriple(Triple::normalize(TargetTriple));
+
+  // Figure out the target triple.
+  Triple TheTriple(mod.getTargetTriple());
   if (TheTriple.getTriple().empty())
     TheTriple.setTriple(sys::getDefaultTargetTriple());
 
@@ -435,7 +400,7 @@ int main(int argc, char **argv) {
   Options.LessPreciseFPMADOption = EnableFPMAD;
   Options.NoFramePointerElim = DisableFPElim;
   Options.NoFramePointerElimNonLeaf = DisableFPElimNonLeaf;
-  Options.AllowFPOpFusion = FuseFPOps;
+  Options.NoExcessFPPrecision = DisableExcessPrecision;
   Options.UnsafeFPMath = EnableUnsafeFPMath;
   Options.NoInfsFPMath = EnableNoInfsFPMath;
   Options.NoNaNsFPMath = EnableNoNaNsFPMath;
@@ -449,17 +414,16 @@ int main(int argc, char **argv) {
   Options.DisableTailCalls = DisableTailCalls;
   Options.StackAlignmentOverride = OverrideStackAlignment;
   Options.RealignStack = EnableRealignStack;
+  Options.DisableJumpTables = DisableSwitchTables;
   Options.TrapFuncName = TrapFuncName;
   Options.PositionIndependentExecutable = EnablePIE;
   Options.EnableSegmentedStacks = SegmentedStacks;
-  Options.UseInitArray = UseInitArray;
 
   std::auto_ptr<TargetMachine>
     target(TheTarget->createTargetMachine(TheTriple.getTriple(),
                                           MCPU, FeaturesStr, Options,
                                           RelocModel, CMModel, OLvl));
   assert(target.get() && "Could not allocate target machine!");
-  assert(mod && "Should have exited after outputting help!");
   TargetMachine &Target = *target.get();
 
   if (DisableDotLoc)
@@ -491,7 +455,7 @@ int main(int argc, char **argv) {
   if (const TargetData *TD = Target.getTargetData())
     PM.add(new TargetData(*TD));
   else
-    PM.add(new TargetData(mod));
+    PM.add(new TargetData(&mod));
 
   // Override default to generate verbose assembly.
   Target.setAsmVerbosityDefault(true);
@@ -507,29 +471,8 @@ int main(int argc, char **argv) {
   {
     formatted_raw_ostream FOS(Out->os());
 
-    AnalysisID StartAfterID = 0;
-    AnalysisID StopAfterID = 0;
-    const PassRegistry *PR = PassRegistry::getPassRegistry();
-    if (!StartAfter.empty()) {
-      const PassInfo *PI = PR->getPassInfo(StartAfter);
-      if (!PI) {
-        errs() << argv[0] << ": start-after pass is not registered.\n";
-        return 1;
-      }
-      StartAfterID = PI->getTypeInfo();
-    }
-    if (!StopAfter.empty()) {
-      const PassInfo *PI = PR->getPassInfo(StopAfter);
-      if (!PI) {
-        errs() << argv[0] << ": stop-after pass is not registered.\n";
-        return 1;
-      }
-      StopAfterID = PI->getTypeInfo();
-    }
-
     // Ask the target to add backend passes as necessary.
-    if (Target.addPassesToEmitFile(PM, FOS, FileType, NoVerify,
-                                   StartAfterID, StopAfterID)) {
+    if (Target.addPassesToEmitFile(PM, FOS, FileType, NoVerify)) {
       errs() << argv[0] << ": target does not support generation of this"
              << " file type!\n";
       return 1;
@@ -538,7 +481,7 @@ int main(int argc, char **argv) {
     // Before executing passes, print the final values of the LLVM options.
     cl::PrintOptionValues();
 
-    PM.run(*mod);
+    PM.run(mod);
   }
 
   // Declare success.

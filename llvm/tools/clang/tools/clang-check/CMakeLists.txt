@@ -1,8 +1,5 @@
+set(LLVM_USED_LIBS clangTooling clangBasic)
+
 add_clang_executable(clang-check
   ClangCheck.cpp
-  )
-
-target_link_libraries(clang-check
-  clangTooling
-  clangBasic
   )

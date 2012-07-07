@@ -3,6 +3,8 @@ clang_tablegen(Checkers.inc -gen-clang-sa-checkers
   SOURCE Checkers.td
   TARGET ClangSACheckers)
 
+set(LLVM_USED_LIBS clangBasic clangAST clangStaticAnalyzerCore)
+
 add_clang_library(clangStaticAnalyzerCheckers
   AdjustedReturnValueChecker.cpp
   AnalyzerStatsChecker.cpp
@@ -58,7 +60,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   StackAddrEscapeChecker.cpp
   StreamChecker.cpp
   TaintTesterChecker.cpp
-  TraversalChecker.cpp
   UndefBranchChecker.cpp
   UndefCapturedBlockVarChecker.cpp
   UndefResultChecker.cpp
@@ -77,10 +78,4 @@ add_dependencies(clangStaticAnalyzerCheckers
   ClangDeclNodes
   ClangStmtNodes
   ClangSACheckers
-  )
-
-target_link_libraries(clangStaticAnalyzerCheckers
-  clangBasic
-  clangAST
-  clangStaticAnalyzerCore
   )

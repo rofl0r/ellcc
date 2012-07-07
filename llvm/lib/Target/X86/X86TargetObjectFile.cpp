@@ -9,19 +9,16 @@
 
 #include "X86TargetObjectFile.h"
 #include "X86TargetMachine.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
-#include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Support/Dwarf.h"
-#include "llvm/Support/ELF.h"
 using namespace llvm;
 using namespace dwarf;
 
-const MCExpr *X86_64MachoTargetObjectFile::
+const MCExpr *X8664_MachoTargetObjectFile::
 getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
                                MachineModuleInfo *MMI, unsigned Encoding,
                                MCStreamer &Streamer) const {
@@ -40,14 +37,8 @@ getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
     getExprForDwarfGlobalReference(GV, Mang, MMI, Encoding, Streamer);
 }
 
-MCSymbol *X86_64MachoTargetObjectFile::
+MCSymbol *X8664_MachoTargetObjectFile::
 getCFIPersonalitySymbol(const GlobalValue *GV, Mangler *Mang,
                         MachineModuleInfo *MMI) const {
   return Mang->getSymbol(GV);
-}
-
-void
-X86LinuxTargetObjectFile::Initialize(MCContext &Ctx, const TargetMachine &TM) {
-  TargetLoweringObjectFileELF::Initialize(Ctx, TM);
-  InitializeELF(TM.Options.UseInitArray);
 }

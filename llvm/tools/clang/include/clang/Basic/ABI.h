@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Enums/classes describing ABI related information about constructors,
-/// destructors and thunks.
-///
+//
+// These enums/classes describe ABI related information about constructors,
+// destructors and thunks.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef CLANG_BASIC_ABI_H
@@ -20,27 +19,27 @@
 
 namespace clang {
 
-/// \brief C++ constructor types.
+/// CXXCtorType - C++ constructor types
 enum CXXCtorType {
-    Ctor_Complete,          ///< Complete object ctor
-    Ctor_Base,              ///< Base object ctor
-    Ctor_CompleteAllocating ///< Complete object allocating ctor
+    Ctor_Complete,          // Complete object ctor
+    Ctor_Base,              // Base object ctor
+    Ctor_CompleteAllocating // Complete object allocating ctor
 };
 
-/// \brief C++ destructor types.
+/// CXXDtorType - C++ destructor types
 enum CXXDtorType {
-    Dtor_Deleting, ///< Deleting dtor
-    Dtor_Complete, ///< Complete object dtor
-    Dtor_Base      ///< Base object dtor
+    Dtor_Deleting, // Deleting dtor
+    Dtor_Complete, // Complete object dtor
+    Dtor_Base      // Base object dtor
 };
 
-/// \brief A return adjustment.
+/// ReturnAdjustment - A return adjustment.
 struct ReturnAdjustment {
-  /// \brief The non-virtual adjustment from the derived object to its
+  /// NonVirtual - The non-virtual adjustment from the derived object to its
   /// nearest virtual base.
   int64_t NonVirtual;
   
-  /// \brief The offset (in bytes), relative to the address point 
+  /// VBaseOffsetOffset - The offset (in bytes), relative to the address point 
   /// of the virtual base class offset.
   int64_t VBaseOffsetOffset;
   
@@ -64,13 +63,13 @@ struct ReturnAdjustment {
   }
 };
   
-/// \brief A \c this pointer adjustment.
+/// ThisAdjustment - A 'this' pointer adjustment.
 struct ThisAdjustment {
-  /// \brief The non-virtual adjustment from the derived object to its
+  /// NonVirtual - The non-virtual adjustment from the derived object to its
   /// nearest virtual base.
   int64_t NonVirtual;
 
-  /// \brief The offset (in bytes), relative to the address point,
+  /// VCallOffsetOffset - The offset (in bytes), relative to the address point,
   /// of the virtual call offset.
   int64_t VCallOffsetOffset;
   
@@ -94,13 +93,13 @@ struct ThisAdjustment {
   }
 };
 
-/// \brief The \c this pointer adjustment as well as an optional return
+/// ThunkInfo - The 'this' pointer adjustment as well as an optional return
 /// adjustment for a thunk.
 struct ThunkInfo {
-  /// \brief The \c this pointer adjustment.
+  /// This - The 'this' pointer adjustment.
   ThisAdjustment This;
     
-  /// \brief The return adjustment.
+  /// Return - The return adjustment.
   ReturnAdjustment Return;
 
   ThunkInfo() { }

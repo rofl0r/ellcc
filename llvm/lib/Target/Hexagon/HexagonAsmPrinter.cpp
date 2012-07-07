@@ -133,9 +133,7 @@ bool HexagonAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     if (ExtraCode[1] != 0) return true; // Unknown modifier.
 
     switch (ExtraCode[0]) {
-    default:
-      // See if this is a generic print operand
-      return AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, OS);
+    default: return true;  // Unknown modifier.
     case 'c': // Don't print "$" before a global var name or constant.
       // Hexagon never has a prefix.
       printOperand(MI, OpNo, OS);

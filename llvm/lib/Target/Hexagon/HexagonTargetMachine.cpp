@@ -102,47 +102,47 @@ TargetPassConfig *HexagonTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 bool HexagonPassConfig::addInstSelector() {
-  addPass(createHexagonRemoveExtendOps(getHexagonTargetMachine()));
-  addPass(createHexagonISelDag(getHexagonTargetMachine()));
-  addPass(createHexagonPeephole());
+  PM->add(createHexagonRemoveExtendOps(getHexagonTargetMachine()));
+  PM->add(createHexagonISelDag(getHexagonTargetMachine()));
+  PM->add(createHexagonPeephole());
   return false;
 }
 
 
 bool HexagonPassConfig::addPreRegAlloc() {
   if (!DisableHardwareLoops) {
-    addPass(createHexagonHardwareLoops());
+    PM->add(createHexagonHardwareLoops());
   }
   return false;
 }
 
 bool HexagonPassConfig::addPostRegAlloc() {
-  addPass(createHexagonCFGOptimizer(getHexagonTargetMachine()));
+  PM->add(createHexagonCFGOptimizer(getHexagonTargetMachine()));
   return true;
 }
 
 
 bool HexagonPassConfig::addPreSched2() {
-  addPass(&IfConverterID);
+  addPass(IfConverterID);
   return true;
 }
 
 bool HexagonPassConfig::addPreEmitPass() {
 
   if (!DisableHardwareLoops) {
-    addPass(createHexagonFixupHwLoops());
+    PM->add(createHexagonFixupHwLoops());
   }
 
-  addPass(createHexagonNewValueJump());
+  PM->add(createHexagonNewValueJump());
 
   // Expand Spill code for predicate registers.
-  addPass(createHexagonExpandPredSpillCode(getHexagonTargetMachine()));
+  PM->add(createHexagonExpandPredSpillCode(getHexagonTargetMachine()));
 
   // Split up TFRcondsets into conditional transfers.
-  addPass(createHexagonSplitTFRCondSets(getHexagonTargetMachine()));
+  PM->add(createHexagonSplitTFRCondSets(getHexagonTargetMachine()));
 
   // Create Packets.
-  addPass(createHexagonPacketizer());
+  PM->add(createHexagonPacketizer());
 
   return false;
 }

@@ -194,21 +194,13 @@ void MBlazeAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   OutStreamer.EmitInstruction(TmpInst);
 }
 
-#include <stdio.h>
 // Print out an operand for an inline asm expression.
 bool MBlazeAsmPrinter::
 PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                 unsigned AsmVariant,const char *ExtraCode, raw_ostream &O) {
   // Does this asm operand have a single letter operand modifier?
-  if (ExtraCode && ExtraCode[0]) {
-    if (ExtraCode[1] != 0) return true; // Unknown modifier.
-
-    switch (ExtraCode[0]) {
-    default:
-      // See if this is a generic print operand
-      return AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, O);
-    }
-  }
+  if (ExtraCode && ExtraCode[0])
+    return true; // Unknown modifier.
 
   printOperand(MI, OpNo, O);
   return false;

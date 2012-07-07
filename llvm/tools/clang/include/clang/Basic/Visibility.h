@@ -6,23 +6,20 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the clang::Visibility enumeration and various utility
-/// functions.
-///
+//
+// This file defines the Visibility enumeration and various utility
+// functions.
+//
 //===----------------------------------------------------------------------===//
 #ifndef LLVM_CLANG_BASIC_VISIBILITY_H
 #define LLVM_CLANG_BASIC_VISIBILITY_H
 
 namespace clang {
 
-/// \brief Describes the different kinds of visibility that a declaration
-/// may have.
-///
-/// Visibility determines how a declaration interacts with the dynamic
-/// linker.  It may also affect whether the symbol can be found by runtime
-/// symbol lookup APIs.
+/// \link Describes the different kinds of visibility that a
+/// declaration may have.  Visibility determines how a declaration
+/// interacts with the dynamic linker.  It may also affect whether the
+/// symbol can be found by runtime symbol lookup APIs.
 ///
 /// Visibility is not described in any language standard and
 /// (nonetheless) sometimes has odd behavior.  Not all platforms

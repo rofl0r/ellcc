@@ -6381,17 +6381,7 @@ CGObjCNonFragileABIMac::GetInterfaceEHType(const ObjCInterfaceDecl *ID,
 
 CodeGen::CGObjCRuntime *
 CodeGen::CreateMacObjCRuntime(CodeGen::CodeGenModule &CGM) {
-  switch (CGM.getLangOpts().ObjCRuntime.getKind()) {
-  case ObjCRuntime::FragileMacOSX:
-  return new CGObjCMac(CGM);
-
-  case ObjCRuntime::MacOSX:
-  case ObjCRuntime::iOS:
+  if (CGM.getLangOpts().ObjCNonFragileABI)
     return new CGObjCNonFragileABIMac(CGM);
-
-  case ObjCRuntime::GNUstep:
-  case ObjCRuntime::GCC:
-    llvm_unreachable("these runtimes are not Mac runtimes");
-  }
-  llvm_unreachable("bad runtime");
+  return new CGObjCMac(CGM);
 }

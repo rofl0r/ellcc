@@ -2268,7 +2268,7 @@ PredicateInstruction(MachineInstr *MI,
 bool
 HexagonInstrInfo::
 isProfitableToIfCvt(MachineBasicBlock &MBB,
-                    unsigned NumCycles,
+                    unsigned NumCyles,
                     unsigned ExtraPredCycles,
                     const BranchProbability &Probability) const {
   return true;

@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the clang::LangOptions interface.
-///
+//
+//  This file defines the LangOptions interface.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_LANGOPTIONS_H
@@ -17,7 +16,6 @@
 
 #include <string>
 #include "clang/Basic/LLVM.h"
-#include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Visibility.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 
@@ -41,8 +39,8 @@ protected:
 #include "clang/Basic/LangOptions.def"
 };
 
-/// \brief Keeps track of the various options that can be
-/// enabled, which controls the dialect of C or C++ that is accepted.
+/// LangOptions - This class keeps track of the various options that can be
+/// enabled, which controls the dialect of C that is accepted.
 class LangOptions : public RefCountedBase<LangOptions>, public LangOptionsBase {
 public:
   typedef clang::Visibility Visibility;
@@ -57,13 +55,9 @@ public:
   };
 
 public:
-  clang::ObjCRuntime ObjCRuntime;
-
   std::string ObjCConstantStringClass;
   
-  /// \brief The name of the handler function to be called when -ftrapv is
-  /// specified.
-  ///
+  /// The name of the handler function to be called when -ftrapv is specified.
   /// If none is specified, abort (GCC-compatible behaviour).
   std::string OverflowHandler;
 
@@ -88,7 +82,7 @@ public:
   void resetNonModularOptions();
 };
 
-/// \brief Floating point control options
+/// Floating point control options
 class FPOptions {
 public:
   unsigned fp_contract : 1;
@@ -99,7 +93,7 @@ public:
     fp_contract(LangOpts.DefaultFPContract) {}
 };
 
-/// \brief OpenCL volatile options
+/// OpenCL volatile options
 class OpenCLOptions {
 public:
 #define OPENCLEXT(nm)  unsigned nm : 1;
@@ -122,6 +116,7 @@ enum TranslationUnitKind {
   TU_Module
 };
   
+  /// \brief 
 }  // end namespace clang
 
 #endif

@@ -18,7 +18,6 @@
 #include "llvm/Constants.h"
 #include "llvm/Instructions.h"
 #include "llvm/Analysis/Dominators.h"
-#include "llvm/Analysis/LoopInfoImpl.h"
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Assembly/Writer.h"
@@ -29,10 +28,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include <algorithm>
 using namespace llvm;
-
-// Explicitly instantiate methods in LoopInfoImpl.h for IR-level Loops.
-template class llvm::LoopBase<BasicBlock, Loop>;
-template class llvm::LoopInfoBase<BasicBlock, Loop>;
 
 // Always verify loopinfo if expensive checking is enabled.
 #ifdef XDEBUG
@@ -512,7 +507,7 @@ Loop *UnloopUpdater::getNearestLoop(BasicBlock *BB, Loop *BBLoop) {
 //
 bool LoopInfo::runOnFunction(Function &) {
   releaseMemory();
-  LI.Analyze(getAnalysis<DominatorTree>().getBase());
+  LI.Calculate(getAnalysis<DominatorTree>().getBase());    // Update
   return false;
 }
 
@@ -594,6 +589,9 @@ void LoopInfo::verifyAnalysis() const {
   }
 
   // Verify that blocks are mapped to valid loops.
+  //
+  // FIXME: With an up-to-date DFS (see LoopIterator.h) and DominatorTree, we
+  // could also verify that the blocks are still in the correct loops.
   for (DenseMap<BasicBlock*, Loop*>::const_iterator I = LI.BBMap.begin(),
          E = LI.BBMap.end(); I != E; ++I) {
     assert(Loops.count(I->second) && "orphaned loop");

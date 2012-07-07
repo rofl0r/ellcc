@@ -6,11 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief  Defines several types used to describe C++ lambda expressions
-/// that are shared between the parser and AST.
-///
+//
+// This file defines several types used to describe C++ lambda
+// expressions that are shared between the parser and AST.
 //===----------------------------------------------------------------------===//
 
 
@@ -19,15 +17,16 @@
 
 namespace clang {
 
-/// \brief The default, if any, capture method for a lambda expression.
+/// LambdaCaptureDefault - The default, if any, capture method for a
+/// lambda expression.
 enum LambdaCaptureDefault {
   LCD_None,
   LCD_ByCopy,
   LCD_ByRef
 };
 
-/// \brief The different capture forms in a lambda introducer: 'this' or a
-/// copied or referenced variable.
+/// LambdaCaptureKind - The different capture forms in a lambda
+/// introducer: 'this' or a copied or referenced variable.
 enum LambdaCaptureKind {
   LCK_This,
   LCK_ByCopy,

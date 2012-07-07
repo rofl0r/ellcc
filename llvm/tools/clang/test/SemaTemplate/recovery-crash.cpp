@@ -1,6 +1,7 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
 
-// Clang used to crash trying to recover while adding 'this->' before Work(x);
+// We don't expect a fix-it to be applied in this case. Clang used to crash
+// trying to recover while adding 'this->' before Work(x);
 
 template <typename> struct A {
   static void Work(int);  // expected-note{{must qualify identifier}}

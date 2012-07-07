@@ -53,114 +53,6 @@ enum FloatingRank {
   HalfRank, FloatRank, DoubleRank, LongDoubleRank
 };
 
-const RawComment *ASTContext::getRawCommentForDeclNoCache(const Decl *D) const {
-  if (!CommentsLoaded && ExternalSource) {
-    ExternalSource->ReadComments();
-    CommentsLoaded = true;
-  }
-
-  assert(D);
-
-  // User can not attach documentation to implicit declarations.
-  if (D->isImplicit())
-    return NULL;
-
-  // TODO: handle comments for function parameters properly.
-  if (isa<ParmVarDecl>(D))
-    return NULL;
-
-  ArrayRef<RawComment> RawComments = Comments.getComments();
-
-  // If there are no comments anywhere, we won't find anything.
-  if (RawComments.empty())
-    return NULL;
-
-  // If the declaration doesn't map directly to a location in a file, we
-  // can't find the comment.
-  SourceLocation DeclLoc = D->getLocation();
-  if (DeclLoc.isInvalid() || !DeclLoc.isFileID())
-    return NULL;
-
-  // Find the comment that occurs just after this declaration.
-  ArrayRef<RawComment>::iterator Comment
-      = std::lower_bound(RawComments.begin(),
-                         RawComments.end(),
-                         RawComment(SourceMgr, SourceRange(DeclLoc)),
-                         BeforeThanCompare<RawComment>(SourceMgr));
-
-  // Decompose the location for the declaration and find the beginning of the
-  // file buffer.
-  std::pair<FileID, unsigned> DeclLocDecomp = SourceMgr.getDecomposedLoc(DeclLoc);
-
-  // First check whether we have a trailing comment.
-  if (Comment != RawComments.end() &&
-      Comment->isDocumentation() && Comment->isTrailingComment() &&
-      !isa<TagDecl>(D) && !isa<NamespaceDecl>(D)) {
-    std::pair<FileID, unsigned> CommentBeginDecomp
-      = SourceMgr.getDecomposedLoc(Comment->getSourceRange().getBegin());
-    // Check that Doxygen trailing comment comes after the declaration, starts
-    // on the same line and in the same file as the declaration.
-    if (DeclLocDecomp.first == CommentBeginDecomp.first &&
-        SourceMgr.getLineNumber(DeclLocDecomp.first, DeclLocDecomp.second)
-          == SourceMgr.getLineNumber(CommentBeginDecomp.first,
-                                     CommentBeginDecomp.second)) {
-      return &*Comment;
-    }
-  }
-
-  // The comment just after the declaration was not a trailing comment.
-  // Let's look at the previous comment.
-  if (Comment == RawComments.begin())
-    return NULL;
-  --Comment;
-
-  // Check that we actually have a non-member Doxygen comment.
-  if (!Comment->isDocumentation() || Comment->isTrailingComment())
-    return NULL;
-
-  // Decompose the end of the comment.
-  std::pair<FileID, unsigned> CommentEndDecomp
-    = SourceMgr.getDecomposedLoc(Comment->getSourceRange().getEnd());
-
-  // If the comment and the declaration aren't in the same file, then they
-  // aren't related.
-  if (DeclLocDecomp.first != CommentEndDecomp.first)
-    return NULL;
-
-  // Get the corresponding buffer.
-  bool Invalid = false;
-  const char *Buffer = SourceMgr.getBufferData(DeclLocDecomp.first,
-                                               &Invalid).data();
-  if (Invalid)
-    return NULL;
-
-  // Extract text between the comment and declaration.
-  StringRef Text(Buffer + CommentEndDecomp.second,
-                 DeclLocDecomp.second - CommentEndDecomp.second);
-
-  // There should be no other declarations or preprocessor directives between
-  // comment and declaration.
-  if (Text.find_first_of(",;{}#") != StringRef::npos)
-    return NULL;
-
-  return &*Comment;
-}
-
-const RawComment *ASTContext::getRawCommentForDecl(const Decl *D) const {
-  // Check whether we have cached a comment string for this declaration
-  // already.
-  llvm::DenseMap<const Decl *, const RawComment *>::iterator Pos
-      = DeclComments.find(D);
-  if (Pos != DeclComments.end())
-      return Pos->second;
-
-  const RawComment *RC = getRawCommentForDeclNoCache(D);
-  // If we found a comment, it should be a documentation comment.
-  assert(!RC || RC->isDocumentation());
-  DeclComments[D] = RC;
-  return RC;
-}
-
 void 
 ASTContext::CanonicalTemplateTemplateParm::Profile(llvm::FoldingSetNodeID &ID, 
                                                TemplateTemplateParmDecl *Parm) {
@@ -337,7 +229,6 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     SubstTemplateTemplateParmPacks(this_()),
     GlobalNestedNameSpecifier(0), 
     Int128Decl(0), UInt128Decl(0),
-    BuiltinVaListDecl(0),
     ObjCIdDecl(0), ObjCSelDecl(0), ObjCClassDecl(0), ObjCProtocolClassDecl(0),
     CFConstantStringTypeDecl(0), ObjCInstanceTypeDecl(0),
     FILEDecl(0), 
@@ -352,7 +243,6 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     BuiltinInfo(builtins),
     DeclarationNames(*this),
     ExternalSource(0), Listener(0),
-    Comments(SM), CommentsLoaded(false),
     LastSDM(0, 0),
     UniqueBlockByRefTypeID(0) 
 {
@@ -588,6 +478,8 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
   DoubleComplexTy     = getComplexType(DoubleTy);
   LongDoubleComplexTy = getComplexType(LongDoubleTy);
 
+  BuiltinVaListType = QualType();
+
   // Builtin types for 'id', 'Class', and 'SEL'.
   InitBuiltinType(ObjCBuiltinIdTy, BuiltinType::ObjCId);
   InitBuiltinType(ObjCBuiltinClassTy, BuiltinType::ObjCClass);
@@ -607,9 +499,6 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
 
   // half type (OpenCL 6.1.1.1) / ARM NEON __fp16
   InitBuiltinType(HalfTy, BuiltinType::Half);
-
-  // Builtin type used to help define __builtin_va_list.
-  VaListTagTy = QualType();
 }
 
 DiagnosticsEngine &ASTContext::getDiagnostics() const {
@@ -1453,6 +1342,14 @@ void ASTContext::setBlockVarCopyInits(VarDecl*VD, Expr* Init) {
   BlockVarCopyInits[VD] = Init;
 }
 
+/// \brief Allocate an uninitialized TypeSourceInfo.
+///
+/// The caller should initialize the memory held by TypeSourceInfo using
+/// the TypeLoc wrappers.
+///
+/// \param T the type that will be the basis for type source info. This type
+/// should refer to how the declarator was written in source code, not to
+/// what type semantic analysis resolved the declarator to.
 TypeSourceInfo *ASTContext::CreateTypeSourceInfo(QualType T,
                                                  unsigned DataSize) const {
   if (!DataSize)
@@ -4152,8 +4049,6 @@ std::string ASTContext::getObjCEncodingForBlock(const BlockExpr *Expr) const {
        E = Decl->param_end(); PI != E; ++PI) {
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
-    if (sz.isZero())
-      continue;
     assert (sz.isPositive() && "BlockExpr - Incomplete param type");
     ParmOffset += sz;
   }
@@ -4195,8 +4090,8 @@ bool ASTContext::getObjCEncodingForFunctionDecl(const FunctionDecl *Decl,
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
     if (sz.isZero())
-      continue;
- 
+      return true;
+    
     assert (sz.isPositive() && 
         "getObjCEncodingForFunctionDecl - Incomplete param type");
     ParmOffset += sz;
@@ -4264,8 +4159,8 @@ bool ASTContext::getObjCEncodingForMethodDecl(const ObjCMethodDecl *Decl,
     QualType PType = (*PI)->getType();
     CharUnits sz = getObjCEncodingTypeSize(PType);
     if (sz.isZero())
-      continue;
- 
+      return true;
+    
     assert (sz.isPositive() && 
         "getObjCEncodingForMethodDecl - Incomplete param type");
     ParmOffset += sz;
@@ -4496,7 +4391,7 @@ static void EncodeBitField(const ASTContext *Ctx, std::string& S,
   // information is not especially sensible, but we're stuck with it for
   // compatibility with GCC, although providing it breaks anything that
   // actually uses runtime introspection and wants to work on both runtimes...
-  if (Ctx->getLangOpts().ObjCRuntime.isGNUFamily()) {
+  if (!Ctx->getLangOpts().NeXTRuntime) {
     const RecordDecl *RD = FD->getParent();
     const ASTRecordLayout &RL = Ctx->getASTRecordLayout(RD);
     S += llvm::utostr(RL.getFieldOffset(FD->getFieldIndex()));
@@ -4983,6 +4878,12 @@ void ASTContext::getObjCEncodingForTypeQualifier(Decl::ObjCDeclQualifier QT,
     S += 'V';
 }
 
+void ASTContext::setBuiltinVaListType(QualType T) {
+  assert(BuiltinVaListType.isNull() && "__builtin_va_list type already set!");
+
+  BuiltinVaListType = T;
+}
+
 TypedefDecl *ASTContext::getObjCIdDecl() const {
   if (!ObjCIdDecl) {
     QualType T = getObjCObjectType(ObjCBuiltinIdTy, 0, 0);
@@ -5034,241 +4935,6 @@ ObjCInterfaceDecl *ASTContext::getObjCProtocolDecl() const {
   }
   
   return ObjCProtocolClassDecl;
-}
-
-//===----------------------------------------------------------------------===//
-// __builtin_va_list Construction Functions
-//===----------------------------------------------------------------------===//
-
-static TypedefDecl *CreateCharPtrBuiltinVaListDecl(const ASTContext *Context) {
-  // typedef char* __builtin_va_list;
-  QualType CharPtrType = Context->getPointerType(Context->CharTy);
-  TypeSourceInfo *TInfo
-    = Context->getTrivialTypeSourceInfo(CharPtrType);
-
-  TypedefDecl *VaListTypeDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__builtin_va_list"),
-                          TInfo);
-  return VaListTypeDecl;
-}
-
-static TypedefDecl *CreateVoidPtrBuiltinVaListDecl(const ASTContext *Context) {
-  // typedef void* __builtin_va_list;
-  QualType VoidPtrType = Context->getPointerType(Context->VoidTy);
-  TypeSourceInfo *TInfo
-    = Context->getTrivialTypeSourceInfo(VoidPtrType);
-
-  TypedefDecl *VaListTypeDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__builtin_va_list"),
-                          TInfo);
-  return VaListTypeDecl;
-}
-
-static TypedefDecl *CreatePowerABIBuiltinVaListDecl(const ASTContext *Context) {
-  // typedef struct __va_list_tag {
-  RecordDecl *VaListTagDecl;
-
-  VaListTagDecl = CreateRecordDecl(*Context, TTK_Struct,
-                                   Context->getTranslationUnitDecl(),
-                                   &Context->Idents.get("__va_list_tag"));
-  VaListTagDecl->startDefinition();
-
-  const size_t NumFields = 5;
-  QualType FieldTypes[NumFields];
-  const char *FieldNames[NumFields];
-
-  //   unsigned char gpr;
-  FieldTypes[0] = Context->UnsignedCharTy;
-  FieldNames[0] = "gpr";
-
-  //   unsigned char fpr;
-  FieldTypes[1] = Context->UnsignedCharTy;
-  FieldNames[1] = "fpr";
-
-  //   unsigned short reserved;
-  FieldTypes[2] = Context->UnsignedShortTy;
-  FieldNames[2] = "reserved";
-
-  //   void* overflow_arg_area;
-  FieldTypes[3] = Context->getPointerType(Context->VoidTy);
-  FieldNames[3] = "overflow_arg_area";
-
-  //   void* reg_save_area;
-  FieldTypes[4] = Context->getPointerType(Context->VoidTy);
-  FieldNames[4] = "reg_save_area";
-
-  // Create fields
-  for (unsigned i = 0; i < NumFields; ++i) {
-    FieldDecl *Field = FieldDecl::Create(*Context, VaListTagDecl,
-                                         SourceLocation(),
-                                         SourceLocation(),
-                                         &Context->Idents.get(FieldNames[i]),
-                                         FieldTypes[i], /*TInfo=*/0,
-                                         /*BitWidth=*/0,
-                                         /*Mutable=*/false,
-                                         ICIS_NoInit);
-    Field->setAccess(AS_public);
-    VaListTagDecl->addDecl(Field);
-  }
-  VaListTagDecl->completeDefinition();
-  QualType VaListTagType = Context->getRecordType(VaListTagDecl);
-  Context->VaListTagTy = VaListTagType;
-
-  // } __va_list_tag;
-  TypedefDecl *VaListTagTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__va_list_tag"),
-                          Context->getTrivialTypeSourceInfo(VaListTagType));
-  QualType VaListTagTypedefType =
-    Context->getTypedefType(VaListTagTypedefDecl);
-
-  // typedef __va_list_tag __builtin_va_list[1];
-  llvm::APInt Size(Context->getTypeSize(Context->getSizeType()), 1);
-  QualType VaListTagArrayType
-    = Context->getConstantArrayType(VaListTagTypedefType,
-                                    Size, ArrayType::Normal, 0);
-  TypeSourceInfo *TInfo
-    = Context->getTrivialTypeSourceInfo(VaListTagArrayType);
-  TypedefDecl *VaListTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__builtin_va_list"),
-                          TInfo);
-
-  return VaListTypedefDecl;
-}
-
-static TypedefDecl *
-CreateX86_64ABIBuiltinVaListDecl(const ASTContext *Context) {
-  // typedef struct __va_list_tag {
-  RecordDecl *VaListTagDecl;
-  VaListTagDecl = CreateRecordDecl(*Context, TTK_Struct,
-                                   Context->getTranslationUnitDecl(),
-                                   &Context->Idents.get("__va_list_tag"));
-  VaListTagDecl->startDefinition();
-
-  const size_t NumFields = 4;
-  QualType FieldTypes[NumFields];
-  const char *FieldNames[NumFields];
-
-  //   unsigned gp_offset;
-  FieldTypes[0] = Context->UnsignedIntTy;
-  FieldNames[0] = "gp_offset";
-
-  //   unsigned fp_offset;
-  FieldTypes[1] = Context->UnsignedIntTy;
-  FieldNames[1] = "fp_offset";
-
-  //   void* overflow_arg_area;
-  FieldTypes[2] = Context->getPointerType(Context->VoidTy);
-  FieldNames[2] = "overflow_arg_area";
-
-  //   void* reg_save_area;
-  FieldTypes[3] = Context->getPointerType(Context->VoidTy);
-  FieldNames[3] = "reg_save_area";
-
-  // Create fields
-  for (unsigned i = 0; i < NumFields; ++i) {
-    FieldDecl *Field = FieldDecl::Create(const_cast<ASTContext &>(*Context),
-                                         VaListTagDecl,
-                                         SourceLocation(),
-                                         SourceLocation(),
-                                         &Context->Idents.get(FieldNames[i]),
-                                         FieldTypes[i], /*TInfo=*/0,
-                                         /*BitWidth=*/0,
-                                         /*Mutable=*/false,
-                                         ICIS_NoInit);
-    Field->setAccess(AS_public);
-    VaListTagDecl->addDecl(Field);
-  }
-  VaListTagDecl->completeDefinition();
-  QualType VaListTagType = Context->getRecordType(VaListTagDecl);
-  Context->VaListTagTy = VaListTagType;
-
-  // } __va_list_tag;
-  TypedefDecl *VaListTagTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__va_list_tag"),
-                          Context->getTrivialTypeSourceInfo(VaListTagType));
-  QualType VaListTagTypedefType =
-    Context->getTypedefType(VaListTagTypedefDecl);
-
-  // typedef __va_list_tag __builtin_va_list[1];
-  llvm::APInt Size(Context->getTypeSize(Context->getSizeType()), 1);
-  QualType VaListTagArrayType
-    = Context->getConstantArrayType(VaListTagTypedefType,
-                                      Size, ArrayType::Normal,0);
-  TypeSourceInfo *TInfo
-    = Context->getTrivialTypeSourceInfo(VaListTagArrayType);
-  TypedefDecl *VaListTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__builtin_va_list"),
-                          TInfo);
-
-  return VaListTypedefDecl;
-}
-
-static TypedefDecl *CreatePNaClABIBuiltinVaListDecl(const ASTContext *Context) {
-  // typedef int __builtin_va_list[4];
-  llvm::APInt Size(Context->getTypeSize(Context->getSizeType()), 4);
-  QualType IntArrayType
-    = Context->getConstantArrayType(Context->IntTy,
-				    Size, ArrayType::Normal, 0);
-  TypedefDecl *VaListTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__builtin_va_list"),
-                          Context->getTrivialTypeSourceInfo(IntArrayType));
-
-  return VaListTypedefDecl;
-}
-
-static TypedefDecl *CreateVaListDecl(const ASTContext *Context,
-                                     TargetInfo::BuiltinVaListKind Kind) {
-  switch (Kind) {
-  case TargetInfo::CharPtrBuiltinVaList:
-    return CreateCharPtrBuiltinVaListDecl(Context);
-  case TargetInfo::VoidPtrBuiltinVaList:
-    return CreateVoidPtrBuiltinVaListDecl(Context);
-  case TargetInfo::PowerABIBuiltinVaList:
-    return CreatePowerABIBuiltinVaListDecl(Context);
-  case TargetInfo::X86_64ABIBuiltinVaList:
-    return CreateX86_64ABIBuiltinVaListDecl(Context);
-  case TargetInfo::PNaClABIBuiltinVaList:
-    return CreatePNaClABIBuiltinVaListDecl(Context);
-  }
-
-  llvm_unreachable("Unhandled __builtin_va_list type kind");
-}
-
-TypedefDecl *ASTContext::getBuiltinVaListDecl() const {
-  if (!BuiltinVaListDecl)
-    BuiltinVaListDecl = CreateVaListDecl(this, Target->getBuiltinVaListKind());
-
-  return BuiltinVaListDecl;
-}
-
-QualType ASTContext::getVaListTagType() const {
-  // Force the creation of VaListTagTy by building the __builtin_va_list
-  // declaration.
-  if (VaListTagTy.isNull())
-    (void) getBuiltinVaListDecl();
-
-  return VaListTagTy;
 }
 
 void ASTContext::setObjCConstantStringInterface(ObjCInterfaceDecl *Decl) {

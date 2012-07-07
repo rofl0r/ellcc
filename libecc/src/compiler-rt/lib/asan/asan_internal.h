@@ -27,6 +27,28 @@ extern "C" void* _ReturnAddress(void);
 # pragma intrinsic(_ReturnAddress)
 #endif  // defined(_WIN32)
 
+// Limits for integral types. We have to redefine it in case we don't
+// have stdint.h (like in Visual Studio 9).
+#if __WORDSIZE == 64
+# define __INT64_C(c)  c ## L
+# define __UINT64_C(c) c ## UL
+#else
+# define __INT64_C(c)  c ## LL
+# define __UINT64_C(c) c ## ULL
+#endif  // __WORDSIZE == 64
+#undef INT32_MIN
+#define INT32_MIN              (-2147483647-1)
+#undef INT32_MAX
+#define INT32_MAX              (2147483647)
+#undef UINT32_MAX
+#define UINT32_MAX             (4294967295U)
+#undef INT64_MIN
+#define INT64_MIN              (-__INT64_C(9223372036854775807)-1)
+#undef INT64_MAX
+#define INT64_MAX              (__INT64_C(9223372036854775807))
+#undef UINT64_MAX
+#define UINT64_MAX             (__UINT64_C(18446744073709551615))
+
 #define ASAN_DEFAULT_FAILURE_EXITCODE 1
 
 #if defined(__linux__)
@@ -99,13 +121,25 @@ void ReplaceSystemMalloc();
 
 // asan_linux.cc / asan_mac.cc / asan_win.cc
 void *AsanDoesNotSupportStaticLinkage();
+bool AsanShadowRangeIsAvailable();
+const char *AsanGetEnv(const char *name);
+void AsanDumpProcessMap();
 
+void *AsanMmapFixedNoReserve(uptr fixed_addr, uptr size);
+void *AsanMmapFixedReserve(uptr fixed_addr, uptr size);
+void *AsanMprotect(uptr fixed_addr, uptr size);
+
+void AsanDisableCoreDumper();
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
 
 bool AsanInterceptsSignal(int signum);
 void SetAlternateSignalStack();
 void UnsetAlternateSignalStack();
 void InstallSignalHandlers();
+uptr GetThreadSelf();
+int AtomicInc(int *a);
+u16 AtomicExchange(u16 *a, u16 new_val);
+u8 AtomicExchange(u8 *a, u8 new_val);
 
 // Wrapper for TLS/TSD.
 void AsanTSDInit(void (*destructor)(void *tsd));
@@ -116,6 +150,12 @@ void AppendToErrorMessageBuffer(const char *buffer);
 // asan_printf.cc
 void AsanPrintf(const char *format, ...);
 void AsanReport(const char *format, ...);
+
+// Don't use std::min and std::max, to minimize dependency on libstdc++.
+template<class T> T Min(T a, T b) { return a < b ? a : b; }
+template<class T> T Max(T a, T b) { return a > b ? a : b; }
+
+void SortArray(uptr *array, uptr size);
 
 // asan_poisoning.cc
 // Poisons the shadow memory for "size" bytes starting from "addr".
@@ -148,7 +188,6 @@ extern uptr  FLAG_malloc_context_size;
 extern bool    FLAG_replace_str;
 extern bool    FLAG_replace_intrin;
 extern bool    FLAG_replace_cfallocator;
-extern bool    FLAG_mac_ignore_invalid_free;
 extern bool    FLAG_fast_unwind;
 extern bool    FLAG_use_fake_stack;
 extern uptr  FLAG_max_malloc_fill_size;
@@ -168,6 +207,11 @@ extern void (*death_callback)(void);
 
 enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 
+void SleepForSeconds(int seconds);
+void NORETURN Exit(int exitcode);
+void NORETURN Abort();
+int Atexit(void (*function)(void));
+
 #define ASAN_ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 #if !defined(_WIN32) || defined(__clang__)
@@ -181,12 +225,22 @@ enum LinkerInitialized { LINKER_INITIALIZED = 0 };
 # define GET_CURRENT_FRAME() (uptr)0xDEADBEEF
 #endif
 
-#ifdef _WIN32
+#ifndef _WIN32
+const uptr kMmapGranularity = kPageSize;
+# define THREAD_CALLING_CONV
+typedef void* thread_return_t;
+#else
+const uptr kMmapGranularity = 1UL << 16;
+# define THREAD_CALLING_CONV __stdcall
+typedef DWORD thread_return_t;
+
 # ifndef ASAN_USE_EXTERNAL_SYMBOLIZER
 #  define ASAN_USE_EXTERNAL_SYMBOLIZER __asan_WinSymbolize
 bool __asan_WinSymbolize(const void *addr, char *out_buffer, int buffer_size);
 # endif
-#endif  // _WIN32
+#endif
+
+typedef thread_return_t (THREAD_CALLING_CONV *thread_callback_t)(void* arg);
 
 // These magic values are written to shadow for better error reporting.
 const int kAsanHeapLeftRedzoneMagic = 0xfa;

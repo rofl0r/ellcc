@@ -6,10 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Includes all the separate Diagnostic headers & some related helpers.
-///
+//
+//  This file includes all the separate Diagnostic headers & some related
+//  helpers.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_ALL_DIAGNOSTICS_H

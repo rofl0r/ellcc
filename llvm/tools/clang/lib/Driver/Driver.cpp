@@ -374,17 +374,16 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   if (FailingCommand && FailingCommand->getCreator().isLinkJob())
     return;
 
+  Diag(clang::diag::note_drv_command_failed_diag_msg)
+    << "Please submit a bug report to " BUG_REPORT_URL " and include command"
+    " line arguments and all diagnostic information.";
+
   // Print the version of the compiler.
   PrintVersion(C, llvm::errs());
-
-  Diag(clang::diag::note_drv_command_failed_diag_msg)
-    << "PLEASE submit a bug report to " BUG_REPORT_URL " and include the "
-    "crash backtrace, preprocessed source, and associated run script.";
 
   // Suppress driver output and emit preprocessor output to temp file.
   CCCIsCPP = true;
   CCGenDiagnostics = true;
-  C.getArgs().AddFlagArg(0, Opts->getOption(options::OPT_frewrite_includes));
 
   // Save the original job command(s).
   std::string Cmd;
@@ -474,9 +473,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   // If the command succeeded, we are done.
   if (Res == 0) {
     Diag(clang::diag::note_drv_command_failed_diag_msg)
-      << "\n********************\n\n"
-      "PLEASE ATTACH THE FOLLOWING FILES TO THE BUG REPORT:\n"
-      "Preprocessed source(s) and associated run script(s) are located at:";
+      << "Preprocessed source(s) and associated run script(s) are located at:";
     ArgStringList Files = C.getTempFiles();
     for (ArgStringList::const_iterator it = Files.begin(), ie = Files.end();
          it != ie; ++it) {
@@ -495,6 +492,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         // Strip away options not necessary to reproduce the crash.
         // FIXME: This doesn't work with quotes (e.g., -D "foo bar").
         SmallVector<std::string, 16> Flag;
+        Flag.push_back("-D ");
         Flag.push_back("-F");
         Flag.push_back("-I ");
         Flag.push_back("-o ");
@@ -512,7 +510,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
           do {
             I = Cmd.find(Flag[i], I);
             if (I == std::string::npos) break;
-
+            
             E = Cmd.find(" ", I + Flag[i].length());
             if (E == std::string::npos) break;
             Cmd.erase(I, E - I + 1);
@@ -535,8 +533,6 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
       }
     }
-    Diag(clang::diag::note_drv_command_failed_diag_msg)
-      << "\n\n********************";
   } else {
     // Failure, remove preprocessed files.
     if (!C.getArgs().hasArg(options::OPT_save_temps))
@@ -1173,10 +1169,7 @@ Action *Driver::ConstructPhaseAction(const ArgList &Args, phases::ID Phase,
     if (Args.hasArg(options::OPT_M, options::OPT_MM)) {
       OutputTy = types::TY_Dependencies;
     } else {
-      OutputTy = Input->getType();
-      if (!Args.hasFlag(options::OPT_frewrite_includes,
-                        options::OPT_fno_rewrite_includes, false))
-        OutputTy = types::getPreprocessedType(OutputTy);
+      OutputTy = types::getPreprocessedType(Input->getType());
       assert(OutputTy != types::TY_INVALID &&
              "Cannot preprocess this input type!");
     }

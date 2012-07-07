@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -fms-extensions -fdelayed-template-parsing -fsyntax-only -verify -std=c++11 %s
+// RUN: %clang_cc1 -fms-extensions -fdelayed-template-parsing -fsyntax-only -verify %s
 
 template <class T>
 class A {
@@ -90,14 +90,3 @@ Callback Bind() {
 }
 
 }
-
-namespace rdar11700604 {
-  template<typename T> void foo() = delete;
-
-  struct X {
-    X() = default;
-
-    template<typename T> void foo() = delete;
-  };
-}
-

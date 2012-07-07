@@ -314,9 +314,7 @@ TEST_GROUP(Inttypes)
     TEST_TRACE(C99 7.8.2.3)
     intmax_t m;
     m = strtoimax("100", 0, 0);
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=54")
-        TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100 (%" PRIdMAX ")", m);
-        TEST_FAIL(MICROBLAZE, m == 100, "strtoimax(\"100\", 0, 0) == 100 (%" PRIdMAX ")", m);
+    TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100");
     uintmax_t um;
     um = strtoumax("100", 0, 0);
     TEST(um == 100, "strtoumax(\"100\", 0, 0) == 100");
@@ -331,9 +329,7 @@ TEST_GROUP(Inttypes)
     TEST(um == UINTMAX_MAX, "strtoumax(BIGNUM, 0, 0) == UINTMAX_MAX");
     TEST_TRACE(C99 7.8.2.4)
     m = wcstoimax(L"100", 0, 0);
-    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=54")
-        TEST(m == 100, "wcstoimax(L\"100\", 0, 0) == 100");
-        TEST_FAIL(MICROBLAZE, m == 100, "wcstoimax(L\"100\", 0, 0) == 100");
+    TEST(m == 100, "wcstoimax(L\"100\", 0, 0) == 100");
     um = wcstoumax(L"100", 0, 0);
     TEST(um == 100, "wcstoumax(L\"100\", 0, 0) == 100");
 #define WBIGNUM L"100000000000000000000000000000000000000"

@@ -54,9 +54,6 @@ static bool CC_PPC_SVR4_Custom_AlignFPArgRegs(unsigned &ValNo, MVT &ValVT,
 static cl::opt<bool> DisablePPCPreinc("disable-ppc-preinc",
 cl::desc("disable preincrement load/store generation on PPC"), cl::Hidden);
 
-static cl::opt<bool> DisableILPPref("disable-ppc-ilp-pref",
-cl::desc("disable setting the node scheduling preference to ILP on PPC"), cl::Hidden);
-
 static TargetLoweringObjectFile *CreateTLOF(const PPCTargetMachine &TM) {
   if (TM.getSubtargetImpl()->isDarwin())
     return new TargetLoweringObjectFileMachO();
@@ -66,7 +63,6 @@ static TargetLoweringObjectFile *CreateTLOF(const PPCTargetMachine &TM) {
 
 PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   : TargetLowering(TM, CreateTLOF(TM)), PPCSubTarget(*TM.getSubtargetImpl()) {
-  const PPCSubtarget *Subtarget = &TM.getSubtarget<PPCSubtarget>();
 
   setPow2DivIsCheap();
 
@@ -76,8 +72,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
 
   // On PPC32/64, arguments smaller than 4/8 bytes are extended, so all
   // arguments are at least 4/8 bytes aligned.
-  bool isPPC64 = Subtarget->isPPC64();
-  setMinStackArgumentAlignment(isPPC64 ? 8:4);
+  setMinStackArgumentAlignment(TM.getSubtarget<PPCSubtarget>().isPPC64() ? 8:4);
 
   // Set up the register classes.
   addRegisterClass(MVT::i32, &PPC::GPRCRegClass);
@@ -134,17 +129,17 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setOperationAction(ISD::FCOS , MVT::f64, Expand);
   setOperationAction(ISD::FREM , MVT::f64, Expand);
   setOperationAction(ISD::FPOW , MVT::f64, Expand);
-  setOperationAction(ISD::FMA  , MVT::f64, Legal);
+  setOperationAction(ISD::FMA  , MVT::f64, Expand);
   setOperationAction(ISD::FSIN , MVT::f32, Expand);
   setOperationAction(ISD::FCOS , MVT::f32, Expand);
   setOperationAction(ISD::FREM , MVT::f32, Expand);
   setOperationAction(ISD::FPOW , MVT::f32, Expand);
-  setOperationAction(ISD::FMA  , MVT::f32, Legal);
+  setOperationAction(ISD::FMA  , MVT::f32, Expand);
 
   setOperationAction(ISD::FLT_ROUNDS_, MVT::i32, Custom);
 
   // If we're enabling GP optimizations, use hardware square root
-  if (!Subtarget->hasFSQRT()) {
+  if (!TM.getSubtarget<PPCSubtarget>().hasFSQRT()) {
     setOperationAction(ISD::FSQRT, MVT::f64, Expand);
     setOperationAction(ISD::FSQRT, MVT::f32, Expand);
   }
@@ -230,8 +225,8 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   // VASTART needs to be custom lowered to use the VarArgsFrameIndex
   setOperationAction(ISD::VASTART           , MVT::Other, Custom);
 
-  if (Subtarget->isSVR4ABI()) {
-    if (isPPC64) {
+  if (TM.getSubtarget<PPCSubtarget>().isSVR4ABI()) {
+    if (TM.getSubtarget<PPCSubtarget>().isPPC64()) {
       // VAARG always uses double-word chunks, so promote anything smaller.
       setOperationAction(ISD::VAARG, MVT::i1, Promote);
       AddPromotedToType (ISD::VAARG, MVT::i1, MVT::i64);
@@ -275,7 +270,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setCondCodeAction(ISD::SETONE, MVT::f32, Expand);
   setCondCodeAction(ISD::SETONE, MVT::f64, Expand);
 
-  if (Subtarget->has64BitSupport()) {
+  if (TM.getSubtarget<PPCSubtarget>().has64BitSupport()) {
     // They also have instructions for converting between i64 and fp.
     setOperationAction(ISD::FP_TO_SINT, MVT::i64, Custom);
     setOperationAction(ISD::FP_TO_UINT, MVT::i64, Expand);
@@ -294,7 +289,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     setOperationAction(ISD::FP_TO_UINT, MVT::i32, Expand);
   }
 
-  if (Subtarget->use64BitRegs()) {
+  if (TM.getSubtarget<PPCSubtarget>().use64BitRegs()) {
     // 64-bit PowerPC implementations can support i64 types directly
     addRegisterClass(MVT::i64, &PPC::G8RCRegClass);
     // BUILD_PAIR can't be handled natively, and should be expanded to shl/or
@@ -310,7 +305,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     setOperationAction(ISD::SRL_PARTS, MVT::i32, Custom);
   }
 
-  if (Subtarget->hasAltivec()) {
+  if (TM.getSubtarget<PPCSubtarget>().hasAltivec()) {
     // First set operation action for all vector types to expand. Then we
     // will selectively turn on ones that can be effectively codegen'd.
     for (unsigned i = (unsigned)MVT::FIRST_VECTOR_VALUETYPE;
@@ -380,7 +375,6 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     addRegisterClass(MVT::v16i8, &PPC::VRRCRegClass);
 
     setOperationAction(ISD::MUL, MVT::v4f32, Legal);
-    setOperationAction(ISD::FMA, MVT::v4f32, Legal);
     setOperationAction(ISD::MUL, MVT::v4i32, Custom);
     setOperationAction(ISD::MUL, MVT::v8i16, Custom);
     setOperationAction(ISD::MUL, MVT::v16i8, Custom);
@@ -394,7 +388,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
   }
 
-  if (Subtarget->has64BitSupport())
+  if (TM.getSubtarget<PPCSubtarget>().has64BitSupport())
     setOperationAction(ISD::PREFETCH, MVT::Other, Legal);
 
   setOperationAction(ISD::ATOMIC_LOAD,  MVT::i32, Expand);
@@ -403,7 +397,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setBooleanContents(ZeroOrOneBooleanContent);
   setBooleanVectorContents(ZeroOrOneBooleanContent); // FIXME: Is this correct?
 
-  if (isPPC64) {
+  if (TM.getSubtarget<PPCSubtarget>().isPPC64()) {
     setStackPointerRegisterToSaveRestore(PPC::X1);
     setExceptionPointerRegister(PPC::X3);
     setExceptionSelectorRegister(PPC::X4);
@@ -420,7 +414,7 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setTargetDAGCombine(ISD::BSWAP);
 
   // Darwin long double math library functions have $LDBL128 appended.
-  if (Subtarget->isDarwin()) {
+  if (TM.getSubtarget<PPCSubtarget>().isDarwin()) {
     setLibcallName(RTLIB::COS_PPCF128, "cosl$LDBL128");
     setLibcallName(RTLIB::POW_PPCF128, "powl$LDBL128");
     setLibcallName(RTLIB::REM_PPCF128, "fmodl$LDBL128");
@@ -436,11 +430,6 @@ PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
   setMinFunctionAlignment(2);
   if (PPCSubTarget.isDarwin())
     setPrefFunctionAlignment(4);
-
-  if (isPPC64 && Subtarget->isJITCodeModel())
-    // Temporary workaround for the inability of PPC64 JIT to handle jump
-    // tables.
-    setSupportJumpTables(false);
 
   setInsertFencesForAtomic(true);
 
@@ -1113,10 +1102,7 @@ bool PPCTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
   if (VT.isVector())
     return false;
 
-  if (SelectAddressRegReg(Ptr, Offset, Base, DAG)) {
-    AM = ISD::PRE_INC;
-    return true;
-  }
+  // TODO: Check reg+reg first.
 
   // LDU/STU use reg+imm*4, others use reg+imm.
   if (VT != MVT::i64) {
@@ -4944,37 +4930,11 @@ PPCTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 
   MachineFunction *F = BB->getParent();
 
-  if (PPCSubTarget.hasISEL() && (MI->getOpcode() == PPC::SELECT_CC_I4 ||
-                                 MI->getOpcode() == PPC::SELECT_CC_I8)) {
-    unsigned OpCode = MI->getOpcode() == PPC::SELECT_CC_I8 ?
-                                         PPC::ISEL8 : PPC::ISEL;
-    unsigned SelectPred = MI->getOperand(4).getImm();
-    DebugLoc dl = MI->getDebugLoc();
-
-    // The SelectPred is ((BI << 5) | BO) for a BCC
-    unsigned BO = SelectPred & 0xF;
-    assert((BO == 12 || BO == 4) && "invalid predicate BO field for isel");
-
-    unsigned TrueOpNo, FalseOpNo;
-    if (BO == 12) {
-      TrueOpNo = 2;
-      FalseOpNo = 3;
-    } else {
-      TrueOpNo = 3;
-      FalseOpNo = 2;
-      SelectPred = PPC::InvertPredicate((PPC::Predicate)SelectPred);
-    }
-
-    BuildMI(*BB, MI, dl, TII->get(OpCode), MI->getOperand(0).getReg())
-      .addReg(MI->getOperand(TrueOpNo).getReg())
-      .addReg(MI->getOperand(FalseOpNo).getReg())
-      .addImm(SelectPred).addReg(MI->getOperand(1).getReg());
-  } else if (MI->getOpcode() == PPC::SELECT_CC_I4 ||
-             MI->getOpcode() == PPC::SELECT_CC_I8 ||
-             MI->getOpcode() == PPC::SELECT_CC_F4 ||
-             MI->getOpcode() == PPC::SELECT_CC_F8 ||
-             MI->getOpcode() == PPC::SELECT_CC_VRRC) {
-
+  if (MI->getOpcode() == PPC::SELECT_CC_I4 ||
+      MI->getOpcode() == PPC::SELECT_CC_I8 ||
+      MI->getOpcode() == PPC::SELECT_CC_F4 ||
+      MI->getOpcode() == PPC::SELECT_CC_F8 ||
+      MI->getOpcode() == PPC::SELECT_CC_VRRC) {
 
     // The incoming instruction knows the destination vreg to set, the
     // condition code register to branch on, the true/false values to
@@ -5910,30 +5870,11 @@ EVT PPCTargetLowering::getOptimalMemOpType(uint64_t Size,
   }
 }
 
-/// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
-/// a pair of mul and add instructions. fmuladd intrinsics will be expanded to
-/// FMAs when this method returns true (and FMAs are legal), otherwise fmuladd
-/// is expanded to mul + add.
-bool PPCTargetLowering::isFMAFasterThanMulAndAdd(EVT VT) const {
-  if (!VT.isSimple())
-    return false;
-
-  switch (VT.getSimpleVT().SimpleTy) {
-  case MVT::f32:
-  case MVT::f64:
-  case MVT::v4f32:
-    return true;
-  default:
-    break;
-  }
-
-  return false;
-}
-
 Sched::Preference PPCTargetLowering::getSchedulingPreference(SDNode *N) const {
-  if (DisableILPPref)
-    return TargetLowering::getSchedulingPreference(N);
+  unsigned Directive = PPCSubTarget.getDarwinDirective();
+  if (Directive == PPC::DIR_440 || Directive == PPC::DIR_A2)
+    return Sched::ILP;
 
-  return Sched::ILP;
+  return TargetLowering::getSchedulingPreference(N);
 }
 

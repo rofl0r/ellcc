@@ -451,8 +451,7 @@ void ObjCMethodDecl::setMethodParams(ASTContext &C,
   if (isImplicit())
     return setParamsAndSelLocs(C, Params, ArrayRef<SourceLocation>());
 
-  SelLocsKind = hasStandardSelectorLocs(getSelector(), SelLocs, Params,
-                                        DeclEndLoc);
+  SelLocsKind = hasStandardSelectorLocs(getSelector(), SelLocs, Params, EndLoc);
   if (SelLocsKind != SelLoc_NonStandard)
     return setParamsAndSelLocs(C, Params, ArrayRef<SourceLocation>());
 
@@ -522,12 +521,6 @@ ObjCMethodDecl *ObjCMethodDecl::getCanonicalDecl() {
                                                     isInstanceMethod());
 
   return this;
-}
-
-SourceLocation ObjCMethodDecl::getLocEnd() const {
-  if (Stmt *Body = getBody())
-    return Body->getLocEnd();
-  return DeclEndLoc;
 }
 
 ObjCMethodFamily ObjCMethodDecl::getMethodFamily() const {
@@ -1176,7 +1169,7 @@ void ObjCImplDecl::setClassInterface(ObjCInterfaceDecl *IFace) {
 }
 
 /// FindPropertyImplIvarDecl - This method lookup the ivar in the list of
-/// properties implemented in this category \@implementation block and returns
+/// properties implemented in this category @implementation block and returns
 /// the implemented property that uses it.
 ///
 ObjCPropertyImplDecl *ObjCImplDecl::
@@ -1191,8 +1184,8 @@ FindPropertyImplIvarDecl(IdentifierInfo *ivarId) const {
 }
 
 /// FindPropertyImplDecl - This method looks up a previous ObjCPropertyImplDecl
-/// added to the list of those properties \@synthesized/\@dynamic in this
-/// category \@implementation block.
+/// added to the list of those properties @synthesized/@dynamic in this
+/// category @implementation block.
 ///
 ObjCPropertyImplDecl *ObjCImplDecl::
 FindPropertyImplDecl(IdentifierInfo *Id) const {

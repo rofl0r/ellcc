@@ -163,22 +163,22 @@ TargetPassConfig *ARMBaseTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 bool ARMPassConfig::addPreISel() {
   if (TM->getOptLevel() != CodeGenOpt::None && EnableGlobalMerge)
-    addPass(createGlobalMergePass(TM->getTargetLowering()));
+    PM->add(createGlobalMergePass(TM->getTargetLowering()));
 
   return false;
 }
 
 bool ARMPassConfig::addInstSelector() {
-  addPass(createARMISelDag(getARMTargetMachine(), getOptLevel()));
+  PM->add(createARMISelDag(getARMTargetMachine(), getOptLevel()));
   return false;
 }
 
 bool ARMPassConfig::addPreRegAlloc() {
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (getOptLevel() != CodeGenOpt::None && !getARMSubtarget().isThumb1Only())
-    addPass(createARMLoadStoreOptimizationPass(true));
+    PM->add(createARMLoadStoreOptimizationPass(true));
   if (getOptLevel() != CodeGenOpt::None && getARMSubtarget().isCortexA9())
-    addPass(createMLxExpansionPass());
+    PM->add(createMLxExpansionPass());
   return true;
 }
 
@@ -186,23 +186,23 @@ bool ARMPassConfig::addPreSched2() {
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (getOptLevel() != CodeGenOpt::None) {
     if (!getARMSubtarget().isThumb1Only()) {
-      addPass(createARMLoadStoreOptimizationPass());
+      PM->add(createARMLoadStoreOptimizationPass());
       printAndVerify("After ARM load / store optimizer");
     }
     if (getARMSubtarget().hasNEON())
-      addPass(createExecutionDependencyFixPass(&ARM::DPRRegClass));
+      PM->add(createExecutionDependencyFixPass(&ARM::DPRRegClass));
   }
 
   // Expand some pseudo instructions into multiple instructions to allow
   // proper scheduling.
-  addPass(createARMExpandPseudoPass());
+  PM->add(createARMExpandPseudoPass());
 
   if (getOptLevel() != CodeGenOpt::None) {
     if (!getARMSubtarget().isThumb1Only())
-      addPass(&IfConverterID);
+      addPass(IfConverterID);
   }
   if (getARMSubtarget().isThumb2())
-    addPass(createThumb2ITBlockPass());
+    PM->add(createThumb2ITBlockPass());
 
   return true;
 }
@@ -210,13 +210,13 @@ bool ARMPassConfig::addPreSched2() {
 bool ARMPassConfig::addPreEmitPass() {
   if (getARMSubtarget().isThumb2()) {
     if (!getARMSubtarget().prefers32BitThumb())
-      addPass(createThumb2SizeReductionPass());
+      PM->add(createThumb2SizeReductionPass());
 
     // Constant island pass work on unbundled instructions.
-    addPass(&UnpackMachineBundlesID);
+    addPass(UnpackMachineBundlesID);
   }
 
-  addPass(createARMConstantIslandPass());
+  PM->add(createARMConstantIslandPass());
 
   return true;
 }

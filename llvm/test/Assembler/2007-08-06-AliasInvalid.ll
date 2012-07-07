@@ -1,5 +1,4 @@
-; RUN: not llvm-as < %s > /dev/null 2> %t
-; RUN: grep "expected top-level entity" %t
+; RUN: not llvm-as < %s > /dev/null |& grep {expected top-level entity}
 ; PR1577
 
 @anInt = global i32 1 

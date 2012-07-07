@@ -3,34 +3,29 @@
 LLVM Design & Overview
 ======================
 
-.. toctree::
-   :hidden:
+ * `LLVM Language Reference Manual <LangRef.html>`_
 
-   GetElementPtr
+   Defines the LLVM intermediate representation.
 
-* `LLVM Language Reference Manual <LangRef.html>`_
+ * `Introduction to the LLVM Compiler <http://llvm.org/pubs/2008-10-04-ACAT-LLVM-Intro.html>`_
 
-  Defines the LLVM intermediate representation.
+   Presentation providing a users introduction to LLVM.
 
-* `Introduction to the LLVM Compiler <http://llvm.org/pubs/2008-10-04-ACAT-LLVM-Intro.html>`_
+ * `Intro to LLVM <http://www.aosabook.org/en/llvm.html>`_
 
-  Presentation providing a users introduction to LLVM.
+   Book chapter providing a compiler hacker's introduction to LLVM.
 
-* `Intro to LLVM <http://www.aosabook.org/en/llvm.html>`_
+ * `LLVM: A Compilation Framework forLifelong Program Analysis & Transformation
+   <http://llvm.org/pubs/2004-01-30-CGO-LLVM.html>`_
 
-  Book chapter providing a compiler hacker's introduction to LLVM.
+   Design overview.
 
-* `LLVM: A Compilation Framework forLifelong Program Analysis & Transformation
-  <http://llvm.org/pubs/2004-01-30-CGO-LLVM.html>`_
+ * `LLVM: An Infrastructure for Multi-Stage Optimization
+   <http://llvm.org/pubs/2002-12-LattnerMSThesis.html>`_
 
-  Design overview.
+   More details (quite old now).
 
-* `LLVM: An Infrastructure for Multi-Stage Optimization
-  <http://llvm.org/pubs/2002-12-LattnerMSThesis.html>`_
+ * `GetElementPtr FAQ <GetElementPtr.html>`_
 
-  More details (quite old now).
-
-* :ref:`gep`
-
-  Answers to some very frequent questions about LLVM's most frequently
-  misunderstood instruction.
+   Answers to some very frequent questions about LLVM's most frequently
+   misunderstood instruction.

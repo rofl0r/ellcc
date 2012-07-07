@@ -24,7 +24,6 @@ enum ReportType {
   ReportTypeThreadLeak,
   ReportTypeMutexDestroyLocked,
   ReportTypeSignalUnsafe,
-  ReportTypeErrnoInSignal,
 };
 
 struct ReportStack {

@@ -246,9 +246,7 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
     for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
       for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
         CallSite CS(cast<Value>(I));
-        if (!CS) continue;
-        Function *Callee = CS.getCalledFunction();
-        if (Callee && Callee->isIntrinsic()) continue;
+        if (!CS || isa<IntrinsicInst>(I)) continue;
         
         // If this call site already existed in the callgraph, just verify it
         // matches up to expectations and remove it from CallSites.

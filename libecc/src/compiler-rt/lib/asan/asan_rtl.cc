@@ -21,15 +21,14 @@
 #include "asan_stats.h"
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
-#include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_libc.h"
 
 namespace __sanitizer {
 using namespace __asan;
 
 void Die() {
-  static atomic_uint32_t num_calls;
-  if (atomic_fetch_add(&num_calls, 1, memory_order_relaxed) != 0) {
+  static int num_calls = 0;
+  if (AtomicInc(&num_calls) > 1) {
     // Don't die twice - run a busy loop.
     while (1) { }
   }
@@ -74,7 +73,6 @@ bool    FLAG_symbolize = 0;
 s64 FLAG_demangle = 1;
 s64 FLAG_debug = 0;
 bool    FLAG_replace_cfallocator = 1;  // Used on Mac only.
-bool    FLAG_mac_ignore_invalid_free = 0;  // Used on Mac only.
 bool    FLAG_replace_str = 1;
 bool    FLAG_replace_intrin = 1;
 bool    FLAG_use_fake_stack = 1;
@@ -113,9 +111,8 @@ static void PrintBytes(const char *before, uptr *a) {
 
 void AppendToErrorMessageBuffer(const char *buffer) {
   if (error_message_buffer) {
-    uptr length = internal_strlen(buffer);
-    CHECK_GE(error_message_buffer_size, error_message_buffer_pos);
-    uptr remaining = error_message_buffer_size - error_message_buffer_pos;
+    uptr length = (uptr)internal_strlen(buffer);
+    int remaining = error_message_buffer_size - error_message_buffer_pos;
     internal_strncpy(error_message_buffer + error_message_buffer_pos,
                      buffer, remaining);
     error_message_buffer[error_message_buffer_size - 1] = '\0';
@@ -130,14 +127,14 @@ static void ReserveShadowMemoryRange(uptr beg, uptr end) {
   CHECK((beg % kPageSize) == 0);
   CHECK(((end + 1) % kPageSize) == 0);
   uptr size = end - beg + 1;
-  void *res = MmapFixedNoReserve(beg, size);
+  void *res = AsanMmapFixedNoReserve(beg, size);
   CHECK(res == (void*)beg && "ReserveShadowMemoryRange failed");
 }
 
 // ---------------------- LowLevelAllocator ------------- {{{1
 void *LowLevelAllocator::Allocate(uptr size) {
   CHECK((size & (size - 1)) == 0 && "size must be a power of two");
-  if (allocated_end_ - allocated_current_ < (sptr)size) {
+  if (allocated_end_ - allocated_current_ < size) {
     uptr size_to_allocate = Max(size, kPageSize);
     allocated_current_ =
         (char*)MmapOrDie(size_to_allocate, __FUNCTION__);
@@ -145,7 +142,7 @@ void *LowLevelAllocator::Allocate(uptr size) {
     PoisonShadow((uptr)allocated_current_, size_to_allocate,
                  kAsanInternalHeapMagic);
   }
-  CHECK(allocated_end_ - allocated_current_ >= (sptr)size);
+  CHECK(allocated_end_ - allocated_current_ >= size);
   void *res = allocated_current_;
   allocated_current_ += size;
   return res;
@@ -344,8 +341,8 @@ void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
 void __asan_report_error(uptr pc, uptr bp, uptr sp,
                          uptr addr, bool is_write, uptr access_size) {
   // Do not print more than one report, otherwise they will mix up.
-  static atomic_uint32_t num_calls;
-  if (atomic_fetch_add(&num_calls, 1, memory_order_relaxed) != 0) return;
+  static int num_calls = 0;
+  if (AtomicInc(&num_calls) > 1) return;
 
   AsanPrintf("===================================================="
              "=============\n");
@@ -461,8 +458,6 @@ static void ParseAsanOptions(const char *options) {
   IntFlagValue(options, "demangle=", &FLAG_demangle);
   IntFlagValue(options, "debug=", &FLAG_debug);
   BoolFlagValue(options, "replace_cfallocator=", &FLAG_replace_cfallocator);
-  BoolFlagValue(options, "mac_ignore_invalid_free=",
-                &FLAG_mac_ignore_invalid_free);
   BoolFlagValue(options, "replace_str=", &FLAG_replace_str);
   BoolFlagValue(options, "replace_intrin=", &FLAG_replace_intrin);
   BoolFlagValue(options, "use_fake_stack=", &FLAG_use_fake_stack);
@@ -482,6 +477,7 @@ static void ParseAsanOptions(const char *options) {
 
 void __asan_init() {
   if (asan_inited) return;
+  MiniLibcStub();  // FIXME: remove me once mini libc build is tested properly.
   asan_init_is_running = true;
 
   // Make sure we are not statically linked.
@@ -497,7 +493,7 @@ void __asan_init() {
   }
 #endif
   // flags
-  const char *options = GetEnv("ASAN_OPTIONS");
+  const char *options = AsanGetEnv("ASAN_OPTIONS");
   ParseAsanOptions(options);
 
   if (FLAG_v && options) {
@@ -540,13 +536,10 @@ void __asan_init() {
   }
 
   if (FLAG_disable_core) {
-    DisableCoreDumper();
+    AsanDisableCoreDumper();
   }
 
-  uptr shadow_start = kLowShadowBeg;
-  if (kLowShadowBeg > 0) shadow_start -= kMmapGranularity;
-  uptr shadow_end = kHighShadowEnd;
-  if (MemoryRangeIsAvailable(shadow_start, shadow_end)) {
+  if (AsanShadowRangeIsAvailable()) {
     if (kLowShadowBeg != kLowShadowEnd) {
       // mmap the low shadow plus at least one page.
       ReserveShadowMemoryRange(kLowShadowBeg - kMmapGranularity, kLowShadowEnd);
@@ -554,12 +547,12 @@ void __asan_init() {
     // mmap the high shadow.
     ReserveShadowMemoryRange(kHighShadowBeg, kHighShadowEnd);
     // protect the gap
-    void *prot = Mprotect(kShadowGapBeg, kShadowGapEnd - kShadowGapBeg + 1);
+    void *prot = AsanMprotect(kShadowGapBeg, kShadowGapEnd - kShadowGapBeg + 1);
     CHECK(prot == (void*)kShadowGapBeg);
   } else {
     Report("Shadow memory range interleaves with an existing memory mapping. "
            "ASan cannot proceed correctly. ABORTING.\n");
-    DumpProcessMap();
+    AsanDumpProcessMap();
     Die();
   }
 

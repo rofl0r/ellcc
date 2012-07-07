@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "OptParserEmitter.h"
 #include "llvm/TableGen/Record.h"
-#include "llvm/TableGen/TableGenBackend.h"
 #include "llvm/ADT/STLExtras.h"
 using namespace llvm;
 
@@ -69,20 +69,16 @@ static raw_ostream &write_cstring(raw_ostream &OS, llvm::StringRef Str) {
   return OS;
 }
 
-/// OptParserEmitter - This tablegen backend takes an input .td file
-/// describing a list of options and emits a data structure for parsing and
-/// working with those options when given an input command line.
-namespace clang {
-void EmitOptParser(RecordKeeper &Records, raw_ostream &OS, bool GenDefs) {
+void OptParserEmitter::run(raw_ostream &OS) {
   // Get the option groups and options.
   const std::vector<Record*> &Groups =
     Records.getAllDerivedDefinitions("OptionGroup");
   std::vector<Record*> Opts = Records.getAllDerivedDefinitions("Option");
 
   if (GenDefs)
-    emitSourceFileHeader("Option Parsing Definitions", OS);
+    EmitSourceFileHeader("Option Parsing Definitions", OS);
   else
-    emitSourceFileHeader("Option Parsing Table", OS);
+    EmitSourceFileHeader("Option Parsing Table", OS);
 
   array_pod_sort(Opts.begin(), Opts.end(), CompareOptionRecords);
   if (GenDefs) {
@@ -196,4 +192,3 @@ void EmitOptParser(RecordKeeper &Records, raw_ostream &OS, bool GenDefs) {
     }
   }
 }
-} // end namespace clang

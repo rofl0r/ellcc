@@ -148,10 +148,6 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent, CXTranslationUnit TU,
   case Stmt::AsmStmtClass:
     K = CXCursor_AsmStmt;
     break;
-
-  case Stmt::MSAsmStmtClass:
-    K = CXCursor_MSAsmStmt;
-    break;
   
   case Stmt::ObjCAtTryStmtClass:
     K = CXCursor_ObjCAtTryStmt;
@@ -1198,8 +1194,7 @@ CXCompletionString clang_getCursorCompletionString(CXCursor cursor) {
         = Result.CreateCodeCompletionString(unit->getASTContext(),
                                             unit->getPreprocessor(),
                                  unit->getCodeCompletionTUInfo().getAllocator(),
-                                 unit->getCodeCompletionTUInfo(),
-                                 true);
+                                 unit->getCodeCompletionTUInfo());
       return String;
     }
   }
@@ -1212,8 +1207,7 @@ CXCompletionString clang_getCursorCompletionString(CXCursor cursor) {
       = Result.CreateCodeCompletionString(unit->getASTContext(),
                                           unit->getPreprocessor(),
                                  unit->getCodeCompletionTUInfo().getAllocator(),
-                                 unit->getCodeCompletionTUInfo(),
-                                 false);
+                                 unit->getCodeCompletionTUInfo());
     return String;
   }
   return NULL;
@@ -1319,30 +1313,5 @@ void clang_disposeOverriddenCursors(CXCursor *overridden) {
   
   pool.AvailableCursors.push_back(Vec);
 }
-
-int clang_Cursor_isDynamicCall(CXCursor C) {
-  const Expr *E = 0;
-  if (clang_isExpression(C.kind))
-    E = getCursorExpr(C);
-  if (!E)
-    return 0;
-
-  if (const ObjCMessageExpr *MsgE = dyn_cast<ObjCMessageExpr>(E))
-    return MsgE->getReceiverKind() == ObjCMessageExpr::Instance;
-
-  const MemberExpr *ME = 0;
-  if (isa<MemberExpr>(E))
-    ME = cast<MemberExpr>(E);
-  else if (const CallExpr *CE = dyn_cast<CallExpr>(E))
-    ME = dyn_cast_or_null<MemberExpr>(CE->getCallee());
-
-  if (ME) {
-    if (const CXXMethodDecl *
-          MD = dyn_cast_or_null<CXXMethodDecl>(ME->getMemberDecl()))
-      return MD->isVirtual() && !ME->hasQualifier();
-  }
-
-  return 0;
-}
-
+  
 } // end: extern "C"

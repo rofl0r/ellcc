@@ -52,16 +52,6 @@ struct AvailabilityChange {
 /// 4: __attribute__(( aligned(16) )). ParmName is unused, Args/Num used.
 ///
 class AttributeList { // TODO: This should really be called ParsedAttribute
-public:
-  /// The style used to specify an attribute.
-  enum Syntax {
-    AS_GNU,
-    AS_CXX11,
-    AS_Declspec,
-    // eg) __w64, __ptr32, etc.  It is implied that an MSTypespec is also
-    // a declspec.
-    AS_MSTypespec   
-  };
 private:
   IdentifierInfo *AttrName;
   IdentifierInfo *ScopeName;
@@ -74,8 +64,11 @@ private:
   /// The expressions themselves are stored after the object.
   unsigned NumArgs : 16;
 
-  /// Corresponds to the Syntax enum.
-  unsigned SyntaxUsed : 2;
+  /// True if Microsoft style: declspec(foo).
+  unsigned DeclspecAttribute : 1;
+
+  /// True if C++0x-style: [[foo]].
+  unsigned CXX0XAttribute : 1;
 
   /// True if already diagnosed as invalid.
   mutable unsigned Invalid : 1;
@@ -130,14 +123,15 @@ private:
                 IdentifierInfo *scopeName, SourceLocation scopeLoc,
                 IdentifierInfo *parmName, SourceLocation parmLoc,
                 Expr **args, unsigned numArgs,
-                Syntax syntaxUsed)
+                bool declspec, bool cxx0x)
     : AttrName(attrName), ScopeName(scopeName), ParmName(parmName),
       AttrRange(attrRange), ScopeLoc(scopeLoc), ParmLoc(parmLoc),
-      NumArgs(numArgs), SyntaxUsed(syntaxUsed), Invalid(false),
+      NumArgs(numArgs),
+      DeclspecAttribute(declspec), CXX0XAttribute(cxx0x), Invalid(false),
       UsedAsTypeAttr(false), IsAvailability(false), 
       NextInPosition(0), NextInPool(0) {
     if (numArgs) memcpy(getArgsBuffer(), args, numArgs * sizeof(Expr*));
-    AttrKind = getKind(getName(), getScopeName(), syntaxUsed);
+    AttrKind = getKind(getName(), getScopeName());
   }
 
   AttributeList(IdentifierInfo *attrName, SourceRange attrRange,
@@ -148,17 +142,17 @@ private:
                 const AvailabilityChange &obsoleted,
                 SourceLocation unavailable, 
                 const Expr *messageExpr,
-                Syntax syntaxUsed)
+                bool declspec, bool cxx0x)
     : AttrName(attrName), ScopeName(scopeName), ParmName(parmName),
       AttrRange(attrRange), ScopeLoc(scopeLoc), ParmLoc(parmLoc),
-      NumArgs(0), SyntaxUsed(syntaxUsed),
+      NumArgs(0), DeclspecAttribute(declspec), CXX0XAttribute(cxx0x),
       Invalid(false), UsedAsTypeAttr(false), IsAvailability(true),
       UnavailableLoc(unavailable), MessageExpr(messageExpr),
       NextInPosition(0), NextInPool(0) {
     new (&getAvailabilitySlot(IntroducedSlot)) AvailabilityChange(introduced);
     new (&getAvailabilitySlot(DeprecatedSlot)) AvailabilityChange(deprecated);
     new (&getAvailabilitySlot(ObsoletedSlot)) AvailabilityChange(obsoleted);
-    AttrKind = getKind(getName(), getScopeName(), syntaxUsed);
+    AttrKind = getKind(getName(), getScopeName());
   }
 
   friend class AttributePool;
@@ -184,12 +178,8 @@ public:
   IdentifierInfo *getParameterName() const { return ParmName; }
   SourceLocation getParameterLoc() const { return ParmLoc; }
 
-  /// Returns true if the attribute is a pure __declspec or a synthesized
-  /// declspec representing a type specification (like __w64 or __ptr32).
-  bool isDeclspecAttribute() const { return SyntaxUsed == AS_Declspec ||
-                                            SyntaxUsed == AS_MSTypespec; }
-  bool isCXX0XAttribute() const { return SyntaxUsed == AS_CXX11; }
-  bool isMSTypespecAttribute() const { return SyntaxUsed == AS_MSTypespec; }
+  bool isDeclspecAttribute() const { return DeclspecAttribute; }
+  bool isCXX0XAttribute() const { return CXX0XAttribute; }
 
   bool isInvalid() const { return Invalid; }
   void setInvalid(bool b = true) const { Invalid = b; }
@@ -198,8 +188,7 @@ public:
   void setUsedAsTypeAttr() { UsedAsTypeAttr = true; }
 
   Kind getKind() const { return Kind(AttrKind); }
-  static Kind getKind(const IdentifierInfo *Name, const IdentifierInfo *Scope,
-                      Syntax SyntaxUsed);
+  static Kind getKind(const IdentifierInfo *Name, const IdentifierInfo *Scope);
 
   AttributeList *getNext() const { return NextInPosition; }
   void setNext(AttributeList *N) { NextInPosition = N; }
@@ -256,27 +245,27 @@ public:
   }
 
   const AvailabilityChange &getAvailabilityIntroduced() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
+    assert(getKind() == AT_availability && "Not an availability attribute");
     return getAvailabilitySlot(IntroducedSlot);
   }
 
   const AvailabilityChange &getAvailabilityDeprecated() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
+    assert(getKind() == AT_availability && "Not an availability attribute");
     return getAvailabilitySlot(DeprecatedSlot);
   }
 
   const AvailabilityChange &getAvailabilityObsoleted() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
+    assert(getKind() == AT_availability && "Not an availability attribute");
     return getAvailabilitySlot(ObsoletedSlot);
   }
 
   SourceLocation getUnavailableLoc() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
+    assert(getKind() == AT_availability && "Not an availability attribute");
     return UnavailableLoc;
   }
   
   const Expr * getMessageExpr() const {
-    assert(getKind() == AT_Availability && "Not an availability attribute");
+    assert(getKind() == AT_availability && "Not an availability attribute");
     return MessageExpr;
   }
 };
@@ -383,13 +372,14 @@ public:
                         IdentifierInfo *scopeName, SourceLocation scopeLoc,
                         IdentifierInfo *parmName, SourceLocation parmLoc,
                         Expr **args, unsigned numArgs,
-                        AttributeList::Syntax syntax) {
+                        bool declspec = false, bool cxx0x = false) {
     void *memory = allocate(sizeof(AttributeList)
                             + numArgs * sizeof(Expr*));
     return add(new (memory) AttributeList(attrName, attrRange,
                                           scopeName, scopeLoc,
                                           parmName, parmLoc,
-                                          args, numArgs, syntax));
+                                          args, numArgs,
+                                          declspec, cxx0x));
   }
 
   AttributeList *create(IdentifierInfo *attrName, SourceRange attrRange,
@@ -400,13 +390,14 @@ public:
                         const AvailabilityChange &obsoleted,
                         SourceLocation unavailable,
                         const Expr *MessageExpr,
-                        AttributeList::Syntax syntax) {
+                        bool declspec = false, bool cxx0x = false) {
     void *memory = allocate(AttributeFactory::AvailabilityAllocSize);
     return add(new (memory) AttributeList(attrName, attrRange,
                                           scopeName, scopeLoc,
                                           parmName, parmLoc,
                                           introduced, deprecated, obsoleted,
-                                          unavailable, MessageExpr, syntax));
+                                          unavailable, MessageExpr,
+                                          declspec, cxx0x));
   }
 
   AttributeList *createIntegerAttribute(ASTContext &C, IdentifierInfo *Name,
@@ -508,10 +499,10 @@ public:
                         IdentifierInfo *scopeName, SourceLocation scopeLoc,
                         IdentifierInfo *parmName, SourceLocation parmLoc,
                         Expr **args, unsigned numArgs,
-                        AttributeList::Syntax syntax) {
+                        bool declspec = false, bool cxx0x = false) {
     AttributeList *attr =
       pool.create(attrName, attrRange, scopeName, scopeLoc, parmName, parmLoc,
-                  args, numArgs, syntax);
+                  args, numArgs, declspec, cxx0x);
     add(attr);
     return attr;
   }
@@ -524,11 +515,12 @@ public:
                         const AvailabilityChange &obsoleted,
                         SourceLocation unavailable,
                         const Expr *MessageExpr,
-                        AttributeList::Syntax syntax) {
+                        bool declspec = false, bool cxx0x = false) {
     AttributeList *attr =
       pool.create(attrName, attrRange, scopeName, scopeLoc, parmName, parmLoc,
                   introduced, deprecated, obsoleted, unavailable,
-                  MessageExpr, syntax);
+                  MessageExpr,
+                  declspec, cxx0x);
     add(attr);
     return attr;
   }

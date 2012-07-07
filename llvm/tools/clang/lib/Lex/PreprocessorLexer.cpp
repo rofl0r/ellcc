@@ -27,7 +27,7 @@ PreprocessorLexer::PreprocessorLexer(Preprocessor *pp, FileID fid)
     InitialNumSLocEntries = pp->getSourceManager().local_sloc_entry_size();
 }
 
-/// \brief After the preprocessor has parsed a \#include, lex and
+/// LexIncludeFilename - After the preprocessor has parsed a #include, lex and
 /// (potentially) macro expand the filename.
 void PreprocessorLexer::LexIncludeFilename(Token &FilenameTok) {
   assert(ParsingPreprocessorDirective &&

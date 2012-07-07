@@ -35,7 +35,7 @@ namespace options {
   class InputArgList;
   class Option;
 
-  /// \brief Provide access to the Option info table.
+  /// OptTable - Provide access to the Option info table.
   ///
   /// The OptTable class provides a layer of indirection which allows Option
   /// instance to be created lazily. In the common case, only a few options will
@@ -44,7 +44,7 @@ namespace options {
   /// parts of the driver still use Option instances where convenient.
   class OptTable {
   public:
-    /// \brief Entry for a single option instance in the option data table.
+    /// Info - Entry for a single option instance in the option data table.
     struct Info {
       const char *Name;
       const char *HelpText;
@@ -57,17 +57,17 @@ namespace options {
     };
 
   private:
-    /// \brief The static option information table.
+    /// The static option information table.
     const Info *OptionInfos;
     unsigned NumOptionInfos;
 
-    /// \brief The lazily constructed options table, indexed by option::ID - 1.
+    /// The lazily constructed options table, indexed by option::ID - 1.
     mutable Option **Options;
 
-    /// \brief Prebound input option instance.
+    /// Prebound input option instance.
     const Option *TheInputOption;
 
-    /// \brief Prebound unknown option instance.
+    /// Prebound unknown option instance.
     const Option *TheUnknownOption;
 
     /// The index of the first option which can be parsed (i.e., is not a
@@ -88,10 +88,10 @@ namespace options {
   public:
     ~OptTable();
 
-    /// \brief Return the total number of option classes.
+    /// getNumOptions - Return the total number of option classes.
     unsigned getNumOptions() const { return NumOptionInfos; }
 
-    /// \brief Get the given Opt's Option instance, lazily creating it
+    /// getOption - Get the given \arg id's Option instance, lazily creating it
     /// if necessary.
     ///
     /// \return The option, or null for the INVALID option id.
@@ -107,71 +107,72 @@ namespace options {
       return Entry;
     }
 
-    /// \brief Lookup the name of the given option.
+    /// getOptionName - Lookup the name of the given option.
     const char *getOptionName(OptSpecifier id) const {
       return getInfo(id).Name;
     }
 
-    /// \brief Get the kind of the given option.
+    /// getOptionKind - Get the kind of the given option.
     unsigned getOptionKind(OptSpecifier id) const {
       return getInfo(id).Kind;
     }
 
-    /// \brief Get the group id for the given option.
+    /// getOptionGroupID - Get the group id for the given option.
     unsigned getOptionGroupID(OptSpecifier id) const {
       return getInfo(id).GroupID;
     }
 
-    /// \brief Should the help for the given option be hidden by default.
+    /// isOptionHelpHidden - Should the help for the given option be hidden by
+    /// default.
     bool isOptionHelpHidden(OptSpecifier id) const {
       return getInfo(id).Flags & options::HelpHidden;
     }
 
-    /// \brief Get the help text to use to describe this option.
+    /// getOptionHelpText - Get the help text to use to describe this option.
     const char *getOptionHelpText(OptSpecifier id) const {
       return getInfo(id).HelpText;
     }
 
-    /// \brief Get the meta-variable name to use when describing
+    /// getOptionMetaVar - Get the meta-variable name to use when describing
     /// this options values in the help text.
     const char *getOptionMetaVar(OptSpecifier id) const {
       return getInfo(id).MetaVar;
     }
 
-    /// \brief Parse a single argument; returning the new argument and
+    /// ParseOneArg - Parse a single argument; returning the new argument and
     /// updating Index.
     ///
-    /// \param [in,out] Index - The current parsing position in the argument
+    /// \param [in] [out] Index - The current parsing position in the argument
     /// string list; on return this will be the index of the next argument
     /// string to parse.
     ///
-    /// \return The parsed argument, or 0 if the argument is missing values
+    /// \return - The parsed argument, or 0 if the argument is missing values
     /// (in which case Index still points at the conceptual next argument string
     /// to parse).
     Arg *ParseOneArg(const ArgList &Args, unsigned &Index) const;
 
-    /// \brief Parse an list of arguments into an InputArgList.
+    /// ParseArgs - Parse an list of arguments into an InputArgList.
     ///
-    /// The resulting InputArgList will reference the strings in [\p ArgBegin,
-    /// \p ArgEnd), and their lifetime should extend past that of the returned
+    /// The resulting InputArgList will reference the strings in [ArgBegin,
+    /// ArgEnd), and their lifetime should extend past that of the returned
     /// InputArgList.
     ///
     /// The only error that can occur in this routine is if an argument is
-    /// missing values; in this case \p MissingArgCount will be non-zero.
+    /// missing values; in this case \arg MissingArgCount will be non-zero.
     ///
     /// \param ArgBegin - The beginning of the argument vector.
     /// \param ArgEnd - The end of the argument vector.
     /// \param MissingArgIndex - On error, the index of the option which could
     /// not be parsed.
     /// \param MissingArgCount - On error, the number of missing options.
-    /// \return An InputArgList; on error this will contain all the options
+    /// \return - An InputArgList; on error this will contain all the options
     /// which could be parsed.
     InputArgList *ParseArgs(const char* const *ArgBegin,
                             const char* const *ArgEnd,
                             unsigned &MissingArgIndex,
                             unsigned &MissingArgCount) const;
 
-    /// \brief Render the help text for an option table.
+    /// PrintHelp - Render the help text for an option table.
     ///
     /// \param OS - The stream to write the help text to.
     /// \param Name - The name to use in the usage line.

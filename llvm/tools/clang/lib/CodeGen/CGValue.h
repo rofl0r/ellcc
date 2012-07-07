@@ -153,7 +153,7 @@ class LValue {
 
 private:
   void Initialize(QualType Type, Qualifiers Quals,
-                  CharUnits Alignment,
+                  CharUnits Alignment = CharUnits(),
                   llvm::MDNode *TBAAInfo = 0) {
     this->Type = Type;
     this->Quals = Quals;
@@ -295,12 +295,12 @@ public:
   /// access.
   static LValue MakeBitfield(llvm::Value *BaseValue,
                              const CGBitFieldInfo &Info,
-                             QualType type, CharUnits Alignment) {
+                             QualType type) {
     LValue R;
     R.LVType = BitField;
     R.V = BaseValue;
     R.BitFieldInfo = &Info;
-    R.Initialize(type, type.getQualifiers(), Alignment);
+    R.Initialize(type, type.getQualifiers());
     return R;
   }
 
@@ -389,8 +389,7 @@ public:
     return AV;
   }
 
-  static AggValueSlot forLValue(const LValue &LV,
-                                IsDestructed_t isDestructed,
+  static AggValueSlot forLValue(LValue LV, IsDestructed_t isDestructed,
                                 NeedsGCBarriers_t needsGC,
                                 IsAliased_t isAliased,
                                 IsZeroed_t isZeroed = IsNotZeroed) {

@@ -11,7 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TableGenBackends.h" // Declares all backends.
+#include "ClangASTNodesEmitter.h"
+#include "ClangAttrEmitter.h"
+#include "ClangDiagnosticsEmitter.h"
+#include "ClangSACheckersEmitter.h"
+#include "NeonEmitter.h"
+#include "OptParserEmitter.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -22,7 +27,6 @@
 #include "llvm/TableGen/TableGenAction.h"
 
 using namespace llvm;
-using namespace clang;
 
 enum ActionType {
   GenClangAttrClasses,
@@ -110,68 +114,68 @@ public:
   bool operator()(raw_ostream &OS, RecordKeeper &Records) {
     switch (Action) {
     case GenClangAttrClasses:
-      EmitClangAttrClass(Records, OS);
+      ClangAttrClassEmitter(Records).run(OS);
       break;
     case GenClangAttrImpl:
-      EmitClangAttrImpl(Records, OS);
+      ClangAttrImplEmitter(Records).run(OS);
       break;
     case GenClangAttrList:
-      EmitClangAttrList(Records, OS);
+      ClangAttrListEmitter(Records).run(OS);
       break;
     case GenClangAttrPCHRead:
-      EmitClangAttrPCHRead(Records, OS);
+      ClangAttrPCHReadEmitter(Records).run(OS);
       break;
     case GenClangAttrPCHWrite:
-      EmitClangAttrPCHWrite(Records, OS);
+      ClangAttrPCHWriteEmitter(Records).run(OS);
       break;
     case GenClangAttrSpellingList:
-      EmitClangAttrSpellingList(Records, OS);
+      ClangAttrSpellingListEmitter(Records).run(OS);
       break;
     case GenClangAttrLateParsedList:
-      EmitClangAttrLateParsedList(Records, OS);
+      ClangAttrLateParsedListEmitter(Records).run(OS);
       break;
     case GenClangAttrTemplateInstantiate:
-      EmitClangAttrTemplateInstantiate(Records, OS);
+      ClangAttrTemplateInstantiateEmitter(Records).run(OS);
       break;
     case GenClangAttrParsedAttrList:
-      EmitClangAttrParsedAttrList(Records, OS);
+      ClangAttrParsedAttrListEmitter(Records).run(OS);
       break;
     case GenClangAttrParsedAttrKinds:
-      EmitClangAttrParsedAttrKinds(Records, OS);
+      ClangAttrParsedAttrKindsEmitter(Records).run(OS);
       break;
     case GenClangDiagsDefs:
-      EmitClangDiagsDefs(Records, OS, ClangComponent);
+      ClangDiagsDefsEmitter(Records, ClangComponent).run(OS);
       break;
     case GenClangDiagGroups:
-      EmitClangDiagGroups(Records, OS);
+      ClangDiagGroupsEmitter(Records).run(OS);
       break;
     case GenClangDiagsIndexName:
-      EmitClangDiagsIndexName(Records, OS);
+      ClangDiagsIndexNameEmitter(Records).run(OS);
       break;
     case GenClangDeclNodes:
-      EmitClangASTNodes(Records, OS, "Decl", "Decl");
-      EmitClangDeclContext(Records, OS);
+      ClangASTNodesEmitter(Records, "Decl", "Decl").run(OS);
+      ClangDeclContextEmitter(Records).run(OS);
       break;
     case GenClangStmtNodes:
-      EmitClangASTNodes(Records, OS, "Stmt", "");
+      ClangASTNodesEmitter(Records, "Stmt", "").run(OS);
       break;
     case GenClangSACheckers:
-      EmitClangSACheckers(Records, OS);
+      ClangSACheckersEmitter(Records).run(OS);
       break;
     case GenOptParserDefs:
-      EmitOptParser(Records, OS, true);
+      OptParserEmitter(Records, true).run(OS);
       break;
     case GenOptParserImpl:
-      EmitOptParser(Records, OS, false);
+      OptParserEmitter(Records, false).run(OS);
       break;
     case GenArmNeon:
-      EmitNeon(Records, OS);
+      NeonEmitter(Records).run(OS);
       break;
     case GenArmNeonSema:
-      EmitNeonSema(Records, OS);
+      NeonEmitter(Records).runHeader(OS);
       break;
     case GenArmNeonTest:
-      EmitNeonTest(Records, OS);
+      NeonEmitter(Records).runTests(OS);
       break;
     }
 

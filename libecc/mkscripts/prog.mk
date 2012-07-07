@@ -11,8 +11,8 @@ CXXFLAGS += -g -Werror -MD -MP
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = $(ELLCC)/bin/ecc -target $(TARGET)-ellcc-$(OS)-$(ABI)
-  CXX = $(ELLCC)/bin/ecc++ -target $(TARGET)-ellcc-$(OS)-$(ABI)
+  CC = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc
+  CXX = $(ELLCC)/bin/$(TARGET)-$(OS)-ecc++
 else
   CC = $(XCC)
   CXX = $(XCXX)
@@ -22,7 +22,7 @@ endif
 .c.o:
 	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS) $(XCFLAGS) $<
 .cxx.o:
-	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXFLAGS) $<
+	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXLAGS) $<
 
 ifeq ($(EXCLUDE),)
 $(PROG): $(OBJS)

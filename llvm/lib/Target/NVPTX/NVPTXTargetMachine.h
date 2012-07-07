@@ -48,6 +48,12 @@ class NVPTXTargetMachine : public LLVMTargetMachine {
   //                            bool DisableVerify, MCContext *&OutCtx);
 
 public:
+  //virtual bool addPassesToEmitFile(PassManagerBase &PM,
+  //                                 formatted_raw_ostream &Out,
+  //                                 CodeGenFileType FileType,
+  //                                 CodeGenOpt::Level OptLevel,
+  //                                 bool DisableVerify = true) ;
+
   NVPTXTargetMachine(const Target &T, StringRef TT, StringRef CPU,
                      StringRef FS, const TargetOptions &Options,
                      Reloc::Model RM, CodeModel::Model CM,

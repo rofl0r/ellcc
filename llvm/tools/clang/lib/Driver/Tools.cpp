@@ -16,11 +16,11 @@
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Job.h"
+#include "clang/Driver/ObjCRuntime.h"
 #include "clang/Driver/Option.h"
 #include "clang/Driver/Options.h"
 #include "clang/Driver/ToolChain.h"
 #include "clang/Driver/Util.h"
-#include "clang/Basic/ObjCRuntime.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -422,6 +422,51 @@ void Clang::AddPreprocessingOptions(Compilation &C,
   getToolChain().AddClangSystemIncludeArgs(Args, CmdArgs);
 }
 
+/// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
+//
+// FIXME: tblgen this.
+static const char *getARMTargetCPU(const ArgList &Args,
+                                   const llvm::Triple &Triple) {
+  // FIXME: Warn on inconsistent use of -mcpu and -march.
+
+  StringRef MArch;
+  //
+  // If we have -mcpu=, use that.
+  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
+    MArch = A->getValue(Args);
+  } else {
+    if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+      // Otherwise, if we have -march= choose the base CPU for that arch.
+      MArch = A->getValue(Args);
+    } else {
+      // Otherwise, use the Arch from the triple.
+      MArch = Triple.getArchName();
+    }
+  }
+
+  return llvm::StringSwitch<const char *>(MArch)
+    .Cases("armv2", "armv2a","arm2")
+    .Case("armv3", "arm6")
+    .Case("armv3m", "arm7m")
+    .Cases("armv4", "armv4t", "arm7tdmi")
+    .Cases("armv5", "armv5t", "arm10tdmi")
+    .Cases("armv5e", "armv5te", "arm1022e")
+    .Case("armv5tej", "arm926ej-s")
+    .Cases("armv6", "armv6k", "arm1136jf-s")
+    .Case("armv6j", "arm1136j-s")
+    .Cases("armv6z", "armv6zk", "arm1176jzf-s")
+    .Case("armv6t2", "arm1156t2-s")
+    .Cases("armv7", "armv7a", "armv7-a", "cortex-a8")
+    .Cases("armv7r", "armv7-r", "cortex-r4")
+    .Cases("armv7m", "armv7-m", "cortex-m3")
+    .Case("ep9312", "ep9312")
+    .Case("iwmmxt", "iwmmxt")
+    .Case("xscale", "xscale")
+    .Cases("armv6m", "armv6-m", "cortex-m0")
+    // If all else failed, return the most base CPU LLVM supports.
+    .Default("arm7tdmi");
+}
+
 /// getLLVMArchSuffixForARM - Get the LLVM arch name to use for a particular
 /// CPU.
 //
@@ -445,77 +490,6 @@ static const char *getLLVMArchSuffixForARM(StringRef CPU) {
     .Case("cortex-m4", "v7m")
     .Case("cortex-m0", "v6m")
     .Default("");
-}
-
-/// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
-//
-// FIXME: tblgen this.
-static std::string getARMTargetCPU(const ArgList &Args,
-                                   const llvm::Triple &Triple) {
-  // FIXME: Warn on inconsistent use of -mcpu and -march.
-
-  StringRef MArch;
-  //
-  // If we have -mcpu=, use that.
-  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
-    StringRef MCPU = A->getValue(Args);
-    // Handle -mcpu=native.
-    if (MCPU == "native")
-      return llvm::sys::getHostCPUName();
-    else
-      return MCPU;
-  }
-
-  if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
-    // Otherwise, if we have -march= choose the base CPU for that arch.
-    MArch = A->getValue(Args);
-  } else {
-    if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
-      // Otherwise, if we have -march= choose the base CPU for that arch.
-      MArch = A->getValue(Args);
-    } else {
-      // Otherwise, use the Arch from the triple.
-      MArch = Triple.getArchName();
-    }
-  }
-
-  // Handle -march=native.
-  std::string NativeMArch;
-  if (MArch == "native") {
-    std::string CPU = llvm::sys::getHostCPUName();
-    if (CPU != "generic") {
-      // Translate the native cpu into the architecture. The switch below will
-      // then chose the minimum cpu for that arch.
-      NativeMArch = std::string("arm") + getLLVMArchSuffixForARM(CPU);
-      MArch = NativeMArch;
-    }
-  }
-
-  return llvm::StringSwitch<const char *>(MArch)
-    .Cases("armv2", "armv2a","arm2")
-    .Case("armv3", "arm6")
-    .Case("armv3m", "arm7m")
-    .Case("armv4", "arm8")
-    .Case("armv4t", "arm7tdmi")
-    .Cases("armv5", "armv5t", "arm10tdmi")
-    .Cases("armv5e", "armv5te", "arm1022e")
-    .Case("armv5tej", "arm926ej-s")
-    .Cases("armv6", "armv6k", "arm1136jf-s")
-    .Case("armv6j", "arm1136j-s")
-    .Cases("armv6z", "armv6zk", "arm1176jzf-s")
-    .Case("armv6t2", "arm1156t2-s")
-    .Cases("armv7", "armv7a", "armv7-a", "cortex-a8")
-    .Cases("armv7r", "armv7-r", "cortex-r4")
-    .Cases("armv7m", "armv7-m", "cortex-m3")
-    .Case("armv7em", "cortex-m4")
-    .Case("ep9312", "ep9312")
-    .Case("iwmmxt", "iwmmxt")
-    .Case("xscale", "xscale")
-    .Cases("armv6m", "armv6-m", "cortex-m0")
-    .Cases("arm8", "arm810", "strongarm", "arm8")
-    .Cases("strongarm110", "strongarm1100", "strongarm1110", "arm8")
-    // If all else failed, return the most base CPU LLVM supports.
-    .Default("arm7tdmi");
 }
 
 // FIXME: Move to target hook.
@@ -629,10 +603,9 @@ static StringRef getARMFloatABI(const Driver &D,
       // Darwin defaults to "softfp" for v6 and v7.
       //
       // FIXME: Factor out an ARM class so we can cache the arch somewhere.
-      std::string ArchName =
+      StringRef ArchName =
         getLLVMArchSuffixForARM(getARMTargetCPU(Args, Triple));
-      if (StringRef(ArchName).startswith("v6") ||
-          StringRef(ArchName).startswith("v7"))
+      if (ArchName.startswith("v6") || ArchName.startswith("v7"))
         FloatABI = "softfp";
       else
         FloatABI = "soft";
@@ -657,9 +630,9 @@ static StringRef getARMFloatABI(const Driver &D,
         FloatABI = "softfp";
         break;
       case llvm::Triple::ANDROIDEABI: {
-        std::string ArchName =
+        StringRef ArchName =
           getLLVMArchSuffixForARM(getARMTargetCPU(Args, Triple));
-        if (StringRef(ArchName).startswith("v7"))
+        if (ArchName.startswith("v7"))
           FloatABI = "softfp";
         else
           FloatABI = "soft";
@@ -709,7 +682,7 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
 
   // Set the CPU based on -march= and -mcpu=.
   CmdArgs.push_back("-target-cpu");
-  CmdArgs.push_back(Args.MakeArgString(getARMTargetCPU(Args, Triple)));
+  CmdArgs.push_back(getARMTargetCPU(Args, Triple));
 
   // Determine floating point ABI from the options & target defaults.
   StringRef FloatABI = getARMFloatABI(D, Args, Triple);
@@ -1051,71 +1024,33 @@ void Clang::AddNios2TargetArgs(const ArgList &Args,
   }
 }
 
-/// getPPCTargetCPU - Get the (LLVM) name of the PowerPC cpu we are targeting.
-static std::string getPPCTargetCPU(const ArgList &Args) {
-  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
-    StringRef CPUName = A->getValue(Args);
-
-    if (CPUName == "native") {
-      std::string CPU = llvm::sys::getHostCPUName();
-      if (!CPU.empty() && CPU != "generic")
-        return CPU;
-      else
-        return "";
-    }
-
-    return llvm::StringSwitch<const char *>(CPUName)
-      .Case("common", "generic")
-      .Cases("440", "cell", "440")
-      .Cases("e200", "e300", "e700", "440")
-      .Case("440", "440")
-      .Case("440fp", "440")
-      .Case("450", "450")
-      .Case("601", "601")
-      .Case("602", "602")
-      .Case("603", "603")
-      .Case("603e", "603e")
-      .Case("603ev", "603ev")
-      .Case("604", "604")
-      .Case("604e", "604e")
-      .Case("620", "620")
-      .Case("G3", "g3")
-      .Case("7400", "7400")
-      .Case("G4", "g4")
-      .Case("7450", "7450")
-      .Case("G4+", "g4+")
-      .Case("750", "750")
-      .Case("970", "970")
-      .Case("G5", "g5")
-      .Case("a2", "a2")
-      .Case("power6", "pwr6")
-      .Case("power7", "pwr7")
-      .Case("powerpc", "ppc")
-      .Case("powerpc64", "ppc64")
-      .Default("");
-  }
-
-  return "";
-}
-
 void Clang::AddPPCTargetArgs(const ArgList &Args,
-                             ArgStringList &CmdArgs) const {
-  std::string TargetCPUName = getPPCTargetCPU(Args);
-
-  // LLVM may default to generating code for the native CPU,
-  // but, like gcc, we default to a more generic option for
-  // each architecture. (except on Darwin)
-  llvm::Triple Triple = getToolChain().getTriple();
-  if (TargetCPUName.empty() && !Triple.isOSDarwin()) {
-    if (Triple.getArch() == llvm::Triple::ppc64)
-      TargetCPUName = "ppc64";
-    else
-      TargetCPUName = "ppc";
+                                ArgStringList &CmdArgs) const {
+  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  llvm::StringRef FloatABI;
+  if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
+                               options::OPT_mhard_float)) {
+    if (A->getOption().matches(options::OPT_msoft_float))
+      FloatABI = "soft";
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      FloatABI = "hard";
   }
 
-  if (!TargetCPUName.empty()) {
-    CmdArgs.push_back("-target-cpu");
-    CmdArgs.push_back(Args.MakeArgString(TargetCPUName.c_str()));
+  // If unspecified, choose the default based on the platform.
+  if (FloatABI.empty()) {
+    // Assume "soft", but warn the user we are guessing.
+    FloatABI = "soft";
+    // RICH: D.Diag(clang::diag::warn_drv_assuming_mfloat_abi_is) << "soft";
+  }
+
+  if (FloatABI == "soft") {
+    // Floating point operations and argument passing are soft.
+    //
+    // FIXME: This changes CPP defines, we need -target-soft-float.
+    CmdArgs.push_back("-msoft-float");
+  } else {
+    assert(FloatABI == "hard" && "Invalid float abi!");
+    CmdArgs.push_back("-mhard-float");
   }
 }
 
@@ -1175,9 +1110,7 @@ void Clang::AddX86TargetArgs(const ArgList &Args,
     CmdArgs.push_back("-no-implicit-float");
 
   const char *CPUName = 0;
-  const Arg *A;
-  if ((A = Args.getLastArg(options::OPT_march_EQ)) ||
-      (A = Args.getLastArg(options::OPT_mcpu_EQ))) {
+  if (const Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
     if (StringRef(A->getValue(Args)) == "native") {
       // FIXME: Reject attempts to use -march=native unless the target matches
       // the host.
@@ -1338,12 +1271,13 @@ void Clang::AddHexagonTargetArgs(const ArgList &Args,
 }
 
 static bool
-shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
+shouldUseExceptionTablesForObjCExceptions(unsigned objcABIVersion,
                                           const llvm::Triple &Triple) {
   // We use the zero-cost exception tables for Objective-C if the non-fragile
   // ABI is enabled or when compiling for x86_64 and ARM on Snow Leopard and
   // later.
-  if (runtime.isNonFragile())
+
+  if (objcABIVersion >= 2)
     return true;
 
   if (!Triple.isOSDarwin())
@@ -1362,7 +1296,7 @@ shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
 static void addExceptionArgs(const ArgList &Args, types::ID InputType,
                              const llvm::Triple &Triple,
                              bool KernelOrKext,
-                             const ObjCRuntime &objcRuntime,
+                             unsigned objcABIVersion,
                              ArgStringList &CmdArgs) {
   if (KernelOrKext) {
     // -mkernel and -fapple-kext imply no exceptions, so claim exception related
@@ -1408,7 +1342,7 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
     CmdArgs.push_back("-fobjc-exceptions");
 
     ShouldUseExceptionTables |=
-      shouldUseExceptionTablesForObjCExceptions(objcRuntime, Triple);
+      shouldUseExceptionTablesForObjCExceptions(objcABIVersion, Triple);
   }
 
   if (types::isCXX(InputType)) {
@@ -1594,7 +1528,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(Args.MakeArgString(TripleStr));
 
   // Select the appropriate action.
-  RewriteKind rewriteKind = RK_None;
+  bool IsRewriter = false;
+  bool IsModernRewriter = false;
   
   if (isa<AnalyzeJobAction>(JA)) {
     assert(JA.getType() == types::TY_Plist && "Invalid output type.");
@@ -1666,10 +1601,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-emit-pch");
     } else if (JA.getType() == types::TY_RewrittenObjC) {
       CmdArgs.push_back("-rewrite-objc");
-      rewriteKind = RK_NonFragile;
+      IsModernRewriter = true;
     } else if (JA.getType() == types::TY_RewrittenLegacyObjC) {
       CmdArgs.push_back("-rewrite-objc");
-      rewriteKind = RK_Fragile;
+      IsRewriter = true;
     } else {
       assert(JA.getType() == types::TY_PP_Asm &&
              "Unexpected output type!");
@@ -1963,8 +1898,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    AsynchronousUnwindTables))
     CmdArgs.push_back("-munwind-tables");
 
-  getToolChain().addClangTargetOptions(CmdArgs);
-
   if (Arg *A = Args.getLastArg(options::OPT_flimited_precision_EQ)) {
     CmdArgs.push_back("-mlimit-float-precision");
     CmdArgs.push_back(A->getValue(Args));
@@ -2070,18 +2003,20 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Use the last option from "-g" group. "-gline-tables-only" is
   // preserved, all other debug options are substituted with "-g".
+  // FIXME: We should eventually do the following:
+  //   1) collapse gdb and dwarf variations to -g (as we do now);
+  //   2) support things like -gtoggle;
+  //   3) ignore flag options like -gstrict-dwarf or -grecord-gcc-switches;
+  //   4) produce a driver error on unsupported formats
+  //      (-gstabs, -gcoff, -gvms etc.)
   Args.ClaimAllArgs(options::OPT_g_Group);
   if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
     if (A->getOption().matches(options::OPT_gline_tables_only)) {
       CmdArgs.push_back("-gline-tables-only");
-    } else if (!A->getOption().matches(options::OPT_g0) &&
-               !A->getOption().matches(options::OPT_ggdb0)) {
+    } else if (!A->getOption().matches(options::OPT_g0)) {
       CmdArgs.push_back("-g");
     }
   }
-
-  // We ignore flags -gstrict-dwarf and -grecord-gcc-switches for now.
-  Args.ClaimAllArgs(options::OPT_g_flags_Group);
 
   Args.AddAllArgs(CmdArgs, options::OPT_ffunction_sections);
   Args.AddAllArgs(CmdArgs, options::OPT_fdata_sections);
@@ -2350,8 +2285,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   Args.AddLastArg(CmdArgs, options::OPT_fvisibility_inlines_hidden);
 
-  Args.AddLastArg(CmdArgs, options::OPT_ftlsmodel_EQ);
-
   // -fhosted is default.
   if (Args.hasFlag(options::OPT_ffreestanding, options::OPT_fhosted, false) ||
       KernelOrKext)
@@ -2365,8 +2298,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddLastArg(CmdArgs, options::OPT_fno_limit_debug_info);
   Args.AddLastArg(CmdArgs, options::OPT_fno_operator_names);
   Args.AddLastArg(CmdArgs, options::OPT_faltivec);
-  Args.AddLastArg(CmdArgs, options::OPT_fdiagnostics_show_template_tree);
-  Args.AddLastArg(CmdArgs, options::OPT_fno_elide_type);
 
   // Report and error for -faltivec on anything other then PowerPC.
   if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
@@ -2393,10 +2324,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (Args.getLastArg(options::OPT_fapple_kext))
     CmdArgs.push_back("-fapple-kext");
-
-  if (Args.hasFlag(options::OPT_frewrite_includes,
-                   options::OPT_fno_rewrite_includes, false))
-    CmdArgs.push_back("-frewrite-includes");
 
   Args.AddLastArg(CmdArgs, options::OPT_fobjc_sender_dependent_dispatch);
   Args.AddLastArg(CmdArgs, options::OPT_fdiagnostics_print_source_range_info);
@@ -2601,11 +2528,80 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_fno_inline_functions))
     CmdArgs.push_back("-fno-inline-functions");
 
-  ObjCRuntime objcRuntime = AddObjCRuntimeArgs(Args, CmdArgs, rewriteKind);
+  // -fobjc-nonfragile-abi=0 is default.
+  ObjCRuntime objCRuntime;
+  unsigned objcABIVersion = 0;
+  bool NeXTRuntimeIsDefault
+    = (IsRewriter || IsModernRewriter ||
+       getToolChain().getTriple().isOSDarwin());
+  if (Args.hasFlag(options::OPT_fnext_runtime, options::OPT_fgnu_runtime,
+                   NeXTRuntimeIsDefault)) {
+    objCRuntime.setKind(ObjCRuntime::NeXT);
+  } else {
+    CmdArgs.push_back("-fgnu-runtime");
+    objCRuntime.setKind(ObjCRuntime::GNU);
+  }
+  getToolChain().configureObjCRuntime(objCRuntime);
+  if (objCRuntime.HasARC)
+    CmdArgs.push_back("-fobjc-runtime-has-arc");
+  if (objCRuntime.HasWeak)
+    CmdArgs.push_back("-fobjc-runtime-has-weak");
+  if (objCRuntime.HasTerminate)
+    CmdArgs.push_back("-fobjc-runtime-has-terminate");
 
-  // -fobjc-dispatch-method is only relevant with the nonfragile-abi, and
-  // legacy is the default.
-  if (objcRuntime.isNonFragile()) {
+  // Compute the Objective-C ABI "version" to use. Version numbers are
+  // slightly confusing for historical reasons:
+  //   1 - Traditional "fragile" ABI
+  //   2 - Non-fragile ABI, version 1
+  //   3 - Non-fragile ABI, version 2
+  objcABIVersion = 1;
+  // If -fobjc-abi-version= is present, use that to set the version.
+  if (Arg *A = Args.getLastArg(options::OPT_fobjc_abi_version_EQ)) {
+    if (StringRef(A->getValue(Args)) == "1")
+      objcABIVersion = 1;
+    else if (StringRef(A->getValue(Args)) == "2")
+      objcABIVersion = 2;
+    else if (StringRef(A->getValue(Args)) == "3")
+      objcABIVersion = 3;
+    else
+      D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
+  } else {
+    // Otherwise, determine if we are using the non-fragile ABI.
+    bool NonFragileABIIsDefault = 
+      (IsModernRewriter || 
+       (!IsRewriter && getToolChain().IsObjCNonFragileABIDefault()));
+    if (Args.hasFlag(options::OPT_fobjc_nonfragile_abi,
+                     options::OPT_fno_objc_nonfragile_abi,
+                     NonFragileABIIsDefault)) {
+      // Determine the non-fragile ABI version to use.
+#ifdef DISABLE_DEFAULT_NONFRAGILEABI_TWO
+      unsigned NonFragileABIVersion = 1;
+#else
+      unsigned NonFragileABIVersion = 2;
+#endif
+
+      if (Arg *A = Args.getLastArg(
+            options::OPT_fobjc_nonfragile_abi_version_EQ)) {
+        if (StringRef(A->getValue(Args)) == "1")
+          NonFragileABIVersion = 1;
+        else if (StringRef(A->getValue(Args)) == "2")
+          NonFragileABIVersion = 2;
+        else
+          D.Diag(diag::err_drv_clang_unsupported)
+            << A->getAsString(Args);
+      }
+
+      objcABIVersion = 1 + NonFragileABIVersion;
+    } else {
+      objcABIVersion = 1;
+    }
+  }
+
+  if (objcABIVersion == 1) {
+    CmdArgs.push_back("-fobjc-fragile-abi");
+  } else {
+    // -fobjc-dispatch-method is only relevant with the nonfragile-abi, and
+    // legacy is the default.
     if (!Args.hasFlag(options::OPT_fobjc_legacy_dispatch,
                       options::OPT_fno_objc_legacy_dispatch,
                       getToolChain().IsObjCLegacyDispatchDefault())) {
@@ -2651,7 +2647,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // -fobjc-infer-related-result-type is the default, except in the Objective-C
   // rewriter.
-  if (rewriteKind != RK_None)
+  if (IsRewriter || IsModernRewriter)
     CmdArgs.push_back("-fno-objc-infer-related-result-type");
 
   // Handle -fobjc-gc and -fobjc-gc-only. They are exclusive, and -fobjc-gc-only
@@ -2674,7 +2670,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Add exception args.
   addExceptionArgs(Args, InputType, getToolChain().getTriple(),
-                   KernelOrKext, objcRuntime, CmdArgs);
+                   KernelOrKext, objcABIVersion, CmdArgs);
 
   if (getToolChain().UseSjLjExceptions())
     CmdArgs.push_back("-fsjlj-exceptions");
@@ -2952,7 +2948,7 @@ void ClangAs::AddARMTargetArgs(const ArgList &Args,
 
   // Set the CPU based on -march= and -mcpu=.
   CmdArgs.push_back("-target-cpu");
-  CmdArgs.push_back(Args.MakeArgString(getARMTargetCPU(Args, Triple)));
+  CmdArgs.push_back(getARMTargetCPU(Args, Triple));
 
   // Honor -mfpu=.
   if (const Arg *A = Args.getLastArg(options::OPT_mfpu_EQ))
@@ -2961,131 +2957,6 @@ void ClangAs::AddARMTargetArgs(const ArgList &Args,
   // Honor -mfpmath=.
   if (const Arg *A = Args.getLastArg(options::OPT_mfpmath_EQ))
     addFPMathArgs(D, A, Args, CmdArgs, getARMTargetCPU(Args, Triple));
-}
-
-/// Add options related to the Objective-C runtime/ABI.
-///
-/// Returns true if the runtime is non-fragile.
-ObjCRuntime Clang::AddObjCRuntimeArgs(const ArgList &args,
-                                      ArgStringList &cmdArgs,
-                                      RewriteKind rewriteKind) const {
-  // Look for the controlling runtime option.
-  Arg *runtimeArg = args.getLastArg(options::OPT_fnext_runtime,
-                                    options::OPT_fgnu_runtime,
-                                    options::OPT_fobjc_runtime_EQ);
-
-  // Just forward -fobjc-runtime= to the frontend.  This supercedes
-  // options about fragility.
-  if (runtimeArg &&
-      runtimeArg->getOption().matches(options::OPT_fobjc_runtime_EQ)) {
-    ObjCRuntime runtime;
-    StringRef value = runtimeArg->getValue(args);
-    if (runtime.tryParse(value)) {
-      getToolChain().getDriver().Diag(diag::err_drv_unknown_objc_runtime)
-        << value;
-    }
-
-    runtimeArg->render(args, cmdArgs);
-    return runtime;
-  }
-
-  // Otherwise, we'll need the ABI "version".  Version numbers are
-  // slightly confusing for historical reasons:
-  //   1 - Traditional "fragile" ABI
-  //   2 - Non-fragile ABI, version 1
-  //   3 - Non-fragile ABI, version 2
-  unsigned objcABIVersion = 1;
-  // If -fobjc-abi-version= is present, use that to set the version.
-  if (Arg *abiArg = args.getLastArg(options::OPT_fobjc_abi_version_EQ)) {
-    StringRef value = abiArg->getValue(args);
-    if (value == "1")
-      objcABIVersion = 1;
-    else if (value == "2")
-      objcABIVersion = 2;
-    else if (value == "3")
-      objcABIVersion = 3;
-    else
-      getToolChain().getDriver().Diag(diag::err_drv_clang_unsupported)
-        << value;
-  } else {
-    // Otherwise, determine if we are using the non-fragile ABI.
-    bool nonFragileABIIsDefault = 
-      (rewriteKind == RK_NonFragile || 
-       (rewriteKind == RK_None &&
-        getToolChain().IsObjCNonFragileABIDefault()));
-    if (args.hasFlag(options::OPT_fobjc_nonfragile_abi,
-                     options::OPT_fno_objc_nonfragile_abi,
-                     nonFragileABIIsDefault)) {
-      // Determine the non-fragile ABI version to use.
-#ifdef DISABLE_DEFAULT_NONFRAGILEABI_TWO
-      unsigned nonFragileABIVersion = 1;
-#else
-      unsigned nonFragileABIVersion = 2;
-#endif
-
-      if (Arg *abiArg = args.getLastArg(
-            options::OPT_fobjc_nonfragile_abi_version_EQ)) {
-        StringRef value = abiArg->getValue(args);
-        if (value == "1")
-          nonFragileABIVersion = 1;
-        else if (value == "2")
-          nonFragileABIVersion = 2;
-        else
-          getToolChain().getDriver().Diag(diag::err_drv_clang_unsupported)
-            << value;
-      }
-
-      objcABIVersion = 1 + nonFragileABIVersion;
-    } else {
-      objcABIVersion = 1;
-    }
-  }
-
-  // We don't actually care about the ABI version other than whether
-  // it's non-fragile.
-  bool isNonFragile = objcABIVersion != 1;
-
-  // If we have no runtime argument, ask the toolchain for its default runtime.
-  // However, the rewriter only really supports the Mac runtime, so assume that.
-  ObjCRuntime runtime;
-  if (!runtimeArg) {
-    switch (rewriteKind) {
-    case RK_None:
-      runtime = getToolChain().getDefaultObjCRuntime(isNonFragile);
-      break;
-    case RK_Fragile:
-      runtime = ObjCRuntime(ObjCRuntime::FragileMacOSX, VersionTuple());
-      break;
-    case RK_NonFragile:
-      runtime = ObjCRuntime(ObjCRuntime::MacOSX, VersionTuple());
-      break;
-    }
-
-  // -fnext-runtime
-  } else if (runtimeArg->getOption().matches(options::OPT_fnext_runtime)) {
-    // On Darwin, make this use the default behavior for the toolchain.
-    if (getToolChain().getTriple().isOSDarwin()) {
-      runtime = getToolChain().getDefaultObjCRuntime(isNonFragile);
-
-    // Otherwise, build for a generic macosx port.
-    } else {
-      runtime = ObjCRuntime(ObjCRuntime::MacOSX, VersionTuple());
-    }
-
-  // -fgnu-runtime
-  } else {
-    assert(runtimeArg->getOption().matches(options::OPT_fgnu_runtime));
-    // Legacy behaviour is to target the gnustep runtime if we are i
-    // non-fragile mode or the GCC runtime in fragile mode.
-    if (isNonFragile)
-      runtime = ObjCRuntime(ObjCRuntime::GNUstep, VersionTuple());
-    else
-      runtime = ObjCRuntime(ObjCRuntime::GCC, VersionTuple());
-  }
-
-  cmdArgs.push_back(args.MakeArgString(
-                                 "-fobjc-runtime=" + runtime.getAsString()));
-  return runtime;
 }
 
 void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
@@ -4488,14 +4359,6 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
             // darwin_crt2 spec is empty.
           }
-          // By default on OS X 10.8 and later, we don't link with a crt1.o
-          // file and the linker knows to use _main as the entry point.  But,
-          // when compiling with -pg, we need to link with the gcrt1.o file,
-          // so pass the -no_new_main option to tell the linker to use the
-          // "start" symbol as the entry point.
-          if (getDarwinToolChain().isTargetMacOS() &&
-              !getDarwinToolChain().isMacosxVersionLT(10, 8))
-            CmdArgs.push_back("-no_new_main");
         } else {
           if (Args.hasArg(options::OPT_static) ||
               Args.hasArg(options::OPT_object) ||
@@ -4564,11 +4427,11 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
       // If we don't have ARC or subscripting runtime support, link in the
       // runtime stubs.  We have to do this *before* adding any of the normal
       // linker inputs so that its initializer gets run first.
-      ObjCRuntime runtime =
-        getDarwinToolChain().getDefaultObjCRuntime(/*nonfragile*/ true);
+      ObjCRuntime runtime;
+      getDarwinToolChain().configureObjCRuntime(runtime);
       // We use arclite library for both ARC and subscripting support.
-      if ((!runtime.hasARC() && isObjCAutoRefCount(Args)) ||
-          !runtime.hasSubscripting())
+      if ((!runtime.HasARC && isObjCAutoRefCount(Args)) ||
+          !runtime.HasSubscripting)
         getDarwinToolChain().AddLinkARCArgs(Args, CmdArgs);
     }
     CmdArgs.push_back("-framework");
@@ -5973,13 +5836,8 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   llvm::Triple Triple = getToolChain().getTriple();
-  if (Triple.getArch() == llvm::Triple::ppc ||
-      Triple.getArch() == llvm::Triple::ppc64) {
-    if (Triple.getArch() == llvm::Triple::ppc)
-      CmdArgs.push_back("-a32");
-    else
-      CmdArgs.push_back("-a64");
-    CmdArgs.push_back("-many");
+  if (Triple.getArch() == llvm::Triple::ppc) {
+    CmdArgs.push_back("-a32");
     if (needEB) {
       CmdArgs.push_back("-be");
     } else if (needEL) {
@@ -6102,7 +5960,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     if (!Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o"));
+        + Triple.getOSTypeName(Triple.getOS()) + "/crt0.o"));
       CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
         + ArchName + "/"
         + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
@@ -6159,7 +6017,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-pthread");
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
-    CmdArgs.push_back("-lcompiler_rt");
+    CmdArgs.push_back("-lcompiler-rt");
   }
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
@@ -6200,14 +6058,7 @@ void visualstudio::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   CmdArgs.push_back("-nologo");
 
-  Args.AddAllArgValues(CmdArgs, options::OPT_l);
-
-  // Add filenames immediately.
-  for (InputInfoList::const_iterator
-       it = Inputs.begin(), ie = Inputs.end(); it != ie; ++it) {
-    if (it->isFilename())
-      CmdArgs.push_back(it->getFilename());
-  }
+  AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("link.exe"));

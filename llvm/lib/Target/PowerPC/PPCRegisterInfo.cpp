@@ -199,20 +199,6 @@ PPCRegisterInfo::getRegPressureLimit(const TargetRegisterClass *RC,
   }
 }
 
-bool
-PPCRegisterInfo::avoidWriteAfterWrite(const TargetRegisterClass *RC) const {
-  switch (RC->getID()) {
-  case PPC::G8RCRegClassID:
-  case PPC::GPRCRegClassID:
-  case PPC::F8RCRegClassID:
-  case PPC::F4RCRegClassID:
-  case PPC::VRRCRegClassID:
-    return true;
-  default:
-    return false;
-  }
-}
-
 //===----------------------------------------------------------------------===//
 // Stack Frame Processing methods
 //===----------------------------------------------------------------------===//
@@ -342,14 +328,14 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
   // address of new allocated space.
   if (LP64) {
     if (requiresRegisterScavenging(MF)) // FIXME (64-bit): Use "true" part.
-      BuildMI(MBB, II, dl, TII.get(PPC::STDUX), PPC::X1)
+      BuildMI(MBB, II, dl, TII.get(PPC::STDUX))
         .addReg(Reg, RegState::Kill)
-        .addReg(PPC::X1)
+        .addReg(PPC::X1, RegState::Define)
         .addReg(MI.getOperand(1).getReg());
     else
-      BuildMI(MBB, II, dl, TII.get(PPC::STDUX), PPC::X1)
+      BuildMI(MBB, II, dl, TII.get(PPC::STDUX))
         .addReg(PPC::X0, RegState::Kill)
-        .addReg(PPC::X1)
+        .addReg(PPC::X1, RegState::Define)
         .addReg(MI.getOperand(1).getReg());
 
     if (!MI.getOperand(1).isKill())
@@ -363,9 +349,9 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
         .addImm(maxCallFrameSize)
         .addReg(MI.getOperand(1).getReg(), RegState::ImplicitKill);
   } else {
-    BuildMI(MBB, II, dl, TII.get(PPC::STWUX), PPC::R1)
+    BuildMI(MBB, II, dl, TII.get(PPC::STWUX))
       .addReg(Reg, RegState::Kill)
-      .addReg(PPC::R1)
+      .addReg(PPC::R1, RegState::Define)
       .addReg(MI.getOperand(1).getReg());
 
     if (!MI.getOperand(1).isKill())

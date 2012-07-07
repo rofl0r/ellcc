@@ -16,7 +16,6 @@
 #include "asan_stack.h"
 #include "asan_thread.h"
 #include "asan_thread_registry.h"
-#include "sanitizer_common/sanitizer_common.h"
 
 namespace __asan {
 

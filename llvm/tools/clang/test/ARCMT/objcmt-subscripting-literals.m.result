@@ -12,9 +12,6 @@ typedef const struct __CFString * CFStringRef;
 + (id)alloc;
 @end
 
-@protocol NSCopying
-@end
-
 @interface NSString : NSObject
 + (id)stringWithString:(NSString *)string;
 - (id)initWithString:(NSString *)aString;
@@ -22,10 +19,7 @@ typedef const struct __CFString * CFStringRef;
 
 @interface NSArray : NSObject
 - (id)objectAtIndex:(unsigned long)index;
-@end
-
-@interface NSArray (NSExtendedArray)
-- (id)objectAtIndexedSubscript:(unsigned)idx;
+- (id)objectAtIndexedSubscript:(int)index;
 @end
 
 @interface NSArray (NSArrayCreation)
@@ -38,21 +32,16 @@ typedef const struct __CFString * CFStringRef;
 - (id)initWithObjects:(const id [])objects count:(unsigned long)cnt;
 - (id)initWithObjects:(id)firstObj, ...;
 - (id)initWithArray:(NSArray *)array;
+
+- (id)objectAtIndex:(unsigned long)index;
 @end
 
 @interface NSMutableArray : NSArray
 - (void)replaceObjectAtIndex:(unsigned long)index withObject:(id)anObject;
-@end
-
-@interface NSMutableArray (NSExtendedMutableArray)
-- (void)setObject:(id)obj atIndexedSubscript:(unsigned)idx;
+- (void)setObject:(id)object atIndexedSubscript:(int)index;
 @end
 
 @interface NSDictionary : NSObject
-- (id)objectForKey:(id)aKey;
-@end
-
-@interface NSDictionary (NSExtendedDictionary)
 - (id)objectForKeyedSubscript:(id)key;
 @end
 
@@ -68,14 +57,13 @@ typedef const struct __CFString * CFStringRef;
 - (id)initWithObjectsAndKeys:(id)firstObject, ...;
 - (id)initWithDictionary:(NSDictionary *)otherDictionary;
 - (id)initWithObjects:(NSArray *)objects forKeys:(NSArray *)keys;
+
+- (id)objectForKey:(id)aKey;
 @end
 
 @interface NSMutableDictionary : NSDictionary
 - (void)setObject:(id)anObject forKey:(id)aKey;
-@end
-
-@interface NSMutableDictionary (NSExtendedMutableDictionary)
-- (void)setObject:(id)obj forKeyedSubscript:(id <NSCopying>)key;
+- (void)setObject:(id)object forKeyedSubscript:(id)key;
 @end
 
 @interface NSNumber : NSObject

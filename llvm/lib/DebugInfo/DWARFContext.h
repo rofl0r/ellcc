@@ -66,8 +66,7 @@ public:
   const DWARFDebugLine::LineTable *
   getLineTableForCompileUnit(DWARFCompileUnit *cu);
 
-  virtual DILineInfo getLineInfoForAddress(uint64_t address,
-      DILineInfoSpecifier specifier = DILineInfoSpecifier());
+  virtual DILineInfo getLineInfoForAddress(uint64_t address);
 
   bool isLittleEndian() const { return IsLittleEndian; }
 

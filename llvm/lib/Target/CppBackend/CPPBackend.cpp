@@ -130,7 +130,6 @@ namespace {
   private:
     void printLinkageType(GlobalValue::LinkageTypes LT);
     void printVisibilityType(GlobalValue::VisibilityTypes VisTypes);
-    void printThreadLocalMode(GlobalVariable::ThreadLocalMode TLM);
     void printCallingConv(CallingConv::ID cc);
     void printEscapedString(const std::string& str);
     void printCFP(const ConstantFP* CFP);
@@ -323,26 +322,6 @@ void CppWriter::printVisibilityType(GlobalValue::VisibilityTypes VisType) {
   case GlobalValue::ProtectedVisibility:
     Out << "GlobalValue::ProtectedVisibility";
     break;
-  }
-}
-
-void CppWriter::printThreadLocalMode(GlobalVariable::ThreadLocalMode TLM) {
-  switch (TLM) {
-    case GlobalVariable::NotThreadLocal:
-      Out << "GlobalVariable::NotThreadLocal";
-      break;
-    case GlobalVariable::GeneralDynamicTLSModel:
-      Out << "GlobalVariable::GeneralDynamicTLSModel";
-      break;
-    case GlobalVariable::LocalDynamicTLSModel:
-      Out << "GlobalVariable::LocalDynamicTLSModel";
-      break;
-    case GlobalVariable::InitialExecTLSModel:
-      Out << "GlobalVariable::InitialExecTLSModel";
-      break;
-    case GlobalVariable::LocalExecTLSModel:
-      Out << "GlobalVariable::LocalExecTLSModel";
-      break;
   }
 }
 
@@ -1017,9 +996,7 @@ void CppWriter::printVariableHead(const GlobalVariable *GV) {
   }
   if (GV->isThreadLocal()) {
     printCppName(GV);
-    Out << "->setThreadLocalMode(";
-    printThreadLocalMode(GV->getThreadLocalMode());
-    Out << ");";
+    Out << "->setThreadLocal(true);";
     nl(Out);
   }
   if (is_inline) {
@@ -2101,9 +2078,7 @@ char CppWriter::ID = 0;
 bool CPPTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                            formatted_raw_ostream &o,
                                            CodeGenFileType FileType,
-                                           bool DisableVerify,
-                                           AnalysisID StartAfter,
-                                           AnalysisID StopAfter) {
+                                           bool DisableVerify) {
   if (FileType != TargetMachine::CGFT_AssemblyFile) return true;
   PM.add(new CppWriter(o));
   return false;

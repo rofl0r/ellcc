@@ -4064,22 +4064,8 @@ bool ObjCARCContract::runOnFunction(Function &F) {
       if (!RetainRVMarker)
         break;
       BasicBlock::iterator BBI = Inst;
-      BasicBlock *InstParent = Inst->getParent();
-
-      // Step up to see if the call immediately precedes the RetainRV call.
-      // If it's an invoke, we have to cross a block boundary. And we have
-      // to carefully dodge no-op instructions.
-      do {
-        if (&*BBI == InstParent->begin()) {
-          BasicBlock *Pred = InstParent->getSinglePredecessor();
-          if (!Pred)
-            goto decline_rv_optimization;
-          BBI = Pred->getTerminator();
-          break;
-        }
-        --BBI;
-      } while (isNoopInstruction(BBI));
-
+      --BBI;
+      while (isNoopInstruction(BBI)) --BBI;
       if (&*BBI == GetObjCArg(Inst)) {
         Changed = true;
         InlineAsm *IA =
@@ -4089,7 +4075,6 @@ bool ObjCARCContract::runOnFunction(Function &F) {
                          /*Constraints=*/"", /*hasSideEffects=*/true);
         CallInst::Create(IA, "", Inst);
       }
-    decline_rv_optimization:
       break;
     }
     case IC_InitWeak: {

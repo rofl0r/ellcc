@@ -12,9 +12,9 @@
  * ===----------------------------------------------------------------------===
  */
 
-#include "int_lib.h"
-
 #if __x86_64
+
+#include "int_lib.h"
 
 /* Returns:  if (a <  b) returns 0
  *           if (a == b) returns 1

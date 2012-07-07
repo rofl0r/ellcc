@@ -9,7 +9,7 @@
 
 LEVEL = ../../..
 TESTNAME = Utils
-LINK_COMPONENTS := TransformUtils
+LINK_COMPONENTS := core support transformutils
 
 include $(LEVEL)/Makefile.config
 include $(LLVM_SRC_ROOT)/unittests/Makefile.unittest

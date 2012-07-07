@@ -30,8 +30,6 @@ add_llvm_target(MBlazeCodeGen
   MBlazeELFWriterInfo.cpp
   )
 
-add_dependencies(LLVMMBlazeCodeGen intrinsics_gen)
-
 add_subdirectory(AsmParser)
 add_subdirectory(Disassembler)
 add_subdirectory(InstPrinter)

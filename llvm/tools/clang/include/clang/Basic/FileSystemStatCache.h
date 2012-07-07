@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the FileSystemStatCache interface.
-///
+//
+//  This file defines the FileSystemStatCache interface.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_FILESYSTEMSTATCACHE_H
@@ -39,10 +38,9 @@ public:
     CacheMissing   ///< We know that the file doesn't exist.
   };
 
-  /// \brief Get the 'stat' information for the specified path, using the cache
-  /// to accelerate it if possible.
-  ///
-  /// \returns \c true if the path does not exist or \c false if it exists.
+  /// FileSystemStatCache::get - Get the 'stat' information for the specified
+  /// path, using the cache to accellerate it if possible.  This returns true if
+  /// the path does not exist or false if it exists.
   ///
   /// If FileDescriptor is non-null, then this lookup should only return success
   /// for files (not directories).  If it is null this lookup should only return

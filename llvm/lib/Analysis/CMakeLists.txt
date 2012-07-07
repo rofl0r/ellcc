@@ -12,7 +12,9 @@ add_llvm_library(LLVMAnalysis
   CaptureTracking.cpp
   CodeMetrics.cpp
   ConstantFolding.cpp
+  DIBuilder.cpp
   DbgInfoPrinter.cpp
+  DebugInfo.cpp
   DomPrinter.cpp
   DominanceFrontier.cpp
   IVUsers.cpp
@@ -56,7 +58,5 @@ add_llvm_library(LLVMAnalysis
   TypeBasedAliasAnalysis.cpp
   ValueTracking.cpp
   )
-
-add_dependencies(LLVMAnalysis intrinsics_gen)
 
 add_subdirectory(IPA)

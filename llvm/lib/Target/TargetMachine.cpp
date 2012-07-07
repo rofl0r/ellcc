@@ -11,9 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/GlobalAlias.h"
 #include "llvm/GlobalValue.h"
-#include "llvm/GlobalVariable.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -77,58 +75,25 @@ CodeModel::Model TargetMachine::getCodeModel() const {
   return CodeGenInfo->getCodeModel();
 }
 
-/// Get the IR-specified TLS model for Var.
-static TLSModel::Model getSelectedTLSModel(const GlobalVariable *Var) {
-  switch (Var->getThreadLocalMode()) {
-  case GlobalVariable::NotThreadLocal:
-    llvm_unreachable("getSelectedTLSModel for non-TLS variable");
-    break;
-  case GlobalVariable::GeneralDynamicTLSModel:
-    return TLSModel::GeneralDynamic;
-  case GlobalVariable::LocalDynamicTLSModel:
-    return TLSModel::LocalDynamic;
-  case GlobalVariable::InitialExecTLSModel:
-    return TLSModel::InitialExec;
-  case GlobalVariable::LocalExecTLSModel:
-    return TLSModel::LocalExec;
-  }
-  llvm_unreachable("invalid TLS model");
-}
-
 TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
-  // If GV is an alias then use the aliasee for determining
-  // thread-localness.
-  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    GV = GA->resolveAliasedGlobal(false);
-  const GlobalVariable *Var = cast<GlobalVariable>(GV);
-
-  bool isLocal = Var->hasLocalLinkage();
-  bool isDeclaration = Var->isDeclaration();
-  bool isPIC = getRelocationModel() == Reloc::PIC_;
-  bool isPIE = Options.PositionIndependentExecutable;
+  bool isLocal = GV->hasLocalLinkage();
+  bool isDeclaration = GV->isDeclaration();
   // FIXME: what should we do for protected and internal visibility?
   // For variables, is internal different from hidden?
-  bool isHidden = Var->hasHiddenVisibility();
+  bool isHidden = GV->hasHiddenVisibility();
 
-  TLSModel::Model Model;
-  if (isPIC && !isPIE) {
+  if (getRelocationModel() == Reloc::PIC_ &&
+      !Options.PositionIndependentExecutable) {
     if (isLocal || isHidden)
-      Model = TLSModel::LocalDynamic;
+      return TLSModel::LocalDynamic;
     else
-      Model = TLSModel::GeneralDynamic;
+      return TLSModel::GeneralDynamic;
   } else {
     if (!isDeclaration || isHidden)
-      Model = TLSModel::LocalExec;
+      return TLSModel::LocalExec;
     else
-      Model = TLSModel::InitialExec;
+      return TLSModel::InitialExec;
   }
-
-  // If the user specified a more specific model, use that.
-  TLSModel::Model SelectedModel = getSelectedTLSModel(Var);
-  if (SelectedModel > Model)
-    return SelectedModel;
-
-  return Model;
 }
 
 /// getOptLevel - Returns the optimization level: None, Less,
@@ -162,3 +127,4 @@ void TargetMachine::setFunctionSections(bool V) {
 void TargetMachine::setDataSections(bool V) {
   DataSections = V;
 }
+

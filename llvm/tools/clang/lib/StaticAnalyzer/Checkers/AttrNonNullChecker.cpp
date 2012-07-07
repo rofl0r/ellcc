@@ -15,7 +15,6 @@
 #include "ClangSACheckers.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/Calls.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 
@@ -24,32 +23,40 @@ using namespace ento;
 
 namespace {
 class AttrNonNullChecker
-  : public Checker< check::PreCall > {
+  : public Checker< check::PreStmt<CallExpr> > {
   mutable OwningPtr<BugType> BT;
 public:
 
-  void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
+  void checkPreStmt(const CallExpr *CE, CheckerContext &C) const;
 };
 } // end anonymous namespace
 
-void AttrNonNullChecker::checkPreCall(const CallEvent &Call,
+void AttrNonNullChecker::checkPreStmt(const CallExpr *CE,
                                       CheckerContext &C) const {
-  const Decl *FD = Call.getDecl();
+  ProgramStateRef state = C.getState();
+  const LocationContext *LCtx = C.getLocationContext();
+
+  // Check if the callee has a 'nonnull' attribute.
+  SVal X = state->getSVal(CE->getCallee(), LCtx);
+
+  const FunctionDecl *FD = X.getAsFunctionDecl();
   if (!FD)
     return;
 
-  const NonNullAttr *Att = FD->getAttr<NonNullAttr>();
+  const NonNullAttr* Att = FD->getAttr<NonNullAttr>();
   if (!Att)
     return;
 
-  ProgramStateRef state = C.getState();
-
   // Iterate through the arguments of CE and check them for null.
-  for (unsigned idx = 0, count = Call.getNumArgs(); idx != count; ++idx) {
+  unsigned idx = 0;
+
+  for (CallExpr::const_arg_iterator I=CE->arg_begin(), E=CE->arg_end(); I!=E;
+       ++I, ++idx) {
+
     if (!Att->isNonNull(idx))
       continue;
 
-    SVal V = Call.getArgSVal(idx);
+    SVal V = state->getSVal(*I, LCtx);
     DefinedSVal *DV = dyn_cast<DefinedSVal>(&V);
 
     // If the value is unknown or undefined, we can't perform this check.
@@ -58,16 +65,11 @@ void AttrNonNullChecker::checkPreCall(const CallEvent &Call,
 
     if (!isa<Loc>(*DV)) {
       // If the argument is a union type, we want to handle a potential
-      // transparent_union GCC extension.
-      const Expr *ArgE = Call.getArgExpr(idx);
-      if (!ArgE)
-        continue;
-
-      QualType T = ArgE->getType();
+      // transparent_unoin GCC extension.
+      QualType T = (*I)->getType();
       const RecordType *UT = T->getAsUnionType();
       if (!UT || !UT->getDecl()->hasAttr<TransparentUnionAttr>())
         continue;
-
       if (nonloc::CompoundVal *CSV = dyn_cast<nonloc::CompoundVal>(DV)) {
         nonloc::CompoundVal::iterator CSV_I = CSV->begin();
         assert(CSV_I != CSV->end());
@@ -76,7 +78,8 @@ void AttrNonNullChecker::checkPreCall(const CallEvent &Call,
         assert(++CSV_I == CSV->end());
         if (!DV)
           continue;        
-      } else {
+      }
+      else {
         // FIXME: Handle LazyCompoundVals?
         continue;
       }
@@ -103,10 +106,10 @@ void AttrNonNullChecker::checkPreCall(const CallEvent &Call,
                              "'nonnull' parameter", errorNode);
 
         // Highlight the range of the argument that was null.
-        R->addRange(Call.getArgSourceRange(idx));
-        if (const Expr *ArgE = Call.getArgExpr(idx))
-          R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(errorNode,
-                                                                     ArgE, R));
+        const Expr *arg = *I;
+        R->addRange(arg->getSourceRange());
+        R->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(errorNode,
+                                                                   arg, R));
         // Emit the bug report.
         C.EmitReport(R);
       }

@@ -71,8 +71,8 @@ namespace llvm {
   /// isBitcodeWrapper - Return true if the given bytes are the magic bytes
   /// for an LLVM IR bitcode wrapper.
   ///
-  inline bool isBitcodeWrapper(const unsigned char *BufPtr,
-                               const unsigned char *BufEnd) {
+  static inline bool isBitcodeWrapper(const unsigned char *BufPtr,
+                                      const unsigned char *BufEnd) {
     // See if you can find the hidden message in the magic bytes :-).
     // (Hint: it's a little-endian encoding.)
     return BufPtr != BufEnd &&
@@ -85,8 +85,8 @@ namespace llvm {
   /// isRawBitcode - Return true if the given bytes are the magic bytes for
   /// raw LLVM IR bitcode (without a wrapper).
   ///
-  inline bool isRawBitcode(const unsigned char *BufPtr,
-                           const unsigned char *BufEnd) {
+  static inline bool isRawBitcode(const unsigned char *BufPtr,
+                                  const unsigned char *BufEnd) {
     // These bytes sort of have a hidden message, but it's not in
     // little-endian this time, and it's a little redundant.
     return BufPtr != BufEnd &&
@@ -99,8 +99,8 @@ namespace llvm {
   /// isBitcode - Return true if the given bytes are the magic bytes for
   /// LLVM IR bitcode, either with or without a wrapper.
   ///
-  inline bool isBitcode(const unsigned char *BufPtr,
-                        const unsigned char *BufEnd) {
+  static bool inline isBitcode(const unsigned char *BufPtr,
+                               const unsigned char *BufEnd) {
     return isBitcodeWrapper(BufPtr, BufEnd) ||
            isRawBitcode(BufPtr, BufEnd);
   }
@@ -121,9 +121,9 @@ namespace llvm {
   /// BC file.
   /// If 'VerifyBufferSize' is true, check that the buffer is large enough to
   /// contain the whole bitcode file.
-  inline bool SkipBitcodeWrapperHeader(const unsigned char *&BufPtr,
-                                       const unsigned char *&BufEnd,
-                                       bool VerifyBufferSize) {
+  static inline bool SkipBitcodeWrapperHeader(const unsigned char *&BufPtr,
+                                              const unsigned char *&BufEnd,
+                                              bool VerifyBufferSize) {
     enum {
       KnownHeaderSize = 4*4,  // Size of header we read.
       OffsetField = 2*4,      // Offset in bytes to Offset field.

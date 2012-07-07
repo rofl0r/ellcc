@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Provides definitions for the various language-specific address
-/// spaces.
-///
+//
+//  This file provides definitions for the various language-specific address
+//  spaces.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_BASIC_ADDRESSSPACES_H
@@ -20,9 +19,8 @@ namespace clang {
 
 namespace LangAS {
 
-/// \brief Defines the set of possible language-specific address spaces.
-///
-/// This uses a high starting offset so as not to conflict with any address
+/// This enum defines the set of possible language-specific address spaces.
+/// It uses a high starting offset so as not to conflict with any address
 /// space used by a target.
 enum ID {
   Offset = 0xFFFF00,

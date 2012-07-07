@@ -12,9 +12,9 @@
  * ===----------------------------------------------------------------------===
  */
 
-#include "int_lib.h"
-
 #if __x86_64
+
+#include "int_lib.h"
 
 tu_int __udivmodti4(tu_int a, tu_int b, tu_int* rem);
 

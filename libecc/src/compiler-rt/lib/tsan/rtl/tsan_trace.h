@@ -41,13 +41,7 @@ typedef u64 Event;
 
 struct TraceHeader {
   StackTrace stack0;  // Start stack for the trace.
-  u64        epoch0;  // Start epoch for the trace.
-  uptr       stack0buf[kShadowStackSize];
-
-  TraceHeader()
-      : stack0(stack0buf, kShadowStackSize)
-      , epoch0() {
-  }
+  u64   epoch0;       // Start epoch for the trace.
 };
 
 struct Trace {

@@ -82,12 +82,12 @@ bool GlobalValue::isDeclaration() const {
 
 GlobalVariable::GlobalVariable(Type *Ty, bool constant, LinkageTypes Link,
                                Constant *InitVal, const Twine &Name,
-                               ThreadLocalMode TLMode, unsigned AddressSpace)
-  : GlobalValue(PointerType::get(Ty, AddressSpace),
+                               bool ThreadLocal, unsigned AddressSpace)
+  : GlobalValue(PointerType::get(Ty, AddressSpace), 
                 Value::GlobalVariableVal,
                 OperandTraits<GlobalVariable>::op_begin(this),
                 InitVal != 0, Link, Name),
-    isConstantGlobal(constant), threadLocalMode(TLMode) {
+    isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");
@@ -100,13 +100,13 @@ GlobalVariable::GlobalVariable(Type *Ty, bool constant, LinkageTypes Link,
 GlobalVariable::GlobalVariable(Module &M, Type *Ty, bool constant,
                                LinkageTypes Link, Constant *InitVal,
                                const Twine &Name,
-                               GlobalVariable *Before, ThreadLocalMode TLMode,
+                               GlobalVariable *Before, bool ThreadLocal,
                                unsigned AddressSpace)
-  : GlobalValue(PointerType::get(Ty, AddressSpace),
+  : GlobalValue(PointerType::get(Ty, AddressSpace), 
                 Value::GlobalVariableVal,
                 OperandTraits<GlobalVariable>::op_begin(this),
                 InitVal != 0, Link, Name),
-    isConstantGlobal(constant), threadLocalMode(TLMode) {
+    isConstantGlobal(constant), isThreadLocalSymbol(ThreadLocal) {
   if (InitVal) {
     assert(InitVal->getType() == Ty &&
            "Initializer should be the same type as the GlobalVariable!");

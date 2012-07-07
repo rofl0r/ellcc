@@ -12,9 +12,9 @@
  * ===----------------------------------------------------------------------===
  */ 
 
-#include "int_lib.h"
-
 #if __x86_64
+
+#include "int_lib.h"
 
 /* Effects: if rem != 0, *rem = a % b 
  * Returns: a / b 

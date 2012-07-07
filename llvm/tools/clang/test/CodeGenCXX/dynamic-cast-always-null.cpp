@@ -17,8 +17,3 @@ C &f(B& b) {
   // CHECK: ret %struct.C* undef
   return dynamic_cast<C&>(b);
 }
-
-void dont_crash() {
-  (void) dynamic_cast<void*>((A*)0);
-  (void) dynamic_cast<void*>((B*)0);
-}

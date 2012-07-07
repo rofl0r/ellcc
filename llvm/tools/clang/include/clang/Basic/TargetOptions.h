@@ -6,11 +6,6 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the clang::TargetOptions class.
-///
-//===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_FRONTEND_TARGETOPTIONS_H
 #define LLVM_CLANG_FRONTEND_TARGETOPTIONS_H
@@ -20,7 +15,7 @@
 
 namespace clang {
 
-/// \brief Options for controlling the target.
+/// TargetOptions - Options for controlling the target.
 class TargetOptions {
 public:
   /// If given, the name of the target triple to compile for. If not given the

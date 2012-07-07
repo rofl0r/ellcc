@@ -22,6 +22,56 @@
 #include <algorithm>
 using namespace clang;
 
+/// Look through spelling locations for a macro argument expansion, and
+/// if found skip to it so that we can trace the argument rather than the macros
+/// in which that argument is used. If no macro argument expansion is found,
+/// don't skip anything and return the starting location.
+static SourceLocation skipToMacroArgExpansion(const SourceManager &SM,
+                                              SourceLocation StartLoc) {
+  for (SourceLocation L = StartLoc; L.isMacroID();
+       L = SM.getImmediateSpellingLoc(L)) {
+    if (SM.isMacroArgExpansion(L))
+      return L;
+  }
+  
+  // Otherwise just return initial location, there's nothing to skip.
+  return StartLoc;
+}
+
+/// Gets the location of the immediate macro caller, one level up the stack
+/// toward the initial macro typed into the source.
+static SourceLocation getImmediateMacroCallerLoc(const SourceManager &SM,
+                                                 SourceLocation Loc) {
+  if (!Loc.isMacroID()) return Loc;
+  
+  // When we have the location of (part of) an expanded parameter, its spelling
+  // location points to the argument as typed into the macro call, and
+  // therefore is used to locate the macro caller.
+  if (SM.isMacroArgExpansion(Loc))
+    return SM.getImmediateSpellingLoc(Loc);
+  
+  // Otherwise, the caller of the macro is located where this macro is
+  // expanded (while the spelling is part of the macro definition).
+  return SM.getImmediateExpansionRange(Loc).first;
+}
+
+/// Gets the location of the immediate macro callee, one level down the stack
+/// toward the leaf macro.
+static SourceLocation getImmediateMacroCalleeLoc(const SourceManager &SM,
+                                                 SourceLocation Loc) {
+  if (!Loc.isMacroID()) return Loc;
+  
+  // When we have the location of (part of) an expanded parameter, its
+  // expansion location points to the unexpanded paramater reference within
+  // the macro definition (or callee).
+  if (SM.isMacroArgExpansion(Loc))
+    return SM.getImmediateExpansionRange(Loc).first;
+  
+  // Otherwise, the callee of the macro is located where this location was
+  // spelled inside the macro definition.
+  return SM.getImmediateSpellingLoc(Loc);
+}
+
 /// \brief Retrieve the name of the immediate macro expansion.
 ///
 /// This routine starts from a source location, and finds the name of the macro
@@ -57,6 +107,20 @@ static StringRef getImmediateMacroName(SourceLocation Loc,
    unsigned MacroTokenLength = Lexer::MeasureTokenLength(Loc, SM, LangOpts);
    StringRef ExpansionBuffer = SM.getBufferData(ExpansionInfo.first);
    return ExpansionBuffer.substr(ExpansionInfo.second, MacroTokenLength);
+}
+
+/// Get the presumed location of a diagnostic message. This computes the
+/// presumed location for the top of any macro backtrace when present.
+static PresumedLoc getDiagnosticPresumedLoc(const SourceManager &SM,
+                                            SourceLocation Loc) {
+  // This is a condensed form of the algorithm used by emitCaretDiagnostic to
+  // walk to the top of the macro call stack.
+  while (Loc.isMacroID()) {
+    Loc = skipToMacroArgExpansion(SM, Loc);
+    Loc = getImmediateMacroCallerLoc(SM, Loc);
+  }
+  
+  return SM.getPresumedLoc(Loc);
 }
 
 DiagnosticRenderer::DiagnosticRenderer(const LangOptions &LangOpts,
@@ -127,7 +191,7 @@ void DiagnosticRenderer::emitDiagnostic(SourceLocation Loc,
   
   PresumedLoc PLoc;
   if (Loc.isValid()) {
-    PLoc = SM->getPresumedLocForDisplay(Loc);
+    PLoc = getDiagnosticPresumedLoc(*SM, Loc);
   
     // First, if this diagnostic is not in the main file, print out the
     // "included from" lines.
@@ -254,9 +318,9 @@ void DiagnosticRenderer::emitMacroExpansionsAndCarets(
   
   // When processing macros, skip over the expansions leading up to
   // a macro argument, and trace the argument's expansion stack instead.
-  Loc = SM.skipToMacroArgExpansion(Loc);
+  Loc = skipToMacroArgExpansion(SM, Loc);
   
-  SourceLocation OneLevelUp = SM.getImmediateMacroCallerLoc(Loc);
+  SourceLocation OneLevelUp = getImmediateMacroCallerLoc(SM, Loc);
   
   // FIXME: Map ranges?
   emitMacroExpansionsAndCarets(OneLevelUp, Level, Ranges, Hints, SM, MacroDepth,
@@ -266,7 +330,7 @@ void DiagnosticRenderer::emitMacroExpansionsAndCarets(
   SourceLocation MacroLoc = Loc;
   
   // Map the location.
-  Loc = SM.getImmediateMacroCalleeLoc(Loc);
+  Loc = getImmediateMacroCalleeLoc(SM, Loc);
   
   unsigned MacroSkipStart = 0, MacroSkipEnd = 0;
   if (MacroDepth > DiagOpts.MacroBacktraceLimit &&
@@ -286,9 +350,9 @@ void DiagnosticRenderer::emitMacroExpansionsAndCarets(
        I != E; ++I) {
     SourceLocation Start = I->getBegin(), End = I->getEnd();
     if (Start.isMacroID())
-      I->setBegin(SM.getImmediateMacroCalleeLoc(Start));
+      I->setBegin(getImmediateMacroCalleeLoc(SM, Start));
     if (End.isMacroID())
-      I->setEnd(SM.getImmediateMacroCalleeLoc(End));
+      I->setEnd(getImmediateMacroCalleeLoc(SM, End));
   }
   
   if (Suppressed) {
@@ -329,3 +393,4 @@ void DiagnosticNoteRenderer::emitIncludeLocation(SourceLocation Loc,
 void DiagnosticNoteRenderer::emitBasicNote(StringRef Message) {
   emitNote(SourceLocation(), Message, 0);  
 }
+

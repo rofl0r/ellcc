@@ -32,7 +32,6 @@
 #define DEBUG_TYPE "ctrloops"
 #include "PPC.h"
 #include "PPCTargetMachine.h"
-#include "MCTargetDesc/PPCPredicates.h"
 #include "llvm/Constants.h"
 #include "llvm/PassSupport.h"
 #include "llvm/ADT/DenseMap.h"
@@ -83,14 +82,13 @@ namespace {
     /// getCanonicalInductionVariable - Check to see if the loop has a canonical
     /// induction variable.
     /// Should be defined in MachineLoop. Based upon version in class Loop.
-    void getCanonicalInductionVariable(MachineLoop *L,
-                              SmallVector<MachineInstr *, 4> &IVars,
-                              SmallVector<MachineInstr *, 4> &IOps) const;
+    MachineInstr *getCanonicalInductionVariable(MachineLoop *L,
+                                                MachineInstr *&IOp) const;
 
     /// getTripCount - Return a loop-invariant LLVM register indicating the
     /// number of times the loop will be executed.  If the trip-count cannot
     /// be determined, this return null.
-    CountValue *getTripCount(MachineLoop *L,
+    CountValue *getTripCount(MachineLoop *L, bool &WordCmp,
                              SmallVector<MachineInstr *, 2> &OldInsts) const;
 
     /// isInductionOperation - Return true if the instruction matches the
@@ -177,12 +175,12 @@ namespace {
 
 /// isCompareEquals - Returns true if the instruction is a compare equals
 /// instruction with an immediate operand.
-static bool isCompareEqualsImm(const MachineInstr *MI, bool &SignedCmp) {
-  if (MI->getOpcode() == PPC::CMPWI || MI->getOpcode() == PPC::CMPDI) {
-    SignedCmp = true;
+static bool isCompareEqualsImm(const MachineInstr *MI, bool &WordCmp) {
+  if (MI->getOpcode() == PPC::CMPWI || MI->getOpcode() == PPC::CMPLWI) {
+    WordCmp = true;
     return true;
-  } else if (MI->getOpcode() == PPC::CMPLWI || MI->getOpcode() == PPC::CMPLDI) {
-    SignedCmp = false;
+  } else if (MI->getOpcode() == PPC::CMPDI || MI->getOpcode() == PPC::CMPLDI) {
+    WordCmp = false;
     return true;
   }
 
@@ -229,27 +227,26 @@ bool PPCCTRLoops::runOnMachineFunction(MachineFunction &MF) {
 /// the machine.
 /// This method assumes that the IndVarSimplify pass has been run by 'opt'.
 ///
-void
-PPCCTRLoops::getCanonicalInductionVariable(MachineLoop *L,
-                                  SmallVector<MachineInstr *, 4> &IVars,
-                                  SmallVector<MachineInstr *, 4> &IOps) const {
+MachineInstr
+*PPCCTRLoops::getCanonicalInductionVariable(MachineLoop *L,
+                                            MachineInstr *&IOp) const {
   MachineBasicBlock *TopMBB = L->getTopBlock();
   MachineBasicBlock::pred_iterator PI = TopMBB->pred_begin();
   assert(PI != TopMBB->pred_end() &&
          "Loop must have more than one incoming edge!");
   MachineBasicBlock *Backedge = *PI++;
-  if (PI == TopMBB->pred_end()) return;  // dead loop
+  if (PI == TopMBB->pred_end()) return 0;  // dead loop
   MachineBasicBlock *Incoming = *PI++;
-  if (PI != TopMBB->pred_end()) return;  // multiple backedges?
+  if (PI != TopMBB->pred_end()) return 0;  // multiple backedges?
 
   // make sure there is one incoming and one backedge and determine which
   // is which.
   if (L->contains(Incoming)) {
     if (L->contains(Backedge))
-      return;
+      return 0;
     std::swap(Incoming, Backedge);
   } else if (!L->contains(Backedge))
-    return;
+    return 0;
 
   // Loop over all of the PHI nodes, looking for a canonical induction variable:
   //   - The PHI node is "reg1 = PHI reg2, BB1, reg3, BB2".
@@ -266,13 +263,13 @@ PPCCTRLoops::getCanonicalInductionVariable(MachineLoop *L,
         // Check if the definition is an induction operation.
         MachineInstr *DI = MRI->getVRegDef(MPhi->getOperand(i).getReg());
         if (isInductionOperation(DI, DefReg)) {
-          IOps.push_back(DI);
-          IVars.push_back(MPhi);
+          IOp = DI;
+          return MPhi;
         }
       }
     }
   }
-  return;
+  return 0;
 }
 
 /// getTripCount - Return a loop-invariant LLVM value indicating the
@@ -286,100 +283,66 @@ PPCCTRLoops::getCanonicalInductionVariable(MachineLoop *L,
 ///
 /// Based upon getTripCount in LoopInfo.
 ///
-CountValue *PPCCTRLoops::getTripCount(MachineLoop *L,
+CountValue *PPCCTRLoops::getTripCount(MachineLoop *L, bool &WordCmp,
                            SmallVector<MachineInstr *, 2> &OldInsts) const {
-  MachineBasicBlock *LastMBB = L->getExitingBlock();
-  // Don't generate a CTR loop if the loop has more than one exit.
-  if (LastMBB == 0)
-    return 0;
-
-  MachineBasicBlock::iterator LastI = LastMBB->getFirstTerminator();
-  if (LastI->getOpcode() != PPC::BCC)
-    return 0;
-
-  // We need to make sure that this compare is defining the condition
-  // register actually used by the terminating branch.
-
-  unsigned PredReg = LastI->getOperand(1).getReg();
-  DEBUG(dbgs() << "Examining loop with first terminator: " << *LastI);
-
-  unsigned PredCond = LastI->getOperand(0).getImm();
-  if (PredCond != PPC::PRED_EQ && PredCond != PPC::PRED_NE)
-    return 0;
-
   // Check that the loop has a induction variable.
-  SmallVector<MachineInstr *, 4> IVars, IOps;
-  getCanonicalInductionVariable(L, IVars, IOps);
-  for (unsigned i = 0; i < IVars.size(); ++i) {
-    MachineInstr *IOp = IOps[i];
-    MachineInstr *IV_Inst = IVars[i];
+  MachineInstr *IOp;
+  MachineInstr *IV_Inst = getCanonicalInductionVariable(L, IOp);
+  if (IV_Inst == 0) return 0;
 
-    // Canonical loops will end with a 'cmpwi/cmpdi cr, IV, Imm',
-    //  if Imm is 0, get the count from the PHI opnd
-    //  if Imm is -M, than M is the count
-    //  Otherwise, Imm is the count
-    MachineOperand *IV_Opnd;
-    const MachineOperand *InitialValue;
-    if (!L->contains(IV_Inst->getOperand(2).getMBB())) {
-      InitialValue = &IV_Inst->getOperand(1);
-      IV_Opnd = &IV_Inst->getOperand(3);
-    } else {
-      InitialValue = &IV_Inst->getOperand(3);
-      IV_Opnd = &IV_Inst->getOperand(1);
-    }
+  // Canonical loops will end with a 'cmpwi/cmpdi cr, IV, Imm',
+  //  if Imm is 0, get the count from the PHI opnd
+  //  if Imm is -M, than M is the count
+  //  Otherwise, Imm is the count
+  MachineOperand *IV_Opnd;
+  const MachineOperand *InitialValue;
+  if (!L->contains(IV_Inst->getOperand(2).getMBB())) {
+    InitialValue = &IV_Inst->getOperand(1);
+    IV_Opnd = &IV_Inst->getOperand(3);
+  } else {
+    InitialValue = &IV_Inst->getOperand(3);
+    IV_Opnd = &IV_Inst->getOperand(1);
+  }
 
-    DEBUG(dbgs() << "Considering:\n");
-    DEBUG(dbgs() << "  induction operation: " << *IOp);
-    DEBUG(dbgs() << "  induction variable: " << *IV_Inst);
-    DEBUG(dbgs() << "  initial value: " << *InitialValue << "\n");
-  
-    // Look for the cmp instruction to determine if we
-    // can get a useful trip count.  The trip count can
-    // be either a register or an immediate.  The location
-    // of the value depends upon the type (reg or imm).
-    while ((IV_Opnd = IV_Opnd->getNextOperandForReg())) {
-      bool SignedCmp;
-      MachineInstr *MI = IV_Opnd->getParent();
-      if (L->contains(MI) && isCompareEqualsImm(MI, SignedCmp) &&
-          MI->getOperand(0).getReg() == PredReg) {
+  // Look for the cmp instruction to determine if we
+  // can get a useful trip count.  The trip count can
+  // be either a register or an immediate.  The location
+  // of the value depends upon the type (reg or imm).
+  while ((IV_Opnd = IV_Opnd->getNextOperandForReg())) {
+    MachineInstr *MI = IV_Opnd->getParent();
+    if (L->contains(MI) && isCompareEqualsImm(MI, WordCmp)) {
+      OldInsts.push_back(MI);
+      OldInsts.push_back(IOp);
 
-        OldInsts.push_back(MI);
-        OldInsts.push_back(IOp);
- 
-        DEBUG(dbgs() << "  compare: " << *MI);
- 
-        const MachineOperand &MO = MI->getOperand(2);
-        assert(MO.isImm() && "IV Cmp Operand should be an immediate");
+      const MachineOperand &MO = MI->getOperand(2);
+      assert(MO.isImm() && "IV Cmp Operand should be an immediate");
+      int64_t ImmVal = MO.getImm();
 
-        int64_t ImmVal;
-        if (SignedCmp)
-          ImmVal = (short) MO.getImm();
-        else
-          ImmVal = MO.getImm();
-  
-        const MachineInstr *IV_DefInstr = MRI->getVRegDef(IV_Opnd->getReg());
-        assert(L->contains(IV_DefInstr->getParent()) &&
-               "IV definition should occurs in loop");
-        int64_t iv_value = (short) IV_DefInstr->getOperand(2).getImm();
-  
+      const MachineInstr *IV_DefInstr = MRI->getVRegDef(IV_Opnd->getReg());
+      assert(L->contains(IV_DefInstr->getParent()) &&
+             "IV definition should occurs in loop");
+      int64_t iv_value = IV_DefInstr->getOperand(2).getImm();
+
+      if (ImmVal == 0) {
+        // Make sure the induction variable changes by one on each iteration.
+        if (iv_value != 1 && iv_value != -1) {
+          return 0;
+        }
+        return new CountValue(InitialValue->getReg(), iv_value > 0);
+      } else {
         assert(InitialValue->isReg() && "Expecting register for init value");
-        unsigned InitialValueReg = InitialValue->getReg();
-  
-        const MachineInstr *DefInstr = MRI->getVRegDef(InitialValueReg);
-  
+        const MachineInstr *DefInstr = MRI->getVRegDef(InitialValue->getReg());
+
         // Here we need to look for an immediate load (an li or lis/ori pair).
         if (DefInstr && (DefInstr->getOpcode() == PPC::ORI8 ||
                          DefInstr->getOpcode() == PPC::ORI)) {
-          int64_t start = (short) DefInstr->getOperand(2).getImm();
+          int64_t start = DefInstr->getOperand(2).getImm();
           const MachineInstr *DefInstr2 =
             MRI->getVRegDef(DefInstr->getOperand(0).getReg());
           if (DefInstr2 && (DefInstr2->getOpcode() == PPC::LIS8 ||
                             DefInstr2->getOpcode() == PPC::LIS)) {
-            DEBUG(dbgs() << "  initial constant: " << *DefInstr);
-            DEBUG(dbgs() << "  initial constant: " << *DefInstr2);
+            start |= DefInstr2->getOperand(1).getImm() << 16;
 
-            start |= int64_t(short(DefInstr2->getOperand(1).getImm())) << 16;
-  
             int64_t count = ImmVal - start;
             if ((count % iv_value) != 0) {
               return 0;
@@ -388,23 +351,12 @@ CountValue *PPCCTRLoops::getTripCount(MachineLoop *L,
           }
         } else if (DefInstr && (DefInstr->getOpcode() == PPC::LI8 ||
                                 DefInstr->getOpcode() == PPC::LI)) {
-          DEBUG(dbgs() << "  initial constant: " << *DefInstr);
-
-          int64_t count = ImmVal - int64_t(short(DefInstr->getOperand(1).getImm()));
+          int64_t count = ImmVal - DefInstr->getOperand(1).getImm();
           if ((count % iv_value) != 0) {
             return 0;
           }
           return new CountValue(count/iv_value);
-        } else if (iv_value == 1 || iv_value == -1) {
-          // We can't determine a constant starting value.
-          if (ImmVal == 0) {
-            return new CountValue(InitialValueReg, iv_value > 0);
-          }
-          // FIXME: handle non-zero end value.
         }
-        // FIXME: handle non-unit increments (we might not want to introduce division
-        // but we can handle some 2^n cases with shifts).
-  
       }
     }
   }
@@ -572,9 +524,10 @@ bool PPCCTRLoops::convertToCTRLoop(MachineLoop *L) {
     return Changed;
   }
 
+  bool WordCmp;
   SmallVector<MachineInstr *, 2> OldInsts;
   // Are we able to determine the trip count for the loop?
-  CountValue *TripCount = getTripCount(L, OldInsts);
+  CountValue *TripCount = getTripCount(L, WordCmp, OldInsts);
   if (TripCount == 0) {
     DEBUG(dbgs() << "failed to get trip count!\n");
     return false;
@@ -622,21 +575,14 @@ bool PPCCTRLoops::convertToCTRLoop(MachineLoop *L) {
   const PPCSubtarget &Subtarget = MF->getTarget().getSubtarget<PPCSubtarget>();
   bool isPPC64 = Subtarget.isPPC64();
 
-  const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
-  const TargetRegisterClass *G8RC = &PPC::G8RCRegClass;
-  const TargetRegisterClass *RC = isPPC64 ? G8RC : GPRC;
-
   unsigned CountReg;
   if (TripCount->isReg()) {
     // Create a copy of the loop count register.
-    const TargetRegisterClass *SrcRC =
+    const TargetRegisterClass *RC =
       MF->getRegInfo().getRegClass(TripCount->getReg());
     CountReg = MF->getRegInfo().createVirtualRegister(RC);
-    unsigned CopyOp = (isPPC64 && SrcRC == GPRC) ?
-                        (unsigned) PPC::EXTSW_32_64 :
-                        (unsigned) TargetOpcode::COPY;
     BuildMI(*Preheader, InsertPos, dl,
-            TII->get(CopyOp), CountReg).addReg(TripCount->getReg());
+            TII->get(TargetOpcode::COPY), CountReg).addReg(TripCount->getReg());
     if (TripCount->isNeg()) {
       unsigned CountReg1 = CountReg;
       CountReg = MF->getRegInfo().createVirtualRegister(RC);
@@ -644,12 +590,26 @@ bool PPCCTRLoops::convertToCTRLoop(MachineLoop *L) {
               TII->get(isPPC64 ? PPC::NEG8 : PPC::NEG),
                        CountReg).addReg(CountReg1);
     }
+
+    // On a 64-bit system, if the original comparison was only 32-bit, then
+    // mask out the higher-order part of the count.
+    if (isPPC64 && WordCmp) {
+       unsigned CountReg1 = CountReg;
+       CountReg = MF->getRegInfo().createVirtualRegister(RC);
+       BuildMI(*Preheader, InsertPos, dl,
+               TII->get(PPC::RLDICL), CountReg).addReg(CountReg1
+              ).addImm(0).addImm(32);
+    }
   } else {
     assert(TripCount->isImm() && "Expecting immedate vaule for trip count");
     // Put the trip count in a register for transfer into the count register.
+    const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
+    const TargetRegisterClass *G8RC = &PPC::G8RCRegClass;
+    const TargetRegisterClass *RC = isPPC64 ? G8RC : GPRC;
 
     int64_t CountImm = TripCount->getImm();
-    assert(!TripCount->isNeg() && "Constant trip count must be positive");
+    if (TripCount->isNeg())
+      CountImm = -CountImm;
 
     CountReg = MF->getRegInfo().createVirtualRegister(RC);
     if (CountImm > 0xFFFF) {
@@ -705,7 +665,6 @@ bool PPCCTRLoops::convertToCTRLoop(MachineLoop *L) {
                  (isPPC64 ? PPC::BDZ8 : PPC::BDZ))).addMBB(BranchTarget);
 
   // Conditional branch; just delete it.
-  DEBUG(dbgs() << "Removing old branch: " << *LastI);
   LastMBB->erase(LastI);
 
   delete TripCount;

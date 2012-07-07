@@ -424,7 +424,6 @@ void StmtDumper::VisitPredefinedExpr(PredefinedExpr *Node) {
   default: llvm_unreachable("unknown case");
   case PredefinedExpr::Func:           OS <<  " __func__"; break;
   case PredefinedExpr::Function:       OS <<  " __FUNCTION__"; break;
-  case PredefinedExpr::LFunction:       OS <<  " L__FUNCTION__"; break;
   case PredefinedExpr::PrettyFunction: OS <<  " __PRETTY_FUNCTION__";break;
   }
 }
@@ -447,8 +446,18 @@ void StmtDumper::VisitFloatingLiteral(FloatingLiteral *Node) {
 
 void StmtDumper::VisitStringLiteral(StringLiteral *Str) {
   DumpExpr(Str);
+  // FIXME: this doesn't print wstrings right.
   OS << " ";
-  Str->outputString(OS);
+  switch (Str->getKind()) {
+  case StringLiteral::Ascii: break; // No prefix
+  case StringLiteral::Wide:  OS << 'L'; break;
+  case StringLiteral::UTF8:  OS << "u8"; break;
+  case StringLiteral::UTF16: OS << 'u'; break;
+  case StringLiteral::UTF32: OS << 'U'; break;
+  }
+  OS << '"';
+  OS.write_escaped(Str->getString());
+  OS << '"';
 }
 
 void StmtDumper::VisitUnaryOperator(UnaryOperator *Node) {
@@ -463,7 +472,7 @@ void StmtDumper::VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *Node) {
     OS << " sizeof ";
     break;
   case UETT_AlignOf:
-    OS << " alignof ";
+    OS << " __alignof ";
     break;
   case UETT_VecStep:
     OS << " vec_step ";

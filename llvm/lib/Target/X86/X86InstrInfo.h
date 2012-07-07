@@ -145,9 +145,9 @@ class X86InstrInfo : public X86GenInstrInfo {
                    std::pair<unsigned, unsigned> > MemOp2RegOpTableType;
   MemOp2RegOpTableType MemOp2RegOpTable;
 
-  static void AddTableEntry(RegOp2MemOpTableType &R2MTable,
-                            MemOp2RegOpTableType &M2RTable,
-                            unsigned RegOp, unsigned MemOp, unsigned Flags);
+  void AddTableEntry(RegOp2MemOpTableType &R2MTable,
+                     MemOp2RegOpTableType &M2RTable,
+                     unsigned RegOp, unsigned MemOp, unsigned Flags);
 
 public:
   explicit X86InstrInfo(X86TargetMachine &tm);
@@ -219,14 +219,6 @@ public:
                                 MachineBasicBlock *FBB,
                                 const SmallVectorImpl<MachineOperand> &Cond,
                                 DebugLoc DL) const;
-  virtual bool canInsertSelect(const MachineBasicBlock&,
-                               const SmallVectorImpl<MachineOperand> &Cond,
-                               unsigned, unsigned, int&, int&, int&) const;
-  virtual void insertSelect(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator MI, DebugLoc DL,
-                            unsigned DstReg,
-                            const SmallVectorImpl<MachineOperand> &Cond,
-                            unsigned TrueReg, unsigned FalseReg) const;
   virtual void copyPhysReg(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MI, DebugLoc DL,
                            unsigned DestReg, unsigned SrcReg,

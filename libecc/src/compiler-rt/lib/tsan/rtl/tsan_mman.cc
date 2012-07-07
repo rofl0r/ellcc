@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "sanitizer_common/sanitizer_common.h"
 #include "tsan_mman.h"
+#include "tsan_allocator.h"
 #include "tsan_rtl.h"
 #include "tsan_report.h"
 #include "tsan_flags.h"
@@ -32,7 +33,7 @@ void *user_alloc(ThreadState *thr, uptr pc, uptr sz) {
   CHECK_GT(thr->in_rtl, 0);
   if (sz + sizeof(MBlock) < sz)
     return 0;
-  MBlock *b = (MBlock*)InternalAlloc(sz + sizeof(MBlock));
+  MBlock *b = (MBlock*)Alloc(sz + sizeof(MBlock));
   if (b == 0)
     return 0;
   b->size = sz;
@@ -54,7 +55,7 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
   if (CTX() && CTX()->initialized && thr->in_rtl == 1) {
     MemoryRangeFreed(thr, pc, (uptr)p, b->size);
   }
-  InternalFree(b);
+  Free(b);
   SignalUnsafeCall(thr, pc);
 }
 
@@ -89,7 +90,7 @@ void *user_alloc_aligned(ThreadState *thr, uptr pc, uptr sz, uptr align) {
 MBlock *user_mblock(ThreadState *thr, void *p) {
   CHECK_GT(thr->in_rtl, 0);
   CHECK_NE(p, (void*)0);
-  MBlock *b = (MBlock*)InternalAllocBlock(p);
+  MBlock *b = (MBlock*)AllocBlock(p);
   // FIXME: Output a warning, it's a user error.
   if (p < (char*)(b + 1) || p > (char*)(b + 1) + b->size) {
     TsanPrintf("user_mblock p=%p b=%p size=%zu beg=%p end=%p\n",
@@ -103,20 +104,12 @@ MBlock *user_mblock(ThreadState *thr, void *p) {
 void *internal_alloc(MBlockType typ, uptr sz) {
   ThreadState *thr = cur_thread();
   CHECK_GT(thr->in_rtl, 0);
-  if (thr->nomalloc) {
-    thr->nomalloc = 0;  // CHECK calls internal_malloc().
-    CHECK(0);
-  }
   return InternalAlloc(sz);
 }
 
 void internal_free(void *p) {
   ThreadState *thr = cur_thread();
   CHECK_GT(thr->in_rtl, 0);
-  if (thr->nomalloc) {
-    thr->nomalloc = 0;  // CHECK calls internal_malloc().
-    CHECK(0);
-  }
   InternalFree(p);
 }
 

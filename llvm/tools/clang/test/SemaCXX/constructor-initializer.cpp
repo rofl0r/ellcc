@@ -126,24 +126,21 @@ struct Q {
 
 // A silly class used to demonstrate field-is-uninitialized in constructors with
 // multiple params.
-int IntParam(int i) { return 0; };
 class TwoInOne { public: TwoInOne(TwoInOne a, TwoInOne b) {} };
 class InitializeUsingSelfTest {
   bool A;
   char* B;
   int C;
   TwoInOne D;
-  int E;
-  InitializeUsingSelfTest(int F)
+  InitializeUsingSelfTest(int E)
       : A(A),  // expected-warning {{field is uninitialized when used here}}
         B((((B)))),  // expected-warning {{field is uninitialized when used here}}
         C(A && InitializeUsingSelfTest::C),  // expected-warning {{field is uninitialized when used here}}
         D(D,  // expected-warning {{field is uninitialized when used here}}
-          D), // expected-warning {{field is uninitialized when used here}}
-        E(IntParam(E)) {} // expected-warning {{field is uninitialized when used here}}
+          D) {}  // expected-warning {{field is uninitialized when used here}}
 };
 
-int IntWrapper(int &i) { return 0; };
+int IntWrapper(int i) { return 0; };
 class InitializeUsingSelfExceptions {
   int A;
   int B;

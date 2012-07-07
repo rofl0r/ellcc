@@ -470,7 +470,6 @@ void InstrEmitter::EmitSubregNode(SDNode *Node,
       VRBase = MRI->createVirtualRegister(TRC);
       BuildMI(*MBB, InsertPos, Node->getDebugLoc(),
               TII->get(TargetOpcode::COPY), VRBase).addReg(SrcReg);
-      MRI->clearKillFlags(SrcReg);
     } else {
       // VReg may not support a SubIdx sub-register, and we may need to
       // constrain its register class or issue a COPY to a compatible register

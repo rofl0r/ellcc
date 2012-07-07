@@ -178,8 +178,9 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
         break;
       }
       break;
-    case ARM::fixup_arm_blx:
     case ARM::fixup_arm_uncondbl:
+    case ARM::fixup_arm_blx:
+    case ARM::fixup_arm_uncondbranch:
       switch (Modifier) {
       case MCSymbolRefExpr::VK_ARM_PLT:
         Type = ELF::R_ARM_PLT32;
@@ -191,7 +192,6 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
       break;
     case ARM::fixup_arm_condbl:
     case ARM::fixup_arm_condbranch:
-    case ARM::fixup_arm_uncondbranch:
       Type = ELF::R_ARM_JUMP24;
       break;
     case ARM::fixup_arm_movt_hi16:
@@ -252,8 +252,10 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
     case ARM::fixup_arm_thumb_cp:
     case ARM::fixup_arm_thumb_br:
       llvm_unreachable("Unimplemented");
-    case ARM::fixup_arm_condbranch:
     case ARM::fixup_arm_uncondbranch:
+      Type = ELF::R_ARM_CALL;
+      break;
+    case ARM::fixup_arm_condbranch:
       Type = ELF::R_ARM_JUMP24;
       break;
     case ARM::fixup_arm_movt_hi16:

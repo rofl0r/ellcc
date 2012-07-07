@@ -60,8 +60,7 @@ namespace {
 
 class TypeNameValidatorCCC : public CorrectionCandidateCallback {
  public:
-  TypeNameValidatorCCC(bool AllowInvalid, bool WantClass=false)
-      : AllowInvalidDecl(AllowInvalid), WantClassName(WantClass) {
+  TypeNameValidatorCCC(bool AllowInvalid) : AllowInvalidDecl(AllowInvalid) {
     WantExpressionKeywords = false;
     WantCXXNamedCasts = false;
     WantRemainingKeywords = false;
@@ -72,50 +71,13 @@ class TypeNameValidatorCCC : public CorrectionCandidateCallback {
       return (isa<TypeDecl>(ND) || isa<ObjCInterfaceDecl>(ND)) &&
           (AllowInvalidDecl || !ND->isInvalidDecl());
     else
-      return !WantClassName && candidate.isKeyword();
+      return candidate.isKeyword();
   }
 
  private:
   bool AllowInvalidDecl;
-  bool WantClassName;
 };
 
-}
-
-/// \brief Determine whether the token kind starts a simple-type-specifier.
-bool Sema::isSimpleTypeSpecifier(tok::TokenKind Kind) const {
-  switch (Kind) {
-  // FIXME: Take into account the current language when deciding whether a
-  // token kind is a valid type specifier
-  case tok::kw_short:
-  case tok::kw_long:
-  case tok::kw___int64:
-  case tok::kw___int128:
-  case tok::kw_signed:
-  case tok::kw_unsigned:
-  case tok::kw_void:
-  case tok::kw_char:
-  case tok::kw_int:
-  case tok::kw_half:
-  case tok::kw_float:
-  case tok::kw_double:
-  case tok::kw_wchar_t:
-  case tok::kw_bool:
-  case tok::kw___underlying_type:
-    return true;
-
-  case tok::annot_typename:
-  case tok::kw_char16_t:
-  case tok::kw_char32_t:
-  case tok::kw_typeof:
-  case tok::kw_decltype:
-    return getLangOpts().CPlusPlus;
-
-  default:
-    break;
-  }
-
-  return false;
 }
 
 /// \brief If the identifier refers to a type name within this scope,
@@ -211,7 +173,7 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
   case LookupResult::NotFound:
   case LookupResult::NotFoundInCurrentInstantiation:
     if (CorrectedII) {
-      TypeNameValidatorCCC Validator(true, isClassName);
+      TypeNameValidatorCCC Validator(true);
       TypoCorrection Correction = CorrectTypo(Result.getLookupNameInfo(),
                                               Kind, S, SS, Validator);
       IdentifierInfo *NewII = Correction.getCorrectionAsIdentifierInfo();
@@ -240,8 +202,8 @@ ParsedType Sema::getTypeName(IdentifierInfo &II, SourceLocation NameLoc,
           std::string CorrectedStr(Correction.getAsString(getLangOpts()));
           std::string CorrectedQuotedStr(
               Correction.getQuoted(getLangOpts()));
-          Diag(NameLoc, diag::err_unknown_type_or_class_name_suggest)
-              << Result.getLookupName() << CorrectedQuotedStr << isClassName
+          Diag(NameLoc, diag::err_unknown_typename_suggest)
+              << Result.getLookupName() << CorrectedQuotedStr
               << FixItHint::CreateReplacement(SourceRange(NameLoc),
                                               CorrectedStr);
           if (NamedDecl *FirstDecl = Correction.getCorrectionDecl())
@@ -397,7 +359,7 @@ bool Sema::isMicrosoftMissingTypename(const CXXScopeSpec *SS, Scope *S) {
   return CurContext->isFunctionOrMethod() || S->isFunctionPrototypeScope();
 }
 
-bool Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
+bool Sema::DiagnoseUnknownTypeName(const IdentifierInfo &II, 
                                    SourceLocation IILoc,
                                    Scope *S,
                                    CXXScopeSpec *SS,
@@ -408,7 +370,7 @@ bool Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
   // There may have been a typo in the name of the type. Look up typo
   // results, in case we have something that we can suggest.
   TypeNameValidatorCCC Validator(false);
-  if (TypoCorrection Corrected = CorrectTypo(DeclarationNameInfo(II, IILoc),
+  if (TypoCorrection Corrected = CorrectTypo(DeclarationNameInfo(&II, IILoc),
                                              LookupOrdinaryName, S, SS,
                                              Validator)) {
     std::string CorrectedStr(Corrected.getAsString(getLangOpts()));
@@ -416,23 +378,19 @@ bool Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
 
     if (Corrected.isKeyword()) {
       // We corrected to a keyword.
-      IdentifierInfo *NewII = Corrected.getCorrectionAsIdentifierInfo();
-      if (!isSimpleTypeSpecifier(NewII->getTokenID()))
-        CorrectedQuotedStr = "the keyword " + CorrectedQuotedStr;
+      // FIXME: Actually recover with the keyword we suggest, and emit a fix-it.
       Diag(IILoc, diag::err_unknown_typename_suggest)
-        << II << CorrectedQuotedStr
-        << FixItHint::CreateReplacement(SourceRange(IILoc), CorrectedStr);
-      II = NewII;
+        << &II << CorrectedQuotedStr;
     } else {
       NamedDecl *Result = Corrected.getCorrectionDecl();
       // We found a similarly-named type or interface; suggest that.
       if (!SS || !SS->isSet())
         Diag(IILoc, diag::err_unknown_typename_suggest)
-          << II << CorrectedQuotedStr
+          << &II << CorrectedQuotedStr
           << FixItHint::CreateReplacement(SourceRange(IILoc), CorrectedStr);
       else if (DeclContext *DC = computeDeclContext(*SS, false))
         Diag(IILoc, diag::err_unknown_nested_typename_suggest)
-          << II << DC << CorrectedQuotedStr << SS->getRange()
+          << &II << DC << CorrectedQuotedStr << SS->getRange()
           << FixItHint::CreateReplacement(SourceRange(IILoc), CorrectedStr);
       else
         llvm_unreachable("could not have corrected a typo here");
@@ -451,7 +409,7 @@ bool Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
   if (getLangOpts().CPlusPlus) {
     // See if II is a class template that the user forgot to pass arguments to.
     UnqualifiedId Name;
-    Name.setIdentifier(II, IILoc);
+    Name.setIdentifier(&II, IILoc);
     CXXScopeSpec EmptySS;
     TemplateTy TemplateResult;
     bool MemberOfUnknownSpecialization;
@@ -472,21 +430,21 @@ bool Sema::DiagnoseUnknownTypeName(IdentifierInfo *&II,
   // (struct, union, enum) from Parser::ParseImplicitInt here, instead?
   
   if (!SS || (!SS->isSet() && !SS->isInvalid()))
-    Diag(IILoc, diag::err_unknown_typename) << II;
+    Diag(IILoc, diag::err_unknown_typename) << &II;
   else if (DeclContext *DC = computeDeclContext(*SS, false))
     Diag(IILoc, diag::err_typename_nested_not_found) 
-      << II << DC << SS->getRange();
+      << &II << DC << SS->getRange();
   else if (isDependentScopeSpecifier(*SS)) {
     unsigned DiagID = diag::err_typename_missing;
     if (getLangOpts().MicrosoftMode && isMicrosoftMissingTypename(SS, S))
       DiagID = diag::warn_typename_missing;
 
     Diag(SS->getRange().getBegin(), DiagID)
-      << (NestedNameSpecifier *)SS->getScopeRep() << II->getName()
+      << (NestedNameSpecifier *)SS->getScopeRep() << II.getName()
       << SourceRange(SS->getRange().getBegin(), IILoc)
       << FixItHint::CreateInsertion(SS->getRange().getBegin(), "typename ");
-    SuggestedType = ActOnTypenameType(S, SourceLocation(),
-                                      *SS, *II, IILoc).get();
+    SuggestedType = ActOnTypenameType(S, SourceLocation(), *SS, II, IILoc)
+                                                                         .get();
   } else {
     assert(SS && SS->isInvalid() && 
            "Invalid scope specifier has already been diagnosed");
@@ -634,19 +592,6 @@ Corrected:
     if (!SecondTry) {
       SecondTry = true;
       CorrectionCandidateCallback DefaultValidator;
-      // Try to limit which sets of keywords should be included in typo
-      // correction based on what the next token is.
-      DefaultValidator.WantTypeSpecifiers =
-          NextToken.is(tok::l_paren) || NextToken.is(tok::less) ||
-          NextToken.is(tok::identifier) || NextToken.is(tok::star) ||
-          NextToken.is(tok::amp) || NextToken.is(tok::l_square);
-      DefaultValidator.WantExpressionKeywords =
-          NextToken.is(tok::l_paren) || NextToken.is(tok::identifier) ||
-          NextToken.is(tok::arrow) || NextToken.is(tok::period);
-      DefaultValidator.WantRemainingKeywords =
-          NextToken.is(tok::l_paren) || NextToken.is(tok::semi) ||
-          NextToken.is(tok::identifier) || NextToken.is(tok::l_brace);
-      DefaultValidator.WantCXXNamedCasts = false;
       if (TypoCorrection Corrected = CorrectTypo(Result.getLookupNameInfo(),
                                                  Result.getLookupKind(), S, 
                                                  &SS, DefaultValidator)) {
@@ -1370,7 +1315,7 @@ void Sema::ActOnEndFunctionDeclarator() {
 ///
 /// \param IdLoc The location of the name in the translation unit.
 ///
-/// \param DoTypoCorrection If true, this routine will attempt typo correction
+/// \param TypoCorrection If true, this routine will attempt typo correction
 /// if there is no class with the given name.
 ///
 /// \returns The declaration of the named Objective-C class, or NULL if the
@@ -3945,6 +3890,8 @@ Sema::ActOnTypedefNameDecl(Scope *S, DeclContext *DC, TypedefNameDecl *NewTD,
         Context.setsigjmp_bufDecl(NewTD);
       else if (II->isStr("ucontext_t"))
         Context.setucontext_tDecl(NewTD);
+      else if (II->isStr("__builtin_va_list"))
+        Context.setBuiltinVaListType(Context.getTypedefType(NewTD));
     }
 
   return NewTD;
@@ -4467,15 +4414,6 @@ bool Sema::CheckVariableDeclaration(VarDecl *NewVD,
   // ISO/IEC TR 18037 S5.1.2
   if (NewVD->hasLocalStorage() && T.getAddressSpace() != 0) {
     Diag(NewVD->getLocation(), diag::err_as_qualified_auto_decl);
-    NewVD->setInvalidDecl();
-    return false;
-  }
-
-  // OpenCL v1.2 s6.8 -- The static qualifier is valid only in program
-  // scope.
-  if ((getLangOpts().OpenCLVersion >= 120)
-      && NewVD->isStaticLocal()) {
-    Diag(NewVD->getLocation(), diag::err_static_function_scope);
     NewVD->setInvalidDecl();
     return false;
   }
@@ -5079,11 +5017,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   FunctionTemplateDecl *FunctionTemplate = 0;
   bool isExplicitSpecialization = false;
   bool isFunctionTemplateSpecialization = false;
-
   bool isDependentClassScopeExplicitSpecialization = false;
-  bool HasExplicitTemplateArgs = false;
-  TemplateArgumentListInfo TemplateArgs;
-
   bool isVirtualOkay = false;
 
   FunctionDecl *NewFD = CreateNewFunctionDecl(*this, D, DC, R, TInfo, SC,
@@ -5224,7 +5158,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       QualType T = R->getAs<FunctionType>()->getResultType();
       DeclaratorChunk &C = D.getTypeObject(0);
       if (!T->isVoidType() && C.Fun.NumArgs == 0 && !C.Fun.isVariadic &&
-          !C.Fun.hasTrailingReturnType() &&
+          !C.Fun.TrailingReturnType &&
           C.Fun.getExceptionSpecType() == EST_None) {
         SourceRange ParenRange(C.Loc, C.EndLoc);
         Diag(C.Loc, diag::warn_empty_parens_are_function_decl) << ParenRange;
@@ -5526,6 +5460,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   } else {
     // If the declarator is a template-id, translate the parser's template 
     // argument list into our AST format.
+    bool HasExplicitTemplateArgs = false;
+    TemplateArgumentListInfo TemplateArgs;
     if (D.getName().getKind() == UnqualifiedId::IK_TemplateId) {
       TemplateIdAnnotation *TemplateId = D.getName().TemplateId;
       TemplateArgs.setLAngleLoc(TemplateId->LAngleLoc);
@@ -5801,14 +5737,6 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     }
   }
 
-  // OpenCL v1.2 s6.8 static is invalid for kernel functions.
-  if ((getLangOpts().OpenCLVersion >= 120)
-      && NewFD->hasAttr<OpenCLKernelAttr>()
-      && (SC == SC_Static)) {
-    Diag(D.getIdentifierLoc(), diag::err_static_kernel);
-    D.setInvalidType();
-  }
-
   MarkUnusedFileScopedDecl(NewFD);
 
   if (getLangOpts().CUDA)
@@ -5829,9 +5757,8 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   if (isDependentClassScopeExplicitSpecialization) {
     ClassScopeFunctionSpecializationDecl *NewSpec =
                          ClassScopeFunctionSpecializationDecl::Create(
-                                Context, CurContext, SourceLocation(), 
-                                cast<CXXMethodDecl>(NewFD),
-                                HasExplicitTemplateArgs, TemplateArgs);
+                                Context, CurContext,  SourceLocation(), 
+                                cast<CXXMethodDecl>(NewFD));
     CurContext->addDecl(NewSpec);
     AddToScope = false;
   }
@@ -5849,12 +5776,12 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 /// that have been instantiated via C++ template instantiation (called
 /// via InstantiateDecl).
 ///
-/// \param IsExplicitSpecialization whether this new function declaration is
+/// \param IsExplicitSpecialiation whether this new function declaration is
 /// an explicit specialization of the previous declaration.
 ///
 /// This sets NewFD->isInvalidDecl() to true if there was an error.
 ///
-/// \returns true if the function declaration is a redeclaration.
+/// Returns true if the function declaration is a redeclaration.
 bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
                                     LookupResult &Previous,
                                     bool IsExplicitSpecialization) {
@@ -6267,7 +6194,7 @@ namespace {
     void VisitUnaryOperator(UnaryOperator *E) {
       // For POD record types, addresses of its own members are well-defined.
       if (E->getOpcode() == UO_AddrOf && isRecordType && isPODType &&
-          isa<MemberExpr>(E->getSubExpr()->IgnoreParens())) return;
+          isa<MemberExpr>(E->getSubExpr())) return;
       Inherited::VisitUnaryOperator(E);
     } 
 
@@ -7659,12 +7586,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
       if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(FD))
         MarkVTableUsed(FD->getLocation(), Constructor->getParent());
       
-      // Try to apply the named return value optimization. We have to check
-      // if we can do this here because lambdas keep return statements around
-      // to deduce an implicit return type.
-      if (getLangOpts().CPlusPlus && FD->getResultType()->isRecordType() &&
-          !FD->isDependentContext())
-        computeNRVO(Body, getCurFunction());
+      computeNRVO(Body, getCurFunction());
     }
     
     assert((FD == getCurFunctionDecl() || getCurLambda()->CallOperator == FD) &&
@@ -7672,6 +7594,8 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
   } else if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(dcl)) {
     assert(MD == getCurMethodDecl() && "Method parsing confused");
     MD->setBody(Body);
+    if (Body)
+      MD->setEndLoc(Body->getLocEnd());
     if (!MD->isInvalidDecl()) {
       DiagnoseUnusedParameters(MD->param_begin(), MD->param_end());
       DiagnoseSizeOfParametersAndReturnValue(MD->param_begin(), MD->param_end(),
@@ -9594,7 +9518,7 @@ Decl *Sema::ActOnIvar(Scope *S,
   ObjCContainerDecl *EnclosingContext;
   if (ObjCImplementationDecl *IMPDecl =
       dyn_cast<ObjCImplementationDecl>(EnclosingDecl)) {
-    if (LangOpts.ObjCRuntime.isFragile()) {
+    if (!LangOpts.ObjCNonFragileABI2) {
     // Case of ivar declared in an implementation. Context is that of its class.
       EnclosingContext = IMPDecl->getClassInterface();
       assert(EnclosingContext && "Implementation has no class interface!");
@@ -9604,7 +9528,7 @@ Decl *Sema::ActOnIvar(Scope *S,
   } else {
     if (ObjCCategoryDecl *CDecl = 
         dyn_cast<ObjCCategoryDecl>(EnclosingDecl)) {
-      if (LangOpts.ObjCRuntime.isFragile() || !CDecl->IsClassExtension()) {
+      if (!LangOpts.ObjCNonFragileABI2 || !CDecl->IsClassExtension()) {
         Diag(Loc, diag::err_misplaced_ivar) << CDecl->IsClassExtension();
         return 0;
       }
@@ -9648,7 +9572,7 @@ Decl *Sema::ActOnIvar(Scope *S,
     IdResolver.AddDecl(NewID);
   }
   
-  if (LangOpts.ObjCRuntime.isNonFragile() &&
+  if (LangOpts.ObjCNonFragileABI2 &&
       !NewID->isInvalidDecl() && isa<ObjCInterfaceDecl>(EnclosingDecl))
     Diag(Loc, diag::warn_ivars_in_interface);
   
@@ -9661,7 +9585,7 @@ Decl *Sema::ActOnIvar(Scope *S,
 /// then add an implicit `char :0` ivar to the end of that interface.
 void Sema::ActOnLastBitfield(SourceLocation DeclLoc,
                              SmallVectorImpl<Decl *> &AllIvarDecls) {
-  if (LangOpts.ObjCRuntime.isFragile() || AllIvarDecls.empty())
+  if (!LangOpts.ObjCNonFragileABI2 || AllIvarDecls.empty())
     return;
   
   Decl *ivarDecl = AllIvarDecls[AllIvarDecls.size()-1];
@@ -10382,13 +10306,6 @@ static void CheckForUniqueEnumValues(Sema &S, Decl **Elements,
   S.Diag(Enum->getLocation(), diag::warn_identical_enum_values)
       << EnumType << FirstVal.toString(10)
       << Enum->getSourceRange();
-
-  EnumConstantDecl *Last = cast<EnumConstantDecl>(Elements[NumElements - 1]),
-                   *Next = cast<EnumConstantDecl>(Elements[NumElements - 2]);
-
-  S.Diag(Last->getLocation(), diag::note_identical_enum_values)
-    << FixItHint::CreateReplacement(Last->getInitExpr()->getSourceRange(),
-                                    Next->getName());
 }
 
 void Sema::ActOnEnumBody(SourceLocation EnumLoc, SourceLocation LBraceLoc,

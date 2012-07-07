@@ -359,7 +359,7 @@ public:
     assert(unsigned(ObjectIdx+NumFixedObjects) < Objects.size() &&
            "Invalid Object Idx!");
     Objects[ObjectIdx+NumFixedObjects].Alignment = Align;
-    ensureMaxAlignment(Align);
+    MaxAlignment = std::max(MaxAlignment, Align);
   }
 
   /// NeedsStackProtector - Returns true if the object may need stack
@@ -416,11 +416,9 @@ public:
   ///
   unsigned getMaxAlignment() const { return MaxAlignment; }
 
-  /// ensureMaxAlignment - Make sure the function is at least Align bytes
-  /// aligned.
-  void ensureMaxAlignment(unsigned Align) {
-    if (MaxAlignment < Align) MaxAlignment = Align;
-  }
+  /// setMaxAlignment - Set the preferred alignment.
+  ///
+  void setMaxAlignment(unsigned Align) { MaxAlignment = Align; }
 
   /// AdjustsStack - Return true if this function adjusts the stack -- e.g.,
   /// when calling another function. This is only valid during and after
@@ -487,7 +485,7 @@ public:
     Objects.push_back(StackObject(Size, Alignment, 0, false, isSS, MayNeedSP));
     int Index = (int)Objects.size() - NumFixedObjects - 1;
     assert(Index >= 0 && "Bad frame index!");
-    ensureMaxAlignment(Alignment);
+    MaxAlignment = std::max(MaxAlignment, Alignment);
     return Index;
   }
 
@@ -498,7 +496,7 @@ public:
   int CreateSpillStackObject(uint64_t Size, unsigned Alignment) {
     CreateStackObject(Size, Alignment, true, false);
     int Index = (int)Objects.size() - NumFixedObjects - 1;
-    ensureMaxAlignment(Alignment);
+    MaxAlignment = std::max(MaxAlignment, Alignment);
     return Index;
   }
 
@@ -517,7 +515,7 @@ public:
   int CreateVariableSizedObject(unsigned Alignment) {
     HasVarSizedObjects = true;
     Objects.push_back(StackObject(0, Alignment, 0, false, false, true));
-    ensureMaxAlignment(Alignment);
+    MaxAlignment = std::max(MaxAlignment, Alignment);
     return (int)Objects.size()-NumFixedObjects-1;
   }
 

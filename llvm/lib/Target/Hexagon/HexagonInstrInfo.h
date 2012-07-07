@@ -112,7 +112,7 @@ public:
   PredicateInstruction(MachineInstr *MI,
                        const SmallVectorImpl<MachineOperand> &Cond) const;
 
-  virtual bool isProfitableToIfCvt(MachineBasicBlock &MBB, unsigned NumCycles,
+  virtual bool isProfitableToIfCvt(MachineBasicBlock &MBB, unsigned NumCyles,
                                    unsigned ExtraPredCycles,
                                    const BranchProbability &Probability) const;
 

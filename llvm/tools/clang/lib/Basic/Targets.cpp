@@ -575,58 +575,10 @@ class PPCTargetInfo : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   static const char * const GCCRegNames[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
-  std::string CPU;
 public:
   PPCTargetInfo(const std::string& triple) : TargetInfo(triple) {
     LongDoubleWidth = LongDoubleAlign = 128;
     LongDoubleFormat = &llvm::APFloat::PPCDoubleDouble;
-  }
-
-  /// \brief Flags for architecture specific defines.
-  typedef enum {
-    ArchDefineNone  = 0,
-    ArchDefineName  = 1 << 0, // <name> is substituted for arch name.
-    ArchDefinePpcgr = 1 << 1,
-    ArchDefinePpcsq = 1 << 2,
-    ArchDefine440   = 1 << 3,
-    ArchDefine603   = 1 << 4,
-    ArchDefine604   = 1 << 5,
-    ArchDefinePwr4  = 1 << 6,
-    ArchDefinePwr6  = 1 << 7
-  } ArchDefineTypes;
-
-  virtual bool setCPU(const std::string &Name) {
-    bool CPUKnown = llvm::StringSwitch<bool>(Name)
-      .Case("generic", true)
-      .Case("440", true)
-      .Case("450", true)
-      .Case("601", true)
-      .Case("602", true)
-      .Case("603", true)
-      .Case("603e", true)
-      .Case("603ev", true)
-      .Case("604", true)
-      .Case("604e", true)
-      .Case("620", true)
-      .Case("g3", true)
-      .Case("7400", true)
-      .Case("g4", true)
-      .Case("7450", true)
-      .Case("g4+", true)
-      .Case("750", true)
-      .Case("970", true)
-      .Case("g5", true)
-      .Case("a2", true)
-      .Case("pwr6", true)
-      .Case("pwr7", true)
-      .Case("ppc", true)
-      .Case("ppc64", true)
-      .Default(false);
-
-    if (CPUKnown)
-      CPU = Name;
-
-    return CPUKnown;
   }
 
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -800,47 +752,10 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__VEC__", "10206");
     Builder.defineMacro("__ALTIVEC__");
   }
-
-  // CPU identification.
-  ArchDefineTypes defs = (ArchDefineTypes)llvm::StringSwitch<int>(CPU)
-    .Case("440",   ArchDefineName)
-    .Case("450",   ArchDefineName | ArchDefine440)
-    .Case("601",   ArchDefineName)
-    .Case("602",   ArchDefineName | ArchDefinePpcgr)
-    .Case("603",   ArchDefineName | ArchDefinePpcgr)
-    .Case("603e",  ArchDefineName | ArchDefine603 | ArchDefinePpcgr)
-    .Case("603ev", ArchDefineName | ArchDefine603 | ArchDefinePpcgr)
-    .Case("604",   ArchDefineName | ArchDefinePpcgr)
-    .Case("604e",  ArchDefineName | ArchDefine604 | ArchDefinePpcgr)
-    .Case("620",   ArchDefineName | ArchDefinePpcgr)
-    .Case("7400",  ArchDefineName | ArchDefinePpcgr)
-    .Case("7450",  ArchDefineName | ArchDefinePpcgr)
-    .Case("750",   ArchDefineName | ArchDefinePpcgr)
-    .Case("970",   ArchDefineName | ArchDefinePwr4 | ArchDefinePpcgr
-                     | ArchDefinePpcsq)
-    .Case("pwr6",  ArchDefinePwr6 | ArchDefinePpcgr | ArchDefinePpcsq)
-    .Case("pwr7",  ArchDefineName | ArchDefinePwr6 | ArchDefinePpcgr
-                     | ArchDefinePpcsq)
-    .Default(ArchDefineNone);
-
-  if (defs & ArchDefineName)
-    Builder.defineMacro(Twine("_ARCH_", StringRef(CPU).upper()));
-  if (defs & ArchDefinePpcgr)
-    Builder.defineMacro("_ARCH_PPCGR");
-  if (defs & ArchDefinePpcsq)
-    Builder.defineMacro("_ARCH_PPCSQ");
-  if (defs & ArchDefine440)
-    Builder.defineMacro("_ARCH_440");
-  if (defs & ArchDefine603)
-    Builder.defineMacro("_ARCH_603");
-  if (defs & ArchDefine604)
-    Builder.defineMacro("_ARCH_604");
-  if (defs & (ArchDefinePwr4 | ArchDefinePwr6))
-    Builder.defineMacro("_ARCH_PWR4");
-  if (defs & ArchDefinePwr6) {
-    Builder.defineMacro("_ARCH_PWR5");
-    Builder.defineMacro("_ARCH_PWR6");
-  }
+#if RICH
+  if (SoftFloat)
+    Builder.defineMacro("_SOFT_FLOAT", "1");
+#endif
 }
 
 bool PPCTargetInfo::hasFeature(StringRef Feature) const {
@@ -978,9 +893,15 @@ public:
     }
   }
 
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
+  virtual const char *getVAListDeclaration() const {
     // This is the ELF definition, and is overridden by the Darwin sub-target
-    return TargetInfo::PowerABIBuiltinVaList;
+    return "typedef struct __va_list_tag {"
+           "  unsigned char gpr;"
+           "  unsigned char fpr;"
+           "  unsigned short reserved;"
+           "  void* overflow_arg_area;"
+           "  void* reg_save_area;"
+           "} __builtin_va_list[1];";
   }
 };
 } // end anonymous namespace.
@@ -1002,8 +923,8 @@ public:
       LongDoubleFormat = &llvm::APFloat::IEEEdouble;
     }
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
 };
 } // end anonymous namespace.
@@ -1022,8 +943,8 @@ public:
     DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
                         "i64:32:64-f32:32:32-f64:64:64-v128:128:128-n32";
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
 };
 
@@ -1091,9 +1012,9 @@ namespace {
       // FIXME: Is this really right?
       return "";
     }
-    virtual BuiltinVaListKind getBuiltinVaListKind() const {
+    virtual const char *getVAListDeclaration() const {
       // FIXME: implement
-      return TargetInfo::CharPtrBuiltinVaList;
+      return "typedef char* __builtin_va_list;";
     }
     virtual bool setCPU(const std::string &Name) {
       return Name == "sm_10" || Name == "sm_13" || Name == "sm_20";
@@ -1182,8 +1103,8 @@ public:
     return Feature == "mblaze";
   }
   
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
   virtual const char *getTargetPrefix() const {
     return "mblaze";
@@ -2410,8 +2331,8 @@ public:
     // MaxAtomicInlineWidth. (cmpxchg8b is an i586 instruction.)
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
 
   int getEHDataRegisterNumber(unsigned RegNo) const {
@@ -2670,8 +2591,14 @@ public:
     MaxAtomicPromoteWidth = 128;
     MaxAtomicInlineWidth = 64;
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::X86_64ABIBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef struct __va_list_tag {"
+           "  unsigned gp_offset;"
+           "  unsigned fp_offset;"
+           "  void* overflow_arg_area;"
+           "  void* reg_save_area;"
+           "} __va_list_tag;"
+           "typedef __va_list_tag __builtin_va_list[1];";
   }
 
   int getEHDataRegisterNumber(unsigned RegNo) const {
@@ -2705,8 +2632,8 @@ public:
     WindowsTargetInfo<X86_64TargetInfo>::getTargetDefines(Opts, Builder);
     Builder.defineMacro("_WIN64");
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
 };
 } // end anonymous namespace
@@ -3039,8 +2966,8 @@ public:
     NumRecords = clang::ARM::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual bool isCLZForZeroUndef() const { return false; }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::VoidPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef void* __builtin_va_list;";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const;
@@ -3265,8 +3192,8 @@ public:
     return Feature == "hexagon";
   }
   
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::CharPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef char* __builtin_va_list;";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const;
@@ -3435,8 +3362,8 @@ public:
                                  unsigned &NumRecords) const {
     // FIXME: Implement!
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::VoidPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef void* __builtin_va_list;";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const;
@@ -3590,9 +3517,9 @@ namespace {
       // FIXME: Is this really right?
       return "";
     }
-    virtual BuiltinVaListKind getBuiltinVaListKind() const {
+    virtual const char *getVAListDeclaration() const {
       // FIXME: implement
-      return TargetInfo::CharPtrBuiltinVaList;
+      return "typedef char* __builtin_va_list;";
    }
   };
 
@@ -3674,8 +3601,8 @@ namespace {
     virtual const char *getClobbers() const {
       return "";
     }
-    virtual BuiltinVaListKind getBuiltinVaListKind() const {
-      return TargetInfo::VoidPtrBuiltinVaList;
+    virtual const char *getVAListDeclaration() const {
+      return "typedef void* __builtin_va_list;";
     }
     virtual void getGCCRegNames(const char * const *&Names,
                                 unsigned &NumNames) const {}
@@ -3690,7 +3617,6 @@ namespace {
 
 namespace {
 class MipsTargetInfoBase : public TargetInfo {
-  static const Builtin::Info BuiltinInfo[];
   std::string CPU;
   bool SoftFloat;
   bool SingleFloat;
@@ -3740,14 +3666,15 @@ public:
                                 MacroBuilder &Builder) const = 0;
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
-    Records = BuiltinInfo;
-    NumRecords = clang::Mips::LastTSBuiltin - Builtin::FirstTSBuiltin;
+    // FIXME: Implement.
+    Records = 0;
+    NumRecords = 0;
   }
   virtual bool hasFeature(StringRef Feature) const {
     return Feature == "mips";
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::VoidPtrBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef void* __builtin_va_list;";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const {
@@ -3850,13 +3777,6 @@ public:
       }
     }
   }
-};
-
-const Builtin::Info MipsTargetInfoBase::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
-#include "clang/Basic/BuiltinsMips.def"
 };
 
 class Mips32TargetInfoBase : public MipsTargetInfoBase {
@@ -4221,8 +4141,8 @@ public:
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
   }
-  virtual BuiltinVaListKind getBuiltinVaListKind() const {
-    return TargetInfo::PNaClABIBuiltinVaList;
+  virtual const char *getVAListDeclaration() const {
+    return "typedef int __builtin_va_list[4];";
   }
   virtual void getGCCRegNames(const char * const *&Names,
                               unsigned &NumNames) const;

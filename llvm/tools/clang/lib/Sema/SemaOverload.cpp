@@ -389,22 +389,13 @@ StandardConversionSequence::getNarrowingKind(ASTContext &Ctx,
     const unsigned ToWidth = Ctx.getIntWidth(ToType);
 
     if (FromWidth > ToWidth ||
-        (FromWidth == ToWidth && FromSigned != ToSigned) ||
-        (FromSigned && !ToSigned)) {
+        (FromWidth == ToWidth && FromSigned != ToSigned)) {
       // Not all values of FromType can be represented in ToType.
       llvm::APSInt InitializerValue;
       const Expr *Initializer = IgnoreNarrowingConversion(Converted);
-      if (!Initializer->isIntegerConstantExpr(InitializerValue, Ctx)) {
-        // Such conversions on variables are always narrowing.
-        return NK_Variable_Narrowing;
-      }
-      bool Narrowing = false;
-      if (FromWidth < ToWidth) {
-        // Negative -> unsigned is narrowing. Otherwise, more bits is never
-        // narrowing.
-        if (InitializerValue.isSigned() && InitializerValue.isNegative())
-          Narrowing = true;
-      } else {
+      if (Initializer->isIntegerConstantExpr(InitializerValue, Ctx)) {
+        ConstantValue = APValue(InitializerValue);
+
         // Add a bit to the InitializerValue so we don't have to worry about
         // signed vs. unsigned comparisons.
         InitializerValue = InitializerValue.extend(
@@ -416,13 +407,13 @@ StandardConversionSequence::getNarrowingKind(ASTContext &Ctx,
         ConvertedValue = ConvertedValue.extend(InitializerValue.getBitWidth());
         ConvertedValue.setIsSigned(InitializerValue.isSigned());
         // If the result is different, this was a narrowing conversion.
-        if (ConvertedValue != InitializerValue)
-          Narrowing = true;
-      }
-      if (Narrowing) {
-        ConstantType = Initializer->getType();
-        ConstantValue = APValue(InitializerValue);
-        return NK_Constant_Narrowing;
+        if (ConvertedValue != InitializerValue) {
+          ConstantType = Initializer->getType();
+          return NK_Constant_Narrowing;
+        }
+      } else {
+        // Variables are always narrowings.
+        return NK_Variable_Narrowing;
       }
     }
     return NK_Not_Narrowing;
@@ -5022,9 +5013,29 @@ static bool isIntegralOrEnumerationType(QualType T, bool AllowScopedEnum) {
 /// \param Loc The source location of the construct that requires the
 /// conversion.
 ///
-/// \param From The expression we're converting from.
+/// \param FromE The expression we're converting from.
 ///
-/// \param Diagnoser Used to output any diagnostics.
+/// \param NotIntDiag The diagnostic to be emitted if the expression does not
+/// have integral or enumeration type.
+///
+/// \param IncompleteDiag The diagnostic to be emitted if the expression has
+/// incomplete class type.
+///
+/// \param ExplicitConvDiag The diagnostic to be emitted if we're calling an
+/// explicit conversion function (because no implicit conversion functions
+/// were available). This is a recovery mode.
+///
+/// \param ExplicitConvNote The note to be emitted with \p ExplicitConvDiag,
+/// showing which conversion was picked.
+///
+/// \param AmbigDiag The diagnostic to be emitted if there is more than one
+/// conversion function that could convert to integral or enumeration type.
+///
+/// \param AmbigNote The note to be emitted with \p AmbigDiag for each
+/// usable conversion function.
+///
+/// \param ConvDiag The diagnostic to be emitted if we are calling a conversion
+/// function, which may be an extension in this case.
 ///
 /// \param AllowScopedEnumerations Specifies whether conversions to scoped
 /// enumerations should be considered.
@@ -5201,7 +5212,7 @@ Sema::ConvertToIntegralOrEnumerationType(SourceLocation Loc, Expr *From,
 /// @p SuppressUserConversions, then don't allow user-defined
 /// conversions via constructors or conversion operators.
 ///
-/// \param PartialOverloading true if we are performing "partial" overloading
+/// \para PartialOverloading true if we are performing "partial" overloading
 /// based on an incomplete set of function arguments. This feature is used by
 /// code completion.
 void
@@ -7806,11 +7817,13 @@ isBetterOverloadCandidate(Sema &S,
 /// \brief Computes the best viable function (C++ 13.3.3)
 /// within an overload candidate set.
 ///
-/// \param Loc The location of the function name (or operator symbol) for
+/// \param CandidateSet the set of candidate functions.
+///
+/// \param Loc the location of the function name (or operator symbol) for
 /// which overload resolution occurs.
 ///
-/// \param Best If overload resolution was successful or found a deleted
-/// function, \p Best points to the candidate function found.
+/// \param Best f overload resolution was successful or found a deleted
+/// function, Best points to the candidate function found.
 ///
 /// \returns The result of overload resolution.
 OverloadingResult
@@ -8134,22 +8147,12 @@ void DiagnoseBadConversion(Sema &S, OverloadCandidate *Cand, unsigned I) {
               FromIface->isSuperClassOf(ToIface))
             BaseToDerivedConversion = 2;
   } else if (const ReferenceType *ToRefTy = ToTy->getAs<ReferenceType>()) {
-    if (ToRefTy->getPointeeType().isAtLeastAsQualifiedAs(FromTy) &&
-        !FromTy->isIncompleteType() &&
-        !ToRefTy->getPointeeType()->isIncompleteType() &&
-        S.IsDerivedFrom(ToRefTy->getPointeeType(), FromTy)) {
-      BaseToDerivedConversion = 3;
-    } else if (ToTy->isLValueReferenceType() && !FromExpr->isLValue() &&
-               ToTy.getNonReferenceType().getCanonicalType() ==
-               FromTy.getNonReferenceType().getCanonicalType()) {
-      S.Diag(Fn->getLocation(), diag::note_ovl_candidate_bad_lvalue)
-        << (unsigned) FnKind << FnDesc
-        << (FromExpr ? FromExpr->getSourceRange() : SourceRange())
-        << (unsigned) isObjectArgument << I + 1;
-      MaybeEmitInheritedConstructorNote(S, Fn);
-      return;
+      if (ToRefTy->getPointeeType().isAtLeastAsQualifiedAs(FromTy) &&
+          !FromTy->isIncompleteType() &&
+          !ToRefTy->getPointeeType()->isIncompleteType() &&
+          S.IsDerivedFrom(ToRefTy->getPointeeType(), FromTy))
+        BaseToDerivedConversion = 3;
     }
-  }
 
   if (BaseToDerivedConversion) {
     S.Diag(Fn->getLocation(),
@@ -9831,14 +9834,14 @@ static bool IsOverloaded(const UnresolvedSetImpl &Functions) {
 /// \param OpcIn The UnaryOperator::Opcode that describes this
 /// operator.
 ///
-/// \param Fns The set of non-member functions that will be
+/// \param Functions The set of non-member functions that will be
 /// considered by overload resolution. The caller needs to build this
 /// set based on the context using, e.g.,
 /// LookupOverloadedOperatorName() and ArgumentDependentLookup(). This
 /// set should not contain any member functions; those will be added
 /// by CreateOverloadedUnaryOp().
 ///
-/// \param Input The input argument.
+/// \param input The input argument.
 ExprResult
 Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
                               const UnresolvedSetImpl &Fns,
@@ -10031,7 +10034,7 @@ Sema::CreateOverloadedUnaryOp(SourceLocation OpLoc, unsigned OpcIn,
 /// \param OpcIn The BinaryOperator::Opcode that describes this
 /// operator.
 ///
-/// \param Fns The set of non-member functions that will be
+/// \param Functions The set of non-member functions that will be
 /// considered by overload resolution. The caller needs to build this
 /// set based on the context using, e.g.,
 /// LookupOverloadedOperatorName() and ArgumentDependentLookup(). This
@@ -10698,7 +10701,7 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
 
   DiagnoseSentinelCalls(Method, LParenLoc, Args, NumArgs);
 
-  if (CheckFunctionCall(Method, TheCall, Proto))
+  if (CheckFunctionCall(Method, TheCall))
     return ExprError();
 
   if ((isa<CXXConstructorDecl>(CurContext) || 
@@ -11006,7 +11009,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
   DiagnoseSentinelCalls(Method, LParenLoc, Args, NumArgs);
 
-  if (CheckFunctionCall(Method, TheCall, Proto))
+  if (CheckFunctionCall(Method, TheCall))
     return true;
 
   return MaybeBindToTemporary(TheCall);
@@ -11186,7 +11189,7 @@ ExprResult Sema::BuildLiteralOperatorCall(LookupResult &R,
   if (CheckCallReturnType(FD->getResultType(), UDSuffixLoc, UDL, FD))
     return ExprError();
 
-  if (CheckFunctionCall(FD, UDL, NULL))
+  if (CheckFunctionCall(FD, UDL))
     return ExprError();
 
   return MaybeBindToTemporary(UDL);

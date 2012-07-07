@@ -39,57 +39,21 @@ struct AddressInfo {
   int line;
   int column;
 
-  AddressInfo() {
-    internal_memset(this, 0, sizeof(AddressInfo));
-  }
-  // Deletes all strings and sets all fields to zero.
+  // Deletes all strings.
   void Clear();
 };
 
-// Fills at most "max_frames" elements of "frames" with descriptions
-// for a given address (in all inlined functions). Returns the number
-// of descriptions actually filled.
-// This function should NOT be called from two threads simultaneously.
-uptr SymbolizeCode(uptr address, AddressInfo *frames, uptr max_frames);
+struct AddressInfoList {
+  AddressInfoList *next;
+  AddressInfo info;
 
-// Debug info routines
-struct DWARFSection {
-  const char *data;
-  uptr size;
-};
-// Returns true on success.
-bool FindDWARFSection(uptr object_file_addr, const char *section_name,
-                      DWARFSection *section);
-bool IsFullNameOfDWARFSection(const char *full_name, const char *short_name);
-
-class ModuleDIContext {
- public:
-  explicit ModuleDIContext(const char *module_name);
-  void addAddressRange(uptr beg, uptr end);
-  bool containsAddress(uptr address) const;
-  void getAddressInfo(AddressInfo *info);
-
-  const char *full_name() const { return full_name_; }
-
- private:
-  void CreateDIContext();
-
-  struct AddressRange {
-    uptr beg;
-    uptr end;
-  };
-  char *full_name_;
-  char *short_name_;
-  uptr base_address_;
-  static const uptr kMaxNumberOfAddressRanges = 16;
-  AddressRange ranges_[kMaxNumberOfAddressRanges];
-  uptr n_ranges_;
-  uptr mapped_addr_;
-  uptr mapped_size_;
+  // Deletes all nodes in a list.
+  void Clear();
 };
 
-// OS-dependent function that gets the linked list of all loaded modules.
-uptr GetListOfModules(ModuleDIContext *modules, uptr max_modules);
+// Returns a list of descriptions for a given address (in all inlined
+// functions). The ownership is transferred to the caller.
+AddressInfoList* SymbolizeCode(uptr address);
 
 }  // namespace __sanitizer
 

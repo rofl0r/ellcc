@@ -274,11 +274,15 @@ let PPC970_Unit = 5 in {  // VALU Operations.
 // VA-Form instructions.  3-input AltiVec ops.
 def VMADDFP : VAForm_1<46, (outs VRRC:$vD), (ins VRRC:$vA, VRRC:$vC, VRRC:$vB),
                        "vmaddfp $vD, $vA, $vC, $vB", VecFP,
-                       [(set VRRC:$vD, (fma VRRC:$vA, VRRC:$vC, VRRC:$vB))]>;
+                       [(set VRRC:$vD, (fadd (fmul VRRC:$vA, VRRC:$vC),
+                                             VRRC:$vB))]>,
+                       Requires<[FPContractions]>;
 def VNMSUBFP: VAForm_1<47, (outs VRRC:$vD), (ins VRRC:$vA, VRRC:$vC, VRRC:$vB),
                        "vnmsubfp $vD, $vA, $vC, $vB", VecFP,
-                       [(set VRRC:$vD, (fneg (fma VRRC:$vA, VRRC:$vC,
-                                                  (fneg VRRC:$vB))))]>; 
+                       [(set VRRC:$vD, (fsub V_immneg0,
+                                             (fsub (fmul VRRC:$vA, VRRC:$vC),
+                                                   VRRC:$vB)))]>,
+                       Requires<[FPContractions]>;
 
 def VMHADDSHS  : VA1a_Int<32, "vmhaddshs",  int_ppc_altivec_vmhaddshs>;
 def VMHRADDSHS : VA1a_Int<33, "vmhraddshs", int_ppc_altivec_vmhraddshs>;

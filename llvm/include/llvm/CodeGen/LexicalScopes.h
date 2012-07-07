@@ -158,10 +158,7 @@ class LexicalScope {
 public:
   LexicalScope(LexicalScope *P, const MDNode *D, const MDNode *I, bool A)
     : Parent(P), Desc(D), InlinedAtLocation(I), AbstractScope(A),
-      LastInsn(0), FirstInsn(0), DFSIn(0), DFSOut(0) {
-#ifndef NDEBUG
-    IndentLevel = 0;
-#endif
+      LastInsn(0), FirstInsn(0), DFSIn(0), DFSOut(0), IndentLevel(0) {
     if (Parent)
       Parent->addChild(this);
   }
@@ -244,9 +241,7 @@ private:
   const MachineInstr *FirstInsn;      // First instruction of this scope.
   unsigned DFSIn, DFSOut;             // In & Out Depth use to determine
                                       // scope nesting.
-#ifndef NDEBUG
   mutable unsigned IndentLevel;       // Private state for dump()
-#endif
 };
 
 } // end llvm namespace

@@ -20,9 +20,9 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/Calls.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExprEngine.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Decl.h"
 
@@ -36,20 +36,29 @@ class NSAutoreleasePoolChecker
   mutable Selector releaseS;
 
 public:
-  void checkPreObjCMessage(const ObjCMethodCall &msg, CheckerContext &C) const;
+  void checkPreObjCMessage(ObjCMessage msg, CheckerContext &C) const;    
 };
 
 } // end anonymous namespace
 
-void NSAutoreleasePoolChecker::checkPreObjCMessage(const ObjCMethodCall &msg,
+void NSAutoreleasePoolChecker::checkPreObjCMessage(ObjCMessage msg,
                                                    CheckerContext &C) const {
-  if (!msg.isInstanceMessage())
+  
+  const Expr *receiver = msg.getInstanceReceiver();
+  if (!receiver)
     return;
-
-  const ObjCInterfaceDecl *OD = msg.getReceiverInterface();
+  
+  // FIXME: Enhance with value-tracking information instead of consulting
+  // the type of the expression.
+  const ObjCObjectPointerType* PT =
+    receiver->getType()->getAs<ObjCObjectPointerType>();
+  
+  if (!PT)
+    return;  
+  const ObjCInterfaceDecl *OD = PT->getInterfaceDecl();
   if (!OD)
     return;  
-  if (!OD->getIdentifier()->isStr("NSAutoreleasePool"))
+  if (!OD->getIdentifier()->getName().equals("NSAutoreleasePool"))
     return;
 
   if (releaseS.isNull())

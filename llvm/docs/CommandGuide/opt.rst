@@ -86,7 +86,7 @@ OPTIONS
  of options available, use the following command:
 
 
- .. code-block:: sh
+ .. code-block:: perl
 
      llvm-as < /dev/null | opt -std-compile-opts -disable-output -debug-pass=Arguments
 
@@ -161,7 +161,7 @@ OPTIONS
  optimizations, use the **-help** and **-load** options together. For example:
 
 
- .. code-block:: sh
+ .. code-block:: perl
 
      opt -load=plugin.so -help
 

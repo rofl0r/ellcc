@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the clang::SourceLocation class and associated facilities.
-///
+//
+//  This file defines the SourceLocation class.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_SOURCELOCATION_H
@@ -32,12 +31,12 @@ namespace clang {
 
 class SourceManager;
 
-/// \brief An opaque identifier used by SourceManager which refers to a
-/// source file (MemoryBuffer) along with its \#include path and \#line data.
+/// FileID - This is an opaque identifier used by SourceManager which refers to
+/// a source file (MemoryBuffer) along with its #include path and #line data.
 ///
 class FileID {
-  /// \brief A mostly-opaque identifier, where 0 is "invalid", >0 is 
-  /// this module, and <-1 is something loaded from another module.
+  /// ID - Opaque identifier, 0 is "invalid". >0 is this module, <-1 is
+  /// something loaded from another module.
   int ID;
 public:
   FileID() : ID(0) {}
@@ -136,28 +135,24 @@ public:
     return L;
   }
 
-  /// \brief When a SourceLocation itself cannot be used, this returns
-  /// an (opaque) 32-bit integer encoding for it.
-  ///
-  /// This should only be passed to SourceLocation::getFromRawEncoding, it
-  /// should not be inspected directly.
+  /// getRawEncoding - When a SourceLocation itself cannot be used, this returns
+  /// an (opaque) 32-bit integer encoding for it.  This should only be passed
+  /// to SourceLocation::getFromRawEncoding, it should not be inspected
+  /// directly.
   unsigned getRawEncoding() const { return ID; }
 
-  /// \brief Turn a raw encoding of a SourceLocation object into
+  /// getFromRawEncoding - Turn a raw encoding of a SourceLocation object into
   /// a real SourceLocation.
-  ///
-  /// \see getRawEncoding.
   static SourceLocation getFromRawEncoding(unsigned Encoding) {
     SourceLocation X;
     X.ID = Encoding;
     return X;
   }
 
-  /// \brief When a SourceLocation itself cannot be used, this returns
-  /// an (opaque) pointer encoding for it.
-  ///
-  /// This should only be passed to SourceLocation::getFromPtrEncoding, it
-  /// should not be inspected directly.
+  /// getPtrEncoding - When a SourceLocation itself cannot be used, this returns
+  /// an (opaque) pointer encoding for it.  This should only be passed
+  /// to SourceLocation::getFromPtrEncoding, it should not be inspected
+  /// directly.
   void* getPtrEncoding() const {
     // Double cast to avoid a warning "cast to pointer from integer of different
     // size".
@@ -186,7 +181,7 @@ inline bool operator<(const SourceLocation &LHS, const SourceLocation &RHS) {
   return LHS.getRawEncoding() < RHS.getRawEncoding();
 }
 
-/// \brief A trival tuple used to represent a source range.
+/// SourceRange - a trival tuple used to represent a source range.
 class SourceRange {
   SourceLocation B;
   SourceLocation E;
@@ -213,8 +208,7 @@ public:
   }
 };
   
-/// \brief Represents a character-granular source range.
-///
+/// CharSourceRange - This class represents a character granular source range.
 /// The underlying SourceRange can either specify the starting/ending character
 /// of the range, or it can specify the start or the range and the start of the
 /// last token of the range (a "token range").  In the token range case, the
@@ -248,7 +242,7 @@ public:
     return getCharRange(SourceRange(B, E));
   }
   
-  /// \brief Return true if the end of this range specifies the start of
+  /// isTokenRange - Return true if the end of this range specifies the start of
   /// the last token.  Return false if the end of this range specifies the last
   /// character in the range.
   bool isTokenRange() const { return IsTokenRange; }
@@ -265,19 +259,17 @@ public:
   bool isInvalid() const { return !isValid(); }
 };
 
-/// \brief A SourceLocation and its associated SourceManager.
-///
-/// This is useful for argument passing to functions that expect both objects.
+/// FullSourceLoc - A SourceLocation and its associated SourceManager.  Useful
+/// for argument passing to functions that expect both objects.
 class FullSourceLoc : public SourceLocation {
   const SourceManager *SrcMgr;
 public:
-  /// \brief Creates a FullSourceLoc where isValid() returns \c false.
+  /// Creates a FullSourceLoc where isValid() returns false.
   explicit FullSourceLoc() : SrcMgr(0) {}
 
   explicit FullSourceLoc(SourceLocation Loc, const SourceManager &SM)
     : SourceLocation(Loc), SrcMgr(&SM) {}
 
-  /// \pre This FullSourceLoc has an associated SourceManager.
   const SourceManager &getManager() const {
     assert(SrcMgr && "SourceManager is NULL.");
     return *SrcMgr;
@@ -298,14 +290,13 @@ public:
 
   const llvm::MemoryBuffer* getBuffer(bool *Invalid = 0) const;
 
-  /// \brief Return a StringRef to the source buffer data for the
+  /// getBufferData - Return a StringRef to the source buffer data for the
   /// specified FileID.
   StringRef getBufferData(bool *Invalid = 0) const;
 
-  /// \brief Decompose the specified location into a raw FileID + Offset pair.
-  ///
-  /// The first element is the FileID, the second is the offset from the
-  /// start of the buffer of the location.
+  /// getDecomposedLoc - Decompose the specified location into a raw FileID +
+  /// Offset pair.  The first element is the FileID, the second is the
+  /// offset from the start of the buffer of the location.
   std::pair<FileID, unsigned> getDecomposedLoc() const;
 
   bool isInSystemHeader() const;
@@ -332,9 +323,8 @@ public:
     }
   };
 
-  /// \brief Prints information about this FullSourceLoc to stderr.
-  ///
-  /// This is useful for debugging.
+  /// Prints information about this FullSourceLoc to stderr. Useful for
+  ///  debugging.
   LLVM_ATTRIBUTE_USED void dump() const;
 
   friend inline bool
@@ -350,11 +340,10 @@ public:
 
 };
 
-/// \brief Represents an unpacked "presumed" location which can be presented
-/// to the user.
-///
-/// A 'presumed' location can be modified by \#line and GNU line marker
-/// directives and is always the expansion point of a normal location.
+/// PresumedLoc - This class represents an unpacked "presumed" location which
+/// can be presented to the user.  A 'presumed' location can be modified by
+/// #line and GNU line marker directives and is always the expansion point of
+/// a normal location.
 ///
 /// You can get a PresumedLoc from a SourceLocation with SourceManager.
 class PresumedLoc {
@@ -367,30 +356,25 @@ public:
     : Filename(FN), Line(Ln), Col(Co), IncludeLoc(IL) {
   }
 
-  /// \brief Return true if this object is invalid or uninitialized.
-  ///
-  /// This occurs when created with invalid source locations or when walking
-  /// off the top of a \#include stack.
+  /// isInvalid - Return true if this object is invalid or uninitialized. This
+  /// occurs when created with invalid source locations or when walking off
+  /// the top of a #include stack.
   bool isInvalid() const { return Filename == 0; }
   bool isValid() const { return Filename != 0; }
 
-  /// \brief Return the presumed filename of this location.
-  ///
-  /// This can be affected by \#line etc.
+  /// getFilename - Return the presumed filename of this location.  This can be
+  /// affected by #line etc.
   const char *getFilename() const { return Filename; }
 
-  /// \brief Return the presumed line number of this location.
-  ///
-  /// This can be affected by \#line etc.
+  /// getLine - Return the presumed line number of this location.  This can be
+  /// affected by #line etc.
   unsigned getLine() const { return Line; }
 
-  /// \brief Return the presumed column number of this location.
-  ///
-  /// This cannot be affected by \#line, but is packaged here for convenience.
+  /// getColumn - Return the presumed column number of this location.  This can
+  /// not be affected by #line, but is packaged here for convenience.
   unsigned getColumn() const { return Col; }
 
-  /// \brief Return the presumed include location of this location.
-  ///
+  /// getIncludeLoc - Return the presumed include location of this location.
   /// This can be affected by GNU linemarker directives.
   SourceLocation getIncludeLoc() const { return IncludeLoc; }
 };

@@ -22,34 +22,34 @@
 #define DEBUG_TYPE "scalarrepl"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Constants.h"
-#include "llvm/DIBuilder.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
-#include "llvm/IRBuilder.h"
 #include "llvm/Instructions.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Operator.h"
 #include "llvm/Pass.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Transforms/Utils/PromoteMemToReg.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Transforms/Utils/Local.h"
-#include "llvm/Transforms/Utils/PromoteMemToReg.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Statistic.h"
 using namespace llvm;
 
 STATISTIC(NumReplaced,  "Number of allocas broken up");
@@ -60,25 +60,12 @@ STATISTIC(NumGlobals,   "Number of allocas copied from constant global");
 
 namespace {
   struct SROA : public FunctionPass {
-    SROA(int T, bool hasDT, char &ID, int ST, int AT, int SLT)
+    SROA(int T, bool hasDT, char &ID)
       : FunctionPass(ID), HasDomTree(hasDT) {
       if (T == -1)
         SRThreshold = 128;
       else
         SRThreshold = T;
-      if (ST == -1)
-        StructMemberThreshold = 32;
-      else
-        StructMemberThreshold = ST;
-      if (AT == -1)
-        ArrayElementThreshold = 8;
-      else
-        ArrayElementThreshold = AT;
-      if (SLT == -1)
-        // Do not limit the scalar integer load size if no threshold is given.
-        ScalarLoadThreshold = -1;
-      else
-        ScalarLoadThreshold = SLT;
     }
 
     bool runOnFunction(Function &F);
@@ -100,7 +87,7 @@ namespace {
     struct AllocaInfo {
       /// The alloca to promote.
       AllocaInst *AI;
-
+      
       /// CheckedPHIs - This is a set of verified PHI nodes, to prevent infinite
       /// looping and avoid redundant work.
       SmallPtrSet<PHINode*, 8> CheckedPHIs;
@@ -129,20 +116,7 @@ namespace {
           hasSubelementAccess(false), hasALoadOrStore(false) {}
     };
 
-    /// SRThreshold - The maximum alloca size to considered for SROA.
     unsigned SRThreshold;
-
-    /// StructMemberThreshold - The maximum number of members a struct can
-    /// contain to be considered for SROA.
-    unsigned StructMemberThreshold;
-
-    /// ArrayElementThreshold - The maximum number of elements an array can
-    /// have to be considered for SROA.
-    unsigned ArrayElementThreshold;
-
-    /// ScalarLoadThreshold - The maximum size in bits of scalars to load when
-    /// converting to scalar
-    unsigned ScalarLoadThreshold;
 
     void MarkUnsafe(AllocaInfo &I, Instruction *User) {
       I.isUnsafe = true;
@@ -182,7 +156,6 @@ namespace {
                                        SmallVector<AllocaInst*, 32> &NewElts);
     void RewriteLoadUserOfWholeAlloca(LoadInst *LI, AllocaInst *AI,
                                       SmallVector<AllocaInst*, 32> &NewElts);
-    bool ShouldAttemptScalarRepl(AllocaInst *AI);
 
     static MemTransferInst *isOnlyCopiedFromConstantGlobal(
         AllocaInst *AI, SmallVector<Instruction*, 4> &ToDelete);
@@ -192,8 +165,7 @@ namespace {
   struct SROA_DT : public SROA {
     static char ID;
   public:
-    SROA_DT(int T = -1, int ST = -1, int AT = -1, int SLT = -1) :
-        SROA(T, true, ID, ST, AT, SLT) {
+    SROA_DT(int T = -1) : SROA(T, true, ID) {
       initializeSROA_DTPass(*PassRegistry::getPassRegistry());
     }
     
@@ -209,8 +181,7 @@ namespace {
   struct SROA_SSAUp : public SROA {
     static char ID;
   public:
-    SROA_SSAUp(int T = -1, int ST = -1, int AT = -1, int SLT = -1) :
-        SROA(T, false, ID, ST, AT, SLT) {
+    SROA_SSAUp(int T = -1) : SROA(T, false, ID) {
       initializeSROA_SSAUpPass(*PassRegistry::getPassRegistry());
     }
     
@@ -239,15 +210,10 @@ INITIALIZE_PASS_END(SROA_SSAUp, "scalarrepl-ssa",
 
 // Public interface to the ScalarReplAggregates pass
 FunctionPass *llvm::createScalarReplAggregatesPass(int Threshold,
-                                                   bool UseDomTree,
-                                                   int StructMemberThreshold,
-                                                   int ArrayElementThreshold,
-                                                   int ScalarLoadThreshold) {
+                                                   bool UseDomTree) {
   if (UseDomTree)
-    return new SROA_DT(Threshold, StructMemberThreshold, ArrayElementThreshold,
-                       ScalarLoadThreshold);
-  return new SROA_SSAUp(Threshold, StructMemberThreshold,
-                        ArrayElementThreshold, ScalarLoadThreshold);
+    return new SROA_DT(Threshold);
+  return new SROA_SSAUp(Threshold);
 }
 
 
@@ -263,7 +229,6 @@ class ConvertToScalarInfo {
   /// AllocaSize - The size of the alloca being considered in bytes.
   unsigned AllocaSize;
   const TargetData &TD;
-  unsigned ScalarLoadThreshold;
 
   /// IsNotTrivial - This is set to true if there is some access to the object
   /// which means that mem2reg can't promote it.
@@ -299,33 +264,23 @@ class ConvertToScalarInfo {
   /// large integers unless there is some potential for optimization.
   bool HadNonMemTransferAccess;
 
-  /// HadDynamicAccess - True if some element of this alloca was dynamic.
-  /// We don't yet have support for turning a dynamic access into a large
-  /// integer.
-  bool HadDynamicAccess;
-
 public:
-  explicit ConvertToScalarInfo(unsigned Size, const TargetData &td,
-                               unsigned SLT)
-    : AllocaSize(Size), TD(td), ScalarLoadThreshold(SLT), IsNotTrivial(false),
-    ScalarKind(Unknown), VectorTy(0), HadNonMemTransferAccess(false),
-    HadDynamicAccess(false) { }
+  explicit ConvertToScalarInfo(unsigned Size, const TargetData &td)
+    : AllocaSize(Size), TD(td), IsNotTrivial(false), ScalarKind(Unknown),
+      VectorTy(0), HadNonMemTransferAccess(false) { }
 
   AllocaInst *TryConvert(AllocaInst *AI);
 
 private:
-  bool CanConvertToScalar(Value *V, uint64_t Offset, Value* NonConstantIdx);
+  bool CanConvertToScalar(Value *V, uint64_t Offset);
   void MergeInTypeForLoadOrStore(Type *In, uint64_t Offset);
   bool MergeInVectorType(VectorType *VInTy, uint64_t Offset);
-  void ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI, uint64_t Offset,
-                           Value *NonConstantIdx);
+  void ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI, uint64_t Offset);
 
   Value *ConvertScalar_ExtractValue(Value *NV, Type *ToType,
-                                    uint64_t Offset, Value* NonConstantIdx,
-                                    IRBuilder<> &Builder);
+                                    uint64_t Offset, IRBuilder<> &Builder);
   Value *ConvertScalar_InsertValue(Value *StoredVal, Value *ExistingVal,
-                                   uint64_t Offset, Value* NonConstantIdx,
-                                   IRBuilder<> &Builder);
+                                   uint64_t Offset, IRBuilder<> &Builder);
 };
 } // end anonymous namespace.
 
@@ -336,7 +291,7 @@ private:
 AllocaInst *ConvertToScalarInfo::TryConvert(AllocaInst *AI) {
   // If we can't convert this scalar, or if mem2reg can trivially do it, bail
   // out.
-  if (!CanConvertToScalar(AI, 0, 0) || !IsNotTrivial)
+  if (!CanConvertToScalar(AI, 0) || !IsNotTrivial)
     return 0;
 
   // If an alloca has only memset / memcpy uses, it may still have an Unknown
@@ -361,19 +316,8 @@ AllocaInst *ConvertToScalarInfo::TryConvert(AllocaInst *AI) {
     NewTy = VectorTy;  // Use the vector type.
   } else {
     unsigned BitWidth = AllocaSize * 8;
-
-    // Do not convert to scalar integer if the alloca size exceeds the
-    // scalar load threshold.
-    if (BitWidth > ScalarLoadThreshold)
-      return 0;
-
     if ((ScalarKind == ImplicitVector || ScalarKind == Integer) &&
         !HadNonMemTransferAccess && !TD.fitsInLegalInteger(BitWidth))
-      return 0;
-    // Dynamic accesses on integers aren't yet supported.  They need us to shift
-    // by a dynamic amount which could be difficult to work out as we might not
-    // know whether to use a left or right shift.
-    if (ScalarKind == Integer && HadDynamicAccess)
       return 0;
 
     DEBUG(dbgs() << "CONVERT TO SCALAR INTEGER: " << *AI << "\n");
@@ -381,7 +325,7 @@ AllocaInst *ConvertToScalarInfo::TryConvert(AllocaInst *AI) {
     NewTy = IntegerType::get(AI->getContext(), BitWidth);
   }
   AllocaInst *NewAI = new AllocaInst(NewTy, 0, "", AI->getParent()->begin());
-  ConvertUsesToScalar(AI, NewAI, 0, 0);
+  ConvertUsesToScalar(AI, NewAI, 0);
   return NewAI;
 }
 
@@ -468,8 +412,7 @@ bool ConvertToScalarInfo::MergeInVectorType(VectorType *VInTy,
 ///
 /// If we see at least one access to the value that is as a vector type, set the
 /// SawVec flag.
-bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset,
-                                             Value* NonConstantIdx) {
+bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset) {
   for (Value::use_iterator UI = V->use_begin(), E = V->use_end(); UI!=E; ++UI) {
     Instruction *User = cast<Instruction>(*UI);
 
@@ -499,35 +442,24 @@ bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset,
     if (BitCastInst *BCI = dyn_cast<BitCastInst>(User)) {
       if (!onlyUsedByLifetimeMarkers(BCI))
         IsNotTrivial = true;  // Can't be mem2reg'd.
-      if (!CanConvertToScalar(BCI, Offset, NonConstantIdx))
+      if (!CanConvertToScalar(BCI, Offset))
         return false;
       continue;
     }
 
     if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(User)) {
       // If this is a GEP with a variable indices, we can't handle it.
-      PointerType* PtrTy = dyn_cast<PointerType>(GEP->getPointerOperandType());
-      if (!PtrTy)
+      if (!GEP->hasAllConstantIndices())
         return false;
 
       // Compute the offset that this GEP adds to the pointer.
       SmallVector<Value*, 8> Indices(GEP->op_begin()+1, GEP->op_end());
-      Value *GEPNonConstantIdx = 0;
-      if (!GEP->hasAllConstantIndices()) {
-        if (!isa<VectorType>(PtrTy->getElementType()))
-          return false;
-        if (NonConstantIdx)
-          return false;
-        GEPNonConstantIdx = Indices.pop_back_val();
-        if (!GEPNonConstantIdx->getType()->isIntegerTy(32))
-          return false;
-        HadDynamicAccess = true;
-      } else
-        GEPNonConstantIdx = NonConstantIdx;
-      uint64_t GEPOffset = TD.getIndexedOffset(PtrTy,
+      if (!GEP->getPointerOperandType()->isPointerTy())
+        return false;
+      uint64_t GEPOffset = TD.getIndexedOffset(GEP->getPointerOperandType(),
                                                Indices);
       // See if all uses can be converted.
-      if (!CanConvertToScalar(GEP, Offset+GEPOffset, GEPNonConstantIdx))
+      if (!CanConvertToScalar(GEP, Offset+GEPOffset))
         return false;
       IsNotTrivial = true;  // Can't be mem2reg'd.
       HadNonMemTransferAccess = true;
@@ -537,9 +469,6 @@ bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset,
     // If this is a constant sized memset of a constant value (e.g. 0) we can
     // handle it.
     if (MemSetInst *MSI = dyn_cast<MemSetInst>(User)) {
-      // Store to dynamic index.
-      if (NonConstantIdx)
-        return false;
       // Store of constant value.
       if (!isa<ConstantInt>(MSI->getValue()))
         return false;
@@ -564,9 +493,6 @@ bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset,
     // If this is a memcpy or memmove into or out of the whole allocation, we
     // can handle it like a load or store of the scalar type.
     if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(User)) {
-      // Store to dynamic index.
-      if (NonConstantIdx)
-        return false;
       ConstantInt *Len = dyn_cast<ConstantInt>(MTI->getLength());
       if (Len == 0 || Len->getZExtValue() != AllocaSize || Offset != 0)
         return false;
@@ -598,13 +524,12 @@ bool ConvertToScalarInfo::CanConvertToScalar(Value *V, uint64_t Offset,
 /// Offset is an offset from the original alloca, in bits that need to be
 /// shifted to the right.  By the end of this, there should be no uses of Ptr.
 void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
-                                              uint64_t Offset,
-                                              Value* NonConstantIdx) {
+                                              uint64_t Offset) {
   while (!Ptr->use_empty()) {
     Instruction *User = cast<Instruction>(Ptr->use_back());
 
     if (BitCastInst *CI = dyn_cast<BitCastInst>(User)) {
-      ConvertUsesToScalar(CI, NewAI, Offset, NonConstantIdx);
+      ConvertUsesToScalar(CI, NewAI, Offset);
       CI->eraseFromParent();
       continue;
     }
@@ -612,11 +537,9 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
     if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(User)) {
       // Compute the offset that this GEP adds to the pointer.
       SmallVector<Value*, 8> Indices(GEP->op_begin()+1, GEP->op_end());
-      if (!GEP->hasAllConstantIndices())
-        NonConstantIdx = Indices.pop_back_val();
       uint64_t GEPOffset = TD.getIndexedOffset(GEP->getPointerOperandType(),
                                                Indices);
-      ConvertUsesToScalar(GEP, NewAI, Offset+GEPOffset*8, NonConstantIdx);
+      ConvertUsesToScalar(GEP, NewAI, Offset+GEPOffset*8);
       GEP->eraseFromParent();
       continue;
     }
@@ -627,8 +550,7 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
       // The load is a bit extract from NewAI shifted right by Offset bits.
       Value *LoadedVal = Builder.CreateLoad(NewAI);
       Value *NewLoadVal
-        = ConvertScalar_ExtractValue(LoadedVal, LI->getType(), Offset,
-                                     NonConstantIdx, Builder);
+        = ConvertScalar_ExtractValue(LoadedVal, LI->getType(), Offset, Builder);
       LI->replaceAllUsesWith(NewLoadVal);
       LI->eraseFromParent();
       continue;
@@ -638,7 +560,7 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
       assert(SI->getOperand(0) != Ptr && "Consistency error!");
       Instruction *Old = Builder.CreateLoad(NewAI, NewAI->getName()+".in");
       Value *New = ConvertScalar_InsertValue(SI->getOperand(0), Old, Offset,
-                                             NonConstantIdx, Builder);
+                                             Builder);
       Builder.CreateStore(New, NewAI);
       SI->eraseFromParent();
 
@@ -653,7 +575,6 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
     // transform it into a store of the expanded constant value.
     if (MemSetInst *MSI = dyn_cast<MemSetInst>(User)) {
       assert(MSI->getRawDest() == Ptr && "Consistency error!");
-      assert(!NonConstantIdx && "Cannot replace dynamic memset with insert");
       int64_t SNumBytes = cast<ConstantInt>(MSI->getLength())->getSExtValue();
       if (SNumBytes > 0 && (SNumBytes >> 32) == 0) {
         unsigned NumBytes = static_cast<unsigned>(SNumBytes);
@@ -670,7 +591,7 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
         Instruction *Old = Builder.CreateLoad(NewAI, NewAI->getName()+".in");
         Value *New = ConvertScalar_InsertValue(
                                     ConstantInt::get(User->getContext(), APVal),
-                                               Old, Offset, 0, Builder);
+                                               Old, Offset, Builder);
         Builder.CreateStore(New, NewAI);
 
         // If the load we just inserted is now dead, then the memset overwrote
@@ -686,7 +607,6 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
     // can handle it like a load or store of the scalar type.
     if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(User)) {
       assert(Offset == 0 && "must be store to start of alloca");
-      assert(!NonConstantIdx && "Cannot replace dynamic transfer with insert");
 
       // If the source and destination are both to the same alloca, then this is
       // a noop copy-to-self, just delete it.  Otherwise, emit a load and store
@@ -759,8 +679,7 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
 /// shifted to the right.
 Value *ConvertToScalarInfo::
 ConvertScalar_ExtractValue(Value *FromVal, Type *ToType,
-                           uint64_t Offset, Value* NonConstantIdx,
-                           IRBuilder<> &Builder) {
+                           uint64_t Offset, IRBuilder<> &Builder) {
   // If the load is of the whole new alloca, no conversion is needed.
   Type *FromType = FromVal->getType();
   if (FromType == ToType && Offset == 0)
@@ -782,17 +701,7 @@ ConvertScalar_ExtractValue(Value *FromVal, Type *ToType,
       assert(EltSize*Elt == Offset && "Invalid modulus in validity checking");
     }
     // Return the element extracted out of it.
-    Value *Idx;
-    if (NonConstantIdx) {
-      if (Elt)
-        Idx = Builder.CreateAdd(NonConstantIdx,
-                                Builder.getInt32(Elt),
-                                "dyn.offset");
-      else
-        Idx = NonConstantIdx;
-    } else
-      Idx = Builder.getInt32(Elt);
-    Value *V = Builder.CreateExtractElement(FromVal, Idx);
+    Value *V = Builder.CreateExtractElement(FromVal, Builder.getInt32(Elt));
     if (V->getType() != ToType)
       V = Builder.CreateBitCast(V, ToType);
     return V;
@@ -801,27 +710,23 @@ ConvertScalar_ExtractValue(Value *FromVal, Type *ToType,
   // If ToType is a first class aggregate, extract out each of the pieces and
   // use insertvalue's to form the FCA.
   if (StructType *ST = dyn_cast<StructType>(ToType)) {
-    assert(!NonConstantIdx &&
-           "Dynamic indexing into struct types not supported");
     const StructLayout &Layout = *TD.getStructLayout(ST);
     Value *Res = UndefValue::get(ST);
     for (unsigned i = 0, e = ST->getNumElements(); i != e; ++i) {
       Value *Elt = ConvertScalar_ExtractValue(FromVal, ST->getElementType(i),
                                         Offset+Layout.getElementOffsetInBits(i),
-                                              0, Builder);
+                                              Builder);
       Res = Builder.CreateInsertValue(Res, Elt, i);
     }
     return Res;
   }
 
   if (ArrayType *AT = dyn_cast<ArrayType>(ToType)) {
-    assert(!NonConstantIdx &&
-           "Dynamic indexing into array types not supported");
     uint64_t EltSize = TD.getTypeAllocSizeInBits(AT->getElementType());
     Value *Res = UndefValue::get(AT);
     for (unsigned i = 0, e = AT->getNumElements(); i != e; ++i) {
       Value *Elt = ConvertScalar_ExtractValue(FromVal, AT->getElementType(),
-                                              Offset+i*EltSize, 0, Builder);
+                                              Offset+i*EltSize, Builder);
       Res = Builder.CreateInsertValue(Res, Elt, i);
     }
     return Res;
@@ -887,14 +792,9 @@ ConvertScalar_ExtractValue(Value *FromVal, Type *ToType,
 ///
 /// Offset is an offset from the original alloca, in bits that need to be
 /// shifted to the right.
-///
-/// NonConstantIdx is an index value if there was a GEP with a non-constant
-/// index value.  If this is 0 then all GEPs used to find this insert address
-/// are constant.
 Value *ConvertToScalarInfo::
 ConvertScalar_InsertValue(Value *SV, Value *Old,
-                          uint64_t Offset, Value* NonConstantIdx,
-                          IRBuilder<> &Builder) {
+                          uint64_t Offset, IRBuilder<> &Builder) {
   // Convert the stored type to the actual type, shift it left to insert
   // then 'or' into place.
   Type *AllocaType = Old->getType();
@@ -915,40 +815,26 @@ ConvertScalar_InsertValue(Value *SV, Value *Old,
       SV = Builder.CreateBitCast(SV, EltTy);
     uint64_t EltSize = TD.getTypeAllocSizeInBits(EltTy);
     unsigned Elt = Offset/EltSize;
-    Value *Idx;
-    if (NonConstantIdx) {
-      if (Elt)
-        Idx = Builder.CreateAdd(NonConstantIdx,
-                                Builder.getInt32(Elt),
-                                "dyn.offset");
-      else
-        Idx = NonConstantIdx;
-    } else
-      Idx = Builder.getInt32(Elt);
-    return Builder.CreateInsertElement(Old, SV, Idx);
+    return Builder.CreateInsertElement(Old, SV, Builder.getInt32(Elt));
   }
 
   // If SV is a first-class aggregate value, insert each value recursively.
   if (StructType *ST = dyn_cast<StructType>(SV->getType())) {
-    assert(!NonConstantIdx &&
-           "Dynamic indexing into struct types not supported");
     const StructLayout &Layout = *TD.getStructLayout(ST);
     for (unsigned i = 0, e = ST->getNumElements(); i != e; ++i) {
       Value *Elt = Builder.CreateExtractValue(SV, i);
       Old = ConvertScalar_InsertValue(Elt, Old,
                                       Offset+Layout.getElementOffsetInBits(i),
-                                      0, Builder);
+                                      Builder);
     }
     return Old;
   }
 
   if (ArrayType *AT = dyn_cast<ArrayType>(SV->getType())) {
-    assert(!NonConstantIdx &&
-           "Dynamic indexing into array types not supported");
     uint64_t EltSize = TD.getTypeAllocSizeInBits(AT->getElementType());
     for (unsigned i = 0, e = AT->getNumElements(); i != e; ++i) {
       Value *Elt = Builder.CreateExtractValue(SV, i);
-      Old = ConvertScalar_InsertValue(Elt, Old, Offset+i*EltSize, 0, Builder);
+      Old = ConvertScalar_InsertValue(Elt, Old, Offset+i*EltSize, Builder);
     }
     return Old;
   }
@@ -1449,14 +1335,15 @@ bool SROA::performPromotion(Function &F) {
 
 /// ShouldAttemptScalarRepl - Decide if an alloca is a good candidate for
 /// SROA.  It must be a struct or array type with a small number of elements.
-bool SROA::ShouldAttemptScalarRepl(AllocaInst *AI) {
+static bool ShouldAttemptScalarRepl(AllocaInst *AI) {
   Type *T = AI->getAllocatedType();
-  // Do not promote any struct that has too many members.
+  // Do not promote any struct into more than 32 separate vars.
   if (StructType *ST = dyn_cast<StructType>(T))
-    return ST->getNumElements() <= StructMemberThreshold;
-  // Do not promote any array that has too many elements.
+    return ST->getNumElements() <= 32;
+  // Arrays are much less likely to be safe for SROA; only consider
+  // them if they are very small.
   if (ArrayType *AT = dyn_cast<ArrayType>(T))
-    return AT->getNumElements() <= ArrayElementThreshold;
+    return AT->getNumElements() <= 8;
   return false;
 }
 
@@ -1561,8 +1448,8 @@ bool SROA::performScalarRepl(Function &F) {
     // promoted itself.  If so, we don't want to transform it needlessly.  Note
     // that we can't just check based on the type: the alloca may be of an i32
     // but that has pointer arithmetic to set byte 3 of it or something.
-    if (AllocaInst *NewAI = ConvertToScalarInfo(
-              (unsigned)AllocaSize, *TD, ScalarLoadThreshold).TryConvert(AI)) {
+    if (AllocaInst *NewAI =
+          ConvertToScalarInfo((unsigned)AllocaSize, *TD).TryConvert(AI)) {
       NewAI->takeName(AI);
       AI->eraseFromParent();
       ++NumConverted;
@@ -1755,8 +1642,6 @@ void SROA::isSafeGEP(GetElementPtrInst *GEPI,
   gep_type_iterator GEPIt = gep_type_begin(GEPI), E = gep_type_end(GEPI);
   if (GEPIt == E)
     return;
-  bool NonConstant = false;
-  unsigned NonConstantIdxSize = 0;
 
   // Walk through the GEP type indices, checking the types that this indexes
   // into.
@@ -1766,30 +1651,15 @@ void SROA::isSafeGEP(GetElementPtrInst *GEPI,
       continue;
 
     ConstantInt *IdxVal = dyn_cast<ConstantInt>(GEPIt.getOperand());
-    if (!IdxVal) {
-      // Non constant GEPs are only a problem on arrays, structs, and pointers
-      // Vectors can be dynamically indexed.
-      // FIXME: Add support for dynamic indexing on arrays.  This should be
-      // ok on any subarrays of the alloca array, eg, a[0][i] is ok, but a[i][0]
-      // isn't.
-      if (!(*GEPIt)->isVectorTy())
-        return MarkUnsafe(Info, GEPI);
-      NonConstant = true;
-      NonConstantIdxSize = TD->getTypeAllocSize(*GEPIt);
-    }
+    if (!IdxVal)
+      return MarkUnsafe(Info, GEPI);
   }
 
   // Compute the offset due to this GEP and check if the alloca has a
   // component element at that offset.
   SmallVector<Value*, 8> Indices(GEPI->op_begin() + 1, GEPI->op_end());
-  // If this GEP is non constant then the last operand must have been a
-  // dynamic index into a vector.  Pop this now as it has no impact on the
-  // constant part of the offset.
-  if (NonConstant)
-    Indices.pop_back();
   Offset += TD->getIndexedOffset(GEPI->getPointerOperandType(), Indices);
-  if (!TypeHasComponent(Info.AI->getAllocatedType(), Offset,
-                        NonConstantIdxSize))
+  if (!TypeHasComponent(Info.AI->getAllocatedType(), Offset, 0))
     MarkUnsafe(Info, GEPI);
 }
 
@@ -1892,12 +1762,6 @@ bool SROA::TypeHasComponent(Type *T, uint64_t Offset, uint64_t Size) {
     EltTy = AT->getElementType();
     EltSize = TD->getTypeAllocSize(EltTy);
     if (Offset >= AT->getNumElements() * EltSize)
-      return false;
-    Offset %= EltSize;
-  } else if (VectorType *VT = dyn_cast<VectorType>(T)) {
-    EltTy = VT->getElementType();
-    EltSize = TD->getTypeAllocSize(EltTy);
-    if (Offset >= VT->getNumElements() * EltSize)
       return false;
     Offset %= EltSize;
   } else {
@@ -2067,16 +1931,9 @@ uint64_t SROA::FindElementAndOffset(Type *&T, uint64_t &Offset,
     Offset -= Layout->getElementOffset(Idx);
     IdxTy = Type::getInt32Ty(T->getContext());
     return Idx;
-  } else if (ArrayType *AT = dyn_cast<ArrayType>(T)) {
-    T = AT->getElementType();
-    uint64_t EltSize = TD->getTypeAllocSize(T);
-    Idx = Offset / EltSize;
-    Offset -= Idx * EltSize;
-    IdxTy = Type::getInt64Ty(T->getContext());
-    return Idx;
   }
-  VectorType *VT = cast<VectorType>(T);
-  T = VT->getElementType();
+  ArrayType *AT = cast<ArrayType>(T);
+  T = AT->getElementType();
   uint64_t EltSize = TD->getTypeAllocSize(T);
   Idx = Offset / EltSize;
   Offset -= Idx * EltSize;
@@ -2091,13 +1948,6 @@ void SROA::RewriteGEP(GetElementPtrInst *GEPI, AllocaInst *AI, uint64_t Offset,
                       SmallVector<AllocaInst*, 32> &NewElts) {
   uint64_t OldOffset = Offset;
   SmallVector<Value*, 8> Indices(GEPI->op_begin() + 1, GEPI->op_end());
-  // If the GEP was dynamic then it must have been a dynamic vector lookup.
-  // In this case, it must be the last GEP operand which is dynamic so keep that
-  // aside until we've found the constant GEP offset then add it back in at the
-  // end.
-  Value* NonConstantIdx = 0;
-  if (!GEPI->hasAllConstantIndices())
-    NonConstantIdx = Indices.pop_back_val();
   Offset += TD->getIndexedOffset(GEPI->getPointerOperandType(), Indices);
 
   RewriteForScalarRepl(GEPI, AI, Offset, NewElts);
@@ -2123,17 +1973,6 @@ void SROA::RewriteGEP(GetElementPtrInst *GEPI, AllocaInst *AI, uint64_t Offset,
   while (EltOffset != 0) {
     uint64_t EltIdx = FindElementAndOffset(T, EltOffset, IdxTy);
     NewArgs.push_back(ConstantInt::get(IdxTy, EltIdx));
-  }
-  if (NonConstantIdx) {
-    Type* GepTy = T;
-    // This GEP has a dynamic index.  We need to add "i32 0" to index through
-    // any structs or arrays in the original type until we get to the vector
-    // to index.
-    while (!isa<VectorType>(GepTy)) {
-      NewArgs.push_back(Constant::getNullValue(i32Ty));
-      GepTy = cast<CompositeType>(GepTy)->getTypeAtIndex(0U);
-    }
-    NewArgs.push_back(NonConstantIdx);
   }
   Instruction *Val = NewElts[Idx];
   if (NewArgs.size() > 1) {

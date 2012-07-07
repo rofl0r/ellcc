@@ -13,15 +13,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CodeEmitterGen.h"
 #include "CodeGenTarget.h"
 #include "llvm/TableGen/Record.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/TableGen/TableGenBackend.h"
 #include <map>
-#include <string>
-#include <vector>
 using namespace llvm;
 
 // FIXME: Somewhat hackish to use a command line option for this. There should
@@ -31,27 +29,6 @@ static cl::opt<bool>
 MCEmitter("mc-emitter",
           cl::desc("Generate CodeEmitter for use with the MC library."),
           cl::init(false));
-
-namespace {
-
-class CodeEmitterGen {
-  RecordKeeper &Records;
-public:
-  CodeEmitterGen(RecordKeeper &R) : Records(R) {}
-
-  void run(raw_ostream &o);
-private:
-  void emitMachineOpEmitter(raw_ostream &o, const std::string &Namespace);
-  void emitGetValueBit(raw_ostream &o, const std::string &Namespace);
-  void reverseBits(std::vector<Record*> &Insts);
-  int getVariableBit(const std::string &VarName, BitsInit *BI, int bit);
-  std::string getInstructionCase(Record *R, CodeGenTarget &Target);
-  void AddCodeToMergeInOperand(Record *R, BitsInit *BI,
-                               const std::string &VarName,
-                               unsigned &NumberedOp,
-                               std::string &Case, CodeGenTarget &Target);
-
-};
 
 void CodeEmitterGen::reverseBits(std::vector<Record*> &Insts) {
   for (std::vector<Record*>::iterator I = Insts.begin(), E = Insts.end();
@@ -237,6 +214,7 @@ void CodeEmitterGen::run(raw_ostream &o) {
   // For little-endian instruction bit encodings, reverse the bit order
   if (Target.isLittleEndianEncoding()) reverseBits(Insts);
 
+  EmitSourceFileHeader("Machine Code Emitter", o);
 
   const std::vector<const CodeGenInstruction*> &NumberedInstructions =
     Target.getInstructionsByEnumValue();
@@ -326,14 +304,3 @@ void CodeEmitterGen::run(raw_ostream &o) {
     << "  return Value;\n"
     << "}\n\n";
 }
-
-} // End anonymous namespace
-
-namespace llvm {
-
-void EmitCodeEmitter(RecordKeeper &RK, raw_ostream &OS) {
-  emitSourceFileHeader("Machine Code Emitter", OS);
-  CodeEmitterGen(RK).run(OS);
-}
-
-} // End llvm namespace

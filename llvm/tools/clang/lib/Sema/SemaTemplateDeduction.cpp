@@ -1899,7 +1899,7 @@ static bool isSameTemplateArg(ASTContext &Context,
 ///
 /// \param S The semantic analysis object.
 ///
-/// \param Arg The template argument we are producing template argument
+/// \param The template argument we are producing template argument
 /// location information for.
 ///
 /// \param NTTPType For a declaration template argument, the type of
@@ -2199,7 +2199,7 @@ static bool isSimpleTemplateIdType(QualType T) {
 /// \param FunctionTemplate the function template into which the explicit
 /// template arguments will be substituted.
 ///
-/// \param ExplicitTemplateArgs the explicitly-specified template
+/// \param ExplicitTemplateArguments the explicitly-specified template
 /// arguments.
 ///
 /// \param Deduced the deduced template arguments, which will be populated
@@ -2965,7 +2965,7 @@ DeduceTemplateArgumentByListElement(Sema &S,
 /// \param FunctionTemplate the function template for which we are performing
 /// template argument deduction.
 ///
-/// \param ExplicitTemplateArgs the explicit template arguments provided
+/// \param ExplicitTemplateArguments the explicit template arguments provided
 /// for this call.
 ///
 /// \param Args the function call arguments
@@ -3225,7 +3225,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 /// \param FunctionTemplate the function template for which we are performing
 /// template argument deduction.
 ///
-/// \param ExplicitTemplateArgs the explicitly-specified template
+/// \param ExplicitTemplateArguments the explicitly-specified template
 /// arguments.
 ///
 /// \param ArgFunctionType the function type that will be used as the
@@ -3408,7 +3408,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
 /// \param FunctionTemplate the function template for which we are performing
 /// template argument deduction.
 ///
-/// \param ExplicitTemplateArgs the explicitly-specified template
+/// \param ExplicitTemplateArguments the explicitly-specified template
 /// arguments.
 ///
 /// \param Specialization if template argument deduction was successful,
@@ -4455,13 +4455,13 @@ MarkUsedTemplateParameters(ASTContext &Ctx,
   }
 }
 
-/// \brief Mark which template parameters can be deduced from a given
+/// \brief Mark the template parameters can be deduced by the given
 /// template argument list.
 ///
 /// \param TemplateArgs the template argument list from which template
 /// parameters will be deduced.
 ///
-/// \param Used a bit vector whose elements will be set to \c true
+/// \param Deduced a bit vector whose elements will be set to \c true
 /// to indicate when the corresponding template parameter will be
 /// deduced.
 void

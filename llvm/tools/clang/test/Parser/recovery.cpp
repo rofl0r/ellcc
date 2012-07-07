@@ -12,12 +12,13 @@ inline namespace Std { // expected-error {{cannot be reopened as inline}}
 int x;
 Std::Important y;
 
-extenr "C" { // expected-error {{did you mean the keyword 'extern'}}
+// FIXME: Recover as if the typo correction were applied.
+extenr "C" { // expected-error {{did you mean 'extern'}} expected-error {{unqualified-id}}
   void f();
 }
 void g() {
   z = 1; // expected-error {{undeclared}}
-  f();
+  f(); // expected-error {{undeclared}}
 }
 
 struct S {
@@ -36,7 +37,6 @@ namespace N {
   int
 } // expected-error {{unqualified-id}}
 
-strcut Uuuu { // expected-error {{did you mean the keyword 'struct'}} \
-              // expected-note {{'Uuuu' declared here}}
-} *u[3];
-uuuu v; // expected-error {{did you mean 'Uuuu'}}
+// FIXME: Recover as if the typo correction were applied.
+strcut U { // expected-error {{did you mean 'struct'}}
+} *u[3]; // expected-error {{expected ';'}}

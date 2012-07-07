@@ -40,8 +40,6 @@ static void PrintHeader(ReportType typ) {
     TsanPrintf("destroy of a locked mutex");
   else if (typ == ReportTypeSignalUnsafe)
     TsanPrintf("signal-unsafe call inside of a signal");
-  else if (typ == ReportTypeErrnoInSignal)
-    TsanPrintf("signal handler spoils errno");
 
   TsanPrintf(" (pid=%d)\n", GetPid());
 }

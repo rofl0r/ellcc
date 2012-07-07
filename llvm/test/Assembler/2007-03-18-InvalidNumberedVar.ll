@@ -1,6 +1,5 @@
 ; PR 1258
-; RUN: not llvm-as < %s >/dev/null 2> %t
-; RUN: grep "'%0' defined with type 'i1'" %t
+; RUN: not llvm-as < %s >/dev/null |& grep {'%0' defined with type 'i1'}
 
 define i32 @test1(i32 %a, i32 %b) {
 entry:

@@ -2151,16 +2151,6 @@ public:
   }
   unsigned getBitWidthValue(const ASTContext &Ctx) const;
 
-  /// setBitWidth - Set the bit-field width for this member.
-  // Note: used by some clients (i.e., do not remove it).
-  void setBitWidth(Expr *Width);
-  /// removeBitWidth - Remove the bit-field width from this member.
-  // Note: used by some clients (i.e., do not remove it).
-  void removeBitWidth() {
-    assert(isBitField() && "no bitfield width to remove");
-    InitializerOrBitWidth.setPointer(0);
-  }
-
   /// getInClassInitStyle - Get the kind of (C++11) in-class initializer which
   /// this field has.
   InClassInitStyle getInClassInitStyle() const {
@@ -3220,11 +3210,11 @@ public:
 ///
 /// An import declaration imports the named module (or submodule). For example:
 /// \code
-///   @__experimental_modules_import std.vector;
+///   \@__experimental_modules_import std.vector;
 /// \endcode
 ///
-/// Import declarations can also be implicitly generated from
-/// \#include/\#import directives.
+/// Import declarations can also be implicitly generated from #include/#import 
+/// directives.
 class ImportDecl : public Decl {
   /// \brief The imported module, along with a bit that indicates whether
   /// we have source-location information for each identifier in the module

@@ -23,7 +23,6 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclVisitor.h"
-#include "clang/AST/EvaluatedExprVisitor.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/RecursiveASTVisitor.h"
@@ -1119,8 +1118,6 @@ Sema::ActOnBaseSpecifier(Decl *classdecl, SourceRange SpecifierRange,
                                                       Virtual, Access, TInfo,
                                                       EllipsisLoc))
     return BaseSpec;
-  else
-    Class->setInvalidDecl();
 
   return true;
 }
@@ -1649,7 +1646,6 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       // effects and are not part of a dependent type declaration.
       if (!FD->isImplicit() && FD->getDeclName() &&
           FD->getAccess() == AS_private &&
-          !FD->hasAttr<UnusedAttr>() &&
           !FD->getParent()->getTypeForDecl()->isDependentType() &&
           !InitializationHasSideEffects(*FD))
         UnusedPrivateFields.insert(FD);
@@ -2041,95 +2037,73 @@ static void CheckForDanglingReferenceOrPointer(Sema &S, ValueDecl *Member,
     << (unsigned)IsPointer;
 }
 
-namespace {
-  class UninitializedFieldVisitor
-      : public EvaluatedExprVisitor<UninitializedFieldVisitor> {
-    Sema &S;
-    ValueDecl *VD;
-  public:
-    typedef EvaluatedExprVisitor<UninitializedFieldVisitor> Inherited;
-    UninitializedFieldVisitor(Sema &S, ValueDecl *VD) : Inherited(S.Context),
-                                                        S(S), VD(VD) {
-    }
+/// Checks an initializer expression for use of uninitialized fields, such as
+/// containing the field that is being initialized. Returns true if there is an
+/// uninitialized field was used an updates the SourceLocation parameter; false
+/// otherwise.
+static bool InitExprContainsUninitializedFields(const Stmt *S,
+                                                const ValueDecl *LhsField,
+                                                SourceLocation *L) {
+  assert(isa<FieldDecl>(LhsField) || isa<IndirectFieldDecl>(LhsField));
 
-    void HandleExpr(Expr *E) {
-      if (!E) return;
-
-      // Expressions like x(x) sometimes lack the surrounding expressions
-      // but need to be checked anyways.
-      HandleValue(E);
-      Visit(E);
-    }
-
-    void HandleValue(Expr *E) {
-      E = E->IgnoreParens();
-
-      if (MemberExpr *ME = dyn_cast<MemberExpr>(E)) {
-        if (isa<EnumConstantDecl>(ME->getMemberDecl()))
-            return;
-        Expr *Base = E;
-        while (isa<MemberExpr>(Base)) {
-          ME = dyn_cast<MemberExpr>(Base);
-          if (VarDecl *VarD = dyn_cast<VarDecl>(ME->getMemberDecl()))
-            if (VarD->hasGlobalStorage())
-              return;
-          Base = ME->getBase();
-        }
-
-        if (VD == ME->getMemberDecl() && isa<CXXThisExpr>(Base)) {
-          S.Diag(ME->getExprLoc(), diag::warn_field_is_uninit);
-          return;
-        }
-      }
-
-      if (ConditionalOperator *CO = dyn_cast<ConditionalOperator>(E)) {
-        HandleValue(CO->getTrueExpr());
-        HandleValue(CO->getFalseExpr());
-        return;
-      }
-
-      if (BinaryConditionalOperator *BCO =
-              dyn_cast<BinaryConditionalOperator>(E)) {
-        HandleValue(BCO->getCommon());
-        HandleValue(BCO->getFalseExpr());
-        return;
-      }
-
-      if (BinaryOperator *BO = dyn_cast<BinaryOperator>(E)) {
-        switch (BO->getOpcode()) {
-        default:
-          return;
-        case(BO_PtrMemD):
-        case(BO_PtrMemI):
-          HandleValue(BO->getLHS());
-          return;
-        case(BO_Comma):
-          HandleValue(BO->getRHS());
-          return;
-        }
-      }
-    }
-
-    void VisitImplicitCastExpr(ImplicitCastExpr *E) {
-      if (E->getCastKind() == CK_LValueToRValue)
-        HandleValue(E->getSubExpr());
-
-      Inherited::VisitImplicitCastExpr(E);
-    }
-
-    void VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
-      Expr *Callee = E->getCallee();
-      if (isa<MemberExpr>(Callee))
-        HandleValue(Callee);
-
-      Inherited::VisitCXXMemberCallExpr(E);
-    }
-  };
-  static void CheckInitExprContainsUninitializedFields(Sema &S, Expr *E,
-                                                       ValueDecl *VD) {
-    UninitializedFieldVisitor(S, VD).HandleExpr(E);
+  if (isa<CallExpr>(S)) {
+    // Do not descend into function calls or constructors, as the use
+    // of an uninitialized field may be valid. One would have to inspect
+    // the contents of the function/ctor to determine if it is safe or not.
+    // i.e. Pass-by-value is never safe, but pass-by-reference and pointers
+    // may be safe, depending on what the function/ctor does.
+    return false;
   }
-} // namespace
+  if (const MemberExpr *ME = dyn_cast<MemberExpr>(S)) {
+    const NamedDecl *RhsField = ME->getMemberDecl();
+
+    if (const VarDecl *VD = dyn_cast<VarDecl>(RhsField)) {
+      // The member expression points to a static data member.
+      assert(VD->isStaticDataMember() && 
+             "Member points to non-static data member!");
+      (void)VD;
+      return false;
+    }
+    
+    if (isa<EnumConstantDecl>(RhsField)) {
+      // The member expression points to an enum.
+      return false;
+    }
+
+    if (RhsField == LhsField) {
+      // Initializing a field with itself. Throw a warning.
+      // But wait; there are exceptions!
+      // Exception #1:  The field may not belong to this record.
+      // e.g. Foo(const Foo& rhs) : A(rhs.A) {}
+      const Expr *base = ME->getBase();
+      if (base != NULL && !isa<CXXThisExpr>(base->IgnoreParenCasts())) {
+        // Even though the field matches, it does not belong to this record.
+        return false;
+      }
+      // None of the exceptions triggered; return true to indicate an
+      // uninitialized field was used.
+      *L = ME->getMemberLoc();
+      return true;
+    }
+  } else if (isa<UnaryExprOrTypeTraitExpr>(S)) {
+    // sizeof/alignof doesn't reference contents, do not warn.
+    return false;
+  } else if (const UnaryOperator *UOE = dyn_cast<UnaryOperator>(S)) {
+    // address-of doesn't reference contents (the pointer may be dereferenced
+    // in the same expression but it would be rare; and weird).
+    if (UOE->getOpcode() == UO_AddrOf)
+      return false;
+  }
+  for (Stmt::const_child_range it = S->children(); it; ++it) {
+    if (!*it) {
+      // An expression such as 'member(arg ?: "")' may trigger this.
+      continue;
+    }
+    if (InitExprContainsUninitializedFields(*it, LhsField, L))
+      return true;
+  }
+  return false;
+}
 
 MemInitResult
 Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
@@ -2178,16 +2152,18 @@ Sema::BuildMemberInitializer(ValueDecl *Member, Expr *Init,
     }
   }
 
-  if (getDiagnostics().getDiagnosticLevel(diag::warn_field_is_uninit, IdLoc)
-        != DiagnosticsEngine::Ignored)
-    for (unsigned i = 0; i < NumArgs; ++i)
-      // FIXME: Warn about the case when other fields are used before being
+  for (unsigned i = 0; i < NumArgs; ++i) {
+    SourceLocation L;
+    if (InitExprContainsUninitializedFields(Args[i], Member, &L)) {
+      // FIXME: Return true in the case when other fields are used before being
       // uninitialized. For example, let this field be the i'th field. When
       // initializing the i'th field, throw a warning if any of the >= i'th
       // fields are used, as they are not yet initialized.
       // Right now we are only handling the case where the i'th field uses
       // itself in its initializer.
-      CheckInitExprContainsUninitializedFields(*this, Args[i], Member);
+      Diag(L, diag::warn_field_is_uninit);
+    }
+  }
 
   SourceRange InitRange = Init->getSourceRange();
 
@@ -9030,6 +9006,13 @@ Sema::BuildCXXConstructExpr(SourceLocation ConstructLoc, QualType DeclInitType,
   unsigned NumExprs = ExprArgs.size();
   Expr **Exprs = (Expr **)ExprArgs.release();
 
+  for (specific_attr_iterator<NonNullAttr>
+           i = Constructor->specific_attr_begin<NonNullAttr>(),
+           e = Constructor->specific_attr_end<NonNullAttr>(); i != e; ++i) {
+    const NonNullAttr *NonNull = *i;
+    CheckNonNullArguments(NonNull, ExprArgs.get(), ConstructLoc);
+  }
+
   MarkFunctionReferenced(ConstructLoc, Constructor);
   return Owned(CXXConstructExpr::Create(Context, DeclInitType, ConstructLoc,
                                         Constructor, Elidable, Exprs, NumExprs,
@@ -9095,7 +9078,7 @@ void Sema::FinalizeVarWithDestructor(VarDecl *VD, const RecordType *Record) {
 bool 
 Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
                               MultiExprArg ArgsPtr,
-                              SourceLocation Loc,
+                              SourceLocation Loc,                                    
                               ASTOwningVector<Expr*> &ConvertedArgs,
                               bool AllowExplicit) {
   // FIXME: This duplicates a lot of code from Sema::ConvertArgumentsForCall.
@@ -9123,8 +9106,7 @@ Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
 
   DiagnoseSentinelCalls(Constructor, Loc, AllArgs.data(), AllArgs.size());
 
-  CheckConstructorCall(Constructor, AllArgs.data(), AllArgs.size(),
-                       Proto, Loc);
+  // FIXME: Missing call to CheckFunctionCall or equivalent
 
   return Invalid;
 }
@@ -9622,8 +9604,7 @@ VarDecl *Sema::BuildExceptionDeclaration(Scope *S,
       Diag(Loc, diag::err_objc_object_catch);
       Invalid = true;
     } else if (T->isObjCObjectPointerType()) {
-      // FIXME: should this be a test for macosx-fragile specifically?
-      if (getLangOpts().ObjCRuntime.isFragile())
+      if (!getLangOpts().ObjCNonFragileABI)
         Diag(Loc, diag::warn_objc_pointer_cxx_catch_fragile);
     }
   }
@@ -9970,7 +9951,7 @@ Decl *Sema::ActOnTemplatedFriendTag(Scope *S, SourceLocation FriendLoc,
 ///   friend class A<T>::B<unsigned>;
 /// We permit this as a special case; if there are any template
 /// parameters present at all, require proper matching, i.e.
-///   template <> template \<class T> friend class A<int>::B;
+///   template <> template <class T> friend class A<int>::B;
 Decl *Sema::ActOnFriendTypeDecl(Scope *S, const DeclSpec &DS,
                                 MultiTemplateParamsArg TempParams) {
   SourceLocation Loc = DS.getLocStart();
@@ -10318,13 +10299,8 @@ void Sema::SetDeclDeleted(Decl *Dcl, SourceLocation DelLoc) {
     return;
   }
   if (const FunctionDecl *Prev = Fn->getPreviousDecl()) {
-    // Don't consider the implicit declaration we generate for explicit
-    // specializations. FIXME: Do not generate these implicit declarations.
-    if ((Prev->getTemplateSpecializationKind() != TSK_ExplicitSpecialization
-        || Prev->getPreviousDecl()) && !Prev->isDefined()) {
-      Diag(DelLoc, diag::err_deleted_decl_not_first);
-      Diag(Prev->getLocation(), diag::note_previous_declaration);
-    }
+    Diag(DelLoc, diag::err_deleted_decl_not_first);
+    Diag(Prev->getLocation(), diag::note_previous_declaration);
     // If the declaration wasn't the first, we delete the function anyway for
     // recovery.
   }

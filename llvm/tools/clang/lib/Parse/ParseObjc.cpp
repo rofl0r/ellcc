@@ -420,7 +420,7 @@ void Parser::ParseObjCInterfaceDeclList(tok::ObjCKeywordKind contextKey,
       // erroneous r_brace would cause an infinite loop if not handled here.
       if (Tok.is(tok::r_brace))
         break;
-      ParsedAttributesWithRange attrs(AttrFactory);
+      ParsedAttributes attrs(AttrFactory);
       allTUVariables.push_back(ParseDeclarationOrFunctionDefinition(attrs));
       continue;
     }
@@ -1106,7 +1106,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
   }
 
   bool isVariadic = false;
-  bool cStyleParamWarned = false;
+
   // Parse the (optional) parameter list.
   while (Tok.is(tok::comma)) {
     ConsumeToken();
@@ -1114,10 +1114,6 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
       isVariadic = true;
       ConsumeToken();
       break;
-    }
-    if (!cStyleParamWarned) {
-      Diag(Tok, diag::warn_cstyle_param);
-      cStyleParamWarned = true;
     }
     DeclSpec DS(AttrFactory);
     ParseDeclarationSpecifiers(DS);
@@ -1130,6 +1126,7 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
                                                     ParmDecl.getIdentifierLoc(), 
                                                     Param,
                                                    0));
+
   }
 
   // FIXME: Add support for optional parameter list...
@@ -1350,15 +1347,15 @@ void Parser::ParseObjCClassInstanceVariables(Decl *interfaceDecl,
 ///     objc-protocol-forward-reference
 ///
 ///   objc-protocol-definition:
-///     \@protocol identifier
+///     @protocol identifier
 ///       objc-protocol-refs[opt]
 ///       objc-interface-decl-list
-///     \@end
+///     @end
 ///
 ///   objc-protocol-forward-reference:
-///     \@protocol identifier-list ';'
+///     @protocol identifier-list ';'
 ///
-///   "\@protocol identifier ;" should be resolved as "\@protocol
+///   "@protocol identifier ;" should be resolved as "@protocol
 ///   identifier-list ;": objc-interface-decl-list may not start with a
 ///   semicolon in the first alternative if objc-protocol-refs are omitted.
 Parser::DeclGroupPtrTy 
@@ -1575,16 +1572,10 @@ void Parser::ObjCImplParsingDataRAII::finish(SourceRange AtEnd) {
   assert(!Finished);
   P.Actions.DefaultSynthesizeProperties(P.getCurScope(), Dcl);
   for (size_t i = 0; i < LateParsedObjCMethods.size(); ++i)
-    P.ParseLexedObjCMethodDefs(*LateParsedObjCMethods[i], 
-                               true/*Methods*/);
+    P.ParseLexedObjCMethodDefs(*LateParsedObjCMethods[i]);
 
   P.Actions.ActOnAtEnd(P.getCurScope(), AtEnd);
 
-  if (HasCFunction)
-    for (size_t i = 0; i < LateParsedObjCMethods.size(); ++i)
-      P.ParseLexedObjCMethodDefs(*LateParsedObjCMethods[i], 
-                                 false/*c-functions*/);
-  
   /// \brief Clear and free the cached objc methods.
   for (LateParsedObjCMethodContainer::iterator
          I = LateParsedObjCMethods.begin(),
@@ -1921,19 +1912,6 @@ Parser::ParseObjCAutoreleasePoolStmt(SourceLocation atLoc) {
                                                 AutoreleasePoolBody.take());
 }
 
-/// StashAwayMethodOrFunctionBodyTokens -  Consume the tokens and store them 
-/// for later parsing.
-void Parser::StashAwayMethodOrFunctionBodyTokens(Decl *MDecl) {
-  LexedMethod* LM = new LexedMethod(this, MDecl);
-  CurParsedObjCImpl->LateParsedObjCMethods.push_back(LM);
-  CachedTokens &Toks = LM->Toks;
-  // Begin by storing the '{' token.
-  Toks.push_back(Tok);
-  ConsumeBrace();
-  // Consume everything up to (and including) the matching right brace.
-  ConsumeAndStoreUntil(tok::r_brace, Toks, /*StopAtSemi=*/false);
-}
-
 ///   objc-method-def: objc-method-proto ';'[opt] '{' body '}'
 ///
 Decl *Parser::ParseObjCMethodDefinition() {
@@ -1974,7 +1952,15 @@ Decl *Parser::ParseObjCMethodDefinition() {
 
   if (CurParsedObjCImpl) {
     // Consume the tokens and store them for later parsing.
-    StashAwayMethodOrFunctionBodyTokens(MDecl);
+    LexedMethod* LM = new LexedMethod(this, MDecl);
+    CurParsedObjCImpl->LateParsedObjCMethods.push_back(LM);
+    CachedTokens &Toks = LM->Toks;
+    // Begin by storing the '{' token.
+    Toks.push_back(Tok);
+    ConsumeBrace();
+    // Consume everything up to (and including) the matching right brace.
+    ConsumeAndStoreUntil(tok::r_brace, Toks, /*StopAtSemi=*/false);
+
   } else {
     ConsumeBrace();
     SkipUntil(tok::r_brace, /*StopAtSemi=*/false);
@@ -2129,7 +2115,7 @@ bool Parser::ParseObjCXXMessageReceiver(bool &IsExpr, void *&TypeOrExpr) {
       Tok.is(tok::kw_typename) || Tok.is(tok::annot_cxxscope))
     TryAnnotateTypeOrScopeToken();
 
-  if (!Actions.isSimpleTypeSpecifier(Tok.getKind())) {
+  if (!isCXXSimpleTypeSpecifier()) {
     //   objc-receiver:
     //     expression
     ExprResult Receiver = ParseExpression();
@@ -2744,7 +2730,7 @@ Parser::ParseObjCEncodeExpression(SourceLocation AtLoc) {
 }
 
 ///     objc-protocol-expression
-///       \@protocol ( protocol-name )
+///       @protocol ( protocol-name )
 ExprResult
 Parser::ParseObjCProtocolExpression(SourceLocation AtLoc) {
   SourceLocation ProtoLoc = ConsumeToken();
@@ -2832,15 +2818,8 @@ ExprResult Parser::ParseObjCSelectorExpression(SourceLocation AtLoc) {
                                                    T.getCloseLocation()));
  }
 
-void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
-  // MCDecl might be null due to error in method or c-function  prototype, etc.
-  Decl *MCDecl = LM.D;
-  bool skip = MCDecl && 
-              ((parseMethod && !Actions.isObjCMethodDecl(MCDecl)) ||
-              (!parseMethod && Actions.isObjCMethodDecl(MCDecl)));
-  if (skip)
-    return;
-  
+Decl *Parser::ParseLexedObjCMethodDefs(LexedMethod &LM) {
+
   // Save the current token position.
   SourceLocation OrigLoc = Tok.getLocation();
 
@@ -2850,25 +2829,24 @@ void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
   LM.Toks.push_back(Tok);
   PP.EnterTokenStream(LM.Toks.data(), LM.Toks.size(), true, false);
   
+  // MDecl might be null due to error in method prototype, etc.
+  Decl *MDecl = LM.D;
   // Consume the previously pushed token.
   ConsumeAnyToken();
     
   assert(Tok.is(tok::l_brace) && "Inline objective-c method not starting with '{'");
   SourceLocation BraceLoc = Tok.getLocation();
-  // Enter a scope for the method or c-fucntion body.
+  // Enter a scope for the method body.
   ParseScope BodyScope(this,
-                       parseMethod
-                       ? Scope::ObjCMethodScope|Scope::FnScope|Scope::DeclScope
-                       : Scope::FnScope|Scope::DeclScope);
+                       Scope::ObjCMethodScope|Scope::FnScope|Scope::DeclScope);
     
-  // Tell the actions module that we have entered a method or c-function definition 
-  // with the specified Declarator for the method/function.
-  Actions.ActOnStartOfObjCMethodOrCFunctionDef(getCurScope(), MCDecl, parseMethod);
+  // Tell the actions module that we have entered a method definition with the
+  // specified Declarator for the method.
+  Actions.ActOnStartOfObjCMethodDef(getCurScope(), MDecl);
     
   if (SkipFunctionBodies && trySkippingFunctionBody()) {
     BodyScope.Exit();
-    (void)Actions.ActOnFinishFunctionBody(MCDecl, 0);
-    return;
+    return Actions.ActOnFinishFunctionBody(MDecl, 0);
   }
     
   StmtResult FnBody(ParseCompoundStatementBody());
@@ -2883,7 +2861,7 @@ void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
   // Leave the function body scope.
   BodyScope.Exit();
     
-  (void)Actions.ActOnFinishFunctionBody(MCDecl, FnBody.take());
+  MDecl = Actions.ActOnFinishFunctionBody(MDecl, FnBody.take());
 
   if (Tok.getLocation() != OrigLoc) {
     // Due to parsing error, we either went over the cached tokens or
@@ -2897,5 +2875,5 @@ void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
         ConsumeAnyToken();
   }
   
-  return;
+  return MDecl;
 }

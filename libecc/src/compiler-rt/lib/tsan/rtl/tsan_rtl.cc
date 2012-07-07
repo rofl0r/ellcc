@@ -12,14 +12,13 @@
 // Main file (entry points) for the TSan run-time.
 //===----------------------------------------------------------------------===//
 
-#include "sanitizer_common/sanitizer_atomic.h"
-#include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_placement_new.h"
 #include "tsan_defs.h"
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
 #include "tsan_interface.h"
+#include "tsan_atomic.h"
 #include "tsan_mman.h"
 #include "tsan_suppressions.h"
 
@@ -105,9 +104,9 @@ static void WriteMemoryProfile(char *buf, uptr buf_size, int num) {
   uptr nsync = 0;
   uptr syncmem = CTX()->synctab.GetMemoryConsumption(&nsync);
 
-  internal_snprintf(buf, buf_size, "%d: shadow=%zuMB"
-                                   " thread=%zuMB(total=%d/live=%d)"
-                                   " sync=%zuMB(cnt=%zu)\n",
+  SNPrintf(buf, buf_size, "%d: shadow=%zuMB"
+                          " thread=%zuMB(total=%d/live=%d)"
+                          " sync=%zuMB(cnt=%zu)\n",
     num,
     shadow >> 20,
     threadmem >> 20, nthread, nlivethread,
@@ -121,7 +120,7 @@ static void MemoryProfileThread(void *arg) {
     InternalScopedBuf<char> buf(4096);
     WriteMemoryProfile(buf.Ptr(), buf.Size(), i);
     internal_write(fd, buf.Ptr(), internal_strlen(buf.Ptr()));
-    SleepForSeconds(1);
+    internal_sleep_ms(1000);
   }
 }
 
@@ -129,7 +128,7 @@ static void InitializeMemoryProfile() {
   if (flags()->profile_memory == 0 || flags()->profile_memory[0] == 0)
     return;
   InternalScopedBuf<char> filename(4096);
-  internal_snprintf(filename.Ptr(), filename.Size(), "%s.%d",
+  SNPrintf(filename.Ptr(), filename.Size(), "%s.%d",
       flags()->profile_memory, GetPid());
   fd_t fd = internal_open(filename.Ptr(), true);
   if (fd == kInvalidFd) {
@@ -142,7 +141,7 @@ static void InitializeMemoryProfile() {
 static void MemoryFlushThread(void *arg) {
   ScopedInRtl in_rtl;
   for (int i = 0; ; i++) {
-    SleepForMillis(flags()->flush_memory_ms);
+    internal_sleep_ms(flags()->flush_memory_ms);
     FlushShadowMemory();
   }
 }
@@ -156,6 +155,7 @@ static void InitializeMemoryFlush() {
 }
 
 void Initialize(ThreadState *thr) {
+  MiniLibcStub();
   // Thread safe because done before all threads exist.
   static bool is_initialized = false;
   if (is_initialized)
@@ -219,14 +219,12 @@ int Finalize(ThreadState *thr) {
 }
 
 static void TraceSwitch(ThreadState *thr) {
-  thr->nomalloc++;
   ScopedInRtl in_rtl;
   Lock l(&thr->trace.mtx);
   unsigned trace = (thr->fast_state.epoch() / kTracePartSize) % kTraceParts;
   TraceHeader *hdr = &thr->trace.headers[trace];
   hdr->epoch0 = thr->fast_state.epoch();
   hdr->stack0.ObtainCurrent(thr, 0);
-  thr->nomalloc--;
 }
 
 extern "C" void __tsan_trace_switch() {

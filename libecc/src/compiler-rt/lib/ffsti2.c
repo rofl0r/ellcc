@@ -12,9 +12,9 @@
  * ===----------------------------------------------------------------------===
  */
 
-#include "int_lib.h"
-
 #if __x86_64
+
+#include "int_lib.h"
 
 /* Returns: the index of the least significant 1-bit in a, or
  * the value zero if a is zero. The least significant bit is index one.

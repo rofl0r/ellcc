@@ -82,12 +82,6 @@ public:
     uint64_t Val = Rand32();
     return Val | (uint64_t(Rand32()) << 32);
   }
-
-  /// Rand operator for STL algorithms.
-  ptrdiff_t operator()(ptrdiff_t y) {
-    return  Rand64() % y;
-  }
-
 private:
   unsigned Seed;
 };
@@ -605,13 +599,15 @@ struct CmpModifier: public Modifier {
   }
 };
 
-void FillFunction(Function *F, Random &R) {
+void FillFunction(Function *F) {
   // Create a legal entry block.
   BasicBlock *BB = BasicBlock::Create(F->getContext(), "BB", F);
   ReturnInst::Create(F->getContext(), BB);
 
   // Create the value table.
   Modifier::PieceTable PT;
+  // Pick an initial seed value
+  Random R(SeedCL);
 
   // Consider arguments as legal values.
   for (Function::arg_iterator it = F->arg_begin(), e = F->arg_end();
@@ -652,17 +648,15 @@ void FillFunction(Function *F, Random &R) {
   SM->ActN(5); // Throw in a few stores.
 }
 
-void IntroduceControlFlow(Function *F, Random &R) {
-  std::vector<Instruction*> BoolInst;
+void IntroduceControlFlow(Function *F) {
+  std::set<Instruction*> BoolInst;
   for (BasicBlock::iterator it = F->begin()->begin(),
        e = F->begin()->end(); it != e; ++it) {
     if (it->getType() == IntegerType::getInt1Ty(F->getContext()))
-      BoolInst.push_back(it);
+      BoolInst.insert(it);
   }
 
-  std::random_shuffle(BoolInst.begin(), BoolInst.end(), R);
-
-  for (std::vector<Instruction*>::iterator it = BoolInst.begin(),
+  for (std::set<Instruction*>::iterator it = BoolInst.begin(),
        e = BoolInst.end(); it != e; ++it) {
     Instruction *Instr = *it;
     BasicBlock *Curr = Instr->getParent();
@@ -684,13 +678,8 @@ int main(int argc, char **argv) {
 
   std::auto_ptr<Module> M(new Module("/tmp/autogen.bc", getGlobalContext()));
   Function *F = GenEmptyFunction(M.get());
-
-  // Pick an initial seed value
-  Random R(SeedCL);
-  // Generate lots of random instructions inside a single basic block.
-  FillFunction(F, R);
-  // Break the basic block into many loops.
-  IntroduceControlFlow(F, R);
+  FillFunction(F);
+  IntroduceControlFlow(F);
 
   // Figure out what stream we are supposed to write to...
   OwningPtr<tool_output_file> Out;

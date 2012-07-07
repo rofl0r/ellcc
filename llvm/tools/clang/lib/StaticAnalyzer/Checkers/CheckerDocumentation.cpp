@@ -37,8 +37,6 @@ class CheckerDocumentation : public Checker< check::PreStmt<DeclStmt>,
                                        check::PostStmt<CallExpr>,
                                        check::PreObjCMessage,
                                        check::PostObjCMessage,
-                                       check::PreCall,
-                                       check::PostCall,
                                        check::BranchCondition,
                                        check::Location,
                                        check::Bind,
@@ -74,42 +72,14 @@ public:
   /// which does not include the control flow statements such as IfStmt. The
   /// callback can be specialized to be called with any subclass of Stmt.
   ///
-  /// check::PostStmt<CallExpr>
+  /// check::PostStmt<DeclStmt>
   void checkPostStmt(const CallExpr *DS, CheckerContext &C) const;
 
-  /// \brief Pre-visit the Objective C message.
-  ///
-  /// This will be called before the analyzer core processes the method call.
-  /// This is called for any action which produces an Objective-C message send,
-  /// including explicit message syntax and property access. See the subclasses
-  /// of ObjCMethodCall for more details.
-  ///
-  /// check::PreObjCMessage
-  void checkPreObjCMessage(const ObjCMethodCall &M, CheckerContext &C) const {}
+  /// \brief Pre-visit the Objective C messages.
+  void checkPreObjCMessage(const ObjCMessage &Msg, CheckerContext &C) const {}
 
-  /// \brief Post-visit the Objective C message.
-  /// \sa checkPreObjCMessage()
-  ///
-  /// check::PostObjCMessage
-  void checkPostObjCMessage(const ObjCMethodCall &M, CheckerContext &C) const {}
-
-  /// \brief Pre-visit an abstract "call" event.
-  ///
-  /// This is used for checkers that want to check arguments or attributed
-  /// behavior for functions and methods no matter how they are being invoked.
-  ///
-  /// Note that this includes ALL cross-body invocations, so if you want to
-  /// limit your checks to, say, function calls, you can either test for that
-  /// or fall back to the explicit callback (i.e. check::PreStmt).
-  ///
-  /// check::PreCall
-  void checkPreCall(const CallEvent &Call, CheckerContext &C) const {}
-
-  /// \brief Post-visit an abstract "call" event.
-  /// \sa checkPreObjCMessage()
-  ///
-  /// check::PostCall
-  void checkPostCall(const CallEvent &Call, CheckerContext &C) const {}
+  /// \brief Post-visit the Objective C messages.
+  void checkPostObjCMessage(const ObjCMessage &Msg, CheckerContext &C) const {}
 
   /// \brief Pre-visit of the condition statement of a branch (such as IfStmt).
   void checkBranchCondition(const Stmt *Condition, CheckerContext &Ctx) const {}
@@ -124,7 +94,7 @@ public:
   ///
   /// check::Location
   void checkLocation(SVal Loc, bool IsLoad, const Stmt *S,
-                     CheckerContext &) const {}
+                     CheckerContext &C) const {}
 
   /// \brief Called on binding of a value to a location.
   ///
@@ -133,7 +103,7 @@ public:
   /// \param S   The bind is performed while processing the statement S.
   ///
   /// check::Bind
-  void checkBind(SVal Loc, SVal Val, const Stmt *S, CheckerContext &) const {}
+  void checkBind(SVal Loc, SVal Val, const Stmt *S, CheckerContext &C) const {}
 
 
   /// \brief Called whenever a symbol becomes dead.
@@ -217,26 +187,24 @@ public:
 
   bool wantsRegionChangeUpdate(ProgramStateRef St) const { return true; }
   
-  /// \brief Allows tracking regions which get invalidated.
-  ///
-  /// \param State The current program state.
-  /// \param Invalidated A set of all symbols potentially touched by the change.
+  /// check::RegionChanges
+  /// Allows tracking regions which get invalidated.
+  /// \param state The current program state.
+  /// \param invalidated A set of all symbols potentially touched by the change.
   /// \param ExplicitRegions The regions explicitly requested for invalidation.
   ///   For example, in the case of a function call, these would be arguments.
   /// \param Regions The transitive closure of accessible regions,
   ///   i.e. all regions that may have been touched by this change.
-  /// \param Call The call expression wrapper if the regions are invalidated
-  ///   by a call, 0 otherwise.
-  /// Note, in order to be notified, the checker should also implement the
+  /// \param The call expression wrapper if the regions are invalidated by a
+  ///   call, 0 otherwise.
+  /// Note, in order to be notified, the checker should also implement 
   /// wantsRegionChangeUpdate callback.
-  ///
-  /// check::RegionChanges
   ProgramStateRef 
     checkRegionChanges(ProgramStateRef State,
-                       const StoreManager::InvalidatedSymbols *Invalidated,
+                       const StoreManager::InvalidatedSymbols *,
                        ArrayRef<const MemRegion *> ExplicitRegions,
                        ArrayRef<const MemRegion *> Regions,
-                       const CallEvent *Call) const {
+                       const CallOrObjCMessage *Call) const {
     return State;
   }
 

@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines enumerations for expression traits intrinsics.
-///
+//
+//  This file defines enumerations for expression traits intrinsics.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_EXPRESSIONTRAITS_H

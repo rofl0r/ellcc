@@ -11,16 +11,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/Debug.h"
+#include "ClangDiagnosticsEmitter.h"
 #include "llvm/TableGen/Record.h"
-#include "llvm/TableGen/TableGenBackend.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/SmallString.h"
+#include <map>
 #include <algorithm>
 #include <functional>
-#include <map>
 #include <set>
 using namespace llvm;
 
@@ -163,11 +163,7 @@ static void groupDiagnostics(const std::vector<Record*> &Diags,
 // Warning Tables (.inc file) generation.
 //===----------------------------------------------------------------------===//
 
-/// ClangDiagsDefsEmitter - The top-level class emits .def files containing
-/// declarations of Clang diagnostics.
-namespace clang {
-void EmitClangDiagsDefs(RecordKeeper &Records, raw_ostream &OS,
-                        const std::string &Component) {
+void ClangDiagsDefsEmitter::run(raw_ostream &OS) {
   // Write the #if guard
   if (!Component.empty()) {
     std::string ComponentName = StringRef(Component).upper();
@@ -248,7 +244,6 @@ void EmitClangDiagsDefs(RecordKeeper &Records, raw_ostream &OS,
     OS << ")\n";
   }
 }
-} // end namespace clang
 
 //===----------------------------------------------------------------------===//
 // Warning Group Tables generation
@@ -263,8 +258,7 @@ static std::string getDiagCategoryEnum(llvm::StringRef name) {
   return enumName.str();
 }
 
-namespace clang {
-void EmitClangDiagGroups(RecordKeeper &Records, raw_ostream &OS) {
+void ClangDiagGroupsEmitter::run(raw_ostream &OS) {
   // Compute a mapping from a DiagGroup to all of its parents.
   DiagGroupParentMap DGParentMap(Records);
   
@@ -345,7 +339,6 @@ void EmitClangDiagGroups(RecordKeeper &Records, raw_ostream &OS) {
     OS << "CATEGORY(\"" << *I << "\", " << getDiagCategoryEnum(*I) << ")\n";
   OS << "#endif // GET_CATEGORY_TABLE\n\n";
 }
-} // end namespace clang
 
 //===----------------------------------------------------------------------===//
 // Diagnostic name index generation
@@ -373,8 +366,7 @@ struct RecordIndexElementSorter :
 
 } // end anonymous namespace.
 
-namespace clang {
-void EmitClangDiagsIndexName(RecordKeeper &Records, raw_ostream &OS) {
+void ClangDiagsIndexNameEmitter::run(raw_ostream &OS) {
   const std::vector<Record*> &Diags =
     Records.getAllDerivedDefinitions("Diagnostic");
   
@@ -393,4 +385,3 @@ void EmitClangDiagsIndexName(RecordKeeper &Records, raw_ostream &OS) {
     OS << "DIAG_NAME_INDEX(" << R.Name << ")\n";
   }
 }
-} // end namespace clang

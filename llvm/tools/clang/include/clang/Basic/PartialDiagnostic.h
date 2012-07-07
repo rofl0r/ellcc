@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Implements a partial diagnostic that can be emitted anwyhere
-/// in a DiagnosticBuilder stream.
-///
+//
+//  This file implements a partial diagnostic that can be emitted anwyhere
+//  in a DiagnosticBuilder stream.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_PARTIALDIAGNOSTIC_H
@@ -38,26 +37,25 @@ public:
     Storage() : NumDiagArgs(0), NumDiagRanges(0) { }
 
     enum {
-        /// \brief The maximum number of arguments we can hold. We
+        /// MaxArguments - The maximum number of arguments we can hold. We
         /// currently only support up to 10 arguments (%0-%9).
-        ///
         /// A single diagnostic with more than that almost certainly has to
         /// be simplified anyway.
         MaxArguments = PartialDiagnostic::MaxArguments
     };
 
-    /// \brief The number of entries in Arguments.
+    /// NumDiagArgs - This contains the number of entries in Arguments.
     unsigned char NumDiagArgs;
 
-    /// \brief This is the number of ranges in the DiagRanges array.
+    /// NumDiagRanges - This is the number of ranges in the DiagRanges array.
     unsigned char NumDiagRanges;
 
-    /// \brief Specifies for each argument whether it is in DiagArgumentsStr
-    /// or in DiagArguments.
+    /// DiagArgumentsKind - This is an array of ArgumentKind::ArgumentKind enum
+    /// values, with one for each argument.  This specifies whether the argument
+    /// is in DiagArgumentsStr or in DiagArguments.
     unsigned char DiagArgumentsKind[MaxArguments];
 
-    /// \brief The values for the various substitution positions.
-    ///
+    /// DiagArgumentsVal - The values for the various substitution positions.
     /// This is used when the argument is not an std::string. The specific value
     /// is mangled into an intptr_t and the interpretation depends on exactly
     /// what sort of argument kind it is.
@@ -67,13 +65,12 @@ public:
     /// string arguments.
     std::string DiagArgumentsStr[MaxArguments];
 
-    /// \brief The list of ranges added to this diagnostic.
-    ///
-    /// It currently only support 10 ranges, could easily be extended if needed.
+    /// DiagRanges - The list of ranges added to this diagnostic.  It currently
+    /// only support 10 ranges, could easily be extended if needed.
     CharSourceRange DiagRanges[10];
 
-    /// \brief If valid, provides a hint with some code to insert, remove, or
-    /// modify at a particular position.
+    /// FixItHints - If valid, provides a hint with some code
+    /// to insert, remove, or modify at a particular position.
     SmallVector<FixItHint, 6>  FixItHints;
   };
 
@@ -117,10 +114,10 @@ private:
   // in the sense that its bits can be safely memcpy'ed and destructed
   // in the new location.
 
-  /// \brief The diagnostic ID.
+  /// DiagID - The diagnostic ID.
   mutable unsigned DiagID;
 
-  /// \brief Storage for args and ranges.
+  /// DiagStorage - Storage for args and ranges.
   mutable Storage *DiagStorage;
 
   /// \brief Allocator used to allocate storage for this diagnostic.

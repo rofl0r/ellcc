@@ -36,7 +36,7 @@
 
 @synthesize PROP=PROP;
 - (void)setPROP:(int)value {
-    PROP = value;        // OK
+    PROP = PROP;        // OK
 }
 
 @end

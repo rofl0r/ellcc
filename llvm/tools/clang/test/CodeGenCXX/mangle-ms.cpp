@@ -42,9 +42,6 @@ public:
 
   foo(char *q){}
 //CHECK: @"\01??0foo@@QAE@PAD@Z"
-
-  static foo* static_method() { return 0; }
-
 }f,s1(1),s2((char*)0);
 
 typedef foo (foo2);
@@ -65,17 +62,8 @@ enum quux {
   qthree
 };
 
-foo bar() { return foo(); }
-//CHECK: @"\01?bar@@YA?AVfoo@@XZ"
-
-int foo::operator+(int a) {
-//CHECK: @"\01??Hfoo@@QAEHH@Z"
-
-  foo::static_method();
-//CHECK: @"\01?static_method@foo@@SAPAV1@XZ"
-  bar();
-  return a;
-}
+int foo::operator+(int a) {return a;}
+// CHECK: @"\01??Hfoo@@QAEHH@Z"
 
 const short foo::d = 0;
 volatile long foo::e;
@@ -144,12 +132,3 @@ typedef double RGB[3];
 RGB color1;
 extern const RGB color2 = {};
 extern RGB const ((color3)[5]) = {};
-
-// PR12603
-enum E {};
-// CHECK: "\01?fooE@@YA?AW4E@@XZ"
-E fooE() { return E(); }
-
-class X {};
-// CHECK: "\01?fooX@@YA?AVX@@XZ"
-X fooX() { return X(); }

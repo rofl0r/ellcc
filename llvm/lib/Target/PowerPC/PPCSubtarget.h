@@ -41,8 +41,6 @@ namespace PPC {
     DIR_750, 
     DIR_970, 
     DIR_A2,
-    DIR_PWR6,
-    DIR_PWR7,
     DIR_64  
   };
 }
@@ -63,14 +61,13 @@ protected:
   unsigned DarwinDirective;
 
   /// Used by the ISel to turn in optimizations for POWER4-derived architectures
-  bool HasMFOCRF;
+  bool IsGigaProcessor;
   bool Has64BitSupport;
   bool Use64BitRegs;
   bool IsPPC64;
   bool HasAltivec;
   bool HasFSQRT;
   bool HasSTFIWX;
-  bool HasISEL;
   bool IsBookE;
   bool HasLazyResolverStubs;
   bool IsJITCodeModel;
@@ -141,8 +138,7 @@ public:
   bool hasFSQRT() const { return HasFSQRT; }
   bool hasSTFIWX() const { return HasSTFIWX; }
   bool hasAltivec() const { return HasAltivec; }
-  bool hasMFOCRF() const { return HasMFOCRF; }
-  bool hasISEL() const { return HasISEL; }
+  bool isGigaProcessor() const { return IsGigaProcessor; }
   bool isBookE() const { return IsBookE; }
 
   const Triple &getTargetTriple() const { return TargetTriple; }

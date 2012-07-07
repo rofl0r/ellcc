@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "ScheduleDAGSDNodes.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/Function.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Assembly/Writer.h"
@@ -20,6 +19,7 @@
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"

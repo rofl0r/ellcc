@@ -149,8 +149,8 @@ public:
   bool shouldWalkTypesOfTypeLocs() const { return true; }
 
   /// \brief Return whether this visitor should recurse into implicit
-  /// code, e.g., implicit constructors and destructors.
-  bool shouldVisitImplicitCode() const { return false; }
+  /// declarations, e.g., implicit constructors and destructors.
+  bool shouldVisitImplicitDeclarations() const { return false; }
 
   /// \brief Return whether \param S should be traversed using data recursion
   /// to avoid a stack overflow with extreme cases.
@@ -607,7 +607,7 @@ bool RecursiveASTVisitor<Derived>::TraverseDecl(Decl *D) {
 
   // As a syntax visitor, by default we want to ignore declarations for
   // implicit declarations (ones not typed explicitly by the user).
-  if (!getDerived().shouldVisitImplicitCode() && D->isImplicit())
+  if (!getDerived().shouldVisitImplicitDeclarations() && D->isImplicit())
     return true;
 
   switch (D->getKind()) {
@@ -1283,13 +1283,7 @@ DEF_TRAVERSE_DECL(FriendTemplateDecl, {
   })
 
 DEF_TRAVERSE_DECL(ClassScopeFunctionSpecializationDecl, {
-    TRY_TO(TraverseDecl(D->getSpecialization()));
-
-    if (D->hasExplicitTemplateArgs()) {
-      const TemplateArgumentListInfo& args = D->templateArgs();
-      TRY_TO(TraverseTemplateArgumentLocsHelper(
-          args.getArgumentArray(), args.size()));
-    }
+  TRY_TO(TraverseDecl(D->getSpecialization()));
  })
 
 DEF_TRAVERSE_DECL(LinkageSpecDecl, { })
@@ -1761,8 +1755,7 @@ template<typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseVarHelper(VarDecl *D) {
   TRY_TO(TraverseDeclaratorHelper(D));
   // Default params are taken care of when we traverse the ParmVarDecl.
-  if (!isa<ParmVarDecl>(D) &&
-      (!D->isCXXForRangeDecl() || getDerived().shouldVisitImplicitCode()))
+  if (!isa<ParmVarDecl>(D))
     TRY_TO(TraverseStmt(D->getInit()));
   return true;
 }
@@ -1833,11 +1826,6 @@ DEF_TRAVERSE_STMT(AsmStmt, {
     // children() iterates over inputExpr and outputExpr.
   })
 
-DEF_TRAVERSE_STMT(MSAsmStmt, { 
-    // FIXME: MS Asm doesn't currently parse Constraints, Clobbers, etc.  Once
-    // added this needs to be implemented.
-  })
-
 DEF_TRAVERSE_STMT(CXXCatchStmt, {
     TRY_TO(TraverseDecl(S->getExceptionDecl()));
     // children() iterates over the handler block.
@@ -1880,15 +1868,7 @@ DEF_TRAVERSE_STMT(ObjCAtThrowStmt, { })
 DEF_TRAVERSE_STMT(ObjCAtTryStmt, { })
 DEF_TRAVERSE_STMT(ObjCForCollectionStmt, { })
 DEF_TRAVERSE_STMT(ObjCAutoreleasePoolStmt, { })
-DEF_TRAVERSE_STMT(CXXForRangeStmt, {
-  if (!getDerived().shouldVisitImplicitCode()) {
-    TRY_TO(TraverseStmt(S->getLoopVarStmt()));
-    TRY_TO(TraverseStmt(S->getRangeInit()));
-    TRY_TO(TraverseStmt(S->getBody()));
-    // Visit everything else only if shouldVisitImplicitCode().
-    return true;
-  }
-})
+DEF_TRAVERSE_STMT(CXXForRangeStmt, { })
 DEF_TRAVERSE_STMT(MSDependentExistsStmt, {
     TRY_TO(TraverseNestedNameSpecifierLoc(S->getQualifierLoc()));
     TRY_TO(TraverseDeclarationNameInfo(S->getNameInfo()));

@@ -116,7 +116,6 @@ public:
 
   BVPair &getValueVectors(const CFGBlock *block, bool shouldLazyCreate);
 
-  void setAllScratchValues(Value V);
   void mergeIntoScratch(ValueVector const &source, bool isFirst);
   bool updateValueVectorWithScratch(const CFGBlock *block);
   bool updateValueVectors(const CFGBlock *block, const BVPair &newVals);
@@ -240,11 +239,6 @@ static void printVector(const char *name, ValueVector const &bv) {
   llvm::errs() << "\n";
 }
 #endif
-
-void CFGBlockValues::setAllScratchValues(Value V) {
-  for (unsigned I = 0, E = scratch.size(); I != E; ++I)
-    scratch[I] = V;
-}
 
 void CFGBlockValues::mergeIntoScratch(ValueVector const &source,
                                       bool isFirst) {
@@ -380,7 +374,6 @@ public:
   void reportUse(const Expr *ex, const VarDecl *vd);
 
   void VisitBlockExpr(BlockExpr *be);
-  void VisitCallExpr(CallExpr *ce);
   void VisitDeclStmt(DeclStmt *ds);
   void VisitDeclRefExpr(DeclRefExpr *dr);
   void VisitUnaryOperator(UnaryOperator *uo);
@@ -583,17 +576,6 @@ void TransferFunctions::VisitBlockExpr(BlockExpr *be) {
   }
 }
 
-void TransferFunctions::VisitCallExpr(CallExpr *ce) {
-  // After a call to a function like setjmp or vfork, any variable which is
-  // initialized anywhere within this function may now be initialized. For now,
-  // just assume such a call initializes all variables.
-  // FIXME: Only mark variables as initialized if they have an initializer which
-  // is reachable from here.
-  Decl *Callee = ce->getCalleeDecl();
-  if (Callee && Callee->hasAttr<ReturnsTwiceAttr>())
-    vals.setAllScratchValues(Initialized);
-}
-
 void TransferFunctions::VisitDeclRefExpr(DeclRefExpr *dr) {
   // Record the last DeclRefExpr seen.  This is an lvalue computation.
   // We use this value to later detect if a variable "escapes" the analysis.
@@ -643,18 +625,6 @@ void TransferFunctions::VisitDeclStmt(DeclStmt *ds) {
           // the use of the uninitialized value (which visiting the
           // initializer).
           vals[vd] = Initialized;
-        } else {
-          // No initializer: the variable is now uninitialized. This matters
-          // for cases like:
-          //   while (...) {
-          //     int n;
-          //     use(n);
-          //     n = 0;
-          //   }
-          // FIXME: Mark the variable as uninitialized whenever its scope is
-          // left, since its scope could be re-entered by a jump over the
-          // declaration.
-          vals[vd] = Uninitialized;
         }
       }
     }

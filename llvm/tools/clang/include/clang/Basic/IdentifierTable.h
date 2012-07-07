@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the clang::IdentifierInfo, clang::IdentifierTable, and
-/// clang::Selector interfaces.
-///
+//
+// This file defines the IdentifierInfo, IdentifierTable, and Selector
+// interfaces.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_BASIC_IDENTIFIERTABLE_H
@@ -38,12 +37,12 @@ namespace clang {
   class MultiKeywordSelector; // private class used by Selector
   class DeclarationName;      // AST class that stores declaration names
 
-  /// \brief A simple pair of identifier info and location.
+  /// IdentifierLocPair - A simple pair of identifier info and location.
   typedef std::pair<IdentifierInfo*, SourceLocation> IdentifierLocPair;
 
 
-/// One of these records is kept for each identifier that
-/// is lexed.  This contains information about whether the token was \#define'd,
+/// IdentifierInfo - One of these records is kept for each identifier that
+/// is lexed.  This contains information about whether the token was #define'd,
 /// is a language keyword, or if it is a front-end token of some sort (e.g. a
 /// variable or function name).  The preprocessor keeps this information in a
 /// set, and all tok::identifier tokens have a pointer to one of these.
@@ -68,7 +67,7 @@ class IdentifierInfo {
   bool OutOfDate              : 1; // True if there may be additional
                                    // information about this identifier
                                    // stored externally.
-  bool IsModulesImport        : 1; // True if this is the 'import' contextual
+  bool IsModulesImport               : 1; // True if this is the 'import' contextual
                                    // keyword.
   // 1 bit left in 32-bit word.
   
@@ -84,16 +83,15 @@ public:
   IdentifierInfo();
 
 
-  /// \brief Return true if this is the identifier for the specified string.
-  ///
+  /// isStr - Return true if this is the identifier for the specified string.
   /// This is intended to be used for string literals only: II->isStr("foo").
   template <std::size_t StrLen>
   bool isStr(const char (&Str)[StrLen]) const {
     return getLength() == StrLen-1 && !memcmp(getNameStart(), Str, StrLen-1);
   }
 
-  /// \brief Return the beginning of the actual null-terminated string for this
-  /// identifier.
+  /// getNameStart - Return the beginning of the actual string for this
+  /// identifier.  The returned string is properly null terminated.
   ///
   const char *getNameStart() const {
     if (Entry) return Entry->getKeyData();
@@ -106,7 +104,7 @@ public:
     return ((const actualtype*) this)->second;
   }
 
-  /// \brief Efficiently return the length of this identifier info.
+  /// getLength - Efficiently return the length of this identifier info.
   ///
   unsigned getLength() const {
     if (Entry) return Entry->getKeyLength();
@@ -120,12 +118,13 @@ public:
     return (((unsigned) p[0]) | (((unsigned) p[1]) << 8)) - 1;
   }
 
-  /// \brief Return the actual identifier string.
+  /// getName - Return the actual identifier string.
   StringRef getName() const {
     return StringRef(getNameStart(), getLength());
   }
 
-  /// \brief Return true if this identifier is \#defined to some other value.
+  /// hasMacroDefinition - Return true if this identifier is #defined to some
+  /// other value.
   bool hasMacroDefinition() const {
     return HasMacro;
   }
@@ -159,14 +158,13 @@ public:
     RevertedTokenID = true;
   }
 
-  /// \brief Return the preprocessor keyword ID for this identifier.
-  ///
+  /// getPPKeywordID - Return the preprocessor keyword ID for this identifier.
   /// For example, "define" will return tok::pp_define.
   tok::PPKeywordKind getPPKeywordID() const;
 
-  /// \brief Return the Objective-C keyword ID for the this identifier.
-  ///
-  /// For example, 'class' will return tok::objc_class if ObjC is enabled.
+  /// getObjCKeywordID - Return the Objective-C keyword ID for the this
+  /// identifier.  For example, 'class' will return tok::objc_class if ObjC is
+  /// enabled.
   tok::ObjCKeywordKind getObjCKeywordID() const {
     if (ObjCOrBuiltinID < tok::NUM_OBJC_KEYWORDS)
       return tok::ObjCKeywordKind(ObjCOrBuiltinID);
@@ -402,11 +400,10 @@ public:
   virtual IdentifierInfo *GetIdentifier(unsigned ID) = 0;
 };
 
-/// \brief Implements an efficient mapping from strings to IdentifierInfo nodes.
-///
-/// This has no other purpose, but this is an extremely performance-critical
-/// piece of the code, as each occurrence of every identifier goes through
-/// here when lexed.
+/// IdentifierTable - This table implements an efficient mapping from strings to
+/// IdentifierInfo nodes.  It has no other purpose, but this is an
+/// extremely performance-critical piece of the code, as each occurrence of
+/// every identifier goes through here when lexed.
 class IdentifierTable {
   // Shark shows that using MallocAllocator is *much* slower than using this
   // BumpPtrAllocator!
@@ -416,8 +413,8 @@ class IdentifierTable {
   IdentifierInfoLookup* ExternalLookup;
 
 public:
-  /// \brief Create the identifier table, populating it with info about the
-  /// language keywords for the language specified by \p LangOpts.
+  /// IdentifierTable ctor - Create the identifier table, populating it with
+  /// info about the language keywords for the language specified by LangOpts.
   IdentifierTable(const LangOptions &LangOpts,
                   IdentifierInfoLookup* externalLookup = 0);
 
@@ -435,8 +432,8 @@ public:
     return HashTable.getAllocator();
   }
 
-  /// \brief Return the identifier token info for the specified named
-  /// identifier.
+  /// get - Return the identifier token info for the specified named identifier.
+  ///
   IdentifierInfo &get(StringRef Name) {
     llvm::StringMapEntry<IdentifierInfo*> &Entry =
       HashTable.GetOrCreateValue(Name);
@@ -510,16 +507,15 @@ public:
   iterator end() const   { return HashTable.end(); }
   unsigned size() const { return HashTable.size(); }
 
-  /// \brief Print some statistics to stderr that indicate how well the
+  /// PrintStats - Print some statistics to stderr that indicate how well the
   /// hashing is doing.
   void PrintStats() const;
 
   void AddKeywords(const LangOptions &LangOpts);
 };
 
-/// \brief A family of Objective-C methods. 
-///
-/// These families have no inherent meaning in the language, but are
+/// ObjCMethodFamily - A family of Objective-C methods.  These
+/// families have no inherent meaning in the language, but are
 /// nonetheless central enough in the existing implementations to
 /// merit direct AST support.  While, in theory, arbitrary methods can
 /// be considered to form families, we focus here on the methods
@@ -566,13 +562,11 @@ enum ObjCMethodFamily {
 /// InvalidObjCMethodFamily.
 enum { ObjCMethodFamilyBitWidth = 4 };
 
-/// \brief An invalid value of ObjCMethodFamily.
+/// An invalid value of ObjCMethodFamily.
 enum { InvalidObjCMethodFamily = (1 << ObjCMethodFamilyBitWidth) - 1 };
 
-/// \brief Smart pointer class that efficiently represents Objective-C method
-/// names.
-///
-/// This class will either point to an IdentifierInfo or a
+/// Selector - This smart pointer class efficiently represents Objective-C
+/// method names. This class will either point to an IdentifierInfo or a
 /// MultiKeywordSelector (which is private). This enables us to optimize
 /// selectors that take no arguments and selectors that take 1 argument, which
 /// accounts for 78% of all selectors in Cocoa.h.
@@ -673,12 +667,12 @@ public:
   /// name was supplied.
   StringRef getNameForSlot(unsigned argIndex) const;
   
-  /// \brief Derive the full selector name (e.g. "foo:bar:") and return
+  /// getAsString - Derive the full selector name (e.g. "foo:bar:") and return
   /// it as an std::string.
   // FIXME: Add a print method that uses a raw_ostream.
   std::string getAsString() const;
 
-  /// \brief Derive the conventional family of this method.
+  /// getMethodFamily - Derive the conventional family of this method.
   ObjCMethodFamily getMethodFamily() const {
     return getMethodFamilyImpl(*this);
   }
@@ -691,7 +685,7 @@ public:
   }
 };
 
-/// \brief This table allows us to fully hide how we implement
+/// SelectorTable - This table allows us to fully hide how we implement
 /// multi-keyword caching.
 class SelectorTable {
   void *Impl;  // Actually a SelectorTableImpl
@@ -701,10 +695,9 @@ public:
   SelectorTable();
   ~SelectorTable();
 
-  /// \brief Can create any sort of selector.
-  ///
-  /// \p NumArgs indicates whether this is a no argument selector "foo", a
-  /// single argument selector "foo:" or multi-argument "foo:bar:".
+  /// getSelector - This can create any sort of selector.  NumArgs indicates
+  /// whether this is a no argument selector "foo", a single argument selector
+  /// "foo:" or multi-argument "foo:bar:".
   Selector getSelector(unsigned NumArgs, IdentifierInfo **IIV);
 
   Selector getUnarySelector(IdentifierInfo *ID) {
@@ -714,12 +707,11 @@ public:
     return Selector(ID, 0);
   }
 
-  /// \brief Return the total amount of memory allocated for managing selectors.
+  /// Return the total amount of memory allocated for managing selectors.
   size_t getTotalMemory() const;
 
-  /// \brief Return the setter name for the given identifier.
-  ///
-  /// This is "set" + \p Name where the initial character of \p Name
+  /// constructSetterName - Return the setter name for the given
+  /// identifier, i.e. "set" + Name where the initial character of Name
   /// has been capitalized.
   static Selector constructSetterName(IdentifierTable &Idents,
                                       SelectorTable &SelTable,

@@ -180,10 +180,6 @@ void Sema::Initialize() {
     if (IdResolver.begin(Protocol) == IdResolver.end())
       PushOnScopeChains(Context.getObjCProtocolDecl(), TUScope);
   }
-
-  DeclarationName BuiltinVaList = &Context.Idents.get("__builtin_va_list");
-  if (IdResolver.begin(BuiltinVaList) == IdResolver.end())
-    PushOnScopeChains(Context.getBuiltinVaListDecl(), TUScope);
 }
 
 Sema::~Sema() {
@@ -448,8 +444,6 @@ static bool MethodsAndNestedClassesComplete(const CXXRecordDecl *RD,
        I != E && Complete; ++I) {
     if (const CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(*I))
       Complete = M->isDefined() || (M->isPure() && !isa<CXXDestructorDecl>(M));
-    else if (const FunctionTemplateDecl *F = dyn_cast<FunctionTemplateDecl>(*I))
-      Complete = F->getTemplatedDecl()->isDefined();
     else if (const CXXRecordDecl *R = dyn_cast<CXXRecordDecl>(*I)) {
       if (R->isInjectedClassName())
         continue;
@@ -682,17 +676,9 @@ void Sema::ActOnEndOfTranslationUnit() {
           if (isa<CXXMethodDecl>(DiagD))
             Diag(DiagD->getLocation(), diag::warn_unneeded_member_function)
                   << DiagD->getDeclName();
-          else {
-            if (FD->getStorageClassAsWritten() == SC_Static &&
-                !FD->isInlineSpecified() &&
-                !SourceMgr.isFromMainFile(
-                   SourceMgr.getExpansionLoc(FD->getLocation())))
-              Diag(DiagD->getLocation(), diag::warn_unneeded_static_internal_decl)
-                << DiagD->getDeclName();
-            else
-              Diag(DiagD->getLocation(), diag::warn_unneeded_internal_decl)
-                   << /*function*/0 << DiagD->getDeclName();
-          }
+          else
+            Diag(DiagD->getLocation(), diag::warn_unneeded_internal_decl)
+                  << /*function*/0 << DiagD->getDeclName();
         } else {
           Diag(DiagD->getLocation(),
                isa<CXXMethodDecl>(DiagD) ? diag::warn_unused_member_function
@@ -1020,29 +1006,6 @@ LambdaScopeInfo *Sema::getCurLambda() {
     return 0;
   
   return dyn_cast<LambdaScopeInfo>(FunctionScopes.back());  
-}
-
-void Sema::ActOnComment(SourceRange Comment) {
-  RawComment RC(SourceMgr, Comment);
-  if (RC.isAlmostTrailingComment()) {
-    SourceRange MagicMarkerRange(Comment.getBegin(),
-                                 Comment.getBegin().getLocWithOffset(3));
-    StringRef MagicMarkerText;
-    switch (RC.getKind()) {
-    case RawComment::RCK_OrdinaryBCPL:
-      MagicMarkerText = "///<";
-      break;
-    case RawComment::RCK_OrdinaryC:
-      MagicMarkerText = "/**<";
-      break;
-    default:
-      llvm_unreachable("if this is an almost Doxygen comment, "
-                       "it should be ordinary");
-    }
-    Diag(Comment.getBegin(), diag::warn_not_a_doxygen_trailing_member_comment) <<
-      FixItHint::CreateReplacement(MagicMarkerRange, MagicMarkerText);
-  }
-  Context.addComment(RC);
 }
 
 // Pin this vtable to this file.

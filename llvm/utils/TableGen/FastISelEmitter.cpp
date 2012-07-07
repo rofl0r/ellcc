@@ -17,31 +17,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CodeGenDAGPatterns.h"
+#include "FastISelEmitter.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/TableGen/Error.h"
-#include "llvm/TableGen/Record.h"
-#include "llvm/TableGen/TableGenBackend.h"
 using namespace llvm;
 
+namespace {
 
 /// InstructionMemo - This class holds additional information about an
 /// instruction needed to emit code for it.
 ///
-namespace {
 struct InstructionMemo {
   std::string Name;
   const CodeGenRegisterClass *RC;
   std::string SubRegNo;
   std::vector<std::string>* PhysRegs;
 };
-} // End anonymous namespace
-
+  
 /// ImmPredicateSet - This uniques predicates (represented as a string) and
 /// gives them unique (small) integer ID's that start at 0.
-namespace {
 class ImmPredicateSet {
   DenseMap<TreePattern *, unsigned> ImmIDs;
   std::vector<TreePredicateFn> PredsByName;
@@ -66,12 +63,10 @@ public:
   iterator end() const { return PredsByName.end(); }
   
 };
-} // End anonymous namespace
 
 /// OperandsSignature - This class holds a description of a list of operand
 /// types. It has utility methods for emitting text based on the operands.
 ///
-namespace {
 struct OperandsSignature {
   class OpKind {
     enum { OK_Reg, OK_FP, OK_Imm, OK_Invalid = -1 };
@@ -357,9 +352,7 @@ struct OperandsSignature {
       Operands[i].printManglingSuffix(OS, ImmPredicates, StripImmCodes);
   }
 };
-} // End anonymous namespace
 
-namespace {
 class FastISelMap {
   typedef std::map<std::string, InstructionMemo> PredMap;
   typedef std::map<MVT::SimpleValueType, PredMap> RetPredMap;
@@ -382,7 +375,8 @@ public:
   void printImmediatePredicates(raw_ostream &OS);
   void printFunctionDefinitions(raw_ostream &OS);
 };
-} // End anonymous namespace
+
+}
 
 static std::string getOpcodeName(Record *Op, CodeGenDAGPatterns &CGP) {
   return CGP.getSDNodeInfo(Op).getEnumName();
@@ -856,17 +850,15 @@ void FastISelMap::printFunctionDefinitions(raw_ostream &OS) {
   // TODO: SignaturesWithConstantForms should be empty here.
 }
 
-namespace llvm {
-
-void EmitFastISel(RecordKeeper &RK, raw_ostream &OS) {
-  CodeGenDAGPatterns CGP(RK);
+void FastISelEmitter::run(raw_ostream &OS) {
   const CodeGenTarget &Target = CGP.getTargetInfo();
-  emitSourceFileHeader("\"Fast\" Instruction Selector for the " +
-                       Target.getName() + " target", OS);
 
   // Determine the target's namespace name.
   std::string InstNS = Target.getInstNamespace() + "::";
   assert(InstNS.size() > 2 && "Can't determine target-specific namespace!");
+
+  EmitSourceFileHeader("\"Fast\" Instruction Selector for the " +
+                       Target.getName() + " target", OS);
 
   FastISelMap F(InstNS);
   F.collectPatterns(CGP);
@@ -874,4 +866,7 @@ void EmitFastISel(RecordKeeper &RK, raw_ostream &OS) {
   F.printFunctionDefinitions(OS);
 }
 
-} // End llvm namespace
+FastISelEmitter::FastISelEmitter(RecordKeeper &R)
+  : CGP(R) {
+}
+

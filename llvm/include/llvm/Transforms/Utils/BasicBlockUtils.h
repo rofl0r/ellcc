@@ -202,6 +202,10 @@ void SplitLandingPadPredecessors(BasicBlock *OrigBB,ArrayRef<BasicBlock*> Preds,
 ReturnInst *FoldReturnIntoUncondBranch(ReturnInst *RI, BasicBlock *BB,
                                        BasicBlock *Pred);
 
+/// GetFirstDebugLocInBasicBlock - Return first valid DebugLoc entry in a
+/// given basic block.
+DebugLoc GetFirstDebugLocInBasicBlock(const BasicBlock *BB);
+
 } // End llvm namespace
 
 #endif

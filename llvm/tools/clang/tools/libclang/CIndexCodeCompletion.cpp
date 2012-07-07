@@ -227,17 +227,6 @@ clang_getCompletionParent(CXCompletionString completion_string,
     *kind = CCStr->getParentContextKind();
   return createCXString(CCStr->getParentContextName(), /*DupString=*/false);
 }
-
-CXString
-clang_getCompletionBriefComment(CXCompletionString completion_string) {
-  CodeCompletionString *CCStr = (CodeCompletionString *)completion_string;
-
-  if (!CCStr)
-    return createCXString((const char *) NULL);
-
-  return createCXString(CCStr->getBriefComment(), /*DupString=*/false);
-}
-
   
 /// \brief The CXCodeCompleteResults structure we allocate internally;
 /// the client only sees the initial CXCodeCompleteResults structure.
@@ -520,10 +509,9 @@ namespace {
     SmallVector<CXCompletionResult, 16> StoredResults;
     CXTranslationUnit *TU;
   public:
-    CaptureCompletionResults(const CodeCompleteOptions &Opts,
-                             AllocatedCXCodeCompleteResults &Results,
+    CaptureCompletionResults(AllocatedCXCodeCompleteResults &Results,
                              CXTranslationUnit *TranslationUnit)
-      : CodeCompleteConsumer(Opts, false), 
+      : CodeCompleteConsumer(true, false, true, false), 
         AllocatedResults(Results), CCTUInfo(Results.CodeCompletionAllocator),
         TU(TranslationUnit) { }
     ~CaptureCompletionResults() { Finish(); }
@@ -536,8 +524,7 @@ namespace {
       for (unsigned I = 0; I != NumResults; ++I) {
         CodeCompletionString *StoredCompletion        
           = Results[I].CreateCodeCompletionString(S, getAllocator(),
-                                                  getCodeCompletionTUInfo(),
-                                                  includeBriefComments());
+                                                  getCodeCompletionTUInfo());
         
         CXCompletionResult R;
         R.CursorKind = Results[I].CursorKind;
@@ -671,7 +658,6 @@ void clang_codeCompleteAt_Impl(void *UserData) {
   struct CXUnsavedFile *unsaved_files = CCAI->unsaved_files;
   unsigned num_unsaved_files = CCAI->num_unsaved_files;
   unsigned options = CCAI->options;
-  bool IncludeBriefComments = options & CXCodeComplete_IncludeBriefComments;
   CCAI->result = 0;
 
 #ifdef UDP_CODE_COMPLETION_LOGGER
@@ -713,16 +699,13 @@ void clang_codeCompleteAt_Impl(void *UserData) {
   Results->NumResults = 0;
   
   // Create a code-completion consumer to capture the results.
-  CodeCompleteOptions Opts;
-  Opts.IncludeBriefComments = IncludeBriefComments;
-  CaptureCompletionResults Capture(Opts, *Results, &TU);
+  CaptureCompletionResults Capture(*Results, &TU);
 
   // Perform completion.
   AST->CodeComplete(complete_filename, complete_line, complete_column,
                     RemappedFiles.data(), RemappedFiles.size(), 
                     (options & CXCodeComplete_IncludeMacros),
                     (options & CXCodeComplete_IncludeCodePatterns),
-                    IncludeBriefComments,
                     Capture,
                     *Results->Diag, Results->LangOpts, *Results->SourceMgr,
                     *Results->FileMgr, Results->Diagnostics,

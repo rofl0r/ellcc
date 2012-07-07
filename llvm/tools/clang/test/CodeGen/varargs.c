@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -emit-llvm -o - %s | FileCheck %s
+// RUN: %clang_cc1 -emit-llvm -o - %s
 
 
 // PR6433 - Don't crash on va_arg(typedef).
@@ -9,9 +9,3 @@ void focus_changed_cb () {
     mfloat = __builtin_va_arg((pa), gdouble);
 }
 
-void vararg(int, ...);
-void function_as_vararg() {
-  // CHECK: define {{.*}}function_as_vararg
-  // CHECK-NOT: llvm.trap
-  vararg(0, focus_changed_cb);
-}

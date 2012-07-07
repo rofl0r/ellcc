@@ -338,9 +338,6 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     Options.NoFramePointerElimNonLeaf = true;
   }
 
-  if (CodeGenOpts.UseInitArray)
-    Options.UseInitArray = true;
-
   // Set float ABI type.
   if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
     Options.FloatABIType = llvm::FloatABI::Soft;

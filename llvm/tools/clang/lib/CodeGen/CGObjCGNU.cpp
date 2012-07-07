@@ -292,8 +292,8 @@ private:
 protected:
   /// Function used for throwing Objective-C exceptions.
   LazyRuntimeFunction ExceptionThrowFn;
-  /// Function used for rethrowing exceptions, used at the end of \@finally or
-  /// \@synchronize blocks.
+  /// Function used for rethrowing exceptions, used at the end of @finally or
+  /// @synchronize blocks.
   LazyRuntimeFunction ExceptionReThrowFn;
   /// Function called when entering a catch function.  This is required for
   /// differentiating Objective-C exceptions and foreign exceptions.
@@ -301,9 +301,9 @@ protected:
   /// Function called when exiting from a catch block.  Used to do exception
   /// cleanup.
   LazyRuntimeFunction ExitCatchFn;
-  /// Function called when entering an \@synchronize block.  Acquires the lock.
+  /// Function called when entering an @synchronize block.  Acquires the lock.
   LazyRuntimeFunction SyncEnterFn;
-  /// Function called when exiting an \@synchronize block.  Releases the lock.
+  /// Function called when exiting an @synchronize block.  Releases the lock.
   LazyRuntimeFunction SyncExitFn;
 
 private:
@@ -350,7 +350,7 @@ private:
       ArrayRef<Selector> MethodSels,
       ArrayRef<llvm::Constant *> MethodTypes,
       bool isClassMethodList);
-  /// Emits an empty protocol.  This is used for \@protocol() where no protocol
+  /// Emits an empty protocol.  This is used for @protocol() where no protocol
   /// is found.  The runtime will (hopefully) fix up the pointer to refer to the
   /// real protocol.
   llvm::Constant *GenerateEmptyProtocol(const std::string &ProtocolName);
@@ -889,7 +889,7 @@ llvm::Constant *CGObjCGNU::GetEHType(QualType T) {
         // foreign exceptions.  With the new ABI, we use __objc_id_typeinfo as
         // a pointer indicating object catchalls, and NULL to indicate real
         // catchalls
-        if (CGM.getLangOpts().ObjCRuntime.isNonFragile()) {
+        if (CGM.getLangOpts().ObjCNonFragileABI) {
           return MakeConstantString("@id");
         } else {
           return 0;
@@ -1984,7 +1984,7 @@ void CGObjCGNU::GenerateClass(const ObjCImplementationDecl *OID) {
     Context.getASTObjCInterfaceLayout(SuperClassDecl).getSize().getQuantity();
   // For non-fragile ivars, set the instance size to 0 - {the size of just this
   // class}.  The runtime will then set this to the correct value on load.
-  if (CGM.getContext().getLangOpts().ObjCRuntime.isNonFragile()) {
+  if (CGM.getContext().getLangOpts().ObjCNonFragileABI) {
     instanceSize = 0 - (instanceSize - superInstanceSize);
   }
 
@@ -1999,7 +1999,7 @@ void CGObjCGNU::GenerateClass(const ObjCImplementationDecl *OID) {
       // Get the offset
       uint64_t BaseOffset = ComputeIvarBaseOffset(CGM, OID, IVD);
       uint64_t Offset = BaseOffset;
-      if (CGM.getContext().getLangOpts().ObjCRuntime.isNonFragile()) {
+      if (CGM.getContext().getLangOpts().ObjCNonFragileABI) {
         Offset = BaseOffset - superInstanceSize;
       }
       llvm::Constant *OffsetValue = llvm::ConstantInt::get(IntTy, Offset);
@@ -2640,7 +2640,7 @@ static const ObjCInterfaceDecl *FindIvarInterface(ASTContext &Context,
 llvm::Value *CGObjCGNU::EmitIvarOffset(CodeGenFunction &CGF,
                          const ObjCInterfaceDecl *Interface,
                          const ObjCIvarDecl *Ivar) {
-  if (CGM.getLangOpts().ObjCRuntime.isNonFragile()) {
+  if (CGM.getLangOpts().ObjCNonFragileABI) {
     Interface = FindIvarInterface(CGM.getContext(), Interface, Ivar);
     if (RuntimeVersion < 10)
       return CGF.Builder.CreateZExtOrBitCast(
@@ -2665,17 +2665,7 @@ llvm::Value *CGObjCGNU::EmitIvarOffset(CodeGenFunction &CGF,
 
 CGObjCRuntime *
 clang::CodeGen::CreateGNUObjCRuntime(CodeGenModule &CGM) {
-  switch (CGM.getLangOpts().ObjCRuntime.getKind()) {
-  case ObjCRuntime::GNUstep:
+  if (CGM.getLangOpts().ObjCNonFragileABI)
     return new CGObjCGNUstep(CGM);
-
-  case ObjCRuntime::GCC:
-    return new CGObjCGCC(CGM);
-
-  case ObjCRuntime::FragileMacOSX:
-  case ObjCRuntime::MacOSX:
-  case ObjCRuntime::iOS:
-    llvm_unreachable("these runtimes are not GNU runtimes");
-  }
-  llvm_unreachable("bad runtime");
+  return new CGObjCGCC(CGM);
 }

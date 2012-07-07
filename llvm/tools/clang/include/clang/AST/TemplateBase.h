@@ -299,12 +299,14 @@ public:
     return Args.NumArgs;
   }
 
-  /// \brief Determines whether two template arguments are superficially the
+  /// Determines whether two template arguments are superficially the
   /// same.
   bool structurallyEquals(const TemplateArgument &Other) const;
 
-  /// \brief When the template argument is a pack expansion, returns
+  /// \brief When the template argument is a pack expansion, returns 
   /// the pattern of the pack expansion.
+  ///
+  /// \param Ellipsis Will be set to the location of the ellipsis.
   TemplateArgument getPackExpansionPattern() const;
 
   /// \brief Print this template argument to the given output stream.

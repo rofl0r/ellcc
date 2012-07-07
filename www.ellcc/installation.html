@@ -1,233 +1,193 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
-  <head>
-    <meta content="text/html; charset=ISO-8859-1"
-      http-equiv="Content-Type">
-    <title>ELLCC Installation</title>
-    <meta content="Richard Pennington" name="author">
-  </head>
-  <body>
-    <table style="text-align: left; width: 100%; height: 100%;"
-      border="0" cellpadding="0" cellspacing="0">
-      <tbody>
-        <tr align="center">
-          <th style="text-align: center; vertical-align: middle;
-            background-color: rgb(192, 192, 192); height: 135px;"
-            colspan="2" rowspan="1">
-            <table style="text-align: left; width: 100%;" border="0"
-              cellpadding="0" cellspacing="0">
-              <tbody>
-                <tr>
-                  <td style="height: 135px; width: 135px;"><img
-                      style="width: 135px; height: 135px;" alt="ELLCC"
-                      src="images/ellcc.png"></td>
-                  <td style="text-align: center;">
-                    <h1><a class="mozTocH1" name="mozTocId15539"></a>ELLCC
-                      Installation</h1>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </th>
-        </tr>
-        <tr>
-          <td style="vertical-align: top; background-color: rgb(153,
-            255, 153); width: 135px;"><a href="index.html">Home</a><br>
-            <a href="blog/">Blog</a><br>
-            <a href="news.html">News</a><br>
-            <a href="demo/">Demo</a><br>
-            <a href="ellcc/libecc/share/doc">Documentation</a><br>
-            <a href="installation.html">Installation</a><br>
-            <a href="targetsupport.html">Target Support</a><br>
-            <a href="bugzilla">Bug Database</a><br>
-            <a href="http://ellcc.org/viewvc/svn/ellcc/">Source
-              Repository</a><br>
-            <a href="mailto:rich@pennware.com">Contact</a><br>
-          </td>
-          <td style="vertical-align: top;">
-            <ol id="mozToc">
-              <!--mozToc h1 1 h2 2 h3 3 h4 4 h5 5 h6 6-->
-              <li><a href="#mozTocId15539">ELLCC Installation</a>
-                <ol>
-                  <li><a href="#mozTocId792290">Prerequisites</a></li>
-                  <li><a href="#mozTocId116071">Get the ELLCC Sources</a></li>
-                  <li><a href="#mozTocId231222">Building ELLCC</a></li>
-                </ol>
-              </li>
-            </ol>
-            The installation
-            procedure for ELLCC is a bit complicated at the moment.
-            There are
-            currently no binary downloads available, you have to build
-            from source.
-            Having said that, here are step by step instructions that
-            describe how
-            to build ELLCC under Linux.<br>
-            <br>
-            It takes a long time to build ELLCC. It helps to have a
-            system with at
-            least 3GB of RAM to speed up the LLVM build.<br>
-            <h2><a class="mozTocH2" name="mozTocId792290"></a>Prerequisites</h2>
-            &nbsp;An ELLCC build requires the following packages to be
-            installed:<br>
-            <ul>
-              <li>A C/C++ compiler</li>
-              <li>Subversion</li>
-            </ul>
-            <h2><a class="mozTocH2" name="mozTocId116071"></a>Get the
-              ELLCC
-              Sources</h2>
-            This will take a while since it gets all of LLVM, Clang,
-            binutils, GDB,
-            and QEMU.
-            <div style="margin-left: 40px;"><code><br>
-                [~] main% svn co http://ellcc.org/svn/ellcc/trunk ellcc<br>
-              </code></div>
-            <h2><a class="mozTocH2" name="mozTocId231222"></a><a
-                name="Building"></a>Building ELLCC</h2>
-            <div style="margin-left: 40px;"><code><span
-                  style="font-family: monospace;"></span></code><span
-                style="font-family: monospace;">[~] main% cd ellcc</span><br>
-              <code><span style="font-family: monospace;">[~/ellcc]
-                  main%</span></code><br>
-              <code><span style="font-family: monospace;"> </span></code><code><span
-                  style="font-family: monospace;">[~/ellcc] main%
-                  ./configure</span></code><br>
-              <code><span style="font-family: monospace;">[~/ellcc]
-                  main% make<br>
-                  [~/ellcc] main% make install<br>
-                </span></code> <code><span style="font-family:
-                  monospace;"> </span><span style="font-family:
-                  monospace;"></span></code><code></code><br>
-            </div>
-            If everything has been successful up to this point, you have
-            built <span style="font-family: monospace;">ecc, binutils,
-              GDB </span>and<span style="font-family: monospace;"> QEMU
-            </span>for all targets. All
-            the binaries created by the build are in the <span
-              style="font-family: monospace;">bin</span>
-            subdirectory of the build directory, i.e. in <span
-              style="font-family: monospace;">~/ellcc/bin</span> in my
-            example. The <span style="font-family: monospace;">bin</span>
-            directory should look something like this:<br>
-            <br>
-            <div style="margin-left: 40px;"><code><span
-                  style="font-family: monospace;">[~/ellcc] main% ls bin</span></code><code><span
-                  style="font-family: monospace;"><br>
-                </span></code><span style="font-family: monospace;">arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
-                ecc-objdump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-io*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-objdump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-microblaze*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">c-index-test*&nbsp;&nbsp;
-                ecc-readelf*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-mips*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">clang-tblgen*&nbsp;&nbsp;
-                ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-mipsel*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-readobj*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-nbd*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-rtdyld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-ppc*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-addr2line*&nbsp;
-                i386-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-ppc64*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-stress*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-ppc64abi32*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-tblgen*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-sparc*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-c++filt*&nbsp;&nbsp;&nbsp;
-                llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                macho-dump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-arm*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-elfedit*&nbsp;&nbsp;&nbsp;
-                llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                microblaze-elf-as*&nbsp; qemu-system-microblaze*</span><br
-                style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-embedspu*&nbsp;&nbsp;
-                llvm-bcanalyzer*&nbsp;
-                mips-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-mips*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-mipsel*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-gdbserver*&nbsp;
-                llvm-cov*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                ppc64-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-ppc*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-diff*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                ppc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-ppc64*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-sparc*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-dwarfdump*&nbsp;&nbsp;
-                qemu-arm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-system-x86_64*</span><br style="font-family:
-                monospace;">
-              <span style="font-family: monospace;">ecc-ld.bfd*&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-armeb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-x86_64*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-i386*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                sparc-elf-as*</span><br style="font-family: monospace;">
-              <span style="font-family: monospace;">ecc-objcopy*&nbsp;&nbsp;&nbsp;
-                llvm-mc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                qemu-img*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                x86_64-elf-as*</span><br style="font-family: monospace;">
-            </div>
-            <span style="font-family: monospace;"><br>
-            </span>You may want to put the <span style="font-family:
-              monospace;">bin</span> directory in your PATH, but
-            it is not required at this point. <span style="font-family:
-              monospace;">ecc</span>
-            and <span style="font-family: monospace;">e++</span> are
-            the hosted C
-            and C++ compilers: They use the system header files in <span
-              style="font-family: monospace;">/usr/include</span>&nbsp;
-            and use the
-            system <span style="font-family: monospace;">cc</span> and
-            <span style="font-family: monospace;">c++</span> libraries
-            to do the final
-            program link. This means you can use ecc and e++ to compile
-            programs that run natively on your system.<br>
-            <br>
-            We will build target libraries and set up for cross
-            compilation&nbsp;
-            in <a href="targetsupport.html">Setting Up&nbsp;Target
-              Support</a>.<br clear="all">
-            <span style="font-family: monospace;"> </span> </td>
-        </tr>
-      </tbody>
-    </table>
-    <br>
-  </body>
+<head>
+  <meta content="text/html; charset=ISO-8859-1"
+ http-equiv="Content-Type">
+  <title>ELLCC Installation</title>
+  <meta content="Richard Pennington" name="author">
+</head>
+<body>
+<table style="text-align: left; width: 100%; height: 100%;" border="0"
+ cellpadding="0" cellspacing="0">
+  <tbody>
+    <tr align="center">
+      <th
+ style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;"
+ colspan="2" rowspan="1">
+      <table style="text-align: left; width: 100%;" border="0"
+ cellpadding="0" cellspacing="0">
+        <tbody>
+          <tr>
+            <td style="height: 135px; width: 135px;"><img
+ style="width: 135px; height: 135px;" alt="ELLCC" src="images/ellcc.png"></td>
+            <td style="text-align: center;">
+            <h1><a class="mozTocH1" name="mozTocId15539"></a>ELLCC
+Installation</h1>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      </th>
+    </tr>
+    <tr>
+      <td
+ style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a
+ href="index.html">Home</a><br>
+      <a href="blog/">Blog</a><br>
+      <a href="news.html">News</a><br>
+      <a href="demo/">Demo</a><br>
+      <a href="ellcc/libecc/share/doc">Documentation</a><br>
+      <a href="installation.html">Installation</a><br>
+      <a href="targetsupport.html">Target Support</a><br>
+      <a href="bugzilla">Bug Database</a><br>
+      <a href="http://ellcc.org/viewvc/svn/ellcc/">Source Repository</a><br>
+      <a href="mailto:rich@pennware.com">Contact</a><br>
+      </td>
+      <td style="vertical-align: top;">
+      <ol id="mozToc">
+<!--mozToc h1 1 h2 2 h3 3 h4 4 h5 5 h6 6-->
+        <li><a href="#mozTocId15539">ELLCC Installation</a>
+          <ol>
+            <li><a href="#mozTocId792290">Prerequisites</a></li>
+            <li><a href="#mozTocId116071">Get the ELLCC Sources</a></li>
+            <li><a href="#mozTocId231222">Building ELLCC</a></li>
+          </ol>
+        </li>
+      </ol>
+The installation
+procedure for ELLCC is a bit complicated at the moment. There are
+currently no binary downloads available, you have to build from source.
+Having said that, here are step by step instructions that describe how
+to build ELLCC under Linux.<br>
+      <br>
+It takes a long time to build ELLCC. It helps to have a system with at
+least 3GB of RAM to speed up the LLVM build.<br>
+      <h2><a class="mozTocH2" name="mozTocId792290"></a>Prerequisites</h2>
+&nbsp;An ELLCC build requires the following packages to be
+installed:<br>
+      <ul>
+        <li>A C/C++ compiler</li>
+        <li>Subversion</li>
+      </ul>
+      <h2><a class="mozTocH2" name="mozTocId116071"></a>Get the ELLCC
+Sources</h2>
+This will take a while since it gets all of LLVM, Clang, binutils, GDB,
+and QEMU.
+      <div style="margin-left: 40px;"><code><br>
+[~] main% svn co http://ellcc.org/svn/ellcc/trunk ellcc<br>
+      </code></div>
+      <h2><a class="mozTocH2" name="mozTocId231222"></a><a
+ name="Building"></a>Building ELLCC</h2>
+      <div style="margin-left: 40px;"><code><span
+ style="font-family: monospace;"></span></code><span
+ style="font-family: monospace;">[~] main% cd ellcc</span><br>
+      <code><span style="font-family: monospace;">[~/ellcc] main%</span></code><br>
+      <code><span style="font-family: monospace;"> </span></code><code><span
+ style="font-family: monospace;">[~/ellcc] main%
+./configure</span></code><br>
+      <code><span style="font-family: monospace;">[~/ellcc] main% make<br>
+[~/ellcc] main% make install<br>
+      </span></code> <code><span style="font-family: monospace;"> </span><span
+ style="font-family: monospace;"></span></code><code></code><br>
+      </div>
+If everything has been successful up to this point, you have built <span
+ style="font-family: monospace;">ecc, binutils, GDB </span>and<span
+ style="font-family: monospace;"> QEMU </span>for all targets. All
+the binaries created by the build are in the <span
+ style="font-family: monospace;">bin</span>
+subdirectory of the build directory, i.e. in <span
+ style="font-family: monospace;">~/ellcc/bin</span> in my
+example. The <span style="font-family: monospace;">bin</span>
+directory should look something like this:<br>
+      <br>
+      <div style="margin-left: 40px;"><code><span
+ style="font-family: monospace;">[~/ellcc] main% ls bin</span></code><br
+ style="font-family: monospace;">
+      <code><span style="font-family: monospace;">arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvmc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-ppc64abi32*<br>
+bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc64-elf-as*&nbsp;&nbsp;&nbsp;&nbsp; qemu-sparc*<br>
+c-index-test*&nbsp;&nbsp; ecc-objcopy*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-diff*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ppc-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-system-arm*<br>
+ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-objdump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-microblaze*<br>
+ecc++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-arm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-mips*<br>
+ecc-addr2line*&nbsp; ecc-readelf*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-armeb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-mipsel*<br>
+ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-i386*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-system-ppc*<br>
+ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-mc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-img*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-ppc64*<br>
+ecc-c++filt*&nbsp;&nbsp;&nbsp;
+ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-io*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-system-sparc*<br>
+ecc-elfedit*&nbsp;&nbsp;&nbsp;
+i386-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-microblaze*&nbsp; qemu-system-x86_64*<br>
+ecc-embedspu*&nbsp;&nbsp;
+llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-mips*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-x86_64*<br>
+ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-stub*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-mipsel*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+sparc-elf-as*<br>
+ecc-gdbserver*&nbsp;
+llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+macho-dump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+qemu-nbd*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; tblgen*<br>
+ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;
+llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+microblaze-elf-as*&nbsp;
+qemu-ppc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x86_64-elf-as*<br>
+ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; llvm-bcanalyzer*&nbsp;
+mips-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; qemu-ppc64*</span></code><span
+ style="font-family: monospace;"><code></code></span><br>
+      </div>
+      <span style="font-family: monospace;"><br>
+      </span>You may want to put the <span
+ style="font-family: monospace;">bin</span> directory in your PATH, but
+it is not required at this point. <span style="font-family: monospace;">ecc</span>
+and <span style="font-family: monospace;">e++</span> are the hosted C
+and C++ compilers: They use the system header files in <span
+ style="font-family: monospace;">/usr/include</span>&nbsp; and use the
+system <span style="font-family: monospace;">cc</span> and <span
+ style="font-family: monospace;">c++</span> libraries to do the final
+program link. This means you can use ecc and e++ to compile
+programs that run natively on your system.<br>
+      <br>
+We will build target libraries and set up for cross compilation&nbsp;
+in <a href="targetsupport.html">Setting Up&nbsp;Target Support</a>.<br
+ clear="all">
+      <span style="font-family: monospace;"> </span> </td>
+    </tr>
+  </tbody>
+</table>
+<br>
+</body>
 </html>

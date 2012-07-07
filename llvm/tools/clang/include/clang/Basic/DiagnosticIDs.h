@@ -6,10 +6,9 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-///
-/// \file
-/// \brief Defines the Diagnostic IDs-related interfaces.
-///
+//
+//  This file defines the Diagnostic IDs-related interfaces.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_DIAGNOSTICIDS_H
@@ -45,7 +44,7 @@ namespace clang {
 
     class CustomDiagInfo;
 
-    /// \brief All of the diagnostics that can be emitted by the frontend.
+    /// diag::kind - All of the diagnostics that can be emitted by the frontend.
     typedef unsigned kind;
 
     // Get typedefs for common diagnostics.
@@ -112,81 +111,80 @@ public:
 /// by multiple Diagnostics for multiple translation units.
 class DiagnosticIDs : public RefCountedBase<DiagnosticIDs> {
 public:
-  /// Level The level of the diagnostic, after it has been through mapping.
+  /// Level - The level of the diagnostic, after it has been through mapping.
   enum Level {
     Ignored, Note, Warning, Error, Fatal
   };
 
 private:
-  /// \brief Information for uniquing and looking up custom diags.
+  /// CustomDiagInfo - Information for uniquing and looking up custom diags.
   diag::CustomDiagInfo *CustomDiagInfo;
 
 public:
   DiagnosticIDs();
   ~DiagnosticIDs();
 
-  /// \brief Return an ID for a diagnostic with the specified message and level.
-  ///
-  /// If this is the first request for this diagnosic, it is registered and
-  /// created, otherwise the existing ID is returned.
+  /// getCustomDiagID - Return an ID for a diagnostic with the specified message
+  /// and level.  If this is the first request for this diagnosic, it is
+  /// registered and created, otherwise the existing ID is returned.
   unsigned getCustomDiagID(Level L, StringRef Message);
 
   //===--------------------------------------------------------------------===//
   // Diagnostic classification and reporting interfaces.
   //
 
-  /// \brief Given a diagnostic ID, return a description of the issue.
+  /// getDescription - Given a diagnostic ID, return a description of the
+  /// issue.
   StringRef getDescription(unsigned DiagID) const;
 
-  /// \brief Return true if the unmapped diagnostic levelof the specified
-  /// diagnostic ID is a Warning or Extension.
-  ///
-  /// This only works on builtin diagnostics, not custom ones, and is not
-  /// legal to call on NOTEs.
+  /// isBuiltinWarningOrExtension - Return true if the unmapped diagnostic level
+  /// of the specified diagnostic ID is a Warning or Extension.  This only works
+  /// on builtin diagnostics, not custom ones, and is not legal to call on
+  /// NOTEs.
   static bool isBuiltinWarningOrExtension(unsigned DiagID);
 
   /// \brief Return true if the specified diagnostic is mapped to errors by
   /// default.
   static bool isDefaultMappingAsError(unsigned DiagID);
 
-  /// \brief Determine whether the given built-in diagnostic ID is a Note.
+  /// \brief Determine whether the given built-in diagnostic ID is a
+  /// Note.
   static bool isBuiltinNote(unsigned DiagID);
 
-  /// \brief Determine whether the given built-in diagnostic ID is for an
-  /// extension of some sort.
+  /// isBuiltinExtensionDiag - Determine whether the given built-in diagnostic
+  /// ID is for an extension of some sort.
+  ///
   static bool isBuiltinExtensionDiag(unsigned DiagID) {
     bool ignored;
     return isBuiltinExtensionDiag(DiagID, ignored);
   }
   
-  /// \brief Determine whether the given built-in diagnostic ID is for an
-  /// extension of some sort, and whether it is enabled by default.
-  ///
-  /// This also returns EnabledByDefault, which is set to indicate whether the
-  /// diagnostic is ignored by default (in which case -pedantic enables it) or
-  /// treated as a warning/error by default.
+  /// isBuiltinExtensionDiag - Determine whether the given built-in diagnostic
+  /// ID is for an extension of some sort.  This also returns EnabledByDefault,
+  /// which is set to indicate whether the diagnostic is ignored by default (in
+  /// which case -pedantic enables it) or treated as a warning/error by default.
   ///
   static bool isBuiltinExtensionDiag(unsigned DiagID, bool &EnabledByDefault);
   
 
-  /// \brief Return the lowest-level warning option that enables the specified
-  /// diagnostic.
-  ///
-  /// If there is no -Wfoo flag that controls the diagnostic, this returns null.
+  /// getWarningOptionForDiag - Return the lowest-level warning option that
+  /// enables the specified diagnostic.  If there is no -Wfoo flag that controls
+  /// the diagnostic, this returns null.
   static StringRef getWarningOptionForDiag(unsigned DiagID);
   
-  /// \brief Return the category number that a specified \p DiagID belongs to,
-  /// or 0 if no category.
+  /// getCategoryNumberForDiag - Return the category number that a specified
+  /// DiagID belongs to, or 0 if no category.
   static unsigned getCategoryNumberForDiag(unsigned DiagID);
 
-  /// \brief Return the number of diagnostic categories.
+  /// getNumberOfCategories - Return the number of categories
   static unsigned getNumberOfCategories();
 
-  /// \brief Given a category ID, return the name of the category.
+  /// getCategoryNameFromID - Given a category ID, return the name of the
+  /// category.
   static StringRef getCategoryNameFromID(unsigned CategoryID);
   
-  /// \brief Return true if a given diagnostic falls into an ARC diagnostic
-  /// category.
+  /// isARCDiagnostic - Return true if a given diagnostic falls into an
+  /// ARC diagnostic category;
   static bool isARCDiagnostic(unsigned DiagID);
 
   /// \brief Enumeration describing how the the emission of a diagnostic should
@@ -255,16 +253,17 @@ private:
   DiagnosticIDs::Level getDiagnosticLevel(unsigned DiagID, SourceLocation Loc,
                                           const DiagnosticsEngine &Diag) const;
 
-  /// \brief An internal implementation helper used when \p DiagClass is
-  /// already known.
+  /// getDiagnosticLevel - This is an internal implementation helper used when
+  /// DiagClass is already known.
   DiagnosticIDs::Level getDiagnosticLevel(unsigned DiagID,
                                           unsigned DiagClass,
                                           SourceLocation Loc,
                                           const DiagnosticsEngine &Diag) const;
 
-  /// \brief Used to report a diagnostic that is finally fully formed.
+  /// ProcessDiag - This is the method used to report a diagnostic that is
+  /// finally fully formed.
   ///
-  /// \returns \c true if the diagnostic was emitted, \c false if it was
+  /// \returns true if the diagnostic was emitted, false if it was
   /// suppressed.
   bool ProcessDiag(DiagnosticsEngine &Diag) const;
 

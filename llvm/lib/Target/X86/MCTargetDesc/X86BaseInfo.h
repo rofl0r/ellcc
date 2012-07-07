@@ -481,17 +481,17 @@ namespace X86II {
   // getBaseOpcodeFor - This function returns the "base" X86 opcode for the
   // specified machine instruction.
   //
-  inline unsigned char getBaseOpcodeFor(uint64_t TSFlags) {
+  static inline unsigned char getBaseOpcodeFor(uint64_t TSFlags) {
     return TSFlags >> X86II::OpcodeShift;
   }
 
-  inline bool hasImm(uint64_t TSFlags) {
+  static inline bool hasImm(uint64_t TSFlags) {
     return (TSFlags & X86II::ImmMask) != 0;
   }
 
   /// getSizeOfImm - Decode the "size of immediate" field from the TSFlags field
   /// of the specified instruction.
-  inline unsigned getSizeOfImm(uint64_t TSFlags) {
+  static inline unsigned getSizeOfImm(uint64_t TSFlags) {
     switch (TSFlags & X86II::ImmMask) {
     default: llvm_unreachable("Unknown immediate size");
     case X86II::Imm8:
@@ -506,7 +506,7 @@ namespace X86II {
 
   /// isImmPCRel - Return true if the immediate of the specified instruction's
   /// TSFlags indicates that it is pc relative.
-  inline unsigned isImmPCRel(uint64_t TSFlags) {
+  static inline unsigned isImmPCRel(uint64_t TSFlags) {
     switch (TSFlags & X86II::ImmMask) {
     default: llvm_unreachable("Unknown immediate size");
     case X86II::Imm8PCRel:
@@ -529,7 +529,7 @@ namespace X86II {
   /// is duplicated in the MCInst (e.g. "EAX = addl EAX, [mem]") it is only
   /// counted as one operand.
   ///
-  inline int getMemoryOperandNo(uint64_t TSFlags, unsigned Opcode) {
+  static inline int getMemoryOperandNo(uint64_t TSFlags, unsigned Opcode) {
     switch (TSFlags & X86II::FormMask) {
     case X86II::MRMInitReg:
         // FIXME: Remove this form.
@@ -591,7 +591,7 @@ namespace X86II {
 
   /// isX86_64ExtendedReg - Is the MachineOperand a x86-64 extended (r8 or
   /// higher) register?  e.g. r8, xmm8, xmm13, etc.
-  inline bool isX86_64ExtendedReg(unsigned RegNo) {
+  static inline bool isX86_64ExtendedReg(unsigned RegNo) {
     switch (RegNo) {
     default: break;
     case X86::R8:    case X86::R9:    case X86::R10:   case X86::R11:
@@ -613,7 +613,7 @@ namespace X86II {
     return false;
   }
   
-  inline bool isX86_64NonExtLowByteReg(unsigned reg) {
+  static inline bool isX86_64NonExtLowByteReg(unsigned reg) {
     return (reg == X86::SPL || reg == X86::BPL ||
             reg == X86::SIL || reg == X86::DIL);
   }
