@@ -15,36 +15,36 @@
 SHELL=/bin/sh
 
 # FIXED: http://ellcc.org/bugzilla/show_bug.cgi?id=46 Remove ppc64
-all: ecc arm armeb armv8 i386 ppc ppc64 x86_64 \
-     mips mipsel mips32r2 mips32r2sf mips32r2elsf microblaze
+all: ecc arm armeb i386 ppc x86_64 \
+     mips mipsel microblaze # ppc64
 
-arm armeb i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64:
+i386 microblaze mips mipsel nios2 sparc x86_64:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-$@ bzip2all
+	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux" \
+	        RUN=../../../bin/qemu-$@ bzip2all
 
-armv8:
+arm armeb:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-arm bzip2all
-
-mips32r2 mips32r2sf:
+	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux -mcpu=cortex-a9 -mfpu=neon" \
+	        RUN=../../../bin/qemu-$@ bzip2all
+ppc ppc64:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-mips bzip2all
-
-mips32r2elsf:
-	$(MAKE) clean
-	$(MAKE) EXT=.$@ XCC=$@-linux- RUN=../../../bin/qemu-mipsel bzip2all
+		# -mcpu=440
+	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux" \
+	        RUN=../../../bin/qemu-$@ bzip2all
 
 ecc:
 	$(MAKE) clean
 	$(MAKE) bzip2all
 
-CC=../../../bin/$(XCC)ecc
+CC=../../../bin/ecc $(TARGET)
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
 LDFLAGS= 
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
-CFLAGS=-Wall -Winline -O2 $(BIGFILES)
+#CFLAGS=-Wall -Winline -O2 $(BIGFILES)
+CFLAGS=-Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
 
 # Where you want it installed when you do 'make install'
 PREFIX=/usr/local

@@ -92,8 +92,8 @@ def err_duplicate_default_assoc : Error<
 def note_previous_default_assoc : Note<
   "previous default generic association is here">;
 
-def ext_c11_alignas : Extension<
-  "_Alignas is a C11-specific feature">, InGroup<C11>;
+def ext_c11_alignment : Extension<
+  "%0 is a C11-specific feature">, InGroup<C11>;
 
 def ext_gnu_indirect_goto : Extension<
   "use of GNU indirect-goto extension">, InGroup<GNU>;
@@ -339,6 +339,9 @@ def err_illegal_super_cast : Error<
   "cannot cast 'super' (it isn't an expression)">;
 def err_nsnumber_nonliteral_unary : Error<
   "@%0 must be followed by a number to form an NSNumber object">;
+def warn_cstyle_param : Warning<
+  "use of C-style parameters in Objective-C method declarations"
+  " is deprecated">, InGroup<DeprecatedDeclarations>;
 
 let CategoryName = "ARC Parse Issue" in {
 def err_arc_bridge_retain : Error<
@@ -481,6 +484,10 @@ def err_l_square_l_square_not_attribute : Error<
   "introducing an attribute">;
 def err_alignas_pack_exp_unsupported : Error<
   "pack expansions in alignment specifiers are not supported yet">;
+def err_ms_declspec_type : Error<
+  "__declspec attributes must be an identifier or string literal">;
+def warn_ms_declspec_unknown : Warning<
+  "unknown __declspec attribute %0 ignored">, InGroup<UnknownAttributes>;
 
 /// C++ Templates
 def err_expected_template : Error<"expected template">;
@@ -498,6 +505,9 @@ def err_id_after_template_in_nested_name_spec : Error<
   "expected template name after 'template' keyword in nested name specifier">;
 def err_two_right_angle_brackets_need_space : Error<
   "a space is required between consecutive right angle brackets (use '> >')">;
+def err_right_angle_bracket_equal_needs_space : Error<
+  "a space is required between a right angle bracket and an equals sign "
+  "(use '> =')">;
 def warn_cxx0x_right_shift_in_template_arg : Warning<
   "use of right-shift operator ('>>') in template argument will require "
   "parentheses in C++11">, InGroup<CXX11Compat>;

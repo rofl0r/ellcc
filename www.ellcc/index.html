@@ -44,45 +44,37 @@
             <a href="mailto:rich@pennware.com">Contact</a><br>
             <br>
             The ELLCC project is supported by <a
-              href="http://pennware.com">Pennington
-              Software</a><br>
+              href="http://pennware.com">Pennington Software</a><br>
             <br>
           </td>
           <td style="vertical-align: top;">ELLCC is a project to using
-            Clang and the&nbsp; <a href="http://llvm.org">LLVM (Low
-              Level Virtual
-              Machine)</a>
+            Clang and the&nbsp; <a href="http://llvm.org">LLVM</a>
             compiler infrastructure. The primary emphasis of the ELLCC
-            project is
-            to
-            create an easy to use multi-target cross compilation
-            environment for
-            embedded systems.<br>
+            project is to create an easy to use multi-target cross
+            compilation environment for embedded systems.<br>
             <br>
             QEMU is used for cross-platform testing. Programs are built
-            for the
-            target as a Linux user space program and run under QEMU for
-            testing
-            purposes.<br>
+            for the target as a Linux user space program and run under
+            QEMU for testing purposes.<br>
             <br>
             ELLCC is in a pre-release state. Some targets are farther
-            along than
-            others. Not for the unhardy!<br>
+            along than others. Not for the unhardy!<br>
             <span style="text-decoration: underline;"></span>
             <h2>Goals</h2>
             <ul>
               <li>A functional C/C++ compiler based on <a
                   href="http://clang.llvm.org">Clang</a> &nbsp;(ecc)</li>
               <li>Multi-target support:&nbsp;ARM, i386, Microblaze,
-                Mips,
-                Nios2<sup>[2]</sup>,
-                PowerPC, PowerPC64, Sparc<sup>[1]</sup> and X86_64</li>
-              <li>Multi-OS support: Linux, NetBSD, Standalone, ...<br>
+                Mips, Nios2<sup>[2]</sup>, PowerPC, PowerPC64, Sparc<sup>[1]</sup>
+                and X86_64</li>
+              <li>Multi-OS support: Linux, Standalone, ...<br>
               </li>
               <li>A complete test environment (described in <a
                   href="targetsupport.html">Target Support)</a> that
                 allows automatic unit and integration testing of the
-                run-time environment and complete executables.<br>
+                run-time environment and complete executables.</li>
+              <li>Support of a wide variety of <a
+                  href="ellcc/target_matrix.html">target processors</a>.<br>
               </li>
             </ul>
             <ul>
@@ -122,8 +114,7 @@
             </ul>
             <br>
             <hr style="width: 100%; height: 2px;">[1] The standard C
-            library
-            does not compile.<br>
+            library does not compile.<br>
             [2] The code generator is unfinished.<br clear="all">
           </td>
         </tr>

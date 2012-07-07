@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_libc.h"
 #include "tsan_suppressions.h"
 #include "tsan_rtl.h"
@@ -27,9 +28,9 @@ static char *ReadFile(const char *filename) {
     return 0;
   InternalScopedBuf<char> tmp(4*1024);
   if (filename[0] == '/')
-    SNPrintf(tmp, tmp.Size(), "%s", filename);
+    internal_snprintf(tmp, tmp.Size(), "%s", filename);
   else
-    SNPrintf(tmp, tmp.Size(), "%s/%s", internal_getpwd(), filename);
+    internal_snprintf(tmp, tmp.Size(), "%s/%s", GetPwd(), filename);
   fd_t fd = internal_open(tmp, false);
   if (fd == kInvalidFd) {
     TsanPrintf("ThreadSanitizer: failed to open suppressions file '%s'\n",
@@ -118,7 +119,7 @@ Suppression *SuppressionParse(const char* supp) {
       head = s;
       s->type = stype;
       s->templ = (char*)internal_alloc(MBlockSuppression, end2 - line + 1);
-      real_memcpy(s->templ, line, end2 - line);
+      internal_memcpy(s->templ, line, end2 - line);
       s->templ[end2 - line] = 0;
     }
     if (end[0] == 0)

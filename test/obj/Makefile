@@ -6,7 +6,7 @@
             mips32r2sf mipsel nios2 pic32 ppc ppc64 sparc x86_64
 #SUBDIRS = gcc.cov x86_64 mips
 # Define directories to ignore.
-IGNORE = musl
+IGNORE = ppc ppc64
 # Define subdirectories to ignore.
 #SUBIGNORE =
 

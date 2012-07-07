@@ -530,45 +530,45 @@ Sema::ActOnStartOfSwitchStmt(SourceLocation SwitchLoc, Expr *Cond,
 
   class SwitchConvertDiagnoser : public ICEConvertDiagnoser {
     Expr *Cond;
-    
+
   public:
     SwitchConvertDiagnoser(Expr *Cond)
       : ICEConvertDiagnoser(false, true), Cond(Cond) { }
-    
+
     virtual DiagnosticBuilder diagnoseNotInt(Sema &S, SourceLocation Loc,
                                              QualType T) {
       return S.Diag(Loc, diag::err_typecheck_statement_requires_integer) << T;
     }
-    
+
     virtual DiagnosticBuilder diagnoseIncomplete(Sema &S, SourceLocation Loc,
                                                  QualType T) {
       return S.Diag(Loc, diag::err_switch_incomplete_class_type)
                << T << Cond->getSourceRange();
     }
-    
+
     virtual DiagnosticBuilder diagnoseExplicitConv(Sema &S, SourceLocation Loc,
                                                    QualType T,
                                                    QualType ConvTy) {
       return S.Diag(Loc, diag::err_switch_explicit_conversion) << T << ConvTy;
     }
-    
+
     virtual DiagnosticBuilder noteExplicitConv(Sema &S, CXXConversionDecl *Conv,
                                                QualType ConvTy) {
       return S.Diag(Conv->getLocation(), diag::note_switch_conversion)
         << ConvTy->isEnumeralType() << ConvTy;
     }
-    
+
     virtual DiagnosticBuilder diagnoseAmbiguous(Sema &S, SourceLocation Loc,
                                                 QualType T) {
       return S.Diag(Loc, diag::err_switch_multiple_conversions) << T;
     }
-    
+
     virtual DiagnosticBuilder noteAmbiguous(Sema &S, CXXConversionDecl *Conv,
                                             QualType ConvTy) {
       return S.Diag(Conv->getLocation(), diag::note_switch_conversion)
       << ConvTy->isEnumeralType() << ConvTy;
     }
-    
+
     virtual DiagnosticBuilder diagnoseConversion(Sema &S, SourceLocation Loc,
                                                  QualType T,
                                                  QualType ConvTy) {
@@ -1385,9 +1385,10 @@ StmtResult Sema::ActOnForEachLValueExpr(Expr *E) {
 }
 
 ExprResult
-Sema::ActOnObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
-  assert(collection);
-
+Sema::CheckObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
+  if (!collection)
+    return ExprError();
+  
   // Bail out early if we've got a type-dependent expression.
   if (collection->isTypeDependent()) return Owned(collection);
 
@@ -1457,8 +1458,12 @@ Sema::ActOnObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
 StmtResult
 Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
                                  SourceLocation LParenLoc,
-                                 Stmt *First, Expr *Second,
-                                 SourceLocation RParenLoc, Stmt *Body) {
+                                 Stmt *First, Expr *collection,
+                                 SourceLocation RParenLoc) {
+  
+  ExprResult CollectionExprResult = 
+    CheckObjCForCollectionOperand(ForLoc, collection);
+  
   if (First) {
     QualType FirstType;
     if (DeclStmt *DS = dyn_cast<DeclStmt>(First)) {
@@ -1486,11 +1491,15 @@ Sema::ActOnObjCForCollectionStmt(SourceLocation ForLoc,
     if (!FirstType->isDependentType() &&
         !FirstType->isObjCObjectPointerType() &&
         !FirstType->isBlockPointerType())
-        Diag(ForLoc, diag::err_selector_element_type)
-          << FirstType << First->getSourceRange();
+        return StmtError(Diag(ForLoc, diag::err_selector_element_type)
+                           << FirstType << First->getSourceRange());
   }
-
-  return Owned(new (Context) ObjCForCollectionStmt(First, Second, Body,
+  
+  if (CollectionExprResult.isInvalid())
+    return StmtError();
+  
+  return Owned(new (Context) ObjCForCollectionStmt(First, 
+                                                   CollectionExprResult.take(), 0, 
                                                    ForLoc, RParenLoc));
 }
 
@@ -1900,6 +1909,17 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation ColonLoc,
                                              ColonLoc, RParenLoc));
 }
 
+/// FinishObjCForCollectionStmt - Attach the body to a objective-C foreach 
+/// statement.
+StmtResult Sema::FinishObjCForCollectionStmt(Stmt *S, Stmt *B) {
+  if (!S || !B)
+    return StmtError();
+  ObjCForCollectionStmt * ForStmt = cast<ObjCForCollectionStmt>(S);
+  
+  ForStmt->setBody(B);
+  return S;
+}
+
 /// FinishCXXForRangeStmt - Attach the body to a C++0x for-range statement.
 /// This is a separate step from ActOnCXXForRangeStmt because analysis of the
 /// body cannot be performed until after the type of the range variable is
@@ -2120,8 +2140,12 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   // [expr.prim.lambda]p4 in C++11; block literals follow a superset of those
   // rules which allows multiple return statements.
   CapturingScopeInfo *CurCap = cast<CapturingScopeInfo>(getCurFunction());
+  QualType FnRetType = CurCap->ReturnType;
+
+  // For blocks/lambdas with implicit return types, we check each return
+  // statement individually, and deduce the common return type when the block
+  // or lambda is completed.
   if (CurCap->HasImplicitReturnType) {
-    QualType ReturnT;
     if (RetValExp && !isa<InitListExpr>(RetValExp)) {
       ExprResult Result = DefaultFunctionArrayLvalueConversion(RetValExp);
       if (Result.isInvalid())
@@ -2129,9 +2153,9 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       RetValExp = Result.take();
 
       if (!RetValExp->isTypeDependent())
-        ReturnT = RetValExp->getType();
+        FnRetType = RetValExp->getType();
       else
-        ReturnT = Context.DependentTy;
+        FnRetType = CurCap->ReturnType = Context.DependentTy;
     } else { 
       if (RetValExp) {
         // C++11 [expr.lambda.prim]p4 bans inferring the result from an
@@ -2141,21 +2165,14 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
           << RetValExp->getSourceRange();
       }
 
-      ReturnT = Context.VoidTy;
+      FnRetType = Context.VoidTy;
     }
-    // We require the return types to strictly match here.
-    if (!CurCap->ReturnType.isNull() &&
-        !CurCap->ReturnType->isDependentType() &&
-        !ReturnT->isDependentType() &&
-        !Context.hasSameType(ReturnT, CurCap->ReturnType)) { 
-      Diag(ReturnLoc, diag::err_typecheck_missing_return_type_incompatible) 
-          << ReturnT << CurCap->ReturnType
-          << (getCurLambda() != 0);
-      return StmtError();
-    }
-    CurCap->ReturnType = ReturnT;
+
+    // Although we'll properly infer the type of the block once it's completed,
+    // make sure we provide a return type now for better error recovery.
+    if (CurCap->ReturnType.isNull())
+      CurCap->ReturnType = FnRetType;
   }
-  QualType FnRetType = CurCap->ReturnType;
   assert(!FnRetType.isNull());
 
   if (BlockScopeInfo *CurBlock = dyn_cast<BlockScopeInfo>(CurCap)) {
@@ -2223,10 +2240,12 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   ReturnStmt *Result = new (Context) ReturnStmt(ReturnLoc, RetValExp,
                                                 NRVOCandidate);
 
-  // If we need to check for the named return value optimization, save the
-  // return statement in our scope for later processing.
-  if (getLangOpts().CPlusPlus && FnRetType->isRecordType() && 
-      !CurContext->isDependentContext())
+  // If we need to check for the named return value optimization,
+  // or if we need to infer the return type,
+  // save the return statement in our scope for later processing.
+  if (CurCap->HasImplicitReturnType ||
+      (getLangOpts().CPlusPlus && FnRetType->isRecordType() &&
+       !CurContext->isDependentContext()))
     FunctionScopes.back()->Returns.push_back(Result);
 
   return Owned(Result);
@@ -2344,7 +2363,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         // FIXME: The diagnostics here don't really describe what is happening.
         InitializedEntity Entity =
             InitializedEntity::InitializeTemporary(RelatedRetType);
-        
+
         ExprResult Res = PerformCopyInitialization(Entity, SourceLocation(),
                                                    RetValExp);
         if (Res.isInvalid()) {
@@ -2388,7 +2407,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   if (getLangOpts().CPlusPlus && FnRetType->isRecordType() &&
       !CurContext->isDependentContext())
     FunctionScopes.back()->Returns.push_back(Result);
-  
+
   return Owned(Result);
 }
 
@@ -2432,13 +2451,12 @@ static bool isOperandMentioned(unsigned OpNo,
   for (unsigned p = 0, e = AsmStrPieces.size(); p != e; ++p) {
     const AsmStmt::AsmStringPiece &Piece = AsmStrPieces[p];
     if (!Piece.isOperand()) continue;
-    
+
     // If this is a reference to the input and if the input was the smaller
     // one, then we have to reject this asm.
     if (Piece.getOperandNo() == OpNo)
       return true;
   }
- 
   return false;
 }
 
@@ -2623,7 +2641,7 @@ StmtResult Sema::ActOnAsmStmt(SourceLocation AsmLoc, bool IsSimple,
     // then we can promote the smaller one to a larger input and the asm string
     // won't notice.
     bool SmallerValueMentioned = false;
-    
+
     // If this is a reference to the input and if the input was the smaller
     // one, then we have to reject this asm.
     if (isOperandMentioned(InputOpNo, Pieces)) {
@@ -2644,7 +2662,7 @@ StmtResult Sema::ActOnAsmStmt(SourceLocation AsmLoc, bool IsSimple,
     if (!SmallerValueMentioned && InputDomain != AD_Other &&
         OutputConstraintInfos[TiedTo].allowsRegister())
       continue;
-    
+
     // Either both of the operands were mentioned or the smaller one was
     // mentioned.  One more special case that we'll allow: if the tied input is
     // integer, unmentioned, and is a constant, then we'll allow truncating it
@@ -2659,13 +2677,25 @@ StmtResult Sema::ActOnAsmStmt(SourceLocation AsmLoc, bool IsSimple,
       NS->setInputExpr(i, InputExpr);
       continue;
     }
-    
+
     Diag(InputExpr->getLocStart(),
          diag::err_asm_tying_incompatible_types)
       << InTy << OutTy << OutputExpr->getSourceRange()
       << InputExpr->getSourceRange();
     return StmtError();
   }
+
+  return Owned(NS);
+}
+
+StmtResult Sema::ActOnMSAsmStmt(SourceLocation AsmLoc,
+                                std::string &AsmString,
+                                SourceLocation EndLoc) {
+  // MS-style inline assembly is not fully supported, so emit a warning.
+  Diag(AsmLoc, diag::warn_unsupported_msasm);
+
+  MSAsmStmt *NS =
+    new (Context) MSAsmStmt(Context, AsmLoc, AsmString, EndLoc);
 
   return Owned(NS);
 }
@@ -2736,7 +2766,6 @@ Sema::ActOnObjCAtThrowStmt(SourceLocation AtLoc, Expr *Throw,
     if (!AtCatchParent)
       return StmtError(Diag(AtLoc, diag::error_rethrow_used_outside_catch));
   }
-  
   return BuildObjCAtThrowStmt(AtLoc, Throw);
 }
 

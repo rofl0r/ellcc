@@ -7,11 +7,14 @@
 
 #import <CoreFoundation/CFBase.h>
 #import <Foundation/NSObject.h>
+#import <Foundation/NSURL.h>
 
-void CFAllocatorDefaultDoubleFree() {
+// This is a (void*)(void*) function so it can be passed to pthread_create.
+void *CFAllocatorDefaultDoubleFree(void *unused) {
   void *mem =  CFAllocatorAllocate(kCFAllocatorDefault, 5, 0);
   CFAllocatorDeallocate(kCFAllocatorDefault, mem);
   CFAllocatorDeallocate(kCFAllocatorDefault, mem);
+  return 0;
 }
 
 void CFAllocatorSystemDefaultDoubleFree() {
@@ -222,4 +225,13 @@ void TestOOBNSObjects() {
   [anObject access:1];
   [anObject access:11];
   [anObject release];
+}
+
+void TestNSURLDeallocation() {
+  NSURL *base =
+      [[NSURL alloc] initWithString:@"file://localhost/Users/glider/Library/"];
+  volatile NSURL *u =
+      [[NSURL alloc] initWithString:@"Saved Application State"
+                     relativeToURL:base];
+  [u release];
 }

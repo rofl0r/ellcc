@@ -10,6 +10,7 @@
 // This file is a part of ThreadSanitizer (TSan), a race detector.
 //
 //===----------------------------------------------------------------------===//
+#include "sanitizer_common/sanitizer_libc.h"
 #include "tsan_mutex.h"
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
@@ -164,7 +165,7 @@ class Backoff {
     if (iter_++ < kActiveSpinIters)
       proc_yield(kActiveSpinCnt);
     else
-      internal_yield();
+      internal_sched_yield();
     return true;
   }
 
@@ -253,24 +254,6 @@ void Mutex::ReadUnlock() {
 #if TSAN_DEBUG
   cur_thread()->deadlock_detector.Unlock(type_);
 #endif
-}
-
-Lock::Lock(Mutex *m)
-  : m_(m) {
-  m_->Lock();
-}
-
-Lock::~Lock() {
-  m_->Unlock();
-}
-
-ReadLock::ReadLock(Mutex *m)
-  : m_(m) {
-  m_->ReadLock();
-}
-
-ReadLock::~ReadLock() {
-  m_->ReadUnlock();
 }
 
 }  // namespace __tsan

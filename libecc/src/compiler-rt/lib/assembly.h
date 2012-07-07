@@ -16,7 +16,8 @@
 #ifndef COMPILERRT_ASSEMBLY_H
 #define COMPILERRT_ASSEMBLY_H
 
-#if defined(__POWERPC__) || defined(__powerpc__) || defined(__ppc__)
+#if !defined(__linux__) && \
+    (defined(__POWERPC__) || defined(__powerpc__) || defined(__ppc__))
 #define SEPARATOR @
 #else
 #define SEPARATOR ;

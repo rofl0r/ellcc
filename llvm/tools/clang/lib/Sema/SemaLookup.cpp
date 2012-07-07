@@ -1100,15 +1100,12 @@ static NamedDecl *getVisibleDecl(NamedDecl *D) {
 /// begin. If the lookup criteria permits, name lookup may also search
 /// in the parent scopes.
 ///
-/// @param Name     The name of the entity that we are searching for.
+/// @param [in,out] R Specifies the lookup to perform (e.g., the name to
+/// look up and the lookup kind), and is updated with the results of lookup
+/// including zero or more declarations and possibly additional information
+/// used to diagnose ambiguities.
 ///
-/// @param Loc      If provided, the source location where we're performing
-/// name lookup. At present, this is only used to produce diagnostics when
-/// C library functions (like "malloc") are implicitly declared.
-///
-/// @returns The result of name lookup, which includes zero or more
-/// declarations and possibly additional information used to diagnose
-/// ambiguities.
+/// @returns \c true if lookup succeeded and false otherwise.
 bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
   DeclarationName Name = R.getLookupName();
   if (!Name) return false;
@@ -1231,7 +1228,7 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
 /// using directives by the given context.
 ///
 /// C++98 [namespace.qual]p2:
-///   Given X::m (where X is a user-declared namespace), or given ::m
+///   Given X::m (where X is a user-declared namespace), or given \::m
 ///   (where X is the global namespace), let S be the set of all
 ///   declarations of m in X and in the transitive closure of all
 ///   namespaces nominated by using-directives in X and its used
@@ -1244,6 +1241,7 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
 ///   (namespace.udecl), S is the required set of declarations of
 ///   m. Otherwise if the use of m is not one that allows a unique
 ///   declaration to be chosen from S, the program is ill-formed.
+///
 /// C++98 [namespace.qual]p5:
 ///   During the lookup of a qualified namespace member name, if the
 ///   lookup finds more than one declaration of the member, and if one
@@ -1636,22 +1634,12 @@ bool Sema::LookupParsedName(LookupResult &R, Scope *S, CXXScopeSpec *SS,
 }
 
 
-/// @brief Produce a diagnostic describing the ambiguity that resulted
+/// \brief Produce a diagnostic describing the ambiguity that resulted
 /// from name lookup.
 ///
-/// @param Result       The ambiguous name lookup result.
+/// \param Result The result of the ambiguous lookup to be diagnosed.
 ///
-/// @param Name         The name of the entity that name lookup was
-/// searching for.
-///
-/// @param NameLoc      The location of the name within the source code.
-///
-/// @param LookupRange  A source range that provides more
-/// source-location information concerning the lookup itself. For
-/// example, this range might highlight a nested-name-specifier that
-/// precedes the name.
-///
-/// @returns true
+/// \returns true
 bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
   assert(Result.isAmbiguous() && "Lookup result must be ambiguous");
 
@@ -3615,6 +3603,12 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
         Consumer.addKeywordResult("alignof");
         Consumer.addKeywordResult("nullptr");
       }
+    }
+
+    if (SemaRef.getLangOpts().C11) {
+      // FIXME: We should not suggest _Alignof if the alignof macro
+      // is present.
+      Consumer.addKeywordResult("_Alignof");
     }
   }
 

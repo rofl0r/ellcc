@@ -4,7 +4,6 @@ XCC = gcc
 # ARCH should be one of arm, i386, microblaze, mips, nios2, ppc64, ppc, sparc, or x86_64.
 ARCH := $(shell uname -m)
 XCFLAGS = -std=gnu99 -D__host__
-# Get compiler defined headers (this assumes XCC has gcc compatable command line options).
 DOFF = ../../../../../../libecc
 XCFLAGS += -I../../../../../../test/include
 XLDEXTRA = -lm

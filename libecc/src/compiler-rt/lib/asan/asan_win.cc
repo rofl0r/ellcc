@@ -22,25 +22,10 @@
 #include "asan_interceptors.h"
 #include "asan_internal.h"
 #include "asan_lock.h"
-#include "asan_procmaps.h"
 #include "asan_thread.h"
-
-// Should not add dependency on libstdc++,
-// since most of the stuff here is inlinable.
-#include <algorithm>
+#include "sanitizer_common/sanitizer_libc.h"
 
 namespace __asan {
-
-// ---------------------- Memory management ---------------- {{{1
-void *AsanMmapFixedNoReserve(uptr fixed_addr, uptr size) {
-  return VirtualAlloc((LPVOID)fixed_addr, size,
-                      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-}
-
-void *AsanMprotect(uptr fixed_addr, uptr size) {
-  return VirtualAlloc((LPVOID)fixed_addr, size,
-                      MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
-}
 
 // ---------------------- Stacktraces, symbols, etc. ---------------- {{{1
 static AsanLock dbghelp_lock(LINKER_INITIALIZED);
@@ -101,11 +86,11 @@ bool __asan_WinSymbolize(const void *addr, char *out_buffer, int buffer_size) {
   out_buffer[0] = '\0';
   // FIXME: it might be useful to print out 'obj' or 'obj+offset' info too.
   if (got_fileline) {
-    written += SNPrintf(out_buffer + written, buffer_size - written,
+    written += internal_snprintf(out_buffer + written, buffer_size - written,
                         " %s %s:%d", symbol->Name,
                         info.FileName, info.LineNumber);
   } else {
-    written += SNPrintf(out_buffer + written, buffer_size - written,
+    written += internal_snprintf(out_buffer + written, buffer_size - written,
                         " %s+0x%p", symbol->Name, offset);
   }
   return true;
@@ -175,59 +160,6 @@ void *AsanDoesNotSupportStaticLinkage() {
   return 0;
 }
 
-bool AsanShadowRangeIsAvailable() {
-  // FIXME: shall we do anything here on Windows?
-  return true;
-}
-
-int AtomicInc(int *a) {
-  return InterlockedExchangeAdd((LONG*)a, 1) + 1;
-}
-
-u16 AtomicExchange(u16 *a, u16 new_val) {
-  // InterlockedExchange16 seems unavailable on some MSVS installations.
-  // Everybody stand back, I pretend to know inline assembly!
-  // FIXME: I assume VC is smart enough to save/restore eax/ecx?
-  __asm {
-    mov eax, a
-    mov cx, new_val
-    xchg [eax], cx  ; NOLINT
-    mov new_val, cx
-  }
-  return new_val;
-}
-
-u8 AtomicExchange(u8 *a, u8 new_val) {
-  // FIXME: can we do this with a proper xchg intrinsic?
-  u8 t = *a;
-  *a = new_val;
-  return t;
-}
-
-const char* AsanGetEnv(const char* name) {
-  static char env_buffer[32767] = {};
-
-  // Note: this implementation stores the result in a static buffer so we only
-  // allow it to be called just once.
-  static bool called_once = false;
-  if (called_once)
-    UNIMPLEMENTED();
-  called_once = true;
-
-  DWORD rv = GetEnvironmentVariableA(name, env_buffer, sizeof(env_buffer));
-  if (rv > 0 && rv < sizeof(env_buffer))
-    return env_buffer;
-  return 0;
-}
-
-void AsanDumpProcessMap() {
-  UNIMPLEMENTED();
-}
-
-uptr GetThreadSelf() {
-  return GetCurrentThreadId();
-}
-
 void SetAlternateSignalStack() {
   // FIXME: Decide what to do on Windows.
 }
@@ -238,31 +170,6 @@ void UnsetAlternateSignalStack() {
 
 void InstallSignalHandlers() {
   // FIXME: Decide what to do on Windows.
-}
-
-void AsanDisableCoreDumper() {
-  UNIMPLEMENTED();
-}
-
-void SleepForSeconds(int seconds) {
-  Sleep(seconds * 1000);
-}
-
-void Exit(int exitcode) {
-  _exit(exitcode);
-}
-
-void Abort() {
-  abort();
-  _exit(-1);  // abort is not NORETURN on Windows.
-}
-
-int Atexit(void (*function)(void)) {
-  return atexit(function);
-}
-
-void SortArray(uptr *array, uptr size) {
-  std::sort(array, array + size);
 }
 
 }  // namespace __asan

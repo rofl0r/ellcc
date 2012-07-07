@@ -28,6 +28,7 @@ const int kTidBits = 13;
 const unsigned kMaxTid = 1 << kTidBits;
 const unsigned kMaxTidInClock = kMaxTid * 2;  // This includes msb 'freed' bit.
 const int kClkBits = 43;
+const int kShadowStackSize = 1024;
 
 #ifdef TSAN_SHADOW_COUNT
 # if TSAN_SHADOW_COUNT == 2 \
@@ -51,24 +52,6 @@ const unsigned kShadowSize = 8;
 const bool kCollectStats = true;
 #else
 const bool kCollectStats = false;
-#endif
-
-#if TSAN_DEBUG
-#define DCHECK(a)       CHECK(a)
-#define DCHECK_EQ(a, b) CHECK_EQ(a, b)
-#define DCHECK_NE(a, b) CHECK_NE(a, b)
-#define DCHECK_LT(a, b) CHECK_LT(a, b)
-#define DCHECK_LE(a, b) CHECK_LE(a, b)
-#define DCHECK_GT(a, b) CHECK_GT(a, b)
-#define DCHECK_GE(a, b) CHECK_GE(a, b)
-#else
-#define DCHECK(a)
-#define DCHECK_EQ(a, b)
-#define DCHECK_NE(a, b)
-#define DCHECK_LT(a, b)
-#define DCHECK_LE(a, b)
-#define DCHECK_GT(a, b)
-#define DCHECK_GE(a, b)
 #endif
 
 // The following "build consistency" machinery ensures that all source files
@@ -133,14 +116,6 @@ T RoundUp(T p, int align) {
   DCHECK_EQ(align & (align - 1), 0);
   return (T)(((u64)p + align - 1) & ~(align - 1));
 }
-
-void real_memset(void *ptr, int c, uptr size);
-void real_memcpy(void *dst, const void *src, uptr size);
-int internal_memcmp(const void *s1, const void *s2, uptr size);
-int internal_strncmp(const char *s1, const char *s2, uptr size);
-void internal_strcpy(char *s1, const char *s2);
-const char *internal_strstr(const char *where, const char *what);
-const char *internal_strchr(const char *where, char what);
 
 struct MD5Hash {
   u64 hash[2];

@@ -14,9 +14,13 @@ TEST_GROUP(Format)
     TEST(strcmp(buffer, "%") == 0, "Format %%%% gives %s", buffer);
 
     // Check formatting.
-#define chk(fmt, out, ...)                                                       \
-    length = sprintf(buffer, fmt, __VA_ARGS__);                              \
-    TEST(strcmp(buffer, out) == 0, "Format \"%s\" with (" #__VA_ARGS__ ") gives \"%s\"", fmt, buffer)
+#define chk(fmt, out, ...)                                                      \
+    do {                                                                        \
+        length = sprintf(buffer, fmt, __VA_ARGS__);                             \
+        TEST(strcmp(buffer, out) == 0, "Format \"%s\" with ("                   \
+                                       #__VA_ARGS__                             \
+                                       ") gives \"%s\"", fmt, buffer);          \
+    } while (0)
 
     chk("%d", "10", 10);
     chk("% d", " 10", 10);
@@ -34,7 +38,9 @@ TEST_GROUP(Format)
     chk("%u", "10", 10);
     chk("%lu", "10", 10l);
     chk("%llu", "10", 10ll);
-    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52") {
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60")
+        chk("%g", "1", 1.0);
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60") {
         chk("%e", "1.000000e+01", 10.0);
         chk("%E", "1.000000E+01", 10.0);
         chk("%e", "1.000000e-02", 0.010);

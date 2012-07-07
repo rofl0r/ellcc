@@ -57,6 +57,7 @@ def DeprecatedImplementations :DiagGroup<"deprecated-implementations">;
 def : DiagGroup<"disabled-optimization">;
 def : DiagGroup<"discard-qual">;
 def : DiagGroup<"div-by-zero">;
+def Doxygen : DiagGroup<"doxygen">;
 def EmptyBody : DiagGroup<"empty-body">;
 def ExtraTokens : DiagGroup<"extra-tokens">;
 
@@ -144,6 +145,9 @@ def : DiagGroup<"old-style-cast">;
 def : DiagGroup<"old-style-definition">;
 def OutOfLineDeclaration : DiagGroup<"out-of-line-declaration">;
 def : DiagGroup<"overflow">;
+def ForwardClassReceiver : DiagGroup<"receiver-forward-class">;
+def MethodAccess : DiagGroup<"objc-method-access">;
+def ObjCReceiver : DiagGroup<"receiver-expr">;
 def OverlengthStrings : DiagGroup<"overlength-strings">;
 def OverloadedVirtual : DiagGroup<"overloaded-virtual">;
 def ObjCPropertyImpl : DiagGroup<"objc-property-implementation">;
@@ -165,7 +169,8 @@ def ReturnTypeCLinkage : DiagGroup<"return-type-c-linkage">;
 def ReturnType : DiagGroup<"return-type", [ReturnTypeCLinkage]>;
 def BindToTemporaryCopy : DiagGroup<"bind-to-temporary-copy",
                                     [CXX98CompatBindToTemporaryCopy]>;
-def SelfAssignment : DiagGroup<"self-assign">;
+def SelfAssignmentField : DiagGroup<"self-assign-field">;
+def SelfAssignment : DiagGroup<"self-assign", [SelfAssignmentField]>;
 def SemiBeforeMethodBody : DiagGroup<"semicolon-before-method-body">;
 def Sentinel : DiagGroup<"sentinel">;
 def MissingMethodReturnType : DiagGroup<"missing-method-return-type">;
@@ -209,9 +214,11 @@ def MethodDuplicate : DiagGroup<"duplicate-method-match">;
 def CoveredSwitchDefault : DiagGroup<"covered-switch-default">;
 def SwitchEnum     : DiagGroup<"switch-enum">;
 def Switch         : DiagGroup<"switch">;
-def ImplicitFallthroughPerMethod : DiagGroup<"implicit-fallthrough-per-method">;
+def ImplicitFallthroughPerFunction :
+  DiagGroup<"implicit-fallthrough-per-function">;
 def ImplicitFallthrough  : DiagGroup<"implicit-fallthrough",
-                                     [ImplicitFallthroughPerMethod]>;
+                                     [ImplicitFallthroughPerFunction]>;
+def InvalidPPToken : DiagGroup<"invalid-pp-token">;
 def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
@@ -312,7 +319,7 @@ def Unused : DiagGroup<"unused",
                        [UnusedArgument, UnusedFunction, UnusedLabel,
                         // UnusedParameter, (matches GCC's behavior)
                         // UnusedMemberFunction, (clean-up llvm before enabling)
-                        // UnusedPrivateField, (clean-up llvm before enabling)
+                        UnusedPrivateField,
                         UnusedValue, UnusedVariable]>,
                         DiagCategory<"Unused Entity Issue">;
 

@@ -16,6 +16,7 @@
 
 #include "sanitizer_common.h"
 #include "sanitizer_libc.h"
+#include "sanitizer_symbolizer.h"
 
 namespace __sanitizer {
 
@@ -24,12 +25,16 @@ int GetPid() {
   return GetProcessId(GetCurrentProcess());
 }
 
+uptr GetThreadSelf() {
+  return GetCurrentThreadId();
+}
+
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom) {
   CHECK(stack_top);
   CHECK(stack_bottom);
   MEMORY_BASIC_INFORMATION mbi;
-  CHECK(VirtualQuery(&mbi /* on stack */, &mbi, sizeof(mbi)) != 0);
+  CHECK_NE(VirtualQuery(&mbi /* on stack */, &mbi, sizeof(mbi)), 0);
   // FIXME: is it possible for the stack to not be a single allocation?
   // Are these values what ASan expects to get (reserved, not committed;
   // including stack guard page) ?
@@ -56,26 +61,111 @@ void UnmapOrDie(void *addr, uptr size) {
   }
 }
 
+void *MmapFixedNoReserve(uptr fixed_addr, uptr size) {
+  return VirtualAlloc((LPVOID)fixed_addr, size,
+                      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+void *Mprotect(uptr fixed_addr, uptr size) {
+  return VirtualAlloc((LPVOID)fixed_addr, size,
+                      MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+}
+
+bool MemoryRangeIsAvailable(uptr range_start, uptr range_end) {
+  // FIXME: shall we do anything here on Windows?
+  return true;
+}
+
+void *MapFileToMemory(const char *file_name, uptr *buff_size) {
+  UNIMPLEMENTED();
+}
+
+const char *GetEnv(const char *name) {
+  static char env_buffer[32767] = {};
+
+  // Note: this implementation stores the result in a static buffer so we only
+  // allow it to be called just once.
+  static bool called_once = false;
+  if (called_once)
+    UNIMPLEMENTED();
+  called_once = true;
+
+  DWORD rv = GetEnvironmentVariableA(name, env_buffer, sizeof(env_buffer));
+  if (rv > 0 && rv < sizeof(env_buffer))
+    return env_buffer;
+  return 0;
+}
+
+const char *GetPwd() {
+  UNIMPLEMENTED();
+  return 0;
+}
+
+void DumpProcessMap() {
+  UNIMPLEMENTED();
+}
+
+void DisableCoreDumper() {
+  UNIMPLEMENTED();
+}
+
+void SleepForSeconds(int seconds) {
+  Sleep(seconds * 1000);
+}
+
+void SleepForMillis(int millis) {
+  Sleep(millis);
+}
+
+void Exit(int exitcode) {
+  _exit(exitcode);
+}
+
+void Abort() {
+  abort();
+  _exit(-1);  // abort is not NORETURN on Windows.
+}
+
+int Atexit(void (*function)(void)) {
+  return atexit(function);
+}
+
+// ------------------ sanitizer_symbolizer.h
+bool FindDWARFSection(uptr object_file_addr, const char *section_name,
+                      DWARFSection *section) {
+  UNIMPLEMENTED();
+  return false;
+}
+
+uptr GetListOfModules(ModuleDIContext *modules, uptr max_modules) {
+  UNIMPLEMENTED();
+};
+
 // ------------------ sanitizer_libc.h
 void *internal_mmap(void *addr, uptr length, int prot, int flags,
                     int fd, u64 offset) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 int internal_munmap(void *addr, uptr length) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 int internal_close(fd_t fd) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 fd_t internal_open(const char *filename, bool write) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 uptr internal_read(fd_t fd, void *buf, uptr count) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 uptr internal_write(fd_t fd, const void *buf, uptr count) {
@@ -92,14 +182,17 @@ uptr internal_write(fd_t fd, const void *buf, uptr count) {
 
 uptr internal_filesize(fd_t fd) {
   UNIMPLEMENTED();
+  return 0;
 }
 
 int internal_dup2(int oldfd, int newfd) {
   UNIMPLEMENTED();
+  return 0;
 }
 
-int internal_sscanf(const char *str, const char *format, ...) {
+int internal_sched_yield() {
   UNIMPLEMENTED();
+  return 0;
 }
 
 }  // namespace __sanitizer
