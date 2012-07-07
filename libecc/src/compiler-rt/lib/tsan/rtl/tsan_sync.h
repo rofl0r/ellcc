@@ -13,7 +13,8 @@
 #ifndef TSAN_SYNC_H
 #define TSAN_SYNC_H
 
-#include "tsan_atomic.h"
+#include "sanitizer_common/sanitizer_atomic.h"
+#include "sanitizer_common/sanitizer_common.h"
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_mutex.h"
@@ -25,6 +26,9 @@ class SlabCache;
 class StackTrace {
  public:
   StackTrace();
+  // Initialized the object in "static mode",
+  // in this mode it never calls malloc/free but uses the provided buffer.
+  StackTrace(uptr *buf, uptr cnt);
   ~StackTrace();
   void Reset();
 
@@ -39,6 +43,7 @@ class StackTrace {
  private:
   uptr n_;
   uptr *s_;
+  const uptr c_;
 
   StackTrace(const StackTrace&);
   void operator = (const StackTrace&);

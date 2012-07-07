@@ -28,7 +28,7 @@
 using namespace clang;
 using namespace CodeGen;
 
-CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
+CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
   : CodeGenTypeCache(cgm), CGM(cgm),
     Target(CGM.getContext().getTargetInfo()),
     Builder(cgm.getModule().getContext()),
@@ -42,7 +42,8 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
     TerminateHandler(0), TrapBB(0) {
 
   CatchUndefined = getContext().getLangOpts().CatchUndefined;
-  CGM.getCXXABI().getMangleContext().startNewFunction();
+  if (!suppressNewContext)
+    CGM.getCXXABI().getMangleContext().startNewFunction();
 }
 
 CodeGenFunction::~CodeGenFunction() {
@@ -687,10 +688,10 @@ void CodeGenFunction::ErrorUnsupported(const Stmt *S, const char *Type,
 /// emitNonZeroVLAInit - Emit the "zero" initialization of a
 /// variable-length array whose elements have a non-zero bit-pattern.
 ///
+/// \param baseType the inner-most element type of the array
 /// \param src - a char* pointing to the bit-pattern for a single
 /// base element of the array
 /// \param sizeInChars - the total size of the VLA, in chars
-/// \param align - the total alignment of the VLA
 static void emitNonZeroVLAInit(CodeGenFunction &CGF, QualType baseType,
                                llvm::Value *dest, llvm::Value *src, 
                                llvm::Value *sizeInChars) {

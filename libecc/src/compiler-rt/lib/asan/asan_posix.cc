@@ -16,7 +16,6 @@
 #include "asan_internal.h"
 #include "asan_interceptors.h"
 #include "asan_mapping.h"
-#include "asan_procmaps.h"
 #include "asan_stack.h"
 #include "asan_thread_registry.h"
 #include "sanitizer_common/sanitizer_libc.h"
@@ -29,42 +28,9 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#ifdef ANDROID
-#include <sys/atomics.h>
-#endif
-
-// Should not add dependency on libstdc++,
-// since most of the stuff here is inlinable.
-#include <algorithm>
-
 static const uptr kAltStackSize = SIGSTKSZ * 4;  // SIGSTKSZ is not enough.
 
 namespace __asan {
-
-static inline bool IntervalsAreSeparate(uptr start1, uptr end1,
-                                        uptr start2, uptr end2) {
-  CHECK(start1 <= end1);
-  CHECK(start2 <= end2);
-  return (end1 < start2) || (end2 < start1);
-}
-
-// FIXME: this is thread-unsafe, but should not cause problems most of the time.
-// When the shadow is mapped only a single thread usually exists (plus maybe
-// several worker threads on Mac, which aren't expected to map big chunks of
-// memory).
-bool AsanShadowRangeIsAvailable() {
-  ProcessMaps procmaps;
-  uptr start, end;
-  uptr shadow_start = kLowShadowBeg;
-  if (kLowShadowBeg > 0) shadow_start -= kMmapGranularity;
-  uptr shadow_end = kHighShadowEnd;
-  while (procmaps.Next(&start, &end,
-                       /*offset*/0, /*filename*/0, /*filename_size*/0)) {
-    if (!IntervalsAreSeparate(start, end, shadow_start, shadow_end))
-      return false;
-  }
-  return true;
-}
 
 static void MaybeInstallSigaction(int signum,
                                   void (*handler)(int, siginfo_t *, void *)) {
@@ -133,66 +99,6 @@ void InstallSignalHandlers() {
   if (FLAG_use_sigaltstack) SetAlternateSignalStack();
   MaybeInstallSigaction(SIGSEGV, ASAN_OnSIGSEGV);
   MaybeInstallSigaction(SIGBUS, ASAN_OnSIGSEGV);
-}
-
-void AsanDisableCoreDumper() {
-  struct rlimit nocore;
-  nocore.rlim_cur = 0;
-  nocore.rlim_max = 0;
-  setrlimit(RLIMIT_CORE, &nocore);
-}
-
-void AsanDumpProcessMap() {
-  ProcessMaps proc_maps;
-  uptr start, end;
-  const sptr kBufSize = 4095;
-  char filename[kBufSize];
-  Report("Process memory map follows:\n");
-  while (proc_maps.Next(&start, &end, /* file_offset */0,
-                        filename, kBufSize)) {
-    Printf("\t%p-%p\t%s\n", (void*)start, (void*)end, filename);
-  }
-  Report("End of process memory map.\n");
-}
-
-uptr GetThreadSelf() {
-  return (uptr)pthread_self();
-}
-
-void SleepForSeconds(int seconds) {
-  sleep(seconds);
-}
-
-void Exit(int exitcode) {
-  _exit(exitcode);
-}
-
-void Abort() {
-  abort();
-}
-
-int Atexit(void (*function)(void)) {
-  return atexit(function);
-}
-
-int AtomicInc(int *a) {
-#ifdef ANDROID
-  return __atomic_inc(a) + 1;
-#else
-  return __sync_add_and_fetch(a, 1);
-#endif
-}
-
-u16 AtomicExchange(u16 *a, u16 new_val) {
-  return __sync_lock_test_and_set(a, new_val);
-}
-
-u8 AtomicExchange(u8 *a, u8 new_val) {
-  return __sync_lock_test_and_set(a, new_val);
-}
-
-void SortArray(uptr *array, uptr size) {
-  std::sort(array, array + size);
 }
 
 // ---------------------- TSD ---------------- {{{1

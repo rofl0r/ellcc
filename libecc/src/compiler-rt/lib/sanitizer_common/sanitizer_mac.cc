@@ -18,11 +18,14 @@
 #include "sanitizer_internal_defs.h"
 #include "sanitizer_libc.h"
 #include "sanitizer_procmaps.h"
+#include "sanitizer_symbolizer.h"
 
+#include <crt_externs.h>  // for _NSGetEnviron
 #include <fcntl.h>
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
 #include <pthread.h>
+#include <sched.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -69,6 +72,10 @@ int internal_dup2(int oldfd, int newfd) {
   return dup2(oldfd, newfd);
 }
 
+int internal_sched_yield() {
+  return sched_yield();
+}
+
 // ----------------- sanitizer_common.h
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom) {
@@ -80,6 +87,37 @@ void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
   *stack_bottom = *stack_top - stacksize;
 }
 
+const char *GetEnv(const char *name) {
+  char ***env_ptr = _NSGetEnviron();
+  CHECK(env_ptr);
+  char **environ = *env_ptr;
+  CHECK(environ);
+  uptr name_len = internal_strlen(name);
+  while (*environ != 0) {
+    uptr len = internal_strlen(*environ);
+    if (len > name_len) {
+      const char *p = *environ;
+      if (!internal_memcmp(p, name, name_len) &&
+          p[name_len] == '=') {  // Match.
+        return *environ + name_len + 1;  // String starting after =.
+      }
+    }
+    environ++;
+  }
+  return 0;
+}
+
+// ------------------ sanitizer_symbolizer.h
+bool FindDWARFSection(uptr object_file_addr, const char *section_name,
+                      DWARFSection *section) {
+  UNIMPLEMENTED();
+  return false;
+}
+
+uptr GetListOfModules(ModuleDIContext *modules, uptr max_modules) {
+  UNIMPLEMENTED();
+  return 0;
+};
 
 // ----------------- sanitizer_procmaps.h
 

@@ -194,3 +194,133 @@ __m128i test_mm_roti_epi64(__m128i a) {
   // CHECK: @llvm.x86.xop.vprotqi
   return _mm_roti_epi64(a, 100);
 }
+
+__m128i test_mm_shl_epi8(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshlb
+  return _mm_shl_epi8(a, b);
+}
+
+__m128i test_mm_shl_epi16(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshlw
+  return _mm_shl_epi16(a, b);
+}
+
+__m128i test_mm_shl_epi32(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshld
+  return _mm_shl_epi32(a, b);
+}
+
+__m128i test_mm_shl_epi64(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshlq
+  return _mm_shl_epi64(a, b);
+}
+
+__m128i test_mm_sha_epi8(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshab
+  return _mm_sha_epi8(a, b);
+}
+
+__m128i test_mm_sha_epi16(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshaw
+  return _mm_sha_epi16(a, b);
+}
+
+__m128i test_mm_sha_epi32(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshad
+  return _mm_sha_epi32(a, b);
+}
+
+__m128i test_mm_sha_epi64(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpshaq
+  return _mm_sha_epi64(a, b);
+}
+
+__m128i test_mm_com_epu8(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomub
+  return _mm_com_epu8(a, b, 0);
+}
+
+__m128i test_mm_com_epu16(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomuw
+  return _mm_com_epu16(a, b, 0);
+}
+
+__m128i test_mm_com_epu32(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomud
+  return _mm_com_epu32(a, b, 0);
+}
+
+__m128i test_mm_com_epu64(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomuq
+  return _mm_com_epu64(a, b, 0);
+}
+
+__m128i test_mm_com_epi8(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomb
+  return _mm_com_epi8(a, b, 0);
+}
+
+__m128i test_mm_com_epi16(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomw
+  return _mm_com_epi16(a, b, 0);
+}
+
+__m128i test_mm_com_epi32(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomd
+  return _mm_com_epi32(a, b, 0);
+}
+
+__m128i test_mm_com_epi64(__m128i a, __m128i b) {
+  // CHECK: @llvm.x86.xop.vpcomq
+  return _mm_com_epi64(a, b, 0);
+}
+
+__m128d test_mm_permute2_pd(__m128d a, __m128d b, __m128i c) {
+  // CHECK: @llvm.x86.xop.vpermil2pd
+  return _mm_permute2_pd(a, b, c, 0);
+}
+
+__m256d test_mm256_permute2_pd(__m256d a, __m256d b, __m256i c) {
+  // CHECK: @llvm.x86.xop.vpermil2pd.256
+  return _mm256_permute2_pd(a, b, c, 0);
+}
+
+__m128 test_mm_permute2_ps(__m128 a, __m128 b, __m128i c) {
+  // CHECK: @llvm.x86.xop.vpermil2ps
+  return _mm_permute2_ps(a, b, c, 0);
+}
+
+__m256 test_mm256_permute2_ps(__m256 a, __m256 b, __m256i c) {
+  // CHECK: @llvm.x86.xop.vpermil2ps.256
+  return _mm256_permute2_ps(a, b, c, 0);
+}
+
+__m128 test_mm_frcz_ss(__m128 a) {
+  // CHECK: @llvm.x86.xop.vfrcz.ss
+  return _mm_frcz_ss(a);
+}
+
+__m128d test_mm_frcz_sd(__m128d a) {
+  // CHECK: @llvm.x86.xop.vfrcz.sd
+  return _mm_frcz_sd(a);
+}
+
+__m128 test_mm_frcz_ps(__m128 a) {
+  // CHECK: @llvm.x86.xop.vfrcz.ps
+  return _mm_frcz_ps(a);
+}
+
+__m128d test_mm_frcz_pd(__m128d a) {
+  // CHECK: @llvm.x86.xop.vfrcz.pd
+  return _mm_frcz_pd(a);
+}
+
+__m256 test_mm256_frcz_ps(__m256 a) {
+  // CHECK: @llvm.x86.xop.vfrcz.ps.256
+  return _mm256_frcz_ps(a);
+}
+
+__m256d test_mm256_frcz_pd(__m256d a) {
+  // CHECK: @llvm.x86.xop.vfrcz.pd.256
+  return _mm256_frcz_pd(a);
+}

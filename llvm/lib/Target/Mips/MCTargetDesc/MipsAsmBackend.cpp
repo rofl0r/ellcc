@@ -36,6 +36,10 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
   case FK_GPRel_4:
   case FK_Data_4:
   case Mips::fixup_Mips_LO16:
+  case Mips::fixup_Mips_GPOFF_HI:
+  case Mips::fixup_Mips_GPOFF_LO:
+  case Mips::fixup_Mips_GOT_PAGE:
+  case Mips::fixup_Mips_GOT_OFST:
     break;
   case Mips::fixup_Mips_PC16:
     // So far we are only using this type for branches.
@@ -74,7 +78,8 @@ public:
     :MCAsmBackend(), OSType(_OSType), IsLittle(_isLittle), Is64Bit(_is64Bit) {}
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return createMipsELFObjectWriter(OS, OSType, IsLittle, Is64Bit);
+    return createMipsELFObjectWriter(OS,
+      MCELFObjectTargetWriter::getOSABI(OSType), IsLittle, Is64Bit);
   }
 
   /// ApplyFixup - Apply the \arg Value for given \arg Fixup into the provided
@@ -115,7 +120,8 @@ public:
       CurVal |= (uint64_t)((uint8_t)Data[Offset + Idx]) << (i*8);
     }
 
-    uint64_t Mask = ((uint64_t)(-1) >> (64 - getFixupKindInfo(Kind).TargetSize));
+    uint64_t Mask = ((uint64_t)(-1) >>
+                     (64 - getFixupKindInfo(Kind).TargetSize));
     CurVal |= Value & Mask;
 
     // Write out the fixed up bytes back to the code/data bits.
@@ -156,7 +162,11 @@ public:
       { "fixup_Mips_TLSLDM",       0,     16,   0 },
       { "fixup_Mips_DTPREL_HI",    0,     16,   0 },
       { "fixup_Mips_DTPREL_LO",    0,     16,   0 },
-      { "fixup_Mips_Branch_PCRel", 0,     16,  MCFixupKindInfo::FKF_IsPCRel }
+      { "fixup_Mips_Branch_PCRel", 0,     16,  MCFixupKindInfo::FKF_IsPCRel },
+      { "fixup_Mips_GPOFF_HI",     0,     16,   0 },
+      { "fixup_Mips_GPOFF_LO",     0,     16,   0 },
+      { "fixup_Mips_GOT_PAGE",     0,     16,   0 },
+      { "fixup_Mips_GOT_OFST",     0,     16,   0 }
     };
 
     if (Kind < FirstTargetFixupKind)

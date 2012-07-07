@@ -1900,21 +1900,32 @@ TEST(AddressSanitizer, BufferOverflowAfterManyFrees) {
 
 #ifdef __APPLE__
 #include "asan_mac_test.h"
-// TODO(glider): figure out whether we still need these tests. Is it correct
-// to intercept CFAllocator?
-TEST(AddressSanitizerMac, DISABLED_CFAllocatorDefaultDoubleFree) {
+TEST(AddressSanitizerMac, CFAllocatorDefaultDoubleFree) {
   EXPECT_DEATH(
-      CFAllocatorDefaultDoubleFree(),
+      CFAllocatorDefaultDoubleFree(NULL),
       "attempting double-free");
 }
 
+void CFAllocator_DoubleFreeOnPthread() {
+  pthread_t child;
+  pthread_create(&child, NULL, CFAllocatorDefaultDoubleFree, NULL);
+  pthread_join(child, NULL);  // Shouldn't be reached.
+}
+
+TEST(AddressSanitizerMac, DISABLED_CFAllocatorDefaultDoubleFree_ChildPhread) {
+  EXPECT_DEATH(CFAllocator_DoubleFreeOnPthread(), "attempting double-free");
+}
+
+// TODO(glider): figure out whether we still need these tests. Is it correct
+// to intercept the non-default CFAllocators?
 TEST(AddressSanitizerMac, DISABLED_CFAllocatorSystemDefaultDoubleFree) {
   EXPECT_DEATH(
       CFAllocatorSystemDefaultDoubleFree(),
       "attempting double-free");
 }
 
-TEST(AddressSanitizerMac, DISABLED_CFAllocatorMallocDoubleFree) {
+// We're intercepting malloc, so kCFAllocatorMalloc is routed to ASan.
+TEST(AddressSanitizerMac, CFAllocatorMallocDoubleFree) {
   EXPECT_DEATH(CFAllocatorMallocDoubleFree(), "attempting double-free");
 }
 
@@ -2048,6 +2059,13 @@ TEST(AddressSanitizerMac, CFStringCreateCopy) {
 TEST(AddressSanitizerMac, NSObjectOOB) {
   // Make sure that our allocators are used for NSObjects.
   EXPECT_DEATH(TestOOBNSObjects(), "heap-buffer-overflow");
+}
+
+// Make sure that correct pointer is passed to free() when deallocating a
+// NSURL object.
+// See http://code.google.com/p/address-sanitizer/issues/detail?id=70.
+TEST(AddressSanitizerMac, NSURLDeallocation) {
+  TestNSURLDeallocation();
 }
 #endif  // __APPLE__
 

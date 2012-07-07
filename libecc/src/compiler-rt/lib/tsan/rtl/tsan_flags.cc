@@ -32,7 +32,7 @@ void WEAK OverrideFlags(Flags *f) {
 }
 
 void InitializeFlags(Flags *f, const char *env) {
-  real_memset(f, 0, sizeof(*f));
+  internal_memset(f, 0, sizeof(*f));
 
   // Default values.
   f->enable_annotations = true;
@@ -139,7 +139,7 @@ static void Flag(const char *env, const char **flag, const char *name) {
     return;
   int len = end - val;
   char *f = (char*)internal_alloc(MBlockFlag, len + 1);
-  real_memcpy(f, val, len);
+  internal_memcpy(f, val, len);
   f[len] = 0;
   *flag = f;
 }

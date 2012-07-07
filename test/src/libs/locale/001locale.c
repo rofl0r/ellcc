@@ -47,7 +47,7 @@ TEST_GROUP(Locale)
 
     TEST_TRACE(C99 7.11.1)
     char *current = setlocale(LC_ALL, "C");
-    TEST_UNSUPPORTED(TEST(current != 0, "setlocale(LC_ALL, \"C\") returns a string");)
+    TEST(current != 0, "setlocale(LC_ALL, \"C\") returns a string");
     TEST_TRACE(C99 7.11.2)
     struct lconv *lconv;
     lconv = localeconv();

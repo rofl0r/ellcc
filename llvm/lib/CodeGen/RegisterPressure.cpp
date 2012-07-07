@@ -680,19 +680,13 @@ void RegPressureTracker::bumpUpwardPressure(const MachineInstr *MI) {
   // Generate liveness for uses.
   for (unsigned i = 0, e = PhysRegOpers.Uses.size(); i < e; ++i) {
     unsigned Reg = PhysRegOpers.Uses[i];
-    if (!hasRegAlias(Reg, LivePhysRegs, TRI)
-        && (findRegAlias(Reg, PhysRegOpers.Defs, TRI)
-            == PhysRegOpers.Defs.end())) {
+    if (!hasRegAlias(Reg, LivePhysRegs, TRI))
       increasePhysRegPressure(Reg);
-    }
   }
   for (unsigned i = 0, e = VirtRegOpers.Uses.size(); i < e; ++i) {
     unsigned Reg = VirtRegOpers.Uses[i];
-    if (!LiveVirtRegs.count(Reg)
-        && (std::find(VirtRegOpers.Defs.begin(), VirtRegOpers.Defs.end(), Reg)
-            != VirtRegOpers.Defs.end())) {
+    if (!LiveVirtRegs.count(Reg))
       increaseVirtRegPressure(Reg);
-    }
   }
 }
 
@@ -817,25 +811,31 @@ getMaxDownwardPressureDelta(const MachineInstr *MI, RegPressureDelta &Delta,
 /// Get the pressure of each PSet after traversing this instruction bottom-up.
 void RegPressureTracker::
 getUpwardPressure(const MachineInstr *MI,
-                  std::vector<unsigned> &PressureResult) {
+                  std::vector<unsigned> &PressureResult,
+                  std::vector<unsigned> &MaxPressureResult) {
   // Snapshot pressure.
   PressureResult = CurrSetPressure;
+  MaxPressureResult = P.MaxSetPressure;
 
   bumpUpwardPressure(MI);
 
   // Current pressure becomes the result. Restore current pressure.
+  P.MaxSetPressure.swap(MaxPressureResult);
   CurrSetPressure.swap(PressureResult);
 }
 
 /// Get the pressure of each PSet after traversing this instruction top-down.
 void RegPressureTracker::
 getDownwardPressure(const MachineInstr *MI,
-                    std::vector<unsigned> &PressureResult) {
+                    std::vector<unsigned> &PressureResult,
+                    std::vector<unsigned> &MaxPressureResult) {
   // Snapshot pressure.
   PressureResult = CurrSetPressure;
+  MaxPressureResult = P.MaxSetPressure;
 
   bumpDownwardPressure(MI);
 
   // Current pressure becomes the result. Restore current pressure.
+  P.MaxSetPressure.swap(MaxPressureResult);
   CurrSetPressure.swap(PressureResult);
 }

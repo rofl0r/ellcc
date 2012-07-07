@@ -1,5 +1,5 @@
 extern "C" {
-  void CFAllocatorDefaultDoubleFree();
+  void *CFAllocatorDefaultDoubleFree(void *unused);
   void CFAllocatorSystemDefaultDoubleFree();
   void CFAllocatorMallocDoubleFree();
   void CFAllocatorMallocZoneDoubleFree();
@@ -14,4 +14,5 @@ extern "C" {
   void TestGCDSourceCancel();
   void TestGCDGroupAsync();
   void TestOOBNSObjects();
+  void TestNSURLDeallocation();
 }
