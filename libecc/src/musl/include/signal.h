@@ -27,7 +27,7 @@ extern "C" {
 
 #define SIG_HOLD ((void (*)(int)) 2)
 
-#if defined(__mips)
+#if defined(__mips__)
 #define SIG_BLOCK     1
 #define SIG_UNBLOCK   2
 #define SIG_SETMASK   3
@@ -80,7 +80,7 @@ extern "C" {
 #define CLD_CONTINUED 6
 
 struct sigaction {
-#if defined(__mips)
+#if defined(__mips__)
 	int sa_flags;
 	union {
 		void (*sa_handler)(int);
