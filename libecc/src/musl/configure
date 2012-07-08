@@ -182,6 +182,7 @@ microblaze*) ARCH=microblaze ;;
 mips*) ARCH=mips ;;
 ppc64*) ARCH=ppc64 ;;
 ppc*) ARCH=ppc ;;
+sparc*) ARCH=sparc ;;
 x86_64*) ARCH=x86_64 ;;
 unknown) fail "$0: unable to detect built target; try $0 --build=..." ;;
 *) fail "$0: unknown or unsupported build target \"$build\"" ;;

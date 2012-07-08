@@ -1,7 +1,7 @@
 # Build ELLCC.
 
 # Get the names of the subdirectories.
-SUBDIRS := llvm-build gnu
+SUBDIRS := llvm-build gnu libecc
 
 all install clean veryclean check: llvm-build gnu/gnu-build
 	@for dir in $(SUBDIRS) ; do \
@@ -12,27 +12,9 @@ all install clean veryclean check: llvm-build gnu/gnu-build
 llvm-build gnu/gnu-build:
 	./configure
 
-# RICH: TODO: Check out the warnings.
-PWD := $(shell pwd)
-TARGETS := ppc64 #armeb x86_64 arm i386 # microblaze mips ppc ppc64
-.PHONY: musl
-musl:
-	@for target in $(TARGETS) ; do \
-	  echo Making musl for $$target $@ in musl-build/$$target ; \
-	  mkdir -p musl-build/$$target ; \
-	  cd musl ; \
-	  export CC="$(PWD)/bin/$$target-linux-ecc" ; \
-	  ./configure --prefix=$(PWD)/musl-build/$$target \
-	    --build=$$target \
-	    --syslibdir=$(PWD)/musl-build/$$target \
-	    --exec-prefix=$(PWD)/musl-build/$$target \
-	    --enable-warnings \
-	    --enable-debug \
-            --disable-shared \
-	    CFLAGS="-MP -MD -g -Werror -Qunused-arguments -Wno-unneeded-internal-declaration -Wno-cast-align -Wno-incompatible-pointer-types -Wno-string-plus-int -Wno-pointer-sign -Wno-array-bounds" \
-	    || exit 1 ; \
-	  make || exit 1 ; \
-	  make install || exit 1 ; \
-	  cd .. ; \
-	done
-	  #make clean ; \
+.PHONY: release
+release:
+	mkdir -p release
+	make -C libecc veryclean
+	tar --exclude "*.svn*" --exclude "*/test/*" -cvpz -frelease/ellcc.tgz bin libecc
+

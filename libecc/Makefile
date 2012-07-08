@@ -21,10 +21,10 @@ CFLAGS.mips := -mcpu=mips32r2
 CFLAGS.mipsel := -mcpu=mips32r2
 CFLAGS.ppc := # -mcpu=440
 CFLAGS.ppc64 := # -mcpu=440
+CFLAGS.sparc :=
 CFLAGS.x86_64 :=
 
-.PHONY: libecc
-libecc: header.install \
+all:	header.install \
 	arm \
         armeb \
 	i386 \
@@ -35,8 +35,10 @@ libecc: header.install \
 	ppc64 \
 	x86_64 \
 	compiler-rt.install \
+	other-libs \
+	# sparc
 
-arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze:
+arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze sparc:
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
 	cd src/musl ; \
@@ -62,12 +64,14 @@ arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze:
 clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean
+	make -C obj clean
 	rm -fr src/musl/musl.last
 
 veryclean: clean
-	rm -fr $(OBJ) clang
+	make -C obj veryclean
+	rm -fr $(OBJ)
 
-install: musl.install compiler-rt.install
+install:
 
 header.install:
 	@echo Installing ecc header files for version $(VERSION) ; \
@@ -99,3 +103,12 @@ compiler-rt.install:
 	  mkdir -p ../../../lib/$$target/linux ; \
 	  cp $$target/*.a ../../../lib/$$target/linux ; \
 	done
+
+other-libs:
+	mkdir -p include/c++ ; \
+	cp src/c++/libcxx/include/* include/c++ ; \
+	mkdir -p include/c++/ext ; \
+	cp src/c++/libcxx/include/ext/* include/c++/ext ; \
+	cp clang/unwind.h include/c++
+	cp src/c++/libcxxabi/include/* include/c++ ; \
+	make -C obj install

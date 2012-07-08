@@ -25,6 +25,8 @@
  * $FreeBSD: src/lib/csu/common/crtbegin.c,v 1.8 2002/01/28 19:02:34 obrien Exp $
  */
 
+void *__dso_handle = 0;
+
 typedef void (*cfptr)(int argc, char **argv, char **envp);
 typedef void (*dfptr)(void);
 
