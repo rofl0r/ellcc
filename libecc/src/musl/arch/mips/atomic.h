@@ -26,9 +26,9 @@ static inline int a_ctz_64(uint64_t x)
 static inline int a_cas(volatile int *p, int t, int s)
 {
 
-	__asm__( "#.set noat\n"
+	__asm__( ".set noat\n"
                  ".set noreorder\n"
-                 "#.set nomacro\n"
+                 ".set nomacro\n"
                  "1: ll $8, 0(%1)\n"
                  "   nop\n"
                  "   add $9, %3, $0\n"
