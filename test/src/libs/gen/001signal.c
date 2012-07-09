@@ -6,6 +6,7 @@ static volatile sig_atomic_t i = 0;
 
 static void handler(int sig)
 {
+    fprintf(stderr, "in handler\n");
     i = 1;
 }
 
@@ -42,7 +43,7 @@ TEST_GROUP(Signal)
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=24")
         TEST(signal(SIGINT, handler) == handler, "The previous signal is correct");
     TEST_TRACE(C99 7.14.1.2)
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=55")
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=55")
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=10")
     TEST_RESOLVED(I386, "http://ellcc.org/bugzilla/show_bug.cgi?id=16")
     TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=11")

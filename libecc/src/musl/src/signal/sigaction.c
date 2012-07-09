@@ -13,16 +13,24 @@ weak_alias(dummy, __pthread_self_def);
 int __libc_sigaction(int sig, const struct sigaction *sa, struct sigaction *old)
 {
 	struct {
+#if defined(__mips__)
+		unsigned long flags;
+		void *handler;
+		sigset_t mask;
+#else
 		void *handler;
 		unsigned long flags;
 		void (*restorer)(void);
 		sigset_t mask;
+#endif
 	} ksa, kold;
 	long pksa=0, pkold=0;
 	if (sa) {
 		ksa.handler = sa->sa_handler;
 		ksa.flags = sa->sa_flags | SA_RESTORER;
+#if !defined(__mips__)
 		ksa.restorer = (sa->sa_flags & SA_SIGINFO) ? __restore_rt : __restore;
+#endif
 		ksa.mask = sa->sa_mask;
 		pksa = (long)&ksa;
 	}

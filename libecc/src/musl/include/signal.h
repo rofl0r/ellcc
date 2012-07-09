@@ -80,14 +80,6 @@ extern "C" {
 #define CLD_CONTINUED 6
 
 struct sigaction {
-#if defined(__mips__)
-	int sa_flags;
-	union {
-		void (*sa_handler)(int);
-		void (*sa_sigaction)(int, siginfo_t *, void *);
-	} __sa_handler;
-	sigset_t sa_mask;
-#else
 	union {
 		void (*sa_handler)(int);
 		void (*sa_sigaction)(int, siginfo_t *, void *);
@@ -95,7 +87,6 @@ struct sigaction {
 	sigset_t sa_mask;
 	int sa_flags;
 	void (*sa_restorer)(void);	
-#endif
 };
 #define sa_handler   __sa_handler.sa_handler
 #define sa_sigaction __sa_handler.sa_sigaction
