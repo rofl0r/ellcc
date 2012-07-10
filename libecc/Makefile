@@ -12,9 +12,9 @@ CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else
 ABI.arm := eabi
-CFLAGS.arm := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
+CFLAGS.arm := -mcpu=cortex-a9 -mfpu=neon
 ABI.armeb := eabi
-CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon -mabi=aapcs-linux
+CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon
 CFLAGS.i386 :=
 CFLAGS.microblaze :=
 CFLAGS.mips := -mcpu=mips32r2
