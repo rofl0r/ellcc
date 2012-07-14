@@ -458,24 +458,20 @@ static std::string getARMTargetCPU(const ArgList &Args,
   //
   // If we have -mcpu=, use that.
   if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
-    StringRef MCPU = A->getValue(Args);
-    // Handle -mcpu=native.
-    if (MCPU == "native")
-      return llvm::sys::getHostCPUName();
-    else
-      return MCPU;
-  }
-
-  if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
-    // Otherwise, if we have -march= choose the base CPU for that arch.
     MArch = A->getValue(Args);
+    // Handle -mcpu=native.
   } else {
     if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
       // Otherwise, if we have -march= choose the base CPU for that arch.
       MArch = A->getValue(Args);
     } else {
-      // Otherwise, use the Arch from the triple.
-      MArch = Triple.getArchName();
+      if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+        // Otherwise, if we have -march= choose the base CPU for that arch.
+        MArch = A->getValue(Args);
+      } else {
+        // Otherwise, use the Arch from the triple.
+        MArch = Triple.getArchName();
+      }
     }
   }
 

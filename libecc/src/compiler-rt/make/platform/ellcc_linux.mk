@@ -3,79 +3,17 @@ Description := Static runtime libraries for ellcc/Linux.
 ###
 
 PWD := $(shell pwd)
-override CC := $(PWD)/../../../bin/ecc
+ELLCC := $(PWD)/../../..
+LIBECC := $(ELLCC)/libecc
+override CC := $(ELLCC)/bin/ecc
 Arch := unknown
-Configs :=
-
-# Configurations which just include all the runtime functions.
-Configs += arm
-Arch.arm := arm
-
-Configs += armeb
-Arch.armeb := armeb
-
-Configs += i386
-Arch.i386 := i386
-
-Configs += microblaze
-Arch.microblaze := microblaze
-
-Configs += mips
-Arch.mips := mips
-
-Configs += mipsel
-Arch.mipsel := mipsel
-
-Configs += ppc
-Arch.ppc := ppc
-
-Configs += ppc64
-Arch.ppc64 := ppc64
-
-Configs += x86_64
-Arch.x86_64 := x86_64
-
-# Configuration for profile runtime.
-ifeq ($(call contains,i386 x86_64,$(CompilerTargetArch)),true)
-Configs += profile-i386 profile-x86_64
-Arch.profile-i386 := i386
-Arch.profile-x86_64 := x86_64
-endif
-
-# Configuration for ASAN runtime.
-ifeq ($(CompilerTargetArch),i386)
-Configs += asan-i386
-Arch.asan-i386 := i386
-endif
-ifeq ($(CompilerTargetArch),x86_64)
-Configs += asan-x86_64
-Arch.asan-x86_64 := x86_64
-endif
-
-# Configuration for TSAN runtime.
-ifeq ($(CompilerTargetArch),x86_64)
-Configs += tsan-x86_64
-Arch.tsan-x86_64 := x86_64
-endif
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/targets; echo *))
+INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/targets/$(TARGET)/setup.mk)
+OS := linux
+CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
+-include $(INCLUDES)
 
 ###
-
-CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
-
-CFLAGS.arm := $(CFLAGS) -target arm-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.armeb := $(CFLAGS) -target armeb-ellcc-linux-eabi -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.i386 := $(CFLAGS) -target i386-ellcc-linux
-CFLAGS.microblaze := $(CFLAGS) -target microblaze-ellcc-linux
-CFLAGS.mips := $(CFLAGS) -target mips-ellcc-linux -mcpu=mips32r2
-CFLAGS.mipsel := $(CFLAGS) -target mipsel-ellcc-linux -mcpu=mips32r2
-CFLAGS.ppc := $(CFLAGS) -target ppc-ellcc-linux # -mcpu=440
-CFLAGS.ppc64 := $(CFLAGS) -target ppc64-ellcc-linux # -mcpu=440
-CFLAGS.x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
-CFLAGS.profile-i386 := $(CFLAGS) -target i386-ellcc-linux
-CFLAGS.profile-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux
-CFLAGS.asan-i386 := $(CFLAGS) -target i386-ellcc-linux -fPIE -fno-builtin
-CFLAGS.asan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
-CFLAGS.tsan-x86_64 := $(CFLAGS) -target x86_64-ellcc-linux -fPIE -fno-builtin
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
 		 aeabi_ldivmod \

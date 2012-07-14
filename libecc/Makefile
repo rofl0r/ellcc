@@ -3,44 +3,28 @@
 # RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
-# Get the clang version.
-VERSION := $(shell $(ELLCC)/bin/ecc -v |& grep version |& sed "s/.*version \([0-9]*\.[0-9]*\).*/\1/")
-
-OBJ := $(PWD)/musl-build
+LIBECC := $(ELLCC)/libecc
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/targets; echo *))
+INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/targets/$(TARGET)/setup.mk)
+OS := linux
 CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else
-ABI.arm := eabi
-CFLAGS.arm := -mcpu=cortex-a9 -mfpu=neon
-ABI.armeb := eabi
-CFLAGS.armeb := -mcpu=cortex-a9 -mfpu=neon
-CFLAGS.i386 :=
-CFLAGS.microblaze :=
-CFLAGS.mips := -mcpu=mips32r2
-CFLAGS.mipsel := -mcpu=mips32r2
-CFLAGS.ppc := # -mcpu=440
-CFLAGS.ppc64 := # -mcpu=440
-CFLAGS.sparc :=
-CFLAGS.x86_64 :=
+-include $(INCLUDES)
 
+# Get the clang version.
+VERSION := $(shell $(ELLCC)/bin/ecc -v |& grep version |& sed "s/.*version \([0-9]*\.[0-9]*\).*/\1/")
+
+OBJ := $(PWD)/musl-build
 install:header.install \
-	arm \
-        armeb \
-	i386 \
-	microblaze \
-	mips \
-	mipsel \
-	ppc \
-	ppc64 \
-	x86_64 \
+	$(Configs) \
 	compiler-rt.install \
-	other-libs \
-	# sparc
+	other-libs
 
 all:
 
-arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze sparc:
+$(Configs):
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
 	cd src/musl ; \
@@ -54,7 +38,7 @@ arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze sparc:
 	      --enable-warnings \
 	      --enable-debug \
               --disable-shared \
-	      CFLAGS="-target $@-ellcc-linux-$(ABI.$@) $(CFLAGS.$@) $(CFLAGS)" \
+	      CFLAGS="$(CFLAGS.$@)" \
 	      || exit 1)) ; \
 	  mv musl.new musl.last ; \
 	  cd ../..
