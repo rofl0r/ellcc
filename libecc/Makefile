@@ -24,7 +24,7 @@ CFLAGS.ppc64 := # -mcpu=440
 CFLAGS.sparc :=
 CFLAGS.x86_64 :=
 
-all:	header.install \
+install:header.install \
 	arm \
         armeb \
 	i386 \
@@ -37,6 +37,8 @@ all:	header.install \
 	compiler-rt.install \
 	other-libs \
 	# sparc
+
+all:
 
 arm armeb i386 mips mipsel ppc ppc64 x86_64 microblaze sparc:
 	@echo Making libecc for $@ in musl-build/$@
