@@ -32,14 +32,6 @@ FUNCTIONS.mipsel := $(CommonFunctions) $(ArchFunctions.mipsel)
 FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
 FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
 FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
-FUNCTIONS.profile-i386 := GCDAProfiling
-FUNCTIONS.profile-x86_64 := GCDAProfiling
-FUNCTIONS.asan-i386 := $(AsanFunctions) $(InterceptionFunctions) \
-                                        $(SanitizerCommonFunctions)
-FUNCTIONS.asan-x86_64 := $(AsanFunctions) $(InterceptionFunctions) \
-                                          $(SanitizerCommonFunctions)
-FUNCTIONS.tsan-x86_64 := $(TsanFunctions) $(InterceptionFunctions) \
-                                          $(SanitizerCommonFunctions) 
 
 # Always use optimized variants.
 OPTIMIZED := 1

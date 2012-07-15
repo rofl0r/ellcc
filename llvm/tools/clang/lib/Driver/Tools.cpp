@@ -5969,30 +5969,30 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   llvm::Triple Triple = getToolChain().getTriple();
-  if (Triple.getArch() == llvm::Triple::ppc ||
-      Triple.getArch() == llvm::Triple::ppc64) {
-    if (Triple.getArch() == llvm::Triple::ppc)
-      CmdArgs.push_back("-a32");
-    else
-      CmdArgs.push_back("-a64");
-    CmdArgs.push_back("-many");
-    if (needEB) {
-      CmdArgs.push_back("-be");
-    } else if (needEL) {
-      CmdArgs.push_back("-le");
-    }
-  } else {
-    if (needEB) {
-      CmdArgs.push_back("-EB");
-    } else if (needEL) {
-      CmdArgs.push_back("-EL");
-    }
-  }
   std::string As = Triple.getArchTypeName(Triple.getArch());
-  if (As == "mipsel") {
-    As = "mips";
-  } else if (As == "armeb") {
-    As = "arm";
+  switch (Triple.getArch()) {
+    case llvm::Triple::arm:
+      CmdArgs.push_back("-mcpu=all");
+      break;
+    case llvm::Triple::armeb:
+      CmdArgs.push_back("-mcpu=all");
+      CmdArgs.push_back("-EB");
+      As = "arm";
+      break;
+    case llvm::Triple::mipsel:
+      CmdArgs.push_back("-EL");
+      As = "mips";
+      break;
+    case llvm::Triple::ppc:
+      CmdArgs.push_back("-a32");
+      CmdArgs.push_back("-many");
+      break;
+    case llvm::Triple::ppc64:
+      CmdArgs.push_back("-a64");
+      CmdArgs.push_back("-many");
+      break;
+    default:
+      break;
   }
   As += "-elf-as";
   const char *Exec =
@@ -6008,36 +6008,20 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
   llvm::Triple Triple = getToolChain().getTriple();
-  bool needEB = false;
-  bool needEL = false;
   StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
-  if (ArchName.endswith("ebsf") || ArchName.endswith("eb")) {
-    needEB = true;
-  } else if (ArchName.endswith("elsf") || ArchName.endswith("el")) {
-    needEL = true;
-  }
-  CmdArgs.push_back("-m");
   StringRef emulation;
   bool hash = true;
   bool buildID = true;
   switch (Triple.getArch()) {
     case llvm::Triple::arm:
-      if (needEB) {
-        emulation = "armelfb";
-      } else {
-        emulation = "armelf";
-      }
+      emulation = "armelf";
       break;
     case llvm::Triple::armeb:
       emulation = "armelfb";
       break;
     case llvm::Triple::mips:
       hash = false;
-      if (needEL) {
-        emulation = "elf32elmip";
-      } else {
-        emulation = "elf32ebmip";
-      }
+      emulation = "elf32ebmip";
       break;
     case llvm::Triple::mipsel: emulation = "elf32elmip";
       hash = false;
@@ -6056,6 +6040,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       break;
     default: emulation = "unknown";
   }
+  CmdArgs.push_back("-m");
   CmdArgs.push_back(Args.MakeArgString(emulation));
 
   if (buildID) {

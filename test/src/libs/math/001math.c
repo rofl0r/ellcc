@@ -43,7 +43,9 @@ TEST_GROUP(Math)
     i = math_errhandling;
     TEST_TRACE(C99 7.12.3.1)
     TEST(fpclassify(0.0) == FP_ZERO, "fpclassify(1.0) == FP_ZERO");
-    TEST(fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");
+    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+        TEST(fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");
+        TEST_FAIL(ARMEB, fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");
     TEST(fpclassify(NAN) == FP_NAN, "fpclassify(NAN) == FP_NAN");
     TEST(fpclassify(INFINITY) == FP_INFINITE, "fpclassify(INFINITY) == FP_INFINITE");
     TEST_TRACE(C99 7.12.3.2)

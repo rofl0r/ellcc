@@ -1,3 +1,3 @@
 TARGET := i386
 Arch.$(TARGET) := i386
-CFLAGS.$(TARGET) := -target $(Arch.$(TARGET))-ellcc-$(OS) $(CFLAGS)
+CFLAGS.$(TARGET) := -target $(TARGET)-ellcc-$(OS) $(CFLAGS)
