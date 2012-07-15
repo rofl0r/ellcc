@@ -4,8 +4,8 @@
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
-Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/targets; echo *))
-INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/targets/$(TARGET)/setup.mk)
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/mkscripts/targets; echo *))
+INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/mkscripts/targets/$(TARGET)/setup.mk)
 OS := linux
 CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \

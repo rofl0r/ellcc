@@ -1,1 +1,1 @@
-include ../../../../src/os.mk
+include ../../../../mkscripts/os.mk

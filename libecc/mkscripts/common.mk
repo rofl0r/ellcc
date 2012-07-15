@@ -89,7 +89,7 @@ endif
 # Build the library.
 SRCPATH := $(LEVEL)/../../src
 VPATH :=
-include $(SRCPATH)/$(LIB)/sources $(EXTRASRCS)
+include $(SRCPATH)/$(LIB)/sources.mk $(EXTRASRCS)
 
 BASENAMES := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)

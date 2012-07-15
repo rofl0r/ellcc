@@ -1,5 +1,5 @@
 SRCS := $(shell cd $(VPATH); echo *.c *.cxx *.y *.l) 
--include $(VPATH)/sources
+-include $(VPATH)/sources.mk
 SRCS := $(SRCS:*.%=)
 BASENAMES := $(basename $(filter %.c %.cxx %.y %.l, $(SRCS)))
 OBJS := $(BASENAMES:%=%.o)

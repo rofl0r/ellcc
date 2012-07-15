@@ -2,4 +2,4 @@
 LEVEL=..
 OS = elf
 OSDIR =
-include $(LEVEL)/../../src/common.mk
+include $(LEVEL)/../../mkscripts/common.mk

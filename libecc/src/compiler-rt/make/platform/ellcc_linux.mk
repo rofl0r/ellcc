@@ -7,8 +7,8 @@ ELLCC := $(PWD)/../../..
 LIBECC := $(ELLCC)/libecc
 override CC := $(ELLCC)/bin/ecc
 Arch := unknown
-Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/targets; echo *))
-INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/targets/$(TARGET)/setup.mk)
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/mkscripts/targets; echo *))
+INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/mkscripts/targets/$(TARGET)/setup.mk)
 OS := linux
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 -include $(INCLUDES)
