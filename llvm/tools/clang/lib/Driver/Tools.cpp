@@ -6153,9 +6153,11 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
     if (Args.hasArg(options::OPT_pthread))
       CmdArgs.push_back("-pthread");
+    CmdArgs.push_back("-(");    // RICH: compiler-rt for ARM needs this.
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
     CmdArgs.push_back("-lcompiler_rt");
+    CmdArgs.push_back("-)");
   }
 
   if (!Args.hasArg(options::OPT_nostdlib) &&

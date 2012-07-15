@@ -1,4 +1,4 @@
 ABI=eabi
-CFLAGS += -mcpu=cortex-a9 -mfpu=neon
-XCFLAGS += -mcpu=cortex-a9 -mfpu=neon
+CFLAGS += -mcpu=armv6z -mfpu=vfp -mfloat-abi=softfp
+XCFLAGS += -mcpu=armv6z -mfpu=vfp -mfloat-abi=softfp
 XCFLAGS += -I../../../../../../test/include
