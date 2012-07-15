@@ -25,7 +25,7 @@ i386 microblaze mips mipsel nios2 sparc x86_64:
 
 arm armeb:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux -mcpu=cortex-a9 -mfpu=neon" \
+	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux -mcpu=armv6z -mfpu=vfp -mfloat-abi=softfp" \
 	        RUN=../../../bin/qemu-$@ bzip2all
 ppc ppc64:
 	$(MAKE) clean
