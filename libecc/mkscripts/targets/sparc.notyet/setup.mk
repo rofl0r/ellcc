@@ -1,3 +1,6 @@
 TARGET := sparc
 Arch.$(TARGET) := sparc
-CFLAGS.$(TARGET) := -target $(TARGET)-ellcc-$(OS) $(CFLAGS)
+TARGET.$(TARGET) := -target $(TARGET)-ellcc-$(OS)
+CFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CFLAGS)
+CXXFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CXXFLAGS)
+LDFLAGS := $(TARGET.$(TARGET))

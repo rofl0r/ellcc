@@ -8,11 +8,12 @@ DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
 CFLAGS += -g -Werror -MD -MP
 CXXFLAGS += -g -Werror -MD -MP
+-include $(ELLCC)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = $(ELLCC)/bin/ecc -target $(TARGET)-ellcc-$(OS)-$(ABI)
-  CXX = $(ELLCC)/bin/ecc++ -target $(TARGET)-ellcc-$(OS)-$(ABI)
+  CC = $(ELLCC)/bin/ecc
+  CXX = $(ELLCC)/bin/ecc++
 else
   CC = $(XCC)
   CXX = $(XCXX)
@@ -20,9 +21,9 @@ endif
 
 .SUFFIXES: .c .cxx .o
 .c.o:
-	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS) $(XCFLAGS) $<
+	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS.$(TARGET)) $(XCFLAGS) $<
 .cxx.o:
-	$(CXX) $(MCPU) -c $(CXXFLAGS) $(XCXXFLAGS) $<
+	$(CXX) $(MCPU) -c $(CXXFLAGS.$(TARGET)) $(XCXXFLAGS) $<
 
 ifeq ($(EXCLUDE),)
 $(PROG): $(OBJS)
@@ -30,7 +31,7 @@ $(PROG): $(OBJS)
 else
 NOCHECK = 1
 $(PROG):
-	@echo $(PROG) for $(ARCH) is being skipped: $(EXCLUDE)
+	@echo $(PROG) for $(TARGET) is being skipped: $(EXCLUDE)
 endif
 
 clean:

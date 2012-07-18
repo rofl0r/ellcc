@@ -72,12 +72,12 @@ $(PROGRAMS):
 	@if [ -e $(DIRPATH)/$@/Makefile ] ; then \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f ../$(DIRPATH)/$@/Makefile ; \
 	else \
 	  $(MAKE) XCC=$(XCC) PROG=$@ VPATH=../$(DIRPATH)/$@ XCFLAGS="$(XCFLAGS)" \
 	    ELLCC="$(ELLCC)" XLDFLAGS="$(XLDFLAGS)" XLDEXTRA="$(XLDEXTRA)" \
-	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) ABI=$(ABI) \
+	    OS=$(OS) TARGET=$(TARGET) ARCH=$(ARCH) \
 	    -C $@ $@ -f $(ELLCC)/libecc/mkscripts/prog.mk ; \
 	fi
 
