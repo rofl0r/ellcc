@@ -7,7 +7,6 @@ SRCS += algorithm.cpp bind.cpp chrono.cpp condition_variable.cpp debug.cpp \
         utility.cpp valarray.cpp
 
 VPATH := $(VPATH):$(SRCPATH)/c++/libcxxabi/src
-CXXFLAGS += $(SRCPATH)/c++/libcxxabi/src
 SRCS += abort_message.cpp cxa_aux_runtime.cpp cxa_default_handlers.cpp \
         cxa_demangle.cpp cxa_exception.cpp cxa_exception_storage.cpp \
         cxa_guard.cpp cxa_handlers.cpp cxa_new_delete.cpp cxa_personality.cpp \
