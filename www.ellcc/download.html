@@ -94,6 +94,51 @@
                 monospace;">[~] main% tar xvfpz
                 ~/Downloads/ellcc-0.0.0-linux-x86_64.tgz</span><br>
             </p>
+            <h2>An Example</h2>
+            <p>In this example we compile a simple "hello world" program
+              and run it native and for the Mips.<br>
+            </p>
+            <div style="margin-left: 40px;"><span style="font-family:
+                monospace;">[~] main% cd ellcc-0.0.0</span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% cat hello.c </span><br style="font-family:
+                monospace;">
+              <span style="font-family: monospace;">#include
+                &lt;stdio.h&gt;</span><br style="font-family:
+                monospace;">
+              <br style="font-family: monospace;">
+              <span style="font-family: monospace;">int main(int argc,
+                char** argv)</span><br style="font-family: monospace;">
+              <span style="font-family: monospace;">{</span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">&nbsp;&nbsp;&nbsp;
+                printf("hello world\n");</span><br style="font-family:
+                monospace;">
+              <span style="font-family: monospace;">}</span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% bin/ecc hello.c </span><br style="font-family:
+                monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% ./a.out </span><br style="font-family:
+                monospace;">
+              <span style="font-family: monospace;">hello world</span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% bin/ecc -target mips-ellcc-linux hello.c </span><span
+                style="font-family: monospace;"></span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% bin/qemu-mips a.out</span><br style="font-family:
+                monospace;">
+              <span style="font-family: monospace;">hello world</span><br
+                style="font-family: monospace;">
+              <span style="font-family: monospace;">[~/ellcc-0.0.0]
+                main% </span><br>
+              <br style="font-family: monospace;">
+              <br>
+            </div>
             <p><br>
             </p>
           </td>
