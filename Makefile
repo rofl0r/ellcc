@@ -1,3 +1,4 @@
+VERSION=0.0.0
 # Build ELLCC.
 
 # Get the names of the subdirectories.
@@ -16,9 +17,12 @@ llvm-build gnu/gnu-build:
 
 .PHONY: release
 release:
-	mkdir -p release
+	rm -fr ellcc-$(VERSION)
+	mkdir -p ellcc-$(VERSION)
 	make -C libecc veryclean
-	tar --exclude "*.svn*" --exclude "*/test/*" -cvpz -frelease/ellcc.tgz bin libecc
+	tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc | (cd ellcc-$(VERSION); tar xfp -)
+	(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
+	tar -cvpz -fellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
 
 .PHONY: docs
 docs:
