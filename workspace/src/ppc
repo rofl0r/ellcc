@@ -1,0 +1,7 @@
+set gnutarget elf32-powerpc
+set endian big
+set arch powerpc:common
+file tcsh
+target remote :1234
+break main
+continue
