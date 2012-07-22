@@ -1,7 +1,0 @@
-set gnutarget elf32-littlearm
-set endian little
-set arch arm
-file tcsh
-target remote :1234
-break main
-continue
