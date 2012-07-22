@@ -26,6 +26,9 @@ release:
 	(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
 	tar -cvpz -fellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
 
+tagrelease:
+	svn cp http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+
 .PHONY: docs
 docs:
 	cp -r ./lib/share/doc/ld.html \
