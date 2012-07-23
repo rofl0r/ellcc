@@ -17,6 +17,7 @@ llvm-build gnu/gnu-build:
 
 .PHONY: release
 release: tagrelease
+	mkdir -p release
 	rm -fr ellcc-$(VERSION)
 	mkdir -p ellcc-$(VERSION)
 	make -C libecc veryclean
@@ -24,7 +25,7 @@ release: tagrelease
 	tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
 	    (cd ellcc-$(VERSION); tar xfp -)
 	(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
-	tar -cvpz -fellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
+	tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
 
 .PHONY: tagrelease
 tagrelease:
