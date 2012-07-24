@@ -7,13 +7,18 @@ SUBDIRS := llvm-build gnu libecc
 all install clean veryclean check:: llvm-build gnu/gnu-build
 	@for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
-	  $(MAKE) -C $$dir $@ || exit 1 ; \
+	  $(MAKE) CLANG_VENDOR="ellcc $(VERSION)svn based on" -C $$dir $@ || exit 1 ; \
 	done
 
 install:: docs
 
 llvm-build gnu/gnu-build:
 	./configure
+
+.PHONY: buildrelease
+buildrelease:
+	$(MAKE) -C llvm-build clean
+	$(MAKE) CLANG_VENDOR="ellcc $(VERSION) based on" -C llvm-build install || exit 1 ; \
 
 .PHONY: release
 release: tagrelease
