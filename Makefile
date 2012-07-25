@@ -21,7 +21,7 @@ buildrelease:
 	$(MAKE) CLANG_VENDOR="ellcc $(VERSION) based on" -C llvm-build install || exit 1 ; \
 
 .PHONY: release
-release: tagrelease
+release:
 	mkdir -p release
 	rm -fr ellcc-$(VERSION)
 	mkdir -p ellcc-$(VERSION)
