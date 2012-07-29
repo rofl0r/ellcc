@@ -445,6 +445,17 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
   // Initialize target-specific preprocessor defines.
 
+  // __BYTE_ORDER__ was added in GCC 4.6.
+  // We don't support the PDP-11 as a target, but include
+  // the define so it can still be compared against.
+  Builder.defineMacro("__ORDER_LITTLE_ENDIAN__", "1234");
+  Builder.defineMacro("__ORDER_BIG_ENDIAN__",    "4321");
+  Builder.defineMacro("__ORDER_PDP_ENDIAN__",    "3412");
+  if (TI.isBigEndian())
+    Builder.defineMacro("__BYTE_ORDER__", "__ORDER_BIG_ENDIAN__");
+  else
+    Builder.defineMacro("__BYTE_ORDER__", "__ORDER_LITTLE_ENDIAN__");
+
   // Define type sizing macros based on the target properties.
   assert(TI.getCharWidth() == 8 && "Only support 8-bit char so far");
   Builder.defineMacro("__CHAR_BIT__", "8");
@@ -531,9 +542,10 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (const char *Prefix = TI.getUserLabelPrefix())
     Builder.defineMacro("__USER_LABEL_PREFIX__", Prefix);
 
-  // Build configuration options.  FIXME: these should be controlled by
-  // command line options or something.
-  Builder.defineMacro("__FINITE_MATH_ONLY__", "0");
+  if (LangOpts.FastMath || LangOpts.FiniteMathOnly)
+    Builder.defineMacro("__FINITE_MATH_ONLY__", "1");
+  else
+    Builder.defineMacro("__FINITE_MATH_ONLY__", "0");
 
   if (LangOpts.GNUInline)
     Builder.defineMacro("__GNUC_GNU_INLINE__");

@@ -265,7 +265,9 @@ void CoreEngine::dispatchWorkItem(ExplodedNode* Pred, ProgramPoint Loc,
     }
     default:
       assert(isa<PostStmt>(Loc) ||
-             isa<PostInitializer>(Loc));
+             isa<PostInitializer>(Loc) ||
+             isa<PostImplicitCall>(Loc) ||
+             isa<CallExitEnd>(Loc));
       HandlePostStmt(WU.getBlock(), WU.getIndex(), Pred);
       break;
   }
@@ -506,7 +508,8 @@ void CoreEngine::enqueueStmtNode(ExplodedNode *N,
   }
 
   // Do not create extra nodes. Move to the next CFG element.
-  if (isa<PostInitializer>(N->getLocation())) {
+  if (isa<PostInitializer>(N->getLocation()) ||
+      isa<PostImplicitCall>(N->getLocation())) {
     WList->enqueue(N, Block, Idx+1);
     return;
   }
@@ -539,10 +542,9 @@ ExplodedNode *CoreEngine::generateCallExitBeginNode(ExplodedNode *N) {
   // Create a CallExitBegin node and enqueue it.
   const StackFrameContext *LocCtx
                          = cast<StackFrameContext>(N->getLocationContext());
-  const Stmt *CE = LocCtx->getCallSite();
 
-  // Use the the callee location context.
-  CallExitBegin Loc(CE, LocCtx);
+  // Use the callee location context.
+  CallExitBegin Loc(LocCtx);
 
   bool isNew;
   ExplodedNode *Node = G->getNode(Loc, N->getState(), false, &isNew);

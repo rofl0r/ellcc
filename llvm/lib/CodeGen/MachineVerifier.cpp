@@ -685,6 +685,12 @@ MachineVerifier::visitMachineOperand(const MachineOperand *MO, unsigned MONum) {
     if (MRI->tracksLiveness() && !MI->isDebugValue())
       checkLiveness(MO, MONum);
 
+    // Verify two-address constraints after leaving SSA form.
+    unsigned DefIdx;
+    if (!MRI->isSSA() && MO->isUse() &&
+        MI->isRegTiedToDefOperand(MONum, &DefIdx) &&
+        Reg != MI->getOperand(DefIdx).getReg())
+      report("Two-address instruction operands must be identical", MO, MONum);
 
     // Check register classes.
     if (MONum < MCID.getNumOperands() && !MO->isImplicit()) {
@@ -786,20 +792,7 @@ void MachineVerifier::checkLiveness(const MachineOperand *MO, unsigned MONum) {
   if (MO->readsReg()) {
     regsLiveInButUnused.erase(Reg);
 
-    bool isKill = false;
-    unsigned defIdx;
-    if (MI->isRegTiedToDefOperand(MONum, &defIdx)) {
-      // A two-addr use counts as a kill if use and def are the same.
-      unsigned DefReg = MI->getOperand(defIdx).getReg();
-      if (Reg == DefReg)
-        isKill = true;
-      else if (TargetRegisterInfo::isPhysicalRegister(Reg)) {
-        report("Two-address instruction operands must be identical", MO, MONum);
-      }
-    } else
-      isKill = MO->isKill();
-
-    if (isKill)
+    if (MO->isKill())
       addRegWithSubRegs(regsKilled, Reg);
 
     // Check that LiveVars knows this kill.
@@ -837,6 +830,8 @@ void MachineVerifier::checkLiveness(const MachineOperand *MO, unsigned MONum) {
         // Reserved registers may be used even when 'dead'.
         if (!isReserved(Reg))
           report("Using an undefined physical register", MO, MONum);
+      } else if (MRI->def_empty(Reg)) {
+        report("Reading virtual register without a def", MO, MONum);
       } else {
         BBInfo &MInfo = MBBInfoMap[MI->getParent()];
         // We don't know which virtual registers are live in, so only complain
@@ -1057,8 +1052,8 @@ void MachineVerifier::visitMachineFunctionAfter() {
          I = MInfo.vregsRequired.begin(), E = MInfo.vregsRequired.end(); I != E;
          ++I)
       if (MInfo.regsKilled.count(*I)) {
-	report("Virtual register killed in block, but needed live out.", MFI);
-	*OS << "Virtual register " << PrintReg(*I)
+        report("Virtual register killed in block, but needed live out.", MFI);
+        *OS << "Virtual register " << PrintReg(*I)
             << " is used after the block.\n";
       }
   }

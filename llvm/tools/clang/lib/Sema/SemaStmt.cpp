@@ -370,12 +370,10 @@ Sema::ActOnLabelStmt(SourceLocation IdentLoc, LabelDecl *TheDecl,
 }
 
 StmtResult Sema::ActOnAttributedStmt(SourceLocation AttrLoc,
-                                     const AttrVec &Attrs,
+                                     ArrayRef<const Attr*> Attrs,
                                      Stmt *SubStmt) {
-  // Fill in the declaration and return it. Variable length will require to
-  // change this to AttributedStmt::Create(Context, ....);
-  // and probably using ArrayRef
-  AttributedStmt *LS = new (Context) AttributedStmt(AttrLoc, Attrs, SubStmt);
+  // Fill in the declaration and return it.
+  AttributedStmt *LS = AttributedStmt::Create(Context, AttrLoc, Attrs, SubStmt);
   return Owned(LS);
 }
 
@@ -1061,6 +1059,55 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
   return Owned(SS);
 }
 
+void
+Sema::DiagnoseAssignmentEnum(QualType DstType, QualType SrcType,
+                             Expr *SrcExpr) {
+  unsigned DIAG = diag::warn_not_in_enum_assignement;
+  if (Diags.getDiagnosticLevel(DIAG, SrcExpr->getExprLoc()) 
+      == DiagnosticsEngine::Ignored)
+    return;
+  
+  if (const EnumType *ET = DstType->getAs<EnumType>())
+    if (!Context.hasSameType(SrcType, DstType) &&
+        SrcType->isIntegerType()) {
+      if (!SrcExpr->isTypeDependent() && !SrcExpr->isValueDependent() &&
+          SrcExpr->isIntegerConstantExpr(Context)) {
+        // Get the bitwidth of the enum value before promotions.
+        unsigned DstWith = Context.getIntWidth(DstType);
+        bool DstIsSigned = DstType->isSignedIntegerOrEnumerationType();
+
+        llvm::APSInt RhsVal = SrcExpr->EvaluateKnownConstInt(Context);
+        const EnumDecl *ED = ET->getDecl();
+        typedef SmallVector<std::pair<llvm::APSInt, EnumConstantDecl*>, 64>
+        EnumValsTy;
+        EnumValsTy EnumVals;
+        
+        // Gather all enum values, set their type and sort them,
+        // allowing easier comparison with rhs constant.
+        for (EnumDecl::enumerator_iterator EDI = ED->enumerator_begin();
+             EDI != ED->enumerator_end(); ++EDI) {
+          llvm::APSInt Val = EDI->getInitVal();
+          AdjustAPSInt(Val, DstWith, DstIsSigned);
+          EnumVals.push_back(std::make_pair(Val, *EDI));
+        }
+        if (EnumVals.empty())
+          return;
+        std::stable_sort(EnumVals.begin(), EnumVals.end(), CmpEnumVals);
+        EnumValsTy::iterator EIend =
+        std::unique(EnumVals.begin(), EnumVals.end(), EqEnumVals);
+        
+        // See which case values aren't in enum.
+        EnumValsTy::const_iterator EI = EnumVals.begin();
+        while (EI != EIend && EI->first < RhsVal)
+          EI++;
+        if (EI == EIend || EI->first != RhsVal) {
+          Diag(SrcExpr->getExprLoc(), diag::warn_not_in_enum_assignement)
+          << DstType;
+        }
+      }
+    }
+}
+
 StmtResult
 Sema::ActOnWhileStmt(SourceLocation WhileLoc, FullExprArg Cond,
                      Decl *CondVar, Stmt *Body) {
@@ -1434,7 +1481,7 @@ Sema::CheckObjCForCollectionOperand(SourceLocation forLoc, Expr *collection) {
     // If there's an interface, look in both the public and private APIs.
     if (iface) {
       method = iface->lookupInstanceMethod(selector);
-      if (!method) method = LookupPrivateInstanceMethod(selector, iface);
+      if (!method) method = iface->lookupPrivateMethod(selector);
     }
 
     // Also check protocol qualifiers.
@@ -1634,6 +1681,11 @@ static ExprResult BuildForRangeBeginEndCall(Sema &SemaRef, Scope *S,
 
 }
 
+static bool ObjCEnumerationCollection(Expr *Collection) {
+  return !Collection->isTypeDependent()
+          && Collection->getType()->getAs<ObjCObjectPointerType>() != 0;
+}
+
 /// ActOnCXXForRangeStmt - Check and build a C++0x for-range statement.
 ///
 /// C++0x [stmt.ranged]:
@@ -1658,6 +1710,10 @@ Sema::ActOnCXXForRangeStmt(SourceLocation ForLoc, SourceLocation LParenLoc,
                            SourceLocation RParenLoc) {
   if (!First || !Range)
     return StmtError();
+  
+  if (ObjCEnumerationCollection(Range))
+    return ActOnObjCForCollectionStmt(ForLoc, LParenLoc, First, Range,
+                                      RParenLoc);
 
   DeclStmt *DS = dyn_cast<DeclStmt>(First);
   assert(DS && "first part of for range not a decl stmt");
@@ -1928,6 +1984,9 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
   if (!S || !B)
     return StmtError();
 
+  if (isa<ObjCForCollectionStmt>(S))
+    return FinishObjCForCollectionStmt(S, B);
+  
   CXXForRangeStmt *ForStmt = cast<CXXForRangeStmt>(S);
   ForStmt->setBody(B);
 
@@ -2025,7 +2084,7 @@ const VarDecl *Sema::getCopyElisionCandidate(QualType ReturnType,
   // ... the expression is the name of a non-volatile automatic object
   // (other than a function or catch-clause parameter)) ...
   const DeclRefExpr *DR = dyn_cast<DeclRefExpr>(E->IgnoreParens());
-  if (!DR)
+  if (!DR || DR->refersToEnclosingLocal())
     return 0;
   const VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl());
   if (!VD)

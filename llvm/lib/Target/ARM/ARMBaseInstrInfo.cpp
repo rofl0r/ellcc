@@ -1974,10 +1974,10 @@ optimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, unsigned SrcReg2,
   case ARM::t2EORri: {
     // Scan forward for the use of CPSR
     // When checking against MI: if it's a conditional code requires
-    // checking of V bit, then this is not safe to do. If we can't find the
-    // CPSR use (i.e. used in another block), then it's not safe to perform
-    // the optimization.
-    // When checking against Sub, we handle the condition codes GE, LT, GT, LE.
+    // checking of V bit, then this is not safe to do.
+    // It is safe to remove CmpInstr if CPSR is redefined or killed.
+    // If we are done with the basic block, we need to check whether CPSR is
+    // live-out.
     SmallVector<std::pair<MachineOperand*, ARMCC::CondCodes>, 4>
         OperandsToUpdate;
     bool isSafe = false;
@@ -2017,7 +2017,7 @@ optimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, unsigned SrcReg2,
         else
           switch (CC) {
           default:
-            isSafe = true;
+            // CPSR can be used multiple times, we should continue.
             break;
           case ARMCC::VS:
           case ARMCC::VC:
@@ -2030,10 +2030,15 @@ optimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, unsigned SrcReg2,
       }
     }
 
-    // If the candidate is Sub, we may exit the loop at end of the basic block.
-    // In that case, it is still safe to remove CmpInstr.
-    if (!isSafe && !Sub)
-      return false;
+    // If CPSR is not killed nor re-defined, we should check whether it is
+    // live-out. If it is live-out, do not optimize.
+    if (!isSafe) {
+      MachineBasicBlock *MBB = CmpInstr->getParent();
+      for (MachineBasicBlock::succ_iterator SI = MBB->succ_begin(),
+               SE = MBB->succ_end(); SI != SE; ++SI)
+        if ((*SI)->isLiveIn(ARM::CPSR))
+          return false;
+    }
 
     // Toggle the optional operand to CPSR.
     MI->getOperand(5).setReg(ARM::CPSR);
@@ -2193,7 +2198,7 @@ ARMBaseInstrInfo::getNumMicroOps(const InstrItineraryData *ItinData,
   //
   // On Cortex-A8, each pair of register loads / stores can be scheduled on the
   // same cycle. The scheduling for the first load / store must be done
-  // separately by assuming the the address is not 64-bit aligned.
+  // separately by assuming the address is not 64-bit aligned.
   //
   // On Cortex-A9, the formula is simply (#reg / 2) + (#reg % 2). If the address
   // is not 64-bit aligned, then AGU would take an extra cycle.  For VFP / NEON

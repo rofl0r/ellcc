@@ -14,9 +14,16 @@
 #include <algorithm>
 #include <vector>
 
-TEST(SanitizerCommon, DefaultSizeClassMap) {
-  typedef DefaultSizeClassMap SCMap;
+static const uptr kAllocatorSpace = 0x600000000000ULL;
+static const uptr kAllocatorSize = 0x10000000000;  // 1T.
 
+typedef DefaultSizeClassMap SCMap;
+typedef
+  SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, 16, SCMap> Allocator;
+typedef SizeClassAllocatorLocalCache<Allocator::kNumClasses, Allocator>
+  AllocatorCache;
+
+TEST(SanitizerCommon, DefaultSizeClassMap) {
 #if 0
   for (uptr i = 0; i < SCMap::kNumClasses; i++) {
     // printf("% 3ld: % 5ld (%4lx);   ", i, SCMap::Size(i), SCMap::Size(i));
@@ -47,14 +54,7 @@ TEST(SanitizerCommon, DefaultSizeClassMap) {
   }
 }
 
-static const uptr kAllocatorSpace = 0x600000000000ULL;
-static const uptr kAllocatorSize = 0x10000000000;  // 1T.
-
 TEST(SanitizerCommon, SizeClassAllocator64) {
-  typedef DefaultSizeClassMap SCMap;
-  typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize,
-                               16, SCMap> Allocator;
-
   Allocator a;
   a.Init();
 
@@ -74,6 +74,7 @@ TEST(SanitizerCommon, SizeClassAllocator64) {
         void *x = a.Allocate(size, 1);
         allocated.push_back(x);
         CHECK(a.PointerIsMine(x));
+        CHECK_GE(a.GetActuallyAllocatedSize(x), size);
         uptr class_id = a.GetSizeClass(x);
         CHECK_EQ(class_id, SCMap::ClassID(size));
         uptr *metadata = reinterpret_cast<uptr*>(a.GetMetaData(x));
@@ -101,9 +102,6 @@ TEST(SanitizerCommon, SizeClassAllocator64) {
 
 
 TEST(SanitizerCommon, SizeClassAllocator64MetadataStress) {
-  typedef DefaultSizeClassMap SCMap;
-  typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize,
-          16, SCMap> Allocator;
   Allocator a;
   a.Init();
   static volatile void *sink;
@@ -128,9 +126,6 @@ TEST(SanitizerCommon, SizeClassAllocator64MetadataStress) {
 }
 
 void FailInAssertionOnOOM() {
-  typedef DefaultSizeClassMap SCMap;
-  typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize,
-          16, SCMap> Allocator;
   Allocator a;
   a.Init();
   const uptr size = 1 << 20;
@@ -170,6 +165,7 @@ TEST(SanitizerCommon, LargeMmapAllocator) {
   // Allocate some more, also add metadata.
   for (int i = 0; i < kNumAllocs; i++) {
     void *x = a.Allocate(size, 1);
+    CHECK_GE(a.GetActuallyAllocatedSize(x), size);
     uptr *meta = reinterpret_cast<uptr*>(a.GetMetaData(x));
     *meta = i;
     allocated[i] = x;
@@ -188,14 +184,15 @@ TEST(SanitizerCommon, LargeMmapAllocator) {
 }
 
 TEST(SanitizerCommon, CombinedAllocator) {
-  typedef DefaultSizeClassMap SCMap;
-  typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize,
-          16, SCMap> PrimaryAllocator;
+  typedef Allocator PrimaryAllocator;
   typedef LargeMmapAllocator SecondaryAllocator;
-  typedef CombinedAllocator<PrimaryAllocator, SecondaryAllocator> Allocator;
+  typedef CombinedAllocator<PrimaryAllocator, AllocatorCache,
+          SecondaryAllocator> Allocator;
 
+  AllocatorCache cache;
   Allocator a;
   a.Init();
+  cache.Init();
   const uptr kNumAllocs = 100000;
   const uptr kNumIter = 10;
   for (uptr iter = 0; iter < kNumIter; iter++) {
@@ -204,7 +201,7 @@ TEST(SanitizerCommon, CombinedAllocator) {
       uptr size = (i % (1 << 14)) + 1;
       if ((i % 1024) == 0)
         size = 1 << (10 + (i % 14));
-      void *x = a.Allocate(size, 1);
+      void *x = a.Allocate(&cache, size, 1);
       uptr *meta = reinterpret_cast<uptr*>(a.GetMetaData(x));
       CHECK_EQ(*meta, 0);
       *meta = size;
@@ -219,9 +216,42 @@ TEST(SanitizerCommon, CombinedAllocator) {
       CHECK_NE(*meta, 0);
       CHECK(a.PointerIsMine(x));
       *meta = 0;
-      a.Deallocate(x);
+      a.Deallocate(&cache, x);
     }
     allocated.clear();
+    a.SwallowCache(&cache);
   }
+  a.TestOnlyUnmap();
+}
+
+static THREADLOCAL AllocatorCache static_allocator_cache;
+
+TEST(SanitizerCommon, SizeClassAllocatorLocalCache) {
+  static_allocator_cache.Init();
+
+  Allocator a;
+  AllocatorCache cache;
+
+  a.Init();
+  cache.Init();
+
+  const uptr kNumAllocs = 10000;
+  const int kNumIter = 100;
+  uptr saved_total = 0;
+  for (int i = 0; i < kNumIter; i++) {
+    void *allocated[kNumAllocs];
+    for (uptr i = 0; i < kNumAllocs; i++) {
+      allocated[i] = cache.Allocate(&a, 0);
+    }
+    for (uptr i = 0; i < kNumAllocs; i++) {
+      cache.Deallocate(&a, 0, allocated[i]);
+    }
+    cache.Drain(&a);
+    uptr total_allocated = a.TotalMemoryUsed();
+    if (saved_total)
+      CHECK_EQ(saved_total, total_allocated);
+    saved_total = total_allocated;
+  }
+
   a.TestOnlyUnmap();
 }

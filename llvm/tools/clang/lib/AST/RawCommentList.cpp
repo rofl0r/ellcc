@@ -61,7 +61,7 @@ bool mergedCommentIsTrailingComment(StringRef Comment) {
 RawComment::RawComment(const SourceManager &SourceMgr, SourceRange SR,
                        bool Merged) :
     Range(SR), RawTextValid(false), BriefTextValid(false),
-    IsAlmostTrailingComment(false),
+    IsAttached(false), IsAlmostTrailingComment(false),
     BeginLineValid(false), EndLineValid(false) {
   // Extract raw comment text, if possible.
   if (SR.getBegin() == SR.getEnd() || getRawText(SourceMgr).empty()) {
@@ -134,7 +134,13 @@ const char *RawComment::extractBriefText(const ASTContext &Context) const {
   // Make sure that RawText is valid.
   getRawText(Context.getSourceManager());
 
-  comments::Lexer L(Range.getBegin(), comments::CommentOptions(),
+  // Since we will be copying the resulting text, all allocations made during
+  // parsing are garbage after resulting string is formed.  Thus we can use
+  // a separate allocator for all temporary stuff.
+  llvm::BumpPtrAllocator Allocator;
+
+  comments::Lexer L(Allocator,
+                    Range.getBegin(), comments::CommentOptions(),
                     RawText.begin(), RawText.end());
   comments::BriefParser P(L);
 
@@ -176,14 +182,15 @@ bool onlyWhitespaceBetweenComments(SourceManager &SM,
 }
 } // unnamed namespace
 
-void RawCommentList::addComment(const RawComment &RC) {
+void RawCommentList::addComment(const RawComment &RC,
+                                llvm::BumpPtrAllocator &Allocator) {
   if (RC.isInvalid())
     return;
 
   // Check if the comments are not in source order.
   while (!Comments.empty() &&
          !SourceMgr.isBeforeInTranslationUnit(
-              Comments.back().getSourceRange().getBegin(),
+              Comments.back()->getSourceRange().getBegin(),
               RC.getSourceRange().getBegin())) {
     // If they are, just pop a few last comments that don't fit.
     // This happens if an \#include directive contains comments.
@@ -204,12 +211,12 @@ void RawCommentList::addComment(const RawComment &RC) {
   // If this is the first Doxygen comment, save it (because there isn't
   // anything to merge it with).
   if (Comments.empty()) {
-    Comments.push_back(RC);
+    Comments.push_back(new (Allocator) RawComment(RC));
     OnlyWhitespaceSeen = true;
     return;
   }
 
-  const RawComment &C1 = Comments.back();
+  const RawComment &C1 = *Comments.back();
   const RawComment &C2 = RC;
 
   // Merge comments only if there is only whitespace between them.
@@ -221,11 +228,9 @@ void RawCommentList::addComment(const RawComment &RC) {
        C1.getEndLine(SourceMgr) + 1 >= C2.getBeginLine(SourceMgr))) {
     SourceRange MergedRange(C1.getSourceRange().getBegin(),
                             C2.getSourceRange().getEnd());
-    RawComment Merged(SourceMgr, MergedRange, true);
-    Comments.pop_back();
-    Comments.push_back(Merged);
+    *Comments.back() = RawComment(SourceMgr, MergedRange, true);
   } else
-    Comments.push_back(RC);
+    Comments.push_back(new (Allocator) RawComment(RC));
 
   OnlyWhitespaceSeen = true;
 }

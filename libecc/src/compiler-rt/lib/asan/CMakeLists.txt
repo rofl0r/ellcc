@@ -28,15 +28,25 @@ set(ASAN_CFLAGS
   -fno-exceptions
   -funwind-tables
   -fvisibility=hidden
+  -fno-builtin
+  -fomit-frame-pointer
+  -O3
   )
 if (SUPPORTS_NO_VARIADIC_MACROS_FLAG)
   list(APPEND ASAN_CFLAGS -Wno-variadic-macros)
 endif ()
 
+if (APPLE)
+  list(APPEND ASAN_CFLAGS -mmacosx-version-min=10.5)
+endif()
+
 set(ASAN_COMMON_DEFINITIONS
   ASAN_HAS_EXCEPTIONS=1
   ASAN_NEEDS_SEGV=1
   )
+
+# FIXME: We need to build universal binaries on OS X instead of
+# two arch-specific binaries.
 
 if(CAN_TARGET_X86_64)
   add_library(clang_rt.asan-x86_64 STATIC
@@ -50,6 +60,7 @@ if(CAN_TARGET_X86_64)
     )
   set_property(TARGET clang_rt.asan-x86_64 APPEND PROPERTY COMPILE_DEFINITIONS
     ${ASAN_COMMON_DEFINITIONS})
+  add_clang_runtime_static_library(clang_rt.asan-x86_64)
 endif()
 if(CAN_TARGET_I386)
   add_library(clang_rt.asan-i386 STATIC
@@ -61,8 +72,9 @@ if(CAN_TARGET_I386)
     ${ASAN_CFLAGS}
     ${TARGET_I386_CFLAGS}
     )
-  set_property(TARGET clang_rt.asan-x86_64 APPEND PROPERTY COMPILE_DEFINITIONS
+  set_property(TARGET clang_rt.asan-i386 APPEND PROPERTY COMPILE_DEFINITIONS
     ${ASAN_COMMON_DEFINITIONS})
+  add_clang_runtime_static_library(clang_rt.asan-i386)
 endif()
 
 if(LLVM_INCLUDE_TESTS)

@@ -9,4 +9,5 @@ svn merge --accept edit http://ellcc.org/svn/vendor/clang/svn-$1 http://ellcc.or
 cd ../../libecc/src
 svn merge --accept edit http://ellcc.org/svn/vendor/compiler-rt/svn-$1 http://ellcc.org/svn/vendor/compiler-rt/current compiler-rt
 cd c++
-svn merge --accept edit http://ellcc.org/svn/vendor/libcxx/svn-$1 http://ellcc.org/svn/vendor/libcxx/current libcxx 
+svn merge --accept edit http://ellcc.org/svn/vendor/libcxx/svn-$1 http://ellcc.org/svn/vendor/libcxx/current libcxx
+svn merge --accept edit http://ellcc.org/svn/vendor/libcxxabi/svn-$1 http://ellcc.org/svn/vendor/libcxxabi/current libcxxabi

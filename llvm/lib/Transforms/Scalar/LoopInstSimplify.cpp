@@ -49,7 +49,7 @@ namespace {
     }
   };
 }
-  
+
 char LoopInstSimplify::ID = 0;
 INITIALIZE_PASS_BEGIN(LoopInstSimplify, "loop-instsimplify",
                 "Simplify instructions in loops", false, false)

@@ -113,11 +113,7 @@ void MipsFrameLowering::emitPrologue(MachineFunction &MF) const {
   // First, compute final stack size.
   unsigned StackAlign = getStackAlignment();
   uint64_t StackSize = RoundUpToAlignment(MFI->getStackSize(), StackAlign);
-
-  if (MipsFI->globalBaseRegSet()) 
-    StackSize += MFI->getObjectOffset(MipsFI->getGlobalRegFI()) + StackAlign;
-  else
-    StackSize += RoundUpToAlignment(MipsFI->getMaxCallFrameSize(), StackAlign);
+  StackSize += RoundUpToAlignment(MipsFI->getMaxCallFrameSize(), StackAlign);
 
    // Update stack size
   MFI->setStackSize(StackSize);
@@ -130,8 +126,13 @@ void MipsFrameLowering::emitPrologue(MachineFunction &MF) const {
   MachineLocation DstML, SrcML;
 
   // Adjust stack.
-  if (isInt<16>(-StackSize)) // addi sp, sp, (-stacksize)
-    BuildMI(MBB, MBBI, dl, TII.get(ADDiu), SP).addReg(SP).addImm(-StackSize);
+  if (isInt<16>(-StackSize)) {// addi sp, sp, (-stacksize)
+    if (STI.inMips16Mode())
+      BuildMI(MBB, MBBI, dl,
+              TII.get(Mips::SaveRaF16)).addImm(StackSize); // cleanup
+    else
+      BuildMI(MBB, MBBI, dl, TII.get(ADDiu), SP).addReg(SP).addImm(-StackSize);
+  }
   else { // Expand immediate that doesn't fit in 16-bit.
     unsigned ATReg = STI.isABI_N64() ? Mips::AT_64 : Mips::AT;
 
@@ -237,8 +238,14 @@ void MipsFrameLowering::emitEpilogue(MachineFunction &MF,
     return;
 
   // Adjust stack.
-  if (isInt<16>(StackSize)) // addi sp, sp, (-stacksize)
-    BuildMI(MBB, MBBI, dl, TII.get(ADDiu), SP).addReg(SP).addImm(StackSize);
+  if (isInt<16>(StackSize)) { // addi sp, sp, (-stacksize)
+    if (STI.inMips16Mode())
+      // assumes stacksize multiple of 8
+      BuildMI(MBB, MBBI, dl,
+              TII.get(Mips::RestoreRaF16)).addImm(StackSize);
+    else
+      BuildMI(MBB, MBBI, dl, TII.get(ADDiu), SP).addReg(SP).addImm(StackSize);
+  }
   else { // Expand immediate that doesn't fit in 16-bit.
     unsigned ATReg = STI.isABI_N64() ? Mips::AT_64 : Mips::AT;
 
@@ -261,16 +268,35 @@ processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   // Mark $fp and $ra as used or unused.
   if (hasFP(MF))
     MRI.setPhysRegUsed(FP);
+}
 
-  // The register allocator might determine $ra is used after seeing
-  // instruction "jr $ra", but we do not want PrologEpilogInserter to insert
-  // instructions to save/restore $ra unless there is a function call.
-  // To correct this, $ra is explicitly marked unused if there is no
-  // function call.
-  if (MF.getFrameInfo()->hasCalls())
-    MRI.setPhysRegUsed(Mips::RA);
-  else {
-    MRI.setPhysRegUnused(Mips::RA);
-    MRI.setPhysRegUnused(Mips::RA_64);
+bool MipsFrameLowering::
+spillCalleeSavedRegisters(MachineBasicBlock &MBB,
+                          MachineBasicBlock::iterator MI,
+                          const std::vector<CalleeSavedInfo> &CSI,
+                          const TargetRegisterInfo *TRI) const {
+  MachineFunction *MF = MBB.getParent();
+  MachineBasicBlock *EntryBlock = MF->begin();
+  const TargetInstrInfo &TII = *MF->getTarget().getInstrInfo();
+
+  for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
+    // Add the callee-saved register as live-in. Do not add if the register is
+    // RA and return address is taken, because it has already been added in
+    // method MipsTargetLowering::LowerRETURNADDR.
+    // It's killed at the spill, unless the register is RA and return address
+    // is taken.
+    unsigned Reg = CSI[i].getReg();
+    bool IsRAAndRetAddrIsTaken = (Reg == Mips::RA || Reg == Mips::RA_64)
+        && MF->getFrameInfo()->isReturnAddressTaken();
+    if (!IsRAAndRetAddrIsTaken)
+      EntryBlock->addLiveIn(Reg);
+
+    // Insert the spill to the stack frame.
+    bool IsKill = !IsRAAndRetAddrIsTaken;
+    const TargetRegisterClass *RC = TRI->getMinimalPhysRegClass(Reg);
+    TII.storeRegToStackSlot(*EntryBlock, MI, Reg, IsKill,
+                            CSI[i].getFrameIdx(), RC, TRI);
   }
+
+  return true;
 }

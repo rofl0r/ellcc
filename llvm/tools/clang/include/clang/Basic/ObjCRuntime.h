@@ -16,6 +16,7 @@
 #define LLVM_CLANG_OBJCRUNTIME_H
 
 #include "clang/Basic/VersionTuple.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Support/ErrorHandling.h"
 
 namespace clang {
@@ -45,7 +46,10 @@ public:
     GCC,
 
     /// 'gnustep' is the modern non-fragile GNUstep runtime.
-   GNUstep 
+    GNUstep,
+
+    /// 'objfw' is the Objective-C runtime included in ObjFW
+    ObjFW
   };
 
 private:
@@ -75,6 +79,7 @@ public:
     case GCC: return false;
     case MacOSX: return true;
     case GNUstep: return true;
+    case ObjFW: return false;
     case iOS: return true;
     }
     llvm_unreachable("bad kind");
@@ -83,6 +88,21 @@ public:
   /// The inverse of isNonFragile():  does this runtime follow the set of
   /// implied behaviors for a "fragile" ABI?
   bool isFragile() const { return !isNonFragile(); }
+
+  /// The default dispatch mechanism to use for the specified architecture
+  bool isLegacyDispatchDefaultForArch(llvm::Triple::ArchType Arch) {
+    // The GNUstep runtime uses a newer dispatch method by default from
+    // version 1.6 onwards
+    if (getKind() == GNUstep && getVersion() >= VersionTuple(1, 6)) {
+      if (Arch == llvm::Triple::arm ||
+          Arch == llvm::Triple::x86 ||
+          Arch == llvm::Triple::x86_64)
+        return false;
+      // Mac runtimes use legacy dispatch everywhere except x86-64
+    } else if (isNeXTFamily() && isNonFragile())
+        return Arch != llvm::Triple::x86_64;
+    return true;
+  }
 
   /// \brief Is this runtime basically of the GNUstep family of runtimes?
   bool isGNUFamily() const {
@@ -93,6 +113,7 @@ public:
       return false;
     case GCC:
     case GNUstep:
+    case ObjFW:
       return true;
     }
     llvm_unreachable("bad kind");
@@ -118,6 +139,7 @@ public:
 
     case GCC: return false;
     case GNUstep: return getVersion() >= VersionTuple(1, 6);
+    case ObjFW: return false; // XXX: this will change soon
     }
     llvm_unreachable("bad kind");
   }
@@ -143,6 +165,7 @@ public:
     // should imply a "maximal" runtime or something?
     case GCC: return true;
     case GNUstep: return true;
+    case ObjFW: return true;
     }
     llvm_unreachable("bad kind");
   }
@@ -158,6 +181,7 @@ public:
     case iOS: return getVersion() >= VersionTuple(5);
     case GCC: return false;
     case GNUstep: return false;
+    case ObjFW: return false;
     }
     llvm_unreachable("bad kind");
   }
@@ -170,6 +194,7 @@ public:
     case FragileMacOSX: return false;
     case GCC: return true;
     case GNUstep: return true;
+    case ObjFW: return true;
     }
     llvm_unreachable("bad kind");
   }
@@ -181,6 +206,7 @@ public:
     case FragileMacOSX: return false;
     case GCC: return true;
     case GNUstep: return true;
+    case ObjFW: return true;
     }
     llvm_unreachable("bad kind");
   }

@@ -198,6 +198,8 @@ void ASTTypeWriter::VisitFunctionProtoType(const FunctionProtoType *T) {
   } else if (T->getExceptionSpecType() == EST_Uninstantiated) {
     Writer.AddDeclRef(T->getExceptionSpecDecl(), Record);
     Writer.AddDeclRef(T->getExceptionSpecTemplate(), Record);
+  } else if (T->getExceptionSpecType() == EST_Unevaluated) {
+    Writer.AddDeclRef(T->getExceptionSpecDecl(), Record);
   }
   Code = TYPE_FUNCTION_PROTO;
 }
@@ -2245,16 +2247,16 @@ void ASTWriter::WriteFileDeclIDsMap() {
 
 void ASTWriter::WriteComments() {
   Stream.EnterSubblock(COMMENTS_BLOCK_ID, 3);
-  ArrayRef<RawComment> RawComments = Context->Comments.getComments();
+  ArrayRef<RawComment *> RawComments = Context->Comments.getComments();
   RecordData Record;
-  for (ArrayRef<RawComment>::iterator I = RawComments.begin(),
-                                      E = RawComments.end();
+  for (ArrayRef<RawComment *>::iterator I = RawComments.begin(),
+                                        E = RawComments.end();
        I != E; ++I) {
     Record.clear();
-    AddSourceRange(I->getSourceRange(), Record);
-    Record.push_back(I->getKind());
-    Record.push_back(I->isTrailingComment());
-    Record.push_back(I->isAlmostTrailingComment());
+    AddSourceRange((*I)->getSourceRange(), Record);
+    Record.push_back((*I)->getKind());
+    Record.push_back((*I)->isTrailingComment());
+    Record.push_back((*I)->isAlmostTrailingComment());
     Stream.EmitRecord(COMMENTS_RAW_COMMENT, Record);
   }
   Stream.ExitBlock();
@@ -3086,10 +3088,12 @@ void ASTWriter::WriteMergedDecls() {
 //===----------------------------------------------------------------------===//
 
 /// \brief Write a record containing the given attributes.
-void ASTWriter::WriteAttributes(const AttrVec &Attrs, RecordDataImpl &Record) {
+void ASTWriter::WriteAttributes(ArrayRef<const Attr*> Attrs,
+                                RecordDataImpl &Record) {
   Record.push_back(Attrs.size());
-  for (AttrVec::const_iterator i = Attrs.begin(), e = Attrs.end(); i != e; ++i){
-    const Attr * A = *i;
+  for (ArrayRef<const Attr *>::iterator i = Attrs.begin(),
+                                        e = Attrs.end(); i != e; ++i){
+    const Attr *A = *i;
     Record.push_back(A->getKind()); // FIXME: stable encoding, target attrs
     AddSourceRange(A->getRange(), Record);
 

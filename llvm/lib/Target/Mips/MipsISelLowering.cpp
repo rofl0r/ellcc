@@ -154,24 +154,26 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::ConstantPool,       MVT::i32,   Custom);
   setOperationAction(ISD::SELECT,             MVT::i32,   Custom);
   if (!TM.Options.UseSoftFloat) {
-#if RICH
-    setOperationAction(ISD::SELECT,             MVT::f32,   Custom);
-    setOperationAction(ISD::SELECT,             MVT::f64,   Custom);
-#endif
+    setOperationAction(ISD::SELECT_CC,          MVT::f32,   Custom);
+    setOperationAction(ISD::FCOPYSIGN,          MVT::f32,   Custom);
+    if (Subtarget->isSingleFloat())
+      setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
+    else {
+      setOperationAction(ISD::SELECT_CC,          MVT::f64,   Custom);
+      setOperationAction(ISD::FCOPYSIGN,          MVT::f64,   Custom);
+    }
     setOperationAction(ISD::SETCC,              MVT::f32,   Custom);
     setOperationAction(ISD::SETCC,              MVT::f64,   Custom);
   }
   setOperationAction(ISD::BRCOND,             MVT::Other, Custom);
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32,   Custom);
   setOperationAction(ISD::VASTART,            MVT::Other, Custom);
-  setOperationAction(ISD::FCOPYSIGN,          MVT::f32,   Custom);
-  setOperationAction(ISD::FCOPYSIGN,          MVT::f64,   Custom);
   setOperationAction(ISD::MEMBARRIER,         MVT::Other, Custom);
   setOperationAction(ISD::ATOMIC_FENCE,       MVT::Other, Custom);
   setOperationAction(ISD::LOAD,               MVT::i32, Custom);
   setOperationAction(ISD::STORE,              MVT::i32, Custom);
 
-  if (!TM.Options.NoNaNsFPMath) {
+  if (!TM.Options.UseSoftFloat && !TM.Options.NoNaNsFPMath) {
     setOperationAction(ISD::FABS,             MVT::f32,   Custom);
     setOperationAction(ISD::FABS,             MVT::f64,   Custom);
   }
@@ -275,10 +277,6 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::ATOMIC_STORE,      MVT::i64,    Expand);
 
   setInsertFencesForAtomic(true);
-
-  if (!TM.Options.UseSoftFloat)
-    if (Subtarget->isSingleFloat())
-      setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
 
   if (!Subtarget->hasSEInReg()) {
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8,  Expand);
@@ -815,11 +813,13 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
     case ISD::GlobalTLSAddress:   return LowerGlobalTLSAddress(Op, DAG);
     case ISD::JumpTable:          return LowerJumpTable(Op, DAG);
     case ISD::SELECT:             return LowerSELECT(Op, DAG);
+    case ISD::SELECT_CC:          return LowerSELECT_CC(Op, DAG);
     case ISD::SETCC:              return LowerSETCC(Op, DAG);
     case ISD::VASTART:            return LowerVASTART(Op, DAG);
     case ISD::FCOPYSIGN:          return LowerFCOPYSIGN(Op, DAG);
     case ISD::FABS:               return LowerFABS(Op, DAG);
     case ISD::FRAMEADDR:          return LowerFRAMEADDR(Op, DAG);
+    case ISD::RETURNADDR:         return LowerRETURNADDR(Op, DAG);
     case ISD::MEMBARRIER:         return LowerMEMBARRIER(Op, DAG);
     case ISD::ATOMIC_FENCE:       return LowerATOMIC_FENCE(Op, DAG);
     case ISD::SHL_PARTS:          return LowerShiftLeftParts(Op, DAG);
@@ -1589,6 +1589,19 @@ LowerSELECT(SDValue Op, SelectionDAG &DAG) const
                       Op.getDebugLoc());
 }
 
+SDValue MipsTargetLowering::
+LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
+{
+  DebugLoc DL = Op.getDebugLoc();
+  EVT Ty = Op.getOperand(0).getValueType();
+  SDValue Cond = DAG.getNode(ISD::SETCC, DL, getSetCCResultType(Ty),
+                             Op.getOperand(0), Op.getOperand(1),
+                             Op.getOperand(4));
+
+  return DAG.getNode(ISD::SELECT, DL, Op.getValueType(), Cond, Op.getOperand(2),
+                     Op.getOperand(3));
+}
+
 SDValue MipsTargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   SDValue Cond = CreateFPCmp(DAG, Op);
 
@@ -2021,6 +2034,23 @@ LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const {
   SDValue FrameAddr = DAG.getCopyFromReg(DAG.getEntryNode(), dl,
                                          IsN64 ? Mips::FP_64 : Mips::FP, VT);
   return FrameAddr;
+}
+
+SDValue MipsTargetLowering::LowerRETURNADDR(SDValue Op,
+                                            SelectionDAG &DAG) const {
+  // check the depth
+  assert((cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue() == 0) &&
+         "Return address can be determined only for current frame.");
+
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
+  EVT VT = Op.getValueType();
+  unsigned RA = IsN64 ? Mips::RA_64 : Mips::RA;
+  MFI->setReturnAddressIsTaken(true);
+
+  // Return RA, which contains the return address. Mark it an implicit live-in.
+  unsigned Reg = MF.addLiveIn(RA, getRegClassFor(VT));
+  return DAG.getCopyFromReg(DAG.getEntryNode(), Op.getDebugLoc(), Reg, VT);
 }
 
 // TODO: set SType according to the desired memory barrier behavior.
@@ -2657,6 +2687,14 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NextStackOffset = CCInfo.getNextStackOffset();
+  unsigned StackAlignment = TFL->getStackAlignment();
+  NextStackOffset = RoundUpToAlignment(NextStackOffset, StackAlignment);
+
+  // Update size of the maximum argument space.
+  // For O32, a minimum of four words (16 bytes) of argument space is
+  // allocated.
+  if (IsO32 && (CallConv != CallingConv::Fast))
+    NextStackOffset = std::max(NextStackOffset, (unsigned)16);
 
   // Chain is the output chain of the last Load/Store or CopyToReg node.
   // ByValChain is the output chain of the last Memcpy node created for copying
@@ -2670,24 +2708,12 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // of dynamically allocated area on the stack.
   int DynAllocFI = MipsFI->getDynAllocFI();
 
-  // Update size of the maximum argument space.
-  // For O32, a minimum of four words (16 bytes) of argument space is
-  // allocated.
-  if (IsO32 && (CallConv != CallingConv::Fast))
-    NextStackOffset = std::max(NextStackOffset, (unsigned)16);
-
-  unsigned MaxCallFrameSize = MipsFI->getMaxCallFrameSize();
-
-  if (MaxCallFrameSize < NextStackOffset) {
+  if (MipsFI->getMaxCallFrameSize() < NextStackOffset) {
     MipsFI->setMaxCallFrameSize(NextStackOffset);
 
     // Set the offsets relative to $sp of the $gp restore slot and dynamically
     // allocated stack space. These offsets must be aligned to a boundary
     // determined by the stack alignment of the ABI.
-    unsigned StackAlignment = TFL->getStackAlignment();
-    NextStackOffset = (NextStackOffset + StackAlignment - 1) /
-                      StackAlignment * StackAlignment;
-
     MFI->setObjectOffset(DynAllocFI, NextStackOffset);
   }
 
@@ -2849,6 +2875,9 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     }
   }
 
+  // T9 register operand.
+  SDValue T9;
+
   // T9 should contain the address of the callee function if
   // -reloction-model=pic or it is an indirect call.
   if (IsPICCall || !GlobalOrExternal) {
@@ -2856,7 +2885,11 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     unsigned T9Reg = IsN64 ? Mips::T9_64 : Mips::T9;
     Chain = DAG.getCopyToReg(Chain, dl, T9Reg, Callee, SDValue(0, 0));
     InFlag = Chain.getValue(1);
-    Callee = DAG.getRegister(T9Reg, getPointerTy());
+
+    if (Subtarget->inMips16Mode())
+      T9 = DAG.getRegister(T9Reg, getPointerTy());
+    else
+      Callee = DAG.getRegister(T9Reg, getPointerTy());
   }
 
   // Insert node "GP copy globalreg" before call to function.
@@ -2892,6 +2925,10 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     Ops.push_back(DAG.getRegister(RegsToPass[i].first,
                                   RegsToPass[i].second.getValueType()));
 
+  // Add T9 register operand.
+  if (T9.getNode())
+    Ops.push_back(T9);
+
   // Add a register mask operand representing the call-preserved registers.
   const TargetRegisterInfo *TRI = getTargetMachine().getRegisterInfo();
   const uint32_t *Mask = TRI->getCallPreservedMask(CallConv);
@@ -2905,8 +2942,7 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain,
-                             DAG.getIntPtrConstant(NextStackOffset, true),
+  Chain = DAG.getCALLSEQ_END(Chain, NextStackOffsetVal,
                              DAG.getIntPtrConstant(0, true), InFlag);
   InFlag = Chain.getValue(1);
 
@@ -3267,11 +3303,10 @@ MipsTargetLowering::LowerReturn(SDValue Chain,
 
   // Return on Mips is always a "jr $ra"
   if (Flag.getNode())
-    return DAG.getNode(MipsISD::Ret, dl, MVT::Other,
-                       Chain, DAG.getRegister(Mips::RA, MVT::i32), Flag);
-  else // Return Void
-    return DAG.getNode(MipsISD::Ret, dl, MVT::Other,
-                       Chain, DAG.getRegister(Mips::RA, MVT::i32));
+    return DAG.getNode(MipsISD::Ret, dl, MVT::Other, Chain, Flag);
+
+  // Return Void
+  return DAG.getNode(MipsISD::Ret, dl, MVT::Other, Chain);
 }
 
 //===----------------------------------------------------------------------===//

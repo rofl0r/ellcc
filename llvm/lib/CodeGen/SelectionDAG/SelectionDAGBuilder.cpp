@@ -942,7 +942,7 @@ void SelectionDAGBuilder::visit(unsigned Opcode, const User &I) {
   default: llvm_unreachable("Unknown instruction type encountered!");
     // Build the switch statement using the Instruction.def file.
 #define HANDLE_INST(NUM, OPCODE, CLASS) \
-    case Instruction::OPCODE: visit##OPCODE((CLASS&)I); break;
+    case Instruction::OPCODE: visit##OPCODE((const CLASS&)I); break;
 #include "llvm/Instruction.def"
   }
 
@@ -1833,7 +1833,7 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
     visitInlineAsm(&I);
   else if (Fn && Fn->isIntrinsic()) {
     assert(Fn->getIntrinsicID() == Intrinsic::donothing);
-    return; // ignore invokes to @llvm.donothing
+    // Ignore invokes to @llvm.donothing: jump directly to the next BB.
   } else
     LowerCallTo(&I, getValue(Callee), false, LandingPad);
 
@@ -4929,6 +4929,11 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                              getValue(I.getArgOperand(0)).getValueType(),
                              getValue(I.getArgOperand(0))));
     return 0;
+  case Intrinsic::floor:
+    setValue(&I, DAG.getNode(ISD::FFLOOR, dl,
+                             getValue(I.getArgOperand(0)).getValueType(),
+                             getValue(I.getArgOperand(0))));
+    return 0;
   case Intrinsic::fma:
     setValue(&I, DAG.getNode(ISD::FMA, dl,
                              getValue(I.getArgOperand(0)).getValueType(),
@@ -5207,9 +5212,9 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
                 Outs, TLI);
 
   bool CanLowerReturn = TLI.CanLowerReturn(CS.getCallingConv(),
-					   DAG.getMachineFunction(),
-					   FTy->isVarArg(), Outs,
-					   FTy->getContext());
+                                           DAG.getMachineFunction(),
+                                           FTy->isVarArg(), Outs,
+                                           FTy->getContext());
 
   SDValue DemoteStackSlot;
   int DemoteStackIdx = -100;
@@ -5976,11 +5981,11 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
       SDISelAsmOperandInfo &Input = ConstraintOperands[OpInfo.MatchingInput];
 
       if (OpInfo.ConstraintVT != Input.ConstraintVT) {
-	std::pair<unsigned, const TargetRegisterClass*> MatchRC =
-	  TLI.getRegForInlineAsmConstraint(OpInfo.ConstraintCode,
+        std::pair<unsigned, const TargetRegisterClass*> MatchRC =
+          TLI.getRegForInlineAsmConstraint(OpInfo.ConstraintCode,
                                            OpInfo.ConstraintVT);
-	std::pair<unsigned, const TargetRegisterClass*> InputRC =
-	  TLI.getRegForInlineAsmConstraint(Input.ConstraintCode,
+        std::pair<unsigned, const TargetRegisterClass*> InputRC =
+          TLI.getRegForInlineAsmConstraint(Input.ConstraintCode,
                                            Input.ConstraintVT);
         if ((OpInfo.ConstraintVT.isInteger() !=
              Input.ConstraintVT.isInteger()) ||
@@ -6770,7 +6775,7 @@ void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
 
     // Note down frame index.
     if (FrameIndexSDNode *FI =
-	dyn_cast<FrameIndexSDNode>(ArgValues[0].getNode()))
+        dyn_cast<FrameIndexSDNode>(ArgValues[0].getNode()))
       FuncInfo->setArgumentFrameIndex(I, FI->getIndex());
 
     SDValue Res = DAG.getMergeValues(&ArgValues[0], NumValues,

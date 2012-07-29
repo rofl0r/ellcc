@@ -13,7 +13,10 @@ add_dependencies(clangStaticAnalyzerFrontend
   clangStaticAnalyzerCore
   ClangAttrClasses
   ClangAttrList
+  ClangCommentNodes
   ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangDiagnosticFrontend
   ClangStmtNodes
   )
 

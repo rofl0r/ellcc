@@ -463,18 +463,25 @@ public:
   }
 
   iterator erase(iterator I) {
+    assert(I >= this->begin() && "Iterator to erase is out of bounds.");
+    assert(I < this->end() && "Erasing at past-the-end iterator.");
+
     iterator N = I;
     // Shift all elts down one.
-    std::copy(I+1, this->end(), I);
+    this->move(I+1, this->end(), I);
     // Drop the last elt.
     this->pop_back();
     return(N);
   }
 
   iterator erase(iterator S, iterator E) {
+    assert(S >= this->begin() && "Range to erase is out of bounds.");
+    assert(S <= E && "Trying to erase invalid range.");
+    assert(E <= this->end() && "Trying to erase past the end.");
+
     iterator N = S;
     // Shift all elts down.
-    iterator I = std::copy(E, this->end(), S);
+    iterator I = this->move(E, this->end(), S);
     // Drop the last elts.
     this->destroy_range(I, this->end());
     this->setEnd(I);
@@ -487,6 +494,9 @@ public:
       this->push_back(::std::move(Elt));
       return this->end()-1;
     }
+
+    assert(I >= this->begin() && "Insertion iterator is out of bounds.");
+    assert(I <= this->end() && "Inserting past the end of the vector.");
 
     if (this->EndX < this->CapacityX) {
     Retry:
@@ -516,6 +526,9 @@ public:
       this->push_back(Elt);
       return this->end()-1;
     }
+
+    assert(I >= this->begin() && "Insertion iterator is out of bounds.");
+    assert(I <= this->end() && "Inserting past the end of the vector.");
 
     if (this->EndX < this->CapacityX) {
     Retry:
@@ -548,6 +561,9 @@ public:
       return this->begin()+InsertElt;
     }
 
+    assert(I >= this->begin() && "Insertion iterator is out of bounds.");
+    assert(I <= this->end() && "Inserting past the end of the vector.");
+
     // Ensure there is enough space.
     reserve(static_cast<unsigned>(this->size() + NumToInsert));
 
@@ -572,11 +588,11 @@ public:
     // Otherwise, we're inserting more elements than exist already, and we're
     // not inserting at the end.
 
-    // Copy over the elements that we're about to overwrite.
+    // Move over the elements that we're about to overwrite.
     T *OldEnd = this->end();
     this->setEnd(this->end() + NumToInsert);
     size_t NumOverwritten = OldEnd-I;
-    this->uninitialized_copy(I, OldEnd, this->end()-NumOverwritten);
+    this->uninitialized_move(I, OldEnd, this->end()-NumOverwritten);
 
     // Replace the overwritten part.
     std::fill_n(I, NumOverwritten, Elt);
@@ -595,6 +611,9 @@ public:
       append(From, To);
       return this->begin()+InsertElt;
     }
+
+    assert(I >= this->begin() && "Insertion iterator is out of bounds.");
+    assert(I <= this->end() && "Inserting past the end of the vector.");
 
     size_t NumToInsert = std::distance(From, To);
 
@@ -622,11 +641,11 @@ public:
     // Otherwise, we're inserting more elements than exist already, and we're
     // not inserting at the end.
 
-    // Copy over the elements that we're about to overwrite.
+    // Move over the elements that we're about to overwrite.
     T *OldEnd = this->end();
     this->setEnd(this->end() + NumToInsert);
     size_t NumOverwritten = OldEnd-I;
-    this->uninitialized_copy(I, OldEnd, this->end()-NumOverwritten);
+    this->uninitialized_move(I, OldEnd, this->end()-NumOverwritten);
 
     // Replace the overwritten part.
     for (T *J = I; NumOverwritten > 0; --NumOverwritten) {

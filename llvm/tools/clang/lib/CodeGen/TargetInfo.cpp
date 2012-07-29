@@ -434,20 +434,13 @@ class X86_32ABIInfo : public ABIInfo {
   /// \brief Return the alignment to use for the given type on the stack.
   unsigned getTypeStackAlignInBytes(QualType Ty, unsigned Align) const;
 
-public:
-
-  ABIArgInfo classifyReturnType(QualType RetTy, 
+  ABIArgInfo classifyReturnType(QualType RetTy,
                                 unsigned callingConvention) const;
   ABIArgInfo classifyArgumentType(QualType RetTy) const;
 
-  virtual void computeInfo(CGFunctionInfo &FI) const {
-    FI.getReturnInfo() = classifyReturnType(FI.getReturnType(), 
-                                            FI.getCallingConvention());
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it)
-      it->info = classifyArgumentType(it->type);
-  }
+public:
 
+  virtual void computeInfo(CGFunctionInfo &FI) const;
   virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                  CodeGenFunction &CGF) const;
 
@@ -756,6 +749,14 @@ ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty) const {
 
   return (Ty->isPromotableIntegerType() ?
           ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
+void X86_32ABIInfo::computeInfo(CGFunctionInfo &FI) const {
+  FI.getReturnInfo() = classifyReturnType(FI.getReturnType(),
+                                          FI.getCallingConvention());
+  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
+       it != ie; ++it)
+    it->info = classifyArgumentType(it->type);
 }
 
 llvm::Value *X86_32ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -1350,7 +1351,8 @@ void X86_64ABIInfo::classify(QualType Ty, uint64_t OffsetBase,
         // single eightbyte, each is classified separately. Each eightbyte gets
         // initialized to class NO_CLASS.
         Class FieldLo, FieldHi;
-        uint64_t Offset = OffsetBase + Layout.getBaseClassOffsetInBits(Base);
+        uint64_t Offset =
+          OffsetBase + getContext().toBits(Layout.getBaseClassOffset(Base));
         classify(i->getType(), Offset, FieldLo, FieldHi);
         Lo = merge(Lo, FieldLo);
         Hi = merge(Hi, FieldHi);
@@ -1589,7 +1591,7 @@ static bool BitsContainNoUserData(QualType Ty, unsigned StartBit,
           cast<CXXRecordDecl>(i->getType()->getAs<RecordType>()->getDecl());
 
         // If the base is after the span we care about, ignore it.
-        unsigned BaseOffset = (unsigned)Layout.getBaseClassOffsetInBits(Base);
+        unsigned BaseOffset = Context.toBits(Layout.getBaseClassOffset(Base));
         if (BaseOffset >= EndBit) continue;
 
         unsigned BaseStart = BaseOffset < StartBit ? StartBit-BaseOffset :0;
@@ -2752,7 +2754,8 @@ static bool isHomogeneousAggregate(QualType Ty, const Type *&Base,
     // double, or 64-bit or 128-bit vectors.
     if (const BuiltinType *BT = Ty->getAs<BuiltinType>()) {
       if (BT->getKind() != BuiltinType::Float && 
-          BT->getKind() != BuiltinType::Double)
+          BT->getKind() != BuiltinType::Double &&
+          BT->getKind() != BuiltinType::LongDouble)
         return false;
     } else if (const VectorType *VT = Ty->getAs<VectorType>()) {
       unsigned VecSize = Context.getTypeSize(VT);

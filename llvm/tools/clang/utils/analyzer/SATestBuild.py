@@ -72,7 +72,7 @@ SBOutputDirReferencePrefix = "Ref"
 
 # The list of checkers used during analyzes.
 # Currently, consists of all the non experimental checkers.
-Checkers="experimental.security.taint,core,deadcode,cplusplus,security,unix,osx,cocoa"
+Checkers="experimental.security.taint,core,deadcode,security,unix,osx"
 
 Verbose = 1
 
@@ -357,7 +357,7 @@ def runCmpResults(Dir):
         OLD_STDOUT = sys.stdout
         sys.stdout = Discarder()
         # Scan the results, delete empty plist files.
-        NumDiffs = CmpRuns.cmpScanBuildResults(RefDir, NewDir, Opts, False)
+        NumDiffs = CmpRuns.dumpScanBuildResultsDiff(RefDir, NewDir, Opts, False)
         sys.stdout = OLD_STDOUT
         if (NumDiffs > 0) :
             print "Warning: %r differences in diagnostics. See %s" % \

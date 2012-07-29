@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
@@ -172,9 +173,9 @@ void StmtPrinter::VisitLabelStmt(LabelStmt *Node) {
 void StmtPrinter::VisitAttributedStmt(AttributedStmt *Node) {
   OS << "[[";
   bool first = true;
-  for (AttrVec::const_iterator it = Node->getAttrs().begin(),
-                               end = Node->getAttrs().end();
-                               it != end; ++it) {
+  for (ArrayRef<const Attr*>::iterator it = Node->getAttrs().begin(),
+                                       end = Node->getAttrs().end();
+                                       it != end; ++it) {
     if (!first) {
       OS << ", ";
       first = false;

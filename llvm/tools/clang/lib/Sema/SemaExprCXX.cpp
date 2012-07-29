@@ -1093,8 +1093,10 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     }
   }
 
-  // C++0x [decl.spec.auto]p6. Deduce the type which 'auto' stands in for.
-  if (TypeMayContainAuto && AllocType->getContainedAutoType()) {
+  // C++11 [decl.spec.auto]p6. Deduce the type which 'auto' stands in for.
+  AutoType *AT = 0;
+  if (TypeMayContainAuto &&
+      (AT = AllocType->getContainedAutoType()) && !AT->isDeduced()) {
     if (initStyle == CXXNewExpr::NoInit || NumInits == 0)
       return ExprError(Diag(StartLoc, diag::err_auto_new_requires_ctor_arg)
                        << AllocType << TypeRange);
@@ -1110,8 +1112,7 @@ Sema::BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
     }
     Expr *Deduce = Inits[0];
     TypeSourceInfo *DeducedType = 0;
-    if (DeduceAutoType(AllocTypeInfo, Deduce, DeducedType) ==
-            DAR_Failed)
+    if (DeduceAutoType(AllocTypeInfo, Deduce, DeducedType) == DAR_Failed)
       return ExprError(Diag(StartLoc, diag::err_auto_new_deduction_failure)
                        << AllocType << Deduce->getType()
                        << TypeRange << Deduce->getSourceRange());
@@ -2147,9 +2148,6 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
     //   delete-expression; it is not necessary to cast away the constness
     //   (5.2.11) of the pointer expression before it is used as the operand
     //   of the delete-expression. ]
-    if (!Context.hasSameType(Ex.get()->getType(), Context.VoidPtrTy))
-      Ex = Owned(ImplicitCastExpr::Create(Context, Context.VoidPtrTy,
-                                          CK_BitCast, Ex.take(), 0, VK_RValue));
 
     if (Pointee->isArrayType() && !ArrayForm) {
       Diag(StartLoc, diag::warn_delete_array_type)
@@ -2227,6 +2225,9 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
       DeclareGlobalNewDelete();
       DeclContext *TUDecl = Context.getTranslationUnitDecl();
       Expr *Arg = Ex.get();
+      if (!Context.hasSameType(Arg->getType(), Context.VoidPtrTy))
+        Arg = ImplicitCastExpr::Create(Context, Context.VoidPtrTy,
+                                       CK_BitCast, Arg, 0, VK_RValue);
       if (FindAllocationOverload(StartLoc, SourceRange(), DeleteName,
                                  &Arg, 1, TUDecl, /*AllowMissing=*/false,
                                  OperatorDelete))
@@ -3189,8 +3190,6 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT,
             CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);
             if (!CPT)
               return false;
-            if (CPT->getExceptionSpecType() == EST_Delayed)
-              return false;
             if (!CPT->isNothrow(Self.Context))
               return false;
           }
@@ -3231,8 +3230,6 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT,
           CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);
           if (!CPT)
             return false;
-          if (CPT->getExceptionSpecType() == EST_Delayed)
-            return false;
           // FIXME: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
           if (!CPT->isNothrow(Self.Context) || CPT->getNumArgs() > 1)
@@ -3268,8 +3265,6 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT,
               = Constructor->getType()->getAs<FunctionProtoType>();
           CPT = Self.ResolveExceptionSpec(KeyLoc, CPT);
           if (!CPT)
-            return false;
-          if (CPT->getExceptionSpecType() == EST_Delayed)
             return false;
           // TODO: check whether evaluating default arguments can throw.
           // For now, we'll be conservative and assume that they can throw.
@@ -4787,6 +4782,11 @@ ExprResult Sema::ActOnDecltypeExpression(Expr *E) {
 
   // Disable the special decltype handling now.
   Rec.IsDecltype = false;
+
+  // In MS mode, don't perform any extra checking of call return types within a
+  // decltype expression.
+  if (getLangOpts().MicrosoftMode)
+    return Owned(E);
 
   // Perform the semantic checks we delayed until this point.
   CallExpr *TopCall = dyn_cast<CallExpr>(E);

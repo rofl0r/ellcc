@@ -778,7 +778,6 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
   // ObjCCategoryDecl
   void visitObjCCategoryDeclAttrs(ObjCCategoryDecl *D) {
     setFlag("extension", D->IsClassExtension());
-    setFlag("synth_bitfield", D->hasSynthBitfield());
   }
   void visitObjCCategoryDeclChildren(ObjCCategoryDecl *D) {
     visitDeclRef("interface", D->getClassInterface());
@@ -804,7 +803,6 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
 
   // ObjCImplementationDecl
   void visitObjCImplementationDeclAttrs(ObjCImplementationDecl *D) {
-    setFlag("synth_bitfield", D->hasSynthBitfield());
     set("identifier", D->getName());
   }
   void visitObjCImplementationDeclChildren(ObjCImplementationDecl *D) {
@@ -1024,17 +1022,12 @@ struct XMLDumper : public XMLDeclVisitor<XMLDumper>,
 };
 }
 
-void Decl::dumpXML() const {
-  dumpXML(llvm::errs());
-}
-
 void Decl::dumpXML(raw_ostream &out) const {
   XMLDumper(out, getASTContext()).dispatch(const_cast<Decl*>(this));
 }
 
 #else /* ifndef NDEBUG */
 
-void Decl::dumpXML() const {}
 void Decl::dumpXML(raw_ostream &out) const {}
 
 #endif

@@ -71,7 +71,9 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
       StatInc(thr, StatSyncCreated);
       void *mem = internal_alloc(MBlockSync, sizeof(SyncVar));
       res = new(mem) SyncVar(addr);
+#ifndef TSAN_GO
       res->creation_stack.ObtainCurrent(thr, pc);
+#endif
       res->next = p->val;
       p->val = res;
     }
@@ -174,7 +176,7 @@ void StackTrace::Init(const uptr *pcs, uptr cnt) {
 
 void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
   Reset();
-  n_ = thr->shadow_stack_pos - &thr->shadow_stack[0];
+  n_ = thr->shadow_stack_pos - thr->shadow_stack;
   if (n_ + !!toppc == 0)
     return;
   if (c_) {

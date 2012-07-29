@@ -184,7 +184,7 @@ static void expandTabs(std::string &SourceLine, unsigned TabStop) {
 ///  characters will appear at (numbering the first column as 0).
 ///
 /// If a byte 'i' corresponds to muliple columns (e.g. the byte contains a tab
-///  character) then the the array will map that byte to the first column the
+///  character) then the array will map that byte to the first column the
 ///  tab appears at and the next value in the map will have been incremented
 ///  more than once.
 ///
@@ -1124,23 +1124,28 @@ std::string TextDiagnostic::buildFixItInsertionLine(
   std::string FixItInsertionLine;
   if (Hints.empty() || !DiagOpts.ShowFixits)
     return FixItInsertionLine;
-  unsigned PrevHintEnd = 0;
+  unsigned PrevHintEndCol = 0;
 
   for (ArrayRef<FixItHint>::iterator I = Hints.begin(), E = Hints.end();
        I != E; ++I) {
     if (!I->CodeToInsert.empty()) {
       // We have an insertion hint. Determine whether the inserted
-      // code is on the same line as the caret.
+      // code contains no newlines and is on the same line as the caret.
       std::pair<FileID, unsigned> HintLocInfo
         = SM.getDecomposedExpansionLoc(I->RemoveRange.getBegin());
-      if (LineNo == SM.getLineNumber(HintLocInfo.first, HintLocInfo.second)) {
+      if (LineNo == SM.getLineNumber(HintLocInfo.first, HintLocInfo.second) &&
+          StringRef(I->CodeToInsert).find_first_of("\n\r") == StringRef::npos) {
         // Insert the new code into the line just below the code
         // that the user wrote.
-        unsigned HintColNo
+        // Note: When modifying this function, be very careful about what is a
+        // "column" (printed width, platform-dependent) and what is a
+        // "byte offset" (SourceManager "column").
+        unsigned HintByteOffset
           = SM.getColumnNumber(HintLocInfo.first, HintLocInfo.second) - 1;
-        // hint must start inside the source or right at the end
-        assert(HintColNo<static_cast<unsigned>(map.bytes())+1);
-        HintColNo = map.byteToColumn(HintColNo);
+
+        // The hint must start inside the source or right at the end
+        assert(HintByteOffset < static_cast<unsigned>(map.bytes())+1);
+        unsigned HintCol = map.byteToColumn(HintByteOffset);
 
         // If we inserted a long previous hint, push this one forwards, and add
         // an extra space to show that this is not part of the previous
@@ -1149,27 +1154,27 @@ std::string TextDiagnostic::buildFixItInsertionLine(
         //
         // Note that if this hint is located immediately after the previous
         // hint, no space will be added, since the location is more important.
-        if (HintColNo < PrevHintEnd)
-          HintColNo = PrevHintEnd + 1;
+        if (HintCol < PrevHintEndCol)
+          HintCol = PrevHintEndCol + 1;
 
-        // FIXME: if the fixit includes tabs or other characters that do not
-        //  take up a single column per byte when displayed then
-        //  I->CodeToInsert.size() is not a column number and we're mixing
-        //  units (columns + bytes). We should get printable versions
-        //  of each fixit before using them.
-        unsigned LastColumnModified
-          = HintColNo + I->CodeToInsert.size();
+        // FIXME: This function handles multibyte characters in the source, but
+        // not in the fixits. This assertion is intended to catch unintended
+        // use of multibyte characters in fixits. If we decide to do this, we'll
+        // have to track separate byte widths for the source and fixit lines.
+        assert((size_t)llvm::sys::locale::columnWidth(I->CodeToInsert) ==
+               I->CodeToInsert.size());
 
-        if (LastColumnModified <= static_cast<unsigned>(map.bytes()))
-          LastColumnModified = map.byteToColumn(LastColumnModified);
-
+        // This relies on one byte per column in our fixit hints.
+        // This should NOT use HintByteOffset, because the source might have
+        // Unicode characters in earlier columns.
+        unsigned LastColumnModified = HintCol + I->CodeToInsert.size();
         if (LastColumnModified > FixItInsertionLine.size())
           FixItInsertionLine.resize(LastColumnModified, ' ');
-        assert(HintColNo+I->CodeToInsert.size() <= FixItInsertionLine.size());
-        std::copy(I->CodeToInsert.begin(), I->CodeToInsert.end(),
-                  FixItInsertionLine.begin() + HintColNo);
 
-        PrevHintEnd = LastColumnModified;
+        std::copy(I->CodeToInsert.begin(), I->CodeToInsert.end(),
+                  FixItInsertionLine.begin() + HintCol);
+
+        PrevHintEndCol = LastColumnModified;
       } else {
         FixItInsertionLine.clear();
         break;

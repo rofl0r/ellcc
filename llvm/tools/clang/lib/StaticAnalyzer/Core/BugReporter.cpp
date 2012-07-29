@@ -48,6 +48,10 @@ static inline const Stmt *GetStmt(const ProgramPoint &P) {
     return SP->getStmt();
   else if (const BlockEdge *BE = dyn_cast<BlockEdge>(&P))
     return BE->getSrc()->getTerminator();
+  else if (const CallEnter *CE = dyn_cast<CallEnter>(&P))
+    return CE->getCallExpr();
+  else if (const CallExitEnd *CEE = dyn_cast<CallExitEnd>(&P))
+    return CEE->getCalleeContext()->getCallSite();
 
   return 0;
 }
@@ -437,21 +441,23 @@ static void GenerateMinimalPathDiagnostic(PathDiagnostic& PD,
     }
     
     if (const CallEnter *CE = dyn_cast<CallEnter>(&P)) {
+      // Flush all locations, and pop the active path.
+      bool VisitedEntireCall = PD.isWithinCall();
       PD.popActivePath();
-      // The current active path should never be empty.  Either we
-      // just added a bunch of stuff to the top-level path, or
-      // we have a previous CallExitEnd.  If the front of the active
-      // path is not a PathDiagnosticCallPiece, it means that the
+
+      // Either we just added a bunch of stuff to the top-level path, or
+      // we have a previous CallExitEnd.  If the former, it means that the
       // path terminated within a function call.  We must then take the
       // current contents of the active path and place it within
       // a new PathDiagnosticCallPiece.
-      assert(!PD.getActivePath().empty());
-      PathDiagnosticCallPiece *C = 
-        dyn_cast<PathDiagnosticCallPiece>(PD.getActivePath().front());
-      if (!C) {
+      PathDiagnosticCallPiece *C;
+      if (VisitedEntireCall) {
+        C = cast<PathDiagnosticCallPiece>(PD.getActivePath().front());
+      } else {
         const Decl *Caller = CE->getLocationContext()->getDecl();
         C = PathDiagnosticCallPiece::construct(PD.getActivePath(), Caller);
       }
+
       C->setCallee(*CE, SMgr);
       if (!CallStack.empty()) {
         assert(CallStack.back().first == C);
@@ -864,6 +870,7 @@ public:
   void rawAddEdge(PathDiagnosticLocation NewLoc);
 
   void addContext(const Stmt *S);
+  void addContext(const PathDiagnosticLocation &L);
   void addExtendedContext(const Stmt *S);
 };
 } // end anonymous namespace
@@ -1031,7 +1038,10 @@ void EdgeBuilder::addContext(const Stmt *S) {
     return;
 
   PathDiagnosticLocation L(S, PDB.getSourceManager(), PDB.LC);
+  addContext(L);
+}
 
+void EdgeBuilder::addContext(const PathDiagnosticLocation &L) {
   while (!CLocs.empty()) {
     const PathDiagnosticLocation &TopContextLoc = CLocs.back();
 
@@ -1102,11 +1112,10 @@ static void reversePropagateInterestingSymbols(BugReport &R,
                                                const LocationContext *CalleeCtx,
                                                const LocationContext *CallerCtx)
 {
-  // FIXME: Handle CXXConstructExpr.
-  // FIXME: Handle calls to blocks.
+  // FIXME: Handle non-CallExpr-based CallEvents.
   const StackFrameContext *Callee = CalleeCtx->getCurrentStackFrame();
   const Stmt *CallSite = Callee->getCallSite();
-  if (const CallExpr *CE = dyn_cast<CallExpr>(CallSite)) {
+  if (const CallExpr *CE = dyn_cast_or_null<CallExpr>(CallSite)) {
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(CalleeCtx->getDecl())) {
       FunctionDecl::param_const_iterator PI = FD->param_begin(), 
                                          PE = FD->param_end();
@@ -1148,15 +1157,19 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
       }
       
       if (const CallExitEnd *CE = dyn_cast<CallExitEnd>(&P)) {
-        const StackFrameContext *LCtx =
-        CE->getLocationContext()->getCurrentStackFrame();
-        PathDiagnosticLocation Loc(CE->getStmt(),
-                                   PDB.getSourceManager(),
-                                   LCtx);
-        EB.addEdge(Loc, true);
-        EB.flushLocations();
+        const Stmt *S = CE->getCalleeContext()->getCallSite();
+        if (const Expr *Ex = dyn_cast_or_null<Expr>(S)) {
+            reversePropagateIntererstingSymbols(*PDB.getBugReport(), IE,
+                                                N->getState().getPtr(), Ex,
+                                                N->getLocationContext());
+        }
+        
         PathDiagnosticCallPiece *C =
           PathDiagnosticCallPiece::construct(N, *CE, SM);
+
+        EB.addEdge(C->callReturn, true);
+        EB.flushLocations();
+
         PD.getActivePath().push_front(C);
         PD.pushActivePath(&C->path);
         CallStack.push_back(StackDiagPair(C, N));
@@ -1173,26 +1186,26 @@ static void GenerateExtensivePathDiagnostic(PathDiagnostic& PD,
         EB.addEdge(pos);
         
         // Flush all locations, and pop the active path.
+        bool VisitedEntireCall = PD.isWithinCall();
         EB.flushLocations();
         PD.popActivePath();
-        assert(!PD.getActivePath().empty());
         PDB.LC = N->getLocationContext();
 
-        // The current active path should never be empty.  Either we
-        // just added a bunch of stuff to the top-level path, or
-        // we have a previous CallExitEnd.  If the front of the active
-        // path is not a PathDiagnosticCallPiece, it means that the
+        // Either we just added a bunch of stuff to the top-level path, or
+        // we have a previous CallExitEnd.  If the former, it means that the
         // path terminated within a function call.  We must then take the
         // current contents of the active path and place it within
         // a new PathDiagnosticCallPiece.
-        PathDiagnosticCallPiece *C =
-          dyn_cast<PathDiagnosticCallPiece>(PD.getActivePath().front());
-        if (!C) {
-          const Decl * Caller = CE->getLocationContext()->getDecl();
+        PathDiagnosticCallPiece *C;
+        if (VisitedEntireCall) {
+          C = cast<PathDiagnosticCallPiece>(PD.getActivePath().front());
+        } else {
+          const Decl *Caller = CE->getLocationContext()->getDecl();
           C = PathDiagnosticCallPiece::construct(PD.getActivePath(), Caller);
         }
+
         C->setCallee(*CE, SM);
-        EB.addContext(CE->getCallExpr());
+        EB.addContext(C->getLocation());
 
         if (!CallStack.empty()) {
           assert(CallStack.back().first == C);

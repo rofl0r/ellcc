@@ -42,40 +42,44 @@ void cleanupBrief(std::string &S) {
 
 bool isBlockCommand(StringRef Name) {
   return llvm::StringSwitch<bool>(Name)
-      .Case("brief", true)
-      .Case("result", true)
-      .Case("return", true)
-      .Case("returns", true)
-      .Case("author", true)
-      .Case("authors", true)
+      .Cases("brief", "short", true)
+      .Cases("result", "return", "returns", true)
+      .Cases("author", "authors", true)
       .Case("pre", true)
       .Case("post", true)
-      .Case("param", true)
-      .Case("arg", true)
+      .Cases("param", "arg", true)
       .Default(false);
 }
 } // unnamed namespace
 
 std::string BriefParser::Parse() {
-  std::string Paragraph;
+  std::string FirstParagraphOrBrief;
+  std::string ReturnsParagraph;
   bool InFirstParagraph = true;
   bool InBrief = false;
+  bool InReturns = false;
 
   while (Tok.isNot(tok::eof)) {
     if (Tok.is(tok::text)) {
       if (InFirstParagraph || InBrief)
-        Paragraph += Tok.getText();
+        FirstParagraphOrBrief += Tok.getText();
+      else if (InReturns)
+        ReturnsParagraph += Tok.getText();
       ConsumeToken();
       continue;
     }
 
     if (Tok.is(tok::command)) {
       StringRef Name = Tok.getCommandName();
-      if (Name == "brief") {
-        Paragraph.clear();
+      if (Name == "brief" || Name == "short") {
+        FirstParagraphOrBrief.clear();
         InBrief = true;
         ConsumeToken();
         continue;
+      }
+      if (Name == "result" || Name == "return" || Name == "returns") {
+        InReturns = true;
+        ReturnsParagraph += "Returns ";
       }
       // Block commands implicitly start a new paragraph.
       if (isBlockCommand(Name)) {
@@ -88,13 +92,16 @@ std::string BriefParser::Parse() {
 
     if (Tok.is(tok::newline)) {
       if (InFirstParagraph || InBrief)
-        Paragraph += ' ';
+        FirstParagraphOrBrief += ' ';
+      else if (InReturns)
+        ReturnsParagraph += ' ';
       ConsumeToken();
 
       if (Tok.is(tok::newline)) {
         ConsumeToken();
         // We found a paragraph end.
         InFirstParagraph = false;
+        InReturns = false;
         if (InBrief)
           break;
       }
@@ -105,12 +112,15 @@ std::string BriefParser::Parse() {
     ConsumeToken();
   }
 
-  cleanupBrief(Paragraph);
-  return Paragraph;
+  cleanupBrief(FirstParagraphOrBrief);
+  if (!FirstParagraphOrBrief.empty())
+    return FirstParagraphOrBrief;
+
+  cleanupBrief(ReturnsParagraph);
+  return ReturnsParagraph;
 }
 
-BriefParser::BriefParser(Lexer &L) : L(L)
-{
+BriefParser::BriefParser(Lexer &L) : L(L) {
   // Get lookahead token.
   ConsumeToken();
 }

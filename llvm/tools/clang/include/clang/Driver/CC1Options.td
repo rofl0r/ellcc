@@ -286,6 +286,10 @@ def resource_dir : Separate<"-resource-dir">,
   HelpText<"The directory which holds the compiler resource files">;
 def version : Flag<"-version">,
   HelpText<"Print the compiler version">;
+def ast_dump_filter : Separate<"-ast-dump-filter">,
+  MetaVarName<"<dump_filter>">,
+  HelpText<"Use with -ast-dump or -ast-print to dump/print only AST declaration"
+           " nodes having a certain substring in a qualified name.">;
 
 let Group = Action_Group in {
 
@@ -431,7 +435,7 @@ def fdebugger_support : Flag<"-fdebugger-support">,
 def fdebugger_cast_result_to_id : Flag<"-fdebugger-cast-result-to-id">,
   HelpText<"Enable casting unknown expression results to id">;
 def fdebugger_objc_literal : Flag<"-fdebugger-objc-literal">,
-  HelpText<"Enable special debugger support for objective-C subscripting and literals">;
+  HelpText<"Enable special debugger support for Objective-C subscripting and literals">;
 def fdeprecated_macro : Flag<"-fdeprecated-macro">,
   HelpText<"Defines the __DEPRECATED macro">;
 def fno_deprecated_macro : Flag<"-fno-deprecated-macro">,

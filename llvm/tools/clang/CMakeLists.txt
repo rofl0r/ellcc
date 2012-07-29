@@ -204,7 +204,6 @@ macro(add_clang_library name)
   target_link_libraries( ${name} ${LLVM_COMMON_LIBS} )
   link_system_libs( ${name} )
 
-  add_dependencies(${name} ClangDiagnosticCommon)
   install(TARGETS ${name}
     LIBRARY DESTINATION lib${LLVM_LIBDIR_SUFFIX}
     ARCHIVE DESTINATION lib${LLVM_LIBDIR_SUFFIX}
@@ -251,13 +250,13 @@ mark_as_advanced(CLANG_EXECUTABLE_VERSION LIBCLANG_LIBRARY_VERSION)
 
 add_subdirectory(utils/TableGen)
 
-option(CLANG_BUILD_EXAMPLES "Build CLANG example programs by default." OFF)
-add_subdirectory(examples)
-
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(runtime)
+
+option(CLANG_BUILD_EXAMPLES "Build CLANG example programs by default." OFF)
+add_subdirectory(examples)
 
 # TODO: docs.
 add_subdirectory(test)

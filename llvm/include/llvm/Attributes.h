@@ -46,14 +46,9 @@ class Attributes {
   Attributes() : Bits(0) { }
   explicit Attributes(uint64_t Val) : Bits(Val) { }
   /*implicit*/ Attributes(Attribute::AttrConst Val) : Bits(Val.v) { }
-  Attributes(const Attributes &Attrs) : Bits(Attrs.Bits) { }
   // This is a "safe bool() operator".
   operator const void *() const { return Bits ? this : 0; }
   bool isEmptyOrSingleton() const { return (Bits & (Bits - 1)) == 0; }
-  Attributes &operator = (const Attributes &Attrs) {
-    Bits = Attrs.Bits;
-    return *this;
-  }
   bool operator == (const Attributes &Attrs) const {
     return Bits == Attrs.Bits;
   }
@@ -170,8 +165,9 @@ const AttrConst FunctionOnly = {NoReturn_i | NoUnwind_i | ReadNone_i |
 const AttrConst VarArgsIncompatible = {StructRet_i};
 
 /// @brief Attributes that are mutually incompatible.
-const AttrConst MutuallyIncompatible[4] = {
-  {ByVal_i | InReg_i | Nest_i | StructRet_i},
+const AttrConst MutuallyIncompatible[5] = {
+  {ByVal_i | Nest_i | StructRet_i},
+  {ByVal_i | Nest_i | InReg_i },
   {ZExt_i  | SExt_i},
   {ReadNone_i | ReadOnly_i},
   {NoInline_i | AlwaysInline_i}

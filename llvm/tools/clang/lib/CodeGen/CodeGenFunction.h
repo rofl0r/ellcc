@@ -1197,6 +1197,16 @@ private:
   llvm::BasicBlock *TerminateHandler;
   llvm::BasicBlock *TrapBB;
 
+  /// Add a kernel metadata node to the named metadata node 'opencl.kernels'.
+  /// In the kernel metadata node, reference the kernel function and metadata 
+  /// nodes for its optional attribute qualifiers (OpenCL 1.1 6.7.2):
+  /// - A node for the work_group_size_hint(X,Y,Z) qualifier contains string 
+  ///   "work_group_size_hint", and three 32-bit integers X, Y and Z.
+  /// - A node for the reqd_work_group_size(X,Y,Z) qualifier contains string 
+  ///   "reqd_work_group_size", and three 32-bit integers X, Y and Z.
+  void EmitOpenCLKernelMetadata(const FunctionDecl *FD, 
+                                llvm::Function *Fn);
+
 public:
   CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext=false);
   ~CodeGenFunction();
@@ -2501,7 +2511,7 @@ public:
   /// ConstantFoldsToSimpleInteger - If the specified expression does not fold
   /// to a constant, or if it does but contains a label, return false.  If it
   /// constant folds return true and set the folded value.
-  bool ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &Result);
+  bool ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APSInt &Result);
   
   /// EmitBranchOnBoolExpr - Emit a branch on a boolean condition (e.g. for an
   /// if statement) to the specified blocks.  Based on the condition, this might

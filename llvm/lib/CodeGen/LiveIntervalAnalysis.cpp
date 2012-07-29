@@ -27,6 +27,7 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -37,6 +38,11 @@
 #include <limits>
 #include <cmath>
 using namespace llvm;
+
+// Switch to the new experimental algorithm for computing live intervals.
+static cl::opt<bool>
+NewLiveIntervals("new-live-intervals", cl::Hidden,
+                 cl::desc("Use new algorithm forcomputing live intervals"));
 
 char LiveIntervals::ID = 0;
 INITIALIZE_PASS_BEGIN(LiveIntervals, "liveintervals",
@@ -105,7 +111,19 @@ bool LiveIntervals::runOnMachineFunction(MachineFunction &fn) {
   AllocatableRegs = TRI->getAllocatableSet(fn);
   ReservedRegs = TRI->getReservedRegs(fn);
 
-  computeIntervals();
+  // Allocate space for all virtual registers.
+  VirtRegIntervals.resize(MRI->getNumVirtRegs());
+
+  if (NewLiveIntervals) {
+    // This is the new way of computing live intervals.
+    // It is independent of LiveVariables, and it can run at any time.
+    computeVirtRegs();
+    computeRegMasks();
+  } else {
+    // This is the old way of computing live intervals.
+    // It depends on LiveVariables.
+    computeIntervals();
+  }
   computeLiveInRegUnits();
 
   DEBUG(dump());
@@ -266,7 +284,6 @@ void LiveIntervals::handleVirtualRegisterDef(MachineBasicBlock *mbb,
         assert(getInstructionFromIndex(Start) == 0 &&
                "PHI def index points at actual instruction.");
         ValNo = interval.getNextValue(Start, VNInfoAllocator);
-        ValNo->setIsPHIDef(true);
       }
       LiveRange LR(Start, killIdx, ValNo);
       interval.addRange(LR);
@@ -441,6 +458,49 @@ LiveInterval* LiveIntervals::createInterval(unsigned reg) {
   return new LiveInterval(reg, Weight);
 }
 
+
+/// computeVirtRegInterval - Compute the live interval of a virtual register,
+/// based on defs and uses.
+void LiveIntervals::computeVirtRegInterval(LiveInterval *LI) {
+  assert(LRCalc && "LRCalc not initialized.");
+  assert(LI->empty() && "Should only compute empty intervals.");
+  LRCalc->reset(MF, getSlotIndexes(), DomTree, &getVNInfoAllocator());
+  LRCalc->createDeadDefs(LI);
+  LRCalc->extendToUses(LI);
+}
+
+void LiveIntervals::computeVirtRegs() {
+  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
+    unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
+    if (MRI->reg_nodbg_empty(Reg))
+      continue;
+    LiveInterval *LI = createInterval(Reg);
+    VirtRegIntervals[Reg] = LI;
+    computeVirtRegInterval(LI);
+  }
+}
+
+void LiveIntervals::computeRegMasks() {
+  RegMaskBlocks.resize(MF->getNumBlockIDs());
+
+  // Find all instructions with regmask operands.
+  for (MachineFunction::iterator MBBI = MF->begin(), E = MF->end();
+       MBBI != E; ++MBBI) {
+    MachineBasicBlock *MBB = MBBI;
+    std::pair<unsigned, unsigned> &RMB = RegMaskBlocks[MBB->getNumber()];
+    RMB.first = RegMaskSlots.size();
+    for (MachineBasicBlock::iterator MI = MBB->begin(), ME = MBB->end();
+         MI != ME; ++MI)
+      for (MIOperands MO(MI); MO.isValid(); ++MO) {
+        if (!MO->isRegMask())
+          continue;
+          RegMaskSlots.push_back(Indexes->getInstructionIndex(MI).getRegSlot());
+          RegMaskBits.push_back(MO->getRegMask());
+      }
+    // Compute the number of register mask instructions in this block.
+    RMB.second = RegMaskSlots.size() - RMB.first;;
+  }
+}
 
 //===----------------------------------------------------------------------===//
 //                           Register Unit Liveness

@@ -107,9 +107,10 @@ InputArgList *Driver::ParseArgStrings(ArrayRef<const char *> ArgList) {
     }
 
     // Warn about -mcpu= without an argument.
-    if (A->getOption().matches(options::OPT_mcpu_EQ) && 
+    if (A->getOption().matches(options::OPT_mcpu_EQ) &&
         A->containsValue("")) {
-      Diag(clang::diag::warn_drv_empty_joined_argument) << A->getAsString(*Args);
+      Diag(clang::diag::warn_drv_empty_joined_argument) <<
+        A->getAsString(*Args);
     }
   }
 
@@ -245,7 +246,7 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   if (char *env = ::getenv("COMPILER_PATH")) {
     StringRef CompilerPath = env;
     while (!CompilerPath.empty()) {
-      std::pair<StringRef, StringRef> Split = CompilerPath.split(':');      
+      std::pair<StringRef, StringRef> Split = CompilerPath.split(':');
       PrefixDirs.push_back(Split.first);
       CompilerPath = Split.second;
     }
@@ -368,7 +369,7 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
 void Driver::generateCompilationDiagnostics(Compilation &C,
                                             const Command *FailingCommand) {
   if (C.getArgs().hasArg(options::OPT_fno_crash_diagnostics))
-    return;  
+    return;
 
   // Don't try to generate diagnostics for link jobs.
   if (FailingCommand && FailingCommand->getCreator().isLinkJob())
@@ -392,7 +393,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
   if (FailingCommand)
     C.PrintJob(OS, *FailingCommand, "\n", false);
   else
-    // Crash triggered by FORCE_CLANG_DIAGNOSTICS_CRASH, which doesn't have an 
+    // Crash triggered by FORCE_CLANG_DIAGNOSTICS_CRASH, which doesn't have an
     // associated FailingCommand, so just pass all jobs.
     C.PrintJob(OS, C.getJobs(), "\n", false);
   OS.flush();
@@ -495,16 +496,34 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         // Strip away options not necessary to reproduce the crash.
         // FIXME: This doesn't work with quotes (e.g., -D "foo bar").
         SmallVector<std::string, 16> Flag;
+        Flag.push_back("-D ");
         Flag.push_back("-F");
         Flag.push_back("-I ");
+        Flag.push_back("-M ");
+        Flag.push_back("-MD ");
+        Flag.push_back("-MF ");
+        Flag.push_back("-MG ");
+        Flag.push_back("-MM ");
+        Flag.push_back("-MMD ");
+        Flag.push_back("-MP ");
+        Flag.push_back("-MQ ");
+        Flag.push_back("-MT ");
         Flag.push_back("-o ");
         Flag.push_back("-coverage-file ");
         Flag.push_back("-dependency-file ");
         Flag.push_back("-fdebug-compilation-dir ");
         Flag.push_back("-fmodule-cache-path ");
+        Flag.push_back("-idirafter ");
         Flag.push_back("-include ");
         Flag.push_back("-include-pch ");
+        Flag.push_back("-internal-isystem ");
+        Flag.push_back("-internal-externc-isystem ");
+        Flag.push_back("-iprefix ");
+        Flag.push_back("-iwithprefix ");
+        Flag.push_back("-iwithprefixbefore ");
         Flag.push_back("-isysroot ");
+        Flag.push_back("-isystem ");
+        Flag.push_back("-iquote ");
         Flag.push_back("-resource-dir ");
         Flag.push_back("-serialize-diagnostic-file ");
         for (unsigned i = 0, e = Flag.size(); i < e; ++i) {
@@ -515,7 +534,14 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
 
             E = Cmd.find(" ", I + Flag[i].length());
             if (E == std::string::npos) break;
-            Cmd.erase(I, E - I + 1);
+            // The -D option is not removed.  Instead, the argument is quoted.
+            if (Flag[i] != "-D ") {
+              Cmd.erase(I, E - I + 1);
+            } else {
+              Cmd.insert(I+3, "\"");
+              Cmd.insert(++E, "\"");
+              I = E;
+            }
           } while(1);
         }
         // Append the new filename with correct preprocessed suffix.
@@ -573,14 +599,8 @@ int Driver::ExecuteCompilation(const Compilation &C,
     C.CleanupFileList(C.getResultFiles(), true);
 
     // Failure result files are valid unless we crashed.
-    if (Res < 0) {
+    if (Res < 0)
       C.CleanupFileList(C.getFailureResultFiles(), true);
-#ifdef _WIN32
-      // Exit status should not be negative on Win32,
-      // unless abnormal termination.
-      Res = 1;
-#endif
-    }
   }
 
   // Print extra information about abnormal failures, if possible.
@@ -916,7 +936,7 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
     if (A && !A->getOption().matches(options::OPT_g0) &&
         !A->getOption().matches(options::OPT_gstabs) &&
         ContainsCompileOrAssembleAction(Actions.back())) {
- 
+
       // Add a 'dsymutil' step if necessary, when debug info is enabled and we
       // have a compile input. We need to run 'dsymutil' ourselves in such cases
       // because the debug info will refer to a temporary object file which is
@@ -1502,7 +1522,7 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
     NamedOutput = C.getArgs().MakeArgString(Suffixed.c_str());
   }
 
-  // If we're saving temps and the temp file conflicts with the input file, 
+  // If we're saving temps and the temp file conflicts with the input file,
   // then avoid overwriting input file.
   if (!AtTopLevel && C.getArgs().hasArg(options::OPT_save_temps) &&
       NamedOutput == BaseName) {
@@ -1622,7 +1642,7 @@ std::string Driver::GetProgramPath(const char *Name, const ToolChain &TC,
   return Name;
 }
 
-std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix) 
+std::string Driver::GetTemporaryPath(StringRef Prefix, const char *Suffix)
   const {
   // FIXME: This is lame; sys::Path should provide this function (in particular,
   // it should know how to find the temporary files dir).

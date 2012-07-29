@@ -347,6 +347,12 @@ namespace llvm {
     /// computeIntervals - Compute live intervals.
     void computeIntervals();
 
+    /// Compute live intervals for all virtual registers.
+    void computeVirtRegs();
+
+    /// Compute RegMaskSlots and RegMaskBits.
+    void computeRegMasks();
+
     /// handleRegisterDef - update intervals for a register def
     /// (calls handleVirtualRegisterDef)
     void handleRegisterDef(MachineBasicBlock *MBB,
@@ -375,6 +381,7 @@ namespace llvm {
 
     void computeLiveInRegUnits();
     void computeRegUnitInterval(LiveInterval*);
+    void computeVirtRegInterval(LiveInterval*);
 
     class HMEditor;
   };

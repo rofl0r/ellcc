@@ -168,10 +168,6 @@ def ReturnUndefChecker : Checker<"UndefReturn">,
 
 let ParentPackage = CplusplusExperimental in {
 
-def IteratorsChecker : Checker<"Iterators">,
-  HelpText<"Check improper uses of STL vector iterators">,
-  DescFile<"IteratorsChecker.cpp">;
-
 def VirtualCallChecker : Checker<"VirtualCall">,
   HelpText<"Check virtual function calls during construction or destruction">, 
   DescFile<"VirtualCallChecker.cpp">;
@@ -481,6 +477,10 @@ def CallGraphDumper : Checker<"DumpCallGraph">,
 
 def TraversalDumper : Checker<"DumpTraversal">,
   HelpText<"Print branch conditions as they are traversed by the engine">,
+  DescFile<"TraversalChecker.cpp">;
+
+def CallDumper : Checker<"DumpCalls">,
+  HelpText<"Print calls as they are traversed by the engine">,
   DescFile<"TraversalChecker.cpp">;
 
 def AnalyzerStatsChecker : Checker<"Stats">,

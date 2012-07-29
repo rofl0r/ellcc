@@ -795,7 +795,7 @@ Instruction *InstCombiner::tryOptimizeCall(CallInst *CI, const TargetData *TD) {
   if (CI->getCalledFunction() == 0) return 0;
 
   InstCombineFortifiedLibCalls Simplifier(this);
-  Simplifier.fold(CI, TD);
+  Simplifier.fold(CI, TD, TLI);
   return Simplifier.NewInstruction;
 }
 
@@ -880,7 +880,7 @@ static IntrinsicInst *FindInitTrampoline(Value *Callee) {
 //
 Instruction *InstCombiner::visitCallSite(CallSite CS) {
   if (isAllocLikeFn(CS.getInstruction()))
-    return visitMalloc(*CS.getInstruction());
+    return visitAllocSite(*CS.getInstruction());
 
   bool Changed = false;
 

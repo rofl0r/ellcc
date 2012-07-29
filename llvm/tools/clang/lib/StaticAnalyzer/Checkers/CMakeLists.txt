@@ -33,7 +33,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   FixedAddressChecker.cpp
   GenericTaintChecker.cpp
   IdempotentOperationChecker.cpp
-  IteratorsChecker.cpp
   LLVMConventionsChecker.cpp
   MacOSKeychainAPIChecker.cpp
   MacOSXAPIChecker.cpp
@@ -74,7 +73,9 @@ add_dependencies(clangStaticAnalyzerCheckers
   clangStaticAnalyzerCore
   ClangAttrClasses
   ClangAttrList
+  ClangCommentNodes
   ClangDeclNodes
+  ClangDiagnosticCommon
   ClangStmtNodes
   ClangSACheckers
   )

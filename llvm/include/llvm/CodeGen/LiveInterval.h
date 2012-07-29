@@ -43,8 +43,7 @@ namespace llvm {
   private:
     enum {
       HAS_PHI_KILL    = 1,
-      IS_PHI_DEF      = 1 << 1,
-      IS_UNUSED       = 1 << 2
+      IS_UNUSED       = 1 << 1
     };
 
     unsigned char flags;
@@ -96,14 +95,9 @@ namespace llvm {
 
     /// Returns true if this value is defined by a PHI instruction (or was,
     /// PHI instrucions may have been eliminated).
-    bool isPHIDef() const { return flags & IS_PHI_DEF; }
-    /// Set the "phi def" flag on this value.
-    void setIsPHIDef(bool phiDef) {
-      if (phiDef)
-        flags |= IS_PHI_DEF;
-      else
-        flags &= ~IS_PHI_DEF;
-    }
+    /// PHI-defs begin at a block boundary, all other defs begin at register or
+    /// EC slots.
+    bool isPHIDef() const { return def.isBlock(); }
 
     /// Returns true if this value is unused.
     bool isUnused() const { return flags & IS_UNUSED; }
@@ -489,12 +483,24 @@ namespace llvm {
     void print(raw_ostream &OS) const;
     void dump() const;
 
+    /// \brief Walk the interval and assert if any invariants fail to hold.
+    ///
+    /// Note that this is a no-op when asserts are disabled.
+#ifdef NDEBUG
+    void verify() const {}
+#else
+    void verify() const;
+#endif
+
   private:
 
     Ranges::iterator addRangeFrom(LiveRange LR, Ranges::iterator From);
     void extendIntervalEndTo(Ranges::iterator I, SlotIndex NewEnd);
     Ranges::iterator extendIntervalStartTo(Ranges::iterator I, SlotIndex NewStr);
     void markValNoForDeletion(VNInfo *V);
+    void mergeIntervalRanges(const LiveInterval &RHS,
+                             VNInfo *LHSValNo = 0,
+                             const VNInfo *RHSValNo = 0);
 
     LiveInterval& operator=(const LiveInterval& rhs); // DO NOT IMPLEMENT
 

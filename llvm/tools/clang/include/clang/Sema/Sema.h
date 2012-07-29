@@ -28,6 +28,7 @@
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExternalASTSource.h"
+#include "clang/AST/LambdaMangleContext.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/NSAPI.h"
 #include "clang/Lex/ModuleLoader.h"
@@ -36,6 +37,7 @@
 #include "clang/Basic/TypeTraits.h"
 #include "clang/Basic/ExpressionTraits.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -1312,6 +1314,12 @@ public:
                                          unsigned NumDecls);
   DeclGroupPtrTy BuildDeclaratorGroup(Decl **Group, unsigned NumDecls,
                                       bool TypeMayContainAuto = true);
+
+  /// Should be called on all declarations that might have attached
+  /// documentation comments.
+  void ActOnDocumentableDecl(Decl *D);
+  void ActOnDocumentableDecls(Decl **Group, unsigned NumDecls);
+
   void ActOnFinishKNRParamDeclarations(Scope *S, Declarator &D,
                                        SourceLocation LocAfterDecls);
   void CheckForFunctionRedefinition(FunctionDecl *FD);
@@ -2116,9 +2124,10 @@ public:
                                                unsigned Quals);
   CXXMethodDecl *LookupCopyingAssignment(CXXRecordDecl *Class, unsigned Quals,
                                          bool RValueThis, unsigned ThisQuals);
-  CXXConstructorDecl *LookupMovingConstructor(CXXRecordDecl *Class);
-  CXXMethodDecl *LookupMovingAssignment(CXXRecordDecl *Class, bool RValueThis,
-                                        unsigned ThisQuals);
+  CXXConstructorDecl *LookupMovingConstructor(CXXRecordDecl *Class,
+                                              unsigned Quals);
+  CXXMethodDecl *LookupMovingAssignment(CXXRecordDecl *Class, unsigned Quals,
+                                        bool RValueThis, unsigned ThisQuals);
   CXXDestructorDecl *LookupDestructor(CXXRecordDecl *Class);
 
   LiteralOperatorLookupResult LookupLiteralOperator(Scope *S, LookupResult &R,
@@ -2466,7 +2475,8 @@ public:
   StmtResult ActOnLabelStmt(SourceLocation IdentLoc, LabelDecl *TheDecl,
                             SourceLocation ColonLoc, Stmt *SubStmt);
 
-  StmtResult ActOnAttributedStmt(SourceLocation AttrLoc, const AttrVec &Attrs,
+  StmtResult ActOnAttributedStmt(SourceLocation AttrLoc,
+                                 ArrayRef<const Attr*> Attrs,
                                  Stmt *SubStmt);
 
   StmtResult ActOnIfStmt(SourceLocation IfLoc,
@@ -3237,7 +3247,7 @@ public:
                               TypeResult Type);
 
   /// InitializeVarWithConstructor - Creates an CXXConstructExpr
-  /// and sets it as the initializer for the the passed in VarDecl.
+  /// and sets it as the initializer for the passed in VarDecl.
   bool InitializeVarWithConstructor(VarDecl *VD,
                                     CXXConstructorDecl *Constructor,
                                     MultiExprArg Exprs,
@@ -3302,7 +3312,7 @@ public:
   public:
     explicit ImplicitExceptionSpecification(Sema &Self)
       : Self(&Self), ComputedEST(EST_BasicNoexcept) {
-      if (!Self.Context.getLangOpts().CPlusPlus0x)
+      if (!Self.getLangOpts().CPlusPlus0x)
         ComputedEST = EST_DynamicNone;
     }
 
@@ -3325,17 +3335,6 @@ public:
     /// \brief Integrate an invoked expression into the collected data.
     void CalledExpr(Expr *E);
 
-    /// \brief Specify that the exception specification can't be detemined yet.
-    void SetDelayed() {
-      ClearExceptions();
-      ComputedEST = EST_Delayed;
-    }
-
-    /// \brief Have we been unable to compute this exception specification?
-    bool isDelayed() {
-      return ComputedEST == EST_Delayed;
-    }
-
     /// \brief Overwrite an EPI's exception specification with this
     /// computed exception specification.
     void getEPI(FunctionProtoType::ExtProtoInfo &EPI) const {
@@ -3353,34 +3352,39 @@ public:
   /// \brief Determine what sort of exception specification a defaulted
   /// copy constructor of a class will have.
   ImplicitExceptionSpecification
-  ComputeDefaultedDefaultCtorExceptionSpec(CXXRecordDecl *ClassDecl);
+  ComputeDefaultedDefaultCtorExceptionSpec(SourceLocation Loc,
+                                           CXXMethodDecl *MD);
 
   /// \brief Determine what sort of exception specification a defaulted
   /// default constructor of a class will have, and whether the parameter
   /// will be const.
-  std::pair<ImplicitExceptionSpecification, bool>
-  ComputeDefaultedCopyCtorExceptionSpecAndConst(CXXRecordDecl *ClassDecl);
+  ImplicitExceptionSpecification
+  ComputeDefaultedCopyCtorExceptionSpec(CXXMethodDecl *MD);
 
   /// \brief Determine what sort of exception specification a defautled
   /// copy assignment operator of a class will have, and whether the
   /// parameter will be const.
-  std::pair<ImplicitExceptionSpecification, bool>
-  ComputeDefaultedCopyAssignmentExceptionSpecAndConst(CXXRecordDecl *ClassDecl);
+  ImplicitExceptionSpecification
+  ComputeDefaultedCopyAssignmentExceptionSpec(CXXMethodDecl *MD);
 
   /// \brief Determine what sort of exception specification a defaulted move
   /// constructor of a class will have.
   ImplicitExceptionSpecification
-  ComputeDefaultedMoveCtorExceptionSpec(CXXRecordDecl *ClassDecl);
+  ComputeDefaultedMoveCtorExceptionSpec(CXXMethodDecl *MD);
 
   /// \brief Determine what sort of exception specification a defaulted move
   /// assignment operator of a class will have.
   ImplicitExceptionSpecification
-  ComputeDefaultedMoveAssignmentExceptionSpec(CXXRecordDecl *ClassDecl);
+  ComputeDefaultedMoveAssignmentExceptionSpec(CXXMethodDecl *MD);
 
   /// \brief Determine what sort of exception specification a defaulted
   /// destructor of a class will have.
   ImplicitExceptionSpecification
-  ComputeDefaultedDtorExceptionSpec(CXXRecordDecl *ClassDecl);
+  ComputeDefaultedDtorExceptionSpec(CXXMethodDecl *MD);
+
+  /// \brief Evaluate the implicit exception specification for a defaulted
+  /// special member function.
+  void EvaluateImplicitExceptionSpec(SourceLocation Loc, CXXMethodDecl *MD);
 
   /// \brief Check the given exception-specification and update the
   /// extended prototype information with the results.
@@ -3428,8 +3432,7 @@ public:
   /// C++11 says that user-defined destructors with no exception spec get one
   /// that looks as if the destructor was implicitly declared.
   void AdjustDestructorExceptionSpec(CXXRecordDecl *ClassDecl,
-                                     CXXDestructorDecl *Destructor,
-                                     bool WasDelayed = false);
+                                     CXXDestructorDecl *Destructor);
 
   /// \brief Declare all inherited constructors for the given class.
   ///
@@ -4004,10 +4007,7 @@ public:
                                        SourceRange IntroducerRange,
                                        TypeSourceInfo *MethodType,
                                        SourceLocation EndLoc,
-                                       llvm::ArrayRef<ParmVarDecl *> Params,
-                                       llvm::Optional<unsigned> ManglingNumber 
-                                         = llvm::Optional<unsigned>(),
-                                       Decl *ContextDecl = 0);
+                                       llvm::ArrayRef<ParmVarDecl *> Params);
   
   /// \brief Introduce the scope for a lambda expression.
   sema::LambdaScopeInfo *enterLambdaScope(CXXMethodDecl *CallOperator,
@@ -4255,6 +4255,11 @@ public:
   void MarkVTableUsed(SourceLocation Loc, CXXRecordDecl *Class,
                       bool DefinitionRequired = false);
 
+  /// \brief Mark the exception specifications of all virtual member functions
+  /// in the given class as needed.
+  void MarkVirtualMemberExceptionSpecsNeeded(SourceLocation Loc,
+                                             const CXXRecordDecl *RD);
+
   /// MarkVirtualMembersReferenced - Will mark all members of the given
   /// CXXRecordDecl referenced.
   void MarkVirtualMembersReferenced(SourceLocation Loc,
@@ -4298,6 +4303,11 @@ public:
                                      Expr *AssertExpr,
                                      Expr *AssertMessageExpr,
                                      SourceLocation RParenLoc);
+  Decl *BuildStaticAssertDeclaration(SourceLocation StaticAssertLoc,
+                                     Expr *AssertExpr,
+                                     StringLiteral *AssertMessageExpr,
+                                     SourceLocation RParenLoc,
+                                     bool Failed);
 
   FriendDecl *CheckFriendTypeDecl(SourceLocation Loc,
                                   SourceLocation FriendLoc,
@@ -4991,7 +5001,9 @@ public:
   /// parameter packs.
   ///
   /// \param Unexpanded the set of unexpanded parameter packs.
-  void DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
+  ///
+  /// \returns true if an error occurred, false otherwise.
+  bool DiagnoseUnexpandedParameterPacks(SourceLocation Loc,
                                         UnexpandedParameterPackContext UPPC,
                                   ArrayRef<UnexpandedParameterPack> Unexpanded);
 
@@ -5204,10 +5216,11 @@ public:
   /// \brief Determine the number of arguments in the given pack expansion
   /// type.
   ///
-  /// This routine already assumes that the pack expansion type can be
-  /// expanded and that the number of arguments in the expansion is
+  /// This routine assumes that the number of arguments in the expansion is
   /// consistent across all of the unexpanded parameter packs in its pattern.
-  unsigned getNumArgumentsInExpansion(QualType T,
+  ///
+  /// Returns an empty Optional if the type can't be expanded.
+  llvm::Optional<unsigned> getNumArgumentsInExpansion(QualType T,
                             const MultiLevelTemplateArgumentList &TemplateArgs);
 
   /// \brief Determine whether the given declarator contains any unexpanded
@@ -5613,16 +5626,14 @@ public:
     /// template-id.
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           TemplateDecl *Template,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange = SourceRange());
 
     /// \brief Note that we are instantiating a default argument in a
     /// template-id.
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           FunctionTemplateDecl *FunctionTemplate,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           ActiveTemplateInstantiation::InstantiationKind Kind,
                           sema::TemplateDeductionInfo &DeductionInfo,
                           SourceRange InstantiationRange = SourceRange());
@@ -5632,15 +5643,13 @@ public:
     /// specialization.
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           ClassTemplatePartialSpecializationDecl *PartialSpec,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           sema::TemplateDeductionInfo &DeductionInfo,
                           SourceRange InstantiationRange = SourceRange());
 
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           ParmVarDecl *Param,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange = SourceRange());
 
     /// \brief Note that we are substituting prior template arguments into a
@@ -5648,15 +5657,13 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           NamedDecl *Template,
                           NonTypeTemplateParmDecl *Param,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           NamedDecl *Template,
                           TemplateTemplateParmDecl *Param,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
     /// \brief Note that we are checking the default template argument
@@ -5664,8 +5671,7 @@ public:
     InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
                           TemplateDecl *Template,
                           NamedDecl *Param,
-                          const TemplateArgument *TemplateArgs,
-                          unsigned NumTemplateArgs,
+                          ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
 
@@ -6101,14 +6107,6 @@ public:
     AttributeList *AttrList, tok::ObjCKeywordKind MethodImplKind,
     bool isVariadic, bool MethodDefinition);
 
-  // Helper method for ActOnClassMethod/ActOnInstanceMethod.
-  // Will search "local" class/category implementations for a method decl.
-  // Will also search in class's root looking for instance method.
-  // Returns 0 if no method is found.
-  ObjCMethodDecl *LookupPrivateClassMethod(Selector Sel,
-                                           ObjCInterfaceDecl *CDecl);
-  ObjCMethodDecl *LookupPrivateInstanceMethod(Selector Sel,
-                                              ObjCInterfaceDecl *ClassDecl);
   ObjCMethodDecl *LookupMethodInQualifiedType(Selector Sel,
                                               const ObjCObjectPointerType *OPT,
                                               bool IsInstance);
@@ -6446,7 +6444,7 @@ public:
                               bool AllowExplicit = false);
 
   // DefaultVariadicArgumentPromotion - Like DefaultArgumentPromotion, but
-  // will return ExprError() if the resulting type is not a POD type.
+  // will create a runtime trap if the resulting type is not a POD type.
   ExprResult DefaultVariadicArgumentPromotion(Expr *E, VariadicCallType CT,
                                               FunctionDecl *FDecl);
 
@@ -6542,6 +6540,11 @@ public:
                                 QualType DstType, QualType SrcType,
                                 Expr *SrcExpr, AssignmentAction Action,
                                 bool *Complained = 0);
+  
+  /// DiagnoseAssignmentEnum - Warn if assignment to enum is a constant
+  /// integer not in the range of enum values.
+  void DiagnoseAssignmentEnum(QualType DstType, QualType SrcType,
+                              Expr *SrcExpr);
 
   /// CheckAssignmentConstraints - Perform type checking for assignment,
   /// argument passing, variable initialization, and function return values.
@@ -7060,6 +7063,7 @@ private:
 
   ExprResult CheckBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
   bool CheckARMBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
+  bool CheckMipsBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall);
 
   bool SemaBuiltinVAStart(CallExpr *TheCall);
   bool SemaBuiltinUnorderedCompare(CallExpr *TheCall);
@@ -7102,20 +7106,23 @@ private:
                                                unsigned format_idx,
                                                unsigned firstDataArg,
                                                FormatStringType Type,
+                                               VariadicCallType CallType,
                                                bool inFunctionCall = true);
 
   void CheckFormatString(const StringLiteral *FExpr, const Expr *OrigFormatExpr,
                          Expr **Args, unsigned NumArgs, bool HasVAListArg,
                          unsigned format_idx, unsigned firstDataArg,
-                         FormatStringType Type, bool inFunctionCall);
+                         FormatStringType Type, bool inFunctionCall,
+                         VariadicCallType CallType);
 
-  bool CheckFormatArguments(const FormatAttr *Format, CallExpr *TheCall);
   bool CheckFormatArguments(const FormatAttr *Format, Expr **Args,
                             unsigned NumArgs, bool IsCXXMember,
+                            VariadicCallType CallType,
                             SourceLocation Loc, SourceRange Range);
   bool CheckFormatArguments(Expr **Args, unsigned NumArgs,
                             bool HasVAListArg, unsigned format_idx,
                             unsigned firstDataArg, FormatStringType Type,
+                            VariadicCallType CallType,
                             SourceLocation Loc, SourceRange range);
 
   void CheckNonNullArguments(const NonNullAttr *NonNull,

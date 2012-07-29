@@ -73,3 +73,39 @@ void test2() {
 struct RDar11178609 {
   ~RDar11178609() = delete;
 };
+
+// Tests that dynamic_cast handles references to C++ classes.  Previously
+// this crashed.
+class rdar11817693_BaseBase {};
+class rdar11817693_BaseInterface {};
+class rdar11817693_Base : public rdar11817693_BaseBase, public rdar11817693_BaseInterface {};
+class rdar11817693 : public rdar11817693_Base {
+  virtual void operator=(const rdar11817693_BaseBase& src);
+  void operator=(const rdar11817693& src);
+};
+void rdar11817693::operator=(const rdar11817693& src) {
+  operator=(dynamic_cast<const rdar11817693_BaseBase&>(src));
+}
+
+// Test warning about null or uninitialized pointer values used as instance member
+// calls.
+class TestInstanceCall {
+public:
+  void foo() {}
+};
+
+void test_ic() {
+  TestInstanceCall *p;
+  p->foo(); // expected-warning {{Called C++ object pointer is uninitialized}}
+}
+
+void test_ic_null() {
+  TestInstanceCall *p = 0;
+  p->foo(); // expected-warning {{Called C++ object pointer is null}}
+}
+
+void test_ic_null(TestInstanceCall *p) {
+  if (!p)
+    p->foo(); // expected-warning {{Called C++ object pointer is null}}
+}
+

@@ -48,6 +48,14 @@ public:
     return Kind == RCK_Merged;
   }
 
+  bool isAttached() const LLVM_READONLY {
+    return IsAttached;
+  }
+
+  void setAttached() {
+    IsAttached = true;
+  }
+
   /// Returns true if it is a comment that should be put after a member:
   /// \code ///< stuff \endcode
   /// \code //!< stuff \endcode
@@ -110,6 +118,9 @@ private:
 
   unsigned Kind : 3;
 
+  /// True if comment is attached to a declaration in ASTContext.
+  bool IsAttached : 1;
+
   bool IsTrailingComment : 1;
   bool IsAlmostTrailingComment : 1;
 
@@ -122,7 +133,7 @@ private:
   RawComment(SourceRange SR, CommentKind K, bool IsTrailingComment,
              bool IsAlmostTrailingComment) :
     Range(SR), RawTextValid(false), BriefTextValid(false), Kind(K),
-    IsTrailingComment(IsTrailingComment),
+    IsAttached(false), IsTrailingComment(IsTrailingComment),
     IsAlmostTrailingComment(IsAlmostTrailingComment),
     BeginLineValid(false), EndLineValid(false)
   { }
@@ -146,6 +157,10 @@ public:
     return SM.isBeforeInTranslationUnit(LHS.getSourceRange().getBegin(),
                                         RHS.getSourceRange().getBegin());
   }
+
+  bool operator()(const RawComment *LHS, const RawComment *RHS) {
+    return operator()(*LHS, *RHS);
+  }
 };
 
 /// \brief This class represents all comments included in the translation unit,
@@ -155,19 +170,19 @@ public:
   RawCommentList(SourceManager &SourceMgr) :
     SourceMgr(SourceMgr), OnlyWhitespaceSeen(true) { }
 
-  void addComment(const RawComment &RC);
+  void addComment(const RawComment &RC, llvm::BumpPtrAllocator &Allocator);
 
-  ArrayRef<RawComment> getComments() const {
+  ArrayRef<RawComment *> getComments() const {
     return Comments;
   }
 
 private:
   SourceManager &SourceMgr;
-  std::vector<RawComment> Comments;
+  std::vector<RawComment *> Comments;
   RawComment LastComment;
   bool OnlyWhitespaceSeen;
 
-  void addCommentsToFront(const std::vector<RawComment> &C) {
+  void addCommentsToFront(const std::vector<RawComment *> &C) {
     size_t OldSize = Comments.size();
     Comments.resize(C.size() + OldSize);
     std::copy_backward(Comments.begin(), Comments.begin() + OldSize,

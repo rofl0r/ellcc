@@ -210,6 +210,8 @@ static void CodeGenOptsToArgs(const CodeGenOptions &Opts, ToArgsList &Res) {
     Res.push_back("-femit-coverage-data");
   if (Opts.EmitGcovNotes)
     Res.push_back("-femit-coverage-notes");
+  if (Opts.EmitOpenCLArgMetadata)
+    Res.push_back("-cl-kernel-arg-info");
   if (!Opts.MergeAllConstants)
     Res.push_back("-fno-merge-all-constants");
   if (Opts.NoCommon)
@@ -556,6 +558,8 @@ static void FrontendOptsToArgs(const FrontendOptions &Opts, ToArgsList &Res) {
     for(unsigned i = 0, e = Opts.PluginArgs.size(); i != e; ++i)
       Res.push_back("-plugin-arg-" + Opts.ActionName, Opts.PluginArgs[i]);
   }
+  if (!Opts.ASTDumpFilter.empty())
+    Res.push_back("-ast-dump-filter", Opts.ASTDumpFilter);
   for (unsigned i = 0, e = Opts.Plugins.size(); i != e; ++i)
     Res.push_back("-load", Opts.Plugins[i]);
   for (unsigned i = 0, e = Opts.AddPluginActions.size(); i != e; ++i) {
@@ -758,6 +762,11 @@ static void LangOptsToArgs(const LangOptions &Opts, ToArgsList &Res) {
     if (!Opts.OverflowHandler.empty())
       Res.push_back("-ftrapv-handler", Opts.OverflowHandler);
     break;
+  }
+  switch (Opts.getFPContractMode()) {
+  case LangOptions::FPC_Off:  Res.push_back("-ffp-contract=off"); break;
+  case LangOptions::FPC_On:   Res.push_back("-ffp-contract=on"); break;
+  case LangOptions::FPC_Fast: Res.push_back("-ffp-contract=fast"); break;
   }
   if (Opts.HeinousExtensions)
     Res.push_back("-fheinous-gnu-extensions");
@@ -1253,6 +1262,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.InstrumentForProfiling = Args.hasArg(OPT_pg);
   Opts.EmitGcovArcs = Args.hasArg(OPT_femit_coverage_data);
   Opts.EmitGcovNotes = Args.hasArg(OPT_femit_coverage_notes);
+  Opts.EmitOpenCLArgMetadata = Args.hasArg(OPT_cl_kernel_arg_info);
+  Opts.EmitMicrosoftInlineAsm = Args.hasArg(OPT_fenable_experimental_ms_inline_asm);
   Opts.CoverageFile = Args.getLastArgValue(OPT_coverage_file);
   Opts.DebugCompilationDir = Args.getLastArgValue(OPT_fdebug_compilation_dir);
   Opts.LinkBitcodeFile = Args.getLastArgValue(OPT_mlink_bitcode_file);
@@ -1533,6 +1544,7 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
   Opts.FixOnlyWarnings = Args.hasArg(OPT_fix_only_warnings);
   Opts.FixAndRecompile = Args.hasArg(OPT_fixit_recompile);
   Opts.FixToTemporaries = Args.hasArg(OPT_fixit_to_temp);
+  Opts.ASTDumpFilter = Args.getLastArgValue(OPT_ast_dump_filter);
 
   Opts.CodeCompleteOpts.IncludeMacros
     = Args.hasArg(OPT_code_completion_macros);
@@ -1975,6 +1987,18 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Diags.Report(diag::err_drv_invalid_value)
       << Args.getLastArg(OPT_fvisibility)->getAsString(Args) << Vis;
 
+  if (Arg *A = Args.getLastArg(OPT_ffp_contract)) {
+    StringRef Val = A->getValue(Args);
+    if (Val == "fast")
+      Opts.setFPContractMode(LangOptions::FPC_Fast);
+    else if (Val == "on")
+      Opts.setFPContractMode(LangOptions::FPC_On);
+    else if (Val == "off")
+      Opts.setFPContractMode(LangOptions::FPC_Off);
+    else
+      Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args) << Val;
+  }
+
   if (Args.hasArg(OPT_fvisibility_inlines_hidden))
     Opts.InlineVisibilityHidden = 1;
 
@@ -2080,6 +2104,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.NoInlineDefine = !Opt || Args.hasArg(OPT_fno_inline);
 
   Opts.FastMath = Args.hasArg(OPT_ffast_math);
+  Opts.FiniteMathOnly = Args.hasArg(OPT_ffinite_math_only);
 
   unsigned SSP = Args.getLastArgIntValue(OPT_stack_protector, 0, Diags);
   switch (SSP) {

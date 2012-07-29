@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "CIndexer.h"
+#include "CXComment.h"
 #include "CXCursor.h"
 #include "CXTranslationUnit.h"
 #include "CXString.h"
@@ -2464,7 +2465,8 @@ CXTranslationUnit clang_createTranslationUnit(CXIndex CIdx,
                                   CXXIdx->getOnlyLocalDecls(),
                                   0, 0,
                                   /*CaptureDiagnostics=*/true,
-                                  /*AllowPCHWithCompilerErrors=*/true);
+                                  /*AllowPCHWithCompilerErrors=*/true,
+                                  /*UserFilesAreVolatile=*/true);
   return MakeCXTranslationUnit(CXXIdx, TU);
 }
 
@@ -2612,6 +2614,7 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
                                  IncludeBriefCommentsInCodeCompletion,
                                  /*AllowPCHWithCompilerErrors=*/true,
                                  SkipFunctionBodies,
+                                 /*UserFilesAreVolatile=*/true,
                                  &ErrUnit));
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
@@ -5708,8 +5711,6 @@ CXString clang_Cursor_getRawCommentText(CXCursor C) {
   return createCXString(RawText, false);
 }
 
-} // end: extern "C"
-
 CXString clang_Cursor_getBriefCommentText(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return createCXString((const char *) NULL);
@@ -5728,6 +5729,19 @@ CXString clang_Cursor_getBriefCommentText(CXCursor C) {
 
   return createCXString((const char *) NULL);
 }
+
+CXComment clang_Cursor_getParsedComment(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return cxcomment::createCXComment(NULL);
+
+  const Decl *D = getCursorDecl(C);
+  const ASTContext &Context = getCursorContext(C);
+  const comments::FullComment *FC = Context.getCommentForDecl(D);
+
+  return cxcomment::createCXComment(FC);
+}
+
+} // end: extern "C"
 
 //===----------------------------------------------------------------------===//
 // C++ AST instrospection.

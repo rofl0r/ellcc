@@ -18,12 +18,14 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace clang {
 namespace comments {
 
 class Lexer;
+class TextTokenRetokenizer;
 
 namespace tok {
 enum TokenKind {
@@ -36,12 +38,13 @@ enum TokenKind {
   verbatim_block_end,
   verbatim_line_name,
   verbatim_line_text,
-  html_tag_open,      // <tag
+  html_start_tag,     // <tag
   html_ident,         // attr
   html_equals,        // =
   html_quoted_string, // "blah\"blah" or 'blah\'blah'
   html_greater,       // >
-  html_tag_close      // </tag>
+  html_slash_greater, // />
+  html_end_tag        // </tag
 };
 } // end namespace tok
 
@@ -53,6 +56,7 @@ public:
 /// \brief Comment token.
 class Token {
   friend class Lexer;
+  friend class TextTokenRetokenizer;
 
   /// The location of the token.
   SourceLocation Loc;
@@ -71,6 +75,12 @@ class Token {
 public:
   SourceLocation getLocation() const LLVM_READONLY { return Loc; }
   void setLocation(SourceLocation SL) { Loc = SL; }
+
+  SourceLocation getEndLocation() const LLVM_READONLY {
+    if (Length == 0 || Length == 1)
+      return Loc;
+    return Loc.getLocWithOffset(Length - 1);
+  }
 
   tok::TokenKind getKind() const LLVM_READONLY { return Kind; }
   void setKind(tok::TokenKind K) { Kind = K; }
@@ -148,13 +158,13 @@ public:
     TextLen1 = Text.size();
   }
 
-  StringRef getHTMLTagOpenName() const LLVM_READONLY {
-    assert(is(tok::html_tag_open));
+  StringRef getHTMLTagStartName() const LLVM_READONLY {
+    assert(is(tok::html_start_tag));
     return StringRef(TextPtr1, TextLen1);
   }
 
-  void setHTMLTagOpenName(StringRef Name) {
-    assert(is(tok::html_tag_open));
+  void setHTMLTagStartName(StringRef Name) {
+    assert(is(tok::html_start_tag));
     TextPtr1 = Name.data();
     TextLen1 = Name.size();
   }
@@ -181,13 +191,13 @@ public:
     TextLen1 = Str.size();
   }
 
-  StringRef getHTMLTagCloseName() const LLVM_READONLY {
-    assert(is(tok::html_tag_close));
+  StringRef getHTMLTagEndName() const LLVM_READONLY {
+    assert(is(tok::html_end_tag));
     return StringRef(TextPtr1, TextLen1);
   }
 
-  void setHTMLTagCloseName(StringRef Name) {
-    assert(is(tok::html_tag_close));
+  void setHTMLTagEndName(StringRef Name) {
+    assert(is(tok::html_end_tag));
     TextPtr1 = Name.data();
     TextLen1 = Name.size();
   }
@@ -200,6 +210,10 @@ class Lexer {
 private:
   Lexer(const Lexer&);          // DO NOT IMPLEMENT
   void operator=(const Lexer&); // DO NOT IMPLEMENT
+
+  /// Allocator for strings that are semantic values of tokens and have to be
+  /// computed (for example, resolved decimal character references).
+  llvm::BumpPtrAllocator &Allocator;
 
   const char *const BufferStart;
   const char *const BufferEnd;
@@ -239,7 +253,10 @@ private:
     LS_VerbatimLineText,
 
     /// Finished lexing \verbatim <TAG \endverbatim part, lexing tag attributes.
-    LS_HTMLOpenTag
+    LS_HTMLStartTag,
+
+    /// Finished lexing \verbatim </TAG \endverbatim part, lexing '>'.
+    LS_HTMLEndTag
   };
 
   /// Current lexing mode.
@@ -257,7 +274,7 @@ private:
   /// Registered verbatim-like block commands.
   VerbatimBlockCommandVector VerbatimBlockCommands;
 
-  /// If State is LS_VerbatimBlock, contains the the name of verbatim end
+  /// If State is LS_VerbatimBlock, contains the name of verbatim end
   /// command, including command marker.
   SmallString<16> VerbatimBlockEndCommandName;
 
@@ -276,6 +293,16 @@ private:
 
   bool isVerbatimLineCommand(StringRef Name) const;
 
+  /// Given a character reference name (e.g., "lt"), return the character that
+  /// it stands for (e.g., "<").
+  StringRef resolveHTMLNamedCharacterReference(StringRef Name) const;
+
+  /// Given a Unicode codepoint as base-10 integer, return the character.
+  StringRef resolveHTMLDecimalCharacterReference(StringRef Name) const;
+
+  /// Given a Unicode codepoint as base-16 integer, return the character.
+  StringRef resolveHTMLHexCharacterReference(StringRef Name) const;
+
   void formTokenWithChars(Token &Result, const char *TokEnd,
                           tok::TokenKind Kind) {
     const unsigned TokLen = TokEnd - BufferPtr;
@@ -287,6 +314,12 @@ private:
     Result.TextLen1 = 7;
 #endif
     BufferPtr = TokEnd;
+  }
+
+  void formTextToken(Token &Result, const char *TokEnd) {
+    StringRef Text(BufferPtr, TokEnd - BufferPtr);
+    formTokenWithChars(Result, TokEnd, tok::text);
+    Result.setText(Text);
   }
 
   SourceLocation getSourceLocation(const char *Loc) const {
@@ -315,14 +348,19 @@ private:
 
   void lexVerbatimLineText(Token &T);
 
-  void setupAndLexHTMLOpenTag(Token &T);
+  void lexHTMLCharacterReference(Token &T);
 
-  void lexHTMLOpenTag(Token &T);
+  void setupAndLexHTMLStartTag(Token &T);
 
-  void lexHTMLCloseTag(Token &T);
+  void lexHTMLStartTag(Token &T);
+
+  void setupAndLexHTMLEndTag(Token &T);
+
+  void lexHTMLEndTag(Token &T);
 
 public:
-  Lexer(SourceLocation FileLoc, const CommentOptions &CommOpts,
+  Lexer(llvm::BumpPtrAllocator &Allocator,
+        SourceLocation FileLoc, const CommentOptions &CommOpts,
         const char *BufferStart, const char *BufferEnd);
 
   void lex(Token &T);

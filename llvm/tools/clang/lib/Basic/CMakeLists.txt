@@ -38,13 +38,14 @@ add_dependencies(clangBasic
   ClangAttrList
   ClangDiagnosticAnalysis
   ClangDiagnosticAST
+  ClangDiagnosticComment
   ClangDiagnosticCommon
   ClangDiagnosticDriver
   ClangDiagnosticFrontend
   ClangDiagnosticGroups
+  ClangDiagnosticIndexName
   ClangDiagnosticLex
   ClangDiagnosticParse
   ClangDiagnosticSema
   ClangDiagnosticSerialization
-  ClangDiagnosticIndexName
   )

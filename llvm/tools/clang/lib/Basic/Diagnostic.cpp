@@ -382,17 +382,34 @@ void DiagnosticsEngine::Report(const StoredDiagnostic &storedDiag) {
   CurDiagID = ~0U;
 }
 
-bool DiagnosticsEngine::EmitCurrentDiagnostic() {
-  // Process the diagnostic, sending the accumulated information to the
-  // DiagnosticConsumer.
-  bool Emitted = ProcessDiag();
+bool DiagnosticsEngine::EmitCurrentDiagnostic(bool Force) {
+  assert(getClient() && "DiagnosticClient not set!");
+
+  bool Emitted;
+  if (Force) {
+    Diagnostic Info(this);
+
+    // Figure out the diagnostic level of this message.
+    DiagnosticIDs::Level DiagLevel
+      = Diags->getDiagnosticLevel(Info.getID(), Info.getLocation(), *this);
+
+    Emitted = (DiagLevel != DiagnosticIDs::Ignored);
+    if (Emitted) {
+      // Emit the diagnostic regardless of suppression level.
+      Diags->EmitDiag(*this, DiagLevel);
+    }
+  } else {
+    // Process the diagnostic, sending the accumulated information to the
+    // DiagnosticConsumer.
+    Emitted = ProcessDiag();
+  }
 
   // Clear out the current diagnostic object.
   unsigned DiagID = CurDiagID;
   Clear();
 
   // If there was a delayed diagnostic, emit it now.
-  if (DelayedDiagID && DelayedDiagID != DiagID)
+  if (!Force && DelayedDiagID && DelayedDiagID != DiagID)
     ReportDelayed();
 
   return Emitted;
@@ -821,13 +838,15 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
       TDT.ToType = getRawArg(ArgNo2);
       TDT.ElideType = getDiags()->ElideType;
       TDT.ShowColors = getDiags()->ShowColors;
+      TDT.TemplateDiffUsed = false;
       intptr_t val = reinterpret_cast<intptr_t>(&TDT);
 
       const char *ArgumentEnd = Argument + ArgumentLen;
       const char *Pipe = ScanFormat(Argument, ArgumentEnd, '|');
 
-      // Print the tree.
-      if (getDiags()->PrintTemplateTree) {
+      // Print the tree.  If this diagnostic already has a tree, skip the
+      // second tree.
+      if (getDiags()->PrintTemplateTree && Tree.empty()) {
         TDT.PrintFromType = true;
         TDT.PrintTree = true;
         getDiags()->ConvertArgToString(Kind, val,
@@ -859,6 +878,10 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
                                      Argument, ArgumentLen,
                                      FormattedArgs.data(), FormattedArgs.size(),
                                      OutStr, QualTypeVals);
+      if (!TDT.TemplateDiffUsed)
+        FormattedArgs.push_back(std::make_pair(DiagnosticsEngine::ak_qualtype,
+                                               TDT.FromType));
+
       // Append middle text
       FormatDiagnostic(FirstDollar + 1, SecondDollar, OutStr);
 
@@ -869,6 +892,10 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
                                      Argument, ArgumentLen,
                                      FormattedArgs.data(), FormattedArgs.size(),
                                      OutStr, QualTypeVals);
+      if (!TDT.TemplateDiffUsed)
+        FormattedArgs.push_back(std::make_pair(DiagnosticsEngine::ak_qualtype,
+                                               TDT.ToType));
+
       // Append end text
       FormatDiagnostic(SecondDollar + 1, Pipe, OutStr);
       break;

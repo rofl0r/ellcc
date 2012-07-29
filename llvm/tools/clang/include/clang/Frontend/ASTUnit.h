@@ -19,6 +19,7 @@
 #include "clang/Sema/CodeCompleteConsumer.h"
 #include "clang/Lex/ModuleLoader.h"
 #include "clang/Lex/PreprocessingRecord.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/FileManager.h"
@@ -253,6 +254,10 @@ private:
   /// \brief Whether to include brief documentation within the set of code
   /// completions cached.
   bool IncludeBriefCommentsInCodeCompletion : 1;
+
+  /// \brief True if non-system source files should be treated as volatile
+  /// (likely to change while trying to use them).
+  bool UserFilesAreVolatile : 1;
  
   /// \brief The language options used when we load an AST file.
   LangOptions ASTFileLangOpts;
@@ -618,7 +623,8 @@ public:
   /// \brief Create a ASTUnit. Gets ownership of the passed CompilerInvocation. 
   static ASTUnit *create(CompilerInvocation *CI,
                          IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
-                         bool CaptureDiagnostics = false);
+                         bool CaptureDiagnostics,
+                         bool UserFilesAreVolatile);
 
   /// \brief Create a ASTUnit from an AST file.
   ///
@@ -635,7 +641,8 @@ public:
                                   RemappedFile *RemappedFiles = 0,
                                   unsigned NumRemappedFiles = 0,
                                   bool CaptureDiagnostics = false,
-                                  bool AllowPCHWithCompilerErrors = false);
+                                  bool AllowPCHWithCompilerErrors = false,
+                                  bool UserFilesAreVolatile = false);
 
 private:
   /// \brief Helper function for \c LoadFromCompilerInvocation() and
@@ -686,6 +693,7 @@ public:
                                              bool PrecompilePreamble = false,
                                        bool CacheCodeCompletionResults = false,
                               bool IncludeBriefCommentsInCodeCompletion = false,
+                                       bool UserFilesAreVolatile = false,
                                        OwningPtr<ASTUnit> *ErrAST = 0);
 
   /// LoadFromCompilerInvocation - Create an ASTUnit from a source file, via a
@@ -706,7 +714,8 @@ public:
                                              bool PrecompilePreamble = false,
                                       TranslationUnitKind TUKind = TU_Complete,
                                        bool CacheCodeCompletionResults = false,
-                            bool IncludeBriefCommentsInCodeCompletion = false);
+                            bool IncludeBriefCommentsInCodeCompletion = false,
+                                             bool UserFilesAreVolatile = false);
 
   /// LoadFromCommandLine - Create an ASTUnit from a vector of command line
   /// arguments, which must specify exactly one source file.
@@ -741,6 +750,7 @@ public:
                             bool IncludeBriefCommentsInCodeCompletion = false,
                                       bool AllowPCHWithCompilerErrors = false,
                                       bool SkipFunctionBodies = false,
+                                      bool UserFilesAreVolatile = false,
                                       OwningPtr<ASTUnit> *ErrAST = 0);
   
   /// \brief Reparse the source files using the same command-line options that

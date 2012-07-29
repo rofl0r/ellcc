@@ -1,4 +1,4 @@
-//===-- tsan_rtl.cc -------------------------------------------------------===//
+//===-- tsan_rtl_report.cc ------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -27,7 +27,8 @@ using namespace __tsan;
 
 void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
   ScopedInRtl in_rtl;
-  TsanPrintf("FATAL: ThreadSanitizer CHECK failed: %s:%d \"%s\" (%zx, %zx)\n",
+  TsanPrintf("FATAL: ThreadSanitizer CHECK failed: "
+             "%s:%d \"%s\" (0x%zx, 0x%zx)\n",
              file, line, cond, (uptr)v1, (uptr)v2);
   Die();
 }
@@ -37,10 +38,14 @@ void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
 namespace __tsan {
 
 // Can be overriden by an application/test to intercept reports.
+#ifdef TSAN_EXTERNAL_HOOKS
+bool OnReport(const ReportDesc *rep, bool suppressed);
+#else
 bool WEAK OnReport(const ReportDesc *rep, bool suppressed) {
   (void)rep;
   return suppressed;
 }
+#endif
 
 static void StackStripMain(ReportStack *stack) {
   ReportStack *last_frame = 0;
@@ -49,12 +54,12 @@ static void StackStripMain(ReportStack *stack) {
   uptr prefix_len = internal_strlen(prefix);
   const char *path_prefix = flags()->strip_path_prefix;
   uptr path_prefix_len = internal_strlen(path_prefix);
+  char *pos;
   for (ReportStack *ent = stack; ent; ent = ent->next) {
     if (ent->func && 0 == internal_strncmp(ent->func, prefix, prefix_len))
       ent->func += prefix_len;
-    if (ent->file && 0 == internal_strncmp(ent->file, path_prefix,
-                                           path_prefix_len))
-      ent->file += path_prefix_len;
+    if (ent->file && (pos = internal_strstr(ent->file, path_prefix)))
+      ent->file = pos + path_prefix_len;
     if (ent->file && ent->file[0] == '.' && ent->file[1] == '/')
       ent->file += 2;
     last_frame2 = last_frame;
@@ -64,6 +69,7 @@ static void StackStripMain(ReportStack *stack) {
   if (last_frame2 == 0)
     return;
   const char *last = last_frame->func;
+#ifndef TSAN_GO
   const char *last2 = last_frame2->func;
   // Strip frame above 'main'
   if (last2 && 0 == internal_strcmp(last2, "main")) {
@@ -82,6 +88,10 @@ static void StackStripMain(ReportStack *stack) {
     // due to our fault.
     TsanPrintf("Bottom stack frame of stack %zx is missed\n", stack->pc);
   }
+#else
+  if (last && 0 == internal_strcmp(last, "schedunlock"))
+    last_frame2->next = 0;
+#endif
 }
 
 static ReportStack *SymbolizeStack(const StackTrace& trace) {

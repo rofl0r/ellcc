@@ -874,11 +874,8 @@ static const char* getMipsABIFromArch(StringRef ArchName) {
 static void getMipsCPUAndABI(const ArgList &Args,
                              const ToolChain &TC,
                              StringRef &CPUName,
-                             StringRef &ABIName,
-                             StringRef &FloatABI) {
+                             StringRef &ABIName) {
   StringRef ArchName;
-
-  FloatABI = "hard";
 
   // Select target cpu and architecture.
   if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
@@ -896,9 +893,6 @@ static void getMipsCPUAndABI(const ArgList &Args,
       CPUName = getMipsCPUFromArch(ArchName, D);
   }
 
-  if (ArchName.endswith("sf"))
-    FloatABI = "soft";
-
   // Select the ABI to use.
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ))
     ABIName = A->getValue(Args);
@@ -906,22 +900,12 @@ static void getMipsCPUAndABI(const ArgList &Args,
     ABIName = getMipsABIFromArch(ArchName);
 }
 
-void Clang::AddMIPSTargetArgs(const ArgList &Args,
-                             ArgStringList &CmdArgs) const {
-  const Driver &D = getToolChain().getDriver();
-  StringRef CPUName;
-  StringRef ABIName;
-  StringRef FloatABI;
-  getMipsCPUAndABI(Args, getToolChain(), CPUName, ABIName, FloatABI);
-
-  CmdArgs.push_back("-target-cpu");
-  CmdArgs.push_back(CPUName.data());
-
-  CmdArgs.push_back("-target-abi");
-  CmdArgs.push_back(ABIName.data());
-
+// Select the MIPS float ABI as determined by -msoft-float, -mhard-float,
+// and -mfloat-abi=.
+static StringRef getMipsFloatABI(const Driver &D, const ArgList &Args) {
   // Select the float ABI as determined by -msoft-float, -mhard-float,
   // and -mfloat-abi=.
+  StringRef FloatABI;
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
                                options::OPT_mhard_float,
                                options::OPT_mfloat_abi_EQ)) {
@@ -946,34 +930,23 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     FloatABI = "hard";
   }
 
-  if (FloatABI == "soft") {
-    // Floating point operations and argument passing are soft.
-    CmdArgs.push_back("-msoft-float");
-    CmdArgs.push_back("-mfloat-abi");
-    CmdArgs.push_back("soft");
+  return FloatABI;
+}
 
-    // FIXME: Note, this is a hack. We need to pass the selected float
-    // mode to the MipsTargetInfoBase to define appropriate macros there.
-    // Now it is the only method.
+static void AddTargetFeature(const ArgList &Args,
+                             ArgStringList &CmdArgs,
+                             OptSpecifier OnOpt,
+                             OptSpecifier OffOpt,
+                             StringRef FeatureName) {
+  if (Arg *A = Args.getLastArg(OnOpt, OffOpt)) {
     CmdArgs.push_back("-target-feature");
-    CmdArgs.push_back("+soft-float");
-  }
-  else if (FloatABI == "single") {
-    // Restrict the use of hardware floating-point
-    // instructions to 32-bit operations.
-    CmdArgs.push_back("-target-feature");
-    CmdArgs.push_back("+single-float");
-  }
-  else {
-    // Floating point operations and argument passing are hard.
-    assert(FloatABI == "hard" && "Invalid float abi!");
-    // RICH: CmdArgs.push_back("-mhard-float");
-    CmdArgs.push_back("-mfloat-abi");
-    CmdArgs.push_back("hard");
+    if (A->getOption().matches(OnOpt))
+      CmdArgs.push_back(Args.MakeArgString("+" + FeatureName));
+    else
+      CmdArgs.push_back(Args.MakeArgString("-" + FeatureName));
   }
 }
 
-#if RICH
 void Clang::AddMIPSTargetArgs(const ArgList &Args,
                              ArgStringList &CmdArgs) const {
   const Driver &D = getToolChain().getDriver();
@@ -1014,8 +987,17 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
     CmdArgs.push_back("-mfloat-abi");
     CmdArgs.push_back("hard");
   }
+
+  AddTargetFeature(Args, CmdArgs,
+                   options::OPT_mips16, options::OPT_mno_mips16,
+                   "mips16");
+  AddTargetFeature(Args, CmdArgs,
+                   options::OPT_mdsp, options::OPT_mno_dsp,
+                   "dsp");
+  AddTargetFeature(Args, CmdArgs,
+                   options::OPT_mdspr2, options::OPT_mno_dspr2,
+                   "dspr2");
 }
-#endif
 
 void Clang::AddNios2TargetArgs(const ArgList &Args,
                                 ArgStringList &CmdArgs) const {
@@ -1909,12 +1891,33 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       !TrappingMath)
     CmdArgs.push_back("-menable-unsafe-fp-math");
 
-  // We separately look for the '-ffast-math' flag, and if we find it, tell the
-  // frontend to provide the appropriate preprocessor macros. This is distinct
-  // from enabling any optimizations as it induces a language change which must
-  // survive serialization and deserialization, etc.
+
+  // Validate and pass through -fp-contract option. 
+  if (Arg *A = Args.getLastArg(options::OPT_ffast_math,
+                               options::OPT_ffp_contract)) {
+    if (A->getOption().getID() == options::OPT_ffp_contract) {
+      StringRef Val = A->getValue(Args);
+      if (Val == "fast" || Val == "on" || Val == "off") {
+        CmdArgs.push_back(Args.MakeArgString("-ffp-contract=" + Val));
+      } else {
+        D.Diag(diag::err_drv_unsupported_option_argument)
+          << A->getOption().getName() << Val;
+      }
+    } else { // A is OPT_ffast_math
+      // If fast-math is set then set the fp-contract mode to fast.
+      CmdArgs.push_back(Args.MakeArgString("-ffp-contract=fast"));
+    }
+  }
+
+  // We separately look for the '-ffast-math' and '-ffinite-math-only' flags,
+  // and if we find them, tell the frontend to provide the appropriate
+  // preprocessor macros. This is distinct from enabling any optimizations as
+  // these options induce language changes which must survive serialization
+  // and deserialization, etc.
   if (Args.hasArg(options::OPT_ffast_math))
     CmdArgs.push_back("-ffast-math");
+  if (Args.hasArg(options::OPT_ffinite_math_only))
+    CmdArgs.push_back("-ffinite-math-only");
 
   // Decide whether to use verbose asm. Verbose assembly is the default on
   // toolchains which have the integrated assembler on by default.
@@ -2188,7 +2191,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_W_Group);
-  Args.AddLastArg(CmdArgs, options::OPT_pedantic);
+  if (Args.hasFlag(options::OPT_pedantic, options::OPT_no_pedantic, false))
+    CmdArgs.push_back("-pedantic");
   Args.AddLastArg(CmdArgs, options::OPT_pedantic_errors);
   Args.AddLastArg(CmdArgs, options::OPT_w);
 
@@ -2547,6 +2551,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    getToolChain().getTriple().getOS() == llvm::Triple::Win32))
     CmdArgs.push_back("-fms-extensions");
 
+  // -fms-inline-asm.
+  if (Args.hasArg(options::OPT_fenable_experimental_ms_inline_asm))
+    CmdArgs.push_back("-fenable-experimental-ms-inline-asm");
+
   // -fms-compatibility=0 is default.
   if (Args.hasFlag(options::OPT_fms_compatibility, 
                    options::OPT_fno_ms_compatibility,
@@ -2604,7 +2612,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (objcRuntime.isNonFragile()) {
     if (!Args.hasFlag(options::OPT_fobjc_legacy_dispatch,
                       options::OPT_fno_objc_legacy_dispatch,
-                      getToolChain().IsObjCLegacyDispatchDefault())) {
+                      objcRuntime.isLegacyDispatchDefaultForArch(
+                        getToolChain().getTriple().getArch()))) {
       if (getToolChain().UseObjCMixedDispatch())
         CmdArgs.push_back("-fobjc-dispatch-method=mixed");
       else
@@ -5090,6 +5099,8 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                  const char *LinkingOutput) const {
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
+  CmdArgs.push_back("--hash-style=both");
+  CmdArgs.push_back("--enable-new-dtags");
 
   if (!D.SysRoot.empty())
     CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
@@ -5425,8 +5436,7 @@ void linuxtools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
              getToolChain().getArch() == llvm::Triple::mips64el) {
     StringRef CPUName;
     StringRef ABIName;
-    StringRef FloatABI;
-    getMipsCPUAndABI(Args, getToolChain(), CPUName, ABIName, FloatABI);
+    getMipsCPUAndABI(Args, getToolChain(), CPUName, ABIName);
 
     CmdArgs.push_back("-march");
     CmdArgs.push_back(CPUName.data());

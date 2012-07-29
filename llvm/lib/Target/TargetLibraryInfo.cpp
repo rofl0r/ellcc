@@ -67,6 +67,7 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "fmod",
     "fmodl",
     "fmodf",
+    "fputc",
     "fputs",
     "fwrite",
     "iprintf",
@@ -82,6 +83,8 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "log1p",
     "log1pl",
     "log1pf",
+    "memchr",
+    "memcmp",
     "memcpy",
     "memmove",
     "memset",
@@ -92,6 +95,8 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "pow",
     "powf",
     "powl",
+    "putchar",
+    "puts",
     "rint",
     "rintf",
     "rintl",
@@ -108,6 +113,14 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "sqrt",
     "sqrtl",
     "sqrtf",
+    "strcat",
+    "strchr",
+    "strcpy",
+    "strlen",
+    "strncat",
+    "strncmp",
+    "strncpy",
+    "strnlen",
     "tan",
     "tanl",
     "tanf",
@@ -120,7 +133,8 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "__cxa_atexit",
     "__cxa_guard_abort",
     "__cxa_guard_acquire",
-    "__cxa_guard_release"
+    "__cxa_guard_release",
+    "__memcpy_chk"
   };
 
 /// initialize - Initialize the set of available library functions based on the

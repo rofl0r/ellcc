@@ -375,9 +375,9 @@ void Parser::ParseObjCInterfaceDeclList(tok::ObjCKeywordKind contextKey,
   while (1) {
     // If this is a method prototype, parse it.
     if (Tok.is(tok::minus) || Tok.is(tok::plus)) {
-      Decl *methodPrototype =
-        ParseObjCMethodPrototype(MethodImplKind, false);
-      allMethods.push_back(methodPrototype);
+      if (Decl *methodPrototype =
+          ParseObjCMethodPrototype(MethodImplKind, false))
+        allMethods.push_back(methodPrototype);
       // Consume the ';' here, since ParseObjCMethodPrototype() is re-used for
       // method definitions.
       if (ExpectAndConsumeSemi(diag::err_expected_semi_after_method_proto)) {
@@ -1001,8 +1001,8 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
   if (!SelIdent && Tok.isNot(tok::colon)) { // missing selector name.
     Diag(Tok, diag::err_expected_selector_for_method)
       << SourceRange(mLoc, Tok.getLocation());
-    // Skip until we get a ; or {}.
-    SkipUntil(tok::r_brace);
+    // Skip until we get a ; or @.
+    SkipUntil(tok::at, true /*StopAtSemi*/, true /*don't consume*/);
     return 0;
   }
 
@@ -2094,8 +2094,23 @@ ExprResult Parser::ParseObjCAtExpression(SourceLocation AtLoc) {
       return ParsePostfixExpressionSuffix(ParseObjCProtocolExpression(AtLoc));
     case tok::objc_selector:
       return ParsePostfixExpressionSuffix(ParseObjCSelectorExpression(AtLoc));
-    default:
-      return ExprError(Diag(AtLoc, diag::err_unexpected_at));
+      default: {
+        const char *str = 0;
+        if (GetLookAheadToken(1).is(tok::l_brace)) {
+          char ch = Tok.getIdentifierInfo()->getNameStart()[0];
+          str =  
+            ch == 't' ? "try" 
+                      : (ch == 'f' ? "finally" 
+                                   : (ch == 'a' ? "autoreleasepool" : 0));
+        }
+        if (str) {
+          SourceLocation kwLoc = Tok.getLocation();
+          return ExprError(Diag(AtLoc, diag::err_unexpected_at) << 
+                             FixItHint::CreateReplacement(kwLoc, str));
+        }
+        else
+          return ExprError(Diag(AtLoc, diag::err_unexpected_at));
+      }
     }
   }
 }

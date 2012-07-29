@@ -23,7 +23,7 @@
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
-#include "clang/StaticAnalyzer/Core/PathSensitive/Calls.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ProgramStateTrait.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
@@ -948,11 +948,11 @@ RetainSummaryManager::getSummary(const CallEvent &Call,
   case CE_CXXMemberOperator:
   case CE_Block:
   case CE_CXXConstructor:
+  case CE_CXXDestructor:
   case CE_CXXAllocator:
     // FIXME: These calls are currently unsupported.
     return getPersistentStopSummary();
-  case CE_ObjCMessage:
-  case CE_ObjCPropertyAccess: {
+  case CE_ObjCMessage: {
     const ObjCMethodCall &Msg = cast<ObjCMethodCall>(Call);
     if (Msg.isInstanceMessage())
       Summ = getInstanceMethodSummary(Msg, State);
@@ -1910,25 +1910,12 @@ static bool isNumericLiteralExpression(const Expr *E) {
          isa<CXXBoolLiteralExpr>(E);
 }
 
-static bool isPropertyAccess(const Stmt *S, ParentMap &PM) {
-  unsigned maxDepth = 4;
-  while (S && maxDepth) {
-    if (const PseudoObjectExpr *PO = dyn_cast<PseudoObjectExpr>(S)) {
-      if (!isa<ObjCMessageExpr>(PO->getSyntacticForm()))
-        return true;
-      return false;
-    }
-    S = PM.getParent(S);
-    --maxDepth;
-  }
-  return false;
-}
-
 PathDiagnosticPiece *CFRefReportVisitor::VisitNode(const ExplodedNode *N,
                                                    const ExplodedNode *PrevN,
                                                    BugReporterContext &BRC,
                                                    BugReport &BR) {
-
+  // FIXME: We will eventually need to handle non-statement-based events
+  // (__attribute__((cleanup))).
   if (!isa<StmtPoint>(N->getLocation()))
     return NULL;
 
@@ -1987,10 +1974,19 @@ PathDiagnosticPiece *CFRefReportVisitor::VisitNode(const ExplodedNode *N,
           os << "function call";
       }
       else {
-        assert(isa<ObjCMessageExpr>(S));      
-        // The message expression may have between written directly or as
-        // a property access.  Lazily determine which case we are looking at.
-        os << (isPropertyAccess(S, N->getParentMap()) ? "Property" : "Method");
+        assert(isa<ObjCMessageExpr>(S));
+        ObjCMethodCall Call(cast<ObjCMessageExpr>(S), CurrSt, LCtx);
+        switch (Call.getMessageKind()) {
+        case OCM_Message:
+          os << "Method";
+          break;
+        case OCM_PropertyAccess:
+          os << "Property";
+          break;
+        case OCM_Subscript:
+          os << "Subscript";
+          break;
+        }
       }
 
       if (CurrV.getObjKind() == RetEffect::CF) {
@@ -2350,8 +2346,15 @@ CFRefLeakReport::CFRefLeakReport(CFRefBug &D, const LangOptions &LOpts,
     GetAllocationSite(Ctx.getStateManager(), getErrorNode(), sym);
 
   // Get the SourceLocation for the allocation site.
+  // FIXME: This will crash the analyzer if an allocation comes from an
+  // implicit call. (Currently there are no such allocations in Cocoa, though.)
+  const Stmt *AllocStmt;
   ProgramPoint P = AllocNode->getLocation();
-  const Stmt *AllocStmt = cast<PostStmt>(P).getStmt();
+  if (CallExitEnd *Exit = dyn_cast<CallExitEnd>(&P))
+    AllocStmt = Exit->getCalleeContext()->getCallSite();
+  else
+    AllocStmt = cast<PostStmt>(P).getStmt();
+  assert(AllocStmt && "All allocations must come from explicit calls");
   Location = PathDiagnosticLocation::createBegin(AllocStmt, SMgr,
                                                   n->getLocationContext());
   // Fill in the description of the bug.
@@ -2753,7 +2756,7 @@ void RetainCountChecker::checkPostCall(const CallEvent &Call,
 
 /// GetReturnType - Used to get the return type of a message expression or
 ///  function call with the intention of affixing that type to a tracked symbol.
-///  While the the return type can be queried directly from RetEx, when
+///  While the return type can be queried directly from RetEx, when
 ///  invoking class methods we augment to the return type to be that of
 ///  a pointer to the class (as opposed it just being id).
 // FIXME: We may be able to do this with related result types instead.
@@ -2815,7 +2818,7 @@ void RetainCountChecker::checkSummary(const RetainSummary &Summ,
           state = updateSymbol(state, Sym, *T, Summ.getReceiverEffect(),
                                hasErr, C);
           if (hasErr) {
-            ErrorRange = MsgInvocation->getReceiverSourceRange();
+            ErrorRange = MsgInvocation->getOriginExpr()->getReceiverRange();
             ErrorSym = Sym;
           }
         }
@@ -3159,7 +3162,7 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
     // If the receiver is unknown, conjure a return value.
     SValBuilder &SVB = C.getSValBuilder();
     unsigned Count = C.getCurrentBlockCount();
-    SVal RetVal = SVB.getConjuredSymbolVal(0, CE, LCtx, ResultTy, Count);
+    RetVal = SVB.getConjuredSymbolVal(0, CE, LCtx, ResultTy, Count);
   }
   state = state->BindExpr(CE, LCtx, RetVal, false);
 
