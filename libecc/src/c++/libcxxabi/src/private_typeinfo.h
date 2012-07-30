@@ -70,7 +70,7 @@ enum
     no
 };
 
-class __class_type_info;
+class __attribute__ ((__visibility__("default"))) __class_type_info;
 
 struct __dynamic_cast_info
 {
@@ -120,7 +120,7 @@ struct __dynamic_cast_info
 };
 
 // Has no base class
-class __attribute__ ((__visibility__("hidden"))) __class_type_info
+class __attribute__ ((__visibility__("default"))) __class_type_info
     : public __shim_type_info
 {
 public:
