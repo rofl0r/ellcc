@@ -34,7 +34,7 @@ release:
 
 .PHONY: tagrelease
 tagrelease:
-	svn cp http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	svn cp -m "Tag release $(VERSION)." http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: untagrelease
 untagrelease:
