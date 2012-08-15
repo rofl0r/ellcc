@@ -27,7 +27,7 @@ namespace llvm {
   class ARMELFMCAsmInfo : public MCAsmInfo {
     virtual void anchor();
   public:
-    explicit ARMELFMCAsmInfo();
+    explicit ARMELFMCAsmInfo(bool LittleEndian);
   };
 
 } // namespace llvm

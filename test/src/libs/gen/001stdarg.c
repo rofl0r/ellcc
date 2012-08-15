@@ -45,8 +45,29 @@ static void vfunc2(int count, ...)
         ++j;
     }
     ll = va_arg(ap, long long);
-    TEST_EXCLUDE(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
+    TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
         TEST(ll == 1234567890123456789LL, "long long vaarg: %lld", ll);
+    va_end(ap);
+}
+
+static void vfunc3(int count, ...)
+{
+    va_list ap;
+    va_start(ap, count);
+    int i, j;
+    double d;
+    TEST(sizeof(int) == 4, "int is 4 bytes");
+    TEST(sizeof(long long) == 8, "long long is 8 bytes");
+    // Consume all int arguments.
+    j = 1;
+    while (--count) {
+        i = va_arg(ap, int);
+        TEST(i == j, "int argument is correct: %d == %d", i, j);
+        ++j;
+    }
+    d = va_arg(ap, double);
+    TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=52")
+        TEST(d == 3.1415927, "double: %g", d);
     va_end(ap);
 }
 
@@ -56,5 +77,9 @@ TEST_GROUP(Stdarg)
     vfunc2(3, 1, 2, 1234567890123456789LL);
     vfunc2(4, 1, 2, 3, 1234567890123456789LL);
     vfunc2(5, 1, 2, 3, 4, 1234567890123456789LL);
+    vfunc3(2, 1, 3.1415927);
+    vfunc3(3, 1, 2, 3.1415927);
+    vfunc3(4, 1, 2, 3, 3.1415927);
+    vfunc3(5, 1, 2, 3, 4, 3.1415927);
 END_GROUP
 

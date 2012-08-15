@@ -38,9 +38,9 @@ TEST_GROUP(Format)
     chk("%u", "10", 10);
     chk("%lu", "10", 10l);
     chk("%llu", "10", 10ll);
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60")
         chk("%g", "1", 1.0);
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60") {
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=60") {
         chk("%e", "1.000000e+01", 10.0);
         chk("%E", "1.000000E+01", 10.0);
         chk("%e", "1.000000e-02", 0.010);

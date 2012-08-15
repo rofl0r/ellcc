@@ -39,10 +39,11 @@ ARMMCAsmInfoDarwin::ARMMCAsmInfoDarwin() {
 
 void ARMELFMCAsmInfo::anchor() { }
 
-ARMELFMCAsmInfo::ARMELFMCAsmInfo() {
+ARMELFMCAsmInfo::ARMELFMCAsmInfo(bool LittleEndian) {
   // ".comm align is in bytes but .align is pow-2."
   AlignmentIsInBytes = false;
 
+  IsLittleEndian = LittleEndian;
   Data64bitsDirective = 0;
   CommentString = "@";
   PrivateGlobalPrefix = ".L";

@@ -149,11 +149,14 @@ static MCRegisterInfo *createARMMCRegisterInfo(StringRef Triple) {
 
 static MCAsmInfo *createARMMCAsmInfo(const Target &T, StringRef TT) {
   Triple TheTriple(TT);
+  bool IsLittleEndian = true;
+  if (TheTriple.getArch() == Triple::armeb)
+    IsLittleEndian = false;
 
   if (TheTriple.isOSDarwin())
     return new ARMMCAsmInfoDarwin();
 
-  return new ARMELFMCAsmInfo();
+  return new ARMELFMCAsmInfo(IsLittleEndian);
 }
 
 static MCCodeGenInfo *createARMMCCodeGenInfo(StringRef TT, Reloc::Model RM,
