@@ -2,7 +2,7 @@
 # If SUBDIRS is not defined, all subdirectories with a Makefile will be built.
 # SUBDIRS = arm i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64
 # Define directories to ignore.
-IGNORE = ppc ppc64
+IGNORE = ppc ppc64 armeb
 # Define subdirectories to ignore.
 SUBIGNORE =
 

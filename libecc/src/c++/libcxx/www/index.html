@@ -115,19 +115,14 @@
   <h2 id="dir-structure">Current Status</h2>
   <!--=====================================================================-->
 
-   <p>libc++ is still under development.  It has about 98% of
-      <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2010/n3126.pdf">N3126</a>
-      implemented/tested.  C++'98 support is fully featured, and most of C++'0x
-      support is as well.  The only major missing piece of C++'0x support is
-      <code>&lt;atomic&gt;</code>.</p>
-
    <p><a href="libcxx_by_chapter.pdf">Here</a> is a by-chapter breakdown of what
    is passing tests and what isn't. This chart is currently based on testing
-   against g++-4.4.0 with -std=c++0x. </p>
+   against clang++ with -std=c++11 on Apple's OS X. </p>
 
    <p>
-   A Windows port is underway.  <a href="results.Windows.html">Here</a> are
-   recent test results.
+   Ports to other platforms are underway. Here are recent test
+   results for <a href="results.Windows.html">Windows</a>
+   and <a href="results.Linux.html">Linux</a>.
    </p>
 
   <!--=====================================================================-->
@@ -191,7 +186,7 @@
     <li><code>clang++ -std=c++11 -stdlib=libc++ test.cpp</code></li>
   </ul>
 
-  <p>To run the libc++ test suit (recommended):</p>
+  <p>To run the libc++ test suite (recommended):</p>
 
   <ul>
   <li><code>cd libcxx/test</code></li>

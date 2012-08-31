@@ -1,4 +1,5 @@
 #include "clang/AST/CommentLexer.h"
+#include "clang/AST/CommentCommandTraits.h"
 #include "clang/Basic/ConvertUTF.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -10,82 +11,6 @@ void Token::dump(const Lexer &L, const SourceManager &SM) const {
   llvm::errs() << "comments::Token Kind=" << Kind << " ";
   Loc.dump(SM);
   llvm::errs() << " " << Length << " \"" << L.getSpelling(*this, SM) << "\"\n";
-}
-
-bool Lexer::isVerbatimBlockCommand(StringRef BeginName,
-                                  StringRef &EndName) const {
-  const char *Result = llvm::StringSwitch<const char *>(BeginName)
-    .Case("code", "endcode")
-    .Case("verbatim", "endverbatim")
-    .Case("htmlonly", "endhtmlonly")
-    .Case("latexonly", "endlatexonly")
-    .Case("xmlonly", "endxmlonly")
-    .Case("manonly", "endmanonly")
-    .Case("rtfonly", "endrtfonly")
-
-    .Case("dot", "enddot")
-    .Case("msc", "endmsc")
-
-    .Case("f$", "f$") // Inline LaTeX formula
-    .Case("f[", "f]") // Displayed LaTeX formula
-    .Case("f{", "f}") // LaTeX environment
-
-    .Default(NULL);
-
-  if (Result) {
-    EndName = Result;
-    return true;
-  }
-
-  for (VerbatimBlockCommandVector::const_iterator
-           I = VerbatimBlockCommands.begin(),
-           E = VerbatimBlockCommands.end();
-       I != E; ++I)
-    if (I->BeginName == BeginName) {
-      EndName = I->EndName;
-      return true;
-    }
-
-  return false;
-}
-
-bool Lexer::isVerbatimLineCommand(StringRef Name) const {
-  bool Result = llvm::StringSwitch<bool>(Name)
-  .Case("fn", true)
-  .Case("var", true)
-  .Case("property", true)
-  .Case("typedef", true)
-
-  .Case("overload", true)
-
-  .Case("defgroup", true)
-  .Case("ingroup", true)
-  .Case("addtogroup", true)
-  .Case("weakgroup", true)
-  .Case("name", true)
-
-  .Case("section", true)
-  .Case("subsection", true)
-  .Case("subsubsection", true)
-  .Case("paragraph", true)
-
-  .Case("mainpage", true)
-  .Case("subpage", true)
-  .Case("ref", true)
-
-  .Default(false);
-
-  if (Result)
-    return true;
-
-  for (VerbatimLineCommandVector::const_iterator
-           I = VerbatimLineCommands.begin(),
-           E = VerbatimLineCommands.end();
-       I != E; ++I)
-    if (I->Name == Name)
-      return true;
-
-  return false;
 }
 
 namespace {
@@ -102,6 +27,33 @@ bool isHTMLHexCharacterReferenceCharacter(char C) {
   return (C >= '0' && C <= '9') ||
          (C >= 'a' && C <= 'f') ||
          (C >= 'A' && C <= 'F');
+}
+
+bool isHTMLTagName(StringRef Name) {
+  return llvm::StringSwitch<bool>(Name)
+      .Cases("em", "strong", true)
+      .Cases("tt", "i", "b", "big", "small", true)
+      .Cases("strike", "s", "u", "font", true)
+      .Case("a", true)
+      .Case("hr", true)
+      .Cases("div", "span", true)
+      .Cases("h1", "h2", "h3", true)
+      .Cases("h4", "h5", "h6", true)
+      .Case("code", true)
+      .Case("blockquote", true)
+      .Cases("sub", "sup", true)
+      .Case("img", true)
+      .Case("p", true)
+      .Case("br", true)
+      .Case("pre", true)
+      .Cases("ins", "del", true)
+      .Cases("ul", "ol", "li", true)
+      .Cases("dl", "dt", "dd", true)
+      .Cases("table", "caption", true)
+      .Cases("thead", "tfoot", "tbody", true)
+      .Cases("colgroup", "col", true)
+      .Cases("tr", "th", "td", true)
+      .Default(false);
 }
 } // unnamed namespace
 
@@ -433,11 +385,11 @@ void Lexer::lexCommentText(Token &T) {
         const StringRef CommandName(BufferPtr + 1, Length);
         StringRef EndName;
 
-        if (isVerbatimBlockCommand(CommandName, EndName)) {
+        if (Traits.isVerbatimBlockCommand(CommandName, EndName)) {
           setupAndLexVerbatimBlock(T, TokenPtr, *BufferPtr, EndName);
           return;
         }
-        if (isVerbatimLineCommand(CommandName)) {
+        if (Traits.isVerbatimLineCommand(CommandName)) {
           setupAndLexVerbatimLine(T, TokenPtr);
           return;
         }
@@ -660,8 +612,12 @@ void Lexer::setupAndLexHTMLStartTag(Token &T) {
   assert(BufferPtr[0] == '<' &&
          isHTMLIdentifierStartingCharacter(BufferPtr[1]));
   const char *TagNameEnd = skipHTMLIdentifier(BufferPtr + 2, CommentEnd);
-
   StringRef Name(BufferPtr + 1, TagNameEnd - (BufferPtr + 1));
+  if (!isHTMLTagName(Name)) {
+    formTextToken(T, TagNameEnd);
+    return;
+  }
+
   formTokenWithChars(T, TagNameEnd, tok::html_start_tag);
   T.setHTMLTagStartName(Name);
 
@@ -740,11 +696,16 @@ void Lexer::setupAndLexHTMLEndTag(Token &T) {
 
   const char *TagNameBegin = skipWhitespace(BufferPtr + 2, CommentEnd);
   const char *TagNameEnd = skipHTMLIdentifier(TagNameBegin, CommentEnd);
+  StringRef Name(TagNameBegin, TagNameEnd - TagNameBegin);
+  if (!isHTMLTagName(Name)) {
+    formTextToken(T, TagNameEnd);
+    return;
+  }
 
   const char *End = skipWhitespace(TagNameEnd, CommentEnd);
 
   formTokenWithChars(T, End, tok::html_end_tag);
-  T.setHTMLTagEndName(StringRef(TagNameBegin, TagNameEnd - TagNameBegin));
+  T.setHTMLTagEndName(Name);
 
   if (BufferPtr != CommentEnd && *BufferPtr == '>')
     State = LS_HTMLEndTag;
@@ -757,10 +718,10 @@ void Lexer::lexHTMLEndTag(Token &T) {
   State = LS_Normal;
 }
 
-Lexer::Lexer(llvm::BumpPtrAllocator &Allocator,
+Lexer::Lexer(llvm::BumpPtrAllocator &Allocator, const CommandTraits &Traits,
              SourceLocation FileLoc, const CommentOptions &CommOpts,
              const char *BufferStart, const char *BufferEnd):
-    Allocator(Allocator),
+    Allocator(Allocator), Traits(Traits),
     BufferStart(BufferStart), BufferEnd(BufferEnd),
     FileLoc(FileLoc), CommOpts(CommOpts), BufferPtr(BufferStart),
     CommentState(LCS_BeforeComment), State(LS_Normal) {
@@ -883,19 +844,6 @@ StringRef Lexer::getSpelling(const Token &Tok,
 
   const char *Begin = File.data() + LocInfo.second;
   return StringRef(Begin, Tok.getLength());
-}
-
-void Lexer::addVerbatimBlockCommand(StringRef BeginName, StringRef EndName) {
-  VerbatimBlockCommand VBC;
-  VBC.BeginName = BeginName;
-  VBC.EndName = EndName;
-  VerbatimBlockCommands.push_back(VBC);
-}
-
-void Lexer::addVerbatimLineCommand(StringRef Name) {
-  VerbatimLineCommand VLC;
-  VLC.Name = Name;
-  VerbatimLineCommands.push_back(VLC);
 }
 
 } // end namespace comments

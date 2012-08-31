@@ -77,7 +77,8 @@ public:
     ELLCC,
     SCEI,
     BGP,
-    BGQ
+    BGQ,
+    Freescale
   };
   enum OSType {
     UnknownOS,
@@ -102,7 +103,8 @@ public:
     Minix,
     RTEMS,
     NativeClient,
-    CNK         // BG/P Compute-Node Kernel
+    CNK,         // BG/P Compute-Node Kernel
+    Bitrig
   };
   enum EnvironmentType {
     UnknownEnvironment,

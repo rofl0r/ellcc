@@ -11,6 +11,7 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/AST/CommentLexer.h"
+#include "clang/AST/CommentCommandTraits.h"
 #include "llvm/ADT/STLExtras.h"
 #include <vector>
 
@@ -48,7 +49,8 @@ void CommentLexerTest::lexString(const char *Source,
   FileID File = SourceMgr.createFileIDForMemBuffer(Buf);
   SourceLocation Begin = SourceMgr.getLocForStartOfFile(File);
 
-  comments::Lexer L(Allocator, Begin, CommentOptions(),
+  comments::CommandTraits Traits;
+  comments::Lexer L(Allocator, Traits, Begin, CommentOptions(),
                     Source, Source + strlen(Source));
 
   while (1) {
@@ -820,7 +822,7 @@ TEST_F(CommentLexerTest, HTML2) {
 
 TEST_F(CommentLexerTest, HTML3) {
   const char *Source =
-    "// < tag";
+    "// < img";
 
   std::vector<Token> Toks;
 
@@ -835,15 +837,15 @@ TEST_F(CommentLexerTest, HTML3) {
   ASSERT_EQ(StringRef("<"),    Toks[1].getText());
 
   ASSERT_EQ(tok::text,         Toks[2].getKind());
-  ASSERT_EQ(StringRef(" tag"), Toks[2].getText());
+  ASSERT_EQ(StringRef(" img"), Toks[2].getText());
 
   ASSERT_EQ(tok::newline,      Toks[3].getKind());
 }
 
 TEST_F(CommentLexerTest, HTML4) {
   const char *Sources[] = {
-    "// <tag",
-    "// <tag "
+    "// <img",
+    "// <img "
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -857,7 +859,7 @@ TEST_F(CommentLexerTest, HTML4) {
     ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::newline,        Toks[2].getKind());
   }
@@ -865,7 +867,7 @@ TEST_F(CommentLexerTest, HTML4) {
 
 TEST_F(CommentLexerTest, HTML5) {
   const char *Source =
-    "// <tag 42";
+    "// <img 42";
 
   std::vector<Token> Toks;
 
@@ -877,7 +879,7 @@ TEST_F(CommentLexerTest, HTML5) {
   ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
   ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+  ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
   ASSERT_EQ(tok::text,           Toks[2].getKind());
   ASSERT_EQ(StringRef("42"),     Toks[2].getText());
@@ -886,7 +888,7 @@ TEST_F(CommentLexerTest, HTML5) {
 }
 
 TEST_F(CommentLexerTest, HTML6) {
-  const char *Source = "// <tag> Meow";
+  const char *Source = "// <img> Meow";
 
   std::vector<Token> Toks;
 
@@ -898,7 +900,7 @@ TEST_F(CommentLexerTest, HTML6) {
   ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
   ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+  ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
   ASSERT_EQ(tok::html_greater,   Toks[2].getKind());
 
@@ -909,7 +911,7 @@ TEST_F(CommentLexerTest, HTML6) {
 }
 
 TEST_F(CommentLexerTest, HTML7) {
-  const char *Source = "// <tag=";
+  const char *Source = "// <img=";
 
   std::vector<Token> Toks;
 
@@ -921,7 +923,7 @@ TEST_F(CommentLexerTest, HTML7) {
   ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
   ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+  ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
   ASSERT_EQ(tok::text,           Toks[2].getKind());
   ASSERT_EQ(StringRef("="),      Toks[2].getText());
@@ -930,7 +932,7 @@ TEST_F(CommentLexerTest, HTML7) {
 }
 
 TEST_F(CommentLexerTest, HTML8) {
-  const char *Source = "// <tag attr=> Meow";
+  const char *Source = "// <img src=> Meow";
 
   std::vector<Token> Toks;
 
@@ -942,10 +944,10 @@ TEST_F(CommentLexerTest, HTML8) {
   ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
   ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+  ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
   ASSERT_EQ(tok::html_ident,     Toks[2].getKind());
-  ASSERT_EQ(StringRef("attr"),   Toks[2].getHTMLIdent());
+  ASSERT_EQ(StringRef("src"),   Toks[2].getHTMLIdent());
 
   ASSERT_EQ(tok::html_equals,    Toks[3].getKind());
 
@@ -959,8 +961,8 @@ TEST_F(CommentLexerTest, HTML8) {
 
 TEST_F(CommentLexerTest, HTML9) {
   const char *Sources[] = {
-    "// <tag attr",
-    "// <tag attr "
+    "// <img src",
+    "// <img src "
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -974,10 +976,10 @@ TEST_F(CommentLexerTest, HTML9) {
     ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_ident,     Toks[2].getKind());
-    ASSERT_EQ(StringRef("attr"),   Toks[2].getHTMLIdent());
+    ASSERT_EQ(StringRef("src"),    Toks[2].getHTMLIdent());
 
     ASSERT_EQ(tok::newline,        Toks[3].getKind());
   }
@@ -985,8 +987,8 @@ TEST_F(CommentLexerTest, HTML9) {
 
 TEST_F(CommentLexerTest, HTML10) {
   const char *Sources[] = {
-    "// <tag attr=",
-    "// <tag attr ="
+    "// <img src=",
+    "// <img src ="
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1000,10 +1002,10 @@ TEST_F(CommentLexerTest, HTML10) {
     ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_ident,     Toks[2].getKind());
-    ASSERT_EQ(StringRef("attr"),   Toks[2].getHTMLIdent());
+    ASSERT_EQ(StringRef("src"),    Toks[2].getHTMLIdent());
 
     ASSERT_EQ(tok::html_equals,    Toks[3].getKind());
 
@@ -1013,10 +1015,10 @@ TEST_F(CommentLexerTest, HTML10) {
 
 TEST_F(CommentLexerTest, HTML11) {
   const char *Sources[] = {
-    "// <tag attr=\"",
-    "// <tag attr = \"",
-    "// <tag attr=\'",
-    "// <tag attr = \'"
+    "// <img src=\"",
+    "// <img src = \"",
+    "// <img src=\'",
+    "// <img src = \'"
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1030,10 +1032,10 @@ TEST_F(CommentLexerTest, HTML11) {
     ASSERT_EQ(StringRef(" "),          Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag,     Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),        Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),        Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_ident,         Toks[2].getKind());
-    ASSERT_EQ(StringRef("attr"),       Toks[2].getHTMLIdent());
+    ASSERT_EQ(StringRef("src"),        Toks[2].getHTMLIdent());
 
     ASSERT_EQ(tok::html_equals,        Toks[3].getKind());
 
@@ -1045,7 +1047,7 @@ TEST_F(CommentLexerTest, HTML11) {
 }
 
 TEST_F(CommentLexerTest, HTML12) {
-  const char *Source = "// <tag attr=@";
+  const char *Source = "// <img src=@";
 
   std::vector<Token> Toks;
 
@@ -1057,10 +1059,10 @@ TEST_F(CommentLexerTest, HTML12) {
   ASSERT_EQ(StringRef(" "),      Toks[0].getText());
 
   ASSERT_EQ(tok::html_start_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),    Toks[1].getHTMLTagStartName());
+  ASSERT_EQ(StringRef("img"),    Toks[1].getHTMLTagStartName());
 
   ASSERT_EQ(tok::html_ident,     Toks[2].getKind());
-  ASSERT_EQ(StringRef("attr"),   Toks[2].getHTMLIdent());
+  ASSERT_EQ(StringRef("src"),    Toks[2].getHTMLIdent());
 
   ASSERT_EQ(tok::html_equals,    Toks[3].getKind());
 
@@ -1072,10 +1074,10 @@ TEST_F(CommentLexerTest, HTML12) {
 
 TEST_F(CommentLexerTest, HTML13) {
   const char *Sources[] = {
-    "// <tag attr=\"val\\\"\\'val",
-    "// <tag attr=\"val\\\"\\'val\"",
-    "// <tag attr=\'val\\\"\\'val",
-    "// <tag attr=\'val\\\"\\'val\'"
+    "// <img src=\"val\\\"\\'val",
+    "// <img src=\"val\\\"\\'val\"",
+    "// <img src=\'val\\\"\\'val",
+    "// <img src=\'val\\\"\\'val\'"
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1089,10 +1091,10 @@ TEST_F(CommentLexerTest, HTML13) {
     ASSERT_EQ(StringRef(" "),             Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag,        Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),           Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),           Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_ident,            Toks[2].getKind());
-    ASSERT_EQ(StringRef("attr"),          Toks[2].getHTMLIdent());
+    ASSERT_EQ(StringRef("src"),           Toks[2].getHTMLIdent());
 
     ASSERT_EQ(tok::html_equals,           Toks[3].getKind());
 
@@ -1105,8 +1107,8 @@ TEST_F(CommentLexerTest, HTML13) {
 
 TEST_F(CommentLexerTest, HTML14) {
   const char *Sources[] = {
-    "// <tag attr=\"val\\\"\\'val\">",
-    "// <tag attr=\'val\\\"\\'val\'>"
+    "// <img src=\"val\\\"\\'val\">",
+    "// <img src=\'val\\\"\\'val\'>"
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1120,10 +1122,10 @@ TEST_F(CommentLexerTest, HTML14) {
     ASSERT_EQ(StringRef(" "),             Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag,        Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),           Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),           Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_ident,            Toks[2].getKind());
-    ASSERT_EQ(StringRef("attr"),          Toks[2].getHTMLIdent());
+    ASSERT_EQ(StringRef("src"),           Toks[2].getHTMLIdent());
 
     ASSERT_EQ(tok::html_equals,           Toks[3].getKind());
 
@@ -1138,8 +1140,8 @@ TEST_F(CommentLexerTest, HTML14) {
 
 TEST_F(CommentLexerTest, HTML15) {
   const char *Sources[] = {
-    "// <tag/>",
-    "// <tag />"
+    "// <img/>",
+    "// <img />"
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1153,7 +1155,7 @@ TEST_F(CommentLexerTest, HTML15) {
     ASSERT_EQ(StringRef(" "),          Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag,     Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),        Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),        Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::html_slash_greater, Toks[2].getKind());
 
@@ -1163,8 +1165,8 @@ TEST_F(CommentLexerTest, HTML15) {
 
 TEST_F(CommentLexerTest, HTML16) {
   const char *Sources[] = {
-    "// <tag/ Aaa",
-    "// <tag / Aaa"
+    "// <img/ Aaa",
+    "// <img / Aaa"
   };
 
   for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
@@ -1178,7 +1180,7 @@ TEST_F(CommentLexerTest, HTML16) {
     ASSERT_EQ(StringRef(" "),          Toks[0].getText());
 
     ASSERT_EQ(tok::html_start_tag,     Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),        Toks[1].getHTMLTagStartName());
+    ASSERT_EQ(StringRef("img"),        Toks[1].getHTMLTagStartName());
 
     ASSERT_EQ(tok::text,               Toks[2].getKind());
     ASSERT_EQ(StringRef("/"),          Toks[2].getText());
@@ -1199,13 +1201,13 @@ TEST_F(CommentLexerTest, HTML17) {
 
   ASSERT_EQ(3U, Toks.size());
 
-  ASSERT_EQ(tok::text,         Toks[0].getKind());
-  ASSERT_EQ(StringRef(" "),    Toks[0].getText());
+  ASSERT_EQ(tok::text,       Toks[0].getKind());
+  ASSERT_EQ(StringRef(" "),  Toks[0].getText());
 
-  ASSERT_EQ(tok::html_end_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef(""),     Toks[1].getHTMLTagEndName());
+  ASSERT_EQ(tok::text,       Toks[1].getKind());
+  ASSERT_EQ(StringRef("</"), Toks[1].getText());
 
-  ASSERT_EQ(tok::newline,      Toks[2].getKind());
+  ASSERT_EQ(tok::newline,    Toks[2].getKind());
 }
 
 TEST_F(CommentLexerTest, HTML18) {
@@ -1217,20 +1219,20 @@ TEST_F(CommentLexerTest, HTML18) {
 
   ASSERT_EQ(4U, Toks.size());
 
-  ASSERT_EQ(tok::text,         Toks[0].getKind());
-  ASSERT_EQ(StringRef(" "),    Toks[0].getText());
+  ASSERT_EQ(tok::text,       Toks[0].getKind());
+  ASSERT_EQ(StringRef(" "),  Toks[0].getText());
 
-  ASSERT_EQ(tok::html_end_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef(""),     Toks[1].getHTMLTagEndName());
+  ASSERT_EQ(tok::text,       Toks[1].getKind());
+  ASSERT_EQ(StringRef("</"), Toks[1].getText());
 
-  ASSERT_EQ(tok::text,         Toks[2].getKind());
-  ASSERT_EQ(StringRef("@"),    Toks[2].getText());
+  ASSERT_EQ(tok::text,       Toks[2].getKind());
+  ASSERT_EQ(StringRef("@"),  Toks[2].getText());
 
-  ASSERT_EQ(tok::newline,      Toks[3].getKind());
+  ASSERT_EQ(tok::newline,    Toks[3].getKind());
 }
 
 TEST_F(CommentLexerTest, HTML19) {
-  const char *Source = "// </tag";
+  const char *Source = "// </img";
 
   std::vector<Token> Toks;
 
@@ -1242,35 +1244,51 @@ TEST_F(CommentLexerTest, HTML19) {
   ASSERT_EQ(StringRef(" "),    Toks[0].getText());
 
   ASSERT_EQ(tok::html_end_tag, Toks[1].getKind());
-  ASSERT_EQ(StringRef("tag"),  Toks[1].getHTMLTagEndName());
+  ASSERT_EQ(StringRef("img"),  Toks[1].getHTMLTagEndName());
 
   ASSERT_EQ(tok::newline,      Toks[2].getKind());
 }
 
-TEST_F(CommentLexerTest, HTML20) {
-  const char *Sources[] = {
-    "// </tag>",
-    "// </ tag>",
-    "// </ tag >"
-  };
+TEST_F(CommentLexerTest, NotAKnownHTMLTag1) {
+  const char *Source = "// <tag>";
 
-  for (size_t i = 0, e = array_lengthof(Sources); i != e; i++) {
-    std::vector<Token> Toks;
+  std::vector<Token> Toks;
 
-    lexString(Sources[i], Toks);
+  lexString(Source, Toks);
 
-    ASSERT_EQ(4U, Toks.size());
+  ASSERT_EQ(4U, Toks.size());
 
-    ASSERT_EQ(tok::text,         Toks[0].getKind());
-    ASSERT_EQ(StringRef(" "),    Toks[0].getText());
+  ASSERT_EQ(tok::text,         Toks[0].getKind());
+  ASSERT_EQ(StringRef(" "),    Toks[0].getText());
 
-    ASSERT_EQ(tok::html_end_tag, Toks[1].getKind());
-    ASSERT_EQ(StringRef("tag"),  Toks[1].getHTMLTagEndName());
+  ASSERT_EQ(tok::text,         Toks[1].getKind());
+  ASSERT_EQ(StringRef("<tag"), Toks[1].getText());
 
-    ASSERT_EQ(tok::html_greater, Toks[2].getKind());
+  ASSERT_EQ(tok::text,         Toks[2].getKind());
+  ASSERT_EQ(StringRef(">"),    Toks[2].getText());
 
-    ASSERT_EQ(tok::newline,      Toks[3].getKind());
-  }
+  ASSERT_EQ(tok::newline,      Toks[3].getKind());
+}
+
+TEST_F(CommentLexerTest, NotAKnownHTMLTag2) {
+  const char *Source = "// </tag>";
+
+  std::vector<Token> Toks;
+
+  lexString(Source, Toks);
+
+  ASSERT_EQ(4U, Toks.size());
+
+  ASSERT_EQ(tok::text,          Toks[0].getKind());
+  ASSERT_EQ(StringRef(" "),     Toks[0].getText());
+
+  ASSERT_EQ(tok::text,          Toks[1].getKind());
+  ASSERT_EQ(StringRef("</tag"), Toks[1].getText());
+
+  ASSERT_EQ(tok::text,          Toks[2].getKind());
+  ASSERT_EQ(StringRef(">"),     Toks[2].getText());
+
+  ASSERT_EQ(tok::newline,       Toks[3].getKind());
 }
 
 TEST_F(CommentLexerTest, HTMLCharacterReferences1) {

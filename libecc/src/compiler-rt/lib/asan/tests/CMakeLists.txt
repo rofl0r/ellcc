@@ -15,9 +15,16 @@ include_directories(..)
 include_directories(../..)
 
 set(ASAN_UNITTEST_COMMON_CFLAGS
+  # Use -D instead of definitions to please custom compile command.
+  -DASAN_HAS_BLACKLIST=1
+  -DASAN_HAS_EXCEPTIONS=1
+  -DASAN_NEEDS_SEGV=1
+  -DASAN_UAR=0
   -Wall
   -Wno-format
   -fvisibility=hidden
+  -g
+  -O2
 )
 # Support 64-bit and 32-bit builds.
 if(LLVM_BUILD_32_BITS)
@@ -38,32 +45,27 @@ set(ASAN_UNITTEST_INSTRUMENTED_CFLAGS
   ${ASAN_UNITTEST_COMMON_CFLAGS}
   ${ASAN_GTEST_INCLUDE_CFLAGS}
   -faddress-sanitizer
-  -O2
-  -g
   -mllvm "-asan-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/asan_test.ignore"
-  -DASAN_HAS_BLACKLIST=1
-  -DASAN_HAS_EXCEPTIONS=1
-  -DASAN_NEEDS_SEGV=1
-  -DASAN_UAR=0
 )
 
-add_custom_target(AsanTests)
-set_target_properties(AsanTests PROPERTIES FOLDER "ASan tests")
+add_custom_target(AsanUnitTests)
+set_target_properties(AsanUnitTests PROPERTIES FOLDER "ASan unit tests")
 function(add_asan_test testname)
-  add_unittest(AsanTests ${testname} ${ARGN})
-  if(LLVM_BUILD_32_BITS)
-    target_link_libraries(${testname} clang_rt.asan-i386)
-  else()
-    target_link_libraries(${testname} clang_rt.asan-x86_64)
-  endif()
+  add_unittest(AsanUnitTests ${testname} ${ARGN})
   if (APPLE)
     # Darwin-specific linker flags.
     set_property(TARGET ${testname} APPEND PROPERTY
                  LINK_FLAGS "-framework Foundation")
+    target_link_libraries(${testname} clang_rt.asan_osx)
   elseif (UNIX)
     # Linux-specific linker flags.
     set_property(TARGET ${testname} APPEND PROPERTY
-                 LINK_FLAGS "-lpthread -ldl -export-dynamic")
+                 LINK_FLAGS "-lpthread -ldl -rdynamic")
+    if(LLVM_BUILD_32_BITS)
+      target_link_libraries(${testname} clang_rt.asan-i386)
+    else()
+      target_link_libraries(${testname} clang_rt.asan-x86_64)
+    endif()
   endif()
   set(add_compile_flags "")
   get_property(compile_flags TARGET ${testname} PROPERTY COMPILE_FLAGS)
@@ -99,7 +101,7 @@ if("${CMAKE_HOST_SYSTEM}" STREQUAL "${CMAKE_SYSTEM}" AND UNIX)
               -c -o "${output_obj}"
               ${CMAKE_CURRENT_SOURCE_DIR}/${source}
       MAIN_DEPENDENCY ${source}
-      DEPENDS clang clang_rt.asan-i386 clang_rt.asan-x86_64 ${ARGN}
+      DEPENDS clang ${ASAN_RUNTIME_LIBRARIES} ${ARGN}
       )
   endfunction()
 

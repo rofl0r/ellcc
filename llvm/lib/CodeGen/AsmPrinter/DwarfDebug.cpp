@@ -54,9 +54,29 @@ static cl::opt<bool> UnknownLocations("use-unknown-locations", cl::Hidden,
      cl::desc("Make an absence of debug location information explicit."),
      cl::init(false));
 
-static cl::opt<bool> DwarfAccelTables("dwarf-accel-tables", cl::Hidden,
+namespace {
+  enum DefaultOnOff {
+    Default, Enable, Disable
+  };
+}
+
+static cl::opt<DefaultOnOff> DwarfAccelTables("dwarf-accel-tables", cl::Hidden,
      cl::desc("Output prototype dwarf accelerator tables."),
-     cl::init(false));
+     cl::values(
+                clEnumVal(Default, "Default for platform"),
+                clEnumVal(Enable, "Enabled"),
+                clEnumVal(Disable, "Disabled"),
+                clEnumValEnd),
+     cl::init(Default));
+
+static cl::opt<DefaultOnOff> DarwinGDBCompat("darwin-gdb-compat", cl::Hidden,
+     cl::desc("Compatibility with Darwin gdb."),
+     cl::values(
+                clEnumVal(Default, "Default for platform"),
+                clEnumVal(Enable, "Enabled"),
+                clEnumVal(Disable, "Disabled"),
+                clEnumValEnd),
+     cl::init(Default));
 
 namespace {
   const char *DWARFGroupName = "DWARF Emission";
@@ -127,8 +147,7 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   : Asm(A), MMI(Asm->MMI), FirstCU(0),
     AbbreviationsSet(InitAbbreviationsSetSize),
     SourceIdMap(DIEValueAllocator), StringPool(DIEValueAllocator),
-    PrevLabel(NULL),
-    HasNonTextSection(false) {
+    PrevLabel(NULL) {
   NextStringPoolNumber = 0;
 
   DwarfInfoSectionSym = DwarfAbbrevSectionSym = 0;
@@ -136,10 +155,25 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   DwarfDebugRangeSectionSym = DwarfDebugLocSectionSym = 0;
   FunctionBeginSym = FunctionEndSym = 0;
 
-  // Turn on accelerator tables for Darwin.
-  if (Triple(M->getTargetTriple()).isOSDarwin())
-    DwarfAccelTables = true;
-  
+  // Turn on accelerator tables and older gdb compatibility
+  // for Darwin.
+  bool isDarwin = Triple(M->getTargetTriple()).isOSDarwin();
+  if (DarwinGDBCompat == Default) {
+    if (isDarwin)
+      isDarwinGDBCompat = true;
+    else
+      isDarwinGDBCompat = false;
+  } else
+    isDarwinGDBCompat = DarwinGDBCompat == Enable ? true : false;
+
+  if (DwarfAccelTables == Default) {
+    if (isDarwin)
+      hasDwarfAccelTables = true;
+    else
+      hasDwarfAccelTables = false;
+  } else
+    hasDwarfAccelTables = DwarfAccelTables == Enable ? true : false;
+
   {
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     beginModule(M);
@@ -283,7 +317,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
     if (SP.isDefinition() && !SP.getContext().isCompileUnit() &&
         !SP.getContext().isFile() &&
         !isSubprogramContext(SP.getContext())) {
-      SPCU->addUInt(SPDie, dwarf::DW_AT_declaration, dwarf::DW_FORM_flag, 1);
+      SPCU->addFlag(SPDie, dwarf::DW_AT_declaration);
       
       // Add arguments.
       DICompositeType SPTy = SP.getType();
@@ -295,7 +329,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
           DIType ATy = DIType(DIType(Args.getElement(i)));
           SPCU->addType(Arg, ATy);
           if (ATy.isArtificial())
-            SPCU->addUInt(Arg, dwarf::DW_AT_artificial, dwarf::DW_FORM_flag, 1);
+            SPCU->addFlag(Arg, dwarf::DW_AT_artificial);
           SPDie->addChild(Arg);
         }
       DIE *SPDeclDie = SPDie;
@@ -562,6 +596,9 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   NewCU->addUInt(Die, dwarf::DW_AT_language, dwarf::DW_FORM_data2,
                  DIUnit.getLanguage());
   NewCU->addString(Die, dwarf::DW_AT_name, FN);
+  // 2.17.1 requires that we use DW_AT_low_pc for a single entry point
+  // into an entity.
+  NewCU->addUInt(Die, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr, 0);
   // DW_AT_stmt_list is a offset of line number information for this
   // compile unit in debug_line section.
   if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
@@ -573,7 +610,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   if (!CompilationDir.empty())
     NewCU->addString(Die, dwarf::DW_AT_comp_dir, CompilationDir);
   if (DIUnit.isOptimized())
-    NewCU->addUInt(Die, dwarf::DW_AT_APPLE_optimized, dwarf::DW_FORM_flag, 1);
+    NewCU->addFlag(Die, dwarf::DW_AT_APPLE_optimized);
 
   StringRef Flags = DIUnit.getFlags();
   if (!Flags.empty())
@@ -785,25 +822,12 @@ void DwarfDebug::endModule() {
     FirstCU->addUInt(ISP, dwarf::DW_AT_inline, 0, dwarf::DW_INL_inlined);
   }
 
+  // Emit DW_AT_containing_type attribute to connect types with their
+  // vtable holding type.
   for (DenseMap<const MDNode *, CompileUnit *>::iterator CUI = CUMap.begin(),
          CUE = CUMap.end(); CUI != CUE; ++CUI) {
-    // Emit DW_AT_containing_type attribute to connect types with their
-    // vtable holding type.
     CompileUnit *TheCU = CUI->second;
     TheCU->constructContainingTypeDIEs();
-
-    // Emit low_pc and high_pc for CU.
-    DIE *Die = TheCU->getCUDie();
-    if (HasNonTextSection) {
-      // 2.17.1 requires that we use DW_AT_low_pc for a single entry point
-      // into an entity.
-      TheCU->addUInt(Die, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr, 0);
-    } else {
-      TheCU->addLabel(Die, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr,
-                      Asm->GetTempSymbol("text_begin"));
-      TheCU->addLabel(Die, dwarf::DW_AT_high_pc, dwarf::DW_FORM_addr,
-                      Asm->GetTempSymbol("text_end"));
-    }
   }
 
   // Standard sections final addresses.
@@ -827,8 +851,8 @@ void DwarfDebug::endModule() {
   // Corresponding abbreviations into a abbrev section.
   emitAbbreviations();
 
-  // Emit info into a dwarf accelerator table sections.
-  if (DwarfAccelTables) {
+  // Emit info into the dwarf accelerator table sections.
+  if (useDwarfAccelTables()) {
     emitAccelNames();
     emitAccelObjC();
     emitAccelNamespaces();
@@ -836,7 +860,10 @@ void DwarfDebug::endModule() {
   }
   
   // Emit info into a debug pubtypes section.
-  emitDebugPubTypes();
+  // TODO: When we don't need the option anymore we can
+  // remove all of the code that adds to the table.
+  if (useDarwinGDBCompat())
+    emitDebugPubTypes();
 
   // Emit info into a debug loc section.
   emitDebugLoc();
@@ -851,7 +878,11 @@ void DwarfDebug::endModule() {
   emitDebugMacInfo();
 
   // Emit inline info.
-  emitDebugInlineInfo();
+  // TODO: When we don't need the option anymore we
+  // can remove all of the code that this section
+  // depends upon.
+  if (useDarwinGDBCompat())
+    emitDebugInlineInfo();
 
   // Emit info into a debug str section.
   emitDebugStr();
@@ -863,7 +894,6 @@ void DwarfDebug::endModule() {
          E = CUMap.end(); I != E; ++I)
     delete I->second;
   FirstCU = NULL;  // Reset for the next Module, if any.
-  HasNonTextSection = false;
 }
 
 /// findAbstractVariable - Find abstract variable, if any, associated with Var.
@@ -1232,9 +1262,6 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   if (LScopes.empty()) return;
   identifyScopeMarkers();
 
-  if (!Asm->getCurrentSection()->getKind().isText())
-    HasNonTextSection = true;
-
   FunctionBeginSym = Asm->GetTempSymbol("func_begin",
                                         Asm->getFunctionNumber());
   // Assumes in correct section after the entry point.
@@ -1454,8 +1481,7 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   DIE *CurFnDIE = constructScopeDIE(TheCU, FnScope);
   
   if (!MF->getTarget().Options.DisableFramePointerElim(*MF))
-    TheCU->addUInt(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr,
-                   dwarf::DW_FORM_flag, 1);
+    TheCU->addFlag(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr);
 
   DebugFrames.push_back(FunctionDebugFrameInfo(Asm->getFunctionNumber(),
                                                MMI->getFrameMoves()));

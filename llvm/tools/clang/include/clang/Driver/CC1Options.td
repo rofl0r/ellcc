@@ -39,8 +39,6 @@ def analysis_UnoptimizedCFG : Flag<"-unoptimized-cfg">,
   HelpText<"Generate unoptimized CFGs for all analyses">;
 def analysis_CFGAddImplicitDtors : Flag<"-cfg-add-implicit-dtors">,
   HelpText<"Add C++ implicit destructors to CFGs for all analyses">;
-def analysis_CFGAddInitializers : Flag<"-cfg-add-initializers">,
-  HelpText<"Add C++ initializers to CFGs for all analyses">;
 
 def analyzer_store : Separate<"-analyzer-store">,
   HelpText<"Source Code Analysis - Abstract Memory Store Models">;
@@ -120,6 +118,11 @@ def analyzer_disable_checker_EQ : Joined<"-analyzer-disable-checker=">,
 
 def analyzer_checker_help : Flag<"-analyzer-checker-help">,
   HelpText<"Display the list of analyzer checkers that are available">;
+
+def analyzer_config : Separate<"-analyzer-config">,
+  HelpText<"Choose analyzer checkers to enable">;
+def analyzer_config_EQ : Joined<"-analyzer-config=">,
+  Alias<analyzer_config>;
 
 //===----------------------------------------------------------------------===//
 // Migrator Options
@@ -289,7 +292,8 @@ def version : Flag<"-version">,
 def ast_dump_filter : Separate<"-ast-dump-filter">,
   MetaVarName<"<dump_filter>">,
   HelpText<"Use with -ast-dump or -ast-print to dump/print only AST declaration"
-           " nodes having a certain substring in a qualified name.">;
+           " nodes having a certain substring in a qualified name. Use"
+           " -ast-list to list all filterable declaration node names.">;
 
 let Group = Action_Group in {
 
@@ -314,6 +318,8 @@ def emit_html : Flag<"-emit-html">,
   HelpText<"Output input source as HTML">;
 def ast_print : Flag<"-ast-print">,
   HelpText<"Build ASTs and then pretty-print them">;
+def ast_list : Flag<"-ast-list">,
+  HelpText<"Build ASTs and print the list of declaration node qualified names">;
 def ast_dump : Flag<"-ast-dump">,
   HelpText<"Build ASTs and then debug dump them">;
 def ast_dump_xml : Flag<"-ast-dump-xml">,
@@ -414,6 +420,8 @@ def static_define : Flag<"-static-define">,
   HelpText<"Should __STATIC__ be defined">;
 def stack_protector : Separate<"-stack-protector">,
   HelpText<"Enable stack protectors">;
+def stack_protector_buffer_size : Separate<"-stack-protector-buffer-size">,
+  HelpText<"Lower bound for a buffer to be considered for stack protection">;
 def fvisibility : Separate<"-fvisibility">,
   HelpText<"Default symbol visibility">;
 def ftemplate_depth : Separate<"-ftemplate-depth">,
