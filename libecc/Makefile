@@ -14,7 +14,7 @@ CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
 -include $(INCLUDES)
 
 # Get the clang version.
-VERSION := $(shell $(ELLCC)/bin/ecc -v |& grep version |& sed "s/.*version \([0-9]*\.[0-9]*\).*/\1/")
+VERSION := $(shell $(ELLCC)/bin/ecc -v 2>&1 | grep version 2>&1 | sed "s/.*version \([0-9]*\.[0-9]*\).*/\1/")
 
 OBJ := $(PWD)/musl-build
 install:header.install \

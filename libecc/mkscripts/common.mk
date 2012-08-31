@@ -67,8 +67,8 @@ ifndef NODEBUG
   LDFLAGS += -g
 endif
 
-ifdef CPU
-    MCPU = -mcpu=$(CPU)
+ifdef TARGET_CPU
+    MCPU = -mcpu=$(TARGET_CPU)
 endif
 
 ifdef FLOAT
