@@ -28,25 +28,17 @@ set(ASAN_DYLIB_SOURCES
 
 include_directories(..)
 
-set(ASAN_CFLAGS
-  ${SANITIZER_COMMON_CFLAGS}
-  -fno-builtin
-  -fomit-frame-pointer
-  -O3
+set(ASAN_CFLAGS ${SANITIZER_COMMON_CFLAGS})
+
+set(ASAN_COMMON_DEFINITIONS
+  ASAN_HAS_EXCEPTIONS=1
+  ASAN_FLEXIBLE_MAPPING_AND_OFFSET=0
+  ASAN_NEEDS_SEGV=1
   )
 
 set(ASAN_DYLIB_DEFINITIONS
   ${ASAN_COMMON_DEFINITIONS}
   MAC_INTERPOSE_FUNCTIONS=1
-  )
-
-if (APPLE)
-  list(APPEND ASAN_CFLAGS -mmacosx-version-min=10.5)
-endif()
-
-set(ASAN_COMMON_DEFINITIONS
-  ASAN_HAS_EXCEPTIONS=1
-  ASAN_NEEDS_SEGV=1
   )
 
 set(ASAN_RUNTIME_LIBRARIES)
@@ -114,7 +106,7 @@ if(APPLE)
   set_target_compile_flags(clang_rt.asan_osx_dynamic ${ASAN_CFLAGS})
   filter_available_targets(ASAN_TARGETS x86_64 i386)
   set_target_properties(clang_rt.asan_osx_dynamic PROPERTIES
-    COMPILE_DEFINITIONS ${ASAN_DYLIB_DEFINITIONS}
+    COMPILE_DEFINITIONS "${ASAN_DYLIB_DEFINITIONS}"
     OSX_ARCHITECTURES "${ASAN_TARGETS}"
     LINK_FLAGS "-framework Foundation")
   list(APPEND ASAN_DYNAMIC_RUNTIME_LIBRARIES clang_rt.asan_osx_dynamic)

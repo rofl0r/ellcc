@@ -46,12 +46,15 @@ set(ASAN_UNITTEST_INSTRUMENTED_CFLAGS
   ${ASAN_GTEST_INCLUDE_CFLAGS}
   -faddress-sanitizer
   -mllvm "-asan-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/asan_test.ignore"
+  -mllvm -asan-stack=1
+  -mllvm -asan-globals=1
+  -mllvm -asan-mapping-scale=0        # default will be used
+  -mllvm -asan-mapping-offset-log=-1  # default will be used
+  -mllvm -asan-use-after-return=0
 )
 
-add_custom_target(AsanUnitTests)
-set_target_properties(AsanUnitTests PROPERTIES FOLDER "ASan unit tests")
-function(add_asan_test testname)
-  add_unittest(AsanUnitTests ${testname} ${ARGN})
+function(add_asan_test testsuite testname)
+  add_unittest(${testsuite} ${testname} ${ARGN})
   if (APPLE)
     # Darwin-specific linker flags.
     set_property(TARGET ${testname} APPEND PROPERTY
@@ -114,7 +117,16 @@ if("${CMAKE_HOST_SYSTEM}" STREQUAL "${CMAKE_SYSTEM}" AND UNIX)
     list(APPEND ASAN_INST_TEST_OBJECTS asan_mac_test.mm.asan.o)
   endif()
 
+  # Build benchmarks test instrumented with AddressSanitizer.
+  add_asan_compile_command(asan_benchmarks_test.cc "")
+  add_custom_target(AsanBenchmarks)
+  set_target_properties(AsanBenchmarks PROPERTIES FOLDER "Asan benchmarks")
+  add_asan_test(AsanBenchmarks AsanBenchmark asan_break_optimization.cc
+                                             asan_benchmarks_test.cc.asan.o)
 endif()
 
-add_asan_test(AsanTest ${ASAN_NOINST_TEST_SOURCES}
-                       ${ASAN_INST_TEST_OBJECTS})
+# Main AddressSanitizer unit tests.
+add_custom_target(AsanUnitTests)
+set_target_properties(AsanUnitTests PROPERTIES FOLDER "ASan unit tests")
+add_asan_test(AsanUnitTests AsanTest ${ASAN_NOINST_TEST_SOURCES}
+                                     ${ASAN_INST_TEST_OBJECTS})

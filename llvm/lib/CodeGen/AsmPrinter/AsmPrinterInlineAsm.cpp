@@ -43,10 +43,10 @@ namespace {
   };
 }
 
-/// SrcMgrDiagHandler - This callback is invoked when the SourceMgr for an
+/// srcMgrDiagHandler - This callback is invoked when the SourceMgr for an
 /// inline asm has an error in it.  diagInfo is a pointer to the SrcMgrDiagInfo
 /// struct above.
-static void SrcMgrDiagHandler(const SMDiagnostic &Diag, void *diagInfo) {
+static void srcMgrDiagHandler(const SMDiagnostic &Diag, void *diagInfo) {
   SrcMgrDiagInfo *DiagInfo = static_cast<SrcMgrDiagInfo *>(diagInfo);
   assert(DiagInfo && "Diagnostic context not passed down?");
 
@@ -68,7 +68,8 @@ static void SrcMgrDiagHandler(const SMDiagnostic &Diag, void *diagInfo) {
 }
 
 /// EmitInlineAsm - Emit a blob of inline asm to the output streamer.
-void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode) const {
+void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode,
+                               InlineAsm::AsmDialect Dialect) const {
   assert(!Str.empty() && "Can't emit empty inline asm block");
 
   // Remember if the buffer is nul terminated or not so we can avoid a copy.
@@ -91,12 +92,12 @@ void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode) const {
   LLVMContext &LLVMCtx = MMI->getModule()->getContext();
   bool HasDiagHandler = false;
   if (LLVMCtx.getInlineAsmDiagnosticHandler() != 0) {
-    // If the source manager has an issue, we arrange for SrcMgrDiagHandler
+    // If the source manager has an issue, we arrange for srcMgrDiagHandler
     // to be invoked, getting DiagInfo passed into it.
     DiagInfo.LocInfo = LocMDNode;
     DiagInfo.DiagHandler = LLVMCtx.getInlineAsmDiagnosticHandler();
     DiagInfo.DiagContext = LLVMCtx.getInlineAsmDiagnosticContext();
-    SrcMgr.setDiagHandler(SrcMgrDiagHandler, &DiagInfo);
+    SrcMgr.setDiagHandler(srcMgrDiagHandler, &DiagInfo);
     HasDiagHandler = true;
   }
 
@@ -126,6 +127,7 @@ void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode) const {
   if (!TAP)
     report_fatal_error("Inline asm not supported by this streamer because"
                        " we don't have an asm parser for this target\n");
+  Parser->setAssemblerDialect(Dialect);
   Parser->setTargetParser(*TAP.get());
 
   // Don't implicitly switch to the text section before the asm.
@@ -363,7 +365,7 @@ void AsmPrinter::EmitInlineAsm(const MachineInstr *MI) const {
     }
   }
   OS << '\n' << (char)0;  // null terminate string.
-  EmitInlineAsm(OS.str(), LocMD);
+  EmitInlineAsm(OS.str(), LocMD, MI->getInlineAsmDialect());
 
   // Emit the #NOAPP end marker.  This has to happen even if verbose-asm isn't
   // enabled, so we use EmitRawText.
@@ -409,8 +411,8 @@ void AsmPrinter::PrintSpecial(const MachineInstr *MI, raw_ostream &OS,
 /// instruction, using the specified assembler variant.  Targets should
 /// override this to format as appropriate.
 bool AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-    unsigned AsmVariant, const char *ExtraCode,
-    raw_ostream &O) {
+                                 unsigned AsmVariant, const char *ExtraCode,
+                                 raw_ostream &O) {
   // Does this asm operand have a single letter operand modifier?
   if (ExtraCode && ExtraCode[0]) {
     if (ExtraCode[1] != 0) return true; // Unknown modifier.

@@ -158,9 +158,7 @@ bool BugReporter::RemoveUneededCalls(PathPieces &pieces, BugReport *R) {
         PathDiagnosticEventPiece *event = cast<PathDiagnosticEventPiece>(piece);
         // We never throw away an event, but we do throw it away wholesale
         // as part of a path if we throw the entire path away.
-        if (event->isPrunable())
-          continue;
-        containsSomethingInteresting = true;
+        containsSomethingInteresting |= !event->isPrunable();
         break;
       }
       case PathDiagnosticPiece::ControlFlow:
@@ -1898,7 +1896,7 @@ void GRBugReporter::GeneratePathDiagnostic(PathDiagnostic& PD,
        visitors.push_back((*I)->clone());
 
     // Clear out the active path from any previous work.
-    PD.getActivePath().clear();
+    PD.resetPath();
     originalReportConfigToken = R->getConfigurationChangeToken();
 
     // Generate the very last diagnostic piece - the piece is visible before 
@@ -1915,7 +1913,7 @@ void GRBugReporter::GeneratePathDiagnostic(PathDiagnostic& PD,
     if (!LastPiece)
       LastPiece = BugReporterVisitor::getDefaultEndPath(PDB, N, *R);
     if (LastPiece)
-      PD.getActivePath().push_back(LastPiece);
+      PD.setEndOfPath(LastPiece);
     else
       return;
 
@@ -2106,9 +2104,8 @@ void BugReporter::FlushReport(BugReport *exampleReport,
   OwningPtr<PathDiagnostic>
     D(new PathDiagnostic(exampleReport->getDeclWithIssue(),
                          exampleReport->getBugType().getName(),
-                         PD.useVerboseDescription()
-                         ? exampleReport->getDescription() 
-                         : exampleReport->getShortDescription(),
+                         exampleReport->getDescription(),
+                         exampleReport->getShortDescription(/*Fallback=*/false),
                          BT.getCategory()));
 
   // Generate the full path diagnostic, using the generation scheme
@@ -2128,7 +2125,7 @@ void BugReporter::FlushReport(BugReport *exampleReport,
     llvm::tie(Beg, End) = exampleReport->getRanges();
     for ( ; Beg != End; ++Beg)
       piece->addRange(*Beg);
-    D->getActivePath().push_back(piece);
+    D->setEndOfPath(piece);
   }
 
   // Get the meta data.

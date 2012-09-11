@@ -24,10 +24,6 @@
   __attribute__ ((shared_locks_required(__VA_ARGS__)))
 #define NO_THREAD_SAFETY_ANALYSIS  __attribute__ ((no_thread_safety_analysis))
 
-//-----------------------------------------//
-//  Helper fields
-//-----------------------------------------//
-
 
 class  __attribute__((lockable)) Mutex {
  public:
@@ -58,6 +54,14 @@ class SCOPED_LOCKABLE ReleasableMutexLock {
 
   void Release() UNLOCK_FUNCTION();
 };
+
+
+// The universal lock, written "*", allows checking to be selectively turned
+// off for a particular piece of code.
+void beginNoWarnOnReads()  SHARED_LOCK_FUNCTION("*");
+void endNoWarnOnReads()    UNLOCK_FUNCTION("*");
+void beginNoWarnOnWrites() EXCLUSIVE_LOCK_FUNCTION("*");
+void endNoWarnOnWrites()   UNLOCK_FUNCTION("*");
 
 
 template<class T>
@@ -3119,3 +3123,173 @@ void test() {
 
 } // end namespace ExistentialPatternMatching
 
+
+namespace StringIgnoreTest {
+
+class Foo {
+public:
+  Mutex mu_;
+  void lock()   EXCLUSIVE_LOCK_FUNCTION("");
+  void unlock() UNLOCK_FUNCTION("");
+  void goober() EXCLUSIVE_LOCKS_REQUIRED("");
+  void roober() SHARED_LOCKS_REQUIRED("");
+};
+
+
+class Bar : public Foo {
+public:
+  void bar(Foo* f) {
+    f->unlock();
+    f->goober();
+    f->roober();
+    f->lock();
+  };
+};
+
+} // end namespace StringIgnoreTest
+
+
+namespace LockReturnedScopeFix {
+
+class Base {
+protected:
+  struct Inner;
+  bool c;
+
+  const Mutex& getLock(const Inner* i);
+
+  void lockInner  (Inner* i) EXCLUSIVE_LOCK_FUNCTION(getLock(i));
+  void unlockInner(Inner* i) UNLOCK_FUNCTION(getLock(i));
+  void foo(Inner* i) EXCLUSIVE_LOCKS_REQUIRED(getLock(i));
+
+  void bar(Inner* i);
+};
+
+
+struct Base::Inner {
+  Mutex lock_;
+  void doSomething() EXCLUSIVE_LOCKS_REQUIRED(lock_);
+};
+
+
+const Mutex& Base::getLock(const Inner* i) LOCK_RETURNED(i->lock_) {
+  return i->lock_;
+}
+
+
+void Base::foo(Inner* i) {
+  i->doSomething();
+}
+
+void Base::bar(Inner* i) {
+  if (c) {
+    i->lock_.Lock();
+    unlockInner(i);
+  }
+  else {
+    lockInner(i);
+    i->lock_.Unlock();
+  }
+}
+
+} // end namespace LockReturnedScopeFix
+
+
+namespace TrylockWithCleanups {
+
+class MyString {
+public:
+  MyString(const char* s);
+  ~MyString();
+};
+
+struct Foo {
+  Mutex mu_;
+  int a GUARDED_BY(mu_);
+};
+
+Foo* GetAndLockFoo(const MyString& s)
+    EXCLUSIVE_TRYLOCK_FUNCTION(true, &Foo::mu_);
+
+static void test() {
+  Foo* lt = GetAndLockFoo("foo");
+  if (!lt) return;
+  int a = lt->a;
+  lt->mu_.Unlock();
+}
+
+}
+
+
+namespace UniversalLock {
+
+class Foo {
+  Mutex mu_;
+  bool c;
+
+  int a        GUARDED_BY(mu_);
+  void r_foo() SHARED_LOCKS_REQUIRED(mu_);
+  void w_foo() EXCLUSIVE_LOCKS_REQUIRED(mu_);
+
+  void test1() {
+    int b;
+
+    beginNoWarnOnReads();
+    b = a;
+    r_foo();
+    endNoWarnOnReads();
+
+    beginNoWarnOnWrites();
+    a = 0;
+    w_foo();
+    endNoWarnOnWrites();
+  }
+
+  // don't warn on joins with universal lock
+  void test2() {
+    if (c) {
+      beginNoWarnOnWrites();
+    }
+    a = 0; // \
+      // expected-warning {{writing variable 'a' requires locking 'mu_' exclusively}}
+    endNoWarnOnWrites();  // \
+      // expected-warning {{unlocking '*' that was not locked}}
+  }
+
+
+  // make sure the universal lock joins properly
+  void test3() {
+    if (c) {
+      mu_.Lock();
+      beginNoWarnOnWrites();
+    }
+    else {
+      beginNoWarnOnWrites();
+      mu_.Lock();
+    }
+    a = 0;
+    endNoWarnOnWrites();
+    mu_.Unlock();
+  }
+
+
+  // combine universal lock with other locks
+  void test4() {
+    beginNoWarnOnWrites();
+    mu_.Lock();
+    mu_.Unlock();
+    endNoWarnOnWrites();
+
+    mu_.Lock();
+    beginNoWarnOnWrites();
+    endNoWarnOnWrites();
+    mu_.Unlock();
+
+    mu_.Lock();
+    beginNoWarnOnWrites();
+    mu_.Unlock();
+    endNoWarnOnWrites();
+  }
+};
+
+}

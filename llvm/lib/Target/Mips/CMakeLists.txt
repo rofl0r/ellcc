@@ -22,6 +22,7 @@ add_llvm_target(MipsCodeGen
   MipsAsmPrinter.cpp
   MipsCodeEmitter.cpp
   MipsDelaySlotFiller.cpp
+  MipsDirectObjLower.cpp
   MipsELFWriterInfo.cpp
   MipsJITInfo.cpp
   MipsInstrInfo.cpp
