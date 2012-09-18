@@ -27,10 +27,9 @@
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_symbolizer.h"
 
-namespace __sanitizer {
-using namespace __asan;
+namespace __asan {
 
-void Die() {
+static void AsanDie() {
   static atomic_uint32_t num_calls;
   if (atomic_fetch_add(&num_calls, 1, memory_order_relaxed) != 0) {
     // Don't die twice - run a busy loop.
@@ -49,18 +48,14 @@ void Die() {
   Exit(flags()->exitcode);
 }
 
-SANITIZER_INTERFACE_ATTRIBUTE
-void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
+static void AsanCheckFailed(const char *file, int line, const char *cond,
+                            u64 v1, u64 v2) {
   Report("AddressSanitizer CHECK failed: %s:%d \"%s\" (0x%zx, 0x%zx)\n",
              file, line, cond, (uptr)v1, (uptr)v2);
   // FIXME: check for infinite recursion without a thread-local counter here.
   PRINT_CURRENT_STACK();
   ShowStatsAndAbort();
 }
-
-}  // namespace __sanitizer
-
-namespace __asan {
 
 // -------------------------- Flags ------------------------- {{{1
 static const int kDeafultMallocContextSize = 30;
@@ -104,6 +99,7 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->strip_path_prefix, "strip_path_prefix");
   ParseFlag(str, &f->allow_reexec, "allow_reexec");
   ParseFlag(str, &f->print_full_thread_history, "print_full_thread_history");
+  ParseFlag(str, &f->log_path, "log_path");
 }
 
 extern "C" {
@@ -142,6 +138,7 @@ void InitializeFlags(Flags *f, const char *env) {
   f->strip_path_prefix = "";
   f->allow_reexec = true;
   f->print_full_thread_history = true;
+  f->log_path = 0;
 
   // Override from user-specified string.
   ParseFlagsFromString(f, __asan_default_options());
@@ -291,12 +288,16 @@ void __asan_init() {
   // Make sure we are not statically linked.
   AsanDoesNotSupportStaticLinkage();
 
+  // Install tool-specific callbacks in sanitizer_common.
+  SetDieCallback(AsanDie);
+  SetCheckFailedCallback(AsanCheckFailed);
   SetPrintfAndReportCallback(AppendToErrorMessageBuffer);
 
   // Initialize flags. This must be done early, because most of the
   // initialization steps look at flags().
   const char *options = GetEnv("ASAN_OPTIONS");
   InitializeFlags(flags(), options);
+  __sanitizer_set_report_path(flags()->log_path);
 
   if (flags()->verbosity && options) {
     Report("Parsed ASAN_OPTIONS: %s\n", options);

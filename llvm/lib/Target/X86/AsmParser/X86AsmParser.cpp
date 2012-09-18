@@ -633,14 +633,15 @@ X86Operand *X86AsmParser::ParseOperand() {
 
 /// getIntelMemOperandSize - Return intel memory operand size.
 static unsigned getIntelMemOperandSize(StringRef OpStr) {
-  unsigned Size = 0;
-  if (OpStr == "BYTE") Size = 8;
-  if (OpStr == "WORD") Size = 16;
-  if (OpStr == "DWORD") Size = 32;
-  if (OpStr == "QWORD") Size = 64;
-  if (OpStr == "XWORD") Size = 80;
-  if (OpStr == "XMMWORD") Size = 128;
-  if (OpStr == "YMMWORD") Size = 256;
+  unsigned Size = StringSwitch<unsigned>(OpStr)
+    .Cases("BYTE", "byte", 8)
+    .Cases("WORD", "word", 16)
+    .Cases("DWORD", "dword", 32)
+    .Cases("QWORD", "qword", 64)
+    .Cases("XWORD", "xword", 80)
+    .Cases("XMMWORD", "xmmword", 128)
+    .Cases("YMMWORD", "ymmword", 256)
+    .Default(0);
   return Size;
 }
 
@@ -743,7 +744,8 @@ X86Operand *X86AsmParser::ParseIntelMemOperand() {
   unsigned Size = getIntelMemOperandSize(Tok.getString());
   if (Size) {
     Parser.Lex();
-    assert (Tok.getString() == "PTR" && "Unexpected token!");
+    assert ((Tok.getString() == "PTR" || Tok.getString() == "ptr") &&
+            "Unexpected token!");
     Parser.Lex();
   }
 
@@ -1745,7 +1747,10 @@ bool X86AsmParser::ParseDirective(AsmToken DirectiveID) {
     return ParseDirectiveWord(2, DirectiveID.getLoc());
   else if (IDVal.startswith(".code"))
     return ParseDirectiveCode(IDVal, DirectiveID.getLoc());
-  else if (IDVal.startswith(".intel_syntax")) {
+  else if (IDVal.startswith(".att_syntax")) {
+    getParser().setAssemblerDialect(0);
+    return false;
+  } else if (IDVal.startswith(".intel_syntax")) {
     getParser().setAssemblerDialect(1);
     if (getLexer().isNot(AsmToken::EndOfStatement)) {
       if(Parser.getTok().getString() == "noprefix") {

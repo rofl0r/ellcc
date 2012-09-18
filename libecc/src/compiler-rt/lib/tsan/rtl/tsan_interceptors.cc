@@ -68,6 +68,12 @@ const int PTHREAD_BARRIER_SERIAL_THREAD = -1;
 const int MAP_FIXED = 0x10;
 typedef long long_t;  // NOLINT
 
+// From /usr/include/unistd.h
+# define F_ULOCK 0      /* Unlock a previously locked region.  */
+# define F_LOCK  1      /* Lock a region for exclusive use.  */
+# define F_TLOCK 2      /* Test and lock a region for exclusive use.  */
+# define F_TEST  3      /* Test a region for other processes locks.  */
+
 typedef void (*sighandler_t)(int sig);
 
 #define errno (*__errno_location())
@@ -353,7 +359,7 @@ TSAN_INTERCEPTOR(void*, calloc, uptr size, uptr n) {
   {
     SCOPED_INTERCEPTOR_RAW(calloc, size, n);
     p = user_alloc(thr, pc, n * size);
-    internal_memset(p, 0, n * size);
+    if (p) internal_memset(p, 0, n * size);
   }
   invoke_malloc_hook(p, n * size);
   return p;
@@ -1360,11 +1366,11 @@ TSAN_INTERCEPTOR(int, sigaction, int sig, sigaction_t *act, sigaction_t *old) {
 }
 
 TSAN_INTERCEPTOR(sighandler_t, signal, int sig, sighandler_t h) {
-  sigaction_t act = {};
+  sigaction_t act;
   act.sa_handler = h;
   REAL(memset)(&act.sa_mask, -1, sizeof(act.sa_mask));
   act.sa_flags = 0;
-  sigaction_t old = {};
+  sigaction_t old;
   int res = sigaction(sig, &act, &old);
   if (res)
     return SIG_ERR;

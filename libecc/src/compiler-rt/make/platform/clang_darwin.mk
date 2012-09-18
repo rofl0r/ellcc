@@ -111,7 +111,7 @@ CFLAGS.profile_osx.x86_64 := $(CFLAGS) $(OSX_DEPLOYMENT_ARGS)
 
 # Configure the asan_osx_dynamic library to be built shared.
 SHARED_LIBRARY.asan_osx_dynamic := 1
-LDFLAGS.asan_osx_dynamic := -framework Foundation -lc++
+LDFLAGS.asan_osx_dynamic := -framework Foundation -lstdc++
 
 FUNCTIONS.eprintf := eprintf
 FUNCTIONS.10.4 := eprintf floatundidf floatundisf floatundixf

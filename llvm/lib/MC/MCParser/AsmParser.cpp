@@ -202,7 +202,7 @@ private:
   /// This returns true on failure.
   bool ProcessIncbinFile(const std::string &Filename);
 
-  /// \brief Reset the current lexer position to that given by \arg Loc. The
+  /// \brief Reset the current lexer position to that given by \p Loc. The
   /// current token is not set; clients should ensure Lex() is called
   /// subsequently.
   void JumpToLoc(SMLoc Loc);
@@ -221,7 +221,8 @@ private:
   /// return the contents from the current token up to the end or comma.
   StringRef ParseStringToComma();
 
-  bool ParseAssignment(StringRef Name, bool allow_redef);
+  bool ParseAssignment(StringRef Name, bool allow_redef,
+                       bool NoDeadStrip = false);
 
   bool ParsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc);
   bool ParseBinOpRHS(unsigned Precedence, const MCExpr *&Res, SMLoc &EndLoc);
@@ -229,7 +230,7 @@ private:
   bool ParseBracketExpr(const MCExpr *&Res, SMLoc &EndLoc);
 
   /// ParseIdentifier - Parse an identifier or string (as a quoted identifier)
-  /// and set \arg Res to the identifier contents.
+  /// and set \p Res to the identifier contents.
   virtual bool ParseIdentifier(StringRef &Res);
 
   // Directive Parsing.
@@ -1697,7 +1698,8 @@ static bool IsUsedIn(const MCSymbol *Sym, const MCExpr *Value) {
   llvm_unreachable("Unknown expr kind!");
 }
 
-bool AsmParser::ParseAssignment(StringRef Name, bool allow_redef) {
+bool AsmParser::ParseAssignment(StringRef Name, bool allow_redef,
+                                bool NoDeadStrip) {
   // FIXME: Use better location, we should use proper tokens.
   SMLoc EqualLoc = Lexer.getLoc();
 
@@ -1752,6 +1754,9 @@ bool AsmParser::ParseAssignment(StringRef Name, bool allow_redef) {
 
   // Do the assignment.
   Out.EmitAssignment(Sym, Value);
+  if (NoDeadStrip)
+    Out.EmitSymbolAttribute(Sym, MCSA_NoDeadStrip);
+
 
   return false;
 }
@@ -1809,7 +1814,7 @@ bool AsmParser::ParseDirectiveSet(StringRef IDVal, bool allow_redef) {
     return TokError("unexpected token in '" + Twine(IDVal) + "'");
   Lex();
 
-  return ParseAssignment(Name, allow_redef);
+  return ParseAssignment(Name, allow_redef, true);
 }
 
 bool AsmParser::ParseEscapedString(std::string &Data) {

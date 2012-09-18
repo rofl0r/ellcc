@@ -743,6 +743,11 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
         << Ptr->getType() << Ptr->getSourceRange();
       return ExprError();
     }
+    if (AtomTy.isConstQualified()) {
+      Diag(DRE->getLocStart(), diag::err_atomic_op_needs_non_const_atomic)
+        << Ptr->getType() << Ptr->getSourceRange();
+      return ExprError();
+    }
     ValType = AtomTy->getAs<AtomicType>()->getValueType();
   }
 
@@ -2096,11 +2101,28 @@ void CheckFormatHandler::HandleNonStandardLengthModifier(
 void CheckFormatHandler::HandleNonStandardConversionSpecifier(
     const analyze_format_string::ConversionSpecifier &CS,
     const char *startSpecifier, unsigned specifierLen) {
-  EmitFormatDiagnostic(S.PDiag(diag::warn_format_non_standard) << CS.toString()
-                       << 1,
-                       getLocationOfByte(CS.getStart()),
-                       /*IsStringLocation*/true,
-                       getSpecifierRange(startSpecifier, specifierLen));
+  using namespace analyze_format_string;
+
+  // See if we know how to fix this conversion specifier.
+  llvm::Optional<ConversionSpecifier> FixedCS = CS.getStandardSpecifier();
+  if (FixedCS) {
+    EmitFormatDiagnostic(S.PDiag(diag::warn_format_non_standard)
+                          << CS.toString() << /*conversion specifier*/1,
+                         getLocationOfByte(CS.getStart()),
+                         /*IsStringLocation*/true,
+                         getSpecifierRange(startSpecifier, specifierLen));
+
+    CharSourceRange CSRange = getSpecifierRange(CS.getStart(), CS.getLength());
+    S.Diag(getLocationOfByte(CS.getStart()), diag::note_format_fix_specifier)
+      << FixedCS->toString()
+      << FixItHint::CreateReplacement(CSRange, FixedCS->toString());
+  } else {
+    EmitFormatDiagnostic(S.PDiag(diag::warn_format_non_standard)
+                          << CS.toString() << /*conversion specifier*/1,
+                         getLocationOfByte(CS.getStart()),
+                         /*IsStringLocation*/true,
+                         getSpecifierRange(startSpecifier, specifierLen));
+  }
 }
 
 void CheckFormatHandler::HandlePosition(const char *startPos,
@@ -3021,7 +3043,8 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
                          inFunctionCall, CallType);
   
     if (!analyze_format_string::ParsePrintfString(H, Str, Str + StrLen,
-                                                  getLangOpts()))
+                                                  getLangOpts(),
+                                                  Context.getTargetInfo()))
       H.DoneProcessing();
   } else if (Type == FST_Scanf) {
     CheckScanfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg, numDataArgs,
@@ -3029,7 +3052,8 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
                         inFunctionCall, CallType);
     
     if (!analyze_format_string::ParseScanfString(H, Str, Str + StrLen,
-                                                 getLangOpts()))
+                                                 getLangOpts(),
+                                                 Context.getTargetInfo()))
       H.DoneProcessing();
   } // TODO: handle other formats
 }
@@ -5281,7 +5305,8 @@ static bool considerVariable(VarDecl *var, Expr *ref, RetainCycleOwner &owner) {
     return false;
 
   owner.Variable = var;
-  owner.setLocsFrom(ref);
+  if (ref)
+    owner.setLocsFrom(ref);
   return true;
 }
 
@@ -5479,6 +5504,20 @@ void Sema::checkRetainCycles(Expr *receiver, Expr *argument) {
 
   if (Expr *capturer = findCapturingExpr(*this, argument, owner))
     diagnoseRetainCycle(*this, capturer, owner);
+}
+
+void Sema::checkRetainCycles(VarDecl *Var, Expr *Init) {
+  RetainCycleOwner Owner;
+  if (!considerVariable(Var, /*DeclRefExpr=*/0, Owner))
+    return;
+  
+  // Because we don't have an expression for the variable, we have to set the
+  // location explicitly here.
+  Owner.Loc = Var->getLocation();
+  Owner.Range = Var->getSourceRange();
+  
+  if (Expr *Capturer = findCapturingExpr(*this, Init, Owner))
+    diagnoseRetainCycle(*this, Capturer, Owner);
 }
 
 bool Sema::checkUnsafeAssigns(SourceLocation Loc,
@@ -6091,4 +6130,3 @@ void Sema::CheckArgumentWithTypeTag(const ArgumentWithTypeTagAttr *Attr,
         << ArgumentExpr->getSourceRange()
         << TypeTagExpr->getSourceRange();
 }
-

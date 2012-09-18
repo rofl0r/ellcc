@@ -23,10 +23,10 @@
 #include "tsan_mman.h"
 #include "tsan_flags.h"
 
-namespace __sanitizer {
-using namespace __tsan;
+namespace __tsan {
 
-void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
+void TsanCheckFailed(const char *file, int line, const char *cond,
+                     u64 v1, u64 v2) {
   ScopedInRtl in_rtl;
   TsanPrintf("FATAL: ThreadSanitizer CHECK failed: "
              "%s:%d \"%s\" (0x%zx, 0x%zx)\n",
@@ -34,14 +34,11 @@ void CheckFailed(const char *file, int line, const char *cond, u64 v1, u64 v2) {
   Die();
 }
 
-}  // namespace __sanitizer
-
-namespace __tsan {
-
 // Can be overriden by an application/test to intercept reports.
 #ifdef TSAN_EXTERNAL_HOOKS
 bool OnReport(const ReportDesc *rep, bool suppressed);
 #else
+SANITIZER_INTERFACE_ATTRIBUTE
 bool WEAK OnReport(const ReportDesc *rep, bool suppressed) {
   (void)rep;
   return suppressed;
@@ -305,7 +302,7 @@ static bool HandleRacyStacks(ThreadState *thr, const StackTrace (&traces)[2],
     uptr addr_min, uptr addr_max) {
   Context *ctx = CTX();
   bool equal_stack = false;
-  RacyStacks hash = {};
+  RacyStacks hash;
   if (flags()->suppress_equal_stacks) {
     hash.hash[0] = md5_hash(traces[0].Begin(), traces[0].Size() * sizeof(uptr));
     hash.hash[1] = md5_hash(traces[1].Begin(), traces[1].Size() * sizeof(uptr));

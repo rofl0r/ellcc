@@ -65,6 +65,8 @@ typedef CombinedAllocator<PrimaryAllocator, AllocatorCache,
 Allocator *allocator();
 #endif
 
+void TsanCheckFailed(const char *file, int line, const char *cond,
+                     u64 v1, u64 v2);
 void TsanPrintf(const char *format, ...);
 
 // FastState (from most significant bit):
@@ -314,7 +316,7 @@ enum ThreadStatus {
   ThreadStatusCreated,   // Created but not yet running.
   ThreadStatusRunning,   // The thread is currently running.
   ThreadStatusFinished,  // Joinable thread is finished but not yet joined.
-  ThreadStatusDead,      // Joined, but some info (trace) is still alive.
+  ThreadStatusDead       // Joined, but some info (trace) is still alive.
 };
 
 // An info about a thread that is hold for some time after its termination.
