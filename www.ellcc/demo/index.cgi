@@ -341,7 +341,7 @@ sub sanitychecktools {
       if `llvm-dis --help 2>&1` !~ /ll disassembler/;
 
     $sanitycheckfail .= ' ecc'
-      if `ecc --help 2>&1` !~ /clang "gcc-compatible" driver/;
+      if `ecc --help 2>&1` !~ /clang LLVM compiler/;
 
     $sanitycheckfail .= ' llc'
       if `llc --help 2>&1` !~ /llvm system compiler/;
