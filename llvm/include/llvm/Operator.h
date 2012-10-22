@@ -16,6 +16,7 @@
 #define LLVM_OPERATOR_H
 
 #include "llvm/Constants.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/Instruction.h"
 #include "llvm/Type.h"
 
@@ -32,9 +33,11 @@ class Operator : public User {
 private:
   // Do not implement any of these. The Operator class is intended to be used
   // as a utility, and is never itself instantiated.
-  void *operator new(size_t, unsigned);
-  void *operator new(size_t s);
-  Operator();
+  void *operator new(size_t, unsigned) LLVM_DELETED_FUNCTION;
+  void *operator new(size_t s) LLVM_DELETED_FUNCTION;
+  Operator() LLVM_DELETED_FUNCTION;
+  // NOTE: cannot use LLVM_DELETED_FUNCTION because it's not legal to delete
+  // an overridden method that's not deleted in the base class.
   ~Operator();
 
 public:
@@ -57,7 +60,6 @@ public:
     return Instruction::UserOp1;
   }
 
-  static inline bool classof(const Operator *) { return true; }
   static inline bool classof(const Instruction *) { return true; }
   static inline bool classof(const ConstantExpr *) { return true; }
   static inline bool classof(const Value *V) {
@@ -77,7 +79,7 @@ public:
   };
 
 private:
-  ~OverflowingBinaryOperator(); // do not implement
+  ~OverflowingBinaryOperator(); // DO NOT IMPLEMENT
 
   friend class BinaryOperator;
   friend class ConstantExpr;
@@ -103,7 +105,6 @@ public:
     return (SubclassOptionalData & NoSignedWrap) != 0;
   }
 
-  static inline bool classof(const OverflowingBinaryOperator *) { return true; }
   static inline bool classof(const Instruction *I) {
     return I->getOpcode() == Instruction::Add ||
            I->getOpcode() == Instruction::Sub ||
@@ -131,7 +132,7 @@ public:
   };
   
 private:
-  ~PossiblyExactOperator(); // do not implement
+  ~PossiblyExactOperator(); // DO NOT IMPLEMENT
 
   friend class BinaryOperator;
   friend class ConstantExpr;
@@ -168,7 +169,7 @@ public:
 /// information about relaxed accuracy requirements attached to them.
 class FPMathOperator : public Operator {
 private:
-  ~FPMathOperator(); // do not implement
+  ~FPMathOperator(); // DO NOT IMPLEMENT
 
 public:
 
@@ -177,7 +178,6 @@ public:
   /// default precision.
   float getFPAccuracy() const;
 
-  static inline bool classof(const FPMathOperator *) { return true; }
   static inline bool classof(const Instruction *I) {
     return I->getType()->isFPOrFPVectorTy();
   }
@@ -193,9 +193,6 @@ template<typename SuperClass, unsigned Opc>
 class ConcreteOperator : public SuperClass {
   ~ConcreteOperator(); // DO NOT IMPLEMENT
 public:
-  static inline bool classof(const ConcreteOperator<SuperClass, Opc> *) {
-    return true;
-  }
   static inline bool classof(const Instruction *I) {
     return I->getOpcode() == Opc;
   }
@@ -225,7 +222,7 @@ class ShlOperator
   ~ShlOperator(); // DO NOT IMPLEMENT
 };
 
-  
+
 class SDivOperator
   : public ConcreteOperator<PossiblyExactOperator, Instruction::SDiv> {
   ~SDivOperator(); // DO NOT IMPLEMENT
@@ -242,9 +239,9 @@ class LShrOperator
   : public ConcreteOperator<PossiblyExactOperator, Instruction::LShr> {
   ~LShrOperator(); // DO NOT IMPLEMENT
 };
-  
-  
-  
+
+
+
 class GEPOperator
   : public ConcreteOperator<Operator, Instruction::GetElementPtr> {
   ~GEPOperator(); // DO NOT IMPLEMENT
@@ -286,6 +283,12 @@ public:
   /// PointerType.
   Type *getPointerOperandType() const {
     return getPointerOperand()->getType();
+  }
+
+  /// getPointerAddressSpace - Method to return the address space of the
+  /// pointer operand.
+  unsigned getPointerAddressSpace() const {
+    return cast<PointerType>(getPointerOperandType())->getAddressSpace();
   }
 
   unsigned getNumIndices() const {  // Note: always non-negative

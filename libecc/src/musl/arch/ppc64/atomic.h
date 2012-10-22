@@ -36,12 +36,22 @@ static inline int a_cas(volatile int *p, int t, int s)
 
 static inline void *a_cas_p(volatile void *p, void *t, void *s)
 {
-	return (void *)a_cas(p, (int)t, (int)s);
+	__asm__( "1: lwarx 10, 0, %1\n"
+                 "   stwcx. %3, 0, %1\n"
+                 "   bne- 1b\n"
+                 "   mr %0, 10\n"
+		: "=r"(t) : "r"(p), "r"(t), "r"(s) : "memory" );
+	return t;
 }
 
 static inline long a_cas_l(volatile void *p, long t, long s)
 {
-	return a_cas(p, t, s);
+	__asm__( "1: lwarx 10, 0, %1\n"
+                 "   stwcx. %3, 0, %1\n"
+                 "   bne- 1b\n"
+                 "   mr %0, 10\n"
+		: "=r"(t) : "r"(p), "r"(t), "r"(s) : "memory" );
+	return t;
 }
 
 

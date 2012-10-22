@@ -26,7 +26,7 @@ class PointerType;
 class Module;
 
 class GlobalValue : public Constant {
-  GlobalValue(const GlobalValue &);             // do not implement
+  GlobalValue(const GlobalValue &) LLVM_DELETED_FUNCTION;
 public:
   /// @brief An enumeration for the kinds of linkage for global values.
   enum LinkageTypes {
@@ -287,7 +287,6 @@ public:
   inline const Module *getParent() const { return Parent; }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const GlobalValue *) { return true; }
   static inline bool classof(const Value *V) {
     return V->getValueID() == Value::FunctionVal ||
            V->getValueID() == Value::GlobalVariableVal ||

@@ -25,7 +25,6 @@ class MemoryMappingLayout {
   bool GetObjectNameAndOffset(uptr addr, uptr *offset,
                               char filename[], uptr filename_size) {
     UNIMPLEMENTED();
-    return false;
   }
 };
 
@@ -84,6 +83,7 @@ class MemoryMappingLayout {
                        char filename[], uptr filename_size);
   int current_image_;
   u32 current_magic_;
+  u32 current_filetype_;
   int current_load_cmd_count_;
   char *current_load_cmd_addr_;
 # endif

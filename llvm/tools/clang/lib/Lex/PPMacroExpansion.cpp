@@ -27,33 +27,128 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Format.h"
 #include <cstdio>
 #include <ctime>
 using namespace clang;
 
-MacroInfo *Preprocessor::getInfoForMacro(IdentifierInfo *II) const {
-  assert(II->hasMacroDefinition() && "Identifier is not a macro!");
+MacroInfo *Preprocessor::getMacroInfoHistory(IdentifierInfo *II) const {
+  assert(II->hadMacroDefinition() && "Identifier has not been not a macro!");
 
   macro_iterator Pos = Macros.find(II);
-  if (Pos == Macros.end()) {
-    // Load this macro from the external source.
-    getExternalSource()->LoadMacroDefinition(II);
-    Pos = Macros.find(II);
-  }
   assert(Pos != Macros.end() && "Identifier macro info is missing!");
-  assert(Pos->second->getUndefLoc().isInvalid() && "Macro is undefined!");
   return Pos->second;
 }
 
 /// setMacroInfo - Specify a macro for this identifier.
 ///
-void Preprocessor::setMacroInfo(IdentifierInfo *II, MacroInfo *MI,
-                                bool LoadedFromAST) {
+void Preprocessor::setMacroInfo(IdentifierInfo *II, MacroInfo *MI) {
   assert(MI && "MacroInfo should be non-zero!");
-  MI->setPreviousDefinition(Macros[II]);
-  Macros[II] = MI;
-  II->setHasMacroDefinition(true);
-  if (II->isFromAST() && !LoadedFromAST)
+  assert(MI->getUndefLoc().isInvalid() &&
+         "Undefined macros cannot be registered");
+
+  MacroInfo *&StoredMI = Macros[II];
+  MI->setPreviousDefinition(StoredMI);
+  StoredMI = MI;
+  II->setHasMacroDefinition(MI->getUndefLoc().isInvalid());
+  if (II->isFromAST())
+    II->setChangedSinceDeserialization();
+}
+
+void Preprocessor::addLoadedMacroInfo(IdentifierInfo *II, MacroInfo *MI,
+                                      MacroInfo *Hint) {
+  assert(MI && "Missing macro?");
+  assert(MI->isFromAST() && "Macro is not from an AST?");
+  assert(!MI->getPreviousDefinition() && "Macro already in chain?");
+  
+  MacroInfo *&StoredMI = Macros[II];
+
+  // Easy case: this is the first macro definition for this macro.
+  if (!StoredMI) {
+    StoredMI = MI;
+
+    if (MI->isDefined())
+      II->setHasMacroDefinition(true);
+    return;
+  }
+
+  // If this macro is a definition and this identifier has been neither
+  // defined nor undef'd in the current translation unit, add this macro
+  // to the end of the chain of definitions.
+  if (MI->isDefined() && StoredMI->isFromAST()) {
+    // Simple case: if this is the first actual definition, just put it at
+    // th beginning.
+    if (!StoredMI->isDefined()) {
+      MI->setPreviousDefinition(StoredMI);
+      StoredMI = MI;
+
+      II->setHasMacroDefinition(true);
+      return;
+    }
+
+    // Find the end of the definition chain.
+    MacroInfo *Prev;
+    MacroInfo *PrevPrev = StoredMI;
+    bool Ambiguous = StoredMI->isAmbiguous();
+    bool MatchedOther = false;
+    do {
+      Prev = PrevPrev;
+
+      // If the macros are not identical, we have an ambiguity.
+      if (!Prev->isIdenticalTo(*MI, *this)) {
+        if (!Ambiguous) {
+          Ambiguous = true;
+          StoredMI->setAmbiguous(true);
+        }
+      } else {
+        MatchedOther = true;
+      }
+    } while ((PrevPrev = Prev->getPreviousDefinition()) &&
+             PrevPrev->isDefined());
+
+    // If there are ambiguous definitions, and we didn't match any other
+    // definition, then mark us as ambiguous.
+    if (Ambiguous && !MatchedOther)
+      MI->setAmbiguous(true);
+
+    // Wire this macro information into the chain.
+    MI->setPreviousDefinition(Prev->getPreviousDefinition());
+    Prev->setPreviousDefinition(MI);
+    return;
+  }
+
+  // The macro is not a definition; put it at the end of the list.
+  MacroInfo *Prev = Hint? Hint : StoredMI;
+  while (Prev->getPreviousDefinition())
+    Prev = Prev->getPreviousDefinition();
+  Prev->setPreviousDefinition(MI);
+}
+
+void Preprocessor::makeLoadedMacroInfoVisible(IdentifierInfo *II,
+                                              MacroInfo *MI) {
+  assert(MI->isFromAST() && "Macro must be from the AST");
+
+  MacroInfo *&StoredMI = Macros[II];
+  if (StoredMI == MI) {
+    // Easy case: this is the first macro anyway.
+    II->setHasMacroDefinition(MI->isDefined());
+    return;
+  }
+
+  // Go find the macro and pull it out of the list.
+  // FIXME: Yes, this is O(N), and making a pile of macros visible or hidden
+  // would be quadratic, but it's extremely rare.
+  MacroInfo *Prev = StoredMI;
+  while (Prev->getPreviousDefinition() != MI)
+    Prev = Prev->getPreviousDefinition();
+  Prev->setPreviousDefinition(MI->getPreviousDefinition());
+  MI->setPreviousDefinition(0);
+
+  // Add the macro back to the list.
+  addLoadedMacroInfo(II, MI);
+
+  II->setHasMacroDefinition(StoredMI->isDefined());
+  if (II->isFromAST())
     II->setChangedSinceDeserialization();
 }
 
@@ -104,6 +199,20 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_include_next = RegisterBuiltinMacro(*this, "__has_include_next");
   Ident__has_warning      = RegisterBuiltinMacro(*this, "__has_warning");
 
+  // Modules.
+  if (LangOpts.Modules) {
+    Ident__building_module  = RegisterBuiltinMacro(*this, "__building_module");
+
+    // __MODULE__
+    if (!LangOpts.CurrentModule.empty())
+      Ident__MODULE__ = RegisterBuiltinMacro(*this, "__MODULE__");
+    else
+      Ident__MODULE__ = 0;
+  } else {
+    Ident__building_module = 0;
+    Ident__MODULE__ = 0;
+  }
+  
   // Microsoft Extensions.
   if (LangOpts.MicrosoftExt) 
     Ident__pragma = RegisterBuiltinMacro(*this, "__pragma");
@@ -267,7 +376,23 @@ bool Preprocessor::HandleMacroExpandedIdentifier(Token &Identifier,
       }
     }
   }
-  
+
+  // If the macro definition is ambiguous, complain.
+  if (MI->isAmbiguous()) {
+    Diag(Identifier, diag::warn_pp_ambiguous_macro)
+      << Identifier.getIdentifierInfo();
+    Diag(MI->getDefinitionLoc(), diag::note_pp_ambiguous_macro_chosen)
+      << Identifier.getIdentifierInfo();
+    for (MacroInfo *PrevMI = MI->getPreviousDefinition();
+         PrevMI && PrevMI->isDefined();
+         PrevMI = PrevMI->getPreviousDefinition()) {
+      if (PrevMI->isAmbiguous()) {
+        Diag(PrevMI->getDefinitionLoc(), diag::note_pp_ambiguous_macro_other)
+          << Identifier.getIdentifierInfo();
+      }
+    }
+  }
+
   // If we started lexing a macro, enter the macro expansion body.
 
   // If this macro expands to no tokens, don't bother to push it onto the
@@ -403,11 +528,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
         }
       } else if (Tok.is(tok::l_paren)) {
         ++NumParens;
-      // In Microsoft-compatibility mode, commas from nested macro expan-
-      // sions should not be considered as argument separators. We test
-      // for this with the IgnoredComma token flag.
-      } else if (Tok.is(tok::comma)
-          && !(Tok.getFlags() & Token::IgnoredComma) && NumParens == 0) {
+      } else if (Tok.is(tok::comma) && NumParens == 0) {
         // Comma ends this argument if there are more fixed arguments expected.
         // However, if this is a variadic macro, and this is part of the
         // variadic part, then the comma is just an argument token.
@@ -589,27 +710,27 @@ static void ComputeDATE_TIME(SourceLocation &DATELoc, SourceLocation &TIMELoc,
     "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"
   };
 
-  char TmpBuffer[32];
-#ifdef LLVM_ON_WIN32
-  sprintf(TmpBuffer, "\"%s %2d %4d\"", Months[TM->tm_mon], TM->tm_mday,
-          TM->tm_year+1900);
-#else
-  snprintf(TmpBuffer, sizeof(TmpBuffer), "\"%s %2d %4d\"", Months[TM->tm_mon], TM->tm_mday,
-          TM->tm_year+1900);
-#endif
+  {
+    SmallString<32> TmpBuffer;
+    llvm::raw_svector_ostream TmpStream(TmpBuffer);
+    TmpStream << llvm::format("\"%s %2d %4d\"", Months[TM->tm_mon],
+                              TM->tm_mday, TM->tm_year + 1900);
+    Token TmpTok;
+    TmpTok.startToken();
+    PP.CreateString(TmpStream.str(), TmpTok);
+    DATELoc = TmpTok.getLocation();
+  }
 
-  Token TmpTok;
-  TmpTok.startToken();
-  PP.CreateString(TmpBuffer, strlen(TmpBuffer), TmpTok);
-  DATELoc = TmpTok.getLocation();
-
-#ifdef LLVM_ON_WIN32
-  sprintf(TmpBuffer, "\"%02d:%02d:%02d\"", TM->tm_hour, TM->tm_min, TM->tm_sec);
-#else
-  snprintf(TmpBuffer, sizeof(TmpBuffer), "\"%02d:%02d:%02d\"", TM->tm_hour, TM->tm_min, TM->tm_sec);
-#endif
-  PP.CreateString(TmpBuffer, strlen(TmpBuffer), TmpTok);
-  TIMELoc = TmpTok.getLocation();
+  {
+    SmallString<32> TmpBuffer;
+    llvm::raw_svector_ostream TmpStream(TmpBuffer);
+    TmpStream << llvm::format("\"%02d:%02d:%02d\"",
+                              TM->tm_hour, TM->tm_min, TM->tm_sec);
+    Token TmpTok;
+    TmpTok.startToken();
+    PP.CreateString(TmpStream.str(), TmpTok);
+    TIMELoc = TmpTok.getLocation();
+  }
 }
 
 
@@ -906,6 +1027,47 @@ static bool EvaluateHasIncludeNext(Token &Tok,
   return EvaluateHasIncludeCommon(Tok, II, PP, Lookup);
 }
 
+/// \brief Process __building_module(identifier) expression.
+/// \returns true if we are building the named module, false otherwise.
+static bool EvaluateBuildingModule(Token &Tok,
+                                   IdentifierInfo *II, Preprocessor &PP) {
+  // Get '('.
+  PP.LexNonComment(Tok);
+
+  // Ensure we have a '('.
+  if (Tok.isNot(tok::l_paren)) {
+    PP.Diag(Tok.getLocation(), diag::err_pp_missing_lparen) << II->getName();
+    return false;
+  }
+
+  // Save '(' location for possible missing ')' message.
+  SourceLocation LParenLoc = Tok.getLocation();
+
+  // Get the module name.
+  PP.LexNonComment(Tok);
+
+  // Ensure that we have an identifier.
+  if (Tok.isNot(tok::identifier)) {
+    PP.Diag(Tok.getLocation(), diag::err_expected_id_building_module);
+    return false;
+  }
+
+  bool Result
+    = Tok.getIdentifierInfo()->getName() == PP.getLangOpts().CurrentModule;
+
+  // Get ')'.
+  PP.LexNonComment(Tok);
+
+  // Ensure we have a trailing ).
+  if (Tok.isNot(tok::r_paren)) {
+    PP.Diag(Tok.getLocation(), diag::err_pp_missing_rparen) << II->getName();
+    PP.Diag(LParenLoc, diag::note_matching) << "(";
+    return false;
+  }
+
+  return Result;
+}
+
 /// ExpandBuiltinMacro - If an identifier token is read that is to be expanded
 /// as a builtin macro, handle it and return the next token as 'Tok'.
 void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
@@ -1161,11 +1323,22 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
 
     OS << (int)Value;
     Tok.setKind(tok::numeric_constant);
+  } else if (II == Ident__building_module) {
+    // The argument to this builtin should be an identifier. The
+    // builtin evaluates to 1 when that identifier names the module we are
+    // currently building.
+    OS << (int)EvaluateBuildingModule(Tok, II, *this);
+    Tok.setKind(tok::numeric_constant);
+  } else if (II == Ident__MODULE__) {
+    // The current module as an identifier.
+    OS << getLangOpts().CurrentModule;
+    IdentifierInfo *ModuleII = getIdentifierInfo(getLangOpts().CurrentModule);
+    Tok.setIdentifierInfo(ModuleII);
+    Tok.setKind(ModuleII->getTokenID());
   } else {
     llvm_unreachable("Unknown identifier!");
   }
-  CreateString(OS.str().data(), OS.str().size(), Tok,
-               Tok.getLocation(), Tok.getLocation());
+  CreateString(OS.str(), Tok, Tok.getLocation(), Tok.getLocation());
 }
 
 void Preprocessor::markMacroAsUsed(MacroInfo *MI) {

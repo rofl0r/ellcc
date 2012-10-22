@@ -23,8 +23,9 @@
 #include "MipsSubtarget.h"
 #include "MipsELFWriterInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Target/TargetFrameLowering.h"
+#include "llvm/Target/TargetTransformImpl.h"
 
 namespace llvm {
 class formatted_raw_ostream;
@@ -32,7 +33,7 @@ class MipsRegisterInfo;
 
 class MipsTargetMachine : public LLVMTargetMachine {
   MipsSubtarget       Subtarget;
-  const TargetData    DataLayout; // Calculates type size & alignment
+  const DataLayout    DL; // Calculates type size & alignment
   const MipsInstrInfo *InstrInfo;
   const MipsFrameLowering *FrameLowering;
   MipsTargetLowering  TLInfo;
@@ -40,6 +41,9 @@ class MipsTargetMachine : public LLVMTargetMachine {
   MipsJITInfo JITInfo;
   MipsELFWriterInfo   ELFWriterInfo;
   MipsIntrinsicInfo   IntrinsicInfo;
+  ScalarTargetTransformImpl STTI;
+  VectorTargetTransformInfo VTTI; 
+
 public:
   MipsTargetMachine(const Target &T, StringRef TT,
                     StringRef CPU, StringRef FS, const TargetOptions &Options,
@@ -55,8 +59,8 @@ public:
   { return FrameLowering; }
   virtual const MipsSubtarget *getSubtargetImpl() const
   { return &Subtarget; }
-  virtual const TargetData *getTargetData()    const
-  { return &DataLayout;}
+  virtual const DataLayout *getDataLayout()    const
+  { return &DL;}
   virtual MipsJITInfo *getJITInfo()
   { return &JITInfo; }
 
@@ -74,6 +78,12 @@ public:
 
   virtual const MipsELFWriterInfo *getELFWriterInfo() const {
     return &ELFWriterInfo;
+  }
+  virtual const ScalarTargetTransformInfo *getScalarTargetTransformInfo()const {
+    return &STTI;
+  }
+  virtual const VectorTargetTransformInfo *getVectorTargetTransformInfo()const {
+    return &VTTI;
   }
 
   const TargetIntrinsicInfo *getIntrinsicInfo() const {

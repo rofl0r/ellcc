@@ -80,6 +80,10 @@ int internal_sched_yield() {
 }
 
 // ----------------- sanitizer_common.h
+uptr GetTid() {
+  return reinterpret_cast<uptr>(pthread_self());
+}
+
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom) {
   CHECK(stack_top);
@@ -108,6 +112,10 @@ const char *GetEnv(const char *name) {
     environ++;
   }
   return 0;
+}
+
+void ReExec() {
+  UNIMPLEMENTED();
 }
 
 // ----------------- sanitizer_procmaps.h
@@ -143,6 +151,7 @@ void MemoryMappingLayout::Reset() {
   current_load_cmd_count_ = -1;
   current_load_cmd_addr_ = 0;
   current_magic_ = 0;
+  current_filetype_ = 0;
 }
 
 // Next and NextSegmentLoad were inspired by base/sysinfo.cc in
@@ -163,7 +172,13 @@ bool MemoryMappingLayout::NextSegmentLoad(
     const SegmentCommand* sc = (const SegmentCommand *)lc;
     if (start) *start = sc->vmaddr + dlloff;
     if (end) *end = sc->vmaddr + sc->vmsize + dlloff;
-    if (offset) *offset = sc->fileoff;
+    if (offset) {
+      if (current_filetype_ == /*MH_EXECUTE*/ 0x2) {
+        *offset = sc->vmaddr;
+      } else {
+        *offset = sc->fileoff;
+      }
+    }
     if (filename) {
       internal_strncpy(filename, _dyld_get_image_name(current_image_),
                        filename_size);
@@ -182,6 +197,7 @@ bool MemoryMappingLayout::Next(uptr *start, uptr *end, uptr *offset,
       // Set up for this image;
       current_load_cmd_count_ = hdr->ncmds;
       current_magic_ = hdr->magic;
+      current_filetype_ = hdr->filetype;
       switch (current_magic_) {
 #ifdef MH_MAGIC_64
         case MH_MAGIC_64: {

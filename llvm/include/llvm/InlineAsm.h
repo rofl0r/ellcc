@@ -44,8 +44,8 @@ private:
   friend class ConstantUniqueMap<InlineAsmKeyType, const InlineAsmKeyType&,
                                  PointerType, InlineAsm, false>;
 
-  InlineAsm(const InlineAsm &);             // do not implement
-  void operator=(const InlineAsm&);         // do not implement
+  InlineAsm(const InlineAsm &) LLVM_DELETED_FUNCTION;
+  void operator=(const InlineAsm&) LLVM_DELETED_FUNCTION;
 
   std::string AsmString, Constraints;
   bool HasSideEffects;
@@ -189,7 +189,6 @@ public:
   }
   
   // Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const InlineAsm *) { return true; }
   static inline bool classof(const Value *V) {
     return V->getValueID() == Value::InlineAsmVal;
   }

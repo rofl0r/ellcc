@@ -18,7 +18,7 @@ BUILT_SOURCES = MipsGenRegisterInfo.inc MipsGenInstrInfo.inc \
 		MipsGenIntrinsics.inc \
                 MipsGenSubtargetInfo.inc MipsGenMCCodeEmitter.inc \
                 MipsGenEDInfo.inc MipsGenDisassemblerTables.inc \
-                MipsGenAsmMatcher.inc
+                MipsGenMCPseudoLowering.inc MipsGenAsmMatcher.inc
 
 DIRS = InstPrinter Disassembler AsmParser TargetInfo MCTargetDesc
 

@@ -39,8 +39,8 @@ namespace llvm {
 /// don't have to worry about the lifetime of the objects.
 /// @brief LLVM Constant Representation
 class Constant : public User {
-  void operator=(const Constant &);     // Do not implement
-  Constant(const Constant &);           // Do not implement
+  void operator=(const Constant &) LLVM_DELETED_FUNCTION;
+  Constant(const Constant &) LLVM_DELETED_FUNCTION;
   virtual void anchor();
   
 protected:
@@ -108,8 +108,6 @@ public:
   virtual void destroyConstant() { llvm_unreachable("Not reached!"); }
 
   //// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const Constant *) { return true; }
-  static inline bool classof(const GlobalValue *) { return true; }
   static inline bool classof(const Value *V) {
     return V->getValueID() >= ConstantFirstVal &&
            V->getValueID() <= ConstantLastVal;

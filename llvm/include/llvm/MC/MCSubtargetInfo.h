@@ -36,6 +36,7 @@ class MCSubtargetInfo {
   const MCWriteProcResEntry *WriteProcResTable;
   const MCWriteLatencyEntry *WriteLatencyTable;
   const MCReadAdvanceEntry *ReadAdvanceTable;
+  const MCSchedModel *CPUSchedModel;
 
   const InstrStage *Stages;            // Instruction itinerary stages
   const unsigned *OperandCycles;       // Itinerary operand cycles
@@ -49,6 +50,9 @@ public:
                            const SubtargetFeatureKV *PF,
                            const SubtargetFeatureKV *PD,
                            const SubtargetInfoKV *ProcSched,
+                           const MCWriteProcResEntry *WPR,
+                           const MCWriteLatencyEntry *WL,
+                           const MCReadAdvanceEntry *RA,
                            const InstrStage *IS,
                            const unsigned *OC, const unsigned *FP,
                            unsigned NF, unsigned NP);
@@ -64,9 +68,9 @@ public:
     return FeatureBits;
   }
 
-  /// ReInitMCSubtargetInfo - Change CPU (and optionally supplemented with
-  /// feature string), recompute and return feature bits.
-  uint64_t ReInitMCSubtargetInfo(StringRef CPU, StringRef FS);
+  /// InitMCProcessorInfo - Set or change the CPU (optionally supplemented with
+  /// feature string). Recompute feature bits and scheduling model.
+  void InitMCProcessorInfo(StringRef CPU, StringRef FS);
 
   /// ToggleFeature - Toggle a feature and returns the re-computed feature
   /// bits. This version does not change the implied bits.
@@ -79,6 +83,10 @@ public:
   /// getSchedModelForCPU - Get the machine model of a CPU.
   ///
   const MCSchedModel *getSchedModelForCPU(StringRef CPU) const;
+
+  /// getSchedModel - Get the machine model for this subtarget's CPU.
+  ///
+  const MCSchedModel *getSchedModel() const { return CPUSchedModel; }
 
   /// Return an iterator at the first process resource consumed by the given
   /// scheduling class.
@@ -101,6 +109,9 @@ public:
 
   int getReadAdvanceCycles(const MCSchedClassDesc *SC, unsigned UseIdx,
                            unsigned WriteResID) const {
+    // TODO: The number of read advance entries in a class can be significant
+    // (~50). Consider compressing the WriteID into a dense ID of those that are
+    // used by ReadAdvance and representing them as a bitset.
     for (const MCReadAdvanceEntry *I = &ReadAdvanceTable[SC->ReadAdvanceIdx],
            *E = I + SC->NumReadAdvanceEntries; I != E; ++I) {
       if (I->UseIdx < UseIdx)

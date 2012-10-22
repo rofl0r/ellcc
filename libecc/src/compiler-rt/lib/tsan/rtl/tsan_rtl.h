@@ -327,6 +327,7 @@ struct ThreadDeadInfo {
 struct ThreadContext {
   const int tid;
   int unique_id;  // Non-rolling thread id.
+  uptr os_id;  // pid
   uptr user_id;  // Some opaque user thread id (e.g. pthread_t).
   ThreadState *thr;
   ThreadStatus status;
@@ -361,6 +362,11 @@ struct RacyAddress {
   uptr addr_max;
 };
 
+struct FiredSuppression {
+  ReportType type;
+  uptr pc;
+};
+
 struct Context {
   Context();
 
@@ -384,6 +390,7 @@ struct Context {
 
   Vector<RacyStacks> racy_stacks;
   Vector<RacyAddress> racy_addresses;
+  Vector<FiredSuppression> fired_suppressions;
 
   Flags flags;
 
@@ -438,8 +445,12 @@ void InitializeInterceptors();
 void InitializeDynamicAnnotations();
 
 void ReportRace(ThreadState *thr);
-bool OutputReport(const ScopedReport &srep,
+bool OutputReport(Context *ctx,
+                  const ScopedReport &srep,
                   const ReportStack *suppress_stack = 0);
+bool IsFiredSuppression(Context *ctx,
+                        const ScopedReport &srep,
+                        const StackTrace &trace);
 bool IsExpectedReport(uptr addr, uptr size);
 
 #if defined(TSAN_DEBUG_OUTPUT) && TSAN_DEBUG_OUTPUT >= 1
@@ -480,7 +491,7 @@ void FuncEntry(ThreadState *thr, uptr pc);
 void FuncExit(ThreadState *thr);
 
 int ThreadCreate(ThreadState *thr, uptr pc, uptr uid, bool detached);
-void ThreadStart(ThreadState *thr, int tid);
+void ThreadStart(ThreadState *thr, int tid, uptr os_id);
 void ThreadFinish(ThreadState *thr);
 int ThreadTid(ThreadState *thr, uptr pc, uptr uid);
 void ThreadJoin(ThreadState *thr, uptr pc, int tid);

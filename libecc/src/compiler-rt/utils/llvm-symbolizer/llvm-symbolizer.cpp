@@ -18,11 +18,14 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/DebugInfo/DIContext.h"
+#include "llvm/Object/MachO.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
@@ -34,7 +37,6 @@
 
 using namespace llvm;
 using namespace object;
-using std::string;
 
 static cl::opt<bool>
 UseSymbolTable("use-symbol-table", cl::init(true),
@@ -71,9 +73,9 @@ static uint32_t getDILineInfoSpecifierFlags() {
   return Flags;
 }
 
-static void patchFunctionNameInDILineInfo(const string &NewFunctionName,
+static void patchFunctionNameInDILineInfo(const std::string &NewFunctionName,
                                           DILineInfo &LineInfo) {
-  string FileName = LineInfo.getFileName();
+  std::string FileName = LineInfo.getFileName();
   LineInfo = DILineInfo(StringRef(FileName), StringRef(NewFunctionName),
                         LineInfo.getLine(), LineInfo.getColumn());
 }
@@ -85,6 +87,7 @@ class ModuleInfo {
  public:
   ModuleInfo(ObjectFile *Obj, DIContext *DICtx)
       : Module(Obj), DebugInfoContext(DICtx) {}
+
   DILineInfo symbolizeCode(uint64_t ModuleOffset) const {
     DILineInfo LineInfo;
     if (DebugInfoContext) {
@@ -93,13 +96,14 @@ class ModuleInfo {
     }
     // Override function name from symbol table if necessary.
     if (PrintFunctions && UseSymbolTable) {
-      string Function;
+      std::string Function;
       if (getFunctionNameFromSymbolTable(ModuleOffset, Function)) {
         patchFunctionNameInDILineInfo(Function, LineInfo);
       }
     }
     return LineInfo;
   }
+
   DIInliningInfo symbolizeInlinedCode(uint64_t ModuleOffset) const {
     DIInliningInfo InlinedContext;
     if (DebugInfoContext) {
@@ -117,7 +121,7 @@ class ModuleInfo {
            i != n; i++) {
         DILineInfo LineInfo = InlinedContext.getFrame(i);
         if (i == n - 1) {
-          string Function;
+          std::string Function;
           if (getFunctionNameFromSymbolTable(ModuleOffset, Function)) {
             patchFunctionNameInDILineInfo(Function, LineInfo);
           }
@@ -128,9 +132,10 @@ class ModuleInfo {
     }
     return InlinedContext;
   }
+
  private:
-  bool getFunctionNameFromSymbolTable(size_t Address,
-                                      string &FunctionName) const {
+  bool getFunctionNameFromSymbolTable(uint64_t Address,
+                                      std::string &FunctionName) const {
     assert(Module);
     error_code ec;
     for (symbol_iterator si = Module->begin_symbols(),
@@ -139,11 +144,16 @@ class ModuleInfo {
       if (error(ec)) return false;
       uint64_t SymbolAddress;
       uint64_t SymbolSize;
-      if (error(si->getAddress(SymbolAddress))) continue;
-      if (error(si->getSize(SymbolSize))) continue;
+      SymbolRef::Type SymbolType;
+      if (error(si->getAddress(SymbolAddress)) ||
+          SymbolAddress == UnknownAddressOrSize) continue;
+      if (error(si->getSize(SymbolSize)) ||
+          SymbolSize == UnknownAddressOrSize) continue;
+      if (error(si->getType(SymbolType))) continue;
       // FIXME: If a function has alias, there are two entries in symbol table
       // with same address size. Make sure we choose the correct one.
-      if (SymbolAddress <= Address && Address < SymbolAddress + SymbolSize) {
+      if (SymbolAddress <= Address && Address < SymbolAddress + SymbolSize &&
+          SymbolType == SymbolRef::ST_Function) {
         StringRef Name;
         if (error(si->getName(Name))) continue;
         FunctionName = Name.str();
@@ -154,9 +164,8 @@ class ModuleInfo {
   }
 };
 
-typedef std::map<string, ModuleInfo*> ModuleMapTy;
+typedef std::map<std::string, ModuleInfo*> ModuleMapTy;
 typedef ModuleMapTy::iterator ModuleMapIter;
-typedef ModuleMapTy::const_iterator ModuleMapConstIter;
 }  // namespace
 
 static ModuleMapTy Modules;
@@ -181,14 +190,62 @@ static bool getObjectEndianness(const ObjectFile *Obj,
   return true;
 }
 
-static ModuleInfo *getOrCreateModuleInfo(const string &ModuleName) {
+static void getDebugInfoSections(const ObjectFile *Obj,
+                                 StringRef &DebugInfoSection,
+                                 StringRef &DebugAbbrevSection,
+                                 StringRef &DebugLineSection,
+                                 StringRef &DebugArangesSection, 
+                                 StringRef &DebugStringSection, 
+                                 StringRef &DebugRangesSection) {
+  if (Obj == 0)
+    return;
+  error_code ec;
+  for (section_iterator i = Obj->begin_sections(),
+                        e = Obj->end_sections();
+                        i != e; i.increment(ec)) {
+    if (error(ec)) break;
+    StringRef Name;
+    if (error(i->getName(Name))) continue;
+    StringRef Data;
+    if (error(i->getContents(Data))) continue;
+    if (isFullNameOfDwarfSection(Name, "debug_info"))
+      DebugInfoSection = Data;
+    else if (isFullNameOfDwarfSection(Name, "debug_abbrev"))
+      DebugAbbrevSection = Data;
+    else if (isFullNameOfDwarfSection(Name, "debug_line"))
+      DebugLineSection = Data;
+    // Don't use debug_aranges for now, as address ranges contained
+    // there may not cover all instructions in the module
+    // else if (isFullNameOfDwarfSection(Name, "debug_aranges"))
+    //   DebugArangesSection = Data;
+    else if (isFullNameOfDwarfSection(Name, "debug_str"))
+      DebugStringSection = Data;
+    else if (isFullNameOfDwarfSection(Name, "debug_ranges"))
+      DebugRangesSection = Data;
+  }
+}
+
+static ObjectFile *getObjectFile(const std::string &Path) {
+  OwningPtr<MemoryBuffer> Buff;
+  MemoryBuffer::getFile(Path, Buff);
+  return ObjectFile::createObjectFile(Buff.take());
+}
+
+static std::string getDarwinDWARFResourceForModule(const std::string &Path) {
+  StringRef Basename = sys::path::filename(Path);
+  const std::string &DSymDirectory = Path + ".dSYM";
+  SmallString<16> ResourceName = StringRef(DSymDirectory);
+  sys::path::append(ResourceName, "Contents", "Resources", "DWARF");
+  sys::path::append(ResourceName, Basename);
+  return ResourceName.str();
+}
+
+static ModuleInfo *getOrCreateModuleInfo(const std::string &ModuleName) {
   ModuleMapIter I = Modules.find(ModuleName);
   if (I != Modules.end())
     return I->second;
 
-  OwningPtr<MemoryBuffer> Buff;
-  MemoryBuffer::getFile(ModuleName, Buff);
-  ObjectFile *Obj = ObjectFile::createObjectFile(Buff.take());
+  ObjectFile *Obj = getObjectFile(ModuleName);
   if (Obj == 0) {
     // Module name doesn't point to a valid object file.
     Modules.insert(make_pair(ModuleName, (ModuleInfo*)0));
@@ -198,41 +255,30 @@ static ModuleInfo *getOrCreateModuleInfo(const string &ModuleName) {
   DIContext *Context = 0;
   bool IsLittleEndian;
   if (getObjectEndianness(Obj, IsLittleEndian)) {
-    StringRef DebugInfoSection;
-    StringRef DebugAbbrevSection;
-    StringRef DebugLineSection;
-    StringRef DebugArangesSection;
-    StringRef DebugStringSection;
-    StringRef DebugRangesSection;
-    error_code ec;
-    for (section_iterator i = Obj->begin_sections(),
-                          e = Obj->end_sections();
-                          i != e; i.increment(ec)) {
-      if (error(ec)) break;
-      StringRef Name;
-      if (error(i->getName(Name))) continue;
-      StringRef Data;
-      if (error(i->getContents(Data))) continue;
-      if (isFullNameOfDwarfSection(Name, "debug_info"))
-        DebugInfoSection = Data;
-      else if (isFullNameOfDwarfSection(Name, "debug_abbrev"))
-        DebugAbbrevSection = Data;
-      else if (isFullNameOfDwarfSection(Name, "debug_line"))
-        DebugLineSection = Data;
-      // Don't use debug_aranges for now, as address ranges contained
-      // there may not cover all instructions in the module
-      // else if (isFullNameOfDwarfSection(Name, "debug_aranges"))
-      //   DebugArangesSection = Data;
-      else if (isFullNameOfDwarfSection(Name, "debug_str"))
-        DebugStringSection = Data;
-      else if (isFullNameOfDwarfSection(Name, "debug_ranges"))
-        DebugRangesSection = Data;
+    StringRef DebugInfo;
+    StringRef DebugAbbrev;
+    StringRef DebugLine;
+    StringRef DebugAranges;
+    StringRef DebugString;
+    StringRef DebugRanges;
+    getDebugInfoSections(Obj, DebugInfo, DebugAbbrev, DebugLine,
+                         DebugAranges, DebugString, DebugRanges);
+    
+    // On Darwin we may find DWARF in separate object file in
+    // resource directory.
+    if (isa<MachOObjectFile>(Obj)) {
+      const std::string &ResourceName = getDarwinDWARFResourceForModule(
+          ModuleName);
+      ObjectFile *ResourceObj = getObjectFile(ResourceName);
+      if (ResourceObj != 0)
+        getDebugInfoSections(ResourceObj, DebugInfo, DebugAbbrev, DebugLine,
+                             DebugAranges, DebugString, DebugRanges);
     }
 
     Context = DIContext::getDWARFContext(
-        IsLittleEndian, DebugInfoSection, DebugAbbrevSection,
-        DebugArangesSection, DebugLineSection, DebugStringSection,
-        DebugRangesSection);
+        IsLittleEndian, DebugInfo, DebugAbbrev,
+        DebugAranges, DebugLine, DebugString,
+        DebugRanges);
     assert(Context);
   }
 
@@ -248,10 +294,10 @@ extern "C" char *__cxa_demangle(const char *mangled_name, char *output_buffer,
 static void printDILineInfo(DILineInfo LineInfo) {
   // By default, DILineInfo contains "<invalid>" for function/filename it
   // cannot fetch. We replace it to "??" to make our output closer to addr2line.
-  static const string kDILineInfoBadString = "<invalid>";
-  static const string kSymbolizerBadString = "??";
+  static const std::string kDILineInfoBadString = "<invalid>";
+  static const std::string kSymbolizerBadString = "??";
   if (PrintFunctions) {
-    string FunctionName = LineInfo.getFunctionName();
+    std::string FunctionName = LineInfo.getFunctionName();
     if (FunctionName == kDILineInfoBadString)
       FunctionName = kSymbolizerBadString;
     if (Demangle) {
@@ -265,7 +311,7 @@ static void printDILineInfo(DILineInfo LineInfo) {
     }
     outs() << FunctionName << "\n";
   }
-  string Filename = LineInfo.getFileName();
+  std::string Filename = LineInfo.getFileName();
   if (Filename == kDILineInfoBadString)
     Filename = kSymbolizerBadString;
   outs() << Filename <<
@@ -274,7 +320,7 @@ static void printDILineInfo(DILineInfo LineInfo) {
          "\n";
 }
 
-static void symbolize(string ModuleName, string ModuleOffsetStr) {
+static void symbolize(std::string ModuleName, std::string ModuleOffsetStr) {
   ModuleInfo *Info = getOrCreateModuleInfo(ModuleName);
   uint64_t Offset = 0;
   if (Info == 0 ||
@@ -297,8 +343,8 @@ static void symbolize(string ModuleName, string ModuleOffsetStr) {
   outs().flush();
 }
 
-static bool parseModuleNameAndOffset(string &ModuleName,
-                                     string &ModuleOffsetStr) {
+static bool parseModuleNameAndOffset(std::string &ModuleName,
+                                     std::string &ModuleOffsetStr) {
   static const int kMaxInputStringLength = 1024;
   static const char kDelimiters[] = " \n";
   char InputString[kMaxInputStringLength];
@@ -324,8 +370,8 @@ int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, "llvm symbolizer for compiler-rt\n");
   ToolInvocationPath = argv[0];
 
-  string ModuleName;
-  string ModuleOffsetStr;
+  std::string ModuleName;
+  std::string ModuleOffsetStr;
   while (parseModuleNameAndOffset(ModuleName, ModuleOffsetStr)) {
     symbolize(ModuleName, ModuleOffsetStr);
   }

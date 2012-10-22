@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "dyld"
+#include "ObjectImageCommon.h"
 #include "RuntimeDyldImpl.h"
 #include "RuntimeDyldELF.h"
 #include "RuntimeDyldMachO.h"
@@ -61,14 +62,11 @@ void RuntimeDyldImpl::mapSectionAddress(const void *LocalAddress,
 
 // Subclasses can implement this method to create specialized image instances.
 // The caller owns the pointer that is returned.
-ObjectImage *RuntimeDyldImpl::createObjectImage(const MemoryBuffer *InputBuffer) {
-  ObjectFile *ObjFile = ObjectFile::createObjectFile(const_cast<MemoryBuffer*>
-                                                                 (InputBuffer));
-  ObjectImage *Obj = new ObjectImage(ObjFile);
-  return Obj;
+ObjectImage *RuntimeDyldImpl::createObjectImage(ObjectBuffer *InputBuffer) {
+  return new ObjectImageCommon(InputBuffer);
 }
 
-bool RuntimeDyldImpl::loadObject(const MemoryBuffer *InputBuffer) {
+ObjectImage *RuntimeDyldImpl::loadObject(ObjectBuffer *InputBuffer) {
   OwningPtr<ObjectImage> obj(createObjectImage(InputBuffer));
   if (!obj)
     report_fatal_error("Unable to create object image from memory buffer!");
@@ -178,9 +176,7 @@ bool RuntimeDyldImpl::loadObject(const MemoryBuffer *InputBuffer) {
     }
   }
 
-  handleObjectLoaded(obj.take());
-
-  return false;
+  return obj.take();
 }
 
 void RuntimeDyldImpl::emitCommonSymbols(ObjectImage &Obj,
@@ -382,17 +378,17 @@ void RuntimeDyldImpl::reassignSectionAddress(unsigned SectionID,
 
 void RuntimeDyldImpl::resolveRelocationEntry(const RelocationEntry &RE,
                                              uint64_t Value) {
-    // Ignore relocations for sections that were not loaded
-    if (Sections[RE.SectionID].Address != 0) {
-      uint8_t *Target = Sections[RE.SectionID].Address + RE.Offset;
-      DEBUG(dbgs() << "\tSectionID: " << RE.SectionID
-            << " + " << RE.Offset << " (" << format("%p", Target) << ")"
-            << " RelType: " << RE.RelType
-            << " Addend: " << RE.Addend
-            << "\n");
+  // Ignore relocations for sections that were not loaded
+  if (Sections[RE.SectionID].Address != 0) {
+    uint8_t *Target = Sections[RE.SectionID].Address + RE.Offset;
+    DEBUG(dbgs() << "\tSectionID: " << RE.SectionID
+          << " + " << RE.Offset << " (" << format("%p", Target) << ")"
+          << " RelType: " << RE.RelType
+          << " Addend: " << RE.Addend
+          << "\n");
 
-      resolveRelocation(Target, Sections[RE.SectionID].LoadAddress + RE.Offset,
-                        Value, RE.RelType, RE.Addend);
+    resolveRelocation(Target, Sections[RE.SectionID].LoadAddress + RE.Offset,
+                      Value, RE.RelType, RE.Addend);
   }
 }
 
@@ -437,7 +433,7 @@ RuntimeDyld::~RuntimeDyld() {
   delete Dyld;
 }
 
-bool RuntimeDyld::loadObject(MemoryBuffer *InputBuffer) {
+ObjectImage *RuntimeDyld::loadObject(ObjectBuffer *InputBuffer) {
   if (!Dyld) {
     sys::LLVMFileType type = sys::IdentifyFileType(
             InputBuffer->getBufferStart(),

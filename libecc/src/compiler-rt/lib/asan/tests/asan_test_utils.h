@@ -1,4 +1,4 @@
-//===-- asan_test_utils.h ------------*- C++ -*-===//
+//===-- asan_test_utils.h ---------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -14,6 +14,12 @@
 #ifndef ASAN_TEST_UTILS_H
 #define ASAN_TEST_UTILS_H
 
+#if !defined(ASAN_EXTERNAL_TEST_CONFIG)
+# define INCLUDED_FROM_ASAN_TEST_UTILS_H
+# include "asan_test_config.h"
+# undef INCLUDED_FROM_ASAN_TEST_UTILS_H
+#endif
+
 #if defined(_WIN32)
 typedef unsigned __int8  uint8_t;
 typedef unsigned __int16 uint16_t;
@@ -24,12 +30,21 @@ typedef __int16          int16_t;
 typedef __int32          int32_t;
 typedef __int64          int64_t;
 # define NOINLINE __declspec(noinline)
+# define USED
 #else  // defined(_WIN32)
 # define NOINLINE __attribute__((noinline))
+# define USED __attribute__((used))
 #endif  // defined(_WIN32)
 
 #if !defined(__has_feature)
 #define __has_feature(x) 0
+#endif
+
+#if __has_feature(address_sanitizer)
+# define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS \
+    __attribute__((no_address_safety_analysis))
+#else
+# define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
 #endif
 
 #ifndef __WORDSIZE

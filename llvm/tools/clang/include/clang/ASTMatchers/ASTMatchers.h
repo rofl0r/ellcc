@@ -108,8 +108,9 @@ internal::Matcher<T> id(const std::string &ID,
 /// hierarchy.
 /// @{
 typedef internal::Matcher<Decl> DeclarationMatcher;
-typedef internal::Matcher<QualType> TypeMatcher;
 typedef internal::Matcher<Stmt> StatementMatcher;
+typedef internal::Matcher<QualType> TypeMatcher;
+typedef internal::Matcher<TypeLoc> TypeLocMatcher;
 typedef internal::Matcher<NestedNameSpecifier> NestedNameSpecifierMatcher;
 typedef internal::Matcher<NestedNameSpecifierLoc> NestedNameSpecifierLocMatcher;
 /// @}
@@ -342,8 +343,8 @@ AST_MATCHER_P(TemplateArgument, refersToType,
 ///     \c B::next
 AST_MATCHER_P(TemplateArgument, refersToDeclaration,
               internal::Matcher<Decl>, InnerMatcher) {
-  if (const Decl *Declaration = Node.getAsDecl())
-    return InnerMatcher.matches(*Declaration, Finder, Builder);
+  if (Node.getKind() == TemplateArgument::Declaration)
+    return InnerMatcher.matches(*Node.getAsDecl(), Finder, Builder);
   return false;
 }
 
@@ -488,6 +489,14 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, MemberExpr> memberExpr;
 ///   y();
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<Stmt, CallExpr> callExpr;
+
+/// \brief Matches lambda expressions.
+///
+/// Example matches [&](){return 5;}
+/// \code
+///   [&](){return 5;}
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<Stmt, LambdaExpr> lambdaExpr;
 
 /// \brief Matches member call expressions.
 ///
@@ -664,8 +673,18 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, IfStmt> ifStmt;
 /// Example matches 'for (;;) {}'
 /// \code
 ///   for (;;) {}
+///   int i[] =  {1, 2, 3}; for (auto a : i);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<Stmt, ForStmt> forStmt;
+
+/// \brief Matches range-based for statements.
+///
+/// forRangeStmt() matches 'for (auto a : i)'
+/// \code
+///   int i[] =  {1, 2, 3}; for (auto a : i);
+///   for(int j = 0; j < 5; ++j);
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<Stmt, CXXForRangeStmt> forRangeStmt;
 
 /// \brief Matches the increment statement of a for loop.
 ///
@@ -716,6 +735,68 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, WhileStmt> whileStmt;
 ///   matches 'do {} while(true)'
 const internal::VariadicDynCastAllOfMatcher<Stmt, DoStmt> doStmt;
 
+/// \brief Matches break statements.
+///
+/// Given
+/// \code
+///   while (true) { break; }
+/// \endcode
+/// breakStmt()
+///   matches 'break'
+const internal::VariadicDynCastAllOfMatcher<Stmt, BreakStmt> breakStmt;
+
+/// \brief Matches continue statements.
+///
+/// Given
+/// \code
+///   while (true) { continue; }
+/// \endcode
+/// continueStmt()
+///   matches 'continue'
+const internal::VariadicDynCastAllOfMatcher<Stmt, ContinueStmt> continueStmt;
+
+/// \brief Matches return statements.
+///
+/// Given
+/// \code
+///   return 1;
+/// \endcode
+/// returnStmt()
+///   matches 'return 1'
+const internal::VariadicDynCastAllOfMatcher<Stmt, ReturnStmt> returnStmt;
+
+/// \brief Matches goto statements.
+///
+/// Given
+/// \code
+///   goto FOO;
+///   FOO: bar();
+/// \endcode
+/// gotoStmt()
+///   matches 'goto FOO'
+const internal::VariadicDynCastAllOfMatcher<Stmt, GotoStmt> gotoStmt;
+
+/// \brief Matches label statements.
+///
+/// Given
+/// \code
+///   goto FOO;
+///   FOO: bar();
+/// \endcode
+/// labelStmt()
+///   matches 'FOO:'
+const internal::VariadicDynCastAllOfMatcher<Stmt, LabelStmt> labelStmt;
+
+/// \brief Matches switch statements.
+///
+/// Given
+/// \code
+///   switch(a) { case 42: break; default: break; }
+/// \endcode
+/// switchStmt()
+///   matches 'switch(a)'.
+const internal::VariadicDynCastAllOfMatcher<Stmt, SwitchStmt> switchStmt;
+
 /// \brief Matches case and default statements inside switch statements.
 ///
 /// Given
@@ -734,6 +815,52 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, SwitchCase> switchCase;
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<Stmt, CompoundStmt> compoundStmt;
 
+/// \brief Matches catch statements.
+///
+/// \code
+///   try {} catch(int i) {}
+/// \endcode
+/// catchStmt()
+///   matches 'catch(int i)'
+const internal::VariadicDynCastAllOfMatcher<Stmt, CXXCatchStmt> catchStmt;
+
+/// \brief Matches try statements.
+///
+/// \code
+///   try {} catch(int i) {}
+/// \endcode
+/// tryStmt()
+///   matches 'try {}'
+const internal::VariadicDynCastAllOfMatcher<Stmt, CXXTryStmt> tryStmt;
+
+/// \brief Matches throw expressions.
+///
+/// \code
+///   try { throw 5; } catch(int i) {}
+/// \endcode
+/// throwExpr()
+///   matches 'throw 5'
+const internal::VariadicDynCastAllOfMatcher<Stmt, CXXThrowExpr> throwExpr;
+
+/// \brief Matches null statements.
+///
+/// \code
+///   foo();;
+/// \endcode
+/// nullStmt()
+///   matches the second ';'
+const internal::VariadicDynCastAllOfMatcher<Stmt, NullStmt> nullStmt;
+
+/// \brief Matches asm statements.
+///
+/// \code
+///  int i = 100;
+///   __asm("mov al, 2");
+/// \endcode
+/// asmStmt()
+///   matches '__asm("mov al, 2")'
+const internal::VariadicDynCastAllOfMatcher<Stmt, AsmStmt> asmStmt;
+
 /// \brief Matches bool literals.
 ///
 /// Example matches true
@@ -741,7 +868,7 @@ const internal::VariadicDynCastAllOfMatcher<Stmt, CompoundStmt> compoundStmt;
 ///   true
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXBoolLiteralExpr> boolLiteral;
 
 /// \brief Matches string literals (also matches wide string literals).
@@ -751,7 +878,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   char *s = "abcd"; wchar_t *ws = L"abcd"
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   StringLiteral> stringLiteral;
 
 /// \brief Matches character literals (also matches wchar_t).
@@ -764,7 +891,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   char ch = 'a'; wchar_t chw = L'a';
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CharacterLiteral> characterLiteral;
 
 /// \brief Matches integer literals of all sizes / encodings.
@@ -773,8 +900,20 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches 1, 1L, 0x1, 1U
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   IntegerLiteral> integerLiteral;
+
+/// \brief Matches user defined literal operator call.
+///
+/// Example match: "foo"_suffix
+const internal::VariadicDynCastAllOfMatcher<
+  Stmt,
+  UserDefinedLiteral> userDefinedLiteral;
+
+/// \brief Matches nullptr literal.
+const internal::VariadicDynCastAllOfMatcher<
+  Stmt,
+  CXXNullPtrLiteralExpr> nullPtrLiteralExpr;
 
 /// \brief Matches binary operator expressions.
 ///
@@ -817,7 +956,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   void* p = reinterpret_cast<char*>(&p);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXReinterpretCastExpr> reinterpretCastExpr;
 
 /// \brief Matches a C++ static_cast expression.
@@ -834,7 +973,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   long eight(static_cast<long>(8));
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXStaticCastExpr> staticCastExpr;
 
 /// \brief Matches a dynamic_cast expression.
@@ -850,7 +989,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   D* p = dynamic_cast<D*>(&b);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXDynamicCastExpr> dynamicCastExpr;
 
 /// \brief Matches a const_cast expression.
@@ -862,8 +1001,18 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   int* p = const_cast<int*>(&r);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXConstCastExpr> constCastExpr;
+
+/// \brief Matches a C-style cast expression.
+///
+/// Example: Matches (int*) 2.2f in
+/// \code
+///   int i = (int) 2.2f;
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<
+  Stmt,
+  CStyleCastExpr> cStyleCastExpr;
 
 /// \brief Matches explicit cast expressions.
 ///
@@ -887,7 +1036,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   long ell = 42;
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   ExplicitCastExpr> explicitCastExpr;
 
 /// \brief Matches the implicit cast nodes of Clang's AST.
@@ -895,7 +1044,7 @@ const internal::VariadicDynCastAllOfMatcher<
 /// This matches many different places, including function call return value
 /// eliding, as well as any type conversions.
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   ImplicitCastExpr> implicitCastExpr;
 
 /// \brief Matches any cast nodes of Clang's AST.
@@ -911,7 +1060,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///   int i = (0);
 ///   int k = 0;
 /// \endcode
-const internal::VariadicDynCastAllOfMatcher<Expr, CastExpr> castExpr;
+const internal::VariadicDynCastAllOfMatcher<Stmt, CastExpr> castExpr;
 
 /// \brief Matches functional cast expressions
 ///
@@ -922,7 +1071,7 @@ const internal::VariadicDynCastAllOfMatcher<Expr, CastExpr> castExpr;
 ///   Foo h = Foo(bar);
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<
-  Expr,
+  Stmt,
   CXXFunctionalCastExpr> functionalCastExpr;
 
 /// \brief Various overloads for the anyOf matcher.
@@ -1261,7 +1410,7 @@ forEachDescendant(
 /// void f() { if (true) { int x = 42; } }
 /// void g() { for (;;) { int x = 43; } }
 /// \endcode
-/// \c expr(integerLiteral(hasAncsestor(ifStmt()))) matches \c 42, but not 43.
+/// \c expr(integerLiteral(hasAncestor(ifStmt()))) matches \c 42, but not 43.
 ///
 /// Usable as: Any Matcher
 template <typename AncestorT>
@@ -2006,7 +2155,7 @@ inline internal::Matcher<BinaryOperator> hasEitherOperand(
 
 /// \brief Matches if the operand of a unary operator matches.
 ///
-/// Example matches true (matcher = hasOperand(boolLiteral(equals(true))))
+/// Example matches true (matcher = hasUnaryOperand(boolLiteral(equals(true))))
 /// \code
 ///   !true
 /// \endcode
@@ -2290,6 +2439,282 @@ isExplicitTemplateSpecialization() {
     internal::IsExplicitTemplateSpecializationMatcher>();
 }
 
+/// \brief Matches \c QualTypes in the clang AST.
+const internal::VariadicAllOfMatcher<QualType> qualType;
+
+/// \brief Matches \c Types in the clang AST.
+const internal::VariadicDynCastAllOfMatcher<Type, Type> type;
+
+/// \brief Matches \c TypeLocs in the clang AST.
+const internal::VariadicDynCastAllOfMatcher<TypeLoc, TypeLoc> typeLoc;
+
+/// \brief Matches \c TypeLocs for which the given inner
+/// QualType-matcher matches.
+inline internal::BindableMatcher<TypeLoc> loc(
+    const internal::Matcher<QualType> &InnerMatcher) {
+  return internal::BindableMatcher<TypeLoc>(
+      new internal::TypeLocTypeMatcher(InnerMatcher));
+}
+
+/// \brief Matches builtin Types.
+///
+/// Given
+/// \code
+///   struct A {};
+///   A a;
+///   int b;
+///   float c;
+///   bool d;
+/// \endcode
+/// builtinType()
+///   matches "int b", "float c" and "bool d"
+AST_TYPE_MATCHER(BuiltinType, builtinType);
+
+/// \brief Matches all kinds of arrays.
+///
+/// Given
+/// \code
+///   int a[] = { 2, 3 };
+///   int b[4];
+///   void f() { int c[a[0]]; }
+/// \endcode
+/// arrayType()
+///   matches "int a[]", "int b[4]" and "int c[a[0]]";
+AST_TYPE_MATCHER(ArrayType, arrayType);
+
+/// \brief Matches C99 complex types.
+///
+/// Given
+/// \code
+///   _Complex float f;
+/// \endcode
+/// complexType()
+///   matches "_Complex float f"
+AST_TYPE_MATCHER(ComplexType, complexType);
+
+/// \brief Matches arrays and C99 complex types that have a specific element
+/// type.
+///
+/// Given
+/// \code
+///   struct A {};
+///   A a[7];
+///   int b[7];
+/// \endcode
+/// arrayType(hasElementType(builtinType()))
+///   matches "int b[7]"
+///
+/// Usable as: Matcher<ArrayType>, Matcher<ComplexType>
+AST_TYPELOC_TRAVERSE_MATCHER(hasElementType, getElement);
+
+/// \brief Matches C arrays with a specified constant size.
+///
+/// Given
+/// \code
+///   void() {
+///     int a[2];
+///     int b[] = { 2, 3 };
+///     int c[b[0]];
+///   }
+/// \endcode
+/// constantArrayType()
+///   matches "int a[2]"
+AST_TYPE_MATCHER(ConstantArrayType, constantArrayType);
+
+/// \brief Matches \c ConstantArrayType nodes that have the specified size.
+///
+/// Given
+/// \code
+///   int a[42];
+///   int b[2 * 21];
+///   int c[41], d[43];
+/// \endcode
+/// constantArrayType(hasSize(42))
+///   matches "int a[42]" and "int b[2 * 21]"
+AST_MATCHER_P(ConstantArrayType, hasSize, unsigned, N) {
+  return Node.getSize() == N;
+}
+
+/// \brief Matches C++ arrays whose size is a value-dependent expression.
+///
+/// Given
+/// \code
+///   template<typename T, int Size>
+///   class array {
+///     T data[Size];
+///   };
+/// \endcode
+/// dependentSizedArrayType
+///   matches "T data[Size]"
+AST_TYPE_MATCHER(DependentSizedArrayType, dependentSizedArrayType);
+
+/// \brief Matches C arrays with unspecified size.
+///
+/// Given
+/// \code
+///   int a[] = { 2, 3 };
+///   int b[42];
+///   void f(int c[]) { int d[a[0]]; };
+/// \endcode
+/// incompleteArrayType()
+///   matches "int a[]" and "int c[]"
+AST_TYPE_MATCHER(IncompleteArrayType, incompleteArrayType);
+
+/// \brief Matches C arrays with a specified size that is not an
+/// integer-constant-expression.
+///
+/// Given
+/// \code
+///   void f() {
+///     int a[] = { 2, 3 }
+///     int b[42];
+///     int c[a[0]];
+/// \endcode
+/// variableArrayType()
+///   matches "int c[a[0]]"
+AST_TYPE_MATCHER(VariableArrayType, variableArrayType);
+
+/// \brief Matches \c VariableArrayType nodes that have a specific size
+/// expression.
+///
+/// Given
+/// \code
+///   void f(int b) {
+///     int a[b];
+///   }
+/// \endcode
+/// variableArrayType(hasSizeExpr(ignoringImpCasts(declRefExpr(to(
+///   varDecl(hasName("b")))))))
+///   matches "int a[b]"
+AST_MATCHER_P(VariableArrayType, hasSizeExpr,
+              internal::Matcher<Expr>, InnerMatcher) {
+  return InnerMatcher.matches(*Node.getSizeExpr(), Finder, Builder);
+}
+
+/// \brief Matches atomic types.
+///
+/// Given
+/// \code
+///   _Atomic(int) i;
+/// \endcode
+/// atomicType()
+///   matches "_Atomic(int) i"
+AST_TYPE_MATCHER(AtomicType, atomicType);
+
+/// \brief Matches atomic types with a specific value type.
+///
+/// Given
+/// \code
+///   _Atomic(int) i;
+///   _Atomic(float) f;
+/// \endcode
+/// atomicType(hasValueType(isInteger()))
+///  matches "_Atomic(int) i"
+///
+/// Usable as: Matcher<AtomicType>
+AST_TYPELOC_TRAVERSE_MATCHER(hasValueType, getValue);
+
+/// \brief Matches types nodes representing C++11 auto types.
+///
+/// Given:
+/// \code
+///   auto n = 4;
+///   int v[] = { 2, 3 }
+///   for (auto i : v) { }
+/// \endcode
+/// autoType()
+///   matches "auto n" and "auto i"
+AST_TYPE_MATCHER(AutoType, autoType);
+
+/// \brief Matches \c AutoType nodes where the deduced type is a specific type.
+///
+/// Note: There is no \c TypeLoc for the deduced type and thus no
+/// \c getDeducedLoc() matcher.
+///
+/// Given
+/// \code
+///   auto a = 1;
+///   auto b = 2.0;
+/// \endcode
+/// autoType(hasDeducedType(isInteger()))
+///   matches "auto a"
+///
+/// Usable as: Matcher<AutoType>
+AST_TYPE_TRAVERSE_MATCHER(hasDeducedType, getDeducedType);
+
+/// \brief Matches block pointer types, i.e. types syntactically represented as
+/// "void (^)(int)".
+///
+/// The \c pointee is always required to be a \c FunctionType.
+AST_TYPE_MATCHER(BlockPointerType, blockPointerType);
+
+/// \brief Matches member pointer types.
+/// Given
+/// \code
+///   struct A { int i; }
+///   A::* ptr = A::i;
+/// \endcode
+/// memberPointerType()
+///   matches "A::* ptr"
+AST_TYPE_MATCHER(MemberPointerType, memberPointerType);
+
+/// \brief Matches pointer types.
+///
+/// Given
+/// \code
+///   int *a;
+///   int &b = *a;
+///   int c = 5;
+/// \endcode
+/// pointerType()
+///   matches "int *a"
+AST_TYPE_MATCHER(PointerType, pointerType);
+
+/// \brief Matches reference types.
+///
+/// Given
+/// \code
+///   int *a;
+///   int &b = *a;
+///   int c = 5;
+/// \endcode
+/// pointerType()
+///   matches "int &b"
+AST_TYPE_MATCHER(ReferenceType, referenceType);
+
+/// \brief Narrows PointerType (and similar) matchers to those where the
+/// \c pointee matches a given matcher.
+///
+/// Given
+/// \code
+///   int *a;
+///   int const *b;
+///   float const *f;
+/// \endcode
+/// pointerType(pointee(isConstQualified(), isInteger()))
+///   matches "int const *b"
+///
+/// Usable as: Matcher<BlockPointerType>, Matcher<MemberPointerType>,
+///   Matcher<PointerType>, Matcher<ReferenceType>
+AST_TYPELOC_TRAVERSE_MATCHER(pointee, getPointee);
+
+/// \brief Matches typedef types.
+///
+/// Given
+/// \code
+///   typedef int X;
+/// \endcode
+/// typedefType()
+///   matches "typedef int X"
+AST_TYPE_MATCHER(TypedefType, typedefType);
+
+/// \brief Matches \c TypedefTypes referring to a specific
+/// \c TypedefNameDecl.
+AST_MATCHER_P(TypedefType, hasDecl,
+              internal::Matcher<TypedefNameDecl>, InnerMatcher) {
+  return InnerMatcher.matches(*Node.getDecl(), Finder, Builder);
+}
+
 /// \brief Matches nested name specifiers.
 ///
 /// Given
@@ -2320,8 +2745,6 @@ inline internal::BindableMatcher<NestedNameSpecifierLoc> loc(
 
 /// \brief Matches nested name specifiers that specify a type matching the
 /// given \c QualType matcher without qualifiers.
-/// FIXME: This is a temporary solution. Switch to using Type-matchers as soon
-/// as we have those.
 ///
 /// Given
 /// \code
@@ -2337,8 +2760,23 @@ AST_MATCHER_P(NestedNameSpecifier, specifiesType,
   return InnerMatcher.matches(QualType(Node.getAsType(), 0), Finder, Builder);
 }
 
-/// \brief Matches on the prefix of a \c NestedNameSpecifier or
-/// \c NestedNameSpecifierLoc.
+/// \brief Matches nested name specifier locs that specify a type matching the
+/// given \c TypeLoc.
+///
+/// Given
+/// \code
+///   struct A { struct B { struct C {}; }; };
+///   A::B::C c;
+/// \endcode
+/// nestedNameSpecifierLoc(specifiesTypeLoc(loc(type(
+///   hasDeclaration(recordDecl(hasName("A")))))))
+///   matches "A::"
+AST_MATCHER_P(NestedNameSpecifierLoc, specifiesTypeLoc,
+              internal::Matcher<TypeLoc>, InnerMatcher) {
+  return InnerMatcher.matches(Node.getTypeLoc(), Finder, Builder);
+}
+
+/// \brief Matches on the prefix of a \c NestedNameSpecifier.
 ///
 /// Given
 /// \code
@@ -2346,9 +2784,27 @@ AST_MATCHER_P(NestedNameSpecifier, specifiesType,
 ///   A::B::C c;
 /// \endcode
 /// nestedNameSpecifier(hasPrefix(specifiesType(asString("struct A")))) and
+///   matches "A::"
+inline internal::Matcher<NestedNameSpecifier> hasPrefix(
+    const internal::Matcher<NestedNameSpecifier> &InnerMatcher) {
+  return internal::makeMatcher(
+    new internal::NestedNameSpecifierPrefixMatcher(InnerMatcher));
+}
+
+/// \brief Matches on the prefix of a \c NestedNameSpecifierLoc.
+///
+/// Given
+/// \code
+///   struct A { struct B { struct C {}; }; };
+///   A::B::C c;
+/// \endcode
 /// nestedNameSpecifierLoc(hasPrefix(loc(specifiesType(asString("struct A")))))
-///   both match "A::"
-LOC_TRAVERSE_MATCHER(hasPrefix, NestedNameSpecifier, getPrefix)
+///   matches "A::"
+inline internal::Matcher<NestedNameSpecifierLoc> hasPrefix(
+    const internal::Matcher<NestedNameSpecifierLoc> &InnerMatcher) {
+  return internal::makeMatcher(
+    new internal::NestedNameSpecifierLocPrefixMatcher(InnerMatcher));
+}
 
 /// \brief Matches nested name specifiers that specify a namespace matching the
 /// given namespace matcher.

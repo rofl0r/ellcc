@@ -255,7 +255,9 @@ void CodeGenFunction::GenerateVarArgsThunk(
   llvm::Function *BaseFn = cast<llvm::Function>(Callee);
 
   // Clone to thunk.
-  llvm::Function *NewFn = llvm::CloneFunction(BaseFn);
+  llvm::ValueToValueMapTy VMap;
+  llvm::Function *NewFn = llvm::CloneFunction(BaseFn, VMap,
+                                              /*ModuleLevelChanges=*/false);
   CGM.getModule().getFunctionList().push_back(NewFn);
   Fn->replaceAllUsesWith(NewFn);
   NewFn->takeName(Fn);
@@ -464,6 +466,8 @@ void CodeGenVTables::EmitThunk(GlobalDecl GD, const ThunkInfo &Thunk,
     return;
   }
 
+  CGM.SetLLVMFunctionAttributesForDefinition(GD.getDecl(), ThunkFn);
+
   if (ThunkFn->isVarArg()) {
     // Varargs thunks are special; we can't just generate a call because
     // we can't copy the varargs.  Our implementation is rather
@@ -533,7 +537,7 @@ CodeGenVTables::CreateVTableInitializer(const CXXRecordDecl *RD,
   
   unsigned NextVTableThunkIndex = 0;
   
-  llvm::Constant* PureVirtualFn = 0;
+  llvm::Constant *PureVirtualFn = 0, *DeletedVirtualFn = 0;
 
   for (unsigned I = 0; I != NumComponents; ++I) {
     VTableComponent Component = Components[I];
@@ -590,6 +594,17 @@ CodeGenVTables::CreateVTableInitializer(const CXXRecordDecl *RD,
                                                          CGM.Int8PtrTy);
         }
         Init = PureVirtualFn;
+      } else if (cast<CXXMethodDecl>(GD.getDecl())->isDeleted()) {
+        if (!DeletedVirtualFn) {
+          llvm::FunctionType *Ty =
+            llvm::FunctionType::get(CGM.VoidTy, /*isVarArg=*/false);
+          StringRef DeletedCallName =
+            CGM.getCXXABI().GetDeletedVirtualCallName();
+          DeletedVirtualFn = CGM.CreateRuntimeFunction(Ty, DeletedCallName);
+          DeletedVirtualFn = llvm::ConstantExpr::getBitCast(DeletedVirtualFn,
+                                                         CGM.Int8PtrTy);
+        }
+        Init = DeletedVirtualFn;
       } else {
         // Check if we should use a thunk.
         if (NextVTableThunkIndex < NumVTableThunks &&

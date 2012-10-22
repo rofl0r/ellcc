@@ -10,7 +10,8 @@ OS := linux
 CFLAGS := -MP -MD -g -Werror -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
-	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else
+	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
+	  -Wno-int-to-pointer-cast
 -include $(INCLUDES)
 
 # Get the clang version.

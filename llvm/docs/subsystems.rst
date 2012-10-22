@@ -15,6 +15,8 @@ Subsystem Documentation
    LinkTimeOptimization
    SegmentedStacks
    TableGenFundamentals
+   DebuggingJITedCode
+   GoldPlugin
 
 * `Writing an LLVM Pass <WritingAnLLVMPass.html>`_
     
@@ -74,11 +76,11 @@ Subsystem Documentation
    This document describes the interface between LLVM intermodular optimizer
    and the linker and its design
     
-* `The LLVM gold plugin <GoldPlugin.html>`_
+* :ref:`gold-plugin`
     
    How to build your programs with link-time optimization on Linux.
     
-* `The GDB JIT interface <DebuggingJITedCode.html>`_
+* :ref:`debugging-jited-code`
     
    How to debug JITed code with GDB.
     
@@ -89,3 +91,10 @@ Subsystem Documentation
 * :ref:`segmented_stacks`
 
    This document describes segmented stacks and how they are used in LLVM.
+
+* `Howto: Implementing LLVM Integrated Assembler`_
+
+   A simple guide for how to implement an LLVM integrated assembler for an
+   architecture.
+
+.. _`Howto: Implementing LLVM Integrated Assembler`: http://www.embecosm.com/download/ean10.html

@@ -87,6 +87,17 @@ static AvailabilityResult DiagnoseAvailabilityOfDecl(Sema &S,
       if (const EnumDecl *TheEnumDecl = dyn_cast<EnumDecl>(DC))
         Result = TheEnumDecl->getAvailability(&Message);
     }
+
+  const ObjCPropertyDecl *ObjCPDecl = 0;
+  if (Result == AR_Deprecated || Result == AR_Unavailable) {
+    if (const ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(D)) {
+      if (const ObjCPropertyDecl *PD = MD->findPropertyDecl()) {
+        AvailabilityResult PDeclResult = PD->getAvailability(0);
+        if (PDeclResult == Result)
+          ObjCPDecl = PD;
+      }
+    }
+  }
   
   switch (Result) {
     case AR_Available:
@@ -94,23 +105,30 @@ static AvailabilityResult DiagnoseAvailabilityOfDecl(Sema &S,
       break;
             
     case AR_Deprecated:
-      S.EmitDeprecationWarning(D, Message, Loc, UnknownObjCClass);
+      S.EmitDeprecationWarning(D, Message, Loc, UnknownObjCClass, ObjCPDecl);
       break;
             
     case AR_Unavailable:
       if (S.getCurContextAvailability() != AR_Unavailable) {
         if (Message.empty()) {
-          if (!UnknownObjCClass)
+          if (!UnknownObjCClass) {
             S.Diag(Loc, diag::err_unavailable) << D->getDeclName();
+            if (ObjCPDecl)
+              S.Diag(ObjCPDecl->getLocation(), diag::note_property_attribute)
+                << ObjCPDecl->getDeclName() << 1;
+          }
           else
             S.Diag(Loc, diag::warn_unavailable_fwdclass_message) 
               << D->getDeclName();
         }
-        else 
+        else
           S.Diag(Loc, diag::err_unavailable_message) 
             << D->getDeclName() << Message;
-          S.Diag(D->getLocation(), diag::note_unavailable_here) 
-          << isa<FunctionDecl>(D) << false;
+        S.Diag(D->getLocation(), diag::note_unavailable_here)
+                  << isa<FunctionDecl>(D) << false;
+        if (ObjCPDecl)
+          S.Diag(ObjCPDecl->getLocation(), diag::note_property_attribute)
+          << ObjCPDecl->getDeclName() << 1;
       }
       break;
     }
@@ -1411,6 +1429,15 @@ Sema::BuildDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
 
   MarkDeclRefReferenced(E);
 
+  if (getLangOpts().ObjCARCWeak && isa<VarDecl>(D) &&
+      Ty.getObjCLifetime() == Qualifiers::OCL_Weak) {
+    DiagnosticsEngine::Level Level =
+      Diags.getDiagnosticLevel(diag::warn_arc_repeated_use_of_weak,
+                               E->getLocStart());
+    if (Level != DiagnosticsEngine::Ignored)
+      getCurFunction()->recordUseOfWeak(E);
+  }
+
   // Just in case we're building an illegal pointer-to-member.
   FieldDecl *FD = dyn_cast<FieldDecl>(D);
   if (FD && FD->isBitField())
@@ -1613,7 +1640,8 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
           Diag(R.getNameLoc(), diag::err_no_member_suggest)
             << Name << computeDeclContext(SS, false) << CorrectedQuotedStr
             << SS.getRange()
-            << FixItHint::CreateReplacement(R.getNameLoc(), CorrectedStr);
+            << FixItHint::CreateReplacement(Corrected.getCorrectionRange(),
+                                            CorrectedStr);
         if (ND)
           Diag(ND->getLocation(), diag::note_previous_decl)
             << CorrectedQuotedStr;
@@ -1972,9 +2000,25 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
       ObjCMethodFamily MF = CurMethod->getMethodFamily();
       if (MF != OMF_init && MF != OMF_dealloc && MF != OMF_finalize)
         Diag(Loc, diag::warn_direct_ivar_access) << IV->getDeclName();
-      return Owned(new (Context)
-                   ObjCIvarRefExpr(IV, IV->getType(), Loc,
-                                   SelfExpr.take(), true, true));
+
+      ObjCIvarRefExpr *Result = new (Context) ObjCIvarRefExpr(IV, IV->getType(),
+                                                              Loc,
+                                                              SelfExpr.take(),
+                                                              true, true);
+
+      if (getLangOpts().ObjCAutoRefCount) {
+        if (IV->getType().getObjCLifetime() == Qualifiers::OCL_Weak) {
+          DiagnosticsEngine::Level Level =
+            Diags.getDiagnosticLevel(diag::warn_arc_repeated_use_of_weak, Loc);
+          if (Level != DiagnosticsEngine::Ignored)
+            getCurFunction()->recordUseOfWeak(Result);
+        }
+        if (CurContext->isClosure())
+          Diag(Loc, diag::warn_implicitly_retains_self)
+            << FixItHint::CreateInsertion(Loc, "self->");
+      }
+      
+      return Owned(Result);
     }
   } else if (CurMethod->isInstanceMethod()) {
     // We should warn if a local variable hides an ivar.
@@ -2630,19 +2674,20 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
     return ActOnIntegerConstant(Tok.getLocation(), Val-'0');
   }
 
-  SmallString<512> IntegerBuffer;
-  // Add padding so that NumericLiteralParser can overread by one character.
-  IntegerBuffer.resize(Tok.getLength()+1);
-  const char *ThisTokBegin = &IntegerBuffer[0];
+  SmallString<128> SpellingBuffer;
+  // NumericLiteralParser wants to overread by one character.  Add padding to
+  // the buffer in case the token is copied to the buffer.  If getSpelling()
+  // returns a StringRef to the memory buffer, it should have a null char at
+  // the EOF, so it is also safe.
+  SpellingBuffer.resize(Tok.getLength() + 1);
 
   // Get the spelling of the token, which eliminates trigraphs, etc.
   bool Invalid = false;
-  unsigned ActualLength = PP.getSpelling(Tok, ThisTokBegin, &Invalid);
+  StringRef TokSpelling = PP.getSpelling(Tok, SpellingBuffer, &Invalid);
   if (Invalid)
     return ExprError();
 
-  NumericLiteralParser Literal(ThisTokBegin, ThisTokBegin+ActualLength,
-                               Tok.getLocation(), PP);
+  NumericLiteralParser Literal(TokSpelling, Tok.getLocation(), PP);
   if (Literal.hadError)
     return ExprError();
 
@@ -2708,7 +2753,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
           Context.CharTy, llvm::APInt(32, Length + 1),
           ArrayType::Normal, 0);
       Expr *Lit = StringLiteral::Create(
-          Context, StringRef(ThisTokBegin, Length), StringLiteral::Ascii,
+          Context, StringRef(TokSpelling.data(), Length), StringLiteral::Ascii,
           /*Pascal*/false, StrTy, &TokLoc, 1);
       return BuildLiteralOperatorCall(R, OpNameInfo,
                                       llvm::makeArrayRef(&Lit, 1), TokLoc);
@@ -2724,7 +2769,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
       bool CharIsUnsigned = Context.CharTy->isUnsignedIntegerType();
       llvm::APSInt Value(CharBits, CharIsUnsigned);
       for (unsigned I = 0, N = Literal.getUDSuffixOffset(); I != N; ++I) {
-        Value = ThisTokBegin[I];
+        Value = TokSpelling[I];
         TemplateArgument Arg(Context, Value, Context.CharTy);
         TemplateArgumentLocInfo ArgInfo;
         ExplicitArgs.addArgument(TemplateArgumentLoc(Arg, ArgInfo));
@@ -2762,11 +2807,15 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
   } else {
     QualType Ty;
 
-    // long long is a C99 feature.
-    if (!getLangOpts().C99 && Literal.isLongLong)
-      Diag(Tok.getLocation(),
-           getLangOpts().CPlusPlus0x ?
-             diag::warn_cxx98_compat_longlong : diag::ext_longlong);
+    // 'long long' is a C99 or C++11 feature.
+    if (!getLangOpts().C99 && Literal.isLongLong) {
+      if (getLangOpts().CPlusPlus)
+        Diag(Tok.getLocation(),
+             getLangOpts().CPlusPlus0x ?
+             diag::warn_cxx98_compat_longlong : diag::ext_cxx11_longlong);
+      else
+        Diag(Tok.getLocation(), diag::ext_c99_longlong);
+    }
 
     // Get the value in the widest-possible width.
     unsigned MaxWidth = Context.getTargetInfo().getIntMaxTWidth();
@@ -5260,7 +5309,7 @@ static void DiagnoseConditionalPrecedence(Sema &Self,
       << BinaryOperator::getOpcodeStr(CondOpcode);
 
   SuggestParentheses(Self, OpLoc,
-    Self.PDiag(diag::note_precedence_conditional_silence)
+    Self.PDiag(diag::note_precedence_silence)
       << BinaryOperator::getOpcodeStr(CondOpcode),
     SourceRange(Condition->getLocStart(), Condition->getLocEnd()));
 
@@ -7707,6 +7756,19 @@ QualType Sema::CheckAssignmentOperands(Expr *LHSExpr, ExprResult &RHS,
         if (!DRE || DRE->getDecl()->hasAttr<BlocksAttr>())
           checkRetainCycles(LHSExpr, RHS.get());
 
+        // It is safe to assign a weak reference into a strong variable.
+        // Although this code can still have problems:
+        //   id x = self.weakProp;
+        //   id y = self.weakProp;
+        // we do not warn to warn spuriously when 'x' and 'y' are on separate
+        // paths through the function. This should be revisited if
+        // -Wrepeated-use-of-weak is made flow-sensitive.
+        DiagnosticsEngine::Level Level =
+          Diags.getDiagnosticLevel(diag::warn_arc_repeated_use_of_weak,
+                                   RHS.get()->getLocStart());
+        if (Level != DiagnosticsEngine::Ignored)
+          getCurFunction()->markSafeWeakUse(RHS.get());
+
       } else if (getLangOpts().ObjCAutoRefCount) {
         checkUnsafeExprAssigns(Loc, LHSExpr, RHS.get());
       }
@@ -7995,8 +8057,16 @@ static QualType CheckAddressOfOperand(Sema &S, ExprResult &OrigOp,
 
     // The method was named without a qualifier.
     } else if (!DRE->getQualifier()) {
-      S.Diag(OpLoc, diag::err_unqualified_pointer_member_function)
-        << op->getSourceRange();
+      if (MD->getParent()->getName().empty())
+        S.Diag(OpLoc, diag::err_unqualified_pointer_member_function)
+          << op->getSourceRange();
+      else {
+        SmallString<32> Str;
+        StringRef Qual = (MD->getParent()->getName() + "::").toStringRef(Str);
+        S.Diag(OpLoc, diag::err_unqualified_pointer_member_function)
+          << op->getSourceRange()
+          << FixItHint::CreateInsertion(op->getSourceRange().getBegin(), Qual);
+      }
     }
 
     return S.Context.getMemberPointerType(op->getType(),
@@ -8362,7 +8432,8 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
 
   if (CompResultTy.isNull())
     return Owned(new (Context) BinaryOperator(LHS.take(), RHS.take(), Opc,
-                                              ResultTy, VK, OK, OpLoc));
+                                              ResultTy, VK, OK, OpLoc,
+                                              FPFeatures.fp_contract));
   if (getLangOpts().CPlusPlus && LHS.get()->getObjectKind() !=
       OK_ObjCProperty) {
     VK = VK_LValue;
@@ -8370,7 +8441,8 @@ ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
   }
   return Owned(new (Context) CompoundAssignOperator(LHS.take(), RHS.take(), Opc,
                                                     ResultTy, VK, OK, CompLHSTy,
-                                                    CompResultTy, OpLoc));
+                                                    CompResultTy, OpLoc,
+                                                    FPFeatures.fp_contract));
 }
 
 /// DiagnoseBitwisePrecedence - Emit a warning when bitwise and comparison
@@ -8405,8 +8477,8 @@ static void DiagnoseBitwisePrecedence(Sema &Self, BinaryOperatorKind Opc,
   SourceRange DiagRange = isLeftComp ? SourceRange(LHSExpr->getLocStart(),
                                                    OpLoc)
                                      : SourceRange(OpLoc, RHSExpr->getLocEnd());
-  std::string OpStr = isLeftComp ? BinOp::getOpcodeStr(LHSopc)
-                                 : BinOp::getOpcodeStr(RHSopc);
+  StringRef OpStr = isLeftComp ? BinOp::getOpcodeStr(LHSopc)
+                               : BinOp::getOpcodeStr(RHSopc);
   SourceRange ParensRange = isLeftComp ?
       SourceRange(cast<BinOp>(LHSExpr)->getRHS()->getLocStart(),
                   RHSExpr->getLocEnd())
@@ -8416,7 +8488,7 @@ static void DiagnoseBitwisePrecedence(Sema &Self, BinaryOperatorKind Opc,
   Self.Diag(OpLoc, diag::warn_precedence_bitwise_rel)
     << DiagRange << BinOp::getOpcodeStr(Opc) << OpStr;
   SuggestParentheses(Self, OpLoc,
-    Self.PDiag(diag::note_precedence_bitwise_silence) << OpStr,
+    Self.PDiag(diag::note_precedence_silence) << OpStr,
     (isLeftComp ? LHSExpr : RHSExpr)->getSourceRange());
   SuggestParentheses(Self, OpLoc,
     Self.PDiag(diag::note_precedence_bitwise_first) << BinOp::getOpcodeStr(Opc),
@@ -8433,7 +8505,8 @@ EmitDiagnosticForBitwiseAndInBitwiseOr(Sema &Self, SourceLocation OpLoc,
   Self.Diag(Bop->getOperatorLoc(), diag::warn_bitwise_and_in_bitwise_or)
       << Bop->getSourceRange() << OpLoc;
   SuggestParentheses(Self, Bop->getOperatorLoc(),
-    Self.PDiag(diag::note_bitwise_and_in_bitwise_or_silence),
+    Self.PDiag(diag::note_precedence_silence)
+      << Bop->getOpcodeStr(),
     Bop->getSourceRange());
 }
 
@@ -8447,7 +8520,8 @@ EmitDiagnosticForLogicalAndInLogicalOr(Sema &Self, SourceLocation OpLoc,
   Self.Diag(Bop->getOperatorLoc(), diag::warn_logical_and_in_logical_or)
       << Bop->getSourceRange() << OpLoc;
   SuggestParentheses(Self, Bop->getOperatorLoc(),
-    Self.PDiag(diag::note_logical_and_in_logical_or_silence),
+    Self.PDiag(diag::note_precedence_silence)
+      << Bop->getOpcodeStr(),
     Bop->getSourceRange());
 }
 
@@ -8511,6 +8585,20 @@ static void DiagnoseBitwiseAndInBitwiseOr(Sema &S, SourceLocation OpLoc,
   }
 }
 
+static void DiagnoseAdditionInShift(Sema &S, SourceLocation OpLoc,
+                                    Expr *SubExpr, StringRef Shift) {
+  if (BinaryOperator *Bop = dyn_cast<BinaryOperator>(SubExpr)) {
+    if (Bop->getOpcode() == BO_Add || Bop->getOpcode() == BO_Sub) {
+      StringRef Op = Bop->getOpcodeStr();
+      S.Diag(Bop->getOperatorLoc(), diag::warn_addition_in_bitshift)
+          << Bop->getSourceRange() << OpLoc << Shift << Op;
+      SuggestParentheses(S, Bop->getOperatorLoc(),
+          S.PDiag(diag::note_precedence_silence) << Op,
+          Bop->getSourceRange());
+    }
+  }
+}
+
 /// DiagnoseBinOpPrecedence - Emit warnings for expressions with tricky
 /// precedence.
 static void DiagnoseBinOpPrecedence(Sema &Self, BinaryOperatorKind Opc,
@@ -8531,6 +8619,13 @@ static void DiagnoseBinOpPrecedence(Sema &Self, BinaryOperatorKind Opc,
   if (Opc == BO_LOr && !OpLoc.isMacroID()/* Don't warn in macros. */) {
     DiagnoseLogicalAndInLogicalOrLHS(Self, OpLoc, LHSExpr, RHSExpr);
     DiagnoseLogicalAndInLogicalOrRHS(Self, OpLoc, LHSExpr, RHSExpr);
+  }
+
+  if ((Opc == BO_Shl && LHSExpr->getType()->isIntegralType(Self.getASTContext()))
+      || Opc == BO_Shr) {
+    StringRef Shift = BinaryOperator::getOpcodeStr(Opc);
+    DiagnoseAdditionInShift(Self, OpLoc, LHSExpr, Shift);
+    DiagnoseAdditionInShift(Self, OpLoc, RHSExpr, Shift);
   }
 }
 
@@ -9548,6 +9643,16 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
     if (Result.isInvalid())
       return ExprError();
     E = Result.take();
+  } else if (VaListType->isRecordType() && getLangOpts().CPlusPlus) {
+    // If va_list is a record type and we are compiling in C++ mode,
+    // check the argument using reference binding.
+    InitializedEntity Entity
+      = InitializedEntity::InitializeParameter(Context,
+          Context.getLValueReferenceType(VaListType), false);
+    ExprResult Init = PerformCopyInitialization(Entity, SourceLocation(), E);
+    if (Init.isInvalid())
+      return ExprError();
+    E = Init.takeAs<Expr>();
   } else {
     // Otherwise, the va_list argument must be an l-value because
     // it is modified by va_arg.
@@ -10114,6 +10219,14 @@ Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext,
   ExprNeedsCleanups = false;
   if (!MaybeODRUseExprs.empty())
     std::swap(MaybeODRUseExprs, ExprEvalContexts.back().SavedMaybeODRUseExprs);
+}
+
+void
+Sema::PushExpressionEvaluationContext(ExpressionEvaluationContext NewContext,
+                                      ReuseLambdaContextDecl_t,
+                                      bool IsDecltype) {
+  Decl *LambdaContextDecl = ExprEvalContexts.back().LambdaContextDecl;
+  PushExpressionEvaluationContext(NewContext, LambdaContextDecl, IsDecltype);
 }
 
 void Sema::PopExpressionEvaluationContext() {
@@ -10907,20 +11020,21 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
     }
   }
 
-  // Per C++11 [basic.def.odr], a variable is odr-used "unless it is 
-  // an object that satisfies the requirements for appearing in a
-  // constant expression (5.19) and the lvalue-to-rvalue conversion (4.1)
+  // Per C++11 [basic.def.odr], a variable is odr-used "unless it satisfies
+  // the requirements for appearing in a constant expression (5.19) and, if
+  // it is an object, the lvalue-to-rvalue conversion (4.1)
   // is immediately applied."  We check the first part here, and
   // Sema::UpdateMarkingForLValueToRValue deals with the second part.
   // Note that we use the C++11 definition everywhere because nothing in
-  // C++03 depends on whether we get the C++03 version correct. This does not
-  // apply to references, since they are not objects.
+  // C++03 depends on whether we get the C++03 version correct. The second
+  // part does not apply to references, since they are not objects.
   const VarDecl *DefVD;
-  if (E && !isa<ParmVarDecl>(Var) && !Var->getType()->isReferenceType() &&
+  if (E && !isa<ParmVarDecl>(Var) &&
       Var->isUsableInConstantExpressions(SemaRef.Context) &&
-      Var->getAnyInitializer(DefVD) && DefVD->checkInitIsICE())
-    SemaRef.MaybeODRUseExprs.insert(E);
-  else
+      Var->getAnyInitializer(DefVD) && DefVD->checkInitIsICE()) {
+    if (!Var->getType()->isReferenceType())
+      SemaRef.MaybeODRUseExprs.insert(E);
+  } else
     MarkVarDeclODRUsed(SemaRef, Var, Loc);
 }
 
@@ -11812,9 +11926,9 @@ Sema::ActOnObjCBoolLiteral(SourceLocation OpLoc, tok::TokenKind Kind) {
          "Unknown Objective-C Boolean value!");
   QualType BoolT = Context.ObjCBuiltinBoolTy;
   if (!Context.getBOOLDecl()) {
-    LookupResult Result(*this, &Context.Idents.get("BOOL"), SourceLocation(),
+    LookupResult Result(*this, &Context.Idents.get("BOOL"), OpLoc,
                         Sema::LookupOrdinaryName);
-    if (LookupName(Result, getCurScope())) {
+    if (LookupName(Result, getCurScope()) && Result.isSingleResult()) {
       NamedDecl *ND = Result.getFoundDecl();
       if (TypedefDecl *TD = dyn_cast<TypedefDecl>(ND)) 
         Context.setBOOLDecl(TD);

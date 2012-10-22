@@ -40,8 +40,6 @@ void AppendToErrorMessageBuffer(const char *buffer) {
   }
 }
 
-static void (*on_error_callback)(void);
-
 // ---------------------- Helper functions ----------------------- {{{1
 
 static void PrintBytes(const char *before, uptr *a) {
@@ -188,6 +186,54 @@ bool DescribeAddressIfStack(uptr addr, uptr access_size) {
   return true;
 }
 
+static void DescribeAccessToHeapChunk(AsanChunkView chunk, uptr addr,
+                                      uptr access_size) {
+  uptr offset;
+  Printf("%p is located ", (void*)addr);
+  if (chunk.AddrIsInside(addr, access_size, &offset)) {
+    Printf("%zu bytes inside of", offset);
+  } else if (chunk.AddrIsAtLeft(addr, access_size, &offset)) {
+    Printf("%zu bytes to the left of", offset);
+  } else if (chunk.AddrIsAtRight(addr, access_size, &offset)) {
+    Printf("%zu bytes to the right of", offset);
+  } else {
+    Printf(" somewhere around (this is AddressSanitizer bug!)");
+  }
+  Printf(" %zu-byte region [%p,%p)\n", chunk.UsedSize(),
+         (void*)(chunk.Beg()), (void*)(chunk.End()));
+}
+
+void DescribeHeapAddress(uptr addr, uptr access_size) {
+  AsanChunkView chunk = FindHeapChunkByAddress(addr);
+  if (!chunk.IsValid()) return;
+  DescribeAccessToHeapChunk(chunk, addr, access_size);
+  CHECK(chunk.AllocTid() != kInvalidTid);
+  AsanThreadSummary *alloc_thread =
+      asanThreadRegistry().FindByTid(chunk.AllocTid());
+  StackTrace alloc_stack;
+  chunk.GetAllocStack(&alloc_stack);
+  AsanThread *t = asanThreadRegistry().GetCurrent();
+  CHECK(t);
+  if (chunk.FreeTid() != kInvalidTid) {
+    AsanThreadSummary *free_thread =
+        asanThreadRegistry().FindByTid(chunk.FreeTid());
+    Printf("freed by thread T%d here:\n", free_thread->tid());
+    StackTrace free_stack;
+    chunk.GetFreeStack(&free_stack);
+    PrintStack(&free_stack);
+    Printf("previously allocated by thread T%d here:\n", alloc_thread->tid());
+    PrintStack(&alloc_stack);
+    DescribeThread(t->summary());
+    DescribeThread(free_thread);
+    DescribeThread(alloc_thread);
+  } else {
+    Printf("allocated by thread T%d here:\n", alloc_thread->tid());
+    PrintStack(&alloc_stack);
+    DescribeThread(t->summary());
+    DescribeThread(alloc_thread);
+  }
+}
+
 void DescribeAddress(uptr addr, uptr access_size) {
   // Check if this is shadow or shadow gap.
   if (DescribeAddressIfShadow(addr))
@@ -229,27 +275,31 @@ class ScopedInErrorReport {
  public:
   ScopedInErrorReport() {
     static atomic_uint32_t num_calls;
+    static u32 reporting_thread_tid;
     if (atomic_fetch_add(&num_calls, 1, memory_order_relaxed) != 0) {
       // Do not print more than one report, otherwise they will mix up.
       // Error reporting functions shouldn't return at this situation, as
       // they are defined as no-return.
       Report("AddressSanitizer: while reporting a bug found another one."
                  "Ignoring.\n");
-      // We can't use infinite busy loop here, as ASan may try to report an
-      // error while another error report is being printed (e.g. if the code
-      // that prints error report for buffer overflow results in SEGV).
-      SleepForSeconds(Max(5, flags()->sleep_before_dying + 1));
+      u32 current_tid = asanThreadRegistry().GetCurrentTidOrInvalid();
+      if (current_tid != reporting_thread_tid) {
+        // ASan found two bugs in different threads simultaneously. Sleep
+        // long enough to make sure that the thread which started to print
+        // an error report will finish doing it.
+        SleepForSeconds(Max(100, flags()->sleep_before_dying + 1));
+      }
       Die();
     }
-    if (on_error_callback) {
-      on_error_callback();
-    }
+    __asan_on_error();
+    reporting_thread_tid = asanThreadRegistry().GetCurrentTidOrInvalid();
     Printf("===================================================="
-               "=============\n");
-    AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
-    if (curr_thread) {
+           "=============\n");
+    if (reporting_thread_tid != kInvalidTid) {
       // We started reporting an error message. Stop using the fake stack
       // in case we call an instrumented function from a symbolizer.
+      AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
+      CHECK(curr_thread);
       curr_thread->fake_stack().StopUsingFakeStack();
     }
   }
@@ -272,7 +322,7 @@ class ScopedInErrorReport {
 
 void ReportSIGSEGV(uptr pc, uptr sp, uptr bp, uptr addr) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer crashed on unknown address %p"
+  Report("ERROR: AddressSanitizer: SEGV on unknown address %p"
              " (pc %p sp %p bp %p T%d)\n",
              (void*)addr, (void*)pc, (void*)sp, (void*)bp,
              asanThreadRegistry().GetCurrentTidOrInvalid());
@@ -283,14 +333,14 @@ void ReportSIGSEGV(uptr pc, uptr sp, uptr bp, uptr addr) {
 
 void ReportDoubleFree(uptr addr, StackTrace *stack) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer attempting double-free on %p:\n", addr);
+  Report("ERROR: AddressSanitizer: attempting double-free on %p:\n", addr);
   PrintStack(stack);
   DescribeHeapAddress(addr, 1);
 }
 
 void ReportFreeNotMalloced(uptr addr, StackTrace *stack) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer attempting free on address "
+  Report("ERROR: AddressSanitizer: attempting free on address "
              "which was not malloc()-ed: %p\n", addr);
   PrintStack(stack);
   DescribeHeapAddress(addr, 1);
@@ -298,7 +348,7 @@ void ReportFreeNotMalloced(uptr addr, StackTrace *stack) {
 
 void ReportMallocUsableSizeNotOwned(uptr addr, StackTrace *stack) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer attempting to call "
+  Report("ERROR: AddressSanitizer: attempting to call "
              "malloc_usable_size() for pointer which is "
              "not owned: %p\n", addr);
   PrintStack(stack);
@@ -307,7 +357,7 @@ void ReportMallocUsableSizeNotOwned(uptr addr, StackTrace *stack) {
 
 void ReportAsanGetAllocatedSizeNotOwned(uptr addr, StackTrace *stack) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer attempting to call "
+  Report("ERROR: AddressSanitizer: attempting to call "
              "__asan_get_allocated_size() for pointer which is "
              "not owned: %p\n", addr);
   PrintStack(stack);
@@ -318,7 +368,7 @@ void ReportStringFunctionMemoryRangesOverlap(
     const char *function, const char *offset1, uptr length1,
     const char *offset2, uptr length2, StackTrace *stack) {
   ScopedInErrorReport in_report;
-  Report("ERROR: AddressSanitizer %s-param-overlap: "
+  Report("ERROR: AddressSanitizer: %s-param-overlap: "
              "memory ranges [%p,%p) and [%p, %p) overlap\n", \
              function, offset1, offset1 + length1, offset2, offset2 + length2);
   PrintStack(stack);
@@ -411,7 +461,7 @@ void __asan_report_error(uptr pc, uptr bp, uptr sp,
     }
   }
 
-  Report("ERROR: AddressSanitizer %s on address "
+  Report("ERROR: AddressSanitizer: %s on address "
              "%p at pc 0x%zx bp 0x%zx sp 0x%zx\n",
              bug_descr, (void*)addr, pc, bp, sp);
 
@@ -438,6 +488,7 @@ void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
   }
 }
 
-void NOINLINE __asan_set_on_error_callback(void (*callback)(void)) {
-  on_error_callback = callback;
-}
+// Provide default implementation of __asan_on_error that does nothing
+// and may be overriden by user.
+SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE NOINLINE
+void __asan_on_error() {}

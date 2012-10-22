@@ -474,6 +474,11 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
     MRI.replaceRegWith(From, To);
   }
 
+  // Freeze the set of reserved registers now that MachineFrameInfo has been
+  // set up. All the information required by getReservedRegs() should be
+  // available now.
+  MRI.freezeReservedRegs(*MF);
+
   // Release function-specific state. SDB and CurDAG are already cleared
   // at this point.
   FuncInfo->clear();
@@ -2004,7 +2009,7 @@ MorphNode(SDNode *Node, unsigned TargetOpc, SDVTList VTList,
   return Res;
 }
 
-/// CheckPatternPredicate - Implements OP_CheckPatternPredicate.
+/// CheckSame - Implements OP_CheckSame.
 LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
 CheckSame(const unsigned char *MatcherTable, unsigned &MatcherIndex,
           SDValue N,

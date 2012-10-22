@@ -20,17 +20,6 @@ def warn_variables_not_in_loop_body : Warning<
   "used in loop condition not modified in loop body">,
   InGroup<DiagGroup<"loop-analysis">>, DefaultIgnore;
 
-def warn_identical_enum_values : Warning<
-  "all elements of %0 are initialized with literals to value %1">,
-  InGroup<DiagGroup<"unique-enum">>;
-def note_identical_enum_values : Note<
-  "initialize the last element with the previous element to silence "
-  "this warning">;
-def warn_duplicate_enum_values : Warning<
-  "element %0 has been implicitly assigned %1 which another element has "
-  "been assigned">, InGroup<DiagGroup<"duplicate-enum">>, DefaultIgnore;
-def note_duplicate_element : Note<"element %0 also has value %1">;
-
 // Constant expressions
 def err_expr_not_ice : Error<
   "expression is not an %select{integer|integral}0 constant expression">;
@@ -414,12 +403,10 @@ def err_statically_allocated_object : Error<
   "interface type cannot be statically allocated">;
 def err_object_cannot_be_passed_returned_by_value : Error<
   "interface type %1 cannot be %select{returned|passed}0 by value"
-  "; did you forget * in %1">;
+  "; did you forget * in %1?">;
 def err_parameters_retval_cannot_have_fp16_type : Error<
   "%select{parameters|function return value}0 cannot have __fp16 type; did you forget * ?">;
 def warn_enum_value_overflow : Warning<"overflow in enumeration value">;
-def warn_pragma_options_align_unsupported_option : Warning<
-  "unsupported alignment option in '#pragma options align'">;
 def warn_pragma_options_align_reset_failed : Warning<
   "#pragma options align=reset failed: %0">;
 def err_pragma_options_align_mac68k_target_unsupported : Error<
@@ -599,6 +586,8 @@ def warn_accessor_property_type_mismatch : Warning<
   "type of property %0 does not match type of accessor %1">;
 def not_conv_function_declared_at : Note<"type conversion function declared here">;
 def note_method_declared_at : Note<"method %0 declared here">;
+def note_property_attribute : Note<"property %0 is declared "
+  "%select{deprecated|unavailable}1 here">;
 def err_setter_type_void : Error<"type of setter must be void">;
 def err_duplicate_method_decl : Error<"duplicate declaration of method %0">;
 def warn_duplicate_method_decl : 
@@ -704,7 +693,7 @@ def error_bad_property_context : Error<
   "property implementation must be in a class or category implementation">;
 def error_missing_property_ivar_decl : Error<
   "synthesized property %0 must either be named the same as a compatible"
-  " ivar or must explicitly name an ivar">;
+  " instance variable or must explicitly name an instance variable">;
 def error_synthesize_weak_non_arc_or_gc : Error<
   "@synthesize of 'weak' property is only allowed in ARC or GC mode">;
 def err_arc_perform_selector_retains : Error<
@@ -716,25 +705,45 @@ def err_gc_weak_property_strong_type : Error<
   "weak attribute declared on a __strong type property in GC mode">;
 def warn_receiver_is_weak : Warning <
   "weak %select{receiver|property|implicit property}0 may be "
-  "unpredictably null in ARC mode">,
+  "unpredictably set to nil">,
   InGroup<DiagGroup<"receiver-is-weak">>, DefaultIgnore;
+def note_arc_assign_to_strong : Note<
+  "assign the value to a strong variable to keep the object alive during use">;
+def warn_arc_repeated_use_of_weak : Warning <
+  "weak %select{variable|property|implicit property|instance variable}0 %1 is "
+  "accessed multiple times in this %select{function|method|block|lambda}2 "
+  "but may be unpredictably set to nil; assign to a strong variable to keep "
+  "the object alive">,
+  InGroup<ARCRepeatedUseOfWeak>, DefaultIgnore;
+def warn_implicitly_retains_self : Warning <
+  "block implicitly retains 'self'; explicitly mention 'self' to indicate "
+  "this is intended behavior">,
+  InGroup<DiagGroup<"implicit-retain-self">>;
+def warn_arc_possible_repeated_use_of_weak : Warning <
+  "weak %select{variable|property|implicit property|instance variable}0 %1 may "
+  "be accessed multiple times in this %select{function|method|block|lambda}2 "
+  "and may be unpredictably set to nil; assign to a strong variable to keep "
+  "the object alive">,
+  InGroup<ARCRepeatedUseOfWeakMaybe>, DefaultIgnore;
+def note_arc_weak_also_accessed_here : Note<
+  "also accessed here">;
 def err_incomplete_synthesized_property : Error<
   "cannot synthesize property %0 with incomplete type %1">;
 
 def error_property_ivar_type : Error<
-  "type of property %0 (%1) does not match type of ivar %2 (%3)">;
+  "type of property %0 (%1) does not match type of instance variable %2 (%3)">;
 def error_property_accessor_type : Error<
   "type of property %0 (%1) does not match type of accessor %2 (%3)">;
 def error_ivar_in_superclass_use : Error<
-  "property %0 attempting to use ivar %1 declared in super class %2">;
+  "property %0 attempting to use instance variable %1 declared in super class %2">;
 def error_weak_property : Error<
-  "existing ivar %1 for __weak property %0 must be __weak">;
+  "existing instance variable %1 for __weak property %0 must be __weak">;
 def error_strong_property : Error<
-  "existing ivar %1 for strong property %0 may not be __weak">;
+  "existing instance variable %1 for strong property %0 may not be __weak">;
 def error_dynamic_property_ivar_decl : Error<
-  "dynamic property can not have ivar specification">;
+  "dynamic property can not have instance variable specification">;
 def error_duplicate_ivar_use : Error<
-  "synthesized properties %0 and %1 both claim ivar %2">;
+  "synthesized properties %0 and %1 both claim instance variable %2">;
 def error_property_implemented : Error<"property %0 is already implemented">;
 def warn_objc_property_attr_mutually_exclusive : Warning<
   "property attributes '%0' and '%1' are mutually exclusive">,
@@ -745,9 +754,6 @@ def warn_objc_missing_super_call : Warning<
 def error_dealloc_bad_result_type : Error<
   "dealloc return type must be correctly specified as 'void' under ARC, "
   "instead of %0">;
-def warn_objc_missing_super_finalize : Warning<
-  "method possibly missing a [super finalize] call">,
-  InGroup<ObjCMissingSuperCalls>;
 def warn_undeclared_selector : Warning<
   "undeclared selector %0">, InGroup<UndeclaredSelector>, DefaultIgnore;
 def warn_implicit_atomic_property : Warning<
@@ -772,7 +778,7 @@ def err_static_assert_expression_is_not_constant : Error<
 def err_static_assert_failed : Error<"static_assert failed %0">;
 
 def warn_inline_namespace_reopened_noninline : Warning<
-  "inline namespace cannot be re-opened as a non-inline namespace">;
+  "inline namespace cannot be reopened as a non-inline namespace">;
 def err_inline_namespace_mismatch : Error<
   "%select{|non-}0inline namespace "
   "cannot be reopened as %select{non-|}0inline">;
@@ -811,16 +817,26 @@ def err_tagless_friend_type_template : Error<
 def err_no_matching_local_friend : Error<
   "no matching function found in local scope">;
 def err_no_matching_local_friend_suggest : Error<
-  "no matching function %0 found in local scope; did you mean %2">;
+  "no matching function %0 found in local scope; did you mean %2?">;
 def err_partial_specialization_friend : Error<
   "partial specialization cannot be declared as a friend">;
 def err_qualified_friend_def : Error<
   "friend function definition cannot be qualified with '%0'">;
 def err_friend_def_in_local_class : Error<
   "friend function cannot be defined in a local class">;
+def err_friend_not_first_in_declaration : Error<
+  "'friend' must appear first in a non-function declaration">;
   
+def err_invalid_member_in_interface : Error<
+  "%select{data member |non-public member function |static member function |"
+          "user-declared constructor|user-declared destructor|operator |"
+          "nested class }0%1 is not permitted within an interface type">;
+def err_invalid_base_in_interface : Error<
+  "interface type cannot inherit from "
+  "%select{'struct|non-public 'interface|'class}0 %1'">;
+
 def err_abstract_type_in_decl : Error<
-  "%select{return|parameter|variable|field|ivar}0 type %1 is an abstract class">;
+  "%select{return|parameter|variable|field|instance variable}0 type %1 is an abstract class">;
 def err_allocation_of_abstract_type : Error<
   "allocating an object of abstract class type %0">;
 def err_throw_abstract_type : Error<
@@ -845,6 +861,12 @@ def note_pure_virtual_function : Note<
 
 def err_deleted_decl_not_first : Error<
   "deleted definition must be first declaration">;
+
+def err_deleted_override : Error<
+  "deleted function %0 cannot override a non-deleted function">;
+
+def err_non_deleted_override : Error<
+  "non-deleted function %0 cannot override a deleted function">;
 
 def warn_weak_vtable : Warning<
   "%0 has no out-of-line virtual method definitions; its vtable will be "
@@ -1035,7 +1057,7 @@ def warn_call_to_pure_virtual_member_function_from_ctor_dtor : Warning<
   "not available in the %select{constructor|destructor}1 of %2">;
 
 def note_field_decl : Note<"member is declared here">;
-def note_ivar_decl : Note<"ivar is declared here">;
+def note_ivar_decl : Note<"instance variable is declared here">;
 def note_bitfield_decl : Note<"bit-field is declared here">;
 def note_previous_decl : Note<"%0 declared here">;
 def note_member_synthesized_at : Note<
@@ -1219,10 +1241,10 @@ def err_init_reference_member_uninitialized : Error<
   "reference member of type %0 uninitialized">;
 def note_uninit_reference_member : Note<
   "uninitialized reference member is here">;
-def warn_field_is_uninit : Warning<"field is uninitialized when used here">,
+def warn_field_is_uninit : Warning<"field %0 is uninitialized when used here">,
   InGroup<Uninitialized>;
 def warn_reference_field_is_uninit : Warning<
-  "reference is not yet bound to a value when used here">,
+  "reference %0 is not yet bound to a value when used here">,
   InGroup<Uninitialized>;
 def warn_uninit_self_reference_in_init : Warning<
   "variable %0 is uninitialized when used within its own initialization">,
@@ -1359,6 +1381,8 @@ def err_function_marked_override_not_overriding : Error<
   "%0 marked 'override' but does not override any member functions">;
 def err_class_marked_final_used_as_base : Error<
   "base %0 is marked 'final'">;
+def warn_abstract_final_class : Warning<
+  "abstract class is marked 'final'">, InGroup<AbstractFinalClass>;
 
 // C++11 attributes
 def err_repeat_attribute : Error<"'%0' attribute cannot be repeated">;
@@ -1725,7 +1749,8 @@ def warn_nsobject_attribute : Warning<
   "__attribute ((NSObject)) may be put on a typedef only, "
   "attribute is ignored">, InGroup<NSobjectAttribute>;
 def warn_attribute_weak_on_local : Warning<
-  "__weak attribute cannot be specified on an automatic variable">,
+  "__weak attribute cannot be specified on an automatic variable when ARC "
+  "is not enabled">,
   InGroup<IgnoredAttributes>;
 def warn_weak_identifier_undeclared : Warning<
   "weak identifier %0 never declared">;
@@ -1779,6 +1804,8 @@ def err_attribute_vecreturn_only_pod_record : Error<
 def err_cconv_change : Error<
   "function declared '%0' here was previously declared "
   "%select{'%2'|without calling convention}1">;
+def warn_cconv_ignored : Warning<
+  "calling convention %0 ignored for this target">, InGroup<IgnoredAttributes>;
 def err_cconv_knr : Error<
   "function with no prototype cannot use %0 calling convention">;
 def err_cconv_varargs : Error<
@@ -1931,7 +1958,7 @@ def warn_impcast_integer_precision : Warning<
   InGroup<DiagGroup<"conversion">>, DefaultIgnore;
 def warn_impcast_integer_64_32 : Warning<
   "implicit conversion loses integer precision: %0 to %1">,
-  InGroup<DiagGroup<"shorten-64-to-32">>, DefaultIgnore;
+  InGroup<Shorten64To32>, DefaultIgnore;
 def warn_impcast_integer_precision_constant : Warning<
   "implicit conversion from %2 to %3 changes value from %0 to %1">,
   InGroup<ConstantConversion>;
@@ -1946,7 +1973,7 @@ def warn_impcast_string_literal_to_bool : Warning<
   InGroup<StringConversion>, DefaultIgnore;
 def warn_impcast_different_enum_types : Warning<
   "implicit conversion from enumeration type %0 to different enumeration type "
-  "%1">, InGroup<DiagGroup<"conversion">>;
+  "%1">, InGroup<EnumConversion>;
 def warn_impcast_bool_to_null_pointer : Warning<
     "initialization of pointer of type %0 to null from a constant boolean "
     "expression">, InGroup<BoolConversion>;
@@ -1970,6 +1997,10 @@ def note_function_to_bool_call : Note<
 def warn_cast_align : Warning<
   "cast from %0 to %1 increases required alignment from %2 to %3">,
   InGroup<CastAlign>, DefaultIgnore;
+
+def warn_int_to_pointer_cast : Warning<
+  "cast to %1 from smaller integer type %0">,
+  InGroup<IntToPointerCast>;
 
 def warn_attribute_ignored_for_field_of_type : Warning<
   "%0 attribute ignored for field of type %1">,
@@ -2052,7 +2083,7 @@ def warn_attribute_ibaction: Warning<
 def err_iboutletcollection_type : Error<
   "invalid type %0 as argument of iboutletcollection attribute">;
 def warn_iboutlet_object_type : Warning<
-  "%select{ivar|property}2 with %0 attribute must "
+  "%select{instance variable|property}2 with %0 attribute must "
   "be an object type (invalid %1)">,
   InGroup<DiagGroup<"invalid-iboutlet">>;
 def err_attribute_overloadable_not_function : Error<
@@ -3194,7 +3225,7 @@ def err_non_thread_thread : Error<
 def err_thread_non_thread : Error<
   "thread-local declaration of %0 follows non-thread-local declaration">;
 def err_redefinition_different_type : Error<
-  "redefinition of %0 with a different type">;
+  "redefinition of %0 with a different type%diff{: $ vs $|}1,2">;
 def err_redefinition_different_kind : Error<
   "redefinition of %0 as different kind of symbol">;
 def warn_forward_class_redefinition : Warning<
@@ -3240,9 +3271,9 @@ def ext_forward_ref_enum_def : Extension<
 def err_redefinition_of_enumerator : Error<"redefinition of enumerator %0">;
 def err_duplicate_member : Error<"duplicate member %0">;
 def err_misplaced_ivar : Error<
-  "ivars may not be placed in %select{categories|class extension}0">;
+  "instance variables may not be placed in %select{categories|class extension}0">;
 def warn_ivars_in_interface : Warning<
-  "declaration of ivars in the interface is deprecated">,
+  "declaration of instance variables in the interface is deprecated">,
   InGroup<DiagGroup<"objc-interface-ivars">>, DefaultIgnore;
 def ext_enum_value_not_int : Extension<
   "ISO C restricts enumerator values to range of 'int' (%0 is too "
@@ -3297,7 +3328,7 @@ def err_typecheck_invalid_restrict_not_pointer_noarg : Error<
 def err_typecheck_invalid_restrict_invalid_pointee : Error<
   "pointer to function type %0 may not be 'restrict' qualified">;
 def ext_typecheck_zero_array_size : Extension<
-  "zero size arrays are an extension">;
+  "zero size arrays are an extension">, InGroup<ZeroLengthArray>;
 def err_typecheck_zero_array_size : Error<
   "zero-length arrays are not permitted in C++">;
 def warn_typecheck_zero_static_array_size : Warning<
@@ -3552,7 +3583,7 @@ def err_arc_weak_unavailable_assign : Error<
   "assignment of a weak-unavailable object to a __weak object">;
 def err_arc_weak_unavailable_property : Error<
   "synthesis of a weak-unavailable property is disallowed "
-  "because it requires synthesis of an ivar of the __weak object">;
+  "because it requires synthesis of an instance variable of the __weak object">;
 def err_arc_convesion_of_weak_unavailable : Error<
   "%select{implicit conversion|cast}0 of weak-unavailable object of type %1 to"
   " a __weak object of type %2">;
@@ -3619,7 +3650,7 @@ def warn_arc_retained_property_assign : Warning<
 def err_arc_new_array_without_ownership : Error<
   "'new' cannot allocate an array of %0 with no explicit ownership">;
 def err_arc_autoreleasing_var : Error<
-  "%select{__block variables|global variables|fields|ivars}0 cannot have "
+  "%select{__block variables|global variables|fields|instance variables}0 cannot have "
   "__autoreleasing ownership">;
 def err_arc_autoreleasing_capture : Error<
   "cannot capture __autoreleasing variable in a "
@@ -3676,10 +3707,10 @@ def warn_arc_object_memaccess : Warning<
 let CategoryName = "ARC and @properties" in {
 
 def err_arc_strong_property_ownership : Error<
-  "existing ivar %1 for strong property %0 may not be "
+  "existing instance variable %1 for strong property %0 may not be "
   "%select{|__unsafe_unretained||__weak}2">;
 def err_arc_assign_property_ownership : Error<
-  "existing ivar %1 for property %0 with %select{unsafe_unretained| assign}2 "
+  "existing instance variable %1 for property %0 with %select{unsafe_unretained| assign}2 "
   "attribute must be __unsafe_unretained">;
 def err_arc_inconsistent_property_ownership : Error<
   "%select{|unsafe_unretained|strong|weak}1 property %0 may not also be "
@@ -3810,16 +3841,14 @@ def warn_precedence_bitwise_rel : Warning<
   InGroup<Parentheses>;
 def note_precedence_bitwise_first : Note<
   "place parentheses around the %0 expression to evaluate it first">;
-def note_precedence_bitwise_silence : Note<
-  "place parentheses around the %0 expression to silence this warning">;
+def note_precedence_silence : Note<
+  "place parentheses around the '%0' expression to silence this warning">;
 
 def warn_precedence_conditional : Warning<
   "operator '?:' has lower precedence than '%0'; '%0' will be evaluated first">,
   InGroup<Parentheses>;
 def note_precedence_conditional_first : Note<
   "place parentheses around the '?:' expression to evaluate it first">;
-def note_precedence_conditional_silence : Note<
-  "place parentheses around the '%0' expression to silence this warning">;
 
 def warn_logical_instead_of_bitwise : Warning<
   "use of logical '%0' with constant operand">,
@@ -3831,13 +3860,13 @@ def note_logical_instead_of_bitwise_remove_constant : Note<
 
 def warn_bitwise_and_in_bitwise_or : Warning<
   "'&' within '|'">, InGroup<BitwiseOpParentheses>;
-def note_bitwise_and_in_bitwise_or_silence : Note<
-  "place parentheses around the '&' expression to silence this warning">;
 
 def warn_logical_and_in_logical_or : Warning<
   "'&&' within '||'">, InGroup<LogicalOpParentheses>;
-def note_logical_and_in_logical_or_silence : Note<
-  "place parentheses around the '&&' expression to silence this warning">;
+
+def warn_addition_in_bitshift : Warning<
+  "operator '%0' has lower precedence than '%1'; "
+  "'%1' will be evaluated first">, InGroup<ShiftOpParentheses>;
 
 def warn_self_assignment : Warning<
   "explicitly assigning a variable of type %0 to itself">,
@@ -4059,7 +4088,8 @@ def ext_typecheck_comparison_of_pointer_integer : ExtWarn<
 def err_typecheck_comparison_of_pointer_integer : Error<
   "comparison between pointer and integer (%0 and %1)">;
 def ext_typecheck_comparison_of_distinct_pointers : ExtWarn<
-  "comparison of distinct pointer types%diff{ ($ and $)|}0,1">;
+  "comparison of distinct pointer types%diff{ ($ and $)|}0,1">,
+  InGroup<CompareDistinctPointerType>;
 def ext_typecheck_cond_incompatible_operands : ExtWarn<
   "incompatible operand types (%0 and %1)">;
 def err_cond_voidptr_arc : Error <
@@ -4069,7 +4099,7 @@ def err_typecheck_comparison_of_distinct_pointers : Error<
   "comparison of distinct pointer types%diff{ ($ and $)|}0,1">;
 def ext_typecheck_comparison_of_distinct_pointers_nonstandard : ExtWarn<
   "comparison of distinct pointer types (%0 and %1) uses non-standard "
-  "composite pointer type %2">;
+  "composite pointer type %2">, InGroup<CompareDistinctPointerType>;
 def err_typecheck_assign_const : Error<"read-only variable is not assignable">;
 def err_stmtexpr_file_scope : Error<
   "statement expression not allowed at file scope">;
@@ -4079,6 +4109,9 @@ def warn_mixed_sign_comparison : Warning<
 def warn_lunsigned_always_true_comparison : Warning<
   "comparison of unsigned%select{| enum}2 expression %0 is always %1">,
   InGroup<TautologicalCompare>;
+def warn_out_of_range_compare : Warning<
+  "comparison of constant %0 with expression of type %1 is always "
+  "%select{false|true}2">, InGroup<TautologicalOutOfRangeCompare>;
 def warn_runsigned_always_true_comparison : Warning<
   "comparison of %0 unsigned%select{| enum}2 expression is always %1">,
   InGroup<TautologicalCompare>;
@@ -4212,7 +4245,7 @@ def err_nogetter_property_incdec : Error<
 def error_no_subobject_property_setting : Error<
   "expression is not assignable">;
 def err_qualified_objc_access : Error<
-  "%select{property|ivar}0 access cannot be qualified with '%1'">;
+  "%select{property|instance variable}0 access cannot be qualified with '%1'">;
   
 def ext_freestanding_complex : Extension<
   "complex numbers are an extension in a freestanding C99 implementation">;
@@ -5099,6 +5132,7 @@ let CategoryName = "Inline Assembly Issue" in {
     "unsupported inline asm: input with type "
     "%diff{$ matching output with type $|}0,1">;
   def err_asm_unknown_register_name : Error<"unknown register name '%0' in asm">;
+  def err_asm_empty : Error<"__asm used with no assembly instructions">;
   def warn_asm_label_on_auto_decl : Warning<
     "ignored asm label '%0' on automatic variable">;
   def err_invalid_asm_cast_lvalue : Error<
@@ -5391,6 +5425,10 @@ def err_out_of_line_default_deletes : Error<
   "defaulting this %select{default constructor|copy constructor|move "
   "constructor|copy assignment operator|move assignment operator|destructor}0 "
   "would delete it after its first declaration">;
+def ext_implicit_exception_spec_mismatch : ExtWarn<
+  "function previously declared with an %select{explicit|implicit}0 exception "
+  "specification redeclared with an %select{implicit|explicit}0 exception "
+  "specification">, InGroup<DiagGroup<"implicit-exception-spec-mismatch">>;
 
 def warn_ptr_arith_precedes_bounds : Warning<
   "the pointer decremented by %0 refers before the beginning of the array">,
@@ -5644,7 +5682,7 @@ def warn_unannotated_fallthrough_per_function : Warning<
   "unannotated fall-through between switch labels in partly-annotated "
   "function">, InGroup<ImplicitFallthroughPerFunction>, DefaultIgnore;
 def note_insert_fallthrough_fixit : Note<
-  "insert '[[clang::fallthrough]];' to silence this warning">;
+  "insert '%0;' to silence this warning">;
 def note_insert_break_fixit : Note<
   "insert 'break;' to avoid fall-through">;
 def err_fallthrough_attr_wrong_target : Error<
@@ -5880,7 +5918,7 @@ def err_typecheck_member_reference_ivar_suggest : Error<
 def err_property_not_found_suggest : Error<
   "property %0 not found on object of type %1; did you mean %2?">;
 def err_ivar_access_using_property_syntax_suggest : Error<
-  "property %0 not found on object of type %1; did you mean to access ivar %2?">;
+  "property %0 not found on object of type %1; did you mean to access instance variable %2?">;
 def err_property_found_suggest : Error<
   "property %0 found on object of type %1; did you mean to access "
   "it with the \".\" operator?">;

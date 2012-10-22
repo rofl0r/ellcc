@@ -67,7 +67,8 @@ public:
     nvptx,   // NVPTX: 32-bit
     nvptx64, // NVPTX: 64-bit
     le32,    // le32: generic little-endian 32-bit CPU (PNaCl / Emscripten)
-    amdil   // amdil: amd IL
+    amdil,   // amdil: amd IL
+    spir     // SPIR: standard portable IR for OpenCL
   };
   enum VendorType {
     UnknownVendor,
@@ -78,7 +79,8 @@ public:
     SCEI,
     BGP,
     BGQ,
-    Freescale
+    Freescale,
+    IBM
   };
   enum OSType {
     UnknownOS,
@@ -104,7 +106,8 @@ public:
     RTEMS,
     NativeClient,
     CNK,         // BG/P Compute-Node Kernel
-    Bitrig
+    Bitrig,
+    AIX
   };
   enum EnvironmentType {
     UnknownEnvironment,
@@ -114,7 +117,8 @@ public:
     GNUEABIHF,
     EABI,
     MachO,
-    Android
+    Android,
+    ELF
   };
 
 private:

@@ -105,7 +105,8 @@ static void diagnoseBadTypeAttribute(Sema &S, const AttributeList &attr,
     case AttributeList::AT_ThisCall: \
     case AttributeList::AT_Pascal: \
     case AttributeList::AT_Regparm: \
-    case AttributeList::AT_Pcs \
+    case AttributeList::AT_Pcs: \
+    case AttributeList::AT_PnaclCall \
 
 namespace {
   /// An object which stores processing state for the entire
@@ -552,19 +553,28 @@ static void maybeSynthesizeBlockSignature(TypeProcessingState &state,
   SourceLocation loc = declarator.getLocStart();
 
   // ...and *prepend* it to the declarator.
+  SourceLocation NoLoc;
   declarator.AddInnermostTypeInfo(DeclaratorChunk::getFunction(
-                             /*proto*/ true,
-                             /*variadic*/ false,
-                             /*ambiguous*/ false, SourceLocation(),
-                             /*args*/ 0, 0,
-                             /*type quals*/ 0,
-                             /*ref-qualifier*/true, SourceLocation(),
-                             /*const qualifier*/SourceLocation(),
-                             /*volatile qualifier*/SourceLocation(),
-                             /*mutable qualifier*/SourceLocation(),
-                             /*EH*/ EST_None, SourceLocation(), 0, 0, 0, 0,
-                             /*parens*/ loc, loc,
-                             declarator));
+                             /*HasProto=*/true,
+                             /*IsAmbiguous=*/false,
+                             /*LParenLoc=*/NoLoc,
+                             /*ArgInfo=*/0,
+                             /*NumArgs=*/0,
+                             /*EllipsisLoc=*/NoLoc,
+                             /*RParenLoc=*/NoLoc,
+                             /*TypeQuals=*/0,
+                             /*RefQualifierIsLvalueRef=*/true,
+                             /*RefQualifierLoc=*/NoLoc,
+                             /*ConstQualifierLoc=*/NoLoc,
+                             /*VolatileQualifierLoc=*/NoLoc,
+                             /*MutableLoc=*/NoLoc,
+                             EST_None,
+                             /*ESpecLoc=*/NoLoc,
+                             /*Exceptions=*/0,
+                             /*ExceptionRanges=*/0,
+                             /*NumExceptions=*/0,
+                             /*NoexceptExpr=*/0,
+                             loc, loc, declarator));
 
   // For consistency, make sure the state still has us as processing
   // the decl spec.
@@ -698,11 +708,15 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       case DeclSpec::TSW_longlong:
         Result = Context.LongLongTy;
 
-        // long long is a C99 feature.
-        if (!S.getLangOpts().C99)
-          S.Diag(DS.getTypeSpecWidthLoc(),
-                 S.getLangOpts().CPlusPlus0x ?
-                   diag::warn_cxx98_compat_longlong : diag::ext_longlong);
+        // 'long long' is a C99 or C++11 feature.
+        if (!S.getLangOpts().C99) {
+          if (S.getLangOpts().CPlusPlus)
+            S.Diag(DS.getTypeSpecWidthLoc(),
+                   S.getLangOpts().CPlusPlus0x ?
+                   diag::warn_cxx98_compat_longlong : diag::ext_cxx11_longlong);
+          else
+            S.Diag(DS.getTypeSpecWidthLoc(), diag::ext_c99_longlong);
+        }
         break;
       }
     } else {
@@ -713,11 +727,15 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       case DeclSpec::TSW_longlong:
         Result = Context.UnsignedLongLongTy;
 
-        // long long is a C99 feature.
-        if (!S.getLangOpts().C99)
-          S.Diag(DS.getTypeSpecWidthLoc(),
-                 S.getLangOpts().CPlusPlus0x ?
-                   diag::warn_cxx98_compat_longlong : diag::ext_longlong);
+        // 'long long' is a C99 or C++11 feature.
+        if (!S.getLangOpts().C99) {
+          if (S.getLangOpts().CPlusPlus)
+            S.Diag(DS.getTypeSpecWidthLoc(),
+                   S.getLangOpts().CPlusPlus0x ?
+                   diag::warn_cxx98_compat_longlong : diag::ext_cxx11_longlong);
+          else
+            S.Diag(DS.getTypeSpecWidthLoc(), diag::ext_c99_longlong);
+        }
         break;
       }
     }
@@ -2151,16 +2169,6 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
   ASTContext &Context = S.Context;
   const LangOptions &LangOpts = S.getLangOpts();
 
-  bool ImplicitlyNoexcept = false;
-  if (D.getName().getKind() == UnqualifiedId::IK_OperatorFunctionId &&
-      LangOpts.CPlusPlus0x) {
-    OverloadedOperatorKind OO = D.getName().OperatorFunctionId.Operator;
-    /// In C++0x, deallocation functions (normal and array operator delete)
-    /// are implicitly noexcept.
-    if (OO == OO_Delete || OO == OO_Array_Delete)
-      ImplicitlyNoexcept = true;
-  }
-
   // The name we're declaring, if any.
   DeclarationName Name;
   if (D.getIdentifier())
@@ -2559,12 +2567,6 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                                       NoexceptExpr,
                                       Exceptions,
                                       EPI);
-
-        if (FTI.getExceptionSpecType() == EST_None &&
-            ImplicitlyNoexcept && chunkIndex == 0) {
-          // Only the outermost chunk is marked noexcept, of course.
-          EPI.ExceptionSpecType = EST_BasicNoexcept;
-        }
 
         T = Context.getFunctionType(T, ArgTys.data(), ArgTys.size(), EPI);
       }
@@ -2987,6 +2989,8 @@ static AttributeList::Kind getAttrListKind(AttributedType::Kind kind) {
     return AttributeList::AT_Pascal;
   case AttributedType::attr_pcs:
     return AttributeList::AT_Pcs;
+  case AttributedType::attr_pnaclcall:
+    return AttributeList::AT_PnaclCall;
   }
   llvm_unreachable("unexpected attribute kind!");
 }
@@ -3273,6 +3277,8 @@ namespace {
       TL.setLocalRangeEnd(Chunk.EndLoc);
 
       const DeclaratorChunk::FunctionTypeInfo &FTI = Chunk.Fun;
+      TL.setLParenLoc(FTI.getLParenLoc());
+      TL.setRParenLoc(FTI.getRParenLoc());
       for (unsigned i = 0, e = TL.getNumArgs(), tpi = 0; i != e; ++i) {
         ParmVarDecl *Param = cast<ParmVarDecl>(FTI.ArgInfo[i].Param);
         TL.setArg(tpi++, Param);
@@ -3878,13 +3884,13 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
     return true;
   }
 
+  // Delay if the type didn't work out to a function.
+  if (!unwrapped.isFunctionType()) return false;
+
   // Otherwise, a calling convention.
   CallingConv CC;
   if (S.CheckCallingConvAttr(attr, CC))
     return true;
-
-  // Delay if the type didn't work out to a function.
-  if (!unwrapped.isFunctionType()) return false;
 
   const FunctionType *fn = unwrapped.get();
   CallingConv CCOld = fn->getCallConv();

@@ -34,6 +34,7 @@ const uptr kMmapGranularity = 1UL << 16;
 
 // Threads
 int GetPid();
+uptr GetTid();
 uptr GetThreadSelf();
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom);
@@ -112,12 +113,16 @@ uptr ReadFileToBuffer(const char *file_name, char **buff,
 // in '*buff_size'.
 void *MapFileToMemory(const char *file_name, uptr *buff_size);
 
-const char *GetEnv(const char *name);
-const char *GetPwd();
-
-// Other
+// OS
 void DisableCoreDumper();
 void DumpProcessMap();
+const char *GetEnv(const char *name);
+const char *GetPwd();
+void ReExec();
+bool StackSizeIsUnlimited();
+void SetStackSizeLimitInBytes(uptr limit);
+
+// Other
 void SleepForSeconds(int seconds);
 void SleepForMillis(int millis);
 int Atexit(void (*function)(void));

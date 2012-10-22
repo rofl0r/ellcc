@@ -17,6 +17,16 @@
 #include "tsan_report.h"
 #include "tsan_flags.h"
 
+// May be overriden by front-end.
+extern "C" void WEAK __tsan_malloc_hook(void *ptr, uptr size) {
+  (void)ptr;
+  (void)size;
+}
+
+extern "C" void WEAK __tsan_free_hook(void *ptr) {
+  (void)ptr;
+}
+
 namespace __tsan {
 
 static char allocator_placeholder[sizeof(Allocator)] ALIGNED(64);
@@ -35,11 +45,14 @@ void AlloctorThreadFinish(ThreadState *thr) {
 static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   if (!thr->in_signal_handler || !flags()->report_signal_unsafe)
     return;
+  Context *ctx = CTX();
   StackTrace stack;
   stack.ObtainCurrent(thr, pc);
   ScopedReport rep(ReportTypeSignalUnsafe);
-  rep.AddStack(&stack);
-  OutputReport(rep, rep.GetReport()->stacks[0]);
+  if (!IsFiredSuppression(ctx, rep, stack)) {
+    rep.AddStack(&stack);
+    OutputReport(ctx, rep, rep.GetReport()->stacks[0]);
+  }
 }
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align) {
@@ -107,6 +120,22 @@ MBlock *user_mblock(ThreadState *thr, void *p) {
   // CHECK_GT(thr->in_rtl, 0);
   CHECK_NE(p, (void*)0);
   return (MBlock*)allocator()->GetMetaData(p);
+}
+
+void invoke_malloc_hook(void *ptr, uptr size) {
+  Context *ctx = CTX();
+  ThreadState *thr = cur_thread();
+  if (ctx == 0 || !ctx->initialized || thr->in_rtl)
+    return;
+  __tsan_malloc_hook(ptr, size);
+}
+
+void invoke_free_hook(void *ptr) {
+  Context *ctx = CTX();
+  ThreadState *thr = cur_thread();
+  if (ctx == 0 || !ctx->initialized || thr->in_rtl)
+    return;
+  __tsan_free_hook(ptr);
 }
 
 void *internal_alloc(MBlockType typ, uptr sz) {

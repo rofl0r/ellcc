@@ -17,6 +17,8 @@ add_llvm_unittest(SupportTests
   LeakDetectorTest.cpp
   ManagedStatic.cpp
   MathExtrasTest.cpp
+  MemoryBufferTest.cpp
+  MemoryTest.cpp
   Path.cpp
   RegexTest.cpp
   SwapByteOrderTest.cpp

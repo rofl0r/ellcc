@@ -325,7 +325,7 @@ RegisterInfoEmitter::EmitRegMappingTables(raw_ostream &OS,
     if (!V || !V->getValue())
       continue;
 
-    DefInit *DI = dynamic_cast<DefInit*>(V->getValue());
+    DefInit *DI = cast<DefInit>(V->getValue());
     Record *Alias = DI->getDef();
     DwarfRegNums[Reg] = DwarfRegNums[Alias];
   }
@@ -751,7 +751,7 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
     BitsInit *BI = Reg->getValueAsBitsInit("HWEncoding");
     uint64_t Value = 0;
     for (unsigned b = 0, be = BI->getNumBits(); b != be; ++b) {
-      if (BitInit *B = dynamic_cast<BitInit*>(BI->getBit(b)))
+      if (BitInit *B = dyn_cast<BitInit>(BI->getBit(b)))
       Value |= (uint64_t)B->getValue() << b;
     }
     OS << "  " << Value << ",\n";
@@ -802,16 +802,16 @@ RegisterInfoEmitter::runTargetHeader(raw_ostream &OS, CodeGenTarget &Target,
      << "  virtual bool needsStackRealignment(const MachineFunction &) const\n"
      << "     { return false; }\n";
   if (!RegBank.getSubRegIndices().empty()) {
-    OS << "  unsigned composeSubRegIndices(unsigned, unsigned) const;\n"
-      << "  const TargetRegisterClass *"
+    OS << "  virtual unsigned composeSubRegIndices(unsigned, unsigned) const;\n"
+      << "  virtual const TargetRegisterClass *"
       "getSubClassWithSubReg(const TargetRegisterClass*, unsigned) const;\n";
   }
-  OS << "  const RegClassWeight &getRegClassWeight("
+  OS << "  virtual const RegClassWeight &getRegClassWeight("
      << "const TargetRegisterClass *RC) const;\n"
-     << "  unsigned getNumRegPressureSets() const;\n"
-     << "  const char *getRegPressureSetName(unsigned Idx) const;\n"
-     << "  unsigned getRegPressureSetLimit(unsigned Idx) const;\n"
-     << "  const int *getRegClassPressureSets("
+     << "  virtual unsigned getNumRegPressureSets() const;\n"
+     << "  virtual const char *getRegPressureSetName(unsigned Idx) const;\n"
+     << "  virtual unsigned getRegPressureSetLimit(unsigned Idx) const;\n"
+     << "  virtual const int *getRegClassPressureSets("
      << "const TargetRegisterClass *RC) const;\n"
      << "};\n\n";
 

@@ -124,7 +124,6 @@ void InitializeShadowMemory() {
   DPrintf("stack        %zx\n", (uptr)&shadow);
 }
 
-static uptr g_tls_size;
 static uptr g_data_start;
 static uptr g_data_end;
 
@@ -154,7 +153,10 @@ static void InitDataSeg() {
   while (proc_maps.Next(&start, &end, &offset, name, ARRAY_SIZE(name))) {
     DPrintf("%p-%p %p %s\n", start, end, offset, name);
     bool is_data = offset != 0 && name[0] != 0;
-    bool is_bss = offset == 0 && name[0] == 0 && prev_is_data;
+    // BSS may get merged with [heap] in /proc/self/maps. This is not very
+    // reliable.
+    bool is_bss = offset == 0 &&
+      (name[0] == 0 || internal_strcmp(name, "[heap]") == 0) && prev_is_data;
     if (g_data_start == 0 && is_data)
       g_data_start = start;
     if (is_bss)
@@ -166,6 +168,8 @@ static void InitDataSeg() {
   CHECK_GE((uptr)&g_data_start, g_data_start);
   CHECK_LT((uptr)&g_data_start, g_data_end);
 }
+
+static uptr g_tls_size;
 
 #ifdef __i386__
 # define INTERNAL_FUNCTION __attribute__((regparm(3), stdcall))
@@ -201,6 +205,17 @@ const char *InitializePlatform() {
     lim.rlim_cur = 0;
     lim.rlim_max = 0;
     setrlimit(RLIMIT_CORE, (rlimit*)&lim);
+  }
+  // TSan doesn't play well with unlimited stack size (as stack
+  // overlaps with shadow memory). If we detect unlimited stack size,
+  // we re-exec the program with limited stack size as a best effort.
+  if (StackSizeIsUnlimited()) {
+    const uptr kMaxStackSize = 32 * 1024 * 1024;  // 32 Mb
+    Report("WARNING: Program is run with unlimited stack size, which "
+           "wouldn't work with ThreadSanitizer.\n");
+    Report("Re-execing with stack size limited to %zd bytes.\n", kMaxStackSize);
+    SetStackSizeLimitInBytes(kMaxStackSize);
+    ReExec();
   }
 
 #ifndef TSAN_GO

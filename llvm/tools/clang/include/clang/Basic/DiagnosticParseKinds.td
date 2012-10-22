@@ -213,6 +213,17 @@ def err_expected_semi_after_static_assert : Error<
   "expected ';' after static_assert">;
 def err_expected_semi_for : Error<"expected ';' in 'for' statement specifier">;
 def err_expected_colon_after : Error<"expected ':' after %0">;
+def warn_missing_selector_name : Warning<
+  "%0 used as the name of the previous parameter rather than as part "
+  "of the selector">,
+  InGroup<DiagGroup<"missing-selector-name">>;
+def note_missing_selector_name : Note<
+  "introduce a parameter name to make %0 part of the selector">;
+def note_force_empty_selector_name : Note<
+  "or insert whitespace before ':' to use %0 as parameter name "
+  "and have an empty entry in the selector">;
+def note_missing_argument_name : Note<
+  "did you mean to use %0 as the selector name instead of %1">;
 def err_label_end_of_compound_statement : Error<
   "label at end of compound statement: expected statement">;
 def err_address_of_label_outside_fn : Error<
@@ -461,9 +472,6 @@ def err_literal_operator_string_prefix : Error<
   "string literal after 'operator' cannot have an encoding prefix">;
 def err_literal_operator_string_not_empty : Error<
   "string literal after 'operator' must be '\"\"'">;
-def err_literal_operator_missing_space : Error<
-  "C++11 requires a space between the \"\" and the user-defined suffix in a "
-  "literal operator">;
 def warn_cxx98_compat_literal_operator : Warning<
   "literal operators are incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
@@ -633,6 +641,11 @@ def ext_override_control_keyword : ExtWarn<
 def warn_cxx98_compat_override_control_keyword : Warning<
   "'%0' keyword is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+def err_override_control_interface : Error<
+  "'%0' keyword not permitted with interface types">;
+
+def err_access_specifier_interface : Error<
+  "interface types cannot specify '%select{private|protected}0' access">;
 
 def err_duplicate_virt_specifier : Error<
   "class member already marked '%0'">;

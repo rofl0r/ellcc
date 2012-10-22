@@ -19,9 +19,11 @@
 
 namespace llvm {
 
+class MachineInstr;
 class SDep;
 class SUnit;
 class TargetRegisterClass;
+class TargetSchedModel;
 template <typename T> class SmallVectorImpl;
 
 //===----------------------------------------------------------------------===//
@@ -31,8 +33,8 @@ template <typename T> class SmallVectorImpl;
 /// be exposed through a TargetSubtargetInfo-derived class.
 ///
 class TargetSubtargetInfo : public MCSubtargetInfo {
-  TargetSubtargetInfo(const TargetSubtargetInfo&);   // DO NOT IMPLEMENT
-  void operator=(const TargetSubtargetInfo&);  // DO NOT IMPLEMENT
+  TargetSubtargetInfo(const TargetSubtargetInfo&) LLVM_DELETED_FUNCTION;
+  void operator=(const TargetSubtargetInfo&) LLVM_DELETED_FUNCTION;
 protected: // Can only create subclasses...
   TargetSubtargetInfo();
 public:
@@ -43,11 +45,14 @@ public:
 
   virtual ~TargetSubtargetInfo();
 
-  /// getSpecialAddressLatency - For targets where it is beneficial to
-  /// backschedule instructions that compute addresses, return a value
-  /// indicating the number of scheduling cycles of backscheduling that
-  /// should be attempted.
-  virtual unsigned getSpecialAddressLatency() const { return 0; }
+  /// Resolve a SchedClass at runtime, where SchedClass identifies an
+  /// MCSchedClassDesc with the isVariant property. This may return the ID of
+  /// another variant SchedClass, but repeated invocation must quickly terminate
+  /// in a nonvariant SchedClass.
+  virtual unsigned resolveSchedClass(unsigned SchedClass, const MachineInstr *MI,
+                                     const TargetSchedModel* SchedModel) const {
+    return 0;
+  }
 
   // enablePostRAScheduler - If the target can benefit from post-regalloc
   // scheduling and the specified optimization level meets the requirement

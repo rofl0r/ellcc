@@ -383,8 +383,8 @@ private:
             T == TST_class);
   }
 
-  DeclSpec(const DeclSpec&);       // DO NOT IMPLEMENT
-  void operator=(const DeclSpec&); // DO NOT IMPLEMENT
+  DeclSpec(const DeclSpec &) LLVM_DELETED_FUNCTION;
+  void operator=(const DeclSpec &) LLVM_DELETED_FUNCTION;
 public:
 
   DeclSpec(AttributeFactory &attrFactory)
@@ -600,8 +600,7 @@ public:
   }
 
   bool SetTypeQual(TQ T, SourceLocation Loc, const char *&PrevSpec,
-                   unsigned &DiagID, const LangOptions &Lang,
-                   bool IsTypeSpec);
+                   unsigned &DiagID, const LangOptions &Lang);
 
   bool SetFunctionSpecInline(SourceLocation Loc, const char *&PrevSpec,
                              unsigned &DiagID);
@@ -783,8 +782,9 @@ private:
 /// \brief Represents a C++ unqualified-id that has been parsed. 
 class UnqualifiedId {
 private:
-  const UnqualifiedId &operator=(const UnqualifiedId &); // DO NOT IMPLEMENT
-  
+  UnqualifiedId(const UnqualifiedId &Other) LLVM_DELETED_FUNCTION;
+  const UnqualifiedId &operator=(const UnqualifiedId &) LLVM_DELETED_FUNCTION;
+
 public:
   /// \brief Describes the kind of unqualified-id parsed.
   enum IdKind {
@@ -858,17 +858,6 @@ public:
   SourceLocation EndLocation;
   
   UnqualifiedId() : Kind(IK_Identifier), Identifier(0) { }
-
-  /// \brief Do not use this copy constructor. It is temporary, and only
-  /// exists because we are holding FieldDeclarators in a SmallVector when we
-  /// don't actually need them.
-  ///
-  /// FIXME: Kill this copy constructor.
-  UnqualifiedId(const UnqualifiedId &Other) 
-    : Kind(IK_Identifier), Identifier(Other.Identifier), 
-      StartLocation(Other.StartLocation), EndLocation(Other.EndLocation) {
-    assert(Other.Kind == IK_Identifier && "Cannot copy non-identifiers");
-  }
 
   /// \brief Clear out this unqualified-id, setting it to default (invalid) 
   /// state.
@@ -1112,7 +1101,7 @@ struct DeclaratorChunk {
     /// \brief Whether the ref-qualifier (if any) is an lvalue reference.
     /// Otherwise, it's an rvalue reference.
     unsigned RefQualifierIsLValueRef : 1;
-    
+
     /// The type qualifiers: const/volatile/restrict.
     /// The qualifier bitmask values are the same as in QualType.
     unsigned TypeQuals : 3;
@@ -1127,8 +1116,14 @@ struct DeclaratorChunk {
     /// specified.
     unsigned HasTrailingReturnType : 1;
 
+    /// The location of the left parenthesis in the source.
+    unsigned LParenLoc;
+
     /// When isVariadic is true, the location of the ellipsis in the source.
     unsigned EllipsisLoc;
+
+    /// The location of the right parenthesis in the source.
+    unsigned RParenLoc;
 
     /// NumArgs - This is the number of formal arguments provided for the
     /// declarator.
@@ -1204,10 +1199,19 @@ struct DeclaratorChunk {
     bool isKNRPrototype() const {
       return !hasPrototype && NumArgs != 0;
     }
-    
+
+    SourceLocation getLParenLoc() const {
+      return SourceLocation::getFromRawEncoding(LParenLoc);
+    }
+
     SourceLocation getEllipsisLoc() const {
       return SourceLocation::getFromRawEncoding(EllipsisLoc);
     }
+
+    SourceLocation getRParenLoc() const {
+      return SourceLocation::getFromRawEncoding(RParenLoc);
+    }
+
     SourceLocation getExceptionSpecLoc() const {
       return SourceLocation::getFromRawEncoding(ExceptionSpecLoc);
     }
@@ -1360,11 +1364,13 @@ struct DeclaratorChunk {
 
   /// DeclaratorChunk::getFunction - Return a DeclaratorChunk for a function.
   /// "TheDeclarator" is the declarator that this will be added to.
-  static DeclaratorChunk getFunction(bool hasProto, bool isVariadic,
+  static DeclaratorChunk getFunction(bool hasProto,
                                      bool isAmbiguous,
-                                     SourceLocation EllipsisLoc,
+                                     SourceLocation LParenLoc,
                                      ParamInfo *ArgInfo, unsigned NumArgs,
-                                     unsigned TypeQuals, 
+                                     SourceLocation EllipsisLoc,
+                                     SourceLocation RParenLoc,
+                                     unsigned TypeQuals,
                                      bool RefQualifierIsLvalueRef,
                                      SourceLocation RefQualifierLoc,
                                      SourceLocation ConstQualifierLoc,

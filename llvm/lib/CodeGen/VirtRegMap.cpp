@@ -20,6 +20,7 @@
 #include "VirtRegMap.h"
 #include "LiveDebugVariables.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
+#include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -171,6 +172,7 @@ INITIALIZE_PASS_BEGIN(VirtRegRewriter, "virtregrewriter",
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_DEPENDENCY(LiveIntervals)
 INITIALIZE_PASS_DEPENDENCY(LiveDebugVariables)
+INITIALIZE_PASS_DEPENDENCY(LiveStacks)
 INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 INITIALIZE_PASS_END(VirtRegRewriter, "virtregrewriter",
                     "Virtual Register Rewriter", false, false)
@@ -183,6 +185,8 @@ void VirtRegRewriter::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<SlotIndexes>();
   AU.addPreserved<SlotIndexes>();
   AU.addRequired<LiveDebugVariables>();
+  AU.addRequired<LiveStacks>();
+  AU.addPreserved<LiveStacks>();
   AU.addRequired<VirtRegMap>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
@@ -253,9 +257,6 @@ void VirtRegRewriter::rewrite() {
   SmallVector<unsigned, 8> SuperDeads;
   SmallVector<unsigned, 8> SuperDefs;
   SmallVector<unsigned, 8> SuperKills;
-#ifndef NDEBUG
-  BitVector Reserved = TRI->getReservedRegs(*MF);
-#endif
 
   for (MachineFunction::iterator MBBI = MF->begin(), MBBE = MF->end();
        MBBI != MBBE; ++MBBI) {
@@ -279,7 +280,7 @@ void VirtRegRewriter::rewrite() {
         unsigned PhysReg = VRM->getPhys(VirtReg);
         assert(PhysReg != VirtRegMap::NO_PHYS_REG &&
                "Instruction uses unmapped VirtReg");
-        assert(!Reserved.test(PhysReg) && "Reserved register assignment");
+        assert(!MRI->isReserved(PhysReg) && "Reserved register assignment");
 
         // Preserve semantics of sub-register operands.
         if (MO.getSubReg()) {

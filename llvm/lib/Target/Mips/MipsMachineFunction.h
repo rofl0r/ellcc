@@ -45,34 +45,20 @@ class MipsFunctionInfo : public MachineFunctionInfo {
   // Range of frame object indices.
   // InArgFIRange: Range of indices of all frame objects created during call to
   //               LowerFormalArguments.
-  // OutArgFIRange: Range of indices of all frame objects created during call to
-  //                LowerCall except for the frame object for restoring $gp.
-  std::pair<int, int> InArgFIRange, OutArgFIRange;
-  unsigned MaxCallFrameSize;
+  std::pair<int, int> InArgFIRange;
 
   bool EmitNOAT;
 
 public:
   MipsFunctionInfo(MachineFunction& MF)
   : MF(MF), SRetReturnReg(0), GlobalBaseReg(0),
-    VarArgsFrameIndex(0), InArgFIRange(std::make_pair(-1, 0)),
-    OutArgFIRange(std::make_pair(-1, 0)), MaxCallFrameSize(0), EmitNOAT(false)
+    VarArgsFrameIndex(0), InArgFIRange(std::make_pair(-1, 0)), EmitNOAT(false)
   {}
 
   bool isInArgFI(int FI) const {
     return FI <= InArgFIRange.first && FI >= InArgFIRange.second;
   }
   void setLastInArgFI(int FI) { InArgFIRange.second = FI; }
-
-  bool isOutArgFI(int FI) const {
-    return FI <= OutArgFIRange.first && FI >= OutArgFIRange.second;
-  }
-  void extendOutArgFIRange(int FirstFI, int LastFI) {
-    if (!OutArgFIRange.second)
-      // this must be the first time this function was called.
-      OutArgFIRange.first = FirstFI;
-    OutArgFIRange.second = LastFI;
-  }
 
   unsigned getSRetReturnReg() const { return SRetReturnReg; }
   void setSRetReturnReg(unsigned Reg) { SRetReturnReg = Reg; }
@@ -82,9 +68,6 @@ public:
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
-
-  unsigned getMaxCallFrameSize() const { return MaxCallFrameSize; }
-  void setMaxCallFrameSize(unsigned S) { MaxCallFrameSize = S; }
 
   bool getEmitNOAT() const { return EmitNOAT; }
   void setEmitNOAT() { EmitNOAT = true; }

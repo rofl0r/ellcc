@@ -49,7 +49,8 @@ Context::Context()
   , nmissed_expected()
   , thread_mtx(MutexTypeThreads, StatMtxThreads)
   , racy_stacks(MBlockRacyStacks)
-  , racy_addresses(MBlockRacyAddresses) {
+  , racy_addresses(MBlockRacyAddresses)
+  , fired_suppressions(MBlockRacyAddresses) {
 }
 
 // The objects are allocated in TLS, so one may rely on zero-initialization.
@@ -74,6 +75,7 @@ ThreadState::ThreadState(Context *ctx, int tid, int unique_id, u64 epoch,
 ThreadContext::ThreadContext(int tid)
   : tid(tid)
   , unique_id()
+  , os_id()
   , user_id()
   , thr()
   , status(ThreadStatusInvalid)
@@ -183,13 +185,15 @@ void Initialize(ThreadState *thr) {
   ctx->dead_list_tail = 0;
   InitializeFlags(&ctx->flags, env);
   InitializeSuppressions();
-  InitializeMemoryProfile();
-  InitializeMemoryFlush();
-
+#ifndef TSAN_GO
+  // Initialize external symbolizer before internal threads are started.
   const char *external_symbolizer = flags()->external_symbolizer_path;
   if (external_symbolizer != 0 && external_symbolizer[0] != '\0') {
     InitializeExternalSymbolizer(external_symbolizer);
   }
+#endif
+  InitializeMemoryProfile();
+  InitializeMemoryFlush();
 
   if (ctx->flags.verbosity)
     TsanPrintf("***** Running under ThreadSanitizer v2 (pid %d) *****\n",
@@ -199,7 +203,7 @@ void Initialize(ThreadState *thr) {
   ctx->thread_seq = 0;
   int tid = ThreadCreate(thr, 0, 0, true);
   CHECK_EQ(tid, 0);
-  ThreadStart(thr, tid);
+  ThreadStart(thr, tid, GetPid());
   CHECK_EQ(thr->in_rtl, 1);
   ctx->initialized = true;
 
@@ -216,11 +220,19 @@ int Finalize(ThreadState *thr) {
   Context *ctx = __tsan::ctx;
   bool failed = false;
 
+  // Wait for pending reports.
+  ctx->report_mtx.Lock();
+  ctx->report_mtx.Unlock();
+
   ThreadFinalize(thr);
 
   if (ctx->nreported) {
     failed = true;
+#ifndef TSAN_GO
     TsanPrintf("ThreadSanitizer: reported %d warnings\n", ctx->nreported);
+#else
+    TsanPrintf("Found %d data race(s)\n", ctx->nreported);
+#endif
   }
 
   if (ctx->nmissed_expected) {
@@ -454,7 +466,7 @@ static void MemoryRangeSet(ThreadState *thr, uptr pc, uptr addr, uptr size,
   // Some programs mmap like hundreds of GBs but actually used a small part.
   // So, it's better to report a false positive on the memory
   // then to hang here senselessly.
-  const uptr kMaxResetSize = 1024*1024*1024;
+  const uptr kMaxResetSize = 4ull*1024*1024*1024;
   if (size > kMaxResetSize)
     size = kMaxResetSize;
   size = (size + (kShadowCell - 1)) & ~(kShadowCell - 1);

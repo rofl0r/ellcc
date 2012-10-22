@@ -19,9 +19,9 @@
 #include "ARMBaseInstrInfo.h"
 #include "ARMSubtarget.h"
 #include "llvm/CallingConv.h"
+#include "llvm/DataLayout.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetData.h"
 
 namespace llvm {
 
@@ -98,7 +98,7 @@ static bool f64AssignAAPCS(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
   (void)T;
   assert(T == LoRegList[i] && "Could not allocate register");
 
-  if (State.getTarget().getTargetData()->isBigEndian()) {
+  if (State.getTarget().getDataLayout()->isBigEndian()) {
     State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
                                            LocVT, LocInfo));
     State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
@@ -136,7 +136,7 @@ static bool f64RetAssign(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
     if (HiRegList[i] == Reg)
       break;
 
-  if (State.getTarget().getTargetData()->isBigEndian()) {
+  if (State.getTarget().getDataLayout()->isBigEndian()) {
     State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
                                              LocVT, LocInfo));
     State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));

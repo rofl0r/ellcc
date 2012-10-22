@@ -974,8 +974,8 @@ static void handlePackedAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 }
 
 static void handleMsStructAttr(Sema &S, Decl *D, const AttributeList &Attr) {
-  if (TagDecl *TD = dyn_cast<TagDecl>(D))
-    TD->addAttr(::new (S.Context) MsStructAttr(Attr.getRange(), S.Context));
+  if (RecordDecl *RD = dyn_cast<RecordDecl>(D))
+    RD->addAttr(::new (S.Context) MsStructAttr(Attr.getRange(), S.Context));
   else
     S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << Attr.getName();
 }
@@ -3582,7 +3582,12 @@ static void handleCallConvAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     }
 
     D->addAttr(::new (S.Context) PcsAttr(Attr.getRange(), S.Context, PCS));
+    return;
   }
+  case AttributeList::AT_PnaclCall:
+    D->addAttr(::new (S.Context) PnaclCallAttr(Attr.getRange(), S.Context));
+    return;
+
   default:
     llvm_unreachable("unexpected attribute kind");
   }
@@ -3635,7 +3640,15 @@ bool Sema::CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC) {
     Diag(attr.getLoc(), diag::err_invalid_pcs);
     return true;
   }
+  case AttributeList::AT_PnaclCall: CC = CC_PnaclCall; break;
   default: llvm_unreachable("unexpected attribute kind");
+  }
+
+  const TargetInfo &TI = Context.getTargetInfo();
+  TargetInfo::CallingConvCheckResult A = TI.checkCallingConvention(CC);
+  if (A == TargetInfo::CCCR_Warning) {
+    Diag(attr.getLoc(), diag::warn_cconv_ignored) << attr.getName();
+    CC = TI.getDefaultCallingConv();
   }
 
   return false;
@@ -4389,6 +4402,7 @@ static void ProcessInheritableDeclAttr(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_ThisCall:
   case AttributeList::AT_Pascal:
   case AttributeList::AT_Pcs:
+  case AttributeList::AT_PnaclCall:
     handleCallConvAttr(S, D, Attr);
     break;
   case AttributeList::AT_OpenCLKernel:
@@ -4803,18 +4817,25 @@ static bool isDeclDeprecated(Decl *D) {
 static void
 DoEmitDeprecationWarning(Sema &S, const NamedDecl *D, StringRef Message,
                          SourceLocation Loc,
-                         const ObjCInterfaceDecl *UnknownObjCClass) {
+                         const ObjCInterfaceDecl *UnknownObjCClass,
+                         const ObjCPropertyDecl *ObjCPropery) {
   DeclarationName Name = D->getDeclName();
   if (!Message.empty()) {
     S.Diag(Loc, diag::warn_deprecated_message) << Name << Message;
     S.Diag(D->getLocation(),
            isa<ObjCMethodDecl>(D) ? diag::note_method_declared_at
                                   : diag::note_previous_decl) << Name;
+    if (ObjCPropery)
+      S.Diag(ObjCPropery->getLocation(), diag::note_property_attribute)
+        << ObjCPropery->getDeclName() << 0;
   } else if (!UnknownObjCClass) {
     S.Diag(Loc, diag::warn_deprecated) << D->getDeclName();
     S.Diag(D->getLocation(),
            isa<ObjCMethodDecl>(D) ? diag::note_method_declared_at
                                   : diag::note_previous_decl) << Name;
+    if (ObjCPropery)
+      S.Diag(ObjCPropery->getLocation(), diag::note_property_attribute)
+        << ObjCPropery->getDeclName() << 0;
   } else {
     S.Diag(Loc, diag::warn_deprecated_fwdclass_message) << Name;
     S.Diag(UnknownObjCClass->getLocation(), diag::note_forward_class);
@@ -4829,16 +4850,19 @@ void Sema::HandleDelayedDeprecationCheck(DelayedDiagnostic &DD,
   DD.Triggered = true;
   DoEmitDeprecationWarning(*this, DD.getDeprecationDecl(),
                            DD.getDeprecationMessage(), DD.Loc,
-                           DD.getUnknownObjCClass());
+                           DD.getUnknownObjCClass(),
+                           DD.getObjCProperty());
 }
 
 void Sema::EmitDeprecationWarning(NamedDecl *D, StringRef Message,
                                   SourceLocation Loc,
-                                  const ObjCInterfaceDecl *UnknownObjCClass) {
+                                  const ObjCInterfaceDecl *UnknownObjCClass,
+                                  const ObjCPropertyDecl  *ObjCProperty) {
   // Delay if we're currently parsing a declaration.
   if (DelayedDiagnostics.shouldDelayDiagnostics()) {
     DelayedDiagnostics.add(DelayedDiagnostic::makeDeprecation(Loc, D, 
                                                               UnknownObjCClass,
+                                                              ObjCProperty,
                                                               Message));
     return;
   }
@@ -4846,5 +4870,5 @@ void Sema::EmitDeprecationWarning(NamedDecl *D, StringRef Message,
   // Otherwise, don't warn if our current context is deprecated.
   if (isDeclDeprecated(cast<Decl>(getCurLexicalContext())))
     return;
-  DoEmitDeprecationWarning(*this, D, Message, Loc, UnknownObjCClass);
+  DoEmitDeprecationWarning(*this, D, Message, Loc, UnknownObjCClass, ObjCProperty);
 }

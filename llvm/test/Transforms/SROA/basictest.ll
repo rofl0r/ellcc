@@ -1,6 +1,7 @@
 ; RUN: opt < %s -sroa -S | FileCheck %s
 ; RUN: opt < %s -sroa -force-ssa-updater -S | FileCheck %s
-target datalayout = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-n8:16:32:64"
+
+target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:32:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-n8:16:32:64"
 
 declare void @llvm.lifetime.start(i64, i8* nocapture)
 declare void @llvm.lifetime.end(i64, i8* nocapture)
@@ -408,8 +409,11 @@ declare void @llvm.memset.p0i8.i32(i8* nocapture, i8, i32, i32, i1) nounwind
 
 define i16 @test5() {
 ; CHECK: @test5
-; CHECK: alloca float
-; CHECK: ret i16 %
+; CHECK-NOT: alloca float
+; CHECK:      %[[cast:.*]] = bitcast float 0.0{{.*}} to i32
+; CHECK-NEXT: %[[shr:.*]] = lshr i32 %[[cast]], 16
+; CHECK-NEXT: %[[trunc:.*]] = trunc i32 %[[shr]] to i16
+; CHECK-NEXT: ret i16 %[[trunc]]
 
 entry:
   %a = alloca [4 x i8]
@@ -552,30 +556,53 @@ bad:
   ret i32 %Z2
 }
 
-define i32 @test12() {
+define i8 @test12() {
+; We fully promote these to the i24 load or store size, resulting in just masks
+; and other operations that instcombine will fold, but no alloca.
+;
 ; CHECK: @test12
-; CHECK: alloca i24
-;
-; FIXME: SROA should promote accesses to this into whole i24 operations instead
-; of i8 operations.
-; CHECK: store i8 0
-; CHECK: store i8 0
-; CHECK: store i8 0
-;
-; CHECK: load i24*
 
 entry:
   %a = alloca [3 x i8]
-  %b0ptr = getelementptr [3 x i8]* %a, i64 0, i32 0
-  store i8 0, i8* %b0ptr
-  %b1ptr = getelementptr [3 x i8]* %a, i64 0, i32 1
-  store i8 0, i8* %b1ptr
-  %b2ptr = getelementptr [3 x i8]* %a, i64 0, i32 2
-  store i8 0, i8* %b2ptr
-  %iptr = bitcast [3 x i8]* %a to i24*
-  %i = load i24* %iptr
-  %ret = zext i24 %i to i32
-  ret i32 %ret
+  %b = alloca [3 x i8]
+; CHECK-NOT: alloca
+
+  %a0ptr = getelementptr [3 x i8]* %a, i64 0, i32 0
+  store i8 0, i8* %a0ptr
+  %a1ptr = getelementptr [3 x i8]* %a, i64 0, i32 1
+  store i8 0, i8* %a1ptr
+  %a2ptr = getelementptr [3 x i8]* %a, i64 0, i32 2
+  store i8 0, i8* %a2ptr
+  %aiptr = bitcast [3 x i8]* %a to i24*
+  %ai = load i24* %aiptr
+; CHCEK-NOT: store
+; CHCEK-NOT: load
+; CHECK:      %[[mask0:.*]] = and i24 undef, -256
+; CHECK-NEXT: %[[mask1:.*]] = and i24 %[[mask0]], -65281
+; CHECK-NEXT: %[[mask2:.*]] = and i24 %[[mask1]], 65535
+
+  %biptr = bitcast [3 x i8]* %b to i24*
+  store i24 %ai, i24* %biptr
+  %b0ptr = getelementptr [3 x i8]* %b, i64 0, i32 0
+  %b0 = load i8* %b0ptr
+  %b1ptr = getelementptr [3 x i8]* %b, i64 0, i32 1
+  %b1 = load i8* %b1ptr
+  %b2ptr = getelementptr [3 x i8]* %b, i64 0, i32 2
+  %b2 = load i8* %b2ptr
+; CHCEK-NOT: store
+; CHCEK-NOT: load
+; CHECK:      %[[trunc0:.*]] = trunc i24 %[[mask2]] to i8
+; CHECK-NEXT: %[[shift1:.*]] = lshr i24 %[[mask2]], 8
+; CHECK-NEXT: %[[trunc1:.*]] = trunc i24 %[[shift1]] to i8
+; CHECK-NEXT: %[[shift2:.*]] = lshr i24 %[[mask2]], 16
+; CHECK-NEXT: %[[trunc2:.*]] = trunc i24 %[[shift2]] to i8
+
+  %bsum0 = add i8 %b0, %b1
+  %bsum1 = add i8 %bsum0, %b2
+  ret i8 %bsum1
+; CHECK:      %[[sum0:.*]] = add i8 %[[trunc0]], %[[trunc1]]
+; CHECK-NEXT: %[[sum1:.*]] = add i8 %[[sum0]], %[[trunc2]]
+; CHECK-NEXT: ret i8 %[[sum1]]
 }
 
 define i32 @test13() {
@@ -753,3 +780,306 @@ entry:
   ret void
 }
 
+%opaque = type opaque
+
+define i32 @test19(%opaque* %x) {
+; This input will cause us to try to compute a natural GEP when rewriting
+; pointers in such a way that we try to GEP through the opaque type. Previously,
+; a check for an unsized type was missing and this crashed. Ensure it behaves
+; reasonably now.
+; CHECK: @test19
+; CHECK-NOT: alloca
+; CHECK: ret i32 undef
+
+entry:
+  %a = alloca { i64, i8* }
+  %cast1 = bitcast %opaque* %x to i8*
+  %cast2 = bitcast { i64, i8* }* %a to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %cast2, i8* %cast1, i32 16, i32 1, i1 false)
+  %gep = getelementptr inbounds { i64, i8* }* %a, i32 0, i32 0
+  %val = load i64* %gep
+  ret i32 undef
+}
+
+define i32 @test20() {
+; Ensure we can track negative offsets (before the beginning of the alloca) and
+; negative relative offsets from offsets starting past the end of the alloca.
+; CHECK: @test20
+; CHECK-NOT: alloca
+; CHECK: %[[sum1:.*]] = add i32 1, 2
+; CHECK: %[[sum2:.*]] = add i32 %[[sum1]], 3
+; CHECK: ret i32 %[[sum2]]
+
+entry:
+  %a = alloca [3 x i32]
+  %gep1 = getelementptr [3 x i32]* %a, i32 0, i32 0
+  store i32 1, i32* %gep1
+  %gep2.1 = getelementptr [3 x i32]* %a, i32 0, i32 -2
+  %gep2.2 = getelementptr i32* %gep2.1, i32 3
+  store i32 2, i32* %gep2.2
+  %gep3.1 = getelementptr [3 x i32]* %a, i32 0, i32 14
+  %gep3.2 = getelementptr i32* %gep3.1, i32 -12
+  store i32 3, i32* %gep3.2
+
+  %load1 = load i32* %gep1
+  %load2 = load i32* %gep2.2
+  %load3 = load i32* %gep3.2
+  %sum1 = add i32 %load1, %load2
+  %sum2 = add i32 %sum1, %load3
+  ret i32 %sum2
+}
+
+declare void @llvm.memset.p0i8.i64(i8* nocapture, i8, i64, i32, i1) nounwind
+
+define i8 @test21() {
+; Test allocations and offsets which border on overflow of the int64_t used
+; internally. This is really awkward to really test as LLVM doesn't really
+; support such extreme constructs cleanly.
+; CHECK: @test21
+; CHECK-NOT: alloca
+; CHECK: or i8 -1, -1
+
+entry:
+  %a = alloca [2305843009213693951 x i8]
+  %gep0 = getelementptr [2305843009213693951 x i8]* %a, i64 0, i64 2305843009213693949
+  store i8 255, i8* %gep0
+  %gep1 = getelementptr [2305843009213693951 x i8]* %a, i64 0, i64 -9223372036854775807
+  %gep2 = getelementptr i8* %gep1, i64 -1
+  call void @llvm.memset.p0i8.i64(i8* %gep2, i8 0, i64 18446744073709551615, i32 1, i1 false)
+  %gep3 = getelementptr i8* %gep1, i64 9223372036854775807
+  %gep4 = getelementptr i8* %gep3, i64 9223372036854775807
+  %gep5 = getelementptr i8* %gep4, i64 -6917529027641081857
+  store i8 255, i8* %gep5
+  %cast1 = bitcast i8* %gep4 to i32*
+  store i32 0, i32* %cast1
+  %load = load i8* %gep0
+  %gep6 = getelementptr i8* %gep0, i32 1
+  %load2 = load i8* %gep6
+  %result = or i8 %load, %load2
+  ret i8 %result
+}
+
+%PR13916.struct = type { i8 }
+
+define void @PR13916.1() {
+; Ensure that we handle overlapping memcpy intrinsics correctly, especially in
+; the case where there is a directly identical value for both source and dest.
+; CHECK: @PR13916.1
+; CHECK-NOT: alloca
+; CHECK: ret void
+
+entry:
+  %a = alloca i8
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %a, i8* %a, i32 1, i32 1, i1 false)
+  %tmp2 = load i8* %a
+  ret void
+}
+
+define void @PR13916.2() {
+; Check whether we continue to handle them correctly when they start off with
+; different pointer value chains, but during rewriting we coalesce them into the
+; same value.
+; CHECK: @PR13916.2
+; CHECK-NOT: alloca
+; CHECK: ret void
+
+entry:
+  %a = alloca %PR13916.struct, align 1
+  br i1 undef, label %if.then, label %if.end
+
+if.then:
+  %tmp0 = bitcast %PR13916.struct* %a to i8*
+  %tmp1 = bitcast %PR13916.struct* %a to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %tmp0, i8* %tmp1, i32 1, i32 1, i1 false)
+  br label %if.end
+
+if.end:
+  %gep = getelementptr %PR13916.struct* %a, i32 0, i32 0
+  %tmp2 = load i8* %gep
+  ret void
+}
+
+define void @PR13990() {
+; Ensure we can handle cases where processing one alloca causes the other
+; alloca to become dead and get deleted. This might crash or fail under
+; Valgrind if we regress.
+; CHECK: @PR13990
+; CHECK-NOT: alloca
+; CHECK: unreachable
+; CHECK: unreachable
+
+entry:
+  %tmp1 = alloca i8*
+  %tmp2 = alloca i8*
+  br i1 undef, label %bb1, label %bb2
+
+bb1:
+  store i8* undef, i8** %tmp2
+  br i1 undef, label %bb2, label %bb3
+
+bb2:
+  %tmp50 = select i1 undef, i8** %tmp2, i8** %tmp1
+  br i1 undef, label %bb3, label %bb4
+
+bb3:
+  unreachable
+
+bb4:
+  unreachable
+}
+
+define double @PR13969(double %x) {
+; Check that we detect when promotion will un-escape an alloca and iterate to
+; re-try running SROA over that alloca. Without that, the two allocas that are
+; stored into a dead alloca don't get rewritten and promoted.
+; CHECK: @PR13969
+
+entry:
+  %a = alloca double
+  %b = alloca double*
+  %c = alloca double
+; CHECK-NOT: alloca
+
+  store double %x, double* %a
+  store double* %c, double** %b
+  store double* %a, double** %b
+  store double %x, double* %c
+  %ret = load double* %a
+; CHECK-NOT: store
+; CHECK-NOT: load
+
+  ret double %ret
+; CHECK: ret double %x
+}
+
+%PR14034.struct = type { { {} }, i32, %PR14034.list }
+%PR14034.list = type { %PR14034.list*, %PR14034.list* }
+
+define void @PR14034() {
+; This test case tries to form GEPs into the empty leading struct members, and
+; subsequently crashed (under valgrind) before we fixed the PR. The important
+; thing is to handle empty structs gracefully.
+; CHECK: @PR14034
+
+entry:
+  %a = alloca %PR14034.struct
+  %list = getelementptr %PR14034.struct* %a, i32 0, i32 2
+  %prev = getelementptr %PR14034.list* %list, i32 0, i32 1
+  store %PR14034.list* undef, %PR14034.list** %prev
+  %cast0 = bitcast %PR14034.struct* undef to i8*
+  %cast1 = bitcast %PR14034.struct* %a to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %cast0, i8* %cast1, i32 12, i32 0, i1 false)
+  ret void
+}
+
+define i32 @test22(i32 %x) {
+; Test that SROA and promotion is not confused by a grab bax mixture of pointer
+; types involving wrapper aggregates and zero-length aggregate members.
+; CHECK: @test22
+
+entry:
+  %a1 = alloca { { [1 x { i32 }] } }
+  %a2 = alloca { {}, { float }, [0 x i8] }
+  %a3 = alloca { [0 x i8], { [0 x double], [1 x [1 x <4 x i8>]], {} }, { { {} } } }
+; CHECK-NOT: alloca
+
+  %wrap1 = insertvalue [1 x { i32 }] undef, i32 %x, 0, 0
+  %gep1 = getelementptr { { [1 x { i32 }] } }* %a1, i32 0, i32 0, i32 0
+  store [1 x { i32 }] %wrap1, [1 x { i32 }]* %gep1
+
+  %gep2 = getelementptr { { [1 x { i32 }] } }* %a1, i32 0, i32 0
+  %ptrcast1 = bitcast { [1 x { i32 }] }* %gep2 to { [1 x { float }] }*
+  %load1 = load { [1 x { float }] }* %ptrcast1
+  %unwrap1 = extractvalue { [1 x { float }] } %load1, 0, 0
+
+  %wrap2 = insertvalue { {}, { float }, [0 x i8] } undef, { float } %unwrap1, 1
+  store { {}, { float }, [0 x i8] } %wrap2, { {}, { float }, [0 x i8] }* %a2
+
+  %gep3 = getelementptr { {}, { float }, [0 x i8] }* %a2, i32 0, i32 1, i32 0
+  %ptrcast2 = bitcast float* %gep3 to <4 x i8>*
+  %load3 = load <4 x i8>* %ptrcast2
+  %valcast1 = bitcast <4 x i8> %load3 to i32
+
+  %wrap3 = insertvalue [1 x [1 x i32]] undef, i32 %valcast1, 0, 0
+  %wrap4 = insertvalue { [1 x [1 x i32]], {} } undef, [1 x [1 x i32]] %wrap3, 0
+  %gep4 = getelementptr { [0 x i8], { [0 x double], [1 x [1 x <4 x i8>]], {} }, { { {} } } }* %a3, i32 0, i32 1
+  %ptrcast3 = bitcast { [0 x double], [1 x [1 x <4 x i8>]], {} }* %gep4 to { [1 x [1 x i32]], {} }*
+  store { [1 x [1 x i32]], {} } %wrap4, { [1 x [1 x i32]], {} }* %ptrcast3
+
+  %gep5 = getelementptr { [0 x i8], { [0 x double], [1 x [1 x <4 x i8>]], {} }, { { {} } } }* %a3, i32 0, i32 1, i32 1, i32 0
+  %ptrcast4 = bitcast [1 x <4 x i8>]* %gep5 to { {}, float, {} }*
+  %load4 = load { {}, float, {} }* %ptrcast4
+  %unwrap2 = extractvalue { {}, float, {} } %load4, 1
+  %valcast2 = bitcast float %unwrap2 to i32
+
+  ret i32 %valcast2
+; CHECK: ret i32
+}
+
+define void @PR14059.1(double* %d) {
+; In PR14059 a peculiar construct was identified as something that is used
+; pervasively in ARM's ABI-calling-convention lowering: the passing of a struct
+; of doubles via an array of i32 in order to place the data into integer
+; registers. This in turn was missed as an optimization by SROA due to the
+; partial loads and stores of integers to the double alloca we were trying to
+; form and promote. The solution is to widen the integer operations to be
+; whole-alloca operations, and perform the appropriate bitcasting on the
+; *values* rather than the pointers. When this works, partial reads and writes
+; via integers can be promoted away.
+; CHECK: @PR14059.1
+; CHECK-NOT: alloca
+; CHECK: ret void
+
+entry:
+  %X.sroa.0.i = alloca double, align 8
+  %0 = bitcast double* %X.sroa.0.i to i8*
+  call void @llvm.lifetime.start(i64 -1, i8* %0)
+
+  ; Store to the low 32-bits...
+  %X.sroa.0.0.cast2.i = bitcast double* %X.sroa.0.i to i32*
+  store i32 0, i32* %X.sroa.0.0.cast2.i, align 8
+
+  ; Also use a memset to the middle 32-bits for fun.
+  %X.sroa.0.2.raw_idx2.i = getelementptr inbounds i8* %0, i32 2
+  call void @llvm.memset.p0i8.i64(i8* %X.sroa.0.2.raw_idx2.i, i8 0, i64 4, i32 1, i1 false)
+
+  ; Or a memset of the whole thing.
+  call void @llvm.memset.p0i8.i64(i8* %0, i8 0, i64 8, i32 1, i1 false)
+
+  ; Write to the high 32-bits with a memcpy.
+  %X.sroa.0.4.raw_idx4.i = getelementptr inbounds i8* %0, i32 4
+  %d.raw = bitcast double* %d to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %X.sroa.0.4.raw_idx4.i, i8* %d.raw, i32 4, i32 1, i1 false)
+
+  ; Store to the high 32-bits...
+  %X.sroa.0.4.cast5.i = bitcast i8* %X.sroa.0.4.raw_idx4.i to i32*
+  store i32 1072693248, i32* %X.sroa.0.4.cast5.i, align 4
+
+  ; Do the actual math...
+  %X.sroa.0.0.load1.i = load double* %X.sroa.0.i, align 8
+  %accum.real.i = load double* %d, align 8
+  %add.r.i = fadd double %accum.real.i, %X.sroa.0.0.load1.i
+  store double %add.r.i, double* %d, align 8
+  call void @llvm.lifetime.end(i64 -1, i8* %0)
+  ret void
+}
+
+define void @PR14105({ [16 x i8] }* %ptr) {
+; Ensure that when rewriting the GEP index '-1' for this alloca we preserve is
+; sign as negative. We use a volatile memcpy to ensure promotion never actually
+; occurs.
+; CHECK: @PR14105
+
+entry:
+  %a = alloca { [16 x i8] }, align 8
+; CHECK: alloca [16 x i8], align 8
+
+  %gep = getelementptr inbounds { [16 x i8] }* %ptr, i64 -1
+; CHECK-NEXT: getelementptr inbounds { [16 x i8] }* %ptr, i64 -1, i32 0, i64 0
+
+  %cast1 = bitcast { [16 x i8 ] }* %gep to i8*
+  %cast2 = bitcast { [16 x i8 ] }* %a to i8*
+  call void @llvm.memcpy.p0i8.p0i8.i32(i8* %cast1, i8* %cast2, i32 16, i32 8, i1 true)
+  ret void
+; CHECK: ret
+}

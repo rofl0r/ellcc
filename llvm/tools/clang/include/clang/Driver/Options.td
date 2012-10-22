@@ -1,4 +1,4 @@
-//===--- DriverOptions.td - Options for clang -----------------------------===//
+//===--- Options.td - Options for clang -----------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -41,6 +41,8 @@ def m_x86_Features_Group  : OptionGroup<"<m x86 features group>">, Group<m_Group
 def m_hexagon_Features_Group  : OptionGroup<"<m hexagon features group>">, Group<m_Group>;
 def opencl_Group          : OptionGroup<"<opencl group>">;
 def u_Group               : OptionGroup<"<u group>">;
+def mips_CPUs_Group       : OptionGroup<"<MIPS CPU aliases group>">,
+  Group<CompileOnly_Group>;
 
 def pedantic_Group        : OptionGroup<"<pedantic group>">,
   Group<CompileOnly_Group>;
@@ -97,9 +99,6 @@ def ccc_no_clang : Flag<"-ccc-no-clang">, CCCDriverOpt,
   HelpText<"Disable the clang compiler">;
 def ccc_no_clang_cpp : Flag<"-ccc-no-clang-cpp">, CCCDriverOpt,
   HelpText<"Disable the clang preprocessor">;
-def ccc_clang_archs : Separate<"-ccc-clang-archs">, CCCDriverOpt,
-  HelpText<"Comma separate list of architectures to use the clang compiler for">,
-  MetaVarName<"<arch-list>">;
 def ccc_pch_is_pch : Flag<"-ccc-pch-is-pch">, CCCDriverOpt,
   HelpText<"Use lazy PCH for precompiled headers">;
 def ccc_pch_is_pth : Flag<"-ccc-pch-is-pth">, CCCDriverOpt,
@@ -387,6 +386,7 @@ def ffast_math : Flag<"-ffast-math">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Enable the *frontend*'s 'fast-math' mode. This has no effect on "
            "optimizations, but provides a preprocessor macro __FAST_MATH__ the "
            "same as GCC's -ffast-math flag.">;
+def fno_fast_math : Flag<"-fno-fast-math">, Group<f_Group>;
 def fmath_errno : Flag<"-fmath-errno">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Require math functions to indicate errors by setting errno">;
 def fno_math_errno : Flag<"-fno-math-errno">, Group<f_Group>;
@@ -716,6 +716,7 @@ def gno_record_gcc_switches : Flag<"-gno-record-gcc-switches">,
   Group<g_flags_Group>;
 def gstrict_dwarf : Flag<"-gstrict-dwarf">, Group<g_flags_Group>;
 def gno_strict_dwarf : Flag<"-gno-strict-dwarf">, Group<g_flags_Group>;
+def gcolumn_info : Flag<"-gcolumn-info">, Group<g_flags_Group>;
 def headerpad__max__install__names : Joined<"-headerpad_max_install_names">;
 def help : Flag<"-help">, Flags<[CC1Option]>,
   HelpText<"Display available options">;
@@ -723,7 +724,7 @@ def index_header_map : Flag<"-index-header-map">, Flags<[CC1Option]>,
   HelpText<"Make the next included directory (-I or -F) an indexer header map">;
 def idirafter : JoinedOrSeparate<"-idirafter">, Group<clang_i_Group>, Flags<[CC1Option]>,
   HelpText<"Add directory to AFTER include search path">;
-def iframework : Joined<"-iframework">, Group<clang_i_Group>, Flags<[CC1Option]>,
+def iframework : JoinedOrSeparate<"-iframework">, Group<clang_i_Group>, Flags<[CC1Option]>,
   HelpText<"Add directory to SYSTEM framework search path">;
 def imacros : JoinedOrSeparate<"-imacros">, Group<clang_i_Group>, Flags<[CC1Option]>,
   HelpText<"Include macros from file before parsing">, MetaVarName<"<file>">;
@@ -823,6 +824,7 @@ def mno_popcnt : Flag<"-mno-popcnt">, Group<m_x86_Features_Group>;
 def mno_fma4 : Flag<"-mno-fma4">, Group<m_x86_Features_Group>;
 def mno_fma : Flag<"-mno-fma">, Group<m_x86_Features_Group>;
 def mno_xop : Flag<"-mno-xop">, Group<m_x86_Features_Group>;
+def mno_f16c : Flag<"-mno-f16c">, Group<m_x86_Features_Group>;
 
 def mno_thumb : Flag<"-mno-thumb">, Group<m_Group>;
 def marm : Flag<"-marm">, Alias<mno_thumb>;
@@ -863,12 +865,21 @@ def mpopcnt : Flag<"-mpopcnt">, Group<m_x86_Features_Group>;
 def mfma4 : Flag<"-mfma4">, Group<m_x86_Features_Group>;
 def mfma : Flag<"-mfma">, Group<m_x86_Features_Group>;
 def mxop : Flag<"-mxop">, Group<m_x86_Features_Group>;
+def mf16c : Flag<"-mf16c">, Group<m_x86_Features_Group>;
 def mips16 : Flag<"-mips16">, Group<m_Group>;
 def mno_mips16 : Flag<"-mno-mips16">, Group<m_Group>;
 def mdsp : Flag<"-mdsp">, Group<m_Group>;
 def mno_dsp : Flag<"-mno-dsp">, Group<m_Group>;
 def mdspr2 : Flag<"-mdspr2">, Group<m_Group>;
 def mno_dspr2 : Flag<"-mno-dspr2">, Group<m_Group>;
+def mips32 : Flag<"-mips32">, Group<mips_CPUs_Group>,
+  HelpText<"Equivalent to -march=mips32">;
+def mips32r2 : Flag<"-mips32r2">, Group<mips_CPUs_Group>,
+  HelpText<"Equivalent to -march=mips32r2">;
+def mips64 : Flag<"-mips64">, Group<mips_CPUs_Group>,
+  HelpText<"Equivalent to -march=mips64">;
+def mips64r2 : Flag<"-mips64r2">, Group<mips_CPUs_Group>,
+  HelpText<"Equivalent to -march=mips64r2">;
 def mthumb : Flag<"-mthumb">, Group<m_Group>;
 def mtune_EQ : Joined<"-mtune=">, Group<m_Group>;
 def multi__module : Flag<"-multi_module">;

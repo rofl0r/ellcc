@@ -145,7 +145,6 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const AccessSpecDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == AccessSpec; }
 };
 
@@ -563,9 +562,10 @@ class CXXRecordDecl : public RecordDecl {
   struct LambdaDefinitionData : public DefinitionData {
     typedef LambdaExpr::Capture Capture;
     
-    LambdaDefinitionData(CXXRecordDecl *D, bool Dependent) 
+    LambdaDefinitionData(CXXRecordDecl *D, TypeSourceInfo *Info, bool Dependent) 
       : DefinitionData(D), Dependent(Dependent), NumCaptures(0), 
-        NumExplicitCaptures(0), ManglingNumber(0), ContextDecl(0), Captures(0) 
+        NumExplicitCaptures(0), ManglingNumber(0), ContextDecl(0), Captures(0),
+        MethodTyInfo(Info) 
     {
       IsLambda = true;
     }
@@ -598,7 +598,10 @@ class CXXRecordDecl : public RecordDecl {
     
     /// \brief The list of captures, both explicit and implicit, for this 
     /// lambda.
-    Capture *Captures;    
+    Capture *Captures;
+
+    /// \brief The type of the call method.
+    TypeSourceInfo *MethodTyInfo;
   };
 
   struct DefinitionData &data() {
@@ -705,7 +708,8 @@ public:
                                IdentifierInfo *Id, CXXRecordDecl* PrevDecl=0,
                                bool DelayTypeCreation = false);
   static CXXRecordDecl *CreateLambda(const ASTContext &C, DeclContext *DC,
-                                     SourceLocation Loc, bool DependentLambda);
+                                     TypeSourceInfo *Info, SourceLocation Loc,
+                                     bool DependentLambda);
   static CXXRecordDecl *CreateDeserialized(const ASTContext &C, unsigned ID);
 
   bool isDynamicClass() const {
@@ -1500,14 +1504,14 @@ public:
   bool isDependentLambda() const {
     return isLambda() && getLambdaData().Dependent;
   }
-  
+
+  TypeSourceInfo *getLambdaTypeInfo() const {
+    return getLambdaData().MethodTyInfo;
+  }
+
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {
     return K >= firstCXXRecord && K <= lastCXXRecord;
-  }
-  static bool classof(const CXXRecordDecl *D) { return true; }
-  static bool classof(const ClassTemplateSpecializationDecl *D) {
-    return true;
   }
 
   friend class ASTDeclReader;
@@ -1549,16 +1553,16 @@ public:
   bool isStatic() const { return getStorageClass() == SC_Static; }
   bool isInstance() const { return !isStatic(); }
 
-  bool isConst() { return getType()->castAs<FunctionType>()->isConst(); }
-  bool isVolatile() { return getType()->castAs<FunctionType>()->isVolatile(); }
+  bool isConst() const { return getType()->castAs<FunctionType>()->isConst(); }
+  bool isVolatile() const { return getType()->castAs<FunctionType>()->isVolatile(); }
 
   bool isVirtual() const {
     CXXMethodDecl *CD =
       cast<CXXMethodDecl>(const_cast<CXXMethodDecl*>(this)->getCanonicalDecl());
 
-    // Methods declared in interfaces are automatically (pure) virtual
+    // Methods declared in interfaces are automatically (pure) virtual.
     if (CD->isVirtualAsWritten() ||
-        CD->getParent()->getTagKind() == TTK_Interface)
+          (CD->getParent()->isInterface() && CD->isUserProvided()))
       return true;
 
     return (CD->begin_overridden_methods() != CD->end_overridden_methods());
@@ -1663,7 +1667,6 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const CXXMethodDecl *D) { return true; }
   static bool classofKind(Kind K) {
     return K >= firstCXXMethod && K <= lastCXXMethod;
   }
@@ -2143,7 +2146,6 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const CXXConstructorDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == CXXConstructor; }
 
   friend class ASTDeclReader;
@@ -2215,7 +2217,6 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const CXXDestructorDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == CXXDestructor; }
 
   friend class ASTDeclReader;
@@ -2282,7 +2283,6 @@ public:
   
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const CXXConversionDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == CXXConversion; }
 
   friend class ASTDeclReader;
@@ -2352,7 +2352,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const LinkageSpecDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == LinkageSpec; }
   static DeclContext *castToDeclContext(const LinkageSpecDecl *D) {
     return static_cast<DeclContext *>(const_cast<LinkageSpecDecl*>(D));
@@ -2456,7 +2455,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const UsingDirectiveDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == UsingDirective; }
 
   // Friend for getUsingDirectiveName.
@@ -2550,7 +2548,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const NamespaceAliasDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == NamespaceAlias; }
 };
 
@@ -2621,7 +2618,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const UsingShadowDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == Decl::UsingShadow; }
 
   friend class ASTDeclReader;
@@ -2753,7 +2749,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const UsingDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == Using; }
 
   friend class ASTDeclReader;
@@ -2827,7 +2822,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const UnresolvedUsingValueDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == UnresolvedUsingValue; }
 
   friend class ASTDeclReader;
@@ -2893,7 +2887,6 @@ public:
   CreateDeserialized(ASTContext &C, unsigned ID);
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(const UnresolvedUsingTypenameDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == UnresolvedUsingTypename; }
 };
 
@@ -2933,7 +2926,6 @@ public:
   }
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classof(StaticAssertDecl *D) { return true; }
   static bool classofKind(Kind K) { return K == StaticAssert; }
 
   friend class ASTDeclReader;

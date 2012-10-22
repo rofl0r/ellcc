@@ -65,11 +65,8 @@ public:
 
   virtual void dumpToStream(raw_ostream &os) const {}
 
-  virtual QualType getType(ASTContext&) const = 0;
+  virtual QualType getType() const = 0;
   virtual void Profile(llvm::FoldingSetNodeID& profile) = 0;
-
-  // Implement isa<T> support.
-  static inline bool classof(const SymExpr*) { return true; }
 
   /// \brief Iterator over symbols that the current symbol depends on.
   ///
@@ -144,7 +141,7 @@ public:
 
   virtual void dumpToStream(raw_ostream &os) const;
 
-  QualType getType(ASTContext&) const;
+  QualType getType() const;
 
   // Implement isa<T> support.
   static inline bool classof(const SymExpr *SE) {
@@ -173,7 +170,7 @@ public:
   unsigned getCount() const { return Count; }
   const void *getTag() const { return SymbolTag; }
 
-  QualType getType(ASTContext&) const;
+  QualType getType() const;
 
   virtual void dumpToStream(raw_ostream &os) const;
 
@@ -211,7 +208,7 @@ public:
   SymbolRef getParentSymbol() const { return parentSymbol; }
   const TypedValueRegion *getRegion() const { return R; }
 
-  QualType getType(ASTContext&) const;
+  QualType getType() const;
 
   virtual void dumpToStream(raw_ostream &os) const;
 
@@ -244,7 +241,7 @@ public:
 
   const SubRegion *getRegion() const { return R; }
 
-  QualType getType(ASTContext&) const;
+  QualType getType() const;
 
   virtual void dumpToStream(raw_ostream &os) const;
 
@@ -283,7 +280,7 @@ public:
   unsigned getCount() const { return Count; }
   const void *getTag() const { return Tag; }
 
-  QualType getType(ASTContext&) const;
+  QualType getType() const;
 
   virtual void dumpToStream(raw_ostream &os) const;
 
@@ -320,7 +317,7 @@ public:
   SymbolCast(const SymExpr *In, QualType From, QualType To) :
     SymExpr(CastSymbolKind), Operand(In), FromTy(From), ToTy(To) { }
 
-  QualType getType(ASTContext &C) const { return ToTy; }
+  QualType getType() const { return ToTy; }
 
   const SymExpr *getOperand() const { return Operand; }
 
@@ -358,7 +355,7 @@ public:
 
   // FIXME: We probably need to make this out-of-line to avoid redundant
   // generation of virtual functions.
-  QualType getType(ASTContext &C) const { return T; }
+  QualType getType() const { return T; }
 
   BinaryOperator::Opcode getOpcode() const { return Op; }
 
@@ -399,7 +396,7 @@ public:
              const SymExpr *rhs, QualType t)
     : SymExpr(IntSymKind), LHS(lhs), Op(op), RHS(rhs), T(t) {}
 
-  QualType getType(ASTContext &C) const { return T; }
+  QualType getType() const { return T; }
 
   BinaryOperator::Opcode getOpcode() const { return Op; }
 
@@ -446,7 +443,7 @@ public:
 
   // FIXME: We probably need to make this out-of-line to avoid redundant
   // generation of virtual functions.
-  QualType getType(ASTContext &C) const { return T; }
+  QualType getType() const { return T; }
 
   virtual void dumpToStream(raw_ostream &os) const;
 
@@ -540,7 +537,7 @@ public:
                                   const SymExpr *rhs, QualType t);
 
   QualType getType(const SymExpr *SE) const {
-    return SE->getType(Ctx);
+    return SE->getType();
   }
 
   /// \brief Add artificial symbol dependency.

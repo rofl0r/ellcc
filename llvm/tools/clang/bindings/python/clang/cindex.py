@@ -654,7 +654,7 @@ CursorKind.TEMPLATE_TYPE_PARAMETER = CursorKind(27)
 CursorKind.TEMPLATE_NON_TYPE_PARAMETER = CursorKind(28)
 
 # A C++ template template parameter.
-CursorKind.TEMPLATE_TEMPLATE_PARAMTER = CursorKind(29)
+CursorKind.TEMPLATE_TEMPLATE_PARAMETER = CursorKind(29)
 
 # A C++ function template.
 CursorKind.FUNCTION_TEMPLATE = CursorKind(30)
@@ -1737,7 +1737,9 @@ class CompletionString(ClangObject):
 
     @property
     def briefComment(self):
-        return conf.lib.clang_getCompletionBriefComment(self.obj)
+        if conf.function_exists("clang_getCompletionBriefComment"):
+            return conf.lib.clang_getCompletionBriefComment(self.obj)
+        return _CXString()
 
     def __repr__(self):
         return " | ".join([str(a) for a in self]) \
@@ -1748,7 +1750,8 @@ class CompletionString(ClangObject):
 availabilityKinds = {
             0: CompletionChunk.Kind("Available"),
             1: CompletionChunk.Kind("Deprecated"),
-            2: CompletionChunk.Kind("NotAvailable")}
+            2: CompletionChunk.Kind("NotAvailable"),
+            3: CompletionChunk.Kind("NotAccessible")}
 
 class CodeCompletionResult(Structure):
     _fields_ = [('cursorKind', c_int), ('completionString', c_object_p)]
@@ -3097,6 +3100,13 @@ class Config:
 
         return library
 
+    def function_exists(self, name):
+        try:
+            getattr(self.lib, name)
+        except AttributeError:
+            return False
+
+        return True
 
 def register_enumerations():
     for name, value in clang.enumerations.TokenKinds:

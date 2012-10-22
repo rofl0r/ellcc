@@ -11,6 +11,7 @@ add_llvm_library(LLVMTransformUtils
   DemoteRegToStack.cpp
   InlineFunction.cpp
   InstructionNamer.cpp
+  IntegerDivision.cpp
   LCSSA.cpp
   Local.cpp
   LoopSimplify.cpp
@@ -27,6 +28,7 @@ add_llvm_library(LLVMTransformUtils
   SimplifyCFG.cpp
   SimplifyIndVar.cpp
   SimplifyInstructions.cpp
+  SimplifyLibCalls.cpp
   UnifyFunctionExitNodes.cpp
   Utils.cpp
   ValueMapper.cpp

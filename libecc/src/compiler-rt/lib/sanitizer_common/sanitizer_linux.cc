@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
 
 namespace __sanitizer {
 
@@ -56,11 +57,15 @@ fd_t internal_open(const char *filename, bool write) {
 }
 
 uptr internal_read(fd_t fd, void *buf, uptr count) {
-  return (uptr)syscall(__NR_read, fd, buf, count);
+  sptr res;
+  HANDLE_EINTR(res, (sptr)syscall(__NR_read, fd, buf, count));
+  return res;
 }
 
 uptr internal_write(fd_t fd, const void *buf, uptr count) {
-  return (uptr)syscall(__NR_write, fd, buf, count);
+  sptr res;
+  HANDLE_EINTR(res, (sptr)syscall(__NR_write, fd, buf, count));
+  return res;
 }
 
 uptr internal_filesize(fd_t fd) {
@@ -89,6 +94,10 @@ int internal_sched_yield() {
 }
 
 // ----------------- sanitizer_common.h
+uptr GetTid() {
+  return syscall(__NR_gettid);
+}
+
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom) {
   static const uptr kMaxThreadStackSize = 256 * (1 << 20);  // 256M
@@ -162,6 +171,26 @@ const char *GetEnv(const char *name) {
     p = endp + 1;
   }
   return 0;  // Not found.
+}
+
+void ReExec() {
+  static const int kMaxArgv = 100;
+  InternalScopedBuffer<char*> argv(kMaxArgv + 1);
+  static char *buff;
+  uptr buff_size = 0;
+  ReadFileToBuffer("/proc/self/cmdline", &buff, &buff_size, 1024 * 1024);
+  argv[0] = buff;
+  int argc, i;
+  for (argc = 1, i = 1; ; i++) {
+    if (buff[i] == 0) {
+      if (buff[i+1] == 0) break;
+      argv[argc] = &buff[i+1];
+      CHECK_LE(argc, kMaxArgv);  // FIXME: make this more flexible.
+      argc++;
+    }
+  }
+  argv[argc] = 0;
+  execv(argv[0], argv.data());
 }
 
 // ----------------- sanitizer_procmaps.h

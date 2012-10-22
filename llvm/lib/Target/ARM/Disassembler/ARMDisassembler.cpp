@@ -525,8 +525,9 @@ static bool tryAddingSymbolicOperand(uint64_t Address, int32_t Value,
     else
        ReferenceType = LLVMDisassembler_ReferenceType_InOut_None;
     const char *ReferenceName;
-    const char *Name = SymbolLookUp(DisInfo, Value, &ReferenceType, Address,
-                                    &ReferenceName);
+    uint64_t SymbolValue = 0x00000000ffffffffULL & Value;
+    const char *Name = SymbolLookUp(DisInfo, SymbolValue, &ReferenceType,
+                                    Address, &ReferenceName);
     if (Name) {
       SymbolicOp.AddSymbol.Name = Name;
       SymbolicOp.AddSymbol.Present = true;
@@ -1525,6 +1526,8 @@ DecodeAddrMode2IdxInstruction(MCInst &Inst, unsigned Insn,
         return MCDisassembler::Fail;
     }
     unsigned amt = fieldFromInstruction(Insn, 7, 5);
+    if (Opc == ARM_AM::ror && amt == 0)
+      Opc = ARM_AM::rrx;
     unsigned imm = ARM_AM::getAM2Opc(Op, amt, Opc, idx_mode);
 
     Inst.addOperand(MCOperand::CreateImm(imm));
@@ -1565,6 +1568,9 @@ static DecodeStatus DecodeSORegMemOperand(MCInst &Inst, unsigned Val,
       ShOp = ARM_AM::ror;
       break;
   }
+
+  if (ShOp == ARM_AM::ror && imm == 0)
+    ShOp = ARM_AM::rrx;
 
   if (!Check(S, DecodeGPRRegisterClass(Inst, Rn, Address, Decoder)))
     return MCDisassembler::Fail;

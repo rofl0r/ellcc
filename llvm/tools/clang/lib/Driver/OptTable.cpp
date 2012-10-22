@@ -11,6 +11,7 @@
 #include "clang/Driver/Arg.h"
 #include "clang/Driver/ArgList.h"
 #include "clang/Driver/Option.h"
+#include "clang/Driver/Options.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
@@ -78,23 +79,24 @@ OptSpecifier::OptSpecifier(const Option *Opt) : ID(Opt->getID()) {}
 //
 
 OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos)
-  : OptionInfos(_OptionInfos), NumOptionInfos(_NumOptionInfos),
-    Options(new Option*[NumOptionInfos]),
-    TheInputOption(0), TheUnknownOption(0), FirstSearchableIndex(0)
+  : OptionInfos(_OptionInfos),
+    NumOptionInfos(_NumOptionInfos),
+    TheInputOptionID(0),
+    TheUnknownOptionID(0),
+    FirstSearchableIndex(0)
 {
   // Explicitly zero initialize the error to work around a bug in array
   // value-initialization on MinGW with gcc 4.3.5.
-  memset(Options, 0, sizeof(*Options) * NumOptionInfos);
 
   // Find start of normal options.
   for (unsigned i = 0, e = getNumOptions(); i != e; ++i) {
     unsigned Kind = getInfo(i + 1).Kind;
     if (Kind == Option::InputClass) {
-      assert(!TheInputOption && "Cannot have multiple input options!");
-      TheInputOption = getOption(i + 1);
+      assert(!TheInputOptionID && "Cannot have multiple input options!");
+      TheInputOptionID = getInfo(i + 1).ID;
     } else if (Kind == Option::UnknownClass) {
-      assert(!TheUnknownOption && "Cannot have multiple input options!");
-      TheUnknownOption = getOption(i + 1);
+      assert(!TheUnknownOptionID && "Cannot have multiple unknown options!");
+      TheUnknownOptionID = getInfo(i + 1).ID;
     } else if (Kind != Option::GroupClass) {
       FirstSearchableIndex = i;
       break;
@@ -115,8 +117,8 @@ OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos)
   // Check that options are in order.
   for (unsigned i = FirstSearchableIndex+1, e = getNumOptions(); i != e; ++i) {
     if (!(getInfo(i) < getInfo(i + 1))) {
-      getOption(i)->dump();
-      getOption(i + 1)->dump();
+      getOption(i).dump();
+      getOption(i + 1).dump();
       llvm_unreachable("Options are not in order!");
     }
   }
@@ -124,23 +126,18 @@ OptTable::OptTable(const Info *_OptionInfos, unsigned _NumOptionInfos)
 }
 
 OptTable::~OptTable() {
-  for (unsigned i = 0, e = getNumOptions(); i != e; ++i)
-    delete Options[i];
-  delete[] Options;
+}
+
+const Option OptTable::getOption(OptSpecifier Opt) const {
+  unsigned id = Opt.getID();
+  if (id == 0)
+    return Option(0, 0);
+  assert((unsigned) (id - 1) < getNumOptions() && "Invalid ID.");
+  return Option(&getInfo(id), this);
 }
 
 bool OptTable::isOptionHelpHidden(OptSpecifier id) const {
   return getInfo(id).Flags & options::HelpHidden;
-}
-
-Option *OptTable::CreateOption(unsigned id) const {
-  const Info &info = getInfo(id);
-  const Option *Group = getOption(info.GroupID);
-  const Option *Alias = getOption(info.AliasID);
-
-  Option *Opt = new Option(&info, id, Group, Alias);
-
-  return Opt;
 }
 
 Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index) const {
@@ -149,7 +146,7 @@ Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index) const {
 
   // Anything that doesn't start with '-' is an input, as is '-' itself.
   if (Str[0] != '-' || Str[1] == '\0')
-    return new Arg(TheInputOption, Index++, Str);
+    return new Arg(getOption(TheInputOptionID), Index++, Str);
 
   const Info *Start = OptionInfos + FirstSearchableIndex;
   const Info *End = OptionInfos + getNumOptions();
@@ -165,16 +162,17 @@ Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index) const {
   // FIXME: This is searching much more than necessary, but I am
   // blanking on the simplest way to make it fast. We can solve this
   // problem when we move to TableGen.
+  StringRef StrRef(Str);
   for (; Start != End; ++Start) {
     // Scan for first option which is a proper prefix.
     for (; Start != End; ++Start)
-      if (memcmp(Str, Start->Name, strlen(Start->Name)) == 0)
+      if (StrRef.startswith(Start->Name))
         break;
     if (Start == End)
       break;
 
     // See if this option matches.
-    if (Arg *A = getOption(Start - OptionInfos + 1)->accept(Args, Index))
+    if (Arg *A = getOption(Start - OptionInfos + 1).accept(Args, Index))
       return A;
 
     // Otherwise, see if this argument was missing values.
@@ -182,7 +180,7 @@ Arg *OptTable::ParseOneArg(const ArgList &Args, unsigned &Index) const {
       return 0;
   }
 
-  return new Arg(TheUnknownOption, Index++, Str);
+  return new Arg(getOption(TheUnknownOptionID), Index++, Str);
 }
 
 InputArgList *OptTable::ParseArgs(const char* const *ArgBegin,
