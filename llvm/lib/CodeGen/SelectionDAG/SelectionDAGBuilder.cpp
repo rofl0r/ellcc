@@ -1255,7 +1255,7 @@ void SelectionDAGBuilder::visitRet(const ReturnInst &I) {
 
         for (unsigned i = 0; i < NumParts; ++i) {
           Outs.push_back(ISD::OutputArg(Flags, Parts[i].getValueType(),
-                                        /*isfixed=*/true));
+                                        /*isfixed=*/true, 0, 0));
           OutVals.push_back(Parts[i]);
         }
       }
@@ -2604,14 +2604,14 @@ void SelectionDAGBuilder::visitIndirectBr(const IndirectBrInst &I) {
   MachineBasicBlock *IndirectBrMBB = FuncInfo.MBB;
 
   // Update machine-CFG edges with unique successors.
-  SmallVector<BasicBlock*, 32> succs;
-  succs.reserve(I.getNumSuccessors());
-  for (unsigned i = 0, e = I.getNumSuccessors(); i != e; ++i)
-    succs.push_back(I.getSuccessor(i));
-  array_pod_sort(succs.begin(), succs.end());
-  succs.erase(std::unique(succs.begin(), succs.end()), succs.end());
-  for (unsigned i = 0, e = succs.size(); i != e; ++i) {
-    MachineBasicBlock *Succ = FuncInfo.MBBMap[succs[i]];
+  SmallSet<BasicBlock*, 32> Done;
+  for (unsigned i = 0, e = I.getNumSuccessors(); i != e; ++i) {
+    BasicBlock *BB = I.getSuccessor(i);
+    bool Inserted = Done.insert(BB);
+    if (!Inserted)
+        continue;
+
+    MachineBasicBlock *Succ = FuncInfo.MBBMap[BB];
     addSuccessorWithWeight(IndirectBrMBB, Succ);
   }
 
@@ -6128,7 +6128,8 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
   const MDNode *SrcLoc = CS.getInstruction()->getMetadata("srcloc");
   AsmNodeOperands.push_back(DAG.getMDNode(SrcLoc));
 
-  // Remember the HasSideEffect, AlignStack and AsmDialect bits as operand 3.
+  // Remember the HasSideEffect, AlignStack, AsmDialect, MayLoad and MayStore
+  // bits as operand 3.
   unsigned ExtraInfo = 0;
   if (IA->hasSideEffects())
     ExtraInfo |= InlineAsm::Extra_HasSideEffects;
@@ -6136,6 +6137,27 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     ExtraInfo |= InlineAsm::Extra_IsAlignStack;
   // Set the asm dialect.
   ExtraInfo |= IA->getDialect() * InlineAsm::Extra_AsmDialect;
+
+  // Determine if this InlineAsm MayLoad or MayStore based on the constraints.
+  for (unsigned i = 0, e = TargetConstraints.size(); i != e; ++i) {
+    TargetLowering::AsmOperandInfo &OpInfo = TargetConstraints[i];
+
+    // Compute the constraint code and ConstraintType to use.
+    TLI.ComputeConstraintToUse(OpInfo, SDValue());
+
+    // Ideally, we would only check against memory constraints.  However, the
+    // meaning of an other constraint can be target-specific and we can't easily
+    // reason about it.  Therefore, be conservative and set MayLoad/MayStore
+    // for other constriants as well.
+    if (OpInfo.ConstraintType == TargetLowering::C_Memory ||
+        OpInfo.ConstraintType == TargetLowering::C_Other) {
+      if (OpInfo.Type == InlineAsm::isInput)
+        ExtraInfo |= InlineAsm::Extra_MayLoad;
+      else if (OpInfo.Type == InlineAsm::isOutput)
+        ExtraInfo |= InlineAsm::Extra_MayStore;
+    }
+  }
+
   AsmNodeOperands.push_back(DAG.getTargetConstant(ExtraInfo,
                                                   TLI.getPointerTy()));
 
@@ -6518,7 +6540,8 @@ TargetLowering::LowerCallTo(TargetLowering::CallLoweringInfo &CLI) const {
       for (unsigned j = 0; j != NumParts; ++j) {
         // if it isn't first piece, alignment must be 1
         ISD::OutputArg MyFlags(Flags, Parts[j].getValueType(),
-                               i < CLI.NumFixedArgs);
+                               i < CLI.NumFixedArgs,
+                               i, j*Parts[j].getValueType().getStoreSize());
         if (NumParts > 1 && j == 0)
           MyFlags.Flags.setSplit();
         else if (j != 0)

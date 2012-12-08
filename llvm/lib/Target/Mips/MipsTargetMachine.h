@@ -21,7 +21,6 @@
 #include "MipsSelectionDAGInfo.h"
 #include "MipsIntrinsicInfo.h"
 #include "MipsSubtarget.h"
-#include "MipsELFWriterInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/DataLayout.h"
 #include "llvm/Target/TargetFrameLowering.h"
@@ -39,10 +38,9 @@ class MipsTargetMachine : public LLVMTargetMachine {
   MipsTargetLowering  TLInfo;
   MipsSelectionDAGInfo TSInfo;
   MipsJITInfo JITInfo;
-  MipsELFWriterInfo   ELFWriterInfo;
   MipsIntrinsicInfo   IntrinsicInfo;
   ScalarTargetTransformImpl STTI;
-  VectorTargetTransformInfo VTTI; 
+  VectorTargetTransformImpl VTTI;
 
 public:
   MipsTargetMachine(const Target &T, StringRef TT,
@@ -76,9 +74,6 @@ public:
     return &TSInfo;
   }
 
-  virtual const MipsELFWriterInfo *getELFWriterInfo() const {
-    return &ELFWriterInfo;
-  }
   virtual const ScalarTargetTransformInfo *getScalarTargetTransformInfo()const {
     return &STTI;
   }

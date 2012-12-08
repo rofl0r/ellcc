@@ -98,6 +98,7 @@ void SetLowLevelAllocateCallback(LowLevelAllocateCallback callback);
 
 // IO
 void RawWrite(const char *buffer);
+bool PrintsToTty();
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void SetPrintfAndReportCallback(void (*callback)(const char *));
@@ -116,6 +117,7 @@ void *MapFileToMemory(const char *file_name, uptr *buff_size);
 // OS
 void DisableCoreDumper();
 void DumpProcessMap();
+bool FileExists(const char *filename);
 const char *GetEnv(const char *name);
 const char *GetPwd();
 void ReExec();

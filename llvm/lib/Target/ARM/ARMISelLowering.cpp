@@ -1594,19 +1594,19 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   // FIXME: handle tail calls differently.
   unsigned CallOpc;
+  bool HasMinSizeAttr = MF.getFunction()->getFnAttributes().
+    hasAttribute(Attributes::MinSize);
   if (Subtarget->isThumb()) {
     if ((!isDirect || isARMFunc) && !Subtarget->hasV5TOps())
-      CallOpc = ARMISD::CALL_NOLINK;
-    else if (doesNotRet && isDirect && !isARMFunc &&
-             Subtarget->hasRAS() && !Subtarget->isThumb1Only())
-      // "mov lr, pc; b _foo" to avoid confusing the RSP
       CallOpc = ARMISD::CALL_NOLINK;
     else
       CallOpc = isARMFunc ? ARMISD::CALL : ARMISD::tCALL;
   } else {
-    if (!isDirect && !Subtarget->hasV5TOps()) {
+    if (!isDirect && !Subtarget->hasV5TOps())
       CallOpc = ARMISD::CALL_NOLINK;
-    } else if (doesNotRet && isDirect && Subtarget->hasRAS())
+    else if (doesNotRet && isDirect && Subtarget->hasRAS() &&
+               // Emit regular call when code size is the priority
+               !HasMinSizeAttr)
       // "mov lr, pc; b _foo" to avoid confusing the RSP
       CallOpc = ARMISD::CALL_NOLINK;
     else
@@ -3923,6 +3923,36 @@ SDValue ARMTargetLowering::LowerConstantFP(SDValue Op, SelectionDAG &DAG,
   return SDValue();
 }
 
+// check if an VEXT instruction can handle the shuffle mask when the
+// vector sources of the shuffle are the same.
+static bool isSingletonVEXTMask(ArrayRef<int> M, EVT VT, unsigned &Imm) {
+  unsigned NumElts = VT.getVectorNumElements();
+
+  // Assume that the first shuffle index is not UNDEF.  Fail if it is.
+  if (M[0] < 0)
+    return false;
+
+  Imm = M[0];
+
+  // If this is a VEXT shuffle, the immediate value is the index of the first
+  // element.  The other shuffle indices must be the successive elements after
+  // the first one.
+  unsigned ExpectedElt = Imm;
+  for (unsigned i = 1; i < NumElts; ++i) {
+    // Increment the expected index.  If it wraps around, just follow it
+    // back to index zero and keep going.
+    ++ExpectedElt;
+    if (ExpectedElt == NumElts)
+      ExpectedElt = 0;
+
+    if (M[i] < 0) continue; // ignore UNDEF indices
+    if (ExpectedElt != static_cast<unsigned>(M[i]))
+      return false;
+  }
+
+  return true;
+}
+
 
 static bool isVEXTMask(ArrayRef<int> M, EVT VT,
                        bool &ReverseVEXT, unsigned &Imm) {
@@ -4681,6 +4711,12 @@ static SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) {
       return DAG.getNode(ARMISD::VREV32, dl, VT, V1);
     if (isVREVMask(ShuffleMask, VT, 16))
       return DAG.getNode(ARMISD::VREV16, dl, VT, V1);
+
+    if (V2->getOpcode() == ISD::UNDEF &&
+        isSingletonVEXTMask(ShuffleMask, VT, Imm)) {
+      return DAG.getNode(ARMISD::VEXT, dl, VT, V1, V1,
+                         DAG.getConstant(Imm, MVT::i32));
+    }
 
     // Check for Neon shuffles that modify both input vectors in place.
     // If both results are used, i.e., if there are two shuffles with the same
@@ -6035,12 +6071,15 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
                              MachineMemOperand::MOLoad |
                              MachineMemOperand::MOVolatile, 4, 4);
 
-  if (AFI->isThumb1OnlyFunction())
-    BuildMI(DispatchBB, dl, TII->get(ARM::tInt_eh_sjlj_dispatchsetup));
-  else if (!Subtarget->hasVFP2())
-    BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup_nofp));
-  else
-    BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup));
+  MachineInstrBuilder MIB;
+  MIB = BuildMI(DispatchBB, dl, TII->get(ARM::Int_eh_sjlj_dispatchsetup));
+
+  const ARMBaseInstrInfo *AII = static_cast<const ARMBaseInstrInfo*>(TII);
+  const ARMBaseRegisterInfo &RI = AII->getRegisterInfo();
+
+  // Add a register mask with no preserved registers.  This results in all
+  // registers being marked as clobbered.
+  MIB.addRegMask(RI.getNoPreservedMask());
 
   unsigned NumLPads = LPadList.size();
   if (Subtarget->isThumb2()) {
@@ -6259,8 +6298,6 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
   }
 
   // N.B. the order the invoke BBs are processed in doesn't matter here.
-  const ARMBaseInstrInfo *AII = static_cast<const ARMBaseInstrInfo*>(TII);
-  const ARMBaseRegisterInfo &RI = AII->getRegisterInfo();
   const uint16_t *SavedRegs = RI.getCalleeSavedRegs(MF);
   SmallVector<MachineBasicBlock*, 64> MBBLPads;
   for (SmallPtrSet<MachineBasicBlock*, 64>::iterator

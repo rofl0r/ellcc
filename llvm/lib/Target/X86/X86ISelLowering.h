@@ -19,6 +19,7 @@
 #include "X86RegisterInfo.h"
 #include "X86MachineFunctionInfo.h"
 #include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetTransformImpl.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/SelectionDAG.h"
@@ -142,6 +143,10 @@ namespace llvm {
       /// mnemonic, so do I; blame Intel.
       MOVDQ2Q,
 
+      /// MMX_MOVD2W - Copies a 32-bit value from the low word of a MMX
+      /// vector to a GPR.
+      MMX_MOVD2W,
+
       /// PEXTRB - Extract an 8-bit value from a vector and zero extend it to
       /// i32, corresponds to X86::PEXTRB.
       PEXTRB,
@@ -235,6 +240,12 @@ namespace llvm {
 
       // VSEXT_MOVL - Vector move low and sign extend.
       VSEXT_MOVL,
+
+      // VZEXT - Vector integer zero-extend.
+      VZEXT,
+
+      // VSEXT - Vector integer signed-extend.
+      VSEXT,
 
       // VFPEXT - Vector FP extend.
       VFPEXT,
@@ -474,10 +485,6 @@ namespace llvm {
     getPICJumpTableRelocBaseExpr(const MachineFunction *MF,
                                  unsigned JTI, MCContext &Ctx) const;
 
-    /// getStackPtrReg - Return the stack pointer register we are using: either
-    /// ESP or RSP.
-    unsigned getStackPtrReg() const { return X86StackPtr; }
-
     /// getByValTypeAlignment - Return the desired alignment for ByVal aggregate
     /// function arguments in the caller parameter area. For X86, aggregates
     /// that contains are placed at 16-byte boundaries while the rest are at
@@ -712,9 +719,6 @@ namespace llvm {
     const X86RegisterInfo *RegInfo;
     const DataLayout *TD;
 
-    /// X86StackPtr - X86 physical register used as stack ptr.
-    unsigned X86StackPtr;
-
     /// X86ScalarSSEf32, X86ScalarSSEf64 - Select between SSE or x87
     /// floating point ops.
     /// When SSE is available, use it for f32 operations.
@@ -795,7 +799,9 @@ namespace llvm {
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i64(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i32(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerUINT_TO_FP_vec(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerZERO_EXTEND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerFP_EXTEND(SDValue Op, SelectionDAG &DAG) const;
@@ -832,6 +838,8 @@ namespace llvm {
 
     SDValue LowerVectorAllZeroTest(SDValue Op, SelectionDAG &DAG) const;
 
+    SDValue lowerVectorIntExtend(SDValue Op, SelectionDAG &DAG) const;
+
     virtual SDValue
       LowerFormalArguments(SDValue Chain,
                            CallingConv::ID CallConv, bool isVarArg,
@@ -863,20 +871,11 @@ namespace llvm {
                    const SmallVectorImpl<ISD::OutputArg> &Outs,
                    LLVMContext &Context) const;
 
-    /// Utility function to emit string processing sse4.2 instructions
-    /// that return in xmm0.
-    /// This takes the instruction to expand, the associated machine basic
-    /// block, the number of args, and whether or not the second arg is
-    /// in memory or not.
-    MachineBasicBlock *EmitPCMP(MachineInstr *BInstr, MachineBasicBlock *BB,
-                                unsigned argNum, bool inMem) const;
-
     /// Utility functions to emit monitor and mwait instructions. These
     /// need to make sure that the arguments to the intrinsic are in the
     /// correct registers.
     MachineBasicBlock *EmitMonitor(MachineInstr *MI,
                                    MachineBasicBlock *BB) const;
-    MachineBasicBlock *EmitMwait(MachineInstr *MI, MachineBasicBlock *BB) const;
 
     /// Utility function to emit atomic-load-arith operations (and, or, xor,
     /// nand, max, min, umax, umin). It takes the corresponding instruction to
@@ -889,6 +888,10 @@ namespace llvm {
     /// nand, add, sub, swap) for 64-bit operands on 32-bit target.
     MachineBasicBlock *EmitAtomicLoadArith6432(MachineInstr *MI,
                                                MachineBasicBlock *MBB) const;
+
+    /// Utility function to emit xbegin specifying the start of an RTM region.
+    MachineBasicBlock *EmitXBegin(MachineInstr *MI,
+                                  MachineBasicBlock *MBB) const;
 
     // Utility function to emit the low-level va_arg code for X86-64.
     MachineBasicBlock *EmitVAARG64WithCustomInserter(
@@ -939,6 +942,23 @@ namespace llvm {
     FastISel *createFastISel(FunctionLoweringInfo &funcInfo,
                              const TargetLibraryInfo *libInfo);
   }
+
+  class X86VectorTargetTransformInfo : public VectorTargetTransformImpl {
+  public:
+    explicit X86VectorTargetTransformInfo(const TargetLowering *TL) :
+    VectorTargetTransformImpl(TL) {}
+
+    virtual unsigned getArithmeticInstrCost(unsigned Opcode, Type *Ty) const;
+
+    virtual unsigned getVectorInstrCost(unsigned Opcode, Type *Val,
+                                        unsigned Index) const;
+
+    unsigned getCmpSelInstrCost(unsigned Opcode, Type *ValTy,
+                                Type *CondTy) const;
+
+    virtual unsigned getCastInstrCost(unsigned Opcode, Type *Dst,
+                                      Type *Src) const;
+  };
 }
 
 #endif    // X86ISELLOWERING_H

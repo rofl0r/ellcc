@@ -4800,7 +4800,8 @@ void CheckImplicitConversion(Sema &S, Expr *E, QualType T,
 
   if ((E->isNullPointerConstant(S.Context, Expr::NPC_ValueDependentIsNotNull)
            == Expr::NPCK_GNUNull) && !Target->isAnyPointerType()
-      && !Target->isBlockPointerType() && !Target->isMemberPointerType()) {
+      && !Target->isBlockPointerType() && !Target->isMemberPointerType()
+      && Target->isScalarType()) {
     SourceLocation Loc = E->getSourceRange().getBegin();
     if (Loc.isMacroID())
       Loc = S.SourceMgr.getImmediateExpansionRange(Loc).first;
@@ -6190,7 +6191,8 @@ void Sema::CheckArgumentWithTypeTag(const ArgumentWithTypeTagAttr *Attr,
   if (IsPointerAttr) {
     // Skip implicit cast of pointer to `void *' (as a function argument).
     if (const ImplicitCastExpr *ICE = dyn_cast<ImplicitCastExpr>(ArgumentExpr))
-      if (ICE->getType()->isVoidPointerType())
+      if (ICE->getType()->isVoidPointerType() &&
+          ICE->getCastKind() == CK_BitCast)
         ArgumentExpr = ICE->getSubExpr();
   }
   QualType ArgumentType = ArgumentExpr->getType();

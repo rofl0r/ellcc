@@ -49,7 +49,7 @@ X86_32TargetMachine::X86_32TargetMachine(const Target &T, StringRef TT,
     TSInfo(*this),
     TLInfo(*this),
     JITInfo(*this),
-    STTI(&TLInfo) {
+    STTI(&TLInfo), VTTI(&TLInfo) {
 }
 
 void X86_64TargetMachine::anchor() { }
@@ -66,7 +66,7 @@ X86_64TargetMachine::X86_64TargetMachine(const Target &T, StringRef TT,
     TSInfo(*this),
     TLInfo(*this),
     JITInfo(*this),
-    STTI(&TLInfo) {
+    STTI(&TLInfo), VTTI(&TLInfo){
 }
 
 /// X86TargetMachine ctor - Create an X86 target.
@@ -80,7 +80,6 @@ X86TargetMachine::X86TargetMachine(const Target &T, StringRef TT,
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     Subtarget(TT, CPU, FS, Options.StackAlignmentOverride, is64Bit),
     FrameLowering(*this, Subtarget),
-    ELFWriterInfo(is64Bit, true),
     InstrItins(Subtarget.getInstrItineraryData()){
   // Determine the PICStyle based on the target selected.
   if (getRelocationModel() == Reloc::Static) {

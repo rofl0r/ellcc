@@ -2633,6 +2633,8 @@ public:
 
   NamedDecl *LookupInlineAsmIdentifier(StringRef Name, SourceLocation Loc,
                                        unsigned &Size);
+  bool LookupInlineAsmField(StringRef Base, StringRef Member,
+                            unsigned &Offset, SourceLocation AsmLoc);
   StmtResult ActOnMSAsmStmt(SourceLocation AsmLoc, SourceLocation LBraceLoc,
                             ArrayRef<Token> AsmToks, SourceLocation EndLoc);
 
@@ -2911,7 +2913,8 @@ public:
                                   bool HasTrailingLParen);
 
   ExprResult BuildQualifiedDeclarationNameExpr(CXXScopeSpec &SS,
-                                         const DeclarationNameInfo &NameInfo);
+                                         const DeclarationNameInfo &NameInfo,
+                                               bool IsAddressOfOperand);
   ExprResult BuildDependentDeclRefExpr(const CXXScopeSpec &SS,
                                        SourceLocation TemplateKWLoc,
                                 const DeclarationNameInfo &NameInfo,
@@ -3375,18 +3378,11 @@ public:
     // Pointer to allow copying
     Sema *Self;
     // We order exception specifications thus:
-    // noexcept is the most restrictive, but is only used in C++0x.
+    // noexcept is the most restrictive, but is only used in C++11.
     // throw() comes next.
     // Then a throw(collected exceptions)
-    // Finally no specification.
+    // Finally no specification, which is expressed as noexcept(false).
     // throw(...) is used instead if any called function uses it.
-    //
-    // If this exception specification cannot be known yet (for instance,
-    // because this is the exception specification for a defaulted default
-    // constructor and we haven't finished parsing the deferred parts of the
-    // class yet), the C++0x standard does not specify how to behave. We
-    // record this as an 'unknown' exception specification, which overrules
-    // any other specification (even 'none', to keep this rule simple).
     ExceptionSpecificationType ComputedEST;
     llvm::SmallPtrSet<CanQualType, 4> ExceptionsSeen;
     SmallVector<QualType, 4> Exceptions;
@@ -3426,8 +3422,17 @@ public:
     /// computed exception specification.
     void getEPI(FunctionProtoType::ExtProtoInfo &EPI) const {
       EPI.ExceptionSpecType = getExceptionSpecType();
-      EPI.NumExceptions = size();
-      EPI.Exceptions = data();
+      if (EPI.ExceptionSpecType == EST_Dynamic) {
+        EPI.NumExceptions = size();
+        EPI.Exceptions = data();
+      } else if (EPI.ExceptionSpecType == EST_None) {
+        /// C++11 [except.spec]p14:
+        ///   The exception-specification is noexcept(false) if the set of
+        ///   potential exceptions of the special member function contains "any"
+        EPI.ExceptionSpecType = EST_ComputedNoexcept;
+        EPI.NoexceptExpr = Self->ActOnCXXBoolLiteral(SourceLocation(),
+                                                     tok::kw_false).take();
+      }
     }
     FunctionProtoType::ExtProtoInfo getEPI() const {
       FunctionProtoType::ExtProtoInfo EPI;
@@ -3757,7 +3762,7 @@ public:
                          SourceLocation PlacementRParen,
                          SourceRange TypeIdParens, Declarator &D,
                          Expr *Initializer);
-  ExprResult BuildCXXNew(SourceLocation StartLoc, bool UseGlobal,
+  ExprResult BuildCXXNew(SourceRange Range, bool UseGlobal,
                          SourceLocation PlacementLParen,
                          MultiExprArg PlacementArgs,
                          SourceLocation PlacementRParen,

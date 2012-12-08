@@ -45,19 +45,19 @@ public:
   /// used.
   TargetTransformInfo();
 
-  explicit TargetTransformInfo(const ScalarTargetTransformInfo* S,
-                               const VectorTargetTransformInfo *V)
-    : ImmutablePass(ID), STTI(S), VTTI(V) {
-      initializeTargetTransformInfoPass(*PassRegistry::getPassRegistry());
-    }
+  TargetTransformInfo(const ScalarTargetTransformInfo* S,
+                      const VectorTargetTransformInfo *V)
+      : ImmutablePass(ID), STTI(S), VTTI(V) {
+    initializeTargetTransformInfoPass(*PassRegistry::getPassRegistry());
+  }
 
   TargetTransformInfo(const TargetTransformInfo &T) :
     ImmutablePass(ID), STTI(T.STTI), VTTI(T.VTTI) { }
 
-  const ScalarTargetTransformInfo* getScalarTargetTransformInfo() {
+  const ScalarTargetTransformInfo* getScalarTargetTransformInfo() const {
     return STTI;
   }
-  const VectorTargetTransformInfo* getVectorTargetTransformInfo() {
+  const VectorTargetTransformInfo* getVectorTargetTransformInfo() const {
     return VTTI;
   }
 
@@ -102,7 +102,7 @@ public:
   /// isTruncateFree - Return true if it's free to truncate a value of
   /// type Ty1 to type Ty2. e.g. On x86 it's free to truncate a i32 value in
   /// register EAX to i16 by referencing its sub-register AX.
-  virtual bool isTruncateFree(Type * /*Ty1*/, Type * /*Ty2*/) const {
+  virtual bool isTruncateFree(Type *Ty1, Type *Ty2) const {
     return false;
   }
   /// Is this type legal.
@@ -117,10 +117,86 @@ public:
   virtual unsigned getJumpBufSize() const {
     return 0;
   }
+  /// shouldBuildLookupTables - Return true if switches should be turned into
+  /// lookup tables for the target.
+  virtual bool shouldBuildLookupTables() const {
+    return true;
+  }
 };
 
+/// VectorTargetTransformInfo - This interface is used by the vectorizers
+/// to estimate the profitability of vectorization for different instructions.
 class VectorTargetTransformInfo {
-  // TODO: define an interface for VectorTargetTransformInfo.
+public:
+  virtual ~VectorTargetTransformInfo() {}
+
+  /// Returns the expected cost of the instruction opcode. The opcode is one of
+  /// the enums like Instruction::Add. The type arguments are the type of the
+  /// operation.
+  /// Most instructions only use the first type and in that case the second
+  /// operand is ignored.
+  ///
+  /// Exceptions:
+  /// * Br instructions do not use any of the types.
+  /// * Select instructions pass the return type as Ty1 and the selector as Ty2.
+  /// * Cast instructions pass the destination as Ty1 and the source as Ty2.
+  /// * Insert/Extract element pass only the vector type as Ty1.
+  /// * ShuffleVector, Load, Store do not use this call.
+  virtual unsigned getInstrCost(unsigned Opcode,
+                                Type *Ty1 = 0,
+                                Type *Ty2 = 0) const {
+    return 1;
+  }
+
+  /// Returns the expected cost of arithmetic ops, such as mul, xor, fsub, etc.
+  virtual unsigned getArithmeticInstrCost(unsigned Opcode, Type *Ty) const {
+    return 1;
+  }
+
+  /// Returns the cost of a vector broadcast of a scalar at place zero to a
+  /// vector of type 'Tp'.
+  virtual unsigned getBroadcastCost(Type *Tp) const {
+    return 1;
+  }
+
+  /// Returns the expected cost of cast instructions, such as bitcast, trunc,
+  /// zext, etc.
+  virtual unsigned getCastInstrCost(unsigned Opcode, Type *Dst,
+                                    Type *Src) const {
+    return 1;
+  }
+
+  /// Returns the expected cost of control-flow related instrutctions such as
+  /// Phi, Ret, Br.
+  virtual unsigned getCFInstrCost(unsigned Opcode) const {
+    return 1;
+  }
+
+  /// Returns the expected cost of compare and select instructions.
+  virtual unsigned getCmpSelInstrCost(unsigned Opcode, Type *ValTy,
+                                      Type *CondTy = 0) const {
+    return 1;
+  }
+
+  /// Returns the expected cost of vector Insert and Extract.
+  /// Use -1 to indicate that there is no information on the index value.
+  virtual unsigned getVectorInstrCost(unsigned Opcode, Type *Val,
+                                      unsigned Index = -1) const {
+    return 1;
+  }
+
+  /// Returns the cost of Load and Store instructions.
+  virtual unsigned getMemoryOpCost(unsigned Opcode, Type *Src,
+                                   unsigned Alignment,
+                                   unsigned AddressSpace) const {
+    return 1;
+  }
+
+  /// Returns the number of pieces into which the provided type must be
+  /// split during legalization. Zero is returned when the answer is unknown.
+  virtual unsigned getNumberOfParts(Type *Tp) const {
+    return 0;
+  }
 };
 
 } // End llvm namespace

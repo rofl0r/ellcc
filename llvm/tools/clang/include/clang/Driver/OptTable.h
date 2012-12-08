@@ -12,6 +12,7 @@
 
 #include "clang/Basic/LLVM.h"
 #include "clang/Driver/OptSpecifier.h"
+#include "llvm/ADT/StringSet.h"
 
 namespace clang {
 namespace driver {
@@ -31,6 +32,9 @@ namespace driver {
   public:
     /// \brief Entry for a single option instance in the option data table.
     struct Info {
+      /// A null terminated array of prefix strings to apply to name while
+      /// matching.
+      const char *const *Prefixes;
       const char *Name;
       const char *HelpText;
       const char *MetaVar;
@@ -53,6 +57,11 @@ namespace driver {
     /// The index of the first option which can be parsed (i.e., is not a
     /// special option like 'input' or 'unknown', and is not an option group).
     unsigned FirstSearchableIndex;
+
+    /// The union of all option prefixes. If an argument does not begin with
+    /// one of these, it is an input.
+    llvm::StringSet<> PrefixesUnion;
+    std::string PrefixChars;
 
   private:
     const Info &getInfo(OptSpecifier Opt) const {
@@ -89,9 +98,6 @@ namespace driver {
     unsigned getOptionGroupID(OptSpecifier id) const {
       return getInfo(id).GroupID;
     }
-
-    /// \brief Should the help for the given option be hidden by default.
-    bool isOptionHelpHidden(OptSpecifier id) const;
 
     /// \brief Get the help text to use to describe this option.
     const char *getOptionHelpText(OptSpecifier id) const {
@@ -142,9 +148,12 @@ namespace driver {
     /// \param OS - The stream to write the help text to.
     /// \param Name - The name to use in the usage line.
     /// \param Title - The title to use in the usage line.
-    /// \param ShowHidden - Whether help-hidden arguments should be shown.
+    /// \param FlagsToInclude - If non-zero, only include options with any
+    ///                         of these flags set.
+    /// \param FlagsToExclude - Exclude options with any of these flags set.
     void PrintHelp(raw_ostream &OS, const char *Name,
-                   const char *Title, bool ShowHidden = false) const;
+                   const char *Title, unsigned short FlagsToInclude = 0,
+                   unsigned short FlagsToExclude = 0) const;
   };
 }
 }

@@ -619,7 +619,10 @@ unsigned ARMFastISel::ARMMaterializeGV(const GlobalValue *GV, EVT VT) {
 
   Reloc::Model RelocM = TM.getRelocationModel();
   bool IsIndirect = Subtarget->GVIsIndirectSymbol(GV, RelocM);
-  unsigned DestReg = createResultReg(TLI.getRegClassFor(VT));
+  const TargetRegisterClass *RC = isThumb2 ?
+    (const TargetRegisterClass*)&ARM::rGPRRegClass :
+    (const TargetRegisterClass*)&ARM::GPRRegClass;
+  unsigned DestReg = createResultReg(RC);
 
   // Use movw+movt when possible, it avoids constant pool entries.
   // Darwin targets don't support movt with Reloc::Static, see
@@ -1388,6 +1391,11 @@ bool ARMFastISel::SelectIndirectBr(const Instruction *I) {
   unsigned Opc = isThumb2 ? ARM::tBRIND : ARM::BX;
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(Opc))
                   .addReg(AddrReg));
+
+  const IndirectBrInst *IB = cast<IndirectBrInst>(I);
+  for (unsigned i = 0, e = IB->getNumSuccessors(); i != e; ++i)
+    FuncInfo.MBB->addSuccessor(FuncInfo.MBBMap[IB->getSuccessor(i)]);
+
   return true;
 }
 

@@ -430,11 +430,6 @@ public:
   /// architecture name (e.g., "x86").
   static ArchType getArchTypeForLLVMName(StringRef Str);
 
-  /// getArchTypeForDarwinArchName - Get the architecture type for a "Darwin"
-  /// architecture name, for example as accepted by "gcc -arch" (see also
-  /// arch(3)).
-  static ArchType getArchTypeForDarwinArchName(StringRef Str);
-
   /// @}
 };
 

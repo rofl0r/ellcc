@@ -69,11 +69,10 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
                            "v128:64:128-v64:64:64-n32-S64") :
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
                            "v128:64:128-v64:64:64-n32-S32")),
-    ELFWriterInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
     FrameLowering(Subtarget),
-    STTI(&TLInfo) {
+    STTI(&TLInfo), VTTI(&TLInfo) {
   if (!Subtarget.hasARMOps())
     report_fatal_error("CPU: '" + Subtarget.getCPUString() + "' does not "
                        "support ARM mode execution!");
@@ -96,7 +95,6 @@ ARMEBTargetMachine::ARMEBTargetMachine(const Target &T, StringRef TT,
                            "v128:64:128-v64:64:64-n32-S64") :
                std::string("E-p:32:32-f64:64:64-i64:64:64-"
                            "v128:64:128-v64:64:64-n32-S32")),
-    ELFWriterInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
     FrameLowering(Subtarget) {
@@ -127,13 +125,12 @@ ThumbTargetMachine::ThumbTargetMachine(const Target &T, StringRef TT,
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
                            "i16:16:32-i8:8:32-i1:8:32-"
                            "v128:64:128-v64:64:64-a:0:32-n32-S32")),
-    ELFWriterInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
     FrameLowering(Subtarget.hasThumb2()
               ? new ARMFrameLowering(Subtarget)
               : (ARMFrameLowering*)new Thumb1FrameLowering(Subtarget)),
-    STTI(&TLInfo){
+    STTI(&TLInfo), VTTI(&TLInfo) {
 }
 
 namespace {
