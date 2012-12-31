@@ -209,6 +209,10 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_PPC_GAS_LO16: return "l";
   case VK_PPC_TPREL16_HA: return "tprel@ha";
   case VK_PPC_TPREL16_LO: return "tprel@l";
+  case VK_PPC_TOC16_HA: return "toc@ha";
+  case VK_PPC_TOC16_LO: return "toc@l";
+  case VK_PPC_GOT_TPREL16_DS: return "got@tprel";
+  case VK_PPC_TLS: return "tls";
   case VK_Mips_GPREL: return "GPREL";
   case VK_Mips_GOT_CALL: return "GOT_CALL";
   case VK_Mips_GOT16: return "GOT16";
@@ -229,6 +233,10 @@ StringRef MCSymbolRefExpr::getVariantKindName(VariantKind Kind) {
   case VK_Mips_GOT_OFST: return "GOT_OFST";
   case VK_Mips_HIGHER:   return "HIGHER";
   case VK_Mips_HIGHEST:  return "HIGHEST";
+  case VK_Mips_GOT_HI16: return "GOT_HI16";
+  case VK_Mips_GOT_LO16: return "GOT_LO16";
+  case VK_Mips_CALL_HI16: return "CALL_HI16";
+  case VK_Mips_CALL_LO16: return "CALL_LO16";
   }
   llvm_unreachable("Invalid variant kind");
 }

@@ -251,6 +251,13 @@ lto_codegen_set_assembler_args(lto_code_gen_t cg, const char **args,
                                int nargs);
 
 /**
+ * If set, then codegen will export all symbols (e.g. the internalize
+ * pass won't run).
+ */
+extern void
+lto_codegen_set_export_dynamic(lto_code_gen_t cg, bool val);
+
+/**
  * Adds to a list of all global symbols that must exist in the final
  * generated code.  If a function is not listed, it might be
  * inlined into every usage and optimized away.
@@ -290,6 +297,13 @@ lto_codegen_compile_to_file(lto_code_gen_t cg, const char** name);
  */
 extern void
 lto_codegen_debug_options(lto_code_gen_t cg, const char *);
+
+/**
+ * Initializes LLVM disassemblers.
+ * FIXME: This doesn't really belong here.
+ */
+extern void
+lto_initialize_disassembler(void);
 
 #ifdef __cplusplus
 }

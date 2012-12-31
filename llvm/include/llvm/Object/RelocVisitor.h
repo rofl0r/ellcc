@@ -16,11 +16,11 @@
 #ifndef _LLVM_OBJECT_RELOCVISITOR
 #define _LLVM_OBJECT_RELOCVISITOR
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Object/ELF.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Object/ObjectFile.h"
-#include "llvm/Object/ELF.h"
-#include "llvm/ADT/StringRef.h"
 
 namespace llvm {
 namespace object {
@@ -75,25 +75,6 @@ private:
   bool HasError;
 
   /// Operations
-
-  // Width is the width in bytes of the extend.
-  RelocToApply zeroExtend(RelocToApply r, char Width) {
-    if (Width == r.Width)
-      return r;
-    r.Value &= (1 << ((Width * 8))) - 1;
-    return r;
-  }
-  RelocToApply signExtend(RelocToApply r, char Width) {
-    if (Width == r.Width)
-      return r;
-    bool SignBit = r.Value & (1 << ((Width * 8) - 1));
-    if (SignBit) {
-      r.Value |= ~((1 << (Width * 8)) - 1);
-    } else {
-      r.Value &= (1 << (Width * 8)) - 1;
-    }
-    return r;
-  }
 
   /// X86-64 ELF
   RelocToApply visitELF_X86_64_NONE(RelocationRef R) {

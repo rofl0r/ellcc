@@ -17,11 +17,11 @@
 
 #include "ARM.h"
 #include "ARMSubtarget.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include <vector>
 
 namespace llvm {
@@ -232,7 +232,11 @@ namespace llvm {
       ATOMAND64_DAG,
       ATOMNAND64_DAG,
       ATOMSWAP64_DAG,
-      ATOMCMPXCHG64_DAG
+      ATOMCMPXCHG64_DAG,
+      ATOMMIN64_DAG,
+      ATOMUMIN64_DAG,
+      ATOMMAX64_DAG,
+      ATOMUMAX64_DAG
     };
   }
 
@@ -248,7 +252,7 @@ namespace llvm {
   public:
     explicit ARMTargetLowering(TargetMachine &TM);
 
-    virtual unsigned getJumpTableEncoding(void) const;
+    virtual unsigned getJumpTableEncoding() const;
 
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
 
@@ -289,6 +293,9 @@ namespace llvm {
                                     bool IsZeroVal,
                                     bool MemcpyStrSrc,
                                     MachineFunction &MF) const;
+
+    using TargetLowering::isZExtFree;
+    virtual bool isZExtFree(SDValue Val, EVT VT2) const;
 
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
@@ -495,6 +502,12 @@ namespace llvm {
                                     const SmallVectorImpl<SDValue> &OutVals,
                                     const SmallVectorImpl<ISD::InputArg> &Ins,
                                            SelectionDAG& DAG) const;
+
+    virtual bool CanLowerReturn(CallingConv::ID CallConv,
+                                MachineFunction &MF, bool isVarArg,
+                                const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                LLVMContext &Context) const;
+
     virtual SDValue
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
@@ -526,7 +539,9 @@ namespace llvm {
                                           unsigned Op1,
                                           unsigned Op2,
                                           bool NeedsCarry = false,
-                                          bool IsCmpxchg = false) const;
+                                          bool IsCmpxchg = false,
+                                          bool IsMinMax = false,
+                                          ARMCC::CondCodes CC = ARMCC::AL) const;
     MachineBasicBlock * EmitAtomicBinaryMinMax(MachineInstr *MI,
                                                MachineBasicBlock *BB,
                                                unsigned Size,

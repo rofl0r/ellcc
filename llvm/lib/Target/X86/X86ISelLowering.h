@@ -15,15 +15,15 @@
 #ifndef X86ISELLOWERING_H
 #define X86ISELLOWERING_H
 
-#include "X86Subtarget.h"
-#include "X86RegisterInfo.h"
 #include "X86MachineFunctionInfo.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetTransformImpl.h"
-#include "llvm/Target/TargetOptions.h"
+#include "X86RegisterInfo.h"
+#include "X86Subtarget.h"
+#include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/CodeGen/CallingConvLower.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetTransformImpl.h"
 
 namespace llvm {
   namespace X86ISD {
@@ -176,13 +176,11 @@ namespace llvm {
       /// PSIGN - Copy integer sign.
       PSIGN,
 
-      /// BLENDV - Blend where the selector is an XMM.
+      /// BLENDV - Blend where the selector is a register.
       BLENDV,
 
-      /// BLENDxx - Blend where the selector is an immediate.
-      BLENDPW,
-      BLENDPS,
-      BLENDPD,
+      /// BLENDI - Blend where the selector is an immediate.
+      BLENDI,
 
       /// HADD - Integer horizontal add.
       HADD,
@@ -630,6 +628,7 @@ namespace llvm {
     /// result out to 64 bits.
     virtual bool isZExtFree(Type *Ty1, Type *Ty2) const;
     virtual bool isZExtFree(EVT VT1, EVT VT2) const;
+    virtual bool isZExtFree(SDValue Val, EVT VT2) const;
 
     /// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
     /// a pair of mul and add instructions. fmuladd intrinsics will be expanded to
@@ -871,12 +870,6 @@ namespace llvm {
                    const SmallVectorImpl<ISD::OutputArg> &Outs,
                    LLVMContext &Context) const;
 
-    /// Utility functions to emit monitor and mwait instructions. These
-    /// need to make sure that the arguments to the intrinsic are in the
-    /// correct registers.
-    MachineBasicBlock *EmitMonitor(MachineInstr *MI,
-                                   MachineBasicBlock *BB) const;
-
     /// Utility function to emit atomic-load-arith operations (and, or, xor,
     /// nand, max, min, umax, umin). It takes the corresponding instruction to
     /// expand, the associated machine basic block, and the associated X86
@@ -888,10 +881,6 @@ namespace llvm {
     /// nand, add, sub, swap) for 64-bit operands on 32-bit target.
     MachineBasicBlock *EmitAtomicLoadArith6432(MachineInstr *MI,
                                                MachineBasicBlock *MBB) const;
-
-    /// Utility function to emit xbegin specifying the start of an RTM region.
-    MachineBasicBlock *EmitXBegin(MachineInstr *MI,
-                                  MachineBasicBlock *MBB) const;
 
     // Utility function to emit the low-level va_arg code for X86-64.
     MachineBasicBlock *EmitVAARG64WithCustomInserter(
@@ -942,6 +931,14 @@ namespace llvm {
     FastISel *createFastISel(FunctionLoweringInfo &funcInfo,
                              const TargetLibraryInfo *libInfo);
   }
+
+  class X86ScalarTargetTransformImpl : public ScalarTargetTransformImpl {
+  public:
+    explicit X86ScalarTargetTransformImpl(const TargetLowering *TL) :
+      ScalarTargetTransformImpl(TL) {};
+
+    virtual PopcntHwSupport getPopcntHwSupport(unsigned TyWidth) const;
+  };
 
   class X86VectorTargetTransformInfo : public VectorTargetTransformImpl {
   public:

@@ -417,6 +417,8 @@ def reglist : Operand<i32> {
   let DecoderMethod = "DecodeRegListOperand";
 }
 
+def GPRPairOp : RegisterOperand<GPRPair, "printGPRPairOperand">;
+
 def DPRRegListAsmOperand : AsmOperandClass { let Name = "DPRRegList"; }
 def dpr_reglist : Operand<i32> {
   let EncoderMethod = "getRegisterListOpValue";
@@ -1622,6 +1624,18 @@ def ATOMCMPXCHG6432 : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
                                  (ins GPR:$addr, GPR:$cmp1, GPR:$cmp2,
                                       GPR:$set1, GPR:$set2),
                                  NoItinerary, []>;
+def ATOMMIN6432  : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
+                              (ins GPR:$addr, GPR:$src1, GPR:$src2),
+                              NoItinerary, []>;
+def ATOMUMIN6432  : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
+                              (ins GPR:$addr, GPR:$src1, GPR:$src2),
+                              NoItinerary, []>;
+def ATOMMAX6432  : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
+                              (ins GPR:$addr, GPR:$src1, GPR:$src2),
+                              NoItinerary, []>;
+def ATOMUMAX6432  : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
+                              (ins GPR:$addr, GPR:$src1, GPR:$src2),
+                              NoItinerary, []>;
 }
 
 def HINT : AI<(outs), (ins imm0_255:$imm), MiscFrm, NoItinerary,
@@ -4229,8 +4243,8 @@ def LDREXH : AIldrex<0b11, (outs GPR:$Rt), (ins addr_offset_none:$addr),
 def LDREX  : AIldrex<0b00, (outs GPR:$Rt), (ins addr_offset_none:$addr),
                      NoItinerary, "ldrex", "\t$Rt, $addr", []>;
 let hasExtraDefRegAllocReq = 1 in
-def LDREXD: AIldrex<0b01, (outs GPR:$Rt, GPR:$Rt2),(ins addr_offset_none:$addr),
-                      NoItinerary, "ldrexd", "\t$Rt, $Rt2, $addr", []> {
+def LDREXD: AIldrex<0b01, (outs GPRPairOp:$Rt),(ins addr_offset_none:$addr),
+                      NoItinerary, "ldrexd", "\t$Rt, $addr", []> {
   let DecoderMethod = "DecodeDoubleRegLoad";
 }
 }
@@ -4244,8 +4258,8 @@ def STREX : AIstrex<0b00, (outs GPR:$Rd), (ins GPR:$Rt, addr_offset_none:$addr),
                     NoItinerary, "strex", "\t$Rd, $Rt, $addr", []>;
 let hasExtraSrcRegAllocReq = 1 in
 def STREXD : AIstrex<0b01, (outs GPR:$Rd),
-                    (ins GPR:$Rt, GPR:$Rt2, addr_offset_none:$addr),
-                    NoItinerary, "strexd", "\t$Rd, $Rt, $Rt2, $addr", []> {
+                    (ins GPRPairOp:$Rt, addr_offset_none:$addr),
+                    NoItinerary, "strexd", "\t$Rd, $Rt, $addr", []> {
   let DecoderMethod = "DecodeDoubleRegStore";
 }
 }

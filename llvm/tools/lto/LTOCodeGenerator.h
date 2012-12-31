@@ -14,10 +14,10 @@
 #ifndef LTO_CODE_GENERATOR_H
 #define LTO_CODE_GENERATOR_H
 
-#include "llvm/Linker.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm-c/lto.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/Linker.h"
 #include <string>
 
 namespace llvm {
@@ -44,6 +44,7 @@ struct LTOCodeGenerator {
   bool setCodePICModel(lto_codegen_model, std::string &errMsg);
 
   void setCpu(const char* mCpu) { _mCpu = mCpu; }
+  void setExportDynamic(bool V) { _exportDynamic = V; }
 
   void addMustPreserveSymbol(const char* sym) {
     _mustPreserveSymbols[sym] = 1;
@@ -70,6 +71,7 @@ private:
   llvm::TargetMachine*        _target;
   bool                        _emitDwarfDebugInfo;
   bool                        _scopeRestrictionsDone;
+  bool                        _exportDynamic;
   lto_codegen_model           _codeModel;
   StringSet                   _mustPreserveSymbols;
   StringSet                   _asmUndefinedRefs;

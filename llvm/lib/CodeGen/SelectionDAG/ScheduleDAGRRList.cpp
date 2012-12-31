@@ -16,22 +16,22 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "pre-RA-sched"
-#include "ScheduleDAGSDNodes.h"
-#include "llvm/InlineAsm.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/CodeGen/SelectionDAGISel.h"
-#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/DataLayout.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetLowering.h"
+#include "ScheduleDAGSDNodes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/DataLayout.h"
+#include "llvm/InlineAsm.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include <climits>
 using namespace llvm;
 
@@ -156,7 +156,7 @@ public:
                     CodeGenOpt::Level OptLevel)
     : ScheduleDAGSDNodes(mf),
       NeedLatency(needlatency), AvailableQueue(availqueue), CurCycle(0),
-      Topo(SUnits) {
+      Topo(SUnits, NULL) {
 
     const TargetMachine &tm = mf.getTarget();
     if (DisableSchedCycles || !NeedLatency)

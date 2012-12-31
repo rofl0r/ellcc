@@ -18,22 +18,22 @@
 
 #define DEBUG_TYPE "dagcombine"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineFrameInfo.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/DataLayout.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetOptions.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/DataLayout.h"
+#include "llvm/DerivedTypes.h"
+#include "llvm/LLVMContext.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 #include <algorithm>
 using namespace llvm;
 
@@ -290,6 +290,10 @@ namespace {
                  const Value *SrcValue2, int SrcValueOffset2,
                  unsigned SrcValueAlign2,
                  const MDNode *TBAAInfo2) const;
+
+    /// isAlias - Return true if there is any possibility that the two addresses
+    /// overlap.
+    bool isAlias(LSBaseSDNode *Op0, LSBaseSDNode *Op1);
 
     /// FindAliasInfo - Extracts the relevant alias information from the memory
     /// node.  Returns true if the operand was a load.
@@ -7552,7 +7556,14 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode* St) {
   if (BasePtr.first.getOpcode() == ISD::UNDEF)
     return false;
 
+  // Save the LoadSDNodes that we find in the chain.
+  // We need to make sure that these nodes do not interfere with
+  // any of the store nodes.
+  SmallVector<LSBaseSDNode*, 8> AliasLoadNodes;
+
+  // Save the StoreSDNodes that we find in the chain.
   SmallVector<MemOpLink, 8> StoreNodes;
+
   // Walk up the chain and look for nodes with offsets from the same
   // base pointer. Stop when reaching an instruction with a different kind
   // or instruction which has a different base pointer.
@@ -7596,8 +7607,26 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode* St) {
     // We found a potential memory operand to merge.
     StoreNodes.push_back(MemOpLink(Index, Ptr.second, Seq++));
 
-    // Move up the chain to the next memory operation.
-    Index = dyn_cast<StoreSDNode>(Index->getChain().getNode());
+    // Find the next memory operand in the chain. If the next operand in the
+    // chain is a store then move up and continue the scan with the next
+    // memory operand. If the next operand is a load save it and use alias
+    // information to check if it interferes with anything.
+    SDNode *NextInChain = Index->getChain().getNode();
+    while (1) {
+      if (StoreSDNode *STn = dyn_cast<StoreSDNode>(NextInChain)) {
+        // We found a store node. Use it for the next iteration.
+        Index = STn;
+        break;
+      } else if (LoadSDNode *Ldn = dyn_cast<LoadSDNode>(NextInChain)) {
+        // Save the load node for later. Continue the scan.
+        AliasLoadNodes.push_back(Ldn);
+        NextInChain = Ldn->getChain().getNode();
+        continue;
+      } else {
+        Index = NULL;
+        break;
+      }
+    }
   }
 
   // Check if there is anything to merge.
@@ -7612,9 +7641,25 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode* St) {
   // store memory address.
   unsigned LastConsecutiveStore = 0;
   int64_t StartAddress = StoreNodes[0].OffsetFromBase;
-  for (unsigned i=1; i<StoreNodes.size(); ++i) {
-    int64_t CurrAddress = StoreNodes[i].OffsetFromBase;
-    if (CurrAddress - StartAddress != (ElementSizeBytes * i))
+  for (unsigned i = 0, e = StoreNodes.size(); i < e; ++i) {
+
+    // Check that the addresses are consecutive starting from the second
+    // element in the list of stores.
+    if (i > 0) {
+      int64_t CurrAddress = StoreNodes[i].OffsetFromBase;
+      if (CurrAddress - StartAddress != (ElementSizeBytes * i))
+        break;
+    }
+
+    bool Alias = false;
+    // Check if this store interferes with any of the loads that we found.
+    for (unsigned ld = 0, lde = AliasLoadNodes.size(); ld < lde; ++ld)
+      if (isAlias(AliasLoadNodes[ld], StoreNodes[i].MemNode)) {
+        Alias = true;
+        break;
+      }
+    // We found a load that alias with this store. Stop the sequence.
+    if (Alias)
       break;
 
     // Mark this node as useful.
@@ -7728,7 +7773,18 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode* St) {
       if (StoreNodes[i].MemNode == EarliestOp)
         continue;
       StoreSDNode *St = cast<StoreSDNode>(StoreNodes[i].MemNode);
-      DAG.ReplaceAllUsesOfValueWith(SDValue(St, 0), St->getChain());
+      // ReplaceAllUsesWith will replace all uses that existed when it was
+      // called, but graph optimizations may cause new ones to appear. For
+      // example, the case in pr14333 looks like
+      //
+      //  St's chain -> St -> another store -> X
+      //
+      // And the only difference from St to the other store is the chain.
+      // When we change it's chain to be St's chain they become identical,
+      // get CSEed and the net result is that X is now a use of St.
+      // Since we know that St is redundant, just iterate.
+      while (!St->use_empty())
+        DAG.ReplaceAllUsesWith(SDValue(St, 0), St->getChain());
       removeFromWorkList(St);
       DAG.DeleteNode(St);
     }
@@ -8105,8 +8161,21 @@ SDValue DAGCombiner::visitSTORE(SDNode *N) {
 
   // Only perform this optimization before the types are legal, because we
   // don't want to perform this optimization on every DAGCombine invocation.
-  if (!LegalTypes && MergeConsecutiveStores(ST))
-    return SDValue(N, 0);
+  if (!LegalTypes) {
+    bool EverChanged = false;
+
+    do {
+      // There can be multiple store sequences on the same chain.
+      // Keep trying to merge store sequences until we are unable to do so
+      // or until we merge the last store on the chain.
+      bool Changed = MergeConsecutiveStores(ST);
+      EverChanged |= Changed;
+      if (!Changed) break;
+    } while (ST->getOpcode() != ISD::DELETED_NODE);
+
+    if (EverChanged)
+      return SDValue(N, 0);
+  }
 
   return ReduceLoadOpStoreWidth(N);
 }
@@ -9667,6 +9736,23 @@ bool DAGCombiner::isAlias(SDValue Ptr1, int64_t Size1,
 
   // Otherwise we have to assume they alias.
   return true;
+}
+
+bool DAGCombiner::isAlias(LSBaseSDNode *Op0, LSBaseSDNode *Op1) {
+  SDValue Ptr0, Ptr1;
+  int64_t Size0, Size1;
+  const Value *SrcValue0, *SrcValue1;
+  int SrcValueOffset0, SrcValueOffset1;
+  unsigned SrcValueAlign0, SrcValueAlign1;
+  const MDNode *SrcTBAAInfo0, *SrcTBAAInfo1;
+  FindAliasInfo(Op0, Ptr0, Size0, SrcValue0, SrcValueOffset0,
+                SrcValueAlign0, SrcTBAAInfo0);
+  FindAliasInfo(Op1, Ptr1, Size1, SrcValue1, SrcValueOffset1,
+                SrcValueAlign1, SrcTBAAInfo1);
+  return isAlias(Ptr0, Size0, SrcValue0, SrcValueOffset0,
+                 SrcValueAlign0, SrcTBAAInfo0,
+                 Ptr1, Size1, SrcValue1, SrcValueOffset1,
+                 SrcValueAlign1, SrcTBAAInfo1);
 }
 
 /// FindAliasInfo - Extracts the relevant alias information from the memory

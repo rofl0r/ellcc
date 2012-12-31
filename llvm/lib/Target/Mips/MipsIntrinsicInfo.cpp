@@ -104,8 +104,8 @@ Function *MipsIntrinsicInfo::getDeclaration(Module *M, unsigned IntrID,
                                                 Type **Tys,
                                                 unsigned numTy) const {
   assert(!isOverloaded(IntrID) && "Mips intrinsics are not overloaded");
-  AttrListPtr AList = getAttributes(M->getContext(),
-                                   (mipsIntrinsic::ID) IntrID);
+  AttributeSet AList = getAttributes(M->getContext(),
+                                     (mipsIntrinsic::ID) IntrID);
   return cast<Function>(M->getOrInsertFunction(getName(IntrID),
                                                getType(M->getContext(), IntrID),
                                                AList));

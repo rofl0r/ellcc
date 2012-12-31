@@ -15,15 +15,15 @@
 #define MIPSTARGETMACHINE_H
 
 #include "MipsFrameLowering.h"
-#include "MipsInstrInfo.h"
 #include "MipsISelLowering.h"
+#include "MipsInstrInfo.h"
 #include "MipsJITInfo.h"
 #include "MipsSelectionDAGInfo.h"
 #include "MipsIntrinsicInfo.h"
 #include "MipsSubtarget.h"
-#include "llvm/Target/TargetMachine.h"
 #include "llvm/DataLayout.h"
 #include "llvm/Target/TargetFrameLowering.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetTransformImpl.h"
 
 namespace llvm {

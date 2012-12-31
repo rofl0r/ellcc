@@ -13,7 +13,6 @@
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/Types.h"
 #include "clang/Driver/Util.h"
-
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/Compiler.h"
 
@@ -594,6 +593,7 @@ namespace ellcc {
     Link(const ToolChain &TC) : Tool("ellcc::Link", "linker", TC) {}
 
     virtual bool hasIntegratedCPP() const { return false; }
+    virtual bool isLinkJob() const { return true; }
 
     virtual void ConstructJob(Compilation &C, const JobAction &JA,
                               const InputInfo &Output,

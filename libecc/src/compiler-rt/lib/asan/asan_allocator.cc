@@ -58,7 +58,7 @@ static const uptr kMallocSizeClassStepLog = 26;
 static const uptr kMallocSizeClassStep = 1UL << kMallocSizeClassStepLog;
 
 static const uptr kMaxAllowedMallocSize =
-    (__WORDSIZE == 32) ? 3UL << 30 : 8UL << 30;
+    (SANITIZER_WORDSIZE == 32) ? 3UL << 30 : 8UL << 30;
 
 static inline bool IsAligned(uptr a, uptr alignment) {
   return (a & (alignment - 1)) == 0;
@@ -85,7 +85,7 @@ static inline uptr RoundUpToPowerOfTwo(uptr size) {
 
   unsigned long up;  // NOLINT
 #if !defined(_WIN32) || defined(__clang__)
-  up = __WORDSIZE - 1 - __builtin_clzl(size);
+  up = SANITIZER_WORDSIZE - 1 - __builtin_clzl(size);
 #elif defined(_WIN64)
   _BitScanReverse64(&up, size);
 #else
@@ -132,7 +132,7 @@ static void PoisonHeapPartialRightRedzone(uptr mem, uptr size) {
 }
 
 static u8 *MmapNewPagesAndPoisonShadow(uptr size) {
-  CHECK(IsAligned(size, kPageSize));
+  CHECK(IsAligned(size, GetPageSizeCached()));
   u8 *res = (u8*)MmapOrDie(size, __FUNCTION__);
   PoisonShadow((uptr)res, size, kAsanHeapLeftRedzoneMagic);
   if (flags()->debug) {
@@ -534,12 +534,13 @@ class MallocInfo {
     uptr mmap_size = Max(size, kMinMmapSize);
     uptr n_chunks = mmap_size / size;
     CHECK(n_chunks * size == mmap_size);
-    if (size < kPageSize) {
+    uptr PageSize = GetPageSizeCached();
+    if (size < PageSize) {
       // Size is small, just poison the last chunk.
       n_chunks--;
     } else {
       // Size is large, allocate an extra page at right and poison it.
-      mmap_size += kPageSize;
+      mmap_size += PageSize;
     }
     CHECK(n_chunks > 0);
     u8 *mem = MmapNewPagesAndPoisonShadow(mmap_size);
@@ -756,7 +757,8 @@ static u8 *Reallocate(u8 *old_ptr, uptr new_size,
 
 }  // namespace __asan
 
-// Default (no-op) implementation of malloc hooks.
+#if !SANITIZER_SUPPORTS_WEAK_HOOKS
+// Provide default (no-op) implementation of malloc hooks.
 extern "C" {
 SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
 void __asan_malloc_hook(void *ptr, uptr size) {
@@ -768,26 +770,27 @@ void __asan_free_hook(void *ptr) {
   (void)ptr;
 }
 }  // extern "C"
+#endif
 
 namespace __asan {
 
 SANITIZER_INTERFACE_ATTRIBUTE
 void *asan_memalign(uptr alignment, uptr size, StackTrace *stack) {
   void *ptr = (void*)Allocate(alignment, size, stack);
-  __asan_malloc_hook(ptr, size);
+  ASAN_MALLOC_HOOK(ptr, size);
   return ptr;
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
 void asan_free(void *ptr, StackTrace *stack) {
-  __asan_free_hook(ptr);
+  ASAN_FREE_HOOK(ptr);
   Deallocate((u8*)ptr, stack);
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
 void *asan_malloc(uptr size, StackTrace *stack) {
   void *ptr = (void*)Allocate(0, size, stack);
-  __asan_malloc_hook(ptr, size);
+  ASAN_MALLOC_HOOK(ptr, size);
   return ptr;
 }
 
@@ -795,17 +798,17 @@ void *asan_calloc(uptr nmemb, uptr size, StackTrace *stack) {
   void *ptr = (void*)Allocate(0, nmemb * size, stack);
   if (ptr)
     REAL(memset)(ptr, 0, nmemb * size);
-  __asan_malloc_hook(ptr, nmemb * size);
+  ASAN_MALLOC_HOOK(ptr, size);
   return ptr;
 }
 
 void *asan_realloc(void *p, uptr size, StackTrace *stack) {
   if (p == 0) {
     void *ptr = (void*)Allocate(0, size, stack);
-    __asan_malloc_hook(ptr, size);
+    ASAN_MALLOC_HOOK(ptr, size);
     return ptr;
   } else if (size == 0) {
-    __asan_free_hook(p);
+    ASAN_FREE_HOOK(p);
     Deallocate((u8*)p, stack);
     return 0;
   }
@@ -813,19 +816,20 @@ void *asan_realloc(void *p, uptr size, StackTrace *stack) {
 }
 
 void *asan_valloc(uptr size, StackTrace *stack) {
-  void *ptr = (void*)Allocate(kPageSize, size, stack);
-  __asan_malloc_hook(ptr, size);
+  void *ptr = (void*)Allocate(GetPageSizeCached(), size, stack);
+  ASAN_MALLOC_HOOK(ptr, size);
   return ptr;
 }
 
 void *asan_pvalloc(uptr size, StackTrace *stack) {
-  size = RoundUpTo(size, kPageSize);
+  uptr PageSize = GetPageSizeCached();
+  size = RoundUpTo(size, PageSize);
   if (size == 0) {
     // pvalloc(0) should allocate one page.
-    size = kPageSize;
+    size = PageSize;
   }
-  void *ptr = (void*)Allocate(kPageSize, size, stack);
-  __asan_malloc_hook(ptr, size);
+  void *ptr = (void*)Allocate(PageSize, size, stack);
+  ASAN_MALLOC_HOOK(ptr, size);
   return ptr;
 }
 
@@ -833,7 +837,7 @@ int asan_posix_memalign(void **memptr, uptr alignment, uptr size,
                           StackTrace *stack) {
   void *ptr = Allocate(alignment, size, stack);
   CHECK(IsAligned((uptr)ptr, alignment));
-  __asan_malloc_hook(ptr, size);
+  ASAN_MALLOC_HOOK(ptr, size);
   *memptr = ptr;
   return 0;
 }
@@ -943,7 +947,7 @@ uptr FakeStack::ClassMmapSize(uptr size_class) {
 }
 
 void FakeStack::AllocateOneSizeClass(uptr size_class) {
-  CHECK(ClassMmapSize(size_class) >= kPageSize);
+  CHECK(ClassMmapSize(size_class) >= GetPageSizeCached());
   uptr new_mem = (uptr)MmapOrDie(
       ClassMmapSize(size_class), __FUNCTION__);
   // Printf("T%d new_mem[%zu]: %p-%p mmap %zu\n",
