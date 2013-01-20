@@ -65,10 +65,22 @@ const uptr kAllocatorSpace = 0x7d0000000000ULL;
 #endif
 const uptr kAllocatorSize  =  0x10000000000ULL;  // 1T.
 
+struct TsanMapUnmapCallback {
+  void OnMap(uptr p, uptr size) const { }
+  void OnUnmap(uptr p, uptr size) const {
+    // We are about to unmap a chunk of user memory.
+    // Mark the corresponding shadow memory as not needed.
+    uptr shadow_beg = MemToShadow(p);
+    uptr shadow_end = MemToShadow(p + size);
+    CHECK(IsAligned(shadow_end|shadow_beg, GetPageSizeCached()));
+    FlushUnneededShadowMemory(shadow_beg, shadow_end - shadow_beg);
+  }
+};
+
 typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, sizeof(MBlock),
     DefaultSizeClassMap> PrimaryAllocator;
 typedef SizeClassAllocatorLocalCache<PrimaryAllocator> AllocatorCache;
-typedef LargeMmapAllocator SecondaryAllocator;
+typedef LargeMmapAllocator<TsanMapUnmapCallback> SecondaryAllocator;
 typedef CombinedAllocator<PrimaryAllocator, AllocatorCache,
     SecondaryAllocator> Allocator;
 Allocator *allocator();
@@ -377,6 +389,7 @@ struct ThreadContext {
   u64 epoch0;
   u64 epoch1;
   StackTrace creation_stack;
+  int creation_tid;
   ThreadDeadInfo *dead_info;
   ThreadContext *dead_next;  // In dead thread list.
   char *name;  // As annotated by user.
@@ -482,6 +495,7 @@ void ALWAYS_INLINE INLINE StatInc(ThreadState *thr, StatType typ, u64 n = 1) {
 }
 
 void MapShadow(uptr addr, uptr size);
+void MapThreadTrace(uptr addr, uptr size);
 void InitializeShadowMemory();
 void InitializeInterceptors();
 void InitializeDynamicAnnotations();
@@ -512,6 +526,10 @@ void PrintCurrentStack(ThreadState *thr, uptr pc);
 
 void Initialize(ThreadState *thr);
 int Finalize(ThreadState *thr);
+
+SyncVar* GetJavaSync(ThreadState *thr, uptr pc, uptr addr,
+                     bool write_lock, bool create);
+SyncVar* GetAndRemoveJavaSync(ThreadState *thr, uptr pc, uptr addr);
 
 void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     int kAccessSizeLog, bool kAccessIsWrite);

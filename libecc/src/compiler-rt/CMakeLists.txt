@@ -15,6 +15,14 @@ include(LLVMParseArguments)
 # runtime libraries.
 cmake_minimum_required(VERSION 2.8.8)
 
+# Add path for custom modules
+set(CMAKE_MODULE_PATH
+  ${CMAKE_MODULE_PATH}
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules"
+  )
+
+set(COMPILER_RT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
 # FIXME: Below we assume that the target build of LLVM/Clang is x86, which is
 # not at all valid. Much of this can be fixed just by switching to use
 # a just-built-clang binary for the compiles.
@@ -32,6 +40,16 @@ else()
   set(TARGET_I386_CFLAGS "-m32")
 endif()
 
+function(get_target_flags_for_arch arch out_var)
+  if(${arch} STREQUAL "x86_64")
+    set(${out_var} ${TARGET_X86_64_CFLAGS} PARENT_SCOPE)
+  elseif(${arch} STREQUAL "i386")
+    set(${out_var} ${TARGET_I386_CFLAGS} PARENT_SCOPE)
+  else()
+    message(FATAL_ERROR "Unsupported architecture: ${arch}")
+  endif()
+endfunction()
+
 # Try to compile a very simple source file to ensure we can target the given
 # platform. We use the results of these tests to build only the various target
 # runtime libraries supported by our current compilers cross-compiling
@@ -48,6 +66,15 @@ try_compile(CAN_TARGET_I386 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE32}
             COMPILE_DEFINITIONS "${TARGET_I386_CFLAGS}"
             CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_I386_CFLAGS}")
 
+# We only support running instrumented tests when we're not cross compiling
+# and target a unix-like system. On Android we define the rules for building
+# unit tests, but don't execute them.
+if("${CMAKE_HOST_SYSTEM}" STREQUAL "${CMAKE_SYSTEM}" AND UNIX AND NOT ANDROID)
+  set(COMPILER_RT_CAN_EXECUTE_TESTS TRUE)
+else()
+  set(COMPILER_RT_CAN_EXECUTE_TESTS FALSE)
+endif()
+    
 function(filter_available_targets out_var)
   set(archs)
   foreach(arch ${ARGN})

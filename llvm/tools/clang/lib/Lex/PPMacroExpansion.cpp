@@ -497,9 +497,13 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
   // argument is separated by an EOF token.  Use a SmallVector so we can avoid
   // heap allocations in the common case.
   SmallVector<Token, 64> ArgTokens;
+  bool ContainsCodeCompletionTok = false;
 
   unsigned NumActuals = 0;
   while (Tok.isNot(tok::r_paren)) {
+    if (ContainsCodeCompletionTok && (Tok.is(tok::eof) || Tok.is(tok::eod)))
+      break;
+
     assert((Tok.is(tok::l_paren) || Tok.is(tok::comma)) &&
            "only expect argument separators here");
 
@@ -516,10 +520,20 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       LexUnexpandedToken(Tok);
 
       if (Tok.is(tok::eof) || Tok.is(tok::eod)) { // "#if f(<eof>" & "#if f(\n"
-        Diag(MacroName, diag::err_unterm_macro_invoc);
-        // Do not lose the EOF/EOD.  Return it to the client.
-        MacroName = Tok;
-        return 0;
+        if (!ContainsCodeCompletionTok) {
+          Diag(MacroName, diag::err_unterm_macro_invoc);
+          Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+            << MacroName.getIdentifierInfo();
+          // Do not lose the EOF/EOD.  Return it to the client.
+          MacroName = Tok;
+          return 0;
+        } else {
+          // Do not lose the EOF/EOD.
+          Token *Toks = new Token[1];
+          Toks[0] = Tok;
+          EnterTokenStream(Toks, 1, true, true);
+          break;
+        }
       } else if (Tok.is(tok::r_paren)) {
         // If we found the ) token, the macro arg list is done.
         if (NumParens-- == 0) {
@@ -550,6 +564,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
           if (!MI->isEnabled())
             Tok.setFlag(Token::DisableExpand);
       } else if (Tok.is(tok::code_completion)) {
+        ContainsCodeCompletionTok = true;
         if (CodeComplete)
           CodeComplete->CodeCompleteMacroArgument(MacroName.getIdentifierInfo(),
                                                   MI, NumActuals);
@@ -572,10 +587,14 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       if (ArgTokens.size() != ArgTokenStart)
         ArgStartLoc = ArgTokens[ArgTokenStart].getLocation();
 
-      // Emit the diagnostic at the macro name in case there is a missing ).
-      // Emitting it at the , could be far away from the macro name.
-      Diag(ArgStartLoc, diag::err_too_many_args_in_macro_invoc);
-      return 0;
+      if (!ContainsCodeCompletionTok) {
+        // Emit the diagnostic at the macro name in case there is a missing ).
+        // Emitting it at the , could be far away from the macro name.
+        Diag(ArgStartLoc, diag::err_too_many_args_in_macro_invoc);
+        Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+          << MacroName.getIdentifierInfo();
+        return 0;
+      }
     }
 
     // Empty arguments are standard in C99 and C++0x, and are supported as an extension in
@@ -603,6 +622,17 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
 
   // See MacroArgs instance var for description of this.
   bool isVarargsElided = false;
+
+  if (ContainsCodeCompletionTok) {
+    // Recover from not-fully-formed macro invocation during code-completion.
+    Token EOFTok;
+    EOFTok.startToken();
+    EOFTok.setKind(tok::eof);
+    EOFTok.setLocation(Tok.getLocation());
+    EOFTok.setLength(0);
+    for (; NumActuals < MinArgsExpected; ++NumActuals)
+      ArgTokens.push_back(EOFTok);
+  }
 
   if (NumActuals < MinArgsExpected) {
     // There are several cases where too few arguments is ok, handle them now.
@@ -635,9 +665,11 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
       //   #define C(...) blah(a, ## __VA_ARGS__)
       //  A(x) B(x) C()
       isVarargsElided = true;
-    } else {
+    } else if (!ContainsCodeCompletionTok) {
       // Otherwise, emit the error.
       Diag(Tok, diag::err_too_few_args_in_macro_invoc);
+      Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+        << MacroName.getIdentifierInfo();
       return 0;
     }
 
@@ -653,10 +685,13 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     if (NumActuals == 0 && MinArgsExpected == 2)
       ArgTokens.push_back(Tok);
 
-  } else if (NumActuals > MinArgsExpected && !MI->isVariadic()) {
+  } else if (NumActuals > MinArgsExpected && !MI->isVariadic() &&
+             !ContainsCodeCompletionTok) {
     // Emit the diagnostic at the macro name in case there is a missing ).
     // Emitting it at the , could be far away from the macro name.
     Diag(MacroName, diag::err_too_many_args_in_macro_invoc);
+    Diag(MI->getDefinitionLoc(), diag::note_macro_here)
+      << MacroName.getIdentifierInfo();
     return 0;
   }
 
@@ -772,6 +807,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_exceptions", LangOpts.Exceptions)
            .Case("cxx_rtti", LangOpts.RTTI)
            .Case("enumerator_attributes", true)
+           .Case("memory_sanitizer", LangOpts.SanitizeMemory)
+           .Case("thread_sanitizer", LangOpts.SanitizeThread)
            // Objective-C features
            .Case("objc_arr", LangOpts.ObjCAutoRefCount) // FIXME: REMOVE?
            .Case("objc_arc", LangOpts.ObjCAutoRefCount)

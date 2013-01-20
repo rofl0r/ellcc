@@ -175,7 +175,7 @@ static void WriteAttributeTable(const ValueEnumerator &VE,
     for (unsigned i = 0, e = A.getNumSlots(); i != e; ++i) {
       const AttributeWithIndex &PAWI = A.getSlot(i);
       Record.push_back(PAWI.Index);
-      Record.push_back(Attributes::encodeLLVMAttributesForBitcode(PAWI.Attrs));
+      Record.push_back(Attribute::encodeLLVMAttributesForBitcode(PAWI.Attrs));
     }
 
     Stream.EmitRecord(bitc::PARAMATTR_CODE_ENTRY, Record);
@@ -552,15 +552,15 @@ static uint64_t GetOptimizationFlags(const Value *V) {
   } else if (const FPMathOperator *FPMO =
              dyn_cast<const FPMathOperator>(V)) {
     if (FPMO->hasUnsafeAlgebra())
-      Flags |= 1 << bitc::FMF_UNSAFE_ALGEBRA;
+      Flags |= FastMathFlags::UnsafeAlgebra;
     if (FPMO->hasNoNaNs())
-      Flags |= 1 << bitc::FMF_NO_NANS;
+      Flags |= FastMathFlags::NoNaNs;
     if (FPMO->hasNoInfs())
-      Flags |= 1 << bitc::FMF_NO_INFS;
+      Flags |= FastMathFlags::NoInfs;
     if (FPMO->hasNoSignedZeros())
-      Flags |= 1 << bitc::FMF_NO_SIGNED_ZEROS;
+      Flags |= FastMathFlags::NoSignedZeros;
     if (FPMO->hasAllowReciprocal())
-      Flags |= 1 << bitc::FMF_ALLOW_RECIPROCAL;
+      Flags |= FastMathFlags::AllowReciprocal;
   }
 
   return Flags;

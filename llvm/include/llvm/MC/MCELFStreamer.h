@@ -47,6 +47,7 @@ public:
   virtual void InitSections();
   virtual void ChangeSection(const MCSection *Section);
   virtual void EmitLabel(MCSymbol *Symbol);
+  virtual void EmitDebugLabel(MCSymbol *Symbol);
   virtual void EmitAssemblerFlag(MCAssemblerFlag Flag);
   virtual void EmitThumbFunc(MCSymbol *Func);
   virtual void EmitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol);
@@ -75,12 +76,18 @@ public:
 
   virtual void EmitTCEntry(const MCSymbol &S);
 
+  virtual void EmitValueToAlignment(unsigned, int64_t, unsigned, unsigned);
+
   virtual void FinishImpl();
   /// @}
 
 private:
   virtual void EmitInstToFragment(const MCInst &Inst);
   virtual void EmitInstToData(const MCInst &Inst);
+
+  virtual void EmitBundleAlignMode(unsigned AlignPow2);
+  virtual void EmitBundleLock();
+  virtual void EmitBundleUnlock();
 
   void fixSymbolsInTLSFixups(const MCExpr *expr);
 

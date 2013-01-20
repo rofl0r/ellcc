@@ -15,7 +15,7 @@
 #ifndef LLVM_LLVMCONTEXT_IMPL_H
 #define LLVM_LLVMCONTEXT_IMPL_H
 
-#include "AttributesImpl.h"
+#include "AttributeImpl.h"
 #include "ConstantsContext.h"
 #include "LeaksContext.h"
 #include "llvm/ADT/APFloat.h"
@@ -236,8 +236,8 @@ public:
   /// will be automatically deleted if this context is deleted.
   SmallPtrSet<Module*, 4> OwnedModules;
   
-  LLVMContext::InlineAsmDiagHandlerTy InlineAsmDiagHandler;
-  void *InlineAsmDiagContext;
+  LLVMContext::DiagHandlerTy DiagHandler;
+  void *DiagContext;
   
   typedef DenseMap<DenseMapAPIntKeyInfo::KeyTy, ConstantInt*, 
                          DenseMapAPIntKeyInfo> IntMapTy;
@@ -247,8 +247,8 @@ public:
                          DenseMapAPFloatKeyInfo> FPMapTy;
   FPMapTy FPConstants;
 
-  FoldingSet<AttributesImpl> AttrsSet;
-  FoldingSet<AttributeListImpl> AttrsLists;
+  FoldingSet<AttributeImpl> AttrsSet;
+  FoldingSet<AttributeSetImpl> AttrsLists;
 
   StringMap<Value*> MDStringCache;
 

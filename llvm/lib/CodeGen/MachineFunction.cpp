@@ -60,13 +60,15 @@ MachineFunction::MachineFunction(const Function *F, const TargetMachine &TM,
   MFInfo = 0;
   FrameInfo = new (Allocator) MachineFrameInfo(*TM.getFrameLowering(),
                                                TM.Options.RealignStack);
-  if (Fn->getFnAttributes().hasAttribute(Attributes::StackAlignment))
+  if (Fn->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                       Attribute::StackAlignment))
     FrameInfo->ensureMaxAlignment(Fn->getAttributes().
-                                  getFnAttributes().getStackAlignment());
+                                getStackAlignment(AttributeSet::FunctionIndex));
   ConstantPool = new (Allocator) MachineConstantPool(TM.getDataLayout());
   Alignment = TM.getTargetLowering()->getMinFunctionAlignment();
   // FIXME: Shouldn't use pref alignment if explicit alignment is set on Fn.
-  if (!Fn->getFnAttributes().hasAttribute(Attributes::OptimizeForSize))
+  if (!Fn->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                        Attribute::OptimizeForSize))
     Alignment = std::max(Alignment,
                          TM.getTargetLowering()->getPrefFunctionAlignment());
   FunctionNumber = FunctionNum;
@@ -158,7 +160,7 @@ MachineInstr *
 MachineFunction::CreateMachineInstr(const MCInstrDesc &MCID,
                                     DebugLoc DL, bool NoImp) {
   return new (InstructionRecycler.Allocate<MachineInstr>(Allocator))
-    MachineInstr(MCID, DL, NoImp);
+    MachineInstr(*this, MCID, DL, NoImp);
 }
 
 /// CloneMachineInstr - Create a new MachineInstr which is a copy of the

@@ -15,6 +15,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOGDI
 #include <stdlib.h>
+#include <io.h>
 #include <windows.h>
 
 #include "sanitizer_common.h"
@@ -75,12 +76,18 @@ void UnmapOrDie(void *addr, uptr size) {
 }
 
 void *MmapFixedNoReserve(uptr fixed_addr, uptr size) {
+  // FIXME: is this really "NoReserve"? On Win32 this does not matter much,
+  // but on Win64 it does.
   void *p = VirtualAlloc((LPVOID)fixed_addr, size,
       MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   if (p == 0)
     Report("ERROR: Failed to allocate 0x%zx (%zd) bytes at %p (%d)\n",
            size, size, fixed_addr, GetLastError());
   return p;
+}
+
+void *MmapFixedOrDie(uptr fixed_addr, uptr size) {
+  return MmapFixedNoReserve(fixed_addr, size);
 }
 
 void *Mprotect(uptr fixed_addr, uptr size) {
@@ -129,6 +136,10 @@ void ReExec() {
   UNIMPLEMENTED();
 }
 
+void PrepareForSandboxing() {
+  // Nothing here for now.
+}
+
 bool StackSizeIsUnlimited() {
   UNIMPLEMENTED();
 }
@@ -175,7 +186,7 @@ int internal_close(fd_t fd) {
 }
 
 int internal_isatty(fd_t fd) {
-  UNIMPLEMENTED();
+  return _isatty(fd);
 }
 
 fd_t internal_open(const char *filename, bool write) {

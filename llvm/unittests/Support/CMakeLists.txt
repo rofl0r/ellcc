@@ -20,10 +20,12 @@ add_llvm_unittest(SupportTests
   MemoryBufferTest.cpp
   MemoryTest.cpp
   Path.cpp
+  ProcessTest.cpp
   RegexTest.cpp
   SwapByteOrderTest.cpp
   TimeValue.cpp
   ValueHandleTest.cpp
+  YAMLIOTest.cpp
   YAMLParserTest.cpp
   formatted_raw_ostream_test.cpp
   raw_ostream_test.cpp

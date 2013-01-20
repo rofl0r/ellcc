@@ -469,6 +469,7 @@ static const char *getLLVMArchSuffixForARM(StringRef CPU) {
     .Cases("arm1176jzf-s",  "mpcorenovfp",  "mpcore", "v6")
     .Cases("arm1156t2-s",  "arm1156t2f-s", "v6t2")
     .Cases("cortex-a5", "cortex-a8", "cortex-a9", "cortex-a15", "v7")
+    .Case("cortex-r5", "v7r")
     .Case("cortex-m3", "v7m")
     .Case("cortex-m4", "v7m")
     .Case("cortex-m0", "v6m")
@@ -665,6 +666,11 @@ static StringRef getARMFloatABI(const Driver &D,
         FloatABI = "soft";
       break;
     }
+
+    case llvm::Triple::FreeBSD:
+      // FreeBSD defaults to soft float
+      FloatABI = "soft";
+      break;
 
     default:
       switch(Triple.getEnvironment()) {
@@ -1452,12 +1458,12 @@ static bool ShouldDisableCFI(const ArgList &Args,
     // The native darwin assembler doesn't support cfi directives, so
     // we disable them if we think the .s file will be passed to it.
     Default = Args.hasFlag(options::OPT_integrated_as,
-			   options::OPT_no_integrated_as,
-			   TC.IsIntegratedAssemblerDefault());
+                           options::OPT_no_integrated_as,
+                           TC.IsIntegratedAssemblerDefault());
   }
   return !Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
-		       options::OPT_fno_dwarf2_cfi_asm,
-		       Default);
+                       options::OPT_fno_dwarf2_cfi_asm,
+                       Default);
 }
 
 static bool ShouldDisableDwarfDirectory(const ArgList &Args,
@@ -1555,6 +1561,13 @@ SanitizerArgs::SanitizerArgs(const Driver &D, const ArgList &Args) {
         D.Diag(diag::err_drv_no_such_file) << BLPath;
     }
   }
+
+  // Parse -f(no-)sanitize-memory-track-origins options.
+  if (Kind & Memory)
+    MsanTrackOrigins =
+      Args.hasFlag(options::OPT_fsanitize_memory_track_origins,
+                   options::OPT_fno_sanitize_memory_track_origins,
+                   /* Default */false);
 }
 
 /// If AddressSanitizer is enabled, add appropriate linker flags (Linux).
@@ -1673,6 +1686,20 @@ static bool shouldUseFramePointer(const ArgList &Args,
   }
 
   return true;
+}
+
+/// If the PWD environment variable is set, add a CC1 option to specify the
+/// debug compilation directory.
+static void addDebugCompDirArg(const ArgList &Args, ArgStringList &CmdArgs) {
+  if (const char *pwd = ::getenv("PWD")) {
+    // GCC also verifies that stat(pwd) and stat(".") have the same inode
+    // number. Not doing those because stats are slow, but we could.
+    if (llvm::sys::path::is_absolute(pwd)) {
+      std::string CompDir = pwd;
+      CmdArgs.push_back("-fdebug-compilation-dir");
+      CmdArgs.push_back(Args.MakeArgString(CompDir));
+    }
+  }
 }
 
 void Clang::ConstructJob(Compilation &C, const JobAction &JA,
@@ -2359,6 +2386,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       A->render(Args, CmdArgs);
   }
 
+  // Don't warn about unused -flto.  This can happen when we're preprocessing or
+  // precompiling.
+  Args.ClaimAllArgs(options::OPT_flto);
+
   Args.AddAllArgs(CmdArgs, options::OPT_W_Group);
   if (Args.hasFlag(options::OPT_pedantic, options::OPT_no_pedantic, false))
     CmdArgs.push_back("-pedantic");
@@ -2431,15 +2462,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (ShouldDisableDwarfDirectory(Args, getToolChain()))
     CmdArgs.push_back("-fno-dwarf-directory-asm");
 
-  if (const char *pwd = ::getenv("PWD")) {
-    // GCC also verifies that stat(pwd) and stat(".") have the same inode
-    // number. Not doing those because stats are slow, but we could.
-    if (llvm::sys::path::is_absolute(pwd)) {
-      std::string CompDir = pwd;
-      CmdArgs.push_back("-fdebug-compilation-dir");
-      CmdArgs.push_back(Args.MakeArgString(CompDir));
-    }
-  }
+  // Add in -fdebug-compilation-dir if necessary.
+  addDebugCompDirArg(Args, CmdArgs);
 
   if (Arg *A = Args.getLastArg(options::OPT_ftemplate_depth_,
                                options::OPT_ftemplate_depth_EQ)) {
@@ -2533,6 +2557,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   SanitizerArgs Sanitize(D, Args);
   Sanitize.addArgs(Args, CmdArgs);
+
+  if (!Args.hasFlag(options::OPT_fsanitize_recover,
+                    options::OPT_fno_sanitize_recover,
+                    true))
+    CmdArgs.push_back("-fno-sanitize-recover");
 
   // Report and error for -faltivec on anything other then PowerPC.
   if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
@@ -3006,6 +3035,20 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    false))
     CmdArgs.push_back("-fasm-blocks");
 
+  // -fvectorize is default.
+  if (Args.hasFlag(options::OPT_fvectorize,
+                   options::OPT_fno_vectorize, true)) {
+    CmdArgs.push_back("-backend-option");
+    CmdArgs.push_back("-vectorize-loops");
+  }
+
+  // -fno-slp-vectorize is default.
+  if (Args.hasFlag(options::OPT_fslp_vectorize,
+                   options::OPT_fno_slp_vectorize, false)) {
+    CmdArgs.push_back("-backend-option");
+    CmdArgs.push_back("-vectorize");
+  }
+
   if (Arg *A = Args.getLastArg(options::OPT_fshow_overloads_EQ))
     A->render(Args, CmdArgs);
 
@@ -3326,6 +3369,11 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("-filetype");
   CmdArgs.push_back("obj");
 
+  // Set the main file name, so that debug info works even with
+  // -save-temps or preprocessed assembly.
+  CmdArgs.push_back("-main-file-name");
+  CmdArgs.push_back(Clang::getBaseInputName(Args, Inputs));
+
   if (UseRelaxAll(C, Args))
     CmdArgs.push_back("-relax-all");
 
@@ -3351,13 +3399,17 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     SourceAction = SourceAction->getInputs()[0];
   }
 
-  // Forward -g, assuming we are dealing with an actual assembly file.
+  // Forward -g and handle debug info related flags, assuming we are dealing
+  // with an actual assembly file.
   if (SourceAction->getType() == types::TY_Asm ||
       SourceAction->getType() == types::TY_PP_Asm) {
     Args.ClaimAllArgs(options::OPT_g_Group);
     if (Arg *A = Args.getLastArg(options::OPT_g_Group))
       if (!A->getOption().matches(options::OPT_g0))
         CmdArgs.push_back("-g");
+
+    // Add the -fdebug-compilation-dir flag if needed.
+    addDebugCompDirArg(Args, CmdArgs);
   }
 
   // Optionally embed the -cc1as level arguments into the debug info, for build
@@ -4194,6 +4246,9 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_ObjC) || Args.hasArg(options::OPT_ObjCXX))
     CmdArgs.push_back("-ObjC");
 
+  if (Args.hasArg(options::OPT_rdynamic))
+    CmdArgs.push_back("-export_dynamic");
+
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
 
@@ -4409,10 +4464,10 @@ void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
 }
 
 void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
-				       const InputInfo &Output,
-				       const InputInfoList &Inputs,
-				       const ArgList &Args,
-				       const char *LinkingOutput) const {
+                                       const InputInfo &Output,
+                                       const InputInfoList &Inputs,
+                                       const ArgList &Args,
+                                       const char *LinkingOutput) const {
   ArgStringList CmdArgs;
   CmdArgs.push_back("--verify");
   CmdArgs.push_back("--debug-info");
@@ -5001,6 +5056,17 @@ void freebsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
          LastPICArg->getOption().matches(options::OPT_fPIE) ||
          LastPICArg->getOption().matches(options::OPT_fpie))) {
       CmdArgs.push_back("-KPIC");
+    }
+  } else if (getToolChain().getArch() == llvm::Triple::arm ||
+             getToolChain().getArch() == llvm::Triple::thumb) {
+    CmdArgs.push_back("-mfpu=softvfp");
+    switch(getToolChain().getTriple().getEnvironment()) {
+    case llvm::Triple::GNUEABI:
+    case llvm::Triple::EABI:
+      break;
+
+    default:
+      CmdArgs.push_back("-matpcs");
     }
   }
 
@@ -5782,7 +5848,7 @@ void minix::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-lCompilerRT-Generic");
     CmdArgs.push_back("-L/usr/pkg/compiler-rt/lib");
     CmdArgs.push_back(
-	 Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
+         Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
   }
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("ld"));

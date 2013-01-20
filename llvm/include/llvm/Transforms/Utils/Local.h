@@ -252,6 +252,16 @@ bool LowerDbgDeclare(Function &F);
 /// an alloca, if any.
 DbgDeclareInst *FindAllocaDbgDeclare(Value *V);
 
+/// replaceDbgDeclareForAlloca - Replaces llvm.dbg.declare instruction when
+/// alloca is replaced with a new value.
+bool replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
+                                DIBuilder &Builder);
+
+/// \brief Remove all blocks that can not be reached from the function's entry.
+///
+/// Returns true if any basic block was removed.
+bool removeUnreachableBlocks(Function &F);
+
 } // End llvm namespace
 
 #endif

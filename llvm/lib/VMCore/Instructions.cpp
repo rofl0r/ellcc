@@ -15,6 +15,7 @@
 #include "llvm/Instructions.h"
 #include "LLVMContextImpl.h"
 #include "llvm/Constants.h"
+#include "llvm/DataLayout.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
 #include "llvm/Module.h"
@@ -330,32 +331,31 @@ CallInst::CallInst(const CallInst &CI)
   SubclassOptionalData = CI.SubclassOptionalData;
 }
 
-void CallInst::addAttribute(unsigned i, Attributes attr) {
+void CallInst::addAttribute(unsigned i, Attribute attr) {
   AttributeSet PAL = getAttributes();
   PAL = PAL.addAttr(getContext(), i, attr);
   setAttributes(PAL);
 }
 
-void CallInst::removeAttribute(unsigned i, Attributes attr) {
+void CallInst::removeAttribute(unsigned i, Attribute attr) {
   AttributeSet PAL = getAttributes();
   PAL = PAL.removeAttr(getContext(), i, attr);
   setAttributes(PAL);
 }
 
-bool CallInst::hasFnAttr(Attributes::AttrVal A) const {
-  if (AttributeList.getParamAttributes(AttributeSet::FunctionIndex)
-      .hasAttribute(A))
+bool CallInst::hasFnAttr(Attribute::AttrKind A) const {
+  if (AttributeList.hasAttribute(AttributeSet::FunctionIndex, A))
     return true;
   if (const Function *F = getCalledFunction())
-    return F->getParamAttributes(AttributeSet::FunctionIndex).hasAttribute(A);
+    return F->getAttributes().hasAttribute(AttributeSet::FunctionIndex, A);
   return false;
 }
 
-bool CallInst::paramHasAttr(unsigned i, Attributes::AttrVal A) const {
-  if (AttributeList.getParamAttributes(i).hasAttribute(A))
+bool CallInst::paramHasAttr(unsigned i, Attribute::AttrKind A) const {
+  if (AttributeList.hasAttribute(i, A))
     return true;
   if (const Function *F = getCalledFunction())
-    return F->getParamAttributes(i).hasAttribute(A);
+    return F->getAttributes().hasAttribute(i, A);
   return false;
 }
 
@@ -571,30 +571,29 @@ void InvokeInst::setSuccessorV(unsigned idx, BasicBlock *B) {
   return setSuccessor(idx, B);
 }
 
-bool InvokeInst::hasFnAttr(Attributes::AttrVal A) const {
-  if (AttributeList.getParamAttributes(AttributeSet::FunctionIndex).
-      hasAttribute(A))
+bool InvokeInst::hasFnAttr(Attribute::AttrKind A) const {
+  if (AttributeList.hasAttribute(AttributeSet::FunctionIndex, A))
     return true;
   if (const Function *F = getCalledFunction())
-    return F->getParamAttributes(AttributeSet::FunctionIndex).hasAttribute(A);
+    return F->getAttributes().hasAttribute(AttributeSet::FunctionIndex, A);
   return false;
 }
 
-bool InvokeInst::paramHasAttr(unsigned i, Attributes::AttrVal A) const {
-  if (AttributeList.getParamAttributes(i).hasAttribute(A))
+bool InvokeInst::paramHasAttr(unsigned i, Attribute::AttrKind A) const {
+  if (AttributeList.hasAttribute(i, A))
     return true;
   if (const Function *F = getCalledFunction())
-    return F->getParamAttributes(i).hasAttribute(A);
+    return F->getAttributes().hasAttribute(i, A);
   return false;
 }
 
-void InvokeInst::addAttribute(unsigned i, Attributes attr) {
+void InvokeInst::addAttribute(unsigned i, Attribute attr) {
   AttributeSet PAL = getAttributes();
   PAL = PAL.addAttr(getContext(), i, attr);
   setAttributes(PAL);
 }
 
-void InvokeInst::removeAttribute(unsigned i, Attributes attr) {
+void InvokeInst::removeAttribute(unsigned i, Attribute attr) {
   AttributeSet PAL = getAttributes();
   PAL = PAL.removeAttr(getContext(), i, attr);
   setAttributes(PAL);
@@ -1421,6 +1420,12 @@ void GetElementPtrInst::setIsInBounds(bool B) {
 
 bool GetElementPtrInst::isInBounds() const {
   return cast<GEPOperator>(this)->isInBounds();
+}
+
+bool GetElementPtrInst::accumulateConstantOffset(const DataLayout &DL,
+                                                 APInt &Offset) const {
+  // Delegate to the generic GEPOperator implementation.
+  return cast<GEPOperator>(this)->accumulateConstantOffset(DL, Offset);
 }
 
 //===----------------------------------------------------------------------===//

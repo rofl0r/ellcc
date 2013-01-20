@@ -23,7 +23,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/Function.h"
-#include "llvm/Function.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetOptions.h"
 
@@ -696,7 +695,7 @@ void ARMFrameLowering::emitPopInst(MachineBasicBlock &MBB,
       for (unsigned i = 0, e = Regs.size(); i < e; ++i)
         MIB.addReg(Regs[i], getDefRegState(true));
       if (DeleteRet) {
-        MIB->copyImplicitOps(&*MI);
+        MIB.copyImplicitOps(&*MI);
         MI->eraseFromParent();
       }
       MI = MIB;
@@ -1153,7 +1152,8 @@ static void checkNumAlignedDPRCS2Regs(MachineFunction &MF) {
     return;
 
   // Naked functions don't spill callee-saved registers.
-  if (MF.getFunction()->getFnAttributes().hasAttribute(Attributes::Naked))
+  if (MF.getFunction()->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                                     Attribute::Naked))
     return;
 
   // We are planning to use NEON instructions vst1 / vld1.

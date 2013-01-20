@@ -96,7 +96,7 @@ private:
   bool parseLevel();
   bool parseBlock(unsigned AddLevels = 1);
   void parsePPDirective();
-  void parseComment();
+  void parseComments();
   void parseStatement();
   void parseParens();
   void parseIfThenElse();
@@ -123,4 +123,4 @@ private:
 }  // end namespace format
 }  // end namespace clang
 
-#endif // LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
+#endif  // LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H

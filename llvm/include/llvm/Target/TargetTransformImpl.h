@@ -69,11 +69,10 @@ public:
 
   virtual ~VectorTargetTransformImpl() {}
 
-  virtual unsigned getInstrCost(unsigned Opcode, Type *Ty1, Type *Ty2) const;
-
   virtual unsigned getArithmeticInstrCost(unsigned Opcode, Type *Ty) const;
 
-  virtual unsigned getBroadcastCost(Type *Tp) const;
+  virtual unsigned getShuffleCost(ShuffleKind Kind, Type *Tp,
+                                  int Index) const;
 
   virtual unsigned getCastInstrCost(unsigned Opcode, Type *Dst,
                                     Type *Src) const;
@@ -89,6 +88,9 @@ public:
   virtual unsigned getMemoryOpCost(unsigned Opcode, Type *Src,
                                    unsigned Alignment,
                                    unsigned AddressSpace) const;
+
+  virtual unsigned getIntrinsicInstrCost(Intrinsic::ID, Type *RetTy,
+                                         ArrayRef<Type*> Tys) const;
 
   virtual unsigned getNumberOfParts(Type *Tp) const;
 };

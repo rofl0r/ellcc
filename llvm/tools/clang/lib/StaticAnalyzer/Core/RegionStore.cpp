@@ -201,6 +201,21 @@ public:
   Store asStore() const {
     return asImmutableMap().getRootWithoutRetain();
   }
+
+  void dump(llvm::raw_ostream &OS, const char *nl) const {
+   for (iterator I = begin(), E = end(); I != E; ++I) {
+     const ClusterBindings &Cluster = I.getData();
+     for (ClusterBindings::iterator CI = Cluster.begin(), CE = Cluster.end();
+          CI != CE; ++CI) {
+       OS << ' ' << CI.getKey() << " : " << CI.getData() << nl;
+     }
+     OS << nl;
+   }
+  }
+
+  LLVM_ATTRIBUTE_USED void dump() const {
+    dump(llvm::errs(), "\n");
+  }
 };
 } // end anonymous namespace
 
@@ -796,7 +811,7 @@ class invalidateRegionsWorker : public ClusterAnalysis<invalidateRegionsWorker>
   const Expr *Ex;
   unsigned Count;
   const LocationContext *LCtx;
-  StoreManager::InvalidatedSymbols &IS;
+  InvalidatedSymbols &IS;
   StoreManager::InvalidatedRegions *Regions;
 public:
   invalidateRegionsWorker(RegionStoreManager &rm,
@@ -804,7 +819,7 @@ public:
                           RegionBindingsRef b,
                           const Expr *ex, unsigned count,
                           const LocationContext *lctx,
-                          StoreManager::InvalidatedSymbols &is,
+                          InvalidatedSymbols &is,
                           StoreManager::InvalidatedRegions *r,
                           bool includeGlobals)
     : ClusterAnalysis<invalidateRegionsWorker>(rm, stateMgr, b, includeGlobals),
@@ -2037,13 +2052,5 @@ void RegionStoreManager::print(Store store, raw_ostream &OS,
   OS << "Store (direct and default bindings), "
      << B.asStore()
      << " :" << nl;
-
-  for (RegionBindingsRef::iterator I = B.begin(), E = B.end(); I != E; ++I) {
-    const ClusterBindings &Cluster = I.getData();
-    for (ClusterBindings::iterator CI = Cluster.begin(), CE = Cluster.end();
-         CI != CE; ++CI) {
-      OS << ' ' << CI.getKey() << " : " << CI.getData() << nl;
-    }
-    OS << nl;
-  }
+  B.dump(OS, nl);
 }

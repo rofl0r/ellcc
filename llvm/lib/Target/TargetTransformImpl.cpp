@@ -132,7 +132,6 @@ int VectorTargetTransformImpl::InstructionOpcodeToISD(unsigned Opcode) const {
 
 std::pair<unsigned, MVT>
 VectorTargetTransformImpl::getTypeLegalizationCost(Type *Ty) const {
-
   LLVMContext &C = Ty->getContext();
   EVT MTy = TLI->getValueType(Ty);
 
@@ -180,10 +179,20 @@ unsigned VectorTargetTransformImpl::getArithmeticInstrCost(unsigned Opcode,
 
   std::pair<unsigned, MVT> LT = getTypeLegalizationCost(Ty);
 
-  if (!TLI->isOperationExpand(ISD, LT.second)) {
-    // The operation is legal. Assume it costs 1. Multiply
-    // by the type-legalization overhead.
+  if (TLI->isOperationLegalOrPromote(ISD, LT.second)) {
+    // The operation is legal. Assume it costs 1.
+    // If the type is split to multiple registers, assume that thre is some
+    // overhead to this.
+    // TODO: Once we have extract/insert subvector cost we need to use them.
+    if (LT.first > 1)
+      return LT.first * 2;
     return LT.first * 1;
+  }
+
+  if (!TLI->isOperationExpand(ISD, LT.second)) {
+    // If the operation is custom lowered then assume
+    // thare the code is twice as expensive.
+    return LT.first * 2;
   }
 
   // Else, assume that we need to scalarize this op.
@@ -199,7 +208,9 @@ unsigned VectorTargetTransformImpl::getArithmeticInstrCost(unsigned Opcode,
   return 1;
 }
 
-unsigned VectorTargetTransformImpl::getBroadcastCost(Type *Tp) const {
+unsigned VectorTargetTransformImpl::getShuffleCost(ShuffleKind Kind,
+                                                   Type *Tp,
+                                                   int Index) const {
   return 1;
 }
 
@@ -271,7 +282,7 @@ unsigned VectorTargetTransformImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
     return getScalarizationOverhead(Dst, true, true) + Num * Cost;
   }
 
-  // We already handled vector-to-vector and scalar-to-scalar conversions. This 
+  // We already handled vector-to-vector and scalar-to-scalar conversions. This
   // is where we handle bitcast between vectors and scalars. We need to assume
   //  that the conversion is scalarized in one way or another.
   if (Opcode == Instruction::BitCast)
@@ -283,6 +294,7 @@ unsigned VectorTargetTransformImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
  }
 
 unsigned VectorTargetTransformImpl::getCFInstrCost(unsigned Opcode) const {
+  // Branches are assumed to be predicted.
   return 0;
 }
 
@@ -331,19 +343,33 @@ unsigned VectorTargetTransformImpl::getVectorInstrCost(unsigned Opcode,
 }
 
 unsigned
-VectorTargetTransformImpl::getInstrCost(unsigned Opcode, Type *Ty1,
-                                        Type *Ty2) const {
-  return 1;
-}
-
-unsigned
 VectorTargetTransformImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
                                            unsigned Alignment,
                                            unsigned AddressSpace) const {
+  assert(!Src->isVoidTy() && "Invalid type");
   std::pair<unsigned, MVT> LT = getTypeLegalizationCost(Src);
 
   // Assume that all loads of legal types cost 1.
   return LT.first;
+}
+
+unsigned
+VectorTargetTransformImpl::getIntrinsicInstrCost(Intrinsic::ID, Type *RetTy,
+                                                 ArrayRef<Type*> Tys) const {
+  // assume that we need to scalarize this intrinsic.
+  unsigned ScalarizationCost = 0;
+  unsigned ScalarCalls = 1;
+  if (RetTy->isVectorTy()) {
+    ScalarizationCost = getScalarizationOverhead(RetTy, true, false);
+    ScalarCalls = std::max(ScalarCalls, RetTy->getVectorNumElements());
+  }
+  for (unsigned i = 0, ie = Tys.size(); i != ie; ++i) {
+    if (Tys[i]->isVectorTy()) {
+      ScalarizationCost += getScalarizationOverhead(Tys[i], false, true);
+      ScalarCalls = std::max(ScalarCalls, RetTy->getVectorNumElements());
+    }
+  }
+  return ScalarCalls + ScalarizationCost;
 }
 
 unsigned

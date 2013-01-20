@@ -15,6 +15,7 @@
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -604,7 +605,7 @@ bool llvm::TryToSimplifyUncondBranchFromEmptyBlock(BasicBlock *BB) {
   // possible to handle such cases, but difficult: it requires checking whether
   // BB dominates Succ, which is non-trivial to calculate in the case where
   // Succ has multiple predecessors.  Also, it requires checking whether
-  // constructing the necessary self-referential PHI node doesn't intoduce any
+  // constructing the necessary self-referential PHI node doesn't introduce any
   // conflicts; this isn't too difficult, but the previous code for doing this
   // was incorrect.
   //
@@ -927,4 +928,79 @@ DbgDeclareInst *llvm::FindAllocaDbgDeclare(Value *V) {
         return DDI;
 
   return 0;
+}
+
+bool llvm::replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
+                                      DIBuilder &Builder) {
+  DbgDeclareInst *DDI = FindAllocaDbgDeclare(AI);
+  if (!DDI)
+    return false;
+  DIVariable DIVar(DDI->getVariable());
+  if (!DIVar.Verify())
+    return false;
+
+  // Create a copy of the original DIDescriptor for user variable, appending
+  // "deref" operation to a list of address elements, as new llvm.dbg.declare
+  // will take a value storing address of the memory for variable, not
+  // alloca itself.
+  Type *Int64Ty = Type::getInt64Ty(AI->getContext());
+  SmallVector<Value*, 4> NewDIVarAddress;
+  if (DIVar.hasComplexAddress()) {
+    for (unsigned i = 0, n = DIVar.getNumAddrElements(); i < n; ++i) {
+      NewDIVarAddress.push_back(
+          ConstantInt::get(Int64Ty, DIVar.getAddrElement(i)));
+    }
+  }
+  NewDIVarAddress.push_back(ConstantInt::get(Int64Ty, DIBuilder::OpDeref));
+  DIVariable NewDIVar = Builder.createComplexVariable(
+      DIVar.getTag(), DIVar.getContext(), DIVar.getName(),
+      DIVar.getFile(), DIVar.getLineNumber(), DIVar.getType(),
+      NewDIVarAddress, DIVar.getArgNumber());
+
+  // Insert llvm.dbg.declare in the same basic block as the original alloca,
+  // and remove old llvm.dbg.declare.
+  BasicBlock *BB = AI->getParent();
+  Builder.insertDeclare(NewAllocaAddress, NewDIVar, BB);
+  DDI->eraseFromParent();
+  return true;
+}
+
+bool llvm::removeUnreachableBlocks(Function &F) {
+  SmallPtrSet<BasicBlock*, 16> Reachable;
+  SmallVector<BasicBlock*, 128> Worklist;
+  Worklist.push_back(&F.getEntryBlock());
+  Reachable.insert(&F.getEntryBlock());
+  do {
+    BasicBlock *BB = Worklist.pop_back_val();
+    for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI)
+      if (Reachable.insert(*SI))
+        Worklist.push_back(*SI);
+  } while (!Worklist.empty());
+
+  if (Reachable.size() == F.size())
+    return false;
+
+  assert(Reachable.size() < F.size());
+  for (Function::iterator I = llvm::next(F.begin()), E = F.end(); I != E; ++I) {
+    if (Reachable.count(I))
+      continue;
+
+    // Remove the block as predecessor of all its reachable successors.
+    // Unreachable successors don't matter as they'll soon be removed, too.
+    for (succ_iterator SI = succ_begin(I), SE = succ_end(I); SI != SE; ++SI)
+      if (Reachable.count(*SI))
+        (*SI)->removePredecessor(I);
+
+    // Zap all instructions in this basic block.
+    while (!I->empty()) {
+      Instruction &Inst = I->back();
+      if (!Inst.use_empty())
+        Inst.replaceAllUsesWith(UndefValue::get(Inst.getType()));
+      I->getInstList().pop_back();
+    }
+
+    --I;
+    llvm::next(I)->eraseFromParent();
+  }
+  return true;
 }

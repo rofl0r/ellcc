@@ -1512,6 +1512,12 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
   case ObjCId:            return "id";
   case ObjCClass:         return "Class";
   case ObjCSel:           return "SEL";
+  case OCLImage1d:        return "image1d_t";
+  case OCLImage1dArray:   return "image1d_array_t";
+  case OCLImage1dBuffer:  return "image1d_buffer_t";
+  case OCLImage2d:        return "image2d_t";
+  case OCLImage2dArray:   return "image2d_array_t";
+  case OCLImage3d:        return "image3d_t";
   }
   
   llvm_unreachable("Invalid builtin type.");
@@ -1546,6 +1552,7 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
   case CC_AAPCS: return "aapcs";
   case CC_AAPCS_VFP: return "aapcs-vfp";
   case CC_PnaclCall: return "pnaclcall";
+  case CC_IntelOclBicc: return "intel_ocl_bicc";
   }
 
   llvm_unreachable("Invalid calling convention.");
@@ -2180,7 +2187,7 @@ std::pair<Linkage,Visibility> Type::getLinkageAndVisibility() const {
   return std::make_pair(TypeBits.getLinkage(), TypeBits.getVisibility());
 }
 
-void Type::ClearLinkageCache() {
+void Type::ClearLVCache() {
   TypeBits.CacheValidAndVisibility = 0;
   if (QualType(this, 0) != CanonicalType)
     CanonicalType->TypeBits.CacheValidAndVisibility = 0;

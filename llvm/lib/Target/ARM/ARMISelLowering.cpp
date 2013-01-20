@@ -833,9 +833,12 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setSchedulingPreference(Sched::Hybrid);
 
   //// temporary - rewrite interface to use type
-  maxStoresPerMemcpy = maxStoresPerMemcpyOptSize = 1;
-  maxStoresPerMemset = 16;
+  maxStoresPerMemset = 8;
   maxStoresPerMemsetOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
+  maxStoresPerMemcpy = 4; // For @llvm.memcpy -> sequence of stores
+  maxStoresPerMemcpyOptSize = Subtarget->isTargetDarwin() ? 4 : 2;
+  maxStoresPerMemmove = 4; // For @llvm.memmove -> sequence of stores
+  maxStoresPerMemmoveOptSize = Subtarget->isTargetDarwin() ? 4 : 2;
 
   // On ARM arguments smaller than 4 bytes are extended, so all arguments
   // are at least 4 bytes aligned.
@@ -860,10 +863,10 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
 // due to the common occurrence of cross class copies and subregister insertions
 // and extractions.
 std::pair<const TargetRegisterClass*, uint8_t>
-ARMTargetLowering::findRepresentativeClass(EVT VT) const{
+ARMTargetLowering::findRepresentativeClass(MVT VT) const{
   const TargetRegisterClass *RRC = 0;
   uint8_t Cost = 1;
-  switch (VT.getSimpleVT().SimpleTy) {
+  switch (VT.SimpleTy) {
   default:
     return TargetLowering::findRepresentativeClass(VT);
   // Use DPR as representative register class for all floating point
@@ -1043,7 +1046,7 @@ EVT ARMTargetLowering::getSetCCResultType(EVT VT) const {
 
 /// getRegClassFor - Return the register class that should be used for the
 /// specified value type.
-const TargetRegisterClass *ARMTargetLowering::getRegClassFor(EVT VT) const {
+const TargetRegisterClass *ARMTargetLowering::getRegClassFor(MVT VT) const {
   // Map v4i64 to QQ registers but do not make the type legal. Similarly map
   // v8i64 to QQQQ registers. v4i64 and v8i64 are only used for REG_SEQUENCE to
   // load / store 4 to 8 consecutive D registers.
@@ -1613,8 +1616,8 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   // FIXME: handle tail calls differently.
   unsigned CallOpc;
-  bool HasMinSizeAttr = MF.getFunction()->getFnAttributes().
-    hasAttribute(Attributes::MinSize);
+  bool HasMinSizeAttr = MF.getFunction()->getAttributes().
+    hasAttribute(AttributeSet::FunctionIndex, Attribute::MinSize);
   if (Subtarget->isThumb()) {
     if ((!isDirect || isARMFunc) && !Subtarget->hasV5TOps())
       CallOpc = ARMISD::CALL_NOLINK;
@@ -6609,7 +6612,7 @@ EmitSjLjDispatchBlock(MachineInstr *MI, MachineBasicBlock *MBB) const {
         DefRegs[OI->getReg()] = true;
       }
 
-      MachineInstrBuilder MIB(&*II);
+      MachineInstrBuilder MIB(*MF, &*II);
 
       for (unsigned i = 0; SavedRegs[i] != 0; ++i) {
         unsigned Reg = SavedRegs[i];
@@ -6686,8 +6689,9 @@ EmitStructByval(MachineInstr *MI, MachineBasicBlock *BB) const {
     UnitSize = 2;
   } else {
     // Check whether we can use NEON instructions.
-    if (!MF->getFunction()->getFnAttributes().
-          hasAttribute(Attributes::NoImplicitFloat) &&
+    if (!MF->getFunction()->getAttributes().
+          hasAttribute(AttributeSet::FunctionIndex,
+                       Attribute::NoImplicitFloat) &&
         Subtarget->hasNEON()) {
       if ((Align % 16 == 0) && SizeVal >= 16) {
         ldrOpc = ARM::VLD1q32wb_fixed;
@@ -9406,7 +9410,7 @@ bool ARMTargetLowering::isDesirableToTransformToIntegerOp(unsigned Opc,
   return (VT == MVT::f32) && (Opc == ISD::LOAD || Opc == ISD::STORE);
 }
 
-bool ARMTargetLowering::allowsUnalignedMemoryAccesses(EVT VT) const {
+bool ARMTargetLowering::allowsUnalignedMemoryAccesses(EVT VT, bool *Fast) const {
   // The AllowsUnaliged flag models the SCTLR.A setting in ARM cpus
   bool AllowsUnaligned = Subtarget->allowsUnalignedMem();
 
@@ -9415,15 +9419,27 @@ bool ARMTargetLowering::allowsUnalignedMemoryAccesses(EVT VT) const {
     return false;
   case MVT::i8:
   case MVT::i16:
-  case MVT::i32:
+  case MVT::i32: {
     // Unaligned access can use (for example) LRDB, LRDH, LDR
-    return AllowsUnaligned;
+    if (AllowsUnaligned) {
+      if (Fast)
+        *Fast = Subtarget->hasV7Ops();
+      return true;
+    }
+    return false;
+  }
   case MVT::f64:
-  case MVT::v2f64:
+  case MVT::v2f64: {
     // For any little-endian targets with neon, we can support unaligned ld/st
     // of D and Q (e.g. {D0,D1}) registers by using vld1.i8/vst1.i8.
     // A big-endian target may also explictly support unaligned accesses
-    return Subtarget->hasNEON() && (AllowsUnaligned || isLittleEndian());
+    if (Subtarget->hasNEON() && (AllowsUnaligned || isLittleEndian())) {
+      if (Fast)
+        *Fast = true;
+      return true;
+    }
+    return false;
+  }
   }
 }
 
@@ -9435,28 +9451,33 @@ static bool memOpAlign(unsigned DstAlign, unsigned SrcAlign,
 
 EVT ARMTargetLowering::getOptimalMemOpType(uint64_t Size,
                                            unsigned DstAlign, unsigned SrcAlign,
-                                           bool IsZeroVal,
+                                           bool IsMemset, bool ZeroMemset,
                                            bool MemcpyStrSrc,
                                            MachineFunction &MF) const {
   const Function *F = MF.getFunction();
 
   // See if we can use NEON instructions for this...
-  if (IsZeroVal &&
-      !F->getFnAttributes().hasAttribute(Attributes::NoImplicitFloat) &&
-      Subtarget->hasNEON()) {
-    if (memOpAlign(SrcAlign, DstAlign, 16) && Size >= 16) {
-      return MVT::v4i32;
-    } else if (memOpAlign(SrcAlign, DstAlign, 8) && Size >= 8) {
-      return MVT::v2i32;
+  if ((!IsMemset || ZeroMemset) &&
+      Subtarget->hasNEON() &&
+      !F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                       Attribute::NoImplicitFloat)) {
+    bool Fast;
+    if (Size >= 16 &&
+        (memOpAlign(SrcAlign, DstAlign, 16) ||
+         (allowsUnalignedMemoryAccesses(MVT::v2f64, &Fast) && Fast))) {
+      return MVT::v2f64;
+    } else if (Size >= 8 &&
+               (memOpAlign(SrcAlign, DstAlign, 8) ||
+                (allowsUnalignedMemoryAccesses(MVT::f64, &Fast) && Fast))) {
+      return MVT::f64;
     }
   }
 
   // Lowering to i32/i16 if the size permits.
-  if (Size >= 4) {
+  if (Size >= 4)
     return MVT::i32;
-  } else if (Size >= 2) {
+  else if (Size >= 2)
     return MVT::i16;
-  }
 
   // Let the target-independent logic figure it out.
   return MVT::Other;
@@ -10321,4 +10342,37 @@ bool ARMTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   }
 
   return false;
+}
+
+unsigned
+ARMScalarTargetTransformImpl::getIntImmCost(const APInt &Imm, Type *Ty) const {
+  assert(Ty->isIntegerTy());
+
+  unsigned Bits = Ty->getPrimitiveSizeInBits();
+  if (Bits == 0 || Bits > 32)
+    return 4;
+
+  int32_t SImmVal = Imm.getSExtValue();
+  uint32_t ZImmVal = Imm.getZExtValue();
+  if (!Subtarget->isThumb()) {
+    if ((SImmVal >= 0 && SImmVal < 65536) ||
+        (ARM_AM::getSOImmVal(ZImmVal) != -1) ||
+        (ARM_AM::getSOImmVal(~ZImmVal) != -1))
+      return 1;
+    return Subtarget->hasV6T2Ops() ? 2 : 3;
+  } else if (Subtarget->isThumb2()) {
+    if ((SImmVal >= 0 && SImmVal < 65536) ||
+        (ARM_AM::getT2SOImmVal(ZImmVal) != -1) ||
+        (ARM_AM::getT2SOImmVal(~ZImmVal) != -1))
+      return 1;
+    return Subtarget->hasV6T2Ops() ? 2 : 3;
+  } else /*Thumb1*/ {
+    if (SImmVal >= 0 && SImmVal < 256)
+      return 1;
+    if ((~ZImmVal < 256) || ARM_AM::isThumbImmShiftedVal(ZImmVal))
+      return 2;
+    // Load from constantpool.
+    return 3;
+  }
+  return 2;
 }

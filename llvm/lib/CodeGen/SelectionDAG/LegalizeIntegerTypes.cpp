@@ -703,7 +703,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_VAARG(SDNode *N) {
   EVT VT = N->getValueType(0);
   DebugLoc dl = N->getDebugLoc();
 
-  EVT RegVT = TLI.getRegisterType(*DAG.getContext(), VT);
+  MVT RegVT = TLI.getRegisterType(*DAG.getContext(), VT);
   unsigned NumRegs = TLI.getNumRegisters(*DAG.getContext(), VT);
   // The argument is passed as NumRegs registers of type RegVT.
 
@@ -2549,7 +2549,7 @@ void DAGTypeLegalizer::IntegerExpandSetCCOperands(SDValue &NewLHS,
 
   // NOTE: on targets without efficient SELECT of bools, we can always use
   // this identity: (B1 ? B2 : B3) --> (B1 & B2)|(!B1&B3)
-  TargetLowering::DAGCombinerInfo DagCombineInfo(DAG, false, true, true, NULL);
+  TargetLowering::DAGCombinerInfo DagCombineInfo(DAG, AfterLegalizeTypes, true, NULL);
   SDValue Tmp1, Tmp2;
   Tmp1 = TLI.SimplifySetCC(TLI.getSetCCResultType(LHSLo.getValueType()),
                            LHSLo, RHSLo, LowCC, false, DagCombineInfo, dl);

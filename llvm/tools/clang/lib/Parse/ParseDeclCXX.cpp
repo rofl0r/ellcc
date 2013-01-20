@@ -707,8 +707,7 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
       if (SkipUntil(tok::r_paren, /*StopAtSemi=*/true, /*DontConsume=*/true)) {
         EndLoc = ConsumeParen();
       } else {
-        assert(Tok.is(tok::semi));
-        if (PP.isBacktrackEnabled()) {
+        if (PP.isBacktrackEnabled() && Tok.is(tok::semi)) {
           // Backtrack to get the location of the last token before the semi.
           PP.RevertCachedTokens(2);
           ConsumeToken(); // the semi.
@@ -1544,13 +1543,15 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   //   is permitted.
   if (TUK == Sema::TUK_Definition &&
       (TemplateInfo.Kind || !isValidAfterTypeSpecifier(false))) {
-    ExpectAndConsume(tok::semi, diag::err_expected_semi_after_tagdecl,
-      DeclSpec::getSpecifierName(TagType));
-    // Push this token back into the preprocessor and change our current token
-    // to ';' so that the rest of the code recovers as though there were an
-    // ';' after the definition.
-    PP.EnterToken(Tok);
-    Tok.setKind(tok::semi);
+    if (Tok.isNot(tok::semi)) {
+      ExpectAndConsume(tok::semi, diag::err_expected_semi_after_tagdecl,
+        DeclSpec::getSpecifierName(TagType));
+      // Push this token back into the preprocessor and change our current token
+      // to ';' so that the rest of the code recovers as though there were an
+      // ';' after the definition.
+      PP.EnterToken(Tok);
+      Tok.setKind(tok::semi);
+    }
   }
 }
 

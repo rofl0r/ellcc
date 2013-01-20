@@ -89,9 +89,8 @@ define void @example2(i32 %n, i32 %x) nounwind uwtable ssp {
   ret void
 }
 
-; We can't vectorize this loop because it has non constant loop bounds.
 ;CHECK: @example3
-;CHECK-NOT: <4 x i32>
+;CHECK: <4 x i32>
 ;CHECK: ret void
 define void @example3(i32 %n, i32* noalias nocapture %p, i32* noalias nocapture %q) nounwind uwtable ssp {
   %1 = icmp eq i32 %n, 0
@@ -330,7 +329,7 @@ define void @example11() nounwind uwtable ssp {
 }
 
 ;CHECK: @example12
-;CHECK: trunc <4 x i64>
+;CHECK: trunc i64
 ;CHECK: store <4 x i32>
 ;CHECK: ret void
 define void @example12() nounwind uwtable ssp {
@@ -537,9 +536,9 @@ define void @example14(i32** nocapture %in, i32** nocapture %coeff, i32* nocaptu
   ret void
 }
 
-; Can't vectorize because the src and dst pointers are not disjoint.
 ;CHECK: @example21
-;CHECK-NOT: <4 x i32>
+;CHECK: load <4 x i32>
+;CHECK: shufflevector {{.*}} <i32 3, i32 2, i32 1, i32 0>
 ;CHECK: ret i32
 define i32 @example21(i32* nocapture %b, i32 %n) nounwind uwtable readonly ssp {
   %1 = icmp sgt i32 %n, 0

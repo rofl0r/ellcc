@@ -398,6 +398,17 @@ def fsanitize_blacklist : Joined<["-"], "fsanitize-blacklist=">,
 def fno_sanitize_blacklist : Flag<["-"], "fno-sanitize-blacklist">,
                              Group<f_clang_Group>,
                              HelpText<"Don't use blacklist file for sanitizers">;
+def fsanitize_memory_track_origins : Flag<["-"], "fsanitize-memory-track-origins">,
+                                     Group<f_clang_Group>, Flags<[CC1Option]>,
+                                     HelpText<"Enable origins tracking in MemorySanitizer">;
+def fno_sanitize_memory_track_origins : Flag<["-"], "fno-sanitize-memory-track-origins">,
+                                        Group<f_clang_Group>,
+                                        HelpText<"Disable origins tracking in MemorySanitizer">;
+def fsanitize_recover : Flag<["-"], "fsanitize-recover">,
+                        Group<f_clang_Group>;
+def fno_sanitize_recover : Flag<["-"], "fno-sanitize-recover">,
+                           Group<f_clang_Group>, Flags<[CC1Option]>,
+                           HelpText<"Disable sanitizer check recovery">;
 def funsafe_math_optimizations : Flag<["-"], "funsafe-math-optimizations">,
   Group<f_Group>;
 def fno_unsafe_math_optimizations : Flag<["-"], "fno-unsafe-math-optimizations">,
@@ -650,6 +661,16 @@ def ftemplate_depth_ : Joined<["-"], "ftemplate-depth-">, Group<f_Group>;
 def ftemplate_backtrace_limit_EQ : Joined<["-"], "ftemplate-backtrace-limit=">,
                                    Group<f_Group>;
 def ftest_coverage : Flag<["-"], "ftest-coverage">, Group<f_Group>;
+def fvectorize : Flag<["-"], "fvectorize">, Group<f_Group>,
+  HelpText<"Enable the loop vectorization passes">;
+def fno_vectorize : Flag<["-"], "fno-vectorize">, Group<f_Group>;
+def ftree_vectorize : Flag<["-"], "ftree-vectorize">, Alias<fvectorize>;
+def fno_tree_vectorize : Flag<["-"], "fno-tree-vectorize">, Alias<fno_vectorize>;
+def fslp_vectorize : Flag<["-"], "fslp-vectorize">, Group<f_Group>,
+  HelpText<"Enable the superword-level parallelism vectorization passes">;
+def fno_slp_vectorize : Flag<["-"], "fno-slp-vectorize">, Group<f_Group>;
+def ftree_slp_vectorize : Flag<["-"], "ftree-slp-vectorize">, Alias<fslp_vectorize>;
+def fno_tree_slp_vectorize : Flag<["-"], "fno-tree-slp-vectorize">, Alias<fno_slp_vectorize>;
 def Wlarge_by_value_copy_def : Flag<["-"], "Wlarge-by-value-copy">,
   HelpText<"Warn if a function definition returns or accepts an object larger "
            "in bytes than a given value">, Flags<[HelpHidden]>;

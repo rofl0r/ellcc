@@ -54,7 +54,7 @@ static void AsanCheckFailed(const char *file, int line, const char *cond,
              file, line, cond, (uptr)v1, (uptr)v2);
   // FIXME: check for infinite recursion without a thread-local counter here.
   PRINT_CURRENT_STACK();
-  ShowStatsAndAbort();
+  Die();
 }
 
 // -------------------------- Flags ------------------------- {{{1
@@ -104,6 +104,11 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->allow_reexec, "allow_reexec");
   ParseFlag(str, &f->print_full_thread_history, "print_full_thread_history");
   ParseFlag(str, &f->log_path, "log_path");
+  ParseFlag(str, &f->fast_unwind_on_fatal, "fast_unwind_on_fatal");
+  ParseFlag(str, &f->fast_unwind_on_malloc, "fast_unwind_on_malloc");
+  ParseFlag(str, &f->poison_heap, "poison_heap");
+  ParseFlag(str, &f->alloc_dealloc_mismatch, "alloc_dealloc_mismatch");
+  ParseFlag(str, &f->use_stack_depot, "use_stack_depot");
 }
 
 void InitializeFlags(Flags *f, const char *env) {
@@ -112,7 +117,7 @@ void InitializeFlags(Flags *f, const char *env) {
   f->quarantine_size = (ASAN_LOW_MEMORY) ? 1UL << 26 : 1UL << 28;
   f->symbolize = false;
   f->verbosity = 0;
-  f->redzone = (ASAN_LOW_MEMORY) ? 64 : 128;
+  f->redzone = ASAN_ALLOCATOR_VERSION == 2 ? 16 : (ASAN_LOW_MEMORY) ? 64 : 128;
   f->debug = false;
   f->report_globals = 1;
   f->check_initialization_order = true;
@@ -137,6 +142,11 @@ void InitializeFlags(Flags *f, const char *env) {
   f->allow_reexec = true;
   f->print_full_thread_history = true;
   f->log_path = 0;
+  f->fast_unwind_on_fatal = true;
+  f->fast_unwind_on_malloc = true;
+  f->poison_heap = true;
+  f->alloc_dealloc_mismatch = true;
+  f->use_stack_depot = true;  // Only affects allocator2.
 
   // Override from user-specified string.
   ParseFlagsFromString(f, MaybeCallAsanDefaultOptions());
@@ -243,6 +253,8 @@ static NOINLINE void force_interface_symbols() {
     case 31: __asan_after_dynamic_init(); break;
     case 32: __asan_poison_stack_memory(0, 0); break;
     case 33: __asan_unpoison_stack_memory(0, 0); break;
+    case 34: __asan_region_is_poisoned(0, 0); break;
+    case 35: __asan_describe_address(0); break;
   }
 }
 

@@ -1,10 +1,12 @@
 set(TSAN_SOURCES
   tsan_clock.cc
   tsan_flags.cc
+  tsan_fd.cc
   tsan_interceptors.cc
   tsan_interface_ann.cc
   tsan_interface_atomic.cc
   tsan_interface.cc
+  tsan_interface_java.cc
   tsan_md5.cc
   tsan_mman.cc
   tsan_mutex.cc

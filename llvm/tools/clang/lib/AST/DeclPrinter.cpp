@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the Decl::dump method, which pretty print the
+// This file implements the Decl::print method, which pretty prints the
 // AST back out to C/Objective-C/C++/Objective-C++ code.
 //
 //===----------------------------------------------------------------------===//
@@ -176,16 +176,6 @@ void DeclContext::dumpDeclContext() const {
   Printer.VisitDeclContext(const_cast<DeclContext *>(this), /*Indent=*/false);
 }
 
-void Decl::dump() const {
-  dump(llvm::errs());
-}
-
-void Decl::dump(raw_ostream &Out) const {
-  PrintingPolicy Policy = getASTContext().getPrintingPolicy();
-  Policy.DumpSourceManager = &getASTContext().getSourceManager();
-  print(Out, Policy, /*Indentation*/ 0, /*PrintInstantiation*/ true);
-}
-
 raw_ostream& DeclPrinter::Indent(unsigned Indentation) {
   for (unsigned i = 0; i != Indentation; ++i)
     Out << "  ";
@@ -193,7 +183,7 @@ raw_ostream& DeclPrinter::Indent(unsigned Indentation) {
 }
 
 void DeclPrinter::prettyPrintAttributes(Decl *D) {
-  if (Policy.SuppressAttributes)
+  if (Policy.PolishForDeclaration)
     return;
   
   if (D->hasAttrs()) {
@@ -242,18 +232,18 @@ void DeclPrinter::VisitDeclContext(DeclContext *DC, bool Indent) {
     if (isa<ObjCIvarDecl>(*D))
       continue;
 
-    if (!Policy.DumpSourceManager) {
-      // Skip over implicit declarations in pretty-printing mode.
-      if (D->isImplicit()) continue;
-      // FIXME: Ugly hack so we don't pretty-print the builtin declaration
-      // of __builtin_va_list or __[u]int128_t.  There should be some other way
-      // to check that.
-      if (NamedDecl *ND = dyn_cast<NamedDecl>(*D)) {
-        if (IdentifierInfo *II = ND->getIdentifier()) {
-          if (II->isStr("__builtin_va_list") ||
-              II->isStr("__int128_t") || II->isStr("__uint128_t"))
-            continue;
-        }
+    // Skip over implicit declarations in pretty-printing mode.
+    if (D->isImplicit())
+      continue;
+
+    // FIXME: Ugly hack so we don't pretty-print the builtin declaration
+    // of __builtin_va_list or __[u]int128_t.  There should be some other way
+    // to check that.
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(*D)) {
+      if (IdentifierInfo *II = ND->getIdentifier()) {
+        if (II->isStr("__builtin_va_list") ||
+            II->isStr("__int128_t") || II->isStr("__uint128_t"))
+          continue;
       }
     }
 
@@ -590,10 +580,8 @@ void DeclPrinter::VisitFunctionDecl(FunctionDecl *D) {
 
 void DeclPrinter::VisitFriendDecl(FriendDecl *D) {
   if (TypeSourceInfo *TSI = D->getFriendType()) {
-    if (CXXRecordDecl *FriendD = TSI->getType()->getAsCXXRecordDecl()) {
-      Out << "friend ";
-      VisitCXXRecordDecl(FriendD);
-    }
+    Out << "friend ";
+    Out << " " << TSI->getType().getAsString(Policy);
   }
   else if (FunctionDecl *FD =
       dyn_cast<FunctionDecl>(D->getFriendDecl())) {
@@ -608,7 +596,7 @@ void DeclPrinter::VisitFriendDecl(FriendDecl *D) {
   else if (ClassTemplateDecl *CTD =
            dyn_cast<ClassTemplateDecl>(D->getFriendDecl())) {
     Out << "friend ";
-    VisitClassTemplateDecl(CTD);
+    VisitRedeclarableTemplateDecl(CTD);
   }
 }
 
@@ -686,7 +674,7 @@ void DeclPrinter::VisitFileScopeAsmDecl(FileScopeAsmDecl *D) {
 }
 
 void DeclPrinter::VisitImportDecl(ImportDecl *D) {
-  Out << "@__experimental_modules_import " << D->getImportedModule()->getFullModuleName()
+  Out << "@import " << D->getImportedModule()->getFullModuleName()
       << ";\n";
 }
 
@@ -915,6 +903,8 @@ void DeclPrinter::VisitObjCMethodDecl(ObjCMethodDecl *OMD) {
     OMD->getBody()->printPretty(Out, 0, Policy);
     Out << '\n';
   }
+  else if (Policy.PolishForDeclaration)
+    Out << ';';
 }
 
 void DeclPrinter::VisitObjCImplementationDecl(ObjCImplementationDecl *OID) {
@@ -948,7 +938,7 @@ void DeclPrinter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *OID) {
     Out << "@class " << I << ";";
     return;
   }
-  
+  bool eolnOut = false;
   if (SID)
     Out << "@interface " << I << " : " << *SID;
   else
@@ -960,13 +950,12 @@ void DeclPrinter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *OID) {
     for (ObjCList<ObjCProtocolDecl>::iterator I = Protocols.begin(),
          E = Protocols.end(); I != E; ++I)
       Out << (I == Protocols.begin() ? '<' : ',') << **I;
-  }
-
-  if (!Protocols.empty())
     Out << "> ";
+  }
 
   if (OID->ivar_size() > 0) {
     Out << "{\n";
+    eolnOut = true;
     Indentation += Policy.Indentation;
     for (ObjCInterfaceDecl::ivar_iterator I = OID->ivar_begin(),
          E = OID->ivar_end(); I != E; ++I) {
@@ -975,19 +964,33 @@ void DeclPrinter::VisitObjCInterfaceDecl(ObjCInterfaceDecl *OID) {
     Indentation -= Policy.Indentation;
     Out << "}\n";
   }
+  else if (SID) {
+    Out << "\n";
+    eolnOut = true;
+  }
 
   VisitDeclContext(OID, false);
+  if (!eolnOut)
+    Out << ' ';
   Out << "@end";
   // FIXME: implement the rest...
 }
 
 void DeclPrinter::VisitObjCProtocolDecl(ObjCProtocolDecl *PID) {
   if (!PID->isThisDeclarationADefinition()) {
-    Out << "@protocol " << PID->getIdentifier() << ";\n";
+    Out << "@protocol " << *PID << ";\n";
     return;
   }
-  
-  Out << "@protocol " << *PID << '\n';
+  // Protocols?
+  const ObjCList<ObjCProtocolDecl> &Protocols = PID->getReferencedProtocols();
+  if (!Protocols.empty()) {
+    Out << "@protocol " << *PID;
+    for (ObjCList<ObjCProtocolDecl>::iterator I = Protocols.begin(),
+         E = Protocols.end(); I != E; ++I)
+      Out << (I == Protocols.begin() ? '<' : ',') << **I;
+    Out << ">\n";
+  } else
+    Out << "@protocol " << *PID << '\n';
   VisitDeclContext(PID, false);
   Out << "@end";
 }
@@ -1094,6 +1097,8 @@ void DeclPrinter::VisitObjCPropertyDecl(ObjCPropertyDecl *PDecl) {
     Out << " )";
   }
   Out << ' ' << PDecl->getType().getAsString(Policy) << ' ' << *PDecl;
+  if (Policy.PolishForDeclaration)
+    Out << ';';
 }
 
 void DeclPrinter::VisitObjCPropertyImplDecl(ObjCPropertyImplDecl *PID) {

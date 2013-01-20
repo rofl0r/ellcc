@@ -106,7 +106,8 @@ static void diagnoseBadTypeAttribute(Sema &S, const AttributeList &attr,
     case AttributeList::AT_Pascal: \
     case AttributeList::AT_Regparm: \
     case AttributeList::AT_Pcs: \
-    case AttributeList::AT_PnaclCall \
+    case AttributeList::AT_PnaclCall: \
+    case AttributeList::AT_IntelOclBicc \
 
 namespace {
   /// An object which stores processing state for the entire
@@ -901,6 +902,30 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       Result = Context.IntTy;
       declarator.setInvalidType(true);
     }
+    break;
+
+  case DeclSpec::TST_image1d_t:
+    Result = Context.OCLImage1dTy;
+    break;
+
+  case DeclSpec::TST_image1d_array_t:
+    Result = Context.OCLImage1dArrayTy;
+    break;
+
+  case DeclSpec::TST_image1d_buffer_t:
+    Result = Context.OCLImage1dBufferTy;
+    break;
+
+  case DeclSpec::TST_image2d_t:
+    Result = Context.OCLImage2dTy;
+    break;
+
+  case DeclSpec::TST_image2d_array_t:
+    Result = Context.OCLImage2dArrayTy;
+    break;
+
+  case DeclSpec::TST_image3d_t:
+    Result = Context.OCLImage3dTy;
     break;
 
   case DeclSpec::TST_error:
@@ -3008,6 +3033,8 @@ static AttributeList::Kind getAttrListKind(AttributedType::Kind kind) {
     return AttributeList::AT_Pcs;
   case AttributedType::attr_pnaclcall:
     return AttributeList::AT_PnaclCall;
+  case AttributedType::attr_inteloclbicc:
+    return AttributeList::AT_IntelOclBicc;
   }
   llvm_unreachable("unexpected attribute kind!");
 }

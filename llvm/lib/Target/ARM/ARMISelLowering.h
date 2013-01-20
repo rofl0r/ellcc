@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetTransformImpl.h"
 #include <vector>
 
 namespace llvm {
@@ -285,12 +286,13 @@ namespace llvm {
     bool isDesirableToTransformToIntegerOp(unsigned Opc, EVT VT) const;
 
     /// allowsUnalignedMemoryAccesses - Returns true if the target allows
-    /// unaligned memory accesses. of the specified type.
-    virtual bool allowsUnalignedMemoryAccesses(EVT VT) const;
+    /// unaligned memory accesses of the specified type. Returns whether it
+    /// is "fast" by reference in the second argument.
+    virtual bool allowsUnalignedMemoryAccesses(EVT VT, bool *Fast) const;
 
     virtual EVT getOptimalMemOpType(uint64_t Size,
                                     unsigned DstAlign, unsigned SrcAlign,
-                                    bool IsZeroVal,
+                                    bool IsMemset, bool ZeroMemset,
                                     bool MemcpyStrSrc,
                                     MachineFunction &MF) const;
 
@@ -365,7 +367,7 @@ namespace llvm {
 
     /// getRegClassFor - Return the register class that should be used for the
     /// specified value type.
-    virtual const TargetRegisterClass *getRegClassFor(EVT VT) const;
+    virtual const TargetRegisterClass *getRegClassFor(MVT VT) const;
 
     /// getMaximalGlobalOffset - Returns the maximal possible offset which can
     /// be used for loads / stores from the global.
@@ -391,7 +393,7 @@ namespace llvm {
                                     unsigned Intrinsic) const;
   protected:
     std::pair<const TargetRegisterClass*, uint8_t>
-    findRepresentativeClass(EVT VT) const;
+    findRepresentativeClass(MVT VT) const;
 
   private:
     /// Subtarget - Keep a pointer to the ARMSubtarget around so that we can
@@ -572,6 +574,16 @@ namespace llvm {
     FastISel *createFastISel(FunctionLoweringInfo &funcInfo,
                              const TargetLibraryInfo *libInfo);
   }
+
+  class ARMScalarTargetTransformImpl : public ScalarTargetTransformImpl {
+    const ARMSubtarget *Subtarget;
+  public:
+    explicit ARMScalarTargetTransformImpl(const TargetLowering *TL) :
+      ScalarTargetTransformImpl(TL),
+      Subtarget(&TL->getTargetMachine().getSubtarget<ARMSubtarget>()) {};
+
+    virtual unsigned getIntImmCost(const APInt &Imm, Type *Ty) const;
+  };
 }
 
 #endif  // ARMISELLOWERING_H

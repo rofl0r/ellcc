@@ -262,7 +262,7 @@ public:
   ///  to the store. Used to update checkers that track region values.
   ProgramStateRef 
   processRegionChanges(ProgramStateRef state,
-                       const StoreManager::InvalidatedSymbols *invalidated,
+                       const InvalidatedSymbols *invalidated,
                        ArrayRef<const MemRegion *> ExplicitRegions,
                        ArrayRef<const MemRegion *> Regions,
                        const CallEvent *Call);
@@ -458,6 +458,18 @@ protected:
   void evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE, ExplodedNode *Pred,
                 SVal location, SVal Val, bool atDeclInit = false,
                 const ProgramPoint *PP = 0);
+
+  /// Call PointerEscape callback when a value escapes as a result of bind.
+  ProgramStateRef processPointerEscapedOnBind(ProgramStateRef State,
+                                              SVal Loc, SVal Val);
+  /// Call PointerEscape callback when a value escapes as a result of
+  /// region invalidation.
+  ProgramStateRef processPointerEscapedOnInvalidateRegions(
+                            ProgramStateRef State,
+                            const InvalidatedSymbols *Invalidated,
+                            ArrayRef<const MemRegion *> ExplicitRegions,
+                            ArrayRef<const MemRegion *> Regions,
+                            const CallEvent *Call);
 
 public:
   // FIXME: 'tag' should be removed, and a LocationContext should be used

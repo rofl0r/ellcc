@@ -15,7 +15,6 @@
 #include "ARMELFStreamer.h"
 #include "ARMMCAsmInfo.h"
 #include "ARMBaseInfo.h"
-#include "ARMMCAsmInfo.h"
 #include "InstPrinter/ARMInstPrinter.h"
 #include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCInstrAnalysis.h"
@@ -153,7 +152,7 @@ static MCInstrInfo *createARMMCInstrInfo() {
 
 static MCRegisterInfo *createARMMCRegisterInfo(StringRef Triple) {
   MCRegisterInfo *X = new MCRegisterInfo();
-  InitARMMCRegisterInfo(X, ARM::LR);
+  InitARMMCRegisterInfo(X, ARM::LR, 0, 0, ARM::PC);
   return X;
 }
 

@@ -228,6 +228,12 @@ public:
              "Enum truncated!");
     }
 
+    bool operator==(const LinkageInfo &Other) {
+      return linkage_ == Other.linkage_ &&
+	visibility_ == Other.visibility_ &&
+	explicit_ == Other.explicit_;
+    }
+
     static LinkageInfo external() {
       return LinkageInfo();
     }
@@ -323,7 +329,7 @@ public:
 
   /// \brief Clear the linkage cache in response to a change
   /// to the declaration.
-  void ClearLinkageCache();
+  void ClearLVCache();
 
   /// \brief Looks through UsingDecls and ObjCCompatibleAliasDecls for
   /// the underlying named decl.
@@ -896,6 +902,12 @@ public:
   /// \brief Determines whether this variable is a variable with
   /// external, C linkage.
   bool isExternC() const;
+
+  /// Checks if this variable has C language linkage. Note that this is not the
+  /// same as isExternC since decls with non external linkage can have C
+  /// language linkage. They can also have C language linkage when they are not
+  /// declared in an extern C context, but a previous decl is.
+  bool hasCLanguageLinkage() const;
 
   /// isLocalVarDecl - Returns true for local variable declarations
   /// other than parameters.  Note that this includes static variables
@@ -1783,6 +1795,12 @@ public:
   /// \brief Determines whether this function is a function with
   /// external, C linkage.
   bool isExternC() const;
+
+  /// Checks if this function has C language linkage. Note that this is not the
+  /// same as isExternC since decls with non external linkage can have C
+  /// language linkage. They can also have C language linkage when they are not
+  /// declared in an extern C context, but a previous decl is.
+  bool hasCLanguageLinkage() const;
 
   /// \brief Determines whether this is a global function.
   bool isGlobal() const;
@@ -3218,7 +3236,7 @@ public:
 ///
 /// An import declaration imports the named module (or submodule). For example:
 /// \code
-///   @__experimental_modules_import std.vector;
+///   @import std.vector;
 /// \endcode
 ///
 /// Import declarations can also be implicitly generated from
@@ -3319,7 +3337,7 @@ void Redeclarable<decl_type>::setPreviousDeclaration(decl_type *PrevDecl) {
   // First one will point to this one as latest.
   First->RedeclLink = LatestDeclLink(static_cast<decl_type*>(this));
   if (NamedDecl *ND = dyn_cast<NamedDecl>(static_cast<decl_type*>(this)))
-    ND->ClearLinkageCache();
+    ND->ClearLVCache();
 }
 
 // Inline function definitions.

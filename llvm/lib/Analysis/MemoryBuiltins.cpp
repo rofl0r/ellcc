@@ -132,7 +132,7 @@ static const AllocFnsTy *getAllocationData(const Value *V, AllocType AllocTy,
 
 static bool hasNoAliasAttr(const Value *V, bool LookThroughBitCast) {
   ImmutableCallSite CS(LookThroughBitCast ? V->stripPointerCasts() : V);
-  return CS && CS.hasFnAttr(Attributes::NoAlias);
+  return CS && CS.hasFnAttr(Attribute::NoAlias);
 }
 
 
@@ -510,11 +510,10 @@ ObjectSizeOffsetVisitor::visitExtractValueInst(ExtractValueInst&) {
 
 SizeOffsetType ObjectSizeOffsetVisitor::visitGEPOperator(GEPOperator &GEP) {
   SizeOffsetType PtrData = compute(GEP.getPointerOperand());
-  if (!bothKnown(PtrData) || !GEP.hasAllConstantIndices())
+  APInt Offset(IntTyBits, 0);
+  if (!bothKnown(PtrData) || !GEP.accumulateConstantOffset(*TD, Offset))
     return unknown();
 
-  SmallVector<Value*, 8> Ops(GEP.idx_begin(), GEP.idx_end());
-  APInt Offset(IntTyBits,TD->getIndexedOffset(GEP.getPointerOperandType(),Ops));
   return std::make_pair(PtrData.first, PtrData.second + Offset);
 }
 
@@ -536,9 +535,20 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitLoadInst(LoadInst&) {
   return unknown();
 }
 
-SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode&) {
-  // too complex to analyze statically.
-  return unknown();
+SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode &PHI) {
+  if (PHI.getNumIncomingValues() == 0)
+    return unknown();
+
+  SizeOffsetType Ret = compute(PHI.getIncomingValue(0));
+  if (!bothKnown(Ret))
+    return unknown();
+
+  // verify that all PHI incoming pointers have the same size and offset
+  for (unsigned i = 1, e = PHI.getNumIncomingValues(); i != e; ++i) {
+    if (compute(PHI.getIncomingValue(i)) != Ret)
+      return unknown();
+  }
+  return Ret;
 }
 
 SizeOffsetType ObjectSizeOffsetVisitor::visitSelectInst(SelectInst &I) {

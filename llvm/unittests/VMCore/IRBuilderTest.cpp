@@ -99,6 +99,13 @@ TEST_F(IRBuilderTest, CreateCondBr) {
   EXPECT_EQ(Weights, TI->getMetadata(LLVMContext::MD_prof));
 }
 
+TEST_F(IRBuilderTest, LandingPadName) {
+  IRBuilder<> Builder(BB);
+  LandingPadInst *LP = Builder.CreateLandingPad(Builder.getInt32Ty(),
+                                                Builder.getInt32(0), 0, "LP");
+  EXPECT_EQ(LP->getName(), "LP");
+}
+
 TEST_F(IRBuilderTest, GetIntTy) {
   IRBuilder<> Builder(BB);
   IntegerType *Ty1 = Builder.getInt1Ty();
@@ -129,7 +136,7 @@ TEST_F(IRBuilderTest, FastMathFlags) {
   F = Builder.CreateFAdd(F, F);
   EXPECT_FALSE(Builder.getFastMathFlags().any());
 
-  FMF.UnsafeAlgebra = true;
+  FMF.setUnsafeAlgebra();
   Builder.SetFastMathFlags(FMF);
 
   F = Builder.CreateFAdd(F, F);
@@ -153,7 +160,7 @@ TEST_F(IRBuilderTest, FastMathFlags) {
   EXPECT_FALSE(FDiv->hasAllowReciprocal());
 
   FMF.clear();
-  FMF.AllowReciprocal = true;
+  FMF.setAllowReciprocal();
   Builder.SetFastMathFlags(FMF);
 
   F = Builder.CreateFDiv(F, F);

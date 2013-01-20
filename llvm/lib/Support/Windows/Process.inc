@@ -35,8 +35,14 @@
 #  define _HEAPOK (-2)
 #endif
 
-namespace llvm {
+using namespace llvm;
 using namespace sys;
+
+
+process::id_type self_process::get_id() {
+  return GetCurrentProcess();
+}
+
 
 // This function retrieves the page size using GetSystemInfo and is present
 // solely so it can be called once in Process::GetPageSize to initialize the
@@ -254,6 +260,4 @@ const char *Process::OutputReverse() {
 const char *Process::ResetColor() {
   SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), defaultColors());
   return 0;
-}
-
 }

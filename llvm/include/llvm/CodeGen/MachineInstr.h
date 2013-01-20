@@ -97,7 +97,8 @@ private:
   /// MachineInstr ctor - This constructor create a MachineInstr and add the
   /// implicit operands.  It reserves space for number of operands specified by
   /// MCInstrDesc.  An explicit DebugLoc is supplied.
-  MachineInstr(const MCInstrDesc &MCID, const DebugLoc dl, bool NoImp = false);
+  MachineInstr(MachineFunction&, const MCInstrDesc &MCID,
+               const DebugLoc dl, bool NoImp = false);
 
   ~MachineInstr();
 
@@ -150,7 +151,9 @@ public:
   }
 
   void setFlags(unsigned flags) {
-    Flags = flags;
+    // Filter out the automatically maintained flags.
+    unsigned Mask = BundledPred | BundledSucc;
+    Flags = (Flags & Mask) | (flags & ~Mask);
   }
 
   /// clearFlag - Clear a MI flag.
@@ -198,18 +201,11 @@ public:
     return getFlag(BundledPred);
   }
 
-  /// setIsInsideBundle - Set InsideBundle bit.
-  ///
-  void setIsInsideBundle(bool Val = true) {
-    if (Val)
-      setFlag(BundledPred);
-    else
-      clearFlag(BundledPred);
-  }
-
   /// isBundled - Return true if this instruction part of a bundle. This is true
   /// if either itself or its following instruction is marked "InsideBundle".
-  bool isBundled() const;
+  bool isBundled() const {
+    return isBundledWithPred() || isBundledWithSucc();
+  }
 
   /// Return true if this instruction is part of a bundle, and it is not the
   /// first instruction in the bundle.
@@ -590,13 +586,32 @@ public:
   bool isIdenticalTo(const MachineInstr *Other,
                      MICheckType Check = CheckDefs) const;
 
-  /// removeFromParent - This method unlinks 'this' from the containing basic
-  /// block, and returns it, but does not delete it.
+  /// Unlink 'this' from the containing basic block, and return it without
+  /// deleting it.
+  ///
+  /// This function can not be used on bundled instructions, use
+  /// removeFromBundle() to remove individual instructions from a bundle.
   MachineInstr *removeFromParent();
 
-  /// eraseFromParent - This method unlinks 'this' from the containing basic
-  /// block and deletes it.
+  /// Unlink this instruction from its basic block and return it without
+  /// deleting it.
+  ///
+  /// If the instruction is part of a bundle, the other instructions in the
+  /// bundle remain bundled.
+  MachineInstr *removeFromBundle();
+
+  /// Unlink 'this' from the containing basic block and delete it.
+  ///
+  /// If this instruction is the header of a bundle, the whole bundle is erased.
+  /// This function can not be used for instructions inside a bundle, use
+  /// eraseFromBundle() to erase individual bundled instructions.
   void eraseFromParent();
+
+  /// Unlink 'this' form its basic block and delete it.
+  ///
+  /// If the instruction is part of a bundle, the other instructions in the
+  /// bundle remain bundled.
+  void eraseFromBundle();
 
   /// isLabel - Returns true if the MachineInstr represents a label.
   ///
@@ -833,13 +848,6 @@ public:
   ///
   void clearKillInfo();
 
-  /// copyKillDeadInfo - Copies kill / dead operand properties from MI.
-  ///
-  void copyKillDeadInfo(const MachineInstr *MI);
-
-  /// copyPredicates - Copies predicate operand(s) from MI.
-  void copyPredicates(const MachineInstr *MI);
-
   /// substituteRegister - Replace all occurrences of FromReg with ToReg:SubIdx,
   /// properly composing subreg indices where necessary.
   void substituteRegister(unsigned FromReg, unsigned ToReg, unsigned SubIdx,
@@ -921,7 +929,7 @@ public:
 
   /// copyImplicitOps - Copy implicit register operands from specified
   /// instruction to this instruction.
-  void copyImplicitOps(const MachineInstr *MI);
+  void copyImplicitOps(MachineFunction &MF, const MachineInstr *MI);
 
   //
   // Debugging support
@@ -932,10 +940,23 @@ public:
   //===--------------------------------------------------------------------===//
   // Accessors used to build up machine instructions.
 
-  /// addOperand - Add the specified operand to the instruction.  If it is an
-  /// implicit operand, it is added to the end of the operand list.  If it is
-  /// an explicit operand it is added at the end of the explicit operand list
+  /// Add the specified operand to the instruction.  If it is an implicit
+  /// operand, it is added to the end of the operand list.  If it is an
+  /// explicit operand it is added at the end of the explicit operand list
   /// (before the first implicit operand).
+  ///
+  /// MF must be the machine function that was used to allocate this
+  /// instruction.
+  ///
+  /// MachineInstrBuilder provides a more convenient interface for creating
+  /// instructions and adding operands.
+  void addOperand(MachineFunction &MF, const MachineOperand &Op);
+
+  /// Add an operand without providing an MF reference. This only works for
+  /// instructions that are inserted in a basic block.
+  ///
+  /// MachineInstrBuilder and the two-argument addOperand(MF, MO) should be
+  /// preferred.
   void addOperand(const MachineOperand &Op);
 
   /// setDesc - Replace the instruction descriptor (thus opcode) of
@@ -982,7 +1003,7 @@ private:
 
   /// addImplicitDefUseOperands - Add all implicit def and use operands to
   /// this instruction.
-  void addImplicitDefUseOperands();
+  void addImplicitDefUseOperands(MachineFunction &MF);
 
   /// RemoveRegOperandsFromUseLists - Unlink all of the register operands in
   /// this instruction from their respective use lists.  This requires that the

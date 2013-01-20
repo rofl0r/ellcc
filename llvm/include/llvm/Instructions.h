@@ -29,9 +29,10 @@
 
 namespace llvm {
 
+class APInt;
 class ConstantInt;
 class ConstantRange;
-class APInt;
+class DataLayout;
 class LLVMContext;
 
 enum AtomicOrdering {
@@ -850,6 +851,16 @@ public:
   /// isInBounds - Determine whether the GEP has the inbounds flag.
   bool isInBounds() const;
 
+  /// \brief Accumulate the constant address offset of this GEP if possible.
+  ///
+  /// This routine accepts an APInt into which it will accumulate the constant
+  /// offset of this GEP if the GEP is in fact constant. If the GEP is not
+  /// all-constant, it returns false and the value of the offset APInt is
+  /// undefined (it is *not* preserved!). The APInt passed into this routine
+  /// must be at least as wide as the IntPtr type for the address space of
+  /// the base GEP pointer.
+  bool accumulateConstantOffset(const DataLayout &DL, APInt &Offset) const;
+
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const Instruction *I) {
     return (I->getOpcode() == Instruction::GetElementPtr);
@@ -1261,16 +1272,16 @@ public:
   void setAttributes(const AttributeSet &Attrs) { AttributeList = Attrs; }
 
   /// addAttribute - adds the attribute to the list of attributes.
-  void addAttribute(unsigned i, Attributes attr);
+  void addAttribute(unsigned i, Attribute attr);
 
   /// removeAttribute - removes the attribute from the list of attributes.
-  void removeAttribute(unsigned i, Attributes attr);
+  void removeAttribute(unsigned i, Attribute attr);
 
   /// \brief Determine whether this call has the given attribute.
-  bool hasFnAttr(Attributes::AttrVal A) const;
+  bool hasFnAttr(Attribute::AttrKind A) const;
 
   /// \brief Determine whether the call or the callee has the given attributes.
-  bool paramHasAttr(unsigned i, Attributes::AttrVal A) const;
+  bool paramHasAttr(unsigned i, Attribute::AttrKind A) const;
 
   /// \brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
@@ -1278,66 +1289,70 @@ public:
   }
 
   /// \brief Return true if the call should not be inlined.
-  bool isNoInline() const { return hasFnAttr(Attributes::NoInline); }
+  bool isNoInline() const { return hasFnAttr(Attribute::NoInline); }
   void setIsNoInline() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoInline));
+                 Attribute::get(getContext(), Attribute::NoInline));
   }
 
   /// \brief Return true if the call can return twice
   bool canReturnTwice() const {
-    return hasFnAttr(Attributes::ReturnsTwice);
+    return hasFnAttr(Attribute::ReturnsTwice);
   }
   void setCanReturnTwice() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::ReturnsTwice));
+                 Attribute::get(getContext(), Attribute::ReturnsTwice));
   }
 
   /// \brief Determine if the call does not access memory.
   bool doesNotAccessMemory() const {
-    return hasFnAttr(Attributes::ReadNone);
+    return hasFnAttr(Attribute::ReadNone);
   }
   void setDoesNotAccessMemory() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::ReadNone));
+                 Attribute::get(getContext(), Attribute::ReadNone));
   }
 
   /// \brief Determine if the call does not access or only reads memory.
   bool onlyReadsMemory() const {
-    return doesNotAccessMemory() || hasFnAttr(Attributes::ReadOnly);
+    return doesNotAccessMemory() || hasFnAttr(Attribute::ReadOnly);
   }
   void setOnlyReadsMemory() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::ReadOnly));
+                 Attribute::get(getContext(), Attribute::ReadOnly));
   }
 
   /// \brief Determine if the call cannot return.
-  bool doesNotReturn() const { return hasFnAttr(Attributes::NoReturn); }
+  bool doesNotReturn() const { return hasFnAttr(Attribute::NoReturn); }
   void setDoesNotReturn() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoReturn));
+                 Attribute::get(getContext(), Attribute::NoReturn));
   }
 
   /// \brief Determine if the call cannot unwind.
-  bool doesNotThrow() const { return hasFnAttr(Attributes::NoUnwind); }
+  bool doesNotThrow() const { return hasFnAttr(Attribute::NoUnwind); }
   void setDoesNotThrow() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoUnwind));
+                 Attribute::get(getContext(), Attribute::NoUnwind));
+  }
+
+  /// \brief Determine if the call cannot be duplicated.
+  bool cannotDuplicate() const {return hasFnAttr(Attribute::NoDuplicate); }
+  void setCannotDuplicate() {
+    addAttribute(AttributeSet::FunctionIndex,
+                 Attribute::get(getContext(), Attribute::NoDuplicate));
   }
 
   /// \brief Determine if the call returns a structure through first
   /// pointer argument.
   bool hasStructRetAttr() const {
     // Be friendly and also check the callee.
-    return paramHasAttr(1, Attributes::StructRet);
+    return paramHasAttr(1, Attribute::StructRet);
   }
 
   /// \brief Determine if any call argument is an aggregate passed by value.
   bool hasByValArgument() const {
-    for (unsigned I = 0, E = AttributeList.getNumAttrs(); I != E; ++I)
-      if (AttributeList.getAttributesAtIndex(I).hasAttribute(Attributes::ByVal))
-        return true;
-    return false;
+    return AttributeList.hasAttrSomewhere(Attribute::ByVal);
   }
 
   /// getCalledFunction - Return the function called, or null if this is an
@@ -3010,16 +3025,16 @@ public:
   void setAttributes(const AttributeSet &Attrs) { AttributeList = Attrs; }
 
   /// addAttribute - adds the attribute to the list of attributes.
-  void addAttribute(unsigned i, Attributes attr);
+  void addAttribute(unsigned i, Attribute attr);
 
   /// removeAttribute - removes the attribute from the list of attributes.
-  void removeAttribute(unsigned i, Attributes attr);
+  void removeAttribute(unsigned i, Attribute attr);
 
   /// \brief Determine whether this call has the NoAlias attribute.
-  bool hasFnAttr(Attributes::AttrVal A) const;
+  bool hasFnAttr(Attribute::AttrKind A) const;
 
   /// \brief Determine whether the call or the callee has the given attributes.
-  bool paramHasAttr(unsigned i, Attributes::AttrVal A) const;
+  bool paramHasAttr(unsigned i, Attribute::AttrKind A) const;
 
   /// \brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
@@ -3027,57 +3042,54 @@ public:
   }
 
   /// \brief Return true if the call should not be inlined.
-  bool isNoInline() const { return hasFnAttr(Attributes::NoInline); }
+  bool isNoInline() const { return hasFnAttr(Attribute::NoInline); }
   void setIsNoInline() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoInline));
+                 Attribute::get(getContext(), Attribute::NoInline));
   }
 
   /// \brief Determine if the call does not access memory.
   bool doesNotAccessMemory() const {
-    return hasFnAttr(Attributes::ReadNone);
+    return hasFnAttr(Attribute::ReadNone);
   }
   void setDoesNotAccessMemory() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::ReadNone));
+                 Attribute::get(getContext(), Attribute::ReadNone));
   }
 
   /// \brief Determine if the call does not access or only reads memory.
   bool onlyReadsMemory() const {
-    return doesNotAccessMemory() || hasFnAttr(Attributes::ReadOnly);
+    return doesNotAccessMemory() || hasFnAttr(Attribute::ReadOnly);
   }
   void setOnlyReadsMemory() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::ReadOnly));
+                 Attribute::get(getContext(), Attribute::ReadOnly));
   }
 
   /// \brief Determine if the call cannot return.
-  bool doesNotReturn() const { return hasFnAttr(Attributes::NoReturn); }
+  bool doesNotReturn() const { return hasFnAttr(Attribute::NoReturn); }
   void setDoesNotReturn() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoReturn));
+                 Attribute::get(getContext(), Attribute::NoReturn));
   }
 
   /// \brief Determine if the call cannot unwind.
-  bool doesNotThrow() const { return hasFnAttr(Attributes::NoUnwind); }
+  bool doesNotThrow() const { return hasFnAttr(Attribute::NoUnwind); }
   void setDoesNotThrow() {
     addAttribute(AttributeSet::FunctionIndex,
-                 Attributes::get(getContext(), Attributes::NoUnwind));
+                 Attribute::get(getContext(), Attribute::NoUnwind));
   }
 
   /// \brief Determine if the call returns a structure through first
   /// pointer argument.
   bool hasStructRetAttr() const {
     // Be friendly and also check the callee.
-    return paramHasAttr(1, Attributes::StructRet);
+    return paramHasAttr(1, Attribute::StructRet);
   }
 
   /// \brief Determine if any call argument is an aggregate passed by value.
   bool hasByValArgument() const {
-    for (unsigned I = 0, E = AttributeList.getNumAttrs(); I != E; ++I)
-      if (AttributeList.getAttributesAtIndex(I).hasAttribute(Attributes::ByVal))
-        return true;
-    return false;
+    return AttributeList.hasAttrSomewhere(Attribute::ByVal);
   }
 
   /// getCalledFunction - Return the function called, or null if this is an

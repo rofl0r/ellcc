@@ -1306,13 +1306,14 @@ RetainSummaryManager::updateSummaryFromAnnotations(const RetainSummary *&Summ,
     else if (FD->getAttr<CFReturnsRetainedAttr>()) {
       Template->setRetEffect(RetEffect::MakeOwned(RetEffect::CF, true));
     }
-    else if (FD->getAttr<NSReturnsNotRetainedAttr>()) {
+    else if (FD->getAttr<NSReturnsNotRetainedAttr>() ||
+             FD->getAttr<NSReturnsAutoreleasedAttr>()) {
       Template->setRetEffect(RetEffect::MakeNotOwned(RetEffect::ObjC));
     }
-    else if (FD->getAttr<CFReturnsNotRetainedAttr>()) {
+    else if (FD->getAttr<CFReturnsNotRetainedAttr>())
       Template->setRetEffect(RetEffect::MakeNotOwned(RetEffect::CF));
     }
-  } else if (RetTy->getAs<PointerType>()) {
+    else if (RetTy->getAs<PointerType>()) {
     if (FD->getAttr<CFReturnsRetainedAttr>()) {
       Template->setRetEffect(RetEffect::MakeOwned(RetEffect::CF, true));
     }
@@ -1359,7 +1360,8 @@ RetainSummaryManager::updateSummaryFromAnnotations(const RetainSummary *&Summ,
       Template->setRetEffect(ObjCAllocRetE);
       return;
     }
-    if (MD->getAttr<NSReturnsNotRetainedAttr>()) {
+    if (MD->getAttr<NSReturnsNotRetainedAttr>() ||
+        MD->getAttr<NSReturnsAutoreleasedAttr>()) {
       Template->setRetEffect(RetEffect::MakeNotOwned(RetEffect::ObjC));
       return;
     }
@@ -2512,7 +2514,7 @@ public:
 
   ProgramStateRef 
   checkRegionChanges(ProgramStateRef state,
-                     const StoreManager::InvalidatedSymbols *invalidated,
+                     const InvalidatedSymbols *invalidated,
                      ArrayRef<const MemRegion *> ExplicitRegions,
                      ArrayRef<const MemRegion *> Regions,
                      const CallEvent *Call) const;
@@ -3176,7 +3178,8 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
       Binding = getRefBinding(state, Sym);
 
     // Invalidate the argument region.
-    state = state->invalidateRegions(ArgRegion, CE, C.blockCount(), LCtx);
+    state = state->invalidateRegions(ArgRegion, CE, C.blockCount(), LCtx,
+                                     /*CausedByPointerEscape*/ false);
 
     // Restore the refcount status of the argument.
     if (Binding)
@@ -3443,7 +3446,7 @@ ProgramStateRef RetainCountChecker::evalAssume(ProgramStateRef state,
 
 ProgramStateRef 
 RetainCountChecker::checkRegionChanges(ProgramStateRef state,
-                            const StoreManager::InvalidatedSymbols *invalidated,
+                                    const InvalidatedSymbols *invalidated,
                                     ArrayRef<const MemRegion *> ExplicitRegions,
                                     ArrayRef<const MemRegion *> Regions,
                                     const CallEvent *Call) const {
@@ -3457,7 +3460,7 @@ RetainCountChecker::checkRegionChanges(ProgramStateRef state,
       WhitelistedSymbols.insert(SR->getSymbol());
   }
 
-  for (StoreManager::InvalidatedSymbols::const_iterator I=invalidated->begin(),
+  for (InvalidatedSymbols::const_iterator I=invalidated->begin(),
        E = invalidated->end(); I!=E; ++I) {
     SymbolRef sym = *I;
     if (WhitelistedSymbols.count(sym))

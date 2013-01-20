@@ -89,7 +89,7 @@ private:
 
   // HasLazyArguments is stored in Value::SubclassData.
   /*bool HasLazyArguments;*/
-                   
+
   // The Calling Convention is stored in Value::SubclassData.
   /*CallingConv::ID CallingConvention;*/
 
@@ -131,7 +131,7 @@ public:
   Type *getReturnType() const;           // Return the type of the ret val
   FunctionType *getFunctionType() const; // Return the FunctionType for me
 
-  /// getContext - Return a pointer to the LLVMContext associated with this 
+  /// getContext - Return a pointer to the LLVMContext associated with this
   /// function, or NULL if this function is not bound to a context yet.
   LLVMContext &getContext() const;
 
@@ -147,7 +147,7 @@ public:
   /// defined in llvm/Intrinsics.h.
   ///
   unsigned getIntrinsicID() const LLVM_READONLY;
-  bool isIntrinsic() const { return getIntrinsicID() != 0; }
+  bool isIntrinsic() const { return getName().startswith("llvm."); }
 
   /// getCallingConv()/setCallingConv(CC) - These method get and set the
   /// calling convention of this function.  The enum values for the known
@@ -159,7 +159,7 @@ public:
     setValueSubclassData((getSubclassDataFromValue() & 1) |
                          (static_cast<unsigned>(CC) << 1));
   }
-  
+
   /// getAttributes - Return the attribute list for this Function.
   ///
   const AttributeSet &getAttributes() const { return AttributeList; }
@@ -168,23 +168,17 @@ public:
   ///
   void setAttributes(const AttributeSet &attrs) { AttributeList = attrs; }
 
-  /// getFnAttributes - Return the function attributes for querying.
-  ///
-  Attributes getFnAttributes() const {
-    return AttributeList.getFnAttributes();
-  }
-
   /// addFnAttr - Add function attributes to this function.
   ///
-  void addFnAttr(Attributes::AttrVal N) { 
-    // Function Attributes are stored at ~0 index 
-    addAttribute(AttributeSet::FunctionIndex, Attributes::get(getContext(), N));
+  void addFnAttr(Attribute::AttrKind N) {
+    // Function Attribute are stored at ~0 index
+    addAttribute(AttributeSet::FunctionIndex, Attribute::get(getContext(), N));
   }
 
   /// removeFnAttr - Remove function attributes from this function.
   ///
-  void removeFnAttr(Attributes N) {
-    // Function Attributes are stored at ~0 index 
+  void removeFnAttr(Attribute N) {
+    // Function Attribute are stored at ~0 index
     removeAttribute(~0U, N);
   }
 
@@ -195,22 +189,11 @@ public:
   void setGC(const char *Str);
   void clearGC();
 
-
-  /// getRetAttributes - Return the return attributes for querying.
-  Attributes getRetAttributes() const {
-    return AttributeList.getRetAttributes();
-  }
-
-  /// getParamAttributes - Return the parameter attributes for querying.
-  Attributes getParamAttributes(unsigned Idx) const {
-    return AttributeList.getParamAttributes(Idx);
-  }
-
   /// addAttribute - adds the attribute to the list of attributes.
-  void addAttribute(unsigned i, Attributes attr);
-  
+  void addAttribute(unsigned i, Attribute attr);
+
   /// removeAttribute - removes the attribute from the list of attributes.
-  void removeAttribute(unsigned i, Attributes attr);
+  void removeAttribute(unsigned i, Attribute attr);
 
   /// @brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
@@ -219,44 +202,58 @@ public:
 
   /// @brief Determine if the function does not access memory.
   bool doesNotAccessMemory() const {
-    return getFnAttributes().hasAttribute(Attributes::ReadNone);
+    return AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::ReadNone);
   }
   void setDoesNotAccessMemory() {
-    addFnAttr(Attributes::ReadNone);
+    addFnAttr(Attribute::ReadNone);
   }
 
   /// @brief Determine if the function does not access or only reads memory.
   bool onlyReadsMemory() const {
     return doesNotAccessMemory() ||
-      getFnAttributes().hasAttribute(Attributes::ReadOnly);
+      AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                 Attribute::ReadOnly);
   }
   void setOnlyReadsMemory() {
-    addFnAttr(Attributes::ReadOnly);
+    addFnAttr(Attribute::ReadOnly);
   }
 
   /// @brief Determine if the function cannot return.
   bool doesNotReturn() const {
-    return getFnAttributes().hasAttribute(Attributes::NoReturn);
+    return AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::NoReturn);
   }
   void setDoesNotReturn() {
-    addFnAttr(Attributes::NoReturn);
+    addFnAttr(Attribute::NoReturn);
   }
 
   /// @brief Determine if the function cannot unwind.
   bool doesNotThrow() const {
-    return getFnAttributes().hasAttribute(Attributes::NoUnwind);
+    return AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::NoUnwind);
   }
   void setDoesNotThrow() {
-    addFnAttr(Attributes::NoUnwind);
+    addFnAttr(Attribute::NoUnwind);
+  }
+
+  /// @brief Determine if the call cannot be duplicated.
+  bool cannotDuplicate() const {
+    return AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::NoDuplicate);
+  }
+  void setCannotDuplicate() {
+    addFnAttr(Attribute::NoDuplicate);
   }
 
   /// @brief True if the ABI mandates (or the user requested) that this
   /// function be in a unwind table.
   bool hasUWTable() const {
-    return getFnAttributes().hasAttribute(Attributes::UWTable);
+    return AttributeList.hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::UWTable);
   }
   void setHasUWTable() {
-    addFnAttr(Attributes::UWTable);
+    addFnAttr(Attribute::UWTable);
   }
 
   /// @brief True if this function needs an unwind table.
@@ -264,28 +261,28 @@ public:
     return hasUWTable() || !doesNotThrow();
   }
 
-  /// @brief Determine if the function returns a structure through first 
+  /// @brief Determine if the function returns a structure through first
   /// pointer argument.
   bool hasStructRetAttr() const {
-    return getParamAttributes(1).hasAttribute(Attributes::StructRet);
+    return AttributeList.hasAttribute(1, Attribute::StructRet);
   }
 
   /// @brief Determine if the parameter does not alias other parameters.
   /// @param n The parameter to check. 1 is the first parameter, 0 is the return
   bool doesNotAlias(unsigned n) const {
-    return getParamAttributes(n).hasAttribute(Attributes::NoAlias);
+    return AttributeList.hasAttribute(n, Attribute::NoAlias);
   }
   void setDoesNotAlias(unsigned n) {
-    addAttribute(n, Attributes::get(getContext(), Attributes::NoAlias));
+    addAttribute(n, Attribute::get(getContext(), Attribute::NoAlias));
   }
 
   /// @brief Determine if the parameter can be captured.
   /// @param n The parameter to check. 1 is the first parameter, 0 is the return
   bool doesNotCapture(unsigned n) const {
-    return getParamAttributes(n).hasAttribute(Attributes::NoCapture);
+    return AttributeList.hasAttribute(n, Attribute::NoCapture);
   }
   void setDoesNotCapture(unsigned n) {
-    addAttribute(n, Attributes::get(getContext(), Attributes::NoCapture));
+    addAttribute(n, Attribute::get(getContext(), Attribute::NoCapture));
   }
 
   /// copyAttributesFrom - copy all additional attributes (those not needed to

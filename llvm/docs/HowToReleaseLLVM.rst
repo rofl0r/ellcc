@@ -4,6 +4,7 @@ How To Release LLVM To The Public
 
 .. contents::
    :local:
+   :depth: 1
 
 .. sectionauthor:: Tanya Lattner <tonic@nondot.org>,
                    Reid Spencer <rspencer@x10sys.com>,
@@ -52,52 +53,11 @@ The release process is roughly as follows:
 
 * Finally, release!
 
-.. _process:
-
 Release Process
 ===============
 
-#. :ref:`Release Administrative Tasks <release-admin>`
-
-   #. :ref:`Create Release Branch <branch>`
-
-   #. :ref:`Update Version Numbers <verchanges>`
-
-#. :ref:`Building the Release <release-build>`
-
-   #. :ref:`Build the LLVM Source Distribution <dist>`
-
-   #. :ref:`Build LLVM <build>`
-
-   #. :ref:`Build the Clang Binary Distribution <clangbin>`
-
-   #. :ref:`Target Specific Build Details <target-build>`
-
-#. :ref:`Release Qualification Criteria <release-qualify>`
-
-   #. :ref:`Qualify LLVM <llvm-qualify>`
-
-   #. :ref:`Qualify Clang <clang-qualify>`
-
-   #. :ref:`Specific Target Qualification Details <target>`
-
-#. :ref:`Community Testing <commTest>`
-
-#. :ref:`Release Patch Rules <release-patch>`
-
-#. :ref:`Release final tasks <release-final>`
-
-   #. :ref:`Update Documentation <updocs>`
-
-   #. :ref:`Tag the LLVM Final Release <tag>`
-
-   #. :ref:`Update the LLVM Demo Page <updemo>`
-
-   #. :ref:`Update the LLVM Website <webupdates>`
-
-   #. :ref:`Announce the Release <announce>`
-
-.. _release-admin:
+.. contents::
+   :local:
 
 Release Administrative Tasks
 ----------------------------
@@ -108,10 +68,8 @@ release process to begin.  Specifically, it involves:
 * Creating the release branch,
 
 * Setting version numbers, and
-  
-* Tagging release candidates for the release team to begin testing.
 
-.. _branch:
+* Tagging release candidates for the release team to begin testing.
 
 Create Release Branch
 ^^^^^^^^^^^^^^^^^^^^^
@@ -130,18 +88,18 @@ Branch the Subversion trunk using the following procedure:
    ``dragonegg`` from the last known good revision.  The branch's name is
    ``release_XY``, where ``X`` is the major and ``Y`` the minor release
    numbers.  The branches should be created using the following commands:
-  
+
    ::
-    
+
      $ svn copy https://llvm.org/svn/llvm-project/llvm/trunk \
                 https://llvm.org/svn/llvm-project/llvm/branches/release_XY
-     
+
      $ svn copy https://llvm.org/svn/llvm-project/cfe/trunk \
                 https://llvm.org/svn/llvm-project/cfe/branches/release_XY
-     
+
      $ svn copy https://llvm.org/svn/llvm-project/dragonegg/trunk \
                 https://llvm.org/svn/llvm-project/dragonegg/branches/release_XY
-     
+
      $ svn copy https://llvm.org/svn/llvm-project/test-suite/trunk \
                 https://llvm.org/svn/llvm-project/test-suite/branches/release_XY
 
@@ -149,20 +107,18 @@ Branch the Subversion trunk using the following procedure:
    tree again.
 
 #. The Release Manager should switch to the release branch, because all changes
-   to the release will now be done in the branch.  The easiest way to do this is 
+   to the release will now be done in the branch.  The easiest way to do this is
    to grab a working copy using the following commands:
 
    ::
-   
-     $ svn co https://llvm.org/svn/llvm-project/llvm/branches/release_XY llvm-X.Y
-     
-     $ svn co https://llvm.org/svn/llvm-project/cfe/branches/release_XY clang-X.Y
-     
-     $ svn co https://llvm.org/svn/llvm-project/dragonegg/branches/release_XY dragonegg-X.Y
-     
-     $ svn co https://llvm.org/svn/llvm-project/test-suite/branches/release_XY test-suite-X.Y
 
-.. _verchanges:
+     $ svn co https://llvm.org/svn/llvm-project/llvm/branches/release_XY llvm-X.Y
+
+     $ svn co https://llvm.org/svn/llvm-project/cfe/branches/release_XY clang-X.Y
+
+     $ svn co https://llvm.org/svn/llvm-project/dragonegg/branches/release_XY dragonegg-X.Y
+
+     $ svn co https://llvm.org/svn/llvm-project/test-suite/branches/release_XY test-suite-X.Y
 
 Update LLVM Version
 ^^^^^^^^^^^^^^^^^^^
@@ -174,8 +130,6 @@ Regenerate the configure scripts for both ``llvm`` and the ``test-suite``.
 
 In addition, the version numbers of all the Bugzilla components must be updated
 for the next release.
-
-.. _dist:
 
 Build the LLVM Release Candidates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -190,7 +144,7 @@ following commands:
   $ svn mkdir https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_XY
   $ svn copy https://llvm.org/svn/llvm-project/llvm/branches/release_XY \
              https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_XY/rc1
-  
+
   $ svn mkdir https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_XY
   $ svn copy https://llvm.org/svn/llvm-project/cfe/branches/release_XY \
              https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_XY/rc1
@@ -206,7 +160,7 @@ following commands:
 Similarly, **Release Candidate 2** would be named ``RC2`` and so on.  This keeps
 a permanent copy of the release candidate around for people to export and build
 as they wish.  The final released sources will be tagged in the ``RELEASE_XY``
-directory as ``Final`` (c.f. :ref:`Tag the LLVM Final Release <tag>`).
+directory as ``Final`` (c.f. :ref:`tag`).
 
 The Release Manager may supply pre-packaged source tarballs for users.  This can
 be done with the following commands:
@@ -217,13 +171,11 @@ be done with the following commands:
   $ svn export https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_XY/rc1 clang-X.Yrc1
   $ svn export https://llvm.org/svn/llvm-project/dragonegg/tags/RELEASE_XY/rc1 dragonegg-X.Yrc1
   $ svn export https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_XY/rc1 llvm-test-X.Yrc1
-  
+
   $ tar -cvf - llvm-X.Yrc1        | gzip > llvm-X.Yrc1.src.tar.gz
   $ tar -cvf - clang-X.Yrc1       | gzip > clang-X.Yrc1.src.tar.gz
   $ tar -cvf - dragonegg-X.Yrc1   | gzip > dragonegg-X.Yrc1.src.tar.gz
   $ tar -cvf - llvm-test-X.Yrc1   | gzip > llvm-test-X.Yrc1.src.tar.gz
-
-.. _release-build:
 
 Building the Release
 --------------------
@@ -244,17 +196,12 @@ The ``make`` options for building the different modes:
 | Release         | ``ENABLE_OPTIMIZED=1 DISABLE_ASSERTIONS=1`` |
 +-----------------+---------------------------------------------+
 
-
-.. _build:
-
 Build LLVM
 ^^^^^^^^^^
 
 Build ``Debug``, ``Release+Asserts``, and ``Release`` versions
 of ``llvm`` on all supported platforms.  Directions to build ``llvm``
 are :ref:`here <getting_started>`.
-
-.. _clangbin:
 
 Build Clang Binary Distribution
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -269,8 +216,6 @@ requires performing the following steps for each supported platform:
    Release build.
 
 #. Package ``clang`` (details to follow).
-
-.. _target-build:
 
 Target Specific Build Details
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -296,8 +241,6 @@ when qualifying the build of ``llvm``, ``clang``, and ``dragonegg``.
 | x86-64       | FreeBSD       | gcc 4.2.X            |
 +--------------+---------------+----------------------+
 
-.. _release-qualify:
-
 Release Qualification Criteria
 ------------------------------
 
@@ -315,8 +258,6 @@ use is described below.  This doesn't mean that we don't care about other
 criteria, but these are the criteria which we found to be most important and
 which must be satisfied before a release can go out.**
 
-.. _llvm-qualify:
-
 Qualify LLVM
 ^^^^^^^^^^^^
 
@@ -324,16 +265,12 @@ LLVM is qualified when it has a clean test run without a front-end.  And it has
 no regressions when using either ``clang`` or ``dragonegg`` with the
 ``test-suite`` from the previous release.
 
-.. _clang-qualify:
-
 Qualify Clang
 ^^^^^^^^^^^^^
 
 ``Clang`` is qualified when front-end specific tests in the ``llvm`` dejagnu
 test suite all pass, clang's own test suite passes cleanly, and there are no
 regressions in the ``test-suite``.
-
-.. _target:
 
 Specific Target Qualification Details
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -364,8 +301,6 @@ Specific Target Qualification Details
 |              |             |                | test-suite                  |
 +--------------+-------------+----------------+-----------------------------+
 
-.. _commTest:
-
 Community Testing
 -----------------
 
@@ -386,17 +321,15 @@ to the list.  Verify that there are no regressions from the previous release.
 The results are not used to qualify a release, but to spot other potential
 problems.  For unsupported targets, verify that ``make check`` is at least
 clean.
-  
+
 During the first round of testing, all regressions must be fixed before the
 second release candidate is tagged.
-  
+
 If this is the second round of testing, the testing is only to ensure that bug
 fixes previously merged in have not created new major problems. *This is not
 the time to solve additional and unrelated bugs!* If no patches are merged in,
 the release is determined to be ready and the release manager may move onto the
 next stage.
-
-.. _release-patch:
 
 Release Patch Rules
 -------------------
@@ -415,16 +348,12 @@ Below are the rules regarding patching the release branch:
 #. During the remaining rounds of testing, only patches that fix critical
    regressions may be applied.
 
-.. _release-final:
-
 Release Final Tasks
 -------------------
 
 The final stages of the release process involves tagging the "final" release
 branch, updating documentation that refers to the release, and updating the
 demo page.
-
-.. _updocs:
 
 Update Documentation
 ^^^^^^^^^^^^^^^^^^^^
@@ -447,25 +376,21 @@ Tag the final release sources using the following procedure:
 
   $ svn copy https://llvm.org/svn/llvm-project/llvm/branches/release_XY \
              https://llvm.org/svn/llvm-project/llvm/tags/RELEASE_XY/Final
-  
+
   $ svn copy https://llvm.org/svn/llvm-project/cfe/branches/release_XY \
              https://llvm.org/svn/llvm-project/cfe/tags/RELEASE_XY/Final
-  
+
   $ svn copy https://llvm.org/svn/llvm-project/dragonegg/branches/release_XY \
              https://llvm.org/svn/llvm-project/dragonegg/tags/RELEASE_XY/Final
-  
+
   $ svn copy https://llvm.org/svn/llvm-project/test-suite/branches/release_XY \
              https://llvm.org/svn/llvm-project/test-suite/tags/RELEASE_XY/Final
-
-.. _updemo:
 
 Update the LLVM Demo Page
 -------------------------
 
 The LLVM demo page must be updated to use the new release.  This consists of
 using the new ``clang`` binary and building LLVM.
-
-.. _webupdates:
 
 Update the LLVM Website
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -494,8 +419,6 @@ is what to do:
 #. Finally, update the main page (``index.html`` and sidebar) to point to the
    new release and release announcement.  Make sure this all gets committed back
    into Subversion.
-
-.. _announce:
 
 Announce the Release
 ^^^^^^^^^^^^^^^^^^^^

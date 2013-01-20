@@ -1853,8 +1853,8 @@ void Sema::DeclareGlobalAllocationFunction(DeclarationName Name,
 
   // Check if this function is already declared.
   {
-    DeclContext::lookup_iterator Alloc, AllocEnd;
-    for (llvm::tie(Alloc, AllocEnd) = GlobalCtx->lookup(Name);
+    DeclContext::lookup_result R = GlobalCtx->lookup(Name);
+    for (DeclContext::lookup_iterator Alloc = R.begin(), AllocEnd = R.end();
          Alloc != AllocEnd; ++Alloc) {
       // Only look at non-template functions, as it is the predefined,
       // non-templated allocation function we are trying to declare here.
@@ -2026,6 +2026,8 @@ Sema::ActOnCXXDelete(SourceLocation StartLoc, bool UseGlobal,
   if (!Ex.get()->isTypeDependent()) {
     // Perform lvalue-to-rvalue cast, if needed.
     Ex = DefaultLvalueConversion(Ex.take());
+    if (Ex.isInvalid())
+      return ExprError();
 
     QualType Type = Ex.get()->getType();
 
@@ -2321,11 +2323,11 @@ static ExprResult BuildCXXCastArgument(Sema &S,
     S.CheckConstructorAccess(CastLoc, Constructor,
                              InitializedEntity::InitializeTemporary(Ty),
                              Constructor->getAccess());
-    
+
     ExprResult Result
       = S.BuildCXXConstructExpr(CastLoc, Ty, cast<CXXConstructorDecl>(Method),
-                                ConstructorArgs, 
-                                HadMultipleCandidates, /*ZeroInit*/ false, 
+                                ConstructorArgs, HadMultipleCandidates,
+                                /*ListInit*/ false, /*ZeroInit*/ false,
                                 CXXConstructExpr::CK_Complete, SourceRange());
     if (Result.isInvalid())
       return ExprError();
@@ -2477,14 +2479,14 @@ Sema::PerformImplicitConversion(Expr *From, QualType ToType,
                                    ToType, SCS.CopyConstructor,
                                    ConstructorArgs,
                                    /*HadMultipleCandidates*/ false,
-                                   /*ZeroInit*/ false,
+                                   /*ListInit*/ false, /*ZeroInit*/ false,
                                    CXXConstructExpr::CK_Complete,
                                    SourceRange());
     }
     return BuildCXXConstructExpr(/*FIXME:ConstructLoc*/SourceLocation(),
                                  ToType, SCS.CopyConstructor,
                                  From, /*HadMultipleCandidates*/ false,
-                                 /*ZeroInit*/ false,
+                                 /*ListInit*/ false, /*ZeroInit*/ false,
                                  CXXConstructExpr::CK_Complete,
                                  SourceRange());
   }
@@ -3189,9 +3191,9 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT,
 
       bool FoundConstructor = false;
       unsigned FoundTQs;
-      DeclContext::lookup_const_iterator Con, ConEnd;
-      for (llvm::tie(Con, ConEnd) = Self.LookupConstructors(RD);
-           Con != ConEnd; ++Con) {
+      DeclContext::lookup_const_result R = Self.LookupConstructors(RD);
+      for (DeclContext::lookup_const_iterator Con = R.begin(),
+           ConEnd = R.end(); Con != ConEnd; ++Con) {
         // A template constructor is never a copy constructor.
         // FIXME: However, it may actually be selected at the actual overload
         // resolution point.
@@ -3228,9 +3230,9 @@ static bool EvaluateUnaryTypeTrait(Sema &Self, UnaryTypeTrait UTT,
           !RD->hasNonTrivialDefaultConstructor())
         return true;
 
-      DeclContext::lookup_const_iterator Con, ConEnd;
-      for (llvm::tie(Con, ConEnd) = Self.LookupConstructors(RD);
-           Con != ConEnd; ++Con) {
+      DeclContext::lookup_const_result R = Self.LookupConstructors(RD);
+      for (DeclContext::lookup_const_iterator Con = R.begin(),
+           ConEnd = R.end(); Con != ConEnd; ++Con) {
         // FIXME: In C++0x, a constructor template can be a default constructor.
         if (isa<FunctionTemplateDecl>(*Con))
           continue;
@@ -4772,7 +4774,7 @@ Stmt *Sema::MaybeCreateStmtWithCleanups(Stmt *SubStmt) {
   // a StmtExpr; currently this is only used for asm statements.
   // This is hacky, either create a new CXXStmtWithTemporaries statement or
   // a new AsmStmtWithTemporaries.
-  CompoundStmt *CompStmt = new (Context) CompoundStmt(Context, &SubStmt, 1,
+  CompoundStmt *CompStmt = new (Context) CompoundStmt(Context, SubStmt,
                                                       SourceLocation(),
                                                       SourceLocation());
   Expr *E = new (Context) StmtExpr(CompStmt, Context.VoidTy, SourceLocation(),

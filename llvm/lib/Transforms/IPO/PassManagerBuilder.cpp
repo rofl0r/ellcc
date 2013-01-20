@@ -20,7 +20,6 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/DefaultPasses.h"
 #include "llvm/PassManager.h"
-#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Target/TargetLibraryInfo.h"
@@ -188,7 +187,7 @@ void PassManagerBuilder::populateModulePassManager(PassManagerBase &MPM) {
   MPM.add(createLoopIdiomPass());             // Recognize idioms like memset.
   MPM.add(createLoopDeletionPass());          // Delete dead loops
 
-  if (LoopVectorize)
+  if (LoopVectorize && OptLevel > 1)
     MPM.add(createLoopVectorizePass());
 
   if (!DisableUnrollLoops)

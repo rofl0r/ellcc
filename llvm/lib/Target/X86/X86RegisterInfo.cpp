@@ -56,10 +56,12 @@ EnableBasePointer("x86-use-base-pointer", cl::Hidden, cl::init(true),
 
 X86RegisterInfo::X86RegisterInfo(X86TargetMachine &tm,
                                  const TargetInstrInfo &tii)
-  : X86GenRegisterInfo(tm.getSubtarget<X86Subtarget>().is64Bit()
-                         ? X86::RIP : X86::EIP,
+  : X86GenRegisterInfo((tm.getSubtarget<X86Subtarget>().is64Bit()
+                         ? X86::RIP : X86::EIP),
                        X86_MC::getDwarfRegFlavour(tm.getTargetTriple(), false),
-                       X86_MC::getDwarfRegFlavour(tm.getTargetTriple(), true)),
+                       X86_MC::getDwarfRegFlavour(tm.getTargetTriple(), true),
+                       (tm.getSubtarget<X86Subtarget>().is64Bit()
+                         ? X86::RIP : X86::EIP)),
                        TM(tm), TII(tii) {
   X86_MC::InitLLVM2SEHRegisterMapping(this);
 
@@ -417,7 +419,8 @@ bool X86RegisterInfo::needsStackRealignment(const MachineFunction &MF) const {
   unsigned StackAlign = TM.getFrameLowering()->getStackAlignment();
   bool requiresRealignment =
     ((MFI->getMaxAlignment() > StackAlign) ||
-     F->getFnAttributes().hasAttribute(Attributes::StackAlignment));
+     F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                     Attribute::StackAlignment));
 
   // If we've requested that we force align the stack do so now.
   if (ForceStackAlign)

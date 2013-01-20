@@ -29,6 +29,7 @@
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Module.h"
 #include "llvm/PassManager.h"
+#include "llvm/TargetTransformInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/Host.h"
@@ -66,7 +67,7 @@ LTOCodeGenerator::LTOCodeGenerator()
   : _context(getGlobalContext()),
     _linker("LinkTimeOptimizer", "ld-temp.o", _context), _target(NULL),
     _emitDwarfDebugInfo(false), _scopeRestrictionsDone(false),
-    _exportDynamic(false), _codeModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC),
+    _codeModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC),
     _nativeObjectFile(NULL) {
   InitializeAllTargets();
   InitializeAllTargetMCs();
@@ -339,8 +340,7 @@ void LTOCodeGenerator::applyScopeRestrictions() {
 
   LLVMCompilerUsed->setSection("llvm.metadata");
 
-  if (!_exportDynamic)
-    passes.add(createInternalizePass(mustPreserveList));
+  passes.add(createInternalizePass(mustPreserveList));
 
   // apply scope restrictions
   passes.run(*mergedModule);
@@ -379,7 +379,7 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
   // keeps only main if it exists and does nothing for libraries. Instead
   // we create the pass ourselves with the symbol list provided by the linker.
   PassManagerBuilder().populateLTOPassManager(passes,
-                                              /*Internalize=*/!_exportDynamic,
+                                              /*Internalize=*/false,
                                               !DisableInline,
                                               DisableGVNLoadPRE);
 

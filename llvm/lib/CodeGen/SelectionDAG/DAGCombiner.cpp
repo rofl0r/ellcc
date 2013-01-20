@@ -25,6 +25,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/DataLayout.h"
 #include "llvm/DerivedTypes.h"
+#include "llvm/Function.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -1182,7 +1183,7 @@ SDValue DAGCombiner::combine(SDNode *N) {
 
       // Expose the DAG combiner to the target combiner impls.
       TargetLowering::DAGCombinerInfo
-        DagCombineInfo(DAG, !LegalTypes, !LegalOperations, false, this);
+        DagCombineInfo(DAG, Level, false, this);
 
       RV = TLI.PerformDAGCombine(N, DagCombineInfo);
     }
@@ -1381,6 +1382,12 @@ SDValue DAGCombiner::visitADD(SDNode *N) {
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
     if (FoldedVOp.getNode()) return FoldedVOp;
+
+    // fold (add x, 0) -> x, vector edition
+    if (ISD::isBuildVectorAllZeros(N1.getNode()))
+      return N0;
+    if (ISD::isBuildVectorAllZeros(N0.getNode()))
+      return N1;
   }
 
   // fold (add x, undef) -> undef
@@ -1624,6 +1631,10 @@ SDValue DAGCombiner::visitSUB(SDNode *N) {
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
     if (FoldedVOp.getNode()) return FoldedVOp;
+
+    // fold (sub x, 0) -> x, vector edition
+    if (ISD::isBuildVectorAllZeros(N1.getNode()))
+      return N0;
   }
 
   // fold (sub x, x) -> 0
@@ -2427,6 +2438,18 @@ SDValue DAGCombiner::visitAND(SDNode *N) {
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
     if (FoldedVOp.getNode()) return FoldedVOp;
+
+    // fold (and x, 0) -> 0, vector edition
+    if (ISD::isBuildVectorAllZeros(N0.getNode()))
+      return N0;
+    if (ISD::isBuildVectorAllZeros(N1.getNode()))
+      return N1;
+
+    // fold (and x, -1) -> x, vector edition
+    if (ISD::isBuildVectorAllOnes(N0.getNode()))
+      return N1;
+    if (ISD::isBuildVectorAllOnes(N1.getNode()))
+      return N0;
   }
 
   // fold (and x, undef) -> 0
@@ -2610,7 +2633,8 @@ SDValue DAGCombiner::visitAND(SDNode *N) {
       bool isInteger = LL.getValueType().isInteger();
       ISD::CondCode Result = ISD::getSetCCAndOperation(Op0, Op1, isInteger);
       if (Result != ISD::SETCC_INVALID &&
-          (!LegalOperations || TLI.isCondCodeLegal(Result, LL.getValueType())))
+          (!LegalOperations ||
+           TLI.isCondCodeLegal(Result, LL.getSimpleValueType())))
         return DAG.getSetCC(N->getDebugLoc(), N0.getValueType(),
                             LL, LR, Result);
     }
@@ -2770,7 +2794,6 @@ SDValue DAGCombiner::visitAND(SDNode *N) {
       }
     }
   }
-      
 
   return SDValue();
 }
@@ -2963,7 +2986,8 @@ SDValue DAGCombiner::MatchBSwapHWord(SDNode *N, SDValue N0, SDValue N1) {
   SDValue N00 = N0.getOperand(0);
   SDValue N01 = N0.getOperand(1);
 
-  if (N1.getOpcode() == ISD::OR) {
+  if (N1.getOpcode() == ISD::OR &&
+      N00.getNumOperands() == 2 && N01.getNumOperands() == 2) {
     // (or (or (and), (and)), (or (and), (and)))
     SDValue N000 = N00.getOperand(0);
     if (!isBSwapHWordElement(N000, Parts))
@@ -3025,6 +3049,18 @@ SDValue DAGCombiner::visitOR(SDNode *N) {
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
     if (FoldedVOp.getNode()) return FoldedVOp;
+
+    // fold (or x, 0) -> x, vector edition
+    if (ISD::isBuildVectorAllZeros(N0.getNode()))
+      return N1;
+    if (ISD::isBuildVectorAllZeros(N1.getNode()))
+      return N0;
+
+    // fold (or x, -1) -> -1, vector edition
+    if (ISD::isBuildVectorAllOnes(N0.getNode()))
+      return N0;
+    if (ISD::isBuildVectorAllOnes(N1.getNode()))
+      return N1;
   }
 
   // fold (or x, undef) -> -1
@@ -3107,7 +3143,8 @@ SDValue DAGCombiner::visitOR(SDNode *N) {
       bool isInteger = LL.getValueType().isInteger();
       ISD::CondCode Result = ISD::getSetCCOrOperation(Op0, Op1, isInteger);
       if (Result != ISD::SETCC_INVALID &&
-          (!LegalOperations || TLI.isCondCodeLegal(Result, LL.getValueType())))
+          (!LegalOperations ||
+           TLI.isCondCodeLegal(Result, LL.getSimpleValueType())))
         return DAG.getSetCC(N->getDebugLoc(), N0.getValueType(),
                             LL, LR, Result);
     }
@@ -3334,6 +3371,12 @@ SDValue DAGCombiner::visitXOR(SDNode *N) {
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
     if (FoldedVOp.getNode()) return FoldedVOp;
+
+    // fold (xor x, 0) -> x, vector edition
+    if (ISD::isBuildVectorAllZeros(N0.getNode()))
+      return N1;
+    if (ISD::isBuildVectorAllZeros(N1.getNode()))
+      return N0;
   }
 
   // fold (xor undef, undef) -> 0. This is a common idiom (misuse).
@@ -3364,7 +3407,8 @@ SDValue DAGCombiner::visitXOR(SDNode *N) {
     ISD::CondCode NotCC = ISD::getSetCCInverse(cast<CondCodeSDNode>(CC)->get(),
                                                isInt);
 
-    if (!LegalOperations || TLI.isCondCodeLegal(NotCC, LHS.getValueType())) {
+    if (!LegalOperations ||
+        TLI.isCondCodeLegal(NotCC, LHS.getSimpleValueType())) {
       switch (N0.getOpcode()) {
       default:
         llvm_unreachable("Unhandled SetCC Equivalent!");
@@ -5029,11 +5073,15 @@ SDValue DAGCombiner::ReduceLoadWidth(SDNode *N) {
       // At this point, we must have a load or else we can't do the transform.
       if (!isa<LoadSDNode>(N0)) return SDValue();
 
+      // Because a SRL must be assumed to *need* to zero-extend the high bits
+      // (as opposed to anyext the high bits), we can't combine the zextload
+      // lowering of SRL and an sextload.
+      if (cast<LoadSDNode>(N0)->getExtensionType() == ISD::SEXTLOAD)
+        return SDValue();
+
       // If the shift amount is larger than the input type then we're not
       // accessing any of the loaded bytes.  If the load was a zextload/extload
       // then the result of the shift+trunc is zero/undef (handled elsewhere).
-      // If the load was a sextload then the result is a splat of the sign bit
-      // of the extended byte.  This is not worth optimizing for.
       if (ShAmt >= cast<LoadSDNode>(N0)->getMemoryVT().getSizeInBits())
         return SDValue();
     }
@@ -5191,6 +5239,7 @@ SDValue DAGCombiner::visitSIGN_EXTEND_INREG(SDNode *N) {
                                      LN0->getAlignment());
     CombineTo(N, ExtLoad);
     CombineTo(N0.getNode(), ExtLoad, ExtLoad.getValue(1));
+    AddToWorkList(ExtLoad.getNode());
     return SDValue(N, 0);   // Return N so it doesn't get rechecked!
   }
   // fold (sext_inreg (zextload x)) -> (sextload x) iff load has one use
@@ -7390,7 +7439,8 @@ SDValue DAGCombiner::ReduceLoadOpStoreWidth(SDNode *N) {
     // start at the previous one.
     if (ShAmt % NewBW)
       ShAmt = (((ShAmt + NewBW - 1) / NewBW) * NewBW) - NewBW;
-    APInt Mask = APInt::getBitsSet(BitWidth, ShAmt, ShAmt + NewBW);
+    APInt Mask = APInt::getBitsSet(BitWidth, ShAmt,
+                                   std::min(BitWidth, ShAmt + NewBW));
     if ((Imm & Mask) == Imm) {
       APInt NewImm = (Imm & Mask).lshr(ShAmt).trunc(NewBW);
       if (Opc == ISD::AND)
@@ -7699,8 +7749,11 @@ bool DAGCombiner::MergeConsecutiveStores(StoreSDNode* St) {
         LastLegalVectorType = i + 1;
     }
 
-    // We only use vectors if the constant is known to be zero.
-    if (NonZero)
+    // We only use vectors if the constant is known to be zero and the
+    // function is not marked with the noimplicitfloat attribute.
+    if (NonZero || (DAG.getMachineFunction().getFunction()->getAttributes().
+                    hasAttribute(AttributeSet::FunctionIndex,
+                                 Attribute::NoImplicitFloat)))
       LastLegalVectorType = 0;
 
     // Check if we found a legal integer type to store.
@@ -9595,7 +9648,7 @@ SDValue DAGCombiner::SimplifySetCC(EVT VT, SDValue N0,
                                    SDValue N1, ISD::CondCode Cond,
                                    DebugLoc DL, bool foldBooleans) {
   TargetLowering::DAGCombinerInfo
-    DagCombineInfo(DAG, !LegalTypes, !LegalOperations, false, this);
+    DagCombineInfo(DAG, Level, false, this);
   return TLI.SimplifySetCC(VT, N0, N1, Cond, foldBooleans, DagCombineInfo, DL);
 }
 

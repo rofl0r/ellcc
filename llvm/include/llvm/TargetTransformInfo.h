@@ -23,6 +23,7 @@
 #define LLVM_TRANSFORMS_TARGET_TRANSFORM_INTERFACE
 
 #include "llvm/AddressingMode.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Type.h"
@@ -134,45 +135,45 @@ public:
   virtual bool shouldBuildLookupTables() const {
     return true;
   }
-
   /// getPopcntHwSupport - Return hardware support for population count.
   virtual PopcntHwSupport getPopcntHwSupport(unsigned IntTyWidthInBit) const {
     return None;
+  }
+  /// getIntImmCost - Return the expected cost of materializing the given
+  /// integer immediate of the specified type.
+  virtual unsigned getIntImmCost(const APInt&, Type*) const {
+    // The default assumption is that the immediate is cheap.
+    return 1;
   }
 };
 
 /// VectorTargetTransformInfo - This interface is used by the vectorizers
 /// to estimate the profitability of vectorization for different instructions.
+/// This interface provides the cost of different IR instructions. The cost
+/// is unit-less and represents the estimated throughput of the instruction
+/// (not the latency!) assuming that all branches are predicted, cache is hit,
+/// etc.
 class VectorTargetTransformInfo {
 public:
   virtual ~VectorTargetTransformInfo() {}
 
-  /// Returns the expected cost of the instruction opcode. The opcode is one of
-  /// the enums like Instruction::Add. The type arguments are the type of the
-  /// operation.
-  /// Most instructions only use the first type and in that case the second
-  /// operand is ignored.
-  ///
-  /// Exceptions:
-  /// * Br instructions do not use any of the types.
-  /// * Select instructions pass the return type as Ty1 and the selector as Ty2.
-  /// * Cast instructions pass the destination as Ty1 and the source as Ty2.
-  /// * Insert/Extract element pass only the vector type as Ty1.
-  /// * ShuffleVector, Load, Store do not use this call.
-  virtual unsigned getInstrCost(unsigned Opcode,
-                                Type *Ty1 = 0,
-                                Type *Ty2 = 0) const {
-    return 1;
-  }
+  enum ShuffleKind {
+    Broadcast,       // Broadcast element 0 to all other elements.
+    Reverse,         // Reverse the order of the vector.
+    InsertSubvector, // InsertSubvector. Index indicates start offset.
+    ExtractSubvector // ExtractSubvector Index indicates start offset.
+  };
 
   /// Returns the expected cost of arithmetic ops, such as mul, xor, fsub, etc.
   virtual unsigned getArithmeticInstrCost(unsigned Opcode, Type *Ty) const {
     return 1;
   }
 
-  /// Returns the cost of a vector broadcast of a scalar at place zero to a
-  /// vector of type 'Tp'.
-  virtual unsigned getBroadcastCost(Type *Tp) const {
+  /// Returns the cost of a shuffle instruction of kind Kind and of type Tp.
+  /// The index parameter is used by some of the shuffle kinds to add
+  /// additional information.
+  virtual unsigned getShuffleCost(ShuffleKind Kind, Type *Tp,
+                                  int Index) const {
     return 1;
   }
 
@@ -206,6 +207,13 @@ public:
   virtual unsigned getMemoryOpCost(unsigned Opcode, Type *Src,
                                    unsigned Alignment,
                                    unsigned AddressSpace) const {
+    return 1;
+  }
+
+  /// Returns the cost of Intrinsic instructions.
+  virtual unsigned getIntrinsicInstrCost(Intrinsic::ID,
+                                         Type *RetTy,
+                                         ArrayRef<Type*> Tys) const {
     return 1;
   }
 

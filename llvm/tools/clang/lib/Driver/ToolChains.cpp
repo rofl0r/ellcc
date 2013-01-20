@@ -397,7 +397,12 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
   // Support allowing the SDKROOT environment variable used by xcrun and other
   // Xcode tools to define the default sysroot, by making it the default for
   // isysroot.
-  if (!Args.hasArg(options::OPT_isysroot)) {
+  if (const Arg *A = Args.getLastArg(options::OPT_isysroot)) {
+    // Warn if the path does not exist.
+    bool Exists;
+    if (llvm::sys::fs::exists(A->getValue(), Exists) || !Exists)
+      getDriver().Diag(clang::diag::warn_missing_sysroot) << A->getValue();
+  } else {
     if (char *env = ::getenv("SDKROOT")) {
       // We only use this value as the default if it is an absolute path and
       // exists.
@@ -962,20 +967,33 @@ Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
 
 /// \brief Less-than for GCCVersion, implementing a Strict Weak Ordering.
 bool Generic_GCC::GCCVersion::operator<(const GCCVersion &RHS) const {
-  if (Major < RHS.Major) return true; if (Major > RHS.Major) return false;
-  if (Minor < RHS.Minor) return true; if (Minor > RHS.Minor) return false;
+  if (Major != RHS.Major)
+    return Major < RHS.Major;
+  if (Minor != RHS.Minor)
+    return Minor < RHS.Minor;
+  if (Patch != RHS.Patch) {
+    // Note that versions without a specified patch sort higher than those with
+    // a patch.
+    if (RHS.Patch == -1)
+      return true;
+    if (Patch == -1)
+      return false;
 
-  // Note that we rank versions with *no* patch specified is better than ones
-  // hard-coding a patch version. Thus if the RHS has no patch, it always
-  // wins, and the LHS only wins if it has no patch and the RHS does have
-  // a patch.
-  if (RHS.Patch == -1) return true;   if (Patch == -1) return false;
-  if (Patch < RHS.Patch) return true; if (Patch > RHS.Patch) return false;
-  if (PatchSuffix == RHS.PatchSuffix) return false;
+    // Otherwise just sort on the patch itself.
+    return Patch < RHS.Patch;
+  }
+  if (PatchSuffix != RHS.PatchSuffix) {
+    // Sort empty suffixes higher.
+    if (RHS.PatchSuffix.empty())
+      return true;
+    if (PatchSuffix.empty())
+      return false;
 
-  // Finally, between completely tied version numbers, the version with the
-  // suffix loses as we prefer full releases.
-  if (RHS.PatchSuffix.empty()) return true;
+    // Provide a lexicographic sort to make this a total ordering.
+    return PatchSuffix < RHS.PatchSuffix;
+  }
+
+  // The versions are equal.
   return false;
 }
 
@@ -1863,6 +1881,19 @@ Tool &FreeBSD::SelectTool(const Compilation &C, const JobAction &JA,
   return *T;
 }
 
+bool FreeBSD::UseSjLjExceptions() const {
+  // FreeBSD uses SjLj exceptions on ARM oabi.
+  switch (getTriple().getEnvironment()) {
+  case llvm::Triple::GNUEABI:
+  case llvm::Triple::EABI:
+    return false;
+
+  default:
+    return (getTriple().getArch() == llvm::Triple::arm ||
+            getTriple().getArch() == llvm::Triple::thumb);
+  }
+}
+
 /// NetBSD - NetBSD tool chain which can call as(1) and ld(1) directly.
 
 NetBSD::NetBSD(const Driver &D, const llvm::Triple& Triple, const ArgList &Args)
@@ -2051,6 +2082,8 @@ enum LinuxDistro {
   UbuntuNatty,
   UbuntuOneiric,
   UbuntuPrecise,
+  UbuntuQuantal,
+  UbuntuRaring,
   UnknownDistro
 };
 
@@ -2068,7 +2101,7 @@ static bool IsDebian(enum LinuxDistro Distro) {
 }
 
 static bool IsUbuntu(enum LinuxDistro Distro) {
-  return Distro >= UbuntuHardy && Distro <= UbuntuPrecise;
+  return Distro >= UbuntuHardy && Distro <= UbuntuRaring;
 }
 
 static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
@@ -2090,6 +2123,8 @@ static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
           .Case("natty", UbuntuNatty)
           .Case("oneiric", UbuntuOneiric)
           .Case("precise", UbuntuPrecise)
+          .Case("quantal", UbuntuQuantal)
+          .Case("raring", UbuntuRaring)
           .Default(UnknownDistro);
     return Version;
   }

@@ -321,7 +321,7 @@ static void ExpandUnalignedStore(StoreSDNode *ST, SelectionDAG &DAG,
     // Do a (aligned) store to a stack slot, then copy from the stack slot
     // to the final destination using (unaligned) integer loads and stores.
     EVT StoredVT = ST->getMemoryVT();
-    EVT RegVT =
+    MVT RegVT =
       TLI.getRegisterType(*DAG.getContext(),
                           EVT::getIntegerVT(*DAG.getContext(),
                                             StoredVT.getSizeInBits()));
@@ -447,7 +447,7 @@ ExpandUnalignedLoad(LoadSDNode *LD, SelectionDAG &DAG,
 
     // Copy the value to a (aligned) stack slot using (unaligned) integer
     // loads and stores, then do a (aligned) load from the stack slot.
-    EVT RegVT = TLI.getRegisterType(*DAG.getContext(), intVT);
+    MVT RegVT = TLI.getRegisterType(*DAG.getContext(), intVT);
     unsigned LoadedBytes = LoadedVT.getSizeInBits() / 8;
     unsigned RegBytes = RegVT.getSizeInBits() / 8;
     unsigned NumRegs = (LoadedBytes + RegBytes - 1) / RegBytes;
@@ -710,7 +710,7 @@ void SelectionDAGLegalize::LegalizeStoreOps(SDNode *Node) {
 
       {
         SDValue Value = ST->getValue();
-        EVT VT = Value.getValueType();
+        MVT VT = Value.getSimpleValueType();
         switch (TLI.getOperationAction(ISD::STORE, VT)) {
         default: llvm_unreachable("This action is not supported yet!");
         case TargetLowering::Legal:
@@ -731,9 +731,10 @@ void SelectionDAGLegalize::LegalizeStoreOps(SDNode *Node) {
           return;
         }
         case TargetLowering::Promote: {
-          assert(VT.isVector() && "Unknown legal promote case!");
-          Value = DAG.getNode(ISD::BITCAST, dl,
-                             TLI.getTypeToPromoteTo(ISD::STORE, VT), Value);
+          MVT NVT = TLI.getTypeToPromoteTo(ISD::STORE, VT);
+          assert(NVT.getSizeInBits() == VT.getSizeInBits() &&
+                 "Can only promote stores to same size type");
+          Value = DAG.getNode(ISD::BITCAST, dl, NVT, Value);
           SDValue Result =
             DAG.getStore(Chain, dl, Value, Ptr,
                          ST->getPointerInfo(), isVolatile,
@@ -817,7 +818,8 @@ void SelectionDAGLegalize::LegalizeStoreOps(SDNode *Node) {
         SDValue Result = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, Lo, Hi);
         ReplaceNode(SDValue(Node, 0), Result);
       } else {
-        switch (TLI.getTruncStoreAction(ST->getValue().getValueType(), StVT)) {
+        switch (TLI.getTruncStoreAction(ST->getValue().getSimpleValueType(),
+                                        StVT.getSimpleVT())) {
         default: llvm_unreachable("This action is not supported yet!");
         case TargetLowering::Legal:
           // If this is an unaligned store and the target doesn't support it,
@@ -862,7 +864,7 @@ void SelectionDAGLegalize::LegalizeLoadOps(SDNode *Node) {
 
   ISD::LoadExtType ExtType = LD->getExtensionType();
   if (ExtType == ISD::NON_EXTLOAD) {
-    EVT VT = Node->getValueType(0);
+    MVT VT = Node->getSimpleValueType(0);
     SDValue RVal = SDValue(Node, 0);
     SDValue RChain = SDValue(Node, 1);
 
@@ -889,10 +891,9 @@ void SelectionDAGLegalize::LegalizeLoadOps(SDNode *Node) {
       break;
     }
     case TargetLowering::Promote: {
-      // Only promote a load of vector type to another.
-      assert(VT.isVector() && "Cannot promote this load!");
-      // Change base type to a different vector type.
-      EVT NVT = TLI.getTypeToPromoteTo(Node->getOpcode(), VT);
+      MVT NVT = TLI.getTypeToPromoteTo(Node->getOpcode(), VT);
+      assert(NVT.getSizeInBits() == VT.getSizeInBits() &&
+             "Can only promote loads to same size type");
 
       SDValue Res = DAG.getLoad(NVT, dl, Chain, Ptr, LD->getPointerInfo(),
                          LD->isVolatile(), LD->isNonTemporal(),
@@ -1037,7 +1038,7 @@ void SelectionDAGLegalize::LegalizeLoadOps(SDNode *Node) {
     Chain = Ch;
   } else {
     bool isCustom = false;
-    switch (TLI.getLoadExtAction(ExtType, SrcVT)) {
+    switch (TLI.getLoadExtAction(ExtType, SrcVT.getSimpleVT())) {
     default: llvm_unreachable("This action is not supported yet!");
     case TargetLowering::Custom:
              isCustom = true;
@@ -1184,7 +1185,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
     unsigned CCOperand = Node->getOpcode() == ISD::SELECT_CC ? 4 :
                          Node->getOpcode() == ISD::SETCC ? 2 : 1;
     unsigned CompareOperand = Node->getOpcode() == ISD::BR_CC ? 2 : 0;
-    EVT OpVT = Node->getOperand(CompareOperand).getValueType();
+    MVT OpVT = Node->getOperand(CompareOperand).getSimpleValueType();
     ISD::CondCode CCCode =
         cast<CondCodeSDNode>(Node->getOperand(CCOperand))->get();
     Action = TLI.getCondCodeAction(CCCode, OpVT);
@@ -1591,7 +1592,7 @@ void SelectionDAGLegalize::LegalizeSetCCCondCode(EVT VT,
                                                  SDValue &LHS, SDValue &RHS,
                                                  SDValue &CC,
                                                  DebugLoc dl) {
-  EVT OpVT = LHS.getValueType();
+  MVT OpVT = LHS.getSimpleValueType();
   ISD::CondCode CCCode = cast<CondCodeSDNode>(CC)->get();
   switch (TLI.getCondCodeAction(CCCode, OpVT)) {
   default: llvm_unreachable("Unknown condition code action!");
@@ -3575,13 +3576,13 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
 
 void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
   SmallVector<SDValue, 8> Results;
-  EVT OVT = Node->getValueType(0);
+  MVT OVT = Node->getSimpleValueType(0);
   if (Node->getOpcode() == ISD::UINT_TO_FP ||
       Node->getOpcode() == ISD::SINT_TO_FP ||
       Node->getOpcode() == ISD::SETCC) {
-    OVT = Node->getOperand(0).getValueType();
+    OVT = Node->getOperand(0).getSimpleValueType();
   }
-  EVT NVT = TLI.getTypeToPromoteTo(Node->getOpcode(), OVT);
+  MVT NVT = TLI.getTypeToPromoteTo(Node->getOpcode(), OVT);
   DebugLoc dl = Node->getDebugLoc();
   SDValue Tmp1, Tmp2, Tmp3;
   switch (Node->getOpcode()) {

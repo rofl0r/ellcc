@@ -44,6 +44,12 @@
 using namespace llvm;
 using namespace sys;
 
+
+process::id_type self_process::get_id() {
+  return getpid();
+}
+
+
 unsigned
 Process::GetPageSize()
 {
@@ -318,7 +324,7 @@ static unsigned GetRandomNumberSeed() {
 
   // Otherwise, swizzle the current time and the process ID to form a reasonable
   // seed.
-  TimeValue Now = llvm::TimeValue::now();
+  TimeValue Now = TimeValue::now();
   return hash_combine(Now.seconds(), Now.nanoseconds(), ::getpid());
 }
 #endif
