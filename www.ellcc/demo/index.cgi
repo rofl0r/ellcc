@@ -67,6 +67,16 @@ my $defaultsrc = "/*\n" .
 "                }\n" .
 '        printf("%d primes\n",count);' .
 "\n}\n";
+my $defaultsrc = "/*\n" .
+" *      Simple factorial function\n" .
+" */\n" .
+"\n" .
+"long fact(long arg)\n" .
+"{\n" .
+"    if (arg <= 1) return 1;\n" .
+"\n" .
+"    return arg * fact(arg - 1);\n" .
+"\n}\n";
 sub getname {
     my ($extension) = @_;
     for ( my $count = 0 ; ; $count++ ) {
@@ -164,6 +174,20 @@ print <<EOF;
   <style>
     \@import url("syntax.css");
   </style>
+<script type="text/javascript">
+
+  var _gaq = _gaq || [];
+  _gaq.push(['_setAccount', 'UA-38388212-1']);
+  _gaq.push(['_trackPageview']);
+
+  (function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+  })();
+</script>
+
+
 </head>
 <body>
 <table style="text-align: left; width: 100%; height: 100%;" border="0"
@@ -226,9 +250,7 @@ print <<END;
 Paste a C/C++ program in the text box or
 upload one from your computer, and you can see ELLCC compile it!
 This demo is very similar to the <a href="http://llvm.org/demo/">LLVM demo page</a> but
-allows you to compile for a wider set of processors. The test program is a little bit of a nostalgic joke.
-It was a popular program for benchmarking embedded C compilers back then. It's even a little more funny since
-my browser has told me I misspelled Eratosthenes back then and never noticed.
+allows you to compile for a wider set of processors.
 </td></tr></table><p>
 END
 
@@ -244,6 +266,7 @@ $llvmTargets{'ppc64'} = { label => '64-bit PowerPC'  };
 $llvmTargets{'i386'} = { label => '32-bit X86: Pentium-Pro and above'  };
 $llvmTargets{'x86_64'}  = { label => '64-bit X86: EM64T and AMD64' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
+$llvmTargets{'cpp'} = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
 sub llvmTargetsSortedByLabel {
   $llvmTargets{$a}->{'label'} cmp $llvmTargets{$b}->{'label'};
@@ -488,6 +511,11 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
         $disassemblyFile = getname(".ll");
         try_run( "llvm-dis",
             "llvm-dis -o=$disassemblyFile $bytecodeFile > $outputFile 2>&1",
+            $outputFile );
+    } elsif ( $target eq 'cpp' ) {
+        $disassemblyFile = getname(".cpp");
+        try_run( "lcc",
+            "llc -march=cpp -o=$disassemblyFile $bytecodeFile > $outputFile 2>&1",
             $outputFile );
     } else {
         $disassemblyFile = getname(".s");
