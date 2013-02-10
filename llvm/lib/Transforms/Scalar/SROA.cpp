@@ -33,19 +33,19 @@
 #include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/PtrUseVisitor.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Constants.h"
 #include "llvm/DIBuilder.h"
-#include "llvm/DataLayout.h"
 #include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/IRBuilder.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/InstVisitor.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/Operator.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -1971,15 +1971,14 @@ static bool isVectorPromotionViable(const DataLayout &TD,
   if (!Ty)
     return false;
 
-  uint64_t VecSize = TD.getTypeSizeInBits(Ty);
   uint64_t ElementSize = TD.getTypeSizeInBits(Ty->getScalarType());
 
   // While the definition of LLVM vectors is bitpacked, we don't support sizes
   // that aren't byte sized.
   if (ElementSize % 8)
     return false;
-  assert((VecSize % 8) == 0 && "vector size not a multiple of element size?");
-  VecSize /= 8;
+  assert((TD.getTypeSizeInBits(Ty) % 8) == 0 &&
+         "vector size not a multiple of element size?");
   ElementSize /= 8;
 
   for (; I != E; ++I) {
@@ -2661,18 +2660,7 @@ private:
 
   /// \brief Compute a vector splat for a given element value.
   Value *getVectorSplat(IRBuilder<> &IRB, Value *V, unsigned NumElements) {
-    assert(NumElements > 0 && "Cannot splat to an empty vector.");
-
-    // First insert it into a one-element vector so we can shuffle it. It is
-    // really silly that LLVM's IR requires this in order to form a splat.
-    Value *Undef = UndefValue::get(VectorType::get(V->getType(), 1));
-    V = IRB.CreateInsertElement(Undef, V, IRB.getInt32(0),
-                                getName(".splatinsert"));
-
-    // Shuffle the value across the desired number of elements.
-    SmallVector<Constant*, 8> Mask(NumElements, IRB.getInt32(0));
-    V = IRB.CreateShuffleVector(V, Undef, ConstantVector::get(Mask),
-                                getName(".splat"));
+    V = IRB.CreateVectorSplat(NumElements, V, NamePrefix);
     DEBUG(dbgs() << "       splat: " << *V << "\n");
     return V;
   }
@@ -2724,8 +2712,7 @@ private:
     // a sensible representation for the alloca type. This is essentially
     // splatting the byte to a sufficiently wide integer, splatting it across
     // any desired vector width, and bitcasting to the final type.
-    uint64_t Size = EndOffset - BeginOffset;
-    Value *V = getIntegerSplat(IRB, II.getValue(), Size);
+    Value *V;
 
     if (VecTy) {
       // If this is a memset of a vectorized alloca, insert it.
@@ -2751,6 +2738,7 @@ private:
       // set integer.
       assert(!II.isVolatile());
 
+      uint64_t Size = EndOffset - BeginOffset;
       V = getIntegerSplat(IRB, II.getValue(), Size);
 
       if (IntTy && (BeginOffset != NewAllocaBeginOffset ||

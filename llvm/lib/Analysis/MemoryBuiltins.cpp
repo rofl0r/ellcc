@@ -17,12 +17,12 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/DataLayout.h"
-#include "llvm/GlobalVariable.h"
-#include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Metadata.h"
-#include "llvm/Module.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -399,6 +399,8 @@ SizeOffsetType ObjectSizeOffsetVisitor::compute(Value *V) {
     return visitArgument(*A);
   if (ConstantPointerNull *P = dyn_cast<ConstantPointerNull>(V))
     return visitConstantPointerNull(*P);
+  if (GlobalAlias *GA = dyn_cast<GlobalAlias>(V))
+    return visitGlobalAlias(*GA);
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
     return visitGlobalVariable(*GV);
   if (UndefValue *UV = dyn_cast<UndefValue>(V))
@@ -517,6 +519,12 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitGEPOperator(GEPOperator &GEP) {
   return std::make_pair(PtrData.first, PtrData.second + Offset);
 }
 
+SizeOffsetType ObjectSizeOffsetVisitor::visitGlobalAlias(GlobalAlias &GA) {
+  if (GA.mayBeOverridden())
+    return unknown();
+  return compute(GA.getAliasee());
+}
+
 SizeOffsetType ObjectSizeOffsetVisitor::visitGlobalVariable(GlobalVariable &GV){
   if (!GV.hasDefinitiveInitializer())
     return unknown();
@@ -535,20 +543,9 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitLoadInst(LoadInst&) {
   return unknown();
 }
 
-SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode &PHI) {
-  if (PHI.getNumIncomingValues() == 0)
-    return unknown();
-
-  SizeOffsetType Ret = compute(PHI.getIncomingValue(0));
-  if (!bothKnown(Ret))
-    return unknown();
-
-  // verify that all PHI incoming pointers have the same size and offset
-  for (unsigned i = 1, e = PHI.getNumIncomingValues(); i != e; ++i) {
-    if (compute(PHI.getIncomingValue(i)) != Ret)
-      return unknown();
-  }
-  return Ret;
+SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode&) {
+  // too complex to analyze statically.
+  return unknown();
 }
 
 SizeOffsetType ObjectSizeOffsetVisitor::visitSelectInst(SelectInst &I) {
@@ -629,6 +626,7 @@ SizeOffsetEvalType ObjectSizeOffsetEvaluator::compute_(Value *V) {
   } else if (isa<Argument>(V) ||
              (isa<ConstantExpr>(V) &&
               cast<ConstantExpr>(V)->getOpcode() == Instruction::IntToPtr) ||
+             isa<GlobalAlias>(V) ||
              isa<GlobalVariable>(V)) {
     // ignore values where we cannot do more than what ObjectSizeVisitor can
     Result = unknown();

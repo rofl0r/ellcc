@@ -553,7 +553,7 @@ void Sema::ForceDeclarationOfImplicitMembers(CXXRecordDecl *Class) {
   if (Class->needsImplicitCopyAssignment())
     DeclareImplicitCopyAssignment(Class);
 
-  if (getLangOpts().CPlusPlus0x) {
+  if (getLangOpts().CPlusPlus11) {
     // If the move constructor has not yet been declared, do so now.
     if (Class->needsImplicitMoveConstructor())
       DeclareImplicitMoveConstructor(Class); // might not actually do it
@@ -603,7 +603,7 @@ static void DeclareImplicitMemberFunctionsWithName(Sema &S,
           S.DeclareImplicitDefaultConstructor(Class);
         if (Record->needsImplicitCopyConstructor())
           S.DeclareImplicitCopyConstructor(Class);
-        if (S.getLangOpts().CPlusPlus0x &&
+        if (S.getLangOpts().CPlusPlus11 &&
             Record->needsImplicitMoveConstructor())
           S.DeclareImplicitMoveConstructor(Class);
       }
@@ -625,7 +625,7 @@ static void DeclareImplicitMemberFunctionsWithName(Sema &S,
         CXXRecordDecl *Class = const_cast<CXXRecordDecl *>(Record);
         if (Record->needsImplicitCopyAssignment())
           S.DeclareImplicitCopyAssignment(Class);
-        if (S.getLangOpts().CPlusPlus0x &&
+        if (S.getLangOpts().CPlusPlus11 &&
             Record->needsImplicitMoveAssignment())
           S.DeclareImplicitMoveAssignment(Class);
       }
@@ -2289,13 +2289,13 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
       Name = Context.DeclarationNames.getCXXConstructorName(CanTy);
       if (RD->needsImplicitCopyConstructor())
         DeclareImplicitCopyConstructor(RD);
-      if (getLangOpts().CPlusPlus0x && RD->needsImplicitMoveConstructor())
+      if (getLangOpts().CPlusPlus11 && RD->needsImplicitMoveConstructor())
         DeclareImplicitMoveConstructor(RD);
     } else {
       Name = Context.DeclarationNames.getCXXOperatorName(OO_Equal);
       if (RD->needsImplicitCopyAssignment())
         DeclareImplicitCopyAssignment(RD);
-      if (getLangOpts().CPlusPlus0x && RD->needsImplicitMoveAssignment())
+      if (getLangOpts().CPlusPlus11 && RD->needsImplicitMoveAssignment())
         DeclareImplicitMoveAssignment(RD);
     }
 
@@ -2448,7 +2448,7 @@ DeclContext::lookup_result Sema::LookupConstructors(CXXRecordDecl *Class) {
       DeclareImplicitDefaultConstructor(Class);
     if (Class->needsImplicitCopyConstructor())
       DeclareImplicitCopyConstructor(Class);
-    if (getLangOpts().CPlusPlus0x && Class->needsImplicitMoveConstructor())
+    if (getLangOpts().CPlusPlus11 && Class->needsImplicitMoveConstructor())
       DeclareImplicitMoveConstructor(Class);
   }
 
@@ -2536,7 +2536,7 @@ Sema::LookupLiteralOperator(Scope *S, LookupResult &R,
       if (FD->getNumParams() == 1 &&
           FD->getParamDecl(0)->getType()->getAs<PointerType>())
         IsRaw = true;
-      else {
+      else if (FD->getNumParams() == ArgTys.size()) {
         IsExactMatch = true;
         for (unsigned ArgIdx = 0; ArgIdx != ArgTys.size(); ++ArgIdx) {
           QualType ParamTy = FD->getParamDecl(ArgIdx)->getType();
@@ -2913,10 +2913,12 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
   // Traverse the contexts of Objective-C classes.
   if (ObjCInterfaceDecl *IFace = dyn_cast<ObjCInterfaceDecl>(Ctx)) {
     // Traverse categories.
-    for (ObjCCategoryDecl *Category = IFace->getCategoryList();
-         Category; Category = Category->getNextClassCategory()) {
+    for (ObjCInterfaceDecl::visible_categories_iterator
+           Cat = IFace->visible_categories_begin(),
+           CatEnd = IFace->visible_categories_end();
+         Cat != CatEnd; ++Cat) {
       ShadowContextRAII Shadow(Visited);
-      LookupVisibleDecls(Category, Result, QualifiedNameLookup, false,
+      LookupVisibleDecls(*Cat, Result, QualifiedNameLookup, false,
                          Consumer, Visited);
     }
 
@@ -3130,7 +3132,7 @@ LabelDecl *Sema::LookupOrCreateLabel(IdentifierInfo *II, SourceLocation Loc,
 
 namespace {
 
-typedef llvm::SmallVector<TypoCorrection, 1> TypoResultList;
+typedef SmallVector<TypoCorrection, 1> TypoResultList;
 typedef llvm::StringMap<TypoResultList, llvm::BumpPtrAllocator> TypoResultsMap;
 typedef std::map<unsigned, TypoResultsMap> TypoEditDistanceMap;
 
@@ -3555,7 +3557,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
       Consumer.addKeywordResult("typename");
       Consumer.addKeywordResult("wchar_t");
 
-      if (SemaRef.getLangOpts().CPlusPlus0x) {
+      if (SemaRef.getLangOpts().CPlusPlus11) {
         Consumer.addKeywordResult("char16_t");
         Consumer.addKeywordResult("char32_t");
         Consumer.addKeywordResult("constexpr");
@@ -3594,7 +3596,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
           cast<CXXMethodDecl>(SemaRef.CurContext)->isInstance())
         Consumer.addKeywordResult("this");
 
-      if (SemaRef.getLangOpts().CPlusPlus0x) {
+      if (SemaRef.getLangOpts().CPlusPlus11) {
         Consumer.addKeywordResult("alignof");
         Consumer.addKeywordResult("nullptr");
       }
@@ -3651,7 +3653,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
     if (SemaRef.getLangOpts().CPlusPlus) {
       Consumer.addKeywordResult("using");
 
-      if (SemaRef.getLangOpts().CPlusPlus0x)
+      if (SemaRef.getLangOpts().CPlusPlus11)
         Consumer.addKeywordResult("static_assert");
     }
   }
@@ -3864,7 +3866,7 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
 
   // Weed out any names that could not be found by name lookup or, if a
   // CorrectionCandidateCallback object was provided, failed validation.
-  llvm::SmallVector<TypoCorrection, 16> QualifiedResults;
+  SmallVector<TypoCorrection, 16> QualifiedResults;
   LookupResult TmpRes(*this, TypoName, LookupKind);
   TmpRes.suppressDiagnostics();
   while (!Consumer.empty()) {
@@ -3966,9 +3968,9 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     // Only perform the qualified lookups for C++
     if (SearchNamespaces) {
       TmpRes.suppressDiagnostics();
-      for (llvm::SmallVector<TypoCorrection,
-                             16>::iterator QRI = QualifiedResults.begin(),
-                                        QRIEnd = QualifiedResults.end();
+      for (SmallVector<TypoCorrection,
+                       16>::iterator QRI = QualifiedResults.begin(),
+                                  QRIEnd = QualifiedResults.end();
            QRI != QRIEnd; ++QRI) {
         for (NamespaceSpecifierSet::iterator NI = Namespaces.begin(),
                                           NIEnd = Namespaces.end();

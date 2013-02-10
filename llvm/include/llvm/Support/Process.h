@@ -22,8 +22,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_SYSTEM_PROCESS_H
-#define LLVM_SYSTEM_PROCESS_H
+#ifndef LLVM_SUPPORT_PROCESS_H
+#define LLVM_SUPPORT_PROCESS_H
 
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/DataTypes.h"
@@ -64,6 +64,23 @@ public:
   /// \brief Get the operating system specific identifier for this process.
   virtual id_type get_id() = 0;
 
+  /// \brief Get the user time consumed by this process.
+  ///
+  /// Note that this is often an approximation and may be zero on platforms
+  /// where we don't have good support for the functionality.
+  virtual TimeValue get_user_time() const = 0;
+
+  /// \brief Get the system time consumed by this process.
+  ///
+  /// Note that this is often an approximation and may be zero on platforms
+  /// where we don't have good support for the functionality.
+  virtual TimeValue get_system_time() const = 0;
+
+  /// \brief Get the wall time consumed by this process.
+  ///
+  /// Note that this is often an approximation and may be zero on platforms
+  /// where we don't have good support for the functionality.
+  virtual TimeValue get_wall_time() const = 0;
 
   /// \name Static factory routines for processes.
   /// @{
@@ -88,8 +105,31 @@ class self_process : public process {
 
 public:
   virtual id_type get_id();
+  virtual TimeValue get_user_time() const;
+  virtual TimeValue get_system_time() const;
+  virtual TimeValue get_wall_time() const;
+
+  /// \name Process configuration (sysconf on POSIX)
+  /// @{
+
+  /// \brief Get the virtual memory page size.
+  ///
+  /// Query the operating system for this process's page size.
+  size_t page_size() const { return PageSize; };
+
+  /// @}
 
 private:
+  /// \name Cached process state.
+  /// @{
+
+  /// \brief Cached page size, this cannot vary during the life of the process.
+  size_t PageSize;
+
+  /// @}
+
+  /// \brief Constructor, used by \c process::get_self() only.
+  self_process();
 };
 
 
@@ -97,25 +137,12 @@ private:
 /// current executing process.
 class Process {
 public:
-  /// \brief Get the virtual memory page size
-  /// This static function will return the operating system's virtual memory
-  /// page size.
-  /// \returns The number of bytes in a virtual memory page.
-  static unsigned GetPageSize();
-
   /// \brief Return process memory usage.
   /// This static function will return the total amount of memory allocated
   /// by the process. This only counts the memory allocated via the malloc,
   /// calloc and realloc functions and includes any "free" holes in the
   /// allocated space.
   static size_t GetMallocUsage();
-
-  /// This static function will return the total memory usage of the
-  /// process. This includes code, data, stack and mapped pages usage. Notei
-  /// that the value returned here is not necessarily the Running Set Size,
-  /// it is the total virtual memory usage, regardless of mapped state of
-  /// that memory.
-  static size_t GetTotalMemoryUsage();
 
   /// This static function will set \p user_time to the amount of CPU time
   /// spent in user (non-kernel) mode and \p sys_time to the amount of CPU

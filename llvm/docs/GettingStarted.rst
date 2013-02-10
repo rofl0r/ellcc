@@ -1,5 +1,3 @@
-.. _getting_started:
-
 ====================================
 Getting Started with the LLVM System  
 ====================================
@@ -71,27 +69,24 @@ Here's the short story for getting up and running quickly with LLVM:
    * ``../llvm/configure [options]``
      Some common options:
 
-     * ``--prefix=directory`` ---
+     * ``--prefix=directory`` --- Specify for *directory* the full pathname of
+       where you want the LLVM tools and libraries to be installed (default
+       ``/usr/local``).
 
-       Specify for *directory* the full pathname of where you want the LLVM
-       tools and libraries to be installed (default ``/usr/local``).
+     * ``--enable-optimized`` --- Compile with optimizations enabled (default
+       is NO).
 
-     * ``--enable-optimized`` ---
-
-       Compile with optimizations enabled (default is NO).
-
-     * ``--enable-assertions`` ---
-
-       Compile with assertion checks enabled (default is YES).
+     * ``--enable-assertions`` --- Compile with assertion checks enabled
+       (default is YES).
 
    * ``make [-j]`` --- The ``-j`` specifies the number of jobs (commands) to run
      simultaneously.  This builds both LLVM and Clang for Debug+Asserts mode.
-     The --enabled-optimized configure option is used to specify a Release
+     The ``--enabled-optimized`` configure option is used to specify a Release
      build.
 
    * ``make check-all`` --- This run the regression tests to ensure everything
      is in working order.
-  
+
    * ``make update`` --- This command is used to update all the svn repositories
      at once, rather then having to ``cd`` into the individual repositories and
      running ``svn update``.
@@ -222,11 +217,7 @@ uses the package and provides other details.
 +--------------------------------------------------------------+-----------------+---------------------------------------------+
 | `SVN <http://subversion.tigris.org/project_packages.html>`_  | >=1.3           | Subversion access to LLVM\ :sup:`2`         |
 +--------------------------------------------------------------+-----------------+---------------------------------------------+
-| `DejaGnu <http://savannah.gnu.org/projects/dejagnu>`_        | 1.4.2           | Automated test suite\ :sup:`3`              |
-+--------------------------------------------------------------+-----------------+---------------------------------------------+
-| `tcl <http://www.tcl.tk/software/tcltk/>`_                   | 8.3, 8.4        | Automated test suite\ :sup:`3`              |
-+--------------------------------------------------------------+-----------------+---------------------------------------------+
-| `expect <http://expect.nist.gov/>`_                          | 5.38.0          | Automated test suite\ :sup:`3`              |
+| `python <http://www.python.org/>`_                           | >=2.4           | Automated test suite\ :sup:`3`              |
 +--------------------------------------------------------------+-----------------+---------------------------------------------+
 | `perl <http://www.perl.com/download.csp>`_                   | >=5.6.0         | Utilities                                   |
 +--------------------------------------------------------------+-----------------+---------------------------------------------+
@@ -387,6 +378,14 @@ intermittent failures when building LLVM with position independent code.  The
 symptom is an error about cyclic dependencies.  We recommend upgrading to a
 newer version of Gold.
 
+**Clang 3.0 with libstdc++ 4.7.x**: a few Linux distributions (Ubuntu 12.10,
+Fedora 17) have both Clang 3.0 and libstdc++ 4.7 in their repositories.  Clang
+3.0 does not implement a few builtins that are used in this library.  We
+recommend using the system GCC to compile LLVM and Clang in this case.
+
+**Clang 3.0 on Mageia 2**.  There's a packaging issue: Clang can not find at
+least some (``cxxabi.h``) libstdc++ headers.
+
 .. _Getting Started with LLVM:
 
 Getting Started with LLVM
@@ -461,6 +460,8 @@ The files are as follows, with *x.y* marking the version number:
 ``llvm-gcc-4.2-x.y-platform.tar.gz``
 
   Binary release of the llvm-gcc-4.2 front end for a specific platform.
+
+.. _checkout:
 
 Checkout LLVM from Subversion
 -----------------------------
@@ -636,8 +637,21 @@ upstream git repo, run:
 
 This leaves your working directories on their master branches, so you'll need to
 ``checkout`` each working branch individually and ``rebase`` it on top of its
-parent branch.  (Note: This script is intended for relative newbies to git.  If
-you have more experience, you can likely improve on it.)
+parent branch.
+
+To commit back changes via git-svn, use ``dcommit``:
+
+.. code-block:: console
+
+  % git svn dcommit
+
+Note that git-svn will create one SVN commit for each Git commit you have pending,
+so squash and edit each commit before executing ``dcommit`` to make sure they all
+conform to the coding standards and the developers' policy.
+
+On success, ``dcommit`` will rebase against the HEAD of SVN, so to avoid conflict,
+please make sure your current branch is up-to-date (via fetch/rebase) before
+proceeding.
 
 The git-svn metadata can get out of sync after you mess around with branches and
 ``dcommit``. When that happens, ``git svn dcommit`` stops working, complaining
@@ -647,6 +661,8 @@ about files with uncommitted changes. The fix is to rebuild the metadata:
 
   % rm -rf .git/svn
   % git svn rebase -l
+
+Please, refer to the Git-SVN manual (``man git-svn``) for more information.
 
 Local LLVM Configuration
 ------------------------
@@ -664,14 +680,15 @@ configure the build system:
 | Variable   | Purpose                                                   |
 +============+===========================================================+
 | CC         | Tells ``configure`` which C compiler to use.  By default, |
-|            | ``configure`` will look for the first GCC C compiler in   |
-|            | ``PATH``.  Use this variable to override ``configure``\'s |
-|            | default behavior.                                         |
+|            | ``configure`` will check ``PATH`` for ``clang`` and GCC C |
+|            | compilers (in this order).  Use this variable to override |
+|            | ``configure``\'s  default behavior.                       |
 +------------+-----------------------------------------------------------+
 | CXX        | Tells ``configure`` which C++ compiler to use.  By        |
-|            | default, ``configure`` will look for the first GCC C++    |
-|            | compiler in ``PATH``.  Use this variable to override      |
-|            | ``configure``'s default behavior.                         |
+|            | default, ``configure`` will check ``PATH`` for            |
+|            | ``clang++`` and GCC C++ compilers (in this order).  Use   |
+|            | this variable to override  ``configure``'s default        |
+|            | behavior.                                                 |
 +------------+-----------------------------------------------------------+
 
 The following options can be used to set or enable LLVM specific options:

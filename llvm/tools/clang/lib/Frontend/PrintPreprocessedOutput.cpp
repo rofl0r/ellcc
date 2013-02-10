@@ -268,7 +268,10 @@ void PrintPPOutputPPCallbacks::FileChanged(SourceLocation Loc,
   Lexer::Stringify(CurFilename);
   FileType = NewFileType;
 
-  if (DisableLineMarkers) return;
+  if (DisableLineMarkers) {
+    startNewLineIfNeeded(/*ShouldUpdateCurrentLine=*/false);
+    return;
+  }
   
   if (!Initialized) {
     WriteLineInfo(CurLine);
@@ -562,7 +565,7 @@ static void PrintPreprocessedTokens(Preprocessor &PP, Token &Tok,
   }
 }
 
-typedef std::pair<IdentifierInfo*, MacroInfo*> id_macro_pair;
+typedef std::pair<const IdentifierInfo *, MacroInfo *> id_macro_pair;
 static int MacroIDCompare(const void* a, const void* b) {
   const id_macro_pair *LHS = static_cast<const id_macro_pair*>(a);
   const id_macro_pair *RHS = static_cast<const id_macro_pair*>(b);

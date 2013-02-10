@@ -155,7 +155,7 @@ static void removeOnDiskEntry(const ASTUnit *AU) {
   }
 }
 
-static void setPreambleFile(const ASTUnit *AU, llvm::StringRef preambleFile) {
+static void setPreambleFile(const ASTUnit *AU, StringRef preambleFile) {
   getOnDiskData(AU).PreambleFile = preambleFile;
 }
 
@@ -310,7 +310,7 @@ static unsigned getDeclShowContexts(NamedDecl *ND,
       Contexts |= (1LL << CodeCompletionContext::CCC_EnumTag);
       
       // Part of the nested-name-specifier in C++0x.
-      if (LangOpts.CPlusPlus0x)
+      if (LangOpts.CPlusPlus11)
         IsNestedNameSpecifier = true;
     } else if (RecordDecl *Record = dyn_cast<RecordDecl>(ND)) {
       if (Record->isUnion())
@@ -656,8 +656,7 @@ void ASTUnit::ConfigureDiags(IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
     if (CaptureDiagnostics)
       Client = new StoredDiagnosticConsumer(AST.StoredDiagnostics);
     Diags = CompilerInstance::createDiagnostics(new DiagnosticOptions(),
-                                                ArgEnd-ArgBegin,
-                                                ArgBegin, Client,
+                                                Client,
                                                 /*ShouldOwnClient=*/true,
                                                 /*ShouldCloneClient=*/false);
   } else if (CaptureDiagnostics) {
@@ -1689,7 +1688,21 @@ void ASTUnit::transferASTDataFromCompilerInstance(CompilerInstance &CI) {
 }
 
 StringRef ASTUnit::getMainFileName() const {
-  return Invocation->getFrontendOpts().Inputs[0].getFile();
+  if (Invocation && !Invocation->getFrontendOpts().Inputs.empty()) {
+    const FrontendInputFile &Input = Invocation->getFrontendOpts().Inputs[0];
+    if (Input.isFile())
+      return Input.getFile();
+    else
+      return Input.getBuffer()->getBufferIdentifier();
+  }
+
+  if (SourceMgr) {
+    if (const FileEntry *
+          FE = SourceMgr->getFileEntryForID(SourceMgr->getMainFileID()))
+      return FE->getName();
+  }
+
+  return StringRef();
 }
 
 ASTUnit *ASTUnit::create(CompilerInvocation *CI,
@@ -1932,9 +1945,7 @@ ASTUnit *ASTUnit::LoadFromCommandLine(const char **ArgBegin,
   if (!Diags.getPtr()) {
     // No diagnostics engine was provided, so create our own diagnostics object
     // with the default options.
-    Diags = CompilerInstance::createDiagnostics(new DiagnosticOptions(),
-                                                ArgEnd - ArgBegin,
-                                                ArgBegin);
+    Diags = CompilerInstance::createDiagnostics(new DiagnosticOptions());
   }
 
   SmallVector<StoredDiagnostic, 4> StoredDiagnostics;

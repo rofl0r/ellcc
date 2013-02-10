@@ -23,15 +23,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/CallingConv.h"
-#include "llvm/Constant.h"
 #include "llvm/DIBuilder.h"
 #include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constant.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
@@ -277,7 +277,7 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
       for (unsigned i = 0; PAL.getSlot(i).Index <= NumArgs; ++i)
         AttributesVec.push_back(PAL.getSlot(i));
       Attribute FnAttrs = PAL.getFnAttributes();
-      if (FnAttrs.hasAttributes())
+      if (PAL.hasAttributes(AttributeSet::FunctionIndex))
         AttributesVec.push_back(AttributeWithIndex::get(AttributeSet::FunctionIndex,
                                                         FnAttrs));
       PAL = AttributeSet::get(Fn.getContext(), AttributesVec);
@@ -351,7 +351,7 @@ bool DAE::RemoveDeadArgumentsFromCallers(Function &Fn)
   if (Fn.use_empty())
     return false;
 
-  llvm::SmallVector<unsigned, 8> UnusedArgs;
+  SmallVector<unsigned, 8> UnusedArgs;
   for (Function::arg_iterator I = Fn.arg_begin(), E = Fn.arg_end(); 
        I != E; ++I) {
     Argument *Arg = I;

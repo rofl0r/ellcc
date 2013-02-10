@@ -18,6 +18,8 @@
 #include "interception/interception.h"
 #include "sanitizer_common/sanitizer_platform_interceptors.h"
 
+#include <stdarg.h>
+
 using __sanitizer::uptr;
 
 // Use macro to describe if specific function should be
@@ -42,10 +44,8 @@ using __sanitizer::uptr;
 
 #if defined(__linux__)
 # define ASAN_USE_ALIAS_ATTRIBUTE_FOR_INDEX 1
-# define ASAN_INTERCEPT_PRCTL 1
 #else
 # define ASAN_USE_ALIAS_ATTRIBUTE_FOR_INDEX 0
-# define ASAN_INTERCEPT_PRCTL 0
 #endif
 
 #if !defined(__APPLE__)
@@ -167,6 +167,13 @@ DECLARE_FUNCTION_AND_WRAPPER(SSIZE_T, pread64, int fd, void *buf,
                              SIZE_T count, OFF64_T offset);
 # endif
 
+#if SANITIZER_INTERCEPT_WRITE
+DECLARE_FUNCTION_AND_WRAPPER(SSIZE_T, write, int fd, void *ptr, SIZE_T count);
+#endif
+#if SANITIZER_INTERCEPT_PWRITE
+DECLARE_FUNCTION_AND_WRAPPER(SSIZE_T, pwrite, int fd, void *ptr, SIZE_T count);
+#endif
+
 # if ASAN_INTERCEPT_MLOCKX
 // mlock/munlock
 DECLARE_FUNCTION_AND_WRAPPER(int, mlock, const void *addr, SIZE_T len);
@@ -221,6 +228,18 @@ DECLARE_FUNCTION_AND_WRAPPER(void, __CFInitialize, void);
 DECLARE_FUNCTION_AND_WRAPPER(CFStringRef, CFStringCreateCopy,
                              CFAllocatorRef alloc, CFStringRef str);
 DECLARE_FUNCTION_AND_WRAPPER(void, free, void* ptr);
+
+DECLARE_FUNCTION_AND_WRAPPER(int, vscanf, const char *format, va_list ap);
+DECLARE_FUNCTION_AND_WRAPPER(int, vsscanf, const char *str, const char *format,
+                             va_list ap);
+DECLARE_FUNCTION_AND_WRAPPER(int, vfscanf, void *stream, const char *format,
+                             va_list ap);
+DECLARE_FUNCTION_AND_WRAPPER(int, scanf, const char *format, ...);
+DECLARE_FUNCTION_AND_WRAPPER(int, fscanf,
+                             void* stream, const char *format, ...);
+DECLARE_FUNCTION_AND_WRAPPER(int, sscanf,  // NOLINT
+                             const char *str, const char *format, ...);
+
 #if MAC_INTERPOSE_FUNCTIONS && !defined(MISSING_BLOCKS_SUPPORT)
 DECLARE_FUNCTION_AND_WRAPPER(void, dispatch_group_async,
                              dispatch_group_t dg,

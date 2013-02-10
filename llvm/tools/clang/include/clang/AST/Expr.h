@@ -196,7 +196,7 @@ public:
   }
 
   /// \brief Whether this expression contains an unexpanded parameter
-  /// pack (for C++0x variadic templates).
+  /// pack (for C++11 variadic templates).
   ///
   /// Given the following function template:
   ///
@@ -238,7 +238,7 @@ public:
   /// result of an r-value expression is a value detached from any
   /// specific storage.
   ///
-  /// C++0x divides the concept of "r-value" into pure r-values
+  /// C++11 divides the concept of "r-value" into pure r-values
   /// ("pr-values") and so-called expiring values ("x-values"), which
   /// identify specific objects that can be safely cannibalized for
   /// their resources.  This is an unfortunate abuse of terminology on
@@ -294,7 +294,7 @@ public:
   isModifiableLvalueResult isModifiableLvalue(ASTContext &Ctx,
                                               SourceLocation *Loc = 0) const;
 
-  /// \brief The return type of classify(). Represents the C++0x expression
+  /// \brief The return type of classify(). Represents the C++11 expression
   ///        taxonomy.
   class Classification {
   public:
@@ -357,10 +357,10 @@ public:
     }
 
   };
-  /// \brief Classify - Classify this expression according to the C++0x
+  /// \brief Classify - Classify this expression according to the C++11
   ///        expression taxonomy.
   ///
-  /// C++0x defines ([basic.lval]) a new taxonomy of expressions to replace the
+  /// C++11 defines ([basic.lval]) a new taxonomy of expressions to replace the
   /// old lvalue vs rvalue. This function determines the type of expression this
   /// is. There are three expression types:
   /// - lvalues are classical lvalues as in C++03.
@@ -374,7 +374,7 @@ public:
   }
 
   /// \brief ClassifyModifiable - Classify this expression according to the
-  ///        C++0x expression taxonomy, and see if it is valid on the left side
+  ///        C++11 expression taxonomy, and see if it is valid on the left side
   ///        of an assignment.
   ///
   /// This function extends classify in that it also tests whether the
@@ -490,7 +490,7 @@ public:
   /// constexpr. Return false if the function can never produce a constant
   /// expression, along with diagnostics describing why not.
   static bool isPotentialConstantExpr(const FunctionDecl *FD,
-                                      llvm::SmallVectorImpl<
+                                      SmallVectorImpl<
                                         PartialDiagnosticAt> &Diags);
 
   /// isConstantInitializer - Returns true if this expression can be emitted to
@@ -510,7 +510,7 @@ public:
     /// foldable. If the expression is foldable, but not a constant expression,
     /// the notes will describes why it isn't a constant expression. If the
     /// expression *is* a constant expression, no notes will be produced.
-    llvm::SmallVectorImpl<PartialDiagnosticAt> *Diag;
+    SmallVectorImpl<PartialDiagnosticAt> *Diag;
 
     EvalStatus() : HasSideEffects(false), Diag(0) {}
 
@@ -568,7 +568,8 @@ public:
   /// EvaluateKnownConstInt - Call EvaluateAsRValue and return the folded
   /// integer. This must be called on an expression that constant folds to an
   /// integer.
-  llvm::APSInt EvaluateKnownConstInt(const ASTContext &Ctx) const;
+  llvm::APSInt EvaluateKnownConstInt(const ASTContext &Ctx,
+                          SmallVectorImpl<PartialDiagnosticAt> *Diag=0) const;
 
   /// EvaluateAsLValue - Evaluate an expression to see if we can fold it to an
   /// lvalue with link time known address, with no side-effects.
@@ -580,7 +581,7 @@ public:
   /// notes will be produced if the expression is not a constant expression.
   bool EvaluateAsInitializer(APValue &Result, const ASTContext &Ctx,
                              const VarDecl *VD,
-                       llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
+                             SmallVectorImpl<PartialDiagnosticAt> &Notes) const;
 
   /// \brief Enumeration used to describe the kind of Null pointer constant
   /// returned from \c isNullPointerConstant().
@@ -598,8 +599,8 @@ public:
     /// \brief Expression is a Null pointer constant built from a literal zero.
     NPCK_ZeroLiteral,
 
-    /// \brief Expression is a C++0X nullptr.
-    NPCK_CXX0X_nullptr,
+    /// \brief Expression is a C++11 nullptr.
+    NPCK_CXX11_nullptr,
 
     /// \brief Expression is a GNU-style __null constant.
     NPCK_GNUNull
@@ -728,7 +729,7 @@ public:
     return const_cast<Expr*>(this)->IgnoreParenNoopCasts(Ctx);
   }
 
-  static bool hasAnyTypeDependentArguments(llvm::ArrayRef<Expr *> Exprs);
+  static bool hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs);
 
   /// \brief For an expression of class type or pointer to class type,
   /// return the most derived class decl the expression is known to refer to.
@@ -2191,6 +2192,10 @@ public:
   /// isBuiltinCall - If this is a call to a builtin, return the builtin ID.  If
   /// not, return 0.
   unsigned isBuiltinCall() const;
+
+  /// \brief Returns \c true if this is a call to a builtin which does not
+  /// evaluate side-effects within its arguments.
+  bool isUnevaluatedBuiltinCall(ASTContext &Ctx) const;
 
   /// getCallReturnType - Get the return type of the call expr. This is not
   /// always the type of the expr itself, if the return type is a reference

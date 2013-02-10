@@ -639,7 +639,7 @@ Sema::VarArgKind Sema::isValidVarArgType(const QualType &Ty) {
   //   having a non-trivial copy constructor, a non-trivial move constructor,
   //   or a non-trivial destructor, with no corresponding parameter,
   //   is conditionally-supported with implementation-defined semantics.
-  if (getLangOpts().CPlusPlus0x && !Ty->isDependentType())
+  if (getLangOpts().CPlusPlus11 && !Ty->isDependentType())
     if (CXXRecordDecl *Record = Ty->getAsCXXRecordDecl())
       if (!Record->hasNonTrivialCopyConstructor() &&
           !Record->hasNonTrivialMoveConstructor() &&
@@ -672,7 +672,7 @@ bool Sema::variadicArgumentPODCheck(const Expr *E, VariadicCallType CT) {
 
     return DiagRuntimeBehavior(E->getLocStart(), 0,
                    PDiag(diag::warn_cannot_pass_non_pod_arg_to_vararg)
-                   << getLangOpts().CPlusPlus0x << Ty << CT);
+                   << getLangOpts().CPlusPlus11 << Ty << CT);
   }
   }
   // c++ rules are enforced elsewhere.
@@ -2830,7 +2830,7 @@ ExprResult Sema::ActOnNumericConstant(const Token &Tok, Scope *UDLScope) {
     if (!getLangOpts().C99 && Literal.isLongLong) {
       if (getLangOpts().CPlusPlus)
         Diag(Tok.getLocation(),
-             getLangOpts().CPlusPlus0x ?
+             getLangOpts().CPlusPlus11 ?
              diag::warn_cxx98_compat_longlong : diag::ext_cxx11_longlong);
       else
         Diag(Tok.getLocation(), diag::ext_c99_longlong);
@@ -3534,7 +3534,7 @@ ExprResult Sema::BuildCXXDefaultArgExpr(SourceLocation CallLoc,
       return ExprError();
 
     Expr *Arg = Result.takeAs<Expr>();
-    CheckImplicitConversions(Arg, Param->getOuterLocStart());
+    CheckCompletedExpr(Arg, Param->getOuterLocStart());
     // Build the default argument expression.
     return Owned(CXXDefaultArgExpr::Create(Context, CallLoc, Param, Arg));
   }
@@ -4728,7 +4728,7 @@ bool Sema::DiagnoseConditionalForNull(Expr *LHSExpr, Expr *RHSExpr,
       return false;
   }
 
-  int DiagType = (NullKind == Expr::NPCK_CXX0X_nullptr);
+  int DiagType = (NullKind == Expr::NPCK_CXX11_nullptr);
   Diag(QuestionLoc, diag::err_typecheck_cond_incompatible_operands_null)
       << NonPointerExpr->getType() << DiagType
       << NonPointerExpr->getSourceRange();
@@ -6578,6 +6578,11 @@ static bool isScopedEnumerationType(QualType T) {
 static void DiagnoseBadShiftValues(Sema& S, ExprResult &LHS, ExprResult &RHS,
                                    SourceLocation Loc, unsigned Opc,
                                    QualType LHSType) {
+  // OpenCL 6.3j: shift values are effectively % word size of LHS (more defined),
+  // so skip remaining warnings as we don't want to modify values within Sema.
+  if (S.getLangOpts().OpenCL)
+    return;
+
   llvm::APSInt Right;
   // Check right/shifter operand
   if (RHS.get()->isValueDependent() ||
@@ -8316,7 +8321,7 @@ static void DiagnoseSelfAssignment(Sema &S, Expr *LHSExpr, Expr *RHSExpr,
 ExprResult Sema::CreateBuiltinBinOp(SourceLocation OpLoc,
                                     BinaryOperatorKind Opc,
                                     Expr *LHSExpr, Expr *RHSExpr) {
-  if (getLangOpts().CPlusPlus0x && isa<InitListExpr>(RHSExpr)) {
+  if (getLangOpts().CPlusPlus11 && isa<InitListExpr>(RHSExpr)) {
     // The syntax only allows initializer lists on the RHS of assignment,
     // so we don't need to worry about accepting invalid code for
     // non-assignment operators.
@@ -9206,9 +9211,9 @@ ExprResult Sema::BuildBuiltinOffsetOf(SourceLocation BuiltinLoc,
     //   If type is not a standard-layout class (Clause 9), the results are
     //   undefined.
     if (CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
-      bool IsSafe = LangOpts.CPlusPlus0x? CRD->isStandardLayout() : CRD->isPOD();
+      bool IsSafe = LangOpts.CPlusPlus11? CRD->isStandardLayout() : CRD->isPOD();
       unsigned DiagID =
-        LangOpts.CPlusPlus0x? diag::warn_offsetof_non_standardlayout_type
+        LangOpts.CPlusPlus11? diag::warn_offsetof_non_standardlayout_type
                             : diag::warn_offsetof_non_pod_type;
 
       if (!IsSafe && !DidWarnAboutNonPOD &&
@@ -9711,11 +9716,11 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
     if (TInfo->getType()->isSpecificBuiltinType(BuiltinType::Float))
       PromoteType = Context.DoubleTy;
     if (!PromoteType.isNull())
-      Diag(TInfo->getTypeLoc().getBeginLoc(),
-          diag::warn_second_parameter_to_va_arg_never_compatible)
-        << TInfo->getType()
-        << PromoteType
-        << TInfo->getTypeLoc().getSourceRange();
+      DiagRuntimeBehavior(TInfo->getTypeLoc().getBeginLoc(), E,
+                  PDiag(diag::warn_second_parameter_to_va_arg_never_compatible)
+                          << TInfo->getType()
+                          << PromoteType
+                          << TInfo->getTypeLoc().getSourceRange());
   }
 
   QualType T = TInfo->getType().getNonLValueExprType(Context);
@@ -9976,7 +9981,7 @@ Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
                                       bool AllowFold) {
   SourceLocation DiagLoc = E->getLocStart();
 
-  if (getLangOpts().CPlusPlus0x) {
+  if (getLangOpts().CPlusPlus11) {
     // C++11 [expr.const]p5:
     //   If an expression of literal class type is used in a context where an
     //   integral constant expression is required, then that class type shall
@@ -10103,14 +10108,14 @@ Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
 
   // Circumvent ICE checking in C++11 to avoid evaluating the expression twice
   // in the non-ICE case.
-  if (!getLangOpts().CPlusPlus0x && E->isIntegerConstantExpr(Context)) {
+  if (!getLangOpts().CPlusPlus11 && E->isIntegerConstantExpr(Context)) {
     if (Result)
       *Result = E->EvaluateKnownConstInt(Context);
     return Owned(E);
   }
 
   Expr::EvalResult EvalResult;
-  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  SmallVector<PartialDiagnosticAt, 8> Notes;
   EvalResult.Diag = &Notes;
 
   // Try to evaluate the expression, and produce diagnostics explaining why it's
@@ -10121,7 +10126,7 @@ Sema::VerifyIntegerConstantExpression(Expr *E, llvm::APSInt *Result,
   // In C++11, we can rely on diagnostics being produced for any expression
   // which is not a constant expression. If no diagnostics were produced, then
   // this is a constant expression.
-  if (Folded && getLangOpts().CPlusPlus0x && Notes.empty()) {
+  if (Folded && getLangOpts().CPlusPlus11 && Notes.empty()) {
     if (Result)
       *Result = EvalResult.Val.getInt();
     return Owned(E);
@@ -10490,7 +10495,17 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
     if (old.isInvalid()) old = Loc;
   }
 
-  Func->setUsed(true);
+  // Normally the must current decl is marked used while processing the use and
+  // any subsequent decls are marked used by decl merging. This fails with
+  // template instantiation since marking can happen at the end of the file
+  // and, because of the two phase lookup, this function is called with at
+  // decl in the middle of a decl chain. We loop to maintain the invariant
+  // that once a decl is used, all decls after it are also used.
+  for (FunctionDecl *F = Func->getMostRecentDecl();; F = F->getPreviousDecl()) {
+    F->setUsed(true);
+    if (F == Func)
+      break;
+  }
 }
 
 static void
@@ -10744,7 +10759,22 @@ bool Sema::tryCaptureVariable(VarDecl *Var, SourceLocation Loc,
       }
       return true;
     }
-
+    // Prohibit structs with flexible array members too.
+    // We cannot capture what is in the tail end of the struct.
+    if (const RecordType *VTTy = Var->getType()->getAs<RecordType>()) {
+      if (VTTy->getDecl()->hasFlexibleArrayMember()) {
+        if (BuildAndDiagnose) {
+          if (IsBlock)
+            Diag(Loc, diag::err_ref_flexarray_type);
+          else
+            Diag(Loc, diag::err_lambda_capture_flexarray_type)
+              << Var->getDeclName();
+          Diag(Var->getLocation(), diag::note_previous_decl)
+            << Var->getDeclName();
+        }
+        return true;
+      }
+    }
     // Lambdas are not allowed to capture __block variables; they don't
     // support the expected semantics.
     if (IsLambda && HasBlocksAttr) {

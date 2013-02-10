@@ -21,18 +21,14 @@ void f() {
   }
   f();
   __asm {
-    mov eax, TYPE cat // expected-error {{Unable to lookup TYPE of expr!}}
+    mov eax, LENGTH bar // expected-error {{Unable to lookup expr!}}
   }
   f();
   __asm {
-    mov eax, SIZE foo // expected-error {{Unsupported directive!}}
+    mov eax, SIZE bar // expected-error {{Unable to lookup expr!}}
   }
   f();
   __asm {
-    mov eax, LENGTH foo // expected-error {{Unsupported directive!}}
-  }
-  f();
-  __asm {
-    mov eax, TYPE bar // expected-error {{Unable to lookup TYPE of expr!}}
+    mov eax, TYPE bar // expected-error {{Unable to lookup expr!}}
   }
 }

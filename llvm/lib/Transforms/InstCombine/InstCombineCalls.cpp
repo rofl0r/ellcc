@@ -14,7 +14,7 @@
 #include "InstCombine.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
-#include "llvm/DataLayout.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/PatternMatch.h"
 #include "llvm/Transforms/Utils/BuildLibCalls.h"
@@ -1014,7 +1014,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
       return false;   // Cannot transform this return value.
 
     if (!CallerPAL.isEmpty() && !Caller->use_empty()) {
-      AttrBuilder RAttrs = CallerPAL.getRetAttributes();
+      AttrBuilder RAttrs(CallerPAL, AttributeSet::ReturnIndex);
       if (RAttrs.hasAttributes(Attribute::typeIncompatible(NewRetTy)))
         return false;   // Attribute not compatible with transformed value.
     }
@@ -1117,7 +1117,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   attrVec.reserve(NumCommonArgs);
 
   // Get any return attributes.
-  AttrBuilder RAttrs = CallerPAL.getRetAttributes();
+  AttrBuilder RAttrs(CallerPAL, AttributeSet::ReturnIndex);
 
   // If the return value is not being used, the type may not be compatible
   // with the existing attributes.  Wipe out any problematic attributes.
@@ -1176,7 +1176,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   }
 
   Attribute FnAttrs = CallerPAL.getFnAttributes();
-  if (FnAttrs.hasAttributes())
+  if (CallerPAL.hasAttributes(AttributeSet::FunctionIndex))
     attrVec.push_back(AttributeWithIndex::get(AttributeSet::FunctionIndex,
                                               FnAttrs));
 
@@ -1287,7 +1287,7 @@ InstCombiner::transformCallThroughTrampoline(CallSite CS,
 
       // Add any result attributes.
       Attribute Attr = Attrs.getRetAttributes();
-      if (Attr.hasAttributes())
+      if (Attrs.hasAttributes(AttributeSet::ReturnIndex))
         NewAttrs.push_back(AttributeWithIndex::get(AttributeSet::ReturnIndex,
                                                    Attr));
 
@@ -1320,7 +1320,7 @@ InstCombiner::transformCallThroughTrampoline(CallSite CS,
 
       // Add any function attributes.
       Attr = Attrs.getFnAttributes();
-      if (Attr.hasAttributes())
+      if (Attrs.hasAttributes(AttributeSet::FunctionIndex))
         NewAttrs.push_back(AttributeWithIndex::get(AttributeSet::FunctionIndex,
                                                    Attr));
 

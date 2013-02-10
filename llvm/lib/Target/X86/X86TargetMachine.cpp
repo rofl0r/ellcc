@@ -48,8 +48,7 @@ X86_32TargetMachine::X86_32TargetMachine(const Target &T, StringRef TT,
     InstrInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
-    JITInfo(*this),
-    STTI(&TLInfo), VTTI(&TLInfo) {
+    JITInfo(*this) {
 }
 
 void X86_64TargetMachine::anchor() { }
@@ -65,8 +64,7 @@ X86_64TargetMachine::X86_64TargetMachine(const Target &T, StringRef TT,
     InstrInfo(*this),
     TLInfo(*this),
     TSInfo(*this),
-    JITInfo(*this),
-    STTI(&TLInfo), VTTI(&TLInfo){
+    JITInfo(*this) {
 }
 
 /// X86TargetMachine ctor - Create an X86 target.
@@ -121,6 +119,19 @@ X86EarlyIfConv("x86-early-ifcvt",
 	       cl::desc("Enable early if-conversion on X86"));
 
 //===----------------------------------------------------------------------===//
+// X86 Analysis Pass Setup
+//===----------------------------------------------------------------------===//
+
+void X86TargetMachine::addAnalysisPasses(PassManagerBase &PM) {
+  // Add first the target-independent BasicTTI pass, then our X86 pass. This
+  // allows the X86 pass to delegate to the target independent layer when
+  // appropriate.
+  PM.add(createBasicTargetTransformInfoPass(getTargetLowering()));
+  PM.add(createX86TargetTransformInfoPass(this));
+}
+
+
+//===----------------------------------------------------------------------===//
 // Pass Pipeline Configuration
 //===----------------------------------------------------------------------===//
 
@@ -140,6 +151,7 @@ public:
   }
 
   virtual bool addInstSelector();
+  virtual bool addILPOpts();
   virtual bool addPreRegAlloc();
   virtual bool addPostRegAlloc();
   virtual bool addPreEmitPass();
@@ -147,12 +159,7 @@ public:
 } // namespace
 
 TargetPassConfig *X86TargetMachine::createPassConfig(PassManagerBase &PM) {
-  X86PassConfig *PC = new X86PassConfig(this, PM);
-
-  if (X86EarlyIfConv && Subtarget.hasCMov())
-    PC->enablePass(&EarlyIfConverterID);
-
-  return PC;
+  return new X86PassConfig(this, PM);
 }
 
 bool X86PassConfig::addInstSelector() {
@@ -167,6 +174,14 @@ bool X86PassConfig::addInstSelector() {
   if (!getX86Subtarget().is64Bit())
     addPass(createGlobalBaseRegPass());
 
+  return false;
+}
+
+bool X86PassConfig::addILPOpts() {
+  if (X86EarlyIfConv && getX86Subtarget().hasCMov()) {
+    addPass(&EarlyIfConverterID);
+    return true;
+  }
   return false;
 }
 
@@ -188,6 +203,12 @@ bool X86PassConfig::addPreEmitPass() {
 
   if (getX86Subtarget().hasAVX() && UseVZeroUpper) {
     addPass(createX86IssueVZeroUpperPass());
+    ShouldPrint = true;
+  }
+
+  if (getOptLevel() != CodeGenOpt::None &&
+      getX86Subtarget().padShortFunctions()) {
+    addPass(createX86PadShortFunctions());
     ShouldPrint = true;
   }
 

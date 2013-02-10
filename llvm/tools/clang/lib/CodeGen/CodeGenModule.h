@@ -23,11 +23,14 @@
 #include "clang/AST/Mangle.h"
 #include "clang/Basic/ABI.h"
 #include "clang/Basic/LangOptions.h"
+#include "clang/Basic/Module.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/Module.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Transforms/Utils/BlackList.h"
 
 namespace llvm {
   class Module;
@@ -66,6 +69,7 @@ namespace clang {
   class AnnotateAttr;
   class CXXDestructorDecl;
   class MangleBuffer;
+  class Module;
 
 namespace CodeGen {
 
@@ -206,7 +210,7 @@ struct ARCEntrypoints {
   /// a call will be immediately retain.
   llvm::InlineAsm *retainAutoreleasedReturnValueMarker;
 };
-  
+
 /// CodeGenModule - This class organizes the cross-function state that is used
 /// while generating LLVM code.
 class CodeGenModule : public CodeGenTypeCache {
@@ -313,6 +317,9 @@ class CodeGenModule : public CodeGenTypeCache {
   /// run on termination.
   std::vector<std::pair<llvm::WeakVH,llvm::Constant*> > CXXGlobalDtors;
 
+  /// \brief The complete set of modules that has been imported.
+  llvm::SetVector<clang::Module *> ImportedModules;
+
   /// @name Cache for Objective-C runtime types
   /// @{
 
@@ -358,8 +365,12 @@ class CodeGenModule : public CodeGenTypeCache {
   struct {
     int GlobalUniqueCount;
   } Block;
-  
+
   GlobalDecl initializedGlobalDecl;
+
+  llvm::BlackList SanitizerBlacklist;
+
+  const SanitizerOptions &SanOpts;
 
   /// @}
 public:
@@ -860,7 +871,7 @@ public:
   void EmitGlobalAnnotations();
 
   /// Emit an annotation string.
-  llvm::Constant *EmitAnnotationString(llvm::StringRef Str);
+  llvm::Constant *EmitAnnotationString(StringRef Str);
 
   /// Emit the annotation's translation unit.
   llvm::Constant *EmitAnnotationUnit(SourceLocation Loc);
@@ -882,6 +893,12 @@ public:
   /// Add global annotations that are set on D, for the global GV. Those
   /// annotations are emitted during finalization of the LLVM code.
   void AddGlobalAnnotations(const ValueDecl *D, llvm::GlobalValue *GV);
+
+  const llvm::BlackList &getSanitizerBlacklist() const {
+    return SanitizerBlacklist;
+  }
+
+  const SanitizerOptions &getSanOpts() const { return SanOpts; }
 
 private:
   llvm::GlobalValue *GetGlobalValue(StringRef Ref);
@@ -988,6 +1005,9 @@ private:
   /// EmitLLVMUsed - Emit the llvm.used metadata used to force
   /// references to global which may otherwise be optimized out.
   void EmitLLVMUsed();
+
+  /// \brief Emit the link options introduced by imported modules.
+  void EmitModuleLinkOptions();
 
   void EmitDeclMetadata();
 

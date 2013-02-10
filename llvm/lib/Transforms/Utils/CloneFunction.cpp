@@ -17,15 +17,15 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/Constants.h"
 #include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/GlobalVariable.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Metadata.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
@@ -98,15 +98,11 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
         Anew->addAttr( OldFunc->getAttributes()
                        .getParamAttributes(I->getArgNo() + 1));
     NewFunc->setAttributes(NewFunc->getAttributes()
-                           .addAttr(NewFunc->getContext(),
-                                    AttributeSet::ReturnIndex,
-                                    OldFunc->getAttributes()
-                                     .getRetAttributes()));
+                           .addRetAttributes(NewFunc->getContext(),
+                                             OldFunc->getAttributes()));
     NewFunc->setAttributes(NewFunc->getAttributes()
-                           .addAttr(NewFunc->getContext(),
-                                    AttributeSet::FunctionIndex,
-                                    OldFunc->getAttributes()
-                                     .getFnAttributes()));
+                           .addFnAttributes(NewFunc->getContext(),
+                                            OldFunc->getAttributes()));
 
   }
 

@@ -404,9 +404,10 @@ void Darwin::AddDeploymentTarget(DerivedArgList &Args) const {
       getDriver().Diag(clang::diag::warn_missing_sysroot) << A->getValue();
   } else {
     if (char *env = ::getenv("SDKROOT")) {
-      // We only use this value as the default if it is an absolute path and
-      // exists.
-      if (llvm::sys::path::is_absolute(env) && llvm::sys::fs::exists(env)) {
+      // We only use this value as the default if it is an absolute path,
+      // exists, and it is not the root path.
+      if (llvm::sys::path::is_absolute(env) && llvm::sys::fs::exists(env) &&
+          StringRef(env) != "/") {
         Args.append(Args.MakeSeparateArg(
                       0, Opts.getOption(options::OPT_isysroot), env));
       }
@@ -953,7 +954,7 @@ Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
   // And retains any patch number it finds.
   StringRef PatchText = GoodVersion.PatchSuffix = Second.second.str();
   if (!PatchText.empty()) {
-    if (unsigned EndNumber = PatchText.find_first_not_of("0123456789")) {
+    if (size_t EndNumber = PatchText.find_first_not_of("0123456789")) {
       // Try to parse the number and any suffix.
       if (PatchText.slice(0, EndNumber).getAsInteger(10, GoodVersion.Patch) ||
           GoodVersion.Patch < 0)
@@ -1648,7 +1649,7 @@ StringRef Hexagon_TC::GetTargetCPU(const ArgList &Args)
   // Select the default CPU (v4) if none was given or detection failed.
   Arg *A = GetLastHexagonArchArg (Args);
   if (A) {
-    llvm::StringRef WhichHexagon = A->getValue();
+    StringRef WhichHexagon = A->getValue();
     if (WhichHexagon.startswith("hexagon"))
       return WhichHexagon.substr(sizeof("hexagon") - 1);
     if (WhichHexagon != "")
@@ -2060,6 +2061,7 @@ enum LinuxDistro {
   DebianLenny,
   DebianSqueeze,
   DebianWheezy,
+  DebianJessie,
   Exherbo,
   RHEL4,
   RHEL5,
@@ -2097,7 +2099,7 @@ static bool IsOpenSuse(enum LinuxDistro Distro) {
 }
 
 static bool IsDebian(enum LinuxDistro Distro) {
-  return Distro >= DebianLenny && Distro <= DebianWheezy;
+  return Distro >= DebianLenny && Distro <= DebianJessie;
 }
 
 static bool IsUbuntu(enum LinuxDistro Distro) {
@@ -2164,6 +2166,8 @@ static LinuxDistro DetectLinuxDistro(llvm::Triple::ArchType Arch) {
       return DebianSqueeze;
     else if (Data.startswith("wheezy/sid")  || Data[0] == '7')
       return DebianWheezy;
+    else if (Data.startswith("jessie/sid")  || Data[0] == '8')
+      return DebianJessie;
     return UnknownDistro;
   }
 
@@ -2330,7 +2334,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     ExtraOpts.push_back("--no-add-needed");
 
   if (Distro == DebianSqueeze || Distro == DebianWheezy ||
-      IsOpenSuse(Distro) ||
+      Distro == DebianJessie || IsOpenSuse(Distro) ||
       (IsRedhat(Distro) && Distro != RHEL4 && Distro != RHEL5) ||
       (IsUbuntu(Distro) && Distro >= UbuntuKarmic))
     ExtraOpts.push_back("--build-id");

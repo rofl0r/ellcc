@@ -35,6 +35,27 @@ will only vectorize loops that do not require a major increase in code size.
 
 We plan to enable the Loop Vectorizer by default as part of the LLVM 3.3 release.
 
+Command line flags
+^^^^^^^^^^^^^^^^^^
+
+The loop vectorizer uses a cost model to decide on the optimal vectorization factor
+and unroll factor. However, users of the vectorizer can force the vectorizer to use
+specific values. Both 'clang' and 'opt' support the flags below.
+
+Users can control the vectorization SIMD width using the command line flag "-force-vector-width".
+
+.. code-block:: console
+
+  $ clang  -mllvm -force-vector-width=8 ...
+  $ opt -loop-vectorize -force-vector-width=8 ...
+
+Users can control the unroll factor using the command line flag "-force-vector-unroll"
+
+.. code-block:: console
+
+  $ clang  -mllvm -force-vector-unroll=2 ...
+  $ opt -loop-vectorize -force-vector-unroll=2 ...
+
 Features
 --------
 
@@ -99,6 +120,8 @@ reduction operations, such as addition, multiplication, XOR, AND and OR.
     return sum;
   }
 
+We support floating point reduction operations when `-ffast-math` is used.
+
 Inductions
 ^^^^^^^^^^
 
@@ -159,8 +182,8 @@ The Loop Vectorizer can vectorize loops that count backwards.
 Scatter / Gather
 ^^^^^^^^^^^^^^^^
 
-The Loop Vectorizer can vectorize code that becomes scatter/gather
-memory accesses.
+The Loop Vectorizer can vectorize code that becomes a sequence of scalar instructions 
+that scatter/gathers memory.
 
 .. code-block:: c++
 
@@ -203,6 +226,32 @@ See the table below for a list of these functions.
 |     |     | fmuladd |
 +-----+-----+---------+
 
+
+Partial unrolling during vectorization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Modern processors feature multiple execution units, and only programs that contain a
+high degree of parallelism can fully utilize the entire width of the machine. 
+The Loop Vectorizer increases the instruction level parallelism (ILP) by 
+performing partial-unrolling of loops.
+
+In the example below the entire array is accumulated into the variable 'sum'.
+This is inefficient because only a single execution port can be used by the processor.
+By unrolling the code the Loop Vectorizer allows two or more execution ports
+to be used simultaneously.
+
+.. code-block:: c++
+
+  int foo(int *A, int *B, int n) {
+    unsigned sum = 0;
+    for (int i = 0; i < n; ++i)
+        sum += A[i];
+    return sum;
+  }
+
+The Loop Vectorizer uses a cost model to decide when it is profitable to unroll loops.
+The decision to unroll the loop depends on the register pressure and the generated code size. 
+
 Performance
 -----------
 
@@ -215,6 +264,10 @@ The chart below compares GCC-4.7, ICC-13, and Clang-SVN with and without loop ve
 The Y-axis shows the time in msec. Lower is better. The last column shows the geomean of all the kernels.
 
 .. image:: gcc-loops.png
+
+And Linpack-pc with the same configuration. Result is Mflops, higher is better.
+
+.. image:: linpack-pc.png
 
 .. _bb-vectorizer:
 

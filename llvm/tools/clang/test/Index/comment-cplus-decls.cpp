@@ -39,7 +39,7 @@ protected:
 */
     data* reserved;
 };
-// CHECK: <Declaration>class Test {\n}</Declaration>
+// CHECK: <Declaration>class Test {}</Declaration>
 // CHECK: <Declaration>Test() : reserved(new Test::data())</Declaration>
 // CHECK: <Declaration>unsigned int getID() const</Declaration>
 // CHECK: <Declaration>void ~Test()</Declaration>
@@ -162,7 +162,7 @@ private:
 */
     template <class T> friend class valarray;
 };
-// CHECK: <Declaration>template &lt;class T = unsigned int&gt; class valarray {\n}\ntemplate &lt;class T&gt; class valarray</Declaration>
+// CHECK: <Declaration>template &lt;class T&gt; class valarray</Declaration>
 // CHECK: <Declaration>friend template &lt;class T&gt; class valarray</Declaration>
 
 class gslice

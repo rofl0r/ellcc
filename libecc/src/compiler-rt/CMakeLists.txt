@@ -15,38 +15,57 @@ include(LLVMParseArguments)
 # runtime libraries.
 cmake_minimum_required(VERSION 2.8.8)
 
+# Compute the Clang version from the LLVM version.
+# FIXME: We should be able to reuse CLANG_VERSION variable calculated
+#        in Clang cmake files, instead of copying the rules here.
+string(REGEX MATCH "[0-9]+\\.[0-9]+(\\.[0-9]+)?" CLANG_VERSION
+       ${PACKAGE_VERSION})
+# Setup the paths where compiler-rt runtimes and headers should be stored.
+set(LIBCLANG_INSTALL_PATH lib${LLVM_LIBDIR_SUFFIX}/clang/${CLANG_VERSION})
+string(TOLOWER ${CMAKE_SYSTEM_NAME} LIBCLANG_OS_DIR)
+set(COMPILER_RT_LIBRARY_OUTPUT_DIR 
+  ${LLVM_BINARY_DIR}/lib/clang/${CLANG_VERSION}/lib/${LIBCLANG_OS_DIR})
+set(COMPILER_RT_LIBRARY_INSTALL_DIR
+ ${LIBCLANG_INSTALL_PATH}/lib/${LIBCLANG_OS_DIR}) 
+
 # Add path for custom modules
 set(CMAKE_MODULE_PATH
   ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules"
   )
+include(AddCompilerRT)
 
 set(COMPILER_RT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Detect whether the current target platform is 32-bit or 64-bit, and setup
+# the correct commandline flags needed to attempt to target 32-bit and 64-bit.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4 OR LLVM_BUILD_32_BITS)
+  set(TARGET_64_BIT_CFLAGS "-m64")
+  set(TARGET_32_BIT_CFLAGS "")
+else()
+  if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "Please use a sane architecture with 4 or 8 byte pointers.")
+  endif()
+  set(TARGET_64_BIT_CFLAGS "")
+  set(TARGET_32_BIT_CFLAGS "-m32")
+endif()
 
 # FIXME: Below we assume that the target build of LLVM/Clang is x86, which is
 # not at all valid. Much of this can be fixed just by switching to use
 # a just-built-clang binary for the compiles.
 
-# Detect whether the current target platform is 32-bit or 64-bit, and setup
-# the correct commandline flags needed to attempt to target 32-bit and 64-bit.
-if(CMAKE_SIZEOF_VOID_P EQUAL 4 OR LLVM_BUILD_32_BITS)
-  set(TARGET_X86_64_CFLAGS "-m64")
-  set(TARGET_I386_CFLAGS "")
-else()
-  if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "Please use a sane architecture with 4 or 8 byte pointers.")
-  endif()
-  set(TARGET_X86_64_CFLAGS "")
-  set(TARGET_I386_CFLAGS "-m32")
-endif()
+set(TARGET_x86_64_CFLAGS ${TARGET_64_BIT_CFLAGS})
+set(TARGET_i386_CFLAGS ${TARGET_32_BIT_CFLAGS})
+
+set(COMPILER_RT_SUPPORTED_ARCH
+  x86_64 i386)
 
 function(get_target_flags_for_arch arch out_var)
-  if(${arch} STREQUAL "x86_64")
-    set(${out_var} ${TARGET_X86_64_CFLAGS} PARENT_SCOPE)
-  elseif(${arch} STREQUAL "i386")
-    set(${out_var} ${TARGET_I386_CFLAGS} PARENT_SCOPE)
-  else()
+  list(FIND COMPILER_RT_SUPPORTED_ARCH ${arch} ARCH_INDEX)
+  if(ARCH_INDEX EQUAL -1)
     message(FATAL_ERROR "Unsupported architecture: ${arch}")
+  else()
+    set(${out_var} ${TARGET_${arch}_CFLAGS} PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -56,15 +75,15 @@ endfunction()
 # abilities.
 set(SIMPLE_SOURCE64 ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple64.c)
 file(WRITE ${SIMPLE_SOURCE64} "#include <stdlib.h>\nint main() {}")
-try_compile(CAN_TARGET_X86_64 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE64}
-            COMPILE_DEFINITIONS "${TARGET_X86_64_CFLAGS}"
-            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_X86_64_CFLAGS}")
+try_compile(CAN_TARGET_x86_64 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE64}
+            COMPILE_DEFINITIONS "${TARGET_x86_64_CFLAGS}"
+            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_x86_64_CFLAGS}")
 
 set(SIMPLE_SOURCE32 ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple32.c)
 file(WRITE ${SIMPLE_SOURCE32} "#include <stdlib.h>\nint main() {}")
-try_compile(CAN_TARGET_I386 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE32}
-            COMPILE_DEFINITIONS "${TARGET_I386_CFLAGS}"
-            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_I386_CFLAGS}")
+try_compile(CAN_TARGET_i386 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE32}
+            COMPILE_DEFINITIONS "${TARGET_i386_CFLAGS}"
+            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_i386_CFLAGS}")
 
 # We only support running instrumented tests when we're not cross compiling
 # and target a unix-like system. On Android we define the rules for building
@@ -78,9 +97,8 @@ endif()
 function(filter_available_targets out_var)
   set(archs)
   foreach(arch ${ARGN})
-    if(${arch} STREQUAL "x86_64" AND CAN_TARGET_X86_64)
-      list(APPEND archs ${arch})
-    elseif (${arch} STREQUAL "i386" AND CAN_TARGET_I386)
+    list(FIND COMPILER_RT_SUPPORTED_ARCH ${arch} ARCH_INDEX)
+    if(NOT (ARCH_INDEX EQUAL -1) AND CAN_TARGET_${arch})
       list(APPEND archs ${arch})
     endif()
   endforeach()
@@ -119,31 +137,10 @@ if(APPLE)
   list(APPEND SANITIZER_COMMON_CFLAGS -mmacosx-version-min=10.5)
 endif()
 
-# Because compiler-rt spends a lot of time setting up custom compile flags,
-# define a handy helper function for it. The compile flags setting in CMake
-# has serious issues that make its syntax challenging at best.
-function(set_target_compile_flags target)
-  foreach(arg ${ARGN})
-    set(argstring "${argstring} ${arg}")
-  endforeach()
-  set_property(TARGET ${target} PROPERTY COMPILE_FLAGS "${argstring}")
-endfunction()
-
-function(set_target_link_flags target)
-  foreach(arg ${ARGN})
-    set(argstring "${argstring} ${arg}")
-  endforeach()
-  set_property(TARGET ${target} PROPERTY LINK_FLAGS "${argstring}")
-endfunction()
-
-# Compute the Clang version from the LLVM version.
-# FIXME: We should be able to reuse CLANG_VERSION variable calculated
-#        in Clang cmake files, instead of copying the rules here.
-string(REGEX MATCH "[0-9]+\\.[0-9]+(\\.[0-9]+)?" CLANG_VERSION
-       ${PACKAGE_VERSION})
-# Setup the paths where compiler-rt runtimes and headers should be stored.
-set(LIBCLANG_INSTALL_PATH lib${LLVM_LIBDIR_SUFFIX}/clang/${CLANG_VERSION})
-string(TOLOWER ${CMAKE_SYSTEM_NAME} LIBCLANG_OS_DIR)
+# Architectures supported by Sanitizer runtimes. Specific sanitizers may
+# support only subset of these (e.g. TSan works on x86_64 only).
+filter_available_targets(SANITIZER_COMMON_SUPPORTED_ARCH
+  x86_64 i386)
 
 # Install compiler-rt headers.
 install(DIRECTORY include/
@@ -158,16 +155,12 @@ install(DIRECTORY include/
 macro(add_clang_compiler_rt_libraries)
   # Setup output directories so that clang in build tree works.
   set_target_properties(${ARGN} PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY
-      ${LLVM_BINARY_DIR}/lib/clang/${CLANG_VERSION}/lib/${LIBCLANG_OS_DIR}
-    LIBRARY_OUTPUT_DIRECTORY
-      ${LLVM_BINARY_DIR}/lib/clang/${CLANG_VERSION}/lib/${LIBCLANG_OS_DIR}
-    )
+    ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+    LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
   # Add installation command.
   install(TARGETS ${ARGN}
-    ARCHIVE DESTINATION ${LIBCLANG_INSTALL_PATH}/lib/${LIBCLANG_OS_DIR}
-    LIBRARY DESTINATION ${LIBCLANG_INSTALL_PATH}/lib/${LIBCLANG_OS_DIR}
-    )
+    ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
+    LIBRARY DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
 endmacro(add_clang_compiler_rt_libraries)
 
 # Add the public header's directory to the includes for all of compiler-rt.

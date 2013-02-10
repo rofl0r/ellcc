@@ -92,29 +92,6 @@ void CompilerInstance::setCodeCompletionConsumer(CodeCompleteConsumer *Value) {
 }
 
 // Diagnostics
-static void SetUpBuildDumpLog(DiagnosticOptions *DiagOpts,
-                              unsigned argc, const char* const *argv,
-                              DiagnosticsEngine &Diags) {
-  std::string ErrorInfo;
-  OwningPtr<raw_ostream> OS(
-    new llvm::raw_fd_ostream(DiagOpts->DumpBuildInformation.c_str(),ErrorInfo));
-  if (!ErrorInfo.empty()) {
-    Diags.Report(diag::err_fe_unable_to_open_logfile)
-                 << DiagOpts->DumpBuildInformation << ErrorInfo;
-    return;
-  }
-
-  (*OS) << "clang -cc1 command line arguments: ";
-  for (unsigned i = 0; i != argc; ++i)
-    (*OS) << argv[i] << ' ';
-  (*OS) << '\n';
-
-  // Chain in a diagnostic client which will log the diagnostics.
-  DiagnosticConsumer *Logger =
-    new TextDiagnosticPrinter(*OS.take(), DiagOpts, /*OwnsOutputStream=*/true);
-  Diags.setClient(new ChainedDiagnosticConsumer(Diags.takeClient(), Logger));
-}
-
 static void SetUpDiagnosticLog(DiagnosticOptions *DiagOpts,
                                const CodeGenOptions *CodeGenOpts,
                                DiagnosticsEngine &Diags) {
@@ -128,7 +105,7 @@ static void SetUpDiagnosticLog(DiagnosticOptions *DiagOpts,
                                ErrorInfo, llvm::raw_fd_ostream::F_Append));
     if (!ErrorInfo.empty()) {
       Diags.Report(diag::warn_fe_cc_log_diagnostics_failure)
-        << DiagOpts->DumpBuildInformation << ErrorInfo;
+        << DiagOpts->DiagnosticLogFile << ErrorInfo;
     } else {
       FileOS->SetUnbuffered();
       FileOS->SetUseAtomicWrites(true);
@@ -167,18 +144,16 @@ static void SetupSerializedDiagnostics(DiagnosticOptions *DiagOpts,
                                                 SerializedConsumer));
 }
 
-void CompilerInstance::createDiagnostics(int Argc, const char* const *Argv,
-                                         DiagnosticConsumer *Client,
+void CompilerInstance::createDiagnostics(DiagnosticConsumer *Client,
                                          bool ShouldOwnClient,
                                          bool ShouldCloneClient) {
-  Diagnostics = createDiagnostics(&getDiagnosticOpts(), Argc, Argv, Client,
+  Diagnostics = createDiagnostics(&getDiagnosticOpts(), Client,
                                   ShouldOwnClient, ShouldCloneClient,
                                   &getCodeGenOpts());
 }
 
 IntrusiveRefCntPtr<DiagnosticsEngine>
 CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
-                                    int Argc, const char* const *Argv,
                                     DiagnosticConsumer *Client,
                                     bool ShouldOwnClient,
                                     bool ShouldCloneClient,
@@ -204,9 +179,6 @@ CompilerInstance::createDiagnostics(DiagnosticOptions *Opts,
   // Chain in -diagnostic-log-file dumper, if requested.
   if (!Opts->DiagnosticLogFile.empty())
     SetUpDiagnosticLog(Opts, CodeGenOpts, *Diags);
-
-  if (!Opts->DumpBuildInformation.empty())
-    SetUpBuildDumpLog(Opts, Argc, Argv, *Diags);
 
   if (!Opts->DiagnosticSerializationFile.empty())
     SetupSerializedDiagnostics(Opts, *Diags,
@@ -854,8 +826,7 @@ static void compileModule(CompilerInstance &ImportingInstance,
   // module.
   CompilerInstance Instance;
   Instance.setInvocation(&*Invocation);
-  Instance.createDiagnostics(/*argc=*/0, /*argv=*/0,
-                             &ImportingInstance.getDiagnosticClient(),
+  Instance.createDiagnostics(&ImportingInstance.getDiagnosticClient(),
                              /*ShouldOwnClient=*/true,
                              /*ShouldCloneClient=*/true);
 
@@ -978,13 +949,11 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
         return ModuleLoadResult();
       }
 
-      getDiagnostics().Report(ModuleNameLoc, diag::warn_module_build)
-        << ModuleName;
       BuildingModule = true;
       compileModule(*this, ModuleNameLoc, Module, ModuleFileName);
       ModuleFile = FileMgr->getFile(ModuleFileName);
 
-      if (!ModuleFile)
+      if (!ModuleFile && getPreprocessorOpts().FailedModules)
         getPreprocessorOpts().FailedModules->addFailed(ModuleName);
     }
 
@@ -1059,7 +1028,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
           ModuleManager->ReadAST(ModuleFileName,
                                  serialization::MK_Module, ImportLoc,
                                  ASTReader::ARR_None) != ASTReader::Success) {
-        getPreprocessorOpts().FailedModules->addFailed(ModuleName);
+        if (getPreprocessorOpts().FailedModules)
+          getPreprocessorOpts().FailedModules->addFailed(ModuleName);
         KnownModules[Path[0].first] = 0;
         return ModuleLoadResult();
       }
@@ -1109,7 +1079,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
       
       if (!Sub) {
         // Attempt to perform typo correction to find a module name that works.
-        llvm::SmallVector<StringRef, 2> Best;
+        SmallVector<StringRef, 2> Best;
         unsigned BestEditDistance = (std::numeric_limits<unsigned>::max)();
         
         for (clang::Module::submodule_iterator J = Module->submodule_begin(), 
@@ -1202,3 +1172,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   LastModuleImportResult = ModuleLoadResult(Module, false);
   return LastModuleImportResult;
 }
+
+void CompilerInstance::makeModuleVisible(Module *Mod,
+                                         Module::NameVisibilityKind Visibility){
+  ModuleManager->makeModuleVisible(Mod, Visibility);
+}
+

@@ -198,7 +198,7 @@ Parser::ParseSingleDeclarationAfterTemplate(
   }
 
   ParsedAttributesWithRange prefixAttrs(AttrFactory);
-  MaybeParseCXX0XAttributes(prefixAttrs);
+  MaybeParseCXX11Attributes(prefixAttrs);
 
   if (Tok.is(tok::kw_using))
     return ParseUsingDirectiveOrDeclaration(Context, TemplateInfo, DeclEnd,
@@ -240,27 +240,6 @@ Parser::ParseSingleDeclarationAfterTemplate(
   if (DeclaratorInfo.isFunctionDeclarator())
     MaybeParseGNUAttributes(DeclaratorInfo, &LateParsedAttrs);
 
-  // If we have a declaration or declarator list, handle it.
-  if (isDeclarationAfterDeclarator()) {
-    // Parse this declaration.
-    Decl *ThisDecl = ParseDeclarationAfterDeclarator(DeclaratorInfo,
-                                                     TemplateInfo);
-
-    if (Tok.is(tok::comma)) {
-      Diag(Tok, diag::err_multiple_template_declarators)
-        << (int)TemplateInfo.Kind;
-      SkipUntil(tok::semi, true, false);
-      return ThisDecl;
-    }
-
-    // Eat the semi colon after the declaration.
-    ExpectAndConsumeSemi(diag::err_expected_semi_declaration);
-    if (LateParsedAttrs.size() > 0)
-      ParseLexedAttributeList(LateParsedAttrs, ThisDecl, true, false);
-    DeclaratorInfo.complete(ThisDecl);
-    return ThisDecl;
-  }
-
   if (DeclaratorInfo.isFunctionDeclarator() &&
       isStartOfFunctionDefinition(DeclaratorInfo)) {
     if (DS.getStorageClassSpec() == DeclSpec::SCS_typedef) {
@@ -275,12 +254,23 @@ Parser::ParseSingleDeclarationAfterTemplate(
                                    &LateParsedAttrs);
   }
 
-  if (DeclaratorInfo.isFunctionDeclarator())
-    Diag(Tok, diag::err_expected_fn_body);
-  else
-    Diag(Tok, diag::err_invalid_token_after_toplevel_declarator);
-  SkipUntil(tok::semi);
-  return 0;
+  // Parse this declaration.
+  Decl *ThisDecl = ParseDeclarationAfterDeclarator(DeclaratorInfo,
+                                                   TemplateInfo);
+
+  if (Tok.is(tok::comma)) {
+    Diag(Tok, diag::err_multiple_template_declarators)
+      << (int)TemplateInfo.Kind;
+    SkipUntil(tok::semi, true, false);
+    return ThisDecl;
+  }
+
+  // Eat the semi colon after the declaration.
+  ExpectAndConsumeSemi(diag::err_expected_semi_declaration);
+  if (LateParsedAttrs.size() > 0)
+    ParseLexedAttributeList(LateParsedAttrs, ThisDecl, true, false);
+  DeclaratorInfo.complete(ThisDecl);
+  return ThisDecl;
 }
 
 /// ParseTemplateParameters - Parses a template-parameter-list enclosed in
@@ -481,7 +471,7 @@ Decl *Parser::ParseTypeParameter(unsigned Depth, unsigned Position) {
     EllipsisLoc = ConsumeToken();
 
     Diag(EllipsisLoc,
-         getLangOpts().CPlusPlus0x
+         getLangOpts().CPlusPlus11
            ? diag::warn_cxx98_compat_variadic_templates
            : diag::ext_variadic_templates);
   }
@@ -568,7 +558,7 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
     EllipsisLoc = ConsumeToken();
     
     Diag(EllipsisLoc,
-         getLangOpts().CPlusPlus0x
+         getLangOpts().CPlusPlus11
            ? diag::warn_cxx98_compat_variadic_templates
            : diag::ext_variadic_templates);
   }
@@ -743,7 +733,7 @@ bool Parser::ParseGreaterThanInTemplateList(SourceLocation &RAngleLoc,
     Hint2 = FixItHint::CreateInsertion(Next.getLocation(), " ");
 
   unsigned DiagId = diag::err_two_right_angle_brackets_need_space;
-  if (getLangOpts().CPlusPlus0x && Tok.is(tok::greatergreater))
+  if (getLangOpts().CPlusPlus11 && Tok.is(tok::greatergreater))
     DiagId = diag::warn_cxx98_compat_two_right_angle_brackets;
   else if (Tok.is(tok::greaterequal))
     DiagId = diag::err_right_angle_bracket_equal_needs_space;

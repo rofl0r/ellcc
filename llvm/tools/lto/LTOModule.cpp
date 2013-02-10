@@ -16,8 +16,9 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/Constants.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
@@ -26,7 +27,6 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -766,11 +766,12 @@ namespace {
     }
 
     virtual void EmitBundleAlignMode(unsigned AlignPow2) {}
-    virtual void EmitBundleLock() {}
+    virtual void EmitBundleLock(bool AlignToEnd) {}
     virtual void EmitBundleUnlock() {}
 
     // Noop calls.
     virtual void ChangeSection(const MCSection *Section) {}
+    virtual void InitToTextSection() {}
     virtual void InitSections() {}
     virtual void EmitAssemblerFlag(MCAssemblerFlag Flag) {}
     virtual void EmitThumbFunc(MCSymbol *Func) {}

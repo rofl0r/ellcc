@@ -1570,10 +1570,6 @@ void RetainSummaryManager::InitializeMethodSummaries() {
   Summ = getPersistentSummary(NoRet, DecRefMsg);
   addNSObjectMethSummary(GetNullarySelector("release", Ctx), Summ);
 
-  // Create the "drain" selector.
-  Summ = getPersistentSummary(NoRet, isGCEnabled() ? DoNothing : DecRef);
-  addNSObjectMethSummary(GetNullarySelector("drain", Ctx), Summ);
-
   // Create the -dealloc summary.
   Summ = getPersistentSummary(NoRet, Dealloc);
   addNSObjectMethSummary(GetNullarySelector("dealloc", Ctx), Summ);
@@ -2352,7 +2348,7 @@ class RetainCountChecker
   : public Checker< check::Bind,
                     check::DeadSymbols,
                     check::EndAnalysis,
-                    check::EndPath,
+                    check::EndFunction,
                     check::PostStmt<BlockExpr>,
                     check::PostStmt<CastExpr>,
                     check::PostStmt<ObjCArrayLiteral>,
@@ -2529,7 +2525,7 @@ public:
                                 SymbolRef Sym, ProgramStateRef state) const;
                                               
   void checkDeadSymbols(SymbolReaper &SymReaper, CheckerContext &C) const;
-  void checkEndPath(CheckerContext &C) const;
+  void checkEndFunction(CheckerContext &C) const;
 
   ProgramStateRef updateSymbol(ProgramStateRef state, SymbolRef sym,
                                RefVal V, ArgEffect E, RefVal::Kind &hasErr,
@@ -3179,7 +3175,7 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
 
     // Invalidate the argument region.
     state = state->invalidateRegions(ArgRegion, CE, C.blockCount(), LCtx,
-                                     /*CausedByPointerEscape*/ false);
+                                     /*CausesPointerEscape*/ false);
 
     // Restore the refcount status of the argument.
     if (Binding)
@@ -3580,7 +3576,7 @@ RetainCountChecker::processLeaks(ProgramStateRef state,
   return N;
 }
 
-void RetainCountChecker::checkEndPath(CheckerContext &Ctx) const {
+void RetainCountChecker::checkEndFunction(CheckerContext &Ctx) const {
   ProgramStateRef state = Ctx.getState();
   RefBindingsTy B = state->get<RefBindings>();
   ExplodedNode *Pred = Ctx.getPredecessor();

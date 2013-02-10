@@ -114,6 +114,8 @@ protected:
   const MCSection *DwarfStrDWOSection;
   const MCSection *DwarfLineDWOSection;
   const MCSection *DwarfLocDWOSection;
+  const MCSection *DwarfStrOffDWOSection;
+  const MCSection *DwarfAddrSection;
 
   // Extra TLS Variable Data section.  If the target needs to put additional
   // information for a TLS variable, it'll go here.
@@ -246,6 +248,12 @@ public:
   }
   const MCSection *getDwarfLocDWOSection() const {
     return DwarfLocDWOSection;
+  }
+  const MCSection *getDwarfStrOffDWOSection() const {
+    return DwarfStrOffDWOSection;
+  }
+  const MCSection *getDwarfAddrSection() const {
+    return DwarfAddrSection;
   }
 
   const MCSection *getTLSExtraDataSection() const {

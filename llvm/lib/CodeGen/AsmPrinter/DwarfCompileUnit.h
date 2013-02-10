@@ -27,6 +27,7 @@ class DwarfUnits;
 class MachineLocation;
 class MachineOperand;
 class ConstantInt;
+class ConstantFP;
 class DbgVariable;
 
 //===----------------------------------------------------------------------===//
@@ -85,6 +86,9 @@ class CompileUnit {
   /// getLowerBoundDefault - Return the default lower bound for an array. If the
   /// DWARF version doesn't handle the language, return -1.
   int64_t getDefaultLowerBound() const;
+
+  /// getOrCreateContextDIE - Get context owner's DIE.
+  DIE *getOrCreateContextDIE(DIDescriptor Context);
 
 public:
   CompileUnit(unsigned UID, unsigned L, DIE *D, AsmPrinter *A, DwarfDebug *DW,
@@ -198,10 +202,24 @@ public:
   ///
   void addString(DIE *Die, unsigned Attribute, const StringRef Str);
 
+  /// addLocalString - Add a string attribute data and value.
+  ///
+  void addLocalString(DIE *Die, unsigned Attribute, const StringRef Str);
+
   /// addLabel - Add a Dwarf label attribute data and value.
   ///
   void addLabel(DIE *Die, unsigned Attribute, unsigned Form,
                 const MCSymbol *Label);
+
+  /// addLabelAddress - Add a dwarf label attribute data and value using
+  /// either DW_FORM_addr or DW_FORM_GNU_addr_index.
+  ///
+  void addLabelAddress(DIE *Die, unsigned Attribute, MCSymbol *Label);
+
+  /// addOpAddress - Add a dwarf op address data and value using the
+  /// form given and an op of either DW_FORM_addr or DW_FORM_GNU_addr_index.
+  ///
+  void addOpAddress(DIE *Die, MCSymbol *Label);
 
   /// addDelta - Add a label delta attribute data and value.
   ///
@@ -233,9 +251,11 @@ public:
   /// addConstantValue - Add constant value entry in variable DIE.
   bool addConstantValue(DIE *Die, const MachineOperand &MO, DIType Ty);
   bool addConstantValue(DIE *Die, const ConstantInt *CI, bool Unsigned);
+  bool addConstantValue(DIE *Die, const APInt &Val, bool Unsigned);
 
   /// addConstantFPValue - Add constant value entry in variable DIE.
   bool addConstantFPValue(DIE *Die, const MachineOperand &MO);
+  bool addConstantFPValue(DIE *Die, const ConstantFP *CFP);
 
   /// addTemplateParams - Add template parameters in buffer.
   void addTemplateParams(DIE &Buffer, DIArray TParams);
@@ -334,6 +354,9 @@ public:
 
   /// createMemberDIE - Create new member DIE.
   DIE *createMemberDIE(DIDerivedType DT);
+
+  /// createStaticMemberDIE - Create new static data member DIE.
+  DIE *createStaticMemberDIE(DIDerivedType DT);
 
 private:
 

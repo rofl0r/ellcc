@@ -12,11 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsIntrinsicInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Module.h"
-#include "llvm/Type.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstring>

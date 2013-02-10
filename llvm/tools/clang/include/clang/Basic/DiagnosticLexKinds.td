@@ -175,12 +175,12 @@ def err_bad_string_encoding : Error<
   "illegal character encoding in string literal">;
 def warn_bad_string_encoding : ExtWarn<
   "illegal character encoding in string literal">,
-  InGroup<DiagGroup<"invalid-source-encoding">>;
+  InGroup<InvalidSourceEncoding>;
 def err_bad_character_encoding : Error<
   "illegal character encoding in character literal">;
 def warn_bad_character_encoding : ExtWarn<
   "illegal character encoding in character literal">,
-  InGroup<DiagGroup<"invalid-source-encoding">>;
+  InGroup<InvalidSourceEncoding>;
 def err_lexing_string : Error<"failure when lexing a string">;
 
 
@@ -284,7 +284,12 @@ def warn_cxx98_compat_empty_fnmacro_arg : Warning<
   InGroup<CXX98CompatPedantic>, DefaultIgnore;
 def note_macro_here : Note<"macro %0 defined here">;
 
+def err_pp_opencl_variadic_macros :
+  Error<"variadic macros not supported in OpenCL">;
+
 def err_pp_invalid_directive : Error<"invalid preprocessing directive">;
+def err_pp_directive_required : Error<
+  "%0 must be used within a preprocessing directive">;
 def err_pp_file_not_found : Error<"'%0' file not found">, DefaultFatal;
 def err_pp_file_not_found_not_fatal : Error<
   "'%0' file not found with <angled> include; use \"quotes\" instead">;
@@ -486,6 +491,8 @@ def err_mmap_umbrella_clash : Error<
   "umbrella for module '%0' already covers this directory">;
 def err_mmap_export_module_id : Error<
   "expected an exported module name or '*'">;
+def err_mmap_expected_library_name : Error<
+  "expected %select{library|framework}0 name as a string">;
 def err_mmap_missing_module_unqualified : Error<
   "no module named '%0' visible from '%1'">;
 def err_mmap_missing_module_qualified : Error<
@@ -521,7 +528,8 @@ def warn_auto_module_import : Warning<
   "treating #%select{include|import|include_next|__include_macros}0 as an "
   "import of module '%1'">, InGroup<AutoImport>, DefaultIgnore;
 def warn_uncovered_module_header : Warning<
-  "umbrella header does not include header '%0'">, InGroup<IncompleteUmbrella>;
+  "umbrella header for module '%0' does not include header '%1'">, 
+  InGroup<IncompleteUmbrella>;
 def err_expected_id_building_module : Error<
   "expected a module name in '__building_module' expression">;
   

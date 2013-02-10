@@ -40,12 +40,13 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Constants.h"
-#include "llvm/DataLayout.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -439,13 +440,12 @@ bool LICM::canSinkOrHoistInst(Instruction &I) {
   }
 
   // Only these instructions are hoistable/sinkable.
-  bool HoistableKind = (isa<BinaryOperator>(I) || isa<CastInst>(I) ||
-                            isa<SelectInst>(I) || isa<GetElementPtrInst>(I) ||
-                            isa<CmpInst>(I)    || isa<InsertElementInst>(I) ||
-                            isa<ExtractElementInst>(I) ||
-                            isa<ShuffleVectorInst>(I));
-  if (!HoistableKind)
-      return false;
+  if (!isa<BinaryOperator>(I) && !isa<CastInst>(I) && !isa<SelectInst>(I) &&
+      !isa<GetElementPtrInst>(I) && !isa<CmpInst>(I) &&
+      !isa<InsertElementInst>(I) && !isa<ExtractElementInst>(I) &&
+      !isa<ShuffleVectorInst>(I) && !isa<ExtractValueInst>(I) &&
+      !isa<InsertValueInst>(I))
+    return false;
 
   return isSafeToExecuteUnconditionally(I);
 }
@@ -816,10 +816,11 @@ void LICM::PromoteAliasSet(AliasSet &AS,
       if (LoopUses.empty()) {
         // On the first load/store, just take its TBAA tag.
         TBAATag = Use->getMetadata(LLVMContext::MD_tbaa);
-      } else if (TBAATag && TBAATag != Use->getMetadata(LLVMContext::MD_tbaa)) {
-        TBAATag = 0;
+      } else if (TBAATag) {
+        TBAATag = MDNode::getMostGenericTBAA(TBAATag,
+                                       Use->getMetadata(LLVMContext::MD_tbaa));
       }
-    
+      
       LoopUses.push_back(Use);
     }
   }

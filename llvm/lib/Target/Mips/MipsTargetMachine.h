@@ -22,10 +22,9 @@
 #include "MipsIntrinsicInfo.h"
 #include "MipsSubtarget.h"
 #include "llvm/ADT/OwningPtr.h"
-#include "llvm/DataLayout.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetTransformImpl.h"
 
 namespace llvm {
 class formatted_raw_ostream;
@@ -40,8 +39,6 @@ class MipsTargetMachine : public LLVMTargetMachine {
   MipsSelectionDAGInfo TSInfo;
   MipsJITInfo JITInfo;
   MipsIntrinsicInfo   IntrinsicInfo;
-  ScalarTargetTransformImpl STTI;
-  VectorTargetTransformImpl VTTI;
 
 public:
   MipsTargetMachine(const Target &T, StringRef TT,
@@ -73,13 +70,6 @@ public:
 
   virtual const MipsSelectionDAGInfo* getSelectionDAGInfo() const {
     return &TSInfo;
-  }
-
-  virtual const ScalarTargetTransformInfo *getScalarTargetTransformInfo()const {
-    return &STTI;
-  }
-  virtual const VectorTargetTransformInfo *getVectorTargetTransformInfo()const {
-    return &VTTI;
   }
 
   const TargetIntrinsicInfo *getIntrinsicInfo() const {

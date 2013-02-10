@@ -157,7 +157,7 @@ Decl *Parser::ParseNamespace(unsigned Context,
 
   // If we're still good, complain about inline namespaces in non-C++0x now.
   if (InlineLoc.isValid())
-    Diag(InlineLoc, getLangOpts().CPlusPlus0x ?
+    Diag(InlineLoc, getLangOpts().CPlusPlus11 ?
          diag::warn_cxx98_compat_inline_namespace : diag::ext_inline_namespace);
 
   // Enter a scope for the namespace.
@@ -195,7 +195,7 @@ void Parser::ParseInnerNamespace(std::vector<SourceLocation>& IdentLoc,
   if (index == Ident.size()) {
     while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
       ParsedAttributesWithRange attrs(AttrFactory);
-      MaybeParseCXX0XAttributes(attrs);
+      MaybeParseCXX11Attributes(attrs);
       MaybeParseMicrosoftAttributes(attrs);
       ParseExternalDeclaration(attrs);
     }
@@ -295,7 +295,7 @@ Decl *Parser::ParseLinkage(ParsingDeclSpec &DS, unsigned Context) {
                                                            : SourceLocation());
 
   ParsedAttributesWithRange attrs(AttrFactory);
-  MaybeParseCXX0XAttributes(attrs);
+  MaybeParseCXX11Attributes(attrs);
   MaybeParseMicrosoftAttributes(attrs);
 
   if (Tok.isNot(tok::l_brace)) {
@@ -318,7 +318,7 @@ Decl *Parser::ParseLinkage(ParsingDeclSpec &DS, unsigned Context) {
   T.consumeOpen();
   while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
     ParsedAttributesWithRange attrs(AttrFactory);
-    MaybeParseCXX0XAttributes(attrs);
+    MaybeParseCXX11Attributes(attrs);
     MaybeParseMicrosoftAttributes(attrs);
     ParseExternalDeclaration(attrs);
   }
@@ -454,7 +454,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
   ParsedAttributesWithRange attrs(AttrFactory);
 
   // FIXME: Simply skip the attributes and diagnose, don't bother parsing them.
-  MaybeParseCXX0XAttributes(attrs);
+  MaybeParseCXX11Attributes(attrs);
   ProhibitAttributes(attrs);
   attrs.clear();
   attrs.Range = SourceRange();
@@ -494,7 +494,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     return 0;
   }
 
-  MaybeParseCXX0XAttributes(attrs);
+  MaybeParseCXX11Attributes(attrs);
 
   // Maybe this is an alias-declaration.
   bool IsAliasDecl = Tok.is(tok::equal);
@@ -504,7 +504,7 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     // Where can GNU attributes appear?
     ConsumeToken();
 
-    Diag(Tok.getLocation(), getLangOpts().CPlusPlus0x ?
+    Diag(Tok.getLocation(), getLangOpts().CPlusPlus11 ?
          diag::warn_cxx98_compat_alias_declaration :
          diag::ext_alias_declaration);
 
@@ -957,6 +957,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::semi:               // struct foo {...} ;
   case tok::star:               // struct foo {...} *         P;
   case tok::amp:                // struct foo {...} &         R = ...
+  case tok::ampamp:             // struct foo {...} &&        R = ...
   case tok::identifier:         // struct foo {...} V         ;
   case tok::r_paren:            //(struct foo {...} )         {4}
   case tok::annot_cxxscope:     // struct foo {...} a::       b;
@@ -964,6 +965,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::annot_template_id:  // struct foo {...} a<int>    ::b;
   case tok::l_paren:            // struct foo {...} (         x);
   case tok::comma:              // __builtin_offsetof(struct foo{...} ,
+  case tok::kw_operator:        // struct foo       operator  ++() {...}
     return true;
   case tok::colon:
     return CouldBeBitfield;     // enum E { ... }   :         2;
@@ -971,7 +973,12 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::kw_const:           // struct foo {...} const     x;
   case tok::kw_volatile:        // struct foo {...} volatile  x;
   case tok::kw_restrict:        // struct foo {...} restrict  x;
-  case tok::kw_inline:          // struct foo {...} inline    foo() {};
+  // Function specifiers
+  // Note, no 'explicit'. An explicit function must be either a conversion
+  // operator or a constructor. Either way, it can't have a return type.
+  case tok::kw_inline:          // struct foo       inline    f();
+  case tok::kw_virtual:         // struct foo       virtual   f();
+  case tok::kw_friend:          // struct foo       friend    f();
   // Storage-class specifiers
   case tok::kw_static:          // struct foo {...} static    x;
   case tok::kw_extern:          // struct foo {...} extern    x;
@@ -979,6 +986,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::kw_register:        // struct foo {...} register  x;
   case tok::kw_auto:            // struct foo {...} auto      x;
   case tok::kw_mutable:         // struct foo {...} mutable   x;
+  case tok::kw_thread_local:    // struct foo {...} thread_local x;
   case tok::kw_constexpr:       // struct foo {...} constexpr x;
     // As shown above, type qualifiers and storage class specifiers absolutely
     // can occur after class specifiers according to the grammar.  However,
@@ -1003,6 +1011,10 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
     if (!getLangOpts().CPlusPlus)
       return true;
     break;
+    // C++11 attributes
+  case tok::l_square: // enum E [[]] x
+    // Note, no tok::kw_alignas here; alignas cannot appertain to a type.
+    return getLangOpts().CPlusPlus11 && NextToken().is(tok::l_square);
   }
   return false;
 }
@@ -1104,7 +1116,11 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   // If C++0x attributes exist here, parse them.
   // FIXME: Are we consistent with the ordering of parsing of different
   // styles of attributes?
-  MaybeParseCXX0XAttributes(attrs);
+  MaybeParseCXX11Attributes(attrs);
+
+  // Source location used by FIXIT to insert misplaced
+  // C++11 attributes
+  SourceLocation AttrFixitLoc = Tok.getLocation();
 
   if (TagType == DeclSpec::TST_struct &&
       !Tok.is(tok::identifier) &&
@@ -1250,14 +1266,14 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   // For these, DSC is DSC_type_specifier.
 
   // If there are attributes after class name, parse them.
-  MaybeParseCXX0XAttributes(Attributes);
+  MaybeParseCXX11Attributes(Attributes);
 
   Sema::TagUseKind TUK;
   if (DSC == DSC_trailing)
     TUK = Sema::TUK_Reference;
   else if (Tok.is(tok::l_brace) ||
            (getLangOpts().CPlusPlus && Tok.is(tok::colon)) ||
-           (isCXX0XFinalKeyword() &&
+           (isCXX11FinalKeyword() &&
             (NextToken().is(tok::l_brace) || NextToken().is(tok::colon)))) {
     if (DS.isFriendSpecified()) {
       // C++ [class.friend]p2:
@@ -1273,7 +1289,7 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
       // Okay, this is a class definition.
       TUK = Sema::TUK_Definition;
     }
-  } else if (isCXX0XFinalKeyword() && (NextToken().is(tok::l_square) || 
+  } else if (isCXX11FinalKeyword() && (NextToken().is(tok::l_square) || 
                                        NextToken().is(tok::kw_alignas) ||
                                        NextToken().is(tok::kw__Alignas))) {
     // We can't tell if this is a definition or reference
@@ -1322,9 +1338,25 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
 
   // Forbid misplaced attributes. In cases of a reference, we pass attributes
   // to caller to handle.
-  // FIXME: provide fix-it hints if we can.
-  if (TUK != Sema::TUK_Reference)
-    ProhibitAttributes(Attributes);
+  if (TUK != Sema::TUK_Reference) {
+    // If this is not a reference, then the only possible
+    // valid place for C++11 attributes to appear here
+    // is between class-key and class-name. If there are
+    // any attributes after class-name, we try a fixit to move
+    // them to the right place.
+    SourceRange AttrRange = Attributes.Range;
+    if (AttrRange.isValid()) {
+      Diag(AttrRange.getBegin(), diag::err_attributes_not_allowed)
+        << AttrRange
+        << FixItHint::CreateInsertionFromRange(AttrFixitLoc,
+                                               CharSourceRange(AttrRange, true))
+        << FixItHint::CreateRemoval(AttrRange);
+
+      // Recover by adding misplaced attributes to the attribute list
+      // of the class so they can be applied on the class later.
+      attrs.takeAllFrom(Attributes);
+    }
+  }
 
   // If this is an elaborated type specifier, and we delayed
   // diagnostics before, just merge them into the current pool.
@@ -1506,9 +1538,10 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   if (TUK == Sema::TUK_Definition) {
     assert(Tok.is(tok::l_brace) ||
            (getLangOpts().CPlusPlus && Tok.is(tok::colon)) ||
-           isCXX0XFinalKeyword());
+           isCXX11FinalKeyword());
     if (getLangOpts().CPlusPlus)
-      ParseCXXMemberSpecification(StartLoc, TagType, TagOrTempResult.get());
+      ParseCXXMemberSpecification(StartLoc, AttrFixitLoc, attrs, TagType,
+                                  TagOrTempResult.get());
     else
       ParseStructUnionBody(StartLoc, TagType, TagOrTempResult.get());
   }
@@ -1708,13 +1741,13 @@ void Parser::HandleMemberFunctionDeclDelays(Declarator& DeclaratorInfo,
   }
 }
 
-/// isCXX0XVirtSpecifier - Determine whether the given token is a C++0x
+/// isCXX11VirtSpecifier - Determine whether the given token is a C++11
 /// virt-specifier.
 ///
 ///       virt-specifier:
 ///         override
 ///         final
-VirtSpecifiers::Specifier Parser::isCXX0XVirtSpecifier(const Token &Tok) const {
+VirtSpecifiers::Specifier Parser::isCXX11VirtSpecifier(const Token &Tok) const {
   if (!getLangOpts().CPlusPlus)
     return VirtSpecifiers::VS_None;
 
@@ -1737,15 +1770,15 @@ VirtSpecifiers::Specifier Parser::isCXX0XVirtSpecifier(const Token &Tok) const {
   return VirtSpecifiers::VS_None;
 }
 
-/// ParseOptionalCXX0XVirtSpecifierSeq - Parse a virt-specifier-seq.
+/// ParseOptionalCXX11VirtSpecifierSeq - Parse a virt-specifier-seq.
 ///
 ///       virt-specifier-seq:
 ///         virt-specifier
 ///         virt-specifier-seq virt-specifier
-void Parser::ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS,
+void Parser::ParseOptionalCXX11VirtSpecifierSeq(VirtSpecifiers &VS,
                                                 bool IsInterface) {
   while (true) {
-    VirtSpecifiers::Specifier Specifier = isCXX0XVirtSpecifier();
+    VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier();
     if (Specifier == VirtSpecifiers::VS_None)
       return;
 
@@ -1761,7 +1794,7 @@ void Parser::ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS,
       Diag(Tok.getLocation(), diag::err_override_control_interface)
         << VirtSpecifiers::getSpecifierName(Specifier);
     } else {
-      Diag(Tok.getLocation(), getLangOpts().CPlusPlus0x ?
+      Diag(Tok.getLocation(), getLangOpts().CPlusPlus11 ?
            diag::warn_cxx98_compat_override_control_keyword :
            diag::ext_override_control_keyword)
         << VirtSpecifiers::getSpecifierName(Specifier);
@@ -1770,9 +1803,9 @@ void Parser::ParseOptionalCXX0XVirtSpecifierSeq(VirtSpecifiers &VS,
   }
 }
 
-/// isCXX0XFinalKeyword - Determine whether the next token is a C++0x
+/// isCXX11FinalKeyword - Determine whether the next token is a C++11
 /// contextual 'final' keyword.
-bool Parser::isCXX0XFinalKeyword() const {
+bool Parser::isCXX11FinalKeyword() const {
   if (!getLangOpts().CPlusPlus)
     return false;
 
@@ -1917,8 +1950,8 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
   ParsedAttributesWithRange attrs(AttrFactory);
   ParsedAttributesWithRange FnAttrs(AttrFactory);
-  // Optional C++0x attribute-specifier
-  MaybeParseCXX0XAttributes(attrs);
+  // Optional C++11 attribute-specifier
+  MaybeParseCXX11Attributes(attrs);
   // We need to keep these attributes for future diagnostic
   // before they are taken over by declaration specifier.
   FnAttrs.addAll(attrs.getList());
@@ -1996,7 +2029,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
       return;
     }
 
-    ParseOptionalCXX0XVirtSpecifierSeq(VS, getCurrentClass().IsInterface);
+    ParseOptionalCXX11VirtSpecifierSeq(VS, getCurrentClass().IsInterface);
 
     // If attributes exist after the declarator, but before an '{', parse them.
     MaybeParseGNUAttributes(DeclaratorInfo, &LateParsedAttrs);
@@ -2020,7 +2053,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // In C++11, a non-function declarator followed by an open brace is a
     // braced-init-list for an in-class member initialization, not an
     // erroneous function definition.
-    if (Tok.is(tok::l_brace) && !getLangOpts().CPlusPlus0x) {
+    if (Tok.is(tok::l_brace) && !getLangOpts().CPlusPlus11) {
       DefinitionKind = FDK_Definition;
     } else if (DeclaratorInfo.isFunctionDeclarator()) {
       if (Tok.is(tok::l_brace) || Tok.is(tok::colon) || Tok.is(tok::kw_try)) {
@@ -2119,7 +2152,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
 
     // FIXME: When g++ adds support for this, we'll need to check whether it
     // goes before or after the GNU attributes and __asm__.
-    ParseOptionalCXX0XVirtSpecifierSeq(VS, getCurrentClass().IsInterface);
+    ParseOptionalCXX11VirtSpecifierSeq(VS, getCurrentClass().IsInterface);
 
     InClassInitStyle HasInClassInit = ICIS_NoInit;
     if ((Tok.is(tok::equal) || Tok.is(tok::l_brace)) && !HasInitializer) {
@@ -2141,7 +2174,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // this call will *not* return the created decl; It will return null.
     // See Sema::ActOnCXXMemberDeclarator for details.
 
-    Decl *ThisDecl = 0;
+    NamedDecl *ThisDecl = 0;
     if (DS.isFriendSpecified()) {
       // C++11 [dcl.attr.grammar] p4: If an attribute-specifier-seq appertains 
       // to a friend declaration, that declaration shall be a definition.
@@ -2184,7 +2217,7 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     // Handle the initializer.
     if (HasInClassInit != ICIS_NoInit) {
       // The initializer was deferred; parse it and cache the tokens.
-      Diag(Tok, getLangOpts().CPlusPlus0x ?
+      Diag(Tok, getLangOpts().CPlusPlus11 ?
            diag::warn_cxx98_compat_nonstatic_member_init :
            diag::ext_nonstatic_member_init);
 
@@ -2346,6 +2379,8 @@ ExprResult Parser::ParseCXXMemberInitializer(Decl *D, bool IsFunction,
 ///         access-specifier ':' member-specification[opt]
 ///
 void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
+                                         SourceLocation AttrFixitLoc,
+                                         ParsedAttributes &Attrs,
                                          unsigned TagType, Decl *TagDecl) {
   assert((TagType == DeclSpec::TST_struct ||
          TagType == DeclSpec::TST_interface ||
@@ -2402,22 +2437,36 @@ void Parser::ParseCXXMemberSpecification(SourceLocation RecordLoc,
 
   // Parse the optional 'final' keyword.
   if (getLangOpts().CPlusPlus && Tok.is(tok::identifier)) {
-    assert(isCXX0XFinalKeyword() && "not a class definition");
+    assert(isCXX11FinalKeyword() && "not a class definition");
     FinalLoc = ConsumeToken();
 
     if (TagType == DeclSpec::TST_interface) {
       Diag(FinalLoc, diag::err_override_control_interface)
         << "final";
     } else {
-      Diag(FinalLoc, getLangOpts().CPlusPlus0x ?
+      Diag(FinalLoc, getLangOpts().CPlusPlus11 ?
            diag::warn_cxx98_compat_override_control_keyword :
            diag::ext_override_control_keyword) << "final";
     }
 
-    // Forbid C++11 attributes that appear here.
-    ParsedAttributesWithRange Attrs(AttrFactory);
-    MaybeParseCXX0XAttributes(Attrs);
-    ProhibitAttributes(Attrs);
+    // Parse any C++11 attributes after 'final' keyword.
+    // These attributes are not allowed to appear here,
+    // and the only possible place for them to appertain
+    // to the class would be between class-key and class-name.
+    ParsedAttributesWithRange Attributes(AttrFactory);
+    MaybeParseCXX11Attributes(Attributes);
+    SourceRange AttrRange = Attributes.Range;
+    if (AttrRange.isValid()) {
+      Diag(AttrRange.getBegin(), diag::err_attributes_not_allowed)
+        << AttrRange
+        << FixItHint::CreateInsertionFromRange(AttrFixitLoc,
+                                               CharSourceRange(AttrRange, true))
+        << FixItHint::CreateRemoval(AttrRange);
+
+      // Recover by adding attributes to the attribute list of the class
+      // so they can be applied on the class later.
+      Attrs.takeAllFrom(Attributes);
+    }
   }
 
   if (Tok.is(tok::colon)) {
@@ -2638,8 +2687,7 @@ void Parser::ParseConstructorInitializer(Decl *ConstructorDecl) {
     }
   } while (true);
 
-  Actions.ActOnMemInitializers(ConstructorDecl, ColonLoc,
-                               MemInitializers.data(), MemInitializers.size(),
+  Actions.ActOnMemInitializers(ConstructorDecl, ColonLoc, MemInitializers,
                                AnyErrors);
 }
 
@@ -2693,7 +2741,7 @@ Parser::MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
 
 
   // Parse the '('.
-  if (getLangOpts().CPlusPlus0x && Tok.is(tok::l_brace)) {
+  if (getLangOpts().CPlusPlus11 && Tok.is(tok::l_brace)) {
     Diag(Tok, diag::warn_cxx98_compat_generalized_initializer_lists);
 
     ExprResult InitList = ParseBraceInitializer();
@@ -2732,7 +2780,7 @@ Parser::MemInitResult Parser::ParseMemInitializer(Decl *ConstructorDecl) {
                                        EllipsisLoc);
   }
 
-  Diag(Tok, getLangOpts().CPlusPlus0x ? diag::err_expected_lparen_or_lbrace
+  Diag(Tok, getLangOpts().CPlusPlus11 ? diag::err_expected_lparen_or_lbrace
                                   : diag::err_expected_lparen);
   return true;
 }
@@ -2979,7 +3027,7 @@ IdentifierInfo *Parser::TryParseCXX11AttributeIdentifier(SourceLocation &Loc) {
   case tok::exclaimequal: // 'not_eq'
     // Alternative tokens do not have identifier info, but their spelling
     // starts with an alphabetical character.
-    llvm::SmallString<8> SpellingBuf;
+    SmallString<8> SpellingBuf;
     StringRef Spelling = PP.getSpelling(Tok.getLocation(), SpellingBuf);
     if (std::isalpha(Spelling[0])) {
       Loc = ConsumeToken();
@@ -2995,7 +3043,7 @@ static bool IsBuiltInOrStandardCXX11Attribute(IdentifierInfo *AttrName,
                                  AttributeList::AS_CXX11)) {
   case AttributeList::AT_CarriesDependency:
   case AttributeList::AT_FallThrough:
-  case AttributeList::AT_NoReturn: {
+  case AttributeList::AT_CXX11NoReturn: {
     return true;
   }
 
@@ -3058,6 +3106,8 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
   ConsumeBracket();
   ConsumeBracket();
 
+  llvm::SmallDenseMap<IdentifierInfo*, SourceLocation, 4> SeenAttrs;
+
   while (Tok.isNot(tok::r_square)) {
     // attribute not present
     if (Tok.is(tok::comma)) {
@@ -3090,6 +3140,11 @@ void Parser::ParseCXX11AttributeSpecifier(ParsedAttributes &attrs,
 
     bool StandardAttr = IsBuiltInOrStandardCXX11Attribute(AttrName,ScopeName);
     bool AttrParsed = false;
+
+    if (StandardAttr &&
+        !SeenAttrs.insert(std::make_pair(AttrName, AttrLoc)).second)
+      Diag(AttrLoc, diag::err_cxx11_attribute_repeated)
+        << AttrName << SourceRange(SeenAttrs[AttrName]);
 
     // Parse attribute arguments
     if (Tok.is(tok::l_paren)) {

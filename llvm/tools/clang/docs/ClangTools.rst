@@ -1,9 +1,9 @@
-===========
-Clang Tools
-===========
+========
+Overview
+========
 
 Clang Tools are standalone command line (and potentially GUI) tools
-design for use by C++ developers who are already using and enjoying
+designed for use by C++ developers who are already using and enjoying
 Clang as their compiler. These tools provide developer-oriented
 functionality such as fast syntax checking, automatic formatting,
 refactoring, etc.
@@ -19,7 +19,7 @@ LLVM/Clang checkout:
 -  With Subversion:
 
    -  ``cd llvm/tools/clang/tools``
-   -  ``svn co http://llvm.org/svn/llvm-project/clang-tools-extra/trunk       extra``
+   -  ``svn co http://llvm.org/svn/llvm-project/clang-tools-extra/trunk extra``
 
 -  Or with Git:
 
@@ -71,16 +71,27 @@ tools that very specifically compliment, and allow use and testing of
 *Clang* specific functionality.
 
 ``clang-check``
-~~~~~~~~~~~~~~~
+---------------
 
-This tool combines the LibTooling framework for running a Clang tool
-with the basic Clang diagnostics by syntax checking specific files in a
-fast, command line interface. It can also accept flags to re-display the
-diagnostics in different formats with different flags, suitable for use
-driving an IDE or editor. Furthermore, it can be used in fixit-mode to
-directly apply fixit-hints offered by clang.
+:doc:`ClangCheck` combines the LibTooling framework for running a
+Clang tool with the basic Clang diagnostics by syntax checking specific files
+in a fast, command line interface. It can also accept flags to re-display the
+diagnostics in different formats with different flags, suitable for use driving
+an IDE or editor. Furthermore, it can be used in fixit-mode to directly apply
+fixit-hints offered by clang. See :doc:`HowToSetupToolingForLLVM` for
+instructions on how to setup and used `clang-check`.
 
-FIXME: Link to user-oriented clang-check documentation.
+``clang-format``
+~~~~~~~~~~~~~~~~
+
+Clang-format is both a :doc:`library <LibFormat>` and a :doc:`stand-alone tool
+<ClangFormat>` with the goal of automatically reformatting C++ sources files
+according to configurable style guides.  To do so, clang-format uses Clang's
+``Lexer`` to transform an input file into a token stream and then changes all
+the whitespace around those tokens.  The goal is for clang-format to both serve
+both as a user tool (ideally with powerful IDE integrations) and part of other
+refactoring tools, e.g. to do a reformatting of all the lines changed during a
+renaming.
 
 Extra Clang Tools
 =================
@@ -89,3 +100,14 @@ As various categories of Clang Tools are added to the extra repository,
 they'll be tracked here. The focus of this documentation is on the scope
 and features of the tools for other tool developers; each tool should
 provide its own user-focused documentation.
+
+Ideas for new Tools
+===================
+
+* C++11 null pointer conversion tool.  Will convert all null pointer constants
+  (like ``NULL`` or ``0``) to C++11 ``nullptr``.
+
+* C++ cast conversion tool.  Will convert C-style casts (``(type) value``) to
+  appropriate C++ cast (``static_cast``, ``const_cast`` or
+  ``reinterpret_cast``).
+

@@ -668,7 +668,9 @@ ifndef NO_PEDANTIC
 CompileCommonOpts += -pedantic -Wno-long-long
 endif
 CompileCommonOpts += -Wall -W -Wno-unused-parameter -Wwrite-strings \
-                     $(EXTRA_OPTIONS) $(COVERED_SWITCH_DEFAULT)
+                     $(EXTRA_OPTIONS) $(COVERED_SWITCH_DEFAULT) \
+                     $(NO_UNINITIALIZED) $(NO_MAYBE_UNINITIALIZED) \
+                     $(NO_MISSING_FIELD_INITIALIZERS)
 # Enable cast-qual for C++; the workaround is to use const_cast.
 CXX.Flags += -Wcast-qual
 
@@ -1814,7 +1816,7 @@ TDFiles := $(strip $(wildcard $(PROJ_SRC_DIR)/*.td) \
            $(LLVM_SRC_ROOT)/include/llvm/Target/TargetSchedule.td \
            $(LLVM_SRC_ROOT)/include/llvm/Target/TargetSelectionDAG.td \
            $(LLVM_SRC_ROOT)/include/llvm/CodeGen/ValueTypes.td) \
-           $(wildcard $(LLVM_SRC_ROOT)/include/llvm/Intrinsics*.td)
+           $(wildcard $(LLVM_SRC_ROOT)/include/llvm/IR/Intrinsics*.td)
 
 # All .inc.tmp files depend on the .td files.
 $(INCTMPFiles) : $(TDFiles)

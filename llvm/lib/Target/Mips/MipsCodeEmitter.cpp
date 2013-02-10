@@ -28,8 +28,8 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -120,9 +120,12 @@ class MipsCodeEmitter : public MachineFunctionPass {
 char MipsCodeEmitter::ID = 0;
 
 bool MipsCodeEmitter::runOnMachineFunction(MachineFunction &MF) {
-  JTI = ((MipsTargetMachine&) MF.getTarget()).getJITInfo();
-  II = ((const MipsTargetMachine&) MF.getTarget()).getInstrInfo();
-  TD = ((const MipsTargetMachine&) MF.getTarget()).getDataLayout();
+  MipsTargetMachine &Target = static_cast<MipsTargetMachine &>(
+                                const_cast<TargetMachine &>(MF.getTarget()));
+
+  JTI = Target.getJITInfo();
+  II = Target.getInstrInfo();
+  TD = Target.getDataLayout();
   Subtarget = &TM.getSubtarget<MipsSubtarget> ();
   MCPEs = &MF.getConstantPool()->getConstants();
   MJTEs = 0;

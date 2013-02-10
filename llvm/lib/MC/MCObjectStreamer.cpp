@@ -47,6 +47,7 @@ MCObjectStreamer::~MCObjectStreamer() {
 void MCObjectStreamer::reset() {
   if (Assembler)
     Assembler->reset();
+  CurSectionData = 0;
   MCStreamer::reset();
 }
 
@@ -216,7 +217,8 @@ void MCObjectStreamer::EmitInstruction(const MCInst &Inst) {
 void MCObjectStreamer::EmitInstToFragment(const MCInst &Inst) {
   // Always create a new, separate fragment here, because its size can change
   // during relaxation.
-  MCInstFragment *IF = new MCInstFragment(Inst, getCurrentSectionData());
+  MCRelaxableFragment *IF =
+    new MCRelaxableFragment(Inst, getCurrentSectionData());
 
   SmallString<128> Code;
   raw_svector_ostream VecOS(Code);
@@ -232,7 +234,7 @@ void MCObjectStreamer::EmitBundleAlignMode(unsigned AlignPow2) {
   llvm_unreachable(BundlingNotImplementedMsg);
 }
 
-void MCObjectStreamer::EmitBundleLock() {
+void MCObjectStreamer::EmitBundleLock(bool AlignToEnd) {
   llvm_unreachable(BundlingNotImplementedMsg);
 }
 
@@ -313,7 +315,7 @@ bool MCObjectStreamer::EmitValueToOffset(const MCExpr *Offset,
 
   if (!Delta->EvaluateAsAbsolute(Res, getAssembler()))
     return true;
-  EmitFill(Res, Value, 0);
+  EmitFill(Res, Value);
   return false;
 }
 

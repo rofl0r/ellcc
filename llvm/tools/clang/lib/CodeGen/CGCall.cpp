@@ -23,9 +23,9 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CodeGenOptions.h"
-#include "llvm/Attributes.h"
-#include "llvm/DataLayout.h"
-#include "llvm/InlineAsm.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Transforms/Utils/Local.h"
 using namespace clang;
@@ -989,7 +989,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
         FuncAttrs.addAttribute(llvm::Attribute::NoUnwind);
     }
 
-    if (TargetDecl->hasAttr<NoReturnAttr>())
+    if (TargetDecl->hasAttr<NoReturnAttr>() ||
+        TargetDecl->hasAttr<CXX11NoReturnAttr>())
       FuncAttrs.addAttribute(llvm::Attribute::NoReturn);
 
     if (TargetDecl->hasAttr<ReturnsTwiceAttr>())

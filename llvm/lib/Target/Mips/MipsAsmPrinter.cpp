@@ -13,24 +13,24 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "mips-asm-printer"
-#include "MipsAsmPrinter.h"
 #include "InstPrinter/MipsInstPrinter.h"
 #include "MCTargetDesc/MipsBaseInfo.h"
 #include "Mips.h"
+#include "MipsAsmPrinter.h"
 #include "MipsInstrInfo.h"
 #include "MipsMCInstLower.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/BasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/DataLayout.h"
-#include "llvm/InlineAsm.h"
-#include "llvm/Instructions.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCStreamer.h"
@@ -550,6 +550,13 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
   } else if (Subtarget->hasMips32()) {
     OutStreamer.EmitRawText(StringRef("\t.set mips32"));
   }
+}
+
+void MipsAsmPrinter::EmitEndOfAsmFile(Module &M) {
+
+  // Emit Mips ELF register info
+  Subtarget->getMReginfo().emitMipsReginfoSectionCG(
+             OutStreamer, getObjFileLowering(), *Subtarget);
 }
 
 MachineLocation

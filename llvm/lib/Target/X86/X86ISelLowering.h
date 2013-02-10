@@ -23,7 +23,6 @@
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetTransformImpl.h"
 
 namespace llvm {
   namespace X86ISD {
@@ -795,9 +794,7 @@ namespace llvm {
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerEXTRACT_VECTOR_ELT_SSE4(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerINSERT_VECTOR_ELT_SSE4(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerGlobalAddress(const GlobalValue *GV, DebugLoc dl,
@@ -825,7 +822,6 @@ namespace llvm {
     SDValue LowerToBT(SDValue And, ISD::CondCode CC,
                       DebugLoc dl, SelectionDAG &DAG) const;
     SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMEMSET(SDValue Op, SelectionDAG &DAG) const;
@@ -842,6 +838,7 @@ namespace llvm {
     SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShift(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSDIV(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
 
@@ -852,7 +849,7 @@ namespace llvm {
 
     SDValue LowerVectorAllZeroTest(SDValue Op, SelectionDAG &DAG) const;
 
-    SDValue lowerVectorIntExtend(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerVectorIntExtend(SDValue Op, SelectionDAG &DAG) const;
 
     virtual SDValue
       LowerFormalArguments(SDValue Chain,
@@ -945,37 +942,6 @@ namespace llvm {
     FastISel *createFastISel(FunctionLoweringInfo &funcInfo,
                              const TargetLibraryInfo *libInfo);
   }
-
-  class X86ScalarTargetTransformImpl : public ScalarTargetTransformImpl {
-  public:
-    explicit X86ScalarTargetTransformImpl(const TargetLowering *TL) :
-      ScalarTargetTransformImpl(TL) {};
-
-    virtual PopcntHwSupport getPopcntHwSupport(unsigned TyWidth) const;
-  };
-
-  class X86VectorTargetTransformInfo : public VectorTargetTransformImpl {
-  public:
-    explicit X86VectorTargetTransformInfo(const TargetLowering *TL) :
-    VectorTargetTransformImpl(TL) {}
-
-    virtual unsigned getArithmeticInstrCost(unsigned Opcode, Type *Ty) const;
-
-    virtual unsigned getMemoryOpCost(unsigned Opcode, Type *Src,
-                                     unsigned Alignment,
-                                     unsigned AddressSpace) const;
-
-    virtual unsigned getVectorInstrCost(unsigned Opcode, Type *Val,
-                                        unsigned Index) const;
-
-    virtual unsigned getCmpSelInstrCost(unsigned Opcode, Type *ValTy,
-                                        Type *CondTy) const;
-
-    virtual unsigned getCastInstrCost(unsigned Opcode, Type *Dst,
-                                      Type *Src) const;
-
-    unsigned getShuffleCost(ShuffleKind Kind, Type *Tp, int Index) const;
-  };
 }
 
 #endif    // X86ISELLOWERING_H

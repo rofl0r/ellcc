@@ -15,12 +15,11 @@
 #include "SelectionDAGBuilder.h"
 #include "SDNodeDbgValue.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/CallingConv.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
@@ -33,18 +32,19 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Constants.h"
-#include "llvm/DataLayout.h"
 #include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/GlobalVariable.h"
-#include "llvm/InlineAsm.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -973,7 +973,7 @@ void SelectionDAGBuilder::visit(unsigned Opcode, const User &I) {
     // Build the switch statement using the Instruction.def file.
 #define HANDLE_INST(NUM, OPCODE, CLASS) \
     case Instruction::OPCODE: visit##OPCODE((const CLASS&)I); break;
-#include "llvm/Instruction.def"
+#include "llvm/IR/Instruction.def"
   }
 
   // Assign the ordering to the freshly created DAG nodes.
@@ -3259,7 +3259,8 @@ void SelectionDAGBuilder::visitAlloca(const AllocaInst &I) {
 
   // Inform the Frame Information that we have just allocated a variable-sized
   // object.
-  FuncInfo.MF->getFrameInfo()->CreateVariableSizedObject(Align ? Align : 1);
+  FuncInfo.MF->getFrameInfo()->CreateVariableSizedObject(Align ? Align : 1,
+                                 I.getAlignment(), &I);
 }
 
 void SelectionDAGBuilder::visitLoad(const LoadInst &I) {
@@ -5276,8 +5277,7 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
 
   // Check if target-independent constraints permit a tail call here.
   // Target-dependent constraints are checked within TLI.LowerCallTo.
-  if (isTailCall &&
-      !isInTailCallPosition(CS, CS.getAttributes().getRetAttributes(), TLI))
+  if (isTailCall && !isInTailCallPosition(CS, TLI))
     isTailCall = false;
 
   TargetLowering::
@@ -5947,6 +5947,10 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     // Compute the constraint code and ConstraintType to use.
     TLI.ComputeConstraintToUse(OpInfo, OpInfo.CallOperand, &DAG);
 
+    if (OpInfo.ConstraintType == TargetLowering::C_Memory &&
+        OpInfo.Type == InlineAsm::isClobber)
+      continue;
+
     // If this is a memory input, and if the operand is not indirect, do what we
     // need to to provide an address for the memory input.
     if (OpInfo.ConstraintType == TargetLowering::C_Memory &&
@@ -6050,6 +6054,8 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
         ExtraInfo |= InlineAsm::Extra_MayLoad;
       else if (OpInfo.Type == InlineAsm::isOutput)
         ExtraInfo |= InlineAsm::Extra_MayStore;
+      else if (OpInfo.Type == InlineAsm::isClobber)
+        ExtraInfo |= (InlineAsm::Extra_MayLoad | InlineAsm::Extra_MayStore);
     }
   }
 

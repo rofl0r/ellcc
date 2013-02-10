@@ -26,6 +26,7 @@
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -56,14 +57,6 @@ typedef uint32_t  U4;
 typedef uint64_t  U8;
 
 static const int kPageSize = 4096;
-
-// Simple stand-alone pseudorandom number generator.
-// Current algorithm is ANSI C linear congruential PRNG.
-static inline uint32_t my_rand(uint32_t* state) {
-  return (*state = *state * 1103515245 + 12345) >> 16;
-}
-
-static uint32_t global_seed = 0;
 
 const size_t kLargeMalloc = 1 << 24;
 
@@ -416,21 +409,21 @@ TEST(AddressSanitizer, SignalTest) {
 #endif
 
 static void MallocStress(size_t n) {
-  uint32_t seed = my_rand(&global_seed);
+  uint32_t seed = my_rand();
   for (size_t iter = 0; iter < 10; iter++) {
     vector<void *> vec;
     for (size_t i = 0; i < n; i++) {
       if ((i % 3) == 0) {
         if (vec.empty()) continue;
-        size_t idx = my_rand(&seed) % vec.size();
+        size_t idx = my_rand_r(&seed) % vec.size();
         void *ptr = vec[idx];
         vec[idx] = vec.back();
         vec.pop_back();
         free_aaa(ptr);
       } else {
-        size_t size = my_rand(&seed) % 1000 + 1;
+        size_t size = my_rand_r(&seed) % 1000 + 1;
 #ifndef __APPLE__
-        size_t alignment = 1 << (my_rand(&seed) % 7 + 3);
+        size_t alignment = 1 << (my_rand_r(&seed) % 7 + 3);
         char *ptr = (char*)memalign_aaa(alignment, size);
 #else
         char *ptr = (char*) malloc_aaa(size);
@@ -536,7 +529,7 @@ TEST(AddressSanitizer, ReallocTest) {
   ptr[3] = 3;
   for (int i = 0; i < 10000; i++) {
     ptr = (int*)realloc(ptr,
-        (my_rand(&global_seed) % 1000 + kMinElem) * sizeof(int));
+        (my_rand() % 1000 + kMinElem) * sizeof(int));
     EXPECT_EQ(3, ptr[3]);
   }
 }
@@ -870,34 +863,35 @@ void MemSetOOBTestTemplate(size_t length) {
   T *array = Ident((T*)malloc(size));
   int element = Ident(42);
   int zero = Ident(0);
+  void *(*MEMSET)(void *s, int c, size_t n) = Ident(memset);
   // memset interval inside array
-  memset(array, element, size);
-  memset(array, element, size - 1);
-  memset(array + length - 1, element, sizeof(T));
-  memset(array, element, 1);
+  MEMSET(array, element, size);
+  MEMSET(array, element, size - 1);
+  MEMSET(array + length - 1, element, sizeof(T));
+  MEMSET(array, element, 1);
 
   // memset 0 bytes
-  memset(array - 10, element, zero);
-  memset(array - 1, element, zero);
-  memset(array, element, zero);
-  memset(array + length, 0, zero);
-  memset(array + length + 1, 0, zero);
+  MEMSET(array - 10, element, zero);
+  MEMSET(array - 1, element, zero);
+  MEMSET(array, element, zero);
+  MEMSET(array + length, 0, zero);
+  MEMSET(array + length + 1, 0, zero);
 
   // try to memset bytes to the right of array
-  EXPECT_DEATH(memset(array, 0, size + 1),
+  EXPECT_DEATH(MEMSET(array, 0, size + 1),
                RightOOBWriteMessage(0));
-  EXPECT_DEATH(memset((char*)(array + length) - 1, element, 6),
-               RightOOBWriteMessage(4));
-  EXPECT_DEATH(memset(array + 1, element, size + sizeof(T)),
-               RightOOBWriteMessage(2 * sizeof(T) - 1));
+  EXPECT_DEATH(MEMSET((char*)(array + length) - 1, element, 6),
+               RightOOBWriteMessage(0));
+  EXPECT_DEATH(MEMSET(array + 1, element, size + sizeof(T)),
+               RightOOBWriteMessage(0));
   // whole interval is to the right
-  EXPECT_DEATH(memset(array + length + 1, 0, 10),
+  EXPECT_DEATH(MEMSET(array + length + 1, 0, 10),
                RightOOBWriteMessage(sizeof(T)));
 
   // try to memset bytes to the left of array
-  EXPECT_DEATH(memset((char*)array - 1, element, size),
+  EXPECT_DEATH(MEMSET((char*)array - 1, element, size),
                LeftOOBWriteMessage(1));
-  EXPECT_DEATH(memset((char*)array - 5, 0, 6),
+  EXPECT_DEATH(MEMSET((char*)array - 5, 0, 6),
                LeftOOBWriteMessage(5));
   if (length >= 100) {
     // Large OOB, we find it only if the redzone is large enough.
@@ -905,11 +899,11 @@ void MemSetOOBTestTemplate(size_t length) {
                  LeftOOBWriteMessage(5 * sizeof(T)));
   }
   // whole interval is to the left
-  EXPECT_DEATH(memset(array - 2, 0, sizeof(T)),
+  EXPECT_DEATH(MEMSET(array - 2, 0, sizeof(T)),
                LeftOOBWriteMessage(2 * sizeof(T)));
 
   // try to memset bytes both to the left & to the right
-  EXPECT_DEATH(memset((char*)array - 2, element, size + 4),
+  EXPECT_DEATH(MEMSET((char*)array - 2, element, size + 4),
                LeftOOBWriteMessage(2));
 
   free(array);
@@ -990,9 +984,9 @@ void MemTransferOOBTestTemplate(size_t length) {
 
   // try to change mem to the right of dest
   EXPECT_DEATH(M::transfer(dest + 1, src, size),
-               RightOOBWriteMessage(sizeof(T) - 1));
+               RightOOBWriteMessage(0));
   EXPECT_DEATH(M::transfer((char*)(dest + length) - 1, src, 5),
-               RightOOBWriteMessage(3));
+               RightOOBWriteMessage(0));
 
   // try to change mem to the left of dest
   EXPECT_DEATH(M::transfer(dest - 2, src, size),
@@ -1002,9 +996,9 @@ void MemTransferOOBTestTemplate(size_t length) {
 
   // try to access mem to the right of src
   EXPECT_DEATH(M::transfer(dest, src + 2, size),
-               RightOOBReadMessage(2 * sizeof(T) - 1));
+               RightOOBReadMessage(0));
   EXPECT_DEATH(M::transfer(dest, (char*)(src + length) - 3, 6),
-               RightOOBReadMessage(2));
+               RightOOBReadMessage(0));
 
   // try to access mem to the left of src
   EXPECT_DEATH(M::transfer(dest, src - 1, size),
@@ -1033,7 +1027,7 @@ void MemTransferOOBTestTemplate(size_t length) {
 class MemCpyWrapper {
  public:
   static void* transfer(void *to, const void *from, size_t size) {
-    return memcpy(to, from, size);
+    return Ident(memcpy)(to, from, size);
   }
 };
 TEST(AddressSanitizer, MemCpyOOBTest) {
@@ -1044,7 +1038,7 @@ TEST(AddressSanitizer, MemCpyOOBTest) {
 class MemMoveWrapper {
  public:
   static void* transfer(void *to, const void *from, size_t size) {
-    return memmove(to, from, size);
+    return Ident(memmove)(to, from, size);
   }
 };
 TEST(AddressSanitizer, MemMoveOOBTest) {
@@ -1311,8 +1305,9 @@ TEST(AddressSanitizer, StrCmpAndFriendsLogicTest) {
 typedef int(*PointerToStrCmp)(const char*, const char*);
 void RunStrCmpTest(PointerToStrCmp StrCmp) {
   size_t size = Ident(100);
-  char *s1 = MallocAndMemsetString(size);
-  char *s2 = MallocAndMemsetString(size);
+  int fill = 'o';
+  char *s1 = MallocAndMemsetString(size, fill);
+  char *s2 = MallocAndMemsetString(size, fill);
   s1[size - 1] = '\0';
   s2[size - 1] = '\0';
   // Normal StrCmp calls
@@ -1328,7 +1323,7 @@ void RunStrCmpTest(PointerToStrCmp StrCmp) {
   EXPECT_DEATH(Ident(StrCmp)(s1 + size, s2), RightOOBReadMessage(0));
   EXPECT_DEATH(Ident(StrCmp)(s1, s2 + size), RightOOBReadMessage(0));
   // Hit unallocated memory and die.
-  s2[size - 1] = 'z';
+  s1[size - 1] = fill;
   EXPECT_DEATH(Ident(StrCmp)(s1, s1), RightOOBReadMessage(0));
   EXPECT_DEATH(Ident(StrCmp)(s1 + size - 1, s2), RightOOBReadMessage(0));
   free(s1);
@@ -1673,42 +1668,28 @@ TEST(AddressSanitizer, DISABLED_MemIntrinsicCallByPointerTest) {
 }
 
 #if defined(__linux__) && !defined(ANDROID) && !defined(__ANDROID__)
+#define READ_TEST(READ_N_BYTES)                                          \
+  char *x = new char[10];                                                \
+  int fd = open("/proc/self/stat", O_RDONLY);                            \
+  ASSERT_GT(fd, 0);                                                      \
+  EXPECT_DEATH(READ_N_BYTES,                                             \
+               ASAN_PCRE_DOTALL                                          \
+               "AddressSanitizer: heap-buffer-overflow"                  \
+               ".* is located 0 bytes to the right of 10-byte region");  \
+  close(fd);                                                             \
+  delete [] x;                                                           \
+
 TEST(AddressSanitizer, pread) {
-  char *x = new char[10];
-  int fd = open("/proc/self/stat", O_RDONLY);
-  ASSERT_GT(fd, 0);
-  EXPECT_DEATH(pread(fd, x, 15, 0),
-               ASAN_PCRE_DOTALL
-               "AddressSanitizer: heap-buffer-overflow"
-               ".* is located 0 bytes to the right of 10-byte region");
-  close(fd);
-  delete [] x;
+  READ_TEST(pread(fd, x, 15, 0));
 }
 
 TEST(AddressSanitizer, pread64) {
-  char *x = new char[10];
-  int fd = open("/proc/self/stat", O_RDONLY);
-  ASSERT_GT(fd, 0);
-  EXPECT_DEATH(pread64(fd, x, 15, 0),
-               ASAN_PCRE_DOTALL
-               "AddressSanitizer: heap-buffer-overflow"
-               ".* is located 0 bytes to the right of 10-byte region");
-  close(fd);
-  delete [] x;
+  READ_TEST(pread64(fd, x, 15, 0));
 }
 
 TEST(AddressSanitizer, read) {
-  char *x = new char[10];
-  int fd = open("/proc/self/stat", O_RDONLY);
-  ASSERT_GT(fd, 0);
-  EXPECT_DEATH(read(fd, x, 15),
-               ASAN_PCRE_DOTALL
-               "AddressSanitizer: heap-buffer-overflow"
-               ".* is located 0 bytes to the right of 10-byte region");
-  close(fd);
-  delete [] x;
+  READ_TEST(read(fd, x, 15));
 }
-
 #endif  // defined(__linux__) && !defined(ANDROID) && !defined(__ANDROID__)
 
 // This test case fails
@@ -1771,28 +1752,30 @@ TEST(AddressSanitizer, DISABLED_MallocFreeUnwindAndSymbolizeTest) {
                "malloc_fff.*malloc_eee.*malloc_ddd");
 }
 
-static void TryToSetThreadName(const char *name) {
-#ifdef __linux__
-  prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
+static bool TryToSetThreadName(const char *name) {
+#if defined(__linux__) && defined(PR_SET_NAME)
+  return 0 == prctl(PR_SET_NAME, (unsigned long)name, 0, 0, 0);
+#else
+  return false;
 #endif
 }
 
 void *ThreadedTestAlloc(void *a) {
-  TryToSetThreadName("AllocThr");
+  EXPECT_EQ(true, TryToSetThreadName("AllocThr"));
   int **p = (int**)a;
   *p = new int;
   return 0;
 }
 
 void *ThreadedTestFree(void *a) {
-  TryToSetThreadName("FreeThr");
+  EXPECT_EQ(true, TryToSetThreadName("FreeThr"));
   int **p = (int**)a;
   delete *p;
   return 0;
 }
 
 void *ThreadedTestUse(void *a) {
-  TryToSetThreadName("UseThr");
+  EXPECT_EQ(true, TryToSetThreadName("UseThr"));
   int **p = (int**)a;
   **p = 1;
   return 0;
@@ -1817,20 +1800,29 @@ TEST(AddressSanitizer, ThreadedTest) {
                ".*Thread T.*created");
 }
 
-#ifdef __linux__
-TEST(AddressSanitizer, ThreadNamesTest) {
-  // ThreadedTestSpawn();
+void *ThreadedTestFunc(void *unused) {
+  // Check if prctl(PR_SET_NAME) is supported. Return if not.
+  if (!TryToSetThreadName("TestFunc"))
+    return 0;
   EXPECT_DEATH(ThreadedTestSpawn(),
                ASAN_PCRE_DOTALL
                "WRITE .*thread T. .UseThr."
                ".*freed by thread T. .FreeThr. here:"
                ".*previously allocated by thread T. .AllocThr. here:"
-               ".*Thread T. .UseThr. created by T. here:"
-               ".*Thread T. .FreeThr. created by T. here:"
-               ".*Thread T. .AllocThr. created by T. here:"
+               ".*Thread T. .UseThr. created by T.*TestFunc"
+               ".*Thread T. .FreeThr. created by T"
+               ".*Thread T. .AllocThr. created by T"
                "");
+  return 0;
 }
-#endif
+
+TEST(AddressSanitizer, ThreadNamesTest) {
+  // Run ThreadedTestFunc in a separate thread because it tries to set a
+  // thread name and we don't want to change the main thread's name.
+  pthread_t t;
+  PTHREAD_CREATE(&t, 0, ThreadedTestFunc, 0);
+  PTHREAD_JOIN(t, 0);
+}
 
 #if ASAN_NEEDS_SEGV
 TEST(AddressSanitizer, ShadowGapTest) {
@@ -2046,13 +2038,14 @@ TEST(AddressSanitizer, AttributeNoAddressSafetyTest) {
   Ident(NoAddressSafety)();
 }
 
+// TODO(glider): Enable this test on Mac.
+// It doesn't work on Android, as calls to new/delete go through malloc/free.
+#if !defined(__APPLE__) && !defined(ANDROID) && !defined(__ANDROID__)
 static string MismatchStr(const string &str) {
   return string("AddressSanitizer: alloc-dealloc-mismatch \\(") + str;
 }
 
-// This test is disabled until we enable alloc_dealloc_mismatch by default.
-// The feature is also tested by lit tests.
-TEST(AddressSanitizer, DISABLED_AllocDeallocMismatch) {
+TEST(AddressSanitizer, AllocDeallocMismatch) {
   EXPECT_DEATH(free(Ident(new int)),
                MismatchStr("operator new vs free"));
   EXPECT_DEATH(free(Ident(new int[2])),
@@ -2066,6 +2059,7 @@ TEST(AddressSanitizer, DISABLED_AllocDeallocMismatch) {
   EXPECT_DEATH(delete [] (Ident((int*)malloc(2 * sizeof(int)))),
                MismatchStr("malloc vs operator delete \\[\\]"));
 }
+#endif
 
 // ------------------ demo tests; run each one-by-one -------------
 // e.g. --gtest_filter=*DemoOOBLeftHigh --gtest_also_run_disabled_tests

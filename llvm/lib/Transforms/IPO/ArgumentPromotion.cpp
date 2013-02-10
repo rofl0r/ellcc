@@ -36,12 +36,12 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CallGraph.h"
-#include "llvm/CallGraphSCCPass.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Instructions.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
@@ -518,10 +518,9 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
   const AttributeSet &PAL = F->getAttributes();
 
   // Add any return attributes.
-  Attribute attrs = PAL.getRetAttributes();
-  if (attrs.hasAttributes())
+  if (PAL.hasAttributes(AttributeSet::ReturnIndex))
     AttributesVec.push_back(AttributeWithIndex::get(AttributeSet::ReturnIndex,
-                                                    attrs));
+                                                    PAL.getRetAttributes()));
 
   // First, determine the new argument list
   unsigned ArgIndex = 1;
@@ -591,10 +590,9 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
   }
 
   // Add any function attributes.
-  attrs = PAL.getFnAttributes();
-  if (attrs.hasAttributes())
+  if (PAL.hasAttributes(AttributeSet::FunctionIndex))
     AttributesVec.push_back(AttributeWithIndex::get(AttributeSet::FunctionIndex,
-                                                    attrs));
+                                                    PAL.getFnAttributes()));
 
   Type *RetTy = FTy->getReturnType();
 
@@ -639,10 +637,9 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
     const AttributeSet &CallPAL = CS.getAttributes();
 
     // Add any return attributes.
-    Attribute attrs = CallPAL.getRetAttributes();
-    if (attrs.hasAttributes())
+    if (CallPAL.hasAttributes(AttributeSet::ReturnIndex))
       AttributesVec.push_back(AttributeWithIndex::get(AttributeSet::ReturnIndex,
-                                                      attrs));
+                                                      CallPAL.getRetAttributes()));
 
     // Loop over the operands, inserting GEP and loads in the caller as
     // appropriate.
@@ -721,10 +718,9 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
     }
 
     // Add any function attributes.
-    attrs = CallPAL.getFnAttributes();
-    if (attrs.hasAttributes())
+    if (CallPAL.hasAttributes(AttributeSet::FunctionIndex))
       AttributesVec.push_back(AttributeWithIndex::get(AttributeSet::FunctionIndex,
-                                                      attrs));
+                                                      CallPAL.getFnAttributes()));
 
     Instruction *New;
     if (InvokeInst *II = dyn_cast<InvokeInst>(Call)) {

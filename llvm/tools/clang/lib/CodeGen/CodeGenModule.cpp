@@ -32,16 +32,17 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/ConvertUTF.h"
 #include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/Module.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/CodeGenOptions.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/CallingConv.h"
-#include "llvm/DataLayout.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/Mangler.h"
@@ -76,8 +77,11 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
     VMContext(M.getContext()),
     NSConcreteGlobalBlock(0), NSConcreteStackBlock(0),
     BlockObjectAssign(0), BlockObjectDispose(0),
-    BlockDescriptorType(0), GenericBlockLiteralType(0) {
-      
+    BlockDescriptorType(0), GenericBlockLiteralType(0),
+    SanitizerBlacklist(CGO.SanitizerBlacklistFile),
+    SanOpts(SanitizerBlacklist.isIn(M) ?
+            SanitizerOptions::Disabled : LangOpts.Sanitize) {
+
   // Initialize the type cache.
   llvm::LLVMContext &LLVMContext = M.getContext();
   VoidTy = llvm::Type::getVoidTy(LLVMContext);
@@ -103,7 +107,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
     createCUDARuntime();
 
   // Enable TBAA unless it's suppressed. ThreadSanitizer needs TBAA even at O0.
-  if (LangOpts.SanitizeThread ||
+  if (SanOpts.Thread ||
       (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.OptimizationLevel > 0))
     TBAA = new CodeGenTBAA(Context, VMContext, CodeGenOpts, getLangOpts(),
                            ABI.getMangleContext());
@@ -172,6 +176,10 @@ void CodeGenModule::Release() {
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
   EmitGlobalAnnotations();
   EmitLLVMUsed();
+
+  if (CodeGenOpts.ModulesAutolink) {
+    EmitModuleLinkOptions();
+  }
 
   SimplifyPersonality();
 
@@ -598,8 +606,8 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     F->addFnAttr(llvm::Attribute::StackProtect);
   else if (LangOpts.getStackProtector() == LangOptions::SSPReq)
     F->addFnAttr(llvm::Attribute::StackProtectReq);
-  
-  if (LangOpts.SanitizeAddress) {
+
+  if (SanOpts.Address) {
     // When AddressSanitizer is enabled, set AddressSafety attribute
     // unless __attribute__((no_address_safety_analysis)) is used.
     if (!D->hasAttr<NoAddressSafetyAnalysisAttr>())
@@ -714,6 +722,112 @@ void CodeGenModule::EmitLLVMUsed() {
   GV->setSection("llvm.metadata");
 }
 
+/// \brief Add link options implied by the given module, including modules
+/// it depends on, using a postorder walk.
+static void addLinkOptionsPostorder(llvm::LLVMContext &Context,
+                                    Module *Mod,
+                                    SmallVectorImpl<llvm::Value *> &Metadata,
+                                    llvm::SmallPtrSet<Module *, 16> &Visited) {
+  // Import this module's parent.
+  if (Mod->Parent && Visited.insert(Mod->Parent)) {
+    addLinkOptionsPostorder(Context, Mod->Parent, Metadata, Visited);
+  }
+
+  // Import this module's dependencies.
+  for (unsigned I = Mod->Imports.size(); I > 0; --I) {
+    if (Visited.insert(Mod->Imports[I-1]))
+      addLinkOptionsPostorder(Context, Mod->Imports[I-1], Metadata, Visited);
+  }
+
+  // Add linker options to link against the libraries/frameworks
+  // described by this module.
+  for (unsigned I = Mod->LinkLibraries.size(); I > 0; --I) {
+    // FIXME: -lfoo is Unix-centric and -framework Foo is Darwin-centric.
+    // We need to know more about the linker to know how to encode these
+    // options propertly.
+
+    // Link against a framework.
+    if (Mod->LinkLibraries[I-1].IsFramework) {
+      llvm::Value *Args[2] = {
+        llvm::MDString::get(Context, "-framework"),
+        llvm::MDString::get(Context, Mod->LinkLibraries[I-1].Library)
+      };
+
+      Metadata.push_back(llvm::MDNode::get(Context, Args));
+      continue;
+    }
+
+    // Link against a library.
+    llvm::Value *OptString
+    = llvm::MDString::get(Context,
+                          "-l" + Mod->LinkLibraries[I-1].Library);
+    Metadata.push_back(llvm::MDNode::get(Context, OptString));
+  }
+}
+
+void CodeGenModule::EmitModuleLinkOptions() {
+  // Collect the set of all of the modules we want to visit to emit link
+  // options, which is essentially the imported modules and all of their
+  // non-explicit child modules.
+  llvm::SetVector<clang::Module *> LinkModules;
+  llvm::SmallPtrSet<clang::Module *, 16> Visited;
+  SmallVector<clang::Module *, 16> Stack;
+
+  // Seed the stack with imported modules.
+  for (llvm::SetVector<clang::Module *>::iterator M = ImportedModules.begin(),
+                                               MEnd = ImportedModules.end();
+       M != MEnd; ++M) {
+    if (Visited.insert(*M))
+      Stack.push_back(*M);
+  }
+
+  // Find all of the modules to import, making a little effort to prune
+  // non-leaf modules.
+  while (!Stack.empty()) {
+    clang::Module *Mod = Stack.back();
+    Stack.pop_back();
+
+    bool AnyChildren = false;
+
+    // Visit the submodules of this module.
+    for (clang::Module::submodule_iterator Sub = Mod->submodule_begin(),
+                                        SubEnd = Mod->submodule_end();
+         Sub != SubEnd; ++Sub) {
+      // Skip explicit children; they need to be explicitly imported to be
+      // linked against.
+      if ((*Sub)->IsExplicit)
+        continue;
+
+      if (Visited.insert(*Sub)) {
+        Stack.push_back(*Sub);
+        AnyChildren = true;
+      }
+    }
+
+    // We didn't find any children, so add this module to the list of
+    // modules to link against.
+    if (!AnyChildren) {
+      LinkModules.insert(Mod);
+    }
+  }
+
+  // Add link options for all of the imported modules in reverse topological
+  // order.
+  SmallVector<llvm::Value *, 16> MetadataArgs;
+  Visited.clear();
+  for (llvm::SetVector<clang::Module *>::iterator M = LinkModules.begin(),
+                                               MEnd = LinkModules.end();
+       M != MEnd; ++M) {
+    if (Visited.insert(*M))
+      addLinkOptionsPostorder(getLLVMContext(), *M, MetadataArgs, Visited);
+  }
+  std::reverse(MetadataArgs.begin(), MetadataArgs.end());
+
+  // Add the linker options metadata flag.
+  getModule().addModuleFlag(llvm::Module::AppendUnique, "Linker Options",
+                            llvm::MDNode::get(getLLVMContext(), MetadataArgs));
+}
+
 void CodeGenModule::EmitDeferred() {
   // Emit code for any potentially referenced deferred decls.  Since a
   // previously unused static decl may become used during the generation of code
@@ -768,7 +882,7 @@ void CodeGenModule::EmitGlobalAnnotations() {
   gv->setSection(AnnotationSection);
 }
 
-llvm::Constant *CodeGenModule::EmitAnnotationString(llvm::StringRef Str) {
+llvm::Constant *CodeGenModule::EmitAnnotationString(StringRef Str) {
   llvm::StringMap<llvm::Constant*>::iterator i = AnnotationStrings.find(Str);
   if (i != AnnotationStrings.end())
     return i->second;
@@ -1740,7 +1854,7 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
 
   // If we are compiling with ASan, add metadata indicating dynamically
   // initialized globals.
-  if (LangOpts.SanitizeAddress && NeedsGlobalCtor) {
+  if (SanOpts.Address && NeedsGlobalCtor) {
     llvm::Module &M = getModule();
 
     llvm::NamedMDNode *DynamicInitializers =
@@ -1820,7 +1934,7 @@ static void replaceUsesOfNonProtoConstant(llvm::Constant *old,
       continue;
 
     // Get the call site's attribute list.
-    llvm::SmallVector<llvm::AttributeWithIndex, 8> newAttrs;
+    SmallVector<llvm::AttributeWithIndex, 8> newAttrs;
     llvm::AttributeSet oldAttrs = callSite.getAttributes();
 
     // Collect any return attributes from the call.
@@ -1853,7 +1967,7 @@ static void replaceUsesOfNonProtoConstant(llvm::Constant *old,
       continue;
 
     llvm::Attribute fnAttrs = oldAttrs.getFnAttributes();
-    if (fnAttrs.hasAttributes())
+    if (oldAttrs.hasAttributes(llvm::AttributeSet::FunctionIndex))
       newAttrs.push_back(llvm::
                        AttributeWithIndex::get(llvm::AttributeSet::FunctionIndex,
                                                fnAttrs));
@@ -2168,7 +2282,8 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   llvm::Constant *C = 0;
   if (isUTF16) {
     ArrayRef<uint16_t> Arr =
-      llvm::makeArrayRef<uint16_t>((uint16_t*)Entry.getKey().data(),
+      llvm::makeArrayRef<uint16_t>(reinterpret_cast<uint16_t*>(
+                                     const_cast<char *>(Entry.getKey().data())),
                                    Entry.getKey().size() / 2);
     C = llvm::ConstantDataArray::get(VMContext, Arr);
   } else {
@@ -2681,7 +2796,6 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
   case Decl::TypeAliasTemplate:
   case Decl::NamespaceAlias:
   case Decl::Block:
-  case Decl::Import:
     break;
   case Decl::CXXConstructor:
     // Skip function templates
@@ -2761,6 +2875,20 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
       getModule().setModuleInlineAsm(S + '\n' + AsmString.str());
     break;
   }
+
+  case Decl::Import: {
+    ImportDecl *Import = cast<ImportDecl>(D);
+
+    // Ignore import declarations that come from imported modules.
+    if (clang::Module *Owner = Import->getOwningModule()) {
+      if (getLangOpts().CurrentModule.empty() ||
+          Owner->getTopLevelModule()->Name == getLangOpts().CurrentModule)
+        break;
+    }
+
+    ImportedModules.insert(Import->getImportedModule());
+    break;
+ }
 
   default:
     // Make sure we handled everything we should, every other kind is a

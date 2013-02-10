@@ -41,9 +41,11 @@ class SanitizerArgs {
   unsigned Kind;
   std::string BlacklistFile;
   bool MsanTrackOrigins;
+  bool AsanZeroBaseShadow;
 
  public:
-  SanitizerArgs() : Kind(0), BlacklistFile(""), MsanTrackOrigins(false) {}
+  SanitizerArgs() : Kind(0), BlacklistFile(""), MsanTrackOrigins(false),
+                    AsanZeroBaseShadow(false) {}
   /// Parses the sanitizer arguments from an argument list.
   SanitizerArgs(const Driver &D, const ArgList &Args);
 
@@ -57,7 +59,7 @@ class SanitizerArgs {
   void addArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
     if (!Kind)
       return;
-    llvm::SmallString<256> SanitizeOpt("-fsanitize=");
+    SmallString<256> SanitizeOpt("-fsanitize=");
 #define SANITIZER(NAME, ID) \
     if (Kind & ID) \
       SanitizeOpt += NAME ",";
@@ -65,13 +67,17 @@ class SanitizerArgs {
     SanitizeOpt.pop_back();
     CmdArgs.push_back(Args.MakeArgString(SanitizeOpt));
     if (!BlacklistFile.empty()) {
-      llvm::SmallString<64> BlacklistOpt("-fsanitize-blacklist=");
+      SmallString<64> BlacklistOpt("-fsanitize-blacklist=");
       BlacklistOpt += BlacklistFile;
       CmdArgs.push_back(Args.MakeArgString(BlacklistOpt));
     }
 
     if (MsanTrackOrigins)
       CmdArgs.push_back(Args.MakeArgString("-fsanitize-memory-track-origins"));
+
+    if (AsanZeroBaseShadow)
+      CmdArgs.push_back(Args.MakeArgString(
+          "-fsanitize-address-zero-base-shadow"));
   }
 
  private:

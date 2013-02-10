@@ -81,7 +81,8 @@
 
 /// LLVM_FINAL - Expands to 'final' if the compiler supports it.
 /// Use to mark classes or virtual methods as final.
-#if (__has_feature(cxx_override_control))
+#if __has_feature(cxx_override_control) \
+    || (defined(_MSC_VER) && _MSC_VER >= 1700)
 #define LLVM_FINAL final
 #else
 #define LLVM_FINAL
@@ -89,10 +90,17 @@
 
 /// LLVM_OVERRIDE - Expands to 'override' if the compiler supports it.
 /// Use to mark virtual methods as overriding a base class method.
-#if (__has_feature(cxx_override_control))
+#if __has_feature(cxx_override_control) \
+    || (defined(_MSC_VER) && _MSC_VER >= 1700)
 #define LLVM_OVERRIDE override
 #else
 #define LLVM_OVERRIDE
+#endif
+
+#if __has_feature(cxx_constexpr) || defined(__GXX_EXPERIMENTAL_CXX0X__)
+# define LLVM_CONSTEXPR constexpr
+#else
+# define LLVM_CONSTEXPR
 #endif
 
 /// LLVM_LIBRARY_VISIBILITY - If a class marked with this attribute is linked
@@ -151,7 +159,6 @@
 #define LLVM_UNLIKELY(EXPR) (EXPR)
 #endif
 
-
 // C++ doesn't support 'extern template' of template specializations.  GCC does,
 // but requires __extension__ before it.  In the header, use this:
 //   EXTERN_TEMPLATE_INSTANTIATION(class foo<bar>);
@@ -186,7 +193,6 @@
 #else
 #define LLVM_ATTRIBUTE_ALWAYS_INLINE
 #endif
-
 
 #ifdef __GNUC__
 #define LLVM_ATTRIBUTE_NORETURN __attribute__((noreturn))
@@ -225,6 +231,8 @@
 #if defined(__clang__) || (__GNUC__ > 4) \
  || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
 # define LLVM_BUILTIN_UNREACHABLE __builtin_unreachable()
+#elif defined(_MSC_VER)
+# define LLVM_BUILTIN_UNREACHABLE __assume(false)
 #endif
 
 /// LLVM_BUILTIN_TRAP - On compilers which support it, expands to an expression
@@ -234,6 +242,28 @@
 # define LLVM_BUILTIN_TRAP __builtin_trap()
 #else
 # define LLVM_BUILTIN_TRAP *(volatile int*)0x11 = 0
+#endif
+
+/// \macro LLVM_ASSUME_ALIGNED
+/// \brief Returns a pointer with an assumed alignment.
+#if !defined(__clang__) && ((__GNUC__ > 4) \
+ || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7))
+// FIXME: Enable on clang when it supports it.
+# define LLVM_ASSUME_ALIGNED(p, a) __builtin_assume_aligned(p, a)
+#elif defined(LLVM_BUILTIN_UNREACHABLE)
+# define LLVM_ASSUME_ALIGNED(p, a) \
+           (((uintptr_t(p) % (a)) == 0) ? (p) : (LLVM_BUILTIN_UNREACHABLE, (p)))
+#else
+# define LLVM_ASSUME_ALIGNED(p, a) (p)
+#endif
+
+/// \macro LLVM_FUNCTION_NAME
+/// \brief Expands to __func__ on compilers which support it.  Otherwise,
+/// expands to a compiler-dependent replacement.
+#if defined(_MSC_VER)
+# define LLVM_FUNCTION_NAME __FUNCTION__
+#else
+# define LLVM_FUNCTION_NAME __func__
 #endif
 
 #endif

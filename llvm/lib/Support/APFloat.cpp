@@ -16,6 +16,7 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/Hashing.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -99,26 +100,6 @@ static inline unsigned int
 decDigitValue(unsigned int c)
 {
   return c - '0';
-}
-
-static unsigned int
-hexDigitValue(unsigned int c)
-{
-  unsigned int r;
-
-  r = c - '0';
-  if (r <= 9)
-    return r;
-
-  r = c - 'A';
-  if (r <= 5)
-    return r + 10;
-
-  r = c - 'a';
-  if (r <= 5)
-    return r + 10;
-
-  return -1U;
 }
 
 /* Return the value of a decimal exponent of the form
@@ -694,6 +675,13 @@ APFloat::operator=(const APFloat &rhs)
   }
 
   return *this;
+}
+
+bool
+APFloat::isDenormal() const {
+  return isNormal() && (exponent == semantics->minExponent) &&
+         (APInt::tcExtractBit(significandParts(), 
+                              semantics->precision - 1) == 0);
 }
 
 bool
@@ -3441,7 +3429,7 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
 
   AdjustToPrecision(significand, exp, FormatPrecision);
 
-  llvm::SmallVector<char, 256> buffer;
+  SmallVector<char, 256> buffer;
 
   // Fill the buffer.
   unsigned precision = significand.getBitWidth();

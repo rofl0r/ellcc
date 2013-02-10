@@ -23,10 +23,10 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/DataLayout.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -5100,16 +5100,26 @@ SDValue DAGCombiner::ReduceLoadWidth(SDNode *N) {
 
   // If we haven't found a load, we can't narrow it.  Don't transform one with
   // multiple uses, this would require adding a new load.
-  if (!isa<LoadSDNode>(N0) || !N0.hasOneUse() ||
-      // Don't change the width of a volatile load.
-      cast<LoadSDNode>(N0)->isVolatile())
+  if (!isa<LoadSDNode>(N0) || !N0.hasOneUse())
+    return SDValue();
+
+  // Don't change the width of a volatile load.
+  LoadSDNode *LN0 = cast<LoadSDNode>(N0);
+  if (LN0->isVolatile())
     return SDValue();
 
   // Verify that we are actually reducing a load width here.
-  if (cast<LoadSDNode>(N0)->getMemoryVT().getSizeInBits() < EVTBits)
+  if (LN0->getMemoryVT().getSizeInBits() < EVTBits)
     return SDValue();
 
-  LoadSDNode *LN0 = cast<LoadSDNode>(N0);
+  // For the transform to be legal, the load must produce only two values
+  // (the value loaded and the chain).  Don't transform a pre-increment
+  // load, for example, which produces an extra value.  Otherwise the 
+  // transformation is not equivalent, and the downstream logic to replace
+  // uses gets things wrong.
+  if (LN0->getNumValues() > 2)
+    return SDValue();
+
   EVT PtrType = N0.getOperand(1).getValueType();
 
   if (PtrType == MVT::Untyped || PtrType.isExtended())
@@ -6735,18 +6745,24 @@ SDValue DAGCombiner::visitBRCOND(SDNode *N) {
     if (Op0.getOpcode() == Op1.getOpcode()) {
       // Avoid missing important xor optimizations.
       SDValue Tmp = visitXOR(TheXor);
-      if (Tmp.getNode() && Tmp.getNode() != TheXor) {
-        DEBUG(dbgs() << "\nReplacing.8 ";
-              TheXor->dump(&DAG);
-              dbgs() << "\nWith: ";
-              Tmp.getNode()->dump(&DAG);
-              dbgs() << '\n');
-        WorkListRemover DeadNodes(*this);
-        DAG.ReplaceAllUsesOfValueWith(N1, Tmp);
-        removeFromWorkList(TheXor);
-        DAG.DeleteNode(TheXor);
-        return DAG.getNode(ISD::BRCOND, N->getDebugLoc(),
-                           MVT::Other, Chain, Tmp, N2);
+      if (Tmp.getNode()) {
+        if (Tmp.getNode() != TheXor) {
+          DEBUG(dbgs() << "\nReplacing.8 ";
+                TheXor->dump(&DAG);
+                dbgs() << "\nWith: ";
+                Tmp.getNode()->dump(&DAG);
+                dbgs() << '\n');
+          WorkListRemover DeadNodes(*this);
+          DAG.ReplaceAllUsesOfValueWith(N1, Tmp);
+          removeFromWorkList(TheXor);
+          DAG.DeleteNode(TheXor);
+          return DAG.getNode(ISD::BRCOND, N->getDebugLoc(),
+                             MVT::Other, Chain, Tmp, N2);
+        }
+
+        // visitXOR has changed XOR's operands.
+        Op0 = TheXor->getOperand(0);
+        Op1 = TheXor->getOperand(1);
       }
     }
 
@@ -6825,7 +6841,7 @@ static bool canFoldInAddressingMode(SDNode *N, SDNode *Use,
   } else
     return false;
 
-  AddrMode AM;
+  TargetLowering::AddrMode AM;
   if (N->getOpcode() == ISD::ADD) {
     ConstantSDNode *Offset = dyn_cast<ConstantSDNode>(N->getOperand(1));
     if (Offset)
@@ -8625,11 +8641,8 @@ SDValue DAGCombiner::reduceBuildVecConvertToConvertBuildVec(SDNode *N) {
     if (Opcode == ISD::DELETED_NODE &&
         (Opc == ISD::UINT_TO_FP || Opc == ISD::SINT_TO_FP)) {
       Opcode = Opc;
-      // If not supported by target, bail out.
-      if (TLI.getOperationAction(Opcode, VT) != TargetLowering::Legal &&
-          TLI.getOperationAction(Opcode, VT) != TargetLowering::Custom)
-        return SDValue();
     }
+
     if (Opc != Opcode)
       return SDValue();
 
@@ -8654,6 +8667,10 @@ SDValue DAGCombiner::reduceBuildVecConvertToConvertBuildVec(SDNode *N) {
   assert(SrcVT != MVT::Other && "Cannot determine source type!");
 
   EVT NVT = EVT::getVectorVT(*DAG.getContext(), SrcVT, NumInScalars);
+
+  if (!TLI.isOperationLegalOrCustom(Opcode, NVT))
+    return SDValue();
+
   SmallVector<SDValue, 8> Opnds;
   for (unsigned i = 0; i != NumInScalars; ++i) {
     SDValue In = N->getOperand(i);

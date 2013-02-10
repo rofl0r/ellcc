@@ -278,7 +278,7 @@ static void computeDeclRefDependence(ASTContext &Ctx, NamedDecl *D, QualType T,
   //       -  an entity with reference type and is initialized with an
   //          expression that is value-dependent [C++11]
   if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
-    if ((Ctx.getLangOpts().CPlusPlus0x ?
+    if ((Ctx.getLangOpts().CPlusPlus11 ?
            Var->getType()->isLiteralType() :
            Var->getType()->isIntegralOrEnumerationType()) &&
         (Var->getType().isConstQualified() ||
@@ -1137,6 +1137,12 @@ unsigned CallExpr::isBuiltinCall() const {
   return FDecl->getBuiltinID();
 }
 
+bool CallExpr::isUnevaluatedBuiltinCall(ASTContext &Ctx) const {
+  if (unsigned BI = isBuiltinCall())
+    return Ctx.BuiltinInfo.isUnevaluated(BI);
+  return false;
+}
+
 QualType CallExpr::getCallReturnType() const {
   QualType CalleeType = getCallee()->getType();
   if (const PointerType *FnTypePtr = CalleeType->getAs<PointerType>())
@@ -1394,6 +1400,7 @@ void CastExpr::CheckCastConsistency() const {
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
+  case CK_ZeroToOCLEvent:
     assert(!getType()->isBooleanType() && "unheralded conversion to bool");
     goto CheckNoBasePath;
 
@@ -1525,6 +1532,8 @@ const char *CastExpr::getCastKindName() const {
     return "CopyAndAutoreleaseBlockObject";
   case CK_BuiltinFnToFnPtr:
     return "BuiltinFnToFnPtr";
+  case CK_ZeroToOCLEvent:
+    return "ZeroToOCLEvent";
   }
 
   llvm_unreachable("Unhandled cast kind!");
@@ -2100,10 +2109,6 @@ bool Expr::isUnusedResultAWarning(const Expr *&WarnE, SourceLocation &Loc,
       return false;
     }
 
-    // Ignore casts within macro expansions.
-    if (getExprLoc().isMacroID())
-      return CE->getSubExpr()->isUnusedResultAWarning(WarnE, Loc, R1, R2, Ctx);
-
     // If this is a cast to a constructor conversion, check the operand.
     // Otherwise, the result of the cast is unused.
     if (CE->getCastKind() == CK_ConstructorConversion)
@@ -2566,7 +2571,7 @@ bool Expr::isImplicitCXXThis() const {
 
 /// hasAnyTypeDependentArguments - Determines if any of the expressions
 /// in Exprs is type-dependent.
-bool Expr::hasAnyTypeDependentArguments(llvm::ArrayRef<Expr *> Exprs) {
+bool Expr::hasAnyTypeDependentArguments(ArrayRef<Expr *> Exprs) {
   for (unsigned I = 0; I < Exprs.size(); ++I)
     if (Exprs[I]->isTypeDependent())
       return true;
@@ -3010,9 +3015,9 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
       return Source->isNullPointerConstant(Ctx, NPC);
   }
 
-  // C++0x nullptr_t is always a null pointer constant.
+  // C++11 nullptr_t is always a null pointer constant.
   if (getType()->isNullPtrType())
-    return NPCK_CXX0X_nullptr;
+    return NPCK_CXX11_nullptr;
 
   if (const RecordType *UT = getType()->getAsUnionType())
     if (UT && UT->getDecl()->hasAttr<TransparentUnionAttr>())
@@ -3030,7 +3035,7 @@ Expr::isNullPointerConstant(ASTContext &Ctx,
   // test for the value 0. Don't use the C++11 constant expression semantics
   // for this, for now; once the dust settles on core issue 903, we might only
   // allow a literal 0 here in C++11 mode.
-  if (Ctx.getLangOpts().CPlusPlus0x) {
+  if (Ctx.getLangOpts().CPlusPlus11) {
     if (!isCXX98IntegralConstantExpr(Ctx))
       return NPCK_NotNull;
   } else {
@@ -3884,7 +3889,7 @@ Stmt::child_range ObjCMessageExpr::children() {
                      reinterpret_cast<Stmt **>(getArgs() + getNumArgs()));
 }
 
-ObjCArrayLiteral::ObjCArrayLiteral(llvm::ArrayRef<Expr *> Elements, 
+ObjCArrayLiteral::ObjCArrayLiteral(ArrayRef<Expr *> Elements, 
                                    QualType T, ObjCMethodDecl *Method,
                                    SourceRange SR)
   : Expr(ObjCArrayLiteralClass, T, VK_RValue, OK_Ordinary, 
@@ -3905,7 +3910,7 @@ ObjCArrayLiteral::ObjCArrayLiteral(llvm::ArrayRef<Expr *> Elements,
 }
 
 ObjCArrayLiteral *ObjCArrayLiteral::Create(ASTContext &C, 
-                                           llvm::ArrayRef<Expr *> Elements,
+                                           ArrayRef<Expr *> Elements,
                                            QualType T, ObjCMethodDecl * Method,
                                            SourceRange SR) {
   void *Mem = C.Allocate(sizeof(ObjCArrayLiteral) 

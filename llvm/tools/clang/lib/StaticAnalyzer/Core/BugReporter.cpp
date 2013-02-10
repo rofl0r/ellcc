@@ -1527,8 +1527,9 @@ const Decl *BugReport::getDeclWithIssue() const {
 void BugReport::Profile(llvm::FoldingSetNodeID& hash) const {
   hash.AddPointer(&BT);
   hash.AddString(Description);
-  if (UniqueingLocation.isValid()) {
-    UniqueingLocation.Profile(hash);
+  PathDiagnosticLocation UL = getUniqueingLocation();
+  if (UL.isValid()) {
+    UL.Profile(hash);
   } else if (Location.isValid()) {
     Location.Profile(hash);
   } else {
@@ -2136,7 +2137,32 @@ void BugReporter::Register(BugType *BT) {
   BugTypes = F.add(BugTypes, BT);
 }
 
+bool BugReporter::suppressReport(BugReport *R) {
+  const Stmt *S = R->getStmt();
+  if (!S)
+    return false;
+
+  // Here we suppress false positives coming from system macros. This list is
+  // based on known issues.
+
+  // Skip reports within the sys/queue.h macros as we do not have the ability to
+  // reason about data structure shapes.
+  SourceManager &SM = getSourceManager();
+  SourceLocation Loc = S->getLocStart();
+  while (Loc.isMacroID()) {
+    if (SM.isInSystemMacro(Loc) &&
+       (SM.getFilename(SM.getSpellingLoc(Loc)).endswith("sys/queue.h")))
+      return true;
+    Loc = SM.getSpellingLoc(Loc);
+  }
+
+  return false;
+}
+
 void BugReporter::emitReport(BugReport* R) {
+  if (suppressReport(R))
+    return;
+
   // Compute the bug report's hash to determine its equivalence class.
   llvm::FoldingSetNodeID ID;
   R->Profile(ID);
@@ -2295,7 +2321,9 @@ void BugReporter::FlushReport(BugReport *exampleReport,
                          exampleReport->getBugType().getName(),
                          exampleReport->getDescription(),
                          exampleReport->getShortDescription(/*Fallback=*/false),
-                         BT.getCategory()));
+                         BT.getCategory(),
+                         exampleReport->getUniqueingLocation(),
+                         exampleReport->getUniqueingDecl()));
 
   // Generate the full path diagnostic, using the generation scheme
   // specified by the PathDiagnosticConsumer. Note that we have to generate

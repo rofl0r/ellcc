@@ -138,13 +138,16 @@ void t14() {
 // CHECK: call void asm sideeffect inteldialect ".if 1\0A\09mov eax, dword ptr $0\0A\09.else\0A\09mov ebx, j\0A\09.endif", "*m,~{eax},~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
 }
 
+int gvar = 10;
 void t15() {
-  int var = 10;
-  __asm mov eax, var        ; eax = 10
-  __asm mov eax, offset var ; eax = address of myvar
+  int lvar = 10;
+  __asm mov eax, lvar        ; eax = 10
+  __asm mov eax, offset lvar ; eax = address of lvar
+  __asm mov eax, offset gvar ; eax = address of gvar
 // CHECK: t15
 // CHECK: call void asm sideeffect inteldialect "mov eax, dword ptr $0", "*m,~{eax},~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
 // CHECK: call void asm sideeffect inteldialect "mov eax, $0", "r,~{eax},~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $0", "r,~{eax},~{dirflag},~{fpsr},~{flags}"(i32* @{{.*}}) nounwind
 }
 
 void t16() {
@@ -195,10 +198,38 @@ int t19() {
 }
 
 void t20() {
+  char bar;
   int foo;
-  __asm mov eax, TYPE foo
+  char _bar[2];
+  int _foo[4];
+
+  __asm mov eax, LENGTH foo
+  __asm mov eax, LENGTH bar
+  __asm mov eax, LENGTH _foo
+  __asm mov eax, LENGTH _bar
 // CHECK: t20
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$1", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$1", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
 // CHECK: call void asm sideeffect inteldialect "mov eax, $$4", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$2", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+
+  __asm mov eax, TYPE foo
+  __asm mov eax, TYPE bar
+  __asm mov eax, TYPE _foo
+  __asm mov eax, TYPE _bar
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$4", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$1", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$4", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$1", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+
+  __asm mov eax, SIZE foo
+  __asm mov eax, SIZE bar
+  __asm mov eax, SIZE _foo
+  __asm mov eax, SIZE _bar
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$4", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$1", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$16", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$2", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
 }
 
 void t21() {
@@ -227,4 +258,19 @@ void t22() {
 // CHECK: call void asm sideeffect inteldialect "push ebx\0A\09mov ebx, esp", "~{ebx},~{dirflag},~{fpsr},~{flags}"() nounwind
 // CHECK: call void @t22_helper
 // CHECK: call void asm sideeffect inteldialect "mov esp, ebx\0A\09pop ebx", "~{ebx},~{esp},~{dirflag},~{fpsr},~{flags}"() nounwind
+}
+
+void t23() {
+  __asm {
+  the_label:
+  }
+// CHECK: t23
+// CHECK: call void asm sideeffect inteldialect "the_label:", "~{dirflag},~{fpsr},~{flags}"() nounwind
+}
+
+void t24_helper(void) {}
+void t24() {
+  __asm call t24_helper
+// CHECK: t24
+// CHECK: call void asm sideeffect inteldialect "call $0", "r,~{dirflag},~{fpsr},~{flags}"(void ()* @t24_helper) nounwind
 }

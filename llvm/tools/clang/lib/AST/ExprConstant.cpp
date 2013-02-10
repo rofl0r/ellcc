@@ -318,7 +318,7 @@ namespace {
 
     OptionalDiagnostic &operator<<(const APSInt &I) {
       if (Diag) {
-        llvm::SmallVector<char, 32> Buffer;
+        SmallVector<char, 32> Buffer;
         I.toString(Buffer);
         *Diag << StringRef(Buffer.data(), Buffer.size());
       }
@@ -327,7 +327,7 @@ namespace {
 
     OptionalDiagnostic &operator<<(const APFloat &F) {
       if (Diag) {
-        llvm::SmallVector<char, 32> Buffer;
+        SmallVector<char, 32> Buffer;
         F.toString(Buffer);
         *Diag << StringRef(Buffer.data(), Buffer.size());
       }
@@ -535,8 +535,7 @@ namespace {
 
   public:
     SpeculativeEvaluationRAII(EvalInfo &Info,
-                              llvm::SmallVectorImpl<PartialDiagnosticAt>
-                                *NewDiag = 0)
+                              SmallVectorImpl<PartialDiagnosticAt> *NewDiag = 0)
       : Info(Info), Old(Info.EvalStatus) {
       Info.EvalStatus.Diag = NewDiag;
     }
@@ -587,7 +586,7 @@ CallStackFrame::~CallStackFrame() {
 }
 
 /// Produce a string describing the given constexpr call.
-static void describeCall(CallStackFrame *Frame, llvm::raw_ostream &Out) {
+static void describeCall(CallStackFrame *Frame, raw_ostream &Out) {
   unsigned ArgIndex = 0;
   bool IsMemberCall = isa<CXXMethodDecl>(Frame->Callee) &&
                       !isa<CXXConstructorDecl>(Frame->Callee) &&
@@ -635,7 +634,7 @@ void EvalInfo::addCallStack(unsigned Limit) {
       continue;
     }
 
-    llvm::SmallVector<char, 128> Buffer;
+    SmallVector<char, 128> Buffer;
     llvm::raw_svector_ostream Out(Buffer);
     describeCall(Frame, Out);
     addDiag(Frame->CallLoc, diag::note_constexpr_call_here) << Out.str();
@@ -738,7 +737,7 @@ namespace {
     bool checkSubobject(EvalInfo &Info, const Expr *E, CheckSubobjectKind CSK) {
       // Outside C++11, do not build a designator referring to a subobject of
       // any object: we won't use such a designator for anything.
-      if (!Info.getLangOpts().CPlusPlus0x)
+      if (!Info.getLangOpts().CPlusPlus11)
         Designator.setInvalid();
       return checkNullPointer(Info, E, CSK) &&
              Designator.checkSubobject(Info, E, CSK);
@@ -972,7 +971,7 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
   // manufacture when checking potential constant expressions is conservatively
   // assumed to be global here.
   if (!IsGlobalLValue(Base)) {
-    if (Info.getLangOpts().CPlusPlus0x) {
+    if (Info.getLangOpts().CPlusPlus11) {
       const ValueDecl *VD = Base.dyn_cast<const ValueDecl*>();
       Info.Diag(Loc, diag::note_constexpr_non_global, 1)
         << IsReferenceType << !Designator.Entries.empty()
@@ -1026,7 +1025,7 @@ static bool CheckLiteralType(EvalInfo &Info, const Expr *E) {
     return true;
 
   // Prvalue constant expressions must be of literal types.
-  if (Info.getLangOpts().CPlusPlus0x)
+  if (Info.getLangOpts().CPlusPlus11)
     Info.Diag(E, diag::note_constexpr_nonliteral)
       << E->getType();
   else
@@ -1463,7 +1462,7 @@ static bool EvaluateVarDeclInit(EvalInfo &Info, const Expr *E,
 
   // Check that we can fold the initializer. In C++, we will have already done
   // this in the cases where it matters for conformance.
-  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  SmallVector<PartialDiagnosticAt, 8> Notes;
   if (!VD->evaluateValue(Notes)) {
     Info.Diag(E, diag::note_constexpr_var_init_non_constant,
               Notes.size() + 1) << VD;
@@ -1527,7 +1526,7 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
     // A diagnostic will have already been produced.
     return false;
   if (Sub.isOnePastTheEnd()) {
-    Info.Diag(E, Info.getLangOpts().CPlusPlus0x ?
+    Info.Diag(E, Info.getLangOpts().CPlusPlus11 ?
                 (unsigned)diag::note_constexpr_read_past_end :
                 (unsigned)diag::note_invalid_subexpr_in_const_expr);
     return false;
@@ -1549,7 +1548,7 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
       if (CAT->getSize().ule(Index)) {
         // Note, it should not be possible to form a pointer with a valid
         // designator which points more than one past the end of the array.
-        Info.Diag(E, Info.getLangOpts().CPlusPlus0x ?
+        Info.Diag(E, Info.getLangOpts().CPlusPlus11 ?
                     (unsigned)diag::note_constexpr_read_past_end :
                     (unsigned)diag::note_invalid_subexpr_in_const_expr);
         return false;
@@ -1571,7 +1570,7 @@ static bool ExtractSubobject(EvalInfo &Info, const Expr *E,
       // Next subobject is a complex number.
       uint64_t Index = Sub.Entries[I].ArrayIndex;
       if (Index > 1) {
-        Info.Diag(E, Info.getLangOpts().CPlusPlus0x ?
+        Info.Diag(E, Info.getLangOpts().CPlusPlus11 ?
                     (unsigned)diag::note_constexpr_read_past_end :
                     (unsigned)diag::note_invalid_subexpr_in_const_expr);
         return false;
@@ -1796,7 +1795,7 @@ static bool HandleLValueToRValueConversion(EvalInfo &Info, const Expr *Conv,
         // We support folding of const floating-point types, in order to make
         // static const data members of such types (supported as an extension)
         // more useful.
-        if (Info.getLangOpts().CPlusPlus0x) {
+        if (Info.getLangOpts().CPlusPlus11) {
           Info.CCEDiag(Conv, diag::note_constexpr_ltor_non_constexpr, 1) << VD;
           Info.Note(VD->getLocation(), diag::note_declared_at);
         } else {
@@ -1804,7 +1803,7 @@ static bool HandleLValueToRValueConversion(EvalInfo &Info, const Expr *Conv,
         }
       } else {
         // FIXME: Allow folding of values of any literal type in all languages.
-        if (Info.getLangOpts().CPlusPlus0x) {
+        if (Info.getLangOpts().CPlusPlus11) {
           Info.Diag(Conv, diag::note_constexpr_ltor_non_constexpr, 1) << VD;
           Info.Note(VD->getLocation(), diag::note_declared_at);
         } else {
@@ -2081,7 +2080,7 @@ static bool CheckTrivialDefaultConstructor(EvalInfo &Info, SourceLocation Loc,
   // call is a core constant expression whether or not the constructor is
   // constexpr.
   if (!CD->isConstexpr() && !IsValueInitialization) {
-    if (Info.getLangOpts().CPlusPlus0x) {
+    if (Info.getLangOpts().CPlusPlus11) {
       // FIXME: If DiagDecl is an implicitly-declared special member function,
       // we should be much more explicit about why it's not constexpr.
       Info.CCEDiag(Loc, diag::note_constexpr_invalid_function, 1)
@@ -2109,7 +2108,7 @@ static bool CheckConstexprFunction(EvalInfo &Info, SourceLocation CallLoc,
   if (Definition && Definition->isConstexpr() && !Definition->isInvalidDecl())
     return true;
 
-  if (Info.getLangOpts().CPlusPlus0x) {
+  if (Info.getLangOpts().CPlusPlus11) {
     const FunctionDecl *DiagDecl = Definition ? Definition : Declaration;
     // FIXME: If DiagDecl is an implicitly-declared special member function, we
     // should be much more explicit about why it's not constexpr.
@@ -2312,7 +2311,7 @@ private:
 
     // Speculatively evaluate both arms.
     {
-      llvm::SmallVector<PartialDiagnosticAt, 8> Diag;
+      SmallVector<PartialDiagnosticAt, 8> Diag;
       SpeculativeEvaluationRAII Speculate(Info, &Diag);
 
       StmtVisitorTy::Visit(E->getFalseExpr());
@@ -2483,7 +2482,7 @@ public:
 
     const FunctionDecl *FD = 0;
     LValue *This = 0, ThisVal;
-    llvm::ArrayRef<const Expr*> Args(E->getArgs(), E->getNumArgs());
+    ArrayRef<const Expr *> Args(E->getArgs(), E->getNumArgs());
     bool HasQualifier = false;
 
     // Extract function decl and 'this' pointer from the callee.
@@ -3488,7 +3487,7 @@ bool RecordExprEvaluator::VisitCXXConstructExpr(const CXXConstructExpr *E) {
   if (ZeroInit && !ZeroInitialization(E))
     return false;
 
-  llvm::ArrayRef<const Expr*> Args(E->getArgs(), E->getNumArgs());
+  ArrayRef<const Expr *> Args(E->getArgs(), E->getNumArgs());
   return HandleConstructorCall(E->getExprLoc(), This, Args,
                                cast<CXXConstructorDecl>(Definition), Info,
                                Result);
@@ -3899,7 +3898,7 @@ bool ArrayExprEvaluator::VisitCXXConstructExpr(const CXXConstructExpr *E) {
       return false;
   }
 
-  llvm::ArrayRef<const Expr*> Args(E->getArgs(), E->getNumArgs());
+  ArrayRef<const Expr *> Args(E->getArgs(), E->getNumArgs());
   return HandleConstructorCall(E->getExprLoc(), Subobject, Args,
                                cast<CXXConstructorDecl>(Definition),
                                Info, *Value);
@@ -4318,7 +4317,7 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
 
   case Builtin::BIstrlen:
     // A call to strlen is not a constant expression.
-    if (Info.getLangOpts().CPlusPlus0x)
+    if (Info.getLangOpts().CPlusPlus11)
       Info.CCEDiag(E, diag::note_constexpr_invalid_function)
         << /*isConstexpr*/0 << /*isConstructor*/0 << "'strlen'";
     else
@@ -4708,9 +4707,14 @@ bool DataRecursiveIntBinOpEvaluator::
       return Success(E->getOpcode() == BO_Rem ? LHS % RHS : LHS / RHS, E,
                      Result);
     case BO_Shl: {
-      // During constant-folding, a negative shift is an opposite shift. Such
-      // a shift is not a constant expression.
-      if (RHS.isSigned() && RHS.isNegative()) {
+      if (Info.getLangOpts().OpenCL)
+        // OpenCL 6.3j: shift values are effectively % word size of LHS.
+        RHS &= APSInt(llvm::APInt(LHS.getBitWidth(),
+                      static_cast<uint64_t>(LHS.getBitWidth() - 1)),
+                      RHS.isUnsigned());
+      else if (RHS.isSigned() && RHS.isNegative()) {
+        // During constant-folding, a negative shift is an opposite shift. Such
+        // a shift is not a constant expression.
         CCEDiag(E, diag::note_constexpr_negative_shift) << RHS;
         RHS = -RHS;
         goto shift_right;
@@ -4735,9 +4739,14 @@ bool DataRecursiveIntBinOpEvaluator::
       return Success(LHS << SA, E, Result);
     }
     case BO_Shr: {
-      // During constant-folding, a negative shift is an opposite shift. Such a
-      // shift is not a constant expression.
-      if (RHS.isSigned() && RHS.isNegative()) {
+      if (Info.getLangOpts().OpenCL)
+        // OpenCL 6.3j: shift values are effectively % word size of LHS.
+        RHS &= APSInt(llvm::APInt(LHS.getBitWidth(),
+                      static_cast<uint64_t>(LHS.getBitWidth() - 1)),
+                      RHS.isUnsigned());
+      else if (RHS.isSigned() && RHS.isNegative()) {
+        // During constant-folding, a negative shift is an opposite shift. Such a
+        // shift is not a constant expression.
         CCEDiag(E, diag::note_constexpr_negative_shift) << RHS;
         RHS = -RHS;
         goto shift_left;
@@ -5363,6 +5372,7 @@ bool IntExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_IntegralComplexCast:
   case CK_IntegralComplexToFloatingComplex:
   case CK_BuiltinFnToFnPtr:
+  case CK_ZeroToOCLEvent:
     llvm_unreachable("invalid cast kind for integral value");
 
   case CK_BitCast:
@@ -5850,6 +5860,7 @@ bool ComplexExprEvaluator::VisitCastExpr(const CastExpr *E) {
   case CK_ARCExtendBlockObject:
   case CK_CopyAndAutoreleaseBlockObject:
   case CK_BuiltinFnToFnPtr:
+  case CK_ZeroToOCLEvent:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_LValueToRValue:
@@ -6192,12 +6203,12 @@ static bool Evaluate(APValue &Result, EvalInfo &Info, const Expr *E) {
       return false;
     Result = Info.CurrentCall->Temporaries[E];
   } else if (E->getType()->isVoidType()) {
-    if (!Info.getLangOpts().CPlusPlus0x)
+    if (!Info.getLangOpts().CPlusPlus11)
       Info.CCEDiag(E, diag::note_constexpr_nonliteral)
         << E->getType();
     if (!EvaluateVoid(E, Info))
       return false;
-  } else if (Info.getLangOpts().CPlusPlus0x) {
+  } else if (Info.getLangOpts().CPlusPlus11) {
     Info.Diag(E, diag::note_constexpr_nonliteral) << E->getType();
     return false;
   } else {
@@ -6267,7 +6278,7 @@ bool Expr::EvaluateAsRValue(EvalResult &Result, const ASTContext &Ctx) const {
   // FIXME: Evaluating values of large array and record types can cause
   // performance problems. Only do so in C++11 for now.
   if (isRValue() && (getType()->isArrayType() || getType()->isRecordType()) &&
-      !Ctx.getLangOpts().CPlusPlus0x)
+      !Ctx.getLangOpts().CPlusPlus11)
     return false;
 
   EvalInfo Info(Ctx, Result);
@@ -6310,11 +6321,11 @@ bool Expr::EvaluateAsLValue(EvalResult &Result, const ASTContext &Ctx) const {
 
 bool Expr::EvaluateAsInitializer(APValue &Value, const ASTContext &Ctx,
                                  const VarDecl *VD,
-                      llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const {
+                            SmallVectorImpl<PartialDiagnosticAt> &Notes) const {
   // FIXME: Evaluating initializers for large array and record types can cause
   // performance problems. Only do so in C++11 for now.
   if (isRValue() && (getType()->isArrayType() || getType()->isRecordType()) &&
-      !Ctx.getLangOpts().CPlusPlus0x)
+      !Ctx.getLangOpts().CPlusPlus11)
     return false;
 
   Expr::EvalStatus EStatus;
@@ -6354,8 +6365,10 @@ bool Expr::isEvaluatable(const ASTContext &Ctx) const {
   return EvaluateAsRValue(Result, Ctx) && !Result.HasSideEffects;
 }
 
-APSInt Expr::EvaluateKnownConstInt(const ASTContext &Ctx) const {
+APSInt Expr::EvaluateKnownConstInt(const ASTContext &Ctx,
+                    SmallVectorImpl<PartialDiagnosticAt> *Diag) const {
   EvalResult EvalResult;
+  EvalResult.Diag = Diag;
   bool Result = EvaluateAsRValue(EvalResult, Ctx);
   (void)Result;
   assert(Result && "Could not evaluate expression");
@@ -6796,7 +6809,7 @@ static bool EvaluateCPlusPlus11IntegralConstantExpr(ASTContext &Ctx,
 }
 
 bool Expr::isIntegerConstantExpr(ASTContext &Ctx, SourceLocation *Loc) const {
-  if (Ctx.getLangOpts().CPlusPlus0x)
+  if (Ctx.getLangOpts().CPlusPlus11)
     return EvaluateCPlusPlus11IntegralConstantExpr(Ctx, this, 0, Loc);
 
   ICEDiag D = CheckICE(this, Ctx);
@@ -6809,7 +6822,7 @@ bool Expr::isIntegerConstantExpr(ASTContext &Ctx, SourceLocation *Loc) const {
 
 bool Expr::isIntegerConstantExpr(llvm::APSInt &Value, ASTContext &Ctx,
                                  SourceLocation *Loc, bool isEvaluated) const {
-  if (Ctx.getLangOpts().CPlusPlus0x)
+  if (Ctx.getLangOpts().CPlusPlus11)
     return EvaluateCPlusPlus11IntegralConstantExpr(Ctx, this, &Value, Loc);
 
   if (!isIntegerConstantExpr(Ctx, Loc))
@@ -6831,7 +6844,7 @@ bool Expr::isCXX11ConstantExpr(ASTContext &Ctx, APValue *Result,
 
   // Build evaluation settings.
   Expr::EvalStatus Status;
-  llvm::SmallVector<PartialDiagnosticAt, 8> Diags;
+  SmallVector<PartialDiagnosticAt, 8> Diags;
   Status.Diag = &Diags;
   EvalInfo Info(Ctx, Status);
 
@@ -6850,7 +6863,7 @@ bool Expr::isCXX11ConstantExpr(ASTContext &Ctx, APValue *Result,
 }
 
 bool Expr::isPotentialConstantExpr(const FunctionDecl *FD,
-                                   llvm::SmallVectorImpl<
+                                   SmallVectorImpl<
                                      PartialDiagnosticAt> &Diags) {
   // FIXME: It would be useful to check constexpr function templates, but at the
   // moment the constant expression evaluator cannot cope with the non-rigorous

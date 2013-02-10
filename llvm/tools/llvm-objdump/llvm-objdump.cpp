@@ -28,6 +28,7 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/COFF.h"
+#include "llvm/Object/ELF.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Casting.h"
@@ -111,6 +112,14 @@ UnwindInfo("unwind-info", cl::desc("Display unwind information"));
 static cl::alias
 UnwindInfoShort("u", cl::desc("Alias for --unwind-info"),
                 cl::aliasopt(UnwindInfo));
+
+static cl::opt<bool>
+PrivateHeaders("private-headers",
+               cl::desc("Display format specific file headers"));
+
+static cl::alias
+PrivateHeadersShort("p", cl::desc("Alias for --private-headers"),
+                    cl::aliasopt(PrivateHeaders));
 
 static StringRef ToolName;
 
@@ -433,7 +442,7 @@ static void PrintSectionHeaders(const ObjectFile *o) {
     if (error(si->isBSS(BSS))) return;
     std::string Type = (std::string(Text ? "TEXT " : "") +
                         (Data ? "DATA " : "") + (BSS ? "BSS" : ""));
-    outs() << format("%3d %-13s %09" PRIx64 " %017" PRIx64 " %s\n",
+    outs() << format("%3d %-13s %08" PRIx64 " %016" PRIx64 " %s\n",
                      i, Name.str().c_str(), Size, Address, Type.c_str());
     ++i;
   }
@@ -563,7 +572,10 @@ static void PrintSymbolTable(const ObjectFile *o) {
       else if (Type == SymbolRef::ST_Function)
         FileFunc = 'F';
 
-      outs() << format("%08" PRIx64, Address) << " "
+      const char *Fmt = o->getBytesInAddress() > 4 ? "%016" PRIx64 :
+                                                     "%08" PRIx64;
+
+      outs() << format(Fmt, Address) << " "
              << GlobLoc // Local -> 'l', Global -> 'g', Neither -> ' '
              << (Weak ? 'w' : ' ') // Weak?
              << ' ' // Constructor. Not supported yet.
@@ -627,6 +639,8 @@ static void DumpObject(const ObjectFile *o) {
     PrintSymbolTable(o);
   if (UnwindInfo)
     PrintUnwindInfo(o);
+  if (PrivateHeaders && o->isELF())
+    printELFFileHeader(o);
 }
 
 /// @brief Dump each object file in \a a;
@@ -706,7 +720,8 @@ int main(int argc, char **argv) {
       && !SectionHeaders
       && !SectionContents
       && !SymbolTable
-      && !UnwindInfo) {
+      && !UnwindInfo
+      && !PrivateHeaders) {
     cl::PrintHelpMessage();
     return 2;
   }

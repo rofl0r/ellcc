@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <wchar.h>
 
+#include <dlfcn.h>
 #include <unistd.h>
 #include <limits.h>
 #include <sys/time.h>
@@ -683,6 +684,24 @@ TEST(MemorySanitizer, strtoull) {
   v_s8 = (S8) e;
 }
 
+TEST(MemorySanitizer, strtod) {
+  char *e;
+  assert(0 != strtod("1.5", &e));
+  v_s8 = (S8) e;
+}
+
+TEST(MemorySanitizer, strtof) {
+  char *e;
+  assert(0 != strtof("1.5", &e));
+  v_s8 = (S8) e;
+}
+
+TEST(MemorySanitizer, strtold) {
+  char *e;
+  assert(0 != strtold("1.5", &e));
+  v_s8 = (S8) e;
+}
+
 TEST(MemorySanitizer, sprintf) {  // NOLINT
   char buff[10];
   __msan_break_optimization(buff);
@@ -1189,6 +1208,61 @@ TEST(MemorySanitizer, getrlimit) {
   volatile rlim_t t;
   t = limit.rlim_cur;
   t = limit.rlim_max;
+}
+
+TEST(MemorySanitizer, getrusage) {
+  struct rusage usage;
+  __msan_poison(&usage, sizeof(usage));
+  int result = getrusage(RUSAGE_SELF, &usage);
+  assert(result == 0);
+  volatile struct timeval t;
+  v_u8 = usage.ru_utime.tv_sec;
+  v_u8 = usage.ru_utime.tv_usec;
+  v_u8 = usage.ru_stime.tv_sec;
+  v_u8 = usage.ru_stime.tv_usec;
+  v_s8 = usage.ru_maxrss;
+  v_s8 = usage.ru_minflt;
+  v_s8 = usage.ru_majflt;
+  v_s8 = usage.ru_inblock;
+  v_s8 = usage.ru_oublock;
+  v_s8 = usage.ru_nvcsw;
+  v_s8 = usage.ru_nivcsw;
+}
+
+static void dladdr_testfn() {}
+
+TEST(MemorySanitizer, dladdr) {
+  Dl_info info;
+  __msan_poison(&info, sizeof(info));
+  int result = dladdr((const void*)dladdr_testfn, &info);
+  assert(result != 0);
+  v_u8 = (unsigned long)info.dli_fname;
+  if (info.dli_fname)
+    v_u8 = strlen(info.dli_fname);
+  v_u8 = (unsigned long)info.dli_fbase;
+  v_u8 = (unsigned long)info.dli_sname;
+  if (info.dli_sname)
+    v_u8 = strlen(info.dli_sname);
+  v_u8 = (unsigned long)info.dli_saddr;
+}
+
+TEST(MemorySanitizer, scanf) {
+  const char *input = "42 hello";
+  int* d = new int;
+  char* s = new char[7];
+  int res = sscanf(input, "%d %5s", d, s);
+  printf("res %d\n", res);
+  assert(res == 2);
+  v_s4 = *d;
+  v_u1 = s[0];
+  v_u1 = s[1];
+  v_u1 = s[2];
+  v_u1 = s[3];
+  v_u1 = s[4];
+  v_u1 = s[5];
+  EXPECT_POISONED(v_u1 = s[6]);
+  delete s;
+  delete d;
 }
 
 static void* SimpleThread_threadfn(void* data) {

@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Config/config.h"
-#include "llvm/Support/Process.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Process.h"
 
 using namespace llvm;
 using namespace sys;
@@ -49,6 +49,31 @@ self_process *process::get_self() {
 self_process::~self_process() {
   llvm_unreachable("This destructor must never be executed!");
 }
+
+/// \brief A helper function to compute the elapsed wall-time since the program
+/// started.
+///
+/// Note that this routine actually computes the elapsed wall time since the
+/// first time it was called. However, we arrange to have it called during the
+/// startup of the process to get approximately correct results.
+static TimeValue getElapsedWallTime() {
+  static TimeValue &StartTime = *new TimeValue(TimeValue::now());
+  return TimeValue::now() - StartTime;
+}
+
+/// \brief A special global variable to ensure we call \c getElapsedWallTime
+/// during global initialization of the program.
+///
+/// Note that this variable is never referenced elsewhere. Doing so could
+/// create race conditions during program startup or shutdown.
+static volatile TimeValue DummyTimeValue = getElapsedWallTime();
+
+// Implement this routine by using the static helpers above. They're already
+// portable.
+TimeValue self_process::get_wall_time() const {
+  return getElapsedWallTime();
+}
+
 
 #if defined(_MSC_VER)
 #pragma warning(pop)

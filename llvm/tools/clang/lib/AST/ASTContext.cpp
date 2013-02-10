@@ -365,10 +365,12 @@ static void addRedeclaredMethods(const ObjCMethodDecl *ObjCMethod,
     if (!ID)
       return;
     // Add redeclared method here.
-    for (const ObjCCategoryDecl *ClsExtDecl = ID->getFirstClassExtension();
-         ClsExtDecl; ClsExtDecl = ClsExtDecl->getNextClassExtension()) {
+    for (ObjCInterfaceDecl::known_extensions_iterator
+           Ext = ID->known_extensions_begin(),
+           ExtEnd = ID->known_extensions_end();
+         Ext != ExtEnd; ++Ext) {
       if (ObjCMethodDecl *RedeclaredMethod =
-            ClsExtDecl->getMethod(ObjCMethod->getSelector(),
+            Ext->getMethod(ObjCMethod->getSelector(),
                                   ObjCMethod->isInstanceMethod()))
         Redeclared.push_back(RedeclaredMethod);
     }
@@ -413,7 +415,16 @@ comments::FullComment *ASTContext::getCommentForDecl(
   if (!RC) {
     if (isa<ObjCMethodDecl>(D) || isa<FunctionDecl>(D)) {
       SmallVector<const NamedDecl*, 8> Overridden;
-      if (const ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(D))
+      const ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(D);
+      if (OMD && OMD->isPropertyAccessor()) {
+        if (const ObjCPropertyDecl *PDecl = OMD->findPropertyDecl()) {
+          if (comments::FullComment *FC = getCommentForDecl(PDecl, PP)) {
+            comments::FullComment *CFC = cloneFullComment(FC, D);
+            return CFC;
+          }
+        }
+      }
+      if (OMD)
         addRedeclaredMethods(OMD, Overridden);
       getOverriddenMethods(dyn_cast<NamedDecl>(D), Overridden);
       for (unsigned i = 0, e = Overridden.size(); i < e; i++) {
@@ -633,7 +644,7 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     Comments(SM), CommentsLoaded(false),
     CommentCommandTraits(BumpAlloc),
     LastSDM(0, 0),
-    UniqueBlockByRefTypeID(0) 
+    UniqueBlockByRefTypeID(0)
 {
   if (size_reserve > 0) Types.reserve(size_reserve);
   TUDecl = TranslationUnitDecl::Create(*this);
@@ -882,6 +893,8 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
     InitBuiltinType(OCLImage2dTy, BuiltinType::OCLImage2d);
     InitBuiltinType(OCLImage2dArrayTy, BuiltinType::OCLImage2dArray);
     InitBuiltinType(OCLImage3dTy, BuiltinType::OCLImage3d);
+
+    InitBuiltinType(OCLEventTy, BuiltinType::OCLEvent);
   }
   
   // Builtin type for __objc_yes and __objc_no
@@ -889,6 +902,8 @@ void ASTContext::InitBuiltinTypes(const TargetInfo &Target) {
                        SignedCharTy : BoolTy);
   
   ObjCConstantStringType = QualType();
+  
+  ObjCSuperType = QualType();
 
   // void * type
   VoidPtrTy = getPointerType(VoidTy);
@@ -1421,6 +1436,7 @@ ASTContext::getTypeInfoImpl(const Type *T) const {
       Width = Target->getPointerWidth(0); 
       Align = Target->getPointerAlign(0);
       break;
+    case BuiltinType::OCLEvent:
     case BuiltinType::OCLImage1d:
     case BuiltinType::OCLImage1dArray:
     case BuiltinType::OCLImage1dBuffer:
@@ -1678,9 +1694,13 @@ void ASTContext::CollectInheritedProtocols(const Decl *CDecl,
     }
     
     // Categories of this Interface.
-    for (const ObjCCategoryDecl *CDeclChain = OI->getCategoryList(); 
-         CDeclChain; CDeclChain = CDeclChain->getNextClassCategory())
-      CollectInheritedProtocols(CDeclChain, Protocols);
+    for (ObjCInterfaceDecl::visible_categories_iterator
+           Cat = OI->visible_categories_begin(),
+           CatEnd = OI->visible_categories_end();
+         Cat != CatEnd; ++Cat) {
+      CollectInheritedProtocols(*Cat, Protocols);
+    }
+
     if (ObjCInterfaceDecl *SD = OI->getSuperClass())
       while (SD) {
         CollectInheritedProtocols(SD, Protocols);
@@ -1710,10 +1730,13 @@ void ASTContext::CollectInheritedProtocols(const Decl *CDecl,
 unsigned ASTContext::CountNonClassIvars(const ObjCInterfaceDecl *OI) const {
   unsigned count = 0;  
   // Count ivars declared in class extension.
-  for (const ObjCCategoryDecl *CDecl = OI->getFirstClassExtension(); CDecl;
-       CDecl = CDecl->getNextClassExtension())
-    count += CDecl->ivar_size();
-
+  for (ObjCInterfaceDecl::known_extensions_iterator
+         Ext = OI->known_extensions_begin(),
+         ExtEnd = OI->known_extensions_end();
+       Ext != ExtEnd; ++Ext) {
+    count += Ext->ivar_size();
+  }
+  
   // Count ivar defined in this class's implementation.  This
   // includes synthesized ivars.
   if (ObjCImplementationDecl *ImplDecl = OI->getImplementation())
@@ -2582,6 +2605,13 @@ ASTContext::getFunctionNoProtoType(QualType ResultTy,
   return QualType(New, 0);
 }
 
+/// \brief Determine whether \p T is canonical as the result type of a function.
+static bool isCanonicalResultType(QualType T) {
+  return T.isCanonical() &&
+         (T.getObjCLifetime() == Qualifiers::OCL_None ||
+          T.getObjCLifetime() == Qualifiers::OCL_ExplicitNone);
+}
+
 /// getFunctionType - Return a normal function type with a typed argument
 /// list.  isVariadic indicates whether the argument list includes '...'.
 QualType
@@ -2600,7 +2630,7 @@ ASTContext::getFunctionType(QualType ResultTy,
 
   // Determine whether the type being created is already canonical or not.
   bool isCanonical =
-    EPI.ExceptionSpecType == EST_None && ResultTy.isCanonical() &&
+    EPI.ExceptionSpecType == EST_None && isCanonicalResultType(ResultTy) &&
     !EPI.HasTrailingReturn;
   for (unsigned i = 0; i != NumArgs && isCanonical; ++i)
     if (!ArgArray[i].isCanonicalAsParam())
@@ -2626,7 +2656,15 @@ ASTContext::getFunctionType(QualType ResultTy,
     CanonicalEPI.ExtInfo
       = CanonicalEPI.ExtInfo.withCallingConv(getCanonicalCallConv(CallConv));
 
-    Canonical = getFunctionType(getCanonicalType(ResultTy),
+    // Result types do not have ARC lifetime qualifiers.
+    QualType CanResultTy = getCanonicalType(ResultTy);
+    if (ResultTy.getQualifiers().hasObjCLifetime()) {
+      Qualifiers Qs = CanResultTy.getQualifiers();
+      Qs.removeObjCLifetime();
+      CanResultTy = getQualifiedType(CanResultTy.getUnqualifiedType(), Qs);
+    }
+
+    Canonical = getFunctionType(CanResultTy,
                                 CanonicalArgs.data(), NumArgs,
                                 CanonicalEPI);
 
@@ -4294,6 +4332,16 @@ QualType ASTContext::getCFConstantStringType() const {
   return getTagDeclType(CFConstantStringTypeDecl);
 }
 
+QualType ASTContext::getObjCSuperType() const {
+  if (ObjCSuperType.isNull()) {
+    RecordDecl *ObjCSuperTypeDecl  =
+      CreateRecordDecl(*this, TTK_Struct, TUDecl, &Idents.get("objc_super"));
+    TUDecl->addDecl(ObjCSuperTypeDecl);
+    ObjCSuperType = getTagDeclType(ObjCSuperTypeDecl);
+  }
+  return ObjCSuperType;
+}
+
 void ASTContext::setCFConstantStringType(QualType T) {
   const RecordType *Rec = T->getAs<RecordType>();
   assert(Rec && "Invalid CFConstantStringType");
@@ -4850,6 +4898,7 @@ static char getObjCEncodingForPrimitiveKind(const ASTContext *C,
     case BuiltinType::OCLImage2d:
     case BuiltinType::OCLImage2dArray:
     case BuiltinType::OCLImage3d:
+    case BuiltinType::OCLEvent:
     case BuiltinType::Dependent:
 #define BUILTIN_TYPE(KIND, ID)
 #define PLACEHOLDER_TYPE(KIND, ID) \
@@ -4857,6 +4906,7 @@ static char getObjCEncodingForPrimitiveKind(const ASTContext *C,
 #include "clang/AST/BuiltinTypes.def"
       llvm_unreachable("invalid builtin type for @encode");
     }
+    llvm_unreachable("invalid BuiltinType::Kind value");
 }
 
 static char ObjCEncodingForEnumType(const ASTContext *C, const EnumType *ET) {
@@ -7205,6 +7255,9 @@ static QualType DecodeTypeFromStr(const char *&Str, const ASTContext &Context,
   case 'H':
     Type = Context.getObjCSelType();
     break;
+  case 'M':
+    Type = Context.getObjCSuperType();
+    break;
   case 'a':
     Type = Context.getBuiltinVaListType();
     assert(!Type.isNull() && "builtin va list type not initialized!");
@@ -7451,9 +7504,8 @@ GVALinkage ASTContext::GetGVALinkageForVariable(const VarDecl *VD) {
     TSK = VD->getTemplateSpecializationKind();
 
   Linkage L = VD->getLinkage();
-  if (L == ExternalLinkage && getLangOpts().CPlusPlus &&
-      VD->getType()->getLinkage() == UniqueExternalLinkage)
-    L = UniqueExternalLinkage;
+  assert (!(L == ExternalLinkage && getLangOpts().CPlusPlus &&
+            VD->getType()->getLinkage() == UniqueExternalLinkage));
 
   switch (L) {
   case NoLinkage:

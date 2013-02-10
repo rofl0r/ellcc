@@ -32,7 +32,7 @@
 #include <ctime>
 using namespace clang;
 
-MacroInfo *Preprocessor::getMacroInfoHistory(IdentifierInfo *II) const {
+MacroInfo *Preprocessor::getMacroInfoHistory(const IdentifierInfo *II) const {
   assert(II->hadMacroDefinition() && "Identifier has not been not a macro!");
 
   macro_iterator Pos = Macros.find(II);
@@ -600,7 +600,7 @@ MacroArgs *Preprocessor::ReadFunctionLikeMacroArgs(Token &MacroName,
     // Empty arguments are standard in C99 and C++0x, and are supported as an extension in
     // other modes.
     if (ArgTokens.size() == ArgTokenStart && !LangOpts.C99)
-      Diag(Tok, LangOpts.CPlusPlus0x ?
+      Diag(Tok, LangOpts.CPlusPlus11 ?
            diag::warn_cxx98_compat_empty_fnmacro_arg :
            diag::ext_empty_fnmacro_arg);
 
@@ -785,7 +785,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
     Feature = Feature.substr(2, Feature.size() - 4);
 
   return llvm::StringSwitch<bool>(Feature)
-           .Case("address_sanitizer", LangOpts.SanitizeAddress)
+           .Case("address_sanitizer", LangOpts.Sanitize.Address)
            .Case("attribute_analyzer_noreturn", true)
            .Case("attribute_availability", true)
            .Case("attribute_availability_with_message", true)
@@ -807,8 +807,8 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("cxx_exceptions", LangOpts.Exceptions)
            .Case("cxx_rtti", LangOpts.RTTI)
            .Case("enumerator_attributes", true)
-           .Case("memory_sanitizer", LangOpts.SanitizeMemory)
-           .Case("thread_sanitizer", LangOpts.SanitizeThread)
+           .Case("memory_sanitizer", LangOpts.Sanitize.Memory)
+           .Case("thread_sanitizer", LangOpts.Sanitize.Thread)
            // Objective-C features
            .Case("objc_arr", LangOpts.ObjCAutoRefCount) // FIXME: REMOVE?
            .Case("objc_arc", LangOpts.ObjCAutoRefCount)
@@ -818,6 +818,7 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("objc_instancetype", LangOpts.ObjC2)
            .Case("objc_modules", LangOpts.ObjC2 && LangOpts.Modules)
            .Case("objc_nonfragile_abi", LangOpts.ObjCRuntime.isNonFragile())
+           .Case("objc_property_explicit_atomic", true) // Does clang support explicit "atomic" keyword?
            .Case("objc_weak_class", LangOpts.ObjCRuntime.hasWeakClassImport())
            .Case("ownership_holds", true)
            .Case("ownership_returns", true)
@@ -834,41 +835,41 @@ static bool HasFeature(const Preprocessor &PP, const IdentifierInfo *II) {
            .Case("c_generic_selections", LangOpts.C11)
            .Case("c_static_assert", LangOpts.C11)
            // C++11 features
-           .Case("cxx_access_control_sfinae", LangOpts.CPlusPlus0x)
-           .Case("cxx_alias_templates", LangOpts.CPlusPlus0x)
-           .Case("cxx_alignas", LangOpts.CPlusPlus0x)
-           .Case("cxx_atomic", LangOpts.CPlusPlus0x)
-           .Case("cxx_attributes", LangOpts.CPlusPlus0x)
-           .Case("cxx_auto_type", LangOpts.CPlusPlus0x)
-           .Case("cxx_constexpr", LangOpts.CPlusPlus0x)
-           .Case("cxx_decltype", LangOpts.CPlusPlus0x)
-           .Case("cxx_decltype_incomplete_return_types", LangOpts.CPlusPlus0x)
-           .Case("cxx_default_function_template_args", LangOpts.CPlusPlus0x)
-           .Case("cxx_defaulted_functions", LangOpts.CPlusPlus0x)
-           .Case("cxx_delegating_constructors", LangOpts.CPlusPlus0x)
-           .Case("cxx_deleted_functions", LangOpts.CPlusPlus0x)
-           .Case("cxx_explicit_conversions", LangOpts.CPlusPlus0x)
-           .Case("cxx_generalized_initializers", LangOpts.CPlusPlus0x)
-           .Case("cxx_implicit_moves", LangOpts.CPlusPlus0x)
+           .Case("cxx_access_control_sfinae", LangOpts.CPlusPlus11)
+           .Case("cxx_alias_templates", LangOpts.CPlusPlus11)
+           .Case("cxx_alignas", LangOpts.CPlusPlus11)
+           .Case("cxx_atomic", LangOpts.CPlusPlus11)
+           .Case("cxx_attributes", LangOpts.CPlusPlus11)
+           .Case("cxx_auto_type", LangOpts.CPlusPlus11)
+           .Case("cxx_constexpr", LangOpts.CPlusPlus11)
+           .Case("cxx_decltype", LangOpts.CPlusPlus11)
+           .Case("cxx_decltype_incomplete_return_types", LangOpts.CPlusPlus11)
+           .Case("cxx_default_function_template_args", LangOpts.CPlusPlus11)
+           .Case("cxx_defaulted_functions", LangOpts.CPlusPlus11)
+           .Case("cxx_delegating_constructors", LangOpts.CPlusPlus11)
+           .Case("cxx_deleted_functions", LangOpts.CPlusPlus11)
+           .Case("cxx_explicit_conversions", LangOpts.CPlusPlus11)
+           .Case("cxx_generalized_initializers", LangOpts.CPlusPlus11)
+           .Case("cxx_implicit_moves", LangOpts.CPlusPlus11)
          //.Case("cxx_inheriting_constructors", false)
-           .Case("cxx_inline_namespaces", LangOpts.CPlusPlus0x)
-           .Case("cxx_lambdas", LangOpts.CPlusPlus0x)
-           .Case("cxx_local_type_template_args", LangOpts.CPlusPlus0x)
-           .Case("cxx_nonstatic_member_init", LangOpts.CPlusPlus0x)
-           .Case("cxx_noexcept", LangOpts.CPlusPlus0x)
-           .Case("cxx_nullptr", LangOpts.CPlusPlus0x)
-           .Case("cxx_override_control", LangOpts.CPlusPlus0x)
-           .Case("cxx_range_for", LangOpts.CPlusPlus0x)
-           .Case("cxx_raw_string_literals", LangOpts.CPlusPlus0x)
-           .Case("cxx_reference_qualified_functions", LangOpts.CPlusPlus0x)
-           .Case("cxx_rvalue_references", LangOpts.CPlusPlus0x)
-           .Case("cxx_strong_enums", LangOpts.CPlusPlus0x)
-           .Case("cxx_static_assert", LangOpts.CPlusPlus0x)
-           .Case("cxx_trailing_return", LangOpts.CPlusPlus0x)
-           .Case("cxx_unicode_literals", LangOpts.CPlusPlus0x)
-           .Case("cxx_unrestricted_unions", LangOpts.CPlusPlus0x)
-           .Case("cxx_user_literals", LangOpts.CPlusPlus0x)
-           .Case("cxx_variadic_templates", LangOpts.CPlusPlus0x)
+           .Case("cxx_inline_namespaces", LangOpts.CPlusPlus11)
+           .Case("cxx_lambdas", LangOpts.CPlusPlus11)
+           .Case("cxx_local_type_template_args", LangOpts.CPlusPlus11)
+           .Case("cxx_nonstatic_member_init", LangOpts.CPlusPlus11)
+           .Case("cxx_noexcept", LangOpts.CPlusPlus11)
+           .Case("cxx_nullptr", LangOpts.CPlusPlus11)
+           .Case("cxx_override_control", LangOpts.CPlusPlus11)
+           .Case("cxx_range_for", LangOpts.CPlusPlus11)
+           .Case("cxx_raw_string_literals", LangOpts.CPlusPlus11)
+           .Case("cxx_reference_qualified_functions", LangOpts.CPlusPlus11)
+           .Case("cxx_rvalue_references", LangOpts.CPlusPlus11)
+           .Case("cxx_strong_enums", LangOpts.CPlusPlus11)
+           .Case("cxx_static_assert", LangOpts.CPlusPlus11)
+           .Case("cxx_trailing_return", LangOpts.CPlusPlus11)
+           .Case("cxx_unicode_literals", LangOpts.CPlusPlus11)
+           .Case("cxx_unrestricted_unions", LangOpts.CPlusPlus11)
+           .Case("cxx_user_literals", LangOpts.CPlusPlus11)
+           .Case("cxx_variadic_templates", LangOpts.CPlusPlus11)
            // Type traits
            .Case("has_nothrow_assign", LangOpts.CPlusPlus)
            .Case("has_nothrow_copy", LangOpts.CPlusPlus)
@@ -964,8 +965,14 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
                                      IdentifierInfo *II, Preprocessor &PP,
                                      const DirectoryLookup *LookupFrom) {
   // Save the location of the current token.  If a '(' is later found, use
-  // that location.  If no, use the end of this location instead.
+  // that location.  If not, use the end of this location instead.
   SourceLocation LParenLoc = Tok.getLocation();
+
+  // These expressions are only allowed within a preprocessor directive.
+  if (!PP.isParsingIfOrElifDirective()) {
+    PP.Diag(LParenLoc, diag::err_pp_directive_required) << II->getName();
+    return false;
+  }
 
   // Get '('.
   PP.LexNonComment(Tok);
@@ -984,8 +991,14 @@ static bool EvaluateHasIncludeCommon(Token &Tok,
     // Save '(' location for possible missing ')' message.
     LParenLoc = Tok.getLocation();
 
-    // Get the file name.
-    PP.getCurrentLexer()->LexIncludeFilename(Tok);
+    if (PP.getCurrentLexer()) {
+      // Get the file name.
+      PP.getCurrentLexer()->LexIncludeFilename(Tok);
+    } else {
+      // We're in a macro, so we can't use LexIncludeFilename; just
+      // grab the next token.
+      PP.Lex(Tok);
+    }
   }
 
   // Reserve a buffer to get the spelling.
@@ -1348,7 +1361,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
       // We construct a SmallVector here to talk to getDiagnosticIDs().
       // Although we don't use the result, this isn't a hot path, and not
       // worth special casing.
-      llvm::SmallVector<diag::kind, 10> Diags;
+      SmallVector<diag::kind, 10> Diags;
       Value = !getDiagnostics().getDiagnosticIDs()->
         getDiagnosticsInGroup(WarningName.substr(2), Diags);
     } while (false);

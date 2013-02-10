@@ -1,7 +1,6 @@
 include(CheckCXXCompilerFlag)
 include(CompilerRTCompile)
 include(CompilerRTLink)
-include(CompilerRTUnittests)
 
 include_directories(..)
 include_directories(../..)
@@ -59,6 +58,7 @@ set(MSAN_UNITTEST_INSTRUMENTED_CFLAGS
 set(MSAN_UNITTEST_LINK_FLAGS
   -fsanitize=memory
   -pie
+  -ldl
   # FIXME: we build libcxx without cxxabi and need libstdc++ to provide it.
   -lstdc++
 )
@@ -148,7 +148,7 @@ macro(add_msan_tests_for_arch arch)
 endmacro()
 
 if(COMPILER_RT_CAN_EXECUTE_TESTS AND EXISTS ${MSAN_LIBCXX_PATH}/)
-  if(CAN_TARGET_X86_64)
+  if(CAN_TARGET_x86_64)
     add_msan_tests_for_arch(x86_64)
   endif()
 

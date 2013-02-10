@@ -13,7 +13,7 @@
 
 #include "InstCombine.h"
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/Intrinsics.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/ConstantRange.h"
 #include "llvm/Support/PatternMatch.h"
 #include "llvm/Transforms/Utils/CmpInstAnalysis.h"
@@ -1528,6 +1528,8 @@ Value *InstCombiner::FoldOrOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
       if (LHS->getOperand(0) == RHS->getOperand(0)) {
         // if LHSCst and RHSCst differ only by one bit:
         // (A == C1 || A == C2) -> (A & ~(C1 ^ C2)) == C1
+        assert(LHSCst->getValue().ule(LHSCst->getValue()));
+
         APInt Xor = LHSCst->getValue() ^ RHSCst->getValue();
         if (Xor.isPowerOf2()) {
           Value *NegCst = Builder->getInt(~Xor);

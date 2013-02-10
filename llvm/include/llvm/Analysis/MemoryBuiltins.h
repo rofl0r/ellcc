@@ -17,9 +17,9 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/IRBuilder.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/InstVisitor.h"
-#include "llvm/Operator.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/TargetFolder.h"
 #include "llvm/Support/ValueHandle.h"
@@ -191,6 +191,7 @@ public:
   SizeOffsetType visitExtractElementInst(ExtractElementInst &I);
   SizeOffsetType visitExtractValueInst(ExtractValueInst &I);
   SizeOffsetType visitGEPOperator(GEPOperator &GEP);
+  SizeOffsetType visitGlobalAlias(GlobalAlias &GA);
   SizeOffsetType visitGlobalVariable(GlobalVariable &GV);
   SizeOffsetType visitIntToPtrInst(IntToPtrInst&);
   SizeOffsetType visitLoadInst(LoadInst &I);

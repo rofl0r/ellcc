@@ -21,8 +21,8 @@
 #include "clang/AST/StmtObjC.h"
 #include "clang/Basic/Diagnostic.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/DataLayout.h"
-#include "llvm/InlineAsm.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InlineAsm.h"
 using namespace clang;
 using namespace CodeGen;
 
@@ -2445,7 +2445,7 @@ static bool shouldEmitSeparateBlockRetain(const Expr *e) {
 /// This massively duplicates emitPseudoObjectRValue.
 static TryEmitResult tryEmitARCRetainPseudoObject(CodeGenFunction &CGF,
                                                   const PseudoObjectExpr *E) {
-  llvm::SmallVector<CodeGenFunction::OpaqueValueMappingData, 4> opaques;
+  SmallVector<CodeGenFunction::OpaqueValueMappingData, 4> opaques;
 
   // Find the result expression.
   const Expr *resultExpr = E->getResultExpr();

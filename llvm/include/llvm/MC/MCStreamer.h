@@ -20,6 +20,7 @@
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCWin64EH.h"
 #include "llvm/Support/DataTypes.h"
+#include <string>
 
 namespace llvm {
   class MCAsmBackend;
@@ -234,6 +235,9 @@ namespace llvm {
     /// InitSections - Create the default sections and set the initial one.
     virtual void InitSections() = 0;
 
+    /// InitToTextSection - Create a text section and switch the streamer to it.
+    virtual void InitToTextSection() = 0;
+
     /// EmitLabel - Emit a label for @p Symbol into the current section.
     ///
     /// This corresponds to an assembler statement such as:
@@ -251,6 +255,10 @@ namespace llvm {
 
     /// EmitAssemblerFlag - Note in the output the specified @p Flag.
     virtual void EmitAssemblerFlag(MCAssemblerFlag Flag) = 0;
+
+    /// EmitLinkerOptions - Emit the given list @p Options of strings as linker
+    /// options into the output.
+    virtual void EmitLinkerOptions(ArrayRef<std::string> Kind) {}
 
     /// EmitDataRegion - Note in the output the specified region @p Kind.
     virtual void EmitDataRegion(MCDataRegionType Kind) {}
@@ -366,7 +374,7 @@ namespace llvm {
     ///
     /// This is used to implement assembler directives such as .byte, .ascii,
     /// etc.
-    virtual void EmitBytes(StringRef Data, unsigned AddrSpace) = 0;
+    virtual void EmitBytes(StringRef Data, unsigned AddrSpace = 0) = 0;
 
     /// EmitValue - Emit the expression @p Value into the output as a native
     /// integer of the given @p Size bytes.
@@ -400,8 +408,8 @@ namespace llvm {
 
     /// EmitULEB128Value - Special case of EmitULEB128Value that avoids the
     /// client having to pass in a MCExpr for constant integers.
-    void EmitULEB128IntValue(uint64_t Value, unsigned AddrSpace = 0,
-                             unsigned Padding = 0);
+    void EmitULEB128IntValue(uint64_t Value, unsigned Padding = 0,
+			     unsigned AddrSpace = 0);
 
     /// EmitSLEB128Value - Special case of EmitSLEB128Value that avoids the
     /// client having to pass in a MCExpr for constant integers.
@@ -429,11 +437,11 @@ namespace llvm {
     /// EmitFill - Emit NumBytes bytes worth of the value specified by
     /// FillValue.  This implements directives such as '.space'.
     virtual void EmitFill(uint64_t NumBytes, uint8_t FillValue,
-                          unsigned AddrSpace);
+                          unsigned AddrSpace = 0);
 
     /// EmitZeros - Emit NumBytes worth of zeros.  This is a convenience
     /// function that just wraps EmitFill.
-    void EmitZeros(uint64_t NumBytes, unsigned AddrSpace) {
+    void EmitZeros(uint64_t NumBytes, unsigned AddrSpace = 0) {
       EmitFill(NumBytes, 0, AddrSpace);
     }
 
@@ -562,7 +570,10 @@ namespace llvm {
     virtual void EmitBundleAlignMode(unsigned AlignPow2) = 0;
 
     /// \brief The following instructions are a bundle-locked group.
-    virtual void EmitBundleLock() = 0;
+    ///
+    /// \param AlignToEnd - If true, the bundle-locked group will be aligned to
+    ///                     the end of a bundle.
+    virtual void EmitBundleLock(bool AlignToEnd) = 0;
 
     /// \brief Ends a bundle-locked group.
     virtual void EmitBundleUnlock() = 0;

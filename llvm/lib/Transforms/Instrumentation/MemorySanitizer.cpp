@@ -71,28 +71,28 @@
 #define DEBUG_TYPE "msan"
 
 #include "llvm/Transforms/Instrumentation.h"
-#include "BlackList.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/ValueMap.h"
-#include "llvm/DataLayout.h"
-#include "llvm/Function.h"
-#include "llvm/IRBuilder.h"
-#include "llvm/InlineAsm.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 #include "llvm/InstVisitor.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/MDBuilder.h"
-#include "llvm/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/BlackList.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
-#include "llvm/Type.h"
 
 using namespace llvm;
 
@@ -574,7 +574,7 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
     if (IntegerType *IT = dyn_cast<IntegerType>(OrigTy))
       return IT;
     if (VectorType *VT = dyn_cast<VectorType>(OrigTy)) {
-      uint32_t EltSize = MS.TD->getTypeStoreSizeInBits(VT->getElementType());
+      uint32_t EltSize = MS.TD->getTypeSizeInBits(VT->getElementType());
       return VectorType::get(IntegerType::get(*MS.C, EltSize),
                              VT->getNumElements());
     }
@@ -586,7 +586,7 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
       DEBUG(dbgs() << "getShadowTy: " << *ST << " ===> " << *Res << "\n");
       return Res;
     }
-    uint32_t TypeSize = MS.TD->getTypeStoreSizeInBits(OrigTy);
+    uint32_t TypeSize = MS.TD->getTypeSizeInBits(OrigTy);
     return IntegerType::get(*MS.C, TypeSize);
   }
 
@@ -1127,10 +1127,13 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
     Value *B = I.getOperand(1);
     Value *Sa = getShadow(A);
     Value *Sb = getShadow(B);
-    if (A->getType()->isPointerTy())
-      A = IRB.CreatePointerCast(A, MS.IntptrTy);
-    if (B->getType()->isPointerTy())
-      B = IRB.CreatePointerCast(B, MS.IntptrTy);
+
+    // Get rid of pointers and vectors of pointers.
+    // For ints (and vectors of ints), types of A and Sa match,
+    // and this is a no-op.
+    A = IRB.CreatePointerCast(A, Sa->getType());
+    B = IRB.CreatePointerCast(B, Sb->getType());
+
     // A == B  <==>  (C = A^B) == 0
     // A != B  <==>  (C = A^B) != 0
     // Sc = Sa | Sb
@@ -1278,7 +1281,7 @@ struct MemorySanitizerVisitor : public InstVisitor<MemorySanitizerVisitor> {
     const int UnknownModRefBehavior = IK_WritesMemory;
 #define GET_INTRINSIC_MODREF_BEHAVIOR
 #define ModRefBehavior IntrinsicKind
-#include "llvm/Intrinsics.gen"
+#include "llvm/IR/Intrinsics.gen"
 #undef ModRefBehavior
 #undef GET_INTRINSIC_MODREF_BEHAVIOR
   }
@@ -1774,7 +1777,7 @@ struct VarArgAMD64Helper : public VarArgHelper {
     // Unpoison the whole __va_list_tag.
     // FIXME: magic ABI constants.
     IRB.CreateMemSet(ShadowPtr, Constant::getNullValue(IRB.getInt8Ty()),
-                     /* size */24, /* alignment */16, false);
+                     /* size */24, /* alignment */8, false);
   }
 
   void visitVACopyInst(VACopyInst &I) {
@@ -1785,7 +1788,7 @@ struct VarArgAMD64Helper : public VarArgHelper {
     // Unpoison the whole __va_list_tag.
     // FIXME: magic ABI constants.
     IRB.CreateMemSet(ShadowPtr, Constant::getNullValue(IRB.getInt8Ty()),
-                     /* size */ 24, /* alignment */ 16, false);
+                     /* size */24, /* alignment */8, false);
   }
 
   void finalizeInstrumentation() {

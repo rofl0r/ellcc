@@ -598,6 +598,9 @@ public:
   /// calls to EmitTypeCheck can be skipped.
   bool SanitizePerformTypeCheck;
 
+  /// \brief Sanitizer options to use for this function.
+  const SanitizerOptions *SanOpts;
+
   /// In ARC, whether we should autorelease the return value.
   bool AutoreleaseResult;
 
@@ -800,7 +803,7 @@ public:
 
   protected:
     CodeGenFunction& CGF;
-    
+
   public:
     /// \brief Enter a new cleanup scope.
     explicit RunCleanupsScope(CodeGenFunction &CGF)
@@ -1687,11 +1690,6 @@ public:
   /// then reuse it.
   void StartBlock(const char *N);
 
-  /// GetAddrOfStaticLocalVar - Return the address of a static local variable.
-  llvm::Constant *GetAddrOfStaticLocalVar(const VarDecl *BVD) {
-    return cast<llvm::Constant>(GetAddrOfLocalVar(BVD));
-  }
-
   /// GetAddrOfLocalVar - Return the address of a local variable.
   llvm::Value *GetAddrOfLocalVar(const VarDecl *VD) {
     llvm::Value *Res = LocalDeclMap[VD];
@@ -2523,7 +2521,7 @@ public:
   /// Emit an annotation call (intrinsic or builtin).
   llvm::Value *EmitAnnotationCall(llvm::Value *AnnotationFn,
                                   llvm::Value *AnnotatedVal,
-                                  llvm::StringRef AnnotationStr,
+                                  StringRef AnnotationStr,
                                   SourceLocation Location);
 
   /// Emit local annotations for the local variable V, declared by D.
@@ -2589,8 +2587,8 @@ public:
   /// sanitizer runtime with the provided arguments, and create a conditional
   /// branch to it.
   void EmitCheck(llvm::Value *Checked, StringRef CheckName,
-                 llvm::ArrayRef<llvm::Constant *> StaticArgs,
-                 llvm::ArrayRef<llvm::Value *> DynamicArgs,
+                 ArrayRef<llvm::Constant *> StaticArgs,
+                 ArrayRef<llvm::Value *> DynamicArgs,
                  CheckRecoverableKind Recoverable);
 
   /// \brief Create a basic block that will call the trap intrinsic, and emit a

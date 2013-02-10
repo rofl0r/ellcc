@@ -901,11 +901,11 @@ void InitListChecker::CheckScalarType(const InitializedEntity &Entity,
   if (Index >= IList->getNumInits()) {
     if (!VerifyOnly)
       SemaRef.Diag(IList->getLocStart(),
-                   SemaRef.getLangOpts().CPlusPlus0x ?
+                   SemaRef.getLangOpts().CPlusPlus11 ?
                      diag::warn_cxx98_compat_empty_scalar_initializer :
                      diag::err_empty_scalar_initializer)
         << IList->getSourceRange();
-    hadError = !SemaRef.getLangOpts().CPlusPlus0x;
+    hadError = !SemaRef.getLangOpts().CPlusPlus11;
     ++Index;
     ++StructuredIndex;
     return;
@@ -985,7 +985,7 @@ void InitListChecker::CheckReferenceType(const InitializedEntity &Entity,
   }
 
   Expr *expr = IList->getInit(Index);
-  if (isa<InitListExpr>(expr) && !SemaRef.getLangOpts().CPlusPlus0x) {
+  if (isa<InitListExpr>(expr) && !SemaRef.getLangOpts().CPlusPlus11) {
     if (!VerifyOnly)
       SemaRef.Diag(IList->getLocStart(), diag::err_init_non_aggr_init_list)
         << DeclType << IList->getSourceRange();
@@ -2424,6 +2424,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_PassByIndirectRestore:
   case SK_ProduceObjCObject:
   case SK_StdInitializerList:
+  case SK_OCLZeroEvent:
     break;
 
   case SK_ConversionSequence:
@@ -2648,6 +2649,13 @@ void InitializationSequence::AddProduceObjCObjectStep(QualType T) {
 void InitializationSequence::AddStdInitializerListConstructionStep(QualType T) {
   Step S;
   S.Kind = SK_StdInitializerList;
+  S.Type = T;
+  Steps.push_back(S);
+}
+
+void InitializationSequence::AddOCLZeroEventStep(QualType T) {
+  Step S;
+  S.Kind = SK_OCLZeroEvent;
   S.Type = T;
   Steps.push_back(S);
 }
@@ -2984,7 +2992,7 @@ static void TryReferenceListInitialization(Sema &S,
                                            InitializationSequence &Sequence)
 {
   // First, catch C++03 where this isn't possible.
-  if (!S.getLangOpts().CPlusPlus0x) {
+  if (!S.getLangOpts().CPlusPlus11) {
     Sequence.SetFailed(InitializationSequence::FK_ReferenceBindingToInitList);
     return;
   }
@@ -3024,6 +3032,10 @@ static void TryReferenceListInitialization(Sema &S,
         Sequence.RewrapReferenceInitList(cv1T1, InitList);
       return;
     }
+
+    // Update the initializer if we've resolved an overloaded function.
+    if (Sequence.step_begin() != Sequence.step_end())
+      Sequence.RewrapReferenceInitList(cv1T1, InitList);
   }
 
   // Not reference-related. Create a temporary and bind to that.
@@ -3068,7 +3080,7 @@ static void TryListInitialization(Sema &S,
     // C++11 [dcl.init.list]p3:
     //   - If T is an aggregate, aggregate initialization is performed.
     if (!DestType->isAggregateType()) {
-      if (S.getLangOpts().CPlusPlus0x) {
+      if (S.getLangOpts().CPlusPlus11) {
         //   - Otherwise, if the initializer list has no elements and T is a
         //     class type with a default constructor, the object is
         //     value-initialized.
@@ -3099,7 +3111,7 @@ static void TryListInitialization(Sema &S,
   InitListChecker CheckInitList(S, Entity, InitList,
           DestType, /*VerifyOnly=*/true,
           Kind.getKind() != InitializationKind::IK_DirectList ||
-            !S.getLangOpts().CPlusPlus0x);
+            !S.getLangOpts().CPlusPlus11);
   if (CheckInitList.HadError()) {
     Sequence.SetFailed(InitializationSequence::FK_ListInitializationFailed);
     return;
@@ -3461,9 +3473,9 @@ static void TryReferenceInitializationCore(Sema &S,
       //
       //   The constructor that would be used to make the copy shall
       //   be callable whether or not the copy is actually done.
-      if (!S.getLangOpts().CPlusPlus0x && !S.getLangOpts().MicrosoftExt)
+      if (!S.getLangOpts().CPlusPlus11 && !S.getLangOpts().MicrosoftExt)
         Sequence.AddExtraneousCopyToTemporary(cv2T2);
-      else if (S.getLangOpts().CPlusPlus0x)
+      else if (S.getLangOpts().CPlusPlus11)
         CheckCXX98CompatAccessibleCopy(S, Entity, Initializer);
     }
 
@@ -3594,7 +3606,7 @@ static void TryValueInitialization(Sema &S,
   if (const RecordType *RT = T->getAs<RecordType>()) {
     if (CXXRecordDecl *ClassDecl = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
       bool NeedZeroInitialization = true;
-      if (!S.getLangOpts().CPlusPlus0x) {
+      if (!S.getLangOpts().CPlusPlus11) {
         // C++98:
         // -- if T is a class type (clause 9) with a user-declared constructor
         //    (12.1), then the default constructor for T is called (and the
@@ -3631,7 +3643,7 @@ static void TryValueInitialization(Sema &S,
       // C++11 doesn't need this handling, because value-initialization does not
       // occur recursively there, and the implicit default constructor is
       // defined as deleted in the problematic cases.
-      if (!S.getLangOpts().CPlusPlus0x &&
+      if (!S.getLangOpts().CPlusPlus11 &&
           ClassDecl->hasUninitializedReferenceMember()) {
         Sequence.SetFailed(InitializationSequence::FK_TooManyInitsForReference);
         return;
@@ -4005,6 +4017,27 @@ static bool tryObjCWritebackConversion(Sema &S,
   return true;
 }
 
+//
+// OpenCL 1.2 spec, s6.12.10
+//
+// The event argument can also be used to associate the
+// async_work_group_copy with a previous async copy allowing
+// an event to be shared by multiple async copies; otherwise
+// event should be zero.
+//
+static bool TryOCLZeroEventInitialization(Sema &S,
+                                          InitializationSequence &Sequence,
+                                          QualType DestType,
+                                          Expr *Initializer) {
+  if (!S.getLangOpts().OpenCL || !DestType->isEventT() ||
+      !Initializer->isIntegerConstantExpr(S.getASTContext()) ||
+      (Initializer->EvaluateKnownConstInt(S.getASTContext()) != 0))
+    return false;
+
+  Sequence.AddOCLZeroEventStep(DestType);
+  return true;
+}
+
 InitializationSequence::InitializationSequence(Sema &S,
                                                const InitializedEntity &Entity,
                                                const InitializationKind &Kind,
@@ -4148,6 +4181,10 @@ InitializationSequence::InitializationSequence(Sema &S,
       return;
     }
     
+
+    if (TryOCLZeroEventInitialization(S, *this, DestType, Initializer))
+      return;
+
     // Handle initialization in C
     AddCAssignmentStep(DestType);
     MaybeProduceObjCObject(S, *this, Entity);
@@ -4290,7 +4327,7 @@ getAssignmentAction(const InitializedEntity &Entity) {
   llvm_unreachable("Invalid EntityKind!");
 }
 
-/// \brief Whether we should binding a created object as a temporary when
+/// \brief Whether we should bind a created object as a temporary when
 /// initializing the given entity.
 static bool shouldBindAsTemporary(const InitializedEntity &Entity) {
   switch (Entity.getKind()) {
@@ -4320,7 +4357,6 @@ static bool shouldBindAsTemporary(const InitializedEntity &Entity) {
 /// created for that initialization, requires destruction.
 static bool shouldDestroyTemporary(const InitializedEntity &Entity) {
   switch (Entity.getKind()) {
-    case InitializedEntity::EK_Member:
     case InitializedEntity::EK_Result:
     case InitializedEntity::EK_New:
     case InitializedEntity::EK_Base:
@@ -4331,6 +4367,7 @@ static bool shouldDestroyTemporary(const InitializedEntity &Entity) {
     case InitializedEntity::EK_LambdaCapture:
       return false;
 
+    case InitializedEntity::EK_Member:
     case InitializedEntity::EK_Variable:
     case InitializedEntity::EK_Parameter:
     case InitializedEntity::EK_Temporary:
@@ -4580,7 +4617,7 @@ static ExprResult CopyObject(Sema &S,
 static void CheckCXX98CompatAccessibleCopy(Sema &S,
                                            const InitializedEntity &Entity,
                                            Expr *CurInitExpr) {
-  assert(S.getLangOpts().CPlusPlus0x);
+  assert(S.getLangOpts().CPlusPlus11);
 
   const RecordType *Record = CurInitExpr->getType()->getAs<RecordType>();
   if (!Record)
@@ -4875,8 +4912,9 @@ InitializationSequence::Perform(Sema &S,
   if (Steps.empty())
     return S.Owned((Expr *)0);
 
-  if (S.getLangOpts().CPlusPlus0x && Entity.getType()->isReferenceType() &&
+  if (S.getLangOpts().CPlusPlus11 && Entity.getType()->isReferenceType() &&
       Args.size() == 1 && isa<InitListExpr>(Args[0]) &&
+      cast<InitListExpr>(Args[0])->getNumInits() == 1 &&
       Entity.getKind() != InitializedEntity::EK_Parameter) {
     // Produce a C++98 compatibility warning if we are initializing a reference
     // from an initializer list. For parameters, we produce a better warning
@@ -4935,7 +4973,8 @@ InitializationSequence::Perform(Sema &S,
   case SK_PassByIndirectCopyRestore:
   case SK_PassByIndirectRestore:
   case SK_ProduceObjCObject:
-  case SK_StdInitializerList: {
+  case SK_StdInitializerList:
+  case SK_OCLZeroEvent: {
     assert(Args.size() == 1);
     CurInit = Args[0];
     if (!CurInit.get()) return ExprError();
@@ -5205,7 +5244,7 @@ InitializationSequence::Perform(Sema &S,
       InitListChecker PerformInitList(S, IsTemporary ? TempEntity : Entity,
           InitList, Ty, /*VerifyOnly=*/false,
           Kind.getKind() != InitializationKind::IK_DirectList ||
-            !S.getLangOpts().CPlusPlus0x);
+            !S.getLangOpts().CPlusPlus11);
       if (PerformInitList.HadError())
         return ExprError();
 
@@ -5446,6 +5485,15 @@ InitializationSequence::Perform(Sema &S,
       Semantic->setType(Dest);
       Semantic->setInitializesStdInitializerList();
       CurInit = S.Owned(Semantic);
+      break;
+    }
+    case SK_OCLZeroEvent: {
+      assert(Step->Type->isEventT() && 
+             "Event initialization on non event type.");
+
+      CurInit = S.ImpCastExprToType(CurInit.take(), Step->Type,
+                                    CK_ZeroToOCLEvent,
+                                    CurInit.get()->getValueKind());
       break;
     }
     }
@@ -5833,7 +5881,7 @@ bool InitializationSequence::Diagnose(Sema &S,
     InitListChecker DiagnoseInitList(S, Entity, InitList,
             DestType, /*VerifyOnly=*/false,
             Kind.getKind() != InitializationKind::IK_DirectList ||
-              !S.getLangOpts().CPlusPlus0x);
+              !S.getLangOpts().CPlusPlus11);
     assert(DiagnoseInitList.HadError() &&
            "Inconsistent init list check result.");
     break;
@@ -6134,6 +6182,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
     case SK_StdInitializerList:
       OS << "std::initializer_list from initializer list";
       break;
+
+    case SK_OCLZeroEvent:
+      OS << "OpenCL event_t from zero";
+      break;
     }
   }
 }
@@ -6191,7 +6243,7 @@ static void DiagnoseNarrowingInInitList(Sema &S, InitializationSequence &Seq,
     // narrowing conversion even if the value is a constant and can be
     // represented exactly as an integer.
     S.Diag(PostInit->getLocStart(),
-           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus0x? 
+           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus11? 
              diag::warn_init_list_type_narrowing
            : S.isSFINAEContext()?
              diag::err_init_list_type_narrowing_sfinae
@@ -6204,7 +6256,7 @@ static void DiagnoseNarrowingInInitList(Sema &S, InitializationSequence &Seq,
   case NK_Constant_Narrowing:
     // A constant value was narrowed.
     S.Diag(PostInit->getLocStart(),
-           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus0x? 
+           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus11? 
              diag::warn_init_list_constant_narrowing
            : S.isSFINAEContext()?
              diag::err_init_list_constant_narrowing_sfinae
@@ -6217,7 +6269,7 @@ static void DiagnoseNarrowingInInitList(Sema &S, InitializationSequence &Seq,
   case NK_Variable_Narrowing:
     // A variable's value may have been narrowed.
     S.Diag(PostInit->getLocStart(),
-           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus0x? 
+           S.getLangOpts().MicrosoftExt || !S.getLangOpts().CPlusPlus11? 
              diag::warn_init_list_variable_narrowing
            : S.isSFINAEContext()?
              diag::err_init_list_variable_narrowing_sfinae

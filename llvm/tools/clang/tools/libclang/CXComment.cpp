@@ -20,12 +20,12 @@
 #include "clang/AST/CommentVisitor.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/PrettyPrinter.h"
+#include "clang/Format/Format.h"
+#include "clang/Lex/Lexer.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "clang/Format/Format.h"
-#include "clang/Lex/Lexer.h"
 #include <climits>
 
 using namespace clang;
@@ -911,7 +911,7 @@ void getSourceTextOfDeclaration(const DeclInfo *ThisDecl,
   PPolicy.PolishForDeclaration = true;
   PPolicy.TerseOutput = true;
   ThisDecl->CurrentDecl->print(OS, PPolicy,
-                               /*Indentation*/0, /*PrintInstantiation*/true);
+                               /*Indentation*/0, /*PrintInstantiation*/false);
 }
   
 void CommentASTToXMLConverter::formatTextOfDeclaration(
@@ -923,7 +923,7 @@ void CommentASTToXMLConverter::formatTextOfDeclaration(
     
   // Formatter specific code.
   // Form a unique in memory buffer name.
-  llvm::SmallString<128> filename;
+  SmallString<128> filename;
   filename += "xmldecl";
   filename += llvm::utostr(FormatInMemoryUniqueId);
   filename += ".xd";

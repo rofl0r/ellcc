@@ -1043,7 +1043,8 @@ bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
   // Add the special flag to GDM to signal retrying with no inlining.
   // Note, changing the state ensures that we are not going to cache out.
   ProgramStateRef NewNodeState = BeforeProcessingCall->getState();
-  NewNodeState = NewNodeState->set<ReplayWithoutInlining>((void*)CE);
+  NewNodeState =
+    NewNodeState->set<ReplayWithoutInlining>(const_cast<Stmt *>(CE));
 
   // Make the new node a successor of BeforeProcessingCall.
   bool IsNew = false;
@@ -1337,10 +1338,10 @@ void ExprEngine::processEndOfFunction(NodeBuilderContext& BC,
     // Notify checkers.
     for (ExplodedNodeSet::iterator I = AfterRemovedDead.begin(),
         E = AfterRemovedDead.end(); I != E; ++I) {
-      getCheckerManager().runCheckersForEndPath(BC, Dst, *I, *this);
+      getCheckerManager().runCheckersForEndFunction(BC, Dst, *I, *this);
     }
   } else {
-    getCheckerManager().runCheckersForEndPath(BC, Dst, Pred, *this);
+    getCheckerManager().runCheckersForEndFunction(BC, Dst, Pred, *this);
   }
 
   Engine.enqueueEndOfFunction(Dst);
@@ -2006,7 +2007,7 @@ struct DOTGraphTraits<ExplodedNode*> :
     return "";
   }
 
-  static void printLocation(llvm::raw_ostream &Out, SourceLocation SLoc) {
+  static void printLocation(raw_ostream &Out, SourceLocation SLoc) {
     if (SLoc.isFileID()) {
       Out << "\\lline="
         << GraphPrintSourceManager->getExpansionLineNumber(SLoc)

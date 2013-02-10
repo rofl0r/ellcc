@@ -25,11 +25,13 @@ set(sources
   X86JITInfo.cpp
   X86MCInstLower.cpp
   X86MachineFunctionInfo.cpp
+  X86PadShortFunction.cpp
   X86RegisterInfo.cpp
   X86SelectionDAGInfo.cpp
   X86Subtarget.cpp
   X86TargetMachine.cpp
   X86TargetObjectFile.cpp
+  X86TargetTransformInfo.cpp
   X86VZeroUpper.cpp
   )
 

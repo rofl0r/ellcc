@@ -247,7 +247,7 @@ public:
   /// must be set.
   bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
                                SourceRange PatternRange,
-                             llvm::ArrayRef<UnexpandedParameterPack> Unexpanded,
+                               ArrayRef<UnexpandedParameterPack> Unexpanded,
                                bool &ShouldExpand,
                                bool &RetainExpansion,
                                llvm::Optional<unsigned> &NumExpansions) {
@@ -2560,7 +2560,7 @@ StmtResult TreeTransform<Derived>::TransformStmt(Stmt *S) {
       if (E.isInvalid())
         return StmtError();
 
-      return getSema().ActOnExprStmt(getSema().MakeFullExpr(E.take()));
+      return getSema().ActOnExprStmt(E);
     }
   }
 
@@ -2804,7 +2804,7 @@ TreeTransform<Derived>::TransformNestedNameSpecifierLoc(
         return NestedNameSpecifierLoc();
 
       if (TL.getType()->isDependentType() || TL.getType()->isRecordType() ||
-          (SemaRef.getLangOpts().CPlusPlus0x &&
+          (SemaRef.getLangOpts().CPlusPlus11 &&
            TL.getType()->isEnumeralType())) {
         assert(!TL.getType().hasLocalQualifiers() &&
                "Can't get cv-qualifiers here");
@@ -3365,6 +3365,7 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
       // Objective-C ARC:
       //   A lifetime qualifier applied to a substituted template parameter
       //   overrides the lifetime qualifier from the template argument.
+      const AutoType *AutoTy;
       if (const SubstTemplateTypeParmType *SubstTypeParam
                                 = dyn_cast<SubstTemplateTypeParmType>(Result)) {
         QualType Replacement = SubstTypeParam->getReplacementType();
@@ -3376,6 +3377,15 @@ TreeTransform<Derived>::TransformQualifiedType(TypeLocBuilder &TLB,
         Result = SemaRef.Context.getSubstTemplateTypeParmType(
                                         SubstTypeParam->getReplacedParameter(),
                                                               Replacement);
+        TLB.TypeWasModifiedSafely(Result);
+      } else if ((AutoTy = dyn_cast<AutoType>(Result)) && AutoTy->isDeduced()) {
+        // 'auto' types behave the same way as template parameters.
+        QualType Deduced = AutoTy->getDeducedType();
+        Qualifiers Qs = Deduced.getQualifiers();
+        Qs.removeObjCLifetime();
+        Deduced = SemaRef.Context.getQualifiedType(Deduced.getUnqualifiedType(),
+                                                   Qs);
+        Result = SemaRef.Context.getAutoType(Deduced);
         TLB.TypeWasModifiedSafely(Result);
       } else {
         // Otherwise, complain about the addition of a qualifier to an
@@ -4633,7 +4643,6 @@ QualType TreeTransform<Derived>::TransformAtomicType(TypeLocBuilder &TLB,
   return Result;
 }
 
-namespace {
   /// \brief Simple iterator that traverses the template arguments in a
   /// container that provides a \c getArgLoc() member function.
   ///
@@ -4697,7 +4706,6 @@ namespace {
       return !(X == Y);
     }
   };
-}
 
 
 template <typename Derived>
@@ -5451,7 +5459,7 @@ TreeTransform<Derived>::TransformForStmt(ForStmt *S) {
   if (Inc.isInvalid())
     return StmtError();
 
-  Sema::FullExprArg FullInc(getSema().MakeFullExpr(Inc.get()));
+  Sema::FullExprArg FullInc(getSema().MakeFullDiscardedValueExpr(Inc.get()));
   if (S->getInc() && !FullInc.get())
     return StmtError();
 
@@ -7596,7 +7604,7 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformTypeTraitExpr(TypeTraitExpr *E) {
   bool ArgChanged = false;
-  llvm::SmallVector<TypeSourceInfo *, 4> Args;
+  SmallVector<TypeSourceInfo *, 4> Args;
   for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I) {
     TypeSourceInfo *From = E->getArg(I);
     TypeLoc FromTL = From->getTypeLoc();
@@ -7944,8 +7952,8 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
   getDerived().transformedLocalDecl(E->getLambdaClass(), Class);
 
   // Transform lambda parameters.
-  llvm::SmallVector<QualType, 4> ParamTypes;
-  llvm::SmallVector<ParmVarDecl *, 4> Params;
+  SmallVector<QualType, 4> ParamTypes;
+  SmallVector<ParmVarDecl *, 4> Params;
   if (getDerived().TransformFunctionTypeParams(E->getLocStart(),
         E->getCallOperator()->param_begin(),
         E->getCallOperator()->param_size(),
@@ -8437,7 +8445,7 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformObjCArrayLiteral(ObjCArrayLiteral *E) {
   // Transform each of the elements.
-  llvm::SmallVector<Expr *, 8> Elements;
+  SmallVector<Expr *, 8> Elements;
   bool ArgChanged = false;
   if (getDerived().TransformExprs(E->getElements(), E->getNumElements(),
                                   /*IsCall=*/false, Elements, &ArgChanged))
@@ -8456,7 +8464,7 @@ ExprResult
 TreeTransform<Derived>::TransformObjCDictionaryLiteral(
                                                     ObjCDictionaryLiteral *E) {
   // Transform each of the elements.
-  llvm::SmallVector<ObjCDictionaryElement, 8> Elements;
+  SmallVector<ObjCDictionaryElement, 8> Elements;
   bool ArgChanged = false;
   for (unsigned I = 0, N = E->getNumElements(); I != N; ++I) {
     ObjCDictionaryElement OrigElement = E->getKeyValueElement(I);

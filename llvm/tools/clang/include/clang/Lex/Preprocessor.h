@@ -84,7 +84,7 @@ public:
 /// like the \#include stack, token expansion, etc.
 ///
 class Preprocessor : public RefCountedBase<Preprocessor> {
-  llvm::IntrusiveRefCntPtr<PreprocessorOptions> PPOpts;
+  IntrusiveRefCntPtr<PreprocessorOptions> PPOpts;
   DiagnosticsEngine        *Diags;
   LangOptions       &LangOpts;
   const TargetInfo  *Target;
@@ -160,6 +160,9 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// \brief True if pragmas are enabled.
   bool PragmasEnabled : 1;
 
+  /// \brief True if we are currently preprocessing a #if or #elif directive
+  bool ParsingIfOrElifDirective;
+
   /// \brief True if we are pre-expanding macro arguments.
   bool InMacroArgPreExpansion;
 
@@ -215,8 +218,7 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   SourceLocation ModuleImportLoc;
 
   /// \brief The module import path that we're currently processing.
-  llvm::SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> 
-    ModuleImportPath;
+  SmallVector<std::pair<IdentifierInfo *, SourceLocation>, 2> ModuleImportPath;
   
   /// \brief Whether the module import expectes an identifier next. Otherwise,
   /// it expects a '.' or ';'.
@@ -308,7 +310,7 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// Macros - For each IdentifierInfo that was associated with a macro, we
   /// keep a mapping to the history of all macro definitions and #undefs in
   /// the reverse order (the latest one is in the head of the list).
-  llvm::DenseMap<IdentifierInfo*, MacroInfo*> Macros;
+  llvm::DenseMap<const IdentifierInfo*, MacroInfo*> Macros;
   friend class ASTReader;
   
   /// \brief Macros that we want to warn because they are not used at the end
@@ -396,7 +398,7 @@ private:  // Cached tokens state.
   MacroInfoChain *MICache;
 
 public:
-  Preprocessor(llvm::IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
+  Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
                DiagnosticsEngine &diags, LangOptions &opts,
                const TargetInfo *target,
                SourceManager &SM, HeaderSearch &Headers,
@@ -446,6 +448,11 @@ public:
 
   /// \brief Retrieve the module loader associated with this preprocessor.
   ModuleLoader &getModuleLoader() const { return TheModuleLoader; }
+
+  /// \brief True if we are currently preprocessing a #if or #elif directive
+  bool isParsingIfOrElifDirective() const { 
+    return ParsingIfOrElifDirective;
+  }
 
   /// SetCommentRetentionState - Control whether or not the preprocessor retains
   /// comments in output.
@@ -521,7 +528,7 @@ public:
   /// representing the most recent macro definition. One can iterate over all
   /// previous macro definitions from it. This method should only be called for
   /// identifiers that hadMacroDefinition().
-  MacroInfo *getMacroInfoHistory(IdentifierInfo *II) const;
+  MacroInfo *getMacroInfoHistory(const IdentifierInfo *II) const;
 
   /// \brief Specify a macro for this identifier.
   void setMacroInfo(IdentifierInfo *II, MacroInfo *MI);
@@ -538,7 +545,7 @@ public:
   /// history table. Currently defined macros have
   /// IdentifierInfo::hasMacroDefinition() set and an empty
   /// MacroInfo::getUndefLoc() at the head of the list.
-  typedef llvm::DenseMap<IdentifierInfo*,
+  typedef llvm::DenseMap<const IdentifierInfo *,
                          MacroInfo*>::const_iterator macro_iterator;
   macro_iterator macro_begin(bool IncludeExternalMacros = true) const;
   macro_iterator macro_end(bool IncludeExternalMacros = true) const;
@@ -957,6 +964,12 @@ public:
   StringRef getSpelling(const Token &Tok,
                         SmallVectorImpl<char> &Buffer,
                         bool *Invalid = 0) const;
+
+  /// \brief Relex the token at the specified location.
+  /// \returns true if there was a failure, false on success.
+  bool getRawToken(SourceLocation Loc, Token &Result) {
+    return Lexer::getRawToken(Loc, Result, SourceMgr, LangOpts);
+  }
 
   /// getSpellingOfSingleCharacterNumericConstant - Tok is a numeric constant
   /// with length 1, return the character.

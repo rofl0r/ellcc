@@ -47,8 +47,9 @@ public:
   enum FragmentType {
     FT_Align,
     FT_Data,
+    FT_CompactEncodedInst,
     FT_Fill,
-    FT_Inst,
+    FT_Relaxable,
     FT_Org,
     FT_Dwarf,
     FT_DwarfFrame,
@@ -100,8 +101,12 @@ public:
   void setLayoutOrder(unsigned Value) { LayoutOrder = Value; }
 
   /// \brief Does this fragment have instructions emitted into it? By default
-  ///  this is false, but specific fragment types may set it to true.
+  /// this is false, but specific fragment types may set it to true.
   virtual bool hasInstructions() const { return false; }
+
+  /// \brief Should this fragment be placed at the end of an aligned bundle?
+  virtual bool alignToBundleEnd() const { return false; }
+  virtual void setAlignToBundleEnd(bool V) { }
 
   /// \brief Get the padding size that must be inserted before this fragment.
   /// Used for bundling. By default, no padding is inserted.
@@ -120,6 +125,9 @@ public:
   void dump();
 };
 
+/// Interface implemented by fragments that contain encoded instructions and/or
+/// data.
+///
 class MCEncodedFragment : public MCFragment {
   virtual void anchor();
 
@@ -131,19 +139,8 @@ public:
   }
   virtual ~MCEncodedFragment();
 
-  typedef SmallVectorImpl<MCFixup>::const_iterator const_fixup_iterator;
-  typedef SmallVectorImpl<MCFixup>::iterator fixup_iterator;
-
   virtual SmallVectorImpl<char> &getContents() = 0;
   virtual const SmallVectorImpl<char> &getContents() const = 0;
-
-  virtual SmallVectorImpl<MCFixup> &getFixups() = 0;
-  virtual const SmallVectorImpl<MCFixup> &getFixups() const = 0;
-
-  virtual fixup_iterator fixup_begin() = 0;
-  virtual const_fixup_iterator fixup_begin() const  = 0;
-  virtual fixup_iterator fixup_end() = 0;
-  virtual const_fixup_iterator fixup_end() const = 0;
 
   virtual uint8_t getBundlePadding() const {
     return BundlePadding;
@@ -155,15 +152,59 @@ public:
 
   static bool classof(const MCFragment *F) {
     MCFragment::FragmentType Kind = F->getKind();
-    return Kind == MCFragment::FT_Inst || Kind == MCFragment::FT_Data;
+    switch (Kind) {
+      default:
+        return false;
+      case MCFragment::FT_Relaxable:
+      case MCFragment::FT_CompactEncodedInst:
+      case MCFragment::FT_Data:
+        return true;
+    }
   }
 };
 
-class MCDataFragment : public MCEncodedFragment {
+/// Interface implemented by fragments that contain encoded instructions and/or
+/// data and also have fixups registered.
+///
+class MCEncodedFragmentWithFixups : public MCEncodedFragment {
+  virtual void anchor();
+
+public:
+  MCEncodedFragmentWithFixups(MCFragment::FragmentType FType,
+                              MCSectionData *SD = 0)
+    : MCEncodedFragment(FType, SD)
+  {
+  }
+
+  virtual ~MCEncodedFragmentWithFixups();
+
+  typedef SmallVectorImpl<MCFixup>::const_iterator const_fixup_iterator;
+  typedef SmallVectorImpl<MCFixup>::iterator fixup_iterator;
+
+  virtual SmallVectorImpl<MCFixup> &getFixups() = 0;
+  virtual const SmallVectorImpl<MCFixup> &getFixups() const = 0;
+
+  virtual fixup_iterator fixup_begin() = 0;
+  virtual const_fixup_iterator fixup_begin() const  = 0;
+  virtual fixup_iterator fixup_end() = 0;
+  virtual const_fixup_iterator fixup_end() const = 0;
+
+  static bool classof(const MCFragment *F) {
+    MCFragment::FragmentType Kind = F->getKind();
+    return Kind == MCFragment::FT_Relaxable || Kind == MCFragment::FT_Data;
+  }
+};
+
+/// Fragment for data and encoded instructions.
+///
+class MCDataFragment : public MCEncodedFragmentWithFixups {
   virtual void anchor();
 
   /// \brief Does this fragment contain encoded instructions anywhere in it?
   bool HasInstructions;
+
+  /// \brief Should this fragment be aligned to the end of a bundle?
+  bool AlignToBundleEnd;
 
   SmallVector<char, 32> Contents;
 
@@ -171,8 +212,8 @@ class MCDataFragment : public MCEncodedFragment {
   SmallVector<MCFixup, 4> Fixups;
 public:
   MCDataFragment(MCSectionData *SD = 0)
-    : MCEncodedFragment(FT_Data, SD),
-      HasInstructions(false)
+    : MCEncodedFragmentWithFixups(FT_Data, SD),
+      HasInstructions(false), AlignToBundleEnd(false)
   {
   }
 
@@ -190,6 +231,9 @@ public:
   virtual bool hasInstructions() const { return HasInstructions; }
   virtual void setHasInstructions(bool V) { HasInstructions = V; }
 
+  virtual bool alignToBundleEnd() const { return AlignToBundleEnd; }
+  virtual void setAlignToBundleEnd(bool V) { AlignToBundleEnd = V; }
+
   fixup_iterator fixup_begin() { return Fixups.begin(); }
   const_fixup_iterator fixup_begin() const { return Fixups.begin(); }
 
@@ -201,7 +245,43 @@ public:
   }
 };
 
-class MCInstFragment : public MCEncodedFragment {
+/// This is a compact (memory-size-wise) fragment for holding an encoded
+/// instruction (non-relaxable) that has no fixups registered. When applicable,
+/// it can be used instead of MCDataFragment and lead to lower memory
+/// consumption.
+///
+class MCCompactEncodedInstFragment : public MCEncodedFragment {
+  virtual void anchor();
+
+  /// \brief Should this fragment be aligned to the end of a bundle?
+  bool AlignToBundleEnd;
+
+  SmallVector<char, 4> Contents;
+public:
+  MCCompactEncodedInstFragment(MCSectionData *SD = 0)
+    : MCEncodedFragment(FT_CompactEncodedInst, SD), AlignToBundleEnd(false)
+  {
+  }
+
+  virtual bool hasInstructions() const {
+    return true;
+  }
+
+  virtual SmallVectorImpl<char> &getContents() { return Contents; }
+  virtual const SmallVectorImpl<char> &getContents() const { return Contents; }
+
+  virtual bool alignToBundleEnd() const { return AlignToBundleEnd; }
+  virtual void setAlignToBundleEnd(bool V) { AlignToBundleEnd = V; }
+
+  static bool classof(const MCFragment *F) {
+    return F->getKind() == MCFragment::FT_CompactEncodedInst;
+  }
+};
+
+/// A relaxable fragment holds on to its MCInst, since it may need to be
+/// relaxed during the assembler layout and relaxation stage.
+///
+class MCRelaxableFragment : public MCEncodedFragmentWithFixups {
   virtual void anchor();
 
   /// Inst - The instruction this is a fragment for.
@@ -214,14 +294,13 @@ class MCInstFragment : public MCEncodedFragment {
   SmallVector<MCFixup, 1> Fixups;
 
 public:
-  MCInstFragment(const MCInst &_Inst, MCSectionData *SD = 0)
-    : MCEncodedFragment(FT_Inst, SD), Inst(_Inst) {
+  MCRelaxableFragment(const MCInst &_Inst, MCSectionData *SD = 0)
+    : MCEncodedFragmentWithFixups(FT_Relaxable, SD), Inst(_Inst) {
   }
 
   virtual SmallVectorImpl<char> &getContents() { return Contents; }
   virtual const SmallVectorImpl<char> &getContents() const { return Contents; }
 
-  unsigned getInstSize() const { return Contents.size(); }
   const MCInst &getInst() const { return Inst; }
   void setInst(const MCInst& Value) { Inst = Value; }
 
@@ -242,7 +321,7 @@ public:
   const_fixup_iterator fixup_end() const {return Fixups.end();}
 
   static bool classof(const MCFragment *F) {
-    return F->getKind() == MCFragment::FT_Inst;
+    return F->getKind() == MCFragment::FT_Relaxable;
   }
 };
 
@@ -476,6 +555,12 @@ public:
   typedef FragmentListType::const_reverse_iterator const_reverse_iterator;
   typedef FragmentListType::reverse_iterator reverse_iterator;
 
+  /// \brief Express the state of bundle locked groups while emitting code.
+  enum BundleLockStateType {
+    NotBundleLocked,
+    BundleLocked,
+    BundleLockedAlignToEnd
+  };
 private:
   FragmentListType Fragments;
   const MCSection *Section;
@@ -489,8 +574,8 @@ private:
   /// Alignment - The maximum alignment seen in this section.
   unsigned Alignment;
 
-  /// \brief We're currently inside a bundle-locked group.
-  bool BundleLocked;
+  /// \brief Keeping track of bundle-locked state.
+  BundleLockStateType BundleLockState; 
 
   /// \brief We've seen a bundle_lock directive but not its first instruction
   /// yet.
@@ -549,11 +634,15 @@ public:
   bool empty() const { return Fragments.empty(); }
 
   bool isBundleLocked() const {
-    return BundleLocked;
+    return BundleLockState != NotBundleLocked;
   }
 
-  void setBundleLocked(bool IsLocked) {
-    BundleLocked = IsLocked;
+  BundleLockStateType getBundleLockState() const {
+    return BundleLockState;
+  }
+
+  void setBundleLockState(BundleLockStateType NewState) {
+    BundleLockState = NewState;
   }
 
   bool isBundleGroupBeforeFirstInst() const {
@@ -760,6 +849,10 @@ private:
   std::vector<IndirectSymbolData> IndirectSymbols;
 
   std::vector<DataRegionData> DataRegions;
+
+  /// The list of linker options to propagate into the object file.
+  std::vector<std::vector<std::string> > LinkerOptions;
+
   /// The set of function symbols for which a .thumb_func directive has
   /// been seen.
   //
@@ -798,11 +891,11 @@ private:
 
   /// Check whether a fixup can be satisfied, or whether it needs to be relaxed
   /// (increased in size, in order to hold its value correctly).
-  bool fixupNeedsRelaxation(const MCFixup &Fixup, const MCInstFragment *DF,
+  bool fixupNeedsRelaxation(const MCFixup &Fixup, const MCRelaxableFragment *DF,
                             const MCAsmLayout &Layout) const;
 
   /// Check whether the given fragment needs relaxation.
-  bool fragmentNeedsRelaxation(const MCInstFragment *IF,
+  bool fragmentNeedsRelaxation(const MCRelaxableFragment *IF,
                                const MCAsmLayout &Layout) const;
 
   /// \brief Perform one layout iteration and return true if any offsets
@@ -813,7 +906,7 @@ private:
   /// if any offsets were adjusted.
   bool layoutSectionOnce(MCAsmLayout &Layout, MCSectionData &SD);
 
-  bool relaxInstruction(MCAsmLayout &Layout, MCInstFragment &IF);
+  bool relaxInstruction(MCAsmLayout &Layout, MCRelaxableFragment &IF);
 
   bool relaxLEB(MCAsmLayout &Layout, MCLEBFragment &IF);
 
@@ -969,6 +1062,14 @@ public:
   }
 
   size_t indirect_symbol_size() const { return IndirectSymbols.size(); }
+
+  /// @}
+  /// @name Linker Option List Access
+  /// @{
+
+  std::vector<std::vector<std::string> > &getLinkerOptions() {
+    return LinkerOptions;
+  }
 
   /// @}
   /// @name Data Region List Access

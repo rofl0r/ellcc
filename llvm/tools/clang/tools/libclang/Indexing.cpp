@@ -10,6 +10,7 @@
 #include "IndexingContext.h"
 #include "CIndexDiagnostic.h"
 #include "CIndexer.h"
+#include "CLog.h"
 #include "CXCursor.h"
 #include "CXSourceLocation.h"
 #include "CXString.h"
@@ -21,10 +22,10 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/Utils.h"
-#include "clang/Lex/PPCallbacks.h"
-#include "clang/Lex/Preprocessor.h"
-#include "clang/Lex/PPConditionalDirectiveRecord.h"
 #include "clang/Lex/HeaderSearch.h"
+#include "clang/Lex/PPCallbacks.h"
+#include "clang/Lex/PPConditionalDirectiveRecord.h"
+#include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/SemaConsumer.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -542,8 +543,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   // Configure the diagnostics.
   IntrusiveRefCntPtr<DiagnosticsEngine>
     Diags(CompilerInstance::createDiagnostics(new DiagnosticOptions,
-                                              num_command_line_args,
-                                              command_line_args,
                                               CaptureDiag,
                                               /*ShouldOwnClient=*/true,
                                               /*ShouldCloneClient=*/false));
@@ -968,6 +967,11 @@ int clang_indexSourceFile(CXIndexAction idxAction,
                           unsigned num_unsaved_files,
                           CXTranslationUnit *out_TU,
                           unsigned TU_options) {
+  LOG_FUNC_SECTION {
+    *Log << source_filename << ": ";
+    for (int i = 0; i != num_command_line_args; ++i)
+      *Log << command_line_args[i] << " ";
+  }
 
   IndexSourceFileInfo ITUI = { idxAction, client_data, index_callbacks,
                                index_callbacks_size, index_options,
@@ -1018,6 +1022,9 @@ int clang_indexTranslationUnit(CXIndexAction idxAction,
                                unsigned index_callbacks_size,
                                unsigned index_options,
                                CXTranslationUnit TU) {
+  LOG_FUNC_SECTION {
+    *Log << TU;
+  }
 
   IndexTranslationUnitInfo ITUI = { idxAction, client_data, index_callbacks,
                                     index_callbacks_size, index_options, TU,

@@ -6,14 +6,7 @@ LLVM Programmer's Manual
    :local:
 
 .. warning::
-   This is a work in progress.
-
-.. sectionauthor:: Chris Lattner <sabre@nondot.org>,
-                   Dinakar Dhurjati <dhurjati@cs.uiuc.edu>,
-                   Gabor Greif <ggreif@gmail.com>,
-                   Joel Stanley <jstanley@cs.uiuc.edu>,
-                   Reid Spencer <rspencer@x10sys.com> and
-                   Owen Anderson <owen@apple.com>
+   This is always a work in progress.
 
 .. _introduction:
 
@@ -84,8 +77,8 @@ Here are some useful links:
    (even better, get the book)
    <http://www.mindview.net/Books/TICPP/ThinkingInCPP2e.html>`_.
 
-You are also encouraged to take a look at the :ref:`LLVM Coding Standards
-<coding_standards>` guide which focuses on how to write maintainable code more
+You are also encouraged to take a look at the :doc:`LLVM Coding Standards
+<CodingStandards>` guide which focuses on how to write maintainable code more
 than where to put your curly braces.
 
 .. _resources:
@@ -185,8 +178,8 @@ rarely have to include this file directly).
 
 These five templates can be used with any classes, whether they have a v-table
 or not.  If you want to add support for these templates, see the document
-:ref:`How to set up LLVM-style RTTI for your class hierarchy
-<how-to-set-up-llvm-style-rtti>`
+:doc:`How to set up LLVM-style RTTI for your class hierarchy
+<HowToSetUpLLVMStyleRTTI>`
 
 .. _string_apis:
 
@@ -2256,13 +2249,13 @@ accomplished by the following scheme:
 A bit-encoding in the 2 LSBits (least significant bits) of the ``Use::Prev``
 allows to find the start of the ``User`` object:
 
-* ``00`` –> binary digit 0
+* ``00`` --- binary digit 0
 
-* ``01`` –> binary digit 1
+* ``01`` --- binary digit 1
 
-* ``10`` –> stop and calculate (``s``)
+* ``10`` --- stop and calculate (``s``)
 
-* ``11`` –> full stop (``S``)
+* ``11`` --- full stop (``S``)
 
 Given a ``Use*``, all we have to do is to walk till we get a stop and we either
 have a ``User`` immediately behind or we have to walk to the next stop picking

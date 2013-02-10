@@ -62,7 +62,7 @@ enum TargetCXXABI {
 /// \brief Exposes information about the current target.
 ///
 class TargetInfo : public RefCountedBase<TargetInfo> {
-  llvm::IntrusiveRefCntPtr<TargetOptions> TargetOpts;
+  IntrusiveRefCntPtr<TargetOptions> TargetOpts;
   llvm::Triple Triple;
 protected:
   // Target values set by the ctor of the actual target implementation.  Default
@@ -337,6 +337,9 @@ public:
   unsigned getIntMaxTWidth() const {
     return getTypeWidth(IntMaxType);
   }
+
+  // Return the size of unwind_word for this target.
+  unsigned getUnwindWordWidth() const { return getPointerWidth(0); }
 
   /// \brief Return the "preferred" register width on this target.
   uint64_t getRegisterWidth() const {

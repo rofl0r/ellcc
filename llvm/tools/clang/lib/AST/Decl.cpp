@@ -104,14 +104,8 @@ getLVForTemplateParameterList(const TemplateParameterList *Params) {
   return LV;
 }
 
-/// Compute the linkage and visibility for the given declaration.
-static LinkageInfo computeLVForDecl(const NamedDecl *D, bool OnlyTemplate);
-
-static LinkageInfo getLVForDecl(const NamedDecl *D, bool OnlyTemplate) {
-  if (!OnlyTemplate)
-    return D->getLinkageAndVisibility();
-  return computeLVForDecl(D, OnlyTemplate);
-}
+/// getLVForDecl - Get the linkage and visibility for the given declaration.
+static LinkageInfo getLVForDecl(const NamedDecl *D, bool OnlyTemplate);
 
 /// \brief Get the most restrictive linkage for the types and
 /// declarations in the given template argument list.
@@ -268,8 +262,8 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D,
   if (D->isInAnonymousNamespace()) {
     const VarDecl *Var = dyn_cast<VarDecl>(D);
     const FunctionDecl *Func = dyn_cast<FunctionDecl>(D);
-    if ((!Var || !Var->getDeclContext()->isExternCContext()) &&
-        (!Func || !Func->getDeclContext()->isExternCContext()))
+    if ((!Var || !Var->hasCLanguageLinkage()) &&
+        (!Func || !Func->hasCLanguageLinkage()))
       return LinkageInfo::uniqueExternal();
   }
 
@@ -575,18 +569,18 @@ static void clearLinkageForClass(const CXXRecordDecl *record) {
          i = record->decls_begin(), e = record->decls_end(); i != e; ++i) {
     Decl *child = *i;
     if (isa<NamedDecl>(child))
-      cast<NamedDecl>(child)->ClearLVCache();
+      cast<NamedDecl>(child)->ClearLinkageCache();
   }
 }
 
 void NamedDecl::anchor() { }
 
-void NamedDecl::ClearLVCache() {
+void NamedDecl::ClearLinkageCache() {
   // Note that we can't skip clearing the linkage of children just
   // because the parent doesn't have cached linkage:  we don't cache
   // when computing linkage for parent contexts.
 
-  CacheValidAndVisibility = 0;
+  HasCachedLinkage = 0;
 
   // If we're changing the linkage of a class, we need to reset the
   // linkage of child declarations, too.
@@ -597,44 +591,81 @@ void NamedDecl::ClearLVCache() {
         dyn_cast<ClassTemplateDecl>(const_cast<NamedDecl*>(this))) {
     // Clear linkage for the template pattern.
     CXXRecordDecl *record = temp->getTemplatedDecl();
-    record->CacheValidAndVisibility = 0;
+    record->HasCachedLinkage = 0;
     clearLinkageForClass(record);
 
     // We need to clear linkage for specializations, too.
     for (ClassTemplateDecl::spec_iterator
            i = temp->spec_begin(), e = temp->spec_end(); i != e; ++i)
-      i->ClearLVCache();
+      i->ClearLinkageCache();
   }
 
   // Clear cached linkage for function template decls, too.
   if (FunctionTemplateDecl *temp =
         dyn_cast<FunctionTemplateDecl>(const_cast<NamedDecl*>(this))) {
-    temp->getTemplatedDecl()->ClearLVCache();
+    temp->getTemplatedDecl()->ClearLinkageCache();
     for (FunctionTemplateDecl::spec_iterator
            i = temp->spec_begin(), e = temp->spec_end(); i != e; ++i)
-      i->ClearLVCache();
+      i->ClearLinkageCache();
   }
     
 }
 
 Linkage NamedDecl::getLinkage() const {
-  return getLinkageAndVisibility().linkage();
+  if (HasCachedLinkage) {
+    assert(Linkage(CachedLinkage) ==
+           getLVForDecl(this, true).linkage());
+    return Linkage(CachedLinkage);
+  }
+
+  CachedLinkage = getLVForDecl(this, true).linkage();
+  HasCachedLinkage = 1;
+
+#ifndef NDEBUG
+  verifyLinkage();
+#endif
+
+  return Linkage(CachedLinkage);
 }
 
 LinkageInfo NamedDecl::getLinkageAndVisibility() const {
-  if (CacheValidAndVisibility) {
-    Linkage L = static_cast<Linkage>(CachedLinkage);
-    Visibility V = static_cast<Visibility>(CacheValidAndVisibility - 1);
-    bool Explicit = CachedVisibilityExplicit;
-    LinkageInfo LV(L, V, Explicit);
-    assert(LV == computeLVForDecl(this, false));
-    return LV;
+  LinkageInfo LI = getLVForDecl(this, false);
+  if (HasCachedLinkage) {
+    assert(Linkage(CachedLinkage) == LI.linkage());
+    return LI;
   }
-  LinkageInfo LV = computeLVForDecl(this, false);
-  CachedLinkage = LV.linkage();
-  CacheValidAndVisibility = LV.visibility() + 1;
-  CachedVisibilityExplicit = LV.visibilityExplicit();
-  return LV;
+  HasCachedLinkage = 1;
+  CachedLinkage = LI.linkage();
+
+#ifndef NDEBUG
+  verifyLinkage();
+#endif
+
+  return LI;
+}
+
+void NamedDecl::verifyLinkage() const {
+  // In C (because of gnu inline) and in c++ with microsoft extensions an
+  // static can follow an extern, so we can have two decls with different
+  // linkages.
+  const LangOptions &Opts = getASTContext().getLangOpts();
+  if (!Opts.CPlusPlus || Opts.MicrosoftExt)
+    return;
+
+  // We have just computed the linkage for this decl. By induction we know
+  // that all other computed linkages match, check that the one we just computed
+  // also does.
+  NamedDecl *D = NULL;
+  for (redecl_iterator I = redecls_begin(), E = redecls_end(); I != E; ++I) {
+    NamedDecl *T = cast<NamedDecl>(*I);
+    if (T == this)
+      continue;
+    if (T->HasCachedLinkage != 0) {
+      D = T;
+      break;
+    }
+  }
+  assert(!D || D->CachedLinkage == CachedLinkage);
 }
 
 llvm::Optional<Visibility> NamedDecl::getExplicitVisibility() const {
@@ -698,7 +729,7 @@ llvm::Optional<Visibility> NamedDecl::getExplicitVisibility() const {
   return llvm::Optional<Visibility>();
 }
 
-static LinkageInfo computeLVForDecl(const NamedDecl *D, bool OnlyTemplate) {
+static LinkageInfo getLVForDecl(const NamedDecl *D, bool OnlyTemplate) {
   // Objective-C: treat all Objective-C declarations as having external
   // linkage.
   switch (D->getKind()) {
@@ -772,11 +803,15 @@ static LinkageInfo computeLVForDecl(const NamedDecl *D, bool OnlyTemplate) {
   //   one such matching entity, the program is ill-formed. Otherwise,
   //   if no matching entity is found, the block scope entity receives
   //   external linkage.
-  if (D->getLexicalDeclContext()->isFunctionOrMethod()) {
+  if (D->getDeclContext()->isFunctionOrMethod()) {
     if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(D)) {
       if (Function->isInAnonymousNamespace() &&
           !Function->getDeclContext()->isExternCContext())
         return LinkageInfo::uniqueExternal();
+
+      // This is a "void f();" which got merged with a file static.
+      if (Function->getStorageClass() == SC_Static)
+        return LinkageInfo::internal();
 
       LinkageInfo LV;
       if (!OnlyTemplate) {
@@ -1163,7 +1198,7 @@ VarDecl *VarDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
 void VarDecl::setStorageClass(StorageClass SC) {
   assert(isLegalForVariable(SC));
   if (getStorageClass() != SC)
-    ClearLVCache();
+    ClearLinkageCache();
   
   VarDeclBits.SClass = SC;
 }
@@ -1177,10 +1212,10 @@ SourceRange VarDecl::getSourceRange() const {
   return DeclaratorDecl::getSourceRange();
 }
 
-template<typename decl_type>
-static bool hasCLanguageLinkageTemplate(const decl_type &D) {
+template<typename T>
+static bool hasCLanguageLinkageTemplate(const T &D) {
   // Language linkage is a C++ concept, but saying that everything in C has
-  // C language linkage fits the implementation nicelly.
+  // C language linkage fits the implementation nicely.
   ASTContext &Context = D.getASTContext();
   if (!Context.getLangOpts().CPlusPlus)
     return true;
@@ -1195,7 +1230,7 @@ static bool hasCLanguageLinkageTemplate(const decl_type &D) {
   // If the first decl is in an extern "C" context, any other redeclaration
   // will have C language linkage. If the first one is not in an extern "C"
   // context, we would have reported an error for any other decl being in one.
-  const decl_type *First = D.getFirstDeclaration();
+  const T *First = D.getFirstDeclaration();
   return First->getDeclContext()->isExternCContext();
 }
 
@@ -1385,7 +1420,7 @@ bool VarDecl::isUsableInConstantExpressions(ASTContext &C) const {
 
   // In C++11, any variable of reference type can be used in a constant
   // expression if it is initialized by a constant expression.
-  if (Lang.CPlusPlus0x && getType()->isReferenceType())
+  if (Lang.CPlusPlus11 && getType()->isReferenceType())
     return true;
 
   // Only const objects can be used in constant expressions in C++. C++98 does
@@ -1401,7 +1436,7 @@ bool VarDecl::isUsableInConstantExpressions(ASTContext &C) const {
 
   // Additionally, in C++11, non-volatile constexpr variables can be used in
   // constant expressions.
-  return Lang.CPlusPlus0x && isConstexpr();
+  return Lang.CPlusPlus11 && isConstexpr();
 }
 
 /// Convert the initializer for this declaration to the elaborated EvaluatedStmt
@@ -1419,12 +1454,12 @@ EvaluatedStmt *VarDecl::ensureEvaluatedStmt() const {
 }
 
 APValue *VarDecl::evaluateValue() const {
-  llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  SmallVector<PartialDiagnosticAt, 8> Notes;
   return evaluateValue(Notes);
 }
 
 APValue *VarDecl::evaluateValue(
-    llvm::SmallVectorImpl<PartialDiagnosticAt> &Notes) const {
+    SmallVectorImpl<PartialDiagnosticAt> &Notes) const {
   EvaluatedStmt *Eval = ensureEvaluatedStmt();
 
   // We only produce notes indicating why an initializer is non-constant the
@@ -1457,7 +1492,7 @@ APValue *VarDecl::evaluateValue(
 
   // In C++11, we have determined whether the initializer was a constant
   // expression as a side-effect.
-  if (getASTContext().getLangOpts().CPlusPlus0x && !Eval->CheckedICE) {
+  if (getASTContext().getLangOpts().CPlusPlus11 && !Eval->CheckedICE) {
     Eval->CheckedICE = true;
     Eval->IsICE = Result && Notes.empty();
   }
@@ -1481,8 +1516,8 @@ bool VarDecl::checkInitIsICE() const {
 
   // In C++11, evaluate the initializer to check whether it's a constant
   // expression.
-  if (getASTContext().getLangOpts().CPlusPlus0x) {
-    llvm::SmallVector<PartialDiagnosticAt, 8> Notes;
+  if (getASTContext().getLangOpts().CPlusPlus11) {
+    SmallVector<PartialDiagnosticAt, 8> Notes;
     evaluateValue(Notes);
     return Eval->IsICE;
   }
@@ -1685,9 +1720,6 @@ void FunctionDecl::setBody(Stmt *B) {
   Body = B;
   if (B)
     EndRangeLoc = B->getLocEnd();
-  for (redecl_iterator R = redecls_begin(), REnd = redecls_end(); R != REnd;
-       ++R)
-    R->ClearLVCache();
 }
 
 void FunctionDecl::setPure(bool P) {
@@ -1729,6 +1761,12 @@ bool FunctionDecl::isReservedGlobalPlacementOperator() const {
 }
 
 bool FunctionDecl::hasCLanguageLinkage() const {
+  // Users expect to be able to write
+  // extern "C" void *__builtin_alloca (size_t);
+  // so consider builtins as having C language linkage.
+  if (getBuiltinID())
+    return true;
+
   return hasCLanguageLinkageTemplate(*this);
 }
 
@@ -1770,6 +1808,11 @@ bool FunctionDecl::isGlobal() const {
   return true;
 }
 
+bool FunctionDecl::isNoReturn() const {
+  return hasAttr<NoReturnAttr>() || hasAttr<CXX11NoReturnAttr>() ||
+         getType()->getAs<FunctionType>()->getNoReturnAttr();
+}
+
 void
 FunctionDecl::setPreviousDeclaration(FunctionDecl *PrevDecl) {
   redeclarable_base::setPreviousDeclaration(PrevDecl);
@@ -1796,7 +1839,7 @@ FunctionDecl *FunctionDecl::getCanonicalDecl() {
 void FunctionDecl::setStorageClass(StorageClass SC) {
   assert(isLegalForFunction(SC));
   if (getStorageClass() != SC)
-    ClearLVCache();
+    ClearLinkageCache();
   
   SClass = SC;
 }
@@ -1861,7 +1904,7 @@ unsigned FunctionDecl::getNumParams() const {
 }
 
 void FunctionDecl::setParams(ASTContext &C,
-                             llvm::ArrayRef<ParmVarDecl *> NewParamInfo) {
+                             ArrayRef<ParmVarDecl *> NewParamInfo) {
   assert(ParamInfo == 0 && "Already has param info!");
   assert(NewParamInfo.size() == getNumParams() && "Parameter count mismatch!");
 
@@ -1872,13 +1915,13 @@ void FunctionDecl::setParams(ASTContext &C,
   }
 }
 
-void FunctionDecl::setDeclsInPrototypeScope(llvm::ArrayRef<NamedDecl *> NewDecls) {
+void FunctionDecl::setDeclsInPrototypeScope(ArrayRef<NamedDecl *> NewDecls) {
   assert(DeclsInPrototypeScope.empty() && "Already has prototype decls!");
 
   if (!NewDecls.empty()) {
     NamedDecl **A = new (getASTContext()) NamedDecl*[NewDecls.size()];
     std::copy(NewDecls.begin(), NewDecls.end(), A);
-    DeclsInPrototypeScope = llvm::ArrayRef<NamedDecl*>(A, NewDecls.size());
+    DeclsInPrototypeScope = ArrayRef<NamedDecl *>(A, NewDecls.size());
   }
 }
 
@@ -2566,8 +2609,8 @@ TagDecl* TagDecl::getCanonicalDecl() {
 void TagDecl::setTypedefNameForAnonDecl(TypedefNameDecl *TDD) { 
   TypedefNameDeclOrQualifier = TDD; 
   if (TypeForDecl)
-    const_cast<Type*>(TypeForDecl)->ClearLVCache();
-  ClearLVCache();
+    const_cast<Type*>(TypeForDecl)->ClearLinkageCache();
+  ClearLinkageCache();
 }
 
 void TagDecl::startDefinition() {
@@ -2802,7 +2845,7 @@ void RecordDecl::LoadFieldsFromExternalStorage() const {
 // BlockDecl Implementation
 //===----------------------------------------------------------------------===//
 
-void BlockDecl::setParams(llvm::ArrayRef<ParmVarDecl *> NewParamInfo) {
+void BlockDecl::setParams(ArrayRef<ParmVarDecl *> NewParamInfo) {
   assert(ParamInfo == 0 && "Already has param info!");
 
   // Zero params -> null pointer.

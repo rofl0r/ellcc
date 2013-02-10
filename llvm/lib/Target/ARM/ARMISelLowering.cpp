@@ -25,7 +25,6 @@
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/CallingConv.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/IntrinsicLowering.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -35,19 +34,20 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Constants.h"
-#include "llvm/Function.h"
-#include "llvm/GlobalValue.h"
-#include "llvm/Instruction.h"
-#include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalValue.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Type.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Type.h"
 using namespace llvm;
 
 STATISTIC(NumTailCalls, "Number of tail calls");
@@ -10344,35 +10344,3 @@ bool ARMTargetLowering::getTgtMemIntrinsic(IntrinsicInfo &Info,
   return false;
 }
 
-unsigned
-ARMScalarTargetTransformImpl::getIntImmCost(const APInt &Imm, Type *Ty) const {
-  assert(Ty->isIntegerTy());
-
-  unsigned Bits = Ty->getPrimitiveSizeInBits();
-  if (Bits == 0 || Bits > 32)
-    return 4;
-
-  int32_t SImmVal = Imm.getSExtValue();
-  uint32_t ZImmVal = Imm.getZExtValue();
-  if (!Subtarget->isThumb()) {
-    if ((SImmVal >= 0 && SImmVal < 65536) ||
-        (ARM_AM::getSOImmVal(ZImmVal) != -1) ||
-        (ARM_AM::getSOImmVal(~ZImmVal) != -1))
-      return 1;
-    return Subtarget->hasV6T2Ops() ? 2 : 3;
-  } else if (Subtarget->isThumb2()) {
-    if ((SImmVal >= 0 && SImmVal < 65536) ||
-        (ARM_AM::getT2SOImmVal(ZImmVal) != -1) ||
-        (ARM_AM::getT2SOImmVal(~ZImmVal) != -1))
-      return 1;
-    return Subtarget->hasV6T2Ops() ? 2 : 3;
-  } else /*Thumb1*/ {
-    if (SImmVal >= 0 && SImmVal < 256)
-      return 1;
-    if ((~ZImmVal < 256) || ARM_AM::isThumbImmShiftedVal(ZImmVal))
-      return 2;
-    // Load from constantpool.
-    return 3;
-  }
-  return 2;
-}

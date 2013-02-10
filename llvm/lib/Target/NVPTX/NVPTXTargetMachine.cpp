@@ -25,7 +25,7 @@
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/DataLayout.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCStreamer.h"
@@ -71,8 +71,7 @@ NVPTXTargetMachine::NVPTXTargetMachine(const Target &T,
 : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
   Subtarget(TT, CPU, FS, is64bit),
   DL(Subtarget.getDataLayout()),
-  InstrInfo(*this), TLInfo(*this), TSInfo(*this), FrameLowering(*this,is64bit),
-  STTI(&TLInfo), VTTI(&TLInfo)
+  InstrInfo(*this), TLInfo(*this), TSInfo(*this), FrameLowering(*this,is64bit)
 /*FrameInfo(TargetFrameInfo::StackGrowsUp, 8, 0)*/ {
 }
 

@@ -282,6 +282,7 @@ public:
   static const TST TST_image2d_t = clang::TST_image2d_t;
   static const TST TST_image2d_array_t = clang::TST_image2d_array_t;
   static const TST TST_image3d_t = clang::TST_image3d_t;
+  static const TST TST_event_t = clang::TST_event_t;
   static const TST TST_error = clang::TST_error;
 
   // type-qualifiers
@@ -325,6 +326,7 @@ private:
   unsigned FS_inline_specified : 1;
   unsigned FS_virtual_specified : 1;
   unsigned FS_explicit_specified : 1;
+  unsigned FS_noreturn_specified : 1;
 
   // friend-specifier
   unsigned Friend_specified : 1;
@@ -367,7 +369,7 @@ private:
   SourceLocation TSTNameLoc;
   SourceRange TypeofParensRange;
   SourceLocation TQ_constLoc, TQ_restrictLoc, TQ_volatileLoc;
-  SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc;
+  SourceLocation FS_inlineLoc, FS_virtualLoc, FS_explicitLoc, FS_noreturnLoc;
   SourceLocation FriendLoc, ModulePrivateLoc, ConstexprLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -409,6 +411,7 @@ public:
       FS_inline_specified(false),
       FS_virtual_specified(false),
       FS_explicit_specified(false),
+      FS_noreturn_specified(false),
       Friend_specified(false),
       Constexpr_specified(false),
       StorageClassSpecAsWritten(SCS_unspecified),
@@ -518,6 +521,9 @@ public:
   bool isExplicitSpecified() const { return FS_explicit_specified; }
   SourceLocation getExplicitSpecLoc() const { return FS_explicitLoc; }
 
+  bool isNoreturnSpecified() const { return FS_noreturn_specified; }
+  SourceLocation getNoreturnSpecLoc() const { return FS_noreturnLoc; }
+
   void ClearFunctionSpecs() {
     FS_inline_specified = false;
     FS_inlineLoc = SourceLocation();
@@ -525,6 +531,8 @@ public:
     FS_virtualLoc = SourceLocation();
     FS_explicit_specified = false;
     FS_explicitLoc = SourceLocation();
+    FS_noreturn_specified = false;
+    FS_noreturnLoc = SourceLocation();
   }
 
   /// \brief Return true if any type-specifier has been found.
@@ -611,6 +619,7 @@ public:
   bool setFunctionSpecInline(SourceLocation Loc);
   bool setFunctionSpecVirtual(SourceLocation Loc);
   bool setFunctionSpecExplicit(SourceLocation Loc);
+  bool setFunctionSpecNoreturn(SourceLocation Loc);
 
   bool SetFriendSpec(SourceLocation Loc, const char *&PrevSpec,
                      unsigned &DiagID);
@@ -1905,7 +1914,7 @@ public:
   void getCXX11AttributeRanges(SmallVector<SourceRange, 4> &Ranges) {
     AttributeList *AttrList = Attrs.getList();
     while (AttrList) {
-      if (AttrList->isCXX0XAttribute())
+      if (AttrList->isCXX11Attribute())
         Ranges.push_back(AttrList->getRange());
       AttrList = AttrList->getNext();
     }
@@ -2010,7 +2019,7 @@ struct LambdaIntroducer {
   SourceRange Range;
   SourceLocation DefaultLoc;
   LambdaCaptureDefault Default;
-  llvm::SmallVector<LambdaCapture, 4> Captures;
+  SmallVector<LambdaCapture, 4> Captures;
 
   LambdaIntroducer()
     : Default(LCD_None) {}

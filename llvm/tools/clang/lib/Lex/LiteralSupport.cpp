@@ -21,15 +21,6 @@
 #include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 
-/// HexDigitValue - Return the value of the specified hex digit, or -1 if it's
-/// not valid.
-static int HexDigitValue(char C) {
-  if (C >= '0' && C <= '9') return C-'0';
-  if (C >= 'a' && C <= 'f') return C-'a'+10;
-  if (C >= 'A' && C <= 'F') return C-'A'+10;
-  return -1;
-}
-
 static unsigned getCharWidth(tok::TokenKind kind, const TargetInfo &Target) {
   switch (kind) {
   default: llvm_unreachable("Unknown token type!");
@@ -147,7 +138,7 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
     // Hex escapes are a maximal series of hex digits.
     bool Overflow = false;
     for (; ThisTokBuf != ThisTokEnd; ++ThisTokBuf) {
-      int CharVal = HexDigitValue(ThisTokBuf[0]);
+      int CharVal = llvm::hexDigitValue(ThisTokBuf[0]);
       if (CharVal == -1) break;
       // About to shift out a digit?
       Overflow |= (ResultChar & 0xF0000000) ? true : false;
@@ -241,7 +232,7 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
   UcnLen = (ThisTokBuf[-1] == 'u' ? 4 : 8);
   unsigned short UcnLenSave = UcnLen;
   for (; ThisTokBuf != ThisTokEnd && UcnLenSave; ++ThisTokBuf, UcnLenSave--) {
-    int CharVal = HexDigitValue(ThisTokBuf[0]);
+    int CharVal = llvm::hexDigitValue(ThisTokBuf[0]);
     if (CharVal == -1) break;
     UcnVal <<= 4;
     UcnVal |= CharVal;
@@ -267,7 +258,7 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
   // characters inside character and string literals
   if (UcnVal < 0xa0 &&
       (UcnVal != 0x24 && UcnVal != 0x40 && UcnVal != 0x60)) {  // $, @, `
-    bool IsError = (!Features.CPlusPlus0x || !in_char_string_literal);
+    bool IsError = (!Features.CPlusPlus11 || !in_char_string_literal);
     if (Diags) {
       char BasicSCSChar = UcnVal;
       if (UcnVal >= 0x20 && UcnVal < 0x7f)
@@ -616,7 +607,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
   }
 
   if (s != ThisTokEnd) {
-    if (PP.getLangOpts().CPlusPlus0x && s == SuffixBegin && *s == '_') {
+    if (PP.getLangOpts().CPlusPlus11 && s == SuffixBegin && *s == '_') {
       // We have a ud-suffix! By C++11 [lex.ext]p10, ud-suffixes not starting
       // with an '_' are ill-formed.
       saw_ud_suffix = true;
@@ -792,7 +783,7 @@ bool NumericLiteralParser::GetIntegerValue(llvm::APInt &Val) {
   if (alwaysFitsInto64Bits(radix, NumDigits)) {
     uint64_t N = 0;
     for (const char *Ptr = DigitsBegin; Ptr != SuffixBegin; ++Ptr)
-      N = N * radix + HexDigitValue(*Ptr);
+      N = N * radix + llvm::hexDigitValue(*Ptr);
 
     // This will truncate the value to Val's input width. Simply check
     // for overflow by comparing.
@@ -809,7 +800,7 @@ bool NumericLiteralParser::GetIntegerValue(llvm::APInt &Val) {
 
   bool OverflowOccurred = false;
   while (Ptr < SuffixBegin) {
-    unsigned C = HexDigitValue(*Ptr++);
+    unsigned C = llvm::hexDigitValue(*Ptr++);
 
     // If this letter is out of bound for this radix, reject it.
     assert(C < radix && "NumericLiteralParser ctor should have rejected this");

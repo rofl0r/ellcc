@@ -48,6 +48,7 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   Context *ctx = CTX();
   StackTrace stack;
   stack.ObtainCurrent(thr, pc);
+  Lock l(&ctx->thread_mtx);
   ScopedReport rep(ReportTypeSignalUnsafe);
   if (!IsFiredSuppression(ctx, rep, stack)) {
     rep.AddStack(&stack);
@@ -121,7 +122,9 @@ void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {
 MBlock *user_mblock(ThreadState *thr, void *p) {
   CHECK_NE(p, (void*)0);
   Allocator *a = allocator();
-  return (MBlock*)a->GetMetaData(a->GetBlockBegin(p));
+  void *b = a->GetBlockBegin(p);
+  CHECK_NE(b, 0);
+  return (MBlock*)a->GetMetaData(b);
 }
 
 void invoke_malloc_hook(void *ptr, uptr size) {

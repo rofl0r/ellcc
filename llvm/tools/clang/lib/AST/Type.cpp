@@ -940,7 +940,7 @@ bool Type::isIncompleteType(NamedDecl **Def) const {
 
 bool QualType::isPODType(ASTContext &Context) const {
   // C++11 has a more relaxed definition of POD.
-  if (Context.getLangOpts().CPlusPlus0x)
+  if (Context.getLangOpts().CPlusPlus11)
     return isCXX11PODType(Context);
 
   return isCXX98PODType(Context);
@@ -1518,6 +1518,7 @@ StringRef BuiltinType::getName(const PrintingPolicy &Policy) const {
   case OCLImage2d:        return "image2d_t";
   case OCLImage2dArray:   return "image2d_array_t";
   case OCLImage3d:        return "image3d_t";
+  case OCLEvent:          return "event_t";
   }
   
   llvm_unreachable("Invalid builtin type.");
@@ -1561,7 +1562,7 @@ StringRef FunctionType::getNameForCallConv(CallingConv CC) {
 FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
                                      unsigned numArgs, QualType canonical,
                                      const ExtProtoInfo &epi)
-  : FunctionType(FunctionProto, result, epi.TypeQuals, epi.RefQualifier,
+  : FunctionType(FunctionProto, result, epi.TypeQuals,
                  canonical,
                  result->isDependentType(),
                  result->isInstantiationDependentType(),
@@ -1571,8 +1572,11 @@ FunctionProtoType::FunctionProtoType(QualType result, const QualType *args,
     NumArgs(numArgs), NumExceptions(epi.NumExceptions),
     ExceptionSpecType(epi.ExceptionSpecType),
     HasAnyConsumedArgs(epi.ConsumedArguments != 0),
-    Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn)
+    Variadic(epi.Variadic), HasTrailingReturn(epi.HasTrailingReturn),
+    RefQualifier(epi.RefQualifier)
 {
+  assert(NumArgs == numArgs && "function has too many parameters");
+
   // Fill in the trailing argument array.
   QualType *argSlot = reinterpret_cast<QualType*>(this+1);
   for (unsigned i = 0; i != numArgs; ++i) {
@@ -2187,7 +2191,7 @@ std::pair<Linkage,Visibility> Type::getLinkageAndVisibility() const {
   return std::make_pair(TypeBits.getLinkage(), TypeBits.getVisibility());
 }
 
-void Type::ClearLVCache() {
+void Type::ClearLinkageCache() {
   TypeBits.CacheValidAndVisibility = 0;
   if (QualType(this, 0) != CanonicalType)
     CanonicalType->TypeBits.CacheValidAndVisibility = 0;
