@@ -84,20 +84,12 @@ void DIBuilder::createCompileUnit(unsigned Lang, StringRef Filename,
          "Unable to create compile unit without filename");
   Value *TElts[] = { GetTagConstant(VMContext, DW_TAG_base_type) };
   TempEnumTypes = MDNode::getTemporary(VMContext, TElts);
-  Value *THElts[] = { TempEnumTypes };
-  MDNode *EnumHolder = MDNode::get(VMContext, THElts);
 
   TempRetainTypes = MDNode::getTemporary(VMContext, TElts);
-  Value *TRElts[] = { TempRetainTypes };
-  MDNode *RetainHolder = MDNode::get(VMContext, TRElts);
 
   TempSubprograms = MDNode::getTemporary(VMContext, TElts);
-  Value *TSElts[] = { TempSubprograms };
-  MDNode *SPHolder = MDNode::get(VMContext, TSElts);
 
   TempGVs = MDNode::getTemporary(VMContext, TElts);
-  Value *TVElts[] = { TempGVs };
-  MDNode *GVHolder = MDNode::get(VMContext, TVElts);
 
   Value *Elts[] = {
     GetTagConstant(VMContext, dwarf::DW_TAG_compile_unit),
@@ -111,10 +103,10 @@ void DIBuilder::createCompileUnit(unsigned Lang, StringRef Filename,
     ConstantInt::get(Type::getInt1Ty(VMContext), isOptimized),
     MDString::get(VMContext, Flags),
     ConstantInt::get(Type::getInt32Ty(VMContext), RunTimeVer),
-    EnumHolder,
-    RetainHolder,
-    SPHolder,
-    GVHolder
+    TempEnumTypes,
+    TempRetainTypes,
+    TempSubprograms,
+    TempGVs
   };
   TheCU = DICompileUnit(MDNode::get(VMContext, Elts));
 
@@ -170,9 +162,9 @@ DIType DIBuilder::createNullPtrType(StringRef Name) {
 
 /// createBasicType - Create debugging information entry for a basic
 /// type, e.g 'char'.
-DIType DIBuilder::createBasicType(StringRef Name, uint64_t SizeInBits,
-                                  uint64_t AlignInBits,
-                                  unsigned Encoding) {
+DIBasicType
+DIBuilder::createBasicType(StringRef Name, uint64_t SizeInBits,
+                           uint64_t AlignInBits, unsigned Encoding) {
   assert(!Name.empty() && "Unable to create type without name");
   // Basic types are encoded in DIBasicType format. Line number, filename,
   // offset and flags are always empty here.
@@ -188,7 +180,7 @@ DIType DIBuilder::createBasicType(StringRef Name, uint64_t SizeInBits,
     ConstantInt::get(Type::getInt32Ty(VMContext), 0), // Flags;
     ConstantInt::get(Type::getInt32Ty(VMContext), Encoding)
   };
-  return DIType(MDNode::get(VMContext, Elts));
+  return DIBasicType(MDNode::get(VMContext, Elts));
 }
 
 /// createQualifiedType - Create debugging information entry for a qualified
@@ -908,10 +900,6 @@ DISubprogram DIBuilder::createFunction(DIDescriptor Context,
                                        MDNode *TParams,
                                        MDNode *Decl) {
   Value *TElts[] = { GetTagConstant(VMContext, DW_TAG_base_type) };
-  MDNode *Temp = MDNode::getTemporary(VMContext, TElts);
-  Value *TVElts[] = { Temp };
-  MDNode *THolder = MDNode::get(VMContext, TVElts);
-
   Value *Elts[] = {
     GetTagConstant(VMContext, dwarf::DW_TAG_subprogram),
     Constant::getNullValue(Type::getInt32Ty(VMContext)),
@@ -932,7 +920,7 @@ DISubprogram DIBuilder::createFunction(DIDescriptor Context,
     Fn,
     TParams,
     Decl,
-    THolder,
+    MDNode::getTemporary(VMContext, TElts),
     ConstantInt::get(Type::getInt32Ty(VMContext), ScopeLine)
   };
   MDNode *Node = MDNode::get(VMContext, Elts);
@@ -957,10 +945,6 @@ DISubprogram DIBuilder::createMethod(DIDescriptor Context,
                                      Function *Fn,
                                      MDNode *TParam) {
   Value *TElts[] = { GetTagConstant(VMContext, DW_TAG_base_type) };
-  MDNode *Temp = MDNode::getTemporary(VMContext, TElts);
-  Value *TVElts[] = { Temp };
-  MDNode *THolder = MDNode::get(VMContext, TVElts);
-
   Value *Elts[] = {
     GetTagConstant(VMContext, dwarf::DW_TAG_subprogram),
     Constant::getNullValue(Type::getInt32Ty(VMContext)),
@@ -981,7 +965,7 @@ DISubprogram DIBuilder::createMethod(DIDescriptor Context,
     Fn,
     TParam,
     Constant::getNullValue(Type::getInt32Ty(VMContext)),
-    THolder,
+    MDNode::getTemporary(VMContext, TElts),
     // FIXME: Do we want to use different scope/lines?
     ConstantInt::get(Type::getInt32Ty(VMContext), LineNo)
   };

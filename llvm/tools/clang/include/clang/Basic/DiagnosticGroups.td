@@ -40,6 +40,7 @@ def ImplicitConversionFloatingPointToBool :
   DiagGroup<"implicit-conversion-floating-point-to-bool">;
 def BadArrayNewLength : DiagGroup<"bad-array-new-length">;
 def BuiltinRequiresHeader : DiagGroup<"builtin-requires-header">;
+def C99Compat : DiagGroup<"c99-compat">;
 def CXXCompat: DiagGroup<"c++-compat">;
 def CastAlign : DiagGroup<"cast-align">;
 def : DiagGroup<"cast-qual">;
@@ -124,7 +125,11 @@ def DanglingField : DiagGroup<"dangling-field">;
 def DistributedObjectModifiers : DiagGroup<"distributed-object-modifiers">;
 def IgnoredQualifiers : DiagGroup<"ignored-qualifiers">;
 def : DiagGroup<"import">;
-def IncompatiblePointerTypes : DiagGroup<"incompatible-pointer-types">;
+def IncompatiblePointerTypesDiscardsQualifiers 
+  : DiagGroup<"incompatible-pointer-types-discards-qualifiers">;
+def IncompatiblePointerTypes
+  : DiagGroup<"incompatible-pointer-types",
+    [IncompatiblePointerTypesDiscardsQualifiers]>;
 def IncompleteUmbrella : DiagGroup<"incomplete-umbrella">;
 def InvalidNoreturn : DiagGroup<"invalid-noreturn">;
 def InvalidSourceEncoding : DiagGroup<"invalid-source-encoding">;
@@ -208,6 +213,8 @@ def : DiagGroup<"synth">;
 def SizeofArrayArgument : DiagGroup<"sizeof-array-argument">;
 def SizeofPointerMemaccess : DiagGroup<"sizeof-pointer-memaccess">;
 def StaticInInline : DiagGroup<"static-in-inline">;
+def GNUStaticFloatInit : DiagGroup<"gnu-static-float-init">;
+def StaticFloatInit : DiagGroup<"static-float-init", [GNUStaticFloatInit]>;
 def StringPlusInt : DiagGroup<"string-plus-int">;
 def StrncatSize : DiagGroup<"strncat-size">;
 def TautologicalOutOfRangeCompare : DiagGroup<"tautological-constant-out-of-range-compare">;
@@ -270,7 +277,9 @@ def IgnoredAttributes : DiagGroup<"ignored-attributes">;
 def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args",
                                         [CXX98CompatUnnamedTypeTemplateArgs]>;
 def UnusedArgument : DiagGroup<"unused-argument">;
-def UnusedCommandLineArgument : DiagGroup<"unused-command-line-argument">;
+def UnusedSanitizeArgument : DiagGroup<"unused-sanitize-argument">;
+def UnusedCommandLineArgument : DiagGroup<"unused-command-line-argument",
+                                          [UnusedSanitizeArgument]>;
 def UnusedComparison : DiagGroup<"unused-comparison">;
 def UnusedExceptionParameter : DiagGroup<"unused-exception-parameter">;
 def UnneededInternalDecl : DiagGroup<"unneeded-internal-declaration">;
@@ -313,6 +322,7 @@ def VariadicMacros : DiagGroup<"variadic-macros">;
 def VectorConversion : DiagGroup<"vector-conversion">;      // clang specific
 def VexingParse : DiagGroup<"vexing-parse">;
 def VLA : DiagGroup<"vla">;
+def VLAExtension : DiagGroup<"vla-extension">;
 def VolatileRegisterVar : DiagGroup<"volatile-register-var">;
 def Visibility : DiagGroup<"visibility">;
 def ZeroLengthArray : DiagGroup<"zero-length-array">;
@@ -469,7 +479,8 @@ def C11 : DiagGroup<"c11-extensions">;
 def C99 : DiagGroup<"c99-extensions">;
 
 // A warning group for warnings about GCC extensions.
-def GNU : DiagGroup<"gnu", [GNUDesignator, VLA, ZeroLengthArray]>;
+def GNU : DiagGroup<"gnu", [GNUDesignator, VLAExtension,
+                            ZeroLengthArray, GNUStaticFloatInit]>;
 // A warning group for warnings about code that clang accepts but gcc doesn't.
 def GccCompat : DiagGroup<"gcc-compat">;
 

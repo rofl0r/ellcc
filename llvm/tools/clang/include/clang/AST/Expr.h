@@ -22,13 +22,13 @@
 #include "clang/AST/Stmt.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
-#include <cctype>
 
 namespace clang {
   class APValue;
@@ -570,6 +570,9 @@ public:
   /// integer.
   llvm::APSInt EvaluateKnownConstInt(const ASTContext &Ctx,
                           SmallVectorImpl<PartialDiagnosticAt> *Diag=0) const;
+  
+  void EvaluateForOverflow(const ASTContext &Ctx,
+                           SmallVectorImpl<PartialDiagnosticAt> *Diag) const;
 
   /// EvaluateAsLValue - Evaluate an expression to see if we can fold it to an
   /// lvalue with link time known address, with no side-effects.
@@ -1214,8 +1217,8 @@ public:
 
 class APFloatStorage : private APNumericStorage {
 public:
-  llvm::APFloat getValue(bool IsIEEE) const {
-    return llvm::APFloat(getIntValue(), IsIEEE);
+  llvm::APFloat getValue(const llvm::fltSemantics &Semantics) const {
+    return llvm::APFloat(Semantics, getIntValue());
   }
   void setValue(ASTContext &C, const llvm::APFloat &Val) {
     setIntValue(C, Val.bitcastToAPInt());
@@ -1322,11 +1325,30 @@ public:
   static FloatingLiteral *Create(ASTContext &C, EmptyShell Empty);
 
   llvm::APFloat getValue() const {
-    return APFloatStorage::getValue(FloatingLiteralBits.IsIEEE);
+    return APFloatStorage::getValue(getSemantics());
   }
   void setValue(ASTContext &C, const llvm::APFloat &Val) {
+    assert(&getSemantics() == &Val.getSemantics() && "Inconsistent semantics");
     APFloatStorage::setValue(C, Val);
   }
+
+  /// Get a raw enumeration value representing the floating-point semantics of
+  /// this literal (32-bit IEEE, x87, ...), suitable for serialisation.
+  APFloatSemantics getRawSemantics() const {
+    return static_cast<APFloatSemantics>(FloatingLiteralBits.Semantics);
+  }
+
+  /// Set the raw enumeration value representing the floating-point semantics of
+  /// this literal (32-bit IEEE, x87, ...), suitable for serialisation.
+  void setRawSemantics(APFloatSemantics Sem) {
+    FloatingLiteralBits.Semantics = Sem;
+  }
+
+  /// Return the APFloat semantics this literal uses.
+  const llvm::fltSemantics &getSemantics() const;
+
+  /// Set the APFloat semantics this literal uses.
+  void setSemantics(const llvm::fltSemantics &Sem);
 
   bool isExact() const { return FloatingLiteralBits.IsExact; }
   void setExact(bool E) { FloatingLiteralBits.IsExact = E; }
@@ -1466,7 +1488,7 @@ public:
                      getByteLength());
   }
 
-  void outputString(raw_ostream &OS);
+  void outputString(raw_ostream &OS) const;
 
   uint32_t getCodeUnit(size_t i) const {
     assert(i < Length && "out of bounds access");
@@ -1499,7 +1521,7 @@ public:
   bool containsNonAsciiOrNull() const {
     StringRef Str = getString();
     for (unsigned i = 0, e = Str.size(); i != e; ++i)
-      if (!isascii(Str[i]) || !Str[i])
+      if (!isASCII(Str[i]) || !Str[i])
         return true;
     return false;
   }
@@ -2183,6 +2205,15 @@ public:
   }
   const_arg_iterator arg_end() const {
     return SubExprs+PREARGS_START+getNumPreArgs()+getNumArgs();
+  }
+
+  /// This method provides fast access to all the subexpressions of
+  /// a CallExpr without going through the slower virtual child_iterator
+  /// interface.  This provides efficient reverse iteration of the
+  /// subexpressions.  This is currently used for CFG construction.
+  ArrayRef<Stmt*> getRawSubExprs() {
+    return ArrayRef<Stmt*>(SubExprs,
+                           getNumPreArgs() + PREARGS_START + getNumArgs());
   }
 
   /// getNumCommas - Return the number of commas that must have been present in
@@ -4015,9 +4046,9 @@ public:
   void setDesignators(ASTContext &C, const Designator *Desigs,
                       unsigned NumDesigs);
 
-  Expr *getArrayIndex(const Designator& D);
-  Expr *getArrayRangeStart(const Designator& D);
-  Expr *getArrayRangeEnd(const Designator& D);
+  Expr *getArrayIndex(const Designator &D) const;
+  Expr *getArrayRangeStart(const Designator &D) const;
+  Expr *getArrayRangeEnd(const Designator &D) const;
 
   /// @brief Retrieve the location of the '=' that precedes the
   /// initializer value itself, if present.

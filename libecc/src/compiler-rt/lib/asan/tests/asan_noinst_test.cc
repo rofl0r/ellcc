@@ -17,7 +17,6 @@
 #include "asan_mapping.h"
 #include "asan_stack.h"
 #include "asan_test_utils.h"
-#include "sanitizer/asan_interface.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -25,6 +24,7 @@
 #include <string.h>  // for memset()
 #include <algorithm>
 #include <vector>
+#include <limits>
 
 
 TEST(AddressSanitizer, InternalSimpleDeathTest) {
@@ -326,11 +326,13 @@ TEST(AddressSanitizer, ThreadedOneSizeMallocStressTest) {
 }
 
 TEST(AddressSanitizer, MemsetWildAddressTest) {
+  using __asan::kHighMemEnd;
   typedef void*(*memset_p)(void*, int, size_t);
   // Prevent inlining of memset().
   volatile memset_p libc_memset = (memset_p)memset;
   EXPECT_DEATH(libc_memset((void*)(kLowShadowBeg + 200), 0, 100),
-               "unknown-crash.*low shadow");
+               (kLowShadowEnd == 0) ? "unknown-crash.*shadow gap"
+                                    : "unknown-crash.*low shadow");
   EXPECT_DEATH(libc_memset((void*)(kShadowGapBeg + 200), 0, 100),
                "unknown-crash.*shadow gap");
   EXPECT_DEATH(libc_memset((void*)(kHighShadowBeg + 200), 0, 100),
@@ -631,6 +633,53 @@ TEST(AddressSanitizerInterface, PushAndPopWithPoisoningTest) {
   free(vec);
 }
 
+TEST(AddressSanitizerInterface, GlobalRedzones) {
+  GOOD_ACCESS(glob1, 1 - 1);
+  GOOD_ACCESS(glob2, 2 - 1);
+  GOOD_ACCESS(glob3, 3 - 1);
+  GOOD_ACCESS(glob4, 4 - 1);
+  GOOD_ACCESS(glob5, 5 - 1);
+  GOOD_ACCESS(glob6, 6 - 1);
+  GOOD_ACCESS(glob7, 7 - 1);
+  GOOD_ACCESS(glob8, 8 - 1);
+  GOOD_ACCESS(glob9, 9 - 1);
+  GOOD_ACCESS(glob10, 10 - 1);
+  GOOD_ACCESS(glob11, 11 - 1);
+  GOOD_ACCESS(glob12, 12 - 1);
+  GOOD_ACCESS(glob13, 13 - 1);
+  GOOD_ACCESS(glob14, 14 - 1);
+  GOOD_ACCESS(glob15, 15 - 1);
+  GOOD_ACCESS(glob16, 16 - 1);
+  GOOD_ACCESS(glob17, 17 - 1);
+  GOOD_ACCESS(glob1000, 1000 - 1);
+  GOOD_ACCESS(glob10000, 10000 - 1);
+  GOOD_ACCESS(glob100000, 100000 - 1);
+
+  BAD_ACCESS(glob1, 1);
+  BAD_ACCESS(glob2, 2);
+  BAD_ACCESS(glob3, 3);
+  BAD_ACCESS(glob4, 4);
+  BAD_ACCESS(glob5, 5);
+  BAD_ACCESS(glob6, 6);
+  BAD_ACCESS(glob7, 7);
+  BAD_ACCESS(glob8, 8);
+  BAD_ACCESS(glob9, 9);
+  BAD_ACCESS(glob10, 10);
+  BAD_ACCESS(glob11, 11);
+  BAD_ACCESS(glob12, 12);
+  BAD_ACCESS(glob13, 13);
+  BAD_ACCESS(glob14, 14);
+  BAD_ACCESS(glob15, 15);
+  BAD_ACCESS(glob16, 16);
+  BAD_ACCESS(glob17, 17);
+  BAD_ACCESS(glob1000, 1000);
+  BAD_ACCESS(glob1000, 1100);  // Redzone is at least 101 bytes.
+  BAD_ACCESS(glob10000, 10000);
+  BAD_ACCESS(glob10000, 11000);  // Redzone is at least 1001 bytes.
+  BAD_ACCESS(glob100000, 100000);
+  BAD_ACCESS(glob100000, 110000);  // Redzone is at least 10001 bytes.
+}
+
 // Make sure that each aligned block of size "2^granularity" doesn't have
 // "true" value before "false" value.
 static void MakeShadowValid(bool *shadow, int length, int granularity) {
@@ -781,4 +830,21 @@ TEST(AddressSanitizerInterface, GetOwnershipStressTest) {
   }
   for (size_t i = 0, n = pointers.size(); i < n; i++)
     free(pointers[i]);
+}
+
+TEST(AddressSanitizerInterface, CallocOverflow) {
+  size_t kArraySize = 4096;
+  volatile size_t kMaxSizeT = std::numeric_limits<size_t>::max();
+  volatile size_t kArraySize2 = kMaxSizeT / kArraySize + 10;
+  void *p = calloc(kArraySize, kArraySize2);  // Should return 0.
+  EXPECT_EQ(0L, Ident(p));
+}
+
+TEST(AddressSanitizerInterface, CallocOverflow2) {
+#if SANITIZER_WORDSIZE == 32
+  size_t kArraySize = 112;
+  volatile size_t kArraySize2 = 43878406;
+  void *p = calloc(kArraySize, kArraySize2);  // Should return 0.
+  EXPECT_EQ(0L, Ident(p));
+#endif
 }

@@ -23,6 +23,7 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Builtins.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Lexer.h"
@@ -646,16 +647,14 @@ FloatingLiteral::FloatingLiteral(ASTContext &C, const llvm::APFloat &V,
                                  bool isexact, QualType Type, SourceLocation L)
   : Expr(FloatingLiteralClass, Type, VK_RValue, OK_Ordinary, false, false,
          false, false), Loc(L) {
-  FloatingLiteralBits.IsIEEE =
-    &C.getTargetInfo().getLongDoubleFormat() == &llvm::APFloat::IEEEquad;
+  setSemantics(V.getSemantics());
   FloatingLiteralBits.IsExact = isexact;
   setValue(C, V);
 }
 
 FloatingLiteral::FloatingLiteral(ASTContext &C, EmptyShell Empty)
   : Expr(FloatingLiteralClass, Empty) {
-  FloatingLiteralBits.IsIEEE =
-    &C.getTargetInfo().getLongDoubleFormat() == &llvm::APFloat::IEEEquad;
+  setRawSemantics(IEEEhalf);
   FloatingLiteralBits.IsExact = false;
 }
 
@@ -668,6 +667,41 @@ FloatingLiteral::Create(ASTContext &C, const llvm::APFloat &V,
 FloatingLiteral *
 FloatingLiteral::Create(ASTContext &C, EmptyShell Empty) {
   return new (C) FloatingLiteral(C, Empty);
+}
+
+const llvm::fltSemantics &FloatingLiteral::getSemantics() const {
+  switch(FloatingLiteralBits.Semantics) {
+  case IEEEhalf:
+    return llvm::APFloat::IEEEhalf;
+  case IEEEsingle:
+    return llvm::APFloat::IEEEsingle;
+  case IEEEdouble:
+    return llvm::APFloat::IEEEdouble;
+  case x87DoubleExtended:
+    return llvm::APFloat::x87DoubleExtended;
+  case IEEEquad:
+    return llvm::APFloat::IEEEquad;
+  case PPCDoubleDouble:
+    return llvm::APFloat::PPCDoubleDouble;
+  }
+  llvm_unreachable("Unrecognised floating semantics");
+}
+
+void FloatingLiteral::setSemantics(const llvm::fltSemantics &Sem) {
+  if (&Sem == &llvm::APFloat::IEEEhalf)
+    FloatingLiteralBits.Semantics = IEEEhalf;
+  else if (&Sem == &llvm::APFloat::IEEEsingle)
+    FloatingLiteralBits.Semantics = IEEEsingle;
+  else if (&Sem == &llvm::APFloat::IEEEdouble)
+    FloatingLiteralBits.Semantics = IEEEdouble;
+  else if (&Sem == &llvm::APFloat::x87DoubleExtended)
+    FloatingLiteralBits.Semantics = x87DoubleExtended;
+  else if (&Sem == &llvm::APFloat::IEEEquad)
+    FloatingLiteralBits.Semantics = IEEEquad;
+  else if (&Sem == &llvm::APFloat::PPCDoubleDouble)
+    FloatingLiteralBits.Semantics = PPCDoubleDouble;
+  else
+    llvm_unreachable("Unknown floating semantics");
 }
 
 /// getValueAsApproximateDouble - This returns the value as an inaccurate
@@ -738,7 +772,7 @@ StringLiteral *StringLiteral::CreateEmpty(ASTContext &C, unsigned NumStrs) {
   return SL;
 }
 
-void StringLiteral::outputString(raw_ostream &OS) {
+void StringLiteral::outputString(raw_ostream &OS) const {
   switch (getKind()) {
   case Ascii: break; // no prefix.
   case Wide:  OS << 'L'; break;
@@ -811,7 +845,7 @@ void StringLiteral::outputString(raw_ostream &OS) {
       assert(Char <= 0xff &&
              "Characters above 0xff should already have been handled.");
 
-      if (isprint(Char))
+      if (isPrintable(Char))
         OS << (char)Char;
       else  // Output anything hard as an octal escape.
         OS << '\\'
@@ -3696,27 +3730,30 @@ SourceLocation DesignatedInitExpr::getLocEnd() const {
   return getInit()->getLocEnd();
 }
 
-Expr *DesignatedInitExpr::getArrayIndex(const Designator& D) {
+Expr *DesignatedInitExpr::getArrayIndex(const Designator& D) const {
   assert(D.Kind == Designator::ArrayDesignator && "Requires array designator");
-  char* Ptr = static_cast<char*>(static_cast<void *>(this));
+  char *Ptr = static_cast<char *>(
+                  const_cast<void *>(static_cast<const void *>(this)));
   Ptr += sizeof(DesignatedInitExpr);
   Stmt **SubExprs = reinterpret_cast<Stmt**>(reinterpret_cast<void**>(Ptr));
   return cast<Expr>(*(SubExprs + D.ArrayOrRange.Index + 1));
 }
 
-Expr *DesignatedInitExpr::getArrayRangeStart(const Designator& D) {
+Expr *DesignatedInitExpr::getArrayRangeStart(const Designator &D) const {
   assert(D.Kind == Designator::ArrayRangeDesignator &&
          "Requires array range designator");
-  char* Ptr = static_cast<char*>(static_cast<void *>(this));
+  char *Ptr = static_cast<char *>(
+                  const_cast<void *>(static_cast<const void *>(this)));
   Ptr += sizeof(DesignatedInitExpr);
   Stmt **SubExprs = reinterpret_cast<Stmt**>(reinterpret_cast<void**>(Ptr));
   return cast<Expr>(*(SubExprs + D.ArrayOrRange.Index + 1));
 }
 
-Expr *DesignatedInitExpr::getArrayRangeEnd(const Designator& D) {
+Expr *DesignatedInitExpr::getArrayRangeEnd(const Designator &D) const {
   assert(D.Kind == Designator::ArrayRangeDesignator &&
          "Requires array range designator");
-  char* Ptr = static_cast<char*>(static_cast<void *>(this));
+  char *Ptr = static_cast<char *>(
+                  const_cast<void *>(static_cast<const void *>(this)));
   Ptr += sizeof(DesignatedInitExpr);
   Stmt **SubExprs = reinterpret_cast<Stmt**>(reinterpret_cast<void**>(Ptr));
   return cast<Expr>(*(SubExprs + D.ArrayOrRange.Index + 2));

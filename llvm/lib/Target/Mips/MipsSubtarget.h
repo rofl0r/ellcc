@@ -93,6 +93,9 @@ protected:
   // InMips16 -- can process Mips16 instructions
   bool InMips16Mode;
 
+  // InMicroMips -- can process MicroMips instructions
+  bool InMicroMipsMode;
+
   // HasDSP, HasDSPR2 -- supports DSP ASE.
   bool HasDSP, HasDSPR2;
 
@@ -103,6 +106,9 @@ protected:
 
   // The instance to the register info section object
   MipsReginfo MRI;
+
+  // Relocation Model
+  Reloc::Model RM;
 
 public:
   virtual bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
@@ -139,6 +145,7 @@ public:
   bool isNotSingleFloat() const { return !IsSingleFloat; }
   bool hasVFPU() const { return HasVFPU; }
   bool inMips16Mode() const { return InMips16Mode; }
+  bool inMicroMipsMode() const { return InMicroMipsMode; }
   bool hasDSP() const { return HasDSP; }
   bool hasDSPR2() const { return HasDSPR2; }
   bool isAndroid() const { return IsAndroid; }
@@ -157,6 +164,9 @@ public:
 
   // Grab MipsRegInfo object
   const MipsReginfo &getMReginfo() const { return MRI; }
+
+  // Grab relocation model
+  Reloc::Model getRelocationModel() const {return RM;}
 };
 } // End llvm namespace
 

@@ -24,7 +24,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/StmtObjC.h"
 #include "clang/Analysis/Analyses/FormatString.h"
-#include "clang/Basic/ConvertUTF.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
@@ -35,6 +35,7 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/raw_ostream.h"
 #include <limits>
 using namespace clang;
@@ -1838,8 +1839,20 @@ Sema::CheckNonNullArguments(const NonNullAttr *NonNull,
                                   e = NonNull->args_end();
        i != e; ++i) {
     const Expr *ArgExpr = ExprArgs[*i];
-    if (ArgExpr->isNullPointerConstant(Context,
-                                       Expr::NPC_ValueDependentIsNotNull))
+
+    // As a special case, transparent unions initialized with zero are
+    // considered null for the purposes of the nonnull attribute.
+    if (const RecordType *UT = ArgExpr->getType()->getAsUnionType()) {
+      if (UT->getDecl()->hasAttr<TransparentUnionAttr>())
+        if (const CompoundLiteralExpr *CLE =
+            dyn_cast<CompoundLiteralExpr>(ArgExpr))
+          if (const InitListExpr *ILE =
+              dyn_cast<InitListExpr>(CLE->getInitializer()))
+            ArgExpr = ILE->getInit(0);
+    }
+
+    bool Result;
+    if (ArgExpr->EvaluateAsBooleanCondition(Result, Context) && !Result)
       Diag(CallSiteLoc, diag::warn_null_arg) << ArgExpr->getSourceRange();
   }
 }
@@ -3242,7 +3255,8 @@ void Sema::CheckMemaccessArguments(const CallExpr *Call,
           if (const UnaryOperator *UnaryOp = dyn_cast<UnaryOperator>(Dest))
             if (UnaryOp->getOpcode() == UO_AddrOf)
               ActionIdx = 1; // If its an address-of operator, just remove it.
-          if (Context.getTypeSize(PointeeTy) == Context.getCharWidth())
+          if (!PointeeTy->isIncompleteType() &&
+              (Context.getTypeSize(PointeeTy) == Context.getCharWidth()))
             ActionIdx = 2; // If the pointee's size is sizeof(char),
                            // suggest an explicit length.
 
@@ -5172,6 +5186,18 @@ void Sema::CheckImplicitConversions(Expr *E, SourceLocation CC) {
   AnalyzeImplicitConversions(*this, E, CC);
 }
 
+/// Diagnose when expression is an integer constant expression and its evaluation
+/// results in integer overflow
+void Sema::CheckForIntOverflow (Expr *E) {
+  if (const BinaryOperator *BExpr = dyn_cast<BinaryOperator>(E->IgnoreParens())) {
+    unsigned Opc = BExpr->getOpcode();
+    if (Opc != BO_Add && Opc != BO_Sub && Opc != BO_Mul)
+      return;
+    llvm::SmallVector<PartialDiagnosticAt, 4> Diags;
+    E->EvaluateForOverflow(Context, &Diags);
+  }
+}
+
 namespace {
 /// \brief Visitor for expressions which looks for unsequenced operations on the
 /// same object.
@@ -5611,9 +5637,12 @@ void Sema::CheckUnsequencedOperations(Expr *E) {
   }
 }
 
-void Sema::CheckCompletedExpr(Expr *E, SourceLocation CheckLoc) {
+void Sema::CheckCompletedExpr(Expr *E, SourceLocation CheckLoc,
+                              bool IsConstexpr) {
   CheckImplicitConversions(E, CheckLoc);
   CheckUnsequencedOperations(E);
+  if (!IsConstexpr && !E->isValueDependent())
+    CheckForIntOverflow(E);
 }
 
 void Sema::CheckBitFieldInitialization(SourceLocation InitLoc,
@@ -5750,10 +5779,11 @@ static bool IsTailPaddedMemberArray(Sema &S, llvm::APInt Size,
       TInfo = TDL->getTypeSourceInfo();
       continue;
     }
-    ConstantArrayTypeLoc CTL = cast<ConstantArrayTypeLoc>(TL);
-    const Expr *SizeExpr = dyn_cast<IntegerLiteral>(CTL.getSizeExpr());
-    if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
-      return false;
+    if (const ConstantArrayTypeLoc *CTL = dyn_cast<ConstantArrayTypeLoc>(&TL)) {
+      const Expr *SizeExpr = dyn_cast<IntegerLiteral>(CTL->getSizeExpr());
+      if (!SizeExpr || SizeExpr->getExprLoc().isMacroID())
+        return false;
+    }
     break;
   }
 
@@ -6144,7 +6174,7 @@ static bool isSetterLikeSelector(Selector sel) {
     return false;
 
   if (str.empty()) return true;
-  return !islower(str.front());
+  return !isLowercase(str.front());
 }
 
 /// Check a message send to see if it's likely to cause a retain cycle.

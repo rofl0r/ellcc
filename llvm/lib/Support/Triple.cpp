@@ -19,6 +19,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   switch (Kind) {
   case UnknownArch: return "unknown";
 
+  case aarch64: return "aarch64";
   case arm:     return "arm";
   case armeb:   return "armeb";
   case hexagon: return "hexagon";
@@ -54,6 +55,8 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
   switch (Kind) {
   default:
     return 0;
+
+  case aarch64: return "aarch64";
 
   case arm:
   case armeb:
@@ -147,6 +150,7 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case GNU: return "gnu";
   case GNUEABIHF: return "gnueabihf";
   case GNUEABI: return "gnueabi";
+  case GNUX32: return "gnux32";
   case EABI: return "eabi";
   case MachO: return "macho";
   case Android: return "android";
@@ -158,6 +162,7 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
 
 Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
   return StringSwitch<Triple::ArchType>(Name)
+    .Case("aarch64", aarch64)
     .Case("arm", arm)
     .Case("armeb", armeb)
     .Case("mips", mips)
@@ -225,6 +230,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Cases("powerpc", "ppc", Triple::ppc)
     .Cases("powerpc64", "ppc64", "ppu", Triple::ppc64)
     .Cases("mblaze", "microblaze", Triple::mblaze)
+    .Case("aarch64", Triple::aarch64)
     .Case("xscale", Triple::arm)
     .StartsWith("arm", ArchName.endswith("ebsf") || ArchName.endswith("eb") ?
                             Triple::armeb : Triple::arm)
@@ -301,6 +307,7 @@ static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
     .StartsWith("eabi", Triple::EABI)
     .StartsWith("gnueabihf", Triple::GNUEABIHF)
     .StartsWith("gnueabi", Triple::GNUEABI)
+    .StartsWith("gnux32", Triple::GNUX32)
     .StartsWith("gnu", Triple::GNU)
     .StartsWith("macho", Triple::MachO)
     .StartsWith("android", Triple::Android)
@@ -693,6 +700,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::spir:
     return 32;
 
+  case llvm::Triple::aarch64:
   case llvm::Triple::mips64:
   case llvm::Triple::mips64el:
   case llvm::Triple::nvptx64:
@@ -721,6 +729,7 @@ Triple Triple::get32BitArchVariant() const {
   Triple T(*this);
   switch (getArch()) {
   case Triple::UnknownArch:
+  case Triple::aarch64:
   case Triple::msp430:
     T.setArch(UnknownArch);
     break;
@@ -776,6 +785,7 @@ Triple Triple::get64BitArchVariant() const {
     T.setArch(UnknownArch);
     break;
 
+  case Triple::aarch64:
   case Triple::spir64:
   case Triple::mips64:
   case Triple::mips64el:

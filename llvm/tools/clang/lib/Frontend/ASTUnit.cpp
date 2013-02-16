@@ -270,7 +270,7 @@ void ASTUnit::setPreprocessor(Preprocessor *pp) { PP = pp; }
 
 /// \brief Determine the set of code-completion contexts in which this 
 /// declaration should be shown.
-static unsigned getDeclShowContexts(NamedDecl *ND,
+static unsigned getDeclShowContexts(const NamedDecl *ND,
                                     const LangOptions &LangOpts,
                                     bool &IsNestedNameSpecifier) {
   IsNestedNameSpecifier = false;
@@ -312,7 +312,7 @@ static unsigned getDeclShowContexts(NamedDecl *ND,
       // Part of the nested-name-specifier in C++0x.
       if (LangOpts.CPlusPlus11)
         IsNestedNameSpecifier = true;
-    } else if (RecordDecl *Record = dyn_cast<RecordDecl>(ND)) {
+    } else if (const RecordDecl *Record = dyn_cast<RecordDecl>(ND)) {
       if (Record->isUnion())
         Contexts |= (1LL << CodeCompletionContext::CCC_UnionTag);
       else
@@ -1912,6 +1912,8 @@ ASTUnit *ASTUnit::LoadFromCompilerInvocation(CompilerInvocation *CI,
   AST->IncludeBriefCommentsInCodeCompletion
     = IncludeBriefCommentsInCodeCompletion;
   AST->Invocation = CI;
+  AST->FileSystemOpts = CI->getFileSystemOpts();
+  AST->FileMgr = new FileManager(AST->FileSystemOpts);
   AST->UserFilesAreVolatile = UserFilesAreVolatile;
   
   // Recover resources if we crash before exiting this method.

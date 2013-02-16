@@ -338,6 +338,12 @@ Sema::ActOnCaseStmt(SourceLocation CaseLoc, Expr *LHSVal,
       // Recover from an error by just forgetting about it.
     }
   }
+  
+  LHSVal = ActOnFinishFullExpr(LHSVal, LHSVal->getExprLoc(), false,
+                               getLangOpts().CPlusPlus11).take();
+  if (RHSVal)
+    RHSVal = ActOnFinishFullExpr(RHSVal, RHSVal->getExprLoc(), false,
+                                 getLangOpts().CPlusPlus11).take();
 
   CaseStmt *CS = new (Context) CaseStmt(LHSVal, RHSVal, CaseLoc, DotDotDotLoc,
                                         ColonLoc);
@@ -400,6 +406,13 @@ StmtResult
 Sema::ActOnIfStmt(SourceLocation IfLoc, FullExprArg CondVal, Decl *CondVar,
                   Stmt *thenStmt, SourceLocation ElseLoc,
                   Stmt *elseStmt) {
+  // If the condition was invalid, discard the if statement.  We could recover
+  // better by replacing it with a valid expr, but don't do that yet.
+  if (!CondVal.get() && !CondVar) {
+    getCurFunction()->setHasDroppedStmt();
+    return StmtError();
+  }
+
   ExprResult CondResult(CondVal.release());
 
   VarDecl *ConditionVar = 0;
@@ -732,14 +745,7 @@ Sema::ActOnFinishSwitchStmt(SourceLocation SwitchLoc, Stmt *Switch,
       } else {
         // We already verified that the expression has a i-c-e value (C99
         // 6.8.4.2p3) - get that value now.
-        SmallVector<PartialDiagnosticAt, 8> Diags;
-        LoVal = Lo->EvaluateKnownConstInt(Context, &Diags);
-        if (Diags.size() == 1 && 
-            Diags[0].second.getDiagID() == diag::note_constexpr_overflow) {
-          Diag(Lo->getLocStart(), diag::warn_case_constant_overflow) <<
-            LoVal.toString(10);
-          Diag(Diags[0].first, Diags[0].second);
-        }
+        LoVal = Lo->EvaluateKnownConstInt(Context);
 
         // If the LHS is not the same type as the condition, insert an implicit
         // cast.

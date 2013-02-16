@@ -981,7 +981,7 @@ ExprResult Sema::ParseObjCSelectorExpression(Selector Sel,
     llvm::DenseMap<Selector, SourceLocation>::iterator Pos
       = ReferencedSelectors.find(Sel);
     if (Pos == ReferencedSelectors.end())
-      ReferencedSelectors.insert(std::make_pair(Sel, SelLoc));
+      ReferencedSelectors.insert(std::make_pair(Sel, AtLoc));
   }
 
   // In ARC, forbid the user from using @selector for 
@@ -2461,6 +2461,18 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
   return MaybeBindToTemporary(Result);
 }
 
+static void RemoveSelectorFromWarningCache(Sema &S, Expr* Arg) {
+  if (ObjCSelectorExpr *OSE =
+      dyn_cast<ObjCSelectorExpr>(Arg->IgnoreParenCasts())) {
+    Selector Sel = OSE->getSelector();
+    SourceLocation Loc = OSE->getAtLoc();
+    llvm::DenseMap<Selector, SourceLocation>::iterator Pos
+    = S.ReferencedSelectors.find(Sel);
+    if (Pos != S.ReferencedSelectors.end() && Pos->second == Loc)
+      S.ReferencedSelectors.erase(Pos);
+  }
+}
+
 // ActOnInstanceMessage - used for both unary and keyword messages.
 // ArgExprs is optional - if it is present, the number of expressions
 // is obtained from Sel.getNumArgs().
@@ -2474,6 +2486,20 @@ ExprResult Sema::ActOnInstanceMessage(Scope *S,
   if (!Receiver)
     return ExprError();
 
+  // A ParenListExpr can show up while doing error recovery with invalid code.
+  if (isa<ParenListExpr>(Receiver)) {
+    ExprResult Result = MaybeConvertParenListExprToParenExpr(S, Receiver);
+    if (Result.isInvalid()) return ExprError();
+    Receiver = Result.take();
+  }
+  
+  if (RespondsToSelectorSel.isNull()) {
+    IdentifierInfo *SelectorId = &Context.Idents.get("respondsToSelector");
+    RespondsToSelectorSel = Context.Selectors.getUnarySelector(SelectorId);
+  }
+  if (Sel == RespondsToSelectorSel)
+    RemoveSelectorFromWarningCache(*this, Args[0]);
+    
   return BuildInstanceMessage(Receiver, Receiver->getType(),
                               /*SuperLoc=*/SourceLocation(), Sel, /*Method=*/0, 
                               LBracLoc, SelectorLocs, RBracLoc, Args);

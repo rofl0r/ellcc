@@ -187,6 +187,23 @@ static bool wasDifferentDeclUsedForInlining(CallEventRef<> Call,
   return RuntimeCallee->getCanonicalDecl() != StaticDecl->getCanonicalDecl();
 }
 
+/// Returns true if the CXXConstructExpr \p E was intended to construct a
+/// prvalue for the region in \p V.
+///
+/// Note that we can't just test for rvalue vs. glvalue because
+/// CXXConstructExprs embedded in DeclStmts and initializers are considered
+/// rvalues by the AST, and the analyzer would like to treat them as lvalues.
+static bool isTemporaryPRValue(const CXXConstructExpr *E, SVal V) {
+  if (E->isGLValue())
+    return false;
+
+  const MemRegion *MR = V.getAsRegion();
+  if (!MR)
+    return false;
+
+  return isa<CXXTempObjectRegion>(MR);
+}
+
 /// The call exit is simulated with a sequence of nodes, which occur between 
 /// CallExitBegin and CallExitEnd. The following operations occur between the 
 /// two program points:
@@ -247,13 +264,9 @@ void ExprEngine::processCallExit(ExplodedNode *CEBNode) {
         svalBuilder.getCXXThis(CCE->getConstructor()->getParent(), calleeCtx);
       SVal ThisV = state->getSVal(This);
 
-      // If the constructed object is a prvalue, get its bindings.
-      // Note that we have to be careful here because constructors embedded
-      // in DeclStmts are not marked as lvalues.
-      if (!CCE->isGLValue())
-        if (const MemRegion *MR = ThisV.getAsRegion())
-          if (isa<CXXTempObjectRegion>(MR))
-            ThisV = state->getSVal(cast<Loc>(ThisV));
+      // If the constructed object is a temporary prvalue, get its bindings.
+      if (isTemporaryPRValue(CCE, ThisV))
+        ThisV = state->getSVal(cast<Loc>(ThisV));
 
       state = state->BindExpr(CCE, callerCtx, ThisV);
     }
@@ -402,7 +415,7 @@ bool ExprEngine::shouldInlineDecl(const Decl *D, ExplodedNode *Pred) {
   if (Engine.FunctionSummaries->hasReachedMaxBlockCount(D))
     return false;
 
-  if (CalleeCFG->getNumBlockIDs() > AMgr.options.InlineMaxFunctionSize)
+  if (CalleeCFG->getNumBlockIDs() > AMgr.options.getMaxInlinableSize())
     return false;
 
   // Do not inline variadic calls (for now).
@@ -558,8 +571,9 @@ bool ExprEngine::inlineCall(const CallEvent &Call, const Decl *D,
   case CE_ObjCMessage:
     if (!Opts.mayInlineObjCMethod())
       return false;
-    if (!(getAnalysisManager().options.IPAMode == DynamicDispatch ||
-          getAnalysisManager().options.IPAMode == DynamicDispatchBifurcate))
+    AnalyzerOptions &Options = getAnalysisManager().options;
+    if (!(Options.getIPAMode() == IPAK_DynamicDispatch ||
+          Options.getIPAMode() == IPAK_DynamicDispatchBifurcate))
       return false;
     break;
   }
@@ -691,7 +705,13 @@ ProgramStateRef ExprEngine::bindReturnValue(const CallEvent &Call,
     }
     }
   } else if (const CXXConstructorCall *C = dyn_cast<CXXConstructorCall>(&Call)){
-    return State->BindExpr(E, LCtx, C->getCXXThisVal());
+    SVal ThisV = C->getCXXThisVal();
+
+    // If the constructed object is a temporary prvalue, get its bindings.
+    if (isTemporaryPRValue(cast<CXXConstructExpr>(E), ThisV))
+      ThisV = State->getSVal(cast<Loc>(ThisV));
+
+    return State->BindExpr(E, LCtx, ThisV);
   }
 
   // Conjure a symbol if the return value is unknown.
@@ -713,13 +733,27 @@ void ExprEngine::conservativeEvalCall(const CallEvent &Call, NodeBuilder &Bldr,
   Bldr.generateNode(Call.getProgramPoint(), State, Pred);
 }
 
+static bool isEssentialToInline(const CallEvent &Call) {
+  const Decl *D = Call.getDecl();
+  if (D) {
+    AnalysisDeclContext *AD =
+      Call.getLocationContext()->getAnalysisDeclContext()->
+      getManager()->getContext(D);
+
+    // The auto-synthesized bodies are essential to inline as they are
+    // usually small and commonly used.
+    return AD->isBodyAutosynthesized();
+  }
+  return false;
+}
+
 void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
                                  const CallEvent &CallTemplate) {
   // Make sure we have the most recent state attached to the call.
   ProgramStateRef State = Pred->getState();
   CallEventRef<> Call = CallTemplate.cloneWithState(State);
 
-  if (HowToInline == Inline_None) {
+  if (HowToInline == Inline_None && !isEssentialToInline(CallTemplate)) {
     conservativeEvalCall(*Call, Bldr, Pred, State);
     return;
   }
@@ -737,14 +771,16 @@ void ExprEngine::defaultEvalCall(NodeBuilder &Bldr, ExplodedNode *Pred,
     const Decl *D = RD.getDecl();
     if (D) {
       if (RD.mayHaveOtherDefinitions()) {
+        AnalyzerOptions &Options = getAnalysisManager().options;
+
         // Explore with and without inlining the call.
-        if (getAnalysisManager().options.IPAMode == DynamicDispatchBifurcate) {
+        if (Options.getIPAMode() == IPAK_DynamicDispatchBifurcate) {
           BifurcateCall(RD.getDispatchRegion(), *Call, D, Bldr, Pred);
           return;
         }
 
         // Don't inline if we're not in any dynamic dispatch mode.
-        if (getAnalysisManager().options.IPAMode != DynamicDispatch) {
+        if (Options.getIPAMode() != IPAK_DynamicDispatch) {
           conservativeEvalCall(*Call, Bldr, Pred, State);
           return;
         }

@@ -552,7 +552,7 @@ protected:
   };
 
   template <typename EntryType>
-  SpecIterator<EntryType>
+  static SpecIterator<EntryType>
   makeSpecIterator(llvm::FoldingSetVector<EntryType> &Specs, bool isEnd) {
     return SpecIterator<EntryType>(isEnd ? Specs.end() : Specs.begin());
   }
@@ -576,14 +576,14 @@ protected:
 
   /// \brief Pointer to the common data shared by all declarations of this
   /// template.
-  CommonBase *Common;
+  mutable CommonBase *Common;
   
   /// \brief Retrieves the "common" pointer shared by all (re-)declarations of
   /// the same template. Calling this routine may implicitly allocate memory
   /// for the common pointer.
-  CommonBase *getCommonPtr();
+  CommonBase *getCommonPtr() const;
 
-  virtual CommonBase *newCommon(ASTContext &C) = 0;
+  virtual CommonBase *newCommon(ASTContext &C) const = 0;
 
   // Construct a template decl with name, parameters, and templated element.
   RedeclarableTemplateDecl(Kind DK, DeclContext *DC, SourceLocation L,
@@ -618,7 +618,7 @@ public:
   /// template<> template<typename T>
   /// struct X<int>::Inner { /* ... */ };
   /// \endcode
-  bool isMemberSpecialization() {
+  bool isMemberSpecialization() const {
     return getCommonPtr()->InstantiatedFromMember.getInt();
   }
 
@@ -665,7 +665,7 @@ public:
   /// template<typename U>
   /// void X<T>::f(T, U);
   /// \endcode
-  RedeclarableTemplateDecl *getInstantiatedFromMemberTemplate() {
+  RedeclarableTemplateDecl *getInstantiatedFromMemberTemplate() const {
     return getCommonPtr()->InstantiatedFromMember.getPointer();
   }
 
@@ -729,9 +729,9 @@ protected:
                        TemplateParameterList *Params, NamedDecl *Decl)
     : RedeclarableTemplateDecl(FunctionTemplate, DC, L, Name, Params, Decl) { }
 
-  CommonBase *newCommon(ASTContext &C);
+  CommonBase *newCommon(ASTContext &C) const;
 
-  Common *getCommonPtr() {
+  Common *getCommonPtr() const {
     return static_cast<Common *>(RedeclarableTemplateDecl::getCommonPtr());
   }
 
@@ -740,7 +740,7 @@ protected:
   /// \brief Retrieve the set of function template specializations of this
   /// function template.
   llvm::FoldingSetVector<FunctionTemplateSpecializationInfo> &
-  getSpecializations() {
+  getSpecializations() const {
     return getCommonPtr()->Specializations;
   }
 
@@ -798,11 +798,11 @@ public:
 
   typedef SpecIterator<FunctionTemplateSpecializationInfo> spec_iterator;
 
-  spec_iterator spec_begin() {
+  spec_iterator spec_begin() const {
     return makeSpecIterator(getSpecializations(), false);
   }
 
-  spec_iterator spec_end() {
+  spec_iterator spec_end() const {
     return makeSpecIterator(getSpecializations(), true);
   }
 
@@ -1464,8 +1464,7 @@ public:
           = SpecializedTemplate.dyn_cast<SpecializedPartialSpecialization*>())
       return PartialSpec->PartialSpecialization;
 
-    return const_cast<ClassTemplateDecl*>(
-                             SpecializedTemplate.get<ClassTemplateDecl*>());
+    return SpecializedTemplate.get<ClassTemplateDecl*>();
   }
 
   /// \brief Retrieve the class template or class template partial
@@ -1477,8 +1476,7 @@ public:
           = SpecializedTemplate.dyn_cast<SpecializedPartialSpecialization*>())
       return PartialSpec->PartialSpecialization;
 
-    return const_cast<ClassTemplateDecl*>(
-                             SpecializedTemplate.get<ClassTemplateDecl*>());
+    return SpecializedTemplate.get<ClassTemplateDecl*>();
   }
 
   /// \brief Retrieve the set of template arguments that should be used
@@ -1780,10 +1778,11 @@ protected:
   };
 
   /// \brief Load any lazily-loaded specializations from the external source.
-  void LoadLazySpecializations();
+  void LoadLazySpecializations() const;
 
   /// \brief Retrieve the set of specializations of this class template.
-  llvm::FoldingSetVector<ClassTemplateSpecializationDecl> &getSpecializations();
+  llvm::FoldingSetVector<ClassTemplateSpecializationDecl> &
+  getSpecializations() const;
 
   /// \brief Retrieve the set of partial specializations of this class
   /// template.
@@ -1798,9 +1797,9 @@ protected:
     : RedeclarableTemplateDecl(ClassTemplate, 0, SourceLocation(),
                                DeclarationName(), 0, 0) { }
 
-  CommonBase *newCommon(ASTContext &C);
+  CommonBase *newCommon(ASTContext &C) const;
 
-  Common *getCommonPtr() {
+  Common *getCommonPtr() const {
     return static_cast<Common *>(RedeclarableTemplateDecl::getCommonPtr());
   }
 
@@ -1925,11 +1924,11 @@ public:
 
   typedef SpecIterator<ClassTemplateSpecializationDecl> spec_iterator;
 
-  spec_iterator spec_begin() {
+  spec_iterator spec_begin() const {
     return makeSpecIterator(getSpecializations(), false);
   }
 
-  spec_iterator spec_end() {
+  spec_iterator spec_end() const {
     return makeSpecIterator(getSpecializations(), true);
   }
 
@@ -2063,7 +2062,7 @@ protected:
                         TemplateParameterList *Params, NamedDecl *Decl)
     : RedeclarableTemplateDecl(TypeAliasTemplate, DC, L, Name, Params, Decl) { }
 
-  CommonBase *newCommon(ASTContext &C);
+  CommonBase *newCommon(ASTContext &C) const;
 
   Common *getCommonPtr() {
     return static_cast<Common *>(RedeclarableTemplateDecl::getCommonPtr());

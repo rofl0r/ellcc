@@ -77,7 +77,6 @@ representation.
    GettingStartedVS
    FAQ
    Lexicon
-   Packaging
    HowToAddABuilder
    yaml2obj
    HowToSubmitABug
@@ -140,9 +139,6 @@ representation.
    Instructions for building the clang front-end from source.
 
    .. __: http://clang.llvm.org/get_started.html
-
-:doc:`Packaging`
-   Advice on packaging LLVM into a distribution.
 
 :doc:`Lexicon`
    Definition of acronyms, terms and concepts used in LLVM.
@@ -251,6 +247,7 @@ For API clients and LLVM developers.
    GarbageCollection
    WritingAnLLVMPass
    TableGen/LangRef
+   HowToUseAttributes
 
 :doc:`WritingAnLLVMPass`
    Information on how to write LLVM transformations and analyses.
@@ -316,6 +313,8 @@ For API clients and LLVM developers.
 :doc:`MarkedUpDisassembly`
    This document describes the optional rich disassembly output syntax.
 
+:doc:`HowToUseAttributes`
+  Answers some questions about the new Attributes infrastructure.
 
 Development Process Documentation
 =================================
@@ -329,6 +328,7 @@ Information about LLVM's development process.
    Projects
    LLVMBuild
    HowToReleaseLLVM
+   Packaging
 
 :doc:`Projects`
   How-to guide and templates for new projects that *use* the LLVM
@@ -345,6 +345,9 @@ Information about LLVM's development process.
 
 :doc:`HowToReleaseLLVM`
   This is a guide to preparing LLVM releases. Most developers can ignore it.
+
+:doc:`Packaging`
+   Advice on packaging LLVM into a distribution.
 
 Mailing Lists
 =============

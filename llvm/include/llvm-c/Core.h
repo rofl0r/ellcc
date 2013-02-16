@@ -173,10 +173,11 @@ typedef enum {
     LLVMUWTable = 1 << 30,
     LLVMNonLazyBind = 1 << 31
 
-    /* FIXME: This attribute is currently not included in the C API as
+    /* FIXME: These attributes are currently not included in the C API as
        a temporary measure until the API/ABI impact to the C API is understood
        and the path forward agreed upon.
-    LLVMAddressSafety = 1ULL << 32
+    LLVMAddressSafety = 1ULL << 32,
+    LLVMStackProtectStrongAttribute = 1ULL<<33
     */
 } LLVMAttribute;
 
@@ -2547,6 +2548,13 @@ LLVMBool LLVMCreateMemoryBufferWithContentsOfFile(const char *Path,
                                                   char **OutMessage);
 LLVMBool LLVMCreateMemoryBufferWithSTDIN(LLVMMemoryBufferRef *OutMemBuf,
                                          char **OutMessage);
+LLVMMemoryBufferRef LLVMCreateMemoryBufferWithMemoryRange(const char *InputData,
+                                                          size_t InputDataLength,
+                                                          const char *BufferName,
+                                                          LLVMBool RequiresNullTerminator);
+LLVMMemoryBufferRef LLVMCreateMemoryBufferWithMemoryRangeCopy(const char *InputData,
+                                                              size_t InputDataLength,
+                                                              const char *BufferName);
 void LLVMDisposeMemoryBuffer(LLVMMemoryBufferRef MemBuf);
 
 /**

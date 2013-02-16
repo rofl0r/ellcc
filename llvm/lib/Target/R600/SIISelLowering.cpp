@@ -34,8 +34,11 @@ SITargetLowering::SITargetLowering(TargetMachine &TM) :
   addRegisterClass(MVT::i1, &AMDGPU::SCCRegRegClass);
   addRegisterClass(MVT::i1, &AMDGPU::VCCRegRegClass);
 
-  addRegisterClass(MVT::v4i32, &AMDGPU::SReg_128RegClass);
-  addRegisterClass(MVT::v8i32, &AMDGPU::SReg_256RegClass);
+  addRegisterClass(MVT::v1i32, &AMDGPU::VReg_32RegClass);
+  addRegisterClass(MVT::v2i32, &AMDGPU::VReg_64RegClass);
+  addRegisterClass(MVT::v4i32, &AMDGPU::VReg_128RegClass);
+  addRegisterClass(MVT::v8i32, &AMDGPU::VReg_256RegClass);
+  addRegisterClass(MVT::v16i32, &AMDGPU::VReg_512RegClass);
 
   computeRegisterProperties();
 
@@ -71,13 +74,11 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
     return AMDGPUTargetLowering::EmitInstrWithCustomInserter(MI, BB);
   case AMDGPU::BRANCH: return BB;
   case AMDGPU::CLAMP_SI:
-    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_MOV_B32_e64))
+    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_ADD_F32_e64))
            .addOperand(MI->getOperand(0))
            .addOperand(MI->getOperand(1))
-           // VSRC1-2 are unused, but we still need to fill all the
-           // operand slots, so we just reuse the VSRC0 operand
-           .addOperand(MI->getOperand(1))
-           .addOperand(MI->getOperand(1))
+           .addReg(AMDGPU::SREG_LIT_0)
+           .addReg(AMDGPU::SREG_LIT_0)
            .addImm(0) // ABS
            .addImm(1) // CLAMP
            .addImm(0) // OMOD
@@ -86,13 +87,11 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
     break;
 
   case AMDGPU::FABS_SI:
-    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_MOV_B32_e64))
+    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_ADD_F32_e64))
                  .addOperand(MI->getOperand(0))
                  .addOperand(MI->getOperand(1))
-                 // VSRC1-2 are unused, but we still need to fill all the
-                 // operand slots, so we just reuse the VSRC0 operand
-                 .addOperand(MI->getOperand(1))
-                 .addOperand(MI->getOperand(1))
+                 .addReg(AMDGPU::SREG_LIT_0)
+                 .addReg(AMDGPU::SREG_LIT_0)
                  .addImm(1) // ABS
                  .addImm(0) // CLAMP
                  .addImm(0) // OMOD
@@ -101,13 +100,11 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
     break;
 
   case AMDGPU::FNEG_SI:
-    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_MOV_B32_e64))
+    BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(AMDGPU::V_ADD_F32_e64))
                  .addOperand(MI->getOperand(0))
                  .addOperand(MI->getOperand(1))
-                 // VSRC1-2 are unused, but we still need to fill all the
-                 // operand slots, so we just reuse the VSRC0 operand
-                 .addOperand(MI->getOperand(1))
-                 .addOperand(MI->getOperand(1))
+                 .addReg(AMDGPU::SREG_LIT_0)
+                 .addReg(AMDGPU::SREG_LIT_0)
                  .addImm(0) // ABS
                  .addImm(0) // CLAMP
                  .addImm(0) // OMOD
@@ -122,9 +119,6 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
 
   case AMDGPU::SI_INTERP:
     LowerSI_INTERP(MI, *BB, I, MRI);
-    break;
-  case AMDGPU::SI_INTERP_CONST:
-    LowerSI_INTERP_CONST(MI, *BB, I, MRI);
     break;
   case AMDGPU::SI_WQM:
     LowerSI_WQM(MI, *BB, I, MRI);
@@ -168,27 +162,6 @@ void SITargetLowering::LowerSI_INTERP(MachineInstr *MI, MachineBasicBlock &BB,
           .addOperand(dst)
           .addReg(tmp)
           .addOperand(jReg)
-          .addOperand(attr_chan)
-          .addOperand(attr)
-          .addReg(M0);
-
-  MI->eraseFromParent();
-}
-
-void SITargetLowering::LowerSI_INTERP_CONST(MachineInstr *MI,
-    MachineBasicBlock &BB, MachineBasicBlock::iterator I,
-    MachineRegisterInfo &MRI) const {
-  MachineOperand dst = MI->getOperand(0);
-  MachineOperand attr_chan = MI->getOperand(1);
-  MachineOperand attr = MI->getOperand(2);
-  MachineOperand params = MI->getOperand(3);
-  unsigned M0 = MRI.createVirtualRegister(&AMDGPU::M0RegRegClass);
-
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::S_MOV_B32), M0)
-          .addOperand(params);
-
-  BuildMI(BB, I, BB.findDebugLoc(I), TII->get(AMDGPU::V_INTERP_MOV_F32))
-          .addOperand(dst)
           .addOperand(attr_chan)
           .addOperand(attr)
           .addReg(M0);

@@ -14,6 +14,7 @@
 #include "clang/Parse/Parser.h"
 #include "RAIIObjectsForParser.h"
 #include "clang/Basic/AddressSpaces.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/OpenCL.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Sema/Lookup.h"
@@ -462,7 +463,7 @@ void Parser::ParseMicrosoftTypeAttributes(ParsedAttributes &attrs) {
     IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
     attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
-                 SourceLocation(), 0, 0, AttributeList::AS_MSTypespec);
+                 SourceLocation(), 0, 0, AttributeList::AS_Keyword);
   }
 }
 
@@ -472,21 +473,23 @@ void Parser::ParseBorlandTypeAttributes(ParsedAttributes &attrs) {
     IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
     attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
-                 SourceLocation(), 0, 0, AttributeList::AS_MSTypespec);
+                 SourceLocation(), 0, 0, AttributeList::AS_Keyword);
   }
 }
 
 void Parser::ParseOpenCLAttributes(ParsedAttributes &attrs) {
   // Treat these like attributes
   while (Tok.is(tok::kw___kernel)) {
+    IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
-    attrs.addNew(PP.getIdentifierInfo("opencl_kernel_function"),
-                 AttrNameLoc, 0, AttrNameLoc, 0,
-                 SourceLocation(), 0, 0, AttributeList::AS_GNU);
+    attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
+                 SourceLocation(), 0, 0, AttributeList::AS_Keyword);
   }
 }
 
 void Parser::ParseOpenCLQualifiers(DeclSpec &DS) {
+  // FIXME: The mapping from attribute spelling to semantics should be
+  //        performed in Sema, not here.
   SourceLocation Loc = Tok.getLocation();
   switch(Tok.getKind()) {
     // OpenCL qualifiers:
@@ -568,7 +571,7 @@ VersionTuple Parser::ParseVersionTuple(SourceRange &Range) {
   // Parse the major version.
   unsigned AfterMajor = 0;
   unsigned Major = 0;
-  while (AfterMajor < ActualLength && isdigit(ThisTokBegin[AfterMajor])) {
+  while (AfterMajor < ActualLength && isDigit(ThisTokBegin[AfterMajor])) {
     Major = Major * 10 + ThisTokBegin[AfterMajor] - '0';
     ++AfterMajor;
   }
@@ -600,7 +603,7 @@ VersionTuple Parser::ParseVersionTuple(SourceRange &Range) {
   // Parse the minor version.
   unsigned AfterMinor = AfterMajor + 1;
   unsigned Minor = 0;
-  while (AfterMinor < ActualLength && isdigit(ThisTokBegin[AfterMinor])) {
+  while (AfterMinor < ActualLength && isDigit(ThisTokBegin[AfterMinor])) {
     Minor = Minor * 10 + ThisTokBegin[AfterMinor] - '0';
     ++AfterMinor;
   }
@@ -627,7 +630,7 @@ VersionTuple Parser::ParseVersionTuple(SourceRange &Range) {
   // Parse the subminor version.
   unsigned AfterSubminor = AfterMinor + 1;
   unsigned Subminor = 0;
-  while (AfterSubminor < ActualLength && isdigit(ThisTokBegin[AfterSubminor])) {
+  while (AfterSubminor < ActualLength && isDigit(ThisTokBegin[AfterSubminor])) {
     Subminor = Subminor * 10 + ThisTokBegin[AfterSubminor] - '0';
     ++AfterSubminor;
   }
@@ -1021,6 +1024,7 @@ void Parser::ParseThreadSafetyAttribute(IdentifierInfo &AttrName,
 
   // now parse the list of expressions
   while (Tok.isNot(tok::r_paren)) {
+    EnterExpressionEvaluationContext Unevaluated(Actions, Sema::Unevaluated);
     ExprResult ArgExpr(ParseAssignmentExpression());
     if (ArgExpr.isInvalid()) {
       ArgExprsOk = false;
@@ -1149,7 +1153,7 @@ void Parser::ProhibitCXX11Attributes(ParsedAttributesWithRange &attrs) {
   AttributeList *AttrList = attrs.getList();
   while (AttrList) {
     if (AttrList->isCXX11Attribute()) {
-      Diag(AttrList->getLoc(), diag::warn_attribute_no_decl) 
+      Diag(AttrList->getLoc(), diag::err_attribute_not_type_attr) 
         << AttrList->getName();
       AttrList->setInvalid();
     }
@@ -2072,15 +2076,15 @@ ExprResult Parser::ParseAlignArgument(SourceLocation Start,
 /// alignment-specifier:
 /// [C11]   '_Alignas' '(' type-id ')'
 /// [C11]   '_Alignas' '(' constant-expression ')'
-/// [C++0x] 'alignas' '(' type-id ...[opt] ')'
-/// [C++0x] 'alignas' '(' assignment-expression ...[opt] ')'
+/// [C++11] 'alignas' '(' type-id ...[opt] ')'
+/// [C++11] 'alignas' '(' assignment-expression ...[opt] ')'
 void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
                                      SourceLocation *endLoc) {
   assert((Tok.is(tok::kw_alignas) || Tok.is(tok::kw__Alignas)) &&
          "Not an alignment-specifier!");
 
-  SourceLocation KWLoc = Tok.getLocation();
-  ConsumeToken();
+  IdentifierInfo *KWName = Tok.getIdentifierInfo();
+  SourceLocation KWLoc = ConsumeToken();
 
   BalancedDelimiterTracker T(*this, tok::l_paren);
   if (T.expectAndConsume(diag::err_expected_lparen))
@@ -2105,12 +2109,8 @@ void Parser::ParseAlignmentSpecifier(ParsedAttributes &Attrs,
 
   ExprVector ArgExprs;
   ArgExprs.push_back(ArgExpr.release());
-  // FIXME: This should not be GNU, but we since the attribute used is
-  //        based on the spelling, and there is no true spelling for
-  //        C++11 attributes, this isn't accepted.
-  Attrs.addNew(PP.getIdentifierInfo("aligned"), KWLoc, 0, KWLoc,
-               0, T.getOpenLocation(), ArgExprs.data(), 1,
-               AttributeList::AS_GNU);
+  Attrs.addNew(KWName, KWLoc, 0, KWLoc, 0, T.getOpenLocation(),
+               ArgExprs.data(), 1, AttributeList::AS_Keyword);
 }
 
 /// ParseDeclarationSpecifiers
@@ -2274,8 +2274,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
         // name, then the code is ill-formed; this interpretation is
         // reinforced by the NAD status of core issue 635.
         TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Next);
-        if ((DSContext == DSC_top_level ||
-             (DSContext == DSC_class && DS.isFriendSpecified())) &&
+        if ((DSContext == DSC_top_level || DSContext == DSC_class) &&
             TemplateId->Name &&
             Actions.isCurrentClassName(*TemplateId->Name, getCurScope(), &SS)) {
           if (isConstructorDeclarator()) {
@@ -2325,8 +2324,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       // If we're in a context where the identifier could be a class name,
       // check whether this is a constructor declaration.
-      if ((DSContext == DSC_top_level ||
-           (DSContext == DSC_class && DS.isFriendSpecified())) &&
+      if ((DSContext == DSC_top_level || DSContext == DSC_class) &&
           Actions.isCurrentClassName(*Next.getIdentifierInfo(), getCurScope(),
                                      &SS)) {
         if (isConstructorDeclarator())
@@ -2781,6 +2779,10 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       break;
     case tok::kw_image3d_t:
       isInvalid = DS.SetTypeSpecType(DeclSpec::TST_image3d_t, Loc,
+                                     PrevSpec, DiagID);
+      break;
+    case tok::kw_sampler_t:
+      isInvalid = DS.SetTypeSpecType(DeclSpec::TST_sampler_t, Loc,
                                      PrevSpec, DiagID);
       break;
     case tok::kw_event_t:
@@ -3637,6 +3639,7 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_image2d_t:
   case tok::kw_image2d_array_t:
   case tok::kw_image3d_t:
+  case tok::kw_sampler_t:
   case tok::kw_event_t:
 
     // struct-or-union-specifier (C99) or class-specifier (C++)
@@ -3718,6 +3721,7 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw_image2d_t:
   case tok::kw_image2d_array_t:
   case tok::kw_image3d_t:
+  case tok::kw_sampler_t:
   case tok::kw_event_t:
 
     // struct-or-union-specifier (C99) or class-specifier (C++)
@@ -3871,6 +3875,7 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_image2d_t:
   case tok::kw_image2d_array_t:
   case tok::kw_image3d_t:
+  case tok::kw_sampler_t:
   case tok::kw_event_t:
 
     // struct-or-union-specifier (C99) or class-specifier (C++)
@@ -3891,6 +3896,9 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_virtual:
   case tok::kw_explicit:
   case tok::kw__Noreturn:
+
+    // alignment-specifier
+  case tok::kw__Alignas:
 
     // friend keyword.
   case tok::kw_friend:
@@ -4435,8 +4443,7 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
       else if (D.getCXXScopeSpec().isSet())
         AllowConstructorName =
           (D.getContext() == Declarator::FileContext ||
-           (D.getContext() == Declarator::MemberContext &&
-            D.getDeclSpec().isFriendSpecified()));
+           D.getContext() == Declarator::MemberContext);
       else
         AllowConstructorName = (D.getContext() == Declarator::MemberContext);
 
@@ -4498,9 +4505,12 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
     if (D.getContext() == Declarator::MemberContext)
       Diag(Tok, diag::err_expected_member_name_or_semi)
         << D.getDeclSpec().getSourceRange();
-    else if (getLangOpts().CPlusPlus)
-      Diag(Tok, diag::err_expected_unqualified_id) << getLangOpts().CPlusPlus;
-    else
+    else if (getLangOpts().CPlusPlus) {
+      if (Tok.is(tok::period) || Tok.is(tok::arrow))
+        Diag(Tok, diag::err_invalid_operator_on_type) << Tok.is(tok::arrow);
+      else
+        Diag(Tok, diag::err_expected_unqualified_id) << getLangOpts().CPlusPlus;
+    } else
       Diag(Tok, diag::err_expected_ident_lparen);
     D.SetIdentifier(0, Tok.getLocation());
     D.setInvalidType(true);
@@ -4519,7 +4529,10 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
       // Enter function-declaration scope, limiting any declarators to the
       // function prototype scope, including parameter declarators.
       ParseScope PrototypeScope(this,
-                                Scope::FunctionPrototypeScope|Scope::DeclScope);
+                                Scope::FunctionPrototypeScope|Scope::DeclScope|
+                                (D.isFunctionDeclaratorAFunctionDeclaration()
+                                   ? Scope::FunctionDeclarationScope : 0));
+
       // The paren may be part of a C++ direct initializer, eg. "int x(1);".
       // In such a case, check if we actually have a function declarator; if it
       // is not, the declarator has been fully parsed.
@@ -4649,7 +4662,9 @@ void Parser::ParseParenDeclarator(Declarator &D) {
   // Enter function-declaration scope, limiting any declarators to the
   // function prototype scope, including parameter declarators.
   ParseScope PrototypeScope(this,
-                            Scope::FunctionPrototypeScope|Scope::DeclScope);
+                            Scope::FunctionPrototypeScope | Scope::DeclScope |
+                            (D.isFunctionDeclaratorAFunctionDeclaration()
+                               ? Scope::FunctionDeclarationScope : 0));
   ParseFunctionDeclarator(D, attrs, T, false, RequiresArg);
   PrototypeScope.Exit();
 }

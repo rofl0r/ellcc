@@ -121,6 +121,9 @@ protected:
   /// HasRTM - Processor has RTM instructions.
   bool HasRTM;
 
+  /// HasADX - Processor has ADX instructions.
+  bool HasADX;
+
   /// IsBTMemSlow - True if BT (bit test) of memory instructions are slow.
   bool IsBTMemSlow;
 
@@ -165,11 +168,13 @@ protected:
   InstrItineraryData InstrItins;
 
 private:
+  /// StackAlignOverride - Override the stack alignment.
+  unsigned StackAlignOverride;
+
   /// In64BitMode - True if compiling for 64-bit, false for 32-bit.
   bool In64BitMode;
 
 public:
-
   /// This constructor initializes the data members to match that
   /// of the specified triple.
   ///
@@ -194,7 +199,24 @@ public:
   /// instruction.
   void AutoDetectSubtargetFeatures();
 
-  bool is64Bit() const { return In64BitMode; }
+  /// \brief Reset the features for the X86 target.
+  virtual void resetSubtargetFeatures(const MachineFunction *MF);
+  void resetSubtargetFeatures(StringRef CPU, StringRef FS);
+
+  /// Is this x86_64? (disregarding specific ABI / programming model)
+  bool is64Bit() const {
+    return In64BitMode;
+  }
+
+  /// Is this x86_64 with the ILP32 programming model (x32 ABI)?
+  bool isTarget64BitILP32() const {
+    return In64BitMode && (TargetTriple.getEnvironment() == Triple::GNUX32);
+  }
+
+  /// Is this x86_64 with the LP64 programming model (standard AMD64, no x32)?
+  bool isTarget64BitLP64() const {
+    return In64BitMode && (TargetTriple.getEnvironment() != Triple::GNUX32);
+  }
 
   PICStyles::Style getPICStyle() const { return PICStyle; }
   void setPICStyle(PICStyles::Style Style)  { PICStyle = Style; }
@@ -229,6 +251,7 @@ public:
   bool hasBMI() const { return HasBMI; }
   bool hasBMI2() const { return HasBMI2; }
   bool hasRTM() const { return HasRTM; }
+  bool hasADX() const { return HasADX; }
   bool isBTMemSlow() const { return IsBTMemSlow; }
   bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool hasVectorUAMem() const { return HasVectorUAMem; }
@@ -315,6 +338,10 @@ public:
   /// memset with zero passed as the second argument. Otherwise it
   /// returns null.
   const char *getBZeroEntry() const;
+  
+  /// This function returns true if the target has sincos() routine in its
+  /// compiler runtime or math libraries.
+  bool hasSinCos() const;
 
   /// enablePostRAScheduler - run for Atom optimization.
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,

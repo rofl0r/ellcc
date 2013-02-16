@@ -20,22 +20,19 @@
 #include "llvm/Support/ErrorHandling.h"
 using namespace llvm;
 
-MCObjectStreamer::MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB,
-                                   raw_ostream &OS, MCCodeEmitter *Emitter_)
-  : MCStreamer(Context),
-    Assembler(new MCAssembler(Context, TAB,
-                              *Emitter_, *TAB.createObjectWriter(OS),
-                              OS)),
-    CurSectionData(0)
-{
-}
+MCObjectStreamer::MCObjectStreamer(StreamerKind Kind, MCContext &Context,
+                                   MCAsmBackend &TAB, raw_ostream &OS,
+                                   MCCodeEmitter *Emitter_)
+    : MCStreamer(Kind, Context),
+      Assembler(new MCAssembler(Context, TAB, *Emitter_,
+                                *TAB.createObjectWriter(OS), OS)),
+      CurSectionData(0) {}
 
-MCObjectStreamer::MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB,
-                                   raw_ostream &OS, MCCodeEmitter *Emitter_,
+MCObjectStreamer::MCObjectStreamer(StreamerKind Kind, MCContext &Context,
+                                   MCAsmBackend &TAB, raw_ostream &OS,
+                                   MCCodeEmitter *Emitter_,
                                    MCAssembler *_Assembler)
-  : MCStreamer(Context), Assembler(_Assembler), CurSectionData(0)
-{
-}
+    : MCStreamer(Kind, Context), Assembler(_Assembler), CurSectionData(0) {}
 
 MCObjectStreamer::~MCObjectStreamer() {
   delete &Assembler->getBackend();
@@ -62,7 +59,9 @@ MCFragment *MCObjectStreamer::getCurrentFragment() const {
 
 MCDataFragment *MCObjectStreamer::getOrCreateDataFragment() const {
   MCDataFragment *F = dyn_cast_or_null<MCDataFragment>(getCurrentFragment());
-  if (!F)
+  // When bundling is enabled, we don't want to add data to a fragment that
+  // already has instructions (see MCELFStreamer::EmitInstToData for details)
+  if (!F || (Assembler->isBundlingEnabled() && F->hasInstructions()))
     F = new MCDataFragment(getCurrentSectionData());
   return F;
 }
@@ -227,7 +226,7 @@ void MCObjectStreamer::EmitInstToFragment(const MCInst &Inst) {
   IF->getContents().append(Code.begin(), Code.end());
 }
 
-const char *BundlingNotImplementedMsg =
+static const char *BundlingNotImplementedMsg =
   "Aligned bundling is not implemented for this object format";
 
 void MCObjectStreamer::EmitBundleAlignMode(unsigned AlignPow2) {

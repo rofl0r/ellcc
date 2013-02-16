@@ -58,7 +58,9 @@ static THREADLOCAL struct {
   uptr stack_top, stack_bottom;
 } __msan_stack_bounds;
 
-extern const int __msan_track_origins;
+static THREADLOCAL bool is_in_symbolizer;
+
+extern "C" const int __msan_track_origins;
 int __msan_get_track_origins() {
   return __msan_track_origins;
 }
@@ -80,6 +82,10 @@ static bool IsRunningUnderDr() {
   UnmapOrDie(filename, kBufSize);
   return result;
 }
+
+void EnterSymbolizer() { is_in_symbolizer = true; }
+void ExitSymbolizer()  { is_in_symbolizer = false; }
+bool IsInSymbolizer() { return is_in_symbolizer; }
 
 static Flags msan_flags;
 
@@ -111,6 +117,7 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->num_callers, "num_callers");
   ParseFlag(str, &f->report_umrs, "report_umrs");
   ParseFlag(str, &f->verbosity, "verbosity");
+  ParseFlag(str, &f->strip_path_prefix, "strip_path_prefix");
 }
 
 static void InitializeFlags(Flags *f, const char *options) {
@@ -123,7 +130,11 @@ static void InitializeFlags(Flags *f, const char *options) {
   f->num_callers = 20;
   f->report_umrs = true;
   f->verbosity = 0;
+  f->strip_path_prefix = "";
 
+  // Override from user-specified string.
+  if (__msan_default_options)
+    ParseFlagsFromString(f, __msan_default_options());
   ParseFlagsFromString(f, options);
 }
 
@@ -204,6 +215,7 @@ void __msan_warning_noreturn() {
 void __msan_init() {
   if (msan_inited) return;
   msan_init_is_running = 1;
+  SanitizerToolName = "MemorySanitizer";
 
   InstallAtExitHandler();
   SetDieCallback(MsanDie);
@@ -237,8 +249,6 @@ void __msan_init() {
     DumpProcessMap();
     Die();
   }
-
-  InstallTrapHandler();
 
   const char *external_symbolizer = GetEnv("MSAN_SYMBOLIZER_PATH");
   if (external_symbolizer && external_symbolizer[0]) {
@@ -307,8 +317,6 @@ int __msan_set_poison_in_malloc(int do_poison) {
   flags()->poison_in_malloc = do_poison;
   return old;
 }
-
-void __msan_break_optimization(void *x) { }
 
 int  __msan_has_dynamic_component() {
   return msan_running_under_dr;
@@ -415,6 +423,14 @@ u32 __msan_get_origin(void *a) {
   return *(u32*)origin_ptr;
 }
 
-u32 __msan_get_origin_tls() {
+u32 __msan_get_umr_origin() {
   return __msan_origin_tls;
 }
+
+#if !SANITIZER_SUPPORTS_WEAK_HOOKS
+extern "C" {
+SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
+const char* __msan_default_options() { return ""; }
+}  // extern "C"
+#endif
+

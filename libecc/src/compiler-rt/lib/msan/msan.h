@@ -17,7 +17,7 @@
 
 #include "sanitizer_common/sanitizer_internal_defs.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
-#include "sanitizer/msan_interface.h"
+#include "msan_interface_internal.h"
 #include "msan_flags.h"
 
 #define MEM_TO_SHADOW(mem) (((uptr)mem)       & ~0x400000000000ULL)
@@ -45,6 +45,10 @@ void MsanDeallocate(void *ptr);
 void InstallTrapHandler();
 void InstallAtExitHandler();
 void ReplaceOperatorsNewAndDelete();
+
+void EnterSymbolizer();
+void ExitSymbolizer();
+bool IsInSymbolizer();
 
 void MsanDie();
 void PrintWarning(uptr pc, uptr bp);

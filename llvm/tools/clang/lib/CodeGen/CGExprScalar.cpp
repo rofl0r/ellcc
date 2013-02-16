@@ -664,9 +664,8 @@ Value *ScalarExprEmitter::EmitScalarConversion(Value *Src, QualType SrcType,
   QualType OrigSrcType = SrcType;
   llvm::Type *SrcTy = Src->getType();
 
-  // Floating casts might be a bit special: if we're doing casts to / from half
-  // FP, we should go via special intrinsics.
-  if (SrcType->isHalfType()) {
+  // If casting to/from storage-only half FP, use special intrinsics.
+  if (SrcType->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType) {
     Src = Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16), Src);
     SrcType = CGF.getContext().FloatTy;
     SrcTy = CGF.FloatTy;
@@ -735,7 +734,7 @@ Value *ScalarExprEmitter::EmitScalarConversion(Value *Src, QualType SrcType,
                              DstTy);
 
   // Cast to half via float
-  if (DstType->isHalfType())
+  if (DstType->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType)
     DstTy = CGF.FloatTy;
 
   if (isa<llvm::IntegerType>(SrcTy)) {
@@ -1221,7 +1220,15 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
     const CXXRecordDecl *DerivedClassDecl = DestTy->getPointeeCXXRecordDecl();
     assert(DerivedClassDecl && "BaseToDerived arg isn't a C++ object pointer!");
 
-    return CGF.GetAddressOfDerivedClass(Visit(E), DerivedClassDecl,
+    llvm::Value *V = Visit(E);
+
+    // C++11 [expr.static.cast]p11: Behavior is undefined if a downcast is
+    // performed and the object is not of the derived type.
+    if (CGF.SanitizePerformTypeCheck)
+      CGF.EmitTypeCheck(CodeGenFunction::TCK_DowncastPointer, CE->getExprLoc(),
+                        V, DestTy->getPointeeType());
+
+    return CGF.GetAddressOfDerivedClass(V, DerivedClassDecl,
                                         CE->path_begin(), CE->path_end(),
                                         ShouldNullCheckClassCastValue(CE));
   }
@@ -1536,7 +1543,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     // Add the inc/dec to the real part.
     llvm::Value *amt;
 
-    if (type->isHalfType()) {
+    if (type->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType) {
       // Another special case: half FP increment should be done via float
       value =
     Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16),
@@ -1558,7 +1565,7 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     }
     value = Builder.CreateFAdd(value, amt, isInc ? "inc" : "dec");
 
-    if (type->isHalfType())
+    if (type->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType)
       value =
        Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_to_fp16),
                           value);
@@ -2045,7 +2052,7 @@ Value *ScalarExprEmitter::EmitOverflowCheckedBinOp(const BinOpInfo &Ops) {
     if (!isSigned || CGF.SanOpts->SignedIntegerOverflow)
       EmitBinOpCheck(Builder.CreateNot(overflow), Ops);
     else
-      CGF.EmitTrapvCheck(Builder.CreateNot(overflow));
+      CGF.EmitTrapCheck(Builder.CreateNot(overflow));
     return result;
   }
 

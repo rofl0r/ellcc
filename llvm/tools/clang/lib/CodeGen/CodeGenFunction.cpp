@@ -43,8 +43,9 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
     FirstBlockInfo(0), EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
     DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
     IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
-    CXXABIThisDecl(0), CXXABIThisValue(0), CXXThisValue(0), CXXVTTDecl(0),
-    CXXVTTValue(0), OutermostConditional(0), TerminateLandingPad(0),
+    CXXABIThisDecl(0), CXXABIThisValue(0), CXXThisValue(0),
+    CXXStructorImplicitParamDecl(0), CXXStructorImplicitParamValue(0),
+    OutermostConditional(0), TerminateLandingPad(0),
     TerminateHandler(0), TrapBB(0) {
   if (!suppressNewContext)
     CGM.getCXXABI().getMangleContext().startNewFunction();
@@ -144,6 +145,8 @@ void CodeGenFunction::EmitReturnBlock() {
     if (BI && BI->isUnconditional() &&
         BI->getSuccessor(0) == ReturnBlock.getBlock()) {
       // Reset insertion point, including debug location, and delete the branch.
+      // This is really subtle & only works because the next change in location
+      // will hit the caching in CGDebugInfo::EmitLocation & not override this.
       Builder.SetCurrentDebugLocation(BI->getDebugLoc());
       Builder.SetInsertPoint(BI->getParent());
       BI->eraseFromParent();
@@ -170,6 +173,9 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
   assert(BreakContinueStack.empty() &&
          "mismatched push/pop in break/continue stack!");
 
+  if (CGDebugInfo *DI = getDebugInfo())
+    DI->EmitLocation(Builder, EndLoc);
+
   // Pop any cleanups that might have been associated with the
   // parameters.  Do this in whatever block we're currently in; it's
   // important to do this before we enter the return block or return
@@ -185,7 +191,6 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
 
   // Emit debug descriptor for function end.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    DI->setLocation(EndLoc);
     DI->EmitFunctionEnd(Builder);
   }
 
@@ -486,7 +491,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
 void CodeGenFunction::EmitFunctionBody(FunctionArgList &Args) {
   const FunctionDecl *FD = cast<FunctionDecl>(CurGD.getDecl());
   assert(FD->getBody());
-  EmitStmt(FD->getBody());
+  if (const CompoundStmt *S = dyn_cast<CompoundStmt>(FD->getBody()))
+    EmitCompoundStmtWithoutScope(*S);
+  else
+    EmitStmt(FD->getBody());
 }
 
 /// Tries to mark the given function nounwind based on the

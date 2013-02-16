@@ -15,6 +15,7 @@
 #define ASAN_INTERNAL_H
 
 #include "asan_flags.h"
+#include "asan_interface_internal.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_internal_defs.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
@@ -53,7 +54,7 @@
 
 #define ASAN_POSIX (ASAN_LINUX || ASAN_MAC)
 
-#if __has_feature(address_sanitizer)
+#if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
 # error "The AddressSanitizer run-time should not be"
         " instrumented by AddressSanitizer"
 #endif

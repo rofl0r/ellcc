@@ -126,11 +126,13 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
 // direct reference.
 void MBlazeRegisterInfo::
 eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
-                    RegScavenger *RS) const {
+                    unsigned FIOperandNum, RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
   MachineFrameInfo *MFI = MF.getFrameInfo();
+  unsigned OFIOperandNum = FIOperandNum == 2 ? 1 : 2;
 
+#if RICH
   unsigned i = 0;
   while (!MI.getOperand(i).isFI()) {
     ++i;
@@ -145,10 +147,11 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
       case 0: oi = 1; break;
       case 1: oi = 2; break;
   }
+#endif
   DEBUG(dbgs() << "\nFunction : " << MF.getName() << "\n";
         dbgs() << "<--------->\n" << MI);
 
-  int FrameIndex = MI.getOperand(i).getIndex();
+  int FrameIndex = MI.getOperand(FIOperandNum).getIndex();
   int stackSize  = MFI->getStackSize();
   int spOffset   = MFI->getObjectOffset(FrameIndex);
 
@@ -164,15 +167,20 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   // as explained on LowerFormalArguments, detect negative offsets
   // and adjust SPOffsets considering the final stack size.
   int Offset = (spOffset < 0) ? (stackSize - spOffset) : spOffset;
-  Offset += MI.getOperand(oi).getImm();
+  Offset += MI.getOperand(OFIOperandNum).getImm();
 
   DEBUG(dbgs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
+#if RICH
   unsigned FR = getFrameRegister(MF);
   if (FrameIndex < 0 && spOffset >= 0)
     FR = MBlaze::R1;    // Use SP to save parameters on the stack.
   MI.getOperand(oi).ChangeToImmediate(Offset);
   MI.getOperand(i).ChangeToRegister(FR, false);
+#else
+  MI.getOperand(OFIOperandNum).ChangeToImmediate(Offset);
+  MI.getOperand(FIOperandNum).ChangeToRegister(getFrameRegister(MF), false);
+#endif
 }
 
 void MBlazeRegisterInfo::

@@ -79,7 +79,7 @@ void CGDebugInfo::setLocation(SourceLocation Loc) {
     llvm::MDNode *N = D;
     LexicalBlockStack.pop_back();
     LexicalBlockStack.push_back(N);
-  } else if (Scope.isLexicalBlock()) {
+  } else if (Scope.isLexicalBlock() || Scope.isSubprogram()) {
     llvm::DIDescriptor D
       = DBuilder.createLexicalBlockFile(Scope, getOrCreateFile(CurLoc));
     llvm::MDNode *N = D;
@@ -426,6 +426,11 @@ llvm::DIType CGDebugInfo::CreateType(const BuiltinType *BT) {
   case BuiltinType::OCLImage3d:
     return getOrCreateStructPtrType("opencl_image3d_t",
                                     OCLImage3dDITy);
+  case BuiltinType::OCLSampler:
+    return DBuilder.createBasicType("opencl_sampler_t",
+                                    CGM.getContext().getTypeSize(BT),
+                                    CGM.getContext().getTypeAlign(BT),
+                                    llvm::dwarf::DW_ATE_unsigned);
   case BuiltinType::OCLEvent:
     return getOrCreateStructPtrType("opencl_event_t",
                                     OCLEventDITy);
@@ -1697,12 +1702,14 @@ llvm::DIType CGDebugInfo::CreateEnumType(const EnumDecl *ED) {
   return DbgTy;
 }
 
-static QualType UnwrapTypeForDebugInfo(QualType T) {
+static QualType UnwrapTypeForDebugInfo(QualType T, const ASTContext &C) {
+  Qualifiers Quals;
   do {
+    Quals += T.getLocalQualifiers();
     QualType LastT = T;
     switch (T->getTypeClass()) {
     default:
-      return T;
+      return C.getQualifiedType(T.getTypePtr(), Quals);
     case Type::TemplateSpecialization:
       T = cast<TemplateSpecializationType>(T)->desugar();
       break;
@@ -1727,13 +1734,8 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
     case Type::Paren:
       T = cast<ParenType>(T)->getInnerType();
       break;
-    case Type::SubstTemplateTypeParm: {
-      // We need to keep the qualifiers handy since getReplacementType()
-      // will strip them away.
-      unsigned Quals = T.getLocalFastQualifiers();
+    case Type::SubstTemplateTypeParm:
       T = cast<SubstTemplateTypeParmType>(T)->getReplacementType();
-      T.addFastQualifiers(Quals);
-    }
       break;
     case Type::Auto:
       T = cast<AutoType>(T)->getDeducedType();
@@ -1741,8 +1743,7 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
     }
     
     assert(T != LastT && "Type unwrapping failed to unwrap!");
-    if (T == LastT)
-      return T;
+    (void)LastT;
   } while (true);
 }
 
@@ -1750,7 +1751,7 @@ static QualType UnwrapTypeForDebugInfo(QualType T) {
 llvm::DIType CGDebugInfo::getTypeOrNull(QualType Ty) {
 
   // Unwrap the type as needed for debug information.
-  Ty = UnwrapTypeForDebugInfo(Ty);
+  Ty = UnwrapTypeForDebugInfo(Ty, CGM.getContext());
   
   // Check for existing entry.
   llvm::DenseMap<void *, llvm::WeakVH>::iterator it =
@@ -1769,7 +1770,7 @@ llvm::DIType CGDebugInfo::getTypeOrNull(QualType Ty) {
 llvm::DIType CGDebugInfo::getCompletedTypeOrNull(QualType Ty) {
 
   // Unwrap the type as needed for debug information.
-  Ty = UnwrapTypeForDebugInfo(Ty);
+  Ty = UnwrapTypeForDebugInfo(Ty, CGM.getContext());
 
   // Check for existing entry.
   llvm::DenseMap<void *, llvm::WeakVH>::iterator it =
@@ -1791,7 +1792,7 @@ llvm::DIType CGDebugInfo::getOrCreateType(QualType Ty, llvm::DIFile Unit) {
     return llvm::DIType();
 
   // Unwrap the type as needed for debug information.
-  Ty = UnwrapTypeForDebugInfo(Ty);
+  Ty = UnwrapTypeForDebugInfo(Ty, CGM.getContext());
 
   llvm::DIType T = getCompletedTypeOrNull(Ty);
 
@@ -1903,7 +1904,7 @@ llvm::DIType CGDebugInfo::getOrCreateLimitedType(QualType Ty,
     return llvm::DIType();
 
   // Unwrap the type as needed for debug information.
-  Ty = UnwrapTypeForDebugInfo(Ty);
+  Ty = UnwrapTypeForDebugInfo(Ty, CGM.getContext());
 
   llvm::DIType T = getTypeOrNull(Ty);
 
@@ -2209,7 +2210,9 @@ void CGDebugInfo::EmitLocation(CGBuilderTy &Builder, SourceLocation Loc) {
   if (CurLoc == PrevLoc ||
       SM.getExpansionLoc(CurLoc) == SM.getExpansionLoc(PrevLoc))
     // New Builder may not be in sync with CGDebugInfo.
-    if (!Builder.getCurrentDebugLocation().isUnknown())
+    if (!Builder.getCurrentDebugLocation().isUnknown() &&
+        Builder.getCurrentDebugLocation().getScope(CGM.getLLVMContext()) ==
+          LexicalBlockStack.back())
       return;
   
   // Update last state.

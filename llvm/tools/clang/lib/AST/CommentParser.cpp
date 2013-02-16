@@ -11,6 +11,7 @@
 #include "clang/AST/CommentCommandTraits.h"
 #include "clang/AST/CommentDiagnostic.h"
 #include "clang/AST/CommentSema.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -107,11 +108,6 @@ class TextTokenRetokenizer {
     if (Toks.size() == 1)
       setupBuffer();
     return true;
-  }
-
-  static bool isWhitespace(char C) {
-    return C == ' ' || C == '\n' || C == '\r' ||
-           C == '\t' || C == '\f' || C == '\v';
   }
 
   void consumeWhitespace() {
@@ -329,8 +325,7 @@ BlockCommandComment *Parser::parseBlockCommand() {
   }
   consumeToken();
 
-  if (Tok.is(tok::command) &&
-      Traits.getCommandInfo(Tok.getCommandID())->IsBlockCommand) {
+  if (isTokBlockCommand()) {
     // Block command ahead.  We can't nest block commands, so pretend that this
     // command has an empty argument.
     ParagraphComment *Paragraph = S.actOnParagraphComment(
@@ -362,10 +357,28 @@ BlockCommandComment *Parser::parseBlockCommand() {
     Retokenizer.putBackLeftoverTokens();
   }
 
-  BlockContentComment *Block = parseParagraphOrBlockCommand();
-  // Since we have checked for a block command, we should have parsed a
-  // paragraph.
-  ParagraphComment *Paragraph = cast<ParagraphComment>(Block);
+  // If there's a block command ahead, we will attach an empty paragraph to
+  // this command.
+  bool EmptyParagraph = false;
+  if (isTokBlockCommand())
+    EmptyParagraph = true;
+  else if (Tok.is(tok::newline)) {
+    Token PrevTok = Tok;
+    consumeToken();
+    EmptyParagraph = isTokBlockCommand();
+    putBack(PrevTok);
+  }
+
+  ParagraphComment *Paragraph;
+  if (EmptyParagraph)
+    Paragraph = S.actOnParagraphComment(ArrayRef<InlineContentComment *>());
+  else {
+    BlockContentComment *Block = parseParagraphOrBlockCommand();
+    // Since we have checked for a block command, we should have parsed a
+    // paragraph.
+    Paragraph = cast<ParagraphComment>(Block);
+  }
+
   if (IsParam) {
     S.actOnParamCommandFinish(PC, Paragraph);
     return PC;

@@ -48,7 +48,8 @@
 using namespace clang;
 
 CompilerInstance::CompilerInstance()
-  : Invocation(new CompilerInvocation()), ModuleManager(0) {
+  : Invocation(new CompilerInvocation()), ModuleManager(0),
+    BuildGlobalModuleIndex(false), ModuleBuildFailed(false) {
 }
 
 CompilerInstance::~CompilerInstance() {
@@ -57,6 +58,12 @@ CompilerInstance::~CompilerInstance() {
 
 void CompilerInstance::setInvocation(CompilerInvocation *Value) {
   Invocation = Value;
+}
+
+bool CompilerInstance::shouldBuildGlobalModuleIndex() const {
+  return (BuildGlobalModuleIndex ||
+          (ModuleManager && ModuleManager->isGlobalIndexUnavailable())) &&
+         !ModuleBuildFailed;
 }
 
 void CompilerInstance::setDiagnostics(DiagnosticsEngine *Value) {
@@ -236,6 +243,8 @@ void CompilerInstance::createPreprocessor() {
 
   InitializePreprocessor(*PP, PPOpts, getHeaderSearchOpts(), getFrontendOpts());
 
+  PP->setPreprocessedOutput(getPreprocessorOutputOpts().ShowCPP);
+
   // Set up the module path, including the hash for the
   // module-creation options.
   SmallString<256> SpecificModuleCache(
@@ -289,7 +298,8 @@ void CompilerInstance::createPCHExternalASTSource(StringRef Path,
                                           AllowPCHWithCompilerErrors,
                                           getPreprocessor(), getASTContext(),
                                           DeserializationListener,
-                                          Preamble));
+                                          Preamble,
+                                       getFrontendOpts().UseGlobalModuleIndex));
   ModuleManager = static_cast<ASTReader*>(Source.get());
   getASTContext().setExternalSource(Source);
 }
@@ -302,12 +312,14 @@ CompilerInstance::createPCHExternalASTSource(StringRef Path,
                                              Preprocessor &PP,
                                              ASTContext &Context,
                                              void *DeserializationListener,
-                                             bool Preamble) {
+                                             bool Preamble,
+                                             bool UseGlobalModuleIndex) {
   OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, Context,
                              Sysroot.empty() ? "" : Sysroot.c_str(),
                              DisablePCHValidation,
-                             AllowPCHWithCompilerErrors));
+                             AllowPCHWithCompilerErrors,
+                             UseGlobalModuleIndex));
 
   Reader->setDeserializationListener(
             static_cast<ASTDeserializationListener *>(DeserializationListener));
@@ -731,6 +743,23 @@ static void doCompileMapModule(void *UserData) {
   Data.Instance.ExecuteAction(Data.CreateModuleAction);
 }
 
+namespace {
+  /// \brief Function object that checks with the given macro definition should
+  /// be removed, because it is one of the ignored macros.
+  class RemoveIgnoredMacro {
+    const HeaderSearchOptions &HSOpts;
+
+  public:
+    explicit RemoveIgnoredMacro(const HeaderSearchOptions &HSOpts)
+      : HSOpts(HSOpts) { }
+
+    bool operator()(const std::pair<std::string, bool> &def) const {
+      StringRef MacroDef = def.first;
+      return HSOpts.ModulesIgnoreMacros.count(MacroDef.split('=').first) > 0;
+    }
+  };
+}
+
 /// \brief Compile a module file for the given module, using the options 
 /// provided by the importing compiler instance.
 static void compileModule(CompilerInstance &ImportingInstance,
@@ -767,6 +796,14 @@ static void compileModule(CompilerInstance &ImportingInstance,
   Invocation->getLangOpts()->resetNonModularOptions();
   PPOpts.resetNonModularOptions();
 
+  // Remove any macro definitions that are explicitly ignored by the module.
+  // They aren't supposed to affect how the module is built anyway.
+  const HeaderSearchOptions &HSOpts = Invocation->getHeaderSearchOpts();
+  PPOpts.Macros.erase(std::remove_if(PPOpts.Macros.begin(), PPOpts.Macros.end(),
+                                     RemoveIgnoredMacro(HSOpts)),
+                      PPOpts.Macros.end());
+
+
   // Note the name of the module we're building.
   Invocation->getLangOpts()->CurrentModule = Module->getTopLevelModuleName();
 
@@ -785,6 +822,7 @@ static void compileModule(CompilerInstance &ImportingInstance,
   FrontendOptions &FrontendOpts = Invocation->getFrontendOpts();
   FrontendOpts.OutputFile = ModuleFileName.str();
   FrontendOpts.DisableFree = false;
+  FrontendOpts.GenerateGlobalModuleIndex = false;
   FrontendOpts.Inputs.clear();
   InputKind IK = getSourceInputKindFromOptions(*Invocation->getLangOpts());
 
@@ -858,6 +896,12 @@ static void compileModule(CompilerInstance &ImportingInstance,
   Instance.clearOutputFiles(/*EraseFiles=*/true);
   if (!TempModuleMapFileName.empty())
     llvm::sys::Path(TempModuleMapFileName).eraseFromDisk();
+
+  // We've rebuilt a module. If we're allowed to generate or update the global
+  // module index, record that fact in the importing compiler instance.
+  if (ImportingInstance.getFrontendOpts().GenerateGlobalModuleIndex) {
+    ImportingInstance.setBuildGlobalModuleIndex(true);
+  }
 }
 
 ModuleLoadResult
@@ -871,7 +915,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   if (!ImportLoc.isInvalid() && LastModuleImportLoc == ImportLoc) {
     // Make the named module visible.
     if (LastModuleImportResult)
-      ModuleManager->makeModuleVisible(LastModuleImportResult, Visibility);
+      ModuleManager->makeModuleVisible(LastModuleImportResult, Visibility,
+                                       ImportLoc);
     return LastModuleImportResult;
   }
   
@@ -895,9 +940,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     // Search for a module with the given name.
     Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
     std::string ModuleFileName;
-    if (Module)
+    if (Module) {
       ModuleFileName = PP->getHeaderSearchInfo().getModuleFileName(Module);
-    else
+    } else
       ModuleFileName = PP->getHeaderSearchInfo().getModuleFileName(ModuleName);
 
     if (ModuleFileName.empty()) {
@@ -945,13 +990,14 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
         getDiagnostics().Report(ModuleNameLoc, diag::err_module_not_built)
           << ModuleName
           << SourceRange(ImportLoc, ModuleNameLoc);
-
+        ModuleBuildFailed = true;
         return ModuleLoadResult();
       }
 
       BuildingModule = true;
       compileModule(*this, ModuleNameLoc, Module, ModuleFileName);
-      ModuleFile = FileMgr->getFile(ModuleFileName);
+      ModuleFile = FileMgr->getFile(ModuleFileName, /*OpenFile=*/false,
+                                    /*CacheFailure=*/false);
 
       if (!ModuleFile && getPreprocessorOpts().FailedModules)
         getPreprocessorOpts().FailedModules->addFailed(ModuleName);
@@ -963,7 +1009,22 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
                                             : diag::err_module_not_found)
         << ModuleName
         << SourceRange(ImportLoc, ModuleNameLoc);
+      ModuleBuildFailed = true;
       return ModuleLoadResult();
+    }
+
+    // If there is already a module file associated with this module, make sure
+    // it is the same as the module file we're looking for. Otherwise, we
+    // have two module files for the same module.
+    if (const FileEntry *CurModuleFile = Module? Module->getASTFile() : 0) {
+      if (CurModuleFile != ModuleFile) {
+        getDiagnostics().Report(ModuleNameLoc, diag::err_module_file_conflict)
+          << ModuleName
+          << CurModuleFile->getName()
+          << ModuleFile->getName();
+        ModuleBuildFailed = true;
+        return ModuleLoadResult();
+      }
     }
 
     // If we don't already have an ASTReader, create one now.
@@ -975,7 +1036,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
       const PreprocessorOptions &PPOpts = getPreprocessorOpts();
       ModuleManager = new ASTReader(getPreprocessor(), *Context,
                                     Sysroot.empty() ? "" : Sysroot.c_str(),
-                                    PPOpts.DisablePCHValidation);
+                                    PPOpts.DisablePCHValidation,
+                                    /*AllowASTWithCompilerErrors=*/false,
+                                    getFrontendOpts().UseGlobalModuleIndex);
       if (hasASTConsumer()) {
         ModuleManager->setDeserializationListener(
           getASTConsumer().GetASTDeserializationListener());
@@ -1016,14 +1079,15 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
         getDiagnostics().Report(ModuleNameLoc, diag::err_module_not_built)
           << ModuleName
           << SourceRange(ImportLoc, ModuleNameLoc);
-
+        ModuleBuildFailed = true;
         return ModuleLoadResult();
       }
 
       compileModule(*this, ModuleNameLoc, Module, ModuleFileName);
 
       // Try loading the module again.
-      ModuleFile = FileMgr->getFile(ModuleFileName);
+      ModuleFile = FileMgr->getFile(ModuleFileName, /*OpenFile=*/false,
+                                    /*CacheFailure=*/false);
       if (!ModuleFile ||
           ModuleManager->ReadAST(ModuleFileName,
                                  serialization::MK_Module, ImportLoc,
@@ -1031,6 +1095,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
         if (getPreprocessorOpts().FailedModules)
           getPreprocessorOpts().FailedModules->addFailed(ModuleName);
         KnownModules[Path[0].first] = 0;
+        ModuleBuildFailed = true;
         return ModuleLoadResult();
       }
 
@@ -1049,6 +1114,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     case ASTReader::Failure:
       // Already complained, but note now that we failed.
       KnownModules[Path[0].first] = 0;
+      ModuleBuildFailed = true;
       return ModuleLoadResult();
     }
     
@@ -1059,8 +1125,9 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
                  .findModule((Path[0].first->getName()));
     }
 
-    if (Module)
+    if (Module) {
       Module->setASTFile(ModuleFile);
+    }
     
     // Cache the result of this top-level module lookup for later.
     Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
@@ -1153,7 +1220,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
       return ModuleLoadResult();
     }
 
-    ModuleManager->makeModuleVisible(Module, Visibility);
+    ModuleManager->makeModuleVisible(Module, Visibility, ImportLoc);
   }
   
   // If this module import was due to an inclusion directive, create an 
@@ -1174,7 +1241,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
 }
 
 void CompilerInstance::makeModuleVisible(Module *Mod,
-                                         Module::NameVisibilityKind Visibility){
-  ModuleManager->makeModuleVisible(Mod, Visibility);
+                                         Module::NameVisibilityKind Visibility,
+                                         SourceLocation ImportLoc){
+  ModuleManager->makeModuleVisible(Mod, Visibility, ImportLoc);
 }
 

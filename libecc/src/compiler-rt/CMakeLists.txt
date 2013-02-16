@@ -50,15 +50,8 @@ else()
   set(TARGET_32_BIT_CFLAGS "-m32")
 endif()
 
-# FIXME: Below we assume that the target build of LLVM/Clang is x86, which is
-# not at all valid. Much of this can be fixed just by switching to use
-# a just-built-clang binary for the compiles.
-
-set(TARGET_x86_64_CFLAGS ${TARGET_64_BIT_CFLAGS})
-set(TARGET_i386_CFLAGS ${TARGET_32_BIT_CFLAGS})
-
-set(COMPILER_RT_SUPPORTED_ARCH
-  x86_64 i386)
+# List of architectures we can target.
+set(COMPILER_RT_SUPPORTED_ARCH)
 
 function(get_target_flags_for_arch arch out_var)
   list(FIND COMPILER_RT_SUPPORTED_ARCH ${arch} ARCH_INDEX)
@@ -73,17 +66,31 @@ endfunction()
 # platform. We use the results of these tests to build only the various target
 # runtime libraries supported by our current compilers cross-compiling
 # abilities.
-set(SIMPLE_SOURCE64 ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple64.c)
-file(WRITE ${SIMPLE_SOURCE64} "#include <stdlib.h>\nint main() {}")
-try_compile(CAN_TARGET_x86_64 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE64}
-            COMPILE_DEFINITIONS "${TARGET_x86_64_CFLAGS}"
-            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_x86_64_CFLAGS}")
+set(SIMPLE_SOURCE ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple.c)
+file(WRITE ${SIMPLE_SOURCE} "#include <stdlib.h>\nint main() {}")
 
-set(SIMPLE_SOURCE32 ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/simple32.c)
-file(WRITE ${SIMPLE_SOURCE32} "#include <stdlib.h>\nint main() {}")
-try_compile(CAN_TARGET_i386 ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE32}
-            COMPILE_DEFINITIONS "${TARGET_i386_CFLAGS}"
-            CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_i386_CFLAGS}")
+# test_target_arch(<arch> <target flags...>)
+# Sets the target flags for a given architecture and determines if this
+# architecture is supported by trying to build a simple file.
+macro(test_target_arch arch)
+  set(TARGET_${arch}_CFLAGS ${ARGN})
+  try_compile(CAN_TARGET_${arch} ${CMAKE_BINARY_DIR} ${SIMPLE_SOURCE}
+              COMPILE_DEFINITIONS "${TARGET_${arch}_CFLAGS}"
+              CMAKE_FLAGS "-DCMAKE_EXE_LINKER_FLAGS:STRING=${TARGET_${arch}_CFLAGS}")
+  if(${CAN_TARGET_${arch}})
+    list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
+  endif()
+endmacro()
+
+if("${LLVM_NATIVE_ARCH}" STREQUAL "X86")
+  test_target_arch(x86_64 ${TARGET_64_BIT_CFLAGS})
+  test_target_arch(i386 ${TARGET_32_BIT_CFLAGS})
+elseif("${LLVM_NATIVE_ARCH}" STREQUAL "PowerPC")
+  # Explicitly set -m flag on powerpc, because on ppc64 defaults for gcc and
+  # clang are different.
+  test_target_arch(powerpc64 "-m64")
+  test_target_arch(powerpc "-m32")
+endif()
 
 # We only support running instrumented tests when we're not cross compiling
 # and target a unix-like system. On Android we define the rules for building
@@ -94,6 +101,10 @@ else()
   set(COMPILER_RT_CAN_EXECUTE_TESTS FALSE)
 endif()
     
+# Check if compiler-rt is built with libc++.
+find_flag_in_string("${CMAKE_CXX_FLAGS}" "-stdlib=libc++"
+                    COMPILER_RT_USES_LIBCXX)
+
 function(filter_available_targets out_var)
   set(archs)
   foreach(arch ${ARGN})
@@ -133,14 +144,55 @@ check_cxx_compiler_flag(-Wno-c99-extensions SUPPORTS_NO_C99_EXTENSIONS_FLAG)
 if(SUPPORTS_NO_C99_EXTENSIONS_FLAG)
   list(APPEND SANITIZER_COMMON_CFLAGS -Wno-c99-extensions)
 endif()
+
+# Setup min Mac OS X version.
 if(APPLE)
-  list(APPEND SANITIZER_COMMON_CFLAGS -mmacosx-version-min=10.5)
+  if(COMPILER_RT_USES_LIBCXX)
+    set(SANITIZER_MIN_OSX_VERSION 10.7)
+  else()
+    set(SANITIZER_MIN_OSX_VERSION 10.5)
+  endif()
+  list(APPEND SANITIZER_COMMON_CFLAGS
+    -mmacosx-version-min=${SANITIZER_MIN_OSX_VERSION})
 endif()
 
 # Architectures supported by Sanitizer runtimes. Specific sanitizers may
 # support only subset of these (e.g. TSan works on x86_64 only).
 filter_available_targets(SANITIZER_COMMON_SUPPORTED_ARCH
-  x86_64 i386)
+  x86_64 i386 powerpc64 powerpc)
+
+file(GLOB_RECURSE COMPILER_RT_HEADERS
+  RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "include/*.h")
+
+set(output_dir ${LLVM_BINARY_DIR}/lib/clang/${CLANG_VERSION}/include)
+
+if(MSVC_IDE OR XCODE)
+   set(other_output_dir ${LLVM_BINARY_DIR}/bin/lib/clang/${CLANG_VERSION}/include)
+endif()
+
+# Copy compiler-rt headers to the build tree.
+set(out_files)
+foreach( f ${COMPILER_RT_HEADERS} )
+  set( src ${CMAKE_CURRENT_SOURCE_DIR}/include/${f} )
+  set( dst ${output_dir}/${f} )
+  add_custom_command(OUTPUT ${dst}
+    DEPENDS ${src}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${src} ${dst}
+    COMMENT "Copying compiler-rt's ${f}...")
+  list(APPEND out_files ${dst})
+
+  if(other_output_dir)
+   set(other_dst ${other_output_dir}/${f})
+    add_custom_command(OUTPUT ${other_dst}
+      DEPENDS ${src}
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${src} ${other_dst}
+      COMMENT "Copying compiler-rt's ${f}...")    
+    list(APPEND out_files ${other_dst})
+  endif()
+endforeach( f )
+
+add_custom_target(compiler-rt-headers ALL DEPENDS ${out_files})
 
 # Install compiler-rt headers.
 install(DIRECTORY include/
@@ -149,19 +201,6 @@ install(DIRECTORY include/
   PATTERN "*.h"
   PATTERN ".svn" EXCLUDE
   )
-
-# Call add_clang_compiler_rt_libraries to make sure that targets are built
-# and installed in the directories where Clang driver expects to find them.
-macro(add_clang_compiler_rt_libraries)
-  # Setup output directories so that clang in build tree works.
-  set_target_properties(${ARGN} PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
-    LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-  # Add installation command.
-  install(TARGETS ${ARGN}
-    ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR}
-    LIBRARY DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
-endmacro(add_clang_compiler_rt_libraries)
 
 # Add the public header's directory to the includes for all of compiler-rt.
 include_directories(include)

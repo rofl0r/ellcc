@@ -54,11 +54,20 @@ protected:
     return CGF.CXXABIThisValue;
   }
 
+  // FIXME: Every place that calls getVTT{Decl,Value} is something
+  // that needs to be abstracted properly.
   ImplicitParamDecl *&getVTTDecl(CodeGenFunction &CGF) {
-    return CGF.CXXVTTDecl;
+    return CGF.CXXStructorImplicitParamDecl;
   }
   llvm::Value *&getVTTValue(CodeGenFunction &CGF) {
-    return CGF.CXXVTTValue;
+    return CGF.CXXStructorImplicitParamValue;
+  }
+
+  ImplicitParamDecl *&getStructorImplicitParamDecl(CodeGenFunction &CGF) {
+    return CGF.CXXStructorImplicitParamDecl;
+  }
+  llvm::Value *&getStructorImplicitParamValue(CodeGenFunction &CGF) {
+    return CGF.CXXStructorImplicitParamValue;
   }
 
   /// Build a parameter variable suitable for 'this'.
@@ -198,6 +207,14 @@ public:
   /// Emit the ABI-specific prolog for the function.
   virtual void EmitInstanceFunctionProlog(CodeGenFunction &CGF) = 0;
 
+  /// Emit the ABI-specific virtual destructor call.
+  virtual RValue EmitVirtualDestructorCall(CodeGenFunction &CGF,
+                                           const CXXDestructorDecl *Dtor,
+                                           CXXDtorType DtorType,
+                                           SourceLocation CallLoc,
+                                           ReturnValueSlot ReturnValue,
+                                           llvm::Value *This) = 0;
+
   virtual void EmitReturnFromThunk(CodeGenFunction &CGF,
                                    RValue RV, QualType ResultType);
 
@@ -294,16 +311,14 @@ public:
   /// \param addr - a pointer to pass to the destructor function.
   virtual void registerGlobalDtor(CodeGenFunction &CGF, llvm::Constant *dtor,
                                   llvm::Constant *addr);
-
-  /***************************** Virtual Tables *******************************/
-
-  /// Generates and emits the virtual tables for a class.
-  virtual void EmitVTables(const CXXRecordDecl *Class) = 0;
 };
 
-/// Creates an instance of a C++ ABI class.
-CGCXXABI *CreateARMCXXABI(CodeGenModule &CGM);
+// Create an instance of a C++ ABI class:
+
+/// Creates an Itanium-family ABI.
 CGCXXABI *CreateItaniumCXXABI(CodeGenModule &CGM);
+
+/// Creates a Microsoft-family ABI.
 CGCXXABI *CreateMicrosoftCXXABI(CodeGenModule &CGM);
 
 }

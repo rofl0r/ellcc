@@ -18,12 +18,16 @@
 #include "interception/interception.h"
 #include "msan.h"
 #include "msan_platform_limits_posix.h"
+#include "sanitizer_common/sanitizer_allocator.h"
 #include "sanitizer_common/sanitizer_common.h"
+#include "sanitizer_common/sanitizer_stackdepot.h"
 #include "sanitizer_common/sanitizer_libc.h"
 
 #include <stdarg.h>
 // ACHTUNG! No other system header includes in this file.
 // Ideally, we should get rid of stdarg.h as well.
+
+extern "C" const int __msan_keep_going;
 
 using namespace __msan;
 
@@ -37,6 +41,7 @@ using namespace __msan;
 #define CHECK_UNPOISONED(x, n) \
   do { \
     sptr offset = __msan_test_shadow(x, n);                 \
+    if (__msan::IsInSymbolizer()) break;                    \
     if (offset >= 0 && flags()->report_umrs) {              \
       GET_CALLER_PC_BP_SP;                                  \
       (void)sp;                                             \
@@ -44,6 +49,10 @@ using namespace __msan;
              __FUNCTION__, offset, x, n);                   \
       __msan::PrintWarningWithOrigin(                       \
         pc, bp, __msan_get_origin((char*)x + offset));      \
+      if (!__msan_keep_going) {                             \
+        Printf("Exiting\n");                                \
+        Die();                                              \
+      }                                                     \
     }                                                       \
   } while (0)
 
@@ -506,6 +515,8 @@ INTERCEPTOR(int, wait, int *status) {
 }
 
 INTERCEPTOR(int, waitpid, int pid, int *status, int options) {
+  if (msan_init_is_running)
+    return REAL(waitpid)(pid, status, options);
   ENSURE_MSAN_INITED();
   int res = REAL(waitpid)(pid, status, options);
   if (status)
@@ -533,7 +544,7 @@ INTERCEPTOR(char *, getcwd, char *buf, SIZE_T size) {
   ENSURE_MSAN_INITED();
   char *res = REAL(getcwd)(buf, size);
   if (res)
-    __msan_unpoison(buf, REAL(strlen)(buf) + 1);
+    __msan_unpoison(res, REAL(strlen)(res) + 1);
   return res;
 }
 
@@ -606,6 +617,18 @@ INTERCEPTOR(int, uname, void *utsname) {
   return res;
 }
 
+INTERCEPTOR(int, gethostname, char *name, SIZE_T len) {
+  ENSURE_MSAN_INITED();
+  int res = REAL(gethostname)(name, len);
+  if (!res) {
+    SIZE_T real_len = REAL(strnlen)(name, len);
+    if (real_len < len)
+      ++real_len;
+    __msan_unpoison(name, real_len);
+  }
+  return res;
+}
+
 INTERCEPTOR(int, epoll_wait, int epfd, void *events, int maxevents,
     int timeout) {
   ENSURE_MSAN_INITED();
@@ -663,6 +686,7 @@ INTERCEPTOR(SSIZE_T, recvmsg, int fd, struct msghdr *msg, int flags) {
 }
 
 INTERCEPTOR(void *, calloc, SIZE_T nmemb, SIZE_T size) {
+  if (CallocShouldReturnNullDueToOverflow(size, nmemb)) return 0;
   GET_MALLOC_STACK_TRACE;
   if (!msan_inited) {
     // Hack: dlsym calls calloc before REAL(calloc) is retrieved from dlsym.
@@ -686,6 +710,18 @@ INTERCEPTOR(void *, realloc, void *ptr, SIZE_T size) {
 INTERCEPTOR(void *, malloc, SIZE_T size) {
   GET_MALLOC_STACK_TRACE;
   return MsanReallocate(&stack, 0, size, sizeof(u64), false);
+}
+
+void __msan_allocated_memory(void* data, uptr size) {
+  GET_MALLOC_STACK_TRACE;
+  if (flags()->poison_in_malloc)
+    __msan_poison(data, size);
+  if (__msan_get_track_origins()) {
+    u32 stack_id = StackDepotPut(stack.trace, stack.size);
+    CHECK(stack_id);
+    CHECK_EQ((stack_id >> 31), 0);  // Higher bit is occupied by stack origins.
+    __msan_set_origin(data, size, stack_id);
+  }
 }
 
 INTERCEPTOR(void *, mmap, void *addr, SIZE_T length, int prot, int flags,
@@ -930,6 +966,7 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(statfs64);
   INTERCEPT_FUNCTION(fstatfs64);
   INTERCEPT_FUNCTION(uname);
+  INTERCEPT_FUNCTION(gethostname);
   INTERCEPT_FUNCTION(epoll_wait);
   INTERCEPT_FUNCTION(epoll_pwait);
   INTERCEPT_FUNCTION(recv);

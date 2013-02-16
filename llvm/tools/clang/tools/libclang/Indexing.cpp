@@ -33,7 +33,6 @@
 #include "llvm/Support/MutexGuard.h"
 
 using namespace clang;
-using namespace cxstring;
 using namespace cxtu;
 using namespace cxindex;
 
@@ -55,7 +54,8 @@ class SessionSkipBodyData { };
 class TUSkipBodyControl {
 public:
   TUSkipBodyControl(SessionSkipBodyData &sessionData,
-                    PPConditionalDirectiveRecord &ppRec) { }
+                    PPConditionalDirectiveRecord &ppRec,
+                    Preprocessor &pp) { }
   bool isParsed(SourceLocation Loc, FileID FID, const FileEntry *FE) {
     return false;
   }
@@ -759,7 +759,7 @@ static void clang_indexTranslationUnit_Impl(void *UserData) {
   if (!client_index_callbacks || index_callbacks_size == 0)
     return;
 
-  CIndexer *CXXIdx = (CIndexer*)TU->CIdx;
+  CIndexer *CXXIdx = TU->CIdx;
   if (CXXIdx->isOptEnabled(CXGlobalOpt_ThreadBackgroundPriorityForIndexing))
     setThreadBackgroundPriority();
 
@@ -783,7 +783,7 @@ static void clang_indexTranslationUnit_Impl(void *UserData) {
   llvm::CrashRecoveryContextCleanupRegistrar<IndexingConsumer>
     IndexConsumerCleanup(IndexConsumer.get());
 
-  ASTUnit *Unit = static_cast<ASTUnit *>(TU->TUData);
+  ASTUnit *Unit = cxtu::getASTUnit(TU);
   if (!Unit)
     return;
 

@@ -354,6 +354,10 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   TTI = getAnalysisIfAvailable<TargetTransformInfo>();
   GFI = Fn.hasGC() ? &getAnalysis<GCModuleInfo>().getFunctionInfo(Fn) : 0;
 
+  TargetSubtargetInfo &ST =
+    const_cast<TargetSubtargetInfo&>(TM.getSubtarget<TargetSubtargetInfo>());
+  ST.resetSubtargetFeatures(MF);
+
   DEBUG(dbgs() << "\n\n\n=== " << Fn.getName() << "\n");
 
   SplitCriticalSideEffectEdges(const_cast<Function&>(Fn), this);
@@ -1032,10 +1036,6 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
     if (FuncInfo->MBB->isLandingPad())
       PrepareEHLandingPad();
 
-    // Lower any arguments needed in this block if this is the entry block.
-    if (LLVMBB == &Fn.getEntryBlock())
-      LowerArguments(LLVMBB);
-
     // Before doing SelectionDAG ISel, see if FastISel has been requested.
     if (FastIS) {
       FastIS->startNewBlock();
@@ -1043,9 +1043,15 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
       // Emit code for any incoming arguments. This must happen before
       // beginning FastISel on the entry block.
       if (LLVMBB == &Fn.getEntryBlock()) {
-        CurDAG->setRoot(SDB->getControlRoot());
-        SDB->clear();
-        CodeGenAndEmitDAG();
+        // Lower any arguments needed in this block if this is the entry block.
+        if (!FastIS->LowerArguments()) {
+          // Call target indepedent SDISel argument lowering code if the target
+          // specific routine is not successful.
+          LowerArguments(LLVMBB);
+          CurDAG->setRoot(SDB->getControlRoot());
+          SDB->clear();
+          CodeGenAndEmitDAG();
+        }
 
         // If we inserted any instructions at the beginning, make a note of
         // where they are, so we can be sure to emit subsequent instructions
@@ -1156,6 +1162,10 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
       }
 
       FastIS->recomputeInsertPt();
+    } else {
+      // Lower any arguments needed in this block if this is the entry block.
+      if (LLVMBB == &Fn.getEntryBlock())
+        LowerArguments(LLVMBB);
     }
 
     if (Begin != BI)

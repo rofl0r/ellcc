@@ -196,6 +196,11 @@ static bool useInlineVisibilityHidden(const NamedDecl *D) {
     FD->hasBody(Def) && Def->isInlined() && !Def->hasAttr<GNUInlineAttr>();
 }
 
+template <typename T> static bool isInExternCContext(T *D) {
+  const T *First = D->getFirstDeclaration();
+  return First->getDeclContext()->isExternCContext();
+}
+
 static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D,
                                               bool OnlyTemplate) {
   assert(D->getDeclContext()->getRedeclContext()->isFileContext() &&
@@ -262,8 +267,8 @@ static LinkageInfo getLVForNamespaceScopeDecl(const NamedDecl *D,
   if (D->isInAnonymousNamespace()) {
     const VarDecl *Var = dyn_cast<VarDecl>(D);
     const FunctionDecl *Func = dyn_cast<FunctionDecl>(D);
-    if ((!Var || !Var->hasCLanguageLinkage()) &&
-        (!Func || !Func->hasCLanguageLinkage()))
+    if ((!Var || !isInExternCContext(Var)) &&
+        (!Func || !isInExternCContext(Func)))
       return LinkageInfo::uniqueExternal();
   }
 
@@ -587,8 +592,7 @@ void NamedDecl::ClearLinkageCache() {
   if (const CXXRecordDecl *record = dyn_cast<CXXRecordDecl>(this))
     clearLinkageForClass(record);
 
-  if (ClassTemplateDecl *temp =
-        dyn_cast<ClassTemplateDecl>(const_cast<NamedDecl*>(this))) {
+  if (ClassTemplateDecl *temp = dyn_cast<ClassTemplateDecl>(this)) {
     // Clear linkage for the template pattern.
     CXXRecordDecl *record = temp->getTemplatedDecl();
     record->HasCachedLinkage = 0;
@@ -601,8 +605,7 @@ void NamedDecl::ClearLinkageCache() {
   }
 
   // Clear cached linkage for function template decls, too.
-  if (FunctionTemplateDecl *temp =
-        dyn_cast<FunctionTemplateDecl>(const_cast<NamedDecl*>(this))) {
+  if (FunctionTemplateDecl *temp = dyn_cast<FunctionTemplateDecl>(this)) {
     temp->getTemplatedDecl()->ClearLinkageCache();
     for (FunctionTemplateDecl::spec_iterator
            i = temp->spec_begin(), e = temp->spec_end(); i != e; ++i)
@@ -612,11 +615,8 @@ void NamedDecl::ClearLinkageCache() {
 }
 
 Linkage NamedDecl::getLinkage() const {
-  if (HasCachedLinkage) {
-    assert(Linkage(CachedLinkage) ==
-           getLVForDecl(this, true).linkage());
+  if (HasCachedLinkage)
     return Linkage(CachedLinkage);
-  }
 
   CachedLinkage = getLVForDecl(this, true).linkage();
   HasCachedLinkage = 1;
@@ -1206,50 +1206,45 @@ void VarDecl::setStorageClass(StorageClass SC) {
 SourceRange VarDecl::getSourceRange() const {
   if (const Expr *Init = getInit()) {
     SourceLocation InitEnd = Init->getLocEnd();
-    if (InitEnd.isValid())
+    // If Init is implicit, ignore its source range and fallback on 
+    // DeclaratorDecl::getSourceRange() to handle postfix elements.
+    if (InitEnd.isValid() && InitEnd != getLocation())
       return SourceRange(getOuterLocStart(), InitEnd);
   }
   return DeclaratorDecl::getSourceRange();
 }
 
 template<typename T>
-static bool hasCLanguageLinkageTemplate(const T &D) {
-  // Language linkage is a C++ concept, but saying that everything in C has
+static LanguageLinkage getLanguageLinkageTemplate(const T &D) {
+  // C++ [dcl.link]p1: All function types, function names with external linkage,
+  // and variable names with external linkage have a language linkage.
+  if (!isExternalLinkage(D.getLinkage()))
+    return NoLanguageLinkage;
+
+  // Language linkage is a C++ concept, but saying that everything else in C has
   // C language linkage fits the implementation nicely.
   ASTContext &Context = D.getASTContext();
   if (!Context.getLangOpts().CPlusPlus)
-    return true;
+    return CLanguageLinkage;
 
-  // dcl.link 4: A C language linkage is ignored in determining the language
-  // linkage of the names of class members and the function type of class member
-  // functions.
+  // C++ [dcl.link]p4: A C language linkage is ignored in determining the
+  // language linkage of the names of class members and the function type of
+  // class member functions.
   const DeclContext *DC = D.getDeclContext();
   if (DC->isRecord())
-    return false;
+    return CXXLanguageLinkage;
 
   // If the first decl is in an extern "C" context, any other redeclaration
   // will have C language linkage. If the first one is not in an extern "C"
   // context, we would have reported an error for any other decl being in one.
   const T *First = D.getFirstDeclaration();
-  return First->getDeclContext()->isExternCContext();
+  if (First->getDeclContext()->isExternCContext())
+    return CLanguageLinkage;
+  return CXXLanguageLinkage;
 }
 
-bool VarDecl::hasCLanguageLinkage() const {
-  return hasCLanguageLinkageTemplate(*this);
-}
-
-bool VarDecl::isExternC() const {
-  if (getLinkage() != ExternalLinkage)
-    return false;
-
-  const DeclContext *DC = getDeclContext();
-  if (DC->isRecord())
-    return false;
-
-  ASTContext &Context = getASTContext();
-  if (!Context.getLangOpts().CPlusPlus)
-    return true;
-  return DC->isExternCContext();
+LanguageLinkage VarDecl::getLanguageLinkage() const {
+  return getLanguageLinkageTemplate(*this);
 }
 
 VarDecl *VarDecl::getCanonicalDecl() {
@@ -1760,32 +1755,14 @@ bool FunctionDecl::isReservedGlobalPlacementOperator() const {
   return (proto->getArgType(1).getCanonicalType() == Context.VoidPtrTy);
 }
 
-bool FunctionDecl::hasCLanguageLinkage() const {
+LanguageLinkage FunctionDecl::getLanguageLinkage() const {
   // Users expect to be able to write
   // extern "C" void *__builtin_alloca (size_t);
   // so consider builtins as having C language linkage.
   if (getBuiltinID())
-    return true;
+    return CLanguageLinkage;
 
-  return hasCLanguageLinkageTemplate(*this);
-}
-
-bool FunctionDecl::isExternC() const {
-  if (getLinkage() != ExternalLinkage)
-    return false;
-
-  if (getAttr<OverloadableAttr>())
-    return false;
-
-  const DeclContext *DC = getDeclContext();
-  if (DC->isRecord())
-    return false;
-
-  ASTContext &Context = getASTContext();
-  if (!Context.getLangOpts().CPlusPlus)
-    return true;
-
-  return isMain() || DC->isExternCContext();
+  return getLanguageLinkageTemplate(*this);
 }
 
 bool FunctionDecl::isGlobal() const {
@@ -1810,6 +1787,7 @@ bool FunctionDecl::isGlobal() const {
 
 bool FunctionDecl::isNoReturn() const {
   return hasAttr<NoReturnAttr>() || hasAttr<CXX11NoReturnAttr>() ||
+         hasAttr<C11NoReturnAttr>() ||
          getType()->getAs<FunctionType>()->getNoReturnAttr();
 }
 
@@ -1960,38 +1938,6 @@ unsigned FunctionDecl::getMinRequiredArguments() const {
   return NumRequiredArgs;
 }
 
-bool FunctionDecl::isInlined() const {
-  if (IsInline)
-    return true;
-  
-  if (isa<CXXMethodDecl>(this)) {
-    if (!isOutOfLine() || getCanonicalDecl()->isInlineSpecified())
-      return true;
-  }
-
-  switch (getTemplateSpecializationKind()) {
-  case TSK_Undeclared:
-  case TSK_ExplicitSpecialization:
-    return false;
-
-  case TSK_ImplicitInstantiation:
-  case TSK_ExplicitInstantiationDeclaration:
-  case TSK_ExplicitInstantiationDefinition:
-    // Handle below.
-    break;
-  }
-
-  const FunctionDecl *PatternDecl = getTemplateInstantiationPattern();
-  bool HasPattern = false;
-  if (PatternDecl)
-    HasPattern = PatternDecl->hasBody(PatternDecl);
-  
-  if (HasPattern && PatternDecl)
-    return PatternDecl->isInlined();
-  
-  return false;
-}
-
 static bool RedeclForcesDefC99(const FunctionDecl *Redecl) {
   // Only consider file-scope declarations in this test.
   if (!Redecl->getLexicalDeclContext()->isTranslationUnit())
@@ -2067,8 +2013,8 @@ bool FunctionDecl::doesDeclarationForceExternallyVisibleDefinition() const {
   return FoundBody;
 }
 
-/// \brief For an inline function definition in C or C++, determine whether the 
-/// definition will be externally visible.
+/// \brief For an inline function definition in C, or for a gnu_inline function
+/// in C++, determine whether the definition will be externally visible.
 ///
 /// Inline function definitions are always available for inlining optimizations.
 /// However, depending on the language dialect, declaration specifiers, and
@@ -2111,6 +2057,10 @@ bool FunctionDecl::isInlineDefinitionExternallyVisible() const {
     
     return false;
   }
+
+  // The rest of this function is C-only.
+  assert(!Context.getLangOpts().CPlusPlus &&
+         "should not use C inline rules in C++");
 
   // C99 6.7.4p6:
   //   [...] If all of the file scope declarations for a function in a 
@@ -2483,7 +2433,7 @@ unsigned FunctionDecl::getMemoryFunctionKind() const {
     return Builtin::BIstrlen;
 
   default:
-    if (hasCLanguageLinkage()) {
+    if (isExternC()) {
       if (FnInfo->isStr("memset"))
         return Builtin::BImemset;
       else if (FnInfo->isStr("memcpy"))
@@ -2639,6 +2589,16 @@ void TagDecl::completeDefinition() {
 TagDecl *TagDecl::getDefinition() const {
   if (isCompleteDefinition())
     return const_cast<TagDecl *>(this);
+
+  // If it's possible for us to have an out-of-date definition, check now.
+  if (MayHaveOutOfDateDef) {
+    if (IdentifierInfo *II = getIdentifier()) {
+      if (II->isOutOfDate()) {
+        updateOutOfDate(*II);
+      }
+    }
+  }
+
   if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(this))
     return CXXRD->getDefinition();
 
@@ -2695,14 +2655,17 @@ EnumDecl *EnumDecl::Create(ASTContext &C, DeclContext *DC,
                            bool IsScopedUsingClassTag, bool IsFixed) {
   EnumDecl *Enum = new (C) EnumDecl(DC, StartLoc, IdLoc, Id, PrevDecl,
                                     IsScoped, IsScopedUsingClassTag, IsFixed);
+  Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
   C.getTypeDeclType(Enum, PrevDecl);
   return Enum;
 }
 
 EnumDecl *EnumDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   void *Mem = AllocateDeserializedDecl(C, ID, sizeof(EnumDecl));
-  return new (Mem) EnumDecl(0, SourceLocation(), SourceLocation(), 0, 0,
-                            false, false, false);
+  EnumDecl *Enum = new (Mem) EnumDecl(0, SourceLocation(), SourceLocation(),
+                                      0, 0, false, false, false);
+  Enum->MayHaveOutOfDateDef = C.getLangOpts().Modules;
+  return Enum;
 }
 
 void EnumDecl::completeDefinition(QualType NewType,
@@ -2760,6 +2723,7 @@ RecordDecl::RecordDecl(Kind DK, TagKind TK, DeclContext *DC,
   HasFlexibleArrayMember = false;
   AnonymousStructOrUnion = false;
   HasObjectMember = false;
+  HasVolatileMember = false;
   LoadedFieldsFromExternalStorage = false;
   assert(classof(static_cast<Decl*>(this)) && "Invalid Kind!");
 }
@@ -2769,14 +2733,18 @@ RecordDecl *RecordDecl::Create(const ASTContext &C, TagKind TK, DeclContext *DC,
                                IdentifierInfo *Id, RecordDecl* PrevDecl) {
   RecordDecl* R = new (C) RecordDecl(Record, TK, DC, StartLoc, IdLoc, Id,
                                      PrevDecl);
+  R->MayHaveOutOfDateDef = C.getLangOpts().Modules;
+
   C.getTypeDeclType(R, PrevDecl);
   return R;
 }
 
 RecordDecl *RecordDecl::CreateDeserialized(const ASTContext &C, unsigned ID) {
   void *Mem = AllocateDeserializedDecl(C, ID, sizeof(RecordDecl));
-  return new (Mem) RecordDecl(Record, TTK_Struct, 0, SourceLocation(),
-                              SourceLocation(), 0, 0);
+  RecordDecl *R = new (Mem) RecordDecl(Record, TTK_Struct, 0, SourceLocation(),
+                                       SourceLocation(), 0, 0);
+  R->MayHaveOutOfDateDef = C.getLangOpts().Modules;
+  return R;
 }
 
 bool RecordDecl::isInjectedClassName() const {

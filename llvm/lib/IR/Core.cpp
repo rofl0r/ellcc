@@ -39,6 +39,7 @@ void llvm::initializeCore(PassRegistry &Registry) {
   initializeDominatorTreePass(Registry);
   initializePrintModulePassPass(Registry);
   initializePrintFunctionPassPass(Registry);
+  initializePrintBasicBlockPassPass(Registry);
   initializeVerifierPass(Registry);
   initializePreVerifierPass(Registry);
 }
@@ -1383,8 +1384,9 @@ void LLVMAddFunctionAttr(LLVMValueRef Fn, LLVMAttribute PA) {
   const AttributeSet PAL = Func->getAttributes();
   AttrBuilder B(PA);
   const AttributeSet PALnew =
-    PAL.addAttr(Func->getContext(), AttributeSet::FunctionIndex,
-                Attribute::get(Func->getContext(), B));
+    PAL.addAttributes(Func->getContext(), AttributeSet::FunctionIndex,
+                      AttributeSet::get(Func->getContext(),
+                                        AttributeSet::FunctionIndex, B));
   Func->setAttributes(PALnew);
 }
 
@@ -1393,8 +1395,9 @@ void LLVMRemoveFunctionAttr(LLVMValueRef Fn, LLVMAttribute PA) {
   const AttributeSet PAL = Func->getAttributes();
   AttrBuilder B(PA);
   const AttributeSet PALnew =
-    PAL.removeAttr(Func->getContext(), AttributeSet::FunctionIndex,
-                   Attribute::get(Func->getContext(), B));
+    PAL.removeAttributes(Func->getContext(), AttributeSet::FunctionIndex,
+                         AttributeSet::get(Func->getContext(),
+                                           AttributeSet::FunctionIndex, B));
   Func->setAttributes(PALnew);
 }
 
@@ -1465,13 +1468,13 @@ LLVMValueRef LLVMGetPreviousParam(LLVMValueRef Arg) {
 void LLVMAddAttribute(LLVMValueRef Arg, LLVMAttribute PA) {
   Argument *A = unwrap<Argument>(Arg);
   AttrBuilder B(PA);
-  A->addAttr(Attribute::get(A->getContext(), B));
+  A->addAttr(AttributeSet::get(A->getContext(), A->getArgNo() + 1,  B));
 }
 
 void LLVMRemoveAttribute(LLVMValueRef Arg, LLVMAttribute PA) {
   Argument *A = unwrap<Argument>(Arg);
   AttrBuilder B(PA);
-  A->removeAttr(Attribute::get(A->getContext(), B));
+  A->removeAttr(AttributeSet::get(A->getContext(), A->getArgNo() + 1,  B));
 }
 
 LLVMAttribute LLVMGetAttribute(LLVMValueRef Arg) {
@@ -1482,10 +1485,10 @@ LLVMAttribute LLVMGetAttribute(LLVMValueRef Arg) {
   
 
 void LLVMSetParamAlignment(LLVMValueRef Arg, unsigned align) {
+  Argument *A = unwrap<Argument>(Arg);
   AttrBuilder B;
   B.addAlignmentAttr(align);
-  unwrap<Argument>(Arg)->addAttr(Attribute::
-                                 get(unwrap<Argument>(Arg)->getContext(), B));
+  A->addAttr(AttributeSet::get(A->getContext(),A->getArgNo() + 1, B));
 }
 
 /*--.. Operations on basic blocks ..........................................--*/
@@ -1676,17 +1679,19 @@ void LLVMAddInstrAttribute(LLVMValueRef Instr, unsigned index,
   CallSite Call = CallSite(unwrap<Instruction>(Instr));
   AttrBuilder B(PA);
   Call.setAttributes(
-    Call.getAttributes().addAttr(Call->getContext(), index,
-                                 Attribute::get(Call->getContext(), B)));
+    Call.getAttributes().addAttributes(Call->getContext(), index,
+                                       AttributeSet::get(Call->getContext(),
+                                                         index, B)));
 }
 
 void LLVMRemoveInstrAttribute(LLVMValueRef Instr, unsigned index, 
                               LLVMAttribute PA) {
   CallSite Call = CallSite(unwrap<Instruction>(Instr));
   AttrBuilder B(PA);
-  Call.setAttributes(
-    Call.getAttributes().removeAttr(Call->getContext(), index,
-                                    Attribute::get(Call->getContext(), B)));
+  Call.setAttributes(Call.getAttributes()
+                       .removeAttributes(Call->getContext(), index,
+                                         AttributeSet::get(Call->getContext(),
+                                                           index, B)));
 }
 
 void LLVMSetInstrParamAlignment(LLVMValueRef Instr, unsigned index, 
@@ -1694,8 +1699,10 @@ void LLVMSetInstrParamAlignment(LLVMValueRef Instr, unsigned index,
   CallSite Call = CallSite(unwrap<Instruction>(Instr));
   AttrBuilder B;
   B.addAlignmentAttr(align);
-  Call.setAttributes(Call.getAttributes().addAttr(Call->getContext(), index,
-                                       Attribute::get(Call->getContext(), B)));
+  Call.setAttributes(Call.getAttributes()
+                       .addAttributes(Call->getContext(), index,
+                                      AttributeSet::get(Call->getContext(),
+                                                        index, B)));
 }
 
 /*--.. Operations on call instructions (only) ..............................--*/
@@ -2361,6 +2368,29 @@ LLVMBool LLVMCreateMemoryBufferWithSTDIN(LLVMMemoryBufferRef *OutMemBuf,
   *OutMessage = strdup(ec.message().c_str());
   return 1;
 }
+
+LLVMMemoryBufferRef LLVMCreateMemoryBufferWithMemoryRange(
+    const char *InputData,
+    size_t InputDataLength,
+    const char *BufferName,
+    LLVMBool RequiresNullTerminator) {
+
+  return wrap(MemoryBuffer::getMemBuffer(
+      StringRef(InputData, InputDataLength),
+      StringRef(BufferName),
+      RequiresNullTerminator));
+}
+
+LLVMMemoryBufferRef LLVMCreateMemoryBufferWithMemoryRangeCopy(
+    const char *InputData,
+    size_t InputDataLength,
+    const char *BufferName) {
+
+  return wrap(MemoryBuffer::getMemBufferCopy(
+      StringRef(InputData, InputDataLength),
+      StringRef(BufferName)));
+}
+
 
 void LLVMDisposeMemoryBuffer(LLVMMemoryBufferRef MemBuf) {
   delete unwrap(MemBuf);

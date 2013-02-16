@@ -366,64 +366,84 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
 }
 
 namespace {
-  struct UndefinedInternal {
-    NamedDecl *decl;
-    FullSourceLoc useLoc;
+  struct SortUndefinedButUsed {
+    const SourceManager &SM;
+    explicit SortUndefinedButUsed(SourceManager &SM) : SM(SM) {}
 
-    UndefinedInternal(NamedDecl *decl, FullSourceLoc useLoc)
-      : decl(decl), useLoc(useLoc) {}
+    bool operator()(const std::pair<NamedDecl *, SourceLocation> &l,
+                    const std::pair<NamedDecl *, SourceLocation> &r) const {
+      if (l.second.isValid() && !r.second.isValid())
+        return true;
+      if (!l.second.isValid() && r.second.isValid())
+        return false;
+      if (l.second != r.second)
+        return SM.isBeforeInTranslationUnit(l.second, r.second);
+      return SM.isBeforeInTranslationUnit(l.first->getLocation(),
+                                          r.first->getLocation());
+    }
   };
-
-  bool operator<(const UndefinedInternal &l, const UndefinedInternal &r) {
-    return l.useLoc.isBeforeInTranslationUnitThan(r.useLoc);
-  }
 }
 
-/// checkUndefinedInternals - Check for undefined objects with internal linkage.
-static void checkUndefinedInternals(Sema &S) {
-  if (S.UndefinedInternals.empty()) return;
-
-  // Collect all the still-undefined entities with internal linkage.
-  SmallVector<UndefinedInternal, 16> undefined;
-  for (llvm::DenseMap<NamedDecl*,SourceLocation>::iterator
-         i = S.UndefinedInternals.begin(), e = S.UndefinedInternals.end();
-       i != e; ++i) {
-    NamedDecl *decl = i->first;
+/// Obtains a sorted list of functions that are undefined but ODR-used.
+void Sema::getUndefinedButUsed(
+    SmallVectorImpl<std::pair<NamedDecl *, SourceLocation> > &Undefined) {
+  for (llvm::DenseMap<NamedDecl *, SourceLocation>::iterator
+         I = UndefinedButUsed.begin(), E = UndefinedButUsed.end();
+       I != E; ++I) {
+    NamedDecl *ND = I->first;
 
     // Ignore attributes that have become invalid.
-    if (decl->isInvalidDecl()) continue;
-
-    // If we found out that the decl is external, don't warn.
-    if (decl->getLinkage() == ExternalLinkage) continue;
+    if (ND->isInvalidDecl()) continue;
 
     // __attribute__((weakref)) is basically a definition.
-    if (decl->hasAttr<WeakRefAttr>()) continue;
+    if (ND->hasAttr<WeakRefAttr>()) continue;
 
-    if (FunctionDecl *fn = dyn_cast<FunctionDecl>(decl)) {
-      if (fn->isPure() || fn->hasBody())
+    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(ND)) {
+      if (FD->isDefined())
+        continue;
+      if (FD->getLinkage() == ExternalLinkage &&
+          !FD->getMostRecentDecl()->isInlined())
         continue;
     } else {
-      if (cast<VarDecl>(decl)->hasDefinition() != VarDecl::DeclarationOnly)
+      if (cast<VarDecl>(ND)->hasDefinition() != VarDecl::DeclarationOnly)
+        continue;
+      if (ND->getLinkage() == ExternalLinkage)
         continue;
     }
 
-    // We build a FullSourceLoc so that we can sort with array_pod_sort.
-    FullSourceLoc loc(i->second, S.Context.getSourceManager());
-    undefined.push_back(UndefinedInternal(decl, loc));
+    Undefined.push_back(std::make_pair(ND, I->second));
   }
 
-  if (undefined.empty()) return;
+  // Sort (in order of use site) so that we're not dependent on the iteration
+  // order through an llvm::DenseMap.
+  std::sort(Undefined.begin(), Undefined.end(),
+            SortUndefinedButUsed(Context.getSourceManager()));
+}
 
-  // Sort (in order of use site) so that we're not (as) dependent on
-  // the iteration order through an llvm::DenseMap.
-  llvm::array_pod_sort(undefined.begin(), undefined.end());
+/// checkUndefinedButUsed - Check for undefined objects with internal linkage
+/// or that are inline.
+static void checkUndefinedButUsed(Sema &S) {
+  if (S.UndefinedButUsed.empty()) return;
 
-  for (SmallVectorImpl<UndefinedInternal>::iterator
-         i = undefined.begin(), e = undefined.end(); i != e; ++i) {
-    NamedDecl *decl = i->decl;
-    S.Diag(decl->getLocation(), diag::warn_undefined_internal)
-      << isa<VarDecl>(decl) << decl;
-    S.Diag(i->useLoc, diag::note_used_here);
+  // Collect all the still-undefined entities with internal linkage.
+  SmallVector<std::pair<NamedDecl *, SourceLocation>, 16> Undefined;
+  S.getUndefinedButUsed(Undefined);
+  if (Undefined.empty()) return;
+
+  for (SmallVectorImpl<std::pair<NamedDecl *, SourceLocation> >::iterator
+         I = Undefined.begin(), E = Undefined.end(); I != E; ++I) {
+    NamedDecl *ND = I->first;
+
+    if (ND->getLinkage() != ExternalLinkage) {
+      S.Diag(ND->getLocation(), diag::warn_undefined_internal)
+        << isa<VarDecl>(ND) << ND;
+    } else {
+      assert(cast<FunctionDecl>(ND)->getMostRecentDecl()->isInlined() &&
+             "used object requires definition but isn't inline or internal?");
+      S.Diag(ND->getLocation(), diag::warn_undefined_inline) << ND;
+    }
+    if (I->second.isValid())
+      S.Diag(I->second, diag::note_used_here);
   }
 }
 
@@ -543,7 +563,7 @@ void Sema::ActOnEndOfTranslationUnit() {
          I != E; ++I) {
       assert(!(*I)->isDependentType() &&
              "Should not see dependent types here!");
-      if (const CXXMethodDecl *KeyFunction = Context.getKeyFunction(*I)) {
+      if (const CXXMethodDecl *KeyFunction = Context.getCurrentKeyFunction(*I)) {
         const FunctionDecl *Definition = 0;
         if (KeyFunction->hasBody(Definition))
           MarkVTableUsed(Definition->getLocation(), *I, true);
@@ -736,7 +756,9 @@ void Sema::ActOnEndOfTranslationUnit() {
       }
     }
 
-    checkUndefinedInternals(*this);
+    if (ExternalSource)
+      ExternalSource->ReadUndefinedButUsed(UndefinedButUsed);
+    checkUndefinedButUsed(*this);
   }
 
   if (Diags.getDiagnosticLevel(diag::warn_unused_private_field,
@@ -1078,6 +1100,10 @@ void ExternalSemaSource::ReadMethodPool(Selector Sel) { }
 
 void ExternalSemaSource::ReadKnownNamespaces(
                            SmallVectorImpl<NamespaceDecl *> &Namespaces) {
+}
+
+void ExternalSemaSource::ReadUndefinedButUsed(
+                       llvm::DenseMap<NamedDecl *, SourceLocation> &Undefined) {
 }
 
 void PrettyDeclStackTraceEntry::print(raw_ostream &OS) const {

@@ -13,12 +13,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/LiteralSupport.h"
-#include "clang/Basic/ConvertUTF.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/LexDiagnostic.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
+
 using namespace clang;
 
 static unsigned getCharWidth(tok::TokenKind kind, const TargetInfo &Target) {
@@ -127,10 +129,10 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
     break;
   case 'x': { // Hex escape.
     ResultChar = 0;
-    if (ThisTokBuf == ThisTokEnd || !isxdigit(*ThisTokBuf)) {
+    if (ThisTokBuf == ThisTokEnd || !isHexDigit(*ThisTokBuf)) {
       if (Diags)
         Diag(Diags, Features, Loc, ThisTokBegin, EscapeBegin, ThisTokBuf,
-             diag::err_hex_escape_no_digits);
+             diag::err_hex_escape_no_digits) << "x";
       HadError = 1;
       break;
     }
@@ -196,7 +198,7 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
     if (Diags == 0)
       break;
 
-    if (isgraph(ResultChar))
+    if (isPrintable(ResultChar))
       Diag(Diags, Features, Loc, ThisTokBegin, EscapeBegin, ThisTokBuf,
            diag::ext_unknown_escape)
         << std::string(1, ResultChar);
@@ -223,10 +225,10 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
   // Skip the '\u' char's.
   ThisTokBuf += 2;
 
-  if (ThisTokBuf == ThisTokEnd || !isxdigit(*ThisTokBuf)) {
+  if (ThisTokBuf == ThisTokEnd || !isHexDigit(*ThisTokBuf)) {
     if (Diags)
       Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-           diag::err_ucn_escape_no_digits);
+           diag::err_hex_escape_no_digits) << StringRef(&ThisTokBuf[-1], 1);
     return false;
   }
   UcnLen = (ThisTokBuf[-1] == 'u' ? 4 : 8);
@@ -277,7 +279,7 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
 
   if (!Features.CPlusPlus && !Features.C99 && Diags)
     Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-         diag::warn_ucn_not_valid_in_c89);
+         diag::warn_ucn_not_valid_in_c89_literal);
 
   return true;
 }
@@ -458,8 +460,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
   // and FP constants (specifically, the 'pp-number' regex), and assumes that
   // the byte at "*end" is both valid and not part of the regex.  Because of
   // this, it doesn't have to check for 'overscan' in various places.
-  assert(!isalnum(*ThisTokEnd) && *ThisTokEnd != '.' && *ThisTokEnd != '_' &&
-         "Lexer didn't maximally munch?");
+  assert(!isPreprocessingNumberBody(*ThisTokEnd) && "didn't maximally munch?");
 
   s = DigitsBegin = ThisTokBegin;
   saw_exponent = false;
@@ -482,7 +483,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
     s = SkipDigits(s);
     if (s == ThisTokEnd) {
       // Done.
-    } else if (isxdigit(*s) && !(*s == 'e' || *s == 'E')) {
+    } else if (isHexDigit(*s) && !(*s == 'e' || *s == 'E')) {
       PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s - ThisTokBegin),
               diag::err_invalid_decimal_digit) << StringRef(s, 1);
       hadError = true;
@@ -634,7 +635,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
   s++;
 
   // Handle a hex number like 0x1234.
-  if ((*s == 'x' || *s == 'X') && (isxdigit(s[1]) || s[1] == '.')) {
+  if ((*s == 'x' || *s == 'X') && (isHexDigit(s[1]) || s[1] == '.')) {
     s++;
     radix = 16;
     DigitsBegin = s;
@@ -693,7 +694,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
     s = SkipBinaryDigits(s);
     if (s == ThisTokEnd) {
       // Done.
-    } else if (isxdigit(*s)) {
+    } else if (isHexDigit(*s)) {
       PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s-ThisTokBegin),
               diag::err_invalid_binary_digit) << StringRef(s, 1);
       hadError = true;
@@ -713,7 +714,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
 
   // If we have some other non-octal digit that *is* a decimal digit, see if
   // this is part of a floating point number like 094.123 or 09e1.
-  if (isdigit(*s)) {
+  if (isDigit(*s)) {
     const char *EndDecimal = SkipDigits(s);
     if (EndDecimal[0] == '.' || EndDecimal[0] == 'e' || EndDecimal[0] == 'E') {
       s = EndDecimal;
@@ -723,7 +724,7 @@ void NumericLiteralParser::ParseNumberStartingWithZero(SourceLocation TokLoc) {
 
   // If we have a hex digit other than 'e' (which denotes a FP exponent) then
   // the code is using an incorrect base.
-  if (isxdigit(*s) && *s != 'e' && *s != 'E') {
+  if (isHexDigit(*s) && *s != 'e' && *s != 'E') {
     PP.Diag(PP.AdvanceToTokenCharacter(TokLoc, s-ThisTokBegin),
             diag::err_invalid_octal_digit) << StringRef(s, 1);
     hadError = true;

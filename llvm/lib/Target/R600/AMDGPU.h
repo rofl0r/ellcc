@@ -23,6 +23,7 @@ class AMDGPUTargetMachine;
 // R600 Passes
 FunctionPass* createR600KernelParametersPass(const DataLayout *TD);
 FunctionPass *createR600ExpandSpecialInstrsPass(TargetMachine &tm);
+FunctionPass *createR600LowerConstCopy(TargetMachine &tm);
 
 // SI Passes
 FunctionPass *createSIAnnotateControlFlowPass();
@@ -35,6 +36,7 @@ FunctionPass *createSIInsertWaits(TargetMachine &tm);
 // Passes common to R600 and SI
 Pass *createAMDGPUStructurizeCFGPass();
 FunctionPass *createAMDGPUConvertToISAPass(TargetMachine &tm);
+FunctionPass* createAMDGPUIndirectAddressingPass(TargetMachine &tm);
 
 } // End namespace llvm
 

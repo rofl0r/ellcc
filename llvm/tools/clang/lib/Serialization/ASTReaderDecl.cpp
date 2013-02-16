@@ -116,29 +116,25 @@ namespace clang {
       ASTReader &Reader;
       GlobalDeclID FirstID;
       mutable bool Owning;
+      Decl::Kind DeclKind;
       
       void operator=(RedeclarableResult &) LLVM_DELETED_FUNCTION;
       
     public:
-      RedeclarableResult(ASTReader &Reader, GlobalDeclID FirstID)
-        : Reader(Reader), FirstID(FirstID), Owning(true) { }
+      RedeclarableResult(ASTReader &Reader, GlobalDeclID FirstID,
+                         Decl::Kind DeclKind)
+        : Reader(Reader), FirstID(FirstID), Owning(true), DeclKind(DeclKind) { }
 
       RedeclarableResult(const RedeclarableResult &Other)
-        : Reader(Other.Reader), FirstID(Other.FirstID), Owning(Other.Owning) 
+        : Reader(Other.Reader), FirstID(Other.FirstID), Owning(Other.Owning) ,
+          DeclKind(Other.DeclKind)
       { 
         Other.Owning = false;
       }
 
       ~RedeclarableResult() {
-        // FIXME: We want to suppress this when the declaration is local to
-        // a function, since there's no reason to search other AST files
-        // for redeclarations (they can't exist). However, this is hard to 
-        // do locally because the declaration hasn't necessarily loaded its
-        // declaration context yet. Also, local externs still have the function
-        // as their (semantic) declaration context, which is wrong and would
-        // break this optimize.
-        
-        if (FirstID && Owning && Reader.PendingDeclChainsKnown.insert(FirstID))
+        if (FirstID && Owning && isRedeclarableDeclKind(DeclKind) &&
+            Reader.PendingDeclChainsKnown.insert(FirstID))
           Reader.PendingDeclChains.push_back(FirstID);
       }
       
@@ -151,7 +147,7 @@ namespace clang {
         Owning = false;
       }
     };
-    
+
     /// \brief Class used to capture the result of searching for an existing
     /// declaration of a specific kind and name, along with the ability
     /// to update the place where this result was found (the declaration
@@ -479,6 +475,7 @@ void ASTDeclReader::VisitRecordDecl(RecordDecl *RD) {
   RD->setHasFlexibleArrayMember(Record[Idx++]);
   RD->setAnonymousStructOrUnion(Record[Idx++]);
   RD->setHasObjectMember(Record[Idx++]);
+  RD->setHasVolatileMember(Record[Idx++]);
 }
 
 void ASTDeclReader::VisitValueDecl(ValueDecl *VD) {
@@ -529,6 +526,8 @@ void ASTDeclReader::VisitFunctionDecl(FunctionDecl *FD) {
   FD->HasImplicitReturnZero = Record[Idx++];
   FD->IsConstexpr = Record[Idx++];
   FD->HasSkippedBody = Record[Idx++];
+  FD->HasCachedLinkage = true;
+  FD->CachedLinkage = Record[Idx++];
   FD->EndRangeLoc = ReadSourceLocation(Record, Idx);
 
   switch ((FunctionDecl::TemplatedKind)Record[Idx++]) {
@@ -911,6 +910,8 @@ void ASTDeclReader::VisitVarDecl(VarDecl *VD) {
   VD->VarDeclBits.CXXForRangeDecl = Record[Idx++];
   VD->VarDeclBits.ARCPseudoStrong = Record[Idx++];
   VD->VarDeclBits.IsConstexpr = Record[Idx++];
+  VD->HasCachedLinkage = true;
+  VD->CachedLinkage = Record[Idx++];
   
   // Only true variables (not parameters or implicit parameters) can be merged.
   if (VD->getKind() == Decl::Var)
@@ -1265,10 +1266,12 @@ void ASTDeclReader::VisitAccessSpecDecl(AccessSpecDecl *D) {
 
 void ASTDeclReader::VisitFriendDecl(FriendDecl *D) {
   VisitDecl(D);
-  if (Record[Idx++])
-    D->Friend = GetTypeSourceInfo(Record, Idx);
-  else
+  if (Record[Idx++]) // hasFriendDecl
     D->Friend = ReadDeclAs<NamedDecl>(Record, Idx);
+  else
+    D->Friend = GetTypeSourceInfo(Record, Idx);
+  for (unsigned i = 0; i != D->NumTPLists; ++i)
+    D->getTPLists()[i] = Reader.ReadTemplateParameterList(F, Record, Idx);
   D->NextFriend = Record[Idx++];
   D->UnsupportedFriend = (Record[Idx++] != 0);
   D->FriendLoc = ReadSourceLocation(Record, Idx);
@@ -1562,7 +1565,8 @@ ASTDeclReader::VisitRedeclarable(Redeclarable<T> *D) {
                              
   // The result structure takes care to note that we need to load the 
   // other declaration chains for this ID.
-  return RedeclarableResult(Reader, FirstDeclID);
+  return RedeclarableResult(Reader, FirstDeclID,
+                            static_cast<T *>(D)->getKind());
 }
 
 /// \brief Attempts to merge the given declaration (D) with another declaration
@@ -2005,7 +2009,7 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
     D = AccessSpecDecl::CreateDeserialized(Context, ID);
     break;
   case DECL_FRIEND:
-    D = FriendDecl::CreateDeserialized(Context, ID);
+    D = FriendDecl::CreateDeserialized(Context, ID, Record[Idx++]);
     break;
   case DECL_FRIEND_TEMPLATE:
     D = FriendTemplateDecl::CreateDeserialized(Context, ID);
@@ -2122,12 +2126,18 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
   // If this declaration is also a declaration context, get the
   // offsets for its tables of lexical and visible declarations.
   if (DeclContext *DC = dyn_cast<DeclContext>(D)) {
+    // FIXME: This should really be
+    //     DeclContext *LookupDC = DC->getPrimaryContext();
+    // but that can walk the redeclaration chain, which might not work yet.
+    DeclContext *LookupDC = DC;
+    if (isa<NamespaceDecl>(DC))
+      LookupDC = DC->getPrimaryContext();
     std::pair<uint64_t, uint64_t> Offsets = Reader.VisitDeclContext(DC);
     if (Offsets.first || Offsets.second) {
       if (Offsets.first != 0)
         DC->setHasExternalLexicalStorage(true);
       if (Offsets.second != 0)
-        DC->setHasExternalVisibleStorage(true);
+        LookupDC->setHasExternalVisibleStorage(true);
       if (ReadDeclContextStorage(*Loc.F, DeclsCursor, Offsets, 
                                  Loc.F->DeclContextInfos[DC]))
         return 0;
@@ -2139,7 +2149,7 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
     if (I != PendingVisibleUpdates.end()) {
       // There are updates. This means the context has external visible
       // storage, even if the original stored version didn't.
-      DC->setHasExternalVisibleStorage(true);
+      LookupDC->setHasExternalVisibleStorage(true);
       DeclContextVisibleUpdates &U = I->second;
       for (DeclContextVisibleUpdates::iterator UI = U.begin(), UE = U.end();
            UI != UE; ++UI) {
@@ -2150,8 +2160,9 @@ Decl *ASTReader::ReadDeclRecord(DeclID ID) {
       PendingVisibleUpdates.erase(I);
     }
 
-    if (!DC->hasExternalVisibleStorage() && DC->hasExternalLexicalStorage())
-      DC->setMustBuildLookupTable();
+    if (!LookupDC->hasExternalVisibleStorage() &&
+        DC->hasExternalLexicalStorage())
+      LookupDC->setMustBuildLookupTable();
   }
   assert(Idx == Record.size());
 

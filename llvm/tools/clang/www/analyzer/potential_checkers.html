@@ -56,7 +56,8 @@ void test() {
     return;
   delete p2;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"><a href="http://llvm.org/bugs/show_bug.cgi?id=15237">PR15237</a>
+</td></tr>
 
 <tr><td><span class="name">memory.MismatchedFree
 <br>enhancement to unix.Malloc<br>(C, C++)</span><br><br>
@@ -71,7 +72,8 @@ void test() {
   free(p1); // warn
   free(p2); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"><a href="http://llvm.org/bugs/show_bug.cgi?id=15238">PR15238</a>
+</td></tr>
 
 <tr><td><span class="name">memory.MismatchedDelete
 <br>(C, C++)</span><br><br>
@@ -88,7 +90,8 @@ void test() {
   delete p2; // warn
   delete p3; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"><a href="http://llvm.org/bugs/show_bug.cgi?id=15238">PR15238</a>
+</td></tr>
 
 <tr><td><span class="name">memory.MultipleDelete
 <br>(C++)</span><br><br>
@@ -105,7 +108,9 @@ void test() {
   delete p2; // warn
   delete p3; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"><a href="http://llvm.org/bugs/show_bug.cgi?id=15237">PR15237</a>
+</td></tr>
+
 
 <tr><td><span class="name">memory.LeakPtrValChanged
 <br>enhancement to unix.Malloc<br>(C, C++)</span><br><br>
@@ -129,7 +134,9 @@ void test() {
   f(p4);
   p4++; // ok
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned">done at r174678 (C case)
+</td></tr>
+
 
 <tr><td><span class="name">memory.DeallocateNonPtr
 <br>enhancement to unix.Malloc<br>(C, C++)</span><br><br>
@@ -151,7 +158,9 @@ void test() {
   delete s; // warn
   free(s); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"><a href="http://llvm.org/bugs/show_bug.cgi?id=15237">PR15237</a>
+</td></tr>
+
 
 <tr><td><span class="name">memory.LeakEvalOrder<br>
 (C, C++)</span><br><br>
@@ -169,7 +178,7 @@ void test() {
   f1(g((int *)malloc(sizeof(int))), h()); // warn
   f2(new int, new int);
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">memory.DstBufferTooSmall
 <br>(C, C++)</span><br><br>
@@ -186,7 +195,7 @@ void test() {
   int* p2 = new int;
   memcpy(p2, p1, 3); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">memory.NegativeArraySize
 <br>enhancement to experimental.security.MallocOverflow<br>(C, C++)
@@ -200,7 +209,7 @@ void test() {
   int n1 = -1;
   p = new int[n1]; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -221,7 +230,7 @@ class A {
   A() {}
   ~A() { throw 1; } // warn
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">ctordtor.ExptInsideDtorImplicit<br>
 (C++)</span><br><br>
@@ -234,7 +243,7 @@ class A {
   A() {}
   ~A() { f(); } // warn
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -250,7 +259,7 @@ Function prototype has throw(T) specifier but the function do not throw
 </td><td><pre>
 void f() throw(int) { // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">exceptions.NoThrowSpecButThrows
 <br>(C++)</span><br><br>
@@ -259,7 +268,7 @@ An exception is throw from a function having the throw() specifier
 void f() throw() {
   throw(1); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">exceptions.ThrownTypeDiffersSpec
 <br>(C++)</span><br><br>
@@ -271,7 +280,7 @@ void f() throw(int) {
   S s;
   throw (s); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -299,7 +308,7 @@ void test() {
   std::auto_ptr&lt;int&gt; 
          p3((int *)malloc(sizeof(int))); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -324,7 +333,7 @@ public:
 };
 
 A a;
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.LocalStaticDestroyed
 <br>(C++)</span><br><br>
@@ -349,7 +358,7 @@ A a;
 void f() {
   static B b; // &lt;-
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.UseAfterRelease
 <br>enhancement to unix.Malloc<br>(C, C++)</span><br><br>
@@ -364,7 +373,7 @@ void test() {
   int i = *p; // warn
 }
 
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ZeroAllocDereference
 <br>enhancement to unix.Malloc<br>(C, C++)</span><br><br>
@@ -375,7 +384,7 @@ undefined
 
 int *p = new int[0];
 int i = p[0]; // warn
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.DeadReferenced
 <br>(C++)</span><br><br>
@@ -431,7 +440,7 @@ void test() {
   dynamic_cast&lt;A*&gt;(b); // warn
   delete b; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ObjLocChanges
 <br>(C++)</span><br><br>
@@ -452,7 +461,7 @@ void test() {
   new (&amp;b2) T;
   delete b1; // warn
 } // warn
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ExprEvalOrderUndef
 <br>(C, C++03)</span><br><br>
@@ -465,7 +474,7 @@ void test () {
   i = v[i++]; // warn
   i = ++i + 1; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.StaticInitReentered
 <br>(C)</span><br><br>
@@ -476,7 +485,7 @@ int test(int i) {
   static int s = test(2*i); // warn
   return i+1;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ConstModified
 <br>(C, C++)</span><br><br>
@@ -506,7 +515,7 @@ void test() {
   p-&gt;x.i = 1; // ok
   p-&gt;x.j = 1; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.DeadDestructed
 <br>(C++)</span><br><br>
@@ -524,7 +533,7 @@ void test() {
   A a;
   a.~A();
 } // warn
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.MethodCallBeforeBaseInit
 <br>(C++)</span><br><br>
@@ -539,7 +548,7 @@ public :
   int f();
   B() : A(f()) {} // warn
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.MemberOrBaseRefBeforeCtor
 <br>(C++)</span><br><br>
@@ -602,7 +611,7 @@ struct S {
   non_trivial nt;
   S() : k(&amp;nt.j) {} // warn
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.MemberRefAfterDtor
 <br>(C++)</span><br><br>
@@ -633,7 +642,7 @@ void test() {
   s->~S();  
   s->f(); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.CtorForeignCall
 <br>(C++)</span><br><br>
@@ -654,7 +663,7 @@ class C : public A, B {
 public:
   C() : B((A*)this) {}
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.CtorForeignCast 
 undefbehavior.CtorForeignTypeid
@@ -682,7 +691,7 @@ class C : public A, B {
 public:
   C() : B((A*)this) {}
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.MemberRefInCatch 
 undefbehavior.BaseRefInCatch
@@ -702,7 +711,7 @@ public :
     i=2; // warn
   }
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ReturnAtCatchEnd
 <br>(C++)</span><br><br>
@@ -714,7 +723,7 @@ int test() try {
 }
 catch(int) {
 } // warn
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.AutoptrsOwnSameObj
 <br>(C++03)</span><br><br>
@@ -728,7 +737,7 @@ void test() {
   std::auto_ptr&lt;int&gt; p(data);
   std::auto_ptr&lt;int&gt; q(data); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.BasicStringBoundAccess
 <br>(C++03)</span><br><br>
@@ -738,7 +747,7 @@ void test() {
   std::basic_string&lt;char&gt; s;
   char c = s[10]; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.BasicStringBoundModification
 <br>(C++)</span><br><br>
@@ -748,7 +757,7 @@ void test() {
   std::basic_string&lt;char&gt; s;
   s[10] = 0; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.EosDereference
 <br>(C++)</span><br><br>
@@ -762,7 +771,7 @@ void test() {
   int i = *v.end(); // warn
   *v.end() = 0; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.QsortNonPOD 
 undefbehavior.QsortNonTrivial
@@ -828,7 +837,7 @@ void test() {
   qsort(nt, 2, sizeof(non_trivial), 
         compare2); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ThrowWhileCopy
 <br>C++</span><br><br>
@@ -848,7 +857,7 @@ struct S {
     j = s.j;
   }
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ValarrayArgBound
 <br>(C++)</span><br><br>
@@ -866,7 +875,7 @@ void test(void) {
   S s[] = { S(1), S(2) };
   std::valarray&lt;S&gt; v(s,3); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ValarrayLengthDiffer
 <br>(C++)</span><br><br>
@@ -899,7 +908,7 @@ void test(void) {
   b.resize(1);
   a = b; // OK
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ValarrayZeroLength
 <br>(C++)</span><br><br>
@@ -914,7 +923,7 @@ void test(void) {
   v.min(); // warn
   v.max(); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.ValarrayBadIndirection
 <br>(C++)</span><br><br>
@@ -930,7 +939,7 @@ void test() {
   a[indirect] = b; //warn
   a[indirect] *= b; //warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.IosBaseDestroyedBeforeInit
 <br>(C++)</span><br>
@@ -961,7 +970,7 @@ void test() {
   delete p1; // warn
   delete p2; // ok
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.IosBaseUsedBeforeInit
 <br>(C++11)</span><br><br>
@@ -993,7 +1002,7 @@ void test() {
   delete p1; // warn
   delete p2; // ok
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">undefbehavior.MinusOnePosType
 <br>(C++)</span><br><br>
@@ -1016,7 +1025,7 @@ void test() {
   in.seekg(pos); // warn
   out.seekp(-1); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 </table>
 
 <!-- ============================ different ================================ -->
@@ -1037,7 +1046,7 @@ void test() {
   int v[1] = {0};
   f(v[i], i++); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.IdenticalExprBinOp
 <br>(C)</span><br><br>
@@ -1063,7 +1072,7 @@ void test() {
 
   if (f() && f()) {} // ok
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.FuncPtrInsteadOfCall
 <br>(C)</span><br><br>
@@ -1074,7 +1083,7 @@ int f();
 void test() {
   if (f == 0) {} // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.IdenticalCondIfElseIf
 <br>(C)</span><br><br>
@@ -1086,7 +1095,7 @@ void test() {
   if (i == 1) {}
   else if (i == 1) {} // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">SuccessiveAssign
 <br>(C)</span><br><br>
@@ -1097,7 +1106,7 @@ void test() {
   i=1;
   i=2; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.NullDerefStmtOrder
 <br>enhancement to core.NullDereference<br>(C)</span><br><br>
@@ -1118,7 +1127,7 @@ void test() {
   S *p2 = f();
   int x2 = p2-&gt;x; // ok
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.NullDerefCondOrder
 <br>enhancement to core.NullDereference<br>(C)</span><br><br>
@@ -1133,7 +1142,7 @@ void test() {
   S *p = f();
   if (p-&gt;b && p) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.IdenticalStmtThenElse
 <br>(C)</span><br><br>
@@ -1148,7 +1157,7 @@ void test() {
     i++;
   }
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.MultipleAccessors
 <br>(C++)</span><br><br>
@@ -1163,7 +1172,7 @@ public:
   void setI(int& ii) { i = ii; }
   void setJ(int& jj) { i = jj; } // warn
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.AccessorsForPublic
 <br>(C++)</span><br><br>
@@ -1175,7 +1184,7 @@ public:
   int getI() { return i; }
   void setI(int& ii) { i = ii; }
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.LibFuncResultUnised
 <br>(C, C++)</span><br><br>
@@ -1188,7 +1197,7 @@ void test() {
   std::vector&lt;int&gt; v;
   v.empty(); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.WrongVarForStmt
 <br>(C, C++)</span><br><br>
@@ -1201,7 +1210,7 @@ void test() {
   for (j=0; j&lt;3; ++i); // warn
   for (int j=0; i&lt;3; ++j); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.FloatingCompare
 <br>(C)</span><br><br>
@@ -1214,7 +1223,7 @@ void test() {
   if (b == 0.5) // warn
     b = 0;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.BoolCompare
 <br>maybe merge with experimental.core.BoolAssignment<br>(C, C++)</span><br><br>
@@ -1226,7 +1235,7 @@ void test() {
   bool b;
   if (b == 3) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.BitwiseOpBoolArg
 <br>maybe join with experimental.core.BoolAssignment<br>(C, C++)</span><br><br>
@@ -1239,7 +1248,7 @@ void test() {
   bool b = true;
   if (b &amp; f()) {} // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.LabelInsideSwitch
 <br>(C)</span><br><br>
@@ -1255,7 +1264,7 @@ void test() {
     c -= 1; break;
   }
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.IdenticalCondIfIf
 <br>(C)</span><br><br>
@@ -1268,7 +1277,7 @@ void test() {
   if (c &gt; 5) // warn
     c -= 1;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.CondOpIdenticalReturn
 <br>(C)</span><br><br>
@@ -1278,7 +1287,7 @@ void test() {
   unsigned a;
   a = a > 5 ? a : a; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.UnaryPlusWithUnsigned
 <br>(C)</span><br><br>
@@ -1288,7 +1297,7 @@ void test() {
   unsigned a;
   a = +a; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.LogicalOpUselessArg
 <br>(C)</span><br><br>
@@ -1298,7 +1307,7 @@ void test() {
   unsigned a;
   if (a&lt;7 &amp;&amp; a&lt;10) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.SameResLogicalExpr
 <br>(C)</span><br><br>
@@ -1310,7 +1319,7 @@ void test() {
   if (i==0 &amp;&amp; i==1) {}; // warn
   if (i<0 || i>=0) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.SameResUnsignedCmp
 <br>(C)</span><br><br>
@@ -1321,7 +1330,7 @@ void test() {
   if (u &lt; -1) {}; // warn
   if (u &gt;= 0) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.OpPrecedenceAssignCmp
 <br>(C)</span><br><br>
@@ -1337,7 +1346,7 @@ void test() {
   if((b = x != y)) {} // ok
   if((x = f() != y)) {} // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.OpPrecedenceIifShift
 <br>(C)</span><br><br>
@@ -1350,7 +1359,7 @@ void test() {
   std::cout &lt;&lt; a ? "a" : "b"; // warn
   a &lt;&lt; a&gt;7 ? 1 : 2; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.ObjectUnused
 <br>(C++)</span><br><br>
@@ -1373,7 +1382,7 @@ void test() {
   S(0, 0); // warn
   std::exception(); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.StaticArrayPtrCompare
 <br>(C)</span><br><br>
@@ -1387,7 +1396,7 @@ void test() {
   int a2[1][1];
   if (a2[0]) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.ConversionToBool
 <br>maybe join with experimental.core.BoolAssignment<br>(C, C++)</span><br><br>
@@ -1397,7 +1406,7 @@ bool test() {
   return 1.; // warn
   return ""; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.ArrayBound
 <br>enhancement to experimental.security.ArrayBound[v2]<br>(C, C++)</span><br><br>
@@ -1411,7 +1420,7 @@ void test() {
   int i = 1;
   if(p2[i]) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.StrcpyInputSize
 <BR>enhancement to experimental.unix.cstring.OutOfBounds<br>(C)</span><br><br>
@@ -1421,7 +1430,7 @@ void test(char* string) {
   char buf[24];
   strcpy(buf, string); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.IntegerOverflow
 <br>(C)</span><br><br>
@@ -1440,7 +1449,7 @@ void test() {
   int y = INT_MAX/2+1; // warn
   x = y*2; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.SignExtension
 <br>(C)</span><br><br>
@@ -1464,7 +1473,7 @@ unsigned int test() {
   ui = g(); // warn
   return si; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.NumericTruncation
 <br>(C)</span><br><br>
@@ -1488,7 +1497,7 @@ int test() {
   ss = g(); // warn
   return sll; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">different.MissingCopyCtorAssignOp
 <br>(C, C++)</span><br><br>
@@ -1501,7 +1510,7 @@ public:
   C() { p = new int; }
   ~C() { delete p; }
 };
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -1526,7 +1535,7 @@ void test() {
     NULL, TEXT("MyProgram.exe"), NULL, NULL, 
     TRUE, 0, NULL, NULL, &amp;si, &amp;pi);
 } // warn
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">WinAPI.LoadLibrary
 <br>(C)</span><br><br>
@@ -1538,7 +1547,7 @@ arbitrary location
 void test() {
   HINSTANCE h = LoadLibrary("X.dll"); // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">WinAPI.WideCharToMultiByte
 <br>(C)</span><br><br>
@@ -1561,7 +1570,7 @@ void test()
   else
    s[res2] = 0;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 
@@ -1584,7 +1593,7 @@ struct A {
 bool FirstIsZero(const struct A a) { // warn
   return a.a[0] == 0;
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">optimization.PostfixIncIter
 <br>(C++)</span><br><br>
@@ -1598,7 +1607,7 @@ void test() {
   for(it = v.begin(); 
       it != v.end(); it++) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">optimization.MultipleCallsStrlen
 <br>(C)</span><br><br>
@@ -1613,7 +1622,7 @@ void test() {
   if (strlen(s) &gt; 0 &amp;&amp;
       strlen(s) &lt; 7) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">optimization.EmptyCstrDetect
 <br>(C)</span><br><br>
@@ -1626,7 +1635,7 @@ void test() {
   const char* s = "abc";
   if (strlen(s) &gt; 0) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">optimization.StrLengthCalculation
 <br>(C, C++)</span><br><br>
@@ -1640,7 +1649,7 @@ void test() {
   std::string s;
   if (strlen(s.c_str()) != 0) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 <tr><td><span class="name">optimization.EmptyContainerDetect
 <br>(C, C++)</span><br><br>
@@ -1653,7 +1662,7 @@ void test() {
   std::list&lt;int&gt; l;
   if (l.size() != 0) {}; // warn
 }
-</pre></td><td></td></tr>
+</pre></td><td class="aligned"></td></tr>
 
 </table>
 

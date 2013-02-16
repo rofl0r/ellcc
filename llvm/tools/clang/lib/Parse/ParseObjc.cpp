@@ -13,6 +13,7 @@
 
 #include "clang/Parse/Parser.h"
 #include "RAIIObjectsForParser.h"
+#include "clang/Basic/CharInfo.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/PrettyDeclStackTrace.h"
@@ -690,7 +691,7 @@ IdentifierInfo *Parser::ParseObjCSelectorPiece(SourceLocation &SelectorLoc) {
   case tok::caret:
   case tok::caretequal: {
     std::string ThisTok(PP.getSpelling(Tok));
-    if (isalpha(ThisTok[0])) {
+    if (isLetter(ThisTok[0])) {
       IdentifierInfo *II = &PP.getIdentifierTable().get(ThisTok.data());
       Tok.setKind(tok::identifier);
       SelectorLoc = ConsumeToken();
@@ -1028,8 +1029,8 @@ Decl *Parser::ParseObjCMethodDecl(SourceLocation mLoc,
   SmallVector<IdentifierInfo *, 12> KeyIdents;
   SmallVector<SourceLocation, 12> KeyLocs;
   SmallVector<Sema::ObjCArgInfo, 12> ArgInfos;
-  ParseScope PrototypeScope(this,
-                            Scope::FunctionPrototypeScope|Scope::DeclScope);
+  ParseScope PrototypeScope(this, Scope::FunctionPrototypeScope |
+                            Scope::FunctionDeclarationScope | Scope::DeclScope);
 
   AttributePool allParamAttrs(AttrFactory);
   while (1) {
@@ -2419,7 +2420,7 @@ Parser::ParseObjCMessageExpressionBody(SourceLocation LBracLoc,
   // Parse objc-selector
   SourceLocation Loc;
   IdentifierInfo *selIdent = ParseObjCSelectorPiece(Loc);
-
+  
   SmallVector<IdentifierInfo *, 12> KeyIdents;
   SmallVector<SourceLocation, 12> KeyLocs;
   ExprVector KeyExprs;
@@ -2543,7 +2544,7 @@ Parser::ParseObjCMessageExpressionBody(SourceLocation LBracLoc,
     SkipUntil(tok::r_square);
     return ExprError();
   }
-
+  
   SourceLocation RBracLoc = ConsumeBracket(); // consume ']'
 
   unsigned nKeys = KeyIdents.size();

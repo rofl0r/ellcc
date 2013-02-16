@@ -952,6 +952,10 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     Result = Context.OCLImage3dTy;
     break;
 
+  case DeclSpec::TST_sampler_t:
+    Result = Context.OCLSamplerTy;
+    break;
+
   case DeclSpec::TST_event_t:
     Result = Context.OCLEventTy;
     break;
@@ -1496,6 +1500,11 @@ QualType Sema::BuildArrayType(QualType T, ArrayType::ArraySizeModifier ASM,
                                      : diag::ext_c99_array_usage) << ASM;
   }
 
+  if (T->isVariableArrayType()) {
+    // Warn about VLAs for -Wvla.
+    Diag(Loc, diag::warn_vla_used);
+  }
+
   return T;
 }
 
@@ -1662,11 +1671,16 @@ QualType Sema::BuildMemberPointerType(QualType T, QualType Class,
     return QualType();
   }
 
-  // In the Microsoft ABI, the class is allowed to be an incomplete
-  // type. In such cases, the compiler makes a worst-case assumption.
-  // We make no such assumption right now, so emit an error if the
-  // class isn't a complete type.
-  if (Context.getTargetInfo().getCXXABI() == CXXABI_Microsoft &&
+  // C++ allows the class type in a member pointer to be an incomplete type.
+  // In the Microsoft ABI, the size of the member pointer can vary
+  // according to the class type, which means that we really need a
+  // complete type if possible, which means we need to instantiate templates.
+  //
+  // For now, just require a complete type, which will instantiate
+  // templates.  This will also error if the type is just forward-declared,
+  // which is a bug, but it's a bug that saves us from dealing with some
+  // complexities at the moment.
+  if (Context.getTargetInfo().getCXXABI().isMicrosoft() &&
       RequireCompleteType(Loc, Class, diag::err_incomplete_type))
     return QualType();
 
@@ -2441,10 +2455,16 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       // Do not allow returning half FP value.
       // FIXME: This really should be in BuildFunctionType.
       if (T->isHalfType()) {
-        S.Diag(D.getIdentifierLoc(),
-             diag::err_parameters_retval_cannot_have_fp16_type) << 1
-          << FixItHint::CreateInsertion(D.getIdentifierLoc(), "*");
-        D.setInvalidType(true);
+        if (S.getLangOpts().OpenCL) {
+          if (!S.getOpenCLOptions().cl_khr_fp16) {
+            S.Diag(D.getIdentifierLoc(), diag::err_opencl_half_return) << T;
+            D.setInvalidType(true);
+          } 
+        } else {
+          S.Diag(D.getIdentifierLoc(),
+            diag::err_parameters_retval_cannot_have_fp16_type) << 1;
+          D.setInvalidType(true);
+        }
       }
 
       // cv-qualifiers on return types are pointless except when the type is a
@@ -2617,10 +2637,18 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           } else if (ArgTy->isHalfType()) {
             // Disallow half FP arguments.
             // FIXME: This really should be in BuildFunctionType.
-            S.Diag(Param->getLocation(),
-               diag::err_parameters_retval_cannot_have_fp16_type) << 0
-            << FixItHint::CreateInsertion(Param->getLocation(), "*");
-            D.setInvalidType();
+            if (S.getLangOpts().OpenCL) {
+              if (!S.getOpenCLOptions().cl_khr_fp16) {
+                S.Diag(Param->getLocation(),
+                  diag::err_opencl_half_argument) << ArgTy;
+                D.setInvalidType();
+                Param->setInvalidDecl();
+              }
+            } else {
+              S.Diag(Param->getLocation(),
+                diag::err_parameters_retval_cannot_have_fp16_type) << 0;
+              D.setInvalidType();
+            }
           } else if (!FTI.hasPrototype) {
             if (ArgTy->isPromotableIntegerType()) {
               ArgTy = Context.getPromotedIntegerType(ArgTy);
@@ -4260,9 +4288,11 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
     switch (attr.getKind()) {
     default:
       // A C++11 attribute on a declarator chunk must appertain to a type.
-      if (attr.isCXX11Attribute() && TAL == TAL_DeclChunk)
+      if (attr.isCXX11Attribute() && TAL == TAL_DeclChunk) {
         state.getSema().Diag(attr.getLoc(), diag::err_attribute_not_type_attr)
-          << attr.getName()->getName();
+          << attr.getName();
+        attr.setUsedAsTypeAttr();
+      }
       break;
 
     case AttributeList::UnknownAttribute:
@@ -4316,7 +4346,8 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
     case AttributeList::AT_Win64:
     case AttributeList::AT_Ptr32:
     case AttributeList::AT_Ptr64:
-      // FIXME: don't ignore these
+      // FIXME: Don't ignore these. We have partial handling for them as
+      // declaration attributes in SemaDeclAttr.cpp; that should be moved here.
       attr.setUsedAsTypeAttr();
       break;
 

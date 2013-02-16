@@ -404,7 +404,7 @@ void ExprEngine::ProcessInitializer(const CFGInitializer Init,
   if (BMI->isAnyMemberInitializer()) {
     // Constructors build the object directly in the field,
     // but non-objects must be copied in from the initializer.
-    const Expr *Init = BMI->getInit();
+    const Expr *Init = BMI->getInit()->IgnoreImplicit();
     if (!isa<CXXConstructExpr>(Init)) {
       SVal FieldLoc;
       if (BMI->isIndirectMemberInitializer())
@@ -639,13 +639,45 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::StringLiteralClass:
     case Stmt::ObjCStringLiteralClass:
     case Stmt::CXXBindTemporaryExprClass:
-    case Stmt::CXXDefaultArgExprClass:
     case Stmt::SubstNonTypeTemplateParmExprClass:
     case Stmt::CXXNullPtrLiteralExprClass: {
       Bldr.takeNodes(Pred);
       ExplodedNodeSet preVisit;
       getCheckerManager().runCheckersForPreStmt(preVisit, Pred, S, *this);
       getCheckerManager().runCheckersForPostStmt(Dst, preVisit, S, *this);
+      Bldr.addNodes(Dst);
+      break;
+    }
+
+    case Stmt::CXXDefaultArgExprClass: {
+      Bldr.takeNodes(Pred);
+      ExplodedNodeSet PreVisit;
+      getCheckerManager().runCheckersForPreStmt(PreVisit, Pred, S, *this);
+
+      ExplodedNodeSet Tmp;
+      StmtNodeBuilder Bldr2(PreVisit, Tmp, *currBldrCtx);
+
+      const LocationContext *LCtx = Pred->getLocationContext();
+      const Expr *ArgE = cast<CXXDefaultArgExpr>(S)->getExpr();
+
+      // Avoid creating and destroying a lot of APSInts.
+      SVal V;
+      llvm::APSInt Result;
+
+      for (ExplodedNodeSet::iterator I = PreVisit.begin(), E = PreVisit.end();
+           I != E; ++I) {
+        ProgramStateRef State = (*I)->getState();
+
+        if (ArgE->EvaluateAsInt(Result, getContext()))
+          V = svalBuilder.makeIntVal(Result);
+        else
+          V = State->getSVal(ArgE, LCtx);
+
+        State = State->BindExpr(S, LCtx, V);
+        Bldr2.generateNode(S, *I, State);
+      }
+
+      getCheckerManager().runCheckersForPostStmt(Dst, Tmp, S, *this);
       Bldr.addNodes(Dst);
       break;
     }
@@ -1627,6 +1659,12 @@ ProgramStateRef ExprEngine::processPointerEscapedOnBind(ProgramStateRef State,
       if (StoredVal != Val)
         escapes = (State == (State->bindLoc(*regionLoc, Val)));
     }
+    if (!escapes) {
+      // Case 4: We do not currently model what happens when a symbol is
+      // assigned to a struct field, so be conservative here and let the symbol
+      // go. TODO: This could definitely be improved upon.
+      escapes = !isa<VarRegion>(regionLoc->getRegion());
+    }
   }
 
   // If our store can represent the binding and we aren't storing to something
@@ -1642,7 +1680,8 @@ ProgramStateRef ExprEngine::processPointerEscapedOnBind(ProgramStateRef State,
   const InvalidatedSymbols &EscapedSymbols = Scanner.getSymbols();
   State = getCheckerManager().runCheckersForPointerEscape(State,
                                                           EscapedSymbols,
-                                                          /*CallEvent*/ 0);
+                                                          /*CallEvent*/ 0,
+                                                          PSK_EscapeOnBind);
 
   return State;
 }
@@ -1659,7 +1698,9 @@ ExprEngine::processPointerEscapedOnInvalidateRegions(ProgramStateRef State,
 
   if (!Call)
     return getCheckerManager().runCheckersForPointerEscape(State,
-                                                           *Invalidated, 0);
+                                                           *Invalidated,
+                                                           0,
+                                                           PSK_EscapeOther);
     
   // If the symbols were invalidated by a call, we want to find out which ones 
   // were invalidated directly due to being arguments to the call.
@@ -1681,12 +1722,12 @@ ExprEngine::processPointerEscapedOnInvalidateRegions(ProgramStateRef State,
 
   if (!SymbolsDirectlyInvalidated.empty())
     State = getCheckerManager().runCheckersForPointerEscape(State,
-        SymbolsDirectlyInvalidated, Call);
+        SymbolsDirectlyInvalidated, Call, PSK_DirectEscapeOnCall);
 
   // Notify about the symbols that get indirectly invalidated by the call.
   if (!SymbolsIndirectlyInvalidated.empty())
     State = getCheckerManager().runCheckersForPointerEscape(State,
-        SymbolsIndirectlyInvalidated, /*CallEvent*/ 0);
+        SymbolsIndirectlyInvalidated, Call, PSK_IndirectEscapeOnCall);
 
   return State;
 }
