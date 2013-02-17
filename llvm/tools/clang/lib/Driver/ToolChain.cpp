@@ -81,15 +81,19 @@ static const char *getARMTargetCPU(const ArgList &Args,
   // For Darwin targets, the -arch option (which is translated to a
   // corresponding -march option) should determine the architecture
   // (and the Mach-O slice) regardless of any -mcpu options.
+#if RICH
   if (!Triple.isOSDarwin()) {
     // FIXME: Warn on inconsistent use of -mcpu and -march.
     // If we have -mcpu=, use that.
     if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
       return A->getValue();
   }
+#endif
 
   StringRef MArch;
-  if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
+  Arg *A;
+  if ((A = Args.getLastArg(options::OPT_march_EQ)) ||
+      (A = Args.getLastArg(options::OPT_mcpu_EQ))) {
     // Otherwise, if we have -march= choose the base CPU for that arch.
     MArch = A->getValue();
   } else {
