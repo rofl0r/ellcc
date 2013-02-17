@@ -2704,12 +2704,15 @@ ELLCC::ELLCC(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 
 Tool &ELLCC::SelectTool(const Compilation &C, const JobAction &JA,
                         const ActionList &Inputs) const {
-  Action::ActionClass Key = JA.getKind();
+  Action::ActionClass Key;
+  if (getDriver().ShouldUseClangCompiler(C, JA, getTriple()))
+    Key = Action::AnalyzeJobClass;
+  else
+    Key = JA.getKind();
 
   bool UseIntegratedAs = C.getArgs().hasFlag(options::OPT_integrated_as,
                                              options::OPT_no_integrated_as,
                                              IsIntegratedAssemblerDefault());
-
   Tool *&T = Tools[Key];
   if (!T) {
     switch (Key) {
