@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_size_t
 #define __NEED_gid_t
 
@@ -28,7 +30,7 @@ struct group  *getgrent(void);
 void           endgrent(void);
 void           setgrent(void);
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 int getgrouplist(const char *, gid_t, gid_t *, int *);
 int setgroups(size_t, const gid_t *);
 int initgroups(const char *, gid_t);

@@ -5,8 +5,13 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_ino_t
 #define __NEED_off_t
+#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
+#define __NEED_size_t
+#endif
 
 #include <bits/alltypes.h>
 
@@ -27,7 +32,7 @@ int            closedir(DIR *);
 DIR           *fdopendir(int);
 DIR           *opendir(const char *);
 struct dirent *readdir(DIR *);
-int            readdir_r(DIR *, struct dirent *, struct dirent **);
+int            readdir_r(DIR *__restrict, struct dirent *__restrict, struct dirent **__restrict);
 void           rewinddir(DIR *);
 void           seekdir(DIR *, long);
 long           telldir(DIR *);
@@ -36,7 +41,7 @@ int            dirfd(DIR *);
 int alphasort(const struct dirent **, const struct dirent **);
 int scandir(const char *, struct dirent ***, int (*)(const struct dirent *), int (*)(const struct dirent **, const struct dirent **));
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 #define DT_UNKNOWN 0
 #define DT_FIFO 1
 #define DT_CHR 2
@@ -48,16 +53,23 @@ int scandir(const char *, struct dirent ***, int (*)(const struct dirent *), int
 #define DT_WHT 14
 #define IFTODT(x) ((x)>>12 & 017)
 #define DTTOIF(x) ((x)<<12)
+int getdents(int, struct dirent *, size_t);
 #endif
 
-#ifdef _LARGEFILE64_SOURCE
+#ifdef _GNU_SOURCE
+int versionsort(const struct dirent **, const struct dirent **);
+#endif
+
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define dirent64 dirent
 #define readdir64 readdir
 #define readdir64_r readdir_r
 #define scandir64 scandir
 #define alphasort64 alphasort
+#define versionsort64 versionsort
 #define off64_t off_t
 #define ino64_t ino_t
+#define getdents64 getdents
 #endif
 
 #ifdef __cplusplus

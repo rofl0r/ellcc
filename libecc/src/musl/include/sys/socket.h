@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_socklen_t
 #define __NEED_sa_family_t
 #define __NEED_size_t
@@ -16,13 +18,6 @@ extern "C" {
 #include <bits/alltypes.h>
 
 #include <bits/socket.h>
-
-struct cmsghdr
-{
-	socklen_t cmsg_len;
-	int cmsg_level;
-	int cmsg_type;
-};
 
 struct ucred
 {
@@ -41,16 +36,21 @@ struct linger
 #define SHUT_WD 1
 #define SHUT_RDWR 2
 
+#ifndef SOCK_STREAM
 #define SOCK_STREAM    1
 #define SOCK_DGRAM     2
+#endif
+
 #define SOCK_RAW       3
 #define SOCK_RDM       4
 #define SOCK_SEQPACKET 5
 #define SOCK_DCCP      6
 #define SOCK_PACKET    10
 
+#ifndef SOCK_CLOEXEC
 #define SOCK_CLOEXEC   02000000
 #define SOCK_NONBLOCK  04000
+#endif
 
 #define PF_UNSPEC       0
 #define PF_LOCAL        1
@@ -76,10 +76,14 @@ struct linger
 #define PF_ASH          18
 #define PF_ECONET       19
 #define PF_ATMSVC       20
+#define PF_RDS          21
 #define PF_SNA          22
 #define PF_IRDA         23
 #define PF_PPPOX        24
 #define PF_WANPIPE      25
+#define PF_LLC          26
+#define PF_CAN          29
+#define PF_TIPC         30
 #define PF_BLUETOOTH    31
 #define PF_IUCV         32
 #define PF_RXRPC        33
@@ -88,7 +92,8 @@ struct linger
 #define PF_IEEE802154   36
 #define PF_CAIF         37
 #define PF_ALG          38
-#define PF_MAX          39
+#define PF_NFC          39
+#define PF_MAX          40
 
 #define AF_UNSPEC       PF_UNSPEC
 #define AF_LOCAL        PF_LOCAL
@@ -114,10 +119,14 @@ struct linger
 #define AF_ASH          PF_ASH
 #define AF_ECONET       PF_ECONET
 #define AF_ATMSVC       PF_ATMSVC
+#define AF_RDS          PF_RDS
 #define AF_SNA          PF_SNA
 #define AF_IRDA         PF_IRDA
 #define AF_PPPOX        PF_PPPOX
 #define AF_WANPIPE      PF_WANPIPE
+#define AF_LLC          PF_LLC
+#define AF_CAN          PF_CAN
+#define AF_TIPC         PF_TIPC
 #define AF_BLUETOOTH    PF_BLUETOOTH
 #define AF_IUCV         PF_IUCV
 #define AF_RXRPC        PF_RXRPC
@@ -126,8 +135,10 @@ struct linger
 #define AF_IEEE802154   PF_IEEE802154
 #define AF_CAIF         PF_CAIF
 #define AF_ALG          PF_ALG
+#define AF_NFC          PF_NFC
 #define AF_MAX          PF_MAX
 
+#ifndef SO_DEBUG
 #define SO_DEBUG        1
 #define SO_REUSEADDR    2
 #define SO_TYPE         3
@@ -142,13 +153,17 @@ struct linger
 #define SO_PRIORITY     12
 #define SO_LINGER       13
 #define SO_BSDCOMPAT    14
-#define SO_REUSEPORT    15
+/* #define SO_REUSEPORT    15 */
 #define SO_PASSCRED     16
 #define SO_PEERCRED     17
 #define SO_RCVLOWAT     18
 #define SO_SNDLOWAT     19
 #define SO_RCVTIMEO     20
 #define SO_SNDTIMEO     21
+#define SO_SNDBUFFORCE  32
+#define SO_RCVBUFFORCE  33
+#endif
+
 
 #define SO_SECURITY_AUTHENTICATION              22
 #define SO_SECURITY_ENCRYPTION_TRANSPORT        23
@@ -165,7 +180,9 @@ struct linger
 
 #define SO_ACCEPTCONN           30
 
+#ifndef SOL_SOCKET
 #define SOL_SOCKET      1
+#endif
 
 #define SOL_RAW         255
 #define SOL_DECNET      261
@@ -236,19 +253,20 @@ int shutdown (int, int);
 int bind (int, const struct sockaddr *, socklen_t);
 int connect (int, const struct sockaddr *, socklen_t);
 int listen (int, int);
-int accept (int, struct sockaddr *, socklen_t *);
+int accept (int, struct sockaddr *__restrict, socklen_t *__restrict);
+int accept4(int, struct sockaddr *__restrict, socklen_t *__restrict, int);
 
-int getsockname (int, struct sockaddr *, socklen_t *);
-int getpeername (int, struct sockaddr *, socklen_t *);
+int getsockname (int, struct sockaddr *__restrict, socklen_t *__restrict);
+int getpeername (int, struct sockaddr *__restrict, socklen_t *__restrict);
 
 ssize_t send (int, const void *, size_t, int);
 ssize_t recv (int, void *, size_t, int);
 ssize_t sendto (int, const void *, size_t, int, const struct sockaddr *, socklen_t);
-ssize_t recvfrom (int, void *, size_t, int, struct sockaddr *, socklen_t *);
+ssize_t recvfrom (int, void *__restrict, size_t, int, struct sockaddr *__restrict, socklen_t *__restrict);
 ssize_t sendmsg (int, const struct msghdr *, int);
 ssize_t recvmsg (int, struct msghdr *, int);
 
-int getsockopt (int, int, int, void *, socklen_t *);
+int getsockopt (int, int, int, void *__restrict, socklen_t *__restrict);
 int setsockopt (int, int, int, const void *, socklen_t);
 
 int sockatmark (int);

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_size_t
 
 #include <bits/alltypes.h>
@@ -17,7 +19,7 @@ typedef struct {
 	void *__dummy2[5];
 } glob_t;
 
-int  glob(const char *, int, int (*)(const char *, int), glob_t *);
+int  glob(const char *__restrict, int, int (*)(const char *, int), glob_t *__restrict);
 void globfree(glob_t *);
 
 #define GLOB_ERR      0x01
@@ -34,7 +36,7 @@ void globfree(glob_t *);
 #define GLOB_NOMATCH 3
 #define GLOB_NOSYS   4
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define glob64 glob
 #define globfree64 globfree
 #endif

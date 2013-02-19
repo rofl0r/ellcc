@@ -1,48 +1,3 @@
-#define __SYSCALL_LL_E(x) \
-((union { long long ll; long l[2]; }){ .ll = x }).l[0], \
-((union { long long ll; long l[2]; }){ .ll = x }).l[1]
-#define __SYSCALL_LL_O(x) 0, __SYSCALL_LL_E((x))
-
-long (__syscall)(long, ...);
-
-static inline long __syscall0(long n)
-{
-	return (__syscall)(n, 0, 0, 0, 0, 0, 0);
-}
-
-static inline long __syscall1(long n, long a)
-{
-	return (__syscall)(n, a, 0, 0, 0, 0, 0);
-}
-
-static inline long __syscall2(long n, long a, long b)
-{
-	return (__syscall)(n, a, b, 0, 0, 0, 0);
-}
-
-static inline long __syscall3(long n, long a, long b, long c)
-{
-	return (__syscall)(n, a, b, c, 0, 0, 0);
-}
-
-static inline long __syscall4(long n, long a, long b, long c, long d)
-{
-	return (__syscall)(n, a, b, c, d, 0, 0);
-}
-
-static inline long __syscall5(long n, long a, long b, long c, long d, long e)
-{
-	return (__syscall)(n, a, b, c, d, e, 0);
-}
-
-static inline long __syscall6(long n, long a, long b, long c, long d, long e, long f)
-{
-	return (__syscall)(n, a, b, c, d, e, f);
-}
-
-#define __socketcall(nm,a,b,c,d,e,f) syscall(SYS_##nm, a, b, c, d, e, f)
-#define __socketcall_cp(nm,a,b,c,d,e,f) syscall_cp(SYS_##nm, a, b, c, d, e, f)
-
 #define __NR_restart_syscall	0
 #define __NR_exit	1
 #define __NR_fork	2
@@ -55,21 +10,16 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define __NR_unlink	10
 #define __NR_execve	11
 #define __NR_chdir	12
-#define __NR_time	13
 #define __NR_mknod	14
 #define __NR_chmod	15
 #define __NR_lchown	16
 #define __NR_lseek	19
 #define __NR_getpid	20
 #define __NR_mount	21
-#define __NR_umount	22
 #define __NR_setuid	23
 #define __NR_getuid	24
-#define __NR_stime	25
 #define __NR_ptrace	26
-#define __NR_alarm	27
 #define __NR_pause	29
-#define __NR_utime	30
 #define __NR_access	33
 #define __NR_nice	34
 #define __NR_sync	36
@@ -109,14 +59,11 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define __NR_settimeofday	79
 #define __NR_getgroups	80
 #define __NR_setgroups	81
-#define __NR_select	82
 #define __NR_symlink	83
 #define __NR_readlink	85
 #define __NR_uselib	86
 #define __NR_swapon	87
 #define __NR_reboot	88
-#define __NR_readdir	89
-#define __NR_mmap	90
 #define __NR_munmap	91
 #define __NR_truncate	92
 #define __NR_ftruncate	93
@@ -126,7 +73,6 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define __NR_setpriority	97
 #define __NR_statfs	99
 #define __NR_fstatfs	100
-#define __NR_socketcall	102
 #define __NR_syslog	103
 #define __NR_setitimer	104
 #define __NR_getitimer	105
@@ -134,11 +80,9 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define __NR_lstat	107
 #define __NR_fstat	108
 #define __NR_vhangup	111
-#define __NR_syscall	113
 #define __NR_wait4	114
 #define __NR_swapoff	115
 #define __NR_sysinfo	116
-#define __NR_ipc	117
 #define __NR_fsync	118
 #define __NR_sigreturn	119
 #define __NR_clone	120
@@ -385,78 +329,8 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define __NR_syncfs	373
 #define __NR_sendmmsg	374
 #define __NR_setns	375
-
-/* fixup legacy 16-bit junk */
-#undef __NR_lchown
-#undef __NR_getuid
-#undef __NR_getgid
-#undef __NR_geteuid
-#undef __NR_getegid
-#undef __NR_setreuid
-#undef __NR_setregid
-#undef __NR_getgroups
-#undef __NR_setgroups
-#undef __NR_fchown
-#undef __NR_setresuid
-#undef __NR_getresuid
-#undef __NR_setresgid
-#undef __NR_getresgid
-#undef __NR_chown
-#undef __NR_setuid
-#undef __NR_setgid
-#undef __NR_setfsuid
-#undef __NR_setfsgid
-#define __NR_lchown __NR_lchown32
-#define __NR_getuid __NR_getuid32
-#define __NR_getgid __NR_getgid32
-#define __NR_geteuid __NR_geteuid32
-#define __NR_getegid __NR_getegid32
-#define __NR_setreuid __NR_setreuid32
-#define __NR_setregid __NR_setregid32
-#define __NR_getgroups __NR_getgroups32
-#define __NR_setgroups __NR_setgroups32
-#define __NR_fchown __NR_fchown32
-#define __NR_setresuid __NR_setresuid32
-#define __NR_getresuid __NR_getresuid32
-#define __NR_setresgid __NR_setresgid32
-#define __NR_getresgid __NR_getresgid32
-#define __NR_chown __NR_chown32
-#define __NR_setuid __NR_setuid32
-#define __NR_setgid __NR_setgid32
-#define __NR_setfsuid __NR_setfsuid32
-#define __NR_setfsgid __NR_setfsgid32
-
-
-/* fixup legacy 32-bit-vs-lfs64 junk */
-#undef __NR_fcntl
-#undef __NR_getdents
-#undef __NR_ftruncate
-#undef __NR_truncate
-#undef __NR_stat
-#undef __NR_fstat
-#undef __NR_lstat
-#undef __NR_statfs
-#undef __NR_fstatfs
-#define __NR_fcntl __NR_fcntl64
-#define __NR_getdents __NR_getdents64
-#define __NR_ftruncate __NR_ftruncate64
-#define __NR_truncate __NR_truncate64
-#define __NR_stat __NR_stat64
-#define __NR_fstat __NR_fstat64
-#define __NR_lstat __NR_lstat64
-#define __NR_statfs __NR_statfs64
-#define __NR_fstatfs __NR_fstatfs64
-#define __NR_fstatat __NR_fstatat64
-#define __NR_pread __NR_pread64
-#define __NR_pwrite __NR_pwrite64
-
-#define __NR_fadvise __NR_fadvise64_64
-
-#undef __NR_getrlimit
-#define __NR_getrlimit __NR_ugetrlimit
-
-#undef __NR_select
-#define __NR_select __NR__newselect
+#define __NR_process_vm_readv	376
+#define __NR_process_vm_writev	377
 
 
 /* Repeated with SYS_ prefix */
@@ -473,21 +347,16 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define SYS_unlink	10
 #define SYS_execve	11
 #define SYS_chdir	12
-#define SYS_time	13
 #define SYS_mknod	14
 #define SYS_chmod	15
 #define SYS_lchown	16
 #define SYS_lseek	19
 #define SYS_getpid	20
 #define SYS_mount	21
-#define SYS_umount	22
 #define SYS_setuid	23
 #define SYS_getuid	24
-#define SYS_stime	25
 #define SYS_ptrace	26
-#define SYS_alarm	27
 #define SYS_pause	29
-#define SYS_utime	30
 #define SYS_access	33
 #define SYS_nice	34
 #define SYS_sync	36
@@ -527,14 +396,11 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define SYS_settimeofday	79
 #define SYS_getgroups	80
 #define SYS_setgroups	81
-#define SYS_select	82
 #define SYS_symlink	83
 #define SYS_readlink	85
 #define SYS_uselib	86
 #define SYS_swapon	87
 #define SYS_reboot	88
-#define SYS_readdir	89
-#define SYS_mmap	90
 #define SYS_munmap	91
 #define SYS_truncate	92
 #define SYS_ftruncate	93
@@ -544,7 +410,6 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define SYS_setpriority	97
 #define SYS_statfs	99
 #define SYS_fstatfs	100
-#define SYS_socketcall	102
 #define SYS_syslog	103
 #define SYS_setitimer	104
 #define SYS_getitimer	105
@@ -552,11 +417,9 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define SYS_lstat	107
 #define SYS_fstat	108
 #define SYS_vhangup	111
-#define SYS_syscall	113
 #define SYS_wait4	114
 #define SYS_swapoff	115
 #define SYS_sysinfo	116
-#define SYS_ipc	117
 #define SYS_fsync	118
 #define SYS_sigreturn	119
 #define SYS_clone	120
@@ -803,75 +666,5 @@ static inline long __syscall6(long n, long a, long b, long c, long d, long e, lo
 #define SYS_syncfs	373
 #define SYS_sendmmsg	374
 #define SYS_setns	375
-
-/* fixup legacy 16-bit junk */
-#undef SYS_lchown
-#undef SYS_getuid
-#undef SYS_getgid
-#undef SYS_geteuid
-#undef SYS_getegid
-#undef SYS_setreuid
-#undef SYS_setregid
-#undef SYS_getgroups
-#undef SYS_setgroups
-#undef SYS_fchown
-#undef SYS_setresuid
-#undef SYS_getresuid
-#undef SYS_setresgid
-#undef SYS_getresgid
-#undef SYS_chown
-#undef SYS_setuid
-#undef SYS_setgid
-#undef SYS_setfsuid
-#undef SYS_setfsgid
-#define SYS_lchown SYS_lchown32
-#define SYS_getuid SYS_getuid32
-#define SYS_getgid SYS_getgid32
-#define SYS_geteuid SYS_geteuid32
-#define SYS_getegid SYS_getegid32
-#define SYS_setreuid SYS_setreuid32
-#define SYS_setregid SYS_setregid32
-#define SYS_getgroups SYS_getgroups32
-#define SYS_setgroups SYS_setgroups32
-#define SYS_fchown SYS_fchown32
-#define SYS_setresuid SYS_setresuid32
-#define SYS_getresuid SYS_getresuid32
-#define SYS_setresgid SYS_setresgid32
-#define SYS_getresgid SYS_getresgid32
-#define SYS_chown SYS_chown32
-#define SYS_setuid SYS_setuid32
-#define SYS_setgid SYS_setgid32
-#define SYS_setfsuid SYS_setfsuid32
-#define SYS_setfsgid SYS_setfsgid32
-
-
-/* fixup legacy 32-bit-vs-lfs64 junk */
-#undef SYS_fcntl
-#undef SYS_getdents
-#undef SYS_ftruncate
-#undef SYS_truncate
-#undef SYS_stat
-#undef SYS_fstat
-#undef SYS_lstat
-#undef SYS_statfs
-#undef SYS_fstatfs
-#define SYS_fcntl SYS_fcntl64
-#define SYS_getdents SYS_getdents64
-#define SYS_ftruncate SYS_ftruncate64
-#define SYS_truncate SYS_truncate64
-#define SYS_stat SYS_stat64
-#define SYS_fstat SYS_fstat64
-#define SYS_lstat SYS_lstat64
-#define SYS_statfs SYS_statfs64
-#define SYS_fstatfs SYS_fstatfs64
-#define SYS_fstatat SYS_fstatat64
-#define SYS_pread SYS_pread64
-#define SYS_pwrite SYS_pwrite64
-
-#define SYS_fadvise SYS_fadvise64_64
-
-#undef SYS_getrlimit
-#define SYS_getrlimit SYS_ugetrlimit
-
-#undef SYS_select
-#define SYS_select SYS__newselect
+#define SYS_process_vm_readv	376
+#define SYS_process_vm_writev	377

@@ -1,6 +1,8 @@
 #ifndef _LIMITS_H
 #define _LIMITS_H
 
+#include <features.h>
+
 /* Most limits are system-specific */
 
 #include <bits/limits.h>
@@ -35,7 +37,7 @@
 #define MB_LEN_MAX 4
 
 #if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+ || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 
 #define PIPE_BUF 4096
 #define PAGESIZE PAGE_SIZE

@@ -1,9 +1,42 @@
 #if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+ || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+typedef unsigned long long greg_t, gregset_t[32];
 typedef struct {
-	unsigned long __regs[21];
+	union {
+		double fp_dregs[32];
+		struct {
+			float _fp_fregs;
+			unsigned _fp_pad;
+		} fp_fregs[32];
+	} fp_r;
+} fpregset_t;
+struct sigcontext
+{
+	unsigned sc_regmask, sc_status;
+	unsigned long long sc_pc, sc_regs[32], sc_fpregs[32];
+	unsigned sc_ownedfp, sc_fpc_csr, sc_fpc_eir, sc_used_math, sc_dsp;
+	unsigned long long sc_mdhi, sc_mdlo;
+	unsigned long sc_hi1, sc_lo1, sc_hi2, sc_lo2, sc_hi3, sc_lo3;
+};
+typedef struct
+{
+	unsigned regmask, status;
+	unsigned long long pc, regs[32], fpregs[32];
+	unsigned ownedfp, fpc_csr, fpc_eir, used_math, dsp;
+	unsigned long long mdhi, mdlo;
+	unsigned long hi1, lo1, hi2, lo2, hi3, lo3;
 } mcontext_t;
+#else
+typedef struct {
+	unsigned __mc1[2];
+	unsigned long long __mc2[65];
+	unsigned __mc3[5];
+	unsigned long long __mc4[2];
+	unsigned __mc5[6];
+} mcontext_t;
+#endif
 
 typedef struct __ucontext {
 	unsigned long uc_flags;
@@ -15,26 +48,20 @@ typedef struct __ucontext {
 } ucontext_t;
 
 #define SA_NOCLDSTOP  1
-#define SA_NOCLDWAIT  2
-#define SA_SIGINFO    4
+#define SA_NOCLDWAIT  0x10000
+#define SA_SIGINFO    8
 #define SA_ONSTACK    0x08000000
 #define SA_RESTART    0x10000000
 #define SA_NODEFER    0x40000000
 #define SA_RESETHAND  0x80000000
 #define SA_RESTORER   0x04000000
 
-#ifdef _GNU_SOURCE
-struct sigcontext
-{
-	unsigned long trap_no, error_code, oldmask;
-	unsigned long arm_r0, arm_r1, arm_r2, arm_r3;
-	unsigned long arm_r4, arm_r5, arm_r6, arm_r7;
-	unsigned long arm_r8, arm_r9, arm_r10, arm_fp;
-	unsigned long arm_ip, arm_sp, arm_lr, arm_pc;
-	unsigned long arm_cpsr, fault_address;
-};
-#define NSIG      64
-#endif
+#undef SIG_BLOCK
+#undef SIG_UNBLOCK
+#undef SIG_SETMASK
+#define SIG_BLOCK     1
+#define SIG_UNBLOCK   2
+#define SIG_SETMASK   3
 
 #endif
 
@@ -73,6 +100,4 @@ struct sigcontext
 #define SIGXFSZ   31
 #define SIGUNUSED SIGSYS
 
-#ifdef _BSD_SOURCE
-#define SIGINFO         SIGUSR1 /* For NetBSD compatability */
-#endif
+#define _NSIG 129

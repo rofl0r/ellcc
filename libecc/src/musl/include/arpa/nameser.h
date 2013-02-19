@@ -1,5 +1,7 @@
-#ifndef _ARPA_NAMESER_H_
-#define _ARPA_NAMESER_H_
+#ifndef _ARPA_NAMESER_H
+#define _ARPA_NAMESER_H
+
+#include <stdint.h>
 
 #define __NAMESER	19991006
 #define NS_PACKETSZ	512

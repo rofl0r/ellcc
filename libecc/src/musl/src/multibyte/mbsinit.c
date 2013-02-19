@@ -13,7 +13,5 @@
 
 int mbsinit(const mbstate_t *st)
 {
-        if (st == NULL)
-            return -1;
-	return !*(unsigned *)st;
+	return !st || !*(unsigned *)st;
 }

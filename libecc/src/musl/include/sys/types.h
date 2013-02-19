@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_ino_t
 #define __NEED_dev_t
 #define __NEED_uid_t
@@ -58,7 +60,7 @@ typedef __uint16_t u_int16_t;
 typedef __uint32_t u_int32_t;
 typedef __uint64_t u_int64_t;
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 typedef char *caddr_t;
 typedef unsigned char u_char;
 typedef unsigned short u_short, ushort;
@@ -72,7 +74,7 @@ typedef long register_t;
 #include <sys/sysmacros.h>
 #endif
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define blksize64_t blksize_t
 #define blkcnt64_t blkcnt_t
 #define fsblkcnt64_t fsblkcnt_t

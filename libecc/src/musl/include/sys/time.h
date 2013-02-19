@@ -4,11 +4,14 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #include <sys/select.h>
 
-int gettimeofday (struct timeval *, void *);
+int gettimeofday (struct timeval *__restrict, void *__restrict);
 
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
+ || defined(_BSD_SOURCE)
 
 #define ITIMER_REAL    0
 #define ITIMER_VIRTUAL 1
@@ -21,17 +24,15 @@ struct itimerval
 };
 
 int getitimer (int, struct itimerval *);
-int setitimer (int, const struct itimerval *, struct itimerval *);
+int setitimer (int, const struct itimerval *__restrict, struct itimerval *__restrict);
 int utimes (const char *, const struct timeval [2]);
 
 #endif
 
-#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 int futimes(int, const struct timeval [2]);
+int futimesat(int, const char *, const struct timeval [2]);
 int lutimes(const char *, const struct timeval [2]);
-#endif
-
-#ifdef _GNU_SOURCE
 int settimeofday (const struct timeval *, void *);
 int adjtime (const struct timeval *, struct timeval *);
 struct timezone {
@@ -48,17 +49,6 @@ struct timezone {
 #define timersub(s,t,a) ( (a)->tv_sec = (s)->tv_sec - (t)->tv_sec, \
 	((a)->tv_usec = (s)->tv_usec - (t)->tv_usec) < 0 && \
 	((a)->tv_usec += 1000000, (a)->tv_sec--) )
-#endif
-
-#ifdef _BSD_SOURCE
-#define TIMEVAL_TO_TIMESPEC(tv, ts) do {                                \
-        (ts)->tv_sec = (tv)->tv_sec;                                    \
-                (ts)->tv_nsec = (tv)->tv_usec * 1000;                           \
-} while (/*CONSTCOND*/0)
-#define TIMESPEC_TO_TIMEVAL(tv, ts) do {                                \
-        (tv)->tv_sec = (ts)->tv_sec;                                    \
-                (tv)->tv_usec = (suseconds_t)(ts)->tv_nsec / 1000;              \
-} while (/*CONSTCOND*/0)
 #endif
 
 #ifdef __cplusplus

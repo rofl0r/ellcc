@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_size_t
 
 #include <bits/alltypes.h>
@@ -22,9 +24,6 @@ typedef struct {
 	regoff_t rm_eo;
 } regmatch_t;
 
-#ifdef _BSD_SOURCE
-#define REG_BASIC       0
-#endif
 #define REG_EXTENDED    1
 #define REG_ICASE       2
 #define REG_NEWLINE     4
@@ -50,11 +49,11 @@ typedef struct {
 
 #define REG_ENOSYS      -1
 
-int regcomp(regex_t *, const char *, int);
-int regexec(const regex_t *, const char *, size_t, regmatch_t [], int);
+int regcomp(regex_t *__restrict, const char *__restrict, int);
+int regexec(const regex_t *__restrict, const char *__restrict, size_t, regmatch_t *__restrict, int);
 void regfree(regex_t *);
 
-size_t regerror(int, const regex_t *, char *, size_t);
+size_t regerror(int, const regex_t *__restrict, char *__restrict, size_t);
 
 #ifdef __cplusplus
 }

@@ -41,6 +41,7 @@ __RCSID("$NetBSD: humanize_number.c,v 1.14 2008/04/28 20:22:59 martin Exp $");
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
+#include <libutil.h>
 
 int
 humanize_number(char *buf, size_t len, int64_t bytes,

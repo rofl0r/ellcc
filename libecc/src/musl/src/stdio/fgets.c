@@ -1,8 +1,9 @@
 #include "stdio_impl.h"
+#include <string.h>
 
 #define MIN(a,b) ((a)<(b) ? (a) : (b))
 
-char *fgets(char *s, int n, FILE *f)
+char *fgets(char *restrict s, int n, FILE *restrict f)
 {
 	char *p = s;
 	unsigned char *z;

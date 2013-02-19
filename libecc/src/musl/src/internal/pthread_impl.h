@@ -2,17 +2,9 @@
 #define _PTHREAD_IMPL_H
 
 #include <pthread.h>
-#include <sched.h>
 #include <signal.h>
-#include <unistd.h>
-#include <sys/mman.h>
 #include <errno.h>
 #include <limits.h>
-#include <inttypes.h>
-#include <setjmp.h>
-#include <string.h>
-#include <time.h>
-#include <locale.h>
 #include "libc.h"
 #include "syscall.h"
 #include "atomic.h"
@@ -22,21 +14,18 @@
 
 struct pthread {
 	struct pthread *self;
-	void *dtv, *unused1, *unused2;
+	void **dtv, *unused1, *unused2;
 	uintptr_t sysinfo;
 	uintptr_t canary;
 	pid_t tid, pid;
 	int tsd_used, errno_val, *errno_ptr;
-	/* All cancellation-related fields must remain together, in order */
-	volatile uintptr_t cp_sp, cp_ip;
 	volatile int cancel, canceldisable, cancelasync;
+	int detached;
 	unsigned char *map_base;
 	size_t map_size;
 	void *start_arg;
 	void *(*start)(void *);
 	void *result;
-	int detached;
-	int exitlock;
 	struct __ptcb *cancelbuf;
 	void **tsd;
 	pthread_attr_t attr;
@@ -49,7 +38,10 @@ struct pthread {
 	int unblock_cancel;
 	int delete_timer;
 	locale_t locale;
-	int killlock;
+	int killlock[2];
+	int exitlock[2];
+	int startlock[2];
+	unsigned long sigmask[__SYSCALL_SSLEN/sizeof(long)];
 };
 
 struct __timer {
@@ -61,7 +53,11 @@ struct __timer {
 
 #define _a_stacksize __u.__s[0]
 #define _a_guardsize __u.__s[1]
-#define _a_detach __u.__i[2*__SU+0]
+#define _a_stackaddr __u.__s[2]
+#define _a_detach __u.__i[3*__SU+0]
+#define _a_sched __u.__i[3*__SU+1]
+#define _a_policy __u.__i[3*__SU+2]
+#define _a_prio __u.__i[3*__SU+3]
 #define _m_type __u.__i[0]
 #define _m_lock __u.__i[1]
 #define _m_waiters __u.__i[2]
@@ -83,7 +79,7 @@ struct __timer {
 #define _b_limit __u.__i[2]
 #define _b_count __u.__i[3]
 #define _b_waiters2 __u.__i[4]
-#define _b_inst __u.__p[4]
+#define _b_inst __u.__p[3]
 
 #include "pthread_arch.h"
 
@@ -91,9 +87,12 @@ struct __timer {
 #define SIGCANCEL 33
 #define SIGSYNCCALL 34
 
-#define SIGPT_SET ((sigset_t *)(unsigned long [1+(sizeof(long)==4)]){ \
+#define SIGALL_SET ((sigset_t *)(const unsigned long long [2]){ -1,-1 })
+#define SIGPT_SET \
+	((sigset_t *)(const unsigned long [__SYSCALL_SSLEN/sizeof(long)]){ \
 	[sizeof(long)==4] = 3UL<<(32*(sizeof(long)>4)) })
-#define SIGTIMER_SET ((sigset_t *)(unsigned long [1+(sizeof(long)==4)]){ \
+#define SIGTIMER_SET \
+	((sigset_t *)(const unsigned long [__SYSCALL_SSLEN/sizeof(long)]){ \
 	 0x80000000 })
 
 pthread_t __pthread_self_init(void);
@@ -109,10 +108,11 @@ int __timedwait(volatile int *, int, clockid_t, const struct timespec *, void (*
 void __wait(volatile int *, volatile int *, int, int);
 void __wake(volatile int *, int, int);
 
-void __synccall_lock();
-void __synccall_unlock();
+void __acquire_ptc();
+void __release_ptc();
+void __inhibit_ptc();
 
-#define DEFAULT_STACK_SIZE (16384-PAGE_SIZE)
+#define DEFAULT_STACK_SIZE 81920
 #define DEFAULT_GUARD_SIZE PAGE_SIZE
 
 #endif

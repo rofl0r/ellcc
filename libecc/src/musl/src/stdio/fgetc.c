@@ -9,5 +9,3 @@ int fgetc(FILE *f)
 	__unlockfile(f);
 	return c;
 }
-
-weak_alias(fgetc, getc);

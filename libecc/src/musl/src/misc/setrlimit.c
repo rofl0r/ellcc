@@ -8,10 +8,8 @@
 int __setrlimit(int resource, const struct rlimit *rlim)
 {
 	unsigned long k_rlim[2];
-#if defined(SYS_prlimit64)
 	int ret = __syscall(SYS_prlimit64, 0, resource, rlim, 0);
 	if (ret != -ENOSYS) return ret;
-#endif
 	k_rlim[0] = MIN(rlim->rlim_cur, -1UL);
 	k_rlim[1] = MIN(rlim->rlim_max, -1UL);
 	return __syscall(SYS_setrlimit, resource, k_rlim);

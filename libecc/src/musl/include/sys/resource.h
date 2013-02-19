@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_id_t
 #define __NEED_time_t
 #define __NEED_struct_timeval
@@ -55,6 +57,7 @@ int setpriority (int, id_t, int);
 
 #ifdef _GNU_SOURCE
 int prlimit(pid_t, int, const struct rlimit *, struct rlimit *);
+#define prlimit64 prlimit
 #endif
 
 #define PRIO_PROCESS 0
@@ -87,7 +90,7 @@ int prlimit(pid_t, int, const struct rlimit *, struct rlimit *);
 
 #define RLIM_NLIMITS RLIMIT_NLIMITS
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define getrlimit64 getrlimit
 #define setrlimit64 setrlimit
 #define rlimit64 rlimit

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_float_t
 #define __NEED_double_t
 #define __NEED___uint16_t
@@ -83,24 +85,36 @@ int __signbitl(long double);
 
 #define isunordered(x,y) (isnan((x)) ? ((void)(y),1) : isnan((y)))
 
-#if __STDC_VERSION__ >= 199901L
-inline
-#endif
-static int __isrel(long double __x, long double __y, int __rel)
-{
-	if (isunordered(__x, __y)) return 0;
-	if (__rel==-2) return __x < __y;
-	if (__rel==2) return __x > __y;
-	if (__rel==-1) return __x <= __y;
-	if (__rel==1) return __x >= __y;
-	return __x != __y;
-}
+#define __ISREL_DEF(rel, op, type) \
+static __inline int __is##rel(type __x, type __y) \
+{ return !isunordered(__x,__y) && __x op __y; }
 
-#define isless(x,y) __isrel((x), (y), -2)
-#define islessequal(x,y) __isrel((x), (y), -1)
-#define islessgreater(x,y) __isrel((x), (y), 0)
-#define isgreaterequal(x,y) __isrel((x), (y), 1)
-#define isgreater(x,y) __isrel((x), (y), 2)
+__ISREL_DEF(lessf, <, float)
+__ISREL_DEF(less, <, double)
+__ISREL_DEF(lessl, <, long double)
+__ISREL_DEF(lessequalf, <=, float)
+__ISREL_DEF(lessequal, <=, double)
+__ISREL_DEF(lessequall, <=, long double)
+__ISREL_DEF(lessgreaterf, !=, float)
+__ISREL_DEF(lessgreater, !=, double)
+__ISREL_DEF(lessgreaterl, !=, long double)
+__ISREL_DEF(greaterf, >, float)
+__ISREL_DEF(greater, >, double)
+__ISREL_DEF(greaterl, >, long double)
+__ISREL_DEF(greaterequalf, >=, float)
+__ISREL_DEF(greaterequal, >=, double)
+__ISREL_DEF(greaterequall, >=, long double)
+
+#define __tg_pred_2(x, y, p) ( \
+	sizeof((x)+(y)) == sizeof(float) ? p##f(x, y) : \
+	sizeof((x)+(y)) == sizeof(double) ? p(x, y) : \
+	p##l(x, y) )
+
+#define isless(x, y)            __tg_pred_2(x, y, __isless)
+#define islessequal(x, y)       __tg_pred_2(x, y, __islessequal)
+#define islessgreater(x, y)     __tg_pred_2(x, y, __islessgreater)
+#define isgreater(x, y)         __tg_pred_2(x, y, __isgreater)
+#define isgreaterequal(x, y)    __tg_pred_2(x, y, __isgreaterequal)
 
 double      acos(double);
 float       acosf(float);
@@ -199,8 +213,8 @@ float       fmodf(float, float);
 long double fmodl(long double, long double);
 
 double      frexp(double, int *);
-float       frexpf(float value, int *);
-long double frexpl(long double value, int *);
+float       frexpf(float, int *);
+long double frexpl(long double, int *);
 
 double      hypot(double, double);
 float       hypotf(float, float);
@@ -330,8 +344,13 @@ double      trunc(double);
 float       truncf(float);
 long double truncl(long double);
 
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+
+#if defined(_XOPEN_SOURCE) || defined(_BSD_SOURCE)
+#undef  MAXFLOAT
 #define MAXFLOAT        3.40282347e+38F
+#endif
+
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 #define M_E             2.7182818284590452354   /* e */
 #define M_LOG2E         1.4426950408889634074   /* log_2 e */
 #define M_LOG10E        0.43429448190325182765  /* log_10 e */
@@ -357,40 +376,38 @@ double      y1(double);
 double      yn(int, double);
 #endif
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+#define HUGE            3.40282347e+38F
+
 double      scalb(double, double);
 float       scalbf(float, float);
-long double scalbl(long double, long double);
+
+double      significand(double);
+float       significandf(float);
+
+double      lgamma_r(double, int*);
+float       lgammaf_r(float, int*);
+
+float       j0f(float);
+float       j1f(float);
+float       jnf(int, float);
+
+float       y0f(float);
+float       y1f(float);
+float       ynf(int, float);
+#endif
+
+#ifdef _GNU_SOURCE
+long double lgammal_r(long double, int*);
 
 void        sincos(double, double*, double*);
 void        sincosf(float, float*, float*);
 void        sincosl(long double, long double*, long double*);
 
-double      gamma(double);
-float       gammaf(float);
-long double gammal(long double);
-
-double      lgamma_r(double, int*);
-float       lgammaf_r(float, int*);
-long double lgammal_r(long double, int*);
-
-float       j0f(float);
-long double j0l(long double);
-float       j1f(float);
-long double j1l(long double);
-float       jnf(int, float);
-long double jnl(int, long double);
-
-float       y0f(float);
-long double y0l(long double);
-float       y1f(float);
-long double y1l(long double);
-float       ynf(int, float);
-long double ynl(int, long double);
-
 double      exp10(double);
 float       exp10f(float);
 long double exp10l(long double);
+
 double      pow10(double);
 float       pow10f(float);
 long double pow10l(long double);

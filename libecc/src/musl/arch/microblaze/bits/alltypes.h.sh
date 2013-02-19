@@ -16,9 +16,9 @@ union \1 \2;\
 #endif\
 /'
 
-TYPEDEF unsigned long size_t;
-TYPEDEF long ssize_t;
-TYPEDEF long ptrdiff_t;
+TYPEDEF unsigned size_t;
+TYPEDEF int ssize_t;
+TYPEDEF int ptrdiff_t;
 
 TYPEDEF __builtin_va_list va_list;
 
@@ -92,9 +92,9 @@ TYPEDEF unsigned int mode_t;
 
 TYPEDEF unsigned int nlink_t;
 TYPEDEF unsigned long long ino_t;
-TYPEDEF unsigned long long dev_t;
-TYPEDEF unsigned long blksize_t;
-TYPEDEF unsigned long long blkcnt_t;
+TYPEDEF long long dev_t;
+TYPEDEF long blksize_t;
+TYPEDEF long long blkcnt_t;
 TYPEDEF unsigned long long fsblkcnt_t;
 TYPEDEF unsigned long long fsfilcnt_t;
 

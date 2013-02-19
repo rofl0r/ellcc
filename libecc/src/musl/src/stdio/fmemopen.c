@@ -1,4 +1,7 @@
 #include "stdio_impl.h"
+#include <errno.h>
+#include <string.h>
+#include <inttypes.h>
 
 struct cookie {
 	size_t pos, len, size;
@@ -67,7 +70,7 @@ static int mclose(FILE *m)
 	return 0;
 }
 
-FILE *fmemopen(void *buf, size_t size, const char *mode)
+FILE *fmemopen(void *restrict buf, size_t size, const char *restrict mode)
 {
 	FILE *f;
 	struct cookie *c;
@@ -105,12 +108,13 @@ FILE *fmemopen(void *buf, size_t size, const char *mode)
 	f->seek = mseek;
 	f->close = mclose;
 
-	if (!libc.threaded) {
-		f->lock = -1;
-		f->next = libc.ofl_head;
-		if (libc.ofl_head) libc.ofl_head->prev = f;
-		libc.ofl_head = f;
-	}
+	if (!libc.threaded) f->lock = -1;
+
+	OFLLOCK();
+	f->next = libc.ofl_head;
+	if (libc.ofl_head) libc.ofl_head->prev = f;
+	libc.ofl_head = f;
+	OFLUNLOCK();
 
 	return f;
 }

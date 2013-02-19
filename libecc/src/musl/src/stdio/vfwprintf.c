@@ -1,4 +1,11 @@
 #include "stdio_impl.h"
+#include <errno.h>
+#include <ctype.h>
+#include <limits.h>
+#include <string.h>
+#include <stdarg.h>
+#include <wchar.h>
+#include <inttypes.h>
 
 /* Convenient bit representation for modifier flags, which all fall
  * within 31 codepoints of the space character. */
@@ -336,7 +343,7 @@ static int wprintf_core(FILE *f, const wchar_t *fmt, va_list *ap, union arg *nl_
 	return 1;
 }
 
-int vfwprintf(FILE *f, const wchar_t *fmt, va_list ap)
+int vfwprintf(FILE *restrict f, const wchar_t *restrict fmt, va_list ap)
 {
 	va_list ap2;
 	int nl_type[NL_ARGMAX] = {0};

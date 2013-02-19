@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -9,6 +8,7 @@
 #include <errno.h>
 #include <math.h>
 #include <float.h>
+#include <inttypes.h>
 
 #include "stdio_impl.h"
 #include "shgetc.h"
@@ -71,7 +71,7 @@ static int readwc(int c, wchar_t **wcs, mbstate_t *st)
 	return 0;
 }
 
-int vfscanf(FILE *f, const char *fmt, va_list ap)
+int vfscanf(FILE *restrict f, const char *restrict fmt, va_list ap)
 {
 	int width;
 	int size;
@@ -103,6 +103,7 @@ int vfscanf(FILE *f, const char *fmt, va_list ap)
 		}
 		if (*p != '%' || p[1] == '%') {
 			p += *p=='%';
+			shlim(f, 0);
 			c = shgetc(f);
 			if (c!=*p) {
 				shunget(f);

@@ -4,15 +4,25 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include "syscall.h"
+#include "pthread_impl.h"
 #include "fdop.h"
+#include "libc.h"
 
 extern char **environ;
 
-int __posix_spawnx(pid_t *res, const char *path,
-	int (*exec)(const char *, char *const *),
+static void dummy_0()
+{
+}
+weak_alias(dummy_0, __acquire_ptc);
+weak_alias(dummy_0, __release_ptc);
+
+pid_t __vfork(void);
+
+int __posix_spawnx(pid_t *restrict res, const char *restrict path,
+	int (*exec)(const char *, char *const *, char *const *),
 	const posix_spawn_file_actions_t *fa,
-	const posix_spawnattr_t *attr,
-	char *const argv[], char *const envp[])
+	const posix_spawnattr_t *restrict attr,
+	char *const argv[restrict], char *const envp[restrict])
 {
 	pid_t pid;
 	sigset_t oldmask;
@@ -21,24 +31,27 @@ int __posix_spawnx(pid_t *res, const char *path,
 
 	if (!attr) attr = &dummy_attr;
 
-	sigprocmask(SIG_BLOCK, (void *)(uint64_t []){-1}, &oldmask);
-	pid = __syscall(SYS_fork);
+	sigprocmask(SIG_BLOCK, SIGALL_SET, &oldmask);
+
+	__acquire_ptc();
+	pid = __vfork();
 
 	if (pid) {
+		__release_ptc();
 		sigprocmask(SIG_SETMASK, &oldmask, 0);
 		if (pid < 0) return -pid;
 		*res = pid;
 		return 0;
 	}
 
-	for (i=1; i<=64; i++) {
+	for (i=1; i<=8*__SYSCALL_SSLEN; i++) {
 		struct sigaction sa;
-		sigaction(i, 0, &sa);
-		if (sa.sa_handler!=SIG_IGN ||
+		__libc_sigaction(i, 0, &sa);
+		if (sa.sa_handler!=SIG_DFL && (sa.sa_handler!=SIG_IGN ||
 		    ((attr->__flags & POSIX_SPAWN_SETSIGDEF)
-		     && sigismember(&attr->__def, i) )) {
+		     && sigismember(&attr->__def, i) ))) {
 			sa.sa_handler = SIG_DFL;
-			sigaction(i, &sa, 0);
+			__libc_sigaction(i, &sa, 0);
 		}
 	}
 
@@ -82,17 +95,16 @@ int __posix_spawnx(pid_t *res, const char *path,
 	sigprocmask(SIG_SETMASK, (attr->__flags & POSIX_SPAWN_SETSIGMASK)
 		? &attr->__mask : &oldmask, 0);
 
-	if (envp) environ = (char **)envp;
-	exec(path, argv);
+	exec(path, argv, envp ? envp : environ);
 	_exit(127);
 
 	return 0;
 }
 
-int posix_spawn(pid_t *res, const char *path,
+int posix_spawn(pid_t *restrict res, const char *restrict path,
 	const posix_spawn_file_actions_t *fa,
-	const posix_spawnattr_t *attr,
-	char *const argv[], char *const envp[])
+	const posix_spawnattr_t *restrict attr,
+	char *const argv[restrict], char *const envp[restrict])
 {
-	return __posix_spawnx(res, path, execv, fa, attr, argv, envp);
+	return __posix_spawnx(res, path, execve, fa, attr, argv, envp);
 }

@@ -5,20 +5,17 @@
 extern "C" {
 #endif
 
-#undef NULL
-#ifdef __cplusplus
-#define NULL 0
-#else
-#define NULL ((void*)0)
-#endif
+#include <features.h>
 
+#define NULL 0L
 
 #define __NEED_size_t
 #define __NEED_time_t
 #define __NEED_clock_t
 
 #if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+ || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
+ || defined(_BSD_SOURCE)
 #define __NEED_struct_timespec
 #define __NEED_clockid_t
 #define __NEED_timer_t
@@ -42,12 +39,16 @@ struct tm
 	long __tm_gmtoff;
 	const char *__tm_zone;
 };
+#if defined(_BSD_SOURCE)
+#define tm_gmtoff __tm_gmtoff
+#define tm_zone __tm_zone
+#endif
 
 clock_t clock (void);
 time_t time (time_t *);
 double difftime (time_t, time_t);
 time_t mktime (struct tm *);
-size_t strftime (char *, size_t, const char *, const struct tm *);
+size_t strftime (char *__restrict, size_t, const char *__restrict, const struct tm *__restrict);
 struct tm *gmtime (const time_t *);
 struct tm *localtime (const time_t *);
 char *asctime (const struct tm *);
@@ -57,13 +58,14 @@ char *ctime (const time_t *);
 
 
 #if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+ || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
+ || defined(_BSD_SOURCE)
 
-size_t strftime_l (char *, size_t, const char *, const struct tm *, locale_t);
+size_t strftime_l (char *  __restrict, size_t, const char *  __restrict, const struct tm *  __restrict, locale_t);
 
-struct tm *gmtime_r (const time_t *, struct tm *);
-struct tm *localtime_r (const time_t *, struct tm *);
-char *asctime_r (const struct tm *, char *);
+struct tm *gmtime_r (const time_t *__restrict, struct tm *__restrict);
+struct tm *localtime_r (const time_t *__restrict, struct tm *__restrict);
+char *asctime_r (const struct tm *__restrict, char *__restrict);
 char *ctime_r (const time_t *, char *);
 
 void tzset (void);
@@ -89,9 +91,9 @@ int clock_nanosleep (clockid_t, int, const struct timespec *, struct timespec *)
 int clock_getcpuclockid (pid_t, clockid_t *);
 
 struct sigevent;
-int timer_create (clockid_t, struct sigevent *, timer_t *);
+int timer_create (clockid_t, struct sigevent *__restrict, timer_t *__restrict);
 int timer_delete (timer_t);
-int timer_settime (timer_t, int, const struct itimerspec *, struct itimerspec *);
+int timer_settime (timer_t, int, const struct itimerspec *__restrict, struct itimerspec *__restrict);
 int timer_gettime (timer_t, struct itimerspec *);
 int timer_getoverrun (timer_t);
 
@@ -99,7 +101,7 @@ int timer_getoverrun (timer_t);
 
 
 #if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
-char *strptime (const char *, const char *, struct tm *);
+char *strptime (const char *__restrict, const char *__restrict, struct tm *__restrict);
 extern int daylight;
 extern long timezone;
 extern char *tzname[2];
@@ -108,10 +110,10 @@ struct tm *getdate (const char *);
 #endif
 
 
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 int stime(time_t *);
+time_t timegm(struct tm *);
 #endif
-
 
 #ifdef __cplusplus
 }

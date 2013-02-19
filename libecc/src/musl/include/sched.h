@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_struct_timespec
 #define __NEED_pid_t
 #define __NEED_time_t
@@ -30,6 +32,9 @@ int     sched_yield(void);
 #define SCHED_OTHER 0
 #define SCHED_FIFO 1
 #define SCHED_RR 2
+#define SCHED_BATCH 3
+#define SCHED_IDLE 5
+#define SCHED_RESET_ON_FORK 0x40000000
 
 #ifdef _GNU_SOURCE
 #define CSIGNAL		0x000000ff
@@ -57,6 +62,7 @@ int     sched_yield(void);
 #define CLONE_IO	0x80000000
 int clone (int (*)(void *), void *, int, void *, ...);
 int unshare(int);
+int setns(int, int);
 #endif
 
 #ifdef __cplusplus

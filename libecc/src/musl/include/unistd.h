@@ -5,23 +5,17 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
-#undef SEEK_SET
-#undef SEEK_CUR
-#undef SEEK_END
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
 
-#undef NULL
-#ifdef __cplusplus
-#define NULL 0
-#else
-#define NULL ((void*)0)
-#endif
+#define NULL 0L
 
 #define __NEED_size_t
 #define __NEED_ssize_t
@@ -31,16 +25,14 @@ extern "C" {
 #define __NEED_pid_t
 #define __NEED_intptr_t
 
-#ifdef _BSD_SOURCE
-#define __NEED_mode_t
-#endif
-
 #include <bits/alltypes.h>
 
 int pipe(int [2]);
+int pipe2(int [2], int);
 int close(int);
 int dup(int);
 int dup2(int, int);
+int dup3(int, int, int);
 off_t lseek(int, off_t, int);
 int fsync(int);
 int fdatasync(int);
@@ -59,8 +51,8 @@ int link(const char *, const char *);
 int linkat(int, const char *, int, const char *, int);
 int symlink(const char *, const char *);
 int symlinkat(const char *, int, const char *);
-ssize_t readlink(const char *, char *, size_t);
-ssize_t readlinkat(int, const char *, char *, size_t);
+ssize_t readlink(const char *__restrict, char *__restrict, size_t);
+ssize_t readlinkat(int, const char *__restrict, char *__restrict, size_t);
 int unlink(const char *);
 int unlinkat(int, const char *, int);
 int rmdir(const char *);
@@ -71,6 +63,7 @@ int ftruncate(int, off_t);
 #define R_OK 4
 #define W_OK 2
 #define X_OK 1
+
 int access(const char *, int);
 int faccessat(int, const char *, int, int);
 
@@ -90,7 +83,7 @@ int execl(const char *, const char *, ...);
 int execvp(const char *, char *const []);
 int execlp(const char *, const char *, ...);
 int fexecve(int, char *const [], char *const []);
-void _exit(int);
+_Noreturn void _exit(int);
 
 pid_t getpid(void);
 pid_t getppid(void);
@@ -136,44 +129,61 @@ size_t confstr(int, char *, size_t);
 #define F_TLOCK 2
 #define F_TEST  3
 
-#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 int lockf(int, int, off_t);
-pid_t setpgrp(void);
-char *crypt(const char *, const char *);
-void encrypt(char *, int);
-void swab(const void *, void *, ssize_t);
 long gethostid(void);
 int nice(int);
 void sync(void);
 #endif
 
-#ifdef _GNU_SOURCE
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+pid_t setpgrp(void);
+char *crypt(const char *, const char *);
+void encrypt(char *, int);
+void swab(const void *__restrict, void *__restrict, ssize_t);
+#endif
+
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE) \
+ || (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE+0 < 700)
+int usleep(unsigned);
+unsigned ualarm(unsigned, unsigned);
+#endif
+
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+#define L_SET 0
+#define L_INCR 1
+#define L_XTND 2
 int brk(void *);
 void *sbrk(intptr_t);
-pid_t forkall(void);
 pid_t vfork(void);
 int vhangup(void);
 int chroot(const char *);
 int getpagesize(void);
+int getdtablesize(void);
 int sethostname(const char *, size_t);
-int usleep(unsigned);
-unsigned ualarm(unsigned, unsigned);
-int setgroups(size_t, const gid_t []);
+int getdomainname(char *, size_t);
+int setdomainname(const char *, size_t);
+int setgroups(size_t, const gid_t *);
+char *getpass(const char *);
+int daemon(int, int);
+void setusershell(void);
+void endusershell(void);
+char *getusershell(void);
+int acct(const char *);
+long syscall(long, ...);
+#endif
+
+#ifdef _GNU_SOURCE
+extern char **environ;
 int setresuid(uid_t, uid_t, uid_t);
 int setresgid(gid_t, gid_t, gid_t);
 int getresuid(uid_t *, uid_t *, uid_t *);
 int getresgid(gid_t *, gid_t *, gid_t *);
 char *get_current_dir_name(void);
-int daemon(int, int);
-int getdomainname(char *, size_t);
-int getdtablesize(void);
-void setusershell(void);
-void endusershell(void);
-char *getusershell(void);
-char *getpass(const char *);
+void syncfs(int);
 #endif
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define lseek64 lseek
 #define pread64 pread
 #define pwrite64 pwrite
@@ -197,6 +207,7 @@ char *getpass(const char *);
 #define _POSIX_MEMLOCK          _POSIX_VERSION
 #define _POSIX_MEMLOCK_RANGE    _POSIX_VERSION
 #define _POSIX_MEMORY_PROTECTION _POSIX_VERSION
+#define _POSIX_FSYNC            _POSIX_VERSION
 #define _POSIX_NO_TRUNC         1
 #define _POSIX_RAW_SOCKETS      _POSIX_VERSION
 #define _POSIX_REALTIME_SIGNALS _POSIX_VERSION
@@ -208,6 +219,9 @@ char *getpass(const char *);
 #define _POSIX_THREADS          _POSIX_VERSION
 #define _POSIX_THREAD_PROCESS_SHARED _POSIX_VERSION
 #define _POSIX_THREAD_SAFE_FUNCTIONS _POSIX_VERSION
+#define _POSIX_THREAD_ATTR_STACKADDR _POSIX_VERSION
+#define _POSIX_THREAD_ATTR_STACKSIZE _POSIX_VERSION
+#define _POSIX_THREAD_PRIORITY_SCHEDULING _POSIX_VERSION
 #define _POSIX_TIMERS           _POSIX_VERSION
 #define _POSIX_TIMEOUTS         _POSIX_VERSION
 #define _POSIX_MONOTONIC_CLOCK  _POSIX_VERSION
@@ -489,12 +503,6 @@ char *getpass(const char *);
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LDFLAGS	1145
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LIBS	1146
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LINTFLAGS	1147
-
-#ifdef _BSD_SOURCE
-void *setmode(const char *);
-mode_t getmode(const void *, mode_t);
-void strmode(mode_t, char *);
-#endif
 
 #ifdef __cplusplus
 }

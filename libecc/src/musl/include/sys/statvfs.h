@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_fsblkcnt_t
 #define __NEED_fsfilcnt_t
 #include <bits/alltypes.h>
@@ -26,7 +28,7 @@ struct statvfs {
 	int __reserved[6];
 };
 
-int statvfs (const char *, struct statvfs *);
+int statvfs (const char *__restrict, struct statvfs *__restrict);
 int fstatvfs (int, struct statvfs *);
 
 #define ST_RDONLY 1
@@ -41,7 +43,7 @@ int fstatvfs (int, struct statvfs *);
 #define ST_NOATIME     1024
 #define ST_NODIRATIME  2048
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define statvfs64 statvfs
 #define fstatvfs64 fstatvfs
 #define fsblkcnt64_t fsblkcnt_t

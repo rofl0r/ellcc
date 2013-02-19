@@ -5,11 +5,15 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #if defined(_POSIX_SOURCE) || defined(_POSIX_C_SOURCE) \
- || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+ || defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE) \
+ || defined(_BSD_SOURCE)
 
 #ifdef _GNU_SOURCE
 #define __siginfo siginfo
+#define __ucontext ucontext
 #endif
 
 #define __NEED_size_t
@@ -27,15 +31,9 @@ extern "C" {
 
 #define SIG_HOLD ((void (*)(int)) 2)
 
-#if defined(__mips__)
-#define SIG_BLOCK     1
-#define SIG_UNBLOCK   2
-#define SIG_SETMASK   3
-#else
 #define SIG_BLOCK     0
 #define SIG_UNBLOCK   1
 #define SIG_SETMASK   2
-#endif
 
 #define SI_ASYNCNL (-60)
 #define SI_TKILL (-6)
@@ -170,16 +168,16 @@ int sigaddset(sigset_t *, int);
 int sigdelset(sigset_t *, int);
 int sigismember(const sigset_t *, int);
 
-int sigprocmask(int, const sigset_t *, sigset_t *);
+int sigprocmask(int, const sigset_t *__restrict, sigset_t *__restrict);
 int sigsuspend(const sigset_t *);
-int sigaction(int, const struct sigaction *, struct sigaction *);
+int sigaction(int, const struct sigaction *__restrict, struct sigaction *__restrict);
 int sigpending(sigset_t *);
-int sigwait(const sigset_t *, int *);
-int sigwaitinfo(const sigset_t *, siginfo_t *);
-int sigtimedwait(const sigset_t *, siginfo_t *, const struct timespec *);
+int sigwait(const sigset_t *__restrict, int *__restrict);
+int sigwaitinfo(const sigset_t *__restrict, siginfo_t *__restrict);
+int sigtimedwait(const sigset_t *__restrict, siginfo_t *__restrict, const struct timespec *__restrict);
 int sigqueue(pid_t, int, const union sigval);
 
-int pthread_sigmask(int, const sigset_t *, sigset_t *);
+int pthread_sigmask(int, const sigset_t *__restrict, sigset_t *__restrict);
 int pthread_kill(pthread_t, int);
 
 void psiginfo(const siginfo_t *, const char *);
@@ -189,7 +187,7 @@ void psignal(int, const char *);
 
 #if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
 int killpg(pid_t, int);
-int sigaltstack(const stack_t *, stack_t *);
+int sigaltstack(const stack_t *__restrict, stack_t *__restrict);
 int sighold(int);
 int sigignore(int);
 int siginterrupt(int, int);
@@ -210,10 +208,21 @@ void (*sigset(int, void (*)(int)))(int);
 #define SIGSTKSZ 8192
 #endif
 
+#if defined(_XOPEN_SOURCE) || defined(_GNU_SOURCE)
+#define NSIG _NSIG
+#endif
+
+#if defined(_BSD_SOURCE) || defined(_GNU_SOURCE)
+typedef void (*sig_t)(int);
+#endif
+
 #ifdef _GNU_SOURCE
 typedef void (*sighandler_t)(int);
 void (*bsd_signal(int, void (*)(int)))(int);
 int sigisemptyset(const sigset_t *);
+int sigorset (sigset_t *, sigset_t *, sigset_t *);
+int sigandset(sigset_t *, sigset_t *, sigset_t *);
+
 #define SA_NOMASK SA_NODEFER
 #define SA_ONESHOT SA_RESETHAND
 #endif
@@ -228,10 +237,6 @@ typedef int sig_atomic_t;
 
 void (*signal(int, void (*)(int)))(int);
 int raise(int);
-
-#ifdef _BSD_SOURCE
-extern const char *const *sys_signame;
-#endif
 
 #ifdef __cplusplus
 }

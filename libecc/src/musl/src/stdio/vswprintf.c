@@ -1,4 +1,9 @@
 #include "stdio_impl.h"
+#include <limits.h>
+#include <string.h>
+#include <errno.h>
+#include <stdint.h>
+#include <wchar.h>
 
 struct cookie {
 	wchar_t *ws;
@@ -22,7 +27,7 @@ static size_t sw_write(FILE *f, const unsigned char *s, size_t l)
 	return i<0 ? i : l0;
 }
 
-int vswprintf(wchar_t *s, size_t n, const wchar_t *fmt, va_list ap)
+int vswprintf(wchar_t *restrict s, size_t n, const wchar_t *restrict fmt, va_list ap)
 {
 	int r;
 	FILE f;

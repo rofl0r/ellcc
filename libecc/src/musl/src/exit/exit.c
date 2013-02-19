@@ -9,24 +9,23 @@ static void dummy()
 {
 }
 
-/* __towrite.c and atexit.c override these */
+/* __toread.c, __towrite.c, and atexit.c override these */
 weak_alias(dummy, __funcs_on_exit);
-weak_alias(dummy, __fflush_on_exit);
+weak_alias(dummy, __flush_on_exit);
+weak_alias(dummy, __seek_on_exit);
 
-void exit(int code)
+_Noreturn void exit(int code)
 {
 	static int lock;
 
 	/* If more than one thread calls exit, hang until _Exit ends it all */
 	while (a_swap(&lock, 1)) __syscall(SYS_pause);
 
-	/* Destructor s**t is kept separate from atexit to avoid bloat */
+	__funcs_on_exit();
 	if (libc.fini) libc.fini();
 	if (libc.ldso_fini) libc.ldso_fini();
-
-	/* Only do atexit & stdio flush if they were actually used */
-	__funcs_on_exit();
-	__fflush_on_exit();
+	__flush_on_exit();
+	__seek_on_exit();
 
 	_Exit(code);
 	for(;;);

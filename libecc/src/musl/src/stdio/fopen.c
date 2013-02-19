@@ -1,11 +1,13 @@
 #include "stdio_impl.h"
+#include <fcntl.h>
+#include <string.h>
+#include <errno.h>
 
-FILE *fopen(const char *filename, const char *mode)
+FILE *fopen(const char *restrict filename, const char *restrict mode)
 {
 	FILE *f;
 	int fd;
 	int flags;
-	int plus = !!strchr(mode, '+');
 
 	/* Check for valid initial mode character */
 	if (!strchr("rwa", *mode)) {
@@ -14,12 +16,7 @@ FILE *fopen(const char *filename, const char *mode)
 	}
 
 	/* Compute the flags to pass to open() */
-	if (plus) flags = O_RDWR;
-	else if (*mode == 'r') flags = O_RDONLY;
-	else flags = O_WRONLY;
-	if (*mode != 'r') flags |= O_CREAT;
-	if (*mode == 'w') flags |= O_TRUNC;
-	if (*mode == 'a') flags |= O_APPEND;
+	flags = __fmodeflags(mode);
 
 	fd = syscall_cp(SYS_open, filename, flags|O_LARGEFILE, 0666);
 	if (fd < 0) return 0;

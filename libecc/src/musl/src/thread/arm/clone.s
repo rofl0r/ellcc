@@ -27,9 +27,9 @@ clone:
 	bne 1f
 	mov lr,pc
 	mov pc,r5
-2:	mov r1,r0
-	mov r0,#1
+2:	mov r7,#1
 	svc 0
 
-1:	blx r5
+1:	mov lr,pc
+	bx r5
 	b 2b

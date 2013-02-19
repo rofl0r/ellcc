@@ -16,16 +16,18 @@ struct __libc {
 	int canceldisable;
 	FILE *ofl_head;
 	int ofl_lock[2];
+	size_t tls_size;
 };
 
+extern size_t __hwcap;
 
-#if !defined(__PIC__) || 100*__GNUC__+__GNUC_MINOR__ >= 303 || defined(__PCC__) || defined(__TINYC__)
+#if !defined(__PIC__) || (100*__GNUC__+__GNUC_MINOR__ >= 303 && !defined(__PCC__))
 
 #ifdef __PIC__
 #if __GNUC__ < 4
 #define BROKEN_VISIBILITY 1
 #endif
-#define ATTR_LIBC_VISIBILITY __attribute__((visibility("hidden"))) 
+#define ATTR_LIBC_VISIBILITY __attribute__((visibility("hidden")))
 #else
 #define ATTR_LIBC_VISIBILITY
 #endif
@@ -44,15 +46,14 @@ extern struct __libc *__libc_loc(void) __attribute__((const));
 
 
 /* Designed to avoid any overhead in non-threaded processes */
-void __lock(volatile int *);
-void __unlock(volatile int *);
-int __lockfile(FILE *);
-void __unlockfile(FILE *);
+void __lock(volatile int *) ATTR_LIBC_VISIBILITY;
+void __unlock(volatile int *) ATTR_LIBC_VISIBILITY;
+int __lockfile(FILE *) ATTR_LIBC_VISIBILITY;
+void __unlockfile(FILE *) ATTR_LIBC_VISIBILITY;
 #define LOCK(x) (libc.threads_minus_1 ? (__lock(x),1) : ((void)(x),1))
 #define UNLOCK(x) (libc.threads_minus_1 ? (__unlock(x),1) : ((void)(x),1))
 
 void __synccall(void (*)(void *), void *);
-void __synccall_wait(void);
 int __setxid(int, int, int, int);
 
 extern char **__environ;
@@ -63,8 +64,7 @@ extern char **__environ;
 	extern __typeof(old) new __attribute__((weak, alias(#old)))
 
 #undef LFS64_2
-//#define LFS64_2(x, y) weak_alias(x, y)
-#define LFS64_2(x, y) extern __typeof(x) y
+#define LFS64_2(x, y) weak_alias(x, y)
 
 #undef LFS64
 #define LFS64(x) LFS64_2(x, x##64)

@@ -13,3 +13,6 @@ struct __libc __libc;
 #ifdef BROKEN_VISIBILITY
 __asm__(".hidden __libc");
 #endif
+
+size_t __hwcap;
+size_t __sysinfo;

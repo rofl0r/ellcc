@@ -5,12 +5,9 @@
 extern "C" {
 #endif
 
-#undef NULL
-#ifdef __cplusplus
-#define NULL 0
-#else
-#define NULL ((void*)0)
-#endif
+#include <features.h>
+
+#define NULL 0L
 
 #define LC_CTYPE    0
 #define LC_NUMERIC  1

@@ -2,7 +2,7 @@
 #include <string.h>
 
 #define E(a,b) a,
-static const unsigned char errid[] = {
+static const unsigned int errid[] = {
 #include "__strerror.h"
 };
 

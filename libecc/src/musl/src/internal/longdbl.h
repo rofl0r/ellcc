@@ -5,14 +5,6 @@
 #include <stdint.h>
 
 #if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
-union ldshape {
-	long double value;
-	struct {
-		uint64_t m:52;
-		uint16_t exp:11;
-		uint16_t sign:1;
-	} bits;
-};
 #elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
 union ldshape {
 	long double value;

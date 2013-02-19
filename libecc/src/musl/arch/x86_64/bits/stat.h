@@ -18,11 +18,5 @@ struct stat {
 	struct timespec st_atim;
 	struct timespec st_mtim;
 	struct timespec st_ctim;
-	long __unused0[3];
+	long __unused2[3];
 };
-
-#ifdef _BSD_SOURCE
-#define st_atimespec st_atim
-#define st_mtimespec st_mtim
-#define st_ctimespec st_ctim
-#endif

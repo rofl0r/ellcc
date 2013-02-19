@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_time_t
 #define __NEED_size_t
 #define __NEED_pid_t
@@ -13,6 +15,9 @@ extern "C" {
 
 #include <sys/ipc.h>
 #include <bits/shm.h>
+
+#define SHM_R 0400
+#define SHM_W 0200
 
 #define SHM_RDONLY 010000
 #define SHM_RND    020000

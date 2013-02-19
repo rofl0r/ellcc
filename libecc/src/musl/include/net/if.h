@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define IF_NAMESIZE 16
 
 struct if_nameindex
@@ -21,7 +23,7 @@ void if_freenameindex (struct if_nameindex *);
 
 
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 
 #include <sys/socket.h>
 

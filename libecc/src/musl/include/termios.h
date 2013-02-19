@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define __NEED_pid_t
 
 #include <bits/alltypes.h>
@@ -32,7 +34,7 @@ int tcflow (int, int);
 
 pid_t tcgetsid (int);
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
 void cfmakeraw(struct termios *);
 int cfsetspeed(struct termios *, speed_t);
 #endif

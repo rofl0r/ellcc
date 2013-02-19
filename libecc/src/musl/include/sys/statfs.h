@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #include <sys/statvfs.h>
 
 typedef struct {
@@ -16,7 +18,7 @@ typedef struct {
 int statfs (const char *, struct statfs *);
 int fstatfs (int, struct statfs *);
 
-#ifdef _LARGEFILE64_SOURCE
+#if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define statfs64 statfs
 #define fstatfs64 fstatfs
 #define fsblkcnt64_t fsblkcnt_t

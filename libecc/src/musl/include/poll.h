@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <features.h>
+
 #define POLLIN     0x001
 #define POLLPRI    0x002
 #define POLLOUT    0x004
@@ -16,8 +18,9 @@ extern "C" {
 #define POLLWRNORM 0x100
 #define POLLWRBAND 0x200
 #define POLLMSG    0x400
+#define POLLRDHUP  0x2000
 
-typedef unsigned int nfds_t;
+typedef unsigned long nfds_t;
 
 struct pollfd
 {
@@ -27,6 +30,14 @@ struct pollfd
 };
 
 int poll (struct pollfd *, nfds_t, int);
+
+#ifdef _GNU_SOURCE
+#define __NEED_time_t
+#define __NEED_struct_timespec
+#define __NEED_sigset_t
+#include <bits/alltypes.h>
+int ppoll(struct pollfd *, nfds_t, const struct timespec *, const sigset_t *);
+#endif
 
 #ifdef __cplusplus
 }
