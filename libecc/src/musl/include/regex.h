@@ -24,6 +24,10 @@ typedef struct {
 	regoff_t rm_eo;
 } regmatch_t;
 
+#ifdef _BSD_SOURCE
+#define REG_BASIC       0
+#endif
+
 #define REG_EXTENDED    1
 #define REG_ICASE       2
 #define REG_NEWLINE     4

@@ -36,7 +36,7 @@ TEST_GROUP(Signal)
     TEST(SIGSEGV > 0, "SIGSEGV is a positive value");
     TEST(SIGSEGV != SIGTERM,
          "SIGSEGV has a distinct value");
-    TEST(SIGTERM > 0, "SIGSEGV is a positive value");
+    TEST(SIGTERM > 0, "SIGTERM is a positive value");
     TEST_TRACE(C99 7.14.1.1)
     signal(SIGINT, handler);
     TEST_TRACE(C99 7.14.1.1/8)

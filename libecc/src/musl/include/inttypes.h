@@ -24,7 +24,7 @@ uintmax_t wcstoumax(const wchar_t *__restrict, wchar_t **__restrict, int);
 
 #if !defined __cplusplus || defined __STDC_FORMAT_MACROS
 
-#if UINTPTR_MAX == UINT64_MAX
+#if 0 && UINTPTR_MAX == UINT64_MAX      // RICH
 #define __PRI64  "l"
 #else
 #define __PRI64  "ll"

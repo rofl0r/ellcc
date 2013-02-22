@@ -51,6 +51,17 @@ struct timezone {
 	((a)->tv_usec += 1000000, (a)->tv_sec--) )
 #endif
 
+#ifdef _BSD_SOURCE
+#define TIMEVAL_TO_TIMESPEC(tv, ts) do {                                \
+        (ts)->tv_sec = (tv)->tv_sec;                                    \
+                (ts)->tv_nsec = (tv)->tv_usec * 1000;                   \
+} while (/*CONSTCOND*/0)
+#define TIMESPEC_TO_TIMEVAL(tv, ts) do {                                \
+        (tv)->tv_sec = (ts)->tv_sec;                                    \
+                (tv)->tv_usec = (suseconds_t)(ts)->tv_nsec / 1000;      \
+} while (/*CONSTCOND*/0)
+#endif
+
 #ifdef __cplusplus
 }
 #endif

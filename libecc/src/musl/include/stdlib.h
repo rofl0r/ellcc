@@ -12,6 +12,11 @@ extern "C" {
 #define __NEED_size_t
 #define __NEED_wchar_t
 
+#ifdef _BSD_SOURCE
+#define __NEED_uint32_t
+#define __NEED_int64_t
+#endif
+
 #include <bits/alltypes.h>
 
 int atoi (const char *);
@@ -150,6 +155,24 @@ char *gcvt(double, int, char *);
 
 #if defined(_LARGEFILE64_SOURCE) || defined(_GNU_SOURCE)
 #define mkstemp64 mkstemp
+#endif
+
+#ifdef _BSD_SOURCE
+char *getbsize(int *, long *);
+
+#define HN_DECIMAL              0x01
+#define HN_NOSPACE              0x02
+#define HN_B                    0x04
+#define HN_DIVISOR_1000         0x08
+
+#define HN_GETSCALE             0x10
+#define HN_AUTOSCALE            0x20
+int humanize_number(char *, size_t, int64_t, const char *, int, int);
+int dehumanize_number(const char *, int64_t *);
+
+uint32_t arc4random(void);
+void  arc4random_stir(void);
+void  arc4random_addrandom(unsigned char *, int);
 #endif
 
 #ifdef __cplusplus

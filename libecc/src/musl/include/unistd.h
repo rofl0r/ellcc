@@ -25,6 +25,10 @@ extern "C" {
 #define __NEED_pid_t
 #define __NEED_intptr_t
 
+#ifdef _BSD_SOURCE
+#define __NEED_mode_t
+#endif
+
 #include <bits/alltypes.h>
 
 int pipe(int [2]);
@@ -503,6 +507,12 @@ void syncfs(int);
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LDFLAGS	1145
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LIBS	1146
 #define _CS_POSIX_V7_LPBIG_OFFBIG_LINTFLAGS	1147
+
+#ifdef _BSD_SOURCE
+void *setmode(const char *);
+mode_t getmode(const void *, mode_t);
+void strmode(mode_t, char *);
+#endif
 
 #ifdef __cplusplus
 }

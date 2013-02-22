@@ -1,4 +1,8 @@
-Changes since 0.0.0:
+Changes since 0.0.1:
+
+* Updated to musl 0.9.9.
+
+version 0.0.1:
 
 * Added the workspace directory for examples of multi-target builds.
 

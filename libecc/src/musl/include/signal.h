@@ -31,9 +31,15 @@ extern "C" {
 
 #define SIG_HOLD ((void (*)(int)) 2)
 
+#if defined(__mips__)
+#define SIG_BLOCK     1
+#define SIG_UNBLOCK   2
+#define SIG_SETMASK   3
+#else
 #define SIG_BLOCK     0
 #define SIG_UNBLOCK   1
 #define SIG_SETMASK   2
+#endif
 
 #define SI_ASYNCNL (-60)
 #define SI_TKILL (-6)
@@ -237,6 +243,11 @@ typedef int sig_atomic_t;
 
 void (*signal(int, void (*)(int)))(int);
 int raise(int);
+
+#ifdef _BSD_SOURCE
+extern const char *const *sys_signame;
+#define SIGINFO         SIGUSR1 /* For NetBSD compatability */
+#endif
 
 #ifdef __cplusplus
 }

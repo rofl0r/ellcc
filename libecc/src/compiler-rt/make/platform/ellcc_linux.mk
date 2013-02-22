@@ -19,11 +19,13 @@ FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \
 		 aeabi_memset \
+		 aeabi_memmove \
 		 aeabi_memcpy
 FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \
 		 aeabi_memset \
+		 aeabi_memmove \
 		 aeabi_memcpy
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
 FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)

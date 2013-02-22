@@ -26,6 +26,13 @@ extern "C" {
 #define st_mtime st_mtim.tv_sec
 #define st_ctime st_ctim.tv_sec
 
+#ifdef _BSD_SOURCE
+#define st_atimespec st_atim
+#define st_mtimespec st_mtim
+#define st_ctimespec st_ctim
+#define S_BLKSIZE 512
+#endif
+
 #define S_IFMT  0170000
 
 #define S_IFDIR 0040000
