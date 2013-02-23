@@ -20,7 +20,9 @@ int __libc_sigaction(int sig, const struct sigaction *restrict sa, struct sigact
 			__pthread_self_def();
 		ksa.handler = sa->sa_handler;
 		ksa.flags = sa->sa_flags | SA_RESTORER;
+#if !defined(__mips__)
 		ksa.restorer = (sa->sa_flags & SA_SIGINFO) ? __restore_rt : __restore;
+#endif
 		memcpy(&ksa.mask, &sa->sa_mask, sizeof ksa.mask);
 	}
 	if (syscall(SYS_rt_sigaction, sig, sa?&ksa:0, old?&oksa:0, sizeof ksa.mask))
