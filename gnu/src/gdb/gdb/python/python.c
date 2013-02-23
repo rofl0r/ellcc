@@ -41,7 +41,7 @@ static const char python_excp_full[] = "full";
 static const char python_excp_message[] = "message";
 
 /* "set python print-stack" choices.  */
-static const char *python_excp_enums[] =
+static const char *const python_excp_enums[] =
   {
     python_excp_none,
     python_excp_full,
@@ -151,34 +151,31 @@ ensure_python_env (struct gdbarch *gdbarch,
   return make_cleanup (restore_python_env, env);
 }
 
-/* A wrapper around PyRun_SimpleFile.  FILENAME is the name of
-   the Python script to run.
+/* A wrapper around PyRun_SimpleFile.  FILE is the Python script to run
+   named FILENAME.
 
-   One of the parameters of PyRun_SimpleFile is a FILE *.
-   The problem is that type FILE is extremely system and compiler
-   dependent.  So, unless the Python library has been compiled using
-   the same build environment as GDB, we run the risk of getting
-   a crash due to inconsistencies between the definition used by GDB,
-   and the definition used by Python.  A mismatch can very likely
-   lead to a crash.
-
-   There is also the situation where the Python library and GDB
-   are using two different versions of the C runtime library.
-   This is particularly visible on Windows, where few users would
-   build Python themselves (this is no trivial task on this platform),
-   and thus use binaries built by someone else instead. Python,
-   being built with VC, would use one version of the msvcr DLL
-   (Eg. msvcr100.dll), while MinGW uses msvcrt.dll.  A FILE *
-   from one runtime does not necessarily operate correctly in
+   On Windows hosts few users would build Python themselves (this is no
+   trivial task on this platform), and thus use binaries built by
+   someone else instead.  There may happen situation where the Python
+   library and GDB are using two different versions of the C runtime
+   library.  Python, being built with VC, would use one version of the
+   msvcr DLL (Eg. msvcr100.dll), while MinGW uses msvcrt.dll.
+   A FILE * from one runtime does not necessarily operate correctly in
    the other runtime.
 
-   To work around this potential issue, we create the FILE object
-   using Python routines, thus making sure that it is compatible
-   with the Python library.  */
+   To work around this potential issue, we create on Windows hosts the
+   FILE object using Python routines, thus making sure that it is
+   compatible with the Python library.  */
 
 static void
-python_run_simple_file (const char *filename)
+python_run_simple_file (FILE *file, const char *filename)
 {
+#ifndef _WIN32
+
+  PyRun_SimpleFile (file, filename);
+
+#else /* _WIN32 */
+
   char *full_path;
   PyObject *python_file;
   struct cleanup *cleanup;
@@ -198,6 +195,8 @@ python_run_simple_file (const char *filename)
   make_cleanup_py_decref (python_file);
   PyRun_SimpleFile (PyFile_AsFile (python_file), filename);
   do_cleanups (cleanup);
+
+#endif /* _WIN32 */
 }
 
 /* Given a command_line, return a command string suitable for passing
@@ -504,7 +503,7 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
 						  appease gcc.  */
   struct symtab_and_line sal;
   const char *arg = NULL;
-  char *copy = NULL;
+  char *copy_to_free = NULL, *copy = NULL;
   struct cleanup *cleanups;
   PyObject *result = NULL;
   PyObject *return_result = NULL;
@@ -516,14 +515,14 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
 
   cleanups = make_cleanup (null_cleanup, NULL);
 
+  sals.sals = NULL;
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
       if (arg)
 	{
 	  copy = xstrdup (arg);
-	  make_cleanup (xfree, copy);
+	  copy_to_free = copy;
 	  sals = decode_line_1 (&copy, 0, 0, 0);
-	  make_cleanup (xfree, sals.sals);
 	}
       else
 	{
@@ -533,6 +532,13 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
 	  sals.nelts = 1;
 	}
     }
+
+  if (sals.sals != NULL && sals.sals != &sal)
+    {
+      make_cleanup (xfree, copy_to_free);
+      make_cleanup (xfree, sals.sals);
+    }
+
   if (except.reason < 0)
     {
       do_cleanups (cleanups);
@@ -550,7 +556,6 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
       for (i = 0; i < sals.nelts; ++i)
 	{
 	  PyObject *obj;
-	  char *str;
 
 	  obj = symtab_and_line_to_sal_object (sals.sals[i]);
 	  if (! obj)
@@ -576,7 +581,16 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
     }
 
   if (copy && strlen (copy) > 0)
-    unparsed = PyString_FromString (copy);
+    {
+      unparsed = PyString_FromString (copy);
+      if (unparsed == NULL)
+	{
+	  Py_DECREF (result);
+	  Py_DECREF (return_result);
+	  return_result = NULL;
+	  goto error;
+	}
+    }
   else
     {
       unparsed = Py_None;
@@ -586,13 +600,10 @@ gdbpy_decode_line (PyObject *self, PyObject *args)
   PyTuple_SetItem (return_result, 0, unparsed);
   PyTuple_SetItem (return_result, 1, result);
 
+ error:
   do_cleanups (cleanups);
 
   return return_result;
-
- error:
-  do_cleanups (cleanups);
-  return NULL;
 }
 
 /* Parse a string and evaluate it as an expression.  */
@@ -619,18 +630,36 @@ gdbpy_parse_and_eval (PyObject *self, PyObject *args)
   return value_to_value_object (result);
 }
 
+/* Implementation of gdb.find_pc_line function.
+   Returns the gdb.Symtab_and_line object corresponding to a PC value.  */
+
+static PyObject *
+gdbpy_find_pc_line (PyObject *self, PyObject *args)
+{
+  struct symtab_and_line sal;
+  CORE_ADDR pc;
+  gdb_py_ulongest pc_llu;
+
+  if (!PyArg_ParseTuple (args, GDB_PY_LLU_ARG, &pc_llu))
+    return NULL;
+
+  pc = (CORE_ADDR) pc_llu;
+  sal = find_pc_line (pc, 0);
+  return symtab_and_line_to_sal_object (sal);
+}
+
 /* Read a file as Python code.
-   FILE is the name of the file.
+   FILE is the file to run.  FILENAME is name of the file FILE.
    This does not throw any errors.  If an exception occurs python will print
    the traceback and clear the error indicator.  */
 
 void
-source_python_script (const char *file)
+source_python_script (FILE *file, const char *filename)
 {
   struct cleanup *cleanup;
 
   cleanup = ensure_python_env (get_current_arch (), current_language);
-  python_run_simple_file (file);
+  python_run_simple_file (file, filename);
   do_cleanups (cleanup);
 }
 
@@ -664,7 +693,6 @@ static void
 gdbpy_run_events (struct serial *scb, void *context)
 {
   struct cleanup *cleanup;
-  int r;
 
   cleanup = ensure_python_env (get_current_arch (), current_language);
 
@@ -834,26 +862,31 @@ gdbpy_write (PyObject *self, PyObject *args, PyObject *kw)
   const char *arg;
   static char *keywords[] = {"text", "stream", NULL };
   int stream_type = 0;
+  volatile struct gdb_exception except;
   
   if (! PyArg_ParseTupleAndKeywords (args, kw, "s|i", keywords, &arg,
 				     &stream_type))
     return NULL;
 
-  switch (stream_type)
+  TRY_CATCH (except, RETURN_MASK_ALL)
     {
-    case 1:
-      {
-	fprintf_filtered (gdb_stderr, "%s", arg);
-	break;
-      }
-    case 2:
-      {
-	fprintf_filtered (gdb_stdlog, "%s", arg);
-	break;
-      }
-    default:
-      fprintf_filtered (gdb_stdout, "%s", arg);
+      switch (stream_type)
+        {
+        case 1:
+          {
+	    fprintf_filtered (gdb_stderr, "%s", arg);
+	    break;
+          }
+        case 2:
+          {
+	    fprintf_filtered (gdb_stdlog, "%s", arg);
+	    break;
+          }
+        default:
+          fprintf_filtered (gdb_stdout, "%s", arg);
+        }
     }
+  GDB_PY_HANDLE_EXCEPTION (except);
      
   Py_RETURN_NONE;
 }
@@ -991,19 +1024,20 @@ gdbpy_progspaces (PyObject *unused1, PyObject *unused2)
    source_python_script_for_objfile; it is NULL at other times.  */
 static struct objfile *gdbpy_current_objfile;
 
-/* Set the current objfile to OBJFILE and then read FILE as Python code.
-   This does not throw any errors.  If an exception occurs python will print
-   the traceback and clear the error indicator.  */
+/* Set the current objfile to OBJFILE and then read FILE named FILENAME
+   as Python code.  This does not throw any errors.  If an exception
+   occurs python will print the traceback and clear the error indicator.  */
 
 void
-source_python_script_for_objfile (struct objfile *objfile, const char *file)
+source_python_script_for_objfile (struct objfile *objfile, FILE *file,
+                                  const char *filename)
 {
   struct cleanup *cleanups;
 
   cleanups = ensure_python_env (get_objfile_arch (objfile), current_language);
   gdbpy_current_objfile = objfile;
 
-  python_run_simple_file (file);
+  python_run_simple_file (file, filename);
 
   do_cleanups (cleanups);
   gdbpy_current_objfile = NULL;
@@ -1079,7 +1113,7 @@ eval_python_from_control_command (struct command_line *cmd)
 }
 
 void
-source_python_script (const char *file)
+source_python_script (FILE *file, const char *filename)
 {
   throw_error (UNSUPPORTED_ERROR,
 	       _("Python scripting is not supported in this copy of GDB."));
@@ -1102,58 +1136,6 @@ gdbpy_breakpoint_has_py_cond (struct breakpoint_object *bp_obj)
 }
 
 #endif /* HAVE_PYTHON */
-
-
-/* Support for "mt set python print-stack on|off" is present in gdb 7.4
-   to not break Eclipse.
-   ref: https://bugs.eclipse.org/bugs/show_bug.cgi?id=367788.  */
-
-/* Lists for 'maint set python' commands.  */
-
-static struct cmd_list_element *maint_set_python_list;
-static struct cmd_list_element *maint_show_python_list;
-
-/* Function for use by 'maint set python' prefix command.  */
-
-static void
-maint_set_python (char *args, int from_tty)
-{
-  help_list (maint_set_python_list, "maintenance set python ",
-	     class_deprecated, gdb_stdout);
-}
-
-/* Function for use by 'maint show python' prefix command.  */
-
-static void
-maint_show_python (char *args, int from_tty)
-{
-  cmd_show_list (maint_show_python_list, from_tty, "");
-}
-
-/* True if we should print the stack when catching a Python error,
-   false otherwise.  */
-static int gdbpy_should_print_stack_deprecated = 0;
-
-static void
-set_maint_python_print_stack (char *args, int from_tty,
-			      struct cmd_list_element *e)
-{
-  if (gdbpy_should_print_stack_deprecated)
-    gdbpy_should_print_stack = python_excp_full;
-  else
-    gdbpy_should_print_stack = python_excp_none;
-}
-
-static void
-show_maint_python_print_stack (struct ui_file *file, int from_tty,
-			       struct cmd_list_element *c, const char *value)
-{
-  fprintf_filtered (file,
-		    _("The mode of Python stack printing on error is"
-		      " \"%s\".\n"),
-		    gdbpy_should_print_stack == python_excp_full
-		    ? "on" : "off");
-}
 
 
 
@@ -1210,34 +1192,6 @@ Python scripting is not supported in this copy of GDB.\n\
 This command is only a placeholder.")
 #endif /* HAVE_PYTHON */
 	   );
-
-  add_prefix_cmd ("python", no_class, maint_show_python,
-		  _("Prefix command for python maintenance settings."),
-		  &maint_show_python_list, "maintenance show python ", 0,
-		  &maintenance_show_cmdlist);
-  add_prefix_cmd ("python", no_class, maint_set_python,
-		  _("Prefix command for python maintenance settings."),
-		  &maint_set_python_list, "maintenance set python ", 0,
-		  &maintenance_set_cmdlist);
-
-  add_setshow_boolean_cmd ("print-stack", class_maintenance,
-			   &gdbpy_should_print_stack_deprecated, _("\
-Enable or disable printing of Python stack dump on error."), _("\
-Show whether Python stack will be printed on error."), _("\
-Enables or disables printing of Python stack traces."),
-			   set_maint_python_print_stack,
-			   show_maint_python_print_stack,
-			   &maint_set_python_list,
-			   &maint_show_python_list);
-
-  /* Deprecate maint set/show python print-stack in favour of
-     non-maintenance alternatives.  */
-  cmd_name = "print-stack";
-  cmd = lookup_cmd (&cmd_name, maint_set_python_list, "", -1, 0);
-  deprecate_cmd (cmd, "set python print-stack");
-  cmd_name = "print-stack"; /* Reset name.  */
-  cmd = lookup_cmd (&cmd_name, maint_show_python_list, "", -1, 0);
-  deprecate_cmd (cmd, "show python print-stack");
 
   /* Add set/show python print-stack.  */
   add_prefix_cmd ("python", no_class, user_show_python,
@@ -1446,6 +1400,9 @@ def GdbSetPythonDirectory (dir):\n\
 GdbSetPythonDirectory (gdb.PYTHONDIR)\n\
 # Default prompt hook does nothing.\n\
 prompt_hook = None\n\
+# Ensure that sys.argv is set to something.\n\
+# We do not use PySys_SetArgvEx because it did not appear until 2.6.6.\n\
+sys.argv = ['']\n\
 ");
 
   do_cleanups (cleanup);
@@ -1522,6 +1479,9 @@ gdb.Symtab_and_line objects (or None)."},
     "parse_and_eval (String) -> Value.\n\
 Parse String as an expression, evaluate it, and return the result as a Value."
   },
+  { "find_pc_line", gdbpy_find_pc_line, METH_VARARGS,
+    "find_pc_line (pc) -> Symtab_and_line.\n\
+Return the gdb.Symtab_and_line object corresponding to the pc value." },
 
   { "post_event", gdbpy_post_event, METH_VARARGS,
     "Post an event into gdb's event loop." },

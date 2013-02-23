@@ -1,3 +1,25 @@
+2012-06-15  Joel Brobecker  <brobecker@adacore.com>
+
+	* config.in, configure: Regenerate.
+
+2012-05-24  Pedro Alves  <palves@redhat.com>
+
+	PR gdb/7205
+
+        Replace TARGET_SIGNAL_ with GDB_SIGNAL_ throughout.
+
+2012-05-18  Nick Clifton  <nickc@redhat.com>
+
+	PR 14072
+	* gdb-if.c: Include config.h before system header files.
+	* load.c: Likewise.
+	* syscalls.c: Likewise.
+	* trace.c: Likewise.
+
+2012-03-24  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4, config.in, configure: Regenerate.
+
 2012-01-02  Joel Brobecker  <brobecker@adacore.com>
 
 	* blinky.S, gloss.S, sample.S: Reformat copyright header.

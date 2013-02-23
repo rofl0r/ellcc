@@ -105,6 +105,12 @@
 #define yygindex f_yygindex
 #define yytable	 f_yytable
 #define yycheck	 f_yycheck
+#define yyss	f_yyss
+#define yysslim	f_yysslim
+#define yyssp	f_yyssp
+#define yystacksize f_yystacksize
+#define yyvs	f_yyvs
+#define yyvsp	f_yyvsp
 
 #ifndef YYDEBUG
 #define	YYDEBUG	1		/* Default to yydebug support */
@@ -664,11 +670,7 @@ name_not_typename :	NAME
 /*** Needs some error checking for the float case ***/
 
 static int
-parse_number (p, len, parsed_float, putithere)
-     char *p;
-     int len;
-     int parsed_float;
-     YYSTYPE *putithere;
+parse_number (char *p, int len, int parsed_float, YYSTYPE *putithere)
 {
   LONGEST n = 0;
   LONGEST prevn = 0;
@@ -895,8 +897,7 @@ static int tempbufindex;	/* Current index into buffer */
    first one on demand.  */
 
 static void
-growbuf_by_size (count)
-     int count;
+growbuf_by_size (int count)
 {
   int growby;
 
@@ -1217,8 +1218,7 @@ yylex (void)
 }
 
 void
-yyerror (msg)
-     char *msg;
+yyerror (char *msg)
 {
   if (prev_lexptr)
     lexptr = prev_lexptr;

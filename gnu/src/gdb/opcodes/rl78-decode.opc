@@ -1,9 +1,8 @@
 /* -*- c -*- */
+#include "sysdep.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "config.h"
 #include "ansidecl.h"
 #include "opcode/rl78.h"
 
@@ -885,6 +884,11 @@ rl78_decode_opcode (unsigned long pc AU,
 
 /** 0000 0000			nop					*/
   ID(nop);
+
+/*----------------------------------------------------------------------*/
+
+/** 0111 0001 1100 0000		not1	cy				*/
+  ID(xor); DCY(); SC(1);
 
 /*----------------------------------------------------------------------*/
 

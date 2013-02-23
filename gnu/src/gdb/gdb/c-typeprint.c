@@ -142,7 +142,7 @@ static void
 cp_type_print_derivation_info (struct ui_file *stream,
 			       struct type *type)
 {
-  char *name;
+  const char *name;
   int i;
 
   for (i = 0; i < TYPE_N_BASECLASSES (type); i++)
@@ -165,8 +165,8 @@ cp_type_print_derivation_info (struct ui_file *stream,
 /* Print the C++ method arguments ARGS to the file STREAM.  */
 
 static void
-cp_type_print_method_args (struct type *mtype, char *prefix,
-			   char *varstring, int staticp,
+cp_type_print_method_args (struct type *mtype, const char *prefix,
+			   const char *varstring, int staticp,
 			   struct ui_file *stream)
 {
   struct field *args = TYPE_FIELDS (mtype);
@@ -238,7 +238,7 @@ c_type_print_varspec_prefix (struct type *type,
 			     int show, int passed_a_ptr,
 			     int need_post_space)
 {
-  char *name;
+  const char *name;
 
   if (type == 0)
     return;
@@ -471,7 +471,7 @@ is_type_conversion_operator (struct type *type, int i, int j)
      by their name is pretty terrible.  But I don't think our present
      data structure gives us any other way to tell.  If you know of
      some other way, feel free to rewrite this function.  */
-  char *name = TYPE_FN_FIELDLIST_NAME (type, i);
+  const char *name = TYPE_FN_FIELDLIST_NAME (type, i);
 
   if (strncmp (name, "operator", 8) != 0)
     return 0;
@@ -717,7 +717,6 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 {
   int i;
   int len, real_len;
-  int lastval;
   enum
     {
       s_none, s_public, s_private, s_protected
@@ -990,8 +989,8 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 	    {
 	      struct fn_field *f = TYPE_FN_FIELDLIST1 (type, i);
 	      int j, len2 = TYPE_FN_FIELDLIST_LENGTH (type, i);
-	      char *method_name = TYPE_FN_FIELDLIST_NAME (type, i);
-	      char *name = type_name_no_tag (type);
+	      const char *method_name = TYPE_FN_FIELDLIST_NAME (type, i);
+	      const char *name = type_name_no_tag (type);
 	      int is_constructor = name && strcmp (method_name,
 						   name) == 0;
 
@@ -1194,9 +1193,10 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 	}
       else if (show > 0 || TYPE_TAG_NAME (type) == NULL)
 	{
+	  LONGEST lastval = 0;
+
 	  fprintf_filtered (stream, "{");
 	  len = TYPE_NFIELDS (type);
-	  lastval = 0;
 	  for (i = 0; i < len; i++)
 	    {
 	      QUIT;
@@ -1204,11 +1204,11 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 		fprintf_filtered (stream, ", ");
 	      wrap_here ("    ");
 	      fputs_filtered (TYPE_FIELD_NAME (type, i), stream);
-	      if (lastval != TYPE_FIELD_BITPOS (type, i))
+	      if (lastval != TYPE_FIELD_ENUMVAL (type, i))
 		{
-		  fprintf_filtered (stream, " = %d", 
-				    TYPE_FIELD_BITPOS (type, i));
-		  lastval = TYPE_FIELD_BITPOS (type, i);
+		  fprintf_filtered (stream, " = %s",
+				    plongest (TYPE_FIELD_ENUMVAL (type, i)));
+		  lastval = TYPE_FIELD_ENUMVAL (type, i);
 		}
 	      lastval++;
 	    }

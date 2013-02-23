@@ -157,7 +157,7 @@ future, if there are, a reference to the list will be included here.
 
 The current global maintainers are (in alphabetical order):
 
-Pedro Alves                     pedro@codesourcery.com
+Pedro Alves                     palves@redhat.com
 Joel Brobecker			brobecker@adacore.com
 Kevin Buettner			kevinb@redhat.com
 Andrew Cagney			cagney@gnu.org
@@ -268,7 +268,6 @@ the native maintainer when resolving ABI issues.
 
 	ia64		--target=ia64-linux-gnu ,-Werror
 			(--target=ia64-elf broken)
-			Jan Kratochvil		jan.kratochvil@redhat.com
 
 	lm32		--target=lm32-elf ,-Werror
 
@@ -294,6 +293,7 @@ the native maintainer when resolving ABI issues.
 			Michael Eager		eager@eagercon.com
 
 	mips		--target=mips-elf ,-Werror
+			Maciej W. Rozycki	macro@codesourcery.com
 
 	mn10300		--target=mn10300-elf broken
 			(sim/ dies with make -j)
@@ -309,6 +309,10 @@ the native maintainer when resolving ABI issues.
 	pa		--target=hppa-elf ,-Werror
 
 	powerpc		--target=powerpc-eabi ,-Werror
+
+	rl78		--target=rl78-elf ,-Werror
+
+	rx		--target=rx-elf ,-Werror
 
 	s390		--target=s390-linux-gnu ,-Werror
 
@@ -360,8 +364,6 @@ AIX			Joel Brobecker		brobecker@adacore.com
 Darwin			Tristan Gingold		gingold@adacore.com
 djgpp native		Eli Zaretskii		eliz@gnu.org
 GNU Hurd		Alfred M. Szmidt	ams@gnu.org
-MS Windows (NT, '00, 9x, Me, XP) host & native
-			Chris Faylor		cgf@alum.bu.edu
 GNU/Linux/x86 native & host
 			Mark Kettenis		kettenis@gnu.org
 GNU/Linux MIPS native & host
@@ -499,7 +501,7 @@ Dhananjay Deshpande				dhananjayd@kpitcummins.com
 Markus Deuling					deuling@de.ibm.com
 Klee Dienes					kdienes@apple.com
 Gabriel Dos Reis                                gdr@integrable-solutions.net
-Sergio Durigan Junior				sergiodj@linux.vnet.ibm.com
+Sergio Durigan Junior				sergiodj@redhat.com
 Michael Eager					eager@eagercon.com
 Richard Earnshaw				rearnsha@arm.com
 Steve Ellcey					sje@cup.hp.com
@@ -513,6 +515,7 @@ Nathan Froyd					froydnj@codesourcery.com
 Gary Funck					gary@intrepid.com
 Paul Gilliam					pgilliam@us.ibm.com
 Tristan Gingold					gingold@adacore.com
+Anton Gorenkov					xgsa@yandex.ru
 Raoul Gough					RaoulGough@yahoo.co.uk
 Anthony Green			 		green@redhat.com
 Matthew Green					mrg@eterna.com.au
@@ -578,13 +581,17 @@ Hans-Peter Nilsson				hp@bitrange.com
 David O'Brien					obrien@freebsd.org
 Alexandre Oliva					aoliva@redhat.com
 Karen Osmond					karen.osmond@gmail.com
+Pawandeep Oza					oza.pawandeep@gmail.com
 Denis Pilat					denis.pilat@st.com
+Andrew Pinski					apinski@cavium.com
 Kevin Pouget					kevin.pouget@st.com
 Paul Pluzhnikov					ppluzhnikov@google.com
 Marek Polacek					mpolacek@redhat.com
+Siddhesh Poyarekar				siddhesh@redhat.com
 Vladimir Prus                                   vladimir@codesourcery.com
 Yao Qi						yao@codesourcery.com
 Qinwei						qinwei@sunnorth.com.cn
+Siva Chandra Reddy				sivachandra@google.com
 Matt Rice					ratmice@gmail.com
 Frederic Riss					frederic.riss@st.com
 Aleksandar Ristovski				aristovski@qnx.com
@@ -598,6 +605,7 @@ Grace Sainsbury					graces@redhat.com
 Kei Sakamoto					sakamoto.kei@renesas.com
 Mark Salter					msalter@redhat.com
 Richard Sandiford				richard@codesourcery.com
+Iain Sandoe					iain@codesourcery.com
 Peter Schauer					Peter.Schauer@mytum.de
 Andreas Schwab					schwab@linux-m68k.org
 Thomas Schwinge					tschwinge@gnu.org
@@ -633,6 +641,7 @@ Kris Warkentin					kewarken@qnx.com
 Philippe Waroquiers				philippe.waroquiers@skynet.be
 Ulrich Weigand					uweigand@de.ibm.com
 Ken Werner					ken.werner@de.ibm.com
+Mark Wielaard					mjw@redhat.com
 Nathan Williams					nathanw@wasabisystems.com
 Bob Wilson					bob.wilson@acm.org
 Jim Wilson					wilson@tuliptree.org
@@ -643,7 +652,6 @@ Jie Zhang					jzhang918@gmail.com
 Wu Zhou						woodzltc@cn.ibm.com
 Yoshinori Sato					ysato@users.sourceforge.jp
 Hui Zhu						teawater@gmail.com
-
 
 			Past Maintainers
 
@@ -675,6 +683,7 @@ Michael Chastain (testsuite)			mec.gnu at mindspring dot com
 Fred Fish (global)
 Jim Blandy (global)				jimb@red-bean.com
 Michael Snyder (global)
+Christopher Faylor (MS Windows, host & native)
 
 
 Folks that have been caught up in a paper trail:

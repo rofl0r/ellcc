@@ -270,10 +270,6 @@ driver (void)
 int main ()
 {
   register int local;
-#ifdef usestubs
-  set_debug_traps();
-  breakpoint();
-#endif
   driver ();
   printf("exiting\n");
   return 0;

@@ -105,13 +105,6 @@ get_objfile_pspace_data (struct program_space *pspace)
   return info;
 }
 
-/* Records whether any objfiles appeared or disappeared since we last updated
-   address to obj section map.  */
-
-/* Locate all mappable sections of a BFD file.
-   objfile_p_char is a char * to get it through
-   bfd_map_over_sections; we cast it back to its proper type.  */
-
 /* Called via bfd_map_over_sections to build up the section table that
    the objfile references.  The objfile contains pointers to the start
    of the table (objfile->sections) and to the first location after
@@ -119,19 +112,18 @@ get_objfile_pspace_data (struct program_space *pspace)
 
 static void
 add_to_objfile_sections (struct bfd *abfd, struct bfd_section *asect,
-			 void *objfile_p_char)
+			 void *objfilep)
 {
-  struct objfile *objfile = (struct objfile *) objfile_p_char;
+  struct objfile *objfile = (struct objfile *) objfilep;
   struct obj_section section;
   flagword aflag;
 
   aflag = bfd_get_section_flags (abfd, asect);
-
   if (!(aflag & SEC_ALLOC))
     return;
-
-  if (0 == bfd_section_size (abfd, asect))
+  if (bfd_section_size (abfd, asect) == 0)
     return;
+
   section.objfile = objfile;
   section.the_bfd_section = asect;
   section.ovly_mapped = 0;
@@ -142,11 +134,9 @@ add_to_objfile_sections (struct bfd *abfd, struct bfd_section *asect,
 }
 
 /* Builds a section table for OBJFILE.
-   Returns 0 if OK, 1 on error (in which case bfd_error contains the
-   error).
 
    Note that while we are building the table, which goes into the
-   psymbol obstack, we hijack the sections_end pointer to instead hold
+   objfile obstack, we hijack the sections_end pointer to instead hold
    a count of the number of sections.  When bfd_map_over_sections
    returns, this count is used to compute the pointer to the end of
    the sections table, which then overwrites the count.
@@ -154,10 +144,10 @@ add_to_objfile_sections (struct bfd *abfd, struct bfd_section *asect,
    Also note that the OFFSET and OVLY_MAPPED in each table entry
    are initialized to zero.
 
-   Also note that if anything else writes to the psymbol obstack while
+   Also note that if anything else writes to the objfile obstack while
    we are building the table, we're pretty much hosed.  */
 
-int
+void
 build_objfile_section_table (struct objfile *objfile)
 {
   objfile->sections_end = 0;
@@ -165,7 +155,6 @@ build_objfile_section_table (struct objfile *objfile)
 			 add_to_objfile_sections, (void *) objfile);
   objfile->sections = obstack_finish (&objfile->objfile_obstack);
   objfile->sections_end = objfile->sections + (size_t) objfile->sections_end;
-  return (0);
 }
 
 /* Given a pointer to an initialized bfd (ABFD) and some flag bits
@@ -216,12 +205,7 @@ allocate_objfile (bfd *abfd, int flags)
       objfile->mtime = bfd_get_mtime (abfd);
 
       /* Build section table.  */
-
-      if (build_objfile_section_table (objfile))
-	{
-	  error (_("Can't find the file sections in `%s': %s"),
-		 objfile->name, bfd_errmsg (bfd_get_error ()));
-	}
+      build_objfile_section_table (objfile);
     }
   else
     {
@@ -340,29 +324,6 @@ entry_point_address (void)
     error (_("Entry point address is not known."));
 
   return retval;
-}
-
-/* Create the terminating entry of OBJFILE's minimal symbol table.
-   If OBJFILE->msymbols is zero, allocate a single entry from
-   OBJFILE->objfile_obstack; otherwise, just initialize
-   OBJFILE->msymbols[OBJFILE->minimal_symbol_count].  */
-void
-terminate_minimal_symbol_table (struct objfile *objfile)
-{
-  if (! objfile->msymbols)
-    objfile->msymbols = ((struct minimal_symbol *)
-                         obstack_alloc (&objfile->objfile_obstack,
-                                        sizeof (objfile->msymbols[0])));
-
-  {
-    struct minimal_symbol *m
-      = &objfile->msymbols[objfile->minimal_symbol_count];
-
-    memset (m, 0, sizeof (*m));
-    /* Don't rely on these enumeration values being 0's.  */
-    MSYMBOL_TYPE (m) = mst_unknown;
-    SYMBOL_SET_LANGUAGE (m, language_unknown);
-  }
 }
 
 /* Iterator on PARENT and every separate debug objfile of PARENT.
@@ -769,7 +730,9 @@ objfile_relocate1 (struct objfile *objfile,
 	  BLOCK_START (b) += ANOFFSET (delta, s->block_line_section);
 	  BLOCK_END (b) += ANOFFSET (delta, s->block_line_section);
 
-	  ALL_BLOCK_SYMBOLS (b, iter, sym)
+	  /* We only want to iterate over the local symbols, not any
+	     symbols in included symtabs.  */
+	  ALL_DICT_SYMBOLS (BLOCK_DICT (b), iter, sym)
 	    {
 	      relocate_one_symbol (sym, objfile, delta);
 	    }
@@ -833,6 +796,11 @@ objfile_relocate1 (struct objfile *objfile,
       exec_set_section_address (bfd_get_filename (objfile->obfd), idx,
 				obj_section_addr (s));
     }
+
+  /* Relocating probes.  */
+  if (objfile->sf && objfile->sf->sym_probe_fns)
+    objfile->sf->sym_probe_fns->sym_relocate_probe (objfile,
+						    new_offsets, delta);
 
   /* Data changed.  */
   return 1;
@@ -1115,7 +1083,7 @@ insert_section_p (const struct bfd *abfd,
 {
   const bfd_vma lma = bfd_section_lma (abfd, section);
 
-  if (lma != 0 && lma != bfd_section_vma (abfd, section)
+  if (overlay_debugging && lma != 0 && lma != bfd_section_vma (abfd, section)
       && (bfd_get_file_flags (abfd) & BFD_IN_MEMORY) == 0)
     /* This is an overlay section.  IN_MEMORY check is needed to avoid
        discarding sections from the "system supplied DSO" (aka vdso)
@@ -1555,6 +1523,31 @@ gdb_bfd_unref (struct bfd *abfd)
   name = bfd_get_filename (abfd);
   gdb_bfd_close_or_warn (abfd);
   xfree (name);
+}
+
+/* The default implementation for the "iterate_over_objfiles_in_search_order"
+   gdbarch method.  It is equivalent to use the ALL_OBJFILES macro,
+   searching the objfiles in the order they are stored internally,
+   ignoring CURRENT_OBJFILE.
+
+   On most platorms, it should be close enough to doing the best
+   we can without some knowledge specific to the architecture.  */
+
+void
+default_iterate_over_objfiles_in_search_order
+  (struct gdbarch *gdbarch,
+   iterate_over_objfiles_in_search_order_cb_ftype *cb,
+   void *cb_data, struct objfile *current_objfile)
+{
+  int stop = 0;
+  struct objfile *objfile;
+
+  ALL_OBJFILES (objfile)
+    {
+       stop = cb (objfile, cb_data);
+       if (stop)
+	 return;
+    }
 }
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */

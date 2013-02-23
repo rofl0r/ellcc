@@ -13,10 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 load_lib "ada.exp"
 
 set testdir "null_array"
@@ -34,7 +30,7 @@ clean_restart ${testfile}
 set bp_location [gdb_get_line_number "START" ${testdir}/foo.adb]
 runto "foo.adb:$bp_location"
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

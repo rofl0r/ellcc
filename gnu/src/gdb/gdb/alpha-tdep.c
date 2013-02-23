@@ -612,7 +612,7 @@ alpha_store_return_value (struct type *valtype, struct regcache *regcache,
 }
 
 static enum return_value_convention
-alpha_return_value (struct gdbarch *gdbarch, struct type *func_type,
+alpha_return_value (struct gdbarch *gdbarch, struct value *function,
 		    struct type *type, struct regcache *regcache,
 		    gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -771,7 +771,7 @@ static const int stq_c_opcode = 0x2f;
    is found, attempt to step through it.  A breakpoint is placed at the end of 
    the sequence.  */
 
-int 
+static int 
 alpha_deal_with_atomic_sequence (struct frame_info *frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
@@ -999,7 +999,7 @@ alpha_sigtramp_frame_sniffer (const struct frame_unwind *self,
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   /* NOTE: cagney/2004-04-30: Do not copy/clone this code.  Instead
      look at tramp-frame.h and other simplier per-architecture

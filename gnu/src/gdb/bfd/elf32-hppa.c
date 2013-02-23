@@ -1,6 +1,6 @@
 /* BFD back-end for HP PA-RISC ELF files.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1999, 2000, 2001,
-   2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011
+   2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
 
    Original code by
@@ -1005,14 +1005,14 @@ elf32_hppa_create_dynamic_sections (bfd *abfd, struct bfd_link_info *info)
   if (! _bfd_elf_create_dynamic_sections (abfd, info))
     return FALSE;
 
-  htab->splt = bfd_get_section_by_name (abfd, ".plt");
-  htab->srelplt = bfd_get_section_by_name (abfd, ".rela.plt");
+  htab->splt = bfd_get_linker_section (abfd, ".plt");
+  htab->srelplt = bfd_get_linker_section (abfd, ".rela.plt");
 
-  htab->sgot = bfd_get_section_by_name (abfd, ".got");
-  htab->srelgot = bfd_get_section_by_name (abfd, ".rela.got");
+  htab->sgot = bfd_get_linker_section (abfd, ".got");
+  htab->srelgot = bfd_get_linker_section (abfd, ".rela.got");
 
-  htab->sdynbss = bfd_get_section_by_name (abfd, ".dynbss");
-  htab->srelbss = bfd_get_section_by_name (abfd, ".rela.bss");
+  htab->sdynbss = bfd_get_linker_section (abfd, ".dynbss");
+  htab->srelbss = bfd_get_linker_section (abfd, ".rela.bss");
 
   /* hppa-linux needs _GLOBAL_OFFSET_TABLE_ to be visible from the main
      application, because __canonicalize_funcptr_for_compare needs it.  */
@@ -1898,13 +1898,6 @@ elf32_hppa_adjust_dynamic_symbol (struct bfd_link_info *info,
 	}
     }
 
-  if (eh->size == 0)
-    {
-      (*_bfd_error_handler) (_("dynamic variable `%s' is zero size"),
-			     eh->root.root.string);
-      return TRUE;
-    }
-
   /* We must allocate the symbol in our .dynbss section, which will
      become part of the .bss section of the executable.  There will be
      an entry for this symbol in the .dynsym section.  The dynamic
@@ -1922,7 +1915,7 @@ elf32_hppa_adjust_dynamic_symbol (struct bfd_link_info *info,
   /* We must generate a COPY reloc to tell the dynamic linker to
      copy the initial value out of the dynamic object and into the
      runtime process image.  */
-  if ((eh->root.u.def.section->flags & SEC_ALLOC) != 0)
+  if ((eh->root.u.def.section->flags & SEC_ALLOC) != 0 && eh->size != 0)
     {
       htab->srelbss->size += sizeof (Elf32_External_Rela);
       eh->needs_copy = 1;
@@ -2232,7 +2225,7 @@ elf32_hppa_size_dynamic_sections (bfd *output_bfd ATTRIBUTE_UNUSED,
       /* Set the contents of the .interp section to the interpreter.  */
       if (info->executable)
 	{
-	  sec = bfd_get_section_by_name (dynobj, ".interp");
+	  sec = bfd_get_linker_section (dynobj, ".interp");
 	  if (sec == NULL)
 	    abort ();
 	  sec->size = sizeof ELF_DYNAMIC_INTERPRETER;
@@ -3741,10 +3734,10 @@ elf32_hppa_relocate_section (bfd *output_bfd,
 	  hh = hppa_elf_hash_entry (eh);
 	}
 
-      if (sym_sec != NULL && elf_discarded_section (sym_sec))
+      if (sym_sec != NULL && discarded_section (sym_sec))
 	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
-					 rela, relend,
-					 elf_hppa_howto_table + r_type,
+					 rela, 1, relend,
+					 elf_hppa_howto_table + r_type, 0,
 					 contents);
 
       if (info->relocatable)
@@ -4513,7 +4506,7 @@ elf32_hppa_finish_dynamic_sections (bfd *output_bfd,
   if (sgot != NULL && bfd_is_abs_section (sgot->output_section))
     return FALSE;
 
-  sdyn = bfd_get_section_by_name (dynobj, ".dynamic");
+  sdyn = bfd_get_linker_section (dynobj, ".dynamic");
 
   if (htab->etab.dynamic_sections_created)
     {

@@ -61,6 +61,13 @@
 #include "ax.h"
 #include "ax-gdb.h"
 
+#include "stap-probe.h"
+#include "user-regs.h"
+#include "cli/cli-utils.h"
+#include "expression.h"
+#include "parser-defs.h"
+#include <ctype.h>
+
 /* Register names.  */
 
 static const char *i386_register_names[] =
@@ -376,7 +383,7 @@ i386_svr4_reg_to_regnum (struct gdbarch *gdbarch, int reg)
    its legitimate values.  */
 static const char att_flavor[] = "att";
 static const char intel_flavor[] = "intel";
-static const char *valid_flavors[] =
+static const char *const valid_flavors[] =
 {
   att_flavor,
   intel_flavor,
@@ -521,7 +528,12 @@ i386_call_p (const gdb_byte *insn)
 static int
 i386_syscall_p (const gdb_byte *insn, int *lengthp)
 {
-  if (insn[0] == 0xcd)
+  /* Is it 'int $0x80'?  */
+  if ((insn[0] == 0xcd && insn[1] == 0x80)
+      /* Or is it 'sysenter'?  */
+      || (insn[0] == 0x0f && insn[1] == 0x34)
+      /* Or is it 'syscall'?  */
+      || (insn[0] == 0x0f && insn[1] == 0x05))
     {
       *lengthp = 2;
       return 1;
@@ -1185,7 +1197,6 @@ i386_match_insn_block (CORE_ADDR pc, struct i386_insn *insn_patterns)
 {
   CORE_ADDR current_pc;
   int ix, i;
-  gdb_byte op;
   struct i386_insn *insn;
 
   insn = i386_match_insn (pc, insn_patterns);
@@ -2036,7 +2047,7 @@ static int
 i386_in_stack_tramp_p (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   gdb_byte insn;
-  char *name;
+  const char *name;
 
   /* A stack trampoline is detected if no name is associated
     to the current pc and if it points inside a trampoline
@@ -2321,6 +2332,22 @@ i386_16_byte_align_p (struct type *type)
   return 0;
 }
 
+/* Implementation for set_gdbarch_push_dummy_code.  */
+
+static CORE_ADDR
+i386_push_dummy_code (struct gdbarch *gdbarch, CORE_ADDR sp, CORE_ADDR funaddr,
+		      struct value **args, int nargs, struct type *value_type,
+		      CORE_ADDR *real_pc, CORE_ADDR *bp_addr,
+		      struct regcache *regcache)
+{
+  /* Use 0xcc breakpoint - 1 byte.  */
+  *bp_addr = sp - 1;
+  *real_pc = funaddr;
+
+  /* Keep the stack aligned.  */
+  return sp - 16;
+}
+
 static CORE_ADDR
 i386_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		      struct regcache *regcache, CORE_ADDR bp_addr, int nargs,
@@ -2340,7 +2367,6 @@ i386_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   for (write_pass = 0; write_pass < 2; write_pass++)
     {
       int args_space_used = 0;
-      int have_16_byte_aligned_arg = 0;
 
       if (struct_return)
 	{
@@ -2378,19 +2404,20 @@ i386_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	  else
 	    {
 	      if (i386_16_byte_align_p (value_enclosing_type (args[i])))
-		{
-		  args_space = align_up (args_space, 16);
-		  have_16_byte_aligned_arg = 1;
-		}
+		args_space = align_up (args_space, 16);
 	      args_space += align_up (len, 4);
 	    }
 	}
 
       if (!write_pass)
 	{
-	  if (have_16_byte_aligned_arg)
-	    args_space = align_up (args_space, 16);
 	  sp -= args_space;
+
+	  /* The original System V ABI only requires word alignment,
+	     but modern incarnations need 16-byte alignment in order
+	     to support SSE.  Since wasting a few bytes here isn't
+	     harmful we unconditionally enforce 16-byte alignment.  */
+	  sp &= ~0xf;
 	}
     }
 
@@ -2545,7 +2572,7 @@ i386_store_return_value (struct gdbarch *gdbarch, struct type *type,
 static const char default_struct_convention[] = "default";
 static const char pcc_struct_convention[] = "pcc";
 static const char reg_struct_convention[] = "reg";
-static const char *valid_conventions[] =
+static const char *const valid_conventions[] =
 {
   default_struct_convention,
   pcc_struct_convention,
@@ -2593,7 +2620,7 @@ i386_reg_struct_return_p (struct gdbarch *gdbarch, struct type *type)
    from WRITEBUF into REGCACHE.  */
 
 static enum return_value_convention
-i386_return_value (struct gdbarch *gdbarch, struct type *func_type,
+i386_return_value (struct gdbarch *gdbarch, struct value *function,
 		   struct type *type, struct regcache *regcache,
 		   gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -2644,7 +2671,7 @@ i386_return_value (struct gdbarch *gdbarch, struct type *func_type,
   if (code == TYPE_CODE_STRUCT && TYPE_NFIELDS (type) == 1)
     {
       type = check_typedef (TYPE_FIELD_TYPE (type, 0));
-      return i386_return_value (gdbarch, func_type, type, regcache,
+      return i386_return_value (gdbarch, function, type, regcache,
 				readbuf, writebuf);
     }
 
@@ -2769,7 +2796,7 @@ i386_mmx_type (struct gdbarch *gdbarch)
 /* Return the GDB type object for the "standard" data type of data in
    register REGNUM.  */
 
-static struct type *
+struct type *
 i386_pseudo_register_type (struct gdbarch *gdbarch, int regnum)
 {
   if (i386_mmx_regnum_p (gdbarch, regnum))
@@ -3273,7 +3300,7 @@ i386_pe_skip_trampoline_code (struct frame_info *frame,
 	read_memory_unsigned_integer (pc + 2, 4, byte_order);
       struct minimal_symbol *indsym =
 	indirect ? lookup_minimal_symbol_by_pc (indirect) : 0;
-      char *symname = indsym ? SYMBOL_LINKAGE_NAME (indsym) : 0;
+      const char *symname = indsym ? SYMBOL_LINKAGE_NAME (indsym) : 0;
 
       if (symname)
 	{
@@ -3294,7 +3321,7 @@ int
 i386_sigtramp_p (struct frame_info *this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   find_pc_partial_function (pc, &name, NULL, NULL);
   return (name && strcmp ("_sigtramp", name) == 0);
@@ -3332,7 +3359,7 @@ static int
 i386_svr4_sigtramp_p (struct frame_info *this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   /* UnixWare uses _sigacthandler.  The origin of the other symbols is
      currently unknown.  */
@@ -3358,6 +3385,323 @@ i386_svr4_sigcontext_addr (struct frame_info *this_frame)
 
   return read_memory_unsigned_integer (sp + 8, 4, byte_order);
 }
+
+
+
+/* Implementation of `gdbarch_stap_is_single_operand', as defined in
+   gdbarch.h.  */
+
+int
+i386_stap_is_single_operand (struct gdbarch *gdbarch, const char *s)
+{
+  return (*s == '$' /* Literal number.  */
+	  || (isdigit (*s) && s[1] == '(' && s[2] == '%') /* Displacement.  */
+	  || (*s == '(' && s[1] == '%') /* Register indirection.  */
+	  || (*s == '%' && isalpha (s[1]))); /* Register access.  */
+}
+
+/* Implementation of `gdbarch_stap_parse_special_token', as defined in
+   gdbarch.h.  */
+
+int
+i386_stap_parse_special_token (struct gdbarch *gdbarch,
+			       struct stap_parse_info *p)
+{
+  /* In order to parse special tokens, we use a state-machine that go
+     through every known token and try to get a match.  */
+  enum
+    {
+      TRIPLET,
+      THREE_ARG_DISPLACEMENT,
+      DONE
+    } current_state;
+
+  current_state = TRIPLET;
+
+  /* The special tokens to be parsed here are:
+
+     - `register base + (register index * size) + offset', as represented
+     in `(%rcx,%rax,8)', or `[OFFSET](BASE_REG,INDEX_REG[,SIZE])'.
+
+     - Operands of the form `-8+3+1(%rbp)', which must be interpreted as
+     `*(-8 + 3 - 1 + (void *) $eax)'.  */
+
+  while (current_state != DONE)
+    {
+      const char *s = p->arg;
+
+      switch (current_state)
+	{
+	case TRIPLET:
+	    {
+	      if (isdigit (*s) || *s == '-' || *s == '+')
+		{
+		  int got_minus[3];
+		  int i;
+		  long displacements[3];
+		  const char *start;
+		  char *regname;
+		  int len;
+		  struct stoken str;
+
+		  got_minus[0] = 0;
+		  if (*s == '+')
+		    ++s;
+		  else if (*s == '-')
+		    {
+		      ++s;
+		      got_minus[0] = 1;
+		    }
+
+		  displacements[0] = strtol (s, (char **) &s, 10);
+
+		  if (*s != '+' && *s != '-')
+		    {
+		      /* We are not dealing with a triplet.  */
+		      break;
+		    }
+
+		  got_minus[1] = 0;
+		  if (*s == '+')
+		    ++s;
+		  else
+		    {
+		      ++s;
+		      got_minus[1] = 1;
+		    }
+
+		  displacements[1] = strtol (s, (char **) &s, 10);
+
+		  if (*s != '+' && *s != '-')
+		    {
+		      /* We are not dealing with a triplet.  */
+		      break;
+		    }
+
+		  got_minus[2] = 0;
+		  if (*s == '+')
+		    ++s;
+		  else
+		    {
+		      ++s;
+		      got_minus[2] = 1;
+		    }
+
+		  displacements[2] = strtol (s, (char **) &s, 10);
+
+		  if (*s != '(' || s[1] != '%')
+		    break;
+
+		  s += 2;
+		  start = s;
+
+		  while (isalnum (*s))
+		    ++s;
+
+		  if (*s++ != ')')
+		    break;
+
+		  len = s - start;
+		  regname = alloca (len + 1);
+
+		  strncpy (regname, start, len);
+		  regname[len] = '\0';
+
+		  if (user_reg_map_name_to_regnum (gdbarch,
+						   regname, len) == -1)
+		    error (_("Invalid register name `%s' "
+			     "on expression `%s'."),
+			   regname, p->saved_arg);
+
+		  for (i = 0; i < 3; i++)
+		    {
+		      write_exp_elt_opcode (OP_LONG);
+		      write_exp_elt_type
+			(builtin_type (gdbarch)->builtin_long);
+		      write_exp_elt_longcst (displacements[i]);
+		      write_exp_elt_opcode (OP_LONG);
+		      if (got_minus[i])
+			write_exp_elt_opcode (UNOP_NEG);
+		    }
+
+		  write_exp_elt_opcode (OP_REGISTER);
+		  str.ptr = regname;
+		  str.length = len;
+		  write_exp_string (str);
+		  write_exp_elt_opcode (OP_REGISTER);
+
+		  write_exp_elt_opcode (UNOP_CAST);
+		  write_exp_elt_type (builtin_type (gdbarch)->builtin_data_ptr);
+		  write_exp_elt_opcode (UNOP_CAST);
+
+		  write_exp_elt_opcode (BINOP_ADD);
+		  write_exp_elt_opcode (BINOP_ADD);
+		  write_exp_elt_opcode (BINOP_ADD);
+
+		  write_exp_elt_opcode (UNOP_CAST);
+		  write_exp_elt_type (lookup_pointer_type (p->arg_type));
+		  write_exp_elt_opcode (UNOP_CAST);
+
+		  write_exp_elt_opcode (UNOP_IND);
+
+		  p->arg = s;
+
+		  return 1;
+		}
+	      break;
+	    }
+	case THREE_ARG_DISPLACEMENT:
+	    {
+	      if (isdigit (*s) || *s == '(' || *s == '-' || *s == '+')
+		{
+		  int offset_minus = 0;
+		  long offset = 0;
+		  int size_minus = 0;
+		  long size = 0;
+		  const char *start;
+		  char *base;
+		  int len_base;
+		  char *index;
+		  int len_index;
+		  struct stoken base_token, index_token;
+
+		  if (*s == '+')
+		    ++s;
+		  else if (*s == '-')
+		    {
+		      ++s;
+		      offset_minus = 1;
+		    }
+
+		  if (offset_minus && !isdigit (*s))
+		    break;
+
+		  if (isdigit (*s))
+		    offset = strtol (s, (char **) &s, 10);
+
+		  if (*s != '(' || s[1] != '%')
+		    break;
+
+		  s += 2;
+		  start = s;
+
+		  while (isalnum (*s))
+		    ++s;
+
+		  if (*s != ',' || s[1] != '%')
+		    break;
+
+		  len_base = s - start;
+		  base = alloca (len_base + 1);
+		  strncpy (base, start, len_base);
+		  base[len_base] = '\0';
+
+		  if (user_reg_map_name_to_regnum (gdbarch,
+						   base, len_base) == -1)
+		    error (_("Invalid register name `%s' "
+			     "on expression `%s'."),
+			   base, p->saved_arg);
+
+		  s += 2;
+		  start = s;
+
+		  while (isalnum (*s))
+		    ++s;
+
+		  len_index = s - start;
+		  index = alloca (len_index + 1);
+		  strncpy (index, start, len_index);
+		  index[len_index] = '\0';
+
+		  if (user_reg_map_name_to_regnum (gdbarch,
+						   index, len_index) == -1)
+		    error (_("Invalid register name `%s' "
+			     "on expression `%s'."),
+			   index, p->saved_arg);
+
+		  if (*s != ',' && *s != ')')
+		    break;
+
+		  if (*s == ',')
+		    {
+		      ++s;
+		      if (*s == '+')
+			++s;
+		      else if (*s == '-')
+			{
+			  ++s;
+			  size_minus = 1;
+			}
+
+		      size = strtol (s, (char **) &s, 10);
+
+		      if (*s != ')')
+			break;
+		    }
+
+		  ++s;
+
+		  if (offset)
+		    {
+		      write_exp_elt_opcode (OP_LONG);
+		      write_exp_elt_type
+			(builtin_type (gdbarch)->builtin_long);
+		      write_exp_elt_longcst (offset);
+		      write_exp_elt_opcode (OP_LONG);
+		      if (offset_minus)
+			write_exp_elt_opcode (UNOP_NEG);
+		    }
+
+		  write_exp_elt_opcode (OP_REGISTER);
+		  base_token.ptr = base;
+		  base_token.length = len_base;
+		  write_exp_string (base_token);
+		  write_exp_elt_opcode (OP_REGISTER);
+
+		  if (offset)
+		    write_exp_elt_opcode (BINOP_ADD);
+
+		  write_exp_elt_opcode (OP_REGISTER);
+		  index_token.ptr = index;
+		  index_token.length = len_index;
+		  write_exp_string (index_token);
+		  write_exp_elt_opcode (OP_REGISTER);
+
+		  if (size)
+		    {
+		      write_exp_elt_opcode (OP_LONG);
+		      write_exp_elt_type
+			(builtin_type (gdbarch)->builtin_long);
+		      write_exp_elt_longcst (size);
+		      write_exp_elt_opcode (OP_LONG);
+		      if (size_minus)
+			write_exp_elt_opcode (UNOP_NEG);
+		      write_exp_elt_opcode (BINOP_MUL);
+		    }
+
+		  write_exp_elt_opcode (BINOP_ADD);
+
+		  write_exp_elt_opcode (UNOP_CAST);
+		  write_exp_elt_type (lookup_pointer_type (p->arg_type));
+		  write_exp_elt_opcode (UNOP_CAST);
+
+		  write_exp_elt_opcode (UNOP_IND);
+
+		  p->arg = s;
+
+		  return 1;
+		}
+	      break;
+	    }
+	}
+
+      /* Advancing to the next state.  */
+      ++current_state;
+    }
+
+  return 0;
+}
+
 
 
 /* Generic ELF.  */
@@ -3367,6 +3711,16 @@ i386_elf_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   /* We typically use stabs-in-ELF with the SVR4 register numbering.  */
   set_gdbarch_stab_reg_to_regnum (gdbarch, i386_svr4_reg_to_regnum);
+
+  /* Registering SystemTap handlers.  */
+  set_gdbarch_stap_integer_prefix (gdbarch, "$");
+  set_gdbarch_stap_register_prefix (gdbarch, "%");
+  set_gdbarch_stap_register_indirection_prefix (gdbarch, "(");
+  set_gdbarch_stap_register_indirection_suffix (gdbarch, ")");
+  set_gdbarch_stap_is_single_operand (gdbarch,
+				      i386_stap_is_single_operand);
+  set_gdbarch_stap_parse_special_token (gdbarch,
+					i386_stap_parse_special_token);
 }
 
 /* System V Release 4 (SVR4).  */
@@ -3515,7 +3869,7 @@ i386_fetch_pointer_argument (struct frame_info *frame, int argi,
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  CORE_ADDR sp = get_frame_register_unsigned  (frame, I386_ESP_REGNUM);
+  CORE_ADDR sp = get_frame_register_unsigned (frame, I386_ESP_REGNUM);
   return read_memory_unsigned_integer (sp + (4 * (argi + 1)), 4, byte_order);
 }
 
@@ -3978,7 +4332,7 @@ i386_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
   int prefixes = 0;
   int regnum = 0;
   uint32_t opcode;
-  uint8_t  opcode8;
+  uint8_t opcode8;
   ULONGEST addr;
   gdb_byte buf[MAX_REGISTER_SIZE];
   struct i386_record_s ir;
@@ -7367,6 +7721,8 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_get_longjmp_target (gdbarch, i386_get_longjmp_target);
 
   /* Call dummy code.  */
+  set_gdbarch_call_dummy_location (gdbarch, ON_STACK);
+  set_gdbarch_push_dummy_code (gdbarch, i386_push_dummy_code);
   set_gdbarch_push_dummy_call (gdbarch, i386_push_dummy_call);
   set_gdbarch_frame_align (gdbarch, i386_frame_align);
 

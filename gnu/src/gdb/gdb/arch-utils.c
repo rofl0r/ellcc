@@ -31,6 +31,7 @@
 #include "osabi.h"
 #include "target-descriptions.h"
 #include "objfiles.h"
+#include "language.h"
 
 #include "version.h"
 
@@ -120,7 +121,7 @@ generic_skip_solib_resolver (struct gdbarch *gdbarch, CORE_ADDR pc)
 
 int
 generic_in_solib_return_trampoline (struct gdbarch *gdbarch,
-				    CORE_ADDR pc, char *name)
+				    CORE_ADDR pc, const char *name)
 {
   return 0;
 }
@@ -251,7 +252,7 @@ static int target_byte_order_user = BFD_ENDIAN_UNKNOWN;
 static const char endian_big[] = "big";
 static const char endian_little[] = "little";
 static const char endian_auto[] = "auto";
-static const char *endian_enum[] =
+static const char *const endian_enum[] =
 {
   endian_big,
   endian_little,
@@ -791,6 +792,16 @@ default_gen_return_address (struct gdbarch *gdbarch,
 			    CORE_ADDR scope)
 {
   error (_("This architecture has no method to collect a return address."));
+}
+
+int
+default_return_in_first_hidden_param_p (struct gdbarch *gdbarch,
+					struct type *type)
+{
+  /* Usually, the return value's address is stored the in the "first hidden"
+     parameter if the return value should be passed by reference, as
+     specified in ABI.  */
+  return language_pass_by_reference (type);
 }
 
 /* */

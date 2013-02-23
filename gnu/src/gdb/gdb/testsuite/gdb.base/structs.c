@@ -400,10 +400,6 @@ static struct { char c; } chartest[256];
 
 int main()
 {
-#ifdef usestubs
-  set_debug_traps();
-  breakpoint();
-#endif
   int i;
 
   for (i = 0; i < 256; i++)

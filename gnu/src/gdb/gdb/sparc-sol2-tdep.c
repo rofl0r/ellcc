@@ -66,7 +66,7 @@ const struct sparc_gregset sparc32_sol2_gregset =
    ignore this.  */
 
 int
-sparc_sol2_pc_in_sigtramp (CORE_ADDR pc, char *name)
+sparc_sol2_pc_in_sigtramp (CORE_ADDR pc, const char *name)
 {
   return (name && (strcmp (name, "sigacthandler") == 0
 		   || strcmp (name, "ucbsigvechandler") == 0
@@ -152,7 +152,7 @@ sparc32_sol2_sigtramp_frame_sniffer (const struct frame_unwind *self,
 				     void **this_cache)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   find_pc_partial_function (pc, &name, NULL, NULL);
   if (sparc_sol2_pc_in_sigtramp (pc, name))
@@ -173,8 +173,8 @@ static const struct frame_unwind sparc32_sol2_sigtramp_frame_unwind =
 
 /* Unglobalize NAME.  */
 
-char *
-sparc_sol2_static_transform_name (char *name)
+const const char *
+sparc_sol2_static_transform_name (const char *name)
 {
   /* The Sun compilers (Sun ONE Studio, Forte Developer, Sun WorkShop,
      SunPRO) convert file static variables into global values, a

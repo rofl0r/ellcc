@@ -54,8 +54,6 @@ typedef struct {
 	error (_("Frame is invalid."));			\
     } while (0)
 
-static PyTypeObject frame_object_type;
-
 /* Returns the frame_info object corresponding to the given Python Frame
    object.  If the frame doesn't exist anymore (the frame id doesn't
    correspond to any frame in the inferior), returns NULL.  */
@@ -124,7 +122,7 @@ static PyObject *
 frapy_name (PyObject *self, PyObject *args)
 {
   struct frame_info *frame;
-  char *name;
+  const char *name;
   enum language lang;
   PyObject *result;
   volatile struct gdb_exception except;
@@ -663,7 +661,7 @@ Return the value of the variable in this frame." },
   {NULL}  /* Sentinel */
 };
 
-static PyTypeObject frame_object_type = {
+PyTypeObject frame_object_type = {
   PyObject_HEAD_INIT (NULL)
   0,				  /* ob_size */
   "gdb.Frame",			  /* tp_name */

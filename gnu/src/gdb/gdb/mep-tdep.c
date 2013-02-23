@@ -1911,7 +1911,7 @@ mep_analyze_prologue (struct gdbarch *gdbarch,
 static CORE_ADDR
 mep_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  char *name;
+  const char *name;
   CORE_ADDR func_addr, func_end;
   struct mep_prologue p;
 
@@ -2194,7 +2194,7 @@ Try using the 'return' command with no argument."));
 }
 
 static enum return_value_convention
-mep_return_value (struct gdbarch *gdbarch, struct type *func_type,
+mep_return_value (struct gdbarch *gdbarch, struct value *function,
 		  struct type *type, struct regcache *regcache,
 		  gdb_byte *readbuf, const gdb_byte *writebuf)
 {

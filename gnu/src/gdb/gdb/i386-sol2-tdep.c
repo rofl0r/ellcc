@@ -55,7 +55,7 @@ static int
 i386_sol2_sigtramp_p (struct frame_info *this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   find_pc_partial_function (pc, &name, NULL, NULL);
   return (name && (strcmp ("sigacthandler", name) == 0
@@ -79,8 +79,8 @@ i386_sol2_mcontext_addr (struct frame_info *this_frame)
 /* SunPRO encodes the static variables.  This is not related to C++
    mangling, it is done for C too.  */
 
-static char *
-i386_sol2_static_transform_name (char *name)
+static const char *
+i386_sol2_static_transform_name (const char *name)
 {
   char *p;
   if (name[0] == '.')

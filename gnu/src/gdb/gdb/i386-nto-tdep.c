@@ -134,7 +134,6 @@ i386nto_register_area (struct gdbarch *gdbarch,
 		       int regno, int regset, unsigned *off)
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
-  int len;
 
   *off = 0;
   if (regset == NTO_REG_GENERAL)
@@ -281,7 +280,7 @@ static int
 i386nto_sigtramp_p (struct frame_info *this_frame)
 {
   CORE_ADDR pc = get_frame_pc (this_frame);
-  char *name;
+  const char *name;
 
   find_pc_partial_function (pc, &name, NULL, NULL);
   return name && strcmp ("__signalstub", name) == 0;

@@ -22,10 +22,6 @@
 # with elementary types
 # 
 
-if $tracelevel then {
-        strace $tracelevel
-        }
-
 # By default, the datastructures are allocated on the stack.  For targets
 # with very small stack, that will not work.  In that case, just set
 # storage to `-DSTORAGE=static' which changes the datastructures to be
@@ -50,7 +46,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable [lis
     return -1
 }
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

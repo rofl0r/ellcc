@@ -15,10 +15,6 @@
 
 # advance.exp -- Expect script to test 'advance' in gdb
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 set testfile advance
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
@@ -49,7 +45,8 @@ gdb_test "advance [gdb_get_line_number "advance this location"]" \
 # Verify that a malformed "advance" is gracefully caught.
 #
 gdb_test "advance [gdb_get_line_number "advance malformed"] then stop" \
-	"Junk at end of arguments." "malformed advance"
+    "malformed linespec error: unexpected string, \"then stop\"" \
+    "malformed advance"
 
 # Verify that "advance <funcname>" works.
 #

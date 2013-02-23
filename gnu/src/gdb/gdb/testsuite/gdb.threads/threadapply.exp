@@ -15,26 +15,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if $tracelevel {
-    strace $tracelevel
-}
-
 
 # This test verifies that a macro using backtrace can be applied to all threads
 # and will continue for each thread even though an error may occur in
 # backtracing one of the threads.
 
-set testfile "threadapply"
-set srcfile ${testfile}.c
-set binfile ${objdir}/${subdir}/${testfile}
-if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable [list debug "incdir=${objdir}"]] != "" } {
+standard_testfile
+if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable debug] != "" } {
     return -1
 }
 
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+clean_restart ${binfile}
 
 #
 # Run to `main' where we begin our tests.

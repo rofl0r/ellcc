@@ -55,8 +55,8 @@ This document describes the stabs debugging format.
 * Questions::			Questions and anomalies
 * Stab Sections::		In some object file formats, stabs are
                                 in sections.
-* Symbol Types Index::          Index of symbolic stab symbol type names.
 * GNU Free Documentation License::  The license for this documentation
+* Symbol Types Index::          Index of symbolic stab symbol type names.
 
 
 File: stabs.info,  Node: Overview,  Next: Program Structure,  Prev: Top,  Up: Top
@@ -3773,7 +3773,7 @@ Appendix E Questions and Anomalies
      or the next `N_FUN'?  (I believe its the first.)
 
 
-File: stabs.info,  Node: Stab Sections,  Next: Symbol Types Index,  Prev: Questions,  Up: Top
+File: stabs.info,  Node: Stab Sections,  Next: GNU Free Documentation License,  Prev: Questions,  Up: Top
 
 Appendix F Using Stabs in Their Own Sections
 ********************************************
@@ -3919,7 +3919,7 @@ stab symbols.  However, no one has yet designed or implemented such a
 scheme.
 
 
-File: stabs.info,  Node: GNU Free Documentation License,  Prev: Symbol Types Index,  Up: Top
+File: stabs.info,  Node: GNU Free Documentation License,  Next: Symbol Types Index,  Prev: Stab Sections,  Up: Top
 
 Appendix G GNU Free Documentation License
 *****************************************
@@ -4405,7 +4405,7 @@ free software license, such as the GNU General Public License, to
 permit their use in free software.
 
 
-File: stabs.info,  Node: Symbol Types Index,  Next: GNU Free Documentation License,  Prev: Stab Sections,  Up: Top
+File: stabs.info,  Node: Symbol Types Index,  Prev: GNU Free Documentation License,  Up: Top
 
 Symbol Types Index
 ******************
@@ -4580,9 +4580,9 @@ Node: Gould140151
 Node: N_LENG141143
 Node: Questions141371
 Node: Stab Sections143015
-Node: Stab Section Basics143613
-Node: ELF Linker Relocation146954
-Node: GNU Free Documentation License150364
-Node: Symbol Types Index175521
+Node: Stab Section Basics143625
+Node: ELF Linker Relocation146966
+Node: GNU Free Documentation License150376
+Node: Symbol Types Index175555
 
 End Tag Table

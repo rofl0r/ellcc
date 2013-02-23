@@ -218,7 +218,7 @@ static CORE_ADDR
 moxie_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   CORE_ADDR func_addr = 0, func_end = 0;
-  char *func_name;
+  const char *func_name;
 
   /* See if we can determine the end of the prologue via the symbol table.
      If so, then return either PC, or the PC after the prologue, whichever
@@ -341,7 +341,7 @@ moxie_extract_return_value (struct type *type, struct regcache *regcache,
 /* Implement the "return_value" gdbarch method.  */
 
 static enum return_value_convention
-moxie_return_value (struct gdbarch *gdbarch, struct type *func_type,
+moxie_return_value (struct gdbarch *gdbarch, struct value *function,
 		   struct type *valtype, struct regcache *regcache,
 		   gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -516,7 +516,7 @@ moxie_process_readu (CORE_ADDR addr, char *buf,
    memory that will be changed in current instruction to "record_arch_list".
    Return -1 if something wrong.  */
 
-int
+static int
 moxie_process_record (struct gdbarch *gdbarch, struct regcache *regcache,
 		      CORE_ADDR addr)
 {

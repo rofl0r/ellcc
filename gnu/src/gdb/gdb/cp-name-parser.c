@@ -304,6 +304,12 @@ static struct demangle_component *d_binary (const char *,
 #define yygindex cpname_yygindex
 #define yytable	 cpname_yytable
 #define yycheck	 cpname_yycheck
+#define yyss	cpname_yyss
+#define yysslim	cpname_yysslim
+#define yyssp	cpname_yyssp
+#define yystacksize cpname_yystacksize
+#define yyvs	cpname_yyvs
+#define yyvsp	cpname_yyvsp
 
 int yyparse (void);
 static int yylex (void);
@@ -322,7 +328,11 @@ fill_comp (enum demangle_component_type d_type, struct demangle_component *lhs,
 	   struct demangle_component *rhs)
 {
   struct demangle_component *ret = d_grab ();
-  cplus_demangle_fill_component (ret, d_type, lhs, rhs);
+  int i;
+
+  i = cplus_demangle_fill_component (ret, d_type, lhs, rhs);
+  gdb_assert (i);
+
   return ret;
 }
 
@@ -338,7 +348,11 @@ static struct demangle_component *
 make_operator (const char *name, int args)
 {
   struct demangle_component *ret = d_grab ();
-  cplus_demangle_fill_operator (ret, name, args);
+  int i;
+
+  i = cplus_demangle_fill_operator (ret, name, args);
+  gdb_assert (i);
+
   return ret;
 }
 
@@ -346,7 +360,11 @@ static struct demangle_component *
 make_dtor (enum gnu_v3_dtor_kinds kind, struct demangle_component *name)
 {
   struct demangle_component *ret = d_grab ();
-  cplus_demangle_fill_dtor (ret, kind, name);
+  int i;
+
+  i = cplus_demangle_fill_dtor (ret, kind, name);
+  gdb_assert (i);
+
   return ret;
 }
 
@@ -354,7 +372,11 @@ static struct demangle_component *
 make_builtin_type (const char *name)
 {
   struct demangle_component *ret = d_grab ();
-  cplus_demangle_fill_builtin_type (ret, name);
+  int i;
+
+  i = cplus_demangle_fill_builtin_type (ret, name);
+  gdb_assert (i);
+
   return ret;
 }
 
@@ -362,7 +384,11 @@ static struct demangle_component *
 make_name (const char *name, int len)
 {
   struct demangle_component *ret = d_grab ();
-  cplus_demangle_fill_name (ret, name, len);
+  int i;
+
+  i = cplus_demangle_fill_name (ret, name, len);
+  gdb_assert (i);
+
   return ret;
 }
 
@@ -385,7 +411,7 @@ make_name (const char *name, int len)
 #endif
 
 #if ! defined (YYSTYPE) && ! defined (YYSTYPE_IS_DECLARED)
-#line 241 "cp-name-parser.y"
+#line 267 "cp-name-parser.y"
 typedef union YYSTYPE {
     struct demangle_component *comp;
     struct nested {
@@ -405,7 +431,7 @@ typedef union YYSTYPE {
     const char *opname;
   } YYSTYPE;
 /* Line 191 of yacc.c.  */
-#line 409 "cp-name-parser.c"
+#line 435 "cp-name-parser.c"
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1
@@ -417,7 +443,7 @@ typedef union YYSTYPE {
 
 
 /* Line 214 of yacc.c.  */
-#line 421 "cp-name-parser.c"
+#line 447 "cp-name-parser.c"
 
 #if ! defined (yyoverflow) || YYERROR_VERBOSE
 
@@ -674,26 +700,26 @@ static const yysigned_char yyrhs[] =
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
 static const unsigned short yyrline[] =
 {
-       0,   355,   355,   359,   361,   363,   368,   369,   376,   385,
-     388,   392,   395,   414,   418,   422,   424,   426,   428,   430,
-     432,   434,   436,   438,   440,   442,   444,   446,   448,   450,
-     452,   454,   456,   458,   460,   462,   464,   466,   468,   470,
-     472,   474,   476,   478,   480,   482,   484,   486,   494,   499,
-     504,   508,   513,   521,   522,   524,   536,   537,   543,   545,
-     546,   548,   551,   552,   555,   556,   560,   562,   565,   571,
-     578,   584,   595,   599,   602,   613,   614,   618,   620,   622,
-     625,   629,   634,   639,   645,   655,   659,   663,   671,   672,
-     675,   677,   679,   683,   684,   691,   693,   695,   697,   699,
-     701,   705,   706,   710,   712,   714,   716,   718,   720,   722,
-     726,   732,   736,   744,   754,   758,   774,   776,   777,   779,
-     782,   784,   785,   787,   790,   792,   794,   796,   801,   804,
-     809,   816,   820,   831,   837,   855,   858,   866,   868,   879,
-     886,   887,   893,   897,   901,   903,   908,   913,   926,   930,
-     935,   943,   948,   957,   961,   966,   971,   975,   981,   987,
-     990,   997,   999,  1004,  1008,  1012,  1019,  1035,  1042,  1049,
-    1068,  1072,  1076,  1080,  1084,  1088,  1092,  1096,  1100,  1104,
-    1108,  1112,  1116,  1120,  1124,  1128,  1132,  1137,  1141,  1145,
-    1152,  1156,  1159,  1164,  1173
+       0,   381,   381,   385,   387,   389,   394,   395,   402,   411,
+     414,   418,   421,   440,   444,   448,   450,   452,   454,   456,
+     458,   460,   462,   464,   466,   468,   470,   472,   474,   476,
+     478,   480,   482,   484,   486,   488,   490,   492,   494,   496,
+     498,   500,   502,   504,   506,   508,   510,   512,   520,   525,
+     530,   534,   539,   547,   548,   550,   562,   563,   569,   571,
+     572,   574,   577,   578,   581,   582,   586,   588,   591,   597,
+     604,   610,   621,   625,   628,   639,   640,   644,   646,   648,
+     651,   655,   660,   665,   671,   681,   685,   689,   697,   698,
+     701,   703,   705,   709,   710,   717,   719,   721,   723,   725,
+     727,   731,   732,   736,   738,   740,   742,   744,   746,   748,
+     752,   758,   762,   770,   780,   784,   800,   802,   803,   805,
+     808,   810,   811,   813,   816,   818,   820,   822,   827,   830,
+     835,   842,   846,   857,   863,   881,   884,   892,   894,   905,
+     912,   913,   919,   923,   927,   929,   934,   939,   952,   956,
+     961,   969,   974,   983,   987,   992,   997,  1001,  1007,  1013,
+    1016,  1023,  1025,  1030,  1034,  1038,  1045,  1061,  1068,  1075,
+    1094,  1098,  1102,  1106,  1110,  1114,  1118,  1122,  1126,  1130,
+    1134,  1138,  1142,  1146,  1150,  1154,  1158,  1163,  1167,  1171,
+    1178,  1182,  1185,  1190,  1199
 };
 #endif
 
@@ -1770,47 +1796,47 @@ yyreduce:
   switch (yyn)
     {
         case 2:
-#line 356 "cp-name-parser.y"
+#line 382 "cp-name-parser.y"
     { global_result = yyvsp[0].comp; }
     break;
 
   case 6:
-#line 368 "cp-name-parser.y"
+#line 394 "cp-name-parser.y"
     { yyval.comp = NULL; }
     break;
 
   case 7:
-#line 370 "cp-name-parser.y"
+#line 396 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].comp; }
     break;
 
   case 8:
-#line 377 "cp-name-parser.y"
+#line 403 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].nested.comp;
 			  *yyvsp[0].nested.last = yyvsp[-1].comp;
 			}
     break;
 
   case 9:
-#line 386 "cp-name-parser.y"
+#line 412 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_TYPED_NAME, yyvsp[-2].comp, yyvsp[-1].nested.comp);
 			  if (yyvsp[0].comp) yyval.comp = fill_comp (DEMANGLE_COMPONENT_LOCAL_NAME, yyval.comp, yyvsp[0].comp); }
     break;
 
   case 10:
-#line 389 "cp-name-parser.y"
+#line 415 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_TYPED_NAME, yyvsp[-2].comp, yyvsp[-1].nested.comp);
 			  if (yyvsp[0].comp) yyval.comp = fill_comp (DEMANGLE_COMPONENT_LOCAL_NAME, yyval.comp, yyvsp[0].comp); }
     break;
 
   case 11:
-#line 393 "cp-name-parser.y"
+#line 419 "cp-name-parser.y"
     { yyval.comp = yyvsp[-1].nested.comp;
 			  if (yyvsp[0].comp) yyval.comp = fill_comp (DEMANGLE_COMPONENT_LOCAL_NAME, yyval.comp, yyvsp[0].comp); }
     break;
 
   case 12:
-#line 396 "cp-name-parser.y"
+#line 422 "cp-name-parser.y"
     { if (yyvsp[0].abstract.last)
 			    {
 			       /* First complete the abstract_declarator's type using
@@ -1829,189 +1855,189 @@ yyreduce:
     break;
 
   case 13:
-#line 415 "cp-name-parser.y"
+#line 441 "cp-name-parser.y"
     { yyval.comp = make_empty (yyvsp[-1].lval);
 			  d_left (yyval.comp) = yyvsp[0].comp;
 			  d_right (yyval.comp) = NULL; }
     break;
 
   case 14:
-#line 419 "cp-name-parser.y"
+#line 445 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_CONSTRUCTION_VTABLE, yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 15:
-#line 423 "cp-name-parser.y"
-    { yyval.comp = make_operator ("new", 1); }
+#line 449 "cp-name-parser.y"
+    { yyval.comp = make_operator ("new", 3); }
     break;
 
   case 16:
-#line 425 "cp-name-parser.y"
-    { yyval.comp = make_operator ("delete", 1); }
+#line 451 "cp-name-parser.y"
+    { yyval.comp = make_operator ("delete ", 1); }
     break;
 
   case 17:
-#line 427 "cp-name-parser.y"
-    { yyval.comp = make_operator ("new[]", 1); }
+#line 453 "cp-name-parser.y"
+    { yyval.comp = make_operator ("new[]", 3); }
     break;
 
   case 18:
-#line 429 "cp-name-parser.y"
-    { yyval.comp = make_operator ("delete[]", 1); }
+#line 455 "cp-name-parser.y"
+    { yyval.comp = make_operator ("delete[] ", 1); }
     break;
 
   case 19:
-#line 431 "cp-name-parser.y"
+#line 457 "cp-name-parser.y"
     { yyval.comp = make_operator ("+", 2); }
     break;
 
   case 20:
-#line 433 "cp-name-parser.y"
+#line 459 "cp-name-parser.y"
     { yyval.comp = make_operator ("-", 2); }
     break;
 
   case 21:
-#line 435 "cp-name-parser.y"
+#line 461 "cp-name-parser.y"
     { yyval.comp = make_operator ("*", 2); }
     break;
 
   case 22:
-#line 437 "cp-name-parser.y"
+#line 463 "cp-name-parser.y"
     { yyval.comp = make_operator ("/", 2); }
     break;
 
   case 23:
-#line 439 "cp-name-parser.y"
+#line 465 "cp-name-parser.y"
     { yyval.comp = make_operator ("%", 2); }
     break;
 
   case 24:
-#line 441 "cp-name-parser.y"
+#line 467 "cp-name-parser.y"
     { yyval.comp = make_operator ("^", 2); }
     break;
 
   case 25:
-#line 443 "cp-name-parser.y"
+#line 469 "cp-name-parser.y"
     { yyval.comp = make_operator ("&", 2); }
     break;
 
   case 26:
-#line 445 "cp-name-parser.y"
+#line 471 "cp-name-parser.y"
     { yyval.comp = make_operator ("|", 2); }
     break;
 
   case 27:
-#line 447 "cp-name-parser.y"
+#line 473 "cp-name-parser.y"
     { yyval.comp = make_operator ("~", 1); }
     break;
 
   case 28:
-#line 449 "cp-name-parser.y"
+#line 475 "cp-name-parser.y"
     { yyval.comp = make_operator ("!", 1); }
     break;
 
   case 29:
-#line 451 "cp-name-parser.y"
+#line 477 "cp-name-parser.y"
     { yyval.comp = make_operator ("=", 2); }
     break;
 
   case 30:
-#line 453 "cp-name-parser.y"
+#line 479 "cp-name-parser.y"
     { yyval.comp = make_operator ("<", 2); }
     break;
 
   case 31:
-#line 455 "cp-name-parser.y"
+#line 481 "cp-name-parser.y"
     { yyval.comp = make_operator (">", 2); }
     break;
 
   case 32:
-#line 457 "cp-name-parser.y"
+#line 483 "cp-name-parser.y"
     { yyval.comp = make_operator (yyvsp[0].opname, 2); }
     break;
 
   case 33:
-#line 459 "cp-name-parser.y"
+#line 485 "cp-name-parser.y"
     { yyval.comp = make_operator ("<<", 2); }
     break;
 
   case 34:
-#line 461 "cp-name-parser.y"
+#line 487 "cp-name-parser.y"
     { yyval.comp = make_operator (">>", 2); }
     break;
 
   case 35:
-#line 463 "cp-name-parser.y"
+#line 489 "cp-name-parser.y"
     { yyval.comp = make_operator ("==", 2); }
     break;
 
   case 36:
-#line 465 "cp-name-parser.y"
+#line 491 "cp-name-parser.y"
     { yyval.comp = make_operator ("!=", 2); }
     break;
 
   case 37:
-#line 467 "cp-name-parser.y"
+#line 493 "cp-name-parser.y"
     { yyval.comp = make_operator ("<=", 2); }
     break;
 
   case 38:
-#line 469 "cp-name-parser.y"
+#line 495 "cp-name-parser.y"
     { yyval.comp = make_operator (">=", 2); }
     break;
 
   case 39:
-#line 471 "cp-name-parser.y"
+#line 497 "cp-name-parser.y"
     { yyval.comp = make_operator ("&&", 2); }
     break;
 
   case 40:
-#line 473 "cp-name-parser.y"
+#line 499 "cp-name-parser.y"
     { yyval.comp = make_operator ("||", 2); }
     break;
 
   case 41:
-#line 475 "cp-name-parser.y"
+#line 501 "cp-name-parser.y"
     { yyval.comp = make_operator ("++", 1); }
     break;
 
   case 42:
-#line 477 "cp-name-parser.y"
+#line 503 "cp-name-parser.y"
     { yyval.comp = make_operator ("--", 1); }
     break;
 
   case 43:
-#line 479 "cp-name-parser.y"
+#line 505 "cp-name-parser.y"
     { yyval.comp = make_operator (",", 2); }
     break;
 
   case 44:
-#line 481 "cp-name-parser.y"
+#line 507 "cp-name-parser.y"
     { yyval.comp = make_operator ("->*", 2); }
     break;
 
   case 45:
-#line 483 "cp-name-parser.y"
+#line 509 "cp-name-parser.y"
     { yyval.comp = make_operator ("->", 2); }
     break;
 
   case 46:
-#line 485 "cp-name-parser.y"
+#line 511 "cp-name-parser.y"
     { yyval.comp = make_operator ("()", 2); }
     break;
 
   case 47:
-#line 487 "cp-name-parser.y"
+#line 513 "cp-name-parser.y"
     { yyval.comp = make_operator ("[]", 2); }
     break;
 
   case 48:
-#line 495 "cp-name-parser.y"
+#line 521 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_CAST, yyvsp[0].comp, NULL); }
     break;
 
   case 49:
-#line 500 "cp-name-parser.y"
+#line 526 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested1.comp;
 			  d_right (yyvsp[-1].nested1.last) = yyvsp[0].comp;
 			  yyval.nested.last = &d_left (yyvsp[0].comp);
@@ -2019,14 +2045,14 @@ yyreduce:
     break;
 
   case 50:
-#line 505 "cp-name-parser.y"
+#line 531 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[0].comp;
 			  yyval.nested.last = &d_left (yyvsp[0].comp);
 			}
     break;
 
   case 51:
-#line 509 "cp-name-parser.y"
+#line 535 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested1.comp;
 			  d_right (yyvsp[-1].nested1.last) = yyvsp[0].comp;
 			  yyval.nested.last = &d_left (yyvsp[0].comp);
@@ -2034,49 +2060,49 @@ yyreduce:
     break;
 
   case 52:
-#line 514 "cp-name-parser.y"
+#line 540 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[0].comp;
 			  yyval.nested.last = &d_left (yyvsp[0].comp);
 			}
     break;
 
   case 54:
-#line 523 "cp-name-parser.y"
+#line 549 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_TEMPLATE, yyvsp[-3].comp, yyvsp[-1].nested.comp); }
     break;
 
   case 55:
-#line 525 "cp-name-parser.y"
+#line 551 "cp-name-parser.y"
     { yyval.comp = make_dtor (gnu_v3_complete_object_dtor, yyvsp[0].comp); }
     break;
 
   case 57:
-#line 538 "cp-name-parser.y"
+#line 564 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].comp; }
     break;
 
   case 58:
-#line 544 "cp-name-parser.y"
+#line 570 "cp-name-parser.y"
     { yyval.comp = yyvsp[-1].nested1.comp; d_right (yyvsp[-1].nested1.last) = yyvsp[0].comp; }
     break;
 
   case 60:
-#line 547 "cp-name-parser.y"
+#line 573 "cp-name-parser.y"
     { yyval.comp = yyvsp[-1].nested1.comp; d_right (yyvsp[-1].nested1.last) = yyvsp[0].comp; }
     break;
 
   case 65:
-#line 557 "cp-name-parser.y"
+#line 583 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].comp; }
     break;
 
   case 66:
-#line 561 "cp-name-parser.y"
+#line 587 "cp-name-parser.y"
     { yyval.comp = yyvsp[-1].nested1.comp; d_right (yyvsp[-1].nested1.last) = yyvsp[0].comp; }
     break;
 
   case 68:
-#line 566 "cp-name-parser.y"
+#line 592 "cp-name-parser.y"
     { yyval.nested1.comp = make_empty (DEMANGLE_COMPONENT_QUAL_NAME);
 			  d_left (yyval.nested1.comp) = yyvsp[-1].comp;
 			  d_right (yyval.nested1.comp) = NULL;
@@ -2085,7 +2111,7 @@ yyreduce:
     break;
 
   case 69:
-#line 572 "cp-name-parser.y"
+#line 598 "cp-name-parser.y"
     { yyval.nested1.comp = yyvsp[-2].nested1.comp;
 			  d_right (yyvsp[-2].nested1.last) = make_empty (DEMANGLE_COMPONENT_QUAL_NAME);
 			  yyval.nested1.last = d_right (yyvsp[-2].nested1.last);
@@ -2095,7 +2121,7 @@ yyreduce:
     break;
 
   case 70:
-#line 579 "cp-name-parser.y"
+#line 605 "cp-name-parser.y"
     { yyval.nested1.comp = make_empty (DEMANGLE_COMPONENT_QUAL_NAME);
 			  d_left (yyval.nested1.comp) = yyvsp[-1].comp;
 			  d_right (yyval.nested1.comp) = NULL;
@@ -2104,7 +2130,7 @@ yyreduce:
     break;
 
   case 71:
-#line 585 "cp-name-parser.y"
+#line 611 "cp-name-parser.y"
     { yyval.nested1.comp = yyvsp[-2].nested1.comp;
 			  d_right (yyvsp[-2].nested1.last) = make_empty (DEMANGLE_COMPONENT_QUAL_NAME);
 			  yyval.nested1.last = d_right (yyvsp[-2].nested1.last);
@@ -2114,18 +2140,18 @@ yyreduce:
     break;
 
   case 72:
-#line 596 "cp-name-parser.y"
+#line 622 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_TEMPLATE, yyvsp[-3].comp, yyvsp[-1].nested.comp); }
     break;
 
   case 73:
-#line 600 "cp-name-parser.y"
+#line 626 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_TEMPLATE_ARGLIST, yyvsp[0].comp, NULL);
 			yyval.nested.last = &d_right (yyval.nested.comp); }
     break;
 
   case 74:
-#line 603 "cp-name-parser.y"
+#line 629 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-2].nested.comp;
 			  *yyvsp[-2].nested.last = fill_comp (DEMANGLE_COMPONENT_TEMPLATE_ARGLIST, yyvsp[0].comp, NULL);
 			  yyval.nested.last = &d_right (*yyvsp[-2].nested.last);
@@ -2133,31 +2159,31 @@ yyreduce:
     break;
 
   case 76:
-#line 615 "cp-name-parser.y"
+#line 641 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].abstract.comp;
 			  *yyvsp[0].abstract.last = yyvsp[-1].comp;
 			}
     break;
 
   case 77:
-#line 619 "cp-name-parser.y"
+#line 645 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY, make_operator ("&", 1), yyvsp[0].comp); }
     break;
 
   case 78:
-#line 621 "cp-name-parser.y"
+#line 647 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY, make_operator ("&", 1), yyvsp[-1].comp); }
     break;
 
   case 80:
-#line 626 "cp-name-parser.y"
+#line 652 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_ARGLIST, yyvsp[0].comp, NULL);
 			  yyval.nested.last = &d_right (yyval.nested.comp);
 			}
     break;
 
   case 81:
-#line 630 "cp-name-parser.y"
+#line 656 "cp-name-parser.y"
     { *yyvsp[0].abstract.last = yyvsp[-1].comp;
 			  yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_ARGLIST, yyvsp[0].abstract.comp, NULL);
 			  yyval.nested.last = &d_right (yyval.nested.comp);
@@ -2165,7 +2191,7 @@ yyreduce:
     break;
 
   case 82:
-#line 635 "cp-name-parser.y"
+#line 661 "cp-name-parser.y"
     { *yyvsp[-2].nested.last = fill_comp (DEMANGLE_COMPONENT_ARGLIST, yyvsp[0].comp, NULL);
 			  yyval.nested.comp = yyvsp[-2].nested.comp;
 			  yyval.nested.last = &d_right (*yyvsp[-2].nested.last);
@@ -2173,7 +2199,7 @@ yyreduce:
     break;
 
   case 83:
-#line 640 "cp-name-parser.y"
+#line 666 "cp-name-parser.y"
     { *yyvsp[0].abstract.last = yyvsp[-1].comp;
 			  *yyvsp[-3].nested.last = fill_comp (DEMANGLE_COMPONENT_ARGLIST, yyvsp[0].abstract.comp, NULL);
 			  yyval.nested.comp = yyvsp[-3].nested.comp;
@@ -2182,7 +2208,7 @@ yyreduce:
     break;
 
   case 84:
-#line 646 "cp-name-parser.y"
+#line 672 "cp-name-parser.y"
     { *yyvsp[-2].nested.last
 			    = fill_comp (DEMANGLE_COMPONENT_ARGLIST,
 					   make_builtin_type ("..."),
@@ -2193,123 +2219,123 @@ yyreduce:
     break;
 
   case 85:
-#line 656 "cp-name-parser.y"
+#line 682 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_FUNCTION_TYPE, NULL, yyvsp[-2].nested.comp);
 			  yyval.nested.last = &d_left (yyval.nested.comp);
 			  yyval.nested.comp = d_qualify (yyval.nested.comp, yyvsp[0].lval, 1); }
     break;
 
   case 86:
-#line 660 "cp-name-parser.y"
+#line 686 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_FUNCTION_TYPE, NULL, NULL);
 			  yyval.nested.last = &d_left (yyval.nested.comp);
 			  yyval.nested.comp = d_qualify (yyval.nested.comp, yyvsp[0].lval, 1); }
     break;
 
   case 87:
-#line 664 "cp-name-parser.y"
+#line 690 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_FUNCTION_TYPE, NULL, NULL);
 			  yyval.nested.last = &d_left (yyval.nested.comp);
 			  yyval.nested.comp = d_qualify (yyval.nested.comp, yyvsp[0].lval, 1); }
     break;
 
   case 88:
-#line 671 "cp-name-parser.y"
+#line 697 "cp-name-parser.y"
     { yyval.lval = 0; }
     break;
 
   case 90:
-#line 676 "cp-name-parser.y"
+#line 702 "cp-name-parser.y"
     { yyval.lval = QUAL_RESTRICT; }
     break;
 
   case 91:
-#line 678 "cp-name-parser.y"
+#line 704 "cp-name-parser.y"
     { yyval.lval = QUAL_VOLATILE; }
     break;
 
   case 92:
-#line 680 "cp-name-parser.y"
+#line 706 "cp-name-parser.y"
     { yyval.lval = QUAL_CONST; }
     break;
 
   case 94:
-#line 685 "cp-name-parser.y"
+#line 711 "cp-name-parser.y"
     { yyval.lval = yyvsp[-1].lval | yyvsp[0].lval; }
     break;
 
   case 95:
-#line 692 "cp-name-parser.y"
+#line 718 "cp-name-parser.y"
     { yyval.lval = 0; }
     break;
 
   case 96:
-#line 694 "cp-name-parser.y"
+#line 720 "cp-name-parser.y"
     { yyval.lval = INT_SIGNED; }
     break;
 
   case 97:
-#line 696 "cp-name-parser.y"
+#line 722 "cp-name-parser.y"
     { yyval.lval = INT_UNSIGNED; }
     break;
 
   case 98:
-#line 698 "cp-name-parser.y"
+#line 724 "cp-name-parser.y"
     { yyval.lval = INT_CHAR; }
     break;
 
   case 99:
-#line 700 "cp-name-parser.y"
+#line 726 "cp-name-parser.y"
     { yyval.lval = INT_LONG; }
     break;
 
   case 100:
-#line 702 "cp-name-parser.y"
+#line 728 "cp-name-parser.y"
     { yyval.lval = INT_SHORT; }
     break;
 
   case 102:
-#line 707 "cp-name-parser.y"
+#line 733 "cp-name-parser.y"
     { yyval.lval = yyvsp[-1].lval | yyvsp[0].lval; if (yyvsp[-1].lval & yyvsp[0].lval & INT_LONG) yyval.lval = yyvsp[-1].lval | INT_LLONG; }
     break;
 
   case 103:
-#line 711 "cp-name-parser.y"
+#line 737 "cp-name-parser.y"
     { yyval.comp = d_int_type (yyvsp[0].lval); }
     break;
 
   case 104:
-#line 713 "cp-name-parser.y"
+#line 739 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("float"); }
     break;
 
   case 105:
-#line 715 "cp-name-parser.y"
+#line 741 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("double"); }
     break;
 
   case 106:
-#line 717 "cp-name-parser.y"
+#line 743 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("long double"); }
     break;
 
   case 107:
-#line 719 "cp-name-parser.y"
+#line 745 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("bool"); }
     break;
 
   case 108:
-#line 721 "cp-name-parser.y"
+#line 747 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("wchar_t"); }
     break;
 
   case 109:
-#line 723 "cp-name-parser.y"
+#line 749 "cp-name-parser.y"
     { yyval.comp = make_builtin_type ("void"); }
     break;
 
   case 110:
-#line 727 "cp-name-parser.y"
+#line 753 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_POINTER);
 			  yyval.nested.comp->u.s_binary.left = yyval.nested.comp->u.s_binary.right = NULL;
 			  yyval.nested.last = &d_left (yyval.nested.comp);
@@ -2317,14 +2343,14 @@ yyreduce:
     break;
 
   case 111:
-#line 733 "cp-name-parser.y"
+#line 759 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_REFERENCE);
 			  yyval.nested.comp->u.s_binary.left = yyval.nested.comp->u.s_binary.right = NULL;
 			  yyval.nested.last = &d_left (yyval.nested.comp); }
     break;
 
   case 112:
-#line 737 "cp-name-parser.y"
+#line 763 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_PTRMEM_TYPE);
 			  yyval.nested.comp->u.s_binary.left = yyvsp[-2].nested1.comp;
 			  /* Convert the innermost DEMANGLE_COMPONENT_QUAL_NAME to a DEMANGLE_COMPONENT_NAME.  */
@@ -2335,7 +2361,7 @@ yyreduce:
     break;
 
   case 113:
-#line 745 "cp-name-parser.y"
+#line 771 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_PTRMEM_TYPE);
 			  yyval.nested.comp->u.s_binary.left = yyvsp[-2].nested1.comp;
 			  /* Convert the innermost DEMANGLE_COMPONENT_QUAL_NAME to a DEMANGLE_COMPONENT_NAME.  */
@@ -2346,77 +2372,77 @@ yyreduce:
     break;
 
   case 114:
-#line 755 "cp-name-parser.y"
+#line 781 "cp-name-parser.y"
     { yyval.comp = make_empty (DEMANGLE_COMPONENT_ARRAY_TYPE);
 			  d_left (yyval.comp) = NULL;
 			}
     break;
 
   case 115:
-#line 759 "cp-name-parser.y"
+#line 785 "cp-name-parser.y"
     { yyval.comp = make_empty (DEMANGLE_COMPONENT_ARRAY_TYPE);
 			  d_left (yyval.comp) = yyvsp[-1].comp;
 			}
     break;
 
   case 116:
-#line 775 "cp-name-parser.y"
+#line 801 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[0].lval, 0); }
     break;
 
   case 118:
-#line 778 "cp-name-parser.y"
+#line 804 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[-2].lval | yyvsp[0].lval, 0); }
     break;
 
   case 119:
-#line 780 "cp-name-parser.y"
+#line 806 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[0].comp, yyvsp[-1].lval, 0); }
     break;
 
   case 120:
-#line 783 "cp-name-parser.y"
+#line 809 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[0].lval, 0); }
     break;
 
   case 122:
-#line 786 "cp-name-parser.y"
+#line 812 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[-2].lval | yyvsp[0].lval, 0); }
     break;
 
   case 123:
-#line 788 "cp-name-parser.y"
+#line 814 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[0].comp, yyvsp[-1].lval, 0); }
     break;
 
   case 124:
-#line 791 "cp-name-parser.y"
+#line 817 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[0].lval, 0); }
     break;
 
   case 125:
-#line 793 "cp-name-parser.y"
+#line 819 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].comp; }
     break;
 
   case 126:
-#line 795 "cp-name-parser.y"
+#line 821 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[-1].comp, yyvsp[-3].lval | yyvsp[0].lval, 0); }
     break;
 
   case 127:
-#line 797 "cp-name-parser.y"
+#line 823 "cp-name-parser.y"
     { yyval.comp = d_qualify (yyvsp[0].comp, yyvsp[-2].lval, 0); }
     break;
 
   case 128:
-#line 802 "cp-name-parser.y"
+#line 828 "cp-name-parser.y"
     { yyval.abstract.comp = yyvsp[0].nested.comp; yyval.abstract.last = yyvsp[0].nested.last;
 			  yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL; }
     break;
 
   case 129:
-#line 805 "cp-name-parser.y"
+#line 831 "cp-name-parser.y"
     { yyval.abstract = yyvsp[0].abstract; yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL;
 			  if (yyvsp[0].abstract.fn.comp) { yyval.abstract.last = yyvsp[0].abstract.fn.last; *yyvsp[0].abstract.last = yyvsp[0].abstract.fn.comp; }
 			  *yyval.abstract.last = yyvsp[-1].nested.comp;
@@ -2424,21 +2450,21 @@ yyreduce:
     break;
 
   case 130:
-#line 810 "cp-name-parser.y"
+#line 836 "cp-name-parser.y"
     { yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL;
 			  if (yyvsp[0].abstract.fn.comp) { yyval.abstract.last = yyvsp[0].abstract.fn.last; *yyvsp[0].abstract.last = yyvsp[0].abstract.fn.comp; }
 			}
     break;
 
   case 131:
-#line 817 "cp-name-parser.y"
+#line 843 "cp-name-parser.y"
     { yyval.abstract = yyvsp[-1].abstract; yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL; yyval.abstract.fold_flag = 1;
 			  if (yyvsp[-1].abstract.fn.comp) { yyval.abstract.last = yyvsp[-1].abstract.fn.last; *yyvsp[-1].abstract.last = yyvsp[-1].abstract.fn.comp; }
 			}
     break;
 
   case 132:
-#line 821 "cp-name-parser.y"
+#line 847 "cp-name-parser.y"
     { yyval.abstract.fold_flag = 0;
 			  if (yyvsp[-1].abstract.fn.comp) { yyval.abstract.last = yyvsp[-1].abstract.fn.last; *yyvsp[-1].abstract.last = yyvsp[-1].abstract.fn.comp; }
 			  if (yyvsp[-1].abstract.fold_flag)
@@ -2452,7 +2478,7 @@ yyreduce:
     break;
 
   case 133:
-#line 832 "cp-name-parser.y"
+#line 858 "cp-name-parser.y"
     { yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL; yyval.abstract.fold_flag = 0;
 			  if (yyvsp[-1].abstract.fn.comp) { yyval.abstract.last = yyvsp[-1].abstract.fn.last; *yyvsp[-1].abstract.last = yyvsp[-1].abstract.fn.comp; }
 			  *yyvsp[-1].abstract.last = yyvsp[0].comp;
@@ -2461,7 +2487,7 @@ yyreduce:
     break;
 
   case 134:
-#line 838 "cp-name-parser.y"
+#line 864 "cp-name-parser.y"
     { yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL; yyval.abstract.fold_flag = 0;
 			  yyval.abstract.comp = yyvsp[0].comp;
 			  yyval.abstract.last = &d_right (yyvsp[0].comp);
@@ -2469,13 +2495,13 @@ yyreduce:
     break;
 
   case 135:
-#line 856 "cp-name-parser.y"
+#line 882 "cp-name-parser.y"
     { yyval.abstract.comp = yyvsp[0].nested.comp; yyval.abstract.last = yyvsp[0].nested.last;
 			  yyval.abstract.fn.comp = NULL; yyval.abstract.fn.last = NULL; yyval.abstract.start = NULL; }
     break;
 
   case 136:
-#line 859 "cp-name-parser.y"
+#line 885 "cp-name-parser.y"
     { yyval.abstract = yyvsp[0].abstract;
 			  if (yyvsp[0].abstract.last)
 			    *yyval.abstract.last = yyvsp[-1].nested.comp;
@@ -2486,12 +2512,12 @@ yyreduce:
     break;
 
   case 137:
-#line 867 "cp-name-parser.y"
+#line 893 "cp-name-parser.y"
     { yyval.abstract.comp = yyvsp[0].abstract.comp; yyval.abstract.last = yyvsp[0].abstract.last; yyval.abstract.fn = yyvsp[0].abstract.fn; yyval.abstract.start = NULL; }
     break;
 
   case 138:
-#line 869 "cp-name-parser.y"
+#line 895 "cp-name-parser.y"
     { yyval.abstract.start = yyvsp[0].comp;
 			  if (yyvsp[-3].abstract.fn.comp) { yyval.abstract.last = yyvsp[-3].abstract.fn.last; *yyvsp[-3].abstract.last = yyvsp[-3].abstract.fn.comp; }
 			  if (yyvsp[-3].abstract.fold_flag)
@@ -2505,7 +2531,7 @@ yyreduce:
     break;
 
   case 139:
-#line 880 "cp-name-parser.y"
+#line 906 "cp-name-parser.y"
     { yyval.abstract.fn = yyvsp[-1].nested;
 			  yyval.abstract.start = yyvsp[0].comp;
 			  yyval.abstract.comp = NULL; yyval.abstract.last = NULL;
@@ -2513,26 +2539,26 @@ yyreduce:
     break;
 
   case 141:
-#line 888 "cp-name-parser.y"
+#line 914 "cp-name-parser.y"
     { yyval.comp = yyvsp[0].abstract.comp;
 			  *yyvsp[0].abstract.last = yyvsp[-1].comp;
 			}
     break;
 
   case 142:
-#line 894 "cp-name-parser.y"
+#line 920 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[0].nested.comp;
 			  yyval.nested.last = yyvsp[-1].nested.last;
 			  *yyvsp[0].nested.last = yyvsp[-1].nested.comp; }
     break;
 
   case 144:
-#line 902 "cp-name-parser.y"
+#line 928 "cp-name-parser.y"
     { yyval.nested = yyvsp[-1].nested; }
     break;
 
   case 145:
-#line 904 "cp-name-parser.y"
+#line 930 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested.comp;
 			  *yyvsp[-1].nested.last = yyvsp[0].nested.comp;
 			  yyval.nested.last = yyvsp[0].nested.last;
@@ -2540,7 +2566,7 @@ yyreduce:
     break;
 
   case 146:
-#line 909 "cp-name-parser.y"
+#line 935 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested.comp;
 			  *yyvsp[-1].nested.last = yyvsp[0].comp;
 			  yyval.nested.last = &d_right (yyvsp[0].comp);
@@ -2548,7 +2574,7 @@ yyreduce:
     break;
 
   case 147:
-#line 914 "cp-name-parser.y"
+#line 940 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_TYPED_NAME);
 			  d_left (yyval.nested.comp) = yyvsp[0].comp;
 			  yyval.nested.last = &d_right (yyval.nested.comp);
@@ -2556,14 +2582,14 @@ yyreduce:
     break;
 
   case 148:
-#line 927 "cp-name-parser.y"
+#line 953 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[0].nested.comp;
 			  yyval.nested.last = yyvsp[-1].nested.last;
 			  *yyvsp[0].nested.last = yyvsp[-1].nested.comp; }
     break;
 
   case 149:
-#line 931 "cp-name-parser.y"
+#line 957 "cp-name-parser.y"
     { yyval.nested.comp = make_empty (DEMANGLE_COMPONENT_TYPED_NAME);
 			  d_left (yyval.nested.comp) = yyvsp[0].comp;
 			  yyval.nested.last = &d_right (yyval.nested.comp);
@@ -2571,7 +2597,7 @@ yyreduce:
     break;
 
   case 151:
-#line 944 "cp-name-parser.y"
+#line 970 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_TYPED_NAME, yyvsp[-3].comp, yyvsp[-2].nested.comp);
 			  yyval.nested.last = yyvsp[-2].nested.last;
 			  yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_LOCAL_NAME, yyval.nested.comp, yyvsp[0].comp);
@@ -2579,7 +2605,7 @@ yyreduce:
     break;
 
   case 152:
-#line 949 "cp-name-parser.y"
+#line 975 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-3].nested.comp;
 			  *yyvsp[-3].nested.last = yyvsp[-2].nested.comp;
 			  yyval.nested.last = yyvsp[-2].nested.last;
@@ -2588,14 +2614,14 @@ yyreduce:
     break;
 
   case 153:
-#line 958 "cp-name-parser.y"
+#line 984 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested.comp;
 			  yyval.nested.last = yyvsp[-2].nested.last;
 			  *yyvsp[-1].nested.last = yyvsp[-2].nested.comp; }
     break;
 
   case 154:
-#line 962 "cp-name-parser.y"
+#line 988 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested.comp;
 			  *yyvsp[-1].nested.last = yyvsp[0].nested.comp;
 			  yyval.nested.last = yyvsp[0].nested.last;
@@ -2603,7 +2629,7 @@ yyreduce:
     break;
 
   case 155:
-#line 967 "cp-name-parser.y"
+#line 993 "cp-name-parser.y"
     { yyval.nested.comp = yyvsp[-1].nested.comp;
 			  *yyvsp[-1].nested.last = yyvsp[0].comp;
 			  yyval.nested.last = &d_right (yyvsp[0].comp);
@@ -2611,56 +2637,56 @@ yyreduce:
     break;
 
   case 156:
-#line 972 "cp-name-parser.y"
+#line 998 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_TYPED_NAME, yyvsp[-1].comp, yyvsp[0].nested.comp);
 			  yyval.nested.last = yyvsp[0].nested.last;
 			}
     break;
 
   case 157:
-#line 976 "cp-name-parser.y"
+#line 1002 "cp-name-parser.y"
     { yyval.nested.comp = fill_comp (DEMANGLE_COMPONENT_TYPED_NAME, yyvsp[-1].comp, yyvsp[0].comp);
 			  yyval.nested.last = &d_right (yyvsp[0].comp);
 			}
     break;
 
   case 158:
-#line 982 "cp-name-parser.y"
+#line 1008 "cp-name-parser.y"
     { yyval.comp = yyvsp[-1].comp; }
     break;
 
   case 160:
-#line 991 "cp-name-parser.y"
+#line 1017 "cp-name-parser.y"
     { yyval.comp = d_binary (">", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 161:
-#line 998 "cp-name-parser.y"
+#line 1024 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY, make_operator ("&", 1), yyvsp[0].comp); }
     break;
 
   case 162:
-#line 1000 "cp-name-parser.y"
+#line 1026 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY, make_operator ("&", 1), yyvsp[-1].comp); }
     break;
 
   case 163:
-#line 1005 "cp-name-parser.y"
+#line 1031 "cp-name-parser.y"
     { yyval.comp = d_unary ("-", yyvsp[0].comp); }
     break;
 
   case 164:
-#line 1009 "cp-name-parser.y"
+#line 1035 "cp-name-parser.y"
     { yyval.comp = d_unary ("!", yyvsp[0].comp); }
     break;
 
   case 165:
-#line 1013 "cp-name-parser.y"
+#line 1039 "cp-name-parser.y"
     { yyval.comp = d_unary ("~", yyvsp[0].comp); }
     break;
 
   case 166:
-#line 1020 "cp-name-parser.y"
+#line 1046 "cp-name-parser.y"
     { if (yyvsp[0].comp->type == DEMANGLE_COMPONENT_LITERAL
 		      || yyvsp[0].comp->type == DEMANGLE_COMPONENT_LITERAL_NEG)
 		    {
@@ -2675,7 +2701,7 @@ yyreduce:
     break;
 
   case 167:
-#line 1036 "cp-name-parser.y"
+#line 1062 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY,
 				    fill_comp (DEMANGLE_COMPONENT_CAST, yyvsp[-4].comp, NULL),
 				    yyvsp[-1].comp);
@@ -2683,7 +2709,7 @@ yyreduce:
     break;
 
   case 168:
-#line 1043 "cp-name-parser.y"
+#line 1069 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY,
 				    fill_comp (DEMANGLE_COMPONENT_CAST, yyvsp[-4].comp, NULL),
 				    yyvsp[-1].comp);
@@ -2691,7 +2717,7 @@ yyreduce:
     break;
 
   case 169:
-#line 1050 "cp-name-parser.y"
+#line 1076 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_UNARY,
 				    fill_comp (DEMANGLE_COMPONENT_CAST, yyvsp[-4].comp, NULL),
 				    yyvsp[-1].comp);
@@ -2699,102 +2725,102 @@ yyreduce:
     break;
 
   case 170:
-#line 1069 "cp-name-parser.y"
+#line 1095 "cp-name-parser.y"
     { yyval.comp = d_binary ("*", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 171:
-#line 1073 "cp-name-parser.y"
+#line 1099 "cp-name-parser.y"
     { yyval.comp = d_binary ("/", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 172:
-#line 1077 "cp-name-parser.y"
+#line 1103 "cp-name-parser.y"
     { yyval.comp = d_binary ("%", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 173:
-#line 1081 "cp-name-parser.y"
+#line 1107 "cp-name-parser.y"
     { yyval.comp = d_binary ("+", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 174:
-#line 1085 "cp-name-parser.y"
+#line 1111 "cp-name-parser.y"
     { yyval.comp = d_binary ("-", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 175:
-#line 1089 "cp-name-parser.y"
+#line 1115 "cp-name-parser.y"
     { yyval.comp = d_binary ("<<", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 176:
-#line 1093 "cp-name-parser.y"
+#line 1119 "cp-name-parser.y"
     { yyval.comp = d_binary (">>", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 177:
-#line 1097 "cp-name-parser.y"
+#line 1123 "cp-name-parser.y"
     { yyval.comp = d_binary ("==", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 178:
-#line 1101 "cp-name-parser.y"
+#line 1127 "cp-name-parser.y"
     { yyval.comp = d_binary ("!=", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 179:
-#line 1105 "cp-name-parser.y"
+#line 1131 "cp-name-parser.y"
     { yyval.comp = d_binary ("<=", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 180:
-#line 1109 "cp-name-parser.y"
+#line 1135 "cp-name-parser.y"
     { yyval.comp = d_binary (">=", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 181:
-#line 1113 "cp-name-parser.y"
+#line 1139 "cp-name-parser.y"
     { yyval.comp = d_binary ("<", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 182:
-#line 1117 "cp-name-parser.y"
+#line 1143 "cp-name-parser.y"
     { yyval.comp = d_binary ("&", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 183:
-#line 1121 "cp-name-parser.y"
+#line 1147 "cp-name-parser.y"
     { yyval.comp = d_binary ("^", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 184:
-#line 1125 "cp-name-parser.y"
+#line 1151 "cp-name-parser.y"
     { yyval.comp = d_binary ("|", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 185:
-#line 1129 "cp-name-parser.y"
+#line 1155 "cp-name-parser.y"
     { yyval.comp = d_binary ("&&", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 186:
-#line 1133 "cp-name-parser.y"
+#line 1159 "cp-name-parser.y"
     { yyval.comp = d_binary ("||", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 187:
-#line 1138 "cp-name-parser.y"
+#line 1164 "cp-name-parser.y"
     { yyval.comp = d_binary ("->", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 188:
-#line 1142 "cp-name-parser.y"
+#line 1168 "cp-name-parser.y"
     { yyval.comp = d_binary (".", yyvsp[-2].comp, yyvsp[0].comp); }
     break;
 
   case 189:
-#line 1146 "cp-name-parser.y"
+#line 1172 "cp-name-parser.y"
     { yyval.comp = fill_comp (DEMANGLE_COMPONENT_TRINARY, make_operator ("?", 3),
 				    fill_comp (DEMANGLE_COMPONENT_TRINARY_ARG1, yyvsp[-4].comp,
 						 fill_comp (DEMANGLE_COMPONENT_TRINARY_ARG2, yyvsp[-2].comp, yyvsp[0].comp)));
@@ -2802,12 +2828,12 @@ yyreduce:
     break;
 
   case 192:
-#line 1160 "cp-name-parser.y"
+#line 1186 "cp-name-parser.y"
     { yyval.comp = d_unary ("sizeof", yyvsp[-1].comp); }
     break;
 
   case 193:
-#line 1165 "cp-name-parser.y"
+#line 1191 "cp-name-parser.y"
     { struct demangle_component *i;
 		  i = make_name ("1", 1);
 		  yyval.comp = fill_comp (DEMANGLE_COMPONENT_LITERAL,
@@ -2817,7 +2843,7 @@ yyreduce:
     break;
 
   case 194:
-#line 1174 "cp-name-parser.y"
+#line 1200 "cp-name-parser.y"
     { struct demangle_component *i;
 		  i = make_name ("0", 1);
 		  yyval.comp = fill_comp (DEMANGLE_COMPONENT_LITERAL,
@@ -2830,7 +2856,7 @@ yyreduce:
     }
 
 /* Line 1000 of yacc.c.  */
-#line 2834 "cp-name-parser.c"
+#line 2860 "cp-name-parser.c"
 
   yyvsp -= yylen;
   yyssp -= yylen;
@@ -3055,7 +3081,7 @@ yyreturn:
 }
 
 
-#line 1184 "cp-name-parser.y"
+#line 1210 "cp-name-parser.y"
 
 
 /* Apply QUALIFIERS to LHS and return a qualified component.  IS_METHOD

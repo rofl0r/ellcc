@@ -17,8 +17,10 @@
    You should have received a copy of the GNU General Public License 
    along with this program. If not, see <http://www.gnu.org/licenses/>.  */
 
+#include "config.h"
 #include <signal.h>
-#include "sysdep.h"
+#include <stdlib.h>
+#include <string.h>
 #include "bfd.h"
 #include "gdb/callback.h"
 #include "gdb/remote-sim.h"
@@ -1417,18 +1419,18 @@ sim_stop_reason (sd, reason, sigrc)
 
     case SIG_CR16_BUS:
       *reason = sim_stopped;
-      *sigrc = TARGET_SIGNAL_BUS;
+      *sigrc = GDB_SIGNAL_BUS;
       break;
 //
 //    case SIG_CR16_IAD:
 //      *reason = sim_stopped;
-//      *sigrc = TARGET_SIGNAL_IAD;
+//      *sigrc = GDB_SIGNAL_IAD;
 //      break;
 
     default:                                /* some signal */
       *reason = sim_stopped;
       if (stop_simulator && !State.exception)
-        *sigrc = TARGET_SIGNAL_INT;
+        *sigrc = GDB_SIGNAL_INT;
       else
         *sigrc = State.exception;
       break;

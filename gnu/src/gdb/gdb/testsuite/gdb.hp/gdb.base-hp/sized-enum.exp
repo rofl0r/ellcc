@@ -22,10 +22,6 @@
 # This file was written by Satish Pai <pai@apollo.hp.com>
 # 1997-09-24
 
-if $tracelevel then {
-	strace $tracelevel
-	}
-
 #
 # test running programs
 #
@@ -36,7 +32,7 @@ set testfile "sized-enum"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 

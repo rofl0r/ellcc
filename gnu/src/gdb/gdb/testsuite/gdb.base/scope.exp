@@ -16,10 +16,6 @@
 
 # This file was written by Fred Fish. (fnf@cygnus.com)
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 
 set testfile "scope"
 set binfile ${objdir}/${subdir}/${testfile}
@@ -42,7 +38,7 @@ if  { [gdb_compile "${binfile}0.o ${binfile}1.o" ${binfile} executable {debug}] 
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 
@@ -556,37 +552,9 @@ gdb_test "print 'scope0.c'::filelocal" "= 1" \
     "print 'scope0.c'::filelocal before run"
 
 if [runto_main] then { test_at_main }
-if [istarget "mips-idt-*"] then {
-    # Restart because IDT/SIM runs out of file descriptors.
-    gdb_exit
-    gdb_start
-    gdb_reinitialize_dir $srcdir/$subdir
-    gdb_load ${binfile}
-}
 if [runto foo] then { test_at_foo }
-if [istarget "mips-idt-*"] then {
-    # Restart because IDT/SIM runs out of file descriptors.
-    gdb_exit
-    gdb_start
-    gdb_reinitialize_dir $srcdir/$subdir
-    gdb_load ${binfile}
-}
 if [runto bar] then { test_at_bar }
-if [istarget "mips-idt-*"] then {
-    # Restart because IDT/SIM runs out of file descriptors.
-    gdb_exit
-    gdb_start
-    gdb_reinitialize_dir $srcdir/$subdir
-    gdb_load ${binfile}
-}
 if [runto localscopes] then { test_at_localscopes }
-if [istarget "mips-idt-*"] then {
-    # Restart because IDT/SIM runs out of file descriptors.
-    gdb_exit
-    gdb_start
-    gdb_reinitialize_dir $srcdir/$subdir
-    gdb_load ${binfile}
-}
 if [runto autovars] then { test_at_autovars }
 
 if [istarget "*-*-vxworks*"] {

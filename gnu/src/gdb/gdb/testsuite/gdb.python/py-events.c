@@ -24,6 +24,11 @@ int second(){
 }
 
 int first(){
+  int i;
+
+  for (i = 0; i < 2; i++)
+    do_nothing ();
+
   return second();
 }
 

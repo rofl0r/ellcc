@@ -68,7 +68,6 @@ m68k_linux_pc_in_sigtramp (struct frame_info *this_frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  CORE_ADDR sp;
   gdb_byte buf[12];
   unsigned long insn0, insn1, insn2;
   CORE_ADDR pc = get_frame_pc (this_frame);
@@ -372,6 +371,8 @@ m68k_linux_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
   /* Enable TLS support.  */
   set_gdbarch_fetch_tls_load_module_address (gdbarch,
                                              svr4_fetch_objfile_link_map);
+
+  set_gdbarch_get_siginfo_type (gdbarch, linux_get_siginfo_type);
 }
 
 /* Provide a prototype to silence -Wmissing-prototypes.  */

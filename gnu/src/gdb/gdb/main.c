@@ -41,6 +41,7 @@
 #include "cli/cli-cmds.h"
 #include "python/python.h"
 #include "objfiles.h"
+#include "auto-load.h"
 
 /* The selected interpreter.  This will be used as a set command
    variable, so it should always be malloc'ed - since
@@ -84,18 +85,11 @@ int batch_silent = 0;
 int return_child_result = 0;
 int return_child_result_value = -1;
 
-/* Whether to enable writing into executable and core files.  */
-extern int write_files;
 
 /* GDB as it has been invoked from the command line (i.e. argv[0]).  */
 static char *gdb_program_name;
 
 static void print_gdb_help (struct ui_file *);
-
-/* These two are used to set the external editor commands when gdb is
-   farming out files to be edited by another program.  */
-
-extern char *external_editor_command;
 
 /* Relocate a file or directory.  PROGNAME is the name by which gdb
    was invoked (i.e., argv[0]).  INITIAL is the default value for the
@@ -237,7 +231,7 @@ captured_command_loop (void *data)
      are not that well behaved.  do_cleanups should either be replaced
      with a do_cleanups call (to cover the problem) or an assertion
      check to detect bad FUNCs code.  */
-  do_cleanups (ALL_CLEANUPS);
+  do_cleanups (all_cleanups ());
   /* If the command_loop returned, normally (rather than threw an
      error) we try to quit.  If the quit is aborted, catch_errors()
      which called this catch the signal and restart the command
@@ -245,6 +239,31 @@ captured_command_loop (void *data)
   quit_command (NULL, instream == stdin);
   return 1;
 }
+
+/* Arguments of --command option and its counterpart.  */
+typedef struct cmdarg {
+  /* Type of this option.  */
+  enum {
+    /* Option type -x.  */
+    CMDARG_FILE,
+
+    /* Option type -ex.  */
+    CMDARG_COMMAND,
+
+    /* Option type -ix.  */
+    CMDARG_INIT_FILE,
+    
+    /* Option type -iex.  */
+    CMDARG_INIT_COMMAND
+  } type;
+
+  /* Value of this option - filename or the GDB command itself.  String memory
+     is not owned by this structure despite it is 'const'.  */
+  char *string;
+} cmdarg_s;
+
+/* Define type VEC (cmdarg_s).  */
+DEF_VEC_O (cmdarg_s);
 
 static int
 captured_main (void *data)
@@ -270,17 +289,8 @@ captured_main (void *data)
   static int print_version;
 
   /* Pointers to all arguments of --command option.  */
-  struct cmdarg {
-    enum {
-      CMDARG_FILE,
-      CMDARG_COMMAND
-    } type;
-    char *string;
-  } *cmdarg;
-  /* Allocated size of cmdarg.  */
-  int cmdsize;
-  /* Number of elements of cmdarg used.  */
-  int ncmd;
+  VEC (cmdarg_s) *cmdarg_vec = NULL;
+  struct cmdarg *cmdarg_p;
 
   /* Indices of all arguments of --directory option.  */
   char **dirarg;
@@ -316,9 +326,7 @@ captured_main (void *data)
   bindtextdomain (PACKAGE, LOCALEDIR);
   textdomain (PACKAGE);
 
-  cmdsize = 1;
-  cmdarg = (struct cmdarg *) xmalloc (cmdsize * sizeof (*cmdarg));
-  ncmd = 0;
+  make_cleanup (VEC_cleanup (cmdarg_s), &cmdarg_vec);
   dirsize = 1;
   dirarg = (char **) xmalloc (dirsize * sizeof (*dirarg));
   ndir = 0;
@@ -393,7 +401,9 @@ captured_main (void *data)
       OPT_STATISTICS,
       OPT_TUI,
       OPT_NOWINDOWS,
-      OPT_WINDOWS
+      OPT_WINDOWS,
+      OPT_IX,
+      OPT_IEX
     };
     static struct option long_options[] =
     {
@@ -433,6 +443,10 @@ captured_main (void *data)
       {"version", no_argument, &print_version, 1},
       {"x", required_argument, 0, 'x'},
       {"ex", required_argument, 0, 'X'},
+      {"init-command", required_argument, 0, OPT_IX},
+      {"init-eval-command", required_argument, 0, OPT_IEX},
+      {"ix", required_argument, 0, OPT_IX},
+      {"iex", required_argument, 0, OPT_IEX},
 #ifdef GDBTK
       {"tclcommand", required_argument, 0, 'z'},
       {"enable-external-editor", no_argument, 0, 'y'},
@@ -541,24 +555,32 @@ captured_main (void *data)
 	    pidarg = optarg;
 	    break;
 	  case 'x':
-	    cmdarg[ncmd].type = CMDARG_FILE;
-	    cmdarg[ncmd++].string = optarg;
-	    if (ncmd >= cmdsize)
-	      {
-		cmdsize *= 2;
-		cmdarg = xrealloc ((char *) cmdarg,
-				   cmdsize * sizeof (*cmdarg));
-	      }
+	    {
+	      struct cmdarg cmdarg = { CMDARG_FILE, optarg };
+
+	      VEC_safe_push (cmdarg_s, cmdarg_vec, &cmdarg);
+	    }
 	    break;
 	  case 'X':
-	    cmdarg[ncmd].type = CMDARG_COMMAND;
-	    cmdarg[ncmd++].string = optarg;
-	    if (ncmd >= cmdsize)
-	      {
-		cmdsize *= 2;
-		cmdarg = xrealloc ((char *) cmdarg,
-				   cmdsize * sizeof (*cmdarg));
-	      }
+	    {
+	      struct cmdarg cmdarg = { CMDARG_COMMAND, optarg };
+
+	      VEC_safe_push (cmdarg_s, cmdarg_vec, &cmdarg);
+	    }
+	    break;
+	  case OPT_IX:
+	    {
+	      struct cmdarg cmdarg = { CMDARG_INIT_FILE, optarg };
+
+	      VEC_safe_push (cmdarg_s, cmdarg_vec, &cmdarg);
+	    }
+	    break;
+	  case OPT_IEX:
+	    {
+	      struct cmdarg cmdarg = { CMDARG_INIT_COMMAND, optarg };
+
+	      VEC_safe_push (cmdarg_s, cmdarg_vec, &cmdarg);
+	    }
 	    break;
 	  case 'B':
 	    batch_flag = batch_silent = 1;
@@ -588,6 +610,10 @@ captured_main (void *data)
 	    break;
 	  case 'w':
 	    {
+	      /* Set the external editor commands when gdb is farming out files
+		 to be edited by another program.  */
+	      extern char *external_editor_command;
+
 	      external_editor_command = xstrdup (optarg);
 	      break;
 	    }
@@ -822,6 +848,20 @@ captured_main (void *data)
   if (home_gdbinit && !inhibit_gdbinit)
     catch_command_errors (source_script, home_gdbinit, 0, RETURN_MASK_ALL);
 
+  /* Process '-ix' and '-iex' options early.  */
+  for (i = 0; VEC_iterate (cmdarg_s, cmdarg_vec, i, cmdarg_p); i++)
+    switch (cmdarg_p->type)
+    {
+      case CMDARG_INIT_FILE:
+        catch_command_errors (source_script, cmdarg_p->string,
+			      !batch_flag, RETURN_MASK_ALL);
+	break;
+      case CMDARG_INIT_COMMAND:
+        catch_command_errors (execute_command, cmdarg_p->string,
+			      !batch_flag, RETURN_MASK_ALL);
+	break;
+    }
+
   /* Now perform all the actions indicated by the arguments.  */
   if (cdarg != NULL)
     {
@@ -835,8 +875,8 @@ captured_main (void *data)
   /* Skip auto-loading section-specified scripts until we've sourced
      local_gdbinit (which is often used to augment the source search
      path).  */
-  save_auto_load = gdbpy_global_auto_load;
-  gdbpy_global_auto_load = 0;
+  save_auto_load = global_auto_load;
+  global_auto_load = 0;
 
   if (execarg != NULL
       && symarg != NULL
@@ -898,27 +938,44 @@ captured_main (void *data)
 
   /* Read the .gdbinit file in the current directory, *if* it isn't
      the same as the $HOME/.gdbinit file (it should exist, also).  */
-  if (local_gdbinit && !inhibit_gdbinit)
-    catch_command_errors (source_script, local_gdbinit, 0, RETURN_MASK_ALL);
+  if (local_gdbinit)
+    {
+      auto_load_local_gdbinit_pathname = gdb_realpath (local_gdbinit);
+
+      if (!inhibit_gdbinit && auto_load_local_gdbinit
+	  && file_is_auto_load_safe (local_gdbinit,
+				     _("auto-load: Loading .gdbinit "
+				       "file \"%s\".\n"),
+				     local_gdbinit))
+	{
+	  auto_load_local_gdbinit_loaded = 1;
+
+	  catch_command_errors (source_script, local_gdbinit, 0,
+				RETURN_MASK_ALL);
+	}
+    }
 
   /* Now that all .gdbinit's have been read and all -d options have been
      processed, we can read any scripts mentioned in SYMARG.
      We wait until now because it is common to add to the source search
      path in local_gdbinit.  */
-  gdbpy_global_auto_load = save_auto_load;
+  global_auto_load = save_auto_load;
   ALL_OBJFILES (objfile)
     load_auto_scripts_for_objfile (objfile);
 
-  for (i = 0; i < ncmd; i++)
+  /* Process '-x' and '-ex' options.  */
+  for (i = 0; VEC_iterate (cmdarg_s, cmdarg_vec, i, cmdarg_p); i++)
+    switch (cmdarg_p->type)
     {
-      if (cmdarg[i].type == CMDARG_FILE)
-        catch_command_errors (source_script, cmdarg[i].string,
+      case CMDARG_FILE:
+        catch_command_errors (source_script, cmdarg_p->string,
 			      !batch_flag, RETURN_MASK_ALL);
-      else  /* cmdarg[i].type == CMDARG_COMMAND */
-        catch_command_errors (execute_command, cmdarg[i].string,
+	break;
+      case CMDARG_COMMAND:
+        catch_command_errors (execute_command, cmdarg_p->string,
 			      !batch_flag, RETURN_MASK_ALL);
+	break;
     }
-  xfree (cmdarg);
 
   /* Read in the old history after all the command files have been
      read.  */
@@ -989,6 +1046,8 @@ Options:\n\n\
                      Execute a single GDB command.\n\
                      May be used multiple times and in conjunction\n\
                      with --command.\n\
+  --init-command=FILE, -ix Like -x but execute it before loading inferior.\n\
+  --init-eval-command=COMMAND, -iex Like -ex but before loading inferior.\n\
   --core=COREFILE    Analyze the core dump COREFILE.\n\
   --pid=PID          Attach to running process PID.\n\
 "), stream);
@@ -1042,7 +1101,7 @@ At startup, GDB reads the following init files and executes their commands:\n\
 "), home_gdbinit);
   if (local_gdbinit)
     fprintf_unfiltered (stream, _("\
-   * local init file: ./%s\n\
+   * local init file (see also 'set auto-load local-gdbinit'): ./%s\n\
 "), local_gdbinit);
   fputs_unfiltered (_("\n\
 For more information, type \"help\" from within GDB, or consult the\n\

@@ -15,16 +15,10 @@
 
 load_lib "trace-support.exp";
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 
 gdb_exit
 gdb_start
-set testfile "actions"
-set srcfile ${testfile}.c
-set binfile $objdir/$subdir/tsv
+standard_testfile actions.c
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable {debug nowarnings}] != "" } {
     untested tsv.exp
@@ -96,7 +90,7 @@ gdb_reinitialize_dir $srcdir/$subdir
 
 # The rest of the testing needs actual tracing to work.
 if { ![gdb_target_supports_trace] } then {
-    pass "Current target does not support trace"
+    unsupported "Current target does not support trace"
     return 1;
 }
 

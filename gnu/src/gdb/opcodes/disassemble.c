@@ -1,6 +1,7 @@
 /* Select disassembly routine for specified architecture.
    Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-   2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Free Software Foundation, Inc.
+   2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012
+   Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -90,6 +91,7 @@
 #define ARCH_w65
 #define ARCH_xstormy16
 #define ARCH_xc16x
+#define ARCH_xgate
 #define ARCH_xtensa
 #define ARCH_z80
 #define ARCH_z8k
@@ -246,12 +248,19 @@ disassembler (abfd)
       disassemble = print_insn_m32r;
       break;
 #endif
-#if defined(ARCH_m68hc11) || defined(ARCH_m68hc12)
+#if defined(ARCH_m68hc11) || defined(ARCH_m68hc12) \
+    || defined(ARCH_9s12x) || defined(ARCH_m9s12xg)
     case bfd_arch_m68hc11:
       disassemble = print_insn_m68hc11;
       break;
     case bfd_arch_m68hc12:
       disassemble = print_insn_m68hc12;
+      break;
+    case bfd_arch_m9s12x:
+      disassemble = print_insn_m9s12x;
+      break;
+    case bfd_arch_m9s12xg:
+      disassemble = print_insn_m9s12xg;
       break;
 #endif
 #ifdef ARCH_m68k
@@ -429,6 +438,11 @@ disassembler (abfd)
       disassemble = print_insn_w65;
       break;
 #endif
+#ifdef ARCH_xgate
+    case bfd_arch_xgate:
+      disassemble = print_insn_xgate;
+      break;
+#endif
 #ifdef ARCH_xstormy16
     case bfd_arch_xstormy16:
       disassemble = print_insn_xstormy16;
@@ -564,6 +578,16 @@ disassemble_init_for_target (struct disassemble_info * info)
 	  else
 	    cgen_bitset_set (info->insn_sets, ISA_M32C);
 	}
+      break;
+#endif
+#ifdef ARCH_powerpc
+    case bfd_arch_powerpc:
+#endif
+#ifdef ARCH_rs6000
+    case bfd_arch_rs6000:
+#endif
+#if defined (ARCH_powerpc) || defined (ARCH_rs6000)
+      disassemble_init_powerpc (info);
       break;
 #endif
     default:

@@ -15,10 +15,6 @@
 
 # This file was written by Michael Snyder. (msnyder@redhat.com)
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 #
 # Test breakpoints at consecutive instruction addresses.
 #
@@ -33,7 +29,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
     return -1
 }
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 
@@ -41,10 +37,6 @@ gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load ${binfile}
-
-if [target_info exists gdb_stub] {
-    gdb_step_for_stub;
-}
 
 if ![runto_main] then {
     perror "couldn't run to breakpoint"

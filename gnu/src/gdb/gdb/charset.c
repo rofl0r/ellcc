@@ -27,6 +27,7 @@
 #include "vec.h"
 #include "environ.h"
 #include "arch-utils.h"
+#include "gdb_vecs.h"
 
 #include <stddef.h>
 #include "gdb_string.h"
@@ -107,7 +108,7 @@
 #define EILSEQ ENOENT
 #endif
 
-iconv_t
+static iconv_t
 phony_iconv_open (const char *to, const char *from)
 {
   /* We allow conversions from UTF-32BE, wchar_t, and the host charset.
@@ -123,13 +124,13 @@ phony_iconv_open (const char *to, const char *from)
   return !strcmp (from, "UTF-32BE");
 }
 
-int
+static int
 phony_iconv_close (iconv_t arg)
 {
   return 0;
 }
 
-size_t
+static size_t
 phony_iconv (iconv_t utf_flag, const char **inbuf, size_t *inbytesleft,
 	     char **outbuf, size_t *outbytesleft)
 {
@@ -717,8 +718,6 @@ wchar_iterate (struct wchar_iterator *iter,
 
 extern initialize_file_ftype _initialize_charset; /* -Wmissing-prototype */
 
-DEF_VEC_P (char_ptr);
-
 static VEC (char_ptr) *charsets;
 
 #ifdef PHONY_ICONV
@@ -840,7 +839,7 @@ find_charset_names (void)
 	 parse the glibc and libiconv formats; feel free to add others
 	 as needed.  */
 
-      while (!feof (in))
+      while (in != NULL && !feof (in))
 	{
 	  /* The size of buf is chosen arbitrarily.  */
 	  char buf[1024];
@@ -910,11 +909,8 @@ find_charset_names (void)
   if (fail)
     {
       /* Some error occurred, so drop the vector.  */
-      int ix;
-      char *elt;
-      for (ix = 0; VEC_iterate (char_ptr, charsets, ix, elt); ++ix)
-	xfree (elt);
-      VEC_truncate (char_ptr, charsets, 0);
+      free_char_ptr_vec (charsets);
+      charsets = NULL;
     }
   else
     VEC_safe_push (char_ptr, charsets, NULL);

@@ -1,3 +1,16 @@
+2012-06-15  Joel Brobecker  <brobecker@adacore.com>
+
+	* config.in, configure: Regenerate.
+
+2012-05-18  Nick Clifton  <nickc@redhat.com>
+
+	PR 14072
+	* interp.c: Include config.h before system header files.
+
+2012-03-24  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4, config.in, configure: Regenerate.
+
 2011-12-03  Mike Frysinger  <vapier@gentoo.org>
 
 	* aclocal.m4: New file.

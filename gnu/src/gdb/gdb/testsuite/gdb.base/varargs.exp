@@ -28,17 +28,13 @@
 #quit
 
 
-if $tracelevel then {
-        strace $tracelevel
-}
-
 
 set prototypes 0
 set testfile "varargs"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 

@@ -16,15 +16,6 @@
 # This file was written by Michael Snyder (msnyder@redhat.com)
 # This is a test for the gdb command "info proc"
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
-if { [is_remote target] } then {
-  continue
-}
-
-
 set ws "\[ \t\]+"
 
 set testfile "break"
@@ -54,19 +45,18 @@ gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load ${binfile}
 
-# Does this gdb support info proc?
-gdb_test_multiple "help info proc" "help info proc" {
-    -re "Undefined info command: .proc..  Try .help info.*$gdb_prompt $" {
+gdb_test "help info proc" "Show /proc process information about .*"
+
+gdb_test_multiple "info proc" "info proc without a process" {
+    -re "No current process.*$gdb_prompt $" {
+	pass "info proc without a process"
+    }
+    -re "Not supported on this target.*$gdb_prompt $" {
 	# info proc command not supported -- nothing to test here.
 	unsupported "gdb does not support info proc on this target"
 	return -1;
     }
-    -re "Show /proc process information about .*$gdb_prompt $" {
-	pass "help info proc"
-    }
 }
-
-gdb_test "info proc" "No current process.*" "info proc without a process"
 
 if { ! [ runto_main ] } then {
     untested info-proc.exp

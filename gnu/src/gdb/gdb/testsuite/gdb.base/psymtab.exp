@@ -19,10 +19,6 @@
 # are working properly.  If multiple tests are added, make sure that
 # you exit and restart GDB between tests.
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 #
 # test running programs
 #
@@ -50,7 +46,7 @@ if  { [gdb_compile "${testfile}1.o ${testfile}2.o" ${binfile} executable {debug}
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

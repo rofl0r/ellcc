@@ -13,10 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 
 set testfile langs
 set binfile ${objdir}/${subdir}/${testfile}
@@ -54,7 +50,7 @@ set timeout 10
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

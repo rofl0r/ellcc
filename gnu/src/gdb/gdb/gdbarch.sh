@@ -503,8 +503,8 @@ m:CORE_ADDR:pointer_to_address:struct type *type, const gdb_byte *buf:type, buf:
 m:void:address_to_pointer:struct type *type, gdb_byte *buf, CORE_ADDR addr:type, buf, addr::unsigned_address_to_pointer::0
 M:CORE_ADDR:integer_to_address:struct type *type, const gdb_byte *buf:type, buf
 
-# Return the return-value convention that will be used by FUNCTYPE
-# to return a value of type VALTYPE.  FUNCTYPE may be NULL in which
+# Return the return-value convention that will be used by FUNCTION
+# to return a value of type VALTYPE.  FUNCTION may be NULL in which
 # case the return convention is computed based only on VALTYPE.
 #
 # If READBUF is not NULL, extract the return value and save it in this buffer.
@@ -513,7 +513,14 @@ M:CORE_ADDR:integer_to_address:struct type *type, const gdb_byte *buf:type, buf
 # stored into the appropriate register.  This can be used when we want
 # to force the value returned by a function (see the "return" command
 # for instance).
-M:enum return_value_convention:return_value:struct type *functype, struct type *valtype, struct regcache *regcache, gdb_byte *readbuf, const gdb_byte *writebuf:functype, valtype, regcache, readbuf, writebuf
+M:enum return_value_convention:return_value:struct value *function, struct type *valtype, struct regcache *regcache, gdb_byte *readbuf, const gdb_byte *writebuf:function, valtype, regcache, readbuf, writebuf
+
+# Return true if the return value of function is stored in the first hidden
+# parameter.  In theory, this feature should be language-dependent, specified
+# by language and its ABI, such as C++.  Unfortunately, compiler may
+# implement it to a target-dependent feature.  So that we need such hook here
+# to be aware of this in GDB.
+m:int:return_in_first_hidden_param_p:struct type *type:type::default_return_in_first_hidden_param_p::0
 
 m:CORE_ADDR:skip_prologue:CORE_ADDR ip:ip:0:0
 M:CORE_ADDR:skip_main_prologue:CORE_ADDR ip:ip
@@ -600,7 +607,7 @@ f:CORE_ADDR:skip_trampoline_code:struct frame_info *frame, CORE_ADDR pc:frame, p
 # a step-resume breakpoint to get us past the dynamic linker.
 m:CORE_ADDR:skip_solib_resolver:CORE_ADDR pc:pc::generic_skip_solib_resolver::0
 # Some systems also have trampoline code for returning from shared libs.
-m:int:in_solib_return_trampoline:CORE_ADDR pc, char *name:pc, name::generic_in_solib_return_trampoline::0
+m:int:in_solib_return_trampoline:CORE_ADDR pc, const char *name:pc, name::generic_in_solib_return_trampoline::0
 
 # A target might have problems with watchpoints as soon as the stack
 # frame of the current function has been destroyed.  This mostly happens
@@ -631,6 +638,12 @@ M:const struct regset *:regset_from_core_section:const char *sect_name, size_t s
 # Supported register notes in a core file.
 v:struct core_regset_section *:core_regset_sections:const char *name, int len::::::host_address_to_string (gdbarch->core_regset_sections)
 
+# Create core file notes
+M:char *:make_corefile_notes:bfd *obfd, int *note_size:obfd, note_size
+
+# Find core file memory regions
+M:int:find_memory_regions:find_memory_region_ftype func, void *data:func, data
+
 # Read offset OFFSET of TARGET_OBJECT_LIBRARIES formatted shared libraries list from
 # core file into buffer READBUF with length LEN.
 M:LONGEST:core_xfer_shared_libraries:gdb_byte *readbuf, ULONGEST offset, LONGEST len:readbuf, offset, len
@@ -653,7 +666,7 @@ v:int:vbit_in_delta:::0:0::0
 # Advance PC to next instruction in order to skip a permanent breakpoint.
 F:void:skip_permanent_breakpoint:struct regcache *regcache:regcache
 
-# The maximum length of an instruction on this architecture.
+# The maximum length of an instruction on this architecture in bytes.
 V:ULONGEST:max_insn_length:::0:0
 
 # Copy the instruction at FROM to TO, and make any adjustments
@@ -752,7 +765,7 @@ F:void:overlay_update:struct obj_section *osect:osect
 M:const struct target_desc *:core_read_description:struct target_ops *target, bfd *abfd:target, abfd
 
 # Handle special encoding of static variables in stabs debug info.
-F:char *:static_transform_name:char *name:name
+F:const char *:static_transform_name:const char *name:name
 # Set if the address in N_SO or N_FUN stabs may be zero.
 v:int:sofun_address_maybe_missing:::0:0::0
 
@@ -764,14 +777,16 @@ M:int:process_record:struct regcache *regcache, CORE_ADDR addr:regcache, addr
 
 # Save process state after a signal.
 # Return -1 if something goes wrong, 0 otherwise.
-M:int:process_record_signal:struct regcache *regcache, enum target_signal signal:regcache, signal
+M:int:process_record_signal:struct regcache *regcache, enum gdb_signal signal:regcache, signal
 
-# Signal translation: translate inferior's signal (host's) number into
-# GDB's representation.
-m:enum target_signal:target_signal_from_host:int signo:signo::default_target_signal_from_host::0
-# Signal translation: translate GDB's signal number into inferior's host
-# signal number.
-m:int:target_signal_to_host:enum target_signal ts:ts::default_target_signal_to_host::0
+# Signal translation: translate inferior's signal (target's) number
+# into GDB's representation.  The implementation of this method must
+# be host independent.  IOW, don't rely on symbols of the NAT_FILE
+# header (the nm-*.h files), the host <signal.h> header, or similar
+# headers.  This is mainly used when cross-debugging core files ---
+# "Live" targets hide the translation behind the target interface
+# (target_wait, target_resume, etc.).
+M:enum gdb_signal:gdb_signal_from_target:int signo:signo
 
 # Extra signal info inspection.
 #
@@ -785,6 +800,101 @@ M:void:record_special_symbol:struct objfile *objfile, asymbol *sym:objfile, sym
 
 # Get architecture-specific system calls information from registers.
 M:LONGEST:get_syscall_number:ptid_t ptid:ptid
+
+# SystemTap related fields and functions.
+
+# Prefix used to mark an integer constant on the architecture's assembly
+# For example, on x86 integer constants are written as:
+#
+#  \$10 ;; integer constant 10
+#
+# in this case, this prefix would be the character \`\$\'.
+v:const char *:stap_integer_prefix:::0:0::0:gdbarch->stap_integer_prefix
+
+# Suffix used to mark an integer constant on the architecture's assembly.
+v:const char *:stap_integer_suffix:::0:0::0:gdbarch->stap_integer_suffix
+
+# Prefix used to mark a register name on the architecture's assembly.
+# For example, on x86 the register name is written as:
+#
+#  \%eax ;; register eax
+#
+# in this case, this prefix would be the character \`\%\'.
+v:const char *:stap_register_prefix:::0:0::0:gdbarch->stap_register_prefix
+
+# Suffix used to mark a register name on the architecture's assembly
+v:const char *:stap_register_suffix:::0:0::0:gdbarch->stap_register_suffix
+
+# Prefix used to mark a register indirection on the architecture's assembly.
+# For example, on x86 the register indirection is written as:
+#
+#  \(\%eax\) ;; indirecting eax
+#
+# in this case, this prefix would be the charater \`\(\'.
+#
+# Please note that we use the indirection prefix also for register
+# displacement, e.g., \`4\(\%eax\)\' on x86.
+v:const char *:stap_register_indirection_prefix:::0:0::0:gdbarch->stap_register_indirection_prefix
+
+# Suffix used to mark a register indirection on the architecture's assembly.
+# For example, on x86 the register indirection is written as:
+#
+#  \(\%eax\) ;; indirecting eax
+#
+# in this case, this prefix would be the charater \`\)\'.
+#
+# Please note that we use the indirection suffix also for register
+# displacement, e.g., \`4\(\%eax\)\' on x86.
+v:const char *:stap_register_indirection_suffix:::0:0::0:gdbarch->stap_register_indirection_suffix
+
+# Prefix used to name a register using GDB's nomenclature.
+#
+# For example, on PPC a register is represented by a number in the assembly
+# language (e.g., \`10\' is the 10th general-purpose register).  However,
+# inside GDB this same register has an \`r\' appended to its name, so the 10th
+# register would be represented as \`r10\' internally.
+v:const char *:stap_gdb_register_prefix:::0:0::0:gdbarch->stap_gdb_register_prefix
+
+# Suffix used to name a register using GDB's nomenclature.
+v:const char *:stap_gdb_register_suffix:::0:0::0:gdbarch->stap_gdb_register_suffix
+
+# Check if S is a single operand.
+#
+# Single operands can be:
+#  \- Literal integers, e.g. \`\$10\' on x86
+#  \- Register access, e.g. \`\%eax\' on x86
+#  \- Register indirection, e.g. \`\(\%eax\)\' on x86
+#  \- Register displacement, e.g. \`4\(\%eax\)\' on x86
+#
+# This function should check for these patterns on the string
+# and return 1 if some were found, or zero otherwise.  Please try to match
+# as much info as you can from the string, i.e., if you have to match
+# something like \`\(\%\', do not match just the \`\(\'.
+M:int:stap_is_single_operand:const char *s:s
+
+# Function used to handle a "special case" in the parser.
+#
+# A "special case" is considered to be an unknown token, i.e., a token
+# that the parser does not know how to parse.  A good example of special
+# case would be ARM's register displacement syntax:
+#
+#  [R0, #4]  ;; displacing R0 by 4
+#
+# Since the parser assumes that a register displacement is of the form:
+#
+#  <number> <indirection_prefix> <register_name> <indirection_suffix>
+#
+# it means that it will not be able to recognize and parse this odd syntax.
+# Therefore, we should add a special case function that will handle this token.
+#
+# This function should generate the proper expression form of the expression
+# using GDB\'s internal expression mechanism (e.g., \`write_exp_elt_opcode\'
+# and so on).  It should also return 1 if the parsing was successful, or zero
+# if the token was not recognized as a special token (in this case, returning
+# zero means that the special parser is deferring the parsing to the generic
+# parser), and should advance the buffer pointer (p->arg).
+M:int:stap_parse_special_token:struct stap_parse_info *p:p
+
 
 # True if the list of shared libraries is one and only for all
 # processes, as opposed to a list of shared libraries per inferior.
@@ -829,6 +939,24 @@ v:int:has_dos_based_file_system:::0:0::0
 # typically this function will issue bytecodes for one or more likely
 # places that the return address may be found.
 m:void:gen_return_address:struct agent_expr *ax, struct axs_value *value, CORE_ADDR scope:ax, value, scope::default_gen_return_address::0
+
+# Implement the "info proc" command.
+M:void:info_proc:char *args, enum info_proc_what what:args, what
+
+# Iterate over all objfiles in the order that makes the most sense
+# for the architecture to make global symbol searches.
+#
+# CB is a callback function where OBJFILE is the objfile to be searched,
+# and CB_DATA a pointer to user-defined data (the same data that is passed
+# when calling this gdbarch method).  The iteration stops if this function
+# returns nonzero.
+#
+# CB_DATA is a pointer to some user-defined data to be passed to
+# the callback.
+#
+# If not NULL, CURRENT_OBJFILE corresponds to the objfile being
+# inspected when the symbol search was requested.
+m:void:iterate_over_objfiles_in_search_order:iterate_over_objfiles_in_search_order_cb_ftype *cb, void *cb_data, struct objfile *current_objfile:cb, cb_data, current_objfile:0:default_iterate_over_objfiles_in_search_order::0
 
 EOF
 }
@@ -945,6 +1073,7 @@ struct core_regset_section;
 struct syscall;
 struct agent_expr;
 struct axs_value;
+struct stap_parse_info;
 
 /* The architecture associated with the connection to the target.
  
@@ -957,6 +1086,12 @@ struct axs_value;
    Eventually, when support for multiple targets is implemented in
    GDB, this global should be made target-specific.  */
 extern struct gdbarch *target_gdbarch;
+
+/* Callback type for the 'iterate_over_objfiles_in_search_order'
+   gdbarch  method.  */
+
+typedef int (iterate_over_objfiles_in_search_order_cb_ftype)
+  (struct objfile *objfile, void *cb_data);
 EOF
 
 # function typedef's
@@ -1275,6 +1410,7 @@ cat <<EOF
 #include "gdb_obstack.h"
 #include "observer.h"
 #include "regcache.h"
+#include "objfiles.h"
 
 /* Static function declarations */
 

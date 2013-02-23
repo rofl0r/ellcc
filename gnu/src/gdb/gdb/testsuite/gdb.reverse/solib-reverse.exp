@@ -20,14 +20,12 @@ if ![supports_reverse] {
     return
 }
 
-set testfile "solib-reverse"
-set srcfile  ${testfile}.c
+standard_testfile
 set libfile  "shr2"
 set libsrc   ${libfile}.c
-set library  ${objdir}/${subdir}/${libfile}.sl
-set binfile  ${objdir}/${subdir}/${testfile}
+set library  [standard_output_file ${libfile}.sl]
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 
@@ -47,6 +45,10 @@ if { [gdb_compile ${srcdir}/${subdir}/${srcfile} ${binfile} executable $exec_opt
 
 gdb_exit
 gdb_start
+
+# Clear it to never find any separate system debug infos.
+gdb_test_no_output "set debug-file-directory"
+
 gdb_reinitialize_dir $srcdir/$subdir
 gdb_load ${binfile}
 

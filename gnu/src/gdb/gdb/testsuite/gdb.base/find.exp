@@ -15,10 +15,6 @@
 
 # This tests the find command.
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 set testfile "find"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
@@ -87,7 +83,7 @@ gdb_test "find /1 &int8_search_buf\[0\], +sizeof(int8_search_buf), 'a', 'a', 'a'
     "max-count"
 
 gdb_test "print \$_" \
-    "${history_prefix}.*${hex_number}" \
+    "${history_prefix}.*${hex_number} <int8_search_buf\\+10>" \
     "\$_"
 
 gdb_test "print \$numfound" \
@@ -186,3 +182,6 @@ if [isnative] {
     "${hex_number}${one_pattern_found}" \
     "find pattern straddling chunk boundary"
 }
+
+# Check GDB buffer overflow.
+gdb_test "find int64_search_buf, +64/8*100, int64_search_buf" " <int64_search_buf>\r\n1 pattern found\\."

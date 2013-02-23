@@ -16,10 +16,6 @@
 #
 # This file is part of the gdb testsuite.
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 # It's possible to have a program that contains two compilation units
 # for the same source file name, that have code at different lines.
 # For example, in this test, we compile expand-psymtabs.c twice with
@@ -40,7 +36,7 @@ set binfile_1 ${objdir}/${subdir}/${testfile}_1.o
 set binfile_2 ${objdir}/${subdir}/${testfile}_2.o
 
 # What compiler are we using?
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 

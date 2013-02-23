@@ -22,6 +22,7 @@
 #include "inferior.h"
 #include "target.h"
 #include "command.h"
+#include "completer.h"
 #include "gdbcmd.h"
 #include "gdbthread.h"
 #include "ui-out.h"
@@ -178,25 +179,6 @@ delete_thread_of_inferior (struct thread_info *tp, void *data)
   return 0;
 }
 
-void
-delete_threads_of_inferior (int pid)
-{
-  struct inferior *inf;
-  struct delete_thread_of_inferior_arg arg;
-
-  for (inf = inferior_list; inf; inf = inf->next)
-    if (inf->pid == pid)
-      break;
-
-  if (!inf)
-    return;
-
-  arg.pid = pid;
-  arg.silent = 1;
-
-  iterate_over_threads (delete_thread_of_inferior, &arg);
-}
-
 /* If SILENT then be quiet -- don't announce a inferior death, or the
    exit of its threads.  */
 
@@ -276,6 +258,7 @@ exit_inferior_1 (struct inferior *inftoex, int silent)
   observer_notify_inferior_exit (inf);
 
   inf->pid = 0;
+  inf->fake_pid_p = 0;
   if (inf->vfork_parent != NULL)
     {
       inf->vfork_parent->vfork_child = NULL;
@@ -525,6 +508,18 @@ number_of_inferiors (void)
   return count;
 }
 
+/* Converts an inferior process id to a string.  Like
+   target_pid_to_str, but special cases the null process.  */
+
+static char *
+inferior_pid_to_str (int pid)
+{
+  if (pid != 0)
+    return target_pid_to_str (pid_to_ptid (pid));
+  else
+    return _("<null>");
+}
+
 /* Prints the list of inferiors and their details on UIOUT.  This is a
    version of 'info_inferior_command' suitable for use from MI.
 
@@ -578,11 +573,8 @@ print_inferior (struct ui_out *uiout, char *requested_inferiors)
 
       ui_out_field_int (uiout, "number", inf->num);
 
-      if (inf->pid)
-	ui_out_field_string (uiout, "target-id",
-			     target_pid_to_str (pid_to_ptid (inf->pid)));
-      else
-	ui_out_field_string (uiout, "target-id", "<null>");
+      ui_out_field_string (uiout, "target-id",
+			   inferior_pid_to_str (inf->pid));
 
       if (inf->pspace->ebfd)
 	ui_out_field_string (uiout, "exec",
@@ -699,7 +691,7 @@ inferior_command (char *args, int from_tty)
 
   printf_filtered (_("[Switching to inferior %d [%s] (%s)]\n"),
 		   inf->num,
-		   target_pid_to_str (pid_to_ptid (inf->pid)),
+		   inferior_pid_to_str (inf->pid),
 		   (inf->pspace->ebfd
 		    ? bfd_get_filename (inf->pspace->ebfd)
 		    : _("<noexec>")));
@@ -750,7 +742,7 @@ info_inferiors_command (char *args, int from_tty)
 
 /* remove-inferior ID */
 
-void
+static void
 remove_inferior_command (char *args, int from_tty)
 {
   int num;
@@ -809,7 +801,7 @@ add_inferior_with_spaces (void)
 
 /* add-inferior [-copies N] [-exec FILENAME]  */
 
-void
+static void
 add_inferior_command (char *args, int from_tty)
 {
   int i, copies = 1;
@@ -872,7 +864,7 @@ add_inferior_command (char *args, int from_tty)
 
 /* clone-inferior [-copies N] [ID] */
 
-void
+static void
 clone_inferior_command (char *args, int from_tty)
 {
   int i, copies = 1;
@@ -1065,6 +1057,8 @@ inferior_data (struct inferior *inf, const struct inferior_data *data)
 void
 initialize_inferiors (void)
 {
+  struct cmd_list_element *c = NULL;
+
   /* There's always one inferior.  Note that this function isn't an
      automatic _initialize_foo function, since other _initialize_foo
      routines may need to install their per-inferior data keys.  We
@@ -1078,12 +1072,13 @@ initialize_inferiors (void)
   add_info ("inferiors", info_inferiors_command, 
 	    _("IDs of specified inferiors (all inferiors if no argument)."));
 
-  add_com ("add-inferior", no_class, add_inferior_command, _("\
+  c = add_com ("add-inferior", no_class, add_inferior_command, _("\
 Add a new inferior.\n\
 Usage: add-inferior [-copies <N>] [-exec <FILENAME>]\n\
 N is the optional number of inferiors to add, default is 1.\n\
 FILENAME is the file name of the executable to use\n\
 as main program."));
+  set_cmd_completer (c, filename_completer);
 
   add_com ("remove-inferiors", no_class, remove_inferior_command, _("\
 Remove inferior ID (or list of IDs).\n\

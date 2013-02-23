@@ -1,6 +1,6 @@
 /* Print mips instructions for GDB, the GNU debugger, or for objdump.
    Copyright 1989, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008, 2009
+   2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008, 2009, 2012
    Free Software Foundation, Inc.
    Contributed by Nobuyuki Hikichi(hikichi@sra.co.jp).
 
@@ -615,6 +615,14 @@ const struct mips_arch_choice mips_arch_choices[] =
 
   { "xlr", 1, bfd_mach_mips_xlr, CPU_XLR,
     ISA_MIPS64 | INSN_XLR,
+    mips_cp0_names_xlr,
+    mips_cp0sel_names_xlr, ARRAY_SIZE (mips_cp0sel_names_xlr),
+    mips_hwr_names_numeric },
+
+  /* XLP is mostly like XLR, with the prominent exception it is being
+     MIPS64R2.  */
+  { "xlp", 1, bfd_mach_mips_xlr, CPU_XLR,
+    ISA_MIPS64R2 | INSN_XLR,
     mips_cp0_names_xlr,
     mips_cp0sel_names_xlr, ARRAY_SIZE (mips_cp0sel_names_xlr),
     mips_hwr_names_numeric },
@@ -1344,7 +1352,6 @@ print_insn_args (const char *d,
 
 	case 'B':
 	  (*info->fprintf_func) (info->stream, "0x%lx",
-
 				 (l >> OP_SH_CODE20) & OP_MASK_CODE20);
 	  break;
 

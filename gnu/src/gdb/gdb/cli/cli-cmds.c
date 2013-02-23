@@ -201,7 +201,7 @@ static const char script_ext_off[] = "off";
 static const char script_ext_soft[] = "soft";
 static const char script_ext_strict[] = "strict";
 
-static const char *script_ext_enums[] = {
+static const char *const script_ext_enums[] = {
   script_ext_off,
   script_ext_soft,
   script_ext_strict,
@@ -254,7 +254,8 @@ static void
 complete_command (char *arg, int from_tty)
 {
   int argpoint;
-  char **completions, *point, *arg_prefix;
+  char *point, *arg_prefix;
+  VEC (char_ptr) *completions;
 
   dont_repeat ();
 
@@ -282,33 +283,30 @@ complete_command (char *arg, int from_tty)
 
   if (completions)
     {
-      int item, size;
+      int ix, size = VEC_length (char_ptr, completions);
+      char *item, *prev = NULL;
 
-      for (size = 0; completions[size]; ++size)
-	;
-      qsort (completions, size, sizeof (char *), compare_strings);
+      qsort (VEC_address (char_ptr, completions), size,
+	     sizeof (char *), compare_strings);
 
       /* We do extra processing here since we only want to print each
 	 unique item once.  */
-      item = 0;
-      while (item < size)
+      for (ix = 0; VEC_iterate (char_ptr, completions, ix, item); ++ix)
 	{
 	  int next_item;
 
-	  printf_unfiltered ("%s%s\n", arg_prefix, completions[item]);
-	  next_item = item + 1;
-	  while (next_item < size
-		 && ! strcmp (completions[item], completions[next_item]))
+	  if (prev == NULL || strcmp (item, prev) != 0)
 	    {
-	      xfree (completions[next_item]);
-	      ++next_item;
+	      printf_unfiltered ("%s%s\n", arg_prefix, item);
+	      xfree (prev);
+	      prev = item;
 	    }
-
-	  xfree (completions[item]);
-	  item = next_item;
+	  else
+	    xfree (item);
 	}
 
-      xfree (completions);
+      xfree (prev);
+      VEC_free (char_ptr, completions);
     }
 }
 
@@ -417,7 +415,7 @@ cd_command (char *dir, int from_tty)
     {
       if (IS_DIR_SEPARATOR (p[0]) && p[1] == '.'
 	  && (p[2] == 0 || IS_DIR_SEPARATOR (p[2])))
-	strcpy (p, p + 2);
+	memmove (p, p + 2, strlen (p + 2) + 1);
       else if (IS_DIR_SEPARATOR (p[0]) && p[1] == '.' && p[2] == '.'
 	       && (p[3] == 0 || IS_DIR_SEPARATOR (p[3])))
 	{
@@ -436,7 +434,7 @@ cd_command (char *dir, int from_tty)
 		++p;
 	      else
 		{
-		  strcpy (q - 1, p + 3);
+		  memmove (q - 1, p + 3, strlen (p + 3) + 1);
 		  p = q - 1;
 		}
 	    }
@@ -513,11 +511,21 @@ find_and_open_script (const char *script_file, int search_path,
   do_cleanups (old_cleanups);
 
   *streamp = fdopen (fd, FOPEN_RT);
+  if (*streamp == NULL)
+    {
+      int save_errno = errno;
+
+      close (fd);
+      if (full_pathp)
+	xfree (*full_pathp);
+      errno = save_errno;
+      return 0;
+    }
+
   return 1;
 }
 
-/* Load script FILE, which has already been opened as STREAM.
-   STREAM is closed before we return.  */
+/* Load script FILE, which has already been opened as STREAM.  */
 
 static void
 source_script_from_stream (FILE *stream, const char *file)
@@ -529,9 +537,7 @@ source_script_from_stream (FILE *stream, const char *file)
 
       TRY_CATCH (e, RETURN_MASK_ERROR)
 	{
-          /* The python support reopens the file using python functions,
-             so there's no point in passing STREAM here.  */
-	  source_python_script (file);
+	  source_python_script (stream, file);
 	}
       if (e.reason < 0)
 	{
@@ -545,12 +551,9 @@ source_script_from_stream (FILE *stream, const char *file)
 	  else
 	    {
 	      /* Nope, just punt.  */
-	      fclose (stream);
 	      throw_exception (e);
 	    }
 	}
-      else
-	fclose (stream);
     }
   else
     script_from_file (stream, file);
@@ -584,6 +587,7 @@ source_script_with_search (const char *file, int from_tty, int search_path)
     }
 
   old_cleanups = make_cleanup (xfree, full_path);
+  make_cleanup_fclose (stream);
   /* The python support reopens the file, so we need to pass full_path here
      in case the file was found on the search path.  It's useful to do this
      anyway so that error messages show the actual file used.  But only do
@@ -957,7 +961,7 @@ list_command (char *arg, int from_tty)
 	  else
 	    sals_end = decode_line_1 (&arg1, DECODE_LINE_LIST_MODE,
 				      sal.symtab, sal.line);
-	  filter_sals (&sals);
+	  filter_sals (&sals_end);
 	  if (sals_end.nelts == 0)
 	    return;
 	  if (sals_end.nelts > 1)
@@ -1091,7 +1095,7 @@ disassemble_current_function (int flags)
   struct frame_info *frame;
   struct gdbarch *gdbarch;
   CORE_ADDR low, high, pc;
-  char *name;
+  const char *name;
 
   frame = get_selected_frame (_("No frame selected."));
   gdbarch = get_frame_arch (frame);
@@ -1129,7 +1133,7 @@ disassemble_command (char *arg, int from_tty)
 {
   struct gdbarch *gdbarch = get_current_arch ();
   CORE_ADDR low, high;
-  char *name;
+  const char *name;
   CORE_ADDR pc;
   int flags;
 
@@ -1235,7 +1239,8 @@ show_user (char *args, int from_tty)
       char *comname = args;
 
       c = lookup_cmd (&comname, cmdlist, "", 0, 1);
-      if (c->class != class_user)
+      /* c->user_commands would be NULL if it's a python command.  */
+      if (c->class != class_user || !c->user_commands)
 	error (_("Not a user command."));
       show_user_1 (c, "", args, gdb_stdout);
     }
@@ -1418,7 +1423,6 @@ alias_command (char *args, int from_tty)
     }
   else
     {
-      int i;
       dyn_string_t alias_prefix_dyn_string, command_prefix_dyn_string;
       char *alias_prefix, *command_prefix;
       struct cmd_list_element *c_alias, *c_command;
@@ -1906,7 +1910,7 @@ Two arguments (separated by a comma) are taken as a range of memory to dump,\n\
 Run the ``make'' program using the rest of the line as arguments."));
   set_cmd_completer (c, filename_completer);
   add_cmd ("user", no_class, show_user, _("\
-Show definitions of user defined commands.\n\
+Show definitions of non-python user defined commands.\n\
 Argument is the name of the user defined command.\n\
 With no argument, show definitions of all user defined commands."), &showlist);
   add_com ("apropos", class_support, apropos_command,
@@ -1914,8 +1918,8 @@ With no argument, show definitions of all user defined commands."), &showlist);
 
   add_setshow_integer_cmd ("max-user-call-depth", no_class,
 			   &max_user_call_depth, _("\
-Set the max call depth for user-defined commands."), _("\
-Show the max call depth for user-defined commands."), NULL,
+Set the max call depth for non-python user-defined commands."), _("\
+Show the max call depth for non-python user-defined commands."), NULL,
 			   NULL,
 			   show_max_user_call_depth,
 			   &setlist, &showlist);

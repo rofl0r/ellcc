@@ -172,9 +172,11 @@ static void windows_kill_inferior (struct target_ops *);
 
 static void cygwin_set_dr (int i, CORE_ADDR addr);
 static void cygwin_set_dr7 (unsigned long val);
+static CORE_ADDR cygwin_get_dr (int i);
 static unsigned long cygwin_get_dr6 (void);
+static unsigned long cygwin_get_dr7 (void);
 
-static enum target_signal last_sig = TARGET_SIGNAL_0;
+static enum gdb_signal last_sig = GDB_SIGNAL_0;
 /* Set if a signal was received from the debugged process.  */
 
 /* Thread information structure used to track information that is
@@ -241,24 +243,28 @@ static int useshell = 0;		/* use shell for subprocesses */
 
 static const int *mappings;
 
+/* The function to use in order to determine whether a register is
+   a segment register or not.  */
+static segment_register_p_ftype *segment_register_p;
+
 /* This vector maps the target's idea of an exception (extracted
    from the DEBUG_EVENT structure) to GDB's idea.  */
 
 struct xlate_exception
   {
     int them;
-    enum target_signal us;
+    enum gdb_signal us;
   };
 
 static const struct xlate_exception
   xlate[] =
 {
-  {EXCEPTION_ACCESS_VIOLATION, TARGET_SIGNAL_SEGV},
-  {STATUS_STACK_OVERFLOW, TARGET_SIGNAL_SEGV},
-  {EXCEPTION_BREAKPOINT, TARGET_SIGNAL_TRAP},
-  {DBG_CONTROL_C, TARGET_SIGNAL_INT},
-  {EXCEPTION_SINGLE_STEP, TARGET_SIGNAL_TRAP},
-  {STATUS_FLOAT_DIVIDE_BY_ZERO, TARGET_SIGNAL_FPE},
+  {EXCEPTION_ACCESS_VIOLATION, GDB_SIGNAL_SEGV},
+  {STATUS_STACK_OVERFLOW, GDB_SIGNAL_SEGV},
+  {EXCEPTION_BREAKPOINT, GDB_SIGNAL_TRAP},
+  {DBG_CONTROL_C, GDB_SIGNAL_INT},
+  {EXCEPTION_SINGLE_STEP, GDB_SIGNAL_TRAP},
+  {STATUS_FLOAT_DIVIDE_BY_ZERO, GDB_SIGNAL_FPE},
   {-1, -1}};
 
 /* Set the MAPPINGS static global to OFFSETS.
@@ -268,6 +274,14 @@ void
 windows_set_context_register_offsets (const int *offsets)
 {
   mappings = offsets;
+}
+
+/* See windows-nat.h.  */
+
+void
+windows_set_segment_register_p (segment_register_p_ftype *fun)
+{
+  segment_register_p = fun;
 }
 
 static void
@@ -452,6 +466,14 @@ do_windows_fetch_inferior_registers (struct regcache *regcache, int r)
   else if (r == I387_FOP_REGNUM (tdep))
     {
       l = (*((long *) context_offset) >> 16) & ((1 << 11) - 1);
+      regcache_raw_supply (regcache, r, (char *) &l);
+    }
+  else if (segment_register_p (r))
+    {
+      /* GDB treats segment registers as 32bit registers, but they are
+	 in fact only 16 bits long.  Make sure we do not read extra
+	 bits from our source buffer.  */
+      l = *((long *) context_offset) & 0xffff;
       regcache_raw_supply (regcache, r, (char *) &l);
     }
   else if (r >= 0)
@@ -889,7 +911,7 @@ windows_clear_solib (void)
 }
 
 /* Load DLL symbol info.  */
-void
+static void
 dll_symbol_command (char *args, int from_tty)
 {
   int n;
@@ -944,7 +966,7 @@ handle_output_debug_string (struct target_waitstatus *ourstatus)
 	 to treat this like a real signal.  */
       char *p;
       int sig = strtol (s + sizeof (_CYGWIN_SIGNAL_STRING) - 1, &p, 0);
-      int gotasig = target_signal_from_host (sig);
+      int gotasig = gdb_signal_from_host (sig);
       ourstatus->value.sig = gotasig;
       if (gotasig)
 	{
@@ -1105,7 +1127,7 @@ handle_exception (struct target_waitstatus *ourstatus)
     {
     case EXCEPTION_ACCESS_VIOLATION:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ACCESS_VIOLATION");
-      ourstatus->value.sig = TARGET_SIGNAL_SEGV;
+      ourstatus->value.sig = GDB_SIGNAL_SEGV;
 #ifdef __CYGWIN__
       {
 	/* See if the access violation happened within the cygwin DLL
@@ -1116,7 +1138,7 @@ handle_exception (struct target_waitstatus *ourstatus)
 	   cygwin later in the process and will be sent as a
 	   cygwin-specific-signal.  So, ignore SEGVs if they show up
 	   within the text segment of the DLL itself.  */
-	char *fn;
+	const char *fn;
 	CORE_ADDR addr = (CORE_ADDR) (uintptr_t)
 	  current_event.u.Exception.ExceptionRecord.ExceptionAddress;
 
@@ -1131,75 +1153,75 @@ handle_exception (struct target_waitstatus *ourstatus)
       break;
     case STATUS_STACK_OVERFLOW:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_STACK_OVERFLOW");
-      ourstatus->value.sig = TARGET_SIGNAL_SEGV;
+      ourstatus->value.sig = GDB_SIGNAL_SEGV;
       break;
     case STATUS_FLOAT_DENORMAL_OPERAND:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_DENORMAL_OPERAND");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ARRAY_BOUNDS_EXCEEDED");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_INEXACT_RESULT:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_INEXACT_RESULT");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_INVALID_OPERATION:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_INVALID_OPERATION");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_OVERFLOW:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_OVERFLOW");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_STACK_CHECK:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_STACK_CHECK");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_UNDERFLOW:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_UNDERFLOW");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_FLOAT_DIVIDE_BY_ZERO:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_FLOAT_DIVIDE_BY_ZERO");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_INTEGER_DIVIDE_BY_ZERO:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_INTEGER_DIVIDE_BY_ZERO");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case STATUS_INTEGER_OVERFLOW:
       DEBUG_EXCEPTION_SIMPLE ("STATUS_INTEGER_OVERFLOW");
-      ourstatus->value.sig = TARGET_SIGNAL_FPE;
+      ourstatus->value.sig = GDB_SIGNAL_FPE;
       break;
     case EXCEPTION_BREAKPOINT:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_BREAKPOINT");
-      ourstatus->value.sig = TARGET_SIGNAL_TRAP;
+      ourstatus->value.sig = GDB_SIGNAL_TRAP;
       break;
     case DBG_CONTROL_C:
       DEBUG_EXCEPTION_SIMPLE ("DBG_CONTROL_C");
-      ourstatus->value.sig = TARGET_SIGNAL_INT;
+      ourstatus->value.sig = GDB_SIGNAL_INT;
       break;
     case DBG_CONTROL_BREAK:
       DEBUG_EXCEPTION_SIMPLE ("DBG_CONTROL_BREAK");
-      ourstatus->value.sig = TARGET_SIGNAL_INT;
+      ourstatus->value.sig = GDB_SIGNAL_INT;
       break;
     case EXCEPTION_SINGLE_STEP:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_SINGLE_STEP");
-      ourstatus->value.sig = TARGET_SIGNAL_TRAP;
+      ourstatus->value.sig = GDB_SIGNAL_TRAP;
       break;
     case EXCEPTION_ILLEGAL_INSTRUCTION:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_ILLEGAL_INSTRUCTION");
-      ourstatus->value.sig = TARGET_SIGNAL_ILL;
+      ourstatus->value.sig = GDB_SIGNAL_ILL;
       break;
     case EXCEPTION_PRIV_INSTRUCTION:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_PRIV_INSTRUCTION");
-      ourstatus->value.sig = TARGET_SIGNAL_ILL;
+      ourstatus->value.sig = GDB_SIGNAL_ILL;
       break;
     case EXCEPTION_NONCONTINUABLE_EXCEPTION:
       DEBUG_EXCEPTION_SIMPLE ("EXCEPTION_NONCONTINUABLE_EXCEPTION");
-      ourstatus->value.sig = TARGET_SIGNAL_ILL;
+      ourstatus->value.sig = GDB_SIGNAL_ILL;
       break;
     default:
       /* Treat unhandled first chance exceptions specially.  */
@@ -1209,7 +1231,7 @@ handle_exception (struct target_waitstatus *ourstatus)
 	current_event.u.Exception.ExceptionRecord.ExceptionCode,
 	host_address_to_string (
 	  current_event.u.Exception.ExceptionRecord.ExceptionAddress));
-      ourstatus->value.sig = TARGET_SIGNAL_UNKNOWN;
+      ourstatus->value.sig = GDB_SIGNAL_UNKNOWN;
       break;
     }
   exception_count++;
@@ -1289,7 +1311,7 @@ fake_create_process (void)
 
 static void
 windows_resume (struct target_ops *ops,
-		ptid_t ptid, int step, enum target_signal sig)
+		ptid_t ptid, int step, enum gdb_signal sig)
 {
   thread_info *th;
   DWORD continue_status = DBG_CONTINUE;
@@ -1302,7 +1324,7 @@ windows_resume (struct target_ops *ops,
   if (resume_all)
     ptid = inferior_ptid;
 
-  if (sig != TARGET_SIGNAL_0)
+  if (sig != GDB_SIGNAL_0)
     {
       if (current_event.dwDebugEventCode != EXCEPTION_DEBUG_EVENT)
 	{
@@ -1336,7 +1358,7 @@ windows_resume (struct target_ops *ops,
 	  last_sig));
     }
 
-  last_sig = TARGET_SIGNAL_0;
+  last_sig = GDB_SIGNAL_0;
 
   DEBUG_EXEC (("gdb: windows_resume (pid=%d, tid=%ld, step=%d, sig=%d);\n",
 	       ptid_get_pid (ptid), ptid_get_tid (ptid), step, sig));
@@ -1384,7 +1406,7 @@ windows_resume (struct target_ops *ops,
    handler is in charge of interrupting the inferior using DebugBreakProcess.
    Note that this function is not available prior to Windows XP.  In this case
    we emit a warning.  */
-BOOL WINAPI
+static BOOL WINAPI
 ctrl_c_handler (DWORD event_type)
 {
   const int attach_flag = current_inferior ()->attach_flag;
@@ -1418,7 +1440,7 @@ get_windows_debug_event (struct target_ops *ops,
   static thread_info dummy_thread_info;
   int retval = 0;
 
-  last_sig = TARGET_SIGNAL_0;
+  last_sig = GDB_SIGNAL_0;
 
   if (!(debug_event = WaitForDebugEvent (&current_event, 1000)))
     goto out;
@@ -1678,7 +1700,7 @@ do_initial_windows_stuff (struct target_ops *ops, DWORD pid, int attaching)
   struct inferior *inf;
   struct thread_info *tp;
 
-  last_sig = TARGET_SIGNAL_0;
+  last_sig = GDB_SIGNAL_0;
   event_count = 0;
   exception_count = 0;
   open_process_used = 0;
@@ -1717,7 +1739,7 @@ do_initial_windows_stuff (struct target_ops *ops, DWORD pid, int attaching)
       stop_after_trap = 1;
       wait_for_inferior ();
       tp = inferior_thread ();
-      if (tp->suspend.stop_signal != TARGET_SIGNAL_TRAP)
+      if (tp->suspend.stop_signal != GDB_SIGNAL_TRAP)
 	resume (0, tp->suspend.stop_signal);
       else
 	break;
@@ -1838,7 +1860,7 @@ windows_detach (struct target_ops *ops, char *args, int from_tty)
   int detached = 1;
 
   ptid_t ptid = {-1};
-  windows_resume (ops, ptid, 0, TARGET_SIGNAL_0);
+  windows_resume (ops, ptid, 0, GDB_SIGNAL_0);
 
   if (!DebugActiveProcessStop (current_event.dwProcessId))
     {
@@ -2493,8 +2515,9 @@ init_windows_ops (void)
 
   i386_dr_low.set_control = cygwin_set_dr7;
   i386_dr_low.set_addr = cygwin_set_dr;
-  i386_dr_low.reset_addr = NULL;
+  i386_dr_low.get_addr = cygwin_get_dr;
   i386_dr_low.get_status = cygwin_get_dr6;
+  i386_dr_low.get_control = cygwin_get_dr7;
 
   /* i386_dr_low.debug_register_length field is set by
      calling i386_set_debug_register_length function
@@ -2508,6 +2531,9 @@ set_windows_aliases (char *argv0)
 {
   add_info_alias ("dll", "sharedlibrary", 1);
 }
+
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_windows_nat;
 
 void
 _initialize_windows_nat (void)
@@ -2626,6 +2652,14 @@ cygwin_set_dr7 (unsigned long val)
   debug_registers_used = 1;
 }
 
+/* Get the value of debug register I from the inferior.  */
+
+static CORE_ADDR
+cygwin_get_dr (int i)
+{
+  return dr[i];
+}
+
 /* Get the value of the DR6 debug status register from the inferior.
    Here we just return the value stored in dr[6]
    by the last call to thread_rec for current_event.dwThreadId id.  */
@@ -2633,6 +2667,16 @@ static unsigned long
 cygwin_get_dr6 (void)
 {
   return (unsigned long) dr[6];
+}
+
+/* Get the value of the DR7 debug status register from the inferior.
+   Here we just return the value stored in dr[7] by the last call to
+   thread_rec for current_event.dwThreadId id.  */
+
+static unsigned long
+cygwin_get_dr7 (void)
+{
+  return (unsigned long) dr[7];
 }
 
 /* Determine if the thread referenced by "ptid" is alive
@@ -2649,6 +2693,9 @@ windows_thread_alive (struct target_ops *ops, ptid_t ptid)
   return WaitForSingleObject (thread_rec (tid, FALSE)->h, 0) == WAIT_OBJECT_0
     ? FALSE : TRUE;
 }
+
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_check_for_gdb_ini;
 
 void
 _initialize_check_for_gdb_ini (void)
@@ -2743,8 +2790,12 @@ bad_GetConsoleFontSize (HANDLE w, DWORD nFont)
   return size;
 }
  
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_loadable;
+
 /* Load any functions which may not be available in ancient versions
    of Windows.  */
+
 void
 _initialize_loadable (void)
 {

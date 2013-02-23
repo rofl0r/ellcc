@@ -233,8 +233,6 @@ EXTERN int type_vector_length;
 
 #define	INITIAL_TYPE_VECTOR_LENGTH	160
 
-extern void add_free_pendings (struct pending *list);
-
 extern void add_symbol_to_list (struct symbol *symbol,
 				struct pending **listhead);
 
@@ -260,8 +258,24 @@ extern void push_subfile (void);
 
 extern char *pop_subfile (void);
 
+extern struct block *end_symtab_get_static_block (CORE_ADDR end_addr,
+						  struct objfile *objfile,
+						  int expandable);
+
+extern struct symtab *end_symtab_from_static_block (struct block *static_block,
+						    struct objfile *objfile,
+						    int section,
+						    int expandable);
+
 extern struct symtab *end_symtab (CORE_ADDR end_addr,
 				  struct objfile *objfile, int section);
+
+extern struct symtab *end_expandable_symtab (CORE_ADDR end_addr,
+					     struct objfile *objfile,
+					     int section);
+
+extern void augment_type_symtab (struct objfile *objfile,
+				 struct symtab *primary_symtab);
 
 /* Defined in stabsread.c.  */
 
@@ -279,17 +293,11 @@ extern void record_line (struct subfile *subfile, int line, CORE_ADDR pc);
 
 extern void start_symtab (char *name, char *dirname, CORE_ADDR start_addr);
 
-extern int hashname (char *name);
+extern void restart_symtab (CORE_ADDR start_addr);
+
+extern int hashname (const char *name);
 
 extern void free_pending_blocks (void);
-
-/* FIXME: Note that this is used only in buildsym.c and dstread.c,
-   which should be fixed to not need direct access to
-   record_pending_block.  */
-
-extern void record_pending_block (struct objfile *objfile,
-				  struct block *block,
-				  struct pending_block *opblock);
 
 /* Record the name of the debug format in the current pending symbol
    table.  FORMAT must be a string with a lifetime at least as long as

@@ -45,6 +45,15 @@ AM_BINUTILS_WARNINGS
 
 AC_CONFIG_HEADERS(config.h:config.in)
 
+# PR 14072
+AH_VERBATIM([00_CONFIG_H_CHECK],
+[/* Check that config.h is #included before system headers
+   (this works only for glibc, but that should be enough).  */
+#if defined(__GLIBC__) && !defined(__CONFIG_H__)
+#  error config.h must be #included before system headers
+#endif
+#define __CONFIG_H__ 1])
+
 if test -z "$target" ; then
     AC_MSG_ERROR(Unrecognized target system type; please check config.sub.)
 fi
@@ -67,6 +76,7 @@ AC_SUBST(HDEFINES)
 AC_PROG_INSTALL
 
 AC_CHECK_HEADERS(string.h strings.h stdlib.h limits.h)
+ACX_HEADER_STRING
 
 AC_CHECK_DECLS([basename, stpcpy])
 
@@ -250,6 +260,8 @@ if test x${all_targets} = xfalse ; then
 	bfd_m32r_arch)		ta="$ta m32r-asm.lo m32r-desc.lo m32r-dis.lo m32r-ibld.lo m32r-opc.lo m32r-opinst.lo" using_cgen=yes ;;
 	bfd_m68hc11_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
 	bfd_m68hc12_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
+	bfd_m9s12x_arch)  ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
+	bfd_m9s12xg_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
 	bfd_m68k_arch)		ta="$ta m68k-dis.lo m68k-opc.lo" ;;
 	bfd_m88k_arch)		ta="$ta m88k-dis.lo" ;;
 	bfd_mcore_arch)		ta="$ta mcore-dis.lo" ;;
@@ -306,7 +318,8 @@ if test x${all_targets} = xfalse ; then
 	bfd_vax_arch)		ta="$ta vax-dis.lo" ;;
 	bfd_w65_arch)		ta="$ta w65-dis.lo" ;;
 	bfd_we32k_arch)		;;
-	bfd_xc16x_arch)		ta="$ta xc16x-asm.lo xc16x-desc.lo xc16x-dis.lo xc16x-ibld.lo xc16x-opc.lo" using_cgen=yes ;;
+	bfd_xc16x_arch)         ta="$ta xc16x-asm.lo xc16x-desc.lo xc16x-dis.lo xc16x-ibld.lo xc16x-opc.lo" using_cgen=yes ;;
+	bfd_xgate_arch) 	ta="$ta xgate-dis.lo xgate-opc.lo" ;;
 	bfd_xstormy16_arch)	ta="$ta xstormy16-asm.lo xstormy16-desc.lo xstormy16-dis.lo xstormy16-ibld.lo xstormy16-opc.lo" using_cgen=yes ;;
 	bfd_xtensa_arch)	ta="$ta xtensa-dis.lo" ;;
 	bfd_z80_arch)		ta="$ta z80-dis.lo" ;;

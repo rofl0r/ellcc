@@ -33,11 +33,10 @@
 #include "demangle.h"
 #include "complaints.h"
 #include "gdbcmd.h"
-#include "wrapper.h"
 #include "cp-abi.h"
 #include "gdb_assert.h"
 #include "hashtab.h"
-
+#include "exceptions.h"
 
 /* Initialize BADNESS constants.  */
 
@@ -463,6 +462,43 @@ lookup_function_type (struct type *type)
   return make_function_type (type, (struct type **) 0);
 }
 
+/* Given a type TYPE and argument types, return the appropriate
+   function type.  If the final type in PARAM_TYPES is NULL, make a
+   varargs function.  */
+
+struct type *
+lookup_function_type_with_arguments (struct type *type,
+				     int nparams,
+				     struct type **param_types)
+{
+  struct type *fn = make_function_type (type, (struct type **) 0);
+  int i;
+
+  if (nparams > 0)
+    {
+      if (param_types[nparams - 1] == NULL)
+	{
+	  --nparams;
+	  TYPE_VARARGS (fn) = 1;
+	}
+      else if (TYPE_CODE (check_typedef (param_types[nparams - 1]))
+	       == TYPE_CODE_VOID)
+	{
+	  --nparams;
+	  /* Caller should have ensured this.  */
+	  gdb_assert (nparams == 0);
+	  TYPE_PROTOTYPED (fn) = 1;
+	}
+    }
+
+  TYPE_NFIELDS (fn) = nparams;
+  TYPE_FIELDS (fn) = TYPE_ZALLOC (fn, nparams * sizeof (struct field));
+  for (i = 0; i < nparams; ++i)
+    TYPE_FIELD_TYPE (fn, i) = param_types[i];
+
+  return fn;
+}
+
 /* Identify address space identifier by name --
    return the integer flag defined in gdbtypes.h.  */
 extern int
@@ -776,13 +812,13 @@ get_discrete_bounds (struct type *type, LONGEST *lowp, LONGEST *highp)
 	     entries.  */
 	  int i;
 
-	  *lowp = *highp = TYPE_FIELD_BITPOS (type, 0);
+	  *lowp = *highp = TYPE_FIELD_ENUMVAL (type, 0);
 	  for (i = 0; i < TYPE_NFIELDS (type); i++)
 	    {
-	      if (TYPE_FIELD_BITPOS (type, i) < *lowp)
-		*lowp = TYPE_FIELD_BITPOS (type, i);
-	      if (TYPE_FIELD_BITPOS (type, i) > *highp)
-		*highp = TYPE_FIELD_BITPOS (type, i);
+	      if (TYPE_FIELD_ENUMVAL (type, i) < *lowp)
+		*lowp = TYPE_FIELD_ENUMVAL (type, i);
+	      if (TYPE_FIELD_ENUMVAL (type, i) > *highp)
+		*highp = TYPE_FIELD_ENUMVAL (type, i);
 	    }
 
 	  /* Set unsigned indicator if warranted.  */
@@ -1093,7 +1129,7 @@ smash_to_method_type (struct type *type, struct type *domain,
 /* Return a typename for a struct/union/enum type without "struct ",
    "union ", or "enum ".  If the type has a NULL name, return NULL.  */
 
-char *
+const char *
 type_name_no_tag (const struct type *type)
 {
   if (TYPE_TAG_NAME (type) != NULL)
@@ -1141,31 +1177,24 @@ lookup_typename (const struct language_defn *language,
 		 const struct block *block, int noerr)
 {
   struct symbol *sym;
-  struct type *tmp;
+  struct type *type;
 
   sym = lookup_symbol (name, block, VAR_DOMAIN, 0);
-  if (sym == NULL || SYMBOL_CLASS (sym) != LOC_TYPEDEF)
-    {
-      tmp = language_lookup_primitive_type_by_name (language, gdbarch, name);
-      if (tmp)
-	{
-	  return tmp;
-	}
-      else if (!tmp && noerr)
-	{
-	  return NULL;
-	}
-      else
-	{
-	  error (_("No type named %s."), name);
-	}
-    }
-  return (SYMBOL_TYPE (sym));
+  if (sym != NULL && SYMBOL_CLASS (sym) == LOC_TYPEDEF)
+    return SYMBOL_TYPE (sym);
+
+  type = language_lookup_primitive_type_by_name (language, gdbarch, name);
+  if (type)
+    return type;
+
+  if (noerr)
+    return NULL;
+  error (_("No type named %s."), name);
 }
 
 struct type *
 lookup_unsigned_typename (const struct language_defn *language,
-			  struct gdbarch *gdbarch, char *name)
+			  struct gdbarch *gdbarch, const char *name)
 {
   char *uns = alloca (strlen (name) + 10);
 
@@ -1176,7 +1205,7 @@ lookup_unsigned_typename (const struct language_defn *language,
 
 struct type *
 lookup_signed_typename (const struct language_defn *language,
-			struct gdbarch *gdbarch, char *name)
+			struct gdbarch *gdbarch, const char *name)
 {
   struct type *t;
   char *uns = alloca (strlen (name) + 8);
@@ -1339,7 +1368,7 @@ lookup_struct_elt_type (struct type *type, char *name, int noerr)
 
   for (i = TYPE_NFIELDS (type) - 1; i >= TYPE_N_BASECLASSES (type); i--)
     {
-      char *t_field_name = TYPE_FIELD_NAME (type, i);
+      const char *t_field_name = TYPE_FIELD_NAME (type, i);
 
       if (t_field_name && (strcmp_iw (t_field_name, name) == 0))
 	{
@@ -1481,7 +1510,7 @@ check_typedef (struct type *type)
     {
       if (!TYPE_TARGET_TYPE (type))
 	{
-	  char *name;
+	  const char *name;
 	  struct symbol *sym;
 
 	  /* It is dangerous to call lookup_symbol if we are currently
@@ -1544,7 +1573,7 @@ check_typedef (struct type *type)
       && opaque_type_resolution 
       && !currently_reading_symtab)
     {
-      char *name = type_name_no_tag (type);
+      const char *name = type_name_no_tag (type);
       struct type *newtype;
 
       if (name == NULL)
@@ -1578,7 +1607,7 @@ check_typedef (struct type *type)
      types.  */
   else if (TYPE_STUB (type) && !currently_reading_symtab)
     {
-      char *name = type_name_no_tag (type);
+      const char *name = type_name_no_tag (type);
       /* FIXME: shouldn't we separately check the TYPE_NAME and the
          TYPE_TAG_NAME, and look in STRUCT_DOMAIN and/or VAR_DOMAIN
          as appropriate?  (this code was written before TYPE_NAME and
@@ -1675,14 +1704,20 @@ static struct type *
 safe_parse_type (struct gdbarch *gdbarch, char *p, int length)
 {
   struct ui_file *saved_gdb_stderr;
-  struct type *type;
+  struct type *type = NULL; /* Initialize to keep gcc happy.  */
+  volatile struct gdb_exception except;
 
   /* Suppress error messages.  */
   saved_gdb_stderr = gdb_stderr;
   gdb_stderr = ui_file_new ();
 
   /* Call parse_and_eval_type() without fear of longjmp()s.  */
-  if (!gdb_parse_and_eval_type (p, length, &type))
+  TRY_CATCH (except, RETURN_MASK_ERROR)
+    {
+      type = parse_and_eval_type (p, length);
+    }
+
+  if (except.reason < 0)
     type = builtin_type (gdbarch)->builtin_void;
 
   /* Stop suppressing error messages.  */
@@ -2895,8 +2930,6 @@ print_cplus_stuff (struct type *type, int spaces)
 		    TYPE_N_BASECLASSES (type));
   printfi_filtered (spaces, "nfn_fields %d\n",
 		    TYPE_NFN_FIELDS (type));
-  printfi_filtered (spaces, "nfn_fields_total %d\n",
-		    TYPE_NFN_FIELDS_TOTAL (type));
   if (TYPE_N_BASECLASSES (type) > 0)
     {
       printfi_filtered (spaces, "virtual_field_bits (%d bits at *",
@@ -3194,10 +3227,15 @@ recursive_dump_type (struct type *type, int spaces)
   puts_filtered ("\n");
   for (idx = 0; idx < TYPE_NFIELDS (type); idx++)
     {
-      printfi_filtered (spaces + 2,
-			"[%d] bitpos %d bitsize %d type ",
-			idx, TYPE_FIELD_BITPOS (type, idx),
-			TYPE_FIELD_BITSIZE (type, idx));
+      if (TYPE_CODE (type) == TYPE_CODE_ENUM)
+	printfi_filtered (spaces + 2,
+			  "[%d] enumval %s type ",
+			  idx, plongest (TYPE_FIELD_ENUMVAL (type, idx)));
+      else
+	printfi_filtered (spaces + 2,
+			  "[%d] bitpos %d bitsize %d type ",
+			  idx, TYPE_FIELD_BITPOS (type, idx),
+			  TYPE_FIELD_BITSIZE (type, idx));
       gdb_print_host_address (TYPE_FIELD_TYPE (type, idx), gdb_stdout);
       printf_filtered (" name '%s' (",
 		       TYPE_FIELD_NAME (type, idx) != NULL
@@ -3393,6 +3431,10 @@ copy_type_recursive (struct objfile *objfile,
 	    case FIELD_LOC_KIND_BITPOS:
 	      SET_FIELD_BITPOS (TYPE_FIELD (new_type, i),
 				TYPE_FIELD_BITPOS (type, i));
+	      break;
+	    case FIELD_LOC_KIND_ENUMVAL:
+	      SET_FIELD_ENUMVAL (TYPE_FIELD (new_type, i),
+				 TYPE_FIELD_ENUMVAL (type, i));
 	      break;
 	    case FIELD_LOC_KIND_PHYSADDR:
 	      SET_FIELD_PHYSADDR (TYPE_FIELD (new_type, i),
@@ -3603,12 +3645,12 @@ append_flags_type_flag (struct type *type, int bitpos, char *name)
   if (name)
     {
       TYPE_FIELD_NAME (type, bitpos) = xstrdup (name);
-      TYPE_FIELD_BITPOS (type, bitpos) = bitpos;
+      SET_FIELD_BITPOS (TYPE_FIELD (type, bitpos), bitpos);
     }
   else
     {
       /* Don't show this field to the user.  */
-      TYPE_FIELD_BITPOS (type, bitpos) = -1;
+      SET_FIELD_BITPOS (TYPE_FIELD (type, bitpos), -1);
     }
 }
 
@@ -3663,9 +3705,10 @@ append_composite_type_field_aligned (struct type *t, char *name,
       TYPE_LENGTH (t) = TYPE_LENGTH (t) + TYPE_LENGTH (field);
       if (TYPE_NFIELDS (t) > 1)
 	{
-	  FIELD_BITPOS (f[0]) = (FIELD_BITPOS (f[-1])
-				 + (TYPE_LENGTH (FIELD_TYPE (f[-1]))
-				    * TARGET_CHAR_BIT));
+	  SET_FIELD_BITPOS (f[0],
+			    (FIELD_BITPOS (f[-1])
+			     + (TYPE_LENGTH (FIELD_TYPE (f[-1]))
+				* TARGET_CHAR_BIT)));
 
 	  if (alignment)
 	    {
@@ -3676,7 +3719,7 @@ append_composite_type_field_aligned (struct type *t, char *name,
 
 	      if (left)
 		{
-		  FIELD_BITPOS (f[0]) += (alignment - left);
+		  SET_FIELD_BITPOS (f[0], FIELD_BITPOS (f[0]) + (alignment - left));
 		  TYPE_LENGTH (t) += (alignment - left) / TARGET_CHAR_BIT;
 		}
 	    }

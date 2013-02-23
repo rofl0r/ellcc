@@ -16,10 +16,6 @@
 # display.exp   Test display commands
 #               Also do some printing stuff for coverage's sake.
 #
-if $tracelevel then {
-	strace $tracelevel
-}
-
 set testfile display
 set srcfile  ${testfile}.c
 set binfile  ${objdir}/${subdir}/${testfile}
@@ -29,9 +25,6 @@ set binfile  ${objdir}/${subdir}/${testfile}
 if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug nowarnings}] != "" } {
     untested display.exp
     return -1
-}
-if [target_info exists gdb_stub] {
-    gdb_step_for_stub;
 }
 
 # Preserve the old timeout, and set a new one that should be

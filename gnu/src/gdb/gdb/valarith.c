@@ -64,7 +64,7 @@ find_size_for_pointer_math (struct type *ptr_type)
 	sz = 1;
       else
 	{
-	  char *name;
+	  const char *name;
 	  
 	  name = TYPE_NAME (ptr_target);
 	  if (name == NULL)
@@ -279,7 +279,7 @@ binop_types_user_defined_p (enum exp_opcode op,
   if (TYPE_CODE (type1) == TYPE_CODE_REF)
     type1 = check_typedef (TYPE_TARGET_TYPE (type1));
 
-  type2 = check_typedef (type1);
+  type2 = check_typedef (type2);
   if (TYPE_CODE (type2) == TYPE_CODE_REF)
     type2 = check_typedef (TYPE_TARGET_TYPE (type2));
 
@@ -1390,7 +1390,7 @@ static struct value *
 vector_binop (struct value *val1, struct value *val2, enum exp_opcode op)
 {
   struct value *val, *tmp, *mark;
-  struct type *type1, *type2, *eltype1, *eltype2, *result_type;
+  struct type *type1, *type2, *eltype1, *eltype2;
   int t1_is_vec, t2_is_vec, elsize, i;
   LONGEST low_bound1, high_bound1, low_bound2, high_bound2;
 

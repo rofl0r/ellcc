@@ -301,10 +301,14 @@ value_cast_structs (struct type *type, struct value *v2)
 
 /* Cast one pointer or reference type to another.  Both TYPE and
    the type of ARG2 should be pointer types, or else both should be
-   reference types.  Returns the new pointer or reference.  */
+   reference types.  If SUBCLASS_CHECK is non-zero, this will force a
+   check to see whether TYPE is a superclass of ARG2's type.  If
+   SUBCLASS_CHECK is zero, then the subclass check is done only when
+   ARG2 is itself non-zero.  Returns the new pointer or reference.  */
 
 struct value *
-value_cast_pointers (struct type *type, struct value *arg2)
+value_cast_pointers (struct type *type, struct value *arg2,
+		     int subclass_check)
 {
   struct type *type1 = check_typedef (type);
   struct type *type2 = check_typedef (value_type (arg2));
@@ -313,7 +317,7 @@ value_cast_pointers (struct type *type, struct value *arg2)
 
   if (TYPE_CODE (t1) == TYPE_CODE_STRUCT
       && TYPE_CODE (t2) == TYPE_CODE_STRUCT
-      && !value_logical_not (arg2))
+      && (subclass_check || !value_logical_not (arg2)))
     {
       struct value *v2;
 
@@ -568,7 +572,7 @@ value_cast (struct type *type, struct value *arg2)
   else if (TYPE_LENGTH (type) == TYPE_LENGTH (type2))
     {
       if (code1 == TYPE_CODE_PTR && code2 == TYPE_CODE_PTR)
-	return value_cast_pointers (type, arg2);
+	return value_cast_pointers (type, arg2, 0);
 
       arg2 = value_copy (arg2);
       deprecated_set_value_type (arg2, type);
@@ -1295,9 +1299,7 @@ value_assign (struct value *toval, struct value *fromval)
 	    dest_buffer = value_contents (fromval);
 	  }
 
-	write_memory (changed_addr, dest_buffer, changed_len);
-	observer_notify_memory_changed (changed_addr, changed_len,
-					dest_buffer);
+	write_memory_with_notification (changed_addr, dest_buffer, changed_len);
       }
       break;
 
@@ -1772,15 +1774,7 @@ value_ind (struct value *arg1)
 			      (value_as_address (arg1)
 			       - value_pointed_to_offset (arg1)));
 
-      /* Re-adjust type.  */
-      deprecated_set_value_type (arg2, TYPE_TARGET_TYPE (base_type));
-      /* Add embedding info.  */
-      set_value_enclosing_type (arg2, enc_type);
-      set_value_embedded_offset (arg2, value_pointed_to_offset (arg1));
-
-      /* We may be pointing to an object of some derived type.  */
-      arg2 = value_full_object (arg2, NULL, 0, 0, 0);
-      return arg2;
+      return readjust_indirect_value_type (arg2, enc_type, base_type, arg1);
     }
 
   error (_("Attempt to take contents of a non-pointer value."));
@@ -1984,17 +1978,41 @@ typecmp (int staticp, int varargs, int nargs,
   return i + 1;
 }
 
-/* Helper function used by value_struct_elt to recurse through
-   baseclasses.  Look for a field NAME in ARG1.  Adjust the address of
-   ARG1 by OFFSET bytes, and search in it assuming it has (class) type
-   TYPE.  If found, return value, else return NULL.
+/* Helper class for do_search_struct_field that updates *RESULT_PTR
+   and *LAST_BOFFSET, and possibly throws an exception if the field
+   search has yielded ambiguous results.  */
 
-   If LOOKING_FOR_BASECLASS, then instead of looking for struct
-   fields, look for a baseclass named NAME.  */
+static void
+update_search_result (struct value **result_ptr, struct value *v,
+		      int *last_boffset, int boffset,
+		      const char *name, struct type *type)
+{
+  if (v != NULL)
+    {
+      if (*result_ptr != NULL
+	  /* The result is not ambiguous if all the classes that are
+	     found occupy the same space.  */
+	  && *last_boffset != boffset)
+	error (_("base class '%s' is ambiguous in type '%s'"),
+	       name, TYPE_SAFE_NAME (type));
+      *result_ptr = v;
+      *last_boffset = boffset;
+    }
+}
 
-static struct value *
-search_struct_field (const char *name, struct value *arg1, int offset,
-		     struct type *type, int looking_for_baseclass)
+/* A helper for search_struct_field.  This does all the work; most
+   arguments are as passed to search_struct_field.  The result is
+   stored in *RESULT_PTR, which must be initialized to NULL.
+   OUTERMOST_TYPE is the type of the initial type passed to
+   search_struct_field; this is used for error reporting when the
+   lookup is ambiguous.  */
+
+static void
+do_search_struct_field (const char *name, struct value *arg1, int offset,
+			struct type *type, int looking_for_baseclass,
+			struct value **result_ptr,
+			int *last_boffset,
+			struct type *outermost_type)
 {
   int i;
   int nbases;
@@ -2005,7 +2023,7 @@ search_struct_field (const char *name, struct value *arg1, int offset,
   if (!looking_for_baseclass)
     for (i = TYPE_NFIELDS (type) - 1; i >= nbases; i--)
       {
-	char *t_field_name = TYPE_FIELD_NAME (type, i);
+	const char *t_field_name = TYPE_FIELD_NAME (type, i);
 
 	if (t_field_name && (strcmp_iw (t_field_name, name) == 0))
 	  {
@@ -2020,12 +2038,9 @@ search_struct_field (const char *name, struct value *arg1, int offset,
 			 name);
 	      }
 	    else
-	      {
-		v = value_primitive_field (arg1, offset, i, type);
-		if (v == 0)
-		  error (_("there is no field named %s"), name);
-	      }
-	    return v;
+	      v = value_primitive_field (arg1, offset, i, type);
+	    *result_ptr = v;
+	    return;
 	  }
 
 	if (t_field_name
@@ -2050,7 +2065,7 @@ search_struct_field (const char *name, struct value *arg1, int offset,
 		   represented as a struct, with a member for each
 		   <variant field>.  */
 
-		struct value *v;
+		struct value *v = NULL;
 		int new_offset = offset;
 
 		/* This is pretty gross.  In G++, the offset in an
@@ -2064,18 +2079,23 @@ search_struct_field (const char *name, struct value *arg1, int offset,
 			&& TYPE_FIELD_BITPOS (field_type, 0) == 0))
 		  new_offset += TYPE_FIELD_BITPOS (type, i) / 8;
 
-		v = search_struct_field (name, arg1, new_offset, 
-					 field_type,
-					 looking_for_baseclass);
+		do_search_struct_field (name, arg1, new_offset, 
+					field_type,
+					looking_for_baseclass, &v,
+					last_boffset,
+					outermost_type);
 		if (v)
-		  return v;
+		  {
+		    *result_ptr = v;
+		    return;
+		  }
 	      }
 	  }
       }
 
   for (i = 0; i < nbases; i++)
     {
-      struct value *v;
+      struct value *v = NULL;
       struct type *basetype = check_typedef (TYPE_BASECLASS (type, i));
       /* If we are looking for baseclasses, this is what we get when
          we hit them.  But it could happen that the base part's member
@@ -2085,10 +2105,10 @@ search_struct_field (const char *name, struct value *arg1, int offset,
 			     && (strcmp_iw (name, 
 					    TYPE_BASECLASS_NAME (type, 
 								 i)) == 0));
+      int boffset = value_embedded_offset (arg1) + offset;
 
       if (BASETYPE_VIA_VIRTUAL (type, i))
 	{
-	  int boffset;
 	  struct value *v2;
 
 	  boffset = baseclass_offset (type, i,
@@ -2124,22 +2144,51 @@ search_struct_field (const char *name, struct value *arg1, int offset,
 	    }
 
 	  if (found_baseclass)
-	    return v2;
-	  v = search_struct_field (name, v2, 0,
-				   TYPE_BASECLASS (type, i),
-				   looking_for_baseclass);
+	    v = v2;
+	  else
+	    {
+	      do_search_struct_field (name, v2, 0,
+				      TYPE_BASECLASS (type, i),
+				      looking_for_baseclass,
+				      result_ptr, last_boffset,
+				      outermost_type);
+	    }
 	}
       else if (found_baseclass)
 	v = value_primitive_field (arg1, offset, i, type);
       else
-	v = search_struct_field (name, arg1,
-				 offset + TYPE_BASECLASS_BITPOS (type, 
-								 i) / 8,
-				 basetype, looking_for_baseclass);
-      if (v)
-	return v;
+	{
+	  do_search_struct_field (name, arg1,
+				  offset + TYPE_BASECLASS_BITPOS (type, 
+								  i) / 8,
+				  basetype, looking_for_baseclass,
+				  result_ptr, last_boffset,
+				  outermost_type);
+	}
+
+      update_search_result (result_ptr, v, last_boffset,
+			    boffset, name, outermost_type);
     }
-  return NULL;
+}
+
+/* Helper function used by value_struct_elt to recurse through
+   baseclasses.  Look for a field NAME in ARG1.  Adjust the address of
+   ARG1 by OFFSET bytes, and search in it assuming it has (class) type
+   TYPE.  If found, return value, else return NULL.
+
+   If LOOKING_FOR_BASECLASS, then instead of looking for struct
+   fields, look for a baseclass named NAME.  */
+
+static struct value *
+search_struct_field (const char *name, struct value *arg1, int offset,
+		     struct type *type, int looking_for_baseclass)
+{
+  struct value *result = NULL;
+  int boffset = 0;
+
+  do_search_struct_field (name, arg1, offset, type, looking_for_baseclass,
+			  &result, &boffset, type);
+  return result;
 }
 
 /* Helper function used by value_struct_elt to recurse through
@@ -2163,7 +2212,7 @@ search_struct_method (const char *name, struct value **arg1p,
   CHECK_TYPEDEF (type);
   for (i = TYPE_NFN_FIELDS (type) - 1; i >= 0; i--)
     {
-      char *t_field_name = TYPE_FN_FIELDLIST_NAME (type, i);
+      const char *t_field_name = TYPE_FN_FIELDLIST_NAME (type, i);
 
       /* FIXME!  May need to check for ARM demangling here.  */
       if (strncmp (t_field_name, "__", 2) == 0 ||
@@ -2407,7 +2456,7 @@ find_method_list (struct value **argp, const char *method,
   for (i = TYPE_NFN_FIELDS (type) - 1; i >= 0; i--)
     {
       /* pai: FIXME What about operators and type conversions?  */
-      char *fn_field_name = TYPE_FN_FIELDLIST_NAME (type, i);
+      const char *fn_field_name = TYPE_FN_FIELDLIST_NAME (type, i);
 
       if (fn_field_name && (strcmp_iw (fn_field_name, method) == 0))
 	{
@@ -2461,7 +2510,7 @@ find_method_list (struct value **argp, const char *method,
       method.
    BOFFSET is the offset of the base subobject which defines the method.  */
 
-struct fn_field *
+static struct fn_field *
 value_find_oload_method_list (struct value **argp, const char *method,
 			      int offset, int *num_fns, 
 			      struct type **basetype, int *boffset)
@@ -2630,8 +2679,7 @@ find_overload_match (struct value **args, int nargs,
          and non member function, the first argument must now be
          dereferenced.  */
       if (method == BOTH)
-	deprecated_set_value_type (args[0],
-				   TYPE_TARGET_TYPE (value_type (args[0])));
+	args[0] = value_ind (args[0]);
 
       if (fsym)
         {
@@ -3154,7 +3202,7 @@ check_field (struct type *type, const char *name)
 
   for (i = TYPE_NFIELDS (type) - 1; i >= TYPE_N_BASECLASSES (type); i--)
     {
-      char *t_field_name = TYPE_FIELD_NAME (type, i);
+      const char *t_field_name = TYPE_FIELD_NAME (type, i);
 
       if (t_field_name && (strcmp_iw (t_field_name, name) == 0))
 	return 1;
@@ -3280,7 +3328,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
 
   for (i = TYPE_NFIELDS (t) - 1; i >= TYPE_N_BASECLASSES (t); i--)
     {
-      char *t_field_name = TYPE_FIELD_NAME (t, i);
+      const char *t_field_name = TYPE_FIELD_NAME (t, i);
 
       if (t_field_name && strcmp (t_field_name, name) == 0)
 	{
@@ -3317,7 +3365,7 @@ value_struct_elt_for_reference (struct type *domain, int offset,
 
   for (i = TYPE_NFN_FIELDS (t) - 1; i >= 0; --i)
     {
-      char *t_field_name = TYPE_FN_FIELDLIST_NAME (t, i);
+      const char *t_field_name = TYPE_FN_FIELDLIST_NAME (t, i);
       char dem_opname[64];
 
       if (strncmp (t_field_name, "__", 2) == 0 
@@ -3526,21 +3574,48 @@ value_maybe_namespace_elt (const struct type *curtype,
   return result;
 }
 
-/* Given a pointer value V, find the real (RTTI) type of the object it
-   points to.
+/* Given a pointer or a reference value V, find its real (RTTI) type.
 
    Other parameters FULL, TOP, USING_ENC as with value_rtti_type()
    and refer to the values computed for the object pointed to.  */
 
 struct type *
-value_rtti_target_type (struct value *v, int *full, 
-			int *top, int *using_enc)
+value_rtti_indirect_type (struct value *v, int *full, 
+			  int *top, int *using_enc)
 {
   struct value *target;
+  struct type *type, *real_type, *target_type;
 
-  target = value_ind (v);
+  type = value_type (v);
+  type = check_typedef (type);
+  if (TYPE_CODE (type) == TYPE_CODE_REF)
+    target = coerce_ref (v);
+  else if (TYPE_CODE (type) == TYPE_CODE_PTR)
+    target = value_ind (v);
+  else
+    return NULL;
 
-  return value_rtti_type (target, full, top, using_enc);
+  real_type = value_rtti_type (target, full, top, using_enc);
+
+  if (real_type)
+    {
+      /* Copy qualifiers to the referenced object.  */
+      target_type = value_type (target);
+      real_type = make_cv_type (TYPE_CONST (target_type),
+				TYPE_VOLATILE (target_type), real_type, NULL);
+      if (TYPE_CODE (type) == TYPE_CODE_REF)
+        real_type = lookup_reference_type (real_type);
+      else if (TYPE_CODE (type) == TYPE_CODE_PTR)
+        real_type = lookup_pointer_type (real_type);
+      else
+        internal_error (__FILE__, __LINE__, _("Unexpected value type."));
+
+      /* Copy qualifiers to the pointer/reference.  */
+      real_type = make_cv_type (TYPE_CONST (type), TYPE_VOLATILE (type),
+				real_type, NULL);
+    }
+
+  return real_type;
 }
 
 /* Given a value pointed to by ARGP, check its real run-time type, and

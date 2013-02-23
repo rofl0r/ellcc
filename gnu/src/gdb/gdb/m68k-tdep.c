@@ -403,7 +403,7 @@ m68k_reg_struct_return_p (struct gdbarch *gdbarch, struct type *type)
    from WRITEBUF into REGCACHE.  */
 
 static enum return_value_convention
-m68k_return_value (struct gdbarch *gdbarch, struct type *func_type,
+m68k_return_value (struct gdbarch *gdbarch, struct value *function,
 		   struct type *type, struct regcache *regcache,
 		   gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -438,7 +438,7 @@ m68k_return_value (struct gdbarch *gdbarch, struct type *func_type,
 }
 
 static enum return_value_convention
-m68k_svr4_return_value (struct gdbarch *gdbarch, struct type *func_type,
+m68k_svr4_return_value (struct gdbarch *gdbarch, struct value *function,
 			struct type *type, struct regcache *regcache,
 			gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -477,7 +477,7 @@ m68k_svr4_return_value (struct gdbarch *gdbarch, struct type *func_type,
   if (code == TYPE_CODE_STRUCT && TYPE_NFIELDS (type) == 1)
     {
       type = check_typedef (TYPE_FIELD_TYPE (type, 0));
-      return m68k_svr4_return_value (gdbarch, func_type, type, regcache,
+      return m68k_svr4_return_value (gdbarch, function, type, regcache,
 				     readbuf, writebuf);
     }
 
@@ -854,7 +854,6 @@ m68k_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR start_pc)
 {
   struct m68k_frame_cache cache;
   CORE_ADDR pc;
-  int op;
 
   cache.locals = -1;
   pc = m68k_analyze_prologue (gdbarch, start_pc, (CORE_ADDR) -1, &cache);
@@ -1051,6 +1050,16 @@ m68k_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
 }
 
 
+/* This is the implementation of gdbarch method
+   return_in_first_hidden_param_p.  */
+
+static int
+m68k_return_in_first_hidden_param_p (struct gdbarch *gdbarch,
+				     struct type *type)
+{
+  return 0;
+}
+
 /* System V Release 4 (SVR4).  */
 
 void
@@ -1236,6 +1245,8 @@ m68k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Function call & return.  */
   set_gdbarch_push_dummy_call (gdbarch, m68k_push_dummy_call);
   set_gdbarch_return_value (gdbarch, m68k_return_value);
+  set_gdbarch_return_in_first_hidden_param_p (gdbarch,
+					      m68k_return_in_first_hidden_param_p);
 
 
   /* Disassembler.  */

@@ -33,16 +33,10 @@ if [is_remote target] then {
     return
 }
 
-if $tracelevel then {
-        strace $tracelevel
-}
 
+standard_testfile
 
-set testfile "thread_events"
-set srcfile ${testfile}.c
-set binfile ${objdir}/${subdir}/${testfile}
-
-if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable [list debug "incdir=${objdir}"]] != "" } {
+if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable debug] != "" } {
     return -1
 }
 

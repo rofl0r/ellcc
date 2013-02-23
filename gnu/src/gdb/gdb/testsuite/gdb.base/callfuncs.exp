@@ -16,10 +16,6 @@
 # This file was written by Fred Fish. (fnf@cygnus.com)
 # and modified by Bob Manson. (manson@cygnus.com)
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 set testfile "callfuncs"
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
@@ -37,7 +33,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable $com
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 
@@ -261,7 +257,7 @@ proc do_function_calls {} {
 	    "call inferior func with struct - returns long double _Complex"
     }
 
-    gdb_test "p t_structs_a(struct_val1)" "= (.unsigned char .. )?\"foo\"" \
+    gdb_test "p t_structs_a(struct_val1)" "= (.unsigned char .. )?<buf.*> \"foo\"" \
     	"call inferior func with struct - returns char *"
 }
 
@@ -543,3 +539,6 @@ if {![target_info exists gdb,nosignals] && ![istarget "*-*-uclinux*"]} {
 # handling vs. local labels `.L'... as `Lcallfunc' starts with `L'.
 
 gdb_test "print callfunc (Lcallfunc, 5)" " = 12"
+
+# Regression test for function pointer cast.
+gdb_test "print *((int *(*) (void)) voidfunc)()" " = 23"

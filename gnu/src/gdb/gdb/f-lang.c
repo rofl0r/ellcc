@@ -33,6 +33,7 @@
 #include "value.h"
 #include "cp-support.h"
 #include "charset.h"
+#include "c-lang.h"
 
 
 /* Following is dubious stuff that had been in the xcoff reader.  */
@@ -262,16 +263,11 @@ f_word_break_characters (void)
 /* Consider the modules separator :: as a valid symbol name character
    class.  */
 
-static char **
+static VEC (char_ptr) *
 f_make_symbol_completion_list (char *text, char *word)
 {
   return default_make_symbol_completion_list_break_on (text, word, ":");
 }
-
-/* This is declared in c-lang.h but it is silly to import that file for what
-   is already just a hack.  */
-extern int c_value_print (struct value *, struct ui_file *,
-			  const struct value_print_options *);
 
 const struct language_defn f_language_defn =
 {
@@ -293,6 +289,7 @@ const struct language_defn f_language_defn =
   default_print_typedef,	/* Print a typedef using appropriate syntax */
   f_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* FIXME */
+  default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,                    	/* name_of_this */
   cp_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -309,7 +306,7 @@ const struct language_defn f_language_defn =
   default_print_array_index,
   default_pass_by_reference,
   default_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };
@@ -572,7 +569,7 @@ find_first_common_named (char *name)
    that belongs to function funcname.  */
 
 SAVED_F77_COMMON_PTR
-find_common_for_function (char *name, char *funcname)
+find_common_for_function (const char *name, const char *funcname)
 {
 
   SAVED_F77_COMMON_PTR tmp;

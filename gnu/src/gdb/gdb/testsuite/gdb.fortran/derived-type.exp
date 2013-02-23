@@ -18,25 +18,13 @@
 # This file is part of the gdb testsuite.  It contains tests for type-printing
 # and value-printing Fortran derived types.
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 if { [skip_fortran_tests] } { return -1 }
 
-set testfile "derived-type"
-set srcfile ${testfile}.f90
-set binfile ${objdir}/${subdir}/${testfile}
+standard_testfile .f90
 
-if {[gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" \
-	 executable {debug f90}] != ""} {
+if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug f90}]} {
     return -1
 }
-
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
 
 if ![runto MAIN__] then {
     perror "couldn't run to breakpoint MAIN__"

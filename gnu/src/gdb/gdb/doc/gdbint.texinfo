@@ -28,13 +28,11 @@ This file documents the internals of the GNU debugger @value{GDBN}.
 @insertcopying
 @end ifnottex
 
-
-@syncodeindex fn cp
-@syncodeindex vr cp
+@syncodeindex vr fn
 
 @titlepage
 @title @value{GDBN} Internals
-@subtitle{A guide to the internals of the GNU debugger}
+@subtitle A guide to the internals of the GNU debugger
 @author John Gilmore
 @author Cygnus Solutions
 @author Second Edition:
@@ -93,7 +91,8 @@ as the mechanisms that adapt @value{GDBN} to specific hosts and targets.
 
 * GDB Observers::  @value{GDBN} Currently available observers
 * GNU Free Documentation License::  The license for this documentation
-* Index::
+* Concept Index::
+* Function and Variable Index::
 @end menu
 
 @node Summary
@@ -4916,11 +4915,6 @@ number of that register.
 Use this function to convert stab register @var{stab_regnr} into @value{GDBN}
 regnum.  If not defined, no conversion will be done.
 
-@item SYMBOL_RELOADING_DEFAULT
-@findex SYMBOL_RELOADING_DEFAULT
-The default value of the ``symbol-reloading'' variable.  (Never defined in
-current sources.)
-
 @item TARGET_CHAR_BIT
 @findex TARGET_CHAR_BIT
 Number of bits in a char; defaults to 8.
@@ -5848,6 +5842,26 @@ the following guidelines:
 @tab @code{* x}
 @tab (pointer dereference)
 @end multitable
+
+Any two or more lines in code should be wrapped in braces, even if
+they are comments, as they look like separate statements:
+
+@smallexample
+if (i)
+  @{
+    /* Return success.  */
+    return 0;
+  @}
+@end smallexample
+
+@noindent
+and not:
+
+@smallexample
+if (i)
+  /* Return success.  */
+  return 0;
+@end smallexample
 
 @subsection Comments
 
@@ -6798,35 +6812,9 @@ Update the copyright year in:
 @end itemize
 
 @item
-Run the @file{copyright.sh} script to add the new year in the copyright
-notices of most source files.  This script requires Emacs 22 or later to
-be installed.
-
-@item
-The new year also needs to be added manually in all other files that
-are not already taken care of by the @file{copyright.sh} script:
-@itemize @bullet
-  @item
-  @file{*.s}
-  @item
-  @file{*.f}
-  @item
-  @file{*.f90}
-  @item
-  @file{*.igen}
-  @item
-  @file{*.ac}
-  @item
-  @file{*.texi}
-  @item
-  @file{*.texinfo}
-  @item
-  @file{*.tex}
-  @item
-  @file{*.defs}
-  @item
-  @file{*.1}
-@end itemize
+Run the @file{copyright.py} Python script to add the new year in the copyright
+notices of most source files.  This script has been tested with Python
+2.6 and 2.7.
 
 @end itemize
 
@@ -7689,7 +7677,7 @@ make check RUNTESTFLAGS="GDB=/usr/bin/gdb GDBSERVER=/usr/bin/gdbserver"
 When running the testsuite normally one doesn't want whatever is in
 @file{~/.gdbinit} to interfere with the tests, therefore the test harness
 passes @option{-nx} to @value{GDBN}.  One also doesn't want any windowed
-version of @value{GDBN}, e.g., @command{gdbtui}, to run.
+version of @value{GDBN}, e.g., @samp{gdb -tui}, to run.
 This is achieved via @code{INTERNAL_GDBFLAGS}.  
 
 @smallexample
@@ -7845,6 +7833,96 @@ instance, some @value{GDBN} bugs involving the display of source lines would
 never manifest themselves if the programs used GNU coding style
 uniformly.
 
+Some testcase results need more detailed explanation:
+
+@table @code
+@item KFAIL
+Known problem of @value{GDBN} itself.  You must specify the @value{GDBN} bug
+report number like in these sample tests:
+@smallexample
+kfail "gdb/13392" "continue to marker 2"
+@end smallexample
+or
+@smallexample
+setup_kfail gdb/13392 "*-*-*"
+kfail "continue to marker 2"
+@end smallexample
+
+@item XFAIL
+Known problem of environment.  This typically includes @value{NGCC} but it
+includes also many other system components which cannot be fixed in the
+@value{GDBN} project.  Sample test with sanity check not knowing the specific
+cause of the problem:
+@smallexample
+# On x86_64 it is commonly about 4MB.
+if @{$stub_size > 25000000@} @{
+    xfail "stub size $stub_size is too large"
+    return
+@}
+@end smallexample
+
+You should provide bug report number for the failing component of the
+environment, if such bug report is available:
+@smallexample
+if @{[test_compiler_info @{gcc-[0-3]-*@}]
+   || [test_compiler_info @{gcc-4-[0-5]-*@}]@} @{
+   setup_xfail "gcc/46955" *-*-*
+@}
+gdb_test "python print ttype.template_argument(2)" "&C::c"
+@end smallexample
+@end table
+
+@section Board settings
+In @value{GDBN} testsuite, the tests can be configured or customized in the board
+file by means of @dfn{Board Settings}.  Each setting   should be consulted by
+test cases that depend on the corresponding feature.
+
+Here are the supported board settings:
+
+@table @code
+
+@item gdb,cannot_call_functions
+The board does not support inferior call, that is, invoking inferior functions
+in @value{GDBN}.
+@item gdb,can_reverse
+The board supports reverse execution.
+@item gdb,no_hardware_watchpoints
+The board does not support hardware watchpoints.
+@item gdb,nofileio
+@value{GDBN} is unable to intercept target file operations in remote and perform
+them on the host.
+@item gdb,noinferiorio
+The board is unable to provide I/O capability to the inferior.
+@c @item gdb,noresults
+@c NEED DOCUMENT.
+@item gdb,nosignals
+The board does not support signals.
+@item gdb,skip_huge_test
+Skip time-consuming tests on the board with slow connection.
+@item gdb,skip_float_tests
+Skip tests related to float points on target board.
+@item gdb,use_precord
+The board supports process record.
+@item gdb_server_prog
+The location of GDBserver.  If GDBserver somewhere other than its default
+location is used in test, specify the location of GDBserver in this variable.
+The location is a file name of GDBserver that can be either absolute or
+relative to testsuite subdirectory in build directory.
+@item in_proc_agent
+The location of in-process agent.  If in-process agent other than its default
+location is used in test, specify the location of in-process agent in
+this variable.  The location is a file name of in-process agent that can be
+either  absolute or relative to testsuite subdirectory in build directory.
+@item noargs
+@value{GDBN} does not support argument passing for inferior.
+@item no_long_long
+The board does not support type @code{long long}.
+@c @item use_cygmon
+@c NEED DOCUMENT.
+@item use_gdb_stub
+The tests are running with gdb stub.
+@end table
+
 @node Hints
 
 @chapter Hints
@@ -7952,11 +8030,11 @@ debugged in another.  Rather than typing the command @kbd{@w{./gdb
 ./gdb}}, which works on Suns and such, you can copy @file{gdb} to
 @file{gdb2} and then type @kbd{@w{./gdb ./gdb2}}.
 
-When you run @value{GDBN} in the @value{GDBN} source directory, it will read a
-@file{.gdbinit} file that sets up some simple things to make debugging
-gdb easier.  The @code{info} command, when executed without a subcommand
-in a @value{GDBN} being debugged by gdb, will pop you back up to the top level
-gdb.  See @file{.gdbinit} for details.
+When you run @value{GDBN} in the @value{GDBN} source directory, it will read
+@file{gdb-gdb.gdb} file (plus possibly @file{gdb-gdb.py} file) that sets up
+some simple things to make debugging gdb easier.  The @code{info} command, when
+executed without a subcommand in a @value{GDBN} being debugged by gdb, will pop
+you back up to the top level gdb.  See @file{gdb-gdb.gdb} for details.
 
 If you use emacs, you will probably want to do a @code{make TAGS} after
 you configure your distribution; this will put the machine dependent
@@ -8053,9 +8131,14 @@ in the directory the script was called from.
 @appendix GNU Free Documentation License
 @include fdl.texi
 
-@node Index
-@unnumbered Index
+@node Concept Index
+@unnumbered Concept Index
 
 @printindex cp
+
+@node Function and Variable Index
+@unnumbered Function and Variable Index
+
+@printindex fn
 
 @bye

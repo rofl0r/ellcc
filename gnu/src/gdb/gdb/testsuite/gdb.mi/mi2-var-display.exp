@@ -27,10 +27,9 @@ if [mi_gdb_start] {
     continue
 }
 
-set testfile "var-cmd"
-set srcfile ${testfile}.c
-set binfile ${objdir}/${subdir}/mi2-var-display
-if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug additional_flags=-DFAKEARGV}] != "" } {
+standard_testfile var-cmd.c
+
+if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {debug}] != "" } {
     untested mi2-var-display.exp
     return -1
 }
@@ -285,7 +284,7 @@ mi_gdb_test "-var-set-format weird.func_ptr_struct hexadecimal" \
 	"set format variable weird.func_ptr_struct"
 
 mi_gdb_test "-var-set-format weird.func_ptr_ptr natural" \
-	"\\^done,format=\"natural\",value=\"0\"" \
+	"\\^done,format=\"natural\",value=\"0x0\"" \
 	"set format variable weird.func_ptr_ptr"
 
 mi_gdb_test "-var-set-format weird.u1 natural" \

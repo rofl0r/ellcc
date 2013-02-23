@@ -309,7 +309,8 @@ fprint_frame (struct ui_file *file, struct frame_info *fi)
 static struct frame_info *
 skip_inlined_frames (struct frame_info *frame)
 {
-  while (get_frame_type (frame) == INLINE_FRAME)
+  while (get_frame_type (frame) == INLINE_FRAME
+	 || get_frame_type (frame) == TAILCALL_FRAME)
     frame = get_prev_frame (frame);
 
   return frame;
@@ -814,6 +815,11 @@ frame_pop (struct frame_info *this_frame)
   if (!prev_frame)
     error (_("Cannot pop the initial frame."));
 
+  /* Ignore TAILCALL_FRAME type frames, they were executed already before
+     entering THISFRAME.  */
+  while (get_frame_type (prev_frame) == TAILCALL_FRAME)
+    prev_frame = get_prev_frame (prev_frame);
+
   /* Make a copy of all the register values unwound from this frame.
      Save them in a scratch buffer so that there isn't a race between
      trying to extract the old values from the current regcache while
@@ -1029,6 +1035,26 @@ ULONGEST
 get_frame_register_unsigned (struct frame_info *frame, int regnum)
 {
   return frame_unwind_register_unsigned (frame->next, regnum);
+}
+
+int
+read_frame_register_unsigned (struct frame_info *frame, int regnum,
+			      ULONGEST *val)
+{
+  struct value *regval = get_frame_register_value (frame, regnum);
+
+  if (!value_optimized_out (regval)
+      && value_entirely_available (regval))
+    {
+      struct gdbarch *gdbarch = get_frame_arch (frame);
+      enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
+      int size = register_size (gdbarch, VALUE_REGNUM (regval));
+
+      *val = extract_unsigned_integer (value_contents (regval), size, byte_order);
+      return 1;
+    }
+
+  return 0;
 }
 
 void
@@ -2095,6 +2121,8 @@ find_frame_sal (struct frame_info *frame, struct symtab_and_line *sal)
 	   the call site is.  Do not pretend to.  This is jarring, but
 	   we can't do much better.  */
 	sal->pc = get_frame_pc (frame);
+
+      sal->pspace = get_frame_program_space (frame);
 
       return;
     }

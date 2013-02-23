@@ -24,17 +24,13 @@ global timeout
 #
 #log_user 1
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 if { [skip_hp_tests] } then { continue }
 
 set testfile optimize
 set srcfile ${testfile}.c
 set binfile ${objdir}/${subdir}/${testfile}
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

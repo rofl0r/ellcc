@@ -17,10 +17,6 @@
 # Test support for stepping over longjmp.
 #
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 
 set testfile "longjmp"
 set srcfile ${testfile}.c
@@ -31,7 +27,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
      return -1
 }
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 

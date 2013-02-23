@@ -108,7 +108,7 @@ static struct cmd_list_element *showpowerpccmdlist = NULL;
 static enum auto_boolean powerpc_soft_float_global = AUTO_BOOLEAN_AUTO;
 
 /* The vector ABI to use.  Keep this in sync with powerpc_vector_abi.  */
-static const char *powerpc_vector_strings[] =
+static const char *const powerpc_vector_strings[] =
 {
   "auto",
   "generic",
@@ -1822,6 +1822,15 @@ skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc, CORE_ADDR lim_pc,
 
 	  /* Set up frame pointer */
 	}
+      else if (op == 0x603d0000)       /* oril r29, r1, 0x0 */
+	{
+	  fdata->frameless = 0;
+	  framep = 1;
+	  fdata->alloca_reg = (tdep->ppc_gp0_regnum + 29);
+	  continue;
+
+	  /* Another way to set up the frame pointer.  */
+	}
       else if (op == 0x603f0000	/* oril r31, r1, 0x0 */
 	       || op == 0x7c3f0b78)
 	{			/* mr r31, r1 */
@@ -2189,7 +2198,7 @@ rs6000_frame_align (struct gdbarch *gdbarch, CORE_ADDR addr)
 
 static int
 rs6000_in_solib_return_trampoline (struct gdbarch *gdbarch,
-				   CORE_ADDR pc, char *name)
+				   CORE_ADDR pc, const char *name)
 {
   return name && !strncmp (name, "@FIX", 4);
 }
@@ -3543,7 +3552,6 @@ rs6000_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   enum bfd_architecture arch;
   unsigned long mach;
   bfd abfd;
-  asection *sect;
   enum auto_boolean soft_float_flag = powerpc_soft_float_global;
   int soft_float;
   enum powerpc_vector_abi vector_abi = powerpc_vector_abi_global;

@@ -15,12 +15,10 @@
 
 load_lib "trace-support.exp"
 
-set testfile "tspeed"
-set srcfile ${testfile}.c
+standard_testfile
 set executable $testfile
-set binfile $objdir/$subdir/$executable
 
-set ipalib $objdir/../gdbserver/libinproctrace.so
+set ipalib [get_in_proc_agent]
 
 if { [gdb_compile "$srcdir/$subdir/$srcfile" $binfile \
 	  executable [concat {debug nowarnings c} libs=$ipalib]] != "" } {
@@ -129,10 +127,8 @@ proc gdb_trace_collection_test {} {
 clean_restart $executable
 runto_main
 
-# We generously give ourselves one "pass" if we successfully
-# detect that this test cannot be run on this target!
 if { ![gdb_target_supports_trace] } then {
-    pass "Current target does not support trace"
+    unsupported "Current target does not support trace"
     return 1;
 }
 

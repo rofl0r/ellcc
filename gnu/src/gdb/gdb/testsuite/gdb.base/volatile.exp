@@ -30,10 +30,6 @@
 #           ... etc.  (you get the idea)
 # Mostly with char and unsigned char.                    
 
-if $tracelevel then {
-        strace $tracelevel
-        }
-
 #
 # test running programs
 #
@@ -46,7 +42,7 @@ if { [prepare_for_testing volatile.exp volatile constvars.c] } {
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info not-used] {
+if [get_compiler_info] {
     return -1;
 }
 

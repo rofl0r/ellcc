@@ -353,8 +353,9 @@ dump_symtab_1 (struct objfile *objfile, struct symtab *symtab,
 	    }
 	  fprintf_filtered (outfile, "\n");
 	  /* Now print each symbol in this block (in no particular order, if
-	     we're using a hashtable).  */
-	  ALL_BLOCK_SYMBOLS (b, iter, sym)
+	     we're using a hashtable).  Note that we only want this
+	     block, not any blocks from included symtabs.  */
+	  ALL_DICT_SYMBOLS (BLOCK_DICT (b), iter, sym)
 	    {
 	      struct print_symbol_args s;
 
@@ -509,9 +510,9 @@ print_symbol (void *args)
       switch (SYMBOL_CLASS (symbol))
 	{
 	case LOC_CONST:
-	  fprintf_filtered (outfile, "const %ld (0x%lx)",
-			    SYMBOL_VALUE (symbol),
-			    SYMBOL_VALUE (symbol));
+	  fprintf_filtered (outfile, "const %s (%s)",
+			    plongest (SYMBOL_VALUE (symbol)),
+			    hex_string (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_CONST_BYTES:
@@ -539,28 +540,31 @@ print_symbol (void *args)
 
 	case LOC_REGISTER:
 	  if (SYMBOL_IS_ARGUMENT (symbol))
-	    fprintf_filtered (outfile, "parameter register %ld",
-			      SYMBOL_VALUE (symbol));
+	    fprintf_filtered (outfile, "parameter register %s",
+			      plongest (SYMBOL_VALUE (symbol)));
 	  else
-	    fprintf_filtered (outfile, "register %ld", SYMBOL_VALUE (symbol));
+	    fprintf_filtered (outfile, "register %s",
+			      plongest (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_ARG:
-	  fprintf_filtered (outfile, "arg at offset 0x%lx",
-			    SYMBOL_VALUE (symbol));
+	  fprintf_filtered (outfile, "arg at offset %s",
+			    hex_string (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_REF_ARG:
-	  fprintf_filtered (outfile, "reference arg at 0x%lx", SYMBOL_VALUE (symbol));
+	  fprintf_filtered (outfile, "reference arg at %s",
+			    hex_string (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_REGPARM_ADDR:
-	  fprintf_filtered (outfile, "address parameter register %ld", SYMBOL_VALUE (symbol));
+	  fprintf_filtered (outfile, "address parameter register %s",
+			    plongest (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_LOCAL:
-	  fprintf_filtered (outfile, "local at offset 0x%lx",
-			    SYMBOL_VALUE (symbol));
+	  fprintf_filtered (outfile, "local at offset %s",
+			    hex_string (SYMBOL_VALUE (symbol)));
 	  break;
 
 	case LOC_TYPEDEF:

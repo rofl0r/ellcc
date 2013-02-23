@@ -16,18 +16,12 @@
 # This file was based on jmisc.exp which in turn was written by
 # Anthony Green. (green@redhat.com)
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 load_lib "java.exp"
 
 if { [skip_java_tests] } { continue }
 
-set testfile "jmain"
-set srcfile ${srcdir}/$subdir/${testfile}.java
-set binfile ${objdir}/${subdir}/${testfile}
-if {[compile_java_from_source ${srcfile} ${binfile} "-g"] != ""} {
+standard_testfile .java
+if {[compile_java_from_source $srcdir/$subdir/$srcfile $binfile "-g"] != ""} {
     continue
 }
 

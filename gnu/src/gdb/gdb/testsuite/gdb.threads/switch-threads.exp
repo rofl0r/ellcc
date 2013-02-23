@@ -23,22 +23,13 @@
 # TODO: we should also test explicitly changing threads with the "thread"
 # command.
 
-if $tracelevel then {
-	strace $tracelevel
-}
+standard_testfile
 
-set testfile "switch-threads"
-set srcfile ${testfile}.c
-set binfile ${objdir}/${subdir}/${testfile}
-
-if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable [list debug "incdir=${objdir}"]] != "" } {
+if {[gdb_compile_pthreads "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable debug] != "" } {
     return -1
 }
 
-gdb_exit
-gdb_start
-gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
+clean_restart ${binfile}
 
 runto_main
 

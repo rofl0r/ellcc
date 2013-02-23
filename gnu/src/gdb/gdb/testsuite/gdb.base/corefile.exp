@@ -15,10 +15,6 @@
 
 # This file was written by Fred Fish. (fnf@cygnus.com)
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 
 # are we on a target board
 if ![isnative] then {
@@ -35,7 +31,7 @@ if  { [gdb_compile "${srcdir}/${subdir}/${srcfile}" "${binfile}" executable {deb
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

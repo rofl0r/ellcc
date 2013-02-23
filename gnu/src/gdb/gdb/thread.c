@@ -54,7 +54,7 @@ void _initialize_thread (void);
 
 /* Prototypes for local functions.  */
 
-static struct thread_info *thread_list = NULL;
+struct thread_info *thread_list = NULL;
 static int highest_thread_num;
 
 static void thread_command (char *tidstr, int from_tty);
@@ -113,12 +113,12 @@ clear_thread_inferior_resources (struct thread_info *tp)
       tp->control.exception_resume_breakpoint = NULL;
     }
 
+  delete_longjmp_breakpoint_at_next_stop (tp->num);
+
   bpstat_clear (&tp->control.stop_bpstat);
 
   do_all_intermediate_continuations_thread (tp, 1);
   do_all_continuations_thread (tp, 1);
-
-  delete_longjmp_breakpoint (tp->num);
 }
 
 static void
@@ -1072,6 +1072,7 @@ struct current_thread_cleanup
   int selected_frame_level;
   int was_stopped;
   int inf_id;
+  int was_removable;
 };
 
 static void
@@ -1112,10 +1113,14 @@ restore_current_thread_cleanup_dtor (void *arg)
 {
   struct current_thread_cleanup *old = arg;
   struct thread_info *tp;
+  struct inferior *inf;
 
   tp = find_thread_ptid (old->inferior_ptid);
   if (tp)
     tp->refcount--;
+  inf = find_inferior_id (old->inf_id);
+  if (inf != NULL)
+    inf->removable = old->was_removable;
   xfree (old);
 }
 
@@ -1129,6 +1134,7 @@ make_cleanup_restore_current_thread (void)
   old = xmalloc (sizeof (struct current_thread_cleanup));
   old->inferior_ptid = inferior_ptid;
   old->inf_id = current_inferior ()->num;
+  old->was_removable = current_inferior ()->removable;
 
   if (!ptid_equal (inferior_ptid, null_ptid))
     {
@@ -1155,6 +1161,8 @@ make_cleanup_restore_current_thread (void)
       if (tp)
 	tp->refcount++;
     }
+
+  current_inferior ()->removable = 0;
 
   return make_cleanup_dtor (do_restore_current_thread_cleanup, old,
 			    restore_current_thread_cleanup_dtor);
@@ -1431,7 +1439,8 @@ update_thread_list (void)
    no thread is selected, or no threads exist.  */
 
 static struct value *
-thread_id_make_value (struct gdbarch *gdbarch, struct internalvar *var)
+thread_id_make_value (struct gdbarch *gdbarch, struct internalvar *var,
+		      void *ignore)
 {
   struct thread_info *tp = find_thread_ptid (inferior_ptid);
 
@@ -1441,6 +1450,15 @@ thread_id_make_value (struct gdbarch *gdbarch, struct internalvar *var)
 
 /* Commands with a prefix of `thread'.  */
 struct cmd_list_element *thread_cmd_list = NULL;
+
+/* Implementation of `thread' variable.  */
+
+static const struct internalvar_funcs thread_funcs =
+{
+  thread_id_make_value,
+  NULL,
+  NULL
+};
 
 void
 _initialize_thread (void)
@@ -1487,5 +1505,5 @@ Show printing of thread events (such as thread start and exit)."), NULL,
          show_print_thread_events,
          &setprintlist, &showprintlist);
 
-  create_internalvar_type_lazy ("_thread", thread_id_make_value);
+  create_internalvar_type_lazy ("_thread", &thread_funcs, NULL);
 }

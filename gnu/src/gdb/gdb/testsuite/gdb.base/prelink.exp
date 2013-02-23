@@ -18,16 +18,12 @@
 
 # This file was written by Alexandre Oliva <aoliva@redhat.com>
 
-if $tracelevel then {
-	strace $tracelevel
-	}
-
 
 if { ![isnative] || [is_remote host] || [skip_shlib_tests]} {
     return
 }
 
-if [get_compiler_info "ignored"] {
+if [get_compiler_info] {
     return -1
 }
 

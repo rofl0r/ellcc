@@ -47,6 +47,7 @@
 #include "gdbthread.h"
 #include "python/python.h"
 #include "interps.h"
+#include "observer.h"
 
 /* readline include files.  */
 #include "readline/readline.h"
@@ -98,11 +99,13 @@ int use_windows = 0;
 
 extern char lang_frame_mismatch_warn[];		/* language.c */
 
-/* Flag for whether we want all the "from_tty" gubbish printed.  */
+/* Flag for whether we want to confirm potentially dangerous
+   operations.  Default is yes.  */
 
-int caution = 1;		/* Default is yes, sigh.  */
+int confirm = 1;
+
 static void
-show_caution (struct ui_file *file, int from_tty,
+show_confirm (struct ui_file *file, int from_tty,
 	      struct cmd_list_element *c, const char *value)
 {
   fprintf_filtered (file, _("Whether to confirm potentially "
@@ -289,9 +292,9 @@ void (*deprecated_context_hook) (int id);
 /* static */ void
 quit_cover (void)
 {
-  caution = 0;			/* Throw caution to the wind -- we're exiting.
-				   This prevents asking the user dumb 
-				   questions.  */
+  /* Stop asking user for confirmation --- we're exiting.  This
+     prevents asking the user dumb questions.  */
+  confirm = 0;
   quit_command ((char *) 0, 0);
 }
 #endif /* defined SIGHUP */
@@ -360,6 +363,47 @@ prepare_execute_command (void)
   return cleanup;
 }
 
+/* Tell the user if the language has changed (except first time) after
+   executing a command.  */
+
+void
+check_frame_language_change (void)
+{
+  static int warned = 0;
+
+  /* First make sure that a new frame has been selected, in case the
+     command or the hooks changed the program state.  */
+  deprecated_safe_get_selected_frame ();
+  if (current_language != expected_language)
+    {
+      if (language_mode == language_mode_auto && info_verbose)
+	{
+	  language_info (1);	/* Print what changed.  */
+	}
+      warned = 0;
+    }
+
+  /* Warn the user if the working language does not match the language
+     of the current frame.  Only warn the user if we are actually
+     running the program, i.e. there is a stack.  */
+  /* FIXME: This should be cacheing the frame and only running when
+     the frame changes.  */
+
+  if (has_stack_frames ())
+    {
+      enum language flang;
+
+      flang = get_frame_language ();
+      if (!warned
+	  && flang != language_unknown
+	  && flang != current_language->la_language)
+	{
+	  printf_filtered ("%s\n", lang_frame_mismatch_warn);
+	  warned = 1;
+	}
+    }
+}
+
 /* Execute the line P as a command, in the current user context.
    Pass FROM_TTY as second argument to the defining function.  */
 
@@ -368,8 +412,6 @@ execute_command (char *p, int from_tty)
 {
   struct cleanup *cleanup_if_error, *cleanup;
   struct cmd_list_element *c;
-  enum language flang;
-  static int warned = 0;
   char *line;
 
   cleanup_if_error = make_bpstat_clear_actions_cleanup ();
@@ -429,16 +471,17 @@ execute_command (char *p, int from_tty)
       if (c->flags & DEPRECATED_WARN_USER)
 	deprecated_cmd_warning (&line);
 
-      if (c->class == class_user)
+      /* c->user_commands would be NULL in the case of a python command.  */
+      if (c->class == class_user && c->user_commands)
 	execute_user_command (c, arg);
       else if (c->type == set_cmd || c->type == show_cmd)
-	do_setshow_command (arg, from_tty & caution, c);
+	do_setshow_command (arg, from_tty, c);
       else if (!cmd_func_p (c))
 	error (_("That is not a command, just a help topic."));
       else if (deprecated_call_command_hook)
-	deprecated_call_command_hook (c, arg, from_tty & caution);
+	deprecated_call_command_hook (c, arg, from_tty);
       else
-	cmd_func (c, arg, from_tty & caution);
+	cmd_func (c, arg, from_tty);
 
       /* If the interpreter is in sync mode (we're running a user
 	 command's list, running command hooks or similars), and we
@@ -456,36 +499,7 @@ execute_command (char *p, int from_tty)
 
     }
 
-  /* Tell the user if the language has changed (except first time).
-     First make sure that a new frame has been selected, in case this
-     command or the hooks changed the program state.  */
-  deprecated_safe_get_selected_frame ();
-  if (current_language != expected_language)
-    {
-      if (language_mode == language_mode_auto && info_verbose)
-	{
-	  language_info (1);	/* Print what changed.  */
-	}
-      warned = 0;
-    }
-
-  /* Warn the user if the working language does not match the
-     language of the current frame.  Only warn the user if we are
-     actually running the program, i.e. there is a stack.  */
-  /* FIXME:  This should be cacheing the frame and only running when
-     the frame changes.  */
-
-  if (has_stack_frames ())
-    {
-      flang = get_frame_language ();
-      if (!warned
-	  && flang != language_unknown
-	  && flang != current_language->la_language)
-	{
-	  printf_filtered ("%s\n", lang_frame_mismatch_warn);
-	  warned = 1;
-	}
-    }
+  check_frame_language_change ();
 
   do_cleanups (cleanup);
   discard_cleanups (cleanup_if_error);
@@ -1284,8 +1298,8 @@ quit_target (void *arg)
   if (write_history_p && history_filename)
     write_history (history_filename);
 
-  do_final_cleanups (ALL_CLEANUPS);    /* Do any final cleanups before
-					  exiting.  */
+  do_final_cleanups (all_cleanups ());    /* Do any final cleanups before
+					     exiting.  */
   return 0;
 }
 
@@ -1546,6 +1560,15 @@ show_exec_done_display_p (struct ui_file *file, int from_tty,
 			    "asynchronous execution commands is %s.\n"),
 		    value);
 }
+
+/* "set" command for the gdb_datadir configuration variable.  */
+
+static void
+set_gdb_datadir (char *args, int from_tty, struct cmd_list_element *c)
+{
+  observer_notify_gdb_datadir_changed ();
+}
+
 static void
 init_main (void)
 {
@@ -1623,11 +1646,11 @@ Show the filename in which to record the command history"), _("\
 			    show_history_filename,
 			    &sethistlist, &showhistlist);
 
-  add_setshow_boolean_cmd ("confirm", class_support, &caution, _("\
+  add_setshow_boolean_cmd ("confirm", class_support, &confirm, _("\
 Set whether to confirm potentially dangerous operations."), _("\
 Show whether to confirm potentially dangerous operations."), NULL,
 			   NULL,
-			   show_caution,
+			   show_confirm,
 			   &setlist, &showlist);
 
   add_setshow_zinteger_cmd ("annotate", class_obscure, &annotation_level, _("\
@@ -1653,7 +1676,7 @@ Use \"on\" to enable the notification, and \"off\" to disable it."),
                            _("Show GDB's data directory."),
                            _("\
 When set, GDB uses the specified path to search for data files."),
-                           NULL, NULL,
+                           set_gdb_datadir, NULL,
                            &setlist,
                            &showlist);
 }

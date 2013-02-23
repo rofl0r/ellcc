@@ -181,8 +181,6 @@ get_ack (void)
 static int
 send_data (void *buf, int len)
 {
-  int ret;
-
   if (!sdi_desc)
     return -1;
 
@@ -452,7 +450,7 @@ m32r_close (int quitting)
 
 static void
 m32r_resume (struct target_ops *ops,
-	     ptid_t ptid, int step, enum target_signal sig)
+	     ptid_t ptid, int step, enum gdb_signal sig)
 {
   unsigned long pc_addr, bp_addr, ab_addr;
   int ib_breakpoints;
@@ -707,14 +705,13 @@ m32r_wait (struct target_ops *ops,
   int ib_breakpoints;
   long i;
   unsigned char buf[13];
-  unsigned long val;
   int ret, c;
 
   if (remote_debug)
     fprintf_unfiltered (gdb_stdlog, "m32r_wait()\n");
 
   status->kind = TARGET_WAITKIND_EXITED;
-  status->value.sig = TARGET_SIGNAL_0;
+  status->value.sig = GDB_SIGNAL_0;
 
   interrupted = 0;
   prev_sigint = signal (SIGINT, gdb_cntrl_c);
@@ -733,7 +730,7 @@ m32r_wait (struct target_ops *ops,
       if (c == '-')		/* error */
 	{
 	  status->kind = TARGET_WAITKIND_STOPPED;
-	  status->value.sig = TARGET_SIGNAL_HUP;
+	  status->value.sig = GDB_SIGNAL_HUP;
 	  return inferior_ptid;
 	}
       else if (c == '+')	/* stopped */
@@ -749,9 +746,9 @@ m32r_wait (struct target_ops *ops,
 
   status->kind = TARGET_WAITKIND_STOPPED;
   if (interrupted)
-    status->value.sig = TARGET_SIGNAL_INT;
+    status->value.sig = GDB_SIGNAL_INT;
   else
-    status->value.sig = TARGET_SIGNAL_TRAP;
+    status->value.sig = GDB_SIGNAL_TRAP;
 
   interrupted = 0;
   signal (SIGINT, prev_sigint);
@@ -885,7 +882,7 @@ m32r_detach (struct target_ops *ops, char *args, int from_tty)
   if (remote_debug)
     fprintf_unfiltered (gdb_stdlog, "m32r_detach(%d)\n", from_tty);
 
-  m32r_resume (ops, inferior_ptid, 0, TARGET_SIGNAL_0);
+  m32r_resume (ops, inferior_ptid, 0, GDB_SIGNAL_0);
 
   /* Calls m32r_close to do the real work.  */
   pop_target ();
@@ -1225,7 +1222,6 @@ m32r_load (char *args, int from_tty)
   int nostart;
   struct timeval start_time, end_time;
   unsigned long data_count;	/* Number of bytes transferred to memory.  */
-  int ret;
   static RETSIGTYPE (*prev_sigint) ();
 
   /* for direct tcp connections, we can do a fast binary download.  */

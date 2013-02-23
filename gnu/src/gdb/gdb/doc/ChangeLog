@@ -1,13 +1,585 @@
+2012-08-27  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (objfile-gdb.py file): New paragraph for .exe stripping.
+
+2012-08-07  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdbint.texinfo (Debugging GDB): In section
+	'Debugging @value{GDBN} with itself' change .gdbinit for gdb-gdb.gdb.
+	Mention also gdb-gdb.py.
+
+2012-07-20  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Mode Options): Delete --use-deprecated-index-sections.
+	(Index Files): Document how to control the use of deprecated index
+	sections.
+	(Index Section Format): Replace --use-deprecated-index-sections with
+	"set use-deprecated-index-sections on".
+
+2012-07-12  Eli Zaretskii  <eliz@gnu.org>
+
+	* gdbint.texinfo: Remove @syncodeindex directives that put all the
+	indices into a single node "Index".  Instead, join function and
+	variable indices into a single index, separate from the concept
+	index.  Requested in
+	http://sourceware.org/ml/gdb-patches/2012-07/msg00146.html.
+	(Top): Update the top-level menu: instead of one "Index" there are
+	now separate entries "Concept Index" and "Function and Variable
+	Index".
+	(Concept Index, Function and Variable Index): New nodes.
+	(Index): Node deleted.
+
+2012-07-05  Hui Zhu  <hui_zhu@mentor.com>
+
+	* gdb.texinfo (Maintenance Commands): Change help for "maint agent"
+	and "maint agent-eval".
+
+2012-07-03  Eli Zaretskii  <eliz@gnu.org>
+
+	* gdb.texinfo: Separate the index into 2 indices, cp and fn, to
+	avoid file-name clashes between Index.html and index.html on
+	case-insensitive filesystems.  See the discussion starting in
+	http://sourceware.org/ml/gdb-patches/2012-06/msg00457.html for the
+	details of the problem.
+	(Top): Update the master menu for the above.
+	(Concept Index, Command and Variable Index): New nodes, instead of
+	the old "Index" node that was deleted.  All cross-references
+	updated.
+
+2012-07-02  Stan Shebs  <stan@codesourcery.com>
+
+	* gdb.texinfo (Dynamic Printf): Mention agent style and
+	disconnected dprintf.
+	(Maintenance Commands): Describe maint agent-printf.
+	(General Query Packets): Mention BreakpointCommands feature.
+	(Packets): Document commands extension to Z0 packet.
+	* agentexpr.texi (Bytecode Descriptions): Document printf
+	bytecode.
+
+2012-07-02  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (File Options): Change -ix and -iex commands that apply
+	only after gdbinit files.
+	(Startup): Move -iex and -iex commands down after gdbinit files.
+
+2012-07-02  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading safe path): Note the shell wildcard
+	possibility.
+
+2012-06-29  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Index Section Format): Update for version 7.
+
+2012-06-28  Stan Shebs  <stan@codesourcery.com>
+
+	* gdb.texinfo (Miscellaneous GDB/MI Commands): Update -info-os
+	example, add note about title column.
+
+2012-06-26  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Symbol Tables In Python): Add description about
+	the new 'last' attribute of gdb.Symtab_and line.
+
+2012-06-26  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Symbol Tables In Python): Correct the description
+	of the 'pc' attribute of gdb.Symtab_and_line.
+
+2012-06-26  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Debugging Output): Document debug options dwarf2-read
+	and symtab-create.
+
+2012-06-25  Keith Seitz  <keiths@redhat.com>
+
+	* gdb.texinfo (GDB/MI Breakpoint Commands): Remove "-r" option
+	from example.  Remove "rbreak" from list of corresponding
+	gdb commands.
+
+2012-06-23  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Index Section Format): Document version 7 format.
+
+2012-06-22  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo: Add missing cindex for some packets.
+
+2012-06-20  Keith Seitz  <keiths@redhat.com>
+
+	* gdb.texinfo (GDB/MI Breakpoint Commands): Re-order options
+	for -break-insert and document -p.
+
+2012-06-20  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo (Inferiors In Python): Replace "gdb.read_memory"
+	and "gdb.write_memory" with "Inferior.read_memory" and
+	"Inferior.write_memory".
+
+2012-06-15  Patrice Dumas  <pertusus@free.fr>  (tiny change)
+
+	* gdb.texinfo (Summary): Add a link to "Free Documentation".
+	(Free Documentation): Add @node line.
+	(Continuing and Stepping) <advance location>: Use @item instead of
+	@itemx.
+	(Reverse Execution) <set exec-direction reverse>: Use @item instead of
+	@itemx.
+	(Embedded Processors): Put the link to "PA" to its correct place,
+	according to document structure.
+	(Python API): Put the link to "Lazy Strings In Python" to its
+	correct place.
+	(Index): Use @@ in @tex block to get a literal @.
+
+	* gdbint.texinfo: Fix the @subtitle line.
+
+	* stabs.texinfo (Top): Put the link to "Symbol Types Index" to its
+	correct place.
+
+2012-06-08  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo (In-Process Agent): Add 'In-Process Agent
+	Protocol'.
+	(In-Process Agent Protocol, IPA Protocol Objects)
+	(IPA Protocol Commands): New nodes.
+	(Tracepoint Packets): Add anchors.
+
+2012-06-06  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* gdb.texinfo: Document the deprecation of SH's 'regs' command.
+
+2012-06-06  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo: Update copyright year.
+
+2012-05-23  Stan Shebs  <stan@codesourcery.com>
+	    Kwok Cheung Yeung  <kcy@codesourcery.com>
+
+	* gdb.texinfo (Miscellaneous GDB/MI Commands): Document -info-os.
+
+2012-05-20  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Separate Debug Files): New anchor debug-file-directory.
+	Mention also --with-separate-debug-dir.
+	(Auto-loading): Prepend $debugdir in the sample output.
+	(Auto-loading safe path): Likewise.  Mention also $debugdir for the
+	auto-load safe-path variable.
+	(objfile-gdb.py file): Remove the extra debug-file-directory paragraph.
+	Mention also $debugdir for 'set auto-load scripts-directory'.
+
+2012-05-19  Eli Zaretskii  <eliz@gnu.org>
+
+	* gdb.texinfo (Continuing and Stepping, Selection, Byte Order)
+	(MIPS Embedded, MIPS, MIPS Register packet Format)
+	(Target Descriptions, MIPS Features): Use @acronym{MIPS} where
+	appropriate.
+
+2012-05-18  Sandra Loosemore  <sandra@codesourcery.com>
+            Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* gdb.texinfo (MIPS): Document "set mips compression" and "show
+	mips compression".
+	(MIPS Breakpoint Kinds): New subsubsection.
+
+2012-05-18  Eli Zaretskii  <eliz@gnu.org>
+
+	* gdb.texinfo (Architecture-Specific Protocol Details): Define
+	nodes for subsections.  Add @acronym mark-ups and adjust
+	formatting.
+
+2012-05-18  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Rename $ddir to $datadir.
+	* gdb.texinfo (Auto-loading, Auto-loading safe path)
+	(objfile-gdb.py file): Rename $ddir to $datadir.
+
+2012-05-18  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Print Settings): Document 'set print symbol'.
+
+2012-05-14  Stan Shebs  <stan@codesourcery.com>
+
+	* gdb.texinfo (Dynamic Printf): New subsection.
+
+2012-05-13  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Basic Python): Add description about the function
+	gdb.find_pc_line
+
+2012-05-12  Jan Kratochvil  <jan.kratochvil@redhat.com>
+	    Eli Zaretskii  <eliz@gnu.org>
+
+	* gdb.texinfo (Separate Debug Files): Use plural form for global
+	debugging information directory.
+
+2012-05-11  Stan Shebs  <stan@codesourcery.com>
+	    Kwok Cheung Yeung  <kcy@codesourcery.com>
+
+	* gdb.texinfo (Operating System Auxiliary Information): Document new
+	'info os' subcommands.
+
+2012-05-11  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading, Init File in the Current Directory)
+	(libthread_db.so.1 file, objfile-gdb.gdb file, objfile-gdb.py file)
+	(dotdebug_gdb_scripts section): Add reference
+	to 'Auto-loading safe path'.
+
+2012-05-11  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Implement multi-component --with-auto-load-dir.
+	* gdb.texinfo (Auto-loading): New references
+	for 'set auto-load scripts-directory'
+	and 'show auto-load scripts-directory'.
+	(Auto-loading safe path): Describe the new default.  Move $ddir
+	substituation reference to 'objfile-gdb.py file'.
+	(objfile-gdb.py file): Describe script-name alias.  Change real-name to
+	script-name.  Describe new 'set auto-load scripts-directory'
+	and 'show auto-load scripts-directory'.
+
+2012-05-11  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Provide $ddir substitution for --with-auto-load-safe-path.
+	* gdb.texinfo (Auto-loading): Replace /usr/local by $ddir/auto-load.
+	(Auto-loading safe path): Likewise.  Mention the default value,
+	$ddir substitution, --with-auto-load-safe-path and
+	--without-auto-load-safe-path.
+	* observer.texi (gdb_datadir_changed): New.
+
+2012-05-09  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading): Wrap too long lines in @smallexample.
+	Twice.
+
+	* gdb.texinfo (Separate Debug Files, Auto-loading safe path): Replace
+	directory separator by path separator.
+
+2012-05-06  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading safe path): Make 'directories'
+	for 'set auto-load safe-path' optional.  Mention if it is omitted.
+	Change disabling security protection condition to "/", twice.
+
+2012-05-03  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Symbol Tables In Python): Add documentation about
+	the new methods global_block and static_block on gdb.Symtab
+	objects.
+
+2012-05-02  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Blocks In Python): Add a note saying that future
+	improvements to GDB and its infrastructure can move symbols
+	across blocks within a symbol table.
+
+2012-04-29  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo (Architectures): Remove menu entry `A29K'.
+	(A29K): Remove.
+
+2012-04-27  Sergio Durigan Junior  <sergiodj@redhat.com>
+	    Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Static Probe Points): New entry, explaining SystemTap
+	and generic static probe support on GDB.
+
+2012-04-25  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Go): Fix thinko.
+
+	* gdb.texinfo (Supported Languages): Add Go.
+	(Go): New node.
+
+2012-04-25  Yao Qi  <yao@codesourcery.com>
+
+	* gdbint.texinfo (Testsuite): New section `Board settings'.
+
+2012-04-23  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading safe path): Remove trailing [@dots{}].
+	Three times.
+
+	* gdb.texinfo (Auto-loading safe path): Add trailing @dots{}.
+	Three times.
+
+2012-04-22  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading safe path): Replace @itemize @bullet
+	by @table @asis.  Fix formatting of one item.
+
+2012-04-18  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading verbose mode): Fix smallexample typo.
+
+2012-04-17  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	New option "set debug auto-load".
+	* gdb.texinfo (Auto-loading): New menu item for auto-load verbose mode.
+	(auto-load verbose mode): New node.
+
+2012-04-17  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	New option "set auto-load safe-path".
+	* gdb.texinfo (Auto-loading): Extend the "show auto-load"
+	and "info auto-load" examples for safe-path.  Put there also references
+	for "set auto-load safe-path" and "show auto-load safe-path".
+	New menu item for Auto-loading safe path.
+	(Auto-loading safe path): New node.
+	(Python Auto-loading): Update the expected output from "Missing"
+	to "No".
+
+2012-04-17  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	auto-load: Implementation.
+	* gdb.texinfo (Mode Options): New anchor for -nx.
+	(Startup): New anchors for Option -init-eval-command,
+	Home Directory Init File
+	and Init File in the Current Directory during Startup.
+	Mention set auto-load local-gdbinit with a reference.
+	Change the sample code to "set auto-load python-scripts".
+	(Threads): New anchor set libthread-db-search-path.
+	Provide references to libthread_db.so.1 file.
+	(Controlling GDB): New menu item for Auto-loading.
+	(Auto-loading, Init File in the Current Directory)
+	(libthread_db.so.1 file, objfile-gdb.gdb file): New nodes.
+	(Python): Rename the menu item Auto-loading to Python Auto-loading.
+	(Writing a Pretty-Printer, Objfiles In Python): Update the renamed
+	reference.
+	(Auto-loading): Rename to ...
+	(Python Auto-loading): ... here.  Change "set auto-load-scripts" to
+	"set auto-load python-scripts", new anchor for it.  Change
+	"show auto-load-scripts" to "show auto-load python-scripts", new anchor
+	for it.  Change "info auto-load-scripts"
+	to "info auto-load python-scripts", new anchor for it.  Change "scripts"
+	to "Python scripts".
+
+2012-04-14  Anton Gorenkov <xgsa@yandex.ru>
+
+	PR mi/13393
+	* gdb.texinfo (Print Settings): Extend the description for "set print
+	object".
+	(GDB/MI Variable Objects): Extend the description for -var-create and
+	-var-list-children.
+
+2012-04-11  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Examining Data): Document the 'explore' command.
+
+2012-03-28  Joel Brobecker  <brobecker@adacore.com>
+
+	* gdb.texinfo (GDB/MI Variable Objects): Document what happens
+	to the children of a varobj and its update range when -var-update
+	returns that the varobj's type changed.
+
+2012-03-27  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading): Move @menu to the end of @node.
+	Create two new links fir 'objfile-gdb.py file'
+	and 'dotdebug_gdb_scripts section'.
+
+2012-03-27  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Auto-loading): Rename node reference
+	'.debug_gdb_scripts section' to 'dotdebug_gdb_scripts section'.
+	Twice.
+	(.debug_gdb_scripts section): Rename the node ...
+	(dotdebug_gdb_scripts section): ... here.
+	(Maintenance Commands): Also rename this node reference.
+
+2012-03-22  Siva Chandra Reddy  <sivachandra@google.com>
+
+	* gdb.texinfo (Python API/Values From Inferior): Add description
+	about the new method Value.referenced_value.  Add description on
+	how Value.dereference is different (and similar) to
+	Value.referenced_value.
+
+2012-03-19  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (File Options): Describe --init-command=FILE, -ix and
+	--init-eval-command=COMMAND, -iex.
+	(Startup): Describe -iex and -ix.  Simplify the example
+	for "set auto-load-scripts off".
+
+2012-03-16  Gary Benson  <gbenson@redhat.com>
+
+	PR breakpoints/10738
+	* gdb.texinfo (Inline Functions): Remove the now-unnecessary @item
+	stating that GDB cannot set breakpoints on inlined functions.
+	(Mode Options): Document --use-deprecated-index-sections.
+	(Index Section Format): Document new index section version format.
+
+2012-03-15  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Debugging C Plus Plus): Document "info vtbl".
+
+2012-03-13  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Help): Change apropos example to use "alias" instead
+	of "reload".
+	(Symbols): Delete docs for set/show symbol-reloading.
+	* gdbint.texinfo (Defining Other Architecture Features): Delete
+	SYMBOL_RELOADING_DEFAULT.
+	* refcard.tex: Delete reference to symbol-reloading.
+
+2012-03-07  Pedro Alves  <palves@redhat.com>
+
+	* gdb.texinfo (General Query Packets): Document new
+	QProgramSignals packet.
+	* gdb.texinfo (Remote configuration): Mention
+	"program-signals-packet".
+
+2012-03-05  Tristan Gingold  <gingold@adacore.com>
+
+	* gdb.texinfo (General Query Packets): Document xfer:uib:read.
+
+2012-03-03  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo (In-Process Agent): New node.
+	Document new commands.
+	(General Query Packets): Add packet `QAgent'.
+
+2012-03-01  Maciej W. Rozycki  <macro@codesourcery.com>
+
+	* gdb.texinfo (MIPS Features): Add org.gnu.gdb.mips.dsp.
+
+2012-03-01  Scott J. Goldman <scottjg@vmware.com>
+
+	* gdb.texinfo (Commands In Python): Put example python macro in
+	COMMAND_USER category rather than COMMAND_OBSCURE.
+	Document gdb.COMMAND_USER.
+	(User-defined Commands): Update documentation to clarify
+	"set/show max-user-call-depth" and "show user" don't apply to python
+	commands.  Update documentation to clarify "help user-defined" may
+	also include python commands defined as COMMAND_USER.
+
+2012-02-25  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdb.texinfo (Startup): Add option -ex description to the option -x
+	description.
+
+2012-02-24  Luis Machado  <lgustavo@codesourcery.com>
+
+	* gdb.texinfo (Setting Breakpoints): Mention and explain the
+	condition-evaluation breakpoint parameter.
+	Mention condition-evaluation mode being shown in "info break".
+	(Break Conditions): Add description for target-side
+	conditional breakpoints.
+	(Remote Configuration): Mention conditional-breakpoints-packet. 
+	(Packets): Add cond-expr parameter to Z0/Z1 packets and explain
+	cond-expr.
+	(General Query Packets): Mention new ConditionalBreakpoint feature.
+
+2012-02-22  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Blocks In Python): Clarify block iteration.
+
+2012-02-17  Tom Tromey  <tromey@redhat.com>
+
+	PR python/10753:
+	* gdb.texinfo (objfile-gdb.py file): Fix location of auto-load
+	directory.
+
+2012-02-14  Stan Shebs  <stan@codesourcery.com>
+
+	* gdb.texinfo (Disabling Breakpoints): Document enable count.
+
+2012-02-13  Pedro Alves  <palves@redhat.com>
+
+	* gdb.texinfo (MIPS boards): Refer to mips-elf instead of
+	mips-idt-ecoff.
+
+2012-02-09  Yao Qi  <yao@codesourcery.com>
+
+	* gdb.texinfo (Symbols In Python): Add missing `@end defvar'.
+
+2012-02-07  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Symbols In Python): Document Symbol.needs_frame and
+	Symbol.value.
+
+2012-02-07  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Symbols In Python): Document Symbol.line.
+
+2012-01-27  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* gdb.textinfo (Packets): Move vCont paragraph to the correct place.
+
+2012-01-24  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Set Catchpoints): Document "catch load" and "catch
+	unload".
+	(Files): Mention new catch commands.
+	(GDB/MI Async Records): Likewise.
+
+2012-01-24  Gary Benson  <gbenson@redhat.com>
+
+	Delete #if 0'd out code.
+	* gdb.texinfo (Frame Info): Remove "info catch".
+
+2012-01-20  Ulrich Weigand  <ulrich.weigand@linaro.org>
+
+	* gdb.texinfo (Remote Configuration): Document
+	"set remote hostio-readlink-packet" command.
+	(General Query Packets): Document vFile:readlink packet.
+
+2012-01-16  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (Specify Location): Document relative file name
+	handling.
+
+2012-01-16  Tom Tromey  <tromey@redhat.com>
+
+	* gdb.texinfo (gdb.printing): Document FlagEnumerationPrinter.
+
+2012-01-13  Jan Kratochvil  <jan.kratochvil@redhat.com>
+	    Eli Zaretskii  <eliz@gnu.org>
+
+	* gdbint.texinfo (Coding Standards): Require braces for two lines of
+	code.
+
+2012-01-11  Paul Hilfinger  <hilfingr@adacore.com>
+
+	* gdb.texinfo (Variables): Document use of :: for non-static
+	variables.
+
+2012-01-05  Joel Brobecker  <brobecker@adacore.com>
+
+	* gdbint.texinfo (Start of New Year Procedure): Update
+	to replace use of copyright.sh by use of copyright.py.
+
+2012-01-02  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	Remove the gdbtui binary.
+	* all-cfg.texi (GDBTUI): Remove.
+	* gdb.texinfo (Mode Options): Remove the GDBTUI reference.
+	(TUI): Remove GDBTUI pindex.  Remove the GDBTUI reference.
+	* gdbint.texinfo (Testsuite): Replace `gdbtui' by `gdb -tui'.
+
 2011-12-23  Kevin Pouget  <kevin.pouget@st.com>
 
-	Introduce gdb.FinishBreakpoint in Python
+	Introduce gdb.FinishBreakpoint in Python.
 	* gdb.texinfo (Finish Breakpoints in Python): New subsection.
 	(Python API): Add menu entry for Finish Breakpoints.
+
+2011-12-19  Jan Kratochvil  <jan.kratochvil@redhat.com>
+
+	* gdbint.texinfo (Testsuite): Describe KFAIL and XFAIL in Writing
+	tests.
+
+2011-12-16  Doug Evans  <dje@google.com>
+
+	* gdb.texinfo (Server): Document -/stdio argument to gdbserver.
 
 2011-12-16  Phil Muldoon  <pmuldoon@redhat.com>
 
 	* gdb.texinfo (Python Commands): Remove "maint set/show print
 	stack".  Add documentation for "set/show python print-stack".
+
+2011-12-14  Pedro Alves  <pedro@codesourcery.com>
+
+	* gdb.texinfo (Implementing a Remote Stub): Explain that you
+	should transfer control to the stub in the startup code instead of
+	in main.  Mention the need to get past the initial breakpoint.
 
 2011-12-06  Tom Tromey  <tromey@redhat.com>
 

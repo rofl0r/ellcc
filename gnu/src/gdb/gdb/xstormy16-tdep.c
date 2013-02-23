@@ -197,7 +197,7 @@ xstormy16_store_return_value (struct type *type, struct regcache *regcache,
 }
 
 static enum return_value_convention
-xstormy16_return_value (struct gdbarch *gdbarch, struct type *func_type,
+xstormy16_return_value (struct gdbarch *gdbarch, struct value *function,
 			struct type *type, struct regcache *regcache,
 			gdb_byte *readbuf, const gdb_byte *writebuf)
 {
@@ -413,7 +413,7 @@ static CORE_ADDR
 xstormy16_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   CORE_ADDR func_addr = 0, func_end = 0;
-  char *func_name;
+  const char *func_name;
 
   if (find_pc_partial_function (pc, &func_name, &func_addr, &func_end))
     {

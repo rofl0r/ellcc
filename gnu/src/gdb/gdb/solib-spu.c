@@ -19,6 +19,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "defs.h"
+#include "solib-spu.h"
 #include "gdbcore.h"
 #include "gdb_string.h"
 #include "gdb_assert.h"
@@ -87,7 +88,7 @@ spu_skip_standalone_loader (void)
 
       inferior_thread ()->control.in_infcall = 1; /* Suppress MI messages.  */
 
-      target_resume (inferior_ptid, 1, TARGET_SIGNAL_0);
+      target_resume (inferior_ptid, 1, GDB_SIGNAL_0);
       target_wait (minus_one_ptid, &ws, 0);
       set_executing (minus_one_ptid, 0);
 
@@ -540,6 +541,9 @@ spu_solib_loaded (struct so_list *so)
       ocl_enable_break (so->objfile);
     }
 }
+
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_spu_solib;
 
 void
 _initialize_spu_solib (void)

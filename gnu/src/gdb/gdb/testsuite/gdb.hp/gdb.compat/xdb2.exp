@@ -16,10 +16,6 @@
 
 # This file was written by Fred Fish. (fnf@cygnus.com)
 
-if $tracelevel then {
-        strace $tracelevel
-        }
-
 if { [skip_hp_tests] } then { continue }
 
 global message
@@ -46,7 +42,7 @@ if  { [gdb_compile "${binfile}0.o ${binfile}1.o" ${binfile} executable {debug}] 
     return -1
 }
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 

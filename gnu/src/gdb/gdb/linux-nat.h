@@ -21,6 +21,8 @@
 
 #include <signal.h>
 
+struct arch_lwp_info;
+
 /* Ways to "resume" a thread.  */
 
 enum resume_kind
@@ -74,10 +76,6 @@ struct lwp_info
   /* Non-zero if we were stepping this LWP.  */
   int step;
 
-  /* Non-zero si_signo if this LWP stopped with a trap.  si_addr may
-     be the address of a hardware watchpoint.  */
-  struct siginfo siginfo;
-
   /* STOPPED_BY_WATCHPOINT is non-zero if this LWP stopped with a data
      watchpoint trap.  */
   int stopped_by_watchpoint;
@@ -107,6 +105,9 @@ struct lwp_info
 
   /* The processor core this LWP was last seen on.  */
   int core;
+
+  /* Arch-specific additions.  */
+  struct arch_lwp_info *arch_private;
 
   /* Next LWP in list.  */
   struct lwp_info *next;
@@ -145,11 +146,19 @@ extern void linux_enable_event_reporting (ptid_t ptid);
 
 extern int lin_lwp_attach_lwp (ptid_t ptid);
 
+extern void linux_stop_lwp (struct lwp_info *lwp);
+
 /* Iterator function for lin-lwp's lwp list.  */
 struct lwp_info *iterate_over_lwps (ptid_t filter,
 				    int (*callback) (struct lwp_info *,
 						     void *), 
 				    void *data);
+
+typedef int (*linux_nat_iterate_watchpoint_lwps_ftype) (struct lwp_info *lwp,
+							void *arg);
+
+extern void linux_nat_iterate_watchpoint_lwps
+  (linux_nat_iterate_watchpoint_lwps_ftype callback, void *callback_data);
 
 /* Create a prototype generic GNU/Linux target.  The client can
    override it with local methods.  */
@@ -165,25 +174,29 @@ linux_trad_target (CORE_ADDR (*register_u_offset)(struct gdbarch *, int, int));
 void linux_nat_add_target (struct target_ops *);
 
 /* Register a method to call whenever a new thread is attached.  */
-void linux_nat_set_new_thread (struct target_ops *, void (*) (ptid_t));
+void linux_nat_set_new_thread (struct target_ops *, void (*) (struct lwp_info *));
 
 /* Register a method that converts a siginfo object between the layout
    that ptrace returns, and the layout in the architecture of the
    inferior.  */
 void linux_nat_set_siginfo_fixup (struct target_ops *,
-				  int (*) (struct siginfo *,
+				  int (*) (siginfo_t *,
 					   gdb_byte *,
 					   int));
+
+/* Register a method to call prior to resuming a thread.  */
+
+void linux_nat_set_prepare_to_resume (struct target_ops *,
+				      void (*) (struct lwp_info *));
 
 /* Update linux-nat internal state when changing from one fork
    to another.  */
 void linux_nat_switch_fork (ptid_t new_ptid);
 
-/* Return the saved siginfo associated with PTID.  */
-struct siginfo *linux_nat_get_siginfo (ptid_t ptid);
-
-/* Compute and return the processor core of a given thread.  */
-int linux_nat_core_of_thread_1 (ptid_t ptid);
+/* Store the saved siginfo associated with PTID in *SIGINFO.
+   Return 1 if it was retrieved successfully, 0 otherwise (*SIGINFO is
+   uninitialized in such case).  */
+int linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo);
 
 /* Set alternative SIGTRAP-like events recognizer.  */
 void linux_nat_set_status_is_event (struct target_ops *t,

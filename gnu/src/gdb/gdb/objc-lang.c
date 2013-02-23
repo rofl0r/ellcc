@@ -524,6 +524,7 @@ const struct language_defn objc_language_defn = {
   c_print_typedef,		/* Print a typedef using appropriate syntax */
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
+  default_read_var_value,	/* la_read_var_value */
   objc_skip_trampoline, 	/* Language specific skip_trampoline */
   "self",		        /* name_of_this */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -540,7 +541,7 @@ const struct language_defn objc_language_defn = {
   default_print_array_index,
   default_pass_by_reference,
   default_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };
@@ -636,14 +637,14 @@ end_msglist(void)
 }
 
 /*
- * Function: specialcmp (char *a, char *b)
+ * Function: specialcmp (const char *a, const char *b)
  *
  * Special strcmp: treats ']' and ' ' as end-of-string.
  * Used for qsorting lists of objc methods (either by class or selector).
  */
 
 static int
-specialcmp (char *a, char *b)
+specialcmp (const char *a, const char *b)
 {
   while (*a && *a != ' ' && *a != ']' && *b && *b != ' ' && *b != ']')
     {
@@ -668,7 +669,7 @@ specialcmp (char *a, char *b)
 static int
 compare_selectors (const void *a, const void *b)
 {
-  char *aname, *bname;
+  const char *aname, *bname;
 
   aname = SYMBOL_PRINT_NAME (*(struct symbol **) a);
   bname = SYMBOL_PRINT_NAME (*(struct symbol **) b);
@@ -697,7 +698,7 @@ selectors_info (char *regexp, int from_tty)
 {
   struct objfile	*objfile;
   struct minimal_symbol *msymbol;
-  char                  *name;
+  const char            *name;
   char                  *val;
   int                    matches = 0;
   int                    maxlen  = 0;
@@ -762,8 +763,8 @@ selectors_info (char *regexp, int from_tty)
 	    }
 	  if (regexp == NULL || re_exec(++name) != 0)
 	    { 
-	      char *mystart = name;
-	      char *myend   = (char *) strchr (mystart, ']');
+	      const char *mystart = name;
+	      const char *myend   = strchr (mystart, ']');
 	      
 	      if (myend && (myend - mystart > maxlen))
 		maxlen = myend - mystart;	/* Get longest selector.  */
@@ -834,7 +835,7 @@ selectors_info (char *regexp, int from_tty)
 static int
 compare_classes (const void *a, const void *b)
 {
-  char *aname, *bname;
+  const char *aname, *bname;
 
   aname = SYMBOL_PRINT_NAME (*(struct symbol **) a);
   bname = SYMBOL_PRINT_NAME (*(struct symbol **) b);
@@ -859,7 +860,7 @@ classes_info (char *regexp, int from_tty)
 {
   struct objfile	*objfile;
   struct minimal_symbol *msymbol;
-  char                  *name;
+  const char            *name;
   char                  *val;
   int                    matches = 0;
   int                    maxlen  = 0;
@@ -901,8 +902,8 @@ classes_info (char *regexp, int from_tty)
 	if (regexp == NULL || re_exec(name+2) != 0)
 	  { 
 	    /* Compute length of classname part.  */
-	    char *mystart = name + 2;
-	    char *myend   = (char *) strchr(mystart, ' ');
+	    const char *mystart = name + 2;
+	    const char *myend   = strchr (mystart, ' ');
 	    
 	    if (myend && (myend - mystart > maxlen))
 	      maxlen = myend - mystart;
@@ -1119,7 +1120,7 @@ find_methods (char type, const char *class, const char *category,
 {
   struct objfile *objfile = NULL;
 
-  char *symname = NULL;
+  const char *symname = NULL;
 
   char ntype = '\0';
   char *nclass = NULL;
@@ -1765,6 +1766,9 @@ resolve_msgsend_super_stret (CORE_ADDR pc, CORE_ADDR *new_pc)
     return 1;
   return 0;
 }
+
+/* Provide a prototype to silence -Wmissing-prototypes.  */
+extern initialize_file_ftype _initialize_objc_lang;
 
 void
 _initialize_objc_lang (void)

@@ -21,10 +21,6 @@
 # with integer type variables
 # 
 
-if $tracelevel then {
-	strace $tracelevel
-	}
-
 #
 # test running programs
 #
@@ -33,7 +29,7 @@ if { [prepare_for_testing relational.exp relational int-type.c {debug nowarnings
     return -1
 }
 
-if [get_compiler_info not-used] {
+if [get_compiler_info] {
     return -1;
 }
 

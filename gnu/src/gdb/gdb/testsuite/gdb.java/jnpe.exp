@@ -13,16 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-if $tracelevel then {
-  strace $tracelevel
-}
-
 load_lib "java.exp"
 
-set testfile "jnpe"
-set srcfile ${testfile}.java
-set binfile ${objdir}/${subdir}/${testfile}
-if  { [compile_java_from_source ${srcdir}/$subdir/${srcfile} ${binfile} "-g"] != "" } {
+standard_testfile .java
+if  { [compile_java_from_source $srcdir/$subdir/$srcfile $binfile "-g"] != "" } {
     untested "Couldn't compile ${srcdir}/$subdir/${srcfile}"
     return -1
 }

@@ -67,7 +67,7 @@ static void skip_file_command (char *arg, int from_tty);
 static void skip_info (char *arg, int from_tty);
 
 static void add_skiplist_entry (struct skiplist_entry *e);
-static void skip_function_pc (CORE_ADDR pc, char *name,
+static void skip_function_pc (CORE_ADDR pc, const char *name,
 			      struct gdbarch *arch,
 			      int pending);
 
@@ -133,7 +133,7 @@ static void
 skip_function_command (char *arg, int from_tty)
 {
   CORE_ADDR func_pc;
-  char *name = NULL;
+  const char *name = NULL;
 
   /* Default to the current function if no argument is given.  */
   if (arg == 0)
@@ -155,9 +155,6 @@ skip_function_command (char *arg, int from_tty)
       /* Decode arg.  We set funfirstline=1 so decode_line_1 will give us the
 	 first line of the function specified, if it can, and so that we'll
 	 reject variable names and the like.  */
-
-      int i;
-      int pending = 0;
       char *orig_arg = arg; /* decode_line_1 modifies the arg pointer.  */
       volatile struct gdb_exception decode_exception;
       struct symtabs_and_lines sals = { 0 };
@@ -397,7 +394,7 @@ skip_delete_command (char *arg, int from_tty)
    function name and add it to the list.  */
 
 static void
-skip_function_pc (CORE_ADDR pc, char *name, struct gdbarch *arch,
+skip_function_pc (CORE_ADDR pc, const char *name, struct gdbarch *arch,
 		  int pending)
 {
   struct skiplist_entry *e = XZALLOC (struct skiplist_entry);
@@ -524,7 +521,7 @@ skip_re_set (void)
 	      CORE_ADDR pc = sal.pc;
 	      CORE_ADDR func_start = 0;
 	      struct gdbarch *arch = get_sal_arch (sal);
-              char *func_name;
+              const char *func_name;
 
 	      if (find_pc_partial_function (pc, &func_name, &func_start, 0))
 		{
@@ -541,6 +538,9 @@ skip_re_set (void)
         }
     }
 }
+
+/* Provide a prototype to silence -Wmissing-prototypes.  */
+extern initialize_file_ftype _initialize_step_skip;
 
 void
 _initialize_step_skip (void)

@@ -16,10 +16,6 @@
 
 # This file was written by Fred Fish. (fnf@cygnus.com)
 
-if $tracelevel then {
-	strace $tracelevel
-}
-
 
 set testfile "list"
 set binfile ${objdir}/${subdir}/${testfile}
@@ -47,7 +43,7 @@ if  { [gdb_compile "${binfile}0.o ${binfile}1.o" ${binfile} executable {debug}] 
 
 # Create and source the file that provides information about the compiler
 # used to compile the test case.
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1;
 }
 
@@ -81,7 +77,7 @@ proc set_listsize { arg } {
 #
 
 proc test_listsize {} {
-    global gdb_prompt use_gdb_stub
+    global gdb_prompt
     global hp_cc_compiler
     global hp_aCC_compiler
 
@@ -90,16 +86,8 @@ proc test_listsize {} {
     gdb_test "show listsize" "Number of source lines gdb will list by default is 10.*" "show default list size"
     
     # Show the default lines
-    # Note that remote targets that have debugging info for _start available will
-    # list the lines there instead of main, so we skip this test for remote targets.
-    # The second case is for optimized code, it is still correct.
-    
-    if $use_gdb_stub {
-	runto_main;
-	unsupported "list default lines around main";
-    } else {
-	gdb_test "list" "(1\[ \t\]+#include \"list0.h\".*10\[ \t\]+x = 0;|2.*11\[ \t\]+foo .x\[+)\]+;)" "list default lines around main"
-    }
+
+    gdb_test "list" "(1\[ \t\]+#include \"list0.h\".*7\[ \t\]+x = 0;\r\n.*10\[ \t\]+foo .x\[+)\]+;)" "list default lines around main"
 
     # Ensure we can limit printouts to one line
 
@@ -179,7 +167,7 @@ proc test_list_filename_and_number {} {
 
     send_gdb "list list0.c:1\n"
     gdb_expect {
-	-re "1\[ \t\]+#include \"list0.h\".*10\[ \t]+x = 0;\r\n$gdb_prompt $" {
+	-re "1\[ \t\]+#include \"list0.h\".*10\[ \t\]+foo .x\[+)\]+;\r\n$gdb_prompt $" {
 	    incr testcnt 
 	}
 	-re ".*$gdb_prompt $" { fail "list list0.c:1" ; gdb_suppress_tests }
@@ -223,7 +211,7 @@ proc test_list_function {} {
     # gcc appears to generate incorrect debugging information for code
     # in include files, which breaks this test.
     # SunPRO cc is the second case below, it's also correct.
-    gdb_test "list main" "(5\[ \t\]+int x;.*14\[ \t\]+foo \[(\]+.*\[)\]+;|1\[ \t\]+#include .*10\[ \t\]+x = 0;)" "list function in source file 1"
+    gdb_test "list main" "(5\[ \t\]+int x;.*8\[ \t\]+foo \[(\]+.*\[)\]+;|1\[ \t\]+#include .*7\[ \t\]+x = 0;)" "list function in source file 1"
 
     # Ultrix gdb takes the second case below; it's also correct.
     # SunPRO cc is the third case.
@@ -335,14 +323,14 @@ proc test_list_backwards {} {
 
     send_gdb "list -\n"
     gdb_expect {
-	-re "8\[ \t\]+breakpoint\[(\]\[)\];.*17\[ \t\]+foo \[(\]+.*\[)\]+;\r\n$gdb_prompt $" { incr testcnt }
+	-re "8\[ \t\]+foo \[(\]+.*\[)\]+;.*17\[ \t\]+foo \[(\]+.*\[)\]+;\r\n$gdb_prompt $" { incr testcnt }
 	-re ".*$gdb_prompt $" { fail "list 8-17" ; gdb_suppress_tests }
 	timeout { fail "list 8-17 (timeout)" ; gdb_suppress_tests }
     }
 
     send_gdb "list -\n"
     gdb_expect {
-	-re "1\[ \t\]+#include .*7\[ \t\]+set_debug_traps\[(\]\[)\]+;\r\n$gdb_prompt $" { incr testcnt }
+	-re "1\[ \t\]+#include .*7\[ \t\]+x = 0;\r\n$gdb_prompt $" { incr testcnt }
 	-re ".*$gdb_prompt $" { fail "list 1-7" ; gdb_suppress_tests }
 	timeout { fail "list 1-7 (timeout)" ; gdb_suppress_tests }
     }
@@ -387,7 +375,7 @@ proc test_list_filename_and_function {} {
     # SunPRO cc is the second case below, it's also correct.
     send_gdb "list list0.c:main\n"
     gdb_expect {
-	-re "1\[ \t\]+#include .*10\[ \t\]+x = 0;\r\n$gdb_prompt $" {
+	-re "1\[ \t\]+#include .*10\[ \t\]+foo \[(\]+.*\[)\]+;\r\n$gdb_prompt $" {
 	    incr testcnt
 	}
 	-re "5\[ \t\]+int x;.*14\[ \t\]+foo \[(\]+.*\[)\]+;\r\n$gdb_prompt $" {
@@ -517,16 +505,18 @@ proc test_forward_search {} {
 	verbose "Timeout is now $timeout seconds" 2
 }
 
+proc test_only_end {} {
+    gdb_test_no_output "set listsize 2"
+    gdb_test "list 1" "list 1\r\n1\[ \t\]\[^\r\n\]*\r\n2\[ \t\]\[^\r\n\]*"
+    gdb_test "list ,5" "list ,5\r\n4\[ \t\]\[^\r\n\]*\r\n5\[ \t\]\[^\r\n\]*"
+}
+
 # Start with a fresh gdb.
 
 gdb_exit
 gdb_start
 gdb_reinitialize_dir $srcdir/$subdir
-gdb_load ${binfile}
-
-if [target_info exists gdb_stub] {
-    gdb_step_for_stub;
-}
+gdb_file_cmd ${binfile}
 
 gdb_test_no_output "set width 0"
 
@@ -542,6 +532,7 @@ if [ set_listsize 10 ] then {
     test_list_range
     test_list_filename_and_function
     test_forward_search
+    test_only_end
 }
 
 remote_exec build "rm -f list0.h"

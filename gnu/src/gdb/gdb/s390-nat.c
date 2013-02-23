@@ -26,6 +26,7 @@
 #include "target.h"
 #include "linux-nat.h"
 #include "auxv.h"
+#include "gregset.h"
 
 #include "s390-tdep.h"
 #include "elf/common.h"
@@ -472,7 +473,7 @@ s390_stopped_by_watchpoint (void)
 }
 
 static void
-s390_fix_watch_points (ptid_t ptid)
+s390_fix_watch_points (struct lwp_info *lp)
 {
   int tid;
 
@@ -482,9 +483,9 @@ s390_fix_watch_points (ptid_t ptid)
   CORE_ADDR watch_lo_addr = (CORE_ADDR)-1, watch_hi_addr = 0;
   struct watch_area *area;
 
-  tid = TIDGET (ptid);
+  tid = TIDGET (lp->ptid);
   if (tid == 0)
-    tid = PIDGET (ptid);
+    tid = PIDGET (lp->ptid);
 
   for (area = watch_base; area; area = area->next)
     {
@@ -532,7 +533,7 @@ s390_insert_watchpoint (CORE_ADDR addr, int len, int type,
   watch_base = area;
 
   ALL_LWPS (lp)
-    s390_fix_watch_points (lp->ptid);
+    s390_fix_watch_points (lp);
   return 0;
 }
 
@@ -560,7 +561,7 @@ s390_remove_watchpoint (CORE_ADDR addr, int len, int type,
   xfree (area);
 
   ALL_LWPS (lp)
-    s390_fix_watch_points (lp->ptid);
+    s390_fix_watch_points (lp);
   return 0;
 }
 

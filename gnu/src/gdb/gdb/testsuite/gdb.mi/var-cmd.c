@@ -91,6 +91,24 @@ struct _struct_n_pointer {
   struct _struct_n_pointer *next;
 };
 
+struct anonymous {
+  int a;
+  struct {
+    int b;
+    char *c;
+    union {
+      int d;
+      void *e;
+      char f;
+      struct {
+	char g;
+	const char **h;
+	simpleton ***simple;
+      };
+    };
+  };
+};
+
 void do_locals_tests (void);
 void do_block_tests (void);
 void subroutine1 (int, long *);
@@ -122,9 +140,9 @@ do_locals_tests ()
   float *lpfloat = 0;
   double ldouble = 0;
   double *lpdouble = 0;
-  struct _simple_struct lsimple;
-  struct _simple_struct *lpsimple;
-  void (*func) (void);
+  struct _simple_struct lsimple = { 0 };
+  struct _simple_struct *lpsimple = 0;
+  void (*func) (void) = 0;
 
   /* Simple assignments */
   linteger = 1234;
@@ -502,6 +520,38 @@ void do_bitfield_tests ()
   /*: END: bitfield :*/  
 }
 
+void
+do_anonymous_type_tests (void)
+{
+  struct anonymous *anon;
+  struct anonymous **ptr;
+  struct
+  {
+    int x;
+    struct
+    {
+      int a;
+    };
+    struct
+    {
+      int b;
+    };
+  } v = {1, {2}, {3}};
+
+  anon = malloc (sizeof (struct anonymous));
+  anon->a = 1;
+  anon->b = 2;
+  anon->c = (char *) 3;
+  anon->d = 4;
+  anon->g = '5';
+  anon->h = (const char **) 6;
+  anon->simple = (simpleton ***) 7;
+
+  ptr = &anon;
+  free (anon);
+  return; /* anonymous type tests breakpoint */
+}
+
 int
 main (int argc, char *argv [])
 {
@@ -512,6 +562,7 @@ main (int argc, char *argv [])
   do_frozen_tests ();
   do_at_tests ();
   do_bitfield_tests ();
+  do_anonymous_type_tests ();
   exit (0);
 }
 

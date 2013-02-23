@@ -23,10 +23,6 @@ if {[skip_shlib_tests]} {
     return 0
 }
 
-if $tracelevel then {
-    strace $tracelevel
-}
-
 #
 # This file uses shreloc.c, shreloc1.c and shreloc2.c
 #
@@ -43,7 +39,7 @@ set binfile $objdir/$subdir/$testfile
 set lib1_sl $objdir/$subdir/$libfile1.sl
 set lib2_sl $objdir/$subdir/$libfile2.sl
 
-if [get_compiler_info ${binfile}] {
+if [get_compiler_info] {
     return -1
 }
 

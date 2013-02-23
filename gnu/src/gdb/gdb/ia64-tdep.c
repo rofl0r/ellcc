@@ -42,8 +42,7 @@
 
 #ifdef HAVE_LIBUNWIND_IA64_H
 #include "elf/ia64.h"           /* for PT_IA_64_UNWIND value */
-#include "libunwind-frame.h"
-#include "libunwind-ia64.h"
+#include "ia64-libunwind-tdep.h"
 
 /* Note: KERNEL_START is supposed to be an address which is not going
          to ever contain any valid unwind info.  For ia64 linux, the choice
@@ -1042,7 +1041,6 @@ ia64_pseudo_register_read (struct gdbarch *gdbarch, struct regcache *regcache,
          It can be calculated as the bsp - sof (sizeof frame).  */
       ULONGEST bsp, vbsp;
       ULONGEST cfm;
-      CORE_ADDR reg;
       status = regcache_cooked_read_unsigned (regcache, IA64_BSP_REGNUM, &bsp);
       if (status != REG_VALID)
 	return status;
@@ -1061,7 +1059,6 @@ ia64_pseudo_register_read (struct gdbarch *gdbarch, struct regcache *regcache,
       ULONGEST pr;
       ULONGEST cfm;
       ULONGEST prN_val;
-      CORE_ADDR reg;
       status = regcache_cooked_read_unsigned (regcache, IA64_PR_REGNUM, &pr);
       if (status != REG_VALID)
 	return status;
@@ -1099,7 +1096,6 @@ ia64_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
     {
       ULONGEST bsp;
       ULONGEST cfm;
-      CORE_ADDR reg;
       regcache_cooked_read_unsigned (regcache, IA64_BSP_REGNUM, &bsp);
       regcache_cooked_read_unsigned (regcache, IA64_CFM_REGNUM, &cfm);
 
@@ -1855,8 +1851,7 @@ ia64_frame_cache (struct frame_info *this_frame, void **this_cache)
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   struct ia64_frame_cache *cache;
   char buf[8];
-  CORE_ADDR cfm, sof, sol, bsp, psr;
-  int i;
+  CORE_ADDR cfm, psr;
 
   if (*this_cache)
     return *this_cache;
@@ -2243,9 +2238,7 @@ ia64_sigtramp_frame_cache (struct frame_info *this_frame, void **this_cache)
   struct gdbarch *gdbarch = get_frame_arch (this_frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   struct ia64_frame_cache *cache;
-  CORE_ADDR addr;
   char buf[8];
-  int i;
 
   if (*this_cache)
     return *this_cache;
@@ -2418,8 +2411,8 @@ ia64_rse_skip_regs (uint64_t addr, long num_regs)
   return addr + ((num_regs + delta/0x3f) << 3);
 }
   
-/* Gdb libunwind-frame callback function to convert from an ia64 gdb register 
-   number to a libunwind register number.  */
+/* Gdb ia64-libunwind-tdep callback function to convert from an ia64 gdb
+   register number to a libunwind register number.  */
 static int
 ia64_gdb2uw_regnum (int regnum)
 {
@@ -2451,8 +2444,8 @@ ia64_gdb2uw_regnum (int regnum)
     return -1;
 }
   
-/* Gdb libunwind-frame callback function to convert from a libunwind register 
-   number to a ia64 gdb register number.  */
+/* Gdb ia64-libunwind-tdep callback function to convert from a libunwind
+   register number to a ia64 gdb register number.  */
 static int
 ia64_uw2gdb_regnum (int uw_regnum)
 {
@@ -2482,8 +2475,8 @@ ia64_uw2gdb_regnum (int uw_regnum)
     return -1;
 }
 
-/* Gdb libunwind-frame callback function to reveal if register is a float 
-   register or not.  */
+/* Gdb ia64-libunwind-tdep callback function to reveal if register is
+   a float register or not.  */
 static int
 ia64_is_fpreg (int uw_regnum)
 {
@@ -3149,7 +3142,7 @@ static const struct frame_unwind ia64_libunwind_sigtramp_frame_unwind =
 };
 
 /* Set of libunwind callback acccessor functions.  */
-static unw_accessors_t ia64_unw_accessors =
+unw_accessors_t ia64_unw_accessors =
 {
   ia64_find_proc_info_x,
   ia64_put_unwind_info,
@@ -3165,7 +3158,7 @@ static unw_accessors_t ia64_unw_accessors =
    the rse registers.  At the top of the stack, we want libunwind to figure out
    how to read r32 - r127.  Though usually they are found sequentially in
    memory starting from $bof, this is not always true.  */
-static unw_accessors_t ia64_unw_rse_accessors =
+unw_accessors_t ia64_unw_rse_accessors =
 {
   ia64_find_proc_info_x,
   ia64_put_unwind_info,
@@ -3177,9 +3170,9 @@ static unw_accessors_t ia64_unw_rse_accessors =
   /* get_proc_name */
 };
 
-/* Set of ia64 gdb libunwind-frame callbacks and data for generic
-   libunwind-frame code to use.  */
-static struct libunwind_descr ia64_libunwind_descr =
+/* Set of ia64-libunwind-tdep gdb callbacks and data for generic
+   ia64-libunwind-tdep code to use.  */
+struct libunwind_descr ia64_libunwind_descr =
 {
   ia64_gdb2uw_regnum, 
   ia64_uw2gdb_regnum, 
@@ -3341,7 +3334,7 @@ ia64_store_return_value (struct type *type, struct regcache *regcache,
 }
   
 static enum return_value_convention
-ia64_return_value (struct gdbarch *gdbarch, struct type *func_type,
+ia64_return_value (struct gdbarch *gdbarch, struct value *function,
 		   struct type *valtype, struct regcache *regcache,
 		   gdb_byte *readbuf, const gdb_byte *writebuf)
 {

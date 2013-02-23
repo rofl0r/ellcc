@@ -1,5 +1,5 @@
 /* Renesas RX specific support for 32-bit ELF.
-   Copyright (C) 2008, 2009, 2010, 2011
+   Copyright (C) 2008, 2009, 2010, 2011, 2012
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -521,9 +521,9 @@ rx_elf_relocate_section
 	  name = h->root.root.string;
 	}
 
-      if (sec != NULL && elf_discarded_section (sec))
+      if (sec != NULL && discarded_section (sec))
 	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
-					 rel, relend, howto, contents);
+					 rel, 1, relend, howto, 0, contents);
 
       if (info->relocatable)
 	{
@@ -1653,7 +1653,7 @@ rx_offset_for_reloc (bfd *                    abfd,
 	  if (ssec)
 	    {
 	      if ((ssec->flags & SEC_MERGE)
-		  && ssec->sec_info_type == ELF_INFO_TYPE_MERGE)
+		  && ssec->sec_info_type == SEC_INFO_TYPE_MERGE)
 		symval = _bfd_merged_section_offset (abfd, & ssec,
 						     elf_section_data (ssec)->sec_info,
 						     symval);
@@ -1926,14 +1926,14 @@ elf32_rx_relax_section (bfd *                  abfd,
       if (shndx_buf == NULL)
 	goto error_return;
       if (bfd_seek (abfd, shndx_hdr->sh_offset, SEEK_SET) != 0
-	  || bfd_bread ((PTR) shndx_buf, amt, abfd) != amt)
+	  || bfd_bread (shndx_buf, amt, abfd) != amt)
 	goto error_return;
       shndx_hdr->contents = (bfd_byte *) shndx_buf;
     }
 
   /* Get a copy of the native relocations.  */
   internal_relocs = (_bfd_elf_link_read_relocs
-		     (abfd, sec, (PTR) NULL, (Elf_Internal_Rela *) NULL,
+		     (abfd, sec, NULL, (Elf_Internal_Rela *) NULL,
 		      link_info->keep_memory));
   if (internal_relocs == NULL)
     goto error_return;
@@ -2115,7 +2115,7 @@ elf32_rx_relax_section (bfd *                  abfd,
 		   /* Decodable bits.  */
 		   && (insn[0] & 0xcc) == 0xcc
 		   /* Width.  */
-		   && (insn[0] & 0x30) != 3
+		   && (insn[0] & 0x30) != 0x30
 		   /* Register MSBs.  */
 		   && (insn[1] & 0x88)  == 0x00)
 	    {
@@ -2219,7 +2219,7 @@ elf32_rx_relax_section (bfd *                  abfd,
 		   /* Decodable bits.  */
 		   && (insn[0] & 0xc3) == 0xc3
 		   /* Width.  */
-		   && (insn[0] & 0x30) != 3
+		   && (insn[0] & 0x30) != 0x30
 		   /* Register MSBs.  */
 		   && (insn[1] & 0x88)  == 0x00)
 	    {
@@ -3060,7 +3060,8 @@ rx_elf_object_p (bfd * abfd)
 	{
 	  Elf_Internal_Shdr *sec = elf_tdata(abfd)->elf_sect_ptr[u];
 
-	  if (phdr[i].p_offset <= (bfd_vma) sec->sh_offset
+	  if (phdr[i].p_filesz
+	      && phdr[i].p_offset <= (bfd_vma) sec->sh_offset
 	      && (bfd_vma)sec->sh_offset <= phdr[i].p_offset + (phdr[i].p_filesz - 1))
 	    {
 	      /* Found one!  The difference between the two addresses,
@@ -3084,7 +3085,8 @@ rx_elf_object_p (bfd * abfd)
       bsec = abfd->sections;
       while (bsec)
 	{
-	  if (phdr[i].p_vaddr <= bsec->vma
+	  if (phdr[i].p_filesz
+	      && phdr[i].p_vaddr <= bsec->vma
 	      && bsec->vma <= phdr[i].p_vaddr + (phdr[i].p_filesz - 1))
 	    {
 	      bsec->lma = phdr[i].p_paddr + (bsec->vma - phdr[i].p_vaddr);

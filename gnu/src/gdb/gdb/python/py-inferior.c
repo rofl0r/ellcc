@@ -81,7 +81,7 @@ static void
 python_on_normal_stop (struct bpstats *bs, int print_frame)
 {
   struct cleanup *cleanup;
-  enum target_signal stop_signal;
+  enum gdb_signal stop_signal;
 
   if (!find_thread_ptid (inferior_ptid))
       return;
@@ -180,7 +180,6 @@ inferior_to_inferior_object (struct inferior *inferior)
 PyObject *
 find_inferior_object (int pid)
 {
-  struct inflist_entry *p;
   struct inferior *inf = find_inferior_pid (pid);
 
   if (inf)
@@ -257,7 +256,6 @@ delete_thread_object (struct thread_info *tp, int ignore)
 {
   struct cleanup *cleanup;
   inferior_object *inf_obj;
-  thread_object *thread_obj;
   struct threadlist_entry **entry, *tmp;
   
   cleanup = ensure_python_env (python_gdbarch, python_language);
@@ -394,7 +392,7 @@ gdbpy_inferiors (PyObject *unused, PyObject *unused2)
 
 /* Membuf and memory manipulation.  */
 
-/* Implementation of gdb.read_memory (address, length).
+/* Implementation of Inferior.read_memory (address, length).
    Returns a Python buffer object with LENGTH bytes of the inferior's
    memory at ADDRESS.  Both arguments are integers.  Returns NULL on error,
    with a python exception set.  */
@@ -405,16 +403,13 @@ infpy_read_memory (PyObject *self, PyObject *args, PyObject *kw)
   CORE_ADDR addr, length;
   void *buffer = NULL;
   membuf_object *membuf_obj;
-  PyObject *addr_obj, *length_obj;
-  struct cleanup *cleanups;
+  PyObject *addr_obj, *length_obj, *result;
   volatile struct gdb_exception except;
   static char *keywords[] = { "address", "length", NULL };
 
   if (! PyArg_ParseTupleAndKeywords (args, kw, "OO", keywords,
 				     &addr_obj, &length_obj))
     return NULL;
-
-  cleanups = make_cleanup (null_cleanup, NULL);
 
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
@@ -426,42 +421,41 @@ infpy_read_memory (PyObject *self, PyObject *args, PyObject *kw)
 	}
 
       buffer = xmalloc (length);
-      make_cleanup (xfree, buffer);
 
       read_memory (addr, buffer, length);
     }
   if (except.reason < 0)
     {
-      do_cleanups (cleanups);
+      xfree (buffer);
       GDB_PY_HANDLE_EXCEPTION (except);
     }
 
   if (error)
     {
-      do_cleanups (cleanups);
+      xfree (buffer);
       return NULL;
     }
 
   membuf_obj = PyObject_New (membuf_object, &membuf_object_type);
   if (membuf_obj == NULL)
     {
+      xfree (buffer);
       PyErr_SetString (PyExc_MemoryError,
 		       _("Could not allocate memory buffer object."));
-      do_cleanups (cleanups);
       return NULL;
     }
-
-  discard_cleanups (cleanups);
 
   membuf_obj->buffer = buffer;
   membuf_obj->addr = addr;
   membuf_obj->length = length;
 
-  return PyBuffer_FromReadWriteObject ((PyObject *) membuf_obj, 0,
-				       Py_END_OF_BUFFER);
+  result = PyBuffer_FromReadWriteObject ((PyObject *) membuf_obj, 0,
+					 Py_END_OF_BUFFER);
+  Py_DECREF (membuf_obj);
+  return result;
 }
 
-/* Implementation of gdb.write_memory (address, buffer [, length]).
+/* Implementation of Inferior.write_memory (address, buffer [, length]).
    Writes the contents of BUFFER (a Python object supporting the read
    buffer protocol) at ADDRESS in the inferior's memory.  Write LENGTH
    bytes from BUFFER, or its entire contents if the argument is not
@@ -499,7 +493,7 @@ infpy_write_memory (PyObject *self, PyObject *args, PyObject *kw)
 	  error = 1;
 	  break;
 	}
-      write_memory (addr, buffer, length);
+      write_memory_with_notification (addr, buffer, length);
     }
   GDB_PY_HANDLE_EXCEPTION (except);
 

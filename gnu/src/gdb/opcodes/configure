@@ -11565,6 +11565,9 @@ fi
 ac_config_headers="$ac_config_headers config.h:config.in"
 
 
+# PR 14072
+
+
 if test -z "$target" ; then
     as_fn_error "Unrecognized target system type; please check config.sub." "$LINENO" 5
 fi
@@ -12089,6 +12092,38 @@ fi
 
 done
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether string.h and strings.h may both be included" >&5
+$as_echo_n "checking whether string.h and strings.h may both be included... " >&6; }
+if test "${gcc_cv_header_string+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <string.h>
+#include <strings.h>
+int
+main ()
+{
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"; then :
+  gcc_cv_header_string=yes
+else
+  gcc_cv_header_string=no
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_header_string" >&5
+$as_echo "$gcc_cv_header_string" >&6; }
+if test $gcc_cv_header_string = yes; then
+
+$as_echo "#define STRING_WITH_STRINGS 1" >>confdefs.h
+
+fi
+
 
 ac_fn_c_check_decl "$LINENO" "basename" "ac_cv_have_decl_basename" "$ac_includes_default"
 if test "x$ac_cv_have_decl_basename" = x""yes; then :
@@ -12436,6 +12471,8 @@ if test x${all_targets} = xfalse ; then
 	bfd_m32r_arch)		ta="$ta m32r-asm.lo m32r-desc.lo m32r-dis.lo m32r-ibld.lo m32r-opc.lo m32r-opinst.lo" using_cgen=yes ;;
 	bfd_m68hc11_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
 	bfd_m68hc12_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
+	bfd_m9s12x_arch)  ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
+	bfd_m9s12xg_arch)	ta="$ta m68hc11-dis.lo m68hc11-opc.lo" ;;
 	bfd_m68k_arch)		ta="$ta m68k-dis.lo m68k-opc.lo" ;;
 	bfd_m88k_arch)		ta="$ta m88k-dis.lo" ;;
 	bfd_mcore_arch)		ta="$ta mcore-dis.lo" ;;
@@ -12492,7 +12529,8 @@ if test x${all_targets} = xfalse ; then
 	bfd_vax_arch)		ta="$ta vax-dis.lo" ;;
 	bfd_w65_arch)		ta="$ta w65-dis.lo" ;;
 	bfd_we32k_arch)		;;
-	bfd_xc16x_arch)		ta="$ta xc16x-asm.lo xc16x-desc.lo xc16x-dis.lo xc16x-ibld.lo xc16x-opc.lo" using_cgen=yes ;;
+	bfd_xc16x_arch)         ta="$ta xc16x-asm.lo xc16x-desc.lo xc16x-dis.lo xc16x-ibld.lo xc16x-opc.lo" using_cgen=yes ;;
+	bfd_xgate_arch) 	ta="$ta xgate-dis.lo xgate-opc.lo" ;;
 	bfd_xstormy16_arch)	ta="$ta xstormy16-asm.lo xstormy16-desc.lo xstormy16-dis.lo xstormy16-ibld.lo xstormy16-opc.lo" using_cgen=yes ;;
 	bfd_xtensa_arch)	ta="$ta xtensa-dis.lo" ;;
 	bfd_z80_arch)		ta="$ta z80-dis.lo" ;;

@@ -56,7 +56,7 @@ int i386_darwin_thread_state_reg_offset[] =
   10 * 4,   /* EIP */
    9 * 4,   /* EFLAGS */
   11 * 4,   /* CS */
-   8,       /* SS */
+   8 * 4,   /* SS */
   12 * 4,   /* DS */
   13 * 4,   /* ES */
   14 * 4,   /* FS */
@@ -286,6 +286,9 @@ i386_mach_o_osabi_sniffer (bfd *abfd)
 
   return GDB_OSABI_UNKNOWN;
 }
+
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_i386_darwin_tdep;
 
 void
 _initialize_i386_darwin_tdep (void)

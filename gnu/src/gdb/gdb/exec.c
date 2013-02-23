@@ -238,7 +238,6 @@ exec_file_attach (char *filename, int from_tty)
 
       if (!exec_bfd)
 	{
-	  close (scratch_chan);
 	  error (_("\"%s\": could not open as an executable file: %s"),
 		 scratch_pathname, bfd_errmsg (bfd_get_error ()));
 	}
@@ -667,7 +666,7 @@ section_table_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
   return 0;			/* We can't help.  */
 }
 
-struct target_section_table *
+static struct target_section_table *
 exec_get_section_table (struct target_ops *ops)
 {
   return current_target_sections;
@@ -761,7 +760,10 @@ print_section_info (struct target_section_table *t, bfd *abfd)
 static void
 exec_files_info (struct target_ops *t)
 {
-  print_section_info (current_target_sections, exec_bfd);
+  if (exec_bfd)
+    print_section_info (current_target_sections, exec_bfd);
+  else
+    puts_filtered (_("\t<no file loaded>\n"));
 
   if (vmap)
     {
@@ -813,9 +815,9 @@ set_section_command (char *args, int from_tty)
   table = current_target_sections;
   for (p = table->sections; p < table->sections_end; p++)
     {
-      if (!strncmp (secname, bfd_section_name (exec_bfd,
+      if (!strncmp (secname, bfd_section_name (p->bfd,
 					       p->the_bfd_section), seclen)
-	  && bfd_section_name (exec_bfd, p->the_bfd_section)[seclen] == '\0')
+	  && bfd_section_name (p->bfd, p->the_bfd_section)[seclen] == '\0')
 	{
 	  offset = secaddr - p->addr;
 	  p->addr += offset;

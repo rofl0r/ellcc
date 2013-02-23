@@ -21,6 +21,7 @@
    run.c and gdb (when the simulator is linked with gdb).
    All simulator interaction should go through this file.  */
 
+#include "config.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -269,6 +270,7 @@ sim_create_inferior (sd, abfd, argv, env)
       ARMul_SelectProcessor (state, ARM_v5_Prop | ARM_v5e_Prop | ARM_XScale_Prop | ARM_v6_Prop);
       break;
 
+    case bfd_mach_arm_iWMMXt2:
     case bfd_mach_arm_iWMMXt:
       {
 	extern int SWI_vector_installed;
@@ -904,7 +906,7 @@ sim_stop_reason (sd, reason, sigrc)
   if (stop_simulator)
     {
       *reason = sim_stopped;
-      *sigrc = TARGET_SIGNAL_INT;
+      *sigrc = GDB_SIGNAL_INT;
     }
   else if (state->EndCondition == 0)
     {
@@ -915,10 +917,10 @@ sim_stop_reason (sd, reason, sigrc)
     {
       *reason = sim_stopped;
       if (state->EndCondition == RDIError_BreakpointReached)
-	*sigrc = TARGET_SIGNAL_TRAP;
+	*sigrc = GDB_SIGNAL_TRAP;
       else if (   state->EndCondition == RDIError_DataAbort
 	       || state->EndCondition == RDIError_AddressException)
-	*sigrc = TARGET_SIGNAL_BUS;
+	*sigrc = GDB_SIGNAL_BUS;
       else
 	*sigrc = 0;
     }

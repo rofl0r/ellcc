@@ -1,5 +1,4 @@
 /* MI Command Set for GDB, the GNU debugger.
-
    Copyright (C) 2000-2001, 2003, 2007-2012 Free Software Foundation,
    Inc.
 
@@ -26,10 +25,10 @@
 #include "gdb_string.h"
 
 extern void _initialize_mi_cmds (void);
+
 struct mi_cmd;
 static struct mi_cmd **lookup_table (const char *command);
 static void build_table (struct mi_cmd *commands);
-
 
 struct mi_cmd mi_cmds[] =
 {
@@ -90,6 +89,7 @@ struct mi_cmd mi_cmds[] =
   { "gdb-version", { "show version", 0 }, 0 },
   { "inferior-tty-set", { NULL, 0 }, mi_cmd_inferior_tty_set},
   { "inferior-tty-show", { NULL, 0 }, mi_cmd_inferior_tty_show},
+  { "info-os", { NULL, 0 }, mi_cmd_info_os},
   { "interpreter-exec", { NULL, 0 }, mi_cmd_interpreter_exec},
   { "list-features", { NULL, 0 }, mi_cmd_list_features},
   { "list-target-features", { NULL, 0 }, mi_cmd_list_target_features},
@@ -140,24 +140,25 @@ struct mi_cmd mi_cmds[] =
   { NULL, }
 };
 
-/* Pointer to the mi command table (built at run time) */
+/* Pointer to the mi command table (built at run time). */
 
 static struct mi_cmd **mi_table;
 
-/* A prime large enough to accomodate the entire command table */
+/* A prime large enough to accomodate the entire command table.  */
 enum
   {
     MI_TABLE_SIZE = 227
   };
 
-/* Exported function used to obtain info from the table */
+/* Exported function used to obtain info from the table.  */
 struct mi_cmd *
 mi_lookup (const char *command)
 {
   return *lookup_table (command);
 }
 
-/* stat collecting */
+/* Used for collecting hash hit/miss statistics.  */
+
 struct mi_cmd_stats
 {
   int hit;
@@ -166,20 +167,21 @@ struct mi_cmd_stats
 };
 struct mi_cmd_stats stats;
 
-/* our lookup function */
+/* Look up a command.  */
+
 static struct mi_cmd **
 lookup_table (const char *command)
 {
   const char *chp;
   unsigned int index = 0;
 
-  /* compute our hash */
+  /* Compute our hash.  */
   for (chp = command; *chp; chp++)
     {
-      /* some what arbitrary */
+      /* We use a somewhat arbitrary formula.  */
       index = ((index << 6) + (unsigned int) *chp) % MI_TABLE_SIZE;
     }
-  /* look it up */
+
   while (1)
     {
       struct mi_cmd **entry = &mi_table[index];
@@ -218,6 +220,7 @@ build_table (struct mi_cmd *commands)
 			_("command `%s' appears to be duplicated"),
 			command->name);
       *entry = command;
+      /* FIXME lose these prints */
       if (0)
 	{
 	  fprintf_unfiltered (gdb_stdlog, "%-30s %2d\n",

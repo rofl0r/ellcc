@@ -87,7 +87,7 @@ classify_type (struct type *elttype, struct gdbarch *gdbarch,
      that would do the wrong thing.  */
   while (elttype)
     {
-      char *name = TYPE_NAME (elttype);
+      const char *name = TYPE_NAME (elttype);
 
       if (TYPE_CODE (elttype) == TYPE_CODE_CHAR || !name)
 	{
@@ -202,7 +202,6 @@ c_printstr (struct ui_file *stream, struct type *type,
   unsigned int things_printed = 0;
   int in_quotes = 0;
   int need_comma = 0;
-  int width = TYPE_LENGTH (type);
   struct obstack wchar_buf, output;
   struct cleanup *cleanup;
   struct wchar_iterator *iter;
@@ -847,6 +846,7 @@ const struct language_defn c_language_defn =
   c_print_typedef,		/* Print a typedef using appropriate syntax */
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
+  default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -863,7 +863,7 @@ const struct language_defn c_language_defn =
   default_print_array_index,
   default_pass_by_reference,
   c_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };
@@ -970,6 +970,7 @@ const struct language_defn cplus_language_defn =
   c_print_typedef,		/* Print a typedef using appropriate syntax */
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
+  default_read_var_value,	/* la_read_var_value */
   cplus_skip_trampoline,	/* Language specific skip_trampoline */
   "this",                       /* name_of_this */
   cp_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -986,7 +987,7 @@ const struct language_defn cplus_language_defn =
   default_print_array_index,
   cp_pass_by_reference,
   c_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };
@@ -1011,6 +1012,7 @@ const struct language_defn asm_language_defn =
   c_print_typedef,		/* Print a typedef using appropriate syntax */
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
+  default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -1027,7 +1029,7 @@ const struct language_defn asm_language_defn =
   default_print_array_index,
   default_pass_by_reference,
   c_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };
@@ -1057,6 +1059,7 @@ const struct language_defn minimal_language_defn =
   c_print_typedef,		/* Print a typedef using appropriate syntax */
   c_val_print,			/* Print a value using appropriate syntax */
   c_value_print,		/* Print a top-level value */
+  default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
@@ -1073,7 +1076,7 @@ const struct language_defn minimal_language_defn =
   default_print_array_index,
   default_pass_by_reference,
   c_get_string,
-  strcmp_iw_ordered,
+  NULL,				/* la_get_symbol_name_cmp */
   iterate_over_symbols,
   LANG_MAGIC
 };

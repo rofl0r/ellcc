@@ -1,3 +1,11 @@
+2012-06-15  Joel Brobecker  <brobecker@adacore.com>
+
+	* configure: Regenerate.
+
+2012-06-06  Michael Eager  <eager@eagercon.com>
+
+	* microblaze/interp.c (config.h): Add #include.
+
 2011-11-29  Joel Brobecker  <brobecker@adacore.com>
 
 	* MAINTAINERS (Global Maintainers): New section.  Add Mike

@@ -131,7 +131,7 @@ pascal_print_typedef (struct type *type, struct symbol *new_symbol,
 static void
 pascal_type_print_derivation_info (struct ui_file *stream, struct type *type)
 {
-  char *name;
+  const char *name;
   int i;
 
   for (i = 0; i < TYPE_N_BASECLASSES (type); i++)
@@ -183,8 +183,7 @@ pascal_type_print_method_args (const char *physname, const char *methodname,
 	  physname += len;
 
 	  for (j = 0; j < i; ++j)
-	    fputc_filtered (physname[i], stream);
-	  fputs_filtered (physname, stream);
+	    fputc_filtered (physname[j], stream);
 
 	  physname += i;
 	  if (physname[0] != 0)
@@ -630,7 +629,7 @@ pascal_type_print_base (struct type *type, struct ui_file *stream, int show,
 	    {
 	      struct fn_field *f = TYPE_FN_FIELDLIST1 (type, i);
 	      int j, len2 = TYPE_FN_FIELDLIST_LENGTH (type, i);
-	      char *method_name = TYPE_FN_FIELDLIST_NAME (type, i);
+	      const char *method_name = TYPE_FN_FIELDLIST_NAME (type, i);
 
 	      /* this is GNU C++ specific
 	         how can we know constructor/destructor?
@@ -751,11 +750,12 @@ pascal_type_print_base (struct type *type, struct ui_file *stream, int show,
 		fprintf_filtered (stream, ", ");
 	      wrap_here ("    ");
 	      fputs_filtered (TYPE_FIELD_NAME (type, i), stream);
-	      if (lastval != TYPE_FIELD_BITPOS (type, i))
+	      if (lastval != TYPE_FIELD_ENUMVAL (type, i))
 		{
 		  fprintf_filtered (stream,
-				    " := %d", TYPE_FIELD_BITPOS (type, i));
-		  lastval = TYPE_FIELD_BITPOS (type, i);
+				    " := %s",
+				    plongest (TYPE_FIELD_ENUMVAL (type, i)));
+		  lastval = TYPE_FIELD_ENUMVAL (type, i);
 		}
 	      lastval++;
 	    }
