@@ -22,13 +22,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef TCG_TARGET_IA64 
 #define TCG_TARGET_IA64 1
-
-#define TCG_TARGET_REG_BITS 64
 
 /* We only map the first 64 registers */
 #define TCG_TARGET_NB_REGS 64
-enum {
+typedef enum {
     TCG_REG_R0 = 0,
     TCG_REG_R1,
     TCG_REG_R2,
@@ -93,7 +92,7 @@ enum {
     TCG_REG_R61,
     TCG_REG_R62,
     TCG_REG_R63,
-};
+} TCGReg;
 
 #define TCG_CT_CONST_ZERO 0x100
 #define TCG_CT_CONST_S22 0x200
@@ -104,47 +103,53 @@ enum {
 #define TCG_TARGET_CALL_STACK_OFFSET 16
 
 /* optional instructions */
-#define TCG_TARGET_HAS_andc_i32
-#define TCG_TARGET_HAS_andc_i64
-#define TCG_TARGET_HAS_bswap16_i32
-#define TCG_TARGET_HAS_bswap16_i64
-#define TCG_TARGET_HAS_bswap32_i32
-#define TCG_TARGET_HAS_bswap32_i64
-#define TCG_TARGET_HAS_bswap64_i64
-#define TCG_TARGET_HAS_eqv_i32
-#define TCG_TARGET_HAS_eqv_i64
-#define TCG_TARGET_HAS_ext8s_i32
-#define TCG_TARGET_HAS_ext16s_i32
-#define TCG_TARGET_HAS_ext8s_i64
-#define TCG_TARGET_HAS_ext16s_i64
-#define TCG_TARGET_HAS_ext32s_i64
-#define TCG_TARGET_HAS_ext8u_i32
-#define TCG_TARGET_HAS_ext16u_i32
-#define TCG_TARGET_HAS_ext8u_i64
-#define TCG_TARGET_HAS_ext16u_i64
-#define TCG_TARGET_HAS_ext32u_i64
-#define TCG_TARGET_HAS_nand_i32
-#define TCG_TARGET_HAS_nand_i64
-#define TCG_TARGET_HAS_nor_i32
-#define TCG_TARGET_HAS_nor_i64
-#define TCG_TARGET_HAS_orc_i32
-#define TCG_TARGET_HAS_orc_i64
-#define TCG_TARGET_HAS_rot_i32
-#define TCG_TARGET_HAS_rot_i64
+#define TCG_TARGET_HAS_div_i32          0
+#define TCG_TARGET_HAS_div_i64          0
+#define TCG_TARGET_HAS_andc_i32         1
+#define TCG_TARGET_HAS_andc_i64         1
+#define TCG_TARGET_HAS_bswap16_i32      1
+#define TCG_TARGET_HAS_bswap16_i64      1
+#define TCG_TARGET_HAS_bswap32_i32      1
+#define TCG_TARGET_HAS_bswap32_i64      1
+#define TCG_TARGET_HAS_bswap64_i64      1
+#define TCG_TARGET_HAS_eqv_i32          1
+#define TCG_TARGET_HAS_eqv_i64          1
+#define TCG_TARGET_HAS_ext8s_i32        1
+#define TCG_TARGET_HAS_ext16s_i32       1
+#define TCG_TARGET_HAS_ext8s_i64        1
+#define TCG_TARGET_HAS_ext16s_i64       1
+#define TCG_TARGET_HAS_ext32s_i64       1
+#define TCG_TARGET_HAS_ext8u_i32        1
+#define TCG_TARGET_HAS_ext16u_i32       1
+#define TCG_TARGET_HAS_ext8u_i64        1
+#define TCG_TARGET_HAS_ext16u_i64       1
+#define TCG_TARGET_HAS_ext32u_i64       1
+#define TCG_TARGET_HAS_nand_i32         1
+#define TCG_TARGET_HAS_nand_i64         1
+#define TCG_TARGET_HAS_nor_i32          1
+#define TCG_TARGET_HAS_nor_i64          1
+#define TCG_TARGET_HAS_orc_i32          1
+#define TCG_TARGET_HAS_orc_i64          1
+#define TCG_TARGET_HAS_rot_i32          1
+#define TCG_TARGET_HAS_rot_i64          1
+#define TCG_TARGET_HAS_movcond_i32      1
+#define TCG_TARGET_HAS_movcond_i64      1
+#define TCG_TARGET_HAS_deposit_i32      1
+#define TCG_TARGET_HAS_deposit_i64      1
+
+#define TCG_TARGET_deposit_i32_valid(ofs, len) ((len) <= 16)
+#define TCG_TARGET_deposit_i64_valid(ofs, len) ((len) <= 16)
 
 /* optional instructions automatically implemented */
-#undef TCG_TARGET_HAS_neg_i32   /* sub r1, r0, r3 */
-#undef TCG_TARGET_HAS_neg_i64   /* sub r1, r0, r3 */
-#undef TCG_TARGET_HAS_not_i32   /* xor r1, -1, r3 */
-#undef TCG_TARGET_HAS_not_i64   /* xor r1, -1, r3 */
+#define TCG_TARGET_HAS_neg_i32          0 /* sub r1, r0, r3 */
+#define TCG_TARGET_HAS_neg_i64          0 /* sub r1, r0, r3 */
+#define TCG_TARGET_HAS_not_i32          0 /* xor r1, -1, r3 */
+#define TCG_TARGET_HAS_not_i64          0 /* xor r1, -1, r3 */
 
-/* Note: must be synced with dyngen-exec.h */
 #define TCG_AREG0 TCG_REG_R7
 
-/* Guest base is supported */
-#define TCG_TARGET_HAS_GUEST_BASE
-
-static inline void flush_icache_range(unsigned long start, unsigned long stop)
+static inline void flush_icache_range(tcg_target_ulong start,
+                                      tcg_target_ulong stop)
 {
     start = start & ~(32UL - 1UL);
     stop = (stop + (32UL - 1UL)) & ~(32UL - 1UL);
@@ -154,3 +159,5 @@ static inline void flush_icache_range(unsigned long start, unsigned long stop)
     }
     asm volatile (";;sync.i;;srlz.i;;");
 }
+
+#endif

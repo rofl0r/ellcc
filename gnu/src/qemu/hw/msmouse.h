@@ -1,2 +1,7 @@
+#ifndef HW_MSMOUSE_H
+#define HW_MSMOUSE_H 1
+
 /* msmouse.c */
-int qemu_chr_open_msmouse(QemuOpts *opts, CharDriverState **_chr);
+CharDriverState *qemu_chr_open_msmouse(QemuOpts *opts);
+
+#endif

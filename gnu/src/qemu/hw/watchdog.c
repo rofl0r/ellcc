@@ -20,12 +20,12 @@
  */
 
 #include "qemu-common.h"
-#include "qemu-option.h"
-#include "qemu-config.h"
-#include "qemu-queue.h"
-#include "qemu-objects.h"
-#include "monitor.h"
-#include "sysemu.h"
+#include "qemu/option.h"
+#include "qemu/config-file.h"
+#include "qemu/queue.h"
+#include "qapi/qmp/types.h"
+#include "monitor/monitor.h"
+#include "sysemu/sysemu.h"
 #include "hw/watchdog.h"
 
 /* Possible values for action parameter. */
@@ -55,7 +55,7 @@ int select_watchdog(const char *p)
     QemuOpts *opts;
 
     /* -watchdog ? lists available devices and exits cleanly. */
-    if (strcmp(p, "?") == 0) {
+    if (is_help_option(p)) {
         QLIST_FOREACH(model, &watchdog_list, entry) {
             fprintf(stderr, "\t%s\t%s\n",
                      model->wdt_name, model->wdt_description);
@@ -66,7 +66,7 @@ int select_watchdog(const char *p)
     QLIST_FOREACH(model, &watchdog_list, entry) {
         if (strcasecmp(model->wdt_name, p) == 0) {
             /* add the device */
-            opts = qemu_opts_create(qemu_find_opts("device"), NULL, 0);
+            opts = qemu_opts_create_nofail(qemu_find_opts("device"));
             qemu_opt_set(opts, "driver", p);
             return 0;
         }
@@ -132,7 +132,7 @@ void watchdog_perform_action(void)
 
     case WDT_PAUSE:             /* same as 'stop' command in monitor */
         watchdog_mon_event("pause");
-        vm_stop(VMSTOP_WATCHDOG);
+        vm_stop(RUN_STATE_WATCHDOG);
         break;
 
     case WDT_DEBUG:

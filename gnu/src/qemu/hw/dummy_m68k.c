@@ -10,20 +10,23 @@
 #include "boards.h"
 #include "loader.h"
 #include "elf.h"
+#include "exec/address-spaces.h"
 
 #define KERNEL_LOAD_ADDR 0x10000
 
 /* Board init.  */
 
-static void dummy_m68k_init(ram_addr_t ram_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void dummy_m68k_init(QEMUMachineInitArgs *args)
 {
-    CPUState *env;
+    ram_addr_t ram_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    CPUM68KState *env;
+    MemoryRegion *address_space_mem =  get_system_memory();
+    MemoryRegion *ram = g_new(MemoryRegion, 1);
     int kernel_size;
     uint64_t elf_entry;
-    target_phys_addr_t entry;
+    hwaddr entry;
 
     if (!cpu_model)
         cpu_model = "cfv4e";
@@ -37,8 +40,9 @@ static void dummy_m68k_init(ram_addr_t ram_size,
     env->vbr = 0;
 
     /* RAM at address zero */
-    cpu_register_physical_memory(0, ram_size,
-        qemu_ram_alloc(NULL, "dummy_m68k.ram", ram_size) | IO_MEM_RAM);
+    memory_region_init_ram(ram, "dummy_m68k.ram", ram_size);
+    vmstate_register_ram_global(ram);
+    memory_region_add_subregion(address_space_mem, 0, ram);
 
     /* Load kernel.  */
     if (kernel_filename) {
@@ -69,6 +73,7 @@ static QEMUMachine dummy_m68k_machine = {
     .name = "dummy",
     .desc = "Dummy board",
     .init = dummy_m68k_init,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void dummy_m68k_machine_init(void)

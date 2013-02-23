@@ -50,7 +50,7 @@ run_multiboot:
 	shr		$0x4, %ecx
 	mov		%cx, %gs
 
-	/* now push the indirect jump decriptor there */
+	/* now push the indirect jump descriptor there */
 	mov		(prot_jump), %ebx
 	add		%eax, %ebx
 	movl		%ebx, %gs:GS_PROT_JUMP
@@ -74,6 +74,13 @@ run_multiboot:
 	read_fw		FW_CFG_INITRD_ADDR
 	shr		$4, %eax
 	mov		%ax, %fs
+
+	/* Account for the EBDA in the multiboot structure's e801
+	 * map.
+	 */
+	int		$0x12
+	cwtl
+	movl		%eax, %fs:4
 
 	/* ES = mmap_addr */
 	mov 		%fs:48, %eax

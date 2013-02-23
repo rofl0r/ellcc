@@ -69,15 +69,6 @@ VARIABLE huge-tftp-load 1 huge-tftp-load !
    1- 2log 1+
 ;
 
-\ Standard compliant $find
-: $find ( str len -- xt true | str len false )
-    2dup $find
-    IF
-	drop nip nip TRUE
-    ELSE
-	FALSE
-    THEN
-;
 
 CREATE $catpad 100 allot
 : $cat ( str1 len1 str2 len2 -- str3 len3 )
@@ -101,10 +92,15 @@ CREATE $catpad 100 allot
 ;
 
 
+: 2CONSTANT    CREATE , , DOES> [ here ] 2@ ;
 
-: 2CONSTANT    CREATE , , DOES> 2@ ;
+\ Save XT of 2CONSTANT, put on the stack by "[ here ]" :
+CONSTANT <2constant>
+
 : $2CONSTANT  $CREATE , , DOES> 2@ ;
+
 : 2VARIABLE    CREATE 0 , 0 ,  DOES> ;
+
 
 : (is-user-word) ( name-str name-len xt -- ) -rot $CREATE , DOES> @ execute ;
 
@@ -115,6 +111,16 @@ CREATE $catpad 100 allot
 
 : str= ( str1 len1 str2 len2 -- equal? )
   rot over <> IF 3drop false ELSE comp 0= THEN ;
+
+: test-string ( param len -- true | false )
+   0 ?DO
+      dup i + c@                     \ Get character / byte at current index
+      dup 20 <  swap 7e >  OR IF     \ Is it out of range 32 to 126 (=ASCII)
+         drop FALSE UNLOOP EXIT      \ FALSE means: No ASCII string
+      THEN
+   LOOP
+   drop TRUE    \ Only ASCII found --> it is a string
+;
 
 : #aligned ( adr alignment -- adr' ) negate swap negate and negate ;
 : #join  ( lo hi #bits -- x )  lshift or ;
@@ -149,6 +155,10 @@ CREATE $catpad 100 allot
 ;
 \ Duplicate string and replace \ with /
 : \-to-/ ( str len -- str' len ) strdup 2dup [char] \ [char] / replace-char ;
+
+: isdigit ( char -- true | false )
+   30 39 between
+;
 
 : //  dup >r 1- + r> / ; \ division, round up
 
@@ -250,6 +260,11 @@ CREATE "pad 100 allot
       pocket dup (") over -          \ Interpretation, put string
    THEN                              \ in temp buffer
 ; immediate
+
+
+\ Output the carriage-return character
+: (cr carret emit ;
+
 
 \ Remove command old-name and all subsequent definitions
 

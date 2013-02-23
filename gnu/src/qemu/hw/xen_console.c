@@ -28,13 +28,12 @@
 #include <termios.h>
 #include <stdarg.h>
 #include <sys/mman.h>
-#include <xs.h>
-#include <xen/io/console.h>
-#include <xenctrl.h>
 
 #include "hw.h"
-#include "qemu-char.h"
+#include "char/char.h"
 #include "xen_backend.h"
+
+#include <xen/io/console.h>
 
 struct buffer {
     uint8_t *data;
@@ -70,7 +69,7 @@ static void buffer_append(struct XenConsole *con)
 
     if ((buffer->capacity - buffer->size) < size) {
 	buffer->capacity += (size + 1024);
-	buffer->data = qemu_realloc(buffer->data, buffer->capacity);
+	buffer->data = g_realloc(buffer->data, buffer->capacity);
     }
 
     while (cons != prod)
@@ -89,7 +88,7 @@ static void buffer_append(struct XenConsole *con)
 	uint8_t *maxpos = buffer->data + buffer->max_capacity;
 
 	memmove(maxpos - over, maxpos, over);
-	buffer->data = qemu_realloc(buffer->data, buffer->max_capacity);
+	buffer->data = g_realloc(buffer->data, buffer->max_capacity);
 	buffer->size = buffer->capacity = buffer->max_capacity;
 
 	if (buffer->consumed > buffer->max_capacity - over)
@@ -156,7 +155,7 @@ static void xencons_send(struct XenConsole *con)
 
     size = con->buffer.size - con->buffer.consumed;
     if (con->chr)
-        len = qemu_chr_write(con->chr, con->buffer.data + con->buffer.consumed,
+        len = qemu_chr_fe_write(con->chr, con->buffer.data + con->buffer.consumed,
                              size);
     else
         len = size;
@@ -185,7 +184,11 @@ static int con_init(struct XenDevice *xendev)
 
     /* setup */
     dom = xs_get_domain_path(xenstore, con->xendev.dom);
-    snprintf(con->console, sizeof(con->console), "%s/console", dom);
+    if (!xendev->dev) {
+        snprintf(con->console, sizeof(con->console), "%s/console", dom);
+    } else {
+        snprintf(con->console, sizeof(con->console), "%s/device/console/%d", dom, xendev->dev);
+    }
     free(dom);
 
     type = xenstore_read_str(con->console, "type");
@@ -202,17 +205,17 @@ static int con_init(struct XenDevice *xendev)
         con->chr = serial_hds[con->xendev.dev];
     } else {
         snprintf(label, sizeof(label), "xencons%d", con->xendev.dev);
-        con->chr = qemu_chr_open(label, output, NULL);
+        con->chr = qemu_chr_new(label, output, NULL);
     }
 
     xenstore_store_pv_console_info(con->xendev.dev, con->chr);
 
 out:
-    qemu_free(type);
+    g_free(type);
     return ret;
 }
 
-static int con_connect(struct XenDevice *xendev)
+static int con_initialise(struct XenDevice *xendev)
 {
     struct XenConsole *con = container_of(xendev, struct XenConsole, xendev);
     int limit;
@@ -224,10 +227,16 @@ static int con_connect(struct XenDevice *xendev)
     if (xenstore_read_int(con->console, "limit", &limit) == 0)
 	con->buffer.max_capacity = limit;
 
-    con->sring = xc_map_foreign_range(xen_xc, con->xendev.dom,
-				      XC_PAGE_SIZE,
-				      PROT_READ|PROT_WRITE,
-				      con->ring_ref);
+    if (!xendev->dev) {
+        con->sring = xc_map_foreign_range(xen_xc, con->xendev.dom,
+                                          XC_PAGE_SIZE,
+                                          PROT_READ|PROT_WRITE,
+                                          con->ring_ref);
+    } else {
+        con->sring = xc_gnttab_map_grant_ref(xendev->gnttabdev, con->xendev.dom,
+                                             con->ring_ref,
+                                             PROT_READ|PROT_WRITE);
+    }
     if (!con->sring)
 	return -1;
 
@@ -248,12 +257,19 @@ static void con_disconnect(struct XenDevice *xendev)
 {
     struct XenConsole *con = container_of(xendev, struct XenConsole, xendev);
 
+    if (!xendev->dev) {
+        return;
+    }
     if (con->chr)
         qemu_chr_add_handlers(con->chr, NULL, NULL, NULL, NULL);
     xen_be_unbind_evtchn(&con->xendev);
 
     if (con->sring) {
-	munmap(con->sring, XC_PAGE_SIZE);
+        if (!xendev->gnttabdev) {
+            munmap(con->sring, XC_PAGE_SIZE);
+        } else {
+            xc_gnttab_munmap(xendev->gnttabdev, con->sring, 1);
+        }
 	con->sring = NULL;
     }
 }
@@ -271,9 +287,9 @@ static void con_event(struct XenDevice *xendev)
 
 struct XenDevOps xen_console_ops = {
     .size       = sizeof(struct XenConsole),
-    .flags      = DEVOPS_FLAG_IGNORE_STATE,
+    .flags      = DEVOPS_FLAG_IGNORE_STATE|DEVOPS_FLAG_NEED_GNTDEV,
     .init       = con_init,
-    .connect    = con_connect,
+    .initialise = con_initialise,
     .event      = con_event,
     .disconnect = con_disconnect,
 };

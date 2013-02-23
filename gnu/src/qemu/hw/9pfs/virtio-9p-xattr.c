@@ -53,7 +53,8 @@ ssize_t pt_listxattr(FsContext *ctx, const char *path,
         return -1;
     }
 
-    strncpy(value, name, name_size);
+    /* no need for strncpy: name_size is strlen(name)+1 */
+    memcpy(value, name, name_size);
     return name_size;
 }
 
@@ -79,7 +80,7 @@ ssize_t v9fs_list_xattr(FsContext *ctx, const char *path,
     }
 
     /* Now fetch the xattr and find the actual size */
-    orig_value = qemu_malloc(xattr_len);
+    orig_value = g_malloc(xattr_len);
     xattr_len = llistxattr(rpath(ctx, path, buffer), orig_value, xattr_len);
 
     /* store the orig pointer */
@@ -111,7 +112,7 @@ next_entry:
     }
 
 err_out:
-    qemu_free(orig_value_start);
+    g_free(orig_value_start);
     return size;
 }
 

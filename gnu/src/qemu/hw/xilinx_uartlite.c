@@ -23,7 +23,7 @@
  */
 
 #include "sysbus.h"
-#include "qemu-char.h"
+#include "char/char.h"
 
 #define DUART(x)
 
@@ -49,6 +49,7 @@
 struct xlx_uartlite
 {
     SysBusDevice busdev;
+    MemoryRegion mmio;
     CharDriverState *chr;
     qemu_irq irq;
 
@@ -82,7 +83,8 @@ static void uart_update_status(struct xlx_uartlite *s)
     s->regs[R_STATUS] = r;
 }
 
-static uint32_t uart_readl (void *opaque, target_phys_addr_t addr)
+static uint64_t
+uart_read(void *opaque, hwaddr addr, unsigned int size)
 {
     struct xlx_uartlite *s = opaque;
     uint32_t r = 0;
@@ -95,6 +97,7 @@ static uint32_t uart_readl (void *opaque, target_phys_addr_t addr)
                 s->rx_fifo_len--;
             uart_update_status(s);
             uart_update_irq(s);
+            qemu_chr_accept_input(s->chr);
             break;
 
         default:
@@ -107,9 +110,11 @@ static uint32_t uart_readl (void *opaque, target_phys_addr_t addr)
 }
 
 static void
-uart_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
+uart_write(void *opaque, hwaddr addr,
+           uint64_t val64, unsigned int size)
 {
     struct xlx_uartlite *s = opaque;
+    uint32_t value = val64;
     unsigned char ch = value;
 
     addr >>= 2;
@@ -129,7 +134,7 @@ uart_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
 
         case R_TX:
             if (s->chr)
-                qemu_chr_write(s->chr, &ch, 1);
+                qemu_chr_fe_write(s->chr, &ch, 1);
 
             s->regs[addr] = value;
 
@@ -147,16 +152,14 @@ uart_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
     uart_update_irq(s);
 }
 
-static CPUReadMemoryFunc * const uart_read[] = {
-    &uart_readl,
-    &uart_readl,
-    &uart_readl,
-};
-
-static CPUWriteMemoryFunc * const uart_write[] = {
-    &uart_writel,
-    &uart_writel,
-    &uart_writel,
+static const MemoryRegionOps uart_ops = {
+    .read = uart_read,
+    .write = uart_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid = {
+        .min_access_size = 1,
+        .max_access_size = 4
+    }
 };
 
 static void uart_rx(void *opaque, const uint8_t *buf, int size)
@@ -180,12 +183,8 @@ static void uart_rx(void *opaque, const uint8_t *buf, int size)
 static int uart_can_rx(void *opaque)
 {
     struct xlx_uartlite *s = opaque;
-    int r;
 
-    r = s->rx_fifo_len < sizeof(s->rx_fifo);
-    if (!r)
-        printf("cannot receive!\n");
-    return r;
+    return s->rx_fifo_len < sizeof(s->rx_fifo);
 }
 
 static void uart_event(void *opaque, int event)
@@ -196,25 +195,37 @@ static void uart_event(void *opaque, int event)
 static int xilinx_uartlite_init(SysBusDevice *dev)
 {
     struct xlx_uartlite *s = FROM_SYSBUS(typeof (*s), dev);
-    int uart_regs;
 
     sysbus_init_irq(dev, &s->irq);
 
     uart_update_status(s);
-    uart_regs = cpu_register_io_memory(uart_read, uart_write, s,
-                                       DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, R_MAX * 4, uart_regs);
+    memory_region_init_io(&s->mmio, &uart_ops, s, "xlnx.xps-uartlite",
+                                                                R_MAX * 4);
+    sysbus_init_mmio(dev, &s->mmio);
 
-    s->chr = qdev_init_chardev(&dev->qdev);
+    s->chr = qemu_char_get_next_serial();
     if (s->chr)
         qemu_chr_add_handlers(s->chr, uart_can_rx, uart_rx, uart_event, s);
     return 0;
 }
 
-static void xilinx_uart_register(void)
+static void xilinx_uartlite_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_dev("xilinx,uartlite", sizeof (struct xlx_uartlite),
-                        xilinx_uartlite_init);
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+
+    sdc->init = xilinx_uartlite_init;
 }
 
-device_init(xilinx_uart_register)
+static const TypeInfo xilinx_uartlite_info = {
+    .name          = "xlnx.xps-uartlite",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof (struct xlx_uartlite),
+    .class_init    = xilinx_uartlite_class_init,
+};
+
+static void xilinx_uart_register_types(void)
+{
+    type_register_static(&xilinx_uartlite_info);
+}
+
+type_init(xilinx_uart_register_types)

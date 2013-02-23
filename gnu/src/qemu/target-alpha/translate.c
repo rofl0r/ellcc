@@ -17,15 +17,10 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-
 #include "cpu.h"
-#include "disas.h"
-#include "host-utils.h"
+#include "disas/disas.h"
+#include "qemu/host-utils.h"
 #include "tcg-op.h"
-#include "qemu-common.h"
 
 #include "helper.h"
 #define GEN_HELPER 1
@@ -93,9 +88,9 @@ static TCGv cpu_usp;
 /* register names */
 static char cpu_reg_names[10*4+21*5 + 10*5+21*6];
 
-#include "gen-icount.h"
+#include "exec/gen-icount.h"
 
-static void alpha_translate_init(void)
+void alpha_translate_init(void)
 {
     int i;
     char *p;
@@ -110,35 +105,35 @@ static void alpha_translate_init(void)
     for (i = 0; i < 31; i++) {
         sprintf(p, "ir%d", i);
         cpu_ir[i] = tcg_global_mem_new_i64(TCG_AREG0,
-                                           offsetof(CPUState, ir[i]), p);
+                                           offsetof(CPUAlphaState, ir[i]), p);
         p += (i < 10) ? 4 : 5;
 
         sprintf(p, "fir%d", i);
         cpu_fir[i] = tcg_global_mem_new_i64(TCG_AREG0,
-                                            offsetof(CPUState, fir[i]), p);
+                                            offsetof(CPUAlphaState, fir[i]), p);
         p += (i < 10) ? 5 : 6;
     }
 
     cpu_pc = tcg_global_mem_new_i64(TCG_AREG0,
-                                    offsetof(CPUState, pc), "pc");
+                                    offsetof(CPUAlphaState, pc), "pc");
 
     cpu_lock_addr = tcg_global_mem_new_i64(TCG_AREG0,
-					   offsetof(CPUState, lock_addr),
+					   offsetof(CPUAlphaState, lock_addr),
 					   "lock_addr");
     cpu_lock_st_addr = tcg_global_mem_new_i64(TCG_AREG0,
-					      offsetof(CPUState, lock_st_addr),
+					      offsetof(CPUAlphaState, lock_st_addr),
 					      "lock_st_addr");
     cpu_lock_value = tcg_global_mem_new_i64(TCG_AREG0,
-					    offsetof(CPUState, lock_value),
+					    offsetof(CPUAlphaState, lock_value),
 					    "lock_value");
 
     cpu_unique = tcg_global_mem_new_i64(TCG_AREG0,
-                                        offsetof(CPUState, unique), "unique");
+                                        offsetof(CPUAlphaState, unique), "unique");
 #ifndef CONFIG_USER_ONLY
     cpu_sysval = tcg_global_mem_new_i64(TCG_AREG0,
-                                        offsetof(CPUState, sysval), "sysval");
+                                        offsetof(CPUAlphaState, sysval), "sysval");
     cpu_usp = tcg_global_mem_new_i64(TCG_AREG0,
-                                     offsetof(CPUState, usp), "usp");
+                                     offsetof(CPUAlphaState, usp), "usp");
 #endif
 
     /* register helpers */
@@ -154,7 +149,7 @@ static void gen_excp_1(int exception, int error_code)
 
     tmp1 = tcg_const_i32(exception);
     tmp2 = tcg_const_i32(error_code);
-    gen_helper_excp(tmp1, tmp2);
+    gen_helper_excp(cpu_env, tmp1, tmp2);
     tcg_temp_free_i32(tmp2);
     tcg_temp_free_i32(tmp1);
 }
@@ -431,27 +426,15 @@ static ExitStatus gen_bcond_internal(DisasContext *ctx, TCGCond cond,
 
         return EXIT_GOTO_TB;
     } else {
-        int lab_over = gen_new_label();
+        TCGv_i64 z = tcg_const_i64(0);
+        TCGv_i64 d = tcg_const_i64(dest);
+        TCGv_i64 p = tcg_const_i64(ctx->pc);
 
-        /* ??? Consider using either
-             movi pc, next
-             addi tmp, pc, disp
-             movcond pc, cond, 0, tmp, pc
-           or
-             setcond tmp, cond, 0
-             movi pc, next
-             neg tmp, tmp
-             andi tmp, tmp, disp
-             add pc, pc, tmp
-           The current diamond subgraph surely isn't efficient.  */
+        tcg_gen_movcond_i64(cond, cpu_pc, cmp, z, d, p);
 
-        tcg_gen_brcondi_i64(cond, cmp, 0, lab_true);
-        tcg_gen_movi_i64(cpu_pc, ctx->pc);
-        tcg_gen_br(lab_over);
-        gen_set_label(lab_true);
-        tcg_gen_movi_i64(cpu_pc, dest);
-        gen_set_label(lab_over);
-
+        tcg_temp_free_i64(z);
+        tcg_temp_free_i64(d);
+        tcg_temp_free_i64(p);
         return EXIT_PC_UPDATED;
     }
 }
@@ -526,61 +509,67 @@ static ExitStatus gen_fbcond(DisasContext *ctx, TCGCond cond, int ra,
 static void gen_cmov(TCGCond cond, int ra, int rb, int rc,
                      int islit, uint8_t lit, int mask)
 {
-    TCGCond inv_cond = tcg_invert_cond(cond);
-    int l1;
-
-    if (unlikely(rc == 31))
-        return;
-
-    l1 = gen_new_label();
-
-    if (ra != 31) {
-        if (mask) {
-            TCGv tmp = tcg_temp_new();
-            tcg_gen_andi_i64(tmp, cpu_ir[ra], 1);
-            tcg_gen_brcondi_i64(inv_cond, tmp, 0, l1);
-            tcg_temp_free(tmp);
-        } else
-            tcg_gen_brcondi_i64(inv_cond, cpu_ir[ra], 0, l1);
-    } else {
-        /* Very uncommon case - Do not bother to optimize.  */
-        TCGv tmp = tcg_const_i64(0);
-        tcg_gen_brcondi_i64(inv_cond, tmp, 0, l1);
-        tcg_temp_free(tmp);
-    }
-
-    if (islit)
-        tcg_gen_movi_i64(cpu_ir[rc], lit);
-    else
-        tcg_gen_mov_i64(cpu_ir[rc], cpu_ir[rb]);
-    gen_set_label(l1);
-}
-
-static void gen_fcmov(TCGCond cond, int ra, int rb, int rc)
-{
-    TCGv cmp_tmp;
-    int l1;
+    TCGv_i64 c1, z, v1;
 
     if (unlikely(rc == 31)) {
         return;
     }
 
-    cmp_tmp = tcg_temp_new();
-    if (unlikely(ra == 31)) {
-        tcg_gen_movi_i64(cmp_tmp, 0);
+    if (ra == 31) {
+        /* Very uncommon case - Do not bother to optimize.  */
+        c1 = tcg_const_i64(0);
+    } else if (mask) {
+        c1 = tcg_const_i64(1);
+        tcg_gen_and_i64(c1, c1, cpu_ir[ra]);
     } else {
-        gen_fold_mzero(cond, cmp_tmp, cpu_fir[ra]);
+        c1 = cpu_ir[ra];
+    }
+    if (islit) {
+        v1 = tcg_const_i64(lit);
+    } else {
+        v1 = cpu_ir[rb];
+    }
+    z = tcg_const_i64(0);
+
+    tcg_gen_movcond_i64(cond, cpu_ir[rc], c1, z, v1, cpu_ir[rc]);
+
+    tcg_temp_free_i64(z);
+    if (ra == 31 || mask) {
+        tcg_temp_free_i64(c1);
+    }
+    if (islit) {
+        tcg_temp_free_i64(v1);
+    }
+}
+
+static void gen_fcmov(TCGCond cond, int ra, int rb, int rc)
+{
+    TCGv_i64 c1, z, v1;
+
+    if (unlikely(rc == 31)) {
+        return;
     }
 
-    l1 = gen_new_label();
-    tcg_gen_brcondi_i64(tcg_invert_cond(cond), cmp_tmp, 0, l1);
-    tcg_temp_free(cmp_tmp);
+    c1 = tcg_temp_new_i64();
+    if (unlikely(ra == 31)) {
+        tcg_gen_movi_i64(c1, 0);
+    } else {
+        gen_fold_mzero(cond, c1, cpu_fir[ra]);
+    }
+    if (rb == 31) {
+        v1 = tcg_const_i64(0);
+    } else {
+        v1 = cpu_fir[rb];
+    }
+    z = tcg_const_i64(0);
 
-    if (rb != 31)
-        tcg_gen_mov_i64(cpu_fir[rc], cpu_fir[rb]);
-    else
-        tcg_gen_movi_i64(cpu_fir[rc], 0);
-    gen_set_label(l1);
+    tcg_gen_movcond_i64(cond, cpu_fir[rc], c1, z, v1, cpu_fir[rc]);
+
+    tcg_temp_free_i64(z);
+    tcg_temp_free_i64(c1);
+    if (rb == 31) {
+        tcg_temp_free_i64(v1);
+    }
 }
 
 #define QUAL_RM_N       0x080   /* Round mode nearest even */
@@ -616,16 +605,17 @@ static void gen_qual_roundmode(DisasContext *ctx, int fn11)
         tcg_gen_movi_i32(tmp, float_round_down);
         break;
     case QUAL_RM_D:
-        tcg_gen_ld8u_i32(tmp, cpu_env, offsetof(CPUState, fpcr_dyn_round));
+        tcg_gen_ld8u_i32(tmp, cpu_env,
+                         offsetof(CPUAlphaState, fpcr_dyn_round));
         break;
     }
 
 #if defined(CONFIG_SOFTFLOAT_INLINE)
-    /* ??? The "softfloat.h" interface is to call set_float_rounding_mode.
+    /* ??? The "fpu/softfloat.h" interface is to call set_float_rounding_mode.
        With CONFIG_SOFTFLOAT that expands to an out-of-line call that just
        sets the one field.  */
     tcg_gen_st8_i32(tmp, cpu_env,
-                    offsetof(CPUState, fp_status.float_rounding_mode));
+                    offsetof(CPUAlphaState, fp_status.float_rounding_mode));
 #else
     gen_helper_setroundmode(tmp);
 #endif
@@ -646,7 +636,8 @@ static void gen_qual_flushzero(DisasContext *ctx, int fn11)
     tmp = tcg_temp_new_i32();
     if (fn11) {
         /* Underflow is enabled, use the FPCR setting.  */
-        tcg_gen_ld8u_i32(tmp, cpu_env, offsetof(CPUState, fpcr_flush_to_zero));
+        tcg_gen_ld8u_i32(tmp, cpu_env,
+                         offsetof(CPUAlphaState, fpcr_flush_to_zero));
     } else {
         /* Underflow is disabled, force flush-to-zero.  */
         tcg_gen_movi_i32(tmp, 1);
@@ -654,7 +645,7 @@ static void gen_qual_flushzero(DisasContext *ctx, int fn11)
 
 #if defined(CONFIG_SOFTFLOAT_INLINE)
     tcg_gen_st8_i32(tmp, cpu_env,
-                    offsetof(CPUState, fp_status.flush_to_zero));
+                    offsetof(CPUAlphaState, fp_status.flush_to_zero));
 #else
     gen_helper_setflushzero(tmp);
 #endif
@@ -664,15 +655,19 @@ static void gen_qual_flushzero(DisasContext *ctx, int fn11)
 
 static TCGv gen_ieee_input(int reg, int fn11, int is_cmp)
 {
-    TCGv val = tcg_temp_new();
+    TCGv val;
     if (reg == 31) {
-        tcg_gen_movi_i64(val, 0);
-    } else if (fn11 & QUAL_S) {
-        gen_helper_ieee_input_s(val, cpu_fir[reg]);
-    } else if (is_cmp) {
-        gen_helper_ieee_input_cmp(val, cpu_fir[reg]);
+        val = tcg_const_i64(0);
     } else {
-        gen_helper_ieee_input(val, cpu_fir[reg]);
+        if ((fn11 & QUAL_S) == 0) {
+            if (is_cmp) {
+                gen_helper_ieee_input_cmp(cpu_env, cpu_fir[reg]);
+            } else {
+                gen_helper_ieee_input(cpu_env, cpu_fir[reg]);
+            }
+        }
+        val = tcg_temp_new();
+        tcg_gen_mov_i64(val, cpu_fir[reg]);
     }
     return val;
 }
@@ -682,10 +677,10 @@ static void gen_fp_exc_clear(void)
 #if defined(CONFIG_SOFTFLOAT_INLINE)
     TCGv_i32 zero = tcg_const_i32(0);
     tcg_gen_st8_i32(zero, cpu_env,
-                    offsetof(CPUState, fp_status.float_exception_flags));
+                    offsetof(CPUAlphaState, fp_status.float_exception_flags));
     tcg_temp_free_i32(zero);
 #else
-    gen_helper_fp_exc_clear();
+    gen_helper_fp_exc_clear(cpu_env);
 #endif
 }
 
@@ -701,9 +696,9 @@ static void gen_fp_exc_raise_ignore(int rc, int fn11, int ignore)
 
 #if defined(CONFIG_SOFTFLOAT_INLINE)
     tcg_gen_ld8u_i32(exc, cpu_env,
-                     offsetof(CPUState, fp_status.float_exception_flags));
+                     offsetof(CPUAlphaState, fp_status.float_exception_flags));
 #else
-    gen_helper_fp_exc_get(exc);
+    gen_helper_fp_exc_get(exc, cpu_env);
 #endif
 
     if (ignore) {
@@ -718,9 +713,9 @@ static void gen_fp_exc_raise_ignore(int rc, int fn11, int ignore)
     reg = tcg_const_i32(rc + 32);
 
     if (fn11 & QUAL_S) {
-        gen_helper_fp_exc_raise_s(exc, reg);
+        gen_helper_fp_exc_raise_s(cpu_env, exc, reg);
     } else {
-        gen_helper_fp_exc_raise(exc, reg);
+        gen_helper_fp_exc_raise(cpu_env, exc, reg);
     }
 
     tcg_temp_free_i32(reg);
@@ -789,20 +784,20 @@ static void gen_fcvtql_v(DisasContext *ctx, int rb, int rc)
     gen_fcvtql(rb, rc);
 }
 
-#define FARITH2(name)                                   \
-static inline void glue(gen_f, name)(int rb, int rc)    \
-{                                                       \
-    if (unlikely(rc == 31)) {                           \
-        return;                                         \
-    }                                                   \
-    if (rb != 31) {                                     \
-        gen_helper_ ## name (cpu_fir[rc], cpu_fir[rb]); \
-    } else {						\
-        TCGv tmp = tcg_const_i64(0);                    \
-        gen_helper_ ## name (cpu_fir[rc], tmp);         \
-        tcg_temp_free(tmp);                             \
-    }                                                   \
-}
+#define FARITH2(name)                                                   \
+    static inline void glue(gen_f, name)(int rb, int rc)                \
+    {                                                                   \
+        if (unlikely(rc == 31)) {                                       \
+            return;                                                     \
+        }                                                               \
+        if (rb != 31) {                                                 \
+            gen_helper_ ## name(cpu_fir[rc], cpu_env, cpu_fir[rb]);     \
+        } else {                                                        \
+            TCGv tmp = tcg_const_i64(0);                                \
+            gen_helper_ ## name(cpu_fir[rc], cpu_env, tmp);             \
+            tcg_temp_free(tmp);                                         \
+        }                                                               \
+    }
 
 /* ??? VAX instruction qualifiers ignored.  */
 FARITH2(sqrtf)
@@ -812,7 +807,8 @@ FARITH2(cvtgq)
 FARITH2(cvtqf)
 FARITH2(cvtqg)
 
-static void gen_ieee_arith2(DisasContext *ctx, void (*helper)(TCGv, TCGv),
+static void gen_ieee_arith2(DisasContext *ctx,
+                            void (*helper)(TCGv, TCGv_ptr, TCGv),
                             int rb, int rc, int fn11)
 {
     TCGv vb;
@@ -828,7 +824,7 @@ static void gen_ieee_arith2(DisasContext *ctx, void (*helper)(TCGv, TCGv),
     gen_fp_exc_clear();
 
     vb = gen_ieee_input(rb, fn11, 0);
-    helper(cpu_fir[rc], vb);
+    helper(cpu_fir[rc], cpu_env, vb);
     tcg_temp_free(vb);
 
     gen_fp_exc_raise(rc, fn11);
@@ -864,18 +860,18 @@ static void gen_fcvttq(DisasContext *ctx, int rb, int rc, int fn11)
        also do not have integer overflow enabled.  Special case that.  */
     switch (fn11) {
     case QUAL_RM_C:
-        gen_helper_cvttq_c(cpu_fir[rc], vb);
+        gen_helper_cvttq_c(cpu_fir[rc], cpu_env, vb);
         break;
     case QUAL_V | QUAL_RM_C:
     case QUAL_S | QUAL_V | QUAL_RM_C:
         ignore = float_flag_inexact;
         /* FALLTHRU */
     case QUAL_S | QUAL_V | QUAL_I | QUAL_RM_C:
-        gen_helper_cvttq_svic(cpu_fir[rc], vb);
+        gen_helper_cvttq_svic(cpu_fir[rc], cpu_env, vb);
         break;
     default:
         gen_qual_roundmode(ctx, fn11);
-        gen_helper_cvttq(cpu_fir[rc], vb);
+        gen_helper_cvttq(cpu_fir[rc], cpu_env, vb);
         ignore |= (fn11 & QUAL_V ? 0 : float_flag_overflow);
         ignore |= (fn11 & QUAL_I ? 0 : float_flag_inexact);
         break;
@@ -885,7 +881,8 @@ static void gen_fcvttq(DisasContext *ctx, int rb, int rc, int fn11)
     gen_fp_exc_raise_ignore(rc, fn11, ignore);
 }
 
-static void gen_ieee_intcvt(DisasContext *ctx, void (*helper)(TCGv, TCGv),
+static void gen_ieee_intcvt(DisasContext *ctx,
+                            void (*helper)(TCGv, TCGv_ptr, TCGv),
 			    int rb, int rc, int fn11)
 {
     TCGv vb;
@@ -909,10 +906,10 @@ static void gen_ieee_intcvt(DisasContext *ctx, void (*helper)(TCGv, TCGv),
        inexact handling is requested.  */
     if (fn11 & QUAL_I) {
         gen_fp_exc_clear();
-        helper(cpu_fir[rc], vb);
+        helper(cpu_fir[rc], cpu_env, vb);
         gen_fp_exc_raise(rc, fn11);
     } else {
-        helper(cpu_fir[rc], vb);
+        helper(cpu_fir[rc], cpu_env, vb);
     }
 
     if (rb == 31) {
@@ -1004,34 +1001,34 @@ static inline void gen_fcpyse(int ra, int rb, int rc)
     gen_cpys_internal(ra, rb, rc, 0, 0xFFF0000000000000ULL);
 }
 
-#define FARITH3(name)                                           \
-static inline void glue(gen_f, name)(int ra, int rb, int rc)    \
-{                                                               \
-    TCGv va, vb;                                                \
-                                                                \
-    if (unlikely(rc == 31)) {                                   \
-        return;                                                 \
-    }                                                           \
-    if (ra == 31) {                                             \
-        va = tcg_const_i64(0);                                  \
-    } else {                                                    \
-        va = cpu_fir[ra];                                       \
-    }                                                           \
-    if (rb == 31) {                                             \
-        vb = tcg_const_i64(0);                                  \
-    } else {                                                    \
-        vb = cpu_fir[rb];                                       \
-    }                                                           \
-                                                                \
-    gen_helper_ ## name (cpu_fir[rc], va, vb);                  \
-                                                                \
-    if (ra == 31) {                                             \
-        tcg_temp_free(va);                                      \
-    }                                                           \
-    if (rb == 31) {                                             \
-        tcg_temp_free(vb);                                      \
-    }                                                           \
-}
+#define FARITH3(name)                                                   \
+    static inline void glue(gen_f, name)(int ra, int rb, int rc)        \
+    {                                                                   \
+        TCGv va, vb;                                                    \
+                                                                        \
+        if (unlikely(rc == 31)) {                                       \
+            return;                                                     \
+        }                                                               \
+        if (ra == 31) {                                                 \
+            va = tcg_const_i64(0);                                      \
+        } else {                                                        \
+            va = cpu_fir[ra];                                           \
+        }                                                               \
+        if (rb == 31) {                                                 \
+            vb = tcg_const_i64(0);                                      \
+        } else {                                                        \
+            vb = cpu_fir[rb];                                           \
+        }                                                               \
+                                                                        \
+        gen_helper_ ## name(cpu_fir[rc], cpu_env, va, vb);              \
+                                                                        \
+        if (ra == 31) {                                                 \
+            tcg_temp_free(va);                                          \
+        }                                                               \
+        if (rb == 31) {                                                 \
+            tcg_temp_free(vb);                                          \
+        }                                                               \
+    }
 
 /* ??? VAX instruction qualifiers ignored.  */
 FARITH3(addf)
@@ -1047,7 +1044,7 @@ FARITH3(cmpglt)
 FARITH3(cmpgle)
 
 static void gen_ieee_arith3(DisasContext *ctx,
-                            void (*helper)(TCGv, TCGv, TCGv),
+                            void (*helper)(TCGv, TCGv_ptr, TCGv, TCGv),
                             int ra, int rb, int rc, int fn11)
 {
     TCGv va, vb;
@@ -1064,7 +1061,7 @@ static void gen_ieee_arith3(DisasContext *ctx,
 
     va = gen_ieee_input(ra, fn11, 0);
     vb = gen_ieee_input(rb, fn11, 0);
-    helper(cpu_fir[rc], va, vb);
+    helper(cpu_fir[rc], cpu_env, va, vb);
     tcg_temp_free(va);
     tcg_temp_free(vb);
 
@@ -1087,7 +1084,7 @@ IEEE_ARITH3(mult)
 IEEE_ARITH3(divt)
 
 static void gen_ieee_compare(DisasContext *ctx,
-                             void (*helper)(TCGv, TCGv, TCGv),
+                             void (*helper)(TCGv, TCGv_ptr, TCGv, TCGv),
                              int ra, int rb, int rc, int fn11)
 {
     TCGv va, vb;
@@ -1102,7 +1099,7 @@ static void gen_ieee_compare(DisasContext *ctx,
 
     va = gen_ieee_input(ra, fn11, 1);
     vb = gen_ieee_input(rb, fn11, 1);
-    helper(cpu_fir[rc], va, vb);
+    helper(cpu_fir[rc], cpu_env, va, vb);
     tcg_temp_free(va);
     tcg_temp_free(vb);
 
@@ -1393,14 +1390,8 @@ static inline void glue(gen_, name)(int ra, int rb, int rc, int islit,\
         tcg_temp_free(tmp1);                                          \
     }                                                                 \
 }
-ARITH3(cmpbge)
-ARITH3(addlv)
-ARITH3(sublv)
-ARITH3(addqv)
-ARITH3(subqv)
 ARITH3(umulh)
-ARITH3(mullv)
-ARITH3(mulqv)
+ARITH3(cmpbge)
 ARITH3(minub8)
 ARITH3(minsb8)
 ARITH3(minuw4)
@@ -1410,6 +1401,43 @@ ARITH3(maxsb8)
 ARITH3(maxuw4)
 ARITH3(maxsw4)
 ARITH3(perr)
+
+/* Code to call arith3 helpers */
+#define ARITH3_EX(name)                                                 \
+    static inline void glue(gen_, name)(int ra, int rb, int rc,         \
+                                        int islit, uint8_t lit)         \
+    {                                                                   \
+        if (unlikely(rc == 31)) {                                       \
+            return;                                                     \
+        }                                                               \
+        if (ra != 31) {                                                 \
+            if (islit) {                                                \
+                TCGv tmp = tcg_const_i64(lit);                          \
+                gen_helper_ ## name(cpu_ir[rc], cpu_env,                \
+                                    cpu_ir[ra], tmp);                   \
+                tcg_temp_free(tmp);                                     \
+            } else {                                                    \
+                gen_helper_ ## name(cpu_ir[rc], cpu_env,                \
+                                    cpu_ir[ra], cpu_ir[rb]);            \
+            }                                                           \
+        } else {                                                        \
+            TCGv tmp1 = tcg_const_i64(0);                               \
+            if (islit) {                                                \
+                TCGv tmp2 = tcg_const_i64(lit);                         \
+                gen_helper_ ## name(cpu_ir[rc], cpu_env, tmp1, tmp2);   \
+                tcg_temp_free(tmp2);                                    \
+            } else {                                                    \
+                gen_helper_ ## name(cpu_ir[rc], cpu_env, tmp1, cpu_ir[rb]); \
+            }                                                           \
+            tcg_temp_free(tmp1);                                        \
+        }                                                               \
+    }
+ARITH3_EX(addlv)
+ARITH3_EX(sublv)
+ARITH3_EX(addqv)
+ARITH3_EX(subqv)
+ARITH3_EX(mullv)
+ARITH3_EX(mulqv)
 
 #define MVIOP2(name)                                    \
 static inline void glue(gen_, name)(int rb, int rc)     \
@@ -1461,11 +1489,11 @@ static void gen_rx(int ra, int set)
     TCGv_i32 tmp;
 
     if (ra != 31) {
-        tcg_gen_ld8u_i64(cpu_ir[ra], cpu_env, offsetof(CPUState, intr_flag));
+        tcg_gen_ld8u_i64(cpu_ir[ra], cpu_env, offsetof(CPUAlphaState, intr_flag));
     }
 
     tmp = tcg_const_i32(set);
-    tcg_gen_st8_i32(tmp, cpu_env, offsetof(CPUState, intr_flag));
+    tcg_gen_st8_i32(tmp, cpu_env, offsetof(CPUAlphaState, intr_flag));
     tcg_temp_free_i32(tmp);
 }
 
@@ -1509,7 +1537,7 @@ static ExitStatus gen_call_pal(DisasContext *ctx, int palcode)
             break;
         case 0x2D:
             /* WRVPTPTR */
-            tcg_gen_st_i64(cpu_ir[IR_A0], cpu_env, offsetof(CPUState, vptptr));
+            tcg_gen_st_i64(cpu_ir[IR_A0], cpu_env, offsetof(CPUAlphaState, vptptr));
             break;
         case 0x31:
             /* WRVAL */
@@ -1526,19 +1554,19 @@ static ExitStatus gen_call_pal(DisasContext *ctx, int palcode)
 
             /* Note that we already know we're in kernel mode, so we know
                that PS only contains the 3 IPL bits.  */
-            tcg_gen_ld8u_i64(cpu_ir[IR_V0], cpu_env, offsetof(CPUState, ps));
+            tcg_gen_ld8u_i64(cpu_ir[IR_V0], cpu_env, offsetof(CPUAlphaState, ps));
 
             /* But make sure and store only the 3 IPL bits from the user.  */
             tmp = tcg_temp_new();
             tcg_gen_andi_i64(tmp, cpu_ir[IR_A0], PS_INT_MASK);
-            tcg_gen_st8_i64(tmp, cpu_env, offsetof(CPUState, ps));
+            tcg_gen_st8_i64(tmp, cpu_env, offsetof(CPUAlphaState, ps));
             tcg_temp_free(tmp);
             break;
         }
 
         case 0x36:
             /* RDPS */
-            tcg_gen_ld8u_i64(cpu_ir[IR_V0], cpu_env, offsetof(CPUState, ps));
+            tcg_gen_ld8u_i64(cpu_ir[IR_V0], cpu_env, offsetof(CPUAlphaState, ps));
             break;
         case 0x38:
             /* WRUSP */
@@ -1551,7 +1579,7 @@ static ExitStatus gen_call_pal(DisasContext *ctx, int palcode)
         case 0x3C:
             /* WHAMI */
             tcg_gen_ld32s_i64(cpu_ir[IR_V0], cpu_env,
-                              offsetof(CPUState, cpu_index));
+                -offsetof(AlphaCPU, env) + offsetof(CPUState, cpu_index));
             break;
 
         default:
@@ -1590,18 +1618,34 @@ static int cpu_pr_data(int pr)
         return offsetof(CPUAlphaState, shadow[pr - 32]);
     case 40 ... 63:
         return offsetof(CPUAlphaState, scratch[pr - 40]);
+
+    case 251:
+        return offsetof(CPUAlphaState, alarm_expire);
     }
     return 0;
 }
 
-static void gen_mfpr(int ra, int regno)
+static ExitStatus gen_mfpr(int ra, int regno)
 {
     int data = cpu_pr_data(regno);
 
     /* In our emulated PALcode, these processor registers have no
        side effects from reading.  */
     if (ra == 31) {
-        return;
+        return NO_EXIT;
+    }
+
+    if (regno == 250) {
+        /* WALL_TIME */
+        if (use_icount) {
+            gen_io_start();
+            gen_helper_get_time(cpu_ir[ra]);
+            gen_io_end();
+            return EXIT_PC_STALE;
+        } else {
+            gen_helper_get_time(cpu_ir[ra]);
+            return NO_EXIT;
+        }
     }
 
     /* The basic registers are data only, and unknown registers
@@ -1615,11 +1659,13 @@ static void gen_mfpr(int ra, int regno)
     } else {
         tcg_gen_ld_i64(cpu_ir[ra], cpu_env, data);
     }
+    return NO_EXIT;
 }
 
-static void gen_mtpr(int rb, int regno)
+static ExitStatus gen_mtpr(DisasContext *ctx, int rb, int regno)
 {
     TCGv tmp;
+    int data;
 
     if (rb == 31) {
         tmp = tcg_const_i64(0);
@@ -1627,19 +1673,37 @@ static void gen_mtpr(int rb, int regno)
         tmp = cpu_ir[rb];
     }
 
-    /* These two register numbers perform a TLB cache flush.  Thankfully we
-       can only do this inside PALmode, which means that the current basic
-       block cannot be affected by the change in mappings.  */
-    if (regno == 255) {
+    switch (regno) {
+    case 255:
         /* TBIA */
-        gen_helper_tbia();
-    } else if (regno == 254) {
+        gen_helper_tbia(cpu_env);
+        break;
+
+    case 254:
         /* TBIS */
-        gen_helper_tbis(tmp);
-    } else {
+        gen_helper_tbis(cpu_env, tmp);
+        break;
+
+    case 253:
+        /* WAIT */
+        tmp = tcg_const_i64(1);
+        tcg_gen_st32_i64(tmp, cpu_env, offsetof(CPUAlphaState, halted));
+        return gen_excp(ctx, EXCP_HLT, 0);
+
+    case 252:
+        /* HALT */
+        gen_helper_halt(tmp);
+        return EXIT_PC_STALE;
+
+    case 251:
+        /* ALARM */
+        gen_helper_set_alarm(cpu_env, tmp);
+        break;
+
+    default:
         /* The basic registers are data only, and unknown registers
            are read-zero, write-ignore.  */
-        int data = cpu_pr_data(regno);
+        data = cpu_pr_data(regno);
         if (data != 0) {
             if (data & PR_BYTE) {
                 tcg_gen_st8_i64(tmp, cpu_env, data & ~PR_BYTE);
@@ -1649,11 +1713,14 @@ static void gen_mtpr(int rb, int regno)
                 tcg_gen_st_i64(tmp, cpu_env, data);
             }
         }
+        break;
     }
 
     if (rb == 31) {
         tcg_temp_free(tmp);
     }
+
+    return NO_EXIT;
 }
 #endif /* !USER_ONLY*/
 
@@ -2640,17 +2707,17 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
         case 0x024:
             /* MT_FPCR */
             if (likely(ra != 31))
-                gen_helper_store_fpcr(cpu_fir[ra]);
+                gen_helper_store_fpcr(cpu_env, cpu_fir[ra]);
             else {
                 TCGv tmp = tcg_const_i64(0);
-                gen_helper_store_fpcr(tmp);
+                gen_helper_store_fpcr(cpu_env, tmp);
                 tcg_temp_free(tmp);
             }
             break;
         case 0x025:
             /* MF_FPCR */
             if (likely(ra != 31))
-                gen_helper_load_fpcr(cpu_fir[ra]);
+                gen_helper_load_fpcr(cpu_fir[ra], cpu_env);
             break;
         case 0x02A:
             /* FCMOVEQ */
@@ -2721,8 +2788,16 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
             break;
         case 0xC000:
             /* RPCC */
-            if (ra != 31)
-                gen_helper_load_pcc(cpu_ir[ra]);
+            if (ra != 31) {
+                if (use_icount) {
+                    gen_io_start();
+                    gen_helper_load_pcc(cpu_ir[ra], cpu_env);
+                    gen_io_end();
+                    ret = EXIT_PC_STALE;
+                } else {
+                    gen_helper_load_pcc(cpu_ir[ra], cpu_env);
+                }
+            }
             break;
         case 0xE000:
             /* RC */
@@ -2747,8 +2822,7 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
         /* HW_MFPR (PALcode) */
 #ifndef CONFIG_USER_ONLY
         if (ctx->tb->flags & TB_FLAGS_PAL_MODE) {
-            gen_mfpr(ra, insn & 0xffff);
-            break;
+            return gen_mfpr(ra, insn & 0xffff);
         }
 #endif
         goto invalid_opc;
@@ -2791,11 +2865,11 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
                 break;
             case 0x2:
                 /* Longword physical access with lock (hw_ldl_l/p) */
-                gen_helper_ldl_l_phys(cpu_ir[ra], addr);
+                gen_helper_ldl_l_phys(cpu_ir[ra], cpu_env, addr);
                 break;
             case 0x3:
                 /* Quadword physical access with lock (hw_ldq_l/p) */
-                gen_helper_ldq_l_phys(cpu_ir[ra], addr);
+                gen_helper_ldq_l_phys(cpu_ir[ra], cpu_env, addr);
                 break;
             case 0x4:
                 /* Longword virtual PTE fetch (hw_ldl/v) */
@@ -3053,8 +3127,7 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
         /* HW_MTPR (PALcode) */
 #ifndef CONFIG_USER_ONLY
         if (ctx->tb->flags & TB_FLAGS_PAL_MODE) {
-            gen_mtpr(rb, insn & 0xffff);
-            break;
+            return gen_mtpr(ctx, rb, insn & 0xffff);
         }
 #endif
         goto invalid_opc;
@@ -3067,11 +3140,11 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
                    address from EXC_ADDR.  This turns out to be useful for our
                    emulation PALcode, so continue to accept it.  */
                 TCGv tmp = tcg_temp_new();
-                tcg_gen_ld_i64(tmp, cpu_env, offsetof(CPUState, exc_addr));
-                gen_helper_hw_ret(tmp);
+                tcg_gen_ld_i64(tmp, cpu_env, offsetof(CPUAlphaState, exc_addr));
+                gen_helper_hw_ret(cpu_env, tmp);
                 tcg_temp_free(tmp);
             } else {
-                gen_helper_hw_ret(cpu_ir[rb]);
+                gen_helper_hw_ret(cpu_env, cpu_ir[rb]);
             }
             ret = EXIT_PC_UPDATED;
             break;
@@ -3105,11 +3178,11 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
                 break;
             case 0x2:
                 /* Longword physical access with lock */
-                gen_helper_stl_c_phys(val, addr, val);
+                gen_helper_stl_c_phys(val, cpu_env, addr, val);
                 break;
             case 0x3:
                 /* Quadword physical access with lock */
-                gen_helper_stq_c_phys(val, addr, val);
+                gen_helper_stq_c_phys(val, cpu_env, addr, val);
                 break;
             case 0x4:
                 /* Longword virtual access */
@@ -3285,7 +3358,7 @@ static ExitStatus translate_one(DisasContext *ctx, uint32_t insn)
     return ret;
 }
 
-static inline void gen_intermediate_code_internal(CPUState *env,
+static inline void gen_intermediate_code_internal(CPUAlphaState *env,
                                                   TranslationBlock *tb,
                                                   int search_pc)
 {
@@ -3300,7 +3373,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
     int max_insns;
 
     pc_start = tb->pc;
-    gen_opc_end = gen_opc_buf + OPC_MAX_SIZE;
+    gen_opc_end = tcg_ctx.gen_opc_buf + OPC_MAX_SIZE;
 
     ctx.tb = tb;
     ctx.env = env;
@@ -3333,22 +3406,22 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             }
         }
         if (search_pc) {
-            j = gen_opc_ptr - gen_opc_buf;
+            j = tcg_ctx.gen_opc_ptr - tcg_ctx.gen_opc_buf;
             if (lj < j) {
                 lj++;
                 while (lj < j)
-                    gen_opc_instr_start[lj++] = 0;
+                    tcg_ctx.gen_opc_instr_start[lj++] = 0;
             }
-            gen_opc_pc[lj] = ctx.pc;
-            gen_opc_instr_start[lj] = 1;
-            gen_opc_icount[lj] = num_insns;
+            tcg_ctx.gen_opc_pc[lj] = ctx.pc;
+            tcg_ctx.gen_opc_instr_start[lj] = 1;
+            tcg_ctx.gen_opc_icount[lj] = num_insns;
         }
         if (num_insns + 1 == max_insns && (tb->cflags & CF_LAST_IO))
             gen_io_start();
-        insn = ldl_code(ctx.pc);
+        insn = cpu_ldl_code(env, ctx.pc);
         num_insns++;
 
-	if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP))) {
+	if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT))) {
             tcg_gen_debug_insn_start(ctx.pc);
         }
 
@@ -3359,7 +3432,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
            or exhaust instruction count, stop generation.  */
         if (ret == NO_EXIT
             && ((ctx.pc & (TARGET_PAGE_SIZE - 1)) == 0
-                || gen_opc_ptr >= gen_opc_end
+                || tcg_ctx.gen_opc_ptr >= gen_opc_end
                 || num_insns >= max_insns
                 || singlestep
                 || env->singlestep_enabled)) {
@@ -3390,12 +3463,12 @@ static inline void gen_intermediate_code_internal(CPUState *env,
     }
 
     gen_icount_end(tb, num_insns);
-    *gen_opc_ptr = INDEX_op_end;
+    *tcg_ctx.gen_opc_ptr = INDEX_op_end;
     if (search_pc) {
-        j = gen_opc_ptr - gen_opc_buf;
+        j = tcg_ctx.gen_opc_ptr - tcg_ctx.gen_opc_buf;
         lj++;
         while (lj <= j)
-            gen_opc_instr_start[lj++] = 0;
+            tcg_ctx.gen_opc_instr_start[lj++] = 0;
     } else {
         tb->size = ctx.pc - pc_start;
         tb->icount = num_insns;
@@ -3404,85 +3477,23 @@ static inline void gen_intermediate_code_internal(CPUState *env,
 #ifdef DEBUG_DISAS
     if (qemu_loglevel_mask(CPU_LOG_TB_IN_ASM)) {
         qemu_log("IN: %s\n", lookup_symbol(pc_start));
-        log_target_disas(pc_start, ctx.pc - pc_start, 1);
+        log_target_disas(env, pc_start, ctx.pc - pc_start, 1);
         qemu_log("\n");
     }
 #endif
 }
 
-void gen_intermediate_code (CPUState *env, struct TranslationBlock *tb)
+void gen_intermediate_code (CPUAlphaState *env, struct TranslationBlock *tb)
 {
     gen_intermediate_code_internal(env, tb, 0);
 }
 
-void gen_intermediate_code_pc (CPUState *env, struct TranslationBlock *tb)
+void gen_intermediate_code_pc (CPUAlphaState *env, struct TranslationBlock *tb)
 {
     gen_intermediate_code_internal(env, tb, 1);
 }
 
-struct cpu_def_t {
-    const char *name;
-    int implver, amask;
-};
-
-static const struct cpu_def_t cpu_defs[] = {
-    { "ev4",   IMPLVER_2106x, 0 },
-    { "ev5",   IMPLVER_21164, 0 },
-    { "ev56",  IMPLVER_21164, AMASK_BWX },
-    { "pca56", IMPLVER_21164, AMASK_BWX | AMASK_MVI },
-    { "ev6",   IMPLVER_21264, AMASK_BWX | AMASK_FIX | AMASK_MVI | AMASK_TRAP },
-    { "ev67",  IMPLVER_21264, (AMASK_BWX | AMASK_FIX | AMASK_CIX
-			       | AMASK_MVI | AMASK_TRAP | AMASK_PREFETCH), },
-    { "ev68",  IMPLVER_21264, (AMASK_BWX | AMASK_FIX | AMASK_CIX
-			       | AMASK_MVI | AMASK_TRAP | AMASK_PREFETCH), },
-    { "21064", IMPLVER_2106x, 0 },
-    { "21164", IMPLVER_21164, 0 },
-    { "21164a", IMPLVER_21164, AMASK_BWX },
-    { "21164pc", IMPLVER_21164, AMASK_BWX | AMASK_MVI },
-    { "21264", IMPLVER_21264, AMASK_BWX | AMASK_FIX | AMASK_MVI | AMASK_TRAP },
-    { "21264a", IMPLVER_21264, (AMASK_BWX | AMASK_FIX | AMASK_CIX
-				| AMASK_MVI | AMASK_TRAP | AMASK_PREFETCH), }
-};
-
-CPUAlphaState * cpu_alpha_init (const char *cpu_model)
+void restore_state_to_opc(CPUAlphaState *env, TranslationBlock *tb, int pc_pos)
 {
-    CPUAlphaState *env;
-    int implver, amask, i, max;
-
-    env = qemu_mallocz(sizeof(CPUAlphaState));
-    cpu_exec_init(env);
-    alpha_translate_init();
-    tlb_flush(env, 1);
-
-    /* Default to ev67; no reason not to emulate insns by default.  */
-    implver = IMPLVER_21264;
-    amask = (AMASK_BWX | AMASK_FIX | AMASK_CIX | AMASK_MVI
-	     | AMASK_TRAP | AMASK_PREFETCH);
-
-    max = ARRAY_SIZE(cpu_defs);
-    for (i = 0; i < max; i++) {
-        if (strcmp (cpu_model, cpu_defs[i].name) == 0) {
-            implver = cpu_defs[i].implver;
-            amask = cpu_defs[i].amask;
-            break;
-        }
-    }
-    env->implver = implver;
-    env->amask = amask;
-
-#if defined (CONFIG_USER_ONLY)
-    env->ps = PS_USER_MODE;
-    cpu_alpha_store_fpcr(env, (FPCR_INVD | FPCR_DZED | FPCR_OVFD
-                               | FPCR_UNFD | FPCR_INED | FPCR_DNOD));
-#endif
-    env->lock_addr = -1;
-    env->fen = 1;
-
-    qemu_init_vcpu(env);
-    return env;
-}
-
-void restore_state_to_opc(CPUState *env, TranslationBlock *tb, int pc_pos)
-{
-    env->pc = gen_opc_pc[pc_pos];
+    env->pc = tcg_ctx.gen_opc_pc[pc_pos];
 }

@@ -85,7 +85,7 @@ done
 cd ../..
 
 # Configure for QEMU.
-cd gnu-build
+cd src/qemu
 # The QEMU system targets.
 qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
     ppc-softmmu ppc64-softmmu sparc-softmmu"
@@ -97,14 +97,11 @@ if [ `uname` = "Linux" ] ; then
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 fi
 
-p=qemu
-echo Configuring package $p for $targets
-mkdir $p
-cd $p
-../../src/$p/configure --cc=$cc --host-cc=$cc --prefix=$prefix --disable-strip \
+echo Configuring package qemu for $targets
+./configure --cc=$cc --host-cc=$cc --prefix=$prefix --disable-strip \
   --target-list="$qemu_target_list" --disable-guest-agent
 if [ $? -ne 0 ] ; then
-  echo configure for $p failed
+  echo configure for qemu failed
   exit 1
 fi
-cd ..
+cd ../..

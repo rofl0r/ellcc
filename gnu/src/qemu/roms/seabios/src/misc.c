@@ -65,7 +65,7 @@ mathcp_setup(void)
 {
     dprintf(3, "math cp init\n");
     // 80x87 coprocessor installed
-    SETBITS_BDA(equipment_list_flags, 0x02);
+    set_equipment_flags(0x02, 0x02);
     enable_hwirq(13, FUNC16(entry_75));
 }
 
@@ -80,8 +80,10 @@ handle_75(void)
     // clear interrupt
     eoi_pic2();
     // legacy nmi call
-    u32 eax=0, flags;
-    call16_simpint(0x02, &eax, &flags);
+    struct bregs br;
+    memset(&br, 0, sizeof(br));
+    br.flags = F_IF;
+    call16_int(0x02, &br);
 }
 
 

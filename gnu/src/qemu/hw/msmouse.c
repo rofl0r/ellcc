@@ -22,9 +22,9 @@
  * THE SOFTWARE.
  */
 #include <stdlib.h>
-#include "../qemu-common.h"
-#include "../qemu-char.h"
-#include "../console.h"
+#include "qemu-common.h"
+#include "char/char.h"
+#include "ui/console.h"
 #include "msmouse.h"
 
 #define MSMOUSE_LO6(n) ((n) & 0x3f)
@@ -50,7 +50,7 @@ static void msmouse_event(void *opaque,
     /* We always send the packet of, so that we do not have to keep track
        of previous state of the middle button. This can potentially confuse
        some very old drivers for two button mice though. */
-    qemu_chr_read(chr, bytes, 4);
+    qemu_chr_be_write(chr, bytes, 4);
 }
 
 static int msmouse_chr_write (struct CharDriverState *s, const uint8_t *buf, int len)
@@ -61,19 +61,18 @@ static int msmouse_chr_write (struct CharDriverState *s, const uint8_t *buf, int
 
 static void msmouse_chr_close (struct CharDriverState *chr)
 {
-    qemu_free (chr);
+    g_free (chr);
 }
 
-int qemu_chr_open_msmouse(QemuOpts *opts, CharDriverState **_chr)
+CharDriverState *qemu_chr_open_msmouse(QemuOpts *opts)
 {
     CharDriverState *chr;
 
-    chr = qemu_mallocz(sizeof(CharDriverState));
+    chr = g_malloc0(sizeof(CharDriverState));
     chr->chr_write = msmouse_chr_write;
     chr->chr_close = msmouse_chr_close;
 
     qemu_add_mouse_event_handler(msmouse_event, chr, 0, "QEMU Microsoft Mouse");
 
-    *_chr = chr;
-    return 0;
+    return chr;
 }

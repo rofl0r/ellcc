@@ -6,10 +6,9 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "farptr.h" // GET_VAR
 #include "bregs.h" // struct bregs
 #include "ioport.h" // outb
-#include "util.h" // wait_irq
+#include "util.h" // dprintf
 #include "config.h" // CONFIG_*
 #include "biosvar.h" // GET_GLOBAL
 
@@ -53,14 +52,14 @@ handle_155301(struct bregs *regs)
 }
 
 // Assembler entry points defined in romlayout.S
-extern void apm16protected_entry(void);
-extern void apm32protected_entry(void);
+extern void entry_apm16(void);
+extern void entry_apm32(void);
 
 // APM 16 bit protected mode interface connect
 static void
 handle_155302(struct bregs *regs)
 {
-    regs->bx = (u32)apm16protected_entry;
+    regs->bx = (u32)entry_apm16;
     regs->ax = SEG_BIOS; // 16 bit code segment base
     regs->si = 0xfff0;   // 16 bit code segment size
     regs->cx = SEG_BIOS; // data segment address
@@ -73,7 +72,7 @@ static void
 handle_155303(struct bregs *regs)
 {
     regs->ax = SEG_BIOS; // 32 bit code segment base
-    regs->ebx = (u32)apm32protected_entry;
+    regs->ebx = (u32)entry_apm32;
     regs->cx = SEG_BIOS; // 16 bit code segment base
     // 32 bit code segment size (low 16 bits)
     // 16 bit code segment size (high 16 bits)
@@ -94,7 +93,7 @@ handle_155304(struct bregs *regs)
 static void
 handle_155305(struct bregs *regs)
 {
-    wait_irq();
+    yield_toirq();
     set_success(regs);
 }
 
@@ -223,15 +222,8 @@ handle_1553(struct bregs *regs)
     }
 }
 
-void VISIBLE16
-handle_apm16(struct bregs *regs)
-{
-    debug_enter(regs, DEBUG_HDL_apm);
-    handle_1553(regs);
-}
-
-void VISIBLE32SEG
-handle_apm32(struct bregs *regs)
+void VISIBLE16 VISIBLE32SEG
+handle_apm(struct bregs *regs)
 {
     debug_enter(regs, DEBUG_HDL_apm);
     handle_1553(regs);

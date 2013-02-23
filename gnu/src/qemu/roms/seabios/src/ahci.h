@@ -26,7 +26,8 @@ struct sata_cmd_fis {
 };
 
 struct ahci_ctrl_s {
-    int pci_bdf;
+    struct pci_device *pci_tmp;
+    u16 pci_bdf;
     u8  irq;
     u32 iobase;
     u32 caps;
@@ -74,6 +75,8 @@ struct ahci_port_s {
     struct ahci_cmd_s  *cmd;
     u32                pnr;
     u32                atapi;
+    char               *desc;
+    int                prio;
 };
 
 void ahci_setup(void);

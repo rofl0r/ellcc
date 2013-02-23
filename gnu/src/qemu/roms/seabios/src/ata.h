@@ -12,6 +12,7 @@ struct ata_channel_s {
     u8  irq;
     u8  chanid;
     int pci_bdf;
+    struct pci_device *pci_tmp;
 };
 
 struct atadrive_s {
@@ -27,7 +28,6 @@ int cdrom_read(struct disk_op_s *op);
 int atapi_cmd_data(struct disk_op_s *op, void *cdbcmd, u16 blocksize);
 void ata_setup(void);
 int process_ata_op(struct disk_op_s *op);
-int process_atapi_op(struct disk_op_s *op);
 
 // Global defines -- ATA register and register bits.
 // command block & control block regs

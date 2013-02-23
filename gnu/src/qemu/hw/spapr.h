@@ -1,19 +1,36 @@
 #if !defined(__HW_SPAPR_H__)
 #define __HW_SPAPR_H__
 
+#include "sysemu/dma.h"
+#include "hw/xics.h"
+
 struct VIOsPAPRBus;
+struct sPAPRPHBState;
+struct sPAPRNVRAM;
 struct icp_state;
 
 typedef struct sPAPREnvironment {
     struct VIOsPAPRBus *vio_bus;
+    QLIST_HEAD(, sPAPRPHBState) phbs;
+    struct sPAPRNVRAM *nvram;
     struct icp_state *icp;
 
+    hwaddr ram_limit;
     void *htab;
-    long htab_size;
-    target_phys_addr_t fdt_addr, rtas_addr;
+    long htab_shift;
+    hwaddr rma_size;
+    int vrma_adjust;
+    hwaddr fdt_addr, rtas_addr;
     long rtas_size;
     void *fdt_skel;
     target_ulong entry_point;
+    int next_irq;
+    int rtc_offset;
+    char *cpu_model;
+    bool has_graphics;
+
+    uint32_t epow_irq;
+    Notifier epow_notifier;
 } sPAPREnvironment;
 
 #define H_SUCCESS         0
@@ -134,7 +151,7 @@ typedef struct sPAPREnvironment {
 #define H_DABRX_KERNEL     (1ULL<<(63-62))
 #define H_DABRX_USER       (1ULL<<(63-63))
 
-/* Each control block has to be on a 4K bondary */
+/* Each control block has to be on a 4K boundary */
 #define H_CB_ALIGNMENT     4096
 
 /* pSeries hypervisor opcodes */
@@ -256,7 +273,8 @@ typedef struct sPAPREnvironment {
  */
 #define KVMPPC_HCALL_BASE       0xf000
 #define KVMPPC_H_RTAS           (KVMPPC_HCALL_BASE + 0x0)
-#define KVMPPC_HCALL_MAX        KVMPPC_H_RTAS
+#define KVMPPC_H_LOGICAL_MEMOP  (KVMPPC_HCALL_BASE + 0x1)
+#define KVMPPC_HCALL_MAX        KVMPPC_H_LOGICAL_MEMOP
 
 extern sPAPREnvironment *spapr;
 
@@ -264,19 +282,32 @@ extern sPAPREnvironment *spapr;
 
 #ifdef DEBUG_SPAPR_HCALLS
 #define hcall_dprintf(fmt, ...) \
-    do { fprintf(stderr, fmt, ## __VA_ARGS__); } while (0)
+    do { fprintf(stderr, "%s: " fmt, __func__, ## __VA_ARGS__); } while (0)
 #else
 #define hcall_dprintf(fmt, ...) \
     do { } while (0)
 #endif
 
-typedef target_ulong (*spapr_hcall_fn)(CPUState *env, sPAPREnvironment *spapr,
+typedef target_ulong (*spapr_hcall_fn)(PowerPCCPU *cpu, sPAPREnvironment *spapr,
                                        target_ulong opcode,
                                        target_ulong *args);
 
 void spapr_register_hypercall(target_ulong opcode, spapr_hcall_fn fn);
-target_ulong spapr_hypercall(CPUState *env, target_ulong opcode,
+target_ulong spapr_hypercall(PowerPCCPU *cpu, target_ulong opcode,
                              target_ulong *args);
+
+int spapr_allocate_irq(int hint, bool lsi);
+int spapr_allocate_irq_block(int num, bool lsi);
+
+static inline int spapr_allocate_msi(int hint)
+{
+    return spapr_allocate_irq(hint, false);
+}
+
+static inline int spapr_allocate_lsi(int hint)
+{
+    return spapr_allocate_irq(hint, true);
+}
 
 static inline uint32_t rtas_ld(target_ulong phys, int n)
 {
@@ -291,11 +322,37 @@ static inline void rtas_st(target_ulong phys, int n, uint32_t val)
 typedef void (*spapr_rtas_fn)(sPAPREnvironment *spapr, uint32_t token,
                               uint32_t nargs, target_ulong args,
                               uint32_t nret, target_ulong rets);
-void spapr_rtas_register(const char *name, spapr_rtas_fn fn);
+int spapr_rtas_register(const char *name, spapr_rtas_fn fn);
 target_ulong spapr_rtas_call(sPAPREnvironment *spapr,
                              uint32_t token, uint32_t nargs, target_ulong args,
                              uint32_t nret, target_ulong rets);
-int spapr_rtas_device_tree_setup(void *fdt, target_phys_addr_t rtas_addr,
-                                 target_phys_addr_t rtas_size);
+int spapr_rtas_device_tree_setup(void *fdt, hwaddr rtas_addr,
+                                 hwaddr rtas_size);
+
+#define SPAPR_TCE_PAGE_SHIFT   12
+#define SPAPR_TCE_PAGE_SIZE    (1ULL << SPAPR_TCE_PAGE_SHIFT)
+#define SPAPR_TCE_PAGE_MASK    (SPAPR_TCE_PAGE_SIZE - 1)
+
+typedef struct sPAPRTCE {
+    uint64_t tce;
+} sPAPRTCE;
+
+#define SPAPR_VIO_BASE_LIOBN    0x00000000
+#define SPAPR_PCI_BASE_LIOBN    0x80000000
+
+#define RTAS_ERROR_LOG_MAX      2048
+
+
+void spapr_iommu_init(void);
+void spapr_events_init(sPAPREnvironment *spapr);
+void spapr_events_fdt_skel(void *fdt, uint32_t epow_irq);
+DMAContext *spapr_tce_new_dma_context(uint32_t liobn, size_t window_size);
+void spapr_tce_free(DMAContext *dma);
+void spapr_tce_reset(DMAContext *dma);
+void spapr_tce_set_bypass(DMAContext *dma, bool bypass);
+int spapr_dma_dt(void *fdt, int node_off, const char *propname,
+                 uint32_t liobn, uint64_t window, uint32_t size);
+int spapr_tcet_dma_dt(void *fdt, int node_off, const char *propname,
+                      DMAContext *dma);
 
 #endif /* !defined (__HW_SPAPR_H__) */

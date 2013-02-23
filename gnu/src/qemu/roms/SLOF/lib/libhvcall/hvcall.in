@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2004, 2008 IBM Corporation
+ * Copyright (c) 2004, 2011 IBM Corporation
  * All rights reserved.
  * This program and the accompanying materials
  * are made available under the terms of the BSD License
@@ -16,3 +16,15 @@ cod(hv-haschar)
 cod(hv-reg-crq)
 cod(hv-free-crq)
 cod(hv-send-crq)
+cod(hv-put-tce)
+
+cod(RB@)
+cod(RB!)
+cod(RW@)
+cod(RW!)
+cod(RL@)
+cod(RL!)
+cod(RX@)
+cod(RX!)
+
+cod(hv-logical-memop)

@@ -140,8 +140,9 @@ int loader_exec(const char * filename, char ** argv, char ** envp,
     bprm->p = TARGET_PAGE_SIZE*MAX_ARG_PAGES-sizeof(unsigned int);
     memset(bprm->page, 0, sizeof(bprm->page));
     retval = open(filename, O_RDONLY);
-    if (retval < 0)
-        return retval;
+    if (retval < 0) {
+        return -errno;
+    }
     bprm->fd = retval;
     bprm->filename = (char *)filename;
     bprm->argc = count(argv);
@@ -165,8 +166,7 @@ int loader_exec(const char * filename, char ** argv, char ** envp,
             retval = load_flt_binary(bprm,regs,infop);
 #endif
         } else {
-            fprintf(stderr, "Unknown binary format\n");
-            return -1;
+            return -ENOEXEC;
         }
     }
 
@@ -178,7 +178,7 @@ int loader_exec(const char * filename, char ** argv, char ** envp,
 
     /* Something went wrong, return the inode and free the argument pages*/
     for (i=0 ; i<MAX_ARG_PAGES ; i++) {
-        free(bprm->page[i]);
+        g_free(bprm->page[i]);
     }
     return(retval);
 }

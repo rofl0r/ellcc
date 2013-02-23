@@ -7,36 +7,30 @@
  */
 
 #include "hw.h"
-#include "pc.h"
 #include "mcf.h"
 #include "boards.h"
 #include "loader.h"
 #include "elf.h"
+#include "exec/address-spaces.h"
 
 #define KERNEL_LOAD_ADDR 0x10000
 #define AN5206_MBAR_ADDR 0x10000000
 #define AN5206_RAMBAR_ADDR 0x20000000
 
-/* Stub functions for hardware that doesn't exist.  */
-void pic_info(Monitor *mon)
-{
-}
-
-void irq_info(Monitor *mon)
-{
-}
-
 /* Board init.  */
 
-static void an5206_init(ram_addr_t ram_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void an5206_init(QEMUMachineInitArgs *args)
 {
-    CPUState *env;
+    ram_addr_t ram_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    CPUM68KState *env;
     int kernel_size;
     uint64_t elf_entry;
-    target_phys_addr_t entry;
+    hwaddr entry;
+    MemoryRegion *address_space_mem = get_system_memory();
+    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *sram = g_new(MemoryRegion, 1);
 
     if (!cpu_model)
         cpu_model = "m5206";
@@ -52,14 +46,16 @@ static void an5206_init(ram_addr_t ram_size,
     env->rambar0 = AN5206_RAMBAR_ADDR | 1;
 
     /* DRAM at address zero */
-    cpu_register_physical_memory(0, ram_size,
-        qemu_ram_alloc(NULL, "an5206.ram", ram_size) | IO_MEM_RAM);
+    memory_region_init_ram(ram, "an5206.ram", ram_size);
+    vmstate_register_ram_global(ram);
+    memory_region_add_subregion(address_space_mem, 0, ram);
 
     /* Internal SRAM.  */
-    cpu_register_physical_memory(AN5206_RAMBAR_ADDR, 512,
-        qemu_ram_alloc(NULL, "an5206.sram", 512) | IO_MEM_RAM);
+    memory_region_init_ram(sram, "an5206.sram", 512);
+    vmstate_register_ram_global(sram);
+    memory_region_add_subregion(address_space_mem, AN5206_RAMBAR_ADDR, sram);
 
-    mcf5206_init(AN5206_MBAR_ADDR, env);
+    mcf5206_init(address_space_mem, AN5206_MBAR_ADDR, env);
 
     /* Load kernel.  */
     if (!kernel_filename) {
@@ -90,6 +86,7 @@ static QEMUMachine an5206_machine = {
     .name = "an5206",
     .desc = "Arnewsh 5206",
     .init = an5206_init,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void an5206_machine_init(void)

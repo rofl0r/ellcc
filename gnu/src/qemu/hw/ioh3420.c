@@ -20,9 +20,9 @@
  * with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "pci_ids.h"
-#include "msi.h"
-#include "pcie.h"
+#include "pci/pci_ids.h"
+#include "pci/msi.h"
+#include "pci/pcie.h"
 #include "ioh3420.h"
 
 #define PCI_DEVICE_ID_IOH_EPORT         0x3420  /* D0:F0 express mode */
@@ -71,7 +71,6 @@ static void ioh3420_write_config(PCIDevice *d,
         pci_get_long(d->config + d->exp.aer_cap + PCI_ERR_ROOT_COMMAND);
 
     pci_bridge_write_config(d, address, val, len);
-    msi_write_config(d, address, val, len);
     ioh3420_aer_vector_update(d);
     pcie_cap_slot_write_config(d, address, val, len);
     pcie_aer_write_config(d, address, val, len);
@@ -80,8 +79,8 @@ static void ioh3420_write_config(PCIDevice *d,
 
 static void ioh3420_reset(DeviceState *qdev)
 {
-    PCIDevice *d = DO_UPCAST(PCIDevice, qdev, qdev);
-    msi_reset(d);
+    PCIDevice *d = PCI_DEVICE(qdev);
+
     ioh3420_aer_vector_update(d);
     pcie_cap_root_reset(d);
     pcie_cap_deverr_reset(d);
@@ -97,7 +96,6 @@ static int ioh3420_initfn(PCIDevice *d)
     PCIEPort *p = DO_UPCAST(PCIEPort, br, br);
     PCIESlot *s = DO_UPCAST(PCIESlot, port, p);
     int rc;
-    int tmp;
 
     rc = pci_bridge_initfn(d);
     if (rc < 0) {
@@ -127,7 +125,6 @@ static int ioh3420_initfn(PCIDevice *d)
     rc = pcie_chassis_add_slot(s);
     if (rc < 0) {
         goto err_pcie_cap;
-        return rc;
     }
     pcie_cap_root_init(d);
     rc = pcie_aer_init(d, IOH_EP_AER_OFFSET);
@@ -145,12 +142,11 @@ err_pcie_cap:
 err_msi:
     msi_uninit(d);
 err_bridge:
-    tmp = pci_bridge_exitfn(d);
-    assert(!tmp);
+    pci_bridge_exitfn(d);
     return rc;
 }
 
-static int ioh3420_exitfn(PCIDevice *d)
+static void ioh3420_exitfn(PCIDevice *d)
 {
     PCIBridge* br = DO_UPCAST(PCIBridge, dev, d);
     PCIEPort *p = DO_UPCAST(PCIEPort, br, br);
@@ -160,7 +156,7 @@ static int ioh3420_exitfn(PCIDevice *d)
     pcie_chassis_del_slot(s);
     pcie_cap_exit(d);
     msi_uninit(d);
-    return pci_bridge_exitfn(d);
+    pci_bridge_exitfn(d);
 }
 
 PCIESlot *ioh3420_init(PCIBus *bus, int devfn, bool multifunction,
@@ -201,39 +197,48 @@ static const VMStateDescription vmstate_ioh3420 = {
     }
 };
 
-static PCIDeviceInfo ioh3420_info = {
-    .qdev.name = "ioh3420",
-    .qdev.desc = "Intel IOH device id 3420 PCIE Root Port",
-    .qdev.size = sizeof(PCIESlot),
-    .qdev.reset = ioh3420_reset,
-    .qdev.vmsd = &vmstate_ioh3420,
-
-    .is_express = 1,
-    .is_bridge = 1,
-    .config_write = ioh3420_write_config,
-    .init = ioh3420_initfn,
-    .exit = ioh3420_exitfn,
-    .vendor_id = PCI_VENDOR_ID_INTEL,
-    .device_id = PCI_DEVICE_ID_IOH_EPORT,
-    .revision = PCI_DEVICE_ID_IOH_REV,
-
-    .qdev.props = (Property[]) {
-        DEFINE_PROP_UINT8("port", PCIESlot, port.port, 0),
-        DEFINE_PROP_UINT8("chassis", PCIESlot, chassis, 0),
-        DEFINE_PROP_UINT16("slot", PCIESlot, slot, 0),
-        DEFINE_PROP_UINT16("aer_log_max", PCIESlot,
-                           port.br.dev.exp.aer_log.log_max,
-                           PCIE_AER_LOG_MAX_DEFAULT),
-        DEFINE_PROP_END_OF_LIST(),
-    }
+static Property ioh3420_properties[] = {
+    DEFINE_PROP_UINT8("port", PCIESlot, port.port, 0),
+    DEFINE_PROP_UINT8("chassis", PCIESlot, chassis, 0),
+    DEFINE_PROP_UINT16("slot", PCIESlot, slot, 0),
+    DEFINE_PROP_UINT16("aer_log_max", PCIESlot,
+    port.br.dev.exp.aer_log.log_max,
+    PCIE_AER_LOG_MAX_DEFAULT),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void ioh3420_register(void)
+static void ioh3420_class_init(ObjectClass *klass, void *data)
 {
-    pci_qdev_register(&ioh3420_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->is_express = 1;
+    k->is_bridge = 1;
+    k->config_write = ioh3420_write_config;
+    k->init = ioh3420_initfn;
+    k->exit = ioh3420_exitfn;
+    k->vendor_id = PCI_VENDOR_ID_INTEL;
+    k->device_id = PCI_DEVICE_ID_IOH_EPORT;
+    k->revision = PCI_DEVICE_ID_IOH_REV;
+    dc->desc = "Intel IOH device id 3420 PCIE Root Port";
+    dc->reset = ioh3420_reset;
+    dc->vmsd = &vmstate_ioh3420;
+    dc->props = ioh3420_properties;
 }
 
-device_init(ioh3420_register);
+static const TypeInfo ioh3420_info = {
+    .name          = "ioh3420",
+    .parent        = TYPE_PCI_DEVICE,
+    .instance_size = sizeof(PCIESlot),
+    .class_init    = ioh3420_class_init,
+};
+
+static void ioh3420_register_types(void)
+{
+    type_register_static(&ioh3420_info);
+}
+
+type_init(ioh3420_register_types)
 
 /*
  * Local variables:

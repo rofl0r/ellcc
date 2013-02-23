@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #endif /* DEBUG_REMAP */
 
-#include "qemu-types.h"
+#include "exec/user/abitypes.h"
 
 enum BSDType {
     target_freebsd,
@@ -23,7 +23,7 @@ extern enum BSDType bsd_type;
 #include "syscall_defs.h"
 #include "syscall.h"
 #include "target_signal.h"
-#include "gdbstub.h"
+#include "exec/gdbstub.h"
 
 #if defined(CONFIG_USE_NPTL)
 #define THREAD __thread
@@ -139,14 +139,14 @@ abi_long do_openbsd_syscall(void *cpu_env, int num, abi_long arg1,
                             abi_long arg2, abi_long arg3, abi_long arg4,
                             abi_long arg5, abi_long arg6);
 void gemu_log(const char *fmt, ...) GCC_FMT_ATTR(1, 2);
-extern THREAD CPUState *thread_env;
-void cpu_loop(CPUState *env);
+extern THREAD CPUArchState *thread_env;
+void cpu_loop(CPUArchState *env);
 char *target_strerror(int err);
 int get_osversion(void);
 void fork_start(void);
 void fork_end(int child);
 
-#include "qemu-log.h"
+#include "qemu/log.h"
 
 /* strace.c */
 void
@@ -167,13 +167,13 @@ void print_openbsd_syscall_ret(int num, abi_long ret);
 extern int do_strace;
 
 /* signal.c */
-void process_pending_signals(CPUState *cpu_env);
+void process_pending_signals(CPUArchState *cpu_env);
 void signal_init(void);
-//int queue_signal(CPUState *env, int sig, target_siginfo_t *info);
+//int queue_signal(CPUArchState *env, int sig, target_siginfo_t *info);
 //void host_to_target_siginfo(target_siginfo_t *tinfo, const siginfo_t *info);
 //void target_to_host_siginfo(siginfo_t *info, const target_siginfo_t *tinfo);
-long do_sigreturn(CPUState *env);
-long do_rt_sigreturn(CPUState *env);
+long do_sigreturn(CPUArchState *env);
+long do_rt_sigreturn(CPUArchState *env);
 abi_long do_sigaltstack(abi_ulong uss_addr, abi_ulong uoss_addr, abi_ulong sp);
 
 /* mmap.c */

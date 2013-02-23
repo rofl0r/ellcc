@@ -13,7 +13,7 @@ import sys
 import re
 
 # Functions that change stacks
-STACKHOP = ['__send_disk_op']
+STACKHOP = ['stack_hop', 'stack_hop_back']
 # List of functions we can assume are never called.
 #IGNORE = ['panic', '__dprintf']
 IGNORE = ['panic']
@@ -149,7 +149,7 @@ def calc():
                 stackusage += int(im.group('num'), 16)
 
             if atstart:
-                if insn == 'movl   %esp,%ebp':
+                if '%esp' in insn or insn.startswith('leal'):
                     # Still part of initial header
                     continue
                 cur[1] = stackusage

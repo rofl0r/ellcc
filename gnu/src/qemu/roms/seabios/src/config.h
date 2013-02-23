@@ -14,13 +14,6 @@
 #define CONFIG_APPNAME6 "BOCHS "
 #define CONFIG_APPNAME4 "BXPC"
 
-// When option roms are not pre-deployed, SeaBIOS can copy an optionrom
-// from flash for up to 2 devices.
-#define OPTIONROM_VENDEV_1 0x00000000
-#define OPTIONROM_MEM_1 0x00000000
-#define OPTIONROM_VENDEV_2 0x00000000
-#define OPTIONROM_MEM_2 0x00000000
-
 // Maximum number of map entries in the e820 map
 #define CONFIG_MAX_E820 32
 // Space to reserve in f-segment for dynamic allocations
@@ -29,6 +22,8 @@
 #define CONFIG_MAX_HIGHTABLE (64*1024)
 // Largest supported externaly facing drive id
 #define CONFIG_MAX_EXTDRIVE 16
+// Number of bytes the smbios may be and still live in the f-segment
+#define BUILD_MAX_SMBIOS_FSEG     600
 
 #define CONFIG_MODEL_ID      0xFC
 #define CONFIG_SUBMODEL_ID   0x00
@@ -43,34 +38,22 @@
 #define BUILD_ROM_START           0xc0000
 #define BUILD_BIOS_ADDR           0xf0000
 #define BUILD_BIOS_SIZE           0x10000
+#define BUILD_EXTRA_STACK_SIZE    0x800
 // 32KB for shadow ram copying (works around emulator deficiencies)
 #define BUILD_BIOS_TMP_ADDR       0x30000
-#define BUILD_MAX_HIGHMEM         0xe0000000
-
-// Support old pci mem assignment behaviour
-//#define CONFIG_OLD_PCIMEM_ASSIGNMENT    1
-#if CONFIG_OLD_PCIMEM_ASSIGNMENT
-#define BUILD_PCIMEM_START        0xf0000000
-#define BUILD_PCIMEM_SIZE         (BUILD_PCIMEM_END - BUILD_PCIMEM_START)
-#define BUILD_PCIMEM_END          0xfec00000    /* IOAPIC is mapped at */
-#define BUILD_PCIPREFMEM_START    0
-#define BUILD_PCIPREFMEM_SIZE     0
-#define BUILD_PCIPREFMEM_END      0
-#else
-#define BUILD_PCIMEM_START        0xf0000000
-#define BUILD_PCIMEM_SIZE         0x08000000    /* half- of pci window */
-#define BUILD_PCIMEM_END          (BUILD_PCIMEM_START + BUILD_PCIMEM_SIZE)
-#define BUILD_PCIPREFMEM_START    BUILD_PCIMEM_END
-#define BUILD_PCIPREFMEM_SIZE     (BUILD_PCIPREFMEM_END - BUILD_PCIPREFMEM_START)
-#define BUILD_PCIPREFMEM_END      0xfec00000    /* IOAPIC is mapped at */
-#endif
-
-#define BUILD_APIC_ADDR           0xfee00000
-#define BUILD_IOAPIC_ADDR         0xfec00000
-
 #define BUILD_SMM_INIT_ADDR       0x38000
 #define BUILD_SMM_ADDR            0xa8000
 #define BUILD_SMM_SIZE            0x8000
+
+#define BUILD_PCIMEM_START        0xe0000000
+#define BUILD_PCIMEM_END          0xfec00000    /* IOAPIC is mapped at */
+#define BUILD_PCIMEM64_START      0x8000000000ULL
+#define BUILD_PCIMEM64_END        0x10000000000ULL
+
+#define BUILD_IOAPIC_ADDR         0xfec00000
+#define BUILD_IOAPIC_ID           0
+#define BUILD_HPET_ADDRESS        0xfed00000
+#define BUILD_APIC_ADDR           0xfee00000
 
 // Important real-mode segments
 #define SEG_IVT      0x0000

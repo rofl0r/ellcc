@@ -1,31 +1,24 @@
 #ifndef HW_FDC_H
 #define HW_FDC_H
 
-#include "isa.h"
-#include "blockdev.h"
+#include "qemu-common.h"
 
 /* fdc.c */
 #define MAX_FD 2
 
-static inline void fdctrl_init_isa(DriveInfo **fds)
-{
-    ISADevice *dev;
+typedef enum FDriveType {
+    FDRIVE_DRV_144  = 0x00,   /* 1.44 MB 3"5 drive      */
+    FDRIVE_DRV_288  = 0x01,   /* 2.88 MB 3"5 drive      */
+    FDRIVE_DRV_120  = 0x02,   /* 1.2  MB 5"25 drive     */
+    FDRIVE_DRV_NONE = 0x03,   /* No drive connected     */
+} FDriveType;
 
-    dev = isa_try_create("isa-fdc");
-    if (!dev) {
-        return;
-    }
-    if (fds[0]) {
-        qdev_prop_set_drive_nofail(&dev->qdev, "driveA", fds[0]->bdrv);
-    }
-    if (fds[1]) {
-        qdev_prop_set_drive_nofail(&dev->qdev, "driveB", fds[1]->bdrv);
-    }
-    qdev_init_nofail(&dev->qdev);
-}
-
+ISADevice *fdctrl_init_isa(ISABus *bus, DriveInfo **fds);
 void fdctrl_init_sysbus(qemu_irq irq, int dma_chann,
-                        target_phys_addr_t mmio_base, DriveInfo **fds);
-void sun4m_fdctrl_init(qemu_irq irq, target_phys_addr_t io_base,
+                        hwaddr mmio_base, DriveInfo **fds);
+void sun4m_fdctrl_init(qemu_irq irq, hwaddr io_base,
                        DriveInfo **fds, qemu_irq *fdc_tc);
+
+FDriveType isa_fdc_get_drive_type(ISADevice *fdc, int i);
+
 #endif

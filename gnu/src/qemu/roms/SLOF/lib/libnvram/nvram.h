@@ -33,26 +33,6 @@ typedef struct {
 
 #define PARTITION_HEADER_SIZE 16
 
-/* FIXME this should be done complete and in a more prominent place */
-#define	__LITTLE_ENDIAN	1234
-#define	__BIG_ENDIAN	4321
-#ifdef __i386__
-#define __BYTE_ORDER __LITTLE_ENDIAN
-#else
-#define __BYTE_ORDER __BIG_ENDIAN
-#endif
-#if __BYTE_ORDER == __BIG_ENDIAN
-#define cpu_to_be64(x)  (x)
-#define be64_to_cpu(x)  (x)
-#define cpu_to_be32(x)  (x)
-#define be32_to_cpu(x)  (x)
-#else
-#include <byteswap.h>
-#define cpu_to_be64(x)  bswap_64(x)
-#define be64_to_cpu(x)  bswap_64(x)
-#define cpu_to_be32(x)  bswap_32(x)
-#define be32_to_cpu(x)  bswap_32(x)
-#endif
 
 /* exported functions */
 
@@ -80,6 +60,9 @@ int delete_nvram_partition(partition_t part);
 void reset_nvram(void);
 void wipe_nvram(void);
 void nvram_debug(void);
+void nvram_init(uint32_t store_token, uint32_t fetch_token,
+		long nv_size, void* nvram_addr);
+unsigned int get_nvram_size(void);
 
 /* envvar.c */
 char *get_env(partition_t part, char *envvar);

@@ -24,9 +24,6 @@ CREATE load-list 2 cells allot load-list 2 cells erase
    dup 8 + @ ciregs >r2 ! @ call-client \ entry point is pointer to .opd
 ;
 
-10000000 VALUE LOAD-BASE
-2000000 VALUE FLASH-LOAD-BASE
-
 : set-bootpath
    s" disk" find-alias
    dup IF ELSE drop s" boot-device" evaluate find-alias THEN
@@ -47,8 +44,13 @@ CREATE load-list 2 cells allot load-list 2 cells erase
 ;
 
 : .(client-exec) ( arg len -- rc )
-   s" snk" romfs-lookup 0<> IF load-elf-file drop start-elf64 client-data
-   ELSE 2drop false THEN
+   s" snk" romfs-lookup 0<> IF
+      \ Load SNK client 15 MiB after Paflof... FIXME: Hard-coded offset is ugly!
+      paflof-start f00000 +
+      elf-load-file-to-addr drop start-elf64 client-data
+   ELSE
+      2drop false
+   THEN
 ;
 ' .(client-exec) to (client-exec)
 

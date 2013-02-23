@@ -10,7 +10,8 @@
 #include "config.h" // CONFIG_*
 #include "ioport.h" // outb
 #include "pci_ids.h" // PCI_VENDOR_ID_INTEL
-#include "dev-i440fx.h"
+#include "xen.h" // usingXen
+#include "dev-q35.h"
 
 ASM32FLAT(
     ".global smm_relocation_start\n"
@@ -73,7 +74,7 @@ ASM32FLAT(
 extern u8 smm_relocation_start, smm_relocation_end;
 extern u8 smm_code_start, smm_code_end;
 
-void
+static void
 smm_save_and_copy(void)
 {
     /* save original memory content */
@@ -84,7 +85,7 @@ smm_save_and_copy(void)
            &smm_relocation_end - &smm_relocation_start);
 }
 
-void
+static void
 smm_relocate_and_restore(void)
 {
     /* init APM status port */
@@ -106,9 +107,76 @@ smm_relocate_and_restore(void)
     wbinvd();
 }
 
+#define I440FX_SMRAM    0x72
+#define PIIX_DEVACTB    0x58
+#define PIIX_APMC_EN    (1 << 25)
+
+// This code is hardcoded for PIIX4 Power Management device.
+static void piix4_apmc_smm_init(struct pci_device *pci, void *arg)
+{
+    struct pci_device *i440_pci = pci_find_device(PCI_VENDOR_ID_INTEL
+                                                  , PCI_DEVICE_ID_INTEL_82441);
+    if (!i440_pci)
+        return;
+
+    /* check if SMM init is already done */
+    u32 value = pci_config_readl(pci->bdf, PIIX_DEVACTB);
+    if (value & PIIX_APMC_EN)
+        return;
+
+    /* enable the SMM memory window */
+    pci_config_writeb(i440_pci->bdf, I440FX_SMRAM, 0x02 | 0x48);
+
+    smm_save_and_copy();
+
+    /* enable SMI generation when writing to the APMC register */
+    pci_config_writel(pci->bdf, PIIX_DEVACTB, value | PIIX_APMC_EN);
+
+    smm_relocate_and_restore();
+
+    /* close the SMM memory window and enable normal SMM */
+    pci_config_writeb(i440_pci->bdf, I440FX_SMRAM, 0x02 | 0x08);
+}
+
+/* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_LPC */
+void ich9_lpc_apmc_smm_init(struct pci_device *dev, void *arg)
+{
+    struct pci_device *mch_dev;
+    int mch_bdf;
+
+    // This code is hardcoded for Q35 Power Management device.
+    mch_dev = pci_find_device(PCI_VENDOR_ID_INTEL,
+                              PCI_DEVICE_ID_INTEL_Q35_MCH);
+    mch_bdf = mch_dev->bdf;
+
+    if (mch_bdf < 0)
+        return;
+
+    /* check if SMM init is already done */
+    u32 value = inl(PORT_ACPI_PM_BASE + ICH9_PMIO_SMI_EN);
+    if (value & ICH9_PMIO_SMI_EN_APMC_EN)
+        return;
+
+    /* enable the SMM memory window */
+    pci_config_writeb(mch_bdf, Q35_HOST_BRIDGE_SMRAM, 0x02 | 0x48);
+
+    smm_save_and_copy();
+
+    /* enable SMI generation when writing to the APMC register */
+    outl(value | ICH9_PMIO_SMI_EN_APMC_EN,
+         PORT_ACPI_PM_BASE + ICH9_PMIO_SMI_EN);
+
+    smm_relocate_and_restore();
+
+    /* close the SMM memory window and enable normal SMM */
+    pci_config_writeb(mch_bdf, Q35_HOST_BRIDGE_SMRAM, 0x02 | 0x08);
+}
+
 static const struct pci_device_id smm_init_tbl[] = {
     PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3,
                piix4_apmc_smm_init),
+    PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ICH9_LPC,
+               ich9_lpc_apmc_smm_init),
 
     PCI_DEVICE_END,
 };
@@ -121,6 +189,8 @@ smm_init(void)
         return;
     if (!CONFIG_USE_SMM)
         return;
+    if (usingXen())
+	return;
 
     dprintf(3, "init smm\n");
     pci_find_init_device(smm_init_tbl, NULL);

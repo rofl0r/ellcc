@@ -24,7 +24,7 @@
 
 #include "hw.h"
 #include "mips.h"
-#include "qemu-timer.h"
+#include "qemu/timer.h"
 
 /********************************************************/
 /* debug rc4030 */
@@ -50,7 +50,7 @@ do { fprintf(stderr, "rc4030 ERROR: %s: " fmt, __func__ , ## __VA_ARGS__); } whi
 typedef struct dma_pagetable_entry {
     int32_t frame;
     int32_t owner;
-} __attribute__((packed)) dma_pagetable_entry;
+} QEMU_PACKED dma_pagetable_entry;
 
 #define DMA_PAGESIZE    4096
 #define DMA_REG_ENABLE  1
@@ -95,6 +95,9 @@ typedef struct rc4030State
 
     qemu_irq timer_irq;
     qemu_irq jazz_bus_irq;
+
+    MemoryRegion iomem_chipset;
+    MemoryRegion iomem_jazzio;
 } rc4030State;
 
 static void set_next_tick(rc4030State *s)
@@ -109,7 +112,7 @@ static void set_next_tick(rc4030State *s)
 }
 
 /* called for accesses to rc4030 */
-static uint32_t rc4030_readl(void *opaque, target_phys_addr_t addr)
+static uint32_t rc4030_readl(void *opaque, hwaddr addr)
 {
     rc4030State *s = opaque;
     uint32_t val;
@@ -247,7 +250,7 @@ static uint32_t rc4030_readl(void *opaque, target_phys_addr_t addr)
     return val;
 }
 
-static uint32_t rc4030_readw(void *opaque, target_phys_addr_t addr)
+static uint32_t rc4030_readw(void *opaque, hwaddr addr)
 {
     uint32_t v = rc4030_readl(opaque, addr & ~0x3);
     if (addr & 0x2)
@@ -256,13 +259,13 @@ static uint32_t rc4030_readw(void *opaque, target_phys_addr_t addr)
         return v & 0xffff;
 }
 
-static uint32_t rc4030_readb(void *opaque, target_phys_addr_t addr)
+static uint32_t rc4030_readb(void *opaque, hwaddr addr)
 {
     uint32_t v = rc4030_readl(opaque, addr & ~0x3);
     return (v >> (8 * (addr & 0x3))) & 0xff;
 }
 
-static void rc4030_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void rc4030_writel(void *opaque, hwaddr addr, uint32_t val)
 {
     rc4030State *s = opaque;
     addr &= 0x3fff;
@@ -305,7 +308,7 @@ static void rc4030_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
     case 0x0060:
         /* HACK */
         if (s->cache_ltag == 0x80000001 && s->cache_bmask == 0xf0f0f0f) {
-            target_phys_addr_t dest = s->cache_ptag & ~0x1;
+            hwaddr dest = s->cache_ptag & ~0x1;
             dest += (s->cache_maint & 0x3) << 3;
             cpu_physical_memory_write(dest, &val, 4);
         }
@@ -387,7 +390,7 @@ static void rc4030_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
     }
 }
 
-static void rc4030_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void rc4030_writew(void *opaque, hwaddr addr, uint32_t val)
 {
     uint32_t old_val = rc4030_readl(opaque, addr & ~0x3);
 
@@ -398,7 +401,7 @@ static void rc4030_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
     rc4030_writel(opaque, addr & ~0x3, val);
 }
 
-static void rc4030_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void rc4030_writeb(void *opaque, hwaddr addr, uint32_t val)
 {
     uint32_t old_val = rc4030_readl(opaque, addr & ~0x3);
 
@@ -419,16 +422,12 @@ static void rc4030_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
     rc4030_writel(opaque, addr & ~0x3, val);
 }
 
-static CPUReadMemoryFunc * const rc4030_read[3] = {
-    rc4030_readb,
-    rc4030_readw,
-    rc4030_readl,
-};
-
-static CPUWriteMemoryFunc * const rc4030_write[3] = {
-    rc4030_writeb,
-    rc4030_writew,
-    rc4030_writel,
+static const MemoryRegionOps rc4030_ops = {
+    .old_mmio = {
+        .read = { rc4030_readb, rc4030_readw, rc4030_readl, },
+        .write = { rc4030_writeb, rc4030_writew, rc4030_writel, },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void update_jazz_irq(rc4030State *s)
@@ -480,7 +479,7 @@ static void rc4030_periodic_timer(void *opaque)
     qemu_irq_raise(s->timer_irq);
 }
 
-static uint32_t jazzio_readw(void *opaque, target_phys_addr_t addr)
+static uint32_t jazzio_readw(void *opaque, hwaddr addr)
 {
     rc4030State *s = opaque;
     uint32_t val;
@@ -518,14 +517,14 @@ static uint32_t jazzio_readw(void *opaque, target_phys_addr_t addr)
     return val;
 }
 
-static uint32_t jazzio_readb(void *opaque, target_phys_addr_t addr)
+static uint32_t jazzio_readb(void *opaque, hwaddr addr)
 {
     uint32_t v;
     v = jazzio_readw(opaque, addr & ~0x1);
     return (v >> (8 * (addr & 0x1))) & 0xff;
 }
 
-static uint32_t jazzio_readl(void *opaque, target_phys_addr_t addr)
+static uint32_t jazzio_readl(void *opaque, hwaddr addr)
 {
     uint32_t v;
     v = jazzio_readw(opaque, addr);
@@ -533,7 +532,7 @@ static uint32_t jazzio_readl(void *opaque, target_phys_addr_t addr)
     return v;
 }
 
-static void jazzio_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void jazzio_writew(void *opaque, hwaddr addr, uint32_t val)
 {
     rc4030State *s = opaque;
     addr &= 0xfff;
@@ -552,7 +551,7 @@ static void jazzio_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
     }
 }
 
-static void jazzio_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void jazzio_writeb(void *opaque, hwaddr addr, uint32_t val)
 {
     uint32_t old_val = jazzio_readw(opaque, addr & ~0x1);
 
@@ -567,22 +566,18 @@ static void jazzio_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
     jazzio_writew(opaque, addr & ~0x1, val);
 }
 
-static void jazzio_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void jazzio_writel(void *opaque, hwaddr addr, uint32_t val)
 {
     jazzio_writew(opaque, addr, val & 0xffff);
     jazzio_writew(opaque, addr + 2, (val >> 16) & 0xffff);
 }
 
-static CPUReadMemoryFunc * const jazzio_read[3] = {
-    jazzio_readb,
-    jazzio_readw,
-    jazzio_readl,
-};
-
-static CPUWriteMemoryFunc * const jazzio_write[3] = {
-    jazzio_writeb,
-    jazzio_writew,
-    jazzio_writel,
+static const MemoryRegionOps jazzio_ops = {
+    .old_mmio = {
+        .read = { jazzio_readb, jazzio_readw, jazzio_readl, },
+        .write = { jazzio_writeb, jazzio_writew, jazzio_writel, },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void rc4030_reset(void *opaque)
@@ -677,11 +672,11 @@ static void rc4030_save(QEMUFile *f, void *opaque)
     qemu_put_be32(f, s->itr);
 }
 
-void rc4030_dma_memory_rw(void *opaque, target_phys_addr_t addr, uint8_t *buf, int len, int is_write)
+void rc4030_dma_memory_rw(void *opaque, hwaddr addr, uint8_t *buf, int len, int is_write)
 {
     rc4030State *s = opaque;
-    target_phys_addr_t entry_addr;
-    target_phys_addr_t phys_addr;
+    hwaddr entry_addr;
+    hwaddr phys_addr;
     dma_pagetable_entry entry;
     int index;
     int ncpy, i;
@@ -718,7 +713,7 @@ void rc4030_dma_memory_rw(void *opaque, target_phys_addr_t addr, uint8_t *buf, i
 static void rc4030_do_dma(void *opaque, int n, uint8_t *buf, int len, int is_write)
 {
     rc4030State *s = opaque;
-    target_phys_addr_t dma_addr;
+    hwaddr dma_addr;
     int dev_to_mem;
 
     s->dma_regs[n][DMA_REG_ENABLE] &= ~(DMA_FLAG_TC_INTR | DMA_FLAG_MEM_INTR | DMA_FLAG_ADDR_INTR);
@@ -789,8 +784,8 @@ static rc4030_dma *rc4030_allocate_dmas(void *opaque, int n)
     struct rc4030DMAState *p;
     int i;
 
-    s = (rc4030_dma *)qemu_mallocz(sizeof(rc4030_dma) * n);
-    p = (struct rc4030DMAState *)qemu_mallocz(sizeof(struct rc4030DMAState) * n);
+    s = (rc4030_dma *)g_malloc0(sizeof(rc4030_dma) * n);
+    p = (struct rc4030DMAState *)g_malloc0(sizeof(struct rc4030DMAState) * n);
     for (i = 0; i < n; i++) {
         p->opaque = opaque;
         p->n = i;
@@ -801,12 +796,12 @@ static rc4030_dma *rc4030_allocate_dmas(void *opaque, int n)
 }
 
 void *rc4030_init(qemu_irq timer, qemu_irq jazz_bus,
-                  qemu_irq **irqs, rc4030_dma **dmas)
+                  qemu_irq **irqs, rc4030_dma **dmas,
+                  MemoryRegion *sysmem)
 {
     rc4030State *s;
-    int s_chipset, s_jazzio;
 
-    s = qemu_mallocz(sizeof(rc4030State));
+    s = g_malloc0(sizeof(rc4030State));
 
     *irqs = qemu_allocate_irqs(rc4030_irq_jazz_request, s, 16);
     *dmas = rc4030_allocate_dmas(s, 4);
@@ -819,12 +814,12 @@ void *rc4030_init(qemu_irq timer, qemu_irq jazz_bus,
     register_savevm(NULL, "rc4030", 0, 2, rc4030_save, rc4030_load, s);
     rc4030_reset(s);
 
-    s_chipset = cpu_register_io_memory(rc4030_read, rc4030_write, s,
-                                       DEVICE_NATIVE_ENDIAN);
-    cpu_register_physical_memory(0x80000000, 0x300, s_chipset);
-    s_jazzio = cpu_register_io_memory(jazzio_read, jazzio_write, s,
-                                      DEVICE_NATIVE_ENDIAN);
-    cpu_register_physical_memory(0xf0000000, 0x00001000, s_jazzio);
+    memory_region_init_io(&s->iomem_chipset, &rc4030_ops, s,
+                          "rc4030.chipset", 0x300);
+    memory_region_add_subregion(sysmem, 0x80000000, &s->iomem_chipset);
+    memory_region_init_io(&s->iomem_jazzio, &jazzio_ops, s,
+                          "rc4030.jazzio", 0x00001000);
+    memory_region_add_subregion(sysmem, 0xf0000000, &s->iomem_jazzio);
 
     return s;
 }

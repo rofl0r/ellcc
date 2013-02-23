@@ -20,7 +20,6 @@ CFLAGS +=$(ADDCFLAGS)
 
 OBJS = main.o
 OBJDIRS = netlib/netlib.o netapps/netboot.o 
-OBJDIRS += netapps/netflash.o
 OBJDIRS += netapps/ping.o
 OBJDIRS += netapps/args.o
 
@@ -31,14 +30,15 @@ endif
 
 SUBDIRS = $(dir $(OBJDIRS))
 
-all: app.o
+all:	subdirs
+	$(MAKE) app.o
 
 subdirs:
 	for dir in $(SUBDIRS); do \
 		$(MAKE) -C $$dir DIRECTORY=$(DIRECTORY)$$dir || exit 1; \
 	done
 
-app.o: subdirs $(OBJS)
+app.o: $(OBJS) $(OBJDIRS)
 	$(LD) $(LDFLAGS) $(OBJDIRS) $(OBJS) -o $@ -r 
 
 clean :	

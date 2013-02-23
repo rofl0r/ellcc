@@ -5,10 +5,13 @@
  * Written by Andrzej Zaborowski <balrog@zabor.org>
  *
  * This code is licensed under the GNU GPL v2.
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
 #include "ssi.h"
-#include "console.h"
+#include "ui/console.h"
 
 typedef struct {
     SSISlave ssidev;
@@ -116,11 +119,12 @@ static int ads7856_post_load(void *opaque, int version_id)
 
 static const VMStateDescription vmstate_ads7846 = {
     .name = "ads7846",
-    .version_id = 0,
-    .minimum_version_id = 0,
-    .minimum_version_id_old = 0,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .minimum_version_id_old = 1,
     .post_load = ads7856_post_load,
     .fields      = (VMStateField[]) {
+        VMSTATE_SSI_SLAVE(ssidev, ADS7846State),
         VMSTATE_INT32_ARRAY(input, ADS7846State, 8),
         VMSTATE_INT32(noise, ADS7846State),
         VMSTATE_INT32(cycle, ADS7846State),
@@ -150,16 +154,24 @@ static int ads7846_init(SSISlave *dev)
     return 0;
 }
 
-static SSISlaveInfo ads7846_info = {
-    .qdev.name ="ads7846",
-    .qdev.size = sizeof(ADS7846State),
-    .init = ads7846_init,
-    .transfer = ads7846_transfer
-};
-
-static void ads7846_register_devices(void)
+static void ads7846_class_init(ObjectClass *klass, void *data)
 {
-    ssi_register_slave(&ads7846_info);
+    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
+
+    k->init = ads7846_init;
+    k->transfer = ads7846_transfer;
 }
 
-device_init(ads7846_register_devices)
+static const TypeInfo ads7846_info = {
+    .name          = "ads7846",
+    .parent        = TYPE_SSI_SLAVE,
+    .instance_size = sizeof(ADS7846State),
+    .class_init    = ads7846_class_init,
+};
+
+static void ads7846_register_types(void)
+{
+    type_register_static(&ads7846_info);
+}
+
+type_init(ads7846_register_types)

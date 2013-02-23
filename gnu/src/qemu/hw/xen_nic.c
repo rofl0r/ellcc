@@ -14,6 +14,9 @@
  *
  *  You should have received a copy of the GNU General Public License along
  *  with this program; if not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Contributions after 2012-01-13 are licensed under the terms of the
+ *  GNU GPL, version 2 or (at your option) any later version.
  */
 
 #include <stdio.h>
@@ -25,7 +28,6 @@
 #include <inttypes.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -33,17 +35,13 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 
-#include <xs.h>
-#include <xenctrl.h>
-#include <xen/io/xenbus.h>
-#include <xen/io/netif.h>
-
 #include "hw.h"
-#include "net.h"
+#include "net/net.h"
 #include "net/checksum.h"
 #include "net/util.h"
-#include "qemu-char.h"
 #include "xen_backend.h"
+
+#include <xen/io/netif.h>
 
 /* ------------------------------------------------------------- */
 
@@ -183,13 +181,15 @@ static void net_tx_packets(struct XenNetDev *netdev)
             if (txreq.flags & NETTXF_csum_blank) {
                 /* have read-only mapping -> can't fill checksum in-place */
                 if (!tmpbuf) {
-                    tmpbuf = qemu_malloc(XC_PAGE_SIZE);
+                    tmpbuf = g_malloc(XC_PAGE_SIZE);
                 }
                 memcpy(tmpbuf, page + txreq.offset, txreq.size);
                 net_checksum_calculate(tmpbuf, txreq.size);
-                qemu_send_packet(&netdev->nic->nc, tmpbuf, txreq.size);
+                qemu_send_packet(qemu_get_queue(netdev->nic), tmpbuf,
+                                 txreq.size);
             } else {
-                qemu_send_packet(&netdev->nic->nc, page + txreq.offset, txreq.size);
+                qemu_send_packet(qemu_get_queue(netdev->nic),
+                                 page + txreq.offset, txreq.size);
             }
             xc_gnttab_munmap(netdev->xendev.gnttabdev, page, 1);
             net_tx_response(netdev, &txreq, NETIF_RSP_OKAY);
@@ -199,7 +199,7 @@ static void net_tx_packets(struct XenNetDev *netdev)
         }
         netdev->tx_work = 0;
     }
-    qemu_free(tmpbuf);
+    g_free(tmpbuf);
 }
 
 /* ------------------------------------------------------------- */
@@ -234,9 +234,9 @@ static void net_rx_response(struct XenNetDev *netdev,
 
 #define NET_IP_ALIGN 2
 
-static int net_rx_ok(VLANClientState *nc)
+static int net_rx_ok(NetClientState *nc)
 {
-    struct XenNetDev *netdev = DO_UPCAST(NICState, nc, nc)->opaque;
+    struct XenNetDev *netdev = qemu_get_nic_opaque(nc);
     RING_IDX rc, rp;
 
     if (netdev->xendev.be_state != XenbusStateConnected) {
@@ -255,9 +255,9 @@ static int net_rx_ok(VLANClientState *nc)
     return 1;
 }
 
-static ssize_t net_rx_packet(VLANClientState *nc, const uint8_t *buf, size_t size)
+static ssize_t net_rx_packet(NetClientState *nc, const uint8_t *buf, size_t size)
 {
-    struct XenNetDev *netdev = DO_UPCAST(NICState, nc, nc)->opaque;
+    struct XenNetDev *netdev = qemu_get_nic_opaque(nc);
     netif_rx_request_t rxreq;
     RING_IDX rc, rp;
     void *page;
@@ -302,7 +302,7 @@ static ssize_t net_rx_packet(VLANClientState *nc, const uint8_t *buf, size_t siz
 /* ------------------------------------------------------------- */
 
 static NetClientInfo net_xen_info = {
-    .type = NET_CLIENT_TYPE_NIC,
+    .type = NET_CLIENT_OPTIONS_KIND_NIC,
     .size = sizeof(NICState),
     .can_receive = net_rx_ok,
     .receive = net_rx_packet,
@@ -326,13 +326,11 @@ static int net_init(struct XenDevice *xendev)
         return -1;
     }
 
-    netdev->conf.vlan = qemu_find_vlan(netdev->xendev.dev, 1);
-    netdev->conf.peer = NULL;
-
     netdev->nic = qemu_new_nic(&net_xen_info, &netdev->conf,
                                "xen", NULL, netdev);
 
-    snprintf(netdev->nic->nc.info_str, sizeof(netdev->nic->nc.info_str),
+    snprintf(qemu_get_queue(netdev->nic)->info_str,
+             sizeof(qemu_get_queue(netdev->nic)->info_str),
              "nic: xenbus vif macaddr=%s", netdev->mac);
 
     /* fill info */
@@ -408,7 +406,7 @@ static void net_disconnect(struct XenDevice *xendev)
         netdev->rxs = NULL;
     }
     if (netdev->nic) {
-        qemu_del_vlan_client(&netdev->nic->nc);
+        qemu_del_nic(netdev->nic);
         netdev->nic = NULL;
     }
 }
@@ -417,13 +415,14 @@ static void net_event(struct XenDevice *xendev)
 {
     struct XenNetDev *netdev = container_of(xendev, struct XenNetDev, xendev);
     net_tx_packets(netdev);
+    qemu_flush_queued_packets(qemu_get_queue(netdev->nic));
 }
 
 static int net_free(struct XenDevice *xendev)
 {
     struct XenNetDev *netdev = container_of(xendev, struct XenNetDev, xendev);
 
-    qemu_free(netdev->mac);
+    g_free(netdev->mac);
     return 0;
 }
 
@@ -433,7 +432,7 @@ struct XenDevOps xen_netdev_ops = {
     .size       = sizeof(struct XenNetDev),
     .flags      = DEVOPS_FLAG_NEED_GNTDEV,
     .init       = net_init,
-    .connect    = net_connect,
+    .initialise    = net_connect,
     .event      = net_event,
     .disconnect = net_disconnect,
     .free       = net_free,

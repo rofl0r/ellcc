@@ -16,7 +16,7 @@
 #define _QEMU_VIRTIO_BALLOON_H
 
 #include "virtio.h"
-#include "pci.h"
+#include "pci/pci.h"
 
 /* from Linux's linux/virtio_balloon.h */
 
@@ -50,6 +50,6 @@ struct virtio_balloon_config
 typedef struct VirtIOBalloonStat {
     uint16_t tag;
     uint64_t val;
-} __attribute__((packed)) VirtIOBalloonStat;
+} QEMU_PACKED VirtIOBalloonStat;
 
 #endif

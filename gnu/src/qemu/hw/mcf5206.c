@@ -7,8 +7,10 @@
  */
 #include "hw.h"
 #include "mcf.h"
-#include "qemu-timer.h"
-#include "sysemu.h"
+#include "qemu/timer.h"
+#include "ptimer.h"
+#include "sysemu/sysemu.h"
+#include "exec/address-spaces.h"
 
 /* General purpose timer module.  */
 typedef struct {
@@ -132,7 +134,7 @@ static m5206_timer_state *m5206_timer_init(qemu_irq irq)
     m5206_timer_state *s;
     QEMUBH *bh;
 
-    s = (m5206_timer_state *)qemu_mallocz(sizeof(m5206_timer_state));
+    s = (m5206_timer_state *)g_malloc0(sizeof(m5206_timer_state));
     bh = qemu_bh_new(m5206_timer_trigger, s);
     s->timer = ptimer_init(bh);
     s->irq = irq;
@@ -143,7 +145,8 @@ static m5206_timer_state *m5206_timer_init(qemu_irq irq)
 /* System Integration Module.  */
 
 typedef struct {
-    CPUState *env;
+    CPUM68KState *env;
+    MemoryRegion iomem;
     m5206_timer_state *timer[2];
     void *uart[2];
     uint8_t scr;
@@ -261,16 +264,17 @@ static void m5206_mbar_reset(m5206_mbar_state *s)
     s->par = 0;
 }
 
-static uint32_t m5206_mbar_read(m5206_mbar_state *s, uint32_t offset)
+static uint64_t m5206_mbar_read(m5206_mbar_state *s,
+                                uint64_t offset, unsigned size)
 {
     if (offset >= 0x100 && offset < 0x120) {
         return m5206_timer_read(s->timer[0], offset - 0x100);
     } else if (offset >= 0x120 && offset < 0x140) {
         return m5206_timer_read(s->timer[1], offset - 0x120);
     } else if (offset >= 0x140 && offset < 0x160) {
-        return mcf_uart_read(s->uart[0], offset - 0x140);
+        return mcf_uart_read(s->uart[0], offset - 0x140, size);
     } else if (offset >= 0x180 && offset < 0x1a0) {
-        return mcf_uart_read(s->uart[1], offset - 0x180);
+        return mcf_uart_read(s->uart[1], offset - 0x180, size);
     }
     switch (offset) {
     case 0x03: return s->scr;
@@ -299,7 +303,7 @@ static uint32_t m5206_mbar_read(m5206_mbar_state *s, uint32_t offset)
 }
 
 static void m5206_mbar_write(m5206_mbar_state *s, uint32_t offset,
-                             uint32_t value)
+                             uint64_t value, unsigned size)
 {
     if (offset >= 0x100 && offset < 0x120) {
         m5206_timer_write(s->timer[0], offset - 0x100, value);
@@ -308,10 +312,10 @@ static void m5206_mbar_write(m5206_mbar_state *s, uint32_t offset,
         m5206_timer_write(s->timer[1], offset - 0x120, value);
         return;
     } else if (offset >= 0x140 && offset < 0x160) {
-        mcf_uart_write(s->uart[0], offset - 0x140, value);
+        mcf_uart_write(s->uart[0], offset - 0x140, value, size);
         return;
     } else if (offset >= 0x180 && offset < 0x1a0) {
-        mcf_uart_write(s->uart[1], offset - 0x180, value);
+        mcf_uart_write(s->uart[1], offset - 0x180, value, size);
         return;
     }
     switch (offset) {
@@ -355,7 +359,7 @@ static void m5206_mbar_write(m5206_mbar_state *s, uint32_t offset,
 
 /* Internal peripherals use a variety of register widths.
    This lookup table allows a single routine to handle all of them.  */
-static const int m5206_mbar_width[] =
+static const uint8_t m5206_mbar_width[] =
 {
   /* 000-040 */ 1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  2, 2, 2, 2,
   /* 040-080 */ 1, 2, 2, 2,  4, 1, 2, 4,  1, 2, 4, 2,  2, 4, 2, 2,
@@ -367,14 +371,14 @@ static const int m5206_mbar_width[] =
   /* 1c0-200 */ 1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,  1, 1, 1, 1,
 };
 
-static uint32_t m5206_mbar_readw(void *opaque, target_phys_addr_t offset);
-static uint32_t m5206_mbar_readl(void *opaque, target_phys_addr_t offset);
+static uint32_t m5206_mbar_readw(void *opaque, hwaddr offset);
+static uint32_t m5206_mbar_readl(void *opaque, hwaddr offset);
 
-static uint32_t m5206_mbar_readb(void *opaque, target_phys_addr_t offset)
+static uint32_t m5206_mbar_readb(void *opaque, hwaddr offset)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR read offset 0x%x", (int)offset);
     }
     if (m5206_mbar_width[offset >> 2] > 1) {
@@ -385,15 +389,15 @@ static uint32_t m5206_mbar_readb(void *opaque, target_phys_addr_t offset)
         }
         return val & 0xff;
     }
-    return m5206_mbar_read(s, offset);
+    return m5206_mbar_read(s, offset, 1);
 }
 
-static uint32_t m5206_mbar_readw(void *opaque, target_phys_addr_t offset)
+static uint32_t m5206_mbar_readw(void *opaque, hwaddr offset)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     int width;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR read offset 0x%x", (int)offset);
     }
     width = m5206_mbar_width[offset >> 2];
@@ -409,15 +413,15 @@ static uint32_t m5206_mbar_readw(void *opaque, target_phys_addr_t offset)
         val |= m5206_mbar_readb(opaque, offset + 1);
         return val;
     }
-    return m5206_mbar_read(s, offset);
+    return m5206_mbar_read(s, offset, 2);
 }
 
-static uint32_t m5206_mbar_readl(void *opaque, target_phys_addr_t offset)
+static uint32_t m5206_mbar_readl(void *opaque, hwaddr offset)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     int width;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR read offset 0x%x", (int)offset);
     }
     width = m5206_mbar_width[offset >> 2];
@@ -427,21 +431,21 @@ static uint32_t m5206_mbar_readl(void *opaque, target_phys_addr_t offset)
         val |= m5206_mbar_readw(opaque, offset + 2);
         return val;
     }
-    return m5206_mbar_read(s, offset);
+    return m5206_mbar_read(s, offset, 4);
 }
 
-static void m5206_mbar_writew(void *opaque, target_phys_addr_t offset,
+static void m5206_mbar_writew(void *opaque, hwaddr offset,
                               uint32_t value);
-static void m5206_mbar_writel(void *opaque, target_phys_addr_t offset,
+static void m5206_mbar_writel(void *opaque, hwaddr offset,
                               uint32_t value);
 
-static void m5206_mbar_writeb(void *opaque, target_phys_addr_t offset,
+static void m5206_mbar_writeb(void *opaque, hwaddr offset,
                               uint32_t value)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     int width;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR write offset 0x%x", (int)offset);
     }
     width = m5206_mbar_width[offset >> 2];
@@ -456,16 +460,16 @@ static void m5206_mbar_writeb(void *opaque, target_phys_addr_t offset,
         m5206_mbar_writew(opaque, offset & ~1, tmp);
         return;
     }
-    m5206_mbar_write(s, offset, value);
+    m5206_mbar_write(s, offset, value, 1);
 }
 
-static void m5206_mbar_writew(void *opaque, target_phys_addr_t offset,
+static void m5206_mbar_writew(void *opaque, hwaddr offset,
                               uint32_t value)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     int width;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR write offset 0x%x", (int)offset);
     }
     width = m5206_mbar_width[offset >> 2];
@@ -484,16 +488,16 @@ static void m5206_mbar_writew(void *opaque, target_phys_addr_t offset,
         m5206_mbar_writeb(opaque, offset + 1, value & 0xff);
         return;
     }
-    m5206_mbar_write(s, offset, value);
+    m5206_mbar_write(s, offset, value, 2);
 }
 
-static void m5206_mbar_writel(void *opaque, target_phys_addr_t offset,
+static void m5206_mbar_writel(void *opaque, hwaddr offset,
                               uint32_t value)
 {
     m5206_mbar_state *s = (m5206_mbar_state *)opaque;
     int width;
     offset &= 0x3ff;
-    if (offset > 0x200) {
+    if (offset >= 0x200) {
         hw_error("Bad MBAR write offset 0x%x", (int)offset);
     }
     width = m5206_mbar_width[offset >> 2];
@@ -502,32 +506,35 @@ static void m5206_mbar_writel(void *opaque, target_phys_addr_t offset,
         m5206_mbar_writew(opaque, offset + 2, value & 0xffff);
         return;
     }
-    m5206_mbar_write(s, offset, value);
+    m5206_mbar_write(s, offset, value, 4);
 }
 
-static CPUReadMemoryFunc * const m5206_mbar_readfn[] = {
-   m5206_mbar_readb,
-   m5206_mbar_readw,
-   m5206_mbar_readl
+static const MemoryRegionOps m5206_mbar_ops = {
+    .old_mmio = {
+        .read = {
+            m5206_mbar_readb,
+            m5206_mbar_readw,
+            m5206_mbar_readl,
+        },
+        .write = {
+            m5206_mbar_writeb,
+            m5206_mbar_writew,
+            m5206_mbar_writel,
+        },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static CPUWriteMemoryFunc * const m5206_mbar_writefn[] = {
-   m5206_mbar_writeb,
-   m5206_mbar_writew,
-   m5206_mbar_writel
-};
-
-qemu_irq *mcf5206_init(uint32_t base, CPUState *env)
+qemu_irq *mcf5206_init(MemoryRegion *sysmem, uint32_t base, CPUM68KState *env)
 {
     m5206_mbar_state *s;
     qemu_irq *pic;
-    int iomemtype;
 
-    s = (m5206_mbar_state *)qemu_mallocz(sizeof(m5206_mbar_state));
-    iomemtype = cpu_register_io_memory(m5206_mbar_readfn,
-                                       m5206_mbar_writefn, s,
-                                       DEVICE_NATIVE_ENDIAN);
-    cpu_register_physical_memory(base, 0x00001000, iomemtype);
+    s = (m5206_mbar_state *)g_malloc0(sizeof(m5206_mbar_state));
+
+    memory_region_init_io(&s->iomem, &m5206_mbar_ops, s,
+                          "mbar", 0x00001000);
+    memory_region_add_subregion(sysmem, base, &s->iomem);
 
     pic = qemu_allocate_irqs(m5206_mbar_set_irq, s, 14);
     s->timer[0] = m5206_timer_init(pic[9]);

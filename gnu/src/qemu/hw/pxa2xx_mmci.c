@@ -5,6 +5,9 @@
  * Written by Andrzej Zaborowski <balrog@zabor.org>
  *
  * This code is licensed under the GPLv2.
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
 #include "hw.h"
@@ -13,6 +16,7 @@
 #include "qdev.h"
 
 struct PXA2xxMMCIState {
+    MemoryRegion iomem;
     qemu_irq irq;
     qemu_irq rx_dma;
     qemu_irq tx_dma;
@@ -211,7 +215,7 @@ static void pxa2xx_mmci_wakequeues(PXA2xxMMCIState *s)
     pxa2xx_mmci_fifo_update(s);
 }
 
-static uint32_t pxa2xx_mmci_read(void *opaque, target_phys_addr_t offset)
+static uint32_t pxa2xx_mmci_read(void *opaque, hwaddr offset)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     uint32_t ret;
@@ -273,7 +277,7 @@ static uint32_t pxa2xx_mmci_read(void *opaque, target_phys_addr_t offset)
 }
 
 static void pxa2xx_mmci_write(void *opaque,
-                target_phys_addr_t offset, uint32_t value)
+                hwaddr offset, uint32_t value)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
 
@@ -382,35 +386,29 @@ static void pxa2xx_mmci_write(void *opaque,
     }
 }
 
-static uint32_t pxa2xx_mmci_readb(void *opaque, target_phys_addr_t offset)
+static uint32_t pxa2xx_mmci_readb(void *opaque, hwaddr offset)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 1;
     return pxa2xx_mmci_read(opaque, offset);
 }
 
-static uint32_t pxa2xx_mmci_readh(void *opaque, target_phys_addr_t offset)
+static uint32_t pxa2xx_mmci_readh(void *opaque, hwaddr offset)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 2;
     return pxa2xx_mmci_read(opaque, offset);
 }
 
-static uint32_t pxa2xx_mmci_readw(void *opaque, target_phys_addr_t offset)
+static uint32_t pxa2xx_mmci_readw(void *opaque, hwaddr offset)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 4;
     return pxa2xx_mmci_read(opaque, offset);
 }
 
-static CPUReadMemoryFunc * const pxa2xx_mmci_readfn[] = {
-    pxa2xx_mmci_readb,
-    pxa2xx_mmci_readh,
-    pxa2xx_mmci_readw
-};
-
 static void pxa2xx_mmci_writeb(void *opaque,
-                target_phys_addr_t offset, uint32_t value)
+                hwaddr offset, uint32_t value)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 1;
@@ -418,7 +416,7 @@ static void pxa2xx_mmci_writeb(void *opaque,
 }
 
 static void pxa2xx_mmci_writeh(void *opaque,
-                target_phys_addr_t offset, uint32_t value)
+                hwaddr offset, uint32_t value)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 2;
@@ -426,17 +424,23 @@ static void pxa2xx_mmci_writeh(void *opaque,
 }
 
 static void pxa2xx_mmci_writew(void *opaque,
-                target_phys_addr_t offset, uint32_t value)
+                hwaddr offset, uint32_t value)
 {
     PXA2xxMMCIState *s = (PXA2xxMMCIState *) opaque;
     s->ac_width = 4;
     pxa2xx_mmci_write(opaque, offset, value);
 }
 
-static CPUWriteMemoryFunc * const pxa2xx_mmci_writefn[] = {
-    pxa2xx_mmci_writeb,
-    pxa2xx_mmci_writeh,
-    pxa2xx_mmci_writew
+static const MemoryRegionOps pxa2xx_mmci_ops = {
+    .old_mmio = {
+        .read = { pxa2xx_mmci_readb,
+                  pxa2xx_mmci_readh,
+                  pxa2xx_mmci_readw, },
+        .write = { pxa2xx_mmci_writeb,
+                   pxa2xx_mmci_writeh,
+                   pxa2xx_mmci_writew, },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void pxa2xx_mmci_save(QEMUFile *f, void *opaque)
@@ -517,21 +521,21 @@ static int pxa2xx_mmci_load(QEMUFile *f, void *opaque, int version_id)
     return 0;
 }
 
-PXA2xxMMCIState *pxa2xx_mmci_init(target_phys_addr_t base,
+PXA2xxMMCIState *pxa2xx_mmci_init(MemoryRegion *sysmem,
+                hwaddr base,
                 BlockDriverState *bd, qemu_irq irq,
                 qemu_irq rx_dma, qemu_irq tx_dma)
 {
-    int iomemtype;
     PXA2xxMMCIState *s;
 
-    s = (PXA2xxMMCIState *) qemu_mallocz(sizeof(PXA2xxMMCIState));
+    s = (PXA2xxMMCIState *) g_malloc0(sizeof(PXA2xxMMCIState));
     s->irq = irq;
     s->rx_dma = rx_dma;
     s->tx_dma = tx_dma;
 
-    iomemtype = cpu_register_io_memory(pxa2xx_mmci_readfn,
-                    pxa2xx_mmci_writefn, s, DEVICE_NATIVE_ENDIAN);
-    cpu_register_physical_memory(base, 0x00100000, iomemtype);
+    memory_region_init_io(&s->iomem, &pxa2xx_mmci_ops, s,
+                          "pxa2xx-mmci", 0x00100000);
+    memory_region_add_subregion(sysmem, base, &s->iomem);
 
     /* Instantiate the actual storage */
     s->card = sd_init(bd, 0);

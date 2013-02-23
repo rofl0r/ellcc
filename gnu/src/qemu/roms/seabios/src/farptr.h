@@ -26,8 +26,8 @@ extern u16 __segment_FS, __segment_GS;
 #define READ64_SEG(prefix, SEG, value, var) do {                \
         union u64_u32_u __value;                                \
         union u64_u32_u *__r64_ptr = (union u64_u32_u *)&(var); \
-        READ32_SEG(prefix, SEG, __value.hi, __r64_ptr->hi);     \
         READ32_SEG(prefix, SEG, __value.lo, __r64_ptr->lo);     \
+        READ32_SEG(prefix, SEG, __value.hi, __r64_ptr->hi);     \
         *(u64*)&(value) = __value.val;                          \
     } while (0)
 #define WRITE8_SEG(prefix, SEG, var, value)                     \
@@ -44,8 +44,8 @@ extern u16 __segment_FS, __segment_GS;
         union u64_u32_u *__w64_ptr = (union u64_u32_u *)&(var); \
         typeof(var) __value_tmp = (value);                      \
         __value.val = *(u64*)&__value_tmp;                      \
-        WRITE32_SEG(prefix, SEG, __w64_ptr->hi, __value.hi);    \
         WRITE32_SEG(prefix, SEG, __w64_ptr->lo, __value.lo);    \
+        WRITE32_SEG(prefix, SEG, __w64_ptr->hi, __value.hi);    \
     } while (0)
 
 // Macros for automatically choosing the appropriate memory size
@@ -79,15 +79,29 @@ extern void __force_link_error__unknown_type(void);
             __force_link_error__unknown_type();         \
     } while (0)
 
+#define DECL_SEGFUNCS(SEG)                              \
+static inline void __set_seg_##SEG(u16 seg) {           \
+    __asm__("movw %w1, %%" #SEG : "=m"(__segment_##SEG) \
+            : "rm"(seg));                               \
+}                                                       \
+static inline u16 __get_seg_##SEG(void) {               \
+    u16 res;                                            \
+    __asm__("movw %%" #SEG ", %w0" : "=rm"(res)         \
+            : "m"(__segment_##SEG));                    \
+    return res;                                         \
+}
+DECL_SEGFUNCS(CS)
+DECL_SEGFUNCS(DS)
+DECL_SEGFUNCS(ES)
+DECL_SEGFUNCS(FS)
+DECL_SEGFUNCS(GS)
+DECL_SEGFUNCS(SS)
+
 // Low level macros for getting/setting a segment register.
-#define __SET_SEG(SEG, value)                                   \
-    __asm__("movw %w1, %%" #SEG : "=m"(__segment_ ## SEG)       \
-            : "rm"(value))
-#define __GET_SEG(SEG) ({                                       \
-    u16 __seg;                                                  \
-    __asm__("movw %%" #SEG ", %w0" : "=rm"(__seg)               \
-            : "m"(__segment_ ## SEG));                          \
-    __seg;})
+#define __SET_SEG(SEG, value)                   \
+    __set_seg_##SEG(value)
+#define __GET_SEG(SEG)                          \
+    __get_seg_##SEG()
 
 // Macros for accessing a variable in another segment.  (They
 // automatically update the %es segment and then make the appropriate

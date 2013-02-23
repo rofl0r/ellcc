@@ -22,6 +22,7 @@ extern int vbe_get_info(char argc, char**argv);
 #endif
 
 extern void _callback_entry(void);
+int callback(int argc, char *argv[]);
 
 
 int
@@ -32,8 +33,6 @@ main(int argc, char *argv[])
 
 	if (strcmp(argv[0], "netboot") == 0 && argc >= 5)
 		return netboot(argc, argv);
-	if (strcmp(argv[0], "netflash") == 0)
-		return netflash(argc, argv);
 	if (strcmp(argv[0], "ping") == 0)
 		return ping(argc, argv);
 #ifdef SNK_BIOSEMU_APPS

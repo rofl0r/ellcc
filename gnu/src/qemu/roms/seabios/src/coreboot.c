@@ -6,13 +6,12 @@
 
 #include "memmap.h" // add_e820
 #include "util.h" // dprintf
-#include "pci.h" // struct pir_header
-#include "acpi.h" // struct rsdp_descriptor
-#include "mptable.h" // MPTABLE_SIGNATURE
-#include "biosvar.h" // GET_EBDA
+#include "byteorder.h" // be32_to_cpu
 #include "lzmadecode.h" // LzmaDecode
 #include "smbios.h" // smbios_init
 #include "boot.h" // boot_add_cbfs
+#include "disk.h" // MAXDESCSIZE
+#include "config.h" // CONFIG_*
 
 
 /****************************************************************
@@ -120,10 +119,11 @@ find_cb_subtable(struct cb_header *cbh, u32 tag)
 }
 
 static struct cb_memory *CBMemTable;
+const char *CBvendor = "", *CBpart = "";
 
 // Populate max ram and e820 map info by scanning for a coreboot table.
-static void
-coreboot_fill_map(void)
+void
+coreboot_setup(void)
 {
     dprintf(3, "Attempting to find coreboot table\n");
 
@@ -171,11 +171,9 @@ coreboot_fill_map(void)
 
     struct cb_mainboard *cbmb = find_cb_subtable(cbh, CB_TAG_MAINBOARD);
     if (cbmb) {
-        const char *vendor = &cbmb->strings[cbmb->vendor_idx];
-        const char *part = &cbmb->strings[cbmb->part_idx];
-        dprintf(1, "Found mainboard %s %s\n", vendor, part);
-
-        vgahook_setup(vendor, part);
+        CBvendor = &cbmb->strings[cbmb->vendor_idx];
+        CBpart = &cbmb->strings[cbmb->part_idx];
+        dprintf(1, "Found mainboard %s %s\n", CBvendor, CBpart);
     }
 
     return;
@@ -194,78 +192,6 @@ fail:
  * BIOS table copying
  ****************************************************************/
 
-static void
-copy_pir(void *pos)
-{
-    struct pir_header *p = pos;
-    if (p->signature != PIR_SIGNATURE)
-        return;
-    if (PirOffset)
-        return;
-    if (p->size < sizeof(*p))
-        return;
-    if (checksum(pos, p->size) != 0)
-        return;
-    void *newpos = malloc_fseg(p->size);
-    if (!newpos) {
-        warn_noalloc();
-        return;
-    }
-    dprintf(1, "Copying PIR from %p to %p\n", pos, newpos);
-    memcpy(newpos, pos, p->size);
-    PirOffset = (u32)newpos - BUILD_BIOS_ADDR;
-}
-
-static void
-copy_mptable(void *pos)
-{
-    struct mptable_floating_s *p = pos;
-    if (p->signature != MPTABLE_SIGNATURE)
-        return;
-    if (!p->physaddr)
-        return;
-    if (checksum(pos, sizeof(*p)) != 0)
-        return;
-    u32 length = p->length * 16;
-    u16 mpclength = ((struct mptable_config_s *)p->physaddr)->length;
-    struct mptable_floating_s *newpos = malloc_fseg(length + mpclength);
-    if (!newpos) {
-        warn_noalloc();
-        return;
-    }
-    dprintf(1, "Copying MPTABLE from %p/%x to %p\n", pos, p->physaddr, newpos);
-    memcpy(newpos, pos, length);
-    newpos->physaddr = (u32)newpos + length;
-    newpos->checksum -= checksum(newpos, sizeof(*newpos));
-    memcpy((void*)newpos + length, (void*)p->physaddr, mpclength);
-}
-
-static void
-copy_acpi_rsdp(void *pos)
-{
-    if (RsdpAddr)
-        return;
-    struct rsdp_descriptor *p = pos;
-    if (p->signature != RSDP_SIGNATURE)
-        return;
-    u32 length = 20;
-    if (checksum(pos, length) != 0)
-        return;
-    if (p->revision > 1) {
-        length = p->length;
-        if (checksum(pos, length) != 0)
-            return;
-    }
-    void *newpos = malloc_fseg(length);
-    if (!newpos) {
-        warn_noalloc();
-        return;
-    }
-    dprintf(1, "Copying ACPI RSDP from %p to %p\n", pos, newpos);
-    memcpy(newpos, pos, length);
-    RsdpAddr = newpos;
-}
-
 // Attempt to find (and relocate) any standard bios tables found in a
 // given address range.
 static void
@@ -273,11 +199,8 @@ scan_tables(u32 start, u32 size)
 {
     void *p = (void*)ALIGN(start, 16);
     void *end = (void*)start + size;
-    for (; p<end; p += 16) {
-        copy_pir(p);
-        copy_mptable(p);
-        copy_acpi_rsdp(p);
-    }
+    for (; p<end; p += 16)
+        copy_table(p);
 }
 
 void
@@ -296,10 +219,6 @@ coreboot_copy_biostable(void)
         if (m->type == CB_MEM_TABLE)
             scan_tables(m->start, m->size);
     }
-
-    // XXX - just create dummy smbios table for now - should detect if
-    // smbios/dmi table is found from coreboot and use that instead.
-    smbios_init();
 }
 
 
@@ -360,25 +279,6 @@ struct cbfs_header {
     u32 pad[2];
 } PACKED;
 
-static struct cbfs_header *CBHDR;
-
-static void
-cbfs_setup(void)
-{
-    if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH)
-        return;
-
-    CBHDR = *(void **)CBFS_HEADPTR_ADDR;
-    if (CBHDR->magic != htonl(CBFS_HEADER_MAGIC)) {
-        dprintf(1, "Unable to find CBFS (ptr=%p; got %x not %x)\n"
-                , CBHDR, CBHDR->magic, htonl(CBFS_HEADER_MAGIC));
-        CBHDR = NULL;
-        return;
-    }
-
-    dprintf(1, "Found CBFS header at %p\n", CBHDR);
-}
-
 #define CBFS_FILE_MAGIC 0x455649484352414cLL // LARCHIVE
 
 struct cbfs_file {
@@ -390,124 +290,22 @@ struct cbfs_file {
     char filename[0];
 } PACKED;
 
-// Verify a cbfs entry looks valid.
-static struct cbfs_file *
-cbfs_verify(struct cbfs_file *file)
-{
-    if (file < (struct cbfs_file *)(0xFFFFFFFF - ntohl(CBHDR->romsize)))
-        return NULL;
-    u64 magic = file->magic;
-    if (magic == CBFS_FILE_MAGIC) {
-        dprintf(5, "Found CBFS file %s\n", file->filename);
-        return file;
-    }
-    return NULL;
-}
-
-// Return the first file in the CBFS archive
-static struct cbfs_file *
-cbfs_getfirst(void)
-{
-    if (! CBHDR)
-        return NULL;
-    return cbfs_verify((void *)(0 - ntohl(CBHDR->romsize) + ntohl(CBHDR->offset)));
-}
-
-// Return the file after the given file.
-static struct cbfs_file *
-cbfs_getnext(struct cbfs_file *file)
-{
-    file = (void*)file + ALIGN(ntohl(file->len) + ntohl(file->offset), ntohl(CBHDR->align));
-    return cbfs_verify(file);
-}
-
-// Find the file with the given filename.
-struct cbfs_file *
-cbfs_findfile(const char *fname)
-{
-    dprintf(3, "Searching CBFS for %s\n", fname);
-    struct cbfs_file *file;
-    for (file = cbfs_getfirst(); file; file = cbfs_getnext(file))
-        if (strcmp(fname, file->filename) == 0)
-            return file;
-    return NULL;
-}
-
-// Find next file with the given filename prefix.
-struct cbfs_file *
-cbfs_findprefix(const char *prefix, struct cbfs_file *last)
+// Copy a file to memory (uncompressing if necessary)
+static int
+cbfs_copyfile(struct romfile_s *file, void *dst, u32 maxlen)
 {
     if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH)
-        return NULL;
-
-    dprintf(3, "Searching CBFS for prefix %s\n", prefix);
-    int len = strlen(prefix);
-    struct cbfs_file *file;
-    if (! last)
-        file = cbfs_getfirst();
-    else
-        file = cbfs_getnext(last);
-    for (; file; file = cbfs_getnext(file))
-        if (memcmp(prefix, file->filename, len) == 0)
-            return file;
-    return NULL;
-}
-
-// Find a file with the given filename (possibly with ".lzma" extension).
-struct cbfs_file *
-cbfs_finddatafile(const char *fname)
-{
-    int fnlen = strlen(fname);
-    struct cbfs_file *file = NULL;
-    for (;;) {
-        file = cbfs_findprefix(fname, file);
-        if (!file)
-            return NULL;
-        if (file->filename[fnlen] == '\0'
-            || strcmp(&file->filename[fnlen], ".lzma") == 0)
-            return file;
-    }
-}
-
-// Determine whether the file has a ".lzma" extension.
-static int
-cbfs_iscomp(struct cbfs_file *file)
-{
-    int fnamelen = strlen(file->filename);
-    return fnamelen > 5 && strcmp(&file->filename[fnamelen-5], ".lzma") == 0;
-}
-
-// Return the filename of a given file.
-const char *
-cbfs_filename(struct cbfs_file *file)
-{
-    return file->filename;
-}
-
-// Determine the uncompressed size of a datafile.
-u32
-cbfs_datasize(struct cbfs_file *file)
-{
-    void *src = (void*)file + ntohl(file->offset);
-    if (cbfs_iscomp(file))
-        return *(u32*)(src + LZMA_PROPERTIES_SIZE);
-    return ntohl(file->len);
-}
-
-// Copy a file to memory (uncompressing if necessary)
-int
-cbfs_copyfile(struct cbfs_file *file, void *dst, u32 maxlen)
-{
-    if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH || !file)
         return -1;
 
-    u32 size = ntohl(file->len);
-    void *src = (void*)file + ntohl(file->offset);
-    if (cbfs_iscomp(file)) {
+    u32 size = file->rawsize;
+    void *src = file->data;
+    if (file->flags) {
         // Compressed - copy to temp ram and uncompress it.
         void *temp = malloc_tmphigh(size);
-        if (!temp)
+        if (!temp) {
+            warn_noalloc();
             return -1;
+        }
         iomemcpy(temp, src, size);
         int ret = ulzma(dst, maxlen, temp, size);
         yield();
@@ -523,6 +321,53 @@ cbfs_copyfile(struct cbfs_file *file, void *dst, u32 maxlen)
     }
     iomemcpy(dst, src, size);
     return size;
+}
+
+void
+coreboot_cbfs_setup(void)
+{
+    if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH)
+        return;
+
+    struct cbfs_header *hdr = *(void **)CBFS_HEADPTR_ADDR;
+    if (hdr->magic != cpu_to_be32(CBFS_HEADER_MAGIC)) {
+        dprintf(1, "Unable to find CBFS (ptr=%p; got %x not %x)\n"
+                , hdr, hdr->magic, cpu_to_be32(CBFS_HEADER_MAGIC));
+        return;
+    }
+    dprintf(1, "Found CBFS header at %p\n", hdr);
+
+    struct cbfs_file *cfile = (void *)(0 - be32_to_cpu(hdr->romsize)
+                                       + be32_to_cpu(hdr->offset));
+    for (;;) {
+        if (cfile < (struct cbfs_file *)(0xFFFFFFFF - be32_to_cpu(hdr->romsize)))
+            break;
+        u64 magic = cfile->magic;
+        if (magic != CBFS_FILE_MAGIC)
+            break;
+        struct romfile_s *file = malloc_tmp(sizeof(*file));
+        if (!file) {
+            warn_noalloc();
+            break;
+        }
+        memset(file, 0, sizeof(*file));
+        strtcpy(file->name, cfile->filename, sizeof(file->name));
+        dprintf(3, "Found CBFS file: %s\n", file->name);
+        file->size = file->rawsize = be32_to_cpu(cfile->len);
+        file->id = (u32)cfile;
+        file->copy = cbfs_copyfile;
+        file->data = (void*)cfile + be32_to_cpu(cfile->offset);
+        int len = strlen(file->name);
+        if (len > 5 && strcmp(&file->name[len-5], ".lzma") == 0) {
+            // Using compression.
+            file->flags = 1;
+            file->name[len-5] = '\0';
+            file->size = *(u32*)(file->data + LZMA_PROPERTIES_SIZE);
+        }
+        romfile_add(file);
+
+        cfile = (void*)ALIGN((u32)file->data + file->size, be32_to_cpu(hdr->align));
+    }
 }
 
 struct cbfs_payload_segment {
@@ -550,13 +395,13 @@ cbfs_run_payload(struct cbfs_file *file)
     if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH || !file)
         return;
     dprintf(1, "Run %s\n", file->filename);
-    struct cbfs_payload *pay = (void*)file + ntohl(file->offset);
+    struct cbfs_payload *pay = (void*)file + be32_to_cpu(file->offset);
     struct cbfs_payload_segment *seg = pay->segments;
     for (;;) {
-        void *src = (void*)pay + ntohl(seg->offset);
-        void *dest = (void*)ntohl((u32)seg->load_addr);
-        u32 src_len = ntohl(seg->len);
-        u32 dest_len = ntohl(seg->mem_len);
+        void *src = (void*)pay + be32_to_cpu(seg->offset);
+        void *dest = (void*)(u32)be64_to_cpu(seg->load_addr);
+        u32 src_len = be32_to_cpu(seg->len);
+        u32 dest_len = be32_to_cpu(seg->mem_len);
         switch (seg->type) {
         case PAYLOAD_SEGMENT_BSS:
             dprintf(3, "BSS segment %d@%p\n", dest_len, dest);
@@ -571,12 +416,12 @@ cbfs_run_payload(struct cbfs_file *file)
         default:
             dprintf(3, "Segment %x %d@%p -> %d@%p\n"
                     , seg->type, src_len, src, dest_len, dest);
-            if (seg->compression == htonl(CBFS_COMPRESS_NONE)) {
+            if (seg->compression == cpu_to_be32(CBFS_COMPRESS_NONE)) {
                 if (src_len > dest_len)
                     src_len = dest_len;
                 memcpy(dest, src, src_len);
             } else if (CONFIG_LZMA
-                       && seg->compression == htonl(CBFS_COMPRESS_LZMA)) {
+                       && seg->compression == cpu_to_be32(CBFS_COMPRESS_LZMA)) {
                 int ret = ulzma(dest, dest_len, src, src_len);
                 if (ret < 0)
                     return;
@@ -598,20 +443,16 @@ cbfs_run_payload(struct cbfs_file *file)
 void
 cbfs_payload_setup(void)
 {
-    struct cbfs_file *file = NULL;
+    if (!CONFIG_COREBOOT || !CONFIG_COREBOOT_FLASH)
+        return;
+    struct romfile_s *file = NULL;
     for (;;) {
-        file = cbfs_findprefix("img/", file);
+        file = romfile_findprefix("img/", file);
         if (!file)
             break;
-        const char *filename = cbfs_filename(file);
+        const char *filename = file->name;
         char *desc = znprintf(MAXDESCSIZE, "Payload [%s]", &filename[4]);
-        boot_add_cbfs(file, desc, bootprio_find_named_rom(filename, 0));
+        boot_add_cbfs((void*)file->id, desc
+                      , bootprio_find_named_rom(filename, 0));
     }
-}
-
-void
-coreboot_setup(void)
-{
-    coreboot_fill_map();
-    cbfs_setup();
 }

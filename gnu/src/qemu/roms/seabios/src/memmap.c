@@ -5,8 +5,8 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "memmap.h" // struct e820entry
+#include "config.h" // CONFIG_*
 #include "util.h" // dprintf.h
-#include "biosvar.h" // SET_EBDA
 
 
 /****************************************************************
@@ -40,6 +40,20 @@ insert_e820(int i, u64 start, u64 size, u32 type)
     e->type = type;
 }
 
+static const char *
+e820_type_name(u32 type)
+{
+    switch (type) {
+    case E820_RAM:      return "RAM";
+    case E820_RESERVED: return "RESERVED";
+    case E820_ACPI:     return "ACPI";
+    case E820_NVS:      return "NVS";
+    case E820_UNUSABLE: return "UNUSABLE";
+    case E820_HOLE:     return "HOLE";
+    default:            return "UNKNOWN";
+    }
+}
+
 // Show the current e820_list.
 static void
 dump_map(void)
@@ -49,10 +63,8 @@ dump_map(void)
     for (i=0; i<e820_count; i++) {
         struct e820entry *e = &e820_list[i];
         u64 e_end = e->start + e->size;
-        dprintf(1, "  %d: %08x%08x - %08x%08x = %d\n", i
-                , (u32)(e->start >> 32), (u32)e->start
-                , (u32)(e_end >> 32), (u32)e_end
-                , e->type);
+        dprintf(1, "  %d: %016llx - %016llx = %d %s\n", i
+                , e->start, e_end, e->type, e820_type_name(e->type));
     }
 }
 

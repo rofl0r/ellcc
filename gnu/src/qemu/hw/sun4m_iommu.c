@@ -128,16 +128,18 @@
 
 typedef struct IOMMUState {
     SysBusDevice busdev;
+    MemoryRegion iomem;
     uint32_t regs[IOMMU_NREGS];
-    target_phys_addr_t iostart;
-    uint32_t version;
+    hwaddr iostart;
     qemu_irq irq;
+    uint32_t version;
 } IOMMUState;
 
-static uint32_t iommu_mem_readl(void *opaque, target_phys_addr_t addr)
+static uint64_t iommu_mem_read(void *opaque, hwaddr addr,
+                               unsigned size)
 {
     IOMMUState *s = opaque;
-    target_phys_addr_t saddr;
+    hwaddr saddr;
     uint32_t ret;
 
     saddr = addr >> 2;
@@ -155,11 +157,11 @@ static uint32_t iommu_mem_readl(void *opaque, target_phys_addr_t addr)
     return ret;
 }
 
-static void iommu_mem_writel(void *opaque, target_phys_addr_t addr,
-                             uint32_t val)
+static void iommu_mem_write(void *opaque, hwaddr addr,
+                            uint64_t val, unsigned size)
 {
     IOMMUState *s = opaque;
-    target_phys_addr_t saddr;
+    hwaddr saddr;
 
     saddr = addr >> 2;
     trace_sun4m_iommu_mem_writel(saddr, val);
@@ -237,23 +239,21 @@ static void iommu_mem_writel(void *opaque, target_phys_addr_t addr,
     }
 }
 
-static CPUReadMemoryFunc * const iommu_mem_read[3] = {
-    NULL,
-    NULL,
-    iommu_mem_readl,
+static const MemoryRegionOps iommu_mem_ops = {
+    .read = iommu_mem_read,
+    .write = iommu_mem_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
 };
 
-static CPUWriteMemoryFunc * const iommu_mem_write[3] = {
-    NULL,
-    NULL,
-    iommu_mem_writel,
-};
-
-static uint32_t iommu_page_get_flags(IOMMUState *s, target_phys_addr_t addr)
+static uint32_t iommu_page_get_flags(IOMMUState *s, hwaddr addr)
 {
     uint32_t ret;
-    target_phys_addr_t iopte;
-    target_phys_addr_t pa = addr;
+    hwaddr iopte;
+    hwaddr pa = addr;
 
     iopte = s->regs[IOMMU_BASE] << 4;
     addr &= ~s->iostart;
@@ -264,17 +264,17 @@ static uint32_t iommu_page_get_flags(IOMMUState *s, target_phys_addr_t addr)
     return ret;
 }
 
-static target_phys_addr_t iommu_translate_pa(target_phys_addr_t addr,
+static hwaddr iommu_translate_pa(hwaddr addr,
                                              uint32_t pte)
 {
-    target_phys_addr_t pa;
+    hwaddr pa;
 
     pa = ((pte & IOPTE_PAGE) << 4) + (addr & ~IOMMU_PAGE_MASK);
     trace_sun4m_iommu_translate_pa(addr, pa, pte);
     return pa;
 }
 
-static void iommu_bad_addr(IOMMUState *s, target_phys_addr_t addr,
+static void iommu_bad_addr(IOMMUState *s, hwaddr addr,
                            int is_write)
 {
     trace_sun4m_iommu_bad_addr(addr);
@@ -286,12 +286,12 @@ static void iommu_bad_addr(IOMMUState *s, target_phys_addr_t addr,
     qemu_irq_raise(s->irq);
 }
 
-void sparc_iommu_memory_rw(void *opaque, target_phys_addr_t addr,
+void sparc_iommu_memory_rw(void *opaque, hwaddr addr,
                            uint8_t *buf, int len, int is_write)
 {
     int l;
     uint32_t flags;
-    target_phys_addr_t page, phys_addr;
+    hwaddr page, phys_addr;
 
     while (len > 0) {
         page = addr & IOMMU_PAGE_MASK;
@@ -347,32 +347,42 @@ static void iommu_reset(DeviceState *d)
 static int iommu_init1(SysBusDevice *dev)
 {
     IOMMUState *s = FROM_SYSBUS(IOMMUState, dev);
-    int io;
 
     sysbus_init_irq(dev, &s->irq);
 
-    io = cpu_register_io_memory(iommu_mem_read, iommu_mem_write, s,
-                                DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, IOMMU_NREGS * sizeof(uint32_t), io);
+    memory_region_init_io(&s->iomem, &iommu_mem_ops, s, "iommu",
+                          IOMMU_NREGS * sizeof(uint32_t));
+    sysbus_init_mmio(dev, &s->iomem);
 
     return 0;
 }
 
-static SysBusDeviceInfo iommu_info = {
-    .init = iommu_init1,
-    .qdev.name  = "iommu",
-    .qdev.size  = sizeof(IOMMUState),
-    .qdev.vmsd  = &vmstate_iommu,
-    .qdev.reset = iommu_reset,
-    .qdev.props = (Property[]) {
-        DEFINE_PROP_HEX32("version", IOMMUState, version, 0),
-        DEFINE_PROP_END_OF_LIST(),
-    }
+static Property iommu_properties[] = {
+    DEFINE_PROP_HEX32("version", IOMMUState, version, 0),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void iommu_register_devices(void)
+static void iommu_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&iommu_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = iommu_init1;
+    dc->reset = iommu_reset;
+    dc->vmsd = &vmstate_iommu;
+    dc->props = iommu_properties;
 }
 
-device_init(iommu_register_devices)
+static const TypeInfo iommu_info = {
+    .name          = "iommu",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(IOMMUState),
+    .class_init    = iommu_class_init,
+};
+
+static void iommu_register_types(void)
+{
+    type_register_static(&iommu_info);
+}
+
+type_init(iommu_register_types)

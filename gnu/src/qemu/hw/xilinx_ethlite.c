@@ -24,7 +24,7 @@
 
 #include "sysbus.h"
 #include "hw.h"
-#include "net.h"
+#include "net/net.h"
 
 #define D(x)
 #define R_TX_BUF0     0
@@ -50,6 +50,7 @@
 struct xlx_ethlite
 {
     SysBusDevice busdev;
+    MemoryRegion mmio;
     qemu_irq irq;
     NICState *nic;
     NICConf conf;
@@ -70,7 +71,8 @@ static inline void eth_pulse_irq(struct xlx_ethlite *s)
     }
 }
 
-static uint32_t eth_readl (void *opaque, target_phys_addr_t addr)
+static uint64_t
+eth_read(void *opaque, hwaddr addr, unsigned int size)
 {
     struct xlx_ethlite *s = opaque;
     uint32_t r = 0;
@@ -87,7 +89,7 @@ static uint32_t eth_readl (void *opaque, target_phys_addr_t addr)
         case R_RX_CTRL1:
         case R_RX_CTRL0:
             r = s->regs[addr];
-            D(qemu_log("%s %x=%x\n", __func__, addr * 4, r));
+            D(qemu_log("%s " TARGET_FMT_plx "=%x\n", __func__, addr * 4, r));
             break;
 
         default:
@@ -98,10 +100,12 @@ static uint32_t eth_readl (void *opaque, target_phys_addr_t addr)
 }
 
 static void
-eth_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
+eth_write(void *opaque, hwaddr addr,
+          uint64_t val64, unsigned int size)
 {
     struct xlx_ethlite *s = opaque;
     unsigned int base = 0;
+    uint32_t value = val64;
 
     addr >>= 2;
     switch (addr) 
@@ -111,9 +115,10 @@ eth_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
             if (addr == R_TX_CTRL1)
                 base = 0x800 / 4;
 
-            D(qemu_log("%s addr=%x val=%x\n", __func__, addr * 4, value));
+            D(qemu_log("%s addr=" TARGET_FMT_plx " val=%x\n",
+                       __func__, addr * 4, value));
             if ((value & (CTRL_P | CTRL_S)) == CTRL_S) {
-                qemu_send_packet(&s->nic->nc,
+                qemu_send_packet(qemu_get_queue(s->nic),
                                  (void *) &s->regs[base],
                                  s->regs[base + R_TX_LEN0]);
                 D(qemu_log("eth_tx %d\n", s->regs[base + R_TX_LEN0]));
@@ -131,12 +136,16 @@ eth_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
             break;
 
         /* Keep these native.  */
+        case R_RX_CTRL0:
+        case R_RX_CTRL1:
+            if (!(value & CTRL_S)) {
+                qemu_flush_queued_packets(qemu_get_queue(s->nic));
+            }
         case R_TX_LEN0:
         case R_TX_LEN1:
         case R_TX_GIE0:
-        case R_RX_CTRL0:
-        case R_RX_CTRL1:
-            D(qemu_log("%s addr=%x val=%x\n", __func__, addr * 4, value));
+            D(qemu_log("%s addr=" TARGET_FMT_plx " val=%x\n",
+                       __func__, addr * 4, value));
             s->regs[addr] = value;
             break;
 
@@ -146,25 +155,27 @@ eth_writel (void *opaque, target_phys_addr_t addr, uint32_t value)
     }
 }
 
-static CPUReadMemoryFunc * const eth_read[] = {
-    NULL, NULL, &eth_readl,
+static const MemoryRegionOps eth_ops = {
+    .read = eth_read,
+    .write = eth_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4
+    }
 };
 
-static CPUWriteMemoryFunc * const eth_write[] = {
-    NULL, NULL, &eth_writel,
-};
-
-static int eth_can_rx(VLANClientState *nc)
+static int eth_can_rx(NetClientState *nc)
 {
-    struct xlx_ethlite *s = DO_UPCAST(NICState, nc, nc)->opaque;
-    int r;
-    r = !(s->regs[R_RX_CTRL0] & CTRL_S);
-    return r;
+    struct xlx_ethlite *s = qemu_get_nic_opaque(nc);
+    unsigned int rxbase = s->rxbuf * (0x800 / 4);
+
+    return !(s->regs[rxbase + R_RX_CTRL0] & CTRL_S);
 }
 
-static ssize_t eth_rx(VLANClientState *nc, const uint8_t *buf, size_t size)
+static ssize_t eth_rx(NetClientState *nc, const uint8_t *buf, size_t size)
 {
-    struct xlx_ethlite *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    struct xlx_ethlite *s = qemu_get_nic_opaque(nc);
     unsigned int rxbase = s->rxbuf * (0x800 / 4);
 
     /* DA filter.  */
@@ -176,7 +187,7 @@ static ssize_t eth_rx(VLANClientState *nc, const uint8_t *buf, size_t size)
         return -1;
     }
 
-    D(qemu_log("%s %d rxbase=%x\n", __func__, size, rxbase));
+    D(qemu_log("%s %zd rxbase=%x\n", __func__, size, rxbase));
     memcpy(&s->regs[rxbase + R_RX_BUF0], buf, size);
 
     s->regs[rxbase + R_RX_CTRL0] |= CTRL_S;
@@ -188,15 +199,15 @@ static ssize_t eth_rx(VLANClientState *nc, const uint8_t *buf, size_t size)
     return size;
 }
 
-static void eth_cleanup(VLANClientState *nc)
+static void eth_cleanup(NetClientState *nc)
 {
-    struct xlx_ethlite *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    struct xlx_ethlite *s = qemu_get_nic_opaque(nc);
 
     s->nic = NULL;
 }
 
 static NetClientInfo net_xilinx_ethlite_info = {
-    .type = NET_CLIENT_TYPE_NIC,
+    .type = NET_CLIENT_OPTIONS_KIND_NIC,
     .size = sizeof(NICState),
     .can_receive = eth_can_rx,
     .receive = eth_rx,
@@ -206,36 +217,47 @@ static NetClientInfo net_xilinx_ethlite_info = {
 static int xilinx_ethlite_init(SysBusDevice *dev)
 {
     struct xlx_ethlite *s = FROM_SYSBUS(typeof (*s), dev);
-    int regs;
 
     sysbus_init_irq(dev, &s->irq);
     s->rxbuf = 0;
 
-    regs = cpu_register_io_memory(eth_read, eth_write, s, DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, R_MAX * 4, regs);
+    memory_region_init_io(&s->mmio, &eth_ops, s, "xlnx.xps-ethernetlite",
+                                                                    R_MAX * 4);
+    sysbus_init_mmio(dev, &s->mmio);
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
     s->nic = qemu_new_nic(&net_xilinx_ethlite_info, &s->conf,
-                          dev->qdev.info->name, dev->qdev.id, s);
-    qemu_format_nic_info_str(&s->nic->nc, s->conf.macaddr.a);
+                          object_get_typename(OBJECT(dev)), dev->qdev.id, s);
+    qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
     return 0;
 }
 
-static SysBusDeviceInfo xilinx_ethlite_info = {
-    .init = xilinx_ethlite_init,
-    .qdev.name  = "xilinx,ethlite",
-    .qdev.size  = sizeof(struct xlx_ethlite),
-    .qdev.props = (Property[]) {
-        DEFINE_PROP_UINT32("txpingpong", struct xlx_ethlite, c_tx_pingpong, 1),
-        DEFINE_PROP_UINT32("rxpingpong", struct xlx_ethlite, c_rx_pingpong, 1),
-        DEFINE_NIC_PROPERTIES(struct xlx_ethlite, conf),
-        DEFINE_PROP_END_OF_LIST(),
-    }
+static Property xilinx_ethlite_properties[] = {
+    DEFINE_PROP_UINT32("tx-ping-pong", struct xlx_ethlite, c_tx_pingpong, 1),
+    DEFINE_PROP_UINT32("rx-ping-pong", struct xlx_ethlite, c_rx_pingpong, 1),
+    DEFINE_NIC_PROPERTIES(struct xlx_ethlite, conf),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void xilinx_ethlite_register(void)
+static void xilinx_ethlite_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&xilinx_ethlite_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = xilinx_ethlite_init;
+    dc->props = xilinx_ethlite_properties;
 }
 
-device_init(xilinx_ethlite_register)
+static const TypeInfo xilinx_ethlite_info = {
+    .name          = "xlnx.xps-ethernetlite",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(struct xlx_ethlite),
+    .class_init    = xilinx_ethlite_class_init,
+};
+
+static void xilinx_ethlite_register_types(void)
+{
+    type_register_static(&xilinx_ethlite_info);
+}
+
+type_init(xilinx_ethlite_register_types)

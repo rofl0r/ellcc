@@ -33,7 +33,8 @@
 
 typedef struct {
     SysBusDevice busdev;
-    CPUState *cpu_env;
+    MemoryRegion iomem;
+    ARMCPU *cpu;
     uint32_t int_enabled[2];
     uint32_t int_pending[2];
     uint32_t is_fiq[2];
@@ -46,25 +47,28 @@ static void pxa2xx_pic_update(void *opaque)
     uint32_t mask[2];
     PXA2xxPICState *s = (PXA2xxPICState *) opaque;
 
-    if (s->cpu_env->halted) {
+    if (s->cpu->env.halted) {
         mask[0] = s->int_pending[0] & (s->int_enabled[0] | s->int_idle);
         mask[1] = s->int_pending[1] & (s->int_enabled[1] | s->int_idle);
-        if (mask[0] || mask[1])
-            cpu_interrupt(s->cpu_env, CPU_INTERRUPT_EXITTB);
+        if (mask[0] || mask[1]) {
+            cpu_interrupt(&s->cpu->env, CPU_INTERRUPT_EXITTB);
+        }
     }
 
     mask[0] = s->int_pending[0] & s->int_enabled[0];
     mask[1] = s->int_pending[1] & s->int_enabled[1];
 
-    if ((mask[0] & s->is_fiq[0]) || (mask[1] & s->is_fiq[1]))
-        cpu_interrupt(s->cpu_env, CPU_INTERRUPT_FIQ);
-    else
-        cpu_reset_interrupt(s->cpu_env, CPU_INTERRUPT_FIQ);
+    if ((mask[0] & s->is_fiq[0]) || (mask[1] & s->is_fiq[1])) {
+        cpu_interrupt(&s->cpu->env, CPU_INTERRUPT_FIQ);
+    } else {
+        cpu_reset_interrupt(&s->cpu->env, CPU_INTERRUPT_FIQ);
+    }
 
-    if ((mask[0] & ~s->is_fiq[0]) || (mask[1] & ~s->is_fiq[1]))
-        cpu_interrupt(s->cpu_env, CPU_INTERRUPT_HARD);
-    else
-        cpu_reset_interrupt(s->cpu_env, CPU_INTERRUPT_HARD);
+    if ((mask[0] & ~s->is_fiq[0]) || (mask[1] & ~s->is_fiq[1])) {
+        cpu_interrupt(&s->cpu->env, CPU_INTERRUPT_HARD);
+    } else {
+        cpu_reset_interrupt(&s->cpu->env, CPU_INTERRUPT_HARD);
+    }
 }
 
 /* Note: Here level means state of the signal on a pin, not
@@ -115,7 +119,8 @@ static inline uint32_t pxa2xx_pic_highest(PXA2xxPICState *s) {
     return ichp;
 }
 
-static uint32_t pxa2xx_pic_mem_read(void *opaque, target_phys_addr_t offset)
+static uint64_t pxa2xx_pic_mem_read(void *opaque, hwaddr offset,
+                                    unsigned size)
 {
     PXA2xxPICState *s = (PXA2xxPICState *) opaque;
 
@@ -154,8 +159,8 @@ static uint32_t pxa2xx_pic_mem_read(void *opaque, target_phys_addr_t offset)
     }
 }
 
-static void pxa2xx_pic_mem_write(void *opaque, target_phys_addr_t offset,
-                uint32_t value)
+static void pxa2xx_pic_mem_write(void *opaque, hwaddr offset,
+                                 uint64_t value, unsigned size)
 {
     PXA2xxPICState *s = (PXA2xxPICState *) opaque;
 
@@ -204,43 +209,46 @@ static const int pxa2xx_cp_reg_map[0x10] = {
     [0xa] = ICPR2,
 };
 
-static uint32_t pxa2xx_pic_cp_read(void *opaque, int op2, int reg, int crm)
+static int pxa2xx_pic_cp_read(CPUARMState *env, const ARMCPRegInfo *ri,
+                              uint64_t *value)
 {
-    target_phys_addr_t offset;
-
-    if (pxa2xx_cp_reg_map[reg] == -1) {
-        printf("%s: Bad register 0x%x\n", __FUNCTION__, reg);
-        return 0;
-    }
-
-    offset = pxa2xx_cp_reg_map[reg];
-    return pxa2xx_pic_mem_read(opaque, offset);
+    int offset = pxa2xx_cp_reg_map[ri->crn];
+    *value = pxa2xx_pic_mem_read(ri->opaque, offset, 4);
+    return 0;
 }
 
-static void pxa2xx_pic_cp_write(void *opaque, int op2, int reg, int crm,
-                uint32_t value)
+static int pxa2xx_pic_cp_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                               uint64_t value)
 {
-    target_phys_addr_t offset;
-
-    if (pxa2xx_cp_reg_map[reg] == -1) {
-        printf("%s: Bad register 0x%x\n", __FUNCTION__, reg);
-        return;
-    }
-
-    offset = pxa2xx_cp_reg_map[reg];
-    pxa2xx_pic_mem_write(opaque, offset, value);
+    int offset = pxa2xx_cp_reg_map[ri->crn];
+    pxa2xx_pic_mem_write(ri->opaque, offset, value, 4);
+    return 0;
 }
 
-static CPUReadMemoryFunc * const pxa2xx_pic_readfn[] = {
-    pxa2xx_pic_mem_read,
-    pxa2xx_pic_mem_read,
-    pxa2xx_pic_mem_read,
+#define REGINFO_FOR_PIC_CP(NAME, CRN) \
+    { .name = NAME, .cp = 6, .crn = CRN, .crm = 0, .opc1 = 0, .opc2 = 0, \
+      .access = PL1_RW, \
+      .readfn = pxa2xx_pic_cp_read, .writefn = pxa2xx_pic_cp_write }
+
+static const ARMCPRegInfo pxa_pic_cp_reginfo[] = {
+    REGINFO_FOR_PIC_CP("ICIP", 0),
+    REGINFO_FOR_PIC_CP("ICMR", 1),
+    REGINFO_FOR_PIC_CP("ICLR", 2),
+    REGINFO_FOR_PIC_CP("ICFP", 3),
+    REGINFO_FOR_PIC_CP("ICPR", 4),
+    REGINFO_FOR_PIC_CP("ICHP", 5),
+    REGINFO_FOR_PIC_CP("ICIP2", 6),
+    REGINFO_FOR_PIC_CP("ICMR2", 7),
+    REGINFO_FOR_PIC_CP("ICLR2", 8),
+    REGINFO_FOR_PIC_CP("ICFP2", 9),
+    REGINFO_FOR_PIC_CP("ICPR2", 0xa),
+    REGINFO_SENTINEL
 };
 
-static CPUWriteMemoryFunc * const pxa2xx_pic_writefn[] = {
-    pxa2xx_pic_mem_write,
-    pxa2xx_pic_mem_write,
-    pxa2xx_pic_mem_write,
+static const MemoryRegionOps pxa2xx_pic_ops = {
+    .read = pxa2xx_pic_mem_read,
+    .write = pxa2xx_pic_mem_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static int pxa2xx_pic_post_load(void *opaque, int version_id)
@@ -249,13 +257,13 @@ static int pxa2xx_pic_post_load(void *opaque, int version_id)
     return 0;
 }
 
-DeviceState *pxa2xx_pic_init(target_phys_addr_t base, CPUState *env)
+DeviceState *pxa2xx_pic_init(hwaddr base, ARMCPU *cpu)
 {
+    CPUARMState *env = &cpu->env;
     DeviceState *dev = qdev_create(NULL, "pxa2xx_pic");
-    int iomemtype;
-    PXA2xxPICState *s = FROM_SYSBUS(PXA2xxPICState, sysbus_from_qdev(dev));
+    PXA2xxPICState *s = FROM_SYSBUS(PXA2xxPICState, SYS_BUS_DEVICE(dev));
 
-    s->cpu_env = env;
+    s->cpu = cpu;
 
     s->int_pending[0] = 0;
     s->int_pending[1] = 0;
@@ -269,13 +277,13 @@ DeviceState *pxa2xx_pic_init(target_phys_addr_t base, CPUState *env)
     qdev_init_gpio_in(dev, pxa2xx_pic_set_irq, PXA2XX_PIC_SRCS);
 
     /* Enable IC memory-mapped registers access.  */
-    iomemtype = cpu_register_io_memory(pxa2xx_pic_readfn,
-                    pxa2xx_pic_writefn, s, DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(sysbus_from_qdev(dev), 0x00100000, iomemtype);
-    sysbus_mmio_map(sysbus_from_qdev(dev), 0, base);
+    memory_region_init_io(&s->iomem, &pxa2xx_pic_ops, s,
+                          "pxa2xx-pic", 0x00100000);
+    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     /* Enable IC coprocessor access.  */
-    cpu_arm_set_cp_io(env, 6, pxa2xx_pic_cp_read, pxa2xx_pic_cp_write, s);
+    define_arm_cp_regs_with_opaque(arm_env_get_cpu(env), pxa_pic_cp_reginfo, s);
 
     return dev;
 }
@@ -301,16 +309,26 @@ static int pxa2xx_pic_initfn(SysBusDevice *dev)
     return 0;
 }
 
-static SysBusDeviceInfo pxa2xx_pic_info = {
-    .init       = pxa2xx_pic_initfn,
-    .qdev.name  = "pxa2xx_pic",
-    .qdev.desc  = "PXA2xx PIC",
-    .qdev.size  = sizeof(PXA2xxPICState),
-    .qdev.vmsd  = &vmstate_pxa2xx_pic_regs,
+static void pxa2xx_pic_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = pxa2xx_pic_initfn;
+    dc->desc = "PXA2xx PIC";
+    dc->vmsd = &vmstate_pxa2xx_pic_regs;
+}
+
+static const TypeInfo pxa2xx_pic_info = {
+    .name          = "pxa2xx_pic",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(PXA2xxPICState),
+    .class_init    = pxa2xx_pic_class_init,
 };
 
-static void pxa2xx_pic_register(void)
+static void pxa2xx_pic_register_types(void)
 {
-    sysbus_register_withprop(&pxa2xx_pic_info);
+    type_register_static(&pxa2xx_pic_info);
 }
-device_init(pxa2xx_pic_register);
+
+type_init(pxa2xx_pic_register_types)

@@ -43,12 +43,14 @@
  */
 
 #include "hw.h"
-#include "disas.h"
-#include "monitor.h"
-#include "sysemu.h"
+#include "disas/disas.h"
+#include "monitor/monitor.h"
+#include "sysemu/sysemu.h"
 #include "uboot_image.h"
 #include "loader.h"
 #include "fw_cfg.h"
+#include "exec/memory.h"
+#include "exec/address-spaces.h"
 
 #include <zlib.h>
 
@@ -85,33 +87,37 @@ int load_image(const char *filename, uint8_t *addr)
 }
 
 /* read()-like version */
-int read_targphys(const char *name,
-                  int fd, target_phys_addr_t dst_addr, size_t nbytes)
+ssize_t read_targphys(const char *name,
+                      int fd, hwaddr dst_addr, size_t nbytes)
 {
     uint8_t *buf;
-    size_t did;
+    ssize_t did;
 
-    buf = qemu_malloc(nbytes);
+    buf = g_malloc(nbytes);
     did = read(fd, buf, nbytes);
     if (did > 0)
         rom_add_blob_fixed("read", buf, did, dst_addr);
-    qemu_free(buf);
+    g_free(buf);
     return did;
 }
 
 /* return the size or -1 if error */
 int load_image_targphys(const char *filename,
-			target_phys_addr_t addr, int max_sz)
+                        hwaddr addr, uint64_t max_sz)
 {
     int size;
 
     size = get_image_size(filename);
-    if (size > 0)
+    if (size > max_sz) {
+        return -1;
+    }
+    if (size > 0) {
         rom_add_file_fixed(filename, addr, -1);
+    }
     return size;
 }
 
-void pstrcpy_targphys(const char *name, target_phys_addr_t dest, int buf_size,
+void pstrcpy_targphys(const char *name, hwaddr dest, int buf_size,
                       const char *source)
 {
     const char *nulp;
@@ -173,10 +179,11 @@ static void bswap_ahdr(struct exec *e)
      : (_N_SEGMENT_ROUND (_N_TXTENDADDR(x, target_page_size), target_page_size)))
 
 
-int load_aout(const char *filename, target_phys_addr_t addr, int max_sz,
-              int bswap_needed, target_phys_addr_t target_page_size)
+int load_aout(const char *filename, hwaddr addr, int max_sz,
+              int bswap_needed, hwaddr target_page_size)
 {
-    int fd, size, ret;
+    int fd;
+    ssize_t size, ret;
     struct exec e;
     uint32_t magic;
 
@@ -234,9 +241,9 @@ static void *load_at(int fd, int offset, int size)
     void *ptr;
     if (lseek(fd, offset, SEEK_SET) < 0)
         return NULL;
-    ptr = qemu_malloc(size);
+    ptr = g_malloc(size);
     if (read(fd, ptr, size) != size) {
-        qemu_free(ptr);
+        g_free(ptr);
         return NULL;
     }
     return ptr;
@@ -351,14 +358,14 @@ static void *zalloc(void *x, unsigned items, unsigned size)
     size *= items;
     size = (size + ZALLOC_ALIGNMENT - 1) & ~(ZALLOC_ALIGNMENT - 1);
 
-    p = qemu_malloc(size);
+    p = g_malloc(size);
 
     return (p);
 }
 
 static void zfree(void *x, void *addr)
 {
-    qemu_free(addr);
+    g_free(addr);
 }
 
 
@@ -370,9 +377,9 @@ static void zfree(void *x, void *addr)
 
 #define DEFLATED	8
 
-/* This is the maximum in uboot, so if a uImage overflows this, it would
+/* This is the usual maximum in uboot, so if a uImage overflows this, it would
  * overflow on real hardware too. */
-#define UBOOT_MAX_GUNZIP_BYTES 0x800000
+#define UBOOT_MAX_GUNZIP_BYTES (64 << 20)
 
 static ssize_t gunzip(void *dst, size_t dstlen, uint8_t *src,
                       size_t srclen)
@@ -427,8 +434,8 @@ static ssize_t gunzip(void *dst, size_t dstlen, uint8_t *src,
 }
 
 /* Load a U-Boot image.  */
-int load_uimage(const char *filename, target_phys_addr_t *ep,
-                target_phys_addr_t *loadaddr, int *is_linux)
+int load_uimage(const char *filename, hwaddr *ep,
+                hwaddr *loadaddr, int *is_linux)
 {
     int fd;
     int size;
@@ -476,7 +483,7 @@ int load_uimage(const char *filename, target_phys_addr_t *ep,
     }
 
     *ep = hdr->ih_ep;
-    data = qemu_malloc(hdr->ih_size);
+    data = g_malloc(hdr->ih_size);
 
     if (read(fd, data, hdr->ih_size) != hdr->ih_size) {
         fprintf(stderr, "Error reading file\n");
@@ -490,10 +497,10 @@ int load_uimage(const char *filename, target_phys_addr_t *ep,
 
         compressed_data = data;
         max_bytes = UBOOT_MAX_GUNZIP_BYTES;
-        data = qemu_malloc(max_bytes);
+        data = g_malloc(max_bytes);
 
         bytes = gunzip(data, max_bytes, compressed_data, hdr->ih_size);
-        qemu_free(compressed_data);
+        g_free(compressed_data);
         if (bytes < 0) {
             fprintf(stderr, "Unable to decompress gzipped image!\n");
             goto out;
@@ -510,7 +517,7 @@ int load_uimage(const char *filename, target_phys_addr_t *ep,
 
 out:
     if (data)
-        qemu_free(data);
+        g_free(data);
     close(fd);
     return ret;
 }
@@ -532,7 +539,7 @@ struct Rom {
     char *fw_dir;
     char *fw_file;
 
-    target_phys_addr_t addr;
+    hwaddr addr;
     QTAILQ_ENTRY(Rom) next;
 };
 
@@ -558,17 +565,17 @@ static void rom_insert(Rom *rom)
 }
 
 int rom_add_file(const char *file, const char *fw_dir,
-                 target_phys_addr_t addr, int32_t bootindex)
+                 hwaddr addr, int32_t bootindex)
 {
     Rom *rom;
     int rc, fd = -1;
     char devpath[100];
 
-    rom = qemu_mallocz(sizeof(*rom));
-    rom->name = qemu_strdup(file);
+    rom = g_malloc0(sizeof(*rom));
+    rom->name = g_strdup(file);
     rom->path = qemu_find_file(QEMU_FILE_TYPE_BIOS, rom->name);
     if (rom->path == NULL) {
-        rom->path = qemu_strdup(file);
+        rom->path = g_strdup(file);
     }
 
     fd = open(rom->path, O_RDONLY | O_BINARY);
@@ -579,12 +586,12 @@ int rom_add_file(const char *file, const char *fw_dir,
     }
 
     if (fw_dir) {
-        rom->fw_dir  = qemu_strdup(fw_dir);
-        rom->fw_file = qemu_strdup(file);
+        rom->fw_dir  = g_strdup(fw_dir);
+        rom->fw_file = g_strdup(file);
     }
     rom->addr    = addr;
     rom->romsize = lseek(fd, 0, SEEK_END);
-    rom->data    = qemu_mallocz(rom->romsize);
+    rom->data    = g_malloc0(rom->romsize);
     lseek(fd, 0, SEEK_SET);
     rc = read(fd, rom->data, rom->romsize);
     if (rc != rom->romsize) {
@@ -618,23 +625,23 @@ int rom_add_file(const char *file, const char *fw_dir,
 err:
     if (fd != -1)
         close(fd);
-    qemu_free(rom->data);
-    qemu_free(rom->path);
-    qemu_free(rom->name);
-    qemu_free(rom);
+    g_free(rom->data);
+    g_free(rom->path);
+    g_free(rom->name);
+    g_free(rom);
     return -1;
 }
 
 int rom_add_blob(const char *name, const void *blob, size_t len,
-                 target_phys_addr_t addr)
+                 hwaddr addr)
 {
     Rom *rom;
 
-    rom = qemu_mallocz(sizeof(*rom));
-    rom->name    = qemu_strdup(name);
+    rom = g_malloc0(sizeof(*rom));
+    rom->name    = g_strdup(name);
     rom->addr    = addr;
     rom->romsize = len;
-    rom->data    = qemu_mallocz(rom->romsize);
+    rom->data    = g_malloc0(rom->romsize);
     memcpy(rom->data, blob, len);
     rom_insert(rom);
     return 0;
@@ -664,7 +671,7 @@ static void rom_reset(void *unused)
         cpu_physical_memory_write_rom(rom->addr, rom->data, rom->romsize);
         if (rom->isrom) {
             /* rom needs to be written only once */
-            qemu_free(rom->data);
+            g_free(rom->data);
             rom->data = NULL;
         }
     }
@@ -672,8 +679,8 @@ static void rom_reset(void *unused)
 
 int rom_load_all(void)
 {
-    target_phys_addr_t addr = 0;
-    int memtype;
+    hwaddr addr = 0;
+    MemoryRegionSection section;
     Rom *rom;
 
     QTAILQ_FOREACH(rom, &roms, next) {
@@ -689,9 +696,8 @@ int rom_load_all(void)
         }
         addr  = rom->addr;
         addr += rom->romsize;
-        memtype = cpu_get_physical_page_desc(rom->addr) & (3 << IO_MEM_SHIFT);
-        if (memtype == IO_MEM_ROM)
-            rom->isrom = 1;
+        section = memory_region_find(get_system_memory(), rom->addr, 1);
+        rom->isrom = section.size && memory_region_is_rom(section.mr);
     }
     qemu_register_reset(rom_reset, NULL);
     roms_loaded = 1;
@@ -703,7 +709,7 @@ void rom_set_fw(void *f)
     fw_cfg = f;
 }
 
-static Rom *find_rom(target_phys_addr_t addr)
+static Rom *find_rom(hwaddr addr)
 {
     Rom *rom;
 
@@ -727,9 +733,9 @@ static Rom *find_rom(target_phys_addr_t addr)
  * a ROM between addr and addr + size is copied. Note that this can involve
  * multiple ROMs, which need not start at addr and need not end at addr + size.
  */
-int rom_copy(uint8_t *dest, target_phys_addr_t addr, size_t size)
+int rom_copy(uint8_t *dest, hwaddr addr, size_t size)
 {
-    target_phys_addr_t end = addr + size;
+    hwaddr end = addr + size;
     uint8_t *s, *d = dest;
     size_t l = 0;
     Rom *rom;
@@ -762,7 +768,7 @@ int rom_copy(uint8_t *dest, target_phys_addr_t addr, size_t size)
     return (d + l) - dest;
 }
 
-void *rom_ptr(target_phys_addr_t addr)
+void *rom_ptr(hwaddr addr)
 {
     Rom *rom;
 
@@ -772,20 +778,20 @@ void *rom_ptr(target_phys_addr_t addr)
     return rom->data + (addr - rom->addr);
 }
 
-void do_info_roms(Monitor *mon)
+void do_info_roms(Monitor *mon, const QDict *qdict)
 {
     Rom *rom;
 
     QTAILQ_FOREACH(rom, &roms, next) {
         if (!rom->fw_file) {
             monitor_printf(mon, "addr=" TARGET_FMT_plx
-                           " size=0x%06zx mem=%s name=\"%s\" \n",
+                           " size=0x%06zx mem=%s name=\"%s\"\n",
                            rom->addr, rom->romsize,
                            rom->isrom ? "rom" : "ram",
                            rom->name);
         } else {
             monitor_printf(mon, "fw=%s/%s"
-                           " size=0x%06zx name=\"%s\" \n",
+                           " size=0x%06zx name=\"%s\"\n",
                            rom->fw_dir,
                            rom->fw_file,
                            rom->romsize,

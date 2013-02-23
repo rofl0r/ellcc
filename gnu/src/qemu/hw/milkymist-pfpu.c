@@ -25,8 +25,8 @@
 #include "hw.h"
 #include "sysbus.h"
 #include "trace.h"
-#include "qemu-log.h"
-#include "qemu-error.h"
+#include "qemu/log.h"
+#include "qemu/error-report.h"
 #include <math.h>
 
 /* #define TRACE_EXEC */
@@ -118,6 +118,7 @@ static const char *opcode_to_str[] = {
 
 struct MilkymistPFPUState {
     SysBusDevice busdev;
+    MemoryRegion regs_region;
     CharDriverState *chr;
     qemu_irq irq;
 
@@ -130,7 +131,7 @@ struct MilkymistPFPUState {
 };
 typedef struct MilkymistPFPUState MilkymistPFPUState;
 
-static inline target_phys_addr_t
+static inline hwaddr
 get_dma_address(uint32_t base, uint32_t x, uint32_t y)
 {
     return base + 8 * (128 * y + x);
@@ -224,7 +225,7 @@ static int pfpu_decode_insn(MilkymistPFPUState *s)
     {
         uint32_t a = cpu_to_be32(s->gp_regs[reg_a]);
         uint32_t b = cpu_to_be32(s->gp_regs[reg_b]);
-        target_phys_addr_t dma_ptr =
+        hwaddr dma_ptr =
             get_dma_address(s->regs[R_MESHBASE],
                     s->gp_regs[GPR_X], s->gp_regs[GPR_Y]);
         cpu_physical_memory_write(dma_ptr, (uint8_t *)&a, 4);
@@ -379,7 +380,8 @@ static inline int get_microcode_address(MilkymistPFPUState *s, uint32_t addr)
     return (512 * s->regs[R_CODEPAGE]) + addr - MICROCODE_BEGIN;
 }
 
-static uint32_t pfpu_read(void *opaque, target_phys_addr_t addr)
+static uint64_t pfpu_read(void *opaque, hwaddr addr,
+                          unsigned size)
 {
     MilkymistPFPUState *s = opaque;
     uint32_t r = 0;
@@ -418,8 +420,8 @@ static uint32_t pfpu_read(void *opaque, target_phys_addr_t addr)
     return r;
 }
 
-static void
-pfpu_write(void *opaque, target_phys_addr_t addr, uint32_t value)
+static void pfpu_write(void *opaque, hwaddr addr, uint64_t value,
+                       unsigned size)
 {
     MilkymistPFPUState *s = opaque;
 
@@ -459,16 +461,14 @@ pfpu_write(void *opaque, target_phys_addr_t addr, uint32_t value)
     }
 }
 
-static CPUReadMemoryFunc * const pfpu_read_fn[] = {
-    NULL,
-    NULL,
-    &pfpu_read,
-};
-
-static CPUWriteMemoryFunc * const pfpu_write_fn[] = {
-    NULL,
-    NULL,
-    &pfpu_write,
+static const MemoryRegionOps pfpu_mmio_ops = {
+    .read = pfpu_read,
+    .write = pfpu_write,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static void milkymist_pfpu_reset(DeviceState *d)
@@ -494,13 +494,12 @@ static void milkymist_pfpu_reset(DeviceState *d)
 static int milkymist_pfpu_init(SysBusDevice *dev)
 {
     MilkymistPFPUState *s = FROM_SYSBUS(typeof(*s), dev);
-    int pfpu_regs;
 
     sysbus_init_irq(dev, &s->irq);
 
-    pfpu_regs = cpu_register_io_memory(pfpu_read_fn, pfpu_write_fn, s,
-            DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, MICROCODE_END * 4, pfpu_regs);
+    memory_region_init_io(&s->regs_region, &pfpu_mmio_ops, s,
+            "milkymist-pfpu", MICROCODE_END * 4);
+    sysbus_init_mmio(dev, &s->regs_region);
 
     return 0;
 }
@@ -520,17 +519,26 @@ static const VMStateDescription vmstate_milkymist_pfpu = {
     }
 };
 
-static SysBusDeviceInfo milkymist_pfpu_info = {
-    .init = milkymist_pfpu_init,
-    .qdev.name  = "milkymist-pfpu",
-    .qdev.size  = sizeof(MilkymistPFPUState),
-    .qdev.vmsd  = &vmstate_milkymist_pfpu,
-    .qdev.reset = milkymist_pfpu_reset,
-};
-
-static void milkymist_pfpu_register(void)
+static void milkymist_pfpu_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&milkymist_pfpu_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = milkymist_pfpu_init;
+    dc->reset = milkymist_pfpu_reset;
+    dc->vmsd = &vmstate_milkymist_pfpu;
 }
 
-device_init(milkymist_pfpu_register)
+static const TypeInfo milkymist_pfpu_info = {
+    .name          = "milkymist-pfpu",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(MilkymistPFPUState),
+    .class_init    = milkymist_pfpu_class_init,
+};
+
+static void milkymist_pfpu_register_types(void)
+{
+    type_register_static(&milkymist_pfpu_info);
+}
+
+type_init(milkymist_pfpu_register_types)

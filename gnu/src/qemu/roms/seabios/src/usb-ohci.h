@@ -2,15 +2,15 @@
 #define __USB_OHCI_H
 
 // usb-ohci.c
-void ohci_init(u16 bdf, int busid);
+void ohci_init(struct pci_device *pci, int busid);
+struct usbdevice_s;
+struct usb_endpoint_descriptor;
+struct usb_pipe *ohci_alloc_pipe(struct usbdevice_s *usbdev
+                                 , struct usb_endpoint_descriptor *epdesc);
 struct usb_pipe;
-void ohci_free_pipe(struct usb_pipe *p);
-struct usb_pipe *ohci_alloc_control_pipe(struct usb_pipe *dummy);
 int ohci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
                  , void *data, int datasize);
-struct usb_pipe *ohci_alloc_bulk_pipe(struct usb_pipe *dummy);
 int ohci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize);
-struct usb_pipe *ohci_alloc_intr_pipe(struct usb_pipe *dummy, int frameexp);
 int ohci_poll_intr(struct usb_pipe *p, void *data);
 
 

@@ -8,10 +8,11 @@
  */
 
 #include "sysbus.h"
-#include "qemu-char.h"
+#include "char/char.h"
 
 typedef struct {
     SysBusDevice busdev;
+    MemoryRegion iomem;
     uint32_t readbuff;
     uint32_t flags;
     uint32_t lcr;
@@ -53,7 +54,8 @@ static void pl011_update(pl011_state *s)
     qemu_set_irq(s->irq, flags != 0);
 }
 
-static uint32_t pl011_read(void *opaque, target_phys_addr_t offset)
+static uint64_t pl011_read(void *opaque, hwaddr offset,
+                           unsigned size)
 {
     pl011_state *s = (pl011_state *)opaque;
     uint32_t c;
@@ -76,7 +78,9 @@ static uint32_t pl011_read(void *opaque, target_phys_addr_t offset)
         if (s->read_count == s->read_trigger - 1)
             s->int_level &= ~ PL011_INT_RX;
         pl011_update(s);
-        qemu_chr_accept_input(s->chr);
+        if (s->chr) {
+            qemu_chr_accept_input(s->chr);
+        }
         return c;
     case 1: /* UARTCR */
         return 0;
@@ -103,7 +107,8 @@ static uint32_t pl011_read(void *opaque, target_phys_addr_t offset)
     case 18: /* UARTDMACR */
         return s->dmacr;
     default:
-        hw_error("pl011_read: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "pl011_read: Bad offset %x\n", (int)offset);
         return 0;
     }
 }
@@ -122,8 +127,8 @@ static void pl011_set_read_trigger(pl011_state *s)
         s->read_trigger = 1;
 }
 
-static void pl011_write(void *opaque, target_phys_addr_t offset,
-                          uint32_t value)
+static void pl011_write(void *opaque, hwaddr offset,
+                        uint64_t value, unsigned size)
 {
     pl011_state *s = (pl011_state *)opaque;
     unsigned char ch;
@@ -133,7 +138,7 @@ static void pl011_write(void *opaque, target_phys_addr_t offset,
         /* ??? Check if transmitter is enabled.  */
         ch = value;
         if (s->chr)
-            qemu_chr_write(s->chr, &ch, 1);
+            qemu_chr_fe_write(s->chr, &ch, 1);
         s->int_level |= PL011_INT_TX;
         pl011_update(s);
         break;
@@ -174,11 +179,13 @@ static void pl011_write(void *opaque, target_phys_addr_t offset,
         break;
     case 18: /* UARTDMACR */
         s->dmacr = value;
-        if (value & 3)
-            hw_error("PL011: DMA not implemented\n");
+        if (value & 3) {
+            qemu_log_mask(LOG_UNIMP, "pl011: DMA not implemented\n");
+        }
         break;
     default:
-        hw_error("pl011_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "pl011_write: Bad offset %x\n", (int)offset);
     }
 }
 
@@ -223,16 +230,10 @@ static void pl011_event(void *opaque, int event)
         pl011_put_fifo(opaque, 0x400);
 }
 
-static CPUReadMemoryFunc * const pl011_readfn[] = {
-   pl011_read,
-   pl011_read,
-   pl011_read
-};
-
-static CPUWriteMemoryFunc * const pl011_writefn[] = {
-   pl011_write,
-   pl011_write,
-   pl011_write
+static const MemoryRegionOps pl011_ops = {
+    .read = pl011_read,
+    .write = pl011_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static const VMStateDescription vmstate_pl011 = {
@@ -262,16 +263,13 @@ static const VMStateDescription vmstate_pl011 = {
 
 static int pl011_init(SysBusDevice *dev, const unsigned char *id)
 {
-    int iomemtype;
     pl011_state *s = FROM_SYSBUS(pl011_state, dev);
 
-    iomemtype = cpu_register_io_memory(pl011_readfn,
-                                       pl011_writefn, s,
-                                       DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, 0x1000,iomemtype);
+    memory_region_init_io(&s->iomem, &pl011_ops, s, "pl011", 0x1000);
+    sysbus_init_mmio(dev, &s->iomem);
     sysbus_init_irq(dev, &s->irq);
     s->id = id;
-    s->chr = qdev_init_chardev(&dev->qdev);
+    s->chr = qemu_char_get_next_serial();
 
     s->read_trigger = 1;
     s->ifl = 0x12;
@@ -285,22 +283,48 @@ static int pl011_init(SysBusDevice *dev, const unsigned char *id)
     return 0;
 }
 
-static int pl011_init_arm(SysBusDevice *dev)
+static int pl011_arm_init(SysBusDevice *dev)
 {
     return pl011_init(dev, pl011_id_arm);
 }
 
-static int pl011_init_luminary(SysBusDevice *dev)
+static int pl011_luminary_init(SysBusDevice *dev)
 {
     return pl011_init(dev, pl011_id_luminary);
 }
 
-static void pl011_register_devices(void)
+static void pl011_arm_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_dev("pl011", sizeof(pl011_state),
-                        pl011_init_arm);
-    sysbus_register_dev("pl011_luminary", sizeof(pl011_state),
-                        pl011_init_luminary);
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+
+    sdc->init = pl011_arm_init;
 }
 
-device_init(pl011_register_devices)
+static const TypeInfo pl011_arm_info = {
+    .name          = "pl011",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(pl011_state),
+    .class_init    = pl011_arm_class_init,
+};
+
+static void pl011_luminary_class_init(ObjectClass *klass, void *data)
+{
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+
+    sdc->init = pl011_luminary_init;
+}
+
+static const TypeInfo pl011_luminary_info = {
+    .name          = "pl011_luminary",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(pl011_state),
+    .class_init    = pl011_luminary_class_init,
+};
+
+static void pl011_register_types(void)
+{
+    type_register_static(&pl011_arm_info);
+    type_register_static(&pl011_luminary_info);
+}
+
+type_init(pl011_register_types)

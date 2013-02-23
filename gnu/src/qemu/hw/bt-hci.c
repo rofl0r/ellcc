@@ -19,9 +19,9 @@
  */
 
 #include "qemu-common.h"
-#include "qemu-timer.h"
+#include "qemu/timer.h"
 #include "usb.h"
-#include "net.h"
+#include "bt/bt.h"
 #include "bt.h"
 
 struct bt_hci_s {
@@ -721,7 +721,7 @@ static void bt_hci_connection_reject_event(struct bt_hci_s *hci,
 static void bt_hci_connection_accept(struct bt_hci_s *hci,
                 struct bt_device_s *host)
 {
-    struct bt_hci_link_s *link = qemu_mallocz(sizeof(struct bt_hci_link_s));
+    struct bt_hci_link_s *link = g_malloc0(sizeof(struct bt_hci_link_s));
     evt_conn_complete params;
     uint16_t handle;
     uint8_t status = HCI_SUCCESS;
@@ -736,7 +736,7 @@ static void bt_hci_connection_accept(struct bt_hci_s *hci,
             tries);
 
     if (!tries) {
-        qemu_free(link);
+        g_free(link);
         bt_hci_connection_reject(hci, host, HCI_REJECTED_LIMITED_RESOURCES);
         status = HCI_NO_CONNECTION;
         goto complete;
@@ -786,7 +786,6 @@ static void bt_hci_lmp_connection_request(struct bt_link_s *link)
     memcpy(&params.dev_class, &link->host->class, sizeof(params.dev_class));
     params.link_type	= ACL_LINK;
     bt_hci_event(hci, EVT_CONN_REQUEST, &params, EVT_CONN_REQUEST_SIZE);
-    return;
 }
 
 static void bt_hci_conn_accept_timeout(void *opaque)
@@ -893,7 +892,7 @@ static void bt_hci_disconnect(struct bt_hci_s *hci,
 
     /* We are the slave, we get to clean this burden */
     link = (struct bt_hci_link_s *) btlink;
-    qemu_free(link);
+    g_free(link);
 
 complete:
     bt_hci_lmp_link_teardown(hci, handle);
@@ -928,7 +927,7 @@ static void bt_hci_lmp_disconnect_slave(struct bt_link_s *btlink)
     uint16_t handle = link->handle;
     evt_disconn_complete params;
 
-    qemu_free(link);
+    g_free(link);
 
     bt_hci_lmp_link_teardown(hci, handle);
 
@@ -943,7 +942,6 @@ static int bt_hci_name_req(struct bt_hci_s *hci, bdaddr_t *bdaddr)
 {
     struct bt_device_s *slave;
     evt_remote_name_req_complete params;
-    int len;
 
     for (slave = hci->device.net->slave; slave; slave = slave->next)
         if (slave->page_scan && !bacmp(&slave->bd_addr, bdaddr))
@@ -955,9 +953,7 @@ static int bt_hci_name_req(struct bt_hci_s *hci, bdaddr_t *bdaddr)
 
     params.status       = HCI_SUCCESS;
     bacpy(&params.bdaddr, &slave->bd_addr);
-    len = snprintf(params.name, sizeof(params.name),
-                    "%s", slave->lmp_name ?: "");
-    memset(params.name + len, 0, sizeof(params.name) - len);
+    pstrcpy(params.name, sizeof(params.name), slave->lmp_name ?: "");
     bt_hci_event(hci, EVT_REMOTE_NAME_REQ_COMPLETE,
                     &params, EVT_REMOTE_NAME_REQ_COMPLETE_SIZE);
 
@@ -1138,7 +1134,7 @@ static void bt_hci_reset(struct bt_hci_s *hci)
     hci->device.inquiry_scan = 0;
     hci->device.page_scan = 0;
     if (hci->device.lmp_name)
-        qemu_free((void *) hci->device.lmp_name);
+        g_free((void *) hci->device.lmp_name);
     hci->device.lmp_name = NULL;
     hci->device.class[0] = 0x00;
     hci->device.class[1] = 0x00;
@@ -1388,7 +1384,7 @@ static inline void bt_hci_event_complete_read_local_name(struct bt_hci_s *hci)
     params.status = HCI_SUCCESS;
     memset(params.name, 0, sizeof(params.name));
     if (hci->device.lmp_name)
-        strncpy(params.name, hci->device.lmp_name, sizeof(params.name));
+        pstrcpy(params.name, sizeof(params.name), hci->device.lmp_name);
 
     bt_hci_event_complete(hci, &params, READ_LOCAL_NAME_RP_SIZE);
 }
@@ -1816,8 +1812,8 @@ static void bt_submit_hci(struct HCIInfo *info,
         LENGTH_CHECK(change_local_name);
 
         if (hci->device.lmp_name)
-            qemu_free((void *) hci->device.lmp_name);
-        hci->device.lmp_name = qemu_strndup(PARAM(change_local_name, name),
+            g_free((void *) hci->device.lmp_name);
+        hci->device.lmp_name = g_strndup(PARAM(change_local_name, name),
                         sizeof(PARAM(change_local_name, name)));
         bt_hci_event_complete_status(hci, HCI_SUCCESS);
         break;
@@ -2143,7 +2139,7 @@ static void bt_hci_destroy(struct bt_device_s *dev)
 
 struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net)
 {
-    struct bt_hci_s *s = qemu_mallocz(sizeof(struct bt_hci_s));
+    struct bt_hci_s *s = g_malloc0(sizeof(struct bt_hci_s));
 
     s->lm.inquiry_done = qemu_new_timer_ns(vm_clock, bt_hci_inquiry_done, s);
     s->lm.inquiry_next = qemu_new_timer_ns(vm_clock, bt_hci_inquiry_next, s);
@@ -2188,7 +2184,7 @@ static void bt_hci_done(struct HCIInfo *info)
     bt_device_done(&hci->device);
 
     if (hci->device.lmp_name)
-        qemu_free((void *) hci->device.lmp_name);
+        g_free((void *) hci->device.lmp_name);
 
     /* Be gentle and send DISCONNECT to all connected peers and those
      * currently waiting for us to accept or reject a connection request.
@@ -2217,5 +2213,5 @@ static void bt_hci_done(struct HCIInfo *info)
     qemu_free_timer(hci->lm.inquiry_next);
     qemu_free_timer(hci->conn_accept_timer);
 
-    qemu_free(hci);
+    g_free(hci);
 }

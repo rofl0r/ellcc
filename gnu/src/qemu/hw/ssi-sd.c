@@ -5,9 +5,12 @@
  * Written by Paul Brook
  *
  * This code is licensed under the GNU GPL v2.
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
-#include "blockdev.h"
+#include "sysemu/blockdev.h"
 #include "ssi.h"
 #include "sd.h"
 
@@ -194,6 +197,7 @@ static uint32_t ssi_sd_transfer(SSISlave *dev, uint32_t val)
 
 static void ssi_sd_save(QEMUFile *f, void *opaque)
 {
+    SSISlave *ss = SSI_SLAVE(opaque);
     ssi_sd_state *s = (ssi_sd_state *)opaque;
     int i;
 
@@ -206,10 +210,13 @@ static void ssi_sd_save(QEMUFile *f, void *opaque)
     qemu_put_be32(f, s->arglen);
     qemu_put_be32(f, s->response_pos);
     qemu_put_be32(f, s->stopping);
+
+    qemu_put_be32(f, ss->cs);
 }
 
 static int ssi_sd_load(QEMUFile *f, void *opaque, int version_id)
 {
+    SSISlave *ss = SSI_SLAVE(opaque);
     ssi_sd_state *s = (ssi_sd_state *)opaque;
     int i;
 
@@ -226,6 +233,8 @@ static int ssi_sd_load(QEMUFile *f, void *opaque, int version_id)
     s->response_pos = qemu_get_be32(f);
     s->stopping = qemu_get_be32(f);
 
+    ss->cs = qemu_get_be32(f);
+
     return 0;
 }
 
@@ -241,16 +250,25 @@ static int ssi_sd_init(SSISlave *dev)
     return 0;
 }
 
-static SSISlaveInfo ssi_sd_info = {
-    .qdev.name = "ssi-sd",
-    .qdev.size = sizeof(ssi_sd_state),
-    .init = ssi_sd_init,
-    .transfer = ssi_sd_transfer
-};
-
-static void ssi_sd_register_devices(void)
+static void ssi_sd_class_init(ObjectClass *klass, void *data)
 {
-    ssi_register_slave(&ssi_sd_info);
+    SSISlaveClass *k = SSI_SLAVE_CLASS(klass);
+
+    k->init = ssi_sd_init;
+    k->transfer = ssi_sd_transfer;
+    k->cs_polarity = SSI_CS_LOW;
 }
 
-device_init(ssi_sd_register_devices)
+static const TypeInfo ssi_sd_info = {
+    .name          = "ssi-sd",
+    .parent        = TYPE_SSI_SLAVE,
+    .instance_size = sizeof(ssi_sd_state),
+    .class_init    = ssi_sd_class_init,
+};
+
+static void ssi_sd_register_types(void)
+{
+    type_register_static(&ssi_sd_info);
+}
+
+type_init(ssi_sd_register_types)

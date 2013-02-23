@@ -27,16 +27,16 @@
 #include "boards.h"
 #include "xen_backend.h"
 #include "xen_domainbuild.h"
-#include "blockdev.h"
+#include "sysemu/blockdev.h"
 
-static void xen_init_pv(ram_addr_t ram_size,
-			const char *boot_device,
-			const char *kernel_filename,
-			const char *kernel_cmdline,
-			const char *initrd_filename,
-			const char *cpu_model)
+static void xen_init_pv(QEMUMachineInitArgs *args)
 {
-    CPUState *env;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    X86CPU *cpu;
+    CPUX86State *env;
     DriveInfo *dinfo;
     int i;
 
@@ -48,7 +48,8 @@ static void xen_init_pv(ram_addr_t ram_size,
         cpu_model = "qemu32";
 #endif
     }
-    env = cpu_init(cpu_model);
+    cpu = cpu_x86_init(cpu_model);
+    env = &cpu->env;
     env->halted = 1;
 
     /* Initialize backend core & drivers */
@@ -114,6 +115,7 @@ static QEMUMachine xenpv_machine = {
     .init = xen_init_pv,
     .max_cpus = 1,
     .default_machine_opts = "accel=xen",
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void xenpv_machine_init(void)

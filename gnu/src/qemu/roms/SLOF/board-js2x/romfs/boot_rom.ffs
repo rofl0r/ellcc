@@ -1,5 +1,5 @@
 # *****************************************************************************
-# * Copyright (c) 2004, 2008 IBM Corporation
+# * Copyright (c) 2004, 2011 IBM Corporation
 # * All rights reserved.
 # * This program and the accompanying materials
 # * are made available under the terms of the BSD License
@@ -10,14 +10,15 @@
 # *     IBM Corporation - initial implementation
 # ****************************************************************************/
 
-# FFile-Name	Real Filename		Flags			ROM-Offset i/a
-#--------------|-----------------------|-----------------------|--------------
-header		romfs/header.img	0			0
-stage1          board-js2x/llfw/stage1.bin         1             0x100
-xvect		slof/xvect.bin		0			0
-ofw_main	board-js2x/slof/paflof		0			0
-stageS		board-js2x/llfw/stageS.bin	0			0
-bootinfo	board-js2x/llfw/Cboot.bin	0			0
-rtas		board-js2x/rtas/rtas.bin	0			0
-snk             clients/net-snk.client		0			0
-net_bcm         other-licence/bcm/net_bcm57xx.bin 0             0
+# FFile-Name	Real Filename			Flags		ROM-Offset i/a
+#--------------|-------------------------------|---------------|--------------
+header		romfs/header.img		0		0
+stage1		board-js2x/llfw/stage1.bin	1		0x100
+xvect		slof/xvect.bin			0		0
+ofw_main	board-js2x/slof/paflof		0		0
+stageS		board-js2x/llfw/stageS.bin	0		0
+bootinfo	board-js2x/llfw/Cboot.bin	0		0
+rtas		board-js2x/rtas/rtas.bin	0		0
+snk		clients/net-snk.client		0		0
+net_bcm 	drivers/bcm57xx/net_bcm57xx.elf	0		0
+net_e1000	drivers/e1k/net_e1k.elf		0		0

@@ -18,8 +18,8 @@
  */
 
 #include "hw.h"
-#include "qemu-timer.h"
-#include "net.h"
+#include "qemu/timer.h"
+#include "net/net.h"
 #include "mips.h"
 
 //#define DEBUG_SONIC
@@ -156,7 +156,8 @@ typedef struct dp8393xState {
     int64_t wt_last_update;
     NICConf conf;
     NICState *nic;
-    int mmio_index;
+    MemoryRegion *address_space;
+    MemoryRegion mmio;
 
     /* Registers */
     uint8_t cam[16][6];
@@ -167,7 +168,7 @@ typedef struct dp8393xState {
     int loopback_packet;
 
     /* Memory access */
-    void (*memory_rw)(void *opaque, target_phys_addr_t addr, uint8_t *buf, int len, int is_write);
+    void (*memory_rw)(void *opaque, hwaddr addr, uint8_t *buf, int len, int is_write);
     void* mem_opaque;
 } dp8393xState;
 
@@ -338,6 +339,7 @@ static void do_receiver_disable(dp8393xState *s)
 
 static void do_transmit_packets(dp8393xState *s)
 {
+    NetClientState *nc = qemu_get_queue(s->nic);
     uint16_t data[12];
     int width, size;
     int tx_len, len;
@@ -407,13 +409,13 @@ static void do_transmit_packets(dp8393xState *s)
         if (s->regs[SONIC_RCR] & (SONIC_RCR_LB1 | SONIC_RCR_LB0)) {
             /* Loopback */
             s->regs[SONIC_TCR] |= SONIC_TCR_CRSL;
-            if (s->nic->nc.info->can_receive(&s->nic->nc)) {
+            if (nc->info->can_receive(nc)) {
                 s->loopback_packet = 1;
-                s->nic->nc.info->receive(&s->nic->nc, s->tx_buffer, tx_len);
+                nc->info->receive(nc, s->tx_buffer, tx_len);
             }
         } else {
             /* Transmit packet */
-            qemu_send_packet(&s->nic->nc, s->tx_buffer, tx_len);
+            qemu_send_packet(nc, s->tx_buffer, tx_len);
         }
         s->regs[SONIC_TCR] |= SONIC_TCR_PTX;
 
@@ -515,7 +517,7 @@ static void write_register(dp8393xState *s, int reg, uint16_t val)
     switch (reg) {
         /* Command register */
         case SONIC_CR:
-            do_command(s, val);;
+            do_command(s, val);
             break;
         /* Prevent write to read-only registers */
         case SONIC_CAP2:
@@ -602,7 +604,7 @@ static void dp8393x_watchdog(void *opaque)
     dp8393x_update_irq(s);
 }
 
-static uint32_t dp8393x_readw(void *opaque, target_phys_addr_t addr)
+static uint32_t dp8393x_readw(void *opaque, hwaddr addr)
 {
     dp8393xState *s = opaque;
     int reg;
@@ -615,13 +617,13 @@ static uint32_t dp8393x_readw(void *opaque, target_phys_addr_t addr)
     return read_register(s, reg);
 }
 
-static uint32_t dp8393x_readb(void *opaque, target_phys_addr_t addr)
+static uint32_t dp8393x_readb(void *opaque, hwaddr addr)
 {
     uint16_t v = dp8393x_readw(opaque, addr & ~0x1);
     return (v >> (8 * (addr & 0x1))) & 0xff;
 }
 
-static uint32_t dp8393x_readl(void *opaque, target_phys_addr_t addr)
+static uint32_t dp8393x_readl(void *opaque, hwaddr addr)
 {
     uint32_t v;
     v = dp8393x_readw(opaque, addr);
@@ -629,7 +631,7 @@ static uint32_t dp8393x_readl(void *opaque, target_phys_addr_t addr)
     return v;
 }
 
-static void dp8393x_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void dp8393x_writew(void *opaque, hwaddr addr, uint32_t val)
 {
     dp8393xState *s = opaque;
     int reg;
@@ -643,7 +645,7 @@ static void dp8393x_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
     write_register(s, reg, (uint16_t)val);
 }
 
-static void dp8393x_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void dp8393x_writeb(void *opaque, hwaddr addr, uint32_t val)
 {
     uint16_t old_val = dp8393x_readw(opaque, addr & ~0x1);
 
@@ -658,27 +660,23 @@ static void dp8393x_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
     dp8393x_writew(opaque, addr & ~0x1, val);
 }
 
-static void dp8393x_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
+static void dp8393x_writel(void *opaque, hwaddr addr, uint32_t val)
 {
     dp8393x_writew(opaque, addr, val & 0xffff);
     dp8393x_writew(opaque, addr + 2, (val >> 16) & 0xffff);
 }
 
-static CPUReadMemoryFunc * const dp8393x_read[3] = {
-    dp8393x_readb,
-    dp8393x_readw,
-    dp8393x_readl,
+static const MemoryRegionOps dp8393x_ops = {
+    .old_mmio = {
+        .read = { dp8393x_readb, dp8393x_readw, dp8393x_readl, },
+        .write = { dp8393x_writeb, dp8393x_writew, dp8393x_writel, },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static CPUWriteMemoryFunc * const dp8393x_write[3] = {
-    dp8393x_writeb,
-    dp8393x_writew,
-    dp8393x_writel,
-};
-
-static int nic_can_receive(VLANClientState *nc)
+static int nic_can_receive(NetClientState *nc)
 {
-    dp8393xState *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    dp8393xState *s = qemu_get_nic_opaque(nc);
 
     if (!(s->regs[SONIC_CR] & SONIC_CR_RXEN))
         return 0;
@@ -725,9 +723,9 @@ static int receive_filter(dp8393xState *s, const uint8_t * buf, int size)
     return -1;
 }
 
-static ssize_t nic_receive(VLANClientState *nc, const uint8_t * buf, size_t size)
+static ssize_t nic_receive(NetClientState *nc, const uint8_t * buf, size_t size)
 {
-    dp8393xState *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    dp8393xState *s = qemu_get_nic_opaque(nc);
     uint16_t data[10];
     int packet_type;
     uint32_t available, address;
@@ -861,36 +859,39 @@ static void nic_reset(void *opaque)
     dp8393x_update_irq(s);
 }
 
-static void nic_cleanup(VLANClientState *nc)
+static void nic_cleanup(NetClientState *nc)
 {
-    dp8393xState *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    dp8393xState *s = qemu_get_nic_opaque(nc);
 
-    cpu_unregister_io_memory(s->mmio_index);
+    memory_region_del_subregion(s->address_space, &s->mmio);
+    memory_region_destroy(&s->mmio);
 
     qemu_del_timer(s->watchdog);
     qemu_free_timer(s->watchdog);
 
-    qemu_free(s);
+    g_free(s);
 }
 
 static NetClientInfo net_dp83932_info = {
-    .type = NET_CLIENT_TYPE_NIC,
+    .type = NET_CLIENT_OPTIONS_KIND_NIC,
     .size = sizeof(NICState),
     .can_receive = nic_can_receive,
     .receive = nic_receive,
     .cleanup = nic_cleanup,
 };
 
-void dp83932_init(NICInfo *nd, target_phys_addr_t base, int it_shift,
+void dp83932_init(NICInfo *nd, hwaddr base, int it_shift,
+                  MemoryRegion *address_space,
                   qemu_irq irq, void* mem_opaque,
-                  void (*memory_rw)(void *opaque, target_phys_addr_t addr, uint8_t *buf, int len, int is_write))
+                  void (*memory_rw)(void *opaque, hwaddr addr, uint8_t *buf, int len, int is_write))
 {
     dp8393xState *s;
 
     qemu_check_nic_model(nd, "dp83932");
 
-    s = qemu_mallocz(sizeof(dp8393xState));
+    s = g_malloc0(sizeof(dp8393xState));
 
+    s->address_space = address_space;
     s->mem_opaque = mem_opaque;
     s->memory_rw = memory_rw;
     s->it_shift = it_shift;
@@ -899,16 +900,15 @@ void dp83932_init(NICInfo *nd, target_phys_addr_t base, int it_shift,
     s->regs[SONIC_SR] = 0x0004; /* only revision recognized by Linux */
 
     s->conf.macaddr = nd->macaddr;
-    s->conf.vlan = nd->vlan;
-    s->conf.peer = nd->netdev;
+    s->conf.peers.ncs[0] = nd->netdev;
 
     s->nic = qemu_new_nic(&net_dp83932_info, &s->conf, nd->model, nd->name, s);
 
-    qemu_format_nic_info_str(&s->nic->nc, s->conf.macaddr.a);
+    qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
     qemu_register_reset(nic_reset, s);
     nic_reset(s);
 
-    s->mmio_index = cpu_register_io_memory(dp8393x_read, dp8393x_write, s,
-                                           DEVICE_NATIVE_ENDIAN);
-    cpu_register_physical_memory(base, 0x40 << it_shift, s->mmio_index);
+    memory_region_init_io(&s->mmio, &dp8393x_ops, s,
+                          "dp8393x", 0x40 << it_shift);
+    memory_region_add_subregion(address_space, base, &s->mmio);
 }

@@ -19,10 +19,10 @@
  */
 
 #include "qemu-common.h"
-#include "console.h"
+#include "ui/console.h"
 #include "devices.h"
 #include "vga_int.h"
-#include "pixel_ops.h"
+#include "ui/pixel_ops.h"
 
 typedef void (*blizzard_fn_t)(uint8_t *, const uint8_t *, unsigned int);
 
@@ -188,7 +188,7 @@ static int blizzard_transfer_setup(BlizzardState *s)
     s->data.len = s->bpp * s->data.dx * s->data.dy;
     s->data.pitch = s->data.dx;
     if (s->data.len > s->data.buflen) {
-        s->data.buf = qemu_realloc(s->data.buf, s->data.len);
+        s->data.buf = g_realloc(s->data.buf, s->data.len);
         s->data.buflen = s->data.len;
     }
     s->data.ptr = s->data.buf;
@@ -878,8 +878,6 @@ void s1d13745_write_block(void *opaque, int dc,
         len -= 2;
         buf += 2;
     }
-
-    return;
 }
 
 static void blizzard_update_display(void *opaque)
@@ -923,8 +921,8 @@ static void blizzard_update_display(void *opaque)
     for (; y < s->my[1]; y ++, src += bypl, dst += bypl)
         memcpy(dst, src, bwidth);
 
-    dpy_update(s->state, s->mx[0], s->my[0],
-                    s->mx[1] - s->mx[0], y - s->my[0]);
+    dpy_gfx_update(s->state, s->mx[0], s->my[0],
+                   s->mx[1] - s->mx[0], y - s->my[0]);
 
     s->mx[0] = s->x;
     s->mx[1] = 0;
@@ -932,12 +930,14 @@ static void blizzard_update_display(void *opaque)
     s->my[1] = 0;
 }
 
-static void blizzard_screen_dump(void *opaque, const char *filename) {
+static void blizzard_screen_dump(void *opaque, const char *filename,
+                                 bool cswitch, Error **errp)
+{
     BlizzardState *s = (BlizzardState *) opaque;
 
     blizzard_update_display(opaque);
     if (s && ds_get_data(s->state))
-        ppm_save(filename, s->state->surface);
+        ppm_save(filename, s->state->surface, errp);
 }
 
 #define DEPTH 8
@@ -953,9 +953,9 @@ static void blizzard_screen_dump(void *opaque, const char *filename) {
 
 void *s1d13745_init(qemu_irq gpio_int)
 {
-    BlizzardState *s = (BlizzardState *) qemu_mallocz(sizeof(*s));
+    BlizzardState *s = (BlizzardState *) g_malloc0(sizeof(*s));
 
-    s->fb = qemu_malloc(0x180000);
+    s->fb = g_malloc(0x180000);
 
     s->state = graphic_console_init(blizzard_update_display,
                                  blizzard_invalidate_display,
@@ -964,7 +964,7 @@ void *s1d13745_init(qemu_irq gpio_int)
     switch (ds_get_bits_per_pixel(s->state)) {
     case 0:
         s->line_fn_tab[0] = s->line_fn_tab[1] =
-                qemu_mallocz(sizeof(blizzard_fn_t) * 0x10);
+                g_malloc0(sizeof(blizzard_fn_t) * 0x10);
         break;
     case 8:
         s->line_fn_tab[0] = blizzard_draw_fn_8;

@@ -94,13 +94,60 @@ fdt-check-header
   2dup + 1 + 3 + fffffffc and -rot
 ;
 
+\ Update unit with information from the reg property...
+\ ... this is required for the PCI nodes for example.
+: fdt-reg-unit ( prop-addr prop-len -- )
+      decode-phys               ( prop-addr' prop-len' phys.lo ... phys.hi )
+      set-unit                  ( prop-addr' prop-len' )
+      2drop
+;
+
 \ Lookup a string by index
-: fdt-fetch-string ( index -- $string)  
+: fdt-fetch-string ( index -- str-addr str-len )  
   fdt-strings + dup from-cstring
 ;
 
-: fdt-create-dec  s" decode-unit" $CREATE , DOES> @ hex-decode-unit ;
-: fdt-create-enc  s" encode-unit" $CREATE , DOES> @ hex-encode-unit ;
+: hex64-decode-unit ( str len ncells -- addr.lo ... addr.hi )
+  dup 2 <> IF
+     hex-decode-unit
+  ELSE
+     drop
+     base @ >r hex
+     $number IF 0 0 ELSE xlsplit THEN
+     r> base !
+  THEN
+;
+
+: hex64-encode-unit ( addr.lo ... addr.hi ncells -- str len )
+  dup 2 <> IF
+     hex-encode-unit
+  ELSE
+     drop
+     base @ >r hex
+     lxjoin (u.)
+     r> base !
+  THEN
+;
+
+: fdt-create-dec  s" decode-unit" $CREATE , DOES> @ hex64-decode-unit ;
+: fdt-create-enc  s" encode-unit" $CREATE , DOES> @ hex64-encode-unit ;
+
+\ Check whether array contains an zero-terminated ASCII string:
+: fdt-prop-is-string?  ( addr len -- string? )
+   dup 1 < IF 2drop FALSE EXIT THEN                \ Check for valid length
+   1-
+   2dup + c@ 0<> IF 2drop FALSE EXIT THEN          \ Check zero-termination
+   test-string
+;
+
+\ Encode fdt property to OF property
+: fdt-encode-prop  ( addr len -- )
+   2dup fdt-prop-is-string? IF
+      1- encode-string
+   ELSE
+      encode-bytes
+   THEN
+;
 
 \ Method to unflatten a node
 : fdt-unflatten-node ( start -- end )
@@ -122,7 +169,7 @@ fdt-check-header
   \ Set name
   device-name
 
-  \ Set unit address
+  \ Set preliminary unit address - might get overwritten by reg property
   dup IF
      " #address-cells" get-parent get-package-property IF
         2drop
@@ -142,9 +189,12 @@ fdt-check-header
       drop dup			( drop tag, dup addr     : a1 a1 )
       dup l@ dup rot 4 +	( fetch size, stack is   : a1 s s a2)
       dup l@ swap 4 +		( fetch nameid, stack is : a1 s s i a3 )
-      rot                       ( we now have: a1 s i a3 s )
-      encode-bytes rot		( a1 s pa ps i)
-      fdt-fetch-string		( a1 s pa ps $pn )
+      rot			( we now have: a1 s i a3 s )
+      fdt-encode-prop rot	( a1 s pa ps i)
+      fdt-fetch-string		( a1 s pa ps na ns )
+      2dup s" reg" str= IF
+          2swap 2dup fdt-reg-unit 2swap
+      THEN
       property
       + 8 + 3 + fffffffc and
     ELSE dup OF_DT_BEGIN_NODE = IF
@@ -186,7 +236,9 @@ fdt-unflatten-tree
     fdt-debug IF
         dup ." Memory size: " . cr
     THEN
-    MIN-RAM-SIZE swap release
+    \ claim.fs already released the memory between 0 and MIN-RAM-SIZE,
+    \ so we've got only to release the remaining memory now:
+    MIN-RAM-SIZE swap MIN-RAM-SIZE - release
     2drop device-end
 ;
 fdt-parse-memory
@@ -209,6 +261,104 @@ fdt-parse-memory
     REPEAT drop drop drop
 ;
 fdt-claim-reserve 
+
+
+\ The following functions are use to replace the FDT phandle and
+\ linux,phandle properties with our own OF1275 phandles...
+
+\ This is used to check whether we successfully replaced a phandle value
+0 VALUE (fdt-phandle-replaced)
+
+\ Replace phandle value in "interrupt-map" property
+: fdt-replace-interrupt-map  ( old new prop-addr prop-len -- old new )
+   BEGIN
+      dup                    ( old new prop-addr prop-len prop-len )
+   WHILE
+      \ This is a little bit ugly ... we're accessing the property at
+      \ hard-coded offsets instead of analyzing it completely...
+      swap dup 10 +          ( old new prop-len prop-addr prop-addr+10 )
+      dup l@ 5 pick = IF
+          \ it matches the old phandle value!
+          3 pick swap l!
+          TRUE TO (fdt-phandle-replaced)
+      ELSE
+          drop
+      THEN
+      ( old new prop-len prop-addr )
+      1c + swap 1c -
+      ( old new new-prop-addr new-prop-len )
+   REPEAT
+   2drop
+;
+
+\ Replace one FDT phandle "old" with a OF1275 phandle "new" in the
+\ whole tree:
+: fdt-replace-all-phandles ( old new node -- )
+   \ ." Replacing in " dup node>path type cr
+   >r
+   s" interrupt-map" r@ get-property 0= IF
+      ( old new prop-addr prop-len  R: node )
+      fdt-replace-interrupt-map
+   THEN
+   s" interrupt-parent" r@ get-property 0= IF
+      ( old new prop-addr prop-len  R: node )
+      decode-int -rot 2drop                  ( old new val  R: node )
+      2 pick = IF                            ( old new      R: node )
+         dup encode-int s" interrupt-parent" r@ set-property
+         TRUE TO (fdt-phandle-replaced)
+      THEN
+   THEN
+   \ ... add more properties that have to be fixed here ...
+   r>
+   \ Now recurse over all child nodes:       ( old new node )
+   child BEGIN
+      dup
+   WHILE
+      3dup RECURSE
+      PEER
+   REPEAT
+   3drop
+;
+
+\ Check whether a node has "phandle" or "linux,phandle" properties
+\ and replace them:
+: fdt-fix-node-phandle  ( node -- )
+   >r
+   FALSE TO (fdt-phandle-replaced)
+   s" phandle" r@ get-property 0= IF
+      decode-int                       ( p-addr2 p-len2 val )
+      \ ." found phandle: " dup . cr
+      r@ s" /" find-node               ( p-addr2 p-len2 val node root )  
+      fdt-replace-all-phandles         ( p-addr2 p-len2 )
+      2drop
+      (fdt-phandle-replaced) IF
+         r@ set-node
+         s" phandle" delete-property
+         s" linux,phandle" delete-property
+      ELSE
+         diagnostic-mode? IF
+            cr ." Warning: Did not replace phandle in " r@ node>path type cr
+         THEN
+      THEN
+   THEN
+   r> drop
+;
+
+\ Recursively walk through all nodes to fix their phandles:
+: fdt-fix-phandles  ( node -- )
+   \ ." fixing phandles of " dup node>path type cr
+   dup fdt-fix-node-phandle
+   child BEGIN
+      dup
+   WHILE
+      dup RECURSE
+      PEER
+   REPEAT
+   drop
+   device-end
+;
+s" /" find-node fdt-fix-phandles
+
 
 \ Remaining bits from root.fs
 

@@ -26,11 +26,12 @@
 
 
 #include "hw.h"
-#include "pci.h"
-#include "net.h"
+#include "pci/pci.h"
+#include "net/net.h"
 #include "net/checksum.h"
 #include "loader.h"
-#include "sysemu.h"
+#include "sysemu/sysemu.h"
+#include "sysemu/dma.h"
 
 #include "e1000_hw.h"
 
@@ -41,7 +42,7 @@ enum {
     DEBUG_GENERAL,	DEBUG_IO,	DEBUG_MMIO,	DEBUG_INTERRUPT,
     DEBUG_RX,		DEBUG_TX,	DEBUG_MDIC,	DEBUG_EEPROM,
     DEBUG_UNKNOWN,	DEBUG_TXSUM,	DEBUG_TXERR,	DEBUG_RXERR,
-    DEBUG_RXFILTER,	DEBUG_NOTYET,
+    DEBUG_RXFILTER,     DEBUG_PHY,      DEBUG_NOTYET,
 };
 #define DBGBIT(x)	(1<<DEBUG_##x)
 static int debugflags = DBGBIT(TXERR) | DBGBIT(GENERAL);
@@ -57,6 +58,11 @@ static int debugflags = DBGBIT(TXERR) | DBGBIT(GENERAL);
 #define IOPORT_SIZE       0x40
 #define PNPMMIO_SIZE      0x20000
 #define MIN_BUF_SIZE      60 /* Min. octets in an ethernet frame sans FCS */
+
+/* this is the size past which hardware will drop packets when setting LPE=0 */
+#define MAXIMUM_ETHERNET_VLAN_SIZE 1522
+/* this is the size past which hardware will drop packets when setting LPE=1 */
+#define MAXIMUM_ETHERNET_LPE_SIZE 16384
 
 /*
  * HW models:
@@ -82,7 +88,8 @@ typedef struct E1000State_st {
     PCIDevice dev;
     NICState *nic;
     NICConf conf;
-    int mmio_index;
+    MemoryRegion mmio;
+    MemoryRegion io;
 
     uint32_t mac_reg[0x8000];
     uint16_t phy_reg[0x20];
@@ -90,7 +97,6 @@ typedef struct E1000State_st {
 
     uint32_t rxbuf_size;
     uint32_t rxbuf_min_shift;
-    int check_rxov;
     struct e1000_tx {
         unsigned char header[256];
         unsigned char vlan_header[4];
@@ -123,6 +129,8 @@ typedef struct E1000State_st {
         uint16_t reading;
         uint32_t old_eecd;
     } eecd_state;
+
+    QEMUTimer *autoneg_timer;
 } E1000State;
 
 #define	defreg(x)	x = (E1000_##x>>2)
@@ -140,6 +148,48 @@ enum {
     defreg(VET),
 };
 
+static void
+e1000_link_down(E1000State *s)
+{
+    s->mac_reg[STATUS] &= ~E1000_STATUS_LU;
+    s->phy_reg[PHY_STATUS] &= ~MII_SR_LINK_STATUS;
+}
+
+static void
+e1000_link_up(E1000State *s)
+{
+    s->mac_reg[STATUS] |= E1000_STATUS_LU;
+    s->phy_reg[PHY_STATUS] |= MII_SR_LINK_STATUS;
+}
+
+static void
+set_phy_ctrl(E1000State *s, int index, uint16_t val)
+{
+    if ((val & MII_CR_AUTO_NEG_EN) && (val & MII_CR_RESTART_AUTO_NEG)) {
+        e1000_link_down(s);
+        s->phy_reg[PHY_STATUS] &= ~MII_SR_AUTONEG_COMPLETE;
+        DBGOUT(PHY, "Start link auto negotiation\n");
+        qemu_mod_timer(s->autoneg_timer, qemu_get_clock_ms(vm_clock) + 500);
+    }
+}
+
+static void
+e1000_autoneg_timer(void *opaque)
+{
+    E1000State *s = opaque;
+    if (!qemu_get_queue(s->nic)->link_down) {
+        e1000_link_up(s);
+    }
+    s->phy_reg[PHY_STATUS] |= MII_SR_AUTONEG_COMPLETE;
+    DBGOUT(PHY, "Auto negotiation is completed\n");
+}
+
+static void (*phyreg_writeops[])(E1000State *, int, uint16_t) = {
+    [PHY_CTRL] = set_phy_ctrl,
+};
+
+enum { NPHYWRITEOPS = ARRAY_SIZE(phyreg_writeops) };
+
 enum { PHY_R = 1, PHY_W = 2, PHY_RW = PHY_R | PHY_W };
 static const char phy_regcap[0x20] = {
     [PHY_STATUS] = PHY_R,	[M88E1000_EXT_PHY_SPEC_CTRL] = PHY_RW,
@@ -150,21 +200,49 @@ static const char phy_regcap[0x20] = {
     [PHY_ID2] = PHY_R,		[M88E1000_PHY_SPEC_STATUS] = PHY_R
 };
 
-static void
-ioport_map(PCIDevice *pci_dev, int region_num, pcibus_t addr,
-           pcibus_t size, int type)
-{
-    DBGOUT(IO, "e1000_ioport_map addr=0x%04"FMT_PCIBUS
-           " size=0x%08"FMT_PCIBUS"\n", addr, size);
-}
+static const uint16_t phy_reg_init[] = {
+    [PHY_CTRL] = 0x1140,
+    [PHY_STATUS] = 0x794d, /* link initially up with not completed autoneg */
+    [PHY_ID1] = 0x141,				[PHY_ID2] = PHY_ID2_INIT,
+    [PHY_1000T_CTRL] = 0x0e00,			[M88E1000_PHY_SPEC_CTRL] = 0x360,
+    [M88E1000_EXT_PHY_SPEC_CTRL] = 0x0d60,	[PHY_AUTONEG_ADV] = 0xde1,
+    [PHY_LP_ABILITY] = 0x1e0,			[PHY_1000T_STATUS] = 0x3c00,
+    [M88E1000_PHY_SPEC_STATUS] = 0xac00,
+};
+
+static const uint32_t mac_reg_init[] = {
+    [PBA] =     0x00100030,
+    [LEDCTL] =  0x602,
+    [CTRL] =    E1000_CTRL_SWDPIN2 | E1000_CTRL_SWDPIN0 |
+                E1000_CTRL_SPD_1000 | E1000_CTRL_SLU,
+    [STATUS] =  0x80000000 | E1000_STATUS_GIO_MASTER_ENABLE |
+                E1000_STATUS_ASDV | E1000_STATUS_MTXCKOK |
+                E1000_STATUS_SPEED_1000 | E1000_STATUS_FD |
+                E1000_STATUS_LU,
+    [MANC] =    E1000_MANC_EN_MNG2HOST | E1000_MANC_RCV_TCO_EN |
+                E1000_MANC_ARP_EN | E1000_MANC_0298_EN |
+                E1000_MANC_RMCP_EN,
+};
 
 static void
 set_interrupt_cause(E1000State *s, int index, uint32_t val)
 {
-    if (val)
+    if (val && (E1000_DEVID >= E1000_DEV_ID_82547EI_MOBILE)) {
+        /* Only for 8257x */
         val |= E1000_ICR_INT_ASSERTED;
+    }
     s->mac_reg[ICR] = val;
+
+    /*
+     * Make sure ICR and ICS registers have the same value.
+     * The spec says that the ICS register is write-only.  However in practice,
+     * on real hardware ICS is readable, and for reads it has the same value as
+     * ICR (except that ICS does not have the clear on read behaviour of ICR).
+     *
+     * The VxWorks PRO/1000 driver uses this behaviour.
+     */
     s->mac_reg[ICS] = val;
+
     qemu_set_irq(s->dev.irq[0], (s->mac_reg[IMS] & s->mac_reg[ICR]) != 0);
 }
 
@@ -199,6 +277,33 @@ rxbufsize(uint32_t v)
     return 2048;
 }
 
+static void e1000_reset(void *opaque)
+{
+    E1000State *d = opaque;
+    uint8_t *macaddr = d->conf.macaddr.a;
+    int i;
+
+    qemu_del_timer(d->autoneg_timer);
+    memset(d->phy_reg, 0, sizeof d->phy_reg);
+    memmove(d->phy_reg, phy_reg_init, sizeof phy_reg_init);
+    memset(d->mac_reg, 0, sizeof d->mac_reg);
+    memmove(d->mac_reg, mac_reg_init, sizeof mac_reg_init);
+    d->rxbuf_min_shift = 1;
+    memset(&d->tx, 0, sizeof d->tx);
+
+    if (qemu_get_queue(d->nic)->link_down) {
+        e1000_link_down(d);
+    }
+
+    /* Some guests expect pre-initialized RAH/RAL (AddrValid flag + MACaddr) */
+    d->mac_reg[RA] = 0;
+    d->mac_reg[RA + 1] = E1000_RAH_AV;
+    for (i = 0; i < 4; i++) {
+        d->mac_reg[RA] |= macaddr[i] << (8 * i);
+        d->mac_reg[RA + 1] |= (i < 2) ? macaddr[i + 4] << (8 * i) : 0;
+    }
+}
+
 static void
 set_ctrl(E1000State *s, int index, uint32_t val)
 {
@@ -214,6 +319,7 @@ set_rx_control(E1000State *s, int index, uint32_t val)
     s->rxbuf_min_shift = ((val / E1000_RCTL_RDMTS_QUAT) & 3) + 1;
     DBGOUT(RX, "RCTL: %d, mac_reg[RCTL] = 0x%x\n", s->mac_reg[RDT],
            s->mac_reg[RCTL]);
+    qemu_flush_queued_packets(qemu_get_queue(s->nic));
 }
 
 static void
@@ -236,11 +342,18 @@ set_mdic(E1000State *s, int index, uint32_t val)
         if (!(phy_regcap[addr] & PHY_W)) {
             DBGOUT(MDIC, "MDIC write reg %x unhandled\n", addr);
             val |= E1000_MDIC_ERROR;
-        } else
+        } else {
+            if (addr < NPHYWRITEOPS && phyreg_writeops[addr]) {
+                phyreg_writeops[addr](s, index, data);
+            }
             s->phy_reg[addr] = data;
+        }
     }
     s->mac_reg[MDIC] = val | E1000_MDIC_READY;
-    set_ics(s, 0, E1000_ICR_MDAC);
+
+    if (val & E1000_MDIC_INT_EN) {
+        set_ics(s, 0, E1000_ICR_MDAC);
+    }
 }
 
 static uint32_t
@@ -355,6 +468,17 @@ fcs_len(E1000State *s)
 }
 
 static void
+e1000_send_packet(E1000State *s, const uint8_t *buf, int size)
+{
+    NetClientState *nc = qemu_get_queue(s->nic);
+    if (s->phy_reg[PHY_CTRL] & MII_CR_LOOPBACK) {
+        nc->info->receive(nc, buf, size);
+    } else {
+        qemu_send_packet(nc, buf, size);
+    }
+}
+
+static void
 xmit_seg(E1000State *s)
 {
     uint16_t len, *sp;
@@ -403,9 +527,9 @@ xmit_seg(E1000State *s)
         memmove(tp->vlan, tp->data, 4);
         memmove(tp->data, tp->data + 4, 8);
         memcpy(tp->data + 8, tp->vlan_header, 4);
-        qemu_send_packet(&s->nic->nc, tp->vlan, tp->size + 4);
+        e1000_send_packet(s, tp->vlan, tp->size + 4);
     } else
-        qemu_send_packet(&s->nic->nc, tp->data, tp->size);
+        e1000_send_packet(s, tp->data, tp->size);
     s->mac_reg[TPT]++;
     s->mac_reg[GPTC]++;
     n = s->mac_reg[TOTL];
@@ -472,7 +596,9 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
             bytes = split_size;
             if (tp->size + bytes > msh)
                 bytes = msh - tp->size;
-            cpu_physical_memory_read(addr, tp->data + tp->size, bytes);
+
+            bytes = MIN(sizeof(tp->data) - tp->size, bytes);
+            pci_dma_read(&s->dev, addr, tp->data + tp->size, bytes);
             if ((sz = tp->size + bytes) >= hdr && tp->size < hdr)
                 memmove(tp->header, tp->data, hdr);
             tp->size = sz;
@@ -485,9 +611,10 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
         } while (split_size -= bytes);
     } else if (!tp->tse && tp->cptse) {
         // context descriptor TSE is not set, while data descriptor TSE is set
-        DBGOUT(TXERR, "TCP segmentaion Error\n");
+        DBGOUT(TXERR, "TCP segmentation error\n");
     } else {
-        cpu_physical_memory_read(addr, tp->data + tp->size, split_size);
+        split_size = MIN(sizeof(tp->data) - tp->size, split_size);
+        pci_dma_read(&s->dev, addr, tp->data + tp->size, split_size);
         tp->size += split_size;
     }
 
@@ -503,7 +630,7 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
 }
 
 static uint32_t
-txdesc_writeback(target_phys_addr_t base, struct e1000_tx_desc *dp)
+txdesc_writeback(E1000State *s, dma_addr_t base, struct e1000_tx_desc *dp)
 {
     uint32_t txd_upper, txd_lower = le32_to_cpu(dp->lower.data);
 
@@ -512,8 +639,8 @@ txdesc_writeback(target_phys_addr_t base, struct e1000_tx_desc *dp)
     txd_upper = (le32_to_cpu(dp->upper.data) | E1000_TXD_STAT_DD) &
                 ~(E1000_TXD_STAT_EC | E1000_TXD_STAT_LC | E1000_TXD_STAT_TU);
     dp->upper.data = cpu_to_le32(txd_upper);
-    cpu_physical_memory_write(base + ((char *)&dp->upper - (char *)dp),
-                              (void *)&dp->upper, sizeof(dp->upper));
+    pci_dma_write(&s->dev, base + ((char *)&dp->upper - (char *)dp),
+                  &dp->upper, sizeof(dp->upper));
     return E1000_ICR_TXDW;
 }
 
@@ -528,7 +655,7 @@ static uint64_t tx_desc_base(E1000State *s)
 static void
 start_xmit(E1000State *s)
 {
-    target_phys_addr_t base;
+    dma_addr_t base;
     struct e1000_tx_desc desc;
     uint32_t tdh_start = s->mac_reg[TDH], cause = E1000_ICS_TXQE;
 
@@ -540,14 +667,14 @@ start_xmit(E1000State *s)
     while (s->mac_reg[TDH] != s->mac_reg[TDT]) {
         base = tx_desc_base(s) +
                sizeof(struct e1000_tx_desc) * s->mac_reg[TDH];
-        cpu_physical_memory_read(base, (void *)&desc, sizeof(desc));
+        pci_dma_read(&s->dev, base, &desc, sizeof(desc));
 
         DBGOUT(TX, "index %d: %p : %x %x\n", s->mac_reg[TDH],
                (void *)(intptr_t)desc.buffer_addr, desc.lower.data,
                desc.upper.data);
 
         process_tx_desc(s, &desc);
-        cause |= txdesc_writeback(base, &desc);
+        cause |= txdesc_writeback(s, base, &desc);
 
         if (++s->mac_reg[TDH] * sizeof(desc) >= s->mac_reg[TDLEN])
             s->mac_reg[TDH] = 0;
@@ -619,15 +746,16 @@ receive_filter(E1000State *s, const uint8_t *buf, int size)
 }
 
 static void
-e1000_set_link_status(VLANClientState *nc)
+e1000_set_link_status(NetClientState *nc)
 {
-    E1000State *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    E1000State *s = qemu_get_nic_opaque(nc);
     uint32_t old_status = s->mac_reg[STATUS];
 
-    if (nc->link_down)
-        s->mac_reg[STATUS] &= ~E1000_STATUS_LU;
-    else
-        s->mac_reg[STATUS] |= E1000_STATUS_LU;
+    if (nc->link_down) {
+        e1000_link_down(s);
+    } else {
+        e1000_link_up(s);
+    }
 
     if (s->mac_reg[STATUS] != old_status)
         set_ics(s, 0, E1000_ICR_LSC);
@@ -638,11 +766,11 @@ static bool e1000_has_rxbufs(E1000State *s, size_t total_size)
     int bufs;
     /* Fast-path short packets */
     if (total_size <= s->rxbuf_size) {
-        return s->mac_reg[RDH] != s->mac_reg[RDT] || !s->check_rxov;
+        return s->mac_reg[RDH] != s->mac_reg[RDT];
     }
     if (s->mac_reg[RDH] < s->mac_reg[RDT]) {
         bufs = s->mac_reg[RDT] - s->mac_reg[RDH];
-    } else if (s->mac_reg[RDH] > s->mac_reg[RDT] || !s->check_rxov) {
+    } else if (s->mac_reg[RDH] > s->mac_reg[RDT]) {
         bufs = s->mac_reg[RDLEN] /  sizeof(struct e1000_rx_desc) +
             s->mac_reg[RDT] - s->mac_reg[RDH];
     } else {
@@ -652,11 +780,12 @@ static bool e1000_has_rxbufs(E1000State *s, size_t total_size)
 }
 
 static int
-e1000_can_receive(VLANClientState *nc)
+e1000_can_receive(NetClientState *nc)
 {
-    E1000State *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    E1000State *s = qemu_get_nic_opaque(nc);
 
-    return (s->mac_reg[RCTL] & E1000_RCTL_EN) && e1000_has_rxbufs(s, 1);
+    return (s->mac_reg[STATUS] & E1000_STATUS_LU) &&
+        (s->mac_reg[RCTL] & E1000_RCTL_EN) && e1000_has_rxbufs(s, 1);
 }
 
 static uint64_t rx_desc_base(E1000State *s)
@@ -668,11 +797,11 @@ static uint64_t rx_desc_base(E1000State *s)
 }
 
 static ssize_t
-e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
+e1000_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 {
-    E1000State *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    E1000State *s = qemu_get_nic_opaque(nc);
     struct e1000_rx_desc desc;
-    target_phys_addr_t base;
+    dma_addr_t base;
     unsigned int n, rdt;
     uint32_t rdh_start;
     uint16_t vlan_special = 0;
@@ -682,8 +811,13 @@ e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
     size_t desc_size;
     size_t total_size;
 
-    if (!(s->mac_reg[RCTL] & E1000_RCTL_EN))
+    if (!(s->mac_reg[STATUS] & E1000_STATUS_LU)) {
         return -1;
+    }
+
+    if (!(s->mac_reg[RCTL] & E1000_RCTL_EN)) {
+        return -1;
+    }
 
     /* Pad to minimum Ethernet frame length */
     if (size < sizeof(min_buf)) {
@@ -691,6 +825,14 @@ e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
         memset(&min_buf[size], 0, sizeof(min_buf) - size);
         buf = min_buf;
         size = sizeof(min_buf);
+    }
+
+    /* Discard oversized packets if !LPE and !SBP. */
+    if ((size > MAXIMUM_ETHERNET_LPE_SIZE ||
+        (size > MAXIMUM_ETHERNET_VLAN_SIZE
+        && !(s->mac_reg[RCTL] & E1000_RCTL_LPE)))
+        && !(s->mac_reg[RCTL] & E1000_RCTL_SBP)) {
+        return size;
     }
 
     if (!receive_filter(s, buf, size))
@@ -717,7 +859,7 @@ e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
             desc_size = s->rxbuf_size;
         }
         base = rx_desc_base(s) + sizeof(desc) * s->mac_reg[RDH];
-        cpu_physical_memory_read(base, (void *)&desc, sizeof(desc));
+        pci_dma_read(&s->dev, base, &desc, sizeof(desc));
         desc.special = vlan_special;
         desc.status |= (vlan_status | E1000_RXD_STAT_DD);
         if (desc.buffer_addr) {
@@ -726,9 +868,8 @@ e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
                 if (copy_size > s->rxbuf_size) {
                     copy_size = s->rxbuf_size;
                 }
-                cpu_physical_memory_write(le64_to_cpu(desc.buffer_addr),
-                                          (void *)(buf + desc_offset + vlan_offset),
-                                          copy_size);
+                pci_dma_write(&s->dev, le64_to_cpu(desc.buffer_addr),
+                              buf + desc_offset + vlan_offset, copy_size);
             }
             desc_offset += desc_size;
             desc.length = cpu_to_le16(desc_size);
@@ -742,11 +883,10 @@ e1000_receive(VLANClientState *nc, const uint8_t *buf, size_t size)
         } else { // as per intel docs; skip descriptors with null buf addr
             DBGOUT(RX, "Null RX descriptor!!\n");
         }
-        cpu_physical_memory_write(base, (void *)&desc, sizeof(desc));
+        pci_dma_write(&s->dev, base, &desc, sizeof(desc));
 
         if (++s->mac_reg[RDH] * sizeof(desc) >= s->mac_reg[RDLEN])
             s->mac_reg[RDH] = 0;
-        s->check_rxov = 1;
         /* see comment in start_xmit; same here */
         if (s->mac_reg[RDH] == rdh_start) {
             DBGOUT(RXERR, "RDH wraparound @%x, RDT %x, RDLEN %x\n",
@@ -823,8 +963,10 @@ mac_writereg(E1000State *s, int index, uint32_t val)
 static void
 set_rdt(E1000State *s, int index, uint32_t val)
 {
-    s->check_rxov = 0;
     s->mac_reg[index] = val & 0xffff;
+    if (e1000_has_rxbufs(s, 1)) {
+        qemu_flush_queued_packets(qemu_get_queue(s->nic));
+    }
 }
 
 static void
@@ -902,10 +1044,12 @@ static void (*macreg_writeops[])(E1000State *, int, uint32_t) = {
     [MTA ... MTA+127] = &mac_writereg,
     [VFTA ... VFTA+127] = &mac_writereg,
 };
+
 enum { NWRITEOPS = ARRAY_SIZE(macreg_writeops) };
 
 static void
-e1000_mmio_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
+e1000_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+                 unsigned size)
 {
     E1000State *s = opaque;
     unsigned int index = (addr & 0x1ffff) >> 2;
@@ -913,31 +1057,15 @@ e1000_mmio_writel(void *opaque, target_phys_addr_t addr, uint32_t val)
     if (index < NWRITEOPS && macreg_writeops[index]) {
         macreg_writeops[index](s, index, val);
     } else if (index < NREADOPS && macreg_readops[index]) {
-        DBGOUT(MMIO, "e1000_mmio_writel RO %x: 0x%04x\n", index<<2, val);
+        DBGOUT(MMIO, "e1000_mmio_writel RO %x: 0x%04"PRIx64"\n", index<<2, val);
     } else {
-        DBGOUT(UNKNOWN, "MMIO unknown write addr=0x%08x,val=0x%08x\n",
+        DBGOUT(UNKNOWN, "MMIO unknown write addr=0x%08x,val=0x%08"PRIx64"\n",
                index<<2, val);
     }
 }
 
-static void
-e1000_mmio_writew(void *opaque, target_phys_addr_t addr, uint32_t val)
-{
-    // emulate hw without byte enables: no RMW
-    e1000_mmio_writel(opaque, addr & ~3,
-                      (val & 0xffff) << (8*(addr & 3)));
-}
-
-static void
-e1000_mmio_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
-{
-    // emulate hw without byte enables: no RMW
-    e1000_mmio_writel(opaque, addr & ~3,
-                      (val & 0xff) << (8*(addr & 3)));
-}
-
-static uint32_t
-e1000_mmio_readl(void *opaque, target_phys_addr_t addr)
+static uint64_t
+e1000_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     E1000State *s = opaque;
     unsigned int index = (addr & 0x1ffff) >> 2;
@@ -950,23 +1078,77 @@ e1000_mmio_readl(void *opaque, target_phys_addr_t addr)
     return 0;
 }
 
-static uint32_t
-e1000_mmio_readb(void *opaque, target_phys_addr_t addr)
+static const MemoryRegionOps e1000_mmio_ops = {
+    .read = e1000_mmio_read,
+    .write = e1000_mmio_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 4,
+        .max_access_size = 4,
+    },
+};
+
+static uint64_t e1000_io_read(void *opaque, hwaddr addr,
+                              unsigned size)
 {
-    return ((e1000_mmio_readl(opaque, addr & ~3)) >>
-            (8 * (addr & 3))) & 0xff;
+    E1000State *s = opaque;
+
+    (void)s;
+    return 0;
 }
 
-static uint32_t
-e1000_mmio_readw(void *opaque, target_phys_addr_t addr)
+static void e1000_io_write(void *opaque, hwaddr addr,
+                           uint64_t val, unsigned size)
 {
-    return ((e1000_mmio_readl(opaque, addr & ~3)) >>
-            (8 * (addr & 3))) & 0xffff;
+    E1000State *s = opaque;
+
+    (void)s;
 }
+
+static const MemoryRegionOps e1000_io_ops = {
+    .read = e1000_io_read,
+    .write = e1000_io_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
 
 static bool is_version_1(void *opaque, int version_id)
 {
     return version_id == 1;
+}
+
+static void e1000_pre_save(void *opaque)
+{
+    E1000State *s = opaque;
+    NetClientState *nc = qemu_get_queue(s->nic);
+    /*
+     * If link is down and auto-negotiation is ongoing, complete
+     * auto-negotiation immediately.  This allows is to look at
+     * MII_SR_AUTONEG_COMPLETE to infer link status on load.
+     */
+    if (nc->link_down &&
+        s->phy_reg[PHY_CTRL] & MII_CR_AUTO_NEG_EN &&
+        s->phy_reg[PHY_CTRL] & MII_CR_RESTART_AUTO_NEG) {
+         s->phy_reg[PHY_STATUS] |= MII_SR_AUTONEG_COMPLETE;
+    }
+}
+
+static int e1000_post_load(void *opaque, int version_id)
+{
+    E1000State *s = opaque;
+    NetClientState *nc = qemu_get_queue(s->nic);
+
+    /* nc.link_down can't be migrated, so infer link_down according
+     * to link status bit in mac_reg[STATUS].
+     * Alternatively, restart link negotiation if it was in progress. */
+    nc->link_down = (s->mac_reg[STATUS] & E1000_STATUS_LU) == 0;
+    if (s->phy_reg[PHY_CTRL] & MII_CR_AUTO_NEG_EN &&
+        s->phy_reg[PHY_CTRL] & MII_CR_RESTART_AUTO_NEG &&
+        !(s->phy_reg[PHY_STATUS] & MII_SR_AUTONEG_COMPLETE)) {
+        nc->link_down = false;
+        qemu_mod_timer(s->autoneg_timer, qemu_get_clock_ms(vm_clock) + 500);
+    }
+
+    return 0;
 }
 
 static const VMStateDescription vmstate_e1000 = {
@@ -974,6 +1156,8 @@ static const VMStateDescription vmstate_e1000 = {
     .version_id = 2,
     .minimum_version_id = 1,
     .minimum_version_id_old = 1,
+    .pre_save = e1000_pre_save,
+    .post_load = e1000_post_load,
     .fields      = (VMStateField []) {
         VMSTATE_PCI_DEVICE(dev, E1000State),
         VMSTATE_UNUSED_TEST(is_version_1, 4), /* was instance id */
@@ -1058,95 +1242,48 @@ static const uint16_t e1000_eeprom_template[64] = {
     0xffff, 0xffff, 0xffff, 0xffff,      0xffff, 0xffff,      0xffff, 0x0000,
 };
 
-static const uint16_t phy_reg_init[] = {
-    [PHY_CTRL] = 0x1140,			[PHY_STATUS] = 0x796d, // link initially up
-    [PHY_ID1] = 0x141,				[PHY_ID2] = PHY_ID2_INIT,
-    [PHY_1000T_CTRL] = 0x0e00,			[M88E1000_PHY_SPEC_CTRL] = 0x360,
-    [M88E1000_EXT_PHY_SPEC_CTRL] = 0x0d60,	[PHY_AUTONEG_ADV] = 0xde1,
-    [PHY_LP_ABILITY] = 0x1e0,			[PHY_1000T_STATUS] = 0x3c00,
-    [M88E1000_PHY_SPEC_STATUS] = 0xac00,
-};
-
-static const uint32_t mac_reg_init[] = {
-    [PBA] =     0x00100030,
-    [LEDCTL] =  0x602,
-    [CTRL] =    E1000_CTRL_SWDPIN2 | E1000_CTRL_SWDPIN0 |
-                E1000_CTRL_SPD_1000 | E1000_CTRL_SLU,
-    [STATUS] =  0x80000000 | E1000_STATUS_GIO_MASTER_ENABLE |
-                E1000_STATUS_ASDV | E1000_STATUS_MTXCKOK |
-                E1000_STATUS_SPEED_1000 | E1000_STATUS_FD |
-                E1000_STATUS_LU,
-    [MANC] =    E1000_MANC_EN_MNG2HOST | E1000_MANC_RCV_TCO_EN |
-                E1000_MANC_ARP_EN | E1000_MANC_0298_EN |
-                E1000_MANC_RMCP_EN,
-};
-
 /* PCI interface */
 
-static CPUWriteMemoryFunc * const e1000_mmio_write[] = {
-    e1000_mmio_writeb,	e1000_mmio_writew,	e1000_mmio_writel
-};
-
-static CPUReadMemoryFunc * const e1000_mmio_read[] = {
-    e1000_mmio_readb,	e1000_mmio_readw,	e1000_mmio_readl
-};
-
 static void
-e1000_mmio_map(PCIDevice *pci_dev, int region_num,
-                pcibus_t addr, pcibus_t size, int type)
+e1000_mmio_setup(E1000State *d)
 {
-    E1000State *d = DO_UPCAST(E1000State, dev, pci_dev);
     int i;
     const uint32_t excluded_regs[] = {
         E1000_MDIC, E1000_ICR, E1000_ICS, E1000_IMS,
         E1000_IMC, E1000_TCTL, E1000_TDT, PNPMMIO_SIZE
     };
 
-
-    DBGOUT(MMIO, "e1000_mmio_map addr=0x%08"FMT_PCIBUS" 0x%08"FMT_PCIBUS"\n",
-           addr, size);
-
-    cpu_register_physical_memory(addr, PNPMMIO_SIZE, d->mmio_index);
-    qemu_register_coalesced_mmio(addr, excluded_regs[0]);
-
+    memory_region_init_io(&d->mmio, &e1000_mmio_ops, d, "e1000-mmio",
+                          PNPMMIO_SIZE);
+    memory_region_add_coalescing(&d->mmio, 0, excluded_regs[0]);
     for (i = 0; excluded_regs[i] != PNPMMIO_SIZE; i++)
-        qemu_register_coalesced_mmio(addr + excluded_regs[i] + 4,
-                                     excluded_regs[i + 1] -
-                                     excluded_regs[i] - 4);
+        memory_region_add_coalescing(&d->mmio, excluded_regs[i] + 4,
+                                     excluded_regs[i+1] - excluded_regs[i] - 4);
+    memory_region_init_io(&d->io, &e1000_io_ops, d, "e1000-io", IOPORT_SIZE);
 }
 
 static void
-e1000_cleanup(VLANClientState *nc)
+e1000_cleanup(NetClientState *nc)
 {
-    E1000State *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    E1000State *s = qemu_get_nic_opaque(nc);
 
     s->nic = NULL;
 }
 
-static int
+static void
 pci_e1000_uninit(PCIDevice *dev)
 {
     E1000State *d = DO_UPCAST(E1000State, dev, dev);
 
-    cpu_unregister_io_memory(d->mmio_index);
-    qemu_del_vlan_client(&d->nic->nc);
-    return 0;
-}
-
-static void e1000_reset(void *opaque)
-{
-    E1000State *d = opaque;
-
-    memset(d->phy_reg, 0, sizeof d->phy_reg);
-    memmove(d->phy_reg, phy_reg_init, sizeof phy_reg_init);
-    memset(d->mac_reg, 0, sizeof d->mac_reg);
-    memmove(d->mac_reg, mac_reg_init, sizeof mac_reg_init);
-    d->rxbuf_min_shift = 1;
-    memset(&d->tx, 0, sizeof d->tx);
+    qemu_del_timer(d->autoneg_timer);
+    qemu_free_timer(d->autoneg_timer);
+    memory_region_destroy(&d->mmio);
+    memory_region_destroy(&d->io);
+    qemu_del_nic(d->nic);
 }
 
 static NetClientInfo net_e1000_info = {
-    .type = NET_CLIENT_TYPE_NIC,
+    .type = NET_CLIENT_OPTIONS_KIND_NIC,
     .size = sizeof(NICState),
     .can_receive = e1000_can_receive,
     .receive = e1000_receive,
@@ -1164,22 +1301,16 @@ static int pci_e1000_init(PCIDevice *pci_dev)
 
     pci_conf = d->dev.config;
 
-    /* TODO: we have no capabilities, so why is this bit set? */
-    pci_set_word(pci_conf + PCI_STATUS, PCI_STATUS_CAP_LIST);
     /* TODO: RST# value should be 0, PCI spec 6.2.4 */
     pci_conf[PCI_CACHE_LINE_SIZE] = 0x10;
 
-    /* TODO: RST# value should be 0 if programmable, PCI spec 6.2.4 */
-    pci_conf[PCI_INTERRUPT_PIN] = 1; // interrupt pin 0
+    pci_conf[PCI_INTERRUPT_PIN] = 1; /* interrupt pin A */
 
-    d->mmio_index = cpu_register_io_memory(e1000_mmio_read,
-            e1000_mmio_write, d, DEVICE_LITTLE_ENDIAN);
+    e1000_mmio_setup(d);
 
-    pci_register_bar(&d->dev, 0, PNPMMIO_SIZE,
-                           PCI_BASE_ADDRESS_SPACE_MEMORY, e1000_mmio_map);
+    pci_register_bar(&d->dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &d->mmio);
 
-    pci_register_bar(&d->dev, 1, IOPORT_SIZE,
-                           PCI_BASE_ADDRESS_SPACE_IO, ioport_map);
+    pci_register_bar(&d->dev, 1, PCI_BASE_ADDRESS_SPACE_IO, &d->io);
 
     memmove(d->eeprom_data, e1000_eeprom_template,
         sizeof e1000_eeprom_template);
@@ -1193,11 +1324,13 @@ static int pci_e1000_init(PCIDevice *pci_dev)
     d->eeprom_data[EEPROM_CHECKSUM_REG] = checksum;
 
     d->nic = qemu_new_nic(&net_e1000_info, &d->conf,
-                          d->dev.qdev.info->name, d->dev.qdev.id, d);
+                          object_get_typename(OBJECT(d)), d->dev.qdev.id, d);
 
-    qemu_format_nic_info_str(&d->nic->nc, macaddr);
+    qemu_format_nic_info_str(qemu_get_queue(d->nic), macaddr);
 
     add_boot_device_path(d->conf.bootindex, &pci_dev->qdev, "/ethernet-phy@0");
+
+    d->autoneg_timer = qemu_new_timer_ms(vm_clock, e1000_autoneg_timer, d);
 
     return 0;
 }
@@ -1208,28 +1341,39 @@ static void qdev_e1000_reset(DeviceState *dev)
     e1000_reset(d);
 }
 
-static PCIDeviceInfo e1000_info = {
-    .qdev.name  = "e1000",
-    .qdev.desc  = "Intel Gigabit Ethernet",
-    .qdev.size  = sizeof(E1000State),
-    .qdev.reset = qdev_e1000_reset,
-    .qdev.vmsd  = &vmstate_e1000,
-    .init       = pci_e1000_init,
-    .exit       = pci_e1000_uninit,
-    .romfile    = "pxe-e1000.rom",
-    .vendor_id  = PCI_VENDOR_ID_INTEL,
-    .device_id  = E1000_DEVID,
-    .revision   = 0x03,
-    .class_id   = PCI_CLASS_NETWORK_ETHERNET,
-    .qdev.props = (Property[]) {
-        DEFINE_NIC_PROPERTIES(E1000State, conf),
-        DEFINE_PROP_END_OF_LIST(),
-    }
+static Property e1000_properties[] = {
+    DEFINE_NIC_PROPERTIES(E1000State, conf),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void e1000_register_devices(void)
+static void e1000_class_init(ObjectClass *klass, void *data)
 {
-    pci_qdev_register(&e1000_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->init = pci_e1000_init;
+    k->exit = pci_e1000_uninit;
+    k->romfile = "pxe-e1000.rom";
+    k->vendor_id = PCI_VENDOR_ID_INTEL;
+    k->device_id = E1000_DEVID;
+    k->revision = 0x03;
+    k->class_id = PCI_CLASS_NETWORK_ETHERNET;
+    dc->desc = "Intel Gigabit Ethernet";
+    dc->reset = qdev_e1000_reset;
+    dc->vmsd = &vmstate_e1000;
+    dc->props = e1000_properties;
 }
 
-device_init(e1000_register_devices)
+static const TypeInfo e1000_info = {
+    .name          = "e1000",
+    .parent        = TYPE_PCI_DEVICE,
+    .instance_size = sizeof(E1000State),
+    .class_init    = e1000_class_init,
+};
+
+static void e1000_register_types(void)
+{
+    type_register_static(&e1000_info);
+}
+
+type_init(e1000_register_types)

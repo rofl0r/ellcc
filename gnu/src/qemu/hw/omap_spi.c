@@ -24,6 +24,7 @@
 
 /* Multichannel SPI */
 struct omap_mcspi_s {
+    MemoryRegion iomem;
     qemu_irq irq;
     int chnum;
 
@@ -129,11 +130,16 @@ void omap_mcspi_reset(struct omap_mcspi_s *s)
     omap_mcspi_interrupt_update(s);
 }
 
-static uint32_t omap_mcspi_read(void *opaque, target_phys_addr_t addr)
+static uint64_t omap_mcspi_read(void *opaque, hwaddr addr,
+                                unsigned size)
 {
     struct omap_mcspi_s *s = (struct omap_mcspi_s *) opaque;
     int ch = 0;
     uint32_t ret;
+
+    if (size != 4) {
+        return omap_badwidth_read32(opaque, addr);
+    }
 
     switch (addr) {
     case 0x00:	/* MCSPI_REVISION */
@@ -161,32 +167,47 @@ static uint32_t omap_mcspi_read(void *opaque, target_phys_addr_t addr)
         return s->control;
 
     case 0x68: ch ++;
+        /* fall through */
     case 0x54: ch ++;
+        /* fall through */
     case 0x40: ch ++;
+        /* fall through */
     case 0x2c:	/* MCSPI_CHCONF */
         return s->ch[ch].config;
 
     case 0x6c: ch ++;
+        /* fall through */
     case 0x58: ch ++;
+        /* fall through */
     case 0x44: ch ++;
+        /* fall through */
     case 0x30:	/* MCSPI_CHSTAT */
         return s->ch[ch].status;
 
     case 0x70: ch ++;
+        /* fall through */
     case 0x5c: ch ++;
+        /* fall through */
     case 0x48: ch ++;
+        /* fall through */
     case 0x34:	/* MCSPI_CHCTRL */
         return s->ch[ch].control;
 
     case 0x74: ch ++;
+        /* fall through */
     case 0x60: ch ++;
+        /* fall through */
     case 0x4c: ch ++;
+        /* fall through */
     case 0x38:	/* MCSPI_TX */
         return s->ch[ch].tx;
 
     case 0x78: ch ++;
+        /* fall through */
     case 0x64: ch ++;
+        /* fall through */
     case 0x50: ch ++;
+        /* fall through */
     case 0x3c:	/* MCSPI_RX */
         s->ch[ch].status &= ~(1 << 0);			/* RXS */
         ret = s->ch[ch].rx;
@@ -198,11 +219,15 @@ static uint32_t omap_mcspi_read(void *opaque, target_phys_addr_t addr)
     return 0;
 }
 
-static void omap_mcspi_write(void *opaque, target_phys_addr_t addr,
-                uint32_t value)
+static void omap_mcspi_write(void *opaque, hwaddr addr,
+                             uint64_t value, unsigned size)
 {
     struct omap_mcspi_s *s = (struct omap_mcspi_s *) opaque;
     int ch = 0;
+
+    if (size != 4) {
+        return omap_badwidth_write32(opaque, addr, value);
+    }
 
     switch (addr) {
     case 0x00:	/* MCSPI_REVISION */
@@ -259,22 +284,28 @@ static void omap_mcspi_write(void *opaque, target_phys_addr_t addr,
         break;
 
     case 0x68: ch ++;
+        /* fall through */
     case 0x54: ch ++;
+        /* fall through */
     case 0x40: ch ++;
+        /* fall through */
     case 0x2c:	/* MCSPI_CHCONF */
         if ((value ^ s->ch[ch].config) & (3 << 14))	/* DMAR | DMAW */
             omap_mcspi_dmarequest_update(s->ch + ch);
         if (((value >> 12) & 3) == 3)			/* TRM */
             fprintf(stderr, "%s: invalid TRM value (3)\n", __FUNCTION__);
         if (((value >> 7) & 0x1f) < 3)			/* WL */
-            fprintf(stderr, "%s: invalid WL value (%i)\n",
+            fprintf(stderr, "%s: invalid WL value (%" PRIx64 ")\n",
                             __FUNCTION__, (value >> 7) & 0x1f);
         s->ch[ch].config = value & 0x7fffff;
         break;
 
     case 0x70: ch ++;
+        /* fall through */
     case 0x5c: ch ++;
+        /* fall through */
     case 0x48: ch ++;
+        /* fall through */
     case 0x34:	/* MCSPI_CHCTRL */
         if (value & ~s->ch[ch].control & 1) {		/* EN */
             s->ch[ch].control |= 1;
@@ -284,8 +315,11 @@ static void omap_mcspi_write(void *opaque, target_phys_addr_t addr,
         break;
 
     case 0x74: ch ++;
+        /* fall through */
     case 0x60: ch ++;
+        /* fall through */
     case 0x4c: ch ++;
+        /* fall through */
     case 0x38:	/* MCSPI_TX */
         s->ch[ch].tx = value;
         s->ch[ch].status &= ~(1 << 1);			/* TXS */
@@ -298,24 +332,17 @@ static void omap_mcspi_write(void *opaque, target_phys_addr_t addr,
     }
 }
 
-static CPUReadMemoryFunc * const omap_mcspi_readfn[] = {
-    omap_badwidth_read32,
-    omap_badwidth_read32,
-    omap_mcspi_read,
-};
-
-static CPUWriteMemoryFunc * const omap_mcspi_writefn[] = {
-    omap_badwidth_write32,
-    omap_badwidth_write32,
-    omap_mcspi_write,
+static const MemoryRegionOps omap_mcspi_ops = {
+    .read = omap_mcspi_read,
+    .write = omap_mcspi_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 struct omap_mcspi_s *omap_mcspi_init(struct omap_target_agent_s *ta, int chnum,
                 qemu_irq irq, qemu_irq *drq, omap_clk fclk, omap_clk iclk)
 {
-    int iomemtype;
     struct omap_mcspi_s *s = (struct omap_mcspi_s *)
-            qemu_mallocz(sizeof(struct omap_mcspi_s));
+            g_malloc0(sizeof(struct omap_mcspi_s));
     struct omap_mcspi_ch_s *ch = s->ch;
 
     s->irq = irq;
@@ -327,9 +354,9 @@ struct omap_mcspi_s *omap_mcspi_init(struct omap_target_agent_s *ta, int chnum,
     }
     omap_mcspi_reset(s);
 
-    iomemtype = l4_register_io_memory(omap_mcspi_readfn,
-                    omap_mcspi_writefn, s);
-    omap_l4_attach(ta, 0, iomemtype);
+    memory_region_init_io(&s->iomem, &omap_mcspi_ops, s, "omap.mcspi",
+                          omap_l4_region_size(ta, 0));
+    omap_l4_attach(ta, 0, &s->iomem);
 
     return s;
 }

@@ -22,13 +22,15 @@
  * THE SOFTWARE.
  */
 #include "hw.h"
-#include "qemu-timer.h"
-#include "qemu-char.h"
-#include "sysemu.h"
+#include "qemu/timer.h"
+#include "ptimer.h"
+#include "char/char.h"
+#include "sysemu/sysemu.h"
 #include "boards.h"
 #include "loader.h"
 #include "elf.h"
 #include "trace.h"
+#include "exec/address-spaces.h"
 
 #include "grlib.h"
 
@@ -40,16 +42,16 @@
 #define MAX_PILS 16
 
 typedef struct ResetData {
-    CPUState *env;
+    SPARCCPU *cpu;
     uint32_t  entry;            /* save kernel entry in case of reset */
 } ResetData;
 
 static void main_cpu_reset(void *opaque)
 {
     ResetData *s   = (ResetData *)opaque;
-    CPUState  *env = s->env;
+    CPUSPARCState  *env = &s->cpu->env;
 
-    cpu_reset(env);
+    cpu_reset(CPU(s->cpu));
 
     env->halted = 0;
     env->pc     = s->entry;
@@ -63,7 +65,7 @@ void leon3_irq_ack(void *irq_manager, int intno)
 
 static void leon3_set_pil_in(void *opaque, uint32_t pil_in)
 {
-    CPUState *env = (CPUState *)opaque;
+    CPUSPARCState *env = (CPUSPARCState *)opaque;
 
     assert(env != NULL);
 
@@ -92,15 +94,16 @@ static void leon3_set_pil_in(void *opaque, uint32_t pil_in)
     }
 }
 
-static void leon3_generic_hw_init(ram_addr_t  ram_size,
-                                  const char *boot_device,
-                                  const char *kernel_filename,
-                                  const char *kernel_cmdline,
-                                  const char *initrd_filename,
-                                  const char *cpu_model)
+static void leon3_generic_hw_init(QEMUMachineInitArgs *args)
 {
-    CPUState   *env;
-    ram_addr_t  ram_offset, prom_offset;
+    ram_addr_t ram_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    SPARCCPU *cpu;
+    CPUSPARCState   *env;
+    MemoryRegion *address_space_mem = get_system_memory();
+    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *prom = g_new(MemoryRegion, 1);
     int         ret;
     char       *filename;
     qemu_irq   *cpu_irqs = NULL;
@@ -113,17 +116,18 @@ static void leon3_generic_hw_init(ram_addr_t  ram_size,
         cpu_model = "LEON3";
     }
 
-    env = cpu_init(cpu_model);
-    if (!env) {
+    cpu = cpu_sparc_init(cpu_model);
+    if (cpu == NULL) {
         fprintf(stderr, "qemu: Unable to find Sparc CPU definition\n");
         exit(1);
     }
+    env = &cpu->env;
 
     cpu_sparc_set_id(env, 0);
 
     /* Reset data */
-    reset_info        = qemu_mallocz(sizeof(ResetData));
-    reset_info->env   = env;
+    reset_info        = g_malloc0(sizeof(ResetData));
+    reset_info->cpu   = cpu;
     qemu_register_reset(main_cpu_reset, reset_info);
 
     /* Allocate IRQ manager */
@@ -139,14 +143,16 @@ static void leon3_generic_hw_init(ram_addr_t  ram_size,
         exit(1);
     }
 
-    ram_offset = qemu_ram_alloc(NULL, "leon3.ram", ram_size);
-    cpu_register_physical_memory(0x40000000, ram_size, ram_offset | IO_MEM_RAM);
+    memory_region_init_ram(ram, "leon3.ram", ram_size);
+    vmstate_register_ram_global(ram);
+    memory_region_add_subregion(address_space_mem, 0x40000000, ram);
 
     /* Allocate BIOS */
     prom_size = 8 * 1024 * 1024; /* 8Mb */
-    prom_offset = qemu_ram_alloc(NULL, "Leon3.bios", prom_size);
-    cpu_register_physical_memory(0x00000000, prom_size,
-                                 prom_offset | IO_MEM_ROM);
+    memory_region_init_ram(prom, "Leon3.bios", prom_size);
+    vmstate_register_ram_global(prom);
+    memory_region_set_readonly(prom, true);
+    memory_region_add_subregion(address_space_mem, 0x00000000, prom);
 
     /* Load boot prom */
     if (bios_name == NULL) {
@@ -202,11 +208,11 @@ static void leon3_generic_hw_init(ram_addr_t  ram_size,
     }
 }
 
-QEMUMachine leon3_generic_machine = {
+static QEMUMachine leon3_generic_machine = {
     .name     = "leon3_generic",
     .desc     = "Leon-3 generic",
     .init     = leon3_generic_hw_init,
-    .use_scsi = 0,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void leon3_machine_init(void)

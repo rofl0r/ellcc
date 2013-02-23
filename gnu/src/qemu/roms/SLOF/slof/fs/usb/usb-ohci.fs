@@ -1,5 +1,5 @@
 \ *****************************************************************************
-\ * Copyright (c) 2004, 2008 IBM Corporation
+\ * Copyright (c) 2004, 2011 IBM Corporation
 \ * All rights reserved.
 \ * This program and the accompanying materials
 \ * are made available under the terms of the BSD License
@@ -11,36 +11,25 @@
 \ ****************************************************************************/
 
 
-\ We expect to base address of the OHCI controller on the stack:
-
-CONSTANT baseaddrs
-
-s" OHCI base address = " baseaddrs usb-debug-print-val
-
-
 \ Open Firmware Properties
 
-
-s" usb" 2dup device-name device-type
+s" usb" device-type
 1 encode-int s" #address-cells" property
 0 encode-int s" #size-cells" property
 
 
 \ converts physical address to text unit string
 
-
 : encode-unit ( port -- unit-str unit-len ) 1 hex-encode-unit ;
 
 
 \ Converts text unit string to phyical address
-
 
 : decode-unit ( addr len -- port ) 1 hex-decode-unit ;
 
 
 \  Data Structure Definitions
 \ OHCI Task Descriptor Structure.
-
 
 STRUCT
    /l field td>tattr
@@ -52,7 +41,6 @@ CONSTANT /tdlen
 
 \ OHCI Endpoint Descriptor Structure.
 
-
 STRUCT
    /l field ed>eattr
    /l field ed>tdqtp
@@ -61,8 +49,7 @@ STRUCT
 CONSTANT /edlen
 
 
-\ HCCA Done queue location packaged as a structure for ease OF use.
-
+\ HCCA Done queue location packaged as a structure for ease of use.
 
 STRUCT
    /l field hc>hcattr
@@ -72,20 +59,15 @@ CONSTANT /hclen
 
 \ OHCI Memory Mapped Registers
 
+: get-base-address ( -- baseaddr )
+   s" assigned-addresses" get-node get-property
+   ABORT" Could not get OHCI base address"
+   decode-int drop                          ( addr len )
+   decode-64 nip nip                        ( n )
+   translate-my-address
+;
 
-\ : get-base-address ( -- baseaddr )
-\    s" assigned-addresses" get-my-property  IF
-\       s" not possible"  usb-debug-print
-\       -1
-\    ELSE                  ( addr len )
-\       decode-int drop    ( addr len )
-\       decode-int drop    ( addr len )
-\       decode-int nip nip ( n )
-\    THEN
-\    \ TODO: Use translate-address here
-\ ;
-
-\ get-base-address CONSTANT baseaddrs
+get-base-address CONSTANT baseaddrs
 
 baseaddrs      CONSTANT HcRevision
 baseaddrs 4  + CONSTANT hccontrol
@@ -178,6 +160,8 @@ A1FE000000000100 CONSTANT GET-MAX-LUN
 00 VALUE ptr
 
 
+0 VALUE instance-count
+
 \ TD Management constants and Data structures.
 
 
@@ -188,7 +172,8 @@ A1FE000000000100 CONSTANT GET-MAX-LUN
 0 VALUE max-rh-ports
 0 VALUE current-stat
 
-INSTANCE VARIABLE td-list-region
+VARIABLE td-list-region
+VARIABLE td-list-region-dma
 
 \ ED Management constants
 
@@ -196,7 +181,8 @@ INSTANCE VARIABLE td-list-region
 14 CONSTANT MAX-EDS
 0 VALUE ed-freelist-head
 0 VALUE num-free-eds
-INSTANCE VARIABLE ed-list-region
+VARIABLE ed-list-region
+VARIABLE ed-list-region-dma
 0 VALUE usb-address
 0 VALUE initial-hub-address
 0 VALUE new-device-address
@@ -220,22 +206,15 @@ INSTANCE VARIABLE ed-list-region
 9 CONSTANT HUB-DEVICE-CLASS
 0 CONSTANT NO-CLASS
 
-VARIABLE  setup-packet     \ 8 bytes for setup packet
-VARIABLE  ch-buffer        \ 1 byte character buffer
-
-INSTANCE VARIABLE dd-buffer
-INSTANCE VARIABLE cd-buffer
-
 
 \ Temporary variables for functions. These variables have to be initialized
 \ before usage in functions and their values assume significance only during
 \ the function's execution time. Should be used like local variables.
 \ CAUTION:
-\ If you are calling functions that destroy contents OF these variables, be
+\ If you are calling functions that destroy contents of these variables, be
 \ smart enuf to save the values before calling them.
 \ It is recommended that these temporary variables are used only amidst normal
-\ FORTH words -- not among the vicinity OF any OF the functions OF this node.
-
+\ FORTH words -- not among the vicinity of any of the functions of this node.
 
 0 VALUE temp1
 0 VALUE temp2
@@ -245,6 +224,61 @@ INSTANCE VARIABLE cd-buffer
 0 VALUE current
 
 0 VALUE device-speed
+
+
+\ DMA-able buffers:
+
+0 VALUE setup-packet     \ 8 bytes for setup packet
+0 VALUE ch-buffer        \ 1 byte character buffer
+
+VARIABLE dd-buffer
+VARIABLE dd-buffer-dma
+VARIABLE cd-buffer
+VARIABLE cd-buffer-dma
+
+
+\ Global buffer allocation
+\ ------------------------
+
+\ Memory size for HCCA (0x100), setup-packet (8) and ch-buf (1)
+109 CONSTANT OHCI-GLOBAL-DMA-BUF-SIZE
+
+\ Memory for the HCCA - must stay allocated as long as the HC is operational!
+
+0 VALUE hchcca
+0 VALUE hchcca-dma
+
+: (init-global-dma-bufs)
+   \ Allocate memory for HCCA (0x100), setup-packet (8) and ch-buf (1)
+   OHCI-GLOBAL-DMA-BUF-SIZE dma-alloc TO hchcca
+   hchcca OHCI-GLOBAL-DMA-BUF-SIZE 0 dma-map-in TO hchcca-dma
+   hchcca ff and IF
+      \ This should never happen - alloc-mem always aligns
+      s" Warning: hchcca not aligned!" usb-debug-print
+   THEN
+   hchcca 8 + TO setup-packet
+   setup-packet 1 + TO ch-buffer
+
+   s" hchcca = " hchcca usb-debug-print-val
+;
+(init-global-dma-bufs)
+
+84 hchcca + CONSTANT hchccadneq                   \ HccaDoneHead
+
+\ Convert virtual address to physical
+hchcca-dma hchcca - CONSTANT virt2phys-offset
+: virt2phys  ( virt -- phys )
+   dup 0<> IF
+      virt2phys-offset +
+   THEN
+;
+
+\ Convert physical address to virtual
+: phys2virt  ( phys -- virt )
+   dup 0<> IF
+      virt2phys-offset -
+   THEN
+;
 
 
 \ Debug functions for displaying ED, TD and their combo list.
@@ -295,14 +329,14 @@ INSTANCE VARIABLE cd-buffer
 
 \ display's the descriptors
 
-
 : display-descriptors ( ED-ADDRESS -- )
-   10  1- not and             ( ED-ADDRESS~ )
-   dup display-ed ed>tdqhp l@-le  BEGIN ( ED-ADDRESS~ )
-      10  1- not and         ( ED-ADDRESS~ )
-      dup 0<>                ( ED-ADDRESS~ TRUE | FALSE )
+   10  1- not and                             ( ED-ADDRESS~ )
+   dup display-ed ed>tdqhp l@-le phys2virt    ( ED-ADDRESS~ )
+   BEGIN
+      10  1- not and                          ( ED-ADDRESS~ )
+      dup 0<>                                 ( ED-ADDRESS~ TRUE | FALSE )
    WHILE
-      dup  display-td td>ntd l@-le ( ED-ADDRESS~ )
+      dup  display-td td>ntd l@-le phys2virt  ( ED-ADDRESS~ )
    REPEAT
    drop
 ;
@@ -314,7 +348,7 @@ INSTANCE VARIABLE cd-buffer
 \        The following are WORDS internal to this node. They are supposed to
 \        be used by other WORDS inside this device node.
 \        The first three WORDS below form the interface. The fourth and fifth
-\        word is a helper function and is not exposed to other portions OF this
+\        word is a helper function and is not exposed to other portions of this
 \        device node.
 \        a) initialize-td-free-list
 \        b) allocate-td-list
@@ -326,17 +360,15 @@ INSTANCE VARIABLE cd-buffer
 
 : zero-out-a-td-except-link ( td -- )
 
-
-   \ There r definitely smarter ways to DO it especially
+   \ There are definitely smarter ways to do it especially
    \ on a 64-bit machine.
 
    \ Optimization, Portability:
    \ --------------------------
-   \ Replace the following code by two "!" OF zeroes. Since
+   \ Replace the following code by two "!" of zeroes. Since
    \ we know that an "td" is actually 16 bytes and that we
-   \ will be executing on a 64-bit machine, we can finish OFf
+   \ will be executing on a 64-bit machine, we can finish off
    \ with 2 stores.  But that WONT be portable.
-
 
    dup 0 swap td>tattr  l!-le		( td )
    dup 0 swap td>cbptr  l!-le		( td )
@@ -347,7 +379,7 @@ INSTANCE VARIABLE cd-buffer
 
 \ COLON DEFINITION: initialize-td-free-list - Internal Function
 
-\ Initialize the TD Free List Region and create a linked list OF successive
+\ Initialize the TD Free List Region and create a linked list of successive
 \ TDs. Note that the NEXT pointers are all in little-endian and they
 \ can be directly used for HC purposes.
 
@@ -358,7 +390,7 @@ INSTANCE VARIABLE cd-buffer
    td-list-region @ TO temp1
    0 TO temp2  BEGIN
       temp1 zero-out-a-td-except-link
-      temp1 /tdlen + dup   temp1 td>ntd   l!-le TO temp1
+      temp1 /tdlen +  dup virt2phys  temp1 td>ntd  l!-le  TO temp1
       temp2 1+ TO temp2
       temp2 MAX-TDS = 		( TRUE | FALSE )
    UNTIL
@@ -372,19 +404,17 @@ INSTANCE VARIABLE cd-buffer
 \ Argument:
 \ The function accepts a non-negative number and allocates
 \ a TD-LIST containing that many TDs. A TD-LIST is a list
-\ OF TDs that are linked by the next-td field. The next-td
+\ of TDs that are linked by the next-td field. The next-td
 \ field is in little-endian mode so that the TD list can
 \ be directly re-used by the HC.
 \ Return value:
-\ The function returns "head" and "tail" OF the allocated
+\ The function returns "head" and "tail" of the allocated
 \ TD-LIST. If for any reason, the function cannot allocate
 \ the TD-LIST, the function returns 2 NULL pointers in the
 \ stack indicating that the allocation failed.
 
 \ Note that the TD list returned is NULL terminated. i.e
-\ the nextTd field OF the tail is NULL.
-
-
+\ the nextTd field of the tail is NULL.
 
 : allocate-td-list ( n -- head tail )
    dup 0= IF drop 0 0 EXIT THEN 		( 0 0 )
@@ -397,9 +427,9 @@ INSTANCE VARIABLE cd-buffer
       EXIT
    THEN
 
-   \ If we are here THEN we know that the requested number OF TDs is less
-   \ than what we actually have. We need TO traverse the list and find the
-   \ new Head pointer position and THEN update the head pointer accordingly.
+   \ If we are here then we know that the requested number of TDs is less
+   \ than what we actually have. We need to traverse the list and find the
+   \ new Head pointer position and then update the head pointer accordingly.
    \ Update num-free-tds
 
    dup num-free-tds swap - TO num-free-tds	( n )
@@ -413,7 +443,7 @@ INSTANCE VARIABLE cd-buffer
    swap 					( td-list-head n )
    0 DO						( td-list-head   )
       temp1 TO temp2				( td-list-head   )
-      temp1 td>ntd l@-le   TO   temp1		( td-list-head   )
+      temp1 td>ntd l@-le phys2virt  TO temp1	( td-list-head   )
    LOOP						( td-list-head   )
    temp2 					( td-list-head td-list-tail )
    dup td>ntd 0 swap l!-le 			( td-list-head td-list-tail )
@@ -422,9 +452,9 @@ INSTANCE VARIABLE cd-buffer
 
 
 \ COLON DEFINITION: find-td-list-tail-and-size
-\ This function counts the number OF TD elements
+\ This function counts the number of TD elements
 \ in the given list. It also returns the last tail
-\ TD OF the TD list.
+\ TD of the TD list.
 
 \ ASSUMPTION:
 \ A NULL terminated TD list is assumed. A not-well formed
@@ -432,9 +462,9 @@ INSTANCE VARIABLE cd-buffer
 
 \ ROOM FOR ENHANCEMENT:
 \ We could arrive at a generic function for counting
-\ list elements to which the next-ptr OFfset can also
+\ list elements to which the next-ptr offset can also
 \ be passed as an argument (in this case it is >ntd)
-\ This function can THEN be changed to call the
+\ This function can then be changed to call the
 \ function with "0 >ntd" as an additional argument
 \ (apart from head and tail)
 
@@ -453,7 +483,7 @@ INSTANCE VARIABLE cd-buffer
          temp1 u. cr
       THEN
       temp1 TO temp3
-      temp1 td>ntd l@-le TO temp1
+      temp1 td>ntd l@-le phys2virt TO temp1
       temp2 1+ TO temp2
    REPEAT
    temp3 temp2					( tail n )
@@ -466,25 +496,25 @@ INSTANCE VARIABLE cd-buffer
 \ COLON DEFINITION: (free-td-list)
 
 \ Arguments: (head  --)
-\ The "head" pointer OF the TD-LIST to be freed is passed as
+\ The "head" pointer of the TD-LIST to be freed is passed as
 \ an argument to this function. The function merely adds the list to the
 \ already existing TD-LIST
 
 \ Assumptions:
 \ The function assumes that the TD-LIST passed as argument is a well-formed
-\ list. The function does not DO any check on it.
+\ list. The function does not do any check on it.
 \ But since, the "TD-LIST" is generally freed from the DONE-QUEUE which is
 \ a well-formed list, the interface makes much sense.
 
 \ Return values:
-\ Nothing is returned. The arguments passed are popped OFf.
+\ Nothing is returned. The arguments passed are popped off.
 
 
 : (free-td-list) ( head  -- )
 
    \ Enhancement:
    \ We could zero-out-a-td-except-link for the TD list that is being freed.
-   \ This way, we could prevent some nasty repercussions OF bugs (that r yet
+   \ This way, we could prevent some nasty repercussions of bugs (that are yet
    \ to be discovered). but we can include this enhancement during the testing
    \ phase.
 
@@ -492,7 +522,7 @@ INSTANCE VARIABLE cd-buffer
    td-freelist-tail 0=  IF					 ( head tail )
       dup TO td-freelist-tail					 ( head tail )
    THEN								 ( head tail )
-   td>ntd td-freelist-head swap l!-le				 ( head )
+   td>ntd td-freelist-head virt2phys swap l!-le			 ( head )
    TO td-freelist-head
 ;
 
@@ -503,17 +533,6 @@ INSTANCE VARIABLE cd-buffer
 
 
 : zero-out-an-ed-except-link ( ed -- )
-
-   \ There are definitely smarter ways to do it especially
-   \ on a 64-bit machine.
-
-   \ Optimization, Portability:
-   \ --------------------------
-   \ Replace by a  "!" and "l!". we know that an "ed" is
-   \ actually 16 bytes and that we will be executing on
-   \ a 64-bit machine, we can finish OFf with 2 stores.
-   \ But that WONT be portable.
-
    dup 0 swap ed>eattr  l!-le 		( ed )
    dup 0 swap ed>tdqtp  l!-le		( ed )
    dup 0 swap ed>tdqhp  l!-le		( ed )
@@ -531,7 +550,10 @@ INSTANCE VARIABLE cd-buffer
    ed-list-region @ TO temp1
    0 TO temp2   BEGIN
       temp1 zero-out-an-ed-except-link
-      temp1 /edlen + dup   temp1 ed>ned   l!-le TO temp1
+      usb-debug-flag IF
+        ." ED " temp2 . ."  v: " temp1 . ."  p: " temp1 virt2phys . cr
+      THEN
+      temp1 /edlen +  dup virt2phys  temp1 ed>ned  l!-le  TO temp1
       temp2 1+ TO temp2
       temp2 MAX-EDS =
    UNTIL
@@ -547,7 +569,8 @@ INSTANCE VARIABLE cd-buffer
 : allocate-ed	( -- ed-ptr )
    num-free-eds 0= IF 0 EXIT THEN
    ed-freelist-head					( ed-freelist-head )
-   ed-freelist-head ed>ned l@-le TO ed-freelist-head	( ed-freelist-head )
+   ed-freelist-head ed>ned				( ed-freelist-head ned )
+   l@-le phys2virt TO ed-freelist-head			( ed-freelist-head )
    num-free-eds 1- TO num-free-eds			( ed-freelist-head )
    dup ed>ned 0 swap l!-le \ Terminate the Link.	( ed-freelist-head )
 ;
@@ -557,45 +580,46 @@ INSTANCE VARIABLE cd-buffer
 
 : free-ed ( ed-ptr  -- )
    dup zero-out-an-ed-except-link			( ed-ptr )
-   dup ed>ned ed-freelist-head swap l!-le 		( ed-ptr )
+   dup ed>ned ed-freelist-head virt2phys swap l!-le	( ed-ptr )
    TO ed-freelist-head
    num-free-eds 1+ TO num-free-eds
 ;
 
 
-\ Buffer allocations
-\ ------------------
-\ Note:
-\ -----
-\ 1. What should we DO IF alloc-mem fails ?
-\ 2. alloc-mem must return aligned memory addresses.
-\ 3. alloc-mem must return DMAable memory!
-
-\ Memory for the HCCA - must stay allocated as long as the HC is operational!
-100 alloc-mem VALUE hchcca
-hchcca ff and IF
-   \ This should never happen - alloc-mem always aligns
-   s" Warning: hchcca not aligned!" usb-debug-print
-THEN
-
-84 hchcca + CONSTANT hchccadneq
-
+\ Instance buffer allocation
+\ --------------------------
 
 : (allocate-mem)  ( -- )
-   /tdlen MAX-TDS * 10 + alloc-mem dup td-list-region !  ( td-list-region-ptr )
-   f and IF
+   /tdlen MAX-TDS * 10 +
+   dup dma-alloc                          ( td-region-size td-list-region-ptr )
+   dup td-list-region !
+   dup f and IF
       s" Warning: td-list-region not aligned!" usb-debug-print
    THEN
+   swap 0 dma-map-in td-list-region-dma !
    initialize-td-free-list
 
-   /edlen MAX-EDS * 10 + alloc-mem dup ed-list-region !  ( ed-list-region-ptr )
-   f and IF
+   /edlen MAX-EDS * 10 +
+   dup dma-alloc                          ( ed-region-size ed-list-region-ptr )
+   dup ed-list-region !
+   dup f and IF
       s" Warning: ed-list-region not aligned!" usb-debug-print
    THEN
+   swap 0 dma-map-in ed-list-region-dma !
    initialize-ed-free-list
 
-   DEVICE-DESCRIPTOR-LEN chars alloc-mem dd-buffer !
-   BULK-CONFIG-DESCRIPTOR-LEN chars alloc-mem cd-buffer !
+   DEVICE-DESCRIPTOR-LEN chars dup dma-alloc
+   dup dd-buffer !                        ( dd-len dd-buf )
+   swap 0 dma-map-in dd-buffer-dma !
+   
+   BULK-CONFIG-DESCRIPTOR-LEN chars dup dma-alloc
+   dup cd-buffer !                        ( cd-len cd-buf )
+   swap 0 dma-map-in cd-buffer-dma !
+
+   s" td-list-region = " td-list-region @ usb-debug-print-val
+   s" ed-list-region = " ed-list-region @ usb-debug-print-val
+   s" dd-buffer = " dd-buffer @ usb-debug-print-val
+   s" cd-buffer-dma = " cd-buffer-dma @ usb-debug-print-val
 ;
 
 
@@ -605,20 +629,32 @@ THEN
 
 : (de-allocate-mem)  ( -- )
    td-list-region @ ?dup IF
-      /tdlen MAX-TDS * 10 + free-mem
+      /tdlen MAX-TDS * 10 +               ( td-list-region td-region-size )
+      2dup td-list-region-dma @ swap dma-map-out
+      dma-free
       0 td-list-region !
+      0 td-list-region-dma !
    THEN
    ed-list-region @ ?dup IF
-      /edlen MAX-EDS * 10 + free-mem
+      /edlen MAX-EDS * 10 +
+      2dup ed-list-region-dma @ swap dma-map-out
+      dma-free
       0 ed-list-region !
+      0 ed-list-region-dma !
    THEN
    dd-buffer @ ?dup IF
-      DEVICE-DESCRIPTOR-LEN free-mem
+      DEVICE-DESCRIPTOR-LEN
+      2dup dd-buffer-dma @ swap dma-map-out
+      dma-free
       0 dd-buffer !
+      0 dd-buffer-dma !
    THEN
    cd-buffer @ ?dup IF
-      BULK-CONFIG-DESCRIPTOR-LEN free-mem
+      BULK-CONFIG-DESCRIPTOR-LEN
+      2dup cd-buffer-dma @ swap dma-map-out
+      dma-free
       0 cd-buffer !
+      0 cd-buffer-dma !
    THEN
 ;
 
@@ -628,21 +664,36 @@ THEN
 \ It prevents the HC from doing DMA in the background during boot
 \ (e.g. updating its frame number counter in the HCCA)
 
-: hc-suspend  ( -- )
+: hc-quiesce  ( -- )
    \ s" USB HC suspend with hccontrol=" type hccontrol . cr
    00C3 hccontrol rl!-le             \ Suspend USB host controller
+   \ Release memory for HCCA etc:
+   hchcca hchcca-dma OHCI-GLOBAL-DMA-BUF-SIZE dma-map-out
+   hchcca OHCI-GLOBAL-DMA-BUF-SIZE dma-free
 ;
+
+' hc-quiesce add-quiesce-xt     \ Assert that HC will be supsended
 
 
 \ OF methods
 
 : open  ( -- TRUE|FALSE )
-   (allocate-mem)
+   instance-count dup 0= IF
+     s" OHCI First open" usb-debug-print
+     (allocate-mem)
+   THEN
+   1 + TO instance-count
+   s" OHCI Open instance count now: " instance-count usb-debug-print-val
    TRUE
 ;
 
 : close  ( -- )
-   (de-allocate-mem)
+   instance-count dup 1 = IF
+     s" OHCI Last close" usb-debug-print
+     (de-allocate-mem)
+   THEN
+   1 - TO instance-count
+   s" OHCI Close instance count now: " instance-count usb-debug-print-val
 ;
 
 
@@ -669,13 +720,17 @@ THEN
 ;
 
 
-\ Clearing WDH to allow HC to write into DOne queue again
+\ Clearing WDH to allow HC to write into done queue again
 
-: (HC-ACK-WDH) ( -- )   WDH hcintstat rl!-le ;
+: (HC-ACK-WDH) ( -- )
+   WDH hcintstat rl!-le
+;
 
-\ Checking whether anything has been written into DOne queue
+\ Checking whether anything has been written into done queue
 
-: (HC-CHECK-WDH) ( -- ) hcintstat rl@-le WDH and 0<> ;
+: (HC-CHECK-WDH) ( -- updated? )
+   hcintstat rl@-le WDH and 0<>
+;
 
 
 \ Disable USB transaction and keep it ready
@@ -704,14 +759,14 @@ THEN
 
 \ Arguments:
 \ ----------
-\ (from bottom OF stack)
-\ 1. addr -- Address OF the data buffer
-\ 2. dlen -- Length OF the data buffer above.
+\ (from bottom of stack)
+\ 1. addr -- Address of the data buffer
+\ 2. dlen -- Length of the data buffer above.
 \ 3. dir  -- Tells whether the TDs r for an IN or
 \            OUT transaction.
 \ 4. MPS  -- Maximum Packet Size associated with the endpoint
 \            that will use this TD list.
-\ 5. TD-List-Head - Head pointer OF the List OF TDs.
+\ 5. TD-List-Head - Head pointer of the List of TDs.
 \            This list is NOT expected to be NULL terminated.
 
 \ Assumptions:
@@ -721,14 +776,14 @@ THEN
 \ 2. The TDs toggle field is assumed to be taken from the endpoint
 \    descriptor's "toggle carry" field.
 \ 3. Assumes that the caller specifies the correct start-toggle.
-\    If the caller specifies a wrong data toggle OF 1 for a SETUP
+\    If the caller specifies a wrong data toggle of 1 for a SETUP
 \    PACKET, this method will not find it out.
 
 \ COLON DEFINTION: (toggle-current-toggle)
 \ Scope: Internal to fill-TD-list
 \ Functionality:
 \        Toggles the "T" field that is passed as argument.
-\        "T" as in the "T" field OF the TD.
+\        "T" as in the "T" field of the TD.
 
 0 VALUE current-toggle
 : fill-TD-list ( start-toggle addr dlen dp MPS TD-List-Head -- )
@@ -744,38 +799,37 @@ THEN
    ENDCASE
    temp3 -1 = IF EXIT THEN                          ( start-toggle addr dlen )
 
-
 \ temp1 -- TD-List-Head
 \ temp2 -- Max Packet Size
 \ temp3 -- TD-DP-IN or TD-DP-OUT or TD-DP-SETUP
 
-   rot                                              ( addr dlen start-toggle )
-   TO current-toggle swap 			    ( dlen addr )
+   rot                                               ( addr dlen start-toggle )
+   TO current-toggle swap                            ( dlen addr )
    BEGIN
-      over temp2 >= 				    ( dlen addr TRUE|FALSE )
-   WHILE					    ( dlen addr )
-      dup temp1 td>cbptr l!-le			    ( dlen addr )
-      current-toggle 18 lshift                      ( dlen addr current-toggle~ )
-      DATA0-TOGGLE                        ( dlen  addr current-toggle~ toggle )
-      CC-FRESH-TD temp3 or or or          ( dlen  addr or-result )
-      temp1 td>tattr l!-le                ( dlen addr~  )
-      dup temp2 1- + temp1 td>bfrend l!-le ( dlen addr~  )
-      temp2 +                             ( dlen next-addr )
+      over temp2 >=                                  ( dlen addr TRUE|FALSE )
+   WHILE                                             ( dlen addr )
+      dup virt2phys temp1 td>cbptr l!-le             ( dlen addr )
+      current-toggle 18 lshift                       ( dlen addr current-toggle~ )
+      DATA0-TOGGLE                                   ( dlen addr current-toggle~ toggle )
+      CC-FRESH-TD temp3 or or or                     ( dlen addr or-result )
+      temp1 td>tattr l!-le                           ( dlen addr~  )
+      dup temp2 1- + virt2phys temp1 td>bfrend l!-le ( dlen addr~  )
+      temp2 +                                        ( dlen next-addr )
       swap temp2 - swap
-      temp1 td>ntd l@-le TO temp1         ( dlen next-addr )
-      current-toggle                      ( dlen next-addr current-toggle )
+      temp1 td>ntd l@-le phys2virt TO temp1          ( dlen next-addr )
+      current-toggle                                 ( dlen next-addr current-toggle )
       CASE
          0 OF 1 TO current-toggle ENDOF
          1 OF 0 TO current-toggle ENDOF
       ENDCASE
    REPEAT                                   ( dlen addr )
    over 0<>  IF
-      dup temp1 td>cbptr l!-le              ( dlen addr )
+      dup virt2phys temp1 td>cbptr l!-le    ( dlen addr )
       current-toggle 18 lshift              ( dlen addr curent-toggle~ )
       DATA0-TOGGLE                          ( dlen addr curent-toggle~ toggle )
       CC-FRESH-TD temp3 or or or            ( dlen addr or-result )
       temp1 td>tattr l!-le                  ( dlen addr )
-      + 1- temp1 td>bfrend l!-le
+      + 1- virt2phys temp1 td>bfrend l!-le
    ELSE
       2drop
    THEN
@@ -799,7 +853,7 @@ THEN
       drop FALSE dup ( FALSE )
    THEN
    WHILE
-      drop drop td>ntd l@-le
+      drop drop td>ntd l@-le phys2virt
    REPEAT
 ;
 
@@ -807,8 +861,8 @@ THEN
 \ ==================================================================
 \ COLON DEFINITION: (wait-for-done-q)
 \ FUNCTIONALITY:
-\ To DO a timed polling OF the DOne queue and acknowledge and return
-\ the address OF the last retired Td list
+\ To do a timed polling of the done queue and acknowledge and return
+\ the address of the last retired Td list
 \ SCOPE:
 \ Internal method
 \ ==================================================================
@@ -822,13 +876,13 @@ THEN
       1 ms                    \ wait
       1-                      ( timeout )
       dup ff and 0= IF show-proceed THEN
-   REPEAT	                  ( timeout )
+   REPEAT                     ( timeout )
    drop
-   hchccadneq  l@-le          \ read last HcDoneHead (RAM)
-   (HC-CHECK-WDH)             \ HcDoneHead was updated ?
+   hchccadneq l@-le phys2virt    \ read last HcDoneHead (RAM)
+   (HC-CHECK-WDH)                \ HcDoneHead was updated ?
    IF
-      (HC-ACK-WDH)	         \ clear register bit: WDH
-      TRUE                    ( td-list TRUE )
+      (HC-ACK-WDH)               \ clear register bit: WDH
+      TRUE                       ( td-list TRUE )
    ELSE
       FALSE
    THEN
@@ -847,7 +901,7 @@ THEN
 
 \ : debug-frame-counter ( -- )
 \   40 1 DO
-\      ." Frame ct at HCCA at end OF enumeration = "
+\      ." Frame ct at HCCA at end of enumeration = "
 \      hchcca 80 + rl@-le .
 \   LOOP
 \ ;
@@ -858,43 +912,19 @@ THEN
 \ This routine will reset the HC and will bring it to Operational
 \ state.
 \ PENDING:
-\ Arrive at the right value OF FrameInterval. Currently we are hardcoding
+\ Arrive at the right value of FrameInterval. Currently we are hardcoding
 \ it.
 \ ==========================================================================
 : HC-reset ( -- )
-
-   hccomstat dup rl@-le 01 or swap rl!-le    \ issue HC reset
-   BEGIN
-      hccomstat rl@-le 01 and 0<>            \ wait for reset end
-      WHILE
-   REPEAT
-
-   23f02edf hcintrval rl!-le                 \ frame-interval register
-   hchcca   hchccareg rl!-le                 \ HC communication area
-   0000     hcctrhead rl!-le                 \ control transfer head
-   0000     hcbulkhead rl!-le                \ bulk transfer head
-   0ffff    hcintdsbl rl!-le                 \ interrupt disable reg.
-
-\ all devices are still in reset-state
-\ next command starts sending SOFs
-   83       hccontrol rl!-le                 \ set USBOPERATIONAL
-
-\ these two repeated register settings are necessary for Bimini
-\ Its OHCI controller (AM8111) behaves different to NEC's one
-   23f02edf hcintrval rl!-le                 \ frame-interval register
-   hchcca   hchccareg rl!-le                 \ HC communication area
-   
-   d# 50 ms
-
    hcrhdescA rl@-le ff and     ( total-rh-ports )
    to max-rh-ports
 
-\ if no hardware-reset was issued (rescan)
-\ switch off all ports first !
+   \ if no hardware-reset was issued (rescan)
+   \ switch off all ports first !
    hcrhpstat TO current-stat              \ start with first port status reg
    0                                      \ port status default
    max-rh-ports 0                         \ checking all ports
-   DO
+   ?DO
       current-stat rl@-le or              \ OR-ing all stats
       200 current-stat rl!-le             \ Clear Port Power (CPP)
       current-stat 4 + TO current-stat    \ check next RH-Port
@@ -904,12 +934,36 @@ THEN
       d# 750 wait-proceed                 \ wait for power discharge
    THEN
 
-\ now power on all ports of this root-hub
+   \ Reset HC and wait until reset has been cleared
+   hccomstat dup rl@-le 01 or swap rl!-le    \ issue HC reset
+   BEGIN
+      hccomstat rl@-le 01 and 0<>            \ wait for reset end
+      WHILE
+   REPEAT
+
+   23f02edf hcintrval rl!-le                 \ frame-interval register
+   hchcca-dma hchccareg rl!-le               \ HC communication area
+   0000     hcctrhead rl!-le                 \ control transfer head
+   0000     hcbulkhead rl!-le                \ bulk transfer head
+   0ffff    hcintdsbl rl!-le                 \ interrupt disable reg.
+
+   \ all devices are still in reset-state
+   \ next command starts sending SOFs
+   83       hccontrol rl!-le                 \ set USBOPERATIONAL
+
+   \ these two repeated register settings are necessary for Bimini
+   \ Its OHCI controller (AM8111) behaves different to NEC's one
+   23f02edf hcintrval rl!-le                 \ frame-interval register
+   hchcca-dma hchccareg rl!-le               \ HC communication area
+
+   d# 50 ms
+
+   \ now power on all ports of this root-hub
    hcrhpstat TO current-stat              \ start with first port status reg
    max-rh-ports 0
-   DO
+   ?DO
       102 current-stat rl!-le             \ power on and enable
-      hcrhdescA 3 + rb@ 2 * ms            \ startup delay 30 ms (2 * POTPGT)
+      hcrhdescA rl@-le 18 rshift 2 * ms   \ startup delay 30 ms (2 * POTPGT)
       current-stat 4 + TO current-stat    \ check next RH-Port
    LOOP
    d# 500 wait-proceed                    \ STEC device needs 300 ms
@@ -985,7 +1039,7 @@ s" usb-support.fs" INCLUDED
 
 
 \ ==================================================================
-\ To retrieve the configuration descriptor OF a device
+\ To retrieve the configuration descriptor of a device
 \ with a valid USB address
 
 
@@ -1084,11 +1138,11 @@ s" usb-enumerate.fs" INCLUDED
       dd-buffer @ DEVICE-DESCRIPTOR-TYPE-OFFSET + c@  ( Descriptor-type )
       DEVICE-DESCRIPTOR-TYPE <> IF
          s" USB: Error Reading Device Descriptor"   usb-debug-print
-         s" Read descriptor is not OF the right type"  usb-debug-print
+         s" Read descriptor is not of the right type"  usb-debug-print
          s" Aborting enumeration"  usb-debug-print
          EXIT
-         \ NOTE: Tomorrow, IF u have a LOOP here THEN we may need to
-         \ UNLOOP before EXITing. Depends on what type OF LOOPing construct
+         \ NOTE: Tomorrow, if you have a LOOP here then we may need to
+         \ UNLOOP before EXITing. Depends on what type of looping construct
          \ is used. Beware.
 
       THEN
@@ -1100,7 +1154,7 @@ s" usb-enumerate.fs" INCLUDED
       \ NOTE: Probably, we could check MPS for only 8/16/32/64
       \       hmm.. not now...
 
-      \ Read the device class to see what type OF device it is and create an
+      \ Read the device class to see what type of device it is and create an
       \ appropriate child node here.
       create-usb-device-tree
    ELSE
@@ -1108,8 +1162,8 @@ s" usb-enumerate.fs" INCLUDED
       s" Aborting Enumeration."   usb-debug-print
       EXIT
 
-      \ NOTE: Tomorrow , IF u have a LOOP here THEN we may need to
-      \ UNLOOP before EXITing. Depends on what type OF LOOPing construct
+      \ NOTE: Tomorrow , if you have a LOOP here then we may need to
+      \ UNLOOP before EXITing. Depends on what type of looping construct
       \ is used. Beware.
 
    THEN
@@ -1119,31 +1173,29 @@ s" usb-enumerate.fs" INCLUDED
 \ =========================================================================
 \ PROTOTYPE FUNCTION: "rhport-initialize"
 \ Detect Device, reset and enable the respective port.
-\ COLON Definition rhport-initialize accepts the total number OF root hub
+\ COLON Definition rhport-initialize accepts the total number of root hub
 \ ports as an argument and probes every available root hub port and initiates
-\ the build OF the USB devie sub-tree so is effectively the mother OF all
+\ the build of the USB devie sub-tree so is effectively the mother of all
 \ USB device nodes that are to be detected and instantiated.
 \ ==========================================================================
 : rhport-initialize ( -- )
 
    hcrhpstat TO current-stat              \ start with first port status reg
    max-rh-ports 1+ 1
-   DO
+   ?DO
+      usb-debug-flag IF
+         ." Initializing RH port " i . cr
+      THEN
       \ any Device connected to that port ?
       current-stat rl@-le RHP-CCS and 0<> 	( TRUE|FALSE )
       IF
-         current-stat hcrhpstat3 =        \ third port of NEC ?
-         IF
-            81 to uDOC-present            \ uDOC is present and now processed
-         THEN
-
          s" Device connected to this port!" usb-debug-print
          RHP-PRS current-stat rl!-le      \ issue a port reset
          BEGIN
             current-stat rl@-le RHP-PRS AND    \ wait for reset end
             WHILE
          REPEAT
-         hcrhdescA 3 + rb@ 2 * ms         \ startup delay 30 ms (POTPGT)
+         hcrhdescA rl@-le 18 rshift 2 * ms     \ startup delay 30 ms (POTPGT)
          d# 100 ms
 
          current-stat rl@-le 200 and 4 lshift
@@ -1158,16 +1210,12 @@ s" usb-enumerate.fs" INCLUDED
 
       ELSE
          s" No device detected at this port." usb-debug-print
-         current-stat hcrhpstat3 =        \ third port of NEC ? (=ModFD)
-         IF                               \ here a ModFD should be on ELBA
-            current-stat rl@-le 80000 and 0<> 	\ is over-current detected ?
-            IF
-               uDOC-present 08 or to uDOC-present  \ set flag for uDOC-check
-            THEN
+         current-stat rl@-le 80000 and 0<>	\ is over-current detected ?
+         IF
+            s" Warning: Overcurrent indicated" usb-debug-print
          THEN
       THEN
       current-stat 4 + TO current-stat    \ check next RH-Port
-      uDOC-present 0f and to uDOC-present \ remove processing flag
    LOOP
 ;
 
@@ -1178,13 +1226,7 @@ s" usb-enumerate.fs" INCLUDED
 
 : enumerate ( -- )
    HC-reset
-   ['] hc-suspend add-quiesce-xt     \ Assert that HC will be supsended
    store-initial-usb-hub-address
    rhport-initialize                 \ Probe all available RH ports
    reset-to-initial-usb-hub-address
 ;
-
-
-\ Create an alias for this controller:
-set-ohci-alias
-

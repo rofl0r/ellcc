@@ -2,15 +2,15 @@
 #define __USB_EHCI_H
 
 // usb-ehci.c
-int ehci_init(u16 bdf, int busid, int compbdf);
+int ehci_init(struct pci_device *pci, int busid, struct pci_device *comppci);
+struct usbdevice_s;
+struct usb_endpoint_descriptor;
+struct usb_pipe *ehci_alloc_pipe(struct usbdevice_s *usbdev
+                                 , struct usb_endpoint_descriptor *epdesc);
 struct usb_pipe;
-void ehci_free_pipe(struct usb_pipe *p);
-struct usb_pipe *ehci_alloc_control_pipe(struct usb_pipe *dummy);
 int ehci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
                  , void *data, int datasize);
-struct usb_pipe *ehci_alloc_bulk_pipe(struct usb_pipe *dummy);
 int ehci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize);
-struct usb_pipe *ehci_alloc_intr_pipe(struct usb_pipe *dummy, int frameexp);
 int ehci_poll_intr(struct usb_pipe *p, void *data);
 
 
@@ -90,7 +90,7 @@ struct ehci_regs {
 #define PORT_RWC_BITS   (PORT_CSC | PORT_PEC | PORT_OCC)
 
 
-#define EHCI_QH_ALIGN 64 // Can't span a 4K boundary, so increase to 64
+#define EHCI_QH_ALIGN 128 // Can't span a 4K boundary, so increase from 32
 
 struct ehci_qh {
     u32 next;
@@ -102,7 +102,7 @@ struct ehci_qh {
     u32 alt_next;
     u32 token;
     u32 buf[5];
-    // u32 buf_hi[5];
+    u32 buf_hi[5];
 } PACKED;
 
 #define QH_CONTROL       (1 << 27)
@@ -133,15 +133,18 @@ struct ehci_qh {
 #define EHCI_PTR_QH             0x0002
 
 
-#define EHCI_QTD_ALIGN 32
+#define EHCI_QTD_ALIGN 64 // Can't span a 4K boundary, so increase from 32
 
 struct ehci_qtd {
     u32 qtd_next;
     u32 alt_next;
     u32 token;
     u32 buf[5];
-    //u32 buf_hi[5];
-} PACKED;
+    u32 buf_hi[5];
+    /* keep struct size a multiple of 64 bytes, as we're allocating
+       arrays. Without this padding, the second qtd could have the
+       wrong alignment. */
+} PACKED __aligned(EHCI_QTD_ALIGN);
 
 #define QTD_TOGGLE      (1 << 31)
 #define QTD_LENGTH_SHIFT 16

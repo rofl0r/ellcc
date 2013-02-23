@@ -18,11 +18,12 @@
  * with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 #include "hw.h"
-#include "qemu-timer.h"
+#include "qemu/timer.h"
 #include "omap.h"
 
 /* GP timers */
 struct omap_gp_timer_s {
+    MemoryRegion iomem;
     qemu_irq irq;
     qemu_irq wkup;
     qemu_irq in;
@@ -257,7 +258,7 @@ void omap_gp_timer_reset(struct omap_gp_timer_s *s)
     omap_gp_timer_update(s);
 }
 
-static uint32_t omap_gp_timer_readw(void *opaque, target_phys_addr_t addr)
+static uint32_t omap_gp_timer_readw(void *opaque, hwaddr addr)
 {
     struct omap_gp_timer_s *s = (struct omap_gp_timer_s *) opaque;
 
@@ -323,7 +324,7 @@ static uint32_t omap_gp_timer_readw(void *opaque, target_phys_addr_t addr)
     return 0;
 }
 
-static uint32_t omap_gp_timer_readh(void *opaque, target_phys_addr_t addr)
+static uint32_t omap_gp_timer_readh(void *opaque, hwaddr addr)
 {
     struct omap_gp_timer_s *s = (struct omap_gp_timer_s *) opaque;
     uint32_t ret;
@@ -337,13 +338,7 @@ static uint32_t omap_gp_timer_readh(void *opaque, target_phys_addr_t addr)
     }
 }
 
-static CPUReadMemoryFunc * const omap_gp_timer_readfn[] = {
-    omap_badwidth_read32,
-    omap_gp_timer_readh,
-    omap_gp_timer_readw,
-};
-
-static void omap_gp_timer_write(void *opaque, target_phys_addr_t addr,
+static void omap_gp_timer_write(void *opaque, hwaddr addr,
                 uint32_t value)
 {
     struct omap_gp_timer_s *s = (struct omap_gp_timer_s *) opaque;
@@ -443,7 +438,7 @@ static void omap_gp_timer_write(void *opaque, target_phys_addr_t addr,
     }
 }
 
-static void omap_gp_timer_writeh(void *opaque, target_phys_addr_t addr,
+static void omap_gp_timer_writeh(void *opaque, hwaddr addr,
                 uint32_t value)
 {
     struct omap_gp_timer_s *s = (struct omap_gp_timer_s *) opaque;
@@ -454,18 +449,27 @@ static void omap_gp_timer_writeh(void *opaque, target_phys_addr_t addr,
         s->writeh = (uint16_t) value;
 }
 
-static CPUWriteMemoryFunc * const omap_gp_timer_writefn[] = {
-    omap_badwidth_write32,
-    omap_gp_timer_writeh,
-    omap_gp_timer_write,
+static const MemoryRegionOps omap_gp_timer_ops = {
+    .old_mmio = {
+        .read = {
+            omap_badwidth_read32,
+            omap_gp_timer_readh,
+            omap_gp_timer_readw,
+        },
+        .write = {
+            omap_badwidth_write32,
+            omap_gp_timer_writeh,
+            omap_gp_timer_write,
+        },
+    },
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 struct omap_gp_timer_s *omap_gp_timer_init(struct omap_target_agent_s *ta,
                 qemu_irq irq, omap_clk fclk, omap_clk iclk)
 {
-    int iomemtype;
     struct omap_gp_timer_s *s = (struct omap_gp_timer_s *)
-            qemu_mallocz(sizeof(struct omap_gp_timer_s));
+            g_malloc0(sizeof(struct omap_gp_timer_s));
 
     s->ta = ta;
     s->irq = irq;
@@ -476,9 +480,9 @@ struct omap_gp_timer_s *omap_gp_timer_init(struct omap_target_agent_s *ta,
     omap_gp_timer_reset(s);
     omap_gp_timer_clk_setup(s);
 
-    iomemtype = l4_register_io_memory(omap_gp_timer_readfn,
-                    omap_gp_timer_writefn, s);
-    omap_l4_attach(ta, 0, iomemtype);
+    memory_region_init_io(&s->iomem, &omap_gp_timer_ops, s, "omap.gptimer",
+                          omap_l4_region_size(ta, 0));
+    omap_l4_attach(ta, 0, &s->iomem);
 
     return s;
 }

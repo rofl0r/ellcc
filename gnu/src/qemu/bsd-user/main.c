@@ -31,8 +31,8 @@
 /* For tb_lock */
 #include "cpu.h"
 #include "tcg.h"
-#include "qemu-timer.h"
-#include "envlist.h"
+#include "qemu/timer.h"
+#include "qemu/envlist.h"
 
 #define DEBUG_LOGFILE "/tmp/qemu.log"
 
@@ -41,6 +41,7 @@ int singlestep;
 unsigned long mmap_min_addr;
 unsigned long guest_base;
 int have_guest_base;
+unsigned long reserved_va;
 #endif
 
 static const char *interp_prefix = CONFIG_QEMU_INTERP_PREFIX;
@@ -63,18 +64,18 @@ void gemu_log(const char *fmt, ...)
 }
 
 #if defined(TARGET_I386)
-int cpu_get_pic_interrupt(CPUState *env)
+int cpu_get_pic_interrupt(CPUX86State *env)
 {
     return -1;
 }
 #endif
 
 /* These are no-ops because we are not threadsafe.  */
-static inline void cpu_exec_start(CPUState *env)
+static inline void cpu_exec_start(CPUArchState *env)
 {
 }
 
-static inline void cpu_exec_end(CPUState *env)
+static inline void cpu_exec_end(CPUArchState *env)
 {
 }
 
@@ -109,7 +110,7 @@ void cpu_list_unlock(void)
 /***********************************************************/
 /* CPUX86 core interface */
 
-void cpu_smm_update(CPUState *env)
+void cpu_smm_update(CPUX86State *env)
 {
 }
 
@@ -680,7 +681,7 @@ static void usage(void)
            "-g port           wait gdb connection to port\n"
            "-L path           set the elf interpreter prefix (default=%s)\n"
            "-s size           set the stack size in bytes (default=%ld)\n"
-           "-cpu model        select CPU (-cpu ? for list)\n"
+           "-cpu model        select CPU (-cpu help for list)\n"
            "-drop-ld-preload  drop LD_PRELOAD for target process\n"
            "-E var=value      sets/modifies targets environment variable(s)\n"
            "-U var            unsets targets environment variable(s)\n"
@@ -713,7 +714,7 @@ static void usage(void)
     exit(1);
 }
 
-THREAD CPUState *thread_env;
+THREAD CPUArchState *thread_env;
 
 /* Assumes contents are already zeroed.  */
 void init_task_state(TaskState *ts)
@@ -737,7 +738,7 @@ int main(int argc, char **argv)
     struct target_pt_regs regs1, *regs = &regs1;
     struct image_info info1, *info = &info1;
     TaskState ts1, *ts = &ts1;
-    CPUState *env;
+    CPUArchState *env;
     int optind;
     const char *r;
     int gdbstub_port = 0;
@@ -747,6 +748,8 @@ int main(int argc, char **argv)
 
     if (argc <= 1)
         usage();
+
+    module_call_init(MODULE_INIT_QOM);
 
     if ((envlist = envlist_create()) == NULL) {
         (void) fprintf(stderr, "Unable to allocate envlist\n");
@@ -822,7 +825,7 @@ int main(int argc, char **argv)
             qemu_uname_release = argv[optind++];
         } else if (!strcmp(r, "cpu")) {
             cpu_model = argv[optind++];
-            if (strcmp(cpu_model, "?") == 0) {
+            if (is_help_option(cpu_model)) {
 /* XXX: implement xxx_cpu_list for targets that still miss it */
 #if defined(cpu_list)
                     cpu_list(stdout, &fprintf);
@@ -905,7 +908,8 @@ int main(int argc, char **argv)
         cpu_model = "any";
 #endif
     }
-    cpu_exec_init_all(0);
+    tcg_exec_init(0);
+    cpu_exec_init_all();
     /* NOTE: we need to init the CPU at this stage to get
        qemu_host_page_size */
     env = cpu_init(cpu_model);
@@ -913,8 +917,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
-#if defined(TARGET_I386) || defined(TARGET_SPARC) || defined(TARGET_PPC)
-    cpu_reset(env);
+#if defined(TARGET_SPARC) || defined(TARGET_PPC)
+    cpu_reset(ENV_GET_CPU(env));
 #endif
     thread_env = env;
 

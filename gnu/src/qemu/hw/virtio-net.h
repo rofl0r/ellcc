@@ -15,8 +15,7 @@
 #define _QEMU_VIRTIO_NET_H
 
 #include "virtio.h"
-#include "net.h"
-#include "pci.h"
+#include "pci/pci.h"
 
 #define ETH_ALEN    6
 
@@ -44,6 +43,10 @@
 #define VIRTIO_NET_F_CTRL_RX    18      /* Control channel RX mode support */
 #define VIRTIO_NET_F_CTRL_VLAN  19      /* Control channel VLAN filtering */
 #define VIRTIO_NET_F_CTRL_RX_EXTRA 20   /* Extra RX mode control support */
+#define VIRTIO_NET_F_MQ         22      /* Device supports Receive Flow
+                                         * Steering */
+
+#define VIRTIO_NET_F_CTRL_MAC_ADDR   23 /* Set MAC address */
 
 #define VIRTIO_NET_S_LINK_UP    1       /* Link is up */
 
@@ -72,33 +75,9 @@ struct virtio_net_config
     uint8_t mac[ETH_ALEN];
     /* See VIRTIO_NET_F_STATUS and VIRTIO_NET_S_* above */
     uint16_t status;
-} __attribute__((packed));
-
-/* This is the first element of the scatter-gather list.  If you don't
- * specify GSO or CSUM features, you can simply ignore the header. */
-struct virtio_net_hdr
-{
-#define VIRTIO_NET_HDR_F_NEEDS_CSUM     1       // Use csum_start, csum_offset
-    uint8_t flags;
-#define VIRTIO_NET_HDR_GSO_NONE         0       // Not a GSO frame
-#define VIRTIO_NET_HDR_GSO_TCPV4        1       // GSO frame, IPv4 TCP (TSO)
-#define VIRTIO_NET_HDR_GSO_UDP          3       // GSO frame, IPv4 UDP (UFO)
-#define VIRTIO_NET_HDR_GSO_TCPV6        4       // GSO frame, IPv6 TCP
-#define VIRTIO_NET_HDR_GSO_ECN          0x80    // TCP has ECN set
-    uint8_t gso_type;
-    uint16_t hdr_len;
-    uint16_t gso_size;
-    uint16_t csum_start;
-    uint16_t csum_offset;
-};
-
-/* This is the version of the header to use when the MRG_RXBUF
- * feature has been negotiated. */
-struct virtio_net_hdr_mrg_rxbuf
-{
-    struct virtio_net_hdr hdr;
-    uint16_t num_buffers;   /* Number of merged rx buffers */
-};
+    /* Max virtqueue pairs supported by the device */
+    uint16_t max_virtqueue_pairs;
+} QEMU_PACKED;
 
 /*
  * Control virtqueue data structures
@@ -124,16 +103,16 @@ typedef uint8_t virtio_net_ctrl_ack;
  * 0 and 1 are supported with the VIRTIO_NET_F_CTRL_RX feature.
  * Commands 2-5 are added with VIRTIO_NET_F_CTRL_RX_EXTRA.
  */
-#define VIRTIO_NET_CTRL_RX_MODE    0
- #define VIRTIO_NET_CTRL_RX_MODE_PROMISC      0
- #define VIRTIO_NET_CTRL_RX_MODE_ALLMULTI     1
- #define VIRTIO_NET_CTRL_RX_MODE_ALLUNI       2
- #define VIRTIO_NET_CTRL_RX_MODE_NOMULTI      3
- #define VIRTIO_NET_CTRL_RX_MODE_NOUNI        4
- #define VIRTIO_NET_CTRL_RX_MODE_NOBCAST      5
+#define VIRTIO_NET_CTRL_RX    0
+ #define VIRTIO_NET_CTRL_RX_PROMISC      0
+ #define VIRTIO_NET_CTRL_RX_ALLMULTI     1
+ #define VIRTIO_NET_CTRL_RX_ALLUNI       2
+ #define VIRTIO_NET_CTRL_RX_NOMULTI      3
+ #define VIRTIO_NET_CTRL_RX_NOUNI        4
+ #define VIRTIO_NET_CTRL_RX_NOBCAST      5
 
 /*
- * Control the MAC filter table.
+ * Control the MAC
  *
  * The MAC filter table is managed by the hypervisor, the guest should
  * assume the size is infinite.  Filtering should be considered
@@ -146,6 +125,10 @@ typedef uint8_t virtio_net_ctrl_ack;
  * first sg list contains unicast addresses, the second is for multicast.
  * This functionality is present if the VIRTIO_NET_F_CTRL_RX feature
  * is available.
+ *
+ * The ADDR_SET command requests one out scatterlist, it contains a
+ * 6 bytes MAC address. This functionality is present if the
+ * VIRTIO_NET_F_CTRL_MAC_ADDR feature is available.
  */
 struct virtio_net_ctrl_mac {
     uint32_t entries;
@@ -153,6 +136,7 @@ struct virtio_net_ctrl_mac {
 };
 #define VIRTIO_NET_CTRL_MAC    1
  #define VIRTIO_NET_CTRL_MAC_TABLE_SET        0
+ #define VIRTIO_NET_CTRL_MAC_ADDR_SET         1
 
 /*
  * Control VLAN filtering
@@ -166,6 +150,26 @@ struct virtio_net_ctrl_mac {
 #define VIRTIO_NET_CTRL_VLAN       2
  #define VIRTIO_NET_CTRL_VLAN_ADD             0
  #define VIRTIO_NET_CTRL_VLAN_DEL             1
+
+/*
+ * Control Multiqueue
+ *
+ * The command VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET
+ * enables multiqueue, specifying the number of the transmit and
+ * receive queues that will be used. After the command is consumed and acked by
+ * the device, the device will not steer new packets on receive virtqueues
+ * other than specified nor read from transmit virtqueues other than specified.
+ * Accordingly, driver should not transmit new packets  on virtqueues other than
+ * specified.
+ */
+struct virtio_net_ctrl_mq {
+    uint16_t virtqueue_pairs;
+};
+
+#define VIRTIO_NET_CTRL_MQ   4
+ #define VIRTIO_NET_CTRL_MQ_VQ_PAIRS_SET        0
+ #define VIRTIO_NET_CTRL_MQ_VQ_PAIRS_MIN        1
+ #define VIRTIO_NET_CTRL_MQ_VQ_PAIRS_MAX        0x8000
 
 #define DEFINE_VIRTIO_NET_FEATURES(_state, _field) \
         DEFINE_VIRTIO_COMMON_FEATURES(_state, _field), \
@@ -185,5 +189,8 @@ struct virtio_net_ctrl_mac {
         DEFINE_PROP_BIT("ctrl_vq", _state, _field, VIRTIO_NET_F_CTRL_VQ, true), \
         DEFINE_PROP_BIT("ctrl_rx", _state, _field, VIRTIO_NET_F_CTRL_RX, true), \
         DEFINE_PROP_BIT("ctrl_vlan", _state, _field, VIRTIO_NET_F_CTRL_VLAN, true), \
-        DEFINE_PROP_BIT("ctrl_rx_extra", _state, _field, VIRTIO_NET_F_CTRL_RX_EXTRA, true)
+        DEFINE_PROP_BIT("ctrl_rx_extra", _state, _field, VIRTIO_NET_F_CTRL_RX_EXTRA, true), \
+        DEFINE_PROP_BIT("ctrl_mac_addr", _state, _field, VIRTIO_NET_F_CTRL_MAC_ADDR, true), \
+        DEFINE_PROP_BIT("mq", _state, _field, VIRTIO_NET_F_MQ, false)
+
 #endif

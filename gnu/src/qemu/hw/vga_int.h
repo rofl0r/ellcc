@@ -21,20 +21,18 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef HW_VGA_INT_H
+#define HW_VGA_INT_H 1
 
 #include <hw/hw.h>
-
-#define MSR_COLOR_EMULATION 0x01
-#define MSR_PAGE_SELECT     0x20
+#include "qapi/error.h"
+#include "exec/memory.h"
 
 #define ST01_V_RETRACE      0x08
 #define ST01_DISP_ENABLE    0x01
 
-/* bochs VBE support */
-#define CONFIG_BOCHS_VBE
-
-#define VBE_DISPI_MAX_XRES              1600
-#define VBE_DISPI_MAX_YRES              1200
+#define VBE_DISPI_MAX_XRES              16000
+#define VBE_DISPI_MAX_YRES              12000
 #define VBE_DISPI_MAX_BPP               32
 
 #define VBE_DISPI_INDEX_ID              0x0
@@ -66,21 +64,6 @@
 
 #define VBE_DISPI_LFB_PHYSICAL_ADDRESS  0xE0000000
 
-#ifdef CONFIG_BOCHS_VBE
-
-#define VGA_STATE_COMMON_BOCHS_VBE              \
-    uint16_t vbe_index;                         \
-    uint16_t vbe_regs[VBE_DISPI_INDEX_NB];      \
-    uint32_t vbe_start_addr;                    \
-    uint32_t vbe_line_offset;                   \
-    uint32_t vbe_bank_mask;			\
-    int vbe_mapped;
-#else
-
-#define VGA_STATE_COMMON_BOCHS_VBE
-
-#endif /* !CONFIG_BOCHS_VBE */
-
 #define CH_ATTR_SIZE (160 * 100)
 #define VGA_MAX_HEIGHT 2048
 
@@ -104,15 +87,14 @@ typedef uint8_t (* vga_retrace_fn)(struct VGACommonState *s);
 typedef void (* vga_update_retrace_info_fn)(struct VGACommonState *s);
 
 typedef struct VGACommonState {
+    MemoryRegion *legacy_address_space;
     uint8_t *vram_ptr;
-    ram_addr_t vram_offset;
-    target_phys_addr_t lfb_addr;
-    target_phys_addr_t lfb_end;
-    target_phys_addr_t map_addr;
-    target_phys_addr_t map_end;
+    MemoryRegion vram;
+    MemoryRegion vram_vbe;
     uint32_t vram_size;
+    uint32_t vram_size_mb; /* property */
     uint32_t latch;
-    uint32_t lfb_vram_mapped; /* whether 0xa0000 is mapped as ram */
+    MemoryRegion *chain4_alias;
     uint8_t sr_index;
     uint8_t sr[256];
     uint8_t gr_index;
@@ -134,7 +116,6 @@ typedef struct VGACommonState {
     int dac_8bit;
     uint8_t palette[768];
     int32_t bank_offset;
-    int vga_io_memory;
     int (*get_bpp)(struct VGACommonState *s);
     void (*get_offsets)(struct VGACommonState *s,
                         uint32_t *pline_offset,
@@ -143,7 +124,13 @@ typedef struct VGACommonState {
     void (*get_resolution)(struct VGACommonState *s,
                         int *pwidth,
                         int *pheight);
-    VGA_STATE_COMMON_BOCHS_VBE
+    /* bochs vbe state */
+    uint16_t vbe_index;
+    uint16_t vbe_regs[VBE_DISPI_INDEX_NB];
+    uint32_t vbe_start_addr;
+    uint32_t vbe_line_offset;
+    uint32_t vbe_bank_mask;
+    int vbe_mapped;
     /* display refresh support */
     DisplayState *ds;
     uint32_t font_offsets[2];
@@ -160,6 +147,8 @@ typedef struct VGACommonState {
     uint32_t last_scr_width, last_scr_height; /* in pixels */
     uint32_t last_depth; /* in bits */
     uint8_t cursor_start, cursor_end;
+    bool cursor_visible_phase;
+    int64_t cursor_blink_time;
     uint32_t cursor_offset;
     unsigned int (*rgb_to_pixel)(unsigned int r,
                                  unsigned int g, unsigned b);
@@ -167,6 +156,8 @@ typedef struct VGACommonState {
     vga_hw_invalidate_ptr invalidate;
     vga_hw_screen_dump_ptr screen_dump;
     vga_hw_text_update_ptr text_update;
+    bool full_update_text;
+    bool full_update_gfx;
     /* hardware mouse cursor support */
     uint32_t invalidated_y_table[VGA_MAX_HEIGHT / 32];
     void (*cursor_invalidate)(struct VGACommonState *s);
@@ -189,45 +180,39 @@ static inline int c6_to_8(int v)
     return (v << 2) | (b << 1) | b;
 }
 
-void vga_common_init(VGACommonState *s, int vga_ram_size);
-void vga_init(VGACommonState *s);
-int vga_init_io(VGACommonState *s);
+void vga_common_init(VGACommonState *s);
+void vga_init(VGACommonState *s, MemoryRegion *address_space,
+              MemoryRegion *address_space_io, bool init_vga_ports);
+MemoryRegion *vga_init_io(VGACommonState *s,
+                          const MemoryRegionPortio **vga_ports,
+                          const MemoryRegionPortio **vbe_ports);
 void vga_common_reset(VGACommonState *s);
 
+void vga_sync_dirty_bitmap(VGACommonState *s);
 void vga_dirty_log_start(VGACommonState *s);
 void vga_dirty_log_stop(VGACommonState *s);
-void vga_dirty_log_restart(VGACommonState *s);
 
 extern const VMStateDescription vmstate_vga_common;
 uint32_t vga_ioport_read(void *opaque, uint32_t addr);
 void vga_ioport_write(void *opaque, uint32_t addr, uint32_t val);
-uint32_t vga_mem_readb(void *opaque, target_phys_addr_t addr);
-void vga_mem_writeb(void *opaque, target_phys_addr_t addr, uint32_t val);
+uint32_t vga_mem_readb(VGACommonState *s, hwaddr addr);
+void vga_mem_writeb(VGACommonState *s, hwaddr addr, uint32_t val);
 void vga_invalidate_scanlines(VGACommonState *s, int y1, int y2);
-int ppm_save(const char *filename, struct DisplaySurface *ds);
-
-void vga_draw_cursor_line_8(uint8_t *d1, const uint8_t *src1,
-                            int poffset, int w,
-                            unsigned int color0, unsigned int color1,
-                            unsigned int color_xor);
-void vga_draw_cursor_line_16(uint8_t *d1, const uint8_t *src1,
-                             int poffset, int w,
-                             unsigned int color0, unsigned int color1,
-                             unsigned int color_xor);
-void vga_draw_cursor_line_32(uint8_t *d1, const uint8_t *src1,
-                             int poffset, int w,
-                             unsigned int color0, unsigned int color1,
-                             unsigned int color_xor);
+void ppm_save(const char *filename, struct DisplaySurface *ds, Error **errp);
 
 int vga_ioport_invalid(VGACommonState *s, uint32_t addr);
-void vga_init_vbe(VGACommonState *s);
+
+void vga_init_vbe(VGACommonState *s, MemoryRegion *address_space);
+uint32_t vbe_ioport_read_data(void *opaque, uint32_t addr);
+void vbe_ioport_write_index(void *opaque, uint32_t addr, uint32_t val);
+void vbe_ioport_write_data(void *opaque, uint32_t addr, uint32_t val);
 
 extern const uint8_t sr_mask[8];
 extern const uint8_t gr_mask[16];
 
-#define VGA_RAM_SIZE (8192 * 1024)
 #define VGABIOS_FILENAME "vgabios.bin"
 #define VGABIOS_CIRRUS_FILENAME "vgabios-cirrus.bin"
 
-extern CPUReadMemoryFunc * const vga_mem_read[3];
-extern CPUWriteMemoryFunc * const vga_mem_write[3];
+extern const MemoryRegionOps vga_mem_ops;
+
+#endif

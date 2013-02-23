@@ -34,11 +34,16 @@ typedef void (*pInterruptFunc_t) (void);
 
 pInterruptFunc_t vectorTable[0x2E << 1];
 
-void c_memInit(uint64_t r3, uint64_t r4);
+extern void proceedInterrupt(void);
 
-void proceedInterrupt();
+/* Prototypes for functions in this file: */
+void c_interrupt(uint64_t vecNum);
+void set_exceptionVector(int num, void *func);
+int io_getchar(char *ch);
+void early_c_entry(uint64_t start_addr);
 
-void
+
+static void
 exception_forward(void)
 {
 	uint64_t val;
@@ -102,22 +107,6 @@ io_getchar(char *ch)
 	return retVal;
 }
 
-uint64_t
-get_dec(void)
-{
-	return 0xdeadaffe;
-}
-
-void
-set_dec(uint64_t val)
-{
-}
-
-uint64_t
-tb_frequency(void)
-{
-	return 0;
-}
 
 void copy_from_flash(uint64_t cnt, uint64_t src, uint64_t dest);
 
@@ -134,7 +123,7 @@ const uint32_t CrcTableLow[16] = {
 	0x350C9B64, 0x31CD86D3, 0x3C8EA00A, 0x384FBDBD
 };
 
-unsigned long
+static unsigned long
 check_flash_image(unsigned long rombase, unsigned long length,
 		  unsigned long start_crc)
 {
@@ -264,7 +253,9 @@ early_c_entry(uint64_t start_addr)
 	load_file(0x100, "xvect", 0, romfs_base);
 	load_file(SLAVELOOP_LOADBASE, "stageS", 0, romfs_base);
 	c_romfs_lookup("ofw_main", romfs_base, &fileInfo);
-	load_elf_file((void *) fileInfo.addr_data, &ofw_addr);
+
+	elf_load_file((void *) fileInfo.addr_data, &ofw_addr,
+		      NULL, flush_cache);
 	ofw_start =
 	    (void (*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t))
 	    &ofw_addr;
@@ -279,6 +270,7 @@ early_c_entry(uint64_t start_addr)
 	 *      non-ePAPR-compliant firmware
 	 * r7 = implementation dependent
 	 */
+	asm volatile("isync; sync;" : : : "memory");
 	ofw_start(0, romfs_base, 0, 0, 0);
 	// never return
 }

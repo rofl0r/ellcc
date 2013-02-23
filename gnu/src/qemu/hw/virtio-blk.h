@@ -15,7 +15,7 @@
 #define _QEMU_VIRTIO_BLK_H
 
 #include "virtio.h"
-#include "block.h"
+#include "hw/block-common.h"
 
 /* from Linux's linux/virtio_blk.h */
 
@@ -31,8 +31,9 @@
 #define VIRTIO_BLK_F_BLK_SIZE   6       /* Block size of disk is available*/
 #define VIRTIO_BLK_F_SCSI       7       /* Supports scsi command passthru */
 /* #define VIRTIO_BLK_F_IDENTIFY   8       ATA IDENTIFY supported, DEPRECATED */
-#define VIRTIO_BLK_F_WCACHE     9       /* write cache enabled */
+#define VIRTIO_BLK_F_WCE        9       /* write cache enabled */
 #define VIRTIO_BLK_F_TOPOLOGY   10      /* Topology information is available */
+#define VIRTIO_BLK_F_CONFIG_WCE 11      /* write cache configurable */
 
 #define VIRTIO_BLK_ID_BYTES     20      /* ID string length */
 
@@ -49,7 +50,8 @@ struct virtio_blk_config
     uint8_t alignment_offset;
     uint16_t min_io_size;
     uint32_t opt_io_size;
-} __attribute__((packed));
+    uint8_t wce;
+} QEMU_PACKED;
 
 /* These two define direction. */
 #define VIRTIO_BLK_T_IN         0
@@ -97,12 +99,16 @@ struct virtio_scsi_inhdr
     uint32_t residual;
 };
 
-#ifdef __linux__
-#define DEFINE_VIRTIO_BLK_FEATURES(_state, _field) \
-        DEFINE_VIRTIO_COMMON_FEATURES(_state, _field), \
-        DEFINE_PROP_BIT("scsi", _state, _field, VIRTIO_BLK_F_SCSI, true)
-#else
+struct VirtIOBlkConf
+{
+    BlockConf conf;
+    char *serial;
+    uint32_t scsi;
+    uint32_t config_wce;
+    uint32_t data_plane;
+};
+
 #define DEFINE_VIRTIO_BLK_FEATURES(_state, _field) \
         DEFINE_VIRTIO_COMMON_FEATURES(_state, _field)
-#endif
+
 #endif

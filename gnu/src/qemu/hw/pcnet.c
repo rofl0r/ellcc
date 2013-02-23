@@ -36,10 +36,10 @@
  */
 
 #include "qdev.h"
-#include "net.h"
-#include "qemu-timer.h"
-#include "qemu_socket.h"
-#include "sysemu.h"
+#include "net/net.h"
+#include "qemu/timer.h"
+#include "qemu/sockets.h"
+#include "sysemu/sysemu.h"
 
 #include "pcnet.h"
 
@@ -57,24 +57,6 @@ struct qemu_ether_header {
     uint8_t ether_shost[6];
     uint16_t ether_type;
 };
-
-/* BUS CONFIGURATION REGISTERS */
-#define BCR_MSRDA    0
-#define BCR_MSWRA    1
-#define BCR_MC       2
-#define BCR_LNKST    4
-#define BCR_LED1     5
-#define BCR_LED2     6
-#define BCR_LED3     7
-#define BCR_FDC      9
-#define BCR_BSBC     18
-#define BCR_EECAS    19
-#define BCR_SWS      20
-#define BCR_PLAT     22
-
-#define BCR_DWIO(S)      !!((S)->bcr[BCR_BSBC] & 0x0080)
-#define BCR_SSIZE32(S)   !!((S)->bcr[BCR_SWS ] & 0x0100)
-#define BCR_SWSTYLE(S)     ((S)->bcr[BCR_SWS ] & 0x00FF)
 
 #define CSR_INIT(S)      !!(((S)->csr[0])&0x0001)
 #define CSR_STRT(S)      !!(((S)->csr[0])&0x0002)
@@ -95,6 +77,7 @@ struct qemu_ether_header {
 #define CSR_DTX(S)       !!(((S)->csr[15])&0x0002)
 #define CSR_LOOP(S)      !!(((S)->csr[15])&0x0004)
 #define CSR_DXMTFCS(S)   !!(((S)->csr[15])&0x0008)
+#define CSR_INTL(S)      !!(((S)->csr[15])&0x0040)
 #define CSR_DRCVPA(S)    !!(((S)->csr[15])&0x2000)
 #define CSR_DRCVBC(S)    !!(((S)->csr[15])&0x4000)
 #define CSR_PROM(S)      !!(((S)->csr[15])&0x8000)
@@ -310,7 +293,7 @@ struct pcnet_RMD {
         GET_FIELD((R)->msg_length, RMDM, ZEROS))
 
 static inline void pcnet_tmd_load(PCNetState *s, struct pcnet_TMD *tmd,
-                                  target_phys_addr_t addr)
+                                  hwaddr addr)
 {
     if (!BCR_SSIZE32(s)) {
         struct {
@@ -340,7 +323,7 @@ static inline void pcnet_tmd_load(PCNetState *s, struct pcnet_TMD *tmd,
 }
 
 static inline void pcnet_tmd_store(PCNetState *s, const struct pcnet_TMD *tmd,
-                                   target_phys_addr_t addr)
+                                   hwaddr addr)
 {
     if (!BCR_SSIZE32(s)) {
         struct {
@@ -376,7 +359,7 @@ static inline void pcnet_tmd_store(PCNetState *s, const struct pcnet_TMD *tmd,
 }
 
 static inline void pcnet_rmd_load(PCNetState *s, struct pcnet_RMD *rmd,
-                                  target_phys_addr_t addr)
+                                  hwaddr addr)
 {
     if (!BCR_SSIZE32(s)) {
         struct {
@@ -406,7 +389,7 @@ static inline void pcnet_rmd_load(PCNetState *s, struct pcnet_RMD *rmd,
 }
 
 static inline void pcnet_rmd_store(PCNetState *s, struct pcnet_RMD *rmd,
-                                   target_phys_addr_t addr)
+                                   hwaddr addr)
 {
     if (!BCR_SSIZE32(s)) {
         struct {
@@ -677,7 +660,7 @@ static inline int ladr_match(PCNetState *s, const uint8_t *buf, int size)
     return 0;
 }
 
-static inline target_phys_addr_t pcnet_rdra_addr(PCNetState *s, int idx)
+static inline hwaddr pcnet_rdra_addr(PCNetState *s, int idx)
 {
     while (idx < 1) idx += CSR_RCVRL(s);
     return s->rdra + ((CSR_RCVRL(s) - idx) * (BCR_SWSTYLE(s) ? 16 : 8));
@@ -706,7 +689,6 @@ static void pcnet_s_reset(PCNetState *s)
     printf("pcnet_s_reset\n");
 #endif
 
-    s->lnkst = 0x40;
     s->rdra = 0;
     s->tdra = 0;
     s->rap = 0;
@@ -903,7 +885,7 @@ static void pcnet_stop(PCNetState *s)
 #ifdef PCNET_DEBUG
     printf("pcnet_stop\n");
 #endif
-    s->csr[0] &= ~0x7feb;
+    s->csr[0] &= ~0xffeb;
     s->csr[0] |= 0x0014;
     s->csr[4] &= ~0x02c2;
     s->csr[5] &= ~0x0011;
@@ -916,19 +898,19 @@ static void pcnet_rdte_poll(PCNetState *s)
     if (s->rdra) {
         int bad = 0;
 #if 1
-        target_phys_addr_t crda = pcnet_rdra_addr(s, CSR_RCVRC(s));
-        target_phys_addr_t nrda = pcnet_rdra_addr(s, -1 + CSR_RCVRC(s));
-        target_phys_addr_t nnrd = pcnet_rdra_addr(s, -2 + CSR_RCVRC(s));
+        hwaddr crda = pcnet_rdra_addr(s, CSR_RCVRC(s));
+        hwaddr nrda = pcnet_rdra_addr(s, -1 + CSR_RCVRC(s));
+        hwaddr nnrd = pcnet_rdra_addr(s, -2 + CSR_RCVRC(s));
 #else
-        target_phys_addr_t crda = s->rdra +
+        hwaddr crda = s->rdra +
             (CSR_RCVRL(s) - CSR_RCVRC(s)) *
             (BCR_SWSTYLE(s) ? 16 : 8 );
         int nrdc = CSR_RCVRC(s)<=1 ? CSR_RCVRL(s) : CSR_RCVRC(s)-1;
-        target_phys_addr_t nrda = s->rdra +
+        hwaddr nrda = s->rdra +
             (CSR_RCVRL(s) - nrdc) *
             (BCR_SWSTYLE(s) ? 16 : 8 );
         int nnrc = nrdc<=1 ? CSR_RCVRL(s) : nrdc-1;
-        target_phys_addr_t nnrd = s->rdra +
+        hwaddr nnrd = s->rdra +
             (CSR_RCVRL(s) - nnrc) *
             (BCR_SWSTYLE(s) ? 16 : 8 );
 #endif
@@ -988,7 +970,7 @@ static int pcnet_tdte_poll(PCNetState *s)
 {
     s->csr[34] = s->csr[35] = 0;
     if (s->tdra) {
-        target_phys_addr_t cxda = s->tdra +
+        hwaddr cxda = s->tdra +
             (CSR_XMTRL(s) - CSR_XMTRC(s)) *
             (BCR_SWSTYLE(s) ? 16 : 8);
         int bad = 0;
@@ -1022,9 +1004,9 @@ static int pcnet_tdte_poll(PCNetState *s)
     return !!(CSR_CXST(s) & 0x8000);
 }
 
-int pcnet_can_receive(VLANClientState *nc)
+int pcnet_can_receive(NetClientState *nc)
 {
-    PCNetState *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    PCNetState *s = qemu_get_nic_opaque(nc);
     if (CSR_STOP(s) || CSR_SPND(s))
         return 0;
 
@@ -1033,9 +1015,9 @@ int pcnet_can_receive(VLANClientState *nc)
 
 #define MIN_BUF_SIZE 60
 
-ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
+ssize_t pcnet_receive(NetClientState *nc, const uint8_t *buf, size_t size_)
 {
-    PCNetState *s = DO_UPCAST(NICState, nc, nc)->opaque;
+    PCNetState *s = qemu_get_nic_opaque(nc);
     int is_padr = 0, is_bcast = 0, is_ladr = 0;
     uint8_t buf1[60];
     int remaining;
@@ -1068,7 +1050,7 @@ ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
         if (!(CSR_CRST(s) & 0x8000) && s->rdra) {
             struct pcnet_RMD rmd;
             int rcvrc = CSR_RCVRC(s)-1,i;
-            target_phys_addr_t nrda;
+            hwaddr nrda;
             for (i = CSR_RCVRL(s)-1; i > 0; i--, rcvrc--) {
                 if (rcvrc <= 1)
                     rcvrc = CSR_RCVRL(s);
@@ -1096,7 +1078,7 @@ ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
             CSR_MISSC(s)++;
         } else {
             uint8_t *src = s->buffer;
-            target_phys_addr_t crda = CSR_CRDA(s);
+            hwaddr crda = CSR_CRDA(s);
             struct pcnet_RMD rmd;
             int pktcount = 0;
 
@@ -1136,7 +1118,7 @@ ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
 
 #define PCNET_RECV_STORE() do {                                 \
     int count = MIN(4096 - GET_FIELD(rmd.buf_length, RMDL, BCNT),remaining); \
-    target_phys_addr_t rbadr = PHYSADDR(s, rmd.rbadr);          \
+    hwaddr rbadr = PHYSADDR(s, rmd.rbadr);          \
     s->phys_mem_write(s->dma_opaque, rbadr, src, count, CSR_BSWP(s)); \
     src += count; remaining -= count;                           \
     SET_FIELD(&rmd.status, RMDS, OWN, 0);                       \
@@ -1147,7 +1129,7 @@ ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
             remaining = size;
             PCNET_RECV_STORE();
             if ((remaining > 0) && CSR_NRDA(s)) {
-                target_phys_addr_t nrda = CSR_NRDA(s);
+                hwaddr nrda = CSR_NRDA(s);
 #ifdef PCNET_DEBUG_RMD
                 PRINT_RMD(&rmd);
 #endif
@@ -1215,9 +1197,16 @@ ssize_t pcnet_receive(VLANClientState *nc, const uint8_t *buf, size_t size_)
     return size_;
 }
 
+void pcnet_set_link_status(NetClientState *nc)
+{
+    PCNetState *d = qemu_get_nic_opaque(nc);
+
+    d->lnkst = nc->link_down ? 0 : 0x40;
+}
+
 static void pcnet_transmit(PCNetState *s)
 {
-    target_phys_addr_t xmit_cxda = 0;
+    hwaddr xmit_cxda = 0;
     int count = CSR_XMTRL(s)-1;
     int add_crc = 0;
 
@@ -1246,6 +1235,15 @@ static void pcnet_transmit(PCNetState *s)
             if (BCR_SWSTYLE(s) != 1)
                 add_crc = GET_FIELD(tmd.status, TMDS, ADDFCS);
         }
+        if (s->lnkst == 0 &&
+            (!CSR_LOOP(s) || (!CSR_INTL(s) && !BCR_TMAULOOP(s)))) {
+            SET_FIELD(&tmd.misc, TMDM, LCAR, 1);
+            SET_FIELD(&tmd.status, TMDS, ERR, 1);
+            SET_FIELD(&tmd.status, TMDS, OWN, 0);
+            s->csr[0] |= 0xa000; /* ERR | CERR */
+            s->xmit_pos = -1;
+            goto txdone;
+        }
         if (!GET_FIELD(tmd.status, TMDS, ENP)) {
             int bcnt = 4096 - GET_FIELD(tmd.length, TMDL, BCNT);
             s->phys_mem_read(s->dma_opaque, PHYSADDR(s, tmd.tbadr),
@@ -1263,17 +1261,19 @@ static void pcnet_transmit(PCNetState *s)
                 if (BCR_SWSTYLE(s) == 1)
                     add_crc = !GET_FIELD(tmd.status, TMDS, NOFCS);
                 s->looptest = add_crc ? PCNET_LOOPTEST_CRC : PCNET_LOOPTEST_NOCRC;
-                pcnet_receive(&s->nic->nc, s->buffer, s->xmit_pos);
+                pcnet_receive(qemu_get_queue(s->nic), s->buffer, s->xmit_pos);
                 s->looptest = 0;
             } else
                 if (s->nic)
-                    qemu_send_packet(&s->nic->nc, s->buffer, s->xmit_pos);
+                    qemu_send_packet(qemu_get_queue(s->nic), s->buffer,
+                                     s->xmit_pos);
 
             s->csr[0] &= ~0x0008;   /* clear TDMD */
             s->csr[4] |= 0x0004;    /* set TXSTRT */
             s->xmit_pos = -1;
         }
 
+    txdone:
         SET_FIELD(&tmd.status, TMDS, OWN, 0);
         TMDSTORE(&tmd, PHYSADDR(s,CSR_CXDA(s)));
         if (!CSR_TOKINTD(s) || (CSR_LTINTEN(s) && GET_FIELD(tmd.status, TMDS, LTINT)))
@@ -1516,6 +1516,7 @@ static void pcnet_bcr_writew(PCNetState *s, uint32_t rap, uint32_t val)
 #ifdef PCNET_DEBUG
        printf("BCR_SWS=0x%04x\n", val);
 #endif
+        /* fall through */
     case BCR_LNKST:
     case BCR_LED1:
     case BCR_LED2:
@@ -1729,8 +1730,8 @@ int pcnet_common_init(DeviceState *dev, PCNetState *s, NetClientInfo *info)
     s->poll_timer = qemu_new_timer_ns(vm_clock, pcnet_poll_timer, s);
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
-    s->nic = qemu_new_nic(info, &s->conf, dev->info->name, dev->id, s);
-    qemu_format_nic_info_str(&s->nic->nc, s->conf.macaddr.a);
+    s->nic = qemu_new_nic(info, &s->conf, object_get_typename(OBJECT(dev)), dev->id, s);
+    qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 
     add_boot_device_path(s->conf.bootindex, dev, "/ethernet-phy@0");
 
@@ -1760,6 +1761,8 @@ int pcnet_common_init(DeviceState *dev, PCNetState *s, NetClientInfo *info)
         checksum += s->prom[i];
     }
     *(uint16_t *)&s->prom[12] = cpu_to_le16(checksum);
+
+    s->lnkst = 0x40; /* initial link state: up */
 
     return 0;
 }

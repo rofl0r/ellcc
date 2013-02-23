@@ -9,10 +9,14 @@
 #include "pci.h" // pci_config_writeb
 #include "config.h" // CONFIG_*
 #include "pci_ids.h" // PCI_VENDOR_ID_INTEL
-#include "dev-i440fx.h"
+#include "pci_regs.h" // PCI_VENDOR_ID
+#include "xen.h" // usingXen
+#include "dev-q35.h" // PCI_VENDOR_ID_INTEL
 
 // On the emulators, the bios at 0xf0000 is also at 0xffff0000
 #define BIOS_SRC_OFFSET 0xfff00000
+
+#define I440FX_PAM0     0x59
 
 // Enable shadowing and copy bios.
 static void
@@ -51,7 +55,7 @@ __make_bios_writable_intel(u16 bdf, u32 pam0)
            , code32flat_end - code32flat_start);
 }
 
-void
+static void
 make_bios_writable_intel(u16 bdf, u32 pam0)
 {
     int reg = pci_config_readb(bdf, pam0);
@@ -69,19 +73,20 @@ make_bios_writable_intel(u16 bdf, u32 pam0)
     __make_bios_writable_intel(bdf, pam0);
 }
 
-void
+static void
 make_bios_readonly_intel(u16 bdf, u32 pam0)
 {
     // Flush any pending writes before locking memory.
     wbinvd();
 
     // Write protect roms from 0xc0000-0xf0000
+    u32 romend = rom_get_last(), romtop = rom_get_top();
     int i;
     for (i=0; i<6; i++) {
         u32 mem = BUILD_ROM_START + i * 32*1024;
         u32 pam = pam0 + 1 + i;
-        if (RomEnd <= mem + 16*1024) {
-            if (RomEnd > mem)
+        if (romend <= mem + 16*1024 || romtop <= mem + 32*1024) {
+            if (romend > mem && romtop > mem + 16*1024)
                 pci_config_writeb(bdf, pam, 0x31);
             break;
         }
@@ -92,9 +97,21 @@ make_bios_readonly_intel(u16 bdf, u32 pam0)
     pci_config_writeb(bdf, pam0, 0x10);
 }
 
-static const struct pci_device_id dram_controller_make_writable_tbl[] = {
+static void i440fx_bios_make_readonly(struct pci_device *pci, void *arg)
+{
+    make_bios_readonly_intel(pci->bdf, I440FX_PAM0);
+}
+
+void mch_bios_make_readonly(struct pci_device *pci, void *arg)
+{
+    make_bios_readonly_intel(pci->bdf, Q35_HOST_BRIDGE_PAM0);
+}
+
+static const struct pci_device_id dram_controller_make_readonly_tbl[] = {
     PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82441,
-               i440fx_bios_make_writable),
+               i440fx_bios_make_readonly),
+    PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_Q35_MCH,
+               mch_bios_make_readonly),
     PCI_DEVICE_END
 };
 
@@ -102,39 +119,43 @@ static const struct pci_device_id dram_controller_make_writable_tbl[] = {
 void
 make_bios_writable(void)
 {
-    if (CONFIG_COREBOOT)
+    if (CONFIG_COREBOOT || usingXen())
         return;
 
     dprintf(3, "enabling shadow ram\n");
 
-    // at this point, statically allocated variables can't be written.
-    // so stack should be used.
-
-    // Locate chip controlling ram shadowing.
-    int bdf = pci_find_init_device(dram_controller_make_writable_tbl, NULL);
-    if (bdf < 0) {
-        dprintf(1, "Unable to unlock ram - bridge not found\n");
+    // At this point, statically allocated variables can't be written,
+    // so do this search manually.
+    int bdf;
+    foreachbdf(bdf, 0) {
+        u32 vendev = pci_config_readl(bdf, PCI_VENDOR_ID);
+        u16 vendor = vendev & 0xffff, device = vendev >> 16;
+        if (vendor == PCI_VENDOR_ID_INTEL
+            && device == PCI_DEVICE_ID_INTEL_82441) {
+            make_bios_writable_intel(bdf, I440FX_PAM0);
+            return;
+        }
+        if (vendor == PCI_VENDOR_ID_INTEL
+            && device == PCI_DEVICE_ID_INTEL_Q35_MCH) {
+            make_bios_writable_intel(bdf, Q35_HOST_BRIDGE_PAM0);
+            return;
+        }
     }
+    dprintf(1, "Unable to unlock ram - bridge not found\n");
 }
-
-static const struct pci_device_id dram_controller_make_readonly_tbl[] = {
-    PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82441,
-               i440fx_bios_make_readonly),
-    PCI_DEVICE_END
-};
 
 // Make the BIOS code segment area (0xf0000) read-only.
 void
 make_bios_readonly(void)
 {
-    if (CONFIG_COREBOOT)
+    if (CONFIG_COREBOOT || usingXen())
         return;
 
     dprintf(3, "locking shadow ram\n");
-    int bdf = pci_find_init_device(dram_controller_make_readonly_tbl, NULL);
-    if (bdf < 0) {
+    struct pci_device *pci = pci_find_init_device(
+        dram_controller_make_readonly_tbl, NULL);
+    if (!pci)
         dprintf(1, "Unable to lock ram - bridge not found\n");
-    }
 }
 
 void

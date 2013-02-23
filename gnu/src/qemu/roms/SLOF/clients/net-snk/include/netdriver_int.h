@@ -28,8 +28,13 @@ typedef struct {
 	int type;
 } bar_t;
 
+typedef enum {
+	CONFIG_TYPE_PCI,
+	CONFIG_TYPE_VIO
+} mod_config_type;
 
 typedef struct {
+	mod_config_type config_type;
 	unsigned long long puid;
 	unsigned int bus;
 	unsigned int devfn;
@@ -42,7 +47,9 @@ typedef struct {
 } pci_config_t;
 
 typedef struct {
-	unsigned int reg;
+	mod_config_type config_type;
+	unsigned int reg_len;
+	unsigned int reg[12];
 	char	     compat[64];
 } vio_config_t;
 
@@ -102,6 +109,9 @@ typedef int (*k_ioctl_t) (int, int, void *);
 typedef void (*modules_remove_t) (int);
 typedef snk_module_t *(*modules_load_t) (int);
 
+typedef long (*dma_map_in_t)(void *address, long size, int cachable);
+typedef void (*dma_map_out_t)(void *address, long devaddr, long size);
+
 typedef struct {
 	int version;
 	print_t print;
@@ -129,6 +139,8 @@ typedef struct {
 	k_ioctl_t k_ioctl;
 	modules_remove_t modules_remove;
 	modules_load_t modules_load;
+	dma_map_in_t dma_map_in;
+	dma_map_out_t dma_map_out;
 } snk_kernel_t;
 
 /* Entry of module */
@@ -175,18 +187,5 @@ typedef struct {
 		ioctl_ethtool_version_t version;
 	} data;
 } ioctl_net_data_t;
-
-/* paflof */
-enum {
-	PAFLOF_GDEPTH,
-	PAFLOF_GIO_BEHAVIOR,
-	PAFLOF_GSTATUS,
-	PAFLOF_POP,
-	PAFLOF_PUSH,
-};
-/*  - clint */
-enum {
-	CLINT_EXECUTE
-};
 
 #endif				/* _NETDRIVER_INT_H */

@@ -37,6 +37,7 @@ typedef struct {
 
 typedef struct {
     SysBusDevice busdev;
+    MemoryRegion iomem;
     uint8_t tc_int;
     uint8_t tc_mask;
     uint8_t err_int;
@@ -217,7 +218,8 @@ again:
     }
 }
 
-static uint32_t pl080_read(void *opaque, target_phys_addr_t offset)
+static uint64_t pl080_read(void *opaque, hwaddr offset,
+                           unsigned size)
 {
     pl080_state *s = (pl080_state *)opaque;
     uint32_t i;
@@ -279,13 +281,14 @@ static uint32_t pl080_read(void *opaque, target_phys_addr_t offset)
         return s->sync;
     default:
     bad_offset:
-        hw_error("pl080_read: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "pl080_read: Bad offset %x\n", (int)offset);
         return 0;
     }
 }
 
-static void pl080_write(void *opaque, target_phys_addr_t offset,
-                          uint32_t value)
+static void pl080_write(void *opaque, hwaddr offset,
+                        uint64_t value, unsigned size)
 {
     pl080_state *s = (pl080_state *)opaque;
     int i;
@@ -325,12 +328,13 @@ static void pl080_write(void *opaque, target_phys_addr_t offset,
     case 10: /* SoftLBReq */
     case 11: /* SoftLSReq */
         /* ??? Implement these.  */
-        hw_error("pl080_write: Soft DMA not implemented\n");
+        qemu_log_mask(LOG_UNIMP, "pl080_write: Soft DMA not implemented\n");
         break;
     case 12: /* Configuration */
         s->conf = value;
         if (s->conf & (PL080_CONF_M1 | PL080_CONF_M1)) {
-            hw_error("pl080_write: Big-endian DMA not implemented\n");
+            qemu_log_mask(LOG_UNIMP,
+                          "pl080_write: Big-endian DMA not implemented\n");
         }
         pl080_run(s);
         break;
@@ -339,32 +343,24 @@ static void pl080_write(void *opaque, target_phys_addr_t offset,
         break;
     default:
     bad_offset:
-        hw_error("pl080_write: Bad offset %x\n", (int)offset);
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "pl080_write: Bad offset %x\n", (int)offset);
     }
     pl080_update(s);
 }
 
-static CPUReadMemoryFunc * const pl080_readfn[] = {
-   pl080_read,
-   pl080_read,
-   pl080_read
-};
-
-static CPUWriteMemoryFunc * const pl080_writefn[] = {
-   pl080_write,
-   pl080_write,
-   pl080_write
+static const MemoryRegionOps pl080_ops = {
+    .read = pl080_read,
+    .write = pl080_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static int pl08x_init(SysBusDevice *dev, int nchannels)
 {
-    int iomemtype;
     pl080_state *s = FROM_SYSBUS(pl080_state, dev);
 
-    iomemtype = cpu_register_io_memory(pl080_readfn,
-                                       pl080_writefn, s,
-                                       DEVICE_NATIVE_ENDIAN);
-    sysbus_init_mmio(dev, 0x1000, iomemtype);
+    memory_region_init_io(&s->iomem, &pl080_ops, s, "pl080", 0x1000);
+    sysbus_init_mmio(dev, &s->iomem);
     sysbus_init_irq(dev, &s->irq);
     s->nchannels = nchannels;
     return 0;
@@ -380,28 +376,46 @@ static int pl081_init(SysBusDevice *dev)
     return pl08x_init(dev, 2);
 }
 
-static SysBusDeviceInfo pl080_info = {
-    .init = pl080_init,
-    .qdev.name = "pl080",
-    .qdev.size = sizeof(pl080_state),
-    .qdev.vmsd = &vmstate_pl080,
-    .qdev.no_user = 1,
+static void pl080_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = pl080_init;
+    dc->no_user = 1;
+    dc->vmsd = &vmstate_pl080;
+}
+
+static const TypeInfo pl080_info = {
+    .name          = "pl080",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(pl080_state),
+    .class_init    = pl080_class_init,
 };
 
-static SysBusDeviceInfo pl081_info = {
-    .init = pl081_init,
-    .qdev.name = "pl081",
-    .qdev.size = sizeof(pl080_state),
-    .qdev.vmsd = &vmstate_pl080,
-    .qdev.no_user = 1,
+static void pl081_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = pl081_init;
+    dc->no_user = 1;
+    dc->vmsd = &vmstate_pl080;
+}
+
+static const TypeInfo pl081_info = {
+    .name          = "pl081",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(pl080_state),
+    .class_init    = pl081_class_init,
 };
 
 /* The PL080 and PL081 are the same except for the number of channels
    they implement (8 and 2 respectively).  */
-static void pl080_register_devices(void)
+static void pl080_register_types(void)
 {
-    sysbus_register_withprop(&pl080_info);
-    sysbus_register_withprop(&pl081_info);
+    type_register_static(&pl080_info);
+    type_register_static(&pl081_info);
 }
 
-device_init(pl080_register_devices)
+type_init(pl080_register_types)

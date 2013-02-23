@@ -22,6 +22,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <cache.h>
+
 #include ISTR(TARG,h)
 
 #define LAST_ELEMENT(x) x[sizeof x / sizeof x[0] - 1]
@@ -29,9 +31,13 @@
 /* Hack to get around static inline issues */
 #include "../lib/libhvcall/libhvcall.h"
 
+
+extern char _start_OF[];
+
 unsigned long fdt_start;
 unsigned long romfs_base;
 unsigned long epapr_magic;
+unsigned long epapr_ima_size;		// ePAPR initially mapped area size
 unsigned char hash_table[HASHSIZE*CELLSIZE];
 
 #include ISTR(TARG,c)

@@ -8,6 +8,7 @@
  */
 #include <inttypes.h>
 
+#include "hw/irq.h"
 #include "qemu-common.h"
 
 /* xen-machine.c */
@@ -20,11 +21,11 @@ enum xen_mode {
 extern uint32_t xen_domid;
 extern enum xen_mode xen_mode;
 
-extern int xen_allowed;
+extern bool xen_allowed;
 
-static inline int xen_enabled(void)
+static inline bool xen_enabled(void)
 {
-#ifdef CONFIG_XEN
+#if defined(CONFIG_XEN_BACKEND) && !defined(CONFIG_NO_XEN)
     return xen_allowed;
 #else
     return 0;
@@ -34,6 +35,7 @@ static inline int xen_enabled(void)
 int xen_pci_slot_get_pirq(PCIDevice *pci_dev, int irq_num);
 void xen_piix3_set_irq(void *opaque, int irq_num, int level);
 void xen_piix_pci_write_config_client(uint32_t address, uint32_t val, int len);
+void xen_hvm_inject_msi(uint64_t addr, uint32_t data);
 void xen_cmos_set_s3_resume(void *opaque, int irq, int level);
 
 qemu_irq *xen_interrupt_controller_init(void);
@@ -44,8 +46,14 @@ void xen_vcpu_init(void);
 void xenstore_store_pv_console_info(int i, struct CharDriverState *chr);
 
 #if defined(NEED_CPU_H) && !defined(CONFIG_USER_ONLY)
-void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size);
+struct MemoryRegion;
+void xen_ram_alloc(ram_addr_t ram_addr, ram_addr_t size,
+                   struct MemoryRegion *mr);
+void xen_modified_memory(ram_addr_t start, ram_addr_t length);
 #endif
+
+struct MemoryRegion;
+void xen_register_framebuffer(struct MemoryRegion *mr);
 
 #if defined(CONFIG_XEN) && CONFIG_XEN_CTRL_INTERFACE_VERSION < 400
 #  define HVM_MAX_VCPUS 32

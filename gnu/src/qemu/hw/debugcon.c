@@ -25,24 +25,31 @@
  */
 
 #include "hw.h"
-#include "qemu-char.h"
+#include "char/char.h"
 #include "isa.h"
 #include "pc.h"
+
+#define TYPE_ISA_DEBUGCON_DEVICE "isa-debugcon"
+#define ISA_DEBUGCON_DEVICE(obj) \
+     OBJECT_CHECK(ISADebugconState, (obj), TYPE_ISA_DEBUGCON_DEVICE)
 
 //#define DEBUG_DEBUGCON
 
 typedef struct DebugconState {
+    MemoryRegion io;
     CharDriverState *chr;
     uint32_t readback;
 } DebugconState;
 
 typedef struct ISADebugconState {
-    ISADevice dev;
+    ISADevice parent_obj;
+
     uint32_t iobase;
     DebugconState state;
 } ISADebugconState;
 
-static void debugcon_ioport_write(void *opaque, uint32_t addr, uint32_t val)
+static void debugcon_ioport_write(void *opaque, hwaddr addr, uint64_t val,
+                                  unsigned width)
 {
     DebugconState *s = opaque;
     unsigned char ch = val;
@@ -51,11 +58,11 @@ static void debugcon_ioport_write(void *opaque, uint32_t addr, uint32_t val)
     printf("debugcon: write addr=0x%04x val=0x%02x\n", addr, val);
 #endif
 
-    qemu_chr_write(s->chr, &ch, 1);
+    qemu_chr_fe_write(s->chr, &ch, 1);
 }
 
 
-static uint32_t debugcon_ioport_read(void *opaque, uint32_t addr)
+static uint64_t debugcon_ioport_read(void *opaque, hwaddr addr, unsigned width)
 {
     DebugconState *s = opaque;
 
@@ -65,6 +72,14 @@ static uint32_t debugcon_ioport_read(void *opaque, uint32_t addr)
 
     return s->readback;
 }
+
+static const MemoryRegionOps debugcon_ops = {
+    .read = debugcon_ioport_read,
+    .write = debugcon_ioport_write,
+    .valid.min_access_size = 1,
+    .valid.max_access_size = 1,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
 
 static void debugcon_init_core(DebugconState *s)
 {
@@ -78,30 +93,42 @@ static void debugcon_init_core(DebugconState *s)
 
 static int debugcon_isa_initfn(ISADevice *dev)
 {
-    ISADebugconState *isa = DO_UPCAST(ISADebugconState, dev, dev);
+    ISADebugconState *isa = ISA_DEBUGCON_DEVICE(dev);
     DebugconState *s = &isa->state;
 
     debugcon_init_core(s);
-    register_ioport_write(isa->iobase, 1, 1, debugcon_ioport_write, s);
-    register_ioport_read(isa->iobase, 1, 1, debugcon_ioport_read, s);
+    memory_region_init_io(&s->io, &debugcon_ops, s,
+                          TYPE_ISA_DEBUGCON_DEVICE, 1);
+    memory_region_add_subregion(isa_address_space_io(dev),
+                                isa->iobase, &s->io);
     return 0;
 }
 
-static ISADeviceInfo debugcon_isa_info = {
-    .qdev.name  = "isa-debugcon",
-    .qdev.size  = sizeof(ISADebugconState),
-    .init       = debugcon_isa_initfn,
-    .qdev.props = (Property[]) {
-        DEFINE_PROP_HEX32("iobase", ISADebugconState, iobase, 0xe9),
-        DEFINE_PROP_CHR("chardev",  ISADebugconState, state.chr),
-        DEFINE_PROP_HEX32("readback", ISADebugconState, state.readback, 0xe9),
-        DEFINE_PROP_END_OF_LIST(),
-    },
+static Property debugcon_isa_properties[] = {
+    DEFINE_PROP_HEX32("iobase", ISADebugconState, iobase, 0xe9),
+    DEFINE_PROP_CHR("chardev",  ISADebugconState, state.chr),
+    DEFINE_PROP_HEX32("readback", ISADebugconState, state.readback, 0xe9),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void debugcon_register_devices(void)
+static void debugcon_isa_class_initfn(ObjectClass *klass, void *data)
 {
-    isa_qdev_register(&debugcon_isa_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    ISADeviceClass *ic = ISA_DEVICE_CLASS(klass);
+    ic->init = debugcon_isa_initfn;
+    dc->props = debugcon_isa_properties;
 }
 
-device_init(debugcon_register_devices)
+static const TypeInfo debugcon_isa_info = {
+    .name          = TYPE_ISA_DEBUGCON_DEVICE,
+    .parent        = TYPE_ISA_DEVICE,
+    .instance_size = sizeof(ISADebugconState),
+    .class_init    = debugcon_isa_class_initfn,
+};
+
+static void debugcon_register_types(void)
+{
+    type_register_static(&debugcon_isa_info);
+}
+
+type_init(debugcon_register_types)

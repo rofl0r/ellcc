@@ -22,13 +22,13 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef TCG_TARGET_ARM 
 #define TCG_TARGET_ARM 1
 
-#define TCG_TARGET_REG_BITS 32
 #undef TCG_TARGET_WORDS_BIGENDIAN
 #undef TCG_TARGET_STACK_GROWSUP
 
-enum {
+typedef enum {
     TCG_REG_R0 = 0,
     TCG_REG_R1,
     TCG_REG_R2,
@@ -45,7 +45,7 @@ enum {
     TCG_REG_R13,
     TCG_REG_R14,
     TCG_REG_PC,
-};
+} TCGReg;
 
 #define TCG_TARGET_NB_REGS 16
 
@@ -58,29 +58,30 @@ enum {
 #define TCG_TARGET_CALL_STACK_OFFSET	0
 
 /* optional instructions */
-#define TCG_TARGET_HAS_ext8s_i32
-#define TCG_TARGET_HAS_ext16s_i32
-#undef TCG_TARGET_HAS_ext8u_i32       /* and r0, r1, #0xff */
-#define TCG_TARGET_HAS_ext16u_i32
-#define TCG_TARGET_HAS_bswap16_i32
-#define TCG_TARGET_HAS_bswap32_i32
-#define TCG_TARGET_HAS_not_i32
-#define TCG_TARGET_HAS_neg_i32
-#define TCG_TARGET_HAS_rot_i32
-#define TCG_TARGET_HAS_andc_i32
-// #define TCG_TARGET_HAS_orc_i32
-// #define TCG_TARGET_HAS_eqv_i32
-// #define TCG_TARGET_HAS_nand_i32
-// #define TCG_TARGET_HAS_nor_i32
-
-#define TCG_TARGET_HAS_GUEST_BASE
+#define TCG_TARGET_HAS_div_i32          0
+#define TCG_TARGET_HAS_ext8s_i32        1
+#define TCG_TARGET_HAS_ext16s_i32       1
+#define TCG_TARGET_HAS_ext8u_i32        0 /* and r0, r1, #0xff */
+#define TCG_TARGET_HAS_ext16u_i32       1
+#define TCG_TARGET_HAS_bswap16_i32      1
+#define TCG_TARGET_HAS_bswap32_i32      1
+#define TCG_TARGET_HAS_not_i32          1
+#define TCG_TARGET_HAS_neg_i32          1
+#define TCG_TARGET_HAS_rot_i32          1
+#define TCG_TARGET_HAS_andc_i32         1
+#define TCG_TARGET_HAS_orc_i32          0
+#define TCG_TARGET_HAS_eqv_i32          0
+#define TCG_TARGET_HAS_nand_i32         0
+#define TCG_TARGET_HAS_nor_i32          0
+#define TCG_TARGET_HAS_deposit_i32      0
+#define TCG_TARGET_HAS_movcond_i32      1
 
 enum {
-    /* Note: must be synced with dyngen-exec.h */
-    TCG_AREG0 = TCG_REG_R7,
+    TCG_AREG0 = TCG_REG_R6,
 };
 
-static inline void flush_icache_range(unsigned long start, unsigned long stop)
+static inline void flush_icache_range(tcg_target_ulong start,
+                                      tcg_target_ulong stop)
 {
 #if QEMU_GNUC_PREREQ(4, 1)
     __builtin___clear_cache((char *) start, (char *) stop);
@@ -91,3 +92,5 @@ static inline void flush_icache_range(unsigned long start, unsigned long stop)
     __asm __volatile__ ("swi 0x9f0002" : : "r" (_beg), "r" (_end), "r" (_flg));
 #endif
 }
+
+#endif

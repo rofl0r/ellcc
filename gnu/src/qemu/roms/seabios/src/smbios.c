@@ -6,9 +6,10 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "util.h" // dprintf
-#include "biosvar.h" // GET_EBDA
 #include "paravirt.h" // qemu_cfg_smbios_load_field
 #include "smbios.h" // struct smbios_entry_point
+
+struct smbios_entry_point *SMBiosAddr;
 
 static void
 smbios_entry_point_init(u16 max_structure_size,
@@ -17,7 +18,13 @@ smbios_entry_point_init(u16 max_structure_size,
                         u16 number_of_structures)
 {
     struct smbios_entry_point *ep = malloc_fseg(sizeof(*ep));
-    void *finaltable = malloc_high(structure_table_length);
+    void *finaltable;
+    if (structure_table_length <= BUILD_MAX_SMBIOS_FSEG)
+        // Table is small enough for f-seg - allocate there.  This
+        // works around a bug in JunOS (at least for small SMBIOS tables).
+        finaltable = malloc_fseg(structure_table_length);
+    else
+        finaltable = malloc_high(structure_table_length);
     if (!ep || !finaltable) {
         warn_noalloc();
         free(ep);
@@ -44,7 +51,9 @@ smbios_entry_point_init(u16 max_structure_size,
 
     ep->intermediate_checksum -= checksum((void*)ep + 0x10, ep->length - 0x10);
 
-    dprintf(1, "SMBIOS ptr=%p table=%p\n", ep, finaltable);
+    SMBiosAddr = ep;
+    dprintf(1, "SMBIOS ptr=%p table=%p size=%d\n"
+            , ep, finaltable, structure_table_length);
 }
 
 #define load_str_field_with_default(type, field, def)                   \
@@ -84,7 +93,7 @@ smbios_entry_point_init(u16 max_structure_size,
     } while (0)
 
 /* Type 0 -- BIOS Information */
-#define RELEASE_DATE_STR "01/01/2007"
+#define RELEASE_DATE_STR "01/01/2011"
 static void *
 smbios_init_type_0(void *start)
 {
@@ -511,4 +520,72 @@ smbios_init(void)
 
     smbios_entry_point_init(max_struct_size, p - start, start, nr_structs);
     free(start);
+}
+
+void
+display_uuid(void)
+{
+    u32 addr, end;
+    u8 *uuid;
+    u8 empty_uuid[16] = { 0 };
+
+    if (SMBiosAddr == NULL)
+        return;
+
+    addr =        SMBiosAddr->structure_table_address;
+    end  = addr + SMBiosAddr->structure_table_length;
+
+    /* the following takes care of any initial wraparound too */
+    while (addr < end) {
+        const struct smbios_structure_header *hdr;
+
+        /* partial structure header */
+        if (end - addr < sizeof(struct smbios_structure_header))
+            return;
+
+        hdr = (struct smbios_structure_header *)addr;
+
+        /* partial structure */
+        if (end - addr < hdr->length)
+            return;
+
+        /* any Type 1 structure version will do that has the UUID */
+        if (hdr->type == 1 &&
+            hdr->length >= offsetof(struct smbios_type_1, uuid) + 16)
+            break;
+
+        /* done with formatted area, skip string-set */
+        addr += hdr->length;
+
+        while (end - addr >= 2 &&
+               (*(u8 *)addr     != '\0' ||
+                *(u8 *)(addr+1) != '\0'))
+            ++addr;
+
+        /* structure terminator not found */
+        if (end - addr < 2)
+            return;
+
+        addr += 2;
+    }
+
+    /* parsing finished or skipped entirely, UUID not found */
+    if (addr >= end)
+        return;
+
+    uuid = (u8 *)(addr + offsetof(struct smbios_type_1, uuid));
+    if (memcmp(uuid, empty_uuid, sizeof empty_uuid) == 0)
+        return;
+
+    printf("Machine UUID"
+             " %02x%02x%02x%02x"
+             "-%02x%02x"
+             "-%02x%02x"
+             "-%02x%02x"
+             "-%02x%02x%02x%02x%02x%02x\n"
+           , uuid[ 0], uuid[ 1], uuid[ 2], uuid[ 3]
+           , uuid[ 4], uuid[ 5]
+           , uuid[ 6], uuid[ 7]
+           , uuid[ 8], uuid[ 9]
+           , uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
 }

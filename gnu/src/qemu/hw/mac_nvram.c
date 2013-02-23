@@ -24,8 +24,8 @@
  */
 #include "hw.h"
 #include "firmware_abi.h"
-#include "sysemu.h"
-#include "ppc_mac.h"
+#include "sysemu/sysemu.h"
+#include "ppc/mac.h"
 
 /* debug NVR */
 //#define DEBUG_NVR
@@ -37,51 +37,44 @@
 #define NVR_DPRINTF(fmt, ...)
 #endif
 
-struct MacIONVRAMState {
-    uint32_t size;
-    int mem_index;
-    unsigned int it_shift;
-    uint8_t *data;
-};
-
 #define DEF_SYSTEM_SIZE 0xc10
 
 /* Direct access to NVRAM */
-uint32_t macio_nvram_read (void *opaque, uint32_t addr)
+uint8_t macio_nvram_read(MacIONVRAMState *s, uint32_t addr)
 {
-    MacIONVRAMState *s = opaque;
     uint32_t ret;
 
-    if (addr < s->size)
+    if (addr < s->size) {
         ret = s->data[addr];
-    else
+    } else {
         ret = -1;
-    NVR_DPRINTF("read addr %04x val %x\n", addr, ret);
+    }
+    NVR_DPRINTF("read addr %04" PRIx32 " val %" PRIx8 "\n", addr, ret);
 
     return ret;
 }
 
-void macio_nvram_write (void *opaque, uint32_t addr, uint32_t val)
+void macio_nvram_write(MacIONVRAMState *s, uint32_t addr, uint8_t val)
 {
-    MacIONVRAMState *s = opaque;
-
-    NVR_DPRINTF("write addr %04x val %x\n", addr, val);
-    if (addr < s->size)
+    NVR_DPRINTF("write addr %04" PRIx32 " val %" PRIx8 "\n", addr, val);
+    if (addr < s->size) {
         s->data[addr] = val;
+    }
 }
 
 /* macio style NVRAM device */
-static void macio_nvram_writeb (void *opaque,
-                                target_phys_addr_t addr, uint32_t value)
+static void macio_nvram_writeb(void *opaque, hwaddr addr,
+                               uint64_t value, unsigned size)
 {
     MacIONVRAMState *s = opaque;
 
     addr = (addr >> s->it_shift) & (s->size - 1);
     s->data[addr] = value;
-    NVR_DPRINTF("writeb addr %04x val %x\n", (int)addr, value);
+    NVR_DPRINTF("writeb addr %04" PHYS_PRIx " val %" PRIx64 "\n", addr, value);
 }
 
-static uint32_t macio_nvram_readb (void *opaque, target_phys_addr_t addr)
+static uint64_t macio_nvram_readb(void *opaque, hwaddr addr,
+                                  unsigned size)
 {
     MacIONVRAMState *s = opaque;
     uint32_t value;
@@ -93,16 +86,10 @@ static uint32_t macio_nvram_readb (void *opaque, target_phys_addr_t addr)
     return value;
 }
 
-static CPUWriteMemoryFunc * const nvram_write[] = {
-    &macio_nvram_writeb,
-    &macio_nvram_writeb,
-    &macio_nvram_writeb,
-};
-
-static CPUReadMemoryFunc * const nvram_read[] = {
-    &macio_nvram_readb,
-    &macio_nvram_readb,
-    &macio_nvram_readb,
+static const MemoryRegionOps macio_nvram_ops = {
+    .read = macio_nvram_readb,
+    .write = macio_nvram_writeb,
+    .endianness = DEVICE_BIG_ENDIAN,
 };
 
 static const VMStateDescription vmstate_macio_nvram = {
@@ -117,36 +104,56 @@ static const VMStateDescription vmstate_macio_nvram = {
 };
 
 
-static void macio_nvram_reset(void *opaque)
+static void macio_nvram_reset(DeviceState *dev)
 {
 }
 
-MacIONVRAMState *macio_nvram_init (int *mem_index, target_phys_addr_t size,
-                                   unsigned int it_shift)
+static void macio_nvram_realizefn(DeviceState *dev, Error **errp)
 {
-    MacIONVRAMState *s;
+    SysBusDevice *d = SYS_BUS_DEVICE(dev);
+    MacIONVRAMState *s = MACIO_NVRAM(dev);
 
-    s = qemu_mallocz(sizeof(MacIONVRAMState));
-    s->data = qemu_mallocz(size);
-    s->size = size;
-    s->it_shift = it_shift;
+    s->data = g_malloc0(s->size);
 
-    s->mem_index = cpu_register_io_memory(nvram_read, nvram_write, s,
-                                          DEVICE_NATIVE_ENDIAN);
-    *mem_index = s->mem_index;
-    vmstate_register(NULL, -1, &vmstate_macio_nvram, s);
-    qemu_register_reset(macio_nvram_reset, s);
-
-    return s;
+    memory_region_init_io(&s->mem, &macio_nvram_ops, s, "macio-nvram",
+                          s->size << s->it_shift);
+    sysbus_init_mmio(d, &s->mem);
 }
 
-void macio_nvram_map (void *opaque, target_phys_addr_t mem_base)
+static void macio_nvram_unrealizefn(DeviceState *dev, Error **errp)
 {
-    MacIONVRAMState *s;
+    MacIONVRAMState *s = MACIO_NVRAM(dev);
 
-    s = opaque;
-    cpu_register_physical_memory(mem_base, s->size << s->it_shift,
-                                 s->mem_index);
+    g_free(s->data);
+}
+
+static Property macio_nvram_properties[] = {
+    DEFINE_PROP_UINT32("size", MacIONVRAMState, size, 0),
+    DEFINE_PROP_UINT32("it_shift", MacIONVRAMState, it_shift, 0),
+    DEFINE_PROP_END_OF_LIST()
+};
+
+static void macio_nvram_class_init(ObjectClass *oc, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(oc);
+
+    dc->realize = macio_nvram_realizefn;
+    dc->unrealize = macio_nvram_unrealizefn;
+    dc->reset = macio_nvram_reset;
+    dc->vmsd = &vmstate_macio_nvram;
+    dc->props = macio_nvram_properties;
+}
+
+static const TypeInfo macio_nvram_type_info = {
+    .name = TYPE_MACIO_NVRAM,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(MacIONVRAMState),
+    .class_init = macio_nvram_class_init,
+};
+
+static void macio_nvram_register_types(void)
+{
+    type_register_static(&macio_nvram_type_info);
 }
 
 /* Set up a system OpenBIOS NVRAM partition */
@@ -185,3 +192,5 @@ void pmac_format_nvram_partition (MacIONVRAMState *nvr, int len)
     end = len;
     OpenBIOS_finish_partition(part_header, end - start);
 }
+
+type_init(macio_nvram_register_types)

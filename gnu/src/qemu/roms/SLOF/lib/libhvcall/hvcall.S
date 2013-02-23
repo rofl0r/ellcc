@@ -12,14 +12,15 @@ ENTRY(hv_generic)
 	HVCALL
 	blr
 
+/* r3 = char, r4 = hvtermno */
 ENTRY(hv_putchar)
 	sldi	r6,r3,(24+32)
 	li	r3,H_PUT_TERM_CHAR
-	li	r4,0
 	li	r5,1
 	HVCALL
 	blr
 
+/* r3 = hvtermno */
 ENTRY(hv_getchar)
 	mflr	r10
 	bl	.hv_haschar
@@ -34,7 +35,9 @@ ENTRY(hv_getchar)
 	stw	r4,20(r9)
 	blr
 
+/* r3 = hvtermno */
 ENTRY(hv_haschar)
+	mr	r4,r3
 	li	r3,-1
 	lis	r9,inbuf@h
 	ori	r9,r9,inbuf@l
@@ -43,7 +46,6 @@ ENTRY(hv_haschar)
 	cmplw	cr0,r5,r6
 	bnelr
 	li	r3,H_GET_TERM_CHAR
-	li	r4,0
 	HVCALL
 	lis	r9,inbuf@h
 	ori	r9,r9,inbuf@l
@@ -78,9 +80,38 @@ ENTRY(hv_send_logical_lan)
 	HVCALL
 	blr
 
+ENTRY(hv_logical_ci_load)
+	mr	r5,r4
+	mr	r4,r3
+	li	r3,H_LOGICAL_CI_LOAD
+	HVCALL
+	cmpdi	cr0,r3,0
+	mr	r3,r4
+	beqlr
+	li	r3,-1
+	blr
+
+ENTRY(hv_logical_ci_store)
+	mr	r6,r5
+	mr	r5,r4
+	mr	r4,r3
+	li	r3,H_LOGICAL_CI_STORE
+	HVCALL
+	blr
+
+ENTRY(hv_logical_memop)
+	mr	r8,r7
+	mr	r7,r6
+	mr	r6,r5
+	mr	r5,r4
+	mr	r4,r3
+	lis	r3,KVMPPC_H_LOGICAL_MEMOP@h
+	ori	r3,r3,KVMPPC_H_LOGICAL_MEMOP@l
+	HVCALL
+	blr
+
 	.section ".bss"
- inbuf:	.space	16
+inbuf:	.space	16
 inlen:	.space	4
 inpos:	.space	4
 	.text
-	

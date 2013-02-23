@@ -6,10 +6,10 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "pci.h" // struct pir_header
+#include "config.h" // CONFIG_*
 #include "util.h" // checksum
-#include "biosvar.h" // SET_EBDA
 
-u16 PirOffset VAR16VISIBLE;
+struct pir_header *PirAddr VAR16VISIBLE;
 
 struct pir_table {
     struct pir_header pir;
@@ -101,5 +101,5 @@ create_pirtable(void)
 
     PIR_TABLE.pir.signature = PIR_SIGNATURE;
     PIR_TABLE.pir.checksum -= checksum(&PIR_TABLE, sizeof(PIR_TABLE));
-    PirOffset = (u32)&PIR_TABLE.pir - BUILD_BIOS_ADDR;
+    PirAddr = &PIR_TABLE.pir;
 }

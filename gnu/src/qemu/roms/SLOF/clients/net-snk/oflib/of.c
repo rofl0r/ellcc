@@ -10,13 +10,13 @@
  *     IBM Corporation - initial implementation
  *****************************************************************************/
 
-
+#include <stdint.h>
 #include <of.h>
 #include <rtas.h>
 #include <string.h>
 #include <netdriver_int.h>
 #include <fileio.h>
-#include <types.h>
+#include <libbootmsg.h>
 
 extern void call_client_interface(of_arg_t *);
 
@@ -26,6 +26,9 @@ static int ofmod_open(snk_fileio_t*, const char* name, int flags);
 static int ofmod_read(char *buffer, int len);
 static int ofmod_write(char *buffer, int len);
 static int ofmod_ioctl(int request, void *data);
+
+int glue_init(snk_kernel_t *, unsigned int *, size_t, size_t);
+void glue_release(void);
 
 snk_module_t of_module = {
 	.version = 1,
@@ -45,7 +48,7 @@ static int claim_rc = 0;
 static void* client_start;
 static size_t client_size;
 
-extern inline int
+static inline int
 of_0_1(const char *serv)
 {
 	of_arg_t arg = {
@@ -59,7 +62,7 @@ of_0_1(const char *serv)
 	return arg.args[0];
 }
 
-extern inline void
+static inline void
 of_1_0(const char *serv, int arg0)
 {
 	of_arg_t arg = {
@@ -71,7 +74,7 @@ of_1_0(const char *serv, int arg0)
 	call_client_interface(&arg);
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_1_1(const char *serv, int arg0)
 {
 	of_arg_t arg = {
@@ -84,7 +87,7 @@ of_1_1(const char *serv, int arg0)
 	return arg.args[1];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_1_2(const char *serv, int arg0, int *ret0)
 {
         of_arg_t arg = {
@@ -98,7 +101,7 @@ of_1_2(const char *serv, int arg0, int *ret0)
         return arg.args[1];
 }
 
-extern inline void
+static inline void
 of_2_0(const char *serv, int arg0, int arg1)
 {
 	of_arg_t arg = {
@@ -110,7 +113,7 @@ of_2_0(const char *serv, int arg0, int arg1)
 	call_client_interface(&arg);
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_2_1(const char *serv, int arg0, int arg1)
 {
 	of_arg_t arg = {
@@ -123,7 +126,7 @@ of_2_1(const char *serv, int arg0, int arg1)
 	return arg.args[2];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_2_2(const char *serv, int arg0, int arg1, int *ret0)
 {
 	of_arg_t arg = {
@@ -137,7 +140,7 @@ of_2_2(const char *serv, int arg0, int arg1, int *ret0)
 	return arg.args[2];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_2_3(const char *serv, int arg0, int arg1, int *ret0, int *ret1)
 {
 	of_arg_t arg = {
@@ -152,7 +155,7 @@ of_2_3(const char *serv, int arg0, int arg1, int *ret0, int *ret1)
 	return arg.args[2];
 }
 
-extern inline void
+static inline void
 of_3_0(const char *serv, int arg0, int arg1, int arg2)
 {
 	of_arg_t arg = {
@@ -165,7 +168,7 @@ of_3_0(const char *serv, int arg0, int arg1, int arg2)
 	return;
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_3_1(const char *serv, int arg0, int arg1, int arg2)
 {
 	of_arg_t arg = {
@@ -178,7 +181,7 @@ of_3_1(const char *serv, int arg0, int arg1, int arg2)
 	return arg.args[3];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_3_2(const char *serv, int arg0, int arg1, int arg2, int *ret0)
 {
 	of_arg_t arg = {
@@ -192,7 +195,7 @@ of_3_2(const char *serv, int arg0, int arg1, int arg2, int *ret0)
 	return arg.args[3];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_3_3(const char *serv, int arg0, int arg1, int arg2, int *ret0, int *ret1)
 {
 	of_arg_t arg = {
@@ -207,7 +210,7 @@ of_3_3(const char *serv, int arg0, int arg1, int arg2, int *ret0, int *ret1)
 	return arg.args[3];
 }
 
-extern inline unsigned int
+static inline unsigned int
 of_4_1(const char *serv, int arg0, int arg1, int arg2, int arg3)
 {
 	of_arg_t arg = {
@@ -218,6 +221,12 @@ of_4_1(const char *serv, int arg0, int arg1, int arg2, int arg3)
 
 	call_client_interface(&arg);
 	return arg.args[4];
+}
+
+int
+of_test(const char *name)
+{
+	return (int) of_1_1("test", p32cast name);
 }
 
 int
@@ -373,6 +382,7 @@ bootmsg_error(short id, const char *str)
 	(void) of_2_0("bootmsg-error", id, p32cast str);
 }
 
+/*
 void
 bootmsg_debugcp(short id, const char *str, short lvl)
 {
@@ -384,7 +394,7 @@ bootmsg_cp(short id)
 {
 	(void) of_1_0("bootmsg-cp", id);
 }
-
+*/
 
 static long
 of_fileio_read(snk_fileio_t *fileio, char *buf, long len)
@@ -411,6 +421,34 @@ of_fileio_close(snk_fileio_t *fileio)
 	fileio->type = FILEIO_TYPE_EMPTY;
 	of_close( * (ihandle_t*) fileio->data );
 	return 0;
+}
+
+static long
+dma_map_in(void *address, long size, int cachable)
+{
+	unsigned int ret;
+
+	/* Is dma-map-in available? */
+	if (of_test("dma-map-in") != 0) {
+		/* No dma-map-in available ==> Assume we can use 1:1 addresses */
+		return (long)address;
+	}
+
+	ret = of_3_1("dma-map-in", p32cast address, (int)size, cachable);
+
+	return ret;
+}
+
+static void
+dma_map_out(void *address, long devaddr, long size)
+{
+	/* Is dma-map-out available? */
+	if (of_test("dma-map-out") != 0) {
+		/* No dma-map-out available */
+		return;
+	}
+
+	of_3_0("dma-map-out", p32cast address, (int)devaddr, (int)size);
 }
 
 
@@ -672,28 +710,30 @@ get_puid(phandle_t node)
 {
 	uint64_t puid = 0;
 	uint64_t tmp = 0;
-	phandle_t curr_node = of_parent(node);
-	if (!curr_node)
-		/* no parent found */
-		return 0;
-	for (;;) {
+	phandle_t curr_node, last_node;
+
+	curr_node = last_node = of_parent(node);
+
+	while (curr_node) {
 		puid = tmp;
 		if (of_getprop(curr_node, "reg", &tmp, 8) < 8) {
 			/* if the found PHB is not directly under
 			 * root we need to translate the found address */
-			translate_address_dev(&puid, node);
+			translate_address_dev(&puid, last_node);
 			return puid;
 		}
+		last_node = curr_node;
 		curr_node = of_parent(curr_node);
-		if (!curr_node)
-			return 0;
 	}
+
 	return 0;
 }
 
 static int set_vio_config(vio_config_t * vio_config, phandle_t net)
 {
-	of_getprop(net, "reg", &vio_config->reg, 4);
+	vio_config->config_type = CONFIG_TYPE_VIO;
+	vio_config->reg_len = of_getprop(net, "reg", vio_config->reg,
+					 sizeof(vio_config->reg));
 	of_getprop(net, "compatible", &vio_config->compat, 64);
 
 	return 0;
@@ -705,6 +745,8 @@ static int set_pci_config(pci_config_t * pci_config, phandle_t net)
 	unsigned char buf[400];
 	int len, bar_nr;
 	unsigned int *assigned_ptr;
+
+	pci_config->config_type = CONFIG_TYPE_PCI;
 
 	of_getprop(net, "vendor-id", &pci_config->vendor_id, 4);
 	of_getprop(net, "device-id", &pci_config->device_id, 4);
@@ -746,20 +788,36 @@ static int set_config(snk_kernel_t * snk_kernel_interface)
 
 	parent = of_parent(net);
 	of_getprop(parent, "compatible", compat, 64);
-	if (!strcmp(compat, "IBM,vdevice"))
+
+	if (strcmp(compat, "IBM,vdevice") == 0
+	    || strncmp(compat, "ibm,virtio", 10) == 0)
 		return set_vio_config(&snk_kernel_interface->vio_conf, net);
+
 	return set_pci_config(&snk_kernel_interface->pci_conf, net);
 }
 
 void
 get_mac(char *mac)
 {
-	phandle_t net = get_boot_device();
+	uint8_t localmac[8];
+	int len;
 
+	phandle_t net = get_boot_device();
 	if (net == -1)
 		return;
 
-	of_getprop(net, "local-mac-address", mac, 6);
+	len = of_getprop(net, "local-mac-address", localmac, 8);
+	if (len <= 0)
+		return;
+
+	if (len == 8) {
+		/* Some bad FDT nodes like veth use a 8-byte wide
+		 * property instead of 6-byte wide MACs... :-( */
+		memcpy(mac, &localmac[2], 6);
+	}
+	else {
+		memcpy(mac, localmac, 6);
+	}
 }
 
 static void
@@ -778,6 +836,7 @@ get_timebase(unsigned int *timebase)
 
 	of_getprop(cpu, "timebase-frequency", timebase, 4);
 }
+
 
 int
 glue_init(snk_kernel_t * snk_kernel_interface, unsigned int * timebase,
@@ -822,6 +881,9 @@ glue_init(snk_kernel_t * snk_kernel_interface, unsigned int * timebase,
 	snk_kernel_interface->translate_addr = translate_address;
 	snk_kernel_interface->pci_config_read = rtas_pci_config_read;
 	snk_kernel_interface->pci_config_write = rtas_pci_config_write;
+	snk_kernel_interface->dma_map_in = dma_map_in;
+	snk_kernel_interface->dma_map_out = dma_map_out;
+
 	claim_rc=(int)(long)of_claim(client_start, client_size, 0);
 
 	return 0;

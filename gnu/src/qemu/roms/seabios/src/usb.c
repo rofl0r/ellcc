@@ -15,6 +15,7 @@
 #include "usb-hid.h" // usb_keyboard_setup
 #include "usb-hub.h" // usb_hub_init
 #include "usb-msc.h" // usb_msc_init
+#include "usb-uas.h" // usb_uas_init
 #include "usb.h" // struct usb_s
 #include "biosvar.h" // GET_GLOBAL
 
@@ -23,37 +24,19 @@
  * Controller function wrappers
  ****************************************************************/
 
-// Free an allocated control or bulk pipe.
-void
-free_pipe(struct usb_pipe *pipe)
+// Allocate an async pipe (control or bulk).
+struct usb_pipe *
+usb_alloc_pipe(struct usbdevice_s *usbdev
+               , struct usb_endpoint_descriptor *epdesc)
 {
-    ASSERT32FLAT();
-    if (!pipe)
-        return;
-    switch (pipe->type) {
+    switch (usbdev->hub->cntl->type) {
     default:
     case USB_TYPE_UHCI:
-        return uhci_free_pipe(pipe);
+        return uhci_alloc_pipe(usbdev, epdesc);
     case USB_TYPE_OHCI:
-        return ohci_free_pipe(pipe);
+        return ohci_alloc_pipe(usbdev, epdesc);
     case USB_TYPE_EHCI:
-        return ehci_free_pipe(pipe);
-    }
-}
-
-// Allocate a control pipe to a default endpoint (which can only be
-// used by 32bit code)
-static struct usb_pipe *
-alloc_default_control_pipe(struct usb_pipe *dummy)
-{
-    switch (dummy->type) {
-    default:
-    case USB_TYPE_UHCI:
-        return uhci_alloc_control_pipe(dummy);
-    case USB_TYPE_OHCI:
-        return ohci_alloc_control_pipe(dummy);
-    case USB_TYPE_EHCI:
-        return ehci_alloc_control_pipe(dummy);
+        return ehci_alloc_pipe(usbdev, epdesc);
     }
 }
 
@@ -74,36 +57,10 @@ send_control(struct usb_pipe *pipe, int dir, const void *cmd, int cmdsize
     }
 }
 
-// Fill "pipe" endpoint info from an endpoint descriptor.
-static void
-desc2pipe(struct usb_pipe *newpipe, struct usb_pipe *origpipe
-          , struct usb_endpoint_descriptor *epdesc)
-{
-    memcpy(newpipe, origpipe, sizeof(*newpipe));
-    newpipe->ep = epdesc->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK;
-    newpipe->maxpacket = epdesc->wMaxPacketSize;
-}
-
-struct usb_pipe *
-alloc_bulk_pipe(struct usb_pipe *pipe, struct usb_endpoint_descriptor *epdesc)
-{
-    struct usb_pipe dummy;
-    desc2pipe(&dummy, pipe, epdesc);
-    switch (pipe->type) {
-    default:
-    case USB_TYPE_UHCI:
-        return uhci_alloc_bulk_pipe(&dummy);
-    case USB_TYPE_OHCI:
-        return ohci_alloc_bulk_pipe(&dummy);
-    case USB_TYPE_EHCI:
-        return ehci_alloc_bulk_pipe(&dummy);
-    }
-}
-
 int
 usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
 {
-    switch (GET_FLATPTR(pipe_fl->type)) {
+    switch (GET_LOWFLAT(pipe_fl->type)) {
     default:
     case USB_TYPE_UHCI:
         return uhci_send_bulk(pipe_fl, dir, data, datasize);
@@ -114,33 +71,10 @@ usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
     }
 }
 
-struct usb_pipe *
-alloc_intr_pipe(struct usb_pipe *pipe, struct usb_endpoint_descriptor *epdesc)
-{
-    struct usb_pipe dummy;
-    desc2pipe(&dummy, pipe, epdesc);
-    // Find the exponential period of the requested time.
-    int period = epdesc->bInterval;
-    int frameexp;
-    if (pipe->speed != USB_HIGHSPEED)
-        frameexp = (period <= 0) ? 0 : __fls(period);
-    else
-        frameexp = (period <= 4) ? 0 : period - 4;
-    switch (pipe->type) {
-    default:
-    case USB_TYPE_UHCI:
-        return uhci_alloc_intr_pipe(&dummy, frameexp);
-    case USB_TYPE_OHCI:
-        return ohci_alloc_intr_pipe(&dummy, frameexp);
-    case USB_TYPE_EHCI:
-        return ehci_alloc_intr_pipe(&dummy, frameexp);
-    }
-}
-
-int noinline
+int
 usb_poll_intr(struct usb_pipe *pipe_fl, void *data)
 {
-    switch (GET_FLATPTR(pipe_fl->type)) {
+    switch (GET_LOWFLAT(pipe_fl->type)) {
     default:
     case USB_TYPE_UHCI:
         return uhci_poll_intr(pipe_fl, data);
@@ -156,14 +90,77 @@ usb_poll_intr(struct usb_pipe *pipe_fl, void *data)
  * Helper functions
  ****************************************************************/
 
+// Send a message to the default control pipe of a device.
+int
+send_default_control(struct usb_pipe *pipe, const struct usb_ctrlrequest *req
+                     , void *data)
+{
+    return send_control(pipe, req->bRequestType & USB_DIR_IN
+                        , req, sizeof(*req), data, req->wLength);
+}
+
+// Free an allocated control or bulk pipe.
+void
+free_pipe(struct usb_pipe *pipe)
+{
+    ASSERT32FLAT();
+    if (!pipe)
+        return;
+    // Add to controller's free list.
+    struct usb_s *cntl = pipe->cntl;
+    pipe->freenext = cntl->freelist;
+    cntl->freelist = pipe;
+}
+
+// Check for an available pipe on the freelist.
+struct usb_pipe *
+usb_getFreePipe(struct usb_s *cntl, u8 eptype)
+{
+    struct usb_pipe **pfree = &cntl->freelist;
+    for (;;) {
+        struct usb_pipe *pipe = *pfree;
+        if (!pipe)
+            return NULL;
+        if (pipe->eptype == eptype) {
+            *pfree = pipe->freenext;
+            return pipe;
+        }
+        pfree = &pipe->freenext;
+    }
+}
+
+// Fill "pipe" endpoint info from an endpoint descriptor.
+void
+usb_desc2pipe(struct usb_pipe *pipe, struct usbdevice_s *usbdev
+              , struct usb_endpoint_descriptor *epdesc)
+{
+    pipe->cntl = usbdev->hub->cntl;
+    pipe->type = usbdev->hub->cntl->type;
+    pipe->ep = epdesc->bEndpointAddress & USB_ENDPOINT_NUMBER_MASK;
+    pipe->devaddr = usbdev->devaddr;
+    pipe->speed = usbdev->speed;
+    pipe->maxpacket = epdesc->wMaxPacketSize;
+    pipe->eptype = epdesc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK;
+}
+
+// Find the exponential period of the requested interrupt end point.
+int
+usb_getFrameExp(struct usbdevice_s *usbdev
+                , struct usb_endpoint_descriptor *epdesc)
+{
+    int period = epdesc->bInterval;
+    if (usbdev->speed != USB_HIGHSPEED)
+        return (period <= 0) ? 0 : __fls(period);
+    return (period <= 4) ? 0 : period - 4;
+}
+
 // Find the first endpoing of a given type in an interface description.
 struct usb_endpoint_descriptor *
-findEndPointDesc(struct usb_interface_descriptor *iface, int imax
-                 , int type, int dir)
+findEndPointDesc(struct usbdevice_s *usbdev, int type, int dir)
 {
-    struct usb_endpoint_descriptor *epdesc = (void*)&iface[1];
+    struct usb_endpoint_descriptor *epdesc = (void*)&usbdev->iface[1];
     for (;;) {
-        if ((void*)epdesc >= (void*)iface + imax
+        if ((void*)epdesc >= (void*)usbdev->iface + usbdev->imax
             || epdesc->bDescriptorType == USB_DT_INTERFACE) {
             return NULL;
         }
@@ -173,15 +170,6 @@ findEndPointDesc(struct usb_interface_descriptor *iface, int imax
             return epdesc;
         epdesc = (void*)epdesc + epdesc->bLength;
     }
-}
-
-// Send a message to the default control pipe of a device.
-int
-send_default_control(struct usb_pipe *pipe, const struct usb_ctrlrequest *req
-                     , void *data)
-{
-    return send_control(pipe, req->bRequestType & USB_DIR_IN
-                        , req, sizeof(*req), data, req->wLength);
 }
 
 // Get the first 8 bytes of the device descriptor.
@@ -242,76 +230,59 @@ set_configuration(struct usb_pipe *pipe, u16 val)
 
 // Assign an address to a device in the default state on the given
 // controller.
-static struct usb_pipe *
-usb_set_address(struct usbhub_s *hub, int port, int speed)
+static int
+usb_set_address(struct usbdevice_s *usbdev)
 {
     ASSERT32FLAT();
-    struct usb_s *cntl = hub->cntl;
+    struct usb_s *cntl = usbdev->hub->cntl;
     dprintf(3, "set_address %p\n", cntl);
     if (cntl->maxaddr >= USB_MAXADDR)
-        return NULL;
+        return -1;
 
-    struct usb_pipe *defpipe = cntl->defaultpipe;
-    if (!defpipe) {
-        // Create a pipe for the default address.
-        struct usb_pipe dummy;
-        memset(&dummy, 0, sizeof(dummy));
-        dummy.cntl = cntl;
-        dummy.type = cntl->type;
-        dummy.maxpacket = 8;
-        dummy.path = (u64)-1;
-        cntl->defaultpipe = defpipe = alloc_default_control_pipe(&dummy);
-        if (!defpipe)
-            return NULL;
-    }
-    defpipe->speed = speed;
-    if (hub->pipe) {
-        if (hub->pipe->speed == USB_HIGHSPEED) {
-            defpipe->tt_devaddr = hub->pipe->devaddr;
-            defpipe->tt_port = port;
-        } else {
-            defpipe->tt_devaddr = hub->pipe->tt_devaddr;
-            defpipe->tt_port = hub->pipe->tt_port;
-        }
-    } else {
-        defpipe->tt_devaddr = defpipe->tt_port = 0;
-    }
+    // Create a pipe for the default address.
+    struct usb_endpoint_descriptor epdesc = {
+        .wMaxPacketSize = 8,
+        .bmAttributes = USB_ENDPOINT_XFER_CONTROL,
+    };
+    usbdev->defpipe = usb_alloc_pipe(usbdev, &epdesc);
+    if (!usbdev->defpipe)
+        return -1;
 
     msleep(USB_TIME_RSTRCY);
 
+    // Send set_address command.
     struct usb_ctrlrequest req;
     req.bRequestType = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
     req.bRequest = USB_REQ_SET_ADDRESS;
     req.wValue = cntl->maxaddr + 1;
     req.wIndex = 0;
     req.wLength = 0;
-    int ret = send_default_control(defpipe, &req, NULL);
+    int ret = send_default_control(usbdev->defpipe, &req, NULL);
+    free_pipe(usbdev->defpipe);
     if (ret)
-        return NULL;
+        return -1;
 
     msleep(USB_TIME_SETADDR_RECOVERY);
 
     cntl->maxaddr++;
-    defpipe->devaddr = cntl->maxaddr;
-    struct usb_pipe *pipe = alloc_default_control_pipe(defpipe);
-    defpipe->devaddr = 0;
-    if (hub->pipe)
-        pipe->path = hub->pipe->path;
-    pipe->path = (pipe->path << 8) | port;
-    return pipe;
+    usbdev->devaddr = cntl->maxaddr;
+    usbdev->defpipe = usb_alloc_pipe(usbdev, &epdesc);
+    if (!usbdev->defpipe)
+        return -1;
+    return 0;
 }
 
 // Called for every found device - see if a driver is available for
 // this device and do setup if so.
 static int
-configure_usb_device(struct usb_pipe *pipe)
+configure_usb_device(struct usbdevice_s *usbdev)
 {
     ASSERT32FLAT();
-    dprintf(3, "config_usb: %p\n", pipe);
+    dprintf(3, "config_usb: %p\n", usbdev->defpipe);
 
     // Set the max packet size for endpoint 0 of this device.
     struct usb_device_descriptor dinfo;
-    int ret = get_device_info8(pipe, &dinfo);
+    int ret = get_device_info8(usbdev->defpipe, &dinfo);
     if (ret)
         return 0;
     dprintf(3, "device rev=%04x cls=%02x sub=%02x proto=%02x size=%02x\n"
@@ -319,10 +290,17 @@ configure_usb_device(struct usb_pipe *pipe)
             , dinfo.bDeviceProtocol, dinfo.bMaxPacketSize0);
     if (dinfo.bMaxPacketSize0 < 8 || dinfo.bMaxPacketSize0 > 64)
         return 0;
-    pipe->maxpacket = dinfo.bMaxPacketSize0;
+    free_pipe(usbdev->defpipe);
+    struct usb_endpoint_descriptor epdesc = {
+        .wMaxPacketSize = dinfo.bMaxPacketSize0,
+        .bmAttributes = USB_ENDPOINT_XFER_CONTROL,
+    };
+    usbdev->defpipe = usb_alloc_pipe(usbdev, &epdesc);
+    if (!usbdev->defpipe)
+        return -1;
 
     // Get configuration
-    struct usb_config_descriptor *config = get_device_config(pipe);
+    struct usb_config_descriptor *config = get_device_config(usbdev->defpipe);
     if (!config)
         return 0;
 
@@ -336,18 +314,23 @@ configure_usb_device(struct usb_pipe *pipe)
         goto fail;
 
     // Set the configuration.
-    ret = set_configuration(pipe, config->bConfigurationValue);
+    ret = set_configuration(usbdev->defpipe, config->bConfigurationValue);
     if (ret)
         goto fail;
 
     // Configure driver.
-    int imax = (void*)config + config->wTotalLength - (void*)iface;
+    usbdev->config = config;
+    usbdev->iface = iface;
+    usbdev->imax = (void*)config + config->wTotalLength - (void*)iface;
     if (iface->bInterfaceClass == USB_CLASS_HUB)
-        ret = usb_hub_init(pipe);
-    else if (iface->bInterfaceClass == USB_CLASS_MASS_STORAGE)
-        ret = usb_msc_init(pipe, iface, imax);
-    else
-        ret = usb_hid_init(pipe, iface, imax);
+        ret = usb_hub_init(usbdev);
+    else if (iface->bInterfaceClass == USB_CLASS_MASS_STORAGE) {
+        if (iface->bInterfaceProtocol == US_PR_BULK)
+            ret = usb_msc_init(usbdev);
+        if (iface->bInterfaceProtocol == US_PR_UAS)
+            ret = usb_uas_init(usbdev);
+    } else
+        ret = usb_hid_init(usbdev);
     if (ret)
         goto fail;
 
@@ -361,8 +344,9 @@ fail:
 static void
 usb_init_hub_port(void *data)
 {
-    struct usbhub_s *hub = data;
-    u32 port = hub->port; // XXX - find better way to pass port
+    struct usbdevice_s *usbdev = data;
+    struct usbhub_s *hub = usbdev->hub;
+    u32 port = usbdev->port;
 
     // Detect if device present (and possibly start reset)
     int ret = hub->op->detect(hub, port);
@@ -376,23 +360,25 @@ usb_init_hub_port(void *data)
     if (ret < 0)
         // Reset failed
         goto resetfail;
+    usbdev->speed = ret;
 
     // Set address of port
-    struct usb_pipe *pipe = usb_set_address(hub, port, ret);
-    if (!pipe) {
+    ret = usb_set_address(usbdev);
+    if (ret) {
         hub->op->disconnect(hub, port);
         goto resetfail;
     }
     mutex_unlock(&hub->cntl->resetlock);
 
     // Configure the device
-    int count = configure_usb_device(pipe);
-    free_pipe(pipe);
+    int count = configure_usb_device(usbdev);
+    free_pipe(usbdev->defpipe);
     if (!count)
         hub->op->disconnect(hub, port);
     hub->devcount += count;
 done:
     hub->threads--;
+    free(usbdev);
     return;
 
 resetfail:
@@ -409,8 +395,15 @@ usb_enumerate(struct usbhub_s *hub)
     // Launch a thread for every port.
     int i;
     for (i=0; i<portcount; i++) {
-        hub->port = i;
-        run_thread(usb_init_hub_port, hub);
+        struct usbdevice_s *usbdev = malloc_tmphigh(sizeof(*usbdev));
+        if (!usbdev) {
+            warn_noalloc();
+            continue;
+        }
+        memset(usbdev, 0, sizeof(*usbdev));
+        usbdev->hub = hub;
+        usbdev->port = i;
+        run_thread(usb_init_hub_port, usbdev);
     }
 
     // Wait for threads to complete.
@@ -428,46 +421,41 @@ usb_setup(void)
     dprintf(3, "init usb\n");
 
     // Look for USB controllers
-    int ehcibdf = -1;
     int count = 0;
-    int bdf, max;
-    foreachpci(bdf, max) {
-        u32 code = pci_config_readl(bdf, PCI_CLASS_REVISION) >> 8;
-
-        if (code >> 8 != PCI_CLASS_SERIAL_USB)
+    struct pci_device *ehcipci = PCIDevices;
+    struct pci_device *pci;
+    foreachpci(pci) {
+        if (pci->class != PCI_CLASS_SERIAL_USB)
             continue;
 
-        if (bdf > ehcibdf) {
+        if (pci->bdf >= ehcipci->bdf) {
             // Check to see if this device has an ehci controller
-            ehcibdf = bdf;
-            u32 ehcicode = code;
             int found = 0;
+            ehcipci = pci;
             for (;;) {
-                if (ehcicode == PCI_CLASS_SERIAL_USB_EHCI) {
+                if (pci_classprog(ehcipci) == PCI_CLASS_SERIAL_USB_EHCI) {
                     // Found an ehci controller.
-                    int ret = ehci_init(ehcibdf, count++, bdf);
+                    int ret = ehci_init(ehcipci, count++, pci);
                     if (ret)
                         // Error
                         break;
                     count += found;
-                    bdf = ehcibdf;
-                    code = 0;
+                    pci = ehcipci;
                     break;
                 }
-                if (ehcicode >> 8 == PCI_CLASS_SERIAL_USB)
+                if (ehcipci->class == PCI_CLASS_SERIAL_USB)
                     found++;
-                ehcibdf = pci_next(ehcibdf+1, &max);
-                if (ehcibdf < 0
-                    || pci_bdf_to_busdev(ehcibdf) != pci_bdf_to_busdev(bdf))
+                ehcipci = ehcipci->next;
+                if (!ehcipci || (pci_bdf_to_busdev(ehcipci->bdf)
+                                 != pci_bdf_to_busdev(pci->bdf)))
                     // No ehci controller found.
                     break;
-                ehcicode = pci_config_readl(ehcibdf, PCI_CLASS_REVISION) >> 8;
             }
         }
 
-        if (code == PCI_CLASS_SERIAL_USB_UHCI)
-            uhci_init(bdf, count++);
-        else if (code == PCI_CLASS_SERIAL_USB_OHCI)
-            ohci_init(bdf, count++);
+        if (pci_classprog(pci) == PCI_CLASS_SERIAL_USB_UHCI)
+            uhci_init(pci, count++);
+        else if (pci_classprog(pci) == PCI_CLASS_SERIAL_USB_OHCI)
+            ohci_init(pci, count++);
     }
 }

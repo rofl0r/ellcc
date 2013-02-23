@@ -4,11 +4,28 @@ mainmenu "SeaBIOS Configuration"
 
 menu "General Features"
 
+choice
+    prompt "Build Target"
+    default QEMU
+
     config COREBOOT
         bool "Build for coreboot"
-        default n
         help
             Configure as a coreboot payload.
+
+    config QEMU
+        bool "Build for QEMU"
+        help
+            Configure as QEMU bios.
+
+endchoice
+
+    config XEN
+        depends on QEMU
+        bool "Build for Xen HVM"
+        default y
+        help
+            Configure to be used by xen hvmloader, for a HVM guest.
 
     config THREADS
         bool "Parallelize hardware init"
@@ -22,6 +39,11 @@ menu "General Features"
         help
             Allow hardware init to run in parallel with optionrom execution.
 
+            This can reduce boot time, but can cause some timing
+            variations during option ROM code execution.  It is not
+            known if all option ROMs will behave properly with this
+            option.
+
     config RELOCATE_INIT
         bool "Copy init code to high memory"
         default y
@@ -34,18 +56,19 @@ menu "General Features"
         default y
         help
             Support an interactive boot menu at end of post.
-    config BOOTMENU_WAIT
-        depends on BOOTMENU
-        int "Bootmenu delay"
-        default 2500
-        help
-            Amount of time (in ms) to wait at menu before selecting normal boot.
     config BOOTSPLASH
         depends on BOOTMENU
         bool "Graphical boot splash screen"
         default y
         help
             Support showing a graphical boot splash screen.
+    config BOOTORDER
+        depends on BOOT
+        bool "Boot ordering"
+        default y
+        help
+            Support controlling of the boot order via the fw_cfg/CBFS
+            "bootorder" file.
 
     config COREBOOT_FLASH
         depends on COREBOOT
@@ -91,15 +114,39 @@ menu "Hardware support"
     config AHCI
         depends on DRIVES
         bool "AHCI controllers"
-        default n
+        default y
         help
             Support for AHCI disk code.
     config VIRTIO_BLK
-        depends on DRIVES && !COREBOOT
-        bool "VirtIO controllers"
+        depends on DRIVES && QEMU
+        bool "virtio-blk controllers"
         default y
         help
-            Support boot from virtio storage.
+            Support boot from virtio-blk storage.
+    config VIRTIO_SCSI
+        depends on DRIVES && QEMU
+        bool "virtio-scsi controllers"
+        default y
+        help
+            Support boot from virtio-scsi storage.
+    config ESP_SCSI
+        depends on DRIVES && QEMU
+        bool "AMD PCscsi controllers"
+        default y
+        help
+            Support boot from AMD PCscsi storage.
+    config LSI_SCSI
+        depends on DRIVES && QEMU
+        bool "lsi53c895a scsi controllers"
+        default y
+        help
+            Support boot from qemu-emulated lsi53c895a scsi storage.
+    config MEGASAS
+        depends on DRIVES
+        bool "LSI MegaRAID SAS controllers"
+        default y
+        help
+            Support boot from LSI MegaRAID SAS scsi storage.
     config FLOPPY
         depends on DRIVES
         bool "Floppy controller"
@@ -142,7 +189,13 @@ menu "Hardware support"
         bool "USB drives"
         default y
         help
-            Support USB disks.
+            Support USB BOT (bulk-only transport) disks.
+    config USB_UAS
+        depends on USB && DRIVES
+        bool "UAS drives"
+        default y
+        help
+            Support USB UAS (usb attached scsi) disks.
     config USB_HUB
         depends on USB
         bool "USB hubs"
@@ -173,33 +226,24 @@ menu "Hardware support"
         help
             Support parallel ports. This also enables int 17 parallel port calls.
 
-    config EXTRA_PCI_ROOTS
-        bool "Extra root buses"
-        default n
-        help
-            If the target machine has multiple independent root buses,
-            the extra buses may be specified here.
-    config PCI_ROOT1
-        depends on EXTRA_PCI_ROOTS
-        hex "Extra primary PCI root bus number"
-        default 0x00
-    config PCI_ROOT2
-        depends on EXTRA_PCI_ROOTS
-        hex "Extra secondary PCI root bus number"
-        default 0x00
-
     config USE_SMM
-        depends on !COREBOOT
+        depends on QEMU
         bool "System Management Mode (SMM)"
         default y
         help
             Support System Management Mode (on emulators).
     config MTRR_INIT
-        depends on !COREBOOT
+        depends on QEMU
         bool "Initialize MTRRs"
         default y
         help
             Initialize the Memory Type Range Registers (on emulators).
+    config PMTIMER
+        depends on QEMU
+        bool "Use ACPI timer"
+        default y
+        help
+            Use the ACPI timer instead of the TSC for timekeeping (on qemu).
 endmenu
 
 menu "BIOS interfaces"
@@ -250,17 +294,6 @@ menu "BIOS interfaces"
             Select this if option ROMs are already copied to
             0xc0000-0xf0000.  This must only be selected when using
             Bochs or QEMU versions older than 0.12.
-    config OPTIONROMS_CHECKSUM
-        depends on OPTIONROMS
-        bool "Require correct checksum on option ROMs"
-        default y
-        help
-            Option ROMs are required to have correct checksums.
-            However, some option ROMs in the wild don't correctly
-            follow the specifications and have bad checksums.
-            Say N here to allow SeaBIOS to execute them anyways.
-
-            If unsure, say Y.
     config PMM
         depends on OPTIONROMS
         bool "PMM interface"
@@ -294,15 +327,8 @@ menu "BIOS interfaces"
         default y
         help
             Support S3 resume handler.
-    config S3_RESUME_VGA_INIT
-        depends on S3_RESUME
-        bool "Run VGA rom on S3 resume"
-        default n
-        help
-            Run the vga rom during S3 resume.
 
     config VGAHOOKS
-        depends on COREBOOT
         bool "Hardware specific VGA helpers"
         default y
         help
@@ -317,14 +343,13 @@ menu "BIOS interfaces"
 endmenu
 
 menu "BIOS Tables"
+    depends on QEMU
     config PIRTABLE
-        depends on !COREBOOT
         bool "PIR table"
         default y
         help
             Support generation of a PIR table in 0xf000 segment.
     config MPTABLE
-        depends on !COREBOOT
         bool "MPTable"
         default y
         help
@@ -336,12 +361,13 @@ menu "BIOS Tables"
             Support generation of SM BIOS tables.  This is also
             sometimes called DMI.
     config ACPI
-        depends on !COREBOOT
         bool "ACPI"
         default y
         help
             Support generation of ACPI tables.
 endmenu
+
+source ../vgasrc/Kconfig
 
 menu "Debugging"
     config DEBUG_LEVEL
@@ -359,12 +385,20 @@ menu "Debugging"
         default n
         help
             Send debugging information to serial port.
+    config DEBUG_SERIAL_PORT
+        depends on DEBUG_SERIAL
+        hex "Serial port base address"
+        default 0x3f8
+        help
+            Base port for serial - generally 0x3f8, 0x2f8, 0x3e8, or 0x2e8.
 
-    config SCREEN_AND_DEBUG
-        depends on DEBUG_LEVEL != 0
-        bool "Show screen writes on debug ports"
+    config DEBUG_IO
+        depends on QEMU && DEBUG_LEVEL != 0
+        bool "Special IO port debugging"
         default y
         help
-            Send characters that SeaBIOS writes to the screen to the
-            debug ports.
+            Some emulators or hypervisors provide with a way to output debug
+            information by outputing strings in a special port present in the
+            IO space.
+
 endmenu

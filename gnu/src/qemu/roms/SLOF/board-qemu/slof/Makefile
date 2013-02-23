@@ -20,12 +20,18 @@ include $(TOPCMNDIR)/make.rules
 all: Makefile.dep OF.ffs paflof $(SLOFCMNDIR)/xvect.bin
 
 CPPFLAGS = -I$(LIBCMNDIR)/libbootmsg -I$(LIBCMNDIR)/libhvcall \
-	 -I$(LIBCMNDIR)/libnvram
-SLOF_LIBS = $(LIBCMNDIR)/libbootmsg.a $(LIBCMNDIR)/libhvcall.a \
+	   -I$(LIBCMNDIR)/libvirtio -I$(LIBCMNDIR)/libnvram
+SLOF_LIBS = \
+	$(LIBCMNDIR)/libbootmsg.a \
+	$(LIBCMNDIR)/libelf.a \
+	$(LIBCMNDIR)/libhvcall.a \
+	$(LIBCMNDIR)/libvirtio.a \
 	$(LIBCMNDIR)/libnvram.a
 BOARD_SLOF_IN = \
 	$(LIBCMNDIR)/libhvcall/hvcall.in \
+	$(LIBCMNDIR)/libvirtio/virtio.in \
 	$(LIBCMNDIR)/libbootmsg/bootmsg.in \
+	$(LIBCMNDIR)/libelf/libelf.in \
 	$(LIBCMNDIR)/libnvram/libnvram.in \
 	$(LIBCMNDIR)/libbases/libbases.in
 BOARD_SLOF_CODE = $(BOARD_SLOF_IN:%.in=%.code)
@@ -34,16 +40,8 @@ include $(SLOFCMNDIR)/Makefile.inc
 
 FPPINCLUDES = -I. -I$(SLOFCMNDIR)/fs -I$(SLOFCMNDIR)
 
-# FCode Evaluator files for the ROM fs:
-FCODE_FFS_FILES = \
-	$(SLOFCMNDIR)/fs/fcode/core.fs \
-	$(SLOFCMNDIR)/fs/fcode/evaluator.fs \
-	$(SLOFCMNDIR)/fs/fcode/big.fs \
-	$(SLOFCMNDIR)/fs/fcode/tokens.fs \
-	$(SLOFCMNDIR)/fs/fcode/1275.fs
-
-
 USB_FFS_FILES = \
+	$(SLOFCMNDIR)/fs/devices/pci-class_02.fs \
 	$(SLOFCMNDIR)/fs/devices/pci-class_0c.fs \
 	$(SLOFCMNDIR)/fs/usb/usb-ohci.fs \
 	$(SLOFCMNDIR)/fs/usb/usb-support.fs \
@@ -58,10 +56,17 @@ USB_FFS_FILES = \
 	$(SLOFCMNDIR)/fs/scsi-support.fs
 
 VIO_FFS_FILES = \
+	$(SLOFBRDDIR)/pci-device_1af4_1000.fs \
+	$(SLOFBRDDIR)/pci-device_1af4_1001.fs \
+	$(SLOFBRDDIR)/pci-device_1af4_1009.fs \
 	$(SLOFBRDDIR)/vio-hvterm.fs \
 	$(SLOFBRDDIR)/vio-vscsi.fs \
 	$(SLOFBRDDIR)/vio-vscsi-device.fs \
-	$(SLOFBRDDIR)/vio-veth.fs
+	$(SLOFBRDDIR)/vio-veth.fs \
+	$(SLOFBRDDIR)/rtas-nvram.fs \
+	$(SLOFBRDDIR)/virtio-net.fs \
+	$(SLOFBRDDIR)/virtio-block.fs \
+	$(SLOFBRDDIR)/virtio-fs.fs
 
 # Files that should go into the ROM fs (and so have to be listed in OF.ffs):
 OF_FFS_FILES = \
@@ -75,10 +80,16 @@ OF_FFS_FILES = \
 	$(SLOFCMNDIR)/fs/update_flash.fs \
 	$(SLOFCMNDIR)/fs/xmodem.fs \
 	$(SLOFBRDDIR)/default-font.bin \
+	$(SLOFBRDDIR)/pci-phb.fs \
+	$(SLOFBRDDIR)/rtas.fs \
+	$(SLOFBRDDIR)/pci-device_1234_1111.fs \
+	$(SLOFBRDDIR)/pci-device_1013_00b8.fs \
 	$(FCODE_FFS_FILES)
 
 # Uncomment the following line to enable the USB code:
-OF_FFS_FILES += $(USB_FFS_FILES) $(VIO_FFS_FILES)
+OF_FFS_FILES += $(USB_FFS_FILES)
+
+OF_FFS_FILES += $(VIO_FFS_FILES)
 
 OF_FFS_FILES := $(OF_FFS_FILES:%.fs=%.fsi)
 

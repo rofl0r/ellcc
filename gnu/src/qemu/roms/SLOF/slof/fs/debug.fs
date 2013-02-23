@@ -10,28 +10,6 @@
 \ *     IBM Corporation - initial implementation
 \ ****************************************************************************/
 
-false constant <debug-dummy>
-
-12 34 2constant (2constant) ' (2constant) cell+ @
-\ fake device node
-here 0
-dup , dup , dup , dup , dup ,
-over 7 cells + ,
-dup , dup , dup , dup , dup ,
-dup , drop
-current-node ! \ FAKE!
-12 instance value (instancevalue) ' (instancevalue) cell+ @
-instance variable (instancevariable) ' (instancevariable) cell+ @
-instance defer (instancedefer) ' (instancedefer) cell+ @
-0 current-node !
-
-forget <debug-dummy>
-
-constant <instancedefer>
-constant <instancevariable>
-constant <instancevalue>
-constant <2constant>
-
 
 \ Get the name of Forth command whose execution token is xt
 
@@ -92,15 +70,19 @@ VARIABLE see-my-type-column
          \ blank causes overflow: just enforce new line with next call
          2drop see-my-type-column !
       ELSE
-         rot drop                      ( indent limit xt str len )
-         2 pick (u.) dup -rot cr type  ( indent limit xt str len xt-len )
-         " :" type 1+                  ( indent limit xt str len prefix-len )
-         5 pick dup spaces +           ( indent limit xt str len prefix-len )
-         over + see-my-type-column !   ( indent limit xt str len )
+         rot drop                     ( indent limit xt str len )
+         \ Need to copy string since we use (u.) again (kills internal buffer):
+         pocket swap 2dup >r >r       ( indent limit xt str pk len  R: len pk )
+         move r> r>                   ( indent limit xt pk len )
+         2 pick (u.) dup -rot
+         cr type                      ( indent limit xt pk len xt-len )
+         " :" type 1+                 ( indent limit xt pk len prefix-len )
+         5 pick dup spaces +          ( indent limit xt pk len prefix-len )
+         over + see-my-type-column !  ( indent limit xt pk len )
          type
-      THEN                          ( indent limit xt )
+      THEN                            ( indent limit xt )
    ELSE
-      see-my-type-column ! type     ( indent limit xt )
+      see-my-type-column ! type       ( indent limit xt )
    THEN
 ;
 
@@ -138,6 +120,8 @@ VARIABLE see-my-type-column
 	 <dotick>   OF cell+ dup @ xt>name (see-my-type)
                     "  " (see-my-type) ENDOF
 	 <doloop>   OF cell+ dup @ (u.) (see-my-type)
+                    "  " (see-my-type) ENDOF
+	 <do+loop>  OF cell+ dup @ (u.) (see-my-type)
                     "  " (see-my-type) ENDOF
 	 <doleave>  OF cell+ dup @ over + cell+ (u.)
                     (see-my-type) "  " (see-my-type) ENDOF
@@ -325,6 +309,7 @@ true value trace>up?
 	    <dotick>    OF drop forth-ip cell+ @ cell fip-add ENDOF
 	    <lit>       OF drop forth-ip cell+ @ cell fip-add ENDOF
 	    <doto>      OF drop forth-ip cell+ @ cell+ ! cell fip-add ENDOF
+	    <(doito)>   OF drop forth-ip cell+ @ cell+ cell+ @ >instance ! cell fip-add ENDOF
 	    <0branch>   OF drop IF
 		                    cell fip-add
 		                ELSE

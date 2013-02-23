@@ -4,6 +4,8 @@
  * This work is licensed under the terms of the GNU GPL, version 2.  See
  * the COPYING file in the top-level directory.
  *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
 #include "config.h"
@@ -11,13 +13,13 @@
 #include <sys/resource.h>
 
 #include "hw/xen_backend.h"
-#include "blockdev.h"
-#include "bitmap.h"
+#include "sysemu/blockdev.h"
+#include "qemu/bitmap.h"
 
 #include <xen/hvm/params.h>
 #include <sys/mman.h>
 
-#include "xen-mapcache.h"
+#include "sysemu/xen-mapcache.h"
 #include "trace.h"
 
 
@@ -40,22 +42,29 @@
 #endif
 #define MCACHE_BUCKET_SIZE (1UL << MCACHE_BUCKET_SHIFT)
 
+/* This is the size of the virtual address space reserve to QEMU that will not
+ * be use by MapCache.
+ * From empirical tests I observed that qemu use 75MB more than the
+ * max_mcache_size.
+ */
+#define NON_MCACHE_MEMORY_SIZE (80 * 1024 * 1024)
+
 #define mapcache_lock()   ((void)0)
 #define mapcache_unlock() ((void)0)
 
 typedef struct MapCacheEntry {
-    target_phys_addr_t paddr_index;
+    hwaddr paddr_index;
     uint8_t *vaddr_base;
     unsigned long *valid_mapping;
     uint8_t lock;
-    target_phys_addr_t size;
+    hwaddr size;
     struct MapCacheEntry *next;
 } MapCacheEntry;
 
 typedef struct MapCacheRev {
     uint8_t *vaddr_req;
-    target_phys_addr_t paddr_index;
-    target_phys_addr_t size;
+    hwaddr paddr_index;
+    hwaddr size;
     QTAILQ_ENTRY(MapCacheRev) next;
 } MapCacheRev;
 
@@ -65,10 +74,13 @@ typedef struct MapCache {
     QTAILQ_HEAD(map_cache_head, MapCacheRev) locked_entries;
 
     /* For most cases (>99.9%), the page address is the same. */
-    target_phys_addr_t last_address_index;
+    hwaddr last_address_index;
     uint8_t *last_address_vaddr;
     unsigned long max_mcache_size;
     unsigned int mcache_bucket_shift;
+
+    phys_offset_to_gaddr_t phys_offset_to_gaddr;
+    void *opaque;
 } MapCache;
 
 static MapCache *mapcache;
@@ -82,25 +94,40 @@ static inline int test_bits(int nr, int size, const unsigned long *addr)
         return 0;
 }
 
-void xen_map_cache_init(void)
+void xen_map_cache_init(phys_offset_to_gaddr_t f, void *opaque)
 {
     unsigned long size;
     struct rlimit rlimit_as;
 
-    mapcache = qemu_mallocz(sizeof (MapCache));
+    mapcache = g_malloc0(sizeof (MapCache));
+
+    mapcache->phys_offset_to_gaddr = f;
+    mapcache->opaque = opaque;
 
     QTAILQ_INIT(&mapcache->locked_entries);
     mapcache->last_address_index = -1;
 
-    getrlimit(RLIMIT_AS, &rlimit_as);
-    if (rlimit_as.rlim_max < MCACHE_MAX_SIZE) {
-        rlimit_as.rlim_cur = rlimit_as.rlim_max;
+    if (geteuid() == 0) {
+        rlimit_as.rlim_cur = RLIM_INFINITY;
+        rlimit_as.rlim_max = RLIM_INFINITY;
+        mapcache->max_mcache_size = MCACHE_MAX_SIZE;
     } else {
-        rlimit_as.rlim_cur = MCACHE_MAX_SIZE;
+        getrlimit(RLIMIT_AS, &rlimit_as);
+        rlimit_as.rlim_cur = rlimit_as.rlim_max;
+
+        if (rlimit_as.rlim_max != RLIM_INFINITY) {
+            fprintf(stderr, "Warning: QEMU's maximum size of virtual"
+                    " memory is not infinity.\n");
+        }
+        if (rlimit_as.rlim_max < MCACHE_MAX_SIZE + NON_MCACHE_MEMORY_SIZE) {
+            mapcache->max_mcache_size = rlimit_as.rlim_max -
+                NON_MCACHE_MEMORY_SIZE;
+        } else {
+            mapcache->max_mcache_size = MCACHE_MAX_SIZE;
+        }
     }
 
     setrlimit(RLIMIT_AS, &rlimit_as);
-    mapcache->max_mcache_size = rlimit_as.rlim_cur;
 
     mapcache->nr_buckets =
         (((mapcache->max_mcache_size >> XC_PAGE_SHIFT) +
@@ -111,23 +138,23 @@ void xen_map_cache_init(void)
     size = (size + XC_PAGE_SIZE - 1) & ~(XC_PAGE_SIZE - 1);
     DPRINTF("%s, nr_buckets = %lx size %lu\n", __func__,
             mapcache->nr_buckets, size);
-    mapcache->entry = qemu_mallocz(size);
+    mapcache->entry = g_malloc0(size);
 }
 
 static void xen_remap_bucket(MapCacheEntry *entry,
-                             target_phys_addr_t size,
-                             target_phys_addr_t address_index)
+                             hwaddr size,
+                             hwaddr address_index)
 {
     uint8_t *vaddr_base;
     xen_pfn_t *pfns;
     int *err;
     unsigned int i;
-    target_phys_addr_t nb_pfn = size >> XC_PAGE_SHIFT;
+    hwaddr nb_pfn = size >> XC_PAGE_SHIFT;
 
     trace_xen_remap_bucket(address_index);
 
-    pfns = qemu_mallocz(nb_pfn * sizeof (xen_pfn_t));
-    err = qemu_mallocz(nb_pfn * sizeof (int));
+    pfns = g_malloc0(nb_pfn * sizeof (xen_pfn_t));
+    err = g_malloc0(nb_pfn * sizeof (int));
 
     if (entry->vaddr_base != NULL) {
         if (munmap(entry->vaddr_base, entry->size) != 0) {
@@ -136,7 +163,7 @@ static void xen_remap_bucket(MapCacheEntry *entry,
         }
     }
     if (entry->valid_mapping != NULL) {
-        qemu_free(entry->valid_mapping);
+        g_free(entry->valid_mapping);
         entry->valid_mapping = NULL;
     }
 
@@ -154,7 +181,7 @@ static void xen_remap_bucket(MapCacheEntry *entry,
     entry->vaddr_base = vaddr_base;
     entry->paddr_index = address_index;
     entry->size = size;
-    entry->valid_mapping = (unsigned long *) qemu_mallocz(sizeof(unsigned long) *
+    entry->valid_mapping = (unsigned long *) g_malloc0(sizeof(unsigned long) *
             BITS_TO_LONGS(size >> XC_PAGE_SHIFT));
 
     bitmap_zero(entry->valid_mapping, nb_pfn);
@@ -164,17 +191,22 @@ static void xen_remap_bucket(MapCacheEntry *entry,
         }
     }
 
-    qemu_free(pfns);
-    qemu_free(err);
+    g_free(pfns);
+    g_free(err);
 }
 
-uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
+uint8_t *xen_map_cache(hwaddr phys_addr, hwaddr size,
                        uint8_t lock)
 {
     MapCacheEntry *entry, *pentry = NULL;
-    target_phys_addr_t address_index  = phys_addr >> MCACHE_BUCKET_SHIFT;
-    target_phys_addr_t address_offset = phys_addr & (MCACHE_BUCKET_SIZE - 1);
-    target_phys_addr_t __size = size;
+    hwaddr address_index;
+    hwaddr address_offset;
+    hwaddr __size = size;
+    bool translated = false;
+
+tryagain:
+    address_index  = phys_addr >> MCACHE_BUCKET_SHIFT;
+    address_offset = phys_addr & (MCACHE_BUCKET_SIZE - 1);
 
     trace_xen_map_cache(phys_addr);
 
@@ -184,12 +216,14 @@ uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
     }
 
     /* size is always a multiple of MCACHE_BUCKET_SIZE */
-    if ((address_offset + (__size % MCACHE_BUCKET_SIZE)) > MCACHE_BUCKET_SIZE)
-        __size += MCACHE_BUCKET_SIZE;
-    if (__size % MCACHE_BUCKET_SIZE)
-        __size += MCACHE_BUCKET_SIZE - (__size % MCACHE_BUCKET_SIZE);
-    if (!__size)
+    if (size) {
+        __size = size + address_offset;
+        if (__size % MCACHE_BUCKET_SIZE) {
+            __size += MCACHE_BUCKET_SIZE - (__size % MCACHE_BUCKET_SIZE);
+        }
+    } else {
         __size = MCACHE_BUCKET_SIZE;
+    }
 
     entry = &mapcache->entry[address_index % mapcache->nr_buckets];
 
@@ -201,7 +235,7 @@ uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
         entry = entry->next;
     }
     if (!entry) {
-        entry = qemu_mallocz(sizeof (MapCacheEntry));
+        entry = g_malloc0(sizeof (MapCacheEntry));
         pentry->next = entry;
         xen_remap_bucket(entry, __size, address_index);
     } else if (!entry->lock) {
@@ -216,6 +250,11 @@ uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
     if(!test_bits(address_offset >> XC_PAGE_SHIFT, size >> XC_PAGE_SHIFT,
                 entry->valid_mapping)) {
         mapcache->last_address_index = -1;
+        if (!translated && mapcache->phys_offset_to_gaddr) {
+            phys_addr = mapcache->phys_offset_to_gaddr(phys_addr, size, mapcache->opaque);
+            translated = true;
+            goto tryagain;
+        }
         trace_xen_map_cache_return(NULL);
         return NULL;
     }
@@ -223,7 +262,7 @@ uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
     mapcache->last_address_index = address_index;
     mapcache->last_address_vaddr = entry->vaddr_base;
     if (lock) {
-        MapCacheRev *reventry = qemu_mallocz(sizeof(MapCacheRev));
+        MapCacheRev *reventry = g_malloc0(sizeof(MapCacheRev));
         entry->lock++;
         reventry->vaddr_req = mapcache->last_address_vaddr + address_offset;
         reventry->paddr_index = mapcache->last_address_index;
@@ -237,10 +276,10 @@ uint8_t *xen_map_cache(target_phys_addr_t phys_addr, target_phys_addr_t size,
 
 ram_addr_t xen_ram_addr_from_mapcache(void *ptr)
 {
-    MapCacheEntry *entry = NULL, *pentry = NULL;
+    MapCacheEntry *entry = NULL;
     MapCacheRev *reventry;
-    target_phys_addr_t paddr_index;
-    target_phys_addr_t size;
+    hwaddr paddr_index;
+    hwaddr size;
     int found = 0;
 
     QTAILQ_FOREACH(reventry, &mapcache->locked_entries, next) {
@@ -263,7 +302,6 @@ ram_addr_t xen_ram_addr_from_mapcache(void *ptr)
 
     entry = &mapcache->entry[paddr_index % mapcache->nr_buckets];
     while (entry && (entry->paddr_index != paddr_index || entry->size != size)) {
-        pentry = entry;
         entry = entry->next;
     }
     if (!entry) {
@@ -278,13 +316,9 @@ void xen_invalidate_map_cache_entry(uint8_t *buffer)
 {
     MapCacheEntry *entry = NULL, *pentry = NULL;
     MapCacheRev *reventry;
-    target_phys_addr_t paddr_index;
-    target_phys_addr_t size;
+    hwaddr paddr_index;
+    hwaddr size;
     int found = 0;
-
-    if (mapcache->last_address_vaddr == buffer) {
-        mapcache->last_address_index = -1;
-    }
 
     QTAILQ_FOREACH(reventry, &mapcache->locked_entries, next) {
         if (reventry->vaddr_req == buffer) {
@@ -302,7 +336,12 @@ void xen_invalidate_map_cache_entry(uint8_t *buffer)
         return;
     }
     QTAILQ_REMOVE(&mapcache->locked_entries, reventry, next);
-    qemu_free(reventry);
+    g_free(reventry);
+
+    if (mapcache->last_address_index == paddr_index) {
+        mapcache->last_address_index = -1;
+        mapcache->last_address_vaddr = NULL;
+    }
 
     entry = &mapcache->entry[paddr_index % mapcache->nr_buckets];
     while (entry && (entry->paddr_index != paddr_index || entry->size != size)) {
@@ -323,8 +362,8 @@ void xen_invalidate_map_cache_entry(uint8_t *buffer)
         perror("unmap fails");
         exit(-1);
     }
-    qemu_free(entry->valid_mapping);
-    qemu_free(entry);
+    g_free(entry->valid_mapping);
+    g_free(entry);
 }
 
 void xen_invalidate_map_cache(void)
@@ -333,7 +372,7 @@ void xen_invalidate_map_cache(void)
     MapCacheRev *reventry;
 
     /* Flush pending AIO before destroying the mapcache */
-    qemu_aio_flush();
+    bdrv_drain_all();
 
     QTAILQ_FOREACH(reventry, &mapcache->locked_entries, next) {
         DPRINTF("There should be no locked mappings at this time, "
@@ -349,6 +388,9 @@ void xen_invalidate_map_cache(void)
         if (entry->vaddr_base == NULL) {
             continue;
         }
+        if (entry->lock > 0) {
+            continue;
+        }
 
         if (munmap(entry->vaddr_base, entry->size) != 0) {
             perror("unmap fails");
@@ -358,7 +400,7 @@ void xen_invalidate_map_cache(void)
         entry->paddr_index = 0;
         entry->vaddr_base = NULL;
         entry->size = 0;
-        qemu_free(entry->valid_mapping);
+        g_free(entry->valid_mapping);
         entry->valid_mapping = NULL;
     }
 

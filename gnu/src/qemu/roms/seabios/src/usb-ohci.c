@@ -10,13 +10,21 @@
 #include "usb-ohci.h" // struct ohci_hcca
 #include "pci_regs.h" // PCI_BASE_ADDRESS_0
 #include "usb.h" // struct usb_s
-#include "farptr.h" // GET_FLATPTR
+#include "biosvar.h" // GET_LOWFLAT
 
 #define FIT                     (1 << 31)
 
 struct usb_ohci_s {
     struct usb_s usb;
     struct ohci_regs *regs;
+};
+
+struct ohci_pipe {
+    struct ohci_ed ed;
+    struct usb_pipe pipe;
+    void *data;
+    int count;
+    struct ohci_td *tds;
 };
 
 
@@ -109,6 +117,56 @@ check_ohci_ports(struct usb_ohci_s *cntl)
  * Setup
  ****************************************************************/
 
+// Wait for next USB frame to start - for ensuring safe memory release.
+static void
+ohci_waittick(struct usb_ohci_s *cntl)
+{
+    barrier();
+    struct ohci_hcca *hcca = (void*)cntl->regs->hcca;
+    u32 startframe = hcca->frame_no;
+    u64 end = calc_future_tsc(1000 * 5);
+    for (;;) {
+        if (hcca->frame_no != startframe)
+            break;
+        if (check_tsc(end)) {
+            warn_timeout();
+            return;
+        }
+        yield();
+    }
+}
+
+static void
+ohci_free_pipes(struct usb_ohci_s *cntl)
+{
+    dprintf(7, "ohci_free_pipes %p\n", cntl);
+
+    u32 creg = readl(&cntl->regs->control);
+    if (creg & (OHCI_CTRL_CLE|OHCI_CTRL_BLE)) {
+        writel(&cntl->regs->control, creg & ~(OHCI_CTRL_CLE|OHCI_CTRL_BLE));
+        ohci_waittick(cntl);
+    }
+
+    u32 *pos = &cntl->regs->ed_controlhead;
+    for (;;) {
+        struct ohci_ed *next = (void*)*pos;
+        if (!next)
+            break;
+        struct ohci_pipe *pipe = container_of(next, struct ohci_pipe, ed);
+        if (pipe->pipe.cntl != &cntl->usb) {
+            *pos = next->hwNextED;
+            free(pipe);
+        } else {
+            pos = &next->hwNextED;
+        }
+    }
+
+    writel(&cntl->regs->ed_controlcurrent, 0);
+    writel(&cntl->regs->ed_bulkcurrent, 0);
+    writel(&cntl->regs->control, creg);
+    cntl->usb.freelist = NULL;
+}
+
 static int
 start_ohci(struct usb_ohci_s *cntl, struct ohci_hcca *hcca)
 {
@@ -191,7 +249,7 @@ configure_ohci(void *data)
         goto err;
 
     int count = check_ohci_ports(cntl);
-    free_pipe(cntl->usb.defaultpipe);
+    ohci_free_pipes(cntl);
     if (! count)
         goto err;
     return;
@@ -204,16 +262,21 @@ free:
 }
 
 void
-ohci_init(u16 bdf, int busid)
+ohci_init(struct pci_device *pci, int busid)
 {
     if (! CONFIG_USB_OHCI)
         return;
     struct usb_ohci_s *cntl = malloc_tmphigh(sizeof(*cntl));
+    if (!cntl) {
+        warn_noalloc();
+        return;
+    }
     memset(cntl, 0, sizeof(*cntl));
     cntl->usb.busid = busid;
-    cntl->usb.bdf = bdf;
+    cntl->usb.pci = pci;
     cntl->usb.type = USB_TYPE_OHCI;
 
+    u16 bdf = pci->bdf;
     u32 baseaddr = pci_config_readl(bdf, PCI_BASE_ADDRESS_0);
     cntl->regs = (void*)(baseaddr & PCI_BASE_ADDRESS_MEM_MASK);
 
@@ -239,6 +302,122 @@ ohci_init(u16 bdf, int busid)
  * End point communication
  ****************************************************************/
 
+// Setup fields in ed
+static void
+ohci_desc2pipe(struct ohci_pipe *pipe, struct usbdevice_s *usbdev
+               , struct usb_endpoint_descriptor *epdesc)
+{
+    usb_desc2pipe(&pipe->pipe, usbdev, epdesc);
+    pipe->ed.hwINFO = (ED_SKIP | usbdev->devaddr | (pipe->pipe.ep << 7)
+                       | (epdesc->wMaxPacketSize << 16)
+                       | (usbdev->speed ? ED_LOWSPEED : 0));
+}
+
+static struct usb_pipe *
+ohci_alloc_intr_pipe(struct usbdevice_s *usbdev
+                     , struct usb_endpoint_descriptor *epdesc)
+{
+    struct usb_ohci_s *cntl = container_of(
+        usbdev->hub->cntl, struct usb_ohci_s, usb);
+    int frameexp = usb_getFrameExp(usbdev, epdesc);
+    dprintf(7, "ohci_alloc_intr_pipe %p %d\n", &cntl->usb, frameexp);
+
+    if (frameexp > 5)
+        frameexp = 5;
+    int maxpacket = epdesc->wMaxPacketSize;
+    // Determine number of entries needed for 2 timer ticks.
+    int ms = 1<<frameexp;
+    int count = DIV_ROUND_UP(PIT_TICK_INTERVAL * 1000 * 2, PIT_TICK_RATE * ms)+1;
+    struct ohci_pipe *pipe = malloc_low(sizeof(*pipe));
+    struct ohci_td *tds = malloc_low(sizeof(*tds) * count);
+    void *data = malloc_low(maxpacket * count);
+    if (!pipe || !tds || !data)
+        goto err;
+    memset(pipe, 0, sizeof(*pipe));
+    ohci_desc2pipe(pipe, usbdev, epdesc);
+    pipe->ed.hwINFO &= ~ED_SKIP;
+    pipe->data = data;
+    pipe->count = count;
+    pipe->tds = tds;
+
+    struct ohci_ed *ed = &pipe->ed;
+    ed->hwHeadP = (u32)&tds[0];
+    ed->hwTailP = (u32)&tds[count-1];
+
+    int i;
+    for (i=0; i<count-1; i++) {
+        tds[i].hwINFO = TD_DP_IN | TD_T_TOGGLE | TD_CC;
+        tds[i].hwCBP = (u32)data + maxpacket * i;
+        tds[i].hwNextTD = (u32)&tds[i+1];
+        tds[i].hwBE = tds[i].hwCBP + maxpacket - 1;
+    }
+
+    // Add to interrupt schedule.
+    struct ohci_hcca *hcca = (void*)cntl->regs->hcca;
+    if (frameexp == 0) {
+        // Add to existing interrupt entry.
+        struct ohci_ed *intr_ed = (void*)hcca->int_table[0];
+        ed->hwNextED = intr_ed->hwNextED;
+        barrier();
+        intr_ed->hwNextED = (u32)ed;
+    } else {
+        int startpos = 1<<(frameexp-1);
+        ed->hwNextED = hcca->int_table[startpos];
+        barrier();
+        for (i=startpos; i<ARRAY_SIZE(hcca->int_table); i+=ms)
+            hcca->int_table[i] = (u32)ed;
+    }
+
+    return &pipe->pipe;
+
+err:
+    free(pipe);
+    free(tds);
+    free(data);
+    return NULL;
+}
+
+struct usb_pipe *
+ohci_alloc_pipe(struct usbdevice_s *usbdev
+                , struct usb_endpoint_descriptor *epdesc)
+{
+    if (! CONFIG_USB_OHCI)
+        return NULL;
+    u8 eptype = epdesc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK;
+    if (eptype == USB_ENDPOINT_XFER_INT)
+        return ohci_alloc_intr_pipe(usbdev, epdesc);
+    if (eptype != USB_ENDPOINT_XFER_CONTROL) {
+        dprintf(1, "OHCI Bulk transfers not supported.\n");
+        return NULL;
+    }
+    struct usb_ohci_s *cntl = container_of(
+        usbdev->hub->cntl, struct usb_ohci_s, usb);
+    dprintf(7, "ohci_alloc_async_pipe %p\n", &cntl->usb);
+
+    struct usb_pipe *usbpipe = usb_getFreePipe(&cntl->usb, eptype);
+    if (usbpipe) {
+        // Use previously allocated pipe.
+        struct ohci_pipe *pipe = container_of(usbpipe, struct ohci_pipe, pipe);
+        ohci_desc2pipe(pipe, usbdev, epdesc);
+        return usbpipe;
+    }
+
+    // Allocate a new queue head.
+    struct ohci_pipe *pipe = malloc_tmphigh(sizeof(*pipe));
+    if (!pipe) {
+        warn_noalloc();
+        return NULL;
+    }
+    memset(pipe, 0, sizeof(*pipe));
+    ohci_desc2pipe(pipe, usbdev, epdesc);
+
+    // Add queue head to controller list.
+    pipe->ed.hwNextED = cntl->regs->ed_controlhead;
+    barrier();
+    cntl->regs->ed_controlhead = (u32)&pipe->ed;
+    return &pipe->pipe;
+}
+
 static int
 wait_ed(struct ohci_ed *ed)
 {
@@ -253,102 +432,6 @@ wait_ed(struct ohci_ed *ed)
         }
         yield();
     }
-}
-
-// Wait for next USB frame to start - for ensuring safe memory release.
-static void
-ohci_waittick(struct usb_ohci_s *cntl)
-{
-    barrier();
-    struct ohci_hcca *hcca = (void*)cntl->regs->hcca;
-    u32 startframe = hcca->frame_no;
-    u64 end = calc_future_tsc(1000 * 5);
-    for (;;) {
-        if (hcca->frame_no != startframe)
-            break;
-        if (check_tsc(end)) {
-            warn_timeout();
-            return;
-        }
-        yield();
-    }
-}
-
-static void
-signal_freelist(struct usb_ohci_s *cntl)
-{
-    u32 v = readl(&cntl->regs->control);
-    if (v & OHCI_CTRL_CLE) {
-        writel(&cntl->regs->control, v & ~(OHCI_CTRL_CLE|OHCI_CTRL_BLE));
-        ohci_waittick(cntl);
-        writel(&cntl->regs->ed_controlcurrent, 0);
-        writel(&cntl->regs->ed_bulkcurrent, 0);
-        writel(&cntl->regs->control, v);
-    } else {
-        ohci_waittick(cntl);
-    }
-}
-
-struct ohci_pipe {
-    struct ohci_ed ed;
-    struct usb_pipe pipe;
-    void *data;
-    int count;
-    struct ohci_td *tds;
-};
-
-void
-ohci_free_pipe(struct usb_pipe *p)
-{
-    if (! CONFIG_USB_OHCI)
-        return;
-    dprintf(7, "ohci_free_pipe %p\n", p);
-    struct ohci_pipe *pipe = container_of(p, struct ohci_pipe, pipe);
-    struct usb_ohci_s *cntl = container_of(
-        pipe->pipe.cntl, struct usb_ohci_s, usb);
-
-    u32 *pos = &cntl->regs->ed_controlhead;
-    for (;;) {
-        struct ohci_ed *next = (void*)*pos;
-        if (!next) {
-            // Not found?!  Exit without freeing.
-            warn_internalerror();
-            return;
-        }
-        if (next == &pipe->ed) {
-            *pos = next->hwNextED;
-            signal_freelist(cntl);
-            free(pipe);
-            return;
-        }
-        pos = &next->hwNextED;
-    }
-}
-
-struct usb_pipe *
-ohci_alloc_control_pipe(struct usb_pipe *dummy)
-{
-    if (! CONFIG_USB_OHCI)
-        return NULL;
-    struct usb_ohci_s *cntl = container_of(
-        dummy->cntl, struct usb_ohci_s, usb);
-    dprintf(7, "ohci_alloc_control_pipe %p\n", &cntl->usb);
-
-    // Allocate a queue head.
-    struct ohci_pipe *pipe = malloc_tmphigh(sizeof(*pipe));
-    if (!pipe) {
-        warn_noalloc();
-        return NULL;
-    }
-    memset(pipe, 0, sizeof(*pipe));
-    memcpy(&pipe->pipe, dummy, sizeof(pipe->pipe));
-    pipe->ed.hwINFO = ED_SKIP;
-
-    // Add queue head to controller list.
-    pipe->ed.hwNextED = cntl->regs->ed_controlhead;
-    barrier();
-    cntl->regs->ed_controlhead = (u32)&pipe->ed;
-    return &pipe->pipe;
 }
 
 int
@@ -366,9 +449,6 @@ ohci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
     struct ohci_pipe *pipe = container_of(p, struct ohci_pipe, pipe);
     struct usb_ohci_s *cntl = container_of(
         pipe->pipe.cntl, struct usb_ohci_s, usb);
-    int maxpacket = pipe->pipe.maxpacket;
-    int lowspeed = pipe->pipe.speed;
-    int devaddr = pipe->pipe.devaddr | (pipe->pipe.ep << 7);
 
     // Setup transfer descriptors
     struct ohci_td *tds = malloc_tmphigh(sizeof(*tds) * 3);
@@ -396,100 +476,24 @@ ohci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
     td++;
 
     // Transfer data
-    pipe->ed.hwINFO = ED_SKIP;
-    barrier();
     pipe->ed.hwHeadP = (u32)tds;
     pipe->ed.hwTailP = (u32)td;
     barrier();
-    pipe->ed.hwINFO = devaddr | (maxpacket << 16) | (lowspeed ? ED_LOWSPEED : 0);
+    pipe->ed.hwINFO &= ~ED_SKIP;
     writel(&cntl->regs->cmdstatus, OHCI_CLF);
 
     int ret = wait_ed(&pipe->ed);
-    pipe->ed.hwINFO = ED_SKIP;
+    pipe->ed.hwINFO |= ED_SKIP;
     if (ret)
         ohci_waittick(cntl);
     free(tds);
     return ret;
 }
 
-struct usb_pipe *
-ohci_alloc_bulk_pipe(struct usb_pipe *dummy)
-{
-    if (! CONFIG_USB_OHCI)
-        return NULL;
-    dprintf(1, "OHCI Bulk transfers not supported.\n");
-    return NULL;
-}
-
 int
 ohci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize)
 {
     return -1;
-}
-
-struct usb_pipe *
-ohci_alloc_intr_pipe(struct usb_pipe *dummy, int frameexp)
-{
-    if (! CONFIG_USB_OHCI)
-        return NULL;
-    struct usb_ohci_s *cntl = container_of(
-        dummy->cntl, struct usb_ohci_s, usb);
-    dprintf(7, "ohci_alloc_intr_pipe %p %d\n", &cntl->usb, frameexp);
-
-    if (frameexp > 5)
-        frameexp = 5;
-    int maxpacket = dummy->maxpacket;
-    int lowspeed = dummy->speed;
-    int devaddr = dummy->devaddr | (dummy->ep << 7);
-    // Determine number of entries needed for 2 timer ticks.
-    int ms = 1<<frameexp;
-    int count = DIV_ROUND_UP(PIT_TICK_INTERVAL * 1000 * 2, PIT_TICK_RATE * ms)+1;
-    struct ohci_pipe *pipe = malloc_low(sizeof(*pipe));
-    struct ohci_td *tds = malloc_low(sizeof(*tds) * count);
-    void *data = malloc_low(maxpacket * count);
-    if (!pipe || !tds || !data)
-        goto err;
-    memset(pipe, 0, sizeof(*pipe));
-    memcpy(&pipe->pipe, dummy, sizeof(pipe->pipe));
-    pipe->data = data;
-    pipe->count = count;
-    pipe->tds = tds;
-
-    struct ohci_ed *ed = &pipe->ed;
-    ed->hwHeadP = (u32)&tds[0];
-    ed->hwTailP = (u32)&tds[count-1];
-    ed->hwINFO = devaddr | (maxpacket << 16) | (lowspeed ? ED_LOWSPEED : 0);
-
-    int i;
-    for (i=0; i<count-1; i++) {
-        tds[i].hwINFO = TD_DP_IN | TD_T_TOGGLE | TD_CC;
-        tds[i].hwCBP = (u32)data + maxpacket * i;
-        tds[i].hwNextTD = (u32)&tds[i+1];
-        tds[i].hwBE = tds[i].hwCBP + maxpacket - 1;
-    }
-
-    // Add to interrupt schedule.
-    barrier();
-    struct ohci_hcca *hcca = (void*)cntl->regs->hcca;
-    if (frameexp == 0) {
-        // Add to existing interrupt entry.
-        struct ohci_ed *intr_ed = (void*)hcca->int_table[0];
-        ed->hwNextED = intr_ed->hwNextED;
-        intr_ed->hwNextED = (u32)ed;
-    } else {
-        int startpos = 1<<(frameexp-1);
-        ed->hwNextED = hcca->int_table[startpos];
-        for (i=startpos; i<ARRAY_SIZE(hcca->int_table); i+=ms)
-            hcca->int_table[i] = (u32)ed;
-    }
-
-    return &pipe->pipe;
-
-err:
-    free(pipe);
-    free(tds);
-    free(data);
-    return NULL;
 }
 
 int
@@ -500,10 +504,10 @@ ohci_poll_intr(struct usb_pipe *p, void *data)
         return -1;
 
     struct ohci_pipe *pipe = container_of(p, struct ohci_pipe, pipe);
-    struct ohci_td *tds = GET_FLATPTR(pipe->tds);
-    struct ohci_td *head = (void*)GET_FLATPTR(pipe->ed.hwHeadP);
-    struct ohci_td *tail = (void*)GET_FLATPTR(pipe->ed.hwTailP);
-    int count = GET_FLATPTR(pipe->count);
+    struct ohci_td *tds = GET_LOWFLAT(pipe->tds);
+    struct ohci_td *head = (void*)(GET_LOWFLAT(pipe->ed.hwHeadP) & ~(ED_C|ED_H));
+    struct ohci_td *tail = (void*)GET_LOWFLAT(pipe->ed.hwTailP);
+    int count = GET_LOWFLAT(pipe->count);
     int pos = (tail - tds + 1) % count;
     struct ohci_td *next = &tds[pos];
     if (head == next)
@@ -512,21 +516,19 @@ ohci_poll_intr(struct usb_pipe *p, void *data)
     // XXX - check for errors.
 
     // Copy data.
-    int maxpacket = GET_FLATPTR(pipe->pipe.maxpacket);
-    void *pipedata = GET_FLATPTR(pipe->data);
+    int maxpacket = GET_LOWFLAT(pipe->pipe.maxpacket);
+    void *pipedata = GET_LOWFLAT((pipe->data));
     void *intrdata = pipedata + maxpacket * pos;
-    memcpy_far(GET_SEG(SS), data
-               , FLATPTR_TO_SEG(intrdata), (void*)FLATPTR_TO_OFFSET(intrdata)
-               , maxpacket);
+    memcpy_far(GET_SEG(SS), data, SEG_LOW, LOWFLAT2LOW(intrdata), maxpacket);
 
     // Reenable this td.
-    SET_FLATPTR(tail->hwINFO, TD_DP_IN | TD_T_TOGGLE | TD_CC);
+    SET_LOWFLAT(tail->hwINFO, TD_DP_IN | TD_T_TOGGLE | TD_CC);
     intrdata = pipedata + maxpacket * (tail-tds);
-    SET_FLATPTR(tail->hwCBP, (u32)intrdata);
-    SET_FLATPTR(tail->hwNextTD, (u32)next);
-    SET_FLATPTR(tail->hwBE, (u32)intrdata + maxpacket - 1);
+    SET_LOWFLAT(tail->hwCBP, (u32)intrdata);
+    SET_LOWFLAT(tail->hwNextTD, (u32)next);
+    SET_LOWFLAT(tail->hwBE, (u32)intrdata + maxpacket - 1);
     barrier();
-    SET_FLATPTR(pipe->ed.hwTailP, (u32)next);
+    SET_LOWFLAT(pipe->ed.hwTailP, (u32)next);
 
     return 0;
 }

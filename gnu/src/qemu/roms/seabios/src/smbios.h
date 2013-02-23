@@ -24,6 +24,8 @@ struct smbios_entry_point {
     u8 smbios_bcd_revision;
 } PACKED;
 
+extern struct smbios_entry_point *SMBiosAddr;
+
 /* This goes at the beginning of every SMBIOS structure. */
 struct smbios_structure_header {
     u8 type;
@@ -163,4 +165,5 @@ struct smbios_type_127 {
     struct smbios_structure_header header;
 } PACKED;
 
+void display_uuid(void);
 #endif // smbios.h

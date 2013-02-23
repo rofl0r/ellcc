@@ -41,8 +41,8 @@ void grlib_irqmp_set_irq(void *opaque, int irq, int level);
 void grlib_irqmp_ack(DeviceState *dev, int intno);
 
 static inline
-DeviceState *grlib_irqmp_create(target_phys_addr_t   base,
-                                CPUState            *env,
+DeviceState *grlib_irqmp_create(hwaddr   base,
+                                CPUSPARCState            *env,
                                 qemu_irq           **cpu_irqs,
                                 uint32_t             nr_irqs,
                                 set_pil_in_fn        set_pil_in)
@@ -61,7 +61,7 @@ DeviceState *grlib_irqmp_create(target_phys_addr_t   base,
 
     env->irq_manager = dev;
 
-    sysbus_mmio_map(sysbus_from_qdev(dev), 0, base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     *cpu_irqs = qemu_allocate_irqs(grlib_irqmp_set_irq,
                                    dev,
@@ -73,7 +73,7 @@ DeviceState *grlib_irqmp_create(target_phys_addr_t   base,
 /* GPTimer */
 
 static inline
-DeviceState *grlib_gptimer_create(target_phys_addr_t  base,
+DeviceState *grlib_gptimer_create(hwaddr  base,
                                   uint32_t            nr_timers,
                                   uint32_t            freq,
                                   qemu_irq           *cpu_irqs,
@@ -91,10 +91,10 @@ DeviceState *grlib_gptimer_create(target_phys_addr_t  base,
         return NULL;
     }
 
-    sysbus_mmio_map(sysbus_from_qdev(dev), 0, base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     for (i = 0; i < nr_timers; i++) {
-        sysbus_connect_irq(sysbus_from_qdev(dev), i, cpu_irqs[base_irq + i]);
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, cpu_irqs[base_irq + i]);
     }
 
     return dev;
@@ -103,7 +103,7 @@ DeviceState *grlib_gptimer_create(target_phys_addr_t  base,
 /* APB UART */
 
 static inline
-DeviceState *grlib_apbuart_create(target_phys_addr_t  base,
+DeviceState *grlib_apbuart_create(hwaddr  base,
                                   CharDriverState    *serial,
                                   qemu_irq            irq)
 {
@@ -116,9 +116,9 @@ DeviceState *grlib_apbuart_create(target_phys_addr_t  base,
         return NULL;
     }
 
-    sysbus_mmio_map(sysbus_from_qdev(dev), 0, base);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
-    sysbus_connect_irq(sysbus_from_qdev(dev), 0, irq);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, irq);
 
     return dev;
 }

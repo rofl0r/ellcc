@@ -24,21 +24,22 @@
 
 #include "config-host.h"
 #include "qemu-common.h"
-#include "qemu-char.h"
-#include "qemu-queue.h"
+#include "qemu/queue.h"
+#include "block/aio.h"
+#include "qemu/main-loop.h"
 
 #ifndef _WIN32
 #include <sys/wait.h>
 #endif
 
 typedef struct IOHandlerRecord {
-    int fd;
     IOCanReadHandler *fd_read_poll;
     IOHandler *fd_read;
     IOHandler *fd_write;
-    int deleted;
     void *opaque;
     QLIST_ENTRY(IOHandlerRecord) next;
+    int fd;
+    bool deleted;
 } IOHandlerRecord;
 
 static QLIST_HEAD(, IOHandlerRecord) io_handlers =
@@ -55,6 +56,8 @@ int qemu_set_fd_handler2(int fd,
 {
     IOHandlerRecord *ioh;
 
+    assert(fd >= 0);
+
     if (!fd_read && !fd_write) {
         QLIST_FOREACH(ioh, &io_handlers, next) {
             if (ioh->fd == fd) {
@@ -67,7 +70,7 @@ int qemu_set_fd_handler2(int fd,
             if (ioh->fd == fd)
                 goto found;
         }
-        ioh = qemu_mallocz(sizeof(IOHandlerRecord));
+        ioh = g_malloc0(sizeof(IOHandlerRecord));
         QLIST_INSERT_HEAD(&io_handlers, ioh, next);
     found:
         ioh->fd = fd;
@@ -76,6 +79,7 @@ int qemu_set_fd_handler2(int fd,
         ioh->fd_write = fd_write;
         ioh->opaque = opaque;
         ioh->deleted = 0;
+        qemu_notify_event();
     }
     return 0;
 }
@@ -126,7 +130,7 @@ void qemu_iohandler_poll(fd_set *readfds, fd_set *writefds, fd_set *xfds, int re
             /* Do this last in case read/write handlers marked it for deletion */
             if (ioh->deleted) {
                 QLIST_REMOVE(ioh, next);
-                qemu_free(ioh);
+                g_free(ioh);
             }
         }
     }
@@ -157,7 +161,7 @@ static void sigchld_bh_handler(void *opaque)
     QLIST_FOREACH_SAFE(rec, &child_watches, next, next) {
         if (waitpid(rec->pid, NULL, WNOHANG) == rec->pid) {
             QLIST_REMOVE(rec, next);
-            qemu_free(rec);
+            g_free(rec);
         }
     }
 }
@@ -185,7 +189,7 @@ int qemu_add_child_watch(pid_t pid)
             return 1;
         }
     }
-    rec = qemu_mallocz(sizeof(ChildProcessRecord));
+    rec = g_malloc0(sizeof(ChildProcessRecord));
     rec->pid = pid;
     QLIST_INSERT_HEAD(&child_watches, rec, next);
     return 0;

@@ -18,9 +18,9 @@
  */
 
 #include "qemu-common.h"
-#include "qemu-char.h"
-#include "net.h"
+#include "bt/bt.h"
 #include "hw/bt.h"
+#include "qemu/main-loop.h"
 
 #define VHCI_DEV	"/dev/vhci"
 #define VHCI_UDEV	"/dev/hci_vhci"
@@ -156,7 +156,7 @@ void bt_vhci_init(struct HCIInfo *info)
         exit(-1);
     }
 
-    s = qemu_mallocz(sizeof(struct bt_vhci_s));
+    s = g_malloc0(sizeof(struct bt_vhci_s));
     s->fd = fd;
     s->info = info ?: qemu_next_hci();
     s->info->opaque = s;

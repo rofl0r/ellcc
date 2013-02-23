@@ -16,9 +16,13 @@
 #include <of.h>
 #include <pci.h>
 #include <cpu.h>
+#include <ioctl.h>
 #include <takeover.h>
 
 extern void call_client_interface(of_arg_t *);
+extern void m_sync(void);
+
+int callback(int argc, char *argv[]);
 
 #define boot_rom_bin_start _binary_______boot_rom_bin_start
 #define boot_rom_bin_end   _binary_______boot_rom_bin_end
@@ -100,18 +104,19 @@ sbrk(int incr)
 	return (void *) -1;
 }
 
-void
+static void
 doWait(void)
 {
 	static const char *wheel = "|/-\\";
 	static int i = 0;
 	volatile int dly = 0xf0000;
-	while (dly--);
+	while (dly--)
+		asm volatile (" nop ");
 	printf("\b%c", wheel[i++]);
 	i &= 0x3;
 }
 
-void
+static void
 quiesce(void)
 {
 	of_arg_t arg = {
@@ -121,7 +126,7 @@ quiesce(void)
 	call_client_interface(&arg);
 }
 
-int
+static int
 startCpu(int num, int addr, int reg)
 {
 	of_arg_t arg = {
@@ -144,11 +149,11 @@ main(int argc, char *argv[])
 	unsigned long slaveMask;
 	extern int slaveLoop[];
 	extern int slaveLoopNoTakeover[];
-	int rcode;
 	int index = 0;
 	int delay = 100;
 	unsigned long reg;
 	unsigned long msr;
+
 	asm volatile ("mfmsr %0":"=r" (msr));
 	if (msr & 0x1000000000000000)
 		takeoverFlag = 0;
@@ -191,17 +196,19 @@ main(int argc, char *argv[])
 	while (delay--)
 		doWait();
 	if (takeoverFlag)
-		rcode = takeover();
+		takeover();
 
 	memcpy((void*)TAKEOVERBASEADDRESS, &boot_rom_bin_start, &boot_rom_bin_end - &boot_rom_bin_start);
 	flush_cache((void *)TAKEOVERBASEADDRESS, &boot_rom_bin_end - &boot_rom_bin_start);
 	index = 0;
 
 	while (slaveMask) {
+		m_sync();
 		unsigned long shifter = 0x1 << index;
 		if (shifter & slaveMask) {
 			slaveQuitt = index;
-			while (slaveQuitt);
+			while (slaveQuitt)
+				m_sync();
 			slaveMask &= ~shifter;
 		}
 		index++;

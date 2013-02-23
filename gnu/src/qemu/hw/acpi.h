@@ -73,26 +73,61 @@
 /* PM2_CNT */
 #define ACPI_BITMASK_ARB_DISABLE                0x0001
 
-/* PM_TMR */
-struct ACPIPMTimer;
+/* structs */
 typedef struct ACPIPMTimer ACPIPMTimer;
+typedef struct ACPIPM1EVT ACPIPM1EVT;
+typedef struct ACPIPM1CNT ACPIPM1CNT;
+typedef struct ACPIGPE ACPIGPE;
+typedef struct ACPIREGS ACPIREGS;
 
-typedef void (*acpi_update_sci_fn)(ACPIPMTimer *tmr);
+typedef void (*acpi_update_sci_fn)(ACPIREGS *ar);
 
 struct ACPIPMTimer {
     QEMUTimer *timer;
+    MemoryRegion io;
     int64_t overflow_time;
 
     acpi_update_sci_fn update_sci;
 };
 
-void acpi_pm_tmr_update(ACPIPMTimer *tmr, bool enable);
-void acpi_pm_tmr_calc_overflow_time(ACPIPMTimer *tmr);
-uint32_t acpi_pm_tmr_get(ACPIPMTimer *tmr);
-void acpi_pm_tmr_init(ACPIPMTimer *tmr, acpi_update_sci_fn update_sci);
-void acpi_pm_tmr_reset(ACPIPMTimer *tmr);
+struct ACPIPM1EVT {
+    MemoryRegion io;
+    uint16_t sts;
+    uint16_t en;
+    acpi_update_sci_fn update_sci;
+};
 
-#include "qemu-timer.h"
+struct ACPIPM1CNT {
+    MemoryRegion io;
+    uint16_t cnt;
+    uint8_t s4_val;
+};
+
+struct ACPIGPE {
+    uint8_t len;
+
+    uint8_t *sts;
+    uint8_t *en;
+};
+
+struct ACPIREGS {
+    ACPIPMTimer     tmr;
+    ACPIGPE         gpe;
+    struct {
+        ACPIPM1EVT  evt;
+        ACPIPM1CNT  cnt;
+    } pm1;
+    Notifier wakeup;
+};
+
+/* PM_TMR */
+void acpi_pm_tmr_update(ACPIREGS *ar, bool enable);
+void acpi_pm_tmr_calc_overflow_time(ACPIREGS *ar);
+void acpi_pm_tmr_init(ACPIREGS *ar, acpi_update_sci_fn update_sci,
+                      MemoryRegion *parent);
+void acpi_pm_tmr_reset(ACPIREGS *ar);
+
+#include "qemu/timer.h"
 static inline int64_t acpi_pm_tmr_get_clock(void)
 {
     return muldiv64(qemu_get_clock_ns(vm_clock), PM_TIMER_FREQUENCY,
@@ -100,47 +135,23 @@ static inline int64_t acpi_pm_tmr_get_clock(void)
 }
 
 /* PM1a_EVT: piix and ich9 don't implement PM1b. */
-struct ACPIPM1EVT
-{
-    uint16_t sts;
-    uint16_t en;
-};
-typedef struct ACPIPM1EVT ACPIPM1EVT;
-
-uint16_t acpi_pm1_evt_get_sts(ACPIPM1EVT *pm1, int64_t overflow_time);
-void acpi_pm1_evt_write_sts(ACPIPM1EVT *pm1, ACPIPMTimer *tmr, uint16_t val);
-void acpi_pm1_evt_power_down(ACPIPM1EVT *pm1, ACPIPMTimer *tmr);
-void acpi_pm1_evt_reset(ACPIPM1EVT *pm1);
+uint16_t acpi_pm1_evt_get_sts(ACPIREGS *ar);
+void acpi_pm1_evt_power_down(ACPIREGS *ar);
+void acpi_pm1_evt_reset(ACPIREGS *ar);
+void acpi_pm1_evt_init(ACPIREGS *ar, acpi_update_sci_fn update_sci,
+                       MemoryRegion *parent);
 
 /* PM1a_CNT: piix and ich9 don't implement PM1b CNT. */
-struct ACPIPM1CNT {
-    uint16_t cnt;
-
-    qemu_irq cmos_s3;
-};
-typedef struct ACPIPM1CNT ACPIPM1CNT;
-
-void acpi_pm1_cnt_init(ACPIPM1CNT *pm1_cnt, qemu_irq cmos_s3);
-void acpi_pm1_cnt_write(ACPIPM1EVT *pm1a, ACPIPM1CNT *pm1_cnt, uint16_t val);
-void acpi_pm1_cnt_update(ACPIPM1CNT *pm1_cnt,
+void acpi_pm1_cnt_init(ACPIREGS *ar, MemoryRegion *parent);
+void acpi_pm1_cnt_update(ACPIREGS *ar,
                          bool sci_enable, bool sci_disable);
-void acpi_pm1_cnt_reset(ACPIPM1CNT *pm1_cnt);
+void acpi_pm1_cnt_reset(ACPIREGS *ar);
 
 /* GPE0 */
-struct ACPIGPE {
-    uint32_t blk;
-    uint8_t len;
+void acpi_gpe_init(ACPIREGS *ar, uint8_t len);
+void acpi_gpe_reset(ACPIREGS *ar);
 
-    uint8_t *sts;
-    uint8_t *en;
-};
-typedef struct ACPIGPE ACPIGPE;
-
-void acpi_gpe_init(ACPIGPE *gpe, uint8_t len);
-void acpi_gpe_blk(ACPIGPE *gpe, uint32_t blk);
-void acpi_gpe_reset(ACPIGPE *gpe);
-
-void acpi_gpe_ioport_writeb(ACPIGPE *gpe, uint32_t addr, uint32_t val);
-uint32_t acpi_gpe_ioport_readb(ACPIGPE *gpe, uint32_t addr);
+void acpi_gpe_ioport_writeb(ACPIREGS *ar, uint32_t addr, uint32_t val);
+uint32_t acpi_gpe_ioport_readb(ACPIREGS *ar, uint32_t addr);
 
 #endif /* !QEMU_HW_ACPI_H */

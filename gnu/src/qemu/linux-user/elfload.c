@@ -14,7 +14,7 @@
 #include <time.h>
 
 #include "qemu.h"
-#include "disas.h"
+#include "disas/disas.h"
 
 #ifdef _ARCH_PPC64
 #undef ARCH_DLINFO
@@ -157,7 +157,7 @@ typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
  *
  * See linux kernel: arch/x86/include/asm/elf.h
  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *env)
 {
     (*regs)[0] = env->regs[15];
     (*regs)[1] = env->regs[14];
@@ -229,7 +229,7 @@ typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
  *
  * See linux kernel: arch/x86/include/asm/elf.h
  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *env)
 {
     (*regs)[0] = env->regs[R_EBX];
     (*regs)[1] = env->regs[R_ECX];
@@ -288,7 +288,7 @@ static inline void init_thread(struct target_pt_regs *regs,
 #define ELF_NREG    18
 typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
 
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUARMState *env)
 {
     (*regs)[0] = tswapl(env->regs[0]);
     (*regs)[1] = tswapl(env->regs[1]);
@@ -307,7 +307,7 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
     (*regs)[14] = tswapl(env->regs[14]);
     (*regs)[15] = tswapl(env->regs[15]);
 
-    (*regs)[16] = tswapl(cpsr_read((CPUState *)env));
+    (*regs)[16] = tswapl(cpsr_read((CPUARMState *)env));
     (*regs)[17] = tswapl(env->regs[0]); /* XXX */
 }
 
@@ -332,10 +332,93 @@ enum
     ARM_HWCAP_ARM_VFPv3D16  = 1 << 13,
 };
 
-#define ELF_HWCAP (ARM_HWCAP_ARM_SWP | ARM_HWCAP_ARM_HALF               \
-                   | ARM_HWCAP_ARM_THUMB | ARM_HWCAP_ARM_FAST_MULT      \
-                   | ARM_HWCAP_ARM_FPA | ARM_HWCAP_ARM_VFP              \
-                   | ARM_HWCAP_ARM_NEON | ARM_HWCAP_ARM_VFPv3 )
+#define TARGET_HAS_VALIDATE_GUEST_SPACE
+/* Return 1 if the proposed guest space is suitable for the guest.
+ * Return 0 if the proposed guest space isn't suitable, but another
+ * address space should be tried.
+ * Return -1 if there is no way the proposed guest space can be
+ * valid regardless of the base.
+ * The guest code may leave a page mapped and populate it if the
+ * address is suitable.
+ */
+static int validate_guest_space(unsigned long guest_base,
+                                unsigned long guest_size)
+{
+    unsigned long real_start, test_page_addr;
+
+    /* We need to check that we can force a fault on access to the
+     * commpage at 0xffff0fxx
+     */
+    test_page_addr = guest_base + (0xffff0f00 & qemu_host_page_mask);
+
+    /* If the commpage lies within the already allocated guest space,
+     * then there is no way we can allocate it.
+     */
+    if (test_page_addr >= guest_base
+        && test_page_addr <= (guest_base + guest_size)) {
+        return -1;
+    }
+
+    /* Note it needs to be writeable to let us initialise it */
+    real_start = (unsigned long)
+                 mmap((void *)test_page_addr, qemu_host_page_size,
+                     PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    /* If we can't map it then try another address */
+    if (real_start == -1ul) {
+        return 0;
+    }
+
+    if (real_start != test_page_addr) {
+        /* OS didn't put the page where we asked - unmap and reject */
+        munmap((void *)real_start, qemu_host_page_size);
+        return 0;
+    }
+
+    /* Leave the page mapped
+     * Populate it (mmap should have left it all 0'd)
+     */
+
+    /* Kernel helper versions */
+    __put_user(5, (uint32_t *)g2h(0xffff0ffcul));
+
+    /* Now it's populated make it RO */
+    if (mprotect((void *)test_page_addr, qemu_host_page_size, PROT_READ)) {
+        perror("Protecting guest commpage");
+        exit(-1);
+    }
+
+    return 1; /* All good */
+}
+
+
+#define ELF_HWCAP get_elf_hwcap()
+
+static uint32_t get_elf_hwcap(void)
+{
+    CPUARMState *e = thread_env;
+    uint32_t hwcaps = 0;
+
+    hwcaps |= ARM_HWCAP_ARM_SWP;
+    hwcaps |= ARM_HWCAP_ARM_HALF;
+    hwcaps |= ARM_HWCAP_ARM_THUMB;
+    hwcaps |= ARM_HWCAP_ARM_FAST_MULT;
+    hwcaps |= ARM_HWCAP_ARM_FPA;
+
+    /* probe for the extra features */
+#define GET_FEATURE(feat, hwcap) \
+    do {if (arm_feature(e, feat)) { hwcaps |= hwcap; } } while (0)
+    GET_FEATURE(ARM_FEATURE_VFP, ARM_HWCAP_ARM_VFP);
+    GET_FEATURE(ARM_FEATURE_IWMMXT, ARM_HWCAP_ARM_IWMMXT);
+    GET_FEATURE(ARM_FEATURE_THUMB2EE, ARM_HWCAP_ARM_THUMBEE);
+    GET_FEATURE(ARM_FEATURE_NEON, ARM_HWCAP_ARM_NEON);
+    GET_FEATURE(ARM_FEATURE_VFP3, ARM_HWCAP_ARM_VFPv3);
+    GET_FEATURE(ARM_FEATURE_VFP_FP16, ARM_HWCAP_ARM_VFPv3D16);
+#undef GET_FEATURE
+
+    return hwcaps;
+}
 
 #endif
 
@@ -367,7 +450,7 @@ static inline void init_thread(struct target_pt_regs *regs,
 #define ELF_NREG    34
 typedef target_elf_greg_t  target_elf_gregset_t[ELF_NREG];
 
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUUniCore32State *env)
 {
     (*regs)[0] = env->regs[0];
     (*regs)[1] = env->regs[1];
@@ -402,7 +485,7 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
     (*regs)[30] = env->regs[30];
     (*regs)[31] = env->regs[31];
 
-    (*regs)[32] = cpu_asr_read((CPUState *)env);
+    (*regs)[32] = cpu_asr_read((CPUUniCore32State *)env);
     (*regs)[33] = env->regs[0]; /* XXX */
 }
 
@@ -529,7 +612,7 @@ enum {
 
 static uint32_t get_elf_hwcap(void)
 {
-    CPUState *e = thread_env;
+    CPUPPCState *e = thread_env;
     uint32_t features = 0;
 
     /* We don't have to be terribly complete here; the high points are
@@ -575,9 +658,14 @@ static inline void init_thread(struct target_pt_regs *_regs, struct image_info *
 {
     _regs->gpr[1] = infop->start_stack;
 #if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
+#if RICH
      // RICH: This seriously mucks things up. How does ppc64 start?
     _regs->gpr[2] = ldq_raw(infop->entry + 8); // RICH + infop->load_addr;
      infop->entry = ldq_raw(infop->entry); // RICH + infop->load_addr;
+#else
+    _regs->gpr[2] = ldq_raw(infop->entry + 8) + infop->load_bias;
+    infop->entry = ldq_raw(infop->entry) + infop->load_bias;
+#endif
 #endif
     _regs->nip = infop->entry;
 }
@@ -586,7 +674,7 @@ static inline void init_thread(struct target_pt_regs *_regs, struct image_info *
 #define ELF_NREG 48
 typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
 
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUPPCState *env)
 {
     int i;
     target_ulong ccr = 0;
@@ -655,7 +743,7 @@ enum {
 };
 
 /* See linux kernel: arch/mips/kernel/process.c:elf_dump_regs.  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUMIPSState *env)
 {
     int i;
 
@@ -707,7 +795,7 @@ static inline void init_thread(struct target_pt_regs *regs,
 typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
 
 /* See linux kernel: arch/mips/kernel/process.c:elf_dump_regs.  */
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUMBState *env)
 {
     int i, pos = 0;
 
@@ -721,6 +809,47 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
 }
 
 #endif /* TARGET_MICROBLAZE */
+
+#ifdef TARGET_OPENRISC
+
+#define ELF_START_MMAP 0x08000000
+
+#define elf_check_arch(x) ((x) == EM_OPENRISC)
+
+#define ELF_ARCH EM_OPENRISC
+#define ELF_CLASS ELFCLASS32
+#define ELF_DATA  ELFDATA2MSB
+
+static inline void init_thread(struct target_pt_regs *regs,
+                               struct image_info *infop)
+{
+    regs->pc = infop->entry;
+    regs->gpr[1] = infop->start_stack;
+}
+
+#define USE_ELF_CORE_DUMP
+#define ELF_EXEC_PAGESIZE 8192
+
+/* See linux kernel arch/openrisc/include/asm/elf.h.  */
+#define ELF_NREG 34 /* gprs and pc, sr */
+typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
+
+static void elf_core_copy_regs(target_elf_gregset_t *regs,
+                               const CPUOpenRISCState *env)
+{
+    int i;
+
+    for (i = 0; i < 32; i++) {
+        (*regs)[i] = tswapl(env->gpr[i]);
+    }
+
+    (*regs)[32] = tswapl(env->pc);
+    (*regs)[33] = tswapl(env->sr);
+}
+#define ELF_HWCAP 0
+#define ELF_PLATFORM NULL
+
+#endif /* TARGET_OPENRISC */
 
 #ifdef TARGET_SH4
 
@@ -755,7 +884,7 @@ enum {
 };
 
 static inline void elf_core_copy_regs(target_elf_gregset_t *regs,
-                                      const CPUState *env)
+                                      const CPUSH4State *env)
 {
     int i;
 
@@ -820,7 +949,7 @@ static inline void init_thread(struct target_pt_regs *regs,
 #define ELF_NREG 20
 typedef target_elf_greg_t target_elf_gregset_t[ELF_NREG];
 
-static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUState *env)
+static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUM68KState *env)
 {
     (*regs)[0] = tswapl(env->dregs[1]);
     (*regs)[1] = tswapl(env->dregs[2]);
@@ -1002,7 +1131,7 @@ static inline void bswap_sym(struct elf_sym *sym) { }
 #endif
 
 #ifdef USE_ELF_CORE_DUMP
-static int elf_core_dump(int, const CPUState *);
+static int elf_core_dump(int, const CPUArchState *);
 #endif /* USE_ELF_CORE_DUMP */
 static void load_symbols(struct elfhdr *hdr, int fd, abi_ulong load_bias);
 
@@ -1063,8 +1192,7 @@ static abi_ulong copy_elf_strings(int argc,char ** argv, void **page,
                 offset = p % TARGET_PAGE_SIZE;
                 pag = (char *)page[p/TARGET_PAGE_SIZE];
                 if (!pag) {
-                    pag = (char *)malloc(TARGET_PAGE_SIZE);
-                    memset(pag, 0, TARGET_PAGE_SIZE);
+                    pag = g_try_malloc0(TARGET_PAGE_SIZE);
                     page[p/TARGET_PAGE_SIZE] = pag;
                     if (!pag)
                         return 0;
@@ -1122,7 +1250,7 @@ static abi_ulong setup_arg_pages(abi_ulong p, struct linux_binprm *bprm,
             info->rss++;
             /* FIXME - check return value of memcpy_to_target() for failure */
             memcpy_to_target(stack_base, bprm->page[i], TARGET_PAGE_SIZE);
-            free(bprm->page[i]);
+            g_free(bprm->page[i]);
         }
         stack_base += TARGET_PAGE_SIZE;
     }
@@ -1204,6 +1332,7 @@ static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
                                    struct image_info *interp_info)
 {
     abi_ulong sp;
+    abi_ulong sp_auxv;
     int size;
     int i;
     abi_ulong u_rand_bytes;
@@ -1275,6 +1404,7 @@ static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
         sp -= n; put_user_ual(id, sp);          \
     } while(0)
 
+    sp_auxv = sp;
     NEW_AUX_ENT (AT_NULL, 0);
 
     /* There must be exactly DLINFO_ITEMS entries here.  */
@@ -1305,9 +1435,109 @@ static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
 #undef NEW_AUX_ENT
 
     info->saved_auxv = sp;
+    info->auxv_len = sp_auxv - sp;
 
     sp = loader_build_argptr(envc, argc, sp, p, 0);
     return sp;
+}
+
+#ifndef TARGET_HAS_VALIDATE_GUEST_SPACE
+/* If the guest doesn't have a validation function just agree */
+static int validate_guest_space(unsigned long guest_base,
+                                unsigned long guest_size)
+{
+    return 1;
+}
+#endif
+
+unsigned long init_guest_space(unsigned long host_start,
+                               unsigned long host_size,
+                               unsigned long guest_start,
+                               bool fixed)
+{
+    unsigned long current_start, real_start;
+    int flags;
+
+    assert(host_start || host_size);
+
+    /* If just a starting address is given, then just verify that
+     * address.  */
+    if (host_start && !host_size) {
+        if (validate_guest_space(host_start, host_size) == 1) {
+            return host_start;
+        } else {
+            return (unsigned long)-1;
+        }
+    }
+
+    /* Setup the initial flags and start address.  */
+    current_start = host_start & qemu_host_page_mask;
+    flags = MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE;
+    if (fixed) {
+        flags |= MAP_FIXED;
+    }
+
+    /* Otherwise, a non-zero size region of memory needs to be mapped
+     * and validated.  */
+    while (1) {
+        unsigned long real_size = host_size;
+
+        /* Do not use mmap_find_vma here because that is limited to the
+         * guest address space.  We are going to make the
+         * guest address space fit whatever we're given.
+         */
+        real_start = (unsigned long)
+            mmap((void *)current_start, host_size, PROT_NONE, flags, -1, 0);
+        if (real_start == (unsigned long)-1) {
+            return (unsigned long)-1;
+        }
+
+        /* Ensure the address is properly aligned.  */
+        if (real_start & ~qemu_host_page_mask) {
+            munmap((void *)real_start, host_size);
+            real_size = host_size + qemu_host_page_size;
+            real_start = (unsigned long)
+                mmap((void *)real_start, real_size, PROT_NONE, flags, -1, 0);
+            if (real_start == (unsigned long)-1) {
+                return (unsigned long)-1;
+            }
+            real_start = HOST_PAGE_ALIGN(real_start);
+        }
+
+        /* Check to see if the address is valid.  */
+        if (!host_start || real_start == current_start) {
+            int valid = validate_guest_space(real_start - guest_start,
+                                             real_size);
+            if (valid == 1) {
+                break;
+            } else if (valid == -1) {
+                return (unsigned long)-1;
+            }
+            /* valid == 0, so try again. */
+        }
+
+        /* That address didn't work.  Unmap and try a different one.
+         * The address the host picked because is typically right at
+         * the top of the host address space and leaves the guest with
+         * no usable address space.  Resort to a linear search.  We
+         * already compensated for mmap_min_addr, so this should not
+         * happen often.  Probably means we got unlucky and host
+         * address space randomization put a shared library somewhere
+         * inconvenient.
+         */
+        munmap((void *)real_start, host_size);
+        current_start += qemu_host_page_size;
+        if (host_start == current_start) {
+            /* Theoretically possible if host doesn't have any suitably
+             * aligned areas.  Normally the first mmap will fail.
+             */
+            return (unsigned long)-1;
+        }
+    }
+
+    qemu_log("Reserved 0x%lx bytes of guest address space\n", host_size);
+
+    return real_start;
 }
 
 static void probe_guest_base(const char *image_name,
@@ -1336,45 +1566,23 @@ static void probe_guest_base(const char *image_name,
             }
         }
         host_size = hiaddr - loaddr;
-        while (1) {
-            /* Do not use mmap_find_vma here because that is limited to the
-               guest address space.  We are going to make the
-               guest address space fit whatever we're given.  */
-            real_start = (unsigned long)
-                mmap((void *)host_start, host_size, PROT_NONE,
-                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
-            if (real_start == (unsigned long)-1) {
-                goto exit_perror;
-            }
-            if (real_start == host_start) {
-                break;
-            }
-            /* That address didn't work.  Unmap and try a different one.
-               The address the host picked because is typically right at
-               the top of the host address space and leaves the guest with
-               no usable address space.  Resort to a linear search.  We
-               already compensated for mmap_min_addr, so this should not
-               happen often.  Probably means we got unlucky and host
-               address space randomization put a shared library somewhere
-               inconvenient.  */
-            munmap((void *)real_start, host_size);
-            host_start += qemu_host_page_size;
-            if (host_start == loaddr) {
-                /* Theoretically possible if host doesn't have any suitably
-                   aligned areas.  Normally the first mmap will fail.  */
-                errmsg = "Unable to find space for application";
-                goto exit_errmsg;
-            }
+
+        /* Setup the initial guest memory space with ranges gleaned from
+         * the ELF image that is being loaded.
+         */
+        real_start = init_guest_space(host_start, host_size, loaddr, false);
+        if (real_start == (unsigned long)-1) {
+            errmsg = "Unable to find space for application";
+            goto exit_errmsg;
         }
+        guest_base = real_start - loaddr;
+
         qemu_log("Relocating guest address space from 0x"
                  TARGET_ABI_FMT_lx " to 0x%lx\n",
                  loaddr, real_start);
-        guest_base = real_start - loaddr;
     }
     return;
 
-exit_perror:
-    errmsg = strerror(errno);
 exit_errmsg:
     fprintf(stderr, "%s: %s\n", image_name, errmsg);
     exit(-1);
@@ -1474,7 +1682,7 @@ static void load_elf_image(const char *image_name, int image_fd,
 #ifdef CONFIG_USE_FDPIC
     {
         struct elf32_fdpic_loadseg *loadsegs = info->loadsegs =
-            qemu_malloc(sizeof(*loadsegs) * info->nsegs);
+            g_malloc(sizeof(*loadsegs) * info->nsegs);
 
         for (i = 0; i < ehdr->e_phnum; ++i) {
             switch (phdr[i].p_type) {
@@ -1500,6 +1708,7 @@ static void load_elf_image(const char *image_name, int image_fd,
     info->start_data = -1;
     info->end_data = 0;
     info->brk = 0;
+    info->elf_flags = ehdr->e_flags;
 
     for (i = 0; i < ehdr->e_phnum; i++) {
         struct elf_phdr *eppnt = phdr + i;
@@ -1633,12 +1842,12 @@ static void load_elf_interp(const char *filename, struct image_info *info,
 
 static int symfind(const void *s0, const void *s1)
 {
-    struct elf_sym *key = (struct elf_sym *)s0;
+    target_ulong addr = *(target_ulong *)s0;
     struct elf_sym *sym = (struct elf_sym *)s1;
     int result = 0;
-    if (key->st_value < sym->st_value) {
+    if (addr < sym->st_value) {
         result = -1;
-    } else if (key->st_value >= sym->st_value + sym->st_size) {
+    } else if (addr >= sym->st_value + sym->st_size) {
         result = 1;
     }
     return result;
@@ -1653,12 +1862,9 @@ static const char *lookup_symbolxx(struct syminfo *s, target_ulong orig_addr)
 #endif
 
     // binary search
-    struct elf_sym key;
     struct elf_sym *sym;
 
-    key.st_value = orig_addr;
-
-    sym = bsearch(&key, syms, s->disas_num_syms, sizeof(*syms), symfind);
+    sym = bsearch(&orig_addr, syms, s->disas_num_syms, sizeof(*syms), symfind);
     if (sym != NULL) {
         return s->disas_strtab + sym->st_name;
     }
@@ -1833,11 +2039,11 @@ int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * regs,
     info->start_stack = bprm->p;
 
     /* If we have an interpreter, set that as the program's entry point.
-       Copy the load_addr as well, to help PPC64 interpret the entry
+       Copy the load_bias as well, to help PPC64 interpret the entry
        point as a function descriptor.  Do this after creating elf tables
        so that we copy the original program entry point into the AUXV.  */
     if (elf_interpreter) {
-        info->load_addr = interp_info.load_addr;
+        info->load_bias = interp_info.load_bias;
         info->entry = interp_info.entry;
         free(elf_interpreter);
     }
@@ -1880,7 +2086,7 @@ int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * regs,
  * from given cpu into just specified register set.  Prototype is:
  *
  * static void elf_core_copy_regs(taret_elf_gregset_t *regs,
- *                                const CPUState *env);
+ *                                const CPUArchState *env);
  *
  * Parameters:
  *     regs - copy register values into here (allocated and zeroed by caller)
@@ -2004,8 +2210,8 @@ static void fill_auxv_note(struct memelfnote *, const TaskState *);
 static void fill_elf_note_phdr(struct elf_phdr *, int, off_t);
 static size_t note_size(const struct memelfnote *);
 static void free_note_info(struct elf_note_info *);
-static int fill_note_info(struct elf_note_info *, long, const CPUState *);
-static void fill_thread_info(struct elf_note_info *, const CPUState *);
+static int fill_note_info(struct elf_note_info *, long, const CPUArchState *);
+static void fill_thread_info(struct elf_note_info *, const CPUArchState *);
 static int core_dump_filename(const TaskState *, char *, size_t);
 
 static int dump_write(int, const void *, size_t);
@@ -2064,7 +2270,7 @@ static struct mm_struct *vma_init(void)
 {
     struct mm_struct *mm;
 
-    if ((mm = qemu_malloc(sizeof (*mm))) == NULL)
+    if ((mm = g_malloc(sizeof (*mm))) == NULL)
         return (NULL);
 
     mm->mm_count = 0;
@@ -2079,9 +2285,9 @@ static void vma_delete(struct mm_struct *mm)
 
     while ((vma = vma_first(mm)) != NULL) {
         QTAILQ_REMOVE(&mm->mm_mmap, vma, vma_link);
-        qemu_free(vma);
+        g_free(vma);
     }
-    qemu_free(mm);
+    g_free(mm);
 }
 
 static int vma_add_mapping(struct mm_struct *mm, abi_ulong start,
@@ -2089,7 +2295,7 @@ static int vma_add_mapping(struct mm_struct *mm, abi_ulong start,
 {
     struct vm_area_struct *vma;
 
-    if ((vma = qemu_mallocz(sizeof (*vma))) == NULL)
+    if ((vma = g_malloc0(sizeof (*vma))) == NULL)
         return (-1);
 
     vma->vma_start = start;
@@ -2242,7 +2448,7 @@ static void fill_prstatus(struct target_elf_prstatus *prstatus,
 
 static int fill_psinfo(struct target_elf_prpsinfo *psinfo, const TaskState *ts)
 {
-    char *filename, *base_filename;
+    char *base_filename;
     unsigned int i, len;
 
     (void) memset(psinfo, 0, sizeof (*psinfo));
@@ -2264,13 +2470,15 @@ static int fill_psinfo(struct target_elf_prpsinfo *psinfo, const TaskState *ts)
     psinfo->pr_uid = getuid();
     psinfo->pr_gid = getgid();
 
-    filename = strdup(ts->bprm->filename);
-    base_filename = strdup(basename(filename));
+    base_filename = g_path_get_basename(ts->bprm->filename);
+    /*
+     * Using strncpy here is fine: at max-length,
+     * this field is not NUL-terminated.
+     */
     (void) strncpy(psinfo->pr_fname, base_filename,
                    sizeof(psinfo->pr_fname));
-    free(base_filename);
-    free(filename);
 
+    g_free(base_filename);
     bswap_psinfo(psinfo);
     return (0);
 }
@@ -2279,24 +2487,14 @@ static void fill_auxv_note(struct memelfnote *note, const TaskState *ts)
 {
     elf_addr_t auxv = (elf_addr_t)ts->info->saved_auxv;
     elf_addr_t orig_auxv = auxv;
-    abi_ulong val;
     void *ptr;
-    int i, len;
+    int len = ts->info->auxv_len;
 
     /*
      * Auxiliary vector is stored in target process stack.  It contains
      * {type, value} pairs that we need to dump into note.  This is not
      * strictly necessary but we do it here for sake of completeness.
      */
-
-    /* find out lenght of the vector, AT_NULL is terminator */
-    i = len = 0;
-    do {
-        get_user_ual(val, auxv);
-        i += 2;
-        auxv += 2 * sizeof (elf_addr_t);
-    } while (val != AT_NULL);
-    len = i * sizeof (elf_addr_t);
 
     /* read in whole auxv vector and copy it to memelfnote */
     ptr = lock_user(VERIFY_READ, orig_auxv, len, 0);
@@ -2408,12 +2606,12 @@ static int write_note(struct memelfnote *men, int fd)
     return (0);
 }
 
-static void fill_thread_info(struct elf_note_info *info, const CPUState *env)
+static void fill_thread_info(struct elf_note_info *info, const CPUArchState *env)
 {
     TaskState *ts = (TaskState *)env->opaque;
     struct elf_thread_status *ets;
 
-    ets = qemu_mallocz(sizeof (*ets));
+    ets = g_malloc0(sizeof (*ets));
     ets->num_notes = 1; /* only prstatus is dumped */
     fill_prstatus(&ets->prstatus, ts, 0);
     elf_core_copy_regs(&ets->prstatus.pr_reg, env);
@@ -2426,10 +2624,10 @@ static void fill_thread_info(struct elf_note_info *info, const CPUState *env)
 }
 
 static int fill_note_info(struct elf_note_info *info,
-                          long signr, const CPUState *env)
+                          long signr, const CPUArchState *env)
 {
 #define NUMNOTES 3
-    CPUState *cpu = NULL;
+    CPUArchState *cpu = NULL;
     TaskState *ts = (TaskState *)env->opaque;
     int i;
 
@@ -2437,13 +2635,13 @@ static int fill_note_info(struct elf_note_info *info,
 
     QTAILQ_INIT(&info->thread_list);
 
-    info->notes = qemu_mallocz(NUMNOTES * sizeof (struct memelfnote));
+    info->notes = g_malloc0(NUMNOTES * sizeof (struct memelfnote));
     if (info->notes == NULL)
         return (-ENOMEM);
-    info->prstatus = qemu_mallocz(sizeof (*info->prstatus));
+    info->prstatus = g_malloc0(sizeof (*info->prstatus));
     if (info->prstatus == NULL)
         return (-ENOMEM);
-    info->psinfo = qemu_mallocz(sizeof (*info->psinfo));
+    info->psinfo = g_malloc0(sizeof (*info->psinfo));
     if (info->prstatus == NULL)
         return (-ENOMEM);
 
@@ -2484,12 +2682,12 @@ static void free_note_info(struct elf_note_info *info)
     while (!QTAILQ_EMPTY(&info->thread_list)) {
         ets = QTAILQ_FIRST(&info->thread_list);
         QTAILQ_REMOVE(&info->thread_list, ets, ets_link);
-        qemu_free(ets);
+        g_free(ets);
     }
 
-    qemu_free(info->prstatus);
-    qemu_free(info->psinfo);
-    qemu_free(info->notes);
+    g_free(info->prstatus);
+    g_free(info->psinfo);
+    g_free(info->notes);
 }
 
 static int write_note_info(struct elf_note_info *info, int fd)
@@ -2555,7 +2753,7 @@ static int write_note_info(struct elf_note_info *info, int fd)
  * handler (provided that target process haven't registered
  * handler for that) that does the dump when signal is received.
  */
-static int elf_core_dump(int signr, const CPUState *env)
+static int elf_core_dump(int signr, const CPUArchState *env)
 {
     const TaskState *ts = (const TaskState *)env->opaque;
     struct vm_area_struct *vma = NULL;

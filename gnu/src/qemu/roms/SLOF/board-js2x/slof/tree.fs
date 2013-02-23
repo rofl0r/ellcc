@@ -15,7 +15,14 @@
 0 value puid
 
 : >conf-rtas ( config-addr  -- config-addr )
-   puid f2000000 >= IF dup ffff > IF 1000000 + THEN THEN puid +  ;
+   puid f2000000 >= IF
+      ffffff AND                        \ Mask away highest byte for normal PCI
+      dup ffff > IF
+         1000000 +
+      THEN
+   THEN
+   puid +
+;
 
 : rtas-config-b@ ( config-addr -- value ) >conf-rtas rb@ ;
 : rtas-config-b! ( value config-addr -- ) >conf-rtas rb! ;
@@ -133,16 +140,7 @@ set-node
 
 #include "ht.fs"
 
-6a0 cp
-get-node device-end
-6a8 cp
-\ at this point the SAS controller has been detected and we know
-\ if it is bimini or js21
-\ if it is bimini the fcode evaluator is included
-bimini? ?include evaluator.fs
 6b0 cp
-set-node
-6b8 cp
 
 u4? ?include attu.fs
 6c0 cp

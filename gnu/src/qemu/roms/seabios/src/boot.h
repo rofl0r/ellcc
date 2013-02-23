@@ -12,11 +12,14 @@ void boot_add_hd(struct drive_s *drive_g, const char *desc, int prio);
 void boot_add_cd(struct drive_s *drive_g, const char *desc, int prio);
 void boot_add_cbfs(void *data, const char *desc, int prio);
 void boot_prep(void);
-int bootprio_find_pci_device(int bdf);
-int bootprio_find_ata_device(int bdf, int chanid, int slave);
-int bootprio_find_fdc_device(int bdf, int port, int fdid);
-int bootprio_find_pci_rom(int bdf, int instance);
+struct pci_device;
+int bootprio_find_pci_device(struct pci_device *pci);
+int bootprio_find_scsi_device(struct pci_device *pci, int target, int lun);
+int bootprio_find_ata_device(struct pci_device *pci, int chanid, int slave);
+int bootprio_find_fdc_device(struct pci_device *pci, int port, int fdid);
+int bootprio_find_pci_rom(struct pci_device *pci, int instance);
 int bootprio_find_named_rom(const char *name, int instance);
-int bootprio_find_usb(int bdf, u64 path);
+struct usbdevice_s;
+int bootprio_find_usb(struct usbdevice_s *usbdev, int lun);
 
 #endif // __BOOT_H

@@ -22,13 +22,13 @@
  * THE SOFTWARE.
  */
 #include "sysbus.h"
-#include "qemu-timer.h"
+#include "qemu/timer.h"
 #include "sun4m.h"
 #include "nvram.h"
 #include "sparc32_dma.h"
 #include "fdc.h"
-#include "sysemu.h"
-#include "net.h"
+#include "sysemu/sysemu.h"
+#include "net/net.h"
 #include "boards.h"
 #include "firmware_abi.h"
 #include "esp.h"
@@ -40,7 +40,7 @@
 #include "qdev-addr.h"
 #include "loader.h"
 #include "elf.h"
-#include "blockdev.h"
+#include "sysemu/blockdev.h"
 #include "trace.h"
 
 /*
@@ -87,52 +87,52 @@
 #define ESCC_CLOCK 4915200
 
 struct sun4m_hwdef {
-    target_phys_addr_t iommu_base, iommu_pad_base, iommu_pad_len, slavio_base;
-    target_phys_addr_t intctl_base, counter_base, nvram_base, ms_kb_base;
-    target_phys_addr_t serial_base, fd_base;
-    target_phys_addr_t afx_base, idreg_base, dma_base, esp_base, le_base;
-    target_phys_addr_t tcx_base, cs_base, apc_base, aux1_base, aux2_base;
-    target_phys_addr_t bpp_base, dbri_base, sx_base;
+    hwaddr iommu_base, iommu_pad_base, iommu_pad_len, slavio_base;
+    hwaddr intctl_base, counter_base, nvram_base, ms_kb_base;
+    hwaddr serial_base, fd_base;
+    hwaddr afx_base, idreg_base, dma_base, esp_base, le_base;
+    hwaddr tcx_base, cs_base, apc_base, aux1_base, aux2_base;
+    hwaddr bpp_base, dbri_base, sx_base;
     struct {
-        target_phys_addr_t reg_base, vram_base;
+        hwaddr reg_base, vram_base;
     } vsimm[MAX_VSIMMS];
-    target_phys_addr_t ecc_base;
-    uint32_t ecc_version;
-    uint8_t nvram_machine_id;
-    uint16_t machine_id;
-    uint32_t iommu_version;
+    hwaddr ecc_base;
     uint64_t max_mem;
     const char * const default_cpu_model;
+    uint32_t ecc_version;
+    uint32_t iommu_version;
+    uint16_t machine_id;
+    uint8_t nvram_machine_id;
 };
 
 #define MAX_IOUNITS 5
 
 struct sun4d_hwdef {
-    target_phys_addr_t iounit_bases[MAX_IOUNITS], slavio_base;
-    target_phys_addr_t counter_base, nvram_base, ms_kb_base;
-    target_phys_addr_t serial_base;
-    target_phys_addr_t espdma_base, esp_base;
-    target_phys_addr_t ledma_base, le_base;
-    target_phys_addr_t tcx_base;
-    target_phys_addr_t sbi_base;
-    uint8_t nvram_machine_id;
-    uint16_t machine_id;
-    uint32_t iounit_version;
+    hwaddr iounit_bases[MAX_IOUNITS], slavio_base;
+    hwaddr counter_base, nvram_base, ms_kb_base;
+    hwaddr serial_base;
+    hwaddr espdma_base, esp_base;
+    hwaddr ledma_base, le_base;
+    hwaddr tcx_base;
+    hwaddr sbi_base;
     uint64_t max_mem;
     const char * const default_cpu_model;
+    uint32_t iounit_version;
+    uint16_t machine_id;
+    uint8_t nvram_machine_id;
 };
 
 struct sun4c_hwdef {
-    target_phys_addr_t iommu_base, slavio_base;
-    target_phys_addr_t intctl_base, counter_base, nvram_base, ms_kb_base;
-    target_phys_addr_t serial_base, fd_base;
-    target_phys_addr_t idreg_base, dma_base, esp_base, le_base;
-    target_phys_addr_t tcx_base, aux1_base;
-    uint8_t nvram_machine_id;
-    uint16_t machine_id;
-    uint32_t iommu_version;
+    hwaddr iommu_base, slavio_base;
+    hwaddr intctl_base, counter_base, nvram_base, ms_kb_base;
+    hwaddr serial_base, fd_base;
+    hwaddr idreg_base, dma_base, esp_base, le_base;
+    hwaddr tcx_base, aux1_base;
     uint64_t max_mem;
     const char * const default_cpu_model;
+    uint32_t iommu_version;
+    uint16_t machine_id;
+    uint8_t nvram_machine_id;
 };
 
 int DMA_get_channel_mode (int nchan)
@@ -216,19 +216,19 @@ static void nvram_init(M48t59State *nvram, uint8_t *macaddr,
 
 static DeviceState *slavio_intctl;
 
-void pic_info(Monitor *mon)
+void sun4m_pic_info(Monitor *mon, const QDict *qdict)
 {
     if (slavio_intctl)
         slavio_pic_info(mon, slavio_intctl);
 }
 
-void irq_info(Monitor *mon)
+void sun4m_irq_info(Monitor *mon, const QDict *qdict)
 {
     if (slavio_intctl)
         slavio_irq_info(mon, slavio_intctl);
 }
 
-void cpu_check_irqs(CPUState *env)
+void cpu_check_irqs(CPUSPARCState *env)
 {
     if (env->pil_in && (env->interrupt_index == 0 ||
                         (env->interrupt_index & ~15) == TT_EXTINT)) {
@@ -253,21 +253,24 @@ void cpu_check_irqs(CPUState *env)
     }
 }
 
-static void cpu_kick_irq(CPUState *env)
+static void cpu_kick_irq(SPARCCPU *cpu)
 {
+    CPUSPARCState *env = &cpu->env;
+
     env->halted = 0;
     cpu_check_irqs(env);
-    qemu_cpu_kick(env);
+    qemu_cpu_kick(CPU(cpu));
 }
 
 static void cpu_set_irq(void *opaque, int irq, int level)
 {
-    CPUState *env = opaque;
+    SPARCCPU *cpu = opaque;
+    CPUSPARCState *env = &cpu->env;
 
     if (level) {
         trace_sun4m_cpu_set_irq_raise(irq);
         env->pil_in |= 1 << irq;
-        cpu_kick_irq(env);
+        cpu_kick_irq(cpu);
     } else {
         trace_sun4m_cpu_set_irq_lower(irq);
         env->pil_in &= ~(1 << irq);
@@ -281,17 +284,19 @@ static void dummy_cpu_set_irq(void *opaque, int irq, int level)
 
 static void main_cpu_reset(void *opaque)
 {
-    CPUState *env = opaque;
+    SPARCCPU *cpu = opaque;
+    CPUSPARCState *env = &cpu->env;
 
-    cpu_reset(env);
+    cpu_reset(CPU(cpu));
     env->halted = 0;
 }
 
 static void secondary_cpu_reset(void *opaque)
 {
-    CPUState *env = opaque;
+    SPARCCPU *cpu = opaque;
+    CPUSPARCState *env = &cpu->env;
 
-    cpu_reset(env);
+    cpu_reset(CPU(cpu));
     env->halted = 1;
 }
 
@@ -368,7 +373,7 @@ static unsigned long sun4m_load_kernel(const char *kernel_filename,
     return kernel_size;
 }
 
-static void *iommu_init(target_phys_addr_t addr, uint32_t version, qemu_irq irq)
+static void *iommu_init(hwaddr addr, uint32_t version, qemu_irq irq)
 {
     DeviceState *dev;
     SysBusDevice *s;
@@ -376,14 +381,14 @@ static void *iommu_init(target_phys_addr_t addr, uint32_t version, qemu_irq irq)
     dev = qdev_create(NULL, "iommu");
     qdev_prop_set_uint32(dev, "version", version);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     sysbus_connect_irq(s, 0, irq);
     sysbus_mmio_map(s, 0, addr);
 
     return s;
 }
 
-static void *sparc32_dma_init(target_phys_addr_t daddr, qemu_irq parent_irq,
+static void *sparc32_dma_init(hwaddr daddr, qemu_irq parent_irq,
                               void *iommu, qemu_irq *dev_irq, int is_ledma)
 {
     DeviceState *dev;
@@ -393,7 +398,7 @@ static void *sparc32_dma_init(target_phys_addr_t daddr, qemu_irq parent_irq,
     qdev_prop_set_ptr(dev, "iommu_opaque", iommu);
     qdev_prop_set_uint32(dev, "is_ledma", is_ledma);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     sysbus_connect_irq(s, 0, parent_irq);
     *dev_irq = qdev_get_gpio_in(dev, 0);
     sysbus_mmio_map(s, 0, daddr);
@@ -401,7 +406,7 @@ static void *sparc32_dma_init(target_phys_addr_t daddr, qemu_irq parent_irq,
     return s;
 }
 
-static void lance_init(NICInfo *nd, target_phys_addr_t leaddr,
+static void lance_init(NICInfo *nd, hwaddr leaddr,
                        void *dma_opaque, qemu_irq irq)
 {
     DeviceState *dev;
@@ -414,15 +419,15 @@ static void lance_init(NICInfo *nd, target_phys_addr_t leaddr,
     qdev_set_nic_properties(dev, nd);
     qdev_prop_set_ptr(dev, "dma", dma_opaque);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     sysbus_mmio_map(s, 0, leaddr);
     sysbus_connect_irq(s, 0, irq);
     reset = qdev_get_gpio_in(dev, 0);
     qdev_connect_gpio_out(dma_opaque, 0, reset);
 }
 
-static DeviceState *slavio_intctl_init(target_phys_addr_t addr,
-                                       target_phys_addr_t addrg,
+static DeviceState *slavio_intctl_init(hwaddr addr,
+                                       hwaddr addrg,
                                        qemu_irq **parent_irq)
 {
     DeviceState *dev;
@@ -432,7 +437,7 @@ static DeviceState *slavio_intctl_init(target_phys_addr_t addr,
     dev = qdev_create(NULL, "slavio_intctl");
     qdev_init_nofail(dev);
 
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     for (i = 0; i < MAX_CPUS; i++) {
         for (j = 0; j < MAX_PILS; j++) {
@@ -450,7 +455,7 @@ static DeviceState *slavio_intctl_init(target_phys_addr_t addr,
 #define SYS_TIMER_OFFSET      0x10000ULL
 #define CPU_TIMER_OFFSET(cpu) (0x1000ULL * cpu)
 
-static void slavio_timer_init_all(target_phys_addr_t addr, qemu_irq master_irq,
+static void slavio_timer_init_all(hwaddr addr, qemu_irq master_irq,
                                   qemu_irq *cpu_irqs, unsigned int num_cpus)
 {
     DeviceState *dev;
@@ -460,15 +465,26 @@ static void slavio_timer_init_all(target_phys_addr_t addr, qemu_irq master_irq,
     dev = qdev_create(NULL, "slavio_timer");
     qdev_prop_set_uint32(dev, "num_cpus", num_cpus);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     sysbus_connect_irq(s, 0, master_irq);
     sysbus_mmio_map(s, 0, addr + SYS_TIMER_OFFSET);
 
     for (i = 0; i < MAX_CPUS; i++) {
-        sysbus_mmio_map(s, i + 1, addr + (target_phys_addr_t)CPU_TIMER_OFFSET(i));
+        sysbus_mmio_map(s, i + 1, addr + (hwaddr)CPU_TIMER_OFFSET(i));
         sysbus_connect_irq(s, i + 1, cpu_irqs[i]);
     }
 }
+
+static qemu_irq  slavio_system_powerdown;
+
+static void slavio_powerdown_req(Notifier *n, void *opaque)
+{
+    qemu_irq_raise(slavio_system_powerdown);
+}
+
+static Notifier slavio_system_powerdown_notifier = {
+    .notify = slavio_powerdown_req
+};
 
 #define MISC_LEDS 0x01600000
 #define MISC_CFG  0x01800000
@@ -476,9 +492,9 @@ static void slavio_timer_init_all(target_phys_addr_t addr, qemu_irq master_irq,
 #define MISC_MDM  0x01b00000
 #define MISC_SYS  0x01f00000
 
-static void slavio_misc_init(target_phys_addr_t base,
-                             target_phys_addr_t aux1_base,
-                             target_phys_addr_t aux2_base, qemu_irq irq,
+static void slavio_misc_init(hwaddr base,
+                             hwaddr aux1_base,
+                             hwaddr aux2_base, qemu_irq irq,
                              qemu_irq fdc_tc)
 {
     DeviceState *dev;
@@ -486,7 +502,7 @@ static void slavio_misc_init(target_phys_addr_t base,
 
     dev = qdev_create(NULL, "slavio_misc");
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     if (base) {
         /* 8 bit registers */
         /* Slavio control */
@@ -512,10 +528,11 @@ static void slavio_misc_init(target_phys_addr_t base,
     }
     sysbus_connect_irq(s, 0, irq);
     sysbus_connect_irq(s, 1, fdc_tc);
-    qemu_system_powerdown = qdev_get_gpio_in(dev, 0);
+    slavio_system_powerdown = qdev_get_gpio_in(dev, 0);
+    qemu_register_powerdown_notifier(&slavio_system_powerdown_notifier);
 }
 
-static void ecc_init(target_phys_addr_t base, qemu_irq irq, uint32_t version)
+static void ecc_init(hwaddr base, qemu_irq irq, uint32_t version)
 {
     DeviceState *dev;
     SysBusDevice *s;
@@ -523,7 +540,7 @@ static void ecc_init(target_phys_addr_t base, qemu_irq irq, uint32_t version)
     dev = qdev_create(NULL, "eccmemctl");
     qdev_prop_set_uint32(dev, "version", version);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     sysbus_connect_irq(s, 0, irq);
     sysbus_mmio_map(s, 0, base);
     if (version == 0) { // SS-600MP only
@@ -531,20 +548,20 @@ static void ecc_init(target_phys_addr_t base, qemu_irq irq, uint32_t version)
     }
 }
 
-static void apc_init(target_phys_addr_t power_base, qemu_irq cpu_halt)
+static void apc_init(hwaddr power_base, qemu_irq cpu_halt)
 {
     DeviceState *dev;
     SysBusDevice *s;
 
     dev = qdev_create(NULL, "apc");
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     /* Power management (APC) XXX: not a Slavio device */
     sysbus_mmio_map(s, 0, power_base);
     sysbus_connect_irq(s, 0, cpu_halt);
 }
 
-static void tcx_init(target_phys_addr_t addr, int vram_size, int width,
+static void tcx_init(hwaddr addr, int vram_size, int width,
                      int height, int depth)
 {
     DeviceState *dev;
@@ -557,7 +574,7 @@ static void tcx_init(target_phys_addr_t addr, int vram_size, int width,
     qdev_prop_set_uint16(dev, "height", height);
     qdev_prop_set_uint16(dev, "depth", depth);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
     /* 8-bit plane */
     sysbus_mmio_map(s, 0, addr + 0x00800000ULL);
     /* DAC */
@@ -580,84 +597,104 @@ static void tcx_init(target_phys_addr_t addr, int vram_size, int width,
 /* NCR89C100/MACIO Internal ID register */
 static const uint8_t idreg_data[] = { 0xfe, 0x81, 0x01, 0x03 };
 
-static void idreg_init(target_phys_addr_t addr)
+static void idreg_init(hwaddr addr)
 {
     DeviceState *dev;
     SysBusDevice *s;
 
     dev = qdev_create(NULL, "macio_idreg");
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     sysbus_mmio_map(s, 0, addr);
     cpu_physical_memory_write_rom(addr, idreg_data, sizeof(idreg_data));
 }
 
+typedef struct IDRegState {
+    SysBusDevice busdev;
+    MemoryRegion mem;
+} IDRegState;
+
 static int idreg_init1(SysBusDevice *dev)
 {
-    ram_addr_t idreg_offset;
+    IDRegState *s = FROM_SYSBUS(IDRegState, dev);
 
-    idreg_offset = qemu_ram_alloc(NULL, "sun4m.idreg", sizeof(idreg_data));
-    sysbus_init_mmio(dev, sizeof(idreg_data), idreg_offset | IO_MEM_ROM);
+    memory_region_init_ram(&s->mem, "sun4m.idreg", sizeof(idreg_data));
+    vmstate_register_ram_global(&s->mem);
+    memory_region_set_readonly(&s->mem, true);
+    sysbus_init_mmio(dev, &s->mem);
     return 0;
 }
 
-static SysBusDeviceInfo idreg_info = {
-    .init = idreg_init1,
-    .qdev.name  = "macio_idreg",
-    .qdev.size  = sizeof(SysBusDevice),
-};
-
-static void idreg_register_devices(void)
+static void idreg_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&idreg_info);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = idreg_init1;
 }
 
-device_init(idreg_register_devices);
+static const TypeInfo idreg_info = {
+    .name          = "macio_idreg",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(IDRegState),
+    .class_init    = idreg_class_init,
+};
+
+typedef struct AFXState {
+    SysBusDevice busdev;
+    MemoryRegion mem;
+} AFXState;
 
 /* SS-5 TCX AFX register */
-static void afx_init(target_phys_addr_t addr)
+static void afx_init(hwaddr addr)
 {
     DeviceState *dev;
     SysBusDevice *s;
 
     dev = qdev_create(NULL, "tcx_afx");
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     sysbus_mmio_map(s, 0, addr);
 }
 
 static int afx_init1(SysBusDevice *dev)
 {
-    ram_addr_t afx_offset;
+    AFXState *s = FROM_SYSBUS(AFXState, dev);
 
-    afx_offset = qemu_ram_alloc(NULL, "sun4m.afx", 4);
-    sysbus_init_mmio(dev, 4, afx_offset | IO_MEM_RAM);
+    memory_region_init_ram(&s->mem, "sun4m.afx", 4);
+    vmstate_register_ram_global(&s->mem);
+    sysbus_init_mmio(dev, &s->mem);
     return 0;
 }
 
-static SysBusDeviceInfo afx_info = {
-    .init = afx_init1,
-    .qdev.name  = "tcx_afx",
-    .qdev.size  = sizeof(SysBusDevice),
-};
-
-static void afx_register_devices(void)
+static void afx_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&afx_info);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = afx_init1;
 }
 
-device_init(afx_register_devices);
+static const TypeInfo afx_info = {
+    .name          = "tcx_afx",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(AFXState),
+    .class_init    = afx_class_init,
+};
+
+typedef struct PROMState {
+    SysBusDevice busdev;
+    MemoryRegion prom;
+} PROMState;
 
 /* Boot PROM (OpenBIOS) */
 static uint64_t translate_prom_address(void *opaque, uint64_t addr)
 {
-    target_phys_addr_t *base_addr = (target_phys_addr_t *)opaque;
+    hwaddr *base_addr = (hwaddr *)opaque;
     return addr + *base_addr - PROM_VADDR;
 }
 
-static void prom_init(target_phys_addr_t addr, const char *bios_name)
+static void prom_init(hwaddr addr, const char *bios_name)
 {
     DeviceState *dev;
     SysBusDevice *s;
@@ -666,7 +703,7 @@ static void prom_init(target_phys_addr_t addr, const char *bios_name)
 
     dev = qdev_create(NULL, "openprom");
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     sysbus_mmio_map(s, 0, addr);
 
@@ -681,7 +718,7 @@ static void prom_init(target_phys_addr_t addr, const char *bios_name)
         if (ret < 0 || ret > PROM_SIZE_MAX) {
             ret = load_image_targphys(filename, addr, PROM_SIZE_MAX);
         }
-        qemu_free(filename);
+        g_free(filename);
     } else {
         ret = -1;
     }
@@ -693,49 +730,54 @@ static void prom_init(target_phys_addr_t addr, const char *bios_name)
 
 static int prom_init1(SysBusDevice *dev)
 {
-    ram_addr_t prom_offset;
+    PROMState *s = FROM_SYSBUS(PROMState, dev);
 
-    prom_offset = qemu_ram_alloc(NULL, "sun4m.prom", PROM_SIZE_MAX);
-    sysbus_init_mmio(dev, PROM_SIZE_MAX, prom_offset | IO_MEM_ROM);
+    memory_region_init_ram(&s->prom, "sun4m.prom", PROM_SIZE_MAX);
+    vmstate_register_ram_global(&s->prom);
+    memory_region_set_readonly(&s->prom, true);
+    sysbus_init_mmio(dev, &s->prom);
     return 0;
 }
 
-static SysBusDeviceInfo prom_info = {
-    .init = prom_init1,
-    .qdev.name  = "openprom",
-    .qdev.size  = sizeof(SysBusDevice),
-    .qdev.props = (Property[]) {
-        {/* end of property list */}
-    }
+static Property prom_properties[] = {
+    {/* end of property list */},
 };
 
-static void prom_register_devices(void)
+static void prom_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&prom_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = prom_init1;
+    dc->props = prom_properties;
 }
 
-device_init(prom_register_devices);
+static const TypeInfo prom_info = {
+    .name          = "openprom",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(PROMState),
+    .class_init    = prom_class_init,
+};
 
 typedef struct RamDevice
 {
     SysBusDevice busdev;
+    MemoryRegion ram;
     uint64_t size;
 } RamDevice;
 
 /* System RAM */
 static int ram_init1(SysBusDevice *dev)
 {
-    ram_addr_t RAM_size, ram_offset;
     RamDevice *d = FROM_SYSBUS(RamDevice, dev);
 
-    RAM_size = d->size;
-
-    ram_offset = qemu_ram_alloc(NULL, "sun4m.ram", RAM_size);
-    sysbus_init_mmio(dev, RAM_size, ram_offset);
+    memory_region_init_ram(&d->ram, "sun4m.ram", d->size);
+    vmstate_register_ram_global(&d->ram);
+    sysbus_init_mmio(dev, &d->ram);
     return 0;
 }
 
-static void ram_init(target_phys_addr_t addr, ram_addr_t RAM_size,
+static void ram_init(hwaddr addr, ram_addr_t RAM_size,
                      uint64_t max_mem)
 {
     DeviceState *dev;
@@ -751,7 +793,7 @@ static void ram_init(target_phys_addr_t addr, ram_addr_t RAM_size,
         exit(1);
     }
     dev = qdev_create(NULL, "memory");
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     d = FROM_SYSBUS(RamDevice, s);
     d->size = RAM_size;
@@ -760,43 +802,53 @@ static void ram_init(target_phys_addr_t addr, ram_addr_t RAM_size,
     sysbus_mmio_map(s, 0, addr);
 }
 
-static SysBusDeviceInfo ram_info = {
-    .init = ram_init1,
-    .qdev.name  = "memory",
-    .qdev.size  = sizeof(RamDevice),
-    .qdev.props = (Property[]) {
-        DEFINE_PROP_UINT64("size", RamDevice, size, 0),
-        DEFINE_PROP_END_OF_LIST(),
-    }
+static Property ram_properties[] = {
+    DEFINE_PROP_UINT64("size", RamDevice, size, 0),
+    DEFINE_PROP_END_OF_LIST(),
 };
 
-static void ram_register_devices(void)
+static void ram_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_withprop(&ram_info);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
+
+    k->init = ram_init1;
+    dc->props = ram_properties;
 }
 
-device_init(ram_register_devices);
+static const TypeInfo ram_info = {
+    .name          = "memory",
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(RamDevice),
+    .class_init    = ram_class_init,
+};
 
 static void cpu_devinit(const char *cpu_model, unsigned int id,
                         uint64_t prom_addr, qemu_irq **cpu_irqs)
 {
-    CPUState *env;
+    SPARCCPU *cpu;
+    CPUSPARCState *env;
 
-    env = cpu_init(cpu_model);
-    if (!env) {
+    cpu = cpu_sparc_init(cpu_model);
+    if (cpu == NULL) {
         fprintf(stderr, "qemu: Unable to find Sparc CPU definition\n");
         exit(1);
     }
+    env = &cpu->env;
 
     cpu_sparc_set_id(env, id);
     if (id == 0) {
-        qemu_register_reset(main_cpu_reset, env);
+        qemu_register_reset(main_cpu_reset, cpu);
     } else {
-        qemu_register_reset(secondary_cpu_reset, env);
+        qemu_register_reset(secondary_cpu_reset, cpu);
         env->halted = 1;
     }
-    *cpu_irqs = qemu_allocate_irqs(cpu_set_irq, env, MAX_PILS);
+    *cpu_irqs = qemu_allocate_irqs(cpu_set_irq, cpu, MAX_PILS);
     env->prom_addr = prom_addr;
+}
+
+static void dummy_fdc_tc(void *opaque, int irq, int level)
+{
 }
 
 static void sun4m_hw_init(const struct sun4m_hwdef *hwdef, ram_addr_t RAM_size,
@@ -903,15 +955,12 @@ static void sun4m_hw_init(const struct sun4m_hwdef *hwdef, ram_addr_t RAM_size,
 
     slavio_serial_ms_kbd_init(hwdef->ms_kb_base, slavio_irq[14],
                               display_type == DT_NOGRAPHIC, ESCC_CLOCK, 1);
-    // Slavio TTYA (base+4, Linux ttyS0) is the first Qemu serial device
-    // Slavio TTYB (base+0, Linux ttyS1) is the second Qemu serial device
+    /* Slavio TTYA (base+4, Linux ttyS0) is the first QEMU serial device
+       Slavio TTYB (base+0, Linux ttyS1) is the second QEMU serial device */
     escc_init(hwdef->serial_base, slavio_irq[15], slavio_irq[15],
               serial_hds[0], serial_hds[1], ESCC_CLOCK, 1);
 
     cpu_halt = qemu_allocate_irqs(cpu_halt_signal, NULL, 1);
-    slavio_misc_init(hwdef->slavio_base, hwdef->aux1_base, hwdef->aux2_base,
-                     slavio_irq[30], fdc_tc);
-
     if (hwdef->apc_base) {
         apc_init(hwdef->apc_base, cpu_halt[0]);
     }
@@ -922,7 +971,12 @@ static void sun4m_hw_init(const struct sun4m_hwdef *hwdef, ram_addr_t RAM_size,
         fd[0] = drive_get(IF_FLOPPY, 0, 0);
         sun4m_fdctrl_init(slavio_irq[22], hwdef->fd_base, fd,
                           &fdc_tc);
+    } else {
+        fdc_tc = *qemu_allocate_irqs(dummy_fdc_tc, NULL, 1);
     }
+
+    slavio_misc_init(hwdef->slavio_base, hwdef->aux1_base, hwdef->aux2_base,
+                     slavio_irq[30], fdc_tc);
 
     if (drive_get_max_bus(IF_SCSI) > 0) {
         fprintf(stderr, "qemu: too many SCSI bus\n");
@@ -967,6 +1021,7 @@ static void sun4m_hw_init(const struct sun4m_hwdef *hwdef, ram_addr_t RAM_size,
                  hwdef->ecc_version);
 
     fw_cfg = fw_cfg_init(0, 0, CFG_ADDR, CFG_ADDR + 2);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)max_cpus);
     fw_cfg_add_i32(fw_cfg, FW_CFG_ID, 1);
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, (uint64_t)ram_size);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MACHINE_ID, hwdef->machine_id);
@@ -976,9 +1031,7 @@ static void sun4m_hw_init(const struct sun4m_hwdef *hwdef, ram_addr_t RAM_size,
     if (kernel_cmdline) {
         fw_cfg_add_i32(fw_cfg, FW_CFG_KERNEL_CMDLINE, CMDLINE_ADDR);
         pstrcpy_targphys("cmdline", CMDLINE_ADDR, TARGET_PAGE_SIZE, kernel_cmdline);
-        fw_cfg_add_bytes(fw_cfg, FW_CFG_CMDLINE_DATA,
-                         (uint8_t*)strdup(kernel_cmdline),
-                         strlen(kernel_cmdline) + 1);
+        fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA, kernel_cmdline);
         fw_cfg_add_i32(fw_cfg, FW_CFG_CMDLINE_SIZE,
                        strlen(kernel_cmdline) + 1);
     } else {
@@ -1252,92 +1305,118 @@ static const struct sun4m_hwdef sun4m_hwdefs[] = {
 };
 
 /* SPARCstation 5 hardware initialisation */
-static void ss5_init(ram_addr_t RAM_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void ss5_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[0], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCstation 10 hardware initialisation */
-static void ss10_init(ram_addr_t RAM_size,
-                      const char *boot_device,
-                      const char *kernel_filename, const char *kernel_cmdline,
-                      const char *initrd_filename, const char *cpu_model)
+static void ss10_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[1], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCserver 600MP hardware initialisation */
-static void ss600mp_init(ram_addr_t RAM_size,
-                         const char *boot_device,
-                         const char *kernel_filename,
-                         const char *kernel_cmdline,
-                         const char *initrd_filename, const char *cpu_model)
+static void ss600mp_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[2], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCstation 20 hardware initialisation */
-static void ss20_init(ram_addr_t RAM_size,
-                      const char *boot_device,
-                      const char *kernel_filename, const char *kernel_cmdline,
-                      const char *initrd_filename, const char *cpu_model)
+static void ss20_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[3], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCstation Voyager hardware initialisation */
-static void vger_init(ram_addr_t RAM_size,
-                      const char *boot_device,
-                      const char *kernel_filename, const char *kernel_cmdline,
-                      const char *initrd_filename, const char *cpu_model)
+static void vger_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[4], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCstation LX hardware initialisation */
-static void ss_lx_init(ram_addr_t RAM_size,
-                       const char *boot_device,
-                       const char *kernel_filename, const char *kernel_cmdline,
-                       const char *initrd_filename, const char *cpu_model)
+static void ss_lx_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[5], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCstation 4 hardware initialisation */
-static void ss4_init(ram_addr_t RAM_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void ss4_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[6], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCClassic hardware initialisation */
-static void scls_init(ram_addr_t RAM_size,
-                      const char *boot_device,
-                      const char *kernel_filename, const char *kernel_cmdline,
-                      const char *initrd_filename, const char *cpu_model)
+static void scls_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[7], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCbook hardware initialisation */
-static void sbook_init(ram_addr_t RAM_size,
-                       const char *boot_device,
-                       const char *kernel_filename, const char *kernel_cmdline,
-                       const char *initrd_filename, const char *cpu_model)
+static void sbook_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4m_hw_init(&sun4m_hwdefs[8], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
@@ -1346,67 +1425,76 @@ static QEMUMachine ss5_machine = {
     .name = "SS-5",
     .desc = "Sun4m platform, SPARCstation 5",
     .init = ss5_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .is_default = 1,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss10_machine = {
     .name = "SS-10",
     .desc = "Sun4m platform, SPARCstation 10",
     .init = ss10_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .max_cpus = 4,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss600mp_machine = {
     .name = "SS-600MP",
     .desc = "Sun4m platform, SPARCserver 600MP",
     .init = ss600mp_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .max_cpus = 4,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss20_machine = {
     .name = "SS-20",
     .desc = "Sun4m platform, SPARCstation 20",
     .init = ss20_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .max_cpus = 4,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine voyager_machine = {
     .name = "Voyager",
     .desc = "Sun4m platform, SPARCstation Voyager",
     .init = vger_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss_lx_machine = {
     .name = "LX",
     .desc = "Sun4m platform, SPARCstation LX",
     .init = ss_lx_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss4_machine = {
     .name = "SS-4",
     .desc = "Sun4m platform, SPARCstation 4",
     .init = ss4_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine scls_machine = {
     .name = "SPARCClassic",
     .desc = "Sun4m platform, SPARCClassic",
     .init = scls_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine sbook_machine = {
     .name = "SPARCbook",
     .desc = "Sun4m platform, SPARCbook",
     .init = sbook_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static const struct sun4d_hwdef sun4d_hwdefs[] = {
@@ -1464,7 +1552,7 @@ static const struct sun4d_hwdef sun4d_hwdefs[] = {
     },
 };
 
-static DeviceState *sbi_init(target_phys_addr_t addr, qemu_irq **parent_irq)
+static DeviceState *sbi_init(hwaddr addr, qemu_irq **parent_irq)
 {
     DeviceState *dev;
     SysBusDevice *s;
@@ -1473,7 +1561,7 @@ static DeviceState *sbi_init(target_phys_addr_t addr, qemu_irq **parent_irq)
     dev = qdev_create(NULL, "sbi");
     qdev_init_nofail(dev);
 
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     for (i = 0; i < MAX_CPUS; i++) {
         sysbus_connect_irq(s, i, *parent_irq[i]);
@@ -1525,7 +1613,7 @@ static void sun4d_hw_init(const struct sun4d_hwdef *hwdef, ram_addr_t RAM_size,
     }
 
     for (i = 0; i < MAX_IOUNITS; i++)
-        if (hwdef->iounit_bases[i] != (target_phys_addr_t)-1)
+        if (hwdef->iounit_bases[i] != (hwaddr)-1)
             iounits[i] = iommu_init(hwdef->iounit_bases[i],
                                     hwdef->iounit_version,
                                     sbi_irq[0]);
@@ -1552,8 +1640,8 @@ static void sun4d_hw_init(const struct sun4d_hwdef *hwdef, ram_addr_t RAM_size,
 
     slavio_serial_ms_kbd_init(hwdef->ms_kb_base, sbi_irq[12],
                               display_type == DT_NOGRAPHIC, ESCC_CLOCK, 1);
-    // Slavio TTYA (base+4, Linux ttyS0) is the first Qemu serial device
-    // Slavio TTYB (base+0, Linux ttyS1) is the second Qemu serial device
+    /* Slavio TTYA (base+4, Linux ttyS0) is the first QEMU serial device
+       Slavio TTYB (base+0, Linux ttyS1) is the second QEMU serial device */
     escc_init(hwdef->serial_base, sbi_irq[12], sbi_irq[12],
               serial_hds[0], serial_hds[1], ESCC_CLOCK, 1);
 
@@ -1578,6 +1666,7 @@ static void sun4d_hw_init(const struct sun4d_hwdef *hwdef, ram_addr_t RAM_size,
                "Sun4d");
 
     fw_cfg = fw_cfg_init(0, 0, CFG_ADDR, CFG_ADDR + 2);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)max_cpus);
     fw_cfg_add_i32(fw_cfg, FW_CFG_ID, 1);
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, (uint64_t)ram_size);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MACHINE_ID, hwdef->machine_id);
@@ -1587,9 +1676,7 @@ static void sun4d_hw_init(const struct sun4d_hwdef *hwdef, ram_addr_t RAM_size,
     if (kernel_cmdline) {
         fw_cfg_add_i32(fw_cfg, FW_CFG_KERNEL_CMDLINE, CMDLINE_ADDR);
         pstrcpy_targphys("cmdline", CMDLINE_ADDR, TARGET_PAGE_SIZE, kernel_cmdline);
-        fw_cfg_add_bytes(fw_cfg, FW_CFG_CMDLINE_DATA,
-                         (uint8_t*)strdup(kernel_cmdline),
-                         strlen(kernel_cmdline) + 1);
+        fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA, kernel_cmdline);
     } else {
         fw_cfg_add_i32(fw_cfg, FW_CFG_KERNEL_CMDLINE, 0);
     }
@@ -1600,21 +1687,27 @@ static void sun4d_hw_init(const struct sun4d_hwdef *hwdef, ram_addr_t RAM_size,
 }
 
 /* SPARCserver 1000 hardware initialisation */
-static void ss1000_init(ram_addr_t RAM_size,
-                        const char *boot_device,
-                        const char *kernel_filename, const char *kernel_cmdline,
-                        const char *initrd_filename, const char *cpu_model)
+static void ss1000_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4d_hw_init(&sun4d_hwdefs[0], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
 
 /* SPARCcenter 2000 hardware initialisation */
-static void ss2000_init(ram_addr_t RAM_size,
-                        const char *boot_device,
-                        const char *kernel_filename, const char *kernel_cmdline,
-                        const char *initrd_filename, const char *cpu_model)
+static void ss2000_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4d_hw_init(&sun4d_hwdefs[1], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
@@ -1623,16 +1716,18 @@ static QEMUMachine ss1000_machine = {
     .name = "SS-1000",
     .desc = "Sun4d platform, SPARCserver 1000",
     .init = ss1000_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .max_cpus = 8,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine ss2000_machine = {
     .name = "SS-2000",
     .desc = "Sun4d platform, SPARCcenter 2000",
     .init = ss2000_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
     .max_cpus = 20,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static const struct sun4c_hwdef sun4c_hwdefs[] = {
@@ -1658,7 +1753,7 @@ static const struct sun4c_hwdef sun4c_hwdefs[] = {
     },
 };
 
-static DeviceState *sun4c_intctl_init(target_phys_addr_t addr,
+static DeviceState *sun4c_intctl_init(hwaddr addr,
                                       qemu_irq *parent_irq)
 {
     DeviceState *dev;
@@ -1668,7 +1763,7 @@ static DeviceState *sun4c_intctl_init(target_phys_addr_t addr,
     dev = qdev_create(NULL, "sun4c_intctl");
     qdev_init_nofail(dev);
 
-    s = sysbus_from_qdev(dev);
+    s = SYS_BUS_DEVICE(dev);
 
     for (i = 0; i < MAX_PILS; i++) {
         sysbus_connect_irq(s, i, parent_irq[i]);
@@ -1733,21 +1828,23 @@ static void sun4c_hw_init(const struct sun4c_hwdef *hwdef, ram_addr_t RAM_size,
 
     slavio_serial_ms_kbd_init(hwdef->ms_kb_base, slavio_irq[1],
                               display_type == DT_NOGRAPHIC, ESCC_CLOCK, 1);
-    // Slavio TTYA (base+4, Linux ttyS0) is the first Qemu serial device
-    // Slavio TTYB (base+0, Linux ttyS1) is the second Qemu serial device
+    /* Slavio TTYA (base+4, Linux ttyS0) is the first QEMU serial device
+       Slavio TTYB (base+0, Linux ttyS1) is the second QEMU serial device */
     escc_init(hwdef->serial_base, slavio_irq[1],
               slavio_irq[1], serial_hds[0], serial_hds[1],
               ESCC_CLOCK, 1);
 
-    slavio_misc_init(0, hwdef->aux1_base, 0, slavio_irq[1], fdc_tc);
-
-    if (hwdef->fd_base != (target_phys_addr_t)-1) {
+    if (hwdef->fd_base != (hwaddr)-1) {
         /* there is zero or one floppy drive */
         memset(fd, 0, sizeof(fd));
         fd[0] = drive_get(IF_FLOPPY, 0, 0);
         sun4m_fdctrl_init(slavio_irq[1], hwdef->fd_base, fd,
                           &fdc_tc);
+    } else {
+        fdc_tc = *qemu_allocate_irqs(dummy_fdc_tc, NULL, 1);
     }
+
+    slavio_misc_init(0, hwdef->aux1_base, 0, slavio_irq[1], fdc_tc);
 
     if (drive_get_max_bus(IF_SCSI) > 0) {
         fprintf(stderr, "qemu: too many SCSI bus\n");
@@ -1770,6 +1867,7 @@ static void sun4c_hw_init(const struct sun4c_hwdef *hwdef, ram_addr_t RAM_size,
                "Sun4c");
 
     fw_cfg = fw_cfg_init(0, 0, CFG_ADDR, CFG_ADDR + 2);
+    fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, (uint16_t)max_cpus);
     fw_cfg_add_i32(fw_cfg, FW_CFG_ID, 1);
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, (uint64_t)ram_size);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MACHINE_ID, hwdef->machine_id);
@@ -1779,9 +1877,7 @@ static void sun4c_hw_init(const struct sun4c_hwdef *hwdef, ram_addr_t RAM_size,
     if (kernel_cmdline) {
         fw_cfg_add_i32(fw_cfg, FW_CFG_KERNEL_CMDLINE, CMDLINE_ADDR);
         pstrcpy_targphys("cmdline", CMDLINE_ADDR, TARGET_PAGE_SIZE, kernel_cmdline);
-        fw_cfg_add_bytes(fw_cfg, FW_CFG_CMDLINE_DATA,
-                         (uint8_t*)strdup(kernel_cmdline),
-                         strlen(kernel_cmdline) + 1);
+        fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA, kernel_cmdline);
     } else {
         fw_cfg_add_i32(fw_cfg, FW_CFG_KERNEL_CMDLINE, 0);
     }
@@ -1792,11 +1888,14 @@ static void sun4c_hw_init(const struct sun4c_hwdef *hwdef, ram_addr_t RAM_size,
 }
 
 /* SPARCstation 2 hardware initialisation */
-static void ss2_init(ram_addr_t RAM_size,
-                     const char *boot_device,
-                     const char *kernel_filename, const char *kernel_cmdline,
-                     const char *initrd_filename, const char *cpu_model)
+static void ss2_init(QEMUMachineInitArgs *args)
 {
+    ram_addr_t RAM_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
+    const char *boot_device = args->boot_device;
     sun4c_hw_init(&sun4c_hwdefs[0], RAM_size, boot_device, kernel_filename,
                   kernel_cmdline, initrd_filename, cpu_model);
 }
@@ -1805,8 +1904,17 @@ static QEMUMachine ss2_machine = {
     .name = "SS-2",
     .desc = "Sun4c platform, SPARCstation 2",
     .init = ss2_init,
-    .use_scsi = 1,
+    .block_default_type = IF_SCSI,
+    DEFAULT_MACHINE_OPTIONS,
 };
+
+static void sun4m_register_types(void)
+{
+    type_register_static(&idreg_info);
+    type_register_static(&afx_info);
+    type_register_static(&prom_info);
+    type_register_static(&ram_info);
+}
 
 static void ss2_machine_init(void)
 {
@@ -1824,4 +1932,5 @@ static void ss2_machine_init(void)
     qemu_register_machine(&ss2_machine);
 }
 
+type_init(sun4m_register_types)
 machine_init(ss2_machine_init);

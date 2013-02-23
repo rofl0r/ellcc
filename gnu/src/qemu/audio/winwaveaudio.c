@@ -1,7 +1,7 @@
 /* public domain */
 
 #include "qemu-common.h"
-#include "sysemu.h"
+#include "sysemu/sysemu.h"
 #include "audio.h"
 
 #define AUDIO_CAP "winwave"
@@ -72,7 +72,7 @@ static void winwave_log_mmresult (MMRESULT mr)
         break;
 
     case MMSYSERR_NOMEM:
-        str = "Unable to allocate or locl memory";
+        str = "Unable to allocate or lock memory";
         break;
 
     case WAVERR_SYNC:
@@ -222,9 +222,9 @@ static int winwave_init_out (HWVoiceOut *hw, struct audsettings *as)
     return 0;
 
  err4:
-    qemu_free (wave->pcm_buf);
+    g_free (wave->pcm_buf);
  err3:
-    qemu_free (wave->hdrs);
+    g_free (wave->hdrs);
  err2:
     winwave_anal_close_out (wave);
  err1:
@@ -310,10 +310,10 @@ static void winwave_fini_out (HWVoiceOut *hw)
         wave->event = NULL;
     }
 
-    qemu_free (wave->pcm_buf);
+    g_free (wave->pcm_buf);
     wave->pcm_buf = NULL;
 
-    qemu_free (wave->hdrs);
+    g_free (wave->hdrs);
     wave->hdrs = NULL;
 }
 
@@ -349,21 +349,15 @@ static int winwave_ctl_out (HWVoiceOut *hw, int cmd, ...)
             else {
                 hw->poll_mode = 0;
             }
-            if (wave->paused) {
-                mr = waveOutRestart (wave->hwo);
-                if (mr != MMSYSERR_NOERROR) {
-                    winwave_logerr (mr, "waveOutRestart");
-                }
-                wave->paused = 0;
-            }
+            wave->paused = 0;
         }
         return 0;
 
     case VOICE_DISABLE:
         if (!wave->paused) {
-            mr = waveOutPause (wave->hwo);
+            mr = waveOutReset (wave->hwo);
             if (mr != MMSYSERR_NOERROR) {
-                winwave_logerr (mr, "waveOutPause");
+                winwave_logerr (mr, "waveOutReset");
             }
             else {
                 wave->paused = 1;
@@ -511,9 +505,9 @@ static int winwave_init_in (HWVoiceIn *hw, struct audsettings *as)
     return 0;
 
  err4:
-    qemu_free (wave->pcm_buf);
+    g_free (wave->pcm_buf);
  err3:
-    qemu_free (wave->hdrs);
+    g_free (wave->hdrs);
  err2:
     winwave_anal_close_in (wave);
  err1:
@@ -550,10 +544,10 @@ static void winwave_fini_in (HWVoiceIn *hw)
         wave->event = NULL;
     }
 
-    qemu_free (wave->pcm_buf);
+    g_free (wave->pcm_buf);
     wave->pcm_buf = NULL;
 
-    qemu_free (wave->hdrs);
+    g_free (wave->hdrs);
     wave->hdrs = NULL;
 }
 

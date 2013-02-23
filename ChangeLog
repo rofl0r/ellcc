@@ -1,5 +1,6 @@
 Changes since 0.0.1:
 
+* Updated to QEMU 1.4.0
 * Updated to musl 0.9.9.
 
 version 0.0.1:

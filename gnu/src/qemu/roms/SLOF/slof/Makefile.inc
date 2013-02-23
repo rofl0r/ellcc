@@ -32,7 +32,7 @@ CFLAGS  = -DTARG=$(TARG) -static -Wall -W -std=gnu99 \
 	  -fno-stack-protector
 ASFLAGS = -Wa,-mpower4 -Wa,-mregnames $(FLAG) $(CPUARCHDEF)
 
-LDFLAGS += -static -nostdlib 
+LDFLAGS += -static -nostdlib -Wl,-q,-n
 
 ifneq ($(TARG),unix)
 CFLAGS	+= -nostdinc -fno-builtin
@@ -91,7 +91,7 @@ paflof: $(SLOFCMNDIR)/OF.lds $(SLOFCMNDIR)/ofw.o paflof.o $(SLOFCMNDIR)/entry.o 
 	    $(LLFWBRDDIR)/io_generic_lib.o $(LDFLAGS) $(SLOF_LIBS) -o $@
 	#save a copy of paflof before stripping
 	@cp $@ $@.unstripped
-	$(STRIP) -s $@
+	$(STRIP) --strip-unneeded $@
 
 paflof.o: board.code dict.xt
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $(SLOFCMNDIR)/paflof.c
@@ -111,10 +111,10 @@ checkpoint.o:
 	$(CC) $(CPPFLAGS) $(ASFLAGS) -c -o $@ $(LLFWCMNDIR)/checkpoint.S
 
 $(LLFWBRDDIR)/board_io.o:
-	make -C $(LLFWBRDDIR) board_io.o
+	$(MAKE) -C $(LLFWBRDDIR) board_io.o
 
 $(LLFWBRDDIR)/io_generic_lib.o:
-	make -C $(LLFWBRDDIR) io_generic_lib.o
+	$(MAKE) -C $(LLFWBRDDIR) io_generic_lib.o
 
 default-font.o: $(SLOFCMNDIR)/default-font.c
 	$(CC) $(CPPFLAGS) $< -c -o default-font.o

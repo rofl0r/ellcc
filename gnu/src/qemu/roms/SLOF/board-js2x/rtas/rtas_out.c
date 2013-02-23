@@ -15,11 +15,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <rtas.h>
 #include <hw.h>
+#include "rtas_board.h"
 
 volatile unsigned char *uart;
 volatile unsigned char u4Flag;
+
+void io_init(void);
+unsigned long check_flash_image(unsigned long rombase, unsigned long length,
+				unsigned long start_crc);
 
 void
 io_init(void)
@@ -35,7 +41,7 @@ io_init(void)
 	}
 }
 
-void
+static void
 display_char(char ch)
 {
 	volatile int i = 0;
@@ -52,7 +58,7 @@ display_char(char ch)
 	}
 }
 
-size_t
+ssize_t
 write(int fd __attribute((unused)), const void *buf, size_t cnt)
 {
 	while (cnt--) {
@@ -71,12 +77,12 @@ sbrk(int incr __attribute((unused)))
 
 
 
-int
+void
 rtas_display_character(rtas_args_t * pArgs)
 {
 	int retVal = 0;
 	display_char((char) pArgs->args[0]);
-	return retVal;
+	pArgs->args[1] = retVal;
 }
 
 unsigned long

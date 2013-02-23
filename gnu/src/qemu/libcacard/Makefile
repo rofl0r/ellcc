@@ -1,42 +1,49 @@
--include ../config-host.mak
--include $(SRC_PATH)/Makefile.objs
--include $(SRC_PATH)/rules.mak
+libcacard_includedir=$(includedir)/cacard
 
-$(call set-vpath, $(SRC_PATH):$(SRC_PATH)/libcacard)
-
-# objects linked against normal qemu binaries, not compiled with libtool
-QEMU_OBJS=$(addprefix ../,$(oslib-obj-y) qemu-malloc.o qemu-timer-common.o $(trace-obj-y))
+TOOLS += vscclient$(EXESUF)
 
 # objects linked into a shared library, built with libtool with -fPIC if required
-QEMU_OBJS_LIB=$(addsuffix .lo,$(basename $(QEMU_OBJS)))
+libcacard-obj-y = $(stub-obj-y) $(libcacard-y)
+libcacard-obj-y += util/osdep.o util/cutils.o util/qemu-timer-common.o util/error.o
+libcacard-obj-$(CONFIG_WIN32) += util/oslib-win32.o util/qemu-thread-win32.o
+libcacard-obj-$(CONFIG_POSIX) += util/oslib-posix.o util/qemu-thread-posix.o
+libcacard-obj-y += $(filter trace/%, $(util-obj-y))
 
-QEMU_CFLAGS+=-I../
+libcacard-lobj-y=$(patsubst %.o,%.lo,$(libcacard-obj-y))
 
-libcacard.lib-y=$(addsuffix .lo,$(basename $(libcacard-y)))
+# libtool will build the .o files, too
+$(libcacard-obj-y): | $(libcacard-lobj-y)
 
-vscclient: $(libcacard-y) $(QEMU_OBJS) vscclient.o
-	$(call quiet-command,$(CC) $(libcacard_libs) -lrt -o $@ $^,"  LINK  $@")
+all: libcacard.la libcacard.pc
 
-clean:
-	rm -f *.o */*.o *.d */*.d *.a */*.a *~ */*~ vscclient *.lo .libs/* *.la
-	rm -Rf .libs
-
-all: vscclient
+vscclient$(EXESUF): libcacard/vscclient.o libcacard.la
+	$(call LINK,$^)
 
 #########################################################################
 # Rules for building libcacard standalone library
 
-ifeq ($(LIBTOOL),)
-libcacard.la:
-	@echo "libtool is missing, please install and rerun configure"; exit 1
+libcacard.la: LDFLAGS += -rpath $(libdir) -no-undefined \
+	-export-syms $(SRC_PATH)/libcacard/libcacard.syms
+libcacard.la: LIBS += $(libcacard_libs)
+libcacard.la: $(libcacard-lobj-y)
+	$(call LINK,$^)
 
-install-libcacard:
-	@echo "libtool is missing, please install and rerun configure"; exit 1
-else
-libcacard.la: $(libcacard.lib-y) $(QEMU_OBJS_LIB)
-	$(call quiet-command,libtool --mode=link --quiet --tag=CC $(CC) $(libcacard_libs) -lrt -rpath $(libdir) -o $@ $^,"  lt LINK $@")
+libcacard.pc: $(SRC_PATH)/libcacard/libcacard.pc.in
+	$(call quiet-command,sed -e 's|@LIBDIR@|$(libdir)|' \
+		-e 's|@INCLUDEDIR@|$(libcacard_includedir)|' \
+	    -e 's|@VERSION@|$(shell cat $(SRC_PATH)/VERSION)|' \
+		-e 's|@PREFIX@|$(prefix)|' $< > libcacard.pc,\
+	"  GEN   $@")
 
-install-libcacard: libcacard.la
+.PHONY: install-libcacard
+
+install: install-libcacard
+install-libcacard: libcacard.pc libcacard.la
 	$(INSTALL_DIR) "$(DESTDIR)$(libdir)"
-	libtool --mode=install $(INSTALL_PROG) libcacard.la "$(DESTDIR)$(libdir)"
-endif
+	$(INSTALL_DIR) "$(DESTDIR)$(libdir)/pkgconfig"
+	$(INSTALL_DIR) "$(DESTDIR)$(libcacard_includedir)"
+	$(INSTALL_LIB) libcacard.la "$(DESTDIR)$(libdir)"
+	$(INSTALL_DATA) libcacard.pc "$(DESTDIR)$(libdir)/pkgconfig"
+	for inc in $(SRC_PATH)/libcacard/*.h; do \
+		$(INSTALL_DATA) $$inc "$(DESTDIR)$(libcacard_includedir)"; \
+	done

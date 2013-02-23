@@ -57,8 +57,8 @@ static inline HWSetup *hwsetup_init(void)
 {
     HWSetup *hw;
 
-    hw = qemu_malloc(sizeof(HWSetup));
-    hw->data = qemu_mallocz(TARGET_PAGE_SIZE);
+    hw = g_malloc(sizeof(HWSetup));
+    hw->data = g_malloc0(TARGET_PAGE_SIZE);
     hw->ptr = hw->data;
 
     return hw;
@@ -66,12 +66,12 @@ static inline HWSetup *hwsetup_init(void)
 
 static inline void hwsetup_free(HWSetup *hw)
 {
-    qemu_free(hw->data);
-    qemu_free(hw);
+    g_free(hw->data);
+    g_free(hw);
 }
 
 static inline void hwsetup_create_rom(HWSetup *hw,
-        target_phys_addr_t base)
+        hwaddr base)
 {
     rom_add_blob("hwsetup", hw->data, TARGET_PAGE_SIZE, base);
 }
@@ -96,7 +96,7 @@ static inline void hwsetup_add_tag(HWSetup *hw, enum hwsetup_tag t)
 
 static inline void hwsetup_add_str(HWSetup *hw, const char *str)
 {
-    strncpy(hw->ptr, str, 31); /* make sure last byte is zero */
+    pstrcpy(hw->ptr, 32, str);
     hw->ptr += 32;
 }
 

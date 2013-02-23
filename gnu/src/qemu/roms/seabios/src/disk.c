@@ -55,28 +55,29 @@ __disk_stub(struct bregs *regs, int lineno, const char *fname)
     __disk_stub((regs), __LINE__, __func__)
 
 // Get the cylinders/heads/sectors for the given drive.
-static void
-fillLCHS(struct drive_s *drive_g, u16 *nlc, u16 *nlh, u16 *nlspt)
+static struct chs_s
+getLCHS(struct drive_s *drive_g)
 {
+    struct chs_s res = { };
     if (CONFIG_CDROM_EMU
         && drive_g == GLOBALFLAT2GLOBAL(GET_GLOBAL(cdemu_drive_gf))) {
-        // Emulated drive - get info from ebda.  (It's not possible to
+        // Emulated drive - get info from CDEmu.  (It's not possible to
         // populate the geometry directly in the driveid because the
         // geometry is only known after the bios segment is made
         // read-only).
-        u16 ebda_seg = get_ebda_seg();
-        *nlc = GET_EBDA2(ebda_seg, cdemu.lchs.cylinders);
-        *nlh = GET_EBDA2(ebda_seg, cdemu.lchs.heads);
-        *nlspt = GET_EBDA2(ebda_seg, cdemu.lchs.spt);
-        return;
+        res.cylinders = GET_LOW(CDEmu.lchs.cylinders);
+        res.heads = GET_LOW(CDEmu.lchs.heads);
+        res.spt = GET_LOW(CDEmu.lchs.spt);
+        return res;
     }
-    *nlc = GET_GLOBAL(drive_g->lchs.cylinders);
-    *nlh = GET_GLOBAL(drive_g->lchs.heads);
-    *nlspt = GET_GLOBAL(drive_g->lchs.spt);
+    res.cylinders = GET_GLOBAL(drive_g->lchs.cylinders);
+    res.heads = GET_GLOBAL(drive_g->lchs.heads);
+    res.spt = GET_GLOBAL(drive_g->lchs.spt);
+    return res;
 }
 
 // Perform read/write/verify using old-style chs accesses
-static void
+static void noinline
 basic_access(struct bregs *regs, struct drive_s *drive_g, u16 command)
 {
     struct disk_op_s dop;
@@ -95,8 +96,8 @@ basic_access(struct bregs *regs, struct drive_s *drive_g, u16 command)
     }
     dop.count = count;
 
-    u16 nlc, nlh, nlspt;
-    fillLCHS(drive_g, &nlc, &nlh, &nlspt);
+    struct chs_s chs = getLCHS(drive_g);
+    u16 nlc=chs.cylinders, nlh=chs.heads, nlspt=chs.spt;
 
     // sanity check on cyl heads, sec
     if (cylinder >= nlc || head >= nlh || sector > nlspt) {
@@ -119,12 +120,13 @@ basic_access(struct bregs *regs, struct drive_s *drive_g, u16 command)
 }
 
 // Perform read/write/verify using new-style "int13ext" accesses.
-static void
+static void noinline
 extended_access(struct bregs *regs, struct drive_s *drive_g, u16 command)
 {
     struct disk_op_s dop;
+    struct int13ext_s *param_far = (struct int13ext_s*)(regs->si+0);
     // Get lba and check.
-    dop.lba = GET_INT13EXT(regs, lba);
+    dop.lba = GET_FARVAR(regs->ds, param_far->lba);
     dop.command = command;
     dop.drive_g = drive_g;
     if (dop.lba >= GET_GLOBAL(drive_g->sectors)) {
@@ -133,12 +135,17 @@ extended_access(struct bregs *regs, struct drive_s *drive_g, u16 command)
         return;
     }
 
-    dop.buf_fl = SEGOFF_TO_FLATPTR(GET_INT13EXT(regs, data));
-    dop.count = GET_INT13EXT(regs, count);
+    dop.buf_fl = SEGOFF_TO_FLATPTR(GET_FARVAR(regs->ds, param_far->data));
+    dop.count = GET_FARVAR(regs->ds, param_far->count);
+    if (! dop.count) {
+        // Nothing to do.
+        disk_ret(regs, DISK_RET_SUCCESS);
+        return;
+    }
 
     int status = send_disk_op(&dop);
 
-    SET_INT13EXT(regs, count, dop.count);
+    SET_FARVAR(regs->ds, param_far->count, dop.count);
 
     disk_ret(regs, status);
 }
@@ -196,13 +203,13 @@ disk_1304(struct bregs *regs, struct drive_s *drive_g)
 }
 
 // format disk track
-static void
+static void noinline
 disk_1305(struct bregs *regs, struct drive_s *drive_g)
 {
     debug_stub(regs);
 
-    u16 nlc, nlh, nlspt;
-    fillLCHS(drive_g, &nlc, &nlh, &nlspt);
+    struct chs_s chs = getLCHS(drive_g);
+    u16 nlh=chs.heads, nlspt=chs.spt;
 
     u8 num_sectors = regs->al;
     u8 head        = regs->dh;
@@ -223,13 +230,12 @@ disk_1305(struct bregs *regs, struct drive_s *drive_g)
 }
 
 // read disk drive parameters
-static void
+static void noinline
 disk_1308(struct bregs *regs, struct drive_s *drive_g)
 {
-    u16 ebda_seg = get_ebda_seg();
     // Get logical geometry from table
-    u16 nlc, nlh, nlspt;
-    fillLCHS(drive_g, &nlc, &nlh, &nlspt);
+    struct chs_s chs = getLCHS(drive_g);
+    u16 nlc=chs.cylinders, nlh=chs.heads, nlspt=chs.spt;
     nlc--;
     nlh--;
     u8 count;
@@ -239,7 +245,7 @@ disk_1308(struct bregs *regs, struct drive_s *drive_g)
 
         if (CONFIG_CDROM_EMU
             && drive_g == GLOBALFLAT2GLOBAL(GET_GLOBAL(cdemu_drive_gf)))
-            regs->bx = GET_EBDA2(ebda_seg, cdemu.media) * 2;
+            regs->bx = GET_LOW(CDEmu.media) * 2;
         else
             regs->bx = GET_GLOBAL(drive_g->floppy_type);
 
@@ -256,8 +262,8 @@ disk_1308(struct bregs *regs, struct drive_s *drive_g)
         return;
     }
 
-    if (CONFIG_CDROM_EMU && GET_EBDA2(ebda_seg, cdemu.active)) {
-        u8 emudrive = GET_EBDA2(ebda_seg, cdemu.emulated_extdrive);
+    if (CONFIG_CDROM_EMU && GET_LOW(CDEmu.active)) {
+        u8 emudrive = GET_LOW(CDEmu.emulated_extdrive);
         if (((emudrive ^ regs->dl) & 0x80) == 0)
             // Note extra drive due to emulation.
             count++;
@@ -324,7 +330,7 @@ disk_1314(struct bregs *regs, struct drive_s *drive_g)
 }
 
 // read disk drive size
-static void
+static void noinline
 disk_1315(struct bregs *regs, struct drive_s *drive_g)
 {
     disk_ret(regs, DISK_RET_SUCCESS);
@@ -336,8 +342,8 @@ disk_1315(struct bregs *regs, struct drive_s *drive_g)
     // Hard drive
 
     // Get logical geometry from table
-    u16 nlc, nlh, nlspt;
-    fillLCHS(drive_g, &nlc, &nlh, &nlspt);
+    struct chs_s chs = getLCHS(drive_g);
+    u16 nlc=chs.cylinders, nlh=chs.heads, nlspt=chs.spt;
 
     // Compute sector count seen by int13
     u32 lba = (u32)(nlc - 1) * (u32)nlh * (u32)nlspt;
@@ -392,15 +398,14 @@ disk_1344(struct bregs *regs, struct drive_s *drive_g)
 static void
 disk_134500(struct bregs *regs, struct drive_s *drive_g)
 {
-    u16 ebda_seg = get_ebda_seg();
     int cdid = regs->dl - EXTSTART_CD;
-    u8 locks = GET_EBDA2(ebda_seg, cdrom_locks[cdid]);
+    u8 locks = GET_LOW(CDRom_locks[cdid]);
     if (locks == 0xff) {
         regs->al = 1;
         disk_ret(regs, DISK_RET_ETOOMANYLOCKS);
         return;
     }
-    SET_EBDA2(ebda_seg, cdrom_locks[cdid], locks + 1);
+    SET_LOW(CDRom_locks[cdid], locks + 1);
     regs->al = 1;
     disk_ret(regs, DISK_RET_SUCCESS);
 }
@@ -409,16 +414,15 @@ disk_134500(struct bregs *regs, struct drive_s *drive_g)
 static void
 disk_134501(struct bregs *regs, struct drive_s *drive_g)
 {
-    u16 ebda_seg = get_ebda_seg();
     int cdid = regs->dl - EXTSTART_CD;
-    u8 locks = GET_EBDA2(ebda_seg, cdrom_locks[cdid]);
+    u8 locks = GET_LOW(CDRom_locks[cdid]);
     if (locks == 0x00) {
         regs->al = 0;
         disk_ret(regs, DISK_RET_ENOTLOCKED);
         return;
     }
     locks--;
-    SET_EBDA2(ebda_seg, cdrom_locks[cdid], locks);
+    SET_LOW(CDRom_locks[cdid], locks);
     regs->al = (locks ? 1 : 0);
     disk_ret(regs, DISK_RET_SUCCESS);
 }
@@ -428,7 +432,7 @@ static void
 disk_134502(struct bregs *regs, struct drive_s *drive_g)
 {
     int cdid = regs->dl - EXTSTART_CD;
-    u8 locks = GET_EBDA(cdrom_locks[cdid]);
+    u8 locks = GET_LOW(CDRom_locks[cdid]);
     regs->al = (locks ? 1 : 0);
     disk_ret(regs, DISK_RET_SUCCESS);
 }
@@ -458,7 +462,7 @@ disk_1345(struct bregs *regs, struct drive_s *drive_g)
 }
 
 // IBM/MS eject media
-static void
+static void noinline
 disk_1346(struct bregs *regs, struct drive_s *drive_g)
 {
     if (regs->dl < EXTSTART_CD) {
@@ -468,7 +472,7 @@ disk_1346(struct bregs *regs, struct drive_s *drive_g)
     }
 
     int cdid = regs->dl - EXTSTART_CD;
-    u8 locks = GET_EBDA(cdrom_locks[cdid]);
+    u8 locks = GET_LOW(CDRom_locks[cdid]);
     if (locks != 0) {
         disk_ret(regs, DISK_RET_ELOCKED);
         return;
@@ -499,10 +503,12 @@ disk_1347(struct bregs *regs, struct drive_s *drive_g)
 }
 
 // IBM/MS get drive parameters
-static void
+static void noinline
 disk_1348(struct bregs *regs, struct drive_s *drive_g)
 {
-    u16 size = GET_INT13DPT(regs, size);
+    u16 seg = regs->ds;
+    struct int13dpt_s *param_far = (struct int13dpt_s*)(regs->si+0);
+    u16 size = GET_FARVAR(seg, param_far->size);
     u16 t13 = size == 74;
 
     // Buffer is too small
@@ -523,30 +529,31 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
     dprintf(DEBUG_HDL_13, "disk_1348 size=%d t=%d chs=%d,%d,%d lba=%d bs=%d\n"
             , size, type, npc, nph, npspt, (u32)lba, blksize);
 
-    SET_INT13DPT(regs, size, 26);
-    if (type == DTYPE_ATAPI) {
+    SET_FARVAR(seg, param_far->size, 26);
+    if (type == DTYPE_ATA_ATAPI) {
         // 0x74 = removable, media change, lockable, max values
-        SET_INT13DPT(regs, infos, 0x74);
-        SET_INT13DPT(regs, cylinders, 0xffffffff);
-        SET_INT13DPT(regs, heads, 0xffffffff);
-        SET_INT13DPT(regs, spt, 0xffffffff);
-        SET_INT13DPT(regs, sector_count, (u64)-1);
+        SET_FARVAR(seg, param_far->infos, 0x74);
+        SET_FARVAR(seg, param_far->cylinders, 0xffffffff);
+        SET_FARVAR(seg, param_far->heads, 0xffffffff);
+        SET_FARVAR(seg, param_far->spt, 0xffffffff);
+        SET_FARVAR(seg, param_far->sector_count, (u64)-1);
     } else {
         if (lba > (u64)npspt*nph*0x3fff) {
-            SET_INT13DPT(regs, infos, 0x00); // geometry is invalid
-            SET_INT13DPT(regs, cylinders, 0x3fff);
+            SET_FARVAR(seg, param_far->infos, 0x00); // geometry is invalid
+            SET_FARVAR(seg, param_far->cylinders, 0x3fff);
         } else {
-            SET_INT13DPT(regs, infos, 0x02); // geometry is valid
-            SET_INT13DPT(regs, cylinders, (u32)npc);
+            SET_FARVAR(seg, param_far->infos, 0x02); // geometry is valid
+            SET_FARVAR(seg, param_far->cylinders, (u32)npc);
         }
-        SET_INT13DPT(regs, heads, (u32)nph);
-        SET_INT13DPT(regs, spt, (u32)npspt);
-        SET_INT13DPT(regs, sector_count, lba);
+        SET_FARVAR(seg, param_far->heads, (u32)nph);
+        SET_FARVAR(seg, param_far->spt, (u32)npspt);
+        SET_FARVAR(seg, param_far->sector_count, lba);
     }
-    SET_INT13DPT(regs, blksize, blksize);
+    SET_FARVAR(seg, param_far->blksize, blksize);
 
     if (size < 30 ||
-        (type != DTYPE_ATA && type != DTYPE_ATAPI && type != DTYPE_VIRTIO)) {
+        (type != DTYPE_ATA && type != DTYPE_ATA_ATAPI &&
+         type != DTYPE_VIRTIO_BLK && type != DTYPE_VIRTIO_SCSI)) {
         disk_ret(regs, DISK_RET_SUCCESS);
         return;
     }
@@ -557,13 +564,9 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
     u16 iobase1 = 0;
     u64 device_path = 0;
     u8 channel = 0;
-    SET_INT13DPT(regs, size, 30);
-    if (type == DTYPE_ATA || type == DTYPE_ATAPI) {
-        u16 ebda_seg = get_ebda_seg();
-
-        SET_INT13DPT(regs, dpte_segment, ebda_seg);
-        SET_INT13DPT(regs, dpte_offset
-                     , offsetof(struct extended_bios_data_area_s, dpte));
+    SET_FARVAR(seg, param_far->size, 30);
+    if (type == DTYPE_ATA || type == DTYPE_ATA_ATAPI) {
+        SET_FARVAR(seg, param_far->dpte, SEGOFF(SEG_LOW, (u32)&DefaultDPTE));
 
         // Fill in dpte
         struct atadrive_s *adrive_g = container_of(
@@ -596,25 +599,23 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
         if (CONFIG_ATA_PIO32)
             options |= 1<<7;
 
-        SET_EBDA2(ebda_seg, dpte.iobase1, iobase1);
-        SET_EBDA2(ebda_seg, dpte.iobase2, iobase2 + ATA_CB_DC);
-        SET_EBDA2(ebda_seg, dpte.prefix, ((slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0)
-                                          | ATA_CB_DH_LBA));
-        SET_EBDA2(ebda_seg, dpte.unused, 0xcb);
-        SET_EBDA2(ebda_seg, dpte.irq, irq);
-        SET_EBDA2(ebda_seg, dpte.blkcount, 1);
-        SET_EBDA2(ebda_seg, dpte.dma, 0);
-        SET_EBDA2(ebda_seg, dpte.pio, 0);
-        SET_EBDA2(ebda_seg, dpte.options, options);
-        SET_EBDA2(ebda_seg, dpte.reserved, 0);
-        SET_EBDA2(ebda_seg, dpte.revision, 0x11);
+        SET_LOW(DefaultDPTE.iobase1, iobase1);
+        SET_LOW(DefaultDPTE.iobase2, iobase2 + ATA_CB_DC);
+        SET_LOW(DefaultDPTE.prefix, ((slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0)
+                                  | ATA_CB_DH_LBA));
+        SET_LOW(DefaultDPTE.unused, 0xcb);
+        SET_LOW(DefaultDPTE.irq, irq);
+        SET_LOW(DefaultDPTE.blkcount, 1);
+        SET_LOW(DefaultDPTE.dma, 0);
+        SET_LOW(DefaultDPTE.pio, 0);
+        SET_LOW(DefaultDPTE.options, options);
+        SET_LOW(DefaultDPTE.reserved, 0);
+        SET_LOW(DefaultDPTE.revision, 0x11);
 
-        u8 sum = checksum_far(
-            ebda_seg, (void*)offsetof(struct extended_bios_data_area_s, dpte), 15);
-        SET_EBDA2(ebda_seg, dpte.checksum, -sum);
+        u8 sum = checksum_far(SEG_LOW, &DefaultDPTE, 15);
+        SET_LOW(DefaultDPTE.checksum, -sum);
     } else {
-        SET_INT13DPT(regs, dpte_segment, 0);
-        SET_INT13DPT(regs, dpte_offset, 0);
+        SET_FARVAR(seg, param_far->dpte.segoff, 0xffffffff);
         bdf = GET_GLOBAL(drive_g->cntl_id);
     }
 
@@ -624,60 +625,60 @@ disk_1348(struct bregs *regs, struct drive_s *drive_g)
     }
 
     // EDD 3.x
-    SET_INT13DPT(regs, key, 0xbedd);
-    SET_INT13DPT(regs, dpi_length, t13 ? 44 : 36);
-    SET_INT13DPT(regs, reserved1, 0);
-    SET_INT13DPT(regs, reserved2, 0);
+    SET_FARVAR(seg, param_far->key, 0xbedd);
+    SET_FARVAR(seg, param_far->dpi_length, t13 ? 44 : 36);
+    SET_FARVAR(seg, param_far->reserved1, 0);
+    SET_FARVAR(seg, param_far->reserved2, 0);
 
     if (bdf != -1) {
-        SET_INT13DPT(regs, host_bus[0], 'P');
-        SET_INT13DPT(regs, host_bus[1], 'C');
-        SET_INT13DPT(regs, host_bus[2], 'I');
-        SET_INT13DPT(regs, host_bus[3], ' ');
+        SET_FARVAR(seg, param_far->host_bus[0], 'P');
+        SET_FARVAR(seg, param_far->host_bus[1], 'C');
+        SET_FARVAR(seg, param_far->host_bus[2], 'I');
+        SET_FARVAR(seg, param_far->host_bus[3], ' ');
 
         u32 path = (pci_bdf_to_bus(bdf) | (pci_bdf_to_dev(bdf) << 8)
                     | (pci_bdf_to_fn(bdf) << 16));
         if (t13)
             path |= channel << 24;
 
-        SET_INT13DPT(regs, iface_path, path);
+        SET_FARVAR(seg, param_far->iface_path, path);
     } else {
         // ISA
-        SET_INT13DPT(regs, host_bus[0], 'I');
-        SET_INT13DPT(regs, host_bus[1], 'S');
-        SET_INT13DPT(regs, host_bus[2], 'A');
-        SET_INT13DPT(regs, host_bus[3], ' ');
+        SET_FARVAR(seg, param_far->host_bus[0], 'I');
+        SET_FARVAR(seg, param_far->host_bus[1], 'S');
+        SET_FARVAR(seg, param_far->host_bus[2], 'A');
+        SET_FARVAR(seg, param_far->host_bus[3], ' ');
 
-        SET_INT13DPT(regs, iface_path, iobase1);
+        SET_FARVAR(seg, param_far->iface_path, iobase1);
     }
 
-    if (type != DTYPE_VIRTIO) {
-        SET_INT13DPT(regs, iface_type[0], 'A');
-        SET_INT13DPT(regs, iface_type[1], 'T');
-        SET_INT13DPT(regs, iface_type[2], 'A');
-        SET_INT13DPT(regs, iface_type[3], ' ');
+    if (type != DTYPE_VIRTIO_BLK) {
+        SET_FARVAR(seg, param_far->iface_type[0], 'A');
+        SET_FARVAR(seg, param_far->iface_type[1], 'T');
+        SET_FARVAR(seg, param_far->iface_type[2], 'A');
+        SET_FARVAR(seg, param_far->iface_type[3], ' ');
     } else {
-        SET_INT13DPT(regs, iface_type[0], 'S');
-        SET_INT13DPT(regs, iface_type[1], 'C');
-        SET_INT13DPT(regs, iface_type[2], 'S');
-        SET_INT13DPT(regs, iface_type[3], 'I');
+        SET_FARVAR(seg, param_far->iface_type[0], 'S');
+        SET_FARVAR(seg, param_far->iface_type[1], 'C');
+        SET_FARVAR(seg, param_far->iface_type[2], 'S');
+        SET_FARVAR(seg, param_far->iface_type[3], 'I');
     }
-    SET_INT13DPT(regs, iface_type[4], ' ');
-    SET_INT13DPT(regs, iface_type[5], ' ');
-    SET_INT13DPT(regs, iface_type[6], ' ');
-    SET_INT13DPT(regs, iface_type[7], ' ');
+    SET_FARVAR(seg, param_far->iface_type[4], ' ');
+    SET_FARVAR(seg, param_far->iface_type[5], ' ');
+    SET_FARVAR(seg, param_far->iface_type[6], ' ');
+    SET_FARVAR(seg, param_far->iface_type[7], ' ');
 
     if (t13) {
-        SET_INT13DPT(regs, t13.device_path[0], device_path);
-        SET_INT13DPT(regs, t13.device_path[1], 0);
+        SET_FARVAR(seg, param_far->t13.device_path[0], device_path);
+        SET_FARVAR(seg, param_far->t13.device_path[1], 0);
 
-        SET_INT13DPT(regs, t13.checksum
-                     , -checksum_far(regs->ds, (void*)(regs->si+30), 43));
+        SET_FARVAR(seg, param_far->t13.checksum
+                   , -checksum_far(seg, (void*)param_far+30, 43));
     } else {
-        SET_INT13DPT(regs, phoenix.device_path, device_path);
+        SET_FARVAR(seg, param_far->phoenix.device_path, device_path);
 
-        SET_INT13DPT(regs, phoenix.checksum
-                     , -checksum_far(regs->ds, (void*)(regs->si+30), 35));
+        SET_FARVAR(seg, param_far->phoenix.checksum
+                   , -checksum_far(seg, (void*)param_far+30, 35));
     }
 
     disk_ret(regs, DISK_RET_SUCCESS);
@@ -860,9 +861,8 @@ handle_13(struct bregs *regs)
             cdemu_134b(regs);
             return;
         }
-        u16 ebda_seg = get_ebda_seg();
-        if (GET_EBDA2(ebda_seg, cdemu.active)) {
-            u8 emudrive = GET_EBDA2(ebda_seg, cdemu.emulated_extdrive);
+        if (GET_LOW(CDEmu.active)) {
+            u8 emudrive = GET_LOW(CDEmu.emulated_extdrive);
             if (extdrive == emudrive) {
                 // Access to an emulated drive.
                 struct drive_s *cdemu_g;

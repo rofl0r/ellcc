@@ -11,12 +11,14 @@
 #include "util.h" // dprintf
 #include "ata.h" // process_ata_op
 #include "ahci.h" // process_ahci_op
-#include "usb-msc.h" // process_usb_op
-#include "virtio-blk.h" // process_virtio_op
+#include "virtio-blk.h" // process_virtio_blk_op
+#include "blockcmd.h" // cdb_*
 
 u8 FloppyCount VAR16VISIBLE;
 u8 CDCount;
 struct drive_s *IDMap[3][CONFIG_MAX_EXTDRIVE] VAR16VISIBLE;
+u8 *bounce_buf_fl VAR16VISIBLE;
+struct dpte_s DefaultDPTE VARLOW;
 
 struct drive_s *
 getDrive(u8 exttype, u8 extdriveoffset)
@@ -38,6 +40,19 @@ int getDriveId(u8 exttype, struct drive_s *drive_g)
     return -1;
 }
 
+int bounce_buf_init(void)
+{
+    if (bounce_buf_fl)
+        return 0;
+
+    u8 *buf = malloc_low(CDROM_SECTOR_SIZE);
+    if (!buf) {
+        warn_noalloc();
+        return -1;
+    }
+    bounce_buf_fl = buf;
+    return 0;
+}
 
 /****************************************************************
  * Disk geometry translation
@@ -248,11 +263,11 @@ map_floppy_drive(struct drive_s *drive_g)
     // Update equipment word bits for floppy
     if (FloppyCount == 1) {
         // 1 drive, ready for boot
-        SETBITS_BDA(equipment_list_flags, 0x01);
+        set_equipment_flags(0x41, 0x01);
         SET_BDA(floppy_harddisk_info, 0x07);
     } else if (FloppyCount >= 2) {
         // 2 drives, ready for boot
-        SETBITS_BDA(equipment_list_flags, 0x41);
+        set_equipment_flags(0x41, 0x41);
         SET_BDA(floppy_harddisk_info, 0x77);
     }
 }
@@ -261,6 +276,38 @@ map_floppy_drive(struct drive_s *drive_g)
 /****************************************************************
  * 16bit calling interface
  ****************************************************************/
+
+static int
+process_scsi_op(struct disk_op_s *op)
+{
+    switch (op->command) {
+    case CMD_READ:
+        return cdb_read(op);
+    case CMD_WRITE:
+        return cdb_write(op);
+    case CMD_FORMAT:
+    case CMD_RESET:
+    case CMD_ISREADY:
+    case CMD_VERIFY:
+    case CMD_SEEK:
+        return DISK_RET_SUCCESS;
+    default:
+        op->count = 0;
+        return DISK_RET_EPARAM;
+    }
+}
+
+static int
+process_atapi_op(struct disk_op_s *op)
+{
+    switch (op->command) {
+    case CMD_WRITE:
+    case CMD_FORMAT:
+        return DISK_RET_EWRITEPROTECT;
+    default:
+        return process_scsi_op(op);
+    }
+}
 
 // Execute a disk_op request.
 int
@@ -273,25 +320,31 @@ process_op(struct disk_op_s *op)
         return process_floppy_op(op);
     case DTYPE_ATA:
         return process_ata_op(op);
-    case DTYPE_ATAPI:
-        return process_atapi_op(op);
     case DTYPE_RAMDISK:
         return process_ramdisk_op(op);
     case DTYPE_CDEMU:
         return process_cdemu_op(op);
-    case DTYPE_USB:
-        return process_usb_op(op);
-    case DTYPE_VIRTIO:
-	return process_virtio_op(op);
+    case DTYPE_VIRTIO_BLK:
+        return process_virtio_blk_op(op);
     case DTYPE_AHCI:
-	return process_ahci_op(op);
+        return process_ahci_op(op);
+    case DTYPE_ATA_ATAPI:
+    case DTYPE_AHCI_ATAPI:
+        return process_atapi_op(op);
+    case DTYPE_USB:
+    case DTYPE_UAS:
+    case DTYPE_VIRTIO_SCSI:
+    case DTYPE_LSI_SCSI:
+    case DTYPE_ESP_SCSI:
+    case DTYPE_MEGASAS:
+        return process_scsi_op(op);
     default:
         op->count = 0;
         return DISK_RET_EPARAM;
     }
 }
 
-// Execute a "disk_op_s" request - this runs on a stack in the ebda.
+// Execute a "disk_op_s" request - this runs on the extra stack.
 static int
 __send_disk_op(struct disk_op_s *op_far, u16 op_seg)
 {
@@ -312,7 +365,7 @@ __send_disk_op(struct disk_op_s *op_far, u16 op_seg)
     return status;
 }
 
-// Execute a "disk_op_s" request by jumping to a stack in the ebda.
+// Execute a "disk_op_s" request by jumping to the extra 16bit stack.
 int
 send_disk_op(struct disk_op_s *op)
 {

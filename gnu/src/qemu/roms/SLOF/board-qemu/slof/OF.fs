@@ -22,6 +22,9 @@ hex
 
 #include "base.fs"
 
+\ Adjust load-base to point to paflof-start / 2:
+paflof-start 1 rshift fff not and to load-base
+
 \ Little-endian accesses.  Also known as `wrong-endian'.
 #include <little-endian.fs>
 
@@ -50,8 +53,6 @@ hex
 	3drop 0
 ;
 
-080 cp
-
 100 cp
 
 \ Input line editing.
@@ -63,14 +64,16 @@ hex
 
 cistack ciregs >r1 ! \ kernel wants a stack :-)
 
-#include "romfs.fs"
-
 140 cp
+
+#include "romfs.fs"
 
 200 cp
 
-201 cp
 #include <slof-logo.fs>
+
+201 cp
+
 #include <banner.fs>
 
 : .banner .slof-logo .banner ;
@@ -90,9 +93,9 @@ d# 512000000 VALUE tb-frequency   \ default value - needed for "ms" to work
 
 #include <timebase.fs>
 
-280 cp
+270 cp
 
-2c0 cp
+#include <fcode/evaluator.fs>
 
 2e0 cp
 
@@ -106,13 +109,20 @@ d# 512000000 VALUE tb-frequency   \ default value - needed for "ms" to work
 
 #include <scsi-loader.fs>
 
-340 cp
-
 360 cp
 
 #include "fdt.fs"
 
 370 cp
+
+\ Grab rtas from qemu
+#include "rtas.fs"
+
+390 cp
+
+#include "virtio.fs"
+
+3f0 cp
 
 #include "tree.fs"
 
@@ -137,9 +147,100 @@ check-for-nvramrc
 #include "elf.fs"
 #include <loaders.fs>
 
+8a8 cp
+
+: enable-framebuffer-output  ( -- )
+\ enable output on framebuffer
+   s" screen" find-alias ?dup  IF
+      \ we need to open/close the screen device once
+      \ before "ticking" display-emit to emit
+      open-dev close-node
+      s" display-emit" $find  IF 
+         to emit 
+      ELSE
+         2drop
+      THEN
+   THEN
+;
+
+enable-framebuffer-output
+
 8b0 cp
 
+\ Scan USB devices
+usb-scan
+
+8c0 cp
+
+\ Claim remaining memory that is used by firmware:
+romfs-base 400000 0 ' claim CATCH IF ." claim failed!" cr 2drop THEN drop
+
+8d0 cp
+
+: set-default-console
+    s" linux,stdout-path" get-chosen IF
+        decode-string
+        ." Using default console: " 2dup type cr
+        io
+        2drop
+    ELSE
+        ." No console specified "
+        " screen" find-alias dup IF nip THEN
+        " keyboard" find-alias dup IF nip THEN
+	AND IF
+	  ." using screen & keyboard" cr
+	  " screen" output
+	  " keyboard" input
+        ELSE
+          " hvterm" find-alias IF
+	    drop
+	    ." using hvterm" cr
+            " hvterm" io
+	  ELSE
+	    ." and no default found" cr
+	  THEN
+        THEN
+    THEN
+;
+set-default-console
+
 8e0 cp
+
+\ Check if we are booting a kernel passed by qemu, in which case
+\ we skip initializing some devices
+
+0 VALUE direct-ram-boot-base
+0 VALUE direct-ram-boot-size
+CREATE boot-opd 10 ALLOT
+
+: (boot-ram)
+    direct-ram-boot-size 0<> IF
+        ." Booting from memory..." cr
+	direct-ram-boot-base boot-opd !
+	0 boot-opd 8 + !
+	s" boot-opd to go-entry" evaluate
+	s" true state-valid ! " evaluate
+	s" disable-watchdog go-64" evaluate
+    THEN
+;
+
+8e8 cp
+
+: check-boot-from-ram
+    s" qemu,boot-kernel" get-chosen IF
+        decode-int -rot decode-int -rot ( n1 n2 p s )
+	decode-int -rot decode-int -rot ( n1 n2 n3 n4 p s )
+	2drop
+	swap 20 << or to direct-ram-boot-size
+	swap 20 << or to direct-ram-boot-base
+	." Detected RAM kernel at " direct-ram-boot-base .
+	." (" direct-ram-boot-size . ." bytes) "
+	\ Override the boot-command word without touching the
+	\ nvram environment
+	s" boot-command" $create " (boot-ram)" env-string
+    THEN
+;
+check-boot-from-ram
 
 8ff cp
 

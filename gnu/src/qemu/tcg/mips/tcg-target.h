@@ -23,16 +23,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef TCG_TARGET_MIPS 
 #define TCG_TARGET_MIPS 1
 
-#define TCG_TARGET_REG_BITS 32
 #ifdef __MIPSEB__
 # define TCG_TARGET_WORDS_BIGENDIAN
 #endif
 
 #define TCG_TARGET_NB_REGS 32
 
-enum {
+typedef enum {
     TCG_REG_ZERO = 0,
     TCG_REG_AT,
     TCG_REG_V0,
@@ -65,7 +65,7 @@ enum {
     TCG_REG_SP,
     TCG_REG_FP,
     TCG_REG_RA,
-};
+} TCGReg;
 
 #define TCG_CT_CONST_ZERO 0x100
 #define TCG_CT_CONST_U16  0x200
@@ -78,29 +78,44 @@ enum {
 #define TCG_TARGET_CALL_ALIGN_ARGS 1
 
 /* optional instructions */
-#define TCG_TARGET_HAS_div_i32
-#define TCG_TARGET_HAS_not_i32
-#define TCG_TARGET_HAS_nor_i32
-#undef TCG_TARGET_HAS_rot_i32
-#define TCG_TARGET_HAS_ext8s_i32
-#define TCG_TARGET_HAS_ext16s_i32
-#undef TCG_TARGET_HAS_bswap32_i32
-#undef TCG_TARGET_HAS_bswap16_i32
-#undef TCG_TARGET_HAS_andc_i32
-#undef TCG_TARGET_HAS_orc_i32
-#undef TCG_TARGET_HAS_eqv_i32
-#undef TCG_TARGET_HAS_nand_i32
+#define TCG_TARGET_HAS_div_i32          1
+#define TCG_TARGET_HAS_not_i32          1
+#define TCG_TARGET_HAS_nor_i32          1
+#define TCG_TARGET_HAS_ext8s_i32        1
+#define TCG_TARGET_HAS_ext16s_i32       1
+#define TCG_TARGET_HAS_andc_i32         0
+#define TCG_TARGET_HAS_orc_i32          0
+#define TCG_TARGET_HAS_eqv_i32          0
+#define TCG_TARGET_HAS_nand_i32         0
+
+/* optional instructions only implemented on MIPS4, MIPS32 and Loongson 2 */
+#if (defined(__mips_isa_rev) && (__mips_isa_rev >= 1)) || \
+    defined(_MIPS_ARCH_LOONGSON2E) || defined(_MIPS_ARCH_LOONGSON2F) || \
+    defined(_MIPS_ARCH_MIPS4)
+#define TCG_TARGET_HAS_movcond_i32      1
+#else
+#define TCG_TARGET_HAS_movcond_i32      0
+#endif
+
+/* optional instructions only implemented on MIPS32R2 */
+#if defined(__mips_isa_rev) && (__mips_isa_rev >= 2)
+#define TCG_TARGET_HAS_bswap16_i32      1
+#define TCG_TARGET_HAS_bswap32_i32      1
+#define TCG_TARGET_HAS_rot_i32          1
+#define TCG_TARGET_HAS_deposit_i32      1
+#else
+#define TCG_TARGET_HAS_bswap16_i32      0
+#define TCG_TARGET_HAS_bswap32_i32      0
+#define TCG_TARGET_HAS_rot_i32          0
+#define TCG_TARGET_HAS_deposit_i32      0
+#endif
 
 /* optional instructions automatically implemented */
-#undef TCG_TARGET_HAS_neg_i32      /* sub  rd, zero, rt   */
-#undef TCG_TARGET_HAS_ext8u_i32    /* andi rt, rs, 0xff   */
-#undef TCG_TARGET_HAS_ext16u_i32   /* andi rt, rs, 0xffff */
+#define TCG_TARGET_HAS_neg_i32          0 /* sub  rd, zero, rt   */
+#define TCG_TARGET_HAS_ext8u_i32        0 /* andi rt, rs, 0xff   */
+#define TCG_TARGET_HAS_ext16u_i32       0 /* andi rt, rs, 0xffff */
 
-/* Note: must be synced with dyngen-exec.h */
 #define TCG_AREG0 TCG_REG_S0
-
-/* guest base is supported */
-#define TCG_TARGET_HAS_GUEST_BASE
 
 #ifdef __OpenBSD__
 #include <machine/sysarch.h>
@@ -108,7 +123,10 @@ enum {
 #include <sys/cachectl.h>
 #endif
 
-static inline void flush_icache_range(unsigned long start, unsigned long stop)
+static inline void flush_icache_range(tcg_target_ulong start,
+                                      tcg_target_ulong stop)
 {
     cacheflush ((void *)start, stop-start, ICACHE);
 }
+
+#endif

@@ -6,7 +6,7 @@
  */
 
 #include "qemu-common.h"
-#include "qemu-thread.h"
+#include "qemu/thread.h"
 
 #include "vcard.h"
 #include "vcard_emul.h"
@@ -46,10 +46,10 @@ vreader_new(const char *name, VReaderEmul *private,
 {
     VReader *reader;
 
-    reader = (VReader *)qemu_malloc(sizeof(VReader));
+    reader = (VReader *)g_malloc(sizeof(VReader));
     qemu_mutex_init(&reader->lock);
     reader->reference_count = 1;
-    reader->name = name ? strdup(name) : NULL;
+    reader->name = g_strdup(name);
     reader->card = NULL;
     reader->id = (vreader_id_t)-1;
     reader->reader_private = private;
@@ -87,13 +87,12 @@ vreader_free(VReader *reader)
         vcard_free(reader->card);
     }
     if (reader->name) {
-        qemu_free(reader->name);
+        g_free(reader->name);
     }
     if (reader->reader_private_free) {
         reader->reader_private_free(reader->reader_private);
     }
-    qemu_free(reader);
-    return;
+    g_free(reader);
 }
 
 static VCard *
@@ -237,7 +236,7 @@ vreader_list_entry_new(VReader *reader)
     VReaderListEntry *new_reader_list_entry;
 
     new_reader_list_entry = (VReaderListEntry *)
-                               qemu_malloc(sizeof(VReaderListEntry));
+                               g_malloc(sizeof(VReaderListEntry));
     new_reader_list_entry->next = NULL;
     new_reader_list_entry->prev = NULL;
     new_reader_list_entry->reader = vreader_reference(reader);
@@ -251,7 +250,7 @@ vreader_list_entry_delete(VReaderListEntry *entry)
         return;
     }
     vreader_free(entry->reader);
-    qemu_free(entry);
+    g_free(entry);
 }
 
 
@@ -260,7 +259,7 @@ vreader_list_new(void)
 {
     VReaderList *new_reader_list;
 
-    new_reader_list = (VReaderList *)qemu_malloc(sizeof(VReaderList));
+    new_reader_list = (VReaderList *)g_malloc(sizeof(VReaderList));
     new_reader_list->head = NULL;
     new_reader_list->tail = NULL;
     return new_reader_list;
@@ -278,7 +277,7 @@ vreader_list_delete(VReaderList *list)
     }
     list->head = NULL;
     list->tail = NULL;
-    qemu_free(list);
+    g_free(list);
 }
 
 

@@ -21,13 +21,15 @@ void cpu_save(QEMUFile *f, void *opaque)
         qemu_put_be32(f, env->fiq_regs[i]);
     }
     qemu_put_be32(f, env->cp15.c0_cpuid);
-    qemu_put_be32(f, env->cp15.c0_cachetype);
     qemu_put_be32(f, env->cp15.c0_cssel);
     qemu_put_be32(f, env->cp15.c1_sys);
     qemu_put_be32(f, env->cp15.c1_coproc);
     qemu_put_be32(f, env->cp15.c1_xscaleauxcr);
+    qemu_put_be32(f, env->cp15.c1_scr);
     qemu_put_be32(f, env->cp15.c2_base0);
+    qemu_put_be32(f, env->cp15.c2_base0_hi);
     qemu_put_be32(f, env->cp15.c2_base1);
+    qemu_put_be32(f, env->cp15.c2_base1_hi);
     qemu_put_be32(f, env->cp15.c2_control);
     qemu_put_be32(f, env->cp15.c2_mask);
     qemu_put_be32(f, env->cp15.c2_base_mask);
@@ -42,6 +44,7 @@ void cpu_save(QEMUFile *f, void *opaque)
     qemu_put_be32(f, env->cp15.c6_insn);
     qemu_put_be32(f, env->cp15.c6_data);
     qemu_put_be32(f, env->cp15.c7_par);
+    qemu_put_be32(f, env->cp15.c7_par_hi);
     qemu_put_be32(f, env->cp15.c9_insn);
     qemu_put_be32(f, env->cp15.c9_data);
     qemu_put_be32(f, env->cp15.c9_pmcr);
@@ -56,8 +59,11 @@ void cpu_save(QEMUFile *f, void *opaque)
     qemu_put_be32(f, env->cp15.c13_tls2);
     qemu_put_be32(f, env->cp15.c13_tls3);
     qemu_put_be32(f, env->cp15.c15_cpar);
+    qemu_put_be32(f, env->cp15.c15_power_control);
+    qemu_put_be32(f, env->cp15.c15_diagnostic);
+    qemu_put_be32(f, env->cp15.c15_power_diagnostic);
 
-    qemu_put_be32(f, env->features);
+    qemu_put_be64(f, env->features);
 
     if (arm_feature(env, ARM_FEATURE_VFP)) {
         for (i = 0;  i < 16; i++) {
@@ -135,13 +141,15 @@ int cpu_load(QEMUFile *f, void *opaque, int version_id)
         env->fiq_regs[i] = qemu_get_be32(f);
     }
     env->cp15.c0_cpuid = qemu_get_be32(f);
-    env->cp15.c0_cachetype = qemu_get_be32(f);
     env->cp15.c0_cssel = qemu_get_be32(f);
     env->cp15.c1_sys = qemu_get_be32(f);
     env->cp15.c1_coproc = qemu_get_be32(f);
     env->cp15.c1_xscaleauxcr = qemu_get_be32(f);
+    env->cp15.c1_scr = qemu_get_be32(f);
     env->cp15.c2_base0 = qemu_get_be32(f);
+    env->cp15.c2_base0_hi = qemu_get_be32(f);
     env->cp15.c2_base1 = qemu_get_be32(f);
+    env->cp15.c2_base1_hi = qemu_get_be32(f);
     env->cp15.c2_control = qemu_get_be32(f);
     env->cp15.c2_mask = qemu_get_be32(f);
     env->cp15.c2_base_mask = qemu_get_be32(f);
@@ -156,6 +164,7 @@ int cpu_load(QEMUFile *f, void *opaque, int version_id)
     env->cp15.c6_insn = qemu_get_be32(f);
     env->cp15.c6_data = qemu_get_be32(f);
     env->cp15.c7_par = qemu_get_be32(f);
+    env->cp15.c7_par_hi = qemu_get_be32(f);
     env->cp15.c9_insn = qemu_get_be32(f);
     env->cp15.c9_data = qemu_get_be32(f);
     env->cp15.c9_pmcr = qemu_get_be32(f);
@@ -170,8 +179,11 @@ int cpu_load(QEMUFile *f, void *opaque, int version_id)
     env->cp15.c13_tls2 = qemu_get_be32(f);
     env->cp15.c13_tls3 = qemu_get_be32(f);
     env->cp15.c15_cpar = qemu_get_be32(f);
+    env->cp15.c15_power_control = qemu_get_be32(f);
+    env->cp15.c15_diagnostic = qemu_get_be32(f);
+    env->cp15.c15_power_diagnostic = qemu_get_be32(f);
 
-    env->features = qemu_get_be32(f);
+    env->features = qemu_get_be64(f);
 
     if (arm_feature(env, ARM_FEATURE_VFP)) {
         for (i = 0;  i < 16; i++) {
@@ -189,7 +201,7 @@ int cpu_load(QEMUFile *f, void *opaque, int version_id)
         env->vfp.vec_stride = qemu_get_be32(f);
 
         if (arm_feature(env, ARM_FEATURE_VFP3)) {
-            for (i = 0;  i < 16; i++) {
+            for (i = 16;  i < 32; i++) {
                 CPU_DoubleU u;
                 u.l.upper = qemu_get_be32(f);
                 u.l.lower = qemu_get_be32(f);

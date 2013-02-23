@@ -17,29 +17,29 @@ include $(TOP)/make.rules
 OBJS	=  kernel/kernel.o oflib/oflib.o libc/libc-glue.o app/app.o
 .PHONY : subdirs clean depend mrproper
 
-client : .depend subdirs $(OBJS) $(LIBCMNDIR)/libc.a
-	$(LD) $(LDFLAGS) -o $@ -Tclient.lds $(OBJS) $(LIBCMNDIR)/libc.a
-	$(OBJDUMP) -DSsx $@ > $@.dis
+CLIENTLIBS = $(LIBCMNDIR)/libelf.a $(LIBCMNDIR)/libc.a
+
+all:	.depend subdirs
+	$(MAKE) client
+
+client : $(OBJS) $(CLIENTLIBS)
+	$(LD) $(LDFLAGS) -o $@ -Tclient.lds $(OBJS) $(CLIENTLIBS)
 	cp $@ $@.unstripped
-	$(STRIP) $@
+	$(STRIP) --strip-unneeded $@
+
+client.dis: client
+	$(OBJDUMP) -DSsx client.unstripped > $@
 
 sec-client : subdirs $(OBJS) $(LIBCMNDIR)/libc.a
 	$(LD) $(LDFLAGS) -o $@ -Tsec-client.lds $(OBJS) $(LIBCMNDIR)/libc.a
-
-fpga-client : 
-	$(MAKE) -C . fpga-client-int SNK_LJTAG_PROCESS=1
-
-fpga-client-int : subdirs $(OBJS) $(LIBCMNDIR)/libc.a
-	$(LD) $(LDFLAGS) -o fpga-client -Tsec-client.lds $(OBJS) $(LIBCMNDIR)/libc.a
-	$(STRIP) fpga-client
 
 subdirs : 
 	@for dir in $(dir $(OBJS)); do \
 	  $(MAKE) -C $$dir || exit 1; \
 	done
 
-$(LIBCMNDIR)/libc.a:
-	$(MAKE) -C $(LIBCMNDIR) libc
+$(LIBCMNDIR)/%.a:
+	$(MAKE) -C $(LIBCMNDIR) $(@:$(LIBCMNDIR)/%.a=%)
 
 clean: 
 	@for dir in $(dir $(OBJS)); do \

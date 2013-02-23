@@ -39,7 +39,7 @@
  */
 
 #include <slirp.h>
-#include <osdep.h>
+#include <qemu/osdep.h>
 #include "ip_icmp.h"
 
 static struct ip *ip_reass(Slirp *slirp, struct ip *ip, struct ipq *fp);
@@ -59,6 +59,13 @@ ip_init(Slirp *slirp)
     udp_init(slirp);
     tcp_init(slirp);
     icmp_init(slirp);
+}
+
+void ip_cleanup(Slirp *slirp)
+{
+    udp_cleanup(slirp);
+    tcp_cleanup(slirp);
+    icmp_cleanup(slirp);
 }
 
 /*
@@ -206,7 +213,6 @@ ip_input(struct mbuf *m)
 	return;
 bad:
 	m_free(m);
-	return;
 }
 
 #define iptofrag(P) ((struct ipasfrag *)(((char*)(P)) - sizeof(struct qlink)))
@@ -511,7 +517,7 @@ typedef uint32_t n_time;
 				 */
 				break;
 			}
-			off--;			/ * 0 origin *  /
+                        off--; /* 0 origin */
 			if (off > optlen - sizeof(struct in_addr)) {
 				/*
 				 * End of source route.  Should be for us.
@@ -554,7 +560,7 @@ typedef uint32_t n_time;
 			/*
 			 * If no space remains, ignore.
 			 */
-			off--;			 * 0 origin *
+                        off--; /* 0 origin */
 			if (off > optlen - sizeof(struct in_addr))
 				break;
 			bcopy((caddr_t)(&ip->ip_dst), (caddr_t)&ipaddr.sin_addr,

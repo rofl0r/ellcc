@@ -18,15 +18,14 @@ static inline void irq_enable(void)
     asm volatile("sti": : :"memory");
 }
 
-static inline unsigned long irq_save(void)
+static inline u32 save_flags(void)
 {
-    unsigned long flags;
-    asm volatile("pushfl ; popl %0" : "=g" (flags): :"memory");
-    irq_disable();
+    u32 flags;
+    asm volatile("pushfl ; popl %0" : "=rm" (flags));
     return flags;
 }
 
-static inline void irq_restore(unsigned long flags)
+static inline void restore_flags(u32 flags)
 {
     asm volatile("pushl %0 ; popfl" : : "g" (flags) : "memory", "cc");
 }
@@ -51,14 +50,24 @@ static inline void wbinvd(void)
     asm volatile("wbinvd": : :"memory");
 }
 
+#define CPUID_TSC (1 << 4)
 #define CPUID_MSR (1 << 5)
 #define CPUID_APIC (1 << 9)
 #define CPUID_MTRR (1 << 12)
-static inline void cpuid(u32 index, u32 *eax, u32 *ebx, u32 *ecx, u32 *edx)
+static inline void __cpuid(u32 index, u32 *eax, u32 *ebx, u32 *ecx, u32 *edx)
 {
     asm("cpuid"
         : "=a" (*eax), "=b" (*ebx), "=c" (*ecx), "=d" (*edx)
         : "0" (index));
+}
+
+static inline u32 getcr0(void) {
+    u32 cr0;
+    asm("movl %%cr0, %0" : "=r"(cr0));
+    return cr0;
+}
+static inline void setcr0(u32 cr0) {
+    asm("movl %0, %%cr0" : : "r"(cr0));
 }
 
 static inline u64 rdmsr(u32 index)
@@ -95,31 +104,6 @@ static inline u32 __fls(u32 word)
     return word;
 }
 
-static inline u16 __htons_constant(u16 val) {
-    return (val<<8) | (val>>8);
-}
-static inline u32 __htonl_constant(u32 val) {
-    return (val<<24) | ((val&0xff00)<<8) | ((val&0xff0000)>>8) | (val>>24);
-}
-static inline u32 __htonl(u32 val) {
-    asm("bswapl %0" : "+r"(val));
-    return val;
-}
-#define htonl(x) (__builtin_constant_p((u32)(x)) ? __htonl_constant(x) : __htonl(x))
-#define ntohl(x) htonl(x)
-#define htons(x) __htons_constant(x)
-#define ntohs(x) htons(x)
-
-static inline u16 cpu_to_le16(u16 x)
-{
-    return x;
-}
-
-static inline u32 cpu_to_le32(u32 x)
-{
-    return x;
-}
-
 static inline u32 getesp(void) {
     u32 esp;
     asm("movl %%esp, %0" : "=rm"(esp));
@@ -145,23 +129,6 @@ static inline u8 readb(const void *addr) {
     return *(volatile const u8 *)addr;
 }
 
-#define call16_simpint(nr, peax, pflags) do {                           \
-        ASSERT16();                                                     \
-        asm volatile(                                                   \
-            "pushl %%ebp\n"                                             \
-            "sti\n"                                                     \
-            "stc\n"                                                     \
-            "int %2\n"                                                  \
-            "pushfl\n"                                                  \
-            "popl %1\n"                                                 \
-            "cli\n"                                                     \
-            "cld\n"                                                     \
-            "popl %%ebp"                                                \
-            : "+a"(*peax), "=c"(*pflags)                                \
-            : "i"(nr)                                                   \
-            : "ebx", "edx", "esi", "edi", "cc", "memory");              \
-    } while (0)
-
 // GDT bits
 #define GDT_CODE     (0x9bULL << 40) // Code segment - P,R,A bits also set
 #define GDT_DATA     (0x93ULL << 40) // Data segment - W,A bits also set
@@ -182,14 +149,7 @@ struct descloc_s {
 } PACKED;
 
 // util.c
-struct bregs;
-inline void call16(struct bregs *callregs);
-inline void call16big(struct bregs *callregs);
-inline void __call16_int(struct bregs *callregs, u16 offset);
-#define call16_int(nr, callregs) do {                           \
-        extern void irq_trampoline_ ##nr ();                    \
-        __call16_int((callregs), (u32)&irq_trampoline_ ##nr );  \
-    } while (0)
+void cpuid(u32 index, u32 *eax, u32 *ebx, u32 *ecx, u32 *edx);
 u8 checksum_far(u16 buf_seg, void *buf_far, u32 len);
 u8 checksum(void *buf, u32 len);
 size_t strlen(const char *s);
@@ -214,12 +174,22 @@ void nullTrailingSpace(char *buf);
 int get_keystroke(int msec);
 
 // stacks.c
+extern u8 ExtraStack[], *StackPos;
+u32 stack_hop(u32 eax, u32 edx, void *func);
+u32 stack_hop_back(u32 eax, u32 edx, void *func);
 u32 call32(void *func, u32 eax, u32 errret);
-inline u32 stack_hop(u32 eax, u32 edx, void *func);
+struct bregs;
+inline void farcall16(struct bregs *callregs);
+inline void farcall16big(struct bregs *callregs);
+inline void __call16_int(struct bregs *callregs, u16 offset);
+#define call16_int(nr, callregs) do {                           \
+        extern void irq_trampoline_ ##nr ();                    \
+        __call16_int((callregs), (u32)&irq_trampoline_ ##nr );  \
+    } while (0)
 extern struct thread_info MainThread;
 struct thread_info *getCurThread(void);
 void yield(void);
-void wait_irq(void);
+void yield_toirq(void);
 void run_thread(void (*func)(void*), void *data);
 void wait_threads(void);
 struct mutex_s { u32 isLocked; };
@@ -231,6 +201,7 @@ int wait_preempt(void);
 void check_preempt(void);
 
 // output.c
+extern u16 DebugOutputPort;
 void debug_serial_setup(void);
 void panic(const char *fmt, ...)
     __attribute__ ((format (printf, 1, 2))) __noreturn;
@@ -311,9 +282,8 @@ void lpt_setup(void);
 // clock.c
 #define PIT_TICK_RATE 1193180   // Underlying HZ of PIT
 #define PIT_TICK_INTERVAL 65536 // Default interval for 18.2Hz timer
-static inline int check_tsc(u64 end) {
-    return (s64)(rdtscll() - end) > 0;
-}
+void pmtimer_init(u16 ioport, u32 khz);
+int check_tsc(u64 end);
 void timer_setup(void);
 void ndelay(u32 count);
 void udelay(u32 count);
@@ -342,46 +312,10 @@ void bios32_setup(void);
 // shadow.c
 void make_bios_writable(void);
 void make_bios_readonly(void);
-void make_bios_writable_intel(u16 bdf, u32 pam0);
-void make_bios_readonly_intel(u16 bdf, u32 pam0);
 void qemu_prep_reset(void);
-
-// smm.c
-void smm_save_and_copy(void);
-void smm_relocate_and_restore(void);
-
-// pci_region.c
-// region allocator. pci region allocates the requested region
-// sequentially with overflow check.
-struct pci_region {
-    // The region is [first, last].
-    u32 first;
-    u32 last;
-
-    // The next allocation starts from here.
-    // i.e. [start, cur_first) is allocated.
-    // Right after initialization cur_first == first.
-    u32 cur_first;
-};
-// initialize the pci_region of [first, last]
-// last must not be 0xffffffff
-void pci_region_init(struct pci_region *r, u32 first, u32 last);
-// allocate the region of size
-u32 pci_region_alloc(struct pci_region *r, u32 size);
-// make the next allocation aligned to align
-u32 pci_region_align(struct pci_region *r, u32 align);
-// revert the allocation to addr.
-void pci_region_revert(struct pci_region *r, u32 addr);
-// make the allocation fail.
-u32 pci_region_disable(struct pci_region *r);
-// returns the current allocation point.
-u32 pci_region_addr(const struct pci_region *r);
-// returns the region size.
-u32 pci_region_size(const struct pci_region *r);
 
 // pciinit.c
 extern const u8 pci_irqs[4];
-void pci_bios_allocate_regions(u16 bdf, void *arg);
 void pci_setup(void);
 
 // smm.c
@@ -392,30 +326,31 @@ extern u32 CountCPUs;
 extern u32 MaxCountCPUs;
 void wrmsr_smp(u32 index, u64 val);
 void smp_probe(void);
+int apic_id_is_present(u8 apic_id);
 
 // coreboot.c
+extern const char *CBvendor, *CBpart;
 struct cbfs_file;
-struct cbfs_file *cbfs_finddatafile(const char *fname);
-struct cbfs_file *cbfs_findprefix(const char *prefix, struct cbfs_file *last);
-u32 cbfs_datasize(struct cbfs_file *file);
-const char *cbfs_filename(struct cbfs_file *file);
-int cbfs_copyfile(struct cbfs_file *file, void *dst, u32 maxlen);
 void cbfs_run_payload(struct cbfs_file *file);
 void coreboot_copy_biostable(void);
 void cbfs_payload_setup(void);
 void coreboot_setup(void);
+void coreboot_cbfs_setup(void);
+
+// biostable.c
+void copy_table(void *pos);
 
 // vgahooks.c
-extern int VGAbdf;
 void handle_155f(struct bregs *regs);
-void vgahook_setup(const char *vendor, const char *part);
+struct pci_device;
+void vgahook_setup(struct pci_device *pci);
 
 // optionroms.c
 void call_bcv(u16 seg, u16 ip);
 void optionrom_setup(void);
 void vga_setup(void);
 void s3_resume_vga_init(void);
-extern u32 RomEnd;
+extern int ScreenAndDebug;
 
 // bootsplash.c
 void enable_vga_console(void);
@@ -423,6 +358,7 @@ void enable_bootsplash(void);
 void disable_bootsplash(void);
 
 // resume.c
+extern int HaveRunPost;
 void init_dma(void);
 
 // pnpbios.c
@@ -432,7 +368,12 @@ void pnp_setup(void);
 
 // pmm.c
 extern struct zone_s ZoneLow, ZoneHigh, ZoneFSeg, ZoneTmpLow, ZoneTmpHigh;
+u32 rom_get_top(void);
+u32 rom_get_last(void);
+struct rom_header *rom_reserve(u32 size);
+int rom_confirm(u32 size);
 void malloc_setup(void);
+void malloc_fixupreloc(void);
 void malloc_finalize(void);
 void *pmm_malloc(struct zone_s *zone, u32 handle, u32 size, u32 align);
 int pmm_free(void *data);
@@ -487,6 +428,24 @@ static inline void free(void *data) {
 
 // mtrr.c
 void mtrr_setup(void);
+
+// romfile.c
+struct romfile_s {
+    struct romfile_s *next;
+    char name[128];
+    u32 size;
+    int (*copy)(struct romfile_s *file, void *dest, u32 maxlen);
+
+    u32 id;
+    u32 rawsize;
+    u32 flags;
+    void *data;
+};
+void romfile_add(struct romfile_s *file);
+struct romfile_s *romfile_findprefix(const char *prefix, struct romfile_s *prev);
+struct romfile_s *romfile_find(const char *name);
+void *romfile_loadfile(const char *name, int *psize);
+u64 romfile_loadint(const char *name, u64 defval);
 
 // romlayout.S
 void reset_vector(void) __noreturn;

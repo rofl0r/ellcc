@@ -13,6 +13,8 @@
 #ifndef _UNISTD_H
 #define _UNISTD_H
 
+#include <stddef.h>
+
 typedef long ssize_t;
 
 extern int open(const char *name, int flags);

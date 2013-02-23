@@ -1,151 +1,218 @@
--include ../config-host.mak
--include $(SRC_PATH)/rules.mak
+export SRC_PATH
 
-$(call set-vpath, $(SRC_PATH)/tests)
-
-QEMU=../i386-linux-user/qemu-i386
-QEMU_X86_64=../x86_64-linux-user/qemu-x86_64
-CC_X86_64=$(CC_I386) -m64
-
-QEMU_INCLUDES += -I..
-CFLAGS=-Wall -O2 -g -fno-strict-aliasing
-#CFLAGS+=-msse2
-LDFLAGS=
-
-# TODO: automatically detect ARM and MIPS compilers, and run those too
-
-# runcom maps page 0, so it requires root privileges
-# also, pi_10.com runs indefinitely
-
-I386_TESTS=hello-i386 \
-	   linux-test \
-	   testthread \
-	   sha1-i386 \
-	   test-i386 \
-	   test-mmap \
-	   # runcom
-
-# native i386 compilers sometimes are not biarch.  assume cross-compilers are
-ifneq ($(ARCH),i386)
-I386_TESTS+=run-test-x86_64
+check-unit-y = tests/check-qdict$(EXESUF)
+gcov-files-check-qdict-y = qobject/qdict.c
+check-unit-y += tests/check-qfloat$(EXESUF)
+gcov-files-check-qfloat-y = qobject/qfloat.c
+check-unit-y += tests/check-qint$(EXESUF)
+gcov-files-check-qint-y = qobject/qint.c
+check-unit-y += tests/check-qstring$(EXESUF)
+gcov-files-check-qstring-y = qobject/qstring.c
+check-unit-y += tests/check-qlist$(EXESUF)
+gcov-files-check-qlist-y = qobject/qlist.c
+check-unit-y += tests/check-qjson$(EXESUF)
+gcov-files-check-qjson-y = qobject/qjson.c
+check-unit-y += tests/test-qmp-output-visitor$(EXESUF)
+gcov-files-test-qmp-output-visitor-y = qapi/qmp-output-visitor.c
+check-unit-y += tests/test-qmp-input-visitor$(EXESUF)
+gcov-files-test-qmp-input-visitor-y = qapi/qmp-input-visitor.c
+check-unit-y += tests/test-qmp-input-strict$(EXESUF)
+check-unit-y += tests/test-qmp-commands$(EXESUF)
+gcov-files-test-qmp-commands-y = qapi/qmp-dispatch.c
+check-unit-y += tests/test-string-input-visitor$(EXESUF)
+gcov-files-test-string-input-visitor-y = qapi/string-input-visitor.c
+check-unit-y += tests/test-string-output-visitor$(EXESUF)
+gcov-files-test-string-output-visitor-y = qapi/string-output-visitor.c
+check-unit-y += tests/test-coroutine$(EXESUF)
+ifeq ($(CONFIG_WIN32),y)
+gcov-files-test-coroutine-y = coroutine-win32.c
+else
+ifeq ($(CONFIG_UCONTEXT_COROUTINE),y)
+gcov-files-test-coroutine-y = coroutine-ucontext.c
+else
+ifeq ($(CONFIG_SIGALTSTACK_COROUTINE),y)
+gcov-files-test-coroutine-y = coroutine-sigaltstack.c
+else
+gcov-files-test-coroutine-y = coroutine-gthread.c
 endif
-
-TESTS = test_path
-ifneq ($(call find-in-path, $(CC_I386)),)
-TESTS += $(I386_TESTS)
 endif
+endif
+check-unit-y += tests/test-visitor-serialization$(EXESUF)
+check-unit-y += tests/test-iov$(EXESUF)
+gcov-files-test-iov-y = util/iov.c
+check-unit-y += tests/test-aio$(EXESUF)
+gcov-files-test-aio-$(CONFIG_WIN32) = aio-win32.c
+gcov-files-test-aio-$(CONFIG_POSIX) = aio-posix.c
+check-unit-y += tests/test-thread-pool$(EXESUF)
+gcov-files-test-thread-pool-y = thread-pool.c
+gcov-files-test-hbitmap-y = util/hbitmap.c
+check-unit-y += tests/test-hbitmap$(EXESUF)
+check-unit-y += tests/test-x86-cpuid$(EXESUF)
+# all code tested by test-x86-cpuid is inside topology.h
+gcov-files-test-x86-cpuid-y =
+check-unit-y += tests/test-xbzrle$(EXESUF)
+gcov-files-test-xbzrle-y = xbzrle.c
+check-unit-y += tests/test-cutils$(EXESUF)
+gcov-files-test-cutils-y += util/cutils.c
 
-all: $(patsubst %,run-%,$(TESTS))
+check-block-$(CONFIG_POSIX) += tests/qemu-iotests-quick.sh
 
-# rules to run tests
+# All QTests for now are POSIX-only, but the dependencies are
+# really in libqtest, not in the testcases themselves.
+check-qtest-i386-y = tests/fdc-test$(EXESUF)
+gcov-files-i386-y = hw/fdc.c
+check-qtest-i386-y += tests/hd-geo-test$(EXESUF)
+gcov-files-i386-y += hw/hd-geometry.c
+check-qtest-i386-y += tests/rtc-test$(EXESUF)
+check-qtest-x86_64-y = $(check-qtest-i386-y)
+gcov-files-i386-y += i386-softmmu/hw/mc146818rtc.c
+gcov-files-x86_64-y = $(subst i386-softmmu/,x86_64-softmmu/,$(gcov-files-i386-y))
+#check-qtest-sparc-y = tests/m48t59-test$(EXESUF)
+#check-qtest-sparc64-y = tests/m48t59-test$(EXESUF)
+gcov-files-sparc-y += hw/m48t59.c
+gcov-files-sparc64-y += hw/m48t59.c
+check-qtest-arm-y = tests/tmp105-test$(EXESUF)
+gcov-files-arm-y += hw/tmp105.c
 
-.PHONY: $(patsubst %,run-%,$(TESTS))
+GENERATED_HEADERS += tests/test-qapi-types.h tests/test-qapi-visit.h tests/test-qmp-commands.h
 
-run-%: %
-	-$(QEMU) ./$*
+test-obj-y = tests/check-qint.o tests/check-qstring.o tests/check-qdict.o \
+	tests/check-qlist.o tests/check-qfloat.o tests/check-qjson.o \
+	tests/test-coroutine.o tests/test-string-output-visitor.o \
+	tests/test-string-input-visitor.o tests/test-qmp-output-visitor.o \
+	tests/test-qmp-input-visitor.o tests/test-qmp-input-strict.o \
+	tests/test-qmp-commands.o tests/test-visitor-serialization.o \
+	tests/test-x86-cpuid.o
 
-run-hello-i386: hello-i386
-run-linux-test: linux-test
-run-testthread: testthread
-run-sha1-i386: sha1-i386
+test-qapi-obj-y = tests/test-qapi-visit.o tests/test-qapi-types.o
 
-run-test-i386: test-i386
-	./test-i386 > test-i386.ref
-	-$(QEMU) test-i386 > test-i386.out
-	@if diff -u test-i386.ref test-i386.out ; then echo "Auto Test OK"; fi
+$(test-obj-y): QEMU_INCLUDES += -Itests
 
-run-test-x86_64: test-x86_64
-	./test-x86_64 > test-x86_64.ref
-	-$(QEMU_X86_64) test-x86_64 > test-x86_64.out
-	@if diff -u test-x86_64.ref test-x86_64.out ; then echo "Auto Test OK"; fi
+tests/test-x86-cpuid.o: QEMU_INCLUDES += -I$(SRC_PATH)/target-i386
 
-run-test-mmap: test-mmap
-	-$(QEMU) ./test-mmap
-	-$(QEMU) -p 8192 ./test-mmap 8192
-	-$(QEMU) -p 16384 ./test-mmap 16384
-	-$(QEMU) -p 32768 ./test-mmap 32768
+tests/check-qint$(EXESUF): tests/check-qint.o libqemuutil.a
+tests/check-qstring$(EXESUF): tests/check-qstring.o libqemuutil.a
+tests/check-qdict$(EXESUF): tests/check-qdict.o libqemuutil.a
+tests/check-qlist$(EXESUF): tests/check-qlist.o libqemuutil.a
+tests/check-qfloat$(EXESUF): tests/check-qfloat.o libqemuutil.a
+tests/check-qjson$(EXESUF): tests/check-qjson.o libqemuutil.a libqemustub.a
+tests/test-coroutine$(EXESUF): tests/test-coroutine.o $(block-obj-y) libqemuutil.a libqemustub.a
+tests/test-aio$(EXESUF): tests/test-aio.o $(block-obj-y) libqemuutil.a libqemustub.a
+tests/test-thread-pool$(EXESUF): tests/test-thread-pool.o $(block-obj-y) libqemuutil.a libqemustub.a
+tests/test-iov$(EXESUF): tests/test-iov.o libqemuutil.a
+tests/test-hbitmap$(EXESUF): tests/test-hbitmap.o libqemuutil.a libqemustub.a
+tests/test-x86-cpuid$(EXESUF): tests/test-x86-cpuid.o
+tests/test-xbzrle$(EXESUF): tests/test-xbzrle.o xbzrle.o page_cache.o libqemuutil.a
+tests/test-cutils$(EXESUF): tests/test-cutils.o util/cutils.o
 
-run-runcom: runcom
-	-$(QEMU) ./runcom $(SRC_PATH)/tests/pi_10.com
+tests/test-qapi-types.c tests/test-qapi-types.h :\
+$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-types.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-types.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
+tests/test-qapi-visit.c tests/test-qapi-visit.h :\
+$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-visit.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-visit.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
+tests/test-qmp-commands.h tests/test-qmp-marshal.c :\
+$(SRC_PATH)/qapi-schema-test.json $(SRC_PATH)/scripts/qapi-commands.py
+	$(call quiet-command,$(PYTHON) $(SRC_PATH)/scripts/qapi-commands.py $(gen-out-type) -o tests -p "test-" < $<, "  GEN   $@")
 
-run-test_path: test_path
-	./test_path
 
-# rules to compile tests
+tests/test-string-output-visitor$(EXESUF): tests/test-string-output-visitor.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
+tests/test-string-input-visitor$(EXESUF): tests/test-string-input-visitor.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
+tests/test-qmp-output-visitor$(EXESUF): tests/test-qmp-output-visitor.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
+tests/test-qmp-input-visitor$(EXESUF): tests/test-qmp-input-visitor.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
+tests/test-qmp-input-strict$(EXESUF): tests/test-qmp-input-strict.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
+tests/test-qmp-commands$(EXESUF): tests/test-qmp-commands.o tests/test-qmp-marshal.o $(test-qapi-obj-y) qapi-types.o qapi-visit.o libqemuutil.a libqemustub.a
+tests/test-visitor-serialization$(EXESUF): tests/test-visitor-serialization.o $(test-qapi-obj-y) libqemuutil.a libqemustub.a
 
-test_path: test_path.o
-test_path.o: test_path.c
+tests/rtc-test$(EXESUF): tests/rtc-test.o
+tests/m48t59-test$(EXESUF): tests/m48t59-test.o
+tests/fdc-test$(EXESUF): tests/fdc-test.o
+tests/hd-geo-test$(EXESUF): tests/hd-geo-test.o
+tests/tmp105-test$(EXESUF): tests/tmp105-test.o
 
-hello-i386: hello-i386.c
-	$(CC_I386) -nostdlib $(CFLAGS) -static $(LDFLAGS) -o $@ $<
-	strip $@
+# QTest rules
 
-testthread: testthread.c
-	$(CC_I386) $(CFLAGS) $(LDFLAGS) -o $@ $< -lpthread
+TARGETS=$(patsubst %-softmmu,%, $(filter %-softmmu,$(TARGET_DIRS)))
+QTEST_TARGETS=$(foreach TARGET,$(TARGETS), $(if $(check-qtest-$(TARGET)-y), $(TARGET),))
+check-qtest-$(CONFIG_POSIX)=$(foreach TARGET,$(TARGETS), $(check-qtest-$(TARGET)-y))
 
-# i386/x86_64 emulation test (test various opcodes) */
-test-i386: test-i386.c test-i386-code16.S test-i386-vm86.S \
-           test-i386.h test-i386-shift.h test-i386-muldiv.h
-	$(CC_I386) $(CFLAGS) $(LDFLAGS) -o $@ \
-              $(<D)/test-i386.c $(<D)/test-i386-code16.S $(<D)/test-i386-vm86.S -lm
+qtest-obj-y = tests/libqtest.o libqemuutil.a libqemustub.a
+qtest-obj-y += tests/libi2c.o tests/libi2c-omap.o
+$(check-qtest-y): $(qtest-obj-y)
 
-test-x86_64: test-i386.c \
-           test-i386.h test-i386-shift.h test-i386-muldiv.h
-	$(CC_X86_64) $(CFLAGS) $(LDFLAGS) -o $@ $(<D)/test-i386.c -lm
+.PHONY: check-help
+check-help:
+	@echo "Regression testing targets:"
+	@echo
+	@echo " make check                Run all tests"
+	@echo " make check-qtest-TARGET   Run qtest tests for given target"
+	@echo " make check-qtest          Run qtest tests"
+	@echo " make check-unit           Run qobject tests"
+	@echo " make check-block          Run block tests"
+	@echo " make check-report.html    Generates an HTML test report"
+	@echo
+	@echo "Please note that HTML reports do not regenerate if the unit tests"
+	@echo "has not changed."
+	@echo
+	@echo "The variable SPEED can be set to control the gtester speed setting."
+	@echo "Default options are -k and (for make V=1) --verbose; they can be"
+	@echo "changed with variable GTESTER_OPTIONS."
 
-# generic Linux and CPU test
-linux-test: linux-test.c
-	$(CC_I386) $(CFLAGS) $(LDFLAGS) -o $@ $< -lm
+SPEED = quick
+GTESTER_OPTIONS = -k $(if $(V),--verbose,-q)
+GCOV_OPTIONS = -n $(if $(V),-f,)
 
-# vm86 test
-runcom: runcom.c
-	$(CC_I386) $(CFLAGS) $(LDFLAGS) -o $@ $<
+# gtester tests, possibly with verbose output
 
-test-mmap: test-mmap.c
-	$(CC_I386) -m32 $(CFLAGS) -Wall -O2 $(LDFLAGS) -o $@ $<
+.PHONY: $(patsubst %, check-qtest-%, $(QTEST_TARGETS))
+$(patsubst %, check-qtest-%, $(QTEST_TARGETS)): check-qtest-%: $(check-qtest-y)
+	$(if $(CONFIG_GCOV),@rm -f *.gcda */*.gcda */*/*.gcda */*/*/*.gcda,)
+	$(call quiet-command,QTEST_QEMU_BINARY=$*-softmmu/qemu-system-$* \
+		gtester $(GTESTER_OPTIONS) -m=$(SPEED) $(check-qtest-$*-y),"GTESTER $@")
+	$(if $(CONFIG_GCOV),@for f in $(gcov-files-$*-y); do \
+	  echo Gcov report for $$f:;\
+	  $(GCOV) $(GCOV_OPTIONS) $$f -o `dirname $$f`; \
+	done,)
 
-# speed test
-sha1-i386: sha1.c
-	$(CC_I386) $(CFLAGS) $(LDFLAGS) -o $@ $<
+.PHONY: $(patsubst %, check-%, $(check-unit-y))
+$(patsubst %, check-%, $(check-unit-y)): check-%: %
+	$(if $(CONFIG_GCOV),@rm -f *.gcda */*.gcda */*/*.gcda */*/*/*.gcda,)
+	$(call quiet-command,gtester $(GTESTER_OPTIONS) -m=$(SPEED) $*,"GTESTER $*")
+	$(if $(CONFIG_GCOV),@for f in $(gcov-files-$(subst tests/,,$*)-y); do \
+	  echo Gcov report for $$f:;\
+	  $(GCOV) $(GCOV_OPTIONS) $$f -o `dirname $$f`; \
+	done,)
 
-sha1: sha1.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+# gtester tests with XML output
 
-speed: sha1 sha1-i386
-	time ./sha1
-	time $(QEMU) ./sha1-i386
+$(patsubst %, check-report-qtest-%.xml, $(QTEST_TARGETS)): check-report-qtest-%.xml: $(check-qtest-y)
+	$(call quiet-command,QTEST_QEMU_BINARY=$*-softmmu/qemu-system-$* \
+	  gtester -q $(GTESTER_OPTIONS) -o $@ -m=$(SPEED) $(check-qtest-$*-y),"GTESTER $@")
 
-# broken test
-# NOTE: -fomit-frame-pointer is currently needed : this is a bug in libqemu
-qruncom: qruncom.c ../ioport-user.c ../i386-user/libqemu.a
-	$(CC) $(CFLAGS) -fomit-frame-pointer $(LDFLAGS) -I../target-i386 -I.. -I../i386-user -I../fpu \
-              -o $@ $(filter %.c, $^) -L../i386-user -lqemu -lm
+check-report-unit.xml: $(check-unit-y)
+	$(call quiet-command,gtester -q $(GTESTER_OPTIONS) -o $@ -m=$(SPEED) $^, "GTESTER $@")
 
-# arm test
-hello-arm: hello-arm.o
-	arm-linux-ld -o $@ $<
+# Reports and overall runs
 
-hello-arm.o: hello-arm.c
-	arm-linux-gcc -Wall -g -O2 -c -o $@ $<
+check-report.xml: $(patsubst %,check-report-qtest-%.xml, $(QTEST_TARGETS)) check-report-unit.xml
+	$(call quiet-command,$(SRC_PATH)/scripts/gtester-cat $^ > $@, "  GEN    $@")
 
-test-arm-iwmmxt: test-arm-iwmmxt.s
-	cpp < $< | arm-linux-gnu-gcc -Wall -static -march=iwmmxt -mabi=aapcs -x assembler - -o $@
+check-report.html: check-report.xml
+	$(call quiet-command,gtester-report $< > $@, "  GEN    $@")
 
-# MIPS test
-hello-mips: hello-mips.c
-	mips-linux-gnu-gcc -nostdlib -static -mno-abicalls -fno-PIC -mabi=32 -Wall -Wextra -g -O2 -o $@ $<
 
-hello-mipsel: hello-mips.c
-	mipsel-linux-gnu-gcc -nostdlib -static -mno-abicalls -fno-PIC -mabi=32 -Wall -Wextra -g -O2 -o $@ $<
+# Other tests
 
-# testsuite for the CRIS port.
-test-cris:
-	$(MAKE) -C cris check
+.PHONY: check-tests/qemu-iotests-quick.sh
+check-tests/qemu-iotests-quick.sh: tests/qemu-iotests-quick.sh qemu-img$(EXESUF) qemu-io$(EXESUF)
+	$<
 
-# testsuite for the LM32 port.
-test-lm32:
-	$(MAKE) -C lm32 check
+# Consolidated targets
 
-clean:
-	rm -f *~ *.o test-i386.out test-i386.ref \
-           test-x86_64.log test-x86_64.ref qruncom $(TESTS)
+.PHONY: check-qtest check-unit check
+check-qtest: $(patsubst %,check-qtest-%, $(QTEST_TARGETS))
+check-unit: $(patsubst %,check-%, $(check-unit-y))
+check-block: $(patsubst %,check-%, $(check-block-y))
+check: check-unit check-qtest
+
+-include $(wildcard tests/*.d)

@@ -6,14 +6,14 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "util.h" // dprintf
-#include "biosvar.h" // GET_EBDA
 #include "config.h" // CONFIG_*
 #include "disk.h" // cdrom_boot
 #include "bregs.h" // struct bregs
 #include "boot.h" // func defs
 #include "cmos.h" // inb_cmos
-#include "paravirt.h" // romfile_loadfile
-#include "pci.h" //pci_bdf_to_*
+#include "paravirt.h" // qemu_cfg_show_boot_menu
+#include "pci.h" // pci_bdf_to_*
+#include "usb.h" // struct usbdevice_s
 
 
 /****************************************************************
@@ -26,6 +26,9 @@ static int BootorderCount;
 static void
 loadBootOrder(void)
 {
+    if (!CONFIG_BOOTORDER)
+        return;
+
     char *f = romfile_loadfile("bootorder", NULL);
     if (!f)
         return;
@@ -96,66 +99,84 @@ find_prio(const char *glob)
 #define FW_PCI_DOMAIN "/pci@i0cf8"
 
 static char *
-build_pci_path(char *buf, int max, const char *devname, int bdf)
+build_pci_path(char *buf, int max, const char *devname, struct pci_device *pci)
 {
     // Build the string path of a bdf - for example: /pci@i0cf8/isa@1,2
     char *p = buf;
-    int parent = pci_bdf_to_bus(bdf);
-    if (PCIpaths)
-        parent = PCIpaths[parent];
-    int parentdev = parent & 0xffff;
-    if (parent & PP_PCIBRIDGE) {
-        p = build_pci_path(p, max, "pci-bridge", parentdev);
+    if (pci->parent) {
+        p = build_pci_path(p, max, "pci-bridge", pci->parent);
     } else {
-        if (parentdev)
-            p += snprintf(p, max, "/pci-root@%x", parentdev);
+        if (pci->rootbus)
+            p += snprintf(p, max, "/pci-root@%x", pci->rootbus);
         p += snprintf(p, buf+max-p, "%s", FW_PCI_DOMAIN);
     }
 
-    int dev = pci_bdf_to_dev(bdf), fn = pci_bdf_to_fn(bdf);
+    int dev = pci_bdf_to_dev(pci->bdf), fn = pci_bdf_to_fn(pci->bdf);
     p += snprintf(p, buf+max-p, "/%s@%x", devname, dev);
     if (fn)
         p += snprintf(p, buf+max-p, ",%x", fn);
     return p;
 }
 
-int bootprio_find_pci_device(int bdf)
+int bootprio_find_pci_device(struct pci_device *pci)
 {
+    if (!CONFIG_BOOTORDER)
+        return -1;
     // Find pci device - for example: /pci@i0cf8/ethernet@5
     char desc[256];
-    build_pci_path(desc, sizeof(desc), "*", bdf);
+    build_pci_path(desc, sizeof(desc), "*", pci);
     return find_prio(desc);
 }
 
-int bootprio_find_ata_device(int bdf, int chanid, int slave)
+int bootprio_find_scsi_device(struct pci_device *pci, int target, int lun)
 {
-    if (bdf == -1)
+    if (!CONFIG_BOOTORDER)
+        return -1;
+    if (!pci)
+        // support only pci machine for now
+        return -1;
+    // Find scsi drive - for example: /pci@i0cf8/scsi@5/channel@0/disk@1,0
+    char desc[256], *p;
+    p = build_pci_path(desc, sizeof(desc), "*", pci);
+    snprintf(p, desc+sizeof(desc)-p, "/*@0/*@%d,%d", target, lun);
+    return find_prio(desc);
+}
+
+int bootprio_find_ata_device(struct pci_device *pci, int chanid, int slave)
+{
+    if (!CONFIG_BOOTORDER)
+        return -1;
+    if (!pci)
         // support only pci machine for now
         return -1;
     // Find ata drive - for example: /pci@i0cf8/ide@1,1/drive@1/disk@0
     char desc[256], *p;
-    p = build_pci_path(desc, sizeof(desc), "*", bdf);
+    p = build_pci_path(desc, sizeof(desc), "*", pci);
     snprintf(p, desc+sizeof(desc)-p, "/drive@%x/disk@%x", chanid, slave);
     return find_prio(desc);
 }
 
-int bootprio_find_fdc_device(int bdf, int port, int fdid)
+int bootprio_find_fdc_device(struct pci_device *pci, int port, int fdid)
 {
-    if (bdf == -1)
+    if (!CONFIG_BOOTORDER)
+        return -1;
+    if (!pci)
         // support only pci machine for now
         return -1;
     // Find floppy - for example: /pci@i0cf8/isa@1/fdc@03f1/floppy@0
     char desc[256], *p;
-    p = build_pci_path(desc, sizeof(desc), "isa", bdf);
+    p = build_pci_path(desc, sizeof(desc), "isa", pci);
     snprintf(p, desc+sizeof(desc)-p, "/fdc@%04x/floppy@%x", port, fdid);
     return find_prio(desc);
 }
 
-int bootprio_find_pci_rom(int bdf, int instance)
+int bootprio_find_pci_rom(struct pci_device *pci, int instance)
 {
+    if (!CONFIG_BOOTORDER)
+        return -1;
     // Find pci rom - for example: /pci@i0cf8/scsi@3:rom2
     char desc[256], *p;
-    p = build_pci_path(desc, sizeof(desc), "*", bdf);
+    p = build_pci_path(desc, sizeof(desc), "*", pci);
     if (instance)
         snprintf(p, desc+sizeof(desc)-p, ":rom%d", instance);
     return find_prio(desc);
@@ -163,6 +184,8 @@ int bootprio_find_pci_rom(int bdf, int instance)
 
 int bootprio_find_named_rom(const char *name, int instance)
 {
+    if (!CONFIG_BOOTORDER)
+        return -1;
     // Find named rom - for example: /rom@genroms/linuxboot.bin
     char desc[256], *p;
     p = desc + snprintf(desc, sizeof(desc), "/rom@%s", name);
@@ -171,18 +194,32 @@ int bootprio_find_named_rom(const char *name, int instance)
     return find_prio(desc);
 }
 
-int bootprio_find_usb(int bdf, u64 path)
+static char *
+build_usb_path(char *buf, int max, struct usbhub_s *hub)
 {
-    // Find usb - for example: /pci@i0cf8/usb@1,2/hub@1/network@0/ethernet@0
-    int i;
+    if (!hub->usbdev)
+        // Root hub - nothing to add.
+        return buf;
+    char *p = build_usb_path(buf, max, hub->usbdev->hub);
+    p += snprintf(p, buf+max-p, "/hub@%x", hub->usbdev->port+1);
+    return p;
+}
+
+int bootprio_find_usb(struct usbdevice_s *usbdev, int lun)
+{
+    if (!CONFIG_BOOTORDER)
+        return -1;
+    // Find usb - for example: /pci@i0cf8/usb@1,2/storage@1/channel@0/disk@0,0
     char desc[256], *p;
-    p = build_pci_path(desc, sizeof(desc), "usb", bdf);
-    for (i=56; i>0; i-=8) {
-        int port = (path >> i) & 0xff;
-        if (port != 0xff)
-            p += snprintf(p, desc+sizeof(desc)-p, "/hub@%x", port);
-    }
-    snprintf(p, desc+sizeof(desc)-p, "/*@%x", (u32)(path & 0xff));
+    p = build_pci_path(desc, sizeof(desc), "usb", usbdev->hub->cntl->pci);
+    p = build_usb_path(p, desc+sizeof(desc)-p, usbdev->hub);
+    snprintf(p, desc+sizeof(desc)-p, "/storage@%x/*@0/*@0,%d"
+             , usbdev->port+1, lun);
+    int ret = find_prio(desc);
+    if (ret >= 0)
+        return ret;
+    // Try usb-host/redir - for example: /pci@i0cf8/usb@1,2/usb-host@1
+    snprintf(p, desc+sizeof(desc)-p, "/usb-*@%x", usbdev->port+1);
     return find_prio(desc);
 }
 
@@ -205,8 +242,6 @@ boot_setup(void)
 {
     if (! CONFIG_BOOT)
         return;
-
-    SET_EBDA(boot_sequence, 0xffff);
 
     if (!CONFIG_COREBOOT) {
         // On emulators, get boot order from nvram.
@@ -256,6 +291,7 @@ static struct bootentry_s *BootList;
 #define IPL_TYPE_CBFS        0x20
 #define IPL_TYPE_BEV         0x80
 #define IPL_TYPE_BCV         0x81
+#define IPL_TYPE_HALT        0xf0
 
 static void
 bootentry_add(int type, int prio, u32 data, const char *desc)
@@ -315,7 +351,7 @@ boot_add_bev(u16 seg, u16 bev, u16 desc, int prio)
 void
 boot_add_bcv(u16 seg, u16 ip, u16 desc, int prio)
 {
-    bootentry_add(IPL_TYPE_BCV, defPrio(prio, DEFAULT_PRIO)
+    bootentry_add(IPL_TYPE_BCV, defPrio(prio, DefaultHDPrio)
                   , SEGOFF(seg, ip).segoff
                   , desc ? MAKE_FLATPTR(seg, desc) : "Legacy option rom");
 }
@@ -353,6 +389,8 @@ boot_add_cbfs(void *data, const char *desc, int prio)
  * Boot menu and BCV execution
  ****************************************************************/
 
+#define DEFAULT_BOOTMENU_WAIT 2500
+
 // Show IPL option menu.
 static void
 interactive_bootmenu(void)
@@ -363,10 +401,11 @@ interactive_bootmenu(void)
     while (get_keystroke(0) >= 0)
         ;
 
-    printf("Press F12 for boot menu.\n\n");
+    printf("\nPress F12 for boot menu.\n\n");
 
+    u32 menutime = romfile_loadint("etc/boot-menu-wait", DEFAULT_BOOTMENU_WAIT);
     enable_bootsplash();
-    int scan_code = get_keystroke(CONFIG_BOOTMENU_WAIT);
+    int scan_code = get_keystroke(menutime);
     disable_bootsplash();
     if (scan_code != 0x86)
         /* not F12 */
@@ -450,6 +489,10 @@ boot_prep(void)
     interactive_bootmenu();
     wait_threads();
 
+    int haltprio = find_prio("HALT");
+    if (haltprio >= 0)
+        bootentry_add(IPL_TYPE_HALT, haltprio, 0, "HALT");
+
     // Map drives and populate BEV list
     struct bootentry_s *pos = BootList;
     while (pos) {
@@ -498,7 +541,7 @@ call_boot_entry(struct segoff_s bootsegip, u8 bootdrv)
     // Set the magic number in ax and the boot drive in dl.
     br.dl = bootdrv;
     br.ax = 0xaa55;
-    call16(&br);
+    farcall16(&br);
 }
 
 // Boot from a disk (either floppy or harddrive)
@@ -552,9 +595,8 @@ boot_cdrom(struct drive_s *drive_g)
         return;
     }
 
-    u16 ebda_seg = get_ebda_seg();
-    u8 bootdrv = GET_EBDA2(ebda_seg, cdemu.emulated_extdrive);
-    u16 bootseg = GET_EBDA2(ebda_seg, cdemu.load_segment);
+    u8 bootdrv = CDEmu.emulated_extdrive;
+    u16 bootseg = CDEmu.load_segment;
     /* Canonicalize bootseg:bootip */
     u16 bootip = (bootseg & 0x0fff) << 4;
     bootseg &= 0xf000;
@@ -582,19 +624,38 @@ boot_rom(u32 vector)
     call_boot_entry(so, 0);
 }
 
+// Unable to find bootable device - warn user and eventually retry.
+static void
+boot_fail(void)
+{
+    u32 retrytime = romfile_loadint("etc/boot-fail-wait", 60*1000);
+    if (retrytime == (u32)-1)
+        printf("No bootable device.\n");
+    else
+        printf("No bootable device.  Retrying in %d seconds.\n", retrytime/1000);
+    // Wait for 'retrytime' milliseconds and then reboot.
+    u32 end = calc_future_timer(retrytime);
+    for (;;) {
+        if (retrytime != (u32)-1 && check_timer(end))
+            break;
+        yield_toirq();
+    }
+    printf("Rebooting.\n");
+    struct bregs br;
+    memset(&br, 0, sizeof(br));
+    br.code = SEGOFF(SEG_BIOS, (u32)reset_vector);
+    farcall16big(&br);
+}
+
 // Determine next boot method and attempt a boot using it.
 static void
-do_boot(u16 seq_nr)
+do_boot(int seq_nr)
 {
     if (! CONFIG_BOOT)
         panic("Boot support not compiled in.\n");
 
-    if (seq_nr >= BEVCount) {
-        printf("No bootable device.\n");
-        // Loop with irqs enabled - this allows ctrl+alt+delete to work.
-        for (;;)
-            wait_irq();
-    }
+    if (seq_nr >= BEVCount)
+        boot_fail();
 
     // Boot the given BEV type.
     struct bev_s *ie = &BEV[seq_nr];
@@ -616,6 +677,9 @@ do_boot(u16 seq_nr)
     case IPL_TYPE_BEV:
         boot_rom(ie->vector);
         break;
+    case IPL_TYPE_HALT:
+        boot_fail();
+        break;
     }
 
     // Boot failed: invoke the boot recovery function
@@ -625,15 +689,16 @@ do_boot(u16 seq_nr)
     call16_int(0x18, &br);
 }
 
+int BootSequence VARLOW = -1;
+
 // Boot Failure recovery: try the next device.
 void VISIBLE32FLAT
 handle_18(void)
 {
     debug_serial_setup();
     debug_enter(NULL, DEBUG_HDL_18);
-    u16 ebda_seg = get_ebda_seg();
-    u16 seq = GET_EBDA2(ebda_seg, boot_sequence) + 1;
-    SET_EBDA2(ebda_seg, boot_sequence, seq);
+    int seq = BootSequence + 1;
+    BootSequence = seq;
     do_boot(seq);
 }
 
@@ -643,6 +708,6 @@ handle_19(void)
 {
     debug_serial_setup();
     debug_enter(NULL, DEBUG_HDL_19);
-    SET_EBDA(boot_sequence, 0);
+    BootSequence = 0;
     do_boot(0);
 }

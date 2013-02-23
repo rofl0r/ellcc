@@ -604,22 +604,14 @@
             pci-device-slots encode-int s" slot-names" property
         dup pci-bridge-range-props
         dup pci-bridge-assigned-addresses-prop
+	\ Only create interrupt-map when it doesn't already exist
+	\ (it can be provided by qemu)
+	s" interrupt-map" get-node get-property IF
             pci-bridge-interrupt-map
+	ELSE 2drop THEN
         pci-reg-props
 ;
 
-\ FIXME still used in the device files slof/fs/devices/pci-device
-: assign-bar-mapping ( bar-offset size var -- )
-        rot my-unit-64 + -rot
-        assign-bar-value32 drop
-;
-
-\ FIXME this is still used by the devices in slof/fs/devices/pci-device_*
-: assigned-addresses-property (  -- )
-        my-unit-64
-        dup pci-common-props
-            pci-device-assigned-addresses-prop
-;
 
 \ used to set up all unknown Bridges.
 \ If a Bridge has no special handling for setup

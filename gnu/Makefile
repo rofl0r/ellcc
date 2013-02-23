@@ -2,7 +2,7 @@
 
 # Get the names of the subdirectories.
 
-SUBDIRS := gnu-build/binutils gnu-build/gdb  gnu-build/qemu \
+SUBDIRS := gnu-build/binutils gnu-build/gdb  src/qemu \
 	   gnu-build/binutils/arm-elf        gnu-build/binutils/ppc64-elf \
 	   gnu-build/binutils/i386-elf       gnu-build/binutils/ppc-elf \
 	   gnu-build/binutils/microblaze-elf gnu-build/binutils/sparc-elf \

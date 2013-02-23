@@ -9,12 +9,12 @@
 #include "util.h" // handle_1ab1
 #include "pci.h" // pci_config_readl
 #include "bregs.h" // struct bregs
-#include "biosvar.h" // GET_EBDA
+#include "biosvar.h" // GET_GLOBAL
 #include "pci_regs.h" // PCI_VENDOR_ID
 
 // romlayout.S
-extern void bios32_entry(void);
-extern void pcibios32_entry(void);
+extern void entry_bios32(void);
+extern void entry_pcibios32(void);
 
 #define RET_FUNC_NOT_SUPPORTED 0x81
 #define RET_BAD_VENDOR_ID      0x83
@@ -25,16 +25,11 @@ extern void pcibios32_entry(void);
 static void
 handle_1ab101(struct bregs *regs)
 {
-    // Find max bus.
-    int bdf, max;
-    foreachpci(bdf, max) {
-    }
-
     regs->al = 0x01; // Flags - "Config Mechanism #1" supported.
     regs->bx = 0x0210; // PCI version 2.10
-    regs->cl = pci_bdf_to_bus(max - 1);
+    regs->cl = GET_GLOBAL(MaxPCIBus);
     regs->edx = 0x20494350; // "PCI "
-    regs->edi = (u32)pcibios32_entry + BUILD_BIOS_ADDR;
+    regs->edi = (u32)entry_pcibios32 + BUILD_BIOS_ADDR;
     set_code_success(regs);
 }
 
@@ -44,16 +39,20 @@ handle_1ab102(struct bregs *regs)
 {
     u32 id = (regs->cx << 16) | regs->dx;
     int count = regs->si;
-    int bdf, max;
-    foreachpci(bdf, max) {
-        u32 v = pci_config_readl(bdf, PCI_VENDOR_ID);
-        if (v != id)
-            continue;
-        if (count--)
-            continue;
-        regs->bx = bdf;
-        set_code_success(regs);
-        return;
+    int bus = -1;
+    while (bus < GET_GLOBAL(MaxPCIBus)) {
+        bus++;
+        int bdf;
+        foreachbdf(bdf, bus) {
+            u32 v = pci_config_readl(bdf, PCI_VENDOR_ID);
+            if (v != id)
+                continue;
+            if (count--)
+                continue;
+            regs->bx = bdf;
+            set_code_success(regs);
+            return;
+        }
     }
     set_code_invalid(regs, RET_DEVICE_NOT_FOUND);
 }
@@ -64,16 +63,20 @@ handle_1ab103(struct bregs *regs)
 {
     int count = regs->si;
     u32 classprog = regs->ecx;
-    int bdf, max;
-    foreachpci(bdf, max) {
-        u32 v = pci_config_readl(bdf, PCI_CLASS_REVISION);
-        if ((v>>8) != classprog)
-            continue;
-        if (count--)
-            continue;
-        regs->bx = bdf;
-        set_code_success(regs);
-        return;
+    int bus = -1;
+    while (bus < GET_GLOBAL(MaxPCIBus)) {
+        bus++;
+        int bdf;
+        foreachbdf(bdf, bus) {
+            u32 v = pci_config_readl(bdf, PCI_CLASS_REVISION);
+            if ((v>>8) != classprog)
+                continue;
+            if (count--)
+                continue;
+            regs->bx = bdf;
+            set_code_success(regs);
+            return;
+        }
     }
     set_code_invalid(regs, RET_DEVICE_NOT_FOUND);
 }
@@ -130,11 +133,12 @@ handle_1ab10d(struct bregs *regs)
 static void
 handle_1ab10e(struct bregs *regs)
 {
-    struct pir_header *pirtable_g = (void*)(GET_GLOBAL(PirOffset) + 0);
-    if (! pirtable_g) {
+    struct pir_header *pirtable_gf = GET_GLOBAL(PirAddr);
+    if (! pirtable_gf) {
         set_code_invalid(regs, RET_FUNC_NOT_SUPPORTED);
         return;
     }
+    struct pir_header *pirtable_g = GLOBALFLAT2GLOBAL(pirtable_gf);
 
     struct param_s {
         u16 size;
@@ -229,6 +233,6 @@ bios32_setup(void)
 {
     dprintf(3, "init bios32\n");
 
-    BIOS32HEADER.entry = (u32)bios32_entry;
+    BIOS32HEADER.entry = (u32)entry_bios32;
     BIOS32HEADER.checksum -= checksum(&BIOS32HEADER, sizeof(BIOS32HEADER));
 }

@@ -1,7 +1,7 @@
 /*
  * QEMU/mipssim emulation
  *
- * Emulates a very simple machine model similiar to the one use by the
+ * Emulates a very simple machine model similar to the one used by the
  * proprietary MIPS emulator.
  * 
  * Copyright (c) 2007 Thiemo Seufer
@@ -27,14 +27,16 @@
 #include "hw.h"
 #include "mips.h"
 #include "mips_cpudevs.h"
-#include "pc.h"
+#include "serial.h"
 #include "isa.h"
-#include "net.h"
-#include "sysemu.h"
+#include "net/net.h"
+#include "sysemu/sysemu.h"
 #include "boards.h"
 #include "mips-bios.h"
 #include "loader.h"
 #include "elf.h"
+#include "sysbus.h"
+#include "exec/address-spaces.h"
 
 static struct _loaderparams {
     int ram_size;
@@ -44,7 +46,7 @@ static struct _loaderparams {
 } loaderparams;
 
 typedef struct ResetData {
-    CPUState *env;
+    MIPSCPU *cpu;
     uint64_t vector;
 } ResetData;
 
@@ -103,25 +105,45 @@ static int64_t load_kernel(void)
 static void main_cpu_reset(void *opaque)
 {
     ResetData *s = (ResetData *)opaque;
-    CPUState *env = s->env;
+    CPUMIPSState *env = &s->cpu->env;
 
-    cpu_reset(env);
+    cpu_reset(CPU(s->cpu));
     env->active_tc.PC = s->vector & ~(target_ulong)1;
     if (s->vector & 1) {
         env->hflags |= MIPS_HFLAG_M16;
     }
 }
 
-static void
-mips_mipssim_init (ram_addr_t ram_size,
-                   const char *boot_device,
-                   const char *kernel_filename, const char *kernel_cmdline,
-                   const char *initrd_filename, const char *cpu_model)
+static void mipsnet_init(int base, qemu_irq irq, NICInfo *nd)
 {
+    DeviceState *dev;
+    SysBusDevice *s;
+
+    dev = qdev_create(NULL, "mipsnet");
+    qdev_set_nic_properties(dev, nd);
+    qdev_init_nofail(dev);
+
+    s = SYS_BUS_DEVICE(dev);
+    sysbus_connect_irq(s, 0, irq);
+    memory_region_add_subregion(get_system_io(),
+                                base,
+                                sysbus_mmio_get_region(s, 0));
+}
+
+static void
+mips_mipssim_init(QEMUMachineInitArgs *args)
+{
+    ram_addr_t ram_size = args->ram_size;
+    const char *cpu_model = args->cpu_model;
+    const char *kernel_filename = args->kernel_filename;
+    const char *kernel_cmdline = args->kernel_cmdline;
+    const char *initrd_filename = args->initrd_filename;
     char *filename;
-    ram_addr_t ram_offset;
-    ram_addr_t bios_offset;
-    CPUState *env;
+    MemoryRegion *address_space_mem = get_system_memory();
+    MemoryRegion *ram = g_new(MemoryRegion, 1);
+    MemoryRegion *bios = g_new(MemoryRegion, 1);
+    MIPSCPU *cpu;
+    CPUMIPSState *env;
     ResetData *reset_info;
     int bios_size;
 
@@ -133,32 +155,36 @@ mips_mipssim_init (ram_addr_t ram_size,
         cpu_model = "24Kf";
 #endif
     }
-    env = cpu_init(cpu_model);
-    if (!env) {
+    cpu = cpu_mips_init(cpu_model);
+    if (cpu == NULL) {
         fprintf(stderr, "Unable to find CPU definition\n");
         exit(1);
     }
-    reset_info = qemu_mallocz(sizeof(ResetData));
-    reset_info->env = env;
+    env = &cpu->env;
+
+    reset_info = g_malloc0(sizeof(ResetData));
+    reset_info->cpu = cpu;
     reset_info->vector = env->active_tc.PC;
     qemu_register_reset(main_cpu_reset, reset_info);
 
     /* Allocate RAM. */
-    ram_offset = qemu_ram_alloc(NULL, "mips_mipssim.ram", ram_size);
-    bios_offset = qemu_ram_alloc(NULL, "mips_mipssim.bios", BIOS_SIZE);
+    memory_region_init_ram(ram, "mips_mipssim.ram", ram_size);
+    vmstate_register_ram_global(ram);
+    memory_region_init_ram(bios, "mips_mipssim.bios", BIOS_SIZE);
+    vmstate_register_ram_global(bios);
+    memory_region_set_readonly(bios, true);
 
-    cpu_register_physical_memory(0, ram_size, ram_offset | IO_MEM_RAM);
+    memory_region_add_subregion(address_space_mem, 0, ram);
 
     /* Map the BIOS / boot exception handler. */
-    cpu_register_physical_memory(0x1fc00000LL,
-                                 BIOS_SIZE, bios_offset | IO_MEM_ROM);
+    memory_region_add_subregion(address_space_mem, 0x1fc00000LL, bios);
     /* Load a BIOS / boot exception handler image. */
     if (bios_name == NULL)
         bios_name = BIOS_FILENAME;
     filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
     if (filename) {
         bios_size = load_image_targphys(filename, 0x1fc00000LL, BIOS_SIZE);
-        qemu_free(filename);
+        g_free(filename);
     } else {
         bios_size = -1;
     }
@@ -191,9 +217,10 @@ mips_mipssim_init (ram_addr_t ram_size,
     /* A single 16450 sits at offset 0x3f8. It is attached to
        MIPS CPU INT2, which is interrupt 4. */
     if (serial_hds[0])
-        serial_init(0x3f8, env->irq[4], 115200, serial_hds[0]);
+        serial_init(0x3f8, env->irq[4], 115200, serial_hds[0],
+                    get_system_io());
 
-    if (nd_table[0].vlan)
+    if (nd_table[0].used)
         /* MIPSnet uses the MIPS CPU INT0, which is interrupt 2. */
         mipsnet_init(0x4200, env->irq[2], &nd_table[0]);
 }
@@ -202,6 +229,7 @@ static QEMUMachine mips_mipssim_machine = {
     .name = "mipssim",
     .desc = "MIPS MIPSsim platform",
     .init = mips_mipssim_init,
+    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void mips_mipssim_machine_init(void)

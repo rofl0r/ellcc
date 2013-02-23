@@ -35,11 +35,15 @@ typedef void (*pInterruptFunc_t) (void);
 
 pInterruptFunc_t vectorTable[0x2E << 1];
 
-void c_memInit(uint64_t r3, uint64_t r4);
+extern void proceedInterrupt(void);
 
-void proceedInterrupt();
+/* Prototypes for functions of this file */
+void c_interrupt(uint64_t vecNum);
+void set_exceptionVector(int num, void *func);
+void early_c_entry(uint64_t start_addr, uint64_t fdt_addr);
 
-void exception_forward(void)
+
+static void exception_forward(void)
 {
 	uint64_t val;
 
@@ -75,24 +79,10 @@ void set_exceptionVector(int num, void *func)
 	vectorTable[num >> 7] = (pInterruptFunc_t) func;
 }
 
-uint64_t get_dec(void)
-{
-	return 0xdeadaffe;
-}
-
-void set_dec(uint64_t val)
-{
-}
-
-uint64_t tb_frequency(void)
-{
-	return 0;
-}
-
 static void load_file(uint64_t destAddr, char *name, uint64_t maxSize,
 		      uint64_t romfs_base)
 {
-	uint64_t *src, *dest, cnt;
+	uint64_t cnt;
 	struct romfs_lookup_t fileInfo;
 	int rc;
 
@@ -108,8 +98,6 @@ static void load_file(uint64_t destAddr, char *name, uint64_t maxSize,
 		cnt = fileInfo.size_data;
 	}
 	memcpy((void *)destAddr, (void *)fileInfo.addr_data, cnt);
-	dest = (uint64_t *) destAddr;
-	src = (uint64_t *) fileInfo.addr_data;
 	flush_cache((void *) destAddr, fileInfo.size_data);
 }
 
@@ -124,18 +112,22 @@ void early_c_entry(uint64_t start_addr, uint64_t fdt_addr)
 	struct romfs_lookup_t fileInfo;
 	void (*ofw_start) (uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 	uint64_t *boot_info;
-	uint64_t romfs_base;
+	uint64_t romfs_base, paflof_base;
 	// romfs header values
-	struct stH *header = (struct stH *) (start_addr + 0x28);
-	uint64_t flashlen = 0;
+	// struct stH *header = (struct stH *) (start_addr + 0x28);
+	// uint64_t flashlen = header->flashlen;
 	unsigned long ofw_addr[2];
 	int rc;
 
-	flashlen = header->flashlen;
+	if (fdt_addr == 0) {
+		puts("ERROR: Flatten device tree not available!");
+	}
 
-	romfs_base = 0x10000000 - 0x400000;
-	if (romfs_base)
-		memcpy((char *)romfs_base, 0, 0x400000);
+	/* Hack: Determine base for "ROM filesystem" in memory...
+	 * QEMU loads the FDT at the top of the available RAM, so we place
+	 * the ROMFS just underneath. */
+	romfs_base = (fdt_addr - 0x410000) & ~0xffffLL;
+	memcpy((char *)romfs_base, 0, 0x400000);
 
 	exception_stack_frame = 0;
 
@@ -157,12 +149,21 @@ void early_c_entry(uint64_t start_addr, uint64_t fdt_addr)
 	DEBUG("  [ofw_main size data 0x%lx]\n", fileInfo.size_data);
 	DEBUG("  [ofw_main flags     0x%lx]\n", fileInfo.flags);
 	DEBUG("  [hdr: 0x%08lx 0x%08lx]\n  [     0x%08lx 0x%08lx]\n",
-	       ((uint64_t *)fileInfo.addr_header)[0],	
+	       ((uint64_t *)fileInfo.addr_header)[0],
 	       ((uint64_t *)fileInfo.addr_header)[1],
 	       ((uint64_t *)fileInfo.addr_header)[2],
 	       ((uint64_t *)fileInfo.addr_header)[3]);
-	rc = load_elf_file((void *)fileInfo.addr_data, ofw_addr);
+
+	/* Assume that paflof and SNK need ca. 31 MiB RAM right now.
+	 * TODO: Use value from ELF file instead */
+	paflof_base = romfs_base - 0x1F00000 + 0x100;
+	if ((int64_t)paflof_base <= 0LL) {
+		puts("ERROR: Not enough memory for Open Firmware");
+	}
+	rc = elf_load_file_to_addr((void *)fileInfo.addr_data, (void*)paflof_base,
+				   ofw_addr, NULL, flush_cache);
 	DEBUG("  [load_elf_file returned %d]\n", rc);
+
 	ofw_start =
 	    (void (*)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t))
 	    &ofw_addr;
@@ -170,17 +171,18 @@ void early_c_entry(uint64_t start_addr, uint64_t fdt_addr)
 	printf("%s%s", TERM_CTRL_RESET, TERM_CTRL_CRSON);
 	DEBUG("  [ofw_start=%p ofw_addr=0x%lx]\n", ofw_start, ofw_addr[0]);
 	ofw_addr[1] = ofw_addr[0];
-	/* ePAPR 0.5
+	/* Call the Open Firmware layer with ePAPR-style calling conventions:
 	 * r3 = R3 Effective address of the device tree image. Note: this
 	 *      address must be 8-byte aligned in memory.
-	 * r4 = implementation dependent
+	 * r4 = implementation dependent, we use it for ROMFS base address
 	 * r5 = 0
 	 * r6 = 0x65504150 -- ePAPR magic value-to distinguish from
 	 *      non-ePAPR-compliant firmware
-	 * r7 = implementation dependent
+	 * r7 = size of Initially Mapped Area
+	 *      (right now we assume everything from 0 to the FDT is the IMA)
 	 */
 	asm volatile("isync; sync;" : : : "memory");
-	ofw_start(fdt_addr, romfs_base, 0, 0, 0);
+	ofw_start(fdt_addr, romfs_base, 0, 0x65504150, fdt_addr);
 	asm volatile("isync; sync;" : : : "memory");
 	// never return
 }

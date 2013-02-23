@@ -8,14 +8,17 @@
  *
  * This work is licensed under the terms of the GNU GPL, version 2.  See
  * the COPYING file in the top-level directory.
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
-#include "net.h"
+#include "net/net.h"
 #include "net/tap.h"
 
 #include "virtio-net.h"
 #include "vhost_net.h"
-#include "qemu-error.h"
+#include "qemu/error-report.h"
 
 #include "config.h"
 
@@ -39,7 +42,7 @@ struct vhost_net {
     struct vhost_dev dev;
     struct vhost_virtqueue vqs[2];
     int backend;
-    VLANClientState *vc;
+    NetClientState *nc;
 };
 
 unsigned vhost_net_get_features(struct vhost_net *net, unsigned features)
@@ -77,10 +80,10 @@ void vhost_net_ack_features(struct vhost_net *net, unsigned features)
     }
 }
 
-static int vhost_net_get_fd(VLANClientState *backend)
+static int vhost_net_get_fd(NetClientState *backend)
 {
     switch (backend->info->type) {
-    case NET_CLIENT_TYPE_TAP:
+    case NET_CLIENT_OPTIONS_KIND_TAP:
         return tap_get_fd(backend);
     default:
         fprintf(stderr, "vhost-net requires tap backend\n");
@@ -88,11 +91,11 @@ static int vhost_net_get_fd(VLANClientState *backend)
     }
 }
 
-struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
+struct vhost_net *vhost_net_init(NetClientState *backend, int devfd,
                                  bool force)
 {
     int r;
-    struct vhost_net *net = qemu_malloc(sizeof *net);
+    struct vhost_net *net = g_malloc(sizeof *net);
     if (!backend) {
         fprintf(stderr, "vhost-net requires backend to be setup\n");
         goto fail;
@@ -101,12 +104,15 @@ struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
     if (r < 0) {
         goto fail;
     }
-    net->vc = backend;
+    net->nc = backend;
     net->dev.backend_features = tap_has_vnet_hdr(backend) ? 0 :
         (1 << VHOST_NET_F_VIRTIO_NET_HDR);
     net->backend = r;
 
-    r = vhost_dev_init(&net->dev, devfd, force);
+    net->dev.nvqs = 2;
+    net->dev.vqs = net->vqs;
+
+    r = vhost_dev_init(&net->dev, devfd, "/dev/vhost-net", force);
     if (r < 0) {
         goto fail;
     }
@@ -125,7 +131,7 @@ struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
     vhost_net_ack_features(net, 0);
     return net;
 fail:
-    qemu_free(net);
+    g_free(net);
     return NULL;
 }
 
@@ -134,24 +140,32 @@ bool vhost_net_query(VHostNetState *net, VirtIODevice *dev)
     return vhost_dev_query(&net->dev, dev);
 }
 
-int vhost_net_start(struct vhost_net *net,
-                    VirtIODevice *dev)
+static int vhost_net_start_one(struct vhost_net *net,
+                               VirtIODevice *dev,
+                               int vq_index)
 {
     struct vhost_vring_file file = { };
     int r;
-    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
-        tap_set_vnet_hdr_len(net->vc,
-                             sizeof(struct virtio_net_hdr_mrg_rxbuf));
+
+    if (net->dev.started) {
+        return 0;
     }
 
     net->dev.nvqs = 2;
     net->dev.vqs = net->vqs;
-    r = vhost_dev_start(&net->dev, dev);
+    net->dev.vq_index = vq_index;
+
+    r = vhost_dev_enable_notifiers(&net->dev, dev);
     if (r < 0) {
-        return r;
+        goto fail_notifiers;
     }
 
-    net->vc->info->poll(net->vc, false);
+    r = vhost_dev_start(&net->dev, dev);
+    if (r < 0) {
+        goto fail_start;
+    }
+
+    net->nc->info->poll(net->nc, false);
     qemu_set_fd_handler(net->backend, NULL, NULL, NULL);
     file.fd = net->backend;
     for (file.index = 0; file.index < net->dev.nvqs; ++file.index) {
@@ -168,40 +182,105 @@ fail:
         int r = ioctl(net->dev.control, VHOST_NET_SET_BACKEND, &file);
         assert(r >= 0);
     }
-    net->vc->info->poll(net->vc, true);
+    net->nc->info->poll(net->nc, true);
     vhost_dev_stop(&net->dev, dev);
-    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
-        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
-    }
+fail_start:
+    vhost_dev_disable_notifiers(&net->dev, dev);
+fail_notifiers:
     return r;
 }
 
-void vhost_net_stop(struct vhost_net *net,
-                    VirtIODevice *dev)
+static void vhost_net_stop_one(struct vhost_net *net,
+                               VirtIODevice *dev)
 {
     struct vhost_vring_file file = { .fd = -1 };
+
+    if (!net->dev.started) {
+        return;
+    }
 
     for (file.index = 0; file.index < net->dev.nvqs; ++file.index) {
         int r = ioctl(net->dev.control, VHOST_NET_SET_BACKEND, &file);
         assert(r >= 0);
     }
-    net->vc->info->poll(net->vc, true);
+    net->nc->info->poll(net->nc, true);
     vhost_dev_stop(&net->dev, dev);
-    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
-        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
+    vhost_dev_disable_notifiers(&net->dev, dev);
+}
+
+int vhost_net_start(VirtIODevice *dev, NetClientState *ncs,
+                    int total_queues)
+{
+    int r, i = 0;
+
+    if (!dev->binding->set_guest_notifiers) {
+        error_report("binding does not support guest notifiers");
+        r = -ENOSYS;
+        goto err;
+    }
+
+    for (i = 0; i < total_queues; i++) {
+        r = vhost_net_start_one(tap_get_vhost_net(ncs[i].peer), dev, i * 2);
+
+        if (r < 0) {
+            goto err;
+        }
+    }
+
+    r = dev->binding->set_guest_notifiers(dev->binding_opaque,
+                                          total_queues * 2,
+                                          true);
+    if (r < 0) {
+        error_report("Error binding guest notifier: %d", -r);
+        goto err;
+    }
+
+    return 0;
+
+err:
+    while (--i >= 0) {
+        vhost_net_stop_one(tap_get_vhost_net(ncs[i].peer), dev);
+    }
+    return r;
+}
+
+void vhost_net_stop(VirtIODevice *dev, NetClientState *ncs,
+                    int total_queues)
+{
+    int i, r;
+
+    r = dev->binding->set_guest_notifiers(dev->binding_opaque,
+                                          total_queues * 2,
+                                          false);
+    if (r < 0) {
+        fprintf(stderr, "vhost guest notifier cleanup failed: %d\n", r);
+        fflush(stderr);
+    }
+    assert(r >= 0);
+
+    for (i = 0; i < total_queues; i++) {
+        vhost_net_stop_one(tap_get_vhost_net(ncs[i].peer), dev);
     }
 }
 
 void vhost_net_cleanup(struct vhost_net *net)
 {
     vhost_dev_cleanup(&net->dev);
-    if (net->dev.acked_features & (1 << VIRTIO_NET_F_MRG_RXBUF)) {
-        tap_set_vnet_hdr_len(net->vc, sizeof(struct virtio_net_hdr));
-    }
-    qemu_free(net);
+    g_free(net);
+}
+
+bool vhost_net_virtqueue_pending(VHostNetState *net, int idx)
+{
+    return vhost_virtqueue_pending(&net->dev, idx);
+}
+
+void vhost_net_virtqueue_mask(VHostNetState *net, VirtIODevice *dev,
+                              int idx, bool mask)
+{
+    vhost_virtqueue_mask(&net->dev, dev, idx, mask);
 }
 #else
-struct vhost_net *vhost_net_init(VLANClientState *backend, int devfd,
+struct vhost_net *vhost_net_init(NetClientState *backend, int devfd,
                                  bool force)
 {
     error_report("vhost-net support is not compiled in");
@@ -213,13 +292,15 @@ bool vhost_net_query(VHostNetState *net, VirtIODevice *dev)
     return false;
 }
 
-int vhost_net_start(struct vhost_net *net,
-		    VirtIODevice *dev)
+int vhost_net_start(VirtIODevice *dev,
+                    NetClientState *ncs,
+                    int total_queues)
 {
     return -ENOSYS;
 }
-void vhost_net_stop(struct vhost_net *net,
-		    VirtIODevice *dev)
+void vhost_net_stop(VirtIODevice *dev,
+                    NetClientState *ncs,
+                    int total_queues)
 {
 }
 
@@ -232,6 +313,16 @@ unsigned vhost_net_get_features(struct vhost_net *net, unsigned features)
     return features;
 }
 void vhost_net_ack_features(struct vhost_net *net, unsigned features)
+{
+}
+
+bool vhost_net_virtqueue_pending(VHostNetState *net, int idx)
+{
+    return -ENOSYS;
+}
+
+void vhost_net_virtqueue_mask(VHostNetState *net, VirtIODevice *dev,
+                              int idx, bool mask)
 {
 }
 #endif

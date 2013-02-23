@@ -24,9 +24,10 @@
 
 #include "hw.h"
 #include "mips.h"
-#include "pci.h"
-#include "pci_host.h"
+#include "pci/pci.h"
+#include "pci/pci_host.h"
 #include "pc.h"
+#include "exec/address-spaces.h"
 
 //#define DEBUG
 
@@ -224,13 +225,18 @@
 #define GT_PCI1_SERR1MASK    	(0xca8 >> 2)
 
 #define PCI_MAPPING_ENTRY(regname)            \
-    target_phys_addr_t regname ##_start;      \
-    target_phys_addr_t regname ##_length;     \
-    int regname ##_handle
+    hwaddr regname ##_start;      \
+    hwaddr regname ##_length;     \
+    MemoryRegion regname ##_mem
+
+#define TYPE_GT64120_PCI_HOST_BRIDGE "gt64120"
+
+#define GT64120_PCI_HOST_BRIDGE(obj) \
+    OBJECT_CHECK(GT64120State, (obj), TYPE_GT64120_PCI_HOST_BRIDGE)
 
 typedef struct GT64120State {
-    SysBusDevice busdev;
-    PCIHostState pci;
+    PCIHostState parent_obj;
+
     uint32_t regs[GT_REGS];
     PCI_MAPPING_ENTRY(PCI0IO);
     PCI_MAPPING_ENTRY(ISD);
@@ -239,11 +245,11 @@ typedef struct GT64120State {
 /* Adjust range to avoid touching space which isn't mappable via PCI */
 /* XXX: Hardcoded values for Malta: 0x1e000000 - 0x1f100000
                                     0x1fc00000 - 0x1fd00000  */
-static void check_reserved_space (target_phys_addr_t *start,
-                                  target_phys_addr_t *length)
+static void check_reserved_space (hwaddr *start,
+                                  hwaddr *length)
 {
-    target_phys_addr_t begin = *start;
-    target_phys_addr_t end = *start + *length;
+    hwaddr begin = *start;
+    hwaddr end = *start + *length;
 
     if (end >= 0x1e000000LL && end < 0x1f100000LL)
         end = 0x1e000000LL;
@@ -265,20 +271,21 @@ static void check_reserved_space (target_phys_addr_t *start,
 
 static void gt64120_isd_mapping(GT64120State *s)
 {
-    target_phys_addr_t start = s->regs[GT_ISD] << 21;
-    target_phys_addr_t length = 0x1000;
+    hwaddr start = s->regs[GT_ISD] << 21;
+    hwaddr length = 0x1000;
 
-    if (s->ISD_length)
-        cpu_register_physical_memory(s->ISD_start, s->ISD_length,
-                                     IO_MEM_UNASSIGNED);
+    if (s->ISD_length) {
+        memory_region_del_subregion(get_system_memory(), &s->ISD_mem);
+    }
     check_reserved_space(&start, &length);
     length = 0x1000;
     /* Map new address */
-    DPRINTF("ISD: "TARGET_FMT_plx"@"TARGET_FMT_plx" -> "TARGET_FMT_plx"@"TARGET_FMT_plx", %x\n", s->ISD_length, s->ISD_start,
-            length, start, s->ISD_handle);
+    DPRINTF("ISD: "TARGET_FMT_plx"@"TARGET_FMT_plx
+        " -> "TARGET_FMT_plx"@"TARGET_FMT_plx"\n",
+        s->ISD_length, s->ISD_start, length, start);
     s->ISD_start = start;
     s->ISD_length = length;
-    cpu_register_physical_memory(s->ISD_start, s->ISD_length, s->ISD_handle);
+    memory_region_add_subregion(get_system_memory(), s->ISD_start, &s->ISD_mem);
 }
 
 static void gt64120_pci_mapping(GT64120State *s)
@@ -289,20 +296,26 @@ static void gt64120_pci_mapping(GT64120State *s)
       /* Unmap old IO address */
       if (s->PCI0IO_length)
       {
-        cpu_register_physical_memory(s->PCI0IO_start, s->PCI0IO_length, IO_MEM_UNASSIGNED);
+          memory_region_del_subregion(get_system_memory(), &s->PCI0IO_mem);
+          memory_region_destroy(&s->PCI0IO_mem);
       }
       /* Map new IO address */
       s->PCI0IO_start = s->regs[GT_PCI0IOLD] << 21;
       s->PCI0IO_length = ((s->regs[GT_PCI0IOHD] + 1) - (s->regs[GT_PCI0IOLD] & 0x7f)) << 21;
       isa_mem_base = s->PCI0IO_start;
-      isa_mmio_init(s->PCI0IO_start, s->PCI0IO_length);
+      if (s->PCI0IO_length) {
+          isa_mmio_setup(&s->PCI0IO_mem, s->PCI0IO_length);
+          memory_region_add_subregion(get_system_memory(), s->PCI0IO_start,
+                                      &s->PCI0IO_mem);
+      }
     }
 }
 
-static void gt64120_writel (void *opaque, target_phys_addr_t addr,
-                            uint32_t val)
+static void gt64120_writel (void *opaque, hwaddr addr,
+                            uint64_t val, unsigned size)
 {
     GT64120State *s = opaque;
+    PCIHostState *phb = PCI_HOST_BRIDGE(s);
     uint32_t saddr;
 
     if (!(s->regs[GT_CPU] & 0x00001000))
@@ -523,13 +536,15 @@ static void gt64120_writel (void *opaque, target_phys_addr_t addr,
         /* not implemented */
         break;
     case GT_PCI0_CFGADDR:
-        s->pci.config_reg = val & 0x80fffffc;
+        phb->config_reg = val & 0x80fffffc;
         break;
     case GT_PCI0_CFGDATA:
-        if (!(s->regs[GT_PCI0_CMD] & 1) && (s->pci.config_reg & 0x00fff800))
+        if (!(s->regs[GT_PCI0_CMD] & 1) && (phb->config_reg & 0x00fff800)) {
             val = bswap32(val);
-        if (s->pci.config_reg & (1u << 31))
-            pci_data_write(s->pci.bus, s->pci.config_reg, val, 4);
+        }
+        if (phb->config_reg & (1u << 31)) {
+            pci_data_write(phb->bus, phb->config_reg, val, 4);
+        }
         break;
 
     /* Interrupts */
@@ -537,19 +552,19 @@ static void gt64120_writel (void *opaque, target_phys_addr_t addr,
         /* not really implemented */
         s->regs[saddr] = ~(~(s->regs[saddr]) | ~(val & 0xfffffffe));
         s->regs[saddr] |= !!(s->regs[saddr] & 0xfffffffe);
-        DPRINTF("INTRCAUSE %x\n", val);
+        DPRINTF("INTRCAUSE %" PRIx64 "\n", val);
         break;
     case GT_INTRMASK:
         s->regs[saddr] = val & 0x3c3ffffe;
-        DPRINTF("INTRMASK %x\n", val);
+        DPRINTF("INTRMASK %" PRIx64 "\n", val);
         break;
     case GT_PCI0_ICMASK:
         s->regs[saddr] = val & 0x03fffffe;
-        DPRINTF("ICMASK %x\n", val);
+        DPRINTF("ICMASK %" PRIx64 "\n", val);
         break;
     case GT_PCI0_SERR0MASK:
         s->regs[saddr] = val & 0x0000003f;
-        DPRINTF("SERR0MASK %x\n", val);
+        DPRINTF("SERR0MASK %" PRIx64 "\n", val);
         break;
 
     /* Reserved when only PCI_0 is configured. */
@@ -578,10 +593,11 @@ static void gt64120_writel (void *opaque, target_phys_addr_t addr,
     }
 }
 
-static uint32_t gt64120_readl (void *opaque,
-                               target_phys_addr_t addr)
+static uint64_t gt64120_readl (void *opaque,
+                               hwaddr addr, unsigned size)
 {
     GT64120State *s = opaque;
+    PCIHostState *phb = PCI_HOST_BRIDGE(s);
     uint32_t val;
     uint32_t saddr;
 
@@ -763,15 +779,17 @@ static uint32_t gt64120_readl (void *opaque,
 
     /* PCI Internal */
     case GT_PCI0_CFGADDR:
-        val = s->pci.config_reg;
+        val = phb->config_reg;
         break;
     case GT_PCI0_CFGDATA:
-        if (!(s->pci.config_reg & (1 << 31)))
+        if (!(phb->config_reg & (1 << 31))) {
             val = 0xffffffff;
-        else
-            val = pci_data_read(s->pci.bus, s->pci.config_reg, 4);
-        if (!(s->regs[GT_PCI0_CMD] & 1) && (s->pci.config_reg & 0x00fff800))
+        } else {
+            val = pci_data_read(phb->bus, phb->config_reg, 4);
+        }
+        if (!(s->regs[GT_PCI0_CMD] & 1) && (phb->config_reg & 0x00fff800)) {
             val = bswap32(val);
+        }
         break;
 
     case GT_PCI0_CMD:
@@ -850,16 +868,10 @@ static uint32_t gt64120_readl (void *opaque,
     return val;
 }
 
-static CPUWriteMemoryFunc * const gt64120_write[] = {
-    &gt64120_writel,
-    &gt64120_writel,
-    &gt64120_writel,
-};
-
-static CPUReadMemoryFunc * const gt64120_read[] = {
-    &gt64120_readl,
-    &gt64120_readl,
-    &gt64120_readl,
+static const MemoryRegionOps isd_mem_ops = {
+    .read = gt64120_readl,
+    .write = gt64120_writel,
+    .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
 static int gt64120_pci_map_irq(PCIDevice *pci_dev, int irq_num)
@@ -1082,29 +1094,31 @@ static void gt64120_reset(void *opaque)
 
 PCIBus *gt64120_register(qemu_irq *pic)
 {
-    SysBusDevice *s;
     GT64120State *d;
+    PCIHostState *phb;
     DeviceState *dev;
 
-    dev = qdev_create(NULL, "gt64120");
+    dev = qdev_create(NULL, TYPE_GT64120_PCI_HOST_BRIDGE);
     qdev_init_nofail(dev);
-    s = sysbus_from_qdev(dev);
-    d = FROM_SYSBUS(GT64120State, s);
-    d->pci.bus = pci_register_bus(&d->busdev.qdev, "pci",
-                                  gt64120_pci_set_irq, gt64120_pci_map_irq,
-                                  pic, PCI_DEVFN(18, 0), 4);
-    d->ISD_handle = cpu_register_io_memory(gt64120_read, gt64120_write, d,
-                                           DEVICE_NATIVE_ENDIAN);
+    d = GT64120_PCI_HOST_BRIDGE(dev);
+    phb = PCI_HOST_BRIDGE(dev);
+    phb->bus = pci_register_bus(dev, "pci",
+                                gt64120_pci_set_irq, gt64120_pci_map_irq,
+                                pic,
+                                get_system_memory(),
+                                get_system_io(),
+                                PCI_DEVFN(18, 0), 4);
+    memory_region_init_io(&d->ISD_mem, &isd_mem_ops, d, "isd-mem", 0x1000);
 
-    pci_create_simple(d->pci.bus, PCI_DEVFN(0, 0), "gt64120_pci");
-    return d->pci.bus;
+    pci_create_simple(phb->bus, PCI_DEVFN(0, 0), "gt64120_pci");
+    return phb->bus;
 }
 
 static int gt64120_init(SysBusDevice *dev)
 {
     GT64120State *s;
 
-    s = FROM_SYSBUS(GT64120State, dev);
+    s = GT64120_PCI_HOST_BRIDGE(dev);
 
     /* FIXME: This value is computed from registers during reset, but some
        devices (e.g. VGA card) need to know it when they are registered.
@@ -1133,21 +1147,42 @@ static int gt64120_pci_init(PCIDevice *d)
     return 0;
 }
 
-static PCIDeviceInfo gt64120_pci_info = {
-    .qdev.name = "gt64120_pci",
-    .qdev.size = sizeof(PCIDevice),
-    .init      = gt64120_pci_init,
-    .vendor_id = PCI_VENDOR_ID_MARVELL,
-    .device_id = PCI_DEVICE_ID_MARVELL_GT6412X,
-    .revision  = 0x10,
-    .class_id  = PCI_CLASS_BRIDGE_HOST,
-};
-
-static void gt64120_pci_register_devices(void)
+static void gt64120_pci_class_init(ObjectClass *klass, void *data)
 {
-    sysbus_register_dev("gt64120", sizeof(GT64120State),
-                        gt64120_init);
-    pci_qdev_register(&gt64120_pci_info);
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->init = gt64120_pci_init;
+    k->vendor_id = PCI_VENDOR_ID_MARVELL;
+    k->device_id = PCI_DEVICE_ID_MARVELL_GT6412X;
+    k->revision = 0x10;
+    k->class_id = PCI_CLASS_BRIDGE_HOST;
 }
 
-device_init(gt64120_pci_register_devices)
+static const TypeInfo gt64120_pci_info = {
+    .name          = "gt64120_pci",
+    .parent        = TYPE_PCI_DEVICE,
+    .instance_size = sizeof(PCIDevice),
+    .class_init    = gt64120_pci_class_init,
+};
+
+static void gt64120_class_init(ObjectClass *klass, void *data)
+{
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
+
+    sdc->init = gt64120_init;
+}
+
+static const TypeInfo gt64120_info = {
+    .name          = TYPE_GT64120_PCI_HOST_BRIDGE,
+    .parent        = TYPE_PCI_HOST_BRIDGE,
+    .instance_size = sizeof(GT64120State),
+    .class_init    = gt64120_class_init,
+};
+
+static void gt64120_pci_register_types(void)
+{
+    type_register_static(&gt64120_info);
+    type_register_static(&gt64120_pci_info);
+}
+
+type_init(gt64120_pci_register_types)

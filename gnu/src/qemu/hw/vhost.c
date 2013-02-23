@@ -8,15 +8,20 @@
  *
  * This work is licensed under the terms of the GNU GPL, version 2.  See
  * the COPYING file in the top-level directory.
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
 #include <sys/ioctl.h>
 #include "vhost.h"
 #include "hw/hw.h"
-#include "range.h"
+#include "qemu/range.h"
 #include <linux/vhost.h>
+#include "exec/address-spaces.h"
 
 static void vhost_dev_sync_region(struct vhost_dev *dev,
+                                  MemoryRegionSection *section,
                                   uint64_t mfirst, uint64_t mlast,
                                   uint64_t rfirst, uint64_t rlast)
 {
@@ -26,11 +31,12 @@ static void vhost_dev_sync_region(struct vhost_dev *dev,
     vhost_log_chunk_t *to = dev->log + end / VHOST_LOG_CHUNK + 1;
     uint64_t addr = (start / VHOST_LOG_CHUNK) * VHOST_LOG_CHUNK;
 
-    assert(end / VHOST_LOG_CHUNK < dev->log_size);
-    assert(start / VHOST_LOG_CHUNK < dev->log_size);
     if (end < start) {
         return;
     }
+    assert(end / VHOST_LOG_CHUNK < dev->log_size);
+    assert(start / VHOST_LOG_CHUNK < dev->log_size);
+
     for (;from < to; ++from) {
         vhost_log_chunk_t log;
         int bit;
@@ -49,36 +55,48 @@ static void vhost_dev_sync_region(struct vhost_dev *dev,
                 ffsll(log) : ffs(log))) {
             ram_addr_t ram_addr;
             bit -= 1;
-            ram_addr = cpu_get_physical_page_desc(addr + bit * VHOST_LOG_PAGE);
-            cpu_physical_memory_set_dirty(ram_addr);
+            ram_addr = section->offset_within_region + bit * VHOST_LOG_PAGE;
+            memory_region_set_dirty(section->mr, ram_addr, VHOST_LOG_PAGE);
             log &= ~(0x1ull << bit);
         }
         addr += VHOST_LOG_CHUNK;
     }
 }
 
-static int vhost_client_sync_dirty_bitmap(CPUPhysMemoryClient *client,
-                                          target_phys_addr_t start_addr,
-                                          target_phys_addr_t end_addr)
+static int vhost_sync_dirty_bitmap(struct vhost_dev *dev,
+                                   MemoryRegionSection *section,
+                                   hwaddr start_addr,
+                                   hwaddr end_addr)
 {
-    struct vhost_dev *dev = container_of(client, struct vhost_dev, client);
     int i;
+
     if (!dev->log_enabled || !dev->started) {
         return 0;
     }
     for (i = 0; i < dev->mem->nregions; ++i) {
         struct vhost_memory_region *reg = dev->mem->regions + i;
-        vhost_dev_sync_region(dev, start_addr, end_addr,
+        vhost_dev_sync_region(dev, section, start_addr, end_addr,
                               reg->guest_phys_addr,
                               range_get_last(reg->guest_phys_addr,
                                              reg->memory_size));
     }
     for (i = 0; i < dev->nvqs; ++i) {
         struct vhost_virtqueue *vq = dev->vqs + i;
-        vhost_dev_sync_region(dev, start_addr, end_addr, vq->used_phys,
+        vhost_dev_sync_region(dev, section, start_addr, end_addr, vq->used_phys,
                               range_get_last(vq->used_phys, vq->used_size));
     }
     return 0;
+}
+
+static void vhost_log_sync(MemoryListener *listener,
+                          MemoryRegionSection *section)
+{
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
+    hwaddr start_addr = section->offset_within_address_space;
+    hwaddr end_addr = start_addr + section->size;
+
+    vhost_sync_dirty_bitmap(dev, section, start_addr, end_addr);
 }
 
 /* Assign/unassign. Keep an unsorted array of non-overlapping
@@ -120,7 +138,6 @@ static void vhost_dev_unassign_memory(struct vhost_dev *dev,
         if (start_addr <= reg->guest_phys_addr && memlast >= reglast) {
             --dev->mem->nregions;
             --to;
-            assert(to >= 0);
             ++overlap_middle;
             continue;
         }
@@ -251,19 +268,19 @@ static inline void vhost_dev_log_resize(struct vhost_dev* dev, uint64_t size)
 {
     vhost_log_chunk_t *log;
     uint64_t log_base;
-    int r;
-    if (size) {
-        log = qemu_mallocz(size * sizeof *log);
-    } else {
-        log = NULL;
-    }
+    int r, i;
+
+    log = g_malloc0(size * sizeof *log);
     log_base = (uint64_t)(unsigned long)log;
     r = ioctl(dev->control, VHOST_SET_LOG_BASE, &log_base);
     assert(r >= 0);
-    vhost_client_sync_dirty_bitmap(&dev->client, 0,
-                                   (target_phys_addr_t)~0x0ull);
+    for (i = 0; i < dev->n_mem_sections; ++i) {
+        /* Sync only the range covered by the old log */
+        vhost_sync_dirty_bitmap(dev, &dev->mem_sections[i], 0,
+                                dev->log_size * VHOST_LOG_CHUNK - 1);
+    }
     if (dev->log) {
-        qemu_free(dev->log);
+        g_free(dev->log);
     }
     dev->log = log;
     dev->log_size = size;
@@ -276,7 +293,7 @@ static int vhost_verify_ring_mappings(struct vhost_dev *dev,
     int i;
     for (i = 0; i < dev->nvqs; ++i) {
         struct vhost_virtqueue *vq = dev->vqs + i;
-        target_phys_addr_t l;
+        hwaddr l;
         void *p;
 
         if (!ranges_overlap(start_addr, size, vq->ring_phys, vq->ring_size)) {
@@ -336,31 +353,33 @@ static bool vhost_dev_cmp_memory(struct vhost_dev *dev,
     return uaddr != reg->userspace_addr + start_addr - reg->guest_phys_addr;
 }
 
-static void vhost_client_set_memory(CPUPhysMemoryClient *client,
-                                    target_phys_addr_t start_addr,
-                                    ram_addr_t size,
-                                    ram_addr_t phys_offset,
-                                    bool log_dirty)
+static void vhost_set_memory(MemoryListener *listener,
+                             MemoryRegionSection *section,
+                             bool add)
 {
-    struct vhost_dev *dev = container_of(client, struct vhost_dev, client);
-    ram_addr_t flags = phys_offset & ~TARGET_PAGE_MASK;
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
+    hwaddr start_addr = section->offset_within_address_space;
+    ram_addr_t size = section->size;
+    bool log_dirty = memory_region_is_logging(section->mr);
     int s = offsetof(struct vhost_memory, regions) +
         (dev->mem->nregions + 1) * sizeof dev->mem->regions[0];
     uint64_t log_size;
     int r;
+    void *ram;
 
-    dev->mem = qemu_realloc(dev->mem, s);
+    dev->mem = g_realloc(dev->mem, s);
 
     if (log_dirty) {
-        flags = IO_MEM_UNASSIGNED;
+        add = false;
     }
 
     assert(size);
 
     /* Optimize no-change case. At least cirrus_vga does this a lot at this time. */
-    if (flags == IO_MEM_RAM) {
-        if (!vhost_dev_cmp_memory(dev, start_addr, size,
-                                  (uintptr_t)qemu_get_ram_ptr(phys_offset))) {
+    ram = memory_region_get_ram_ptr(section->mr) + section->offset_within_region;
+    if (add) {
+        if (!vhost_dev_cmp_memory(dev, start_addr, size, (uintptr_t)ram)) {
             /* Region exists with same address. Nothing to do. */
             return;
         }
@@ -372,10 +391,9 @@ static void vhost_client_set_memory(CPUPhysMemoryClient *client,
     }
 
     vhost_dev_unassign_memory(dev, start_addr, size);
-    if (flags == IO_MEM_RAM) {
+    if (add) {
         /* Add given mapping, merging adjacent regions if any */
-        vhost_dev_assign_memory(dev, start_addr, size,
-                                (uintptr_t)qemu_get_ram_ptr(phys_offset));
+        vhost_dev_assign_memory(dev, start_addr, size, (uintptr_t)ram);
     } else {
         /* Remove old mapping for this memory, if any. */
         vhost_dev_unassign_memory(dev, start_addr, size);
@@ -409,6 +427,64 @@ static void vhost_client_set_memory(CPUPhysMemoryClient *client,
     if (dev->log_size > log_size + VHOST_LOG_BUFFER) {
         vhost_dev_log_resize(dev, log_size);
     }
+}
+
+static bool vhost_section(MemoryRegionSection *section)
+{
+    return memory_region_is_ram(section->mr);
+}
+
+static void vhost_begin(MemoryListener *listener)
+{
+}
+
+static void vhost_commit(MemoryListener *listener)
+{
+}
+
+static void vhost_region_add(MemoryListener *listener,
+                             MemoryRegionSection *section)
+{
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
+
+    if (!vhost_section(section)) {
+        return;
+    }
+
+    ++dev->n_mem_sections;
+    dev->mem_sections = g_renew(MemoryRegionSection, dev->mem_sections,
+                                dev->n_mem_sections);
+    dev->mem_sections[dev->n_mem_sections - 1] = *section;
+    vhost_set_memory(listener, section, true);
+}
+
+static void vhost_region_del(MemoryListener *listener,
+                             MemoryRegionSection *section)
+{
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
+    int i;
+
+    if (!vhost_section(section)) {
+        return;
+    }
+
+    vhost_set_memory(listener, section, false);
+    for (i = 0; i < dev->n_mem_sections; ++i) {
+        if (dev->mem_sections[i].offset_within_address_space
+            == section->offset_within_address_space) {
+            --dev->n_mem_sections;
+            memmove(&dev->mem_sections[i], &dev->mem_sections[i+1],
+                    (dev->n_mem_sections - i) * sizeof(*dev->mem_sections));
+            break;
+        }
+    }
+}
+
+static void vhost_region_nop(MemoryListener *listener,
+                             MemoryRegionSection *section)
+{
 }
 
 static int vhost_virtqueue_set_addr(struct vhost_dev *dev,
@@ -468,10 +544,10 @@ err_features:
     return r;
 }
 
-static int vhost_client_migration_log(CPUPhysMemoryClient *client,
-                                      int enable)
+static int vhost_migration_log(MemoryListener *listener, int enable)
 {
-    struct vhost_dev *dev = container_of(client, struct vhost_dev, client);
+    struct vhost_dev *dev = container_of(listener, struct vhost_dev,
+                                         memory_listener);
     int r;
     if (!!enable == dev->log_enabled) {
         return 0;
@@ -486,7 +562,7 @@ static int vhost_client_migration_log(CPUPhysMemoryClient *client,
             return r;
         }
         if (dev->log) {
-            qemu_free(dev->log);
+            g_free(dev->log);
         }
         dev->log = NULL;
         dev->log_size = 0;
@@ -501,25 +577,55 @@ static int vhost_client_migration_log(CPUPhysMemoryClient *client,
     return 0;
 }
 
-static int vhost_virtqueue_init(struct vhost_dev *dev,
+static void vhost_log_global_start(MemoryListener *listener)
+{
+    int r;
+
+    r = vhost_migration_log(listener, true);
+    if (r < 0) {
+        abort();
+    }
+}
+
+static void vhost_log_global_stop(MemoryListener *listener)
+{
+    int r;
+
+    r = vhost_migration_log(listener, false);
+    if (r < 0) {
+        abort();
+    }
+}
+
+static void vhost_log_start(MemoryListener *listener,
+                            MemoryRegionSection *section)
+{
+    /* FIXME: implement */
+}
+
+static void vhost_log_stop(MemoryListener *listener,
+                           MemoryRegionSection *section)
+{
+    /* FIXME: implement */
+}
+
+static int vhost_virtqueue_start(struct vhost_dev *dev,
                                 struct VirtIODevice *vdev,
                                 struct vhost_virtqueue *vq,
                                 unsigned idx)
 {
-    target_phys_addr_t s, l, a;
+    hwaddr s, l, a;
     int r;
+    int vhost_vq_index = idx - dev->vq_index;
     struct vhost_vring_file file = {
-        .index = idx,
+        .index = vhost_vq_index
     };
     struct vhost_vring_state state = {
-        .index = idx,
+        .index = vhost_vq_index
     };
     struct VirtQueue *vvq = virtio_get_queue(vdev, idx);
 
-    if (!vdev->binding->set_host_notifier) {
-        fprintf(stderr, "binding does not support host notifiers\n");
-        return -ENOSYS;
-    }
+    assert(idx >= dev->vq_index && idx < dev->vq_index + dev->nvqs);
 
     vq->num = state.num = virtio_queue_get_num(vdev, idx);
     r = ioctl(dev->control, VHOST_SET_VRING_NUM, &state);
@@ -563,15 +669,10 @@ static int vhost_virtqueue_init(struct vhost_dev *dev,
         goto fail_alloc_ring;
     }
 
-    r = vhost_virtqueue_set_addr(dev, vq, idx, dev->log_enabled);
+    r = vhost_virtqueue_set_addr(dev, vq, vhost_vq_index, dev->log_enabled);
     if (r < 0) {
         r = -errno;
         goto fail_alloc;
-    }
-    r = vdev->binding->set_host_notifier(vdev->binding_opaque, idx, true);
-    if (r < 0) {
-        fprintf(stderr, "Error binding host notifier: %d\n", -r);
-        goto fail_host_notifier;
     }
 
     file.fd = event_notifier_get_fd(virtio_queue_get_host_notifier(vvq));
@@ -581,19 +682,12 @@ static int vhost_virtqueue_init(struct vhost_dev *dev,
         goto fail_kick;
     }
 
-    file.fd = event_notifier_get_fd(virtio_queue_get_guest_notifier(vvq));
-    r = ioctl(dev->control, VHOST_SET_VRING_CALL, &file);
-    if (r) {
-        r = -errno;
-        goto fail_call;
-    }
+    /* Clear and discard previous events if any. */
+    event_notifier_test_and_clear(&vq->masked_notifier);
 
     return 0;
 
-fail_call:
 fail_kick:
-    vdev->binding->set_host_notifier(vdev->binding_opaque, idx, false);
-fail_host_notifier:
 fail_alloc:
     cpu_physical_memory_unmap(vq->ring, virtio_queue_get_ring_size(vdev, idx),
                               0, 0);
@@ -610,21 +704,16 @@ fail_alloc_desc:
     return r;
 }
 
-static void vhost_virtqueue_cleanup(struct vhost_dev *dev,
+static void vhost_virtqueue_stop(struct vhost_dev *dev,
                                     struct VirtIODevice *vdev,
                                     struct vhost_virtqueue *vq,
                                     unsigned idx)
 {
     struct vhost_vring_state state = {
-        .index = idx,
+        .index = idx - dev->vq_index
     };
     int r;
-    r = vdev->binding->set_host_notifier(vdev->binding_opaque, idx, false);
-    if (r < 0) {
-        fprintf(stderr, "vhost VQ %d host cleanup failed: %d\n", idx, r);
-        fflush(stderr);
-    }
-    assert (r >= 0);
+    assert(idx >= dev->vq_index && idx < dev->vq_index + dev->nvqs);
     r = ioctl(dev->control, VHOST_GET_VRING_BASE, &state);
     if (r < 0) {
         fprintf(stderr, "vhost VQ %d ring restore failed: %d\n", idx, r);
@@ -642,14 +731,55 @@ static void vhost_virtqueue_cleanup(struct vhost_dev *dev,
                               0, virtio_queue_get_desc_size(vdev, idx));
 }
 
-int vhost_dev_init(struct vhost_dev *hdev, int devfd, bool force)
+static void vhost_eventfd_add(MemoryListener *listener,
+                              MemoryRegionSection *section,
+                              bool match_data, uint64_t data, EventNotifier *e)
+{
+}
+
+static void vhost_eventfd_del(MemoryListener *listener,
+                              MemoryRegionSection *section,
+                              bool match_data, uint64_t data, EventNotifier *e)
+{
+}
+
+static int vhost_virtqueue_init(struct vhost_dev *dev,
+                                struct vhost_virtqueue *vq, int n)
+{
+    struct vhost_vring_file file = {
+        .index = n,
+    };
+    int r = event_notifier_init(&vq->masked_notifier, 0);
+    if (r < 0) {
+        return r;
+    }
+
+    file.fd = event_notifier_get_fd(&vq->masked_notifier);
+    r = ioctl(dev->control, VHOST_SET_VRING_CALL, &file);
+    if (r) {
+        r = -errno;
+        goto fail_call;
+    }
+    return 0;
+fail_call:
+    event_notifier_cleanup(&vq->masked_notifier);
+    return r;
+}
+
+static void vhost_virtqueue_cleanup(struct vhost_virtqueue *vq)
+{
+    event_notifier_cleanup(&vq->masked_notifier);
+}
+
+int vhost_dev_init(struct vhost_dev *hdev, int devfd, const char *devpath,
+                   bool force)
 {
     uint64_t features;
-    int r;
+    int i, r;
     if (devfd >= 0) {
         hdev->control = devfd;
     } else {
-        hdev->control = open("/dev/vhost-net", O_RDWR);
+        hdev->control = open(devpath, O_RDWR);
         if (hdev->control < 0) {
             return -errno;
         }
@@ -663,21 +793,44 @@ int vhost_dev_init(struct vhost_dev *hdev, int devfd, bool force)
     if (r < 0) {
         goto fail;
     }
+
+    for (i = 0; i < hdev->nvqs; ++i) {
+        r = vhost_virtqueue_init(hdev, hdev->vqs + i, i);
+        if (r < 0) {
+            goto fail_vq;
+        }
+    }
     hdev->features = features;
 
-    hdev->client.set_memory = vhost_client_set_memory;
-    hdev->client.sync_dirty_bitmap = vhost_client_sync_dirty_bitmap;
-    hdev->client.migration_log = vhost_client_migration_log;
-    hdev->client.log_start = NULL;
-    hdev->client.log_stop = NULL;
-    hdev->mem = qemu_mallocz(offsetof(struct vhost_memory, regions));
+    hdev->memory_listener = (MemoryListener) {
+        .begin = vhost_begin,
+        .commit = vhost_commit,
+        .region_add = vhost_region_add,
+        .region_del = vhost_region_del,
+        .region_nop = vhost_region_nop,
+        .log_start = vhost_log_start,
+        .log_stop = vhost_log_stop,
+        .log_sync = vhost_log_sync,
+        .log_global_start = vhost_log_global_start,
+        .log_global_stop = vhost_log_global_stop,
+        .eventfd_add = vhost_eventfd_add,
+        .eventfd_del = vhost_eventfd_del,
+        .priority = 10
+    };
+    hdev->mem = g_malloc0(offsetof(struct vhost_memory, regions));
+    hdev->n_mem_sections = 0;
+    hdev->mem_sections = NULL;
     hdev->log = NULL;
     hdev->log_size = 0;
     hdev->log_enabled = false;
     hdev->started = false;
-    cpu_register_phys_memory_client(&hdev->client);
+    memory_listener_register(&hdev->memory_listener, &address_space_memory);
     hdev->force = force;
     return 0;
+fail_vq:
+    while (--i >= 0) {
+        vhost_virtqueue_cleanup(hdev->vqs + i);
+    }
 fail:
     r = -errno;
     close(hdev->control);
@@ -686,8 +839,13 @@ fail:
 
 void vhost_dev_cleanup(struct vhost_dev *hdev)
 {
-    cpu_unregister_phys_memory_client(&hdev->client);
-    qemu_free(hdev->mem);
+    int i;
+    for (i = 0; i < hdev->nvqs; ++i) {
+        vhost_virtqueue_cleanup(hdev->vqs + i);
+    }
+    memory_listener_unregister(&hdev->memory_listener);
+    g_free(hdev->mem);
+    g_free(hdev->mem_sections);
     close(hdev->control);
 }
 
@@ -698,20 +856,104 @@ bool vhost_dev_query(struct vhost_dev *hdev, VirtIODevice *vdev)
         hdev->force;
 }
 
-int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
+/* Stop processing guest IO notifications in qemu.
+ * Start processing them in vhost in kernel.
+ */
+int vhost_dev_enable_notifiers(struct vhost_dev *hdev, VirtIODevice *vdev)
 {
     int i, r;
-    if (!vdev->binding->set_guest_notifiers) {
-        fprintf(stderr, "binding does not support guest notifiers\n");
+    if (!vdev->binding->set_host_notifier) {
+        fprintf(stderr, "binding does not support host notifiers\n");
         r = -ENOSYS;
         goto fail;
     }
 
-    r = vdev->binding->set_guest_notifiers(vdev->binding_opaque, true);
-    if (r < 0) {
-        fprintf(stderr, "Error binding guest notifier: %d\n", -r);
-        goto fail_notifiers;
+    for (i = 0; i < hdev->nvqs; ++i) {
+        r = vdev->binding->set_host_notifier(vdev->binding_opaque,
+                                             hdev->vq_index + i,
+                                             true);
+        if (r < 0) {
+            fprintf(stderr, "vhost VQ %d notifier binding failed: %d\n", i, -r);
+            goto fail_vq;
+        }
     }
+
+    return 0;
+fail_vq:
+    while (--i >= 0) {
+        r = vdev->binding->set_host_notifier(vdev->binding_opaque,
+                                             hdev->vq_index + i,
+                                             false);
+        if (r < 0) {
+            fprintf(stderr, "vhost VQ %d notifier cleanup error: %d\n", i, -r);
+            fflush(stderr);
+        }
+        assert (r >= 0);
+    }
+fail:
+    return r;
+}
+
+/* Stop processing guest IO notifications in vhost.
+ * Start processing them in qemu.
+ * This might actually run the qemu handlers right away,
+ * so virtio in qemu must be completely setup when this is called.
+ */
+void vhost_dev_disable_notifiers(struct vhost_dev *hdev, VirtIODevice *vdev)
+{
+    int i, r;
+
+    for (i = 0; i < hdev->nvqs; ++i) {
+        r = vdev->binding->set_host_notifier(vdev->binding_opaque,
+                                             hdev->vq_index + i,
+                                             false);
+        if (r < 0) {
+            fprintf(stderr, "vhost VQ %d notifier cleanup failed: %d\n", i, -r);
+            fflush(stderr);
+        }
+        assert (r >= 0);
+    }
+}
+
+/* Test and clear event pending status.
+ * Should be called after unmask to avoid losing events.
+ */
+bool vhost_virtqueue_pending(struct vhost_dev *hdev, int n)
+{
+    struct vhost_virtqueue *vq = hdev->vqs + n - hdev->vq_index;
+    assert(hdev->started);
+    assert(n >= hdev->vq_index && n < hdev->vq_index + hdev->nvqs);
+    return event_notifier_test_and_clear(&vq->masked_notifier);
+}
+
+/* Mask/unmask events from this vq. */
+void vhost_virtqueue_mask(struct vhost_dev *hdev, VirtIODevice *vdev, int n,
+                         bool mask)
+{
+    struct VirtQueue *vvq = virtio_get_queue(vdev, n);
+    int r, index = n - hdev->vq_index;
+
+    assert(hdev->started);
+    assert(n >= hdev->vq_index && n < hdev->vq_index + hdev->nvqs);
+
+    struct vhost_vring_file file = {
+        .index = index
+    };
+    if (mask) {
+        file.fd = event_notifier_get_fd(&hdev->vqs[index].masked_notifier);
+    } else {
+        file.fd = event_notifier_get_fd(virtio_queue_get_guest_notifier(vvq));
+    }
+    r = ioctl(hdev->control, VHOST_SET_VRING_CALL, &file);
+    assert(r >= 0);
+}
+
+/* Host notifiers must be enabled at this point. */
+int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
+{
+    int i, r;
+
+    hdev->started = true;
 
     r = vhost_dev_set_features(hdev, hdev->log_enabled);
     if (r < 0) {
@@ -723,10 +965,10 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
         goto fail_mem;
     }
     for (i = 0; i < hdev->nvqs; ++i) {
-        r = vhost_virtqueue_init(hdev,
-                                 vdev,
-                                 hdev->vqs + i,
-                                 i);
+        r = vhost_virtqueue_start(hdev,
+                                  vdev,
+                                  hdev->vqs + i,
+                                  hdev->vq_index + i);
         if (r < 0) {
             goto fail_vq;
         }
@@ -735,7 +977,7 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
     if (hdev->log_enabled) {
         hdev->log_size = vhost_get_log_size(hdev);
         hdev->log = hdev->log_size ?
-            qemu_mallocz(hdev->log_size * sizeof *hdev->log) : NULL;
+            g_malloc0(hdev->log_size * sizeof *hdev->log) : NULL;
         r = ioctl(hdev->control, VHOST_SET_LOG_BASE,
                   (uint64_t)(unsigned long)hdev->log);
         if (r < 0) {
@@ -744,46 +986,42 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev)
         }
     }
 
-    hdev->started = true;
-
     return 0;
 fail_log:
 fail_vq:
     while (--i >= 0) {
-        vhost_virtqueue_cleanup(hdev,
-                                vdev,
-                                hdev->vqs + i,
-                                i);
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
     }
+    i = hdev->nvqs;
 fail_mem:
 fail_features:
-    vdev->binding->set_guest_notifiers(vdev->binding_opaque, false);
-fail_notifiers:
-fail:
+
+    hdev->started = false;
     return r;
 }
 
+/* Host notifiers must be enabled at this point. */
 void vhost_dev_stop(struct vhost_dev *hdev, VirtIODevice *vdev)
 {
-    int i, r;
+    int i;
 
     for (i = 0; i < hdev->nvqs; ++i) {
-        vhost_virtqueue_cleanup(hdev,
-                                vdev,
-                                hdev->vqs + i,
-                                i);
+        vhost_virtqueue_stop(hdev,
+                             vdev,
+                             hdev->vqs + i,
+                             hdev->vq_index + i);
     }
-    vhost_client_sync_dirty_bitmap(&hdev->client, 0,
-                                   (target_phys_addr_t)~0x0ull);
-    r = vdev->binding->set_guest_notifiers(vdev->binding_opaque, false);
-    if (r < 0) {
-        fprintf(stderr, "vhost guest notifier cleanup failed: %d\n", r);
-        fflush(stderr);
+    for (i = 0; i < hdev->n_mem_sections; ++i) {
+        vhost_sync_dirty_bitmap(hdev, &hdev->mem_sections[i],
+                                0, (hwaddr)~0x0ull);
     }
-    assert (r >= 0);
 
     hdev->started = false;
-    qemu_free(hdev->log);
+    g_free(hdev->log);
     hdev->log = NULL;
     hdev->log_size = 0;
 }
+

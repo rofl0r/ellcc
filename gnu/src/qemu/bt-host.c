@@ -18,9 +18,8 @@
  */
 
 #include "qemu-common.h"
-#include "qemu-char.h"
-#include "net.h"
-#include "bt-host.h"
+#include "bt/bt.h"
+#include "qemu/main-loop.h"
 
 #ifndef _WIN32
 # include <errno.h>
@@ -130,6 +129,7 @@ static void bt_host_read(void *opaque)
             pktlen = MIN(pkt[2] + 3, s->len);
             s->len -= pktlen;
             pkt += pktlen;
+            break;
 
         default:
         bad_pkt:
@@ -177,7 +177,7 @@ struct HCIInfo *bt_host_hci(const char *id)
     }
 # endif
 
-    s = qemu_mallocz(sizeof(struct bt_host_hci_s));
+    s = g_malloc0(sizeof(struct bt_host_hci_s));
     s->fd = fd;
     s->hci.cmd_send = bt_host_cmd;
     s->hci.sco_send = bt_host_sco;

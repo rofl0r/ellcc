@@ -15,22 +15,18 @@
 
 400 cp
 
-0 value puid
-
-440 cp
-
-480 cp
-
 \ The root of the device tree and some of its kids.
 " /" find-device
 
-" QEMU" encode-string s" model" property
+\ The following properties have been provided by the FDT from QEMU already,
+\ so we do not have to create them on our own:
 
-2 encode-int s" #address-cells" property
-2 encode-int s" #size-cells" property
+\ " QEMU" encode-string s" model" property
+\ 2 encode-int s" #address-cells" property
+\ 2 encode-int s" #size-cells" property
+\ s" chrp" device-type
 
-\ Yaboot is stupid.  Without this, it can't/won't find /etc/yaboot.conf.
-s" chrp" device-type
+480 cp
 
 \ See 3.6.5, and the PowerPC OF binding document.
 new-device
@@ -59,8 +55,7 @@ fixup-tbfreq
 
 4d0 cp
 
-\ Grab rtas from qemu
-#include "rtas.fs"
+include fbuffer.fs
 
 500 cp
 
@@ -85,6 +80,9 @@ fixup-tbfreq
             2dup " IBM,l-lan" strequal IF
                 " vio-veth.fs" included
             THEN
+	    2dup " qemu,spapr-nvram" strequal IF
+	    	" rtas-nvram.fs" included
+	    THEN
             2drop
        THEN
        peer
@@ -99,6 +97,30 @@ populate-vios
 580 cp
 
 5a0 cp
+
+#include "pci-scan.fs"
+
+: populate-pci-busses ( -- )
+    \ Populate the /pci* children with their methods
+    " /" find-device get-node child
+    BEGIN
+        dup 0 <>
+    WHILE
+        dup set-node
+        dup " name" rot get-package-property 0 = IF
+            drop dup from-cstring
+            2dup s" pci" strequal IF
+                s" pci-phb.fs" included
+            THEN
+            2drop
+       THEN
+       peer
+    REPEAT drop
+
+    device-end
+;
+
+populate-pci-busses
 
 600 cp
 
@@ -145,6 +167,3 @@ s" /mmu" open-dev encode-int s" mmu" set-chosen
 
 #include <term-io.fs>
 
-" hvterm" find-alias IF drop
-  " hvterm" io
-THEN

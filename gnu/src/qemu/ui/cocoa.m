@@ -26,8 +26,8 @@
 #include <crt_externs.h>
 
 #include "qemu-common.h"
-#include "console.h"
-#include "sysemu.h"
+#include "ui/console.h"
+#include "sysemu/sysemu.h"
 
 #ifndef MAC_OS_X_VERSION_10_4
 #define MAC_OS_X_VERSION_10_4 1040
@@ -265,6 +265,7 @@ static int cocoa_keycode_to_qemu(int keycode)
     BOOL isTabletEnabled;
 }
 - (void) resizeContentToWidth:(int)w height:(int)h displayState:(DisplayState *)ds;
+- (void) updateDataOffset:(DisplayState *)ds;
 - (void) grabMouse;
 - (void) ungrabMouse;
 - (void) toggleFullScreen:(id)sender;
@@ -427,6 +428,20 @@ QemuCocoaView *cocoaView;
 	[normalWindow center];
     [self setContentDimensions];
     [self setFrame:NSMakeRect(cx, cy, cw, ch)];
+}
+
+- (void) updateDataOffset:(DisplayState *)ds
+{
+    COCOA_DEBUG("QemuCocoaView: UpdateDataOffset\n");
+
+    // update screenBuffer
+    if (dataProviderRef) {
+        CGDataProviderRelease(dataProviderRef);
+    }
+
+    size_t size = ds_get_width(ds) * 4 * ds_get_height(ds);
+    dataProviderRef = CGDataProviderCreateWithData(NULL, ds_get_data(ds),
+                                                   size, NULL);
 }
 
 - (void) toggleFullScreen:(id)sender
@@ -772,7 +787,7 @@ QemuCocoaView *cocoaView;
               modalForWindow:normalWindow modalDelegate:self
               didEndSelector:@selector(openPanelDidEnd:returnCode:contextInfo:) contextInfo:NULL];
     } else {
-        // or Launch Qemu, with the global args
+        // or launch QEMU, with the global args
         [self startEmulationWithArgc:gArgc argv:(char **)gArgv];
     }
 }
@@ -811,9 +826,11 @@ QemuCocoaView *cocoaView;
 
         char **argv = (char**)malloc( sizeof(char*)*3 );
 
-        asprintf(&argv[0], "%s", bin);
-        asprintf(&argv[1], "-hda");
-        asprintf(&argv[2], "%s", img);
+        [sheet close];
+
+        argv[0] = g_strdup_printf("%s", bin);
+        argv[1] = g_strdup_printf("-hda");
+        argv[2] = g_strdup_printf("%s", img);
 
         printf("Using argc %d argv %s -hda %s\n", 3, bin, img);
 
@@ -877,7 +894,8 @@ int main (int argc, const char * argv[]) {
                 !strcmp(opt, "-vnc") ||
                 !strcmp(opt, "-nographic") ||
                 !strcmp(opt, "-version") ||
-                !strcmp(opt, "-curses")) {
+                !strcmp(opt, "-curses") ||
+                !strcmp(opt, "-qtest")) {
                 return qemu_main(gArgc, gArgv, *_NSGetEnviron());
             }
         }
@@ -1001,22 +1019,28 @@ static void cocoa_refresh(DisplayState *ds)
     vga_hw_update();
 }
 
+static void cocoa_setdata(DisplayState *ds)
+{
+    [cocoaView updateDataOffset:ds];
+}
+
 static void cocoa_cleanup(void)
 {
     COCOA_DEBUG("qemu_cocoa: cocoa_cleanup\n");
-	qemu_free(dcl);
+    g_free(dcl);
 }
 
 void cocoa_display_init(DisplayState *ds, int full_screen)
 {
     COCOA_DEBUG("qemu_cocoa: cocoa_display_init\n");
 
-	dcl = qemu_mallocz(sizeof(DisplayChangeListener));
-	
+    dcl = g_malloc0(sizeof(DisplayChangeListener));
+
     // register vga output callbacks
-    dcl->dpy_update = cocoa_update;
-    dcl->dpy_resize = cocoa_resize;
+    dcl->dpy_gfx_update = cocoa_update;
+    dcl->dpy_gfx_resize = cocoa_resize;
     dcl->dpy_refresh = cocoa_refresh;
+    dcl->dpy_gfx_setdata = cocoa_setdata;
 
 	register_displaychangelistener(ds, dcl);
 

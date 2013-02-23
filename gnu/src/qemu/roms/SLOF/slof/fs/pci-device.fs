@@ -10,8 +10,10 @@
 \ *     IBM Corporation - initial implementation
 \ ****************************************************************************/
 
+get-node CONSTANT my-phandle
+
 \ get the PUID from the node above
-s" my-puid" $call-parent CONSTANT my-puid
+s" my-puid" my-phandle parent $call-static CONSTANT my-puid
 
 \ define the config reads
 : config-b@  puid >r my-puid TO puid my-space + rtas-config-b@ r> TO puid ;
@@ -50,6 +52,33 @@ s" my-puid" $call-parent CONSTANT my-puid
         pci-device-disable  \ and disable the device
         r> TO puid          \ restore puid
 ;
+
+
+\ DMA memory allocation functions
+: dma-alloc ( size -- virt )
+   my-phandle TO calling-child
+   s" dma-alloc" my-phandle parent $call-static
+   0 TO calling-child
+;
+
+: dma-free ( virt size -- )
+   my-phandle TO calling-child
+   s" dma-free" my-phandle parent $call-static
+   0 TO calling-child
+;
+
+: dma-map-in ( virt size cacheable? -- devaddr )
+   my-phandle TO calling-child
+   s" dma-map-in" my-phandle parent $call-static
+   0 TO calling-child
+;
+
+: dma-map-out ( virt devaddr size -- )
+   my-phandle TO calling-child
+   s" dma-map-out" my-phandle parent $call-static
+   0 TO calling-child
+;
+
 
 \ generate the rom-fs filename from the vendor and device ID "pci-device_VENDORID_DEVICEID.fs"
 : devicefile ( -- str len )

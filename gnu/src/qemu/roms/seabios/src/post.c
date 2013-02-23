@@ -23,9 +23,13 @@
 #include "usb.h" // usb_setup
 #include "smbios.h" // smbios_init
 #include "paravirt.h" // qemu_cfg_port_probe
+#include "xen.h" // xen_probe_hvm_info
 #include "ps2port.h" // ps2port_setup
 #include "virtio-blk.h" // virtio_blk_setup
-
+#include "virtio-scsi.h" // virtio_scsi_setup
+#include "lsi-scsi.h" // lsi_scsi_setup
+#include "esp-scsi.h" // esp_scsi_setup
+#include "megasas.h" // megasas_setup
 
 /****************************************************************
  * BIOS init
@@ -69,8 +73,6 @@ init_ivt(void)
     // set vector 0x79 to zero
     // this is used by 'gardian angel' protection system
     SET_IVT(0x79, SEGOFF(0, 0));
-
-    SET_IVT(0x1E, SEGOFF(SEG_BIOS, (u32)&diskette_param_table2 - BUILD_BIOS_ADDR));
 }
 
 static void
@@ -91,8 +93,11 @@ init_bda(void)
     memset(ebda, 0, sizeof(*ebda));
     ebda->size = esize;
 
-    add_e820((u32)MAKE_FLATPTR(ebda_seg, 0), GET_EBDA2(ebda_seg, size) * 1024
+    add_e820((u32)MAKE_FLATPTR(ebda_seg, 0), GET_EBDA(ebda_seg, size) * 1024
              , E820_RESERVED);
+
+    // Init extra stack
+    StackPos = (void*)(&ExtraStack[BUILD_EXTRA_STACK_SIZE] - datalow_base);
 }
 
 static void
@@ -101,6 +106,8 @@ ram_probe(void)
     dprintf(3, "Find memory size\n");
     if (CONFIG_COREBOOT) {
         coreboot_setup();
+    } else if (usingXen()) {
+        xen_setup();
     } else {
         // On emulators, get memory size from nvram.
         u32 rs = ((inb_cmos(CMOS_MEM_EXTMEM2_LOW) << 16)
@@ -147,8 +154,7 @@ ram_probe(void)
         add_e820(0xfffbc000, 4*4096, E820_RESERVED);
     }
 
-    dprintf(1, "Ram Size=0x%08x (0x%08x%08x high)\n"
-            , RamSize, (u32)(RamSizeOver4G >> 32), (u32)RamSizeOver4G);
+    dprintf(1, "Ram Size=0x%08x (0x%016llx high)\n", RamSize, RamSizeOver4G);
 }
 
 static void
@@ -156,6 +162,10 @@ init_bios_tables(void)
 {
     if (CONFIG_COREBOOT) {
         coreboot_copy_biostable();
+        return;
+    }
+    if (usingXen()) {
+        xen_copy_biostables();
         return;
     }
 
@@ -183,6 +193,10 @@ init_hw(void)
     cbfs_payload_setup();
     ramdisk_setup();
     virtio_blk_setup();
+    virtio_scsi_setup();
+    lsi_scsi_setup();
+    esp_scsi_setup();
+    megasas_setup();
 }
 
 // Begin the boot process by invoking an int0x19 in 16bit mode.
@@ -203,6 +217,10 @@ startBoot(void)
 static void
 maininit(void)
 {
+    // Setup romfile items.
+    qemu_cfg_romfile_setup();
+    coreboot_cbfs_setup();
+
     // Setup ivt/bda/ebda
     init_ivt();
     init_bda();
@@ -212,13 +230,15 @@ maininit(void)
     timer_setup();
     mathcp_setup();
 
+    // Initialize pci
+    pci_setup();
+    smm_init();
+
     // Initialize mtrr
     mtrr_setup();
 
-    // Initialize pci
-    pci_setup();
-    pci_path_setup();
-    smm_init();
+    // Setup Xen hypercalls
+    xen_init_hypercalls();
 
     // Initialize internal tables
     boot_setup();
@@ -240,6 +260,9 @@ maininit(void)
 
     // Run vga option rom
     vga_setup();
+
+    // SMBIOS tables and VGA console are ready, print UUID
+    display_uuid();
 
     // Do hardware initialization (if running synchronously)
     if (!CONFIG_THREADS || !CONFIG_THREAD_OPTIONROMS) {
@@ -271,8 +294,23 @@ maininit(void)
 
 
 /****************************************************************
- * Code relocation
+ * POST entry and code relocation
  ****************************************************************/
+
+// Relocation fixup code that runs at new address after relocation complete.
+static void
+afterReloc(void)
+{
+    // Running at new code address - do code relocation fixups
+    malloc_fixupreloc();
+
+    // Move low-memory initial variable content to new location.
+    extern u8 datalow_start[], datalow_end[], final_datalow_start[];
+    memmove(final_datalow_start, datalow_start, datalow_end - datalow_start);
+
+    // Run main code
+    maininit();
+}
 
 // Update given relocs for the code at 'dest' with a given 'delta'
 static void
@@ -283,8 +321,7 @@ updateRelocs(void *dest, u32 *rstart, u32 *rend, u32 delta)
         *((u32*)(dest + *reloc)) += delta;
 }
 
-// Start of Power On Self Test - the BIOS initilization.  This
-// function sets up for and attempts relocation of the init code.
+// Relocate init code and then call maininit() at new address.
 static void
 reloc_init(void)
 {
@@ -294,96 +331,79 @@ reloc_init(void)
     }
     // Symbols populated by the build.
     extern u8 code32flat_start[];
-    extern u8 _reloc_min_align[];
+    extern u8 _reloc_min_align;
     extern u32 _reloc_abs_start[], _reloc_abs_end[];
     extern u32 _reloc_rel_start[], _reloc_rel_end[];
     extern u32 _reloc_init_start[], _reloc_init_end[];
     extern u8 code32init_start[], code32init_end[];
+    extern u32 _reloc_datalow_start[], _reloc_datalow_end[];
+    extern u8 datalow_start[], datalow_end[], final_datalow_start[];
 
     // Allocate space for init code.
     u32 initsize = code32init_end - code32init_start;
-    u32 align = (u32)&_reloc_min_align;
-    void *dest = memalign_tmp(align, initsize);
-    if (!dest)
+    u32 codealign = (u32)&_reloc_min_align;
+    void *codedest = memalign_tmp(codealign, initsize);
+    if (!codedest)
         panic("No space for init relocation.\n");
 
     // Copy code and update relocs (init absolute, init relative, and runtime)
+    dprintf(1, "Relocating low data from %p to %p (size %d)\n"
+            , datalow_start, final_datalow_start, datalow_end - datalow_start);
+    updateRelocs(code32flat_start, _reloc_datalow_start, _reloc_datalow_end
+                 , final_datalow_start - datalow_start);
     dprintf(1, "Relocating init from %p to %p (size %d)\n"
-            , code32init_start, dest, initsize);
-    s32 delta = dest - (void*)code32init_start;
-    memcpy(dest, code32init_start, initsize);
-    updateRelocs(dest, _reloc_abs_start, _reloc_abs_end, delta);
-    updateRelocs(dest, _reloc_rel_start, _reloc_rel_end, -delta);
+            , code32init_start, codedest, initsize);
+    s32 delta = codedest - (void*)code32init_start;
+    memcpy(codedest, code32init_start, initsize);
+    updateRelocs(codedest, _reloc_abs_start, _reloc_abs_end, delta);
+    updateRelocs(codedest, _reloc_rel_start, _reloc_rel_end, -delta);
     updateRelocs(code32flat_start, _reloc_init_start, _reloc_init_end, delta);
 
     // Call maininit() in relocated code.
-    void (*func)(void) = (void*)maininit + delta;
+    void (*func)(void) = (void*)afterReloc + delta;
     barrier();
     func();
 }
 
-// Start of Power On Self Test (POST) - the BIOS initilization phase.
-// This function sets up for and attempts relocation of the init code.
+// Setup for code relocation and then call reloc_init
 void VISIBLE32INIT
-post(void)
+dopost(void)
 {
+    HaveRunPost = 1;
+
     // Detect ram and setup internal malloc.
     qemu_cfg_port_probe();
     ram_probe();
     malloc_setup();
 
+    // Relocate initialization code and call maininit().
     reloc_init();
 }
 
-
-/****************************************************************
- * POST entry point
- ****************************************************************/
-
-static int HaveRunPost;
-
-// Attempt to invoke a hard-reboot.
-static void
-tryReboot(void)
-{
-    dprintf(1, "Attempting a hard reboot\n");
-
-    // Setup for reset on qemu.
-    if (! CONFIG_COREBOOT) {
-        qemu_prep_reset();
-        if (HaveRunPost)
-            apm_shutdown();
-    }
-
-    // Try keyboard controller reboot.
-    i8042_reboot();
-
-    // Try PCI 0xcf9 reboot
-    pci_reboot();
-
-    // Try triple fault
-    asm volatile("int3");
-
-    panic("Could not reboot");
-}
-
-// 32-bit entry point.
+// Entry point for Power On Self Test (POST) - the BIOS initilization
+// phase.  This function makes the memory at 0xc0000-0xfffff
+// read/writable and then calls dopost().
 void VISIBLE32FLAT
-_start(void)
+handle_post(void)
 {
-    init_dma();
-
     debug_serial_setup();
     dprintf(1, "Start bios (version %s)\n", VERSION);
 
-    if (HaveRunPost)
-        // This is a soft reboot - invoke a hard reboot.
-        tryReboot();
+    // Enable CPU caching
+    setcr0(getcr0() & ~(CR0_CD|CR0_NW));
+
+    // Clear CMOS reboot flag.
+    outb_cmos(0, CMOS_RESET_CODE);
+
+    // Make sure legacy DMA isn't running.
+    init_dma();
+
+    // Check if we are running under Xen.
+    xen_probe();
 
     // Allow writes to modify bios area (0xf0000)
     make_bios_writable();
-    HaveRunPost = 1;
 
-    // Perform main setup code.
-    post();
+    // Now that memory is read/writable - start post process.
+    dopost();
 }

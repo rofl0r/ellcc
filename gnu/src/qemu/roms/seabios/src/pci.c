@@ -5,11 +5,11 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
+#include "config.h" // CONFIG_*
 #include "pci.h" // pci_config_writel
 #include "ioport.h" // outl
 #include "util.h" // dprintf
-#include "config.h" // CONFIG_*
-#include "farptr.h" // CONFIG_*
+#include "farptr.h" // MAKE_FLATPTR
 #include "pci_regs.h" // PCI_VENDOR_ID
 #include "pci_ids.h" // PCI_CLASS_DISPLAY_VGA
 
@@ -57,177 +57,151 @@ pci_config_maskw(u16 bdf, u32 addr, u16 off, u16 on)
     pci_config_writew(bdf, addr, val);
 }
 
-// Helper function for foreachpci() macro - return next device
+// Helper function for foreachbdf() macro - return next device
 int
-pci_next(int bdf, int *pmax)
+pci_next(int bdf, int bus)
 {
-    if (pci_bdf_to_fn(bdf) == 1
-        && (pci_config_readb(bdf-1, PCI_HEADER_TYPE) & 0x80) == 0)
+    if (pci_bdf_to_fn(bdf) == 0
+        && (pci_config_readb(bdf, PCI_HEADER_TYPE) & 0x80) == 0)
         // Last found device wasn't a multi-function device - skip to
         // the next device.
-        bdf += 7;
+        bdf += 8;
+    else
+        bdf += 1;
 
-    int max = *pmax;
     for (;;) {
-        if (bdf >= max) {
-            if (CONFIG_PCI_ROOT1 && bdf <= (CONFIG_PCI_ROOT1 << 8))
-                bdf = CONFIG_PCI_ROOT1 << 8;
-            else if (CONFIG_PCI_ROOT2 && bdf <= (CONFIG_PCI_ROOT2 << 8))
-                bdf = CONFIG_PCI_ROOT2 << 8;
-            else
-            	return -1;
-            *pmax = max = bdf + 0x0100;
-        }
+        if (pci_bdf_to_bus(bdf) != bus)
+            return -1;
 
         u16 v = pci_config_readw(bdf, PCI_VENDOR_ID);
         if (v != 0x0000 && v != 0xffff)
             // Device is present.
-            break;
+            return bdf;
 
         if (pci_bdf_to_fn(bdf) == 0)
             bdf += 8;
         else
             bdf += 1;
     }
-
-    // Check if found device is a bridge.
-    u32 v = pci_config_readb(bdf, PCI_HEADER_TYPE);
-    v &= 0x7f;
-    if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
-        v = pci_config_readl(bdf, PCI_PRIMARY_BUS);
-        int newmax = (v & 0xff00) + 0x0100;
-        if (newmax > max)
-            *pmax = newmax;
-    }
-
-    return bdf;
 }
 
-// Find a vga device with legacy address decoding enabled.
+struct pci_device *PCIDevices;
+int MaxPCIBus VAR16VISIBLE;
+
+// Check if PCI is available at all
 int
-pci_find_vga(void)
+pci_probe_host(void)
 {
-    int bdf = 0x0000, max = 0x0100;
-    for (;;) {
-        if (bdf >= max) {
-            if (CONFIG_PCI_ROOT1 && bdf <= (CONFIG_PCI_ROOT1 << 8))
-                bdf = CONFIG_PCI_ROOT1 << 8;
-            else if (CONFIG_PCI_ROOT2 && bdf <= (CONFIG_PCI_ROOT2 << 8))
-                bdf = CONFIG_PCI_ROOT2 << 8;
-            else
-            	return -1;
-            max = bdf + 0x0100;
-        }
-
-        u16 cls = pci_config_readw(bdf, PCI_CLASS_DEVICE);
-        if (cls == 0x0000 || cls == 0xffff) {
-            // Device not present.
-            if (pci_bdf_to_fn(bdf) == 0)
-                bdf += 8;
-            else
-                bdf += 1;
-            continue;
-        }
-        if (cls == PCI_CLASS_DISPLAY_VGA) {
-            u16 cmd = pci_config_readw(bdf, PCI_COMMAND);
-            if (cmd & PCI_COMMAND_IO && cmd & PCI_COMMAND_MEMORY)
-                // Found active vga card
-                return bdf;
-        }
-
-        // Check if device is a bridge.
-        u8 hdr = pci_config_readb(bdf, PCI_HEADER_TYPE);
-        u8 ht = hdr & 0x7f;
-        if (ht == PCI_HEADER_TYPE_BRIDGE || ht == PCI_HEADER_TYPE_CARDBUS) {
-            u32 ctrl = pci_config_readb(bdf, PCI_BRIDGE_CONTROL);
-            if (ctrl & PCI_BRIDGE_CTL_VGA) {
-                // Found a VGA enabled bridge.
-                u32 pbus = pci_config_readl(bdf, PCI_PRIMARY_BUS);
-                bdf = (pbus & 0xff00);
-                max = bdf + 0x100;
-                continue;
-            }
-        }
-
-        if (pci_bdf_to_fn(bdf) == 0 && (hdr & 0x80) == 0)
-            // Last found device wasn't a multi-function device - skip to
-            // the next device.
-            bdf += 8;
-        else
-            bdf += 1;
+    outl(0x80000000, PORT_PCI_CMD);
+    if (inl(PORT_PCI_CMD) != 0x80000000) {
+        dprintf(1, "Detected non-PCI system\n");
+        return -1;
     }
+    return 0;
+}
+
+// Find all PCI devices and populate PCIDevices linked list.
+void
+pci_probe_devices(void)
+{
+    dprintf(3, "PCI probe\n");
+    struct pci_device *busdevs[256];
+    memset(busdevs, 0, sizeof(busdevs));
+    struct pci_device **pprev = &PCIDevices;
+    int extraroots = romfile_loadint("etc/extra-pci-roots", 0);
+    int bus = -1, lastbus = 0, rootbuses = 0, count=0;
+    while (bus < 0xff && (bus < MaxPCIBus || rootbuses < extraroots)) {
+        bus++;
+        int bdf;
+        foreachbdf(bdf, bus) {
+            // Create new pci_device struct and add to list.
+            struct pci_device *dev = malloc_tmp(sizeof(*dev));
+            if (!dev) {
+                warn_noalloc();
+                return;
+            }
+            memset(dev, 0, sizeof(*dev));
+            *pprev = dev;
+            pprev = &dev->next;
+            count++;
+
+            // Find parent device.
+            int rootbus;
+            struct pci_device *parent = busdevs[bus];
+            if (!parent) {
+                if (bus != lastbus)
+                    rootbuses++;
+                lastbus = bus;
+                rootbus = rootbuses;
+                if (bus > MaxPCIBus)
+                    MaxPCIBus = bus;
+            } else {
+                rootbus = parent->rootbus;
+            }
+
+            // Populate pci_device info.
+            dev->bdf = bdf;
+            dev->parent = parent;
+            dev->rootbus = rootbus;
+            u32 vendev = pci_config_readl(bdf, PCI_VENDOR_ID);
+            dev->vendor = vendev & 0xffff;
+            dev->device = vendev >> 16;
+            u32 classrev = pci_config_readl(bdf, PCI_CLASS_REVISION);
+            dev->class = classrev >> 16;
+            dev->prog_if = classrev >> 8;
+            dev->revision = classrev & 0xff;
+            dev->header_type = pci_config_readb(bdf, PCI_HEADER_TYPE);
+            u8 v = dev->header_type & 0x7f;
+            if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
+                u8 secbus = pci_config_readb(bdf, PCI_SECONDARY_BUS);
+                dev->secondary_bus = secbus;
+                if (secbus > bus && !busdevs[secbus])
+                    busdevs[secbus] = dev;
+                if (secbus > MaxPCIBus)
+                    MaxPCIBus = secbus;
+            }
+            dprintf(4, "PCI device %02x:%02x.%x (vd=%04x:%04x c=%04x)\n"
+                    , pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf)
+                    , pci_bdf_to_fn(bdf)
+                    , dev->vendor, dev->device, dev->class);
+        }
+    }
+    dprintf(1, "Found %d PCI devices (max PCI bus is %02x)\n", count, MaxPCIBus);
 }
 
 // Search for a device with the specified vendor and device ids.
-int
+struct pci_device *
 pci_find_device(u16 vendid, u16 devid)
 {
-    u32 id = (devid << 16) | vendid;
-    int bdf, max;
-    foreachpci(bdf, max) {
-        u32 v = pci_config_readl(bdf, PCI_VENDOR_ID);
-        if (v == id)
-            return bdf;
+    struct pci_device *pci;
+    foreachpci(pci) {
+        if (pci->vendor == vendid && pci->device == devid)
+            return pci;
     }
-    return -1;
+    return NULL;
 }
 
 // Search for a device with the specified class id.
-int
+struct pci_device *
 pci_find_class(u16 classid)
 {
-    int bdf, max;
-    foreachpci(bdf, max) {
-        u16 v = pci_config_readw(bdf, PCI_CLASS_DEVICE);
-        if (v == classid)
-            return bdf;
+    struct pci_device *pci;
+    foreachpci(pci) {
+        if (pci->class == classid)
+            return pci;
     }
-    return -1;
+    return NULL;
 }
 
-int *PCIpaths;
-
-// Build the PCI path designations.
-void
-pci_path_setup(void)
+int pci_init_device(const struct pci_device_id *ids
+                    , struct pci_device *pci, void *arg)
 {
-    PCIpaths = malloc_tmp(sizeof(*PCIpaths) * 256);
-    if (!PCIpaths)
-        return;
-    memset(PCIpaths, 0, sizeof(*PCIpaths) * 256);
-
-    int roots = 0;
-    int bdf, max;
-    foreachpci(bdf, max) {
-        int bus = pci_bdf_to_bus(bdf);
-        if (! PCIpaths[bus])
-            PCIpaths[bus] = (roots++) | PP_ROOT;
-
-        // Check if found device is a bridge.
-        u32 v = pci_config_readb(bdf, PCI_HEADER_TYPE);
-        v &= 0x7f;
-        if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
-            v = pci_config_readl(bdf, PCI_PRIMARY_BUS);
-            int childbus = (v >> 8) & 0xff;
-            if (childbus > bus)
-                PCIpaths[childbus] = bdf | PP_PCIBRIDGE;
-        }
-    }
-}
-
-int pci_init_device(const struct pci_device_id *ids, u16 bdf, void *arg)
-{
-    u16 vendor_id = pci_config_readw(bdf, PCI_VENDOR_ID);
-    u16 device_id = pci_config_readw(bdf, PCI_DEVICE_ID);
-    u16 class = pci_config_readw(bdf, PCI_CLASS_DEVICE);
-
     while (ids->vendid || ids->class_mask) {
-        if ((ids->vendid == PCI_ANY_ID || ids->vendid == vendor_id) &&
-            (ids->devid == PCI_ANY_ID || ids->devid == device_id) &&
-            !((ids->class ^ class) & ids->class_mask)) {
-            if (ids->func) {
-                ids->func(bdf, arg);
-            }
+        if ((ids->vendid == PCI_ANY_ID || ids->vendid == pci->vendor) &&
+            (ids->devid == PCI_ANY_ID || ids->devid == pci->device) &&
+            !((ids->class ^ pci->class) & ids->class_mask)) {
+            if (ids->func)
+                ids->func(pci, arg);
             return 0;
         }
         ids++;
@@ -235,16 +209,15 @@ int pci_init_device(const struct pci_device_id *ids, u16 bdf, void *arg)
     return -1;
 }
 
-int pci_find_init_device(const struct pci_device_id *ids, void *arg)
+struct pci_device *
+pci_find_init_device(const struct pci_device_id *ids, void *arg)
 {
-    int bdf, max;
-
-    foreachpci(bdf, max) {
-        if (pci_init_device(ids, bdf, arg) == 0) {
-            return bdf;
-        }
+    struct pci_device *pci;
+    foreachpci(pci) {
+        if (pci_init_device(ids, pci, arg) == 0)
+            return pci;
     }
-    return -1;
+    return NULL;
 }
 
 void
@@ -262,14 +235,14 @@ pci_reboot(void)
 u32 VISIBLE32FLAT
 pci_readl_32(u32 addr)
 {
-    dprintf(3, "32: pci read : %x\n", addr);
+    dprintf(9, "32: pci read : %x\n", addr);
     return readl((void*)addr);
 }
 
 u32 pci_readl(u32 addr)
 {
     if (MODESEGMENT) {
-        dprintf(3, "16: pci read : %x\n", addr);
+        dprintf(9, "16: pci read : %x\n", addr);
         extern void _cfunc32flat_pci_readl_32(u32 addr);
         return call32(_cfunc32flat_pci_readl_32, addr, -1);
     } else {
@@ -285,7 +258,7 @@ struct reg32 {
 void VISIBLE32FLAT
 pci_writel_32(struct reg32 *reg32)
 {
-    dprintf(3, "32: pci write: %x, %x (%p)\n", reg32->addr, reg32->data, reg32);
+    dprintf(9, "32: pci write: %x, %x (%p)\n", reg32->addr, reg32->data, reg32);
     writel((void*)(reg32->addr), reg32->data);
 }
 
@@ -293,7 +266,7 @@ void pci_writel(u32 addr, u32 val)
 {
     struct reg32 reg32 = { .addr = addr, .data = val };
     if (MODESEGMENT) {
-        dprintf(3, "16: pci write: %x, %x (%x:%p)\n",
+        dprintf(9, "16: pci write: %x, %x (%x:%p)\n",
                 reg32.addr, reg32.data, GET_SEG(SS), &reg32);
         void *flatptr = MAKE_FLATPTR(GET_SEG(SS), &reg32);
         extern void _cfunc32flat_pci_writel_32(struct reg32 *reg32);

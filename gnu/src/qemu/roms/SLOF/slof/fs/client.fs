@@ -13,6 +13,8 @@
 
 \ Client interface.
 
+0 VALUE debug-client-interface?
+
 \ First, the machinery.
 
 VOCABULARY client-voc \ We store all client-interface callable words here.
@@ -65,7 +67,7 @@ VARIABLE  client-callback \ Address of client's callback function
           sc-exit OF drop r> drop EXIT ENDOF
           sc-yield OF drop r> drop EXIT ENDOF
         ENDCASE
-	\ Some special call was made but we don't know that to do with it...
+        \ Some special call was made but we don't know that to do with it...
         THROW
       THEN
       stack-to-client-data
@@ -102,18 +104,42 @@ ALSO client-voc DEFINITIONS
 : yield  sc-yield THROW ;
 
 : test ( zstr -- missing? )
-  \ XXX: Should only look in client-voc...
-  zcount 
-  ALSO client-voc $find PREVIOUS IF nip FALSE ELSE nip nip TRUE THEN 
-  ;
+   \ XXX: Should only look in client-voc...
+   zcount
+   debug-client-interface? IF
+      ." ci: test " 2dup type cr
+   THEN
+   ALSO client-voc $find PREVIOUS IF
+      drop FALSE
+   ELSE
+      2drop TRUE
+   THEN 
+;
 
 : finddevice ( zstr -- phandle )
-  zcount find-node dup 0= IF drop -1 THEN ;
+   zcount
+   debug-client-interface? IF
+      ." ci: finddevice " 2dup type cr
+   THEN
+   find-node dup 0= IF drop -1 THEN
+;
 
 : getprop ( phandle zstr buf len -- len' )
-  >r >r zcount rot get-property
-  0= IF r> swap dup r> min swap >r move r>
-  ELSE r> r> 2drop -1 THEN ;
+   >r >r zcount rot                     ( str-adr str-len phandle   R: len buf )
+   debug-client-interface? IF
+      ." ci: getprop " 3dup . ." '" type ." '"
+   THEN
+   get-property
+   debug-client-interface? IF
+      dup IF ."  ** not found **" THEN
+      cr
+   THEN
+   0= IF
+      r> swap dup r> min swap >r move r>
+   ELSE
+      r> r> 2drop -1
+   THEN
+;
 
 : getproplen ( phandle zstr -- len )
   zcount rot get-property 0= IF nip ELSE -1 THEN ;
@@ -136,8 +162,20 @@ ALSO client-voc DEFINITIONS
 : nextprop ( phandle zstr buf -- flag ) \ -1 invalid, 0 end, 1 ok
   >r zcount rot next-property IF r> zplace 1 ELSE r> drop 0 THEN ; 
 
-: open ( zstr -- ihandle )  zcount open-dev ;
-: close ( ihandle -- )  close-dev ;
+: open ( zstr -- ihandle )
+   zcount
+   debug-client-interface? IF
+      ." ci: open " 2dup type cr
+   THEN
+   open-dev
+;
+
+: close ( ihandle -- )
+   debug-client-interface? IF
+      ." ci: close " dup . cr
+   THEN
+   close-dev
+;
 
 \ Now implemented: should return -1 if no such method exists in that node
 : write ( ihandle str len -- len' )      rot s" write" rot
@@ -149,6 +187,9 @@ ALSO client-voc DEFINITIONS
 
 \ A real claim implementation: 3.2% memory fat :-)
 : claim  ( addr len align -- base )
+   debug-client-interface? IF
+      ." ci: claim " .s cr
+   THEN
    dup  IF  rot drop
       ['] claim CATCH  IF  2drop -1  THEN
    ELSE
@@ -156,7 +197,12 @@ ALSO client-voc DEFINITIONS
    THEN
 ;
 
-: release ( addr len -- ) release ;
+: release ( addr len -- )
+   debug-client-interface? IF
+      ." ci: release " .s cr
+   THEN
+   release
+;
 
 : instance-to-package ( ihandle -- phandle )
   ihandle>phandle ;
@@ -169,15 +215,25 @@ ALSO client-voc DEFINITIONS
   2>r instance>qpath 2r> string-to-buffer ;
 
 : call-method ( str ihandle arg ... arg -- result return ... return )
-  nargs flip-stack zcount rot ['] $call-method CATCH
+  nargs flip-stack zcount
+  debug-client-interface? IF
+     ." ci: call-method " 2dup type cr
+  THEN
+  rot ['] $call-method CATCH
   nrets 0= IF drop ELSE \ if called with 0 return args do not return the catch result
      dup IF nrets 1 ?DO -444 LOOP THEN
      nrets flip-stack 
-  THEN ;
+  THEN
+;
 
 \ From the PAPR.
 : test-method ( phandle str -- missing? )
-  zcount rot find-method dup IF nip THEN 0= ;
+   zcount
+   debug-client-interface? IF
+      ." ci: test-method " 2dup type cr
+   THEN
+   rot find-method dup IF nip THEN 0=
+;
 
 : milliseconds  milliseconds ;
 
@@ -191,6 +247,9 @@ ALSO client-voc DEFINITIONS
 \ Quiesce firmware and assert that all hardware is in a sane state
 \ (e.g. assert that no background DMA is running anymore)
 : quiesce  ( -- )
+   debug-client-interface? IF
+      ." ci: quiesce" cr
+   THEN
    \ The main quiesce call is defined in quiesce.fs
    quiesce
 ;
@@ -199,7 +258,12 @@ ALSO client-voc DEFINITIONS
 \ User Interface, defined in 6.3.2.6
 \
 : interpret ( ... zstr -- result ... )
-  zcount ['] evaluate CATCH ;
+   zcount
+   debug-client-interface? IF
+      ." ci: interpret " 2dup type cr
+   THEN
+   ['] evaluate CATCH
+;
 
 \ Allow the client to register a callback
 : set-callback ( newfunc -- oldfunc )
