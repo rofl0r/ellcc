@@ -2,11 +2,12 @@
 
 # Get the names of the subdirectories.
 
-SUBDIRS := gnu-build/binutils gnu-build/gdb  src/qemu \
+SUBDIRS := gnu-build/binutils gnu-build/gdb \
 	   gnu-build/binutils/arm-elf        gnu-build/binutils/ppc64-elf \
 	   gnu-build/binutils/i386-elf       gnu-build/binutils/ppc-elf \
 	   gnu-build/binutils/microblaze-elf gnu-build/binutils/sparc-elf \
-	   gnu-build/binutils/mips-elf       gnu-build/binutils/x86_64-elf
+	   gnu-build/binutils/mips-elf       gnu-build/binutils/x86_64-elf \
+	   src/qemu
 
 all install clean veryclean check:: gnu-build
 	@for dir in $(SUBDIRS) ; do \
