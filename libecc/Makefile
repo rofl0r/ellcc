@@ -43,7 +43,7 @@ $(Configs):
 	      || exit 1)) ; \
 	  mv musl.new musl.last ; \
 	  cd ../..
-	make -C src/musl || exit 1
+	make CROSS_COMPILE=$(ELLCC)/bin/ecc- -C src/musl || exit 1
 	make -C src/musl install || exit 1
 	make $@.musl.install
 	make -C src/compiler-rt ellcc_linux-$@
