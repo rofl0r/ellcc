@@ -32,13 +32,13 @@
 // || `[0x000000040000, 0x01ffffffffff]` || ShadowGap  ||
 //
 // Special case when something is already mapped between
-// 0x003000000000 and 0x004000000000 (e.g. when prelink is installed):
+// 0x003000000000 and 0x005000000000 (e.g. when prelink is installed):
 // || `[0x10007fff8000, 0x7fffffffffff]` || HighMem    ||
 // || `[0x02008fff7000, 0x10007fff7fff]` || HighShadow ||
-// || `[0x004000000000, 0x02008fff6fff]` || ShadowGap3 ||
-// || `[0x003000000000, 0x003fffffffff]` || MidMem     ||
-// || `[0x00087fff8000, 0x002fffffffff]` || ShadowGap2 ||
-// || `[0x00067fff8000, 0x00087fff7fff]` || MidShadow  ||
+// || `[0x005000000000, 0x02008fff6fff]` || ShadowGap3 ||
+// || `[0x003000000000, 0x004fffffffff]` || MidMem     ||
+// || `[0x000a7fff8000, 0x002fffffffff]` || ShadowGap2 ||
+// || `[0x00067fff8000, 0x000a7fff7fff]` || MidShadow  ||
 // || `[0x00008fff7000, 0x00067fff7fff]` || ShadowGap  ||
 // || `[0x00007fff8000, 0x00008fff6fff]` || LowShadow  ||
 // || `[0x000000000000, 0x00007fff7fff]` || LowMem     ||
@@ -131,7 +131,7 @@ extern uptr AsanMappingProfile[];
 // difference between fixed and non-fixed mapping is below the noise level.
 static uptr kHighMemEnd = 0x7fffffffffffULL;
 static uptr kMidMemBeg =    0x3000000000ULL;
-static uptr kMidMemEnd =    0x3fffffffffULL;
+static uptr kMidMemEnd =    0x4fffffffffULL;
 #else
 SANITIZER_INTERFACE_ATTRIBUTE
 extern uptr kHighMemEnd, kMidMemBeg, kMidMemEnd;  // Initialized in __asan_init.
@@ -206,7 +206,7 @@ static inline bool AddrIsAlignedByGranularity(uptr a) {
 static inline bool AddressIsPoisoned(uptr a) {
   PROFILE_ASAN_MAPPING();
   const uptr kAccessSize = 1;
-  u8 *shadow_address = (u8*)MemToShadow(a);
+  u8 *shadow_address = (u8*)MEM_TO_SHADOW(a);
   s8 shadow_value = *shadow_address;
   if (shadow_value) {
     u8 last_accessed_byte = (a & (SHADOW_GRANULARITY - 1))

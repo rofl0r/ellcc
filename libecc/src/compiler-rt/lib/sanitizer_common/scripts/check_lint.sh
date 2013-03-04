@@ -23,7 +23,7 @@ CPPLINT=${SCRIPT_DIR}/cpplint/cpplint.py
 # TODO: remove some of these filters
 COMMON_LINT_FILTER=-build/include,-build/header_guard,-legal/copyright,-whitespace/comments,-readability/casting,\
 -build/namespaces
-ASAN_RTL_LINT_FILTER=${COMMON_LINT_FILTER},-readability/check
+ASAN_RTL_LINT_FILTER=${COMMON_LINT_FILTER},-readability/check,-runtime/int
 ASAN_TEST_LINT_FILTER=${COMMON_LINT_FILTER},-runtime/sizeof,-runtime/int,-runtime/printf
 ASAN_LIT_TEST_LINT_FILTER=${ASAN_TEST_LINT_FILTER},-whitespace/line_length
 TSAN_RTL_LINT_FILTER=${COMMON_LINT_FILTER}
@@ -48,8 +48,8 @@ ${CPPLINT} --filter=${TSAN_RTL_LINT_FILTER} ${SANITIZER_INCLUDES}/*.h
 
 # Sanitizer_common
 COMMON_RTL=${COMPILER_RT}/lib/sanitizer_common
-${CPPLINT} --filter=${ASAN_RTL_LINT_FILTER} ${COMMON_RTL}/*.{cc,h}
-${CPPLINT} --filter=${TSAN_RTL_LINT_FILTER} ${COMMON_RTL}/tests/*.cc
+${CPPLINT} --filter=${COMMON_RTL_INC_LINT_FILTER} ${COMMON_RTL}/*.{cc,h}
+${CPPLINT} --filter=${COMMON_RTL_INC_LINT_FILTER} ${COMMON_RTL}/tests/*.cc
 
 # Interception
 INTERCEPTION=${COMPILER_RT}/lib/interception

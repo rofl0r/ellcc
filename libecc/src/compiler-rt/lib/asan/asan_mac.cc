@@ -114,7 +114,7 @@ void LeakyResetEnv(const char *name, const char *name_value) {
           char **del = environ;
           do {
             del[0] = del[1];
-          } while(*del++);
+          } while (*del++);
         }
       }
     }
@@ -193,7 +193,8 @@ void MaybeReexec() {
         if ((uptr)(piece_start - dyld_insert_libraries) > old_env_len) break;
         uptr piece_len = piece_end - piece_start;
 
-        // If the current piece isn't the runtime library name, append it to new_env.
+        // If the current piece isn't the runtime library name,
+        // append it to new_env.
         if ((piece_len != fname_len) ||
             (internal_strncmp(piece_start, info.dli_fname, fname_len) != 0)) {
           if (new_env_pos != new_env + env_name_len + 1) {
@@ -202,7 +203,7 @@ void MaybeReexec() {
           }
           internal_strncpy(new_env_pos, piece_start, piece_len);
         }
-        // Move on to the next piece. 
+        // Move on to the next piece.
         new_env_pos += piece_len;
         piece_start = piece_end;
       } while (piece_start < old_env_end);
@@ -286,24 +287,6 @@ typedef struct {
   dispatch_function_t func;
   u32 parent_tid;
 } asan_block_context_t;
-
-// We use extern declarations of libdispatch functions here instead
-// of including <dispatch/dispatch.h>. This header is not present on
-// Mac OS X Leopard and eariler, and although we don't expect ASan to
-// work on legacy systems, it's bad to break the build of
-// LLVM compiler-rt there.
-extern "C" {
-void dispatch_async_f(dispatch_queue_t dq, void *ctxt,
-                      dispatch_function_t func);
-void dispatch_sync_f(dispatch_queue_t dq, void *ctxt,
-                     dispatch_function_t func);
-void dispatch_after_f(dispatch_time_t when, dispatch_queue_t dq, void *ctxt,
-                      dispatch_function_t func);
-void dispatch_barrier_async_f(dispatch_queue_t dq, void *ctxt,
-                              dispatch_function_t func);
-void dispatch_group_async_f(dispatch_group_t group, dispatch_queue_t dq,
-                            void *ctxt, dispatch_function_t func);
-}  // extern "C"
 
 static ALWAYS_INLINE
 void asan_register_worker_thread(int parent_tid, StackTrace *stack) {

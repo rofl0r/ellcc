@@ -764,10 +764,19 @@ TEST(AddressSanitizerInterface, PoisonedRegion) {
 //     10.50%   [.] __sanitizer::mem_is_zero
 // I.e. mem_is_zero should consume ~ SHADOW_GRANULARITY less CPU cycles
 // than memset itself.
-TEST(AddressSanitizerInterface, DISABLED_Stress_memset) {
+TEST(AddressSanitizerInterface, DISABLED_StressLargeMemset) {
   size_t size = 1 << 20;
   char *x = new char[size];
   for (int i = 0; i < 100000; i++)
+    Ident(memset)(x, 0, size);
+  delete [] x;
+}
+
+// Same here, but we run memset with small sizes.
+TEST(AddressSanitizerInterface, DISABLED_StressSmallMemset) {
+  size_t size = 32;
+  char *x = new char[size];
+  for (int i = 0; i < 100000000; i++)
     Ident(memset)(x, 0, size);
   delete [] x;
 }
@@ -847,4 +856,22 @@ TEST(AddressSanitizerInterface, CallocOverflow2) {
   void *p = calloc(kArraySize, kArraySize2);  // Should return 0.
   EXPECT_EQ(0L, Ident(p));
 #endif
+}
+
+TEST(AddressSanitizerInterface, CallocReturnsZeroMem) {
+  size_t sizes[] = {16, 1000, 10000, 100000, 2100000};
+  for (size_t s = 0; s < ARRAY_SIZE(sizes); s++) {
+    size_t size = sizes[s];
+    for (size_t iter = 0; iter < 5; iter++) {
+      char *x = Ident((char*)calloc(1, size));
+      EXPECT_EQ(x[0], 0);
+      EXPECT_EQ(x[size - 1], 0);
+      EXPECT_EQ(x[size / 2], 0);
+      EXPECT_EQ(x[size / 3], 0);
+      EXPECT_EQ(x[size / 4], 0);
+      memset(x, 0x42, size);
+      free(Ident(x));
+      free(Ident(malloc(Ident(1 << 27))));  // Try to drain the quarantine.
+    }
+  }
 }

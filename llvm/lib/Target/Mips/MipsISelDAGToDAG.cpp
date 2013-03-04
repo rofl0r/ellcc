@@ -97,22 +97,19 @@ private:
 
   // Complex Pattern.
   /// (reg + imm).
-  bool selectAddrRegImm(SDNode *Parent, SDValue Addr, SDValue &Base,
-                        SDValue &Offset) const;
+  bool selectAddrRegImm(SDValue Addr, SDValue &Base, SDValue &Offset) const;
 
   /// Fall back on this function if all else fails.
-  bool selectAddrDefault(SDNode *Parent, SDValue Addr, SDValue &Base,
-                         SDValue &Offset) const;
+  bool selectAddrDefault(SDValue Addr, SDValue &Base, SDValue &Offset) const;
 
   /// Match integer address pattern.
-  bool selectIntAddr(SDNode *Parent, SDValue Addr, SDValue &Base,
-                     SDValue &Offset) const;
+  bool selectIntAddr(SDValue Addr, SDValue &Base, SDValue &Offset) const;
 
   bool SelectAddr16(SDNode *Parent, SDValue N, SDValue &Base, SDValue &Offset,
        SDValue &Alias);
 
   // getImm - Return a target constant with the specified value.
-  inline SDValue getImm(const SDNode *Node, unsigned Imm) {
+  inline SDValue getImm(const SDNode *Node, uint64_t Imm) {
     return CurDAG->getTargetConstant(Imm, Node->getValueType(0));
   }
 
@@ -333,8 +330,8 @@ SDValue MipsDAGToDAGISel::getMips16SPAliasReg() {
 
 /// ComplexPattern used on MipsInstrInfo
 /// Used on Mips Load/Store instructions
-bool MipsDAGToDAGISel::selectAddrRegImm(SDNode *Parent, SDValue Addr,
-                                        SDValue &Base, SDValue &Offset) const {
+bool MipsDAGToDAGISel::selectAddrRegImm(SDValue Addr, SDValue &Base,
+                                        SDValue &Offset) const {
   EVT ValTy = Addr.getValueType();
 
   // if Address is FI, get the TargetFrameIndex.
@@ -399,17 +396,17 @@ bool MipsDAGToDAGISel::selectAddrRegImm(SDNode *Parent, SDValue Addr,
   return false;
 }
 
-bool MipsDAGToDAGISel::selectAddrDefault(SDNode *Parent, SDValue Addr,
-                                         SDValue &Base, SDValue &Offset) const {
+bool MipsDAGToDAGISel::selectAddrDefault(SDValue Addr, SDValue &Base,
+                                         SDValue &Offset) const {
   Base = Addr;
   Offset = CurDAG->getTargetConstant(0, Addr.getValueType());
   return true;
 }
 
-bool MipsDAGToDAGISel::selectIntAddr(SDNode *Parent, SDValue Addr,
-                                     SDValue &Base, SDValue &Offset) const {
-  return selectAddrRegImm(Parent, Addr, Base, Offset) ||
-    selectAddrDefault(Parent, Addr, Base, Offset);
+bool MipsDAGToDAGISel::selectIntAddr(SDValue Addr, SDValue &Base,
+                                     SDValue &Offset) const {
+  return selectAddrRegImm(Addr, Base, Offset) ||
+    selectAddrDefault(Addr, Base, Offset);
 }
 
 void MipsDAGToDAGISel::getMips16SPRefReg(SDNode *Parent, SDValue &AliasReg) {

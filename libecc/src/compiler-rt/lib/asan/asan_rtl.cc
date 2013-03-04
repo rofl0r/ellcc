@@ -51,7 +51,7 @@ static void AsanDie() {
     death_callback();
   if (flags()->abort_on_error)
     Abort();
-  Exit(flags()->exitcode);
+  internal__exit(flags()->exitcode);
 }
 
 static void AsanCheckFailed(const char *file, int line, const char *cond,
@@ -74,6 +74,17 @@ Flags *flags() {
 
 static const char *MaybeCallAsanDefaultOptions() {
   return (&__asan_default_options) ? __asan_default_options() : "";
+}
+
+static const char *MaybeUseAsanDefaultOptionsCompileDefiniton() {
+#ifdef ASAN_DEFAULT_OPTIONS
+// Stringize the macro value.
+# define ASAN_STRINGIZE(x) #x
+# define ASAN_STRINGIZE_OPTIONS(options) ASAN_STRINGIZE(options)
+  return ASAN_STRINGIZE_OPTIONS(ASAN_DEFAULT_OPTIONS);
+#else
+  return "";
+#endif
 }
 
 static void ParseFlagsFromString(Flags *f, const char *str) {
@@ -116,6 +127,7 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->poison_heap, "poison_heap");
   ParseFlag(str, &f->alloc_dealloc_mismatch, "alloc_dealloc_mismatch");
   ParseFlag(str, &f->use_stack_depot, "use_stack_depot");
+  ParseFlag(str, &f->strict_memcmp, "strict_memcmp");
 }
 
 void InitializeFlags(Flags *f, const char *env) {
@@ -153,8 +165,14 @@ void InitializeFlags(Flags *f, const char *env) {
   f->fast_unwind_on_fatal = false;
   f->fast_unwind_on_malloc = true;
   f->poison_heap = true;
-  f->alloc_dealloc_mismatch = true;
+  // Turn off alloc/dealloc mismatch checker on Mac for now.
+  // TODO(glider): Fix known issues and enable this back.
+  f->alloc_dealloc_mismatch = (ASAN_MAC == 0);;
   f->use_stack_depot = true;  // Only affects allocator2.
+  f->strict_memcmp = true;
+
+  // Override from compile definition.
+  ParseFlagsFromString(f, MaybeUseAsanDefaultOptionsCompileDefiniton());
 
   // Override from user-specified string.
   ParseFlagsFromString(f, MaybeCallAsanDefaultOptions());
@@ -221,6 +239,17 @@ ASAN_REPORT_ERROR(store, true, 2)
 ASAN_REPORT_ERROR(store, true, 4)
 ASAN_REPORT_ERROR(store, true, 8)
 ASAN_REPORT_ERROR(store, true, 16)
+
+#define ASAN_REPORT_ERROR_N(type, is_write)                    \
+extern "C" NOINLINE INTERFACE_ATTRIBUTE                        \
+void __asan_report_ ## type ## _n(uptr addr, uptr size);       \
+void __asan_report_ ## type ## _n(uptr addr, uptr size) {      \
+  GET_CALLER_PC_BP_SP;                                         \
+  __asan_report_error(pc, bp, sp, addr, is_write, size);       \
+}
+
+ASAN_REPORT_ERROR_N(load, false)
+ASAN_REPORT_ERROR_N(store, true)
 
 // Force the linker to keep the symbols for various ASan interface functions.
 // We want to keep those in the executable in order to let the instrumented
@@ -432,7 +461,7 @@ void __asan_init() {
 #if ASAN_LINUX && defined(__x86_64__) && !ASAN_FIXED_MAPPING
   if (!full_shadow_is_available) {
     kMidMemBeg = kLowMemEnd < 0x3000000000ULL ? 0x3000000000ULL : 0;
-    kMidMemEnd = kLowMemEnd < 0x3000000000ULL ? 0x3fffffffffULL : 0;
+    kMidMemEnd = kLowMemEnd < 0x3000000000ULL ? 0x4fffffffffULL : 0;
   }
 #endif
 
@@ -496,17 +525,3 @@ void __asan_init() {
     Report("AddressSanitizer Init done\n");
   }
 }
-
-#if defined(ASAN_USE_PREINIT_ARRAY)
-  // On Linux, we force __asan_init to be called before anyone else
-  // by placing it into .preinit_array section.
-  // FIXME: do we have anything like this on Mac?
-  __attribute__((section(".preinit_array")))
-    typeof(__asan_init) *__asan_preinit =__asan_init;
-#elif defined(_WIN32) && defined(_DLL)
-  // On Windows, when using dynamic CRT (/MD), we can put a pointer
-  // to __asan_init into the global list of C initializers.
-  // See crt0dat.c in the CRT sources for the details.
-  #pragma section(".CRT$XIB", long, read)  // NOLINT
-  __declspec(allocate(".CRT$XIB")) void (*__asan_preinit)() = __asan_init;
-#endif

@@ -429,11 +429,11 @@ public:
     geteagerlyAssumeBinOpBifurcationTags();
 
   SVal evalMinus(SVal X) {
-    return X.isValid() ? svalBuilder.evalMinus(cast<NonLoc>(X)) : X;
+    return X.isValid() ? svalBuilder.evalMinus(X.castAs<NonLoc>()) : X;
   }
 
   SVal evalComplement(SVal X) {
-    return X.isValid() ? svalBuilder.evalComplement(cast<NonLoc>(X)) : X;
+    return X.isValid() ? svalBuilder.evalComplement(X.castAs<NonLoc>()) : X;
   }
 
 public:
@@ -445,7 +445,8 @@ public:
 
   SVal evalBinOp(ProgramStateRef state, BinaryOperator::Opcode op,
                  NonLoc L, SVal R, QualType T) {
-    return R.isValid() ? svalBuilder.evalBinOpNN(state,op,L, cast<NonLoc>(R), T) : R;
+    return R.isValid() ? svalBuilder.evalBinOpNN(state, op, L,
+                                                 R.castAs<NonLoc>(), T) : R;
   }
 
   SVal evalBinOp(ProgramStateRef ST, BinaryOperator::Opcode Op,
@@ -531,7 +532,10 @@ private:
   void examineStackFrames(const Decl *D, const LocationContext *LCtx,
                           bool &IsRecursive, unsigned &StackDepth);
 
-  bool shouldInlineDecl(const Decl *D, ExplodedNode *Pred);
+  /// Checks our policies and decides weither the given call should be inlined.
+  bool shouldInlineCall(const CallEvent &Call, const Decl *D,
+                        const ExplodedNode *Pred);
+
   bool inlineCall(const CallEvent &Call, const Decl *D, NodeBuilder &Bldr,
                   ExplodedNode *Pred, ProgramStateRef State);
 
@@ -551,6 +555,17 @@ private:
   /// Models a trivial copy or move constructor call with a simple bind.
   void performTrivialCopy(NodeBuilder &Bldr, ExplodedNode *Pred,
                           const CXXConstructorCall &Call);
+
+  /// If the value of the given expression is a NonLoc, copy it into a new
+  /// temporary object region, and replace the value of the expression with
+  /// that.
+  ///
+  /// If \p ResultE is provided, the new region will be bound to this expression
+  /// instead of \p E.
+  ProgramStateRef createTemporaryRegionIfNeeded(ProgramStateRef State,
+                                                const LocationContext *LC,
+                                                const Expr *E,
+                                                const Expr *ResultE = 0);
 };
 
 /// Traits for storing the call processing policy inside GDM.

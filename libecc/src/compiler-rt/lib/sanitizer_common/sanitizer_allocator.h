@@ -143,7 +143,7 @@ class SizeClassMap {
         Printf("\n");
       uptr d = s - prev_s;
       uptr p = prev_s ? (d * 100 / prev_s) : 0;
-      uptr l = MostSignificantSetBitIndex(s);
+      uptr l = s ? MostSignificantSetBitIndex(s) : 0;
       uptr cached = MaxCached(i) * s;
       Printf("c%02zd => s: %zd diff: +%zd %02zd%% l %zd "
              "cached: %zd %zd; id %zd\n",
@@ -158,6 +158,7 @@ class SizeClassMap {
     for (uptr c = 1; c < kNumClasses; c++) {
       // Printf("Validate: c%zd\n", c);
       uptr s = Size(c);
+      CHECK_NE(s, 0U);
       CHECK_EQ(ClassID(s), c);
       if (c != kNumClasses - 1)
         CHECK_EQ(ClassID(s + 1), c + 1);

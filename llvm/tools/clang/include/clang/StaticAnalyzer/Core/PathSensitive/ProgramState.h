@@ -173,8 +173,8 @@ public:
   ProgramStateRef assume(DefinedOrUnknownSVal cond, bool assumption) const;
 
   /// This method assumes both "true" and "false" for 'cond', and
-  ///  returns both corresponding states.  It's shorthand for doing
-  ///  'assume' twice.
+  /// returns both corresponding states.  It's shorthand for doing
+  /// 'assume' twice.
   std::pair<ProgramStateRef , ProgramStateRef >
   assume(DefinedOrUnknownSVal cond) const;
 
@@ -182,7 +182,11 @@ public:
                                DefinedOrUnknownSVal upperBound,
                                bool assumption,
                                QualType IndexType = QualType()) const;
-
+  
+  /// \brief Check if the given SVal is constrained to zero or is a zero
+  ///        constant.
+  ConditionTruthVal isNull(SVal V) const;
+  
   /// Utility method for getting regions.
   const VarRegion* getRegion(const VarDecl *D, const LocationContext *LC) const;
 
@@ -620,22 +624,24 @@ inline ProgramStateRef ProgramState::assume(DefinedOrUnknownSVal Cond,
                                       bool Assumption) const {
   if (Cond.isUnknown())
     return this;
-  
-  return getStateManager().ConstraintMgr->assume(this, cast<DefinedSVal>(Cond),
-                                                 Assumption);
+
+  return getStateManager().ConstraintMgr
+      ->assume(this, Cond.castAs<DefinedSVal>(), Assumption);
 }
   
 inline std::pair<ProgramStateRef , ProgramStateRef >
 ProgramState::assume(DefinedOrUnknownSVal Cond) const {
   if (Cond.isUnknown())
     return std::make_pair(this, this);
-  
-  return getStateManager().ConstraintMgr->assumeDual(this,
-                                                     cast<DefinedSVal>(Cond));
+
+  return getStateManager().ConstraintMgr
+      ->assumeDual(this, Cond.castAs<DefinedSVal>());
 }
 
 inline ProgramStateRef ProgramState::bindLoc(SVal LV, SVal V) const {
-  return !isa<Loc>(LV) ? this : bindLoc(cast<Loc>(LV), V);
+  if (Optional<Loc> L = LV.getAs<Loc>())
+    return bindLoc(*L, V);
+  return this;
 }
 
 inline Loc ProgramState::getLValue(const VarDecl *VD,
@@ -669,7 +675,7 @@ inline SVal ProgramState::getLValue(const IndirectFieldDecl *D,
 }
 
 inline SVal ProgramState::getLValue(QualType ElementType, SVal Idx, SVal Base) const{
-  if (NonLoc *N = dyn_cast<NonLoc>(&Idx))
+  if (Optional<NonLoc> N = Idx.getAs<NonLoc>())
     return getStateManager().StoreMgr->getLValueElement(ElementType, *N, Base);
   return UnknownVal();
 }

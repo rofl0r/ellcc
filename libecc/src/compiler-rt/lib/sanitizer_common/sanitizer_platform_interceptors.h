@@ -16,6 +16,7 @@
 
 #if !defined(_WIN32)
 # define SI_NOT_WINDOWS 1
+# include "sanitizer_platform_limits_posix.h"
 #else
 # define SI_NOT_WINDOWS 0
 #endif
@@ -24,6 +25,12 @@
 # define SI_LINUX_NOT_ANDROID 1
 #else
 # define SI_LINUX_NOT_ANDROID 0
+#endif
+
+#if defined(__linux__)
+# define SI_LINUX 1
+#else
+# define SI_LINUX 0
 #endif
 
 # define SANITIZER_INTERCEPT_READ   SI_NOT_WINDOWS
@@ -35,4 +42,7 @@
 # define SANITIZER_INTERCEPT_PWRITE64 SI_LINUX_NOT_ANDROID
 # define SANITIZER_INTERCEPT_PRCTL   SI_LINUX_NOT_ANDROID
 
+# define SANITIZER_INTERCEPT_LOCALTIME_AND_FRIENDS SI_NOT_WINDOWS
+
 # define SANITIZER_INTERCEPT_SCANF SI_NOT_WINDOWS
+# define SANITIZER_INTERCEPT_ISOC99_SCANF SI_LINUX

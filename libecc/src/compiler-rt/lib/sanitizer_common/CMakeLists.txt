@@ -8,6 +8,7 @@ set(SANITIZER_SOURCES
   sanitizer_libc.cc
   sanitizer_linux.cc
   sanitizer_mac.cc
+  sanitizer_platform_limits_posix.cc
   sanitizer_posix.cc
   sanitizer_printf.cc
   sanitizer_stackdepot.cc
@@ -35,6 +36,7 @@ set(SANITIZER_HEADERS
   sanitizer_internal_defs.h
   sanitizer_lfstack.h
   sanitizer_libc.h
+  sanitizer_linux.h
   sanitizer_list.h
   sanitizer_mutex.h
   sanitizer_placement_new.h

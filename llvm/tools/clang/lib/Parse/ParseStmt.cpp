@@ -1385,9 +1385,6 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
     if (!C99orCXXorObjC)   // Use of C99-style for loops in C90 mode?
       Diag(Tok, diag::ext_c99_variable_decl_in_for_loop);
 
-    ParsedAttributesWithRange attrs(AttrFactory);
-    MaybeParseCXX11Attributes(attrs);
-
     // In C++0x, "for (T NS:a" might not be a typo for ::
     bool MightBeForRangeStmt = getLangOpts().CPlusPlus;
     ColonProtectionRAIIObject ColonProtection(*this, MightBeForRangeStmt);
@@ -1977,7 +1974,7 @@ Decl *Parser::ParseFunctionStatementBody(Decl *Decl, ParseScope &BodyScope) {
   assert(Tok.is(tok::l_brace));
   SourceLocation LBraceLoc = Tok.getLocation();
 
-  if (SkipFunctionBodies && Actions.canSkipFunctionBody(Decl) &&
+  if (SkipFunctionBodies && (!Decl || Actions.canSkipFunctionBody(Decl)) &&
       trySkippingFunctionBody()) {
     BodyScope.Exit();
     return Actions.ActOnSkippedFunctionBody(Decl);

@@ -26,6 +26,16 @@
 
 namespace __asan {
 
+// Return true if we can quickly decide that the region is unpoisoned.
+static inline bool QuickCheckForUnpoisonedRegion(uptr beg, uptr size) {
+  if (size == 0) return true;
+  if (size <= 32)
+    return !AddressIsPoisoned(beg) &&
+           !AddressIsPoisoned(beg + size - 1) &&
+           !AddressIsPoisoned(beg + size / 2);
+  return false;
+}
+
 // We implement ACCESS_MEMORY_RANGE, ASAN_READ_RANGE,
 // and ASAN_WRITE_RANGE as macro instead of function so
 // that no extra frames are created, and stack trace contains
@@ -34,9 +44,11 @@ namespace __asan {
 #define ACCESS_MEMORY_RANGE(offset, size, isWrite) do {                 \
     uptr __offset = (uptr)(offset);                                     \
     uptr __size = (uptr)(size);                                         \
-    if (__asan_region_is_poisoned(__offset, __size)) {                  \
+    uptr __bad = 0;                                                     \
+    if (!QuickCheckForUnpoisonedRegion(__offset, __size) &&             \
+        (__bad = __asan_region_is_poisoned(__offset, __size))) {        \
       GET_CURRENT_PC_BP_SP;                                             \
-      __asan_report_error(pc, bp, sp, __offset, isWrite, __size);       \
+      __asan_report_error(pc, bp, sp, __bad, isWrite, __size);          \
     }                                                                   \
   } while (0)
 
@@ -247,18 +259,29 @@ static inline int CharCaseCmp(unsigned char c1, unsigned char c2) {
 INTERCEPTOR(int, memcmp, const void *a1, const void *a2, uptr size) {
   if (!asan_inited) return internal_memcmp(a1, a2, size);
   ENSURE_ASAN_INITED();
-  unsigned char c1 = 0, c2 = 0;
-  const unsigned char *s1 = (const unsigned char*)a1;
-  const unsigned char *s2 = (const unsigned char*)a2;
-  uptr i;
-  for (i = 0; i < size; i++) {
-    c1 = s1[i];
-    c2 = s2[i];
-    if (c1 != c2) break;
+  if (flags()->replace_intrin) {
+    if (flags()->strict_memcmp) {
+      // Check the entire regions even if the first bytes of the buffers are
+      // different.
+      ASAN_READ_RANGE(a1, size);
+      ASAN_READ_RANGE(a2, size);
+      // Fallthrough to REAL(memcmp) below.
+    } else {
+      unsigned char c1 = 0, c2 = 0;
+      const unsigned char *s1 = (const unsigned char*)a1;
+      const unsigned char *s2 = (const unsigned char*)a2;
+      uptr i;
+      for (i = 0; i < size; i++) {
+        c1 = s1[i];
+        c2 = s2[i];
+        if (c1 != c2) break;
+      }
+      ASAN_READ_RANGE(s1, Min(i + 1, size));
+      ASAN_READ_RANGE(s2, Min(i + 1, size));
+      return CharCmp(c1, c2);
+    }
   }
-  ASAN_READ_RANGE(s1, Min(i + 1, size));
-  ASAN_READ_RANGE(s2, Min(i + 1, size));
-  return CharCmp(c1, c2);
+  return REAL(memcmp(a1, a2, size));
 }
 
 INTERCEPTOR(void*, memcpy, void *to, const void *from, uptr size) {
@@ -332,7 +355,12 @@ INTERCEPTOR(char*, strchr, const char *str, int c) {
 INTERCEPTOR(char*, index, const char *string, int c)
   ALIAS(WRAPPER_NAME(strchr));
 # else
-DEFINE_REAL(char*, index, const char *string, int c)
+#  if defined(__APPLE__)
+DECLARE_REAL(char*, index, const char *string, int c)
+OVERRIDE_FUNCTION(index, strchr);
+#  else
+DEFINE_REAL(char*, index, const char *string, int c);
+#  endif
 # endif
 #endif  // ASAN_INTERCEPT_INDEX
 

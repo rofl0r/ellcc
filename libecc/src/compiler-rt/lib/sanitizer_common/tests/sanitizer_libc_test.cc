@@ -55,22 +55,35 @@ TEST(SanitizerCommon, FileOps) {
   const char *str2 = "zxcv";
   uptr len2 = internal_strlen(str2);
 
-  const char kTempFileName[] = "/tmp/sanitizer_common.tmp";
-  fd_t fd = OpenFile(kTempFileName, true);
+  u32 uid = GetUid();
+  char temp_filename[128];
+#ifdef __ANDROID__
+  // I don't know a way to query temp directory location on Android without
+  // going through Java interfaces. The code below is not ideal, but should
+  // work. May require "adb root", but it is needed for almost any use of ASan
+  // on Android already.
+  internal_snprintf(temp_filename, sizeof(temp_filename),
+                    "%s/sanitizer_common.tmp.%d",
+                    GetEnv("EXTERNAL_STORAGE"), uid);
+#else
+  internal_snprintf(temp_filename, sizeof(temp_filename),
+                    "/tmp/sanitizer_common.tmp.%d", uid);
+#endif
+  fd_t fd = OpenFile(temp_filename, true);
   EXPECT_NE(fd, kInvalidFd);
   EXPECT_EQ(len1, internal_write(fd, str1, len1));
   EXPECT_EQ(len2, internal_write(fd, str2, len2));
   internal_close(fd);
 
-  fd = OpenFile(kTempFileName, false);
+  fd = OpenFile(temp_filename, false);
   EXPECT_NE(fd, kInvalidFd);
   uptr fsize = internal_filesize(fd);
   EXPECT_EQ(len1 + len2, fsize);
 
 #if SANITIZER_TEST_HAS_STAT_H
   struct stat st1, st2, st3;
-  EXPECT_EQ(0, internal_stat(kTempFileName, &st1));
-  EXPECT_EQ(0, internal_lstat(kTempFileName, &st2));
+  EXPECT_EQ(0, internal_stat(temp_filename, &st1));
+  EXPECT_EQ(0, internal_lstat(temp_filename, &st2));
   EXPECT_EQ(0, internal_fstat(fd, &st3));
   EXPECT_EQ(fsize, (uptr)st3.st_size);
 #endif

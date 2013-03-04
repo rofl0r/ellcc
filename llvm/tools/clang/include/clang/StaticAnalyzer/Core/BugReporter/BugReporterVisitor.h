@@ -99,7 +99,7 @@ class FindLastStoreBRVisitor
 {
   const MemRegion *R;
   SVal V;
-  bool satisfied;
+  bool Satisfied;
 
 public:
   /// \brief Convenience method to create a visitor given only the MemRegion.
@@ -112,13 +112,10 @@ public:
   /// the BugReport.
   static void registerStatementVarDecls(BugReport &BR, const Stmt *S);
 
-  FindLastStoreBRVisitor(SVal v, const MemRegion *r)
-  : R(r), V(v), satisfied(false) {
-    assert (!V.isUnknown() && "Cannot track unknown value.");
-
-    // TODO: Does it make sense to allow undef values here?
-    // (If not, also see UndefCapturedBlockVarChecker)?
-  }
+  FindLastStoreBRVisitor(KnownSVal V, const MemRegion *R)
+  : R(R),
+    V(V),
+    Satisfied(false) {}
 
   void Profile(llvm::FoldingSetNodeID &ID) const;
 
@@ -227,7 +224,7 @@ public:
                     BugReporterContext &BRC,
                     BugReport &R,
                     const ExplodedNode *N,
-                    llvm::Optional<bool> &prunable);
+                    Optional<bool> &prunable);
 };
 
 /// \brief Suppress reports that might lead to known false positives.
@@ -276,6 +273,31 @@ public:
     ID.AddPointer(&Tag);
     ID.AddPointer(R);
   }
+
+  PathDiagnosticPiece *VisitNode(const ExplodedNode *N,
+                                 const ExplodedNode *PrevN,
+                                 BugReporterContext &BRC,
+                                 BugReport &BR);
+};
+
+class SuppressInlineDefensiveChecksVisitor
+: public BugReporterVisitorImpl<SuppressInlineDefensiveChecksVisitor>
+{
+  // The symbolic value for which we are tracking constraints.
+  // This value is constrained to null in the end of path.
+  DefinedSVal V;
+
+  // Track if we found the node where the constraint was first added.
+  bool IsSatisfied;
+
+public:
+  SuppressInlineDefensiveChecksVisitor(DefinedSVal Val, const ExplodedNode *N);
+
+  void Profile(llvm::FoldingSetNodeID &ID) const;
+
+  /// Return the tag associated with this visitor.  This tag will be used
+  /// to make all PathDiagnosticPieces created by this visitor.
+  static const char *getTag();
 
   PathDiagnosticPiece *VisitNode(const ExplodedNode *N,
                                  const ExplodedNode *PrevN,

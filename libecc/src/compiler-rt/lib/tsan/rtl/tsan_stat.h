@@ -102,6 +102,7 @@ enum StatType {
   StatInt_realloc,
   StatInt_free,
   StatInt_cfree,
+  StatInt_malloc_usable_size,
   StatInt_mmap,
   StatInt_mmap64,
   StatInt_munmap,
@@ -264,6 +265,14 @@ enum StatType {
   StatInt___isoc99_fscanf,
   StatInt_on_exit,
   StatInt___cxa_atexit,
+  StatInt_localtime,
+  StatInt_localtime_r,
+  StatInt_gmtime,
+  StatInt_gmtime_r,
+  StatInt_ctime,
+  StatInt_ctime_r,
+  StatInt_asctime,
+  StatInt_asctime_r,
 
   // Dynamic annotations.
   StatAnnotation,

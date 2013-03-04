@@ -396,7 +396,7 @@ isTemplate(const NamedDecl *ND,
     TypeSourceInfo *TSI = Spec->getTypeAsWritten();
     if (TSI) {
       TemplateSpecializationTypeLoc TSTL =
-        cast<TemplateSpecializationTypeLoc>(TSI->getTypeLoc());
+          TSI->getTypeLoc().castAs<TemplateSpecializationTypeLoc>();
       TemplateArgumentListInfo LI(TSTL.getLAngleLoc(), TSTL.getRAngleLoc());
       for (unsigned i = 0, e = TSTL.getNumArgs(); i != e; ++i)
         TemplateArgs.push_back(TSTL.getArgLoc(i));
@@ -503,6 +503,10 @@ MicrosoftCXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
       llvm_unreachable("Can't mangle Objective-C selector names here!");
       
     case DeclarationName::CXXConstructorName:
+      if (ND == Structor) {
+        assert(StructorType == Ctor_Complete &&
+               "Should never be asked to mangle a ctor other than complete");
+      }
       Out << "?0";
       break;
       

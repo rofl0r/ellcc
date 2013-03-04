@@ -108,6 +108,14 @@ static bool checkLanguageOptions(const LangOptions &LangOpts,
     return true;
   }
 
+  if (ExistingLangOpts.CommentOpts.BlockCommandNames !=
+      LangOpts.CommentOpts.BlockCommandNames) {
+    if (Diags)
+      Diags->Report(diag::err_pch_langopt_value_mismatch)
+        << "block command names";
+    return true;
+  }
+
   return false;
 }
 
@@ -530,7 +538,7 @@ IdentifierInfo *ASTIdentifierLookupTrait::ReadData(const internal_key_type& k,
 
   // Set or check the various bits in the IdentifierInfo structure.
   // Token IDs are read-only.
-  if (HasRevertedTokenIDToIdentifier)
+  if (HasRevertedTokenIDToIdentifier && II->getTokenID() != tok::identifier)
     II->RevertTokenIDToIdentifier();
   II->setObjCOrBuiltinID(ObjCOrBuiltinID);
   assert(II->isExtensionToken() == ExtensionToken &&
@@ -909,10 +917,13 @@ bool ASTReader::ReadSLocEntry(int ID) {
     // we will also try to fail gracefully by setting up the SLocEntry.
     unsigned InputID = Record[4];
     InputFile IF = getInputFile(*F, InputID);
-    const FileEntry *File = IF.getPointer();
-    bool OverriddenBuffer = IF.getInt();
+    const FileEntry *File = IF.getFile();
+    bool OverriddenBuffer = IF.isOverridden();
 
-    if (!IF.getPointer())
+    // Note that we only check if a File was returned. If it was out-of-date
+    // we have complained but we will continue creating a FileID to recover
+    // gracefully.
+    if (!File)
       return true;
 
     SourceLocation IncludeLoc = ReadSourceLocation(*F, Record[1]);
@@ -1062,7 +1073,7 @@ bool ASTReader::ReadBlockAbbrevs(BitstreamCursor &Cursor, unsigned BlockID) {
 }
 
 void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
-                                MacroInfo *Hint) {
+                                MacroDirective *Hint) {
   BitstreamCursor &Stream = F.MacroCursor;
 
   // Keep track of where we are in the stream, then jump back there
@@ -1078,16 +1089,16 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
   // adding tokens.
   struct AddLoadedMacroInfoRAII {
     Preprocessor &PP;
-    MacroInfo *Hint;
-    MacroInfo *MI;
+    MacroDirective *Hint;
+    MacroDirective *MD;
     IdentifierInfo *II;
 
-    AddLoadedMacroInfoRAII(Preprocessor &PP, MacroInfo *Hint)
-      : PP(PP), Hint(Hint), MI(), II() { }
+    AddLoadedMacroInfoRAII(Preprocessor &PP, MacroDirective *Hint)
+      : PP(PP), Hint(Hint), MD(), II() { }
     ~AddLoadedMacroInfoRAII( ) {
-      if (MI) {
+      if (MD) {
         // Finally, install the macro.
-        PP.addLoadedMacroInfo(II, MI, Hint);
+        PP.addLoadedMacroInfo(II, MD, Hint);
       }
     }
   } AddLoadedMacroInfo(PP, Hint);
@@ -1140,20 +1151,22 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
       unsigned NextIndex = 3;
       SourceLocation Loc = ReadSourceLocation(F, Record, NextIndex);
       MacroInfo *MI = PP.AllocateMacroInfo(Loc);
+      // FIXME: Location should be import location in case of module.
+      MacroDirective *MD = PP.AllocateMacroDirective(MI, Loc,
+                                                     /*isImported=*/true);
       MI->setDefinitionEndLoc(ReadSourceLocation(F, Record, NextIndex));
 
       // Record this macro.
-      MacrosLoaded[GlobalID - NUM_PREDEF_MACRO_IDS] = MI;
+      MacrosLoaded[GlobalID - NUM_PREDEF_MACRO_IDS] = MD;
 
       SourceLocation UndefLoc = ReadSourceLocation(F, Record, NextIndex);
       if (UndefLoc.isValid())
-        MI->setUndefLoc(UndefLoc);
+        MD->setUndefLoc(UndefLoc);
 
       MI->setIsUsed(Record[NextIndex++]);
-      MI->setIsFromAST();
 
       bool IsPublic = Record[NextIndex++];
-      MI->setVisibility(IsPublic, ReadSourceLocation(F, Record, NextIndex));
+      MD->setVisibility(IsPublic, ReadSourceLocation(F, Record, NextIndex));
 
       if (RecType == PP_MACRO_FUNCTION_LIKE) {
         // Decode function-like macro info.
@@ -1175,13 +1188,13 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
       }
 
       if (DeserializationListener)
-        DeserializationListener->MacroRead(GlobalID, MI);
+        DeserializationListener->MacroRead(GlobalID, MD);
 
       // If an update record marked this as undefined, do so now.
       // FIXME: Only if the submodule this update came from is visible?
       MacroUpdatesMap::iterator Update = MacroUpdates.find(GlobalID);
       if (Update != MacroUpdates.end()) {
-        if (MI->getUndefLoc().isInvalid()) {
+        if (MD->getUndefLoc().isInvalid()) {
           for (unsigned I = 0, N = Update->second.size(); I != N; ++I) {
             bool Hidden = false;
             if (unsigned SubmoduleID = Update->second[I].first) {
@@ -1192,15 +1205,15 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
 
                   // Record this hiding for later.
                   HiddenNamesMap[Owner].push_back(
-                    HiddenName(II, MI, Update->second[I].second.UndefLoc));
+                    HiddenName(II, MD, Update->second[I].second.UndefLoc));
                 }
               }
             }
 
             if (!Hidden) {
-              MI->setUndefLoc(Update->second[I].second.UndefLoc);
+              MD->setUndefLoc(Update->second[I].second.UndefLoc);
               if (PPMutationListener *Listener = PP.getPPMutationListener())
-                Listener->UndefinedMacro(MI);
+                Listener->UndefinedMacro(MD);
               break;
             }
           }
@@ -1209,7 +1222,7 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
       }
 
       // Determine whether this macro definition is visible.
-      bool Hidden = !MI->isPublic();
+      bool Hidden = !MD->isPublic();
       if (!Hidden && GlobalSubmoduleID) {
         if (Module *Owner = getSubmodule(GlobalSubmoduleID)) {
           if (Owner->NameVisibility == Module::Hidden) {
@@ -1219,14 +1232,14 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
 
             // Note that this macro definition was hidden because its owning
             // module is not yet visible.
-            HiddenNamesMap[Owner].push_back(HiddenName(II, MI));
+            HiddenNamesMap[Owner].push_back(HiddenName(II, MD));
           }
         }
       }
-      MI->setHidden(Hidden);
+      MD->setHidden(Hidden);
 
       // Make sure we install the macro once we're done.
-      AddLoadedMacroInfo.MI = MI;
+      AddLoadedMacroInfo.MD = MD;
       AddLoadedMacroInfo.II = II;
 
       // Remember that we saw this macro last so that we add the tokens that
@@ -1239,8 +1252,12 @@ void ASTReader::ReadMacroRecord(ModuleFile &F, uint64_t Offset,
         PreprocessedEntityID
             GlobalID = getGlobalPreprocessedEntityID(F, Record[NextIndex]);
         PreprocessingRecord &PPRec = *PP.getPreprocessingRecord();
-        PPRec.RegisterMacroDefinition(Macro,
-                            PPRec.getPPEntityID(GlobalID-1, /*isLoaded=*/true));
+        PreprocessingRecord::PPEntityID
+          PPID = PPRec.getPPEntityID(GlobalID-1, /*isLoaded=*/true);
+        MacroDefinition *PPDef =
+          cast_or_null<MacroDefinition>(PPRec.getPreprocessedEntity(PPID));
+        if (PPDef)
+          PPRec.RegisterMacroDefinition(Macro, PPDef);
       }
 
       ++NumMacrosRead;
@@ -1481,14 +1498,13 @@ void ASTReader::markIdentifierUpToDate(IdentifierInfo *II) {
     IdentifierGeneration[II] = CurrentGeneration;
 }
 
-llvm::PointerIntPair<const FileEntry *, 1, bool> 
-ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
+InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
   // If this ID is bogus, just return an empty input file.
   if (ID == 0 || ID > F.InputFilesLoaded.size())
     return InputFile();
 
   // If we've already loaded this input file, return it.
-  if (F.InputFilesLoaded[ID-1].getPointer())
+  if (F.InputFilesLoaded[ID-1].getFile())
     return F.InputFilesLoaded[ID-1];
 
   // Go find this input file.
@@ -1542,17 +1558,15 @@ ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
       }
       return InputFile();
     }
-    
-    // Note that we've loaded this input file.
-    F.InputFilesLoaded[ID-1] = InputFile(File, Overridden);
-    
+
     // Check if there was a request to override the contents of the file
     // that was part of the precompiled header. Overridding such a file
     // can lead to problems when lexing using the source locations from the
     // PCH.
     SourceManager &SM = getSourceManager();
     if (!Overridden && SM.isFileOverridden(File)) {
-      Error(diag::err_fe_pch_file_overridden, Filename);
+      if (Complain)
+        Error(diag::err_fe_pch_file_overridden, Filename);
       // After emitting the diagnostic, recover by disabling the override so
       // that the original file will be used.
       SM.disableFileContentsOverride(File);
@@ -1563,11 +1577,10 @@ ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
                               StoredSize, StoredTime);
     }
 
-    // For an overridden file, there is nothing to validate.
-    if (Overridden)
-      return InputFile(File, Overridden);
+    bool IsOutOfDate = false;
 
-    if ((StoredSize != File->getSize()
+    // For an overridden file, there is nothing to validate.
+    if (!Overridden && (StoredSize != File->getSize()
 #if !defined(LLVM_ON_WIN32)
          // In our regression testing, the Windows file system seems to
          // have inconsistent modification times that sometimes
@@ -1577,11 +1590,14 @@ ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
          )) {
       if (Complain)
         Error(diag::err_fe_pch_file_modified, Filename);
-      
-      return InputFile();
+      IsOutOfDate = true;
     }
 
-    return InputFile(File, Overridden);
+    InputFile IF = InputFile(File, Overridden, IsOutOfDate);
+
+    // Note that we've loaded this input file.
+    F.InputFilesLoaded[ID-1] = IF;
+    return IF;
   }
   }
 
@@ -1654,9 +1670,11 @@ ASTReader::ReadControlBlock(ModuleFile &F,
       // Validate all of the input files.
       if (!DisableValidation) {
         bool Complain = (ClientLoadCapabilities & ARR_OutOfDate) == 0;
-        for (unsigned I = 0, N = Record[0]; I < N; ++I)
-          if (!getInputFile(F, I+1, Complain).getPointer())
+        for (unsigned I = 0, N = Record[0]; I < N; ++I) {
+          InputFile IF = getInputFile(F, I+1, Complain);
+          if (!IF.getFile() || IF.isOutOfDate())
             return OutOfDate;
+        }
       }
       return Success;
       
@@ -2639,7 +2657,7 @@ void ASTReader::makeNamesVisible(const HiddenNames &Names) {
       break;
     }
     case HiddenName::MacroVisibility: {
-      std::pair<IdentifierInfo *, MacroInfo *> Macro = Names[I].getMacro();
+      std::pair<IdentifierInfo *, MacroDirective *> Macro = Names[I].getMacro();
       Macro.second->setHidden(!Macro.second->isPublic());
       if (Macro.second->isDefined()) {
         PP.makeLoadedMacroInfoVisible(Macro.first, Macro.second);
@@ -2648,7 +2666,7 @@ void ASTReader::makeNamesVisible(const HiddenNames &Names) {
     }
 
     case HiddenName::MacroUndef: {
-      std::pair<IdentifierInfo *, MacroInfo *> Macro = Names[I].getMacro();
+      std::pair<IdentifierInfo *, MacroDirective *> Macro = Names[I].getMacro();
       if (Macro.second->isDefined()) {
         Macro.second->setUndefLoc(Names[I].getMacroUndefLoc());
         if (PPMutationListener *Listener = PP.getPPMutationListener())
@@ -2703,59 +2721,13 @@ void ASTReader::makeModuleVisible(Module *Mod,
     }
     
     // Push any exported modules onto the stack to be marked as visible.
-    bool AnyWildcard = false;
-    bool UnrestrictedWildcard = false;
-    SmallVector<Module *, 4> WildcardRestrictions;
-    for (unsigned I = 0, N = Mod->Exports.size(); I != N; ++I) {
-      Module *Exported = Mod->Exports[I].getPointer();
-      if (!Mod->Exports[I].getInt()) {
-        // Export a named module directly; no wildcards involved.
-        if (Visited.insert(Exported))
-          Stack.push_back(Exported);
-        
-        continue;
-      }
-      
-      // Wildcard export: export all of the imported modules that match
-      // the given pattern.
-      AnyWildcard = true;
-      if (UnrestrictedWildcard)
-        continue;
-
-      if (Module *Restriction = Mod->Exports[I].getPointer())
-        WildcardRestrictions.push_back(Restriction);
-      else {
-        WildcardRestrictions.clear();
-        UnrestrictedWildcard = true;
-      }
-    }
-    
-    // If there were any wildcards, push any imported modules that were
-    // re-exported by the wildcard restriction.
-    if (!AnyWildcard)
-      continue;
-    
-    for (unsigned I = 0, N = Mod->Imports.size(); I != N; ++I) {
-      Module *Imported = Mod->Imports[I];
-      if (!Visited.insert(Imported))
-        continue;
-      
-      bool Acceptable = UnrestrictedWildcard;
-      if (!Acceptable) {
-        // Check whether this module meets one of the restrictions.
-        for (unsigned R = 0, NR = WildcardRestrictions.size(); R != NR; ++R) {
-          Module *Restriction = WildcardRestrictions[R];
-          if (Imported == Restriction || Imported->isSubModuleOf(Restriction)) {
-            Acceptable = true;
-            break;
-          }
-        }
-      }
-      
-      if (!Acceptable)
-        continue;
-      
-      Stack.push_back(Imported);
+    SmallVector<Module *, 16> Exports;
+    Mod->getExportedModules(Exports);
+    for (SmallVectorImpl<Module *>::iterator
+           I = Exports.begin(), E = Exports.end(); I != E; ++I) {
+      Module *Exported = *I;
+      if (Visited.insert(Exported))
+        Stack.push_back(Exported);
     }
   }
 }
@@ -3715,6 +3687,15 @@ bool ASTReader::ParseLanguageOptions(const RecordData &Record,
   unsigned Length = Record[Idx++];
   LangOpts.CurrentModule.assign(Record.begin() + Idx, 
                                 Record.begin() + Idx + Length);
+
+  Idx += Length;
+
+  // Comment options.
+  for (unsigned N = Record[Idx++]; N; --N) {
+    LangOpts.CommentOpts.BlockCommandNames.push_back(
+      ReadString(Record, Idx));
+  }
+
   return Listener.ReadLanguageOptions(LangOpts, Complain);
 }
 
@@ -4089,7 +4070,7 @@ std::pair<unsigned, unsigned>
 
 /// \brief Optionally returns true or false if the preallocated preprocessed
 /// entity with index \arg Index came from file \arg FID.
-llvm::Optional<bool> ASTReader::isPreprocessedEntityInFileID(unsigned Index,
+Optional<bool> ASTReader::isPreprocessedEntityInFileID(unsigned Index,
                                                              FileID FID) {
   if (FID.isInvalid())
     return false;
@@ -4115,7 +4096,7 @@ namespace {
     ASTReader &Reader;
     const FileEntry *FE;
     
-    llvm::Optional<HeaderFileInfo> HFI;
+    Optional<HeaderFileInfo> HFI;
     
   public:
     HeaderFileInfoVisitor(ASTReader &Reader, const FileEntry *FE)
@@ -4145,14 +4126,14 @@ namespace {
       return true;
     }
     
-    llvm::Optional<HeaderFileInfo> getHeaderFileInfo() const { return HFI; }
+    Optional<HeaderFileInfo> getHeaderFileInfo() const { return HFI; }
   };
 }
 
 HeaderFileInfo ASTReader::GetHeaderFileInfo(const FileEntry *FE) {
   HeaderFileInfoVisitor Visitor(*this, FE);
   ModuleMgr.visit(&HeaderFileInfoVisitor::visit, &Visitor);
-  if (llvm::Optional<HeaderFileInfo> HFI = Visitor.getHeaderFileInfo()) {
+  if (Optional<HeaderFileInfo> HFI = Visitor.getHeaderFileInfo()) {
     if (Listener)
       Listener->ReadHeaderFileInfo(*HFI, FE->getUID());
     return *HFI;
@@ -4512,7 +4493,7 @@ QualType ASTReader::readTypeRecord(unsigned Index) {
     QualType Pattern = readType(*Loc.F, Record, Idx);
     if (Pattern.isNull())
       return QualType();
-    llvm::Optional<unsigned> NumExpansions;
+    Optional<unsigned> NumExpansions;
     if (Record[1])
       NumExpansions = Record[1] - 1;
     return Context.getPackExpansionType(Pattern, NumExpansions);
@@ -5684,7 +5665,7 @@ void ASTReader::PrintStats() {
   unsigned NumMacrosLoaded
     = MacrosLoaded.size() - std::count(MacrosLoaded.begin(),
                                        MacrosLoaded.end(),
-                                       (MacroInfo *)0);
+                                       (MacroDirective *)0);
   unsigned NumSelectorsLoaded
     = SelectorsLoaded.size() - std::count(SelectorsLoaded.begin(),
                                           SelectorsLoaded.end(),
@@ -5830,8 +5811,8 @@ void ASTReader::InitializeSema(Sema &S) {
   // Makes sure any declarations that were deserialized "too early"
   // still get added to the identifier's declaration chains.
   for (unsigned I = 0, N = PreloadedDecls.size(); I != N; ++I) {
-    SemaObj->pushExternalDeclIntoScope(PreloadedDecls[I], 
-                                       PreloadedDecls[I]->getDeclName());
+    NamedDecl *ND = cast<NamedDecl>(PreloadedDecls[I]->getMostRecentDecl());
+    SemaObj->pushExternalDeclIntoScope(ND, PreloadedDecls[I]->getDeclName());
   }
   PreloadedDecls.clear();
 
@@ -6208,28 +6189,32 @@ void ASTReader::SetIdentifierInfo(IdentifierID ID, IdentifierInfo *II) {
 /// \param DeclIDs the set of declaration IDs with the name @p II that are
 /// visible at global scope.
 ///
-/// \param Nonrecursive should be true to indicate that the caller knows that
-/// this call is non-recursive, and therefore the globally-visible declarations
-/// will not be placed onto the pending queue.
+/// \param Decls if non-null, this vector will be populated with the set of
+/// deserialized declarations. These declarations will not be pushed into
+/// scope.
 void
 ASTReader::SetGloballyVisibleDecls(IdentifierInfo *II,
                               const SmallVectorImpl<uint32_t> &DeclIDs,
-                                   bool Nonrecursive) {
-  if (NumCurrentElementsDeserializing && !Nonrecursive) {
-    PendingIdentifierInfos.push_back(PendingIdentifierInfo());
-    PendingIdentifierInfo &PII = PendingIdentifierInfos.back();
-    PII.II = II;
-    PII.DeclIDs.append(DeclIDs.begin(), DeclIDs.end());
+                                   SmallVectorImpl<Decl *> *Decls) {
+  if (NumCurrentElementsDeserializing && !Decls) {
+    PendingIdentifierInfos[II].append(DeclIDs.begin(), DeclIDs.end());
     return;
   }
 
   for (unsigned I = 0, N = DeclIDs.size(); I != N; ++I) {
     NamedDecl *D = cast<NamedDecl>(GetDecl(DeclIDs[I]));
     if (SemaObj) {
+      // If we're simply supposed to record the declarations, do so now.
+      if (Decls) {
+        Decls->push_back(D);
+        continue;
+      }
+
       // Introduce this declaration into the translation-unit scope
       // and add it to the declaration chain for this identifier, so
       // that (unqualified) name lookup will find it.
-      SemaObj->pushExternalDeclIntoScope(D, II);
+      NamedDecl *ND = cast<NamedDecl>(D->getMostRecentDecl());
+      SemaObj->pushExternalDeclIntoScope(ND, II);
     } else {
       // Queue this declaration so that it will be added to the
       // translation unit scope and identifier's declaration chain
@@ -6289,7 +6274,7 @@ IdentifierID ASTReader::getGlobalIdentifierID(ModuleFile &M, unsigned LocalID) {
   return LocalID + I->second;
 }
 
-MacroInfo *ASTReader::getMacro(MacroID ID, MacroInfo *Hint) {
+MacroDirective *ASTReader::getMacro(MacroID ID, MacroDirective *Hint) {
   if (ID == 0)
     return 0;
 
@@ -6582,7 +6567,7 @@ ASTReader::ReadTemplateArgument(ModuleFile &F,
     return TemplateArgument(ReadTemplateName(F, Record, Idx));
   case TemplateArgument::TemplateExpansion: {
     TemplateName Name = ReadTemplateName(F, Record, Idx);
-    llvm::Optional<unsigned> NumTemplateExpansions;
+    Optional<unsigned> NumTemplateExpansions;
     if (unsigned NumExpansions = Record[Idx++])
       NumTemplateExpansions = NumExpansions - 1;
     return TemplateArgument(Name, NumTemplateExpansions);
@@ -6986,13 +6971,17 @@ void ASTReader::ReadComments() {
 
 void ASTReader::finishPendingActions() {
   while (!PendingIdentifierInfos.empty() || !PendingDeclChains.empty() ||
-         !PendingMacroIDs.empty()) {
+         !PendingMacroIDs.empty() || !PendingDeclContextInfos.empty()) {
     // If any identifiers with corresponding top-level declarations have
     // been loaded, load those declarations now.
+    llvm::DenseMap<IdentifierInfo *, SmallVector<Decl *, 2> > TopLevelDecls;
     while (!PendingIdentifierInfos.empty()) {
-      SetGloballyVisibleDecls(PendingIdentifierInfos.front().II,
-                              PendingIdentifierInfos.front().DeclIDs, true);
-      PendingIdentifierInfos.pop_front();
+      // FIXME: std::move
+      IdentifierInfo *II = PendingIdentifierInfos.back().first;
+      SmallVector<uint32_t, 4> DeclIDs = PendingIdentifierInfos.back().second;
+      PendingIdentifierInfos.pop_back();
+
+      SetGloballyVisibleDecls(II, DeclIDs, &TopLevelDecls[II]);
     }
   
     // Load pending declaration chains.
@@ -7002,17 +6991,38 @@ void ASTReader::finishPendingActions() {
     }
     PendingDeclChains.clear();
 
+    // Make the most recent of the top-level declarations visible.
+    for (llvm::DenseMap<IdentifierInfo *, SmallVector<Decl *, 2> >::iterator
+           TLD = TopLevelDecls.begin(), TLDEnd = TopLevelDecls.end();
+         TLD != TLDEnd; ++TLD) {
+      IdentifierInfo *II = TLD->first;
+      for (unsigned I = 0, N = TLD->second.size(); I != N; ++I) {
+        NamedDecl *ND = cast<NamedDecl>(TLD->second[I]->getMostRecentDecl());
+        SemaObj->pushExternalDeclIntoScope(ND, II);
+      }
+    }
+
     // Load any pending macro definitions.
     for (unsigned I = 0; I != PendingMacroIDs.size(); ++I) {
       // FIXME: std::move here
       SmallVector<MacroID, 2> GlobalIDs = PendingMacroIDs.begin()[I].second;
-      MacroInfo *Hint = 0;
+      MacroDirective *Hint = 0;
       for (unsigned IDIdx = 0, NumIDs = GlobalIDs.size(); IDIdx !=  NumIDs;
            ++IDIdx) {
         Hint = getMacro(GlobalIDs[IDIdx], Hint);
       }
     }
     PendingMacroIDs.clear();
+
+    // Wire up the DeclContexts for Decls that we delayed setting until
+    // recursive loading is completed.
+    while (!PendingDeclContextInfos.empty()) {
+      PendingDeclContextInfo Info = PendingDeclContextInfos.front();
+      PendingDeclContextInfos.pop_front();
+      DeclContext *SemaDC = cast<DeclContext>(GetDecl(Info.SemaDC));
+      DeclContext *LexicalDC = cast<DeclContext>(GetDecl(Info.LexicalDC));
+      Info.D->setDeclContextsImpl(SemaDC, LexicalDC, getContext());
+    }
   }
   
   // If we deserialized any C++ or Objective-C class definitions, any

@@ -44,6 +44,10 @@ int GetPid() {
   return getpid();
 }
 
+u32 GetUid() {
+  return getuid();
+}
+
 uptr GetThreadSelf() {
   return (uptr)pthread_self();
 }
@@ -203,10 +207,6 @@ void SleepForSeconds(int seconds) {
 
 void SleepForMillis(int millis) {
   usleep(millis * 1000);
-}
-
-void Exit(int exitcode) {
-  _exit(exitcode);
 }
 
 void Abort() {

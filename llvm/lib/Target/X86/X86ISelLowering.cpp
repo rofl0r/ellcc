@@ -1323,6 +1323,7 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
   setTargetDAGCombine(ISD::ZERO_EXTEND);
   setTargetDAGCombine(ISD::ANY_EXTEND);
   setTargetDAGCombine(ISD::SIGN_EXTEND);
+  setTargetDAGCombine(ISD::SIGN_EXTEND_INREG);
   setTargetDAGCombine(ISD::TRUNCATE);
   setTargetDAGCombine(ISD::SINT_TO_FP);
   setTargetDAGCombine(ISD::SETCC);
@@ -1334,17 +1335,17 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   // On Darwin, -Os means optimize for size without hurting performance,
   // do not reduce the limit.
-  maxStoresPerMemset = 16; // For @llvm.memset -> sequence of stores
-  maxStoresPerMemsetOptSize = Subtarget->isTargetDarwin() ? 16 : 8;
-  maxStoresPerMemcpy = 8; // For @llvm.memcpy -> sequence of stores
-  maxStoresPerMemcpyOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
-  maxStoresPerMemmove = 8; // For @llvm.memmove -> sequence of stores
-  maxStoresPerMemmoveOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
+  MaxStoresPerMemset = 16; // For @llvm.memset -> sequence of stores
+  MaxStoresPerMemsetOptSize = Subtarget->isTargetDarwin() ? 16 : 8;
+  MaxStoresPerMemcpy = 8; // For @llvm.memcpy -> sequence of stores
+  MaxStoresPerMemcpyOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
+  MaxStoresPerMemmove = 8; // For @llvm.memmove -> sequence of stores
+  MaxStoresPerMemmoveOptSize = Subtarget->isTargetDarwin() ? 8 : 4;
   setPrefLoopAlignment(4); // 2^4 bytes.
-  benefitFromCodePlacementOpt = true;
+  BenefitFromCodePlacementOpt = true;
 
   // Predictable cmov don't hurt on atom because it's in-order.
-  predictableSelectIsExpensive = !Subtarget->isAtom();
+  PredictableSelectIsExpensive = !Subtarget->isAtom();
 
   setPrefFunctionAlignment(4); // 2^4 bytes.
 }
@@ -2655,8 +2656,7 @@ X86TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     // This isn't right, although it's probably harmless on x86; liveouts
     // should be computed from returns not tail calls.  Consider a void
     // function making a tail call to a function returning int.
-    return DAG.getNode(X86ISD::TC_RETURN, dl,
-                       NodeTys, &Ops[0], Ops.size());
+    return DAG.getNode(X86ISD::TC_RETURN, dl, NodeTys, &Ops[0], Ops.size());
   }
 
   Chain = DAG.getNode(X86ISD::CALL, dl, NodeTys, &Ops[0], Ops.size());
@@ -4222,10 +4222,11 @@ static unsigned getShuffleCLImmediate(ShuffleVectorSDNode *N) {
 /// isZeroNode - Returns true if Elt is a constant zero or a floating point
 /// constant +0.0.
 bool X86::isZeroNode(SDValue Elt) {
-  return ((isa<ConstantSDNode>(Elt) &&
-           cast<ConstantSDNode>(Elt)->isNullValue()) ||
-          (isa<ConstantFPSDNode>(Elt) &&
-           cast<ConstantFPSDNode>(Elt)->getValueAPF().isPosZero()));
+  if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Elt))
+    return CN->isNullValue();
+  if (ConstantFPSDNode *CFP = dyn_cast<ConstantFPSDNode>(Elt))
+    return CFP->getValueAPF().isPosZero();
+  return false;
 }
 
 /// CommuteVectorShuffle - Swap vector_shuffle operands as well as values in
@@ -4955,7 +4956,7 @@ static SDValue getVShift(bool isLeft, EVT VT, SDValue SrcOp,
   return DAG.getNode(ISD::BITCAST, dl, VT,
                      DAG.getNode(Opc, dl, ShVT, SrcOp,
                              DAG.getConstant(NumBits,
-                                  TLI.getShiftAmountTy(SrcOp.getValueType()))));
+                                  TLI.getScalarShiftAmountTy(SrcOp.getValueType()))));
 }
 
 SDValue
@@ -5343,7 +5344,7 @@ X86TargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const {
   // Vectors containing all ones can be matched by pcmpeqd on 128-bit width
   // vectors or broken into v4i32 operations on 256-bit vectors. AVX2 can use
   // vpcmpeqd on 256-bit vectors.
-  if (ISD::isBuildVectorAllOnes(Op.getNode())) {
+  if (Subtarget->hasSSE2() && ISD::isBuildVectorAllOnes(Op.getNode())) {
     if (VT == MVT::v4i32 || (VT == MVT::v8i32 && Subtarget->hasInt256()))
       return Op;
 
@@ -10210,7 +10211,7 @@ static SDValue LowerVACOPY(SDValue Op, const X86Subtarget *Subtarget,
                        MachinePointerInfo(DstSV), MachinePointerInfo(SrcSV));
 }
 
-// getTargetVShiftNOde - Handle vector element shifts where the shift amount
+// getTargetVShiftNode - Handle vector element shifts where the shift amount
 // may or may not be a constant. Takes immediate version of shift as input.
 static SDValue getTargetVShiftNode(unsigned Opc, DebugLoc dl, EVT VT,
                                    SDValue SrcOp, SDValue ShAmt,
@@ -15675,7 +15676,7 @@ static SDValue PerformCMOVCombine(SDNode *N, SelectionDAG &DAG,
     ConstantSDNode *CmpAgainst = 0;
     if ((Cond.getOpcode() == X86ISD::CMP || Cond.getOpcode() == X86ISD::SUB) &&
         (CmpAgainst = dyn_cast<ConstantSDNode>(Cond.getOperand(1))) &&
-        dyn_cast<ConstantSDNode>(Cond.getOperand(0)) == 0) {
+        !isa<ConstantSDNode>(Cond.getOperand(0))) {
 
       if (CC == X86::COND_NE &&
           CmpAgainst == dyn_cast<ConstantSDNode>(FalseOp)) {
@@ -15955,8 +15956,7 @@ static SDValue CMPEQCombine(SDNode *N, SelectionDAG &DAG,
     if (VT == MVT::f32 || VT == MVT::f64) {
       bool ExpectingFlags = false;
       // Check for any users that want flags:
-      for (SDNode::use_iterator UI = N->use_begin(),
-             UE = N->use_end();
+      for (SDNode::use_iterator UI = N->use_begin(), UE = N->use_end();
            !ExpectingFlags && UI != UE; ++UI)
         switch (UI->getOpcode()) {
         default:
@@ -16248,11 +16248,6 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
 
       DebugLoc DL = N->getDebugLoc();
 
-      // We are going to replace the AND, OR, NAND with either BLEND
-      // or PSIGN, which only look at the MSB. The VSRAI instruction
-      // does not affect the highest bit, so we can get rid of it.
-      Mask = Mask.getOperand(0);
-
       // Now we know we at least have a plendvb with the mask val.  See if
       // we can form a psignb/w/d.
       // psign = x.type == y.type == mask.type && y = sub(0, x);
@@ -16261,7 +16256,7 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
           X.getValueType() == MaskVT && Y.getValueType() == MaskVT) {
         assert((EltBits == 8 || EltBits == 16 || EltBits == 32) &&
                "Unsupported VT for PSIGN");
-        Mask = DAG.getNode(X86ISD::PSIGN, DL, MaskVT, X, Mask);
+        Mask = DAG.getNode(X86ISD::PSIGN, DL, MaskVT, X, Mask.getOperand(0));
         return DAG.getNode(ISD::BITCAST, DL, VT, Mask);
       }
       // PBLENDVB only available on SSE 4.1
@@ -17077,6 +17072,41 @@ static SDValue PerformVZEXT_MOVLCombine(SDNode *N, SelectionDAG &DAG) {
   return SDValue();
 }
 
+static SDValue PerformSIGN_EXTEND_INREGCombine(SDNode *N, SelectionDAG &DAG, 
+                                               const X86Subtarget *Subtarget) {
+  EVT VT = N->getValueType(0);
+  if (!VT.isVector())
+    return SDValue();
+
+  SDValue N0 = N->getOperand(0);
+  SDValue N1 = N->getOperand(1);
+  EVT ExtraVT = cast<VTSDNode>(N1)->getVT();
+  DebugLoc dl = N->getDebugLoc();
+
+  // The SIGN_EXTEND_INREG to v4i64 is expensive operation on the
+  // both SSE and AVX2 since there is no sign-extended shift right
+  // operation on a vector with 64-bit elements.
+  //(sext_in_reg (v4i64 anyext (v4i32 x )), ExtraVT) ->
+  // (v4i64 sext (v4i32 sext_in_reg (v4i32 x , ExtraVT)))
+  if (VT == MVT::v4i64 && (N0.getOpcode() == ISD::ANY_EXTEND ||
+      N0.getOpcode() == ISD::SIGN_EXTEND)) {
+    SDValue N00 = N0.getOperand(0);
+
+    // EXTLOAD has a better solution on AVX2, 
+    // it may be replaced with X86ISD::VSEXT node.
+    if (N00.getOpcode() == ISD::LOAD && Subtarget->hasInt256())
+      if (!ISD::isNormalLoad(N00.getNode()))
+        return SDValue();
+
+    if (N00.getValueType() == MVT::v4i32 && ExtraVT.getSizeInBits() < 128) {
+        SDValue Tmp = DAG.getNode(ISD::SIGN_EXTEND_INREG, dl, MVT::v4i32, 
+                                  N00, N1);
+      return DAG.getNode(ISD::SIGN_EXTEND, dl, MVT::v4i64, Tmp);
+    }
+  }
+  return SDValue();
+}
+
 static SDValue PerformSExtCombine(SDNode *N, SelectionDAG &DAG,
                                   TargetLowering::DAGCombinerInfo &DCI,
                                   const X86Subtarget *Subtarget) {
@@ -17469,6 +17499,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::ANY_EXTEND:
   case ISD::ZERO_EXTEND:    return PerformZExtCombine(N, DAG, DCI, Subtarget);
   case ISD::SIGN_EXTEND:    return PerformSExtCombine(N, DAG, DCI, Subtarget);
+  case ISD::SIGN_EXTEND_INREG: return PerformSIGN_EXTEND_INREGCombine(N, DAG, Subtarget);
   case ISD::TRUNCATE:       return PerformTruncateCombine(N, DAG,DCI,Subtarget);
   case ISD::SETCC:          return PerformISDSETCCCombine(N, DAG);
   case X86ISD::SETCC:       return PerformSETCCCombine(N, DAG, DCI, Subtarget);
@@ -17658,7 +17689,7 @@ bool X86TargetLowering::ExpandInlineAsm(CallInst *CI) const {
       AsmPieces.clear();
       const std::string &ConstraintsStr = IA->getConstraintString();
       SplitString(StringRef(ConstraintsStr).substr(5), AsmPieces, ",");
-      std::sort(AsmPieces.begin(), AsmPieces.end());
+      array_pod_sort(AsmPieces.begin(), AsmPieces.end());
       if (AsmPieces.size() == 4 &&
           AsmPieces[0] == "~{cc}" &&
           AsmPieces[1] == "~{dirflag}" &&
@@ -17676,7 +17707,7 @@ bool X86TargetLowering::ExpandInlineAsm(CallInst *CI) const {
       AsmPieces.clear();
       const std::string &ConstraintsStr = IA->getConstraintString();
       SplitString(StringRef(ConstraintsStr).substr(5), AsmPieces, ",");
-      std::sort(AsmPieces.begin(), AsmPieces.end());
+      array_pod_sort(AsmPieces.begin(), AsmPieces.end());
       if (AsmPieces.size() == 4 &&
           AsmPieces[0] == "~{cc}" &&
           AsmPieces[1] == "~{dirflag}" &&

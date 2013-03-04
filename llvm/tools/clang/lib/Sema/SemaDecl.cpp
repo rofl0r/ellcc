@@ -1822,34 +1822,164 @@ DeclHasAttr(const Decl *D, const Attr *A) {
   return false;
 }
 
-bool Sema::mergeDeclAttribute(NamedDecl *D, InheritableAttr *Attr,
-                              bool Override) {
+static bool isAttributeTargetADefinition(Decl *D) {
+  if (VarDecl *VD = dyn_cast<VarDecl>(D))
+    return VD->isThisDeclarationADefinition();
+  if (TagDecl *TD = dyn_cast<TagDecl>(D))
+    return TD->isCompleteDefinition() || TD->isBeingDefined();
+  return true;
+}
+
+/// Merge alignment attributes from \p Old to \p New, taking into account the
+/// special semantics of C11's _Alignas specifier and C++11's alignas attribute.
+///
+/// \return \c true if any attributes were added to \p New.
+static bool mergeAlignedAttrs(Sema &S, NamedDecl *New, Decl *Old) {
+  // Look for alignas attributes on Old, and pick out whichever attribute
+  // specifies the strictest alignment requirement.
+  AlignedAttr *OldAlignasAttr = 0;
+  AlignedAttr *OldStrictestAlignAttr = 0;
+  unsigned OldAlign = 0;
+  for (specific_attr_iterator<AlignedAttr>
+         I = Old->specific_attr_begin<AlignedAttr>(),
+         E = Old->specific_attr_end<AlignedAttr>(); I != E; ++I) {
+    // FIXME: We have no way of representing inherited dependent alignments
+    // in a case like:
+    //   template<int A, int B> struct alignas(A) X;
+    //   template<int A, int B> struct alignas(B) X {};
+    // For now, we just ignore any alignas attributes which are not on the
+    // definition in such a case.
+    if (I->isAlignmentDependent())
+      return false;
+
+    if (I->isAlignas())
+      OldAlignasAttr = *I;
+
+    unsigned Align = I->getAlignment(S.Context);
+    if (Align > OldAlign) {
+      OldAlign = Align;
+      OldStrictestAlignAttr = *I;
+    }
+  }
+
+  // Look for alignas attributes on New.
+  AlignedAttr *NewAlignasAttr = 0;
+  unsigned NewAlign = 0;
+  for (specific_attr_iterator<AlignedAttr>
+         I = New->specific_attr_begin<AlignedAttr>(),
+         E = New->specific_attr_end<AlignedAttr>(); I != E; ++I) {
+    if (I->isAlignmentDependent())
+      return false;
+
+    if (I->isAlignas())
+      NewAlignasAttr = *I;
+
+    unsigned Align = I->getAlignment(S.Context);
+    if (Align > NewAlign)
+      NewAlign = Align;
+  }
+
+  if (OldAlignasAttr && NewAlignasAttr && OldAlign != NewAlign) {
+    // Both declarations have 'alignas' attributes. We require them to match.
+    // C++11 [dcl.align]p6 and C11 6.7.5/7 both come close to saying this, but
+    // fall short. (If two declarations both have alignas, they must both match
+    // every definition, and so must match each other if there is a definition.)
+
+    // If either declaration only contains 'alignas(0)' specifiers, then it
+    // specifies the natural alignment for the type.
+    if (OldAlign == 0 || NewAlign == 0) {
+      QualType Ty;
+      if (ValueDecl *VD = dyn_cast<ValueDecl>(New))
+        Ty = VD->getType();
+      else
+        Ty = S.Context.getTagDeclType(cast<TagDecl>(New));
+
+      if (OldAlign == 0)
+        OldAlign = S.Context.getTypeAlign(Ty);
+      if (NewAlign == 0)
+        NewAlign = S.Context.getTypeAlign(Ty);
+    }
+
+    if (OldAlign != NewAlign) {
+      S.Diag(NewAlignasAttr->getLocation(), diag::err_alignas_mismatch)
+        << (unsigned)S.Context.toCharUnitsFromBits(OldAlign).getQuantity()
+        << (unsigned)S.Context.toCharUnitsFromBits(NewAlign).getQuantity();
+      S.Diag(OldAlignasAttr->getLocation(), diag::note_previous_declaration);
+    }
+  }
+
+  if (OldAlignasAttr && !NewAlignasAttr && isAttributeTargetADefinition(New)) {
+    // C++11 [dcl.align]p6:
+    //   if any declaration of an entity has an alignment-specifier,
+    //   every defining declaration of that entity shall specify an
+    //   equivalent alignment.
+    // C11 6.7.5/7:
+    //   If the definition of an object does not have an alignment
+    //   specifier, any other declaration of that object shall also
+    //   have no alignment specifier.
+    S.Diag(New->getLocation(), diag::err_alignas_missing_on_definition)
+      << OldAlignasAttr->isC11();
+    S.Diag(OldAlignasAttr->getLocation(), diag::note_alignas_on_declaration)
+      << OldAlignasAttr->isC11();
+  }
+
+  bool AnyAdded = false;
+
+  // Ensure we have an attribute representing the strictest alignment.
+  if (OldAlign > NewAlign) {
+    AlignedAttr *Clone = OldStrictestAlignAttr->clone(S.Context);
+    Clone->setInherited(true);
+    New->addAttr(Clone);
+    AnyAdded = true;
+  }
+
+  // Ensure we have an alignas attribute if the old declaration had one.
+  if (OldAlignasAttr && !NewAlignasAttr &&
+      !(AnyAdded && OldStrictestAlignAttr->isAlignas())) {
+    AlignedAttr *Clone = OldAlignasAttr->clone(S.Context);
+    Clone->setInherited(true);
+    New->addAttr(Clone);
+    AnyAdded = true;
+  }
+
+  return AnyAdded;
+}
+
+static bool mergeDeclAttribute(Sema &S, NamedDecl *D, InheritableAttr *Attr,
+                               bool Override) {
   InheritableAttr *NewAttr = NULL;
   unsigned AttrSpellingListIndex = Attr->getSpellingListIndex();
   if (AvailabilityAttr *AA = dyn_cast<AvailabilityAttr>(Attr))
-    NewAttr = mergeAvailabilityAttr(D, AA->getRange(), AA->getPlatform(),
-                                    AA->getIntroduced(), AA->getDeprecated(),
-                                    AA->getObsoleted(), AA->getUnavailable(),
-                                    AA->getMessage(), Override,
-                                    AttrSpellingListIndex);
+    NewAttr = S.mergeAvailabilityAttr(D, AA->getRange(), AA->getPlatform(),
+                                      AA->getIntroduced(), AA->getDeprecated(),
+                                      AA->getObsoleted(), AA->getUnavailable(),
+                                      AA->getMessage(), Override,
+                                      AttrSpellingListIndex);
   else if (VisibilityAttr *VA = dyn_cast<VisibilityAttr>(Attr))
-    NewAttr = mergeVisibilityAttr(D, VA->getRange(), VA->getVisibility(),
-                                  AttrSpellingListIndex);
+    NewAttr = S.mergeVisibilityAttr(D, VA->getRange(), VA->getVisibility(),
+                                    AttrSpellingListIndex);
+  else if (TypeVisibilityAttr *VA = dyn_cast<TypeVisibilityAttr>(Attr))
+    NewAttr = S.mergeTypeVisibilityAttr(D, VA->getRange(), VA->getVisibility(),
+                                        AttrSpellingListIndex);
   else if (DLLImportAttr *ImportA = dyn_cast<DLLImportAttr>(Attr))
-    NewAttr = mergeDLLImportAttr(D, ImportA->getRange(),
-                                 AttrSpellingListIndex);
+    NewAttr = S.mergeDLLImportAttr(D, ImportA->getRange(),
+                                   AttrSpellingListIndex);
   else if (DLLExportAttr *ExportA = dyn_cast<DLLExportAttr>(Attr))
-    NewAttr = mergeDLLExportAttr(D, ExportA->getRange(),
-                                 AttrSpellingListIndex);
+    NewAttr = S.mergeDLLExportAttr(D, ExportA->getRange(),
+                                   AttrSpellingListIndex);
   else if (FormatAttr *FA = dyn_cast<FormatAttr>(Attr))
-    NewAttr = mergeFormatAttr(D, FA->getRange(), FA->getType(),
-                              FA->getFormatIdx(), FA->getFirstArg(),
-                              AttrSpellingListIndex);
+    NewAttr = S.mergeFormatAttr(D, FA->getRange(), FA->getType(),
+                                FA->getFormatIdx(), FA->getFirstArg(),
+                                AttrSpellingListIndex);
   else if (SectionAttr *SA = dyn_cast<SectionAttr>(Attr))
-    NewAttr = mergeSectionAttr(D, SA->getRange(), SA->getName(),
-                               AttrSpellingListIndex);
+    NewAttr = S.mergeSectionAttr(D, SA->getRange(), SA->getName(),
+                                 AttrSpellingListIndex);
+  else if (isa<AlignedAttr>(Attr))
+    // AlignedAttrs are handled separately, because we need to handle all
+    // such attributes on a declaration at the same time.
+    NewAttr = 0;
   else if (!DeclHasAttr(D, Attr))
-    NewAttr = cast<InheritableAttr>(Attr->clone(Context));
+    NewAttr = cast<InheritableAttr>(Attr->clone(S.Context));
 
   if (NewAttr) {
     NewAttr->setInherited(true);
@@ -1900,11 +2030,31 @@ static void checkNewAttributesAfterDef(Sema &S, Decl *New, const Decl *Old) {
       ++I;
       continue; // regular attr merging will take care of validating this.
     }
-    // C's _Noreturn is allowed to be added to a function after it is defined.
+
     if (isa<C11NoReturnAttr>(NewAttribute)) {
+      // C's _Noreturn is allowed to be added to a function after it is defined.
       ++I;
       continue;
+    } else if (const AlignedAttr *AA = dyn_cast<AlignedAttr>(NewAttribute)) {
+      if (AA->isAlignas()) { 
+        // C++11 [dcl.align]p6:
+        //   if any declaration of an entity has an alignment-specifier,
+        //   every defining declaration of that entity shall specify an
+        //   equivalent alignment.
+        // C11 6.7.5/7:
+        //   If the definition of an object does not have an alignment
+        //   specifier, any other declaration of that object shall also
+        //   have no alignment specifier.
+        S.Diag(Def->getLocation(), diag::err_alignas_missing_on_definition)
+          << AA->isC11();
+        S.Diag(NewAttribute->getLocation(), diag::note_alignas_on_declaration)
+          << AA->isC11();
+        NewAttributes.erase(NewAttributes.begin() + I);
+        --E;
+        continue;
+      }
     }
+
     S.Diag(NewAttribute->getLocation(),
            diag::warn_attribute_precede_definition);
     S.Diag(Def->getLocation(), diag::note_previous_definition);
@@ -1953,9 +2103,12 @@ void Sema::mergeDeclAttributes(NamedDecl *New, Decl *Old,
       }
     }
 
-    if (mergeDeclAttribute(New, *i, Override))
+    if (mergeDeclAttribute(*this, New, *i, Override))
       foundAny = true;
   }
+
+  if (mergeAlignedAttrs(*this, New, Old))
+    foundAny = true;
 
   if (!foundAny) New->dropAttrs();
 }
@@ -2175,9 +2328,10 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD, Scope *S) {
     RequiresAdjustment = true;
 
   // Don't complain about mismatches when the default CC is
-  // effectively the same as the explict one.
+  // effectively the same as the explict one. Only Old decl contains correct
+  // information about storage class of CXXMethod.
   } else if (OldTypeInfo.getCC() == CC_Default &&
-             isABIDefaultCC(*this, NewTypeInfo.getCC(), New)) {
+             isABIDefaultCC(*this, NewTypeInfo.getCC(), Old)) {
     NewTypeInfo = NewTypeInfo.withCallingConv(OldTypeInfo.getCC());
     RequiresAdjustment = true;
 
@@ -4066,29 +4220,29 @@ static QualType TryToFixInvalidVariablyModifiedType(QualType T,
 
 static void
 FixInvalidVariablyModifiedTypeLoc(TypeLoc SrcTL, TypeLoc DstTL) {
-  if (PointerTypeLoc* SrcPTL = dyn_cast<PointerTypeLoc>(&SrcTL)) {
-    PointerTypeLoc* DstPTL = cast<PointerTypeLoc>(&DstTL);
-    FixInvalidVariablyModifiedTypeLoc(SrcPTL->getPointeeLoc(),
-                                      DstPTL->getPointeeLoc());
-    DstPTL->setStarLoc(SrcPTL->getStarLoc());
+  if (PointerTypeLoc SrcPTL = SrcTL.getAs<PointerTypeLoc>()) {
+    PointerTypeLoc DstPTL = DstTL.castAs<PointerTypeLoc>();
+    FixInvalidVariablyModifiedTypeLoc(SrcPTL.getPointeeLoc(),
+                                      DstPTL.getPointeeLoc());
+    DstPTL.setStarLoc(SrcPTL.getStarLoc());
     return;
   }
-  if (ParenTypeLoc* SrcPTL = dyn_cast<ParenTypeLoc>(&SrcTL)) {
-    ParenTypeLoc* DstPTL = cast<ParenTypeLoc>(&DstTL);
-    FixInvalidVariablyModifiedTypeLoc(SrcPTL->getInnerLoc(),
-                                      DstPTL->getInnerLoc());
-    DstPTL->setLParenLoc(SrcPTL->getLParenLoc());
-    DstPTL->setRParenLoc(SrcPTL->getRParenLoc());
+  if (ParenTypeLoc SrcPTL = SrcTL.getAs<ParenTypeLoc>()) {
+    ParenTypeLoc DstPTL = DstTL.castAs<ParenTypeLoc>();
+    FixInvalidVariablyModifiedTypeLoc(SrcPTL.getInnerLoc(),
+                                      DstPTL.getInnerLoc());
+    DstPTL.setLParenLoc(SrcPTL.getLParenLoc());
+    DstPTL.setRParenLoc(SrcPTL.getRParenLoc());
     return;
   }
-  ArrayTypeLoc* SrcATL = cast<ArrayTypeLoc>(&SrcTL);
-  ArrayTypeLoc* DstATL = cast<ArrayTypeLoc>(&DstTL);
-  TypeLoc SrcElemTL = SrcATL->getElementLoc();
-  TypeLoc DstElemTL = DstATL->getElementLoc();
+  ArrayTypeLoc SrcATL = SrcTL.castAs<ArrayTypeLoc>();
+  ArrayTypeLoc DstATL = DstTL.castAs<ArrayTypeLoc>();
+  TypeLoc SrcElemTL = SrcATL.getElementLoc();
+  TypeLoc DstElemTL = DstATL.getElementLoc();
   DstElemTL.initializeFullCopy(SrcElemTL);
-  DstATL->setLBracketLoc(SrcATL->getLBracketLoc());
-  DstATL->setSizeExpr(SrcATL->getSizeExpr());
-  DstATL->setRBracketLoc(SrcATL->getRBracketLoc());
+  DstATL.setLBracketLoc(SrcATL.getLBracketLoc());
+  DstATL.setSizeExpr(SrcATL.getSizeExpr());
+  DstATL.setRBracketLoc(SrcATL.getRBracketLoc());
 }
 
 /// Helper method to turn variable array types into constant array
@@ -4746,6 +4900,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       NewVD->setInvalidDecl();
   }
 
+  ProcessPragmaWeak(S, NewVD);
   checkAttributesAfterMerging(*this, *NewVD);
 
   // If this is a locally-scoped extern C variable, update the map of
@@ -4753,11 +4908,6 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   if (CurContext->isFunctionOrMethod() && NewVD->isExternC() &&
       !NewVD->isInvalidDecl())
     RegisterLocallyScopedExternCDecl(NewVD, Previous, S);
-
-  // If there's a #pragma GCC visibility in scope, and this isn't a class
-  // member, set the visibility of this variable.
-  if (NewVD->getLinkage() == ExternalLinkage && !DC->isRecord())
-    AddPushedVisibilityAttribute(NewVD);
 
   return NewVD;
 }
@@ -6219,6 +6369,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     }
   }
 
+  ProcessPragmaWeak(S, NewFD);
   checkAttributesAfterMerging(*this, *NewFD);
 
   AddKnownFunctionAttributes(NewFD);
@@ -6600,12 +6751,12 @@ static SourceRange getResultSourceRange(const FunctionDecl *FD) {
     return SourceRange();
 
   TypeLoc TL = TSI->getTypeLoc();
-  FunctionTypeLoc *FunctionTL = dyn_cast<FunctionTypeLoc>(&TL);
+  FunctionTypeLoc FunctionTL = TL.getAs<FunctionTypeLoc>();
   if (!FunctionTL)
     return SourceRange();
 
-  TypeLoc ResultTL = FunctionTL->getResultLoc();
-  if (isa<BuiltinTypeLoc>(ResultTL.getUnqualifiedLoc()))
+  TypeLoc ResultTL = FunctionTL.getResultLoc();
+  if (ResultTL.getUnqualifiedLoc().getAs<BuiltinTypeLoc>())
     return ResultTL.getSourceRange();
 
   return SourceRange();
@@ -7726,9 +7877,15 @@ Sema::FinalizeDeclaration(Decl *ThisDecl) {
   // Note that we are no longer parsing the initializer for this declaration.
   ParsingInitForAutoVars.erase(ThisDecl);
 
-  const VarDecl *VD = dyn_cast_or_null<VarDecl>(ThisDecl);
+  VarDecl *VD = dyn_cast_or_null<VarDecl>(ThisDecl);
   if (!VD)
     return;
+
+  const DeclContext *DC = VD->getDeclContext();
+  // If there's a #pragma GCC visibility in scope, and this isn't a class
+  // member, set the visibility of this variable.
+  if (VD->getLinkage() == ExternalLinkage && !DC->isRecord())
+    AddPushedVisibilityAttribute(VD);
 
   if (VD->isFileVarDecl())
     MarkUnusedFileScopedDecl(VD);
@@ -8291,11 +8448,11 @@ Decl *Sema::ActOnStartOfFunctionDef(Scope *FnBodyScope, Decl *D) {
       // but that could be a zero-parameter prototype
       TypeSourceInfo* TI = PossibleZeroParamPrototype->getTypeSourceInfo();
       TypeLoc TL = TI->getTypeLoc();
-      if (FunctionNoProtoTypeLoc* FTL = dyn_cast<FunctionNoProtoTypeLoc>(&TL))
+      if (FunctionNoProtoTypeLoc FTL = TL.getAs<FunctionNoProtoTypeLoc>())
         Diag(PossibleZeroParamPrototype->getLocation(), 
              diag::note_declaration_not_a_prototype)
           << PossibleZeroParamPrototype 
-          << FixItHint::CreateInsertion(FTL->getRParenLoc(), "void");
+          << FixItHint::CreateInsertion(FTL.getRParenLoc(), "void");
     }
   }
 
@@ -8446,9 +8603,9 @@ bool Sema::canSkipFunctionBody(Decl *D) {
 }
 
 Decl *Sema::ActOnSkippedFunctionBody(Decl *Decl) {
-  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(Decl))
+  if (FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(Decl))
     FD->setHasSkippedBody();
-  else if (ObjCMethodDecl *MD = dyn_cast<ObjCMethodDecl>(Decl))
+  else if (ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(Decl))
     MD->setHasSkippedBody();
   return ActOnFinishFunctionBody(Decl, 0);
 }
@@ -9989,6 +10146,12 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
     }
   }
 
+  // TR 18037 does not allow fields to be declared with address spaces.
+  if (T.getQualifiers().hasAddressSpace()) {
+    Diag(Loc, diag::err_field_with_address_space);
+    D.setInvalidType();
+  }
+
   // OpenCL 1.2 spec, s6.9 r:
   // The event type cannot be used to declare a structure or union field.
   if (LangOpts.OpenCL && T->isEventT()) {
@@ -9996,12 +10159,11 @@ FieldDecl *Sema::HandleField(Scope *S, RecordDecl *Record,
     D.setInvalidType();
   }
 
-
   DiagnoseFunctionSpecifiers(D);
 
   if (D.getDeclSpec().isThreadSpecified())
     Diag(D.getDeclSpec().getThreadSpecLoc(), diag::err_invalid_thread);
-  
+
   // Check to see if this name was declared as a member previously
   NamedDecl *PrevDecl = 0;
   LookupResult Previous(*this, II, Loc, LookupMemberName, ForRedeclaration);

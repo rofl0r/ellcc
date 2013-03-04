@@ -46,3 +46,43 @@ namespace PR14872 {
     f2(p);
   }
 }
+
+namespace rdar13249297 {
+  struct IntWrapperSubclass : public IntWrapper {};
+
+  struct IntWrapperWrapper {
+    IntWrapper w;
+  };
+
+  void test(IntWrapperWrapper *ww) {
+    reinterpret_cast<IntWrapperSubclass *>(ww)->x = 42;
+    clang_analyzer_eval(reinterpret_cast<IntWrapperSubclass *>(ww)->x == 42); // expected-warning{{TRUE}}
+
+    clang_analyzer_eval(ww->w.x == 42); // expected-warning{{TRUE}}
+    ww->w.x = 0;
+
+    clang_analyzer_eval(reinterpret_cast<IntWrapperSubclass *>(ww)->x == 42); // expected-warning{{FALSE}}
+  }
+}
+
+namespace PR15345 {
+  class C {};
+
+  class Base {
+  public:
+    void (*f)();
+    int x;
+  };
+
+  class Derived : public Base {};
+
+  void test() {
+	Derived* p;
+	*(reinterpret_cast<void**>(&p)) = new C;
+	p->f();
+
+    // We should still be able to do some reasoning about bindings.
+    p->x = 42;
+    clang_analyzer_eval(p->x == 42); // expected-warning{{TRUE}}
+  };
+}

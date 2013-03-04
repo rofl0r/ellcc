@@ -118,8 +118,8 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
                                            svalBuilder.makeZeroVal(T),
                                            getContext().IntTy);
 
-      DefinedOrUnknownSVal *Constraint =
-        dyn_cast<DefinedOrUnknownSVal>(&Constraint_untested);
+      Optional<DefinedOrUnknownSVal> Constraint =
+          Constraint_untested.getAs<DefinedOrUnknownSVal>();
 
       if (!Constraint)
         break;
@@ -138,7 +138,7 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
     const MemRegion *R = state->getRegion(SelfD, InitLoc);
     SVal V = state->getSVal(loc::MemRegionVal(R));
 
-    if (const Loc *LV = dyn_cast<Loc>(&V)) {
+    if (Optional<Loc> LV = V.getAs<Loc>()) {
       // Assume that the pointer value in 'self' is non-null.
       state = state->assume(*LV, true);
       assert(state && "'self' cannot be null");
@@ -154,7 +154,7 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
       if (SFC->getParent() == 0) {
         loc::MemRegionVal L = svalBuilder.getCXXThis(MD, SFC);
         SVal V = state->getSVal(L);
-        if (const Loc *LV = dyn_cast<Loc>(&V)) {
+        if (Optional<Loc> LV = V.getAs<Loc>()) {
           state = state->assume(*LV, true);
           assert(state && "'this' cannot be null");
         }
@@ -165,20 +165,48 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
   return state;
 }
 
-/// If the value of the given expression is a NonLoc, copy it into a new
-/// temporary region, and replace the value of the expression with that.
-static ProgramStateRef createTemporaryRegionIfNeeded(ProgramStateRef State,
-                                                     const LocationContext *LC,
-                                                     const Expr *E) {
-  SVal V = State->getSVal(E, LC);
+ProgramStateRef
+ExprEngine::createTemporaryRegionIfNeeded(ProgramStateRef State,
+                                          const LocationContext *LC,
+                                          const Expr *Ex,
+                                          const Expr *Result) {
+  SVal V = State->getSVal(Ex, LC);
+  if (!Result && !V.getAs<NonLoc>())
+    return State;
 
-  if (isa<NonLoc>(V)) {
-    MemRegionManager &MRMgr = State->getStateManager().getRegionManager();
-    const MemRegion *R  = MRMgr.getCXXTempObjectRegion(E, LC);
-    State = State->bindLoc(loc::MemRegionVal(R), V);
-    State = State->BindExpr(E, LC, loc::MemRegionVal(R));
+  ProgramStateManager &StateMgr = State->getStateManager();
+  MemRegionManager &MRMgr = StateMgr.getRegionManager();
+  StoreManager &StoreMgr = StateMgr.getStoreManager();
+
+  // We need to be careful about treating a derived type's value as
+  // bindings for a base type. Start by stripping and recording base casts.
+  SmallVector<const CastExpr *, 4> Casts;
+  const Expr *Inner = Ex->IgnoreParens();
+  if (V.getAs<NonLoc>()) {
+    while (const CastExpr *CE = dyn_cast<CastExpr>(Inner)) {
+      if (CE->getCastKind() == CK_DerivedToBase ||
+          CE->getCastKind() == CK_UncheckedDerivedToBase)
+        Casts.push_back(CE);
+      else if (CE->getCastKind() != CK_NoOp)
+        break;
+
+      Inner = CE->getSubExpr()->IgnoreParens();
+    }
   }
 
+  // Create a temporary object region for the inner expression (which may have
+  // a more derived type) and bind the NonLoc value into it.
+  SVal Reg = loc::MemRegionVal(MRMgr.getCXXTempObjectRegion(Inner, LC));
+  State = State->bindLoc(Reg, V);
+
+  // Re-apply the casts (from innermost to outermost) for type sanity.
+  for (SmallVectorImpl<const CastExpr *>::reverse_iterator I = Casts.rbegin(),
+                                                           E = Casts.rend();
+       I != E; ++I) {
+    Reg = StoreMgr.evalDerivedToBase(Reg, *I);
+  }
+
+  State = State->BindExpr(Result ? Result : Ex, LC, Reg);
   return State;
 }
 
@@ -222,19 +250,17 @@ void ExprEngine::processCFGElement(const CFGElement E, ExplodedNode *Pred,
   currBldrCtx = Ctx;
 
   switch (E.getKind()) {
-    case CFGElement::Invalid:
-      llvm_unreachable("Unexpected CFGElement kind.");
     case CFGElement::Statement:
-      ProcessStmt(const_cast<Stmt*>(E.getAs<CFGStmt>()->getStmt()), Pred);
+      ProcessStmt(const_cast<Stmt*>(E.castAs<CFGStmt>().getStmt()), Pred);
       return;
     case CFGElement::Initializer:
-      ProcessInitializer(E.getAs<CFGInitializer>()->getInitializer(), Pred);
+      ProcessInitializer(E.castAs<CFGInitializer>().getInitializer(), Pred);
       return;
     case CFGElement::AutomaticObjectDtor:
     case CFGElement::BaseDtor:
     case CFGElement::MemberDtor:
     case CFGElement::TemporaryDtor:
-      ProcessImplicitDtor(*E.getAs<CFGImplicitDtor>(), Pred);
+      ProcessImplicitDtor(E.castAs<CFGImplicitDtor>(), Pred);
       return;
   }
   currBldrCtx = 0;
@@ -250,7 +276,7 @@ static bool shouldRemoveDeadBindings(AnalysisManager &AMgr,
     return false;
 
   // Is this the beginning of a basic block?
-  if (isa<BlockEntrance>(Pred->getLocation()))
+  if (Pred->getLocation().getAs<BlockEntrance>())
     return true;
 
   // Is this on a non-expression?
@@ -440,16 +466,16 @@ void ExprEngine::ProcessImplicitDtor(const CFGImplicitDtor D,
   ExplodedNodeSet Dst;
   switch (D.getKind()) {
   case CFGElement::AutomaticObjectDtor:
-    ProcessAutomaticObjDtor(cast<CFGAutomaticObjDtor>(D), Pred, Dst);
+    ProcessAutomaticObjDtor(D.castAs<CFGAutomaticObjDtor>(), Pred, Dst);
     break;
   case CFGElement::BaseDtor:
-    ProcessBaseDtor(cast<CFGBaseDtor>(D), Pred, Dst);
+    ProcessBaseDtor(D.castAs<CFGBaseDtor>(), Pred, Dst);
     break;
   case CFGElement::MemberDtor:
-    ProcessMemberDtor(cast<CFGMemberDtor>(D), Pred, Dst);
+    ProcessMemberDtor(D.castAs<CFGMemberDtor>(), Pred, Dst);
     break;
   case CFGElement::TemporaryDtor:
-    ProcessTemporaryDtor(cast<CFGTemporaryDtor>(D), Pred, Dst);
+    ProcessTemporaryDtor(D.castAs<CFGTemporaryDtor>(), Pred, Dst);
     break;
   default:
     llvm_unreachable("Unexpected dtor kind.");
@@ -472,8 +498,8 @@ void ExprEngine::ProcessAutomaticObjDtor(const CFGAutomaticObjDtor Dtor,
 
   Loc dest = state->getLValue(varDecl, Pred->getLocationContext());
 
-  VisitCXXDestructor(varType, cast<loc::MemRegionVal>(dest).getRegion(),
-                     Dtor.getTriggerStmt(), /*IsBase=*/false, Pred, Dst);
+  VisitCXXDestructor(varType, dest.castAs<loc::MemRegionVal>().getRegion(),
+                     Dtor.getTriggerStmt(), /*IsBase=*/ false, Pred, Dst);
 }
 
 void ExprEngine::ProcessBaseDtor(const CFGBaseDtor D,
@@ -487,11 +513,13 @@ void ExprEngine::ProcessBaseDtor(const CFGBaseDtor D,
   SVal ThisVal = Pred->getState()->getSVal(ThisPtr);
 
   // Create the base object region.
-  QualType BaseTy = D.getBaseSpecifier()->getType();
-  SVal BaseVal = getStoreManager().evalDerivedToBase(ThisVal, BaseTy);
+  const CXXBaseSpecifier *Base = D.getBaseSpecifier();
+  QualType BaseTy = Base->getType();
+  SVal BaseVal = getStoreManager().evalDerivedToBase(ThisVal, BaseTy,
+                                                     Base->isVirtual());
 
-  VisitCXXDestructor(BaseTy, cast<loc::MemRegionVal>(BaseVal).getRegion(),
-                     CurDtor->getBody(), /*IsBase=*/true, Pred, Dst);
+  VisitCXXDestructor(BaseTy, BaseVal.castAs<loc::MemRegionVal>().getRegion(),
+                     CurDtor->getBody(), /*IsBase=*/ true, Pred, Dst);
 }
 
 void ExprEngine::ProcessMemberDtor(const CFGMemberDtor D,
@@ -503,10 +531,11 @@ void ExprEngine::ProcessMemberDtor(const CFGMemberDtor D,
   const CXXDestructorDecl *CurDtor = cast<CXXDestructorDecl>(LCtx->getDecl());
   Loc ThisVal = getSValBuilder().getCXXThis(CurDtor,
                                             LCtx->getCurrentStackFrame());
-  SVal FieldVal = State->getLValue(Member, cast<Loc>(State->getSVal(ThisVal)));
+  SVal FieldVal =
+      State->getLValue(Member, State->getSVal(ThisVal).castAs<Loc>());
 
   VisitCXXDestructor(Member->getType(),
-                     cast<loc::MemRegionVal>(FieldVal).getRegion(),
+                     FieldVal.castAs<loc::MemRegionVal>().getRegion(),
                      CurDtor->getBody(), /*IsBase=*/false, Pred, Dst);
 }
 
@@ -658,7 +687,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
       StmtNodeBuilder Bldr2(PreVisit, Tmp, *currBldrCtx);
 
       const LocationContext *LCtx = Pred->getLocationContext();
-      const Expr *ArgE = cast<CXXDefaultArgExpr>(S)->getExpr();
+      const CXXDefaultArgExpr *DefaultE = cast<CXXDefaultArgExpr>(S);
+      const Expr *ArgE = DefaultE->getExpr();
 
       // Avoid creating and destroying a lot of APSInts.
       SVal V;
@@ -673,7 +703,10 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
         else
           V = State->getSVal(ArgE, LCtx);
 
-        State = State->BindExpr(S, LCtx, V);
+        State = State->BindExpr(DefaultE, LCtx, V);
+        if (DefaultE->isGLValue())
+          State = createTemporaryRegionIfNeeded(State, LCtx, DefaultE,
+                                                DefaultE);
         Bldr2.generateNode(S, *I, State);
       }
 
@@ -1053,11 +1086,11 @@ bool ExprEngine::replayWithoutInlining(ExplodedNode *N,
     // processing the call.
     if (L.isPurgeKind())
       continue;
-    if (isa<PreImplicitCall>(&L))
+    if (L.getAs<PreImplicitCall>())
       continue;
-    if (isa<CallEnter>(&L))
+    if (L.getAs<CallEnter>())
       continue;
-    if (const StmtPoint *SP = dyn_cast<StmtPoint>(&L))
+    if (Optional<StmtPoint> SP = L.getAs<StmtPoint>())
       if (SP->getStmt() == CE)
         continue;
     break;
@@ -1197,7 +1230,7 @@ static const Stmt *ResolveCondition(const Stmt *Condition,
   CFGBlock::const_reverse_iterator I = B->rbegin(), E = B->rend();
   for (; I != E; ++I) {
     CFGElement Elem = *I;
-    CFGStmt *CS = dyn_cast<CFGStmt>(&Elem);
+    Optional<CFGStmt> CS = Elem.getAs<CFGStmt>();
     if (!CS)
       continue;
     if (CS->getStmt() != Condition)
@@ -1287,7 +1320,7 @@ void ExprEngine::processBranch(const Stmt *Condition, const Stmt *Term,
       continue;
     }
 
-    DefinedSVal V = cast<DefinedSVal>(X);
+    DefinedSVal V = X.castAs<DefinedSVal>();
 
     ProgramStateRef StTrue, StFalse;
     tie(StTrue, StFalse) = PrevState->assume(V);
@@ -1327,8 +1360,8 @@ void ExprEngine::processIndirectGoto(IndirectGotoNodeBuilder &builder) {
 
   typedef IndirectGotoNodeBuilder::iterator iterator;
 
-  if (isa<loc::GotoLabel>(V)) {
-    const LabelDecl *L = cast<loc::GotoLabel>(V).getLabel();
+  if (Optional<loc::GotoLabel> LV = V.getAs<loc::GotoLabel>()) {
+    const LabelDecl *L = LV->getLabel();
 
     for (iterator I = builder.begin(), E = builder.end(); I != E; ++I) {
       if (I.getLabel() == L) {
@@ -1340,7 +1373,7 @@ void ExprEngine::processIndirectGoto(IndirectGotoNodeBuilder &builder) {
     llvm_unreachable("No block with label.");
   }
 
-  if (isa<loc::ConcreteInt>(V) || isa<UndefinedVal>(V)) {
+  if (V.getAs<loc::ConcreteInt>() || V.getAs<UndefinedVal>()) {
     // Dispatch to the first target and mark it as a sink.
     //ExplodedNode* N = builder.generateNode(builder.begin(), state, true);
     // FIXME: add checker visit.
@@ -1394,7 +1427,7 @@ void ExprEngine::processSwitch(SwitchNodeBuilder& builder) {
 
     return;
   }
-  DefinedOrUnknownSVal CondV = cast<DefinedOrUnknownSVal>(CondV_untested);
+  DefinedOrUnknownSVal CondV = CondV_untested.castAs<DefinedOrUnknownSVal>();
 
   ProgramStateRef DefaultSt = state;
   
@@ -1435,7 +1468,7 @@ void ExprEngine::processSwitch(SwitchNodeBuilder& builder) {
         // If CondV evaluates to a constant, then we know that this
         // is the *only* case that we can take, so stop evaluating the
         // others.
-        if (isa<nonloc::ConcreteInt>(CondV))
+        if (CondV.getAs<nonloc::ConcreteInt>())
           return;
       }
 
@@ -1529,7 +1562,7 @@ void ExprEngine::VisitCommonDeclRefExpr(const Expr *Ex, const NamedDecl *D,
     // results in boolean contexts.
     SVal V = svalBuilder.conjureSymbolVal(Ex, LCtx, getContext().VoidPtrTy,
                                           currBldrCtx->blockCount());
-    state = state->assume(cast<DefinedOrUnknownSVal>(V), true);
+    state = state->assume(V.castAs<DefinedOrUnknownSVal>(), true);
     Bldr.generateNode(Ex, Pred, state->BindExpr(Ex, LCtx, V), 0,
 		      ProgramPoint::PostLValueKind);
     return;
@@ -1646,7 +1679,7 @@ ProgramStateRef ExprEngine::processPointerEscapedOnBind(ProgramStateRef State,
   bool escapes = true;
 
   // TODO: Move to StoreManager.
-  if (loc::MemRegionVal *regionLoc = dyn_cast<loc::MemRegionVal>(&Loc)) {
+  if (Optional<loc::MemRegionVal> regionLoc = Loc.getAs<loc::MemRegionVal>()) {
     escapes = !regionLoc->getRegion()->hasStackStorage();
 
     if (!escapes) {
@@ -1754,7 +1787,7 @@ void ExprEngine::evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE,
 
   // If the location is not a 'Loc', it will already be handled by
   // the checkers.  There is nothing left to do.
-  if (!isa<Loc>(location)) {
+  if (!location.getAs<Loc>()) {
     const ProgramPoint L = PostStore(StoreE, LC, /*Loc*/0, /*tag*/0);
     ProgramStateRef state = Pred->getState();
     state = processPointerEscapedOnBind(state, location, Val);
@@ -1773,11 +1806,12 @@ void ExprEngine::evalBind(ExplodedNodeSet &Dst, const Stmt *StoreE,
     // When binding the value, pass on the hint that this is a initialization.
     // For initializations, we do not need to inform clients of region
     // changes.
-    state = state->bindLoc(cast<Loc>(location),
+    state = state->bindLoc(location.castAs<Loc>(),
                            Val, /* notifyChanges = */ !atDeclInit);
 
     const MemRegion *LocReg = 0;
-    if (loc::MemRegionVal *LocRegVal = dyn_cast<loc::MemRegionVal>(&location)) {
+    if (Optional<loc::MemRegionVal> LocRegVal =
+            location.getAs<loc::MemRegionVal>()) {
       LocReg = LocRegVal->getRegion();
     }
     
@@ -1826,7 +1860,7 @@ void ExprEngine::evalLoad(ExplodedNodeSet &Dst,
                           const ProgramPointTag *tag,
                           QualType LoadTy)
 {
-  assert(!isa<NonLoc>(location) && "location cannot be a NonLoc.");
+  assert(!location.getAs<NonLoc>() && "location cannot be a NonLoc.");
 
   // Are we loading from a region?  This actually results in two loads; one
   // to fetch the address of the referenced value and one to fetch the
@@ -1885,7 +1919,7 @@ void ExprEngine::evalLoadCommon(ExplodedNodeSet &Dst,
     if (location.isValid()) {
       if (LoadTy.isNull())
         LoadTy = BoundEx->getType();
-      V = state->getSVal(cast<Loc>(location), LoadTy);
+      V = state->getSVal(location.castAs<Loc>(), LoadTy);
     }
 
     Bldr.generateNode(NodeEx, *NI, state->BindExpr(BoundEx, LCtx, V), tag,
@@ -1949,13 +1983,13 @@ void ExprEngine::evalEagerlyAssumeBinOpBifurcation(ExplodedNodeSet &Dst,
     // when the expression fails to evaluate to anything meaningful and
     // (as an optimization) we don't generate a node.
     ProgramPoint P = Pred->getLocation();
-    if (!isa<PostStmt>(P) || cast<PostStmt>(P).getStmt() != Ex) {
+    if (!P.getAs<PostStmt>() || P.castAs<PostStmt>().getStmt() != Ex) {
       continue;
     }
 
     ProgramStateRef state = Pred->getState();
     SVal V = state->getSVal(Ex, Pred->getLocationContext());
-    nonloc::SymbolVal *SEV = dyn_cast<nonloc::SymbolVal>(&V);
+    Optional<nonloc::SymbolVal> SEV = V.getAs<nonloc::SymbolVal>();
     if (SEV && SEV->isExpression()) {
       const std::pair<const ProgramPointTag *, const ProgramPointTag*> &tags =
         geteagerlyAssumeBinOpBifurcationTags();
@@ -1995,10 +2029,10 @@ void ExprEngine::VisitGCCAsmStmt(const GCCAsmStmt *A, ExplodedNode *Pred,
   for (GCCAsmStmt::const_outputs_iterator OI = A->begin_outputs(),
        OE = A->end_outputs(); OI != OE; ++OI) {
     SVal X = state->getSVal(*OI, Pred->getLocationContext());
-    assert (!isa<NonLoc>(X));  // Should be an Lval, or unknown, undef.
+    assert (!X.getAs<NonLoc>());  // Should be an Lval, or unknown, undef.
 
-    if (isa<Loc>(X))
-      state = state->bindLoc(cast<Loc>(X), UnknownVal());
+    if (Optional<Loc> LV = X.getAs<Loc>())
+      state = state->bindLoc(*LV, UnknownVal());
   }
 
   Bldr.generateNode(A, Pred, state);
@@ -2069,7 +2103,7 @@ struct DOTGraphTraits<ExplodedNode*> :
     switch (Loc.getKind()) {
       case ProgramPoint::BlockEntranceKind: {
         Out << "Block Entrance: B"
-            << cast<BlockEntrance>(Loc).getBlock()->getBlockID();
+            << Loc.castAs<BlockEntrance>().getBlock()->getBlockID();
         if (const NamedDecl *ND =
                     dyn_cast<NamedDecl>(Loc.getLocationContext()->getDecl())) {
           Out << " (";
@@ -2108,27 +2142,27 @@ struct DOTGraphTraits<ExplodedNode*> :
         break;
 
       case ProgramPoint::PreImplicitCallKind: {
-        ImplicitCallPoint *PC = cast<ImplicitCallPoint>(&Loc);
+        ImplicitCallPoint PC = Loc.castAs<ImplicitCallPoint>();
         Out << "PreCall: ";
 
         // FIXME: Get proper printing options.
-        PC->getDecl()->print(Out, LangOptions());
-        printLocation(Out, PC->getLocation());
+        PC.getDecl()->print(Out, LangOptions());
+        printLocation(Out, PC.getLocation());
         break;
       }
 
       case ProgramPoint::PostImplicitCallKind: {
-        ImplicitCallPoint *PC = cast<ImplicitCallPoint>(&Loc);
+        ImplicitCallPoint PC = Loc.castAs<ImplicitCallPoint>();
         Out << "PostCall: ";
 
         // FIXME: Get proper printing options.
-        PC->getDecl()->print(Out, LangOptions());
-        printLocation(Out, PC->getLocation());
+        PC.getDecl()->print(Out, LangOptions());
+        printLocation(Out, PC.getLocation());
         break;
       }
 
       default: {
-        if (StmtPoint *L = dyn_cast<StmtPoint>(&Loc)) {
+        if (Optional<StmtPoint> L = Loc.getAs<StmtPoint>()) {
           const Stmt *S = L->getStmt();
 
           Out << S->getStmtClassName() << ' ' << (const void*) S << ' ';
@@ -2136,13 +2170,13 @@ struct DOTGraphTraits<ExplodedNode*> :
           S->printPretty(Out, 0, PrintingPolicy(LO));
           printLocation(Out, S->getLocStart());
 
-          if (isa<PreStmt>(Loc))
+          if (Loc.getAs<PreStmt>())
             Out << "\\lPreStmt\\l;";
-          else if (isa<PostLoad>(Loc))
+          else if (Loc.getAs<PostLoad>())
             Out << "\\lPostLoad\\l;";
-          else if (isa<PostStore>(Loc))
+          else if (Loc.getAs<PostStore>())
             Out << "\\lPostStore\\l";
-          else if (isa<PostLValue>(Loc))
+          else if (Loc.getAs<PostLValue>())
             Out << "\\lPostLValue\\l";
 
 #if 0
@@ -2169,7 +2203,7 @@ struct DOTGraphTraits<ExplodedNode*> :
           break;
         }
 
-        const BlockEdge &E = cast<BlockEdge>(Loc);
+        const BlockEdge &E = Loc.castAs<BlockEdge>();
         Out << "Edge: (B" << E.getSrc()->getBlockID() << ", B"
             << E.getDst()->getBlockID()  << ')';
 

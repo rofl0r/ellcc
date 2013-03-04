@@ -151,7 +151,11 @@ static void GetCurrentStackBounds(uptr *stack_top, uptr *stack_bottom) {
   *stack_bottom = __msan_stack_bounds.stack_bottom;
 }
 
-void GetStackTrace(StackTrace *stack, uptr max_s, uptr pc, uptr bp) {
+void GetStackTrace(StackTrace *stack, uptr max_s, uptr pc, uptr bp,
+                   bool fast) {
+  if (!fast)
+    return stack->SlowUnwindStack(pc, max_s);
+
   uptr stack_top, stack_bottom;
   GetCurrentStackBounds(&stack_top, &stack_bottom);
   stack->size = 0;
@@ -179,7 +183,7 @@ void PrintWarningWithOrigin(uptr pc, uptr bp, u32 origin) {
   ++msan_report_count;
 
   StackTrace stack;
-  GetStackTrace(&stack, kStackTraceMax, pc, bp);
+  GetStackTrace(&stack, kStackTraceMax, pc, bp, /*fast*/false);
 
   u32 report_origin =
     (__msan_track_origins && OriginIsValid(origin)) ? origin : 0;
@@ -222,6 +226,8 @@ void __msan_init() {
   InitializeInterceptors();
 
   ReplaceOperatorsNewAndDelete();
+  const char *msan_options = GetEnv("MSAN_OPTIONS");
+  InitializeFlags(&msan_flags, msan_options);
   if (StackSizeIsUnlimited()) {
     if (flags()->verbosity)
       Printf("Unlimited stack, doing reexec\n");
@@ -230,10 +236,10 @@ void __msan_init() {
     SetStackSizeLimitInBytes(32 * 1024 * 1024);
     ReExec();
   }
-  const char *msan_options = GetEnv("MSAN_OPTIONS");
-  InitializeFlags(&msan_flags, msan_options);
+
   if (flags()->verbosity)
     Printf("MSAN_OPTIONS: %s\n", msan_options ? msan_options : "<empty>");
+
   msan_running_under_dr = IsRunningUnderDr();
   __msan_clear_on_return();
   if (__msan_track_origins && flags()->verbosity > 0)
@@ -275,7 +281,7 @@ void __msan_set_expect_umr(int expect_umr) {
     GET_CALLER_PC_BP_SP;
     (void)sp;
     StackTrace stack;
-    GetStackTrace(&stack, kStackTraceMax, pc, bp);
+    GetStackTrace(&stack, kStackTraceMax, pc, bp, /*fast*/false);
     ReportExpectedUMRNotFound(&stack);
     Die();
   }

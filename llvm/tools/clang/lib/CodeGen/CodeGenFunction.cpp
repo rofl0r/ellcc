@@ -144,9 +144,10 @@ void CodeGenFunction::EmitReturnBlock() {
       dyn_cast<llvm::BranchInst>(*ReturnBlock.getBlock()->use_begin());
     if (BI && BI->isUnconditional() &&
         BI->getSuccessor(0) == ReturnBlock.getBlock()) {
-      // Reset insertion point, including debug location, and delete the branch.
-      // This is really subtle & only works because the next change in location
-      // will hit the caching in CGDebugInfo::EmitLocation & not override this.
+      // Reset insertion point, including debug location, and delete the
+      // branch.  This is really subtle and only works because the next change
+      // in location will hit the caching in CGDebugInfo::EmitLocation and not
+      // override this.
       Builder.SetCurrentDebugLocation(BI->getDebugLoc());
       Builder.SetInsertPoint(BI->getParent());
       BI->eraseFromParent();
@@ -257,9 +258,12 @@ void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
     llvm::ConstantInt::get(Int32Ty, 0),
     "callsite");
 
-  Builder.CreateCall2(F,
-                      llvm::ConstantExpr::getBitCast(CurFn, PointerTy),
-                      CallSite);
+  llvm::Value *args[] = {
+    llvm::ConstantExpr::getBitCast(CurFn, PointerTy),
+    CallSite
+  };
+
+  EmitNounwindRuntimeCall(F, args);
 }
 
 void CodeGenFunction::EmitMCountInstrumentation() {
@@ -267,7 +271,7 @@ void CodeGenFunction::EmitMCountInstrumentation() {
 
   llvm::Constant *MCountFn = CGM.CreateRuntimeFunction(FTy,
                                                        Target.getMCountName());
-  Builder.CreateCall(MCountFn);
+  EmitNounwindRuntimeCall(MCountFn);
 }
 
 // OpenCL v1.2 s5.6.4.6 allows the compiler to store kernel argument
@@ -560,6 +564,11 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
     // The lambda "__invoke" function is special, because it forwards or
     // clones the body of the function call operator (but is actually static).
     EmitLambdaStaticInvokeFunction(cast<CXXMethodDecl>(FD));
+  } else if (FD->isDefaulted() && isa<CXXMethodDecl>(FD) &&
+             cast<CXXMethodDecl>(FD)->isCopyAssignmentOperator()) {
+    // Implicit copy-assignment gets the same special treatment as implicit
+    // copy-constructors.
+    emitImplicitAssignmentOperatorBody(Args);
   }
   else
     EmitFunctionBody(Args);

@@ -14,6 +14,7 @@ set(ASAN_SOURCES
   asan_new_delete.cc
   asan_poisoning.cc
   asan_posix.cc
+  asan_preinit.cc
   asan_report.cc
   asan_rtl.cc
   asan_stack.cc
@@ -25,7 +26,6 @@ set(ASAN_SOURCES
 
 set(ASAN_DYLIB_SOURCES
   ${ASAN_SOURCES}
-  dynamic/asan_interceptors_dynamic.cc
   )
 
 include_directories(..)

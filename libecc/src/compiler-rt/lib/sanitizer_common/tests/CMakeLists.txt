@@ -5,11 +5,13 @@ set(SANITIZER_UNITTESTS
   sanitizer_common_test.cc
   sanitizer_flags_test.cc
   sanitizer_libc_test.cc
+  sanitizer_linux_test.cc
   sanitizer_list_test.cc
   sanitizer_mutex_test.cc
   sanitizer_printf_test.cc
   sanitizer_scanf_interceptor_test.cc
   sanitizer_stackdepot_test.cc
+  sanitizer_stacktrace_test.cc
   sanitizer_test_main.cc
   )
 
@@ -53,7 +55,7 @@ macro(add_sanitizer_tests_for_arch arch)
                             -I${COMPILER_RT_SOURCE_DIR}/include
                             -I${COMPILER_RT_SOURCE_DIR}/lib
                             -I${COMPILER_RT_SOURCE_DIR}/lib/sanitizer_common
-                            -O2 -g ${TARGET_FLAGS})
+                            -O2 -g -Wall -Werror ${TARGET_FLAGS})
   set(SANITIZER_TEST_LINK_FLAGS -lstdc++ -lpthread ${TARGET_FLAGS})
   set(SANITIZER_TEST_OBJECTS)
   foreach(source ${SANITIZER_TEST_SOURCES})

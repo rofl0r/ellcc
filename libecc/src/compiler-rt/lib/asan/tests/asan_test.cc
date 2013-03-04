@@ -170,6 +170,27 @@ TEST(AddressSanitizer, UAF_char) {
   EXPECT_DEATH(uaf_test<U1>(kLargeMalloc, kLargeMalloc / 2), uaf_string);
 }
 
+TEST(AddressSanitizer, UAF_long_double) {
+  if (sizeof(long double) == sizeof(double)) return;
+  long double *p = Ident(new long double[10]);
+  EXPECT_DEATH(Ident(p)[12] = 0, "WRITE of size 10");
+  EXPECT_DEATH(Ident(p)[0] = Ident(p)[12], "READ of size 10");
+  delete [] Ident(p);
+}
+
+struct Packed5 {
+  int x;
+  char c;
+} __attribute__((packed));
+
+
+TEST(AddressSanitizer, UAF_Packed5) {
+  Packed5 *p = Ident(new Packed5[2]);
+  EXPECT_DEATH(p[0] = p[3], "READ of size 5");
+  EXPECT_DEATH(p[3] = p[0], "WRITE of size 5");
+  delete [] Ident(p);
+}
+
 #if ASAN_HAS_BLACKLIST
 TEST(AddressSanitizer, IgnoreTest) {
   int *x = Ident(new int);
@@ -695,7 +716,8 @@ TEST(AddressSanitizer, Store128Test) {
 string RightOOBErrorMessage(int oob_distance, bool is_write) {
   assert(oob_distance >= 0);
   char expected_str[100];
-  sprintf(expected_str, ASAN_PCRE_DOTALL "%s.*located %d bytes to the right",
+  sprintf(expected_str, ASAN_PCRE_DOTALL
+          "buffer-overflow.*%s.*located %d bytes to the right",
           is_write ? "WRITE" : "READ", oob_distance);
   return string(expected_str);
 }

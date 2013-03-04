@@ -1672,9 +1672,13 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, CXXScopeSpec &SS, LookupResult &R,
             << SS.getRange()
             << FixItHint::CreateReplacement(Corrected.getCorrectionRange(),
                                             CorrectedStr);
-        if (ND)
-          Diag(ND->getLocation(), diag::note_previous_decl)
-            << CorrectedQuotedStr;
+
+        unsigned diag = isa<ImplicitParamDecl>(ND)
+          ? diag::note_implicit_param_decl
+          : diag::note_previous_decl;
+
+        Diag(ND->getLocation(), diag)
+          << CorrectedQuotedStr;
 
         // Tell the callee to try to recover.
         return false;
@@ -1976,6 +1980,10 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
                          IdentifierInfo *II, bool AllowBuiltinCreation) {
   SourceLocation Loc = Lookup.getNameLoc();
   ObjCMethodDecl *CurMethod = getCurMethodDecl();
+  
+  // Check for error condition which is already reported.
+  if (!CurMethod)
+    return ExprError();
 
   // There are two cases to handle here.  1) scoped lookup could have failed,
   // in which case we should look for an ivar.  2) scoped lookup could have
@@ -3832,9 +3840,9 @@ bool Sema::GatherArgumentsForCall(SourceLocation CallLoc,
 
 static void DiagnoseCalleeStaticArrayParam(Sema &S, ParmVarDecl *PVD) {
   TypeLoc TL = PVD->getTypeSourceInfo()->getTypeLoc();
-  if (ArrayTypeLoc *ATL = dyn_cast<ArrayTypeLoc>(&TL))
+  if (ArrayTypeLoc ATL = TL.getAs<ArrayTypeLoc>())
     S.Diag(PVD->getLocation(), diag::note_callee_static_array)
-      << ATL->getLocalSourceRange();
+      << ATL.getLocalSourceRange();
 }
 
 /// CheckStaticArrayArgument - If the given argument corresponds to a static
@@ -7155,7 +7163,7 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
         if ((LCanPointeeTy->isFunctionType() || RCanPointeeTy->isFunctionType())
             && !LHSIsNull && !RHSIsNull) {
           diagnoseFunctionPointerToVoidComparison(
-              *this, Loc, LHS, RHS, /*isError*/ isSFINAEContext());
+              *this, Loc, LHS, RHS, /*isError*/ (bool)isSFINAEContext());
           
           if (isSFINAEContext())
             return QualType();
@@ -7442,7 +7450,10 @@ QualType Sema::CheckVectorLogicalOperands(ExprResult &LHS, ExprResult &RHS,
   // Ensure that either both operands are of the same vector type, or
   // one operand is of a vector type and the other is of its element type.
   QualType vType = CheckVectorOperands(LHS, RHS, Loc, false);
-  if (vType.isNull() || vType->isFloatingType())
+  if (vType.isNull())
+    return InvalidOperands(Loc, LHS, RHS);
+  if (getLangOpts().OpenCL && getLangOpts().OpenCLVersion < 120 &&
+      vType->hasFloatingRepresentation())
     return InvalidOperands(Loc, LHS, RHS);
   
   return GetSignedVectorType(LHS.get()->getType());
@@ -7518,8 +7529,17 @@ inline QualType Sema::CheckLogicalOperands( // C99 6.5.[13,14]
                       RHS.get()->getLocEnd()));
       }
   }
-  
+
   if (!Context.getLangOpts().CPlusPlus) {
+    // OpenCL v1.1 s6.3.g: The logical operators and (&&), or (||) do
+    // not operate on the built-in scalar and vector float types.
+    if (Context.getLangOpts().OpenCL &&
+        Context.getLangOpts().OpenCLVersion < 120) {
+      if (LHS.get()->getType()->isFloatingType() ||
+          RHS.get()->getType()->isFloatingType())
+        return InvalidOperands(Loc, LHS, RHS);
+    }
+
     LHS = UsualUnaryConversions(LHS.take());
     if (LHS.isInvalid())
       return QualType();
@@ -8092,8 +8112,8 @@ static QualType CheckAddressOfOperand(Sema &S, ExprResult &OrigOp,
   unsigned AddressOfError = AO_No_Error;
 
   if (lval == Expr::LV_ClassTemporary || lval == Expr::LV_ArrayTemporary) { 
-    bool sfinae = S.isSFINAEContext();
-    S.Diag(OpLoc, sfinae ? diag::err_typecheck_addrof_temporary
+    bool sfinae = (bool)S.isSFINAEContext();
+    S.Diag(OpLoc, S.isSFINAEContext() ? diag::err_typecheck_addrof_temporary
                          : diag::ext_typecheck_addrof_temporary)
       << op->getType() << op->getSourceRange();
     if (sfinae)
@@ -8845,7 +8865,8 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
 
   case UO_Not: // bitwise complement
     Input = UsualUnaryConversions(Input.take());
-    if (Input.isInvalid()) return ExprError();
+    if (Input.isInvalid())
+      return ExprError();
     resultType = Input.get()->getType();
     if (resultType->isDependentType())
       break;
@@ -8853,12 +8874,22 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
     if (resultType->isComplexType() || resultType->isComplexIntegerType())
       // C99 does not support '~' for complex conjugation.
       Diag(OpLoc, diag::ext_integer_complement_complex)
-        << resultType << Input.get()->getSourceRange();
+          << resultType << Input.get()->getSourceRange();
     else if (resultType->hasIntegerRepresentation())
       break;
-    else {
+    else if (resultType->isExtVectorType()) {
+      if (Context.getLangOpts().OpenCL) {
+        // OpenCL v1.1 s6.3.f: The bitwise operator not (~) does not operate
+        // on vector float types.
+        QualType T = resultType->getAs<ExtVectorType>()->getElementType();
+        if (!T->isIntegerType())
+          return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
+                           << resultType << Input.get()->getSourceRange());
+      }
+      break;
+    } else {
       return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
-        << resultType << Input.get()->getSourceRange());
+                       << resultType << Input.get()->getSourceRange());
     }
     break;
 
@@ -8883,8 +8914,24 @@ ExprResult Sema::CreateBuiltinUnaryOp(SourceLocation OpLoc,
         // operand contextually converted to bool.
         Input = ImpCastExprToType(Input.take(), Context.BoolTy,
                                   ScalarTypeToBooleanCastKind(resultType));
+      } else if (Context.getLangOpts().OpenCL &&
+                 Context.getLangOpts().OpenCLVersion < 120) {
+        // OpenCL v1.1 6.3.h: The logical operator not (!) does not
+        // operate on scalar float types.
+        if (!resultType->isIntegerType())
+          return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
+                           << resultType << Input.get()->getSourceRange());
       }
     } else if (resultType->isExtVectorType()) {
+      if (Context.getLangOpts().OpenCL &&
+          Context.getLangOpts().OpenCLVersion < 120) {
+        // OpenCL v1.1 6.3.h: The logical operator not (!) does not
+        // operate on vector float types.
+        QualType T = resultType->getAs<ExtVectorType>()->getElementType();
+        if (!T->isIntegerType())
+          return ExprError(Diag(OpLoc, diag::err_typecheck_unary_expr)
+                           << resultType << Input.get()->getSourceRange());
+      }
       // Vector logical not returns the signed variant of the operand type.
       resultType = GetSignedVectorType(resultType);
       break;
@@ -9433,8 +9480,7 @@ void Sema::ActOnBlockArguments(SourceLocation CaretLoc, Declarator &ParamInfo,
   FunctionProtoTypeLoc ExplicitSignature;
 
   TypeLoc tmp = Sig->getTypeLoc().IgnoreParens();
-  if (isa<FunctionProtoTypeLoc>(tmp)) {
-    ExplicitSignature = cast<FunctionProtoTypeLoc>(tmp);
+  if ((ExplicitSignature = tmp.getAs<FunctionProtoTypeLoc>())) {
 
     // Check whether that explicit signature was synthesized by
     // GetTypeForDeclarator.  If so, don't save that as part of the

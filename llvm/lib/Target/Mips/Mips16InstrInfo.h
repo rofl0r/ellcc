@@ -93,10 +93,11 @@ public:
   //
   // build the proper one based on the Imm field
   //
-  void BuildAddiuSpImm(MachineBasicBlock &MBB,
-                           MachineBasicBlock::iterator II, DebugLoc DL,
-                           int64_t Imm) const;
 
+  const MCInstrDesc& AddiuSpImm(int64_t Imm) const;
+
+  void BuildAddiuSpImm
+    (MachineBasicBlock &MBB, MachineBasicBlock::iterator I, int64_t Imm) const;
 
 private:
   virtual unsigned GetAnalyzableBrOpc(unsigned Opc) const;
@@ -113,7 +114,6 @@ private:
   void adjustStackPtrBigUnrestricted(unsigned SP, int64_t Amount,
                                      MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator I) const;
-
 
 };
 

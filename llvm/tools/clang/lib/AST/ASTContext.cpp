@@ -654,7 +654,7 @@ ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
     DeclarationNames(*this),
     ExternalSource(0), Listener(0),
     Comments(SM), CommentsLoaded(false),
-    CommentCommandTraits(BumpAlloc),
+    CommentCommandTraits(BumpAlloc, LOpts.CommentOpts),
     LastSDM(0, 0),
     UniqueBlockByRefTypeID(0)
 {
@@ -2957,8 +2957,8 @@ ASTContext::getTemplateSpecializationTypeInfo(TemplateName Name,
   QualType TST = getTemplateSpecializationType(Name, Args, Underlying);
 
   TypeSourceInfo *DI = CreateTypeSourceInfo(TST);
-  TemplateSpecializationTypeLoc TL
-    = cast<TemplateSpecializationTypeLoc>(DI->getTypeLoc());
+  TemplateSpecializationTypeLoc TL =
+      DI->getTypeLoc().castAs<TemplateSpecializationTypeLoc>();
   TL.setTemplateKeywordLoc(SourceLocation());
   TL.setTemplateNameLoc(NameLoc);
   TL.setLAngleLoc(Args.getLAngleLoc());
@@ -3234,7 +3234,7 @@ ASTContext::getDependentTemplateSpecializationType(
 }
 
 QualType ASTContext::getPackExpansionType(QualType Pattern,
-                                      llvm::Optional<unsigned> NumExpansions) {
+                                          Optional<unsigned> NumExpansions) {
   llvm::FoldingSetNodeID ID;
   PackExpansionType::Profile(ID, Pattern, NumExpansions);
 
@@ -5142,13 +5142,11 @@ void ASTContext::getObjCEncodingForTypeImpl(QualType T, std::string& S,
       if (ClassTemplateSpecializationDecl *Spec
           = dyn_cast<ClassTemplateSpecializationDecl>(RDecl)) {
         const TemplateArgumentList &TemplateArgs = Spec->getTemplateArgs();
-        std::string TemplateArgsStr
-          = TemplateSpecializationType::PrintTemplateArgumentList(
+        llvm::raw_string_ostream OS(S);
+        TemplateSpecializationType::PrintTemplateArgumentList(OS,
                                             TemplateArgs.data(),
                                             TemplateArgs.size(),
                                             (*this).getPrintingPolicy());
-
-        S += TemplateArgsStr;
       }
     } else {
       S += '?';
