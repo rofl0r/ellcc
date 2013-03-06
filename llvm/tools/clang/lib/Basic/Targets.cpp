@@ -3438,7 +3438,8 @@ public:
       DoubleAlign = SuitableAlign = 32;
       LongLongAlign = LongDoubleAlign = 64;
       // size_t is unsigned int on FreeBSD.
-      if (getTriple().getOS() != llvm::Triple::FreeBSD)
+      if (getTriple().getVendor() != llvm::Triple::ELLCC &&
+          getTriple().getOS() != llvm::Triple::FreeBSD)
         SizeType = UnsignedLong;
 
       // Revert to using SignedInt on apcs-gnu to comply with existing behaviour.
