@@ -19,7 +19,11 @@ else
   CXX = $(XCXX)
 endif
 
-.SUFFIXES: .c .cxx .o
+.SUFFIXES: .c .cxx.s .S .o
+.s.o:
+	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS.$(TARGET)) $(XCFLAGS) $<
+.S.o:
+	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS.$(TARGET)) $(XCFLAGS) $<
 .c.o:
 	$(CC) $(MCPU) $(MFLOAT) -c $(CFLAGS.$(TARGET)) $(XCFLAGS) $<
 .cxx.o:

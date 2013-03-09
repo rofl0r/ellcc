@@ -24,10 +24,4 @@
  *
  * $FreeBSD: src/lib/csu/common/crtend.c,v 1.3 1999/08/27 23:57:57 peter Exp $
  */
-
-typedef void (*fptr)(void);
-
-static fptr ctor_end[1] __attribute__((section(".ctors"), unused, used)) = { 0 };
-static fptr dtor_end[1] __attribute__((section(".dtors"), unused, used)) = { 0 };
-static fptr init_end[1] __attribute__((section(".init_array"), unused, used)) = { 0 };
-static fptr fini_end[1] __attribute__((section(".fini_array"), unused, used)) = { 0 };
+/* Nothing to do. */

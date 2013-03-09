@@ -30,24 +30,22 @@ void *__dso_handle = 0;
 typedef void (*cfptr)(int argc, char **argv, char **envp);
 typedef void (*dfptr)(void);
 
-static cfptr ctor_list[1] __attribute__((section(".ctors"))) = { (cfptr) -1 };
-static dfptr dtor_list[1] __attribute__((section(".dtors"))) = { (dfptr) -1 };
-static cfptr init_array[1] __attribute__((section(".init_array"))) = { (cfptr) -1 };
-static dfptr fini_array[1] __attribute__((section(".fini_array"))) = { (dfptr) -1 };
+extern void (*__init_array_start [])(int, char **, char **)
+    __attribute__((visibility("hidden")));
+extern void (*__init_array_end [])(int, char **, char **)
+    __attribute__((visibility("hidden")));
+extern void (*__fini_array_start [])(void)
+    __attribute__((visibility("hidden")));
+extern void (*__fini_array_end [])(void)
+    __attribute__((visibility("hidden")));
 
 static void
 do_ctors(int argc, char **argv, char **envp)
 {
     cfptr *fpp;
 
-    // Do ctors in reverse order.
-    for(fpp = ctor_list + 1;  *fpp != 0;  ++fpp)
-        ;
-    while(--fpp > ctor_list)
-        (**fpp)(argc, argv, envp);
-
     // Do init array in forward order.
-    for(fpp = init_array + 1;  *fpp != 0;  ++fpp)
+    for(fpp = __init_array_start;  fpp != __init_array_end;  ++fpp)
         (**fpp)(argc, argv, envp);
 }
 
@@ -57,14 +55,10 @@ do_dtors(void)
     dfptr *fpp;
 
     // Do fini array in reverse order.
-    for(fpp = fini_array + 1;  *fpp != 0;  ++fpp)
-        ;
-    while(--fpp > fini_array)
+    for(fpp = __fini_array_end;  fpp != __fini_array_start; ) {
+        --fpp;
         (**fpp)();
-
-    // Do dtors in forward order.
-    for(fpp = dtor_list + 1;  *fpp != 0;  ++fpp)
-        (**fpp)();
+    }
 }
 
 /*
