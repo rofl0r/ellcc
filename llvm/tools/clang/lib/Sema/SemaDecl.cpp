@@ -1223,7 +1223,7 @@ bool Sema::ShouldWarnIfUnusedFileScopedDecl(const DeclaratorDecl *D) const {
   }
 
   // Only warn for unused decls internal to the translation unit.
-  if (D->getLinkage() == ExternalLinkage)
+  if (D->hasExternalLinkage())
     return false;
 
   return true;
@@ -1584,7 +1584,7 @@ static void filterNonConflictingPreviousDecls(ASTContext &context,
     return;
 
   // If this declaration has external
-  bool hasExternalLinkage = (decl->getLinkage() == ExternalLinkage);
+  bool hasExternalLinkage = decl->hasExternalLinkage();
 
   LookupResult::Filter filter = previous.makeFilter();
   while (filter.hasNext()) {
@@ -2563,7 +2563,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD, Scope *S) {
       SmallVector<QualType, 16> ParamTypes(OldProto->arg_type_begin(),
                                                  OldProto->arg_type_end());
       NewQType = Context.getFunctionType(NewFuncType->getResultType(),
-                                         ParamTypes.data(), ParamTypes.size(),
+                                         ParamTypes,
                                          OldProto->getExtProtoInfo());
       New->setType(NewQType);
       New->setHasInheritedPrototype();
@@ -2646,8 +2646,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, Decl *OldD, Scope *S) {
                diag::note_previous_declaration);
       }
 
-      New->setType(Context.getFunctionType(MergedReturn, &ArgTypes[0],
-                                           ArgTypes.size(),
+      New->setType(Context.getFunctionType(MergedReturn, ArgTypes,
                                            OldProto->getExtProtoInfo()));
       return MergeCompatibleFunctionDecls(New, Old, S);
     }
@@ -4117,6 +4116,11 @@ NamedDecl *Sema::HandleDeclarator(Scope *S, Declarator &D,
       D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_typedef)
     Previous.clear();
 
+  // Check that there are no default arguments other than in the parameters
+  // of a function declaration (C++ only).
+  if (getLangOpts().CPlusPlus)
+    CheckExtraCXXDefaultArguments(D);
+
   NamedDecl *New;
 
   bool AddToScope = true;
@@ -4356,11 +4360,6 @@ Sema::ActOnTypedefDeclarator(Scope* S, Declarator& D, DeclContext* DC,
     Previous.clear();
   }
 
-  if (getLangOpts().CPlusPlus) {
-    // Check that there are no default arguments (C++ only).
-    CheckExtraCXXDefaultArguments(D);
-  }
-
   DiagnoseFunctionSpecifiers(D);
 
   if (D.getDeclSpec().isThreadSpecified())
@@ -4577,7 +4576,7 @@ static void checkAttributesAfterMerging(Sema &S, NamedDecl &ND) {
     }
   }
   if (WeakRefAttr *Attr = ND.getAttr<WeakRefAttr>()) {
-    if (ND.getLinkage() == ExternalLinkage) {
+    if (ND.hasExternalLinkage()) {
       S.Diag(Attr->getLocation(), diag::err_attribute_weakref_not_static);
       ND.dropAttr<WeakRefAttr>();
     }
@@ -4590,10 +4589,6 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                               MultiTemplateParamsArg TemplateParamLists) {
   QualType R = TInfo->getType();
   DeclarationName Name = GetNameForDeclarator(D).getName();
-
-  // Check that there are no default arguments (C++ only).
-  if (getLangOpts().CPlusPlus)
-    CheckExtraCXXDefaultArguments(D);
 
   DeclSpec::SCS SCSpec = D.getDeclSpec().getStorageClassSpec();
   assert(SCSpec != DeclSpec::SCS_typedef &&
@@ -5705,8 +5700,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     T = Context.getObjCObjectPointerType(T);
     if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(R)) {
       FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
-      R = Context.getFunctionType(T, FPT->arg_type_begin(),
-                                  FPT->getNumArgs(), EPI);
+      R = Context.getFunctionType(T,
+                                  ArrayRef<QualType>(FPT->arg_type_begin(),
+                                                     FPT->getNumArgs()),
+                                  EPI);
     }
     else if (isa<FunctionNoProtoType>(R))
       R = Context.getFunctionNoProtoType(T);
@@ -6001,8 +5998,9 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
       EPI.ExceptionSpecType = EST_BasicNoexcept;
       NewFD->setType(Context.getFunctionType(FPT->getResultType(),
-                                             FPT->arg_type_begin(),
-                                             FPT->getNumArgs(), EPI));
+                                      ArrayRef<QualType>(FPT->arg_type_begin(),
+                                                         FPT->getNumArgs()),
+                                             EPI));
     }
   }
 
@@ -6386,13 +6384,15 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     EPI.Variadic = true;
     EPI.ExtInfo = FT->getExtInfo();
 
-    QualType R = Context.getFunctionType(FT->getResultType(), 0, 0, EPI);
+    QualType R = Context.getFunctionType(FT->getResultType(),
+                                         ArrayRef<QualType>(),
+                                         EPI);
     NewFD->setType(R);
   }
 
   // If there's a #pragma GCC visibility in scope, and this isn't a class
   // member, set the visibility of this function.
-  if (NewFD->getLinkage() == ExternalLinkage && !DC->isRecord())
+  if (NewFD->hasExternalLinkage() && !DC->isRecord())
     AddPushedVisibilityAttribute(NewFD);
 
   // If there's a #pragma clang arc_cf_code_audited in scope, consider
@@ -6587,8 +6587,9 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
       FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
       EPI.TypeQuals |= Qualifiers::Const;
       MD->setType(Context.getFunctionType(FPT->getResultType(),
-                                          FPT->arg_type_begin(),
-                                          FPT->getNumArgs(), EPI));
+                                      ArrayRef<QualType>(FPT->arg_type_begin(),
+                                                         FPT->getNumArgs()),
+                                          EPI));
     }
   }
 
@@ -7129,6 +7130,20 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
         DeduceInit = CXXDirectInit->getExpr(0);
       }
     }
+
+    // Expressions default to 'id' when we're in a debugger.
+    bool DefaultedToAuto = false;
+    if (getLangOpts().DebuggerCastResultToId &&
+        Init->getType() == Context.UnknownAnyTy) {
+      ExprResult Result = forceUnknownAnyToType(Init, Context.getObjCIdType());
+      if (Result.isInvalid()) {
+        VDecl->setInvalidDecl();
+        return;
+      }
+      Init = Result.take();
+      DefaultedToAuto = true;
+    }
+    
     TypeSourceInfo *DeducedType = 0;
     if (DeduceAutoType(VDecl->getTypeSourceInfo(), DeduceInit, DeducedType) ==
             DAR_Failed)
@@ -7149,7 +7164,7 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
     // 'id' instead of a specific object type prevents most of our usual checks.
     // We only want to warn outside of template instantiations, though:
     // inside a template, the 'id' could have come from a parameter.
-    if (ActiveTemplateInstantiations.empty() &&
+    if (ActiveTemplateInstantiations.empty() && !DefaultedToAuto &&
         DeducedType->getType()->isObjCIdType()) {
       SourceLocation Loc = DeducedType->getTypeLoc().getBeginLoc();
       Diag(Loc, diag::warn_auto_var_is_id)
@@ -7240,17 +7255,17 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
   // CheckInitializerTypes may change it.
   QualType DclT = VDecl->getType(), SavT = DclT;
   
-  // Top-level message sends default to 'id' when we're in a debugger
-  // and we are assigning it to a variable of 'id' type.
-  if (getLangOpts().DebuggerCastResultToId && DclT->isObjCIdType())
-    if (Init->getType() == Context.UnknownAnyTy && isa<ObjCMessageExpr>(Init)) {
-      ExprResult Result = forceUnknownAnyToType(Init, Context.getObjCIdType());
-      if (Result.isInvalid()) {
-        VDecl->setInvalidDecl();
-        return;
-      }
-      Init = Result.take();
+  // Expressions default to 'id' when we're in a debugger
+  // and we are assigning it to a variable of Objective-C pointer type.
+  if (getLangOpts().DebuggerCastResultToId && DclT->isObjCObjectPointerType() &&
+      Init->getType() == Context.UnknownAnyTy) {
+    ExprResult Result = forceUnknownAnyToType(Init, Context.getObjCIdType());
+    if (Result.isInvalid()) {
+      VDecl->setInvalidDecl();
+      return;
     }
+    Init = Result.take();
+  }
 
   // Perform the initialization.
   if (!VDecl->isInvalidDecl()) {
@@ -7786,7 +7801,7 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
   }
 
   if (var->isThisDeclarationADefinition() &&
-      var->getLinkage() == ExternalLinkage &&
+      var->hasExternalLinkage() &&
       getDiagnostics().getDiagnosticLevel(
                        diag::warn_missing_variable_declarations,
                        var->getLocation())) {
@@ -7815,10 +7830,10 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     if (type->isStructureOrClassType()) {
       SourceLocation poi = var->getLocation();
       Expr *varRef =new (Context) DeclRefExpr(var, false, type, VK_LValue, poi);
-      ExprResult result =
-        PerformCopyInitialization(
-                        InitializedEntity::InitializeBlock(poi, type, false),
-                                  poi, Owned(varRef));
+      ExprResult result
+        = PerformMoveOrCopyInitialization(
+            InitializedEntity::InitializeBlock(poi, type, false),
+            var, var->getType(), varRef, /*AllowNRVO=*/true);
       if (!result.isInvalid()) {
         result = MaybeCreateExprWithCleanups(result);
         Expr *init = result.takeAs<Expr>();
@@ -7884,7 +7899,7 @@ Sema::FinalizeDeclaration(Decl *ThisDecl) {
   const DeclContext *DC = VD->getDeclContext();
   // If there's a #pragma GCC visibility in scope, and this isn't a class
   // member, set the visibility of this variable.
-  if (VD->getLinkage() == ExternalLinkage && !DC->isRecord())
+  if (VD->hasExternalLinkage() && !DC->isRecord())
     AddPushedVisibilityAttribute(VD);
 
   if (VD->isFileVarDecl())
@@ -8859,7 +8874,7 @@ NamedDecl *Sema::ImplicitlyDefineFunction(SourceLocation Loc,
   DeclContext *PrevDC = CurContext;
   CurContext = Context.getTranslationUnitDecl();
 
-  FunctionDecl *FD = dyn_cast<FunctionDecl>(ActOnDeclarator(TUScope, D));
+  FunctionDecl *FD = cast<FunctionDecl>(ActOnDeclarator(TUScope, D));
   FD->setImplicit();
 
   CurContext = PrevDC;

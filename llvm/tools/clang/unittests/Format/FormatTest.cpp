@@ -172,6 +172,35 @@ TEST_F(FormatTest, RemovesTrailingWhitespaceOfFormattedLine) {
             format("int a;  \nint b;    ", 0, 0, getLLVMStyle()));
 }
 
+TEST_F(FormatTest, FormatsCorrectRegionForLeadingWhitespace) {
+  EXPECT_EQ("int b;\nint a;",
+            format("int b;\n   int a;", 7, 0, getLLVMStyle()));
+  EXPECT_EQ("int b;\n   int a;",
+            format("int b;\n   int a;", 6, 0, getLLVMStyle()));
+
+  EXPECT_EQ("#define A  \\\n"
+            "  int a;   \\\n"
+            "  int b;",
+            format("#define A  \\\n"
+                   "  int a;   \\\n"
+                   "    int b;",
+                   26, 0, getLLVMStyleWithColumns(12)));
+  EXPECT_EQ("#define A  \\\n"
+            "  int a;   \\\n"
+            "    int b;",
+            format("#define A  \\\n"
+                   "  int a;   \\\n"
+                   "    int b;",
+                   25, 0, getLLVMStyleWithColumns(12)));
+}
+
+TEST_F(FormatTest, RemovesWhitespaceWhenTriggeredOnEmptyLine) {
+  EXPECT_EQ("int  a;\n\n int b;",
+            format("int  a;\n  \n\n int b;", 7, 0, getLLVMStyle()));
+  EXPECT_EQ("int  a;\n\n int b;",
+            format("int  a;\n  \n\n int b;", 9, 0, getLLVMStyle()));
+}
+
 TEST_F(FormatTest, ReformatsMovedLines) {
   EXPECT_EQ(
       "template <typename T> T *getFETokenInfo() const {\n"
@@ -3021,6 +3050,14 @@ TEST_F(FormatTest, BreakStringLiterals) {
   EXPECT_EQ("\"some\"\n"
             "\" text\"",
             format("\"some text\"", getLLVMStyleWithColumns(6)));
+  EXPECT_EQ("\"some\"\n"
+            "\" tex\"\n"
+            "\" and\"",
+            format("\"some tex and\"", getLLVMStyleWithColumns(6)));
+  EXPECT_EQ("\"some\"\n"
+            "\"/tex\"\n"
+            "\"/and\"",
+            format("\"some/tex/and\"", getLLVMStyleWithColumns(6)));
 
   EXPECT_EQ("variable =\n"
             "    \"long string \"\n"
@@ -3069,6 +3106,45 @@ TEST_F(FormatTest, BreakStringLiterals) {
       "\"pathat/\"\n"
       "\"slashes\"",
       format("\"split/pathat/slashes\"", getLLVMStyleWithColumns(10)));
+}
+
+TEST_F(FormatTest, DoNotBreakStringLiteralsInEscapeSequence) {
+  EXPECT_EQ("\"\\a\"",
+            format("\"\\a\"", getLLVMStyleWithColumns(3)));
+  EXPECT_EQ("\"\\\"",
+            format("\"\\\"", getLLVMStyleWithColumns(2)));
+  EXPECT_EQ("\"test\"\n"
+            "\"\\n\"",
+            format("\"test\\n\"", getLLVMStyleWithColumns(7)));
+  EXPECT_EQ("\"tes\\\\\"\n"
+            "\"n\"",
+            format("\"tes\\\\n\"", getLLVMStyleWithColumns(7)));
+  EXPECT_EQ("\"\\\\\\\\\"\n"
+            "\"\\n\"",
+            format("\"\\\\\\\\\\n\"", getLLVMStyleWithColumns(7)));
+  EXPECT_EQ("\"\\uff01\"",
+            format("\"\\uff01\"", getLLVMStyleWithColumns(7)));
+  EXPECT_EQ("\"\\uff01\"\n"
+            "\"test\"",
+            format("\"\\uff01test\"", getLLVMStyleWithColumns(8)));
+  EXPECT_EQ("\"\\Uff01ff02\"",
+            format("\"\\Uff01ff02\"", getLLVMStyleWithColumns(11)));
+  EXPECT_EQ("\"\\x000000000001\"\n"
+            "\"next\"",
+            format("\"\\x000000000001next\"", getLLVMStyleWithColumns(16)));
+  EXPECT_EQ("\"\\x000000000001next\"",
+            format("\"\\x000000000001next\"", getLLVMStyleWithColumns(15)));
+  EXPECT_EQ("\"\\x000000000001\"",
+            format("\"\\x000000000001\"", getLLVMStyleWithColumns(7)));
+  EXPECT_EQ("\"test\"\n"
+            "\"\\000000\"\n"
+            "\"000001\"",
+            format("\"test\\000000000001\"", getLLVMStyleWithColumns(9)));
+  EXPECT_EQ("\"test\\000\"\n"
+            "\"000000001\"",
+            format("\"test\\000000000001\"", getLLVMStyleWithColumns(10)));
+  EXPECT_EQ("R\"(\\x\\x00)\"\n",
+            format("R\"(\\x\\x00)\"\n", getLLVMStyleWithColumns(7)));
 }
 
 } // end namespace tooling

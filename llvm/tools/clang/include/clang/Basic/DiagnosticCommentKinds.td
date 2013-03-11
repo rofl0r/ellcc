@@ -69,10 +69,28 @@ def warn_doc_param_spaces_in_direction : Warning<
   InGroup<DocumentationPedantic>, DefaultIgnore;
 
 def warn_doc_param_not_attached_to_a_function_decl : Warning<
-  "'\\param' command used in a comment that is not attached to "
+  "'%select{\\|@}0param' command used in a comment that is not attached to "
   "a function declaration">,
   InGroup<Documentation>, DefaultIgnore;
 
+def warn_doc_function_method_decl_mismatch : Warning<
+  "'%select{\\|@}0%select{function|method|callback}1' command should be "
+  "used in a comment attached to "
+  "%select{a function|an Objective-C method|a pointer to function}2 declaration">,
+  InGroup<Documentation>, DefaultIgnore;
+  
+def warn_doc_api_container_decl_mismatch : Warning<
+  "'%select{\\|@}0%select{class|interface|protocol|struct|union}1' "
+  "command should not be used in a comment attached to a "
+  "non-%select{class|interface|protocol|struct|union}2 declaration">,
+  InGroup<Documentation>, DefaultIgnore;
+  
+def warn_doc_container_decl_mismatch : Warning<
+  "'%select{\\|@}0%select{classdesign|coclass|dependency|helper"
+  "|helperclass|helps|instancesize|ownership|performance|security|superclass}1' "
+  "command should not be used in a comment attached to a non-container declaration">,
+  InGroup<Documentation>, DefaultIgnore;
+  
 def warn_doc_param_duplicate : Warning<
   "parameter '%0' is already documented">,
   InGroup<Documentation>, DefaultIgnore;
@@ -87,10 +105,10 @@ def warn_doc_param_not_found : Warning<
 def note_doc_param_name_suggestion : Note<
   "did you mean '%0'?">;
 
-// \tparam command
+// tparam command
 
 def warn_doc_tparam_not_attached_to_a_template_decl : Warning<
-  "'\\tparam' command used in a comment that is not attached to "
+  "'%select{\\|@}0tparam' command used in a comment that is not attached to "
   "a template declaration">,
   InGroup<Documentation>, DefaultIgnore;
 

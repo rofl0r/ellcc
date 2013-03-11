@@ -36,7 +36,7 @@
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-class _LIBCPP_VISIBLE locale;
+class _LIBCPP_TYPE_VIS locale;
 
 template <class _Facet>
 _LIBCPP_INLINE_VISIBILITY
@@ -48,12 +48,12 @@ _LIBCPP_INLINE_VISIBILITY
 const _Facet&
 use_facet(const locale&);
 
-class _LIBCPP_VISIBLE locale
+class _LIBCPP_TYPE_VIS locale
 {
 public:
     // types:
-    class _LIBCPP_VISIBLE facet;
-    class _LIBCPP_VISIBLE id;
+    class _LIBCPP_TYPE_VIS facet;
+    class _LIBCPP_TYPE_VIS id;
 
     typedef int category;
     static const category // values assigned here are for exposition only
@@ -108,7 +108,7 @@ private:
     template <class _Facet> friend const _Facet& use_facet(const locale&);
 };
 
-class _LIBCPP_VISIBLE locale::facet
+class _LIBCPP_TYPE_VIS locale::facet
     : public __shared_count
 {
 protected:
@@ -124,7 +124,7 @@ private:
     virtual void __on_zero_shared() _NOEXCEPT;
 };
 
-class _LIBCPP_VISIBLE locale::id
+class _LIBCPP_TYPE_VIS locale::id
 {
     once_flag      __flag_;
     int32_t        __id_;
@@ -180,7 +180,7 @@ use_facet(const locale& __l)
 // template <class _CharT> class collate;
 
 template <class _CharT>
-class _LIBCPP_VISIBLE collate
+class _LIBCPP_TYPE_VIS collate
     : public locale::facet
 {
 public:
@@ -259,15 +259,15 @@ collate<_CharT>::do_hash(const char_type* __lo, const char_type* __hi) const
     return static_cast<long>(__h);
 }
 
-_LIBCPP_EXTERN_TEMPLATE(class _LIBCPP_VISIBLE collate<char>)
-_LIBCPP_EXTERN_TEMPLATE(class _LIBCPP_VISIBLE collate<wchar_t>)
+_LIBCPP_EXTERN_TEMPLATE(class _LIBCPP_TYPE_VIS collate<char>)
+_LIBCPP_EXTERN_TEMPLATE(class _LIBCPP_TYPE_VIS collate<wchar_t>)
 
 // template <class CharT> class collate_byname;
 
-template <class _CharT> class _LIBCPP_VISIBLE collate_byname;
+template <class _CharT> class _LIBCPP_TYPE_VIS collate_byname;
 
 template <>
-class _LIBCPP_VISIBLE collate_byname<char>
+class _LIBCPP_TYPE_VIS collate_byname<char>
     : public collate<char>
 {
     locale_t __l;
@@ -286,7 +286,7 @@ protected:
 };
 
 template <>
-class _LIBCPP_VISIBLE collate_byname<wchar_t>
+class _LIBCPP_TYPE_VIS collate_byname<wchar_t>
     : public collate<wchar_t>
 {
     locale_t __l;
@@ -317,7 +317,7 @@ locale::operator()(const basic_string<_CharT, _Traits, _Allocator>& __x,
 
 // template <class charT> class ctype
 
-class _LIBCPP_VISIBLE ctype_base
+class _LIBCPP_TYPE_VIS ctype_base
 {
 public:
 #if __GLIBC__
@@ -391,10 +391,10 @@ public:
     _LIBCPP_ALWAYS_INLINE ctype_base() {}
 };
 
-template <class _CharT> class _LIBCPP_VISIBLE ctype;
+template <class _CharT> class _LIBCPP_TYPE_VIS ctype;
 
 template <>
-class _LIBCPP_VISIBLE ctype<wchar_t>
+class _LIBCPP_TYPE_VIS ctype<wchar_t>
     : public locale::facet,
       public ctype_base
 {
@@ -496,7 +496,7 @@ protected:
 };
 
 template <>
-class _LIBCPP_VISIBLE ctype<char>
+class _LIBCPP_TYPE_VIS ctype<char>
     : public locale::facet, public ctype_base
 {
     const mask* __tab_;
@@ -614,10 +614,10 @@ protected:
 
 // template <class CharT> class ctype_byname;
 
-template <class _CharT> class _LIBCPP_VISIBLE ctype_byname;
+template <class _CharT> class _LIBCPP_TYPE_VIS ctype_byname;
 
 template <>
-class _LIBCPP_VISIBLE ctype_byname<char>
+class _LIBCPP_TYPE_VIS ctype_byname<char>
     : public ctype<char>
 {
     locale_t __l;
@@ -635,7 +635,7 @@ protected:
 };
 
 template <>
-class _LIBCPP_VISIBLE ctype_byname<wchar_t>
+class _LIBCPP_TYPE_VIS ctype_byname<wchar_t>
     : public ctype<wchar_t>
 {
     locale_t __l;
@@ -766,7 +766,7 @@ tolower(_CharT __c, const locale& __loc)
 
 // codecvt_base
 
-class _LIBCPP_VISIBLE codecvt_base
+class _LIBCPP_TYPE_VIS codecvt_base
 {
 public:
     _LIBCPP_ALWAYS_INLINE codecvt_base() {}
@@ -775,12 +775,12 @@ public:
 
 // template <class internT, class externT, class stateT> class codecvt;
 
-template <class _InternT, class _ExternT, class _StateT> class _LIBCPP_VISIBLE codecvt;
+template <class _InternT, class _ExternT, class _StateT> class _LIBCPP_TYPE_VIS codecvt;
 
 // template <> class codecvt<char, char, mbstate_t>
 
 template <>
-class _LIBCPP_VISIBLE codecvt<char, char, mbstate_t>
+class _LIBCPP_TYPE_VIS codecvt<char, char, mbstate_t>
     : public locale::facet,
       public codecvt_base
 {
@@ -866,7 +866,7 @@ protected:
 // template <> class codecvt<wchar_t, char, mbstate_t>
 
 template <>
-class _LIBCPP_VISIBLE codecvt<wchar_t, char, mbstate_t>
+class _LIBCPP_TYPE_VIS codecvt<wchar_t, char, mbstate_t>
     : public locale::facet,
       public codecvt_base
 {
@@ -949,7 +949,7 @@ protected:
 // template <> class codecvt<char16_t, char, mbstate_t>
 
 template <>
-class _LIBCPP_VISIBLE codecvt<char16_t, char, mbstate_t>
+class _LIBCPP_TYPE_VIS codecvt<char16_t, char, mbstate_t>
     : public locale::facet,
       public codecvt_base
 {
@@ -1035,7 +1035,7 @@ protected:
 // template <> class codecvt<char32_t, char, mbstate_t>
 
 template <>
-class _LIBCPP_VISIBLE codecvt<char32_t, char, mbstate_t>
+class _LIBCPP_TYPE_VIS codecvt<char32_t, char, mbstate_t>
     : public locale::facet,
       public codecvt_base
 {
@@ -1121,7 +1121,7 @@ protected:
 // template <class _InternT, class _ExternT, class _StateT> class codecvt_byname
 
 template <class _InternT, class _ExternT, class _StateT>
-class _LIBCPP_VISIBLE codecvt_byname
+class _LIBCPP_TYPE_VIS codecvt_byname
     : public codecvt<_InternT, _ExternT, _StateT>
 {
 public:
@@ -1145,7 +1145,7 @@ _LIBCPP_EXTERN_TEMPLATE(class codecvt_byname<wchar_t, char, mbstate_t>)
 _LIBCPP_EXTERN_TEMPLATE(class codecvt_byname<char16_t, char, mbstate_t>)
 _LIBCPP_EXTERN_TEMPLATE(class codecvt_byname<char32_t, char, mbstate_t>)
 
-_LIBCPP_VISIBLE void __throw_runtime_error(const char*);
+_LIBCPP_FUNC_VIS void __throw_runtime_error(const char*);
 
 template <size_t _Np>
 struct __narrow_to_utf8
@@ -1329,10 +1329,10 @@ struct __widen_from_utf8<32>
 
 // template <class charT> class numpunct
 
-template <class _CharT> class _LIBCPP_VISIBLE numpunct;
+template <class _CharT> class _LIBCPP_TYPE_VIS numpunct;
 
 template <>
-class _LIBCPP_VISIBLE numpunct<char>
+class _LIBCPP_TYPE_VIS numpunct<char>
     : public locale::facet
 {
 public:
@@ -1363,7 +1363,7 @@ protected:
 };
 
 template <>
-class _LIBCPP_VISIBLE numpunct<wchar_t>
+class _LIBCPP_TYPE_VIS numpunct<wchar_t>
     : public locale::facet
 {
 public:
@@ -1395,10 +1395,10 @@ protected:
 
 // template <class charT> class numpunct_byname
 
-template <class charT> class _LIBCPP_VISIBLE numpunct_byname;
+template <class charT> class _LIBCPP_TYPE_VIS numpunct_byname;
 
 template <>
-class _LIBCPP_VISIBLE numpunct_byname<char>
+class _LIBCPP_TYPE_VIS numpunct_byname<char>
 : public numpunct<char>
 {
 public:
@@ -1416,7 +1416,7 @@ private:
 };
 
 template <>
-class _LIBCPP_VISIBLE numpunct_byname<wchar_t>
+class _LIBCPP_TYPE_VIS numpunct_byname<wchar_t>
 : public numpunct<wchar_t>
 {
 public:
