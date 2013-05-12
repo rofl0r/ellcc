@@ -31,8 +31,10 @@ set(MSAN_LIBCXX_LINK_FLAGS
   -fsanitize=memory)
 
 # Unittest sources and build flags.
-set(MSAN_UNITTEST_SOURCE msan_test.cc)
+set(MSAN_UNITTEST_SOURCES msan_test.cc msan_test_main.cc)
+set(MSAN_LOADABLE_SOURCE msan_loadable.cc)
 set(MSAN_UNITTEST_HEADERS
+  msan_test_config.h
   msandr_test_so.h
   ../../../include/sanitizer/msan_interface.h
 )
@@ -45,7 +47,6 @@ set(MSAN_UNITTEST_COMMON_CFLAGS
   -I${COMPILER_RT_SOURCE_DIR}/lib/msan
   -std=c++0x
   -stdlib=libc++
-  -fPIE
   -g
   -O2
   -fno-exceptions
@@ -60,10 +61,13 @@ set(MSAN_UNITTEST_INSTRUMENTED_CFLAGS
 )
 set(MSAN_UNITTEST_LINK_FLAGS
   -fsanitize=memory
-  -pie
   -ldl
   # FIXME: we build libcxx without cxxabi and need libstdc++ to provide it.
   -lstdc++
+)
+set(MSAN_LOADABLE_LINK_FLAGS
+  -fsanitize=memory
+  -shared
 )
 
 # Compile source for the given architecture, using compiler
@@ -96,6 +100,7 @@ macro(add_msan_test test_suite test_name arch)
   add_compiler_rt_test(${test_suite} ${test_name}
                        OBJECTS ${ARGN}
                        DEPS ${MSAN_RUNTIME_LIBRARIES} ${ARGN}
+                            ${MSAN_LOADABLE_SO}
                        LINK_FLAGS ${MSAN_UNITTEST_LINK_FLAGS}
                                   ${TARGET_LINK_FLAGS}
                                   "-Wl,-rpath=${CMAKE_CURRENT_BINARY_DIR}")
@@ -127,13 +132,26 @@ macro(add_msan_tests_for_arch arch)
 
   # Instrumented tests.
   set(MSAN_INST_TEST_OBJECTS)
-  msan_compile(MSAN_INST_TEST_OBJECTS ${MSAN_UNITTEST_SOURCE} ${arch}
+  foreach (SOURCE ${MSAN_UNITTEST_SOURCES})
+    msan_compile(MSAN_INST_TEST_OBJECTS ${SOURCE} ${arch}
+                 ${MSAN_UNITTEST_INSTRUMENTED_CFLAGS})
+  endforeach(SOURCE)
+
+  # Instrumented loadable module objects.
+  set(MSAN_INST_LOADABLE_OBJECTS)
+  msan_compile(MSAN_INST_LOADABLE_OBJECTS ${MSAN_LOADABLE_SOURCE} ${arch}
                ${MSAN_UNITTEST_INSTRUMENTED_CFLAGS})
 
   # Uninstrumented shared object for MSanDR tests.
   set(MSANDR_TEST_OBJECTS)
   msan_compile(MSANDR_TEST_OBJECTS ${MSANDR_UNITTEST_SOURCE} ${arch}
                ${MSAN_UNITTEST_COMMON_CFLAGS})
+
+  # Instrumented loadable library tests.
+  set(MSAN_LOADABLE_SO)
+  msan_link_shared(MSAN_LOADABLE_SO "libmsan_loadable" ${arch}
+                   OBJECTS ${MSAN_INST_LOADABLE_OBJECTS}
+                   DEPS ${MSAN_INST_LOADABLE_OBJECTS} ${MSAN_RUNTIME_LIBRARIES})
 
   # Uninstrumented shared library tests.
   set(MSANDR_TEST_SO)

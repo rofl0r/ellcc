@@ -11,7 +11,9 @@
 // run-time libraries.
 // Linux-specific implementation of symbolizer parts.
 //===----------------------------------------------------------------------===//
-#ifdef __linux__
+
+#include "sanitizer_platform.h"
+#if SANITIZER_LINUX
 #include "sanitizer_common.h"
 #include "sanitizer_internal_defs.h"
 #include "sanitizer_libc.h"
@@ -26,7 +28,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#if !defined(__ANDROID__) && !defined(ANDROID)
+#if !SANITIZER_ANDROID
 #include <link.h>
 #endif
 
@@ -121,11 +123,11 @@ bool StartSymbolizerSubprocess(const char *path_to_symbolizer,
   return true;
 }
 
-#if defined(__ANDROID__) || defined(ANDROID)
+#if SANITIZER_ANDROID
 uptr GetListOfModules(LoadedModule *modules, uptr max_modules) {
   UNIMPLEMENTED();
 }
-#else  // ANDROID
+#else  // SANITIZER_ANDROID
 typedef ElfW(Phdr) Elf_Phdr;
 
 struct DlIteratePhdrData {
@@ -146,7 +148,12 @@ static int dl_iterate_phdr_cb(dl_phdr_info *info, size_t size, void *arg) {
     // First module is the binary itself.
     uptr module_name_len = internal_readlink(
         "/proc/self/exe", module_name.data(), module_name.size());
-    CHECK_NE(module_name_len, (uptr)-1);
+    if (internal_iserror(module_name_len)) {
+      // We can't read /proc/self/exe for some reason, assume the name of the
+      // binary is unknown.
+      module_name_len = internal_snprintf(module_name.data(),
+                                          module_name.size(), "/proc/self/exe");
+    }
     CHECK_LT(module_name_len, module_name.size());
     module_name[module_name_len] = '\0';
   } else if (info->dlpi_name) {
@@ -175,8 +182,8 @@ uptr GetListOfModules(LoadedModule *modules, uptr max_modules) {
   dl_iterate_phdr(dl_iterate_phdr_cb, &data);
   return data.current_n;
 }
-#endif  // ANDROID
+#endif  // SANITIZER_ANDROID
 
 }  // namespace __sanitizer
 
-#endif  // __linux__
+#endif  // SANITIZER_LINUX

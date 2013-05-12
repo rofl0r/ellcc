@@ -129,6 +129,7 @@ namespace std
     template <class T> struct alignment_of;
     template <size_t Len, size_t Align = most_stringent_alignment_requirement>
         struct aligned_storage;
+    template <size_t Len, class... Types> struct aligned_union;
 
     template <class T> struct decay;
     template <class... T> struct common_type;
@@ -802,17 +803,13 @@ struct _LIBCPP_TYPE_VIS is_polymorphic
 
 #else
 
-template <class _Tp> struct __is_polymorphic1 : public _Tp {};
-template <class _Tp> struct __is_polymorphic2 : public _Tp {virtual ~__is_polymorphic2() throw();};
-
-template <class _Tp, bool = is_class<_Tp>::value>
-struct __libcpp_polymorphic
-    : public integral_constant<bool, sizeof(__is_polymorphic1<_Tp>) == sizeof(__is_polymorphic2<_Tp>)> {};
-
-template <class _Tp> struct __libcpp_polymorphic<_Tp, false> : public false_type {};
+template<typename _Tp> char &__is_polymorphic_impl(
+    typename enable_if<sizeof((_Tp*)dynamic_cast<const volatile void*>(declval<_Tp*>())) != 0,
+                       int>::type);
+template<typename _Tp> __two &__is_polymorphic_impl(...);
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS is_polymorphic
-    : public __libcpp_polymorphic<_Tp> {};
+    : public integral_constant<bool, sizeof(__is_polymorphic_impl<_Tp>(0)) == 1> {};
 
 #endif // __has_feature(is_polymorphic)
 
@@ -832,10 +829,8 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS has_virtual_destructor
 
 // alignment_of
 
-template <class _Tp> struct __alignment_of {_Tp __lx;};
-
 template <class _Tp> struct _LIBCPP_TYPE_VIS alignment_of
-    : public integral_constant<size_t, __alignof__(__alignment_of<typename remove_all_extents<_Tp>::type>)> {};
+    : public integral_constant<size_t, __alignof__(_Tp)> {};
 
 // aligned_storage
 
@@ -963,6 +958,38 @@ _CREATE_ALIGNED_STORAGE_SPECIALIZATION(0x4000);
 #endif // !_MSC_VER
 
 #undef _CREATE_ALIGNED_STORAGE_SPECIALIZATION
+
+#ifndef _LIBCPP_HAS_NO_VARIADICS
+
+// aligned_union
+
+template <size_t _I0, size_t ..._In>
+struct __static_max;
+
+template <size_t _I0>
+struct __static_max<_I0>
+{
+    static const size_t value = _I0;
+};
+
+template <size_t _I0, size_t _I1, size_t ..._In>
+struct __static_max<_I0, _I1, _In...>
+{
+    static const size_t value = _I0 >= _I1 ? __static_max<_I0, _In...>::value :
+                                             __static_max<_I1, _In...>::value;
+};
+
+template <size_t _Len, class _Type0, class ..._Types>
+struct aligned_union
+{
+    static const size_t alignment_value = __static_max<__alignof__(_Type0),
+                                                       __alignof__(_Types)...>::value;
+    static const size_t __len = __static_max<_Len, sizeof(_Type0),
+                                             sizeof(_Types)...>::value;
+    typedef typename aligned_storage<__len, alignment_value>::type type;
+};
+
+#endif  // _LIBCPP_HAS_NO_VARIADICS
 
 // __promote
 
@@ -2851,13 +2878,27 @@ __invoke(__any, _Args&& ...__args)
 
 // bullets 1 and 2
 
-template <class _Fp, class _A0, class ..._Args>
+template <class _Fp, class _A0, class ..._Args,
+            class = typename enable_if
+            <
+                is_member_function_pointer<typename remove_reference<_Fp>::type>::value &&
+                is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                           typename remove_reference<_A0>::type>::value
+            >::type
+         >
 _LIBCPP_INLINE_VISIBILITY
 auto
 __invoke(_Fp&& __f, _A0&& __a0, _Args&& ...__args)
     -> decltype((_VSTD::forward<_A0>(__a0).*__f)(_VSTD::forward<_Args>(__args)...));
 
-template <class _Fp, class _A0, class ..._Args>
+template <class _Fp, class _A0, class ..._Args,
+            class = typename enable_if
+            <
+                is_member_function_pointer<typename remove_reference<_Fp>::type>::value &&
+                !is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                           typename remove_reference<_A0>::type>::value
+            >::type
+         >
 _LIBCPP_INLINE_VISIBILITY
 auto
 __invoke(_Fp&& __f, _A0&& __a0, _Args&& ...__args)
@@ -2865,13 +2906,27 @@ __invoke(_Fp&& __f, _A0&& __a0, _Args&& ...__args)
 
 // bullets 3 and 4
 
-template <class _Fp, class _A0>
+template <class _Fp, class _A0,
+            class = typename enable_if
+            <
+                is_member_object_pointer<typename remove_reference<_Fp>::type>::value &&
+                is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                           typename remove_reference<_A0>::type>::value
+            >::type
+         >
 _LIBCPP_INLINE_VISIBILITY
 auto
 __invoke(_Fp&& __f, _A0&& __a0)
     -> decltype(_VSTD::forward<_A0>(__a0).*__f);
 
-template <class _Fp, class _A0>
+template <class _Fp, class _A0,
+            class = typename enable_if
+            <
+                is_member_object_pointer<typename remove_reference<_Fp>::type>::value &&
+                !is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                           typename remove_reference<_A0>::type>::value
+            >::type
+         >
 _LIBCPP_INLINE_VISIBILITY
 auto
 __invoke(_Fp&& __f, _A0&& __a0)

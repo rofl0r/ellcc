@@ -16,7 +16,7 @@
 #define PLATFORM_SUPPORT_H
 
 // locale names
-#if _WIN32
+#ifdef _WIN32
 // WARNING: Windows does not support UTF-8 codepages.
 // Locales are "converted" using http://docs.moodle.org/dev/Table_of_locales
 #define LOCALE_en_US_UTF_8     "English_United States.1252"
@@ -38,5 +38,26 @@
 #define LOCALE_ru_RU_UTF_8     "ru_RU.UTF-8"
 #define LOCALE_zh_CN_UTF_8     "zh_CN.UTF-8"
 #endif
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+
+inline
+std::string
+get_temp_file_name()
+{
+#ifdef _WIN32
+   char* p = _tempnam( NULL, NULL );
+   if (p == nullptr)
+       abort();
+    std::string s(p);
+    free( p );
+#else
+   std::string s("temp.XXXXXX");
+   mktemp(&s[0]);
+#endif
+   return s;
+}
 
 #endif // PLATFORM_SUPPORT_H

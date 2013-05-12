@@ -13,7 +13,9 @@
 #ifndef SANITIZER_DEFS_H
 #define SANITIZER_DEFS_H
 
-#if defined(_WIN32)
+#include "sanitizer_platform.h"
+
+#if SANITIZER_WINDOWS
 // FIXME find out what we need on Windows. __declspec(dllexport) ?
 # define SANITIZER_INTERFACE_ATTRIBUTE
 # define SANITIZER_WEAK_ATTRIBUTE
@@ -25,7 +27,7 @@
 # define SANITIZER_WEAK_ATTRIBUTE  __attribute__((weak))
 #endif
 
-#ifdef __linux__
+#if SANITIZER_LINUX && !defined(SANITIZER_GO)
 # define SANITIZER_SUPPORTS_WEAK_HOOKS 1
 #else
 # define SANITIZER_SUPPORTS_WEAK_HOOKS 0
@@ -70,7 +72,7 @@ typedef int fd_t;
 // _FILE_OFFSET_BITS. This definition of OFF_T matches the ABI of system calls
 // like pread and mmap, as opposed to pread64 and mmap64.
 // Mac and Linux/x86-64 are special.
-#if defined(__APPLE__) || (defined(__linux__) && defined(__x86_64__))
+#if SANITIZER_MAC || (SANITIZER_LINUX && defined(__x86_64__))
 typedef u64 OFF_T;
 #else
 typedef uptr OFF_T;
@@ -107,13 +109,13 @@ using namespace __sanitizer;  // NOLINT
 // This header should NOT include any other headers to avoid portability issues.
 
 // Common defs.
-#define INLINE static inline
+#define INLINE inline
 #define INTERFACE_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
 #define WEAK SANITIZER_WEAK_ATTRIBUTE
 
 // Platform-specific defs.
 #if defined(_MSC_VER)
-# define ALWAYS_INLINE __declspec(forceinline)
+# define ALWAYS_INLINE __forceinline
 // FIXME(timurrrr): do we need this on Windows?
 # define ALIAS(x)
 # define ALIGNED(x) __declspec(align(x))
@@ -128,7 +130,7 @@ using namespace __sanitizer;  // NOLINT
 # define USED
 # define PREFETCH(x) /* _mm_prefetch(x, _MM_HINT_NTA) */
 #else  // _MSC_VER
-# define ALWAYS_INLINE __attribute__((always_inline))
+# define ALWAYS_INLINE inline __attribute__((always_inline))
 # define ALIAS(x) __attribute__((alias(x)))
 # define ALIGNED(x) __attribute__((aligned(x)))
 # define FORMAT(f, a)  __attribute__((format(printf, f, a)))
@@ -148,7 +150,7 @@ using namespace __sanitizer;  // NOLINT
 # endif
 #endif  // _MSC_VER
 
-#if defined(_WIN32)
+#if SANITIZER_WINDOWS
 typedef unsigned long DWORD;  // NOLINT
 typedef DWORD thread_return_t;
 # define THREAD_CALLING_CONV __stdcall
@@ -271,10 +273,12 @@ extern "C" void* _ReturnAddress(void);
 # define GET_CURRENT_FRAME() (uptr)0xDEADBEEF
 #endif
 
-#define HANDLE_EINTR(res, f) {                               \
-  do {                                                                  \
-    res = (f);                                                         \
-  } while (res == -1 && errno == EINTR); \
+#define HANDLE_EINTR(res, f)                                       \
+  {                                                                \
+    int rverrno;                                                   \
+    do {                                                           \
+      res = (f);                                                   \
+    } while (internal_iserror(res, &rverrno) && rverrno == EINTR); \
   }
 
 #endif  // SANITIZER_DEFS_H

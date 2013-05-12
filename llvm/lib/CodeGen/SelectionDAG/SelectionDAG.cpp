@@ -1917,7 +1917,8 @@ void SelectionDAG::ComputeMaskedBits(SDValue Op, APInt &KnownZero,
   }
   case ISD::LOAD: {
     LoadSDNode *LD = cast<LoadSDNode>(Op);
-    if (ISD::isZEXTLoad(Op.getNode())) {
+    // If this is a ZEXTLoad and we are looking at the loaded value.
+    if (ISD::isZEXTLoad(Op.getNode()) && Op.getResNo() == 0) {
       EVT VT = LD->getMemoryVT();
       unsigned MemBits = VT.getScalarType().getSizeInBits();
       KnownZero |= APInt::getHighBitsSet(BitWidth, BitWidth - MemBits);
@@ -2287,17 +2288,20 @@ unsigned SelectionDAG::ComputeNumSignBits(SDValue Op, unsigned Depth) const{
     break;
   }
 
-  // Handle LOADX separately here. EXTLOAD case will fallthrough.
-  if (LoadSDNode *LD = dyn_cast<LoadSDNode>(Op)) {
-    unsigned ExtType = LD->getExtensionType();
-    switch (ExtType) {
-    default: break;
-    case ISD::SEXTLOAD:    // '17' bits known
-      Tmp = LD->getMemoryVT().getScalarType().getSizeInBits();
-      return VTBits-Tmp+1;
-    case ISD::ZEXTLOAD:    // '16' bits known
-      Tmp = LD->getMemoryVT().getScalarType().getSizeInBits();
-      return VTBits-Tmp;
+  // If we are looking at the loaded value of the SDNode.
+  if (Op.getResNo() == 0) {
+    // Handle LOADX separately here. EXTLOAD case will fallthrough.
+    if (LoadSDNode *LD = dyn_cast<LoadSDNode>(Op)) {
+      unsigned ExtType = LD->getExtensionType();
+      switch (ExtType) {
+        default: break;
+        case ISD::SEXTLOAD:    // '17' bits known
+          Tmp = LD->getMemoryVT().getScalarType().getSizeInBits();
+          return VTBits-Tmp+1;
+        case ISD::ZEXTLOAD:    // '16' bits known
+          Tmp = LD->getMemoryVT().getScalarType().getSizeInBits();
+          return VTBits-Tmp;
+      }
     }
   }
 
@@ -2781,7 +2785,7 @@ SDValue SelectionDAG::FoldConstantArithmetic(unsigned Opcode, EVT VT,
   }
 
   // Handle the scalar case first.
-  if (Outputs.size() == 1)
+  if (Scalar1 && Scalar2)
     return Outputs.back();
 
   // Otherwise build a big vector out of the scalar elements we generated.
@@ -3257,6 +3261,21 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
   // Perform various simplifications.
   ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(N1.getNode());
   switch (Opcode) {
+  case ISD::FMA: {
+    ConstantFPSDNode *N1CFP = dyn_cast<ConstantFPSDNode>(N1);
+    ConstantFPSDNode *N2CFP = dyn_cast<ConstantFPSDNode>(N2);
+    ConstantFPSDNode *N3CFP = dyn_cast<ConstantFPSDNode>(N3);
+    if (N1CFP && N2CFP && N3CFP) {
+      APFloat  V1 = N1CFP->getValueAPF();
+      const APFloat &V2 = N2CFP->getValueAPF();
+      const APFloat &V3 = N3CFP->getValueAPF();
+      APFloat::opStatus s =
+        V1.fusedMultiplyAdd(V2, V3, APFloat::rmNearestTiesToEven);
+      if (s != APFloat::opInvalidOp)
+        return getConstantFP(V1, VT);
+    }
+    break;
+  }
   case ISD::CONCAT_VECTORS:
     // A CONCAT_VECTOR with all operands BUILD_VECTOR can be simplified to
     // one big BUILD_VECTOR.
@@ -5248,14 +5267,14 @@ SDNode *SelectionDAG::MorphNodeTo(SDNode *N, unsigned Opc,
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT) {
   SDVTList VTs = getVTList(VT);
-  return getMachineNode(Opcode, dl, VTs, 0, 0);
+  return getMachineNode(Opcode, dl, VTs, None);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT, SDValue Op1) {
   SDVTList VTs = getVTList(VT);
   SDValue Ops[] = { Op1 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5263,7 +5282,7 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT,
                              SDValue Op1, SDValue Op2) {
   SDVTList VTs = getVTList(VT);
   SDValue Ops[] = { Op1, Op2 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5271,20 +5290,20 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT,
                              SDValue Op1, SDValue Op2, SDValue Op3) {
   SDVTList VTs = getVTList(VT);
   SDValue Ops[] = { Op1, Op2, Op3 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> Ops) {
   SDVTList VTs = getVTList(VT);
-  return getMachineNode(Opcode, dl, VTs, Ops, NumOps);
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT1, EVT VT2) {
   SDVTList VTs = getVTList(VT1, VT2);
-  return getMachineNode(Opcode, dl, VTs, 0, 0);
+  return getMachineNode(Opcode, dl, VTs, None);
 }
 
 MachineSDNode *
@@ -5292,7 +5311,7 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              EVT VT1, EVT VT2, SDValue Op1) {
   SDVTList VTs = getVTList(VT1, VT2);
   SDValue Ops[] = { Op1 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5300,7 +5319,7 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              EVT VT1, EVT VT2, SDValue Op1, SDValue Op2) {
   SDVTList VTs = getVTList(VT1, VT2);
   SDValue Ops[] = { Op1, Op2 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5309,15 +5328,15 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              SDValue Op2, SDValue Op3) {
   SDVTList VTs = getVTList(VT1, VT2);
   SDValue Ops[] = { Op1, Op2, Op3 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              EVT VT1, EVT VT2,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> Ops) {
   SDVTList VTs = getVTList(VT1, VT2);
-  return getMachineNode(Opcode, dl, VTs, Ops, NumOps);
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5326,7 +5345,7 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              SDValue Op1, SDValue Op2) {
   SDVTList VTs = getVTList(VT1, VT2, VT3);
   SDValue Ops[] = { Op1, Op2 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
@@ -5335,39 +5354,41 @@ SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              SDValue Op1, SDValue Op2, SDValue Op3) {
   SDVTList VTs = getVTList(VT1, VT2, VT3);
   SDValue Ops[] = { Op1, Op2, Op3 };
-  return getMachineNode(Opcode, dl, VTs, Ops, array_lengthof(Ops));
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              EVT VT1, EVT VT2, EVT VT3,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> Ops) {
   SDVTList VTs = getVTList(VT1, VT2, VT3);
-  return getMachineNode(Opcode, dl, VTs, Ops, NumOps);
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl, EVT VT1,
                              EVT VT2, EVT VT3, EVT VT4,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> Ops) {
   SDVTList VTs = getVTList(VT1, VT2, VT3, VT4);
-  return getMachineNode(Opcode, dl, VTs, Ops, NumOps);
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc dl,
                              ArrayRef<EVT> ResultTys,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> Ops) {
   SDVTList VTs = getVTList(&ResultTys[0], ResultTys.size());
-  return getMachineNode(Opcode, dl, VTs, Ops, NumOps);
+  return getMachineNode(Opcode, dl, VTs, Ops);
 }
 
 MachineSDNode *
 SelectionDAG::getMachineNode(unsigned Opcode, DebugLoc DL, SDVTList VTs,
-                             const SDValue *Ops, unsigned NumOps) {
+                             ArrayRef<SDValue> OpsArray) {
   bool DoCSE = VTs.VTs[VTs.NumVTs-1] != MVT::Glue;
   MachineSDNode *N;
   void *IP = 0;
+  const SDValue *Ops = OpsArray.data();
+  unsigned NumOps = OpsArray.size();
 
   if (DoCSE) {
     FoldingSetNodeID ID;

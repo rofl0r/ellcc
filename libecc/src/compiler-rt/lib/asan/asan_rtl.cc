@@ -15,11 +15,11 @@
 #include "asan_interceptors.h"
 #include "asan_internal.h"
 #include "asan_mapping.h"
+#include "asan_poisoning.h"
 #include "asan_report.h"
 #include "asan_stack.h"
 #include "asan_stats.h"
 #include "asan_thread.h"
-#include "asan_thread_registry.h"
 #include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_flags.h"
 #include "sanitizer_common/sanitizer_libc.h"
@@ -64,13 +64,9 @@ static void AsanCheckFailed(const char *file, int line, const char *cond,
 }
 
 // -------------------------- Flags ------------------------- {{{1
-static const int kDeafultMallocContextSize = 30;
+static const int kDefaultMallocContextSize = 30;
 
-static Flags asan_flags;
-
-Flags *flags() {
-  return &asan_flags;
-}
+Flags asan_flags_dont_use_directly;  // use via flags().
 
 static const char *MaybeCallAsanDefaultOptions() {
   return (&__asan_default_options) ? __asan_default_options() : "";
@@ -88,28 +84,30 @@ static const char *MaybeUseAsanDefaultOptionsCompileDefiniton() {
 }
 
 static void ParseFlagsFromString(Flags *f, const char *str) {
+  ParseCommonFlagsFromString(str);
+  CHECK((uptr)common_flags()->malloc_context_size <= kStackTraceMax);
+
   ParseFlag(str, &f->quarantine_size, "quarantine_size");
-  ParseFlag(str, &f->symbolize, "symbolize");
   ParseFlag(str, &f->verbosity, "verbosity");
   ParseFlag(str, &f->redzone, "redzone");
-  CHECK(f->redzone >= 16);
+  CHECK_GE(f->redzone, 16);
   CHECK(IsPowerOfTwo(f->redzone));
 
   ParseFlag(str, &f->debug, "debug");
   ParseFlag(str, &f->report_globals, "report_globals");
-  ParseFlag(str, &f->check_initialization_order, "initialization_order");
-  ParseFlag(str, &f->malloc_context_size, "malloc_context_size");
-  CHECK((uptr)f->malloc_context_size <= kStackTraceMax);
+  ParseFlag(str, &f->check_initialization_order, "check_initialization_order");
 
   ParseFlag(str, &f->replace_str, "replace_str");
   ParseFlag(str, &f->replace_intrin, "replace_intrin");
   ParseFlag(str, &f->mac_ignore_invalid_free, "mac_ignore_invalid_free");
   ParseFlag(str, &f->use_fake_stack, "use_fake_stack");
   ParseFlag(str, &f->max_malloc_fill_size, "max_malloc_fill_size");
+  ParseFlag(str, &f->malloc_fill_byte, "malloc_fill_byte");
   ParseFlag(str, &f->exitcode, "exitcode");
   ParseFlag(str, &f->allow_user_poisoning, "allow_user_poisoning");
   ParseFlag(str, &f->sleep_before_dying, "sleep_before_dying");
   ParseFlag(str, &f->handle_segv, "handle_segv");
+  ParseFlag(str, &f->allow_user_segv_handler, "allow_user_segv_handler");
   ParseFlag(str, &f->use_sigaltstack, "use_sigaltstack");
   ParseFlag(str, &f->check_malloc_usable_size, "check_malloc_usable_size");
   ParseFlag(str, &f->unmap_shadow_on_exit, "unmap_shadow_on_exit");
@@ -118,38 +116,43 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->print_legend, "print_legend");
   ParseFlag(str, &f->atexit, "atexit");
   ParseFlag(str, &f->disable_core, "disable_core");
-  ParseFlag(str, &f->strip_path_prefix, "strip_path_prefix");
   ParseFlag(str, &f->allow_reexec, "allow_reexec");
   ParseFlag(str, &f->print_full_thread_history, "print_full_thread_history");
   ParseFlag(str, &f->log_path, "log_path");
-  ParseFlag(str, &f->fast_unwind_on_fatal, "fast_unwind_on_fatal");
-  ParseFlag(str, &f->fast_unwind_on_malloc, "fast_unwind_on_malloc");
   ParseFlag(str, &f->poison_heap, "poison_heap");
   ParseFlag(str, &f->alloc_dealloc_mismatch, "alloc_dealloc_mismatch");
   ParseFlag(str, &f->use_stack_depot, "use_stack_depot");
   ParseFlag(str, &f->strict_memcmp, "strict_memcmp");
+  ParseFlag(str, &f->strict_init_order, "strict_init_order");
 }
 
 void InitializeFlags(Flags *f, const char *env) {
-  internal_memset(f, 0, sizeof(*f));
+  CommonFlags *cf = common_flags();
+  cf->external_symbolizer_path = GetEnv("ASAN_SYMBOLIZER_PATH");
+  cf->symbolize = (cf->external_symbolizer_path != 0);
+  cf->malloc_context_size = kDefaultMallocContextSize;
+  cf->fast_unwind_on_fatal = false;
+  cf->fast_unwind_on_malloc = true;
+  cf->strip_path_prefix = "";
 
+  internal_memset(f, 0, sizeof(*f));
   f->quarantine_size = (ASAN_LOW_MEMORY) ? 1UL << 26 : 1UL << 28;
-  f->symbolize = false;
   f->verbosity = 0;
-  f->redzone = ASAN_ALLOCATOR_VERSION == 2 ? 16 : (ASAN_LOW_MEMORY) ? 64 : 128;
+  f->redzone = 16;
   f->debug = false;
   f->report_globals = 1;
-  f->check_initialization_order = true;
-  f->malloc_context_size = kDeafultMallocContextSize;
+  f->check_initialization_order = false;
   f->replace_str = true;
   f->replace_intrin = true;
   f->mac_ignore_invalid_free = false;
   f->use_fake_stack = true;
-  f->max_malloc_fill_size = 0;
+  f->max_malloc_fill_size = 0x1000;  // By default, fill only the first 4K.
+  f->malloc_fill_byte = 0xbe;
   f->exitcode = ASAN_DEFAULT_FAILURE_EXITCODE;
   f->allow_user_poisoning = true;
   f->sleep_before_dying = 0;
   f->handle_segv = ASAN_NEEDS_SEGV;
+  f->allow_user_segv_handler = false;
   f->use_sigaltstack = false;
   f->check_malloc_usable_size = true;
   f->unmap_shadow_on_exit = false;
@@ -158,18 +161,16 @@ void InitializeFlags(Flags *f, const char *env) {
   f->print_legend = true;
   f->atexit = false;
   f->disable_core = (SANITIZER_WORDSIZE == 64);
-  f->strip_path_prefix = "";
   f->allow_reexec = true;
   f->print_full_thread_history = true;
   f->log_path = 0;
-  f->fast_unwind_on_fatal = false;
-  f->fast_unwind_on_malloc = true;
   f->poison_heap = true;
   // Turn off alloc/dealloc mismatch checker on Mac for now.
   // TODO(glider): Fix known issues and enable this back.
-  f->alloc_dealloc_mismatch = (ASAN_MAC == 0);;
-  f->use_stack_depot = true;  // Only affects allocator2.
+  f->alloc_dealloc_mismatch = (SANITIZER_MAC == 0);;
+  f->use_stack_depot = true;
   f->strict_memcmp = true;
+  f->strict_init_order = false;
 
   // Override from compile definition.
   ParseFlagsFromString(f, MaybeUseAsanDefaultOptionsCompileDefiniton());
@@ -203,8 +204,8 @@ void ShowStatsAndAbort() {
 // ---------------------- mmap -------------------- {{{1
 // Reserve memory range [beg, end].
 static void ReserveShadowMemoryRange(uptr beg, uptr end) {
-  CHECK((beg % GetPageSizeCached()) == 0);
-  CHECK(((end + 1) % GetPageSizeCached()) == 0);
+  CHECK_EQ((beg % GetPageSizeCached()), 0);
+  CHECK_EQ(((end + 1) % GetPageSizeCached()), 0);
   uptr size = end - beg + 1;
   void *res = MmapFixedNoReserve(beg, size);
   if (res != (void*)beg) {
@@ -289,7 +290,7 @@ static NOINLINE void force_interface_symbols() {
     case 27: __asan_set_error_exit_code(0); break;
     case 28: __asan_stack_free(0, 0, 0); break;
     case 29: __asan_stack_malloc(0, 0); break;
-    case 30: __asan_before_dynamic_init(0, 0); break;
+    case 30: __asan_before_dynamic_init(0); break;
     case 31: __asan_after_dynamic_init(); break;
     case 32: __asan_poison_stack_memory(0, 0); break;
     case 33: __asan_unpoison_stack_memory(0, 0); break;
@@ -367,7 +368,8 @@ static void PrintAddressSpaceLayout() {
   }
   Printf("\n");
   Printf("red_zone=%zu\n", (uptr)flags()->redzone);
-  Printf("malloc_context_size=%zu\n", (uptr)flags()->malloc_context_size);
+  Printf("malloc_context_size=%zu\n",
+         (uptr)common_flags()->malloc_context_size);
 
   Printf("SHADOW_SCALE: %zx\n", (uptr)SHADOW_SCALE);
   Printf("SHADOW_GRANULARITY: %zx\n", (uptr)SHADOW_GRANULARITY);
@@ -399,7 +401,7 @@ int NOINLINE __asan_set_error_exit_code(int exit_code) {
 
 void NOINLINE __asan_handle_no_return() {
   int local_stack;
-  AsanThread *curr_thread = asanThreadRegistry().GetCurrent();
+  AsanThread *curr_thread = GetCurrentThread();
   CHECK(curr_thread);
   uptr PageSize = GetPageSizeCached();
   uptr top = curr_thread->stack_top();
@@ -458,7 +460,7 @@ void __asan_init() {
   bool full_shadow_is_available =
       MemoryRangeIsAvailable(shadow_start, shadow_end);
 
-#if ASAN_LINUX && defined(__x86_64__) && !ASAN_FIXED_MAPPING
+#if SANITIZER_LINUX && defined(__x86_64__) && !ASAN_FIXED_MAPPING
   if (!full_shadow_is_available) {
     kMidMemBeg = kLowMemEnd < 0x3000000000ULL ? 0x3000000000ULL : 0;
     kMidMemEnd = kLowMemEnd < 0x3000000000ULL ? 0x4fffffffffULL : 0;
@@ -503,11 +505,10 @@ void __asan_init() {
 
   InstallSignalHandlers();
   // Start symbolizer process if necessary.
-  if (flags()->symbolize) {
-    const char *external_symbolizer = GetEnv("ASAN_SYMBOLIZER_PATH");
-    if (external_symbolizer) {
-      InitializeExternalSymbolizer(external_symbolizer);
-    }
+  const char* external_symbolizer = common_flags()->external_symbolizer_path;
+  if (common_flags()->symbolize && external_symbolizer &&
+      external_symbolizer[0]) {
+    InitializeExternalSymbolizer(external_symbolizer);
   }
 
   // On Linux AsanThread::ThreadStart() calls malloc() that's why asan_inited
@@ -515,8 +516,15 @@ void __asan_init() {
   asan_inited = 1;
   asan_init_is_running = false;
 
-  asanThreadRegistry().Init();
-  asanThreadRegistry().GetMain()->ThreadStart();
+  // Create main thread.
+  AsanTSDInit(AsanThread::TSDDtor);
+  AsanThread *main_thread = AsanThread::Create(0, 0);
+  CreateThreadContextArgs create_main_args = { main_thread, 0 };
+  u32 main_tid = asanThreadRegistry().CreateThread(
+      0, true, 0, &create_main_args);
+  CHECK_EQ(0, main_tid);
+  SetCurrentThread(main_thread);
+  main_thread->ThreadStart(GetPid());
   force_interface_symbols();  // no-op.
 
   InitializeAllocator();

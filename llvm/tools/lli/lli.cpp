@@ -29,11 +29,11 @@
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Memory.h"
@@ -42,6 +42,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cerrno>
@@ -156,11 +157,6 @@ namespace {
                      clEnumValN(CodeModel::Large, "large",
                                 "Large code model"),
                      clEnumValEnd));
-
-  cl::opt<bool>
-  EnableJITExceptionHandling("jit-enable-eh",
-    cl::desc("Emit exception handling information"),
-    cl::init(false));
 
   cl::opt<bool>
   GenerateSoftFloatCalls("soft-float",
@@ -380,7 +376,6 @@ int main(int argc, char **argv, char * const *envp) {
 
   // Remote target execution doesn't handle EH or debug registration.
   if (!RemoteMCJIT) {
-    Options.JITExceptionHandling = EnableJITExceptionHandling;
     Options.JITEmitDebugInfo = EmitJitDebugInfo;
     Options.JITEmitDebugInfoToDisk = EmitJitDebugInfoToDisk;
   }

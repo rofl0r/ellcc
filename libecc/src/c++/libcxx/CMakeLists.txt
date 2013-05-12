@@ -93,9 +93,9 @@ if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
         add_custom_command(
           OUTPUT "${CMAKE_BINARY_DIR}/include/${dstdir}/${file}"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${incpath}/${path}"
-                    "${CMAKE_BINARY_DIR}/include/${dstdir}"
-          MAIN_DEPENDENCY "${incpath}/${path}"
+            "${incpath}/${fpath}"
+            "${CMAKE_BINARY_DIR}/include/${dstdir}"
+          MAIN_DEPENDENCY "${incpath}/${fpath}"
           )
         list(APPEND LIBCXX_CXX_ABI_DEPS
                     "${CMAKE_BINARY_DIR}/include/${dstdir}/${file}")

@@ -471,6 +471,7 @@ public:
     return OriginalSourceFile;
   }
 
+  ASTMutationListener *getASTMutationListener();
   ASTDeserializationListener *getDeserializationListener();
 
   /// \brief Add a temporary file that the ASTUnit depends on.
@@ -843,7 +844,8 @@ public:
 
   virtual void makeModuleVisible(Module *Mod,
                                  Module::NameVisibilityKind Visibility,
-                                 SourceLocation ImportLoc) { }
+                                 SourceLocation ImportLoc,
+                                 bool Complain) { }
 
 };
 

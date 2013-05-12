@@ -18,6 +18,7 @@
 
 #include "sanitizer_internal_defs.h"
 #include "sanitizer_libc.h"
+#include "sanitizer_mutex.h"
 
 namespace __sanitizer {
 struct StackTrace;
@@ -33,6 +34,7 @@ const uptr kCacheLineSize = 64;
 #endif
 
 extern const char *SanitizerToolName;  // Can be changed by the tool.
+extern uptr SanitizerVerbosity;
 
 uptr GetPageSize();
 uptr GetPageSizeCached();
@@ -43,6 +45,8 @@ uptr GetTid();
 uptr GetThreadSelf();
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
                                 uptr *stack_bottom);
+void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
+                          uptr *tls_addr, uptr *tls_size);
 
 // Memory management
 void *MmapOrDie(uptr size, const char *mem_type);
@@ -108,8 +112,10 @@ bool PrintsToTty();
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void SetPrintfAndReportCallback(void (*callback)(const char *));
+// Can be used to prevent mixing error reports from different sanitizers.
+extern StaticSpinMutex CommonSanitizerReportMutex;
 
-fd_t OpenFile(const char *filename, bool write);
+uptr OpenFile(const char *filename, bool write);
 // Opens the file 'file_name" and reads up to 'max_len' bytes.
 // The resulting buffer is mmaped and stored in '*buff'.
 // The size of the mmaped region is stored in '*buff_size',
@@ -126,6 +132,7 @@ void DisableCoreDumper();
 void DumpProcessMap();
 bool FileExists(const char *filename);
 const char *GetEnv(const char *name);
+bool SetEnv(const char *name, const char *value);
 const char *GetPwd();
 u32 GetUid();
 void ReExec();
@@ -133,9 +140,13 @@ bool StackSizeIsUnlimited();
 void SetStackSizeLimitInBytes(uptr limit);
 void PrepareForSandboxing();
 
+void InitTlsSize();
+uptr GetTlsSize();
+
 // Other
 void SleepForSeconds(int seconds);
 void SleepForMillis(int millis);
+u64 NanoTime();
 int Atexit(void (*function)(void));
 void SortArray(uptr *array, uptr size);
 
@@ -166,7 +177,7 @@ void ReportErrorSummary(const char *error_type, const char *file,
                         int line, const char *function);
 
 // Math
-#if defined(_WIN32) && !defined(__clang__)
+#if SANITIZER_WINDOWS && !defined(__clang__)
 extern "C" {
 unsigned char _BitScanForward(unsigned long *index, unsigned long mask);  // NOLINT
 unsigned char _BitScanReverse(unsigned long *index, unsigned long mask);  // NOLINT
@@ -180,7 +191,7 @@ unsigned char _BitScanReverse64(unsigned long *index, unsigned __int64 mask);  /
 INLINE uptr MostSignificantSetBitIndex(uptr x) {
   CHECK_NE(x, 0U);
   unsigned long up;  // NOLINT
-#if !defined(_WIN32) || defined(__clang__)
+#if !SANITIZER_WINDOWS || defined(__clang__)
   up = SANITIZER_WORDSIZE - 1 - __builtin_clzl(x);
 #elif defined(_WIN64)
   _BitScanReverse64(&up, x);
@@ -219,7 +230,7 @@ INLINE bool IsAligned(uptr a, uptr alignment) {
 
 INLINE uptr Log2(uptr x) {
   CHECK(IsPowerOfTwo(x));
-#if !defined(_WIN32) || defined(__clang__)
+#if !SANITIZER_WINDOWS || defined(__clang__)
   return __builtin_ctzl(x);
 #elif defined(_WIN64)
   unsigned long ret;  // NOLINT
@@ -279,6 +290,10 @@ class InternalVector {
     CHECK_LT(i, size_);
     return data_[i];
   }
+  const T &operator[](uptr i) const {
+    CHECK_LT(i, size_);
+    return data_[i];
+  }
   void push_back(const T &element) {
     CHECK_LE(size_, capacity_);
     if (size_ == capacity_) {
@@ -295,8 +310,14 @@ class InternalVector {
     CHECK_GT(size_, 0);
     size_--;
   }
-  uptr size() {
+  uptr size() const {
     return size_;
+  }
+  const T *data() const {
+    return data_;
+  }
+  uptr capacity() const {
+    return capacity_;
   }
 
  private:

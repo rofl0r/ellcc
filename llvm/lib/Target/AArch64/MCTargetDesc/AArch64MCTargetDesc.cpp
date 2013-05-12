@@ -57,7 +57,7 @@ static MCRegisterInfo *createAArch64MCRegisterInfo(StringRef Triple) {
   return X;
 }
 
-static MCAsmInfo *createAArch64MCAsmInfo(const Target &T, StringRef TT) {
+static MCAsmInfo *createAArch64MCAsmInfo(StringRef TT) {
   Triple TheTriple(TT);
 
   MCAsmInfo *MAI = new AArch64ELFMCAsmInfo();
@@ -81,6 +81,12 @@ static MCCodeGenInfo *createAArch64MCCodeGenInfo(StringRef TT, Reloc::Model RM,
 
   if (CM == CodeModel::Default)
     CM = CodeModel::Small;
+  else if (CM == CodeModel::JITDefault) {
+    // The default MCJIT memory managers make no guarantees about where they can
+    // find an executable page; JITed code needs to be able to refer to globals
+    // no matter how far away they are.
+    CM = CodeModel::Large;
+  }
 
   X->InitMCCodeGenInfo(RM, CM, OL);
   return X;

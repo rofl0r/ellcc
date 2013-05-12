@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # //===--------------------------- testit ---------------------------------===//
 # //
 # //                     The LLVM Compiler Infrastructure
@@ -61,49 +61,58 @@ case $TRIPLE in
     ;;
 esac
 
+case $(uname -s) in
+   NetBSD)
+     THREAD_FLAGS=-lpthread
+     ;;
+esac
+
 FAIL=0
 PASS=0
 UNIMPLEMENTED=0
 IMPLEMENTED_FAIL=0
 IMPLEMENTED_PASS=0
 
-function afunc
-{
+afunc() {
 	fail=0
 	pass=0
-	if (ls *.fail.cpp &> /dev/null)
+	if (ls *.fail.cpp > /dev/null 2>&1)
 	then
 		for FILE in $(ls *.fail.cpp); do
-			if $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS -o ./$TEST_EXE &> /dev/null
+			if $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS -o ./$TEST_EXE > /dev/null 2>&1
 			then
 				rm ./$TEST_EXE
 				echo "$FILE should not compile"
-				let "fail+=1"
+				fail=$(($fail+1))
 			else
-				let "pass+=1"
+				pass=$(($pass+1))
 			fi
 		done
 	fi
 
-	if (ls *.pass.cpp &> /dev/null)
+	if (ls *.pass.cpp > /dev/null 2>&1)
 	then
 		for FILE in $(ls *.pass.cpp); do
-			if $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS -o ./$TEST_EXE
+            if [ "$VERBOSE" ]
+            then
+             	echo "Running test: " $FILE
+            fi
+			if $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS $(test $1 = no || echo $THREAD_FLAGS) -o ./$TEST_EXE
 			then
 				if ./$TEST_EXE
 				then
 					rm ./$TEST_EXE
-					let "pass+=1"
+					pass=$(($pass+1))
 				else
 					echo "`pwd`/$FILE failed at run time"
-					echo "Compile line was:" $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS
-					let "fail+=1"
+					echo "Compile line was:" $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS $(test $1 = no || echo $THREAD_FLAGS)
+					fail=$(($fail+1))
 					rm ./$TEST_EXE
 				fi
 			else
 				echo "`pwd`/$FILE failed to compile"
-				echo "Compile line was:" $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS
-				let "fail+=1"
+				echo "Compile line was:" $CC $OPTIONS $HEADER_INCLUDE $SOURCE_LIB $FILE $LIBS $(test $1 = no || echo $THREAD_FLAGS)
+				fail=$(($fail+1))
 			fi
 		done
 	fi
@@ -111,37 +120,41 @@ function afunc
 	if [ $fail -gt 0 ]
 	then
 		echo "failed $fail tests in `pwd`"
-		let "IMPLEMENTED_FAIL+=1"
+		IMPLEMENTED_FAIL=$(($IMPLEMENTED_FAIL+1))
 	fi
 	if [ $pass -gt 0 ]
 	then
 		echo "passed $pass tests in `pwd`"
 		if [ $fail -eq 0 ]
 		then
-			let "IMPLEMENTED_PASS+=1"
+			IMPLEMENTED_PASS=$((IMPLEMENTED_PASS+1))
 		fi
 	fi
 	if [ $fail -eq 0 -a $pass -eq 0 ]
 	then
 		echo "not implemented:  `pwd`"
-		let "UNIMPLEMENTED+=1"
+		UNIMPLEMENTED=$(($UNIMPLEMENTED+1))
 	fi
 
-	let "FAIL+=$fail"
-	let "PASS+=$pass"
+	FAIL=$(($FAIL+$fail))
+	PASS=$(($PASS+$pass))
 
 	for FILE in *
 	do
 		if [ -d "$FILE" ];
 		then
 			cd $FILE
-			afunc
+			if [ $FILE = thread -o $1 = yes ]; then
+				afunc yes
+			else
+				afunc no
+			fi
 			cd ..
 		fi
 	done
 }
 
-afunc
+afunc no
 
 echo "****************************************************"
 echo "Results for `pwd`:"

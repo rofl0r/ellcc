@@ -16,13 +16,13 @@
 // Status: under development, not enabled by default yet.
 //===----------------------------------------------------------------------===//
 #include "asan_allocator.h"
-#if ASAN_ALLOCATOR_VERSION == 2
 
 #include "asan_mapping.h"
+#include "asan_poisoning.h"
 #include "asan_report.h"
 #include "asan_thread.h"
-#include "asan_thread_registry.h"
 #include "sanitizer_common/sanitizer_allocator.h"
+#include "sanitizer_common/sanitizer_flags.h"
 #include "sanitizer_common/sanitizer_internal_defs.h"
 #include "sanitizer_common/sanitizer_list.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
@@ -34,7 +34,7 @@ struct AsanMapUnmapCallback {
   void OnMap(uptr p, uptr size) const {
     PoisonShadow(p, size, kAsanHeapLeftRedzoneMagic);
     // Statistics.
-    AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+    AsanStats &thread_stats = GetCurrentThreadStats();
     thread_stats.mmaps++;
     thread_stats.mmaped += size;
   }
@@ -49,7 +49,7 @@ struct AsanMapUnmapCallback {
     uptr shadow_end = RoundDownTo(MemToShadow(p + size), page_size);
     FlushUnneededShadowMemory(shadow_beg, shadow_end - shadow_beg);
     // Statistics.
-    AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+    AsanStats &thread_stats = GetCurrentThreadStats();
     thread_stats.munmaps++;
     thread_stats.munmaped += size;
   }
@@ -61,7 +61,7 @@ const uptr kAllocatorSpace =  0xa0000000000ULL;
 #else
 const uptr kAllocatorSpace = 0x600000000000ULL;
 #endif
-const uptr kAllocatorSize  =  0x10000000000ULL;  // 1T.
+const uptr kAllocatorSize  =  0x40000000000ULL;  // 4T.
 typedef DefaultSizeClassMap SizeClassMap;
 typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, 0 /*metadata*/,
     SizeClassMap, AsanMapUnmapCallback> PrimaryAllocator;
@@ -274,7 +274,7 @@ struct QuarantineCallback {
     }
 
     // Statistics.
-    AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+    AsanStats &thread_stats = GetCurrentThreadStats();
     thread_stats.real_frees++;
     thread_stats.really_freed += m->UsedSize();
 
@@ -298,9 +298,10 @@ void InitializeAllocator() {
 }
 
 static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
-                      AllocType alloc_type) {
+                      AllocType alloc_type, bool can_fill) {
   if (!asan_inited)
     __asan_init();
+  Flags &fl = *flags();
   CHECK(stack);
   const uptr min_alignment = SHADOW_GRANULARITY;
   if (alignment < min_alignment)
@@ -336,7 +337,7 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
     return 0;
   }
 
-  AsanThread *t = asanThreadRegistry().GetCurrent();
+  AsanThread *t = GetCurrentThread();
   void *allocated;
   if (t) {
     AllocatorCache *cache = GetAllocatorCache(&t->malloc_storage());
@@ -384,7 +385,7 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
     meta[1] = chunk_beg;
   }
 
-  if (flags()->use_stack_depot) {
+  if (fl.use_stack_depot) {
     m->alloc_context_id = StackDepotPut(stack->trace, stack->size);
   } else {
     m->alloc_context_id = 0;
@@ -396,12 +397,12 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
   if (size_rounded_down_to_granularity)
     PoisonShadow(user_beg, size_rounded_down_to_granularity, 0);
   // Deal with the end of the region if size is not aligned to granularity.
-  if (size != size_rounded_down_to_granularity && flags()->poison_heap) {
+  if (size != size_rounded_down_to_granularity && fl.poison_heap) {
     u8 *shadow = (u8*)MemToShadow(user_beg + size_rounded_down_to_granularity);
     *shadow = size & (SHADOW_GRANULARITY - 1);
   }
 
-  AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+  AsanStats &thread_stats = GetCurrentThreadStats();
   thread_stats.mallocs++;
   thread_stats.malloced += size;
   thread_stats.malloced_redzones += needed_size - size;
@@ -411,6 +412,10 @@ static void *Allocate(uptr size, uptr alignment, StackTrace *stack,
     thread_stats.malloc_large++;
 
   void *res = reinterpret_cast<void *>(user_beg);
+  if (can_fill && fl.max_malloc_fill_size) {
+    uptr fill_size = Min(size, (uptr)fl.max_malloc_fill_size);
+    REAL(memset)(res, fl.malloc_fill_byte, fill_size);
+  }
   ASAN_MALLOC_HOOK(res, size);
   return res;
 }
@@ -422,15 +427,17 @@ static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
   uptr chunk_beg = p - kChunkHeaderSize;
   AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
 
+  u8 old_chunk_state = CHUNK_ALLOCATED;
   // Flip the chunk_state atomically to avoid race on double-free.
-  u8 old_chunk_state = atomic_exchange((atomic_uint8_t*)m, CHUNK_QUARANTINE,
-                                       memory_order_relaxed);
+  if (!atomic_compare_exchange_strong((atomic_uint8_t*)m, &old_chunk_state,
+                                      CHUNK_QUARANTINE, memory_order_relaxed)) {
+    if (old_chunk_state == CHUNK_QUARANTINE)
+      ReportDoubleFree((uptr)ptr, stack);
+    else
+      ReportFreeNotMalloced((uptr)ptr, stack);
+  }
+  CHECK_EQ(CHUNK_ALLOCATED, old_chunk_state);
 
-  if (old_chunk_state == CHUNK_QUARANTINE)
-    ReportDoubleFree((uptr)ptr, stack);
-  else if (old_chunk_state != CHUNK_ALLOCATED)
-    ReportFreeNotMalloced((uptr)ptr, stack);
-  CHECK(old_chunk_state == CHUNK_ALLOCATED);
   if (m->alloc_type != alloc_type && flags()->alloc_dealloc_mismatch)
     ReportAllocTypeMismatch((uptr)ptr, stack,
                             (AllocType)m->alloc_type, (AllocType)alloc_type);
@@ -438,7 +445,7 @@ static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
   CHECK_GE(m->alloc_tid, 0);
   if (SANITIZER_WORDSIZE == 64)  // On 32-bits this resides in user area.
     CHECK_EQ(m->free_tid, kInvalidTid);
-  AsanThread *t = asanThreadRegistry().GetCurrent();
+  AsanThread *t = GetCurrentThread();
   m->free_tid = t ? t->tid() : 0;
   if (flags()->use_stack_depot) {
     m->free_context_id = StackDepotPut(stack->trace, stack->size);
@@ -452,7 +459,7 @@ static void Deallocate(void *ptr, StackTrace *stack, AllocType alloc_type) {
                RoundUpTo(m->UsedSize(), SHADOW_GRANULARITY),
                kAsanHeapFreeMagic);
 
-  AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+  AsanStats &thread_stats = GetCurrentThreadStats();
   thread_stats.frees++;
   thread_stats.freed += m->UsedSize();
 
@@ -476,14 +483,14 @@ static void *Reallocate(void *old_ptr, uptr new_size, StackTrace *stack) {
   uptr chunk_beg = p - kChunkHeaderSize;
   AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
 
-  AsanStats &thread_stats = asanThreadRegistry().GetCurrentThreadStats();
+  AsanStats &thread_stats = GetCurrentThreadStats();
   thread_stats.reallocs++;
   thread_stats.realloced += new_size;
 
   CHECK(m->chunk_state == CHUNK_ALLOCATED);
   uptr old_size = m->UsedSize();
   uptr memcpy_size = Min(new_size, old_size);
-  void *new_ptr = Allocate(new_size, 8, stack, FROM_MALLOC);
+  void *new_ptr = Allocate(new_size, 8, stack, FROM_MALLOC, true);
   if (new_ptr) {
     CHECK_NE(REAL(memcpy), (void*)0);
     REAL(memcpy)(new_ptr, old_ptr, memcpy_size);
@@ -588,7 +595,7 @@ void PrintInternalAllocatorStats() {
 SANITIZER_INTERFACE_ATTRIBUTE
 void *asan_memalign(uptr alignment, uptr size, StackTrace *stack,
                     AllocType alloc_type) {
-  return Allocate(size, alignment, stack, alloc_type);
+  return Allocate(size, alignment, stack, alloc_type, true);
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
@@ -598,12 +605,12 @@ void asan_free(void *ptr, StackTrace *stack, AllocType alloc_type) {
 
 SANITIZER_INTERFACE_ATTRIBUTE
 void *asan_malloc(uptr size, StackTrace *stack) {
-  return Allocate(size, 8, stack, FROM_MALLOC);
+  return Allocate(size, 8, stack, FROM_MALLOC, true);
 }
 
 void *asan_calloc(uptr nmemb, uptr size, StackTrace *stack) {
   if (CallocShouldReturnNullDueToOverflow(size, nmemb)) return 0;
-  void *ptr = Allocate(nmemb * size, 8, stack, FROM_MALLOC);
+  void *ptr = Allocate(nmemb * size, 8, stack, FROM_MALLOC, false);
   // If the memory comes from the secondary allocator no need to clear it
   // as it comes directly from mmap.
   if (ptr && allocator.FromPrimary(ptr))
@@ -613,7 +620,7 @@ void *asan_calloc(uptr nmemb, uptr size, StackTrace *stack) {
 
 void *asan_realloc(void *p, uptr size, StackTrace *stack) {
   if (p == 0)
-    return Allocate(size, 8, stack, FROM_MALLOC);
+    return Allocate(size, 8, stack, FROM_MALLOC, true);
   if (size == 0) {
     Deallocate(p, stack, FROM_MALLOC);
     return 0;
@@ -622,7 +629,7 @@ void *asan_realloc(void *p, uptr size, StackTrace *stack) {
 }
 
 void *asan_valloc(uptr size, StackTrace *stack) {
-  return Allocate(size, GetPageSizeCached(), stack, FROM_MALLOC);
+  return Allocate(size, GetPageSizeCached(), stack, FROM_MALLOC, true);
 }
 
 void *asan_pvalloc(uptr size, StackTrace *stack) {
@@ -632,12 +639,12 @@ void *asan_pvalloc(uptr size, StackTrace *stack) {
     // pvalloc(0) should allocate one page.
     size = PageSize;
   }
-  return Allocate(size, PageSize, stack, FROM_MALLOC);
+  return Allocate(size, PageSize, stack, FROM_MALLOC, true);
 }
 
 int asan_posix_memalign(void **memptr, uptr alignment, uptr size,
                         StackTrace *stack) {
-  void *ptr = Allocate(size, alignment, stack, FROM_MALLOC);
+  void *ptr = Allocate(size, alignment, stack, FROM_MALLOC, true);
   CHECK(IsAligned((uptr)ptr, alignment));
   *memptr = ptr;
   return 0;
@@ -708,6 +715,3 @@ void __asan_free_hook(void *ptr) {
 }
 }  // extern "C"
 #endif
-
-
-#endif  // ASAN_ALLOCATOR_VERSION

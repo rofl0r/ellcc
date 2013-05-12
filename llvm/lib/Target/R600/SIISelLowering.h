@@ -24,9 +24,7 @@ class SITargetLowering : public AMDGPUTargetLowering {
   const SIInstrInfo * TII;
   const TargetRegisterInfo * TRI;
 
-  void LowerSI_WQM(MachineInstr *MI, MachineBasicBlock &BB,
-              MachineBasicBlock::iterator I, MachineRegisterInfo & MRI) const;
-
+  SDValue LowerSTORE(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
 
@@ -35,6 +33,9 @@ class SITargetLowering : public AMDGPUTargetLowering {
   bool fitsRegClass(SelectionDAG &DAG, SDValue &Op, unsigned RegClass) const;
   void ensureSRegLimit(SelectionDAG &DAG, SDValue &Operand, 
                        unsigned RegClass, bool &ScalarSlotUsed) const;
+
+  SDNode *foldOperands(MachineSDNode *N, SelectionDAG &DAG) const;
+  void adjustWritemask(MachineSDNode *&N, SelectionDAG &DAG) const;
 
 public:
   SITargetLowering(TargetMachine &tm);
@@ -48,9 +49,12 @@ public:
   virtual MachineBasicBlock * EmitInstrWithCustomInserter(MachineInstr * MI,
                                               MachineBasicBlock * BB) const;
   virtual EVT getSetCCResultType(EVT VT) const;
+  virtual MVT getScalarShiftAmountTy(EVT VT) const;
   virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
   virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   virtual SDNode *PostISelFolding(MachineSDNode *N, SelectionDAG &DAG) const;
+  virtual void AdjustInstrPostInstrSelection(MachineInstr *MI,
+                                             SDNode *Node) const;
 
   int32_t analyzeImmediate(const SDNode *N) const;
 };

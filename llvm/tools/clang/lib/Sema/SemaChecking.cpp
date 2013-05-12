@@ -587,12 +587,11 @@ bool Sema::CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
 }
 
 bool Sema::CheckObjCMethodCall(ObjCMethodDecl *Method, SourceLocation lbrac, 
-                               Expr **Args, unsigned NumArgs) {
+                               ArrayRef<const Expr *> Args) {
   VariadicCallType CallType =
       Method->isVariadic() ? VariadicMethod : VariadicDoesNotApply;
 
-  checkCall(Method, llvm::makeArrayRef<const Expr *>(Args, NumArgs),
-            Method->param_size(),
+  checkCall(Method, Args, Method->param_size(),
             /*IsMemberFunction=*/false,
             lbrac, Method->getSourceRange(), CallType);
 
@@ -2010,7 +2009,7 @@ public:
                                    PartialDiagnostic PDiag,
                                    SourceLocation StringLoc,
                                    bool IsStringLocation, Range StringRange,
-                            ArrayRef<FixItHint> Fixit = ArrayRef<FixItHint>());
+                                   ArrayRef<FixItHint> Fixit = None);
 
 protected:
   bool HandleInvalidConversionSpecifier(unsigned argIndex, SourceLocation Loc,
@@ -2037,7 +2036,7 @@ protected:
   template <typename Range>
   void EmitFormatDiagnostic(PartialDiagnostic PDiag, SourceLocation StringLoc,
                             bool IsStringLocation, Range StringRange,
-                            ArrayRef<FixItHint> Fixit = ArrayRef<FixItHint>());
+                            ArrayRef<FixItHint> Fixit = None);
 
   void CheckPositionalAndNonpositionalArgs(
       const analyze_format_string::FormatSpecifier *FS);
@@ -2745,6 +2744,10 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
     return true;
 
   QualType ExprTy = E->getType();
+  while (const TypeOfExprType *TET = dyn_cast<TypeOfExprType>(ExprTy)) {
+    ExprTy = TET->getUnderlyingExpr()->getType();
+  }
+
   if (AT.matchesType(S.Context, ExprTy))
     return true;
 
@@ -2804,7 +2807,9 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
   // casts to primitive types that are known to be large enough.
   bool ShouldNotPrintDirectly = false;
   if (S.Context.getTargetInfo().getTriple().isOSDarwin()) {
-    if (const TypedefType *UserTy = IntendedTy->getAs<TypedefType>()) {
+    // Use a 'while' to peel off layers of typedefs.
+    QualType TyTy = IntendedTy;
+    while (const TypedefType *UserTy = TyTy->getAs<TypedefType>()) {
       StringRef Name = UserTy->getDecl()->getName();
       QualType CastTy = llvm::StringSwitch<QualType>(Name)
         .Case("NSInteger", S.Context.LongTy)
@@ -2816,7 +2821,9 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
       if (!CastTy.isNull()) {
         ShouldNotPrintDirectly = true;
         IntendedTy = CastTy;
+        break;
       }
+      TyTy = UserTy->desugar();
     }
   }
 
@@ -4305,7 +4312,7 @@ static IntRange GetExprRange(ASTContext &C, Expr *E, unsigned MaxWidth) {
     IntRange::forValueOfType(C, E->getType());
   }
 
-  if (FieldDecl *BitField = E->getBitField())
+  if (FieldDecl *BitField = E->getSourceBitField())
     return IntRange(BitField->getBitWidthValue(C),
                     BitField->getType()->isUnsignedIntegerOrEnumerationType());
 
@@ -4496,9 +4503,22 @@ static void DiagnoseOutOfRangeComparison(Sema &S, BinaryOperator *E,
     else // op == BO_GT || op == BO_GE
       IsTrue = PositiveConstant;
   }
-  SmallString<16> PrettySourceValue(Value.toString(10));
+
+  // If this is a comparison to an enum constant, include that
+  // constant in the diagnostic.
+  const EnumConstantDecl *ED = 0;
+  if (const DeclRefExpr *DR = dyn_cast<DeclRefExpr>(Constant))
+    ED = dyn_cast<EnumConstantDecl>(DR->getDecl());
+
+  SmallString<64> PrettySourceValue;
+  llvm::raw_svector_ostream OS(PrettySourceValue);
+  if (ED)
+    OS << '\'' << *ED << "' (" << Value << ")";
+  else
+    OS << Value;
+
   S.Diag(E->getOperatorLoc(), diag::warn_out_of_range_compare)
-      << PrettySourceValue << OtherT << IsTrue
+      << OS.str() << OtherT << IsTrue
       << E->getLHS()->getSourceRange() << E->getRHS()->getSourceRange();
 }
 
@@ -4669,7 +4689,7 @@ static void AnalyzeAssignment(Sema &S, BinaryOperator *E) {
 
   // We want to recurse on the RHS as normal unless we're assigning to
   // a bitfield.
-  if (FieldDecl *Bitfield = E->getLHS()->getBitField()) {
+  if (FieldDecl *Bitfield = E->getLHS()->getSourceBitField()) {
     if (AnalyzeBitFieldAssignment(S, Bitfield, E->getRHS(),
                                   E->getOperatorLoc())) {
       // Recurse, ignoring any implicit conversions on the RHS.
@@ -5187,10 +5207,7 @@ void Sema::CheckImplicitConversions(Expr *E, SourceLocation CC) {
 /// Diagnose when expression is an integer constant expression and its evaluation
 /// results in integer overflow
 void Sema::CheckForIntOverflow (Expr *E) {
-  if (const BinaryOperator *BExpr = dyn_cast<BinaryOperator>(E->IgnoreParens())) {
-    unsigned Opc = BExpr->getOpcode();
-    if (Opc != BO_Add && Opc != BO_Sub && Opc != BO_Mul)
-      return;
+  if (isa<BinaryOperator>(E->IgnoreParens())) {
     llvm::SmallVector<PartialDiagnosticAt, 4> Diags;
     E->EvaluateForOverflow(Context, &Diags);
   }
@@ -5686,12 +5703,14 @@ bool Sema::CheckParmsForFunctionDef(ParmVarDecl **P, ParmVarDecl **PEnd,
     //   notation in their sequences of declarator specifiers to specify
     //   variable length array types.
     QualType PType = Param->getOriginalType();
-    if (const ArrayType *AT = Context.getAsArrayType(PType)) {
+    while (const ArrayType *AT = Context.getAsArrayType(PType)) {
       if (AT->getSizeModifier() == ArrayType::Star) {
         // FIXME: This diagnostic should point the '[*]' if source-location
         // information is added for it.
         Diag(Param->getLocation(), diag::err_array_star_in_function_definition);
+        break;
       }
+      PType= AT->getElementType();
     }
   }
 

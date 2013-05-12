@@ -43,7 +43,7 @@ public:
   enum ArchType {
     UnknownArch,
 
-    arm,     // ARM; arm, armv.*, xscale
+    arm,     // ARM: arm, armv.*, xscale
     armeb,   // ARMEB: armeb
     aarch64, // AArch64: aarch64
     hexagon, // Hexagon: hexagon
@@ -57,6 +57,7 @@ public:
     r600,    // R600: AMD GPUs HD2XXX - HD6XXX
     sparc,   // Sparc: sparc
     sparcv9, // Sparcv9: Sparcv9
+    systemz, // SystemZ: s390x
     tce,     // TCE (http://tce.cs.tut.fi/): tce
     thumb,   // Thumb: thumb, thumbv.*
     x86,     // X86: i[3-9]86

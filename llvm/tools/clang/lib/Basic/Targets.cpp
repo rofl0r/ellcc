@@ -621,7 +621,7 @@ class NaClTargetInfo : public OSTargetInfo<Target> {
     this->SizeType = TargetInfo::UnsignedInt;
     this->PtrDiffType = TargetInfo::SignedInt;
     this->IntPtrType = TargetInfo::SignedInt;
-    this->RegParmMax = 2;
+    // RegParmMax is inherited from the underlying architecture
     this->LongDoubleFormat = &llvm::APFloat::IEEEdouble;
     this->DescriptionString = "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
                               "f32:32:32-f64:64:64-p:32:32:32-v128:32:32";
@@ -1037,7 +1037,8 @@ void PPCTargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
 bool PPCTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
                                          StringRef Name,
                                          bool Enabled) const {
-  if (Name == "altivec" || Name == "qpx") {
+  if (Name == "altivec" || Name == "fprnd" || Name == "mfocrf" ||
+      Name == "popcntd" || Name == "qpx") {
     Features[Name] = Enabled;
     return true;
   }
@@ -1309,7 +1310,14 @@ namespace {
       return TargetInfo::CharPtrBuiltinVaList;
     }
     virtual bool setCPU(const std::string &Name) {
-      return Name == "sm_10" || Name == "sm_13" || Name == "sm_20";
+      bool Valid = llvm::StringSwitch<bool>(Name)
+        .Case("sm_20", true)
+        .Case("sm_21", true)
+        .Case("sm_30", true)
+        .Case("sm_35", true)
+        .Default(false);
+
+      return Valid;
     }
     virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
                                    StringRef Name,
@@ -1492,7 +1500,7 @@ public:
       .Case("caicos",   GK_NORTHERN_ISLANDS)
       .Case("cayman",   GK_CAYMAN)
       .Case("aruba",    GK_CAYMAN)
-      .Case("SI",       GK_SOUTHERN_ISLANDS)
+      .Case("tahiti",   GK_SOUTHERN_ISLANDS)
       .Case("pitcairn", GK_SOUTHERN_ISLANDS)
       .Case("verde",    GK_SOUTHERN_ISLANDS)
       .Case("oland",    GK_SOUTHERN_ISLANDS)
@@ -1721,6 +1729,8 @@ class X86TargetInfo : public TargetInfo {
   bool HasBMI2;
   bool HasPOPCNT;
   bool HasRTM;
+  bool HasPRFCHW;
+  bool HasRDSEED;
   bool HasSSE4a;
   bool HasFMA4;
   bool HasFMA;
@@ -1845,6 +1855,7 @@ class X86TargetInfo : public TargetInfo {
     /// Bobcat architecture processors.
     //@{
     CK_BTVER1,
+    CK_BTVER2,
     //@}
 
     /// \name Bulldozer
@@ -1872,8 +1883,8 @@ public:
     : TargetInfo(triple), SSELevel(NoSSE), MMX3DNowLevel(NoMMX3DNow),
       HasAES(false), HasPCLMUL(false), HasLZCNT(false), HasRDRND(false),
       HasBMI(false), HasBMI2(false), HasPOPCNT(false), HasRTM(false),
-      HasSSE4a(false), HasFMA4(false), HasFMA(false), HasXOP(false),
-      HasF16C(false), CPU(CK_Generic) {
+      HasPRFCHW(false), HasRDSEED(false), HasSSE4a(false), HasFMA4(false),
+      HasFMA(false), HasXOP(false), HasF16C(false), CPU(CK_Generic) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
   }
@@ -1969,6 +1980,7 @@ public:
       .Case("opteron-sse3", CK_OpteronSSE3)
       .Case("amdfam10", CK_AMDFAM10)
       .Case("btver1", CK_BTVER1)
+      .Case("btver2", CK_BTVER2)
       .Case("bdver1", CK_BDVER1)
       .Case("bdver2", CK_BDVER2)
       .Case("x86-64", CK_x86_64)
@@ -2034,6 +2046,7 @@ public:
     case CK_OpteronSSE3:
     case CK_AMDFAM10:
     case CK_BTVER1:
+    case CK_BTVER2:
     case CK_BDVER1:
     case CK_BDVER2:
     case CK_x86_64:
@@ -2079,6 +2092,8 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   Features["bmi2"] = false;
   Features["popcnt"] = false;
   Features["rtm"] = false;
+  Features["prfchw"] = false;
+  Features["rdseed"] = false;
   Features["fma4"] = false;
   Features["fma"] = false;
   Features["xop"] = false;
@@ -2201,6 +2216,15 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabled(Features, "lzcnt", true);
     setFeatureEnabled(Features, "popcnt", true);
     break;
+  case CK_BTVER2:
+    setFeatureEnabled(Features, "avx", true);
+    setFeatureEnabled(Features, "sse4a", true);
+    setFeatureEnabled(Features, "lzcnt", true);
+    setFeatureEnabled(Features, "aes", true);
+    setFeatureEnabled(Features, "pclmul", true);
+    setFeatureEnabled(Features, "bmi", true);
+    setFeatureEnabled(Features, "f16c", true);
+    break;
   case CK_BDVER1:
     setFeatureEnabled(Features, "xop", true);
     setFeatureEnabled(Features, "lzcnt", true);
@@ -2301,6 +2325,10 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["f16c"] = true;
     else if (Name == "rtm")
       Features["rtm"] = true;
+    else if (Name == "prfchw")
+      Features["prfchw"] = true;
+    else if (Name == "rdseed")
+      Features["rdseed"] = true;
   } else {
     if (Name == "mmx")
       Features["mmx"] = Features["3dnow"] = Features["3dnowa"] = false;
@@ -2365,6 +2393,10 @@ bool X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
       Features["f16c"] = false;
     else if (Name == "rtm")
       Features["rtm"] = false;
+    else if (Name == "prfchw")
+      Features["prfchw"] = false;
+    else if (Name == "rdseed")
+      Features["rdseed"] = false;
   }
 
   return true;
@@ -2418,6 +2450,16 @@ void X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features) {
 
     if (Feature == "rtm") {
       HasRTM = true;
+      continue;
+    }
+
+    if (Feature == "prfchw") {
+      HasPRFCHW = true;
+      continue;
+    }
+
+    if (Feature == "rdseed") {
+      HasRDSEED = true;
       continue;
     }
 
@@ -2601,6 +2643,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_BTVER1:
     defineCPUMacros(Builder, "btver1");
     break;
+  case CK_BTVER2:
+    defineCPUMacros(Builder, "btver2");
+    break;
   case CK_BDVER1:
     defineCPUMacros(Builder, "bdver1");
     break;
@@ -2644,6 +2689,12 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
 
   if (HasRTM)
     Builder.defineMacro("__RTM__");
+
+  if (HasPRFCHW)
+    Builder.defineMacro("__PRFCHW__");
+
+  if (HasRDSEED)
+    Builder.defineMacro("__RDSEED__");
 
   if (HasSSE4a)
     Builder.defineMacro("__SSE4A__");
@@ -2714,6 +2765,14 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case NoMMX3DNow:
     break;
   }
+
+  if (CPU >= CK_i486) {
+    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
+    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
+    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
+  }
+  if (CPU >= CK_i586)
+    Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
 }
 
 bool X86TargetInfo::hasFeature(StringRef Feature) const {
@@ -2733,6 +2792,8 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("pclmul", HasPCLMUL)
       .Case("popcnt", HasPOPCNT)
       .Case("rtm", HasRTM)
+      .Case("prfchw", HasPRFCHW)
+      .Case("rdseed", HasRDSEED)
       .Case("sse", SSELevel >= SSE1)
       .Case("sse2", SSELevel >= SSE2)
       .Case("sse3", SSELevel >= SSE3)
@@ -3276,6 +3337,8 @@ namespace {
 class AArch64TargetInfo : public TargetInfo {
   static const char * const GCCRegNames[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
+
+  static const Builtin::Info BuiltinInfo[];
 public:
   AArch64TargetInfo(const std::string& triple) : TargetInfo(triple) {
     BigEndian = false;
@@ -3307,45 +3370,45 @@ public:
     // FIXME: these were written based on an unreleased version of a 32-bit ACLE
     // which was intended to be compatible with a 64-bit implementation. They
     // will need updating when a real 64-bit ACLE exists. Particularly pressing
-    // instances are: __AARCH_ISA_A32, __AARCH_ISA_T32, __ARCH_PCS.
-    Builder.defineMacro("__AARCH_ACLE",    "101");
-    Builder.defineMacro("__AARCH",         "8");
-    Builder.defineMacro("__AARCH_PROFILE", "'A'");
+    // instances are: __ARM_ARCH_ISA_ARM, __ARM_ARCH_ISA_THUMB, __ARM_PCS.
+    Builder.defineMacro("__ARM_ACLE",         "101");
+    Builder.defineMacro("__ARM_ARCH",         "8");
+    Builder.defineMacro("__ARM_ARCH_PROFILE", "'A'");
 
-    Builder.defineMacro("__AARCH_FEATURE_UNALIGNED");
-    Builder.defineMacro("__AARCH_FEATURE_CLZ");
-    Builder.defineMacro("__AARCH_FEATURE_FMA");
+    Builder.defineMacro("__ARM_FEATURE_UNALIGNED");
+    Builder.defineMacro("__ARM_FEATURE_CLZ");
+    Builder.defineMacro("__ARM_FEATURE_FMA");
 
     // FIXME: ACLE 1.1 reserves bit 4. Will almost certainly come to mean
     // 128-bit LDXP present, at which point this becomes 0x1f.
-    Builder.defineMacro("__AARCH_FEATURE_LDREX", "0xf");
+    Builder.defineMacro("__ARM_FEATURE_LDREX", "0xf");
 
     // 0xe implies support for half, single and double precision operations.
-    Builder.defineMacro("__AARCH_FP", "0xe");
+    Builder.defineMacro("__ARM_FP", "0xe");
 
     // PCS specifies this for SysV variants, which is all we support. Other ABIs
-    // may choose __AARCH_FP16_FORMAT_ALTERNATIVE.
-    Builder.defineMacro("__AARCH_FP16_FORMAT_IEEE");
+    // may choose __ARM_FP16_FORMAT_ALTERNATIVE.
+    Builder.defineMacro("__ARM_FP16_FORMAT_IEEE");
 
     if (Opts.FastMath || Opts.FiniteMathOnly)
-      Builder.defineMacro("__AARCH_FP_FAST");
+      Builder.defineMacro("__ARM_FP_FAST");
 
     if ((Opts.C99 || Opts.C11) && !Opts.Freestanding)
-      Builder.defineMacro("__AARCH_FP_FENV_ROUNDING");
+      Builder.defineMacro("__ARM_FP_FENV_ROUNDING");
 
-    Builder.defineMacro("__AARCH_SIZEOF_WCHAR_T",
+    Builder.defineMacro("__ARM_SIZEOF_WCHAR_T",
                         Opts.ShortWChar ? "2" : "4");
 
-    Builder.defineMacro("__AARCH_SIZEOF_MINIMAL_ENUM",
+    Builder.defineMacro("__ARM_SIZEOF_MINIMAL_ENUM",
                         Opts.ShortEnums ? "1" : "4");
 
     if (BigEndian)
-      Builder.defineMacro("__AARCH_BIG_ENDIAN");
+      Builder.defineMacro("__ARM_BIG_ENDIAN");
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
-    Records = 0;
-    NumRecords = 0;
+    Records = BuiltinInfo;
+    NumRecords = clang::AArch64::LastTSBuiltin-Builtin::FirstTSBuiltin;
   }
   virtual bool hasFeature(StringRef Feature) const {
     return Feature == "aarch64";
@@ -3454,6 +3517,14 @@ void AArch64TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 
 }
+
+const Builtin::Info AArch64TargetInfo::BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
+                                              ALL_LANGUAGES },
+#include "clang/Basic/BuiltinsAArch64.def"
+};
+
 } // end anonymous namespace
 
 namespace {
@@ -4038,8 +4109,6 @@ public:
 
   static const char *getHexagonCPUSuffix(StringRef Name) {
     return llvm::StringSwitch<const char*>(Name)
-      .Case("hexagonv2", "2")
-      .Case("hexagonv3", "3")
       .Case("hexagonv4", "4")
       .Case("hexagonv5", "5")
       .Default(0);
@@ -4145,16 +4214,14 @@ const Builtin::Info HexagonTargetInfo::BuiltinInfo[] = {
 
 
 namespace {
-class SparcV8TargetInfo : public TargetInfo {
+// Shared base class for SPARC v8 (32-bit) and SPARC v9 (64-bit).
+class SparcTargetInfo : public TargetInfo {
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char * const GCCRegNames[];
   bool SoftFloat;
 public:
-  SparcV8TargetInfo(const std::string& triple) : TargetInfo(triple) {
-    // FIXME: Support Sparc quad-precision long double?
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
-  }
+  SparcTargetInfo(const std::string &triple) : TargetInfo(triple) {}
+
   virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
                                  StringRef Name,
                                  bool Enabled) const {
@@ -4174,7 +4241,6 @@ public:
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
     DefineStd(Builder, "sparc", Opts);
-    Builder.defineMacro("__sparcv8");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
     Builder.defineMacro("__BIG_ENDIAN__");
 
@@ -4224,20 +4290,20 @@ public:
   }
 };
 
-const char * const SparcV8TargetInfo::GCCRegNames[] = {
+const char * const SparcTargetInfo::GCCRegNames[] = {
   "g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7",
   "o0", "o1", "o2", "o3", "o4", "o5", "o6", "o7",
   "l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7",
   "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7",
 };
 
-void SparcV8TargetInfo::getGCCRegNames(const char * const *&Names,
-                                       unsigned &NumNames) const {
+void SparcTargetInfo::getGCCRegNames(const char * const *&Names,
+                                     unsigned &NumNames) const {
   Names = GCCRegNames;
   NumNames = llvm::array_lengthof(GCCRegNames);
 }
 
-const TargetInfo::GCCRegAlias SparcV8TargetInfo::GCCRegAliases[] = {
+const TargetInfo::GCCRegAlias SparcTargetInfo::GCCRegAliases[] = {
   { { "r0" }, "g0" },
   { { "r1" }, "g1" },
   { { "r2" }, "g2" },
@@ -4272,11 +4338,53 @@ const TargetInfo::GCCRegAlias SparcV8TargetInfo::GCCRegAliases[] = {
   { { "r31" }, "i7" },
 };
 
-void SparcV8TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
-                                         unsigned &NumAliases) const {
+void SparcTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                       unsigned &NumAliases) const {
   Aliases = GCCRegAliases;
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
+
+// SPARC v8 is the 32-bit mode selected by Triple::sparc.
+class SparcV8TargetInfo : public SparcTargetInfo {
+public:
+  SparcV8TargetInfo(const std::string& triple) : SparcTargetInfo(triple) {
+    // FIXME: Support Sparc quad-precision long double?
+    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S64";
+  }
+
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    SparcTargetInfo::getTargetDefines(Opts, Builder);
+    Builder.defineMacro("__sparcv8");
+  }
+};
+
+// SPARC v9 is the 64-bit mode selected by Triple::sparcv9.
+class SparcV9TargetInfo : public SparcTargetInfo {
+public:
+  SparcV9TargetInfo(const std::string& triple) : SparcTargetInfo(triple) {
+    // FIXME: Support Sparc quad-precision long double?
+    DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32:64-S128";
+  }
+
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    SparcTargetInfo::getTargetDefines(Opts, Builder);
+    Builder.defineMacro("__sparcv9");
+    Builder.defineMacro("__arch64__");
+    // Solaris and its derivative AuroraUX don't need these variants, but the
+    // BSDs do.
+    if (getTriple().getOS() != llvm::Triple::Solaris &&
+        getTriple().getOS() != llvm::Triple::AuroraUX) {
+      Builder.defineMacro("__sparc64__");
+      Builder.defineMacro("__sparc_v9__");
+      Builder.defineMacro("__sparcv9__");
+    }
+  }
+};
+
 } // end anonymous namespace.
 
 namespace {
@@ -4297,6 +4405,100 @@ public:
   }
 };
 } // end anonymous namespace.
+
+namespace {
+  class SystemZTargetInfo : public TargetInfo {
+    static const char *const GCCRegNames[];
+
+  public:
+    SystemZTargetInfo(const std::string& triple) : TargetInfo(triple) {
+      TLSSupported = true;
+      IntWidth = IntAlign = 32;
+      LongWidth = LongLongWidth = LongAlign = LongLongAlign = 64;
+      PointerWidth = PointerAlign = 64;
+      LongDoubleWidth = 128;
+      LongDoubleAlign = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEquad;
+      MinGlobalAlign = 16;
+      DescriptionString = "E-p:64:64:64-i1:8:16-i8:8:16-i16:16-i32:32-i64:64"
+       "-f32:32-f64:64-f128:64-a0:8:16-n32:64";
+      MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
+    }
+    virtual void getTargetDefines(const LangOptions &Opts,
+                                  MacroBuilder &Builder) const {
+      Builder.defineMacro("__s390__");
+      Builder.defineMacro("__s390x__");
+      Builder.defineMacro("__zarch__");
+      Builder.defineMacro("__LONG_DOUBLE_128__");
+    }
+    virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                   unsigned &NumRecords) const {
+      // FIXME: Implement.
+      Records = 0;
+      NumRecords = 0;
+    }
+
+    virtual void getGCCRegNames(const char *const *&Names,
+                                unsigned &NumNames) const;
+    virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                  unsigned &NumAliases) const {
+      // No aliases.
+      Aliases = 0;
+      NumAliases = 0;
+    }
+    virtual bool validateAsmConstraint(const char *&Name,
+                                       TargetInfo::ConstraintInfo &info) const;
+    virtual const char *getClobbers() const {
+      // FIXME: Is this really right?
+      return "";
+    }
+    virtual BuiltinVaListKind getBuiltinVaListKind() const {
+      return TargetInfo::SystemZBuiltinVaList;
+    }
+  };
+
+  const char *const SystemZTargetInfo::GCCRegNames[] = {
+    "r0",  "r1",  "r2",  "r3",  "r4",  "r5",  "r6",  "r7",
+    "r8",  "r9",  "r10", "r11", "r12", "r13", "r14", "r15",
+    "f0",  "f2",  "f4",  "f6",  "f1",  "f3",  "f5",  "f7",
+    "f8",  "f10", "f12", "f14", "f9",  "f11", "f13", "f15"
+  };
+
+  void SystemZTargetInfo::getGCCRegNames(const char *const *&Names,
+                                         unsigned &NumNames) const {
+    Names = GCCRegNames;
+    NumNames = llvm::array_lengthof(GCCRegNames);
+  }
+
+  bool SystemZTargetInfo::
+  validateAsmConstraint(const char *&Name,
+                        TargetInfo::ConstraintInfo &Info) const {
+    switch (*Name) {
+    default:
+      return false;
+
+    case 'a': // Address register
+    case 'd': // Data register (equivalent to 'r')
+    case 'f': // Floating-point register
+      Info.setAllowsRegister();
+      return true;
+
+    case 'I': // Unsigned 8-bit constant
+    case 'J': // Unsigned 12-bit constant
+    case 'K': // Signed 16-bit constant
+    case 'L': // Signed 20-bit displacement (on all targets we support)
+    case 'M': // 0x7fffffff
+      return true;
+
+    case 'Q': // Memory with base and unsigned 12-bit displacement
+    case 'R': // Likewise, plus an index
+    case 'S': // Memory with base and signed 20-bit displacement
+    case 'T': // Likewise, plus an index
+      Info.setAllowsMemory();
+      return true;
+    }
+  }
+}
 
 namespace {
   class MSP430TargetInfo : public TargetInfo {
@@ -4453,8 +4655,10 @@ class MipsTargetInfoBase : public TargetInfo {
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
   bool IsMips16;
+  bool IsMicromips;
+  bool IsSingleFloat;
   enum MipsFloatABI {
-    HardFloat, SingleFloat, SoftFloat
+    HardFloat, SoftFloat
   } FloatABI;
   enum DspRevEnum {
     NoDSP, DSP1, DSP2
@@ -4470,6 +4674,8 @@ public:
     : TargetInfo(triple),
       CPU(CPUStr),
       IsMips16(false),
+      IsMicromips(false),
+      IsSingleFloat(false),
       FloatABI(HardFloat),
       DspRev(NoDSP),
       ABI(ABIStr)
@@ -4496,17 +4702,19 @@ public:
     case HardFloat:
       Builder.defineMacro("__mips_hard_float", Twine(1));
       break;
-    case SingleFloat:
-      Builder.defineMacro("__mips_hard_float", Twine(1));
-      Builder.defineMacro("__mips_single_float", Twine(1));
-      break;
     case SoftFloat:
       Builder.defineMacro("__mips_soft_float", Twine(1));
       break;
     }
 
+    if (IsSingleFloat)
+      Builder.defineMacro("__mips_single_float", Twine(1));
+
     if (IsMips16)
       Builder.defineMacro("__mips16", Twine(1));
+
+    if (IsMicromips)
+      Builder.defineMacro("__mips_micromips", Twine(1));
 
     switch (DspRev) {
     default:
@@ -4619,7 +4827,8 @@ public:
         Name == "o32" || Name == "n32" || Name == "n64" || Name == "eabi" ||
         Name == "mips32" || Name == "mips32r2" ||
         Name == "mips64" || Name == "mips64r2" ||
-        Name == "mips16" || Name == "dsp" || Name == "dspr2") {
+        Name == "mips16" || Name == "micromips" ||
+        Name == "dsp" || Name == "dspr2") {
       Features[Name] = Enabled;
       return true;
     } else if (Name == "32") {
@@ -4634,17 +4843,21 @@ public:
 
   virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
     IsMips16 = false;
+    IsMicromips = false;
+    IsSingleFloat = false;
     FloatABI = HardFloat;
     DspRev = NoDSP;
 
     for (std::vector<std::string>::iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it) {
       if (*it == "+single-float")
-        FloatABI = SingleFloat;
+        IsSingleFloat = true;
       else if (*it == "+soft-float")
         FloatABI = SoftFloat;
       else if (*it == "+mips16")
         IsMips16 = true;
+      else if (*it == "+micromips")
+        IsMicromips = true;
       else if (*it == "+dsp")
         DspRev = std::max(DspRev, DSP1);
       else if (*it == "+dspr2")
@@ -5004,7 +5217,7 @@ public:
     this->SizeType = TargetInfo::UnsignedInt;
     this->PtrDiffType = TargetInfo::SignedInt;
     this->IntPtrType = TargetInfo::SignedInt;
-    this->RegParmMax = 2;
+    this->RegParmMax = 0; // Disallow regparm
     DescriptionString = "e-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
                         "f32:32:32-f64:64:64-p:32:32:32-v128:32:32";
   }
@@ -5353,6 +5566,32 @@ static TargetInfo *AllocateTarget(const std::string &T) {
       return new RTEMSTargetInfo<SparcV8TargetInfo>(T);
     default:
       return new SparcV8TargetInfo(T);
+    }
+
+  case llvm::Triple::sparcv9:
+    switch (os) {
+    case llvm::Triple::Linux:
+      return new LinuxTargetInfo<SparcV9TargetInfo>(T);
+    case llvm::Triple::AuroraUX:
+      return new AuroraUXTargetInfo<SparcV9TargetInfo>(T);
+    case llvm::Triple::Solaris:
+      return new SolarisTargetInfo<SparcV9TargetInfo>(T);
+    case llvm::Triple::NetBSD:
+      return new NetBSDTargetInfo<SparcV9TargetInfo>(T);
+    case llvm::Triple::OpenBSD:
+      return new OpenBSDTargetInfo<SparcV9TargetInfo>(T);
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<SparcV9TargetInfo>(T);
+    default:
+      return new SparcV9TargetInfo(T);
+    }
+
+  case llvm::Triple::systemz:
+    switch (os) {
+    case llvm::Triple::Linux:
+      return new LinuxTargetInfo<SystemZTargetInfo>(T);
+    default:
+      return new SystemZTargetInfo(T);
     }
 
   case llvm::Triple::tce:

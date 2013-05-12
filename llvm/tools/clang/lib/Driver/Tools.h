@@ -53,6 +53,7 @@ namespace tools {
     void AddMIPSTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddNios2TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddPPCTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void AddR600TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddSparcTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddX86TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddHexagonTargetArgs (const ArgList &Args, ArgStringList &CmdArgs) const;
@@ -429,12 +430,11 @@ namespace netbsd {
   };
 } // end namespace netbsd
 
-  /// linux -- Directly call GNU Binutils assembler and linker
-namespace linuxtools {
+  /// Directly call GNU Binutils' assembler and linker.
+namespace gnutools {
   class LLVM_LIBRARY_VISIBILITY Assemble : public Tool  {
   public:
-    Assemble(const ToolChain &TC) : Tool("linux::Assemble", "assembler",
-                                         TC) {}
+    Assemble(const ToolChain &TC) : Tool("GNU::Assemble", "assembler", TC) {}
 
     virtual bool hasIntegratedCPP() const { return false; }
 
@@ -446,7 +446,7 @@ namespace linuxtools {
   };
   class LLVM_LIBRARY_VISIBILITY Link : public Tool  {
   public:
-    Link(const ToolChain &TC) : Tool("linux::Link", "linker", TC) {}
+    Link(const ToolChain &TC) : Tool("GNU::Link", "linker", TC) {}
 
     virtual bool hasIntegratedCPP() const { return false; }
     virtual bool isLinkJob() const { return true; }

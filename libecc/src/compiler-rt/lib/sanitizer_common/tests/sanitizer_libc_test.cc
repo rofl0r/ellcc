@@ -49,6 +49,11 @@ TEST(SanitizerCommon, mem_is_zero) {
   delete [] x;
 }
 
+struct stat_and_more {
+  struct stat st;
+  unsigned char z;
+};
+
 TEST(SanitizerCommon, FileOps) {
   const char *str1 = "qwerty";
   uptr len1 = internal_strlen(str1);
@@ -69,23 +74,34 @@ TEST(SanitizerCommon, FileOps) {
   internal_snprintf(temp_filename, sizeof(temp_filename),
                     "/tmp/sanitizer_common.tmp.%d", uid);
 #endif
-  fd_t fd = OpenFile(temp_filename, true);
-  EXPECT_NE(fd, kInvalidFd);
+  uptr openrv = OpenFile(temp_filename, true);
+  EXPECT_EQ(false, internal_iserror(openrv));
+  fd_t fd = openrv;
   EXPECT_EQ(len1, internal_write(fd, str1, len1));
   EXPECT_EQ(len2, internal_write(fd, str2, len2));
   internal_close(fd);
 
-  fd = OpenFile(temp_filename, false);
-  EXPECT_NE(fd, kInvalidFd);
+  openrv = OpenFile(temp_filename, false);
+  EXPECT_EQ(false, internal_iserror(openrv));
+  fd = openrv;
   uptr fsize = internal_filesize(fd);
   EXPECT_EQ(len1 + len2, fsize);
 
 #if SANITIZER_TEST_HAS_STAT_H
   struct stat st1, st2, st3;
-  EXPECT_EQ(0, internal_stat(temp_filename, &st1));
-  EXPECT_EQ(0, internal_lstat(temp_filename, &st2));
-  EXPECT_EQ(0, internal_fstat(fd, &st3));
+  EXPECT_EQ(0u, internal_stat(temp_filename, &st1));
+  EXPECT_EQ(0u, internal_lstat(temp_filename, &st2));
+  EXPECT_EQ(0u, internal_fstat(fd, &st3));
   EXPECT_EQ(fsize, (uptr)st3.st_size);
+
+  // Verify that internal_fstat does not write beyond the end of the supplied
+  // buffer.
+  struct stat_and_more sam;
+  memset(&sam, 0xAB, sizeof(sam));
+  EXPECT_EQ(0u, internal_fstat(fd, &sam.st));
+  EXPECT_EQ(0xAB, sam.z);
+  EXPECT_NE(0xAB, sam.st.st_size);
+  EXPECT_NE(0, sam.st.st_size);
 #endif
 
   char buf[64] = {};
@@ -97,3 +113,4 @@ TEST(SanitizerCommon, FileOps) {
   EXPECT_EQ(0, internal_memcmp(buf, str2, len2));
   internal_close(fd);
 }
+

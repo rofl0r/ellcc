@@ -1,8 +1,9 @@
 CXXFLAGS = -fPIE -g -Wall -Werror -fno-builtin -DTSAN_DEBUG=$(DEBUG) -DSANITIZER_DEBUG=$(DEBUG)
+CLANG=clang
 ifeq ($(DEBUG), 0)
   CXXFLAGS += -O3
 endif
-ifeq ($(CXX), clang++)
+ifeq ($(CXX), $(CLANG)++)
   CXXFLAGS+= -Wgnu
 endif
 
@@ -10,7 +11,7 @@ endif
 INTERCEPTION=../../interception
 COMMON=../../sanitizer_common
 INCLUDES= -I../.. -I../../../include
-EXTRA_CXXFLAGS=-fno-exceptions
+EXTRA_CXXFLAGS=-fno-exceptions -fno-rtti
 NO_SYSROOT=--sysroot=.
 CXXFLAGS+=$(EXTRA_CXXFLAGS)
 CXXFLAGS+=$(CFLAGS)
@@ -21,7 +22,7 @@ ifeq ($(CXX), g++)
 endif  # CXX=g++
 endif  # DEBUG=0
 
-ifeq ($(CXX), clang++)
+ifeq ($(CXX), $(CLANG)++)
   # Global constructors are banned.
   CXXFLAGS+=-Wglobal-constructors
 endif

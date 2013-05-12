@@ -111,7 +111,7 @@ class ExternalSymbolizer {
 
   char *SendCommand(bool is_data, const char *module_name, uptr module_offset) {
     CHECK(module_name);
-    internal_snprintf(buffer_, kBufferSize, "%s%s 0x%zx\n",
+    internal_snprintf(buffer_, kBufferSize, "%s\"%s\" 0x%zx\n",
                       is_data ? "DATA " : "", module_name, module_offset);
     if (!writeToSymbolizer(buffer_, internal_strlen(buffer_)))
       return 0;
@@ -126,6 +126,9 @@ class ExternalSymbolizer {
     internal_close(input_fd_);
     internal_close(output_fd_);
     return StartSymbolizerSubprocess(path_, &input_fd_, &output_fd_);
+  }
+
+  void Flush() {
   }
 
  private:
@@ -184,11 +187,14 @@ bool __sanitizer_symbolize_code(const char *ModuleName, u64 ModuleOffset,
 SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
 bool __sanitizer_symbolize_data(const char *ModuleName, u64 ModuleOffset,
                                 char *Buffer, int MaxLength);
+SANITIZER_WEAK_ATTRIBUTE SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_symbolize_flush();
 }  // extern "C"
 
 class InternalSymbolizer {
  public:
   typedef bool (*SanitizerSymbolizeFn)(const char*, u64, char*, int);
+
   static InternalSymbolizer *get() {
     if (__sanitizer_symbolize_code != 0 &&
         __sanitizer_symbolize_data != 0) {
@@ -197,12 +203,18 @@ class InternalSymbolizer {
     }
     return 0;
   }
+
   char *SendCommand(bool is_data, const char *module_name, uptr module_offset) {
     SanitizerSymbolizeFn symbolize_fn = is_data ? __sanitizer_symbolize_data
                                                 : __sanitizer_symbolize_code;
     if (symbolize_fn(module_name, module_offset, buffer_, kBufferSize))
       return buffer_;
     return 0;
+  }
+
+  void Flush() {
+    if (__sanitizer_symbolize_flush)
+      __sanitizer_symbolize_flush();
   }
 
  private:
@@ -219,11 +231,15 @@ class InternalSymbolizer {
   char *SendCommand(bool is_data, const char *module_name, uptr module_offset) {
     return 0;
   }
+  void Flush() {
+  }
 };
 
 #endif  // SANITIZER_SUPPORTS_WEAK_HOOKS
 
 class Symbolizer {
+  // This class has no constructor, as global constructors are forbidden in
+  // sanitizer_common. It should be linker initialized instead.
  public:
   uptr SymbolizeCode(uptr addr, AddressInfo *frames, uptr max_frames) {
     if (max_frames == 0)
@@ -321,6 +337,13 @@ class Symbolizer {
     return internal_symbolizer_ || external_symbolizer_;
   }
 
+  void Flush() {
+    if (internal_symbolizer_)
+      internal_symbolizer_->Flush();
+    if (external_symbolizer_)
+      external_symbolizer_->Flush();
+  }
+
  private:
   char *SendCommand(bool is_data, const char *module_name, uptr module_offset) {
     // First, try to use internal symbolizer.
@@ -355,7 +378,8 @@ class Symbolizer {
   }
 
   LoadedModule *FindModuleForAddress(uptr address) {
-    if (modules_ == 0) {
+    bool modules_were_reloaded = false;
+    if (modules_ == 0 || !modules_fresh_) {
       modules_ = (LoadedModule*)(symbolizer_allocator.Allocate(
           kMaxNumberOfModuleContexts * sizeof(LoadedModule)));
       CHECK(modules_);
@@ -363,14 +387,25 @@ class Symbolizer {
       // FIXME: Return this check when GetListOfModules is implemented on Mac.
       // CHECK_GT(n_modules_, 0);
       CHECK_LT(n_modules_, kMaxNumberOfModuleContexts);
+      modules_fresh_ = true;
+      modules_were_reloaded = true;
     }
     for (uptr i = 0; i < n_modules_; i++) {
       if (modules_[i].containsAddress(address)) {
         return &modules_[i];
       }
     }
+    // Reload the modules and look up again, if we haven't tried it yet.
+    if (!modules_were_reloaded) {
+      // FIXME: set modules_fresh_ from dlopen()/dlclose() interceptors.
+      // It's too aggressive to reload the list of modules each time we fail
+      // to find a module for a given address.
+      modules_fresh_ = false;
+      return FindModuleForAddress(address);
+    }
     return 0;
   }
+
   void ReportExternalSymbolizerError(const char *msg) {
     // Don't use atomics here for now, as SymbolizeCode can't be called
     // from multiple threads anyway.
@@ -385,6 +420,8 @@ class Symbolizer {
   static const uptr kMaxNumberOfModuleContexts = 1 << 14;
   LoadedModule *modules_;  // Array of module descriptions is leaked.
   uptr n_modules_;
+  // If stale, need to reload the modules before looking up addresses.
+  bool modules_fresh_;
 
   ExternalSymbolizer *external_symbolizer_;  // Leaked.
   InternalSymbolizer *internal_symbolizer_;  // Leaked.
@@ -406,6 +443,10 @@ bool InitializeExternalSymbolizer(const char *path_to_symbolizer) {
 
 bool IsSymbolizerAvailable() {
   return symbolizer.IsSymbolizerAvailable();
+}
+
+void FlushSymbolizer() {
+  symbolizer.Flush();
 }
 
 }  // namespace __sanitizer

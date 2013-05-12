@@ -515,7 +515,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SETCC(SDNode *N) {
   // Only use the result of getSetCCResultType if it is legal,
   // otherwise just use the promoted result type (NVT).
   if (!TLI.isTypeLegal(SVT))
-      SVT = NVT;
+    SVT = NVT;
 
   DebugLoc dl = N->getDebugLoc();
   assert(SVT.isVector() == N->getOperand(0).getValueType().isVector() &&
@@ -550,7 +550,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_SimpleIntBinOp(SDNode *N) {
   SDValue LHS = GetPromotedInteger(N->getOperand(0));
   SDValue RHS = GetPromotedInteger(N->getOperand(1));
   return DAG.getNode(N->getOpcode(), N->getDebugLoc(),
-                    LHS.getValueType(), LHS, RHS);
+                     LHS.getValueType(), LHS, RHS);
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_SRA(SDNode *N) {
@@ -777,7 +777,6 @@ bool DAGTypeLegalizer::PromoteIntegerOperand(SDNode *N, unsigned OpNo) {
                           Res = PromoteIntOp_CONVERT_RNDSAT(N); break;
   case ISD::INSERT_VECTOR_ELT:
                           Res = PromoteIntOp_INSERT_VECTOR_ELT(N, OpNo);break;
-  case ISD::MEMBARRIER:   Res = PromoteIntOp_MEMBARRIER(N); break;
   case ISD::SCALAR_TO_VECTOR:
                           Res = PromoteIntOp_SCALAR_TO_VECTOR(N); break;
   case ISD::VSELECT:
@@ -959,17 +958,6 @@ SDValue DAGTypeLegalizer::PromoteIntOp_INSERT_VECTOR_ELT(SDNode *N,
   SDValue Idx = ZExtPromotedInteger(N->getOperand(2));
   return SDValue(DAG.UpdateNodeOperands(N, N->getOperand(0),
                                 N->getOperand(1), Idx), 0);
-}
-
-SDValue DAGTypeLegalizer::PromoteIntOp_MEMBARRIER(SDNode *N) {
-  SDValue NewOps[6];
-  DebugLoc dl = N->getDebugLoc();
-  NewOps[0] = N->getOperand(0);
-  for (unsigned i = 1; i < array_lengthof(NewOps); ++i) {
-    SDValue Flag = GetPromotedInteger(N->getOperand(i));
-    NewOps[i] = DAG.getZeroExtendInReg(Flag, dl, MVT::i1);
-  }
-  return SDValue(DAG.UpdateNodeOperands(N, NewOps, array_lengthof(NewOps)), 0);
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_SCALAR_TO_VECTOR(SDNode *N) {

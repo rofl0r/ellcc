@@ -15,16 +15,16 @@
 
 // FIXME: We should probably use more low-level allocator that would
 // mmap some pages and split them into chunks to fulfill requests.
-#if defined(__linux__) && !defined(__ANDROID__)
+#if SANITIZER_LINUX && !SANITIZER_ANDROID
 extern "C" void *__libc_malloc(__sanitizer::uptr size);
 extern "C" void __libc_free(void *ptr);
 # define LIBC_MALLOC __libc_malloc
 # define LIBC_FREE __libc_free
-#else  // __linux__ && !ANDROID
+#else  // SANITIZER_LINUX && !SANITIZER_ANDROID
 # include <stdlib.h>
 # define LIBC_MALLOC malloc
 # define LIBC_FREE free
-#endif  // __linux__ && !ANDROID
+#endif  // SANITIZER_LINUX && !SANITIZER_ANDROID
 
 namespace __sanitizer {
 

@@ -234,7 +234,12 @@ public:
   /// getFrameMoves - Returns a reference to a list of moves done in the current
   /// function's prologue.  Used to construct frame maps for debug and exception
   /// handling comsumers.
-  std::vector<MachineMove> &getFrameMoves() { return FrameMoves; }
+  const std::vector<MachineMove> &getFrameMoves() { return FrameMoves; }
+
+  void addFrameMove(MCSymbol *Label, const MachineLocation &Dst,
+                    const MachineLocation &Src) {
+    FrameMoves.push_back(MachineMove(Label, Dst, Src));
+  }
 
   /// getCompactUnwindEncoding - Returns the compact unwind encoding for a
   /// function if the target supports the encoding. This encoding replaces a
@@ -295,7 +300,7 @@ public:
   /// isUsedFunction - Return true if the functions in the llvm.used list.  This
   /// does not return true for things in llvm.compiler.used unless they are also
   /// in llvm.used.
-  bool isUsedFunction(const Function *F) {
+  bool isUsedFunction(const Function *F) const {
     return UsedFunctions.count(F);
   }
 

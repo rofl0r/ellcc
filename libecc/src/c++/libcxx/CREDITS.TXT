@@ -48,6 +48,10 @@ N: Argyrios Kyrtzidis
 E: kyrtzidis@apple.com
 D: Bug fixes.
 
+N: Bruce Mitchener, Jr.
+E: bruce.mitchener@gmail.com
+D: Emscripten-related changes.
+
 N: Michel Morin
 E: mimomorin@gmail.com
 D: Minor patches to is_convertible.
@@ -73,6 +77,17 @@ D: Implemented Cityhash as the string hash function on 64-bit machines
 
 N: Richard Smith
 D: Minor patches.
+
+N: Joerg Sonnenberger
+E: joerg@NetBSD.org
+D: NetBSD port.
+
+N: Stephan Tolksdorf
+E: st@quanttec.com
+D: Minor <atomic> fix
+
+N: Michael van der Westhuizen
+E: r1mikey at gmail dot com
 
 N: Klaas de Vries
 E: klaas at klaasgaaf dot nl

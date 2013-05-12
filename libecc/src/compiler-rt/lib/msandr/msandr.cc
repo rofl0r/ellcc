@@ -37,14 +37,13 @@
 #include <drsyscall.h>
 
 #include <sys/mman.h>
+#include <sys/syscall.h>  /* for SYS_mmap */
 
 #include <algorithm>
 #include <string>
 #include <set>
 #include <vector>
 #include <string.h>
-
-using std::string;
 
 #define TESTALL(mask, var) (((mask) & (var)) == (mask))
 #define TESTANY(mask, var) (((mask) & (var)) != 0)
@@ -73,13 +72,13 @@ public:
   app_pc start_;
   app_pc end_;
   // Full path to the module.
-  string path_;
+  std::string path_;
   module_handle_t handle_;
   bool should_instrument_;
   bool executed_;
 };
 
-string g_app_path;
+std::string g_app_path;
 
 int msan_retval_tls_offset;
 int msan_param_tls_offset;
@@ -103,6 +102,17 @@ ModuleData::ModuleData(const module_data_t *info)
 
 int(*__msan_get_retval_tls_offset)();
 int(*__msan_get_param_tls_offset)();
+void (*__msan_unpoison)(void *base, size_t size);
+bool (*__msan_is_in_loader)();
+
+static generic_func_t LookupCallback(module_data_t *app, const char *name) {
+  generic_func_t callback = dr_get_proc_address(app->handle, name);
+  if (callback == NULL) {
+    dr_printf("Couldn't find `%s` in %s\n", name, app->full_path);
+    CHECK(callback);
+  }
+  return callback;
+}
 
 void InitializeMSanCallbacks() {
   module_data_t *app = dr_lookup_module_by_name(dr_get_application_name());
@@ -113,24 +123,17 @@ void InitializeMSanCallbacks() {
   }
   g_app_path = app->full_path;
 
-  const char *callback_name = "__msan_get_retval_tls_offset";
-  __msan_get_retval_tls_offset =
-      (int(*)()) dr_get_proc_address(app->handle, callback_name);
-  if (__msan_get_retval_tls_offset == NULL) {
-    dr_printf("Couldn't find `%s` in %s\n", callback_name, app->full_path);
-    CHECK(__msan_get_retval_tls_offset);
-  }
+  __msan_get_retval_tls_offset = (int (*)())
+      LookupCallback(app, "__msan_get_retval_tls_offset");
+  __msan_get_param_tls_offset = (int (*)())
+      LookupCallback(app, "__msan_get_param_tls_offset");
+  __msan_unpoison = (void(*)(void *, size_t))
+      LookupCallback(app, "__msan_unpoison");
+  __msan_is_in_loader = (bool (*)())
+      LookupCallback(app, "__msan_is_in_loader");
 
-  callback_name = "__msan_get_param_tls_offset";
-  __msan_get_param_tls_offset =
-      (int(*)()) dr_get_proc_address(app->handle, callback_name);
-  if (__msan_get_param_tls_offset == NULL) {
-    dr_printf("Couldn't find `%s` in %s\n", callback_name, app->full_path);
-    CHECK(__msan_get_param_tls_offset);
-  }
+  dr_free_module_data(app);
 }
-
-#define MEM_TO_SHADOW(mem) ((mem) & ~0x400000000000ULL)
 
 // FIXME: Handle absolute addresses and PC-relative addresses.
 // FIXME: Handle TLS accesses via FS or GS.  DR assumes all other segments have
@@ -394,7 +397,7 @@ dr_emit_flags_t event_basic_block(void *drcontext, void *tag, instrlist_t *bb,
   if (VERBOSITY > 1)
     dr_printf("============================================================\n");
   if (VERBOSITY > 0) {
-    string mod_path = (mod_data ? mod_data->path_ : "<no module, JITed?>");
+    std::string mod_path = (mod_data ? mod_data->path_ : "<no module, JITed?>");
     if (mod_data && !mod_data->executed_) {
       mod_data->executed_ = true; // Nevermind this race.
       dr_printf("Executing from new module: %s\n", mod_path.c_str());
@@ -506,6 +509,11 @@ void event_module_unload(void *drcontext, const module_data_t *info) {
 }
 
 void event_exit() {
+  // Clean up so DR doesn't tell us we're leaking memory.
+  drsys_exit();
+  drutil_exit();
+  drmgr_exit();
+
   if (VERBOSITY > 0)
     dr_printf("==DRMSAN== DONE\n");
 }
@@ -520,7 +528,7 @@ bool drsys_iter_memarg_cb(drsys_arg_t *arg, void *user_data) {
 
   if (arg->pre)
     return true;
-  if (arg->mode != DRSYS_PARAM_OUT)
+  if (!TESTANY(DRSYS_PARAM_OUT, arg->mode))
     return true;
 
   size_t sz = arg->size;
@@ -538,8 +546,19 @@ bool drsys_iter_memarg_cb(drsys_arg_t *arg, void *user_data) {
               (unsigned long long)(sz & 0xFFFFFFFF));
   }
 
-  void *p = (void *)MEM_TO_SHADOW((ptr_uint_t) arg->start_addr);
-  memset(p, 0, sz);
+  if (VERBOSITY > 0) {
+    drmf_status_t res;
+    drsys_syscall_t *syscall = (drsys_syscall_t *)user_data;
+    const char *name;
+    res = drsys_syscall_name(syscall, &name);
+    dr_printf("drsyscall: syscall '%s' arg %d wrote range [%p, %p)\n",
+              name, arg->ordinal, arg->start_addr,
+              (char *)arg->start_addr + sz);
+  }
+
+  // We don't switch to the app context because __msan_unpoison() doesn't need
+  // TLS segments.
+  __msan_unpoison(arg->start_addr, sz);
 
   return true; /* keep going */
 }
@@ -576,6 +595,19 @@ bool event_pre_syscall(void *drcontext, int sysnum) {
   return true;
 }
 
+static bool IsInLoader(void *drcontext) {
+  // TODO: This segment swap is inefficient.  DR should just let us query the
+  // app segment base, which it has.  Alternatively, if we disable
+  // -mangle_app_seg, then we won't need the swap.
+  bool need_swap = !dr_using_app_state(drcontext);
+  if (need_swap)
+    dr_switch_to_app_state(drcontext);
+  bool is_in_loader = __msan_is_in_loader();
+  if (need_swap)
+    dr_switch_to_dr_state(drcontext);
+  return is_in_loader;
+}
+
 void event_post_syscall(void *drcontext, int sysnum) {
   drsys_syscall_t *syscall;
   drsys_sysnum_t sysnum_full;
@@ -598,6 +630,30 @@ void event_post_syscall(void *drcontext, int sysnum) {
         drsys_iterate_memargs(drcontext, drsys_iter_memarg_cb, (void *)syscall);
     CHECK(res == DRMF_SUCCESS);
   }
+
+  // Our normal mmap interceptor can't intercept calls from the loader itself.
+  // This means we don't clear the shadow for calls to dlopen.  For now, we
+  // solve this by intercepting mmap from ld.so here, but ideally we'd have a
+  // solution that doesn't rely on msandr.
+  //
+  // Be careful not to intercept maps done by the msan rtl.  Otherwise we end up
+  // unpoisoning vast regions of memory and OOMing.
+  // TODO: __msan_unpoison() could "flush" large regions of memory like tsan
+  // does instead of doing a large memset.  However, we need the memory to be
+  // zeroed, where as tsan does not, so plain madvise is not enough.
+  if (success && (sysnum == SYS_mmap IF_NOT_X64(|| sysnum == SYS_mmap2))) {
+    if (IsInLoader(drcontext)) {
+      app_pc base = (app_pc)dr_syscall_get_result(drcontext);
+      ptr_uint_t size;
+      drmf_status_t res = drsys_pre_syscall_arg(drcontext, 1, &size);
+      CHECK(res == DRMF_SUCCESS);
+      if (VERBOSITY > 0)
+        dr_printf("unpoisoning for dlopen: [%p-%p]\n", base, base + size);
+      // We don't switch to the app context because __msan_unpoison() doesn't
+      // need TLS segments.
+      __msan_unpoison(base, size);
+    }
+  }
 }
 
 } // namespace
@@ -608,7 +664,7 @@ DR_EXPORT void dr_init(client_id_t id) {
   drmgr_init();
   drutil_init();
 
-  string app_name = dr_get_application_name();
+  std::string app_name = dr_get_application_name();
   // This blacklist will still run these apps through DR's code cache.  On the
   // other hand, we are able to follow children of these apps.
   // FIXME: Once DR has detach, we could just detach here.  Alternatively,
