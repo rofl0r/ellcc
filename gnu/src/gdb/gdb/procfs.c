@@ -1,6 +1,6 @@
 /* Machine independent support for SVR4 /proc (process file system) for GDB.
 
-   Copyright (C) 1999-2003, 2006-2012 Free Software Foundation, Inc.
+   Copyright (C) 1999-2013 Free Software Foundation, Inc.
 
    Written by Michael Snyder at Cygnus Solutions.
    Based on work by Fred Fish, Stu Grossman, Geoff Noer, and others.
@@ -45,6 +45,7 @@
 #include "gdb_wait.h"
 #include <signal.h>
 #include <ctype.h>
+#include "gdb_bfd.h"
 #include "gdb_string.h"
 #include "gdb_assert.h"
 #include "inflow.h"
@@ -61,7 +62,6 @@
      Irix
      Solaris
      OSF
-     Unixware
      AIX5
 
    /proc works by imitating a file system: you open a simulated file
@@ -141,11 +141,7 @@ static int procfs_thread_alive (struct target_ops *ops, ptid_t);
 static void procfs_find_new_threads (struct target_ops *ops);
 static char *procfs_pid_to_str (struct target_ops *, ptid_t);
 
-static int proc_find_memory_regions (int (*) (CORE_ADDR,
-					      unsigned long,
-					      int, int, int,
-					      void *),
-				     void *);
+static int proc_find_memory_regions (find_memory_region_ftype, void *);
 
 static char * procfs_make_note_section (bfd *, int *);
 
@@ -162,7 +158,7 @@ static int
 procfs_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
 		   gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   gdb_byte *ptr = *readptr;
 
   if (endptr == ptr)
@@ -552,7 +548,7 @@ open_procinfo_files (procinfo *pi, int which)
   /* This function is getting ALMOST long enough to break up into
      several.  Here is some rationale:
 
-     NEW_PROC_API (Solaris 2.6, Solaris 2.7, Unixware):
+     NEW_PROC_API (Solaris 2.6, Solaris 2.7):
      There are several file descriptors that may need to be open
        for any given process or LWP.  The ones we're intereted in are:
 	 - control	 (ctl)	  write-only	change the state
@@ -1078,16 +1074,6 @@ proc_get_status (procinfo *pi)
 				    (char *) &pi->prstatus,
 				    sizeof (gdb_prstatus_t))
 			      == sizeof (gdb_prstatus_t));
-#if 0 /*def UNIXWARE*/
-	  if (pi->status_valid &&
-	      (pi->prstatus.pr_lwp.pr_flags & PR_ISTOP) &&
-	      pi->prstatus.pr_lwp.pr_why == PR_REQUESTED)
-	    /* Unixware peculiarity -- read the damn thing again!  */
-	    pi->status_valid = (read (pi->status_fd,
-				      (char *) &pi->prstatus,
-				      sizeof (gdb_prstatus_t))
-				== sizeof (gdb_prstatus_t));
-#endif /* UNIXWARE */
 	}
     }
 #else	/* ioctl method */
@@ -1151,14 +1137,7 @@ proc_flags (procinfo *pi)
       return 0;	/* FIXME: not a good failure value (but what is?)  */
 
 #ifdef NEW_PROC_API
-# ifdef UNIXWARE
-  /* UnixWare 7.1 puts process status flags, e.g. PR_ASYNC, in
-     pstatus_t and LWP status flags, e.g. PR_STOPPED, in lwpstatus_t.
-     The two sets of flags don't overlap.  */
-  return pi->prstatus.pr_flags | pi->prstatus.pr_lwp.pr_flags;
-# else
   return pi->prstatus.pr_lwp.pr_flags;
-# endif
 #else
   return pi->prstatus.pr_flags;
 #endif
@@ -1209,12 +1188,12 @@ proc_watchpoint_address (procinfo *pi, CORE_ADDR *addr)
       return 0;
 
 #ifdef NEW_PROC_API
-  *addr = (CORE_ADDR) gdbarch_pointer_to_address (target_gdbarch,
-	    builtin_type (target_gdbarch)->builtin_data_ptr,
+  *addr = (CORE_ADDR) gdbarch_pointer_to_address (target_gdbarch (),
+	    builtin_type (target_gdbarch ())->builtin_data_ptr,
 	    (gdb_byte *) &pi->prstatus.pr_lwp.pr_info.si_addr);
 #else
-  *addr = (CORE_ADDR) gdbarch_pointer_to_address (target_gdbarch,
-	    builtin_type (target_gdbarch)->builtin_data_ptr,
+  *addr = (CORE_ADDR) gdbarch_pointer_to_address (target_gdbarch (),
+	    builtin_type (target_gdbarch ())->builtin_data_ptr,
 	    (gdb_byte *) &pi->prstatus.pr_info.si_addr);
 #endif
   return 1;
@@ -1320,7 +1299,7 @@ proc_modify_flag (procinfo *pi, long flag, long mode)
   if (pi->pid != 0)
     pi = find_procinfo_or_die (pi->pid, 0);
 
-#ifdef NEW_PROC_API	/* Newest method: UnixWare and newer Solarii.  */
+#ifdef NEW_PROC_API	/* Newest method: Newer Solarii.  */
   /* First normalize the PCUNSET/PCRESET command opcode
      (which for no obvious reason has a different definition
      from one operating system to the next...)  */
@@ -1824,11 +1803,7 @@ proc_get_held_signals (procinfo *pi, gdb_sigset_t *save)
     if (!proc_get_status (pi))
       return NULL;
 
-#ifdef UNIXWARE
-  ret = &pi->prstatus.pr_lwp.pr_context.uc_sigmask;
-#else
   ret = &pi->prstatus.pr_lwp.pr_lwphold;
-#endif /* UNIXWARE */
 #else  /* not NEW_PROC_API */
   {
     static gdb_sigset_t sigheld;
@@ -2210,15 +2185,8 @@ proc_get_gregs (procinfo *pi)
     if (!proc_get_status (pi))
       return NULL;
 
-  /* OK, sorry about the ifdef's.  There's three cases instead of two,
-     because in this case Unixware and Solaris/RW differ.  */
-
 #ifdef NEW_PROC_API
-# ifdef UNIXWARE		/* FIXME:  Should be autoconfigured.  */
-  return &pi->prstatus.pr_lwp.pr_context.uc_mcontext.gregs;
-# else
   return &pi->prstatus.pr_lwp.pr_reg;
-# endif
 #else
   return &pi->prstatus.pr_reg;
 #endif
@@ -2235,11 +2203,7 @@ proc_get_fpregs (procinfo *pi)
     if (!proc_get_status (pi))
       return NULL;
 
-# ifdef UNIXWARE		/* FIXME:  Should be autoconfigured.  */
-  return &pi->prstatus.pr_lwp.pr_context.uc_mcontext.fpregs;
-# else
   return &pi->prstatus.pr_lwp.pr_fpreg;
-# endif
 
 #else  /* not NEW_PROC_API */
   if (pi->fpregs_valid)
@@ -2454,15 +2418,15 @@ proc_parent_pid (procinfo *pi)
    (a.k.a void pointer)!  */
 
 #if (defined (PCWATCH) || defined (PIOCSWATCH)) \
-    && !(defined (PIOCOPENLWP) || defined (UNIXWARE))
+    && !(defined (PIOCOPENLWP))
 static void *
 procfs_address_to_host_pointer (CORE_ADDR addr)
 {
-  struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
+  struct type *ptr_type = builtin_type (target_gdbarch ())->builtin_data_ptr;
   void *ptr;
 
   gdb_assert (sizeof (ptr) == TYPE_LENGTH (ptr_type));
-  gdbarch_address_to_pointer (target_gdbarch, ptr_type,
+  gdbarch_address_to_pointer (target_gdbarch (), ptr_type,
 			      (gdb_byte *) &ptr, addr);
   return ptr;
 }
@@ -2478,7 +2442,7 @@ proc_set_watchpoint (procinfo *pi, CORE_ADDR addr, int len, int wflags)
   return 0;
 #else
 /* Horrible hack!  Detect Solaris 2.5, because this doesn't work on 2.5.  */
-#if defined (PIOCOPENLWP) || defined (UNIXWARE)	/* Solaris 2.5: bail out.  */
+#if defined (PIOCOPENLWP)	/* Solaris 2.5: bail out.  */
   return 0;
 #else
   struct {
@@ -2520,7 +2484,7 @@ proc_set_watchpoint (procinfo *pi, CORE_ADDR addr, int len, int wflags)
    register for the LWP that we're interested in.  Returns the
    matching ssh struct (LDT entry).  */
 
-struct ssd *
+static struct ssd *
 proc_get_LDT_entry (procinfo *pi, int key)
 {
   static struct ssd *ldt_entry = NULL;
@@ -2651,7 +2615,7 @@ proc_get_nthreads (procinfo *pi)
 
 #else
 #if defined (SYS_lwpcreate) || defined (SYS_lwp_create) /* FIXME: multiple */
-/* Solaris and Unixware version */
+/* Solaris version */
 static int
 proc_get_nthreads (procinfo *pi)
 {
@@ -2686,7 +2650,7 @@ proc_get_nthreads (procinfo *pi)
    currently executing.  */
 
 #if defined (SYS_lwpcreate) || defined (SYS_lwp_create) /* FIXME: multiple */
-/* Solaris and Unixware version */
+/* Solaris version */
 static int
 proc_get_current_thread (procinfo *pi)
 {
@@ -2794,7 +2758,7 @@ proc_update_threads (procinfo *pi)
 }
 #else
 #ifdef NEW_PROC_API
-/* Unixware and Solaris 6 (and later) version.  */
+/* Solaris 6 (and later) version.  */
 static void
 do_closedir_cleanup (void *dir)
 {
@@ -2821,13 +2785,11 @@ proc_update_threads (procinfo *pi)
 
   proc_iterate_over_threads (pi, proc_delete_dead_threads, NULL);
 
-  /* Unixware
-
-     Note: this brute-force method is the only way I know of to
-     accomplish this task on Unixware.  This method will also work on
-     Solaris 2.6 and 2.7.  There is a much simpler and more elegant
-     way to do this on Solaris, but the margins of this manuscript are
-     too small to write it here...  ;-)  */
+  /* Note: this brute-force method was originally devised for Unixware
+     (support removed since), and will also work on Solaris 2.6 and
+     2.7.  The original comment mentioned the existence of a much
+     simpler and more elegant way to do this on Solaris, but didn't
+     point out what that was.  */
 
   strcpy (pathname, pi->pathname);
   strcat (pathname, "/lwp");
@@ -3433,7 +3395,7 @@ remove_dbx_link_breakpoint (void)
   if (dbx_link_bpt_addr == 0)
     return;
 
-  if (deprecated_remove_raw_breakpoint (target_gdbarch, dbx_link_bpt) != 0)
+  if (deprecated_remove_raw_breakpoint (target_gdbarch (), dbx_link_bpt) != 0)
     warning (_("Unable to remove __dbx_link breakpoint."));
 
   dbx_link_bpt_addr = 0;
@@ -3486,7 +3448,7 @@ insert_dbx_link_bpt_in_file (int fd, CORE_ADDR ignored)
   long storage_needed;
   CORE_ADDR sym_addr;
 
-  abfd = bfd_fdopenr ("unamed", 0, fd);
+  abfd = gdb_bfd_fdopenr ("unamed", 0, fd);
   if (abfd == NULL)
     {
       warning (_("Failed to create a bfd: %s."), bfd_errmsg (bfd_get_error ()));
@@ -3497,7 +3459,7 @@ insert_dbx_link_bpt_in_file (int fd, CORE_ADDR ignored)
     {
       /* Not the correct format, so we can not possibly find the dbx_link
 	 symbol in it.	*/
-      bfd_close (abfd);
+      gdb_bfd_unref (abfd);
       return 0;
     }
 
@@ -3506,19 +3468,19 @@ insert_dbx_link_bpt_in_file (int fd, CORE_ADDR ignored)
     {
       /* Insert the breakpoint.  */
       dbx_link_bpt_addr = sym_addr;
-      dbx_link_bpt = deprecated_insert_raw_breakpoint (target_gdbarch, NULL,
+      dbx_link_bpt = deprecated_insert_raw_breakpoint (target_gdbarch (), NULL,
 						       sym_addr);
       if (dbx_link_bpt == NULL)
 	{
 	  warning (_("Failed to insert dbx_link breakpoint."));
-	  bfd_close (abfd);
+	  gdb_bfd_unref (abfd);
 	  return 0;
 	}
-      bfd_close (abfd);
+      gdb_bfd_unref (abfd);
       return 1;
     }
 
-  bfd_close (abfd);
+  gdb_bfd_unref (abfd);
   return 0;
 }
 
@@ -4121,7 +4083,7 @@ invalidate_cache (procinfo *parent, procinfo *pi, void *ptr)
       if (!proc_set_gregs (pi))	/* flush gregs cache */
 	proc_warn (pi, "target_resume, set_gregs",
 		   __LINE__);
-  if (gdbarch_fp0_regnum (target_gdbarch) >= 0)
+  if (gdbarch_fp0_regnum (target_gdbarch ()) >= 0)
     if (pi->fpregs_dirty)
       if (parent == NULL ||
 	  proc_get_current_thread (parent) != pi->tid)
@@ -4399,7 +4361,7 @@ procfs_mourn_inferior (struct target_ops *ops)
 
   if (dbx_link_bpt != NULL)
     {
-      deprecated_remove_raw_breakpoint (target_gdbarch, dbx_link_bpt);
+      deprecated_remove_raw_breakpoint (target_gdbarch (), dbx_link_bpt);
       dbx_link_bpt_addr = 0;
       dbx_link_bpt = NULL;
     }
@@ -4818,7 +4780,6 @@ static int
 procfs_set_watchpoint (ptid_t ptid, CORE_ADDR addr, int len, int rwflag,
 		       int after)
 {
-#ifndef UNIXWARE
 #ifndef AIX5
   int       pflags = 0;
   procinfo *pi;
@@ -4860,7 +4821,6 @@ procfs_set_watchpoint (ptid_t ptid, CORE_ADDR addr, int len, int rwflag,
       proc_error (pi, "set_watchpoint", __LINE__);
     }
 #endif /* AIX5 */
-#endif /* UNIXWARE */
   return 0;
 }
 
@@ -4884,7 +4844,7 @@ procfs_can_use_hw_breakpoint (int type, int cnt, int othertype)
      procfs_address_to_host_pointer will reveal that an internal error
      will be generated when the host and target pointer sizes are
      different.  */
-  struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
+  struct type *ptr_type = builtin_type (target_gdbarch ())->builtin_data_ptr;
 
   if (sizeof (void *) != TYPE_LENGTH (ptr_type))
     return 0;
@@ -4941,7 +4901,7 @@ procfs_insert_watchpoint (CORE_ADDR addr, int len, int type,
 			  struct expression *cond)
 {
   if (!target_have_steppable_watchpoint
-      && !gdbarch_have_nonsteppable_watchpoint (target_gdbarch))
+      && !gdbarch_have_nonsteppable_watchpoint (target_gdbarch ()))
     {
       /* When a hardware watchpoint fires off the PC will be left at
 	 the instruction following the one which caused the
@@ -5074,6 +5034,7 @@ find_memory_regions_callback (struct prmap *map,
 		  (map->pr_mflags & MA_READ) != 0,
 		  (map->pr_mflags & MA_WRITE) != 0,
 		  (map->pr_mflags & MA_EXEC) != 0,
+		  1, /* MODIFIED is unknown, pass it as true.  */
 		  data);
 }
 
@@ -5140,7 +5101,7 @@ info_mappings_callback (struct prmap *map, find_memory_region_ftype ignore,
   pr_off = map->pr_off;
 #endif
 
-  if (gdbarch_addr_bit (target_gdbarch) == 32)
+  if (gdbarch_addr_bit (target_gdbarch ()) == 32)
     printf_filtered ("\t%#10lx %#10lx %#10lx %#10x %7s\n",
 		     (unsigned long) map->pr_vaddr,
 		     (unsigned long) map->pr_vaddr + map->pr_size - 1,
@@ -5167,7 +5128,7 @@ info_proc_mappings (procinfo *pi, int summary)
     return;	/* No output for summary mode.  */
 
   printf_filtered (_("Mapped address spaces:\n\n"));
-  if (gdbarch_ptr_bit (target_gdbarch) == 32)
+  if (gdbarch_ptr_bit (target_gdbarch ()) == 32)
     printf_filtered ("\t%10s %10s %10s %10s %7s\n",
 		     "Start Addr",
 		     "  End Addr",
@@ -5405,8 +5366,8 @@ procfs_first_available (void)
 }
 
 /* ===================  GCORE .NOTE "MODULE" =================== */
-#if defined (UNIXWARE) || defined (PIOCOPENLWP) || defined (PCAGENT)
-/* gcore only implemented on solaris and unixware (so far) */
+#if defined (PIOCOPENLWP) || defined (PCAGENT)
+/* gcore only implemented on solaris (so far) */
 
 static char *
 procfs_do_thread_registers (bfd *obfd, ptid_t ptid,
@@ -5546,7 +5507,7 @@ procfs_make_note_section (bfd *obfd, int *note_size)
 
   stop_signal = find_stop_signal ();
 
-#ifdef UNIXWARE
+#ifdef NEW_PROC_API
   fill_gregset (get_current_regcache (), &gregs, -1);
   note_data = elfcore_write_pstatus (obfd, note_data, note_size,
 				     PIDGET (inferior_ptid),
@@ -5576,12 +5537,12 @@ procfs_make_note_section (bfd *obfd, int *note_size)
   make_cleanup (xfree, note_data);
   return note_data;
 }
-#else /* !(Solaris or Unixware) */
+#else /* !Solaris */
 static char *
 procfs_make_note_section (bfd *obfd, int *note_size)
 {
   error (_("gcore not implemented for this host."));
   return NULL;	/* lint */
 }
-#endif /* Solaris or Unixware */
+#endif /* Solaris */
 /* ===================  END GCORE .NOTE "MODULE" =================== */

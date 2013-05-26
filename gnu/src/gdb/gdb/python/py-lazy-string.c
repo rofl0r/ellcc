@@ -1,6 +1,6 @@
 /* Python interface to lazy strings.
 
-   Copyright (C) 2010-2012 Free Software Foundation, Inc.
+   Copyright (C) 2010-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -216,8 +216,7 @@ static PyGetSetDef lazy_string_object_getset[] = {
 };
 
 static PyTypeObject lazy_string_object_type = {
-  PyObject_HEAD_INIT (NULL)
-  0,				  /*ob_size*/
+  PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.LazyString",	          /*tp_name*/
   sizeof (lazy_string_object),	  /*tp_basicsize*/
   0,				  /*tp_itemsize*/

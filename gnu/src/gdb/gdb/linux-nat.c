@@ -1,6 +1,6 @@
 /* GNU/Linux native-dependent code common to multiple platforms.
 
-   Copyright (C) 2001-2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -66,6 +66,7 @@
 #include "exceptions.h"
 #include "linux-ptrace.h"
 #include "buffer.h"
+#include "target-descriptions.h"
 
 #ifndef SPUFS_MAGIC
 #define SPUFS_MAGIC 0x23c9b64e
@@ -183,6 +184,13 @@ static struct target_ops linux_ops_saved;
 /* The method to call, if any, when a new thread is attached.  */
 static void (*linux_nat_new_thread) (struct lwp_info *);
 
+/* The method to call, if any, when a new fork is attached.  */
+static linux_nat_new_fork_ftype *linux_nat_new_fork;
+
+/* The method to call, if any, when a process is no longer
+   attached.  */
+static linux_nat_forget_process_ftype *linux_nat_forget_process_hook;
+
 /* Hook to call prior to resuming a thread.  */
 static void (*linux_nat_prepare_to_resume) (struct lwp_info *);
 
@@ -201,7 +209,7 @@ static LONGEST (*super_xfer_partial) (struct target_ops *,
 				      const gdb_byte *,
 				      ULONGEST, LONGEST);
 
-static int debug_linux_nat;
+static unsigned int debug_linux_nat;
 static void
 show_debug_linux_nat (struct ui_file *file, int from_tty,
 		      struct cmd_list_element *c, const char *value)
@@ -697,15 +705,6 @@ holding the child stopped.  Try \"set detach-on-fork\" or \
 	  child_lp->last_resume_kind = resume_stop;
 	  make_cleanup (delete_lwp_cleanup, child_lp);
 
-	  /* CHILD_LP has new PID, therefore linux_nat_new_thread is not called for it.
-	     See i386_inferior_data_get for the Linux kernel specifics.
-	     Ensure linux_nat_prepare_to_resume will reset the hardware debug
-	     registers.  It is done by the linux_nat_new_thread call, which is
-	     being skipped in add_lwp above for the first lwp of a pid.  */
-	  gdb_assert (num_lwps (GET_PID (child_lp->ptid)) == 1);
-	  if (linux_nat_new_thread != NULL)
-	    linux_nat_new_thread (child_lp);
-
 	  if (linux_nat_prepare_to_resume != NULL)
 	    linux_nat_prepare_to_resume (child_lp);
 	  ptrace (PTRACE_DETACH, child_pid, 0, 0);
@@ -723,6 +722,8 @@ holding the child stopped.  Try \"set detach-on-fork\" or \
 	  parent_inf = current_inferior ();
 	  child_inf->attach_flag = parent_inf->attach_flag;
 	  copy_terminal_info (child_inf, parent_inf);
+	  child_inf->gdbarch = parent_inf->gdbarch;
+	  copy_inferior_target_desc_info (child_inf, parent_inf);
 
 	  old_chain = save_inferior_ptid ();
 	  save_current_program_space ();
@@ -887,6 +888,8 @@ holding the child stopped.  Try \"set detach-on-fork\" or \
       parent_inf = current_inferior ();
       child_inf->attach_flag = parent_inf->attach_flag;
       copy_terminal_info (child_inf, parent_inf);
+      child_inf->gdbarch = parent_inf->gdbarch;
+      copy_inferior_target_desc_info (child_inf, parent_inf);
 
       parent_pspace = parent_inf->pspace;
 
@@ -1171,12 +1174,22 @@ purge_lwp_list (int pid)
     }
 }
 
-/* Add the LWP specified by PID to the list.  Return a pointer to the
-   structure describing the new LWP.  The LWP should already be stopped
-   (with an exception for the very first LWP).  */
+/* Add the LWP specified by PTID to the list.  PTID is the first LWP
+   in the process.  Return a pointer to the structure describing the
+   new LWP.
+
+   This differs from add_lwp in that we don't let the arch specific
+   bits know about this new thread.  Current clients of this callback
+   take the opportunity to install watchpoints in the new thread, and
+   we shouldn't do that for the first thread.  If we're spawning a
+   child ("run"), the thread executes the shell wrapper first, and we
+   shouldn't touch it until it execs the program we want to debug.
+   For "attach", it'd be okay to call the callback, but it's not
+   necessary, because watchpoints can't yet have been inserted into
+   the inferior.  */
 
 static struct lwp_info *
-add_lwp (ptid_t ptid)
+add_initial_lwp (ptid_t ptid)
 {
   struct lwp_info *lp;
 
@@ -1195,15 +1208,25 @@ add_lwp (ptid_t ptid)
   lp->next = lwp_list;
   lwp_list = lp;
 
+  return lp;
+}
+
+/* Add the LWP specified by PID to the list.  Return a pointer to the
+   structure describing the new LWP.  The LWP should already be
+   stopped.  */
+
+static struct lwp_info *
+add_lwp (ptid_t ptid)
+{
+  struct lwp_info *lp;
+
+  lp = add_initial_lwp (ptid);
+
   /* Let the arch specific bits know about this new thread.  Current
      clients of this callback take the opportunity to install
-     watchpoints in the new thread.  Don't do this for the first
-     thread though.  If we're spawning a child ("run"), the thread
-     executes the shell wrapper first, and we shouldn't touch it until
-     it execs the program we want to debug.  For "attach", it'd be
-     okay to call the callback, but it's not necessary, because
-     watchpoints can't yet have been inserted into the inferior.  */
-  if (num_lwps (GET_PID (ptid)) > 1 && linux_nat_new_thread != NULL)
+     watchpoints in the new thread.  We don't do this for the first
+     thread though.  See add_initial_lwp.  */
+  if (linux_nat_new_thread != NULL)
     linux_nat_new_thread (lp);
 
   return lp;
@@ -1278,46 +1301,6 @@ iterate_over_lwps (ptid_t filter,
     }
 
   return NULL;
-}
-
-/* Iterate like iterate_over_lwps does except when forking-off a child call
-   CALLBACK with CALLBACK_DATA specifically only for that new child PID.  */
-
-void
-linux_nat_iterate_watchpoint_lwps
-  (linux_nat_iterate_watchpoint_lwps_ftype callback, void *callback_data)
-{
-  int inferior_pid = ptid_get_pid (inferior_ptid);
-  struct inferior *inf = current_inferior ();
-
-  if (inf->pid == inferior_pid)
-    {
-      /* Iterate all the threads of the current inferior.  Without specifying
-	 INFERIOR_PID it would iterate all threads of all inferiors, which is
-	 inappropriate for watchpoints.  */
-
-      iterate_over_lwps (pid_to_ptid (inferior_pid), callback, callback_data);
-    }
-  else
-    {
-      /* Detaching a new child PID temporarily present in INFERIOR_PID.  */
-
-      struct lwp_info *child_lp;
-      struct cleanup *old_chain;
-      pid_t child_pid = GET_PID (inferior_ptid);
-      ptid_t child_ptid = ptid_build (child_pid, child_pid, 0);
-
-      gdb_assert (!is_lwp (inferior_ptid));
-      gdb_assert (find_lwp_pid (child_ptid) == NULL);
-      child_lp = add_lwp (child_ptid);
-      child_lp->stopped = 1;
-      child_lp->last_resume_kind = resume_stop;
-      old_chain = make_cleanup (delete_lwp_cleanup, child_lp);
-
-      callback (child_lp, callback_data);
-
-      do_cleanups (old_chain);
-    }
 }
 
 /* Update our internal state when changing from one checkpoint to
@@ -1652,7 +1635,7 @@ linux_nat_attach (struct target_ops *ops, char *args, int from_tty)
   thread_change_ptid (inferior_ptid, ptid);
 
   /* Add the initial process as the first LWP to the list.  */
-  lp = add_lwp (ptid);
+  lp = add_initial_lwp (ptid);
 
   status = linux_nat_post_attach_wait (lp->ptid, 1, &lp->cloned,
 				       &lp->signalled);
@@ -2305,6 +2288,15 @@ linux_handle_extended_wait (struct lwp_info *lp, int status,
 
       ourstatus->value.related_pid = ptid_build (new_pid, new_pid, 0);
 
+      if (event == PTRACE_EVENT_FORK || event == PTRACE_EVENT_VFORK)
+	{
+	  /* The arch-specific native code may need to know about new
+	     forks even if those end up never mapped to an
+	     inferior.  */
+	  if (linux_nat_new_fork != NULL)
+	    linux_nat_new_fork (lp, new_pid);
+	}
+
       if (event == PTRACE_EVENT_FORK
 	  && linux_fork_checkpointing_p (GET_PID (lp->ptid)))
 	{
@@ -2314,7 +2306,7 @@ linux_handle_extended_wait (struct lwp_info *lp, int status,
 
 	  /* This won't actually modify the breakpoint list, but will
 	     physically remove the breakpoints from the child.  */
-	  detach_breakpoints (new_pid);
+	  detach_breakpoints (ptid_build (new_pid, new_pid, 0));
 
 	  /* Retain child fork in ptrace (stopped) state.  */
 	  if (!find_fork_pid (new_pid))
@@ -3485,7 +3477,7 @@ linux_nat_wait_1 (struct target_ops *ops,
 			  BUILD_LWP (GET_PID (inferior_ptid),
 				     GET_PID (inferior_ptid)));
 
-      lp = add_lwp (inferior_ptid);
+      lp = add_initial_lwp (inferior_ptid);
       lp->resumed = 1;
     }
 
@@ -3929,8 +3921,16 @@ linux_nat_wait (struct target_ops *ops,
   ptid_t event_ptid;
 
   if (debug_linux_nat)
-    fprintf_unfiltered (gdb_stdlog,
-			"linux_nat_wait: [%s]\n", target_pid_to_str (ptid));
+    {
+      char *options_string;
+
+      options_string = target_options_to_string (target_options);
+      fprintf_unfiltered (gdb_stdlog,
+			  "linux_nat_wait: [%s], [%s]\n",
+			  target_pid_to_str (ptid),
+			  options_string);
+      xfree (options_string);
+    }
 
   /* Flush the async file first.  */
   if (target_can_async_p ())
@@ -4063,6 +4063,10 @@ linux_nat_kill (struct target_ops *ops)
     {
       ptrace (PT_KILL, PIDGET (last.value.related_pid), 0, 0);
       wait (&status);
+
+      /* Let the arch-specific native code know this process is
+	 gone.  */
+      linux_nat_forget_process (PIDGET (last.value.related_pid));
     }
 
   if (forks_exist_p ())
@@ -4091,7 +4095,9 @@ linux_nat_kill (struct target_ops *ops)
 static void
 linux_nat_mourn_inferior (struct target_ops *ops)
 {
-  purge_lwp_list (ptid_get_pid (inferior_ptid));
+  int pid = ptid_get_pid (inferior_ptid);
+
+  purge_lwp_list (pid);
 
   if (! forks_exist_p ())
     /* Normal case, no other forks available.  */
@@ -4101,6 +4107,9 @@ linux_nat_mourn_inferior (struct target_ops *ops)
        there are other viable forks to debug.  Delete the exiting
        one and context-switch to the first available.  */
     linux_fork_mourn_inferior ();
+
+  /* Let the arch-specific native code know this process is gone.  */
+  linux_nat_forget_process (pid);
 }
 
 /* Convert a native/host siginfo object, into/from the siginfo in the
@@ -4307,7 +4316,7 @@ linux_child_pid_to_exec_file (int pid)
   memset (name2, 0, MAXPATHLEN);
 
   sprintf (name1, "/proc/%d/exe", pid);
-  if (readlink (name1, name2, MAXPATHLEN) > 0)
+  if (readlink (name1, name2, MAXPATHLEN - 1) > 0)
     return name2;
   else
     return name1;
@@ -4364,7 +4373,7 @@ linux_nat_make_corefile_notes (bfd *obfd, int *note_size)
 {
   /* FIXME: uweigand/2011-10-06: Once all GNU/Linux architectures have been
      converted to gdbarch_core_regset_sections, this function can go away.  */
-  return linux_make_corefile_notes (target_gdbarch, obfd, note_size,
+  return linux_make_corefile_notes (target_gdbarch (), obfd, note_size,
 				    linux_nat_collect_thread_registers);
 }
 
@@ -4419,7 +4428,7 @@ linux_proc_xfer_partial (struct target_ops *ops, enum target_object object,
 static LONGEST
 spu_enumerate_spu_ids (int pid, gdb_byte *buf, ULONGEST offset, LONGEST len)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   LONGEST pos = 0;
   LONGEST written = 0;
   char path[128];
@@ -4628,7 +4637,7 @@ linux_xfer_partial (struct target_ops *ops, enum target_object object,
 
   if (object == TARGET_OBJECT_MEMORY)
     {
-      int addr_bit = gdbarch_addr_bit (target_gdbarch);
+      int addr_bit = gdbarch_addr_bit (target_gdbarch ());
 
       if (addr_bit < (sizeof (ULONGEST) * HOST_CHAR_BIT))
 	offset &= ((ULONGEST) 1 << addr_bit) - 1;
@@ -4964,8 +4973,6 @@ linux_nat_stop_lwp (struct lwp_info *lwp, void *data)
 {
   if (!lwp->stopped)
     {
-      ptid_t ptid = lwp->ptid;
-
       if (debug_linux_nat)
 	fprintf_unfiltered (gdb_stdlog,
 			    "LNSL: running -> suspending %s\n",
@@ -5136,6 +5143,35 @@ linux_nat_set_new_thread (struct target_ops *t,
   linux_nat_new_thread = new_thread;
 }
 
+/* See declaration in linux-nat.h.  */
+
+void
+linux_nat_set_new_fork (struct target_ops *t,
+			linux_nat_new_fork_ftype *new_fork)
+{
+  /* Save the pointer.  */
+  linux_nat_new_fork = new_fork;
+}
+
+/* See declaration in linux-nat.h.  */
+
+void
+linux_nat_set_forget_process (struct target_ops *t,
+			      linux_nat_forget_process_ftype *fn)
+{
+  /* Save the pointer.  */
+  linux_nat_forget_process_hook = fn;
+}
+
+/* See declaration in linux-nat.h.  */
+
+void
+linux_nat_forget_process (pid_t pid)
+{
+  if (linux_nat_forget_process_hook != NULL)
+    linux_nat_forget_process_hook (pid);
+}
+
 /* Register a method that converts a siginfo object between the layout
    that ptrace returns, and the layout in the architecture of the
    inferior.  */
@@ -5186,14 +5222,14 @@ extern initialize_file_ftype _initialize_linux_nat;
 void
 _initialize_linux_nat (void)
 {
-  add_setshow_zinteger_cmd ("lin-lwp", class_maintenance,
-			    &debug_linux_nat, _("\
+  add_setshow_zuinteger_cmd ("lin-lwp", class_maintenance,
+			     &debug_linux_nat, _("\
 Set debugging of GNU/Linux lwp module."), _("\
 Show debugging of GNU/Linux lwp module."), _("\
 Enables printf debugging output."),
-			    NULL,
-			    show_debug_linux_nat,
-			    &setdebuglist, &showdebuglist);
+			     NULL,
+			     show_debug_linux_nat,
+			     &setdebuglist, &showdebuglist);
 
   /* Save this mask as the default.  */
   sigprocmask (SIG_SETMASK, NULL, &normal_mask);

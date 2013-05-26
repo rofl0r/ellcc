@@ -1,6 +1,6 @@
 /* D language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2005-2006, 2008-2012 Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -240,7 +240,6 @@ static const struct language_defn d_language_defn =
   "d",
   language_d,
   range_check_off,
-  type_check_off,
   case_sensitive_on,
   array_row_major,
   macro_expansion_c,

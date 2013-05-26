@@ -1,4 +1,4 @@
-# Copyright 1999-2003, 2005, 2007-2012 Free Software Foundation, Inc.
+# Copyright 1999-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #
-# test basic Machine interface (MI) operations
+# Test basic Machine interface (MI) operations
 #
 # Verify that, using the MI, we can load a program and do
 # other basic things that are used by all test files through  mi_gdb_exit,

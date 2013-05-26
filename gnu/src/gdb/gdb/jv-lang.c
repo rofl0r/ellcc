@@ -1,7 +1,6 @@
 /* Java language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 1997-2000, 2003-2005, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -270,7 +269,6 @@ type_from_class (struct gdbarch *gdbarch, struct value *clas)
   struct value *utf8_name;
   char *nptr;
   CORE_ADDR addr;
-  int is_array = 0;
 
   type = check_typedef (value_type (clas));
   if (TYPE_CODE (type) == TYPE_CODE_PTR)
@@ -319,7 +317,6 @@ type_from_class (struct gdbarch *gdbarch, struct value *clas)
 	name = obstack_alloc (&objfile->objfile_obstack, namelen + 1);
       java_demangled_signature_copy (name, signature);
       name[namelen] = '\0';
-      is_array = 1;
       temp = clas;
       /* Set array element type.  */
       temp = value_struct_elt (&temp, NULL, "methods", NULL, "structure");
@@ -1167,7 +1164,6 @@ const struct language_defn java_language_defn =
   "java",			/* Language name */
   language_java,
   range_check_off,
-  type_check_off,
   case_sensitive_on,
   array_row_major,
   macro_expansion_no,

@@ -1,5 +1,5 @@
 /* Support routines for building symbol tables in GDB's internal format.
-   Copyright (C) 1986-2004, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -83,6 +83,25 @@ static struct obstack pending_addrmap_obstack;
    the end, then we just toss the addrmap.  */
 static int pending_addrmap_interesting;
 
+/* An obstack used for allocating pending blocks.  */
+
+static struct obstack pending_block_obstack;
+
+/* List of blocks already made (lexical contexts already closed).
+   This is used at the end to make the blockvector.  */
+
+struct pending_block
+  {
+    struct pending_block *next;
+    struct block *block;
+  };
+
+/* Pointer to the head of a linked list of symbol blocks which have
+   already been finalized (lexical contexts already closed) and which
+   are just waiting to be built into a blockvector when finalizing the
+   associated symtab.  */
+
+static struct pending_block *pending_blocks;
 
 static int compare_line_numbers (const void *ln1p, const void *ln2p);
 
@@ -205,9 +224,11 @@ really_free_pendings (void *dummy)
 void
 free_pending_blocks (void)
 {
-  /* The links are made in the objfile_obstack, so we only need to
-     reset PENDING_BLOCKS.  */
-  pending_blocks = NULL;
+  if (pending_blocks != NULL)
+    {
+      obstack_free (&pending_block_obstack, NULL);
+      pending_blocks = NULL;
+    }
 }
 
 /* Take one of the lists of symbols and make a block from it.  Keep
@@ -418,8 +439,11 @@ record_pending_block (struct objfile *objfile, struct block *block,
 {
   struct pending_block *pblock;
 
+  if (pending_blocks == NULL)
+    obstack_init (&pending_block_obstack);
+
   pblock = (struct pending_block *)
-    obstack_alloc (&objfile->objfile_obstack, sizeof (struct pending_block));
+    obstack_alloc (&pending_block_obstack, sizeof (struct pending_block));
   pblock->block = block;
   if (opblock)
     {
@@ -657,7 +681,7 @@ patch_subfile_names (struct subfile *subfile, char *name)
     {
       subfile->dirname = subfile->name;
       subfile->name = xstrdup (name);
-      last_source_file = name;
+      set_last_source_file (name);
 
       /* Default the source language to whatever can be deduced from
          the filename.  If nothing can be deduced (such as for a C/C++
@@ -811,10 +835,10 @@ compare_line_numbers (const void *ln1p, const void *ln2p)
    lowest address of objects in the file (or 0 if not known).  */
 
 void
-start_symtab (char *name, char *dirname, CORE_ADDR start_addr)
+start_symtab (const char *name, const char *dirname, CORE_ADDR start_addr)
 {
   restart_symtab (start_addr);
-  last_source_file = name;
+  set_last_source_file (name);
   start_subfile (name, dirname);
 }
 
@@ -826,7 +850,7 @@ start_symtab (char *name, char *dirname, CORE_ADDR start_addr)
 void
 restart_symtab (CORE_ADDR start_addr)
 {
-  last_source_file = NULL;
+  set_last_source_file (NULL);
   last_source_start_addr = start_addr;
   file_symbols = NULL;
   global_symbols = NULL;
@@ -947,7 +971,7 @@ block_compar (const void *ap, const void *bp)
 static void
 reset_symtab_globals (void)
 {
-  last_source_file = NULL;
+  set_last_source_file (NULL);
   current_subfile = NULL;
   pending_macros = NULL;
   if (pending_addrmap)
@@ -966,11 +990,14 @@ reset_symtab_globals (void)
    file's text.
 
    If EXPANDABLE is non-zero the STATIC_BLOCK dictionary is made
-   expandable.  */
+   expandable.
+
+   If REQUIRED is non-zero, then a symtab is created even if it does
+   not contain any symbols.  */
 
 struct block *
 end_symtab_get_static_block (CORE_ADDR end_addr, struct objfile *objfile,
-			     int expandable)
+			     int expandable, int required)
 {
   /* Finish the lexical context of the last function in the file; pop
      the context stack.  */
@@ -1038,7 +1065,8 @@ end_symtab_get_static_block (CORE_ADDR end_addr, struct objfile *objfile,
   cleanup_undefined_stabs_types (objfile);
   finish_global_stabs (objfile);
 
-  if (pending_blocks == NULL
+  if (!required
+      && pending_blocks == NULL
       && file_symbols == NULL
       && global_symbols == NULL
       && have_line_numbers == 0
@@ -1296,7 +1324,7 @@ end_symtab (CORE_ADDR end_addr, struct objfile *objfile, int section)
 {
   struct block *static_block;
 
-  static_block = end_symtab_get_static_block (end_addr, objfile, 0);
+  static_block = end_symtab_get_static_block (end_addr, objfile, 0, 0);
   return end_symtab_from_static_block (static_block, objfile, section, 0);
 }
 
@@ -1308,7 +1336,7 @@ end_expandable_symtab (CORE_ADDR end_addr, struct objfile *objfile,
 {
   struct block *static_block;
 
-  static_block = end_symtab_get_static_block (end_addr, objfile, 1);
+  static_block = end_symtab_get_static_block (end_addr, objfile, 1, 0);
   return end_symtab_from_static_block (static_block, objfile, section, 1);
 }
 
@@ -1400,14 +1428,12 @@ push_context (int desc, CORE_ADDR valu)
   new = &context_stack[context_stack_depth++];
   new->depth = desc;
   new->locals = local_symbols;
-  new->params = param_symbols;
   new->old_blocks = pending_blocks;
   new->start_addr = valu;
   new->using_directives = using_directives;
   new->name = NULL;
 
   local_symbols = NULL;
-  param_symbols = NULL;
   using_directives = NULL;
 
   return new;
@@ -1474,6 +1500,32 @@ merge_symbol_lists (struct pending **srclist, struct pending **targetlist)
   free_pendings = (*srclist);
 }
 
+
+/* Name of source file whose symbol data we are now processing.  This
+   comes from a symbol of type N_SO for stabs.  For Dwarf it comes
+   from the DW_AT_name attribute of a DW_TAG_compile_unit DIE.  */
+
+static char *last_source_file;
+
+/* See buildsym.h.  */
+
+void
+set_last_source_file (const char *name)
+{
+  xfree (last_source_file);
+  last_source_file = name == NULL ? NULL : xstrdup (name);
+}
+
+/* See buildsym.h.  */
+
+const char *
+get_last_source_file (void)
+{
+  return last_source_file;
+}
+
+
+
 /* Initialize anything that needs initializing when starting to read a
    fresh piece of a symbol file, e.g. reading in the stuff
    corresponding to a psymtab.  */
@@ -1486,6 +1538,7 @@ buildsym_init (void)
   global_symbols = NULL;
   pending_blocks = NULL;
   pending_macros = NULL;
+  using_directives = NULL;
 
   /* We shouldn't have any address map at this point.  */
   gdb_assert (! pending_addrmap);

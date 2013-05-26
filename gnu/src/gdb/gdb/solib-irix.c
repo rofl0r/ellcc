@@ -1,6 +1,5 @@
 /* Shared library support for IRIX.
-   Copyright (C) 1993-1996, 1998-2002, 2004, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1993-2013 Free Software Foundation, Inc.
 
    This file was created using portions of irix5-nat.c originally
    contributed to GDB by Ian Lance Taylor.
@@ -142,7 +141,7 @@ extract_mips_address (void *addr, int len, enum bfd_endian byte_order)
 static struct lm_info
 fetch_lm_info (CORE_ADDR addr)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   struct lm_info li;
   union irix_obj_info buf;
 
@@ -306,7 +305,7 @@ disable_break (void)
   /* Note that breakpoint address and original contents are in our address
      space, so we just need to write the original contents back.  */
 
-  if (deprecated_remove_raw_breakpoint (target_gdbarch, base_breakpoint) != 0)
+  if (deprecated_remove_raw_breakpoint (target_gdbarch (), base_breakpoint) != 0)
     {
       status = 0;
     }
@@ -339,7 +338,7 @@ enable_break (void)
       if (!entry_point_address_query (&entry_point))
 	return 0;
 
-      base_breakpoint = deprecated_insert_raw_breakpoint (target_gdbarch,
+      base_breakpoint = deprecated_insert_raw_breakpoint (target_gdbarch (),
 							  aspace, entry_point);
 
       if (base_breakpoint != NULL)
@@ -453,8 +452,8 @@ irix_solib_create_inferior_hook (int from_tty)
 static struct so_list *
 irix_current_sos (void)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
-  int addr_size = gdbarch_addr_bit (target_gdbarch) / TARGET_CHAR_BIT;
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  int addr_size = gdbarch_addr_bit (target_gdbarch ()) / TARGET_CHAR_BIT;
   CORE_ADDR lma;
   char addr_buf[8];
   struct so_list *head = 0;
@@ -545,8 +544,8 @@ irix_current_sos (void)
 static int
 irix_open_symbol_file_object (void *from_ttyp)
 {
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
-  int addr_size = gdbarch_addr_bit (target_gdbarch) / TARGET_CHAR_BIT;
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
+  int addr_size = gdbarch_addr_bit (target_gdbarch ()) / TARGET_CHAR_BIT;
   CORE_ADDR lma;
   char addr_buf[8];
   struct lm_info lm;

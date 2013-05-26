@@ -1,8 +1,7 @@
 /* Target-dependent code for PowerPC systems using the SVR4 ABI
    for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2003, 2005, 2007-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1921,11 +1920,13 @@ ppc64_sysv_abi_return_value (struct gdbarch *gdbarch, struct value *function,
 	      gdb_byte regval[MAX_REGISTER_SIZE];
 	      struct type *regtype =
 		register_type (gdbarch, tdep->ppc_fp0_regnum);
+	      struct type *target_type;
+	      target_type = check_typedef (TYPE_TARGET_TYPE (valtype));
 	      if (writebuf != NULL)
 		{
 		  convert_typed_floating ((const bfd_byte *) writebuf +
-					  i * (TYPE_LENGTH (valtype) / 2),
-					  valtype, regval, regtype);
+					  i * TYPE_LENGTH (target_type), 
+					  target_type, regval, regtype);
 		  regcache_cooked_write (regcache,
                                          tdep->ppc_fp0_regnum + 1 + i,
 					 regval);
@@ -1937,8 +1938,8 @@ ppc64_sysv_abi_return_value (struct gdbarch *gdbarch, struct value *function,
                                         regval);
 		  convert_typed_floating (regval, regtype,
 					  (bfd_byte *) readbuf +
-					  i * (TYPE_LENGTH (valtype) / 2),
-					  valtype);
+					  i * TYPE_LENGTH (target_type),
+					  target_type);
 		}
 	    }
 	}

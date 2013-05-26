@@ -1,7 +1,6 @@
 /* MI Command Set for GDB, the GNU debugger.
 
-   Copyright (C) 2000, 2003-2005, 2007-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -43,6 +42,8 @@ extern mi_cmd_argv_ftype mi_cmd_break_insert;
 extern mi_cmd_argv_ftype mi_cmd_break_commands;
 extern mi_cmd_argv_ftype mi_cmd_break_passcount;
 extern mi_cmd_argv_ftype mi_cmd_break_watch;
+extern mi_cmd_argv_ftype mi_cmd_catch_load;
+extern mi_cmd_argv_ftype mi_cmd_catch_unload;
 extern mi_cmd_argv_ftype mi_cmd_disassemble;
 extern mi_cmd_argv_ftype mi_cmd_data_evaluate_expression;
 extern mi_cmd_argv_ftype mi_cmd_data_list_register_names;
@@ -138,6 +139,12 @@ struct mi_cmd
   struct mi_cli cli;
   /* If non-null, the function implementing the MI command.  */
   mi_cmd_argv_ftype *argv_func;
+  /* If non-null, the pointer to a field in
+     'struct mi_suppress_notification', which will be set to true by MI
+     command processor (mi-main.c:mi_cmd_execute) when this command is
+     being executed.  It will be set back to false when command has been
+     executed.  */
+  int *suppress_notification;
 };
 
 /* Lookup a command in the MI command table.  */
@@ -150,6 +157,6 @@ extern int mi_debug_p;
 /* Raw console output - FIXME: should this be a parameter? */
 extern struct ui_file *raw_stdout;
 
-extern void mi_execute_command (char *cmd, int from_tty);
+extern void mi_execute_command (const char *cmd, int from_tty);
 
 #endif

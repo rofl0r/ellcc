@@ -21,7 +21,7 @@ Open the file @var{filename} with the target @var{target}.
 Return a pointer to the created BFD.  If @var{fd} is not -1,
 then @code{fdopen} is used to open the file; otherwise, @code{fopen}
 is used.  @var{mode} is passed directly to @code{fopen} or
-@code{fdopen}. 
+@code{fdopen}.
 
 Calls @code{bfd_find_target}, so @var{target} is interpreted as by
 that function.

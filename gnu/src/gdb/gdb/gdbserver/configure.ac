@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB server.
-dnl Copyright (C) 2000, 2002-2012 Free Software Foundation, Inc.
+dnl Copyright (C) 2000-2013 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
 dnl
@@ -27,6 +27,7 @@ AM_MAINTAINER_MODE
 
 AC_PROG_CC
 AC_GNU_SOURCE
+AC_SYS_LARGEFILE
 
 AC_CANONICAL_SYSTEM
 
@@ -40,8 +41,20 @@ AC_HEADER_DIRENT
 
 AC_FUNC_ALLOCA
 
+# Dependency checking.
+ZW_CREATE_DEPDIR
+ZW_PROG_COMPILER_DEPENDENCIES([CC])
+
 # Check for the 'make' the user wants to use.
 AC_CHECK_PROGS(MAKE, make)
+MAKE_IS_GNU=
+case "`$MAKE --version 2>&1 | sed 1q`" in
+  *GNU*)
+    MAKE_IS_GNU=yes
+    ;;
+esac
+AM_CONDITIONAL(GMAKE, test "$MAKE_IS_GNU" = yes)
+AC_PROG_MAKE_SET
 
 # Configure gnulib.  We can't use AC_CONFIG_SUBDIRS as that'd expect
 # to find the the source subdir to be configured directly under
@@ -55,7 +68,8 @@ AC_CHECK_HEADERS(sgtty.h termio.h termios.h sys/reg.h string.h dnl
 		 stdlib.h unistd.h dnl
 		 errno.h fcntl.h signal.h sys/file.h malloc.h dnl
 		 sys/ioctl.h netinet/in.h sys/socket.h netdb.h dnl
-		 netinet/tcp.h arpa/inet.h sys/wait.h sys/un.h)
+		 netinet/tcp.h arpa/inet.h sys/wait.h wait.h sys/un.h dnl
+		 linux/perf_event.h)
 AC_CHECK_FUNCS(pread pwrite pread64 readlink)
 AC_REPLACE_FUNCS(vasprintf vsnprintf)
 
@@ -126,7 +140,7 @@ if test "${ERROR_ON_WARNING}" = yes ; then
 fi
 
 build_warnings="-Wall -Wdeclaration-after-statement -Wpointer-arith \
--Wformat-nonliteral -Wno-char-subscripts"
+-Wformat-nonliteral -Wno-char-subscripts -Wempty-body"
 
 WARN_CFLAGS=""
 if test "x$GCC" = xyes
@@ -174,7 +188,7 @@ AC_TRY_LINK([
   [AC_MSG_RESULT(no)])
 fi
 
-AC_CHECK_DECLS([strerror, perror, vasprintf, vsnprintf])
+AC_CHECK_DECLS([strerror, strstr, perror, vasprintf, vsnprintf])
 
 AC_CHECK_TYPES(socklen_t, [], [],
 [#include <sys/types.h>
@@ -276,6 +290,11 @@ if test "${srv_linux_regsets}" = "yes"; then
 	      [Define if the target supports PTRACE_GETFPXREGS for extended ]
 	      [register access.])
   fi
+fi
+
+if test "${srv_linux_btrace}" = "yes"; then
+  AC_DEFINE(HAVE_LINUX_BTRACE, 1,
+	    [Define if the target supports branch tracing.])
 fi
 
 if test "$ac_cv_header_sys_procfs_h" = yes; then

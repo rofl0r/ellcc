@@ -1,3 +1,38 @@
+2013-01-28  Nick Clifton  <nickc@redhat.com>
+
+	* simops.c (v850_rotl): New function.
+	(v850_bins): New function.
+	* simops.h: Add prototypes fir v850_rotl and v850_bins.
+	* v850-dc: Add entries for V850e3v5.
+	* v850.igen: Add support for v850e3v5.
+	(ld.dw, st.dw, rotl, bins): New patterns.
+
+2013-01-10  Nick Clifton  <nickc@redhat.com>
+
+	* interp.c (sim_open): Add support for bfd_arch_v850_rh850
+	architecture type.  Add support for bfd_mach_v850e2 and
+	bfd_mach_v850e2v3 machine numbers.
+        * v850.igen (dbtrap): Add support for SIM_OPEN_DEBUG.
+        (cmpf.d): Correct order of operands.
+        (cmpf.s): Likewise.
+        (trncf.dul): New pattern.
+        (trncf.duw): New pattern.
+        (trncf.sul): New pattern.
+        (trncf.suw): New pattern.
+        * v850-dc: Correct bitfield selection for TRNCF.SW and CVTF.SW.
+
+2012-09-13  Nick Clifton  <nickc@redhat.com>
+
+	* v850.igen (W,WWWW): Correct computation of register number.
+	(JR32): Remove unnecessary comma.
+	(cmovf.s): Register 0 is an invalid source register.
+	(maddf.s): Remove bogus intermediary rounding.
+	(nmaddf.s): Likewise.
+	(trncf.sl): Remove bogus initial rounding.
+	(trncf.dw): Likewise.
+	(trncf.sl): Likewise.
+	(trncf.sw): Likewise.
+
 2012-06-15  Joel Brobecker  <brobecker@adacore.com>
 
 	* config.in, configure: Regenerate.

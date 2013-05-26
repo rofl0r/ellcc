@@ -1,6 +1,5 @@
 /* YACC parser for Fortran expressions, for GDB.
-   Copyright (C) 1986, 1989-1991, 1993-1996, 2000-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C parser by Farooq Butt
    (fmbutt@engage.sps.mot.com).
@@ -1175,9 +1174,13 @@ yylex (void)
   {
     char *tmp = copy_name (yylval.sval);
     struct symbol *sym;
-    int is_a_field_of_this = 0;
+    struct field_of_this_result is_a_field_of_this;
     int hextype;
     
+    /* Initialize this in case we *don't* use it in this call; that
+       way we can refer to it unconditionally below.  */
+    memset (&is_a_field_of_this, 0, sizeof (is_a_field_of_this));
+
     sym = lookup_symbol (tmp, expression_context_block,
 			 VAR_DOMAIN,
 			 parse_language->la_language == language_cplus
@@ -1205,14 +1208,14 @@ yylex (void)
 	if (hextype == INT)
 	  {
 	    yylval.ssym.sym = sym;
-	    yylval.ssym.is_a_field_of_this = is_a_field_of_this;
+	    yylval.ssym.is_a_field_of_this = is_a_field_of_this.type != NULL;
 	    return NAME_OR_INT;
 	  }
       }
     
     /* Any other kind of symbol */
     yylval.ssym.sym = sym;
-    yylval.ssym.is_a_field_of_this = is_a_field_of_this;
+    yylval.ssym.is_a_field_of_this = is_a_field_of_this.type != NULL;
     return NAME;
   }
 }

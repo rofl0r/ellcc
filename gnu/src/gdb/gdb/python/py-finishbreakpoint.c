@@ -1,6 +1,6 @@
 /* Python interface to finish breakpoints
 
-   Copyright (C) 2011-2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -160,7 +160,8 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
   int type = bp_breakpoint;
   PyObject *frame_obj = NULL;
   int thread;
-  struct frame_info *frame, *prev_frame = NULL;
+  struct frame_info *frame = NULL; /* init for gcc -Wall */
+  struct frame_info *prev_frame = NULL;
   struct frame_id frame_id;
   PyObject *internal = NULL;
   int internal_bp = 0;
@@ -173,39 +174,43 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
                                     &frame_obj, &internal))
     return -1;
 
-  /* Default frame to gdb.newest_frame if necessary.  */
-  if (!frame_obj)
-    frame_obj = gdbpy_newest_frame (NULL, NULL);
-  else
-    Py_INCREF (frame_obj);
-
-  frame = frame_object_to_frame_info (frame_obj);
-  Py_DECREF (frame_obj);
-
-  if (frame == NULL)
-    goto invalid_frame;
-  
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
-      prev_frame = get_prev_frame (frame);
-      if (prev_frame == 0)
-        {
-          PyErr_SetString (PyExc_ValueError, _("\"FinishBreakpoint\" not "   \
-                                               "meaningful in the outermost "\
-                                               "frame."));
-        }
-      else if (get_frame_type (prev_frame) == DUMMY_FRAME)
-        {
-          PyErr_SetString (PyExc_ValueError, _("\"FinishBreakpoint\" cannot "\
-                                               "be set on a dummy frame."));
-        }
+      /* Default frame to newest frame if necessary.  */
+      if (frame_obj == NULL)
+	frame = get_current_frame ();
       else
-        {
-          frame_id = get_frame_id (prev_frame);
-          if (frame_id_eq (frame_id, null_frame_id))
-            PyErr_SetString (PyExc_ValueError,
-                             _("Invalid ID for the `frame' object."));
-        }
+	frame = frame_object_to_frame_info (frame_obj);
+
+      if (frame == NULL)
+	{
+	  PyErr_SetString (PyExc_ValueError, 
+			   _("Invalid ID for the `frame' object."));
+	}
+      else
+	{
+	  prev_frame = get_prev_frame (frame);
+	  if (prev_frame == 0)
+	    {
+	      PyErr_SetString (PyExc_ValueError,
+			       _("\"FinishBreakpoint\" not "
+				 "meaningful in the outermost "
+				 "frame."));
+	    }
+	  else if (get_frame_type (prev_frame) == DUMMY_FRAME)
+	    {
+	      PyErr_SetString (PyExc_ValueError,
+			       _("\"FinishBreakpoint\" cannot "
+				 "be set on a dummy frame."));
+	    }
+	  else
+	    {
+	      frame_id = get_frame_id (prev_frame);
+	      if (frame_id_eq (frame_id, null_frame_id))
+		PyErr_SetString (PyExc_ValueError,
+				 _("Invalid ID for the `frame' object."));
+	    }
+	}
     }
   if (except.reason < 0)
     {
@@ -305,11 +310,6 @@ bpfinishpy_init (PyObject *self, PyObject *args, PyObject *kwargs)
   self_bpfinish->py_bp.bp->pspace = current_program_space;
 
   return 0;
-  
- invalid_frame:
-  PyErr_SetString (PyExc_ValueError, 
-                   _("Invalid ID for the `frame' object."));
-  return -1;
 }
 
 /* Called when GDB notices that the finish breakpoint BP_OBJ is out of
@@ -392,7 +392,7 @@ bpfinishpy_handle_stop (struct bpstats *bs, int print_frame)
 static void
 bpfinishpy_handle_exit (struct inferior *inf)
 {
-  struct cleanup *cleanup = ensure_python_env (target_gdbarch,
+  struct cleanup *cleanup = ensure_python_env (target_gdbarch (),
                                                current_language);
 
   iterate_over_breakpoints (bpfinishpy_detect_out_scope_cb, NULL);
@@ -425,8 +425,7 @@ None otherwise.", NULL },
 
 static PyTypeObject finish_breakpoint_object_type =
 {
-  PyObject_HEAD_INIT (NULL)
-  0,                              /*ob_size*/
+  PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.FinishBreakpoint",         /*tp_name*/
   sizeof (struct finish_breakpoint_object),  /*tp_basicsize*/
   0,                              /*tp_itemsize*/

@@ -1,6 +1,6 @@
 /* Generic serial interface routines
 
-   Copyright (C) 1992-2002, 2004-2012 Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,12 +22,13 @@
 #include "serial.h"
 #include "gdb_string.h"
 #include "gdbcmd.h"
+#include "cli/cli-utils.h"
 
 extern void _initialize_serial (void);
 
 /* Is serial being debugged?  */
 
-static int global_serial_debug_p;
+static unsigned int global_serial_debug_p;
 
 /* Linked list of serial I/O handlers.  */
 
@@ -194,8 +195,7 @@ serial_open (const char *name)
       ops = serial_interface_lookup ("pipe");
       /* Discard ``|'' and any space before the command itself.  */
       ++open_name;
-      while (isspace (*open_name))
-	++open_name;
+      open_name = skip_spaces_const (open_name);
     }
   /* Check for a colon, suggesting an IP address/port pair.
      Do this *after* checking for all the interesting prefixes.  We
@@ -546,19 +546,6 @@ serial_async (struct serial *scb,
     scb->ops->async (scb, handler != NULL);
 }
 
-int
-deprecated_serial_fd (struct serial *scb)
-{
-  /* FIXME: should this output a warning that deprecated code is being
-     called?  */
-  if (scb->fd < 0)
-    {
-      internal_error (__FILE__, __LINE__,
-		      _("serial: FD not valid"));
-    }
-  return scb->fd; /* sigh */
-}
-
 void
 serial_debug (struct serial *scb, int debug_p)
 {
@@ -671,12 +658,12 @@ Show numerical base for remote session logging"), NULL,
 			NULL, /* FIXME: i18n: */
 			&setlist, &showlist);
 
-  add_setshow_zinteger_cmd ("serial", class_maintenance,
-			    &global_serial_debug_p, _("\
+  add_setshow_zuinteger_cmd ("serial", class_maintenance,
+			     &global_serial_debug_p, _("\
 Set serial debugging."), _("\
 Show serial debugging."), _("\
 When non-zero, serial port debugging is enabled."),
-			    NULL,
-			    NULL, /* FIXME: i18n: */
-			    &setdebuglist, &showdebuglist);
+			     NULL,
+			     NULL, /* FIXME: i18n: */
+			     &setdebuglist, &showdebuglist);
 }

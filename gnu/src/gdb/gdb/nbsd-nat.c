@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD.
 
-   Copyright (C) 2006-2012 Free Software Foundation, Inc.
+   Copyright (C) 2006-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -34,7 +34,7 @@ nbsd_pid_to_exec_file (int pid)
   char *path;
 
   path = xstrprintf ("/proc/%d/exe", pid);
-  if (readlink (path, buf, MAXPATHLEN) == -1)
+  if (readlink (path, buf, MAXPATHLEN - 1) == -1)
     {
       xfree (buf);
       buf = NULL;

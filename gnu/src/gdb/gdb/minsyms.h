@@ -1,6 +1,6 @@
 /* Minimal symbol table definitions for GDB.
 
-   Copyright (C) 2011-2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -227,12 +227,6 @@ struct minimal_symbol *lookup_minimal_symbol_by_pc_section
    with a NULL section argument.  */
 
 struct minimal_symbol *lookup_minimal_symbol_by_pc (CORE_ADDR);
-
-/* Check if PC is in a shared library trampoline code stub.
-   Return minimal symbol for the trampoline entry or NULL if PC is not
-   in a trampoline code stub.  */
-
-struct minimal_symbol *lookup_solib_trampoline_symbol_by_pc (CORE_ADDR);
 
 /* Iterate over all the minimal symbols in the objfile OBJF which
    match NAME.  Both the ordinary and demangled names of each symbol

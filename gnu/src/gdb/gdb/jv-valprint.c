@@ -1,6 +1,6 @@
 /* Support for printing Java values for GDB, the GNU debugger.
 
-   Copyright (C) 1997-2005, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -361,36 +361,17 @@ java_print_value_fields (struct type *type, const gdb_byte *valaddr,
 	    {
 	      wrap_here (n_spaces (2 + 2 * recurse));
 	    }
-	  if (options->inspect_it)
-	    {
-	      if (TYPE_CODE (TYPE_FIELD_TYPE (type, i)) == TYPE_CODE_PTR)
-		fputs_filtered ("\"( ptr \"", stream);
-	      else
-		fputs_filtered ("\"( nodef \"", stream);
-	      if (field_is_static (&TYPE_FIELD (type, i)))
-		fputs_filtered ("static ", stream);
-	      fprintf_symbol_filtered (stream, TYPE_FIELD_NAME (type, i),
-				       language_cplus,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      fputs_filtered ("\" \"", stream);
-	      fprintf_symbol_filtered (stream, TYPE_FIELD_NAME (type, i),
-				       language_cplus,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      fputs_filtered ("\") \"", stream);
-	    }
-	  else
-	    {
-	      annotate_field_begin (TYPE_FIELD_TYPE (type, i));
 
-	      if (field_is_static (&TYPE_FIELD (type, i)))
-		fputs_filtered ("static ", stream);
-	      fprintf_symbol_filtered (stream, TYPE_FIELD_NAME (type, i),
-				       language_cplus,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      annotate_field_name_end ();
-	      fputs_filtered (": ", stream);
-	      annotate_field_value ();
-	    }
+	  annotate_field_begin (TYPE_FIELD_TYPE (type, i));
+
+	  if (field_is_static (&TYPE_FIELD (type, i)))
+	    fputs_filtered ("static ", stream);
+	  fprintf_symbol_filtered (stream, TYPE_FIELD_NAME (type, i),
+				   language_cplus,
+				   DMGL_PARAMS | DMGL_ANSI);
+	  annotate_field_name_end ();
+	  fputs_filtered (": ", stream);
+	  annotate_field_value ();
 
 	  if (!field_is_static (&TYPE_FIELD (type, i))
 	      && TYPE_FIELD_PACKED (type, i))
@@ -490,7 +471,6 @@ java_val_print (struct type *type, const gdb_byte *valaddr,
 		const struct value_print_options *options)
 {
   struct gdbarch *gdbarch = get_type_arch (type);
-  unsigned int i = 0;	/* Number of characters printed.  */
   struct type *target_type;
   CORE_ADDR addr;
 

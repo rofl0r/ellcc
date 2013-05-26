@@ -1,7 +1,6 @@
 /* PPC GNU/Linux native support.
 
-   Copyright (C) 1988-1989, 1991-1992, 1994, 1996, 2000-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -548,7 +547,7 @@ fetch_register (struct regcache *regcache, int tid, int regno)
   CORE_ADDR regaddr = ppc_register_u_addr (gdbarch, regno);
   int bytes_transferred;
   unsigned int offset;         /* Offset of registers within the u area.  */
-  char buf[MAX_REGISTER_SIZE];
+  gdb_byte buf[MAX_REGISTER_SIZE];
 
   if (altivec_register_p (gdbarch, regno))
     {
@@ -601,8 +600,8 @@ fetch_register (struct regcache *regcache, int tid, int regno)
       if (errno != 0)
 	{
           char message[128];
-	  sprintf (message, "reading register %s (#%d)", 
-		   gdbarch_register_name (gdbarch, regno), regno);
+	  xsnprintf (message, sizeof (message), "reading register %s (#%d)",
+		     gdbarch_register_name (gdbarch, regno), regno);
 	  perror_with_name (message);
 	}
       memcpy (&buf[bytes_transferred], &l, sizeof (l));
@@ -1035,7 +1034,7 @@ store_register (const struct regcache *regcache, int tid, int regno)
   CORE_ADDR regaddr = ppc_register_u_addr (gdbarch, regno);
   int i;
   size_t bytes_to_transfer;
-  char buf[MAX_REGISTER_SIZE];
+  gdb_byte buf[MAX_REGISTER_SIZE];
 
   if (altivec_register_p (gdbarch, regno))
     {
@@ -1095,8 +1094,8 @@ store_register (const struct regcache *regcache, int tid, int regno)
       if (errno != 0)
 	{
           char message[128];
-	  sprintf (message, "writing register %s (#%d)", 
-		   gdbarch_register_name (gdbarch, regno), regno);
+	  xsnprintf (message, sizeof (message), "writing register %s (#%d)",
+		     gdbarch_register_name (gdbarch, regno), regno);
 	  perror_with_name (message);
 	}
     }
@@ -2394,7 +2393,7 @@ ppc_linux_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
                       gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
   int sizeof_auxv_field = ppc_linux_target_wordsize ();
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   gdb_byte *ptr = *readptr;
 
   if (endptr == ptr)

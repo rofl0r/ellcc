@@ -1,13 +1,11 @@
-This is gdb.info, produced by makeinfo version 4.8 from ./gdb.texinfo.
+This is gdb.info, produced by makeinfo version 4.13 from ./gdb.texinfo.
 
 INFO-DIR-SECTION Software development
 START-INFO-DIR-ENTRY
 * Gdb: (gdb).                     The GNU debugger.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -23,11 +21,9 @@ developing GNU and promoting software freedom."
    This file documents the GNU debugger GDB.
 
    This is the Tenth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.5.1.
+Source-Level Debugger' for GDB (GDB) Version 7.6.
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -39,6 +35,143 @@ with the Back-Cover Texts as in (a) below.
    (a) The FSF's Back-Cover Text is: "You are free to copy and modify
 this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
+
+
+File: gdb.info,  Node: Memory,  Next: Auto Display,  Prev: Output Formats,  Up: Data
+
+10.6 Examining Memory
+=====================
+
+You can use the command `x' (for "examine") to examine memory in any of
+several formats, independently of your program's data types.
+
+`x/NFU ADDR'
+`x ADDR'
+`x'
+     Use the `x' command to examine memory.
+
+   N, F, and U are all optional parameters that specify how much memory
+to display and how to format it; ADDR is an expression giving the
+address where you want to start displaying memory.  If you use defaults
+for NFU, you need not type the slash `/'.  Several commands set
+convenient defaults for ADDR.
+
+N, the repeat count
+     The repeat count is a decimal integer; the default is 1.  It
+     specifies how much memory (counting by units U) to display.
+
+F, the display format
+     The display format is one of the formats used by `print' (`x',
+     `d', `u', `o', `t', `a', `c', `f', `s'), and in addition `i' (for
+     machine instructions).  The default is `x' (hexadecimal)
+     initially.  The default changes each time you use either `x' or
+     `print'.
+
+U, the unit size
+     The unit size is any of
+
+    `b'
+          Bytes.
+
+    `h'
+          Halfwords (two bytes).
+
+    `w'
+          Words (four bytes).  This is the initial default.
+
+    `g'
+          Giant words (eight bytes).
+
+     Each time you specify a unit size with `x', that size becomes the
+     default unit the next time you use `x'.  For the `i' format, the
+     unit size is ignored and is normally not written.  For the `s'
+     format, the unit size defaults to `b', unless it is explicitly
+     given.  Use `x /hs' to display 16-bit char strings and `x /ws' to
+     display 32-bit strings.  The next use of `x /s' will again display
+     8-bit strings.  Note that the results depend on the programming
+     language of the current compilation unit.  If the language is C,
+     the `s' modifier will use the UTF-16 encoding while `w' will use
+     UTF-32.  The encoding is set by the programming language and cannot
+     be altered.
+
+ADDR, starting display address
+     ADDR is the address where you want GDB to begin displaying memory.
+     The expression need not have a pointer value (though it may); it
+     is always interpreted as an integer address of a byte of memory.
+     *Note Expressions: Expressions, for more information on
+     expressions.  The default for ADDR is usually just after the last
+     address examined--but several other commands also set the default
+     address: `info breakpoints' (to the address of the last breakpoint
+     listed), `info line' (to the starting address of a line), and
+     `print' (if you use it to display a value from memory).
+
+   For example, `x/3uh 0x54320' is a request to display three halfwords
+(`h') of memory, formatted as unsigned decimal integers (`u'), starting
+at address `0x54320'.  `x/4xw $sp' prints the four words (`w') of
+memory above the stack pointer (here, `$sp'; *note Registers:
+Registers.) in hexadecimal (`x').
+
+   Since the letters indicating unit sizes are all distinct from the
+letters specifying output formats, you do not have to remember whether
+unit size or format comes first; either order works.  The output
+specifications `4xw' and `4wx' mean exactly the same thing.  (However,
+the count N must come first; `wx4' does not work.)
+
+   Even though the unit size U is ignored for the formats `s' and `i',
+you might still want to use a count N; for example, `3i' specifies that
+you want to see three machine instructions, including any operands.
+For convenience, especially when used with the `display' command, the
+`i' format also prints branch delay slot instructions, if any, beyond
+the count specified, which immediately follow the last instruction that
+is within the count.  The command `disassemble' gives an alternative
+way of inspecting machine instructions; see *note Source and Machine
+Code: Machine Code.
+
+   All the defaults for the arguments to `x' are designed to make it
+easy to continue scanning memory with minimal specifications each time
+you use `x'.  For example, after you have inspected three machine
+instructions with `x/3i ADDR', you can inspect the next seven with just
+`x/7'.  If you use <RET> to repeat the `x' command, the repeat count N
+is used again; the other arguments default as for successive uses of
+`x'.
+
+   When examining machine instructions, the instruction at current
+program counter is shown with a `=>' marker. For example:
+
+     (gdb) x/5i $pc-6
+        0x804837f <main+11>: mov    %esp,%ebp
+        0x8048381 <main+13>: push   %ecx
+        0x8048382 <main+14>: sub    $0x4,%esp
+     => 0x8048385 <main+17>: movl   $0x8048460,(%esp)
+        0x804838c <main+24>: call   0x80482d4 <puts@plt>
+
+   The addresses and contents printed by the `x' command are not saved
+in the value history because there is often too much of them and they
+would get in the way.  Instead, GDB makes these values available for
+subsequent use in expressions as values of the convenience variables
+`$_' and `$__'.  After an `x' command, the last address examined is
+available for use in expressions in the convenience variable `$_'.  The
+contents of that address, as examined, are available in the convenience
+variable `$__'.
+
+   If the `x' command has a repeat count, the address and contents saved
+are from the last memory unit printed; this is not the same as the last
+address printed if several units were printed on the last line of
+output.
+
+   When you are debugging a program running on a remote target machine
+(*note Remote Debugging::), you may wish to verify the program's image
+in the remote machine's memory against the executable file you
+downloaded to the target.  The `compare-sections' command is provided
+for such situations.
+
+`compare-sections [SECTION-NAME]'
+     Compare the data of a loadable section SECTION-NAME in the
+     executable file of the program being debugged with the same
+     section in the remote machine's memory, and report any mismatches.
+     With no arguments, compares all loadable sections.  This command's
+     availability depends on the target's support for the `"qCRC"'
+     remote request.
 
 
 File: gdb.info,  Node: Auto Display,  Next: Print Settings,  Prev: Memory,  Up: Data
@@ -422,7 +555,7 @@ print symbol on':
                #0  invalid (val=<optimized out>)
 
      For analysis messages on possible failures of frame argument
-     values at function entry resolution see *Note set debug
+     values at function entry resolution see *note set debug
      entry-values::.
 
 `show print entry-values'
@@ -556,11 +689,11 @@ These settings are of interest when debugging C++ programs:
 
     `auto'
           Allow GDB to choose a decoding style by inspecting your
-          program.
+          program.  This is the default.
 
     `gnu'
           Decode based on the GNU C++ compiler (`g++') encoding
-          algorithm.  This is the default.
+          algorithm.
 
     `hp'
           Decode based on the HP ANSI C++ (`aCC') encoding algorithm.
@@ -864,7 +997,7 @@ remains 4 even though the value of `x' has changed.
 as `show values +'.
 
 
-File: gdb.info,  Node: Convenience Vars,  Next: Registers,  Prev: Value History,  Up: Data
+File: gdb.info,  Node: Convenience Vars,  Next: Convenience Funs,  Prev: Value History,  Up: Data
 
 10.11 Convenience Variables
 ===========================
@@ -902,7 +1035,8 @@ its current value.
 
 `show convenience'
      Print a list of convenience variables used so far, and their
-     values.  Abbreviated `show conv'.
+     values, as well as a list of the convenience functions.
+     Abbreviated `show conv'.
 
 `init-if-undefined $VARIABLE = EXPRESSION'
      Set a convenience variable if it has not already been set.  This
@@ -973,18 +1107,47 @@ values likely to be useful.
 begins with a dollar sign, GDB searches for a user or system name
 first, before it searches for a convenience variable.
 
-   GDB also supplies some "convenience functions".  These have a syntax
+
+File: gdb.info,  Node: Convenience Funs,  Next: Registers,  Prev: Convenience Vars,  Up: Data
+
+10.12 Convenience Functions
+===========================
+
+GDB also supplies some "convenience functions".  These have a syntax
 similar to convenience variables.  A convenience function can be used
 in an expression just like an ordinary function; however, a convenience
 function is implemented internally to GDB.
+
+   These functions require GDB to be configured with `Python' support.
+
+`$_memeq(BUF1, BUF2, LENGTH)'
+     Returns one if the LENGTH bytes at the addresses given by BUF1 and
+     BUF2 are equal.  Otherwise it returns zero.
+
+`$_regex(STR, REGEX)'
+     Returns one if the string STR matches the regular expression
+     REGEX.  Otherwise it returns zero.  The syntax of the regular
+     expression is that specified by `Python''s regular expression
+     support.
+
+`$_streq(STR1, STR2)'
+     Returns one if the strings STR1 and STR2 are equal.  Otherwise it
+     returns zero.
+
+`$_strlen(STR)'
+     Returns the length of string STR.
+
+
+   GDB provides the ability to list and get help on convenience
+functions.
 
 `help function'
      Print a list of all convenience functions.
 
 
-File: gdb.info,  Node: Registers,  Next: Floating Point Hardware,  Prev: Convenience Vars,  Up: Data
+File: gdb.info,  Node: Registers,  Next: Floating Point Hardware,  Prev: Convenience Funs,  Up: Data
 
-10.12 Registers
+10.13 Registers
 ===============
 
 You can refer to machine register contents, in expressions, as variables
@@ -1094,12 +1257,12 @@ where stacks grow downward in memory (most machines, nowadays).  This
 assumes that the innermost stack frame is selected; setting `$sp' is
 not allowed when other stack frames are selected.  To pop entire frames
 off the stack, regardless of machine architecture, use `return'; see
-*Note Returning from a Function: Returning.
+*note Returning from a Function: Returning.
 
 
 File: gdb.info,  Node: Floating Point Hardware,  Next: Vector Unit,  Prev: Registers,  Up: Data
 
-10.13 Floating Point Hardware
+10.14 Floating Point Hardware
 =============================
 
 Depending on the configuration, GDB may be able to give you more
@@ -1114,7 +1277,7 @@ information about the status of the floating point hardware.
 
 File: gdb.info,  Node: Vector Unit,  Next: OS Information,  Prev: Floating Point Hardware,  Up: Data
 
-10.14 Vector Unit
+10.15 Vector Unit
 =================
 
 Depending on the configuration, GDB may be able to give you more
@@ -1127,23 +1290,11 @@ information about the status of the vector unit.
 
 File: gdb.info,  Node: OS Information,  Next: Memory Region Attributes,  Prev: Vector Unit,  Up: Data
 
-10.15 Operating System Auxiliary Information
+10.16 Operating System Auxiliary Information
 ============================================
 
 GDB provides interfaces to useful OS facilities that can help you debug
 your program.
-
-   When GDB runs on a "Posix system" (such as GNU or Unix machines), it
-interfaces with the inferior via the `ptrace' system call.  The
-operating system creates a special sata structure, called `struct
-user', for this interface.  You can use the command `info udot' to
-display the contents of this data structure.
-
-`info udot'
-     Display the contents of the `struct user' maintained by the OS
-     kernel for the program being debugged.  GDB displays the contents
-     of `struct user' as a list of hex numbers, similar to the
-     `examine' command.
 
    Some operating systems supply an "auxiliary vector" to programs at
 startup.  This is akin to the arguments and environment that you
@@ -1154,7 +1305,7 @@ identified by an integer tag; the meanings are well-known but
 system-specific.  Depending on the configuration and operating system
 facilities, GDB may be able to show you this information.  For remote
 targets, this functionality may further depend on the remote stub's
-support of the `qXfer:auxv:read' packet, see *Note qXfer auxiliary
+support of the `qXfer:auxv:read' packet, see *note qXfer auxiliary
 vector read::.
 
 `info auxv'
@@ -1169,10 +1320,10 @@ vector read::.
    On some targets, GDB can access operating system-specific
 information and show it to you.  The types of information available
 will differ depending on the type of operating system running on the
-target.  The mechanism used to fetch the data is described in *Note
+target.  The mechanism used to fetch the data is described in *note
 Operating System Information::.  For remote targets, this functionality
 depends on the remote stub's support of the `qXfer:osdata:read' packet,
-see *Note qXfer osdata read::.
+see *note qXfer osdata read::.
 
 `info os INFOTYPE'
      Display OS information of the requested type.
@@ -1263,7 +1414,7 @@ see *Note qXfer osdata read::.
 
 File: gdb.info,  Node: Memory Region Attributes,  Next: Dump/Restore Files,  Prev: OS Information,  Up: Data
 
-10.16 Memory Region Attributes
+10.17 Memory Region Attributes
 ==============================
 
 "Memory region attributes" allow you to describe special handling
@@ -1326,10 +1477,10 @@ to enable, disable, or remove a memory region, you specify that number.
     _Attributes_
           The list of attributes set for this memory region.
 
-10.16.1 Attributes
+10.17.1 Attributes
 ------------------
 
-10.16.1.1 Memory Access Mode
+10.17.1.1 Memory Access Mode
 ............................
 
 The access mode attributes set whether GDB may make read or write
@@ -1348,7 +1499,7 @@ from accessing memory.
 `rw'
      Memory is read/write.  This is the default.
 
-10.16.1.2 Memory Access Size
+10.17.1.2 Memory Access Size
 ............................
 
 The access size attribute tells GDB to use specific sized accesses in
@@ -1368,7 +1519,7 @@ may use accesses of any size.
 `64'
      Use 64 bit memory accesses.
 
-10.16.1.3 Data Cache
+10.17.1.3 Data Cache
 ....................
 
 The data cache attributes set whether GDB will cache target memory.
@@ -1382,7 +1533,7 @@ about volatile variables or memory mapped device registers.
 `nocache'
      Disable GDB from caching target memory.  This is the default.
 
-10.16.2 Memory Access Checking
+10.17.2 Memory Access Checking
 ------------------------------
 
 GDB can be instructed to refuse accesses to memory that is not
@@ -1404,7 +1555,7 @@ checking.  The following commands control this behaviour.
 
 File: gdb.info,  Node: Dump/Restore Files,  Next: Core File Generation,  Prev: Memory Region Attributes,  Up: Data
 
-10.17 Copy Between Memory and a File
+10.18 Copy Between Memory and a File
 ====================================
 
 You can use the commands `dump', `append', and `restore' to copy data
@@ -1463,7 +1614,7 @@ append to binary files.
 
 File: gdb.info,  Node: Core File Generation,  Next: Character Sets,  Prev: Dump/Restore Files,  Up: Data
 
-10.18 How to Produce a Core File from Your Program
+10.19 How to Produce a Core File from Your Program
 ==================================================
 
 A "core file" or "core dump" is a file that records the memory image of
@@ -1486,12 +1637,12 @@ special command for that.
      inferior process ID.
 
      Note that this command is implemented only for some systems (as of
-     this writing, GNU/Linux, FreeBSD, Solaris, Unixware, and S390).
+     this writing, GNU/Linux, FreeBSD, Solaris, and S390).
 
 
 File: gdb.info,  Node: Character Sets,  Next: Caching Remote Data,  Prev: Core File Generation,  Up: Data
 
-10.19 Character Sets
+10.20 Character Sets
 ====================
 
 If the program you are debugging uses a different character set to
@@ -1674,7 +1825,7 @@ character.
 
 File: gdb.info,  Node: Caching Remote Data,  Next: Searching Memory,  Prev: Character Sets,  Up: Data
 
-10.20 Caching Data of Remote Targets
+10.21 Caching Data of Remote Targets
 ====================================
 
 GDB caches data exchanged between the debugger and a remote target
@@ -1723,11 +1874,11 @@ Other regions of memory can be explicitly marked as cacheable; see
      Must be a power of 2.
 
 `show dcache size'
-     Show maximum number of dcache entries.  See also *Note info
+     Show maximum number of dcache entries.  See also *note info
      dcache: Caching Remote Data.
 
 `show dcache line-size'
-     Show default size of dcache lines.  See also *Note info dcache:
+     Show default size of dcache lines.  See also *note info dcache:
      Caching Remote Data.
 
 
@@ -1741,7 +1892,7 @@ of remote backtraces.
 
 File: gdb.info,  Node: Searching Memory,  Prev: Caching Remote Data,  Up: Data
 
-10.21 Search Memory
+10.22 Search Memory
 ===================
 
 Memory can be searched for a particular sequence of bytes with the
@@ -1787,9 +1938,8 @@ N, maximum number of finds
      all finds.
 
    You can use strings as search values.  Quote them with double-quotes
-(`"').  The string value is copied into the search pattern byte by
-byte, regardless of the endianness of the target and the size
-specification.
+(`"').  The string value is copied into the search pattern byte by byte,
+regardless of the endianness of the target and the size specification.
 
    The address of each match found is printed as well as a count of the
 number of matches found.
@@ -1959,7 +2109,7 @@ output:
       Locals at unknown address, Previous frame's sp is 0x7fffffffda30
 
    The detection of all the possible code path executions can find them
-ambiguous.  There is no execution history stored (possible *Note
+ambiguous.  There is no execution history stored (possible *note
 Reverse Execution:: is never used for this purpose) and the last known
 caller could have reached the known callee by multiple different jump
 sequences.  In such case GDB still tries to show at least all the
@@ -2081,7 +2231,7 @@ different points in the program, a macro may have different
 definitions, or have no definition at all.  If there is a current stack
 frame, GDB uses the macros in scope at that frame's source code line.
 Otherwise, GDB uses the macros in scope at the current listing location;
-see *Note List::.
+see *note List::.
 
    Whenever GDB evaluates an expression, it always expands any macro
 invocations present in the expression.  GDB also provides the following
@@ -2304,7 +2454,7 @@ targets.  *Note Targets::.  In addition, your remote target must know
 how to collect trace data.  This functionality is implemented in the
 remote stub; however, none of the stubs distributed with GDB support
 tracepoints as of this writing.  The format of the remote packets used
-to implement tracepoints are described in *Note Tracepoint Packets::.
+to implement tracepoints are described in *note Tracepoint Packets::.
 
    It is also possible to get trace data from a file, in a manner
 reminiscent of corefiles; you specify the filename, and use `tfind' to
@@ -2829,6 +2979,8 @@ File: gdb.info,  Node: Listing Tracepoints,  Next: Listing Static Tracepoint Mar
 
         * its passcount as given by the `passcount N' command
 
+        * the state about installed on target of each location
+
           (gdb) info trace
           Num     Type           Disp Enb Address    What
           1       tracepoint     keep y   0x0804ab57 in foo() at main.cxx:7
@@ -2838,6 +2990,15 @@ File: gdb.info,  Node: Listing Tracepoints,  Next: Listing Static Tracepoint Mar
                   collect globfoo2
                   end
                   pass count 1200
+          2       tracepoint     keep y   <MULTIPLE>
+                  collect $eip
+          2.1                         y     0x0804859c in func4 at change-loc.h:35
+                  installed on target
+          2.2                         y     0xb7ffc480 in func4 at change-loc.h:35
+                  installed on target
+          2.3                         y     <PENDING>  set_tracepoint
+          3       tracepoint     keep y   0x080485b1 in foo at change-loc.c:29
+                  not installed on target
           (gdb)
 
      This command can be abbreviated `info tp'.
@@ -3001,6 +3162,21 @@ on the fly, otherwise it will not take effect until the next run.
      during a past run, for instance if you are looking at frames from
      a trace file.
 
+
+`set trace-buffer-size N'
+     Request that the target use a trace buffer of N bytes.  Not all
+     targets will honor the request; they may have a compiled-in size
+     for the trace buffer, or some other limitation.  Set to a value of
+     `-1' to let the target use whatever size it likes.  This is also
+     the default.
+
+`show trace-buffer-size'
+     Show the current requested size for the trace buffer.  Note that
+     this will only match the actual size if the target supports
+     size-setting, and was able to handle the requested size.  For
+     instance, if the target can only change buffer size between runs,
+     this variable will not reflect the change until the next run
+     starts.  Use `tstatus' to get a report of the actual buffer size.
 
 `set trace-user TEXT'
 
@@ -3484,7 +3660,7 @@ program:
      be relocated and its symbols defined as if the overlay were at its
      mapped address.  You can use GNU linker scripts to specify
      different load and relocation addresses for pieces of your
-     program; see *Note Overlay Description: (ld.info)Overlay
+     program; see *note Overlay Description: (ld.info)Overlay
      Description.
 
    * The procedure for loading executable files onto your system must
@@ -3561,7 +3737,7 @@ abbreviate this as `ov' or `ovly'.  The commands are:
 `overlay auto'
      Enable "automatic" overlay debugging.  In this mode, GDB consults
      a data structure the overlay manager maintains in the inferior to
-     see which overlays are mapped.  For details, see *Note Automatic
+     see which overlays are mapped.  For details, see *note Automatic
      Overlay Debugging::.
 
 `overlay load-target'
@@ -3925,25 +4101,18 @@ File: gdb.info,  Node: Checks,  Next: Supported Languages,  Prev: Show,  Up: Lan
 15.3 Type and Range Checking
 ============================
 
-     _Warning:_ In this release, the GDB commands for type and range
-     checking are included, but they do not yet have any effect.  This
-     section documents the intended facilities.
+Some languages are designed to guard you against making seemingly common
+errors through a series of compile- and run-time checks.  These include
+checking the type of arguments to functions and operators and making
+sure mathematical overflows are caught at run time.  Checks such as
+these help to ensure a program's correctness once it has been compiled
+by eliminating type mismatches and providing active checks for range
+errors when your program is running.
 
-   Some languages are designed to guard you against making seemingly
-common errors through a series of compile- and run-time checks.  These
-include checking the type of arguments to functions and operators, and
-making sure mathematical overflows are caught at run time.  Checks such
-as these help to ensure a program's correctness once it has been
-compiled by eliminating type mismatches, and providing active checks
-for range errors when your program is running.
-
-   GDB can check for conditions like the above if you wish.  Although
-GDB does not check the statements in your program, it can check
-expressions entered directly into GDB for evaluation via the `print'
-command, for example.  As with the working language, GDB can also
-decide whether or not to check automatically based on your program's
-source language.  *Note Supported Languages: Supported Languages, for
-the default settings of supported languages.
+   By default GDB checks for these errors according to the rules of the
+current source language.  Although GDB does not check the statements in
+your program, it can check expressions entered directly into GDB for
+evaluation via the `print' command, for example.
 
 * Menu:
 
@@ -3956,64 +4125,44 @@ File: gdb.info,  Node: Type Checking,  Next: Range Checking,  Up: Checks
 15.3.1 An Overview of Type Checking
 -----------------------------------
 
-Some languages, such as Modula-2, are strongly typed, meaning that the
+Some languages, such as C and C++, are strongly typed, meaning that the
 arguments to operators and functions have to be of the correct type,
 otherwise an error occurs.  These checks prevent type mismatch errors
 from ever causing any run-time problems.  For example,
 
-     1 + 2 => 3
+     int klass::my_method(char *b) { return  b ? 1 : 2; }
+
+     (gdb) print obj.my_method (0)
+     $1 = 2
 but
-     error--> 1 + 2.3
+     (gdb) print obj.my_method (0x1234)
+     Cannot resolve method klass::my_method to any overloaded instance
 
-   The second example fails because the `CARDINAL' 1 is not
-type-compatible with the `REAL' 2.3.
+   The second example fails because in C++ the integer constant
+`0x1234' is not type-compatible with the pointer parameter type.
 
-   For the expressions you use in GDB commands, you can tell the GDB
-type checker to skip checking; to treat any mismatches as errors and
-abandon the expression; or to only issue warnings when type mismatches
-occur, but evaluate the expression anyway.  When you choose the last of
-these, GDB evaluates expressions like the second example above, but
-also issues a warning.
+   For the expressions you use in GDB commands, you can tell GDB to not
+enforce strict type checking or to treat any mismatches as errors and
+abandon the expression; When type checking is disabled, GDB
+successfully evaluates expressions like the second example above.
 
-   Even if you turn type checking off, there may be other reasons
-related to type that prevent GDB from evaluating an expression.  For
-instance, GDB does not know how to add an `int' and a `struct foo'.
-These particular type errors have nothing to do with the language in
-use, and usually arise from expressions, such as the one described
-above, which make little sense to evaluate anyway.
+   Even if type checking is off, there may be other reasons related to
+type that prevent GDB from evaluating an expression.  For instance, GDB
+does not know how to add an `int' and a `struct foo'.  These particular
+type errors have nothing to do with the language in use and usually
+arise from expressions which make little sense to evaluate anyway.
 
-   Each language defines to what degree it is strict about type.  For
-instance, both Modula-2 and C require the arguments to arithmetical
-operators to be numbers.  In C, enumerated types and pointers can be
-represented as numbers, so that they are valid arguments to mathematical
-operators.  *Note Supported Languages: Supported Languages, for further
-details on specific languages.
-
-   GDB provides some additional commands for controlling the type
-checker:
-
-`set check type auto'
-     Set type checking on or off based on the current working language.
-     *Note Supported Languages: Supported Languages, for the default
-     settings for each language.
+   GDB provides some additional commands for controlling type checking:
 
 `set check type on'
 `set check type off'
-     Set type checking on or off, overriding the default setting for the
-     current working language.  Issue a warning if the setting does not
-     match the language default.  If any type mismatches occur in
-     evaluating an expression while type checking is on, GDB prints a
+     Set strict type checking on or off.  If any type mismatches occur
+     in evaluating an expression while type checking is on, GDB prints a
      message and aborts evaluation of the expression.
 
-`set check type warn'
-     Cause the type checker to issue warnings, but to always attempt to
-     evaluate the expression.  Evaluating the expression may still be
-     impossible for other reasons.  For example, GDB cannot add numbers
-     and structures.
-
-`show type'
-     Show the current setting of the type checker, and whether or not
-     GDB is setting it automatically.
+`show check type'
+     Show the current setting of type checking and whether GDB is
+     enforcing strict type checking rules.
 
 
 File: gdb.info,  Node: Range Checking,  Prev: Type Checking,  Up: Checks
@@ -4381,7 +4530,7 @@ GDB expression handling can interpret most C++ expressions.
      explicit function signature to call an overloaded function, as in
           p 'foo(char,int)'('x', 13)
 
-     The GDB command-completion facility can simplify this; see *Note
+     The GDB command-completion facility can simplify this; see *note
      Command Completion: Completion.
 
   4. GDB understands variables declared as C++ references; you can use
@@ -4411,10 +4560,9 @@ File: gdb.info,  Node: C Defaults,  Next: C Checks,  Prev: C Plus Plus Expressio
 15.4.1.4 C and C++ Defaults
 ...........................
 
-If you allow GDB to set type and range checking automatically, they
-both default to `off' whenever the working language changes to C or
-C++.  This happens regardless of whether you or GDB selects the working
-language.
+If you allow GDB to set range checking automatically, it defaults to
+`off' whenever the working language changes to C or C++.  This happens
+regardless of whether you or GDB selects the working language.
 
    If you allow GDB to set the language automatically, it recognizes
 source files whose names end with `.c', `.C', or `.cc', etc, and when
@@ -4428,16 +4576,10 @@ File: gdb.info,  Node: C Checks,  Next: Debugging C,  Prev: C Defaults,  Up: C
 15.4.1.5 C and C++ Type and Range Checks
 ........................................
 
-By default, when GDB parses C or C++ expressions, type checking is not
-used.  However, if you turn type checking on, GDB considers two
-variables type equivalent if:
-
-   * The two variables are structured and have the same structure,
-     union, or enumerated tag.
-
-   * The two variables have the same type name, or types that have been
-     declared equivalent through `typedef'.
-
+By default, when GDB parses C or C++ expressions, strict type checking
+is used.  However, if you turn type checking off, GDB will allow
+certain non-standard conversions, such as promoting integer constants
+to pointers.
 
    Range checking, if turned on, is done on mathematical operations.
 Array indices are not checked, since they are often used to index a
@@ -4515,7 +4657,7 @@ designed specifically for use with C++.  Here is a summary:
      Enable overload resolution for C++ expression evaluation.  The
      default is on.  For overloaded functions, GDB evaluates the
      arguments and searches for a function whose signature matches the
-     argument types, using the standard C++ conversion rules (see *Note
+     argument types, using the standard C++ conversion rules (see *note
      C++ Expressions: C Plus Plus Expressions, for details).  If it
      cannot find a match, it emits a message.
 
@@ -4566,7 +4708,7 @@ underflow, overflow and divide by zero exceptions.
 
    In the PowerPC architecture, GDB provides a set of pseudo-registers
 to inspect `_Decimal128' values stored in floating point registers.
-See *Note PowerPC: PowerPC. for more details.
+See *note PowerPC: PowerPC. for more details.
 
 
 File: gdb.info,  Node: D,  Next: Go,  Prev: C,  Up: Supported Languages
@@ -4625,8 +4767,8 @@ File: gdb.info,  Node: Objective-C,  Next: OpenCL C,  Prev: Go,  Up: Supported L
 ------------------
 
 This section provides information about some commands and command
-options that are useful for debugging Objective-C code.  See also *Note
-info classes: Symbols, and *Note info selectors: Symbols, for a few
+options that are useful for debugging Objective-C code.  See also *note
+info classes: Symbols, and *note info selectors: Symbols, for a few
 more commands specific to Objective-C support.
 
 * Menu:
@@ -4803,7 +4945,7 @@ File: gdb.info,  Node: Fortran Defaults,  Next: Special Fortran Commands,  Prev:
 
 Fortran symbols are usually case-insensitive, so GDB by default uses
 case-insensitive matches for Fortran symbols.  You can change that with
-the `set case-insensitive' command, see *Note Symbols::, for the
+the `set case-insensitive' command, see *note Symbols::, for the
 details.
 
 
@@ -5777,7 +5919,7 @@ Threads::).  GDB provides the following task-related commands:
 `break LINESPEC task TASKNO if ...'
      These commands are like the `break ... thread ...' command (*note
      Thread Stops::).  LINESPEC specifies source lines, as described in
-     *Note Specify Location::.
+     *note Specify Location::.
 
      Use the qualifier `task TASKNO' with a breakpoint command to
      specify that you only want GDB to stop the program when a
@@ -5982,6 +6124,36 @@ looks up the value of `x' in the scope of the file `foo.c'.
      This command shows the current setting of case sensitivity for
      symbols lookups.
 
+`set print type methods'
+`set print type methods on'
+`set print type methods off'
+     Normally, when GDB prints a class, it displays any methods
+     declared in that class.  You can control this behavior either by
+     passing the appropriate flag to `ptype', or using `set print type
+     methods'.  Specifying `on' will cause GDB to display the methods;
+     this is the default.  Specifying `off' will cause GDB to omit the
+     methods.
+
+`show print type methods'
+     This command shows the current setting of method display when
+     printing classes.
+
+`set print type typedefs'
+`set print type typedefs on'
+`set print type typedefs off'
+     Normally, when GDB prints a class, it displays any typedefs
+     defined in that class.  You can control this behavior either by
+     passing the appropriate flag to `ptype', or using `set print type
+     typedefs'.  Specifying `on' will cause GDB to display the typedef
+     definitions; this is the default.  Specifying `off' will cause GDB
+     to omit the typedef definitions.  Note that this controls whether
+     the typedef definition itself is printed, not whether typedef
+     names are substituted when printing other types.
+
+`show print type typedefs'
+     This command shows the current setting of typedef display when
+     printing classes.
+
 `info address SYMBOL'
      Describe where the data for SYMBOL is stored.  For a register
      variable, this says which register it is kept in.  For a
@@ -6012,7 +6184,7 @@ looks up the value of `x' in the scope of the file `foo.c'.
           (gdb) info symbol 0x2aaaac2811cf
           __read_nocancel + 6 in section .text of /usr/lib64/libc.so.6
 
-`whatis [ARG]'
+`whatis[/FLAGS] [ARG]'
      Print the data type of ARG, which can be either an expression or a
      name of a data type.  With no argument, print the data type of
      `$', the last value in the value history.
@@ -6040,7 +6212,34 @@ looks up the value of `x' in the scope of the file `foo.c'.
      CLASS-NAME', `struct STRUCT-TAG', `union UNION-TAG' or `enum
      ENUM-TAG'.
 
-`ptype [ARG]'
+     FLAGS can be used to modify how the type is displayed.  Available
+     flags are:
+
+    `r'
+          Display in "raw" form.  Normally, GDB substitutes template
+          parameters and typedefs defined in a class when printing the
+          class' members.  The `/r' flag disables this.
+
+    `m'
+          Do not print methods defined in the class.
+
+    `M'
+          Print methods defined in the class.  This is the default, but
+          the flag exists in case you change the default with `set
+          print type methods'.
+
+    `t'
+          Do not print typedefs defined in the class.  Note that this
+          controls whether the typedef definition itself is printed,
+          not whether typedef names are substituted when printing other
+          types.
+
+    `T'
+          Print typedefs defined in the class.  This is the default,
+          but the flag exists in case you change the default with `set
+          print type typedefs'.
+
+`ptype[/FLAGS] [ARG]'
      `ptype' accepts the same arguments as `whatis', but prints a
      detailed description of the type, instead of just the name of the
      type.  *Note Expressions: Expressions.
@@ -6119,6 +6318,19 @@ looks up the value of `x' in the scope of the file `foo.c'.
      `whatis', it does not print a detailed description; second, it
      lists all source files where a type is defined.
 
+`info type-printers'
+     Versions of GDB that ship with Python scripting enabled may have
+     "type printers" available.  When using `ptype' or `whatis', these
+     printers are consulted when the name of a type is needed.  *Note
+     Type Printing API::, for more information on writing type printers.
+
+     `info type-printers' displays all the available type printers.
+
+`enable type-printer NAME...'
+
+`disable type-printer NAME...'
+     These commands can be used to enable or disable type printers.
+
 `info scope LOCATION'
      List all the variables local to a particular scope.  This command
      accepts a LOCATION argument--a function name, a source line, or an
@@ -6137,7 +6349,7 @@ looks up the value of `x' in the scope of the file `foo.c'.
           Symbol repeat is a local variable at frame offset -8, length 4.
 
      This command is especially useful for determining what data to
-     collect during a "trace experiment", see *Note collect: Tracepoint
+     collect during a "trace experiment", see *note collect: Tracepoint
      Actions.
 
 `info source'
@@ -6401,11 +6613,13 @@ it stopped, with the `continue' command.  You can instead continue at
 an address of your own choosing, with the following commands:
 
 `jump LINESPEC'
+`j LINESPEC'
 `jump LOCATION'
+`j LOCATION'
      Resume execution at line LINESPEC or at address given by LOCATION.
      Execution stops again immediately if there is a breakpoint there.
-     *Note Specify Location::, for a description of the different
-     forms of LINESPEC and LOCATION.  It is common practice to use the
+     *Note Specify Location::, for a description of the different forms
+     of LINESPEC and LOCATION.  It is common practice to use the
      `tbreak' command in conjunction with `jump'.  *Note Setting
      Breakpoints: Set Breaks.
 
@@ -6449,9 +6663,9 @@ File: gdb.info,  Node: Signaling,  Next: Returning,  Prev: Jumping,  Up: Alterin
 
      Alternatively, if SIGNAL is zero, continue execution without
      giving a signal.  This is useful when your program stopped on
-     account of a signal and would ordinary see the signal when resumed
-     with the `continue' command; `signal 0' causes it to resume
-     without a signal.
+     account of a signal and would ordinarily see the signal when
+     resumed with the `continue' command; `signal 0' causes it to
+     resume without a signal.
 
      `signal' does not repeat when you press <RET> a second time after
      executing the command.
@@ -6644,6 +6858,7 @@ the core dump file.
 
 * Files::                       Commands to specify files
 * Separate Debug Files::        Debugging information in separate files
+* MiniDebugInfo::               Debugging information in a special section
 * Index Files::                 Index files speed up GDB
 * Symbol Errors::               Errors reading symbol files
 * Data Files::                  GDB data files
@@ -7182,7 +7397,7 @@ that happens to be named `remote:', you need to use some equivalent
 variant of the name like `./remote:'.
 
 
-File: gdb.info,  Node: Separate Debug Files,  Next: Index Files,  Prev: Files,  Up: GDB Files
+File: gdb.info,  Node: Separate Debug Files,  Next: MiniDebugInfo,  Prev: Files,  Up: GDB Files
 
 18.2 Debugging Information in Separate Files
 ============================================
@@ -7211,7 +7426,7 @@ need to debug a problem.
      supported only on some operating systems, notably those which use
      the ELF format for binary files and the GNU Binutils.)  For more
      details about this feature, see the description of the `--build-id'
-     command-line option in *Note Command Line Options:
+     command-line option in *note Command Line Options:
      (ld.info)Options.  The debug info file's name is not specified
      explicitly by the build ID, but can be computed from the build ID,
      see below.
@@ -7415,54 +7630,4 @@ function passing in zero will start computing the CRC using
      }
 
 This computation does not apply to the "build ID" method.
-
-
-File: gdb.info,  Node: Index Files,  Next: Symbol Errors,  Prev: Separate Debug Files,  Up: GDB Files
-
-18.3 Index Files Speed Up GDB
-=============================
-
-When GDB finds a symbol file, it scans the symbols in the file in order
-to construct an internal symbol table.  This lets most GDB operations
-work quickly--at the cost of a delay early on.  For large programs,
-this delay can be quite lengthy, so GDB provides a way to build an
-index, which speeds up startup.
-
-   The index is stored as a section in the symbol file.  GDB can write
-the index to a file, then you can put it into the symbol file using
-`objcopy'.
-
-   To create an index file, use the `save gdb-index' command:
-
-`save gdb-index DIRECTORY'
-     Create an index file for each symbol file currently known by GDB.
-     Each file is named after its corresponding symbol file, with
-     `.gdb-index' appended, and is written into the given DIRECTORY.
-
-   Once you have created an index file you can merge it into your symbol
-file, here named `symfile', using `objcopy':
-
-     $ objcopy --add-section .gdb_index=symfile.gdb-index \
-         --set-section-flags .gdb_index=readonly symfile symfile
-
-   GDB will normally ignore older versions of `.gdb_index' sections
-that have been deprecated.  Usually they are deprecated because they
-are missing a new feature or have performance issues.  To tell GDB to
-use a deprecated index section anyway specify `set
-use-deprecated-index-sections on'.  The default is `off'.  This can
-speed up startup, but may result in some functionality being lost.
-*Note Index Section Format::.
-
-   _Warning:_ Setting `use-deprecated-index-sections' to `on' must be
-done before gdb reads the file.  The following will not work:
-
-     $ gdb -ex "set use-deprecated-index-sections on" <program>
-
-   Instead you must do, for example,
-
-     $ gdb -iex "set use-deprecated-index-sections on" <program>
-
-   There are currently some limitation on indices.  They only work when
-for DWARF debugging information, not stabs.  And, they do not currently
-work for programs using Ada.
 

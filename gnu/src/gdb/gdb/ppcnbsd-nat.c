@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD/powerpc.
 
-   Copyright (C) 2002, 2004-2012 Free Software Foundation, Inc.
+   Copyright (C) 2002-2013 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
 
@@ -19,13 +19,14 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
+#include "defs.h"
+
 #include <sys/types.h>
 #include <sys/ptrace.h>
 #include <machine/reg.h>
 #include <machine/frame.h>
 #include <machine/pcb.h>
 
-#include "defs.h"
 #include "gdbcore.h"
 #include "inferior.h"
 #include "regcache.h"

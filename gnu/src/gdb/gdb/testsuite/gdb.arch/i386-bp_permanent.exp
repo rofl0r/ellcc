@@ -1,4 +1,4 @@
-# Copyright (C) 2008-2012 Free Software Foundation, Inc.
+# Copyright (C) 2008-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 
 # Test stepping over permanent breakpoints on i386.
 
-if {(![istarget "x86_64-*-*"] && ![istarget "i?86-*-*"]) || ![is_ilp32_target] } then {
+if { ![is_x86_like_target] } then {
     verbose "Skipping skip over permanent breakpoint on i386 tests."
     return
 }

@@ -1,7 +1,6 @@
 /* Source-language-related definitions for GDB.
 
-   Copyright (C) 1991-1995, 1998-2000, 2003-2004, 2007-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1991-2013 Free Software Foundation, Inc.
 
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
@@ -31,6 +30,7 @@ struct frame_info;
 struct expression;
 struct ui_file;
 struct value_print_options;
+struct type_print_options;
 
 #define MAX_FORTRAN_DIMS  7	/* Maximum number of F77 array dims.  */
 
@@ -54,27 +54,6 @@ extern enum range_check
     range_check_off, range_check_warn, range_check_on
   }
 range_check;
-
-/* type_mode ==
-   type_mode_auto:   type_check set automatically to default of language.
-   type_mode_manual: type_check set manually by user.  */
-
-extern enum type_mode
-  {
-    type_mode_auto, type_mode_manual
-  }
-type_mode;
-
-/* type_check ==
-   type_check_on:    Types are checked in GDB expressions, producing errors.
-   type_check_warn:  Types are checked, producing warnings.
-   type_check_off:   Types are not checked in GDB expressions.  */
-
-extern enum type_check
-  {
-    type_check_off, type_check_warn, type_check_on
-  }
-type_check;
 
 /* case_mode ==
    case_mode_auto:   case_sensitivity set upon selection of scope.
@@ -162,10 +141,6 @@ struct language_defn
 
     enum range_check la_range_check;
 
-    /* Default type checking.  */
-
-    enum type_check la_type_check;
-
     /* Default case sensitivity.  */
     enum case_sensitivity la_case_sensitivity;
 
@@ -210,7 +185,7 @@ struct language_defn
     /* Print a type using syntax appropriate for this language.  */
 
     void (*la_print_type) (struct type *, const char *, struct ui_file *, int,
-			   int);
+			   int, const struct type_print_options *);
 
     /* Print a typedef using syntax appropriate for this language.
        TYPE is the underlying type.  NEW_SYMBOL is the symbol naming
@@ -308,8 +283,11 @@ struct language_defn
 
     /* Should return a vector of all symbols which are possible
        completions for TEXT.  WORD is the entire command on which the
-       completion is being made.  */
-    VEC (char_ptr) *(*la_make_symbol_completion_list) (char *text, char *word);
+       completion is being made.  If CODE is TYPE_CODE_UNDEF, then all
+       symbols should be examined; otherwise, only STRUCT_DOMAIN
+       symbols whose type has a code of CODE should be matched.  */
+    VEC (char_ptr) *(*la_make_symbol_completion_list) (char *text, char *word,
+						       enum type_code code);
 
     /* The per-architecture (OS/ABI) language information.  */
     void (*la_language_arch_info) (struct gdbarch *,
@@ -348,9 +326,9 @@ struct language_defn
     /* Find all symbols in the current program space matching NAME in
        DOMAIN, according to this language's rules.
 
-       The search starts with BLOCK.  This function iterates upward
-       through blocks.  When the outermost block has been finished,
-       the function returns.
+       The search is done in BLOCK only.
+       The caller is responsible for iterating up through superblocks
+       if desired.
 
        For each one, call CALLBACK with the symbol and the DATA
        argument.  If CALLBACK returns zero, the iteration ends at that
@@ -422,9 +400,6 @@ struct type *language_lookup_primitive_type_by_name (const struct language_defn 
 /* These macros define the behaviour of the expression 
    evaluator.  */
 
-/* Should we strictly type check expressions?  */
-#define STRICT_TYPE (type_check != type_check_off)
-
 /* Should we range check values against the domain of their type?  */
 #define RANGE_CHECK (range_check != range_check_off)
 
@@ -444,8 +419,8 @@ extern enum language set_language (enum language);
    the current setting of working_lang, which the user sets
    with the "set language" command.  */
 
-#define LA_PRINT_TYPE(type,varstring,stream,show,level) \
-  (current_language->la_print_type(type,varstring,stream,show,level))
+#define LA_PRINT_TYPE(type,varstring,stream,show,level,flags)		\
+  (current_language->la_print_type(type,varstring,stream,show,level,flags))
 
 #define LA_PRINT_TYPEDEF(type,new_symbol,stream) \
   (current_language->la_print_typedef(type,new_symbol,stream))
@@ -495,8 +470,6 @@ extern int pointer_type (struct type *);
 extern void binop_type_check (struct value *, struct value *, int);
 
 /* Error messages */
-
-extern void type_error (const char *, ...) ATTRIBUTE_PRINTF (1, 2);
 
 extern void range_error (const char *, ...) ATTRIBUTE_PRINTF (1, 2);
 

@@ -1,6 +1,6 @@
 /* Definitions for values of C expressions, for GDB.
 
-   Copyright (C) 1986-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -90,8 +90,6 @@ extern void set_value_offset (struct value *, int offset);
    not_lval and be done with it?  */
 
 extern int deprecated_value_modifiable (struct value *value);
-extern void deprecated_set_value_modifiable (struct value *value,
-					     int modifiable);
 
 /* If a value represents a C++ object, then the `type' field gives the
    object's compile-time type.  If the object actually belongs to some
@@ -482,6 +480,12 @@ extern void read_value_memory (struct value *val, int embedded_offset,
 			       int stack, CORE_ADDR memaddr,
 			       gdb_byte *buffer, size_t length);
 
+/* Cast SCALAR_VALUE to the element type of VECTOR_TYPE, then replicate
+   into each element of a new vector value with VECTOR_TYPE.  */
+
+struct value *value_vector_widen (struct value *scalar_value,
+				  struct type *vector_type);
+
 
 
 #include "symtab.h"
@@ -557,7 +561,8 @@ extern CORE_ADDR address_from_register (struct type *type, int regnum,
 extern struct value *value_of_variable (struct symbol *var,
 					const struct block *b);
 
-extern struct value *address_of_variable (struct symbol *var, struct block *b);
+extern struct value *address_of_variable (struct symbol *var,
+					  const struct block *b);
 
 extern struct value *value_of_register (int regnum, struct frame_info *frame);
 
@@ -587,12 +592,10 @@ extern struct value *value_mark (void);
 
 extern void value_free_to_mark (struct value *mark);
 
-extern struct value *value_cstring (char *ptr, int len,
+extern struct value *value_cstring (char *ptr, ssize_t len,
 				    struct type *char_type);
-extern struct value *value_string (char *ptr, int len,
+extern struct value *value_string (char *ptr, ssize_t len,
 				   struct type *char_type);
-extern struct value *value_bitstring (char *ptr, int len,
-				      struct type *index_type);
 
 extern struct value *value_array (int lowbound, int highbound,
 				  struct value **elemvec);
@@ -646,7 +649,7 @@ enum oload_search_type { NON_METHOD, METHOD, BOTH };
 
 extern int find_overload_match (struct value **args, int nargs,
 				const char *name,
-				enum oload_search_type method, int lax,
+				enum oload_search_type method,
 				struct value **objp, struct symbol *fsym,
 				struct value **valp, struct symbol **symp,
 				int *staticp, const int no_adl);
@@ -693,6 +696,10 @@ extern int value_in (struct value *element, struct value *set);
 extern int value_bit_index (struct type *type, const gdb_byte *addr,
 			    int index);
 
+extern enum return_value_convention
+struct_return_convention (struct gdbarch *gdbarch, struct value *function,
+			  struct type *value_type);
+
 extern int using_struct_return (struct gdbarch *gdbarch,
 				struct value *function,
 				struct type *value_type);
@@ -717,13 +724,13 @@ extern char *extract_field_op (struct expression *exp, int *subexp);
 extern struct value *evaluate_subexp_with_coercion (struct expression *,
 						    int *, enum noside);
 
-extern struct value *parse_and_eval (char *exp);
+extern struct value *parse_and_eval (const char *exp);
 
-extern struct value *parse_to_comma_and_eval (char **expp);
+extern struct value *parse_to_comma_and_eval (const char **expp);
 
 extern struct type *parse_and_eval_type (char *p, int length);
 
-extern CORE_ADDR parse_and_eval_address (char *exp);
+extern CORE_ADDR parse_and_eval_address (const char *exp);
 
 extern LONGEST parse_and_eval_long (char *exp);
 
@@ -913,8 +920,6 @@ extern void print_variable_and_value (const char *name,
 				      struct frame_info *frame,
 				      struct ui_file *stream,
 				      int indent);
-
-extern int check_field (struct type *, const char *);
 
 extern void typedef_print (struct type *type, struct symbol *news,
 			   struct ui_file *stream);

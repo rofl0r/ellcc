@@ -1,5 +1,5 @@
 /* GDB routines for manipulating the minimal symbol tables.
-   Copyright (C) 1992-2004, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
    This file is part of GDB.
@@ -50,6 +50,7 @@
 #include "target.h"
 #include "cp-support.h"
 #include "language.h"
+#include "cli/cli-utils.h"
 
 /* Accumulate the minimal symbols for each objfile in bunches of BUNCH_SIZE.
    At the end, copy them all into one newly allocated location on an objfile's
@@ -85,8 +86,7 @@ msymbol_hash_iw (const char *string)
 
   while (*string && *string != '(')
     {
-      while (isspace (*string))
-	++string;
+      string = skip_spaces_const (string);
       if (*string && *string != '(')
 	{
 	  hash = SYMBOL_HASH_NEXT (hash, *string);
@@ -937,7 +937,9 @@ prim_record_minimal_symbol_full (const char *name, int name_len, int copy_name,
   MSYMBOL_TYPE (msymbol) = ms_type;
   MSYMBOL_TARGET_FLAG_1 (msymbol) = 0;
   MSYMBOL_TARGET_FLAG_2 (msymbol) = 0;
-  MSYMBOL_SIZE (msymbol) = 0;
+  /* Do not use the SET_MSYMBOL_SIZE macro to initialize the size,
+     as it would also set the has_size flag.  */
+  msymbol->size = 0;
 
   /* The hash pointers must be cleared! If they're not,
      add_minsym_to_hash_table will NOT add this msymbol to the hash table.  */
@@ -1229,13 +1231,7 @@ install_minimal_symbols (struct objfile *objfile)
          symbol count does *not* include this null symbol, which is why it
          is indexed by mcount and not mcount-1.  */
 
-      SYMBOL_LINKAGE_NAME (&msymbols[mcount]) = NULL;
-      SYMBOL_VALUE_ADDRESS (&msymbols[mcount]) = 0;
-      MSYMBOL_TARGET_FLAG_1 (&msymbols[mcount]) = 0;
-      MSYMBOL_TARGET_FLAG_2 (&msymbols[mcount]) = 0;
-      MSYMBOL_SIZE (&msymbols[mcount]) = 0;
-      MSYMBOL_TYPE (&msymbols[mcount]) = mst_unknown;
-      SYMBOL_SET_LANGUAGE (&msymbols[mcount], language_unknown);
+      memset (&msymbols[mcount], 0, sizeof (struct minimal_symbol));
 
       /* Attach the minimal symbol table to the specified objfile.
          The strings themselves are also located in the objfile_obstack
@@ -1243,29 +1239,6 @@ install_minimal_symbols (struct objfile *objfile)
 
       objfile->minimal_symbol_count = mcount;
       objfile->msymbols = msymbols;
-
-      /* Try to guess the appropriate C++ ABI by looking at the names 
-	 of the minimal symbols in the table.  */
-      {
-	int i;
-
-	for (i = 0; i < mcount; i++)
-	  {
-	    /* If a symbol's name starts with _Z and was successfully
-	       demangled, then we can assume we've found a GNU v3 symbol.
-	       For now we set the C++ ABI globally; if the user is
-	       mixing ABIs then the user will need to "set cp-abi"
-	       manually.  */
-	    const char *name = SYMBOL_LINKAGE_NAME (&objfile->msymbols[i]);
-
-	    if (name[0] == '_' && name[1] == 'Z'
-		&& SYMBOL_DEMANGLED_NAME (&objfile->msymbols[i]) != NULL)
-	      {
-		set_cp_abi_as_auto_default ("gnu-v3");
-		break;
-	      }
-	  }
-      }
 
       /* Now build the hash tables; we can't do this incrementally
          at an earlier point since we weren't finished with the obstack
@@ -1306,9 +1279,11 @@ msymbols_sort (struct objfile *objfile)
   build_minimal_symbol_hash_tables (objfile);
 }
 
-/* See minsyms.h.  */
+/* Check if PC is in a shared library trampoline code stub.
+   Return minimal symbol for the trampoline entry or NULL if PC is not
+   in a trampoline code stub.  */
 
-struct minimal_symbol *
+static struct minimal_symbol *
 lookup_solib_trampoline_symbol_by_pc (CORE_ADDR pc)
 {
   struct obj_section *section = find_pc_section (pc);

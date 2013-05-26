@@ -1,7 +1,6 @@
 /* Parse expressions for GDB.
 
-   Copyright (C) 1986, 1989-2001, 2004-2005, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    Modified from expread.y by the Department of Computer Science at the
    State University of New York at Buffalo, 1991.
@@ -71,9 +70,9 @@ const struct exp_descriptor exp_descriptor_standard =
 struct expression *expout;
 int expout_size;
 int expout_ptr;
-struct block *expression_context_block;
+const struct block *expression_context_block;
 CORE_ADDR expression_context_pc;
-struct block *innermost_block;
+const struct block *innermost_block;
 int arglist_len;
 static struct type_stack type_stack;
 char *lexptr;
@@ -81,16 +80,22 @@ char *prev_lexptr;
 int paren_depth;
 int comma_terminates;
 
-/* True if parsing an expression to find a field reference.  This is
-   only used by completion.  */
-int in_parse_field;
+/* True if parsing an expression to attempt completion.  */
+int parse_completion;
 
 /* The index of the last struct expression directly before a '.' or
    '->'.  This is set when parsing and is only used when completing a
    field name.  It is -1 if no dereference operation was found.  */
 static int expout_last_struct = -1;
+
+/* If we are completing a tagged type name, this will be nonzero.  */
+static enum type_code expout_tag_completion_type = TYPE_CODE_UNDEF;
+
+/* The token for tagged type name completion.  */
+static char *expout_completion_name;
+
 
-static int expressiondebug = 0;
+static unsigned int expressiondebug = 0;
 static void
 show_expressiondebug (struct ui_file *file, int from_tty,
 		      struct cmd_list_element *c, const char *value)
@@ -116,7 +121,7 @@ static int prefixify_subexp (struct expression *, struct expression *, int,
 			     int);
 
 static struct expression *parse_exp_in_context (char **, CORE_ADDR,
-						struct block *, int, 
+						const struct block *, int, 
 						int, int *);
 
 void _initialize_parse (void);
@@ -248,7 +253,7 @@ write_exp_elt_sym (struct symbol *expelt)
 }
 
 void
-write_exp_elt_block (struct block *b)
+write_exp_elt_block (const struct block *b)
 {
   union exp_element tmp;
 
@@ -579,7 +584,30 @@ write_exp_msymbol (struct minimal_symbol *msymbol)
 void
 mark_struct_expression (void)
 {
+  gdb_assert (parse_completion
+	      && expout_tag_completion_type == TYPE_CODE_UNDEF);
   expout_last_struct = expout_ptr;
+}
+
+/* Indicate that the current parser invocation is completing a tag.
+   TAG is the type code of the tag, and PTR and LENGTH represent the
+   start of the tag name.  */
+
+void
+mark_completion_tag (enum type_code tag, const char *ptr, int length)
+{
+  gdb_assert (parse_completion
+	      && expout_tag_completion_type == TYPE_CODE_UNDEF
+	      && expout_completion_name == NULL
+	      && expout_last_struct == -1);
+  gdb_assert (tag == TYPE_CODE_UNION
+	      || tag == TYPE_CODE_STRUCT
+	      || tag == TYPE_CODE_CLASS
+	      || tag == TYPE_CODE_ENUM);
+  expout_tag_completion_type = tag;
+  expout_completion_name = xmalloc (length + 1);
+  memcpy (expout_completion_name, ptr, length);
+  expout_completion_name[length] = '\0';
 }
 
 
@@ -663,7 +691,7 @@ write_dollar_variable (struct stoken str)
      have names beginning with $ or $$.  Check for those, first.  */
 
   sym = lookup_symbol (copy_name (str), (struct block *) NULL,
-		       VAR_DOMAIN, (int *) NULL);
+		       VAR_DOMAIN, NULL);
   if (sym)
     {
       write_exp_elt_opcode (OP_VAR_VALUE);
@@ -910,10 +938,16 @@ operator_length_standard (const struct expression *expr, int endpos,
       oplen = 3;
       break;
 
-    case BINOP_VAL:
-    case UNOP_CAST:
+    case UNOP_CAST_TYPE:
     case UNOP_DYNAMIC_CAST:
     case UNOP_REINTERPRET_CAST:
+    case UNOP_MEMVAL_TYPE:
+      oplen = 1;
+      args = 2;
+      break;
+
+    case BINOP_VAL:
+    case UNOP_CAST:
     case UNOP_MEMVAL:
       oplen = 3;
       args = 1;
@@ -932,6 +966,8 @@ operator_length_standard (const struct expression *expr, int endpos,
     case UNOP_ODD:
     case UNOP_ORD:
     case UNOP_TRUNC:
+    case OP_TYPEOF:
+    case OP_DECLTYPE:
       oplen = 1;
       args = 1;
       break;
@@ -943,7 +979,6 @@ operator_length_standard (const struct expression *expr, int endpos,
       oplen++;
       break;
 
-    case OP_LABELED:
     case STRUCTOP_STRUCT:
     case STRUCTOP_PTR:
       args = 1;
@@ -959,12 +994,6 @@ operator_length_standard (const struct expression *expr, int endpos,
       oplen = 4 + BYTES_TO_EXP_ELEM (oplen + 1);
       break;
 
-    case OP_BITSTRING:
-      oplen = longest_to_int (expr->elts[endpos - 2].longconst);
-      oplen = (oplen + HOST_CHAR_BIT - 1) / HOST_CHAR_BIT;
-      oplen = 4 + BYTES_TO_EXP_ELEM (oplen);
-      break;
-
     case OP_ARRAY:
       oplen = 4;
       args = longest_to_int (expr->elts[endpos - 2].longconst);
@@ -974,7 +1003,6 @@ operator_length_standard (const struct expression *expr, int endpos,
 
     case TERNOP_COND:
     case TERNOP_SLICE:
-    case TERNOP_SLICE_COUNT:
       args = 3;
       break;
 
@@ -1097,9 +1125,18 @@ prefixify_subexp (struct expression *inexpr,
    If COMMA is nonzero, stop if a comma is reached.  */
 
 struct expression *
-parse_exp_1 (char **stringptr, CORE_ADDR pc, struct block *block, int comma)
+parse_exp_1 (const char **stringptr, CORE_ADDR pc, const struct block *block,
+	     int comma)
 {
-  return parse_exp_in_context (stringptr, pc, block, comma, 0, NULL);
+  struct expression *expr;
+  char *const_hack = *stringptr ? xstrdup (*stringptr) : NULL;
+  char *orig = const_hack;
+  struct cleanup *back_to = make_cleanup (xfree, const_hack);
+
+  expr = parse_exp_in_context (&const_hack, pc, block, comma, 0, NULL);
+  (*stringptr) += const_hack - orig;
+  do_cleanups (back_to);
+  return expr;
 }
 
 /* As for parse_exp_1, except that if VOID_CONTEXT_P, then
@@ -1110,11 +1147,11 @@ parse_exp_1 (char **stringptr, CORE_ADDR pc, struct block *block, int comma)
    is left untouched.  */
 
 static struct expression *
-parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
+parse_exp_in_context (char **stringptr, CORE_ADDR pc, const struct block *block,
 		      int comma, int void_context_p, int *out_subexp)
 {
   volatile struct gdb_exception except;
-  struct cleanup *old_chain;
+  struct cleanup *old_chain, *inner_chain;
   const struct language_defn *lang = NULL;
   int subexp;
 
@@ -1124,6 +1161,9 @@ parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
   paren_depth = 0;
   type_stack.depth = 0;
   expout_last_struct = -1;
+  expout_tag_completion_type = TYPE_CODE_UNDEF;
+  xfree (expout_completion_name);
+  expout_completion_name = NULL;
 
   comma_terminates = comma;
 
@@ -1181,7 +1221,13 @@ parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
   else
     lang = current_language;
 
+  /* get_current_arch may reset CURRENT_LANGUAGE via select_frame.
+     While we need CURRENT_LANGUAGE to be set to LANG (for lookup_symbol
+     and others called from *.y) ensure CURRENT_LANGUAGE gets restored
+     to the value matching SELECTED_FRAME as set by get_current_arch.  */
   initialize_expout (10, lang, get_current_arch ());
+  inner_chain = make_cleanup_restore_current_language ();
+  set_language (lang->la_language);
 
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
@@ -1190,14 +1236,12 @@ parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
     }
   if (except.reason < 0)
     {
-      if (! in_parse_field)
+      if (! parse_completion)
 	{
 	  xfree (expout);
 	  throw_exception (except);
 	}
     }
-
-  discard_cleanups (old_chain);
 
   reallocate_expout ();
 
@@ -1217,6 +1261,9 @@ parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
   if (expressiondebug)
     dump_prefix_expression (expout, gdb_stdlog);
 
+  do_cleanups (inner_chain);
+  discard_cleanups (old_chain);
+
   *stringptr = lexptr;
   return expout;
 }
@@ -1225,7 +1272,7 @@ parse_exp_in_context (char **stringptr, CORE_ADDR pc, struct block *block,
    to use up all of the contents of STRING.  */
 
 struct expression *
-parse_expression (char *string)
+parse_expression (const char *string)
 {
   struct expression *exp;
 
@@ -1244,7 +1291,8 @@ parse_expression (char *string)
    *NAME must be freed by the caller.  */
 
 struct type *
-parse_field_expression (char *string, char **name)
+parse_expression_for_completion (char *string, char **name,
+				 enum type_code *code)
 {
   struct expression *exp = NULL;
   struct value *val;
@@ -1253,12 +1301,21 @@ parse_field_expression (char *string, char **name)
 
   TRY_CATCH (except, RETURN_MASK_ERROR)
     {
-      in_parse_field = 1;
+      parse_completion = 1;
       exp = parse_exp_in_context (&string, 0, 0, 0, 0, &subexp);
     }
-  in_parse_field = 0;
+  parse_completion = 0;
   if (except.reason < 0 || ! exp)
     return NULL;
+
+  if (expout_tag_completion_type != TYPE_CODE_UNDEF)
+    {
+      *code = expout_tag_completion_type;
+      *name = expout_completion_name;
+      expout_completion_name = NULL;
+      return NULL;
+    }
+
   if (expout_last_struct == -1)
     {
       xfree (exp);
@@ -1732,8 +1789,6 @@ operator_check_standard (struct expression *exp, int pos,
     case OP_SCOPE:
     case OP_TYPE:
     case UNOP_CAST:
-    case UNOP_DYNAMIC_CAST:
-    case UNOP_REINTERPRET_CAST:
     case UNOP_MAX:
     case UNOP_MEMVAL:
     case UNOP_MIN:
@@ -1853,15 +1908,15 @@ _initialize_parse (void)
   type_stack.depth = 0;
   type_stack.elements = NULL;
 
-  add_setshow_zinteger_cmd ("expression", class_maintenance,
-			    &expressiondebug,
-			    _("Set expression debugging."),
-			    _("Show expression debugging."),
-			    _("When non-zero, the internal representation "
-			      "of expressions will be printed."),
-			    NULL,
-			    show_expressiondebug,
-			    &setdebuglist, &showdebuglist);
+  add_setshow_zuinteger_cmd ("expression", class_maintenance,
+			     &expressiondebug,
+			     _("Set expression debugging."),
+			     _("Show expression debugging."),
+			     _("When non-zero, the internal representation "
+			       "of expressions will be printed."),
+			     NULL,
+			     show_expressiondebug,
+			     &setdebuglist, &showdebuglist);
   add_setshow_boolean_cmd ("parser", class_maintenance,
 			    &parser_debug,
 			   _("Set parser debugging."),

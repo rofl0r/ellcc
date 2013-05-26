@@ -1,4 +1,4 @@
-This is gdbint.info, produced by makeinfo version 4.8 from
+This is gdbint.info, produced by makeinfo version 4.13 from
 ./gdbint.texinfo.
 
 INFO-DIR-SECTION Software development
@@ -6,9 +6,9 @@ START-INFO-DIR-ENTRY
 * Gdb-Internals: (gdbint).	The GNU debugger's internals.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1990-1994, 1996, 1998-2006, 2008-2012 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+   Copyright (C) 1990-2013 Free Software Foundation, Inc.  Contributed
+by Cygnus Solutions.  Written by John Gilmore.  Second Edition by Stan
+Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -19,9 +19,9 @@ Free Documentation License".
 
    This file documents the internals of the GNU debugger GDB.
 
-   Copyright (C) 1990-1994, 1996, 1998-2006, 2008-2012 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+   Copyright (C) 1990-2013 Free Software Foundation, Inc.  Contributed
+by Cygnus Solutions.  Written by John Gilmore.  Second Edition by Stan
+Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -926,7 +926,7 @@ previously available.  This new interface needed to be strongly typed,
 easy to extend, and versatile enough to be used as the standard
 interface when adding new notifications.
 
-   See *Note GDB Observers:: for a brief description of the observers
+   See *note GDB Observers:: for a brief description of the observers
 currently implemented in GDB. The rationale for the current
 implementation is also briefly discussed.
 
@@ -2119,7 +2119,7 @@ The IBM RS/6000 running AIX uses an object file format called XCOFF.
 The COFF sections, symbols, and line numbers are used, but debugging
 symbols are `dbx'-style stabs whose strings are located in the `.debug'
 section (rather than the string table).  For more information, see
-*Note Top: (stabs)Top.
+*note Top: (stabs)Top.
 
    The shared library scheme has a clean interface for figuring out what
 shared libraries are in use, but the catch is that everything which
@@ -2444,14 +2444,6 @@ are:
      The default name of GDB's initialization file (normally
      `.gdbinit').
 
-`SIGWINCH_HANDLER'
-     If your host defines `SIGWINCH', you can define this to be the name
-     of a function to be called if `SIGWINCH' is received.
-
-`SIGWINCH_HANDLER_BODY'
-     Define this to expand into code that will define the function
-     named by the expansion of `SIGWINCH_HANDLER'.
-
 `CRLF_SOURCE_FILES'
      Define this if host files use `\r\n' rather than `\n' as a line
      terminator.  This will cause source file listings to omit `\r'
@@ -2470,10 +2462,6 @@ are:
 
 `FOPEN_RB'
      Define this if binary files are opened the same way as text files.
-
-`CC_HAS_LONG_LONG'
-     Define this if the host C compiler supports `long long'.  This is
-     set by the `configure' script.
 
 `PRINTF_HAS_LONG_LONG'
      Define this if the host can handle printing of long long integers
@@ -4121,8 +4109,12 @@ architecture.
      of bytes that encode a breakpoint instruction, stores the length
      of the string to `*LENPTR', and adjusts the program counter (if
      necessary) to point to the actual memory location where the
-     breakpoint should be inserted.  May return `NULL' to indicate that
-     software breakpoints are not supported.
+     breakpoint should be inserted.  On input, the program counter
+     (`*PCPTR' is the encoded inferior's PC register.  If software
+     breakpoints are supported, the function sets this argument to the
+     PC's plain address.  If software breakpoints are not supported,
+     the function returns NULL instead of the encoded breakpoint
+     instruction.
 
      Although it is common to use a trap instruction for a breakpoint,
      it's not required; for instance, the bit pattern could be an
@@ -4259,7 +4251,7 @@ architecture.
 
 `I386_USE_GENERIC_WATCHPOINTS'
      An x86-based target can define this to use the generic x86
-     watchpoint support; see *Note I386_USE_GENERIC_WATCHPOINTS:
+     watchpoint support; see *note I386_USE_GENERIC_WATCHPOINTS:
      Algorithms.
 
 `gdbarch_in_function_epilogue_p (GDBARCH, ADDR)'
@@ -4376,7 +4368,7 @@ architecture.
      Define this to push the dummy frame's call to the inferior
      function onto the stack.  In addition to pushing NARGS, the code
      should push STRUCT_ADDR (when STRUCT_RETURN is non-zero), and the
-     return address (BP_ADDR).
+     return address (BP_ADDR, in inferior's PC register encoding).
 
      FUNCTION is a pointer to a `struct value'; on architectures that
      use function descriptors, this contains the function descriptor
@@ -4390,12 +4382,14 @@ architecture.
      should return.
 
      Set BP_ADDR to the address at which the breakpoint instruction
-     should be inserted, REAL_PC to the resume address when starting
-     the call sequence, and return the updated inner-most stack address.
+     should be inserted (in inferior's PC register encoding), REAL_PC
+     to the resume address when starting the call sequence, and return
+     the updated inner-most stack address.
 
      By default, the stack is grown sufficient to hold a frame-aligned
      (*note frame_align::) breakpoint, BP_ADDR is set to the address
-     reserved for that breakpoint, and REAL_PC set to FUNADDR.
+     reserved for that breakpoint (in inferior's PC register encoding),
+     and REAL_PC set to FUNADDR.
 
      This method replaces `gdbarch_call_dummy_location (GDBARCH)'.
 
@@ -4622,7 +4616,7 @@ mechanism for the user to tell GDB more about what their target
 supports, or for the target to tell GDB directly.
 
    For details on writing, automatically supplying, and manually
-selecting target descriptions, see *Note Target Descriptions:
+selecting target descriptions, see *note Target Descriptions:
 (gdb)Target Descriptions.  This section will cover some related topics
 about the GDB internals.
 
@@ -4655,7 +4649,7 @@ architecture's gdbarch initialization routine is called to create the
 new architecture.  Then the initialization routine is called, and has a
 chance to adjust the constructed architecture based on the contents of
 the target description.  For instance, it can recognize any properties
-set by a `to_read_description' routine.  Also see *Note Adding Target
+set by a `to_read_description' routine.  Also see *note Adding Target
 Described Register Support::.
 
 
@@ -4927,7 +4921,7 @@ the same.  These macros should be defined (or left undefined) in
 
 `I386_USE_GENERIC_WATCHPOINTS'
      An x86-based machine can define this to use the generic x86
-     watchpoint support; see *Note I386_USE_GENERIC_WATCHPOINTS:
+     watchpoint support; see *note I386_USE_GENERIC_WATCHPOINTS:
      Algorithms.
 
 `SOLIB_ADD (FILENAME, FROM_TTY, TARG, READSYMS)'
@@ -5385,6 +5379,17 @@ that the macro arguments are protected with parentheses.)
    Declarations like `struct foo *' should be used in preference to
 declarations like `typedef struct foo { ... } *foo_ptr'.
 
+   Zero constant (`0') is not interchangeable with a null pointer
+constant (`NULL') anywhere.  GCC does not give a warning for such
+interchange.  Specifically:
+
+incorrect      `if (pointervar) {}'
+incorrect      `if (!pointervar) {}'
+incorrect      `if (pointervar != 0) {}'
+incorrect      `if (pointervar == 0) {}'
+correct        `if (pointervar != NULL) {}'
+correct        `if (pointervar == NULL) {}'
+
 16.1.5 Function Prototypes
 --------------------------
 
@@ -5394,9 +5399,10 @@ type and name, with the name matching that used in the actual function
 definition.
 
    All external functions should have a declaration in a header file
-that callers include, except for `_initialize_*' functions, which must
-be external so that `init.c' construction works, but shouldn't be
-visible to random source files.
+that callers include, that declaration should use the `extern' modifier.
+The only exception concerns `_initialize_*' functions, which must be
+external so that `init.c' construction works, but shouldn't be visible
+to random source files.
 
    Where a source file needs a forward declaration of a static function,
 that declaration must appear in a block near the top of the source file.

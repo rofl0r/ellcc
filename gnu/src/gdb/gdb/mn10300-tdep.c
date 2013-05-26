@@ -1,6 +1,6 @@
 /* Target-dependent code for the Matsushita MN10300 for GDB, the GNU debugger.
 
-   Copyright (C) 1996-2005, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1996-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -198,7 +198,7 @@ static void
 mn10300_extract_return_value (struct gdbarch *gdbarch, struct type *type,
 			      struct regcache *regcache, void *valbuf)
 {
-  char buf[MAX_REGISTER_SIZE];
+  gdb_byte buf[MAX_REGISTER_SIZE];
   int len = TYPE_LENGTH (type);
   int reg, regsz;
 

@@ -1,6 +1,6 @@
 /* Target-dependent code for Renesas Super-H, for GDB.
 
-   Copyright (C) 1993-2005, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1993-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1175,10 +1175,10 @@ sh64_push_dummy_call (struct gdbarch *gdbarch,
 		  int_argreg ++;
 		}
 	      else 
-		;
-		/* Store it as the integers, 8 bytes at the time, if
-		   necessary spilling on the stack.  */
-	      
+		{
+		  /* Store it as the integers, 8 bytes at the time, if
+		     necessary spilling on the stack.  */
+		}
 	    }
 	    else if (len == 8)
 	      {
@@ -1202,9 +1202,10 @@ sh64_push_dummy_call (struct gdbarch *gdbarch,
 		    int_argreg ++;
 		  }
 		else
-		  ;
-		  /* Store it as the integers, 8 bytes at the time, if
-                     necessary spilling on the stack.  */
+		  {
+		    /* Store it as the integers, 8 bytes at the time, if
+		       necessary spilling on the stack.  */
+		  }
 	      }
 	}
     }
@@ -1260,7 +1261,7 @@ sh64_extract_return_value (struct type *type, struct regcache *regcache,
       if (len <= 8)
 	{
 	  int offset;
-	  char buf[8];
+	  gdb_byte buf[8];
 	  /* Result is in register 2.  If smaller than 8 bytes, it is padded 
 	     at the most significant end.  */
 	  regcache_raw_read (regcache, DEFAULT_RETURN_REGNUM, buf);
@@ -1289,7 +1290,7 @@ sh64_store_return_value (struct type *type, struct regcache *regcache,
 			 const void *valbuf)
 {
   struct gdbarch *gdbarch = get_regcache_arch (regcache);
-  char buf[64];	/* more than enough...  */
+  gdb_byte buf[64];	/* more than enough...  */
   int len = TYPE_LENGTH (type);
 
   if (TYPE_CODE (type) == TYPE_CODE_FLT)
@@ -1930,7 +1931,7 @@ sh64_do_fp_register (struct gdbarch *gdbarch, struct ui_file *file,
     alloca (register_size (gdbarch, gdbarch_fp0_regnum (gdbarch)));
 
   /* Get the data in raw format.  */
-  if (!frame_register_read (frame, regnum, raw_buffer))
+  if (!deprecated_frame_register_read (frame, regnum, raw_buffer))
     error (_("can't read register %d (%s)"),
 	   regnum, gdbarch_register_name (gdbarch, regnum));
 
@@ -2046,7 +2047,7 @@ sh64_do_register (struct gdbarch *gdbarch, struct ui_file *file,
 				      (gdbarch, regnum)), file);
 
   /* Get the data in raw format.  */
-  if (!frame_register_read (frame, regnum, raw_buffer))
+  if (!deprecated_frame_register_read (frame, regnum, raw_buffer))
     fprintf_filtered (file, "*value not available*\n");
 
   get_formatted_print_options (&opts, 'x');

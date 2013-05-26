@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux on MIPS processors.
 
-   Copyright (C) 2001-2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -326,7 +326,7 @@ mips64_linux_regsets_store_registers (struct target_ops *ops,
   have_dsp = mips_regnum (gdbarch)->dspctl != -1;
   if (!have_dsp)
     is_dsp = 0;
-  if (regno >= mips_regnum (gdbarch)->dspacc
+  else if (regno >= mips_regnum (gdbarch)->dspacc
       && regno < mips_regnum (gdbarch)->dspacc + 6)
     is_dsp = 1;
   else if (regno == mips_regnum (gdbarch)->dspctl)
@@ -688,7 +688,7 @@ mips_show_dr (const char *func, CORE_ADDR addr,
   puts_unfiltered (func);
   if (addr || len)
     printf_unfiltered (" (addr=%s, len=%d, type=%s)",
-		       paddress (target_gdbarch, addr), len,
+		       paddress (target_gdbarch (), addr), len,
 		       type == hw_write ? "data-write"
 		       : (type == hw_read ? "data-read"
 			  : (type == hw_access ? "data-read/write"
@@ -698,9 +698,9 @@ mips_show_dr (const char *func, CORE_ADDR addr,
 
   for (i = 0; i < MAX_DEBUG_REGISTER; i++)
     printf_unfiltered ("\tDR%d: lo=%s, hi=%s\n", i,
-		       paddress (target_gdbarch,
+		       paddress (target_gdbarch (),
 				 get_watchlo (&watch_mirror, i)),
-		       paddress (target_gdbarch,
+		       paddress (target_gdbarch (),
 				 get_watchhi (&watch_mirror, i)));
 }
 

@@ -1,6 +1,6 @@
 /* Python interface to inferiors.
 
-   Copyright (C) 2009-2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -101,7 +101,7 @@ python_on_resume (ptid_t ptid)
 {
   struct cleanup *cleanup;
 
-  cleanup = ensure_python_env (target_gdbarch, current_language);
+  cleanup = ensure_python_env (target_gdbarch (), current_language);
 
   if (emit_continue_event (ptid) < 0)
     gdbpy_print_stack ();
@@ -115,7 +115,7 @@ python_inferior_exit (struct inferior *inf)
   struct cleanup *cleanup;
   const LONGEST *exit_code = NULL;
 
-  cleanup = ensure_python_env (target_gdbarch, current_language);
+  cleanup = ensure_python_env (target_gdbarch (), current_language);
 
   if (inf->has_exit_code)
     exit_code = &inf->exit_code;
@@ -300,8 +300,13 @@ infpy_threads (PyObject *self, PyObject *args)
   struct threadlist_entry *entry;
   inferior_object *inf_obj = (inferior_object *) self;
   PyObject *tuple;
+  volatile struct gdb_exception except;
 
   INFPY_REQUIRE_VALID (inf_obj);
+
+  TRY_CATCH (except, RETURN_MASK_ALL)
+    update_thread_list ();
+  GDB_PY_HANDLE_EXCEPTION (except);
 
   tuple = PyTuple_New (inf_obj->nthreads);
   if (!tuple)
@@ -449,9 +454,14 @@ infpy_read_memory (PyObject *self, PyObject *args, PyObject *kw)
   membuf_obj->addr = addr;
   membuf_obj->length = length;
 
+#ifdef IS_PY3K
+  result = PyMemoryView_FromObject ((PyObject *) membuf_obj);
+#else
   result = PyBuffer_FromReadWriteObject ((PyObject *) membuf_obj, 0,
 					 Py_END_OF_BUFFER);
+#endif
   Py_DECREF (membuf_obj);
+
   return result;
 }
 
@@ -471,12 +481,22 @@ infpy_write_memory (PyObject *self, PyObject *args, PyObject *kw)
   PyObject *addr_obj, *length_obj = NULL;
   volatile struct gdb_exception except;
   static char *keywords[] = { "address", "buffer", "length", NULL };
+#ifdef IS_PY3K
+  Py_buffer pybuf;
 
+  if (! PyArg_ParseTupleAndKeywords (args, kw, "Os*|O", keywords,
+				     &addr_obj, &pybuf,
+				     &length_obj))
+    return NULL;
 
+  buffer = pybuf.buf;
+  buf_len = pybuf.len;
+#else
   if (! PyArg_ParseTupleAndKeywords (args, kw, "Os#|O", keywords,
 				     &addr_obj, &buffer, &buf_len,
 				     &length_obj))
     return NULL;
+#endif
 
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
@@ -495,7 +515,11 @@ infpy_write_memory (PyObject *self, PyObject *args, PyObject *kw)
 	}
       write_memory_with_notification (addr, buffer, length);
     }
+#ifdef IS_PY3K
+  PyBuffer_Release (&pybuf);
+#endif
   GDB_PY_HANDLE_EXCEPTION (except);
+
 
   if (error)
     return NULL;
@@ -508,7 +532,7 @@ static void
 mbpy_dealloc (PyObject *self)
 {
   xfree (((membuf_object *) self)->buffer);
-  self->ob_type->tp_free (self);
+  Py_TYPE (self)->tp_free (self);
 }
 
 /* Return a description of the Membuf object.  */
@@ -522,6 +546,24 @@ which is %s bytes long."),
 			      paddress (python_gdbarch, membuf_obj->addr),
 			      pulongest (membuf_obj->length));
 }
+
+#ifdef IS_PY3K
+
+static int
+get_buffer (PyObject *self, Py_buffer *buf, int flags)
+{
+  membuf_object *membuf_obj = (membuf_object *) self;
+  int ret;
+  
+  ret = PyBuffer_FillInfo (buf, self, membuf_obj->buffer,
+			   membuf_obj->length, 0, 
+			   PyBUF_CONTIG);
+  buf->format = "c";
+
+  return ret;
+}
+
+#else
 
 static Py_ssize_t
 get_read_buffer (PyObject *self, Py_ssize_t segment, void **ptrptr)
@@ -567,6 +609,8 @@ get_char_buffer (PyObject *self, Py_ssize_t segment, char **ptrptr)
   return ret;
 }
 
+#endif	/* IS_PY3K */
+
 /* Implementation of
    gdb.search_memory (address, length, pattern).  ADDRESS is the
    address to start the search.  LENGTH specifies the scope of the
@@ -580,39 +624,29 @@ infpy_search_memory (PyObject *self, PyObject *args, PyObject *kw)
 {
   CORE_ADDR start_addr, length;
   static char *keywords[] = { "address", "length", "pattern", NULL };
-  PyObject *pattern, *start_addr_obj, *length_obj;
+  PyObject *start_addr_obj, *length_obj;
   volatile struct gdb_exception except;
   Py_ssize_t pattern_size;
   const void *buffer;
   CORE_ADDR found_addr;
   int found = 0;
+#ifdef IS_PY3K
+  Py_buffer pybuf;
 
-  if (! PyArg_ParseTupleAndKeywords (args, kw, "OOO", keywords,
+  if (! PyArg_ParseTupleAndKeywords (args, kw, "OOs*", keywords,
 				     &start_addr_obj, &length_obj,
+				     &pybuf))
+    return NULL;
+
+  buffer = pybuf.buf;
+  pattern_size = pybuf.len;
+#else
+  PyObject *pattern;
+  
+  if (! PyArg_ParseTupleAndKeywords (args, kw, "OOO", keywords,
+ 				     &start_addr_obj, &length_obj,
 				     &pattern))
-    return NULL;
-
-  if (get_addr_from_python (start_addr_obj, &start_addr)
-      && get_addr_from_python (length_obj, &length))
-    {
-      if (!length)
-	{
-	  PyErr_SetString (PyExc_ValueError,
-			   _("Search range is empty."));
-	  return NULL;
-	}
-      /* Watch for overflows.  */
-      else if (length > CORE_ADDR_MAX
-	       || (start_addr + length - 1) < start_addr)
-	{
-	  PyErr_SetString (PyExc_ValueError,
-			   _("The search range is too large."));
-
-	  return NULL;
-	}
-    }
-  else
-    return NULL;
+     return NULL;
 
   if (!PyObject_CheckReadBuffer (pattern))
     {
@@ -624,6 +658,36 @@ infpy_search_memory (PyObject *self, PyObject *args, PyObject *kw)
 
   if (PyObject_AsReadBuffer (pattern, &buffer, &pattern_size) == -1)
     return NULL;
+#endif
+
+  if (get_addr_from_python (start_addr_obj, &start_addr)
+      && get_addr_from_python (length_obj, &length))
+    {
+      if (!length)
+	{
+	  PyErr_SetString (PyExc_ValueError,
+			   _("Search range is empty."));
+
+#ifdef IS_PY3K
+	  PyBuffer_Release (&pybuf);
+#endif
+	  return NULL;
+	}
+      /* Watch for overflows.  */
+      else if (length > CORE_ADDR_MAX
+	       || (start_addr + length - 1) < start_addr)
+	{
+	  PyErr_SetString (PyExc_ValueError,
+			   _("The search range is too large."));
+
+#ifdef IS_PY3K
+	  PyBuffer_Release (&pybuf);
+#endif
+	  return NULL;
+	}
+    }
+  else
+    return NULL;
 
   TRY_CATCH (except, RETURN_MASK_ALL)
     {
@@ -632,6 +696,10 @@ infpy_search_memory (PyObject *self, PyObject *args, PyObject *kw)
 				    &found_addr);
     }
   GDB_PY_HANDLE_EXCEPTION (except);
+
+#ifdef IS_PY3K
+  PyBuffer_Release (&pybuf);
+#endif
 
   if (found)
     return PyLong_FromLong (found_addr);
@@ -720,7 +788,7 @@ gdbpy_initialize_inferior (void)
 		      (PyObject *) &inferior_object_type);
 
   infpy_inf_data_key =
-    register_inferior_data_with_cleanup (py_free_inferior);
+    register_inferior_data_with_cleanup (NULL, py_free_inferior);
 
   observer_attach_new_thread (add_thread_object);
   observer_attach_thread_exit (delete_thread_object);
@@ -772,8 +840,7 @@ Return a long with the address of a match, or None." },
 
 static PyTypeObject inferior_object_type =
 {
-  PyObject_HEAD_INIT (NULL)
-  0,				  /* ob_size */
+  PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Inferior",		  /* tp_name */
   sizeof (inferior_object),	  /* tp_basicsize */
   0,				  /* tp_itemsize */
@@ -812,6 +879,15 @@ static PyTypeObject inferior_object_type =
   0				  /* tp_alloc */
 };
 
+#ifdef IS_PY3K
+
+static PyBufferProcs buffer_procs =
+{
+  get_buffer
+};
+
+#else
+
 /* Python doesn't provide a decent way to get compatibility here.  */
 #if HAVE_LIBPYTHON2_4
 #define CHARBUFFERPROC_NAME getcharbufferproc
@@ -827,10 +903,10 @@ static PyBufferProcs buffer_procs = {
      Python 2.5.  */
   (CHARBUFFERPROC_NAME) get_char_buffer
 };
+#endif	/* IS_PY3K */
 
 static PyTypeObject membuf_object_type = {
-  PyObject_HEAD_INIT (NULL)
-  0,				  /*ob_size*/
+  PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Membuf",			  /*tp_name*/
   sizeof (membuf_object),	  /*tp_basicsize*/
   0,				  /*tp_itemsize*/

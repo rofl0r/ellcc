@@ -1,6 +1,241 @@
 		What has changed in GDB?
 	     (Organized release by release)
 
+*** Changes in GDB 7.6
+
+* Target record has been renamed to record-full.
+  Record/replay is now enabled with the "record full" command.
+  This also affects settings that are associated with full record/replay
+  that have been moved from "set/show record" to "set/show record full":
+
+set|show record full insn-number-max
+set|show record full stop-at-limit
+set|show record full memory-query
+
+* A new record target "record-btrace" has been added.  The new target
+  uses hardware support to record the control-flow of a process.  It
+  does not support replaying the execution, but it implements the
+  below new commands for investigating the recorded execution log.
+  This new recording method can be enabled using:
+
+record btrace
+
+  The "record-btrace" target is only available on Intel Atom processors
+  and requires a Linux kernel 2.6.32 or later.
+
+* Two new commands have been added for record/replay to give information
+  about the recorded execution without having to replay the execution.
+  The commands are only supported by "record btrace".
+
+record instruction-history      prints the execution history at
+                                instruction granularity
+
+record function-call-history    prints the execution history at
+                                function granularity
+
+* New native configurations
+
+ARM AArch64 GNU/Linux		aarch64*-*-linux-gnu
+FreeBSD/powerpc			powerpc*-*-freebsd
+x86_64/Cygwin			x86_64-*-cygwin*
+Tilera TILE-Gx GNU/Linux	tilegx*-*-linux-gnu
+
+* New targets
+
+ARM AArch64			aarch64*-*-elf
+ARM AArch64 GNU/Linux		aarch64*-*-linux
+Lynx 178 PowerPC		powerpc-*-lynx*178
+x86_64/Cygwin			x86_64-*-cygwin*
+Tilera TILE-Gx GNU/Linux	tilegx*-*-linux
+
+* If the configured location of system.gdbinit file (as given by the
+  --with-system-gdbinit option at configure time) is in the
+  data-directory (as specified by --with-gdb-datadir at configure
+  time) or in one of its subdirectories, then GDB will look for the
+  system-wide init file in the directory specified by the
+  --data-directory command-line option.
+
+* New command line options:
+
+-nh   Disables auto-loading of ~/.gdbinit, but still executes all the
+      other initialization files, unlike -nx which disables all of them.
+
+* Removed command line options
+
+-epoch  This was used by the gdb mode in Epoch, an ancient fork of
+        Emacs.
+
+* The 'ptype' and 'whatis' commands now accept an argument to control
+  type formatting.
+
+* 'info proc' now works on some core files.
+
+* Python scripting
+
+  ** Vectors can be created with gdb.Type.vector.
+
+  ** Python's atexit.register now works in GDB.
+
+  ** Types can be pretty-printed via a Python API.
+
+  ** Python 3 is now supported (in addition to Python 2.4 or later)
+
+  ** New class gdb.Architecture exposes GDB's internal representation
+     of architecture in the Python API.
+
+  ** New method Frame.architecture returns the gdb.Architecture object
+     corresponding to the frame's architecture.
+
+* New Python-based convenience functions:
+
+  ** $_memeq(buf1, buf2, length)
+  ** $_streq(str1, str2)
+  ** $_strlen(str)
+  ** $_regex(str, regex)
+
+* The 'cd' command now defaults to using '~' (the home directory) if not
+  given an argument.
+
+* The C++ ABI now defaults to the GNU v3 ABI.  This has been the
+  default for GCC since November 2000.
+
+* The command 'forward-search' can now be abbreviated as 'fo'.
+
+* The command 'info tracepoints' can now display 'installed on target'
+  or 'not installed on target' for each non-pending location of tracepoint.
+
+* New configure options
+
+--enable-libmcheck/--disable-libmcheck
+  By default, development versions are built with -lmcheck on hosts
+  that support it, in order to help track memory corruption issues.
+  Release versions, on the other hand, are built without -lmcheck
+  by default.  The --enable-libmcheck/--disable-libmcheck configure
+  options allow the user to override that default.
+
+* New commands (for set/show, see "New options" below)
+
+catch signal 
+  Catch signals.  This is similar to "handle", but allows commands and
+  conditions to be attached.
+
+maint info bfds
+  List the BFDs known to GDB.
+
+python-interactive [command]
+pi [command]
+  Start a Python interactive prompt, or evaluate the optional command
+  and print the result of expressions.
+
+py [command]
+  "py" is a new alias for "python".
+
+enable type-printer [name]...
+disable type-printer [name]...
+  Enable or disable type printers.
+
+* Removed commands
+
+  ** For the Renesas Super-H architecture, the "regs" command has been removed
+     (has been deprecated in GDB 7.5), and "info all-registers" should be used
+     instead.
+
+* New options
+
+set print type methods (on|off)
+show print type methods
+  Control whether method declarations are displayed by "ptype".
+  The default is to show them.
+
+set print type typedefs (on|off)
+show print type typedefs
+  Control whether typedef definitions are displayed by "ptype".
+  The default is to show them.
+
+set filename-display basename|relative|absolute
+show filename-display
+  Control the way in which filenames is displayed.
+  The default is "relative", which preserves previous behavior.
+
+set trace-buffer-size
+show trace-buffer-size
+  Request target to change the size of trace buffer.
+
+set remote trace-buffer-size-packet auto|on|off
+show remote trace-buffer-size-packet
+  Control the use of the remote protocol `QTBuffer:size' packet.
+
+set debug aarch64
+show debug aarch64
+  Control display of debugging messages related to ARM AArch64.
+  The default is off.
+
+set debug coff-pe-read
+show debug coff-pe-read
+  Control display of debugging messages related to reading of COFF/PE
+  exported symbols.
+
+set debug mach-o
+show debug mach-o
+  Control display of debugging messages related to Mach-O symbols
+  processing.
+
+set debug notification
+show debug notification
+  Control display of debugging info for async remote notification.
+
+* MI changes
+
+  ** Command parameter changes are now notified using new async record
+     "=cmd-param-changed".
+  ** Trace frame changes caused by command "tfind" are now notified using
+     new async record "=traceframe-changed".
+  ** The creation, deletion and modification of trace state variables
+     are now notified using new async records "=tsv-created",
+     "=tsv-deleted" and "=tsv-modified".
+  ** The start and stop of process record are now notified using new
+     async record "=record-started" and "=record-stopped".
+  ** Memory changes are now notified using new async record
+     "=memory-changed".
+  ** The data-disassemble command response will include a "fullname" field
+     containing the absolute file name when source has been requested.
+  ** New optional parameter COUNT added to the "-data-write-memory-bytes" 
+     command, to allow pattern filling of memory areas.
+  ** New commands "-catch-load"/"-catch-unload" added for intercepting
+     library load/unload events.
+  ** The response to breakpoint commands and breakpoint async records
+     includes an "installed" field containing a boolean state about each
+     non-pending tracepoint location is whether installed on target or not.
+  ** Output of the "-trace-status" command includes a "trace-file" field 
+     containing the name of the trace file being examined.  This field is
+     optional, and only present when examining a trace file.
+  ** The "fullname" field is now always present along with the "file" field,
+     even if the file cannot be found by GDB.
+
+* GDB now supports the "mini debuginfo" section, .gnu_debugdata.
+  You must have the LZMA library available when configuring GDB for this
+  feature to be enabled.  For more information, see:
+      http://fedoraproject.org/wiki/Features/MiniDebugInfo
+
+* New remote packets
+
+QTBuffer:size
+   Set the size of trace buffer.  The remote stub reports support for this
+   packet to gdb's qSupported query.
+
+Qbtrace:bts
+  Enable Branch Trace Store (BTS)-based branch tracing for the current
+  thread.  The remote stub reports support for this packet to gdb's
+  qSupported query.
+
+Qbtrace:off
+  Disable branch tracing for the current thread.  The remote stub reports
+  support for this packet to gdb's qSupported query.
+
+qXfer:btrace:read
+  Read the traced branches for the current thread.  The remote stub
+  reports support for this packet to gdb's qSupported query.
+
 *** Changes in GDB 7.5
 
 * GDB now supports x32 ABI.  Visit <http://sites.google.com/site/x32abi/>

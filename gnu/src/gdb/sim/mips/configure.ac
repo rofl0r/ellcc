@@ -22,6 +22,7 @@ case "${target}" in
   mips64vr*-*-*)	SIM_SUBTARGET="-DTARGET_ENABLE_FR=1" ;;
   mips*tx39*)           SIM_SUBTARGET="-DSUBTARGET_R3900=1";;
   mips*-sde-elf*)       SIM_SUBTARGET="-DTARGET_ENABLE_FR=1";;
+  mips*-mti-elf*)       SIM_SUBTARGET="-DTARGET_ENABLE_FR=1";;
   mipsisa32*-*-*)       SIM_SUBTARGET="-DTARGET_ENABLE_FR=1";;
   mipsisa64*-*-*)       SIM_SUBTARGET="-DTARGET_ENABLE_FR=1";;
   *)                    SIM_SUBTARGET="";;
@@ -55,6 +56,7 @@ SIM_AC_OPTION_ENDIAN($mips_endian,$default_endian)
 mips_addr_bitsize=
 case "${target}" in
   mips*-sde-elf*)       mips_bitsize=64 ; mips_msb=63 ;;
+  mips*-mti-elf*)       mips_bitsize=64 ; mips_msb=63 ;;
   mips64*-*-*)          mips_bitsize=64 ; mips_msb=63 ;;
   mips16*-*-*)          mips_bitsize=64 ; mips_msb=63 ;;
   mipsisa32*-*-*)       mips_bitsize=32 ; mips_msb=31 ;;
@@ -74,6 +76,7 @@ mips_fpu_bitsize=
 case "${target}" in
   mips*tx39*)		mips_fpu=HARD_FLOATING_POINT ; mips_fpu_bitsize=32 ;;
   mips*-sde-elf*)       mips_fpu=HARD_FLOATING_POINT ; mips_fpu_bitsize=64 ;;
+  mips*-mti-elf*)       mips_fpu=HARD_FLOATING_POINT ; mips_fpu_bitsize=64 ;;
   mips64*-*-*)          mips_fpu=HARD_FLOATING_POINT ;;
   mips16*-*-*)          mips_fpu=HARD_FLOATING_POINT ;;
   mipsisa32*-*-*)       mips_fpu=HARD_FLOATING_POINT ; mips_fpu_bitsize=64 ;;
@@ -135,7 +138,8 @@ case "${target}" in
 			  vr5500:mipsIV,vr5500:32,64,f:mips5500"
 			sim_multi_default=mips5000
 			;;
-  mips*-sde-elf*)	sim_gen=M16
+  mips*-sde-elf* | mips*-mti-elf*)
+			sim_gen=M16
 			sim_igen_machine="-M mips64r2,mips3d,mips16,mips16e,mdmx,dsp,dsp2,smartmips"
 			sim_m16_machine="-M mips16,mips16e,mips64r2"
 			sim_igen_filter="32,64,f"
@@ -230,7 +234,7 @@ if test ${sim_gen} = MULTI; then
 
   cat << __EOF__ > multi-run.c
 /* Main entry point for MULTI simulators.
-   Copyright (C) 2003, 2007, 2010, 2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -409,15 +413,23 @@ case "${target}" in
   mips*tx39*)
 	hw_enabled=yes
 	hw_extra_devices="tx3904cpu tx3904irc tx3904tmr tx3904sio" 
-	mips_extra_objs="dv-sockser.o"
 	SIM_SUBTARGET="$SIM_SUBTARGET -DTARGET_TX3904=1"
 	;;
   *)
-	mips_extra_objs="" 
 	;;
 esac
 SIM_AC_OPTION_HARDWARE($hw_enabled,$hw_devices,$hw_extra_devices)
+mips_extra_objs="$SIM_DV_SOCKSER_O"
 AC_SUBST(mips_extra_objs)
+
+if test "$sim_hw_p" = yes -a -z "$SIM_DV_SOCKSER_O"; then
+	case " $sim_hw " in
+	*" tx3904sio "*)
+		AC_MSG_ERROR([Sorry, but tx3904sio hardware support is
+unavailable for your target.  Please use --disable-sim-hardware, or pass a
+list of devices to enable that does not include that.])
+	esac
+fi
 
 
 # Choose simulator engine

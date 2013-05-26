@@ -1,6 +1,6 @@
 /* This testcase is part of GDB, the GNU debugger.
 
-   Copyright 2009-2012 Free Software Foundation, Inc.
+   Copyright 2009-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -49,6 +49,9 @@ Temargs<D, 23, &C::c> temvar;
 enum E
 { v1, v2, v3
 };
+
+struct s vec_data_1 = {1, 1};
+struct s vec_data_2 = {1, 2};
 
 int
 main ()

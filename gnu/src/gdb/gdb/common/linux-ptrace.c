@@ -1,5 +1,5 @@
 /* Linux-specific ptrace manipulation routines.
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include "linux-procfs.h"
 #include "buffer.h"
 #include "gdb_assert.h"
+#include "gdb_wait.h"
 
 /* Find all possible reasons we could fail to attach PID and append these
    newline terminated reason strings to initialized BUFFER.  '\0' termination
@@ -57,7 +58,6 @@ extern void (linux_ptrace_test_ret_to_nx_instr) (void);
 #include <sys/reg.h>
 #include <sys/mman.h>
 #include <signal.h>
-#include <sys/wait.h>
 #include <stdint.h>
 
 #endif /* defined __i386__ || defined __x86_64__ */
@@ -74,7 +74,7 @@ linux_ptrace_test_ret_to_nx (void)
   pid_t child, got_pid;
   gdb_byte *return_address, *pc;
   long l;
-  int status;
+  int status, kill_status;
 
   return_address = mmap (NULL, 2, PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -114,7 +114,8 @@ linux_ptrace_test_ret_to_nx (void)
 			".globl linux_ptrace_test_ret_to_nx_instr;"
 			"linux_ptrace_test_ret_to_nx_instr:"
 			"ret"
-			: : "r" (return_address) : "%rsp", "memory");
+			: : "r" ((uint64_t) (uintptr_t) return_address)
+			: "%rsp", "memory");
 #else
 # error "!__i386__ && !__x86_64__"
 #endif
@@ -176,32 +177,24 @@ linux_ptrace_test_ret_to_nx (void)
     }
   pc = (void *) (uintptr_t) l;
 
-  if (ptrace (PTRACE_KILL, child, NULL, NULL) != 0)
+  kill (child, SIGKILL);
+  ptrace (PTRACE_KILL, child, NULL, NULL);
+
+  errno = 0;
+  got_pid = waitpid (child, &kill_status, 0);
+  if (got_pid != child)
     {
-      warning (_("linux_ptrace_test_ret_to_nx: Cannot PTRACE_KILL: %s"),
-	       strerror (errno));
+      warning (_("linux_ptrace_test_ret_to_nx: "
+		 "PTRACE_KILL waitpid returned %ld: %s"),
+	       (long) got_pid, strerror (errno));
       return;
     }
-  else
+  if (!WIFSIGNALED (kill_status))
     {
-      int kill_status;
-
-      errno = 0;
-      got_pid = waitpid (child, &kill_status, 0);
-      if (got_pid != child)
-	{
-	  warning (_("linux_ptrace_test_ret_to_nx: "
-		     "PTRACE_KILL waitpid returned %ld: %s"),
-		   (long) got_pid, strerror (errno));
-	  return;
-	}
-      if (!WIFSIGNALED (kill_status))
-	{
-	  warning (_("linux_ptrace_test_ret_to_nx: "
-		     "PTRACE_KILL status %d is not WIFSIGNALED!"),
-		   status);
-	  return;
-	}
+      warning (_("linux_ptrace_test_ret_to_nx: "
+		 "PTRACE_KILL status %d is not WIFSIGNALED!"),
+	       status);
+      return;
     }
 
   /* + 1 is there as x86* stops after the 'int3' instruction.  */
@@ -223,8 +216,9 @@ linux_ptrace_test_ret_to_nx (void)
 	       "address %p nor is the return instruction %p!"),
 	     pc, return_address, &linux_ptrace_test_ret_to_nx_instr);
   else
-    warning (_("Cannot call inferior functions, you have broken "
-	       "Linux kernel i386 NX (non-executable pages) support!"));
+    warning (_("Cannot call inferior functions on this system - "
+	       "Linux kernel with broken i386 NX (non-executable pages) "
+	       "support detected!"));
 #endif /* defined __i386__ || defined __x86_64__ */
 }
 

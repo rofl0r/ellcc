@@ -1,6 +1,6 @@
 /* GDB routines for supporting auto-loaded scripts.
 
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -178,7 +178,6 @@ auto_load_expand_dir_vars (const char *string)
 static void
 auto_load_safe_path_vec_update (void)
 {
-  VEC (char_ptr) *dir_vec = NULL;
   unsigned len;
   int ix;
 
@@ -978,11 +977,9 @@ auto_load_info_scripts (char *pattern, int from_tty,
     {
       struct collect_matching_scripts_data data = { &scripts, language };
 
-      immediate_quit++;
       /* Pass a pointer to scripts as VEC_safe_push can realloc space.  */
       htab_traverse_noresize (pspace_info->loaded_scripts,
 			      collect_matching_scripts, &data);
-      immediate_quit--;
     }
 
   nr_scripts = VEC_length (loaded_script_ptr, scripts);
@@ -1086,7 +1083,7 @@ set_auto_load_cmd (char *args, int from_tty)
     if (list->var_type == var_boolean)
       {
 	gdb_assert (list->type == set_cmd);
-	do_setshow_command (args, from_tty, list);
+	do_set_command (args, from_tty, list);
       }
 }
 
@@ -1195,7 +1192,8 @@ _initialize_auto_load (void)
   char *scripts_directory_help;
 
   auto_load_pspace_data
-    = register_program_space_data_with_cleanup (auto_load_pspace_data_cleanup);
+    = register_program_space_data_with_cleanup (NULL,
+						auto_load_pspace_data_cleanup);
 
   observer_attach_new_objfile (auto_load_new_objfile);
 

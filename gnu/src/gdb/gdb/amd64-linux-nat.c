@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86-64.
 
-   Copyright (C) 2001-2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -25,6 +25,8 @@
 #include "regset.h"
 #include "linux-nat.h"
 #include "amd64-linux-tdep.h"
+#include "linux-btrace.h"
+#include "btrace.h"
 
 #include "gdb_assert.h"
 #include "gdb_string.h"
@@ -337,8 +339,8 @@ amd64_linux_dr_get_status (void)
   return amd64_linux_dr_get (inferior_ptid, DR_STATUS);
 }
 
-/* Callback for linux_nat_iterate_watchpoint_lwps.  Update the debug registers
-   of LWP.  */
+/* Callback for iterate_over_lwps.  Update the debug registers of
+   LWP.  */
 
 static int
 update_debug_registers_callback (struct lwp_info *lwp, void *arg)
@@ -364,7 +366,9 @@ update_debug_registers_callback (struct lwp_info *lwp, void *arg)
 static void
 amd64_linux_dr_set_control (unsigned long control)
 {
-  linux_nat_iterate_watchpoint_lwps (update_debug_registers_callback, NULL);
+  ptid_t pid_ptid = pid_to_ptid (ptid_get_pid (inferior_ptid));
+
+  iterate_over_lwps (pid_ptid, update_debug_registers_callback, NULL);
 }
 
 /* Set address REGNUM (zero based) to ADDR in all LWPs of the current
@@ -373,9 +377,11 @@ amd64_linux_dr_set_control (unsigned long control)
 static void
 amd64_linux_dr_set_addr (int regnum, CORE_ADDR addr)
 {
+  ptid_t pid_ptid = pid_to_ptid (ptid_get_pid (inferior_ptid));
+
   gdb_assert (regnum >= 0 && regnum <= DR_LASTADDR - DR_FIRSTADDR);
 
-  linux_nat_iterate_watchpoint_lwps (update_debug_registers_callback, NULL);
+  iterate_over_lwps (pid_ptid, update_debug_registers_callback, NULL);
 }
 
 /* Called when resuming a thread.
@@ -394,7 +400,8 @@ amd64_linux_prepare_to_resume (struct lwp_info *lwp)
 
   if (lwp->arch_private->debug_registers_changed)
     {
-      struct i386_debug_reg_state *state = i386_debug_reg_state ();
+      struct i386_debug_reg_state *state
+	= i386_debug_reg_state (ptid_get_pid (lwp->ptid));
       int i;
 
       /* On Linux kernel before 2.6.33 commit
@@ -434,6 +441,41 @@ amd64_linux_new_thread (struct lwp_info *lp)
 
   lp->arch_private = info;
 }
+
+/* linux_nat_new_fork hook.   */
+
+static void
+amd64_linux_new_fork (struct lwp_info *parent, pid_t child_pid)
+{
+  pid_t parent_pid;
+  struct i386_debug_reg_state *parent_state;
+  struct i386_debug_reg_state *child_state;
+
+  /* NULL means no watchpoint has ever been set in the parent.  In
+     that case, there's nothing to do.  */
+  if (parent->arch_private == NULL)
+    return;
+
+  /* Linux kernel before 2.6.33 commit
+     72f674d203cd230426437cdcf7dd6f681dad8b0d
+     will inherit hardware debug registers from parent
+     on fork/vfork/clone.  Newer Linux kernels create such tasks with
+     zeroed debug registers.
+
+     GDB core assumes the child inherits the watchpoints/hw
+     breakpoints of the parent, and will remove them all from the
+     forked off process.  Copy the debug registers mirrors into the
+     new process so that all breakpoints and watchpoints can be
+     removed together.  The debug registers mirror will become zeroed
+     in the end before detaching the forked off process, thus making
+     this compatible with older Linux kernels too.  */
+
+  parent_pid = ptid_get_pid (parent->ptid);
+  parent_state = i386_debug_reg_state (parent_pid);
+  child_state = i386_debug_reg_state (child_pid);
+  *child_state = *parent_state;
+}
+
 
 
 /* This function is called by libthread_db as part of its handling of
@@ -443,7 +485,7 @@ ps_err_e
 ps_get_thread_area (const struct ps_prochandle *ph,
                     lwpid_t lwpid, int idx, void **base)
 {
-  if (gdbarch_bfd_arch_info (target_gdbarch)->bits_per_word == 32)
+  if (gdbarch_bfd_arch_info (target_gdbarch ())->bits_per_word == 32)
     {
       /* The full structure is found in <asm-i386/ldt.h>.  The second
 	 integer is the LDT's base_address and that is used to locate
@@ -1079,6 +1121,48 @@ amd64_linux_read_description (struct target_ops *ops)
     }
 }
 
+/* Enable branch tracing.  */
+
+static struct btrace_target_info *
+amd64_linux_enable_btrace (ptid_t ptid)
+{
+  struct btrace_target_info *tinfo;
+  struct gdbarch *gdbarch;
+
+  errno = 0;
+  tinfo = linux_enable_btrace (ptid);
+
+  if (tinfo == NULL)
+    error (_("Could not enable branch tracing for %s: %s."),
+	   target_pid_to_str (ptid), safe_strerror (errno));
+
+  /* Fill in the size of a pointer in bits.  */
+  gdbarch = target_thread_architecture (ptid);
+  tinfo->ptr_bits = gdbarch_ptr_bit (gdbarch);
+
+  return tinfo;
+}
+
+/* Disable branch tracing.  */
+
+static void
+amd64_linux_disable_btrace (struct btrace_target_info *tinfo)
+{
+  int errcode = linux_disable_btrace (tinfo);
+
+  if (errcode != 0)
+    error (_("Could not disable branch tracing: %s."), safe_strerror (errcode));
+}
+
+/* Teardown branch tracing.  */
+
+static void
+amd64_linux_teardown_btrace (struct btrace_target_info *tinfo)
+{
+  /* Ignore errors.  */
+  linux_disable_btrace (tinfo);
+}
+
 /* Provide a prototype to silence -Wmissing-prototypes.  */
 void _initialize_amd64_linux_nat (void);
 
@@ -1117,9 +1201,18 @@ _initialize_amd64_linux_nat (void)
 
   t->to_read_description = amd64_linux_read_description;
 
+  /* Add btrace methods.  */
+  t->to_supports_btrace = linux_supports_btrace;
+  t->to_enable_btrace = amd64_linux_enable_btrace;
+  t->to_disable_btrace = amd64_linux_disable_btrace;
+  t->to_teardown_btrace = amd64_linux_teardown_btrace;
+  t->to_read_btrace = linux_read_btrace;
+
   /* Register the target.  */
   linux_nat_add_target (t);
   linux_nat_set_new_thread (t, amd64_linux_new_thread);
+  linux_nat_set_new_fork (t, amd64_linux_new_fork);
+  linux_nat_set_forget_process (t, i386_forget_process);
   linux_nat_set_siginfo_fixup (t, amd64_linux_siginfo_fixup);
   linux_nat_set_prepare_to_resume (t, amd64_linux_prepare_to_resume);
 }

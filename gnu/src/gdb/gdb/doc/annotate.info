@@ -1,4 +1,4 @@
-This is annotate.info, produced by makeinfo version 4.8 from
+This is annotate.info, produced by makeinfo version 4.13 from
 ./annotate.texinfo.
 
 INFO-DIR-SECTION Software development
@@ -6,8 +6,7 @@ START-INFO-DIR-ENTRY
 * Annotate: (annotate).                 The obsolete annotation interface.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1994-1995, 2000-2001, 2003-2005, 2007-2012 Free
-Software Foundation, Inc.
+   Copyright (C) 1994-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -18,8 +17,7 @@ Free Documentation License".
 
    This file documents GDB's obsolete annotations.
 
-   Copyright (C) 1994-1995, 2000-2001, 2003-2005, 2007-2012 Free
-Software Foundation, Inc.
+   Copyright (C) 1994-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -1172,21 +1170,21 @@ permit their use in free software.
 
 
 Tag Table:
-Node: Top1238
-Node: Annotations Overview2408
-Node: Limitations4207
-Node: Migrating to GDB/MI6792
-Node: Server Prefix7175
-Node: Value Annotations7821
-Node: Frame Annotations10991
-Node: Displays14890
-Node: Prompting15921
-Node: Errors17424
-Node: Breakpoint Info18314
-Node: Invalidation19539
-Node: Annotations for Running20018
-Node: Source Annotations21531
-Node: Multi-threaded Apps22477
-Node: GNU Free Documentation License23086
+Node: Top1173
+Node: Annotations Overview2343
+Node: Limitations4142
+Node: Migrating to GDB/MI6727
+Node: Server Prefix7110
+Node: Value Annotations7756
+Node: Frame Annotations10926
+Node: Displays14825
+Node: Prompting15856
+Node: Errors17359
+Node: Breakpoint Info18249
+Node: Invalidation19474
+Node: Annotations for Running19953
+Node: Source Annotations21466
+Node: Multi-threaded Apps22412
+Node: GNU Free Documentation License23021
 
 End Tag Table

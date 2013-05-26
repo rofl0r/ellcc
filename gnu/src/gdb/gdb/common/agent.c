@@ -1,6 +1,6 @@
 /* Shared utility routines for GDB to interact with agent.
 
-   Copyright (C) 2009-2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -125,7 +125,7 @@ agent_get_helper_thread_id (void)
 				(unsigned char *) &helper_thread_id,
 				sizeof helper_thread_id))
 #else
-      enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+      enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
       gdb_byte buf[4];
 
       if (target_read_memory (ipa_sym_addrs.addr_helper_thread_id,
@@ -332,7 +332,7 @@ agent_capability_check (enum agent_capa agent_capa)
 				(unsigned char *) &agent_capability,
 				sizeof agent_capability))
 #else
-      enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+      enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
       gdb_byte buf[4];
 
       if (target_read_memory (ipa_sym_addrs.addr_capability,

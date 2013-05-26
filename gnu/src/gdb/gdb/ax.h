@@ -1,5 +1,5 @@
 /* Definitions for expressions designed to be executed on the agent
-   Copyright (C) 1998-2000, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -221,7 +221,7 @@ extern void ax_reg_mask (struct agent_expr *ax, int reg);
 extern void ax_tsv (struct agent_expr *expr, enum agent_op op, int num);
 
 /* Append a string to the bytecode stream.  */
-extern void ax_string (struct agent_expr *x, char *str, int slen);
+extern void ax_string (struct agent_expr *x, const char *str, int slen);
 
 
 /* Functions for printing out expressions, and otherwise debugging

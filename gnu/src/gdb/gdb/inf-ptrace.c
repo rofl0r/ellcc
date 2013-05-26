@@ -1,7 +1,6 @@
 /* Low-level child interface to ptrace.
 
-   Copyright (C) 1988-1996, 1998-2002, 2004-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -649,11 +648,11 @@ static int
 inf_ptrace_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
 		       gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
-  struct type *int_type = builtin_type (target_gdbarch)->builtin_int;
-  struct type *ptr_type = builtin_type (target_gdbarch)->builtin_data_ptr;
+  struct type *int_type = builtin_type (target_gdbarch ())->builtin_int;
+  struct type *ptr_type = builtin_type (target_gdbarch ())->builtin_data_ptr;
   const int sizeof_auxv_type = TYPE_LENGTH (int_type);
   const int sizeof_auxv_val = TYPE_LENGTH (ptr_type);
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   gdb_byte *ptr = *readptr;
 
   if (endptr == ptr)

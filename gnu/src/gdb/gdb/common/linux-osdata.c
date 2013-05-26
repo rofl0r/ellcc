@@ -1,6 +1,6 @@
 /* Linux-specific functions to retrieve OS data.
    
-   Copyright (C) 2009-2012 Free Software Foundation, Inc.
+   Copyright (C) 2009-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,8 +26,7 @@
 #include "linux-osdata.h"
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <dirent.h>
+#include <sys/sysinfo.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +43,7 @@
 #include "buffer.h"
 #include "gdb_assert.h"
 #include "gdb_dirent.h"
+#include "gdb_stat.h"
 
 /* Define PID_T to be a fixed size that is at least as large as pid_t,
    so that reading pid values embedded in /proc works
@@ -254,30 +254,8 @@ get_process_owner (uid_t *owner, PID_T pid)
     return -1;
 }
 
-/* Returns the number of CPU cores found on the system.  */
-
-static int
-get_number_of_cpu_cores (void)
-{
-  int cores = 0;
-  FILE *f = fopen ("/proc/cpuinfo", "r");
-
-  while (!feof (f))
-    {
-      char buf[512];
-      char *p = fgets (buf, sizeof (buf), f);
-
-      if (p && strncmp (buf, "processor", 9) == 0)
-	++cores;
-    }
-
-  fclose (f);
-
-  return cores;
-}
-
 /* Find the CPU cores used by process PID and return them in CORES.
-   CORES points to an array of at least get_number_of_cpu_cores ()
+   CORES points to an array of at least sysconf(_SC_NPROCESSOR_ONLN)
    elements.  */
 
 static int
@@ -341,7 +319,7 @@ linux_xfer_osdata_processes (gdb_byte *readbuf,
       dirp = opendir ("/proc");
       if (dirp)
 	{
-	  const int num_cores = get_number_of_cpu_cores ();
+	  const int num_cores = sysconf (_SC_NPROCESSORS_ONLN);
 	  struct dirent *dp;
 
 	  while ((dp = readdir (dirp)) != NULL)
@@ -759,7 +737,7 @@ linux_xfer_osdata_fds (gdb_byte *readbuf,
 			    continue;
 
 			  fdname = xstrprintf ("%s/%s", pathname, dp2->d_name);
-			  rslt = readlink (fdname, buf, 1000);
+			  rslt = readlink (fdname, buf, sizeof (buf) - 1);
 			  if (rslt >= 0)
 			    buf[rslt] = '\0';
 

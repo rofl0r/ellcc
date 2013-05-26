@@ -1,7 +1,6 @@
 /* Core dump and executable file functions above target vector, for GDB.
 
-   Copyright (C) 1986-1987, 1989, 1991-1994, 1996-2001, 2003, 2006-2012
-   Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,6 +34,7 @@
 #include "completer.h"
 #include "exceptions.h"
 #include "observer.h"
+#include "cli/cli-utils.h"
 
 /* Local function declarations.  */
 
@@ -203,11 +203,11 @@ memory_error (int status, CORE_ADDR memaddr)
        bounds.  */
     throw_error (MEMORY_ERROR,
 		 _("Cannot access memory at address %s"),
-		 paddress (target_gdbarch, memaddr));
+		 paddress (target_gdbarch (), memaddr));
   else
     throw_error (MEMORY_ERROR,
 		 _("Error accessing memory address %s: %s."),
-		 paddress (target_gdbarch, memaddr),
+		 paddress (target_gdbarch (), memaddr),
 		 safe_strerror (status));
 }
 
@@ -331,7 +331,7 @@ read_memory_string (CORE_ADDR memaddr, char *buffer, int max_len)
       cnt = max_len - (cp - buffer);
       if (cnt > 8)
 	cnt = 8;
-      read_memory (memaddr + (int) (cp - buffer), cp, cnt);
+      read_memory (memaddr + (int) (cp - buffer), (gdb_byte *) cp, cnt);
       for (i = 0; i < cnt && *cp; i++, cp++)
 	;			/* null body */
 
@@ -369,7 +369,7 @@ write_memory_with_notification (CORE_ADDR memaddr, const bfd_byte *myaddr,
 				ssize_t len)
 {
   write_memory (memaddr, myaddr, len);
-  observer_notify_memory_changed (memaddr, len, myaddr);
+  observer_notify_memory_changed (current_inferior (), memaddr, len, myaddr);
 }
 
 /* Store VALUE at ADDR in the inferior as a LEN-byte unsigned
@@ -420,10 +420,38 @@ static void
 set_gnutarget_command (char *ignore, int from_tty,
 		       struct cmd_list_element *c)
 {
+  char *gend = gnutarget_string + strlen (gnutarget_string);
+
+  gend = remove_trailing_whitespace (gnutarget_string, gend);
+  *gend = '\0';
+
   if (strcmp (gnutarget_string, "auto") == 0)
     gnutarget = NULL;
   else
     gnutarget = gnutarget_string;
+}
+
+/* A completion function for "set gnutarget".  */
+
+static VEC (char_ptr) *
+complete_set_gnutarget (struct cmd_list_element *cmd, char *text, char *word)
+{
+  static const char **bfd_targets;
+
+  if (bfd_targets == NULL)
+    {
+      int last;
+
+      bfd_targets = bfd_target_list ();
+      for (last = 0; bfd_targets[last] != NULL; ++last)
+	;
+
+      bfd_targets = xrealloc (bfd_targets, (last + 2) * sizeof (const char **));
+      bfd_targets[last] = "auto";
+      bfd_targets[last + 1] = NULL;
+    }
+
+  return complete_on_enum (bfd_targets, text, word);
 }
 
 /* Set the gnutarget.  */
@@ -448,14 +476,17 @@ No arg means have no core file.  This command has been superseded by the\n\
   set_cmd_completer (c, filename_completer);
 
   
-  add_setshow_string_noescape_cmd ("gnutarget", class_files,
-				   &gnutarget_string, _("\
+  c = add_setshow_string_noescape_cmd ("gnutarget", class_files,
+				       &gnutarget_string, _("\
 Set the current BFD target."), _("\
 Show the current BFD target."), _("\
 Use `set gnutarget auto' to specify automatic detection."),
-				   set_gnutarget_command,
-				   show_gnutarget_string,
-				   &setlist, &showlist);
+				       set_gnutarget_command,
+				       show_gnutarget_string,
+				       &setlist, &showlist);
+  set_cmd_completer (c, complete_set_gnutarget);
+
+  add_alias_cmd ("g", "gnutarget", class_files, 1, &setlist);
 
   if (getenv ("GNUTARGET"))
     set_gnutarget (getenv ("GNUTARGET"));

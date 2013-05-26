@@ -1,7 +1,6 @@
 /* Handle lists of commands, their decoding and documentation, for GDB.
 
-   Copyright (c) 1986, 1989-1991, 1998, 2000-2002, 2004, 2007-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -51,6 +50,53 @@ static struct cmd_list_element *find_cmd (char *command,
 					  int *nfound);
 
 static void help_all (struct ui_file *stream);
+
+/* Look up a command whose 'prefixlist' is KEY.  Return the command if found,
+   otherwise return NULL.  */
+
+static struct cmd_list_element *
+lookup_cmd_for_prefixlist (struct cmd_list_element **key,
+			   struct cmd_list_element *list)
+{
+  struct cmd_list_element *p = NULL;
+
+  for (p = list; p != NULL; p = p->next)
+    {
+      struct cmd_list_element *q;
+
+      if (p->prefixlist == NULL)
+	continue;
+      else if (p->prefixlist == key)
+	return p;
+
+      q = lookup_cmd_for_prefixlist (key, *(p->prefixlist));
+      if (q != NULL)
+	return q;
+    }
+
+  return NULL;
+}
+
+static void
+set_cmd_prefix (struct cmd_list_element *c, struct cmd_list_element **list)
+{
+  struct cmd_list_element *p;
+
+  /* Check to see if *LIST contains any element other than C.  */
+  for (p = *list; p != NULL; p = p->next)
+    if (p != c)
+      break;
+
+  if (p == NULL)
+    {
+      /* *SET_LIST only contains SET.  */
+      p = lookup_cmd_for_prefixlist (list, setlist);
+
+      c->prefix = p ? (p->cmd_pointer ? p->cmd_pointer : p) : p;
+    }
+  else
+    c->prefix = p->prefix;
+}
 
 static void
 print_help_for_command (struct cmd_list_element *c, char *prefix, int recurse,
@@ -193,6 +239,7 @@ add_cmd (char *name, enum command_class class, void (*fun) (char *, int),
   c->prefixlist = NULL;
   c->prefixname = NULL;
   c->allow_unknown = 0;
+  c->prefix = NULL;
   c->abbrev_flag = 0;
   set_cmd_completer (c, make_symbol_completion_list_fn);
   c->destroyer = NULL;
@@ -258,6 +305,13 @@ add_alias_cmd (char *name, char *oldname, enum command_class class,
     }
 
   c = add_cmd (name, class, NULL, old->doc, list);
+
+  /* If OLD->DOC can be freed, we should make another copy.  */
+  if ((old->flags & DOC_ALLOCATED) != 0)
+    {
+      c->doc = xstrdup (old->doc);
+      c->flags |= DOC_ALLOCATED;
+    }
   /* NOTE: Both FUNC and all the FUNCTIONs need to be copied.  */
   c->func = old->func;
   c->function = old->function;
@@ -268,6 +322,8 @@ add_alias_cmd (char *name, char *oldname, enum command_class class,
   c->cmd_pointer = old;
   c->alias_chain = old->aliases;
   old->aliases = c;
+
+  set_cmd_prefix (c, list);
   return c;
 }
 
@@ -284,10 +340,21 @@ add_prefix_cmd (char *name, enum command_class class,
 		struct cmd_list_element **list)
 {
   struct cmd_list_element *c = add_cmd (name, class, fun, doc, list);
+  struct cmd_list_element *p;
 
   c->prefixlist = prefixlist;
   c->prefixname = prefixname;
   c->allow_unknown = allow_unknown;
+
+  if (list == &cmdlist)
+    c->prefix = NULL;
+  else
+    set_cmd_prefix (c, list);
+
+  /* Update the field 'prefix' of each cmd_list_element in *PREFIXLIST.  */
+  for (p = *prefixlist; p != NULL; p = p->next)
+    p->prefix = c;
+
   return c;
 }
 
@@ -390,10 +457,16 @@ add_setshow_cmd_full (char *name,
     }
   set = add_set_or_show_cmd (name, set_cmd, class, var_type, var,
 			     full_set_doc, set_list);
+  set->flags |= DOC_ALLOCATED;
+
   if (set_func != NULL)
     set_cmd_sfunc (set, set_func);
+
+  set_cmd_prefix (set, set_list);
+
   show = add_set_or_show_cmd (name, show_cmd, class, var_type, var,
 			      full_show_doc, show_list);
+  show->flags |= DOC_ALLOCATED;
   show->show_value_func = show_func;
 
   if (set_result != NULL)
@@ -430,6 +503,8 @@ add_setshow_enum_cmd (char *name,
   c->enums = enumlist;
 }
 
+const char * const auto_boolean_enums[] = { "on", "off", "auto", NULL };
+
 /* Add an auto-boolean command named NAME to both the set and show
    command list lists.  CLASS is as in add_cmd.  VAR is address of the
    variable which will contain the value.  DOC is the documentation
@@ -445,7 +520,6 @@ add_setshow_auto_boolean_cmd (char *name,
 			      struct cmd_list_element **set_list,
 			      struct cmd_list_element **show_list)
 {
-  static const char *auto_boolean_enums[] = { "on", "off", "auto", NULL };
   struct cmd_list_element *c;
 
   add_setshow_cmd_full (name, class, var_auto_boolean, var,
@@ -523,7 +597,7 @@ add_setshow_string_cmd (char *name, enum command_class class,
 
 /* Add element named NAME to both the set and show command LISTs (the
    list for set/show or some sublist thereof).  */
-void
+struct cmd_list_element *
 add_setshow_string_noescape_cmd (char *name, enum command_class class,
 				 char **var,
 				 const char *set_doc, const char *show_doc,
@@ -533,11 +607,14 @@ add_setshow_string_noescape_cmd (char *name, enum command_class class,
 				 struct cmd_list_element **set_list,
 				 struct cmd_list_element **show_list)
 {
+  struct cmd_list_element *set_cmd;
+
   add_setshow_cmd_full (name, class, var_string_noescape, var,
 			set_doc, show_doc, help_doc,
 			set_func, show_func,
 			set_list, show_list,
-			NULL, NULL);
+			&set_cmd, NULL);
+  return set_cmd;
 }
 
 /* Add element named NAME to both the set and show command LISTs (the
@@ -567,7 +644,8 @@ add_setshow_optional_filename_cmd (char *name, enum command_class class,
 /* Add element named NAME to both the set and show command LISTs (the
    list for set/show or some sublist thereof).  CLASS is as in
    add_cmd.  VAR is address of the variable which will contain the
-   value.  SET_DOC and SHOW_DOC are the documentation strings.  */
+   value.  SET_DOC and SHOW_DOC are the documentation strings.  This
+   function is only used in Python API.  Please don't use it elsewhere.  */
 void
 add_setshow_integer_cmd (char *name, enum command_class class,
 			 int *var,
@@ -621,6 +699,25 @@ add_setshow_zinteger_cmd (char *name, enum command_class class,
 			  struct cmd_list_element **show_list)
 {
   add_setshow_cmd_full (name, class, var_zinteger, var,
+			set_doc, show_doc, help_doc,
+			set_func, show_func,
+			set_list, show_list,
+			NULL, NULL);
+}
+
+void
+add_setshow_zuinteger_unlimited_cmd (char *name,
+				     enum command_class class,
+				     int *var,
+				     const char *set_doc,
+				     const char *show_doc,
+				     const char *help_doc,
+				     cmd_sfunc_ftype *set_func,
+				     show_value_ftype *show_func,
+				     struct cmd_list_element **set_list,
+				     struct cmd_list_element **show_list)
+{
+  add_setshow_cmd_full (name, class, var_zuinteger_unlimited, var,
 			set_doc, show_doc, help_doc,
 			set_func, show_func,
 			set_list, show_list,
@@ -684,6 +781,8 @@ delete_cmd (char *name, struct cmd_list_element **list,
 	  *prehookee = iter->hookee_pre;
 	  if (iter->hookee_post)
 	    iter->hookee_post->hook_post = 0;
+	  if (iter->doc && (iter->flags & DOC_ALLOCATED) != 0)
+	    xfree (iter->doc);
 	  *posthook = iter->hook_post;
 	  *posthookee = iter->hookee_post;
 
@@ -818,7 +917,6 @@ void
 help_cmd (char *command, struct ui_file *stream)
 {
   struct cmd_list_element *c;
-  extern struct cmd_list_element *cmdlist;
 
   if (!command)
     {
@@ -950,7 +1048,6 @@ static void
 help_all (struct ui_file *stream)
 {
   struct cmd_list_element *c;
-  extern struct cmd_list_element *cmdlist;
   int seen_unclassified = 0;
 
   for (c = cmdlist; c; c = c->next)
@@ -1641,7 +1738,8 @@ lookup_cmd_composition (char *text,
    "oobar"; if WORD is "baz/foo", return "baz/foobar".  */
 
 VEC (char_ptr) *
-complete_on_cmdlist (struct cmd_list_element *list, char *text, char *word)
+complete_on_cmdlist (struct cmd_list_element *list, char *text, char *word,
+		     int ignore_help_classes)
 {
   struct cmd_list_element *ptr;
   VEC (char_ptr) *matchlist = NULL;
@@ -1658,7 +1756,7 @@ complete_on_cmdlist (struct cmd_list_element *list, char *text, char *word)
       for (ptr = list; ptr; ptr = ptr->next)
 	if (!strncmp (ptr->name, text, textlen)
 	    && !ptr->abbrev_flag
-	    && (ptr->func
+	    && (!ignore_help_classes || ptr->func
 		|| ptr->prefixlist))
 	  {
 	    char *match;

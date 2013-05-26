@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on MIPS processors.
 
-   Copyright (C) 2001-2002, 2004-2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -59,7 +59,7 @@ mips_linux_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
   CORE_ADDR jb_addr;
   struct gdbarch *gdbarch = get_frame_arch (frame);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
-  char buf[gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT];
+  gdb_byte buf[gdbarch_ptr_bit (gdbarch) / TARGET_CHAR_BIT];
 
   jb_addr = get_frame_register_unsigned (frame, MIPS_A0_REGNUM);
 
@@ -680,10 +680,10 @@ mips_linux_core_read_description (struct gdbarch *gdbarch,
 static int
 mips_linux_in_dynsym_stub (CORE_ADDR pc, char *name)
 {
-  unsigned char buf[28], *p;
+  gdb_byte buf[28], *p;
   ULONGEST insn, insn1;
-  int n64 = (mips_abi (target_gdbarch) == MIPS_ABI_N64);
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  int n64 = (mips_abi (target_gdbarch ()) == MIPS_ABI_N64);
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
 
   read_memory (pc - 12, buf, 28);
 

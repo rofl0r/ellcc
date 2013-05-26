@@ -1,5 +1,5 @@
 /* Simulation code for the CR16 processor.
-   Copyright (C) 2008-2012 Free Software Foundation, Inc.
+   Copyright (C) 2008-2013 Free Software Foundation, Inc.
    Contributed by M Ranga Swami Reddy <MR.Swami.Reddy@nsc.com>
 
    This file is part of GDB, the GNU debugger.
@@ -1192,7 +1192,11 @@ sim_resume (SIM_DESC sd, int step, int siggnal)
       iaddr = imem_addr ((uint32)PC);
       if (iaddr == State.mem.fault)
         {
+#ifdef SIGBUS
           State.exception = SIGBUS;
+#else
+          State.exception = SIGSEGV;
+#endif
           break;
         }
  
@@ -1548,6 +1552,11 @@ sim_store_register (sd, rn, memory, length)
   return size;
 }
 
+char **
+sim_complete_command (SIM_DESC sd, char *text, char *word)
+{
+  return NULL;
+}
 
 void
 sim_do_command (sd, cmd)

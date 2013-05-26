@@ -1,7 +1,6 @@
 /* Manages interpreters for GDB, the GNU debugger.
 
-   Copyright (C) 2000, 2002-2003, 2007-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    Written by Jim Ingham <jingham@apple.com> of Apple Computer, Inc.
 
@@ -210,8 +209,8 @@ interp_set (struct interp *interp, int top_level)
     {
       if (!interp_quiet_p (interp))
 	{
-	  sprintf (buffer, "Switching to interpreter \"%.24s\".\n",
-		   interp->name);
+	  xsnprintf (buffer, sizeof (buffer),
+		     "Switching to interpreter \"%.24s\".\n", interp->name);
 	  ui_out_text (current_uiout, buffer);
 	}
       display_gdb_prompt (NULL);

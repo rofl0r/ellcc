@@ -1,4 +1,4 @@
-# Copyright (C) 2011-2012 Free Software Foundation, Inc.
+# Copyright (C) 2011-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,11 @@ set testfile "kill-after-signal"
 if { ![can_single_step_to_signal_handler] } {
     untested ${testfile}.exp
     return
+}
+
+if [target_info exists gdb,nosignals] {
+    verbose "Skipping kill-after-signal.exp because of nosignals."
+    continue
 }
 
 if [prepare_for_testing ${testfile}.exp ${testfile}] {

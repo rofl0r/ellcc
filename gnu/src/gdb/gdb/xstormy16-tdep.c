@@ -1,6 +1,6 @@
 /* Target-dependent code for the Sanyo Xstormy16a (LC590000) processor.
 
-   Copyright (C) 2001-2005, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -181,7 +181,7 @@ xstormy16_store_return_value (struct type *type, struct regcache *regcache,
   if (TYPE_LENGTH (type) == 1)
     {    
       /* Add leading zeros to the value.  */
-      char buf[xstormy16_reg_size];
+      gdb_byte buf[xstormy16_reg_size];
       memset (buf, 0, xstormy16_reg_size);
       memcpy (buf, valbuf, 1);
       regcache_raw_write (regcache, E_1ST_ARG_REGNUM, buf);
@@ -238,7 +238,7 @@ xstormy16_push_dummy_call (struct gdbarch *gdbarch,
   int i, j;
   int typelen, slacklen;
   const gdb_byte *val;
-  char buf[xstormy16_pc_size];
+  gdb_byte buf[xstormy16_pc_size];
 
   /* If struct_return is true, then the struct return address will
      consume one argument-passing register.  */
@@ -279,16 +279,20 @@ xstormy16_push_dummy_call (struct gdbarch *gdbarch,
   for (j = nargs - 1; j >= i; j--)
     {
       char *val;
+      struct cleanup *back_to;
+      const gdb_byte *bytes = value_contents (args[j]);
 
       typelen = TYPE_LENGTH (value_enclosing_type (args[j]));
       slacklen = typelen & 1;
-      val = alloca (typelen + slacklen);
-      memcpy (val, value_contents (args[j]), typelen);
+      val = xmalloc (typelen + slacklen);
+      back_to = make_cleanup (xfree, val);
+      memcpy (val, bytes, typelen);
       memset (val + typelen, 0, slacklen);
 
       /* Now write this data to the stack.  The stack grows upwards.  */
       write_memory (stack_dest, val, typelen + slacklen);
       stack_dest += typelen + slacklen;
+      do_cleanups (back_to);
     }
 
   store_unsigned_integer (buf, xstormy16_pc_size, byte_order, bp_addr);
@@ -521,7 +525,7 @@ xstormy16_resolve_jmp_table_entry (struct gdbarch *gdbarch, CORE_ADDR faddr)
   if (faddr_sect)
     {
       LONGEST inst, inst2, addr;
-      char buf[2 * xstormy16_inst_size];
+      gdb_byte buf[2 * xstormy16_inst_size];
 
       /* Return faddr if it's not pointing into the jump table.  */
       if (strcmp (faddr_sect->the_bfd_section->name, ".plt"))
@@ -573,7 +577,7 @@ xstormy16_find_jmp_table_entry (struct gdbarch *gdbarch, CORE_ADDR faddr)
 	  for (; addr < endaddr; addr += 2 * xstormy16_inst_size)
 	    {
 	      LONGEST inst, inst2, faddr2;
-	      char buf[2 * xstormy16_inst_size];
+	      gdb_byte buf[2 * xstormy16_inst_size];
 
 	      if (target_read_memory (addr, buf, sizeof buf))
 		return 0;

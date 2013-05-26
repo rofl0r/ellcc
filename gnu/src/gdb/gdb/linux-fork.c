@@ -1,6 +1,6 @@
 /* GNU/Linux native-dependent code for debugging multiple forks.
 
-   Copyright (C) 2005-2012 Free Software Foundation, Inc.
+   Copyright (C) 2005-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,6 +29,7 @@
 #include "linux-fork.h"
 #include "linux-nat.h"
 #include "gdbthread.h"
+#include "source.h"
 
 #include <sys/ptrace.h>
 #include "gdb_wait.h"
@@ -120,6 +121,8 @@ delete_fork (ptid_t ptid)
   struct fork_info *fp, *fpprev;
 
   fpprev = NULL;
+
+  linux_nat_forget_process (ptid_get_pid (ptid));
 
   for (fp = fork_list; fp; fpprev = fp, fp = fp->next)
     if (ptid_equal (fp->ptid, ptid))
@@ -583,7 +586,8 @@ info_checkpoints_command (char *arg, int from_tty)
 
       sal = find_pc_line (pc, 0);
       if (sal.symtab)
-	printf_filtered (_(", file %s"), lbasename (sal.symtab->filename));
+	printf_filtered (_(", file %s"),
+			 symtab_to_filename_for_display (sal.symtab));
       if (sal.line)
 	printf_filtered (_(", line %d"), sal.line);
       if (!sal.symtab && !sal.line)

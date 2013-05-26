@@ -1,7 +1,6 @@
 /* Header file for command creation.
 
-   Copyright (C) 1986, 1989-1995, 1999-2000, 2002, 2004, 2007-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -77,7 +76,8 @@ typedef enum var_types
 
     /* Like var_uinteger but signed.  *VAR is an int.  The user can
        type 0 to mean "unlimited", which is stored in *VAR as
-       INT_MAX.  */
+       INT_MAX.  The only remaining use of it is the Python API.
+       Don't use it elsewhere.  */
     var_integer,
 
     /* String which the user enters with escapes (e.g. the user types
@@ -93,12 +93,16 @@ typedef enum var_types
     /* String which stores a filename.  (*VAR) is a malloc'd
        string.  */
     var_filename,
-    /* ZeroableInteger.  *VAR is an int.  Like Unsigned Integer except
+    /* ZeroableInteger.  *VAR is an int.  Like var_integer except
        that zero really means zero.  */
     var_zinteger,
     /* ZeroableUnsignedInteger.  *VAR is an unsigned int.  Zero really
        means zero.  */
     var_zuinteger,
+    /* ZeroableUnsignedInteger with unlimited value.  *VAR is an int,
+       but its range is [0, INT_MAX].  -1 stands for unlimited and
+       other negative numbers are not allowed.  */
+    var_zuinteger_unlimited,
     /* Enumerated type.  Can only have one of the specified values.
        *VAR is a char pointer to the name of the element that we
        find.  */
@@ -212,7 +216,7 @@ extern struct cmd_list_element *add_info (char *,
 extern struct cmd_list_element *add_info_alias (char *, char *, int);
 
 extern VEC (char_ptr) *complete_on_cmdlist (struct cmd_list_element *,
-					    char *, char *);
+					    char *, char *, int);
 
 extern VEC (char_ptr) *complete_on_enum (const char *const *enumlist,
 					 char *, char *);
@@ -288,16 +292,17 @@ extern void add_setshow_string_cmd (char *name,
 				    struct cmd_list_element **set_list,
 				    struct cmd_list_element **show_list);
 
-extern void add_setshow_string_noescape_cmd (char *name,
-					     enum command_class class,
-					     char **var,
-					     const char *set_doc,
-					     const char *show_doc,
-					     const char *help_doc,
-					     cmd_sfunc_ftype *set_func,
-					     show_value_ftype *show_func,
-					     struct cmd_list_element **set_list,
-					     struct cmd_list_element **show_list);
+extern struct cmd_list_element *add_setshow_string_noescape_cmd
+		      (char *name,
+		       enum command_class class,
+		       char **var,
+		       const char *set_doc,
+		       const char *show_doc,
+		       const char *help_doc,
+		       cmd_sfunc_ftype *set_func,
+		       show_value_ftype *show_func,
+		       struct cmd_list_element **set_list,
+		       struct cmd_list_element **show_list);
 
 extern void add_setshow_optional_filename_cmd (char *name,
 					       enum command_class class,
@@ -346,6 +351,18 @@ extern void add_setshow_zinteger_cmd (char *name,
 extern void add_setshow_zuinteger_cmd (char *name,
 				       enum command_class class,
 				       unsigned int *var,
+				       const char *set_doc,
+				       const char *show_doc,
+				       const char *help_doc,
+				       cmd_sfunc_ftype *set_func,
+				       show_value_ftype *show_func,
+				       struct cmd_list_element **set_list,
+				       struct cmd_list_element **show_list);
+
+extern void
+  add_setshow_zuinteger_unlimited_cmd (char *name,
+				       enum command_class class,
+				       int *var,
 				       const char *set_doc,
 				       const char *show_doc,
 				       const char *help_doc,

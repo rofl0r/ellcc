@@ -1,5 +1,4 @@
-# Copyright 1997-1999, 2003-2004, 2007-2012 Free Software Foundation,
-# Inc.
+# Copyright 1997-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -156,7 +155,7 @@ local_compiler_xfail_check
 gdb_test "ptype veneer" "type = volatile short( int)? \\* volatile.*"
 
 local_compiler_xfail_check
-gdb_test "ptype video" "type = volatile (unsigned short|short unsigned)( int) \\* volatile.*"
+gdb_test "ptype video" "type = volatile (unsigned short|short unsigned) \\* volatile.*"
 
 local_compiler_xfail_check
 gdb_test "ptype vacuum" "type = volatile long( int)? \\* volatile.*"

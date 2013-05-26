@@ -1,5 +1,5 @@
 /* Header for GDB line completion.
-   Copyright (C) 2000, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -40,6 +40,9 @@ extern VEC (char_ptr) *location_completer (struct cmd_list_element *,
 
 extern VEC (char_ptr) *command_completer (struct cmd_list_element *,
 					  char *, char *);
+
+extern VEC (char_ptr) *signal_completer (struct cmd_list_element *,
+					 char *, char *);
 
 extern char *get_gdb_completer_quote_characters (void);
 

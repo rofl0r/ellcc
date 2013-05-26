@@ -1,5 +1,5 @@
 dnl Autoconf configure script for GDB, the GNU debugger.
-dnl Copyright (C) 1995-2012 Free Software Foundation, Inc.
+dnl Copyright (C) 1995-2013 Free Software Foundation, Inc.
 dnl
 dnl This file is part of GDB.
 dnl 
@@ -645,11 +645,6 @@ AC_SUBST(READLINE_DEPS)
 AC_SUBST(READLINE_CFLAGS)
 AC_SUBST(READLINE_TEXI_INCFLAG)
 
-dnl -lmcheck provides cheap enough memory mangling for debugging purposes.
-if $development; then
-  AC_CHECK_LIB(mcheck, main)
-fi
-
 # Generate jit-reader.h
 
 # This is typedeffed to GDB_CORE_ADDR in jit-reader.h
@@ -994,12 +989,43 @@ if test "${have_libpython}" != no; then
   # unilaterally defined, and that in turn causes _SGIAPI to evaluate
   # to false.  So, we work around this issue by defining siginfo ourself
   # though the command-line.
+  #
+  # On x64 Windows, Python's include headers, and pyconfig.h in
+  # particular, rely on MS_WIN64 macro to detect that it's a 64bit
+  # version of Windows.  Unfortunately, MS_WIN64 is only defined if
+  # _MSC_VER, a Microsoft-specific macro, is defined.  So, when
+  # building on x64 Windows with GCC, we define MS_WIN64 ourselves.
+  # The issue was reported to the Python community, but still isn't
+  # solved as of 2012-10-02 (http://bugs.python.org/issue4709).
+
   case "$gdb_host" in
     irix*) if test "${GCC}" = yes; then
              CPPFLAGS="$CPPFLAGS -Dsiginfo=__siginfo"
            fi
            ;;
+    mingw64)
+           if test "${GCC}" = yes; then
+             CPPFLAGS="$CPPFLAGS -DMS_WIN64"
+           fi
+           ;;
   esac
+
+  # Note that "python -m threading" cannot be used to check for
+  # threading support due to a bug in Python 2.7.3
+  # (http://bugs.python.org/issue15567).
+  AC_MSG_CHECKING(whether python supports threads)
+  saved_CPPFLAGS="${CPPFLAGS}"
+  CPPFLAGS="${PYTHON_CPPFLAGS}"
+  # Note that the test is reversed so that python_has_threads=yes on
+  # unexpected failures.
+  AC_PREPROC_IFELSE(AC_LANG_SOURCE([[
+#include <Python.h>
+#ifdef WITH_THREAD
+# error
+#endif
+  ]]), [python_has_threads=no], [python_has_threads=yes])
+  AC_MSG_RESULT(${python_has_threads})
+  CPPFLAGS="${saved_CPPFLAGS}"
 else
   # Even if Python support is not compiled in, we need to have these files
   # included.
@@ -1011,16 +1037,43 @@ AC_SUBST(PYTHON_CFLAGS)
 AC_SUBST(PYTHON_CPPFLAGS)
 AC_SUBST(PYTHON_LIBS)
 
+# Provide a --enable-libmcheck/--disable-libmcheck set of options
+# allowing a user to enable this option even when building releases,
+# or to disable it when building a snapshot.
+AC_ARG_ENABLE(libmcheck,
+  AS_HELP_STRING([--enable-libmcheck],
+                 [Try building GDB with -lmcheck if available]),
+  [case "${enableval}" in
+     yes | y) ENABLE_LIBMCHECK="yes" ;;
+     no | n)  ENABLE_LIBMCHECK="no" ;;
+     *) AC_MSG_ERROR(bad value ${enableval} for --enable-libmcheck) ;;
+   esac])
+
+# Enable -lmcheck by default (it provides cheap-enough memory mangling),
+# but turn it off if Python is enabled with threads, since -lmcheck is
+# not thread safe (http://sourceware.org/bugzilla/show_bug.cgi?id=9939),
+# and for releases.
+if test -z "${ENABLE_LIBMCHECK}" \
+        -a \( "${have_libpython}" = "no" \
+	     -o "${python_has_threads}" = "no" \) \
+    && $development; then
+  ENABLE_LIBMCHECK=yes
+fi
+
+if test "$ENABLE_LIBMCHECK" = "yes" ; then
+  if test "${have_libpython}" != "no" -a "${python_has_threads}" = "yes" ; then
+    AC_MSG_WARN(--enable-libmcheck may lead to spurious crashes if threads are used in python)
+  fi
+  AC_CHECK_LIB(mcheck, main)
+fi
+
 # ------------------------- #
 # Checks for header files.  #
 # ------------------------- #
 
 AC_HEADER_DIRENT
-AC_HEADER_STAT
 AC_HEADER_STDC
 # elf_hp.h is for HP/UX 64-bit shared library support.
-# FIXME: kettenis/20030102: In most cases we include these (ctype.h, time.h)
-# unconditionally, so what's the point in checking these?
 AC_CHECK_HEADERS([nlist.h machine/reg.h poll.h sys/poll.h proc_service.h \
                   thread_db.h signal.h stddef.h \
 		  stdlib.h string.h memory.h strings.h sys/fault.h \
@@ -1028,8 +1081,8 @@ AC_CHECK_HEADERS([nlist.h machine/reg.h poll.h sys/poll.h proc_service.h \
 		  sys/resource.h sys/procfs.h sys/ptrace.h ptrace.h \
 		  sys/reg.h sys/debugreg.h sys/select.h sys/syscall.h \
 		  sys/types.h sys/wait.h wait.h termios.h termio.h \
-		  sgtty.h unistd.h elf_hp.h ctype.h time.h locale.h \
-		  dlfcn.h sys/socket.h sys/un.h])
+		  sgtty.h unistd.h elf_hp.h locale.h \
+		  dlfcn.h sys/socket.h sys/un.h linux/perf_event.h])
 AC_CHECK_HEADERS(link.h, [], [],
 [#if HAVE_SYS_TYPES_H
 # include <sys/types.h>
@@ -1334,11 +1387,11 @@ if test $gdb_cv_have_pt_getxmmregs = yes; then
   [Define if sys/ptrace.h defines the PT_GETXMMREGS request.])
 fi
 
-# Detect which type of /proc is in use, such as for Unixware or Solaris.
+# Detect which type of /proc is in use, such as for Solaris.
 
 if test "${target}" = "${host}"; then
   case "${host}" in
-  *-*-unixware* | *-*-sysv4.2* | *-*-sysv5* | *-*-interix* )
+  *-*-sysv4.2* | *-*-sysv5* | *-*-interix* )
       AC_DEFINE(NEW_PROC_API, 1,
       [Define if you want to use new multi-fd /proc interface
        (replaces HAVE_MULTIPLE_PROC_FDS as well as other macros).])
@@ -1503,9 +1556,9 @@ AC_CACHE_CHECK([for long long support in compiler], gdb_cv_c_long_long,
 [[switch (foo & 2) { case 0: return 1; }]])],
                                   gdb_cv_c_long_long=yes,
                                   gdb_cv_c_long_long=no)])
-if test $gdb_cv_c_long_long = yes; then
-  AC_DEFINE(CC_HAS_LONG_LONG, 1,
-            [Define to 1 if the compiler supports long long.])
+if test $gdb_cv_c_long_long != yes; then
+  # libdecnumber requires long long.
+  AC_MSG_ERROR([Compiler must support long long for GDB.])
 fi
 
 # Check if the compiler and runtime support printing long longs.
@@ -1634,6 +1687,8 @@ if test "${gdb_native}" = yes; then
      # Problem does not happen for the recommended libpythonX.Y.so linkage.
      old_CFLAGS="$CFLAGS"
      CFLAGS="$CFLAGS $PYTHON_CFLAGS"
+     old_LIBS="$LIBS"
+     LIBS="$LIBS $PYTHON_LIBS"
      AC_RUN_IFELSE(
        AC_LANG_PROGRAM(
          [#include "]${have_libpython}[/Python.h"],
@@ -1643,6 +1698,7 @@ if test "${gdb_native}" = yes; then
           Py_Finalize ();
           return err == 0 ? 0 : 1;]),
        [dynamic_list=true], [], [true])
+     LIBS="$old_LIBS"
      CFLAGS="$old_CFLAGS"
    fi
    LDFLAGS="$old_LDFLAGS"
@@ -1677,6 +1733,13 @@ if test ${build} = ${host} -a ${host} = ${target} ; then
          [Define if using Solaris thread debugging.])
          CONFIG_OBS="${CONFIG_OBS} sol-thread.o"
          CONFIG_SRCS="${CONFIG_SRCS} sol-thread.c"
+         # On SPARC CPUs, we also need to build sparc-sol-thread.
+         case ${host_cpu} in
+           sparc*)
+             CONFIG_OBS="${CONFIG_OBS} sparc-sol-thread.o"
+             CONFIG_SRCS="${CONFIG_SRCS} sparc-sol-thread.c"
+             ;;
+         esac
          AC_CHECK_LIB(dl, dlopen)
 	 CONFIG_LDFLAGS="${CONFIG_LDFLAGS} $RDYNAMIC"
 	 # Sun randomly tweaked the prototypes in <proc_service.h>
@@ -1857,7 +1920,7 @@ build_warnings="-Wall -Wdeclaration-after-statement -Wpointer-arith \
 -Wformat-nonliteral -Wno-pointer-sign \
 -Wno-unused -Wunused-value -Wunused-function \
 -Wno-switch -Wno-char-subscripts -Wmissing-prototypes \
--Wdeclaration-after-statement"
+-Wdeclaration-after-statement -Wempty-body"
 
 # Enable -Wno-format by default when using gcc on mingw since many
 # GCC versions complain about %I64.
@@ -1955,43 +2018,55 @@ esac
 AC_SUBST(WIN32LIBS)
 
 # Add ELF support to GDB, but only if BFD includes ELF support.
-OLD_CFLAGS=$CFLAGS
-OLD_LDFLAGS=$LDFLAGS
-OLD_LIBS=$LIBS
-# Put the old CFLAGS/LDFLAGS last, in case the user's (C|LD)FLAGS
-# points somewhere with bfd, with -I/foo/lib and -L/foo/lib.  We
-# always want our bfd.
-CFLAGS="-I${srcdir}/../include -I../bfd -I${srcdir}/../bfd $CFLAGS"
-LDFLAGS="-L../bfd -L../libiberty $LDFLAGS"
-intl=`echo $LIBINTL | sed 's,${top_builddir}/,,g'`
-# -ldl is provided by bfd/Makfile.am (LIBDL) <PLUGINS>.
-if test "$plugins" = "yes"; then
-  LIBS="-ldl $LIBS"
-fi
-LIBS="-lbfd -liberty $intl $LIBS"
-AC_CACHE_CHECK([for ELF support in BFD], gdb_cv_var_elf,
-[AC_TRY_LINK(
-[#include <stdlib.h>
-#include "bfd.h"
-#include "elf-bfd.h"
-],
-[bfd *abfd = NULL; bfd_get_elf_phdr_upper_bound (abfd); ],
-gdb_cv_var_elf=yes, gdb_cv_var_elf=no)])
+GDB_AC_CHECK_BFD([for ELF support in BFD], gdb_cv_var_elf,
+                 [bfd_get_elf_phdr_upper_bound (NULL)], elf-bfd.h)
 if test $gdb_cv_var_elf = yes; then
   CONFIG_OBS="$CONFIG_OBS elfread.o stap-probe.o"
   AC_DEFINE(HAVE_ELF, 1,
 	    [Define if ELF support should be included.])
   # -ldl is provided by bfd/Makfile.am (LIBDL) <PLUGINS>.
   if test "$plugins" = "yes"; then
-    OLD_LIBS="-ldl $OLD_LIBS"
+    LIBS="-ldl $LIBS"
   fi
 fi
-CFLAGS=$OLD_CFLAGS
-LDFLAGS=$OLD_LDFLAGS
-LIBS=$OLD_LIBS
+
+# Add macho support to GDB, but only if BFD includes it.
+GDB_AC_CHECK_BFD([for Mach-O support in BFD], gdb_cv_var_macho,
+                 [bfd_mach_o_lookup_command (NULL, 0, NULL)], mach-o.h)
+if test $gdb_cv_var_macho = yes; then
+  CONFIG_OBS="$CONFIG_OBS machoread.o"
+fi
+
+# Add SOM support to GDB, but only if BFD includes it.
+GDB_AC_CHECK_BFD([for SOM support in BFD], gdb_cv_var_som,
+                 [bfd_som_attach_aux_hdr (NULL, 0, NULL)], som.h)
+if test $gdb_cv_var_som = yes; then
+  CONFIG_OBS="$CONFIG_OBS somread.o"
+fi
 
 # Add any host-specific objects to GDB.
 CONFIG_OBS="${CONFIG_OBS} ${gdb_host_obs}"
+
+# If building on ELF, look for lzma support for embedded compressed debug info.
+if test $gdb_cv_var_elf = yes; then
+  AC_ARG_WITH(lzma,
+    AS_HELP_STRING([--with-lzma], [support lzma compression (auto/yes/no)]),
+    [], [with_lzma=auto])
+  AC_MSG_CHECKING([whether to use lzma])
+  AC_MSG_RESULT([$with_lzma])
+
+  if test "${with_lzma}" != no; then
+    AC_LIB_HAVE_LINKFLAGS([lzma], [], [#include "lzma.h"],
+			  [lzma_index_iter iter;
+			   lzma_index_iter_init (&iter, 0);
+			   lzma_mf_is_supported (LZMA_MF_HC3);])
+    if test "$HAVE_LIBLZMA" != yes; then
+      if test "$with_lzma" = yes; then
+        AC_MSG_ERROR([missing liblzma for --with-lzma])
+      fi
+    fi
+  fi
+fi
 
 LIBGUI="../libgui/src/libgui.a"
 GUI_CFLAGS_X="-I${srcdir}/../libgui/src"

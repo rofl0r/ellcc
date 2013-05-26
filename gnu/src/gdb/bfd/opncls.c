@@ -86,7 +86,7 @@ _bfd_new_bfd (void)
   nbfd->iostream = NULL;
   nbfd->where = 0;
   if (!bfd_hash_table_init_n (& nbfd->section_htab, bfd_section_hash_newfunc,
-			      sizeof (struct section_hash_entry), 251))
+			      sizeof (struct section_hash_entry), 13))
     {
       free (nbfd);
       return NULL;
@@ -107,6 +107,8 @@ _bfd_new_bfd (void)
   return nbfd;
 }
 
+static const struct bfd_iovec opncls_iovec;
+
 /* Allocate a new BFD as a member of archive OBFD.  */
 
 bfd *
@@ -119,6 +121,8 @@ _bfd_new_bfd_contained_in (bfd *obfd)
     return NULL;
   nbfd->xvec = obfd->xvec;
   nbfd->iovec = obfd->iovec;
+  if (obfd->iovec == &opncls_iovec)
+    nbfd->iostream = obfd->iostream;
   nbfd->my_archive = obfd;
   nbfd->direction = read_direction;
   nbfd->target_defaulted = obfd->target_defaulted;
@@ -127,7 +131,7 @@ _bfd_new_bfd_contained_in (bfd *obfd)
 
 /* Delete a BFD.  */
 
-void
+static void
 _bfd_delete_bfd (bfd *abfd)
 {
   if (abfd->memory)
@@ -135,6 +139,8 @@ _bfd_delete_bfd (bfd *abfd)
       bfd_hash_table_free (&abfd->section_htab);
       objalloc_free ((struct objalloc *) abfd->memory);
     }
+
+  free (abfd->arelt_data);
   free (abfd);
 }
 
@@ -180,7 +186,7 @@ DESCRIPTION
 	Return a pointer to the created BFD.  If @var{fd} is not -1,
 	then <<fdopen>> is used to open the file; otherwise, <<fopen>>
 	is used.  @var{mode} is passed directly to <<fopen>> or
-	<<fdopen>>. 
+	<<fdopen>>.
 
 	Calls <<bfd_find_target>>, so @var{target} is interpreted as by
 	that function.
@@ -216,7 +222,7 @@ bfd_fopen (const char *filename, const char *target, const char *mode, int fd)
       _bfd_delete_bfd (nbfd);
       return NULL;
     }
-  
+
 #ifdef HAVE_FDOPEN
   if (fd != -1)
     nbfd->iostream = fdopen (fd, mode);
@@ -235,7 +241,7 @@ bfd_fopen (const char *filename, const char *target, const char *mode, int fd)
 
   /* Figure out whether the user is opening the file for reading,
      writing, or both, by looking at the MODE argument.  */
-  if ((mode[0] == 'r' || mode[0] == 'w' || mode[0] == 'a') 
+  if ((mode[0] == 'r' || mode[0] == 'w' || mode[0] == 'a')
       && mode[1] == '+')
     nbfd->direction = both_direction;
   else if (mode[0] == 'r')
@@ -707,8 +713,6 @@ bfd_boolean
 bfd_close (bfd *abfd)
 {
   bfd_boolean ret;
-  bfd *nbfd;
-  bfd *next;
 
   if (bfd_write_p (abfd))
     {
@@ -716,17 +720,10 @@ bfd_close (bfd *abfd)
 	return FALSE;
     }
 
-  /* Close nested archives (if this bfd is a thin archive).  */
-  for (nbfd = abfd->nested_archives; nbfd; nbfd = next)
-    {
-      next = nbfd->archive_next;
-      bfd_close (nbfd);
-    }
-
   if (! BFD_SEND (abfd, _close_and_cleanup, (abfd)))
     return FALSE;
 
-  ret = abfd->iovec->bclose (abfd);
+  ret = abfd->iovec->bclose (abfd) == 0;
 
   if (ret)
     _maybe_make_executable (abfd);
@@ -1138,7 +1135,7 @@ bfd_calc_gnu_debuglink_crc32 (unsigned long crc,
   crc = ~crc & 0xffffffff;
   for (end = buf + len; buf < end; ++ buf)
     crc = crc32_table[(crc ^ *buf) & 0xff] ^ (crc >> 8);
-  return ~crc & 0xffffffff;;
+  return ~crc & 0xffffffff;
 }
 
 

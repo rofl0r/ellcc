@@ -1,6 +1,5 @@
 /* MI Command Set - varobj commands.
-   Copyright (C) 2000, 2002, 2004-2005, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -21,6 +20,7 @@
 
 #include "defs.h"
 #include "mi-cmds.h"
+#include "mi-main.h"
 #include "ui-out.h"
 #include "mi-out.h"
 #include "varobj.h"
@@ -34,7 +34,7 @@ const char mi_no_values[] = "--no-values";
 const char mi_simple_values[] = "--simple-values";
 const char mi_all_values[] = "--all-values";
 
-extern int varobjdebug;		/* defined in varobj.c.  */
+extern unsigned int varobjdebug;		/* defined in varobj.c.  */
 
 static void varobj_update_one (struct varobj *var,
 			       enum print_values print_values,
@@ -616,6 +616,7 @@ mi_cmd_var_assign (char *command, char **argv, int argc)
   struct ui_out *uiout = current_uiout;
   struct varobj *var;
   char *expression, *val;
+  struct cleanup *cleanup;
 
   if (argc != 2)
     error (_("-var-assign: Usage: NAME EXPRESSION."));
@@ -628,6 +629,12 @@ mi_cmd_var_assign (char *command, char **argv, int argc)
 
   expression = xstrdup (argv[1]);
 
+  /* MI command '-var-assign' may write memory, so suppress memory
+     changed notification if it does.  */
+  cleanup
+    = make_cleanup_restore_integer (&mi_suppress_notification.memory);
+  mi_suppress_notification.memory = 1;
+
   if (!varobj_set_value (var, expression))
     error (_("-var-assign: Could not assign "
 	     "expression to variable object"));
@@ -635,6 +642,8 @@ mi_cmd_var_assign (char *command, char **argv, int argc)
   val = varobj_get_value (var);
   ui_out_field_string (uiout, "value", val);
   xfree (val);
+
+  do_cleanups (cleanup);
 }
 
 /* Type used for parameters passing to mi_cmd_var_update_iter.  */
@@ -783,14 +792,14 @@ varobj_update_one (struct varobj *var, enum print_values print_values,
 	ui_out_field_int (uiout, "new_num_children", 
 			  varobj_get_num_children (r->varobj));
 
-      display_hint = varobj_get_display_hint (var);
+      display_hint = varobj_get_display_hint (r->varobj);
       if (display_hint)
 	{
 	  ui_out_field_string (uiout, "displayhint", display_hint);
 	  xfree (display_hint);
 	}
 
-      if (varobj_pretty_printed_p (var))
+      if (varobj_pretty_printed_p (r->varobj))
 	ui_out_field_int (uiout, "dynamic", 1);
 
       varobj_get_child_range (r->varobj, &from, &to);

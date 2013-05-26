@@ -1,5 +1,5 @@
 /* Simulation code for the CR16 processor.
-   Copyright (C) 2008-2012 Free Software Foundation, Inc.
+   Copyright (C) 2008-2013 Free Software Foundation, Inc.
    Contributed by M Ranga Swami Reddy <MR.Swami.Reddy@nsc.com>
 
    This file is part of GDB, the GNU debugger.
@@ -5059,6 +5059,8 @@ OP_14C_14 ()
 void
 OP_C_C ()
 {
+  uint32 tmp;
+  uint16 a;
   trace_input ("excp", OP_CONSTANT4, OP_VOID, OP_VOID);
   switch (OP[0])
     {
@@ -5465,9 +5467,24 @@ OP_C_C ()
 #endif
 	    
 	  default:
-	    cr16_callback->error (cr16_callback, "Unknown syscall %d", FUNC);
+	    a = OP[0];
+	    switch (a)
+	    {
+	      case TRAP_BREAKPOINT:
+		State.exception = SIGTRAP;
+		tmp = (PC);
+		JMP(tmp);
+		trace_output_void ();
+		break;
+	      case SIGTRAP:  /* supervisor call ?  */
+		State.exception = SIG_CR16_EXIT;
+		trace_output_void ();
+		break;
+	      default:
+		cr16_callback->error (cr16_callback, "Unknown syscall %d", FUNC);
+		break;
+	    }
 	  }
-
 	if ((uint16) result == (uint16) -1)
 	  RETERR (cr16_callback->get_errno(cr16_callback));
 	else

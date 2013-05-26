@@ -1,7 +1,6 @@
 /* Abstraction of GNU v2 abi.
 
-   Copyright (C) 2001-2003, 2005, 2007-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 2001-2013 Free Software Foundation, Inc.
 
    Contributed by Daniel Berlin <dberlin@redhat.com>
 
@@ -424,5 +423,4 @@ _initialize_gnu_v2_abi (void)
 {
   init_gnuv2_ops ();
   register_cp_abi (&gnu_v2_abi_ops);
-  set_cp_abi_as_auto_default (gnu_v2_abi_ops.shortname);
 }

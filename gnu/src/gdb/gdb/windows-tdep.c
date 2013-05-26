@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2012 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,10 @@
 #include "gdbcmd.h"
 #include "gdbthread.h"
 #include "objfiles.h"
+#include "symfile.h"
+#include "coff-pe-read.h"
+#include "gdb_bfd.h"
+#include "complaints.h"
 
 struct cmd_list_element *info_w32_cmdlist;
 
@@ -290,8 +294,8 @@ display_one_tib (ptid_t ptid)
   gdb_byte *index;
   CORE_ADDR thread_local_base;
   ULONGEST i, val, max, max_name, size, tib_size;
-  ULONGEST sizeof_ptr = gdbarch_ptr_bit (target_gdbarch);
-  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch);
+  ULONGEST sizeof_ptr = gdbarch_ptr_bit (target_gdbarch ());
+  enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
 
   if (sizeof_ptr == 64)
     {
@@ -329,13 +333,13 @@ display_one_tib (ptid_t ptid)
       printf_filtered (_("Unable to read thread information "
 			 "block for %s at address %s\n"),
 	target_pid_to_str (ptid), 
-	paddress (target_gdbarch, thread_local_base));
+	paddress (target_gdbarch (), thread_local_base));
       return -1;
     }
 
   printf_filtered (_("Thread Information Block %s at %s\n"),
 		   target_pid_to_str (ptid),
-		   paddress (target_gdbarch, thread_local_base));
+		   paddress (target_gdbarch (), thread_local_base));
 
   index = (gdb_byte *) tib;
 
@@ -387,15 +391,21 @@ windows_xfer_shared_library (const char* so_name, CORE_ADDR load_addr,
 			     struct gdbarch *gdbarch, struct obstack *obstack)
 {
   char *p;
+  struct bfd * dll;
+  CORE_ADDR text_offset;
+
   obstack_grow_str (obstack, "<library name=\"");
   p = xml_escape_text (so_name);
   obstack_grow_str (obstack, p);
   xfree (p);
   obstack_grow_str (obstack, "\"><segment address=\"");
-  /* The symbols in a dll are offset by 0x1000, which is the
-     offset from 0 of the first byte in an image - because of the file
-     header and the section alignment.  */
-  obstack_grow_str (obstack, paddress (gdbarch, load_addr + 0x1000));
+  dll = gdb_bfd_open_maybe_remote (so_name);
+  /* The following calls are OK even if dll is NULL.
+     The default value 0x1000 is returned by pe_text_section_offset
+     in that case.  */
+  text_offset = pe_text_section_offset (dll);
+  gdb_bfd_unref (dll);
+  obstack_grow_str (obstack, paddress (gdbarch, load_addr + text_offset));
   obstack_grow_str (obstack, "\"/></library>");
 }
 

@@ -1,13 +1,11 @@
-This is gdb.info, produced by makeinfo version 4.8 from ./gdb.texinfo.
+This is gdb.info, produced by makeinfo version 4.13 from ./gdb.texinfo.
 
 INFO-DIR-SECTION Software development
 START-INFO-DIR-ENTRY
 * Gdb: (gdb).                     The GNU debugger.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -23,11 +21,9 @@ developing GNU and promoting software freedom."
    This file documents the GNU debugger GDB.
 
    This is the Tenth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.5.1.
+Source-Level Debugger' for GDB (GDB) Version 7.6.
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -41,9 +37,108 @@ this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
 
 
+File: gdb.info,  Node: MiniDebugInfo,  Next: Index Files,  Prev: Separate Debug Files,  Up: GDB Files
+
+18.3 Debugging information in a special section
+===============================================
+
+Some systems ship pre-built executables and libraries that have a
+special `.gnu_debugdata' section.  This feature is called
+"MiniDebugInfo".  This section holds an LZMA-compressed object and is
+used to supply extra symbols for backtraces.
+
+   The intent of this section is to provide extra minimal debugging
+information for use in simple backtraces.  It is not intended to be a
+replacement for full separate debugging information (*note Separate
+Debug Files::).  The example below shows the intended use; however, GDB
+does not currently put restrictions on what sort of debugging
+information might be included in the section.
+
+   GDB has support for this extension.  If the section exists, then it
+is used provided that no other source of debugging information can be
+found, and that GDB was configured with LZMA support.
+
+   This section can be easily created using `objcopy' and other
+standard utilities:
+
+     # Extract the dynamic symbols from the main binary, there is no need
+     # to also have these in the normal symbol table
+     nm -D BINARY --format=posix --defined-only \
+       | awk '{ print $1 }' | sort > dynsyms
+
+     # Extract all the text (i.e. function) symbols from the debuginfo .
+     nm BINARY --format=posix --defined-only \
+       | awk '{ if ($2 == "T" || $2 == "t") print $1 }' \
+       | sort > funcsyms
+
+     # Keep all the function symbols not already in the dynamic symbol
+     # table.
+     comm -13 dynsyms funcsyms > keep_symbols
+
+     # Copy the full debuginfo, keeping only a minimal set of symbols and
+     # removing some unnecessary sections.
+     objcopy -S --remove-section .gdb_index --remove-section .comment \
+       --keep-symbols=keep_symbols BINARY mini_debuginfo
+
+     # Inject the compressed data into the .gnu_debugdata section of the
+     # original binary.
+     xz mini_debuginfo
+     objcopy --add-section .gnu_debugdata=mini_debuginfo.xz BINARY
+
+
+File: gdb.info,  Node: Index Files,  Next: Symbol Errors,  Prev: MiniDebugInfo,  Up: GDB Files
+
+18.4 Index Files Speed Up GDB
+=============================
+
+When GDB finds a symbol file, it scans the symbols in the file in order
+to construct an internal symbol table.  This lets most GDB operations
+work quickly--at the cost of a delay early on.  For large programs,
+this delay can be quite lengthy, so GDB provides a way to build an
+index, which speeds up startup.
+
+   The index is stored as a section in the symbol file.  GDB can write
+the index to a file, then you can put it into the symbol file using
+`objcopy'.
+
+   To create an index file, use the `save gdb-index' command:
+
+`save gdb-index DIRECTORY'
+     Create an index file for each symbol file currently known by GDB.
+     Each file is named after its corresponding symbol file, with
+     `.gdb-index' appended, and is written into the given DIRECTORY.
+
+   Once you have created an index file you can merge it into your symbol
+file, here named `symfile', using `objcopy':
+
+     $ objcopy --add-section .gdb_index=symfile.gdb-index \
+         --set-section-flags .gdb_index=readonly symfile symfile
+
+   GDB will normally ignore older versions of `.gdb_index' sections
+that have been deprecated.  Usually they are deprecated because they
+are missing a new feature or have performance issues.  To tell GDB to
+use a deprecated index section anyway specify `set
+use-deprecated-index-sections on'.  The default is `off'.  This can
+speed up startup, but may result in some functionality being lost.
+*Note Index Section Format::.
+
+   _Warning:_ Setting `use-deprecated-index-sections' to `on' must be
+done before gdb reads the file.  The following will not work:
+
+     $ gdb -ex "set use-deprecated-index-sections on" <program>
+
+   Instead you must do, for example,
+
+     $ gdb -iex "set use-deprecated-index-sections on" <program>
+
+   There are currently some limitation on indices.  They only work when
+for DWARF debugging information, not stabs.  And, they do not currently
+work for programs using Ada.
+
+
 File: gdb.info,  Node: Symbol Errors,  Next: Data Files,  Prev: Index Files,  Up: GDB Files
 
-18.4 Errors Reading Symbol Files
+18.5 Errors Reading Symbol Files
 ================================
 
 While reading a symbol file, GDB occasionally encounters problems, such
@@ -124,7 +219,7 @@ Optional Warnings and Messages: Messages/Warnings.).
 
 File: gdb.info,  Node: Data Files,  Prev: Symbol Errors,  Up: GDB Files
 
-18.5 GDB Data Files
+18.6 GDB Data Files
 ===================
 
 GDB will sometimes read an auxiliary data file.  These files are kept
@@ -255,7 +350,7 @@ File: gdb.info,  Node: Target Commands,  Next: Byte Order,  Prev: Active Targets
      Use the `show gnutarget' command to display what file format
      `gnutarget' is set to read.  If you have not set `gnutarget', GDB
      will determine the file format for each file automatically, and
-     `show gnutarget' displays `The current BDF target is "auto"'.
+     `show gnutarget' displays `The current BFD target is "auto"'.
 
    Here are some common targets (available, or not, depending on the GDB
 configuration):
@@ -293,7 +388,7 @@ configuration):
      device drivers, or even basic I/O is available, although some
      simulators do provide these.  For info about any
      processor-specific simulator details, see the appropriate section
-     in *Note Embedded Processors: Embedded Processors.
+     in *note Embedded Processors: Embedded Processors.
 
 
    Some configurations may include these targets as well:
@@ -663,8 +758,8 @@ from it, GDB stays connected to `gdbserver' even though no program is
 running.  The `run' and `attach' commands instruct `gdbserver' to run
 or attach to a new program.  The `run' command uses `set remote
 exec-file' (*note set remote exec-file::) to select the program to run.
-Command line arguments are supported, except for wildcard expansion
-and I/O redirection (*note Arguments::).
+Command line arguments are supported, except for wildcard expansion and
+I/O redirection (*note Arguments::).
 
    To start `gdbserver' without supplying an initial command to run or
 process ID to attach, use the `--multi' command line option.  Then you
@@ -694,7 +789,7 @@ Therefore, when the connection drops unexpectedly, and GDB cannot ask
 even in the `target remote' mode.
 
    When `gdbserver' stays running, GDB can connect to it again later.
-Such reconnecting is useful for features like *Note disconnected
+Such reconnecting is useful for features like *note disconnected
 tracing::.  For completeness, at most one GDB can be connected at a
 time.
 
@@ -885,7 +980,7 @@ File: gdb.info,  Node: Remote Configuration,  Next: Remote Stub,  Prev: Server, 
 
 This section documents the configuration options available when
 debugging remote programs.  For the options related to the File I/O
-extensions of the remote protocol, see *Note system-call-allowed:
+extensions of the remote protocol, see *note system-call-allowed:
 system.
 
 `set remoteaddresssize BITS'
@@ -1024,7 +1119,7 @@ these commands to enable or disable individual packets.  Each packet
 can be set to `on' (the remote target supports this packet), `off' (the
 remote target does not support this packet), or `auto' (detect remote
 target support for this packet).  They all default to `auto'.  For more
-information about each packet, see *Note Remote Protocol::.
+information about each packet, see *note Remote Protocol::.
 
    During normal use, you should not have to use any of these commands.
 If you do, that may be a bug in your remote debugging stub, or a bug in
@@ -1088,6 +1183,8 @@ storage-address'                             `__thread'
 `query-attached'     `qAttached'             Querying remote
                                              process attach
                                              state.
+`trace-buffer-size'  `QTBuffer:size'         `set
+                                             trace-buffer-size'
 `traceframe-info'    `qXfer:traceframe-info:read'Traceframe info
 `install-in-trace'   `InstallInTrace'        Install
                                              tracepoint in
@@ -1399,7 +1496,6 @@ configurations.
 * DJGPP Native::                Features specific to the DJGPP port
 * Cygwin Native::		Features specific to the Cygwin port
 * Hurd Native::                 Features specific to GNU Hurd
-* Neutrino::                    Features specific to QNX Neutrino
 * Darwin::			Features specific to Darwin
 
 
@@ -1451,13 +1547,16 @@ File: gdb.info,  Node: SVR4 Process Information,  Next: DJGPP Native,  Prev: BSD
 
 Many versions of SVR4 and compatible systems provide a facility called
 `/proc' that can be used to examine the image of a running process
-using file-system subroutines.  If GDB is configured for an operating
-system with this facility, the command `info proc' is available to
-report information about the process running your program, or about any
-process running on your system.  `info proc' works only on SVR4 systems
-that include the `procfs' code.  This includes, as of this writing,
-GNU/Linux, OSF/1 (Digital Unix), Solaris, Irix, and Unixware, but not
-HP-UX, for example.
+using file-system subroutines.
+
+   If GDB is configured for an operating system with this facility, the
+command `info proc' is available to report information about the
+process running your program, or about any process running on your
+system.  This includes, as of this writing, GNU/Linux, OSF/1 (Digital
+Unix), Solaris, and Irix, but not HP-UX, for example.
+
+   This command may also work on core files that were created on a
+system that has the `/proc' facility.
 
 `info proc'
 `info proc PROCESS-ID'
@@ -1473,6 +1572,18 @@ HP-UX, for example.
      PID part is missing, it means a thread from the process being
      debugged (the leading `/' still needs to be present, or else GDB
      will interpret the number as a process ID rather than a thread ID).
+
+`info proc cmdline'
+     Show the original command line of the process.  This command is
+     specific to GNU/Linux.
+
+`info proc cwd'
+     Show the current working directory of the process.  This command is
+     specific to GNU/Linux.
+
+`info proc exe'
+     Show the name of executable of the process.  This command is
+     specific to GNU/Linux.
 
 `info proc mappings'
      Report the memory address space ranges accessible in the program,
@@ -1688,7 +1799,7 @@ interrupt the debuggee even if it ignores `C-c'.
 
    There are various additional Cygwin-specific commands, described in
 this section.  Working with DLLs that have no debugging symbols is
-described in *Note Non-debug DLL Symbols::.
+described in *note Non-debug DLL Symbols::.
 
 `info w32'
      This is a prefix of MS Windows-specific commands which print
@@ -1791,8 +1902,8 @@ will have been loaded.  The easiest way around this problem is simply to
 start the program -- either by setting a breakpoint or letting the
 program run once to completion.  It is also possible to force GDB to
 load a particular DLL before starting the executable -- see the shared
-library information in *Note Files::, or the `dll-symbols' command in
-*Note Cygwin Native::.  Currently, explicitly loading symbols from a
+library information in *note Files::, or the `dll-symbols' command in
+*note Cygwin Native::.  Currently, explicitly loading symbols from a
 DLL with no debugging information will cause the symbol names to be
 duplicated in GDB's lookup table, which may adversely affect symbol
 lookup performance.
@@ -1881,7 +1992,7 @@ setting a break point within a shared DLL like `kernel32.dll' is
 completely safe.
 
 
-File: gdb.info,  Node: Hurd Native,  Next: Neutrino,  Prev: Cygwin Native,  Up: Native
+File: gdb.info,  Node: Hurd Native,  Next: Darwin,  Prev: Cygwin Native,  Up: Native
 
 21.1.6 Commands Specific to GNU Hurd Systems
 --------------------------------------------
@@ -2019,24 +2130,9 @@ debugging.
      commands.
 
 
-File: gdb.info,  Node: Neutrino,  Next: Darwin,  Prev: Hurd Native,  Up: Native
+File: gdb.info,  Node: Darwin,  Prev: Hurd Native,  Up: Native
 
-21.1.7 QNX Neutrino
--------------------
-
-GDB provides the following commands specific to the QNX Neutrino target:
-
-`set debug nto-debug'
-     When set to on, enables debugging messages specific to the QNX
-     Neutrino support.
-
-`show debug nto-debug'
-     Show the current state of QNX Neutrino messages.
-
-
-File: gdb.info,  Node: Darwin,  Prev: Neutrino,  Up: Native
-
-21.1.8 Darwin
+21.1.7 Darwin
 -------------
 
 GDB provides the following commands specific to the Darwin target:
@@ -2781,7 +2877,7 @@ region using one of the following commands (*note Expressions::):
      (gdb) watch {char[LENGTH]} ADDRESS
 
    PowerPC embedded processors support masked watchpoints.  See the
-discussion about the `mask' argument in *Note Set Watchpoints::.
+discussion about the `mask' argument in *note Set Watchpoints::.
 
    PowerPC embedded processors support hardware accelerated "ranged
 breakpoints".  A ranged breakpoint stops execution of the inferior
@@ -2795,7 +2891,7 @@ command.
      Set a breakpoint for an address range.  START-LOCATION and
      END-LOCATION can specify a function name, a line number, an offset
      of lines from the current line or from the start location, or an
-     address of an instruction (see *Note Specify Location::, for a
+     address of an instruction (see *note Specify Location::, for a
      list of all the possible ways to specify a LOCATION.)  The
      breakpoint will stop execution of the inferior whenever it
      executes an instruction at any address within the specified range,
@@ -3093,12 +3189,6 @@ File: gdb.info,  Node: Super-H,  Prev: CRIS,  Up: Embedded Processors
 
 For the Renesas Super-H processor, GDB provides these commands:
 
-`regs'
-     This command is deprecated, and `info all-registers' should be
-     used instead.
-
-     Show the values of all Super-H registers.
-
 `set sh calling-convention CONVENTION'
      Set the calling-convention used when calling functions from GDB.
      Allowed values are `gcc', which is the default setting, and
@@ -3127,6 +3217,7 @@ uses of GDB with the architecture, both native and cross.
 
 * Menu:
 
+* AArch64::
 * i386::
 * Alpha::
 * MIPS::
@@ -3135,9 +3226,26 @@ uses of GDB with the architecture, both native and cross.
 * PowerPC::
 
 
-File: gdb.info,  Node: i386,  Next: Alpha,  Up: Architectures
+File: gdb.info,  Node: AArch64,  Next: i386,  Up: Architectures
 
-21.4.1 x86 Architecture-specific Issues
+21.4.1 AArch64
+--------------
+
+When GDB is debugging the AArch64 architecture, it provides the
+following special commands:
+
+`set debug aarch64'
+     This command determines whether AArch64 architecture-specific
+     debugging messages are to be displayed.
+
+`show debug aarch64'
+     Show whether AArch64 debugging messages are displayed.
+
+
+
+File: gdb.info,  Node: i386,  Next: Alpha,  Prev: AArch64,  Up: Architectures
+
+21.4.2 x86 Architecture-specific Issues
 ---------------------------------------
 
 `set struct-convention MODE'
@@ -3155,7 +3263,7 @@ File: gdb.info,  Node: i386,  Next: Alpha,  Up: Architectures
 
 File: gdb.info,  Node: Alpha,  Next: MIPS,  Prev: i386,  Up: Architectures
 
-21.4.2 Alpha
+21.4.3 Alpha
 ------------
 
 See the following section.
@@ -3163,7 +3271,7 @@ See the following section.
 
 File: gdb.info,  Node: MIPS,  Next: HPPA,  Prev: Alpha,  Up: Architectures
 
-21.4.3 MIPS
+21.4.4 MIPS
 -----------
 
 Alpha- and MIPS-based computers use an unusual stack frame, which
@@ -3275,7 +3383,7 @@ programs:
 
 File: gdb.info,  Node: HPPA,  Next: SPU,  Prev: MIPS,  Up: Architectures
 
-21.4.4 HPPA
+21.4.5 HPPA
 -----------
 
 When GDB is debugging the HP PA architecture, it provides the following
@@ -3296,7 +3404,7 @@ special commands:
 
 File: gdb.info,  Node: SPU,  Next: PowerPC,  Prev: HPPA,  Up: Architectures
 
-21.4.5 Cell Broadband Engine SPU architecture
+21.4.6 Cell Broadband Engine SPU architecture
 ---------------------------------------------
 
 When GDB is debugging the Cell Broadband Engine SPU architecture, it
@@ -3343,8 +3451,8 @@ commands:
      Set whether to automatically flush the software-managed cache.
      When set to `on', GDB will automatically cause the SPE
      software-managed cache to be flushed whenever SPE execution stops.
-     This provides a consistent view of PowerPC memory that is
-     accessed via the cache.  If an application does not use the
+     This provides a consistent view of PowerPC memory that is accessed
+     via the cache.  If an application does not use the
      software-managed cache, this option has no effect.
 
 `show spu auto-flush-cache'
@@ -3354,7 +3462,7 @@ commands:
 
 File: gdb.info,  Node: PowerPC,  Prev: SPU,  Up: Architectures
 
-21.4.6 PowerPC
+21.4.7 PowerPC
 --------------
 
 When GDB is debugging the PowerPC architecture, it provides a set of
@@ -3377,7 +3485,7 @@ File: gdb.info,  Node: Controlling GDB,  Next: Extending GDB,  Prev: Configurati
 ******************
 
 You can alter the way GDB interacts with you by using the `set'
-command.  For commands controlling how GDB displays data, see *Note
+command.  For commands controlling how GDB displays data, see *note
 Print Settings: Print Settings.  Other settings are described here.
 
 * Menu:
@@ -3669,6 +3777,11 @@ C library (e.g. UCLIBC for GNU/Linux) which does not have the same
 identifying marks that the standard C library for your platform
 provides.
 
+   When GDB is debugging the AArch64 architecture, it provides a
+"Newlib" OS ABI.  This is useful for handling `setjmp' and `longjmp'
+when debugging binaries that use the NEWLIB C library.  The "Newlib" OS
+ABI can be selected by `set osabi Newlib'.
+
 `show osabi'
      Show the OS ABI currently in use.
 
@@ -3787,19 +3900,19 @@ control when to auto-load files and which files should be auto-loaded.
 
    These are various kinds of files GDB can automatically load:
 
-   * *Note objfile-gdb.py file::, controlled by *Note set auto-load
+   * *Note objfile-gdb.py file::, controlled by *note set auto-load
      python-scripts::.
 
-   * *Note objfile-gdb.gdb file::, controlled by *Note set auto-load
+   * *Note objfile-gdb.gdb file::, controlled by *note set auto-load
      gdb-scripts::.
 
-   * *Note dotdebug_gdb_scripts section::, controlled by *Note set
+   * *Note dotdebug_gdb_scripts section::, controlled by *note set
      auto-load python-scripts::.
 
-   * *Note Init File in the Current Directory::, controlled by *Note
+   * *Note Init File in the Current Directory::, controlled by *note
      set auto-load local-gdbinit::.
 
-   * *Note libthread_db.so.1 file::, controlled by *Note set auto-load
+   * *Note libthread_db.so.1 file::, controlled by *note set auto-load
      libthread-db::.
 
    These are GDB control commands for the auto-loading:
@@ -3855,7 +3968,7 @@ File: gdb.info,  Node: Init File in the Current Directory,  Next: libthread_db.s
 ---------------------------------------------------------------
 
 By default, GDB reads and executes the canned sequences of commands
-from init file (if any) in the current working directory, see *Note
+from init file (if any) in the current working directory, see *note
 Init File in the Current Directory during Startup::.
 
    Note that loading of this local `.gdbinit' file also requires
@@ -3964,6 +4077,11 @@ will not get loaded:
               declined by your `auto-load safe-path' set
               to "$debugdir:$datadir/auto-load".
 
+To instruct GDB to go ahead and use the init files anyway, invoke GDB
+like this:
+
+     $ gdb -q -iex "set auto-load safe-path /home/user/gdb" ./gdb
+
    The list of trusted directories is controlled by the following
 commands:
 
@@ -3992,7 +4110,7 @@ commands:
 
    This variable defaults to what `--with-auto-load-dir' has been
 configured to (*note with-auto-load-dir::).  `$debugdir' and `$datadir'
-substitution applies the same as for *Note set auto-load
+substitution applies the same as for *note set auto-load
 scripts-directory::.  The default `set auto-load safe-path' value can
 be also overriden by GDB configuration option
 `--with-auto-load-safe-path'.
@@ -4094,7 +4212,7 @@ will not think it has crashed.
 
    Currently, the messages controlled by `set verbose' are those which
 announce that the symbol table for a source file is being read; see
-`symbol-file' in *Note Commands to Specify Files: Files.
+`symbol-file' in *note Commands to Specify Files: Files.
 
 `set verbose on'
      Enables GDB output of certain informational messages.
@@ -4177,9 +4295,17 @@ commands.
      Displays the current setting of asynchronous command completion
      notification.  
 
+`set debug aarch64'
+     Turns on or off display of debugging messages related to ARM
+     AArch64.  The default is off.  
+
+`show debug aarch64'
+     Displays the current state of displaying debugging messages
+     related to ARM AArch64.  
+
 `set debug arch'
      Turns on or off display of gdbarch debugging info.  The default is
-     off 
+     off
 
 `show debug arch'
      Displays the current state of displaying gdbarch debugging info.
@@ -4201,6 +4327,14 @@ commands.
 
 `show debug check-physname'
      Show the current state of "physname" checking.
+
+`set debug coff-pe-read'
+     Control display of debugging messages related to reading of COFF/PE
+     exported symbols.  The default is off.
+
+`show debug coff-pe-read'
+     Displays the current state of displaying debugging messages
+     related to reading of COFF/PE exported symbols.
 
 `set debug dwarf2-die'
      Dump DWARF2 DIEs after they are read in.  The value is the number
@@ -4273,6 +4407,22 @@ commands.
 
 `show debug lin-lwp'
      Show the current state of Linux LWP debugging messages.
+
+`set debug mach-o'
+     Control display of debugging messages related to Mach-O symbols
+     processing.  The default is off.
+
+`show debug mach-o'
+     Displays the current state of displaying debugging messages
+     related to reading of COFF/PE exported symbols.
+
+`set debug notification'
+     Turns on or off debugging messages about remote async notification.
+     The default is off.
+
+`show debug notification'
+     Displays the current state of remote async notification debugging
+     messages.
 
 `set debug observer'
      Turns on or off display of GDB observer debugging.  This includes
@@ -4534,7 +4684,7 @@ been passed.  This expands to a number in the range 0...10.
      user-defined python commands.
 
    In addition to the above commands, user-defined commands frequently
-use control flow commands, described in *Note Command Files::.
+use control flow commands, described in *note Command Files::.
 
    When user-defined commands are executed, the commands of the
 definition are not printed.  An error in any command stops execution of
@@ -4882,10 +5032,25 @@ File: gdb.info,  Node: Python Commands,  Next: Python API,  Up: Python
 23.2.1 Python Commands
 ----------------------
 
-GDB provides one command for accessing the Python interpreter, and one
+GDB provides two commands for accessing the Python interpreter, and one
 related setting:
 
-`python [CODE]'
+`python-interactive [COMMAND]'
+`pi [COMMAND]'
+     Without an argument, the `python-interactive' command can be used
+     to start an interactive Python prompt.  To return to GDB, type the
+     `EOF' character (e.g., `Ctrl-D' on an empty prompt).
+
+     Alternatively, a single-line Python command can be given as an
+     argument and evaluated.  If the command is an expression, the
+     result will be printed; otherwise, nothing will be printed.  For
+     example:
+
+          (gdb) python-interactive 2 + 3
+          5
+
+`python [COMMAND]'
+`py [COMMAND]'
      The `python' command can be used to evaluate Python code.
 
      If given an argument, the `python' command will evaluate the
@@ -4949,6 +5114,7 @@ user (*note Screen Size::).  In this situation, a Python
 * Pretty Printing API::         Pretty-printing values.
 * Selecting Pretty-Printers::   How GDB chooses a pretty-printer.
 * Writing a Pretty-Printer::    Writing a Pretty-Printer.
+* Type Printing API::		Pretty-printing types.
 * Inferiors In Python::         Python representation of inferiors (processes)
 * Events In Python::            Listening for events from GDB.
 * Threads In Python::           Accessing inferior threads from Python.
@@ -4965,6 +5131,7 @@ user (*note Screen Size::).  In this situation, a Python
 * Finish Breakpoints in Python:: Setting Breakpoints on function return
                                 using Python.
 * Lazy Strings In Python::      Python representation of lazy strings.
+* Architectures In Python::     Python representation of architectures.
 
 
 File: gdb.info,  Node: Basic Python,  Next: Exception Handling,  Up: Python API
@@ -4983,7 +5150,7 @@ classes added by GDB are placed in this module.  GDB automatically
  -- Function: gdb.execute (command [, from_tty [, to_string]])
      Evaluate COMMAND, a string, as a GDB CLI command.  If a GDB
      exception happens while COMMAND runs, it is translated as
-     described in *Note Exception Handling: Exception Handling.
+     described in *note Exception Handling: Exception Handling.
 
      FROM_TTY specifies whether GDB ought to consider this command as
      having originated from the user invoking it interactively.  It
@@ -5262,245 +5429,236 @@ function, call it like so:
 
    The following attributes are provided:
 
-      -- Variable: Value.address
-          If this object is addressable, this read-only attribute holds
-          a `gdb.Value' object representing the address.  Otherwise,
-          this attribute holds `None'.
+ -- Variable: Value.address
+     If this object is addressable, this read-only attribute holds a
+     `gdb.Value' object representing the address.  Otherwise, this
+     attribute holds `None'.
 
-      -- Variable: Value.is_optimized_out
-          This read-only boolean attribute is true if the compiler
-          optimized out this value, thus it is not available for
-          fetching from the inferior.
+ -- Variable: Value.is_optimized_out
+     This read-only boolean attribute is true if the compiler optimized
+     out this value, thus it is not available for fetching from the
+     inferior.
 
-      -- Variable: Value.type
-          The type of this `gdb.Value'.  The value of this attribute is
-          a `gdb.Type' object (*note Types In Python::).
+ -- Variable: Value.type
+     The type of this `gdb.Value'.  The value of this attribute is a
+     `gdb.Type' object (*note Types In Python::).
 
-      -- Variable: Value.dynamic_type
-          The dynamic type of this `gdb.Value'.  This uses C++ run-time
-          type information (RTTI) to determine the dynamic type of the
-          value.  If this value is of class type, it will return the
-          class in which the value is embedded, if any.  If this value
-          is of pointer or reference to a class type, it will compute
-          the dynamic type of the referenced object, and return a
-          pointer or reference to that type, respectively.  In all
-          other cases, it will return the value's static type.
+ -- Variable: Value.dynamic_type
+     The dynamic type of this `gdb.Value'.  This uses C++ run-time type
+     information (RTTI) to determine the dynamic type of the value.  If
+     this value is of class type, it will return the class in which the
+     value is embedded, if any.  If this value is of pointer or
+     reference to a class type, it will compute the dynamic type of the
+     referenced object, and return a pointer or reference to that type,
+     respectively.  In all other cases, it will return the value's
+     static type.
 
-          Note that this feature will only work when debugging a C++
-          program that includes RTTI for the object in question.
-          Otherwise, it will just return the static type of the value
-          as in `ptype foo' (*note ptype: Symbols.).
+     Note that this feature will only work when debugging a C++ program
+     that includes RTTI for the object in question.  Otherwise, it will
+     just return the static type of the value as in `ptype foo' (*note
+     ptype: Symbols.).
 
-      -- Variable: Value.is_lazy
-          The value of this read-only boolean attribute is `True' if
-          this `gdb.Value' has not yet been fetched from the inferior.
-          GDB does not fetch values until necessary, for efficiency.
-          For example:
+ -- Variable: Value.is_lazy
+     The value of this read-only boolean attribute is `True' if this
+     `gdb.Value' has not yet been fetched from the inferior.  GDB does
+     not fetch values until necessary, for efficiency.  For example:
 
-               myval = gdb.parse_and_eval ('somevar')
+          myval = gdb.parse_and_eval ('somevar')
 
-          The value of `somevar' is not fetched at this time.  It will
-          be fetched when the value is needed, or when the `fetch_lazy'
-          method is invoked.
+     The value of `somevar' is not fetched at this time.  It will be
+     fetched when the value is needed, or when the `fetch_lazy' method
+     is invoked.
 
    The following methods are provided:
 
-      -- Function: Value.__init__ (VAL)
-          Many Python values can be converted directly to a `gdb.Value'
-          via this object initializer.  Specifically:
+ -- Function: Value.__init__ (VAL)
+     Many Python values can be converted directly to a `gdb.Value' via
+     this object initializer.  Specifically:
 
-         Python boolean
-               A Python boolean is converted to the boolean type from
-               the current language.
-
-         Python integer
-               A Python integer is converted to the C `long' type for
-               the current architecture.
-
-         Python long
-               A Python long is converted to the C `long long' type for
-               the current architecture.
-
-         Python float
-               A Python float is converted to the C `double' type for
-               the current architecture.
-
-         Python string
-               A Python string is converted to a target string, using
-               the current target encoding.
-
-         `gdb.Value'
-               If `val' is a `gdb.Value', then a copy of the value is
-               made.
-
-         `gdb.LazyString'
-               If `val' is a `gdb.LazyString' (*note Lazy Strings In
-               Python::), then the lazy string's `value' method is
-               called, and its result is used.
-
-      -- Function: Value.cast (type)
-          Return a new instance of `gdb.Value' that is the result of
-          casting this instance to the type described by TYPE, which
-          must be a `gdb.Type' object.  If the cast cannot be performed
-          for some reason, this method throws an exception.
-
-      -- Function: Value.dereference ()
-          For pointer data types, this method returns a new `gdb.Value'
-          object whose contents is the object pointed to by the
-          pointer.  For example, if `foo' is a C pointer to an `int',
-          declared in your C program as
-
-               int *foo;
-
-          then you can use the corresponding `gdb.Value' to access what
-          `foo' points to like this:
-
-               bar = foo.dereference ()
-
-          The result `bar' will be a `gdb.Value' object holding the
-          value pointed to by `foo'.
-
-          A similar function `Value.referenced_value' exists which also
-          returns `gdb.Value' objects corresonding to the values
-          pointed to by pointer values (and additionally, values
-          referenced by reference values).  However, the behavior of
-          `Value.dereference' differs from `Value.referenced_value' by
-          the fact that the behavior of `Value.dereference' is
-          identical to applying the C unary operator `*' on a given
-          value.  For example, consider a reference to a pointer
-          `ptrref', declared in your C++ program as
-
-               typedef int *intptr;
-               ...
-               int val = 10;
-               intptr ptr = &val;
-               intptr &ptrref = ptr;
-
-          Though `ptrref' is a reference value, one can apply the method
-          `Value.dereference' to the `gdb.Value' object corresponding
-          to it and obtain a `gdb.Value' which is identical to that
-          corresponding to `val'.  However, if you apply the method
-          `Value.referenced_value', the result would be a `gdb.Value'
-          object identical to that corresponding to `ptr'.
-
-               py_ptrref = gdb.parse_and_eval ("ptrref")
-               py_val = py_ptrref.dereference ()
-               py_ptr = py_ptrref.referenced_value ()
-
-          The `gdb.Value' object `py_val' is identical to that
-          corresponding to `val', and `py_ptr' is identical to that
-          corresponding to `ptr'.  In general, `Value.dereference' can
-          be applied whenever the C unary operator `*' can be applied
-          to the corresponding C value.  For those cases where applying
-          both `Value.dereference' and `Value.referenced_value' is
-          allowed, the results obtained need not be identical (as we
-          have seen in the above example).  The results are however
-          identical when applied on `gdb.Value' objects corresponding
-          to pointers (`gdb.Value' objects with type code
-          `TYPE_CODE_PTR') in a C/C++ program.
-
-      -- Function: Value.referenced_value ()
-          For pointer or reference data types, this method returns a new
-          `gdb.Value' object corresponding to the value referenced by
-          the pointer/reference value.  For pointer data types,
-          `Value.dereference' and `Value.referenced_value' produce
-          identical results.  The difference between these methods is
-          that `Value.dereference' cannot get the values referenced by
-          reference values.  For example, consider a reference to an
-          `int', declared in your C++ program as
-
-               int val = 10;
-               int &ref = val;
-
-          then applying `Value.dereference' to the `gdb.Value' object
-          corresponding to `ref' will result in an error, while applying
-          `Value.referenced_value' will result in a `gdb.Value' object
-          identical to that corresponding to `val'.
-
-               py_ref = gdb.parse_and_eval ("ref")
-               er_ref = py_ref.dereference ()       # Results in error
-               py_val = py_ref.referenced_value ()  # Returns the referenced value
-
-          The `gdb.Value' object `py_val' is identical to that
-          corresponding to `val'.
-
-      -- Function: Value.dynamic_cast (type)
-          Like `Value.cast', but works as if the C++ `dynamic_cast'
-          operator were used.  Consult a C++ reference for details.
-
-      -- Function: Value.reinterpret_cast (type)
-          Like `Value.cast', but works as if the C++ `reinterpret_cast'
-          operator were used.  Consult a C++ reference for details.
-
-      -- Function: Value.string ([encoding[, errors[, length]]])
-          If this `gdb.Value' represents a string, then this method
-          converts the contents to a Python string.  Otherwise, this
-          method will throw an exception.
-
-          Strings are recognized in a language-specific way; whether a
-          given `gdb.Value' represents a string is determined by the
+    Python boolean
+          A Python boolean is converted to the boolean type from the
           current language.
 
-          For C-like languages, a value is a string if it is a pointer
-          to or an array of characters or ints.  The string is assumed
-          to be terminated by a zero of the appropriate width.  However
-          if the optional length argument is given, the string will be
-          converted to that given length, ignoring any embedded zeros
-          that the string may contain.
+    Python integer
+          A Python integer is converted to the C `long' type for the
+          current architecture.
 
-          If the optional ENCODING argument is given, it must be a
-          string naming the encoding of the string in the `gdb.Value',
-          such as `"ascii"', `"iso-8859-6"' or `"utf-8"'.  It accepts
-          the same encodings as the corresponding argument to Python's
-          `string.decode' method, and the Python codec machinery will
-          be used to convert the string.  If ENCODING is not given, or
-          if ENCODING is the empty string, then either the
-          `target-charset' (*note Character Sets::) will be used, or a
-          language-specific encoding will be used, if the current
-          language is able to supply one.
+    Python long
+          A Python long is converted to the C `long long' type for the
+          current architecture.
 
-          The optional ERRORS argument is the same as the corresponding
-          argument to Python's `string.decode' method.
+    Python float
+          A Python float is converted to the C `double' type for the
+          current architecture.
 
-          If the optional LENGTH argument is given, the string will be
-          fetched and converted to the given length.
+    Python string
+          A Python string is converted to a target string, using the
+          current target encoding.
 
-      -- Function: Value.lazy_string ([encoding [, length]])
-          If this `gdb.Value' represents a string, then this method
-          converts the contents to a `gdb.LazyString' (*note Lazy
-          Strings In Python::).  Otherwise, this method will throw an
-          exception.
+    `gdb.Value'
+          If `val' is a `gdb.Value', then a copy of the value is made.
 
-          If the optional ENCODING argument is given, it must be a
-          string naming the encoding of the `gdb.LazyString'.  Some
-          examples are: `ascii', `iso-8859-6' or `utf-8'.  If the
-          ENCODING argument is an encoding that GDB does recognize, GDB
-          will raise an error.
+    `gdb.LazyString'
+          If `val' is a `gdb.LazyString' (*note Lazy Strings In
+          Python::), then the lazy string's `value' method is called,
+          and its result is used.
 
-          When a lazy string is printed, the GDB encoding machinery is
-          used to convert the string during printing.  If the optional
-          ENCODING argument is not provided, or is an empty string, GDB
-          will automatically select the encoding most suitable for the
-          string type.  For further information on encoding in GDB
-          please see *Note Character Sets::.
+ -- Function: Value.cast (type)
+     Return a new instance of `gdb.Value' that is the result of casting
+     this instance to the type described by TYPE, which must be a
+     `gdb.Type' object.  If the cast cannot be performed for some
+     reason, this method throws an exception.
 
-          If the optional LENGTH argument is given, the string will be
-          fetched and encoded to the length of characters specified.  If
-          the LENGTH argument is not provided, the string will be
-          fetched and encoded until a null of appropriate width is
-          found.
+ -- Function: Value.dereference ()
+     For pointer data types, this method returns a new `gdb.Value'
+     object whose contents is the object pointed to by the pointer.
+     For example, if `foo' is a C pointer to an `int', declared in your
+     C program as
 
-      -- Function: Value.fetch_lazy ()
-          If the `gdb.Value' object is currently a lazy value
-          (`gdb.Value.is_lazy' is `True'), then the value is fetched
-          from the inferior.  Any errors that occur in the process will
-          produce a Python exception.
+          int *foo;
 
-          If the `gdb.Value' object is not a lazy value, this method
-          has no effect.
+     then you can use the corresponding `gdb.Value' to access what
+     `foo' points to like this:
 
-          This method does not return a value.
+          bar = foo.dereference ()
 
+     The result `bar' will be a `gdb.Value' object holding the value
+     pointed to by `foo'.
+
+     A similar function `Value.referenced_value' exists which also
+     returns `gdb.Value' objects corresonding to the values pointed to
+     by pointer values (and additionally, values referenced by reference
+     values).  However, the behavior of `Value.dereference' differs
+     from `Value.referenced_value' by the fact that the behavior of
+     `Value.dereference' is identical to applying the C unary operator
+     `*' on a given value.  For example, consider a reference to a
+     pointer `ptrref', declared in your C++ program as
+
+          typedef int *intptr;
+          ...
+          int val = 10;
+          intptr ptr = &val;
+          intptr &ptrref = ptr;
+
+     Though `ptrref' is a reference value, one can apply the method
+     `Value.dereference' to the `gdb.Value' object corresponding to it
+     and obtain a `gdb.Value' which is identical to that corresponding
+     to `val'.  However, if you apply the method
+     `Value.referenced_value', the result would be a `gdb.Value' object
+     identical to that corresponding to `ptr'.
+
+          py_ptrref = gdb.parse_and_eval ("ptrref")
+          py_val = py_ptrref.dereference ()
+          py_ptr = py_ptrref.referenced_value ()
+
+     The `gdb.Value' object `py_val' is identical to that corresponding
+     to `val', and `py_ptr' is identical to that corresponding to
+     `ptr'.  In general, `Value.dereference' can be applied whenever
+     the C unary operator `*' can be applied to the corresponding C
+     value.  For those cases where applying both `Value.dereference'
+     and `Value.referenced_value' is allowed, the results obtained need
+     not be identical (as we have seen in the above example).  The
+     results are however identical when applied on `gdb.Value' objects
+     corresponding to pointers (`gdb.Value' objects with type code
+     `TYPE_CODE_PTR') in a C/C++ program.
+
+ -- Function: Value.referenced_value ()
+     For pointer or reference data types, this method returns a new
+     `gdb.Value' object corresponding to the value referenced by the
+     pointer/reference value.  For pointer data types,
+     `Value.dereference' and `Value.referenced_value' produce identical
+     results.  The difference between these methods is that
+     `Value.dereference' cannot get the values referenced by reference
+     values.  For example, consider a reference to an `int', declared
+     in your C++ program as
+
+          int val = 10;
+          int &ref = val;
+
+     then applying `Value.dereference' to the `gdb.Value' object
+     corresponding to `ref' will result in an error, while applying
+     `Value.referenced_value' will result in a `gdb.Value' object
+     identical to that corresponding to `val'.
+
+          py_ref = gdb.parse_and_eval ("ref")
+          er_ref = py_ref.dereference ()       # Results in error
+          py_val = py_ref.referenced_value ()  # Returns the referenced value
+
+     The `gdb.Value' object `py_val' is identical to that corresponding
+     to `val'.
+
+ -- Function: Value.dynamic_cast (type)
+     Like `Value.cast', but works as if the C++ `dynamic_cast' operator
+     were used.  Consult a C++ reference for details.
+
+ -- Function: Value.reinterpret_cast (type)
+     Like `Value.cast', but works as if the C++ `reinterpret_cast'
+     operator were used.  Consult a C++ reference for details.
+
+ -- Function: Value.string ([encoding[, errors[, length]]])
+     If this `gdb.Value' represents a string, then this method converts
+     the contents to a Python string.  Otherwise, this method will
+     throw an exception.
+
+     Strings are recognized in a language-specific way; whether a given
+     `gdb.Value' represents a string is determined by the current
+     language.
+
+     For C-like languages, a value is a string if it is a pointer to or
+     an array of characters or ints.  The string is assumed to be
+     terminated by a zero of the appropriate width.  However if the
+     optional length argument is given, the string will be converted to
+     that given length, ignoring any embedded zeros that the string may
+     contain.
+
+     If the optional ENCODING argument is given, it must be a string
+     naming the encoding of the string in the `gdb.Value', such as
+     `"ascii"', `"iso-8859-6"' or `"utf-8"'.  It accepts the same
+     encodings as the corresponding argument to Python's
+     `string.decode' method, and the Python codec machinery will be used
+     to convert the string.  If ENCODING is not given, or if ENCODING
+     is the empty string, then either the `target-charset' (*note
+     Character Sets::) will be used, or a language-specific encoding
+     will be used, if the current language is able to supply one.
+
+     The optional ERRORS argument is the same as the corresponding
+     argument to Python's `string.decode' method.
+
+     If the optional LENGTH argument is given, the string will be
+     fetched and converted to the given length.
+
+ -- Function: Value.lazy_string ([encoding [, length]])
+     If this `gdb.Value' represents a string, then this method converts
+     the contents to a `gdb.LazyString' (*note Lazy Strings In
+     Python::).  Otherwise, this method will throw an exception.
+
+     If the optional ENCODING argument is given, it must be a string
+     naming the encoding of the `gdb.LazyString'.  Some examples are:
+     `ascii', `iso-8859-6' or `utf-8'.  If the ENCODING argument is an
+     encoding that GDB does recognize, GDB will raise an error.
+
+     When a lazy string is printed, the GDB encoding machinery is used
+     to convert the string during printing.  If the optional ENCODING
+     argument is not provided, or is an empty string, GDB will
+     automatically select the encoding most suitable for the string
+     type.  For further information on encoding in GDB please see *note
+     Character Sets::.
+
+     If the optional LENGTH argument is given, the string will be
+     fetched and encoded to the length of characters specified.  If the
+     LENGTH argument is not provided, the string will be fetched and
+     encoded until a null of appropriate width is found.
+
+ -- Function: Value.fetch_lazy ()
+     If the `gdb.Value' object is currently a lazy value
+     (`gdb.Value.is_lazy' is `True'), then the value is fetched from
+     the inferior.  Any errors that occur in the process will produce a
+     Python exception.
+
+     If the `gdb.Value' object is not a lazy value, this method has no
+     effect.
+
+     This method does not return a value.
 
 
 File: gdb.info,  Node: Types In Python,  Next: Pretty Printing API,  Prev: Values From Inferior,  Up: Python API
@@ -5535,132 +5693,141 @@ of the `Type.fields' method for a description of the `gdb.Field' class.
 
    An instance of `Type' has the following attributes:
 
-      -- Variable: Type.code
-          The type code for this type.  The type code will be one of the
-          `TYPE_CODE_' constants defined below.
+ -- Variable: Type.code
+     The type code for this type.  The type code will be one of the
+     `TYPE_CODE_' constants defined below.
 
-      -- Variable: Type.sizeof
-          The size of this type, in target `char' units.  Usually, a
-          target's `char' type will be an 8-bit byte.  However, on some
-          unusual platforms, this type may have a different size.
+ -- Variable: Type.sizeof
+     The size of this type, in target `char' units.  Usually, a
+     target's `char' type will be an 8-bit byte.  However, on some
+     unusual platforms, this type may have a different size.
 
-      -- Variable: Type.tag
-          The tag name for this type.  The tag name is the name after
-          `struct', `union', or `enum' in C and C++; not all languages
-          have this concept.  If this type has no tag name, then `None'
-          is returned.
+ -- Variable: Type.tag
+     The tag name for this type.  The tag name is the name after
+     `struct', `union', or `enum' in C and C++; not all languages have
+     this concept.  If this type has no tag name, then `None' is
+     returned.
 
    The following methods are provided:
 
-      -- Function: Type.fields ()
-          For structure and union types, this method returns the
-          fields.  Range types have two fields, the minimum and maximum
-          values.  Enum types have one field per enum constant.
-          Function and method types have one field per parameter.  The
-          base types of C++ classes are also represented as fields.  If
-          the type has no fields, or does not fit into one of these
-          categories, an empty sequence will be returned.
+ -- Function: Type.fields ()
+     For structure and union types, this method returns the fields.
+     Range types have two fields, the minimum and maximum values.  Enum
+     types have one field per enum constant.  Function and method types
+     have one field per parameter.  The base types of C++ classes are
+     also represented as fields.  If the type has no fields, or does
+     not fit into one of these categories, an empty sequence will be
+     returned.
 
-          Each field is a `gdb.Field' object, with some pre-defined
-          attributes:
-         `bitpos'
-               This attribute is not available for `static' fields (as
-               in C++ or Java).  For non-`static' fields, the value is
-               the bit position of the field.  For `enum' fields, the
-               value is the enumeration member's integer representation.
+     Each field is a `gdb.Field' object, with some pre-defined
+     attributes:
+    `bitpos'
+          This attribute is not available for `static' fields (as in
+          C++ or Java).  For non-`static' fields, the value is the bit
+          position of the field.  For `enum' fields, the value is the
+          enumeration member's integer representation.
 
-         `name'
-               The name of the field, or `None' for anonymous fields.
+    `name'
+          The name of the field, or `None' for anonymous fields.
 
-         `artificial'
-               This is `True' if the field is artificial, usually
-               meaning that it was provided by the compiler and not the
-               user.  This attribute is always provided, and is `False'
-               if the field is not artificial.
+    `artificial'
+          This is `True' if the field is artificial, usually meaning
+          that it was provided by the compiler and not the user.  This
+          attribute is always provided, and is `False' if the field is
+          not artificial.
 
-         `is_base_class'
-               This is `True' if the field represents a base class of a
-               C++ structure.  This attribute is always provided, and
-               is `False' if the field is not a base class of the type
-               that is the argument of `fields', or if that type was
-               not a C++ class.
+    `is_base_class'
+          This is `True' if the field represents a base class of a C++
+          structure.  This attribute is always provided, and is `False'
+          if the field is not a base class of the type that is the
+          argument of `fields', or if that type was not a C++ class.
 
-         `bitsize'
-               If the field is packed, or is a bitfield, then this will
-               have a non-zero value, which is the size of the field in
-               bits.  Otherwise, this will be zero; in this case the
-               field's size is given by its type.
+    `bitsize'
+          If the field is packed, or is a bitfield, then this will have
+          a non-zero value, which is the size of the field in bits.
+          Otherwise, this will be zero; in this case the field's size
+          is given by its type.
 
-         `type'
-               The type of the field.  This is usually an instance of
-               `Type', but it can be `None' in some situations.
+    `type'
+          The type of the field.  This is usually an instance of `Type',
+          but it can be `None' in some situations.
 
-      -- Function: Type.array (N1 [, N2])
-          Return a new `gdb.Type' object which represents an array of
-          this type.  If one argument is given, it is the inclusive
-          upper bound of the array; in this case the lower bound is
-          zero.  If two arguments are given, the first argument is the
-          lower bound of the array, and the second argument is the
-          upper bound of the array.  An array's length must not be
-          negative, but the bounds can be.
+ -- Function: Type.array (N1 [, N2])
+     Return a new `gdb.Type' object which represents an array of this
+     type.  If one argument is given, it is the inclusive upper bound of
+     the array; in this case the lower bound is zero.  If two arguments
+     are given, the first argument is the lower bound of the array, and
+     the second argument is the upper bound of the array.  An array's
+     length must not be negative, but the bounds can be.
 
-      -- Function: Type.const ()
-          Return a new `gdb.Type' object which represents a
-          `const'-qualified variant of this type.
+ -- Function: Type.vector (N1 [, N2])
+     Return a new `gdb.Type' object which represents a vector of this
+     type.  If one argument is given, it is the inclusive upper bound of
+     the vector; in this case the lower bound is zero.  If two
+     arguments are given, the first argument is the lower bound of the
+     vector, and the second argument is the upper bound of the vector.
+     A vector's length must not be negative, but the bounds can be.
 
-      -- Function: Type.volatile ()
-          Return a new `gdb.Type' object which represents a
-          `volatile'-qualified variant of this type.
+     The difference between an `array' and a `vector' is that arrays
+     behave like in C: when used in expressions they decay to a pointer
+     to the first element whereas vectors are treated as first class
+     values.
 
-      -- Function: Type.unqualified ()
-          Return a new `gdb.Type' object which represents an unqualified
-          variant of this type.  That is, the result is neither `const'
-          nor `volatile'.
+ -- Function: Type.const ()
+     Return a new `gdb.Type' object which represents a
+     `const'-qualified variant of this type.
 
-      -- Function: Type.range ()
-          Return a Python `Tuple' object that contains two elements: the
-          low bound of the argument type and the high bound of that
-          type.  If the type does not have a range, GDB will raise a
-          `gdb.error' exception (*note Exception Handling::).
+ -- Function: Type.volatile ()
+     Return a new `gdb.Type' object which represents a
+     `volatile'-qualified variant of this type.
 
-      -- Function: Type.reference ()
-          Return a new `gdb.Type' object which represents a reference
-          to this type.
+ -- Function: Type.unqualified ()
+     Return a new `gdb.Type' object which represents an unqualified
+     variant of this type.  That is, the result is neither `const' nor
+     `volatile'.
 
-      -- Function: Type.pointer ()
-          Return a new `gdb.Type' object which represents a pointer to
-          this type.
+ -- Function: Type.range ()
+     Return a Python `Tuple' object that contains two elements: the low
+     bound of the argument type and the high bound of that type.  If
+     the type does not have a range, GDB will raise a `gdb.error'
+     exception (*note Exception Handling::).
 
-      -- Function: Type.strip_typedefs ()
-          Return a new `gdb.Type' that represents the real type, after
-          removing all layers of typedefs.
+ -- Function: Type.reference ()
+     Return a new `gdb.Type' object which represents a reference to this
+     type.
 
-      -- Function: Type.target ()
-          Return a new `gdb.Type' object which represents the target
-          type of this type.
+ -- Function: Type.pointer ()
+     Return a new `gdb.Type' object which represents a pointer to this
+     type.
 
-          For a pointer type, the target type is the type of the
-          pointed-to object.  For an array type (meaning C-like
-          arrays), the target type is the type of the elements of the
-          array.  For a function or method type, the target type is the
-          type of the return value.  For a complex type, the target
-          type is the type of the elements.  For a typedef, the target
-          type is the aliased type.
+ -- Function: Type.strip_typedefs ()
+     Return a new `gdb.Type' that represents the real type, after
+     removing all layers of typedefs.
 
-          If the type does not have a target, this method will throw an
-          exception.
+ -- Function: Type.target ()
+     Return a new `gdb.Type' object which represents the target type of
+     this type.
 
-      -- Function: Type.template_argument (n [, block])
-          If this `gdb.Type' is an instantiation of a template, this
-          will return a new `gdb.Type' which represents the type of the
-          Nth template argument.
+     For a pointer type, the target type is the type of the pointed-to
+     object.  For an array type (meaning C-like arrays), the target
+     type is the type of the elements of the array.  For a function or
+     method type, the target type is the type of the return value.  For
+     a complex type, the target type is the type of the elements.  For
+     a typedef, the target type is the aliased type.
 
-          If this `gdb.Type' is not a template type, this will throw an
-          exception.  Ordinarily, only C++ code will have template
-          types.
+     If the type does not have a target, this method will throw an
+     exception.
 
-          If BLOCK is given, then NAME is looked up in that scope.
-          Otherwise, it is searched for globally.
+ -- Function: Type.template_argument (n [, block])
+     If this `gdb.Type' is an instantiation of a template, this will
+     return a new `gdb.Type' which represents the type of the Nth
+     template argument.
+
+     If this `gdb.Type' is not a template type, this will throw an
+     exception.  Ordinarily, only C++ code will have template types.
+
+     If BLOCK is given, then NAME is looked up in that scope.
+     Otherwise, it is searched for globally.
 
    Each type has a code, which indicates what category this type falls
 into.  The available type categories are represented by constants
@@ -5708,7 +5875,7 @@ defined in the `gdb' module:
      this way.
 
 `gdb.TYPE_CODE_BITSTRING'
-     A string of bits.
+     A string of bits.  It is deprecated.
 
 `gdb.TYPE_CODE_ERROR'
      An unknown or erroneous type.
@@ -5888,7 +6055,7 @@ attribute is present and its value is `False', the printer is disabled,
 otherwise the printer is enabled.
 
 
-File: gdb.info,  Node: Writing a Pretty-Printer,  Next: Inferiors In Python,  Prev: Selecting Pretty-Printers,  Up: Python API
+File: gdb.info,  Node: Writing a Pretty-Printer,  Next: Type Printing API,  Prev: Selecting Pretty-Printers,  Up: Python API
 
 23.2.2.7 Writing a Pretty-Printer
 .................................
@@ -6038,9 +6205,65 @@ corresponding output of `info pretty-printer':
          bar
 
 
-File: gdb.info,  Node: Inferiors In Python,  Next: Events In Python,  Prev: Writing a Pretty-Printer,  Up: Python API
+File: gdb.info,  Node: Type Printing API,  Next: Inferiors In Python,  Prev: Writing a Pretty-Printer,  Up: Python API
 
-23.2.2.8 Inferiors In Python
+23.2.2.8 Type Printing API
+..........................
+
+GDB provides a way for Python code to customize type display.  This is
+mainly useful for substituting canonical typedef names for types.
+
+   A "type printer" is just a Python object conforming to a certain
+protocol.  A simple base class implementing the protocol is provided;
+see *note gdb.types::.  A type printer must supply at least:
+
+ -- Instance Variable of type_printer: enabled
+     A boolean which is True if the printer is enabled, and False
+     otherwise.  This is manipulated by the `enable type-printer' and
+     `disable type-printer' commands.
+
+ -- Instance Variable of type_printer: name
+     The name of the type printer.  This must be a string.  This is
+     used by the `enable type-printer' and `disable type-printer'
+     commands.
+
+ -- Method on type_printer: instantiate (self)
+     This is called by GDB at the start of type-printing.  It is only
+     called if the type printer is enabled.  This method must return a
+     new object that supplies a `recognize' method, as described below.
+
+   When displaying a type, say via the `ptype' command, GDB will
+compute a list of type recognizers.  This is done by iterating first
+over the per-objfile type printers (*note Objfiles In Python::),
+followed by the per-progspace type printers (*note Progspaces In
+Python::), and finally the global type printers.
+
+   GDB will call the `instantiate' method of each enabled type printer.
+If this method returns `None', then the result is ignored; otherwise,
+it is appended to the list of recognizers.
+
+   Then, when GDB is going to display a type name, it iterates over the
+list of recognizers.  For each one, it calls the recognition function,
+stopping if the function returns a non-`None' value.  The recognition
+function is defined as:
+
+ -- Method on type_recognizer: recognize (self, type)
+     If TYPE is not recognized, return `None'.  Otherwise, return a
+     string which is to be printed as the name of TYPE.  TYPE will be
+     an instance of `gdb.Type' (*note Types In Python::).
+
+   GDB uses this two-pass approach so that type printers can
+efficiently cache information without holding on to it too long.  For
+example, it can be convenient to look up type information in a type
+printer and hold it for a recognizer's lifetime; if a single pass were
+done then type printers would have to make use of the event system in
+order to avoid holding information that could become stale as the
+inferior changed.
+
+
+File: gdb.info,  Node: Inferiors In Python,  Next: Events In Python,  Prev: Type Printing API,  Up: Python API
+
+23.2.2.9 Inferiors In Python
 ............................
 
 Programs which are being run under GDB are called inferiors (*note
@@ -6059,58 +6282,59 @@ module:
 
    A `gdb.Inferior' object has the following attributes:
 
-      -- Variable: Inferior.num
-          ID of inferior, as assigned by GDB.
+ -- Variable: Inferior.num
+     ID of inferior, as assigned by GDB.
 
-      -- Variable: Inferior.pid
-          Process ID of the inferior, as assigned by the underlying
-          operating system.
+ -- Variable: Inferior.pid
+     Process ID of the inferior, as assigned by the underlying operating
+     system.
 
-      -- Variable: Inferior.was_attached
-          Boolean signaling whether the inferior was created using
-          `attach', or started by GDB itself.
+ -- Variable: Inferior.was_attached
+     Boolean signaling whether the inferior was created using `attach',
+     or started by GDB itself.
 
    A `gdb.Inferior' object has the following methods:
 
-      -- Function: Inferior.is_valid ()
-          Returns `True' if the `gdb.Inferior' object is valid, `False'
-          if not.  A `gdb.Inferior' object will become invalid if the
-          inferior no longer exists within GDB.  All other
-          `gdb.Inferior' methods will throw an exception if it is
-          invalid at the time the method is called.
+ -- Function: Inferior.is_valid ()
+     Returns `True' if the `gdb.Inferior' object is valid, `False' if
+     not.  A `gdb.Inferior' object will become invalid if the inferior
+     no longer exists within GDB.  All other `gdb.Inferior' methods
+     will throw an exception if it is invalid at the time the method is
+     called.
 
-      -- Function: Inferior.threads ()
-          This method returns a tuple holding all the threads which are
-          valid when it is called.  If there are no valid threads, the
-          method will return an empty tuple.
+ -- Function: Inferior.threads ()
+     This method returns a tuple holding all the threads which are valid
+     when it is called.  If there are no valid threads, the method will
+     return an empty tuple.
 
-      -- Function: Inferior.read_memory (address, length)
-          Read LENGTH bytes of memory from the inferior, starting at
-          ADDRESS.  Returns a buffer object, which behaves much like an
-          array or a string.  It can be modified and given to the
-          `Inferior.write_memory' function.
+ -- Function: Inferior.read_memory (address, length)
+     Read LENGTH bytes of memory from the inferior, starting at
+     ADDRESS.  Returns a buffer object, which behaves much like an array
+     or a string.  It can be modified and given to the
+     `Inferior.write_memory' function.  In `Python' 3, the return value
+     is a `memoryview' object.
 
-      -- Function: Inferior.write_memory (address, buffer [, length])
-          Write the contents of BUFFER to the inferior, starting at
-          ADDRESS.  The BUFFER parameter must be a Python object which
-          supports the buffer protocol, i.e., a string, an array or the
-          object returned from `Inferior.read_memory'.  If given, LENGTH
-          determines the number of bytes from BUFFER to be written.
+ -- Function: Inferior.write_memory (address, buffer [, length])
+     Write the contents of BUFFER to the inferior, starting at ADDRESS.
+     The BUFFER parameter must be a Python object which supports the
+     buffer protocol, i.e., a string, an array or the object returned
+     from `Inferior.read_memory'.  If given, LENGTH determines the
+     number of bytes from BUFFER to be written.
 
-      -- Function: Inferior.search_memory (address, length, pattern)
-          Search a region of the inferior memory starting at ADDRESS
-          with the given LENGTH using the search pattern supplied in
-          PATTERN.  The PATTERN parameter must be a Python object which
-          supports the buffer protocol, i.e., a string, an array or the
-          object returned from `gdb.read_memory'.  Returns a Python
-          `Long' containing the address where the pattern was found, or
-          `None' if the pattern could not be found.
+ -- Function: Inferior.search_memory (address, length, pattern)
+     Search a region of the inferior memory starting at ADDRESS with
+     the given LENGTH using the search pattern supplied in PATTERN.
+     The PATTERN parameter must be a Python object which supports the
+     buffer protocol, i.e., a string, an array or the object returned
+     from `gdb.read_memory'.  Returns a Python `Long' containing the
+     address where the pattern was found, or `None' if the pattern
+     could not be found.
 
 
 File: gdb.info,  Node: Events In Python,  Next: Threads In Python,  Prev: Inferiors In Python,  Up: Python API
 
-23.2.2.9 Events In Python
-.........................
+23.2.2.10 Events In Python
+..........................
 
 GDB provides a general event facility so that Python code can be
 notified of various state changes, particularly changes that occur in
@@ -6125,14 +6349,13 @@ handler with an "event registry".  An event registry is an object in the
 `gdb.events' module which dispatches particular events.  A registry
 provides methods to register and unregister event handlers:
 
-      -- Function: EventRegistry.connect (object)
-          Add the given callable OBJECT to the registry.  This object
-          will be called when an event corresponding to this registry
-          occurs.
+ -- Function: EventRegistry.connect (object)
+     Add the given callable OBJECT to the registry.  This object will be
+     called when an event corresponding to this registry occurs.
 
-      -- Function: EventRegistry.disconnect (object)
-          Remove the given OBJECT from the registry.  Once removed, the
-          object will no longer receive notifications of events.
+ -- Function: EventRegistry.disconnect (object)
+     Remove the given OBJECT from the registry.  Once removed, the
+     object will no longer receive notifications of events.
 
    Here is an example:
 
@@ -6162,10 +6385,10 @@ available and details of the events they emit:
      extend this event.  Examples of these events are
      `gdb.BreakpointEvent' and `gdb.ContinueEvent'.
 
-           -- Variable: ThreadEvent.inferior_thread
-               In non-stop mode this attribute will be set to the
-               specific thread which was involved in the emitted event.
-               Otherwise, it will be set to `None'.
+      -- Variable: ThreadEvent.inferior_thread
+          In non-stop mode this attribute will be set to the specific
+          thread which was involved in the emitted event. Otherwise, it
+          will be set to `None'.
 
      Emits `gdb.ContinueEvent' which extends `gdb.ThreadEvent'.
 
@@ -6175,16 +6398,16 @@ available and details of the events they emit:
 `events.exited'
      Emits `events.ExitedEvent' which indicates that the inferior has
      exited.  `events.ExitedEvent' has two attributes:
-           -- Variable: ExitedEvent.exit_code
-               An integer representing the exit code, if available,
-               which the inferior has returned.  (The exit code could
-               be unavailable if, for example, GDB detaches from the
-               inferior.) If the exit code is unavailable, the
-               attribute does not exist.
 
-           -- Variable: ExitedEvent inferior
-               A reference to the inferior which triggered the `exited'
-               event.
+      -- Variable: ExitedEvent.exit_code
+          An integer representing the exit code, if available, which
+          the inferior has returned.  (The exit code could be
+          unavailable if, for example, GDB detaches from the inferior.)
+          If the exit code is unavailable, the attribute does not exist.
+
+      -- Variable: ExitedEvent inferior
+          A reference to the inferior which triggered the `exited'
+          event.
 
 `events.stop'
      Emits `gdb.StopEvent' which extends `gdb.ThreadEvent'.
@@ -6201,43 +6424,41 @@ available and details of the events they emit:
      received as signal.  `gdb.SignalEvent' has the following
      attributes:
 
-           -- Variable: SignalEvent.stop_signal
-               A string representing the signal received by the
-               inferior.  A list of possible signal values can be
-               obtained by running the command `info signals' in the
-               GDB command prompt.
+      -- Variable: SignalEvent.stop_signal
+          A string representing the signal received by the inferior.  A
+          list of possible signal values can be obtained by running the
+          command `info signals' in the GDB command prompt.
 
      Also emits  `gdb.BreakpointEvent' which extends `gdb.StopEvent'.
 
      `gdb.BreakpointEvent' event indicates that one or more breakpoints
      have been hit, and has the following attributes:
 
-           -- Variable: BreakpointEvent.breakpoints
-               A sequence containing references to all the breakpoints
-               (type `gdb.Breakpoint') that were hit.  *Note
-               Breakpoints In Python::, for details of the
-               `gdb.Breakpoint' object.
+      -- Variable: BreakpointEvent.breakpoints
+          A sequence containing references to all the breakpoints (type
+          `gdb.Breakpoint') that were hit.  *Note Breakpoints In
+          Python::, for details of the `gdb.Breakpoint' object.
 
-           -- Variable: BreakpointEvent.breakpoint
-               A reference to the first breakpoint that was hit.  This
-               function is maintained for backward compatibility and is
-               now deprecated in favor of the
-               `gdb.BreakpointEvent.breakpoints' attribute.
+      -- Variable: BreakpointEvent.breakpoint
+          A reference to the first breakpoint that was hit.  This
+          function is maintained for backward compatibility and is now
+          deprecated in favor of the `gdb.BreakpointEvent.breakpoints'
+          attribute.
 
 `events.new_objfile'
      Emits `gdb.NewObjFileEvent' which indicates that a new object file
      has been loaded by GDB.  `gdb.NewObjFileEvent' has one attribute:
 
-           -- Variable: NewObjFileEvent.new_objfile
-               A reference to the object file (`gdb.Objfile') which has
-               been loaded.  *Note Objfiles In Python::, for details of
-               the `gdb.Objfile' object.
+      -- Variable: NewObjFileEvent.new_objfile
+          A reference to the object file (`gdb.Objfile') which has been
+          loaded.  *Note Objfiles In Python::, for details of the
+          `gdb.Objfile' object.
 
 
 
 File: gdb.info,  Node: Threads In Python,  Next: Commands In Python,  Prev: Events In Python,  Up: Python API
 
-23.2.2.10 Threads In Python
+23.2.2.11 Threads In Python
 ...........................
 
 Python scripts can access information about, and manipulate inferior
@@ -6253,54 +6474,53 @@ module:
 
    A `gdb.InferiorThread' object has the following attributes:
 
-      -- Variable: InferiorThread.name
-          The name of the thread.  If the user specified a name using
-          `thread name', then this returns that name.  Otherwise, if an
-          OS-supplied name is available, then it is returned.
-          Otherwise, this returns `None'.
+ -- Variable: InferiorThread.name
+     The name of the thread.  If the user specified a name using
+     `thread name', then this returns that name.  Otherwise, if an
+     OS-supplied name is available, then it is returned.  Otherwise,
+     this returns `None'.
 
-          This attribute can be assigned to.  The new value must be a
-          string object, which sets the new name, or `None', which
-          removes any user-specified thread name.
+     This attribute can be assigned to.  The new value must be a string
+     object, which sets the new name, or `None', which removes any
+     user-specified thread name.
 
-      -- Variable: InferiorThread.num
-          ID of the thread, as assigned by GDB.
+ -- Variable: InferiorThread.num
+     ID of the thread, as assigned by GDB.
 
-      -- Variable: InferiorThread.ptid
-          ID of the thread, as assigned by the operating system.  This
-          attribute is a tuple containing three integers.  The first is
-          the Process ID (PID); the second is the Lightweight Process
-          ID (LWPID), and the third is the Thread ID (TID).  Either the
-          LWPID or TID may be 0, which indicates that the operating
-          system does not  use that identifier.
+ -- Variable: InferiorThread.ptid
+     ID of the thread, as assigned by the operating system.  This
+     attribute is a tuple containing three integers.  The first is the
+     Process ID (PID); the second is the Lightweight Process ID
+     (LWPID), and the third is the Thread ID (TID).  Either the LWPID
+     or TID may be 0, which indicates that the operating system does
+     not  use that identifier.
 
    A `gdb.InferiorThread' object has the following methods:
 
-      -- Function: InferiorThread.is_valid ()
-          Returns `True' if the `gdb.InferiorThread' object is valid,
-          `False' if not.  A `gdb.InferiorThread' object will become
-          invalid if the thread exits, or the inferior that the thread
-          belongs is deleted.  All other `gdb.InferiorThread' methods
-          will throw an exception if it is invalid at the time the
-          method is called.
+ -- Function: InferiorThread.is_valid ()
+     Returns `True' if the `gdb.InferiorThread' object is valid,
+     `False' if not.  A `gdb.InferiorThread' object will become invalid
+     if the thread exits, or the inferior that the thread belongs is
+     deleted.  All other `gdb.InferiorThread' methods will throw an
+     exception if it is invalid at the time the method is called.
 
-      -- Function: InferiorThread.switch ()
-          This changes GDB's currently selected thread to the one
-          represented by this object.
+ -- Function: InferiorThread.switch ()
+     This changes GDB's currently selected thread to the one represented
+     by this object.
 
-      -- Function: InferiorThread.is_stopped ()
-          Return a Boolean indicating whether the thread is stopped.
+ -- Function: InferiorThread.is_stopped ()
+     Return a Boolean indicating whether the thread is stopped.
 
-      -- Function: InferiorThread.is_running ()
-          Return a Boolean indicating whether the thread is running.
+ -- Function: InferiorThread.is_running ()
+     Return a Boolean indicating whether the thread is running.
 
-      -- Function: InferiorThread.is_exited ()
-          Return a Boolean indicating whether the thread is exited.
+ -- Function: InferiorThread.is_exited ()
+     Return a Boolean indicating whether the thread is exited.
 
 
 File: gdb.info,  Node: Commands In Python,  Next: Parameters In Python,  Prev: Threads In Python,  Up: Python API
 
-23.2.2.11 Commands In Python
+23.2.2.12 Commands In Python
 ............................
 
 You can implement new GDB CLI commands in Python.  A CLI command is
@@ -6344,7 +6564,7 @@ using a subclass.
      By default, a GDB command is repeated when the user enters a blank
      line at the command prompt.  A command can suppress this behavior
      by invoking the `dont_repeat' method.  This is similar to the user
-     command `dont-repeat', see *Note dont-repeat: Define.
+     command `dont-repeat', see *note dont-repeat: Define.
 
  -- Function: Command.invoke (argument, from_tty)
      This method is called by GDB when this command is invoked.
@@ -6516,7 +6736,7 @@ is read into GDB, you may need to import the `gdb' module explicitly.
 
 File: gdb.info,  Node: Parameters In Python,  Next: Functions In Python,  Prev: Commands In Python,  Up: Python API
 
-23.2.2.12 Parameters In Python
+23.2.2.13 Parameters In Python
 ..............................
 
 You can implement new GDB parameters using Python.  A new parameter is
@@ -6647,7 +6867,7 @@ module:
 
 File: gdb.info,  Node: Functions In Python,  Next: Progspaces In Python,  Prev: Parameters In Python,  Up: Python API
 
-23.2.2.13 Writing new convenience functions
+23.2.2.14 Writing new convenience functions
 ...........................................
 
 You can implement new convenience functions (*note Convenience Vars::)
@@ -6697,10 +6917,15 @@ registration of the function with GDB.  Depending on how the Python
 code is read into GDB, you may need to import the `gdb' module
 explicitly.
 
+   Now you can use the function in an expression:
+
+     (gdb) print $greet("Bob")
+     $1 = "Hello, Bob!"
+
 
 File: gdb.info,  Node: Progspaces In Python,  Next: Objfiles In Python,  Prev: Functions In Python,  Up: Python API
 
-23.2.2.14 Program Spaces In Python
+23.2.2.15 Program Spaces In Python
 ..................................
 
 A program space, or "progspace", represents a symbolic view of an
@@ -6732,10 +6957,14 @@ class.
      is used to format the value.  *Note Pretty Printing API::, for more
      information.
 
+ -- Variable: Progspace.type_printers
+     The `type_printers' attribute is a list of type printer objects.
+     *Note Type Printing API::, for more information.
+
 
 File: gdb.info,  Node: Objfiles In Python,  Next: Frames In Python,  Prev: Progspaces In Python,  Up: Python API
 
-23.2.2.15 Objfiles In Python
+23.2.2.16 Objfiles In Python
 ............................
 
 GDB loads symbols for an inferior from various symbol-containing files
@@ -6771,6 +7000,10 @@ class.
      is used to format the value.  *Note Pretty Printing API::, for more
      information.
 
+ -- Variable: Objfile.type_printers
+     The `type_printers' attribute is a list of type printer objects.
+     *Note Type Printing API::, for more information.
+
    A `gdb.Objfile' object has the following methods:
 
  -- Function: Objfile.is_valid ()
@@ -6783,7 +7016,7 @@ class.
 
 File: gdb.info,  Node: Frames In Python,  Next: Blocks In Python,  Prev: Objfiles In Python,  Up: Python API
 
-23.2.2.16 Accessing inferior stack frames from Python.
+23.2.2.17 Accessing inferior stack frames from Python.
 ......................................................
 
 When the debugged program stops, GDB is able to analyze its call stack
@@ -6816,140 +7049,137 @@ module:
 
    A `gdb.Frame' object has the following methods:
 
-      -- Function: Frame.is_valid ()
-          Returns true if the `gdb.Frame' object is valid, false if not.
-          A frame object can become invalid if the frame it refers to
-          doesn't exist anymore in the inferior.  All `gdb.Frame'
-          methods will throw an exception if it is invalid at the time
-          the method is called.
+ -- Function: Frame.is_valid ()
+     Returns true if the `gdb.Frame' object is valid, false if not.  A
+     frame object can become invalid if the frame it refers to doesn't
+     exist anymore in the inferior.  All `gdb.Frame' methods will throw
+     an exception if it is invalid at the time the method is called.
 
-      -- Function: Frame.name ()
-          Returns the function name of the frame, or `None' if it can't
-          be obtained.
+ -- Function: Frame.name ()
+     Returns the function name of the frame, or `None' if it can't be
+     obtained.
 
-      -- Function: Frame.type ()
-          Returns the type of the frame.  The value can be one of:
-         `gdb.NORMAL_FRAME'
-               An ordinary stack frame.
+ -- Function: Frame.architecture ()
+     Returns the `gdb.Architecture' object corresponding to the frame's
+     architecture.  *Note Architectures In Python::.
 
-         `gdb.DUMMY_FRAME'
-               A fake stack frame that was created by GDB when
-               performing an inferior function call.
+ -- Function: Frame.type ()
+     Returns the type of the frame.  The value can be one of:
+    `gdb.NORMAL_FRAME'
+          An ordinary stack frame.
 
-         `gdb.INLINE_FRAME'
-               A frame representing an inlined function.  The function
-               was inlined into a `gdb.NORMAL_FRAME' that is older than
-               this one.
+    `gdb.DUMMY_FRAME'
+          A fake stack frame that was created by GDB when performing an
+          inferior function call.
 
-         `gdb.TAILCALL_FRAME'
-               A frame representing a tail call.  *Note Tail Call
-               Frames::.
+    `gdb.INLINE_FRAME'
+          A frame representing an inlined function.  The function was
+          inlined into a `gdb.NORMAL_FRAME' that is older than this one.
 
-         `gdb.SIGTRAMP_FRAME'
-               A signal trampoline frame.  This is the frame created by
-               the OS when it calls into a signal handler.
+    `gdb.TAILCALL_FRAME'
+          A frame representing a tail call.  *Note Tail Call Frames::.
 
-         `gdb.ARCH_FRAME'
-               A fake stack frame representing a cross-architecture
-               call.
+    `gdb.SIGTRAMP_FRAME'
+          A signal trampoline frame.  This is the frame created by the
+          OS when it calls into a signal handler.
 
-         `gdb.SENTINEL_FRAME'
-               This is like `gdb.NORMAL_FRAME', but it is only used for
-               the newest frame.
+    `gdb.ARCH_FRAME'
+          A fake stack frame representing a cross-architecture call.
 
-      -- Function: Frame.unwind_stop_reason ()
-          Return an integer representing the reason why it's not
-          possible to find more frames toward the outermost frame.  Use
-          `gdb.frame_stop_reason_string' to convert the value returned
-          by this function to a string. The value can be one of:
+    `gdb.SENTINEL_FRAME'
+          This is like `gdb.NORMAL_FRAME', but it is only used for the
+          newest frame.
 
-         `gdb.FRAME_UNWIND_NO_REASON'
-               No particular reason (older frames should be available).
+ -- Function: Frame.unwind_stop_reason ()
+     Return an integer representing the reason why it's not possible to
+     find more frames toward the outermost frame.  Use
+     `gdb.frame_stop_reason_string' to convert the value returned by
+     this function to a string. The value can be one of:
 
-         `gdb.FRAME_UNWIND_NULL_ID'
-               The previous frame's analyzer returns an invalid result.
+    `gdb.FRAME_UNWIND_NO_REASON'
+          No particular reason (older frames should be available).
 
-         `gdb.FRAME_UNWIND_OUTERMOST'
-               This frame is the outermost.
+    `gdb.FRAME_UNWIND_NULL_ID'
+          The previous frame's analyzer returns an invalid result.
 
-         `gdb.FRAME_UNWIND_UNAVAILABLE'
-               Cannot unwind further, because that would require
-               knowing the values of registers or memory that have not
-               been collected.
+    `gdb.FRAME_UNWIND_OUTERMOST'
+          This frame is the outermost.
 
-         `gdb.FRAME_UNWIND_INNER_ID'
-               This frame ID looks like it ought to belong to a NEXT
-               frame, but we got it for a PREV frame.  Normally, this
-               is a sign of unwinder failure.  It could also indicate
-               stack corruption.
+    `gdb.FRAME_UNWIND_UNAVAILABLE'
+          Cannot unwind further, because that would require knowing the
+          values of registers or memory that have not been collected.
 
-         `gdb.FRAME_UNWIND_SAME_ID'
-               This frame has the same ID as the previous one.  That
-               means that unwinding further would almost certainly give
-               us another frame with exactly the same ID, so break the
-               chain.  Normally, this is a sign of unwinder failure.
-               It could also indicate stack corruption.
+    `gdb.FRAME_UNWIND_INNER_ID'
+          This frame ID looks like it ought to belong to a NEXT frame,
+          but we got it for a PREV frame.  Normally, this is a sign of
+          unwinder failure.  It could also indicate stack corruption.
 
-         `gdb.FRAME_UNWIND_NO_SAVED_PC'
-               The frame unwinder did not find any saved PC, but we
-               needed one to unwind further.
+    `gdb.FRAME_UNWIND_SAME_ID'
+          This frame has the same ID as the previous one.  That means
+          that unwinding further would almost certainly give us another
+          frame with exactly the same ID, so break the chain.  Normally,
+          this is a sign of unwinder failure.  It could also indicate
+          stack corruption.
 
-         `gdb.FRAME_UNWIND_FIRST_ERROR'
-               Any stop reason greater or equal to this value indicates
-               some kind of error.  This special value facilitates
-               writing code that tests for errors in unwinding in a way
-               that will work correctly even if the list of the other
-               values is modified in future GDB versions.  Using it,
-               you could write:
-                    reason = gdb.selected_frame().unwind_stop_reason ()
-                    reason_str =  gdb.frame_stop_reason_string (reason)
-                    if reason >=  gdb.FRAME_UNWIND_FIRST_ERROR:
-                        print "An error occured: %s" % reason_str
+    `gdb.FRAME_UNWIND_NO_SAVED_PC'
+          The frame unwinder did not find any saved PC, but we needed
+          one to unwind further.
+
+    `gdb.FRAME_UNWIND_FIRST_ERROR'
+          Any stop reason greater or equal to this value indicates some
+          kind of error.  This special value facilitates writing code
+          that tests for errors in unwinding in a way that will work
+          correctly even if the list of the other values is modified in
+          future GDB versions.  Using it, you could write:
+               reason = gdb.selected_frame().unwind_stop_reason ()
+               reason_str =  gdb.frame_stop_reason_string (reason)
+               if reason >=  gdb.FRAME_UNWIND_FIRST_ERROR:
+                   print "An error occured: %s" % reason_str
 
 
-      -- Function: Frame.pc ()
-          Returns the frame's resume address.
+ -- Function: Frame.pc ()
+     Returns the frame's resume address.
 
-      -- Function: Frame.block ()
-          Return the frame's code block.  *Note Blocks In Python::.
+ -- Function: Frame.block ()
+     Return the frame's code block.  *Note Blocks In Python::.
 
-      -- Function: Frame.function ()
-          Return the symbol for the function corresponding to this
-          frame.  *Note Symbols In Python::.
+ -- Function: Frame.function ()
+     Return the symbol for the function corresponding to this frame.
+     *Note Symbols In Python::.
 
-      -- Function: Frame.older ()
-          Return the frame that called this frame.
+ -- Function: Frame.older ()
+     Return the frame that called this frame.
 
-      -- Function: Frame.newer ()
-          Return the frame called by this frame.
+ -- Function: Frame.newer ()
+     Return the frame called by this frame.
 
-      -- Function: Frame.find_sal ()
-          Return the frame's symtab and line object.  *Note Symbol
-          Tables In Python::.
+ -- Function: Frame.find_sal ()
+     Return the frame's symtab and line object.  *Note Symbol Tables In
+     Python::.
 
-      -- Function: Frame.read_var (variable [, block])
-          Return the value of VARIABLE in this frame.  If the optional
-          argument BLOCK is provided, search for the variable from that
-          block; otherwise start at the frame's current block (which is
-          determined by the frame's current program counter).  VARIABLE
-          must be a string or a `gdb.Symbol' object.  BLOCK must be a
-          `gdb.Block' object.
+ -- Function: Frame.read_var (variable [, block])
+     Return the value of VARIABLE in this frame.  If the optional
+     argument BLOCK is provided, search for the variable from that
+     block; otherwise start at the frame's current block (which is
+     determined by the frame's current program counter).  VARIABLE must
+     be a string or a `gdb.Symbol' object.  BLOCK must be a `gdb.Block'
+     object.
 
-      -- Function: Frame.select ()
-          Set this frame to be the selected frame.  *Note Examining the
-          Stack: Stack.
+ -- Function: Frame.select ()
+     Set this frame to be the selected frame.  *Note Examining the
+     Stack: Stack.
 
 
 File: gdb.info,  Node: Blocks In Python,  Next: Symbols In Python,  Prev: Frames In Python,  Up: Python API
 
-23.2.2.17 Accessing frame blocks from Python.
+23.2.2.18 Accessing frame blocks from Python.
 .............................................
 
 Within each frame, GDB maintains information on each block stored in
 that frame.  These blocks are organized hierarchically, and are
-represented individually in Python as a `gdb.Block'.  Please see *Note
+represented individually in Python as a `gdb.Block'.  Please see *note
 Frames In Python::, for a more in-depth discussion on frames.
-Furthermore, see *Note Examining the Stack: Stack, for more detailed
+Furthermore, see *note Examining the Stack: Stack, for more detailed
 technical information on GDB's book-keeping of the stack.
 
    A `gdb.Block' is iterable.  The iterator returns the symbols (*note
@@ -6968,53 +7198,52 @@ module:
 
    A `gdb.Block' object has the following methods:
 
-      -- Function: Block.is_valid ()
-          Returns `True' if the `gdb.Block' object is valid, `False' if
-          not.  A block object can become invalid if the block it
-          refers to doesn't exist anymore in the inferior.  All other
-          `gdb.Block' methods will throw an exception if it is invalid
-          at the time the method is called.  The block's validity is
-          also checked during iteration over symbols of the block.
+ -- Function: Block.is_valid ()
+     Returns `True' if the `gdb.Block' object is valid, `False' if not.
+     A block object can become invalid if the block it refers to
+     doesn't exist anymore in the inferior.  All other `gdb.Block'
+     methods will throw an exception if it is invalid at the time the
+     method is called.  The block's validity is also checked during
+     iteration over symbols of the block.
 
    A `gdb.Block' object has the following attributes:
 
-      -- Variable: Block.start
-          The start address of the block.  This attribute is not
-          writable.
+ -- Variable: Block.start
+     The start address of the block.  This attribute is not writable.
 
-      -- Variable: Block.end
-          The end address of the block.  This attribute is not writable.
+ -- Variable: Block.end
+     The end address of the block.  This attribute is not writable.
 
-      -- Variable: Block.function
-          The name of the block represented as a `gdb.Symbol'.  If the
-          block is not named, then this attribute holds `None'.  This
-          attribute is not writable.
+ -- Variable: Block.function
+     The name of the block represented as a `gdb.Symbol'.  If the block
+     is not named, then this attribute holds `None'.  This attribute is
+     not writable.
 
-      -- Variable: Block.superblock
-          The block containing this block.  If this parent block does
-          not exist, this attribute holds `None'.  This attribute is
-          not writable.
+ -- Variable: Block.superblock
+     The block containing this block.  If this parent block does not
+     exist, this attribute holds `None'.  This attribute is not
+     writable.
 
-      -- Variable: Block.global_block
-          The global block associated with this block.  This attribute
-          is not writable.
+ -- Variable: Block.global_block
+     The global block associated with this block.  This attribute is not
+     writable.
 
-      -- Variable: Block.static_block
-          The static block associated with this block.  This attribute
-          is not writable.
+ -- Variable: Block.static_block
+     The static block associated with this block.  This attribute is not
+     writable.
 
-      -- Variable: Block.is_global
-          `True' if the `gdb.Block' object is a global block, `False'
-          if not.  This attribute is not writable.
+ -- Variable: Block.is_global
+     `True' if the `gdb.Block' object is a global block, `False' if
+     not.  This attribute is not writable.
 
-      -- Variable: Block.is_static
-          `True' if the `gdb.Block' object is a static block, `False'
-          if not.  This attribute is not writable.
+ -- Variable: Block.is_static
+     `True' if the `gdb.Block' object is a static block, `False' if
+     not.  This attribute is not writable.
 
 
 File: gdb.info,  Node: Symbols In Python,  Next: Symbol Tables In Python,  Prev: Blocks In Python,  Up: Python API
 
-23.2.2.18 Python representation of Symbols.
+23.2.2.19 Python representation of Symbols.
 ...........................................
 
 GDB represents every variable, function and type as an entry in a
@@ -7058,73 +7287,70 @@ module:
 
    A `gdb.Symbol' object has the following attributes:
 
-      -- Variable: Symbol.type
-          The type of the symbol or `None' if no type is recorded.
-          This attribute is represented as a `gdb.Type' object.  *Note
-          Types In Python::.  This attribute is not writable.
+ -- Variable: Symbol.type
+     The type of the symbol or `None' if no type is recorded.  This
+     attribute is represented as a `gdb.Type' object.  *Note Types In
+     Python::.  This attribute is not writable.
 
-      -- Variable: Symbol.symtab
-          The symbol table in which the symbol appears.  This attribute
-          is represented as a `gdb.Symtab' object.  *Note Symbol Tables
-          In Python::.  This attribute is not writable.
+ -- Variable: Symbol.symtab
+     The symbol table in which the symbol appears.  This attribute is
+     represented as a `gdb.Symtab' object.  *Note Symbol Tables In
+     Python::.  This attribute is not writable.
 
-      -- Variable: Symbol.line
-          The line number in the source code at which the symbol was
-          defined.  This is an integer.
+ -- Variable: Symbol.line
+     The line number in the source code at which the symbol was defined.
+     This is an integer.
 
-      -- Variable: Symbol.name
-          The name of the symbol as a string.  This attribute is not
-          writable.
+ -- Variable: Symbol.name
+     The name of the symbol as a string.  This attribute is not
+     writable.
 
-      -- Variable: Symbol.linkage_name
-          The name of the symbol, as used by the linker (i.e., may be
-          mangled).  This attribute is not writable.
+ -- Variable: Symbol.linkage_name
+     The name of the symbol, as used by the linker (i.e., may be
+     mangled).  This attribute is not writable.
 
-      -- Variable: Symbol.print_name
-          The name of the symbol in a form suitable for output.  This
-          is either `name' or `linkage_name', depending on whether the
-          user asked GDB to display demangled or mangled names.
+ -- Variable: Symbol.print_name
+     The name of the symbol in a form suitable for output.  This is
+     either `name' or `linkage_name', depending on whether the user
+     asked GDB to display demangled or mangled names.
 
-      -- Variable: Symbol.addr_class
-          The address class of the symbol.  This classifies how to find
-          the value of a symbol.  Each address class is a constant
-          defined in the `gdb' module and described later in this
-          chapter.
+ -- Variable: Symbol.addr_class
+     The address class of the symbol.  This classifies how to find the
+     value of a symbol.  Each address class is a constant defined in the
+     `gdb' module and described later in this chapter.
 
-      -- Variable: Symbol.needs_frame
-          This is `True' if evaluating this symbol's value requires a
-          frame (*note Frames In Python::) and `False' otherwise.
-          Typically, local variables will require a frame, but other
-          symbols will not.
+ -- Variable: Symbol.needs_frame
+     This is `True' if evaluating this symbol's value requires a frame
+     (*note Frames In Python::) and `False' otherwise.  Typically,
+     local variables will require a frame, but other symbols will not.
 
-      -- Variable: Symbol.is_argument
-          `True' if the symbol is an argument of a function.
+ -- Variable: Symbol.is_argument
+     `True' if the symbol is an argument of a function.
 
-      -- Variable: Symbol.is_constant
-          `True' if the symbol is a constant.
+ -- Variable: Symbol.is_constant
+     `True' if the symbol is a constant.
 
-      -- Variable: Symbol.is_function
-          `True' if the symbol is a function or a method.
+ -- Variable: Symbol.is_function
+     `True' if the symbol is a function or a method.
 
-      -- Variable: Symbol.is_variable
-          `True' if the symbol is a variable.
+ -- Variable: Symbol.is_variable
+     `True' if the symbol is a variable.
 
    A `gdb.Symbol' object has the following methods:
 
-      -- Function: Symbol.is_valid ()
-          Returns `True' if the `gdb.Symbol' object is valid, `False'
-          if not.  A `gdb.Symbol' object can become invalid if the
-          symbol it refers to does not exist in GDB any longer.  All
-          other `gdb.Symbol' methods will throw an exception if it is
-          invalid at the time the method is called.
+ -- Function: Symbol.is_valid ()
+     Returns `True' if the `gdb.Symbol' object is valid, `False' if
+     not.  A `gdb.Symbol' object can become invalid if the symbol it
+     refers to does not exist in GDB any longer.  All other
+     `gdb.Symbol' methods will throw an exception if it is invalid at
+     the time the method is called.
 
-      -- Function: Symbol.value ([frame])
-          Compute the value of the symbol, as a `gdb.Value'.  For
-          functions, this computes the address of the function, cast to
-          the appropriate type.  If the symbol requires a frame in
-          order to compute its value, then FRAME must be given.  If
-          FRAME is not given, or if FRAME is invalid, then this method
-          will throw an exception.
+ -- Function: Symbol.value ([frame])
+     Compute the value of the symbol, as a `gdb.Value'.  For functions,
+     this computes the address of the function, cast to the appropriate
+     type.  If the symbol requires a frame in order to compute its
+     value, then FRAME must be given.  If FRAME is not given, or if
+     FRAME is invalid, then this method will throw an exception.
 
    The available domain categories in `gdb.Symbol' are represented as
 constants in the `gdb' module:
@@ -7211,7 +7437,7 @@ represented as constants in the `gdb' module:
 
 File: gdb.info,  Node: Symbol Tables In Python,  Next: Breakpoints In Python,  Prev: Symbols In Python,  Up: Python API
 
-23.2.2.19 Symbol table representation in Python.
+23.2.2.20 Symbol table representation in Python.
 ................................................
 
 Access to symbol table data maintained by GDB on the inferior is
@@ -7219,386 +7445,64 @@ exposed to Python via two objects: `gdb.Symtab_and_line' and
 `gdb.Symtab'.  Symbol table and line data for a frame is returned from
 the `find_sal' method in `gdb.Frame' object.  *Note Frames In Python::.
 
-   For more information on GDB's symbol table management, see *Note
+   For more information on GDB's symbol table management, see *note
 Examining the Symbol Table: Symbols, for more information.
 
    A `gdb.Symtab_and_line' object has the following attributes:
 
-      -- Variable: Symtab_and_line.symtab
-          The symbol table object (`gdb.Symtab') for this frame.  This
-          attribute is not writable.
+ -- Variable: Symtab_and_line.symtab
+     The symbol table object (`gdb.Symtab') for this frame.  This
+     attribute is not writable.
 
-      -- Variable: Symtab_and_line.pc
-          Indicates the start of the address range occupied by code for
-          the current source line.  This attribute is not writable.
+ -- Variable: Symtab_and_line.pc
+     Indicates the start of the address range occupied by code for the
+     current source line.  This attribute is not writable.
 
-      -- Variable: Symtab_and_line.last
-          Indicates the end of the address range occupied by code for
-          the current source line.  This attribute is not writable.
+ -- Variable: Symtab_and_line.last
+     Indicates the end of the address range occupied by code for the
+     current source line.  This attribute is not writable.
 
-      -- Variable: Symtab_and_line.line
-          Indicates the current line number for this object.  This
-          attribute is not writable.
+ -- Variable: Symtab_and_line.line
+     Indicates the current line number for this object.  This attribute
+     is not writable.
 
    A `gdb.Symtab_and_line' object has the following methods:
 
-      -- Function: Symtab_and_line.is_valid ()
-          Returns `True' if the `gdb.Symtab_and_line' object is valid,
-          `False' if not.  A `gdb.Symtab_and_line' object can become
-          invalid if the Symbol table and line object it refers to does
-          not exist in GDB any longer.  All other `gdb.Symtab_and_line'
-          methods will throw an exception if it is invalid at the time
-          the method is called.
+ -- Function: Symtab_and_line.is_valid ()
+     Returns `True' if the `gdb.Symtab_and_line' object is valid,
+     `False' if not.  A `gdb.Symtab_and_line' object can become invalid
+     if the Symbol table and line object it refers to does not exist in
+     GDB any longer.  All other `gdb.Symtab_and_line' methods will
+     throw an exception if it is invalid at the time the method is
+     called.
 
    A `gdb.Symtab' object has the following attributes:
 
-      -- Variable: Symtab.filename
-          The symbol table's source filename.  This attribute is not
-          writable.
+ -- Variable: Symtab.filename
+     The symbol table's source filename.  This attribute is not
+     writable.
 
-      -- Variable: Symtab.objfile
-          The symbol table's backing object file.  *Note Objfiles In
-          Python::.  This attribute is not writable.
+ -- Variable: Symtab.objfile
+     The symbol table's backing object file.  *Note Objfiles In
+     Python::.  This attribute is not writable.
 
    A `gdb.Symtab' object has the following methods:
 
-      -- Function: Symtab.is_valid ()
-          Returns `True' if the `gdb.Symtab' object is valid, `False'
-          if not.  A `gdb.Symtab' object can become invalid if the
-          symbol table it refers to does not exist in GDB any longer.
-          All other `gdb.Symtab' methods will throw an exception if it
-          is invalid at the time the method is called.
-
-      -- Function: Symtab.fullname ()
-          Return the symbol table's source absolute file name.
-
-      -- Function: Symtab.global_block ()
-          Return the global block of the underlying symbol table.
-          *Note Blocks In Python::.
-
-      -- Function: Symtab.static_block ()
-          Return the static block of the underlying symbol table.
-          *Note Blocks In Python::.
-
-
-File: gdb.info,  Node: Breakpoints In Python,  Next: Finish Breakpoints in Python,  Prev: Symbol Tables In Python,  Up: Python API
-
-23.2.2.20 Manipulating breakpoints using Python
-...............................................
-
-Python code can manipulate breakpoints via the `gdb.Breakpoint' class.
-
- -- Function: Breakpoint.__init__ (spec [, type [, wp_class
-          [,internal]]])
-     Create a new breakpoint.  SPEC is a string naming the location of
-     the breakpoint, or an expression that defines a watchpoint.  The
-     contents can be any location recognized by the `break' command, or
-     in the case of a watchpoint, by the `watch' command.  The optional
-     TYPE denotes the breakpoint to create from the types defined later
-     in this chapter.  This argument can be either: `gdb.BP_BREAKPOINT'
-     or `gdb.BP_WATCHPOINT'.  TYPE defaults to `gdb.BP_BREAKPOINT'.
-     The optional INTERNAL argument allows the breakpoint to become
-     invisible to the user.  The breakpoint will neither be reported
-     when created, nor will it be listed in the output from `info
-     breakpoints' (but will be listed with the `maint info breakpoints'
-     command).  The optional WP_CLASS argument defines the class of
-     watchpoint to create, if TYPE is `gdb.BP_WATCHPOINT'.  If a
-     watchpoint class is not provided, it is assumed to be a
-     `gdb.WP_WRITE' class.
-
- -- Function: Breakpoint.stop (self)
-     The `gdb.Breakpoint' class can be sub-classed and, in particular,
-     you may choose to implement the `stop' method.  If this method is
-     defined as a sub-class of `gdb.Breakpoint', it will be called when
-     the inferior reaches any location of a breakpoint which
-     instantiates that sub-class.  If the method returns `True', the
-     inferior will be stopped at the location of the breakpoint,
-     otherwise the inferior will continue.
-
-     If there are multiple breakpoints at the same location with a
-     `stop' method, each one will be called regardless of the return
-     status of the previous.  This ensures that all `stop' methods have
-     a chance to execute at that location.  In this scenario if one of
-     the methods returns `True' but the others return `False', the
-     inferior will still be stopped.
-
-     You should not alter the execution state of the inferior (i.e.,
-     step, next, etc.), alter the current frame context (i.e., change
-     the current active frame), or alter, add or delete any breakpoint.
-     As a general rule, you should not alter any data within GDB or
-     the inferior at this time.
-
-     Example `stop' implementation:
-
-          class MyBreakpoint (gdb.Breakpoint):
-                def stop (self):
-                  inf_val = gdb.parse_and_eval("foo")
-                  if inf_val == 3:
-                    return True
-                  return False
-
-   The available watchpoint types represented by constants are defined
-in the `gdb' module:
-
-`gdb.WP_READ'
-     Read only watchpoint.
-
-`gdb.WP_WRITE'
-     Write only watchpoint.
-
-`gdb.WP_ACCESS'
-     Read/Write watchpoint.
-
- -- Function: Breakpoint.is_valid ()
-     Return `True' if this `Breakpoint' object is valid, `False'
-     otherwise.  A `Breakpoint' object can become invalid if the user
-     deletes the breakpoint.  In this case, the object still exists,
-     but the underlying breakpoint does not.  In the cases of
-     watchpoint scope, the watchpoint remains valid even if execution
-     of the inferior leaves the scope of that watchpoint.
-
- -- Function: Breakpoint.delete
-     Permanently deletes the GDB breakpoint.  This also invalidates the
-     Python `Breakpoint' object.  Any further access to this object's
-     attributes or methods will raise an error.
-
- -- Variable: Breakpoint.enabled
-     This attribute is `True' if the breakpoint is enabled, and `False'
-     otherwise.  This attribute is writable.
-
- -- Variable: Breakpoint.silent
-     This attribute is `True' if the breakpoint is silent, and `False'
-     otherwise.  This attribute is writable.
-
-     Note that a breakpoint can also be silent if it has commands and
-     the first command is `silent'.  This is not reported by the
-     `silent' attribute.
-
- -- Variable: Breakpoint.thread
-     If the breakpoint is thread-specific, this attribute holds the
-     thread id.  If the breakpoint is not thread-specific, this
-     attribute is `None'.  This attribute is writable.
-
- -- Variable: Breakpoint.task
-     If the breakpoint is Ada task-specific, this attribute holds the
-     Ada task id.  If the breakpoint is not task-specific (or the
-     underlying language is not Ada), this attribute is `None'.  This
-     attribute is writable.
-
- -- Variable: Breakpoint.ignore_count
-     This attribute holds the ignore count for the breakpoint, an
-     integer.  This attribute is writable.
-
- -- Variable: Breakpoint.number
-     This attribute holds the breakpoint's number -- the identifier
-     used by the user to manipulate the breakpoint.  This attribute is
-     not writable.
-
- -- Variable: Breakpoint.type
-     This attribute holds the breakpoint's type -- the identifier used
-     to determine the actual breakpoint type or use-case.  This
-     attribute is not writable.
-
- -- Variable: Breakpoint.visible
-     This attribute tells whether the breakpoint is visible to the user
-     when set, or when the `info breakpoints' command is run.  This
-     attribute is not writable.
-
-   The available types are represented by constants defined in the `gdb'
-module:
-
-`gdb.BP_BREAKPOINT'
-     Normal code breakpoint.
-
-`gdb.BP_WATCHPOINT'
-     Watchpoint breakpoint.
-
-`gdb.BP_HARDWARE_WATCHPOINT'
-     Hardware assisted watchpoint.
-
-`gdb.BP_READ_WATCHPOINT'
-     Hardware assisted read watchpoint.
-
-`gdb.BP_ACCESS_WATCHPOINT'
-     Hardware assisted access watchpoint.
-
- -- Variable: Breakpoint.hit_count
-     This attribute holds the hit count for the breakpoint, an integer.
-     This attribute is writable, but currently it can only be set to
-     zero.
-
- -- Variable: Breakpoint.location
-     This attribute holds the location of the breakpoint, as specified
-     by the user.  It is a string.  If the breakpoint does not have a
-     location (that is, it is a watchpoint) the attribute's value is
-     `None'.  This attribute is not writable.
-
- -- Variable: Breakpoint.expression
-     This attribute holds a breakpoint expression, as specified by the
-     user.  It is a string.  If the breakpoint does not have an
-     expression (the breakpoint is not a watchpoint) the attribute's
-     value is `None'.  This attribute is not writable.
-
- -- Variable: Breakpoint.condition
-     This attribute holds the condition of the breakpoint, as specified
-     by the user.  It is a string.  If there is no condition, this
-     attribute's value is `None'.  This attribute is writable.
-
- -- Variable: Breakpoint.commands
-     This attribute holds the commands attached to the breakpoint.  If
-     there are commands, this attribute's value is a string holding all
-     the commands, separated by newlines.  If there are no commands,
-     this attribute is `None'.  This attribute is not writable.
-
-
-File: gdb.info,  Node: Finish Breakpoints in Python,  Next: Lazy Strings In Python,  Prev: Breakpoints In Python,  Up: Python API
-
-23.2.2.21 Finish Breakpoints
-............................
-
-A finish breakpoint is a temporary breakpoint set at the return address
-of a frame, based on the `finish' command.  `gdb.FinishBreakpoint'
-extends `gdb.Breakpoint'.  The underlying breakpoint will be disabled
-and deleted when the execution will run out of the breakpoint scope
-(i.e.  `Breakpoint.stop' or `FinishBreakpoint.out_of_scope' triggered).
-Finish breakpoints are thread specific and must be create with the right
-thread selected.
-
- -- Function: FinishBreakpoint.__init__ ([frame] [, internal])
-     Create a finish breakpoint at the return address of the `gdb.Frame'
-     object FRAME.  If FRAME is not provided, this defaults to the
-     newest frame.  The optional INTERNAL argument allows the
-     breakpoint to become invisible to the user.  *Note Breakpoints In
-     Python::, for further details about this argument.
-
- -- Function: FinishBreakpoint.out_of_scope (self)
-     In some circumstances (e.g. `longjmp', C++ exceptions, GDB
-     `return' command, ...), a function may not properly terminate, and
-     thus never hit the finish breakpoint.  When GDB notices such a
-     situation, the `out_of_scope' callback will be triggered.
-
-     You may want to sub-class `gdb.FinishBreakpoint' and override this
-     method:
-
-          class MyFinishBreakpoint (gdb.FinishBreakpoint)
-              def stop (self):
-                  print "normal finish"
-                  return True
-
-              def out_of_scope ():
-                  print "abnormal finish"
-
- -- Variable: FinishBreakpoint.return_value
-     When GDB is stopped at a finish breakpoint and the frame used to
-     build the `gdb.FinishBreakpoint' object had debug symbols, this
-     attribute will contain a `gdb.Value' object corresponding to the
-     return value of the function.  The value will be `None' if the
-     function return type is `void' or if the return value was not
-     computable.  This attribute is not writable.
-
-
-File: gdb.info,  Node: Lazy Strings In Python,  Prev: Finish Breakpoints in Python,  Up: Python API
-
-23.2.2.22 Python representation of lazy strings.
-................................................
-
-A "lazy string" is a string whose contents is not retrieved or encoded
-until it is needed.
-
-   A `gdb.LazyString' is represented in GDB as an `address' that points
-to a region of memory, an `encoding' that will be used to encode that
-region of memory, and a `length' to delimit the region of memory that
-represents the string.  The difference between a `gdb.LazyString' and a
-string wrapped within a `gdb.Value' is that a `gdb.LazyString' will be
-treated differently by GDB when printing.  A `gdb.LazyString' is
-retrieved and encoded during printing, while a `gdb.Value' wrapping a
-string is immediately retrieved and encoded on creation.
-
-   A `gdb.LazyString' object has the following functions:
-
- -- Function: LazyString.value ()
-     Convert the `gdb.LazyString' to a `gdb.Value'.  This value will
-     point to the string in memory, but will lose all the delayed
-     retrieval, encoding and handling that GDB applies to a
-     `gdb.LazyString'.
-
- -- Variable: LazyString.address
-     This attribute holds the address of the string.  This attribute is
-     not writable.
-
- -- Variable: LazyString.length
-     This attribute holds the length of the string in characters.  If
-     the length is -1, then the string will be fetched and encoded up
-     to the first null of appropriate width.  This attribute is not
-     writable.
-
- -- Variable: LazyString.encoding
-     This attribute holds the encoding that will be applied to the
-     string when the string is printed by GDB.  If the encoding is not
-     set, or contains an empty string,  then GDB will select the most
-     appropriate encoding when the string is printed.  This attribute
-     is not writable.
-
- -- Variable: LazyString.type
-     This attribute holds the type that is represented by the lazy
-     string's type.  For a lazy string this will always be a pointer
-     type.  To resolve this to the lazy string's character type, use
-     the type's `target' method.  *Note Types In Python::.  This
-     attribute is not writable.
-
-
-File: gdb.info,  Node: Python Auto-loading,  Next: Python modules,  Prev: Python API,  Up: Python
-
-23.2.3 Python Auto-loading
---------------------------
-
-When a new object file is read (for example, due to the `file' command,
-or because the inferior has loaded a shared library), GDB will look for
-Python support scripts in several ways: `OBJFILE-gdb.py' (*note
-objfile-gdb.py file::) and `.debug_gdb_scripts' section (*note
-dotdebug_gdb_scripts section::).
-
-   The auto-loading feature is useful for supplying application-specific
-debugging commands and scripts.
-
-   Auto-loading can be enabled or disabled, and the list of auto-loaded
-scripts can be printed.
-
-`set auto-load python-scripts [on|off]'
-     Enable or disable the auto-loading of Python scripts.
-
-`show auto-load python-scripts'
-     Show whether auto-loading of Python scripts is enabled or disabled.
-
-`info auto-load python-scripts [REGEXP]'
-     Print the list of all Python scripts that GDB auto-loaded.
-
-     Also printed is the list of Python scripts that were mentioned in
-     the `.debug_gdb_scripts' section and were not found (*note
-     dotdebug_gdb_scripts section::).  This is useful because their
-     names are not printed when GDB tries to load them and fails.
-     There may be many of them, and printing an error message for each
-     one is problematic.
-
-     If REGEXP is supplied only Python scripts with matching names are
-     printed.
-
-     Example:
-
-          (gdb) info auto-load python-scripts
-          Loaded Script
-          Yes    py-section-script.py
-                 full name: /tmp/py-section-script.py
-          No     my-foo-pretty-printers.py
-
-   When reading an auto-loaded file, GDB sets the "current objfile".
-This is available via the `gdb.current_objfile' function (*note
-Objfiles In Python::).  This can be useful for registering
-objfile-specific pretty-printers.
-
-* Menu:
-
-* objfile-gdb.py file::          The `OBJFILE-gdb.py' file
-* dotdebug_gdb_scripts section:: The `.debug_gdb_scripts' section
-* Which flavor to choose?::
+ -- Function: Symtab.is_valid ()
+     Returns `True' if the `gdb.Symtab' object is valid, `False' if
+     not.  A `gdb.Symtab' object can become invalid if the symbol table
+     it refers to does not exist in GDB any longer.  All other
+     `gdb.Symtab' methods will throw an exception if it is invalid at
+     the time the method is called.
+
+ -- Function: Symtab.fullname ()
+     Return the symbol table's source absolute file name.
+
+ -- Function: Symtab.global_block ()
+     Return the global block of the underlying symbol table.  *Note
+     Blocks In Python::.
+
+ -- Function: Symtab.static_block ()
+     Return the static block of the underlying symbol table.  *Note
+     Blocks In Python::.
 

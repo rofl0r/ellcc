@@ -1,6 +1,5 @@
 /* Native debugging support for Intel x86 running DJGPP.
-   Copyright (C) 1997, 1999-2001, 2005-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
    Written by Robert Hoehne.
 
    This file is part of GDB.
@@ -82,9 +81,10 @@
    GDB does not use those as of this writing, and will never need
    to.  */
 
+#include "defs.h"
+
 #include <fcntl.h>
 
-#include "defs.h"
 #include "i386-nat.h"
 #include "inferior.h"
 #include "gdbthread.h"
@@ -100,6 +100,7 @@
 #include "regcache.h"
 #include "gdb_string.h"
 #include "top.h"
+#include "cli/cli-utils.h"
 
 #include <stdio.h>		/* might be required for __DJGPP_MINOR__ */
 #include <stdlib.h>
@@ -1272,9 +1273,9 @@ go32_sysinfo (char *arg, int from_tty)
 		break;
 	    }
 	}
-      sprintf (cpu_string, "%s%s Model %d Stepping %d",
-	       intel_p ? "Pentium" : (amd_p ? "AMD" : "ix86"),
-	       cpu_brand, cpu_model, cpuid_eax & 0xf);
+      xsnprintf (cpu_string, sizeof (cpu_string), "%s%s Model %d Stepping %d",
+	         intel_p ? "Pentium" : (amd_p ? "AMD" : "ix86"),
+	         cpu_brand, cpu_model, cpuid_eax & 0xf);
       printfi_filtered (31, "%s\n", cpu_string);
       if (((cpuid_edx & (6 | (0x0d << 23))) != 0)
 	  || ((cpuid_edx & 1) == 0)
@@ -1702,8 +1703,7 @@ go32_sldt (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	{
@@ -1773,8 +1773,7 @@ go32_sgdt (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	{
@@ -1815,8 +1814,7 @@ go32_sidt (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	{
@@ -1986,8 +1984,7 @@ go32_pde (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	{
@@ -2037,8 +2034,7 @@ go32_pte (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	{
@@ -2065,8 +2061,7 @@ go32_pte_for_address (char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      while (*arg && isspace(*arg))
-	arg++;
+      arg = skip_spaces (arg);
 
       if (*arg)
 	addr = parse_and_eval_address (arg);
@@ -2096,6 +2091,9 @@ go32_info_dos_command (char *args, int from_tty)
 {
   help_list (info_dos_cmdlist, "info dos ", class_info, gdb_stdout);
 }
+
+/* -Wmissing-prototypes */
+extern initialize_file_ftype _initialize_go32_nat;
 
 void
 _initialize_go32_nat (void)

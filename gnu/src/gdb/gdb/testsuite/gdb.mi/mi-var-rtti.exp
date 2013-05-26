@@ -1,4 +1,4 @@
-# Copyright 2012 Free Software Foundation, Inc.
+# Copyright 2012-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ mi_prepare_inline_tests $srcfile
 # Enable using RTTI to determine real types of the objects
 proc set_print_object {state testname} {
     mi_gdb_test "-interpreter-exec console \"set print object ${state}\"" \
-        {\^done} \
+	"(.*=cmd-param-changed,param=\"print object\",value=\"${state}\".*|)\\^done" \
         "-interpreter-exec console \"set print object ${state}\" in $testname"
 }
 

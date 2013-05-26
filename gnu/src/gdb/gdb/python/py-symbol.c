@@ -1,6 +1,6 @@
 /* Python interface to symbols.
 
-   Copyright (C) 2008-2012 Free Software Foundation, Inc.
+   Copyright (C) 2008-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -335,7 +335,7 @@ sympy_dealloc (PyObject *obj)
 
   if (sym_obj->prev)
     sym_obj->prev->next = sym_obj->next;
-  else if (SYMBOL_SYMTAB (sym_obj->symbol))
+  else if (sym_obj->symbol && SYMBOL_SYMTAB (sym_obj->symbol))
     {
       set_objfile_data (SYMBOL_SYMTAB (sym_obj->symbol)->objfile,
 			sympy_objfile_data_key, sym_obj->next);
@@ -354,7 +354,8 @@ sympy_dealloc (PyObject *obj)
 PyObject *
 gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
 {
-  int domain = VAR_DOMAIN, is_a_field_of_this = 0;
+  int domain = VAR_DOMAIN;
+  struct field_of_this_result is_a_field_of_this;
   const char *name;
   static char *keywords[] = { "name", "block", "domain", NULL };
   struct symbol *symbol = NULL;
@@ -407,7 +408,7 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
     }
   PyTuple_SET_ITEM (ret_tuple, 0, sym_obj);
 
-  bool_obj = is_a_field_of_this? Py_True : Py_False;
+  bool_obj = (is_a_field_of_this.type != NULL) ? Py_True : Py_False;
   Py_INCREF (bool_obj);
   PyTuple_SET_ITEM (ret_tuple, 1, bool_obj);
 
@@ -561,8 +562,7 @@ Return the value of the symbol." },
 };
 
 PyTypeObject symbol_object_type = {
-  PyObject_HEAD_INIT (NULL)
-  0,				  /*ob_size*/
+  PyVarObject_HEAD_INIT (NULL, 0)
   "gdb.Symbol",			  /*tp_name*/
   sizeof (symbol_object),	  /*tp_basicsize*/
   0,				  /*tp_itemsize*/

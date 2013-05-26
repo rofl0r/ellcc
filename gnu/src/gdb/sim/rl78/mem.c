@@ -1,6 +1,6 @@
 /* mem.c --- memory for RL78 simulator.
 
-   Copyright (C) 2011-2012 Free Software Foundation, Inc.
+   Copyright (C) 2011-2013 Free Software Foundation, Inc.
    Contributed by Red Hat, Inc.
 
    This file is part of the GNU simulators.
@@ -78,8 +78,8 @@ mem_rom_size (int rom_bytes)
 #define MDUC	0xf00e8
 #define MDAL	0xffff0
 #define MDAH	0xffff2
-#define MDBL	0xffff4
-#define MDBH	0xffff6
+#define MDBL	0xffff6
+#define MDBH	0xffff4
 #define MDCL	0xf00e0
 #define MDCH	0xf00e2
 static long long mduc_clock = 0;

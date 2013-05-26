@@ -1,4 +1,4 @@
-# Copyright 1992-2005, 2007-2012 Free Software Foundation, Inc.
+# Copyright 1992-2013 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -128,6 +128,7 @@ proc gdb_version { } {
 
 #
 # gdb_unload -- unload a file if one is loaded
+# Return 0 on success, -1 on error.
 #
 
 proc gdb_unload {} {
@@ -148,10 +149,11 @@ proc gdb_unload {} {
 	}
 	-re "$gdb_prompt $" {}
 	timeout {
-	    perror "couldn't unload file in $GDB (timed out)."
+	    perror "couldn't unload file in $GDB (timeout)."
 	    return -1
 	}
     }
+    return 0
 }
 
 # Many of the tests depend on setting breakpoints at various places and
@@ -515,6 +517,9 @@ proc runto { function args } {
 	    }
 	    return 0
 	}
+    }
+    if { $print_pass } {
+	pass $test_name
     }
     return 1
 }
@@ -1275,6 +1280,8 @@ proc default_gdb_exit {} {
 #
 #   debug    file was loaded successfully and has debug information
 #   nodebug  file was loaded successfully and has no debug information
+#   lzma     file was loaded, .gnu_debugdata found, but no LZMA support
+#            compiled in
 #   fail     file was not loaded
 #
 # I tried returning this information as part of the return value,
@@ -1290,6 +1297,7 @@ proc gdb_file_cmd { arg } {
     global GDB
     global last_loaded_file
 
+    # Save this for the benefit of gdbserver-support.exp.
     set last_loaded_file $arg
 
     # Set whether debug info was found.
@@ -1321,13 +1329,18 @@ proc gdb_file_cmd { arg } {
 
     send_gdb "file $arg\n"
     gdb_expect 120 {
+	-re "Reading symbols from.*LZMA support was disabled.*done.*$gdb_prompt $" {
+	    verbose "\t\tLoaded $arg into $GDB; .gnu_debugdata found but no LZMA available"
+	    set gdb_file_cmd_debug_info "lzma"
+	    return 0
+	}
 	-re "Reading symbols from.*no debugging symbols found.*done.*$gdb_prompt $" {
-	    verbose "\t\tLoaded $arg into the $GDB with no debugging symbols"
+	    verbose "\t\tLoaded $arg into $GDB with no debugging symbols"
 	    set gdb_file_cmd_debug_info "nodebug"
 	    return 0
 	}
         -re "Reading symbols from.*done.*$gdb_prompt $" {
-            verbose "\t\tLoaded $arg into the $GDB"
+            verbose "\t\tLoaded $arg into $GDB"
 	    set gdb_file_cmd_debug_info "debug"
 	    return 0
         }
@@ -1340,28 +1353,37 @@ proc gdb_file_cmd { arg } {
 		    return 0
                 }
                 timeout {
-                    perror "(timeout) Couldn't load $arg, other program already loaded."
+                    perror "Couldn't load $arg, other program already loaded (timeout)."
 		    return -1
                 }
+		eof {
+		    perror "Couldn't load $arg, other program already loaded (eof)."
+		    return -1
+		}
             }
 	}
         -re "No such file or directory.*$gdb_prompt $" {
             perror "($arg) No such file or directory"
 	    return -1
         }
+	-re "A problem internal to GDB has been detected" {
+	    fail "($arg) (GDB internal error)"
+	    gdb_internal_error_resync
+	    return -1
+	}
         -re "$gdb_prompt $" {
-            perror "couldn't load $arg into $GDB."
+            perror "Couldn't load $arg into $GDB."
 	    return -1
             }
         timeout {
-            perror "couldn't load $arg into $GDB (timed out)."
+            perror "Couldn't load $arg into $GDB (timeout)."
 	    return -1
         }
         eof {
             # This is an attempt to detect a core dump, but seems not to
             # work.  Perhaps we need to match .* followed by eof, in which
             # gdb_expect does not seem to have a way to do that.
-            perror "couldn't load $arg into $GDB (end of file)."
+            perror "Couldn't load $arg into $GDB (eof)."
 	    return -1
         }
     }
@@ -1528,12 +1550,35 @@ proc skip_java_tests {} {
 
 proc skip_python_tests {} {
     global gdb_prompt
-    gdb_test_multiple "python print 'test'" "verify python support" {
+    global gdb_py_is_py3k
+    global gdb_py_is_py24
+
+    gdb_test_multiple "python print ('test')" "verify python support" {
 	-re "not supported.*$gdb_prompt $"	{
 	    unsupported "Python support is disabled."
 	    return 1
 	}
 	-re "$gdb_prompt $"	{}
+    }
+
+    set gdb_py_is_py24 0
+    gdb_test_multiple "python print (sys.version_info\[0\])" "check if python 3" {
+	-re "3.*$gdb_prompt $"	{
+            set gdb_py_is_py3k 1
+        }
+	-re ".*$gdb_prompt $"	{
+            set gdb_py_is_py3k 0
+        }
+    }
+    if { $gdb_py_is_py3k == 0 } {
+        gdb_test_multiple "python print (sys.version_info\[1\])" "check if python 2.4" {
+	    -re "\[45\].*$gdb_prompt $" {
+                set gdb_py_is_py24 1
+            }
+	    -re ".*$gdb_prompt $" {
+                set gdb_py_is_py24 0
+            }
+        }
     }
 
     return 0
@@ -2052,6 +2097,74 @@ proc skip_vsx_tests {} {
     return $skip_vsx_tests_saved
 }
 
+# Run a test on the target to see if it supports btrace hardware.  Return 0 if so,
+# 1 if it does not.  Based on 'check_vmx_hw_available' from the GCC testsuite.
+
+proc skip_btrace_tests {} {
+    global skip_btrace_tests_saved
+    global srcdir subdir gdb_prompt inferior_exited_re
+
+    # Use the cached value, if it exists.
+    set me "skip_btrace_tests"
+    if [info exists skip_btrace_tests_saved] {
+        verbose "$me:  returning saved $skip_btrace_tests_saved" 2
+        return $skip_btrace_tests_saved
+    }
+
+    if { ![istarget "i?86-*-*"] && ![istarget "x86_64-*-*"] } {
+        verbose "$me:  target does not support btrace, returning 1" 2
+        return [set skip_btrace_tests_saved 1]
+    }
+
+    # Set up, compile, and execute a test program.
+    # Include the current process ID in the file names to prevent conflicts
+    # with invocations for multiple testsuites.
+    set src [standard_output_file btrace[pid].c]
+    set exe [standard_output_file btrace[pid].x]
+
+    set f [open $src "w"]
+    puts $f "int main(void) { return 0; }"
+    close $f
+
+    verbose "$me:  compiling testfile $src" 2
+    set compile_flags {debug nowarnings quiet}
+    set lines [gdb_compile $src $exe executable $compile_flags]
+    file delete $src
+
+    if ![string match "" $lines] then {
+        verbose "$me:  testfile compilation failed, returning 1" 2
+        return [set skip_btrace_tests_saved 1]
+    }
+
+    # No error message, compilation succeeded so now run it via gdb.
+
+    clean_restart btrace[pid].x
+    if ![runto_main] {
+        return [set skip_btrace_tests_saved 1]
+    }
+    # In case of an unexpected output, we return 2 as a fail value.
+    set skip_btrace_tests_saved 2
+    gdb_test_multiple "record btrace" "check btrace support" {
+        -re "You can't do that when your target is.*\r\n$gdb_prompt $" {
+            set skip_btrace_tests_saved 1
+        }
+        -re "Target does not support branch tracing.*\r\n$gdb_prompt $" {
+            set skip_btrace_tests_saved 1
+        }
+        -re "Could not enable branch tracing.*\r\n$gdb_prompt $" {
+            set skip_btrace_tests_saved 1
+        }
+        -re "^record btrace\r\n$gdb_prompt $" {
+            set skip_btrace_tests_saved 0
+        }
+    }
+    gdb_exit
+    remote_file build delete $exe
+
+    verbose "$me:  returning $skip_btrace_tests_saved" 2
+    return $skip_btrace_tests_saved
+}
+
 # Skip all the tests in the file if you are not on an hppa running
 # hpux target.
 
@@ -2163,6 +2276,36 @@ proc skip_hw_watchpoint_access_tests {} {
     }
 
     return 0
+}
+
+# Return 1 if we should skip tests that require the runtime unwinder
+# hook.  This must be invoked while gdb is running, after shared
+# libraries have been loaded.  This is needed because otherwise a
+# shared libgcc won't be visible.
+
+proc skip_unwinder_tests {} {
+    global gdb_prompt
+
+    set ok 0
+    gdb_test_multiple "print _Unwind_DebugHook" "check for unwinder hook" {
+	-re "= .*no debug info.*_Unwind_DebugHook.*\r\n$gdb_prompt $" {
+	}
+	-re "= .*_Unwind_DebugHook.*\r\n$gdb_prompt $" {
+	    set ok 1
+	}
+	-re "No symbol .* in current context.\r\n$gdb_prompt $" {
+	}
+    }
+    if {!$ok} {
+	gdb_test_multiple "info probe" "check for stap probe in unwinder" {
+	    -re ".*libgcc.*unwind.*\r\n$gdb_prompt $" {
+		set ok 1
+	    }
+	    -re "\r\n$gdb_prompt $" {
+	    }
+	}
+    }
+    return $ok
 }
 
 set compiler_info		"unknown"
@@ -2983,6 +3126,36 @@ proc gdb_load_cmd { args } {
     return -1
 }
 
+# Invoke "gcore".  CORE is the name of the core file to write.  TEST
+# is the name of the test case.  This will return 1 if the core file
+# was created, 0 otherwise.  If this fails to make a core file because
+# this configuration of gdb does not support making core files, it
+# will call "unsupported", not "fail".  However, if this fails to make
+# a core file for some other reason, then it will call "fail".
+
+proc gdb_gcore_cmd {core test} {
+    global gdb_prompt
+
+    set result 0
+    gdb_test_multiple "gcore $core" $test {
+	-re "Saved corefile .*\[\r\n\]+$gdb_prompt $" {
+	    pass $test
+	    set result 1
+	}
+
+	-re "Undefined command.*$gdb_prompt $" {
+	    unsupported $test
+	    verbose -log "'gcore' command undefined in gdb_gcore_cmd"
+	}
+
+	-re "Can't create a corefile\[\r\n\]+$gdb_prompt $" {
+	    unsupported $test
+	}
+    }
+
+    return $result
+}
+
 # Return the filename to download to the target and load on the target
 # for this shared library.  Normally just LIBNAME, unless shared libraries
 # for this target have separate link and load images.
@@ -3358,7 +3531,7 @@ proc get_debug_format { } {
 	    return 1;
 	}
 	timeout {
-	    warning "couldn't check debug format (timed out)."
+	    warning "couldn't check debug format (timeout)."
 	    return 1;
 	}
     }
@@ -3389,14 +3562,6 @@ proc setup_xfail_format { format } {
 	setup_xfail "*-*-*"
     }
     return $ret;
-}
-
-# Like setup_kfail, but only call setup_kfail conditionally if
-# istarget[TARGET] returns true.
-proc setup_kfail_for_target { PR target } {
-    if { [istarget $target] } {
-	setup_kfail $PR $target
-    }
 }
 
 # gdb_get_line_number TEXT [FILE]

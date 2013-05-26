@@ -1,6 +1,5 @@
 /* Multi-process/thread control defs for GDB, the GNU debugger.
-   Copyright (C) 1987-1993, 1997-2000, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1987-2013 Free Software Foundation, Inc.
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
    
 
@@ -28,6 +27,7 @@ struct symtab;
 #include "frame.h"
 #include "ui-out.h"
 #include "inferior.h"
+#include "btrace.h"
 
 /* Frontend view of the thread state.  Possible extensions: stepping,
    finishing, until(ling),...  */
@@ -227,6 +227,9 @@ struct thread_info
   /* Function that is called to free PRIVATE.  If this is NULL, then
      xfree will be called on PRIVATE.  */
   void (*private_dtor) (struct private_thread_info *);
+
+  /* Branch trace information for this thread.  */
+  struct btrace_thread_info btrace;
 };
 
 /* Create an empty thread list, or empty the existing one.  */

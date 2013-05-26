@@ -1,5 +1,5 @@
 /* Data structures associated with breakpoints in GDB.
-   Copyright (C) 1992-2004, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -465,14 +465,34 @@ struct bp_location
      it becomes 0 this location is retired.  */
   int events_till_retirement;
 
-  /* Line number of this address.  */
+  /* Line number which was used to place this location.
+
+     Breakpoint placed into a comment keeps it's user specified line number
+     despite ADDRESS resolves into a different line number.  */
 
   int line_number;
 
-  /* Source file name of this address.  */
+  /* Symtab which was used to place this location.  This is used
+     to find the corresponding source file name.  */
 
-  char *source_file;
+  struct symtab *symtab;
 };
+
+/* Return values for bpstat_explains_signal.  Note that the order of
+   the constants is important here; they are compared directly in
+   bpstat_explains_signal.  */
+
+enum bpstat_signal_value
+  {
+    /* bpstat does not explain this signal.  */
+    BPSTAT_SIGNAL_NO = 0,
+
+    /* bpstat explains this signal; signal should not be delivered.  */
+    BPSTAT_SIGNAL_HIDE,
+
+    /* bpstat explains this signal; signal should be delivered.  */
+    BPSTAT_SIGNAL_PASS
+  };
 
 /* This structure is a collection of function pointers that, if available,
    will be called instead of the performing the default action for this
@@ -588,6 +608,12 @@ struct breakpoint_ops
      This function is called inside `addr_string_to_sals'.  */
   void (*decode_linespec) (struct breakpoint *, char **,
 			   struct symtabs_and_lines *);
+
+  /* Return true if this breakpoint explains a signal, but the signal
+     should still be delivered to the inferior.  This is used to make
+     'catch signal' interact properly with 'handle'; see
+     bpstat_explains_signal.  */
+  enum bpstat_signal_value (*explains_signal) (struct breakpoint *);
 };
 
 /* Helper for breakpoint_ops->print_recreate implementations.  Prints
@@ -756,12 +782,12 @@ struct watchpoint
   struct expression *exp;
   /* The largest block within which it is valid, or NULL if it is
      valid anywhere (e.g. consists just of global symbols).  */
-  struct block *exp_valid_block;
+  const struct block *exp_valid_block;
   /* The conditional expression if any.  */
   struct expression *cond_exp;
   /* The largest block within which it is valid, or NULL if it is
      valid anywhere (e.g. consists just of global symbols).  */
-  struct block *cond_exp_valid_block;
+  const struct block *cond_exp_valid_block;
   /* Value of the watchpoint the last time we checked it, or NULL when
      we do not know the value yet or the value was not readable.  VAL
      is never lazy.  */
@@ -980,10 +1006,9 @@ struct bpstat_what bpstat_what (bpstat);
 bpstat bpstat_find_breakpoint (bpstat, struct breakpoint *);
 
 /* Nonzero if a signal that we got in wait() was due to circumstances
-   explained by the BS.  */
-/* Currently that is true if we have hit a breakpoint, or if there is
-   a watchpoint enabled.  */
-#define bpstat_explains_signal(bs) ((bs) != NULL)
+   explained by the bpstat; and the signal should therefore not be
+   delivered.  */
+extern enum bpstat_signal_value bpstat_explains_signal (bpstat);
 
 /* Nonzero is this bpstat causes a stop.  */
 extern int bpstat_causes_stop (bpstat);
@@ -1183,7 +1208,9 @@ extern void awatch_command_wrapper (char *, int, int);
 extern void rwatch_command_wrapper (char *, int, int);
 extern void tbreak_command (char *, int);
 
+extern struct breakpoint_ops base_breakpoint_ops;
 extern struct breakpoint_ops bkpt_breakpoint_ops;
+extern struct breakpoint_ops tracepoint_breakpoint_ops;
 
 extern void initialize_breakpoint_ops (void);
 
@@ -1213,6 +1240,11 @@ extern void
 				 const struct breakpoint_ops *ops,
 				 int tempflag,
 				 int from_tty);
+
+extern void init_catchpoint (struct breakpoint *b,
+			     struct gdbarch *gdbarch, int tempflag,
+			     char *cond_string,
+			     const struct breakpoint_ops *ops);
 
 /* Add breakpoint B on the breakpoint list, and notify the user, the
    target and breakpoint_created observers of its existence.  If
@@ -1284,7 +1316,7 @@ extern void update_breakpoints_after_exec (void);
 
    It is an error to use this function on the process whose id is
    inferior_ptid.  */
-extern int detach_breakpoints (int);
+extern int detach_breakpoints (ptid_t ptid);
 
 /* This function is called when program space PSPACE is about to be
    deleted.  It takes care of updating breakpoints to not reference
@@ -1404,6 +1436,11 @@ extern void disable_breakpoints_in_shlibs (void);
 /* This function returns TRUE if ep is a catchpoint.  */
 extern int is_catchpoint (struct breakpoint *);
 
+/* Shared helper function (MI and CLI) for creating and installing
+   a shared object event catchpoint.  */
+extern void add_solib_catchpoint (char *arg, int is_load, int is_temp,
+                                  int enabled);
+
 /* Enable breakpoints and delete when hit.  Called with ARG == NULL
    deletes all breakpoints.  */
 extern void delete_command (char *arg, int from_tty);
@@ -1516,5 +1553,7 @@ extern int user_breakpoint_p (struct breakpoint *);
 extern struct gdbarch *get_sal_arch (struct symtab_and_line sal);
 
 extern void handle_solib_event (void);
+
+extern void breakpoint_free_objfile (struct objfile *objfile);
 
 #endif /* !defined (BREAKPOINT_H) */

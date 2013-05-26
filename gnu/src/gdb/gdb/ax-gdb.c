@@ -1,7 +1,6 @@
 /* GDB-specific functions for operating on agent expressions.
 
-   Copyright (C) 1998-2001, 2003, 2007-2012 Free Software Foundation,
-   Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -367,9 +366,9 @@ gen_trace_static_fields (struct gdbarch *gdbarch,
 	    {
 	    case axs_lvalue_memory:
 	      {
-		int length = TYPE_LENGTH (check_typedef (value.type));
-
-		ax_const_l (ax, length);
+	        /* Initialize the TYPE_LENGTH if it is a typedef.  */
+	        check_typedef (value.type);
+		ax_const_l (ax, TYPE_LENGTH (value.type));
 		ax_simple (ax, aop_trace);
 	      }
 	      break;
@@ -425,17 +424,18 @@ gen_traced_pop (struct gdbarch *gdbarch,
 
       case axs_lvalue_memory:
 	{
-	  int length = TYPE_LENGTH (check_typedef (value->type));
-
 	  if (string_trace)
 	    ax_simple (ax, aop_dup);
+
+	  /* Initialize the TYPE_LENGTH if it is a typedef.  */
+	  check_typedef (value->type);
 
 	  /* There's no point in trying to use a trace_quick bytecode
 	     here, since "trace_quick SIZE pop" is three bytes, whereas
 	     "const8 SIZE trace" is also three bytes, does the same
 	     thing, and the simplest code which generates that will also
 	     work correctly for objects with large sizes.  */
-	  ax_const_l (ax, length);
+	  ax_const_l (ax, TYPE_LENGTH (value->type));
 	  ax_simple (ax, aop_trace);
 
 	  if (string_trace)
@@ -2076,11 +2076,53 @@ gen_expr (struct expression *exp, union exp_element **pc,
       }
       break;
 
+    case UNOP_CAST_TYPE:
+      {
+	int offset;
+	struct value *val;
+	struct type *type;
+
+	++*pc;
+	offset = *pc - exp->elts;
+	val = evaluate_subexp (NULL, exp, &offset, EVAL_AVOID_SIDE_EFFECTS);
+	type = value_type (val);
+	*pc = &exp->elts[offset];
+
+	gen_expr (exp, pc, ax, value);
+	gen_cast (ax, value, type);
+      }
+      break;
+
     case UNOP_MEMVAL:
       {
 	struct type *type = check_typedef ((*pc)[1].type);
 
 	(*pc) += 3;
+	gen_expr (exp, pc, ax, value);
+
+	/* If we have an axs_rvalue or an axs_lvalue_memory, then we
+	   already have the right value on the stack.  For
+	   axs_lvalue_register, we must convert.  */
+	if (value->kind == axs_lvalue_register)
+	  require_rvalue (ax, value);
+
+	value->type = type;
+	value->kind = axs_lvalue_memory;
+      }
+      break;
+
+    case UNOP_MEMVAL_TYPE:
+      {
+	int offset;
+	struct value *val;
+	struct type *type;
+
+	++*pc;
+	offset = *pc - exp->elts;
+	val = evaluate_subexp (NULL, exp, &offset, EVAL_AVOID_SIDE_EFFECTS);
+	type = value_type (val);
+	*pc = &exp->elts[offset];
+
 	gen_expr (exp, pc, ax, value);
 
 	/* If we have an axs_rvalue or an axs_lvalue_memory, then we
@@ -2213,6 +2255,8 @@ gen_expr (struct expression *exp, union exp_element **pc,
       break;
 
     case OP_TYPE:
+    case OP_TYPEOF:
+    case OP_DECLTYPE:
       error (_("Attempt to use a type name as an expression."));
 
     default:
@@ -2514,17 +2558,15 @@ gen_trace_for_return_address (CORE_ADDR scope, struct gdbarch *gdbarch)
 struct agent_expr *
 gen_printf (CORE_ADDR scope, struct gdbarch *gdbarch,
 	    CORE_ADDR function, LONGEST channel,
-	    char *format, int fmtlen,
+	    const char *format, int fmtlen,
 	    struct format_piece *frags,
 	    int nargs, struct expression **exprs)
 {
-  struct expression *expr;
   struct cleanup *old_chain = 0;
   struct agent_expr *ax = new_agent_expr (gdbarch, scope);
   union exp_element *pc;
   struct axs_value value;
-  int i, tem, bot, fr, flen;
-  char *fmt;
+  int tem;
 
   old_chain = make_cleanup_free_agent_expr (ax);
 
@@ -2566,6 +2608,7 @@ agent_eval_command_one (char *exp, int eval, CORE_ADDR pc)
   struct cleanup *old_chain = 0;
   struct expression *expr;
   struct agent_expr *agent;
+  const char *arg;
 
   if (!eval)
     {
@@ -2574,14 +2617,15 @@ agent_eval_command_one (char *exp, int eval, CORE_ADDR pc)
         exp = decode_agent_options (exp);
     }
 
-  if (!eval && strcmp (exp, "$_ret") == 0)
+  arg = exp;
+  if (!eval && strcmp (arg, "$_ret") == 0)
     {
       agent = gen_trace_for_return_address (pc, get_current_arch ());
       old_chain = make_cleanup_free_agent_expr (agent);
     }
   else
     {
-      expr = parse_exp_1 (&exp, pc, block_for_pc (pc), 0);
+      expr = parse_exp_1 (&arg, pc, block_for_pc (pc), 0);
       old_chain = make_cleanup (free_current_contents, &expr);
       if (eval)
 	agent = gen_eval_for_expr (pc, expr);
@@ -2674,8 +2718,8 @@ maint_agent_printf_command (char *exp, int from_tty)
   struct expression *argvec[100];
   struct agent_expr *agent;
   struct frame_info *fi = get_current_frame ();	/* need current scope */
-  char *cmdrest;
-  char *format_start, *format_end;
+  const char *cmdrest;
+  const char *format_start, *format_end;
   struct format_piece *fpieces;
   int nargs;
 
@@ -2691,7 +2735,7 @@ maint_agent_printf_command (char *exp, int from_tty)
 
   cmdrest = exp;
 
-  cmdrest = skip_spaces (cmdrest);
+  cmdrest = skip_spaces_const (cmdrest);
 
   if (*cmdrest++ != '"')
     error (_("Must start with a format string."));
@@ -2707,19 +2751,19 @@ maint_agent_printf_command (char *exp, int from_tty)
   if (*cmdrest++ != '"')
     error (_("Bad format string, non-terminated '\"'."));
   
-  cmdrest = skip_spaces (cmdrest);
+  cmdrest = skip_spaces_const (cmdrest);
 
   if (*cmdrest != ',' && *cmdrest != 0)
     error (_("Invalid argument syntax"));
 
   if (*cmdrest == ',')
     cmdrest++;
-  cmdrest = skip_spaces (cmdrest);
+  cmdrest = skip_spaces_const (cmdrest);
 
   nargs = 0;
   while (*cmdrest != '\0')
     {
-      char *cmd1;
+      const char *cmd1;
 
       cmd1 = cmdrest;
       expr = parse_exp_1 (&cmd1, 0, (struct block *) 0, 1);

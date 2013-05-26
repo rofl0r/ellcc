@@ -1,3 +1,23 @@
+2013-03-26  Mike Frysinger  <vapier@gentoo.org>
+
+	* aclocal.m4, configure: Regenerate.
+
+2013-03-23  Joel Sherrill  <joel.sherrill@oarcorp.com>
+
+	* configure.ac: Use $SIM_DV_SOCKSER_O.
+	* configure: Regenerated.
+
+2012-12-20  Joel Brobecker  <brobecker@adacore.com>
+
+	* aclocal.m4: Revert the previous change changing
+	the license from GPL v2 or later to GPL v3 or later
+	(this file was generated).
+
+2012-12-20  Joel Brobecker  <brobecker@adacore.com>
+
+	* linux-fixed-code.s: Revert the previous change changing
+	the license from GPL v2 or later to GPL v3 or later.
+
 2012-07-31  Mike Frysinger  <vapier@gentoo.org>
 
 	* machs.c (bf54x_roms): Pass 0x1000 to alias field of BFROM, and

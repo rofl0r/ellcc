@@ -1,7 +1,6 @@
 /* Multi-process/thread control for GDB, the GNU debugger.
 
-   Copyright (C) 1986-1988, 1993-2004, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    Contributed by Lynx Real-Time Systems, Inc.  Los Gatos, CA.
 
@@ -34,6 +33,7 @@
 #include "regcache.h"
 #include "gdb.h"
 #include "gdb_string.h"
+#include "btrace.h"
 
 #include <ctype.h>
 #include <sys/types.h>
@@ -116,6 +116,8 @@ clear_thread_inferior_resources (struct thread_info *tp)
   delete_longjmp_breakpoint_at_next_stop (tp->num);
 
   bpstat_clear (&tp->control.stop_bpstat);
+
+  btrace_teardown (tp);
 
   do_all_intermediate_continuations_thread (tp, 1);
   do_all_continuations_thread (tp, 1);
@@ -987,7 +989,6 @@ switch_to_thread (ptid_t ptid)
 
   inferior_ptid = ptid;
   reinit_frame_cache ();
-  registers_changed ();
 
   /* We don't check for is_stopped, because we're called at times
      while in the TARGET_RUNNING state, e.g., while handling an
@@ -1235,7 +1236,6 @@ thread_apply_command (char *tidlist, int from_tty)
     {
       struct thread_info *tp;
       int start;
-      char *p = tidlist;
 
       start = get_number_or_range (&state);
 
@@ -1303,8 +1303,7 @@ thread_name_command (char *arg, int from_tty)
   if (ptid_equal (inferior_ptid, null_ptid))
     error (_("No thread selected"));
 
-  while (arg && isspace (*arg))
-    ++arg;
+  arg = skip_spaces (arg);
 
   info = inferior_thread ();
   xfree (info->name);

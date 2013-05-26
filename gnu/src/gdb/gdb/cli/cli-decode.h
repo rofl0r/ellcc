@@ -1,6 +1,6 @@
 /* Header file for GDB command decoding library.
 
-   Copyright (c) 2000, 2003, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 2000-2013 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ cmd_types;
 #define CMD_DEPRECATED            0x1
 #define DEPRECATED_WARN_USER      0x2
 #define MALLOCED_REPLACEMENT      0x4
+#define DOC_ALLOCATED             0x8
 
 struct cmd_list_element
   {
@@ -112,7 +113,9 @@ struct cmd_list_element
        memory for replacement is malloc'ed.  When a command is
        undeprecated or re-deprecated at runtime we don't want to risk
        calling free on statically allocated memory, so we check this
-       flag.  */
+       flag.
+
+       bit 3: DOC_ALLOCATED, set if the doc field should be xfree'd.  */
 
     int flags;
 
@@ -148,6 +151,9 @@ struct cmd_list_element
        nonzero means do not get an error if subcommand is not
        recognized; call the prefix's own function in that case.  */
     char allow_unknown;
+
+    /* The prefix command of this command.  */
+    struct cmd_list_element *prefix;
 
     /* Nonzero says this is an abbreviation, and should not
        be mentioned in lists of commands.
@@ -232,5 +238,6 @@ extern void not_just_help_class_command (char *arg, int from_tty);
 
 extern void print_doc_line (struct ui_file *, char *);
 
+extern const char * const auto_boolean_enums[];
 
 #endif /* !defined (CLI_DECODE_H) */

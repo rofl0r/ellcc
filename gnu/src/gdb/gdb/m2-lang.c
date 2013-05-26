@@ -1,7 +1,6 @@
 /* Modula 2 language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 1992-1996, 1998, 2000, 2002-2005, 2007-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1992-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -146,10 +145,7 @@ m2_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 	{
 	  if (in_quotes)
 	    {
-	      if (options->inspect_it)
-		fputs_filtered ("\\\", ", stream);
-	      else
-		fputs_filtered ("\", ", stream);
+	      fputs_filtered ("\", ", stream);
 	      in_quotes = 0;
 	    }
 	  m2_printchar (string[i], type, stream);
@@ -162,10 +158,7 @@ m2_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 	{
 	  if (!in_quotes)
 	    {
-	      if (options->inspect_it)
-		fputs_filtered ("\\\"", stream);
-	      else
-		fputs_filtered ("\"", stream);
+	      fputs_filtered ("\"", stream);
 	      in_quotes = 1;
 	    }
 	  LA_EMIT_CHAR (string[i], type, stream, '"');
@@ -175,12 +168,7 @@ m2_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 
   /* Terminate the quotes if necessary.  */
   if (in_quotes)
-    {
-      if (options->inspect_it)
-	fputs_filtered ("\\\"", stream);
-      else
-	fputs_filtered ("\"", stream);
-    }
+    fputs_filtered ("\"", stream);
 
   if (force_ellipses || i < length)
     fputs_filtered ("...", stream);
@@ -370,7 +358,6 @@ const struct language_defn m2_language_defn =
   "modula-2",
   language_m2,
   range_check_on,
-  type_check_on,
   case_sensitive_on,
   array_row_major,
   macro_expansion_no,

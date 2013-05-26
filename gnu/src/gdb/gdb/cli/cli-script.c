@@ -1,6 +1,6 @@
 /* GDB CLI command scripting.
 
-   Copyright (c) 1986-2002, 2004-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -314,7 +314,7 @@ execute_user_command (struct cmd_list_element *c, char *args)
   struct cleanup *old_chain;
   enum command_control_type ret;
   static int user_call_depth = 0;
-  extern int max_user_call_depth;
+  extern unsigned int max_user_call_depth;
 
   cmdlines = c->user_commands;
   if (cmdlines == 0)
@@ -441,9 +441,10 @@ execute_control_command (struct command_line *cmd)
 
     case while_control:
       {
-	char *buffer = alloca (strlen (cmd->line) + 7);
+	int len = strlen (cmd->line) + 7;
+	char *buffer = alloca (len);
 
-	sprintf (buffer, "while %s", cmd->line);
+	xsnprintf (buffer, len, "while %s", cmd->line);
 	print_command_trace (buffer);
 
 	/* Parse the loop control expression for the while statement.  */
@@ -509,9 +510,10 @@ execute_control_command (struct command_line *cmd)
 
     case if_control:
       {
-	char *buffer = alloca (strlen (cmd->line) + 4);
+	int len = strlen (cmd->line) + 4;
+	char *buffer = alloca (len);
 
-	sprintf (buffer, "if %s", cmd->line);
+	xsnprintf (buffer, len, "if %s", cmd->line);
 	print_command_trace (buffer);
 
 	new_line = insert_args (cmd->line);
@@ -596,7 +598,7 @@ execute_control_command_untraced (struct command_line *cmd)
 /* "while" command support.  Executes a body of statements while the
    loop condition is nonzero.  */
 
-void
+static void
 while_command (char *arg, int from_tty)
 {
   struct command_line *command = NULL;
@@ -620,7 +622,7 @@ while_command (char *arg, int from_tty)
 /* "if" command support.  Execute either the true or false arm depending
    on the value of the if conditional.  */
 
-void
+static void
 if_command (char *arg, int from_tty)
 {
   struct command_line *command = NULL;
@@ -1446,7 +1448,7 @@ user_defined_command (char *ignore, int from_tty)
 {
 }
 
-void
+static void
 define_command (char *comname, int from_tty)
 {
 #define MAX_TMPBUF 128   
@@ -1529,7 +1531,8 @@ define_command (char *comname, int from_tty)
     if (isupper (*tem))
       *tem = tolower (*tem);
 
-  sprintf (tmpbuf, "Type commands for definition of \"%s\".", comfull);
+  xsnprintf (tmpbuf, sizeof (tmpbuf),
+	     "Type commands for definition of \"%s\".", comfull);
   cmds = read_command_lines (tmpbuf, from_tty, 1, 0, 0);
 
   if (c && c->class == class_user)
@@ -1562,7 +1565,7 @@ define_command (char *comname, int from_tty)
     }
 }
 
-void
+static void
 document_command (char *comname, int from_tty)
 {
   struct command_line *doclines;
@@ -1579,7 +1582,8 @@ document_command (char *comname, int from_tty)
   if (c->class != class_user)
     error (_("Command \"%s\" is built-in."), comfull);
 
-  sprintf (tmpbuf, "Type documentation for \"%s\".", comfull);
+  xsnprintf (tmpbuf, sizeof (tmpbuf), "Type documentation for \"%s\".",
+	     comfull);
   doclines = read_command_lines (tmpbuf, from_tty, 0, 0, 0);
 
   if (c->doc)
@@ -1696,3 +1700,34 @@ show_user_1 (struct cmd_list_element *c, char *prefix, char *name,
   fputs_filtered ("\n", stream);
 }
 
+
+
+initialize_file_ftype _initialize_cli_script;
+
+void
+_initialize_cli_script (void)
+{
+  add_com ("document", class_support, document_command, _("\
+Document a user-defined command.\n\
+Give command name as argument.  Give documentation on following lines.\n\
+End with a line of just \"end\"."));
+  add_com ("define", class_support, define_command, _("\
+Define a new command name.  Command name is argument.\n\
+Definition appears on following lines, one command per line.\n\
+End with a line of just \"end\".\n\
+Use the \"document\" command to give documentation for the new command.\n\
+Commands defined in this way may have up to ten arguments."));
+
+  add_com ("while", class_support, while_command, _("\
+Execute nested commands WHILE the conditional expression is non zero.\n\
+The conditional expression must follow the word `while' and must in turn be\n\
+followed by a new line.  The nested commands must be entered one per line,\n\
+and should be terminated by the word `end'."));
+
+  add_com ("if", class_support, if_command, _("\
+Execute nested commands once IF the conditional expression is non zero.\n\
+The conditional expression must follow the word `if' and must in turn be\n\
+followed by a new line.  The nested commands must be entered one per line,\n\
+and should be terminated by the word 'else' or `end'.  If an else clause\n\
+is used, the same rules apply to its nested commands as to the first ones."));
+}

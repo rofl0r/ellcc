@@ -1,7 +1,6 @@
 /* Dynamic architecture support for GDB, the GNU debugger.
 
-   Copyright (C) 1998-2000, 2002-2004, 2007-2012 Free Software
-   Foundation, Inc.
+   Copyright (C) 1998-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,9 +25,6 @@ struct frame_info;
 struct minimal_symbol;
 struct type;
 struct gdbarch_info;
-
-/* gdbarch trace variable */
-extern int gdbarch_debug;
 
 /* An implementation of gdbarch_displaced_step_copy_insn for
    processors that don't need to modify the instruction before

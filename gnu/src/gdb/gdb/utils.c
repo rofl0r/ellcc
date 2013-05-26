@@ -1,6 +1,6 @@
 /* General utility routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986, 1988-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include "exceptions.h"
 #include "gdbthread.h"
 #include "fnmatch.h"
+#include "gdb_bfd.h"
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
 #endif /* HAVE_SYS_RESOURCE_H */
@@ -88,9 +89,6 @@ extern PTR realloc ();		/* ARI: PTR */
 extern void free ();
 #endif
 
-/* readline defines this.  */
-#undef savestring
-
 void (*deprecated_error_begin_hook) (void);
 
 /* Prototypes for local functions */
@@ -105,6 +103,14 @@ static void prompt_for_continue (void);
 static void set_screen_size (void);
 static void set_width (void);
 
+/* Time spent in prompt_for_continue in the currently executing command
+   waiting for user to respond.
+   Initialized in make_command_stats_cleanup.
+   Modified in prompt_for_continue and defaulted_query.
+   Used in report_command_stats.  */
+
+static struct timeval prompt_for_continue_wait_time;
+
 /* A flag indicating whether to timestamp debugging messages.  */
 
 static int debug_timestamp = 0;
@@ -113,9 +119,11 @@ static int debug_timestamp = 0;
 
 int job_control;
 
+#ifndef HAVE_PYTHON
 /* Nonzero means a quit has been requested.  */
 
 int quit_flag;
+#endif /* HAVE_PYTHON */
 
 /* Nonzero means quit immediately if Control-C is typed now, rather
    than waiting until QUIT is executed.  Be careful in setting this;
@@ -129,6 +137,41 @@ int quit_flag;
    expect to block), call QUIT after setting immediate_quit.  */
 
 int immediate_quit;
+
+#ifndef HAVE_PYTHON
+
+/* Clear the quit flag.  */
+
+void
+clear_quit_flag (void)
+{
+  quit_flag = 0;
+}
+
+/* Set the quit flag.  */
+
+void
+set_quit_flag (void)
+{
+  quit_flag = 1;
+}
+
+/* Return true if the quit flag has been set, false otherwise.  */
+
+int
+check_quit_flag (void)
+{
+  /* This is written in a particular way to avoid races.  */
+  if (quit_flag)
+    {
+      quit_flag = 0;
+      return 1;
+    }
+
+  return 0;
+}
+
+#endif /* HAVE_PYTHON */
 
 /* Nonzero means that strings with character values >0x7F should be printed
    as octal escapes.  Zero means just print the value (e.g. it's an
@@ -198,11 +241,11 @@ make_cleanup_dyn_string_delete (dyn_string_t arg)
 static void
 do_bfd_close_cleanup (void *arg)
 {
-  bfd_close (arg);
+  gdb_bfd_unref (arg);
 }
 
 struct cleanup *
-make_cleanup_bfd_close (bfd *abfd)
+make_cleanup_bfd_unref (bfd *abfd)
 {
   return make_cleanup (do_bfd_close_cleanup, abfd);
 }
@@ -457,6 +500,28 @@ make_cleanup_free_so (struct so_list *so)
   return make_cleanup (do_free_so, so);
 }
 
+/* Helper for make_cleanup_restore_current_language.  */
+
+static void
+do_restore_current_language (void *p)
+{
+  enum language saved_lang = (uintptr_t) p;
+
+  set_language (saved_lang);
+}
+
+/* Remember the current value of CURRENT_LANGUAGE and make it restored when
+   the cleanup is run.  */
+
+struct cleanup *
+make_cleanup_restore_current_language (void)
+{
+  enum language saved_lang = current_language->la_language;
+
+  return make_cleanup (do_restore_current_language,
+		       (void *) (uintptr_t) saved_lang);
+}
+
 /* This function is useful for cleanups.
    Do
 
@@ -536,6 +601,10 @@ report_command_stats (void *arg)
       timeval_sub (&delta_wall_time,
 		   &now_wall_time, &start_stats->start_wall_time);
 
+      /* Subtract time spend in prompt_for_continue from walltime.  */
+      timeval_sub (&delta_wall_time,
+                   &delta_wall_time, &prompt_for_continue_wait_time);
+
       printf_unfiltered (msg_type == 0
 			 ? _("Startup time: %ld.%06ld (cpu), %ld.%06ld (wall)\n")
 			 : _("Command execution time: %ld.%06ld (cpu), %ld.%06ld (wall)\n"),
@@ -569,6 +638,7 @@ report_command_stats (void *arg)
 struct cleanup *
 make_command_stats_cleanup (int msg_type)
 {
+  static const struct timeval zero_timeval = { 0 };
   struct cmd_stats *new_stat = XMALLOC (struct cmd_stats);
   
 #ifdef HAVE_SBRK
@@ -579,6 +649,9 @@ make_command_stats_cleanup (int msg_type)
   new_stat->msg_type = msg_type;
   new_stat->start_cpu_time = get_run_time ();
   gettimeofday (&new_stat->start_wall_time, NULL);
+
+  /* Initalize timer to keep track of how long we waited for the user.  */
+  prompt_for_continue_wait_time = zero_timeval;
 
   return make_cleanup_dtor (report_command_stats, new_stat, xfree);
 }
@@ -1004,11 +1077,11 @@ add_internal_problem_command (struct internal_problem *problem)
 }
 
 /* Print the system error message for errno, and also mention STRING
-   as the file name for which the error was encountered.
-   Then return to command level.  */
+   as the file name for which the error was encountered.  Use ERRCODE
+   for the thrown exception.  Then return to command level.  */
 
 void
-perror_with_name (const char *string)
+throw_perror_with_name (enum errors errcode, const char *string)
 {
   char *err;
   char *combined;
@@ -1025,7 +1098,15 @@ perror_with_name (const char *string)
   bfd_set_error (bfd_error_no_error);
   errno = 0;
 
-  error (_("%s."), combined);
+  throw_error (errcode, _("%s."), combined);
+}
+
+/* See throw_perror_with_name, ERRCODE defaults here to GENERIC_ERROR.  */
+
+void
+perror_with_name (const char *string)
+{
+  throw_perror_with_name (GENERIC_ERROR, string);
 }
 
 /* Print the system error message for ERRCODE, and also mention STRING
@@ -1110,20 +1191,6 @@ myread (int desc, char *addr, int len)
   return orglen;
 }
 
-/* Make a copy of the string at PTR with SIZE characters
-   (and add a null character at the end in the copy).
-   Uses malloc to get the space.  Returns the address of the copy.  */
-
-char *
-savestring (const char *ptr, size_t size)
-{
-  char *p = (char *) xmalloc (size + 1);
-
-  memcpy (p, ptr, size);
-  p[size] = 0;
-  return p;
-}
-
 void
 print_spaces (int n, struct ui_file *file)
 {
@@ -1189,6 +1256,9 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
   int def_value;
   char def_answer, not_def_answer;
   char *y_string, *n_string, *question;
+  /* Used to add duration we waited for user to respond to
+     prompt_for_continue_wait_time.  */
+  struct timeval prompt_started, prompt_ended, prompt_delta;
 
   /* Set up according to which answer is the default.  */
   if (defchar == '\0')
@@ -1245,6 +1315,9 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
 
   /* Format the question outside of the loop, to avoid reusing args.  */
   question = xstrvprintf (ctlstr, args);
+
+  /* Used for calculating time spend waiting for user.  */
+  gettimeofday (&prompt_started, NULL);
 
   while (1)
     {
@@ -1323,6 +1396,12 @@ defaulted_query (const char *ctlstr, const char defchar, va_list args)
 		       y_string, n_string);
     }
 
+  /* Add time spend in this routine to prompt_for_continue_wait_time.  */
+  gettimeofday (&prompt_ended, NULL);
+  timeval_sub (&prompt_delta, &prompt_ended, &prompt_started);
+  timeval_add (&prompt_for_continue_wait_time,
+               &prompt_for_continue_wait_time, &prompt_delta);
+
   xfree (question);
   if (annotation_level > 1)
     printf_filtered (("\n\032\032post-query\n"));
@@ -1400,7 +1479,8 @@ host_char_to_target (struct gdbarch *gdbarch, int c, int *target_c)
   cleanups = make_cleanup_obstack_free (&host_data);
 
   convert_between_encodings (target_charset (gdbarch), host_charset (),
-			     &the_char, 1, 1, &host_data, translit_none);
+			     (gdb_byte *) &the_char, 1, 1,
+			     &host_data, translit_none);
 
   if (obstack_object_size (&host_data) == 1)
     {
@@ -1685,11 +1765,6 @@ init_page_info (void)
 	  lines_per_page = UINT_MAX;
 	}
 
-      /* FIXME: Get rid of this junk.  */
-#if defined(SIGWINCH) && defined(SIGWINCH_HANDLER)
-      SIGWINCH_HANDLER (SIGWINCH);
-#endif
-
       /* If the output is not a terminal, don't paginate it.  */
       if (!ui_file_isatty (gdb_stdout))
 	lines_per_page = UINT_MAX;
@@ -1796,6 +1871,11 @@ prompt_for_continue (void)
 {
   char *ignore;
   char cont_prompt[120];
+  /* Used to add duration we waited for user to respond to
+     prompt_for_continue_wait_time.  */
+  struct timeval prompt_started, prompt_ended, prompt_delta;
+
+  gettimeofday (&prompt_started, NULL);
 
   if (annotation_level > 1)
     printf_unfiltered (("\n\032\032pre-prompt-for-continue\n"));
@@ -1811,6 +1891,7 @@ prompt_for_continue (void)
   reinitialize_more_filter ();
 
   immediate_quit++;
+  QUIT;
   /* On a real operating system, the user can quit with SIGINT.
      But not on GO32.
 
@@ -1823,6 +1904,12 @@ prompt_for_continue (void)
      out to DOS.  */
   ignore = gdb_readline_wrapper (cont_prompt);
 
+  /* Add time spend in this routine to prompt_for_continue_wait_time.  */
+  gettimeofday (&prompt_ended, NULL);
+  timeval_sub (&prompt_delta, &prompt_ended, &prompt_started);
+  timeval_add (&prompt_for_continue_wait_time,
+               &prompt_for_continue_wait_time, &prompt_delta);
+
   if (annotation_level > 1)
     printf_unfiltered (("\n\032\032post-prompt-for-continue\n"));
 
@@ -1833,7 +1920,7 @@ prompt_for_continue (void)
       while (*p == ' ' || *p == '\t')
 	++p;
       if (p[0] == 'q')
-	async_request_quit (0);
+	quit ();
       xfree (ignore);
     }
   immediate_quit--;
@@ -2654,15 +2741,20 @@ void
 initialize_utils (void)
 {
   add_setshow_uinteger_cmd ("width", class_support, &chars_per_line, _("\
-Set number of characters gdb thinks are in a line."), _("\
-Show number of characters gdb thinks are in a line."), NULL,
+Set number of characters where GDB should wrap lines of its output."), _("\
+Show number of characters where GDB should wrap lines of its output."), _("\
+This affects where GDB wraps its output to fit the screen width.\n\
+Setting this to zero prevents GDB from wrapping its output."),
 			    set_width_command,
 			    show_chars_per_line,
 			    &setlist, &showlist);
 
   add_setshow_uinteger_cmd ("height", class_support, &lines_per_page, _("\
-Set number of lines gdb thinks are in a page."), _("\
-Show number of lines gdb thinks are in a page."), NULL,
+Set number of lines in a page for GDB output pagination."), _("\
+Show number of lines in a page for GDB output pagination."), _("\
+This affects the number of lines after which GDB will pause\n\
+its output and ask you whether to continue.\n\
+Setting this to zero causes GDB never pause during output."),
 			    set_height_command,
 			    show_lines_per_page,
 			    &setlist, &showlist);
@@ -2671,8 +2763,11 @@ Show number of lines gdb thinks are in a page."), NULL,
 
   add_setshow_boolean_cmd ("pagination", class_support,
 			   &pagination_enabled, _("\
-Set state of pagination."), _("\
-Show state of pagination."), NULL,
+Set state of GDB output pagination."), _("\
+Show state of GDB output pagination."), _("\
+When pagination is ON, GDB pauses at end of each screenful of\n\
+its output and asks you whether to continue.\n\
+Turning pagination off is an alternative to \"set height 0\"."),
 			   NULL,
 			   show_pagination_enabled,
 			   &setlist, &showlist);
@@ -2703,11 +2798,6 @@ When set, debugging messages will be marked with seconds and microseconds."),
 			   &setdebuglist, &showdebuglist);
 }
 
-/* Machine specific function to handle SIGWINCH signal.  */
-
-#ifdef  SIGWINCH_HANDLER_BODY
-SIGWINCH_HANDLER_BODY
-#endif
 /* Print routines to handle variable size regs, etc.  */
 /* Temporary storage using circular buffer.  */
 #define NUMCELLS 16
@@ -3196,123 +3286,6 @@ gdb_realpath (const char *filename)
   return xstrdup (filename);
 }
 
-/* Return a copy of FILENAME, with its directory prefix canonicalized
-   by gdb_realpath.  */
-
-char *
-xfullpath (const char *filename)
-{
-  const char *base_name = lbasename (filename);
-  char *dir_name;
-  char *real_path;
-  char *result;
-
-  /* Extract the basename of filename, and return immediately 
-     a copy of filename if it does not contain any directory prefix.  */
-  if (base_name == filename)
-    return xstrdup (filename);
-
-  dir_name = alloca ((size_t) (base_name - filename + 2));
-  /* Allocate enough space to store the dir_name + plus one extra
-     character sometimes needed under Windows (see below), and
-     then the closing \000 character.  */
-  strncpy (dir_name, filename, base_name - filename);
-  dir_name[base_name - filename] = '\000';
-
-#ifdef HAVE_DOS_BASED_FILE_SYSTEM
-  /* We need to be careful when filename is of the form 'd:foo', which
-     is equivalent of d:./foo, which is totally different from d:/foo.  */
-  if (strlen (dir_name) == 2 && isalpha (dir_name[0]) && dir_name[1] == ':')
-    {
-      dir_name[2] = '.';
-      dir_name[3] = '\000';
-    }
-#endif
-
-  /* Canonicalize the directory prefix, and build the resulting
-     filename.  If the dirname realpath already contains an ending
-     directory separator, avoid doubling it.  */
-  real_path = gdb_realpath (dir_name);
-  if (IS_DIR_SEPARATOR (real_path[strlen (real_path) - 1]))
-    result = concat (real_path, base_name, (char *) NULL);
-  else
-    result = concat (real_path, SLASH_STRING, base_name, (char *) NULL);
-
-  xfree (real_path);
-  return result;
-}
-
-
-/* This is the 32-bit CRC function used by the GNU separate debug
-   facility.  An executable may contain a section named
-   .gnu_debuglink, which holds the name of a separate executable file
-   containing its debug info, and a checksum of that file's contents,
-   computed using this function.  */
-unsigned long
-gnu_debuglink_crc32 (unsigned long crc, unsigned char *buf, size_t len)
-{
-  static const unsigned int crc32_table[256] = {
-    0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419,
-    0x706af48f, 0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4,
-    0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07,
-    0x90bf1d91, 0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de,
-    0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7, 0x136c9856,
-    0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9,
-    0xfa0f3d63, 0x8d080df5, 0x3b6e20c8, 0x4c69105e, 0xd56041e4,
-    0xa2677172, 0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,
-    0x35b5a8fa, 0x42b2986c, 0xdbbbc9d6, 0xacbcf940, 0x32d86ce3,
-    0x45df5c75, 0xdcd60dcf, 0xabd13d59, 0x26d930ac, 0x51de003a,
-    0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423, 0xcfba9599,
-    0xb8bda50f, 0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924,
-    0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d, 0x76dc4190,
-    0x01db7106, 0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f,
-    0x9fbfe4a5, 0xe8b8d433, 0x7807c9a2, 0x0f00f934, 0x9609a88e,
-    0xe10e9818, 0x7f6a0dbb, 0x086d3d2d, 0x91646c97, 0xe6635c01,
-    0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e, 0x6c0695ed,
-    0x1b01a57b, 0x8208f4c1, 0xf50fc457, 0x65b0d9c6, 0x12b7e950,
-    0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3,
-    0xfbd44c65, 0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2,
-    0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb, 0x4369e96a,
-    0x346ed9fc, 0xad678846, 0xda60b8d0, 0x44042d73, 0x33031de5,
-    0xaa0a4c5f, 0xdd0d7cc9, 0x5005713c, 0x270241aa, 0xbe0b1010,
-    0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
-    0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17,
-    0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad, 0xedb88320, 0x9abfb3b6,
-    0x03b6e20c, 0x74b1d29a, 0xead54739, 0x9dd277af, 0x04db2615,
-    0x73dc1683, 0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8,
-    0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1, 0xf00f9344,
-    0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb,
-    0x196c3671, 0x6e6b06e7, 0xfed41b76, 0x89d32be0, 0x10da7a5a,
-    0x67dd4acc, 0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5,
-    0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252, 0xd1bb67f1,
-    0xa6bc5767, 0x3fb506dd, 0x48b2364b, 0xd80d2bda, 0xaf0a1b4c,
-    0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55, 0x316e8eef,
-    0x4669be79, 0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236,
-    0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f, 0xc5ba3bbe,
-    0xb2bd0b28, 0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31,
-    0x2cd99e8b, 0x5bdeae1d, 0x9b64c2b0, 0xec63f226, 0x756aa39c,
-    0x026d930a, 0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713,
-    0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38, 0x92d28e9b,
-    0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21, 0x86d3d2d4, 0xf1d4e242,
-    0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1,
-    0x18b74777, 0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c,
-    0x8f659eff, 0xf862ae69, 0x616bffd3, 0x166ccf45, 0xa00ae278,
-    0xd70dd2ee, 0x4e048354, 0x3903b3c2, 0xa7672661, 0xd06016f7,
-    0x4969474d, 0x3e6e77db, 0xaed16a4a, 0xd9d65adc, 0x40df0b66,
-    0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
-    0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605,
-    0xcdd70693, 0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8,
-    0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b,
-    0x2d02ef8d
-  };
-  unsigned char *end;
-
-  crc = ~crc & 0xffffffff;
-  for (end = buf + len; buf < end; ++buf)
-    crc = crc32_table[(crc ^ *buf) & 0xff] ^ (crc >> 8);
-  return ~crc & 0xffffffff;
-}
-
 ULONGEST
 align_up (ULONGEST v, int n)
 {
@@ -3636,24 +3609,6 @@ producer_is_gcc_ge_4 (const char *producer)
   return minor;
 }
 
-/* Call xfree for each element of CHAR_PTR_VEC and final VEC_free for
-   CHAR_PTR_VEC itself.
-
-   You must not modify CHAR_PTR_VEC after it got registered with this function
-   by make_cleanup as the CHAR_PTR_VEC base address may change on its updates.
-   Contrary to VEC_free this function does not (cannot) clear the pointer.  */
-
-void
-free_char_ptr_vec (VEC (char_ptr) *char_ptr_vec)
-{
-  int ix;
-  char *name;
-
-  for (ix = 0; VEC_iterate (char_ptr, char_ptr_vec, ix, name); ++ix)
-    xfree (name);
-  VEC_free (char_ptr, char_ptr_vec);
-}
-
 /* Helper for make_cleanup_free_char_ptr_vec.  */
 
 static void
@@ -3675,54 +3630,6 @@ struct cleanup *
 make_cleanup_free_char_ptr_vec (VEC (char_ptr) *char_ptr_vec)
 {
   return make_cleanup (do_free_char_ptr_vec, char_ptr_vec);
-}
-
-/* Extended version of dirnames_to_char_ptr_vec - additionally if *VECP is
-   non-NULL the new list elements from DIRNAMES are appended to the existing
-   *VECP list of entries.  *VECP address will be updated by this call.  */
-
-void
-dirnames_to_char_ptr_vec_append (VEC (char_ptr) **vecp, const char *dirnames)
-{
-  do
-    {
-      size_t this_len;
-      char *next_dir, *this_dir;
-
-      next_dir = strchr (dirnames, DIRNAME_SEPARATOR);
-      if (next_dir == NULL)
-	this_len = strlen (dirnames);
-      else
-	{
-	  this_len = next_dir - dirnames;
-	  next_dir++;
-	}
-
-      this_dir = xmalloc (this_len + 1);
-      memcpy (this_dir, dirnames, this_len);
-      this_dir[this_len] = '\0';
-      VEC_safe_push (char_ptr, *vecp, this_dir);
-
-      dirnames = next_dir;
-    }
-  while (dirnames != NULL);
-}
-
-/* Split DIRNAMES by DIRNAME_SEPARATOR delimiter and return a list of all the
-   elements in their original order.  For empty string ("") DIRNAMES return
-   list of one empty string ("") element.
-   
-   You may modify the returned strings.
-   Read free_char_ptr_vec for its cleanup.  */
-
-VEC (char_ptr) *
-dirnames_to_char_ptr_vec (const char *dirnames)
-{
-  VEC (char_ptr) *retval = NULL;
-  
-  dirnames_to_char_ptr_vec_append (&retval, dirnames);
-
-  return retval;
 }
 
 /* Substitute all occurences of string FROM by string TO in *STRINGP.  *STRINGP

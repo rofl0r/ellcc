@@ -1,7 +1,7 @@
 /* Get info from stack frames; convert between frames, blocks,
    functions and pc values.
 
-   Copyright (C) 1986-2004, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -360,14 +360,9 @@ struct frame_info *
 block_innermost_frame (const struct block *block)
 {
   struct frame_info *frame;
-  CORE_ADDR start;
-  CORE_ADDR end;
 
   if (block == NULL)
     return NULL;
-
-  start = BLOCK_START (block);
-  end = BLOCK_END (block);
 
   frame = get_selected_frame_if_set ();
   if (frame == NULL)

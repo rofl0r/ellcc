@@ -1,6 +1,6 @@
 /* Target-vector operations for controlling windows child processes, for GDB.
 
-   Copyright (C) 1995-2012 Free Software Foundation, Inc.
+   Copyright (C) 1995-2013 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions, A Red Hat Company.
 
@@ -49,6 +49,7 @@
 #include "filenames.h"
 #include "symfile.h"
 #include "objfiles.h"
+#include "gdb_bfd.h"
 #include "gdb_obstack.h"
 #include "gdb_string.h"
 #include "gdbthread.h"
@@ -288,8 +289,8 @@ static void
 check (BOOL ok, const char *file, int line)
 {
   if (!ok)
-    printf_filtered ("error return %s:%d was %lu\n", file, line,
-		     GetLastError ());
+    printf_filtered ("error return %s:%d was %u\n", file, line,
+		     (unsigned) GetLastError ());
 }
 
 /* Find a thread record given a thread id.  If GET_CONTEXT is not 0,
@@ -310,8 +311,8 @@ thread_rec (DWORD id, int get_context)
 		if (SuspendThread (th->h) == (DWORD) -1)
 		  {
 		    DWORD err = GetLastError ();
-		    warning (_("SuspendThread failed. (winerr %d)"),
-			     (int) err);
+		    warning (_("SuspendThread failed. (winerr %u)"),
+			     (unsigned) err);
 		    return NULL;
 		  }
 		th->suspended = 1;
@@ -575,7 +576,8 @@ get_module_name (LPVOID base_address, char *dll_name_ret)
 	  len = GetModuleFileNameEx (current_process_handle,
 				      DllHandle[i], pathbuf, __PMAX);
 	  if (len == 0)
-	    error (_("Error getting dll name: %lu."), GetLastError ());
+	    error (_("Error getting dll name: %u."),
+		   (unsigned) GetLastError ());
 	  if (cygwin_conv_path (CCP_WIN_W_TO_POSIX, pathbuf, dll_name_ret,
 				__PMAX) < 0)
 	    error (_("Error converting dll name to POSIX: %d."), errno);
@@ -752,7 +754,7 @@ windows_make_so (const char *name, LPVOID load_addr)
       asection *text = NULL;
       CORE_ADDR text_vma;
 
-      abfd = bfd_openr (so->so_name, "pei-i386");
+      abfd = gdb_bfd_open (so->so_name, "pei-i386", -1);
 
       if (!abfd)
 	return so;
@@ -762,7 +764,7 @@ windows_make_so (const char *name, LPVOID load_addr)
 
       if (!text)
 	{
-	  bfd_close (abfd);
+	  gdb_bfd_unref (abfd);
 	  return so;
 	}
 
@@ -773,7 +775,7 @@ windows_make_so (const char *name, LPVOID load_addr)
 						   load_addr + 0x1000);
       cygwin_load_end = cygwin_load_start + bfd_section_size (abfd, text);
 
-      bfd_close (abfd);
+      gdb_bfd_unref (abfd);
     }
 #endif
 
@@ -976,7 +978,7 @@ handle_output_debug_string (struct target_waitstatus *ourstatus)
 	  retval = strtoul (p, &p, 0);
 	  if (!retval)
 	    retval = main_thread_id;
-	  else if ((x = (LPCVOID) strtoul (p, &p, 0))
+	  else if ((x = (LPCVOID) string_to_core_addr (p))
 		   && ReadProcessMemory (current_process_handle, x,
 					 &saved_context,
 					 __COPY_CONTEXT_SIZE, &n)
@@ -999,7 +1001,7 @@ display_selector (HANDLE thread, DWORD sel)
   if (GetThreadSelectorEntry (thread, sel, &info))
     {
       int base, limit;
-      printf_filtered ("0x%03lx: ", sel);
+      printf_filtered ("0x%03x: ", (unsigned) sel);
       if (!info.HighWord.Bits.Pres)
 	{
 	  puts_filtered ("Segment not present\n");
@@ -1063,7 +1065,7 @@ display_selector (HANDLE thread, DWORD sel)
       if (err == ERROR_NOT_SUPPORTED)
 	printf_filtered ("Function not supported\n");
       else
-	printf_filtered ("Invalid selector 0x%lx.\n",sel);
+	printf_filtered ("Invalid selector 0x%x.\n", (unsigned) sel);
       return 0;
     }
 }
@@ -1227,8 +1229,8 @@ handle_exception (struct target_waitstatus *ourstatus)
       /* Treat unhandled first chance exceptions specially.  */
       if (current_event.u.Exception.dwFirstChance)
 	return -1;
-      printf_unfiltered ("gdb: unknown target exception 0x%08lx at %s\n",
-	current_event.u.Exception.ExceptionRecord.ExceptionCode,
+      printf_unfiltered ("gdb: unknown target exception 0x%08x at %s\n",
+	(unsigned) current_event.u.Exception.ExceptionRecord.ExceptionCode,
 	host_address_to_string (
 	  current_event.u.Exception.ExceptionRecord.ExceptionAddress));
       ourstatus->value.sig = GDB_SIGNAL_UNKNOWN;
@@ -1248,8 +1250,9 @@ windows_continue (DWORD continue_status, int id)
   thread_info *th;
   BOOL res;
 
-  DEBUG_EVENTS (("ContinueDebugEvent (cpid=%ld, ctid=%lx, %s);\n",
-		  current_event.dwProcessId, current_event.dwThreadId,
+  DEBUG_EVENTS (("ContinueDebugEvent (cpid=%d, ctid=%x, %s);\n",
+		  (unsigned) current_event.dwProcessId,
+		  (unsigned) current_event.dwThreadId,
 		  continue_status == DBG_CONTINUE ?
 		  "DBG_CONTINUE" : "DBG_EXCEPTION_NOT_HANDLED"));
 
@@ -1296,8 +1299,8 @@ fake_create_process (void)
     open_process_used = 1;
   else
     {
-      error (_("OpenProcess call failed, GetLastError = %lud"),
-       GetLastError ());
+      error (_("OpenProcess call failed, GetLastError = %u"),
+       (unsigned) GetLastError ());
       /*  We can not debug anything in that case.  */
     }
   main_thread_id = current_event.dwThreadId;
@@ -1456,7 +1459,7 @@ get_windows_debug_event (struct target_ops *ops,
   switch (event_code)
     {
     case CREATE_THREAD_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "CREATE_THREAD_DEBUG_EVENT"));
@@ -1485,7 +1488,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case EXIT_THREAD_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXIT_THREAD_DEBUG_EVENT"));
@@ -1499,7 +1502,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case CREATE_PROCESS_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "CREATE_PROCESS_DEBUG_EVENT"));
@@ -1521,7 +1524,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case EXIT_PROCESS_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXIT_PROCESS_DEBUG_EVENT"));
@@ -1541,7 +1544,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case LOAD_DLL_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "LOAD_DLL_DEBUG_EVENT"));
@@ -1555,7 +1558,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case UNLOAD_DLL_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "UNLOAD_DLL_DEBUG_EVENT"));
@@ -1568,7 +1571,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case EXCEPTION_DEBUG_EVENT:
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "EXCEPTION_DEBUG_EVENT"));
@@ -1590,7 +1593,7 @@ get_windows_debug_event (struct target_ops *ops,
       break;
 
     case OUTPUT_DEBUG_STRING_EVENT:	/* Message from the kernel.  */
-      DEBUG_EVENTS (("gdb: kernel event for pid=%d tid=%x code=%s)\n",
+      DEBUG_EVENTS (("gdb: kernel event for pid=%u tid=%x code=%s)\n",
 		     (unsigned) current_event.dwProcessId,
 		     (unsigned) current_event.dwThreadId,
 		     "OUTPUT_DEBUG_STRING_EVENT"));
@@ -1602,11 +1605,11 @@ get_windows_debug_event (struct target_ops *ops,
     default:
       if (saw_create != 1)
 	break;
-      printf_unfiltered ("gdb: kernel event for pid=%ld tid=%ld\n",
-			 (DWORD) current_event.dwProcessId,
-			 (DWORD) current_event.dwThreadId);
-      printf_unfiltered ("                 unknown event code %ld\n",
-			 current_event.dwDebugEventCode);
+      printf_unfiltered ("gdb: kernel event for pid=%u tid=%x\n",
+			 (unsigned) current_event.dwProcessId,
+			 (unsigned) current_event.dwThreadId);
+      printf_unfiltered ("                 unknown event code %u\n",
+			 (unsigned) current_event.dwDebugEventCode);
       break;
     }
 
@@ -1864,8 +1867,8 @@ windows_detach (struct target_ops *ops, char *args, int from_tty)
 
   if (!DebugActiveProcessStop (current_event.dwProcessId))
     {
-      error (_("Can't detach process %lu (error %lu)"),
-	     current_event.dwProcessId, GetLastError ());
+      error (_("Can't detach process %u (error %u)"),
+	     (unsigned) current_event.dwProcessId, (unsigned) GetLastError ());
       detached = 0;
     }
   DebugSetProcessKillOnExit (FALSE);
@@ -1875,11 +1878,12 @@ windows_detach (struct target_ops *ops, char *args, int from_tty)
       char *exec_file = get_exec_file (0);
       if (exec_file == 0)
 	exec_file = "";
-      printf_unfiltered ("Detaching from program: %s, Pid %lu\n", exec_file,
-			 current_event.dwProcessId);
+      printf_unfiltered ("Detaching from program: %s, Pid %u\n", exec_file,
+			 (unsigned) current_event.dwProcessId);
       gdb_flush (gdb_stdout);
     }
 
+  i386_cleanup_dregs ();
   inferior_ptid = null_ptid;
   detach_inferior (current_event.dwProcessId);
 
@@ -1894,7 +1898,8 @@ windows_pid_to_exec_file (int pid)
   /* Try to find exe name as symlink target of /proc/<pid>/exe.  */
   int nchars;
   char procexe[sizeof ("/proc/4294967295/exe")];
-  sprintf (procexe, "/proc/%u/exe", pid);
+
+  xsnprintf (procexe, sizeof (procexe), "/proc/%u/exe", pid);
   nchars = readlink (procexe, path, sizeof(path));
   if (nchars > 0 && nchars < sizeof (path))
     {
@@ -2035,6 +2040,7 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
   char shell[__PMAX]; /* Path to shell */
   char *toexec;
   char *args;
+  size_t args_len;
   HANDLE tty;
   char *w32env;
   char *temp;
@@ -2091,10 +2097,10 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
       cygallargs = (wchar_t *) alloca (len * sizeof (wchar_t));
       swprintf (cygallargs, len, L" -c 'exec %s %s'", exec_file, allargs);
 #else
-      cygallargs = (char *)
-	alloca (sizeof (" -c 'exec  '") + strlen (exec_file)
-				    + strlen (allargs) + 2);
-      sprintf (cygallargs, " -c 'exec %s %s'", exec_file, allargs);
+      len = (sizeof (" -c 'exec  '") + strlen (exec_file)
+	     + strlen (allargs) + 2);
+      cygallargs = (char *) alloca (len);
+      xsnprintf (cygallargs, len, " -c 'exec %s %s'", exec_file, allargs);
 #endif
       toexec = shell;
       flags |= DEBUG_PROCESS;
@@ -2187,10 +2193,13 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
     }
 #else
   toexec = exec_file;
-  args = alloca (strlen (toexec) + strlen (allargs) + 2);
-  strcpy (args, toexec);
-  strcat (args, " ");
-  strcat (args, allargs);
+  /* Build the command line, a space-separated list of tokens where
+     the first token is the name of the module to be executed.
+     To avoid ambiguities introduced by spaces in the module name,
+     we quote it.  */
+  args_len = strlen (toexec) + 2 /* quotes */ + strlen (allargs) + 2;
+  args = alloca (args_len);
+  xsnprintf (args, args_len, "\"%s\" %s", toexec, allargs);
 
   flags |= DEBUG_ONLY_THIS_PROCESS;
 
@@ -2257,7 +2266,7 @@ windows_create_inferior (struct target_ops *ops, char *exec_file,
 #endif
 
   if (!ret)
-    error (_("Error creating process %s, (error %d)."),
+    error (_("Error creating process %s, (error %u)."),
 	   exec_file, (unsigned) GetLastError ());
 
   CloseHandle (pi.hThread);
@@ -2306,8 +2315,8 @@ windows_xfer_memory (CORE_ADDR memaddr, gdb_byte *our, int len,
   SIZE_T done = 0;
   if (write)
     {
-      DEBUG_MEM (("gdb: write target memory, %d bytes at 0x%08lx\n",
-		  len, (DWORD) (uintptr_t) memaddr));
+      DEBUG_MEM (("gdb: write target memory, %d bytes at %s\n",
+		  len, core_addr_to_string (memaddr)));
       if (!WriteProcessMemory (current_process_handle,
 			       (LPVOID) (uintptr_t) memaddr, our,
 			       len, &done))
@@ -2317,8 +2326,8 @@ windows_xfer_memory (CORE_ADDR memaddr, gdb_byte *our, int len,
     }
   else
     {
-      DEBUG_MEM (("gdb: read target memory, %d bytes at 0x%08lx\n",
-		  len, (DWORD) (uintptr_t) memaddr));
+      DEBUG_MEM (("gdb: read target memory, %d bytes at %s\n",
+		  len, core_addr_to_string (memaddr)));
       if (!ReadProcessMemory (current_process_handle,
 			      (LPCVOID) (uintptr_t) memaddr, our,
 			      len, &done))
@@ -2399,17 +2408,19 @@ windows_xfer_shared_libraries (struct target_ops *ops,
   for (so = solib_start.next; so; so = so->next)
     windows_xfer_shared_library (so->so_name, (CORE_ADDR)
 				 (uintptr_t) so->lm_info->load_addr,
-				 target_gdbarch, &obstack);
+				 target_gdbarch (), &obstack);
   obstack_grow_str0 (&obstack, "</library-list>\n");
 
   buf = obstack_finish (&obstack);
   len_avail = strlen (buf);
   if (offset >= len_avail)
-    return 0;
-
-  if (len > len_avail - offset)
-    len = len_avail - offset;
-  memcpy (readbuf, buf + offset, len);
+    len= 0;
+  else
+    {
+      if (len > len_avail - offset)
+	len = len_avail - offset;
+      memcpy (readbuf, buf + offset, len);
+    }
 
   obstack_free (&obstack, NULL);
   return len;
@@ -2719,8 +2730,9 @@ _initialize_check_for_gdb_ini (void)
 	{
 	  int len = strlen (oldini);
 	  char *newini = alloca (len + 1);
-	  sprintf (newini, "%.*s.gdbinit",
-	    (int) (len - (sizeof ("gdb.ini") - 1)), oldini);
+
+	  xsnprintf (newini, len + 1, "%.*s.gdbinit",
+		     (int) (len - (sizeof ("gdb.ini") - 1)), oldini);
 	  warning (_("obsolete '%s' found. Rename to '%s'."), oldini, newini);
 	}
     }

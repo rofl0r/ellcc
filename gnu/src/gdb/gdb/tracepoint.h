@@ -1,5 +1,5 @@
 /* Data structures associated with tracepoints in GDB.
-   Copyright (C) 1997-2000, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1997-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -72,9 +72,9 @@ enum trace_stop_reason
 
 struct trace_status
 {
-  /* This is true if the status is coming from a file rather
-     than a live target.  */
-  int from_file;
+  /* If the status is coming from a file rather than a live target,
+     this points at the file's filename.  Otherwise, this is NULL.  */
+  const char *filename;
 
   /* This is true if the value of the running field is known.  */
   int running_known;
@@ -243,9 +243,7 @@ extern void encode_actions (struct breakpoint *t, struct bp_location *tloc,
 			    char ***tdp_actions, char ***stepping_actions);
 
 extern void validate_actionline (char **, struct breakpoint *);
-
-extern void end_actions_pseudocommand (char *args, int from_tty);
-extern void while_stepping_pseudocommand (char *args, int from_tty);
+extern void validate_trace_state_variable_name (const char *name);
 
 extern struct trace_state_variable *find_trace_state_variable (const char *name);
 extern struct trace_state_variable *create_trace_state_variable (const char *name);

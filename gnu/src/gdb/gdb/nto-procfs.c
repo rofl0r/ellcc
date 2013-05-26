@@ -1,7 +1,7 @@
 /* Machine independent support for QNX Neutrino /proc (process file system)
    for GDB.  Written by Colin Burgess at QNX Software Systems Limited.
 
-   Copyright (C) 2003, 2006-2012 Free Software Foundation, Inc.
+   Copyright (C) 2003-2013 Free Software Foundation, Inc.
 
    Contributed by QNX Software Systems Ltd.
 
@@ -197,7 +197,7 @@ procfs_open (char *arg, int from_tty)
 	    {
 	      if (sysinfo->type !=
 		  nto_map_arch_to_cputype (gdbarch_bfd_arch_info
-					   (target_gdbarch)->arch_name))
+					   (target_gdbarch ())->arch_name))
 		error (_("Invalid target CPU."));
 	    }
 	}

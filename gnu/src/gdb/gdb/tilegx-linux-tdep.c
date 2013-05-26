@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux on Tilera TILE-Gx processors.
 
-   Copyright 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -39,13 +39,23 @@ tilegx_linux_sigframe_init (const struct tramp_frame *self,
 {
   CORE_ADDR pc = get_frame_register_unsigned (this_frame, 64);
   CORE_ADDR sp = get_frame_register_unsigned (this_frame, 54);
-  CORE_ADDR base = sp + 16;
+
+  /* Base address of register save area.  */
+  CORE_ADDR base = sp
+                   + 16    /* Skip ABI_SAVE_AREA.  */
+                   + 128   /* Skip SIGINFO.  */
+                   + 40;   /* Skip UCONTEXT.  */
+
+  /* Address of saved LR register (R56) which holds previous PC.  */
+  CORE_ADDR prev_pc = base + 56 * 8;
+
   int i;
 
   for (i = 0; i < 56; i++)
     trad_frame_set_reg_addr (this_cache, i, base + i * 8);
 
-  trad_frame_set_reg_value (this_cache, 64, pc);
+  trad_frame_set_reg_value (this_cache, 64,
+                            get_frame_memory_unsigned (this_frame, prev_pc, 8));
 
   /* Save a frame ID.  */
   trad_frame_set_id (this_cache, frame_id_build (base, func));
@@ -75,9 +85,11 @@ tilegx_linux_supply_regset (const struct regset *regset,
   int i;
 
   /* This logic must match that of struct pt_regs in "ptrace.h".  */
-  for (i = 0; i < TILEGX_NUM_EASY_REGS + 1; i++, ptr += tilegx_reg_size)
+  for (i = 0; i < TILEGX_NUM_EASY_REGS + 2; i++, ptr += tilegx_reg_size)
     {
-      int gri = (i < TILEGX_NUM_EASY_REGS) ? i : TILEGX_PC_REGNUM;
+      int gri = (i < TILEGX_NUM_EASY_REGS)
+                 ? i : (i == TILEGX_NUM_EASY_REGS)
+                        ? TILEGX_PC_REGNUM : TILEGX_FAULTNUM_REGNUM;
 
       if (regnum == gri || regnum == -1)
 	regcache_raw_supply (regcache, gri, ptr);

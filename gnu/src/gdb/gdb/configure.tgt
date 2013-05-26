@@ -31,6 +31,18 @@ esac
 # map target info into gdb names.
 
 case "${targ}" in
+aarch64*-*-elf)
+	# Target: AArch64 embedded system
+	gdb_target_obs="aarch64-tdep.o aarch64-newlib-tdep.o"
+	;;
+
+aarch64*-*-linux*)
+	# Target: AArch64 linux
+	gdb_target_obs="aarch64-tdep.o aarch64-linux-tdep.o \
+			glibc-tdep.o linux-tdep.o solib-svr4.o \
+			symfile-mem.o"
+	build_gdbserver=yes
+	;;
 
 alpha*-*-osf*)
 	# Target: Little-endian Alpha running OSF/1
@@ -127,7 +139,7 @@ frv-*-*)
 	gdb_sim=../sim/frv/libsim.a
 	;;
 
-moxie-*-elf)
+moxie-*-elf | moxie-*-rtems*)
 	gdb_target_obs="moxie-tdep.o"
 	gdb_sim=../sim/moxie/libsim.a
 	;;
@@ -383,34 +395,53 @@ mt-*-*)
 	gdb_target_obs="mt-tdep.o"
 	;;
 
+powerpc*-*-freebsd*)
+	# Target: FreeBSD/powerpc
+	gdb_target_obs="rs6000-tdep.o ppc-sysv-tdep.o ppc64-tdep.o \
+		        ppcfbsd-tdep.o solib-svr4.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
+	;;
+
 powerpc-*-netbsd* | powerpc-*-knetbsd*-gnu)
 	# Target: NetBSD/powerpc
 	gdb_target_obs="rs6000-tdep.o ppc-sysv-tdep.o ppcnbsd-tdep.o \
-			solib-svr4.o"
+			solib-svr4.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	gdb_sim=../sim/ppc/libsim.a
 	;;
 powerpc-*-openbsd*)
 	# Target: OpenBSD/powerpc
 	gdb_target_obs="rs6000-tdep.o ppc-sysv-tdep.o ppcobsd-tdep.o \
-			solib-svr4.o"
+			solib-svr4.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	;;
 powerpc-*-aix* | rs6000-*-*)
 	# Target: PowerPC running AIX
 	gdb_target_obs="rs6000-tdep.o rs6000-aix-tdep.o xcoffread.o \
-			ppc-sysv-tdep.o solib-svr4.o"
+			ppc-sysv-tdep.o solib-svr4.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	;;
 powerpc-*-linux* | powerpc64-*-linux*)
 	# Target: PowerPC running Linux
 	gdb_target_obs="rs6000-tdep.o ppc-linux-tdep.o ppc-sysv-tdep.o \
-			solib-svr4.o solib-spu.o spu-multiarch.o \
-			glibc-tdep.o symfile-mem.o linux-tdep.o"
+			ppc64-tdep.o solib-svr4.o solib-spu.o \
+			spu-multiarch.o \
+			glibc-tdep.o symfile-mem.o linux-tdep.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	gdb_sim=../sim/ppc/libsim.a
 	build_gdbserver=yes
+	;;
+powerpc-*-lynx*178)
+	# Target: PowerPC running Lynx178.
+	gdb_target_obs="rs6000-tdep.o rs6000-lynx178-tdep.o \
+			xcoffread.o monitor.o dsrec.o ppc-sysv-tdep.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	;;
 powerpc*-*-*)
 	# Target: PowerPC running eabi
 	gdb_target_obs="rs6000-tdep.o monitor.o dsrec.o ppcbug-rom.o \
-			dink32-rom.o ppc-sysv-tdep.o solib-svr4.o"
+			dink32-rom.o ppc-sysv-tdep.o solib-svr4.o \
+			ravenscar-thread.o ppc-ravenscar-thread.o"
 	if test -f ../sim/ppc/Makefile; then
 	  gdb_sim=../sim/ppc/libsim.a
 	fi
@@ -475,7 +506,8 @@ sparc-*-linux*)
 	# Target: GNU/Linux SPARC
 	gdb_target_obs="sparc-tdep.o sparc-sol2-tdep.o sol2-tdep.o \
 			sparc-linux-tdep.o solib-svr4.o symfile-mem.o \
-			linux-tdep.o"
+			linux-tdep.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	if test "x$enable_64_bit_bfd" = "xyes"; then
 	    # Target: GNU/Linux UltraSPARC
 	    gdb_target_obs="sparc64-tdep.o sparc64-sol2-tdep.o \
@@ -487,52 +519,63 @@ sparc64-*-linux*)
 	# Target: GNU/Linux UltraSPARC
 	gdb_target_obs="sparc64-tdep.o sparc64-sol2-tdep.o sol2-tdep.o \
 			sparc64-linux-tdep.o sparc-tdep.o sparc-sol2-tdep.o \
-			sparc-linux-tdep.o solib-svr4.o linux-tdep.o"
+			sparc-linux-tdep.o solib-svr4.o linux-tdep.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	build_gdbserver=yes
 	;;
 sparc*-*-freebsd* | sparc*-*-kfreebsd*-gnu)
 	# Target: FreeBSD/sparc64
 	gdb_target_obs="sparc-tdep.o sparc64-tdep.o sparc64fbsd-tdep.o \
-			solib-svr4.o"
+			solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc-*-netbsd* | sparc-*-knetbsd*-gnu)
 	# Target: NetBSD/sparc
-	gdb_target_obs="sparc-tdep.o sparcnbsd-tdep.o nbsd-tdep.o solib-svr4.o"
+	gdb_target_obs="sparc-tdep.o sparcnbsd-tdep.o nbsd-tdep.o \
+			solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc64-*-netbsd* | sparc64-*-knetbsd*-gnu)
 	# Target: NetBSD/sparc64
 	gdb_target_obs="sparc64-tdep.o sparc64nbsd-tdep.o sparc-tdep.o \
-			sparcnbsd-tdep.o nbsd-tdep.o solib-svr4.o"
+			sparcnbsd-tdep.o nbsd-tdep.o solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc-*-openbsd*)
 	# Target: OpenBSD/sparc
 	gdb_target_obs="sparc-tdep.o sparcnbsd-tdep.o sparcobsd-tdep.o \
-			nbsd-tdep.o obsd-tdep.o bsd-uthread.o solib-svr4.o"
+			nbsd-tdep.o obsd-tdep.o bsd-uthread.o solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc64-*-openbsd*)
 	# Target: OpenBSD/sparc64
 	gdb_target_obs="sparc64-tdep.o sparc64nbsd-tdep.o sparc64obsd-tdep.o \
 			sparc-tdep.o sparcnbsd-tdep.o sparcobsd-tdep.o \
-			nbsd-tdep.o obsd-tdep.o bsd-uthread.o solib-svr4.o"
+			nbsd-tdep.o obsd-tdep.o bsd-uthread.o solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc-*-solaris2.[0-6] | sparc-*-solaris2.[0-6].*)
 	# Target: Solaris SPARC
-	gdb_target_obs="sparc-tdep.o sparc-sol2-tdep.o sol2-tdep.o solib-svr4.o"
+	gdb_target_obs="sparc-tdep.o sparc-sol2-tdep.o sol2-tdep.o \
+			solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc-*-solaris2* | sparcv9-*-solaris2* | sparc64-*-solaris2*)
 	# Target: Solaris UltraSPARC
 	gdb_target_obs="sparc64-tdep.o sparc64-sol2-tdep.o sparc-tdep.o \
-			sparc-sol2-tdep.o sol2-tdep.o solib-svr4.o"
+			sparc-sol2-tdep.o sol2-tdep.o solib-svr4.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 sparc-*-*)
 	# Target: SPARC
-	gdb_target_obs="sparc-tdep.o ravenscar-thread.o \
-			ravenscar-sparc-thread.o"
+	gdb_target_obs="sparc-tdep.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	gdb_sim=../sim/erc32/libsim.a
 	;;
 sparc64-*-*)
 	# Target: UltraSPARC
-	gdb_target_obs="sparc-tdep.o sparc64-tdep.o"
+	gdb_target_obs="sparc-tdep.o sparc64-tdep.o \
+			ravenscar-thread.o sparc-ravenscar-thread.o"
 	;;
 
 spu*-*-*)
@@ -553,10 +596,11 @@ tic6x-*-*)
 	;;
 
 tilegx-*-linux*)
-        # Target: TILE-Gx
-        gdb_target_obs="tilegx-tdep.o tilegx-linux-tdep.o solib-svr4.o \
+	# Target: TILE-Gx
+	gdb_target_obs="tilegx-tdep.o tilegx-linux-tdep.o solib-svr4.o \
 			symfile-mem.o glibc-tdep.o linux-tdep.o"
-        ;;
+	build_gdbserver=yes
+	;;
 
 xstormy16-*-*)
 	# Target: Sanyo Xstormy16a processor
@@ -608,7 +652,7 @@ x86_64-*-freebsd* | x86_64-*-kfreebsd*-gnu)
 			i387-tdep.o i386bsd-tdep.o i386fbsd-tdep.o \
 			bsd-uthread.o solib-svr4.o"
 	;;
-x86_64-*-mingw*)
+x86_64-*-mingw* | x86_64-*-cygwin*)
         # Target: MingW/amd64
 	gdb_target_obs="amd64-tdep.o amd64-windows-tdep.o \
                         i386-tdep.o i386-cygwin-tdep.o i387-tdep.o \

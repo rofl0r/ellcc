@@ -1,13 +1,11 @@
-This is gdb.info, produced by makeinfo version 4.8 from ./gdb.texinfo.
+This is gdb.info, produced by makeinfo version 4.13 from ./gdb.texinfo.
 
 INFO-DIR-SECTION Software development
 START-INFO-DIR-ENTRY
 * Gdb: (gdb).                     The GNU debugger.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -23,11 +21,9 @@ developing GNU and promoting software freedom."
    This file documents the GNU debugger GDB.
 
    This is the Tenth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.5.1.
+Source-Level Debugger' for GDB (GDB) Version 7.6.
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -39,6 +35,376 @@ with the Back-Cover Texts as in (a) below.
    (a) The FSF's Back-Cover Text is: "You are free to copy and modify
 this GNU Manual.  Buying copies from GNU Press supports the FSF in
 developing GNU and promoting software freedom."
+
+
+File: gdb.info,  Node: Breakpoints In Python,  Next: Finish Breakpoints in Python,  Prev: Symbol Tables In Python,  Up: Python API
+
+23.2.2.21 Manipulating breakpoints using Python
+...............................................
+
+Python code can manipulate breakpoints via the `gdb.Breakpoint' class.
+
+ -- Function: Breakpoint.__init__ (spec [, type [, wp_class
+          [,internal]]])
+     Create a new breakpoint.  SPEC is a string naming the location of
+     the breakpoint, or an expression that defines a watchpoint.  The
+     contents can be any location recognized by the `break' command, or
+     in the case of a watchpoint, by the `watch' command.  The optional
+     TYPE denotes the breakpoint to create from the types defined later
+     in this chapter.  This argument can be either: `gdb.BP_BREAKPOINT'
+     or `gdb.BP_WATCHPOINT'.  TYPE defaults to `gdb.BP_BREAKPOINT'.
+     The optional INTERNAL argument allows the breakpoint to become
+     invisible to the user.  The breakpoint will neither be reported
+     when created, nor will it be listed in the output from `info
+     breakpoints' (but will be listed with the `maint info breakpoints'
+     command).  The optional WP_CLASS argument defines the class of
+     watchpoint to create, if TYPE is `gdb.BP_WATCHPOINT'.  If a
+     watchpoint class is not provided, it is assumed to be a
+     `gdb.WP_WRITE' class.
+
+ -- Function: Breakpoint.stop (self)
+     The `gdb.Breakpoint' class can be sub-classed and, in particular,
+     you may choose to implement the `stop' method.  If this method is
+     defined as a sub-class of `gdb.Breakpoint', it will be called when
+     the inferior reaches any location of a breakpoint which
+     instantiates that sub-class.  If the method returns `True', the
+     inferior will be stopped at the location of the breakpoint,
+     otherwise the inferior will continue.
+
+     If there are multiple breakpoints at the same location with a
+     `stop' method, each one will be called regardless of the return
+     status of the previous.  This ensures that all `stop' methods have
+     a chance to execute at that location.  In this scenario if one of
+     the methods returns `True' but the others return `False', the
+     inferior will still be stopped.
+
+     You should not alter the execution state of the inferior (i.e.,
+     step, next, etc.), alter the current frame context (i.e., change
+     the current active frame), or alter, add or delete any breakpoint.
+     As a general rule, you should not alter any data within GDB or the
+     inferior at this time.
+
+     Example `stop' implementation:
+
+          class MyBreakpoint (gdb.Breakpoint):
+                def stop (self):
+                  inf_val = gdb.parse_and_eval("foo")
+                  if inf_val == 3:
+                    return True
+                  return False
+
+   The available watchpoint types represented by constants are defined
+in the `gdb' module:
+
+`gdb.WP_READ'
+     Read only watchpoint.
+
+`gdb.WP_WRITE'
+     Write only watchpoint.
+
+`gdb.WP_ACCESS'
+     Read/Write watchpoint.
+
+ -- Function: Breakpoint.is_valid ()
+     Return `True' if this `Breakpoint' object is valid, `False'
+     otherwise.  A `Breakpoint' object can become invalid if the user
+     deletes the breakpoint.  In this case, the object still exists,
+     but the underlying breakpoint does not.  In the cases of
+     watchpoint scope, the watchpoint remains valid even if execution
+     of the inferior leaves the scope of that watchpoint.
+
+ -- Function: Breakpoint.delete
+     Permanently deletes the GDB breakpoint.  This also invalidates the
+     Python `Breakpoint' object.  Any further access to this object's
+     attributes or methods will raise an error.
+
+ -- Variable: Breakpoint.enabled
+     This attribute is `True' if the breakpoint is enabled, and `False'
+     otherwise.  This attribute is writable.
+
+ -- Variable: Breakpoint.silent
+     This attribute is `True' if the breakpoint is silent, and `False'
+     otherwise.  This attribute is writable.
+
+     Note that a breakpoint can also be silent if it has commands and
+     the first command is `silent'.  This is not reported by the
+     `silent' attribute.
+
+ -- Variable: Breakpoint.thread
+     If the breakpoint is thread-specific, this attribute holds the
+     thread id.  If the breakpoint is not thread-specific, this
+     attribute is `None'.  This attribute is writable.
+
+ -- Variable: Breakpoint.task
+     If the breakpoint is Ada task-specific, this attribute holds the
+     Ada task id.  If the breakpoint is not task-specific (or the
+     underlying language is not Ada), this attribute is `None'.  This
+     attribute is writable.
+
+ -- Variable: Breakpoint.ignore_count
+     This attribute holds the ignore count for the breakpoint, an
+     integer.  This attribute is writable.
+
+ -- Variable: Breakpoint.number
+     This attribute holds the breakpoint's number -- the identifier
+     used by the user to manipulate the breakpoint.  This attribute is
+     not writable.
+
+ -- Variable: Breakpoint.type
+     This attribute holds the breakpoint's type -- the identifier used
+     to determine the actual breakpoint type or use-case.  This
+     attribute is not writable.
+
+ -- Variable: Breakpoint.visible
+     This attribute tells whether the breakpoint is visible to the user
+     when set, or when the `info breakpoints' command is run.  This
+     attribute is not writable.
+
+   The available types are represented by constants defined in the `gdb'
+module:
+
+`gdb.BP_BREAKPOINT'
+     Normal code breakpoint.
+
+`gdb.BP_WATCHPOINT'
+     Watchpoint breakpoint.
+
+`gdb.BP_HARDWARE_WATCHPOINT'
+     Hardware assisted watchpoint.
+
+`gdb.BP_READ_WATCHPOINT'
+     Hardware assisted read watchpoint.
+
+`gdb.BP_ACCESS_WATCHPOINT'
+     Hardware assisted access watchpoint.
+
+ -- Variable: Breakpoint.hit_count
+     This attribute holds the hit count for the breakpoint, an integer.
+     This attribute is writable, but currently it can only be set to
+     zero.
+
+ -- Variable: Breakpoint.location
+     This attribute holds the location of the breakpoint, as specified
+     by the user.  It is a string.  If the breakpoint does not have a
+     location (that is, it is a watchpoint) the attribute's value is
+     `None'.  This attribute is not writable.
+
+ -- Variable: Breakpoint.expression
+     This attribute holds a breakpoint expression, as specified by the
+     user.  It is a string.  If the breakpoint does not have an
+     expression (the breakpoint is not a watchpoint) the attribute's
+     value is `None'.  This attribute is not writable.
+
+ -- Variable: Breakpoint.condition
+     This attribute holds the condition of the breakpoint, as specified
+     by the user.  It is a string.  If there is no condition, this
+     attribute's value is `None'.  This attribute is writable.
+
+ -- Variable: Breakpoint.commands
+     This attribute holds the commands attached to the breakpoint.  If
+     there are commands, this attribute's value is a string holding all
+     the commands, separated by newlines.  If there are no commands,
+     this attribute is `None'.  This attribute is not writable.
+
+
+File: gdb.info,  Node: Finish Breakpoints in Python,  Next: Lazy Strings In Python,  Prev: Breakpoints In Python,  Up: Python API
+
+23.2.2.22 Finish Breakpoints
+............................
+
+A finish breakpoint is a temporary breakpoint set at the return address
+of a frame, based on the `finish' command.  `gdb.FinishBreakpoint'
+extends `gdb.Breakpoint'.  The underlying breakpoint will be disabled
+and deleted when the execution will run out of the breakpoint scope
+(i.e.  `Breakpoint.stop' or `FinishBreakpoint.out_of_scope' triggered).
+Finish breakpoints are thread specific and must be create with the right
+thread selected.
+
+ -- Function: FinishBreakpoint.__init__ ([frame] [, internal])
+     Create a finish breakpoint at the return address of the `gdb.Frame'
+     object FRAME.  If FRAME is not provided, this defaults to the
+     newest frame.  The optional INTERNAL argument allows the
+     breakpoint to become invisible to the user.  *Note Breakpoints In
+     Python::, for further details about this argument.
+
+ -- Function: FinishBreakpoint.out_of_scope (self)
+     In some circumstances (e.g. `longjmp', C++ exceptions, GDB
+     `return' command, ...), a function may not properly terminate, and
+     thus never hit the finish breakpoint.  When GDB notices such a
+     situation, the `out_of_scope' callback will be triggered.
+
+     You may want to sub-class `gdb.FinishBreakpoint' and override this
+     method:
+
+          class MyFinishBreakpoint (gdb.FinishBreakpoint)
+              def stop (self):
+                  print "normal finish"
+                  return True
+
+              def out_of_scope ():
+                  print "abnormal finish"
+
+ -- Variable: FinishBreakpoint.return_value
+     When GDB is stopped at a finish breakpoint and the frame used to
+     build the `gdb.FinishBreakpoint' object had debug symbols, this
+     attribute will contain a `gdb.Value' object corresponding to the
+     return value of the function.  The value will be `None' if the
+     function return type is `void' or if the return value was not
+     computable.  This attribute is not writable.
+
+
+File: gdb.info,  Node: Lazy Strings In Python,  Next: Architectures In Python,  Prev: Finish Breakpoints in Python,  Up: Python API
+
+23.2.2.23 Python representation of lazy strings.
+................................................
+
+A "lazy string" is a string whose contents is not retrieved or encoded
+until it is needed.
+
+   A `gdb.LazyString' is represented in GDB as an `address' that points
+to a region of memory, an `encoding' that will be used to encode that
+region of memory, and a `length' to delimit the region of memory that
+represents the string.  The difference between a `gdb.LazyString' and a
+string wrapped within a `gdb.Value' is that a `gdb.LazyString' will be
+treated differently by GDB when printing.  A `gdb.LazyString' is
+retrieved and encoded during printing, while a `gdb.Value' wrapping a
+string is immediately retrieved and encoded on creation.
+
+   A `gdb.LazyString' object has the following functions:
+
+ -- Function: LazyString.value ()
+     Convert the `gdb.LazyString' to a `gdb.Value'.  This value will
+     point to the string in memory, but will lose all the delayed
+     retrieval, encoding and handling that GDB applies to a
+     `gdb.LazyString'.
+
+ -- Variable: LazyString.address
+     This attribute holds the address of the string.  This attribute is
+     not writable.
+
+ -- Variable: LazyString.length
+     This attribute holds the length of the string in characters.  If
+     the length is -1, then the string will be fetched and encoded up
+     to the first null of appropriate width.  This attribute is not
+     writable.
+
+ -- Variable: LazyString.encoding
+     This attribute holds the encoding that will be applied to the
+     string when the string is printed by GDB.  If the encoding is not
+     set, or contains an empty string,  then GDB will select the most
+     appropriate encoding when the string is printed.  This attribute
+     is not writable.
+
+ -- Variable: LazyString.type
+     This attribute holds the type that is represented by the lazy
+     string's type.  For a lazy string this will always be a pointer
+     type.  To resolve this to the lazy string's character type, use
+     the type's `target' method.  *Note Types In Python::.  This
+     attribute is not writable.
+
+
+File: gdb.info,  Node: Architectures In Python,  Prev: Lazy Strings In Python,  Up: Python API
+
+23.2.2.24 Python representation of architectures
+................................................
+
+GDB uses architecture specific parameters and artifacts in a number of
+its various computations.  An architecture is represented by an
+instance of the `gdb.Architecture' class.
+
+   A `gdb.Architecture' class has the following methods:
+
+ -- Function: Architecture.name ()
+     Return the name (string value) of the architecture.
+
+ -- Function: Architecture.disassemble (START_PC [, END_PC [, COUNT]])
+     Return a list of disassembled instructions starting from the memory
+     address START_PC.  The optional arguments END_PC and COUNT
+     determine the number of instructions in the returned list.  If
+     both the optional arguments END_PC and COUNT are specified, then a
+     list of at most COUNT disassembled instructions whose start
+     address falls in the closed memory address interval from START_PC
+     to END_PC are returned.  If END_PC is not specified, but COUNT is
+     specified, then COUNT number of instructions starting from the
+     address START_PC are returned.  If COUNT is not specified but
+     END_PC is specified, then all instructions whose start address
+     falls in the closed memory address interval from START_PC to
+     END_PC are returned.  If neither END_PC nor COUNT are specified,
+     then a single instruction at START_PC is returned.  For all of
+     these cases, each element of the returned list is a Python `dict'
+     with the following string keys:
+
+    `addr'
+          The value corresponding to this key is a Python long integer
+          capturing the memory address of the instruction.
+
+    `asm'
+          The value corresponding to this key is a string value which
+          represents the instruction with assembly language mnemonics.
+          The assembly language flavor used is the same as that
+          specified by the current CLI variable `disassembly-flavor'.
+          *Note Machine Code::.
+
+    `length'
+          The value corresponding to this key is the length (integer
+          value) of the instruction in bytes.
+
+
+
+File: gdb.info,  Node: Python Auto-loading,  Next: Python modules,  Prev: Python API,  Up: Python
+
+23.2.3 Python Auto-loading
+--------------------------
+
+When a new object file is read (for example, due to the `file' command,
+or because the inferior has loaded a shared library), GDB will look for
+Python support scripts in several ways: `OBJFILE-gdb.py' (*note
+objfile-gdb.py file::) and `.debug_gdb_scripts' section (*note
+dotdebug_gdb_scripts section::).
+
+   The auto-loading feature is useful for supplying application-specific
+debugging commands and scripts.
+
+   Auto-loading can be enabled or disabled, and the list of auto-loaded
+scripts can be printed.
+
+`set auto-load python-scripts [on|off]'
+     Enable or disable the auto-loading of Python scripts.
+
+`show auto-load python-scripts'
+     Show whether auto-loading of Python scripts is enabled or disabled.
+
+`info auto-load python-scripts [REGEXP]'
+     Print the list of all Python scripts that GDB auto-loaded.
+
+     Also printed is the list of Python scripts that were mentioned in
+     the `.debug_gdb_scripts' section and were not found (*note
+     dotdebug_gdb_scripts section::).  This is useful because their
+     names are not printed when GDB tries to load them and fails.
+     There may be many of them, and printing an error message for each
+     one is problematic.
+
+     If REGEXP is supplied only Python scripts with matching names are
+     printed.
+
+     Example:
+
+          (gdb) info auto-load python-scripts
+          Loaded Script
+          Yes    py-section-script.py
+                 full name: /tmp/py-section-script.py
+          No     my-foo-pretty-printers.py
+
+   When reading an auto-loaded file, GDB sets the "current objfile".
+This is available via the `gdb.current_objfile' function (*note
+Objfiles In Python::).  This can be useful for registering
+objfile-specific pretty-printers.
+
+* Menu:
+
+* objfile-gdb.py file::          The `OBJFILE-gdb.py' file
+* dotdebug_gdb_scripts section:: The `.debug_gdb_scripts' section
+* Which flavor to choose?::
 
 
 File: gdb.info,  Node: objfile-gdb.py file,  Next: dotdebug_gdb_scripts section,  Up: Python Auto-loading
@@ -242,7 +608,7 @@ File: gdb.info,  Node: gdb.types,  Next: gdb.prompt,  Prev: gdb.printing,  Up: P
 ..................
 
 This module provides a collection of utilities for working with
-`gdb.Types' objects.
+`gdb.Type' objects.
 
 `get_basic_type (TYPE)'
      Return TYPE with const and volatile qualifiers stripped, and with
@@ -292,6 +658,35 @@ This module provides a collection of utilities for working with
           {['a', '']}
           (gdb) python print [k for k,v in gdb.types.deep_items(struct_a)]
           {['a', 'b0', 'b1']}
+
+`get_type_recognizers ()'
+     Return a list of the enabled type recognizers for the current
+     context.  This is called by GDB during the type-printing process
+     (*note Type Printing API::).
+
+`apply_type_recognizers (recognizers, type_obj)'
+     Apply the type recognizers, RECOGNIZERS, to the type object
+     TYPE_OBJ.  If any recognizer returns a string, return that string.
+     Otherwise, return `None'.  This is called by GDB during the
+     type-printing process (*note Type Printing API::).
+
+`register_type_printer (locus, printer)'
+     This is a convenience function to register a type printer.
+     PRINTER is the type printer to register.  It must implement the
+     type printer protocol.  LOCUS is either a `gdb.Objfile', in which
+     case the printer is registered with that objfile; a
+     `gdb.Progspace', in which case the printer is registered with that
+     progspace; or `None', in which case the printer is registered
+     globally.
+
+`TypePrinter'
+     This is a base class that implements the type printer protocol.
+     Type printers are encouraged, but not required, to derive from
+     this class.  It defines a constructor:
+
+      -- Method on TypePrinter: __init__ (self, name)
+          Initialize the type printer with the given name.  The new
+          printer starts in the enabled state.
 
 
 
@@ -462,7 +857,7 @@ include:
 `mi'
      The newest GDB/MI interface (currently `mi2').  Used primarily by
      programs wishing to use GDB as a backend for a debugger GUI or an
-     IDE.  For more information, see *Note The GDB/MI Interface: GDB/MI.
+     IDE.  For more information, see *note The GDB/MI Interface: GDB/MI.
 
 `mi2'
      The current GDB/MI interface.
@@ -1037,6 +1432,7 @@ This chapter uses the following notation:
 * GDB/MI Simple Examples::
 * GDB/MI Command Description Format::
 * GDB/MI Breakpoint Commands::
+* GDB/MI Catchpoint Commands::
 * GDB/MI Program Context::
 * GDB/MI Thread Commands::
 * GDB/MI Ada Tasking Commands::
@@ -1497,6 +1893,7 @@ File: gdb.info,  Node: GDB/MI Output Records,  Next: GDB/MI Simple Examples,  Pr
 * GDB/MI Result Records::
 * GDB/MI Stream Records::
 * GDB/MI Async Records::
+* GDB/MI Breakpoint Information::
 * GDB/MI Frame Information::
 * GDB/MI Thread Information::
 * GDB/MI Ada Exception Information::
@@ -1565,7 +1962,7 @@ or a quoted C string (which does not contain an implicit newline).
      internals.
 
 
-File: gdb.info,  Node: GDB/MI Async Records,  Next: GDB/MI Frame Information,  Prev: GDB/MI Stream Records,  Up: GDB/MI Output Records
+File: gdb.info,  Node: GDB/MI Async Records,  Next: GDB/MI Breakpoint Information,  Prev: GDB/MI Stream Records,  Up: GDB/MI Output Records
 
 27.5.3 GDB/MI Async Records
 ---------------------------
@@ -1732,24 +2129,188 @@ activity (e.g., target stopped).
      absent, it means the library was unloaded in the context of all
      present thread groups.
 
+`=traceframe-changed,num=TFNUM,tracepoint=TPNUM'
+`=traceframe-changed,end'
+     Reports that the trace frame was changed and its new number is
+     TFNUM.  The number of the tracepoint associated with this trace
+     frame is TPNUM.
+
+`=tsv-created,name=NAME,initial=INITIAL'
+     Reports that the new trace state variable NAME is created with
+     initial value INITIAL.
+
+`=tsv-deleted,name=NAME'
+`=tsv-deleted'
+     Reports that the trace state variable NAME is deleted or all trace
+     state variables are deleted.
+
+`=tsv-modified,name=NAME,initial=INITIAL[,current=CURRENT]'
+     Reports that the trace state variable NAME is modified with the
+     initial value INITIAL. The current value CURRENT of trace state
+     variable is optional and is reported if the current value of trace
+     state variable is known.
+
 `=breakpoint-created,bkpt={...}'
 `=breakpoint-modified,bkpt={...}'
-`=breakpoint-deleted,bkpt={...}'
+`=breakpoint-deleted,id=NUMBER'
      Reports that a breakpoint was created, modified, or deleted,
      respectively.  Only user-visible breakpoints are reported to the MI
      user.
 
      The BKPT argument is of the same form as returned by the various
-     breakpoint commands; *Note GDB/MI Breakpoint Commands::.
+     breakpoint commands; *Note GDB/MI Breakpoint Commands::.  The
+     NUMBER is the ordinal number of the breakpoint.
 
      Note that if a breakpoint is emitted in the result record of a
      command, then it will not also be emitted in an async record.
 
+`=record-started,thread-group="ID"'
+`=record-stopped,thread-group="ID"'
+     Execution log recording was either started or stopped on an
+     inferior.  The ID is the GDB identifier of the thread group
+     corresponding to the affected inferior.
+
+`=cmd-param-changed,param=PARAM,value=VALUE'
+     Reports that a parameter of the command `set PARAM' is changed to
+     VALUE.  In the multi-word `set' command, the PARAM is the whole
+     parameter list to `set' command.  For example, In command `set
+     check type on', PARAM is `check type' and VALUE is `on'.
+
+`=memory-changed,thread-group=ID,addr=ADDR,len=LEN[,type="code"]'
+     Reports that bytes from ADDR to DATA + LEN were written in an
+     inferior.  The ID is the identifier of the thread group
+     corresponding to the affected inferior.  The optional
+     `type="code"' part is reported if the memory written to holds
+     executable code.
 
 
-File: gdb.info,  Node: GDB/MI Frame Information,  Next: GDB/MI Thread Information,  Prev: GDB/MI Async Records,  Up: GDB/MI Output Records
+File: gdb.info,  Node: GDB/MI Breakpoint Information,  Next: GDB/MI Frame Information,  Prev: GDB/MI Async Records,  Up: GDB/MI Output Records
 
-27.5.4 GDB/MI Frame Information
+27.5.4 GDB/MI Breakpoint Information
+------------------------------------
+
+When GDB reports information about a breakpoint, a tracepoint, a
+watchpoint, or a catchpoint, it uses a tuple with the following fields:
+
+`number'
+     The breakpoint number.  For a breakpoint that represents one
+     location of a multi-location breakpoint, this will be a dotted
+     pair, like `1.2'.
+
+`type'
+     The type of the breakpoint.  For ordinary breakpoints this will be
+     `breakpoint', but many values are possible.
+
+`catch-type'
+     If the type of the breakpoint is `catchpoint', then this indicates
+     the exact type of catchpoint.
+
+`disp'
+     This is the breakpoint disposition--either `del', meaning that the
+     breakpoint will be deleted at the next stop, or `keep', meaning
+     that the breakpoint will not be deleted.
+
+`enabled'
+     This indicates whether the breakpoint is enabled, in which case the
+     value is `y', or disabled, in which case the value is `n'.  Note
+     that this is not the same as the field `enable'.
+
+`addr'
+     The address of the breakpoint.  This may be a hexidecimal number,
+     giving the address; or the string `<PENDING>', for a pending
+     breakpoint; or the string `<MULTIPLE>', for a breakpoint with
+     multiple locations.  This field will not be present if no address
+     can be determined.  For example, a watchpoint does not have an
+     address.
+
+`func'
+     If known, the function in which the breakpoint appears.  If not
+     known, this field is not present.
+
+`filename'
+     The name of the source file which contains this function, if known.
+     If not known, this field is not present.
+
+`fullname'
+     The full file name of the source file which contains this
+     function, if known.  If not known, this field is not present.
+
+`line'
+     The line number at which this breakpoint appears, if known.  If
+     not known, this field is not present.
+
+`at'
+     If the source file is not known, this field may be provided.  If
+     provided, this holds the address of the breakpoint, possibly
+     followed by a symbol name.
+
+`pending'
+     If this breakpoint is pending, this field is present and holds the
+     text used to set the breakpoint, as entered by the user.
+
+`evaluated-by'
+     Where this breakpoint's condition is evaluated, either `host' or
+     `target'.
+
+`thread'
+     If this is a thread-specific breakpoint, then this identifies the
+     thread in which the breakpoint can trigger.
+
+`task'
+     If this breakpoint is restricted to a particular Ada task, then
+     this field will hold the task identifier.
+
+`cond'
+     If the breakpoint is conditional, this is the condition expression.
+
+`ignore'
+     The ignore count of the breakpoint.
+
+`enable'
+     The enable count of the breakpoint.
+
+`traceframe-usage'
+     FIXME.
+
+`static-tracepoint-marker-string-id'
+     For a static tracepoint, the name of the static tracepoint marker.
+
+`mask'
+     For a masked watchpoint, this is the mask.
+
+`pass'
+     A tracepoint's pass count.
+
+`original-location'
+     The location of the breakpoint as originally specified by the user.
+     This field is optional.
+
+`times'
+     The number of times the breakpoint has been hit.
+
+`installed'
+     This field is only given for tracepoints.  This is either `y',
+     meaning that the tracepoint is installed, or `n', meaning that it
+     is not.
+
+`what'
+     Some extra data, the exact contents of which are type-dependent.
+
+
+   For example, here is what the output of `-break-insert' (*note
+GDB/MI Breakpoint Commands::) might be:
+
+     -> -break-insert main
+     <- ^done,bkpt={number="1",type="breakpoint",disp="keep",
+         enabled="y",addr="0x08048564",func="main",file="myprog.c",
+         fullname="/home/nickrob/myprog.c",line="68",thread-groups=["i1"],
+         times="0"}
+     <- (gdb)
+
+
+File: gdb.info,  Node: GDB/MI Frame Information,  Next: GDB/MI Thread Information,  Prev: GDB/MI Breakpoint Information,  Up: GDB/MI Output Records
+
+27.5.5 GDB/MI Frame Information
 -------------------------------
 
 Response from many MI commands includes an information about stack
@@ -1783,7 +2344,7 @@ frame.  This information is a tuple that may have the following fields:
 
 File: gdb.info,  Node: GDB/MI Thread Information,  Next: GDB/MI Ada Exception Information,  Prev: GDB/MI Frame Information,  Up: GDB/MI Output Records
 
-27.5.5 GDB/MI Thread Information
+27.5.6 GDB/MI Thread Information
 --------------------------------
 
 Whenever GDB has to report an information about a thread, it uses a
@@ -1813,7 +2374,7 @@ tuple with the following fields:
 
 File: gdb.info,  Node: GDB/MI Ada Exception Information,  Prev: GDB/MI Thread Information,  Up: GDB/MI Output Records
 
-27.5.6 GDB/MI Ada Exception Information
+27.5.7 GDB/MI Ada Exception Information
 ---------------------------------------
 
 Whenever a `*stopped' record is emitted because the program stopped
@@ -1844,7 +2405,8 @@ detailed information of the breakpoint.
      -> -break-insert main
      <- ^done,bkpt={number="1",type="breakpoint",disp="keep",
          enabled="y",addr="0x08048564",func="main",file="myprog.c",
-         fullname="/home/nickrob/myprog.c",line="68",times="0"}
+         fullname="/home/nickrob/myprog.c",line="68",thread-groups=["i1"],
+         times="0"}
      <- (gdb)
 
 Program Execution
@@ -1937,7 +2499,7 @@ have not been implemented yet and these are labeled N.A. (not
 available).
 
 
-File: gdb.info,  Node: GDB/MI Breakpoint Commands,  Next: GDB/MI Program Context,  Prev: GDB/MI Command Description Format,  Up: GDB/MI
+File: gdb.info,  Node: GDB/MI Breakpoint Commands,  Next: GDB/MI Catchpoint Commands,  Prev: GDB/MI Command Description Format,  Up: GDB/MI
 
 27.8 GDB/MI Breakpoint Commands
 ===============================
@@ -1969,7 +2531,8 @@ Example
      -break-insert main
      ^done,bkpt={number="1",type="breakpoint",disp="keep",
      enabled="y",addr="0x000100d0",func="main",file="hello.c",
-     fullname="/home/foo/hello.c",line="5",times="0"}
+     fullname="/home/foo/hello.c",line="5",thread-groups=["i1"],
+     times="0"}
      (gdb)
      -break-after 1 3
      ~
@@ -1985,7 +2548,7 @@ Example
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x000100d0",func="main",file="hello.c",fullname="/home/foo/hello.c",
-     line="5",times="0",ignore="3"}]}
+     line="5",thread-groups=["i1"],times="0",ignore="3"}]}
      (gdb)
 
 The `-break-commands' Command
@@ -2015,7 +2578,8 @@ Example
      -break-insert main
      ^done,bkpt={number="1",type="breakpoint",disp="keep",
      enabled="y",addr="0x000100d0",func="main",file="hello.c",
-     fullname="/home/foo/hello.c",line="5",times="0"}
+     fullname="/home/foo/hello.c",line="5",thread-groups=["i1"],
+     times="0"}
      (gdb)
      -break-commands 1 "print v" "continue"
      ^done
@@ -2055,7 +2619,7 @@ Example
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x000100d0",func="main",file="hello.c",fullname="/home/foo/hello.c",
-     line="5",cond="1",times="0",ignore="3"}]}
+     line="5",cond="1",thread-groups=["i1"],times="0",ignore="3"}]}
      (gdb)
 
 The `-break-delete' Command
@@ -2125,7 +2689,7 @@ Example
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="2",type="breakpoint",disp="keep",enabled="n",
      addr="0x000100d0",func="main",file="hello.c",fullname="/home/foo/hello.c",
-     line="5",times="0"}]}
+     line="5",thread-groups=["i1"],times="0"}]}
      (gdb)
 
 The `-break-enable' Command
@@ -2160,7 +2724,7 @@ Example
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="2",type="breakpoint",disp="keep",enabled="y",
      addr="0x000100d0",func="main",file="hello.c",fullname="/home/foo/hello.c",
-     line="5",times="0"}]}
+     line="5",thread-groups=["i1"],times="0"}]}
      (gdb)
 
 The `-break-info' Command
@@ -2172,6 +2736,10 @@ Synopsis
       -break-info BREAKPOINT
 
    Get information about a single breakpoint.
+
+   The result is a table of breakpoints.  *Note GDB/MI Breakpoint
+Information::, for details on the format of each breakpoint in the
+table.
 
 GDB Command
 ...........
@@ -2236,19 +2804,8 @@ If specified, LOCATION, can be one of:
 Result
 ......
 
-The result is in the form:
-
-     ^done,bkpt={number="NUMBER",type="TYPE",disp="del"|"keep",
-     enabled="y"|"n",addr="HEX",func="FUNCNAME",file="FILENAME",
-     fullname="FULL_FILENAME",line="LINENO",[thread="THREADNO,]
-     times="TIMES"}
-
-where NUMBER is the GDB number for this breakpoint, FUNCNAME is the
-name of the function where the breakpoint was inserted, FILENAME is the
-name of the source file which contains this function, LINENO is the
-source line number within that file and TIMES the number of times that
-the breakpoint has been hit (always 0 for -break-insert but may be
-greater for -break-info or -break-list which use the same output).
+*Note GDB/MI Breakpoint Information::, for details on the format of the
+resulting breakpoint.
 
    Note: this format is open to change.
 
@@ -2264,11 +2821,13 @@ Example
      (gdb)
      -break-insert main
      ^done,bkpt={number="1",addr="0x0001072c",file="recursive2.c",
-     fullname="/home/foo/recursive2.c,line="4",times="0"}
+     fullname="/home/foo/recursive2.c,line="4",thread-groups=["i1"],
+     times="0"}
      (gdb)
      -break-insert -t foo
      ^done,bkpt={number="2",addr="0x00010774",file="recursive2.c",
-     fullname="/home/foo/recursive2.c,line="11",times="0"}
+     fullname="/home/foo/recursive2.c,line="11",thread-groups=["i1"],
+     times="0"}
      (gdb)
      -break-list
      ^done,BreakpointTable={nr_rows="2",nr_cols="6",
@@ -2280,10 +2839,12 @@ Example
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x0001072c", func="main",file="recursive2.c",
-     fullname="/home/foo/recursive2.c,"line="4",times="0"},
+     fullname="/home/foo/recursive2.c,"line="4",thread-groups=["i1"],
+     times="0"},
      bkpt={number="2",type="breakpoint",disp="del",enabled="y",
      addr="0x00010774",func="foo",file="recursive2.c",
-     fullname="/home/foo/recursive2.c",line="11",times="0"}]}
+     fullname="/home/foo/recursive2.c",line="11",thread-groups=["i1"],
+     times="0"}]}
      (gdb)
 
 The `-break-list' Command
@@ -2317,6 +2878,9 @@ fields:
      logical location of the breakpoint, expressed by function name,
      file name, line number
 
+`Thread-groups'
+     list of thread groups to which this breakpoint applies
+
 `Times'
      number of times the breakpoint has been hit
 
@@ -2341,10 +2905,11 @@ Example
      {width="10",alignment="-1",col_name="addr",colhdr="Address"},
      {width="40",alignment="2",col_name="what",colhdr="What"}],
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
-     addr="0x000100d0",func="main",file="hello.c",line="5",times="0"},
+     addr="0x000100d0",func="main",file="hello.c",line="5",thread-groups=["i1"],
+     times="0"},
      bkpt={number="2",type="breakpoint",disp="keep",enabled="y",
      addr="0x00010114",func="foo",file="hello.c",fullname="/home/foo/hello.c",
-     line="13",times="0"}]}
+     line="13",thread-groups=["i1"],times="0"}]}
      (gdb)
 
    Here's an example of the result when there are no breakpoints:
@@ -2462,9 +3027,10 @@ is deleted.
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x00010734",func="callee4",
      file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
-     fullname="/home/foo/devo/gdb/testsuite/gdb.mi/basics.c"line="8",times="1"},
+     fullname="/home/foo/devo/gdb/testsuite/gdb.mi/basics.c"line="8",thread-groups=["i1"],
+     times="1"},
      bkpt={number="2",type="watchpoint",disp="keep",
-     enabled="y",addr="",what="C",times="0"}]}
+     enabled="y",addr="",what="C",thread-groups=["i1"],times="0"}]}
      (gdb)
      -exec-continue
      ^running
@@ -2486,9 +3052,10 @@ is deleted.
      body=[bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x00010734",func="callee4",
      file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
-     fullname="/home/foo/devo/gdb/testsuite/gdb.mi/basics.c",line="8",times="1"},
+     fullname="/home/foo/devo/gdb/testsuite/gdb.mi/basics.c",line="8",thread-groups=["i1"],
+     times="1"},
      bkpt={number="2",type="watchpoint",disp="keep",
-     enabled="y",addr="",what="C",times="-5"}]}
+     enabled="y",addr="",what="C",thread-groups=["i1"],times="-5"}]}
      (gdb)
      -exec-continue
      ^running
@@ -2510,14 +3077,76 @@ is deleted.
      addr="0x00010734",func="callee4",
      file="../../../devo/gdb/testsuite/gdb.mi/basics.c",
      fullname="/home/foo/devo/gdb/testsuite/gdb.mi/basics.c",line="8",
-     times="1"}]}
+     thread-groups=["i1"],times="1"}]}
      (gdb)
 
 
-File: gdb.info,  Node: GDB/MI Program Context,  Next: GDB/MI Thread Commands,  Prev: GDB/MI Breakpoint Commands,  Up: GDB/MI
+File: gdb.info,  Node: GDB/MI Catchpoint Commands,  Next: GDB/MI Program Context,  Prev: GDB/MI Breakpoint Commands,  Up: GDB/MI
 
-27.9 GDB/MI  Program Context
-============================
+27.9 GDB/MI Catchpoint Commands
+===============================
+
+This section documents GDB/MI commands for manipulating catchpoints.
+
+The `-catch-load' Command
+-------------------------
+
+Synopsis
+........
+
+      -catch-load [ -t ] [ -d ] REGEXP
+
+   Add a catchpoint for library load events.  If the `-t' option is
+used, the catchpoint is a temporary one (*note Setting Breakpoints: Set
+Breaks.).  If the `-d' option is used, the catchpoint is created in a
+disabled state.  The `regexp' argument is a regular expression used to
+match the name of the loaded library.
+
+GDB Command
+...........
+
+The corresponding GDB command is `catch load'.
+
+Example
+.......
+
+     -catch-load -t foo.so
+     ^done,bkpt={number="1",type="catchpoint",disp="del",enabled="y",
+     what="load of library matching foo.so",catch-type="load",times="0"}
+     (gdb)
+
+The `-catch-unload' Command
+---------------------------
+
+Synopsis
+........
+
+      -catch-unload [ -t ] [ -d ] REGEXP
+
+   Add a catchpoint for library unload events.  If the `-t' option is
+used, the catchpoint is a temporary one (*note Setting Breakpoints: Set
+Breaks.).  If the `-d' option is used, the catchpoint is created in a
+disabled state.  The `regexp' argument is a regular expression used to
+match the name of the unloaded library.
+
+GDB Command
+...........
+
+The corresponding GDB command is `catch unload'.
+
+Example
+.......
+
+     -catch-unload -d bar.so
+     ^done,bkpt={number="2",type="catchpoint",disp="keep",enabled="n",
+     what="load of library matching bar.so",catch-type="unload",times="0"}
+     (gdb)
+
+
+File: gdb.info,  Node: GDB/MI Program Context,  Next: GDB/MI Thread Commands,  Prev: GDB/MI Catchpoint Commands,  Up: GDB/MI
+
+27.10 GDB/MI  Program Context
+=============================
 
 The `-exec-arguments' Command
 -----------------------------
@@ -2677,7 +3306,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Thread Commands,  Next: GDB/MI Ada Tasking Commands,  Prev: GDB/MI Program Context,  Up: GDB/MI
 
-27.10 GDB/MI Thread Commands
+27.11 GDB/MI Thread Commands
 ============================
 
 The `-thread-info' Command
@@ -2833,7 +3462,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Ada Tasking Commands,  Next: GDB/MI Program Execution,  Prev: GDB/MI Thread Commands,  Up: GDB/MI
 
-27.11 GDB/MI Ada Tasking Commands
+27.12 GDB/MI Ada Tasking Commands
 =================================
 
 The `-ada-task-info' Command
@@ -2885,7 +3514,7 @@ for each Ada task:
 
 `state'
      The current state of the task.  For a detailed description of the
-     possible states, see *Note Ada Tasks::.
+     possible states, see *note Ada Tasks::.
 
 `name'
      The name of the task.
@@ -2911,7 +3540,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Program Execution,  Next: GDB/MI Stack Manipulation,  Prev: GDB/MI Ada Tasking Commands,  Up: GDB/MI
 
-27.12 GDB/MI Program Execution
+27.13 GDB/MI Program Execution
 ==============================
 
 These are the asynchronous commands which generate the out-of-band
@@ -3198,8 +3827,8 @@ Synopsis
 
    Starts execution of the inferior from the beginning.  The inferior
 executes until either a breakpoint is encountered or the program exits.
-In the latter case the output will include an exit code, if the
-program has exited exceptionally.
+In the latter case the output will include an exit code, if the program
+has exited exceptionally.
 
    When no option is specified, the current inferior is started.  If the
 `--thread-group' option is specified, it should refer to a thread group
@@ -3369,7 +3998,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Stack Manipulation,  Next: GDB/MI Variable Objects,  Prev: GDB/MI Program Execution,  Up: GDB/MI
 
-27.13 GDB/MI Stack Manipulation Commands
+27.14 GDB/MI Stack Manipulation Commands
 ========================================
 
 The `-stack-info-frame' Command
@@ -3722,7 +4351,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Variable Objects,  Next: GDB/MI Data Manipulation,  Prev: GDB/MI Stack Manipulation,  Up: GDB/MI
 
-27.14 GDB/MI Variable Objects
+27.15 GDB/MI Variable Objects
 =============================
 
 Introduction to Variable Objects
@@ -4011,8 +4640,7 @@ Synopsis
 ........
 
       -var-list-children [PRINT-VALUES] NAME [FROM TO]
-
-   Return a list of the children of the specified variable object and
+Return a list of the children of the specified variable object and
 create variable objects for them, if they do not already exist.  With a
 single argument or if PRINT-VALUES has a value of 0 or `--no-values',
 print only the names of the variables; if PRINT-VALUES is 1 or
@@ -4444,7 +5072,7 @@ be used to instantiate this class for a varobj:
 
 File: gdb.info,  Node: GDB/MI Data Manipulation,  Next: GDB/MI Tracepoint Commands,  Prev: GDB/MI Variable Objects,  Up: GDB/MI
 
-27.15 GDB/MI Data Manipulation
+27.16 GDB/MI Data Manipulation
 ==============================
 
 This section describes the GDB/MI commands that manipulate data:
@@ -4492,24 +5120,64 @@ Where:
 Result
 ......
 
-The output for each instruction is composed of four fields:
+The result of the `-data-disassemble' command will be a list named
+`asm_insns', the contents of this list depend on the MODE used with the
+`-data-disassemble' command.
 
-   * Address
+   For modes 0 and 2 the `asm_insns' list contains tuples with the
+following fields:
 
-   * Func-name
+`address'
+     The address at which this instruction was disassembled.
 
-   * Offset
+`func-name'
+     The name of the function this instruction is within.
 
-   * Instruction
+`offset'
+     The decimal offset in bytes from the start of `func-name'.
 
-   Note that whatever included in the instruction field, is not
-manipulated directly by GDB/MI, i.e., it is not possible to adjust its
-format.
+`inst'
+     The text disassembly for this `address'.
+
+`opcodes'
+     This field is only present for mode 2.  This contains the raw
+     opcode bytes for the `inst' field.
+
+
+   For modes 1 and 3 the `asm_insns' list contains tuples named
+`src_and_asm_line', each of which has the following fields:
+
+`line'
+     The line number within `file'.
+
+`file'
+     The file name from the compilation unit.  This might be an absolute
+     file name or a relative file name depending on the compile command
+     used.
+
+`fullname'
+     Absolute file name of `file'.  It is converted to a canonical form
+     using the source file search path (*note Specifying Source
+     Directories: Source Path.)  and after resolving all the symbolic
+     links.
+
+     If the source file is not found this field will contain the path as
+     present in the debug information.
+
+`line_asm_insn'
+     This is a list of tuples containing the disassembly for `line' in
+     `file'.  The fields of each tuple are the same as for
+     `-data-disassemble' in MODE 0 and 2, so `address', `func-name',
+     `offset', `inst', and optionally `opcodes'.
+
+
+   Note that whatever included in the `inst' field, is not manipulated
+directly by GDB/MI, i.e., it is not possible to adjust its format.
 
 GDB Command
 ...........
 
-There's no direct mapping from this command to the CLI.
+The corresponding GDB command is `disassemble'.
 
 Example
 .......
@@ -4566,15 +5234,15 @@ Disassemble from the current value of `$pc' to `$pc + 20':
      -data-disassemble -f basics.c -l 32 -n 3 -- 1
      ^done,asm_insns=[
      src_and_asm_line={line="31",
-     file="/kwikemart/marge/ezannoni/flathead-dev/devo/gdb/ \
-       testsuite/gdb.mi/basics.c",line_asm_insn=[
-     {address="0x000107bc",func-name="main",offset="0",
-     inst="save  %sp, -112, %sp"}]},
+     file="../../../src/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/absolute/path/to/src/gdb/testsuite/gdb.mi/basics.c",
+     line_asm_insn=[{address="0x000107bc",
+     func-name="main",offset="0",inst="save  %sp, -112, %sp"}]},
      src_and_asm_line={line="32",
-     file="/kwikemart/marge/ezannoni/flathead-dev/devo/gdb/ \
-       testsuite/gdb.mi/basics.c",line_asm_insn=[
-     {address="0x000107c0",func-name="main",offset="4",
-     inst="mov  2, %o0"},
+     file="../../../src/gdb/testsuite/gdb.mi/basics.c",
+     fullname="/absolute/path/to/src/gdb/testsuite/gdb.mi/basics.c",
+     line_asm_insn=[{address="0x000107c0",
+     func-name="main",offset="4",inst="mov  2, %o0"},
      {address="0x000107c4",func-name="main",offset="8",
      inst="sethi  %hi(0x11800), %o2"}]}]
      (gdb)
@@ -4601,7 +5269,7 @@ Example
 .......
 
 In the following example, the numbers that precede the commands are the
-"tokens" described in *Note GDB/MI Command Syntax: GDB/MI Command
+"tokens" described in *note GDB/MI Command Syntax: GDB/MI Command
 Syntax.  Notice how GDB/MI returns the same tokens in its output.
 
      211-data-evaluate-expression A
@@ -4972,6 +5640,7 @@ Synopsis
 ........
 
       -data-write-memory-bytes ADDRESS CONTENTS
+      -data-write-memory-bytes ADDRESS CONTENTS [COUNT]
 
 where:
 
@@ -4982,6 +5651,11 @@ where:
 
 `CONTENTS'
      The hex-encoded bytes to write.
+
+`COUNT'
+     Optional argument indicating the number of bytes to be written.
+     If COUNT is greater than CONTENTS' length, GDB will repeatedly
+     write CONTENTS until it fills COUNT bytes.
 
 
 GDB Command
@@ -4997,14 +5671,19 @@ Example
      ^done
      (gdb)
 
+     (gdb)
+     -data-write-memory-bytes &a "aabbccdd" 16e
+     ^done
+     (gdb)
+
 
 File: gdb.info,  Node: GDB/MI Tracepoint Commands,  Next: GDB/MI Symbol Query,  Prev: GDB/MI Data Manipulation,  Up: GDB/MI
 
-27.16 GDB/MI Tracepoint Commands
+27.17 GDB/MI Tracepoint Commands
 ================================
 
 The commands defined in this section implement MI support for
-tracepoints.  For detailed introduction, see *Note Tracepoints::.
+tracepoints.  For detailed introduction, see *note Tracepoints::.
 
 The `-trace-find' Command
 -------------------------
@@ -5016,7 +5695,7 @@ Synopsis
 
    Find a trace frame using criteria defined by MODE and PARAMETERS.
 The following table lists permissible modes and their parameters.  For
-details of operation, see *Note tfind::.
+details of operation, see *note tfind::.
 
 `none'
      No parameters are required.  Stops examining trace frames.
@@ -5232,6 +5911,10 @@ the following fields:
      tracing will continue after GDB disconnects, `0' means that the
      trace run will stop.
 
+`trace-file'
+     The filename of the trace file being examined.  This field is
+     optional, and only present when examining a trace file.
+
 
 GDB Command
 ...........
@@ -5258,7 +5941,7 @@ The corresponding GDB command is `tstop'.
 
 File: gdb.info,  Node: GDB/MI Symbol Query,  Next: GDB/MI File Commands,  Prev: GDB/MI Tracepoint Commands,  Up: GDB/MI
 
-27.17 GDB/MI Symbol Query Commands
+27.18 GDB/MI Symbol Query Commands
 ==================================
 
 The `-symbol-list-lines' Command
@@ -5289,7 +5972,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI File Commands,  Next: GDB/MI Target Manipulation,  Prev: GDB/MI Symbol Query,  Up: GDB/MI
 
-27.18 GDB/MI File Commands
+27.19 GDB/MI File Commands
 ==========================
 
 This section describes the GDB/MI commands to specify executable file
@@ -5386,8 +6069,8 @@ Synopsis
 
    List the source files for the current executable.
 
-   It will always output the filename, but only when GDB can find the
-absolute file name of a source file, will it output the fullname.
+   It will always output both the filename and fullname (absolute file
+name) of a source file.
 
 GDB Command
 ...........
@@ -5434,7 +6117,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Target Manipulation,  Next: GDB/MI File Transfer Commands,  Prev: GDB/MI File Commands,  Up: GDB/MI
 
-27.19 GDB/MI Target Manipulation Commands
+27.20 GDB/MI Target Manipulation Commands
 =========================================
 
 The `-target-attach' Command
@@ -5665,7 +6348,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI File Transfer Commands,  Next: GDB/MI Miscellaneous Commands,  Prev: GDB/MI Target Manipulation,  Up: GDB/MI
 
-27.20 GDB/MI File Transfer Commands
+27.21 GDB/MI File Transfer Commands
 ===================================
 
 The `-target-file-put' Command
@@ -5742,7 +6425,7 @@ Example
 
 File: gdb.info,  Node: GDB/MI Miscellaneous Commands,  Prev: GDB/MI File Transfer Commands,  Up: GDB/MI
 
-27.21 Miscellaneous GDB/MI Commands
+27.22 Miscellaneous GDB/MI Commands
 ===================================
 
 The `-gdb-exit' Command
@@ -6131,8 +6814,7 @@ Synopsis
 --------
 
      -interpreter-exec INTERPRETER COMMAND
-
-   Execute the specified COMMAND in the given INTERPRETER.
+Execute the specified COMMAND in the given INTERPRETER.
 
 GDB Command
 -----------
@@ -6227,7 +6909,8 @@ Example
      -break-insert main
      ^done,bkpt={number="1",type="breakpoint",disp="keep",enabled="y",
      addr="0x080484ed",func="main",file="myprog.c",
-     fullname="/home/nickrob/myprog.c",line="73",times="0"},
+     fullname="/home/nickrob/myprog.c",line="73",thread-groups=["i1"],
+     times="0"},
      time={wallclock="0.05185",user="0.00800",system="0.00000"}
      (gdb)
      -enable-timings no
@@ -6686,14 +7369,18 @@ File: gdb.info,  Node: Using JIT Debug Info Readers,  Next: Writing JIT Debug In
 Readers can be loaded and unloaded using the `jit-reader-load' and
 `jit-reader-unload' commands.
 
-`jit-reader-load READER-NAME'
-     Load the JIT reader named READER-NAME.  On a UNIX system, this
-     will usually load `LIBDIR/gdb/READER-NAME', where LIBDIR is the
-     system library directory, usually `/usr/local/lib'.  Only one
-     reader can be active at a time; trying to load a second reader
-     when one is already loaded will result in GDB reporting an error.
-     A new JIT reader can be loaded by first unloading the current one
-     using `jit-reader-load' and then invoking `jit-reader-load'.
+`jit-reader-load READER'
+     Load the JIT reader named READER.  READER is a shared object
+     specified as either an absolute or a relative file name.  In the
+     latter case, GDB will try to load the reader from a pre-configured
+     directory, usually `LIBDIR/gdb/' on a UNIX system (here LIBDIR is
+     the system library directory, often `/usr/local/lib').
+
+     Only one reader can be active at a time; trying to load a second
+     reader when one is already loaded will result in GDB reporting an
+     error.  A new JIT reader can be loaded by first unloading the
+     current one using `jit-reader-unload' and then invoking
+     `jit-reader-load'.
 
 `jit-reader-unload'
      Unload the currently loaded JIT reader.
@@ -6866,7 +7553,6 @@ However, there are still some differences of two ends in two processes:
   3. tracepoint object.  It represents a tracepoint (*note
      Tracepoints::).
 
-
    The following table describes important attributes of each IPA
 protocol object:
 
@@ -6901,7 +7587,7 @@ _tracepoint action
 for expression                        
 evaluation_                           
 'X'                    1              type of tracepoint action
-agent expression       length of      *Note agent expression object::
+agent expression       length of      *note agent expression object::
 _tracepoint object_                   
 number                 4              number of tracepoint
 address                8              address of tracepoint inserted on
@@ -6915,14 +7601,14 @@ trace frame usage      8              trace frame usage
 compiled_cond          8              compiled condition
 orig_size              8              orig size
 condition              4 if           zero if condition is NULL,
-                       condition is   otherwise is *Note agent expression
+                       condition is   otherwise is *note agent expression
                        NULL           object::
                        otherwise      
                        length of      
-                       *Note agent    
+                       *note agent    
                        expression     
                        object::       
-actions                variable       numactions number of *Note
+actions                variable       numactions number of *note
                                       tracepoint action object::
 
 
@@ -6951,6 +7637,10 @@ specification.  They don't exist in real commands.
     `E NN'
           for an error
 
+
+`close'
+     Closes the in-process agent.  This command is sent when GDB or
+     GDBserver is about to kill inferiors.
 
 `qTfSTM'
      *Note qTfSTM::.
@@ -8155,729 +8845,4 @@ File: gdb.info,  Node: Commands For History,  Next: Commands For Text,  Prev: Co
      the last argument, as if the `!$' history expansion had been
      specified.
 
-
-
-File: gdb.info,  Node: Commands For Text,  Next: Commands For Killing,  Prev: Commands For History,  Up: Bindable Readline Commands
-
-32.4.3 Commands For Changing Text
----------------------------------
-
-`delete-char (C-d)'
-     Delete the character at point.  If point is at the beginning of
-     the line, there are no characters in the line, and the last
-     character typed was not bound to `delete-char', then return EOF.
-
-`backward-delete-char (Rubout)'
-     Delete the character behind the cursor.  A numeric argument means
-     to kill the characters instead of deleting them.
-
-`forward-backward-delete-char ()'
-     Delete the character under the cursor, unless the cursor is at the
-     end of the line, in which case the character behind the cursor is
-     deleted.  By default, this is not bound to a key.
-
-`quoted-insert (C-q or C-v)'
-     Add the next character typed to the line verbatim.  This is how to
-     insert key sequences like `C-q', for example.
-
-`tab-insert (M-<TAB>)'
-     Insert a tab character.
-
-`self-insert (a, b, A, 1, !, ...)'
-     Insert yourself.
-
-`transpose-chars (C-t)'
-     Drag the character before the cursor forward over the character at
-     the cursor, moving the cursor forward as well.  If the insertion
-     point is at the end of the line, then this transposes the last two
-     characters of the line.  Negative arguments have no effect.
-
-`transpose-words (M-t)'
-     Drag the word before point past the word after point, moving point
-     past that word as well.  If the insertion point is at the end of
-     the line, this transposes the last two words on the line.
-
-`upcase-word (M-u)'
-     Uppercase the current (or following) word.  With a negative
-     argument, uppercase the previous word, but do not move the cursor.
-
-`downcase-word (M-l)'
-     Lowercase the current (or following) word.  With a negative
-     argument, lowercase the previous word, but do not move the cursor.
-
-`capitalize-word (M-c)'
-     Capitalize the current (or following) word.  With a negative
-     argument, capitalize the previous word, but do not move the cursor.
-
-`overwrite-mode ()'
-     Toggle overwrite mode.  With an explicit positive numeric argument,
-     switches to overwrite mode.  With an explicit non-positive numeric
-     argument, switches to insert mode.  This command affects only
-     `emacs' mode; `vi' mode does overwrite differently.  Each call to
-     `readline()' starts in insert mode.
-
-     In overwrite mode, characters bound to `self-insert' replace the
-     text at point rather than pushing the text to the right.
-     Characters bound to `backward-delete-char' replace the character
-     before point with a space.
-
-     By default, this command is unbound.
-
-
-
-File: gdb.info,  Node: Commands For Killing,  Next: Numeric Arguments,  Prev: Commands For Text,  Up: Bindable Readline Commands
-
-32.4.4 Killing And Yanking
---------------------------
-
-`kill-line (C-k)'
-     Kill the text from point to the end of the line.
-
-`backward-kill-line (C-x Rubout)'
-     Kill backward to the beginning of the line.
-
-`unix-line-discard (C-u)'
-     Kill backward from the cursor to the beginning of the current line.
-
-`kill-whole-line ()'
-     Kill all characters on the current line, no matter where point is.
-     By default, this is unbound.
-
-`kill-word (M-d)'
-     Kill from point to the end of the current word, or if between
-     words, to the end of the next word.  Word boundaries are the same
-     as `forward-word'.
-
-`backward-kill-word (M-<DEL>)'
-     Kill the word behind point.  Word boundaries are the same as
-     `backward-word'.
-
-`unix-word-rubout (C-w)'
-     Kill the word behind point, using white space as a word boundary.
-     The killed text is saved on the kill-ring.
-
-`unix-filename-rubout ()'
-     Kill the word behind point, using white space and the slash
-     character as the word boundaries.  The killed text is saved on the
-     kill-ring.
-
-`delete-horizontal-space ()'
-     Delete all spaces and tabs around point.  By default, this is
-     unbound.
-
-`kill-region ()'
-     Kill the text in the current region.  By default, this command is
-     unbound.
-
-`copy-region-as-kill ()'
-     Copy the text in the region to the kill buffer, so it can be yanked
-     right away.  By default, this command is unbound.
-
-`copy-backward-word ()'
-     Copy the word before point to the kill buffer.  The word
-     boundaries are the same as `backward-word'.  By default, this
-     command is unbound.
-
-`copy-forward-word ()'
-     Copy the word following point to the kill buffer.  The word
-     boundaries are the same as `forward-word'.  By default, this
-     command is unbound.
-
-`yank (C-y)'
-     Yank the top of the kill ring into the buffer at point.
-
-`yank-pop (M-y)'
-     Rotate the kill-ring, and yank the new top.  You can only do this
-     if the prior command is `yank' or `yank-pop'.
-
-
-File: gdb.info,  Node: Numeric Arguments,  Next: Commands For Completion,  Prev: Commands For Killing,  Up: Bindable Readline Commands
-
-32.4.5 Specifying Numeric Arguments
------------------------------------
-
-`digit-argument (M-0, M-1, ... M--)'
-     Add this digit to the argument already accumulating, or start a new
-     argument.  `M--' starts a negative argument.
-
-`universal-argument ()'
-     This is another way to specify an argument.  If this command is
-     followed by one or more digits, optionally with a leading minus
-     sign, those digits define the argument.  If the command is
-     followed by digits, executing `universal-argument' again ends the
-     numeric argument, but is otherwise ignored.  As a special case, if
-     this command is immediately followed by a character that is
-     neither a digit or minus sign, the argument count for the next
-     command is multiplied by four.  The argument count is initially
-     one, so executing this function the first time makes the argument
-     count four, a second time makes the argument count sixteen, and so
-     on.  By default, this is not bound to a key.
-
-
-File: gdb.info,  Node: Commands For Completion,  Next: Keyboard Macros,  Prev: Numeric Arguments,  Up: Bindable Readline Commands
-
-32.4.6 Letting Readline Type For You
-------------------------------------
-
-`complete (<TAB>)'
-     Attempt to perform completion on the text before point.  The
-     actual completion performed is application-specific.  The default
-     is filename completion.
-
-`possible-completions (M-?)'
-     List the possible completions of the text before point.  When
-     displaying completions, Readline sets the number of columns used
-     for display to the value of `completion-display-width', the value
-     of the environment variable `COLUMNS', or the screen width, in
-     that order.
-
-`insert-completions (M-*)'
-     Insert all completions of the text before point that would have
-     been generated by `possible-completions'.
-
-`menu-complete ()'
-     Similar to `complete', but replaces the word to be completed with
-     a single match from the list of possible completions.  Repeated
-     execution of `menu-complete' steps through the list of possible
-     completions, inserting each match in turn.  At the end of the list
-     of completions, the bell is rung (subject to the setting of
-     `bell-style') and the original text is restored.  An argument of N
-     moves N positions forward in the list of matches; a negative
-     argument may be used to move backward through the list.  This
-     command is intended to be bound to <TAB>, but is unbound by
-     default.
-
-`menu-complete-backward ()'
-     Identical to `menu-complete', but moves backward through the list
-     of possible completions, as if `menu-complete' had been given a
-     negative argument.
-
-`delete-char-or-list ()'
-     Deletes the character under the cursor if not at the beginning or
-     end of the line (like `delete-char').  If at the end of the line,
-     behaves identically to `possible-completions'.  This command is
-     unbound by default.
-
-
-
-File: gdb.info,  Node: Keyboard Macros,  Next: Miscellaneous Commands,  Prev: Commands For Completion,  Up: Bindable Readline Commands
-
-32.4.7 Keyboard Macros
-----------------------
-
-`start-kbd-macro (C-x ()'
-     Begin saving the characters typed into the current keyboard macro.
-
-`end-kbd-macro (C-x ))'
-     Stop saving the characters typed into the current keyboard macro
-     and save the definition.
-
-`call-last-kbd-macro (C-x e)'
-     Re-execute the last keyboard macro defined, by making the
-     characters in the macro appear as if typed at the keyboard.
-
-
-
-File: gdb.info,  Node: Miscellaneous Commands,  Prev: Keyboard Macros,  Up: Bindable Readline Commands
-
-32.4.8 Some Miscellaneous Commands
-----------------------------------
-
-`re-read-init-file (C-x C-r)'
-     Read in the contents of the INPUTRC file, and incorporate any
-     bindings or variable assignments found there.
-
-`abort (C-g)'
-     Abort the current editing command and ring the terminal's bell
-     (subject to the setting of `bell-style').
-
-`do-uppercase-version (M-a, M-b, M-X, ...)'
-     If the metafied character X is lowercase, run the command that is
-     bound to the corresponding uppercase character.
-
-`prefix-meta (<ESC>)'
-     Metafy the next character typed.  This is for keyboards without a
-     meta key.  Typing `<ESC> f' is equivalent to typing `M-f'.
-
-`undo (C-_ or C-x C-u)'
-     Incremental undo, separately remembered for each line.
-
-`revert-line (M-r)'
-     Undo all changes made to this line.  This is like executing the
-     `undo' command enough times to get back to the beginning.
-
-`tilde-expand (M-~)'
-     Perform tilde expansion on the current word.
-
-`set-mark (C-@)'
-     Set the mark to the point.  If a numeric argument is supplied, the
-     mark is set to that position.
-
-`exchange-point-and-mark (C-x C-x)'
-     Swap the point with the mark.  The current cursor position is set
-     to the saved position, and the old cursor position is saved as the
-     mark.
-
-`character-search (C-])'
-     A character is read and point is moved to the next occurrence of
-     that character.  A negative count searches for previous
-     occurrences.
-
-`character-search-backward (M-C-])'
-     A character is read and point is moved to the previous occurrence
-     of that character.  A negative count searches for subsequent
-     occurrences.
-
-`skip-csi-sequence ()'
-     Read enough characters to consume a multi-key sequence such as
-     those defined for keys like Home and End.  Such sequences begin
-     with a Control Sequence Indicator (CSI), usually ESC-[.  If this
-     sequence is bound to "\e[", keys producing such sequences will
-     have no effect unless explicitly bound to a readline command,
-     instead of inserting stray characters into the editing buffer.
-     This is unbound by default, but usually bound to ESC-[.
-
-`insert-comment (M-#)'
-     Without a numeric argument, the value of the `comment-begin'
-     variable is inserted at the beginning of the current line.  If a
-     numeric argument is supplied, this command acts as a toggle:  if
-     the characters at the beginning of the line do not match the value
-     of `comment-begin', the value is inserted, otherwise the
-     characters in `comment-begin' are deleted from the beginning of
-     the line.  In either case, the line is accepted as if a newline
-     had been typed.
-
-`dump-functions ()'
-     Print all of the functions and their key bindings to the Readline
-     output stream.  If a numeric argument is supplied, the output is
-     formatted in such a way that it can be made part of an INPUTRC
-     file.  This command is unbound by default.
-
-`dump-variables ()'
-     Print all of the settable variables and their values to the
-     Readline output stream.  If a numeric argument is supplied, the
-     output is formatted in such a way that it can be made part of an
-     INPUTRC file.  This command is unbound by default.
-
-`dump-macros ()'
-     Print all of the Readline key sequences bound to macros and the
-     strings they output.  If a numeric argument is supplied, the
-     output is formatted in such a way that it can be made part of an
-     INPUTRC file.  This command is unbound by default.
-
-`emacs-editing-mode (C-e)'
-     When in `vi' command mode, this causes a switch to `emacs' editing
-     mode.
-
-`vi-editing-mode (M-C-j)'
-     When in `emacs' editing mode, this causes a switch to `vi' editing
-     mode.
-
-
-
-File: gdb.info,  Node: Readline vi Mode,  Prev: Bindable Readline Commands,  Up: Command Line Editing
-
-32.5 Readline vi Mode
-=====================
-
-While the Readline library does not have a full set of `vi' editing
-functions, it does contain enough to allow simple editing of the line.
-The Readline `vi' mode behaves as specified in the POSIX standard.
-
-   In order to switch interactively between `emacs' and `vi' editing
-modes, use the command `M-C-j' (bound to emacs-editing-mode when in
-`vi' mode and to vi-editing-mode in `emacs' mode).  The Readline
-default is `emacs' mode.
-
-   When you enter a line in `vi' mode, you are already placed in
-`insertion' mode, as if you had typed an `i'.  Pressing <ESC> switches
-you into `command' mode, where you can edit the text of the line with
-the standard `vi' movement keys, move to previous history lines with
-`k' and subsequent lines with `j', and so forth.
-
-
-File: gdb.info,  Node: Using History Interactively,  Next: In Memoriam,  Prev: Command Line Editing,  Up: Top
-
-33 Using History Interactively
-******************************
-
-This chapter describes how to use the GNU History Library interactively,
-from a user's standpoint.  It should be considered a user's guide.  For
-information on using the GNU History Library in your own programs,
-*note Programming with GNU History: (history)Programming with GNU
-History.
-
-* Menu:
-
-* History Interaction::		What it feels like using History as a user.
-
-
-File: gdb.info,  Node: History Interaction,  Up: Using History Interactively
-
-33.1 History Expansion
-======================
-
-The History library provides a history expansion feature that is similar
-to the history expansion provided by `csh'.  This section describes the
-syntax used to manipulate the history information.
-
-   History expansions introduce words from the history list into the
-input stream, making it easy to repeat commands, insert the arguments
-to a previous command into the current input line, or fix errors in
-previous commands quickly.
-
-   History expansion takes place in two parts.  The first is to
-determine which line from the history list should be used during
-substitution.  The second is to select portions of that line for
-inclusion into the current one.  The line selected from the history is
-called the "event", and the portions of that line that are acted upon
-are called "words".  Various "modifiers" are available to manipulate
-the selected words.  The line is broken into words in the same fashion
-that Bash does, so that several words surrounded by quotes are
-considered one word.  History expansions are introduced by the
-appearance of the history expansion character, which is `!' by default.
-
-* Menu:
-
-* Event Designators::	How to specify which history line to use.
-* Word Designators::	Specifying which words are of interest.
-* Modifiers::		Modifying the results of substitution.
-
-
-File: gdb.info,  Node: Event Designators,  Next: Word Designators,  Up: History Interaction
-
-33.1.1 Event Designators
-------------------------
-
-An event designator is a reference to a command line entry in the
-history list.  Unless the reference is absolute, events are relative to
-the current position in the history list.  
-
-`!'
-     Start a history substitution, except when followed by a space, tab,
-     the end of the line, or `='.
-
-`!N'
-     Refer to command line N.
-
-`!-N'
-     Refer to the command N lines back.
-
-`!!'
-     Refer to the previous command.  This is a synonym for `!-1'.
-
-`!STRING'
-     Refer to the most recent command preceding the current position in
-     the history list starting with STRING.
-
-`!?STRING[?]'
-     Refer to the most recent command preceding the current position in
-     the history list containing STRING.  The trailing `?' may be
-     omitted if the STRING is followed immediately by a newline.
-
-`^STRING1^STRING2^'
-     Quick Substitution.  Repeat the last command, replacing STRING1
-     with STRING2.  Equivalent to `!!:s/STRING1/STRING2/'.
-
-`!#'
-     The entire command line typed so far.
-
-
-
-File: gdb.info,  Node: Word Designators,  Next: Modifiers,  Prev: Event Designators,  Up: History Interaction
-
-33.1.2 Word Designators
------------------------
-
-Word designators are used to select desired words from the event.  A
-`:' separates the event specification from the word designator.  It may
-be omitted if the word designator begins with a `^', `$', `*', `-', or
-`%'.  Words are numbered from the beginning of the line, with the first
-word being denoted by 0 (zero).  Words are inserted into the current
-line separated by single spaces.
-
-   For example,
-
-`!!'
-     designates the preceding command.  When you type this, the
-     preceding command is repeated in toto.
-
-`!!:$'
-     designates the last argument of the preceding command.  This may be
-     shortened to `!$'.
-
-`!fi:2'
-     designates the second argument of the most recent command starting
-     with the letters `fi'.
-
-   Here are the word designators:
-
-`0 (zero)'
-     The `0'th word.  For many applications, this is the command word.
-
-`N'
-     The Nth word.
-
-`^'
-     The first argument; that is, word 1.
-
-`$'
-     The last argument.
-
-`%'
-     The word matched by the most recent `?STRING?' search.
-
-`X-Y'
-     A range of words; `-Y' abbreviates `0-Y'.
-
-`*'
-     All of the words, except the `0'th.  This is a synonym for `1-$'.
-     It is not an error to use `*' if there is just one word in the
-     event; the empty string is returned in that case.
-
-`X*'
-     Abbreviates `X-$'
-
-`X-'
-     Abbreviates `X-$' like `X*', but omits the last word.
-
-
-   If a word designator is supplied without an event specification, the
-previous command is used as the event.
-
-
-File: gdb.info,  Node: Modifiers,  Prev: Word Designators,  Up: History Interaction
-
-33.1.3 Modifiers
-----------------
-
-After the optional word designator, you can add a sequence of one or
-more of the following modifiers, each preceded by a `:'.
-
-`h'
-     Remove a trailing pathname component, leaving only the head.
-
-`t'
-     Remove all leading pathname components, leaving the tail.
-
-`r'
-     Remove a trailing suffix of the form `.SUFFIX', leaving the
-     basename.
-
-`e'
-     Remove all but the trailing suffix.
-
-`p'
-     Print the new command but do not execute it.
-
-`s/OLD/NEW/'
-     Substitute NEW for the first occurrence of OLD in the event line.
-     Any delimiter may be used in place of `/'.  The delimiter may be
-     quoted in OLD and NEW with a single backslash.  If `&' appears in
-     NEW, it is replaced by OLD.  A single backslash will quote the
-     `&'.  The final delimiter is optional if it is the last character
-     on the input line.
-
-`&'
-     Repeat the previous substitution.
-
-`g'
-`a'
-     Cause changes to be applied over the entire event line.  Used in
-     conjunction with `s', as in `gs/OLD/NEW/', or with `&'.
-
-`G'
-     Apply the following `s' modifier once to each word in the event.
-
-
-
-File: gdb.info,  Node: In Memoriam,  Next: Formatting Documentation,  Prev: Using History Interactively,  Up: Top
-
-Appendix A In Memoriam
-**********************
-
-The GDB project mourns the loss of the following long-time contributors:
-
-`Fred Fish'
-     Fred was a long-standing contributor to GDB (1991-2006), and to
-     Free Software in general.  Outside of GDB, he was known in the
-     Amiga world for his series of Fish Disks, and the GeekGadget
-     project.
-
-`Michael Snyder'
-     Michael was one of the Global Maintainers of the GDB project, with
-     contributions recorded as early as 1996, until 2011.  In addition
-     to his day to day participation, he was a large driving force
-     behind adding Reverse Debugging to GDB.
-
-   Beyond their technical contributions to the project, they were also
-enjoyable members of the Free Software Community.  We will miss them.
-
-
-File: gdb.info,  Node: Formatting Documentation,  Next: Installing GDB,  Prev: In Memoriam,  Up: Top
-
-Appendix B Formatting Documentation
-***********************************
-
-The GDB 4 release includes an already-formatted reference card, ready
-for printing with PostScript or Ghostscript, in the `gdb' subdirectory
-of the main source directory(1).  If you can use PostScript or
-Ghostscript with your printer, you can print the reference card
-immediately with `refcard.ps'.
-
-   The release also includes the source for the reference card.  You
-can format it, using TeX, by typing:
-
-     make refcard.dvi
-
-   The GDB reference card is designed to print in "landscape" mode on
-US "letter" size paper; that is, on a sheet 11 inches wide by 8.5 inches
-high.  You will need to specify this form of printing as an option to
-your DVI output program.
-
-   All the documentation for GDB comes as part of the machine-readable
-distribution.  The documentation is written in Texinfo format, which is
-a documentation system that uses a single source file to produce both
-on-line information and a printed manual.  You can use one of the Info
-formatting commands to create the on-line version of the documentation
-and TeX (or `texi2roff') to typeset the printed version.
-
-   GDB includes an already formatted copy of the on-line Info version
-of this manual in the `gdb' subdirectory.  The main Info file is
-`gdb-7.5.1/gdb/gdb.info', and it refers to subordinate files matching
-`gdb.info*' in the same directory.  If necessary, you can print out
-these files, or read them with any editor; but they are easier to read
-using the `info' subsystem in GNU Emacs or the standalone `info'
-program, available as part of the GNU Texinfo distribution.
-
-   If you want to format these Info files yourself, you need one of the
-Info formatting programs, such as `texinfo-format-buffer' or `makeinfo'.
-
-   If you have `makeinfo' installed, and are in the top level GDB
-source directory (`gdb-7.5.1', in the case of version 7.5.1), you can
-make the Info file by typing:
-
-     cd gdb
-     make gdb.info
-
-   If you want to typeset and print copies of this manual, you need TeX,
-a program to print its DVI output files, and `texinfo.tex', the Texinfo
-definitions file.
-
-   TeX is a typesetting program; it does not print files directly, but
-produces output files called DVI files.  To print a typeset document,
-you need a program to print DVI files.  If your system has TeX
-installed, chances are it has such a program.  The precise command to
-use depends on your system; `lpr -d' is common; another (for PostScript
-devices) is `dvips'.  The DVI print command may require a file name
-without any extension or a `.dvi' extension.
-
-   TeX also requires a macro definitions file called `texinfo.tex'.
-This file tells TeX how to typeset a document written in Texinfo
-format.  On its own, TeX cannot either read or typeset a Texinfo file.
-`texinfo.tex' is distributed with GDB and is located in the
-`gdb-VERSION-NUMBER/texinfo' directory.
-
-   If you have TeX and a DVI printer program installed, you can typeset
-and print this manual.  First switch to the `gdb' subdirectory of the
-main source directory (for example, to `gdb-7.5.1/gdb') and type:
-
-     make gdb.dvi
-
-   Then give `gdb.dvi' to your DVI printing program.
-
-   ---------- Footnotes ----------
-
-   (1) In `gdb-7.5.1/gdb/refcard.ps' of the version 7.5.1 release.
-
-
-File: gdb.info,  Node: Installing GDB,  Next: Maintenance Commands,  Prev: Formatting Documentation,  Up: Top
-
-Appendix C Installing GDB
-*************************
-
-* Menu:
-
-* Requirements::                Requirements for building GDB
-* Running Configure::           Invoking the GDB `configure' script
-* Separate Objdir::             Compiling GDB in another directory
-* Config Names::                Specifying names for hosts and targets
-* Configure Options::           Summary of options for configure
-* System-wide configuration::   Having a system-wide init file
-
-
-File: gdb.info,  Node: Requirements,  Next: Running Configure,  Up: Installing GDB
-
-C.1 Requirements for Building GDB
-=================================
-
-Building GDB requires various tools and packages to be available.
-Other packages will be used only if they are found.
-
-Tools/Packages Necessary for Building GDB
-=========================================
-
-ISO C90 compiler
-     GDB is written in ISO C90.  It should be buildable with any
-     working C90 compiler, e.g. GCC.
-
-
-Tools/Packages Optional for Building GDB
-========================================
-
-Expat
-     GDB can use the Expat XML parsing library.  This library may be
-     included with your operating system distribution; if it is not, you
-     can get the latest version from `http://expat.sourceforge.net'.
-     The `configure' script will search for this library in several
-     standard locations; if it is installed in an unusual path, you can
-     use the `--with-libexpat-prefix' option to specify its location.
-
-     Expat is used for:
-
-        * Remote protocol memory maps (*note Memory Map Format::)
-
-        * Target descriptions (*note Target Descriptions::)
-
-        * Remote shared library lists (*Note Library List Format::, or
-          alternatively *note Library List Format for SVR4 Targets::)
-
-        * MS-Windows shared libraries (*note Shared Libraries::)
-
-        * Traceframe info (*note Traceframe Info Format::)
-
-zlib
-     GDB will use the `zlib' library, if available, to read compressed
-     debug sections.  Some linkers, such as GNU gold, are capable of
-     producing binaries with compressed debug sections.  If GDB is
-     compiled with `zlib', it will be able to read the debug
-     information in such binaries.
-
-     The `zlib' library is likely included with your operating system
-     distribution; if it is not, you can get the latest version from
-     `http://zlib.net'.
-
-iconv
-     GDB's features related to character sets (*note Character Sets::)
-     require a functioning `iconv' implementation.  If you are on a GNU
-     system, then this is provided by the GNU C Library.  Some other
-     systems also provide a working `iconv'.
-
-     If GDB is using the `iconv' program which is installed in a
-     non-standard place, you will need to tell GDB where to find it.
-     This is done with `--with-iconv-bin' which specifies the directory
-     that contains the `iconv' program.
-
-     On systems without `iconv', you can install GNU Libiconv.  If you
-     have previously installed Libiconv, you can use the
-     `--with-libiconv-prefix' option to configure.
-
-     GDB's top-level `configure' and `Makefile' will arrange to build
-     Libiconv if a directory named `libiconv' appears in the top-most
-     source directory.  If Libiconv is built this way, and if the
-     operating system does not provide a suitable `iconv'
-     implementation, then the just-built library will automatically be
-     used by GDB.  One easy way to set this up is to download GNU
-     Libiconv, unpack it, and then rename the directory holding the
-     Libiconv source code to `libiconv'.
 

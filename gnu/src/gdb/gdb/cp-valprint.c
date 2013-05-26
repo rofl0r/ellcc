@@ -1,7 +1,6 @@
 /* Support for printing C++ values for GDB, the GNU debugger.
 
-   Copyright (C) 1986, 1988-1989, 1991-1997, 2000-2003, 2005-2012 Free
-   Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -37,6 +36,7 @@
 #include "language.h"
 #include "python/python.h"
 #include "exceptions.h"
+#include "typeprint.h"
 
 /* Controls printing of vtbl's.  */
 static void
@@ -210,7 +210,9 @@ cp_print_value_fields (struct type *type, struct type *real_type,
     {
       int statmem_obstack_initial_size = 0;
       int stat_array_obstack_initial_size = 0;
-      
+      struct type *vptr_basetype = NULL;
+      int vptr_fieldno;
+
       if (dont_print_statmem == 0)
 	{
 	  statmem_obstack_initial_size =
@@ -225,6 +227,7 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 	    }
 	}
 
+      vptr_fieldno = get_vptr_fieldno (type, &vptr_basetype);
       for (i = n_baseclasses; i < len; i++)
 	{
 	  /* If requested, skip printing of static fields.  */
@@ -256,42 +259,21 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 	    {
 	      wrap_here (n_spaces (2 + 2 * recurse));
 	    }
-	  if (options->inspect_it)
-	    {
-	      if (TYPE_CODE (TYPE_FIELD_TYPE (type, i)) == TYPE_CODE_PTR)
-		fputs_filtered ("\"( ptr \"", stream);
-	      else
-		fputs_filtered ("\"( nodef \"", stream);
-	      if (field_is_static (&TYPE_FIELD (type, i)))
-		fputs_filtered ("static ", stream);
-	      fprintf_symbol_filtered (stream,
-				       TYPE_FIELD_NAME (type, i),
-				       current_language->la_language,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      fputs_filtered ("\" \"", stream);
-	      fprintf_symbol_filtered (stream,
-				       TYPE_FIELD_NAME (type, i),
-				       current_language->la_language,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      fputs_filtered ("\") \"", stream);
-	    }
-	  else
-	    {
-	      annotate_field_begin (TYPE_FIELD_TYPE (type, i));
 
-	      if (field_is_static (&TYPE_FIELD (type, i)))
-		fputs_filtered ("static ", stream);
-	      fprintf_symbol_filtered (stream,
-				       TYPE_FIELD_NAME (type, i),
-				       current_language->la_language,
-				       DMGL_PARAMS | DMGL_ANSI);
-	      annotate_field_name_end ();
-	      /* Do not print leading '=' in case of anonymous
-		 unions.  */
-	      if (strcmp (TYPE_FIELD_NAME (type, i), ""))
-		fputs_filtered (" = ", stream);
-	      annotate_field_value ();
-	    }
+	  annotate_field_begin (TYPE_FIELD_TYPE (type, i));
+
+	  if (field_is_static (&TYPE_FIELD (type, i)))
+	    fputs_filtered ("static ", stream);
+	  fprintf_symbol_filtered (stream,
+				   TYPE_FIELD_NAME (type, i),
+				   current_language->la_language,
+				   DMGL_PARAMS | DMGL_ANSI);
+	  annotate_field_name_end ();
+	  /* Do not print leading '=' in case of anonymous
+	     unions.  */
+	  if (strcmp (TYPE_FIELD_NAME (type, i), ""))
+	    fputs_filtered (" = ", stream);
+	  annotate_field_value ();
 
 	  if (!field_is_static (&TYPE_FIELD (type, i))
 	      && TYPE_FIELD_PACKED (type, i))
@@ -358,7 +340,7 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 					   v, stream, recurse + 1,
 					   options);
 		}
-	      else if (i == TYPE_VPTR_FIELDNO (type))
+	      else if (i == vptr_fieldno && type == vptr_basetype)
 		{
 		  int i_offset = offset + TYPE_FIELD_BITPOS (type, i) / 8;
 		  struct type *i_type = TYPE_FIELD_TYPE (type, i);
@@ -819,7 +801,7 @@ cp_print_class_member (const gdb_byte *valaddr, struct type *type,
       if (name)
 	fputs_filtered (name, stream);
       else
-	c_type_print_base (domain, stream, 0, 0);
+	c_type_print_base (domain, stream, 0, 0, &type_print_raw_options);
       fprintf_filtered (stream, "::");
       fputs_filtered (TYPE_FIELD_NAME (domain, fieldno), stream);
     }

@@ -1,13 +1,11 @@
-This is gdb.info, produced by makeinfo version 4.8 from ./gdb.texinfo.
+This is gdb.info, produced by makeinfo version 4.13 from ./gdb.texinfo.
 
 INFO-DIR-SECTION Software development
 START-INFO-DIR-ENTRY
 * Gdb: (gdb).                     The GNU debugger.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -23,11 +21,9 @@ developing GNU and promoting software freedom."
    This file documents the GNU debugger GDB.
 
    This is the Tenth Edition, of `Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.5.1.
+Source-Level Debugger' for GDB (GDB) Version 7.6.
 
-   Copyright (C) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
-2010 2011, 2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -48,9 +44,9 @@ Debugging with GDB
 
 This file describes GDB, the GNU symbolic debugger.
 
-   This is the Tenth Edition, for GDB (GDB) Version 7.5.1.
+   This is the Tenth Edition, for GDB (GDB) Version 7.6.
 
-   Copyright (C) 1988-2012 Free Software Foundation, Inc.
+   Copyright (C) 1988-2013 Free Software Foundation, Inc.
 
    This edition of the GDB manual is dedicated to the memory of Fred
 Fish.  Fred was a long-standing contributor to GDB and to Free software
@@ -141,16 +137,16 @@ these) to help you catch bugs in the act:
      correcting the effects of one bug and go on to learn about another.
 
    You can use GDB to debug programs written in C and C++.  For more
-information, see *Note Supported Languages: Supported Languages.  For
-more information, see *Note C and C++: C.
+information, see *note Supported Languages: Supported Languages.  For
+more information, see *note C and C++: C.
 
-   Support for D is partial.  For information on D, see *Note D: D.
+   Support for D is partial.  For information on D, see *note D: D.
 
    Support for Modula-2 is partial.  For information on Modula-2, see
-*Note Modula-2: Modula-2.
+*note Modula-2: Modula-2.
 
    Support for OpenCL C is partial.  For information on OpenCL C, see
-*Note OpenCL C: OpenCL C.
+*note OpenCL C: OpenCL C.
 
    Debugging Pascal programs which use sets, subranges, file variables,
 or nested functions does not currently work.  GDB does not support
@@ -496,7 +492,7 @@ Let us use GDB to try to see what is going on.
      There is absolutely no warranty for GDB; type "show warranty"
       for details.
 
-     GDB 7.5.1, Copyright 1999 Free Software Foundation, Inc...
+     GDB 7.6, Copyright 1999 Free Software Foundation, Inc...
      (gdb)
 
 GDB reads only enough symbol data to know where to find the rest when
@@ -850,10 +846,33 @@ mode or quiet mode.
 
 `-nx'
 `-n'
-     Do not execute commands found in any initialization files.
-     Normally, GDB executes the commands in these files after all the
-     command options and arguments have been processed.  *Note Command
+     Do not execute commands found in any initialization file.  There
+     are three init files, loaded in the following order:
+
+    ``system.gdbinit''
+          This is the system-wide init file.  Its location is specified
+          with the `--with-system-gdbinit' configure option (*note
+          System-wide configuration::).  It is loaded first when GDB
+          starts, before command line options have been processed.
+
+    ``~/.gdbinit''
+          This is the init file in your home directory.  It is loaded
+          next, after `system.gdbinit', and before command options have
+          been processed.
+
+    ``./.gdbinit''
+          This is the init file in the current directory.  It is loaded
+          last, after command line options other than `-x' and `-ex'
+          have been processed.  Command line options `-x' and `-ex' are
+          processed last, after `./.gdbinit' has been loaded.
+
+     For further documentation on startup processing, *Note Startup::.
+     For documentation on how to write command files, *Note Command
      Files: Command Files.
+
+`-nh'
+     Do not execute commands found in `~/.gdbinit', the init file in
+     your home directory.  *Note Startup::.
 
 `-quiet'
 `-silent'
@@ -939,11 +958,6 @@ mode or quiet mode.
      colons, and a newline.  The Emacs-to-GDB interface program uses
      the two `\032' characters as a signal to display the source code
      for the frame.
-
-`-epoch'
-     The Epoch Emacs-GDB interface sets this option when it runs GDB as
-     a subprocess.  It tells GDB to modify its print routines so as to
-     allow Epoch to display values of expressions in a separate window.
 
 `-annotate LEVEL'
      This option sets the "annotation level" inside GDB.  Its effect is
@@ -1077,9 +1091,9 @@ use `gdb --help'.
 
    The GDB init files are normally called `.gdbinit'.  The DJGPP port
 of GDB uses the name `gdb.ini', due to the limitations of file names
-imposed by DOS filesystems.  The Windows ports of GDB use the standard
-name, but if they find a `gdb.ini' file, they warn you about that and
-suggest to rename the file to the standard name.
+imposed by DOS filesystems.  The Windows port of GDB uses the standard
+name, but if it finds a `gdb.ini' file in your home directory, it warns
+you about that and suggests to rename the file to the standard name.
 
    ---------- Footnotes ----------
 
@@ -1208,7 +1222,7 @@ to the `help' command.
 previous command.  Certain commands (for example, `run') will not
 repeat this way; these are commands whose unintentional repetition
 might cause trouble and which you are unlikely to want to repeat.
-User-defined commands can disable this feature; see *Note dont-repeat:
+User-defined commands can disable this feature; see *note dont-repeat:
 Define.
 
    The `list' and `x' commands, when you repeat them with <RET>,
@@ -1321,9 +1335,9 @@ In general, GDB can tell that a quote is needed (and inserts it) if you
 have not yet started typing the argument list when you ask for
 completion on an overloaded symbol.
 
-   For more information about overloaded functions, see *Note C++
+   For more information about overloaded functions, see *note C++
 Expressions: C Plus Plus Expressions.  You can use the command `set
-overload-resolution off' to disable overload resolution; see *Note GDB
+overload-resolution off' to disable overload resolution; see *note GDB
 Features for C++: Debugging C Plus Plus.
 
    When completing in an expression which looks up a field in a
@@ -1563,7 +1577,7 @@ debugging information.
 making it possible to debug optimized code.  We recommend that you
 _always_ use `-g' whenever you compile a program.  You may think your
 program is correct, but there is no sense in pushing your luck.  For
-more information, see *Note Optimized Code::.
+more information, see *note Optimized Code::.
 
    Older versions of the GNU C compiler permitted a variant option
 `-gg' for debugging information.  GDB no longer supports this format;
@@ -1690,11 +1704,11 @@ breakpoints.
      `start' or `run'.
 
      It is sometimes necessary to debug the program during elaboration.
-     In these cases, using the `start' command would stop the
-     execution of your program too late, as the program would have
-     already completed the elaboration phase.  Under these
-     circumstances, insert breakpoints in your elaboration code before
-     running your program.
+     In these cases, using the `start' command would stop the execution
+     of your program too late, as the program would have already
+     completed the elaboration phase.  Under these circumstances,
+     insert breakpoints in your elaboration code before running your
+     program.
 
 `set exec-wrapper WRAPPER'
 `show exec-wrapper'
@@ -1891,8 +1905,9 @@ GDB with the `cd' command.
 that specify files for GDB to operate on.  *Note Commands to Specify
 Files: Files.
 
-`cd DIRECTORY'
-     Set the GDB working directory to DIRECTORY.
+`cd [DIRECTORY]'
+     Set the GDB working directory to DIRECTORY.  If not given,
+     DIRECTORY uses `'~''.
 
 `pwd'
      Print the GDB working directory.
@@ -2762,7 +2777,7 @@ exception or the loading of a library.  As with watchpoints, you use a
 different command to set a catchpoint (*note Setting Catchpoints: Set
 Catchpoints.), but aside from that, you can manage a catchpoint like any
 other breakpoint.  (To stop when your program receives a signal, use the
-`handle' command; see *Note Signals: Signals.)
+`handle' command; see *note Signals: Signals.)
 
    GDB assigns a number to each breakpoint, watchpoint, or catchpoint
 when you create it; these numbers are successive integers starting with
@@ -2800,7 +2815,7 @@ File: gdb.info,  Node: Set Breaks,  Next: Set Watchpoints,  Up: Breakpoints
 
 Breakpoints are set with the `break' command (abbreviated `b').  The
 debugger convenience variable `$bpnum' records the number of the
-breakpoint you've set most recently; see *Note Convenience Variables:
+breakpoint you've set most recently; see *note Convenience Variables:
 Convenience Vars, for a discussion of what you can do with convenience
 variables.
 
@@ -2871,7 +2886,7 @@ variables.
      unused hardware breakpoints before setting new ones (*note
      Disabling Breakpoints: Disabling.).  *Note Break Conditions:
      Conditions.  For remote targets, you can restrict the number of
-     hardware breakpoints GDB will use, see *Note set remote
+     hardware breakpoints GDB will use, see *note set remote
      hardware-breakpoint-limit::.
 
 `thbreak ARGS'
@@ -2882,7 +2897,7 @@ variables.
      program stops there.  Also, like the `hbreak' command, the
      breakpoint requires hardware support and some target hardware may
      not have this support.  *Note Disabling Breakpoints: Disabling.
-     See also *Note Break Conditions: Conditions.
+     See also *note Break Conditions: Conditions.
 
 `rbreak REGEX'
      Set breakpoints on all functions matching the regular expression
@@ -2943,10 +2958,10 @@ variables.
 
     _Address_
           Where the breakpoint is in your program, as a memory address.
-          For a pending breakpoint whose address is not yet known,
-          this field will contain `<PENDING>'.  Such breakpoint won't
-          fire until a shared library that has the symbol or line
-          referred by breakpoint is loaded.  See below for details.  A
+          For a pending breakpoint whose address is not yet known, this
+          field will contain `<PENDING>'.  Such breakpoint won't fire
+          until a shared library that has the symbol or line referred
+          by breakpoint is loaded.  See below for details.  A
           breakpoint with several locations will have `<MULTIPLE>' in
           this field--see below for details.
 
@@ -3248,7 +3263,7 @@ do not slow down the running of your program.
 
      The `[mask MASKVALUE]' argument allows creation of masked
      watchpoints, if the current architecture supports this feature
-     (e.g., PowerPC Embedded architecture, see *Note PowerPC
+     (e.g., PowerPC Embedded architecture, see *note PowerPC
      Embedded::.)  A "masked watchpoint" specifies a mask in addition
      to an address to watch.  The mask specifies that some bits of an
      address (the bits which are reset in the mask) should be ignored
@@ -3304,7 +3319,7 @@ use the hardware mechanism of watching expression values.)
      Show the current mode of using hardware watchpoints.
 
    For remote targets, you can restrict the number of hardware
-watchpoints GDB will use, see *Note set remote
+watchpoints GDB will use, see *note set remote
 hardware-breakpoint-limit::.
 
    When you issue the `watch' command, GDB reports
@@ -3555,6 +3570,31 @@ shared library.  Use the `catch' command to set a catchpoint.
           given, then the catchpoint will stop only if the regular
           expression matches one of the affected libraries.
 
+    `signal [SIGNAL... | `all']'
+          The delivery of a signal.
+
+          With no arguments, this catchpoint will catch any signal that
+          is not used internally by GDB, specifically, all signals
+          except `SIGTRAP' and `SIGINT'.
+
+          With the argument `all', all signals, including those used by
+          GDB, will be caught.  This argument cannot be used with other
+          signal names.
+
+          Otherwise, the arguments are a list of signal names as given
+          to `handle' (*note Signals::).  Only signals specified in
+          this list will be caught.
+
+          One reason that `catch signal' can be more useful than
+          `handle' is that you can attach commands and conditions to the
+          catchpoint.
+
+          When a signal is caught by a catchpoint, the signal's `stop'
+          and `print' settings, as specified by `handle', are ignored.
+          However, whether the signal is still delivered to the
+          inferior depends on the `pass' setting; this can be changed
+          in the catchpoint's commands.
+
 
 `tcatch EVENT'
      Set a catchpoint that is enabled only for one stop.  The
@@ -3729,7 +3769,7 @@ Breakpoints: Set Breaks.), breakpoints that you set are initially
 enabled; subsequently, they become disabled or enabled only when you
 use one of the commands above.  (The command `until' can set and delete
 a breakpoint of its own, but it does not change the state of your other
-breakpoints; see *Note Continuing and Stepping: Continuing and
+breakpoints; see *note Continuing and Stepping: Continuing and
 Stepping.)
 
 
@@ -4340,7 +4380,7 @@ interesting, until you see the problem happen.
 `u LOCATION'
      Continue running your program until either the specified location
      is reached, or the current stack frame returns.  LOCATION is any of
-     the forms described in *Note Specify Location::.  This form of the
+     the forms described in *note Specify Location::.  This form of the
      command uses temporary breakpoints, and hence is quicker than
      `until' without an argument.  The specified location is actually
      reached only if it is in the current frame.  This implies that
@@ -4361,7 +4401,7 @@ interesting, until you see the problem happen.
 `advance LOCATION'
      Continue running the program up to the given LOCATION.  An
      argument is required, which should be of one of the forms
-     described in *Note Specify Location::.  Execution will also stop
+     described in *note Specify Location::.  Execution will also stop
      upon exit from the current stack frame.  This command is similar
      to `until', but `advance' will not skip over recursive function
      calls, and the target location doesn't have to be in the same
@@ -4531,6 +4571,10 @@ settings with the `handle' command.
      number.
 
      `info handle' is an alias for `info signals'.
+
+`catch signal [SIGNAL... | `all']'
+     Set a catchpoint for the indicated signals.  *Note Set
+     Catchpoints::, for details about this command.
 
 `handle SIGNAL [KEYWORDS...]'
      Change the way GDB handles signal SIGNAL.  SIGNAL can be the
@@ -4726,8 +4770,8 @@ run with the `set schedule-multiple' command.
      resumed when an execution command is issued.  When `on', all
      threads of all processes are allowed to run.  When `off', only the
      threads of the current process are resumed.  The default is `off'.
-     The `scheduler-locking' mode takes precedence when set to `on',
-     or while you are stepping and set to `step'.
+     The `scheduler-locking' mode takes precedence when set to `on', or
+     while you are stepping and set to `step'.
 
 `show schedule-multiple'
      Display the current mode for resuming the execution of threads of
@@ -4876,7 +4920,7 @@ are:
 
 
    Background execution is especially useful in conjunction with
-non-stop mode for debugging programs with multiple threads; see *Note
+non-stop mode for debugging programs with multiple threads; see *note
 Non-Stop Mode::.  However, you can also use these commands in the
 normal all-stop mode with the restriction that you cannot issue another
 execution command until the previous one finishes.  Examples of
@@ -5204,14 +5248,30 @@ supports reverse execution, or stop if not.
    For architecture environments that support process record and replay,
 GDB provides the following commands:
 
-`target record'
+`record METHOD'
      This command starts the process record and replay target.  The
-     process record and replay target can only debug a process that is
-     already running.  Therefore, you need first to start the process
-     with the `run' or `start' commands, and then start the recording
-     with the `target record' command.
+     recording method can be specified as parameter.  Without a
+     parameter the command uses the `full' recording method.  The
+     following recording methods are available:
 
-     Both `record' and `rec' are aliases of `target record'.
+    `full'
+          Full record/replay recording using GDB's software record and
+          replay implementation.  This method allows replaying and
+          reverse execution.
+
+    `btrace'
+          Hardware-supported instruction recording.  This method does
+          not allow replaying and reverse execution.
+
+          This recording method may not be available on all processors.
+
+     The process record and replay target can only debug a process that
+     is already running.  Therefore, you need first to start the
+     process with the `run' or `start' commands, and then start the
+     recording with the `record METHOD' command.
+
+     Both `record METHOD' and `rec METHOD' are aliases of `target
+     record-METHOD'.
 
      Displaced stepping (*note displaced stepping: Maintenance
      Commands.)  will be automatically disabled when process record and
@@ -5220,8 +5280,8 @@ GDB provides the following commands:
 
      If the inferior is in the non-stop mode (*note Non-Stop Mode::) or
      in the asynchronous execution mode (*note Background Execution::),
-     the process record and replay target cannot be started because it
-     doesn't support these two modes.
+     not all recording methods are available.  The `full' recording
+     method does not support these two modes.
 
 `record stop'
      Stop the process record and replay target.  When process record and
@@ -5251,13 +5311,15 @@ GDB provides the following commands:
      `gdb_record.PROCESS_ID', where PROCESS_ID is the process ID of the
      inferior.
 
+     This command may not be available for all recording methods.
+
 `record restore FILENAME'
      Restore the execution log from a file `FILENAME'.  File must have
      been created with `record save'.
 
-`set record insn-number-max LIMIT'
-     Set the limit of instructions to be recorded.  Default value is
-     200000.
+`set record full insn-number-max LIMIT'
+     Set the limit of instructions to be recorded for the `full'
+     recording method.  Default value is 200000.
 
      If LIMIT is a positive number, then GDB will start deleting
      instructions from the log once the number of the record
@@ -5272,27 +5334,29 @@ GDB provides the following commands:
      the execution log.  The number of recorded instructions is
      unlimited in this case.
 
-`show record insn-number-max'
-     Show the limit of instructions to be recorded.
+`show record full insn-number-max'
+     Show the limit of instructions to be recorded with the `full'
+     recording method.
 
-`set record stop-at-limit'
-     Control the behavior when the number of recorded instructions
-     reaches the limit.  If ON (the default), GDB will stop when the
-     limit is reached for the first time and ask you whether you want
-     to stop the inferior or continue running it and recording the
-     execution log.  If you decide to continue recording, each new
-     recorded instruction will cause the oldest one to be deleted.
+`set record full stop-at-limit'
+     Control the behavior of the  `full' recording method when the
+     number of recorded instructions reaches the limit.  If ON (the
+     default), GDB will stop when the limit is reached for the first
+     time and ask you whether you want to stop the inferior or continue
+     running it and recording the execution log.  If you decide to
+     continue recording, each new recorded instruction will cause the
+     oldest one to be deleted.
 
      If this option is OFF, GDB will automatically delete the oldest
      record to make room for each new one, without asking.
 
-`show record stop-at-limit'
+`show record full stop-at-limit'
      Show the current setting of `stop-at-limit'.
 
-`set record memory-query'
+`set record full memory-query'
      Control the behavior when GDB is unable to record memory changes
-     caused by an instruction.  If ON, GDB will query whether to stop
-     the inferior in that case.
+     caused by an instruction for the `full' recording method.  If ON,
+     GDB will query whether to stop the inferior in that case.
 
      If this option is OFF (the default), GDB will automatically ignore
      the effect of such instructions on memory.  Later, when GDB
@@ -5300,26 +5364,38 @@ GDB provides the following commands:
      instruction as not accessible, and it will not affect the replay
      results.
 
-`show record memory-query'
+`show record full memory-query'
      Show the current setting of `memory-query'.
 
 `info record'
-     Show various statistics about the state of process record and its
-     in-memory execution log buffer, including:
+     Show various statistics about the recording depending on the
+     recording method:
 
-        * Whether in record mode or replay mode.
+    `full'
+          For the `full' recording method, it shows the state of process
+          record and its in-memory execution log buffer, including:
 
-        * Lowest recorded instruction number (counting from when the
-          current execution log started recording instructions).
+             * Whether in record mode or replay mode.
 
-        * Highest recorded instruction number.
+             * Lowest recorded instruction number (counting from when
+               the current execution log started recording
+               instructions).
 
-        * Current instruction about to be replayed (if in replay mode).
+             * Highest recorded instruction number.
 
-        * Number of instructions contained in the execution log.
+             * Current instruction about to be replayed (if in replay
+               mode).
 
-        * Maximum number of instructions that may be contained in the
-          execution log.
+             * Number of instructions contained in the execution log.
+
+             * Maximum number of instructions that may be contained in
+               the execution log.
+
+    `btrace'
+          For the `btrace' recording method, it shows the number of
+          instructions that have been recorded and the number of blocks
+          of sequential control-flow that is formed by the recorded
+          instructions.
 
 `record delete'
      When record target runs in replay mode ("in the past"), delete the
@@ -5327,6 +5403,103 @@ GDB provides the following commands:
      starting from the current address.  This means you will abandon
      the previously recorded "future" and begin recording a new
      "future".
+
+`record instruction-history'
+     Disassembles instructions from the recorded execution log.  By
+     default, ten instructions are disassembled.  This can be changed
+     using the `set record instruction-history-size' command.
+     Instructions are printed in execution order.  There are several
+     ways to specify what part of the execution log to disassemble:
+
+    `record instruction-history INSN'
+          Disassembles ten instructions starting from instruction number
+          INSN.
+
+    `record instruction-history INSN, +/-N'
+          Disassembles N instructions around instruction number INSN.
+          If N is preceded with `+', disassembles N instructions after
+          instruction number INSN.  If N is preceded with `-',
+          disassembles N instructions before instruction number INSN.
+
+    `record instruction-history'
+          Disassembles ten more instructions after the last disassembly.
+
+    `record instruction-history -'
+          Disassembles ten more instructions before the last
+          disassembly.
+
+    `record instruction-history BEGIN END'
+          Disassembles instructions beginning with instruction number
+          BEGIN until instruction number END.  The instruction number
+          END is not included.
+
+     This command may not be available for all recording methods.
+
+`set record instruction-history-size'
+     Define how many instructions to disassemble in the `record
+     instruction-history' command.  The default value is 10.
+
+`show record instruction-history-size'
+     Show how many instructions to disassemble in the `record
+     instruction-history' command.
+
+`record function-call-history'
+     Prints the execution history at function granularity. It prints one
+     line for each sequence of instructions that belong to the same
+     function giving the name of that function, the source lines for
+     this instruction sequence (if the `/l' modifier is specified), and
+     the instructions numbers that form the sequence (if the `/i'
+     modifier is specified).
+
+          (gdb) list 1, 10
+          1   void foo (void)
+          2   {
+          3   }
+          4
+          5   void bar (void)
+          6   {
+          7     ...
+          8     foo ();
+          9     ...
+          10  }
+          (gdb) record function-call-history /l
+          1  foo.c:6-8   bar
+          2  foo.c:2-3   foo
+          3  foo.c:9-10  bar
+
+     By default, ten lines are printed.  This can be changed using the
+     `set record function-call-history-size' command.  Functions are
+     printed in execution order.  There are several ways to specify what
+     to print:
+
+    `record function-call-history FUNC'
+          Prints ten functions starting from function number FUNC.
+
+    `record function-call-history FUNC, +/-N'
+          Prints N functions around function number FUNC.  If N is
+          preceded with `+', prints N functions after function number
+          FUNC.  If N is preceded with `-', prints N functions before
+          function number FUNC.
+
+    `record function-call-history'
+          Prints ten more functions after the last ten-line print.
+
+    `record function-call-history -'
+          Prints ten more functions before the last ten-line print.
+
+    `record function-call-history BEGIN END'
+          Prints functions beginning with function number BEGIN until
+          function number END.  The function number END is not included.
+
+     This command may not be available for all recording methods.
+
+`set record function-call-history-size'
+     Define how many lines to print in the `record
+     function-call-history' command.  The default value is 10.
+
+`show record function-call-history-size'
+     Show how many lines to print in the `record function-call-history'
+     command.
 
 
 File: gdb.info,  Node: Stack,  Next: Source,  Prev: Process Record and Replay,  Up: Top
@@ -5489,7 +5662,7 @@ for line `993' of `builtin.c'.
 The value of parameter `data' in frame 1 has been replaced by `...'.
 By default, GDB prints the value of a parameter only if it is a scalar
 (integer, pointer, enumeration, etc).  See command `set print
-frame-arguments' in *Note Print Settings:: for more details on how to
+frame-arguments' in *note Print Settings:: for more details on how to
 configure the way function parameter values are printed.
 
    If your program was compiled with optimizations, some compilers will
@@ -5554,6 +5727,22 @@ levels in a backtrace, you can change this behavior:
 
 `show backtrace limit'
      Display the current limit on backtrace levels.
+
+   You can control how file names are displayed.
+
+`set filename-display'
+`set filename-display relative'
+     Display file names relative to the compilation directory.  This is
+     the default.
+
+`set filename-display basename'
+     Display only basename of a filename.
+
+`set filename-display absolute'
+     Display an absolute filename.
+
+`show filename-display'
+     Show the current way to display filenames.
 
    ---------- Footnotes ----------
 
@@ -5709,7 +5898,7 @@ execution in that frame has stopped.  You can print other portions of
 source files by explicit command.
 
    If you use GDB through its GNU Emacs interface, you may prefer to
-use Emacs facilities to view source; see *Note Using GDB under GNU
+use Emacs facilities to view source; see *note Using GDB under GNU
 Emacs: Emacs.
 
 * Menu:
@@ -5729,7 +5918,7 @@ File: gdb.info,  Node: List,  Next: Specify Location,  Up: Source
 
 To print lines from a source file, use the `list' command (abbreviated
 `l').  By default, ten lines are printed.  There are several ways to
-specify what part of the file you want to print; see *Note Specify
+specify what part of the file you want to print; see *note Specify
 Location::, for the full list.
 
    Here are the forms of the `list' command most commonly used:
@@ -5756,7 +5945,8 @@ the `list' command.  You can change this using `set listsize':
 
 `set listsize COUNT'
      Make the `list' command display COUNT source lines (unless the
-     `list' argument explicitly specifies some other number).
+     `list' argument explicitly specifies some other number).  Setting
+     COUNT to 0 means there's no limit.
 
 `show listsize'
      Display the number of lines that `list' prints.
@@ -6025,7 +6215,7 @@ specifies how to rewrite source directories stored in the program's
 debug information in case the sources were moved to a different
 directory between compilation and debugging.  A rule is made of two
 strings, the first specifying what needs to be rewritten in the path,
-and the second specifying how it should be rewritten.  In *Note set
+and the second specifying how it should be rewritten.  In *note set
 substitute-path::, we name these two parts FROM and TO respectively.
 GDB does a simple string replacement of FROM with TO at the start of
 the directory part of the source file name, and uses that result
@@ -6173,7 +6363,7 @@ line' command causes the arrow to point to the line specified.  Also,
 `info line LINESPEC'
      Print the starting and ending addresses of the compiled code for
      source line LINESPEC.  You can specify source lines in any of the
-     ways documented in *Note Specify Location::.
+     ways documented in *note Specify Location::.
 
    For example, we can use `info line' to discover the location of the
 object code for the first line of function `m4_changequote':
@@ -6274,6 +6464,11 @@ x86-64,
         0x0000000000400289:  2e 32 00       xor    %cs:(%rax),%al
      End of assembler dump.
 
+   Addresses cannot be specified as a linespec (*note Specify
+Location::).  So, for example, if you want to disassemble function `bar'
+in file `foo.c', you must type `disassemble 'foo.c'::bar' and not
+`disassemble foo.c:bar'.
+
    Some architectures have more than one commonly-used set of
 instruction mnemonics or other syntax.
 
@@ -6330,7 +6525,7 @@ may also print the expression using a Python-based pretty-printer
      EXPR is an expression (in the source language).  By default the
      value of EXPR is printed in a format appropriate to its data type;
      you can choose a different format by specifying `/F', where F is a
-     letter specifying the format; see *Note Output Formats: Output
+     letter specifying the format; see *note Output Formats: Output
      Formats.
 
 `print'
@@ -6480,6 +6675,7 @@ argument is being invoked.
 * Pretty Printing::             Python pretty printing
 * Value History::               Value history
 * Convenience Vars::            Convenience variables
+* Convenience Funs::            Convenience functions
 * Registers::                   Registers
 * Floating Point Hardware::     Floating point hardware
 * Vector Unit::                 Vector Unit
@@ -6503,7 +6699,7 @@ its value.  Any kind of constant, variable or operator defined by the
 programming language you are using is valid in an expression in GDB.
 This includes conditional expressions, function calls, casts, and
 string constants.  It also includes preprocessor macros, if you
-compiled your program to include this information; see *Note
+compiled your program to include this information; see *note
 Compilation::.
 
    GDB supports array constants in expressions input by the user.  The
@@ -6749,7 +6945,7 @@ Symbols, for more about this.
 its value at the time the function got called.  If the value is not
 available an error message is printed.  Entry values are available only
 with some compilers.  Entry values are normally also printed at the
-function parameter list according to *Note set print entry-values::.
+function parameter list according to *note set print entry-values::.
 
      Breakpoint 1, d (i=30) at gdb.base/entry-value.c:29
      29	  i++;
@@ -6927,143 +7123,6 @@ expression.  For example, `p/x' reprints the last value in hex.
    ---------- Footnotes ----------
 
    (1) `b' cannot be used because these format letters are also used
-with the `x' command, where `b' stands for "byte"; see *Note Examining
+with the `x' command, where `b' stands for "byte"; see *note Examining
 Memory: Memory.
-
-
-File: gdb.info,  Node: Memory,  Next: Auto Display,  Prev: Output Formats,  Up: Data
-
-10.6 Examining Memory
-=====================
-
-You can use the command `x' (for "examine") to examine memory in any of
-several formats, independently of your program's data types.
-
-`x/NFU ADDR'
-`x ADDR'
-`x'
-     Use the `x' command to examine memory.
-
-   N, F, and U are all optional parameters that specify how much memory
-to display and how to format it; ADDR is an expression giving the
-address where you want to start displaying memory.  If you use defaults
-for NFU, you need not type the slash `/'.  Several commands set
-convenient defaults for ADDR.
-
-N, the repeat count
-     The repeat count is a decimal integer; the default is 1.  It
-     specifies how much memory (counting by units U) to display.
-
-F, the display format
-     The display format is one of the formats used by `print' (`x',
-     `d', `u', `o', `t', `a', `c', `f', `s'), and in addition `i' (for
-     machine instructions).  The default is `x' (hexadecimal)
-     initially.  The default changes each time you use either `x' or
-     `print'.
-
-U, the unit size
-     The unit size is any of
-
-    `b'
-          Bytes.
-
-    `h'
-          Halfwords (two bytes).
-
-    `w'
-          Words (four bytes).  This is the initial default.
-
-    `g'
-          Giant words (eight bytes).
-
-     Each time you specify a unit size with `x', that size becomes the
-     default unit the next time you use `x'.  For the `i' format, the
-     unit size is ignored and is normally not written.  For the `s'
-     format, the unit size defaults to `b', unless it is explicitly
-     given.  Use `x /hs' to display 16-bit char strings and `x /ws' to
-     display 32-bit strings.  The next use of `x /s' will again display
-     8-bit strings.  Note that the results depend on the programming
-     language of the current compilation unit.  If the language is C,
-     the `s' modifier will use the UTF-16 encoding while `w' will use
-     UTF-32.  The encoding is set by the programming language and cannot
-     be altered.
-
-ADDR, starting display address
-     ADDR is the address where you want GDB to begin displaying memory.
-     The expression need not have a pointer value (though it may); it
-     is always interpreted as an integer address of a byte of memory.
-     *Note Expressions: Expressions, for more information on
-     expressions.  The default for ADDR is usually just after the last
-     address examined--but several other commands also set the default
-     address: `info breakpoints' (to the address of the last breakpoint
-     listed), `info line' (to the starting address of a line), and
-     `print' (if you use it to display a value from memory).
-
-   For example, `x/3uh 0x54320' is a request to display three halfwords
-(`h') of memory, formatted as unsigned decimal integers (`u'), starting
-at address `0x54320'.  `x/4xw $sp' prints the four words (`w') of
-memory above the stack pointer (here, `$sp'; *note Registers:
-Registers.) in hexadecimal (`x').
-
-   Since the letters indicating unit sizes are all distinct from the
-letters specifying output formats, you do not have to remember whether
-unit size or format comes first; either order works.  The output
-specifications `4xw' and `4wx' mean exactly the same thing.  (However,
-the count N must come first; `wx4' does not work.)
-
-   Even though the unit size U is ignored for the formats `s' and `i',
-you might still want to use a count N; for example, `3i' specifies that
-you want to see three machine instructions, including any operands.
-For convenience, especially when used with the `display' command, the
-`i' format also prints branch delay slot instructions, if any, beyond
-the count specified, which immediately follow the last instruction that
-is within the count.  The command `disassemble' gives an alternative
-way of inspecting machine instructions; see *Note Source and Machine
-Code: Machine Code.
-
-   All the defaults for the arguments to `x' are designed to make it
-easy to continue scanning memory with minimal specifications each time
-you use `x'.  For example, after you have inspected three machine
-instructions with `x/3i ADDR', you can inspect the next seven with just
-`x/7'.  If you use <RET> to repeat the `x' command, the repeat count N
-is used again; the other arguments default as for successive uses of
-`x'.
-
-   When examining machine instructions, the instruction at current
-program counter is shown with a `=>' marker. For example:
-
-     (gdb) x/5i $pc-6
-        0x804837f <main+11>: mov    %esp,%ebp
-        0x8048381 <main+13>: push   %ecx
-        0x8048382 <main+14>: sub    $0x4,%esp
-     => 0x8048385 <main+17>: movl   $0x8048460,(%esp)
-        0x804838c <main+24>: call   0x80482d4 <puts@plt>
-
-   The addresses and contents printed by the `x' command are not saved
-in the value history because there is often too much of them and they
-would get in the way.  Instead, GDB makes these values available for
-subsequent use in expressions as values of the convenience variables
-`$_' and `$__'.  After an `x' command, the last address examined is
-available for use in expressions in the convenience variable `$_'.  The
-contents of that address, as examined, are available in the convenience
-variable `$__'.
-
-   If the `x' command has a repeat count, the address and contents saved
-are from the last memory unit printed; this is not the same as the last
-address printed if several units were printed on the last line of
-output.
-
-   When you are debugging a program running on a remote target machine
-(*note Remote Debugging::), you may wish to verify the program's image
-in the remote machine's memory against the executable file you
-downloaded to the target.  The `compare-sections' command is provided
-for such situations.
-
-`compare-sections [SECTION-NAME]'
-     Compare the data of a loadable section SECTION-NAME in the
-     executable file of the program being debugged with the same
-     section in the remote machine's memory, and report any mismatches.
-     With no arguments, compares all loadable sections.  This command's
-     availability depends on the target's support for the `"qCRC"'
-     remote request.
 

@@ -1,4 +1,4 @@
-This is gdbint.info, produced by makeinfo version 4.8 from
+This is gdbint.info, produced by makeinfo version 4.13 from
 ./gdbint.texinfo.
 
 INFO-DIR-SECTION Software development
@@ -6,9 +6,9 @@ START-INFO-DIR-ENTRY
 * Gdb-Internals: (gdbint).	The GNU debugger's internals.
 END-INFO-DIR-ENTRY
 
-   Copyright (C) 1990-1994, 1996, 1998-2006, 2008-2012 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+   Copyright (C) 1990-2013 Free Software Foundation, Inc.  Contributed
+by Cygnus Solutions.  Written by John Gilmore.  Second Edition by Stan
+Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -19,9 +19,9 @@ Free Documentation License".
 
    This file documents the internals of the GNU debugger GDB.
 
-   Copyright (C) 1990-1994, 1996, 1998-2006, 2008-2012 Free Software
-Foundation, Inc.  Contributed by Cygnus Solutions.  Written by John
-Gilmore.  Second Edition by Stan Shebs.
+   Copyright (C) 1990-2013 Free Software Foundation, Inc.  Contributed
+by Cygnus Solutions.  Written by John Gilmore.  Second Edition by Stan
+Shebs.
 
    Permission is granted to copy, distribute and/or modify this document
 under the terms of the GNU Free Documentation License, Version 1.3 or
@@ -232,6 +232,12 @@ emitted.
      immediately after connecting to the inferior, and before any
      information on the inferior has been printed.
 
+ -- Function: void record_changed (struct inferior *INFERIOR, int
+          STARTED)
+     The status of process record for inferior INFERIOR in GDB has
+     changed.  The process record is started if STARTED is true, and
+     the process record is stopped if STARTED is false.
+
  -- Function: void solib_loaded (struct so_list *SOLIB)
      The shared library specified by SOLIB has been loaded.  Note that
      when GDB calls this observer, the library's symbols probably
@@ -280,17 +286,11 @@ emitted.
      A breakpoint has been modified in some way.  The argument B is the
      modified breakpoint.
 
- -- Function: void tracepoint_created (int TPNUM)
-     A new tracepoint has been created.  The argument TPNUM is the
-     number of the newly-created tracepoint.
-
- -- Function: void tracepoint_deleted (int TPNUM)
-     A tracepoint has been destroyed.  The argument TPNUM is the number
-     of the newly-destroyed tracepoint.
-
- -- Function: void tracepoint_modified (int TPNUM)
-     A tracepoint has been modified in some way.  The argument TPNUM is
-     the number of the modified tracepoint.
+ -- Function: void traceframe_changed (int TFNUM, int TPNUM)
+     The trace frame is changed to TFNUM (e.g., by using the `tfind'
+     command).  If TFNUM is negative, it means GDB resumes live
+     debugging.  The number of the tracepoint associated with this
+     traceframe is TPNUM.
 
  -- Function: void architecture_changed (struct gdbarch *NEWARCH)
      The current architecture has changed.  The argument NEWARCH is a
@@ -316,10 +316,10 @@ emitted.
      The inferior INF has been removed from the list of inferiors.
      This method is called immediately before freeing INF.
 
- -- Function: void memory_changed (CORE_ADDR ADDR, int LEN, const
-          bfd_byte *DATA)
-     Bytes from DATA to DATA + LEN have been written to the current
-     inferior at ADDR.
+ -- Function: void memory_changed (struct inferior *INFERIOR, CORE_ADDR
+          ADDR, ssize_t LEN, const bfd_byte *DATA)
+     Bytes from DATA to DATA + LEN have been written to the INFERIOR at
+     ADDR.
 
  -- Function: void before_prompt (const char *CURRENT_PROMPT)
      Called before a top-level prompt is displayed.  CURRENT_PROMPT is
@@ -328,6 +328,23 @@ emitted.
  -- Function: void gdb_datadir_changed (void)
      Variable gdb_datadir has been set.  The value may not necessarily
      change.
+
+ -- Function: void command_param_changed (const char *PARAM, const char
+          *VALUE)
+     The parameter of some `set' commands in console are changed.  This
+     method is called after a command `set PARAM VALUE'.  PARAM is the
+     parameter of `set' command, and VALUE is the value of changed
+     parameter.
+
+ -- Function: void tsv_created (const struct trace_state_variable *TSV)
+     The new trace state variable TSV is created.
+
+ -- Function: void tsv_deleted (const struct trace_state_variable *TSV)
+     The trace state variable TSV is deleted.  If TSV is `NULL', all
+     trace state variables are deleted.
+
+ -- Function: void tsv_modified (const struct trace_state_variable *TSV)
+     The trace state value TSV is modified.
 
  -- Function: void test_notification (int SOMEARG)
      This observer is used for internal testing.  Do not use.  See
@@ -859,7 +876,7 @@ Concept Index
                                                               (line  28)
 * BFD library:                           Support Libraries.   (line   9)
 * breakpoint address adjusted:           Defining Other Architecture Features.
-                                                              (line 145)
+                                                              (line 149)
 * breakpoints:                           Algorithms.          (line 151)
 * bug-gdb mailing list:                  Getting Started.     (line  72)
 * build script:                          Debugging GDB.       (line  94)
@@ -887,7 +904,7 @@ Concept Index
 * converting between pointers and addresses: Pointers and Addresses.
                                                               (line   6)
 * converting integers to addresses:      Defining Other Architecture Features.
-                                                              (line 274)
+                                                              (line 278)
 * cooked register representation:        Raw and Cooked Registers.
                                                               (line   6)
 * core files:                            Adding support for debugging core files.
@@ -899,7 +916,7 @@ Concept Index
 * debugging GDB:                         Debugging GDB.       (line   6)
 * deprecating commands:                  User Interface.      (line  32)
 * design:                                Misc Guidelines.     (line 329)
-* DOS text files:                        Host Definition.     (line  87)
+* DOS text files:                        Host Definition.     (line  79)
 * dummy frames:                          About Dummy Frames.  (line   6)
 * DW_AT_address_class:                   Address Classes.     (line   6)
 * DW_AT_byte_size:                       Address Classes.     (line   6)
@@ -947,7 +964,7 @@ Concept Index
                                                               (line  36)
 * full symbol table:                     Symbol Handling.     (line 104)
 * function prologue:                     Prologue Caches.     (line   6)
-* function prototypes:                   Coding Standards.    (line 142)
+* function prototypes:                   Coding Standards.    (line 153)
 * function usage:                        Coding Standards.    (line 124)
 * fundamental types:                     Symbol Handling.     (line 183)
 * GDB source tree structure:             Overall Structure.   (line  83)
@@ -986,7 +1003,6 @@ Concept Index
 * libiberty library:                     Support Libraries.   (line  52)
 * line wrap in output:                   Misc Guidelines.     (line 191)
 * list output functions:                 User Interface.      (line 131)
-* long long data type:                   Host Definition.     (line 106)
 * longjmp debugging:                     Algorithms.          (line 258)
 * lookup_symbol:                         Symbol Handling.     (line 142)
 * lval_type enumeration, for values.:    Values.              (line  19)
@@ -1032,7 +1048,7 @@ Concept Index
 * prologue cache:                        Prologue Caches.     (line  12)
 * prologue of a function:                Prologue Caches.     (line   6)
 * prologue-value.c:                      Algorithms.          (line  48)
-* prompt:                                Host Definition.     (line  94)
+* prompt:                                Host Definition.     (line  86)
 * pseudo-evaluation of function prologues: Algorithms.        (line  48)
 * psymtabs:                              Symbol Handling.     (line 107)
 * raw register representation:           Raw and Cooked Registers.
@@ -1122,7 +1138,7 @@ Concept Index
                                                               (line   6)
 * targets:                               Existing Targets.    (line   6)
 * TCP remote support:                    Host Definition.     (line  57)
-* terminal device:                       Host Definition.     (line  97)
+* terminal device:                       Host Definition.     (line  89)
 * test suite:                            Testsuite.           (line   6)
 * test suite organization:               Testsuite.           (line 195)
 * Testsuite Configuration:               Testsuite.           (line 167)
@@ -1164,7 +1180,7 @@ Function and Variable Index
 * _initialize_ARCH_tdep:                 How an Architecture is Represented.
                                                               (line  13)
 * _initialize_language:                  Language Support.    (line  79)
-* about_to_proceed:                      GDB Observers.       (line 133)
+* about_to_proceed:                      GDB Observers.       (line 139)
 * add_cmd:                               User Interface.      (line  21)
 * add_com:                               User Interface.      (line  21)
 * add_setshow_cmd:                       User Interface.      (line  26)
@@ -1186,27 +1202,27 @@ Function and Variable Index
 * BIG_BREAKPOINT:                        Defining Other Architecture Features.
                                                               (line 100)
 * BPT_VECTOR:                            Defining Other Architecture Features.
-                                                              (line 532)
+                                                              (line 538)
 * BREAKPOINT:                            Defining Other Architecture Features.
                                                               (line  88)
-* breakpoint_created:                    GDB Observers.       (line 136)
-* breakpoint_deleted:                    GDB Observers.       (line 139)
-* breakpoint_modified:                   GDB Observers.       (line 143)
-* CC_HAS_LONG_LONG:                      Host Definition.     (line 105)
+* breakpoint_created:                    GDB Observers.       (line 142)
+* breakpoint_deleted:                    GDB Observers.       (line 145)
+* breakpoint_modified:                   GDB Observers.       (line 149)
+* command_param_changed:                 GDB Observers.       (line 197)
 * core_addr_greaterthan:                 Functions and Variable to Analyze Frames.
                                                               (line  30)
 * core_addr_lessthan:                    Functions and Variable to Analyze Frames.
                                                               (line  30)
-* CRLF_SOURCE_FILES:                     Host Definition.     (line  86)
+* CRLF_SOURCE_FILES:                     Host Definition.     (line  78)
 * current_language:                      Language Support.    (line  75)
-* DEFAULT_PROMPT:                        Host Definition.     (line  93)
+* DEFAULT_PROMPT:                        Host Definition.     (line  85)
 * deprecate_cmd:                         User Interface.      (line  32)
 * DEPRECATED_IBM6000_TARGET:             Defining Other Architecture Features.
-                                                              (line 242)
-* DEV_TTY:                               Host Definition.     (line  96)
+                                                              (line 246)
+* DEV_TTY:                               Host Definition.     (line  88)
 * DIRNAME_SEPARATOR:                     Misc Guidelines.     (line 399)
 * DISABLE_UNSETTABLE_BREAK:              Defining Other Architecture Features.
-                                                              (line 211)
+                                                              (line 215)
 * discard_cleanups:                      Misc Guidelines.     (line  39)
 * do_cleanups:                           Misc Guidelines.     (line  35)
 * evaluate_subexp:                       Language Support.    (line  58)
@@ -1217,7 +1233,7 @@ Function and Variable Index
 * find_pc_function:                      Symbol Handling.     (line 136)
 * find_pc_line:                          Symbol Handling.     (line 136)
 * find_sym_fns:                          Symbol Handling.     (line  32)
-* FOPEN_RB:                              Host Definition.     (line 102)
+* FOPEN_RB:                              Host Definition.     (line  94)
 * fp0_regnum:                            Register Architecture Functions & Variables.
                                                               (line  78)
 * frame_align:                           Functions and Variable to Analyze Frames.
@@ -1241,9 +1257,9 @@ Function and Variable Index
 * frame_unwind_got_register:             Stack Frames.        (line  93)
 * frame_unwind_prepend_unwinder:         Stack Frames.        (line  30)
 * GCC2_COMPILED_FLAG_SYMBOL:             Defining Other Architecture Features.
-                                                              (line 225)
+                                                              (line 229)
 * GCC_COMPILED_FLAG_SYMBOL:              Defining Other Architecture Features.
-                                                              (line 225)
+                                                              (line 229)
 * gdb_datadir_changed:                   GDB Observers.       (line 192)
 * GDB_OSABI_AIX:                         OS ABI Variant Handling.
                                                               (line  90)
@@ -1305,7 +1321,7 @@ Function and Variable Index
 * gdbarch_address_to_pointer:            Pointers and Addresses.
                                                               (line 114)
 * gdbarch_adjust_breakpoint_address:     Defining Other Architecture Features.
-                                                              (line 145)
+                                                              (line 149)
 * gdbarch_alloc:                         Creating a New Architecture.
                                                               (line   6)
 * gdbarch_believe_pcc_promotion:         Defining Other Architecture Features.
@@ -1315,78 +1331,78 @@ Function and Variable Index
 * gdbarch_breakpoint_from_pc:            Defining Other Architecture Features.
                                                               (line 106)
 * gdbarch_call_dummy_location:           Defining Other Architecture Features.
-                                                              (line 178)
+                                                              (line 182)
 * gdbarch_cannot_fetch_register:         Defining Other Architecture Features.
-                                                              (line 184)
-* gdbarch_cannot_store_register:         Defining Other Architecture Features.
                                                               (line 188)
+* gdbarch_cannot_store_register:         Defining Other Architecture Features.
+                                                              (line 192)
 * gdbarch_char_signed:                   Defining Other Architecture Features.
-                                                              (line 457)
+                                                              (line 463)
 * gdbarch_convert_register_p <1>:        Defining Other Architecture Features.
-                                                              (line 195)
+                                                              (line 199)
 * gdbarch_convert_register_p:            Register and Memory Data.
                                                               (line  30)
 * gdbarch_data:                          Misc Guidelines.     (line 133)
 * gdbarch_data_register_post_init:       Misc Guidelines.     (line 118)
 * gdbarch_data_register_pre_init:        Misc Guidelines.     (line 108)
 * gdbarch_decr_pc_after_break:           Defining Other Architecture Features.
-                                                              (line 205)
+                                                              (line 209)
 * gdbarch_deprecated_fp_regnum:          Defining Other Architecture Features.
-                                                              (line 446)
+                                                              (line 452)
 * gdbarch_double_bit:                    Defining Other Architecture Features.
-                                                              (line 467)
+                                                              (line 473)
 * gdbarch_dummy_id:                      Defining Other Architecture Features.
-                                                              (line 519)
+                                                              (line 525)
 * gdbarch_dwarf2_reg_to_regnum:          Defining Other Architecture Features.
-                                                              (line 216)
-* gdbarch_ecoff_reg_to_regnum:           Defining Other Architecture Features.
                                                               (line 220)
+* gdbarch_ecoff_reg_to_regnum:           Defining Other Architecture Features.
+                                                              (line 224)
 * gdbarch_float_bit:                     Defining Other Architecture Features.
-                                                              (line 471)
+                                                              (line 477)
 * gdbarch_fp0_regnum:                    Defining Other Architecture Features.
-                                                              (line 200)
+                                                              (line 204)
 * gdbarch_get_longjmp_target <1>:        Defining Other Architecture Features.
-                                                              (line 231)
+                                                              (line 235)
 * gdbarch_get_longjmp_target:            Algorithms.          (line 263)
 * gdbarch_have_nonsteppable_watchpoint:  Algorithms.          (line 396)
 * gdbarch_in_function_epilogue_p:        Defining Other Architecture Features.
-                                                              (line 253)
+                                                              (line 257)
 * gdbarch_in_solib_return_trampoline:    Defining Other Architecture Features.
-                                                              (line 259)
+                                                              (line 263)
 * gdbarch_init_osabi:                    OS ABI Variant Handling.
                                                               (line 125)
 * gdbarch_int_bit:                       Defining Other Architecture Features.
-                                                              (line 474)
+                                                              (line 480)
 * gdbarch_integer_to_address:            Defining Other Architecture Features.
-                                                              (line 274)
+                                                              (line 278)
 * gdbarch_list_lookup_by_info:           Looking Up an Existing Architecture.
                                                               (line  22)
 * gdbarch_long_bit:                      Defining Other Architecture Features.
-                                                              (line 477)
+                                                              (line 483)
 * gdbarch_long_double_bit:               Defining Other Architecture Features.
-                                                              (line 481)
+                                                              (line 487)
 * gdbarch_long_long_bit:                 Defining Other Architecture Features.
-                                                              (line 485)
+                                                              (line 491)
 * gdbarch_lookup_osabi:                  OS ABI Variant Handling.
                                                               (line 119)
 * gdbarch_memory_insert_breakpoint:      Defining Other Architecture Features.
-                                                              (line 130)
+                                                              (line 134)
 * gdbarch_memory_remove_breakpoint:      Defining Other Architecture Features.
-                                                              (line 130)
+                                                              (line 134)
 * gdbarch_osabi_name:                    OS ABI Variant Handling.
                                                               (line  97)
 * gdbarch_pointer_to_address <1>:        Defining Other Architecture Features.
-                                                              (line 295)
+                                                              (line 299)
 * gdbarch_pointer_to_address:            Pointers and Addresses.
                                                               (line 105)
 * gdbarch_print_insn:                    Defining Other Architecture Features.
-                                                              (line 509)
+                                                              (line 515)
 * gdbarch_ptr_bit:                       Defining Other Architecture Features.
-                                                              (line 489)
+                                                              (line 495)
 * gdbarch_push_dummy_call:               Defining Other Architecture Features.
-                                                              (line 363)
+                                                              (line 367)
 * gdbarch_push_dummy_code:               Defining Other Architecture Features.
-                                                              (line 375)
+                                                              (line 379)
 * gdbarch_register <1>:                  Adding a New Target. (line  40)
 * gdbarch_register:                      How an Architecture is Represented.
                                                               (line  19)
@@ -1395,29 +1411,29 @@ Function and Variable Index
 * gdbarch_register_osabi_sniffer:        OS ABI Variant Handling.
                                                               (line 112)
 * gdbarch_register_to_value <1>:         Defining Other Architecture Features.
-                                                              (line 301)
+                                                              (line 305)
 * gdbarch_register_to_value:             Register and Memory Data.
                                                               (line  46)
 * gdbarch_return_value:                  Defining Other Architecture Features.
-                                                              (line 394)
+                                                              (line 400)
 * gdbarch_sdb_reg_to_regnum:             Defining Other Architecture Features.
-                                                              (line 390)
+                                                              (line 396)
 * gdbarch_short_bit:                     Defining Other Architecture Features.
-                                                              (line 493)
+                                                              (line 499)
 * gdbarch_skip_permanent_breakpoint:     Defining Other Architecture Features.
-                                                              (line 430)
+                                                              (line 436)
 * gdbarch_skip_trampoline_code:          Defining Other Architecture Features.
-                                                              (line 441)
+                                                              (line 447)
 * gdbarch_stab_reg_to_regnum:            Defining Other Architecture Features.
-                                                              (line 450)
+                                                              (line 456)
 * gdbarch_stabs_argument_has_addr:       Defining Other Architecture Features.
-                                                              (line 359)
+                                                              (line 363)
 * gdbarch_value_to_register <1>:         Defining Other Architecture Features.
-                                                              (line 525)
+                                                              (line 531)
 * gdbarch_value_to_register:             Register and Memory Data.
                                                               (line  62)
 * gdbarch_virtual_frame_pointer:         Defining Other Architecture Features.
-                                                              (line 497)
+                                                              (line 503)
 * GDBINIT_FILENAME:                      Host Definition.     (line  74)
 * generic_elf_osabi_sniff_abi_tag_sections: OS ABI Variant Handling.
                                                               (line 133)
@@ -1440,7 +1456,7 @@ Function and Variable Index
 * i386_stopped_data_address:             Algorithms.          (line 521)
 * I386_USE_GENERIC_WATCHPOINTS:          Algorithms.          (line 461)
 * in_dynsym_resolve_code:                Defining Other Architecture Features.
-                                                              (line 263)
+                                                              (line 267)
 * inferior_added:                        GDB Observers.       (line 168)
 * inferior_appeared:                     GDB Observers.       (line 172)
 * inferior_created:                      GDB Observers.       (line  92)
@@ -1450,19 +1466,19 @@ Function and Variable Index
                                                               (line  30)
 * IS_ABSOLUTE_PATH:                      Misc Guidelines.     (line 387)
 * IS_DIR_SEPARATOR:                      Misc Guidelines.     (line 382)
-* ISATTY:                                Host Definition.     (line  99)
+* ISATTY:                                Host Definition.     (line  91)
 * length_of_subexp:                      Language Support.    (line  58)
-* lint:                                  Host Definition.     (line 119)
+* lint:                                  Host Definition.     (line 107)
 * LITTLE_BREAKPOINT:                     Defining Other Architecture Features.
                                                               (line 100)
-* LSEEK_NOT_LINEAR:                      Host Definition.     (line 114)
+* LSEEK_NOT_LINEAR:                      Host Definition.     (line 102)
 * make_cleanup:                          Misc Guidelines.     (line  28)
 * make_cleanup_ui_out_list_begin_end:    User Interface.      (line 247)
 * make_cleanup_ui_out_tuple_begin_end:   User Interface.      (line 223)
 * memory_changed:                        GDB Observers.       (line 184)
 * NATDEPFILES:                           Native Debugging.    (line   8)
-* new_objfile:                           GDB Observers.       (line 109)
-* new_thread:                            GDB Observers.       (line 114)
+* new_objfile:                           GDB Observers.       (line 115)
+* new_thread:                            GDB Observers.       (line 120)
 * normal_stop:                           GDB Observers.       (line  76)
 * op_print_tab:                          Language Support.    (line  91)
 * parse_exp_1:                           Language Support.    (line  97)
@@ -1476,7 +1492,7 @@ Function and Variable Index
 * print_subexp:                          Language Support.    (line  91)
 * print_vector_info:                     Register Information Functions.
                                                               (line  96)
-* PRINTF_HAS_LONG_LONG:                  Host Definition.     (line 109)
+* PRINTF_HAS_LONG_LONG:                  Host Definition.     (line  97)
 * ps_regnum:                             Register Architecture Functions & Variables.
                                                               (line  69)
 * pseudo_register_read:                  Register Architecture Functions & Variables.
@@ -1489,6 +1505,7 @@ Function and Variable Index
                                                               (line  57)
 * read_pc:                               Register Architecture Functions & Variables.
                                                               (line  10)
+* record_changed:                        GDB Observers.       (line 100)
 * regcache_cooked_read:                  Register Caching.    (line  23)
 * regcache_cooked_read_signed:           Register Caching.    (line  23)
 * regcache_cooked_read_unsigned:         Register Caching.    (line  23)
@@ -1496,9 +1513,9 @@ Function and Variable Index
 * regcache_cooked_write_signed:          Register Caching.    (line  23)
 * regcache_cooked_write_unsigned:        Register Caching.    (line  23)
 * REGISTER_CONVERT_TO_RAW:               Defining Other Architecture Features.
-                                                              (line 311)
+                                                              (line 315)
 * REGISTER_CONVERT_TO_VIRTUAL:           Defining Other Architecture Features.
-                                                              (line 306)
+                                                              (line 310)
 * register_name:                         Register Information Functions.
                                                               (line  10)
 * register_reggroup_p:                   Register Information Functions.
@@ -1506,29 +1523,27 @@ Function and Variable Index
 * register_type:                         Register Information Functions.
                                                               (line  33)
 * regset_from_core_section:              Defining Other Architecture Features.
-                                                              (line 316)
+                                                              (line 320)
 * REMOTE_BPT_VECTOR:                     Defining Other Architecture Features.
-                                                              (line 536)
+                                                              (line 542)
 * SENTINEL_FRAME:                        Stack Frames.        (line  22)
 * set_gdbarch_bits_big_endian:           Defining Other Architecture Features.
                                                               (line  83)
 * set_gdbarch_sofun_address_maybe_missing: Defining Other Architecture Features.
-                                                              (line 330)
-* SIGWINCH_HANDLER:                      Host Definition.     (line  78)
-* SIGWINCH_HANDLER_BODY:                 Host Definition.     (line  82)
+                                                              (line 334)
 * skip_prologue:                         Functions and Variable to Analyze Frames.
                                                               (line  12)
 * SKIP_SOLIB_RESOLVER:                   Defining Other Architecture Features.
-                                                              (line 267)
+                                                              (line 271)
 * SLASH_STRING:                          Misc Guidelines.     (line 404)
 * SOFTWARE_SINGLE_STEP:                  Defining Other Architecture Features.
-                                                              (line 324)
+                                                              (line 328)
 * SOFTWARE_SINGLE_STEP_P:                Defining Other Architecture Features.
-                                                              (line 320)
+                                                              (line 324)
 * SOLIB_ADD:                             Native Debugging.    (line  86)
 * SOLIB_CREATE_INFERIOR_HOOK:            Native Debugging.    (line  92)
-* solib_loaded:                          GDB Observers.       (line  99)
-* solib_unloaded:                        GDB Observers.       (line 104)
+* solib_loaded:                          GDB Observers.       (line 105)
+* solib_unloaded:                        GDB Observers.       (line 110)
 * sp_regnum:                             Register Architecture Functions & Variables.
                                                               (line  49)
 * START_INFERIOR_TRAPS_EXPECTED:         Native Debugging.    (line  96)
@@ -1539,7 +1554,7 @@ Function and Variable Index
 * TARGET_CAN_USE_HARDWARE_WATCHPOINT:    Algorithms.          (line 333)
 * target_changed:                        GDB Observers.       (line  82)
 * TARGET_CHAR_BIT:                       Defining Other Architecture Features.
-                                                              (line 454)
+                                                              (line 460)
 * target_insert_breakpoint:              Algorithms.          (line 211)
 * target_insert_hw_breakpoint:           Algorithms.          (line 234)
 * target_insert_watchpoint:              Algorithms.          (line 347)
@@ -1547,16 +1562,17 @@ Function and Variable Index
 * target_remove_breakpoint:              Algorithms.          (line 211)
 * target_remove_hw_breakpoint:           Algorithms.          (line 234)
 * target_remove_watchpoint:              Algorithms.          (line 347)
-* target_resumed:                        GDB Observers.       (line 129)
+* target_resumed:                        GDB Observers.       (line 135)
 * target_stopped_data_address:           Algorithms.          (line 364)
 * target_watchpoint_addr_within_range:   Algorithms.          (line 378)
-* test_notification:                     GDB Observers.       (line 196)
-* thread_exit:                           GDB Observers.       (line 117)
+* test_notification:                     GDB Observers.       (line 213)
+* thread_exit:                           GDB Observers.       (line 123)
 * thread_ptid_changed:                   GDB Observers.       (line 164)
-* thread_stop_requested:                 GDB Observers.       (line 122)
-* tracepoint_created:                    GDB Observers.       (line 147)
-* tracepoint_deleted:                    GDB Observers.       (line 151)
-* tracepoint_modified:                   GDB Observers.       (line 155)
+* thread_stop_requested:                 GDB Observers.       (line 128)
+* traceframe_changed:                    GDB Observers.       (line 153)
+* tsv_created:                           GDB Observers.       (line 203)
+* tsv_deleted:                           GDB Observers.       (line 206)
+* tsv_modified:                          GDB Observers.       (line 210)
 * ui_out_field_core_addr:                User Interface.      (line 287)
 * ui_out_field_fmt:                      User Interface.      (line 261)
 * ui_out_field_fmt_int:                  User Interface.      (line 280)
@@ -1590,7 +1606,7 @@ Function and Variable Index
 * value_from_pointer:                    Pointers and Addresses.
                                                               (line  93)
 * void:                                  GDB Observers.       (line  67)
-* volatile:                              Host Definition.     (line 122)
+* volatile:                              Host Definition.     (line 110)
 * wrap_here:                             Misc Guidelines.     (line 191)
 * write_pc:                              Register Architecture Functions & Variables.
                                                               (line  13)

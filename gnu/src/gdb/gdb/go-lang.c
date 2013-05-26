@@ -1,6 +1,6 @@
 /* Go language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2012 Free Software Foundation, Inc.
+   Copyright (C) 2012-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -562,7 +562,6 @@ static const struct language_defn go_language_defn =
   "go",
   language_go,
   range_check_off,
-  type_check_off,
   case_sensitive_on,
   array_row_major,
   macro_expansion_no,

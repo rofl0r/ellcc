@@ -1,4 +1,4 @@
-# Copyright (C) 1989-2012 Free Software Foundation, Inc.
+# Copyright (C) 1989-2013 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -151,6 +151,9 @@ READLINE_CFLAGS = @READLINE_CFLAGS@
 # Where is expat?  This will be empty if expat was not available.
 LIBEXPAT = @LIBEXPAT@
 
+# Where is lzma?  This will be empty if lzma was not available.
+LIBLZMA = @LIBLZMA@
+
 WARN_CFLAGS = @WARN_CFLAGS@
 WERROR_CFLAGS = @WERROR_CFLAGS@
 GDB_WARN_CFLAGS = $(WARN_CFLAGS)
@@ -200,13 +203,14 @@ SUBDIR_CLI_CFLAGS=
 #
 SUBDIR_MI_OBS = \
 	mi-out.o mi-console.o \
-	mi-cmds.o mi-cmd-env.o mi-cmd-var.o mi-cmd-break.o mi-cmd-stack.o \
+	mi-cmds.o mi-cmd-catch.o mi-cmd-env.o \
+	mi-cmd-var.o mi-cmd-break.o mi-cmd-stack.o \
 	mi-cmd-file.o mi-cmd-disas.o mi-symbol-cmds.o mi-cmd-target.o \
 	mi-cmd-info.o mi-interp.o \
 	mi-main.o mi-parse.o mi-getopt.o
 SUBDIR_MI_SRCS = \
 	mi/mi-out.c mi/mi-console.c \
-	mi/mi-cmds.c mi/mi-cmd-env.c \
+	mi/mi-cmds.c mi/mi-cmd-catch.c mi/mi-cmd-env.c \
 	mi/mi-cmd-var.c mi/mi-cmd-break.c mi/mi-cmd-stack.c \
 	mi/mi-cmd-file.c mi/mi-cmd-disas.c mi/mi-symbol-cmds.c \
 	mi/mi-cmd-target.c mi/mi-cmd-info.c mi/mi-interp.c \
@@ -267,6 +271,7 @@ SUBDIR_TUI_CFLAGS= \
 #
 SUBDIR_PYTHON_OBS = \
 	python.o \
+	py-arch.o \
 	py-auto-load.o \
 	py-block.o \
 	py-bpevent.o \
@@ -280,6 +285,7 @@ SUBDIR_PYTHON_OBS = \
 	py-finishbreakpoint.o \
 	py-frame.o \
 	py-function.o \
+	py-gdb-readline.o \
 	py-inferior.o \
 	py-infthread.o \
 	py-lazy-string.o \
@@ -299,6 +305,7 @@ SUBDIR_PYTHON_OBS = \
 
 SUBDIR_PYTHON_SRCS = \
 	python/python.c \
+	python/py-arch.c \
 	python/py-auto-load.c \
 	python/py-block.c \
 	python/py-bpevent.c \
@@ -312,6 +319,7 @@ SUBDIR_PYTHON_SRCS = \
 	python/py-finishbreakpoint.c \
 	python/py-frame.c \
 	python/py-function.c \
+	python/py-gdb-readline.c \
 	python/py-inferior.c \
 	python/py-infthread.c \
 	python/py-lazy-string.c \
@@ -467,7 +475,7 @@ INTERNAL_LDFLAGS = $(CFLAGS) $(GLOBAL_CFLAGS) $(MH_LDFLAGS) $(LDFLAGS) $(CONFIG_
 # LIBIBERTY appears twice on purpose.
 CLIBS = $(SIM) $(READLINE) $(OPCODES) $(BFD) $(INTL) $(LIBIBERTY) $(LIBDECNUMBER) \
 	$(XM_CLIBS) $(NAT_CLIBS) $(GDBTKLIBS) @LIBS@ @PYTHON_LIBS@ \
-	$(LIBEXPAT) \
+	$(LIBEXPAT) $(LIBLZMA) \
 	$(LIBIBERTY) $(WIN32LIBS) $(LIBGNU)
 CDEPS = $(XM_CDEPS) $(NAT_CDEPS) $(SIM) $(BFD) $(READLINE_DEPS) \
 	$(OPCODES) $(INTL_DEPS) $(LIBIBERTY) $(CONFIG_DEPS) $(LIBGNU)
@@ -489,7 +497,8 @@ RUNTESTFLAGS=
 XMLFILES = $(srcdir)/features/gdb-target.dtd $(srcdir)/features/xinclude.dtd \
 	$(srcdir)/features/library-list.dtd \
 	$(srcdir)/features/library-list-svr4.dtd $(srcdir)/features/osdata.dtd \
-	$(srcdir)/features/threads.dtd $(srcdir)/features/traceframe-info.dtd
+	$(srcdir)/features/threads.dtd $(srcdir)/features/traceframe-info.dtd \
+	$(srcdir)/features/btrace.dtd
 
 # This is ser-unix.o for any system which supports a v7/BSD/SYSV/POSIX
 # interface to the serial port.  Hopefully if get ported to OS/2, VMS,
@@ -501,7 +510,8 @@ SER_HARDWIRE = @SER_HARDWIRE@
 
 # The `remote' debugging target is supported for most architectures,
 # but not all (e.g. 960)
-REMOTE_OBS = remote.o dcache.o tracepoint.o ax-general.o ax-gdb.o remote-fileio.o
+REMOTE_OBS = remote.o dcache.o tracepoint.o ax-general.o ax-gdb.o remote-fileio.o \
+	remote-notif.o
 
 # This is remote-sim.o if a simulator is to be linked in.
 SIM_OBS = @SIM_OBS@
@@ -512,6 +522,7 @@ TARGET_OBS = @TARGET_OBS@
 # All target-dependent objects files that require 64-bit CORE_ADDR
 # (used with --enable-targets=all --enable-64-bit-bfd).
 ALL_64_TARGET_OBS = \
+	aarch64-tdep.o aarch64-linux-tdep.o aarch64-newlib-tdep.o \
 	alphabsd-tdep.o alphafbsd-tdep.o alpha-linux-tdep.o alpha-mdebug-tdep.o \
 	alphanbsd-tdep.o alphaobsd-tdep.o alpha-osf1-tdep.o alpha-tdep.o \
 	amd64fbsd-tdep.o amd64-darwin-tdep.o amd64-dicos-tdep.o \
@@ -556,14 +567,15 @@ ALL_TARGET_OBS = \
 	mt-tdep.o \
 	nto-tdep.o \
 	ppc-linux-tdep.o ppcnbsd-tdep.o ppcobsd-tdep.o ppc-sysv-tdep.o \
-	rl78-tdep.o \
-	rs6000-aix-tdep.o rs6000-tdep.o \
+	ppc64-tdep.o rl78-tdep.o \
+	rs6000-aix-tdep.o rs6000-tdep.o ppc-ravenscar-thread.o \
+	rs6000-lynx178-tdep.o \
 	rx-tdep.o \
 	s390-tdep.o \
 	score-tdep.o \
 	sh64-tdep.o sh-linux-tdep.o shnbsd-tdep.o sh-tdep.o \
 	sparc-linux-tdep.o sparcnbsd-tdep.o sparcobsd-tdep.o \
-	sparc-sol2-tdep.o sparc-tdep.o \
+	sparc-sol2-tdep.o sparc-tdep.o sparc-ravenscar-thread.o \
 	spu-tdep.o spu-multiarch.o solib-spu.o \
 	tic6x-tdep.o tic6x-linux-tdep.o \
 	tilegx-tdep.o tilegx-linux-tdep.o \
@@ -582,7 +594,8 @@ ALL_TARGET_OBS = \
 	xcoffread.o \
 	symfile-mem.o \
 	windows-tdep.o \
-	linux-record.o
+	linux-record.o \
+	ravenscar-thread.o
 
 # Host-dependent makefile fragment comes in here.
 @host_makefile_frag@
@@ -690,7 +703,7 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	agent.c \
 	bcache.c \
 	bfd-target.c \
-	block.c blockframe.c breakpoint.c buildsym.c \
+	block.c blockframe.c breakpoint.c break-catch-sig.c buildsym.c \
 	c-exp.y c-lang.c c-typeprint.c c-valprint.c \
 	charset.c cleanups.c cli-out.c coffread.c coff-pe-read.c \
 	complaints.c completer.c continuations.c corefile.c corelow.c \
@@ -704,7 +717,8 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	exceptions.c expprint.c \
 	f-exp.y f-lang.c f-typeprint.c f-valprint.c filesystem.c \
 	findcmd.c findvar.c frame.c frame-base.c frame-unwind.c \
-	gdbarch.c arch-utils.c gdbtypes.c gnu-v2-abi.c gnu-v3-abi.c \
+	gdbarch.c arch-utils.c gdb_bfd.c gdb_obstack.c \
+	gdbtypes.c gnu-v2-abi.c gnu-v3-abi.c \
 	go-exp.y go-lang.c go-typeprint.c go-valprint.c \
 	inf-loop.c \
 	infcall.c \
@@ -712,18 +726,18 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	inline-frame.c \
 	interps.c \
 	jv-exp.y jv-lang.c jv-valprint.c jv-typeprint.c \
-	language.c linespec.c \
+	language.c linespec.c minidebug.c \
 	m2-exp.y m2-lang.c m2-typeprint.c m2-valprint.c \
 	macrotab.c macroexp.c macrocmd.c macroscope.c main.c maint.c \
 	mdebugread.c memattr.c mem-break.c minsyms.c mipsread.c memory-map.c \
 	memrange.c mi/mi-common.c \
-	objc-exp.y objc-lang.c \
+	objc-lang.c \
 	objfiles.c osabi.c observer.c osdata.c \
 	opencl-lang.c \
 	p-exp.y p-lang.c p-typeprint.c p-valprint.c parse.c printcmd.c \
 	proc-service.list progspace.c \
 	prologue-value.c psymtab.c \
-	regcache.c reggroups.c remote.c remote-fileio.c reverse.c \
+	regcache.c reggroups.c remote.c remote-fileio.c remote-notif.c reverse.c \
 	sentinel-frame.c \
 	serial.c ser-base.c ser-unix.c skip.c \
 	solib.c solib-target.c source.c \
@@ -739,14 +753,14 @@ SFILES = ada-exp.y ada-lang.c ada-typeprint.c ada-valprint.c ada-tasks.c \
 	valarith.c valops.c valprint.c value.c varobj.c common/vec.c \
 	xml-tdesc.c xml-support.c \
 	inferior.c gdb_usleep.c \
-	record.c gcore.c \
+	record.c record-full.c gcore.c \
 	jit.c \
 	xml-syscall.c \
 	annotate.c common/signals.c copying.c dfp.c gdb.c inf-child.c \
 	regset.c sol-thread.c windows-termcap.c \
-	common/common-utils.c common/xml-utils.c \
+	common/gdb_vecs.c common/common-utils.c common/xml-utils.c \
 	common/ptid.c common/buffer.c gdb-dlfcn.c common/agent.c \
-	common/format.c
+	common/format.c btrace.c record-btrace.c
 
 LINTFILES = $(SFILES) $(YYFILES) $(CONFIG_SRCS) init.c
 
@@ -756,30 +770,22 @@ LINTFILES = $(SFILES) $(YYFILES) $(CONFIG_SRCS) init.c
 # wrong if TAGS has files twice).  Because this is tricky to get
 # right, it is probably easiest just to list .h files here directly.
 
-HFILES_NO_SRCDIR = osf-share/cma_debug_client.h	\
-osf-share/HP800/cma_thread_io.h osf-share/cma_sequence.h \
-osf-share/cma_mutex.h osf-share/cma_semaphore_defs.h \
-osf-share/cma_list.h osf-share/cma_handle.h osf-share/cma_stack.h \
-osf-share/cma_util.h osf-share/RIOS/cma_thread_io.h \
-osf-share/cma_errors.h osf-share/cma_tcb_defs.h osf-share/cma_attr.h \
-osf-share/cma_stack_int.h osf-share/cma_init.h \
-osf-share/cma_deb_core.h osf-share/AT386/cma_thread_io.h \
-osf-share/cma_sched.h \
-common/gdb_signals.h common/gdb_thread_db.h common/i386-xstate.h \
-common/linux-ptrace.h \
-proc-utils.h arm-tdep.h ax-gdb.h ppcnbsd-tdep.h	\
-cli-out.h gdb_expat.h breakpoint.h infcall.h obsd-tdep.h \
+HFILES_NO_SRCDIR = \
+common/gdb_signals.h common/gdb_thread_db.h common/gdb_vecs.h \
+common/i386-xstate.h common/linux-ptrace.h \
+proc-utils.h aarch64-tdep.h arm-tdep.h ax-gdb.h ppcfbsd-tdep.h \
+ppcnbsd-tdep.h cli-out.h gdb_expat.h breakpoint.h infcall.h obsd-tdep.h \
 exec.h m32r-tdep.h osabi.h gdbcore.h solib-som.h amd64bsd-nat.h \
 i386bsd-nat.h xml-support.h xml-tdesc.h alphabsd-tdep.h gdb_obstack.h \
 ia64-tdep.h ada-lang.h ada-varobj.h varobj.h frv-tdep.h nto-tdep.h serial.h \
-c-lang.h d-lang.h golang.h frame.h event-loop.h block.h cli/cli-setshow.h \
+c-lang.h d-lang.h go-lang.h frame.h event-loop.h block.h cli/cli-setshow.h \
 cli/cli-decode.h cli/cli-cmds.h cli/cli-dump.h cli/cli-utils.h \
 cli/cli-script.h macrotab.h symtab.h version.h \
 gnulib/import/string.in.h gnulib/import/str-two-way.h \
-gnulib/import/stdint.in.h remote.h gdb.h sparc-nat.h \
+gnulib/import/stdint.in.h remote.h remote-notif.h gdb.h sparc-nat.h \
 gdbthread.h dwarf2-frame.h dwarf2-frame-tailcall.h nbsd-nat.h dcache.h \
 amd64-nat.h s390-tdep.h arm-linux-tdep.h exceptions.h macroscope.h \
-gdbarch.h bsd-uthread.h gdb_stat.h memory-map.h	memrange.h \
+gdbarch.h bsd-uthread.h common/gdb_stat.h memory-map.h	memrange.h \
 mdebugread.h m88k-tdep.h stabsread.h hppa-linux-offsets.h linux-fork.h \
 ser-unix.h inf-ptrace.h terminal.h ui-out.h frame-base.h \
 f-lang.h dwarf2loc.h value.h sparc-tdep.h defs.h target-descriptions.h \
@@ -794,19 +800,19 @@ tui/tui-windata.h tui/tui-data.h tui/tui-win.h tui/tui-stack.h \
 tui/tui-winsource.h tui/tui-regs.h tui/tui-io.h tui/tui-layout.h \
 tui/tui-source.h xcoffsolib.h sol2-tdep.h gregset.h sh-tdep.h sh64-tdep.h \
 expression.h score-tdep.h gdb_select.h ser-tcp.h buildsym.h valprint.h \
-call-cmds.h typeprint.h mi/mi-getopt.h mi/mi-parse.h mi/mi-console.h \
+typeprint.h mi/mi-getopt.h mi/mi-parse.h mi/mi-console.h \
 mi/mi-out.h mi/mi-main.h mi/mi-common.h mi/mi-cmds.h linux-nat.h \
 complaints.h gdb_proc_service.h gdb_regex.h xtensa-tdep.h inf-loop.h \
-gdb_wait.h common/gdb_assert.h solib.h ppc-tdep.h cp-support.h glibc-tdep.h \
+common/gdb_wait.h common/gdb_assert.h solib.h ppc-tdep.h cp-support.h glibc-tdep.h \
 interps.h auxv.h gdbcmd.h tramp-frame.h mipsnbsd-tdep.h	\
 amd64-linux-tdep.h linespec.h i387-tdep.h mn10300-tdep.h \
 sparc64-tdep.h monitor.h ppcobsd-tdep.h srec.h solib-pa64.h \
 coff-pe-read.h parser-defs.h gdb_ptrace.h mips-linux-tdep.h \
 m68k-tdep.h spu-tdep.h jv-lang.h environ.h solib-irix.h amd64-tdep.h \
-doublest.h regset.h hppa-tdep.h ppc-linux-tdep.h rs6000-tdep.h \
+doublest.h regset.h hppa-tdep.h ppc-linux-tdep.h ppc64-tdep.h rs6000-tdep.h \
 common/gdb_locale.h common/gdb_dirent.h arch-utils.h trad-frame.h gnu-nat.h \
 language.h nbsd-tdep.h solib-svr4.h \
-macroexp.h ui-file.h regcache.h gdb_string.h tracepoint.h i386-tdep.h \
+macroexp.h ui-file.h regcache.h tracepoint.h i386-tdep.h \
 inf-child.h p-lang.h event-top.h gdbtypes.h user-regs.h \
 regformats/regdef.h config/alpha/nm-osf3.h  config/i386/nm-i386gnu.h \
 config/i386/nm-fbsd.h \
@@ -823,13 +829,15 @@ dicos-tdep.h filesystem.h gcore.h gdb_wchar.h hppabsd-tdep.h \
 i386-darwin-tdep.h i386-nat.h linux-record.h moxie-tdep.h \
 osdata.h procfs.h python/py-event.h python/py-events.h python/py-stopevent.h \
 python/python-internal.h python/python.h ravenscar-thread.h record.h \
+record-full.h \
 solib-darwin.h solib-ia64-hpux.h solib-spu.h windows-nat.h xcoffread.h \
 gnulib/import/extra/snippet/arg-nonnull.h gnulib/import/extra/snippet/c++defs.h \
 gnulib/import/extra/snippet/warn-on-use.h \
 gnulib/import/stddef.in.h gnulib/import/inttypes.in.h inline-frame.h skip.h \
 common/common-utils.h common/xml-utils.h common/buffer.h common/ptid.h \
-common/format.h \
-common/linux-osdata.h gdb-dlfcn.h auto-load.h probe.h stap-probe.h
+common/format.h common/host-defs.h utils.h common/queue.h common/gdb_string.h \
+common/linux-osdata.h gdb-dlfcn.h auto-load.h probe.h stap-probe.h \
+gdb_bfd.h sparc-ravenscar-thread.h ppc-ravenscar-thread.h common/linux-btrace.h
 
 # Header files that already have srcdir in them, or which are in objdir.
 
@@ -864,7 +872,8 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	auto-load.o auxv.o \
 	agent.o \
 	bfd-target.o \
-	blockframe.o breakpoint.o findvar.o regcache.o cleanups.o \
+	blockframe.o breakpoint.o break-catch-sig.o \
+	findvar.o regcache.o cleanups.o \
 	charset.o continuations.o corelow.o disasm.o dummy-frame.o dfp.o \
 	source.o value.o eval.o valops.o valarith.o valprint.o printcmd.o \
 	block.o symtab.o psymtab.o symfile.o symmisc.o linespec.o dictionary.o \
@@ -875,11 +884,13 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	filesystem.o \
 	inf-child.o \
 	interps.o \
+	minidebug.o \
 	main.o \
 	macrotab.o macrocmd.o macroexp.o macroscope.o \
 	mi-common.o \
 	event-loop.o event-top.o inf-loop.o completer.o \
-	gdbarch.o arch-utils.o gdbtypes.o osabi.o copying.o \
+	gdbarch.o arch-utils.o gdbtypes.o gdb_bfd.o gdb_obstack.o \
+	osabi.o copying.o \
 	memattr.o mem-break.o target.o parse.o language.o buildsym.o \
 	findcmd.o \
 	std-regs.o \
@@ -916,10 +927,10 @@ COMMON_OBS = $(DEPFILES) $(CONFIG_OBS) $(YYOBJ) \
 	prologue-value.o memory-map.o memrange.o \
 	xml-support.o xml-syscall.o xml-utils.o \
 	target-descriptions.o target-memory.o xml-tdesc.o xml-builtin.o \
-	inferior.o osdata.o gdb_usleep.o record.o gcore.o \
-	jit.o progspace.o skip.o probe.o \
+	inferior.o osdata.o gdb_usleep.o record.o record-full.o gcore.o \
+	gdb_vecs.o jit.o progspace.o skip.o probe.o \
 	common-utils.o buffer.o ptid.o gdb-dlfcn.o common-agent.o \
-	format.o
+	format.o registry.o btrace.o record-btrace.o
 
 TSOBS = inflow.o
 
@@ -935,14 +946,12 @@ REQUIRED_SUBDIRS = doc | testsuite | $(GNULIB_BUILDDIR) | data-directory
 # For now, shortcut the "configure GDB for fewer languages" stuff.
 YYFILES = c-exp.c \
 	cp-name-parser.c \
-	objc-exp.c \
 	ada-lex.c \
 	ada-exp.c \
 	jv-exp.c \
 	f-exp.c go-exp.c m2-exp.c p-exp.c
 YYOBJ = c-exp.o \
 	cp-name-parser.o \
-	objc-exp.o \
 	ada-exp.o \
 	jv-exp.o \
 	f-exp.o go-exp.o m2-exp.o p-exp.o
@@ -1139,7 +1148,7 @@ init.c: $(INIT_FILES)
 	@echo '/* Do not modify this file.  */' >>init.c-tmp
 	@echo '/* It is created automatically by the Makefile.  */'>>init.c-tmp
 	@echo '#include "defs.h"      /* For initialize_file_ftype.  */' >>init.c-tmp
-	@echo '#include "call-cmds.h" /* For initialize_all_files.  */' >>init.c-tmp
+	@echo 'extern void initialize_all_files(void);' >>init.c-tmp
 	@sed -e 's/\(.*\)/extern initialize_file_ftype _initialize_\1;/' <init.l-tmp >>init.c-tmp
 	@echo 'void' >>init.c-tmp
 	@echo 'initialize_all_files (void)' >>init.c-tmp
@@ -1245,7 +1254,6 @@ local-maintainer-clean:
 	rm -f c-exp.c \
 		cp-name-parser.c \
 		ada-lex.c ada-exp.c \
-	        objc-exp.c \
 		jv-exp.tab \
 		f-exp.c go-exp.c m2-exp.c p-exp.c
 	rm -f TAGS $(INFOFILES)
@@ -1312,15 +1320,17 @@ config.status: $(srcdir)/configure configure.tgt configure.host
 
 ACLOCAL = aclocal
 ACLOCAL_AMFLAGS = -I ../config
+
+# Keep these in sync with the includes in acinclude.m4.
 aclocal_m4_deps = \
 	configure.ac \
 	acx_configure_dir.m4 \
-	../config/extensions.m4 \
-	../config/lead-dot.m4 \
-	../config/proginstall.m4 \
 	../bfd/bfd.m4 \
 	../config/acinclude.m4 \
+	../config/plugins.m4 \
+	../config/lead-dot.m4 \
 	../config/override.m4 \
+	../config/largefile.m4 \
 	../config/gettext-sister.m4 \
 	../config/lib-ld.m4 \
 	../config/lib-prefix.m4 \
@@ -1329,7 +1339,8 @@ aclocal_m4_deps = \
 	../config/tcl.m4 \
 	../config/depstand.m4 \
 	../config/lcmessage.m4 \
-	../config/codeset.m4
+	../config/codeset.m4 \
+	../config/zlib.m4
 
 $(srcdir)/aclocal.m4: @MAINTAINER_MODE_TRUE@ $(aclocal_m4_deps)
 	cd $(srcdir) && $(ACLOCAL) $(ACLOCAL_AMFLAGS)
@@ -1412,6 +1423,8 @@ force_update:
 MAKEOVERRIDES=
 
 ALLDEPFILES = \
+	aarch64-tdep.c aarch64-linux-tdep.c aarch64-newlib-tdep.c \
+	aarch64-linux-nat.c \
 	aix-thread.c \
 	alpha-nat.c alphabsd-nat.c alpha-linux-nat.c \
 	alpha-tdep.c alpha-mdebug-tdep.c \
@@ -1479,15 +1492,17 @@ ALLDEPFILES = \
 	solib-osf.c \
 	somread.c solib-som.c \
 	posix-hdep.c \
-	ppc-sysv-tdep.c ppc-linux-nat.c ppc-linux-tdep.c \
+	ppc-sysv-tdep.c ppc-linux-nat.c ppc-linux-tdep.c ppc64-tdep.c \
 	ppcnbsd-nat.c ppcnbsd-tdep.c \
 	ppcobsd-nat.c ppcobsd-tdep.c \
 	procfs.c \
+	ravenscar-thread.c \
 	remote-m32r-sdi.c remote-mips.c \
 	remote-sim.c \
 	dcache.c \
 	rl78-tdep.c \
-	rs6000-nat.c rs6000-tdep.c \
+	rs6000-nat.c rs6000-tdep.c ppc-ravenscar-thread.c \
+	rs6000-lynx178-tdep.c \
 	rx-tdep.c \
 	s390-tdep.c s390-nat.c \
 	score-tdep.c \
@@ -1501,6 +1516,7 @@ ALLDEPFILES = \
 	sparc64-nat.c sparc64-tdep.c sparc64fbsd-nat.c sparc64fbsd-tdep.c \
 	sparc64nbsd-nat.c sparc64nbsd-tdep.c sparc64obsd-tdep.c \
 	sparcnbsd-nat.c sparcnbsd-tdep.c sparcobsd-tdep.c \
+	sparc-ravenscar-thread.c \
 	spu-linux-nat.c spu-tdep.c spu-multiarch.c solib-spu.c \
 	tilegx-linux-nat.c tilegx-tdep.c tilegx-linux-tdep.c \
 	v850-tdep.c \
@@ -1830,6 +1846,10 @@ mi-cmd-break.o: $(srcdir)/mi/mi-cmd-break.c
 	$(COMPILE) $(srcdir)/mi/mi-cmd-break.c
 	$(POSTCOMPILE)
 
+mi-cmd-catch.o: $(srcdir)/mi/mi-cmd-catch.c
+	$(COMPILE) $(srcdir)/mi/mi-cmd-catch.c
+	$(POSTCOMPILE)
+
 mi-cmd-disas.o: $(srcdir)/mi/mi-cmd-disas.c
 	$(COMPILE) $(srcdir)/mi/mi-cmd-disas.c
 	$(POSTCOMPILE)
@@ -1907,6 +1927,10 @@ common-utils.o: ${srcdir}/common/common-utils.c
 	$(COMPILE) $(srcdir)/common/common-utils.c
 	$(POSTCOMPILE)
 
+gdb_vecs.o: ${srcdir}/common/gdb_vecs.c
+	$(COMPILE) $(srcdir)/common/gdb_vecs.c
+	$(POSTCOMPILE)
+
 xml-utils.o: ${srcdir}/common/xml-utils.c
 	$(COMPILE) $(srcdir)/common/xml-utils.c
 	$(POSTCOMPILE)
@@ -1941,6 +1965,10 @@ common-agent.o: $(srcdir)/common/agent.c
 
 vec.o: ${srcdir}/common/vec.c
 	$(COMPILE) $(srcdir)/common/vec.c
+	$(POSTCOMPILE)
+
+linux-btrace.o: ${srcdir}/common/linux-btrace.c
+	$(COMPILE) $(srcdir)/common/linux-btrace.c
 	$(POSTCOMPILE)
 
 #
@@ -2030,6 +2058,10 @@ python.o: $(srcdir)/python/python.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/python.c
 	$(POSTCOMPILE)
 
+py-arch.o: $(srcdir)/python/py-arch.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-arch.c
+	$(POSTCOMPILE)
+
 py-auto-load.o: $(srcdir)/python/py-auto-load.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-auto-load.c
 	$(POSTCOMPILE)
@@ -2080,6 +2112,10 @@ py-frame.o: $(srcdir)/python/py-frame.c
 
 py-function.o: $(srcdir)/python/py-function.c
 	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-function.c
+	$(POSTCOMPILE)
+
+py-gdb-readline.o: $(srcdir)/python/py-gdb-readline.c
+	$(COMPILE) $(PYTHON_CFLAGS) $(srcdir)/python/py-gdb-readline.c
 	$(POSTCOMPILE)
 
 py-inferior.o: $(srcdir)/python/py-inferior.c

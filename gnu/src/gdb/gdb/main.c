@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2005, 2007-2012 Free Software Foundation, Inc.
+   Copyright (C) 1986-2013 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -43,6 +43,8 @@
 #include "objfiles.h"
 #include "auto-load.h"
 
+#include "filenames.h"
+
 /* The selected interpreter.  This will be used as a set command
    variable, so it should always be malloc'ed - since
    do_setshow_command will free it.  */
@@ -59,6 +61,11 @@ char *gdb_sysroot = 0;
 
 /* GDB datadir, used to store data files.  */
 char *gdb_datadir = 0;
+
+/* Non-zero if GDB_DATADIR was provided on the command line.
+   This doesn't track whether data-directory is set later from the
+   command line, but we don't reread system.gdbinit when that happens.  */
+static int gdb_datadir_provided = 0;
 
 /* If gdb was configured with --with-python=/path,
    the possibly relocated path to python's lib directory.  */
@@ -121,7 +128,7 @@ relocate_gdb_directory (const char *initial, int flag)
     {
       struct stat s;
 
-      if (stat (dir, &s) != 0 || !S_ISDIR (s.st_mode))
+      if (*dir == '\0' || stat (dir, &s) != 0 || !S_ISDIR (s.st_mode))
 	{
 	  xfree (dir);
 	  dir = NULL;
@@ -163,13 +170,38 @@ get_init_files (char **system_gdbinit,
   if (!initialized)
     {
       struct stat homebuf, cwdbuf, s;
-      char *homedir, *relocated_sysgdbinit;
+      char *homedir;
 
       if (SYSTEM_GDBINIT[0])
 	{
-	  relocated_sysgdbinit = relocate_path (gdb_program_name,
-						SYSTEM_GDBINIT,
-						SYSTEM_GDBINIT_RELOCATABLE);
+	  int datadir_len = strlen (GDB_DATADIR);
+	  int sys_gdbinit_len = strlen (SYSTEM_GDBINIT);
+	  char *relocated_sysgdbinit;
+
+	  /* If SYSTEM_GDBINIT lives in data-directory, and data-directory
+	     has been provided, search for SYSTEM_GDBINIT there.  */
+	  if (gdb_datadir_provided
+	      && datadir_len < sys_gdbinit_len
+	      && filename_ncmp (SYSTEM_GDBINIT, GDB_DATADIR, datadir_len) == 0
+	      && IS_DIR_SEPARATOR (SYSTEM_GDBINIT[datadir_len]))
+	    {
+	      /* Append the part of SYSTEM_GDBINIT that follows GDB_DATADIR
+		 to gdb_datadir.  */
+	      char *tmp_sys_gdbinit = xstrdup (SYSTEM_GDBINIT + datadir_len);
+	      char *p;
+
+	      for (p = tmp_sys_gdbinit; IS_DIR_SEPARATOR (*p); ++p)
+		continue;
+	      relocated_sysgdbinit = concat (gdb_datadir, SLASH_STRING, p,
+					     NULL);
+	      xfree (tmp_sys_gdbinit);
+	    }
+	  else
+	    {
+	      relocated_sysgdbinit = relocate_path (gdb_program_name,
+						    SYSTEM_GDBINIT,
+						    SYSTEM_GDBINIT_RELOCATABLE);
+	    }
 	  if (relocated_sysgdbinit && stat (relocated_sysgdbinit, &s) == 0)
 	    sysgdbinit = relocated_sysgdbinit;
 	  else
@@ -273,6 +305,7 @@ captured_main (void *data)
   char **argv = context->argv;
   static int quiet = 0;
   static int set_args = 0;
+  static int inhibit_home_gdbinit = 0;
 
   /* Pointers to various arguments from command line.  */
   char *symarg = NULL;
@@ -326,12 +359,14 @@ captured_main (void *data)
   bindtextdomain (PACKAGE, LOCALEDIR);
   textdomain (PACKAGE);
 
+  bfd_init ();
+
   make_cleanup (VEC_cleanup (cmdarg_s), &cmdarg_vec);
   dirsize = 1;
   dirarg = (char **) xmalloc (dirsize * sizeof (*dirarg));
   ndir = 0;
 
-  quit_flag = 0;
+  clear_quit_flag ();
   saved_command_line = (char *) xmalloc (saved_command_line_size);
   saved_command_line[0] = '\0';
   instream = stdin;
@@ -344,7 +379,13 @@ captured_main (void *data)
   gdb_stdtargerr = gdb_stderr;	/* for moment */
   gdb_stdtargin = gdb_stdin;	/* for moment */
 
+#ifdef __MINGW32__
+  /* On Windows, argv[0] is not necessarily set to absolute form when
+     GDB is found along PATH, without which relocation doesn't work.  */
+  gdb_program_name = windows_get_absolute_argv0 (argv[0]);
+#else
   gdb_program_name = xstrdup (argv[0]);
+#endif
 
   if (! getcwd (gdb_dirbuf, sizeof (gdb_dirbuf)))
     /* Don't use *_filtered or warning() (which relies on
@@ -378,7 +419,7 @@ captured_main (void *data)
 
 #ifdef RELOC_SRCDIR
   add_substitute_path_rule (RELOC_SRCDIR,
-			    make_relative_prefix (argv[0], BINDIR,
+			    make_relative_prefix (gdb_program_name, BINDIR,
 						  RELOC_SRCDIR));
 #endif
 
@@ -415,11 +456,11 @@ captured_main (void *data)
       {"quiet", no_argument, &quiet, 1},
       {"q", no_argument, &quiet, 1},
       {"silent", no_argument, &quiet, 1},
+      {"nh", no_argument, &inhibit_home_gdbinit, 1},
       {"nx", no_argument, &inhibit_gdbinit, 1},
       {"n", no_argument, &inhibit_gdbinit, 1},
       {"batch-silent", no_argument, 0, 'B'},
       {"batch", no_argument, &batch_flag, 1},
-      {"epoch", no_argument, &epoch_interface, 1},
 
     /* This is a synonym for "--annotate=1".  --annotate is now
        preferred, but keep this here for a long time because people
@@ -589,6 +630,7 @@ captured_main (void *data)
 	  case 'D':
 	    xfree (gdb_datadir);
 	    gdb_datadir = xstrdup (optarg);
+	    gdb_datadir_provided = 1;
 	    break;
 #ifdef GDBTK
 	  case 'z':
@@ -695,7 +737,7 @@ captured_main (void *data)
 
   /* Initialize all files.  Give the interpreter a chance to take
      control of the console via the deprecated_init_ui_hook ().  */
-  gdb_init (argv[0]);
+  gdb_init (gdb_program_name);
 
   /* Now that gdb_init has created the initial inferior, we're in
      position to set args for that inferior.  */
@@ -845,7 +887,7 @@ captured_main (void *data)
      global parameters, which are independent of what file you are
      debugging or what directory you are in.  */
 
-  if (home_gdbinit && !inhibit_gdbinit)
+  if (home_gdbinit && !inhibit_gdbinit && !inhibit_home_gdbinit)
     catch_command_errors (source_script, home_gdbinit, 0, RETURN_MASK_ALL);
 
   /* Process '-ix' and '-iex' options early.  */
@@ -1054,7 +1096,6 @@ Options:\n\n\
   fputs_unfiltered (_("\
   --dbx              DBX compatibility mode.\n\
   --directory=DIR    Search for source files in DIR.\n\
-  --epoch            Output information used by epoch emacs-GDB interface.\n\
   --exec=EXECFILE    Use EXECFILE as the executable.\n\
   --fullname         Output information used by emacs-GDB interface.\n\
   --help             Print this message.\n\
@@ -1066,9 +1107,12 @@ Options:\n\n\
   fputs_unfiltered (_("\
   -l TIMEOUT         Set timeout in seconds for remote debugging.\n\
   --nw		     Do not use a window interface.\n\
-  --nx               Do not read "), stream);
+  --nx               Do not read any "), stream);
   fputs_unfiltered (gdbinit, stream);
-  fputs_unfiltered (_(" file.\n\
+  fputs_unfiltered (_(" files.\n\
+  --nh               Do not read "), stream);
+  fputs_unfiltered (gdbinit, stream);
+  fputs_unfiltered (_(" file from home directory.\n\
   --quiet            Do not print version number on startup.\n\
   --readnow          Fully read symbol files on first access.\n\
 "), stream);
